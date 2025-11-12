@@ -139,8 +139,8 @@ class ColyseusService {
     });
 
     // Listen to room errors
-    this.room.onError((code: number, message: string) => {
-      console.error('Room error:', code, message);
+    this.room.onError((code: number, message?: string) => {
+      console.error('Room error:', code, message || 'Unknown error');
     });
 
     // Listen to room leave
