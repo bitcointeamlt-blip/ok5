@@ -6,7 +6,11 @@ import { GameRoom } from "./rooms/GameRoom";
 import cors from "cors";
 
 const app = express();
-app.use(cors());
+// CORS configuration - allow all origins for development
+app.use(cors({
+  origin: true, // Allow all origins
+  credentials: true
+}));
 app.use(express.json());
 
 const server = createServer(app);
@@ -26,7 +30,10 @@ app.get("/health", (req, res) => {
 
 const PORT = Number(process.env.PORT) || 2567;
 
-// Start the server
+// Attach Colyseus to existing HTTP server (instead of listen)
+gameServer.attach({ server });
+
+// Start the HTTP server
 server.listen(PORT, () => {
   console.log(`✅ HTTP server is listening on port ${PORT}`);
   console.log(`✅ Colyseus server is running on port ${PORT}`);
