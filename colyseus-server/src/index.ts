@@ -13,24 +13,26 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const server = createServer(app);
-const gameServer = new Server({
-  transport: new WebSocketTransport({
-    server: server,
-  }),
-});
-
-// Register room
-gameServer.define("pvp_room", GameRoom);
-
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+// Create Colyseus server with WebSocketTransport
+// WebSocketTransport will create its own HTTP server
+const gameServer = new Server({
+  transport: new WebSocketTransport(),
+});
+
+// Attach Express app to Colyseus server
+gameServer.attach({ server: createServer(app) });
+
+// Register room
+gameServer.define("pvp_room", GameRoom);
+
 const PORT = Number(process.env.PORT) || 2567;
 
-// Start Colyseus server - it will handle the HTTP server
+// Start Colyseus server
 gameServer.listen(PORT)
   .then(() => {
     console.log(`✅ HTTP server is listening on port ${PORT}`);
