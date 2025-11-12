@@ -30,12 +30,14 @@ app.get("/health", (req, res) => {
 
 const PORT = Number(process.env.PORT) || 2567;
 
-// Attach Colyseus to existing HTTP server (instead of listen)
-gameServer.attach({ server });
-
-// Start the HTTP server
-server.listen(PORT, () => {
-  console.log(`✅ HTTP server is listening on port ${PORT}`);
-  console.log(`✅ Colyseus server is running on port ${PORT}`);
-});
+// Start Colyseus server - it will handle the HTTP server
+gameServer.listen(PORT)
+  .then(() => {
+    console.log(`✅ HTTP server is listening on port ${PORT}`);
+    console.log(`✅ Colyseus server is running on port ${PORT}`);
+  })
+  .catch((error) => {
+    console.error('❌ Failed to start Colyseus server:', error);
+    process.exit(1);
+  });
 
