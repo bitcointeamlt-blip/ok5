@@ -24,8 +24,15 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-const PORT = parseInt(process.env.PORT || "2567", 10);
-gameServer.listen(PORT).then(() => {
-  console.log(`✅ Colyseus server running on port ${PORT}`);
-});
+const PORT = Number(process.env.PORT) || 2567;
+
+// Start the server
+gameServer.listen(PORT)
+  .then(() => {
+    console.log(`✅ Colyseus server is running on port ${PORT}`);
+  })
+  .catch((error) => {
+    console.error('❌ Failed to start Colyseus server:', error);
+    process.exit(1);
+  });
 
