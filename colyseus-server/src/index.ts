@@ -38,40 +38,42 @@ app.get("/health", (req, res) => {
 });
 
 // Colyseus Cloud automatically sets PORT environment variable
-// In production (Colyseus Cloud), PORT MUST be set - no fallback
+// If PORT is not set in production, use 0 to let system assign a free port automatically
 // For local development, use 2567 as fallback
-const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT 
   ? Number(process.env.PORT) 
-  : (isProduction ? null : 2567);
+  : (process.env.NODE_ENV === 'production' ? 0 : 2567);
 
-if (!PORT) {
-  console.error('❌ PORT environment variable is not set!');
-  console.error('💡 Colyseus Cloud should set PORT automatically.');
-  console.error('💡 If running locally, set PORT=2567 or use default.');
-  process.exit(1);
-}
+console.log(`🔧 Starting server (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, using port: ${PORT === 0 ? 'auto-assign' : PORT})`);
 
-console.log(`🔧 Starting server on port: ${PORT} (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'})`);
-
-// Start Colyseus server (it will handle HTTP server automatically)
-// This is the correct way for Colyseus Cloud deployment
+// Start Colyseus server - it will handle HTTP server automatically
+// Using PORT 0 allows the system to assign a free port if PORT env is not set
 gameServer.listen(PORT)
   .then(() => {
-    console.log(`✅ HTTP server is listening on port ${PORT}`);
-    console.log(`✅ Colyseus server is running on port ${PORT}`);
+    const actualPort = PORT || (server.address() as any)?.port || 2567;
+    console.log(`✅ HTTP server is listening on port ${actualPort}`);
+    console.log(`✅ Colyseus server is running on port ${actualPort}`);
   })
   .catch((error) => {
     console.error('❌ Failed to start Colyseus server:', error);
-    // If port is in use, try to get a different port from Colyseus Cloud
     if (error.code === 'EADDRINUSE') {
-      console.error(`⚠️ Port ${PORT} is already in use.`);
-      if (isProduction) {
-        console.error('💡 Colyseus Cloud should set PORT automatically. Check Colyseus Cloud settings.');
+      console.error(`⚠️ Port ${PORT} is already in use. Trying to use system-assigned port...`);
+      // Try again with port 0 (auto-assign)
+      if (PORT !== 0) {
+        gameServer.listen(0)
+          .then(() => {
+            const actualPort = (server.address() as any)?.port;
+            console.log(`✅ Server started on auto-assigned port ${actualPort}`);
+          })
+          .catch((err) => {
+            console.error('❌ Failed to start on auto-assigned port:', err);
+            process.exit(1);
+          });
       } else {
-        console.error('💡 Port 2567 is already in use. Try a different port or stop the other process.');
+        process.exit(1);
       }
+    } else {
+      process.exit(1);
     }
-    process.exit(1);
   });
 
