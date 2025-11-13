@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   server: {
-    port: 4000,
+    port: 7000,
     open: true,
     // Note: For Ronin Wallet to work, you need HTTPS
     // Option 1: Deploy to Netlify (recommended - automatic HTTPS)
