@@ -37,43 +37,31 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Colyseus Cloud automatically sets PORT environment variable
-// If PORT is not set in production, use 0 to let system assign a free port automatically
+// Colyseus Cloud uses PM2 which should set PORT automatically
+// If PORT is not set, PM2/Colyseus Cloud will assign one
 // For local development, use 2567 as fallback
-const PORT = process.env.PORT 
-  ? Number(process.env.PORT) 
-  : (process.env.NODE_ENV === 'production' ? 0 : 2567);
+// IMPORTANT: Don't use 0 or fallback in production - PM2 must set PORT
+const PORT = process.env.PORT ? Number(process.env.PORT) : 2567;
 
-console.log(`🔧 Starting server (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, using port: ${PORT === 0 ? 'auto-assign' : PORT})`);
+console.log(`🔧 Starting server (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, using port: ${PORT})`);
 
 // Start Colyseus server - it will handle HTTP server automatically
-// Using PORT 0 allows the system to assign a free port if PORT env is not set
+// When using WebSocketTransport({ server: server }), gameServer.listen() is required
 gameServer.listen(PORT)
   .then(() => {
-    const actualPort = PORT || (server.address() as any)?.port || 2567;
+    const actualPort = (server.address() as any)?.port || PORT;
     console.log(`✅ HTTP server is listening on port ${actualPort}`);
     console.log(`✅ Colyseus server is running on port ${actualPort}`);
   })
   .catch((error) => {
     console.error('❌ Failed to start Colyseus server:', error);
-    if (error.code === 'EADDRINUSE') {
-      console.error(`⚠️ Port ${PORT} is already in use. Trying to use system-assigned port...`);
-      // Try again with port 0 (auto-assign)
-      if (PORT !== 0) {
-        gameServer.listen(0)
-          .then(() => {
-            const actualPort = (server.address() as any)?.port;
-            console.log(`✅ Server started on auto-assigned port ${actualPort}`);
-          })
-          .catch((err) => {
-            console.error('❌ Failed to start on auto-assigned port:', err);
-            process.exit(1);
-          });
-      } else {
-        process.exit(1);
-      }
-    } else {
-      process.exit(1);
-    }
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      PORT: PORT,
+      PORT_ENV: process.env.PORT,
+      NODE_ENV: process.env.NODE_ENV
+    });
+    process.exit(1);
   });
 
