@@ -1,9 +1,17 @@
+// Log immediately - this will show in PM2 logs if file loads
+console.log('=== SERVER STARTING ===');
+console.log('PORT:', process.env.PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('CWD:', process.cwd());
+
 import express from "express";
 import { createServer } from "http";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GameRoom } from "./rooms/GameRoom";
 import cors from "cors";
+
+console.log('=== IMPORTS LOADED ===');
 
 const app = express();
 
@@ -25,7 +33,7 @@ app.get("/health", (req, res) => {
 // Create HTTP server
 const server = createServer(app);
 
-// Create Colyseus server with WebSocketTransport attached to HTTP server
+// Create Colyseus server with WebSocketTransport
 const gameServer = new Server({
   transport: new WebSocketTransport({
     server: server,
@@ -35,8 +43,22 @@ const gameServer = new Server({
 // Register room
 gameServer.define("pvp_room", GameRoom);
 
-// Get PORT from environment or use default
-const PORT = process.env.PORT ? Number(process.env.PORT) : 2567;
+// Get PORT from environment - Colyseus Cloud MUST set this
+const PORT = process.env.PORT ? Number(process.env.PORT) : 0;
+
+console.log('=== PORT CHECK ===');
+console.log('process.env.PORT:', process.env.PORT);
+console.log('PORT (parsed):', PORT);
+console.log('PORT type:', typeof PORT);
+console.log('isNaN(PORT):', isNaN(PORT));
+
+// If PORT is not set, crash with clear error
+if (!process.env.PORT || PORT === 0 || isNaN(PORT)) {
+  console.error('❌ PORT environment variable is not set or invalid!');
+  console.error('process.env.PORT:', process.env.PORT);
+  console.error('Colyseus Cloud must set PORT automatically.');
+  process.exit(1);
+}
 
 // Error handling
 process.on('uncaughtException', (error) => {
@@ -50,7 +72,18 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start HTTP server - Colyseus is already attached via WebSocketTransport
+server.on('error', (err: any) => {
+  console.error('Server error:', err);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  const addr = server.address();
+  const actualPort = (addr && typeof addr === 'object') ? addr.port : PORT;
+  console.log(`✅ Server running on port ${actualPort}`);
+  console.log(`✅ Server address:`, addr);
 });
 
