@@ -37,31 +37,45 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Colyseus Cloud uses PM2 which should set PORT automatically
-// If PORT is not set, PM2/Colyseus Cloud will assign one
+// Colyseus Cloud PM2 sets PORT automatically - use it directly
+// If PORT is not set, PM2/Colyseus Cloud will crash - that's expected
 // For local development, use 2567 as fallback
-// IMPORTANT: Don't use 0 or fallback in production - PM2 must set PORT
 const PORT = process.env.PORT ? Number(process.env.PORT) : 2567;
+
+// Add error handling to catch any startup errors
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
 
 console.log(`🔧 Starting server (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, using port: ${PORT})`);
 
-// Start Colyseus server - it will handle HTTP server automatically
-// When using WebSocketTransport({ server: server }), gameServer.listen() is required
-gameServer.listen(PORT)
-  .then(() => {
+// Start HTTP server first, then Colyseus attaches automatically
+// This is the correct way for PM2/Colyseus Cloud
+try {
+  server.listen(PORT, () => {
     const actualPort = (server.address() as any)?.port || PORT;
     console.log(`✅ HTTP server is listening on port ${actualPort}`);
     console.log(`✅ Colyseus server is running on port ${actualPort}`);
-  })
-  .catch((error) => {
-    console.error('❌ Failed to start Colyseus server:', error);
-    console.error('Error details:', {
-      code: error.code,
-      message: error.message,
-      PORT: PORT,
-      PORT_ENV: process.env.PORT,
-      NODE_ENV: process.env.NODE_ENV
-    });
+    
+    // Colyseus is already attached via WebSocketTransport({ server: server })
+    // No need to call gameServer.listen() separately
+  });
+  
+  server.on('error', (error: any) => {
+    console.error('❌ Server error:', error);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`⚠️ Port ${PORT} is already in use`);
+    }
     process.exit(1);
   });
+} catch (error) {
+  console.error('❌ Failed to start server:', error);
+  process.exit(1);
+}
 
