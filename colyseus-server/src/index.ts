@@ -37,9 +37,8 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Colyseus Cloud PM2 sets PORT automatically - use it directly
-// If PORT is not set, PM2/Colyseus Cloud will crash - that's expected
-// For local development, use 2567 as fallback
+// Colyseus Cloud PM2 sets PORT automatically
+// Use PORT from environment or default to 2567 for local development
 const PORT = process.env.PORT ? Number(process.env.PORT) : 2567;
 
 // Add error handling to catch any startup errors
@@ -53,29 +52,8 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-console.log(`🔧 Starting server (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, using port: ${PORT})`);
-
-// Start HTTP server first, then Colyseus attaches automatically
-// This is the correct way for PM2/Colyseus Cloud
-try {
-  server.listen(PORT, () => {
-    const actualPort = (server.address() as any)?.port || PORT;
-    console.log(`✅ HTTP server is listening on port ${actualPort}`);
-    console.log(`✅ Colyseus server is running on port ${actualPort}`);
-    
-    // Colyseus is already attached via WebSocketTransport({ server: server })
-    // No need to call gameServer.listen() separately
-  });
-  
-  server.on('error', (error: any) => {
-    console.error('❌ Server error:', error);
-    if (error.code === 'EADDRINUSE') {
-      console.error(`⚠️ Port ${PORT} is already in use`);
-    }
-    process.exit(1);
-  });
-} catch (error) {
-  console.error('❌ Failed to start server:', error);
-  process.exit(1);
-}
+// Start HTTP server - Colyseus attaches automatically via WebSocketTransport
+server.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
 
