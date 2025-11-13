@@ -1,9 +1,16 @@
+// Log immediately to catch startup issues
+console.log("Starting server...");
+console.log("PORT:", process.env.PORT);
+console.log("NODE_ENV:", process.env.NODE_ENV);
+
 import express from "express";
 import { createServer } from "http";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GameRoom } from "./rooms/GameRoom";
 import cors from "cors";
+
+console.log("Imports loaded");
 
 const app = express();
 
@@ -53,7 +60,19 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start HTTP server - Colyseus attaches automatically via WebSocketTransport
-server.listen(PORT, () => {
+server.on('error', (err: any) => {
+  console.error('Server error:', err);
+  process.exit(1);
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  const addr = server.address();
   console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Address:`, addr);
+  
+  // Notify PM2 that server is ready (for wait_ready: true)
+  if (process.send) {
+    process.send('ready');
+  }
 });
 
