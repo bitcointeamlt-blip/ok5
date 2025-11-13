@@ -6,7 +6,9 @@ module.exports = {
     exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
-      PORT: process.env.PORT || 2567
+      // Colyseus Cloud automatically sets PORT - use it directly
+      // Don't set PORT here - let Colyseus Cloud set it via environment variable
+      // PORT will be available via process.env.PORT in the application
     },
     error_file: './logs/err.log',
     out_file: './logs/out.log',
