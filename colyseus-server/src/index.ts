@@ -7,12 +7,15 @@ import cors from "cors";
 
 const app = express();
 
-// CORS configuration
+// CORS configuration - allow all origins (including Netlify)
 app.use(cors({
-  origin: true,
+  origin: true, // Allow all origins (Colyseus Cloud handles this)
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 app.use(express.json());
