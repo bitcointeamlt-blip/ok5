@@ -688,6 +688,8 @@ function initializePvP(): void {
     maxArmor: dotMaxArmor, // Use Solo max Armor
     outOfBoundsStartTime: null, // Track when player goes out of bounds
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
+    lastArmorRegen: Date.now(), // When armor was last regenerated
+    paralyzedUntil: 0, // Not paralyzed initially
   };
   
   pvpPlayers[myPlayerId] = myPlayer;

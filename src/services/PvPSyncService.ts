@@ -2,7 +2,7 @@
 import { supabaseService } from './SupabaseService';
 
 export interface PlayerInput {
-  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position' | 'line' | 'projectile_explode' | 'stats' | 'bullet';
+  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position' | 'line' | 'projectile_explode' | 'stats' | 'bullet' | 'hit';
   timestamp: number;
   x?: number; // Click position or arrow/projectile start X or player position X or arrow/projectile current X
   y?: number; // Click position or arrow/projectile start Y or player position Y or arrow/projectile current Y
@@ -19,6 +19,11 @@ export interface PlayerInput {
   maxHP?: number; // Player Max HP (for stats sync)
   maxArmor?: number; // Player Max Armor (for stats sync)
   dmg?: number; // Player damage stat (for arrow/projectile damage calculation)
+  damage?: number; // Damage dealt (for hit event)
+  targetPlayerId?: string; // Target player ID (for hit event)
+  isBullet?: boolean; // Whether this is a bullet hit (for paralysis)
+  paralysisDuration?: number; // Paralysis duration in ms (for bullet hit)
+  paralyzedUntil?: number; // Timestamp when paralysis ends (for stats sync)
 }
 
 export interface OpponentInputCallback {
