@@ -47,14 +47,21 @@ class ColyseusService {
     // Colyseus Cloud uses wss:// (WebSocket Secure)
     const endpoint = (import.meta as any).env?.VITE_COLYSEUS_ENDPOINT || 'ws://localhost:2567';
     
+    // Log endpoint for debugging (without exposing full URL in production)
+    if (endpoint && endpoint !== 'ws://localhost:2567') {
+      console.log('🔵 Colyseus endpoint found:', endpoint.substring(0, 30) + '...');
+    } else {
+      console.warn('⚠️ VITE_COLYSEUS_ENDPOINT not set, using default localhost');
+    }
+    
     // Convert https:// to wss:// if needed
     const wsEndpoint = endpoint.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
     
     try {
       this.client = new Client(wsEndpoint);
-      console.log('Colyseus client initialized:', wsEndpoint);
+      console.log('✅ Colyseus client initialized:', wsEndpoint);
     } catch (error) {
-      console.error('Failed to initialize Colyseus client:', error);
+      console.error('❌ Failed to initialize Colyseus client:', error);
     }
   }
 

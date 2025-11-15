@@ -758,10 +758,14 @@ async function enterLobby(): Promise<void> {
   // Check if Colyseus endpoint is configured
   const colyseusEndpoint = (import.meta as any).env?.VITE_COLYSEUS_ENDPOINT;
   if (!colyseusEndpoint) {
-    walletError = 'Colyseus not configured. Set VITE_COLYSEUS_ENDPOINT in .env file';
-    console.error('Cannot enter lobby: Colyseus endpoint not configured');
+    walletError = 'Colyseus not configured. Set VITE_COLYSEUS_ENDPOINT in Netlify Environment Variables (Site Settings → Environment Variables)';
+    console.error('❌ Cannot enter lobby: Colyseus endpoint not configured');
+    console.error('💡 For Netlify: Go to Site Settings → Environment Variables → Add VITE_COLYSEUS_ENDPOINT');
+    console.error('💡 Value should be: https://de-fra-f8820c12.colyseus.cloud');
     return;
   }
+  
+  console.log('🔵 Colyseus endpoint configured:', colyseusEndpoint.substring(0, 30) + '...');
 
   const myAddress = walletState.address;
   isInLobby = true;
