@@ -756,12 +756,21 @@ async function enterLobby(): Promise<void> {
   }
 
   // Check if Colyseus endpoint is configured
-  const colyseusEndpoint = (import.meta as any).env?.VITE_COLYSEUS_ENDPOINT;
+  // IMPORTANT: Vite replaces import.meta.env.VITE_* at build time
+  const colyseusEndpoint = import.meta.env.VITE_COLYSEUS_ENDPOINT;
+  
+  console.log('🔍 Environment check in enterLobby:', {
+    hasEnv: !!import.meta.env.VITE_COLYSEUS_ENDPOINT,
+    endpoint: colyseusEndpoint ? colyseusEndpoint.substring(0, 30) + '...' : 'not set',
+    allEnvKeys: Object.keys(import.meta.env).filter(k => k.startsWith('VITE_'))
+  });
+  
   if (!colyseusEndpoint) {
     walletError = 'Colyseus not configured. Set VITE_COLYSEUS_ENDPOINT in Netlify Environment Variables (Site Settings → Environment Variables)';
     console.error('❌ Cannot enter lobby: Colyseus endpoint not configured');
     console.error('💡 For Netlify: Go to Site Settings → Environment Variables → Add VITE_COLYSEUS_ENDPOINT');
     console.error('💡 Value should be: https://de-fra-f8820c12.colyseus.cloud');
+    console.error('💡 Current env keys:', Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
     return;
   }
   
