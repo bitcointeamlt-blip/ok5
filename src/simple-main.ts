@@ -166,6 +166,9 @@ type DamageNumber = {
 
 let clickParticles: Particle[] = [];
 
+// Projectile smoke particles (black smoke trail)
+let projectileSmokeParticles: Particle[] = [];
+
 // Click smudges/blotches (pixel art smears)
 type ClickSmudge = {
   x: number;
@@ -220,6 +223,14 @@ function safePushClickParticle(particle: Particle): void {
     clickParticles.shift(); // Remove oldest if at limit
   }
   clickParticles.push(particle);
+}
+
+function safePushProjectileSmokeParticle(particle: Particle): void {
+  const MAX_PROJECTILE_SMOKE_PARTICLES = 50;
+  if (projectileSmokeParticles.length >= MAX_PROJECTILE_SMOKE_PARTICLES) {
+    projectileSmokeParticles.shift(); // Remove oldest if at limit
+  }
+  projectileSmokeParticles.push(particle);
 }
 
 function safePushDotDecayParticle(particle: Particle): void {
@@ -324,6 +335,10 @@ type PvPPlayer = {
   // Out of bounds tracking
   outOfBoundsStartTime: number | null; // When player first went out of bounds
   lastOutOfBoundsDamageTime: number; // When last damage was dealt for being out of bounds
+  // Armor regeneration
+  lastArmorRegen: number; // When armor was last regenerated
+  // Bullet paralysis
+  paralyzedUntil: number; // Timestamp when paralysis ends (0 = not paralyzed)
 };
 
 let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
@@ -365,9 +380,22 @@ let projectileBounceCount = 0; // How many times players have bounced on this pr
 const projectileGravity = 0.15; // Gravity for projectile (reduced for better upward shots)
 const projectileMaxCharge = 2000; // Maximum charge time (2 seconds)
 const projectileBaseSpeed = 4; // Base speed multiplier (reduced from 8)
-const projectileRadius = 8; // Projectile size
+const projectileRadius = 16; // Projectile size (doubled)
 const projectileLifetime = 5000; // Projectile lifetime in milliseconds (5 seconds)
 const projectileMaxBounces = 2; // Maximum number of bounces allowed on projectile
+
+// Bullet system (simple projectile, faster than arrow, smaller than projectile)
+let bulletFlying = false; // Whether bullet is flying
+let bulletX = 0; // Bullet current position
+let bulletY = 0;
+let bulletVx = 0; // Bullet velocity X
+let bulletVy = 0; // Bullet velocity Y
+let bulletLastShotTime = 0; // When bullet was last fired (for cooldown)
+const bulletSpeed = 18; // Bullet speed (20% faster than arrow: 15 * 1.2 = 18)
+const bulletRadius = 8; // Bullet size (doubled for heavier look)
+const bulletCooldown = 5000; // Cooldown between shots (5 seconds)
+const bulletLifetime = 3000; // Bullet lifetime in milliseconds (3 seconds)
+let bulletSpawnTime = 0; // When bullet was spawned
 
 // Performance optimization: Cache speed calculations
 let cachedDotSpeed = 0;
@@ -429,6 +457,14 @@ let opponentProjectileVy = 0;
 let opponentProjectileSpawnTime = 0; // When opponent projectile was spawned
 let opponentProjectileBounceCount = 0; // How many times players have bounced on opponent projectile
 
+// Opponent bullet state (synced from network)
+let opponentBulletFlying = false;
+let opponentBulletX = 0;
+let opponentBulletY = 0;
+let opponentBulletVx = 0;
+let opponentBulletVy = 0;
+let opponentBulletSpawnTime = 0;
+
 
 // Leveling system
 let currentLevel = 1; // Current active level
@@ -473,6 +509,23 @@ let isPressingCancel = false;
 let matchResult: 'victory' | 'defeat' | null = null;
 let matchResultEloChange = 0;
 let showingMatchResult = false;
+
+// Death animation system - pixel art particles
+interface DeathParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  color: string;
+  rotation: number;
+  rotationSpeed: number;
+}
+
+const deathAnimations: Map<string, DeathParticle[]> = new Map(); // playerId -> particles
+const deathAnimationDuration = 1500; // 1.5 seconds
 
 // Arrow weapon system
 let arrowReady = false; // Whether arrow is ready to be fired (toggled by key "1")
@@ -600,6 +653,12 @@ function soloDmgToPvpMaxImpulse(dmg: number): number {
 
 // PvP initialization
 function initializePvP(): void {
+  // Clear any existing players first
+  pvpPlayers = {};
+  
+  // Clear death animations when starting new game
+  deathAnimations.clear();
+  
   // Generate player IDs if not set
   if (!myPlayerId) {
     myPlayerId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -619,7 +678,7 @@ function initializePvP(): void {
     mass: pvpMass, // Converted from Solo level
     radius: dotRadius,
     isOut: false,
-    color: '#0000ff', // Blue for my player
+    color: '#000000', // Black for my player
     lastHitTime: 0,
     gravityLocked: true, // Same as Solo - disable gravity until first hit
     speedTrail: [], // Supersonic shadow tail
@@ -650,7 +709,7 @@ function initializePvP(): void {
     mass: 1.0, // Default, will be synced from network
     radius: dotRadius,
     isOut: false,
-    color: '#ff0000', // Red for opponent
+    color: '#000000', // Black for opponent
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
@@ -660,6 +719,8 @@ function initializePvP(): void {
     maxArmor: dotMaxArmor, // Use Solo max Armor
     outOfBoundsStartTime: null, // Track when player goes out of bounds
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
   };
   
   pvpPlayers[opponentId] = opponent;
@@ -684,25 +745,11 @@ function cleanupPvP(): void {
   console.log('PvP cleaned up');
 }
 
-// Enter PvP lobby (Colyseus version)
+// Enter PvP lobby (Colyseus only)
 async function enterLobby(): Promise<void> {
   const walletState = walletService.getState();
-  
-  // CRITICAL: Log wallet state to debug address issues
-  console.log('🔵 enterLobby() called - Wallet state:', {
-    isConnected: walletState.isConnected,
-    address: walletState.address,
-    addressLength: walletState.address?.length,
-    addressType: typeof walletState.address,
-    fullWalletState: walletState
-  });
-  
   if (!walletState.isConnected || !walletState.address) {
     walletError = 'Connect Ronin Wallet to play PvP';
-    console.error('❌ Cannot enter lobby: Wallet not connected or no address', {
-      isConnected: walletState.isConnected,
-      hasAddress: !!walletState.address
-    });
     return;
   }
 
@@ -714,10 +761,7 @@ async function enterLobby(): Promise<void> {
     return;
   }
 
-  // CRITICAL: Store address in a local variable to ensure it doesn't change
   const myAddress = walletState.address;
-  console.log('🔵 Using wallet address for Colyseus lobby:', myAddress);
-
   isInLobby = true;
   isSearchingForMatch = true;
   lobbySearchStartTime = Date.now();
@@ -726,6 +770,7 @@ async function enterLobby(): Promise<void> {
   waitingForOpponentReady = false;
 
   try {
+    console.log('🔵 Connecting to Colyseus server (low latency)...');
     // Connect to Colyseus server
     await colyseusService.connect(colyseusEndpoint);
     
@@ -753,7 +798,6 @@ async function enterLobby(): Promise<void> {
       console.log('Game started!', message);
       waitingForOpponentReady = false;
       // Initialize PvP game
-      // Note: We'll need to adapt initializePvPWithMatch for Colyseus
       const roomState = colyseusService.getState();
       if (roomState) {
         // Get opponent session ID
@@ -782,20 +826,22 @@ async function enterLobby(): Promise<void> {
     };
 
   } catch (error) {
-    console.error('❌ Failed to enter Colyseus lobby:', error);
-    walletError = 'Failed to connect to game server. Check Colyseus configuration.';
+    console.error('❌ Failed to connect to Colyseus server:', error);
+    walletError = 'Failed to connect to Colyseus server. Check if server is running and VITE_COLYSEUS_ENDPOINT is correct.';
     isInLobby = false;
     isSearchingForMatch = false;
   }
 }
 
-// Leave PvP lobby (Colyseus version)
+// Leave PvP lobby
 async function leaveLobby(): Promise<void> {
   const walletState = walletService.getState();
   if (!walletState.address) return;
 
-  // Leave Colyseus room
-  await colyseusService.leaveRoom().catch(console.error);
+  // Leave Colyseus room if connected
+  if (colyseusService.isConnectedToRoom()) {
+    await colyseusService.leaveRoom().catch(console.error);
+  }
   
   // Also try Supabase matchmaking cleanup (for compatibility)
   await matchmakingService.leaveLobby(walletState.address).catch(console.error);
@@ -1026,6 +1072,9 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   // Clear any existing players first
   pvpPlayers = {};
   
+  // Clear death animations when starting new game
+  deathAnimations.clear();
+  
   const walletState = walletService.getState();
   const myAddress = walletState.address || '';
   
@@ -1053,7 +1102,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     mass: pvpMass,
     radius: dotRadius,
     isOut: false,
-    color: '#0000ff', // Blue - ALWAYS blue for my player
+    color: '#000000', // Black - ALWAYS black for my player
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
@@ -1063,6 +1112,8 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     maxArmor: dotMaxArmor,
     outOfBoundsStartTime: null,
     lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
@@ -1079,7 +1130,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     mass: 1.0, // Will be synced from network
     radius: dotRadius,
     isOut: false,
-    color: '#ff0000', // Red - ALWAYS red for opponent
+    color: '#000000', // Black - ALWAYS black for opponent
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
@@ -1089,6 +1140,8 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     maxArmor: dotMaxArmor,
     outOfBoundsStartTime: null,
     lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
   };
 
   pvpPlayers[opponentId] = opponent;
@@ -1100,6 +1153,9 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
 function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
   // Clear any existing players first
   pvpPlayers = {};
+  
+  // Clear death animations when starting new game
+  deathAnimations.clear();
   
   // Set player IDs based on match and wallet address
   const walletState = walletService.getState();
@@ -1139,7 +1195,7 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     mass: pvpMass,
     radius: dotRadius,
     isOut: false,
-    color: '#0000ff', // Blue - ALWAYS blue for my player
+    color: '#000000', // Black - ALWAYS black for my player
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
@@ -1149,6 +1205,8 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     maxArmor: dotMaxArmor,
     outOfBoundsStartTime: null,
     lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
@@ -1165,7 +1223,7 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     mass: 1.0, // Will be synced from network
     radius: dotRadius,
     isOut: false,
-    color: '#ff0000', // Red - ALWAYS red for opponent
+    color: '#000000', // Black - ALWAYS black for opponent
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
@@ -1175,6 +1233,8 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     maxArmor: dotMaxArmor,
     outOfBoundsStartTime: null,
     lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
   };
 
   pvpPlayers[opponentId] = opponent;
@@ -1312,6 +1372,10 @@ function handleOpponentInput(input: any): void {
     opponentProjectileY = input.y;
     opponentProjectileSpawnTime = input.timestamp || Date.now(); // Record spawn time for lifetime
     opponentProjectileBounceCount = 0; // Reset bounce count
+    
+    // Create explosion animation at opponent's launch position
+    createProjectileExplosion(opponentProjectileX, opponentProjectileY);
+    
     if (input.targetX !== undefined && input.targetY !== undefined) {
       const dx = input.targetX - input.x;
       const dy = input.targetY - input.y;
@@ -1338,6 +1402,235 @@ function handleOpponentInput(input: any): void {
     opponentProjectileY = input.y;
     if (input.vx !== undefined) opponentProjectileVx = input.vx;
     if (input.vy !== undefined) opponentProjectileVy = input.vy;
+  }
+  
+  // Handle drawn line from opponent
+  if (input.type === 'line' && input.points && input.points.length >= 2) {
+    // Add opponent's drawn line to our drawnLines array
+    drawnLines.push({
+      points: input.points.map((p: any) => ({ x: p.x, y: p.y })), // Copy points
+      life: 240, // 4 seconds at 60 FPS
+      maxLife: 240,
+      hits: 0, // Start with 0 hits
+      maxHits: 2 // Line can take 2 hits before disappearing
+    });
+    console.log('Received opponent drawn line', { pointCount: input.points.length });
+  }
+  
+  // Handle bullet input from opponent (fire event)
+  if (input.type === 'bullet' && input.x !== undefined && input.y !== undefined && input.vx !== undefined && input.vy !== undefined) {
+    // Spawn opponent bullet
+    opponentBulletFlying = true;
+    opponentBulletX = input.x;
+    opponentBulletY = input.y;
+    opponentBulletVx = input.vx;
+    opponentBulletVy = input.vy;
+    opponentBulletSpawnTime = Date.now();
+    
+    console.log('Opponent bullet fired', { x: input.x, y: input.y, vx: input.vx, vy: input.vy });
+  }
+  
+  // Handle hit event from opponent (damage sync)
+  // When opponent hits us, they send their calculated damage, and we apply it
+  // This ensures both players see/feel the EXACT same damage
+  if (input.type === 'hit' && input.damage !== undefined && input.isCrit !== undefined && input.targetPlayerId !== undefined) {
+    // Only process if this hit is targeting us (myPlayerId)
+    if (input.targetPlayerId === myPlayerId && myPlayerId && pvpPlayers[myPlayerId]) {
+      const myPlayer = pvpPlayers[myPlayerId];
+      const hitDamage = input.damage;
+      const isCritHit = input.isCrit;
+      
+      // Apply damage (armor first, then HP) - using EXACT damage from opponent
+      const absorbed = Math.min(hitDamage, myPlayer.armor);
+      myPlayer.armor -= absorbed;
+      const remainingDamage = hitDamage - absorbed;
+      myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
+      
+      // Apply paralysis if this is a bullet hit
+      if (input.isBullet && input.paralysisDuration !== undefined) {
+        myPlayer.paralyzedUntil = Date.now() + input.paralysisDuration;
+      }
+      
+      // Show damage number (EXACT same as attacker sees)
+      safePushDamageNumber({
+        x: myPlayer.x + (Math.random() - 0.5) * 40,
+        y: myPlayer.y - 20,
+        value: hitDamage,
+        life: 60,
+        maxLife: 60,
+        vx: (Math.random() - 0.5) * 2,
+        vy: -2 - Math.random() * 2,
+        isCrit: isCritHit
+      });
+      
+      // Screen shake for crit hits (same as attacker feels)
+      if (isCritHit) {
+        screenShake = Math.max(screenShake, 30);
+      }
+      
+      // Send stats update back to opponent (include paralyzedUntil for paralysis sync)
+      // Only send paralyzedUntil if player is actually paralyzed (paralyzedUntil > Date.now())
+      const paralyzedUntilToSend = (myPlayer.paralyzedUntil > Date.now()) ? myPlayer.paralyzedUntil : undefined;
+      sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor, paralyzedUntilToSend);
+      
+      // Check if I died - start death animation
+      if (myPlayer.hp <= 0 && !myPlayer.isOut && !deathAnimations.has(myPlayerId)) {
+        myPlayer.isOut = true;
+        const myPlayerColor = '#000000';
+        createDeathAnimation(myPlayerId, myPlayer.x, myPlayer.y, myPlayerColor, myPlayer.radius);
+      }
+    }
+    return;
+  }
+  
+  // Handle stats update from opponent (HP/Armor sync)
+  if (input.type === 'stats' && input.hp !== undefined && input.armor !== undefined) {
+    // Update opponent's stats from network
+    if (opponentId && pvpPlayers[opponentId]) {
+      const opponent = pvpPlayers[opponentId];
+      const oldHP = opponent.hp;
+      opponent.hp = input.hp;
+      opponent.armor = input.armor;
+      if (input.maxHP !== undefined) opponent.maxHP = input.maxHP;
+      if (input.maxArmor !== undefined) opponent.maxArmor = input.maxArmor;
+      
+      // Sync paralysis state (paralyzedUntil)
+      if (input.paralyzedUntil !== undefined && input.paralyzedUntil > Date.now()) {
+        opponent.paralyzedUntil = input.paralyzedUntil;
+      } else if (input.paralyzedUntil !== undefined && input.paralyzedUntil <= Date.now()) {
+        // Clear paralysis if it expired
+        opponent.paralyzedUntil = 0;
+      }
+      
+      console.log('Received opponent stats update', { hp: input.hp, armor: input.armor, paralyzedUntil: input.paralyzedUntil });
+      
+      // Check if opponent died (HP reached 0) - start death animation
+      if (opponent.hp <= 0 && oldHP > 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
+        opponent.isOut = true;
+        
+        // Determine opponent color for death animation
+        const opponentColor = '#000000'; // Black for opponent
+        
+        // Start death animation at opponent's current position
+        createDeathAnimation(opponentId, opponent.x, opponent.y, opponentColor, opponent.radius);
+      }
+    }
+  }
+}
+
+// Send stats update to opponent
+function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: number, paralyzedUntil?: number): void {
+  if (gameMode === 'PvP' && currentMatch) {
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    
+    if (isSyncing) {
+      const statsInput: any = {
+        type: 'stats' as const,
+        timestamp: Date.now(),
+        hp: hp,
+        armor: armor,
+        maxHP: maxHP,
+        maxArmor: maxArmor
+      };
+      
+      // Include paralyzedUntil if provided (for paralysis sync)
+      if (paralyzedUntil !== undefined) {
+        statsInput.paralyzedUntil = paralyzedUntil;
+      }
+      
+      if (useColyseus) {
+        colyseusService.sendInput(statsInput);
+      } else {
+        pvpSyncService.sendInput(statsInput);
+      }
+    }
+  }
+}
+
+// Create death animation - pixel art particles that disintegrate
+function createDeathAnimation(playerId: string, x: number, y: number, color: string, radius: number): void {
+  const particles: DeathParticle[] = [];
+  const particleCount = 30; // Number of pixel art pieces
+  
+  // Ensure minimum particle size for visibility
+  const minParticleSize = 4; // Minimum 4 pixels
+  const maxParticleSize = 8; // Maximum 8 pixels
+  
+  for (let i = 0; i < particleCount; i++) {
+    // Random position within the player circle
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * radius;
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance;
+    
+    // Random velocity - particles fly outward
+    const speed = 3 + Math.random() * 5; // Increased speed for better visibility
+    const vAngle = angle + (Math.random() - 0.5) * 0.8; // More spread
+    const vx = Math.cos(vAngle) * speed;
+    const vy = Math.sin(vAngle) * speed - 2; // More upward bias
+    
+    // Random particle size within range
+    const particleSize = minParticleSize + Math.random() * (maxParticleSize - minParticleSize);
+    
+    particles.push({
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
+      life: deathAnimationDuration,
+      maxLife: deathAnimationDuration,
+      size: particleSize,
+      color: color,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.15 // Slightly faster rotation
+    });
+  }
+  
+  deathAnimations.set(playerId, particles);
+}
+
+// Create projectile explosion animation (particles)
+function createProjectileExplosion(x: number, y: number): void {
+  // Create explosion particles (reduced from 16 to 8)
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8;
+    const speed = 2 + Math.random() * 4;
+    safePushClickParticle({
+      x: x,
+      y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 30 + Math.floor(Math.random() * 20), // 30-50 frames
+      maxLife: 30 + Math.floor(Math.random() * 20),
+      size: 3 + Math.random() * 4 // 3-7 pixels
+    });
+  }
+  
+  // Screen shake effect
+  screenShake = Math.max(screenShake, 6);
+}
+
+// Send projectile explosion to opponent
+function sendProjectileExplosion(x: number, y: number): void {
+  if (gameMode === 'PvP' && currentMatch) {
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    
+    if (isSyncing) {
+      const explodeInput = {
+        type: 'projectile_explode' as const,
+        timestamp: Date.now(),
+        x: x,
+        y: y
+      };
+      
+      if (useColyseus) {
+        colyseusService.sendInput(explodeInput);
+      } else {
+        pvpSyncService.sendInput(explodeInput);
+      }
+    }
   }
 }
 
@@ -1415,9 +1708,212 @@ let movingPlatformX = playLeft + movingPlatformWidth / 2; // center of platform
 let movingPlatformVx = 1.5; // horizontal speed
 let movingPlatformFlashTimer = 0;
 
+// PvP platforms (static positions)
+const pvpPlatformLeftX = playLeft + (playRight - playLeft) * 0.25 - 50; // Left platform (25% from left, shifted 50px left)
+const pvpPlatformCenterX = (playLeft + playRight) / 2; // Center platform (50% - middle)
+const pvpPlatformRightX = playLeft + (playRight - playLeft) * 0.75 + 50; // Right platform (75% from left, shifted 50px right)
+const pvpPlatformSideWidth = movingPlatformWidth * 0.5; // Left and right platforms are 50% of center platform width
+
+// Sewer background rendering function
+function drawSewerBackground() {
+  // Dark sewer background color (dirty gray-green)
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw brick wall pattern
+  const brickWidth = 40;
+  const brickHeight = 20;
+  const brickColor1 = '#4a3a2a'; // Dark brown brick
+  const brickColor2 = '#3a2a1a'; // Darker brown brick
+  const mortarColor = '#1a1a1a'; // Dark mortar
+  
+  // Draw bricks in background
+  for (let y = 0; y < canvas.height; y += brickHeight) {
+    for (let x = 240; x < canvas.width; x += brickWidth) {
+      const offset = (y / brickHeight) % 2 === 0 ? 0 : brickWidth / 2; // Staggered pattern
+      const brickX = x + offset;
+      
+      // Skip if outside canvas
+      if (brickX >= canvas.width) continue;
+      
+      // Random brick color variation
+      const isDark = Math.floor((x + y) / brickWidth) % 3 === 0;
+      ctx.fillStyle = isDark ? brickColor2 : brickColor1;
+      
+      // Draw brick with slight 3D effect (some bricks protrude)
+      const protrude = Math.floor((x + y * 7) / (brickWidth * 3)) % 5 === 0;
+      const protrudeAmount = protrude ? 2 : 0;
+      
+      ctx.fillRect(brickX, y, brickWidth - 2, brickHeight - 2);
+      
+      // Draw mortar lines
+      ctx.fillStyle = mortarColor;
+      ctx.fillRect(brickX, y, brickWidth - 2, 1); // Top mortar
+      ctx.fillRect(brickX, y + brickHeight - 3, brickWidth - 2, 1); // Bottom mortar
+      ctx.fillRect(brickX, y, 1, brickHeight - 2); // Left mortar
+      ctx.fillRect(brickX + brickWidth - 3, y, 1, brickHeight - 2); // Right mortar
+      
+      // Draw 3D shadow on protruding bricks
+      if (protrude) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(brickX + brickWidth - 4, y + 1, 2, brickHeight - 4);
+        ctx.fillRect(brickX + 1, y + brickHeight - 4, brickWidth - 4, 2);
+      }
+    }
+  }
+  
+  // Draw pipes with spider webs
+  const pipeY1 = canvas.height * 0.2;
+  const pipeY2 = canvas.height * 0.6;
+  const pipeY3 = canvas.height * 0.85;
+  const pipeRadius = 15;
+  const pipeColor = '#1a1a1a';
+  const pipeHighlight = '#3a3a3a';
+  
+  // Pipe 1 (top)
+  const pipe1X = 240 + 50;
+  ctx.fillStyle = pipeColor;
+  ctx.beginPath();
+  ctx.arc(pipe1X, pipeY1, pipeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(pipe1X - pipeRadius, pipeY1, pipeRadius * 2, 100);
+  
+  // Pipe joint/connection
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(pipe1X - pipeRadius - 2, pipeY1 + 40, pipeRadius * 2 + 4, 8);
+  ctx.fillRect(pipe1X - pipeRadius - 2, pipeY1 + 80, pipeRadius * 2 + 4, 8);
+  
+  // Pipe highlight
+  ctx.fillStyle = pipeHighlight;
+  ctx.beginPath();
+  ctx.arc(pipe1X, pipeY1, pipeRadius - 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Rust stains on pipe
+  ctx.fillStyle = 'rgba(100, 50, 20, 0.5)';
+  ctx.beginPath();
+  ctx.arc(pipe1X + 5, pipeY1 + 50, 8, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Spider web on pipe 1
+  drawSpiderWeb(pipe1X, pipeY1 + 30, 25);
+  
+  // Pipe 2 (middle)
+  const pipe2X = canvas.width - 80;
+  ctx.fillStyle = pipeColor;
+  ctx.beginPath();
+  ctx.arc(pipe2X, pipeY2, pipeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(pipe2X - pipeRadius, pipeY2, pipeRadius * 2, 80);
+  
+  // Pipe joint/connection
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(pipe2X - pipeRadius - 2, pipeY2 + 30, pipeRadius * 2 + 4, 8);
+  ctx.fillRect(pipe2X - pipeRadius - 2, pipeY2 + 60, pipeRadius * 2 + 4, 8);
+  
+  // Pipe highlight
+  ctx.fillStyle = pipeHighlight;
+  ctx.beginPath();
+  ctx.arc(pipe2X, pipeY2, pipeRadius - 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Rust stains on pipe
+  ctx.fillStyle = 'rgba(100, 50, 20, 0.5)';
+  ctx.beginPath();
+  ctx.arc(pipe2X - 5, pipeY2 + 40, 6, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Spider web on pipe 2
+  drawSpiderWeb(pipe2X, pipeY2 + 25, 20);
+  
+  // Pipe 3 (bottom)
+  const pipe3X = 240 + 120;
+  ctx.fillStyle = pipeColor;
+  ctx.beginPath();
+  ctx.arc(pipe3X, pipeY3, pipeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(pipe3X - pipeRadius, pipeY3, pipeRadius * 2, 60);
+  
+  // Pipe joint/connection
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(pipe3X - pipeRadius - 2, pipeY3 + 25, pipeRadius * 2 + 4, 8);
+  ctx.fillRect(pipe3X - pipeRadius - 2, pipeY3 + 45, pipeRadius * 2 + 4, 8);
+  
+  // Pipe highlight
+  ctx.fillStyle = pipeHighlight;
+  ctx.beginPath();
+  ctx.arc(pipe3X, pipeY3, pipeRadius - 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Rust stains on pipe
+  ctx.fillStyle = 'rgba(100, 50, 20, 0.5)';
+  ctx.beginPath();
+  ctx.arc(pipe3X + 8, pipeY3 + 30, 7, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Draw grime and stains
+  ctx.fillStyle = 'rgba(50, 40, 30, 0.4)';
+  for (let i = 0; i < 15; i++) {
+    const stainX = 240 + Math.random() * (canvas.width - 240);
+    const stainY = Math.random() * canvas.height;
+    const stainSize = 20 + Math.random() * 40;
+    ctx.beginPath();
+    ctx.arc(stainX, stainY, stainSize, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Draw water stains/drips
+  ctx.strokeStyle = 'rgba(100, 80, 60, 0.3)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    const dripX = 240 + Math.random() * (canvas.width - 240);
+    const dripStartY = Math.random() * canvas.height * 0.5;
+    const dripLength = 30 + Math.random() * 50;
+    ctx.beginPath();
+    ctx.moveTo(dripX, dripStartY);
+    ctx.lineTo(dripX + (Math.random() - 0.5) * 10, dripStartY + dripLength);
+    ctx.stroke();
+  }
+}
+
+// Helper function to draw spider web
+function drawSpiderWeb(centerX: number, centerY: number, radius: number) {
+  ctx.strokeStyle = 'rgba(180, 180, 180, 0.5)';
+  ctx.lineWidth = 1;
+  
+  // Draw radial lines (spokes)
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+    ctx.stroke();
+  }
+  
+  // Draw concentric circles (spiral web pattern)
+  for (let r = radius * 0.25; r <= radius; r += radius * 0.12) {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  // Draw some broken/irregular web lines for realism
+  ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)';
+  for (let i = 0; i < 3; i++) {
+    const angle1 = (Math.PI * 2 * Math.random());
+    const angle2 = (Math.PI * 2 * Math.random());
+    const r1 = radius * (0.3 + Math.random() * 0.4);
+    const r2 = radius * (0.5 + Math.random() * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(centerX + Math.cos(angle1) * r1, centerY + Math.sin(angle1) * r1);
+    ctx.lineTo(centerX + Math.cos(angle2) * r2, centerY + Math.sin(angle2) * r2);
+    ctx.stroke();
+  }
+}
+
 // Render function
 function render() {
-  // Clear canvas
+  // Clear canvas with white background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
@@ -2521,8 +3017,176 @@ function render() {
     ctx.fillRect(centerX - halfW, topY, movingPlatformWidth, 2);
   }
   
+  // PvP/Training mode: Render additional left and right platforms
+  if (gameMode === 'PvP' || gameMode === 'Training') {
+    const topY = Math.floor(movingPlatformY);
+    const baseColor = '#000000';
+    const whiteHighlight = '#ffffff';
+    
+    // Helper function to draw a platform with custom width
+    const drawPlatform = (centerX: number, width: number) => {
+      const halfW = width / 2;
+      // Main platform body
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(centerX - halfW, topY, width, movingPlatformThickness);
+      
+      // Top surface highlight
+      ctx.fillStyle = whiteHighlight;
+      ctx.fillRect(centerX - halfW, topY, width, 2);
+    };
+    
+    // Draw left platform (50% width)
+    drawPlatform(pvpPlatformLeftX, pvpPlatformSideWidth);
+    
+    // Draw right platform (50% width)
+    drawPlatform(pvpPlatformRightX, pvpPlatformSideWidth);
+  }
+  
   // Bottom floor line (100px below moving platform) - where DOT/players land but don't bounce
   const bottomFloorY = movingPlatformY + 100; // 100px below platform
+  
+  // PvP/Training mode: Draw lava between platforms and bottom floor
+  if (gameMode === 'PvP' || gameMode === 'Training') {
+    const lavaTopY = movingPlatformY + movingPlatformThickness; // Start from platform bottom
+    const lavaBottomY = bottomFloorY; // End at bottom floor
+    const lavaHeight = lavaBottomY - lavaTopY;
+    
+    // Lava animation time
+    const time = Date.now() * 0.002; // Slow animation
+    
+    // Draw lava with wave animation
+    ctx.save();
+    
+    // Create gradient for toxic water (gray/white with green tones, brighter at top, darker at bottom) - no white, only bubbles are white
+    const lavaGradient = ctx.createLinearGradient(playLeft, lavaTopY, playLeft, lavaBottomY);
+    lavaGradient.addColorStop(0, 'rgba(200, 220, 200, 0.8)'); // Light gray-green at top (toxic water surface)
+    lavaGradient.addColorStop(0.2, 'rgba(150, 200, 150, 0.85)'); // Light toxic green in upper middle
+    lavaGradient.addColorStop(0.4, 'rgba(100, 160, 120, 0.9)'); // Medium toxic green in middle
+    lavaGradient.addColorStop(0.7, 'rgba(60, 120, 80, 0.95)'); // Dark toxic green lower middle
+    lavaGradient.addColorStop(1, 'rgba(30, 80, 50, 0.95)'); // Very dark toxic green at bottom
+    
+    // Draw lava base
+    ctx.fillStyle = lavaGradient;
+    ctx.fillRect(playLeft, lavaTopY, playRight - playLeft, lavaHeight);
+    
+    // Draw wave animation on top of toxic water (light gray with green tones) - calm waves (not white, only bubbles are white)
+    ctx.strokeStyle = 'rgba(180, 220, 200, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    const wavePoints = 50; // Number of wave points
+    const waveAmplitude = 3; // Wave height (back to original)
+    for (let i = 0; i <= wavePoints; i++) {
+      const x = playLeft + (playRight - playLeft) * (i / wavePoints);
+      const waveOffset = Math.sin(time + i * 0.3) * waveAmplitude; // Original calm wave movement
+      const y = lavaTopY + waveOffset;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    
+    // Draw additional smaller waves for depth (gray with green tones) - calm
+    ctx.strokeStyle = 'rgba(160, 200, 180, 0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= wavePoints; i++) {
+      const x = playLeft + (playRight - playLeft) * (i / wavePoints);
+      const waveOffset = Math.sin(time * 1.5 + i * 0.4) * (waveAmplitude * 0.6); // Original calm
+      const y = lavaTopY + waveOffset + 5;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    
+    // Draw lava bubbles that rise from bottom to top and pop randomly during rise
+    const bubbleCount = 12; // Increased from 7 to 12
+    for (let i = 0; i < bubbleCount; i++) {
+      // Each bubble has its own cycle - starts at bottom, rises to top
+      const bubbleCycle = (time * 0.25 + i * 0.7) % (Math.PI * 2); // Slow rise cycle
+      const bubbleProgress = bubbleCycle / (Math.PI * 2); // 0 to 1
+      
+      // Random spawn position for each bubble (better spread)
+      // Use seeded random based on bubble index to get consistent random positions
+      const seedX = i * 1234.567; // Seed for X position
+      const seedY = i * 987.654; // Seed for Y spawn timing
+      const randomX = (Math.sin(seedX) * 0.5 + 0.5); // 0 to 1
+      const baseX = playLeft + (playRight - playLeft) * randomX; // Full width spread (0% to 100%)
+      const horizontalDrift = Math.sin(time * 0.4 + i * 1.3) * 12; // Gentle horizontal drift
+      const bubbleX = baseX + horizontalDrift;
+      
+      // Random pop point for each bubble (can pop anywhere during rise, not just at surface)
+      const randomPopPoint = (Math.sin(seedY) * 0.5 + 0.5) * 0.7 + 0.2; // Pop between 20% and 90% of the way up
+      
+      // Bubble Y position - rises from bottom to top
+      const bubbleY = lavaBottomY - 10 - bubbleProgress * (lavaHeight - 20); // Rises from bottom
+      
+      // Bubble size - grows as it rises
+      let bubbleSize = 2 + bubbleProgress * 2.5; // Grows from 2 to 4.5 as it rises
+      
+      // Bubble pulsing/expanding effect (simulating bubble growth)
+      const bubblePulse = Math.sin(bubbleCycle * 4) * 0.4 + 1; // Pulsing effect
+      bubbleSize *= bubblePulse;
+      
+      // Bubble glow intensity - brighter as it rises
+      const bubbleGlow = 0.4 + bubbleProgress * 0.5; // Gets brighter as it rises
+      
+      // Check if bubble should pop (random pop point reached)
+      const shouldPop = bubbleProgress >= randomPopPoint && bubbleProgress < randomPopPoint + 0.1;
+      
+      // Draw bubble if it's still rising (not popped yet)
+      if (!shouldPop && bubbleProgress < randomPopPoint + 0.1) {
+        ctx.globalAlpha = bubbleGlow;
+        // Gray/white bubbles with green tones - lighter as they rise (toxic bubbles)
+        const bubbleGray = 200 + bubbleProgress * 55; // 200-255 (light gray to white)
+        const bubbleGreen = 220 - bubbleProgress * 50; // 220-170 (green-gray tones)
+        ctx.fillStyle = `rgba(${bubbleGray - 20}, ${bubbleGreen}, ${bubbleGray - 30}, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw bubble highlight (white)
+        ctx.fillStyle = `rgba(255, 255, 255, ${bubbleGlow * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(bubbleX - bubbleSize * 0.3, bubbleY - bubbleSize * 0.3, bubbleSize * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (shouldPop) {
+        // Bubble pops during rise - draw explosion particles
+        const popProgress = (bubbleProgress - randomPopPoint) / 0.1; // 0 to 1 during pop
+        if (popProgress < 1.0) {
+          const explosionParticles = 8;
+          for (let j = 0; j < explosionParticles; j++) {
+            const angle = (Math.PI * 2 * j) / explosionParticles;
+            const distance = popProgress * 15;
+            const particleX = bubbleX + Math.cos(angle) * distance;
+            const particleY = bubbleY + Math.sin(angle) * distance - popProgress * 5; // Slight upward
+            const particleSize = (1 - popProgress) * 3;
+            const particleAlpha = (1 - popProgress) * 0.8;
+            
+            ctx.globalAlpha = particleAlpha;
+            // Gray/white particles with green tones when bubble pops (toxic particles)
+            const particleGray = 220 - popProgress * 50; // 220-170 (light gray to darker gray)
+            const particleGreen = 200 - popProgress * 80; // 200-120 (green-gray tones)
+            ctx.fillStyle = `rgba(${particleGray - 20}, ${particleGreen}, ${particleGray - 30}, 1)`;
+            ctx.beginPath();
+            ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+    ctx.globalAlpha = 1.0;
+    
+    ctx.restore();
+  }
+  
   ctx.strokeStyle = '#000000';
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -2603,6 +3267,14 @@ function render() {
     const alpha = particle.life / particle.maxLife;
     ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
     const s = particle.size ?? 2;
+    ctx.fillRect(particle.x, particle.y, s, s);
+  }
+  
+  // Projectile smoke particles (black smoke trail)
+  for (const particle of projectileSmokeParticles) {
+    const alpha = particle.life / particle.maxLife;
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.8})`; // Black with fade out
+    const s = particle.size ?? 4;
     ctx.fillRect(particle.x, particle.y, s, s);
   }
   
@@ -2888,6 +3560,10 @@ function render() {
       // Miss text - gray, smaller size
       ctx.fillStyle = `rgba(128, 128, 128, ${alpha})`;
       ctx.font = `bold ${8 + (1 - alpha) * 4}px "Press Start 2P"`; // Smaller than damage numbers
+    } else if (typeof dmgNum.value === 'string' && dmgNum.value.startsWith('+')) {
+      // Green for armor regeneration (+1)
+      ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`; // Green for armor regen
+      ctx.font = `bold ${12 + (1 - alpha) * 6}px "Press Start 2P"`;
     } else {
       ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`; // Red for normal damage
       ctx.font = `bold ${12 + (1 - alpha) * 6}px "Press Start 2P"`;
@@ -3203,11 +3879,75 @@ function render() {
       return; // Don't render arena if error
     }
     
-    // Draw arena bounds (visual indicator)
+    // Draw arena bounds (visual indicator) - but skip dotted line where platforms are located
     ctx.strokeStyle = '#888888';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]); // Dashed line
-    ctx.strokeRect(pvpBounds.left, pvpBounds.top, pvpBounds.right - pvpBounds.left, pvpBounds.bottom - pvpBounds.top);
+    
+    // Calculate platform edges
+    const halfW = movingPlatformWidth / 2;
+    const halfSideW = pvpPlatformSideWidth / 2;
+    const leftPlatformLeftEdge = pvpPlatformLeftX - halfSideW;
+    const leftPlatformRightEdge = pvpPlatformLeftX + halfSideW;
+    const centerPlatformLeftEdge = pvpPlatformCenterX - halfW;
+    const centerPlatformRightEdge = pvpPlatformCenterX + halfW;
+    const rightPlatformLeftEdge = pvpPlatformRightX - halfSideW;
+    const rightPlatformRightEdge = pvpPlatformRightX + halfSideW;
+    const platformY = movingPlatformY; // Platform Y position
+    const platformBottomY = platformY + movingPlatformThickness; // Platform bottom Y position
+    
+    // Draw top line segments only over platforms (not in empty spaces)
+    // Left platform segment: over left platform only
+    ctx.beginPath();
+    ctx.moveTo(leftPlatformLeftEdge, pvpBounds.top);
+    ctx.lineTo(leftPlatformRightEdge, pvpBounds.top);
+    ctx.stroke();
+    
+    // Center platform segment: over center platform only
+    ctx.beginPath();
+    ctx.moveTo(centerPlatformLeftEdge, pvpBounds.top);
+    ctx.lineTo(centerPlatformRightEdge, pvpBounds.top);
+    ctx.stroke();
+    
+    // Right platform segment: over right platform only
+    ctx.beginPath();
+    ctx.moveTo(rightPlatformLeftEdge, pvpBounds.top);
+    ctx.lineTo(rightPlatformRightEdge, pvpBounds.top);
+    ctx.stroke();
+    
+    // Draw bottom line segments only over platforms (not in empty spaces)
+    // Left platform segment: over left platform only
+    ctx.beginPath();
+    ctx.moveTo(leftPlatformLeftEdge, pvpBounds.bottom);
+    ctx.lineTo(leftPlatformRightEdge, pvpBounds.bottom);
+    ctx.stroke();
+    
+    // Center platform segment: over center platform only
+    ctx.beginPath();
+    ctx.moveTo(centerPlatformLeftEdge, pvpBounds.bottom);
+    ctx.lineTo(centerPlatformRightEdge, pvpBounds.bottom);
+    ctx.stroke();
+    
+    // Right platform segment: over right platform only
+    ctx.beginPath();
+    ctx.moveTo(rightPlatformLeftEdge, pvpBounds.bottom);
+    ctx.lineTo(rightPlatformRightEdge, pvpBounds.bottom);
+    ctx.stroke();
+    
+    // Draw left side segments only over left platform (not in empty spaces)
+    // Left platform vertical segment: over left platform only
+    ctx.beginPath();
+    ctx.moveTo(pvpBounds.left, platformY);
+    ctx.lineTo(pvpBounds.left, platformBottomY);
+    ctx.stroke();
+    
+    // Draw right side segments only over right platform (not in empty spaces)
+    // Right platform vertical segment: over right platform only
+    ctx.beginPath();
+    ctx.moveTo(pvpBounds.right, platformY);
+    ctx.lineTo(pvpBounds.right, platformBottomY);
+    ctx.stroke();
+    
     ctx.setLineDash([]); // Reset line dash
     
     // Draw side walls from platform to bottom floor (prevent players from going through UI panel)
@@ -3229,9 +3969,38 @@ function render() {
     ctx.lineWidth = 1;
     ctx.strokeRect(playRight, wallTopY, 5, wallBottomY - wallTopY);
     
+    // Draw death animations (pixel art particles) - draw before players so they appear behind
+    for (const [playerId, particles] of deathAnimations.entries()) {
+      for (const particle of particles) {
+        const lifeRatio = particle.life / particle.maxLife;
+        const alpha = lifeRatio; // Fade out as life decreases
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(particle.x, particle.y);
+        ctx.rotate(particle.rotation);
+        
+        // Draw pixel art square piece - make sure it's visible
+        ctx.fillStyle = particle.color;
+        ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+        
+        // Draw outline for pixel art look
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1; // Increased line width for better visibility
+        ctx.strokeRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+        
+        ctx.restore();
+      }
+    }
+    
     // Draw all players
     for (const playerId in pvpPlayers) {
       const player = pvpPlayers[playerId];
+      
+      // Skip drawing player if death animation is playing
+      if (deathAnimations.has(playerId)) {
+        continue; // Don't draw player during death animation
+      }
       
       // Draw fading shadow tail (behind the player) - same as Solo
       {
@@ -3249,12 +4018,12 @@ function render() {
       
       // Draw player DOT
       // CRITICAL: Ensure correct color based on player ID
-      // My player is ALWAYS blue, opponent is ALWAYS red
+      // Both players are black
       let dotColor: string;
       if (playerId === myPlayerId) {
-        dotColor = '#0000ff'; // Blue for my player - ALWAYS
+        dotColor = '#000000'; // Black for my player
       } else if (playerId === opponentId && opponentId) {
-        dotColor = '#ff0000'; // Red for opponent - ALWAYS
+        dotColor = '#000000'; // Black for opponent
       } else {
         // Fallback to player's stored color (should not happen)
         dotColor = player.color;
@@ -3270,6 +4039,31 @@ function render() {
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 2;
       ctx.stroke();
+      
+      // Draw magnetic wave animation when paralyzed
+      if (player.paralyzedUntil > Date.now()) {
+        const time = Date.now() * 0.003; // Slow animation
+        const waveRadius = player.radius + 8 + Math.sin(time * 2) * 3; // Gentle wave
+        const waveCount = 3; // Number of wave rings
+        
+        for (let i = 0; i < waveCount; i++) {
+          const offset = i * 0.5;
+          const alpha = 0.3 - (i * 0.1); // Fade out
+          const radius = waveRadius + i * 4 + Math.sin(time * 2 + offset) * 2;
+          
+          ctx.strokeStyle = `rgba(100, 100, 120, ${alpha})`; // Gray-blue magnetic color
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        
+        // Draw small black dot in center (paralyzed indicator)
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
       
       // Supersonic animation when speed >= 7 (same as Solo)
       // OPTIMIZED: Use squared speed for comparison to avoid Math.sqrt
@@ -3362,36 +4156,70 @@ function render() {
         }
       }
       
-      // Draw player ID label with wallet address suffix
-      if (playerId === opponentId) {
-        // Get opponent wallet address (last 4 chars)
-        const walletState = walletService.getState();
-        let opponentLabel = 'OPPONENT';
-        if (currentMatch && opponentId) {
-          // opponentId is the wallet address in PvP Online
-          const addressSuffix = opponentId.length >= 4 ? opponentId.slice(-4).toUpperCase() : '';
-          opponentLabel = `OPPONENT ${addressSuffix}`;
+      // Draw Armor and HP bars above player head (combined bar - always same height)
+      {
+        const barWidth = player.radius * 2 - 6; // Shorter bar width (6px shorter total)
+        const barHeight = 4; // Thinner bar height - always same height
+        const barX = player.x - barWidth / 2;
+        const barY = player.y - player.radius - 8; // Bar position
+        
+        // Draw "You" text above HP bar (only for my player)
+        if (myPlayerId && playerId === myPlayerId) {
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 8px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText('You', player.x, barY - 3);
         }
         
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 8px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(opponentLabel, player.x, player.y - player.radius - 5);
-      } else if (playerId === myPlayerId) {
-        // Get my wallet address (last 4 chars)
-        const walletState = walletService.getState();
-        let myLabel = 'YOU';
-        if (walletState.address) {
-          const addressSuffix = walletState.address.length >= 4 ? walletState.address.slice(-4).toUpperCase() : '';
-          myLabel = `YOU ${addressSuffix}`;
+        // Calculate percentages
+        const armorPercentage = Math.max(0, Math.min(1, player.armor / player.maxArmor));
+        const hpPercentage = Math.max(0, Math.min(1, player.hp / player.maxHP));
+        
+        // Draw bar background (thin black outline) - always same height
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1; // Thin outline
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Draw HP bar (green/yellow/red) first - always draw it, but armor will cover it
+        if (player.maxArmor > 0) {
+          // Show HP bar when armor exists (armor will cover it)
+          if (hpPercentage > 0.6) {
+            ctx.fillStyle = '#00ff00'; // Green when HP > 60%
+          } else if (hpPercentage > 0.3) {
+            ctx.fillStyle = '#ffff00'; // Yellow when HP 30-60%
+          } else {
+            ctx.fillStyle = '#ff0000'; // Red when HP < 30%
+          }
+          
+          const fillWidth = barWidth * hpPercentage;
+          if (fillWidth > 0) {
+            ctx.fillRect(barX + 0.5, barY + 0.5, fillWidth - 1, barHeight - 1);
+          }
+        } else {
+          // If no armor, show HP bar only
+          if (hpPercentage > 0.6) {
+            ctx.fillStyle = '#00ff00'; // Green when HP > 60%
+          } else if (hpPercentage > 0.3) {
+            ctx.fillStyle = '#ffff00'; // Yellow when HP 30-60%
+          } else {
+            ctx.fillStyle = '#ff0000'; // Red when HP < 30%
+          }
+          
+          const fillWidth = barWidth * hpPercentage;
+          if (fillWidth > 0) {
+            ctx.fillRect(barX + 0.5, barY + 0.5, fillWidth - 1, barHeight - 1);
+          }
         }
         
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 8px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(myLabel, player.x, player.y - player.radius - 5);
+        // Draw Armor bar (blue) on top - always visible if armor exists, covers HP bar
+        if (player.maxArmor > 0 && armorPercentage > 0) {
+          ctx.fillStyle = '#0000ff'; // Blue for armor
+          const armorFillWidth = barWidth * armorPercentage;
+          if (armorFillWidth > 0) {
+            ctx.fillRect(barX + 0.5, barY + 0.5, armorFillWidth - 1, barHeight - 1); // Covers HP
+          }
+        }
       }
     }
     
@@ -3450,30 +4278,178 @@ function render() {
       }
     }
     
-    // PvP mode: Draw flying projectile (my projectile)
-    if (projectileFlying) {
-      ctx.fillStyle = '#ff0000'; // Red projectile
+    // PvP mode: Draw flying bullet (my bullet) - doubled size for heavier look
+    if (bulletFlying) {
+      ctx.save();
+      ctx.translate(bulletX, bulletY);
+      
+      // Calculate angle from velocity
+      const bulletAngle = Math.atan2(bulletVy, bulletVx);
+      ctx.rotate(bulletAngle);
+      
+      // Bullet dimensions - doubled size for heavier look, maintaining form
+      const bulletLength = 24; // Length of bullet (doubled from 12)
+      const bulletWidth = 4; // Width of bullet (doubled from 2)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      
+      // Draw bullet body (gray cylinder) - heavier look
+      ctx.fillStyle = '#666666'; // Darker gray for heavier look
       ctx.beginPath();
-      ctx.arc(projectileX, projectileY, projectileRadius, 0, Math.PI * 2);
+      ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      
+      // Draw pointed tip (triangle) - green color for poisoned look
+      ctx.fillStyle = '#00ff00'; // Green color for poisoned tip
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0); // Point at tip
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
       ctx.fill();
       
-      // White outline
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      // Draw darker outline - thicker for heavier look
+      ctx.strokeStyle = '#444444'; // Darker outline
+      ctx.lineWidth = 1.5; // Thicker outline (doubled from 0.5)
+      ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      // Green outline for tip
+      ctx.strokeStyle = '#00aa00'; // Darker green for tip outline
+      ctx.lineWidth = 1.5; // Thicker outline
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0);
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
       ctx.stroke();
+      
+      ctx.restore();
     }
     
-    // PvP mode: Draw opponent's flying projectile
-    if (opponentProjectileFlying && gameMode === 'PvP') {
-      ctx.fillStyle = '#ff8800'; // Orange projectile (different color to distinguish)
+    // PvP mode: Draw opponent bullet - doubled size for heavier look
+    if (opponentBulletFlying && gameMode === 'PvP') {
+      ctx.save();
+      ctx.translate(opponentBulletX, opponentBulletY);
+      
+      // Calculate angle from velocity
+      const bulletAngle = Math.atan2(opponentBulletVy, opponentBulletVx);
+      ctx.rotate(bulletAngle);
+      
+      // Bullet dimensions - doubled size for heavier look, maintaining form
+      const bulletLength = 24; // Length of bullet (doubled from 12)
+      const bulletWidth = 4; // Width of bullet (doubled from 2)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      
+      // Draw bullet body (gray cylinder) - heavier look
+      ctx.fillStyle = '#666666'; // Darker gray for heavier look
       ctx.beginPath();
-      ctx.arc(opponentProjectileX, opponentProjectileY, projectileRadius, 0, Math.PI * 2);
+      ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      
+      // Draw pointed tip (triangle) - green color for poisoned look
+      ctx.fillStyle = '#00ff00'; // Green color for poisoned tip
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0); // Point at tip
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
       ctx.fill();
       
-      // White outline
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      // Draw darker outline - thicker for heavier look
+      ctx.strokeStyle = '#444444'; // Darker outline
+      ctx.lineWidth = 1.5; // Thicker outline (doubled from 0.5)
+      ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      // Green outline for tip
+      ctx.strokeStyle = '#00aa00'; // Darker green for tip outline
+      ctx.lineWidth = 1.5; // Thicker outline
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0);
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
       ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw flying projectile (my projectile) - cannonball shape with pointed tip
+    if (projectileFlying) {
+      ctx.save();
+      ctx.translate(projectileX, projectileY);
+      
+      // Calculate angle from velocity
+      const angle = Math.atan2(projectileVy, projectileVx);
+      ctx.rotate(angle);
+      
+      // Draw cannonball shape: short cylinder with pointed tip
+      const length = 24; // Short projectile (doubled from 12)
+      const width = 12; // Width of projectile (doubled from 6)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      
+      ctx.fillStyle = '#8B4513'; // Brown cannonball color
+      ctx.beginPath();
+      
+      // Draw main body (rounded rectangle)
+      ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+      
+      // Draw pointed tip (triangle)
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+      ctx.lineTo(length / 2, 0); // Point at tip
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Dark outline
+      ctx.strokeStyle = '#654321';
+      ctx.lineWidth = 3; // Thicker outline (doubled from 1.5)
+      ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+      ctx.lineTo(length / 2, 0);
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent's flying projectile - cannonball shape with pointed tip
+    if (opponentProjectileFlying && gameMode === 'PvP') {
+      ctx.save();
+      ctx.translate(opponentProjectileX, opponentProjectileY);
+      
+      // Calculate angle from velocity
+      const angle = Math.atan2(opponentProjectileVy, opponentProjectileVx);
+      ctx.rotate(angle);
+      
+      // Draw cannonball shape: short cylinder with pointed tip
+      const length = 24; // Short projectile (doubled from 12)
+      const width = 12; // Width of projectile (doubled from 6)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      
+      ctx.fillStyle = '#CD853F'; // Lighter brown for opponent (different color to distinguish)
+      ctx.beginPath();
+      
+      // Draw main body (rounded rectangle)
+      ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+      
+      // Draw pointed tip (triangle)
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+      ctx.lineTo(length / 2, 0); // Point at tip
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Dark outline
+      ctx.strokeStyle = '#8B4513';
+      ctx.lineWidth = 3; // Thicker outline (doubled from 1.5)
+      ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+      ctx.lineTo(length / 2, 0);
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.stroke();
+      
+      ctx.restore();
     }
     
     // PvP mode: Draw arrow (ready or flying) - always near player, follows mouse like trajectory line
@@ -4028,6 +5004,8 @@ if (!(window as any).__mousedownListenerAdded) {
   if (mouseX > 240 && e.button === 0 && gameState === 'Alive') {
     mouseHoldStartTime = Date.now();
   }
+  
+  // Bullet firing is handled in mouseup event (no charging needed)
   });
 } else {
   console.warn('⚠️ Mousedown listener already added - skipping duplicate (HMR protection)');
@@ -4039,6 +5017,8 @@ if (!(window as any).__mouseupListenerAdded) {
   (window as any).__mouseupListenerAdded = true;
   canvas.addEventListener('mouseup', (e) => {
   // PvP mode: Projectile firing is now handled by keyboard (key "2"), not mouse
+  
+  // Bullet firing is now handled by keyboard (key "3"), not mouse
   
   // Handle upgrade buttons (works with any button)
   isPressingUpgrade = false;
@@ -4404,13 +5384,35 @@ if (!(window as any).__mouseupListenerAdded) {
     if (isDrawing) {
       // Only create line if has enough points (at least 2 for a segment)
       if (currentDrawPoints.length >= 2) {
-        drawnLines.push({
+        const newLine = {
           points: [...currentDrawPoints], // Copy the points array
           life: 240, // 4 seconds at 60 FPS
           maxLife: 240,
           hits: 0, // Start with 0 hits
           maxHits: 2 // Line can take 2 hits before disappearing
-        });
+        };
+        drawnLines.push(newLine);
+        
+        // Send line to opponent via network sync (PvP mode only)
+        if (gameMode === 'PvP' && currentMatch) {
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          
+          if (isSyncing) {
+            const lineInput = {
+              type: 'line' as const,
+              timestamp: Date.now(),
+              points: newLine.points
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(lineInput);
+            } else {
+              pvpSyncService.sendInput(lineInput);
+            }
+          }
+        }
+        
         // Start cooldown timer when drawing ends
         lastDrawEndTime = Date.now();
       }
@@ -4453,6 +5455,17 @@ if (!(window as any).__keydownListenerAdded) {
   
   // PvP/Training mode: Arrow activation
   if (e.key === '1' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't use arrow
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't activate arrow
+    }
     const currentTime = Date.now();
     const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
     
@@ -4475,12 +5488,88 @@ if (!(window as any).__keydownListenerAdded) {
   // PvP/Training mode: Start charging projectile (key "2")
   if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && !projectileCharging) {
     const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't use projectile
+    }
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't charge projectile
+    }
     // Start charging from player position
     projectileCharging = true;
     projectileChargeStartTime = Date.now();
     projectileStartX = myPlayer.x;
     projectileStartY = myPlayer.y;
     console.log('Projectile charging started - release key "2" to fire!');
+  }
+  
+  // PvP/Training mode: Fire bullet (key "3")
+  if (e.key === '3' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't fire bullet
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't fire bullet
+    }
+    
+    // Check cooldown (5 seconds after every shot)
+    const timeSinceLastShot = Date.now() - bulletLastShotTime;
+    if (timeSinceLastShot < bulletCooldown) {
+      return; // Still on cooldown
+    }
+    
+    // Don't fire if bullet is already flying
+    if (bulletFlying) {
+      return; // Bullet already in flight
+    }
+    
+    // Calculate direction to mouse position
+    const dx = globalMouseX - myPlayer.x;
+    const dy = globalMouseY - myPlayer.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 0) {
+      // Normalize direction
+      const dirX = dx / distance;
+      const dirY = dy / distance;
+      
+      // Spawn bullet at player position
+      bulletFlying = true;
+      bulletX = myPlayer.x;
+      bulletY = myPlayer.y;
+      bulletVx = dirX * bulletSpeed;
+      bulletVy = dirY * bulletSpeed;
+      bulletSpawnTime = Date.now();
+      bulletLastShotTime = Date.now();
+      
+      // Send to opponent via network sync
+      const useColyseus = colyseusService.isConnectedToRoom();
+      const isSyncing = useColyseus || pvpSyncService.isSyncing();
+      if (currentMatch && isSyncing) {
+        const bulletInput = {
+          type: 'bullet' as const,
+          timestamp: Date.now(),
+          x: myPlayer.x,
+          y: myPlayer.y,
+          vx: bulletVx,
+          vy: bulletVy,
+        };
+        if (useColyseus) {
+          colyseusService.sendInput(bulletInput);
+        } else {
+          pvpSyncService.sendInput(bulletInput);
+        }
+      }
+      
+      console.log('Bullet fired!', { x: bulletX, y: bulletY, vx: bulletVx, vy: bulletVy });
+    }
   }
   });
 } else {
@@ -4494,11 +5583,17 @@ if (!(window as any).__keyupListenerAdded) {
   window.addEventListener('keyup', (e) => {
   // PvP/Training mode: Launch projectile if charging (key "2" released)
   if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && projectileCharging && !projectileFlying && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      // Cancel charging if paralyzed
+      projectileCharging = false;
+      return; // Paralyzed - can't fire projectile
+    }
     const chargeTime = Date.now() - projectileChargeStartTime;
     const chargeRatio = Math.min(chargeTime / projectileMaxCharge, 1.0); // 0 to 1
     
     // Get current player position and mouse position for direction
-    const myPlayer = pvpPlayers[myPlayerId];
     const dx = globalMouseX - myPlayer.x;
     const dy = globalMouseY - myPlayer.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -4536,13 +5631,18 @@ if (!(window as any).__keyupListenerAdded) {
       screenShake = Math.max(screenShake, 8);
       
       projectileFlying = true;
-      projectileX = myPlayer.x; // Use current player position
-      projectileY = myPlayer.y; // Use current player position
+      // Spawn projectile slightly away from player to avoid immediate self-collision
+      const spawnOffset = 15; // Spawn 15px away from player center
+      projectileX = myPlayer.x + dirX * spawnOffset; // Spawn in direction of shot
+      projectileY = myPlayer.y + dirY * spawnOffset; // Spawn in direction of shot
       projectileVx = dirX * speed;
       projectileVy = dirY * speed;
       projectileSpawnTime = Date.now(); // Record spawn time for lifetime
       projectileBounceCount = 0; // Reset bounce count
       projectileCharging = false;
+      
+      // Create explosion animation at launch position
+      createProjectileExplosion(projectileX, projectileY);
       
       console.log(`Projectile launched with speed ${speed}, charge: ${(chargeRatio * 100).toFixed(1)}%`);
       
@@ -4551,11 +5651,14 @@ if (!(window as any).__keyupListenerAdded) {
       const isSyncing = useColyseus || pvpSyncService.isSyncing();
       if (currentMatch && isSyncing) {
         const chargeTime = Date.now() - projectileChargeStartTime;
+        
+        // Send explosion animation to opponent
+        sendProjectileExplosion(projectileX, projectileY);
         const projectileInput = {
           type: 'projectile' as const,
           timestamp: Date.now(),
-          x: myPlayer.x,
-          y: myPlayer.y,
+          x: projectileX, // Use spawn position (already offset from player)
+          y: projectileY, // Use spawn position (already offset from player)
           targetX: globalMouseX,
           targetY: globalMouseY,
           chargeTime: chargeTime,
@@ -4837,12 +5940,22 @@ if (!(window as any).__clickListenerAdded) {
 
   // PvP/Training mode: Handle arrow throw - click to launch arrow (only if ready and cooldown passed)
   if ((gameMode === 'PvP' || gameMode === 'Training') && pvpArrowReady && mouseX > 240 && myPlayerId && pvpPlayers[myPlayerId] && !pvpKatanaFlying && e.button === 0) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't fire arrow
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't fire arrow
+    }
     const currentTime = Date.now();
     const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
     
     // Check if cooldown has passed
     if (timeSinceLastShot >= pvpArrowCooldown) {
-      const myPlayer = pvpPlayers[myPlayerId];
       // Launch arrow from player position towards mouse position (like Solo mode)
       pvpKatanaFlying = true;
       pvpArrowFired = true; // Mark as fired
@@ -4901,6 +6014,11 @@ if (!(window as any).__clickListenerAdded) {
     // Only process clicks in play area
     if (mouseX > 240 && e.button === 0) {
       const myPlayer = pvpPlayers[myPlayerId];
+      
+      // Check if paralyzed
+      if (myPlayer.paralyzedUntil > Date.now()) {
+        return; // Paralyzed - can't click
+      }
       
       // CRITICAL: Only allow controlling my player, never opponent
       if (myPlayer.id !== myPlayerId) {
@@ -5157,6 +6275,43 @@ function checkWalletBalance() {
 }
 
 function gameLoop() {
+  // Update death animations
+  for (const [playerId, particles] of deathAnimations.entries()) {
+    const aliveParticles: DeathParticle[] = [];
+    
+    for (const particle of particles) {
+      // Update particle position
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      
+      // Apply gravity
+      particle.vy += 0.1;
+      
+      // Update rotation
+      particle.rotation += particle.rotationSpeed;
+      
+      // Decrease life
+      particle.life -= 16; // ~60 FPS, decrease by ~16ms per frame
+      
+      // Keep particle if still alive
+      if (particle.life > 0) {
+        aliveParticles.push(particle);
+      }
+    }
+    
+    // Remove animation if all particles are dead
+    if (aliveParticles.length === 0) {
+      deathAnimations.delete(playerId);
+      
+      // Remove dead player from game - they will only reappear in a new game
+      if (pvpPlayers[playerId]) {
+        delete pvpPlayers[playerId];
+      }
+    } else {
+      deathAnimations.set(playerId, aliveParticles);
+    }
+  }
+  
   // Track frame time (to detect frame pacing issues) - measure entire gameLoop
   const frameStartTime = performance.now();
   
@@ -5169,6 +6324,166 @@ function gameLoop() {
   
   // Check wallet balance periodically (non-blocking)
   checkWalletBalance();
+  
+  // PvP/Training mode: Update bullet physics and collision
+  if ((gameMode === 'PvP' || gameMode === 'Training') && bulletFlying) {
+    // Update bullet position
+    bulletX += bulletVx;
+    bulletY += bulletVy;
+    
+    // Check lifetime
+    const bulletAge = Date.now() - bulletSpawnTime;
+    if (bulletAge > bulletLifetime) {
+      bulletFlying = false;
+      bulletX = 0;
+      bulletY = 0;
+      bulletVx = 0;
+      bulletVy = 0;
+    }
+    
+    // Check collision with opponent
+    // Make sure we're hitting the opponent, not ourselves
+    if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+      // Skip if no opponent or opponent is ourselves
+    } else {
+      const opponent = pvpPlayers[opponentId];
+      const dx = bulletX - opponent.x;
+      const dy = bulletY - opponent.y;
+      const distanceSquared = dx * dx + dy * dy;
+      const collisionRadius = bulletRadius + opponent.radius;
+      const collisionRadiusSquared = collisionRadius * collisionRadius;
+      
+      if (distanceSquared <= collisionRadiusSquared) {
+        // Double check - make sure opponent is not ourselves
+        if (opponent.id === myPlayerId) {
+          console.error('ERROR: Trying to damage ourselves with bullet!', { opponentId, myPlayerId, opponent: opponent.id });
+          return;
+        }
+        
+        // Hit opponent!
+        bulletFlying = false;
+        bulletX = 0;
+        bulletY = 0;
+        bulletVx = 0;
+        bulletVy = 0;
+        
+        // Check for crit hit
+        const isCritHit = Math.random() < critChance / 100;
+        // Damage: 50% of basic damage (rounded down), 2x crit (using MY stats)
+        const baseBulletDamage = Math.floor(dmg * 0.5); // 50% rounded down
+        const bulletDamage = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
+        
+        // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
+        // Opponent will apply damage when they receive the hit event
+        const useColyseus = colyseusService.isConnectedToRoom();
+        const isSyncing = useColyseus || pvpSyncService.isSyncing();
+        if (currentMatch && isSyncing && opponentId) {
+          const hitInput = {
+            type: 'hit' as const,
+            timestamp: Date.now(),
+            damage: bulletDamage,
+            isCrit: isCritHit,
+            targetPlayerId: opponentId, // Tell opponent this hit is for them
+            isBullet: true, // Indicate this is a bullet hit (for paralysis)
+            paralysisDuration: 2000 // 2 seconds paralysis
+          };
+          
+          if (useColyseus) {
+            colyseusService.sendInput(hitInput);
+          } else {
+            pvpSyncService.sendInput(hitInput);
+          }
+        }
+        
+        // DON'T apply damage locally - opponent will apply it when they receive hit event
+        // This ensures both players see/feel the EXACT same damage
+        
+        // DON'T apply paralysis locally - opponent will apply it when they receive hit event
+        // This ensures both players have the same paralysis timing
+        
+        // Screen shake for crit hits (we feel it when we hit)
+        if (isCritHit) {
+          screenShake = Math.max(screenShake, 30);
+        }
+        
+        // Show damage number (we see it when we hit)
+        safePushDamageNumber({
+          x: opponent.x + (Math.random() - 0.5) * 40,
+          y: opponent.y - 20,
+          value: bulletDamage,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+        
+        // No push effect - bullet doesn't move target (like arrow/projectile)
+        
+        console.log(`Bullet hit opponent! Damage: ${bulletDamage}, Crit: ${isCritHit}, Paralyzed for 2s`);
+      }
+    }
+    
+    // Check if bullet is out of bounds
+    if (bulletX < pvpBounds.left || bulletX > pvpBounds.right || bulletY < pvpBounds.top || bulletY > pvpBounds.bottom) {
+      bulletFlying = false;
+      bulletX = 0;
+      bulletY = 0;
+      bulletVx = 0;
+      bulletVy = 0;
+    }
+  }
+  
+  // PvP mode: Update opponent bullet physics and collision
+  if (gameMode === 'PvP' && opponentBulletFlying && myPlayerId && pvpPlayers[myPlayerId]) {
+    // Update opponent bullet position
+    opponentBulletX += opponentBulletVx;
+    opponentBulletY += opponentBulletVy;
+    
+    // Check lifetime
+    const bulletAge = Date.now() - opponentBulletSpawnTime;
+    if (bulletAge > bulletLifetime) {
+      opponentBulletFlying = false;
+      opponentBulletX = 0;
+      opponentBulletY = 0;
+      opponentBulletVx = 0;
+      opponentBulletVy = 0;
+    }
+    
+    // Check collision with my player
+    const myPlayer = pvpPlayers[myPlayerId];
+    const dx = opponentBulletX - myPlayer.x;
+    const dy = opponentBulletY - myPlayer.y;
+    const distanceSquared = dx * dx + dy * dy;
+    const collisionRadius = bulletRadius + myPlayer.radius;
+    const collisionRadiusSquared = collisionRadius * collisionRadius;
+    
+    if (distanceSquared <= collisionRadiusSquared) {
+      // Hit me!
+      opponentBulletFlying = false;
+      opponentBulletX = 0;
+      opponentBulletY = 0;
+      opponentBulletVx = 0;
+      opponentBulletVy = 0;
+      
+      // DON'T calculate damage locally - opponent will send hit event with their calculated damage
+      // This prevents using wrong stats (our stats instead of opponent's stats)
+      // Opponent will send hit event when their bullet hits us
+      
+      // Just remove the bullet - damage will be applied when we receive hit event
+      console.log('Opponent bullet hit me - waiting for hit event from opponent');
+    }
+    
+    // Check if bullet is out of bounds
+    if (opponentBulletX < pvpBounds.left || opponentBulletX > pvpBounds.right || opponentBulletY < pvpBounds.top || opponentBulletY > pvpBounds.bottom) {
+      opponentBulletFlying = false;
+      opponentBulletX = 0;
+      opponentBulletY = 0;
+      opponentBulletVx = 0;
+      opponentBulletVy = 0;
+    }
+  }
+  
   // Update death animation
   if (gameState === 'Dying' && deathAnimation) {
     deathTimer += 16; // Assuming 60 FPS
@@ -5664,6 +6979,15 @@ function gameLoop() {
     for (const playerId in pvpPlayers) {
       const player = pvpPlayers[playerId];
       
+      // Skip physics update if player is dead (isOut, hp <= 0, or death animation playing)
+      const isDead = player.isOut || player.hp <= 0 || deathAnimations.has(playerId);
+      if (isDead) {
+        // Stop all movement when dead
+        player.vx = 0;
+        player.vy = 0;
+        continue; // Skip physics update for dead player
+      }
+      
       // Apply gravity only if not locked and after delay (same as Solo)
       const timeSinceLastHit = Date.now() - player.lastHitTime;
       if (!player.gravityLocked && timeSinceLastHit >= gravityDelay) {
@@ -5706,9 +7030,22 @@ function gameLoop() {
           
           console.log(`PvP: Player ${playerId} went out of bounds - -1 HP. HP: ${player.hp}/${player.maxHP}`);
           
-          // Check if player is dead
-          if (player.hp <= 0) {
+          // Check if player is dead - start death animation
+          if (player.hp <= 0 && !player.isOut && !deathAnimations.has(playerId)) {
             player.isOut = true;
+            
+            // Determine player color for death animation
+            let playerColor = '#000000';
+            if (playerId === myPlayerId) {
+              playerColor = '#000000';
+            } else if (playerId === opponentId && opponentId) {
+              playerColor = '#000000';
+            } else {
+              playerColor = player.color;
+            }
+            
+            // Start death animation
+            createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
           }
         } else {
           // Already out of bounds - check if 1 second has passed since last damage
@@ -5819,26 +7156,62 @@ function gameLoop() {
       pvpKatanaY += pvpKatanaVy;
       
       // Check collision with opponent - OPTIMIZED: Use squared distance
+      // Make sure we're hitting the opponent, not ourselves
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        return; // Safety check - don't hit ourselves
+      }
       const opponent = pvpPlayers[opponentId];
       const dx = opponent.x - pvpKatanaX;
       const dy = opponent.y - pvpKatanaY;
       const distanceSquared = dx * dx + dy * dy;
-      const hitRadius = opponent.radius + (arrowLength - arrowFletchingLength);
+      // Reduced hit radius - only arrow head should hit (much smaller collision box)
+      const hitRadius = opponent.radius + arrowHeadLength * 0.5; // Only half of arrow head length
       const hitRadiusSquared = hitRadius * hitRadius;
       
       // Hit if arrow tip/body touches opponent
       if (distanceSquared <= hitRadiusSquared) {
         const distance = Math.sqrt(distanceSquared);
-        // Impact! Apply 3x damage
-        const arrowDamage = dmg * 3; // 3x damage
         
-        // Apply damage (armor first, then HP)
-        const absorbed = Math.min(arrowDamage, opponent.armor);
-        opponent.armor -= absorbed;
-        const remainingDamage = arrowDamage - absorbed;
-        opponent.hp = Math.max(0, opponent.hp - remainingDamage);
+        // Double check - make sure opponent is not ourselves
+        if (opponent.id === myPlayerId) {
+          console.error('ERROR: Trying to damage ourselves!', { opponentId, myPlayerId, opponent: opponent.id });
+          return;
+        }
         
-        // Show damage number
+        // Check for crit hit
+        const isCritHit = Math.random() < critChance / 100;
+        // Damage: 2x normal, 3x crit (using MY stats)
+        const arrowDamage = isCritHit ? dmg * 3 : dmg * 2;
+        
+        // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
+        // Opponent will apply damage when they receive the hit event
+        const useColyseus = colyseusService.isConnectedToRoom();
+        const isSyncing = useColyseus || pvpSyncService.isSyncing();
+        if (currentMatch && isSyncing && opponentId) {
+          const hitInput = {
+            type: 'hit' as const,
+            timestamp: Date.now(),
+            damage: arrowDamage,
+            isCrit: isCritHit,
+            targetPlayerId: opponentId // Tell opponent this hit is for them
+          };
+          
+          if (useColyseus) {
+            colyseusService.sendInput(hitInput);
+          } else {
+            pvpSyncService.sendInput(hitInput);
+          }
+        }
+        
+        // DON'T apply damage locally - opponent will apply it when they receive hit event
+        // This ensures both players see/feel the EXACT same damage
+        
+        // Screen shake for crit hits (we feel it when we hit)
+        if (isCritHit) {
+          screenShake = Math.max(screenShake, 30);
+        }
+        
+        // Show damage number (we see it when we hit)
         safePushDamageNumber({
           x: opponent.x + (Math.random() - 0.5) * 40,
           y: opponent.y - 20,
@@ -5847,7 +7220,7 @@ function gameLoop() {
           maxLife: 60,
           vx: (Math.random() - 0.5) * 2,
           vy: -2 - Math.random() * 2,
-          isCrit: false
+          isCrit: isCritHit
         });
         
         // Create particle effect
@@ -5865,9 +7238,6 @@ function gameLoop() {
           });
         }
         
-        // Removed console.log to reduce lag
-        // console.log(`PvP Arrow hit opponent! Damage: ${arrowDamage}, HP: ${opponent.hp}/${opponent.maxHP}`);
-        
         // Push opponent away with 2 speed in the direction of arrow
         const pushSpeed = 2;
         if (distance > 0) {
@@ -5879,9 +7249,22 @@ function gameLoop() {
           opponent.vy += pushDy * pushSpeed;
         }
         
-        // Check if opponent is dead
-        if (opponent.hp <= 0) {
+        // Check if opponent is dead - start death animation
+        if (opponent.hp <= 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
           opponent.isOut = true;
+          
+          // Determine opponent color for death animation
+          let opponentColor = '#000000';
+          if (opponentId === myPlayerId) {
+            opponentColor = '#000000';
+          } else if (opponentId === opponentId && opponentId) {
+            opponentColor = '#000000';
+          } else {
+            opponentColor = opponent.color;
+          }
+          
+          // Start death animation
+          createDeathAnimation(opponentId, opponent.x, opponent.y, opponentColor, opponent.radius);
         }
         
         // Remove arrow
@@ -5916,32 +7299,17 @@ function gameLoop() {
       const dx = myPlayer.x - opponentArrowX;
       const dy = myPlayer.y - opponentArrowY;
       const distanceSquared = dx * dx + dy * dy;
-      const hitRadius = myPlayer.radius + (arrowLength - arrowFletchingLength);
+      // Reduced hit radius - only arrow head should hit (much smaller collision box)
+      const hitRadius = myPlayer.radius + arrowHeadLength * 0.5; // Only half of arrow head length
       const hitRadiusSquared = hitRadius * hitRadius;
       
       // Hit if arrow tip/body touches my player
       if (distanceSquared <= hitRadiusSquared) {
         const distance = Math.sqrt(distanceSquared);
-        // Impact! Apply 3x damage
-        const arrowDamage = dmg * 3; // 3x damage (opponent's damage)
         
-        // Apply damage (armor first, then HP)
-        const absorbed = Math.min(arrowDamage, myPlayer.armor);
-        myPlayer.armor -= absorbed;
-        const remainingDamage = arrowDamage - absorbed;
-        myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
-        
-        // Show damage number
-        safePushDamageNumber({
-          x: myPlayer.x + (Math.random() - 0.5) * 40,
-          y: myPlayer.y - 20,
-          value: arrowDamage,
-          life: 60,
-          maxLife: 60,
-          vx: (Math.random() - 0.5) * 2,
-          vy: -2 - Math.random() * 2,
-          isCrit: false
-        });
+        // DON'T calculate damage locally - opponent will send hit event with their calculated damage
+        // This prevents using wrong stats (our stats instead of opponent's stats)
+        // Opponent will send hit event when their arrow hits us
         
         // Create particle effect
         for (let i = 0; i < 10; i++) {
@@ -5970,9 +7338,15 @@ function gameLoop() {
           myPlayer.vy += pushDy * pushSpeed;
         }
         
-        // Check if I'm dead
-        if (myPlayer.hp <= 0) {
+        // Check if I'm dead - start death animation
+        if (myPlayer.hp <= 0 && !myPlayer.isOut && !deathAnimations.has(myPlayerId)) {
           myPlayer.isOut = true;
+          
+          // Determine my player color for death animation
+          const myPlayerColor = '#000000'; // Black for my player
+          
+          // Start death animation
+          createDeathAnimation(myPlayerId, myPlayer.x, myPlayer.y, myPlayerColor, myPlayer.radius);
         }
         
         // Remove opponent arrow
@@ -5998,7 +7372,7 @@ function gameLoop() {
       // Check if opponent projectile lifetime expired (5 seconds)
       const now = Date.now();
       if (now - opponentProjectileSpawnTime >= projectileLifetime) {
-        // Opponent projectile expired - remove it
+        // Opponent projectile expired - remove it (no explosion animation)
         opponentProjectileFlying = false;
         opponentProjectileX = 0;
         opponentProjectileY = 0;
@@ -6007,7 +7381,7 @@ function gameLoop() {
         opponentProjectileBounceCount = 0;
         console.log('Opponent projectile expired after 5 seconds');
       } else if (opponentProjectileBounceCount >= projectileMaxBounces) {
-        // Max bounces reached - remove opponent projectile
+        // Max bounces reached - remove opponent projectile (no explosion animation)
         opponentProjectileFlying = false;
         opponentProjectileX = 0;
         opponentProjectileY = 0;
@@ -6021,41 +7395,64 @@ function gameLoop() {
         opponentProjectileY += opponentProjectileVy;
         opponentProjectileVy += projectileGravity; // Apply gravity
         
-        // Opponent projectile collision with players (bouncing platform, NOT damage) - OPTIMIZED: Use squared distance
-        for (const playerId in pvpPlayers) {
-          const player = pvpPlayers[playerId];
+        // Create smoke trail (black smoke particles) - only when falling (positive vy)
+        if (opponentProjectileVy > 0) {
+          // Add smoke particle from projectile center
+          safePushProjectileSmokeParticle({
+            x: opponentProjectileX + (Math.random() - 0.5) * 4,
+            y: opponentProjectileY + (Math.random() - 0.5) * 4,
+            vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
+            vy: -0.3 - Math.random() * 0.2, // Rises slowly
+            life: 30 + Math.random() * 20, // 30-50 frames
+            maxLife: 30 + Math.random() * 20,
+            size: 4 + Math.random() * 3 // 4-7 pixels
+          });
+        }
+        
+        // Opponent projectile collision with players (damage + movement like arrow) - OPTIMIZED: Use squared distance
+        // Opponent projectile should only hit me (myPlayerId), not opponent themselves
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const player = pvpPlayers[myPlayerId];
           const dx = opponentProjectileX - player.x;
           const dy = opponentProjectileY - player.y;
           const distanceSquared = dx * dx + dy * dy;
           const collisionRadius = projectileRadius + player.radius;
           const collisionRadiusSquared = collisionRadius * collisionRadius;
           
-          // Check if player is landing on top of opponent projectile (platform collision)
+          // Check if projectile hits me (damage + push) - only hit myPlayerId, not opponent
           if (distanceSquared <= collisionRadiusSquared) {
-            // Player is touching opponent projectile - check if landing on top
-            const isLandingOnTop = player.y + player.radius >= opponentProjectileY - projectileRadius && 
-                                   player.y < opponentProjectileY && 
-                                   player.vy > 0;
+            const distance = Math.sqrt(distanceSquared);
             
-            if (isLandingOnTop && opponentProjectileBounceCount < projectileMaxBounces) {
-              // Bounce player up (like platform)
-              player.y = opponentProjectileY - projectileRadius - player.radius;
-              player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
-              // Slight horizontal deflection
-              const localX = player.x - opponentProjectileX;
-              player.vx += (localX / projectileRadius) * 1.2;
-              
-              // Increment bounce count
-              opponentProjectileBounceCount++;
-              screenShake = Math.max(screenShake, 6);
-              
-              console.log(`Player bounced on opponent projectile! Bounce count: ${opponentProjectileBounceCount}/${projectileMaxBounces}`);
+            // DON'T calculate damage locally - opponent will send hit event with their calculated damage
+            // This prevents using wrong stats (our stats instead of opponent's stats)
+            // Opponent will send hit event when their projectile hits us
+            
+            // Push player away with 2 speed in the opposite direction of projectile (projectile hits and pushes back)
+            const pushSpeed = 2;
+            if (distance > 0) {
+              // Normalize direction vector (projectile to player)
+              const pushDx = dx / distance;
+              const pushDy = dy / distance;
+              // Apply push force in OPPOSITE direction (projectile pushes player away)
+              player.vx += -pushDx * pushSpeed; // Negative to push away from projectile
+              player.vy += -pushDy * pushSpeed; // Negative to push away from projectile
             }
+            
+            // Remove projectile after hit - damage will be applied when we receive hit event
+            opponentProjectileFlying = false;
+            opponentProjectileX = 0;
+            opponentProjectileY = 0;
+            opponentProjectileVx = 0;
+            opponentProjectileVy = 0;
+            opponentProjectileBounceCount = 0;
+            
+            console.log('Opponent projectile hit me - waiting for hit event from opponent');
           }
         }
         
         // Check if opponent projectile is out of bounds
         if (opponentProjectileX < playLeft || opponentProjectileX > playRight || opponentProjectileY < 0 || opponentProjectileY > pvpBounds.bottom) {
+          // Opponent projectile out of bounds - remove it (no explosion animation)
           opponentProjectileFlying = false;
           opponentProjectileX = 0;
           opponentProjectileY = 0;
@@ -6071,7 +7468,7 @@ function gameLoop() {
       // Check if projectile lifetime expired (5 seconds)
       const now = Date.now();
       if (now - projectileSpawnTime >= projectileLifetime) {
-        // Projectile expired - remove it
+        // Projectile expired - remove it (no explosion animation)
         projectileFlying = false;
         projectileX = 0;
         projectileY = 0;
@@ -6080,7 +7477,7 @@ function gameLoop() {
         projectileBounceCount = 0;
         console.log('Projectile expired after 5 seconds');
       } else if (projectileBounceCount >= projectileMaxBounces) {
-        // Max bounces reached - remove projectile
+        // Max bounces reached - remove projectile (no explosion animation)
         projectileFlying = false;
         projectileX = 0;
         projectileY = 0;
@@ -6094,7 +7491,21 @@ function gameLoop() {
         projectileY += projectileVy;
         projectileVy += projectileGravity; // Apply gravity
         
-        // Projectile collision with players (bouncing platform, NOT damage) - OPTIMIZED: Use squared distance
+        // Create smoke trail (black smoke particles) - only when falling (positive vy)
+        if (projectileVy > 0) {
+          // Add smoke particle from projectile center
+          safePushProjectileSmokeParticle({
+            x: projectileX + (Math.random() - 0.5) * 4,
+            y: projectileY + (Math.random() - 0.5) * 4,
+            vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
+            vy: -0.3 - Math.random() * 0.2, // Rises slowly
+            life: 30 + Math.random() * 20, // 30-50 frames
+            maxLife: 30 + Math.random() * 20,
+            size: 4 + Math.random() * 3 // 4-7 pixels
+          });
+        }
+        
+        // Projectile collision with players (damage + movement like arrow) - OPTIMIZED: Use squared distance
         for (const playerId in pvpPlayers) {
           const player = pvpPlayers[playerId];
           const dx = projectileX - player.x;
@@ -6103,32 +7514,98 @@ function gameLoop() {
           const collisionRadius = projectileRadius + player.radius;
           const collisionRadiusSquared = collisionRadius * collisionRadius;
           
-          // Check if player is landing on top of projectile (platform collision)
-          if (distanceSquared <= collisionRadiusSquared) {
-            // Player is touching projectile - check if landing on top
-            const isLandingOnTop = player.y + player.radius >= projectileY - projectileRadius && 
-                                   player.y < projectileY && 
-                                   player.vy > 0;
+          // Check if projectile hits player (damage + push) - only hit opponent, not self
+          if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
+            const distance = Math.sqrt(distanceSquared);
+            const opponent = player;
             
-            if (isLandingOnTop && projectileBounceCount < projectileMaxBounces) {
-              // Bounce player up (like platform)
-              player.y = projectileY - projectileRadius - player.radius;
-              player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
-              // Slight horizontal deflection
-              const localX = player.x - projectileX;
-              player.vx += (localX / projectileRadius) * 1.2;
+            // Check for crit hit
+            const isCritHit = Math.random() < critChance / 100;
+            // Damage: 2x normal, 3x crit (using MY stats)
+            const projectileDamage = isCritHit ? dmg * 3 : dmg * 2;
+            
+            // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
+            // Opponent will apply damage when they receive the hit event
+            const useColyseus = colyseusService.isConnectedToRoom();
+            const isSyncing = useColyseus || pvpSyncService.isSyncing();
+            if (currentMatch && isSyncing && opponentId) {
+              const hitInput = {
+                type: 'hit' as const,
+                timestamp: Date.now(),
+                damage: projectileDamage,
+                isCrit: isCritHit,
+                targetPlayerId: opponentId // Tell opponent this hit is for them
+              };
               
-              // Increment bounce count
-              projectileBounceCount++;
-              screenShake = Math.max(screenShake, 6);
-              
-              console.log(`Player bounced on projectile! Bounce count: ${projectileBounceCount}/${projectileMaxBounces}`);
+              if (useColyseus) {
+                colyseusService.sendInput(hitInput);
+              } else {
+                pvpSyncService.sendInput(hitInput);
+              }
             }
+            
+            // DON'T apply damage locally - opponent will apply it when they receive hit event
+            // This ensures both players see/feel the EXACT same damage
+            
+            // Screen shake for crit hits (we feel it when we hit)
+            if (isCritHit) {
+              screenShake = Math.max(screenShake, 30);
+            }
+            
+            // Show damage number (we see it when we hit)
+            safePushDamageNumber({
+              x: opponent.x + (Math.random() - 0.5) * 40,
+              y: opponent.y - 20,
+              value: projectileDamage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: isCritHit
+            });
+            
+            // Create particle effect
+            for (let i = 0; i < 10; i++) {
+              const angle = (Math.PI * 2 * i) / 10;
+              const speed = 2 + Math.random() * 3;
+              safePushClickParticle({
+                x: opponent.x,
+                y: opponent.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 30,
+                maxLife: 30,
+                size: 3 + Math.random() * 2
+              });
+            }
+            
+            // Push player away with 2 speed in the opposite direction of projectile (projectile hits and pushes back)
+            const pushSpeed = 2;
+            if (distance > 0) {
+              // Normalize direction vector (projectile to player)
+              const pushDx = dx / distance;
+              const pushDy = dy / distance;
+              // Apply push force in OPPOSITE direction (projectile pushes player away)
+              opponent.vx += -pushDx * pushSpeed; // Negative to push away from projectile
+              opponent.vy += -pushDy * pushSpeed; // Negative to push away from projectile
+            }
+            
+            // Remove projectile after hit
+            projectileFlying = false;
+            projectileX = 0;
+            projectileY = 0;
+            projectileVx = 0;
+            projectileVy = 0;
+            projectileBounceCount = 0;
+            
+            console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
+            break; // Only hit one player
           }
         }
         
         // Check if projectile is out of bounds
         if (projectileX < playLeft || projectileX > playRight || projectileY < 0 || projectileY > pvpBounds.bottom) {
+          // Projectile out of bounds - remove it (no explosion animation)
           projectileFlying = false;
           projectileX = 0;
           projectileY = 0;
@@ -6230,6 +7707,32 @@ function gameLoop() {
         }
       }
       
+      // PvP/Training mode: Collision with left and right platforms
+      if (gameMode === 'PvP' || gameMode === 'Training') {
+        const surfaceY = movingPlatformY;
+        
+        // Helper function to check collision with a platform (with custom width)
+        const checkPlatformCollision = (platformX: number, width: number) => {
+          const halfW = width / 2;
+          if (player.x >= platformX - halfW - player.radius && player.x <= platformX + halfW + player.radius) {
+            if (player.y + player.radius >= surfaceY && player.vy > 0) {
+              player.y = surfaceY - player.radius;
+              player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
+              // Slight horizontal deflection
+              const localX = player.x - platformX;
+              player.vx += (localX / halfW) * 1.2;
+              screenShake = Math.max(screenShake, 6);
+            }
+          }
+        };
+        
+        // Check collision with left platform (50% width)
+        checkPlatformCollision(pvpPlatformLeftX, pvpPlatformSideWidth);
+        
+        // Check collision with right platform (50% width)
+        checkPlatformCollision(pvpPlatformRightX, pvpPlatformSideWidth);
+      }
+      
       // Update speed trail (supersonic animation - same as Solo) - OPTIMIZED: Cache speed
       let playerSpeed = 0;
       if (!cachedPlayerSpeeds[playerId] || cachedPlayerSpeeds[playerId].frame !== currentFrame) {
@@ -6264,9 +7767,56 @@ function gameLoop() {
         }
       }
       
-      // Check if player is dead (HP <= 0) - set isOut flag
-      if (player.hp <= 0) {
+      // Check if player is dead (HP <= 0) - set isOut flag and start death animation
+      if (player.hp <= 0 && !player.isOut && !deathAnimations.has(playerId)) {
         player.isOut = true;
+        
+        // Determine player color for death animation
+        let playerColor = '#000000'; // Default black
+        if (playerId === myPlayerId) {
+          playerColor = '#000000'; // Black for my player
+        } else if (playerId === opponentId && opponentId) {
+          playerColor = '#000000'; // Black for opponent
+        } else {
+          playerColor = player.color;
+        }
+        
+        // Start death animation
+        createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
+      }
+      
+      // Armor regeneration (1 per 5 seconds) - PvP mode
+      if (player.armor < player.maxArmor && player.maxArmor > 0) {
+        const now = Date.now();
+        // Ensure lastArmorRegen is initialized
+        if (!player.lastArmorRegen) {
+          player.lastArmorRegen = now;
+        }
+        
+        if (now - player.lastArmorRegen >= 5000) { // 5 seconds
+          const oldArmor = player.armor;
+          player.armor = Math.min(player.maxArmor, player.armor + 1);
+          player.lastArmorRegen = now;
+          
+          // Show "+1" animation in green when armor regenerates
+          if (player.armor > oldArmor) {
+            safePushDamageNumber({
+              x: player.x + (Math.random() - 0.5) * 20,
+              y: player.y - player.radius - 20,
+              value: '+1',
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 1,
+              vy: -2 - Math.random() * 1,
+              isCrit: false
+            });
+            
+            // Send stats update after armor regeneration (only for my player)
+            if (playerId === myPlayerId) {
+              sendStatsUpdate(player.hp, player.armor, player.maxHP, player.maxArmor);
+            }
+          }
+        }
       }
       }
     }
@@ -6338,13 +7888,22 @@ function gameLoop() {
     }
     
     // PvP mode: Check win/loss conditions (only for online PvP, not Training)
-    if (gameMode === 'PvP' && currentMatch && myPlayerId && opponentId && pvpPlayers[myPlayerId] && pvpPlayers[opponentId] && !showingMatchResult) {
+    if (gameMode === 'PvP' && currentMatch && myPlayerId && opponentId && !showingMatchResult) {
       const myPlayer = pvpPlayers[myPlayerId];
       const opponent = pvpPlayers[opponentId];
       const walletState = walletService.getState();
       
-      // Check if I won (opponent is out or HP <= 0)
-      if (opponent.isOut || opponent.hp <= 0) {
+      // Check if opponent is dead (removed from game or HP <= 0 or isOut)
+      // Wait for death animation to finish before showing result
+      const opponentDeathAnimPlaying = deathAnimations.has(opponentId);
+      const opponentIsDead = !opponent || opponent.isOut || opponent.hp <= 0;
+      
+      // Check if I am dead (removed from game or HP <= 0 or isOut)
+      const myDeathAnimPlaying = deathAnimations.has(myPlayerId);
+      const iAmDead = !myPlayer || myPlayer.isOut || myPlayer.hp <= 0;
+      
+      // Check if I won (opponent is dead and death animation finished)
+      if (opponentIsDead && !opponentDeathAnimPlaying && !iAmDead) {
         console.log('PvP: You won!');
         matchResult = 'victory';
         matchResultEloChange = 10; // +10 ELO for win
@@ -6371,8 +7930,8 @@ function gameLoop() {
         }
       }
       
-      // Check if I lost (I am out or HP <= 0)
-      if (myPlayer.isOut || myPlayer.hp <= 0) {
+      // Check if I lost (I am dead and death animation finished)
+      if (iAmDead && !myDeathAnimPlaying && !opponentIsDead) {
         console.log('PvP: You lost!');
         matchResult = 'defeat';
         matchResultEloChange = -5; // -5 ELO for loss
@@ -6514,9 +8073,20 @@ function gameLoop() {
             
             console.log(`PvP Collision: Player 1 (speed ${speed1.toFixed(2)}) hits Player 2 (speed ${speed2.toFixed(2)}) for ${damage} damage. Player 2 HP: ${player2.hp}/${player2.maxHP}, Armor: ${player2.armor}/${player2.maxArmor}`);
             
-            // Check if player 2 is dead
-            if (player2.hp <= 0) {
+            // Check if player 2 is dead - start death animation
+            if (player2.hp <= 0 && !player2.isOut && !deathAnimations.has(opponentId!)) {
               player2.isOut = true;
+              
+              // Determine player color for death animation
+              let playerColor = '#000000';
+              if (opponentId === myPlayerId) {
+                playerColor = '#000000';
+              } else {
+                playerColor = player2.color;
+              }
+              
+              // Start death animation
+              createDeathAnimation(opponentId!, player2.x, player2.y, playerColor, player2.radius);
             }
           } else if (speed2 > speed1) {
             // Player 2 has higher speed - deals damage to player 1
@@ -6542,9 +8112,20 @@ function gameLoop() {
             
             console.log(`PvP Collision: Player 2 (speed ${speed2.toFixed(2)}) hits Player 1 (speed ${speed1.toFixed(2)}) for ${damage} damage. Player 1 HP: ${player1.hp}/${player1.maxHP}, Armor: ${player1.armor}/${player1.maxArmor}`);
             
-            // Check if player 1 is dead
-            if (player1.hp <= 0) {
+            // Check if player 1 is dead - start death animation
+            if (player1.hp <= 0 && !player1.isOut && !deathAnimations.has(myPlayerId!)) {
               player1.isOut = true;
+              
+              // Determine player color for death animation
+              let playerColor = '#000000';
+              if (myPlayerId === opponentId) {
+                playerColor = '#000000';
+              } else {
+                playerColor = player1.color;
+              }
+              
+              // Start death animation
+              createDeathAnimation(myPlayerId!, player1.x, player1.y, playerColor, player1.radius);
             }
           }
           
@@ -6619,14 +8200,19 @@ function gameLoop() {
     screenShake--;
   }
 
-  // Update moving platform position (both Solo and PvP)
-  movingPlatformX += movingPlatformVx;
-  // Bounce off edges
-  const halfW = movingPlatformWidth / 2;
-  if (movingPlatformX - halfW <= playLeft || movingPlatformX + halfW >= playRight) {
-    movingPlatformVx = -movingPlatformVx;
-    // Keep within bounds
-    movingPlatformX = Math.max(playLeft + halfW, Math.min(playRight - halfW, movingPlatformX));
+  // Update moving platform position (Solo mode only - PvP platform is static in center)
+  if (gameMode !== 'PvP' && gameMode !== 'Training') {
+    movingPlatformX += movingPlatformVx;
+    // Bounce off edges
+    const halfW = movingPlatformWidth / 2;
+    if (movingPlatformX - halfW <= playLeft || movingPlatformX + halfW >= playRight) {
+      movingPlatformVx = -movingPlatformVx;
+      // Keep within bounds
+      movingPlatformX = Math.max(playLeft + halfW, Math.min(playRight - halfW, movingPlatformX));
+    }
+  } else {
+    // PvP/Training mode: Platform is static in center
+    movingPlatformX = (playLeft + playRight) / 2; // Center of play area
   }
 
   // Platform flash timer
@@ -6825,6 +8411,18 @@ function gameLoop() {
     
     if (particle.life <= 0) {
       clickParticles.splice(i, 1);
+    }
+  }
+  
+  // Update projectile smoke particles
+  for (let i = projectileSmokeParticles.length - 1; i >= 0; i--) {
+    const particle = projectileSmokeParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    
+    if (particle.life <= 0) {
+      projectileSmokeParticles.splice(i, 1);
     }
   }
   

@@ -25,7 +25,7 @@ app.get("/health", (req, res) => {
 // Create HTTP server
 const server = createServer(app);
 
-// Create Colyseus server with WebSocketTransport attached to HTTP server
+// Create Colyseus server with WebSocketTransport
 const gameServer = new Server({
   transport: new WebSocketTransport({
     server: server,
@@ -35,8 +35,8 @@ const gameServer = new Server({
 // Register room
 gameServer.define("pvp_room", GameRoom);
 
-// Get PORT from environment or use default
-const PORT = process.env.PORT ? Number(process.env.PORT) : 2567;
+// Get PORT from environment - Colyseus Cloud sets this automatically
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 2567;
 
 // Error handling
 process.on('uncaughtException', (error) => {
@@ -50,7 +50,14 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start HTTP server - Colyseus is already attached via WebSocketTransport
+server.on('error', (err: any) => {
+  console.error('Server error:', err);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
-

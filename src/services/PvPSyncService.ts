@@ -2,7 +2,7 @@
 import { supabaseService } from './SupabaseService';
 
 export interface PlayerInput {
-  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position';
+  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position' | 'line' | 'projectile_explode' | 'stats' | 'bullet';
   timestamp: number;
   x?: number; // Click position or arrow/projectile start X or player position X or arrow/projectile current X
   y?: number; // Click position or arrow/projectile start Y or player position Y or arrow/projectile current Y
@@ -13,6 +13,12 @@ export interface PlayerInput {
   chargeTime?: number; // For projectiles
   isCrit?: boolean; // Whether this was a crit hit
   angle?: number; // Arrow rotation angle
+  points?: Array<{ x: number; y: number }>; // For drawn lines
+  hp?: number; // Player HP (for stats sync)
+  armor?: number; // Player Armor (for stats sync)
+  maxHP?: number; // Player Max HP (for stats sync)
+  maxArmor?: number; // Player Max Armor (for stats sync)
+  dmg?: number; // Player damage stat (for arrow/projectile damage calculation)
 }
 
 export interface OpponentInputCallback {
@@ -32,6 +38,10 @@ class PvPSyncService {
   private readonly MIN_INPUT_INTERVAL = 1000 / this.MAX_INPUTS_PER_SECOND;
   private pendingInputs: PlayerInput[] = []; // Batch inputs together
   private batchTimeout: number | null = null;
+  private reconnectTimeout: number | null = null; // For automatic reconnection
+  private reconnectAttempts: number = 0; // Track reconnection attempts
+  private readonly MAX_RECONNECT_ATTEMPTS = 5; // Maximum reconnection attempts
+  private readonly RECONNECT_DELAY = 2000; // Delay between reconnection attempts (2 seconds)
 
   // Start sync for a match
   startSync(matchId: string, myAddress: string, onOpponentInput: OpponentInputCallback): boolean {
@@ -82,6 +92,7 @@ class PvPSyncService {
         
         if (status === 'SUBSCRIBED') {
           this.isChannelSubscribed = true; // Mark as subscribed
+          this.reconnectAttempts = 0; // Reset reconnection attempts on successful connection
           console.log(`✅ Subscribed to match channel: match_${matchId} (WebSocket active)`);
           
           // Try to flush any queued inputs now that we're subscribed
@@ -96,13 +107,17 @@ class PvPSyncService {
           this.isChannelSubscribed = false; // Mark as not subscribed
           // Only log CLOSED if it's unexpected (not during initial connection)
           if (status === 'CLOSED' && this.currentMatchId === matchId) {
-            console.warn(`⚠️ Channel closed unexpectedly for match_${matchId} - will retry if needed`);
+            console.warn(`⚠️ Channel closed unexpectedly for match_${matchId} - attempting to reconnect...`);
+            // Attempt to reconnect if match is still active
+            this.attemptReconnect();
           } else if (status !== 'CLOSED') {
             console.error(`❌ Channel subscription failed: ${status} - Check if Realtime is enabled in Supabase Dashboard → Settings → API`);
             // Helpful error message for user
             if (status === 'CHANNEL_ERROR') {
               console.error('💡 TIP: Make sure Realtime is enabled in Supabase Dashboard → Settings → API');
             }
+            // Attempt to reconnect on error
+            this.attemptReconnect();
           }
         } else {
           // Other statuses like 'JOINING', 'JOINED', 'LEAVING' - not ready yet
@@ -116,6 +131,13 @@ class PvPSyncService {
 
   // Stop sync
   stopSync(): void {
+    // Cancel any pending reconnection attempts
+    if (this.reconnectTimeout !== null) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.reconnectAttempts = 0; // Reset reconnection attempts
+    
     // Flush any pending inputs before stopping
     this.flushBatch();
     
@@ -134,6 +156,41 @@ class PvPSyncService {
     this.myAddress = null;
     this.inputCallback = null;
     this.pendingInputs = [];
+  }
+  
+  // Attempt to reconnect if connection was lost
+  private attemptReconnect(): void {
+    // Don't reconnect if we're already trying or if match is no longer active
+    if (this.reconnectTimeout !== null || !this.currentMatchId || !this.myAddress || !this.inputCallback) {
+      return;
+    }
+    
+    // Don't reconnect if we've exceeded max attempts
+    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      console.error(`❌ Max reconnection attempts (${this.MAX_RECONNECT_ATTEMPTS}) reached. Please refresh the page.`);
+      return;
+    }
+    
+    this.reconnectAttempts++;
+    console.log(`🔄 Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})...`);
+    
+    // Wait before reconnecting
+    this.reconnectTimeout = window.setTimeout(() => {
+      this.reconnectTimeout = null;
+      
+      // Only reconnect if match is still active
+      if (this.currentMatchId && this.myAddress && this.inputCallback) {
+        const matchId = this.currentMatchId;
+        const myAddress = this.myAddress;
+        const callback = this.inputCallback;
+        
+        // Reset subscription status before reconnecting
+        this.isChannelSubscribed = false;
+        
+        // Attempt to reconnect
+        this.startSync(matchId, myAddress, callback);
+      }
+    }, this.RECONNECT_DELAY);
   }
 
   // Send input to opponent (non-blocking with batching for better performance)

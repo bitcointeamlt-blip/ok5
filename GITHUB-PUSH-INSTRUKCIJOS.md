@@ -114,3 +114,4 @@ VITE_COLYSEUS_ENDPOINT=ws://localhost:2567
 
 **Ar viskas aišku? Jei kyla klausimų, klauskite!** 🎮
 
+

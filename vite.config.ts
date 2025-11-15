@@ -16,7 +16,11 @@ export default defineConfig({
     // Force include all modules - prevent tree-shaking from removing needed code
     rollupOptions: {
       output: {
-        manualChunks: undefined // Don't split chunks - bundle everything together
+        manualChunks: undefined, // Don't split chunks - bundle everything together
+        // Force new hash on each build by including version/timestamp in chunk names
+        entryFileNames: `assets/index-[hash]-v${process.env.npm_package_version || '1.0.12'}.js`,
+        chunkFileNames: `assets/[name]-[hash]-v${process.env.npm_package_version || '1.0.12'}.js`,
+        assetFileNames: `assets/[name]-[hash]-v${process.env.npm_package_version || '1.0.12'}.[ext]`
       }
     }
   }

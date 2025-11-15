@@ -107,3 +107,4 @@ Po deployment:
 
 **Ar padarėte push į GitHub?** Po push palaukite 2-5 min ir patikrinkite logs!
 
+

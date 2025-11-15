@@ -1,7 +1,7 @@
 {
   "name": "dot-clicker",
   "private": true,
-  "version": "1.0.11",
+  "version": "1.0.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,7 +27,11 @@
     "build:gg10": "powershell -ExecutionPolicy Bypass -File build-gg10.ps1",
     "deploy:gg10": "npm run build:gg10",
     "build:gg11": "powershell -ExecutionPolicy Bypass -File build-gg11.ps1",
-    "deploy:gg11": "npm run build:gg11"
+    "deploy:gg11": "npm run build:gg11",
+    "build:gg15": "powershell -ExecutionPolicy Bypass -File build-gg15.ps1",
+    "deploy:gg15": "npm run build:gg15",
+    "build:gg16": "powershell -ExecutionPolicy Bypass -File build-gg16.ps1",
+    "deploy:gg16": "npm run build:gg16"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",

@@ -130,3 +130,4 @@ Tai restart'ins serverį su nauju kodu (jei jis jau push'intas).
 
 **Ar padarėte ištrinimą ir sukūrėte naują deployment location?** Po to palaukite automatinį deployment!
 
+

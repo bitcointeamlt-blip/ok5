@@ -116,3 +116,4 @@ npm start
 
 **Ar patikrinote build settings ir ar kodas push'intas?** Patikrinkite build logs Deployments tab'e!
 
+

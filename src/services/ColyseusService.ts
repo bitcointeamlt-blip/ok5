@@ -2,7 +2,7 @@
 import { Client, Room } from "colyseus.js";
 
 export interface PlayerInput {
-  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position';
+  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position' | 'line' | 'projectile_explode' | 'stats' | 'bullet';
   timestamp: number;
   x?: number;
   y?: number;
@@ -13,6 +13,12 @@ export interface PlayerInput {
   chargeTime?: number;
   isCrit?: boolean;
   angle?: number;
+  points?: Array<{ x: number; y: number }>; // For drawn lines
+  hp?: number; // Player HP (for stats sync)
+  armor?: number; // Player Armor (for stats sync)
+  maxHP?: number; // Player Max HP (for stats sync)
+  maxArmor?: number; // Player Max Armor (for stats sync)
+  dmg?: number; // Player damage stat (for arrow/projectile damage calculation)
 }
 
 export interface OpponentInputCallback {

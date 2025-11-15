@@ -38,3 +38,11 @@ netlify-deploy-temp/
 # Colyseus server build
 colyseus-server/build/
 colyseus-server/node_modules/
+
+# Backup folders (do not commit backup folders)
+GG*/
+lol*/
+*.zip
+
+# Build artifacts
+*.backup-*
