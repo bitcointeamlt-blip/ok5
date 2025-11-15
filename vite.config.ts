@@ -1,4 +1,11 @@
 import { defineConfig } from 'vite'
+import { readFileSync } from 'fs'
+
+// Read package.json to get version
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'))
+const version = packageJson.version || '1.0.19'
+// Create unique build ID: version + timestamp
+const buildId = `${version}-${Date.now()}`
 
 export default defineConfig({
   server: {
@@ -13,14 +20,16 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: false,
     // Force include all modules - prevent tree-shaking from removing needed code
     rollupOptions: {
       output: {
         manualChunks: undefined, // Don't split chunks - bundle everything together
-        // Force new hash on each build by including version/timestamp in chunk names
-        entryFileNames: `assets/index-[hash]-v${process.env.npm_package_version || '1.0.12'}.js`,
-        chunkFileNames: `assets/[name]-[hash]-v${process.env.npm_package_version || '1.0.12'}.js`,
-        assetFileNames: `assets/[name]-[hash]-v${process.env.npm_package_version || '1.0.12'}.[ext]`
+        // Force unique filename with version + timestamp to ensure new hash every build
+        entryFileNames: `assets/[name]-[hash]-${buildId}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${buildId}.js`,
+        assetFileNames: `assets/[name]-[hash]-${buildId}.[ext]`
       }
     }
   }
