@@ -4,12 +4,16 @@ module.exports = {
     script: 'build/index.js',
     instances: 1,
     exec_mode: 'fork',
-    wait_ready: true,
     env: {
       NODE_ENV: 'production',
       PORT: process.env.PORT || 2567
     },
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    merge_logs: true,
     autorestart: true,
-    watch: false
+    watch: false,
+    max_memory_restart: '1G'
   }]
 };

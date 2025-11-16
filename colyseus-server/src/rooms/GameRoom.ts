@@ -5,40 +5,19 @@ export class GameRoom extends Room<GameState> {
   maxClients = 2; // 2 players per match
 
   onCreate(options: any) {
-    try {
-      console.log("GameRoom created:", this.roomId);
-      
-      // Initialize game state
-      const state = new GameState();
-      state.seed = Math.floor(Math.random() * 1000000);
-      this.setState(state);
-      console.log("GameState initialized successfully");
-      
-      // Set up room handlers
-      this.onMessage("player_input", (client, message) => {
-        try {
-          this.handlePlayerInput(client, message);
-        } catch (error: any) {
-          console.error("Error handling player_input:", error);
-        }
-      });
-      
-      this.onMessage("player_ready", (client, message) => {
-        try {
-          this.handlePlayerReady(client, message);
-        } catch (error: any) {
-          console.error("Error handling player_ready:", error);
-        }
-      });
-      
-      console.log("GameRoom onCreate completed successfully");
-    } catch (error: any) {
-      console.error("❌ Error in GameRoom.onCreate:", error);
-      console.error("Error name:", error?.name);
-      console.error("Error message:", error?.message);
-      console.error("Error stack:", error?.stack);
-      throw error; // Re-throw to let Colyseus handle it
-    }
+    console.log("GameRoom created:", this.roomId);
+    
+    // Initialize game state
+    this.setState(new GameState());
+    
+    // Set up room handlers
+    this.onMessage("player_input", (client, message) => {
+      this.handlePlayerInput(client, message);
+    });
+    
+    this.onMessage("player_ready", (client, message) => {
+      this.handlePlayerReady(client, message);
+    });
   }
 
   onJoin(client: Client, options: any) {
