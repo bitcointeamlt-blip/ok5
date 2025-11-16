@@ -8,8 +8,7 @@ module.exports = {
       NODE_ENV: 'production',
       PORT: process.env.PORT || 2567
     },
-    error_file: './logs/err.log',
-    out_file: './logs/out.log',
+    // Remove log files - Colyseus Cloud handles logging
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
     merge_logs: true,
     autorestart: true,
