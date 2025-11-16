@@ -813,6 +813,41 @@ async function enterLobby(): Promise<void> {
         isSearchingForMatch = false;
         waitingForOpponentReady = true;
         console.log('Both players joined! Waiting for ready...');
+        
+        // Update currentMatch with opponent info
+        if (currentMatch) {
+          const players = Array.from(room.state.players.values());
+          const opponent = players.find(p => p.sessionId !== room.sessionId);
+          if (opponent && opponent.address) {
+            currentMatch.p2 = opponent.address;
+          }
+        }
+      }
+    });
+
+    // Listen to room state changes for ready status
+    room.onStateChange((state) => {
+      if (currentMatch && state.players) {
+        const players = Array.from(state.players.values());
+        if (players.length === 2) {
+          const myPlayer = players.find(p => p.sessionId === room.sessionId);
+          const opponent = players.find(p => p.sessionId !== room.sessionId);
+          
+          if (myPlayer && opponent) {
+            // Update ready status based on player order
+            const isPlayer1 = currentMatch.p1 === myPlayer.address;
+            if (isPlayer1) {
+              currentMatch.p1Ready = myPlayer.ready;
+              currentMatch.p2Ready = opponent.ready;
+            } else {
+              currentMatch.p1Ready = opponent.ready;
+              currentMatch.p2Ready = myPlayer.ready;
+            }
+            
+            // Update local ready state
+            isReady = myPlayer.ready;
+          }
+        }
       }
     });
 
@@ -865,8 +900,7 @@ async function leaveLobby(): Promise<void> {
     await colyseusService.leaveRoom().catch(console.error);
   }
   
-  // Also try Supabase matchmaking cleanup (for compatibility)
-  await matchmakingService.leaveLobby(walletState.address).catch(console.error);
+  // Note: Supabase matchmaking cleanup removed - using Colyseus only
   
   isInLobby = false;
   isSearchingForMatch = false;
@@ -960,19 +994,16 @@ function subscribeToMatchUpdates(matchId: string, myAddress: string, isPlayer1: 
   (window as any)[`matchChannel_${matchId}`] = matchChannel;
 }
 
-// Set player ready
+// Set player ready (Colyseus only - no Supabase fallback)
 async function setPlayerReady(): Promise<void> {
   console.log('=== setPlayerReady() called ===');
   
-  // Use Colyseus if connected, otherwise use Supabase
-  if (colyseusService.isConnectedToRoom()) {
-    isReady = !isReady; // Toggle ready state
-    colyseusService.sendReady(isReady);
-    console.log('Player ready status (Colyseus):', isReady);
+  if (!colyseusService.isConnectedToRoom()) {
+    console.error('❌ Cannot set ready: Colyseus not connected');
+    walletError = 'Not connected to game server. Please reconnect.';
     return;
   }
 
-  // Fallback to Supabase
   if (!currentMatch) {
     console.error('Cannot set ready: no current match');
     return;
@@ -983,106 +1014,23 @@ async function setPlayerReady(): Promise<void> {
     console.error('Cannot set ready: wallet not connected');
     return;
   }
+
+  // Use Colyseus only
+  isReady = !isReady; // Toggle ready state
+  const success = colyseusService.sendReady(isReady);
   
-  const isPlayer1 = currentMatch.p1 === walletState.address;
-  console.log('Setting player ready...', { 
-    matchId: currentMatch.id, 
-    isPlayer1, 
-    address: walletState.address,
-    currentMatchState: currentMatch.state,
-    currentP1Ready: currentMatch.p1Ready,
-    currentP2Ready: currentMatch.p2Ready
-  });
-  
-  try {
-    const success = await supabaseService.setPlayerReady(currentMatch.id, walletState.address, isPlayer1);
+  if (success) {
+    console.log('✅ Player ready status sent to Colyseus:', isReady);
     
-    if (success) {
-      isReady = true;
-      console.log('✅ Player ready set successfully!', { matchId: currentMatch.id, isPlayer1 });
-      
-      // Immediately update local match state
-      if (isPlayer1) {
-        currentMatch.p1Ready = true;
-      } else {
-        currentMatch.p2Ready = true;
-      }
-      
-      // Update state to 'ready' if not both ready yet
-      if (!(currentMatch.p1Ready === true && currentMatch.p2Ready === true)) {
-        currentMatch.state = 'ready';
-      }
-      
-      // Immediately check match state to see if both are ready (with retries)
-      let retries = 0;
-      const maxRetries = 10; // Increased retries
-      const checkMatch = () => {
-        if (!currentMatch) {
-          console.log('No current match, stopping check');
-          return;
-        }
-        
-        if (retries >= maxRetries) {
-          console.warn('Max retries reached checking match ready');
-          return;
-        }
-        
-        console.log(`Checking match ready (attempt ${retries + 1}/${maxRetries})...`);
-        
-        supabaseService.checkMatchReady(currentMatch.id).then(({ match, ready }) => {
-          if (match) {
-            // Always update currentMatch with latest state
-            currentMatch = match;
-            console.log('Match state after ready check:', match);
-            
-            if (ready) {
-              console.log('🎮 Both players ready! Starting game from setPlayerReady callback');
-              waitingForOpponentReady = false;
-              
-              // CRITICAL: Unsubscribe from match_ready channel to free up Supabase connection
-              const matchChannel = (window as any)[`matchChannel_${match.id}`];
-              if (matchChannel) {
-                matchChannel.unsubscribe().catch((err: any) => {
-                  console.warn('Error unsubscribing from match channel:', err);
-                });
-                delete (window as any)[`matchChannel_${match.id}`];
-              }
-              
-              initializePvPWithMatch(match, isPlayer1);
-              // Start sync - Use Colyseus if available, otherwise Supabase
-              if (walletState.address && !colyseusService.isConnectedToRoom() && !pvpSyncService.isSyncing()) {
-                pvpSyncService.startSync(match.id, walletState.address, handleOpponentInput);
-              }
-            } else {
-              // Retry after 500ms if not ready yet (increased delay to reduce network load)
-              retries++;
-              setTimeout(checkMatch, 500);
-            }
-          } else {
-            console.warn('No match returned from checkMatchReady');
-            retries++;
-            if (retries < maxRetries) {
-              setTimeout(checkMatch, 1000); // Increased from 500ms to 1000ms to reduce network requests
-            }
-          }
-        }).catch((error) => {
-          console.error('Error checking match ready:', error);
-          retries++;
-          if (retries < maxRetries) {
-            setTimeout(checkMatch, 1000); // Increased from 500ms to 1000ms to reduce network requests
-          }
-        });
-      };
-      
-      // Start checking after 200ms (increased delay to reduce initial network load)
-      setTimeout(checkMatch, 200);
+    // Update local match state (will be synced via onStateChange)
+    const isPlayer1 = currentMatch.p1 === walletState.address;
+    if (isPlayer1) {
+      currentMatch.p1Ready = isReady;
     } else {
-      console.error('❌ Failed to set player ready - supabaseService.setPlayerReady returned false');
-      isReady = false;
+      currentMatch.p2Ready = isReady;
     }
-  } catch (error) {
-    console.error('❌ Exception in setPlayerReady:', error);
-    console.error('Error stack:', (error as Error).stack);
+  } else {
+    console.error('❌ Failed to send ready to Colyseus');
     isReady = false;
   }
   
