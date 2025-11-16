@@ -1,38 +1,27 @@
-# DOT Clicker Game
+# DOT Clicker PvP - Colyseus Server
 
-## Netlify Deployment
+Minimalus Colyseus serveris pagal oficialias rekomendacijas.
 
-### Automatic Deployment (Recommended)
+## Deployment į Colyseus Cloud
 
-**Use Git Integration:**
-1. Push code to GitHub/GitLab/Bitbucket
-2. Connect repository to Netlify
-3. Netlify will automatically build and deploy on every push
+1. **Commit → Push** kodą į GitHub
+2. **Colyseus Cloud** automatiškai deploy'ins
+3. Patikrinkite logs Colyseus Cloud'e
 
-**Netlify Settings:**
-- Build command: `npm install && npm run build`
-- Publish directory: `dist`
-- Environment variables (set in Netlify dashboard):
-  - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_ANON_KEY`
-
-### Manual Deployment
-
-If you need to deploy manually:
-1. Run: `powershell -ExecutionPolicy Bypass -File create-deploy-zip.ps1`
-2. Upload `netlify-deploy.zip` to Netlify → Deploy manually
-
-## Local Development
+## Lokalus Paleidimas
 
 ```bash
+cd colyseus-server
 npm install
-npm run dev
-```
-
-## Build
-
-```bash
 npm run build
+npm start
 ```
 
+Serveris veiks ant `http://localhost:2567`
 
+## Struktūra
+
+- `colyseus-server/src/index.ts` - Serverio entry point
+- `colyseus-server/src/rooms/GameRoom.ts` - GameRoom logika
+- `colyseus-server/src/schema/GameState.ts` - GameState schema
+- `colyseus-server/ecosystem.config.js` - PM2 konfigūracija

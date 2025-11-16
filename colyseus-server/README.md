@@ -1,53 +1,62 @@
-# Colyseus Server for DOT Clicker PvP
+# Colyseus Server - PvP Game
 
-## Setup
+Colyseus serveris sukonfigūruotas pagal oficialias rekomendacijas.
 
-1. Install dependencies:
-```bash
-cd colyseus-server
-npm install
-```
+## 🚀 Konfigūracija
 
-2. Set environment variables (optional):
-```bash
-PORT=2567  # Default port
-```
+### Endpoint'ai:
+- **Production:** `https://de-fra-f8820c12.colyseus.cloud`
+- **Local:** `ws://localhost:2567`
 
-## Development
+### Frontend:
+- **Netlify:** `https://jocular-zabaione-835b49.netlify.app`
 
-Run in development mode:
-```bash
-npm run dev
-```
+## 📦 Setup
 
-## Build
-
-Build for production:
-```bash
-npm run build
-```
-
-## Deploy to Colyseus Cloud
-
-1. Push code to GitHub repository
-2. In Colyseus Cloud dashboard, click "LINK WITH GITHUB"
-3. Select your repository
-4. Set build settings:
-   - Build command: `cd colyseus-server && npm install && npm run build`
-   - Start command: `cd colyseus-server && npm start`
-   - Root directory: `colyseus-server`
-
-## Environment Variables
-
-Set these in Colyseus Cloud dashboard:
-- `PORT` - Server port (default: 2567)
-
-## Testing Locally
-
-1. Start server: `npm run dev`
-2. Server will run on `ws://localhost:2567`
-3. Update frontend `.env` file:
+1. **Install dependencies:**
+   ```bash
+   npm install
    ```
-   VITE_COLYSEUS_ENDPOINT=ws://localhost:2567
+
+2. **Build:**
+   ```bash
+   npm run build
    ```
+
+3. **Start:**
+   ```bash
+   npm start
+   ```
+
+## 🔧 Konfigūracija
+
+### CORS
+Serveris sukonfigūruotas leisti request'us iš:
+- `https://jocular-zabaione-835b49.netlify.app`
+- `http://localhost:7000`
+- `http://localhost:5173`
+
+### Room Registration
+- **Room name:** `pvp_room`
+- **Max clients:** 2 (PvP)
+
+## 📋 Endpoints
+
+- **Health:** `GET /health`
+- **Matchmaking:** `POST /matchmake/joinOrCreate/pvp_room`
+
+## 🚀 Deployment
+
+Colyseus Cloud automatiškai deploy'ina iš GitHub `ok05` repository.
+
+### PM2 Configuration
+- **Script:** `build/index.js`
+- **Instances:** 1
+- **Port:** `process.env.PORT` (Colyseus Cloud nustato)
+
+## 📝 Notes
+
+- Serveris naudoja `@colyseus/core` ir `@colyseus/ws-transport`
+- CORS konfigūruotas Express middleware
+- Health check endpoint'as prieinamas `/health`
 

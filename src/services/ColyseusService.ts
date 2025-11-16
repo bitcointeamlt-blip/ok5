@@ -44,19 +44,19 @@ class ColyseusService {
 
   constructor() {
     // Get Colyseus endpoint from environment or use default
-    // Colyseus Cloud uses wss:// (WebSocket Secure)
+    // Colyseus Cloud: https://de-fra-f8820c12.colyseus.cloud
     // IMPORTANT: Vite replaces import.meta.env.VITE_* at build time
     const endpoint = import.meta.env.VITE_COLYSEUS_ENDPOINT || 'ws://localhost:2567';
     
     // Log endpoint for debugging (without exposing full URL in production)
-    console.log('🔍 Environment check:', {
+    console.log('🔍 Colyseus Service Environment:', {
       hasEnv: !!import.meta.env.VITE_COLYSEUS_ENDPOINT,
-      endpoint: endpoint ? endpoint.substring(0, 30) + '...' : 'not set',
+      endpoint: endpoint ? endpoint.substring(0, 40) + '...' : 'not set',
       allEnvKeys: Object.keys(import.meta.env).filter(k => k.startsWith('VITE_'))
     });
     
     if (endpoint && endpoint !== 'ws://localhost:2567') {
-      console.log('🔵 Colyseus endpoint found:', endpoint.substring(0, 30) + '...');
+      console.log('🔵 Using Colyseus Cloud endpoint');
     } else {
       console.warn('⚠️ VITE_COLYSEUS_ENDPOINT not set, using default localhost');
     }
@@ -66,7 +66,7 @@ class ColyseusService {
     
     try {
       this.client = new Client(wsEndpoint);
-      console.log('✅ Colyseus client initialized:', wsEndpoint);
+      console.log('✅ Colyseus client initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Colyseus client:', error);
     }
