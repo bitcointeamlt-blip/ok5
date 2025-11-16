@@ -1,16 +1,21 @@
 import express from "express";
 import { createServer } from "http";
-import { Server } from "@colyseus/core";
+import { Server, matchMaker } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GameRoom } from "./rooms/GameRoom";
 import cors from "cors";
 
 const app = express();
 
-// CORS configuration - allow all origins
+// CORS configuration - allow all origins including Netlify
 app.use(cors({
-  origin: true,
-  credentials: true
+  origin: true, // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 app.use(express.json());
@@ -29,6 +34,22 @@ const gameServer = new Server({
     server: server,
   }),
 });
+
+// CRITICAL: Override Colyseus matchmaking CORS headers
+// This ensures matchmaking endpoints (/matchmake/*) have CORS headers
+matchMaker.controller.getCorsHeaders = function(req: any) {
+  const origin = req.headers.origin;
+  
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Type',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin'
+  };
+};
 
 // Register room
 gameServer.define("pvp_room", GameRoom);
