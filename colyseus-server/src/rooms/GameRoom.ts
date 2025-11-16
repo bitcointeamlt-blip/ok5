@@ -9,7 +9,9 @@ export class GameRoom extends Room<GameState> {
       console.log("GameRoom created:", this.roomId);
       
       // Initialize game state
-      this.setState(new GameState());
+      const state = new GameState();
+      state.seed = Math.floor(Math.random() * 1000000);
+      this.setState(state);
       console.log("GameState initialized successfully");
       
       // Set up room handlers
