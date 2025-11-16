@@ -1,4 +1,4 @@
-# ✅ Colyseus Server - Veikianti Versija (OK05)
+# ✅ Colyseus Server - Veikianti Versija (OK088)
 
 Šis kodas yra **veikianti versija**, pagrįsta dokumentais `CORRECT-SOLUTION.md` ir `SERVER-WORKING.md`, kai serveris veikė be problemų.
 
@@ -14,7 +14,7 @@
 ## 📁 Struktūra
 
 ```
-ok05/
+ok088/
 ├── src/
 │   ├── index.ts          # Pagrindinis serverio failas
 │   ├── rooms/
@@ -25,6 +25,7 @@ ok05/
 ├── tsconfig.json
 ├── ecosystem.config.js   # PM2 konfigūracija
 ├── Procfile              # Heroku/Colyseus Cloud konfigūracija
+├── .gitignore
 └── README.md
 ```
 
@@ -33,7 +34,7 @@ ok05/
 ### Lokalus Testavimas
 
 ```bash
-cd ok05
+cd ok088
 npm install
 npm run build
 npm start
@@ -41,9 +42,9 @@ npm start
 
 ### Colyseus Cloud Deployment
 
-1. **Push kodą į GitHub** (ok05 folderį kaip `colyseus-server`)
+1. **Push kodą į GitHub** (ok088 folderį kaip `colyseus-server`)
 2. **Colyseus Cloud** → Settings → Build & Deployment:
-   - **Root Directory**: `ok05` arba `/ok05/`
+   - **Root Directory**: `ok088` arba `/ok088/`
    - **Build Command**: `npm install && npm run build`
    - **Start Command**: `npm start`
 3. **Palaukite** automatinį deployment (2-5 min)

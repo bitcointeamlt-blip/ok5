@@ -1,7 +1,7 @@
 {
   "name": "dot-game-colyseus-server",
   "version": "1.0.0",
-  "description": "Colyseus server for DOT Clicker PvP - Working Version",
+  "description": "Colyseus server for DOT Clicker PvP - Working Version OK088",
   "main": "src/index.ts",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
