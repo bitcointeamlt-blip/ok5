@@ -776,7 +776,7 @@ async function enterLobby(): Promise<void> {
     walletError = 'Colyseus not configured. Set VITE_COLYSEUS_ENDPOINT in Netlify Environment Variables (Site Settings → Environment Variables)';
     console.error('❌ Cannot enter lobby: Colyseus endpoint not configured');
     console.error('💡 For Netlify: Go to Site Settings → Environment Variables → Add VITE_COLYSEUS_ENDPOINT');
-    console.error('💡 Value should be: https://de-fra-c81e866a.colyseus.cloud');
+    console.error('💡 Value should be: https://de-fra-f8820c12.colyseus.cloud');
     console.error('💡 Current env keys:', Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
     return;
   }

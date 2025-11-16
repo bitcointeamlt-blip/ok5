@@ -7,11 +7,12 @@ import { GameRoom } from "./rooms/GameRoom";
 
 const app = express();
 
-// CORS configuration - allow Netlify origin
+// CORS configuration - allow Netlify origin and localhost
 app.use(cors({
   origin: [
     "https://jocular-zabaione-835b49.netlify.app",
     "http://localhost:7000",
+    "http://localhost:7005",
     "http://localhost:5173"
   ],
   credentials: true,

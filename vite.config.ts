@@ -9,7 +9,7 @@ const buildId = `${version}-${Date.now()}`
 
 export default defineConfig({
   server: {
-    port: 7000,
+    port: 7005,
     open: true,
     // Note: For Ronin Wallet to work, you need HTTPS
     // Option 1: Deploy to Netlify (recommended - automatic HTTPS)
