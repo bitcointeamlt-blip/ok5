@@ -37,11 +37,9 @@ gameServer.define("pvp_room", GameRoom);
 
 // Get PORT from environment - Colyseus Cloud sets this automatically
 // Use Number() like the working version, but with auto-assign fallback for production
-const PORT = process.env.PORT 
-  ? Number(process.env.PORT) 
-  : (process.env.NODE_ENV === 'production' ? 0 : 2567); // Auto-assign (0) in production if PORT not set
+const PORT = process.env.PORT ? Number(process.env.PORT) : 2567; // Auto-assign (0) in production if PORT not set
 
-console.log(`🔧 Starting server (PORT env: ${process.env.PORT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'development'}, using port: ${PORT === 0 ? 'auto-assign' : PORT})`);
+console.log(`🔧 Starting server in ${process.env.NODE_ENV || 'development'} mode. PORT env: ${process.env.PORT || 'not set'}, using port: ${PORT}`);
 
 // Error handling
 process.on('uncaughtException', (error) => {
