@@ -59,3 +59,4 @@ Write-Host "   2. Atidarykite browser: http://localhost:7000" -ForegroundColor W
 Write-Host "   3. Patikrinkite browser console" -ForegroundColor White
 Write-Host ""
 
+

@@ -275,3 +275,4 @@ Pridėkite į `package.json`:
 - [Netlify Functions Documentation](https://docs.netlify.com/functions/overview/)
 
 
+

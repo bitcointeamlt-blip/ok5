@@ -94,3 +94,4 @@ Po deployment'o patikrinkite logs:
 **Kodas paruoštas commit'ui!**
 
 
+

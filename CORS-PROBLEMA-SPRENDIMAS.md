@@ -102,3 +102,4 @@ Jei vis tiek yra problemos:
 3. Patikrinkite, ar serveris veikia: `https://de-fra-c81e866a.colyseus.cloud/health`
 
 
+

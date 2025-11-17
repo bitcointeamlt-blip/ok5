@@ -110,3 +110,4 @@ Po deployment patikrinkite Colyseus Cloud logs:
 - [ ] CORS veikia (frontend gali prisijungti)
 
 
+

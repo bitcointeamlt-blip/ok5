@@ -177,3 +177,4 @@ Po visų žingsnių:
 - Penkis kartus CORS headers garantuoja veikimą
 
 
+

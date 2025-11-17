@@ -60,3 +60,4 @@ Colyseus Cloud automatiškai deploy'ina iš GitHub `ok05` repository.
 - CORS konfigūruotas Express middleware
 - Health check endpoint'as prieinamas `/health`
 
+

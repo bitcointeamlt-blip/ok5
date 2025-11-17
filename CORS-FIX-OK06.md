@@ -81,3 +81,4 @@ Jei vis dar neveikia, galbūt Colyseus Cloud turi savo CORS nustatymus.
 3. Patikrinti serverio logs
 
 
+

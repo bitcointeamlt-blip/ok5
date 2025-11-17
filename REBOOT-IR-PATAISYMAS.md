@@ -49,3 +49,4 @@ Po reboot, patikrinkite logs:
 **Dabar spustelėkite "REBOOT INSTANCE" mygtuką!**
 
 
+

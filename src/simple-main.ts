@@ -166,6 +166,9 @@ type DamageNumber = {
 
 let clickParticles: Particle[] = [];
 
+// Projectile smoke particles (black smoke trail)
+let projectileSmokeParticles: Particle[] = [];
+
 // Click smudges/blotches (pixel art smears)
 type ClickSmudge = {
   x: number;
@@ -222,6 +225,14 @@ function safePushClickParticle(particle: Particle): void {
   clickParticles.push(particle);
 }
 
+function safePushProjectileSmokeParticle(particle: Particle): void {
+  const MAX_PROJECTILE_SMOKE_PARTICLES = 50;
+  if (projectileSmokeParticles.length >= MAX_PROJECTILE_SMOKE_PARTICLES) {
+    projectileSmokeParticles.shift(); // Remove oldest if at limit
+  }
+  projectileSmokeParticles.push(particle);
+}
+
 function safePushDotDecayParticle(particle: Particle): void {
   const MAX_DOT_DECAY_PARTICLES = 200;
   if (dotDecayParticles.length >= MAX_DOT_DECAY_PARTICLES) {
@@ -248,6 +259,7 @@ type DrawnLine = {
   maxLife: number;
   hits: number; // Number of times DOT has hit this line
   maxHits: number; // Maximum hits before line disappears (2)
+  ownerId?: string; // Player ID who drew this line (undefined = my line, opponentId = opponent's line)
 };
 let drawnLines: DrawnLine[] = [];
 let isDrawing = false;
@@ -334,6 +346,12 @@ let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
 let myPlayerId: string | null = null; // My player ID
 let opponentId: string | null = null; // Opponent player ID
 
+// Collision damage cooldown tracking - prevent infinite damage when players are stuck together
+// Key format: "playerId1_playerId2" (sorted alphabetically to ensure same key for both players)
+let lastCollisionDamageTime: { [key: string]: number } = {};
+const COLLISION_DAMAGE_COOLDOWN = 500; // 500ms cooldown between collision damage
+const COLLISION_DAMAGE_MIN_DISTANCE = 5; // Minimum distance (in speed units) to reset cooldown
+
 // PvP arena bounds
 const pvpBounds = {
   left: 240, // Same as playLeft
@@ -366,12 +384,14 @@ let projectileVx = 0; // Projectile velocity X
 let projectileVy = 0; // Projectile velocity Y
 let projectileSpawnTime = 0; // When projectile was spawned (for 5 second lifetime)
 let projectileBounceCount = 0; // How many times players have bounced on this projectile
+let projectileLastShotTime = 0; // When projectile was last fired (for cooldown after hit)
 const projectileGravity = 0.15; // Gravity for projectile (reduced for better upward shots)
 const projectileMaxCharge = 2000; // Maximum charge time (2 seconds)
 const projectileBaseSpeed = 4; // Base speed multiplier (reduced from 8)
-const projectileRadius = 8; // Projectile size
+const projectileRadius = 16; // Projectile size (doubled)
 const projectileLifetime = 5000; // Projectile lifetime in milliseconds (5 seconds)
 const projectileMaxBounces = 2; // Maximum number of bounces allowed on projectile
+const projectileCooldown = 3000; // Cooldown after hitting target (3 seconds)
 
 // Bullet system (simple projectile, faster than arrow, smaller than projectile)
 let bulletFlying = false; // Whether bullet is flying
@@ -381,7 +401,7 @@ let bulletVx = 0; // Bullet velocity X
 let bulletVy = 0; // Bullet velocity Y
 let bulletLastShotTime = 0; // When bullet was last fired (for cooldown)
 const bulletSpeed = 18; // Bullet speed (20% faster than arrow: 15 * 1.2 = 18)
-const bulletRadius = 4; // Bullet size (2x smaller than projectile: 8 / 2 = 4)
+const bulletRadius = 8; // Bullet size (doubled for heavier look)
 const bulletCooldown = 5000; // Cooldown between shots (5 seconds)
 const bulletLifetime = 3000; // Bullet lifetime in milliseconds (3 seconds)
 let bulletSpawnTime = 0; // When bullet was spawned
@@ -410,6 +430,14 @@ function cleanupCachedPlayerSpeeds(): void {
       cachedPlayerSpeeds[playerId].frame = -1;
     }
   }
+}
+
+// Apply 50% damage variance (damage ranges from 50% to 100% of base damage)
+function applyDamageVariance(baseDamage: number): number {
+  // Random multiplier between 0.5 and 1.0 (50% to 100%)
+  const varianceMultiplier = 0.5 + Math.random() * 0.5;
+  // Round to nearest integer (no decimals)
+  return Math.round(baseDamage * varianceMultiplier);
 }
 
 // PvP Arrow system (from Solo mode)
@@ -677,6 +705,8 @@ function initializePvP(): void {
     maxArmor: dotMaxArmor, // Use Solo max Armor
     outOfBoundsStartTime: null, // Track when player goes out of bounds
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
+    lastArmorRegen: Date.now(), // When armor was last regenerated
+    paralyzedUntil: 0, // Not paralyzed initially
   };
   
   pvpPlayers[myPlayerId] = myPlayer;
@@ -743,12 +773,42 @@ async function enterLobby(): Promise<void> {
   }
 
   // Check if Colyseus endpoint is configured
-  const colyseusEndpoint = (import.meta as any).env?.VITE_COLYSEUS_ENDPOINT;
+  // IMPORTANT: Vite replaces import.meta.env.VITE_* at build time
+  // For local development, use default ws://localhost:2567
+  // For production (Netlify), use Colyseus Cloud endpoint
+  const isProduction = import.meta.env.PROD || 
+    (window.location.hostname !== 'localhost' && 
+     window.location.hostname !== '127.0.0.1');
+  
+  // Default endpoints
+  const defaultLocalEndpoint = 'ws://localhost:2567';
+  
+  // Use environment variable if set, otherwise use default based on environment
+  let colyseusEndpoint = import.meta.env.VITE_COLYSEUS_ENDPOINT;
+  
   if (!colyseusEndpoint) {
-    walletError = 'Colyseus not configured. Set VITE_COLYSEUS_ENDPOINT in .env file';
-    console.error('Cannot enter lobby: Colyseus endpoint not configured');
-    return;
+    if (isProduction) {
+      // Production: VITE_COLYSEUS_ENDPOINT MUST be set in Netlify Environment Variables
+      console.error('❌ VITE_COLYSEUS_ENDPOINT not set in Netlify Environment Variables!');
+      console.error('❌ Please set VITE_COLYSEUS_ENDPOINT in Netlify → Site settings → Environment variables');
+      walletError = 'Colyseus endpoint not configured. Please set VITE_COLYSEUS_ENDPOINT in Netlify Environment Variables.';
+      return;
+    } else {
+      // Local: use localhost endpoint
+      colyseusEndpoint = defaultLocalEndpoint;
+      console.log('🔵 Using default localhost endpoint for local development');
+    }
   }
+  
+  console.log('🔍 Environment check in enterLobby:', {
+    hasEnv: !!import.meta.env.VITE_COLYSEUS_ENDPOINT,
+    endpoint: colyseusEndpoint ? colyseusEndpoint.substring(0, 50) + '...' : 'not set',
+    isProduction: isProduction,
+    hostname: window.location.hostname,
+    allEnvKeys: Object.keys(import.meta.env).filter(k => k.startsWith('VITE_'))
+  });
+  
+  console.log('🔵 Colyseus endpoint:', colyseusEndpoint);
 
   const myAddress = walletState.address;
   isInLobby = true;
@@ -759,15 +819,21 @@ async function enterLobby(): Promise<void> {
   waitingForOpponentReady = false;
 
   try {
-    console.log('🔵 Connecting to Colyseus server (low latency)...');
-    // Connect to Colyseus server
-    await colyseusService.connect(colyseusEndpoint);
+    console.log('🔵 Connecting to Colyseus server...', { endpoint: colyseusEndpoint });
+    
+    // Always create new client with the correct endpoint (overrides constructor default)
+    const connected = await colyseusService.connect(colyseusEndpoint);
+    if (!connected) {
+      throw new Error(`Failed to connect to Colyseus server at ${colyseusEndpoint}`);
+    }
+    
+    console.log('✅ Connected to Colyseus server, joining room...');
     
     // Join or create room (Colyseus handles matchmaking automatically)
     const room = await colyseusService.joinOrCreateRoom(myAddress, handleOpponentInput);
     
     if (!room) {
-      throw new Error('Failed to join Colyseus room');
+      throw new Error('Failed to join Colyseus room - room is null');
     }
 
     console.log('✅ Successfully joined Colyseus room:', room.id);
@@ -780,6 +846,41 @@ async function enterLobby(): Promise<void> {
         isSearchingForMatch = false;
         waitingForOpponentReady = true;
         console.log('Both players joined! Waiting for ready...');
+        
+        // Update currentMatch with opponent info
+        if (currentMatch) {
+          const players = Array.from(room.state.players.values());
+          const opponent = players.find(p => p.sessionId !== room.sessionId);
+          if (opponent && opponent.address) {
+            currentMatch.p2 = opponent.address;
+          }
+        }
+      }
+    });
+
+    // Listen to room state changes for ready status
+    room.onStateChange((state) => {
+      if (currentMatch && state.players) {
+        const players = Array.from(state.players.values());
+        if (players.length === 2) {
+          const myPlayer = players.find(p => p.sessionId === room.sessionId);
+          const opponent = players.find(p => p.sessionId !== room.sessionId);
+          
+          if (myPlayer && opponent) {
+            // Update ready status based on player order
+            const isPlayer1 = currentMatch.p1 === myPlayer.address;
+            if (isPlayer1) {
+              currentMatch.p1Ready = myPlayer.ready;
+              currentMatch.p2Ready = opponent.ready;
+            } else {
+              currentMatch.p1Ready = opponent.ready;
+              currentMatch.p2Ready = myPlayer.ready;
+            }
+            
+            // Update local ready state
+            isReady = myPlayer.ready;
+          }
+        }
       }
     });
 
@@ -814,9 +915,22 @@ async function enterLobby(): Promise<void> {
       created_at: new Date().toISOString()
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Failed to connect to Colyseus server:', error);
-    walletError = 'Failed to connect to Colyseus server. Check if server is running and VITE_COLYSEUS_ENDPOINT is correct.';
+    console.error('Error details:', {
+      message: error?.message,
+      stack: error?.stack,
+      endpoint: colyseusEndpoint,
+      isProduction: isProduction
+    });
+    
+    // More helpful error message
+    if (isProduction) {
+      walletError = `Failed to connect to Colyseus server. Endpoint: ${colyseusEndpoint}. Check if Colyseus Cloud server is running.`;
+    } else {
+      walletError = `Failed to connect to Colyseus server. Make sure Colyseus server is running on ${colyseusEndpoint}`;
+    }
+    
     isInLobby = false;
     isSearchingForMatch = false;
   }
@@ -831,15 +945,16 @@ async function leaveLobby(): Promise<void> {
   if (colyseusService.isConnectedToRoom()) {
     await colyseusService.leaveRoom().catch(console.error);
   }
-  
-  // Also try Supabase matchmaking cleanup (for compatibility)
-  await matchmakingService.leaveLobby(walletState.address).catch(console.error);
-  
+
+  // Note: Supabase matchmaking cleanup removed - using Colyseus only
+
   isInLobby = false;
   isSearchingForMatch = false;
   currentMatch = null;
   isReady = false;
   waitingForOpponentReady = false;
+  walletError = null;
+  cleanupPvP();
 }
 
 // Subscribe to match updates to detect when both players are ready
@@ -927,19 +1042,16 @@ function subscribeToMatchUpdates(matchId: string, myAddress: string, isPlayer1: 
   (window as any)[`matchChannel_${matchId}`] = matchChannel;
 }
 
-// Set player ready
+// Set player ready (Colyseus only - no Supabase fallback)
 async function setPlayerReady(): Promise<void> {
   console.log('=== setPlayerReady() called ===');
   
-  // Use Colyseus if connected, otherwise use Supabase
-  if (colyseusService.isConnectedToRoom()) {
-    isReady = !isReady; // Toggle ready state
-    colyseusService.sendReady(isReady);
-    console.log('Player ready status (Colyseus):', isReady);
+  if (!colyseusService.isConnectedToRoom()) {
+    console.error('❌ Cannot set ready: Colyseus not connected');
+    walletError = 'Not connected to game server. Please reconnect.';
     return;
   }
 
-  // Fallback to Supabase
   if (!currentMatch) {
     console.error('Cannot set ready: no current match');
     return;
@@ -950,106 +1062,23 @@ async function setPlayerReady(): Promise<void> {
     console.error('Cannot set ready: wallet not connected');
     return;
   }
+
+  // Use Colyseus only
+  isReady = !isReady; // Toggle ready state
+  const success = colyseusService.sendReady(isReady);
   
-  const isPlayer1 = currentMatch.p1 === walletState.address;
-  console.log('Setting player ready...', { 
-    matchId: currentMatch.id, 
-    isPlayer1, 
-    address: walletState.address,
-    currentMatchState: currentMatch.state,
-    currentP1Ready: currentMatch.p1Ready,
-    currentP2Ready: currentMatch.p2Ready
-  });
-  
-  try {
-    const success = await supabaseService.setPlayerReady(currentMatch.id, walletState.address, isPlayer1);
+  if (success) {
+    console.log('✅ Player ready status sent to Colyseus:', isReady);
     
-    if (success) {
-      isReady = true;
-      console.log('✅ Player ready set successfully!', { matchId: currentMatch.id, isPlayer1 });
-      
-      // Immediately update local match state
-      if (isPlayer1) {
-        currentMatch.p1Ready = true;
-      } else {
-        currentMatch.p2Ready = true;
-      }
-      
-      // Update state to 'ready' if not both ready yet
-      if (!(currentMatch.p1Ready === true && currentMatch.p2Ready === true)) {
-        currentMatch.state = 'ready';
-      }
-      
-      // Immediately check match state to see if both are ready (with retries)
-      let retries = 0;
-      const maxRetries = 10; // Increased retries
-      const checkMatch = () => {
-        if (!currentMatch) {
-          console.log('No current match, stopping check');
-          return;
-        }
-        
-        if (retries >= maxRetries) {
-          console.warn('Max retries reached checking match ready');
-          return;
-        }
-        
-        console.log(`Checking match ready (attempt ${retries + 1}/${maxRetries})...`);
-        
-        supabaseService.checkMatchReady(currentMatch.id).then(({ match, ready }) => {
-          if (match) {
-            // Always update currentMatch with latest state
-            currentMatch = match;
-            console.log('Match state after ready check:', match);
-            
-            if (ready) {
-              console.log('🎮 Both players ready! Starting game from setPlayerReady callback');
-              waitingForOpponentReady = false;
-              
-              // CRITICAL: Unsubscribe from match_ready channel to free up Supabase connection
-              const matchChannel = (window as any)[`matchChannel_${match.id}`];
-              if (matchChannel) {
-                matchChannel.unsubscribe().catch((err: any) => {
-                  console.warn('Error unsubscribing from match channel:', err);
-                });
-                delete (window as any)[`matchChannel_${match.id}`];
-              }
-              
-              initializePvPWithMatch(match, isPlayer1);
-              // Start sync - Use Colyseus if available, otherwise Supabase
-              if (walletState.address && !colyseusService.isConnectedToRoom() && !pvpSyncService.isSyncing()) {
-                pvpSyncService.startSync(match.id, walletState.address, handleOpponentInput);
-              }
-            } else {
-              // Retry after 500ms if not ready yet (increased delay to reduce network load)
-              retries++;
-              setTimeout(checkMatch, 500);
-            }
-          } else {
-            console.warn('No match returned from checkMatchReady');
-            retries++;
-            if (retries < maxRetries) {
-              setTimeout(checkMatch, 1000); // Increased from 500ms to 1000ms to reduce network requests
-            }
-          }
-        }).catch((error) => {
-          console.error('Error checking match ready:', error);
-          retries++;
-          if (retries < maxRetries) {
-            setTimeout(checkMatch, 1000); // Increased from 500ms to 1000ms to reduce network requests
-          }
-        });
-      };
-      
-      // Start checking after 200ms (increased delay to reduce initial network load)
-      setTimeout(checkMatch, 200);
+    // Update local match state (will be synced via onStateChange)
+    const isPlayer1 = currentMatch.p1 === walletState.address;
+    if (isPlayer1) {
+      currentMatch.p1Ready = isReady;
     } else {
-      console.error('❌ Failed to set player ready - supabaseService.setPlayerReady returned false');
-      isReady = false;
+      currentMatch.p2Ready = isReady;
     }
-  } catch (error) {
-    console.error('❌ Exception in setPlayerReady:', error);
-    console.error('Error stack:', (error as Error).stack);
+  } else {
+    console.error('❌ Failed to send ready to Colyseus');
     isReady = false;
   }
   
@@ -1401,7 +1430,8 @@ function handleOpponentInput(input: any): void {
       life: 240, // 4 seconds at 60 FPS
       maxLife: 240,
       hits: 0, // Start with 0 hits
-      maxHits: 2 // Line can take 2 hits before disappearing
+      maxHits: 2, // Line can take 2 hits before disappearing
+      ownerId: opponentId // Mark as opponent's line
     });
     console.log('Received opponent drawn line', { pointCount: input.points.length });
   }
@@ -1435,6 +1465,11 @@ function handleOpponentInput(input: any): void {
       const remainingDamage = hitDamage - absorbed;
       myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
       
+      // Apply paralysis if this is a bullet hit
+      if (input.isBullet && input.paralysisDuration !== undefined) {
+        myPlayer.paralyzedUntil = Date.now() + input.paralysisDuration;
+      }
+      
       // Show damage number (EXACT same as attacker sees)
       safePushDamageNumber({
         x: myPlayer.x + (Math.random() - 0.5) * 40,
@@ -1452,8 +1487,10 @@ function handleOpponentInput(input: any): void {
         screenShake = Math.max(screenShake, 30);
       }
       
-      // Send stats update back to opponent
-      sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+      // Send stats update back to opponent (include paralyzedUntil for paralysis sync)
+      // Only send paralyzedUntil if player is actually paralyzed (paralyzedUntil > Date.now())
+      const paralyzedUntilToSend = (myPlayer.paralyzedUntil > Date.now()) ? myPlayer.paralyzedUntil : undefined;
+      sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor, paralyzedUntilToSend);
       
       // Check if I died - start death animation
       if (myPlayer.hp <= 0 && !myPlayer.isOut && !deathAnimations.has(myPlayerId)) {
@@ -1475,7 +1512,16 @@ function handleOpponentInput(input: any): void {
       opponent.armor = input.armor;
       if (input.maxHP !== undefined) opponent.maxHP = input.maxHP;
       if (input.maxArmor !== undefined) opponent.maxArmor = input.maxArmor;
-      console.log('Received opponent stats update', { hp: input.hp, armor: input.armor });
+      
+      // Sync paralysis state (paralyzedUntil)
+      if (input.paralyzedUntil !== undefined && input.paralyzedUntil > Date.now()) {
+        opponent.paralyzedUntil = input.paralyzedUntil;
+      } else if (input.paralyzedUntil !== undefined && input.paralyzedUntil <= Date.now()) {
+        // Clear paralysis if it expired
+        opponent.paralyzedUntil = 0;
+      }
+      
+      console.log('Received opponent stats update', { hp: input.hp, armor: input.armor, paralyzedUntil: input.paralyzedUntil });
       
       // Check if opponent died (HP reached 0) - start death animation
       if (opponent.hp <= 0 && oldHP > 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
@@ -1492,13 +1538,13 @@ function handleOpponentInput(input: any): void {
 }
 
 // Send stats update to opponent
-function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: number): void {
+function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: number, paralyzedUntil?: number): void {
   if (gameMode === 'PvP' && currentMatch) {
     const useColyseus = colyseusService.isConnectedToRoom();
     const isSyncing = useColyseus || pvpSyncService.isSyncing();
     
     if (isSyncing) {
-      const statsInput = {
+      const statsInput: any = {
         type: 'stats' as const,
         timestamp: Date.now(),
         hp: hp,
@@ -1506,6 +1552,11 @@ function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: num
         maxHP: maxHP,
         maxArmor: maxArmor
       };
+      
+      // Include paralyzedUntil if provided (for paralysis sync)
+      if (paralyzedUntil !== undefined) {
+        statsInput.paralyzedUntil = paralyzedUntil;
+      }
       
       if (useColyseus) {
         colyseusService.sendInput(statsInput);
@@ -1885,6 +1936,21 @@ function render() {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
+  // Speed display at top (PvP/Training mode only) - render before shake so it's always visible
+  if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    // Calculate current speed
+    const speedSquared = myPlayer.vx * myPlayer.vx + myPlayer.vy * myPlayer.vy;
+    const currentSpeed = Math.sqrt(speedSquared);
+    
+    // Speed text (centered, no frame)
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText(`SPEED: ${currentSpeed.toFixed(2)}`, canvas.width / 2, 18);
+    ctx.textAlign = 'left'; // Reset alignment
+  }
+  
   // Apply screen shake
   let shakeX = 0;
   let shakeY = 0;
@@ -1912,29 +1978,31 @@ function render() {
     ctx.textAlign = 'left';
     ctx.fillText(`DOT: ${dotCurrency}`, 20, 40);
 
-  // DOT stats with frame
-  const statsX = 20;
-  const statsY = 70;
-  const statsWidth = 200;
-  const statsHeight = 50;
-  
-  // Frame background
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(statsX, statsY, statsWidth, statsHeight);
-  
-  // Frame border
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(statsX, statsY, statsWidth, statsHeight);
-  
-  // HP and Armor text
-  ctx.fillStyle = '#000000';
-  ctx.font = 'bold 12px "Press Start 2P"';
-  ctx.fillText(`HP: ${dotHP}/${dotMaxHP}`, statsX + 10, statsY + 20);
-  
-  // Armor text
-  ctx.fillStyle = '#000000';
-  ctx.fillText(`ARMOR: ${dotArmor}/${dotMaxArmor}`, statsX + 10, statsY + 40);
+  // DOT stats with frame - Solo mode only
+  if (gameMode === 'Solo') {
+    const statsX = 20;
+    const statsY = 70;
+    const statsWidth = 200;
+    const statsHeight = 50;
+    
+    // Frame background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(statsX, statsY, statsWidth, statsHeight);
+    
+    // Frame border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(statsX, statsY, statsWidth, statsHeight);
+    
+    // HP and Armor text
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`HP: ${dotHP}/${dotMaxHP}`, statsX + 10, statsY + 20);
+    
+    // Armor text
+    ctx.fillStyle = '#000000';
+    ctx.fillText(`ARMOR: ${dotArmor}/${dotMaxArmor}`, statsX + 10, statsY + 40);
+  }
 
   // Upgrade buttons - Solo mode only
   if (gameMode === 'Solo') {
@@ -3238,6 +3306,14 @@ function render() {
     ctx.fillRect(particle.x, particle.y, s, s);
   }
   
+  // Projectile smoke particles (black smoke trail)
+  for (const particle of projectileSmokeParticles) {
+    const alpha = particle.life / particle.maxLife;
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.8})`; // Black with fade out
+    const s = particle.size ?? 4;
+    ctx.fillRect(particle.x, particle.y, s, s);
+  }
+  
   // Arrow render - flying or following mouse
   // Only render if arrow is ready or flying (always show when flying for smooth animation)
   if ((arrowReady && !arrowFired && gameState === 'Alive') || (katanaFlying && gameState === 'Alive')) {
@@ -4068,13 +4144,13 @@ function render() {
         }
       }
       
-      // Draw player HP and Armor stats (same format as Solo)
+      // Draw player HP and Armor stats - positioned right after DOT balance (top left)
       if (myPlayerId && playerId === myPlayerId) {
-        // My player stats - draw in UI panel
+        // My player stats - draw in UI panel right after DOT balance
         const statsX = 20;
-        const statsY = 420; // Below game mode button
+        const statsY = 65; // Moved 5px down from 60 to 65
         const statsWidth = 200;
-        const statsHeight = 70; // Increased height to fit cooldown timer
+        const statsHeight = 60; // Increased height from 50 to 60 for better visibility
         
         // Frame background
         ctx.fillStyle = '#ffffff';
@@ -4085,34 +4161,246 @@ function render() {
         ctx.lineWidth = 2;
         ctx.strokeRect(statsX, statsY, statsWidth, statsHeight);
         
-        // Label: "YOUR STATS" or "YOU XXXX STATS"
-        const walletState = walletService.getState();
-        let statsLabel = 'YOUR STATS';
-        if (walletState.address) {
-          const addressSuffix = walletState.address.length >= 4 ? walletState.address.slice(-4).toUpperCase() : '';
-          statsLabel = `YOU ${addressSuffix} STATS`;
+        // HP and Armor text (same format as Solo, no label to save space)
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 12px "Press Start 2P"';
+        ctx.textAlign = 'left';
+        ctx.fillText(`HP: ${player.hp}/${player.maxHP}`, statsX + 10, statsY + 20);
+        ctx.fillText(`ARMOR: ${player.armor}/${player.maxArmor}`, statsX + 10, statsY + 40);
+      }
+      
+      // Weapon info panels - PvP mode only (shows weapon status and cooldowns)
+      if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && playerId === myPlayerId) {
+        const weaponPanelX = 20;
+        const weaponPanelWidth = 200;
+        const weaponPanelHeight = 50;
+        
+        // Arrow weapon panel
+        {
+          const weaponPanelY = 160;
+          const currentTime = Date.now();
+          const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
+          const remainingCooldown = Math.max(0, pvpArrowCooldown - timeSinceLastShot);
+          const isOnCooldown = remainingCooldown > 0;
+          const isFlying = pvpKatanaFlying;
+          
+          // Frame background
+          ctx.fillStyle = isFlying ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if flying, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('ARROW', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 1', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isFlying) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+          
+          // Cooldown bar
+          if (isOnCooldown) {
+            const cooldownProgress = remainingCooldown / pvpArrowCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          }
         }
         
-        // HP and Armor text
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 10px "Press Start 2P"';
-        ctx.textAlign = 'left';
-        ctx.fillText(statsLabel, statsX + 10, statsY + 15);
-        ctx.font = 'bold 12px "Press Start 2P"';
-        ctx.fillText(`HP: ${player.hp}/${player.maxHP}`, statsX + 10, statsY + 30);
-        ctx.fillText(`ARMOR: ${player.armor}/${player.maxArmor}`, statsX + 10, statsY + 50);
+        // Projectile weapon panel
+        {
+          const weaponPanelY = 220;
+          const isFlying = projectileFlying;
+          const isCharging = projectileCharging;
+          const currentTime = Date.now();
+          const timeSinceLastShot = currentTime - projectileLastShotTime;
+          const remainingCooldown = Math.max(0, projectileCooldown - timeSinceLastShot);
+          const isOnCooldown = remainingCooldown > 0;
+          
+          // Frame background
+          ctx.fillStyle = isFlying ? '#ffff00' : (isCharging ? '#ffcc00' : (isOnCooldown ? '#ffcccc' : '#ccffcc')); // Yellow if flying, orange if charging, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('PROJECTILE', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 2', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isFlying) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isCharging) {
+            const chargeTime = Date.now() - projectileChargeStartTime;
+            const chargeProgress = Math.min(1, chargeTime / projectileMaxCharge);
+            ctx.fillStyle = '#ff8800';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CHARGING ${Math.round(chargeProgress * 100)}%`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+            
+            // Charge bar
+            const barWidth = (weaponPanelWidth - 20) * chargeProgress;
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+            
+            // Cooldown bar
+            const cooldownProgress = remainingCooldown / projectileCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+        }
         
-        // Arrow cooldown timer
-        const currentTime = Date.now();
-        const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
-        const remainingTime = Math.max(0, Math.ceil((pvpArrowCooldown - timeSinceLastShot) / 1000));
+        // Bullet weapon panel
+        {
+          const weaponPanelY = 280;
+          const currentTime = Date.now();
+          const timeSinceLastShot = currentTime - bulletLastShotTime;
+          const remainingCooldown = Math.max(0, bulletCooldown - timeSinceLastShot);
+          const isOnCooldown = remainingCooldown > 0;
+          const isFlying = bulletFlying;
+          
+          // Frame background
+          ctx.fillStyle = isFlying ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if flying, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('BULLET', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 3', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isFlying) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+          
+          // Cooldown bar
+          if (isOnCooldown) {
+            const cooldownProgress = remainingCooldown / bulletCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          }
+        }
         
-        if (remainingTime > 0) {
-          ctx.fillStyle = '#ff0000'; // Red when on cooldown
-          ctx.fillText(`ARROW: ${remainingTime}s`, statsX + 10, statsY + 60);
-        } else {
-          ctx.fillStyle = '#00ff00'; // Green when ready
-          ctx.fillText(`ARROW: READY`, statsX + 10, statsY + 60);
+        // Drawing/Line skill panel
+        {
+          const weaponPanelY = 340;
+          const currentTime = Date.now();
+          const timeSinceLastDraw = currentTime - lastDrawEndTime;
+          const remainingCooldown = Math.max(0, drawCooldown - timeSinceLastDraw);
+          const isOnCooldown = remainingCooldown > 0;
+          const isActive = isDrawing;
+          
+          // Frame background
+          ctx.fillStyle = isActive ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if drawing, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Skill name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('DRAW LINE', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('RMB', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isActive) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('DRAWING...', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+            
+            // Cooldown bar
+            const cooldownProgress = remainingCooldown / drawCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
         }
       }
       
@@ -4238,7 +4526,7 @@ function render() {
       }
     }
     
-    // PvP mode: Draw flying bullet (my bullet) - thin elongated shape with pointed tip, gray color
+    // PvP mode: Draw flying bullet (my bullet) - doubled size for heavier look
     if (bulletFlying) {
       ctx.save();
       ctx.translate(bulletX, bulletY);
@@ -4247,13 +4535,13 @@ function render() {
       const bulletAngle = Math.atan2(bulletVy, bulletVx);
       ctx.rotate(bulletAngle);
       
-      // Bullet dimensions - thin and elongated
-      const bulletLength = 12; // Length of bullet
-      const bulletWidth = 2; // Width of bullet (thin)
-      const tipLength = 4; // Pointed tip length
+      // Bullet dimensions - doubled size for heavier look, maintaining form
+      const bulletLength = 24; // Length of bullet (doubled from 12)
+      const bulletWidth = 4; // Width of bullet (doubled from 2)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
       
-      // Draw bullet body (gray cylinder)
-      ctx.fillStyle = '#888888'; // Gray color
+      // Draw bullet body (gray cylinder) - heavier look
+      ctx.fillStyle = '#666666'; // Darker gray for heavier look
       ctx.beginPath();
       ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
       
@@ -4266,12 +4554,13 @@ function render() {
       ctx.closePath();
       ctx.fill();
       
-      // Draw darker outline
-      ctx.strokeStyle = '#666666';
-      ctx.lineWidth = 0.5;
+      // Draw darker outline - thicker for heavier look
+      ctx.strokeStyle = '#444444'; // Darker outline
+      ctx.lineWidth = 1.5; // Thicker outline (doubled from 0.5)
       ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
       // Green outline for tip
       ctx.strokeStyle = '#00aa00'; // Darker green for tip outline
+      ctx.lineWidth = 1.5; // Thicker outline
       ctx.beginPath();
       ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
       ctx.lineTo(bulletLength / 2, 0);
@@ -4282,7 +4571,7 @@ function render() {
       ctx.restore();
     }
     
-    // PvP mode: Draw opponent bullet - thin elongated shape with pointed tip, gray color
+    // PvP mode: Draw opponent bullet - doubled size for heavier look
     if (opponentBulletFlying && gameMode === 'PvP') {
       ctx.save();
       ctx.translate(opponentBulletX, opponentBulletY);
@@ -4291,13 +4580,13 @@ function render() {
       const bulletAngle = Math.atan2(opponentBulletVy, opponentBulletVx);
       ctx.rotate(bulletAngle);
       
-      // Bullet dimensions - thin and elongated
-      const bulletLength = 12; // Length of bullet
-      const bulletWidth = 2; // Width of bullet (thin)
-      const tipLength = 4; // Pointed tip length
+      // Bullet dimensions - doubled size for heavier look, maintaining form
+      const bulletLength = 24; // Length of bullet (doubled from 12)
+      const bulletWidth = 4; // Width of bullet (doubled from 2)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
       
-      // Draw bullet body (gray cylinder)
-      ctx.fillStyle = '#888888'; // Gray color
+      // Draw bullet body (gray cylinder) - heavier look
+      ctx.fillStyle = '#666666'; // Darker gray for heavier look
       ctx.beginPath();
       ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
       
@@ -4310,12 +4599,13 @@ function render() {
       ctx.closePath();
       ctx.fill();
       
-      // Draw darker outline
-      ctx.strokeStyle = '#666666';
-      ctx.lineWidth = 0.5;
+      // Draw darker outline - thicker for heavier look
+      ctx.strokeStyle = '#444444'; // Darker outline
+      ctx.lineWidth = 1.5; // Thicker outline (doubled from 0.5)
       ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
       // Green outline for tip
       ctx.strokeStyle = '#00aa00'; // Darker green for tip outline
+      ctx.lineWidth = 1.5; // Thicker outline
       ctx.beginPath();
       ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
       ctx.lineTo(bulletLength / 2, 0);
@@ -4336,9 +4626,9 @@ function render() {
       ctx.rotate(angle);
       
       // Draw cannonball shape: short cylinder with pointed tip
-      const length = 12; // Short projectile (was radius 8, now length 12)
-      const width = 6; // Width of projectile
-      const tipLength = 4; // Pointed tip length
+      const length = 24; // Short projectile (doubled from 12)
+      const width = 12; // Width of projectile (doubled from 6)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
       
       ctx.fillStyle = '#8B4513'; // Brown cannonball color
       ctx.beginPath();
@@ -4356,7 +4646,7 @@ function render() {
       
       // Dark outline
       ctx.strokeStyle = '#654321';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 3; // Thicker outline (doubled from 1.5)
       ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
       ctx.beginPath();
       ctx.moveTo(length / 2 - tipLength, -width / 2);
@@ -4378,9 +4668,9 @@ function render() {
       ctx.rotate(angle);
       
       // Draw cannonball shape: short cylinder with pointed tip
-      const length = 12; // Short projectile
-      const width = 6; // Width of projectile
-      const tipLength = 4; // Pointed tip length
+      const length = 24; // Short projectile (doubled from 12)
+      const width = 12; // Width of projectile (doubled from 6)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
       
       ctx.fillStyle = '#CD853F'; // Lighter brown for opponent (different color to distinguish)
       ctx.beginPath();
@@ -4398,7 +4688,7 @@ function render() {
       
       // Dark outline
       ctx.strokeStyle = '#8B4513';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 3; // Thicker outline (doubled from 1.5)
       ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
       ctx.beginPath();
       ctx.moveTo(length / 2 - tipLength, -width / 2);
@@ -5347,7 +5637,8 @@ if (!(window as any).__mouseupListenerAdded) {
           life: 240, // 4 seconds at 60 FPS
           maxLife: 240,
           hits: 0, // Start with 0 hits
-          maxHits: 2 // Line can take 2 hits before disappearing
+          maxHits: 2, // Line can take 2 hits before disappearing
+          ownerId: undefined // My line (undefined = my line)
         };
         drawnLines.push(newLine);
         
@@ -5444,7 +5735,12 @@ if (!(window as any).__keydownListenerAdded) {
   }
   
   // PvP/Training mode: Start charging projectile (key "2")
-  if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && !projectileCharging) {
+  // Check projectile cooldown
+  const currentTime = Date.now();
+  const timeSinceLastProjectileShot = currentTime - projectileLastShotTime;
+  const canUseProjectile = timeSinceLastProjectileShot >= projectileCooldown;
+  
+  if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && !projectileCharging && canUseProjectile) {
     const myPlayer = pvpPlayers[myPlayerId];
     
     // Block input if player is dead
@@ -5564,6 +5860,14 @@ if (!(window as any).__keyupListenerAdded) {
       const dirX = dx / distance;
       const dirY = dy / distance;
       
+      // If fully charged (100%), give player +1 speed bonus in opposite direction (backward boost)
+      if (chargeRatio >= 1.0) {
+        const boostSpeed = 1; // +1 speed bonus
+        myPlayer.vx -= dirX * boostSpeed; // Boost backward (opposite to shot direction)
+        myPlayer.vy -= dirY * boostSpeed; // Boost backward (opposite to shot direction)
+        console.log('Full charge! +1 speed bonus applied');
+      }
+      
       // Apply recoil: push player in opposite direction with 3 speed
       const recoilSpeed = 3;
       myPlayer.vx -= dirX * recoilSpeed; // Opposite direction
@@ -5589,6 +5893,10 @@ if (!(window as any).__keyupListenerAdded) {
       screenShake = Math.max(screenShake, 8);
       
       projectileFlying = true;
+      
+      // Start cooldown immediately when projectile is fired (3 seconds)
+      projectileLastShotTime = Date.now();
+      
       // Spawn projectile slightly away from player to avoid immediate self-collision
       const spawnOffset = 15; // Spawn 15px away from player center
       projectileX = myPlayer.x + dirX * spawnOffset; // Spawn in direction of shot
@@ -5729,11 +6037,11 @@ if (!(window as any).__clickListenerAdded) {
         } else if (Date.now() > nextHitForceCritExpiresAt) {
           nextHitForceCrit = false;
         }
-        // Randomize base damage in [floor(0.5*dmg), dmg]
-        const minD = Math.max(1, Math.floor(dmg * 0.5));
-        const baseDamage = Math.floor(Math.random() * (dmg - minD + 1)) + minD;
-        // Apply katana multiplier to base damage, then crit multiplier
-        let totalDamage = isCritHit ? (baseDamage * katanaDamageMultiplier) * 2 : baseDamage * katanaDamageMultiplier;
+        // Calculate base damage with katana multiplier and crit
+        const baseDamage = dmg * katanaDamageMultiplier;
+        const damageWithCrit = isCritHit ? baseDamage * 2 : baseDamage;
+        // Apply 50% variance (damage ranges from 50% to 100%)
+        let totalDamage = applyDamageVariance(damageWithCrit);
         
         // Move DOT opposite to click direction - crit hits give more force
         const clickAngle = Math.atan2(dy, dx);
@@ -6327,9 +6635,11 @@ function gameLoop() {
         
         // Check for crit hit
         const isCritHit = Math.random() < critChance / 100;
-        // Damage: 50% of basic damage (rounded down), 2x crit (using MY stats)
-        const baseBulletDamage = Math.floor(dmg * 0.5); // 50% rounded down
-        const bulletDamage = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
+        // Damage: 50% of basic damage, 2x crit (using MY stats)
+        const baseBulletDamage = dmg * 0.5; // 50% of base damage
+        const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
+        // Apply 50% variance (damage ranges from 50% to 100%)
+        const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
         
         // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
         // Opponent will apply damage when they receive the hit event
@@ -6341,7 +6651,9 @@ function gameLoop() {
             timestamp: Date.now(),
             damage: bulletDamage,
             isCrit: isCritHit,
-            targetPlayerId: opponentId // Tell opponent this hit is for them
+            targetPlayerId: opponentId, // Tell opponent this hit is for them
+            isBullet: true, // Indicate this is a bullet hit (for paralysis)
+            paralysisDuration: 2000 // 2 seconds paralysis
           };
           
           if (useColyseus) {
@@ -6353,6 +6665,9 @@ function gameLoop() {
         
         // DON'T apply damage locally - opponent will apply it when they receive hit event
         // This ensures both players see/feel the EXACT same damage
+        
+        // DON'T apply paralysis locally - opponent will apply it when they receive hit event
+        // This ensures both players have the same paralysis timing
         
         // Screen shake for crit hits (we feel it when we hit)
         if (isCritHit) {
@@ -6372,9 +6687,6 @@ function gameLoop() {
         });
         
         // No push effect - bullet doesn't move target (like arrow/projectile)
-        
-        // Apply paralysis (2 seconds) - we apply this locally for immediate effect
-        opponent.paralyzedUntil = Date.now() + 2000;
         
         console.log(`Bullet hit opponent! Damage: ${bulletDamage}, Crit: ${isCritHit}, Paralyzed for 2s`);
       }
@@ -7137,7 +7449,9 @@ function gameLoop() {
         // Check for crit hit
         const isCritHit = Math.random() < critChance / 100;
         // Damage: 2x normal, 3x crit (using MY stats)
-        const arrowDamage = isCritHit ? dmg * 3 : dmg * 2;
+        const baseArrowDamage = isCritHit ? dmg * 3 : dmg * 2;
+        // Apply 50% variance (damage ranges from 50% to 100%)
+        const arrowDamage = applyDamageVariance(baseArrowDamage);
         
         // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
         // Opponent will apply damage when they receive the hit event
@@ -7351,6 +7665,20 @@ function gameLoop() {
         opponentProjectileY += opponentProjectileVy;
         opponentProjectileVy += projectileGravity; // Apply gravity
         
+        // Create smoke trail (black smoke particles) - only when falling (positive vy)
+        if (opponentProjectileVy > 0) {
+          // Add smoke particle from projectile center
+          safePushProjectileSmokeParticle({
+            x: opponentProjectileX + (Math.random() - 0.5) * 4,
+            y: opponentProjectileY + (Math.random() - 0.5) * 4,
+            vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
+            vy: -0.3 - Math.random() * 0.2, // Rises slowly
+            life: 30 + Math.random() * 20, // 30-50 frames
+            maxLife: 30 + Math.random() * 20,
+            size: 4 + Math.random() * 3 // 4-7 pixels
+          });
+        }
+        
         // Opponent projectile collision with players (damage + movement like arrow) - OPTIMIZED: Use squared distance
         // Opponent projectile should only hit me (myPlayerId), not opponent themselves
         if (myPlayerId && pvpPlayers[myPlayerId]) {
@@ -7365,52 +7693,9 @@ function gameLoop() {
           if (distanceSquared <= collisionRadiusSquared) {
             const distance = Math.sqrt(distanceSquared);
             
-            // Check for crit hit (opponent's crit chance)
-            // NOTE: We use global critChance as opponent's crit chance (same for all players)
-            const isCritHit = Math.random() < critChance / 100;
-            // Damage: 2x normal, 3x crit (opponent's damage)
-            const projectileDamage = isCritHit ? dmg * 3 : dmg * 2;
-            
-            // Screen shake for crit hits
-            if (isCritHit) {
-              screenShake = Math.max(screenShake, 30);
-            }
-            
-            // Apply damage (armor first, then HP)
-            const absorbed = Math.min(projectileDamage, player.armor);
-            player.armor -= absorbed;
-            const remainingDamage = projectileDamage - absorbed;
-            player.hp = Math.max(0, player.hp - remainingDamage);
-            
-            // Send stats update to opponent
-            sendStatsUpdate(player.hp, player.armor, player.maxHP, player.maxArmor);
-            
-            // Show damage number
-            safePushDamageNumber({
-              x: player.x + (Math.random() - 0.5) * 40,
-              y: player.y - 20,
-              value: projectileDamage,
-              life: 60,
-              maxLife: 60,
-              vx: (Math.random() - 0.5) * 2,
-              vy: -2 - Math.random() * 2,
-              isCrit: isCritHit
-            });
-            
-            // Create particle effect
-            for (let i = 0; i < 10; i++) {
-              const angle = (Math.PI * 2 * i) / 10;
-              const speed = 2 + Math.random() * 3;
-              safePushClickParticle({
-                x: player.x,
-                y: player.y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                life: 30,
-                maxLife: 30,
-                size: 3 + Math.random() * 2
-              });
-            }
+            // DON'T calculate damage locally - opponent will send hit event with their calculated damage
+            // This prevents using wrong stats (our stats instead of opponent's stats)
+            // Opponent will send hit event when their projectile hits us
             
             // Push player away with 2 speed in the opposite direction of projectile (projectile hits and pushes back)
             const pushSpeed = 2;
@@ -7423,12 +7708,7 @@ function gameLoop() {
               player.vy += -pushDy * pushSpeed; // Negative to push away from projectile
             }
             
-            // Check if player is dead
-            if (player.hp <= 0) {
-              player.isOut = true;
-            }
-            
-            // Remove projectile after hit
+            // Remove projectile after hit - damage will be applied when we receive hit event
             opponentProjectileFlying = false;
             opponentProjectileX = 0;
             opponentProjectileY = 0;
@@ -7436,7 +7716,7 @@ function gameLoop() {
             opponentProjectileVy = 0;
             opponentProjectileBounceCount = 0;
             
-            console.log(`Opponent projectile hit me! Damage: ${projectileDamage}, HP: ${player.hp}/${player.maxHP}`);
+            console.log('Opponent projectile hit me - waiting for hit event from opponent');
           }
         }
         
@@ -7481,6 +7761,20 @@ function gameLoop() {
         projectileY += projectileVy;
         projectileVy += projectileGravity; // Apply gravity
         
+        // Create smoke trail (black smoke particles) - only when falling (positive vy)
+        if (projectileVy > 0) {
+          // Add smoke particle from projectile center
+          safePushProjectileSmokeParticle({
+            x: projectileX + (Math.random() - 0.5) * 4,
+            y: projectileY + (Math.random() - 0.5) * 4,
+            vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
+            vy: -0.3 - Math.random() * 0.2, // Rises slowly
+            life: 30 + Math.random() * 20, // 30-50 frames
+            maxLife: 30 + Math.random() * 20,
+            size: 4 + Math.random() * 3 // 4-7 pixels
+          });
+        }
+        
         // Projectile collision with players (damage + movement like arrow) - OPTIMIZED: Use squared distance
         for (const playerId in pvpPlayers) {
           const player = pvpPlayers[playerId];
@@ -7491,34 +7785,49 @@ function gameLoop() {
           const collisionRadiusSquared = collisionRadius * collisionRadius;
           
           // Check if projectile hits player (damage + push) - only hit opponent, not self
-          if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId) {
+          if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
             const distance = Math.sqrt(distanceSquared);
+            const opponent = player;
             
             // Check for crit hit
             const isCritHit = Math.random() < critChance / 100;
-            // Damage: 2x normal, 3x crit
-            const projectileDamage = isCritHit ? dmg * 3 : dmg * 2;
+            // Damage: 2x normal, 3x crit (using MY stats)
+            const baseProjectileDamage = isCritHit ? dmg * 3 : dmg * 2;
+            // Apply 50% variance (damage ranges from 50% to 100%)
+            const projectileDamage = applyDamageVariance(baseProjectileDamage);
             
-            // Screen shake for crit hits
+            // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
+            // Opponent will apply damage when they receive the hit event
+            const useColyseus = colyseusService.isConnectedToRoom();
+            const isSyncing = useColyseus || pvpSyncService.isSyncing();
+            if (currentMatch && isSyncing && opponentId) {
+              const hitInput = {
+                type: 'hit' as const,
+                timestamp: Date.now(),
+                damage: projectileDamage,
+                isCrit: isCritHit,
+                targetPlayerId: opponentId // Tell opponent this hit is for them
+              };
+              
+              if (useColyseus) {
+                colyseusService.sendInput(hitInput);
+              } else {
+                pvpSyncService.sendInput(hitInput);
+              }
+            }
+            
+            // DON'T apply damage locally - opponent will apply it when they receive hit event
+            // This ensures both players see/feel the EXACT same damage
+            
+            // Screen shake for crit hits (we feel it when we hit)
             if (isCritHit) {
               screenShake = Math.max(screenShake, 30);
             }
             
-            // Apply damage (armor first, then HP)
-            // NOTE: We calculate damage locally, but opponent will calculate it themselves
-            // and send their own stats update. We don't send opponent's stats here.
-            const absorbed = Math.min(projectileDamage, player.armor);
-            player.armor -= absorbed;
-            const remainingDamage = projectileDamage - absorbed;
-            player.hp = Math.max(0, player.hp - remainingDamage);
-            
-            // DO NOT send stats update here - opponent will calculate damage locally
-            // and send their own stats update when they receive the projectile hit event
-            
-            // Show damage number
+            // Show damage number (we see it when we hit)
             safePushDamageNumber({
-              x: player.x + (Math.random() - 0.5) * 40,
-              y: player.y - 20,
+              x: opponent.x + (Math.random() - 0.5) * 40,
+              y: opponent.y - 20,
               value: projectileDamage,
               life: 60,
               maxLife: 60,
@@ -7532,8 +7841,8 @@ function gameLoop() {
               const angle = (Math.PI * 2 * i) / 10;
               const speed = 2 + Math.random() * 3;
               safePushClickParticle({
-                x: player.x,
-                y: player.y,
+                x: opponent.x,
+                y: opponent.y,
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed,
                 life: 30,
@@ -7549,13 +7858,8 @@ function gameLoop() {
               const pushDx = dx / distance;
               const pushDy = dy / distance;
               // Apply push force in OPPOSITE direction (projectile pushes player away)
-              player.vx += -pushDx * pushSpeed; // Negative to push away from projectile
-              player.vy += -pushDy * pushSpeed; // Negative to push away from projectile
-            }
-            
-            // Check if player is dead
-            if (player.hp <= 0) {
-              player.isOut = true;
+              opponent.vx += -pushDx * pushSpeed; // Negative to push away from projectile
+              opponent.vy += -pushDy * pushSpeed; // Negative to push away from projectile
             }
             
             // Remove projectile after hit
@@ -7566,7 +7870,8 @@ function gameLoop() {
             projectileVy = 0;
             projectileBounceCount = 0;
             
-            console.log(`Projectile hit opponent! Damage: ${projectileDamage}, HP: ${player.hp}/${player.maxHP}`);
+            // Cooldown already started when projectile was fired, no need to set again
+            console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
             break; // Only hit one player
           }
         }
@@ -7594,6 +7899,18 @@ function gameLoop() {
         for (let i = drawnLines.length - 1; i >= 0; i--) {
           const line = drawnLines[i];
           if (line.points.length < 2) continue; // Skip degenerate lines
+          
+          // Only collide with lines that belong to the current player (my lines affect me, opponent's lines affect opponent)
+          // If line.ownerId is undefined, it's my line - only affect me
+          // If line.ownerId is opponentId, it's opponent's line - only affect opponent
+          const isMyLine = line.ownerId === undefined;
+          const isOpponentLine = line.ownerId === opponentId;
+          
+          // Only check collision if this line belongs to the current player being checked
+          // My lines only affect me, opponent's lines only affect opponent
+          if ((isMyLine && playerId !== myPlayerId) || (isOpponentLine && playerId !== opponentId)) {
+            continue; // Skip - this line doesn't belong to the current player
+          }
           
           let collisionFound = false;
           
@@ -8016,15 +8333,34 @@ function gameLoop() {
           }
           
           // Deal damage when players collide - the one with higher speed wins
-          // Damage is dealt regardless of relative speed direction (as long as collision happened)
-          if (speed1 > speed2) {
+          // Damage is dealt ONLY ONCE per collision, then requires cooldown and separation
+          
+          // Create collision key (sorted alphabetically for consistency)
+          const collisionKey = [myPlayerId!, opponentId!].sort().join('_');
+          const lastDamageTime = lastCollisionDamageTime[collisionKey] || 0;
+          const timeSinceLastDamage = Date.now() - lastDamageTime;
+          
+          // Check if players are separated enough to reset cooldown
+          const separationDistance = distance - minDistance; // How far apart they are beyond collision
+          const canDealDamage = timeSinceLastDamage >= COLLISION_DAMAGE_COOLDOWN || 
+                                separationDistance >= COLLISION_DAMAGE_MIN_DISTANCE;
+          
+          // Damage is only dealt if speed >= 5
+          const MIN_SPEED_FOR_DAMAGE = 5;
+          
+          if (speed1 > speed2 && canDealDamage && speed1 >= MIN_SPEED_FOR_DAMAGE) {
             // Player 1 has higher speed - deals damage to player 2
             // Use base dmg from Solo stat (not 2x, just base dmg)
-            const damage = dmg; // Base damage from Solo dmg stat
+            const baseDamage = dmg; // Base damage from Solo dmg stat
+            // Apply 50% variance (damage ranges from 50% to 100%)
+            const damage = applyDamageVariance(baseDamage);
             const absorbed = Math.min(damage, player2.armor);
             player2.armor -= absorbed;
             const remainingDamage = damage - absorbed;
             player2.hp = Math.max(0, player2.hp - remainingDamage);
+            
+            // Record damage time
+            lastCollisionDamageTime[collisionKey] = Date.now();
             
             // Show damage number
             safePushDamageNumber({
@@ -8056,14 +8392,19 @@ function gameLoop() {
               // Start death animation
               createDeathAnimation(opponentId!, player2.x, player2.y, playerColor, player2.radius);
             }
-          } else if (speed2 > speed1) {
+          } else if (speed2 > speed1 && canDealDamage && speed2 >= MIN_SPEED_FOR_DAMAGE) {
             // Player 2 has higher speed - deals damage to player 1
             // Use base dmg from Solo stat (not 2x, just base dmg)
-            const damage = dmg; // Base damage from Solo dmg stat
+            const baseDamage = dmg; // Base damage from Solo dmg stat
+            // Apply 50% variance (damage ranges from 50% to 100%)
+            const damage = applyDamageVariance(baseDamage);
             const absorbed = Math.min(damage, player1.armor);
             player1.armor -= absorbed;
             const remainingDamage = damage - absorbed;
             player1.hp = Math.max(0, player1.hp - remainingDamage);
+            
+            // Record damage time
+            lastCollisionDamageTime[collisionKey] = Date.now();
             
             // Show damage number
             safePushDamageNumber({
@@ -8238,10 +8579,11 @@ function gameLoop() {
           nextHitForceCrit = false;
         }
         
-        // Randomize base damage
-        const minD = Math.max(1, Math.floor(dmg * 0.5));
-        const baseDamage = Math.floor(Math.random() * (dmg - minD + 1)) + minD;
-        let totalDamage = isCritHit ? (baseDamage * arrowDamageMultiplier) * 2 : baseDamage * arrowDamageMultiplier;
+        // Calculate base damage with arrow multiplier and crit
+        const baseDamage = dmg * arrowDamageMultiplier;
+        const damageWithCrit = isCritHit ? baseDamage * 2 : baseDamage;
+        // Apply 50% variance (damage ranges from 50% to 100%)
+        let totalDamage = applyDamageVariance(damageWithCrit);
         
         // Apply damage
         const absorbed = Math.min(totalDamage, dotArmor);
@@ -8379,6 +8721,18 @@ function gameLoop() {
     
     if (particle.life <= 0) {
       clickParticles.splice(i, 1);
+    }
+  }
+  
+  // Update projectile smoke particles
+  for (let i = projectileSmokeParticles.length - 1; i >= 0; i--) {
+    const particle = projectileSmokeParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    
+    if (particle.life <= 0) {
+      projectileSmokeParticles.splice(i, 1);
     }
   }
   

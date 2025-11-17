@@ -45,3 +45,4 @@
 
 **Status:** ✅ Build sėkmingas! Reikia tik patikrinti environment variables.
 
+

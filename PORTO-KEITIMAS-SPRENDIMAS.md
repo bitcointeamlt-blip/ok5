@@ -93,3 +93,4 @@ Jei portas 2567 užimtas, serveris negali start'inti ir crash'ina.
 **Bet jei vis tiek neveikia - šis sprendimas padės!**
 
 
+

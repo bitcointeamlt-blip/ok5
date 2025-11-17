@@ -34,6 +34,6 @@ export class Player extends Schema {
 export class GameState extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
   @type("boolean") gameStarted: boolean = false;
-  @type("number") seed: number = Math.floor(Math.random() * 1000000);
+  @type("number") seed: number = 0;
 }
 

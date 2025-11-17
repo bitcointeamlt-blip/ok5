@@ -35,3 +35,4 @@
 - ✅ Netlify automatiškai deploy'ins (2-3 min)
 
 
+

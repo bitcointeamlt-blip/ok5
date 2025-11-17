@@ -192,3 +192,4 @@ git push -u origin main
 Pasirinkite vieną būdą ir sekite instrukcijas. Rekomenduoju **GitHub Desktop** - tai lengviausias būdas!
 
 
+
