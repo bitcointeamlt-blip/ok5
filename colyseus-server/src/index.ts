@@ -9,10 +9,17 @@ const app = express();
 const server = createServer(app);
 
 // CORS - allow all origins for Colyseus Cloud
+// CRITICAL: Must be configured BEFORE Colyseus server initialization
 app.use(cors({
-  origin: true,
-  credentials: true
+  origin: true, // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Type']
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
 
 app.use(express.json());
 

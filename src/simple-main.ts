@@ -8,6 +8,7 @@ import { matchmakingService } from './services/MatchmakingService';
 import { pvpSyncService } from './services/PvPSyncService';
 import { colyseusService } from './services/ColyseusService';
 import type { Match } from './services/SupabaseService';
+import { ProfileManager } from './profile/ProfileManager';
 
 console.log('Starting simple game...');
 
@@ -65,6 +66,9 @@ try {
 } catch (error) {
   console.error('Error initializing wallet service:', error);
 }
+
+// Profile Manager
+const profileManager = new ProfileManager();
 
 // Game state
 let dotCurrency = 1000;
@@ -510,6 +514,11 @@ let isPressingWallet = false;
 let walletConnecting = false;
 let walletError: string | null = null;
 
+// Profile UI state
+let isProfileOpen = false;
+let isHoveringProfile = false;
+let isPressingProfile = false;
+
 // Lobby state
 let isInLobby = false;
 let isSearchingForMatch = false;
@@ -526,6 +535,14 @@ let isPressingCancel = false;
 let matchResult: 'victory' | 'defeat' | null = null;
 let matchResultEloChange = 0;
 let showingMatchResult = false;
+let opponentNicknameForResult: string | null = null; // Opponent nickname for result screen
+let opponentAddressForResult: string | null = null; // Opponent address for result screen (saved when match ends)
+let savedCurrentMatch: Match | null = null; // Saved copy of currentMatch for result screen
+let opponentWalletAddress: string | null = null; // Opponent wallet address (for Colyseus mode)
+
+// Opponent profile state
+let isOpponentProfileOpen = false;
+let opponentProfileData: any = null; // Opponent profile data from Supabase
 
 // Death animation system - pixel art particles
 interface DeathParticle {
@@ -645,14 +662,32 @@ function loadGame(): void {
   }
 }
 
-// Save game
+// Save game (only if wallet is connected)
 function saveGame(): void {
+  // Check if wallet is connected - only save if connected
+  const walletState = walletService.getState();
+  const isWalletConnected = walletState.isConnected && walletState.address;
+  
+  if (!isWalletConnected) {
+    // Wallet not connected - don't save (game continues but progress is not saved)
+    return;
+  }
+  
   const saveData = getCurrentSaveData();
   saveManager.save(saveData);
 }
 
-// Force save (call after important events)
+// Force save (call after important events) - only if wallet is connected
 function forceSaveGame(): void {
+  // Check if wallet is connected - only save if connected
+  const walletState = walletService.getState();
+  const isWalletConnected = walletState.isConnected && walletState.address;
+  
+  if (!isWalletConnected) {
+    // Wallet not connected - don't save (game continues but progress is not saved)
+    return;
+  }
+  
   const saveData = getCurrentSaveData();
   saveManager.forceSave(saveData);
 }
@@ -853,6 +888,9 @@ async function enterLobby(): Promise<void> {
           const opponent = players.find(p => p.sessionId !== room.sessionId);
           if (opponent && opponent.address) {
             currentMatch.p2 = opponent.address;
+            // CRITICAL: Save opponent wallet address for result screen
+            opponentWalletAddress = opponent.address;
+            console.log('Saved opponent wallet address:', opponentWalletAddress);
           }
         }
       }
@@ -867,6 +905,13 @@ async function enterLobby(): Promise<void> {
           const opponent = players.find(p => p.sessionId !== room.sessionId);
           
           if (myPlayer && opponent) {
+            // CRITICAL: Save opponent wallet address for result screen
+            if (opponent.address) {
+              opponentWalletAddress = opponent.address;
+              currentMatch.p2 = opponent.address; // Ensure p2 is set
+              console.log('Saved opponent wallet address from state change:', opponentWalletAddress);
+            }
+            
             // Update ready status based on player order
             const isPlayer1 = currentMatch.p1 === myPlayer.address;
             if (isPlayer1) {
@@ -1095,6 +1140,21 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   
   const walletState = walletService.getState();
   const myAddress = walletState.address || '';
+  
+  // CRITICAL: Get opponent wallet address from room state
+  const roomState = colyseusService.getState();
+  if (roomState && roomState.players) {
+    const players = Array.from(roomState.players.values());
+    const opponent = players.find(p => p.sessionId === opponentSessionId);
+    if (opponent && opponent.address) {
+      opponentWalletAddress = opponent.address;
+      // Update currentMatch.p2 if not already set
+      if (currentMatch && !currentMatch.p2) {
+        currentMatch.p2 = opponent.address;
+      }
+      console.log('Saved opponent wallet address in initializePvPWithColyseus:', opponentWalletAddress);
+    }
+  }
   
   // Set player IDs based on session IDs
   myPlayerId = mySessionId;
@@ -1465,6 +1525,9 @@ function handleOpponentInput(input: any): void {
       const remainingDamage = hitDamage - absorbed;
       myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
       
+      // Profile: Track damage taken (PvP mode - I receive damage)
+      profileManager.addDamageTaken(hitDamage);
+      
       // Apply paralysis if this is a bullet hit
       if (input.isBullet && input.paralysisDuration !== undefined) {
         myPlayer.paralyzedUntil = Date.now() + input.paralysisDuration;
@@ -1712,6 +1775,12 @@ function grantDeathReward() {
       });
     }
     rewardGranted = true; // Mark reward as granted
+    
+    // Profile: Solo kill + XP
+    profileManager.addSoloKill();
+    profileManager.addXP(3);
+    profileManager.addDot(finalReward); // Track DOT balance increase
+    
     forceSaveGame(); // Save after death reward (currency increase)
   }
 }
@@ -2188,98 +2257,8 @@ function render() {
   ctx.fillText(`COST : ${accuracyUpgradeCost} DOT`, accuracyButtonX + accuracyButtonWidth/2, accuracyButtonY + 35);
   } // End of Solo mode upgrade buttons
 
-  // Level selection section - Solo mode only
-  if (gameMode === 'Solo') {
-  const levelSectionY = 360; // After accuracy button
-  const levelSectionHeight = 300; // Space for level buttons
-  
-  // Level info text
-  ctx.fillStyle = '#000000';
-  ctx.font = 'bold 10px "Press Start 2P"';
-  ctx.textAlign = 'left';
-  ctx.fillText(`LEVEL: ${currentLevel}`, 20, levelSectionY);
-  ctx.fillText(`KILLS: ${killsInCurrentLevel}/${killsNeededPerLevel}`, 20, levelSectionY + 15);
-  
-  // Level buttons (grid layout: 5 levels per row, max 2 rows visible)
-  const buttonsPerRow = 5;
-  const buttonSize = 32;
-  const buttonSpacing = 5;
-  const rowSpacing = 5;
-  const levelButtonsStartX = 20;
-  const levelButtonsStartY = levelSectionY + 30;
-  
-  levelButtons = []; // Reset buttons array
-  
-  // Calculate visible range: show current level ± 2 levels, but not below 1 or above maxUnlocked
-  const minVisible = Math.max(1, currentLevel - 2);
-  const maxVisible = Math.min(maxUnlockedLevel, currentLevel + 2);
-  
-  // Show buttons for each level from minVisible to maxVisible
-  let buttonIndex = 0;
-  for (let level = minVisible; level <= maxVisible; level++) {
-    const row = Math.floor((level - minVisible) / buttonsPerRow);
-    const col = (level - minVisible) % buttonsPerRow;
-    const buttonX = levelButtonsStartX + col * (buttonSize + buttonSpacing);
-    const buttonY = levelButtonsStartY + row * (buttonSize + rowSpacing);
-    
-    // Check if level is accessible (can go back max 2 levels)
-    const levelDiff = currentLevel - level;
-    const canAccess = level <= maxUnlockedLevel && levelDiff <= 2 && levelDiff >= 0;
-    const isCurrentLevel = level === currentLevel;
-    
-    // Button state
-    const isHovered = hoveredLevel === level;
-    const isPressed = pressedLevel === level;
-    
-    levelButtons.push({x: buttonX, y: buttonY, level: level, hovered: isHovered, pressed: isPressed});
-    
-    // Button shadow (dark gray) - only if not pressed
-    if (!isPressed) {
-      ctx.fillStyle = canAccess ? '#404040' : '#808080';
-      ctx.fillRect(buttonX + 2, buttonY + 2, buttonSize, buttonSize);
-    }
-    
-    // Button main
-    if (isPressed) {
-      ctx.fillStyle = '#909090';
-    } else if (isHovered && canAccess) {
-      ctx.fillStyle = '#b0b0b0';
-    } else if (isCurrentLevel) {
-      ctx.fillStyle = '#ffff00'; // Yellow for current level
-    } else if (canAccess) {
-      ctx.fillStyle = '#c0c0c0';
-    } else {
-      ctx.fillStyle = '#e0e0e0'; // Grayed out for locked
-    }
-    ctx.fillRect(buttonX, buttonY, buttonSize, buttonSize);
-    
-    // Button highlight (white) - only if not pressed
-    if (!isPressed && canAccess) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(buttonX, buttonY, buttonSize, 2);
-      ctx.fillRect(buttonX, buttonY, 2, buttonSize);
-    }
-    
-    // Button shadow (dark gray)
-    ctx.fillStyle = canAccess ? '#808080' : '#c0c0c0';
-    ctx.fillRect(buttonX + buttonSize - 2, buttonY, 2, buttonSize);
-    ctx.fillRect(buttonX, buttonY + buttonSize - 2, buttonSize, 2);
-    
-    // Button border (black)
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(buttonX, buttonY, buttonSize, buttonSize);
-    
-    // Button text (level number)
-    ctx.fillStyle = canAccess ? '#000000' : '#808080';
-    ctx.font = 'bold 10px "Press Start 2P"';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(level.toString(), buttonX + buttonSize/2, buttonY + buttonSize/2);
-    
-    buttonIndex++;
-  }
-  } // End of Solo mode level selection section
+  // Level selection section - REMOVED (hidden from UI)
+  // Level system still exists in code but is not displayed in UI panel
 
   // Arrow status indicator (replaces katana button) - Solo mode only
   if (gameMode === 'Solo') {
@@ -2298,9 +2277,55 @@ function render() {
     }
   }
 
+  // Profile button (above wallet button)
+  const profileButtonX = 20;
+  const profileButtonY = 400; // Above wallet button
+  const profileButtonWidth = 200;
+  const profileButtonHeight = 40;
+  
+  // Button shadow (dark gray) - only if not pressed
+  if (!isPressingProfile) {
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(profileButtonX + 2, profileButtonY + 2, profileButtonWidth, profileButtonHeight);
+  }
+  
+  // Button main
+  if (isPressingProfile) {
+    ctx.fillStyle = '#909090';
+  } else if (isHoveringProfile) {
+    ctx.fillStyle = '#b0b0b0';
+  } else {
+    ctx.fillStyle = '#c0c0c0';
+  }
+  ctx.fillRect(profileButtonX, profileButtonY, profileButtonWidth, profileButtonHeight);
+  
+  // Button highlight (white) - only if not pressed
+  if (!isPressingProfile) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(profileButtonX, profileButtonY, profileButtonWidth, 2);
+    ctx.fillRect(profileButtonX, profileButtonY, 2, profileButtonHeight);
+  }
+  
+  // Button shadow (dark gray)
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(profileButtonX + profileButtonWidth - 2, profileButtonY, 2, profileButtonHeight);
+  ctx.fillRect(profileButtonX, profileButtonY + profileButtonHeight - 2, profileButtonWidth, 2);
+  
+  // Button border (black)
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(profileButtonX, profileButtonY, profileButtonWidth, profileButtonHeight);
+  
+  // Button text
+  ctx.fillStyle = '#000000';
+  ctx.font = 'bold 10px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PROFILE', profileButtonX + profileButtonWidth/2, profileButtonY + profileButtonHeight/2);
+
   // Wallet connection button (moved down to avoid overlapping with other info) - ALWAYS render, regardless of game mode
   const walletButtonX = 20;
-  const walletButtonY = 450; // Moved down below PvP stats
+  const walletButtonY = 450; // Moved down below Profile button
   const walletButtonWidth = 200;
   const walletButtonHeight = 40;
   
@@ -3027,6 +3052,8 @@ function render() {
         if (tf >= 1) {
           // Merge finished: add to balance
           dotCurrency += rp.value;
+          // Profile: Track DOT balance increase
+          profileManager.addDot(rp.value);
           rewardPopups.splice(i, 1);
         }
       }
@@ -4890,11 +4917,11 @@ function render() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
     
-    // Modal background
-    const modalX = canvas.width / 2 - 200;
-    const modalY = canvas.height / 2 - 150;
-    const modalWidth = 400;
-    const modalHeight = 300;
+    // Modal background (larger to fit more info)
+    const modalX = canvas.width / 2 - 250;
+    const modalY = canvas.height / 2 - 200;
+    const modalWidth = 500;
+    const modalHeight = 400;
     
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
@@ -4906,17 +4933,113 @@ function render() {
     ctx.fillStyle = matchResult === 'victory' ? '#00ff00' : '#ff0000';
     ctx.font = 'bold 32px "Press Start 2P"';
     ctx.textAlign = 'center';
-    ctx.fillText(matchResult === 'victory' ? 'VICTORY!' : 'DEFEAT', canvas.width / 2, modalY + 80);
+    ctx.fillText(matchResult === 'victory' ? 'VICTORY!' : 'DEFEAT', canvas.width / 2, modalY + 50);
+    
+    // Opponent info - use saved address from when match ended
+    // CRITICAL: Always use opponentAddressForResult first, then fallback to currentMatch/opponentId
+    let opponentAddress = '';
+    
+    // First priority: use saved address from when match ended
+    if (opponentAddressForResult) {
+      opponentAddress = opponentAddressForResult;
+      console.log('Render: Using saved opponentAddressForResult:', opponentAddress);
+    } else {
+      // Fallback: try to get from currentMatch or opponentId
+      const walletState = walletService.getState();
+      const myAddress = walletState.address;
+      
+      // Try currentMatch or savedCurrentMatch first (most reliable)
+      const matchToUse = currentMatch || savedCurrentMatch;
+      if (matchToUse && myAddress) {
+        // Determine opponent: if I'm p1, opponent is p2; if I'm p2, opponent is p1
+        if (matchToUse.p1 === myAddress) {
+          opponentAddress = matchToUse.p2;
+        } else if (matchToUse.p2 === myAddress) {
+          opponentAddress = matchToUse.p1;
+        } else {
+          opponentAddress = opponentId || '';
+        }
+        console.log('Render: Fallback - Using opponent address from match:', opponentAddress, { 
+          myAddress, 
+          p1: matchToUse.p1, 
+          p2: matchToUse.p2,
+          usedSavedMatch: !currentMatch && !!savedCurrentMatch
+        });
+      } else if (opponentId) {
+        // Fallback to opponentId
+        opponentAddress = opponentId;
+        console.log('Render: Fallback - Using opponentId as address:', opponentAddress);
+      } else {
+        opponentAddress = 'Unknown';
+        console.warn('Render: No opponent address found!', { 
+          opponentAddressForResult, 
+          currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null, 
+          opponentId, 
+          myAddress 
+        });
+      }
+    }
+    
+    // Opponent address/nickname
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillText('OPPONENT:', modalX + 20, modalY + 90);
+    ctx.font = 'bold 10px "Press Start 2P"';
+    // Always show opponent address (nickname is optional)
+    // Priority: nickname > saved address > fallback address > 'Unknown'
+    const opponentDisplay = opponentNicknameForResult || opponentAddress || 'Unknown';
+    console.log('Rendering opponent info:', { 
+      matchResult, 
+      opponentNicknameForResult, 
+      opponentAddress, 
+      opponentAddressForResult, 
+      currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null,
+      display: opponentDisplay 
+    });
+    // Truncate address if too long (only if it's an address, not nickname)
+    const displayOpponent = (opponentNicknameForResult || opponentAddress) && (opponentNicknameForResult || opponentAddress).length > 30 
+      ? (opponentNicknameForResult || opponentAddress).substring(0, 27) + '...' 
+      : (opponentNicknameForResult || opponentAddress || 'Unknown');
+    ctx.fillText(displayOpponent, modalX + 20, modalY + 110);
+    
+    // XP change
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText('XP CHANGE:', modalX + 20, modalY + 140);
+    ctx.font = 'bold 14px "Press Start 2P"';
+    const xpChange = matchResult === 'victory' ? 3 : -1;
+    ctx.fillStyle = matchResult === 'victory' ? '#00ff00' : '#ff0000';
+    const xpText = xpChange > 0 ? `+${xpChange} XP` : `${xpChange} XP`;
+    ctx.fillText(xpText, modalX + 20, modalY + 160);
     
     // ELO change
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 16px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText('ELO CHANGE:', modalX + 20, modalY + 190);
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.fillStyle = matchResultEloChange > 0 ? '#00ff00' : '#ff0000';
     const eloText = matchResultEloChange > 0 ? `+${matchResultEloChange} ELO` : `${matchResultEloChange} ELO`;
-    ctx.fillText(eloText, canvas.width / 2, modalY + 120);
+    ctx.fillText(eloText, modalX + 20, modalY + 210);
+    
+    // Close button (X) - top right
+    const closeButtonX = modalX + modalWidth - 40;
+    const closeButtonY = modalY + 10;
+    const closeButtonSize = 30;
+    
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
     
     // Back to Lobby button
     const backButtonX = canvas.width / 2 - 100;
-    const backButtonY = modalY + 180;
+    const backButtonY = modalY + 320;
     const backButtonWidth = 200;
     const backButtonHeight = 40;
     
@@ -4928,6 +5051,7 @@ function render() {
     
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'center';
     ctx.fillText('BACK TO LOBBY', canvas.width / 2, backButtonY + backButtonHeight / 2);
   }
 
@@ -4945,6 +5069,421 @@ function render() {
   
   // Restore context from shake
   ctx.restore();
+  
+  // Profile panel (render LAST - highest layer) - no overlay, game continues in background
+  // Only show profile panel if wallet is connected
+  const walletStateForProfile = walletService.getState();
+  const isWalletConnectedForProfile = walletStateForProfile.isConnected && walletStateForProfile.address;
+  
+  // Close profile if wallet disconnects
+  if (isProfileOpen && !isWalletConnectedForProfile) {
+    isProfileOpen = false;
+    // Hide nickname input if visible
+    const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+    if (nicknameInput) {
+      nicknameInput.style.display = 'none';
+    }
+  }
+  
+  if (isProfileOpen && isWalletConnectedForProfile) {
+    // Profile window (centered)
+    const profileWindowWidth = 650;
+    const profileWindowHeight = 550;
+    const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2;
+    
+    // Window shadow (dark gray, offset)
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(profileWindowX + 4, profileWindowY + 4, profileWindowWidth, profileWindowHeight);
+    
+    // Window background (light gray)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(profileWindowX, profileWindowY, profileWindowWidth, profileWindowHeight);
+    
+    // Window border (thick black)
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(profileWindowX, profileWindowY, profileWindowWidth, profileWindowHeight);
+    
+    // Inner border (white highlight)
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(profileWindowX + 2, profileWindowY + 2, profileWindowWidth - 4, profileWindowHeight - 4);
+    
+    // Title bar background
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(profileWindowX, profileWindowY, profileWindowWidth, 50);
+    
+    // Title text (white on black)
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('PROFILE', profileWindowX + profileWindowWidth / 2, profileWindowY + 32);
+    
+    // Get profile data
+    const profile = profileManager.getProfile();
+    
+    // Profile data container (with background)
+    const dataStartY = profileWindowY + 70;
+    const dataEndY = profileWindowY + profileWindowHeight - 20;
+    
+    // Left column background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(profileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(profileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    
+    // Right column background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(profileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(profileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    
+    // Profile data (left side)
+    let yOffset = dataStartY + 25;
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillStyle = '#000000';
+    
+    // Label style
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('NICKNAME', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.nickname || '(not set)'}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('XP', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.xp}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('PVP WINS', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#00aa00';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.winsPvP}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('PVP LOSSES', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#aa0000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.lossesPvP}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('WALLET BALANCE', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    // Show Ronin wallet DOT balance if available, otherwise show "Not connected"
+    const walletBalanceText = walletDotBalance !== null ? `${walletDotBalance} DOT` : 'Not connected';
+    ctx.fillText(walletBalanceText, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('SOLO KILLS', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.totalSoloKills}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('UPGRADE ATTEMPTS', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.totalUpgradeAttempts}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('UPGRADE SUCCESS CHANCE', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.upgradeSuccessChance}%`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('BASIC DMG', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${dmg}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('CRIT CHANCE', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${critChance}%`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('ACCURACY', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${accuracy}%`, profileWindowX + 30, yOffset + 10);
+    
+    // Profile data (right side)
+    yOffset = dataStartY + 25;
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('MAX HP', profileWindowX + 330, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.maxHP}`, profileWindowX + 330, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('MAX ARMOR', profileWindowX + 330, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText(`${profile.maxArmor}`, profileWindowX + 330, yOffset + 10);
+    
+    // Close button (better design)
+    const closeButtonX = profileWindowX + profileWindowWidth - 45;
+    const closeButtonY = profileWindowY + 10;
+    const closeButtonSize = 30;
+    
+    // Close button shadow
+    ctx.fillStyle = '#800000';
+    ctx.fillRect(closeButtonX + 2, closeButtonY + 2, closeButtonSize, closeButtonSize);
+    
+    // Close button background
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button highlight
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(closeButtonX + 1, closeButtonY + 1, closeButtonSize - 2, closeButtonSize - 2);
+    
+    // Close button text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
+  }
+  
+  // Opponent Profile panel (render AFTER profile panel - highest layer)
+  if (isOpponentProfileOpen && opponentAddressForResult) {
+    // Opponent profile window (centered)
+    const opponentProfileWindowWidth = 650;
+    const opponentProfileWindowHeight = 550;
+    const opponentProfileWindowX = (canvas.width - opponentProfileWindowWidth) / 2;
+    const opponentProfileWindowY = (canvas.height - opponentProfileWindowHeight) / 2;
+    
+    // Window shadow (dark gray, offset)
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(opponentProfileWindowX + 4, opponentProfileWindowY + 4, opponentProfileWindowWidth, opponentProfileWindowHeight);
+    
+    // Window background (light gray)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(opponentProfileWindowX, opponentProfileWindowY, opponentProfileWindowWidth, opponentProfileWindowHeight);
+    
+    // Window border (thick black)
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(opponentProfileWindowX, opponentProfileWindowY, opponentProfileWindowWidth, opponentProfileWindowHeight);
+    
+    // Inner border (white highlight)
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(opponentProfileWindowX + 2, opponentProfileWindowY + 2, opponentProfileWindowWidth - 4, opponentProfileWindowHeight - 4);
+    
+    // Title bar background
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(opponentProfileWindowX, opponentProfileWindowY, opponentProfileWindowWidth, 50);
+    
+    // Title text (white on black)
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('OPPONENT PROFILE', opponentProfileWindowX + opponentProfileWindowWidth / 2, opponentProfileWindowY + 32);
+    
+    // Opponent profile data container (with background)
+    const dataStartY = opponentProfileWindowY + 70;
+    const dataEndY = opponentProfileWindowY + opponentProfileWindowHeight - 20;
+    
+    // Left column background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(opponentProfileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(opponentProfileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    
+    // Right column background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(opponentProfileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(opponentProfileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    
+    // Opponent profile data (left side)
+    let yOffset = dataStartY + 25;
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillStyle = '#000000';
+    
+    // Label style
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('NICKNAME', opponentProfileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    const opponentNickname = opponentProfileData?.nickname || opponentNicknameForResult || '(not set)';
+    ctx.fillText(opponentNickname, opponentProfileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('ADDRESS', opponentProfileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 9px "Press Start 2P"';
+    const displayAddress = opponentAddressForResult.length > 20 
+      ? opponentAddressForResult.substring(0, 17) + '...' 
+      : opponentAddressForResult;
+    ctx.fillText(displayAddress, opponentProfileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    // PvP stats from Supabase profile
+    if (opponentProfileData && opponentProfileData.pvp_data) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('PVP WINS', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#00aa00';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.pvp_data.wins || 0}`, opponentProfileWindowX + 30, yOffset + 10);
+      yOffset += 35;
+      
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('PVP LOSSES', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#aa0000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.pvp_data.losses || 0}`, opponentProfileWindowX + 30, yOffset + 10);
+      yOffset += 35;
+      
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('ELO RATING', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.pvp_data.elo || 1000}`, opponentProfileWindowX + 30, yOffset + 10);
+      yOffset += 35;
+    }
+    
+    // Solo stats from Supabase profile
+    if (opponentProfileData && opponentProfileData.solo_data) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('SOLO LEVEL', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.solo_data.level || 1}`, opponentProfileWindowX + 30, yOffset + 10);
+      yOffset += 35;
+      
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('SOLO DMG', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.solo_data.dmg || 1}`, opponentProfileWindowX + 30, yOffset + 10);
+      yOffset += 35;
+      
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('CRIT CHANCE', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      const critChanceOpponent = opponentProfileData.solo_data.upgrades?.critChance || 4;
+      ctx.fillText(`${critChanceOpponent}%`, opponentProfileWindowX + 30, yOffset + 10);
+      yOffset += 35;
+      
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('ACCURACY', opponentProfileWindowX + 30, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      const accuracyOpponent = opponentProfileData.solo_data.upgrades?.accuracy || 60;
+      ctx.fillText(`${accuracyOpponent}%`, opponentProfileWindowX + 30, yOffset + 10);
+    }
+    
+    // Right column - Max stats
+    yOffset = dataStartY + 25;
+    if (opponentProfileData && opponentProfileData.solo_data) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('MAX HP', opponentProfileWindowX + 330, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.solo_data.maxHP || 10}`, opponentProfileWindowX + 330, yOffset + 10);
+      yOffset += 35;
+      
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('MAX ARMOR', opponentProfileWindowX + 330, yOffset - 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(`${opponentProfileData.solo_data.maxArmor || 5}`, opponentProfileWindowX + 330, yOffset + 10);
+    }
+    
+    // Loading message if profile not loaded yet
+    if (!opponentProfileData) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('Loading profile...', opponentProfileWindowX + opponentProfileWindowWidth / 2, opponentProfileWindowY + opponentProfileWindowHeight / 2);
+    }
+    
+    // Close button (better design)
+    const closeButtonX = opponentProfileWindowX + opponentProfileWindowWidth - 45;
+    const closeButtonY = opponentProfileWindowY + 10;
+    const closeButtonSize = 30;
+    
+    // Close button shadow
+    ctx.fillStyle = '#800000';
+    ctx.fillRect(closeButtonX + 2, closeButtonY + 2, closeButtonSize, closeButtonSize);
+    
+    // Close button background
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button highlight
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(closeButtonX + 1, closeButtonY + 1, closeButtonSize - 2, closeButtonSize - 2);
+    
+    // Close button text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
+  }
 }
 
 // Global mouse position for katana tracking
@@ -5037,6 +5576,10 @@ if (!(window as any).__mousemoveListenerAdded) {
         }
 
         // Check wallet button hover
+        // Profile button hover
+        const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+        isHoveringProfile = isOverProfile && !upgradeAnimation && !isDrawing && !isProfileOpen;
+        
         const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
         isHoveringWallet = isOverWallet && !upgradeAnimation && !isDrawing;
 
@@ -5097,7 +5640,7 @@ if (!(window as any).__mousemoveListenerAdded) {
         if (arrowReady && !arrowFired && mouseX > 240 && !isDrawing && gameState === 'Alive') {
           // Custom arrow cursor
           canvas.style.cursor = 'crosshair';
-        } else if (((gameMode === 'Solo' && (isHoveringUpgrade || isHoveringCrit || isHoveringAccuracy || hoveredLevel >= 0)) || isOverWallet || isHoveringGameMode || isHoveringPvPOnline || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
+        } else if (((gameMode === 'Solo' && (isHoveringUpgrade || isHoveringCrit || isHoveringAccuracy || hoveredLevel >= 0)) || isOverProfile || isOverWallet || isHoveringGameMode || isHoveringPvPOnline || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
           canvas.style.cursor = 'pointer';
         } else if (isDrawing) {
           canvas.style.cursor = 'crosshair';
@@ -5192,6 +5735,102 @@ if (!(window as any).__mousedownListenerAdded) {
     }
   }
   
+  // Opponent profile panel close button click (check FIRST)
+  if (isOpponentProfileOpen) {
+    const opponentProfileWindowWidth = 650;
+    const opponentProfileWindowHeight = 550;
+    const opponentProfileWindowX = (canvas.width - opponentProfileWindowWidth) / 2;
+    const opponentProfileWindowY = (canvas.height - opponentProfileWindowHeight) / 2;
+    const closeButtonX = opponentProfileWindowX + opponentProfileWindowWidth - 45;
+    const closeButtonY = opponentProfileWindowY + 10;
+    const closeButtonSize = 30;
+    
+    if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
+        mouseY >= closeButtonY && mouseY <= closeButtonY + closeButtonSize) {
+      isOpponentProfileOpen = false;
+      opponentProfileData = null; // Clear profile data
+      return; // Don't process other clicks
+    }
+  }
+  
+  // Profile panel close button click (check AFTER opponent profile)
+  // Only allow closing if wallet is connected (profile should only be open if wallet is connected)
+  const walletStateForClose = walletService.getState();
+  const isWalletConnectedForClose = walletStateForClose.isConnected && walletStateForClose.address;
+  
+  if (isProfileOpen && isWalletConnectedForClose) {
+    const profileWindowWidth = 650;
+    const profileWindowHeight = 550;
+    const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2;
+    const closeButtonX = profileWindowX + profileWindowWidth - 45;
+    const closeButtonY = profileWindowY + 10;
+    const closeButtonSize = 30;
+    
+    if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
+        mouseY >= closeButtonY && mouseY <= closeButtonY + closeButtonSize) {
+      isProfileOpen = false;
+      // Hide nickname input if visible
+      const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (nicknameInput) {
+        nicknameInput.style.display = 'none';
+        // Save nickname if changed
+        if (nicknameInput.value.trim()) {
+          const newNickname = nicknameInput.value.trim();
+          profileManager.setNickname(newNickname);
+          // Also save to Supabase if wallet is connected
+          const walletState = walletService.getState();
+          if (walletState.address) {
+            supabaseService.updateNickname(walletState.address, newNickname).catch((error) => {
+              console.error('Error updating nickname in Supabase:', error);
+            });
+          }
+        }
+      }
+      return; // Don't process other clicks
+    }
+    
+    // Click on nickname area to edit
+    const nicknameY = profileWindowY + 70;
+    if (mouseX >= profileWindowX + 20 && mouseX <= profileWindowX + 300 &&
+        mouseY >= nicknameY - 10 && mouseY <= nicknameY + 10) {
+      // Show HTML input for nickname editing
+      const profile = profileManager.getProfile();
+      let nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (!nicknameInput) {
+        nicknameInput = document.createElement('input');
+        nicknameInput.id = 'nicknameInput';
+        nicknameInput.type = 'text';
+        nicknameInput.maxLength = 16;
+        nicknameInput.style.position = 'absolute';
+        nicknameInput.style.fontFamily = '"Press Start 2P", monospace';
+        nicknameInput.style.fontSize = '10px';
+        nicknameInput.style.padding = '5px';
+        nicknameInput.style.border = '2px solid #000000';
+        nicknameInput.style.backgroundColor = '#ffffff';
+        nicknameInput.style.color = '#000000';
+        document.body.appendChild(nicknameInput);
+      }
+      nicknameInput.value = profile.nickname || '';
+      nicknameInput.style.display = 'block';
+      nicknameInput.style.left = `${profileWindowX + 20}px`;
+      nicknameInput.style.top = `${nicknameY - 5}px`;
+      nicknameInput.style.width = '280px';
+      nicknameInput.focus();
+      nicknameInput.select();
+      return; // Don't process other clicks
+    }
+  }
+  
+  // Check if clicking profile button
+  if (!isProfileOpen) {
+    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+    if (isOverProfile) {
+      isPressingProfile = true;
+      return; // Don't process other clicks
+    }
+  }
+  
   // Check if clicking wallet button
   const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
   if (isOverWallet) {
@@ -5275,7 +5914,7 @@ if (!(window as any).__mouseupListenerAdded) {
   isPressingReady = false;
   isPressingCancel = false;
   
-  // Handle wallet button click
+  // Handle wallet button click (always allow, even if not connected)
   if (isPressingWallet) {
     const pos = getCanvasMousePos(e);
     const mouseX = pos.x;
@@ -5283,105 +5922,105 @@ if (!(window as any).__mouseupListenerAdded) {
     const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
     
     if (isOverWallet) {
+      // Check current wallet state
       const walletState = walletService.getState();
-      if (walletState.isConnected) {
-        // Disconnect
-        walletService.disconnect();
-        walletError = null;
+      if (walletState.isConnected && walletState.address) {
+        // Disconnect wallet
+        walletService.disconnect().then(() => {
+          console.log('Wallet disconnected');
+          walletError = null;
+          // Reset game mode to Solo if in PvP
+          if (gameMode === 'PvP') {
+            gameMode = 'Solo';
+            cleanupPvP();
+          }
+        }).catch((error) => {
+          console.error('Error disconnecting wallet:', error);
+          walletError = 'Failed to disconnect';
+        });
       } else {
-        // Connect
+        // Connect wallet
         walletConnecting = true;
         walletError = null;
-        
-        // Check if wallet is available
-        if (!walletService.isWalletAvailable()) {
-          walletError = 'Ronin Wallet not installed';
+        walletService.connect().then((result) => {
+          if (result) {
+            console.log('Wallet connected:', result.address);
+            walletError = null;
+            
+            // Check DOT token balance after connection
+            if (result.address) {
+              // Check DOT token balance
+              walletService.getTokenBalance(DOT_TOKEN_ADDRESS)
+                .then((balance) => {
+                  if (balance !== null) {
+                    walletDotBalance = balance;
+                    console.log('Wallet DOT balance (after auth success):', balance);
+                  } else {
+                    console.log('Wallet DOT balance: null (check failed)');
+                  }
+                })
+                .catch((error) => {
+                  console.error('Failed to get DOT balance:', error);
+                });
+            }
+          } else {
+            console.error('Wallet connect() returned null!');
+            walletError = 'Connection failed';
+          }
           walletConnecting = false;
-        } else {
-          console.log('Attempting to connect wallet...');
-          walletService.connect()
-            .then(async (result) => {
-              console.log('Wallet connect() returned:', result);
-              if (result) {
-                // Check state immediately after connect
-                const stateAfterConnect = walletService.getState();
-                console.log('State immediately after connect():', stateAfterConnect);
-                
-                // Authenticate with Supabase
-                console.log('Authenticating with Supabase...');
-                const authResult = await supabaseService.loginWithRonin(result.address, result.signature);
-                console.log('Auth result:', authResult);
-                
-                if (!authResult.success) {
-                  // Don't disconnect wallet if Supabase auth fails - keep wallet connected
-                  // User can still use wallet features even without Supabase
-                  walletError = authResult.error || 'Auth failed (Supabase)';
-                  console.log('Supabase auth failed, but keeping wallet connected:', walletError);
-                  console.log('Wallet remains connected for local use');
-                  
-                  // Verify wallet is still connected
-                  const stateAfterAuthFail = walletService.getState();
-                  console.log('State after auth fail (should still be connected):', stateAfterAuthFail);
-                  
-                  // Check DOT token balance even if Supabase auth failed
-                  walletService.getTokenBalance(DOT_TOKEN_ADDRESS)
-                    .then((balance) => {
-                      if (balance !== null) {
-                        walletDotBalance = balance;
-                        console.log('Wallet DOT balance (after auth fail):', balance);
-                      } else {
-                        console.log('Wallet DOT balance: null (check failed)');
-                      }
-                    })
-                    .catch((error) => {
-                      console.error('Failed to get DOT balance:', error);
-                    });
-                } else {
-                  // Load profile from Supabase
-                  const profile = await supabaseService.getProfile(result.address);
-                  if (profile) {
-                    // TODO: Load profile data into game state
-                    console.log('Profile loaded:', profile);
-                  }
-                  walletError = null;
-                  
-                  // Verify state is still updated
-                  const finalState = walletService.getState();
-                  console.log('Final wallet state after successful auth:', finalState);
-                  if (!finalState.isConnected) {
-                    console.error('ERROR: Wallet state lost after successful auth!');
-                  }
-                  
-                  // Check DOT token balance
-                  walletService.getTokenBalance(DOT_TOKEN_ADDRESS)
-                    .then((balance) => {
-                      if (balance !== null) {
-                        walletDotBalance = balance;
-                        console.log('Wallet DOT balance (after auth success):', balance);
-                      } else {
-                        console.log('Wallet DOT balance: null (check failed)');
-                      }
-                    })
-                    .catch((error) => {
-                      console.error('Failed to get DOT balance:', error);
-                    });
-                }
-              } else {
-                console.error('Wallet connect() returned null!');
-                walletError = 'Connection failed';
-              }
-              walletConnecting = false;
-              console.log('walletConnecting set to false');
-            })
-            .catch((error: any) => {
-              console.error('Wallet connect() error:', error);
-              walletError = error.message || 'Connection error';
-              walletConnecting = false;
-            });
-        }
+          console.log('walletConnecting set to false');
+        })
+        .catch((error: any) => {
+          console.error('Wallet connect() error:', error);
+          walletError = error.message || 'Connection error';
+          walletConnecting = false;
+        });
       }
     }
     isPressingWallet = false;
+  }
+  
+  // Handle profile button click (only if wallet is connected)
+  if (isPressingProfile) {
+    // Check if wallet is connected - only allow profile if connected
+    const walletState = walletService.getState();
+    const isWalletConnected = walletState.isConnected && walletState.address;
+    
+    if (!isWalletConnected) {
+      // Wallet not connected - don't open profile
+      isPressingProfile = false;
+      return;
+    }
+    
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+    if (isOverProfile) {
+      isProfileOpen = !isProfileOpen;
+      // Show/hide nickname input
+      const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (nicknameInput) {
+        if (isProfileOpen) {
+          nicknameInput.style.display = 'none'; // Hide initially, will show when clicking nickname
+        } else {
+          nicknameInput.style.display = 'none';
+          // Save nickname if changed
+          if (nicknameInput.value.trim()) {
+            const newNickname = nicknameInput.value.trim();
+            profileManager.setNickname(newNickname);
+            // Also save to Supabase if wallet is connected
+            const walletState = walletService.getState();
+            if (walletState.address) {
+              supabaseService.updateNickname(walletState.address, newNickname).catch((error) => {
+                console.error('Error updating nickname in Supabase:', error);
+              });
+            }
+          }
+        }
+      }
+    }
+    isPressingProfile = false;
   }
   
   // PvP Online: Handle Ready button click
@@ -5622,6 +6261,9 @@ if (!(window as any).__mouseupListenerAdded) {
     else if (upgradeType === 'crit') upgradeMessageY = 273;
     else if (upgradeType === 'accuracy') upgradeMessageY = 333;
     upgradeMessageTimer = 2000;
+    
+    // Profile: Track upgrade failure (mouse released early)
+    profileManager.addUpgradeFailure();
     
     console.log('Upgrade failed - mouse released!');
   }
@@ -5955,6 +6597,62 @@ if (!(window as any).__clickListenerAdded) {
   const mouseX = pos.x;
   const mouseY = pos.y;
 
+  // Handle match result modal clicks
+  if (gameMode === 'PvP' && showingMatchResult && matchResult) {
+    const modalX = canvas.width / 2 - 250;
+    const modalY = canvas.height / 2 - 200;
+    const modalWidth = 500;
+    const modalHeight = 400;
+    
+    // Close button (X) - top right
+    const closeButtonX = modalX + modalWidth - 40;
+    const closeButtonY = modalY + 10;
+    const closeButtonSize = 30;
+    
+    if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
+        mouseY >= closeButtonY && mouseY <= closeButtonY + closeButtonSize) {
+      // Close result modal
+      showingMatchResult = false;
+      matchResult = null;
+      matchResultEloChange = 0;
+      opponentNicknameForResult = null; // Reset opponent nickname
+      opponentAddressForResult = null; // Reset opponent address
+      savedCurrentMatch = null; // Reset saved match
+      opponentWalletAddress = null; // Reset opponent wallet address
+      isOpponentProfileOpen = false; // Close opponent profile if open
+      opponentProfileData = null; // Clear opponent profile data
+      // Return to lobby
+      leaveLobby();
+      gameMode = 'Solo';
+      cleanupPvP();
+      return;
+    }
+    
+    // Back to Lobby button
+    const backButtonX = canvas.width / 2 - 100;
+    const backButtonY = modalY + 320;
+    const backButtonWidth = 200;
+    const backButtonHeight = 40;
+    
+    if (mouseX >= backButtonX && mouseX <= backButtonX + backButtonWidth &&
+        mouseY >= backButtonY && mouseY <= backButtonY + backButtonHeight) {
+      // Close result modal and return to lobby
+      showingMatchResult = false;
+      matchResult = null;
+      matchResultEloChange = 0;
+      opponentNicknameForResult = null; // Reset opponent nickname
+      opponentAddressForResult = null; // Reset opponent address
+      savedCurrentMatch = null; // Reset saved match
+      opponentWalletAddress = null; // Reset opponent wallet address
+      isOpponentProfileOpen = false; // Close opponent profile if open
+      opponentProfileData = null; // Clear opponent profile data
+      leaveLobby();
+      gameMode = 'Solo';
+      cleanupPvP();
+      return;
+    }
+  }
+
   // Check if clicking UI buttons - don't charge DOT for these
   const isOverUpgrade = mouseX >= 20 && mouseX <= 220 && mouseY >= 160 && mouseY <= 200;
   const isOverCrit = mouseX >= 20 && mouseX <= 220 && mouseY >= 220 && mouseY <= 260;
@@ -6110,6 +6808,9 @@ if (!(window as any).__clickListenerAdded) {
         dotArmor -= absorbed;
         const remainingDamage = totalDamage - absorbed;
         dotHP = Math.max(0, dotHP - remainingDamage); // Don't go below 0
+        
+        // Profile: Track damage taken (Solo mode)
+        profileManager.addDamageTaken(totalDamage);
 
         // Add damage number animation
         safePushDamageNumber({
@@ -6413,7 +7114,11 @@ if (!(window as any).__clickListenerAdded) {
   }
 
   // Check upgrade button click (variables already defined above)
-  if (isOverUpgrade) {
+  // Only allow upgrade if wallet is connected
+  const walletStateForUpgrade = walletService.getState();
+  const isWalletConnectedForUpgrade = walletStateForUpgrade.isConnected && walletStateForUpgrade.address;
+  
+  if (isOverUpgrade && isWalletConnectedForUpgrade) {
     const cost = Math.ceil(10 * Math.pow(1.15, dmg - 1));
     if (dotCurrency >= cost && !upgradeAnimation) {
       // Determine success/fail immediately
@@ -6434,6 +7139,11 @@ if (!(window as any).__clickListenerAdded) {
       upgradeCost = cost;
       upgradeParticles = [];
       dotCurrency -= cost;
+      
+      // Profile: Upgrade attempt + XP
+      profileManager.addUpgradeAttempt();
+      profileManager.addXP(1);
+      
       console.log(`Starting DMG upgrade animation... Will succeed: ${upgradeWillSucceed}, Fail at: ${upgradeFailAt}`);
     } else if (dotCurrency < cost) {
       upgradeMessage = 'No Dot!';
@@ -6446,7 +7156,7 @@ if (!(window as any).__clickListenerAdded) {
   }
 
   // Check crit chance upgrade button click (variable already defined above)
-  if (isOverCrit) {
+  if (isOverCrit && isWalletConnectedForUpgrade) {
     const critUpgradeCost = Math.ceil(20 * Math.pow(1.1, critUpgradeLevel));
     if (dotCurrency >= critUpgradeCost && !upgradeAnimation) {
       // Determine success/fail immediately
@@ -6467,6 +7177,11 @@ if (!(window as any).__clickListenerAdded) {
       upgradeCost = critUpgradeCost;
       upgradeParticles = [];
       dotCurrency -= critUpgradeCost;
+      
+      // Profile: Upgrade attempt + XP
+      profileManager.addUpgradeAttempt();
+      profileManager.addXP(1);
+      
       console.log(`Starting Crit upgrade animation... Will succeed: ${upgradeWillSucceed}, Fail at: ${upgradeFailAt}`);
     } else if (dotCurrency < critUpgradeCost) {
       upgradeMessage = 'No Dot!';
@@ -6479,7 +7194,7 @@ if (!(window as any).__clickListenerAdded) {
   }
 
   // Check accuracy upgrade button click (variable already defined above)
-  if (isOverAccuracy) {
+  if (isOverAccuracy && isWalletConnectedForUpgrade) {
     const accuracyUpgradeCost = Math.ceil(20 * Math.pow(1.1, accuracyUpgradeLevel));
     if (dotCurrency >= accuracyUpgradeCost && !upgradeAnimation) {
       // Determine success/fail immediately
@@ -6500,6 +7215,11 @@ if (!(window as any).__clickListenerAdded) {
       upgradeCost = accuracyUpgradeCost;
       upgradeParticles = [];
       dotCurrency -= accuracyUpgradeCost;
+      
+      // Profile: Upgrade attempt + XP
+      profileManager.addUpgradeAttempt();
+      profileManager.addXP(1);
+      
       console.log(`Starting Accuracy upgrade animation... Will succeed: ${upgradeWillSucceed}, Fail at: ${upgradeFailAt}`);
     } else if (dotCurrency < accuracyUpgradeCost) {
       upgradeMessage = 'No Dot!';
@@ -6541,6 +7261,9 @@ function checkWalletBalance() {
 }
 
 function gameLoop() {
+  // Profile: Update max stats periodically
+  profileManager.updateMaxStats(dotMaxHP, dotMaxArmor);
+  
   // Update death animations
   for (const [playerId, particles] of deathAnimations.entries()) {
     const aliveParticles: DeathParticle[] = [];
@@ -6640,6 +7363,9 @@ function gameLoop() {
         const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
         // Apply 50% variance (damage ranges from 50% to 100%)
         const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
+        
+        // Profile: Track damage dealt (PvP mode - Bullet)
+        profileManager.addDamageDealt(bulletDamage);
         
         // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
         // Opponent will apply damage when they receive the hit event
@@ -7339,8 +8065,26 @@ function gameLoop() {
             
             console.log(`PvP: Player ${playerId} still out of bounds - -1 HP per second. HP: ${player.hp}/${player.maxHP}`);
             
-            // Check if player is dead
-            if (player.hp <= 0) {
+            // Check if player is dead - start death animation if not already started
+            if (player.hp <= 0 && !player.isOut && !deathAnimations.has(playerId)) {
+              player.isOut = true;
+              
+              // Determine player color for death animation
+              let playerColor = '#000000';
+              if (playerId === myPlayerId) {
+                playerColor = '#000000';
+              } else if (playerId === opponentId && opponentId) {
+                playerColor = '#000000';
+              } else {
+                playerColor = player.color;
+              }
+              
+              // Start death animation
+              createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
+              
+              console.log(`PvP: Player ${playerId} died from water damage - started death animation`);
+            } else if (player.hp <= 0) {
+              // Already dead, just ensure isOut is set
               player.isOut = true;
             }
           }
@@ -7452,6 +8196,9 @@ function gameLoop() {
         const baseArrowDamage = isCritHit ? dmg * 3 : dmg * 2;
         // Apply 50% variance (damage ranges from 50% to 100%)
         const arrowDamage = applyDamageVariance(baseArrowDamage);
+        
+        // Profile: Track damage dealt (PvP mode - Arrow)
+        profileManager.addDamageDealt(arrowDamage);
         
         // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
         // Opponent will apply damage when they receive the hit event
@@ -7795,6 +8542,9 @@ function gameLoop() {
             const baseProjectileDamage = isCritHit ? dmg * 3 : dmg * 2;
             // Apply 50% variance (damage ranges from 50% to 100%)
             const projectileDamage = applyDamageVariance(baseProjectileDamage);
+            
+            // Profile: Track damage dealt (PvP mode - Projectile)
+            profileManager.addDamageDealt(projectileDamage);
             
             // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
             // Opponent will apply damage when they receive the hit event
@@ -8178,6 +8928,13 @@ function gameLoop() {
       const opponent = pvpPlayers[opponentId];
       const walletState = walletService.getState();
       
+      // CRITICAL: Save currentMatch copy BEFORE checking win/loss conditions
+      // This ensures we have match data even if currentMatch is cleared later
+      if (currentMatch && !savedCurrentMatch) {
+        savedCurrentMatch = { ...currentMatch }; // Deep copy
+        console.log('Saved currentMatch copy for result screen:', savedCurrentMatch);
+      }
+      
       // Check if opponent is dead (removed from game or HP <= 0 or isOut)
       // Wait for death animation to finish before showing result
       const opponentDeathAnimPlaying = deathAnimations.has(opponentId);
@@ -8190,9 +8947,87 @@ function gameLoop() {
       // Check if I won (opponent is dead and death animation finished)
       if (opponentIsDead && !opponentDeathAnimPlaying && !iAmDead) {
         console.log('PvP: You won!');
+        
+        // CRITICAL: Save opponent address BEFORE setting showingMatchResult = true
+        // Save opponent address for result screen - ALWAYS save opponent address
+        // Logic: If I'm p1 → opponent is p2; If I'm p2 → opponent is p1
+        // Use savedCurrentMatch if currentMatch is null (defense against race conditions)
+        const matchToUse = currentMatch || savedCurrentMatch;
+        if (matchToUse && walletState.address) {
+          // Determine opponent: if I'm p1, opponent is p2; if I'm p2, opponent is p1
+          const myAddress = walletState.address;
+          if (matchToUse.p1 === myAddress) {
+            // I'm p1, opponent is p2
+            opponentAddressForResult = matchToUse.p2 || opponentWalletAddress || null;
+            console.log('Victory: I am p1, opponent is p2:', opponentAddressForResult);
+          } else if (matchToUse.p2 === myAddress) {
+            // I'm p2, opponent is p1
+            opponentAddressForResult = matchToUse.p1 || opponentWalletAddress || null;
+            console.log('Victory: I am p2, opponent is p1:', opponentAddressForResult);
+          } else {
+            // Fallback: use opponentWalletAddress or opponentId
+            opponentAddressForResult = opponentWalletAddress || opponentId || null;
+            console.warn('Victory: My address does not match p1 or p2, using opponentWalletAddress/opponentId:', opponentAddressForResult, {
+              myAddress,
+              p1: matchToUse.p1,
+              p2: matchToUse.p2,
+              opponentWalletAddress
+            });
+          }
+          console.log('Victory: Saved opponent address from match:', opponentAddressForResult, { 
+            myAddress: walletState.address, 
+            p1: matchToUse.p1, 
+            p2: matchToUse.p2,
+            opponentId,
+            opponentWalletAddress,
+            usedSavedMatch: !currentMatch && !!savedCurrentMatch
+          });
+        } else if (opponentWalletAddress) {
+          // CRITICAL: Use opponentWalletAddress for Colyseus mode (where opponentId is session ID)
+          opponentAddressForResult = opponentWalletAddress;
+          console.log('Victory: Saved opponent address from opponentWalletAddress:', opponentAddressForResult);
+        } else if (opponentId) {
+          opponentAddressForResult = opponentId;
+          console.log('Victory: Saved opponent address from opponentId (fallback):', opponentAddressForResult);
+        } else {
+          // Last resort: try to get from opponent player object
+          if (opponent && opponentId) {
+            // opponentId should be the address
+            opponentAddressForResult = opponentId;
+            console.log('Victory: Saved opponent address from opponentId (last resort):', opponentAddressForResult);
+          } else {
+            opponentAddressForResult = null;
+            console.error('Victory: Could not determine opponent address!', { 
+              currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null, 
+              opponentId, 
+              walletAddress: walletState.address,
+              opponent: opponent ? 'exists' : 'null',
+              myPlayerId
+            });
+          }
+        }
+        
         matchResult = 'victory';
         matchResultEloChange = 10; // +10 ELO for win
         showingMatchResult = true;
+        
+        // Get opponent nickname from profile (async)
+        opponentNicknameForResult = null; // Reset first
+        if (opponentAddressForResult) {
+          supabaseService.getProfile(opponentAddressForResult).then((opponentProfile) => {
+            if (opponentProfile && opponentProfile.nickname) {
+              opponentNicknameForResult = opponentProfile.nickname;
+            } else {
+              opponentNicknameForResult = null; // Use address if no nickname
+            }
+          }).catch(() => {
+            opponentNicknameForResult = null;
+          });
+        }
+        
+        // Profile: PvP win + XP
+        profileManager.addWinPvP();
+        profileManager.addXP(3);
         
         // Update match result in Supabase
         if (walletState.address && currentMatch) {
@@ -8218,9 +9053,87 @@ function gameLoop() {
       // Check if I lost (I am dead and death animation finished)
       if (iAmDead && !myDeathAnimPlaying && !opponentIsDead) {
         console.log('PvP: You lost!');
+        
+        // CRITICAL: Save opponent address BEFORE setting showingMatchResult = true
+        // Save opponent address for result screen - ALWAYS save opponent address
+        // Logic: If I'm p1 → opponent is p2; If I'm p2 → opponent is p1
+        // Use savedCurrentMatch if currentMatch is null (defense against race conditions)
+        const matchToUse = currentMatch || savedCurrentMatch;
+        if (matchToUse && walletState.address) {
+          // Determine opponent: if I'm p1, opponent is p2; if I'm p2, opponent is p1
+          const myAddress = walletState.address;
+          if (matchToUse.p1 === myAddress) {
+            // I'm p1, opponent is p2
+            opponentAddressForResult = matchToUse.p2 || opponentWalletAddress || null;
+            console.log('Defeat: I am p1, opponent is p2:', opponentAddressForResult);
+          } else if (matchToUse.p2 === myAddress) {
+            // I'm p2, opponent is p1
+            opponentAddressForResult = matchToUse.p1 || opponentWalletAddress || null;
+            console.log('Defeat: I am p2, opponent is p1:', opponentAddressForResult);
+          } else {
+            // Fallback: use opponentWalletAddress or opponentId
+            opponentAddressForResult = opponentWalletAddress || opponentId || null;
+            console.warn('Defeat: My address does not match p1 or p2, using opponentWalletAddress/opponentId:', opponentAddressForResult, {
+              myAddress,
+              p1: matchToUse.p1,
+              p2: matchToUse.p2,
+              opponentWalletAddress
+            });
+          }
+          console.log('Defeat: Saved opponent address from match:', opponentAddressForResult, { 
+            myAddress: walletState.address, 
+            p1: matchToUse.p1, 
+            p2: matchToUse.p2,
+            opponentId,
+            opponentWalletAddress,
+            usedSavedMatch: !currentMatch && !!savedCurrentMatch
+          });
+        } else if (opponentWalletAddress) {
+          // CRITICAL: Use opponentWalletAddress for Colyseus mode (where opponentId is session ID)
+          opponentAddressForResult = opponentWalletAddress;
+          console.log('Defeat: Saved opponent address from opponentWalletAddress:', opponentAddressForResult);
+        } else if (opponentId) {
+          opponentAddressForResult = opponentId;
+          console.log('Defeat: Saved opponent address from opponentId (fallback):', opponentAddressForResult);
+        } else {
+          // Last resort: try to get from opponent player object
+          if (opponent && opponentId) {
+            // opponentId should be the address
+            opponentAddressForResult = opponentId;
+            console.log('Defeat: Saved opponent address from opponentId (last resort):', opponentAddressForResult);
+          } else {
+            opponentAddressForResult = null;
+            console.error('Defeat: Could not determine opponent address!', { 
+              currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null, 
+              opponentId, 
+              walletAddress: walletState.address,
+              opponent: opponent ? 'exists' : 'null',
+              myPlayerId
+            });
+          }
+        }
+        
         matchResult = 'defeat';
         matchResultEloChange = -5; // -5 ELO for loss
         showingMatchResult = true;
+        
+        // Get opponent nickname from profile (async)
+        opponentNicknameForResult = null; // Reset first
+        if (opponentAddressForResult) {
+          supabaseService.getProfile(opponentAddressForResult).then((opponentProfile) => {
+            if (opponentProfile && opponentProfile.nickname) {
+              opponentNicknameForResult = opponentProfile.nickname;
+            } else {
+              opponentNicknameForResult = null; // Use address if no nickname
+            }
+          }).catch(() => {
+            opponentNicknameForResult = null;
+          });
+        }
+        
+        // Profile: PvP lose + XP (negative)
+        profileManager.addLossPvP();
+        profileManager.addXP(-1);
         
         // Update match result in Supabase
         if (walletState.address && currentMatch) {
@@ -8358,6 +9271,11 @@ function gameLoop() {
             player2.armor -= absorbed;
             const remainingDamage = damage - absorbed;
             player2.hp = Math.max(0, player2.hp - remainingDamage);
+            
+            // Profile: Track damage dealt (PvP mode - I deal damage if I'm player 1)
+            if (myPlayerId && myPlayerId === player1.id) {
+              profileManager.addDamageDealt(damage);
+            }
             
             // Record damage time
             lastCollisionDamageTime[collisionKey] = Date.now();
@@ -8777,6 +9695,9 @@ function gameLoop() {
       upgradeAnimation = false;
       upgradeProgress = 0;
       upgradeParticles = [];
+      
+      // Profile: Track upgrade failure
+      profileManager.addUpgradeFailure();
     }
     
     // Add particles during animation
@@ -8811,6 +9732,9 @@ function gameLoop() {
       // Animation complete - upgrade successful
       upgradeAnimation = false;
       upgradeProgress = 0;
+      
+      // Profile: Track upgrade success
+      profileManager.addUpgradeSuccess();
       
       if (upgradeType === 'dmg') {
         dmg += 1;

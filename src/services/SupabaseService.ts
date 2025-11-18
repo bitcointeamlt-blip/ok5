@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export interface Profile {
   ronin_address: string;
+  nickname?: string; // Optional nickname field
   solo_data: {
     currency: number;
     dmg: number;
@@ -213,6 +214,31 @@ class SupabaseService {
       return true;
     } catch (error) {
       console.error('Error in updatePvpData:', error);
+      return false;
+    }
+  }
+
+  // Update nickname
+  async updateNickname(roninAddress: string, nickname: string): Promise<boolean> {
+    if (!this.client) return false;
+
+    try {
+      const { error } = await this.client
+        .from('profiles')
+        .update({
+          nickname: nickname,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('ronin_address', roninAddress);
+
+      if (error) {
+        console.error('Error updating nickname:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in updateNickname:', error);
       return false;
     }
   }
