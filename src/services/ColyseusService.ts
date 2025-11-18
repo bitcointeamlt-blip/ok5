@@ -135,22 +135,39 @@ class ColyseusService {
   // Join or create a PvP room
   async joinOrCreateRoom(address: string, onOpponentInput: OpponentInputCallback): Promise<Room<RoomState> | null> {
     if (!this.client) {
-      console.error('Colyseus client not initialized');
+      console.error('❌ Colyseus client not initialized');
       return null;
     }
 
     try {
       // Leave existing room if any
       if (this.room) {
+        console.log('🔵 Leaving existing room before joining new one...');
         await this.leaveRoom();
       }
 
-      // Join or create room
-      this.room = await this.client.joinOrCreate<RoomState>("pvp_room", {
+      console.log('🔵 Attempting to join or create room "pvp_room"...');
+      console.log('🔵 Client endpoint:', this.client.endpoint);
+      console.log('🔵 Address:', address);
+      
+      // Join or create room with timeout
+      const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", {
         address: address,
         x: 960,
         y: 540
       });
+      
+      // Add timeout (30 seconds)
+      const timeoutPromise = new Promise<Room<RoomState>>((_, reject) => {
+        setTimeout(() => reject(new Error('Join room timeout after 30 seconds')), 30000);
+      });
+      
+      this.room = await Promise.race([joinPromise, timeoutPromise]);
+
+      if (!this.room) {
+        console.error('❌ Room is null after joinOrCreate');
+        return null;
+      }
 
       this.inputCallback = onOpponentInput;
       this.isConnected = true;
@@ -158,10 +175,30 @@ class ColyseusService {
       // Set up room message handlers
       this.setupRoomHandlers();
 
-      console.log('Joined Colyseus room:', this.room.id);
+      console.log('✅ Successfully joined Colyseus room:', this.room.id);
+      console.log('✅ Room state:', this.room.state);
       return this.room;
-    } catch (error) {
-      console.error('Failed to join Colyseus room:', error);
+    } catch (error: any) {
+      console.error('❌ Failed to join Colyseus room:', error);
+      console.error('❌ Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        code: error?.code
+      });
+      
+      // Check if it's a CORS error
+      if (error?.message?.includes('CORS') || error?.message?.includes('Access-Control')) {
+        console.error('❌ CORS ERROR DETECTED! Server is blocking requests from this origin.');
+        console.error('❌ Please check Colyseus Cloud CORS settings or server CORS configuration.');
+      }
+      
+      // Check if it's a network error
+      if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
+        console.error('❌ NETWORK ERROR! Cannot reach Colyseus server.');
+        console.error('❌ Check if server is running and endpoint is correct.');
+      }
+      
       return null;
     }
   }
