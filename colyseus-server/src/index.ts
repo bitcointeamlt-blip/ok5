@@ -73,7 +73,7 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 2567;
 
 server.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+    console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ Health check: http://localhost:${PORT}/health`);
   console.log(`✅ Matchmaking: http://localhost:${PORT}/matchmake`);
-});
+  });
