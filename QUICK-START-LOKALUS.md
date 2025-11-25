@@ -74,3 +74,5 @@ taskkill /PID <PID> /F
 **Status:** ✅ Instrukcijos paruoštos
 
 
+
+

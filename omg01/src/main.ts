@@ -8608,3 +8608,5 @@ if (!(window as any).__gameLoopRunning) {
 } else {
   console.warn('⚠️ Game loop already running - skipping duplicate start (HMR protection)');
 }
+
+

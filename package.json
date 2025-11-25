@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",
-    "colyseus.js": "^0.15.0"
+    "colyseus.js": "^0.15.0",
+    "ethers": "^6.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

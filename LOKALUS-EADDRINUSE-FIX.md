@@ -38,3 +38,5 @@ npm run dev
 **Status:** ✅ Procesas uždarytas. Dabar galite paleisti serverį.
 
 
+
+

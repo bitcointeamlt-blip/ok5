@@ -336,3 +336,5 @@ npm run dev
 
 **Status:** ✅ Kodas paruoštas, reikia tik deployment konfigūracijos
 
+
+

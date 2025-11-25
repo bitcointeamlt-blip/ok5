@@ -95,3 +95,5 @@ Po deployment'o patikrinkite logs:
 
 
 
+
+

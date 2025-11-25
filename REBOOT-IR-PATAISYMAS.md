@@ -50,3 +50,5 @@ Po reboot, patikrinkite logs:
 
 
 
+
+

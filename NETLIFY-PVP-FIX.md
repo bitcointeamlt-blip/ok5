@@ -65,3 +65,5 @@ Netlify automatiškai redeploy'ins po push.
 - [ ] Colyseus Cloud serveris veikia (`/health` endpoint)
 - [ ] PvP Online veikia Netlify'e
 
+
+

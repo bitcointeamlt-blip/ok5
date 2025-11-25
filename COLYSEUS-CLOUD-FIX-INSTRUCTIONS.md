@@ -202,3 +202,5 @@ https://de-fra-f8820c12.colyseus.cloud/health
 **Status:** ✅ Kodas paruoštas! Reikia tik patikrinti Colyseus Cloud settings ir redeploy'inti!
 
 
+
+

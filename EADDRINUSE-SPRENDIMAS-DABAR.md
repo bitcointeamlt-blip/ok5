@@ -97,3 +97,5 @@ Po reboot, patikrinkite logs:
 
 
 
+
+

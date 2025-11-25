@@ -127,3 +127,5 @@ curl http://localhost:2567/health
 **Status:** ✅ Colyseus serveris veikia su CORS fix! Patikrinkite browser console.
 
 
+
+

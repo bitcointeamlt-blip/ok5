@@ -9,6 +9,8 @@ import { pvpSyncService } from './services/PvPSyncService';
 import { colyseusService } from './services/ColyseusService';
 import type { Match } from './services/SupabaseService';
 import { ProfileManager } from './profile/ProfileManager';
+import { nftService } from './services/NftService';
+import type { NftItem } from './types/nft';
 
 console.log('Starting simple game...');
 
@@ -92,6 +94,18 @@ let critUpgradeLevel = 0; // Track upgrade level for cost calculation
 // Accuracy system
 let accuracy = 60; // 60% base accuracy
 let accuracyUpgradeLevel = 0; // Track upgrade level for cost calculation
+
+// NFT Bonus system
+// Calculate NFT bonuses based on owned NFT count
+// 1 NFT = +1 dmg, +2% crit chance, +5 HP
+function calculateNftBonuses(): { dmg: number; critChance: number; hp: number } {
+  const nftCount = nftList.length;
+  return {
+    dmg: nftCount, // +1 dmg per NFT
+    critChance: nftCount * 2, // +2% crit chance per NFT
+    hp: nftCount * 5 // +5 HP per NFT
+  };
+}
 
 // Cache for upgrade costs (to avoid recalculating Math.pow every frame)
 let cachedDmgCost: number | null = null;
@@ -519,6 +533,21 @@ let isProfileOpen = false;
 let isHoveringProfile = false;
 let isPressingProfile = false;
 
+// NFT state
+let nftList: NftItem[] = [];
+let isLoadingNfts = false;
+let nftError: string | null = null;
+let nftCurrentPage = 0;
+const nftsPerPage = 4;
+let nftPaginationHoverLeft = false;
+let nftPaginationHoverRight = false;
+let nftPaginationPressLeft = false;
+let nftPaginationPressRight = false;
+
+// NFT image cache
+const nftImageCache: Map<string, HTMLImageElement> = new Map();
+const nftImageLoading: Set<string> = new Set();
+
 // Lobby state
 let isInLobby = false;
 let isSearchingForMatch = false;
@@ -720,7 +749,9 @@ function initializePvP(): void {
   const pvpMass = soloLevelToPvpMass(currentLevel);
   const pvpMaxImpulse = soloDmgToPvpMaxImpulse(dmg);
   
-  // Initialize my player (left side)
+  // Initialize my player (left side) - with NFT bonuses
+  const nftBonuses = calculateNftBonuses();
+  const totalMaxHP = dotMaxHP + nftBonuses.hp;
   const myPlayer: PvPPlayer = {
     id: myPlayerId,
     x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25, // Left quarter
@@ -734,8 +765,8 @@ function initializePvP(): void {
     lastHitTime: 0,
     gravityLocked: true, // Same as Solo - disable gravity until first hit
     speedTrail: [], // Supersonic shadow tail
-    hp: dotMaxHP, // Use Solo max HP
-    maxHP: dotMaxHP, // Use Solo max HP
+    hp: totalMaxHP, // Use Solo max HP + NFT bonus
+    maxHP: totalMaxHP, // Use Solo max HP + NFT bonus
     armor: dotMaxArmor, // Use Solo max Armor
     maxArmor: dotMaxArmor, // Use Solo max Armor
     outOfBoundsStartTime: null, // Track when player goes out of bounds
@@ -797,6 +828,112 @@ function cleanupPvP(): void {
   pvpSyncService.stopSync();
   matchmakingService.clearMatch();
   console.log('PvP cleaned up');
+}
+
+// Get CORS proxy URL for images
+function getCorsProxyUrl(url: string): string {
+  // Use CORS proxy for S3 URLs and other external URLs that might have CORS issues
+  if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
+    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
+// Load NFT image asynchronously
+function loadNftImage(imageUrl: string, tokenId: string): void {
+  if (!imageUrl || imageUrl.trim() === '') {
+    console.warn(`No image URL for token ${tokenId}`);
+    return;
+  }
+  
+  if (nftImageCache.has(imageUrl) || nftImageLoading.has(imageUrl)) {
+    return; // Already loaded or loading
+  }
+  
+  console.log(`Loading NFT image for token ${tokenId}:`, imageUrl);
+  nftImageLoading.add(imageUrl);
+  
+  const img = new Image();
+  
+  // Try direct load first (for IPFS and other CORS-enabled sources)
+  img.crossOrigin = 'anonymous'; // Allow CORS
+  
+  img.onload = () => {
+    nftImageCache.set(imageUrl, img);
+    nftImageLoading.delete(imageUrl);
+    console.log(`✅ NFT image loaded successfully for token ${tokenId}:`, imageUrl, `(${img.width}x${img.height})`);
+  };
+  
+  img.onerror = (error) => {
+    console.warn(`Direct load failed for token ${tokenId}, trying CORS proxy...`);
+    nftImageLoading.delete(imageUrl);
+    
+    // If direct load failed (likely CORS), try CORS proxy
+    if (imageUrl.includes('s3.amazonaws.com') || imageUrl.includes('s3.')) {
+      const proxyUrl = getCorsProxyUrl(imageUrl);
+      console.log(`Trying CORS proxy for token ${tokenId}:`, proxyUrl);
+      
+      const proxyImg = new Image();
+      proxyImg.crossOrigin = 'anonymous';
+      
+      proxyImg.onload = () => {
+        nftImageCache.set(imageUrl, proxyImg); // Cache with original URL as key
+        nftImageLoading.delete(imageUrl);
+        console.log(`✅ NFT image loaded via proxy for token ${tokenId}:`, imageUrl, `(${proxyImg.width}x${proxyImg.height})`);
+      };
+      
+      proxyImg.onerror = (proxyError) => {
+        console.error(`❌ Failed to load NFT image via proxy for token ${tokenId}:`, imageUrl, proxyError);
+        nftImageLoading.delete(imageUrl);
+      };
+      
+      try {
+        proxyImg.src = proxyUrl;
+      } catch (proxyError) {
+        console.error(`❌ Error setting proxy image src for token ${tokenId}:`, proxyError);
+        nftImageLoading.delete(imageUrl);
+      }
+    } else {
+      console.error(`❌ Failed to load NFT image for token ${tokenId}:`, imageUrl, error);
+    }
+  };
+  
+  try {
+    img.src = imageUrl;
+  } catch (error) {
+    console.error(`❌ Error setting image src for token ${tokenId}:`, error);
+    nftImageLoading.delete(imageUrl);
+  }
+}
+
+// Load player NFTs
+async function loadPlayerNfts(walletAddress: string): Promise<void> {
+  if (isLoadingNfts) return; // Already loading
+  
+  isLoadingNfts = true;
+  nftError = null;
+  nftList = [];
+  nftCurrentPage = 0;
+  
+  try {
+    console.log('Loading NFTs for wallet:', walletAddress);
+    const nfts = await nftService.loadPlayerNfts(walletAddress);
+    nftList = nfts;
+    console.log(`Loaded ${nfts.length} NFTs`);
+    
+    // Preload images for all NFTs
+    nfts.forEach((nft) => {
+      if (nft.image) {
+        loadNftImage(nft.image, nft.tokenId);
+      }
+    });
+  } catch (error: any) {
+    console.error('Failed to load NFTs:', error);
+    nftError = error.message || 'Could not load your Ronkeverse NFTs. Please try again later.';
+    nftList = [];
+  } finally {
+    isLoadingNfts = false;
+  }
 }
 
 // Enter PvP lobby (Colyseus only)
@@ -932,6 +1069,8 @@ async function enterLobby(): Promise<void> {
     room.onMessage("game_start", (message: any) => {
       console.log('Game started!', message);
       waitingForOpponentReady = false;
+      isInLobby = false; // Exit lobby when game starts
+      gameMode = 'PvP'; // Ensure game mode is set to PvP
       // Initialize PvP game
       const roomState = colyseusService.getState();
       if (roomState) {
@@ -943,6 +1082,7 @@ async function enterLobby(): Promise<void> {
         if (opponentSessionId) {
           // Initialize PvP with Colyseus room data
           initializePvPWithColyseus(room, mySessionId, opponentSessionId);
+          console.log('PvP game initialized, players:', Object.keys(pvpPlayers));
         }
       }
     });
@@ -1164,6 +1304,10 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   const pvpMass = soloLevelToPvpMass(currentLevel);
   const pvpMaxImpulse = soloDmgToPvpMaxImpulse(dmg);
 
+  // Calculate NFT bonuses for HP
+  const nftBonuses = calculateNftBonuses();
+  const totalMaxHP = dotMaxHP + nftBonuses.hp;
+
   // Determine if I'm player 1 or 2 based on session ID order
   const sessionIds = [mySessionId, opponentSessionId].sort();
   const isMePlayer1 = mySessionId === sessionIds[0];
@@ -1184,8 +1328,8 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
-    hp: dotMaxHP,
-    maxHP: dotMaxHP,
+    hp: totalMaxHP,
+    maxHP: totalMaxHP,
     armor: dotMaxArmor,
     maxArmor: dotMaxArmor,
     outOfBoundsStartTime: null,
@@ -1224,7 +1368,20 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
 
   pvpPlayers[opponentId] = opponent;
 
-  console.log('PvP initialized with Colyseus', { myPlayerId, opponentId });
+  // Initialize wall spikes
+  initializeWallSpikes();
+
+  // Ensure we're not in lobby anymore
+  isInLobby = false;
+  gameMode = 'PvP';
+
+  console.log('PvP initialized with Colyseus', { 
+    myPlayerId, 
+    opponentId, 
+    players: Object.keys(pvpPlayers),
+    gameMode,
+    isInLobby 
+  });
 }
 
 // Initialize PvP with match data (Supabase version - kept for compatibility)
@@ -1261,7 +1418,9 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
   // This ensures both players see themselves in the correct position
   const isMePlayer1 = myPlayerId === match.p1;
   
-  // Initialize my player - ALWAYS on the side based on whether I'm p1 or p2
+  // Initialize my player - ALWAYS on the side based on whether I'm p1 or p2 - with NFT bonuses
+  const nftBonuses = calculateNftBonuses();
+  const totalMaxHP = dotMaxHP + nftBonuses.hp;
   const myPlayer: PvPPlayer = {
     id: myPlayerId,
     x: isMePlayer1 
@@ -1277,8 +1436,8 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastHitTime: 0,
     gravityLocked: true,
     speedTrail: [],
-    hp: dotMaxHP,
-    maxHP: dotMaxHP,
+    hp: totalMaxHP,
+    maxHP: totalMaxHP,
     armor: dotMaxArmor,
     maxArmor: dotMaxArmor,
     outOfBoundsStartTime: null,
@@ -1332,6 +1491,9 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     matchP2: match.p2,
     myAddress: myAddress
   });
+  
+  // Initialize wall spikes
+  initializeWallSpikes();
 }
 
 // Handle opponent input from network
@@ -1802,6 +1964,69 @@ const pvpPlatformCenterX = (playLeft + playRight) / 2; // Center platform (50% -
 const pvpPlatformRightX = playLeft + (playRight - playLeft) * 0.75 + 50; // Right platform (75% from left, shifted 50px right)
 const pvpPlatformSideWidth = movingPlatformWidth * 0.5; // Left and right platforms are 50% of center platform width
 
+// Wall spikes system
+interface WallSpike {
+  id: string;
+  side: 'left' | 'right'; // Which wall
+  y: number; // Vertical position
+  state: 'extending' | 'extended' | 'retracting' | 'retracted'; // Animation state
+  progress: number; // 0-1, animation progress
+  extendDuration: number; // 4 seconds = 4000ms
+  retractDuration: number; // 5 seconds = 5000ms
+  startTime: number; // When current state started
+  length: number; // Spike length when fully extended (in pixels)
+  width: number; // Spike width
+  damagePercent: number; // 5% of max HP
+  lastDamageTime: { [playerId: string]: number }; // Track damage cooldown per player
+}
+
+let wallSpikes: WallSpike[] = [];
+const SPIKE_DAMAGE_COOLDOWN = 500; // 500ms cooldown between damage ticks
+const SPIKE_LENGTH = 40; // Spike length when fully extended
+const SPIKE_WIDTH = 8; // Spike width
+const SPIKE_SPACING = 120; // Vertical spacing between spikes
+
+// Initialize wall spikes
+function initializeWallSpikes() {
+  wallSpikes = [];
+  // Spikes at the top (ceiling), centered vertically
+  const spikeAreaTop = pvpBounds.top + 100; // Start 100px from top
+  const spikeAreaBottom = pvpBounds.top + 300; // End 300px from top (200px height area)
+  const centerY = (spikeAreaTop + spikeAreaBottom) / 2; // Center of spike area
+  
+  // Create spikes on left wall - centered vertically
+  wallSpikes.push({
+    id: `left_center`,
+    side: 'left',
+    y: centerY,
+    state: 'retracted',
+    progress: 0,
+    extendDuration: 4000, // 4 seconds
+    retractDuration: 5000, // 5 seconds
+    startTime: Date.now() + Math.random() * 2000, // Random start time (0-2s delay)
+    length: SPIKE_LENGTH,
+    width: SPIKE_WIDTH,
+    damagePercent: 5, // 5% of max HP
+    lastDamageTime: {}
+  });
+  
+  // Create spikes on right wall - centered vertically
+  wallSpikes.push({
+    id: `right_center`,
+    side: 'right',
+    y: centerY,
+    state: 'retracted',
+    progress: 0,
+    extendDuration: 4000, // 4 seconds
+    retractDuration: 5000, // 5 seconds
+    startTime: Date.now() + Math.random() * 2000, // Random start time (0-2s delay)
+    length: SPIKE_LENGTH,
+    width: SPIKE_WIDTH,
+    damagePercent: 5, // 5% of max HP
+    lastDamageTime: {}
+  });
+}
+
 // Sewer background rendering function
 function drawSewerBackground() {
   // Dark sewer background color (dirty gray-green)
@@ -2066,7 +2291,13 @@ function render() {
     // HP and Armor text
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 12px "Press Start 2P"';
+    const nftBonuses = calculateNftBonuses();
+    const totalMaxHP = dotMaxHP + nftBonuses.hp;
     ctx.fillText(`HP: ${dotHP}/${dotMaxHP}`, statsX + 10, statsY + 20);
+    if (nftBonuses.hp > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.hp}`, statsX + 10 + ctx.measureText(`HP: ${dotHP}/${dotMaxHP} `).width, statsY + 20);
+    }
     
     // Armor text
     ctx.fillStyle = '#000000';
@@ -4032,6 +4263,45 @@ function render() {
     ctx.lineWidth = 1;
     ctx.strokeRect(playRight, wallTopY, 5, wallBottomY - wallTopY);
     
+    // Draw wall spikes (PvP mode only)
+    if (gameMode === 'PvP' || gameMode === 'Training') {
+      for (const spike of wallSpikes) {
+        // Only draw spikes that are extending or extended
+        if (spike.state === 'retracted' || spike.state === 'retracting') continue;
+        
+        const spikeCurrentLength = spike.length * spike.progress;
+        if (spikeCurrentLength <= 0) continue;
+        
+        const spikeX = spike.side === 'left' ? playLeft : playRight;
+        const spikeTopY = spike.y - spike.width / 2;
+        const spikeBottomY = spike.y + spike.width / 2;
+        
+        // Draw spike (triangle pointing inward)
+        ctx.save();
+        ctx.fillStyle = '#8B0000'; // Dark red
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        
+        ctx.beginPath();
+        if (spike.side === 'left') {
+          // Left spike pointing right
+          ctx.moveTo(spikeX, spikeTopY);
+          ctx.lineTo(spikeX + spikeCurrentLength, spike.y);
+          ctx.lineTo(spikeX, spikeBottomY);
+          ctx.closePath();
+        } else {
+          // Right spike pointing left
+          ctx.moveTo(spikeX, spikeTopY);
+          ctx.lineTo(spikeX - spikeCurrentLength, spike.y);
+          ctx.lineTo(spikeX, spikeBottomY);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    
     // Draw death animations (pixel art particles) - draw before players so they appear behind
     for (const [playerId, particles] of deathAnimations.entries()) {
       for (const particle of particles) {
@@ -5086,11 +5356,11 @@ function render() {
   }
   
   if (isProfileOpen && isWalletConnectedForProfile) {
-    // Profile window (centered)
-    const profileWindowWidth = 650;
-    const profileWindowHeight = 550;
+    // Profile window (centered, moved up 100px)
+    const profileWindowWidth = 900;
+    const profileWindowHeight = 750;
     const profileWindowX = (canvas.width - profileWindowWidth) / 2;
-    const profileWindowY = (canvas.height - profileWindowHeight) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
     
     // Window shadow (dark gray, offset)
     ctx.fillStyle = '#404040';
@@ -5116,7 +5386,7 @@ function render() {
     
     // Title text (white on black)
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.font = 'bold 19px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.fillText('PROFILE', profileWindowX + profileWindowWidth / 2, profileWindowY + 32);
     
@@ -5127,32 +5397,36 @@ function render() {
     const dataStartY = profileWindowY + 70;
     const dataEndY = profileWindowY + profileWindowHeight - 20;
     
-    // Left column background
-    ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(profileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
-    ctx.strokeStyle = '#cccccc';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(profileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    // Left column background (wider for larger window)
+    const leftColumnWidth = 400;
+    const rightColumnWidth = 450;
+    const columnSpacing = 30;
     
-    // Right column background
     ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(profileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    ctx.fillRect(profileWindowX + 20, dataStartY, leftColumnWidth, dataEndY - dataStartY);
     ctx.strokeStyle = '#cccccc';
     ctx.lineWidth = 1;
-    ctx.strokeRect(profileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    ctx.strokeRect(profileWindowX + 20, dataStartY, leftColumnWidth, dataEndY - dataStartY);
+    
+    // Right column background (NFT gallery)
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(profileWindowX + 20 + leftColumnWidth + columnSpacing, dataStartY, rightColumnWidth, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(profileWindowX + 20 + leftColumnWidth + columnSpacing, dataStartY, rightColumnWidth, dataEndY - dataStartY);
     
     // Profile data (left side)
     let yOffset = dataStartY + 25;
     ctx.textAlign = 'left';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillStyle = '#000000';
     
     // Label style
     ctx.fillStyle = '#666666';
-    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.font = 'bold 9px "Press Start 2P"';
     ctx.fillText('NICKNAME', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.nickname || '(not set)'}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5160,7 +5434,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('XP', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.xp}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5168,7 +5442,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('PVP WINS', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#00aa00';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.winsPvP}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5176,7 +5450,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('PVP LOSSES', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#aa0000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.lossesPvP}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5184,7 +5458,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('WALLET BALANCE', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     // Show Ronin wallet DOT balance if available, otherwise show "Not connected"
     const walletBalanceText = walletDotBalance !== null ? `${walletDotBalance} DOT` : 'Not connected';
     ctx.fillText(walletBalanceText, profileWindowX + 30, yOffset + 10);
@@ -5194,7 +5468,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('SOLO KILLS', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.totalSoloKills}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5202,7 +5476,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('UPGRADE ATTEMPTS', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.totalUpgradeAttempts}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5210,7 +5484,7 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('UPGRADE SUCCESS CHANCE', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.upgradeSuccessChance}%`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
@@ -5218,41 +5492,262 @@ function render() {
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('BASIC DMG', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    const nftBonuses = calculateNftBonuses();
+    const totalDmg = dmg + nftBonuses.dmg;
     ctx.fillText(`${dmg}`, profileWindowX + 30, yOffset + 10);
+    if (nftBonuses.dmg > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.dmg}`, profileWindowX + 30 + ctx.measureText(`${dmg} `).width, yOffset + 10);
+    }
     yOffset += 35;
     
     ctx.fillStyle = '#666666';
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('CRIT CHANCE', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    const totalCritChance = critChance + nftBonuses.critChance;
     ctx.fillText(`${critChance}%`, profileWindowX + 30, yOffset + 10);
+    if (nftBonuses.critChance > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.critChance}%`, profileWindowX + 30 + ctx.measureText(`${critChance}% `).width, yOffset + 10);
+    }
     yOffset += 35;
     
     ctx.fillStyle = '#666666';
     ctx.font = 'bold 8px "Press Start 2P"';
     ctx.fillText('ACCURACY', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${accuracy}%`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
     
-    // Profile data (right side)
-    yOffset = dataStartY + 25;
+    // Move MAX HP and MAX ARMOR to left side
     ctx.fillStyle = '#666666';
     ctx.font = 'bold 8px "Press Start 2P"';
-    ctx.fillText('MAX HP', profileWindowX + 330, yOffset - 5);
+    ctx.fillText('MAX HP', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
-    ctx.fillText(`${profile.maxHP}`, profileWindowX + 330, yOffset + 10);
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.maxHP}`, profileWindowX + 30, yOffset + 10);
+    if (nftBonuses.hp > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.hp}`, profileWindowX + 30 + ctx.measureText(`${profile.maxHP} `).width, yOffset + 10);
+    }
     yOffset += 35;
     
     ctx.fillStyle = '#666666';
     ctx.font = 'bold 8px "Press Start 2P"';
-    ctx.fillText('MAX ARMOR', profileWindowX + 330, yOffset - 5);
+    ctx.fillText('MAX ARMOR', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.maxArmor}`, profileWindowX + 30, yOffset + 10);
+    
+    // NFT Gallery (right side)
+    const nftSectionX = profileWindowX + 20 + leftColumnWidth + columnSpacing;
+    const nftSectionY = dataStartY;
+    const nftSectionWidth = rightColumnWidth;
+    const nftSectionHeight = dataEndY - dataStartY;
+    
+    // NFT Section Title
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 11px "Press Start 2P"';
-    ctx.fillText(`${profile.maxArmor}`, profileWindowX + 330, yOffset + 10);
+    ctx.textAlign = 'center';
+    ctx.fillText('RONKEVERSE NFT COLLECTION', nftSectionX + nftSectionWidth / 2, nftSectionY + 20);
+    
+    // NFT Content Area
+    const nftContentY = nftSectionY + 35;
+    const nftContentHeight = nftSectionHeight - 80; // Leave space for pagination
+    
+    // Loading state
+    if (isLoadingNfts) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('Loading Ronkeverse collection...', nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2);
+    }
+    // Error state
+    else if (nftError) {
+      ctx.fillStyle = '#aa0000';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      const errorLines = nftError.match(/.{1,35}/g) || [nftError];
+      errorLines.forEach((line, i) => {
+        ctx.fillText(line, nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2 + i * 15);
+      });
+    }
+    // Empty state
+    else if (nftList.length === 0) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('You don\'t own any', nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2 - 10);
+      ctx.fillText('Ronkeverse NFTs yet.', nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2 + 10);
+    }
+    // NFT Grid (2x2)
+    else {
+      const totalPages = Math.ceil(nftList.length / nftsPerPage);
+      const startIndex = nftCurrentPage * nftsPerPage;
+      const endIndex = Math.min(startIndex + nftsPerPage, nftList.length);
+      const currentNfts = nftList.slice(startIndex, endIndex);
+      
+      // Grid layout: 2 rows x 2 columns (larger cards for bigger window)
+      const cardWidth = 200;
+      const cardHeight = 200;
+      const cardSpacing = 15;
+      const gridStartX = nftSectionX + (nftSectionWidth - (cardWidth * 2 + cardSpacing)) / 2;
+      const gridStartY = nftContentY + 10;
+      
+      for (let i = 0; i < nftsPerPage; i++) {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const cardX = gridStartX + col * (cardWidth + cardSpacing);
+        const cardY = gridStartY + row * (cardHeight + cardSpacing);
+        
+        if (i < currentNfts.length) {
+          const nft = currentNfts[i];
+          
+          // Card background
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+          
+          // NFT Image (if available)
+          const imageAreaX = cardX + 5;
+          const imageAreaY = cardY + 5;
+          const imageAreaWidth = cardWidth - 10;
+          const imageAreaHeight = cardHeight - 40;
+          
+          if (nft.image) {
+            const cachedImage = nftImageCache.get(nft.image);
+            
+            if (cachedImage && cachedImage.complete) {
+              // Draw image
+              try {
+                // Calculate aspect ratio to fit image in area
+                const imgAspect = cachedImage.width / cachedImage.height;
+                const areaAspect = imageAreaWidth / imageAreaHeight;
+                
+                let drawWidth = imageAreaWidth;
+                let drawHeight = imageAreaHeight;
+                let drawX = imageAreaX;
+                let drawY = imageAreaY;
+                
+                if (imgAspect > areaAspect) {
+                  // Image is wider - fit to width
+                  drawHeight = imageAreaWidth / imgAspect;
+                  drawY = imageAreaY + (imageAreaHeight - drawHeight) / 2;
+                } else {
+                  // Image is taller - fit to height
+                  drawWidth = imageAreaHeight * imgAspect;
+                  drawX = imageAreaX + (imageAreaWidth - drawWidth) / 2;
+                }
+                
+                ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+              } catch (error) {
+                console.error('Error drawing NFT image:', error);
+                // Fallback to placeholder
+                ctx.fillStyle = '#e0e0e0';
+                ctx.fillRect(imageAreaX, imageAreaY, imageAreaWidth, imageAreaHeight);
+                ctx.fillStyle = '#666666';
+                ctx.font = 'bold 8px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.fillText('ERROR', cardX + cardWidth / 2, cardY + cardHeight / 2 - 20);
+              }
+            } else {
+              // Image is loading - show placeholder
+              ctx.fillStyle = '#e0e0e0';
+              ctx.fillRect(imageAreaX, imageAreaY, imageAreaWidth, imageAreaHeight);
+              ctx.fillStyle = '#666666';
+              ctx.font = 'bold 8px "Press Start 2P"';
+              ctx.textAlign = 'center';
+              ctx.fillText('LOADING...', cardX + cardWidth / 2, cardY + cardHeight / 2 - 20);
+              
+              // Try to load image if not already loading
+              if (!nftImageLoading.has(nft.image)) {
+                loadNftImage(nft.image, nft.tokenId);
+              }
+            }
+          } else {
+            // No image URL
+            ctx.fillStyle = '#e0e0e0';
+            ctx.fillRect(imageAreaX, imageAreaY, imageAreaWidth, imageAreaHeight);
+            ctx.fillStyle = '#666666';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('NO IMAGE', cardX + cardWidth / 2, cardY + cardHeight / 2 - 20);
+          }
+          
+          // NFT Name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 8px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          const nameText = nft.name.length > 18 ? nft.name.substring(0, 15) + '...' : nft.name;
+          ctx.fillText(nameText, cardX + cardWidth / 2, cardY + cardHeight - 25);
+          
+          // Token ID
+          ctx.fillStyle = '#666666';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText(`#${nft.tokenId}`, cardX + cardWidth / 2, cardY + cardHeight - 10);
+        } else {
+          // Empty slot
+          ctx.fillStyle = '#f5f5f5';
+          ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+          ctx.strokeStyle = '#cccccc';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+        }
+      }
+      
+      // Pagination controls
+      if (totalPages > 1) {
+        const paginationY = nftSectionY + nftSectionHeight - 40;
+        const arrowSize = 20;
+        const arrowY = paginationY + 10;
+        
+        // Left arrow
+        const leftArrowX = nftSectionX + 20;
+        const canGoLeft = nftCurrentPage > 0;
+        
+        ctx.fillStyle = canGoLeft ? (nftPaginationPressLeft ? '#666666' : (nftPaginationHoverLeft ? '#999999' : '#cccccc')) : '#e0e0e0';
+        ctx.fillRect(leftArrowX, arrowY, arrowSize, arrowSize);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(leftArrowX, arrowY, arrowSize, arrowSize);
+        
+        // Left arrow symbol (<)
+        ctx.fillStyle = canGoLeft ? '#000000' : '#999999';
+        ctx.font = 'bold 15px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText('<', leftArrowX + arrowSize / 2, arrowY + arrowSize / 2 + 5);
+        
+        // Page indicator
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 9px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Page ${nftCurrentPage + 1} / ${totalPages}`, nftSectionX + nftSectionWidth / 2, arrowY + arrowSize / 2 + 5);
+        
+        // Right arrow
+        const rightArrowX = nftSectionX + nftSectionWidth - arrowSize - 20;
+        const canGoRight = nftCurrentPage < totalPages - 1;
+        
+        ctx.fillStyle = canGoRight ? (nftPaginationPressRight ? '#666666' : (nftPaginationHoverRight ? '#999999' : '#cccccc')) : '#e0e0e0';
+        ctx.fillRect(rightArrowX, arrowY, arrowSize, arrowSize);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(rightArrowX, arrowY, arrowSize, arrowSize);
+        
+        // Right arrow symbol (>)
+        ctx.fillStyle = canGoRight ? '#000000' : '#999999';
+        ctx.font = 'bold 15px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText('>', rightArrowX + arrowSize / 2, arrowY + arrowSize / 2 + 5);
+      }
+    }
+    
+    ctx.textAlign = 'left'; // Reset text align
     
     // Close button (better design)
     const closeButtonX = profileWindowX + profileWindowWidth - 45;
@@ -5279,7 +5774,7 @@ function render() {
     
     // Close button text
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.font = 'bold 19px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
   }
@@ -5341,15 +5836,15 @@ function render() {
     // Opponent profile data (left side)
     let yOffset = dataStartY + 25;
     ctx.textAlign = 'left';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillStyle = '#000000';
     
     // Label style
     ctx.fillStyle = '#666666';
-    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.font = 'bold 9px "Press Start 2P"';
     ctx.fillText('NICKNAME', opponentProfileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.font = 'bold 12px "Press Start 2P"';
     const opponentNickname = opponentProfileData?.nickname || opponentNicknameForResult || '(not set)';
     ctx.fillText(opponentNickname, opponentProfileWindowX + 30, yOffset + 10);
     yOffset += 35;
@@ -5371,7 +5866,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('PVP WINS', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#00aa00';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.pvp_data.wins || 0}`, opponentProfileWindowX + 30, yOffset + 10);
       yOffset += 35;
       
@@ -5379,7 +5874,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('PVP LOSSES', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#aa0000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.pvp_data.losses || 0}`, opponentProfileWindowX + 30, yOffset + 10);
       yOffset += 35;
       
@@ -5387,7 +5882,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('ELO RATING', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.pvp_data.elo || 1000}`, opponentProfileWindowX + 30, yOffset + 10);
       yOffset += 35;
     }
@@ -5398,7 +5893,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('SOLO LEVEL', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.solo_data.level || 1}`, opponentProfileWindowX + 30, yOffset + 10);
       yOffset += 35;
       
@@ -5406,7 +5901,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('SOLO DMG', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.solo_data.dmg || 1}`, opponentProfileWindowX + 30, yOffset + 10);
       yOffset += 35;
       
@@ -5414,7 +5909,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('CRIT CHANCE', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       const critChanceOpponent = opponentProfileData.solo_data.upgrades?.critChance || 4;
       ctx.fillText(`${critChanceOpponent}%`, opponentProfileWindowX + 30, yOffset + 10);
       yOffset += 35;
@@ -5423,7 +5918,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('ACCURACY', opponentProfileWindowX + 30, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       const accuracyOpponent = opponentProfileData.solo_data.upgrades?.accuracy || 60;
       ctx.fillText(`${accuracyOpponent}%`, opponentProfileWindowX + 30, yOffset + 10);
     }
@@ -5435,7 +5930,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('MAX HP', opponentProfileWindowX + 330, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.solo_data.maxHP || 10}`, opponentProfileWindowX + 330, yOffset + 10);
       yOffset += 35;
       
@@ -5443,7 +5938,7 @@ function render() {
       ctx.font = 'bold 8px "Press Start 2P"';
       ctx.fillText('MAX ARMOR', opponentProfileWindowX + 330, yOffset - 5);
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.font = 'bold 12px "Press Start 2P"';
       ctx.fillText(`${opponentProfileData.solo_data.maxArmor || 5}`, opponentProfileWindowX + 330, yOffset + 10);
     }
     
@@ -5582,6 +6077,36 @@ if (!(window as any).__mousemoveListenerAdded) {
         
         const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
         isHoveringWallet = isOverWallet && !upgradeAnimation && !isDrawing;
+        
+        // NFT pagination hover (only when profile is open)
+        if (isProfileOpen && nftList.length > 0) {
+          const totalPages = Math.ceil(nftList.length / nftsPerPage);
+          const profileWindowWidth = 900;
+          const profileWindowHeight = 750;
+          const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+          const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
+          const dataStartY = profileWindowY + 70;
+          const dataEndY = profileWindowY + profileWindowHeight - 20;
+          const nftSectionX = profileWindowX + 20 + 400 + 30; // leftColumnWidth + columnSpacing
+          const nftSectionHeight = dataEndY - dataStartY;
+          const paginationY = dataStartY + nftSectionHeight - 40;
+          const arrowSize = 20;
+          const arrowY = paginationY + 10;
+          
+          const leftArrowX = nftSectionX + 20;
+          const rightArrowX = nftSectionX + 310 - arrowSize - 20;
+          
+          const canGoLeft = nftCurrentPage > 0;
+          const canGoRight = nftCurrentPage < totalPages - 1;
+          
+          nftPaginationHoverLeft = canGoLeft && mouseX >= leftArrowX && mouseX <= leftArrowX + arrowSize &&
+                                   mouseY >= arrowY && mouseY <= arrowY + arrowSize;
+          nftPaginationHoverRight = canGoRight && mouseX >= rightArrowX && mouseX <= rightArrowX + arrowSize &&
+                                    mouseY >= arrowY && mouseY <= arrowY + arrowSize;
+        } else {
+          nftPaginationHoverLeft = false;
+          nftPaginationHoverRight = false;
+        }
 
         // Training button hover detection
         let trainingButtonY = 500;
@@ -5759,10 +6284,10 @@ if (!(window as any).__mousedownListenerAdded) {
   const isWalletConnectedForClose = walletStateForClose.isConnected && walletStateForClose.address;
   
   if (isProfileOpen && isWalletConnectedForClose) {
-    const profileWindowWidth = 650;
-    const profileWindowHeight = 550;
+    const profileWindowWidth = 900;
+    const profileWindowHeight = 750;
     const profileWindowX = (canvas.width - profileWindowWidth) / 2;
-    const profileWindowY = (canvas.height - profileWindowHeight) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
     const closeButtonX = profileWindowX + profileWindowWidth - 45;
     const closeButtonY = profileWindowY + 10;
     const closeButtonSize = 30;
@@ -5788,6 +6313,38 @@ if (!(window as any).__mousedownListenerAdded) {
         }
       }
       return; // Don't process other clicks
+    }
+    
+    // NFT pagination click handlers
+    if (nftList.length > 0) {
+      const totalPages = Math.ceil(nftList.length / nftsPerPage);
+      const leftColumnWidth = 400;
+      const rightColumnWidth = 450;
+      const columnSpacing = 30;
+      const nftSectionX = profileWindowX + 20 + leftColumnWidth + columnSpacing;
+      const dataStartY = profileWindowY + 70;
+      const dataEndY = profileWindowY + profileWindowHeight - 20;
+      const nftSectionHeight = dataEndY - dataStartY;
+      const paginationY = dataStartY + nftSectionHeight - 40;
+      const arrowSize = 20;
+      const arrowY = paginationY + 10;
+      
+      const leftArrowX = nftSectionX + 20;
+      const rightArrowX = nftSectionX + rightColumnWidth - arrowSize - 20;
+      
+      // Left arrow click
+      if (nftCurrentPage > 0 && mouseX >= leftArrowX && mouseX <= leftArrowX + arrowSize &&
+          mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+        nftCurrentPage--;
+        return; // Don't process other clicks
+      }
+      
+      // Right arrow click
+      if (nftCurrentPage < totalPages - 1 && mouseX >= rightArrowX && mouseX <= rightArrowX + arrowSize &&
+          mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+        nftCurrentPage++;
+        return; // Don't process other clicks
+      }
     }
     
     // Click on nickname area to edit
@@ -5828,6 +6385,42 @@ if (!(window as any).__mousedownListenerAdded) {
     if (isOverProfile) {
       isPressingProfile = true;
       return; // Don't process other clicks
+    }
+  }
+  
+  // NFT pagination button press (when profile is open)
+  if (isProfileOpen && nftList.length > 0) {
+    const profileWindowWidth = 900;
+    const profileWindowHeight = 750;
+    const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
+    const leftColumnWidth = 400;
+    const rightColumnWidth = 450;
+    const columnSpacing = 30;
+    const nftSectionX = profileWindowX + 20 + leftColumnWidth + columnSpacing;
+    const dataStartY = profileWindowY + 70;
+    const dataEndY = profileWindowY + profileWindowHeight - 20;
+    const nftSectionHeight = dataEndY - dataStartY;
+    const paginationY = dataStartY + nftSectionHeight - 40;
+    const arrowSize = 20;
+    const arrowY = paginationY + 10;
+    
+    const leftArrowX = nftSectionX + 20;
+    const rightArrowX = nftSectionX + rightColumnWidth - arrowSize - 20;
+    const totalPages = Math.ceil(nftList.length / nftsPerPage);
+    
+    // Left arrow press
+    if (nftCurrentPage > 0 && mouseX >= leftArrowX && mouseX <= leftArrowX + arrowSize &&
+        mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+      nftPaginationPressLeft = true;
+      return;
+    }
+    
+    // Right arrow press
+    if (nftCurrentPage < totalPages - 1 && mouseX >= rightArrowX && mouseX <= rightArrowX + arrowSize &&
+        mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+      nftPaginationPressRight = true;
+      return;
     }
   }
   
@@ -5997,7 +6590,17 @@ if (!(window as any).__mouseupListenerAdded) {
     const mouseY = pos.y;
     const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
     if (isOverProfile) {
+      const wasOpen = isProfileOpen;
       isProfileOpen = !isProfileOpen;
+      
+      // Load NFTs when opening profile
+      if (isProfileOpen && !wasOpen) {
+        const walletState = walletService.getState();
+        if (walletState.address) {
+          loadPlayerNfts(walletState.address);
+        }
+      }
+      
       // Show/hide nickname input
       const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
       if (nicknameInput) {
@@ -6022,6 +6625,10 @@ if (!(window as any).__mouseupListenerAdded) {
     }
     isPressingProfile = false;
   }
+  
+  // Reset NFT pagination press states
+  nftPaginationPressLeft = false;
+  nftPaginationPressRight = false;
   
   // PvP Online: Handle Ready button click
   // Removed excessive logging to reduce lag - only log if there's an issue
@@ -6726,8 +7333,10 @@ if (!(window as any).__clickListenerAdded) {
         // Katana damage multiplier (if active and in slash zone, handled in gameLoop)
         const katanaDamageMultiplier = 1; // Normal click damage
         
-        // Check for crit hit (only if we hit)
-        let isCritHit = Math.random() < critChance / 100;
+        // Check for crit hit (only if we hit) - with NFT bonuses
+        const nftBonuses = calculateNftBonuses();
+        const totalCritChance = critChance + nftBonuses.critChance;
+        let isCritHit = Math.random() < totalCritChance / 100;
         // Apply force-crit if available and not expired
         if (nextHitForceCrit && Date.now() <= nextHitForceCritExpiresAt) {
           isCritHit = true;
@@ -6735,8 +7344,9 @@ if (!(window as any).__clickListenerAdded) {
         } else if (Date.now() > nextHitForceCritExpiresAt) {
           nextHitForceCrit = false;
         }
-        // Calculate base damage with katana multiplier and crit
-        const baseDamage = dmg * katanaDamageMultiplier;
+        // Calculate base damage with katana multiplier and crit (with NFT bonuses)
+        const totalDmg = dmg + nftBonuses.dmg;
+        const baseDamage = totalDmg * katanaDamageMultiplier;
         const damageWithCrit = isCritHit ? baseDamage * 2 : baseDamage;
         // Apply 50% variance (damage ranges from 50% to 100%)
         let totalDamage = applyDamageVariance(damageWithCrit);
@@ -7007,8 +7617,10 @@ if (!(window as any).__clickListenerAdded) {
           const clickAngle = Math.atan2(dy, dx);
           const oppositeAngle = clickAngle + Math.PI; // Add 180 degrees for opposite direction
           
-          // Check for crit hit (same as Solo)
-          let isCritHit = Math.random() < critChance / 100;
+          // Check for crit hit (same as Solo) - with NFT bonuses
+          const nftBonuses = calculateNftBonuses();
+          const totalCritChance = critChance + nftBonuses.critChance;
+          let isCritHit = Math.random() < totalCritChance / 100;
           
           // Use same force as Solo DOT - crit hits give more force
           const force = isCritHit ? 8.625 : 4.6; // Crit hits give more force (8.625 vs 4.6)
@@ -7356,10 +7968,13 @@ function gameLoop() {
         bulletVx = 0;
         bulletVy = 0;
         
-        // Check for crit hit
-        const isCritHit = Math.random() < critChance / 100;
-        // Damage: 50% of basic damage, 2x crit (using MY stats)
-        const baseBulletDamage = dmg * 0.5; // 50% of base damage
+        // Check for crit hit - with NFT bonuses
+        const nftBonuses = calculateNftBonuses();
+        const totalCritChance = critChance + nftBonuses.critChance;
+        const isCritHit = Math.random() < totalCritChance / 100;
+        // Damage: 50% of basic damage, 2x crit (using MY stats + NFT bonuses)
+        const totalDmg = dmg + nftBonuses.dmg;
+        const baseBulletDamage = totalDmg * 0.5; // 50% of base damage
         const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
         // Apply 50% variance (damage ranges from 50% to 100%)
         const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
@@ -7982,6 +8597,22 @@ function gameLoop() {
         continue; // Skip physics update for dead player
       }
       
+      // Skip movement if paralyzed (stuck on spike)
+      const isParalyzed = player.paralyzedUntil > Date.now();
+      if (isParalyzed) {
+        // Still apply gravity and air resistance, but don't allow movement input
+        const timeSinceLastHit = Date.now() - player.lastHitTime;
+        if (!player.gravityLocked && timeSinceLastHit >= gravityDelay) {
+          player.vy += pvpGravity;
+        }
+        player.x += player.vx;
+        player.y += player.vy;
+        // Apply air resistance
+        player.vx *= 0.995;
+        player.vy *= 0.995;
+        continue; // Skip rest of physics update (no input handling)
+      }
+      
       // Apply gravity only if not locked and after delay (same as Solo)
       const timeSinceLastHit = Date.now() - player.lastHitTime;
       if (!player.gravityLocked && timeSinceLastHit >= gravityDelay) {
@@ -8123,16 +8754,121 @@ function gameLoop() {
       // Check if player is in the wall zone (between platform and bottom floor)
       const isInWallZone = player.y >= wallTopY && player.y <= wallBottomY;
       
+      // Track if player is stuck on a spike (for paralysis)
+      let isStuckOnSpike = false;
+      
       if (isInWallZone) {
-        // Left wall collision (prevents going through UI panel)
-        if (player.x - player.radius < playLeft) {
-          player.x = playLeft + player.radius;
-          player.vx = -player.vx * 0.8; // Bounce with friction
+        // Check collision with wall spikes first
+        for (const spike of wallSpikes) {
+          // Only check spikes that are extended or extending
+          if (spike.state === 'retracted' || spike.state === 'retracting') continue;
+          
+          const spikeCurrentLength = spike.length * spike.progress;
+          if (spikeCurrentLength <= 0) continue;
+          
+          // Check if player is touching this spike
+          const spikeX = spike.side === 'left' ? playLeft : playRight;
+          const spikeTopY = spike.y - spike.width / 2;
+          const spikeBottomY = spike.y + spike.width / 2;
+          
+          // Check if player is in spike's vertical range
+          if (player.y + player.radius >= spikeTopY && player.y - player.radius <= spikeBottomY) {
+            // Check if player is touching spike horizontally
+            if (spike.side === 'left') {
+              if (player.x - player.radius <= spikeX + spikeCurrentLength && player.x - player.radius >= spikeX) {
+                // Player is touching left spike
+                isStuckOnSpike = true;
+                
+                // Apply paralysis (can't move while stuck)
+                player.paralyzedUntil = Date.now() + 1000; // 1 second paralysis
+                
+                // Apply damage (5% of max HP) with cooldown
+                const now = Date.now();
+                const lastDamage = spike.lastDamageTime[playerId] || 0;
+                if (now - lastDamage >= SPIKE_DAMAGE_COOLDOWN) {
+                  const damage = Math.ceil(player.maxHP * (spike.damagePercent / 100));
+                  const absorbed = Math.min(damage, player.armor);
+                  player.armor -= absorbed;
+                  const remainingDamage = damage - absorbed;
+                  player.hp = Math.max(0, player.hp - remainingDamage);
+                  
+                  spike.lastDamageTime[playerId] = now;
+                  
+                  // Show damage number
+                  safePushDamageNumber({
+                    x: player.x + (Math.random() - 0.5) * 40,
+                    y: player.y - 20,
+                    value: damage,
+                    life: 60,
+                    maxLife: 60,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: -2 - Math.random() * 2,
+                    isCrit: false
+                  });
+                  
+                  console.log(`PvP: Player ${playerId} hit by left spike - ${damage} damage. HP: ${player.hp}/${player.maxHP}`);
+                }
+                
+                // Push player away from spike
+                player.x = spikeX + spikeCurrentLength + player.radius;
+                player.vx = 0; // Stop horizontal movement
+              }
+            } else {
+              // Right spike
+              if (player.x + player.radius >= spikeX - spikeCurrentLength && player.x + player.radius <= spikeX) {
+                // Player is touching right spike
+                isStuckOnSpike = true;
+                
+                // Apply paralysis (can't move while stuck)
+                player.paralyzedUntil = Date.now() + 1000; // 1 second paralysis
+                
+                // Apply damage (5% of max HP) with cooldown
+                const now = Date.now();
+                const lastDamage = spike.lastDamageTime[playerId] || 0;
+                if (now - lastDamage >= SPIKE_DAMAGE_COOLDOWN) {
+                  const damage = Math.ceil(player.maxHP * (spike.damagePercent / 100));
+                  const absorbed = Math.min(damage, player.armor);
+                  player.armor -= absorbed;
+                  const remainingDamage = damage - absorbed;
+                  player.hp = Math.max(0, player.hp - remainingDamage);
+                  
+                  spike.lastDamageTime[playerId] = now;
+                  
+                  // Show damage number
+                  safePushDamageNumber({
+                    x: player.x + (Math.random() - 0.5) * 40,
+                    y: player.y - 20,
+                    value: damage,
+                    life: 60,
+                    maxLife: 60,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: -2 - Math.random() * 2,
+                    isCrit: false
+                  });
+                  
+                  console.log(`PvP: Player ${playerId} hit by right spike - ${damage} damage. HP: ${player.hp}/${player.maxHP}`);
+                }
+                
+                // Push player away from spike
+                player.x = spikeX - spikeCurrentLength - player.radius;
+                player.vx = 0; // Stop horizontal movement
+              }
+            }
+          }
         }
-        // Right wall collision
-        if (player.x + player.radius > playRight) {
-          player.x = playRight - player.radius;
-          player.vx = -player.vx * 0.8; // Bounce with friction
+        
+        // If not stuck on spike, handle normal wall collision
+        if (!isStuckOnSpike) {
+          // Left wall collision (prevents going through UI panel)
+          if (player.x - player.radius < playLeft) {
+            player.x = playLeft + player.radius;
+            player.vx = -player.vx * 0.8; // Bounce with friction
+          }
+          // Right wall collision
+          if (player.x + player.radius > playRight) {
+            player.x = playRight - player.radius;
+            player.vx = -player.vx * 0.8; // Bounce with friction
+          }
         }
       }
       
@@ -8159,6 +8895,48 @@ function gameLoop() {
       // Apply air resistance (same as Solo: 0.995)
       player.vx *= 0.995;
       player.vy *= 0.995;
+    }
+    
+    // Update wall spikes animation (PvP mode only)
+    if (gameMode === 'PvP' || gameMode === 'Training') {
+      const now = Date.now();
+      for (const spike of wallSpikes) {
+        const elapsed = now - spike.startTime;
+        
+        if (spike.state === 'retracted') {
+          // Start extending after retracted duration
+          if (elapsed >= spike.retractDuration) {
+            spike.state = 'extending';
+            spike.startTime = now;
+            spike.progress = 0;
+          }
+        } else if (spike.state === 'extending') {
+          // Extend over extendDuration
+          spike.progress = Math.min(1, elapsed / spike.extendDuration);
+          if (spike.progress >= 1) {
+            spike.state = 'extended';
+            spike.startTime = now;
+            spike.progress = 1;
+          }
+        } else if (spike.state === 'extended') {
+          // Stay extended for extendDuration
+          if (elapsed >= spike.extendDuration) {
+            spike.state = 'retracting';
+            spike.startTime = now;
+            spike.progress = 1;
+          }
+        } else if (spike.state === 'retracting') {
+          // Retract over retractDuration
+          spike.progress = Math.max(0, 1 - (elapsed / spike.retractDuration));
+          if (spike.progress <= 0) {
+            spike.state = 'retracted';
+            spike.startTime = now;
+            spike.progress = 0;
+            // Clear damage cooldown when spike retracts (player is free)
+            spike.lastDamageTime = {};
+          }
+        }
+      }
     }
     
     // PvP/Training mode: Update arrow physics and collision
@@ -8190,10 +8968,13 @@ function gameLoop() {
           return;
         }
         
-        // Check for crit hit
-        const isCritHit = Math.random() < critChance / 100;
-        // Damage: 2x normal, 3x crit (using MY stats)
-        const baseArrowDamage = isCritHit ? dmg * 3 : dmg * 2;
+        // Check for crit hit (with NFT bonuses)
+        const nftBonuses = calculateNftBonuses();
+        const totalCritChance = critChance + nftBonuses.critChance;
+        const isCritHit = Math.random() < totalCritChance / 100;
+        // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
+        const totalDmg = dmg + nftBonuses.dmg;
+        const baseArrowDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
         // Apply 50% variance (damage ranges from 50% to 100%)
         const arrowDamage = applyDamageVariance(baseArrowDamage);
         
@@ -8536,10 +9317,13 @@ function gameLoop() {
             const distance = Math.sqrt(distanceSquared);
             const opponent = player;
             
-            // Check for crit hit
-            const isCritHit = Math.random() < critChance / 100;
-            // Damage: 2x normal, 3x crit (using MY stats)
-            const baseProjectileDamage = isCritHit ? dmg * 3 : dmg * 2;
+            // Check for crit hit - with NFT bonuses
+            const nftBonuses = calculateNftBonuses();
+            const totalCritChance = critChance + nftBonuses.critChance;
+            const isCritHit = Math.random() < totalCritChance / 100;
+            // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
+            const totalDmg = dmg + nftBonuses.dmg;
+            const baseProjectileDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
             // Apply 50% variance (damage ranges from 50% to 100%)
             const projectileDamage = applyDamageVariance(baseProjectileDamage);
             
@@ -9488,8 +10272,10 @@ function gameLoop() {
       // Arrow does strong damage (3x for impact strike)
       const arrowDamageMultiplier = 3;
         
-        // Check for crit hit
-        let isCritHit = Math.random() < critChance / 100;
+        // Check for crit hit - with NFT bonuses
+        const nftBonuses = calculateNftBonuses();
+        const totalCritChance = critChance + nftBonuses.critChance;
+        let isCritHit = Math.random() < totalCritChance / 100;
         if (nextHitForceCrit && Date.now() <= nextHitForceCritExpiresAt) {
           isCritHit = true;
           nextHitForceCrit = false;
@@ -9497,8 +10283,9 @@ function gameLoop() {
           nextHitForceCrit = false;
         }
         
-        // Calculate base damage with arrow multiplier and crit
-        const baseDamage = dmg * arrowDamageMultiplier;
+        // Calculate base damage with arrow multiplier and crit (with NFT bonuses)
+        const totalDmg = dmg + nftBonuses.dmg;
+        const baseDamage = totalDmg * arrowDamageMultiplier;
         const damageWithCrit = isCritHit ? baseDamage * 2 : baseDamage;
         // Apply 50% variance (damage ranges from 50% to 100%)
         let totalDamage = applyDamageVariance(damageWithCrit);
