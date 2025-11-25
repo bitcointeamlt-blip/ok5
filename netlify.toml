@@ -2,6 +2,7 @@
 [build]
   command = "rm -rf dist node_modules && npm install && npm run build"
   publish = "dist"
+  functions = "netlify/functions"
   
 # Force new build by clearing dist first (uncomment if needed)
 # [build]
@@ -38,10 +39,6 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
-# Netlify Functions configuration
-[build]
-  functions = "netlify/functions"
 
 # Environment variables (set these in Netlify dashboard)
 # VITE_SUPABASE_URL=your_supabase_url
