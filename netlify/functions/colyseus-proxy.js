@@ -1,55 +1,6 @@
 // Netlify Function handler - proxies requests to Colyseus Cloud
 // This solves CORS issues by running server-side
-
-// Use native fetch (Node.js 18+) or require node-fetch for older versions
-let fetch;
-try {
-  // Try native fetch first (Node.js 18+)
-  if (typeof globalThis.fetch === 'function') {
-    fetch = globalThis.fetch;
-  } else {
-    // Fallback to node-fetch if available
-    fetch = require('node-fetch');
-  }
-} catch (e) {
-  // If node-fetch not available, use https module
-  const https = require('https');
-  const http = require('http');
-  const { URL } = require('url');
-  
-  fetch = (url, options = {}) => {
-    return new Promise((resolve, reject) => {
-      const urlObj = new URL(url);
-      const client = urlObj.protocol === 'https:' ? https : http;
-      
-      const req = client.request({
-        hostname: urlObj.hostname,
-        port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-        path: urlObj.pathname + urlObj.search,
-        method: options.method || 'GET',
-        headers: options.headers || {},
-      }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          resolve({
-            status: res.statusCode,
-            statusText: res.statusMessage,
-            headers: res.headers,
-            text: () => Promise.resolve(data),
-            json: () => Promise.resolve(JSON.parse(data)),
-          });
-        });
-      });
-      
-      req.on('error', reject);
-      if (options.body) {
-        req.write(options.body);
-      }
-      req.end();
-    });
-  };
-}
+// Uses native fetch (Node.js 18+ - Netlify uses Node.js 22.21.1)
 
 exports.handler = async (event, context) => {
   // CORS headers visada - leidžiame visus origins
