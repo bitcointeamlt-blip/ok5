@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Netlify deploy ZIP (temporary file)
+netlify-deploy.zip
+netlify-deploy-temp/
+
+# Colyseus server build
+colyseus-server/build/
+colyseus-server/node_modules/
+
+# Backup folders (do not commit backup folders)
+GG*/
+lol*/
+*.zip
+
+# Build artifacts
+*.backup-*
