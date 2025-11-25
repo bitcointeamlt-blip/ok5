@@ -1,46 +1,27 @@
-# PvP04 – Clean DOT PvP Build
+# DOT Clicker PvP - Colyseus Server
 
-Šiame kataloge yra minimali, sutvarkyta DOT PvP žaidimo versija:
+Minimalus Colyseus serveris pagal oficialias rekomendacijas.
 
-- **Frontend** (`package.json`, `src/`, `public/`): Vite + TypeScript klientas su Supabase ir Colyseus integracija.
-- **colyseus-server/**: Colyseus Node.js serveris (TypeScript) su CORS override'u ir PM2 `ecosystem.config.js`.
-- **netlify.toml** ir `_redirects`: paruošta Netlify deploy'ui.
+## Deployment į Colyseus Cloud
 
-## Naudojimas
+1. **Commit → Push** kodą į GitHub
+2. **Colyseus Cloud** automatiškai deploy'ins
+3. Patikrinkite logs Colyseus Cloud'e
+
+## Lokalus Paleidimas
 
 ```bash
-cd pvp04
-npm install
-npm run dev          # http://localhost:5173
-
-# Colyseus serveris
 cd colyseus-server
 npm install
-npm run dev          # ws://localhost:2567
+npm run build
+npm start
 ```
 
-## Deploy
-
-1. **Colyseus Cloud**  
-   - `cd colyseus-server` → `npm run build`  
-   - įkelkite `build/`, `package.json`, `package-lock.json`, `ecosystem.config.js`, `Procfile`.
-2. **Netlify**  
-   - `npm run build` prieš deploy.  
-   - Jei `VITE_COLYSEUS_ENDPOINT` nenustatytas, klientas naudoja `https://de-fra-f8820c12.colyseus.cloud`.
+Serveris veiks ant `http://localhost:2567`
 
 ## Struktūra
 
-```
-pvp04/
-  public/
-  src/
-  colyseus-server/
-  netlify.toml
-  package.json
-  tsconfig.json
-  vite.config.ts
-```
-
-Visi senesni dokumentacijos ir atsarginių failų šiukšlynai pašalinti – liko tik būtini komponentai PvP režimui.
-
-
+- `colyseus-server/src/index.ts` - Serverio entry point
+- `colyseus-server/src/rooms/GameRoom.ts` - GameRoom logika
+- `colyseus-server/src/schema/GameState.ts` - GameState schema
+- `colyseus-server/ecosystem.config.js` - PM2 konfigūracija

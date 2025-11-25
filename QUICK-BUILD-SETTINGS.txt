@@ -1,0 +1,30 @@
+COLYSEUS CLOUD BUILD SETTINGS - GREITAS REFERENCE
+
+1. SETTINGS TAB → Build Configuration
+
+Build Command:
+cd colyseus-server && npm install && npm run build
+
+Start Command:
+cd colyseus-server && npm start
+
+Root Directory:
+colyseus-server
+
+Node Version:
+22
+
+2. DEPLOYMENTS TAB
+
+SELECT BRANCH:
+main (arba master)
+
+3. DEPLOY
+
+Spustelėkite "Deploy" arba "New Deployment"
+
+4. PATIKRINKITE
+
+Endpoint: https://de-fra-f8820c12.colyseus.cloud/health
+Turėtumėte matyti: {"status":"ok"}
+
