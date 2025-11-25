@@ -59,11 +59,12 @@ class ColyseusService {
     
     if (!endpoint) {
       if (isProduction) {
-        // Production: VITE_COLYSEUS_ENDPOINT MUST be set in Netlify Environment Variables
-        console.error('❌ VITE_COLYSEUS_ENDPOINT not set in Netlify Environment Variables!');
-        console.error('❌ Please set VITE_COLYSEUS_ENDPOINT in Netlify → Site settings → Environment variables');
-        // Don't throw error in constructor - let connect() handle it
-        endpoint = null; // Will be checked in connect()
+        // Production: Use Netlify Function proxy to avoid CORS issues
+        // The proxy runs server-side, so no CORS problems
+        const netlifyUrl = typeof window !== 'undefined' ? window.location.origin : '';
+        endpoint = `${netlifyUrl}/.netlify/functions/colyseus-proxy`;
+        console.log('🔵 Colyseus Service: Using Netlify Function proxy for production (CORS-free)');
+        console.log('🔵 Proxy endpoint:', endpoint);
       } else {
         // Local: use localhost endpoint
         endpoint = defaultLocalEndpoint;
@@ -132,6 +133,64 @@ class ColyseusService {
     }
   }
 
+  // Custom matchmaking via HTTP proxy (for production to avoid CORS)
+  private async joinOrCreateViaProxy(roomName: string, options: any): Promise<Room<RoomState> | null> {
+    try {
+      // Get proxy URL and Colyseus Cloud endpoint
+      const netlifyUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const proxyUrl = `${netlifyUrl}/.netlify/functions/colyseus-proxy`;
+      const colyseusCloudEndpoint = 'https://de-fra-f8820c12.colyseus.cloud';
+      
+      // Use proxy for HTTP matchmaking request
+      const matchmakeUrl = `${proxyUrl}/matchmake/joinOrCreate/${roomName}`;
+      console.log('🔵 Using proxy for matchmaking:', matchmakeUrl);
+
+      const response = await fetch(matchmakeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(options),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Matchmaking failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const matchmakeData = await response.json();
+      console.log('✅ Matchmaking response:', matchmakeData);
+
+      // Colyseus matchmaking returns room data with roomId and sessionId
+      // We need to create a Room object and connect via WebSocket
+      const roomId = matchmakeData.roomId || matchmakeData.room?.roomId;
+      const sessionId = matchmakeData.sessionId || matchmakeData.room?.sessionId;
+
+      if (!roomId || !sessionId) {
+        throw new Error('Failed to extract roomId or sessionId from matchmaking response');
+      }
+
+      console.log('🔵 Room ID:', roomId, 'Session ID:', sessionId);
+
+      // Create new client with direct Colyseus Cloud WebSocket URL
+      const wsEndpoint = colyseusCloudEndpoint.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
+      const directClient = new Client(wsEndpoint);
+      
+      // Join room using the room ID from matchmaking response
+      // joinById connects via WebSocket directly (no CORS issues)
+      const room = await directClient.joinById<RoomState>(roomId, options);
+
+      return room;
+    } catch (error: any) {
+      console.error('❌ Proxy matchmaking failed:', error);
+      console.error('❌ Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+      });
+      return null;
+    }
+  }
+
   // Join or create a PvP room
   async joinOrCreateRoom(address: string, onOpponentInput: OpponentInputCallback): Promise<Room<RoomState> | null> {
     if (!this.client) {
@@ -147,22 +206,43 @@ class ColyseusService {
       }
 
       console.log('🔵 Attempting to join or create room "pvp_room"...');
-      console.log('🔵 Client endpoint:', this.client.endpoint);
       console.log('🔵 Address:', address);
       
-      // Join or create room with timeout
-      const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", {
+      const options = {
         address: address,
         x: 960,
         y: 540
-      });
-      
-      // Add timeout (30 seconds)
-      const timeoutPromise = new Promise<Room<RoomState>>((_, reject) => {
-        setTimeout(() => reject(new Error('Join room timeout after 30 seconds')), 30000);
-      });
-      
-      this.room = await Promise.race([joinPromise, timeoutPromise]);
+      };
+
+      // Check if we should use proxy method (production mode)
+      const isProduction = import.meta.env.PROD || 
+        (typeof window !== 'undefined' && 
+         window.location.hostname !== 'localhost' && 
+         window.location.hostname !== '127.0.0.1');
+
+      // Try proxy method first in production to avoid CORS
+      if (isProduction) {
+        console.log('🔵 Production mode: Using proxy matchmaking method...');
+        this.room = await this.joinOrCreateViaProxy("pvp_room", options);
+        
+        if (!this.room) {
+          console.warn('⚠️ Proxy method failed, falling back to direct method');
+          // Fallback to direct method
+          const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", options);
+          const timeoutPromise = new Promise<Room<RoomState>>((_, reject) => {
+            setTimeout(() => reject(new Error('Join room timeout after 30 seconds')), 30000);
+          });
+          this.room = await Promise.race([joinPromise, timeoutPromise]);
+        }
+      } else {
+        // Direct method for local development
+        console.log('🔵 Local mode: Using direct matchmaking method...');
+        const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", options);
+        const timeoutPromise = new Promise<Room<RoomState>>((_, reject) => {
+          setTimeout(() => reject(new Error('Join room timeout after 30 seconds')), 30000);
+        });
+        this.room = await Promise.race([joinPromise, timeoutPromise]);
+      }
 
       if (!this.room) {
         console.error('❌ Room is null after joinOrCreate');

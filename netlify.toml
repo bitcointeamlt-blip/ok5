@@ -39,7 +39,12 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Netlify Functions configuration
+[build]
+  functions = "netlify/functions"
+
 # Environment variables (set these in Netlify dashboard)
 # VITE_SUPABASE_URL=your_supabase_url
 # VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+# COLYSEUS_CLOUD_ENDPOINT=https://de-fra-f8820c12.colyseus.cloud (optional, defaults to this)
 
