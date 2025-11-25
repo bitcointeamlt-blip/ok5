@@ -960,11 +960,9 @@ async function enterLobby(): Promise<void> {
   
   if (!colyseusEndpoint) {
     if (isProduction) {
-      // Production: VITE_COLYSEUS_ENDPOINT MUST be set in Netlify Environment Variables
-      console.error('❌ VITE_COLYSEUS_ENDPOINT not set in Netlify Environment Variables!');
-      console.error('❌ Please set VITE_COLYSEUS_ENDPOINT in Netlify → Site settings → Environment variables');
-      walletError = 'Colyseus endpoint not configured. Please set VITE_COLYSEUS_ENDPOINT in Netlify Environment Variables.';
-      return;
+    // Production: use default Colyseus Cloud endpoint if env not set
+    colyseusEndpoint = 'https://de-fra-f8820c12.colyseus.cloud';
+    console.log('🔵 Using default Colyseus Cloud endpoint for production');
     } else {
       // Local: use localhost endpoint
       colyseusEndpoint = defaultLocalEndpoint;
