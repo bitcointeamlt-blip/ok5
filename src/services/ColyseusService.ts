@@ -59,9 +59,11 @@ class ColyseusService {
     
     if (!endpoint) {
       if (isProduction) {
-        // Production: use default Colyseus Cloud endpoint
-        endpoint = 'https://de-fra-f8820c12.colyseus.cloud';
-        console.log('🔵 Colyseus Service: Using default Colyseus Cloud endpoint for production');
+        // Production: VITE_COLYSEUS_ENDPOINT MUST be set in Netlify Environment Variables
+        console.error('❌ VITE_COLYSEUS_ENDPOINT not set in Netlify Environment Variables!');
+        console.error('❌ Please set VITE_COLYSEUS_ENDPOINT in Netlify → Site settings → Environment variables');
+        // Don't throw error in constructor - let connect() handle it
+        endpoint = null; // Will be checked in connect()
       } else {
         // Local: use localhost endpoint
         endpoint = defaultLocalEndpoint;
@@ -145,19 +147,21 @@ class ColyseusService {
       }
 
       console.log('🔵 Attempting to join or create room "pvp_room"...');
+      console.log('🔵 Client endpoint:', this.client.endpoint);
       console.log('🔵 Address:', address);
       
-      const options = {
+      // Join or create room with timeout
+      const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", {
         address: address,
         x: 960,
         y: 540
-      };
-
-      // Join or create room with timeout to avoid hanging requests
-      const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", options);
+      });
+      
+      // Add timeout (30 seconds)
       const timeoutPromise = new Promise<Room<RoomState>>((_, reject) => {
         setTimeout(() => reject(new Error('Join room timeout after 30 seconds')), 30000);
       });
+      
       this.room = await Promise.race([joinPromise, timeoutPromise]);
 
       if (!this.room) {

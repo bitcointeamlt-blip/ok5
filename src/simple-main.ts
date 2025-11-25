@@ -936,13 +936,21 @@ async function loadPlayerNfts(walletAddress: string): Promise<void> {
   }
 }
 
-// Enter PvP lobby (Colyseus only)
+// Enter PvP lobby (Colyseus primary, Supabase fallback)
 async function enterLobby(): Promise<void> {
   const walletState = walletService.getState();
   if (!walletState.isConnected || !walletState.address) {
     walletError = 'Connect Ronin Wallet to play PvP';
     return;
   }
+
+  const myAddress = walletState.address;
+  isInLobby = true;
+  isSearchingForMatch = true;
+  lobbySearchStartTime = Date.now();
+  currentMatch = null;
+  isReady = false;
+  waitingForOpponentReady = false;
 
   // Check if Colyseus endpoint is configured
   // IMPORTANT: Vite replaces import.meta.env.VITE_* at build time
@@ -960,9 +968,9 @@ async function enterLobby(): Promise<void> {
   
   if (!colyseusEndpoint) {
     if (isProduction) {
-    // Production: use default Colyseus Cloud endpoint if env not set
-    colyseusEndpoint = 'https://de-fra-f8820c12.colyseus.cloud';
-    console.log('🔵 Using default Colyseus Cloud endpoint for production');
+      // Production: Try to use default Colyseus Cloud endpoint as fallback
+      colyseusEndpoint = 'https://de-fra-f8820c12.colyseus.cloud';
+      console.warn('⚠️ VITE_COLYSEUS_ENDPOINT not set, using default Colyseus Cloud endpoint');
     } else {
       // Local: use localhost endpoint
       colyseusEndpoint = defaultLocalEndpoint;
@@ -978,16 +986,9 @@ async function enterLobby(): Promise<void> {
     allEnvKeys: Object.keys(import.meta.env).filter(k => k.startsWith('VITE_'))
   });
   
-  console.log('🔵 Colyseus endpoint:', colyseusEndpoint);
+  console.log('🔵 Attempting Colyseus connection first...', colyseusEndpoint);
 
-  const myAddress = walletState.address;
-  isInLobby = true;
-  isSearchingForMatch = true;
-  lobbySearchStartTime = Date.now();
-  currentMatch = null;
-  isReady = false;
-  waitingForOpponentReady = false;
-
+  // TRY COLYSEUS FIRST (Primary System)
   try {
     console.log('🔵 Connecting to Colyseus server...', { endpoint: colyseusEndpoint });
     
@@ -1007,6 +1008,7 @@ async function enterLobby(): Promise<void> {
     }
 
     console.log('✅ Successfully joined Colyseus room:', room.id);
+    console.log('✅ Using Colyseus as primary PvP system');
     
     // Set up room event handlers
     room.onMessage("player_joined", (message: any) => {
@@ -1098,24 +1100,53 @@ async function enterLobby(): Promise<void> {
       created_at: new Date().toISOString()
     };
 
+    // Successfully connected to Colyseus - return early
+    return;
+
   } catch (error: any) {
-    console.error('❌ Failed to connect to Colyseus server:', error);
-    console.error('Error details:', {
+    console.warn('⚠️ Colyseus connection failed, falling back to Supabase:', error);
+    console.warn('⚠️ Error details:', {
       message: error?.message,
-      stack: error?.stack,
       endpoint: colyseusEndpoint,
       isProduction: isProduction
     });
     
-    // More helpful error message
-    if (isProduction) {
-      walletError = `Failed to connect to Colyseus server. Endpoint: ${colyseusEndpoint}. Check if Colyseus Cloud server is running.`;
-    } else {
-      walletError = `Failed to connect to Colyseus server. Make sure Colyseus server is running on ${colyseusEndpoint}`;
-    }
+    // FALLBACK TO SUPABASE (Secondary System)
+    console.log('🔄 Falling back to Supabase matchmaking...');
     
-    isInLobby = false;
-    isSearchingForMatch = false;
+    try {
+      // Clear any Colyseus connection attempts
+      if (colyseusService.isConnectedToRoom()) {
+        await colyseusService.leaveRoom().catch(console.error);
+      }
+
+      // Use Supabase matchmaking as fallback
+      const success = await matchmakingService.enterLobby(myAddress, (match: Match, isPlayer1: boolean) => {
+        console.log('✅ Match found via Supabase:', match.id);
+        currentMatch = match;
+        isInLobby = false;
+        isSearchingForMatch = false;
+        waitingForOpponentReady = true;
+        
+        // Save opponent address
+        opponentWalletAddress = isPlayer1 ? match.p2 : match.p1;
+        
+        // Subscribe to match updates
+        subscribeToMatchUpdates(match.id, myAddress, isPlayer1);
+      });
+
+      if (success) {
+        console.log('✅ Successfully entered Supabase lobby (fallback mode)');
+        walletError = null; // Clear any previous errors
+      } else {
+        throw new Error('Failed to enter Supabase lobby');
+      }
+    } catch (supabaseError: any) {
+      console.error('❌ Supabase fallback also failed:', supabaseError);
+      walletError = `Failed to connect to game servers. Colyseus: ${error?.message || 'unknown'}, Supabase: ${supabaseError?.message || 'unknown'}`;
+      isInLobby = false;
+      isSearchingForMatch = false;
+    }
   }
 }
 

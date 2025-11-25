@@ -1,101 +1,182 @@
-# Deployment Checklist - Colyseus Integration
+# ✅ Deployment Checklist - Paruoštas Deploy'inti
 
-## ✅ Kas Padaryta
+## 🎯 Frontend (Netlify) - Paruoštas ✅
 
-- [x] Colyseus server sukurtas ir kompiliuojasi
-- [x] ColyseusService sukurtas frontend'e
-- [x] Integruota į simple-main.ts
-- [x] Fallback į Supabase (jei Colyseus nepasiekiamas)
-- [x] Dependencies įdiegti
+### ✅ Kas Jau Paruošta:
+- ✅ `netlify.toml` konfigūracija teisinga
+- ✅ Build komanda: `npm install && npm run build`
+- ✅ Publish directory: `dist`
+- ✅ Node version: `22.21.1`
+- ✅ Redirects konfigūruoti (SPA support)
+- ✅ Security headers nustatyti
+- ✅ Colyseus primary system su Supabase fallback
 
-## 🚀 Deployment Steps
+### ⚠️ Reikia Patikrinti Netlify Dashboard:
 
-### Step 1: GitHub Push
+#### 1. Environment Variables (SVARBU!)
+Netlify Dashboard → Site settings → Environment variables:
 
-```bash
-git add .
-git commit -m "Add Colyseus server for PvP multiplayer"
-git push origin main
+**Privalomi:**
+- ✅ `VITE_SUPABASE_URL` - jūsų Supabase URL
+- ✅ `VITE_SUPABASE_ANON_KEY` - jūsų Supabase anon key
+- ✅ `VITE_COLYSEUS_ENDPOINT` - jūsų Colyseus Cloud endpoint (pvz: `https://de-fra-xxxxx.colyseus.cloud`)
+
+**Patikrinkite:**
+- [ ] Ar visi 3 environment variables yra nustatyti?
+- [ ] Ar `VITE_COLYSEUS_ENDPOINT` turi teisingą endpoint'ą?
+- [ ] Ar `VITE_SUPABASE_URL` ir `VITE_SUPABASE_ANON_KEY` teisingi?
+
+---
+
+## 🎯 Colyseus Server (Colyseus Cloud) - Reikia Patikrinti
+
+### ⚠️ Reikia Patikrinti Colyseus Cloud:
+
+#### 1. Colyseus Cloud Dashboard:
+1. Eikite į: **https://cloud.colyseus.io**
+2. Prisijunkite prie savo account'o
+3. Pasirinkite aplikaciją
+
+#### 2. Build Settings:
+Colyseus Cloud → Settings → Build & Deployment:
+
+**Root Directory:**
+```
+colyseus-server
+```
+(be slash'ų, be tarpų!)
+
+**Build Command:**
+```
+cd colyseus-server && npm install && npm run build
 ```
 
-**SVARBU**: Patikrinkite, kad `colyseus-server/` folderis yra GitHub'e!
-
-### Step 2: Colyseus Cloud Deployment
-
-1. Eikite į: https://cloud.colyseus.io
-2. Prisijunkite
-3. Pasirinkite "dot game" aplikaciją
-4. Spustelėkite **"LINK WITH GITHUB"**
-5. Pasirinkite savo repository
-6. Nustatykite build settings:
-
-   **Build Command**:
-   ```
-   cd colyseus-server && npm install && npm run build
-   ```
-
-   **Start Command**:
-   ```
-   cd colyseus-server && npm start
-   ```
-
-   **Root Directory**:
-   ```
-   colyseus-server
-   ```
-
-   **Node Version**: `22` (arba `20`)
-
-7. Spustelėkite **"Deploy"**
-
-### Step 3: Gaukite Endpoint
-
-Po deployment, gausite endpoint (pvz: `https://de-fra-xxxxx.colyseus.cloud`)
-
-### Step 4: Update Frontend Environment
-
-**Netlify**:
-1. Site settings → Environment variables
-2. Pridėkite: `VITE_COLYSEUS_ENDPOINT` = jūsų endpoint
-3. Redeploy
-
-**Cloudflare Pages**:
-1. Settings → Environment variables
-2. Pridėkite: `VITE_COLYSEUS_ENDPOINT` = jūsų endpoint
-3. Redeploy
-
-**Lokaliai**:
-Sukurkite `.env` failą:
+**Start Command:**
 ```
-VITE_COLYSEUS_ENDPOINT=https://de-fra-xxxxx.colyseus.cloud
+cd colyseus-server && npm start
 ```
 
-### Step 5: Testuokite
+**Node Version:**
+```
+22
+```
 
-1. Atidarykite žaidimą
-2. Prisijunkite su Ronin Wallet
-3. Pasirinkite "PvP Online"
-4. Turėtumėte prisijungti prie Colyseus room
+**Port:**
+```
+(palikite tuščią)
+```
+
+#### 3. GitHub Connection:
+- [ ] Ar Colyseus Cloud susietas su GitHub repository?
+- [ ] Ar repository turi `colyseus-server/` folderį?
+- [ ] Ar kodas push'intas į GitHub?
+
+#### 4. Deployment:
+- [ ] Ar Colyseus serveris deploy'intas?
+- [ ] Ar deployment sėkmingas (status: "Running")?
+- [ ] Ar gavote endpoint'ą (pvz: `https://de-fra-xxxxx.colyseus.cloud`)?
+
+#### 5. Patikrinkite Endpoint:
+Atidarykite browser:
+```
+https://de-fra-xxxxx.colyseus.cloud/health
+```
+
+Turėtumėte matyti:
+```json
+{"status":"ok"}
+```
+
+✅ **Jei matote `{"status":"ok"}`:** Serveris veikia!
+
+---
+
+## 🚀 Deployment Žingsniai
+
+### Step 1: Patikrinkite Colyseus Server
+1. Eikite į Colyseus Cloud Dashboard
+2. Patikrinkite ar serveris veikia
+3. Kopijuokite endpoint'ą (pvz: `https://de-fra-xxxxx.colyseus.cloud`)
+
+### Step 2: Netlify Environment Variables
+1. Eikite į Netlify Dashboard
+2. Site settings → Environment variables
+3. Patikrinkite/atnaujinkite:
+   - `VITE_COLYSEUS_ENDPOINT` = jūsų Colyseus endpoint
+   - `VITE_SUPABASE_URL` = jūsų Supabase URL
+   - `VITE_SUPABASE_ANON_KEY` = jūsų Supabase anon key
+
+### Step 3: Deploy Frontend
+1. Netlify Dashboard → Deploys
+2. Spustelėkite **"Trigger deploy"** → **"Clear cache and deploy site"**
+3. Palaukite, kol deployment baigsis (2-5 min)
+
+### Step 4: Patikrinkite Deployment
+1. Atidarykite deployed site
+2. Patikrinkite browser console (F12)
+3. Turėtumėte matyti:
+   ```
+   🔵 Attempting Colyseus connection first...
+   ✅ Connected to Colyseus server...
+   ✅ Using Colyseus as primary PvP system
+   ```
+   ARBA (jei Colyseus nepavyksta):
+   ```
+   ⚠️ Colyseus connection failed, falling back to Supabase
+   ✅ Successfully entered Supabase lobby (fallback mode)
+   ```
+
+---
+
+## ✅ Deployment Checklist
+
+### Prieš Deploy'inti:
+- [ ] Colyseus serveris deploy'intas ir veikia
+- [ ] Colyseus endpoint gautas ir kopijuotas
+- [ ] Netlify environment variables nustatyti:
+  - [ ] `VITE_COLYSEUS_ENDPOINT`
+  - [ ] `VITE_SUPABASE_URL`
+  - [ ] `VITE_SUPABASE_ANON_KEY`
+- [ ] Kodas push'intas į GitHub (jei naudojate auto-deploy)
+
+### Po Deployment:
+- [ ] Netlify deployment sėkmingas
+- [ ] Site veikia (atidarykite browser)
+- [ ] Browser console neturi error'ų
+- [ ] Colyseus prisijungia (arba Supabase fallback veikia)
+- [ ] PvP Online veikia
+
+---
 
 ## 🔍 Troubleshooting
 
-### Server neveikia Colyseus Cloud'e
-- Patikrinkite logs Colyseus Cloud dashboard
-- Patikrinkite build command
-- Patikrinkite Node version
+### Problema: "VITE_COLYSEUS_ENDPOINT not set"
+**Sprendimas:** Pridėkite `VITE_COLYSEUS_ENDPOINT` į Netlify Environment Variables
 
-### Frontend negali prisijungti
-- Patikrinkite `VITE_COLYSEUS_ENDPOINT` environment variable
-- Patikrinkite, ar endpoint formatas teisingas
-- Patikrinkite browser console errors
+### Problema: "Colyseus connection failed"
+**Tai Normalus:** Sistema automatiškai perjungia į Supabase fallback. Patikrinkite:
+- Ar Colyseus serveris veikia?
+- Ar endpoint teisingas?
 
-### Matchmaking neveikia
-- Colyseus automatiškai match'ina žaidėjus
-- Jei neveikia, patikrinkite server logs
+### Problema: "Failed to connect to Supabase"
+**Sprendimas:** Patikrinkite:
+- Ar `VITE_SUPABASE_URL` teisingas?
+- Ar `VITE_SUPABASE_ANON_KEY` teisingas?
 
-## 📝 Notes
+---
 
-- Supabase vis dar reikalingas duomenų bazei (profiles, stats)
-- Colyseus pakeičia tik PvP multiplayer (Realtime)
-- Solo mode veikia be Colyseus
+## 📝 Išvada
+
+**Kodas paruoštas deploy'inti!** ✅
+
+**Reikia tik:**
+1. ✅ Patikrinti Colyseus Cloud deployment
+2. ✅ Patikrinti Netlify Environment Variables
+3. ✅ Deploy'inti frontend
+
+**Sistema veiks su:**
+- ✅ Colyseus kaip primary (jei veikia)
+- ✅ Supabase kaip fallback (jei Colyseus nepavyksta)
+
+**Galite daryti deploy!** 🚀
 

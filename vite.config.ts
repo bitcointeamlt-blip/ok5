@@ -4,8 +4,8 @@ import { readFileSync } from 'fs'
 // Read package.json to get version
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'))
 const version = packageJson.version || '1.0.19'
-// Create unique build ID: version only (Date.now() causes build issues)
-const buildId = version
+// Create unique build ID: version + timestamp
+const buildId = `${version}-${Date.now()}`
 
 export default defineConfig({
   server: {
