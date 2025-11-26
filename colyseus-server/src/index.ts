@@ -11,14 +11,21 @@ const server = createServer(app);
 // CORS - allow all origins for Colyseus Cloud
 // CRITICAL: Must be configured BEFORE Colyseus server initialization
 app.use(cors({
-  origin: true, // Allow all origins
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    // Allow all origins for Colyseus Cloud
+    callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Type']
+  exposedHeaders: ['Content-Type'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
-// Handle preflight requests explicitly
+// Handle preflight requests explicitly - MUST be before other routes
 app.options('*', cors());
 
 app.use(express.json());
@@ -40,6 +47,10 @@ const gameServer = new Server({
 matchMaker.controller.getCorsHeaders = function(req: any) {
   const origin = req.headers.origin;
   
+  // Log for debugging
+  console.log('[CORS] Matchmaking request from origin:', origin);
+  
+  // Return CORS headers - allow specific origin or all if no origin
   return {
     'Access-Control-Allow-Origin': origin || '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
