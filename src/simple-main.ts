@@ -1104,49 +1104,38 @@ async function enterLobby(): Promise<void> {
     return;
 
   } catch (error: any) {
-    console.warn('⚠️ Colyseus connection failed, falling back to Supabase:', error);
-    console.warn('⚠️ Error details:', {
+    console.error('❌ Colyseus connection failed:', error);
+    console.error('❌ Error details:', {
       message: error?.message,
       endpoint: colyseusEndpoint,
-      isProduction: isProduction
+      isProduction: isProduction,
+      errorType: error?.name,
+      errorCode: error?.code,
+      stack: error?.stack
     });
     
-    // FALLBACK TO SUPABASE (Secondary System)
-    console.log('🔄 Falling back to Supabase matchmaking...');
-    
-    try {
-      // Clear any Colyseus connection attempts
-      if (colyseusService.isConnectedToRoom()) {
-        await colyseusService.leaveRoom().catch(console.error);
-      }
-
-      // Use Supabase matchmaking as fallback
-      const success = await matchmakingService.enterLobby(myAddress, (match: Match, isPlayer1: boolean) => {
-        console.log('✅ Match found via Supabase:', match.id);
-        currentMatch = match;
-        isInLobby = false;
-        isSearchingForMatch = false;
-        waitingForOpponentReady = true;
-        
-        // Save opponent address
-        opponentWalletAddress = isPlayer1 ? match.p2 : match.p1;
-        
-        // Subscribe to match updates
-        subscribeToMatchUpdates(match.id, myAddress, isPlayer1);
-      });
-
-      if (success) {
-        console.log('✅ Successfully entered Supabase lobby (fallback mode)');
-        walletError = null; // Clear any previous errors
-      } else {
-        throw new Error('Failed to enter Supabase lobby');
-      }
-    } catch (supabaseError: any) {
-      console.error('❌ Supabase fallback also failed:', supabaseError);
-      walletError = `Failed to connect to game servers. Colyseus: ${error?.message || 'unknown'}, Supabase: ${supabaseError?.message || 'unknown'}`;
-      isInLobby = false;
-      isSearchingForMatch = false;
+    // Check for specific error types
+    if (error?.message?.includes('CORS') || error?.message?.includes('Access-Control')) {
+      walletError = 'CORS Error: Colyseus serveris blokuoja request\'us. Reikia redeploy\'inti serverį su nauja CORS konfigūracija.';
+      console.error('❌ CORS ERROR DETECTED!');
+      console.error('❌ Sprendimas: Colyseus Cloud → Deployments → Redeploy');
+    } else if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError') || error?.message?.includes('ERR_FAILED')) {
+      walletError = 'Network Error: Negaliu pasiekti Colyseus serverio. Patikrinkite ar serveris veikia.';
+      console.error('❌ NETWORK ERROR DETECTED!');
+      console.error('❌ Patikrinkite: https://de-fra-f8820c12.colyseus.cloud/health');
+    } else if (error?.message?.includes('room is null')) {
+      walletError = 'Colyseus Room Error: Negaliu prisijungti prie room. Patikrinkite ar serveris deploy\'intas su nauja versija.';
+      console.error('❌ ROOM NULL ERROR DETECTED!');
+      console.error('❌ Sprendimas: Colyseus Cloud → Deployments → Redeploy');
+    } else {
+      walletError = `Colyseus Error: ${error?.message || 'Unknown error'}. Patikrinkite serverio status.`;
     }
+    
+    isInLobby = false;
+    isSearchingForMatch = false;
+    
+    // NO SUPABASE FALLBACK - Focus only on Colyseus
+    console.log('⚠️ Colyseus failed - no fallback. Please fix Colyseus server.');
   }
 }
 

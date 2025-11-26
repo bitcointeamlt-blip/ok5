@@ -184,19 +184,36 @@ class ColyseusService {
         message: error?.message,
         stack: error?.stack,
         name: error?.name,
-        code: error?.code
+        code: error?.code,
+        endpoint: this.client?.endpoint
       });
       
       // Check if it's a CORS error
-      if (error?.message?.includes('CORS') || error?.message?.includes('Access-Control')) {
-        console.error('❌ CORS ERROR DETECTED! Server is blocking requests from this origin.');
-        console.error('❌ Please check Colyseus Cloud CORS settings or server CORS configuration.');
+      if (error?.message?.includes('CORS') || 
+          error?.message?.includes('Access-Control') ||
+          error?.message?.includes('blocked by CORS policy') ||
+          (error?.message?.includes('Failed to fetch') && error?.stack?.includes('CORS'))) {
+        console.error('❌ CORS ERROR DETECTED!');
+        console.error('❌ Serveris blokuoja request\'us iš:', window.location.origin);
+        console.error('❌ Sprendimas: Colyseus Cloud → Deployments → Redeploy');
+        console.error('❌ ARBA: Patikrinkite Colyseus Cloud CORS settings');
       }
       
       // Check if it's a network error
-      if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
-        console.error('❌ NETWORK ERROR! Cannot reach Colyseus server.');
-        console.error('❌ Check if server is running and endpoint is correct.');
+      if (error?.message?.includes('Failed to fetch') || 
+          error?.message?.includes('NetworkError') ||
+          error?.message?.includes('ERR_FAILED') ||
+          error?.code === 'ECONNREFUSED') {
+        console.error('❌ NETWORK ERROR!');
+        console.error('❌ Negaliu pasiekti Colyseus serverio:', this.client?.endpoint);
+        console.error('❌ Patikrinkite: https://de-fra-f8820c12.colyseus.cloud/health');
+      }
+      
+      // Check if it's a timeout
+      if (error?.message?.includes('timeout')) {
+        console.error('❌ TIMEOUT ERROR!');
+        console.error('❌ Serveris neatsako per 30 sekundžių');
+        console.error('❌ Patikrinkite ar serveris veikia');
       }
       
       return null;
