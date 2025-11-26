@@ -104,8 +104,13 @@ class ColyseusService {
         // Convert https:// to wss:// if needed
         const wsEndpoint = endpoint.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
         console.log('🔵 Creating Colyseus client with endpoint:', wsEndpoint.substring(0, 50) + '...');
+        
+        // Store endpoint for logging
+        (this as any)._currentEndpoint = wsEndpoint;
+        
         this.client = new Client(wsEndpoint);
         console.log('✅ Colyseus client created successfully');
+        console.log('✅ Client endpoint stored:', wsEndpoint.substring(0, 50) + '...');
         return true;
       }
 
@@ -147,7 +152,12 @@ class ColyseusService {
       }
 
       console.log('🔵 Attempting to join or create room "pvp_room"...');
-      console.log('🔵 Client endpoint:', this.client.endpoint);
+      // Log endpoint safely (Colyseus Client might not expose endpoint property)
+      const clientEndpoint = (this as any)?._currentEndpoint || 
+                           (this.client as any)?.endpoint || 
+                           (this.client as any)?.transport?.endpoint || 
+                           'unknown';
+      console.log('🔵 Client endpoint:', clientEndpoint);
       console.log('🔵 Address:', address);
       
       // Join or create room with timeout
@@ -180,12 +190,17 @@ class ColyseusService {
       return this.room;
     } catch (error: any) {
       console.error('❌ Failed to join Colyseus room:', error);
+      // Get endpoint safely
+      const clientEndpoint = (this as any)?._currentEndpoint || 
+                           (this.client as any)?.endpoint || 
+                           (this.client as any)?.transport?.endpoint || 
+                           'unknown';
       console.error('❌ Error details:', {
         message: error?.message,
         stack: error?.stack,
         name: error?.name,
         code: error?.code,
-        endpoint: this.client?.endpoint
+        endpoint: clientEndpoint
       });
       
       // Check if it's a CORS error
@@ -204,8 +219,12 @@ class ColyseusService {
           error?.message?.includes('NetworkError') ||
           error?.message?.includes('ERR_FAILED') ||
           error?.code === 'ECONNREFUSED') {
+        const clientEndpoint = (this as any)?._currentEndpoint || 
+                             (this.client as any)?.endpoint || 
+                             (this.client as any)?.transport?.endpoint || 
+                             'unknown';
         console.error('❌ NETWORK ERROR!');
-        console.error('❌ Negaliu pasiekti Colyseus serverio:', this.client?.endpoint);
+        console.error('❌ Negaliu pasiekti Colyseus serverio:', clientEndpoint);
         console.error('❌ Patikrinkite: https://de-fra-f8820c12.colyseus.cloud/health');
       }
       
