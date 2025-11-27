@@ -1,0 +1,15 @@
+SSH DEPLOY KEY - NUKOPIJUOKITE VISĄ ŠĮ TEKSTĄ
+
+Title: Colyseus Cloud Deploy
+
+Key (įdėkite VISĄ šį tekstą):
+
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDKQEIZMOy9qks8P9Cf2G0ZX9VWujJ+PRw/ejpVeDi0EVLS5m40ZSZWubSdj/GbxF+a2UlTyYiRjMm9O+omoUlPccsuXfwHQ84l5WmolupleEXRPmIV8wJZrDnWeCFlQ3fOXANlWYmvJpmeSqWwwAlgviWk+NxrH9kaXNGTN6m+WWogOqXA510NZjihuzJkCp6AozQ5aBL6SEFTucwqPmV9MbeLyiG0uoq7t19r9yF7suUqF+xrnBQVSAr8YXP0igxli7TOqjQlf8ZhEcFYE/O31GuIrQHc8SJD2Ex4y2Sao6oVQpKpxo3etKvIhrhHehZIKJT3IE8JjsAeTLNZnoKr colyseus-cloud-deploy-key-11-11-2025
+
+INSTRUKCIJOS:
+
+1. Title laukelyje įdėkite: Colyseus Cloud Deploy
+2. Key laukelyje įdėkite VISĄ SSH key (pradeda nuo ssh-rsa, baigiasi colyseus-cloud-deploy-key-11-11-2025)
+3. ✅ Pažymėkite "Allow write access" checkbox
+4. Spustelėkite "Add key"
+
