@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DOT Clicker</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    
+    body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Press Start 2P', monospace;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+    }
+    #gameContainer {
+      background: #fff;
+      border: 4px solid #000;
+      position: relative;
+      box-shadow: 0 0 0 2px #000;
+      max-width: 100vw;
+      max-height: 100vh;
+      overflow: hidden;
+    }
+    #gameCanvas {
+      display: block;
+      cursor: default;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+    /* Responsive scaling for smaller screens */
+    @media (max-width: 1920px) {
+      #gameCanvas {
+        width: 100vw;
+        height: auto;
+      }
+    }
+    @media (max-height: 1080px) {
+      #gameCanvas {
+        width: auto;
+        height: 100vh;
+      }
+    }
+    /* Ensure minimum size for UI visibility */
+    @media (max-width: 800px) {
+      #gameContainer {
+        transform: scale(0.5);
+        transform-origin: top left;
+        width: 200%;
+        height: 200%;
+      }
+    }
+    #gameCanvas.pointer {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="1920" height="1080" style="border: 1px solid #000;"></canvas>
+  </div>
+  <script type="module" src="/src/simple-main.ts"></script>
+</body>
+</html>
