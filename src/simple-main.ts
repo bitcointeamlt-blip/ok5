@@ -11,6 +11,7 @@ import type { Match } from './services/SupabaseService';
 import { ProfileManager } from './profile/ProfileManager';
 import { nftService } from './services/NftService';
 import type { NftItem } from './types/nft';
+import { AudioManager } from './audio/AudioManager';
 
 console.log('Starting simple game...');
 
@@ -71,6 +72,9 @@ try {
 
 // Profile Manager
 const profileManager = new ProfileManager();
+
+// Audio Manager
+const audioManager = new AudioManager();
 
 // Game state
 let dotCurrency = 1000;
@@ -1704,6 +1708,11 @@ function handleOpponentInput(input: any): void {
       myPlayer.armor -= absorbed;
       const remainingDamage = hitDamage - absorbed;
       myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
+      
+      // Play damage hit sound effect (pain/impact sound)
+      audioManager.resumeContext().then(() => {
+        audioManager.playDamageHit(isCritHit);
+      });
       
       // Profile: Track damage taken (PvP mode - I receive damage)
       profileManager.addDamageTaken(hitDamage);
@@ -7070,6 +7079,11 @@ if (!(window as any).__keydownListenerAdded) {
       bulletSpawnTime = Date.now();
       bulletLastShotTime = Date.now();
       
+      // Play bullet shot sound effect (like gunshot from barrel)
+      audioManager.resumeContext().then(() => {
+        audioManager.playBulletShot();
+      });
+      
       // Send to opponent via network sync
       const useColyseus = colyseusService.isConnectedToRoom();
       const isSyncing = useColyseus || pvpSyncService.isSyncing();
@@ -7176,6 +7190,11 @@ if (!(window as any).__keyupListenerAdded) {
       
       // Create explosion animation at launch position
       createProjectileExplosion(projectileX, projectileY);
+      
+      // Play projectile launch sound effect (like cannon explosion)
+      audioManager.resumeContext().then(() => {
+        audioManager.playProjectileLaunch();
+      });
       
       console.log(`Projectile launched with speed ${speed}, charge: ${(chargeRatio * 100).toFixed(1)}%`);
       
@@ -7326,6 +7345,11 @@ if (!(window as any).__clickListenerAdded) {
     // Reset hit targets
     katanaHitTargets.clear();
     
+    // Play arrow shot sound effect (like arrow flying through air - fffiiiit)
+    audioManager.resumeContext().then(() => {
+      audioManager.playArrowShot();
+    });
+    
     console.log(`Arrow launched from (${mouseX}, ${mouseY}) towards DOT at speed ${katanaSpeed}`);
     return; // Don't process normal click when arrow is launched
   }
@@ -7376,6 +7400,11 @@ if (!(window as any).__clickListenerAdded) {
         dotVx += Math.cos(oppositeAngle) * force;
         dotVy += Math.sin(oppositeAngle) * force;
         
+        // Play dot hit sound effect (like hammer hitting a nail)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDotHit();
+        });
+        
         // Update last hit time to disable gravity temporarily
         lastHitTime = Date.now();
         gravityLocked = false; // enable gravity after the very first successful hit
@@ -7387,6 +7416,12 @@ if (!(window as any).__clickListenerAdded) {
           dotArmor -= absorbedB;
           const remainingB = bonusDamage - absorbedB;
           dotHP = Math.max(0, dotHP - remainingB);
+          
+          // Play damage hit sound effect (pain/impact sound)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageHit(false);
+          });
+          
           safePushDamageNumber({
             x: dotX + (Math.random() - 0.5) * 40,
             y: dotY - 28,
@@ -7436,6 +7471,11 @@ if (!(window as any).__clickListenerAdded) {
         dotArmor -= absorbed;
         const remainingDamage = totalDamage - absorbed;
         dotHP = Math.max(0, dotHP - remainingDamage); // Don't go below 0
+        
+        // Play damage hit sound effect (pain/impact sound)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDamageHit(isCritHit);
+        });
         
         // Profile: Track damage taken (Solo mode)
         profileManager.addDamageTaken(totalDamage);
@@ -7569,6 +7609,11 @@ if (!(window as any).__clickListenerAdded) {
         pvpKatanaAngle = Math.atan2(dy, dx);
       }
       
+      // Play arrow shot sound effect (like arrow flying through air - fffiiiit)
+      audioManager.resumeContext().then(() => {
+        audioManager.playArrowShot();
+      });
+      
         // Removed console.log to reduce lag
         // console.log(`PvP Arrow launched from player (${myPlayer.x}, ${myPlayer.y}) towards mouse (${mouseX}, ${mouseY}) at speed ${pvpKatanaSpeed}`);
       
@@ -7646,6 +7691,11 @@ if (!(window as any).__clickListenerAdded) {
           // Apply force to player velocity (same as Solo DOT)
           myPlayer.vx += Math.cos(oppositeAngle) * force;
           myPlayer.vy += Math.sin(oppositeAngle) * force;
+          
+          // Play dot hit sound effect (like hammer hitting a nail)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDotHit();
+          });
           
           // Update last hit time and unlock gravity (same as Solo)
           myPlayer.lastHitTime = Date.now();
@@ -8033,6 +8083,11 @@ function gameLoop() {
           screenShake = Math.max(screenShake, 30);
         }
         
+        // Play damage hit sound effect (pain/impact sound when hitting opponent)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDamageHit(isCritHit);
+        });
+        
         // Show damage number (we see it when we hit)
         safePushDamageNumber({
           x: opponent.x + (Math.random() - 0.5) * 40,
@@ -8273,6 +8328,11 @@ function gameLoop() {
             dotVy = -Math.max(2, Math.abs(dotVy) * 0.6 + 3);
             screenShake = Math.max(screenShake, 6);
             
+            // Play bounce sound effect (like spring or trampoline)
+            audioManager.resumeContext().then(() => {
+              audioManager.playBounce();
+            });
+            
             collisionFound = true;
             break; // Only handle first collision
           }
@@ -8297,6 +8357,12 @@ function gameLoop() {
             dotArmor -= absorbedB;
             const remainingB = bonusDamage - absorbedB;
             dotHP = Math.max(0, dotHP - remainingB);
+            
+            // Play damage hit sound effect (pain/impact sound)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageHit(true); // Combo bonus is crit-like
+            });
+            
             safePushDamageNumber({
               x: dotX + (Math.random() - 0.5) * 40,
               y: dotY - 28,
@@ -8355,6 +8421,12 @@ function gameLoop() {
             dotArmor -= absorbed;
             const remainingDamage = bonusDamage - absorbed;
             dotHP = Math.max(0, dotHP - remainingDamage);
+            
+            // Play damage hit sound effect (pain/impact sound)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageHit(true); // Speed bonus is crit-like
+            });
+            
             safePushDamageNumber({
               x: dotX + (Math.random() - 0.5) * 40,
               y: dotY - 20,
@@ -8411,6 +8483,11 @@ function gameLoop() {
           movingPlatformFlashTimer = 6;
           screenShake = Math.max(screenShake, 6);
           
+          // Play bounce sound effect (like spring or trampoline)
+          audioManager.resumeContext().then(() => {
+            audioManager.playBounce();
+          });
+          
           // Update combo progress on platform bounce
           comboProgress = Math.min(100, comboProgress + 10); // Each platform bounce adds 10%
           
@@ -8421,6 +8498,12 @@ function gameLoop() {
             dotArmor -= absorbedB;
             const remainingB = bonusDamage - absorbedB;
             dotHP = Math.max(0, dotHP - remainingB);
+            
+            // Play damage hit sound effect (pain/impact sound)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageHit(true); // Combo bonus is crit-like
+            });
+            
             safePushDamageNumber({
               x: dotX + (Math.random() - 0.5) * 40,
               y: dotY - 28,
@@ -8810,6 +8893,11 @@ function gameLoop() {
                   const remainingDamage = damage - absorbed;
                   player.hp = Math.max(0, player.hp - remainingDamage);
                   
+                  // Play damage hit sound effect (pain/impact sound)
+                  audioManager.resumeContext().then(() => {
+                    audioManager.playDamageHit(false);
+                  });
+                  
                   spike.lastDamageTime[playerId] = now;
                   
                   // Show damage number
@@ -8849,6 +8937,11 @@ function gameLoop() {
                   player.armor -= absorbed;
                   const remainingDamage = damage - absorbed;
                   player.hp = Math.max(0, player.hp - remainingDamage);
+                  
+                  // Play damage hit sound effect (pain/impact sound)
+                  audioManager.resumeContext().then(() => {
+                    audioManager.playDamageHit(false);
+                  });
                   
                   spike.lastDamageTime[playerId] = now;
                   
@@ -9026,6 +9119,11 @@ function gameLoop() {
         if (isCritHit) {
           screenShake = Math.max(screenShake, 30);
         }
+        
+        // Play damage hit sound effect (pain/impact sound when hitting opponent)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDamageHit(isCritHit);
+        });
         
         // Show damage number (we see it when we hit)
         safePushDamageNumber({
@@ -9345,6 +9443,11 @@ function gameLoop() {
             // Apply 50% variance (damage ranges from 50% to 100%)
             const projectileDamage = applyDamageVariance(baseProjectileDamage);
             
+            // Play damage hit sound effect (pain/impact sound when hitting opponent)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageHit(isCritHit);
+            });
+            
             // Profile: Track damage dealt (PvP mode - Projectile)
             profileManager.addDamageDealt(projectileDamage);
             
@@ -9510,6 +9613,11 @@ function gameLoop() {
               player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
               screenShake = Math.max(screenShake, 6);
               
+              // Play bounce sound effect (like spring or trampoline)
+              audioManager.resumeContext().then(() => {
+                audioManager.playBounce();
+              });
+              
               collisionFound = true;
               break; // Only handle first collision
             }
@@ -9540,6 +9648,11 @@ function gameLoop() {
             player.vx += (localX / halfW) * 1.2;
             movingPlatformFlashTimer = 6;
             screenShake = Math.max(screenShake, 6);
+            
+            // Play bounce sound effect (like spring or trampoline)
+            audioManager.resumeContext().then(() => {
+              audioManager.playBounce();
+            });
           }
         }
       }
@@ -9559,6 +9672,11 @@ function gameLoop() {
               const localX = player.x - platformX;
               player.vx += (localX / halfW) * 1.2;
               screenShake = Math.max(screenShake, 6);
+              
+              // Play bounce sound effect (like spring or trampoline)
+              audioManager.resumeContext().then(() => {
+                audioManager.playBounce();
+              });
             }
           }
         };
@@ -10074,6 +10192,11 @@ function gameLoop() {
             const remainingDamage = damage - absorbed;
             player2.hp = Math.max(0, player2.hp - remainingDamage);
             
+            // Play damage hit sound effect (pain/impact sound)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageHit(false);
+            });
+            
             // Profile: Track damage dealt (PvP mode - I deal damage if I'm player 1)
             if (myPlayerId && myPlayerId === player1.id) {
               profileManager.addDamageDealt(damage);
@@ -10122,6 +10245,11 @@ function gameLoop() {
             player1.armor -= absorbed;
             const remainingDamage = damage - absorbed;
             player1.hp = Math.max(0, player1.hp - remainingDamage);
+            
+            // Play damage hit sound effect (pain/impact sound)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageHit(false);
+            });
             
             // Record damage time
             lastCollisionDamageTime[collisionKey] = Date.now();
@@ -10314,6 +10442,11 @@ function gameLoop() {
         const remainingDamage = totalDamage - absorbed;
         dotHP = Math.max(0, dotHP - remainingDamage);
         
+        // Play damage hit sound effect (pain/impact sound)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDamageHit(isCritHit);
+        });
+        
         // Add damage number animation
         safePushDamageNumber({
           x: dotX + (Math.random() - 0.5) * 40,
@@ -10339,6 +10472,11 @@ function gameLoop() {
         // Move DOT opposite to click direction - same logic as normal click
         dotVx += Math.cos(oppositeAngle) * force;
         dotVy += Math.sin(oppositeAngle) * force;
+        
+        // Play dot hit sound effect (like hammer hitting a nail)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDotHit();
+        });
         
         // Screen shake on impact (stronger than normal hits)
         screenShake = Math.max(screenShake, isCritHit ? 30 : 20);
