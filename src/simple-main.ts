@@ -312,6 +312,8 @@ let awaitingRestart = false;
 let scheduledRestartAt = 0;
 let groundShrinkStartAt = 0;
 let gravityLocked = true; // Disable gravity until first successful DMG click
+let gravityActiveUntil = 0; // When gravity should stop being active (0 = inactive)
+const gravityActiveDuration = 5000; // Gravity active for 5 seconds after damage
 // Force-next-crit after high-speed platform bounce
 let nextHitForceCrit = false;
 let nextHitForceCritExpiresAt = 0;
@@ -349,6 +351,7 @@ type PvPPlayer = {
   // Solo DOT physics state (copied from Solo)
   lastHitTime: number; // Track when player was last hit
   gravityLocked: boolean; // Disable gravity until first successful hit
+  gravityActiveUntil: number; // When gravity should stop being active (0 = inactive)
   speedTrail: Particle[]; // Supersonic shadow tail
   // HP and Armor system (from Solo)
   hp: number; // Current HP
@@ -362,6 +365,18 @@ type PvPPlayer = {
   lastArmorRegen: number; // When armor was last regenerated
   // Bullet paralysis
   paralyzedUntil: number; // Timestamp when paralysis ends (0 = not paralyzed)
+  // Jetpack fuel system
+  fuel: number; // Current fuel (0-100)
+  maxFuel: number; // Maximum fuel (100)
+  isUsingJetpack: boolean; // Whether jetpack is currently active
+  jetpackStartTime: number; // When jetpack was started (for fuel consumption)
+  lastFuelRegenTime: number; // When fuel was last regenerated
+  // Overheat system
+  isOverheated: boolean; // Whether jetpack is overheated
+  overheatStartTime: number; // When overheat started (for 3 second duration)
+  // Toxic water system
+  toxicWaterStartTime: number | null; // When player entered toxic water (null = not in water)
+  toxicWaterLastDamageTime: number; // When last toxic water damage was dealt
 };
 
 let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
@@ -416,17 +431,73 @@ const projectileMaxBounces = 2; // Maximum number of bounces allowed on projecti
 const projectileCooldown = 3000; // Cooldown after hitting target (3 seconds)
 
 // Bullet system (simple projectile, faster than arrow, smaller than projectile)
-let bulletFlying = false; // Whether bullet is flying
-let bulletX = 0; // Bullet current position
-let bulletY = 0;
-let bulletVx = 0; // Bullet velocity X
-let bulletVy = 0; // Bullet velocity Y
+// Changed to array to support multiple bullets (burst fire)
+interface Bullet {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spawnTime: number;
+}
+let bullets: Bullet[] = []; // Array of flying bullets
 let bulletLastShotTime = 0; // When bullet was last fired (for cooldown)
+let shotsInBurst = 0; // Number of shots fired in current burst (0-2)
+let lastBurstShotTime = 0; // When last shot in burst was fired
 const bulletSpeed = 18; // Bullet speed (20% faster than arrow: 15 * 1.2 = 18)
 const bulletRadius = 8; // Bullet size (doubled for heavier look)
-const bulletCooldown = 5000; // Cooldown between shots (5 seconds)
+const bulletCooldown = 5000; // Cooldown after burst (5 seconds after 2 shots)
+const bulletBurstDelay = 200; // Delay between shots in burst (0.2 seconds)
 const bulletLifetime = 3000; // Bullet lifetime in milliseconds (3 seconds)
-let bulletSpawnTime = 0; // When bullet was spawned
+
+// Mine/Trap system
+interface Mine {
+  x: number;
+  y: number;
+  spawnTime: number;
+  exploded: boolean;
+}
+interface Spike {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spawnTime: number;
+}
+let mines: Mine[] = []; // Array of placed mines
+let spikes: Spike[] = []; // Array of flying spikes from exploded mines
+let mineLastPlaceTime = 0; // When mine was last placed (for cooldown)
+const mineCooldown = 8000; // Cooldown between placing mines (8 seconds)
+const mineLifetime = 10000; // Mine lifetime before auto-explosion (10 seconds)
+const mineRadius = 12; // Mine collision radius (restored to original size)
+const spikeSpeed = 12; // Spike speed after explosion
+const spikeRadius = 4; // Spike collision radius (reduced from 6 to 4 for smaller spikes)
+const spikeLifetime = 800; // Spike lifetime in milliseconds (reduced from 1.2s to 0.8s for even shorter flight distance)
+const mineDamageMultiplier = 2.0; // Damage multiplier when stepping on mine (2x)
+const spikeDamageMultiplier = 0.5; // Damage multiplier for spikes (50% of basic damage)
+
+// Health pack system (HP pakai) - only one at a time, fixed positions
+interface HealthPack {
+  x: number;
+  y: number;
+  spawnTime: number;
+  id: string; // Unique ID for network sync
+  positionIndex: number; // Which position in the cycle (0=center, 1=left, 2=right)
+}
+let healthPack: HealthPack | null = null; // Only one health pack at a time
+let lastHealthPackPickupTime = 0; // When last health pack was picked up
+let healthPackPositionIndex = 0; // Current position index in cycle (0=center, 1=left, 2=right)
+let pvpGameStartTime = 0; // When PvP game started (for initial spawn delay)
+const healthPackSpawnDelay = 25000; // Spawn 25 seconds after pickup or game start
+const healthPackRadius = 15; // Health pack collision radius
+const healthPackMinHeal = 10; // Minimum HP restored
+const healthPackMaxHeal = 15; // Maximum HP restored
+
+// Fixed health pack positions (always same locations)
+const healthPackPositions = [
+  { x: (pvpBounds.left + pvpBounds.right) / 2, y: (pvpBounds.top + pvpBounds.bottom) / 2 }, // Center
+  { x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25, y: (pvpBounds.top + pvpBounds.bottom) / 2 }, // Left quarter
+  { x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75, y: (pvpBounds.top + pvpBounds.bottom) / 2 }, // Right quarter
+];
 
 // Performance optimization: Cache speed calculations
 let cachedDotSpeed = 0;
@@ -503,6 +574,10 @@ let opponentBulletY = 0;
 let opponentBulletVx = 0;
 let opponentBulletVy = 0;
 let opponentBulletSpawnTime = 0;
+
+// Opponent mines state (synced from network)
+let opponentMines: Mine[] = []; // Array of opponent's mines
+let opponentSpikes: Spike[] = []; // Array of opponent's spikes from exploded mines
 
 
 // Leveling system
@@ -744,6 +819,11 @@ function initializePvP(): void {
   // Clear death animations when starting new game
   deathAnimations.clear();
   
+  // Reset health packs when starting new PvP game
+  healthPack = null;
+  lastHealthPackPickupTime = 0;
+  healthPackPositionIndex = 0; // Reset to center position
+  
   // Generate player IDs if not set
   if (!myPlayerId) {
     myPlayerId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -768,6 +848,7 @@ function initializePvP(): void {
     color: '#000000', // Black for my player
     lastHitTime: 0,
     gravityLocked: true, // Same as Solo - disable gravity until first hit
+    gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [], // Supersonic shadow tail
     hp: totalMaxHP, // Use Solo max HP + NFT bonus
     maxHP: totalMaxHP, // Use Solo max HP + NFT bonus
@@ -777,6 +858,15 @@ function initializePvP(): void {
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
     lastArmorRegen: Date.now(), // When armor was last regenerated
     paralyzedUntil: 0, // Not paralyzed initially
+    fuel: 100, // Start with full fuel
+    maxFuel: 100, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    toxicWaterStartTime: null, // Not in toxic water initially
+    toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
   };
   
   pvpPlayers[myPlayerId] = myPlayer;
@@ -801,6 +891,7 @@ function initializePvP(): void {
     color: '#000000', // Black for opponent
     lastHitTime: 0,
     gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [],
     hp: dotMaxHP, // Use Solo max HP (same as my player for now)
     maxHP: dotMaxHP, // Use Solo max HP
@@ -810,6 +901,15 @@ function initializePvP(): void {
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
+    fuel: 100, // Start with full fuel
+    maxFuel: 100, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    toxicWaterStartTime: null, // Not in toxic water initially
+    toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
   };
   
   pvpPlayers[opponentId] = opponent;
@@ -1300,6 +1400,12 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   // Clear death animations when starting new game
   deathAnimations.clear();
   
+  // Reset health packs when starting new PvP game
+  healthPack = null;
+  lastHealthPackPickupTime = 0;
+  healthPackPositionIndex = 0; // Reset to center position
+  pvpGameStartTime = Date.now(); // Record game start time for initial spawn delay
+  
   const walletState = walletService.getState();
   const myAddress = walletState.address || '';
   
@@ -1349,6 +1455,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     color: '#000000', // Black - ALWAYS black for my player
     lastHitTime: 0,
     gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [],
     hp: totalMaxHP,
     maxHP: totalMaxHP,
@@ -1358,6 +1465,15 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
+    fuel: 100, // Start with full fuel
+    maxFuel: 100, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    toxicWaterStartTime: null, // Not in toxic water initially
+    toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
@@ -1377,6 +1493,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     color: '#000000', // Black - ALWAYS black for opponent
     lastHitTime: 0,
     gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [],
     hp: dotMaxHP, // Will be synced from network
     maxHP: dotMaxHP,
@@ -1386,6 +1503,15 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
+    fuel: 100, // Start with full fuel
+    maxFuel: 100, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    toxicWaterStartTime: null, // Not in toxic water initially
+    toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
   };
 
   pvpPlayers[opponentId] = opponent;
@@ -1457,6 +1583,7 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     color: '#000000', // Black - ALWAYS black for my player
     lastHitTime: 0,
     gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [],
     hp: totalMaxHP,
     maxHP: totalMaxHP,
@@ -1466,6 +1593,15 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
+    fuel: 100, // Start with full fuel
+    maxFuel: 100, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    toxicWaterStartTime: null, // Not in toxic water initially
+    toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
@@ -1485,6 +1621,7 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     color: '#000000', // Black - ALWAYS black for opponent
     lastHitTime: 0,
     gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [],
     hp: dotMaxHP, // Will be synced from network
     maxHP: dotMaxHP,
@@ -1494,6 +1631,15 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
+    fuel: 100, // Start with full fuel
+    maxFuel: 100, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    toxicWaterStartTime: null, // Not in toxic water initially
+    toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
   };
 
   pvpPlayers[opponentId] = opponent;
@@ -1693,6 +1839,100 @@ function handleOpponentInput(input: any): void {
     console.log('Opponent bullet fired', { x: input.x, y: input.y, vx: input.vx, vy: input.vy });
   }
   
+  // Handle mine input from opponent (placement event)
+  if (input.type === 'mine' && input.x !== undefined && input.y !== undefined) {
+    // Spawn opponent mine
+    const opponentMine: Mine = {
+      x: input.x,
+      y: input.y,
+      spawnTime: input.timestamp || Date.now(),
+      exploded: false,
+    };
+    opponentMines.push(opponentMine);
+    
+    // Play mine placement sound effect
+    audioManager.resumeContext().then(() => {
+      audioManager.playMinePlacement();
+    });
+    
+    console.log('Opponent mine placed', { x: input.x, y: input.y });
+  }
+  
+  // Handle health pack spawn from opponent (using fixed positions)
+  if (input.type === 'healthpack' && input.positionIndex !== undefined && input.id !== undefined) {
+    // Check if health pack already exists (avoid duplicates)
+    if (!healthPack || healthPack.id !== input.id) {
+      // Use same position index as opponent
+      const position = healthPackPositions[input.positionIndex];
+      
+      healthPack = {
+        x: position.x,
+        y: position.y,
+        spawnTime: input.timestamp || Date.now(),
+        id: input.id,
+        positionIndex: input.positionIndex,
+      };
+      
+      // Update our position index to match opponent's cycle
+      healthPackPositionIndex = (input.positionIndex + 1) % healthPackPositions.length;
+      
+      // Play spawn sound effect
+      audioManager.resumeContext().then(() => {
+        audioManager.playHealthPackSpawn();
+      });
+      
+      console.log('Health pack spawned (from opponent)', { x: position.x, y: position.y, positionIndex: input.positionIndex, id: input.id });
+    }
+  }
+  
+  // Handle health pack pickup from opponent
+  if (input.type === 'healthpack_pickup' && input.healthPackId !== undefined) {
+    // Remove health pack that opponent picked up (always remove if we have a pack, even if ID doesn't match)
+    if (healthPack) {
+      // Check if ID matches, or if it's the only pack (force remove to prevent desync)
+      if (healthPack.id === input.healthPackId || healthPack.id === undefined) {
+        const pickupTime = input.timestamp || Date.now();
+        lastHealthPackPickupTime = pickupTime;
+        healthPack = null;
+        
+        // Play pickup sound effect (opponent picked it up)
+        audioManager.resumeContext().then(() => {
+          audioManager.playHealthPackPickup();
+        });
+        
+        // Show pickup notification for opponent (if we have opponent player data)
+        if (opponentId && pvpPlayers[opponentId]) {
+          const opponent = pvpPlayers[opponentId];
+          const healAmount = input.healAmount || 0;
+          
+          // Show only HP amount (armor is ignored)
+          if (healAmount > 0) {
+            safePushDamageNumber({
+              x: opponent.x + (Math.random() - 0.5) * 20,
+              y: opponent.y - opponent.radius - 20,
+              value: `+${healAmount}`,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 1,
+              vy: -2 - Math.random() * 1,
+              isCrit: false
+            });
+          }
+        }
+        
+        console.log('Health pack picked up by opponent', { id: input.healthPackId, healAmount: input.healAmount });
+      } else {
+        // ID doesn't match but we have a pack - log warning and remove anyway to prevent desync
+        console.warn('Health pack ID mismatch, removing anyway to prevent desync', { 
+          localId: healthPack.id, 
+          remoteId: input.healthPackId 
+        });
+        lastHealthPackPickupTime = input.timestamp || Date.now();
+        healthPack = null;
+      }
+    }
+  }
+  
   // Handle hit event from opponent (damage sync)
   // When opponent hits us, they send their calculated damage, and we apply it
   // This ensures both players see/feel the EXACT same damage
@@ -1709,9 +1949,12 @@ function handleOpponentInput(input: any): void {
       const remainingDamage = hitDamage - absorbed;
       myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
       
-      // Play damage hit sound effect (pain/impact sound)
+      // Activate gravity for 5 seconds after damage
+      myPlayer.gravityActiveUntil = Date.now() + gravityActiveDuration;
+      
+      // Play damage received sound effect (pain/impact sound when receiving damage)
       audioManager.resumeContext().then(() => {
-        audioManager.playDamageHit(isCritHit);
+        audioManager.playDamageReceived(isCritHit);
       });
       
       // Profile: Track damage taken (PvP mode - I receive damage)
@@ -1855,6 +2098,38 @@ function createDeathAnimation(playerId: string, x: number, y: number, color: str
       color: color,
       rotation: Math.random() * Math.PI * 2,
       rotationSpeed: (Math.random() - 0.5) * 0.15 // Slightly faster rotation
+    });
+  }
+  
+  // Add 10 red particles on top for better visual effect
+  const redParticleCount = 10;
+  for (let i = 0; i < redParticleCount; i++) {
+    // Random position within the player circle (slightly above center)
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * radius * 0.8; // Slightly closer to center
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance - radius * 0.3; // Slightly above center
+    
+    // Random velocity - particles fly outward and upward
+    const speed = 4 + Math.random() * 6; // Faster than regular particles
+    const vAngle = angle + (Math.random() - 0.5) * 1.0; // More spread
+    const vx = Math.cos(vAngle) * speed;
+    const vy = Math.sin(vAngle) * speed - 3; // More upward bias
+    
+    // Random particle size within range (slightly larger)
+    const particleSize = minParticleSize + Math.random() * (maxParticleSize - minParticleSize + 2);
+    
+    particles.push({
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
+      life: deathAnimationDuration,
+      maxLife: deathAnimationDuration,
+      size: particleSize,
+      color: '#ff0000', // Red color
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.2 // Faster rotation
     });
   }
   
@@ -2269,6 +2544,61 @@ function render() {
     ctx.font = 'bold 12px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.fillText(`SPEED: ${currentSpeed.toFixed(2)}`, canvas.width / 2, 18);
+    
+    // Fuel bar display (below speed)
+    const fuelBarWidth = 200;
+    const fuelBarHeight = 12;
+    const fuelBarX = canvas.width / 2 - fuelBarWidth / 2;
+    const fuelBarY = 30;
+    const fuelPercent = myPlayer.fuel / myPlayer.maxFuel;
+    
+    // Fuel bar background
+    ctx.fillStyle = '#cccccc';
+    ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
+    
+    // Fuel bar fill - red when overheated, orange when using, green when not
+    let fuelBarColor = '#00ff00'; // Green default
+    if (myPlayer.isOverheated) {
+      fuelBarColor = '#ff0000'; // Red when overheated
+    } else if (myPlayer.isUsingJetpack) {
+      fuelBarColor = '#ff6600'; // Orange when using
+    }
+    ctx.fillStyle = fuelBarColor;
+    ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth * fuelPercent, fuelBarHeight);
+    
+    // Overheat effect - pulsing red glow
+    if (myPlayer.isOverheated) {
+      const overheatDuration = (Date.now() - myPlayer.overheatStartTime) / 1000;
+      const pulse = Math.sin(overheatDuration * Math.PI * 4) * 0.3 + 0.7; // Pulsing effect
+      ctx.fillStyle = `rgba(255, 0, 0, ${pulse * 0.3})`;
+      ctx.fillRect(fuelBarX - 2, fuelBarY - 2, fuelBarWidth + 4, fuelBarHeight + 4);
+    }
+    
+    // Fuel bar border
+    ctx.strokeStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
+    ctx.lineWidth = myPlayer.isOverheated ? 3 : 2;
+    ctx.strokeRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
+    
+    // Fuel text
+    ctx.fillStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}%`, canvas.width / 2, fuelBarY + fuelBarHeight + 14);
+    
+    // Jetpack status text
+    if (myPlayer.isUsingJetpack) {
+      const jetpackUseTime = (Date.now() - myPlayer.jetpackStartTime) / 1000;
+      const maxJetpackTime = 1.5; // 1.5 seconds
+      const speedBoost = 1 + (jetpackUseTime / maxJetpackTime) * 4; // Linear from 1 to 5 (higher top speed)
+      ctx.fillStyle = '#ff6600';
+      ctx.fillText(`JETPACK: +${speedBoost.toFixed(1)} SPEED`, canvas.width / 2, fuelBarY + fuelBarHeight + 28);
+    } else if (myPlayer.isOverheated) {
+      const overheatDuration = (Date.now() - myPlayer.overheatStartTime) / 1000;
+      const remainingTime = Math.max(0, 4 - overheatDuration); // 4 seconds overheat
+      ctx.fillStyle = '#ff0000';
+      ctx.fillText(`OVERHEAT: ${remainingTime.toFixed(1)}s`, canvas.width / 2, fuelBarY + fuelBarHeight + 28);
+    }
+    
     ctx.textAlign = 'left'; // Reset alignment
   }
   
@@ -3190,8 +3520,29 @@ function render() {
         ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
         ctx.fill();
         
-        // Draw cooldown timer in center of dot (visual indicator only)
+        // Draw magnetic wave animation when gravity is active (Solo mode)
         const now = Date.now();
+        if (gravityActiveUntil > now) {
+          const timeRemaining = gravityActiveUntil - now;
+          const waveProgress = 1 - (timeRemaining / gravityActiveDuration); // 0 to 1
+          const waveSpeed = 0.02; // Speed of wave animation
+          const waveTime = Date.now() * waveSpeed;
+          
+          // Draw multiple concentric waves
+          for (let i = 0; i < 3; i++) {
+            const waveOffset = (waveTime + i * 0.5) % (Math.PI * 2);
+            const waveRadius = dotRadius + 10 + Math.sin(waveOffset) * 5 + i * 8;
+            const waveAlpha = 0.3 * (1 - waveProgress) * (1 - i * 0.3); // Fade out as gravity ends
+            
+            ctx.strokeStyle = `rgba(100, 100, 100, ${waveAlpha})`; // Gray magnetic waves
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, waveRadius, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        
+        // Draw cooldown timer in center of dot (visual indicator only)
         const timeSinceLastDraw = now - lastDrawEndTime;
         const remainingCooldown = Math.max(0, drawCooldown - timeSinceLastDraw);
         const canDraw = remainingCooldown <= 0;
@@ -4400,6 +4751,28 @@ function render() {
       ctx.lineWidth = 2;
       ctx.stroke();
       
+      // Draw magnetic wave animation when gravity is active
+      const now = Date.now();
+      if (player.gravityActiveUntil > now) {
+        const timeRemaining = player.gravityActiveUntil - now;
+        const waveProgress = 1 - (timeRemaining / gravityActiveDuration); // 0 to 1
+        const waveSpeed = 0.02; // Speed of wave animation
+        const waveTime = Date.now() * waveSpeed;
+        
+        // Draw multiple concentric waves
+        for (let i = 0; i < 3; i++) {
+          const waveOffset = (waveTime + i * 0.5) % (Math.PI * 2);
+          const waveRadius = player.radius + 10 + Math.sin(waveOffset) * 5 + i * 8;
+          const waveAlpha = 0.3 * (1 - waveProgress) * (1 - i * 0.3); // Fade out as gravity ends
+          
+          ctx.strokeStyle = `rgba(100, 100, 100, ${waveAlpha})`; // Gray magnetic waves
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, waveRadius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      
       // Draw magnetic wave animation when paralyzed
       if (player.paralyzedUntil > Date.now()) {
         const time = Date.now() * 0.003; // Slow animation
@@ -4619,6 +4992,65 @@ function render() {
           ctx.textAlign = 'left'; // Reset alignment
         }
         
+        // Mine/Trap weapon panel
+        {
+          const weaponPanelY = 340;
+          const currentTime = Date.now();
+          const timeSinceLastPlace = currentTime - mineLastPlaceTime;
+          const remainingCooldown = Math.max(0, mineCooldown - timeSinceLastPlace);
+          const isOnCooldown = remainingCooldown > 0;
+          const hasMines = mines.length > 0 && mines.some(m => !m.exploded);
+          
+          // Frame background
+          ctx.fillStyle = hasMines ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if mines active, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('MINE', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 4', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (hasMines) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('ACTIVE', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+          
+          // Cooldown bar
+          if (isOnCooldown) {
+            const cooldownProgress = remainingCooldown / mineCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            const barX = weaponPanelX + 10;
+            const barY = weaponPanelY + weaponPanelHeight - 8;
+            const barHeight = 4;
+            
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+          }
+        }
+        
         // Bullet weapon panel
         {
           const weaponPanelY = 280;
@@ -4626,7 +5058,8 @@ function render() {
           const timeSinceLastShot = currentTime - bulletLastShotTime;
           const remainingCooldown = Math.max(0, bulletCooldown - timeSinceLastShot);
           const isOnCooldown = remainingCooldown > 0;
-          const isFlying = bulletFlying;
+          const isFlying = bullets.length > 0;
+          const canFireNext = shotsInBurst < 2 && (shotsInBurst === 0 || (currentTime - lastBurstShotTime >= bulletBurstDelay));
           
           // Frame background
           ctx.fillStyle = isFlying ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if flying, light red if cooldown, light green if ready
@@ -4658,10 +5091,16 @@ function render() {
             ctx.fillStyle = '#ff0000';
             ctx.font = 'bold 8px "Press Start 2P"';
             ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (shotsInBurst === 1 && !canFireNext) {
+            // Waiting for burst delay
+            const timeUntilNext = bulletBurstDelay - (currentTime - lastBurstShotTime);
+            ctx.fillStyle = '#ffaa00';
+            ctx.font = 'bold 7px "Press Start 2P"';
+            ctx.fillText(`${(timeUntilNext / 1000).toFixed(1)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
           } else {
             ctx.fillStyle = '#00ff00';
             ctx.font = 'bold 8px "Press Start 2P"';
-            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+            ctx.fillText(`READY (${shotsInBurst}/2)`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
           }
           ctx.textAlign = 'left'; // Reset alignment
           
@@ -4850,13 +5289,13 @@ function render() {
       }
     }
     
-    // PvP mode: Draw flying bullet (my bullet) - doubled size for heavier look
-    if (bulletFlying) {
+    // PvP mode: Draw flying bullets (my bullets) - doubled size for heavier look
+    for (const bullet of bullets) {
       ctx.save();
-      ctx.translate(bulletX, bulletY);
+      ctx.translate(bullet.x, bullet.y);
       
       // Calculate angle from velocity
-      const bulletAngle = Math.atan2(bulletVy, bulletVx);
+      const bulletAngle = Math.atan2(bullet.vy, bullet.vx);
       ctx.rotate(bulletAngle);
       
       // Bullet dimensions - doubled size for heavier look, maintaining form
@@ -4890,6 +5329,89 @@ function render() {
       ctx.lineTo(bulletLength / 2, 0);
       ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
       ctx.closePath();
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw mines/traps (bomb-like appearance)
+    for (const mine of mines) {
+      if (mine.exploded) continue; // Skip exploded mines
+      
+      const now = Date.now();
+      const mineAge = now - mine.spawnTime;
+      const timeUntilExplosion = mineLifetime - mineAge;
+      const explosionProgress = mineAge / mineLifetime; // 0 to 1
+      
+      ctx.save();
+      ctx.translate(mine.x, mine.y);
+      
+      // Smaller pulsing effect - subtle pulse
+      const pulse = Math.sin(explosionProgress * Math.PI * 8) * 0.1 + 0.95; // Reduced from 0.3 to 0.1, slower pulse
+      const mineSize = mineRadius * pulse;
+      
+      // Draw mine body (dark bomb-like circle)
+      ctx.fillStyle = explosionProgress > 0.8 ? '#440000' : '#220000'; // Dark red/black bomb color
+      ctx.beginPath();
+      ctx.arc(0, 0, mineSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw mine outline (thicker for bomb look)
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw burning fuse (klanas) - shrinks as explosion approaches
+      const fuseHeight = Math.max(2, (1 - explosionProgress) * 12); // Shrinks from 12px to 2px
+      const fuseWidth = 3;
+      const fuseY = -mineSize - fuseHeight / 2; // Above the mine
+      
+      // Draw fuse body (brown/black)
+      ctx.fillStyle = '#331100'; // Dark brown fuse color
+      ctx.fillRect(-fuseWidth / 2, fuseY, fuseWidth, fuseHeight);
+      
+      // Draw burning flame at top of fuse (shrinks as fuse burns)
+      const flameSize = Math.max(1, fuseHeight * 0.6); // Flame size relative to fuse
+      const flameColors = ['#ff6600', '#ff9900', '#ffff00']; // Orange to yellow gradient
+      
+      // Draw flame layers (from outer to inner)
+      for (let i = 0; i < flameColors.length; i++) {
+        const layerSize = flameSize * (1 - i * 0.3);
+        ctx.fillStyle = flameColors[i];
+        ctx.beginPath();
+        // Draw flame shape (teardrop/triangle pointing up)
+        ctx.moveTo(0, fuseY - fuseHeight / 2); // Top center
+        ctx.lineTo(-layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top left
+        ctx.lineTo(0, fuseY - fuseHeight / 2 - layerSize * 1.2); // Top point
+        ctx.lineTo(layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top right
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw spikes (from exploded mines)
+    for (const spike of spikes) {
+      ctx.save();
+      ctx.translate(spike.x, spike.y);
+      
+      // Calculate angle from velocity
+      const spikeAngle = Math.atan2(spike.vy, spike.vx);
+      ctx.rotate(spikeAngle);
+      
+      // Draw spike as a small red triangle (smaller size)
+      ctx.fillStyle = '#ff0000'; // Red color
+      ctx.beginPath();
+      ctx.moveTo(spikeRadius * 1.5, 0); // Point forward (reduced from 2x to 1.5x)
+      ctx.lineTo(-spikeRadius * 0.8, -spikeRadius * 0.8); // Smaller base
+      ctx.lineTo(-spikeRadius * 0.8, spikeRadius * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw outline
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
       ctx.stroke();
       
       ctx.restore();
@@ -5019,6 +5541,154 @@ function render() {
       ctx.lineTo(length / 2, 0);
       ctx.lineTo(length / 2 - tipLength, width / 2);
       ctx.closePath();
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw health pack (only one at a time) - beautiful medical cross
+    if (healthPack) {
+      ctx.save();
+      ctx.translate(healthPack.x, healthPack.y);
+      
+      const size = healthPackRadius;
+      const timeSinceSpawn = Date.now() - healthPack.spawnTime;
+      const pulse = Math.sin(timeSinceSpawn / 400) * 0.1 + 0.9; // Gentle pulsing effect
+      const pulseSize = size * pulse;
+      
+      // Draw outer glow circle (subtle green glow)
+      ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseSize * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw main circle background (bright green)
+      ctx.fillStyle = '#00ff00'; // Bright green
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw white plus sign (+) - clean and elegant
+      ctx.fillStyle = '#ffffff'; // White color
+      const plusLength = pulseSize * 0.6; // Length of plus bars
+      const plusThickness = pulseSize * 0.2; // Thickness of plus bars
+      
+      // Helper function to draw rounded rectangle using quadratic curves
+      const drawRoundedRect = (x: number, y: number, w: number, h: number, r: number) => {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.fill();
+      };
+      
+      // Draw horizontal bar of plus sign with rounded corners
+      drawRoundedRect(-plusLength / 2, -plusThickness / 2, plusLength, plusThickness, plusThickness / 2);
+      
+      // Draw vertical bar of plus sign with rounded corners
+      drawRoundedRect(-plusThickness / 2, -plusLength / 2, plusThickness, plusLength, plusThickness / 2);
+      
+      // Draw outline for better visibility
+      ctx.strokeStyle = '#00cc00'; // Darker green outline
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseSize, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Draw inner highlight for depth (subtle shine effect)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.beginPath();
+      ctx.arc(0, -pulseSize * 0.3, pulseSize * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent mines/traps (bomb-like appearance)
+    for (const mine of opponentMines) {
+      if (mine.exploded) continue; // Skip exploded mines
+      
+      const now = Date.now();
+      const mineAge = now - mine.spawnTime;
+      const timeUntilExplosion = mineLifetime - mineAge;
+      const explosionProgress = mineAge / mineLifetime; // 0 to 1
+      
+      ctx.save();
+      ctx.translate(mine.x, mine.y);
+      
+      // Smaller pulsing effect - subtle pulse
+      const pulse = Math.sin(explosionProgress * Math.PI * 8) * 0.1 + 0.95; // Reduced from 0.3 to 0.1, slower pulse
+      const mineSize = mineRadius * pulse;
+      
+      // Draw mine body (dark bomb-like circle)
+      ctx.fillStyle = explosionProgress > 0.8 ? '#440000' : '#220000'; // Dark red/black bomb color
+      ctx.beginPath();
+      ctx.arc(0, 0, mineSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw mine outline (thicker for bomb look)
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw burning fuse (klanas) - shrinks as explosion approaches
+      const fuseHeight = Math.max(2, (1 - explosionProgress) * 12); // Shrinks from 12px to 2px
+      const fuseWidth = 3;
+      const fuseY = -mineSize - fuseHeight / 2; // Above the mine
+      
+      // Draw fuse body (brown/black)
+      ctx.fillStyle = '#331100'; // Dark brown fuse color
+      ctx.fillRect(-fuseWidth / 2, fuseY, fuseWidth, fuseHeight);
+      
+      // Draw burning flame at top of fuse (shrinks as fuse burns)
+      const flameSize = Math.max(1, fuseHeight * 0.6); // Flame size relative to fuse
+      const flameColors = ['#ff6600', '#ff9900', '#ffff00']; // Orange to yellow gradient
+      
+      // Draw flame layers (from outer to inner)
+      for (let i = 0; i < flameColors.length; i++) {
+        const layerSize = flameSize * (1 - i * 0.3);
+        ctx.fillStyle = flameColors[i];
+        ctx.beginPath();
+        // Draw flame shape (teardrop/triangle pointing up)
+        ctx.moveTo(0, fuseY - fuseHeight / 2); // Top center
+        ctx.lineTo(-layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top left
+        ctx.lineTo(0, fuseY - fuseHeight / 2 - layerSize * 1.2); // Top point
+        ctx.lineTo(layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top right
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent spikes (from exploded mines)
+    for (const spike of opponentSpikes) {
+      ctx.save();
+      ctx.translate(spike.x, spike.y);
+      
+      // Calculate angle from velocity
+      const spikeAngle = Math.atan2(spike.vy, spike.vx);
+      ctx.rotate(spikeAngle);
+      
+      // Draw spike as a small red triangle (smaller size)
+      ctx.fillStyle = '#ff0000'; // Red color
+      ctx.beginPath();
+      ctx.moveTo(spikeRadius * 1.5, 0); // Point forward (reduced from 2x to 1.5x)
+      ctx.lineTo(-spikeRadius * 0.8, -spikeRadius * 0.8); // Smaller base
+      ctx.lineTo(-spikeRadius * 0.8, spikeRadius * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw outline
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
       ctx.stroke();
       
       ctx.restore();
@@ -7035,9 +7705,32 @@ if (!(window as any).__keydownListenerAdded) {
     console.log('Projectile charging started - release key "2" to fire!');
   }
   
-  // PvP/Training mode: Fire bullet (key "3")
+  // PvP/Training mode: Jetpack activation (key "Space")
+  if (e.key === ' ' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't use jetpack
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't use jetpack
+    }
+    
+    // Check if player has fuel and is not already using jetpack
+    if (myPlayer.fuel > 0 && !myPlayer.isUsingJetpack) {
+      myPlayer.isUsingJetpack = true;
+      myPlayer.jetpackStartTime = Date.now();
+      console.log('Jetpack activated! Fuel:', myPlayer.fuel);
+    }
+  }
+  
+  // PvP/Training mode: Fire bullet (key "3") - Burst fire: 2 shots with 0.2s delay, then cooldown
   if (e.key === '3' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
     const myPlayer = pvpPlayers[myPlayerId];
+    const now = Date.now();
     
     // Block input if player is dead
     if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
@@ -7045,19 +7738,26 @@ if (!(window as any).__keydownListenerAdded) {
     }
     
     // Check if paralyzed
-    if (myPlayer.paralyzedUntil > Date.now()) {
+    if (myPlayer.paralyzedUntil > now) {
       return; // Paralyzed - can't fire bullet
     }
     
-    // Check cooldown (5 seconds after every shot)
-    const timeSinceLastShot = Date.now() - bulletLastShotTime;
-    if (timeSinceLastShot < bulletCooldown) {
-      return; // Still on cooldown
-    }
-    
-    // Don't fire if bullet is already flying
-    if (bulletFlying) {
-      return; // Bullet already in flight
+    // Check if we can fire (burst system: 2 shots with 0.2s delay, then cooldown)
+    if (shotsInBurst === 0) {
+      // First shot in burst - check cooldown from last burst
+      const timeSinceLastBurst = now - bulletLastShotTime;
+      if (timeSinceLastBurst < bulletCooldown) {
+        return; // Still on cooldown from last burst
+      }
+    } else if (shotsInBurst === 1) {
+      // Second shot in burst - check delay between shots (0.2s)
+      const timeSinceLastShot = now - lastBurstShotTime;
+      if (timeSinceLastShot < bulletBurstDelay) {
+        return; // Too soon, wait for 0.2s delay
+      }
+    } else {
+      // Already fired 2 shots, need to wait for cooldown
+      return;
     }
     
     // Calculate direction to mouse position
@@ -7070,14 +7770,27 @@ if (!(window as any).__keydownListenerAdded) {
       const dirX = dx / distance;
       const dirY = dy / distance;
       
-      // Spawn bullet at player position
-      bulletFlying = true;
-      bulletX = myPlayer.x;
-      bulletY = myPlayer.y;
-      bulletVx = dirX * bulletSpeed;
-      bulletVy = dirY * bulletSpeed;
-      bulletSpawnTime = Date.now();
-      bulletLastShotTime = Date.now();
+      // Create new bullet
+      const newBullet: Bullet = {
+        x: myPlayer.x,
+        y: myPlayer.y,
+        vx: dirX * bulletSpeed,
+        vy: dirY * bulletSpeed,
+        spawnTime: now,
+      };
+      
+      // Add bullet to array
+      bullets.push(newBullet);
+      
+      // Update burst tracking
+      shotsInBurst++;
+      lastBurstShotTime = now;
+      
+      // If this is the second shot, start cooldown
+      if (shotsInBurst === 2) {
+        bulletLastShotTime = now;
+        shotsInBurst = 0; // Reset burst counter after cooldown starts
+      }
       
       // Play bullet shot sound effect (like gunshot from barrel)
       audioManager.resumeContext().then(() => {
@@ -7090,11 +7803,11 @@ if (!(window as any).__keydownListenerAdded) {
       if (currentMatch && isSyncing) {
         const bulletInput = {
           type: 'bullet' as const,
-          timestamp: Date.now(),
+          timestamp: now,
           x: myPlayer.x,
           y: myPlayer.y,
-          vx: bulletVx,
-          vy: bulletVy,
+          vx: newBullet.vx,
+          vy: newBullet.vy,
         };
         if (useColyseus) {
           colyseusService.sendInput(bulletInput);
@@ -7103,7 +7816,64 @@ if (!(window as any).__keydownListenerAdded) {
         }
       }
       
-      console.log('Bullet fired!', { x: bulletX, y: bulletY, vx: bulletVx, vy: bulletVy });
+      console.log(`Bullet fired! (${shotsInBurst === 0 ? '2nd' : '1st'} in burst)`, { x: newBullet.x, y: newBullet.y, vx: newBullet.vx, vy: newBullet.vy });
+    }
+  }
+  
+  // PvP/Training mode: Place mine/trap (key "4")
+  if (e.key === '4' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    const now = Date.now();
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't place mine
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > now) {
+      return; // Paralyzed - can't place mine
+    }
+    
+    // Check cooldown
+    const timeSinceLastPlace = now - mineLastPlaceTime;
+    if (timeSinceLastPlace < mineCooldown) {
+      return; // Still on cooldown
+    }
+    
+    // Place mine at player position
+    const newMine: Mine = {
+      x: myPlayer.x,
+      y: myPlayer.y,
+      spawnTime: now,
+      exploded: false,
+    };
+    
+    mines.push(newMine);
+    mineLastPlaceTime = now;
+    
+    // Play mine placement sound effect
+    audioManager.resumeContext().then(() => {
+      audioManager.playMinePlacement();
+    });
+    
+    console.log('Mine placed!', { x: newMine.x, y: newMine.y });
+    
+    // Send to opponent via network sync
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    if (currentMatch && isSyncing) {
+      const mineInput = {
+        type: 'mine' as const,
+        timestamp: now,
+        x: myPlayer.x,
+        y: myPlayer.y,
+      };
+      if (useColyseus) {
+        colyseusService.sendInput(mineInput);
+      } else {
+        pvpSyncService.sendInput(mineInput);
+      }
     }
   }
   });
@@ -7116,6 +7886,19 @@ if (!(window as any).__keydownListenerAdded) {
 if (!(window as any).__keyupListenerAdded) {
   (window as any).__keyupListenerAdded = true;
   window.addEventListener('keyup', (e) => {
+  // PvP/Training mode: Jetpack deactivation (key "Space" released)
+  if (e.key === ' ' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Deactivate jetpack
+    if (myPlayer.isUsingJetpack) {
+      myPlayer.isUsingJetpack = false;
+      myPlayer.lastFuelRegenTime = Date.now(); // Start fuel regeneration
+      audioManager['stopJetpackSound']();
+      console.log('Jetpack deactivated. Fuel:', myPlayer.fuel);
+    }
+  }
+  
   // PvP/Training mode: Launch projectile if charging (key "2" released)
   if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && projectileCharging && !projectileFlying && myPlayerId && pvpPlayers[myPlayerId]) {
     const myPlayer = pvpPlayers[myPlayerId];
@@ -7405,9 +8188,10 @@ if (!(window as any).__clickListenerAdded) {
           audioManager.playDotHit();
         });
         
-        // Update last hit time to disable gravity temporarily
+        // Update last hit time and unlock gravity (but don't activate gravity on self-click)
         lastHitTime = Date.now();
         gravityLocked = false; // enable gravity after the very first successful hit
+        // Note: Gravity is NOT activated on self-click - only on damage from opponent
         
         // Check if combo reached 100% from previous platform/line bounces and trigger bonus
         if (comboProgress >= 100 && !comboActive) {
@@ -7417,9 +8201,9 @@ if (!(window as any).__clickListenerAdded) {
           const remainingB = bonusDamage - absorbedB;
           dotHP = Math.max(0, dotHP - remainingB);
           
-          // Play damage hit sound effect (pain/impact sound)
+          // Play damage received sound effect (pain/impact sound when receiving damage)
           audioManager.resumeContext().then(() => {
-            audioManager.playDamageHit(false);
+            audioManager.playDamageReceived(false);
           });
           
           safePushDamageNumber({
@@ -7472,9 +8256,9 @@ if (!(window as any).__clickListenerAdded) {
         const remainingDamage = totalDamage - absorbed;
         dotHP = Math.max(0, dotHP - remainingDamage); // Don't go below 0
         
-        // Play damage hit sound effect (pain/impact sound)
+        // Play damage received sound effect (pain/impact sound when receiving damage)
         audioManager.resumeContext().then(() => {
-          audioManager.playDamageHit(isCritHit);
+          audioManager.playDamageReceived(isCritHit);
         });
         
         // Profile: Track damage taken (Solo mode)
@@ -7697,9 +8481,10 @@ if (!(window as any).__clickListenerAdded) {
             audioManager.playDotHit();
           });
           
-          // Update last hit time and unlock gravity (same as Solo)
+          // Update last hit time and unlock gravity (but don't activate gravity on self-click)
           myPlayer.lastHitTime = Date.now();
           myPlayer.gravityLocked = false; // Enable gravity after first hit
+          // Note: Gravity is NOT activated on self-click - only on damage from opponent
           
           // Send input to opponent via network sync
           const useColyseusClick = colyseusService.isConnectedToRoom();
@@ -7994,125 +8779,140 @@ function gameLoop() {
   // Check wallet balance periodically (non-blocking)
   checkWalletBalance();
   
-  // PvP/Training mode: Update bullet physics and collision
-  if ((gameMode === 'PvP' || gameMode === 'Training') && bulletFlying) {
-    // Update bullet position
-    bulletX += bulletVx;
-    bulletY += bulletVy;
-    
-    // Check lifetime
-    const bulletAge = Date.now() - bulletSpawnTime;
-    if (bulletAge > bulletLifetime) {
-      bulletFlying = false;
-      bulletX = 0;
-      bulletY = 0;
-      bulletVx = 0;
-      bulletVy = 0;
+  // PvP/Training mode: Reset burst counter if too much time passed since last shot
+  if ((gameMode === 'PvP' || gameMode === 'Training') && shotsInBurst > 0) {
+    const now = Date.now();
+    const timeSinceLastShot = now - lastBurstShotTime;
+    // If more than cooldown time passed, reset burst counter (allows new burst)
+    if (timeSinceLastShot > bulletCooldown) {
+      shotsInBurst = 0;
     }
+  }
+  
+  // PvP/Training mode: Update bullet physics and collision
+  if ((gameMode === 'PvP' || gameMode === 'Training') && bullets.length > 0) {
+    const now = Date.now();
+    const bulletsToRemove: number[] = []; // Indices of bullets to remove
     
-    // Check collision with opponent
-    // Make sure we're hitting the opponent, not ourselves
-    if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
-      // Skip if no opponent or opponent is ourselves
-    } else {
-      const opponent = pvpPlayers[opponentId];
-      const dx = bulletX - opponent.x;
-      const dy = bulletY - opponent.y;
-      const distanceSquared = dx * dx + dy * dy;
-      const collisionRadius = bulletRadius + opponent.radius;
-      const collisionRadiusSquared = collisionRadius * collisionRadius;
+    // Process each bullet
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const bullet = bullets[i];
       
-      if (distanceSquared <= collisionRadiusSquared) {
-        // Double check - make sure opponent is not ourselves
-        if (opponent.id === myPlayerId) {
-          console.error('ERROR: Trying to damage ourselves with bullet!', { opponentId, myPlayerId, opponent: opponent.id });
-          return;
-        }
+      // Update bullet position
+      bullet.x += bullet.vx;
+      bullet.y += bullet.vy;
+      
+      // Check lifetime
+      const bulletAge = now - bullet.spawnTime;
+      if (bulletAge > bulletLifetime) {
+        bulletsToRemove.push(i);
+        continue;
+      }
+      
+      // Check collision with opponent
+      // Make sure we're hitting the opponent, not ourselves
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        // Skip if no opponent or opponent is ourselves
+      } else {
+        const opponent = pvpPlayers[opponentId];
+        const dx = bullet.x - opponent.x;
+        const dy = bullet.y - opponent.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = bulletRadius + opponent.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
         
-        // Hit opponent!
-        bulletFlying = false;
-        bulletX = 0;
-        bulletY = 0;
-        bulletVx = 0;
-        bulletVy = 0;
-        
-        // Check for crit hit - with NFT bonuses
-        const nftBonuses = calculateNftBonuses();
-        const totalCritChance = critChance + nftBonuses.critChance;
-        const isCritHit = Math.random() < totalCritChance / 100;
-        // Damage: 50% of basic damage, 2x crit (using MY stats + NFT bonuses)
-        const totalDmg = dmg + nftBonuses.dmg;
-        const baseBulletDamage = totalDmg * 0.5; // 50% of base damage
-        const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
-        // Apply 50% variance (damage ranges from 50% to 100%)
-        const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
-        
-        // Profile: Track damage dealt (PvP mode - Bullet)
-        profileManager.addDamageDealt(bulletDamage);
-        
-        // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
-        // Opponent will apply damage when they receive the hit event
-        const useColyseus = colyseusService.isConnectedToRoom();
-        const isSyncing = useColyseus || pvpSyncService.isSyncing();
-        if (currentMatch && isSyncing && opponentId) {
-          const hitInput = {
-            type: 'hit' as const,
-            timestamp: Date.now(),
-            damage: bulletDamage,
-            isCrit: isCritHit,
-            targetPlayerId: opponentId, // Tell opponent this hit is for them
-            isBullet: true, // Indicate this is a bullet hit (for paralysis)
-            paralysisDuration: 2000 // 2 seconds paralysis
-          };
-          
-          if (useColyseus) {
-            colyseusService.sendInput(hitInput);
-          } else {
-            pvpSyncService.sendInput(hitInput);
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Double check - make sure opponent is not ourselves
+          if (opponent.id === myPlayerId) {
+            console.error('ERROR: Trying to damage ourselves with bullet!', { opponentId, myPlayerId, opponent: opponent.id });
+            bulletsToRemove.push(i);
+            continue;
           }
+          
+          // Hit opponent! Remove bullet
+          bulletsToRemove.push(i);
+          
+          // Check for crit hit - with NFT bonuses
+          const nftBonuses = calculateNftBonuses();
+          const totalCritChance = critChance + nftBonuses.critChance;
+          const isCritHit = Math.random() < totalCritChance / 100;
+          // Damage: 50% of basic damage, 2x crit (using MY stats + NFT bonuses)
+          const totalDmg = dmg + nftBonuses.dmg;
+          const baseBulletDamage = totalDmg * 0.5; // 50% of base damage
+          const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
+          // Apply 50% variance (damage ranges from 50% to 100%)
+          const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
+          
+          // Profile: Track damage dealt (PvP mode - Bullet)
+          profileManager.addDamageDealt(bulletDamage);
+          
+          // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
+          // Opponent will apply damage when they receive the hit event
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing && opponentId) {
+            const hitInput = {
+              type: 'hit' as const,
+              timestamp: now,
+              damage: bulletDamage,
+              isCrit: isCritHit,
+              targetPlayerId: opponentId, // Tell opponent this hit is for them
+              isBullet: true, // Indicate this is a bullet hit (for paralysis)
+              paralysisDuration: 2000 // 2 seconds paralysis
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(hitInput);
+            } else {
+              pvpSyncService.sendInput(hitInput);
+            }
+          }
+          
+          // DON'T apply damage locally - opponent will apply it when they receive hit event
+          // This ensures both players see/feel the EXACT same damage
+          
+          // DON'T apply paralysis locally - opponent will apply it when they receive hit event
+          // This ensures both players have the same paralysis timing
+          
+          // Screen shake for crit hits (we feel it when we hit)
+          if (isCritHit) {
+            screenShake = Math.max(screenShake, 30);
+          }
+          
+          // Play damage dealt sound effect (satisfying hit sound when dealing damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageDealt(isCritHit);
+          });
+        
+          // Show damage number (we see it when we hit)
+          safePushDamageNumber({
+            x: opponent.x + (Math.random() - 0.5) * 40,
+            y: opponent.y - 20,
+            value: bulletDamage,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: isCritHit
+          });
+          
+          // No push effect - bullet doesn't move target (like arrow/projectile)
+          
+          console.log(`Bullet hit opponent! Damage: ${bulletDamage}, Crit: ${isCritHit}, Paralyzed for 2s`);
+          continue; // Skip bounds check since we're removing this bullet
         }
-        
-        // DON'T apply damage locally - opponent will apply it when they receive hit event
-        // This ensures both players see/feel the EXACT same damage
-        
-        // DON'T apply paralysis locally - opponent will apply it when they receive hit event
-        // This ensures both players have the same paralysis timing
-        
-        // Screen shake for crit hits (we feel it when we hit)
-        if (isCritHit) {
-          screenShake = Math.max(screenShake, 30);
-        }
-        
-        // Play damage hit sound effect (pain/impact sound when hitting opponent)
-        audioManager.resumeContext().then(() => {
-          audioManager.playDamageHit(isCritHit);
-        });
-        
-        // Show damage number (we see it when we hit)
-        safePushDamageNumber({
-          x: opponent.x + (Math.random() - 0.5) * 40,
-          y: opponent.y - 20,
-          value: bulletDamage,
-          life: 60,
-          maxLife: 60,
-          vx: (Math.random() - 0.5) * 2,
-          vy: -2 - Math.random() * 2,
-          isCrit: isCritHit
-        });
-        
-        // No push effect - bullet doesn't move target (like arrow/projectile)
-        
-        console.log(`Bullet hit opponent! Damage: ${bulletDamage}, Crit: ${isCritHit}, Paralyzed for 2s`);
+      }
+      
+      // Check if bullet is out of bounds
+      if (bullet.x < pvpBounds.left || bullet.x > pvpBounds.right || bullet.y < pvpBounds.top || bullet.y > pvpBounds.bottom) {
+        bulletsToRemove.push(i);
       }
     }
     
-    // Check if bullet is out of bounds
-    if (bulletX < pvpBounds.left || bulletX > pvpBounds.right || bulletY < pvpBounds.top || bulletY > pvpBounds.bottom) {
-      bulletFlying = false;
-      bulletX = 0;
-      bulletY = 0;
-      bulletVx = 0;
-      bulletVy = 0;
+    // Remove bullets that hit or expired (remove from end to preserve indices)
+    bulletsToRemove.sort((a, b) => b - a); // Sort descending
+    for (const index of bulletsToRemove) {
+      bullets.splice(index, 1);
     }
   }
   
@@ -8185,6 +8985,524 @@ function gameLoop() {
     }
   }
   
+  // PvP/Training mode: Update mines and spikes
+  if ((gameMode === 'PvP' || gameMode === 'Training')) {
+    const now = Date.now();
+    const minesToRemove: number[] = [];
+    const spikesToRemove: number[] = [];
+    
+    // Process mines
+    for (let i = mines.length - 1; i >= 0; i--) {
+      const mine = mines[i];
+      
+      if (mine.exploded) {
+        minesToRemove.push(i);
+        continue;
+      }
+      
+      const mineAge = now - mine.spawnTime;
+      
+      // Check if mine lifetime expired (auto-explode after 10 seconds)
+      if (mineAge >= mineLifetime) {
+        // Play explosion sound effect
+        audioManager.resumeContext().then(() => {
+          audioManager.playMineExplosion();
+        });
+        
+        // Explode mine - spawn 8 spikes in 8 directions (4 cardinal + 4 diagonal)
+        const directions = [
+          { x: 1, y: 0 },      // Right
+          { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+          { x: 0, y: 1 },      // Down
+          { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+          { x: -1, y: 0 },     // Left
+          { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+          { x: 0, y: -1 },     // Up
+          { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+        ];
+        
+        for (const dir of directions) {
+          const spike: Spike = {
+            x: mine.x,
+            y: mine.y,
+            vx: dir.x * spikeSpeed,
+            vy: dir.y * spikeSpeed,
+            spawnTime: now,
+          };
+          spikes.push(spike);
+        }
+        
+        mine.exploded = true;
+        minesToRemove.push(i);
+        console.log('Mine auto-exploded!', { x: mine.x, y: mine.y });
+        continue;
+      }
+      
+      // Check collision with opponent (stepping on mine)
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        // Skip if no opponent
+      } else {
+        const opponent = pvpPlayers[opponentId];
+        const dx = mine.x - opponent.x;
+        const dy = mine.y - opponent.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = mineRadius + opponent.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Opponent stepped on mine - explode and deal 2x damage
+          if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+            // Skip if no my player
+            continue;
+          }
+          const myPlayer = pvpPlayers[myPlayerId];
+          const nftBonuses = calculateNftBonuses();
+          const totalDmg = dmg + nftBonuses.dmg;
+          const mineDamage = totalDmg * mineDamageMultiplier; // 2x damage
+          const mineDamageWithVariance = applyDamageVariance(mineDamage);
+          
+          // Profile: Track damage dealt (PvP mode - Mine)
+          profileManager.addDamageDealt(mineDamageWithVariance);
+          
+          // Send hit event to opponent
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing && opponentId) {
+            const hitInput = {
+              type: 'hit' as const,
+              timestamp: now,
+              damage: mineDamageWithVariance,
+              isCrit: false,
+              targetPlayerId: opponentId,
+              isMine: true, // Indicate this is a mine hit
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(hitInput);
+            } else {
+              pvpSyncService.sendInput(hitInput);
+            }
+          }
+          
+          // Show damage number
+          safePushDamageNumber({
+            x: opponent.x + (Math.random() - 0.5) * 40,
+            y: opponent.y - 20,
+            value: mineDamageWithVariance,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: false
+          });
+          
+          // Play explosion sound effect
+          audioManager.resumeContext().then(() => {
+            audioManager.playMineExplosion();
+          });
+          
+          // Explode mine - spawn 8 spikes in 8 directions (4 cardinal + 4 diagonal)
+          const directions = [
+            { x: 1, y: 0 },      // Right
+            { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+            { x: 0, y: 1 },      // Down
+            { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+            { x: -1, y: 0 },     // Left
+            { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+            { x: 0, y: -1 },     // Up
+            { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+          ];
+          
+          for (const dir of directions) {
+            const spike: Spike = {
+              x: mine.x,
+              y: mine.y,
+              vx: dir.x * spikeSpeed,
+              vy: dir.y * spikeSpeed,
+              spawnTime: now,
+            };
+            spikes.push(spike);
+          }
+          
+          mine.exploded = true;
+          minesToRemove.push(i);
+          console.log('Mine exploded on contact!', { x: mine.x, y: mine.y, damage: mineDamageWithVariance });
+        }
+      }
+    }
+    
+    // Remove exploded mines
+    minesToRemove.sort((a, b) => b - a);
+    for (const index of minesToRemove) {
+      mines.splice(index, 1);
+    }
+    
+    // Process spikes
+    for (let i = spikes.length - 1; i >= 0; i--) {
+      const spike = spikes[i];
+      
+      // Update spike position
+      spike.x += spike.vx;
+      spike.y += spike.vy;
+      
+      // Check lifetime
+      const spikeAge = now - spike.spawnTime;
+      if (spikeAge > spikeLifetime) {
+        spikesToRemove.push(i);
+        continue;
+      }
+      
+      // Check collision with opponent
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        // Skip if no opponent
+      } else {
+        const opponent = pvpPlayers[opponentId];
+        const dx = spike.x - opponent.x;
+        const dy = spike.y - opponent.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = spikeRadius + opponent.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Spike hit opponent - deal 50% basic damage
+          if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+            // Skip if no my player
+            continue;
+          }
+          const myPlayer = pvpPlayers[myPlayerId];
+          const nftBonuses = calculateNftBonuses();
+          const totalDmg = dmg + nftBonuses.dmg;
+          const spikeDamage = totalDmg * spikeDamageMultiplier; // 50% damage
+          const spikeDamageWithVariance = applyDamageVariance(spikeDamage);
+          
+          // Profile: Track damage dealt (PvP mode - Spike)
+          profileManager.addDamageDealt(spikeDamageWithVariance);
+          
+          // Send hit event to opponent
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing && opponentId) {
+            const hitInput = {
+              type: 'hit' as const,
+              timestamp: now,
+              damage: spikeDamageWithVariance,
+              isCrit: false,
+              targetPlayerId: opponentId,
+              isSpike: true, // Indicate this is a spike hit
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(hitInput);
+            } else {
+              pvpSyncService.sendInput(hitInput);
+            }
+          }
+          
+          // Show damage number
+          safePushDamageNumber({
+            x: opponent.x + (Math.random() - 0.5) * 40,
+            y: opponent.y - 20,
+            value: spikeDamageWithVariance,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: false
+          });
+          
+          spikesToRemove.push(i);
+          console.log('Spike hit opponent!', { x: spike.x, y: spike.y, damage: spikeDamageWithVariance });
+          continue;
+        }
+      }
+      
+      // Check if spike is out of bounds
+      if (spike.x < pvpBounds.left || spike.x > pvpBounds.right || spike.y < pvpBounds.top || spike.y > pvpBounds.bottom) {
+        spikesToRemove.push(i);
+      }
+    }
+    
+    // Remove expired or hit spikes
+    spikesToRemove.sort((a, b) => b - a);
+    for (const index of spikesToRemove) {
+      spikes.splice(index, 1);
+    }
+    
+    // Process opponent mines
+    const opponentMinesToRemove: number[] = [];
+    const opponentSpikesToRemove: number[] = [];
+    
+    // Process opponent mines
+    for (let i = opponentMines.length - 1; i >= 0; i--) {
+      const mine = opponentMines[i];
+      
+      if (mine.exploded) {
+        opponentMinesToRemove.push(i);
+        continue;
+      }
+      
+      const mineAge = now - mine.spawnTime;
+      
+      // Check if mine lifetime expired (auto-explode after 10 seconds)
+      if (mineAge >= mineLifetime) {
+        // Explode opponent mine - spawn 8 spikes in 8 directions
+        const directions = [
+          { x: 1, y: 0 },      // Right
+          { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+          { x: 0, y: 1 },      // Down
+          { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+          { x: -1, y: 0 },     // Left
+          { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+          { x: 0, y: -1 },     // Up
+          { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+        ];
+        
+        for (const dir of directions) {
+          const spike: Spike = {
+            x: mine.x,
+            y: mine.y,
+            vx: dir.x * spikeSpeed,
+            vy: dir.y * spikeSpeed,
+            spawnTime: now,
+          };
+          opponentSpikes.push(spike);
+        }
+        
+        // Play explosion sound effect
+        audioManager.resumeContext().then(() => {
+          audioManager.playMineExplosion();
+        });
+        
+        mine.exploded = true;
+        opponentMinesToRemove.push(i);
+        console.log('Opponent mine auto-exploded!', { x: mine.x, y: mine.y });
+        continue;
+      }
+      
+      // Check collision with my player (stepping on opponent mine)
+      if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+        // Skip if no my player
+      } else {
+        const myPlayer = pvpPlayers[myPlayerId];
+        const dx = mine.x - myPlayer.x;
+        const dy = mine.y - myPlayer.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = mineRadius + myPlayer.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // My player stepped on opponent mine - explode and deal 2x damage
+          // Damage is handled by opponent via network sync (they send hit event)
+          // We just explode the mine locally
+          
+          // Explode opponent mine - spawn 8 spikes in 8 directions
+          const directions = [
+            { x: 1, y: 0 },      // Right
+            { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+            { x: 0, y: 1 },      // Down
+            { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+            { x: -1, y: 0 },     // Left
+            { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+            { x: 0, y: -1 },     // Up
+            { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+          ];
+          
+          for (const dir of directions) {
+            const spike: Spike = {
+              x: mine.x,
+              y: mine.y,
+              vx: dir.x * spikeSpeed,
+              vy: dir.y * spikeSpeed,
+              spawnTime: now,
+            };
+            opponentSpikes.push(spike);
+          }
+          
+          // Play explosion sound effect
+          audioManager.resumeContext().then(() => {
+            audioManager.playMineExplosion();
+          });
+          
+          mine.exploded = true;
+          opponentMinesToRemove.push(i);
+          console.log('Opponent mine exploded on contact!', { x: mine.x, y: mine.y });
+        }
+      }
+    }
+    
+    // Remove exploded opponent mines
+    opponentMinesToRemove.sort((a, b) => b - a);
+    for (const index of opponentMinesToRemove) {
+      opponentMines.splice(index, 1);
+    }
+    
+    // Process opponent spikes
+    for (let i = opponentSpikes.length - 1; i >= 0; i--) {
+      const spike = opponentSpikes[i];
+      
+      // Update spike position
+      spike.x += spike.vx;
+      spike.y += spike.vy;
+      
+      // Check lifetime
+      const spikeAge = now - spike.spawnTime;
+      if (spikeAge > spikeLifetime) {
+        opponentSpikesToRemove.push(i);
+        continue;
+      }
+      
+      // Check collision with my player
+      if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+        // Skip if no my player
+      } else {
+        const myPlayer = pvpPlayers[myPlayerId];
+        const dx = spike.x - myPlayer.x;
+        const dy = spike.y - myPlayer.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = spikeRadius + myPlayer.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Opponent spike hit my player - damage is handled by opponent via network sync
+          opponentSpikesToRemove.push(i);
+          console.log('Opponent spike hit me!', { x: spike.x, y: spike.y });
+          continue;
+        }
+      }
+      
+      // Check if spike is out of bounds
+      if (spike.x < pvpBounds.left || spike.x > pvpBounds.right || spike.y < pvpBounds.top || spike.y > pvpBounds.bottom) {
+        opponentSpikesToRemove.push(i);
+      }
+    }
+    
+    // Remove expired or hit opponent spikes
+    opponentSpikesToRemove.sort((a, b) => b - a);
+    for (const index of opponentSpikesToRemove) {
+      opponentSpikes.splice(index, 1);
+    }
+    
+    // Health pack spawn system - only one at a time, spawns 25 seconds after pickup or game start
+    // Spawn new health pack if none exists and enough time has passed
+    const timeSinceLastPickup = lastHealthPackPickupTime === 0 
+      ? (pvpGameStartTime === 0 ? now : now - pvpGameStartTime) 
+      : now - lastHealthPackPickupTime;
+    if (!healthPack && timeSinceLastPickup >= healthPackSpawnDelay) {
+      // Get fixed position based on cycle (center -> left -> right -> center -> ...)
+      const position = healthPackPositions[healthPackPositionIndex];
+      
+      healthPack = {
+        x: position.x,
+        y: position.y,
+        spawnTime: now,
+        id: `hp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        positionIndex: healthPackPositionIndex,
+      };
+      
+      // Move to next position in cycle
+      healthPackPositionIndex = (healthPackPositionIndex + 1) % healthPackPositions.length;
+      
+      // Play spawn sound effect
+      audioManager.resumeContext().then(() => {
+        audioManager.playHealthPackSpawn();
+      });
+      
+      // Send to opponent via network sync (only position index, not coordinates)
+      const useColyseus = colyseusService.isConnectedToRoom();
+      const isSyncing = useColyseus || pvpSyncService.isSyncing();
+      if (currentMatch && isSyncing) {
+        const healthPackInput = {
+          type: 'healthpack' as const,
+          timestamp: now,
+          positionIndex: healthPack.positionIndex, // The position index we just used
+          id: healthPack.id,
+        };
+        if (useColyseus) {
+          colyseusService.sendInput(healthPackInput);
+        } else {
+          pvpSyncService.sendInput(healthPackInput);
+        }
+      }
+      
+      console.log('Health pack spawned!', { x: position.x, y: position.y, positionIndex: healthPack.positionIndex, id: healthPack.id });
+    }
+    
+    // Process health pack - check collision with players (only one at a time)
+    if (healthPack) {
+      // Check collision with my player
+      if (myPlayerId && pvpPlayers[myPlayerId]) {
+        const myPlayer = pvpPlayers[myPlayerId];
+        const dx = healthPack.x - myPlayer.x;
+        const dy = healthPack.y - myPlayer.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = healthPackRadius + myPlayer.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // My player picked up health pack - restore ONLY HP, armor is ignored
+          const healAmount = Math.floor(Math.random() * (healthPackMaxHeal - healthPackMinHeal + 1)) + healthPackMinHeal; // 10-15 HP
+          
+          const oldHP = myPlayer.hp;
+          
+          // Restore HP only (armor is not touched)
+          myPlayer.hp = Math.min(myPlayer.maxHP, myPlayer.hp + healAmount);
+          
+          const actualHealAmount = myPlayer.hp - oldHP;
+          
+          // Play pickup sound effect
+          audioManager.resumeContext().then(() => {
+            audioManager.playHealthPackPickup();
+          });
+          
+          // Show healing number animation (only HP amount)
+          if (actualHealAmount > 0) {
+            safePushDamageNumber({
+              x: myPlayer.x + (Math.random() - 0.5) * 20,
+              y: myPlayer.y - myPlayer.radius - 20,
+              value: `+${actualHealAmount}`,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 1,
+              vy: -2 - Math.random() * 1,
+              isCrit: false
+            });
+          }
+          
+          // Send stats update
+          sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+          
+          // Remove health pack FIRST (before sending network event to prevent double pickup)
+          const pickedUpHealthPackId = healthPack.id;
+          lastHealthPackPickupTime = now;
+          healthPack = null;
+          
+          // Send pickup event to opponent (with heal amount for display)
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing) {
+            const pickupInput = {
+              type: 'healthpack_pickup' as const,
+              timestamp: now,
+              healthPackId: pickedUpHealthPackId,
+              playerId: myPlayerId,
+              healAmount: actualHealAmount,
+            };
+            if (useColyseus) {
+              colyseusService.sendInput(pickupInput);
+            } else {
+              pvpSyncService.sendInput(pickupInput);
+            }
+          }
+          
+          console.log(`Health pack picked up! +${actualHealAmount} HP (armor ignored)`, { id: pickedUpHealthPackId });
+        }
+      }
+      
+      // Note: Opponent pickup is handled via network sync (healthpack_pickup event)
+      // We don't check collision with opponent here to avoid conflicts
+    }
+  }
+  
   // Update respawn delay
   if (gameState === 'Dead') {
     respawnTimer += 16; // Assuming 60 FPS
@@ -8204,6 +9522,7 @@ function gameLoop() {
       dotVx = 0;
       dotVy = 0;
       lastHitTime = 0; // Reset hit time
+      gravityActiveUntil = 0; // Reset gravity active timer
       // Reset combo on respawn
       comboProgress = 0;
       comboActive = false;
@@ -8264,10 +9583,11 @@ function gameLoop() {
       }
     }
     
-    // Apply gravity only if not in slow-motion freeze
+    // Apply gravity only if active (after damage) and not in slow-motion freeze
     if (!slowMotionActive) {
-      const timeSinceLastHit = Date.now() - lastHitTime;
-      if (!gravityLocked && timeSinceLastHit >= gravityDelay) {
+      const now = Date.now();
+      // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
+      if (gravityActiveUntil > now) {
         dotVy += gravity;
       }
     }
@@ -8358,12 +9678,12 @@ function gameLoop() {
             const remainingB = bonusDamage - absorbedB;
             dotHP = Math.max(0, dotHP - remainingB);
             
-            // Play damage hit sound effect (pain/impact sound)
-            audioManager.resumeContext().then(() => {
-              audioManager.playDamageHit(true); // Combo bonus is crit-like
-            });
-            
-            safePushDamageNumber({
+          // Play damage received sound effect (pain/impact sound when receiving damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageReceived(true); // Combo bonus is crit-like
+          });
+          
+          safePushDamageNumber({
               x: dotX + (Math.random() - 0.5) * 40,
               y: dotY - 28,
               value: bonusDamage,
@@ -8422,12 +9742,12 @@ function gameLoop() {
             const remainingDamage = bonusDamage - absorbed;
             dotHP = Math.max(0, dotHP - remainingDamage);
             
-            // Play damage hit sound effect (pain/impact sound)
-            audioManager.resumeContext().then(() => {
-              audioManager.playDamageHit(true); // Speed bonus is crit-like
-            });
-            
-            safePushDamageNumber({
+          // Play damage received sound effect (pain/impact sound when receiving damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageReceived(true); // Speed bonus is crit-like
+          });
+          
+          safePushDamageNumber({
               x: dotX + (Math.random() - 0.5) * 40,
               y: dotY - 20,
               value: bonusDamage,
@@ -8499,12 +9819,12 @@ function gameLoop() {
             const remainingB = bonusDamage - absorbedB;
             dotHP = Math.max(0, dotHP - remainingB);
             
-            // Play damage hit sound effect (pain/impact sound)
-            audioManager.resumeContext().then(() => {
-              audioManager.playDamageHit(true); // Combo bonus is crit-like
-            });
-            
-            safePushDamageNumber({
+          // Play damage received sound effect (pain/impact sound when receiving damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageReceived(true); // Combo bonus is crit-like
+          });
+          
+          safePushDamageNumber({
               x: dotX + (Math.random() - 0.5) * 40,
               y: dotY - 28,
               value: bonusDamage,
@@ -8702,8 +10022,9 @@ function gameLoop() {
       const isParalyzed = player.paralyzedUntil > Date.now();
       if (isParalyzed) {
         // Still apply gravity and air resistance, but don't allow movement input
-        const timeSinceLastHit = Date.now() - player.lastHitTime;
-        if (!player.gravityLocked && timeSinceLastHit >= gravityDelay) {
+        const now = Date.now();
+        // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
+        if (player.gravityActiveUntil > now) {
           player.vy += pvpGravity;
         }
         player.x += player.vx;
@@ -8714,39 +10035,174 @@ function gameLoop() {
         continue; // Skip rest of physics update (no input handling)
       }
       
-      // Apply gravity only if not locked and after delay (same as Solo)
-      const timeSinceLastHit = Date.now() - player.lastHitTime;
-      if (!player.gravityLocked && timeSinceLastHit >= gravityDelay) {
+      // Apply gravity only if active (after damage) - gravity is triggered by damage, not always active
+      const now = Date.now(); // Declare once for entire scope
+      // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
+      if (player.gravityActiveUntil > now) {
         player.vy += pvpGravity;
+      }
+      
+      // Jetpack system - only for my player
+      if (playerId === myPlayerId && player.isUsingJetpack && player.fuel > 0 && !player.isOverheated) {
+        const jetpackUseTime = (now - player.jetpackStartTime) / 1000; // Time in seconds
+        const maxJetpackTime = 1.5; // Reduced from 3 to 1.5 seconds
+        
+        // Calculate fuel percent for sound effect
+        const fuelPercent = player.fuel / player.maxFuel;
+        
+        // Start/update jetpack sound effect only after 25% fuel is used (fuel <= 75%)
+        const FUEL_THRESHOLD_FOR_SOUND = 0.75; // Start sound when fuel <= 75% (25% used)
+        if (fuelPercent <= FUEL_THRESHOLD_FOR_SOUND) {
+          // Calculate adjusted fuel percent for sound (0.0 = 75% fuel, 1.0 = 0% fuel)
+          const adjustedFuelPercent = fuelPercent / FUEL_THRESHOLD_FOR_SOUND; // 0.0 to 1.0 range
+          
+          audioManager.resumeContext().then(() => {
+            if (!(audioManager as any).jetpackOscillator) {
+              // Start jetpack sound if not already playing
+              audioManager.startJetpackSound(adjustedFuelPercent);
+            } else {
+              // Update jetpack sound based on adjusted fuel level
+              audioManager.updateJetpackSound(adjustedFuelPercent);
+            }
+          });
+        } else {
+          // Stop sound if fuel is above threshold (above 75%)
+          audioManager.stopJetpackSound();
+        }
+        
+        // Check if max usage time reached (1.5 seconds)
+        if (jetpackUseTime >= maxJetpackTime) {
+          // Max usage time reached - deactivate jetpack
+          player.isUsingJetpack = false;
+          player.lastFuelRegenTime = now;
+          audioManager.stopJetpackSound();
+          console.log(`Jetpack max usage time reached (${maxJetpackTime}s). Fuel:`, player.fuel);
+        } else {
+          // Calculate speed boost (from +1 to +5 over 1.5 seconds) - increased for higher top speed
+          const speedBoost = 1 + (jetpackUseTime / maxJetpackTime) * 4; // Linear from 1 to 5 (higher top speed)
+          
+          // Get current movement direction (normalize velocity)
+          const currentSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+          if (currentSpeed > 0.1) {
+            // Apply speed boost in current direction - increased multiplier for better feel
+            const dirX = player.vx / currentSpeed;
+            const dirY = player.vy / currentSpeed;
+            player.vx += dirX * speedBoost * 0.2; // Increased from 0.15 to 0.2 for stronger effect
+            player.vy += dirY * speedBoost * 0.2;
+          }
+          
+          // Consume fuel (15 fuel over 1.5 seconds = ~10 per second) - much slower consumption for longer usage
+          const fuelConsumptionRate = 15 / maxJetpackTime; // Fuel per second (15 fuel per 1.5s = much slower consumption)
+          const fuelConsumed = (fuelConsumptionRate * (now - player.jetpackStartTime)) / 1000;
+          player.fuel = Math.max(0, player.fuel - fuelConsumed);
+          
+          // If fuel runs out, start overheat
+          if (player.fuel <= 0) {
+            player.isUsingJetpack = false;
+            player.fuel = 0;
+            player.isOverheated = true;
+            player.overheatStartTime = now;
+            player.lastFuelRegenTime = now; // Reset regen time for after overheat
+            audioManager.stopJetpackSound();
+            console.log('Jetpack fuel depleted! Overheat started.');
+          }
+        }
+      } else if (playerId === myPlayerId && !player.isUsingJetpack) {
+        // Stop jetpack sound when not using
+        audioManager['stopJetpackSound']();
+      }
+      
+      // Overheat system - only for my player
+      if (playerId === myPlayerId && player.isOverheated) {
+        const overheatDuration = (now - player.overheatStartTime) / 1000; // Time in seconds
+        const overheatTime = 4; // 4 seconds overheat (increased from 3 to 4 seconds)
+        
+        // Check if overheat duration passed (4 seconds)
+        if (overheatDuration >= overheatTime) {
+          // Overheat finished - start fuel regeneration
+          player.isOverheated = false;
+          player.overheatStartTime = 0;
+          player.lastFuelRegenTime = now; // Start regeneration now
+          console.log('Overheat finished! Fuel regeneration started.');
+        }
+        // During overheat, fuel regeneration is blocked (handled below)
+      }
+      
+      // Fuel regeneration (only when not using jetpack, not overheated, and regeneration has started)
+      if (playerId === myPlayerId && !player.isUsingJetpack && !player.isOverheated && player.fuel < player.maxFuel && player.lastFuelRegenTime > 0) {
+        const timeSinceLastRegen = now - player.lastFuelRegenTime;
+        
+        // Fuel regenerates fully in 18 seconds (much slower recovery to prevent spam) - increased from 12 to 18 seconds
+        const regenRate = player.maxFuel / 18000; // Fuel per millisecond (100 / 18000 = ~0.0056 per ms)
+        const fuelRegenerated = regenRate * timeSinceLastRegen;
+        const newFuel = player.fuel + fuelRegenerated;
+        player.fuel = Math.min(player.maxFuel, newFuel);
+        
+        // Update last regen time only if fuel is still regenerating
+        if (player.fuel < player.maxFuel) {
+          player.lastFuelRegenTime = now;
+        }
       }
       
       // Update position
       player.x += player.vx;
       player.y += player.vy;
       
-      // Check if player is out of bounds (any side)
+      // Check if player is out of bounds (any side) - no damage, just tracking for death animation
       const isOutOfBounds = player.x < pvpBounds.left || 
                             player.x > pvpBounds.right || 
                             player.y < pvpBounds.top || 
                             player.y > pvpBounds.bottom;
       
-      const now = Date.now();
-      
+      // Out of bounds tracking (no damage - toxic water system handles damage)
+      // Note: 'now' is already declared above in this scope
       if (isOutOfBounds) {
-        // Player is out of bounds
         if (player.outOfBoundsStartTime === null) {
-          // First time going out of bounds - deal immediate -1 HP damage
           player.outOfBoundsStartTime = now;
-          player.lastOutOfBoundsDamageTime = now;
+        }
+      } else {
+        // Player is back in safe area - reset out of bounds tracking
+        if (player.outOfBoundsStartTime !== null) {
+          player.outOfBoundsStartTime = null;
+          player.lastOutOfBoundsDamageTime = 0;
+        }
+      }
+      
+      // Toxic water damage system (between platform and bottom floor)
+      const bottomFloorY = movingPlatformY + 100; // 100px below platform
+      const lavaTopY = movingPlatformY + movingPlatformThickness; // Start from platform bottom
+      const lavaBottomY = bottomFloorY; // End at bottom floor
+      
+      // Check if player is in toxic water zone (between platform and bottom floor)
+      const isInToxicWater = player.y + player.radius >= lavaTopY && player.y - player.radius <= lavaBottomY;
+      
+      if (isInToxicWater) {
+        // Player is in toxic water
+        if (player.toxicWaterStartTime === null) {
+          // First time entering toxic water - start tracking
+          player.toxicWaterStartTime = now;
+          player.toxicWaterLastDamageTime = now;
           
-          // Deal -1 HP damage
-          player.hp = Math.max(0, player.hp - 1);
+          // Deal initial -1 HP damage
+          const damage = 1;
+          const absorbed = Math.min(damage, player.armor);
+          player.armor -= absorbed;
+          const remainingDamage = damage - absorbed;
+          player.hp = Math.max(0, player.hp - remainingDamage);
+          
+          // Activate gravity for 5 seconds after damage
+          player.gravityActiveUntil = Date.now() + gravityActiveDuration;
+          
+          // Play muffled damage hit sound effect (like sound through closed door)
+          audioManager.resumeContext().then(() => {
+            audioManager.playMuffledDamageHit();
+          });
           
           // Show damage number
           safePushDamageNumber({
             x: player.x + (Math.random() - 0.5) * 40,
             y: player.y - 20,
-            value: 1,
+            value: damage,
             life: 60,
             maxLife: 60,
             vx: (Math.random() - 0.5) * 2,
@@ -8754,40 +10210,36 @@ function gameLoop() {
             isCrit: false
           });
           
-          console.log(`PvP: Player ${playerId} went out of bounds - -1 HP. HP: ${player.hp}/${player.maxHP}`);
-          
-          // Check if player is dead - start death animation
-          if (player.hp <= 0 && !player.isOut && !deathAnimations.has(playerId)) {
-            player.isOut = true;
-            
-            // Determine player color for death animation
-            let playerColor = '#000000';
-            if (playerId === myPlayerId) {
-              playerColor = '#000000';
-            } else if (playerId === opponentId && opponentId) {
-              playerColor = '#000000';
-            } else {
-              playerColor = player.color;
-            }
-            
-            // Start death animation
-            createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
-          }
+          console.log(`PvP: Player ${playerId} entered toxic water - -1 HP. HP: ${player.hp}/${player.maxHP}`);
         } else {
-          // Already out of bounds - check if 1 second has passed since last damage
-          const timeSinceLastDamage = now - player.lastOutOfBoundsDamageTime;
+          // Already in toxic water - check if 1 second has passed since last damage
+          const timeSinceLastDamage = now - player.toxicWaterLastDamageTime;
           if (timeSinceLastDamage >= 1000) { // 1 second = 1000ms
-            // Deal -1 HP damage every second
-            player.lastOutOfBoundsDamageTime = now;
+            // Calculate damage based on time in water (starts at 1, increases by +1 each second)
+            const secondsInWater = Math.floor((now - player.toxicWaterStartTime) / 1000);
+            const damage = secondsInWater + 1; // 1 sec = 1 dmg, 2 sec = 2 dmg, 3 sec = 3 dmg, etc.
             
-            // Deal -1 HP damage
-            player.hp = Math.max(0, player.hp - 1);
+            player.toxicWaterLastDamageTime = now;
+            
+            // Apply damage (armor first, then HP)
+            const absorbed = Math.min(damage, player.armor);
+            player.armor -= absorbed;
+            const remainingDamage = damage - absorbed;
+            player.hp = Math.max(0, player.hp - remainingDamage);
+            
+            // Activate gravity for 5 seconds after damage
+            player.gravityActiveUntil = Date.now() + gravityActiveDuration;
+            
+            // Play muffled damage hit sound effect (like sound through closed door)
+            audioManager.resumeContext().then(() => {
+              audioManager.playMuffledDamageHit();
+            });
             
             // Show damage number
             safePushDamageNumber({
               x: player.x + (Math.random() - 0.5) * 40,
               y: player.y - 20,
-              value: 1,
+              value: damage,
               life: 60,
               maxLife: 60,
               vx: (Math.random() - 0.5) * 2,
@@ -8795,9 +10247,9 @@ function gameLoop() {
               isCrit: false
             });
             
-            console.log(`PvP: Player ${playerId} still out of bounds - -1 HP per second. HP: ${player.hp}/${player.maxHP}`);
+            console.log(`PvP: Player ${playerId} in toxic water for ${secondsInWater + 1}s - -${damage} HP. HP: ${player.hp}/${player.maxHP}`);
             
-            // Check if player is dead - start death animation if not already started
+            // Check if player is dead - start death animation
             if (player.hp <= 0 && !player.isOut && !deathAnimations.has(playerId)) {
               player.isOut = true;
               
@@ -8814,7 +10266,7 @@ function gameLoop() {
               // Start death animation
               createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
               
-              console.log(`PvP: Player ${playerId} died from water damage - started death animation`);
+              console.log(`PvP: Player ${playerId} died from toxic water damage - started death animation`);
             } else if (player.hp <= 0) {
               // Already dead, just ensure isOut is set
               player.isOut = true;
@@ -8822,16 +10274,15 @@ function gameLoop() {
           }
         }
       } else {
-        // Player is back in safe area - reset out of bounds tracking
-        if (player.outOfBoundsStartTime !== null) {
-          player.outOfBoundsStartTime = null;
-          player.lastOutOfBoundsDamageTime = 0;
-          console.log(`PvP: Player ${playerId} returned to safe area`);
+        // Player is out of toxic water - reset tracking
+        if (player.toxicWaterStartTime !== null) {
+          player.toxicWaterStartTime = null;
+          player.toxicWaterLastDamageTime = 0;
+          console.log(`PvP: Player ${playerId} exited toxic water`);
         }
       }
       
       // Bottom floor collision (100px below moving platform) - player lands but doesn't bounce
-      const bottomFloorY = movingPlatformY + 100; // 100px below platform
       const wallTopY = movingPlatformY; // Start from platform level
       const wallBottomY = bottomFloorY; // End at bottom floor
       
@@ -8893,9 +10344,13 @@ function gameLoop() {
                   const remainingDamage = damage - absorbed;
                   player.hp = Math.max(0, player.hp - remainingDamage);
                   
-                  // Play damage hit sound effect (pain/impact sound)
+                  // Activate gravity for 5 seconds after damage
+                  const now = Date.now();
+                  player.gravityActiveUntil = now + gravityActiveDuration;
+                  
+                  // Play damage received sound effect (pain/impact sound when receiving damage)
                   audioManager.resumeContext().then(() => {
-                    audioManager.playDamageHit(false);
+                    audioManager.playDamageReceived(false);
                   });
                   
                   spike.lastDamageTime[playerId] = now;
@@ -8938,9 +10393,13 @@ function gameLoop() {
                   const remainingDamage = damage - absorbed;
                   player.hp = Math.max(0, player.hp - remainingDamage);
                   
-                  // Play damage hit sound effect (pain/impact sound)
+                  // Activate gravity for 5 seconds after damage
+                  const now = Date.now();
+                  player.gravityActiveUntil = now + gravityActiveDuration;
+                  
+                  // Play damage received sound effect (pain/impact sound when receiving damage)
                   audioManager.resumeContext().then(() => {
-                    audioManager.playDamageHit(false);
+                    audioManager.playDamageReceived(false);
                   });
                   
                   spike.lastDamageTime[playerId] = now;
@@ -9120,9 +10579,9 @@ function gameLoop() {
           screenShake = Math.max(screenShake, 30);
         }
         
-        // Play damage hit sound effect (pain/impact sound when hitting opponent)
+        // Play damage dealt sound effect (satisfying hit sound when dealing damage)
         audioManager.resumeContext().then(() => {
-          audioManager.playDamageHit(isCritHit);
+          audioManager.playDamageDealt(isCritHit);
         });
         
         // Show damage number (we see it when we hit)
@@ -9443,9 +10902,9 @@ function gameLoop() {
             // Apply 50% variance (damage ranges from 50% to 100%)
             const projectileDamage = applyDamageVariance(baseProjectileDamage);
             
-            // Play damage hit sound effect (pain/impact sound when hitting opponent)
+            // Play damage dealt sound effect (satisfying hit sound when dealing damage)
             audioManager.resumeContext().then(() => {
-              audioManager.playDamageHit(isCritHit);
+              audioManager.playDamageDealt(isCritHit);
             });
             
             // Profile: Track damage dealt (PvP mode - Projectile)
@@ -10192,9 +11651,13 @@ function gameLoop() {
             const remainingDamage = damage - absorbed;
             player2.hp = Math.max(0, player2.hp - remainingDamage);
             
-            // Play damage hit sound effect (pain/impact sound)
+            // Activate gravity for 5 seconds after damage
+            const now = Date.now();
+            player2.gravityActiveUntil = now + gravityActiveDuration;
+            
+            // Play damage dealt sound effect (satisfying hit sound when dealing damage)
             audioManager.resumeContext().then(() => {
-              audioManager.playDamageHit(false);
+              audioManager.playDamageDealt(false);
             });
             
             // Profile: Track damage dealt (PvP mode - I deal damage if I'm player 1)
@@ -10246,9 +11709,13 @@ function gameLoop() {
             const remainingDamage = damage - absorbed;
             player1.hp = Math.max(0, player1.hp - remainingDamage);
             
-            // Play damage hit sound effect (pain/impact sound)
+            // Activate gravity for 5 seconds after damage
+            const now = Date.now();
+            player1.gravityActiveUntil = now + gravityActiveDuration;
+            
+            // Play damage received sound effect (pain/impact sound when receiving damage)
             audioManager.resumeContext().then(() => {
-              audioManager.playDamageHit(false);
+              audioManager.playDamageReceived(false);
             });
             
             // Record damage time
@@ -10442,9 +11909,9 @@ function gameLoop() {
         const remainingDamage = totalDamage - absorbed;
         dotHP = Math.max(0, dotHP - remainingDamage);
         
-        // Play damage hit sound effect (pain/impact sound)
+        // Play damage received sound effect (pain/impact sound when receiving damage)
         audioManager.resumeContext().then(() => {
-          audioManager.playDamageHit(isCritHit);
+          audioManager.playDamageReceived(isCritHit);
         });
         
         // Add damage number animation
