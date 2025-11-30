@@ -104,3 +104,4 @@ const isInToxicWater = player.y + player.radius >= lavaTopY &&
 Nuodingo vandens damage sistema dabar veikia su **progresuojančiu damage**!
 
 
+

@@ -87,4 +87,5 @@ server.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ Health check: http://localhost:${PORT}/health`);
   console.log(`✅ Matchmaking: http://localhost:${PORT}/matchmake`);
-  });
+  // Deployment trigger - forces PM2 restart
+});

@@ -182,3 +182,4 @@ Remove-Item -Path "C:\Users\p3p3l\Downloads\ok05" -Recurse -Force
 **Po backup galite saugiai ištrinti!** 🚀
 
 
+

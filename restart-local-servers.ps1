@@ -119,3 +119,4 @@ Write-Host "1. Colyseus serveris: cd colyseus-server && npm run dev" -Foreground
 Write-Host "2. Frontend: npm run dev" -ForegroundColor White
 
 
+

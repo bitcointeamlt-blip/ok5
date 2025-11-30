@@ -195,3 +195,4 @@ COLYSEUS_API_TOKEN=NjkxMzk5OTgwOTQzM3Fxd2NVWTBIdWV1SEJhcm0wWU1aTjBNdUs4M3d6Ym9X 
 3. Jei Root Directory neteisingas, naudokite pilnas komandas su `cd colyseus-server &&`
 
 
+

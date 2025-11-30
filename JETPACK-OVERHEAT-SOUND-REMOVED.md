@@ -60,3 +60,4 @@ Pašalintas perkaitimo garso efektas, nes jis atrodė kaip damage garsas, bet da
 Jetpack sistema dabar turi **tik jetpack garso efektą**, o perkaitimo metu yra **tyla**!
 
 
+

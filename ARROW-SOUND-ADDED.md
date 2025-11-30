@@ -80,3 +80,4 @@ playArrowShot():
    - Kai paspaudžiate "1" ir tada click - šaudote strėlę
 
 
+

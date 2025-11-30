@@ -79,3 +79,4 @@ Site settings → Environment variables → Add a variable
 - ✅ Po pridėjimo → Redeploy frontend!
 
 
+

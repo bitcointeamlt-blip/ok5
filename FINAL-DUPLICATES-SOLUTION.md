@@ -82,3 +82,4 @@ backup_*/
 **Po to deployment turėtų veikti!** 🚀
 
 
+

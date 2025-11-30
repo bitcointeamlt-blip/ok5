@@ -73,3 +73,4 @@ Degalų talpa padidinta nuo 100 iki 200 (2x padidėjimas).
 Jetpack sistema dabar turi **dvigubai daugiau degalų**!
 
 
+

@@ -76,3 +76,4 @@ Po redeploy, patikrinkite console log'us:
 4. Bandykite hard refresh Netlify app (Ctrl+Shift+R)
 
 
+

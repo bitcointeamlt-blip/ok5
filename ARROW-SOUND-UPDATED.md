@@ -49,3 +49,4 @@ Dabar strėlės garsas:
 4. Bandykite atsokti nuo platformos - garsai turėtų skambėti skirtingai
 
 
+

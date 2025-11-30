@@ -1,5 +1,4 @@
 # 🧹 Cleanup Summary - Kas Išvalyta
-supratau
 
 ## ✅ Kas Padaryta:
 
@@ -145,5 +144,6 @@ supratau
 4. Redeploy'inti serverį
 
 **Po to viskas veiks!** 🚀
+
 
 
