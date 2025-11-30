@@ -13,6 +13,85 @@ import { nftService } from './services/NftService';
 import type { NftItem } from './types/nft';
 import { AudioManager } from './audio/AudioManager';
 
+type PvpServerPreset = {
+  id: string;
+  name: string;
+  region: string;
+  endpoint: string;
+  description?: string;
+};
+
+type PvpServerStatus = PvpServerPreset & {
+  status: 'checking' | 'online' | 'offline';
+  pingMs: number | null;
+  waitingPlayers: number | null;
+  waitingRooms: number | null;
+  activeRooms: number | null;
+  totalPlayers: number | null;
+  lastUpdated: number | null;
+  error?: string;
+};
+
+const fallbackColyseusEndpoint = import.meta.env.VITE_COLYSEUS_ENDPOINT || 'https://de-fra-f8820c12.colyseus.cloud';
+const serverPresets: PvpServerPreset[] = [
+  {
+    id: 'eu-central',
+    name: 'Europe - Frankfurt',
+    region: 'EU',
+    endpoint: fallbackColyseusEndpoint,
+    description: 'Primary Colyseus Cloud server'
+  }
+];
+
+if (!import.meta.env.PROD) {
+  serverPresets.push({
+    id: 'local-dev',
+    name: 'Localhost (dev)',
+    region: 'Local',
+    endpoint: 'http://localhost:2567',
+    description: 'Developer testing server'
+  });
+}
+
+const PVP_SERVER_PRESETS: PvpServerPreset[] = serverPresets.filter(
+  (preset, index, array) =>
+    !!preset.endpoint &&
+    index === array.findIndex((other) => other.id === preset.id)
+);
+
+let serverStatuses: PvpServerStatus[] = PVP_SERVER_PRESETS.map((preset) => ({
+  ...preset,
+  status: 'checking',
+  pingMs: null,
+  waitingPlayers: null,
+  waitingRooms: null,
+  activeRooms: null,
+  totalPlayers: null,
+  lastUpdated: null
+}));
+
+const storedServerId = (() => {
+  try {
+    return localStorage.getItem('pvp_server_id');
+  } catch (error) {
+    return null;
+  }
+})();
+
+let selectedServerId: string | null =
+  (storedServerId && serverStatuses.some((server) => server.id === storedServerId) && storedServerId) ||
+  serverStatuses[0]?.id ||
+  null;
+
+let isServerBrowserOpen = false;
+let serverBrowserError = '';
+let serverBrowserHoverId: string | null = null;
+let serverBrowserHoverClose = false;
+let serverStatusLoading = false;
+let serverBrowserHitRegions: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
+let serverBrowserCloseRegion = { x: 0, y: 0, width: 0, height: 0 };
+let serverBrowserModalRegion = { x: 0, y: 0, width: 0, height: 0 };
+
 // Verbose logging control (prevents spam in production and lowers frame stutter)
 const originalConsoleLog = console.log.bind(console);
 let verboseLogsEnabled = (window as any).__ENABLE_VERBOSE_LOGS;
@@ -38,6 +117,273 @@ console.log = (...args: any[]) => {
 (window as any).setGameLogVerbosity = setGameLogVerbosity;
 
 console.info('Starting simple game...');
+
+function normalizeServerEndpoint(endpoint: string): string {
+  if (!endpoint) {
+    return endpoint;
+  }
+  return endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
+}
+
+function getSelectedServer(): PvpServerStatus | undefined {
+  if (!selectedServerId) {
+    return serverStatuses[0];
+  }
+  return serverStatuses.find((server) => server.id === selectedServerId) || serverStatuses[0];
+}
+
+function getSelectedServerEndpoint(): string | null {
+  const server = getSelectedServer();
+  return server?.endpoint || null;
+}
+
+function setSelectedServer(serverId: string): void {
+  selectedServerId = serverId;
+  try {
+    localStorage.setItem('pvp_server_id', serverId);
+  } catch (error) {
+    // Ignore storage errors (private mode, etc.)
+  }
+}
+
+async function fetchWithTimeout(url: string, timeoutMs = 4000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function checkServerStatus(server: PvpServerPreset | PvpServerStatus): Promise<PvpServerStatus> {
+  const normalizedEndpoint = normalizeServerEndpoint(server.endpoint);
+  const baseStatus: PvpServerStatus = {
+    ...server,
+    status: 'checking',
+    pingMs: null,
+    waitingPlayers: null,
+    waitingRooms: null,
+    activeRooms: null,
+    totalPlayers: null,
+    lastUpdated: null,
+    error: undefined
+  };
+
+  if (!normalizedEndpoint) {
+    return {
+      ...baseStatus,
+      status: 'offline',
+      error: 'No endpoint configured',
+      lastUpdated: Date.now()
+    };
+  }
+
+  try {
+    const healthUrl = `${normalizedEndpoint}/health?ts=${Date.now()}`;
+    const startTime = performance.now();
+    const healthResponse = await fetchWithTimeout(healthUrl, 4000);
+
+    if (!healthResponse.ok) {
+      throw new Error(`Health check failed (${healthResponse.status})`);
+    }
+
+    // Some deployments might return non-JSON. Ignore parsing errors.
+    try {
+      await healthResponse.json();
+    } catch (error) {
+      // ignore
+    }
+
+    const pingMs = Math.max(1, Math.round(performance.now() - startTime));
+
+    let waitingPlayers: number | null = null;
+    let waitingRooms: number | null = null;
+    let activeRooms: number | null = null;
+    let totalPlayers: number | null = null;
+
+    try {
+      const statusResponse = await fetchWithTimeout(`${normalizedEndpoint}/status?ts=${Date.now()}`, 4000);
+      if (statusResponse.ok) {
+        const data = await statusResponse.json();
+        waitingPlayers = typeof data.waitingPlayers === 'number' ? data.waitingPlayers : null;
+        waitingRooms = typeof data.waitingRooms === 'number' ? data.waitingRooms : null;
+        activeRooms = typeof data.activeRooms === 'number' ? data.activeRooms : null;
+        totalPlayers = typeof data.totalPlayers === 'number' ? data.totalPlayers : null;
+      }
+    } catch (error) {
+      // Older server versions may not have /status - ignore
+    }
+
+    return {
+      ...server,
+      status: 'online',
+      pingMs,
+      waitingPlayers,
+      waitingRooms,
+      activeRooms,
+      totalPlayers,
+      lastUpdated: Date.now(),
+      error: undefined
+    };
+  } catch (error: any) {
+    return {
+      ...server,
+      status: 'offline',
+      pingMs: null,
+      waitingPlayers: null,
+      waitingRooms: null,
+      activeRooms: null,
+      totalPlayers: null,
+      lastUpdated: Date.now(),
+      error: error?.message || 'Unavailable'
+    };
+  }
+}
+
+async function refreshServerStatuses(): Promise<void> {
+  if (serverStatuses.length === 0) {
+    return;
+  }
+
+  serverStatusLoading = true;
+  const results = await Promise.all(serverStatuses.map((server) => checkServerStatus(server)));
+  serverStatuses = results;
+  serverStatusLoading = false;
+}
+
+function openServerBrowser(): void {
+  serverBrowserError = '';
+  serverBrowserHoverId = null;
+  serverBrowserHoverClose = false;
+  isServerBrowserOpen = true;
+  refreshServerStatuses().catch(() => {
+    serverBrowserError = 'Failed to refresh server status';
+  });
+}
+
+function closeServerBrowser(): void {
+  isServerBrowserOpen = false;
+  serverBrowserHoverId = null;
+  serverBrowserHoverClose = false;
+}
+
+function handleServerSelection(serverId: string): void {
+  const server = serverStatuses.find((item) => item.id === serverId);
+  if (!server) {
+    return;
+  }
+
+  setSelectedServer(serverId);
+  closeServerBrowser();
+  startPvPMatchOnServer(server.endpoint);
+}
+
+function startPvPMatchOnServer(serverEndpoint?: string): void {
+  const walletState = walletService.getState();
+  if (!walletState.isConnected || !walletState.address) {
+    walletError = 'Connect Ronin Wallet to play PvP Online';
+    return;
+  }
+
+  const endpointToUse = serverEndpoint || getSelectedServerEndpoint();
+  const previousMode = gameMode;
+  gameMode = 'PvP';
+  cleanupPvP();
+
+  if (!endpointToUse) {
+    walletError = 'No PvP server available';
+    gameMode = previousMode;
+    return;
+  }
+
+  enterLobby(endpointToUse).catch((error) => {
+    console.error('Failed to enter lobby:', error);
+    gameMode = previousMode;
+    isInLobby = false;
+    isSearchingForMatch = false;
+    currentMatch = null;
+    walletError = 'Failed to enter lobby';
+  });
+
+  console.log('Entered PvP Online lobby via server:', endpointToUse);
+  forceSaveGame();
+}
+
+function updateServerBrowserHover(mouseX: number, mouseY: number): void {
+  serverBrowserHoverId = null;
+  serverBrowserHoverClose = false;
+
+  for (const region of serverBrowserHitRegions) {
+    if (mouseX >= region.x && mouseX <= region.x + region.width &&
+        mouseY >= region.y && mouseY <= region.y + region.height) {
+      serverBrowserHoverId = region.id;
+      break;
+    }
+  }
+
+  serverBrowserHoverClose =
+    mouseX >= serverBrowserCloseRegion.x && mouseX <= serverBrowserCloseRegion.x + serverBrowserCloseRegion.width &&
+    mouseY >= serverBrowserCloseRegion.y && mouseY <= serverBrowserCloseRegion.y + serverBrowserCloseRegion.height;
+
+  if (serverBrowserHoverId || serverBrowserHoverClose) {
+    canvas.style.cursor = 'pointer';
+  } else {
+    canvas.style.cursor = 'default';
+  }
+}
+
+function isPointInsideRegion(
+  mouseX: number,
+  mouseY: number,
+  region: { x: number; y: number; width: number; height: number }
+): boolean {
+  return (
+    mouseX >= region.x &&
+    mouseX <= region.x + region.width &&
+    mouseY >= region.y &&
+    mouseY <= region.y + region.height
+  );
+}
+
+function getServerDisplayHost(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    return url.host;
+  } catch (error) {
+    return endpoint;
+  }
+}
+
+function getServerStatusColor(status: PvpServerStatus): string {
+  if (status.status === 'online') {
+    if (typeof status.pingMs === 'number' && status.pingMs <= 80) {
+      return '#00aa00';
+    }
+    if (typeof status.pingMs === 'number' && status.pingMs <= 140) {
+      return '#ffaa00';
+    }
+    return '#ff5500';
+  }
+  if (status.status === 'checking') {
+    return '#ffaa00';
+  }
+  return '#ff1e1e';
+}
+
+function getServerPingText(status: PvpServerStatus): string {
+  if (status.status === 'online' && typeof status.pingMs === 'number') {
+    return `${status.pingMs}ms`;
+  }
+  if (status.status === 'offline') {
+    return 'offline';
+  }
+  return 'checking...';
+}
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -1098,7 +1444,7 @@ async function loadPlayerNfts(walletAddress: string): Promise<void> {
 }
 
 // Enter PvP lobby (Colyseus primary, Supabase fallback)
-async function enterLobby(): Promise<void> {
+async function enterLobby(forcedEndpoint?: string): Promise<void> {
   const walletState = walletService.getState();
   if (!walletState.isConnected || !walletState.address) {
     walletError = 'Connect Ronin Wallet to play PvP';
@@ -1127,6 +1473,11 @@ async function enterLobby(): Promise<void> {
   // Use environment variable if set, otherwise use default based on environment
   let colyseusEndpoint = import.meta.env.VITE_COLYSEUS_ENDPOINT;
   
+  const selectedServerEndpoint = forcedEndpoint || getSelectedServerEndpoint();
+  if (selectedServerEndpoint) {
+    colyseusEndpoint = selectedServerEndpoint;
+  }
+
   if (!colyseusEndpoint) {
     if (isProduction) {
       // Production: Try to use default Colyseus Cloud endpoint as fallback
@@ -3237,6 +3588,23 @@ function render() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`PvP ONLINE`, pvpOnlineButtonX + pvpOnlineButtonWidth/2, pvpOnlineButtonY + pvpOnlineButtonHeight/2);
+
+  const selectedServer = getSelectedServer();
+  if (selectedServer) {
+    const statusColor = getServerStatusColor(selectedServer);
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#000000';
+    ctx.fillText(`Server: ${selectedServer.name}`, pvpOnlineButtonX, pvpOnlineButtonY + pvpOnlineButtonHeight + 14);
+    ctx.fillStyle = statusColor;
+    ctx.fillText(`Ping: ${getServerPingText(selectedServer)}`, pvpOnlineButtonX, pvpOnlineButtonY + pvpOnlineButtonHeight + 26);
+    if (typeof selectedServer.waitingPlayers === 'number') {
+      ctx.fillStyle = '#000000';
+      ctx.fillText(`${selectedServer.waitingPlayers} waiting`, pvpOnlineButtonX + 120, pvpOnlineButtonY + pvpOnlineButtonHeight + 26);
+    }
+    ctx.fillStyle = '#444444';
+    ctx.fillText('Click to change server', pvpOnlineButtonX, pvpOnlineButtonY + pvpOnlineButtonHeight + 38);
+  }
 
   // New button (placeholder - does nothing yet)
   const newButtonX = 20;
@@ -7116,6 +7484,11 @@ if (!(window as any).__mousemoveListenerAdded) {
   const mouseX = pos.x;
   const mouseY = pos.y;
   
+  if (isServerBrowserOpen) {
+    updateServerBrowserHover(mouseX, mouseY);
+    return;
+  }
+  
   // Store global mouse position for katana
   globalMouseX = mouseX;
   globalMouseY = mouseY;
@@ -7310,6 +7683,28 @@ if (!(window as any).__mousedownListenerAdded) {
   const pos = getCanvasMousePos(e);
   const mouseX = pos.x;
   const mouseY = pos.y;
+  
+  if (isServerBrowserOpen) {
+    if (isPointInsideRegion(mouseX, mouseY, serverBrowserCloseRegion)) {
+      closeServerBrowser();
+      return;
+    }
+
+    if (isPointInsideRegion(mouseX, mouseY, serverBrowserModalRegion)) {
+      const targetRegion = serverBrowserHitRegions.find(
+        (region) =>
+          mouseX >= region.x && mouseX <= region.x + region.width &&
+          mouseY >= region.y && mouseY <= region.y + region.height
+      );
+
+      if (targetRegion) {
+        handleServerSelection(targetRegion.id);
+      }
+    } else {
+      closeServerBrowser();
+    }
+    return;
+  }
   
   // PvP Online: Handle Ready button press (in Ready screen)
   if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady && !isReady) {
@@ -7953,9 +8348,7 @@ if (!(window as any).__mouseupListenerAdded) {
     const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
     
     if (isOverPvPOnline) {
-      // Enter PvP Online (lobby/matchmaking)
       if (gameMode === 'PvP') {
-        // Already in PvP Online, leave lobby and go back to Solo
         leaveLobby().catch((error) => {
           console.error('Failed to leave lobby:', error);
         });
@@ -7963,34 +8356,14 @@ if (!(window as any).__mouseupListenerAdded) {
         cleanupPvP();
         console.log('Left PvP Online, switched to Solo mode');
       } else {
-        // Enter PvP Online lobby
-        const previousMode = gameMode;
-        gameMode = 'PvP';
-        cleanupPvP(); // Cleanup any existing PvP state
-        
-        // Check wallet connection before entering lobby
         const walletState = walletService.getState();
         if (!walletState.isConnected || !walletState.address) {
-          // Wallet not connected - revert to previous mode and show error
-          gameMode = previousMode;
           walletError = 'Connect Ronin Wallet to play PvP Online';
-          console.log('Cannot enter PvP Online: Wallet not connected');
+          console.log('Cannot open PvP server list: Wallet not connected');
         } else {
-          // Wallet connected - enter lobby
-          enterLobby().catch((error) => {
-            // If entering lobby fails, revert to previous mode
-            console.error('Failed to enter lobby:', error);
-            gameMode = previousMode;
-            isInLobby = false;
-            isSearchingForMatch = false;
-            currentMatch = null;
-            walletError = 'Failed to enter lobby';
-          });
-          console.log('Entered PvP Online lobby');
+          openServerBrowser();
         }
       }
-      
-      forceSaveGame(); // Save after mode switch
     }
     isPressingPvPOnline = false;
   }
@@ -9168,6 +9541,156 @@ if (!(window as any).__clickListenerAdded) {
   });
 } else {
   console.warn('⚠️ Click listener already added - skipping duplicate (HMR protection)');
+}
+
+function drawServerBrowserOverlay() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const modalWidth = Math.min(900, canvas.width - 80);
+  const modalHeight = Math.min(520, canvas.height - 80);
+  const modalX = (canvas.width - modalWidth) / 2;
+  const modalY = (canvas.height - modalHeight) / 2;
+
+  serverBrowserModalRegion = { x: modalX, y: modalY, width: modalWidth, height: modalHeight };
+  serverBrowserHitRegions = [];
+
+  ctx.fillStyle = '#f3f3f3';
+  ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(modalX, modalY, modalWidth, modalHeight);
+
+  ctx.fillStyle = '#000000';
+  ctx.font = 'bold 18px "Press Start 2P"';
+  ctx.textAlign = 'left';
+  ctx.fillText('SELECT PvP SERVER', modalX + 30, modalY + 45);
+
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillStyle = '#333333';
+  ctx.fillText('Click a server to join. Ping and queue refresh automatically.', modalX + 30, modalY + 75);
+
+  if (serverStatusLoading) {
+    ctx.fillStyle = '#666666';
+    ctx.fillText('Refreshing status...', modalX + 30, modalY + 95);
+  } else if (serverBrowserError) {
+    ctx.fillStyle = '#ff2222';
+    ctx.fillText(serverBrowserError, modalX + 30, modalY + 95);
+  }
+
+  // Close button
+  serverBrowserCloseRegion = { x: modalX + modalWidth - 50, y: modalY + 20, width: 30, height: 30 };
+  ctx.fillStyle = serverBrowserHoverClose ? '#ff6666' : '#ff9999';
+  ctx.fillRect(serverBrowserCloseRegion.x, serverBrowserCloseRegion.y, serverBrowserCloseRegion.width, serverBrowserCloseRegion.height);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(serverBrowserCloseRegion.x, serverBrowserCloseRegion.y, serverBrowserCloseRegion.width, serverBrowserCloseRegion.height);
+  ctx.beginPath();
+  ctx.moveTo(serverBrowserCloseRegion.x + 6, serverBrowserCloseRegion.y + 6);
+  ctx.lineTo(serverBrowserCloseRegion.x + serverBrowserCloseRegion.width - 6, serverBrowserCloseRegion.y + serverBrowserCloseRegion.height - 6);
+  ctx.moveTo(serverBrowserCloseRegion.x + serverBrowserCloseRegion.width - 6, serverBrowserCloseRegion.y + 6);
+  ctx.lineTo(serverBrowserCloseRegion.x + 6, serverBrowserCloseRegion.y + serverBrowserCloseRegion.height - 6);
+  ctx.stroke();
+
+  const listStartY = modalY + 120;
+  const rowHeight = 90;
+  const rowGap = 12;
+  const rowWidth = modalWidth - 60;
+
+  if (serverStatuses.length === 0) {
+    ctx.fillStyle = '#000000';
+    ctx.font = '12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('No servers configured', modalX + modalWidth / 2, listStartY + 40);
+  } else {
+    ctx.textAlign = 'left';
+    serverStatuses.forEach((server, index) => {
+      const rowY = listStartY + index * (rowHeight + rowGap);
+      if (rowY + rowHeight > modalY + modalHeight - 30) {
+        return;
+      }
+
+      const isSelected = server.id === selectedServerId;
+      const isHovered = serverBrowserHoverId === server.id;
+
+      ctx.fillStyle = isHovered ? '#e7f7ff' : isSelected ? '#d6f1ff' : '#ffffff';
+      ctx.fillRect(modalX + 30, rowY, rowWidth, rowHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(modalX + 30, rowY, rowWidth, rowHeight);
+
+      serverBrowserHitRegions.push({
+        id: server.id,
+        x: modalX + 30,
+        y: rowY,
+        width: rowWidth,
+        height: rowHeight
+      });
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.fillText(server.name, modalX + 50, rowY + 26);
+
+      ctx.font = '9px "Press Start 2P"';
+      ctx.fillStyle = '#444444';
+      ctx.fillText(`${server.region} • ${getServerDisplayHost(server.endpoint)}`, modalX + 50, rowY + 44);
+
+      if (server.description) {
+        ctx.fillText(server.description, modalX + 50, rowY + 60);
+      }
+
+      const statusColor = getServerStatusColor(server);
+      ctx.fillStyle = statusColor;
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.fillText(`${server.status.toUpperCase()} • ${getServerPingText(server)}`, modalX + rowWidth - 220, rowY + 26);
+
+      ctx.fillStyle = '#000000';
+      ctx.font = '8px "Press Start 2P"';
+      const queueText = typeof server.waitingPlayers === 'number'
+        ? `${server.waitingPlayers} player${server.waitingPlayers === 1 ? '' : 's'} waiting`
+        : 'Queue: n/a';
+      ctx.fillText(queueText, modalX + rowWidth - 220, rowY + 46);
+
+      if (typeof server.activeRooms === 'number' || typeof server.totalPlayers === 'number') {
+        const roomsText = typeof server.activeRooms === 'number'
+          ? `Matches: ${server.activeRooms}`
+          : '';
+        const playersText = typeof server.totalPlayers === 'number'
+          ? `Players: ${server.totalPlayers}`
+          : '';
+        ctx.fillText(`${roomsText}${roomsText && playersText ? ' • ' : ''}${playersText}`, modalX + rowWidth - 220, rowY + 62);
+      }
+
+      const joinWidth = 150;
+      const joinHeight = 32;
+      const joinX = modalX + rowWidth - joinWidth - 40;
+      const joinY = rowY + rowHeight - joinHeight - 12;
+      ctx.fillStyle = isHovered ? '#9cf19c' : '#c8f7c5';
+      ctx.fillRect(joinX, joinY, joinWidth, joinHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(joinX, joinY, joinWidth, joinHeight);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText(isHovered ? 'CLICK TO JOIN' : 'JOIN', joinX + joinWidth / 2, joinY + joinHeight / 2 + 4);
+      ctx.textAlign = 'left';
+
+      if (isSelected) {
+        ctx.fillStyle = '#000000';
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillText('CURRENT', joinX - 110, joinY + joinHeight / 2 + 4);
+      }
+    });
+  }
+
+  ctx.fillStyle = '#333333';
+  ctx.font = '8px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillText('Tip: pick the server with the lowest ping (ms) for smoother matches', modalX + modalWidth / 2, modalY + modalHeight - 20);
+
+  ctx.restore();
 }
 
 // Game loop
@@ -12756,6 +13279,10 @@ function gameLoop() {
   }
 
   render();
+  
+  if (isServerBrowserOpen) {
+    drawServerBrowserOverlay();
+  }
   
   // Track frame time for this frame (measure entire gameLoop including render)
   const frameEndTime = performance.now();

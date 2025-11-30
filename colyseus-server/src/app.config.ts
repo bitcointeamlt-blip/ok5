@@ -3,6 +3,7 @@ import { matchMaker } from "@colyseus/core";
 import cors, { CorsOptions } from "cors";
 import express from "express";
 import { GameRoom } from "./rooms/GameRoom";
+import { getRoomMetrics } from "./metrics/RoomMetrics";
 
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
@@ -48,6 +49,15 @@ export default config({
 
     app.get("/health", (_req, res) => {
       res.json({ status: "ok" });
+    });
+    
+    app.get("/status", (_req, res) => {
+      const metrics = getRoomMetrics();
+      res.json({
+        status: "ok",
+        timestamp: Date.now(),
+        ...metrics
+      });
     });
 
     app.get("/", (_req, res) => {

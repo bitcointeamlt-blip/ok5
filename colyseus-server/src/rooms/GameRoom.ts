@@ -1,5 +1,6 @@
 import { Room, Client } from "@colyseus/core";
 import { GameState, Player } from "../schema/GameState";
+import { registerRoom, unregisterRoom, updateRoomPlayerCount } from "../metrics/RoomMetrics";
 
 export class GameRoom extends Room<GameState> {
   maxClients = 2; // 2 players per match
@@ -7,6 +8,7 @@ export class GameRoom extends Room<GameState> {
   onCreate(options: any) {
     try {
       console.log("GameRoom created:", this.roomId);
+      registerRoom(this.roomId);
       
       // Initialize game state
       const state = new GameState();
@@ -60,6 +62,8 @@ export class GameRoom extends Room<GameState> {
       this.state.players.set(client.sessionId, player);
     }
     
+    updateRoomPlayerCount(this.roomId, this.state.players.size);
+    
     // Broadcast player joined
     this.broadcast("player_joined", {
       sessionId: client.sessionId,
@@ -79,6 +83,7 @@ export class GameRoom extends Room<GameState> {
     
     // Remove player from state
     this.state.players.delete(client.sessionId);
+    updateRoomPlayerCount(this.roomId, this.state.players.size);
     
     // Broadcast player left
     this.broadcast("player_left", {
@@ -89,6 +94,7 @@ export class GameRoom extends Room<GameState> {
 
   onDispose() {
     console.log("GameRoom disposed:", this.roomId);
+    unregisterRoom(this.roomId);
   }
 
   handlePlayerInput(client: Client, message: any) {
