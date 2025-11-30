@@ -1,4 +1,5 @@
 # 🧹 Cleanup Summary - Kas Išvalyta
+supratau
 
 ## ✅ Kas Padaryta:
 
