@@ -120,8 +120,13 @@ export class GameRoom extends Room<GameState> {
       player.projectileVy = message.vy;
     }
 
-    // Broadcast to other players (not sender)
-    this.broadcast("player_input", message, {
+    // Broadcast to other players (not sender) with server timestamp (for client latency calc)
+    const broadcastMessage = {
+      ...message,
+      serverTimestamp: Date.now()
+    };
+
+    this.broadcast("player_input", broadcastMessage, {
       except: client
     });
   }

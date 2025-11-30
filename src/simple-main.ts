@@ -1761,8 +1761,9 @@ function handleOpponentInput(input: any): void {
   // Only correct position if there's a significant difference (smooth interpolation)
   if (input.type === 'position' && input.x !== undefined && input.y !== undefined) {
     // Track network latency (time since input was created)
-    if (input.timestamp) {
-      const latency = Date.now() - input.timestamp;
+    const timestampSource = input.serverTimestamp ?? input.timestamp;
+    if (timestampSource) {
+      const latency = Math.max(0, Date.now() - timestampSource);
       networkLatencyHistory.push(latency);
       if (networkLatencyHistory.length > 60) {
         networkLatencyHistory.shift(); // Keep last 60 measurements
