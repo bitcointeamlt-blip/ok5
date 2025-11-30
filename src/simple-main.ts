@@ -13,7 +13,31 @@ import { nftService } from './services/NftService';
 import type { NftItem } from './types/nft';
 import { AudioManager } from './audio/AudioManager';
 
-console.log('Starting simple game...');
+// Verbose logging control (prevents spam in production and lowers frame stutter)
+const originalConsoleLog = console.log.bind(console);
+let verboseLogsEnabled = (window as any).__ENABLE_VERBOSE_LOGS;
+if (typeof verboseLogsEnabled !== 'boolean') {
+  const host = window.location.hostname;
+  verboseLogsEnabled = host === 'localhost' || host === '127.0.0.1';
+}
+
+(window as any).__ENABLE_VERBOSE_LOGS = verboseLogsEnabled;
+
+function setGameLogVerbosity(enabled: boolean) {
+  verboseLogsEnabled = enabled;
+  (window as any).__ENABLE_VERBOSE_LOGS = enabled;
+  originalConsoleLog(`[Game] Verbose logs ${enabled ? 'enabled' : 'muted'}`);
+}
+
+console.log = (...args: any[]) => {
+  if (verboseLogsEnabled) {
+    originalConsoleLog(...args);
+  }
+};
+
+(window as any).setGameLogVerbosity = setGameLogVerbosity;
+
+console.info('Starting simple game...');
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -1272,7 +1296,7 @@ async function enterLobby(): Promise<void> {
     isSearchingForMatch = false;
     
     // NO SUPABASE FALLBACK - Focus only on Colyseus
-    console.log('⚠️ Colyseus failed - no fallback. Please fix Colyseus server.');
+    console.warn('⚠️ Colyseus failed - no fallback. Please fix Colyseus server.');
   }
 }
 
