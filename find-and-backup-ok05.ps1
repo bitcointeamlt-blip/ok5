@@ -113,3 +113,4 @@ foreach ($folderPath in $selectedFolders) {
 Write-Host "`n✅ Backup procesas baigtas!" -ForegroundColor Green
 Write-Host "Dabar galite saugiai ištrinti originalius folderius." -ForegroundColor Cyan
 
+

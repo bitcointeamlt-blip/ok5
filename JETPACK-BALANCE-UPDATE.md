@@ -99,3 +99,4 @@ player.fuel = Math.max(0, player.fuel - fuelConsumed); // Subtract from current 
 
 Jetpack sistema dabar yra **subalansuota** ir nebe OP!
 
+

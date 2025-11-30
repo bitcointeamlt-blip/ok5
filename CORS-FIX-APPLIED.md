@@ -75,3 +75,4 @@ Po redeploy, patikrinkite console log'us:
 3. Patikrinkite Colyseus Cloud logs - ar matote CORS log'us?
 4. Bandykite hard refresh Netlify app (Ctrl+Shift+R)
 
+

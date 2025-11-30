@@ -125,3 +125,4 @@ https://de-fra-xxxxx.colyseus.cloud/
 2. Patikrinkite ar frontend prisijungia
 3. Jei viskas gerai → galite žaisti PvP!
 
+

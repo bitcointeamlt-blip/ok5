@@ -203,3 +203,4 @@ if (playerId === myPlayerId && !player.isUsingJetpack && player.fuel < player.ma
 6. **UI render** (eilutė ~2292)
    - Fuel bar ir status rodymas
 
+

@@ -105,5 +105,14 @@ export class ProfileManager {
     }
     this.saveProfile();
   }
+
+  setProfilePicture(imageUrl: string | undefined): void {
+    this.profile.selectedProfilePicture = imageUrl;
+    this.saveProfile();
+  }
+
+  getProfilePicture(): string | undefined {
+    return this.profile.selectedProfilePicture;
+  }
 }
 

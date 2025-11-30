@@ -152,3 +152,4 @@ Colyseus Cloud Dashboard → Logs:
 - Turėtumėte matyti: `[CORS] Matchmaking request from origin: https://jocular-zabaione-835b49.netlify.app`
 - Turėtumėte matyti: `GameRoom created: [room-id]`
 
+

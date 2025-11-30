@@ -18,6 +18,9 @@ export type PlayerProfile = {
   
   // ateičiai: paskutinį kartą atnaujinta ir t.t.
   lastUpdatedAt: number;
+  
+  // Profile picture (NFT image URL)
+  selectedProfilePicture?: string; // NFT image URL selected as profile picture
 };
 
 export const defaultProfile: PlayerProfile = {

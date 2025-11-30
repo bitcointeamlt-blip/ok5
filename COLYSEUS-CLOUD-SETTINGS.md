@@ -194,3 +194,4 @@ COLYSEUS_API_TOKEN=NjkxMzk5OTgwOTQzM3Fxd2NVWTBIdWV1SEJhcm0wWU1aTjBNdUs4M3d6Ym9X 
 2. Jei Root Directory teisingas, Install/Build/Start komandos gali būti be `cd colyseus-server &&`
 3. Jei Root Directory neteisingas, naudokite pilnas komandas su `cd colyseus-server &&`
 
+

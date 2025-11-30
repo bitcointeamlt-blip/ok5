@@ -78,3 +78,4 @@ Site settings → Environment variables → Add a variable
 - ✅ Project URL format: `https://xxxxx.supabase.co`
 - ✅ Po pridėjimo → Redeploy frontend!
 
+

@@ -158,3 +158,4 @@ VITE_COLYSEUS_ENDPOINT=https://de-fra-xxxxx.colyseus.cloud
 - Supabase yra **atsarginė sistema** (fallback)
 - **Visada** turėsite veikiančią PvP sistemą!
 
+

@@ -119,3 +119,4 @@ Turėtumėte matyti:
 - ✅ Laukiama antro žaidėjo (jei vienas žaidėjas)
 - ✅ Match prasideda (jei 2 žaidėjai)
 
+

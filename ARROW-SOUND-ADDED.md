@@ -79,3 +79,4 @@ playArrowShot():
 2. **PvP/Training mode - Arrow launch** (eilutė ~7591)
    - Kai paspaudžiate "1" ir tada click - šaudote strėlę
 
+

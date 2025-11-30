@@ -89,3 +89,4 @@ for (let i = 0; i < redParticleCount; i++) {
 - **Dabar:** Juodi partikliai + 10 raudonų partiklių ant viršaus
 - **Rezultatas:** Geresnė vizualinė mirties animacija su raudonais partikliais
 
+

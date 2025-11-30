@@ -81,3 +81,4 @@ Jetpack sistema buvo per greitai išsinaudojanti ir speed efektas buvo per silpn
 
 Jetpack sistema dabar yra **subalansuota** su geresniu speed efektu ir lėtesniu degalų naudojimu!
 
+

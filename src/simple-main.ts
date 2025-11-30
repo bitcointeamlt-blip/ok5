@@ -304,6 +304,10 @@ let dotY = 1080 / 2;
 const dotRadius = 25; // Increased from 15 to 25
 let dotVx = 0; // Horizontal velocity
 let dotVy = 0; // Vertical velocity
+// UFO tilt/sway effect for Solo mode
+let soloUfoTilt = 0; // Current tilt angle (for balancing effect)
+let soloLastVx = 0; // Previous velocity X (for acceleration calculation)
+let soloLastVy = 0; // Previous velocity Y (for acceleration calculation)
 const gravity = 0.05; // Reduced gravity (was 0.1)
 const groundY = 1080 - 220; // Invisible ground 220px from bottom
 let lastHitTime = 0; // Track when DOT was last hit
@@ -377,6 +381,12 @@ type PvPPlayer = {
   // Toxic water system
   toxicWaterStartTime: number | null; // When player entered toxic water (null = not in water)
   toxicWaterLastDamageTime: number; // When last toxic water damage was dealt
+  // Profile picture (NFT image URL)
+  profilePicture?: string; // NFT image URL for profile picture
+  // UFO tilt/sway effect
+  ufoTilt: number; // Current tilt angle (for balancing effect)
+  lastVx: number; // Previous velocity X (for acceleration calculation)
+  lastVy: number; // Previous velocity Y (for acceleration calculation)
 };
 
 let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
@@ -626,6 +636,28 @@ let nftPaginationPressRight = false;
 // NFT image cache
 const nftImageCache: Map<string, HTMLImageElement> = new Map();
 const nftImageLoading: Set<string> = new Set();
+
+// UFO sprite cache
+let ufoSprite: HTMLImageElement | null = null;
+const ufoSpritePath = '/ufo_sprite.png';
+
+// Load UFO sprite
+function loadUfoSprite(): void {
+  if (ufoSprite) return; // Already loaded
+  
+  const img = new Image();
+  img.onload = () => {
+    ufoSprite = img;
+    console.log('✅ UFO sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load UFO sprite');
+  };
+  img.src = ufoSpritePath;
+}
+
+// Load UFO sprite on initialization
+loadUfoSprite();
 
 // Lobby state
 let isInLobby = false;
@@ -910,6 +942,7 @@ function initializePvP(): void {
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    profilePicture: undefined, // Will be synced from opponent
   };
   
   pvpPlayers[opponentId] = opponent;
@@ -1474,9 +1507,18 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    profilePicture: profileManager.getProfilePicture(), // Set my profile picture
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
+  
+  // Send initial profile picture to opponent
+  if (myPlayer.profilePicture) {
+    sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+  }
 
   // Initialize opponent
   const opponent: PvPPlayer = {
@@ -1512,6 +1554,10 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    profilePicture: undefined, // Will be synced from opponent
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
   };
 
   pvpPlayers[opponentId] = opponent;
@@ -1602,9 +1648,18 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    profilePicture: profileManager.getProfilePicture(), // Set my profile picture
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
+  
+  // Send initial profile picture to opponent
+  if (myPlayer.profilePicture) {
+    sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+  }
 
   // Initialize opponent - ALWAYS on the opposite side
   const opponent: PvPPlayer = {
@@ -1640,6 +1695,10 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    profilePicture: undefined, // Will be synced from opponent
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
   };
 
   pvpPlayers[opponentId] = opponent;
@@ -2016,7 +2075,16 @@ function handleOpponentInput(input: any): void {
         opponent.paralyzedUntil = 0;
       }
       
-      console.log('Received opponent stats update', { hp: input.hp, armor: input.armor, paralyzedUntil: input.paralyzedUntil });
+      // Sync profile picture
+      if (input.profilePicture !== undefined) {
+        opponent.profilePicture = input.profilePicture;
+        // Preload opponent's profile picture image if not already cached
+        if (input.profilePicture && !nftImageCache.has(input.profilePicture)) {
+          loadNftImage(input.profilePicture, 'opponent_profile');
+        }
+      }
+      
+      console.log('Received opponent stats update', { hp: input.hp, armor: input.armor, paralyzedUntil: input.paralyzedUntil, profilePicture: input.profilePicture });
       
       // Check if opponent died (HP reached 0) - start death animation
       if (opponent.hp <= 0 && oldHP > 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
@@ -2051,6 +2119,12 @@ function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: num
       // Include paralyzedUntil if provided (for paralysis sync)
       if (paralyzedUntil !== undefined) {
         statsInput.paralyzedUntil = paralyzedUntil;
+      }
+      
+      // Include profile picture if available
+      const myProfilePicture = profileManager.getProfilePicture();
+      if (myProfilePicture) {
+        statsInput.profilePicture = myProfilePicture;
       }
       
       if (useColyseus) {
@@ -3513,12 +3587,107 @@ function render() {
         ctx.restore();
       }
       
-      // Solo mode: Draw dot in full black (no color change)
+      // Solo mode: Draw UFO sprite with profile picture inside
       if (gameMode === 'Solo') {
-        ctx.fillStyle = '#000000'; // Black
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
-        ctx.fill();
+        const profilePicture = profileManager.getProfilePicture();
+        
+        // Calculate movement direction angle (where DOT is moving)
+        const speed = Math.sqrt(dotVx * dotVx + dotVy * dotVy);
+        let rotationAngle = 0; // Default rotation (right)
+        let isMovingLeft = false; // Track if moving left for mirror effect
+        
+        if (speed > 0.1) {
+          // DOT is moving - check horizontal direction
+          if (Math.abs(dotVx) > 0.1) {
+            // Moving horizontally - determine left/right
+            isMovingLeft = dotVx < 0;
+            // Use vertical component for rotation angle (up/down movement)
+            rotationAngle = Math.atan2(dotVy, Math.abs(dotVx)); // Use absolute vx to prevent upside down
+          } else {
+            // Moving only vertically - use last horizontal direction from speed trail
+            if (speedTrail.length > 0) {
+              const lastTrail = speedTrail[speedTrail.length - 1];
+              const secondLastTrail = speedTrail[speedTrail.length - 2];
+              if (secondLastTrail) {
+                const dx = lastTrail.x - secondLastTrail.x;
+                if (Math.abs(dx) > 0.1) {
+                  isMovingLeft = dx < 0;
+                }
+              }
+            }
+            rotationAngle = Math.atan2(dotVy, 1); // Use positive x for angle calculation
+          }
+        }
+        
+        ctx.save();
+        
+        // Translate to DOT position and rotate
+        ctx.translate(dotX, dotY);
+        ctx.rotate(rotationAngle + soloUfoTilt); // Add tilt effect for balancing/sway
+        
+        // Apply horizontal flip (mirror effect) if moving left
+        if (isMovingLeft) {
+          ctx.scale(-1, 1); // Flip horizontally
+        }
+        
+        // Draw UFO sprite (base layer)
+        if (ufoSprite && ufoSprite.complete) {
+          try {
+            // Draw UFO sprite scaled to fit dot radius
+            const spriteSize = dotRadius * 5.0; // Even larger sprite size
+            ctx.drawImage(ufoSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+          } catch (error) {
+            console.error('Error drawing UFO sprite:', error);
+            // Fallback to black circle
+            ctx.fillStyle = '#000000'; // Black
+            ctx.beginPath();
+            ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          // UFO sprite not loaded - show black circle
+          ctx.fillStyle = '#000000'; // Black
+          ctx.beginPath();
+          ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        // Draw profile picture inside UFO sprite (if available)
+        if (profilePicture) {
+          const cachedImage = nftImageCache.get(profilePicture);
+          if (cachedImage && cachedImage.complete) {
+            try {
+            // Create clipping path for profile picture (smaller circle inside UFO)
+            ctx.beginPath();
+            const profileRadius = dotRadius * 1.2 - 8; // Profile picture, smaller (8px less radius)
+            ctx.arc(0, -dotRadius * 0.2, profileRadius, 0, Math.PI * 2); // Slightly above center for dome position
+              ctx.clip();
+              
+              // Calculate aspect ratio to fit image in circle
+              const imgAspect = cachedImage.width / cachedImage.height;
+              let drawWidth = profileRadius * 2;
+              let drawHeight = profileRadius * 2;
+              let drawX = -profileRadius;
+              let drawY = -dotRadius * 0.2 - profileRadius; // Position in dome area
+              
+              if (imgAspect > 1) {
+                // Image is wider - fit to height
+                drawWidth = profileRadius * 2 * imgAspect;
+                drawX = -drawWidth / 2;
+              } else {
+                // Image is taller - fit to width
+                drawHeight = profileRadius * 2 / imgAspect;
+                drawY = -dotRadius * 0.2 - drawHeight / 2;
+              }
+              
+              ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+            } catch (error) {
+              console.error('Error drawing profile picture inside UFO:', error);
+            }
+          }
+        }
+        
+        ctx.restore();
         
         // Draw magnetic wave animation when gravity is active (Solo mode)
         const now = Date.now();
@@ -4741,10 +4910,128 @@ function render() {
         console.warn('Unknown player ID in render', { playerId, myPlayerId, opponentId, allPlayers: Object.keys(pvpPlayers) });
       }
       
-      ctx.fillStyle = dotColor;
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-      ctx.fill();
+      // Draw player with UFO sprite and profile picture inside
+      const profilePicture = playerId === myPlayerId 
+        ? profileManager.getProfilePicture() 
+        : player.profilePicture;
+      
+      // Calculate movement direction angle (where player is moving)
+      const speed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+      let rotationAngle = 0; // Default rotation (right)
+      let isMovingLeft = false; // Track if moving left for mirror effect
+      
+      if (speed > 0.1) {
+        // Player is moving - check horizontal direction
+        if (Math.abs(player.vx) > 0.1) {
+          // Moving horizontally - determine left/right
+          isMovingLeft = player.vx < 0;
+          // Use vertical component for rotation angle (up/down movement)
+          rotationAngle = Math.atan2(player.vy, Math.abs(player.vx)); // Use absolute vx to prevent upside down
+        } else {
+          // Moving only vertically - use last horizontal direction
+          if (player.speedTrail.length > 0) {
+            const lastTrail = player.speedTrail[player.speedTrail.length - 1];
+            const secondLastTrail = player.speedTrail[player.speedTrail.length - 2];
+            if (secondLastTrail) {
+              const dx = lastTrail.x - secondLastTrail.x;
+              if (Math.abs(dx) > 0.1) {
+                isMovingLeft = dx < 0;
+              }
+            }
+          }
+          rotationAngle = Math.atan2(player.vy, 1); // Use positive x for angle calculation
+        }
+      } else {
+        // Player is not moving - use last movement direction or default to right
+        // Try to get direction from speed trail if available
+        if (player.speedTrail.length > 0) {
+          const lastTrail = player.speedTrail[player.speedTrail.length - 1];
+          const secondLastTrail = player.speedTrail[player.speedTrail.length - 2];
+          if (secondLastTrail) {
+            const dx = lastTrail.x - secondLastTrail.x;
+            const dy = lastTrail.y - secondLastTrail.y;
+            const trailSpeed = Math.sqrt(dx * dx + dy * dy);
+            if (trailSpeed > 0.1) {
+              if (Math.abs(dx) > 0.1) {
+                isMovingLeft = dx < 0;
+                rotationAngle = Math.atan2(dy, Math.abs(dx));
+              } else {
+                rotationAngle = Math.atan2(dy, 1);
+              }
+            }
+          }
+        }
+      }
+      
+      ctx.save();
+      
+      // Translate to player position and rotate
+      ctx.translate(player.x, player.y);
+      ctx.rotate(rotationAngle + player.ufoTilt); // Add tilt effect for balancing/sway
+      
+      // Apply horizontal flip (mirror effect) if moving left
+      if (isMovingLeft) {
+        ctx.scale(-1, 1); // Flip horizontally
+      }
+      
+      // Draw UFO sprite (base layer)
+      if (ufoSprite && ufoSprite.complete) {
+        try {
+          // Draw UFO sprite scaled to fit player radius
+          const spriteSize = player.radius * 5.0; // Even larger sprite size
+          ctx.drawImage(ufoSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+        } catch (error) {
+          console.error('Error drawing UFO sprite:', error);
+          // Fallback to black circle
+          ctx.fillStyle = dotColor;
+          ctx.beginPath();
+          ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // UFO sprite not loaded - show black circle
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Draw profile picture inside UFO sprite (if available)
+      if (profilePicture) {
+        const cachedImage = nftImageCache.get(profilePicture);
+        if (cachedImage && cachedImage.complete) {
+          try {
+            // Create clipping path for profile picture (smaller circle inside UFO)
+            ctx.beginPath();
+            const profileRadius = player.radius * 1.2 - 8; // Profile picture, smaller (8px less radius)
+            ctx.arc(0, -player.radius * 0.2, profileRadius, 0, Math.PI * 2); // Slightly above center for dome position
+            ctx.clip();
+            
+            // Calculate aspect ratio to fit image in circle
+            const imgAspect = cachedImage.width / cachedImage.height;
+            let drawWidth = profileRadius * 2;
+            let drawHeight = profileRadius * 2;
+            let drawX = -profileRadius;
+            let drawY = -player.radius * 0.2 - profileRadius; // Position in dome area
+            
+            if (imgAspect > 1) {
+              // Image is wider - fit to height
+              drawWidth = profileRadius * 2 * imgAspect;
+              drawX = -drawWidth / 2;
+            } else {
+              // Image is taller - fit to width
+              drawHeight = profileRadius * 2 / imgAspect;
+              drawY = -player.radius * 0.2 - drawHeight / 2;
+            }
+            
+            ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+          } catch (error) {
+            console.error('Error drawing profile picture inside UFO:', error);
+          }
+        }
+      }
+      
+      ctx.restore();
       
       // Draw player outline
       ctx.strokeStyle = '#000000';
@@ -6252,9 +6539,9 @@ function render() {
     ctx.textAlign = 'center';
     ctx.fillText('RONKEVERSE NFT COLLECTION', nftSectionX + nftSectionWidth / 2, nftSectionY + 20);
     
-    // NFT Content Area
+    // NFT Content Area (reduced height to make room for profile picture selection)
     const nftContentY = nftSectionY + 35;
-    const nftContentHeight = nftSectionHeight - 80; // Leave space for pagination
+    const nftContentHeight = nftSectionHeight - 180; // Leave space for pagination and profile picture selection
     
     // Loading state
     if (isLoadingNfts) {
@@ -6388,6 +6675,15 @@ function render() {
           ctx.fillStyle = '#666666';
           ctx.font = 'bold 7px "Press Start 2P"';
           ctx.fillText(`#${nft.tokenId}`, cardX + cardWidth / 2, cardY + cardHeight - 10);
+          
+          // Highlight if this NFT is selected as profile picture
+          const currentProfilePicture = profileManager.getProfilePicture();
+          if (currentProfilePicture === nft.image) {
+            // Draw green border to indicate selected
+            ctx.strokeStyle = '#00aa00';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(cardX - 2, cardY - 2, cardWidth + 4, cardHeight + 4);
+          }
         } else {
           // Empty slot
           ctx.fillStyle = '#f5f5f5';
@@ -6442,6 +6738,110 @@ function render() {
         ctx.textAlign = 'center';
         ctx.fillText('>', rightArrowX + arrowSize / 2, arrowY + arrowSize / 2 + 5);
       }
+    }
+    
+    // Profile Picture Selection Section (below NFT collection)
+    const profilePictureSectionY = nftSectionY + nftSectionHeight - 140;
+    const profilePictureSectionHeight = 120;
+    
+    // Profile Picture Section Background
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(nftSectionX, profilePictureSectionY, nftSectionWidth, profilePictureSectionHeight);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(nftSectionX, profilePictureSectionY, nftSectionWidth, profilePictureSectionHeight);
+    
+    // Profile Picture Section Title
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('SELECT PROFILE PICTURE', nftSectionX + nftSectionWidth / 2, profilePictureSectionY + 18);
+    
+    // Current Profile Picture Preview
+    const previewSize = 60;
+    const previewX = nftSectionX + 20;
+    const previewY = profilePictureSectionY + 30;
+    const previewCenterX = previewX + previewSize / 2;
+    const previewCenterY = previewY + previewSize / 2;
+    
+    const currentProfilePicture = profileManager.getProfilePicture();
+    if (currentProfilePicture) {
+      const cachedImage = nftImageCache.get(currentProfilePicture);
+      if (cachedImage && cachedImage.complete) {
+        try {
+          // Draw profile picture preview
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+          ctx.clip();
+          
+          // Calculate aspect ratio to fit image in circle
+          const imgAspect = cachedImage.width / cachedImage.height;
+          let drawWidth = previewSize;
+          let drawHeight = previewSize;
+          let drawX = previewX;
+          let drawY = previewY;
+          
+          if (imgAspect > 1) {
+            // Image is wider - fit to height
+            drawWidth = previewSize * imgAspect;
+            drawX = previewX - (drawWidth - previewSize) / 2;
+          } else {
+            // Image is taller - fit to width
+            drawHeight = previewSize / imgAspect;
+            drawY = previewY - (drawHeight - previewSize) / 2;
+          }
+          
+          ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+          ctx.restore();
+        } catch (error) {
+          console.error('Error drawing profile picture:', error);
+          // Fallback to black circle
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Loading - show black circle
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // No profile picture - show black circle (default)
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Preview border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Instructions text
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 7px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    const instructionText = 'Click on any NFT above to set it as your profile picture';
+    const instructionX = previewX + previewSize + 15;
+    const instructionY = profilePictureSectionY + 50;
+    ctx.fillText(instructionText, instructionX, instructionY);
+    
+    // Current selection indicator
+    if (currentProfilePicture) {
+      ctx.fillStyle = '#00aa00';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('ACTIVE', instructionX, instructionY + 20);
+    } else {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.fillText('(Default: Black)', instructionX, instructionY + 20);
     }
     
     ctx.textAlign = 'left'; // Reset text align
@@ -7041,6 +7441,51 @@ if (!(window as any).__mousedownListenerAdded) {
           mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
         nftCurrentPage++;
         return; // Don't process other clicks
+      }
+      
+      // NFT card click handler (select as profile picture)
+      const nftContentY = dataStartY + 35;
+      const nftContentHeight = nftSectionHeight - 180; // Match render function
+      const cardWidth = 200;
+      const cardHeight = 200;
+      const cardSpacing = 15;
+      const gridStartX = nftSectionX + (rightColumnWidth - (cardWidth * 2 + cardSpacing)) / 2;
+      const gridStartY = nftContentY + 10;
+      
+      const startIndex = nftCurrentPage * nftsPerPage;
+      const endIndex = Math.min(startIndex + nftsPerPage, nftList.length);
+      const currentNfts = nftList.slice(startIndex, endIndex);
+      
+      for (let i = 0; i < currentNfts.length; i++) {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const cardX = gridStartX + col * (cardWidth + cardSpacing);
+        const cardY = gridStartY + row * (cardHeight + cardSpacing);
+        
+        // Check if click is within NFT card bounds
+        if (mouseX >= cardX && mouseX <= cardX + cardWidth &&
+            mouseY >= cardY && mouseY <= cardY + cardHeight) {
+          const nft = currentNfts[i];
+          if (nft.image) {
+            // Set this NFT as profile picture
+            profileManager.setProfilePicture(nft.image);
+            
+            // Update my player's profile picture
+            if (myPlayerId && pvpPlayers[myPlayerId]) {
+              pvpPlayers[myPlayerId].profilePicture = nft.image;
+              // Send profile picture update to opponent
+              sendStatsUpdate(
+                pvpPlayers[myPlayerId].hp,
+                pvpPlayers[myPlayerId].armor,
+                pvpPlayers[myPlayerId].maxHP,
+                pvpPlayers[myPlayerId].maxArmor
+              );
+            }
+            
+            console.log('Profile picture set to:', nft.name, nft.image);
+            return; // Don't process other clicks
+          }
+        }
       }
     }
     
@@ -10002,6 +10447,26 @@ function gameLoop() {
     // Apply air resistance
     dotVx *= 0.995;
     dotVy *= 0.995;
+    
+    // Update UFO tilt/sway effect for Solo mode
+    const accelX = dotVx - soloLastVx;
+    const accelY = dotVy - soloLastVy;
+    const acceleration = Math.sqrt(accelX * accelX + accelY * accelY);
+    
+    // Add tilt based on acceleration (stronger acceleration = more tilt)
+    const tiltAmount = acceleration * 0.15; // Adjust sensitivity
+    const tiltDirection = Math.atan2(accelY, accelX);
+    soloUfoTilt += Math.sin(tiltDirection) * tiltAmount;
+    
+    // Damping - slowly return to neutral position
+    soloUfoTilt *= 0.92; // Damping factor (0.92 = 8% reduction per frame)
+    
+    // Limit maximum tilt
+    soloUfoTilt = Math.max(-0.3, Math.min(0.3, soloUfoTilt));
+    
+    // Update last velocities
+    soloLastVx = dotVx;
+    soloLastVy = dotVy;
   }
   
   // PvP/Training mode: Physics update for all players (copied from Solo DOT physics)
@@ -10081,14 +10546,32 @@ function gameLoop() {
           // Calculate speed boost (from +1 to +5 over 1.5 seconds) - increased for higher top speed
           const speedBoost = 1 + (jetpackUseTime / maxJetpackTime) * 4; // Linear from 1 to 5 (higher top speed)
           
-          // Get current movement direction (normalize velocity)
-          const currentSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
-          if (currentSpeed > 0.1) {
-            // Apply speed boost in current direction - increased multiplier for better feel
-            const dirX = player.vx / currentSpeed;
-            const dirY = player.vy / currentSpeed;
-            player.vx += dirX * speedBoost * 0.2; // Increased from 0.15 to 0.2 for stronger effect
-            player.vy += dirY * speedBoost * 0.2;
+          // Move towards mouse cursor position
+          // Use global mouse position (updated in mousemove event)
+          if (typeof globalMouseX !== 'undefined' && typeof globalMouseY !== 'undefined') {
+            // Calculate direction to mouse cursor
+            const dx = globalMouseX - player.x;
+            const dy = globalMouseY - player.y;
+            const distanceToMouse = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distanceToMouse > 0.1) {
+              // Normalize direction to mouse
+              const dirX = dx / distanceToMouse;
+              const dirY = dy / distanceToMouse;
+              // Apply speed boost towards mouse cursor
+              player.vx += dirX * speedBoost * 0.2; // Increased from 0.15 to 0.2 for stronger effect
+              player.vy += dirY * speedBoost * 0.2;
+            }
+          } else {
+            // Fallback: if mouse position not available, use current movement direction
+            const currentSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+            if (currentSpeed > 0.1) {
+              // Apply speed boost in current direction - increased multiplier for better feel
+              const dirX = player.vx / currentSpeed;
+              const dirY = player.vy / currentSpeed;
+              player.vx += dirX * speedBoost * 0.2; // Increased from 0.15 to 0.2 for stronger effect
+              player.vy += dirY * speedBoost * 0.2;
+            }
           }
           
           // Consume fuel (15 fuel over 1.5 seconds = ~10 per second) - much slower consumption for longer usage
@@ -10465,6 +10948,26 @@ function gameLoop() {
       // Apply air resistance (same as Solo: 0.995)
       player.vx *= 0.995;
       player.vy *= 0.995;
+      
+      // Update UFO tilt/sway effect for PvP players
+      const accelX = player.vx - player.lastVx;
+      const accelY = player.vy - player.lastVy;
+      const acceleration = Math.sqrt(accelX * accelX + accelY * accelY);
+      
+      // Add tilt based on acceleration (stronger acceleration = more tilt)
+      const tiltAmount = acceleration * 0.15; // Adjust sensitivity
+      const tiltDirection = Math.atan2(accelY, accelX);
+      player.ufoTilt += Math.sin(tiltDirection) * tiltAmount;
+      
+      // Damping - slowly return to neutral position
+      player.ufoTilt *= 0.92; // Damping factor (0.92 = 8% reduction per frame)
+      
+      // Limit maximum tilt
+      player.ufoTilt = Math.max(-0.3, Math.min(0.3, player.ufoTilt));
+      
+      // Update last velocities
+      player.lastVx = player.vx;
+      player.lastVy = player.vy;
     }
     
     // Update wall spikes animation (PvP mode only)

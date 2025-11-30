@@ -48,3 +48,4 @@ Dabar strėlės garsas:
 3. Turėtumėte išgirsti aukštesnį, aštresnį garsą
 4. Bandykite atsokti nuo platformos - garsai turėtų skambėti skirtingai
 
+

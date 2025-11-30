@@ -67,3 +67,4 @@ playProjectileLaunch():
 1. **PvP/Training mode - Projectile launch** (eilutė ~7182)
    - Kai paspaudžiate "2" ir paleidžiate projectile šūvį
 
+

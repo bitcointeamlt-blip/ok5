@@ -103,3 +103,4 @@ foreach ($folderPath in $selectedFolders) {
 
 Write-Host "`n✅ Ištrynimo procesas baigtas!" -ForegroundColor Green
 
+

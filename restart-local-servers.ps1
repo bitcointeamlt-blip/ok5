@@ -118,3 +118,4 @@ Write-Host "`nDabar galite paleisti serverius:" -ForegroundColor Cyan
 Write-Host "1. Colyseus serveris: cd colyseus-server && npm run dev" -ForegroundColor White
 Write-Host "2. Frontend: npm run dev" -ForegroundColor White
 
+
