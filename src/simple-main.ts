@@ -924,6 +924,64 @@ let pvpKatanaY = 0;
 // Reduced frequency to prevent lag: 100ms = 10 times per second (was 50ms = 20 times per second)
 let lastPositionSyncTime = 0;
 const POSITION_SYNC_INTERVAL = 100; // Sync position every 100ms (10 times per second) - reduced to prevent network lag
+const POSITION_HEARTBEAT_INTERVAL = 400; // Always send at least every 400ms to avoid timeouts
+const POSITION_DISTANCE_EPSILON = 4; // Only send if moved at least 4px
+const VELOCITY_EPSILON = 0.5; // Only send if speed changed significantly
+const ARROW_ANGLE_EPSILON = 0.08; // Minimal radian change before sending arrow rotation
+const PROJECTILE_DISTANCE_EPSILON = 6; // Projectiles move fast, allow slightly larger threshold
+interface MovementSnapshot {
+  x: number;
+  y: number;
+  vx?: number;
+  vy?: number;
+  angle?: number;
+  timestamp: number;
+}
+let lastSentPositionSnapshot: MovementSnapshot | null = null;
+let lastSentArrowSnapshot: MovementSnapshot | null = null;
+let lastSentProjectileSnapshot: MovementSnapshot | null = null;
+
+function shouldSendSnapshot(
+  current: MovementSnapshot,
+  last: MovementSnapshot | null,
+  options: {
+    distanceEpsilon: number;
+    velocityEpsilon?: number;
+    angleEpsilon?: number;
+    heartbeatInterval: number;
+  }
+): boolean {
+  if (!last) {
+    return true;
+  }
+
+  const dx = current.x - last.x;
+  const dy = current.y - last.y;
+  const distanceSquared = dx * dx + dy * dy;
+  if (distanceSquared >= options.distanceEpsilon * options.distanceEpsilon) {
+    return true;
+  }
+
+  if (typeof options.velocityEpsilon === 'number') {
+    const dvx = Math.abs((current.vx || 0) - (last.vx || 0));
+    const dvy = Math.abs((current.vy || 0) - (last.vy || 0));
+    if (dvx > options.velocityEpsilon || dvy > options.velocityEpsilon) {
+      return true;
+    }
+  }
+
+  if (
+    typeof options.angleEpsilon === 'number' &&
+    typeof current.angle === 'number' &&
+    typeof last.angle === 'number'
+  ) {
+    if (Math.abs(current.angle - last.angle) > options.angleEpsilon) {
+      return true;
+    }
+  }
+
+  return current.timestamp - last.timestamp >= options.heartbeatInterval;
+}
 let pvpKatanaVx = 0; // Arrow velocity X
 let pvpKatanaVy = 0; // Arrow velocity Y
 let pvpKatanaAngle = 0; // Arrow rotation angle
@@ -2480,7 +2538,8 @@ function handleOpponentInput(input: any): void {
 function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: number, paralyzedUntil?: number): void {
   if (gameMode === 'PvP' && currentMatch) {
     const useColyseus = colyseusService.isConnectedToRoom();
-    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
     
     if (isSyncing) {
       const statsInput: any = {
@@ -2611,7 +2670,8 @@ function createProjectileExplosion(x: number, y: number): void {
 function sendProjectileExplosion(x: number, y: number): void {
   if (gameMode === 'PvP' && currentMatch) {
     const useColyseus = colyseusService.isConnectedToRoom();
-    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
     
     if (isSyncing) {
       const explodeInput = {
@@ -8704,7 +8764,8 @@ if (!(window as any).__keydownListenerAdded) {
     
     // Send to opponent via network sync
     const useColyseus = colyseusService.isConnectedToRoom();
-    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
     if (currentMatch && isSyncing) {
       const mineInput = {
         type: 'mine' as const,
@@ -12289,65 +12350,108 @@ function gameLoop() {
     // PvP mode: Sync position with opponent (real-time position updates)
     // Use Colyseus if available, otherwise fallback to Supabase
     const useColyseus = colyseusService.isConnectedToRoom();
-    const isSyncing = useColyseus || pvpSyncService.isSyncing();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
     
     if (gameMode === 'PvP' && currentMatch && myPlayerId && pvpPlayers[myPlayerId] && isSyncing) {
       const now = Date.now();
       if (now - lastPositionSyncTime >= POSITION_SYNC_INTERVAL) {
         lastPositionSyncTime = now;
         const myPlayer = pvpPlayers[myPlayerId];
-        
-        const positionInput = {
-          type: 'position' as const,
-          timestamp: now,
+        const sendNetworkInput = useColyseus
+          ? (input: any) => colyseusService.sendInput(input)
+          : (input: any) => pvpSyncService.sendInput(input);
+
+        const positionSnapshot: MovementSnapshot = {
           x: myPlayer.x,
           y: myPlayer.y,
           vx: myPlayer.vx,
           vy: myPlayer.vy,
+          timestamp: now
         };
-        
-        // Send via Colyseus or Supabase
-        if (useColyseus) {
-          colyseusService.sendInput(positionInput);
-        } else {
-          pvpSyncService.sendInput(positionInput);
+
+        if (
+          shouldSendSnapshot(positionSnapshot, lastSentPositionSnapshot, {
+            distanceEpsilon: POSITION_DISTANCE_EPSILON,
+            velocityEpsilon: VELOCITY_EPSILON,
+            heartbeatInterval: POSITION_HEARTBEAT_INTERVAL
+          })
+        ) {
+          const positionInput = {
+            type: 'position' as const,
+            timestamp: now,
+            x: myPlayer.x,
+            y: myPlayer.y,
+            vx: myPlayer.vx,
+            vy: myPlayer.vy
+          };
+          sendNetworkInput(positionInput);
+          lastSentPositionSnapshot = positionSnapshot;
         }
         
-        // Send arrow position if flying
         if (pvpKatanaFlying) {
-          const arrowInput = {
-            type: 'arrow_position' as const,
-            timestamp: now,
+          const arrowSnapshot: MovementSnapshot = {
             x: pvpKatanaX,
             y: pvpKatanaY,
             vx: pvpKatanaVx,
             vy: pvpKatanaVy,
             angle: pvpKatanaAngle,
+            timestamp: now
           };
           
-          if (useColyseus) {
-            colyseusService.sendInput(arrowInput);
-          } else {
-            pvpSyncService.sendInput(arrowInput);
+          if (
+            shouldSendSnapshot(arrowSnapshot, lastSentArrowSnapshot, {
+              distanceEpsilon: POSITION_DISTANCE_EPSILON,
+              velocityEpsilon: VELOCITY_EPSILON,
+              angleEpsilon: ARROW_ANGLE_EPSILON,
+              heartbeatInterval: POSITION_HEARTBEAT_INTERVAL
+            })
+          ) {
+            const arrowInput = {
+              type: 'arrow_position' as const,
+              timestamp: now,
+              x: pvpKatanaX,
+              y: pvpKatanaY,
+              vx: pvpKatanaVx,
+              vy: pvpKatanaVy,
+              angle: pvpKatanaAngle,
+            };
+            sendNetworkInput(arrowInput);
+            lastSentArrowSnapshot = arrowSnapshot;
           }
+        } else if (lastSentArrowSnapshot) {
+          lastSentArrowSnapshot = null;
         }
         
-        // Send projectile position if flying
         if (projectileFlying) {
-          const projectileInput = {
-            type: 'projectile_position' as const,
-            timestamp: now,
+          const projectileSnapshot: MovementSnapshot = {
             x: projectileX,
             y: projectileY,
             vx: projectileVx,
             vy: projectileVy,
+            timestamp: now
           };
           
-          if (useColyseus) {
-            colyseusService.sendInput(projectileInput);
-          } else {
-            pvpSyncService.sendInput(projectileInput);
+          if (
+            shouldSendSnapshot(projectileSnapshot, lastSentProjectileSnapshot, {
+              distanceEpsilon: PROJECTILE_DISTANCE_EPSILON,
+              velocityEpsilon: VELOCITY_EPSILON,
+              heartbeatInterval: POSITION_HEARTBEAT_INTERVAL
+            })
+          ) {
+            const projectileInput = {
+              type: 'projectile_position' as const,
+              timestamp: now,
+              x: projectileX,
+              y: projectileY,
+              vx: projectileVx,
+              vy: projectileVy,
+            };
+            sendNetworkInput(projectileInput);
+            lastSentProjectileSnapshot = projectileSnapshot;
           }
+        } else if (lastSentProjectileSnapshot) {
+          lastSentProjectileSnapshot = null;
         }
       }
     }
