@@ -3,7 +3,7 @@
 ### ✅ Completed in this pass
 - Added client-side movement snapshots that send data only when the player/arrow/projectile actually moves or every 400 ms heartbeat, cutting redundant packets by ~50–70 %.
 - Limited projectile + arrow sync to significant deltas and reset snapshots when those objects despawn, preventing stale broadcasts.
-- Prevented Supabase from receiving movement packets whenever Colyseus is connected, so only one transport carries motion data at a time.
+- Disabled Supabase Realtime for PvP (all matches use Colyseus only, Supabase is now standby), eliminating duplicate transports entirely.
 
 ### 🎯 Next target areas
 1. **Server schema trim** – keep authoritative state minimal (positions, HP/armor) and relay effects via messages to shrink patch sizes.

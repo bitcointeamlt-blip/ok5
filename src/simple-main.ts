@@ -1794,11 +1794,6 @@ function subscribeToMatchUpdates(matchId: string, myAddress: string, isPlayer1: 
           
           // Initialize PvP with match data
           initializePvPWithMatch(match, isPlayer1);
-          
-          // Start PvP sync - CRITICAL: Only start if not already syncing (prevents duplicate channels)
-          if (myAddress && !pvpSyncService.isSyncing()) {
-            pvpSyncService.startSync(match.id, myAddress, handleOpponentInput);
-          }
         }
       }
     )
