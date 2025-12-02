@@ -366,5 +366,6 @@ export class GameRoom extends Room<GameState> {
   private lerp(current: number, target: number, factor: number): number {
     return current + (target - current) * factor;
   }
+
 }
 

@@ -12,19 +12,19 @@ export class Player extends Schema {
   @type("number") armor: number = 50;
   @type("number") maxArmor: number = 50;
   @type("boolean") ready: boolean = false;
-  
+
   // Arrow state
   @type("number") arrowX: number = 0;
   @type("number") arrowY: number = 0;
   @type("number") arrowVx: number = 0;
   @type("number") arrowVy: number = 0;
-  
+
   // Projectile state
   @type("number") projectileX: number = 0;
   @type("number") projectileY: number = 0;
   @type("number") projectileVx: number = 0;
   @type("number") projectileVy: number = 0;
-  
+
   // Last click
   @type("number") lastClickX: number = 0;
   @type("number") lastClickY: number = 0;

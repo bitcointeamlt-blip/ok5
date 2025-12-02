@@ -43,16 +43,6 @@ const serverPresets: PvpServerPreset[] = [
   }
 ];
 
-if (!import.meta.env.PROD) {
-  serverPresets.push({
-    id: 'local-dev',
-    name: 'Localhost (dev)',
-    region: 'Local',
-    endpoint: 'http://localhost:2567',
-    description: 'Developer testing server'
-  });
-}
-
 const PVP_SERVER_PRESETS: PvpServerPreset[] = serverPresets.filter(
   (preset, index, array) =>
     !!preset.endpoint &&
@@ -91,6 +81,7 @@ let serverStatusLoading = false;
 let serverBrowserHitRegions: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
 let serverBrowserCloseRegion = { x: 0, y: 0, width: 0, height: 0 };
 let serverBrowserModalRegion = { x: 0, y: 0, width: 0, height: 0 };
+let serverStatusInterval: number | null = null;
 
 // Verbose logging control (prevents spam in production and lowers frame stutter)
 const originalConsoleLog = console.log.bind(console);
@@ -246,7 +237,7 @@ async function checkServerStatus(server: PvpServerPreset | PvpServerStatus): Pro
 }
 
 async function refreshServerStatuses(): Promise<void> {
-  if (serverStatuses.length === 0) {
+  if (serverStatuses.length === 0 || serverStatusLoading) {
     return;
   }
 
@@ -256,11 +247,33 @@ async function refreshServerStatuses(): Promise<void> {
   serverStatusLoading = false;
 }
 
+function startServerStatusAutoRefresh(): void {
+  if (serverStatusInterval !== null) {
+    return;
+  }
+  serverStatusInterval = window.setInterval(() => {
+    if (!isServerBrowserOpen) {
+      return;
+    }
+    refreshServerStatuses().catch(() => {
+      serverBrowserError = 'Failed to refresh server status';
+    });
+  }, 5000);
+}
+
+function stopServerStatusAutoRefresh(): void {
+  if (serverStatusInterval !== null) {
+    clearInterval(serverStatusInterval);
+    serverStatusInterval = null;
+  }
+}
+
 function openServerBrowser(): void {
   serverBrowserError = '';
   serverBrowserHoverId = null;
   serverBrowserHoverClose = false;
   isServerBrowserOpen = true;
+  startServerStatusAutoRefresh();
   refreshServerStatuses().catch(() => {
     serverBrowserError = 'Failed to refresh server status';
   });
@@ -270,6 +283,7 @@ function closeServerBrowser(): void {
   isServerBrowserOpen = false;
   serverBrowserHoverId = null;
   serverBrowserHoverClose = false;
+  stopServerStatusAutoRefresh();
 }
 
 function handleServerSelection(serverId: string): void {
@@ -789,11 +803,8 @@ const botSelfClickCooldown = 400; // Minimum 400ms between bot clicks on itself
 const botClickChance = 0.25; // 25% chance to click on blue player (reduced to make it clear blue is player-controlled)
 const botSelfClickChance = 0.3; // 30% chance to click on itself (to move around)
 
-// PvP Projectile system (Angry Birds style - bouncing platform)
-let projectileCharging = false; // Whether projectile is being charged (mouse held down)
-let projectileChargeStartTime = 0; // When charging started
-let projectileStartX = 0; // Projectile launch position X
-let projectileStartY = 0; // Projectile launch position Y
+// PvP Heavy projectile (instant fire with arcing trajectory)
+let projectileAiming = false; // Whether heavy shot is armed/aiming
 let projectileFlying = false; // Whether projectile is flying
 let projectileX = 0; // Current projectile position
 let projectileY = 0;
@@ -802,13 +813,12 @@ let projectileVy = 0; // Projectile velocity Y
 let projectileSpawnTime = 0; // When projectile was spawned (for 5 second lifetime)
 let projectileBounceCount = 0; // How many times players have bounced on this projectile
 let projectileLastShotTime = 0; // When projectile was last fired (for cooldown after hit)
-const projectileGravity = 0.15; // Gravity for projectile (reduced for better upward shots)
-const projectileMaxCharge = 2000; // Maximum charge time (2 seconds)
-const projectileBaseSpeed = 4; // Base speed multiplier (reduced from 8)
+const projectileGravity = 0.32; // Stronger gravity for heavier arc
+const projectileLaunchSpeed = 14.5; // Fixed launch speed (longer range)
 const projectileRadius = 16; // Projectile size (doubled)
-const projectileLifetime = 5000; // Projectile lifetime in milliseconds (5 seconds)
+const projectileLifetime = 4500; // Projectile lifetime in milliseconds
 const projectileMaxBounces = 2; // Maximum number of bounces allowed on projectile
-const projectileCooldown = 3000; // Cooldown after hitting target (3 seconds)
+const projectileCooldown = 3000; // Cooldown between shots (3 seconds)
 
 // Bullet system (simple projectile, faster than arrow, smaller than projectile)
 // Changed to array to support multiple bullets (burst fire)
@@ -2272,15 +2282,17 @@ function handleOpponentInput(input: any): void {
     // Create explosion animation at opponent's launch position
     createProjectileExplosion(opponentProjectileX, opponentProjectileY);
     
-    if (input.targetX !== undefined && input.targetY !== undefined) {
+    if (typeof input.vx === 'number' && typeof input.vy === 'number') {
+      opponentProjectileVx = input.vx;
+      opponentProjectileVy = input.vy;
+    } else if (input.targetX !== undefined && input.targetY !== undefined) {
       const dx = input.targetX - input.x;
       const dy = input.targetY - input.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       if (distance > 0) {
-        const chargeRatio = input.chargeTime ? Math.min(input.chargeTime / projectileMaxCharge, 1.0) : 0.5;
-        const speed = projectileBaseSpeed * (0.5 + chargeRatio * 1.5) * 1.15;
-        opponentProjectileVx = (dx / distance) * speed;
-        opponentProjectileVy = (dy / distance) * speed;
+        const fallbackSpeed = projectileLaunchSpeed;
+        opponentProjectileVx = (dx / distance) * fallbackSpeed;
+        opponentProjectileVy = (dy / distance) * fallbackSpeed;
       }
     }
     console.log('Opponent projectile launched', { x: input.x, y: input.y, targetX: input.targetX, targetY: input.targetY });
@@ -2642,47 +2654,20 @@ function createDeathAnimation(playerId: string, x: number, y: number, color: str
 
 // Create projectile explosion animation (particles)
 function createProjectileExplosion(x: number, y: number): void {
-  // Create explosion particles (reduced from 16 to 8)
-  for (let i = 0; i < 8; i++) {
-    const angle = (Math.PI * 2 * i) / 8;
-    const speed = 2 + Math.random() * 4;
+  for (let i = 0; i < 4; i++) {
+    const angle = (Math.PI * 2 * i) / 4;
+    const speed = 1.5 + Math.random() * 2.5;
     safePushClickParticle({
-      x: x,
-      y: y,
+      x,
+      y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      life: 30 + Math.floor(Math.random() * 20), // 30-50 frames
-      maxLife: 30 + Math.floor(Math.random() * 20),
-      size: 3 + Math.random() * 4 // 3-7 pixels
+      life: 24 + Math.floor(Math.random() * 10),
+      maxLife: 24 + Math.floor(Math.random() * 10),
+      size: 2.5 + Math.random() * 2.5
     });
   }
-  
-  // Screen shake effect
-  screenShake = Math.max(screenShake, 6);
-}
-
-// Send projectile explosion to opponent
-function sendProjectileExplosion(x: number, y: number): void {
-  if (gameMode === 'PvP' && currentMatch) {
-    const useColyseus = colyseusService.isConnectedToRoom();
-    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
-    const isSyncing = useColyseus || useSupabaseFallback;
-    
-    if (isSyncing) {
-      const explodeInput = {
-        type: 'projectile_explode' as const,
-        timestamp: Date.now(),
-        x: x,
-        y: y
-      };
-      
-      if (useColyseus) {
-        colyseusService.sendInput(explodeInput);
-      } else {
-        pvpSyncService.sendInput(explodeInput);
-      }
-    }
-  }
+  screenShake = Math.max(screenShake, 5);
 }
 
 function grantDeathReward() {
@@ -5666,14 +5651,14 @@ function render() {
         {
           const weaponPanelY = 220;
           const isFlying = projectileFlying;
-          const isCharging = projectileCharging;
+          const isAiming = projectileAiming;
           const currentTime = Date.now();
           const timeSinceLastShot = currentTime - projectileLastShotTime;
           const remainingCooldown = Math.max(0, projectileCooldown - timeSinceLastShot);
           const isOnCooldown = remainingCooldown > 0;
           
           // Frame background
-          ctx.fillStyle = isFlying ? '#ffff00' : (isCharging ? '#ffcc00' : (isOnCooldown ? '#ffcccc' : '#ccffcc')); // Yellow if flying, orange if charging, light red if cooldown, light green if ready
+          ctx.fillStyle = isFlying ? '#ffff00' : (isAiming ? '#ffcc00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'));
           ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
           
           // Frame border
@@ -5698,17 +5683,10 @@ function render() {
             ctx.fillStyle = '#ff0000';
             ctx.font = 'bold 8px "Press Start 2P"';
             ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
-          } else if (isCharging) {
-            const chargeTime = Date.now() - projectileChargeStartTime;
-            const chargeProgress = Math.min(1, chargeTime / projectileMaxCharge);
-            ctx.fillStyle = '#ff8800';
+          } else if (isAiming) {
+            ctx.fillStyle = '#ffaa00';
             ctx.font = 'bold 8px "Press Start 2P"';
-            ctx.fillText(`CHARGING ${Math.round(chargeProgress * 100)}%`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
-            
-            // Charge bar
-            const barWidth = (weaponPanelWidth - 20) * chargeProgress;
-            ctx.fillStyle = '#ff0000';
-            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+            ctx.fillText('AIMING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
           } else if (isOnCooldown) {
             ctx.fillStyle = '#ff0000';
             ctx.font = 'bold 8px "Press Start 2P"';
@@ -5969,8 +5947,8 @@ function render() {
       }
     }
     
-    // PvP mode: Draw projectile trajectory (dotted line) when charging
-    if (projectileCharging && myPlayerId && pvpPlayers[myPlayerId]) {
+    // PvP mode: Draw projectile trajectory (dotted line) when aiming
+    if (projectileAiming && myPlayerId && pvpPlayers[myPlayerId]) {
       const myPlayer = pvpPlayers[myPlayerId];
       
       // Always use current player position (not the initial charging position)
@@ -5983,12 +5961,8 @@ function render() {
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance > 0) {
-        const chargeTime = Date.now() - projectileChargeStartTime;
-        const chargeRatio = Math.min(chargeTime / projectileMaxCharge, 1.0);
-        const speed = projectileBaseSpeed * (0.5 + chargeRatio * 1.5) * 1.15; // 15% stronger flight speed
-        
-        const vx = (dx / distance) * speed;
-        const vy = (dy / distance) * speed;
+        const vx = (dx / distance) * projectileLaunchSpeed;
+        const vy = (dy / distance) * projectileLaunchSpeed;
         
         // Simulate trajectory (parabolic path with gravity)
         ctx.strokeStyle = '#cccccc'; // Lighter gray color (more visible)
@@ -6005,8 +5979,8 @@ function render() {
         
         // Draw trajectory for shorter duration (shorter line)
         // Use reduced gravity for trajectory visualization (less curved)
-        const trajectoryGravity = projectileGravity * 0.5; // Half gravity for visualization
-        for (let i = 0; i < 60; i++) { // 60 frames = 1 second at 60 FPS (shorter trajectory)
+        const trajectoryGravity = projectileGravity;
+        for (let i = 0; i < 40; i++) {
           trajX += trajVx;
           trajY += trajVy;
           trajVy += trajectoryGravity; // Apply reduced gravity for visualization
@@ -8578,29 +8552,33 @@ if (!(window as any).__keydownListenerAdded) {
     }
   }
   
-  // PvP/Training mode: Start charging projectile (key "2")
-  // Check projectile cooldown
-  const currentTime = Date.now();
-  const timeSinceLastProjectileShot = currentTime - projectileLastShotTime;
-  const canUseProjectile = timeSinceLastProjectileShot >= projectileCooldown;
-  
-  if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && !projectileCharging && canUseProjectile) {
+  // PvP/Training mode: Toggle heavy projectile aiming (key "2")
+  if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
     const myPlayer = pvpPlayers[myPlayerId];
-    
-    // Block input if player is dead
     if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
-      return; // Dead - can't use projectile
+      return;
     }
-    // Check if paralyzed
     if (myPlayer.paralyzedUntil > Date.now()) {
-      return; // Paralyzed - can't charge projectile
+      return;
     }
-    // Start charging from player position
-    projectileCharging = true;
-    projectileChargeStartTime = Date.now();
-    projectileStartX = myPlayer.x;
-    projectileStartY = myPlayer.y;
-    console.log('Projectile charging started - release key "2" to fire!');
+    if (projectileFlying) {
+      console.log('Projectile already in flight');
+      return;
+    }
+    const now = Date.now();
+    const timeSinceLastProjectileShot = now - projectileLastShotTime;
+    if (timeSinceLastProjectileShot < projectileCooldown) {
+      const remaining = Math.ceil((projectileCooldown - timeSinceLastProjectileShot) / 1000);
+      console.log(`Projectile on cooldown: ${remaining}s remaining`);
+      projectileAiming = false;
+      return;
+    }
+    projectileAiming = !projectileAiming;
+    if (projectileAiming) {
+      console.log('Heavy shot armed - left click to fire!');
+    } else {
+      console.log('Heavy shot cancelled');
+    }
   }
   
   // PvP/Training mode: Jetpack activation (key "Space")
@@ -8798,115 +8776,6 @@ if (!(window as any).__keyupListenerAdded) {
     }
   }
   
-  // PvP/Training mode: Launch projectile if charging (key "2" released)
-  if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && projectileCharging && !projectileFlying && myPlayerId && pvpPlayers[myPlayerId]) {
-    const myPlayer = pvpPlayers[myPlayerId];
-    // Check if paralyzed
-    if (myPlayer.paralyzedUntil > Date.now()) {
-      // Cancel charging if paralyzed
-      projectileCharging = false;
-      return; // Paralyzed - can't fire projectile
-    }
-    const chargeTime = Date.now() - projectileChargeStartTime;
-    const chargeRatio = Math.min(chargeTime / projectileMaxCharge, 1.0); // 0 to 1
-    
-    // Get current player position and mouse position for direction
-    const dx = globalMouseX - myPlayer.x;
-    const dy = globalMouseY - myPlayer.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (distance > 0) {
-      // Launch projectile with speed based on charge (15% stronger)
-      const speed = projectileBaseSpeed * (0.5 + chargeRatio * 1.5) * 1.15; // 0.5x to 2x base speed + 15% boost
-      
-      // Calculate direction (normalized)
-      const dirX = dx / distance;
-      const dirY = dy / distance;
-      
-      // If fully charged (100%), give player +1 speed bonus in opposite direction (backward boost)
-      if (chargeRatio >= 1.0) {
-        const boostSpeed = 1; // +1 speed bonus
-        myPlayer.vx -= dirX * boostSpeed; // Boost backward (opposite to shot direction)
-        myPlayer.vy -= dirY * boostSpeed; // Boost backward (opposite to shot direction)
-        console.log('Full charge! +1 speed bonus applied');
-      }
-      
-      // Apply recoil: push player in opposite direction with 3 speed
-      const recoilSpeed = 3;
-      myPlayer.vx -= dirX * recoilSpeed; // Opposite direction
-      myPlayer.vy -= dirY * recoilSpeed; // Opposite direction
-      
-      // Create shot impact effect (particles and screen shake) - reduced particle count
-      // Particle effect at launch position
-      for (let i = 0; i < 8; i++) {
-        const angle = (Math.PI * 2 * i) / 8 + Math.atan2(dirY, dirX) + Math.PI; // Particles go opposite to shot
-        const particleSpeed = 3 + Math.random() * 4;
-        safePushClickParticle({
-          x: myPlayer.x,
-          y: myPlayer.y,
-          vx: Math.cos(angle) * particleSpeed,
-          vy: Math.sin(angle) * particleSpeed,
-          life: 40,
-          maxLife: 40,
-          size: 4 + Math.random() * 3
-        });
-      }
-      
-      // Screen shake effect
-      screenShake = Math.max(screenShake, 8);
-      
-      projectileFlying = true;
-      
-      // Start cooldown immediately when projectile is fired (3 seconds)
-      projectileLastShotTime = Date.now();
-      
-      // Spawn projectile slightly away from player to avoid immediate self-collision
-      const spawnOffset = 15; // Spawn 15px away from player center
-      projectileX = myPlayer.x + dirX * spawnOffset; // Spawn in direction of shot
-      projectileY = myPlayer.y + dirY * spawnOffset; // Spawn in direction of shot
-      projectileVx = dirX * speed;
-      projectileVy = dirY * speed;
-      projectileSpawnTime = Date.now(); // Record spawn time for lifetime
-      projectileBounceCount = 0; // Reset bounce count
-      projectileCharging = false;
-      
-      // Create explosion animation at launch position
-      createProjectileExplosion(projectileX, projectileY);
-      
-      // Play projectile launch sound effect (like cannon explosion)
-      audioManager.resumeContext().then(() => {
-        audioManager.playProjectileLaunch();
-      });
-      
-      console.log(`Projectile launched with speed ${speed}, charge: ${(chargeRatio * 100).toFixed(1)}%`);
-      
-      // Send projectile to opponent via network sync
-      const useColyseus = colyseusService.isConnectedToRoom();
-      const isSyncing = useColyseus || pvpSyncService.isSyncing();
-      if (currentMatch && isSyncing) {
-        const chargeTime = Date.now() - projectileChargeStartTime;
-        
-        // Send explosion animation to opponent
-        sendProjectileExplosion(projectileX, projectileY);
-        const projectileInput = {
-          type: 'projectile' as const,
-          timestamp: Date.now(),
-          x: projectileX, // Use spawn position (already offset from player)
-          y: projectileY, // Use spawn position (already offset from player)
-          targetX: globalMouseX,
-          targetY: globalMouseY,
-          chargeTime: chargeTime,
-        };
-        if (useColyseus) {
-          colyseusService.sendInput(projectileInput);
-        } else {
-          pvpSyncService.sendInput(projectileInput);
-        }
-      }
-    } else {
-      projectileCharging = false; // Cancel if no direction
-    }
-  }
   });
 } else {
   console.warn('⚠️ Keyup listener already added - skipping duplicate (HMR protection)');
@@ -9328,6 +9197,89 @@ if (!(window as any).__clickListenerAdded) {
     }
   }
 
+  // PvP/Training mode: fire heavy projectile when aiming
+  if ((gameMode === 'PvP' || gameMode === 'Training') && projectileAiming && mouseX > 240 && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && e.button === 0) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      projectileAiming = false;
+      return;
+    }
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return;
+    }
+    const now = Date.now();
+    const timeSinceLastShot = now - projectileLastShotTime;
+    if (timeSinceLastShot < projectileCooldown) {
+      projectileAiming = false;
+      const remaining = Math.ceil((projectileCooldown - timeSinceLastShot) / 1000);
+      console.log(`Projectile on cooldown: ${remaining}s remaining`);
+      return;
+    }
+
+    const dx = mouseX - myPlayer.x;
+    const dy = mouseY - myPlayer.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance <= 0) {
+      return;
+    }
+
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    const spawnOffset = 18;
+
+    projectileFlying = true;
+    projectileAiming = false;
+    projectileLastShotTime = now;
+    projectileSpawnTime = now;
+    projectileBounceCount = 0;
+    projectileX = myPlayer.x + dirX * spawnOffset;
+    projectileY = myPlayer.y + dirY * spawnOffset;
+    projectileVx = dirX * projectileLaunchSpeed;
+    projectileVy = dirY * projectileLaunchSpeed;
+
+    // Heavy shell no longer pushes the player back (removed recoil)
+
+    for (let i = 0; i < 4; i++) {
+      const angle = (Math.PI * 2 * i) / 8 + Math.atan2(dirY, dirX) + Math.PI;
+      const particleSpeed = 2 + Math.random() * 3;
+      safePushClickParticle({
+        x: myPlayer.x,
+        y: myPlayer.y,
+        vx: Math.cos(angle) * particleSpeed,
+        vy: Math.sin(angle) * particleSpeed,
+        life: 28,
+        maxLife: 28,
+        size: 3 + Math.random() * 2
+      });
+    }
+    screenShake = Math.max(screenShake, 8);
+
+    createProjectileExplosion(projectileX, projectileY);
+    audioManager.playProjectileLaunch();
+
+    const useColyseusProjectile = colyseusService.isConnectedToRoom();
+    const isSyncingProjectile = useColyseusProjectile || pvpSyncService.isSyncing();
+    if (currentMatch && isSyncingProjectile) {
+      const projectileInput = {
+        type: 'projectile' as const,
+        timestamp: now,
+        x: projectileX,
+        y: projectileY,
+        vx: projectileVx,
+        vy: projectileVy,
+        targetX: mouseX,
+        targetY: mouseY,
+      };
+      if (useColyseusProjectile) {
+        colyseusService.sendInput(projectileInput);
+      } else {
+        pvpSyncService.sendInput(projectileInput);
+      }
+    }
+
+    return;
+  }
+
   // PvP/Training mode: Click handler (same as Solo DOT click system with accuracy/miss)
   if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
     const pos = getCanvasMousePos(e);
@@ -9623,9 +9575,6 @@ function drawServerBrowserOverlay() {
   ctx.textAlign = 'left';
   ctx.fillText('SELECT PvP SERVER', modalX + 30, modalY + 45);
 
-  ctx.font = '10px "Press Start 2P"';
-  ctx.fillStyle = '#333333';
-  ctx.fillText('Click a server to join. Ping and queue refresh automatically.', modalX + 30, modalY + 75);
 
   if (serverStatusLoading) {
     ctx.fillStyle = '#666666';
@@ -9686,27 +9635,27 @@ function drawServerBrowserOverlay() {
 
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'left';
       ctx.fillText(server.name, modalX + 50, rowY + 26);
 
-      ctx.font = '9px "Press Start 2P"';
-      ctx.fillStyle = '#444444';
-      ctx.fillText(`${server.region} • ${getServerDisplayHost(server.endpoint)}`, modalX + 50, rowY + 44);
-
-      if (server.description) {
-        ctx.fillText(server.description, modalX + 50, rowY + 60);
-      }
+      const joinWidth = 150;
+      const joinHeight = 32;
+      const joinX = modalX + 30 + rowWidth - joinWidth - 30;
+      const joinY = rowY + rowHeight - joinHeight - 32;
+      const statusAreaRight = joinX - 40;
 
       const statusColor = getServerStatusColor(server);
+      ctx.textAlign = 'right';
       ctx.fillStyle = statusColor;
       ctx.font = 'bold 10px "Press Start 2P"';
-      ctx.fillText(`${server.status.toUpperCase()} • ${getServerPingText(server)}`, modalX + rowWidth - 220, rowY + 26);
+      ctx.fillText(`${server.status.toUpperCase()} • ${getServerPingText(server)}`, statusAreaRight, rowY + 26);
 
       ctx.fillStyle = '#000000';
-      ctx.font = '8px "Press Start 2P"';
+      ctx.font = 'bold 8px "Press Start 2P"';
       const queueText = typeof server.waitingPlayers === 'number'
         ? `${server.waitingPlayers} player${server.waitingPlayers === 1 ? '' : 's'} waiting`
         : 'Queue: n/a';
-      ctx.fillText(queueText, modalX + rowWidth - 220, rowY + 46);
+      ctx.fillText(queueText, statusAreaRight, rowY + 46);
 
       if (typeof server.activeRooms === 'number' || typeof server.totalPlayers === 'number') {
         const roomsText = typeof server.activeRooms === 'number'
@@ -9715,13 +9664,10 @@ function drawServerBrowserOverlay() {
         const playersText = typeof server.totalPlayers === 'number'
           ? `Players: ${server.totalPlayers}`
           : '';
-        ctx.fillText(`${roomsText}${roomsText && playersText ? ' • ' : ''}${playersText}`, modalX + rowWidth - 220, rowY + 62);
+        ctx.fillText(`${roomsText}${roomsText && playersText ? ' • ' : ''}${playersText}`, statusAreaRight, rowY + 62);
       }
 
-      const joinWidth = 150;
-      const joinHeight = 32;
-      const joinX = modalX + rowWidth - joinWidth - 40;
-      const joinY = rowY + rowHeight - joinHeight - 12;
+      ctx.textAlign = 'left';
       ctx.fillStyle = isHovered ? '#9cf19c' : '#c8f7c5';
       ctx.fillRect(joinX, joinY, joinWidth, joinHeight);
       ctx.strokeStyle = '#000000';
@@ -9733,11 +9679,7 @@ function drawServerBrowserOverlay() {
       ctx.fillText(isHovered ? 'CLICK TO JOIN' : 'JOIN', joinX + joinWidth / 2, joinY + joinHeight / 2 + 4);
       ctx.textAlign = 'left';
 
-      if (isSelected) {
-        ctx.fillStyle = '#000000';
-        ctx.font = '8px "Press Start 2P"';
-        ctx.fillText('CURRENT', joinX - 110, joinY + joinHeight / 2 + 4);
-      }
+      // removed "CURRENT" label to avoid clutter
     });
   }
 
