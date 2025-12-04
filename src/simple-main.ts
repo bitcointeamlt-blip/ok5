@@ -702,6 +702,7 @@ let groundShrinkStartAt = 0;
 let gravityLocked = true; // Disable gravity until first successful DMG click
 let gravityActiveUntil = 0; // When gravity should stop being active (0 = inactive)
 const gravityActiveDuration = 5000; // Gravity active for 5 seconds after damage
+const DAMAGE_GRAVITY_ENABLED = false; // Disable knockdown gravity after taking damage
 // Force-next-crit after high-speed platform bounce
 let nextHitForceCrit = false;
 let nextHitForceCritExpiresAt = 0;
@@ -772,6 +773,10 @@ type PvPPlayer = {
   lastVx: number; // Previous velocity X (for acceleration calculation)
   lastVy: number; // Previous velocity Y (for acceleration calculation)
 };
+
+function setDamageGravity(player: PvPPlayer, now: number = Date.now()): void {
+  player.gravityActiveUntil = DAMAGE_GRAVITY_ENABLED ? now + gravityActiveDuration : 0;
+}
 
 let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
 let myPlayerId: string | null = null; // My player ID
@@ -866,6 +871,7 @@ const mineDamageMultiplier = 2.0; // Damage multiplier when stepping on mine (2x
 const spikeDamageMultiplier = 0.5; // Damage multiplier for spikes (50% of basic damage)
 
 // Health pack system (HP pakai) - only one at a time, fixed positions
+const HEALTH_PACKS_ENABLED = false; // Fully disable HP packs in PvP
 interface HealthPack {
   x: number;
   y: number;
@@ -1511,6 +1517,67 @@ async function loadPlayerNfts(walletAddress: string): Promise<void> {
   }
 }
 
+function syncReadyStateFromRoom(room: any): void {
+  if (!room || !currentMatch || !room.state || !room.state.players) {
+    return;
+  }
+
+  const walletState = walletService.getState();
+  const myAddress = walletState.address || '';
+  const mySessionId = room.sessionId;
+
+  const orderedPlayers: any[] = [];
+  room.state.players.forEach((player: any) => {
+    orderedPlayers.push(player);
+  });
+
+  if (orderedPlayers.length === 0) {
+    return;
+  }
+
+  if (orderedPlayers[0]?.address) {
+    currentMatch.p1 = orderedPlayers[0].address;
+  }
+  if (orderedPlayers[1]?.address) {
+    currentMatch.p2 = orderedPlayers[1].address;
+  }
+
+  const myPlayer =
+    orderedPlayers.find((p) => p.sessionId === mySessionId) ||
+    orderedPlayers.find((p) => p.address === myAddress);
+
+  const opponent =
+    orderedPlayers.find((p) => p.sessionId !== (myPlayer?.sessionId || '')) ||
+    orderedPlayers.find((p) => p.address && p.address !== myPlayer?.address);
+
+  if (!myPlayer) {
+    return;
+  }
+
+  if (opponent?.address) {
+    opponentWalletAddress = opponent.address;
+  }
+
+  const amPlayer1 =
+    (myAddress && currentMatch.p1 === myAddress) ||
+    (orderedPlayers[0] && orderedPlayers[0].sessionId === myPlayer.sessionId);
+
+  if (amPlayer1) {
+    currentMatch.p1Ready = myPlayer.ready;
+    currentMatch.p2Ready = opponent ? opponent.ready : false;
+  } else {
+    currentMatch.p1Ready = opponent ? opponent.ready : false;
+    currentMatch.p2Ready = myPlayer.ready;
+  }
+
+  isReady = myPlayer.ready;
+  waitingForOpponentReady = !room.state.gameStarted && orderedPlayers.length >= 2;
+  if (orderedPlayers.length >= 2) {
+    isInLobby = false;
+    isSearchingForMatch = false;
+  }
+}
+
 // Enter PvP lobby (Colyseus primary, Supabase fallback)
 async function enterLobby(forcedEndpoint?: string): Promise<void> {
   const walletState = walletService.getState();
@@ -1610,39 +1677,15 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
             console.log('Saved opponent wallet address:', opponentWalletAddress);
           }
         }
+        
+        syncReadyStateFromRoom(room);
       }
     });
 
     // Listen to room state changes for ready status
     room.onStateChange((state) => {
-      if (currentMatch && state.players) {
-        const players = Array.from(state.players.values());
-        if (players.length === 2) {
-          const myPlayer = players.find(p => p.sessionId === room.sessionId);
-          const opponent = players.find(p => p.sessionId !== room.sessionId);
-          
-          if (myPlayer && opponent) {
-            // CRITICAL: Save opponent wallet address for result screen
-            if (opponent.address) {
-              opponentWalletAddress = opponent.address;
-              currentMatch.p2 = opponent.address; // Ensure p2 is set
-              console.log('Saved opponent wallet address from state change:', opponentWalletAddress);
-            }
-            
-            // Update ready status based on player order
-            const isPlayer1 = currentMatch.p1 === myPlayer.address;
-            if (isPlayer1) {
-              currentMatch.p1Ready = myPlayer.ready;
-              currentMatch.p2Ready = opponent.ready;
-            } else {
-              currentMatch.p1Ready = opponent.ready;
-              currentMatch.p2Ready = myPlayer.ready;
-            }
-            
-            // Update local ready state
-            isReady = myPlayer.ready;
-          }
-        }
+      if (state && state.players) {
+        syncReadyStateFromRoom(room);
       }
     });
 
@@ -1679,6 +1722,9 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       p2Ready: false,
       created_at: new Date().toISOString()
     };
+
+    // Ensure ready UI syncs with current room state (handles joining second)
+    syncReadyStateFromRoom(room);
 
     // Successfully connected to Colyseus - return early
     return;
@@ -2359,7 +2405,7 @@ function handleOpponentInput(input: any): void {
   }
   
   // Handle health pack spawn from opponent (using fixed positions)
-  if (input.type === 'healthpack' && input.positionIndex !== undefined && input.id !== undefined) {
+  if (HEALTH_PACKS_ENABLED && input.type === 'healthpack' && input.positionIndex !== undefined && input.id !== undefined) {
     // Check if health pack already exists (avoid duplicates)
     if (!healthPack || healthPack.id !== input.id) {
       // Use same position index as opponent
@@ -2386,7 +2432,7 @@ function handleOpponentInput(input: any): void {
   }
   
   // Handle health pack pickup from opponent
-  if (input.type === 'healthpack_pickup' && input.healthPackId !== undefined) {
+  if (HEALTH_PACKS_ENABLED && input.type === 'healthpack_pickup' && input.healthPackId !== undefined) {
     // Remove health pack that opponent picked up (always remove if we have a pack, even if ID doesn't match)
     if (healthPack) {
       // Check if ID matches, or if it's the only pack (force remove to prevent desync)
@@ -2449,8 +2495,8 @@ function handleOpponentInput(input: any): void {
       const remainingDamage = hitDamage - absorbed;
       myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
       
-      // Activate gravity for 5 seconds after damage
-      myPlayer.gravityActiveUntil = Date.now() + gravityActiveDuration;
+      // Activate gravity for 5 seconds after damage (disabled via DAMAGE_GRAVITY_ENABLED)
+      setDamageGravity(myPlayer);
       
       // Play damage received sound effect (pain/impact sound when receiving damage)
       audioManager.resumeContext().then(() => {
@@ -2740,6 +2786,8 @@ function grantDeathReward() {
 }
 
 // Moving platform (sliding horizontally across screen)
+const TOXIC_PLATFORMS_ENABLED = false; // Disable platforms above toxic water
+const WALL_DEATH_PADDING = 10; // Extra padding so UFO sprite also triggers wall death
 const movingPlatformWidth = 400; // increased by 100px
 const movingPlatformArcHeight = 6; // bow depth
 const movingPlatformY = groundY - 2; // just above ground
@@ -2980,6 +3028,78 @@ function drawSewerBackground() {
     ctx.stroke();
   }
 }
+
+function drawPerimeterHighlight(ctx: CanvasRenderingContext2D): void {
+  const borderColor = '#000000';
+  const lineWidth = 4;
+
+  ctx.save();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+
+  // Left border
+  ctx.beginPath();
+  ctx.moveTo(playLeft, pvpBounds.top);
+  ctx.lineTo(playLeft, pvpBounds.bottom);
+  ctx.stroke();
+
+  // Right border
+  ctx.beginPath();
+  ctx.moveTo(playRight, pvpBounds.top);
+  ctx.lineTo(playRight, pvpBounds.bottom);
+  ctx.stroke();
+
+  // Top border
+  ctx.beginPath();
+  ctx.moveTo(playLeft, pvpBounds.top);
+  ctx.lineTo(playRight, pvpBounds.top);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function killPlayerByWall(playerId: string, player: PvPPlayer, reason: 'left_wall' | 'right_wall' | 'top_wall'): void {
+  if (player.isOut || deathAnimations.has(playerId)) {
+    return;
+  }
+
+  player.hp = 0;
+  player.isOut = true;
+  player.vx = 0;
+  player.vy = 0;
+
+  let playerColor = player.color;
+  if (playerId === myPlayerId || playerId === opponentId) {
+    playerColor = '#000000';
+  }
+
+  createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
+  console.log(`Player ${playerId} died by wall contact (${reason}).`);
+
+  if (playerId === myPlayerId) {
+    sendStatsUpdate(player.hp, player.armor, player.maxHP, player.maxArmor);
+  }
+}
+
+function shouldKillByWall(player: PvPPlayer): { hit: boolean; reason: 'left_wall' | 'right_wall' | 'top_wall' } | null {
+  if (player.isOut) {
+    return null;
+  }
+
+  if (player.x - player.radius - WALL_DEATH_PADDING <= playLeft) {
+    return { hit: true, reason: 'left_wall' };
+  }
+  if (player.x + player.radius + WALL_DEATH_PADDING >= playRight) {
+    return { hit: true, reason: 'right_wall' };
+  }
+  if (player.y - player.radius - WALL_DEATH_PADDING <= pvpBounds.top) {
+    return { hit: true, reason: 'top_wall' };
+  }
+
+  return null;
+}
+
 
 // Helper function to draw spider web
 function drawSpiderWeb(centerX: number, centerY: number, radius: number) {
@@ -4273,7 +4393,7 @@ function render() {
   }
 
   // Moving platform render (straight, smooth, proper 3D effect)
-  {
+  if (TOXIC_PLATFORMS_ENABLED) {
     const halfW = movingPlatformWidth / 2;
     const centerX = movingPlatformX;
     const topY = Math.floor(movingPlatformY);
@@ -4292,7 +4412,7 @@ function render() {
   }
   
   // PvP/Training mode: Render additional left and right platforms
-  if (gameMode === 'PvP' || gameMode === 'Training') {
+  if (TOXIC_PLATFORMS_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
     const topY = Math.floor(movingPlatformY);
     const baseColor = '#000000';
     const whiteHighlight = '#ffffff';
@@ -5153,76 +5273,80 @@ function render() {
       return; // Don't render arena if error
     }
     
-    // Draw arena bounds (visual indicator) - but skip dotted line where platforms are located
-    ctx.strokeStyle = '#888888';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]); // Dashed line
-    
-    // Calculate platform edges
-    const halfW = movingPlatformWidth / 2;
-    const halfSideW = pvpPlatformSideWidth / 2;
-    const leftPlatformLeftEdge = pvpPlatformLeftX - halfSideW;
-    const leftPlatformRightEdge = pvpPlatformLeftX + halfSideW;
-    const centerPlatformLeftEdge = pvpPlatformCenterX - halfW;
-    const centerPlatformRightEdge = pvpPlatformCenterX + halfW;
-    const rightPlatformLeftEdge = pvpPlatformRightX - halfSideW;
-    const rightPlatformRightEdge = pvpPlatformRightX + halfSideW;
-    const platformY = movingPlatformY; // Platform Y position
-    const platformBottomY = platformY + movingPlatformThickness; // Platform bottom Y position
-    
-    // Draw top line segments only over platforms (not in empty spaces)
-    // Left platform segment: over left platform only
-    ctx.beginPath();
-    ctx.moveTo(leftPlatformLeftEdge, pvpBounds.top);
-    ctx.lineTo(leftPlatformRightEdge, pvpBounds.top);
-    ctx.stroke();
-    
-    // Center platform segment: over center platform only
-    ctx.beginPath();
-    ctx.moveTo(centerPlatformLeftEdge, pvpBounds.top);
-    ctx.lineTo(centerPlatformRightEdge, pvpBounds.top);
-    ctx.stroke();
-    
-    // Right platform segment: over right platform only
-    ctx.beginPath();
-    ctx.moveTo(rightPlatformLeftEdge, pvpBounds.top);
-    ctx.lineTo(rightPlatformRightEdge, pvpBounds.top);
-    ctx.stroke();
-    
-    // Draw bottom line segments only over platforms (not in empty spaces)
-    // Left platform segment: over left platform only
-    ctx.beginPath();
-    ctx.moveTo(leftPlatformLeftEdge, pvpBounds.bottom);
-    ctx.lineTo(leftPlatformRightEdge, pvpBounds.bottom);
-    ctx.stroke();
-    
-    // Center platform segment: over center platform only
-    ctx.beginPath();
-    ctx.moveTo(centerPlatformLeftEdge, pvpBounds.bottom);
-    ctx.lineTo(centerPlatformRightEdge, pvpBounds.bottom);
-    ctx.stroke();
-    
-    // Right platform segment: over right platform only
-    ctx.beginPath();
-    ctx.moveTo(rightPlatformLeftEdge, pvpBounds.bottom);
-    ctx.lineTo(rightPlatformRightEdge, pvpBounds.bottom);
-    ctx.stroke();
-    
-    // Draw left side segments only over left platform (not in empty spaces)
-    // Left platform vertical segment: over left platform only
-    ctx.beginPath();
-    ctx.moveTo(pvpBounds.left, platformY);
-    ctx.lineTo(pvpBounds.left, platformBottomY);
-    ctx.stroke();
-    
-    // Draw right side segments only over right platform (not in empty spaces)
-    // Right platform vertical segment: over right platform only
-    ctx.beginPath();
-    ctx.moveTo(pvpBounds.right, platformY);
-    ctx.lineTo(pvpBounds.right, platformBottomY);
-    ctx.stroke();
-    
-    ctx.setLineDash([]); // Reset line dash
+    if (TOXIC_PLATFORMS_ENABLED) {
+      // Draw arena bounds (visual indicator) - but skip dotted line where platforms are located
+      ctx.strokeStyle = '#888888';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]); // Dashed line
+      
+      // Calculate platform edges
+      const halfW = movingPlatformWidth / 2;
+      const halfSideW = pvpPlatformSideWidth / 2;
+      const leftPlatformLeftEdge = pvpPlatformLeftX - halfSideW;
+      const leftPlatformRightEdge = pvpPlatformLeftX + halfSideW;
+      const centerPlatformLeftEdge = pvpPlatformCenterX - halfW;
+      const centerPlatformRightEdge = pvpPlatformCenterX + halfW;
+      const rightPlatformLeftEdge = pvpPlatformRightX - halfSideW;
+      const rightPlatformRightEdge = pvpPlatformRightX + halfSideW;
+      const platformY = movingPlatformY; // Platform Y position
+      const platformBottomY = platformY + movingPlatformThickness; // Platform bottom Y position
+      
+      // Draw top line segments only over platforms (not in empty spaces)
+      // Left platform segment: over left platform only
+      ctx.beginPath();
+      ctx.moveTo(leftPlatformLeftEdge, pvpBounds.top);
+      ctx.lineTo(leftPlatformRightEdge, pvpBounds.top);
+      ctx.stroke();
+      
+      // Center platform segment: over center platform only
+      ctx.beginPath();
+      ctx.moveTo(centerPlatformLeftEdge, pvpBounds.top);
+      ctx.lineTo(centerPlatformRightEdge, pvpBounds.top);
+      ctx.stroke();
+      
+      // Right platform segment: over right platform only
+      ctx.beginPath();
+      ctx.moveTo(rightPlatformLeftEdge, pvpBounds.top);
+      ctx.lineTo(rightPlatformRightEdge, pvpBounds.top);
+      ctx.stroke();
+      
+      // Draw bottom line segments only over platforms (not in empty spaces)
+      // Left platform segment: over left platform only
+      ctx.beginPath();
+      ctx.moveTo(leftPlatformLeftEdge, pvpBounds.bottom);
+      ctx.lineTo(leftPlatformRightEdge, pvpBounds.bottom);
+      ctx.stroke();
+      
+      // Center platform segment: over center platform only
+      ctx.beginPath();
+      ctx.moveTo(centerPlatformLeftEdge, pvpBounds.bottom);
+      ctx.lineTo(centerPlatformRightEdge, pvpBounds.bottom);
+      ctx.stroke();
+      
+      // Right platform segment: over right platform only
+      ctx.beginPath();
+      ctx.moveTo(rightPlatformLeftEdge, pvpBounds.bottom);
+      ctx.lineTo(rightPlatformRightEdge, pvpBounds.bottom);
+      ctx.stroke();
+      
+      // Draw left side segments only over left platform (not in empty spaces)
+      // Left platform vertical segment: over left platform only
+      ctx.beginPath();
+      ctx.moveTo(pvpBounds.left, platformY);
+      ctx.lineTo(pvpBounds.left, platformBottomY);
+      ctx.stroke();
+      
+      // Draw right side segments only over right platform (not in empty spaces)
+      // Right platform vertical segment: over right platform only
+      ctx.beginPath();
+      ctx.moveTo(pvpBounds.right, platformY);
+      ctx.lineTo(pvpBounds.right, platformBottomY);
+      ctx.stroke();
+      
+      ctx.setLineDash([]); // Reset line dash
+    } else {
+      ctx.setLineDash([]); // Ensure solid lines when platforms disabled
+    }
     
     // Draw side walls from platform to bottom floor (prevent players from going through UI panel)
     // Use existing bottomFloorY from render function scope (declared above)
@@ -5242,6 +5366,9 @@ function render() {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
     ctx.strokeRect(playRight, wallTopY, 5, wallBottomY - wallTopY);
+    
+    // Highlight borders (top, left, right)
+    drawPerimeterHighlight(ctx);
     
     // Draw wall spikes (PvP mode only)
     if (gameMode === 'PvP' || gameMode === 'Training') {
@@ -6256,7 +6383,7 @@ function render() {
     }
     
     // PvP mode: Draw health pack (only one at a time) - beautiful medical cross
-    if (healthPack) {
+    if (HEALTH_PACKS_ENABLED && healthPack) {
       ctx.save();
       ctx.translate(healthPack.x, healthPack.y);
       
@@ -10373,124 +10500,126 @@ function gameLoop() {
       opponentSpikes.splice(index, 1);
     }
     
-    // Health pack spawn system - only one at a time, spawns 25 seconds after pickup or game start
-    // Spawn new health pack if none exists and enough time has passed
-    const timeSinceLastPickup = lastHealthPackPickupTime === 0 
-      ? (pvpGameStartTime === 0 ? now : now - pvpGameStartTime) 
-      : now - lastHealthPackPickupTime;
-    if (!healthPack && timeSinceLastPickup >= healthPackSpawnDelay) {
-      // Get fixed position based on cycle (center -> left -> right -> center -> ...)
-      const position = healthPackPositions[healthPackPositionIndex];
-      
-      healthPack = {
-        x: position.x,
-        y: position.y,
-        spawnTime: now,
-        id: `hp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        positionIndex: healthPackPositionIndex,
-      };
-      
-      // Move to next position in cycle
-      healthPackPositionIndex = (healthPackPositionIndex + 1) % healthPackPositions.length;
-      
-      // Play spawn sound effect
-      audioManager.resumeContext().then(() => {
-        audioManager.playHealthPackSpawn();
-      });
-      
-      // Send to opponent via network sync (only position index, not coordinates)
-      const useColyseus = colyseusService.isConnectedToRoom();
-      const isSyncing = useColyseus || pvpSyncService.isSyncing();
-      if (currentMatch && isSyncing) {
-        const healthPackInput = {
-          type: 'healthpack' as const,
-          timestamp: now,
-          positionIndex: healthPack.positionIndex, // The position index we just used
-          id: healthPack.id,
-        };
-        if (useColyseus) {
-          colyseusService.sendInput(healthPackInput);
-        } else {
-          pvpSyncService.sendInput(healthPackInput);
-        }
-      }
-      
-      console.log('Health pack spawned!', { x: position.x, y: position.y, positionIndex: healthPack.positionIndex, id: healthPack.id });
-    }
-    
-    // Process health pack - check collision with players (only one at a time)
-    if (healthPack) {
-      // Check collision with my player
-      if (myPlayerId && pvpPlayers[myPlayerId]) {
-        const myPlayer = pvpPlayers[myPlayerId];
-        const dx = healthPack.x - myPlayer.x;
-        const dy = healthPack.y - myPlayer.y;
-        const distanceSquared = dx * dx + dy * dy;
-        const collisionRadius = healthPackRadius + myPlayer.radius;
-        const collisionRadiusSquared = collisionRadius * collisionRadius;
+    if (HEALTH_PACKS_ENABLED) {
+      // Health pack spawn system - only one at a time, spawns 25 seconds after pickup or game start
+      // Spawn new health pack if none exists and enough time has passed
+      const timeSinceLastPickup = lastHealthPackPickupTime === 0 
+        ? (pvpGameStartTime === 0 ? now : now - pvpGameStartTime) 
+        : now - lastHealthPackPickupTime;
+      if (!healthPack && timeSinceLastPickup >= healthPackSpawnDelay) {
+        // Get fixed position based on cycle (center -> left -> right -> center -> ...)
+        const position = healthPackPositions[healthPackPositionIndex];
         
-        if (distanceSquared <= collisionRadiusSquared) {
-          // My player picked up health pack - restore ONLY HP, armor is ignored
-          const healAmount = Math.floor(Math.random() * (healthPackMaxHeal - healthPackMinHeal + 1)) + healthPackMinHeal; // 10-15 HP
-          
-          const oldHP = myPlayer.hp;
-          
-          // Restore HP only (armor is not touched)
-          myPlayer.hp = Math.min(myPlayer.maxHP, myPlayer.hp + healAmount);
-          
-          const actualHealAmount = myPlayer.hp - oldHP;
-          
-          // Play pickup sound effect
-          audioManager.resumeContext().then(() => {
-            audioManager.playHealthPackPickup();
-          });
-          
-          // Show healing number animation (only HP amount)
-          if (actualHealAmount > 0) {
-            safePushDamageNumber({
-              x: myPlayer.x + (Math.random() - 0.5) * 20,
-              y: myPlayer.y - myPlayer.radius - 20,
-              value: `+${actualHealAmount}`,
-              life: 60,
-              maxLife: 60,
-              vx: (Math.random() - 0.5) * 1,
-              vy: -2 - Math.random() * 1,
-              isCrit: false
-            });
+        healthPack = {
+          x: position.x,
+          y: position.y,
+          spawnTime: now,
+          id: `hp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          positionIndex: healthPackPositionIndex,
+        };
+        
+        // Move to next position in cycle
+        healthPackPositionIndex = (healthPackPositionIndex + 1) % healthPackPositions.length;
+        
+        // Play spawn sound effect
+        audioManager.resumeContext().then(() => {
+          audioManager.playHealthPackSpawn();
+        });
+        
+        // Send to opponent via network sync (only position index, not coordinates)
+        const useColyseus = colyseusService.isConnectedToRoom();
+        const isSyncing = useColyseus || pvpSyncService.isSyncing();
+        if (currentMatch && isSyncing) {
+          const healthPackInput = {
+            type: 'healthpack' as const,
+            timestamp: now,
+            positionIndex: healthPack.positionIndex, // The position index we just used
+            id: healthPack.id,
+          };
+          if (useColyseus) {
+            colyseusService.sendInput(healthPackInput);
+          } else {
+            pvpSyncService.sendInput(healthPackInput);
           }
-          
-          // Send stats update
-          sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
-          
-          // Remove health pack FIRST (before sending network event to prevent double pickup)
-          const pickedUpHealthPackId = healthPack.id;
-          lastHealthPackPickupTime = now;
-          healthPack = null;
-          
-          // Send pickup event to opponent (with heal amount for display)
-          const useColyseus = colyseusService.isConnectedToRoom();
-          const isSyncing = useColyseus || pvpSyncService.isSyncing();
-          if (currentMatch && isSyncing) {
-            const pickupInput = {
-              type: 'healthpack_pickup' as const,
-              timestamp: now,
-              healthPackId: pickedUpHealthPackId,
-              playerId: myPlayerId,
-              healAmount: actualHealAmount,
-            };
-            if (useColyseus) {
-              colyseusService.sendInput(pickupInput);
-            } else {
-              pvpSyncService.sendInput(pickupInput);
-            }
-          }
-          
-          console.log(`Health pack picked up! +${actualHealAmount} HP (armor ignored)`, { id: pickedUpHealthPackId });
         }
+        
+        console.log('Health pack spawned!', { x: position.x, y: position.y, positionIndex: healthPack.positionIndex, id: healthPack.id });
       }
       
-      // Note: Opponent pickup is handled via network sync (healthpack_pickup event)
-      // We don't check collision with opponent here to avoid conflicts
+      // Process health pack - check collision with players (only one at a time)
+      if (healthPack) {
+        // Check collision with my player
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const myPlayer = pvpPlayers[myPlayerId];
+          const dx = healthPack.x - myPlayer.x;
+          const dy = healthPack.y - myPlayer.y;
+          const distanceSquared = dx * dx + dy * dy;
+          const collisionRadius = healthPackRadius + myPlayer.radius;
+          const collisionRadiusSquared = collisionRadius * collisionRadius;
+          
+          if (distanceSquared <= collisionRadiusSquared) {
+            // My player picked up health pack - restore ONLY HP, armor is ignored
+            const healAmount = Math.floor(Math.random() * (healthPackMaxHeal - healthPackMinHeal + 1)) + healthPackMinHeal; // 10-15 HP
+            
+            const oldHP = myPlayer.hp;
+            
+            // Restore HP only (armor is not touched)
+            myPlayer.hp = Math.min(myPlayer.maxHP, myPlayer.hp + healAmount);
+            
+            const actualHealAmount = myPlayer.hp - oldHP;
+            
+            // Play pickup sound effect
+            audioManager.resumeContext().then(() => {
+              audioManager.playHealthPackPickup();
+            });
+            
+            // Show healing number animation (only HP amount)
+            if (actualHealAmount > 0) {
+              safePushDamageNumber({
+                x: myPlayer.x + (Math.random() - 0.5) * 20,
+                y: myPlayer.y - myPlayer.radius - 20,
+                value: `+${actualHealAmount}`,
+                life: 60,
+                maxLife: 60,
+                vx: (Math.random() - 0.5) * 1,
+                vy: -2 - Math.random() * 1,
+                isCrit: false
+              });
+            }
+            
+            // Send stats update
+            sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+            
+            // Remove health pack FIRST (before sending network event to prevent double pickup)
+            const pickedUpHealthPackId = healthPack.id;
+            lastHealthPackPickupTime = now;
+            healthPack = null;
+            
+            // Send pickup event to opponent (with heal amount for display)
+            const useColyseus = colyseusService.isConnectedToRoom();
+            const isSyncing = useColyseus || pvpSyncService.isSyncing();
+            if (currentMatch && isSyncing) {
+              const pickupInput = {
+                type: 'healthpack_pickup' as const,
+                timestamp: now,
+                healthPackId: pickedUpHealthPackId,
+                playerId: myPlayerId,
+                healAmount: actualHealAmount,
+              };
+              if (useColyseus) {
+                colyseusService.sendInput(pickupInput);
+              } else {
+                pvpSyncService.sendInput(pickupInput);
+              }
+            }
+            
+            console.log(`Health pack picked up! +${actualHealAmount} HP (armor ignored)`, { id: pickedUpHealthPackId });
+          }
+        }
+        
+        // Note: Opponent pickup is handled via network sync (healthpack_pickup event)
+        // We don't check collision with opponent here to avoid conflicts
+      }
     }
   }
   
@@ -10578,7 +10707,7 @@ function gameLoop() {
     if (!slowMotionActive) {
       const now = Date.now();
       // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
-      if (gravityActiveUntil > now) {
+      if (DAMAGE_GRAVITY_ENABLED && gravityActiveUntil > now) {
         dotVy += gravity;
       }
     }
@@ -10781,7 +10910,7 @@ function gameLoop() {
     }
 
     // Moving platform collision (straight platform)
-    {
+    if (TOXIC_PLATFORMS_ENABLED) {
       const halfW = movingPlatformWidth / 2;
       const surfaceY = movingPlatformY; // straight top surface
       if (dotX >= movingPlatformX - halfW - dotRadius && dotX <= movingPlatformX + halfW + dotRadius) {
@@ -11035,7 +11164,7 @@ function gameLoop() {
         // Still apply gravity and air resistance, but don't allow movement input
         const now = Date.now();
         // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
-        if (player.gravityActiveUntil > now) {
+        if (DAMAGE_GRAVITY_ENABLED && player.gravityActiveUntil > now) {
           player.vy += pvpGravity;
         }
         player.x += player.vx;
@@ -11049,7 +11178,7 @@ function gameLoop() {
       // Apply gravity only if active (after damage) - gravity is triggered by damage, not always active
       const now = Date.now(); // Declare once for entire scope
       // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
-      if (player.gravityActiveUntil > now) {
+      if (DAMAGE_GRAVITY_ENABLED && player.gravityActiveUntil > now) {
         player.vy += pvpGravity;
       }
       
@@ -11220,7 +11349,7 @@ function gameLoop() {
           player.hp = Math.max(0, player.hp - remainingDamage);
           
           // Activate gravity for 5 seconds after damage
-          player.gravityActiveUntil = Date.now() + gravityActiveDuration;
+          setDamageGravity(player);
           
           // Play muffled damage hit sound effect (like sound through closed door)
           audioManager.resumeContext().then(() => {
@@ -11257,7 +11386,7 @@ function gameLoop() {
             player.hp = Math.max(0, player.hp - remainingDamage);
             
             // Activate gravity for 5 seconds after damage
-            player.gravityActiveUntil = Date.now() + gravityActiveDuration;
+            setDamageGravity(player);
             
             // Play muffled damage hit sound effect (like sound through closed door)
             audioManager.resumeContext().then(() => {
@@ -11375,7 +11504,7 @@ function gameLoop() {
                   
                   // Activate gravity for 5 seconds after damage
                   const now = Date.now();
-                  player.gravityActiveUntil = now + gravityActiveDuration;
+                  setDamageGravity(player, now);
                   
                   // Play damage received sound effect (pain/impact sound when receiving damage)
                   audioManager.resumeContext().then(() => {
@@ -11424,7 +11553,7 @@ function gameLoop() {
                   
                   // Activate gravity for 5 seconds after damage
                   const now = Date.now();
-                  player.gravityActiveUntil = now + gravityActiveDuration;
+                  setDamageGravity(player, now);
                   
                   // Play damage received sound effect (pain/impact sound when receiving damage)
                   audioManager.resumeContext().then(() => {
@@ -11660,16 +11789,7 @@ function gameLoop() {
           });
         }
         
-        // Push opponent away with 2 speed in the direction of arrow
-        const pushSpeed = 2;
-        if (distance > 0) {
-          // Normalize direction vector
-          const pushDx = dx / distance;
-          const pushDy = dy / distance;
-          // Apply push force
-          opponent.vx += pushDx * pushSpeed;
-          opponent.vy += pushDy * pushSpeed;
-        }
+        // Removed knockback: keep opponent in place to avoid desync/out-of-bounds
         
         // Check if opponent is dead - start death animation
         if (opponent.hp <= 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
@@ -11751,14 +11871,7 @@ function gameLoop() {
         // Removed console.log to reduce lag
         // console.log(`Opponent arrow hit me! Damage: ${arrowDamage}, HP: ${myPlayer.hp}/${myPlayer.maxHP}`);
         
-        // Push me away with 2 speed in the direction of arrow
-        const pushSpeed = 2;
-        if (distance > 0) {
-          const pushDx = dx / distance;
-          const pushDy = dy / distance;
-          myPlayer.vx += pushDx * pushSpeed;
-          myPlayer.vy += pushDy * pushSpeed;
-        }
+        // Removed knockback to keep players inside arena bounds
         
         // Check if I'm dead - start death animation
         if (myPlayer.hp <= 0 && !myPlayer.isOut && !deathAnimations.has(myPlayerId)) {
@@ -11848,17 +11961,6 @@ function gameLoop() {
             // DON'T calculate damage locally - opponent will send hit event with their calculated damage
             // This prevents using wrong stats (our stats instead of opponent's stats)
             // Opponent will send hit event when their projectile hits us
-            
-            // Push player away with 2 speed in the opposite direction of projectile (projectile hits and pushes back)
-            const pushSpeed = 2;
-            if (distance > 0) {
-              // Normalize direction vector (projectile to player)
-              const pushDx = dx / distance;
-              const pushDy = dy / distance;
-              // Apply push force in OPPOSITE direction (projectile pushes player away)
-              player.vx += -pushDx * pushSpeed; // Negative to push away from projectile
-              player.vy += -pushDy * pushSpeed; // Negative to push away from projectile
-            }
             
             // Remove projectile after hit - damage will be applied when we receive hit event
             opponentProjectileFlying = false;
@@ -12014,17 +12116,6 @@ function gameLoop() {
               });
             }
             
-            // Push player away with 2 speed in the opposite direction of projectile (projectile hits and pushes back)
-            const pushSpeed = 2;
-            if (distance > 0) {
-              // Normalize direction vector (projectile to player)
-              const pushDx = dx / distance;
-              const pushDy = dy / distance;
-              // Apply push force in OPPOSITE direction (projectile pushes player away)
-              opponent.vx += -pushDx * pushSpeed; // Negative to push away from projectile
-              opponent.vy += -pushDy * pushSpeed; // Negative to push away from projectile
-            }
-            
             // Remove projectile after hit
             projectileFlying = false;
             projectileX = 0;
@@ -12056,6 +12147,12 @@ function gameLoop() {
     if (gameMode === 'PvP' || gameMode === 'Training') {
       for (const playerId in pvpPlayers) {
       const player = pvpPlayers[playerId];
+      
+      const initialWallCheck = shouldKillByWall(player);
+      if (initialWallCheck) {
+        killPlayerByWall(playerId, player, initialWallCheck.reason);
+        continue;
+      }
       
       // Drawn lines collision (pencil tool - same as Solo)
       {
@@ -12143,42 +12240,19 @@ function gameLoop() {
         }
       }
       
-      // Moving platform collision (same as Solo)
-      {
-        const halfW = movingPlatformWidth / 2;
-        const surfaceY = movingPlatformY; // straight top surface
-        if (player.x >= movingPlatformX - halfW - player.radius && player.x <= movingPlatformX + halfW + player.radius) {
-          if (player.y + player.radius >= surfaceY && player.vy > 0) {
-            player.y = surfaceY - player.radius;
-            player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
-            // Slight horizontal deflection
-            const localX = player.x - movingPlatformX;
-            player.vx += (localX / halfW) * 1.2;
-            movingPlatformFlashTimer = 6;
-            screenShake = Math.max(screenShake, 6);
-            
-            // Play bounce sound effect (like spring or trampoline)
-            audioManager.resumeContext().then(() => {
-              audioManager.playBounce();
-            });
-          }
-        }
-      }
-      
-      // PvP/Training mode: Collision with left and right platforms
-      if (gameMode === 'PvP' || gameMode === 'Training') {
-        const surfaceY = movingPlatformY;
-        
-        // Helper function to check collision with a platform (with custom width)
-        const checkPlatformCollision = (platformX: number, width: number) => {
-          const halfW = width / 2;
-          if (player.x >= platformX - halfW - player.radius && player.x <= platformX + halfW + player.radius) {
+      if (TOXIC_PLATFORMS_ENABLED) {
+        // Moving platform collision (same as Solo)
+        {
+          const halfW = movingPlatformWidth / 2;
+          const surfaceY = movingPlatformY; // straight top surface
+          if (player.x >= movingPlatformX - halfW - player.radius && player.x <= movingPlatformX + halfW + player.radius) {
             if (player.y + player.radius >= surfaceY && player.vy > 0) {
               player.y = surfaceY - player.radius;
               player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
               // Slight horizontal deflection
-              const localX = player.x - platformX;
+              const localX = player.x - movingPlatformX;
               player.vx += (localX / halfW) * 1.2;
+              movingPlatformFlashTimer = 6;
               screenShake = Math.max(screenShake, 6);
               
               // Play bounce sound effect (like spring or trampoline)
@@ -12187,13 +12261,44 @@ function gameLoop() {
               });
             }
           }
-        };
+        }
         
-        // Check collision with left platform (50% width)
-        checkPlatformCollision(pvpPlatformLeftX, pvpPlatformSideWidth);
-        
-        // Check collision with right platform (50% width)
-        checkPlatformCollision(pvpPlatformRightX, pvpPlatformSideWidth);
+        // PvP/Training mode: Collision with left and right platforms
+        if (gameMode === 'PvP' || gameMode === 'Training') {
+          const surfaceY = movingPlatformY;
+          
+          // Helper function to check collision with a platform (with custom width)
+          const checkPlatformCollision = (platformX: number, width: number) => {
+            const halfW = width / 2;
+            if (player.x >= platformX - halfW - player.radius && player.x <= platformX + halfW + player.radius) {
+              if (player.y + player.radius >= surfaceY && player.vy > 0) {
+                player.y = surfaceY - player.radius;
+                player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
+                // Slight horizontal deflection
+                const localX = player.x - platformX;
+                player.vx += (localX / halfW) * 1.2;
+                screenShake = Math.max(screenShake, 6);
+                
+                // Play bounce sound effect (like spring or trampoline)
+                audioManager.resumeContext().then(() => {
+                  audioManager.playBounce();
+                });
+              }
+            }
+          };
+          
+          // Check collision with left platform (50% width)
+          checkPlatformCollision(pvpPlatformLeftX, pvpPlatformSideWidth);
+          
+          // Check collision with right platform (50% width)
+          checkPlatformCollision(pvpPlatformRightX, pvpPlatformSideWidth);
+        }
+
+      const postPhysicsWallCheck = shouldKillByWall(player);
+      if (postPhysicsWallCheck) {
+        killPlayerByWall(playerId, player, postPhysicsWallCheck.reason);
+        continue;
+      }
       }
       
       // Update speed trail (supersonic animation - same as Solo) - OPTIMIZED: Cache speed
@@ -12745,7 +12850,7 @@ function gameLoop() {
             
             // Activate gravity for 5 seconds after damage
             const now = Date.now();
-            player2.gravityActiveUntil = now + gravityActiveDuration;
+            setDamageGravity(player2, now);
             
             // Play damage dealt sound effect (satisfying hit sound when dealing damage)
             audioManager.resumeContext().then(() => {
@@ -12803,7 +12908,7 @@ function gameLoop() {
             
             // Activate gravity for 5 seconds after damage
             const now = Date.now();
-            player1.gravityActiveUntil = now + gravityActiveDuration;
+            setDamageGravity(player1, now);
             
             // Play damage received sound effect (pain/impact sound when receiving damage)
             audioManager.resumeContext().then(() => {
@@ -12853,7 +12958,7 @@ function gameLoop() {
               player1.vy *= 0.5;
               
               // Push player 2 away
-              const pushForce = Math.abs(relSpeed) * 0.5;
+              const pushForce = Math.abs(relSpeed) * 0.2;
               player2.vx += nx * pushForce;
               player2.vy += ny * pushForce;
             } else {
@@ -12862,7 +12967,7 @@ function gameLoop() {
               player2.vy *= 0.5;
               
               // Push player 1 away
-              const pushForce = Math.abs(relSpeed) * 0.5;
+              const pushForce = Math.abs(relSpeed) * 0.2;
               player1.vx -= nx * pushForce;
               player1.vy -= ny * pushForce;
             }
@@ -12917,18 +13022,23 @@ function gameLoop() {
   }
 
   // Update moving platform position (Solo mode only - PvP platform is static in center)
-  if (gameMode !== 'PvP' && gameMode !== 'Training') {
-    movingPlatformX += movingPlatformVx;
-    // Bounce off edges
-    const halfW = movingPlatformWidth / 2;
-    if (movingPlatformX - halfW <= playLeft || movingPlatformX + halfW >= playRight) {
-      movingPlatformVx = -movingPlatformVx;
-      // Keep within bounds
-      movingPlatformX = Math.max(playLeft + halfW, Math.min(playRight - halfW, movingPlatformX));
+  if (TOXIC_PLATFORMS_ENABLED) {
+    if (gameMode !== 'PvP' && gameMode !== 'Training') {
+      movingPlatformX += movingPlatformVx;
+      // Bounce off edges
+      const halfW = movingPlatformWidth / 2;
+      if (movingPlatformX - halfW <= playLeft || movingPlatformX + halfW >= playRight) {
+        movingPlatformVx = -movingPlatformVx;
+        // Keep within bounds
+        movingPlatformX = Math.max(playLeft + halfW, Math.min(playRight - halfW, movingPlatformX));
+      }
+    } else {
+      // PvP/Training mode: Platform is static in center
+      movingPlatformX = (playLeft + playRight) / 2; // Center of play area
     }
   } else {
-    // PvP/Training mode: Platform is static in center
-    movingPlatformX = (playLeft + playRight) / 2; // Center of play area
+    // Keep coordinates centered when platforms are disabled
+    movingPlatformX = (playLeft + playRight) / 2;
   }
 
   // Platform flash timer

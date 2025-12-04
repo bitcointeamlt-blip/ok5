@@ -115,3 +115,4 @@ Write-Host "Dabar galite saugiai ištrinti originalius folderius." -ForegroundCo
 
 
 
+

@@ -75,3 +75,4 @@ Jetpack sistema dabar turi **ilgesnį perkaitimo laiką** (3 sekundės)!
 
 
 
+
