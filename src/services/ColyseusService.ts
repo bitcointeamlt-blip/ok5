@@ -42,6 +42,25 @@ class ColyseusService {
   private inputCallback: OpponentInputCallback | null = null;
   private isConnected: boolean = false;
 
+  // #region agent log
+  private _agentNetStats = {
+    lastSentFlushTs: 0,
+    lastRecvFlushTs: 0,
+    sentCount: 0,
+    sentBytes: 0,
+    sentByType: {} as Record<string, number>,
+    recvCount: 0,
+    recvBytes: 0,
+    recvByType: {} as Record<string, number>
+  };
+  private _agentSafeJsonSize(obj: any): number {
+    try { return JSON.stringify(obj).length; } catch { return -1; }
+  }
+  private _agentPostLog(hypothesisId: string, location: string, message: string, data: any): void {
+    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId})}).catch(()=>{});
+  }
+  // #endregion
+
   constructor() {
     // Get Colyseus endpoint from environment or use default based on environment
     // IMPORTANT: Vite replaces import.meta.env.VITE_* at build time
@@ -245,6 +264,28 @@ class ColyseusService {
 
     // Listen to player input from opponent
     this.room.onMessage("player_input", (message: PlayerInput) => {
+      // #region agent log
+      try {
+        const now = Date.now();
+        const type = (message as any)?.type ?? "unknown";
+        this._agentNetStats.recvCount += 1;
+        this._agentNetStats.recvBytes += this._agentSafeJsonSize(message);
+        this._agentNetStats.recvByType[type] = (this._agentNetStats.recvByType[type] || 0) + 1;
+        if (now - this._agentNetStats.lastRecvFlushTs >= 1000) {
+          this._agentNetStats.lastRecvFlushTs = now;
+          this._agentPostLog("H2","src/services/ColyseusService.ts:player_input:onMessage","client recv rate (1s window)",{
+            recvCount:this._agentNetStats.recvCount,
+            recvBytes:this._agentNetStats.recvBytes,
+            recvByType:this._agentNetStats.recvByType,
+            isConnected:this.isConnected,
+            hasRoom:!!this.room
+          });
+          this._agentNetStats.recvCount = 0;
+          this._agentNetStats.recvBytes = 0;
+          this._agentNetStats.recvByType = {};
+        }
+      } catch {}
+      // #endregion
       if (this.inputCallback) {
         this.inputCallback(message);
       }
@@ -295,6 +336,28 @@ class ColyseusService {
     }
 
     try {
+      // #region agent log
+      try {
+        const now = Date.now();
+        const type = (input as any)?.type ?? "unknown";
+        this._agentNetStats.sentCount += 1;
+        this._agentNetStats.sentBytes += this._agentSafeJsonSize(input);
+        this._agentNetStats.sentByType[type] = (this._agentNetStats.sentByType[type] || 0) + 1;
+        if (now - this._agentNetStats.lastSentFlushTs >= 1000) {
+          this._agentNetStats.lastSentFlushTs = now;
+          this._agentPostLog("H1","src/services/ColyseusService.ts:sendInput","client send rate (1s window)",{
+            sentCount:this._agentNetStats.sentCount,
+            sentBytes:this._agentNetStats.sentBytes,
+            sentByType:this._agentNetStats.sentByType,
+            isConnected:this.isConnected,
+            hasRoom:!!this.room
+          });
+          this._agentNetStats.sentCount = 0;
+          this._agentNetStats.sentBytes = 0;
+          this._agentNetStats.sentByType = {};
+        }
+      } catch {}
+      // #endregion
       this.room.send("player_input", input);
       return true;
     } catch (error) {

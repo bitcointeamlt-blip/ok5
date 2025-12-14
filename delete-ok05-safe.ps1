@@ -106,3 +106,7 @@ Write-Host "`n✅ Ištrynimo procesas baigtas!" -ForegroundColor Green
 
 
 
+
+
+
+

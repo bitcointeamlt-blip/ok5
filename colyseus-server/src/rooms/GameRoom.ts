@@ -50,11 +50,69 @@ const SIMULATION_RATE = 30; // Hz
 const SIMULATION_INTERVAL_MS = Math.floor(1000 / SIMULATION_RATE);
 const POSITION_LERP_FACTOR = 0.45;
 const MAX_EVENT_QUEUE_LENGTH = 20;
+const CONTINUOUS_TYPES: PlayerInputType[] = ["position", "arrow_position", "projectile_position", "stats"];
+const POSITION_BROADCAST_DISTANCE_EPSILON = 8;
+const POSITION_BROADCAST_VELOCITY_EPSILON = 1;
+const POSITION_BROADCAST_HEARTBEAT_MS = 400;
+const PROJECTILE_BROADCAST_DISTANCE_EPSILON = 12;
+const PROJECTILE_BROADCAST_VELOCITY_EPSILON = 1;
+const PROJECTILE_BROADCAST_HEARTBEAT_MS = 350;
+const ARROW_BROADCAST_ANGLE_EPSILON = 0.12;
+const STATS_BROADCAST_HEARTBEAT_MS = 1500;
+
+interface ContinuousSnapshot {
+  timestamp: number;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  angle?: number;
+  hp?: number;
+  armor?: number;
+  maxHP?: number;
+  maxArmor?: number;
+  paralyzedUntil?: number;
+}
 
 export class GameRoom extends Room<GameState> {
   maxClients = 2; // 2 players per match
   private latestPositionInputs = new Map<string, PendingInputEntry>();
   private pendingEventInputs = new Map<string, PendingInputEntry[]>();
+  private lastContinuousBroadcasts = new Map<string, Map<PlayerInputType, ContinuousSnapshot>>();
+
+  // #region agent log
+  private _agentStats = {
+    lastFlushTs: 0,
+    inCount: 0,
+    inBytes: 0,
+    inByType: {} as Record<string, number>,
+    outCount: 0,
+    outBytes: 0,
+    outByType: {} as Record<string, number>,
+    droppedCount: 0,
+    droppedByType: {} as Record<string, number>,
+    tickCount: 0,
+    tickMsTotal: 0
+  };
+  private _agentSafeJsonSize(obj: any): number {
+    try { return JSON.stringify(obj).length; } catch { return -1; }
+  }
+  private _agentMaybeFlush(serverTimestamp: number, extra?: any): void {
+    if (serverTimestamp - this._agentStats.lastFlushTs < 1000) return;
+    this._agentStats.lastFlushTs = serverTimestamp;
+    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:agentFlush',message:'room net/tick stats (1s window)',data:{roomId:this.roomId,players:this.state?.players?.size||0,inCount:this._agentStats.inCount,inBytes:this._agentStats.inBytes,inByType:this._agentStats.inByType,outCount:this._agentStats.outCount,outBytes:this._agentStats.outBytes,outByType:this._agentStats.outByType,droppedCount:this._agentStats.droppedCount,droppedByType:this._agentStats.droppedByType,tickCount:this._agentStats.tickCount,tickMsAvg:this._agentStats.tickCount?Math.round(this._agentStats.tickMsTotal/this._agentStats.tickCount):0,queues:extra?.queues},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H3'})}).catch(()=>{});
+    this._agentStats.inCount = 0;
+    this._agentStats.inBytes = 0;
+    this._agentStats.inByType = {};
+    this._agentStats.outCount = 0;
+    this._agentStats.outBytes = 0;
+    this._agentStats.outByType = {};
+    this._agentStats.droppedCount = 0;
+    this._agentStats.droppedByType = {};
+    this._agentStats.tickCount = 0;
+    this._agentStats.tickMsTotal = 0;
+  }
+  // #endregion
 
   onCreate(options: any) {
     try {
@@ -139,6 +197,7 @@ export class GameRoom extends Room<GameState> {
     this.state.players.delete(client.sessionId);
     this.latestPositionInputs.delete(client.sessionId);
     this.pendingEventInputs.delete(client.sessionId);
+    this.lastContinuousBroadcasts.delete(client.sessionId);
     
     updateRoomPlayerCount(this.roomId, this.state.players.size);
     
@@ -153,6 +212,7 @@ export class GameRoom extends Room<GameState> {
     console.log("GameRoom disposed:", this.roomId);
     this.latestPositionInputs.clear();
     this.pendingEventInputs.clear();
+    this.lastContinuousBroadcasts.clear();
     unregisterRoom(this.roomId);
   }
 
@@ -161,6 +221,14 @@ export class GameRoom extends Room<GameState> {
     if (!player) return;
 
     const sanitizedInput = this.sanitizeInput(message);
+    // #region agent log
+    try {
+      const t = sanitizedInput?.type || "unknown";
+      this._agentStats.inCount += 1;
+      this._agentStats.inBytes += this._agentSafeJsonSize(sanitizedInput);
+      this._agentStats.inByType[t] = (this._agentStats.inByType[t] || 0) + 1;
+    } catch {}
+    // #endregion
     const pending: PendingInputEntry = {
       client,
       input: sanitizedInput,
@@ -202,6 +270,9 @@ export class GameRoom extends Room<GameState> {
     }
 
     const serverTimestamp = Date.now();
+    // #region agent log
+    const _agentTickStart = serverTimestamp;
+    // #endregion
 
     for (const [sessionId, pending] of this.latestPositionInputs.entries()) {
       this.applyInputToState(sessionId, pending.input);
@@ -228,9 +299,40 @@ export class GameRoom extends Room<GameState> {
         this.pendingEventInputs.delete(sessionId);
       }
     }
+
+    // #region agent log
+    try {
+      const tickMs = Date.now() - _agentTickStart;
+      this._agentStats.tickCount += 1;
+      this._agentStats.tickMsTotal += tickMs;
+      let pendingEventTotal = 0;
+      for (const q of this.pendingEventInputs.values()) pendingEventTotal += q.length;
+      this._agentMaybeFlush(Date.now(), { queues: { latestPosition: this.latestPositionInputs.size, pendingEventTotal } });
+    } catch {}
+    // #endregion
   }
 
   private emitInputToOpponents(pending: PendingInputEntry, serverTimestamp: number): void {
+    if (!this.shouldBroadcastInput(pending, serverTimestamp)) {
+      // #region agent log
+      try {
+        const t = pending?.input?.type || "unknown";
+        this._agentStats.droppedCount += 1;
+        this._agentStats.droppedByType[t] = (this._agentStats.droppedByType[t] || 0) + 1;
+      } catch {}
+      // #endregion
+      return;
+    }
+
+    // #region agent log
+    try {
+      const outMsg = { ...pending.input, serverTimestamp };
+      const t = pending?.input?.type || "unknown";
+      this._agentStats.outCount += 1;
+      this._agentStats.outBytes += this._agentSafeJsonSize(outMsg);
+      this._agentStats.outByType[t] = (this._agentStats.outByType[t] || 0) + 1;
+    } catch {}
+    // #endregion
     this.broadcast("player_input", {
       ...pending.input,
       serverTimestamp
@@ -365,6 +467,168 @@ export class GameRoom extends Room<GameState> {
 
   private lerp(current: number, target: number, factor: number): number {
     return current + (target - current) * factor;
+  }
+
+  private shouldBroadcastInput(pending: PendingInputEntry, serverTimestamp: number): boolean {
+    const inputType = pending.input.type;
+    const sessionId = pending.client.sessionId;
+
+    if (!CONTINUOUS_TYPES.includes(inputType)) {
+      return true;
+    }
+
+    const perPlayer = this.lastContinuousBroadcasts.get(sessionId) || new Map<PlayerInputType, ContinuousSnapshot>();
+    const lastSnapshot = perPlayer.get(inputType);
+
+    if (!lastSnapshot) {
+      perPlayer.set(inputType, this.createSnapshot(pending.input, serverTimestamp));
+      this.lastContinuousBroadcasts.set(sessionId, perPlayer);
+      return true;
+    }
+
+    const heartbeat = this.getHeartbeatForType(inputType);
+    const elapsed = serverTimestamp - lastSnapshot.timestamp;
+    let hasMeaningfulChange = false;
+
+    switch (inputType) {
+      case "position":
+        hasMeaningfulChange = this.hasMovementDelta(
+          pending.input,
+          lastSnapshot,
+          POSITION_BROADCAST_DISTANCE_EPSILON,
+          POSITION_BROADCAST_VELOCITY_EPSILON
+        );
+        break;
+      case "arrow_position":
+        hasMeaningfulChange = this.hasMovementDelta(
+          pending.input,
+          lastSnapshot,
+          PROJECTILE_BROADCAST_DISTANCE_EPSILON,
+          PROJECTILE_BROADCAST_VELOCITY_EPSILON,
+          ARROW_BROADCAST_ANGLE_EPSILON
+        );
+        break;
+      case "projectile_position":
+        hasMeaningfulChange = this.hasMovementDelta(
+          pending.input,
+          lastSnapshot,
+          PROJECTILE_BROADCAST_DISTANCE_EPSILON,
+          PROJECTILE_BROADCAST_VELOCITY_EPSILON
+        );
+        break;
+      case "stats":
+        hasMeaningfulChange = this.hasStatsDelta(pending.input, lastSnapshot);
+        break;
+      default:
+        hasMeaningfulChange = true;
+    }
+
+    if (!hasMeaningfulChange && elapsed < heartbeat) {
+      return false;
+    }
+
+    perPlayer.set(inputType, this.createSnapshot(pending.input, serverTimestamp));
+    this.lastContinuousBroadcasts.set(sessionId, perPlayer);
+    return true;
+  }
+
+  private getHeartbeatForType(type: PlayerInputType): number {
+    switch (type) {
+      case "stats":
+        return STATS_BROADCAST_HEARTBEAT_MS;
+      case "position":
+        return POSITION_BROADCAST_HEARTBEAT_MS;
+      case "arrow_position":
+      case "projectile_position":
+        return PROJECTILE_BROADCAST_HEARTBEAT_MS;
+      default:
+        return 250;
+    }
+  }
+
+  private hasMovementDelta(
+    current: PlayerInputMessage,
+    last: ContinuousSnapshot,
+    distanceEpsilon: number,
+    velocityEpsilon: number,
+    angleEpsilon?: number
+  ): boolean {
+    if (typeof current.x === "number" && typeof current.y === "number" && typeof last.x === "number" && typeof last.y === "number") {
+      const dx = current.x - last.x;
+      const dy = current.y - last.y;
+      if (dx * dx + dy * dy >= distanceEpsilon * distanceEpsilon) {
+        return true;
+      }
+    } else if (typeof current.x === "number" || typeof current.y === "number") {
+      return true;
+    }
+
+    if (typeof current.vx === "number" && typeof last.vx === "number") {
+      if (Math.abs(current.vx - last.vx) > velocityEpsilon) {
+        return true;
+      }
+    } else if (typeof current.vx === "number") {
+      return true;
+    }
+
+    if (typeof current.vy === "number" && typeof last.vy === "number") {
+      if (Math.abs(current.vy - last.vy) > velocityEpsilon) {
+        return true;
+      }
+    } else if (typeof current.vy === "number") {
+      return true;
+    }
+
+    if (typeof angleEpsilon === "number") {
+      if (typeof current.angle === "number" && typeof last.angle === "number") {
+        if (Math.abs(current.angle - last.angle) > angleEpsilon) {
+          return true;
+        }
+      } else if (typeof current.angle === "number") {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private hasStatsDelta(current: PlayerInputMessage, last: ContinuousSnapshot): boolean {
+    if (typeof current.hp === "number" && current.hp !== last.hp) {
+      return true;
+    }
+    if (typeof current.armor === "number" && current.armor !== last.armor) {
+      return true;
+    }
+    if (typeof current.maxHP === "number" && current.maxHP !== last.maxHP) {
+      return true;
+    }
+    if (typeof current.maxArmor === "number" && current.maxArmor !== last.maxArmor) {
+      return true;
+    }
+    if (typeof current.paralyzedUntil === "number") {
+      if (current.paralyzedUntil !== last.paralyzedUntil) {
+        return true;
+      }
+    } else if (typeof last.paralyzedUntil === "number") {
+      return true;
+    }
+    return false;
+  }
+
+  private createSnapshot(input: PlayerInputMessage, timestamp: number): ContinuousSnapshot {
+    return {
+      timestamp,
+      x: input.x,
+      y: input.y,
+      vx: input.vx,
+      vy: input.vy,
+      angle: input.angle,
+      hp: input.hp,
+      armor: input.armor,
+      maxHP: input.maxHP,
+      maxArmor: input.maxArmor,
+      paralyzedUntil: input.paralyzedUntil
+    };
   }
 
 }

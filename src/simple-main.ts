@@ -240,11 +240,19 @@ async function refreshServerStatuses(): Promise<void> {
   if (serverStatuses.length === 0 || serverStatusLoading) {
     return;
   }
+  if (!isServerBrowserOpen) {
+    return;
+  }
 
   serverStatusLoading = true;
-  const results = await Promise.all(serverStatuses.map((server) => checkServerStatus(server)));
-  serverStatuses = results;
-  serverStatusLoading = false;
+  try {
+    const results = await Promise.all(serverStatuses.map((server) => checkServerStatus(server)));
+    if (isServerBrowserOpen) {
+      serverStatuses = results;
+    }
+  } finally {
+    serverStatusLoading = false;
+  }
 }
 
 function startServerStatusAutoRefresh(): void {
@@ -284,6 +292,7 @@ function closeServerBrowser(): void {
   serverBrowserHoverId = null;
   serverBrowserHoverClose = false;
   stopServerStatusAutoRefresh();
+  serverStatusLoading = false;
 }
 
 function handleServerSelection(serverId: string): void {
@@ -940,11 +949,11 @@ let pvpKatanaY = 0;
 // Reduced frequency to prevent lag: 100ms = 10 times per second (was 50ms = 20 times per second)
 let lastPositionSyncTime = 0;
 const POSITION_SYNC_INTERVAL = 100; // Sync position every 100ms (10 times per second) - reduced to prevent network lag
-const POSITION_HEARTBEAT_INTERVAL = 400; // Always send at least every 400ms to avoid timeouts
-const POSITION_DISTANCE_EPSILON = 4; // Only send if moved at least 4px
-const VELOCITY_EPSILON = 0.5; // Only send if speed changed significantly
-const ARROW_ANGLE_EPSILON = 0.08; // Minimal radian change before sending arrow rotation
-const PROJECTILE_DISTANCE_EPSILON = 6; // Projectiles move fast, allow slightly larger threshold
+const POSITION_HEARTBEAT_INTERVAL = 500; // Always send at least every 500ms to avoid timeouts
+const POSITION_DISTANCE_EPSILON = 8; // Only send if moved at least 8px (was 4px)
+const VELOCITY_EPSILON = 1.0; // Only send if speed changed significantly (was 0.5)
+const ARROW_ANGLE_EPSILON = 0.12; // Minimal radian change before sending arrow rotation (was 0.08)
+const PROJECTILE_DISTANCE_EPSILON = 12; // Projectiles move fast, allow slightly larger threshold (was 6px)
 interface MovementSnapshot {
   x: number;
   y: number;
@@ -3058,6 +3067,7 @@ function drawPerimeterHighlight(ctx: CanvasRenderingContext2D): void {
 
   ctx.restore();
 }
+
 
 function killPlayerByWall(playerId: string, player: PvPPlayer, reason: 'left_wall' | 'right_wall' | 'top_wall'): void {
   if (player.isOut || deathAnimations.has(playerId)) {
@@ -7816,7 +7826,7 @@ if (!(window as any).__mousemoveListenerAdded) {
         if (arrowReady && !arrowFired && mouseX > 240 && !isDrawing && gameState === 'Alive') {
           // Custom arrow cursor
           canvas.style.cursor = 'crosshair';
-        } else if (((gameMode === 'Solo' && (isHoveringUpgrade || isHoveringCrit || isHoveringAccuracy || hoveredLevel >= 0)) || isOverProfile || isOverWallet || isHoveringGameMode || isHoveringPvPOnline || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
+  } else if (((gameMode === 'Solo' && (isHoveringUpgrade || isHoveringCrit || isHoveringAccuracy || hoveredLevel >= 0)) || isOverProfile || isOverWallet || isHoveringGameMode || isHoveringPvPOnline || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
           canvas.style.cursor = 'pointer';
         } else if (isDrawing) {
           canvas.style.cursor = 'crosshair';
@@ -9844,6 +9854,7 @@ function checkWalletBalance() {
 }
 
 function gameLoop() {
+  const frameStartTime = performance.now();
   // Profile: Update max stats periodically
   profileManager.updateMaxStats(dotMaxHP, dotMaxArmor);
   
@@ -9885,8 +9896,6 @@ function gameLoop() {
   }
   
   // Track frame time (to detect frame pacing issues) - measure entire gameLoop
-  const frameStartTime = performance.now();
-  
   currentFrame++;
   
   // Clean up cached player speeds periodically (every 1000 frames to reduce overhead)

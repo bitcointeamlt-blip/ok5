@@ -118,3 +118,7 @@ PM2 post-deploy agent tiesiog log'ina kiekvieną deployment'ą, bet tai neturėt
 - Jei norite sumažinti "noise" - patikrinkite auto-deploy settings ir webhooks
 
 
+
+
+
+
