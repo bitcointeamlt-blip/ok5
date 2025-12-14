@@ -2218,85 +2218,90 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
 
 // Handle opponent input from network
 function handleOpponentInput(input: any): void {
-  if (!opponentId || !pvpPlayers[opponentId]) {
-    console.warn('handleOpponentInput: opponentId or opponent not found', { opponentId, players: Object.keys(pvpPlayers) });
-    return;
-  }
+  // #region agent log
+  const __agentOppT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const __agentOppType = input?.type ?? 'unknown';
+  // #endregion
+  try {
+    if (!opponentId || !pvpPlayers[opponentId]) {
+      console.warn('handleOpponentInput: opponentId or opponent not found', { opponentId, players: Object.keys(pvpPlayers) });
+      return;
+    }
 
-  const opponent = pvpPlayers[opponentId];
+    const opponent = pvpPlayers[opponentId];
 
-  // Handle position sync (real-time position updates)
-  // OPTIMIZED: Use client-side prediction - opponent moves via physics between network updates
-  // Only correct position if there's a significant difference (smooth interpolation)
-  if (input.type === 'position' && input.x !== undefined && input.y !== undefined) {
-    // Track network latency (time since input was created)
-    const timestampSource = input.serverTimestamp ?? input.timestamp;
-    if (timestampSource) {
-      const latency = Math.max(0, Date.now() - timestampSource);
-      networkLatencyHistory.push(latency);
-      if (networkLatencyHistory.length > 60) {
-        networkLatencyHistory.shift(); // Keep last 60 measurements
+    // Handle position sync (real-time position updates)
+    // OPTIMIZED: Use client-side prediction - opponent moves via physics between network updates
+    // Only correct position if there's a significant difference (smooth interpolation)
+    if (input.type === 'position' && input.x !== undefined && input.y !== undefined) {
+      // Track network latency (time since input was created)
+      const timestampSource = input.serverTimestamp ?? input.timestamp;
+      if (timestampSource) {
+        const latency = Math.max(0, Date.now() - timestampSource);
+        networkLatencyHistory.push(latency);
+        if (networkLatencyHistory.length > 60) {
+          networkLatencyHistory.shift(); // Keep last 60 measurements
+        }
+        // Calculate average latency
+        const sum = networkLatencyHistory.reduce((a, b) => a + b, 0);
+        averageNetworkLatency = Math.round(sum / networkLatencyHistory.length);
+        lastNetworkUpdateTime = Date.now();
       }
-      // Calculate average latency
-      const sum = networkLatencyHistory.reduce((a, b) => a + b, 0);
-      averageNetworkLatency = Math.round(sum / networkLatencyHistory.length);
-      lastNetworkUpdateTime = Date.now();
-    }
-    
-    // OPTIMIZED for high latency (557ms): Use adaptive correction based on latency
-    // With high latency, we need to trust client-side prediction more
-    const dx = input.x - opponent.x;
-    const dy = input.y - opponent.y;
-    const distanceSquared = dx * dx + dy * dy;
-    
-    // Adaptive correction distance based on latency
-    // Higher latency = larger correction distance (trust prediction more)
-    const adaptiveCorrectionDistance = Math.max(50, averageNetworkLatency / 10); // 50px base, +10px per 100ms latency
-    const maxCorrectionDistance = adaptiveCorrectionDistance;
-    
-    if (distanceSquared > maxCorrectionDistance * maxCorrectionDistance) {
-      // Significant difference - smoothly interpolate towards network position
-      // With high latency, use slower correction to avoid jitter
-      const correctionFactor = averageNetworkLatency > 200 ? 0.3 : 0.6; // Slower correction for high latency
-      opponent.x += dx * correctionFactor;
-      opponent.y += dy * correctionFactor;
-    } else {
-      // Small difference - trust client-side prediction (opponent moves via physics)
-      // Only apply small correction to prevent drift
-      const smallCorrectionFactor = 0.1; // Very small correction to prevent drift
-      opponent.x += dx * smallCorrectionFactor;
-      opponent.y += dy * smallCorrectionFactor;
-    }
-    
-    // Always update velocity from network (critical for physics prediction)
-    // This ensures client-side prediction is accurate
-    if (input.vx !== undefined) opponent.vx = input.vx;
-    if (input.vy !== undefined) opponent.vy = input.vy;
-    
-    return;
-  }
-
-  // Apply input to opponent (simulate click/action)
-  if (input.type === 'click' && input.x !== undefined && input.y !== undefined) {
-    // Calculate direction from click to opponent
-    const dx = input.x - opponent.x;
-    const dy = input.y - opponent.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (distance > 0) {
-      const angle = Math.atan2(dy, dx);
-      const oppositeAngle = angle + Math.PI;
-      const force = input.isCrit ? 8.625 : 4.6; // Use crit flag from input
       
-      opponent.vx += Math.cos(oppositeAngle) * force;
-      opponent.vy += Math.sin(oppositeAngle) * force;
-      opponent.lastHitTime = input.timestamp;
-      opponent.gravityLocked = false;
+      // OPTIMIZED for high latency (557ms): Use adaptive correction based on latency
+      // With high latency, we need to trust client-side prediction more
+      const dx = input.x - opponent.x;
+      const dy = input.y - opponent.y;
+      const distanceSquared = dx * dx + dy * dy;
+      
+      // Adaptive correction distance based on latency
+      // Higher latency = larger correction distance (trust prediction more)
+      const adaptiveCorrectionDistance = Math.max(50, averageNetworkLatency / 10); // 50px base, +10px per 100ms latency
+      const maxCorrectionDistance = adaptiveCorrectionDistance;
+      
+      if (distanceSquared > maxCorrectionDistance * maxCorrectionDistance) {
+        // Significant difference - smoothly interpolate towards network position
+        // With high latency, use slower correction to avoid jitter
+        const correctionFactor = averageNetworkLatency > 200 ? 0.3 : 0.6; // Slower correction for high latency
+        opponent.x += dx * correctionFactor;
+        opponent.y += dy * correctionFactor;
+      } else {
+        // Small difference - trust client-side prediction (opponent moves via physics)
+        // Only apply small correction to prevent drift
+        const smallCorrectionFactor = 0.1; // Very small correction to prevent drift
+        opponent.x += dx * smallCorrectionFactor;
+        opponent.y += dy * smallCorrectionFactor;
+      }
+      
+      // Always update velocity from network (critical for physics prediction)
+      // This ensures client-side prediction is accurate
+      if (input.vx !== undefined) opponent.vx = input.vx;
+      if (input.vy !== undefined) opponent.vy = input.vy;
+      
+      return;
     }
-  }
-  
-  // Handle arrow input from opponent (launch event)
-  if (input.type === 'arrow' && input.x !== undefined && input.y !== undefined) {
+
+    // Apply input to opponent (simulate click/action)
+    if (input.type === 'click' && input.x !== undefined && input.y !== undefined) {
+      // Calculate direction from click to opponent
+      const dx = input.x - opponent.x;
+      const dy = input.y - opponent.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance > 0) {
+        const angle = Math.atan2(dy, dx);
+        const oppositeAngle = angle + Math.PI;
+        const force = input.isCrit ? 8.625 : 4.6; // Use crit flag from input
+        
+        opponent.vx += Math.cos(oppositeAngle) * force;
+        opponent.vy += Math.sin(oppositeAngle) * force;
+        opponent.lastHitTime = input.timestamp;
+        opponent.gravityLocked = false;
+      }
+    }
+    
+    // Handle arrow input from opponent (launch event)
+    if (input.type === 'arrow' && input.x !== undefined && input.y !== undefined) {
     opponentArrowFlying = true;
     opponentArrowX = input.x;
     opponentArrowY = input.y;
@@ -2593,6 +2598,28 @@ function handleOpponentInput(input: any): void {
         createDeathAnimation(opponentId, opponent.x, opponent.y, opponentColor, opponent.radius);
       }
     }
+    }
+  } finally {
+    // #region agent log
+    try {
+      const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const dtMs = Math.max(0, t1 - __agentOppT0);
+      const win: any = (typeof window !== 'undefined') ? window : {};
+      const s = win.__agentOpponentStats || (win.__agentOpponentStats = { lastFlushTs: 0, count: 0, msTotal: 0, byType: {} as Record<string, number> });
+      s.count += 1;
+      s.msTotal += dtMs;
+      s.byType[__agentOppType] = (s.byType[__agentOppType] || 0) + 1;
+      const now = Date.now();
+      if (now - s.lastFlushTs >= 1000) {
+        s.lastFlushTs = now;
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:handleOpponentInput',message:'opponent input processing cost (1s window)',data:{count:s.count,msAvg:s.count?Math.round((s.msTotal/s.count)*1000)/1000:0,byType:s.byType},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H5'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:netLatency',message:'client measured network latency (1s window)',data:{averageNetworkLatency,ageSinceLastNetworkUpdateMs:Math.max(0,Date.now()-lastNetworkUpdateTime)},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H6'})}).catch(()=>{});
+        s.count = 0;
+        s.msTotal = 0;
+        s.byType = {};
+      }
+    } catch {}
+    // #endregion
   }
 }
 
@@ -13436,6 +13463,12 @@ function gameLoop() {
       maxFrameTime = Math.max(...frameTimeHistory);
       frameTimeHistory = []; // Reset for next second
     }
+
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:gameLoop',message:'fps + frametime (1s window)',data:{gameMode,currentFPS,averageFrameTime, maxFrameTime},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H7'})}).catch(()=>{});
+    } catch {}
+    // #endregion
   }
 
   render();

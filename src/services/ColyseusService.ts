@@ -53,11 +53,34 @@ class ColyseusService {
     recvBytes: 0,
     recvByType: {} as Record<string, number>
   };
+  private _agentStateStats = {
+    lastFlushTs: 0,
+    stateChangeCount: 0,
+    playersSizeMax: 0,
+    stateJsonBytesMax: 0
+  };
   private _agentSafeJsonSize(obj: any): number {
     try { return JSON.stringify(obj).length; } catch { return -1; }
   }
   private _agentPostLog(hypothesisId: string, location: string, message: string, data: any): void {
     fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId})}).catch(()=>{});
+  }
+  private _agentPing = { lastPingTs: 0, pendingT0: null as number | null, pendingStartPerf: 0 };
+  private _agentPerfNow(): number {
+    try { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); } catch { return Date.now(); }
+  }
+  private _agentMaybePing(): void {
+    try {
+      if (!this.room || !this.isConnected) return;
+      const now = Date.now();
+      if (now - this._agentPing.lastPingTs < 2000) return;
+      if (this._agentPing.pendingT0 !== null) return; // don't overlap pings
+      const t0 = Math.floor(Math.random() * 1e9);
+      this._agentPing.lastPingTs = now;
+      this._agentPing.pendingT0 = t0;
+      this._agentPing.pendingStartPerf = this._agentPerfNow();
+      this.room.send("ping", { t0 });
+    } catch {}
   }
   // #endregion
 
@@ -206,6 +229,18 @@ class ColyseusService {
 
       console.log('✅ Successfully joined Colyseus room:', this.room.id);
       console.log('✅ Room state:', this.room.state);
+      // #region agent log
+      try {
+        const clientEndpoint = (this as any)?._currentEndpoint ||
+                             (this.client as any)?.endpoint ||
+                             (this.client as any)?.transport?.endpoint ||
+                             'unknown';
+        this._agentPostLog("H0","src/services/ColyseusService.ts:joinOrCreateRoom","joined room",{
+          roomId: this.room.id,
+          endpoint: typeof clientEndpoint === "string" ? clientEndpoint.substring(0, 80) : "unknown"
+        });
+      } catch {}
+      // #endregion
       return this.room;
     } catch (error: any) {
       console.error('❌ Failed to join Colyseus room:', error);
@@ -286,10 +321,29 @@ class ColyseusService {
         }
       } catch {}
       // #endregion
+      // #region agent log
+      this._agentMaybePing();
+      // #endregion
       if (this.inputCallback) {
         this.inputCallback(message);
       }
     });
+
+    // #region agent log
+    this.room.onMessage("pong", (message: any) => {
+      try {
+        const t0 = message?.t0;
+        if (typeof t0 !== "number") return;
+        if (this._agentPing.pendingT0 !== t0) return;
+        const rttMs = Math.max(0, this._agentPerfNow() - this._agentPing.pendingStartPerf);
+        this._agentPostLog("H8","src/services/ColyseusService.ts:pong","client<->server rtt",{
+          rttMs: Math.round(rttMs * 10) / 10
+        });
+      } finally {
+        this._agentPing.pendingT0 = null;
+      }
+    });
+    // #endregion
 
     // Listen to player joined
     this.room.onMessage("player_joined", (message: any) => {
@@ -313,7 +367,35 @@ class ColyseusService {
 
     // Listen to state changes
     this.room.onStateChange((state: RoomState) => {
-      // Handle state changes if needed
+      // #region agent log
+      try {
+        const now = Date.now();
+        const stateJsonBytes = this._agentSafeJsonSize(state);
+        const playersSize =
+          (state as any)?.players?.size ??
+          (typeof (state as any)?.players?.length === "number" ? (state as any).players.length : 0);
+        this._agentStateStats.stateChangeCount += 1;
+        this._agentStateStats.playersSizeMax = Math.max(this._agentStateStats.playersSizeMax, playersSize || 0);
+        this._agentStateStats.stateJsonBytesMax = Math.max(this._agentStateStats.stateJsonBytesMax, stateJsonBytes || 0);
+        if (now - this._agentStateStats.lastFlushTs >= 1000) {
+          this._agentStateStats.lastFlushTs = now;
+          this._agentPostLog("H4","src/services/ColyseusService.ts:onStateChange","client state patch rate (1s window)",{
+            stateChangeCount:this._agentStateStats.stateChangeCount,
+            playersSizeMax:this._agentStateStats.playersSizeMax,
+            stateJsonBytesMax:this._agentStateStats.stateJsonBytesMax,
+            isConnected:this.isConnected,
+            hasRoom:!!this.room
+          });
+          this._agentStateStats.stateChangeCount = 0;
+          this._agentStateStats.playersSizeMax = 0;
+          this._agentStateStats.stateJsonBytesMax = 0;
+        }
+      } catch {}
+      // #endregion
+
+      // #region agent log
+      this._agentMaybePing();
+      // #endregion
     });
 
     // Listen to room errors
@@ -338,6 +420,7 @@ class ColyseusService {
     try {
       // #region agent log
       try {
+        this._agentMaybePing();
         const now = Date.now();
         const type = (input as any)?.type ?? "unknown";
         this._agentNetStats.sentCount += 1;

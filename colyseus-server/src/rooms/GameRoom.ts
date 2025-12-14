@@ -100,7 +100,28 @@ export class GameRoom extends Room<GameState> {
   private _agentMaybeFlush(serverTimestamp: number, extra?: any): void {
     if (serverTimestamp - this._agentStats.lastFlushTs < 1000) return;
     this._agentStats.lastFlushTs = serverTimestamp;
-    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:agentFlush',message:'room net/tick stats (1s window)',data:{roomId:this.roomId,players:this.state?.players?.size||0,inCount:this._agentStats.inCount,inBytes:this._agentStats.inBytes,inByType:this._agentStats.inByType,outCount:this._agentStats.outCount,outBytes:this._agentStats.outBytes,outByType:this._agentStats.outByType,droppedCount:this._agentStats.droppedCount,droppedByType:this._agentStats.droppedByType,tickCount:this._agentStats.tickCount,tickMsAvg:this._agentStats.tickCount?Math.round(this._agentStats.tickMsTotal/this._agentStats.tickCount):0,queues:extra?.queues},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H3'})}).catch(()=>{});
+    // NOTE: We log to BOTH local ingest (for local debugging) and console (for Colyseus Cloud logs).
+    const payload = {
+      roomId: this.roomId,
+      players: this.state?.players?.size || 0,
+      inCount: this._agentStats.inCount,
+      inBytes: this._agentStats.inBytes,
+      inByType: this._agentStats.inByType,
+      outCount: this._agentStats.outCount,
+      outBytes: this._agentStats.outBytes,
+      outByType: this._agentStats.outByType,
+      droppedCount: this._agentStats.droppedCount,
+      droppedByType: this._agentStats.droppedByType,
+      tickCount: this._agentStats.tickCount,
+      tickMsAvg: this._agentStats.tickCount ? Math.round(this._agentStats.tickMsTotal / this._agentStats.tickCount) : 0,
+      queues: extra?.queues
+    };
+    try {
+      console.log("[AGENT_STATS]", JSON.stringify(payload));
+    } catch {
+      console.log("[AGENT_STATS]", payload);
+    }
+    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:agentFlush',message:'room net/tick stats (1s window)',data:payload,timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H3'})}).catch(()=>{});
     this._agentStats.inCount = 0;
     this._agentStats.inBytes = 0;
     this._agentStats.inByType = {};
@@ -118,6 +139,15 @@ export class GameRoom extends Room<GameState> {
     try {
       console.log("GameRoom created:", this.roomId);
       registerRoom(this.roomId);
+
+      // #region agent log
+      try {
+        const f: any = (globalThis as any).fetch;
+        if (typeof f === "function") {
+          f('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:onCreate',message:'server started room (agent probe)',data:{roomId:this.roomId},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H3'})}).catch(()=>{});
+        }
+      } catch {}
+      // #endregion
       
       // Initialize game state
       const state = new GameState();
@@ -132,6 +162,12 @@ export class GameRoom extends Room<GameState> {
         } catch (error: any) {
           console.error("Error handling player_input:", error);
         }
+      });
+
+      this.onMessage("ping", (client, message) => {
+        try {
+          client.send("pong", { t0: message?.t0, serverTs: Date.now() });
+        } catch {}
       });
       
       this.onMessage("player_ready", (client, message) => {
