@@ -82,3 +82,5 @@ Po redeploy, patikrinkite console log'us:
 
 
 
+
+

@@ -26,6 +26,8 @@ export default config({
   initializeGameServer: (gameServer) => {
     // Register PvP room
     gameServer.define("pvp_room", GameRoom);
+    // Register 5SEC PvP room (turn-based micro-turn arena)
+    gameServer.define("pvp_5sec_room", GameRoom);
 
     // Ensure matchmaker endpoints send CORS headers
     matchMaker.controller.getCorsHeaders = (req: any) => {
@@ -64,7 +66,7 @@ export default config({
       res.json({
         message: "Colyseus PvP Server",
         status: "running",
-        rooms: ["pvp_room"],
+        rooms: ["pvp_room", "pvp_5sec_room"],
         endpoints: {
           health: "/health",
           matchmake: "/matchmake"

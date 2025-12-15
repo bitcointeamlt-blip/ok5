@@ -2,7 +2,21 @@
 import { Client, Room } from "colyseus.js";
 
 export interface PlayerInput {
-  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position' | 'line' | 'projectile_explode' | 'stats' | 'bullet' | 'hit';
+  type:
+    | 'click'
+    | 'arrow'
+    | 'projectile'
+    | 'position'
+    | 'arrow_position'
+    | 'projectile_position'
+    | 'line'
+    | 'projectile_explode'
+    | 'stats'
+    | 'bullet'
+    | 'hit'
+    | 'mine'
+    | 'healthpack'
+    | 'healthpack_pickup';
   timestamp: number;
   x?: number;
   y?: number;
@@ -36,6 +50,20 @@ export interface RoomState {
   seed: number;
 }
 
+export interface TurnShotPlan {
+  tMs: number;
+  type: 'arrow' | 'bullet' | 'projectile';
+  aimX: number;
+  aimY: number;
+}
+
+export interface TurnPlanSubmit {
+  destX: number;
+  destY: number;
+  shots: TurnShotPlan[];
+  stats?: { dmg?: number; critChance?: number };
+}
+
 class ColyseusService {
   private client: Client | null = null;
   private room: Room<RoomState> | null = null;
@@ -59,11 +87,38 @@ class ColyseusService {
     playersSizeMax: 0,
     stateJsonBytesMax: 0
   };
+  private _agentRtt = { lastMs: null as number | null, lastAt: 0 };
   private _agentSafeJsonSize(obj: any): number {
     try { return JSON.stringify(obj).length; } catch { return -1; }
   }
   private _agentPostLog(hypothesisId: string, location: string, message: string, data: any): void {
-    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId})}).catch(()=>{});
+    const evt = { location, message, data, timestamp: Date.now(), sessionId: 'debug-session', runId: 'baseline', hypothesisId };
+    // Always try local ingest (works for local dev / debugging).
+    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(evt)}).catch(()=>{});
+    // Fallback for HTTPS (Netlify) where mixed-content may block local ingest:
+    // store a capped buffer in-memory so users can export it from DevTools.
+    try {
+      const w: any = (typeof window !== "undefined") ? window : {};
+      const buf: any[] = w.__agentDebugBuffer || (w.__agentDebugBuffer = []);
+      buf.push(evt);
+      if (buf.length > 5000) buf.splice(0, buf.length - 5000);
+      if (!w.__downloadAgentDebugLog) {
+        w.__downloadAgentDebugLog = () => {
+          try {
+            const json = JSON.stringify(w.__agentDebugBuffer || []);
+            const blob = new Blob([json], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "agent-debug.json";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          } catch {}
+        };
+      }
+    } catch {}
   }
   private _agentPing = { lastPingTs: 0, pendingT0: null as number | null, pendingStartPerf: 0 };
   private _agentPerfNow(): number {
@@ -180,7 +235,7 @@ class ColyseusService {
   }
 
   // Join or create a PvP room
-  async joinOrCreateRoom(address: string, onOpponentInput: OpponentInputCallback): Promise<Room<RoomState> | null> {
+  async joinOrCreateRoom(roomName: string, address: string, onOpponentInput: OpponentInputCallback): Promise<Room<RoomState> | null> {
     if (!this.client) {
       console.error('❌ Colyseus client not initialized');
       return null;
@@ -193,7 +248,7 @@ class ColyseusService {
         await this.leaveRoom();
       }
 
-      console.log('🔵 Attempting to join or create room "pvp_room"...');
+      console.log(`🔵 Attempting to join or create room "${roomName}"...`);
       // Log endpoint safely (Colyseus Client might not expose endpoint property)
       const clientEndpoint = (this as any)?._currentEndpoint || 
                            (this.client as any)?.endpoint || 
@@ -203,7 +258,7 @@ class ColyseusService {
       console.log('🔵 Address:', address);
       
       // Join or create room with timeout
-      const joinPromise = this.client.joinOrCreate<RoomState>("pvp_room", {
+      const joinPromise = this.client.joinOrCreate<RoomState>(roomName, {
         address: address,
         x: 960,
         y: 540
@@ -336,8 +391,10 @@ class ColyseusService {
         if (typeof t0 !== "number") return;
         if (this._agentPing.pendingT0 !== t0) return;
         const rttMs = Math.max(0, this._agentPerfNow() - this._agentPing.pendingStartPerf);
+        this._agentRtt.lastMs = Math.round(rttMs * 10) / 10;
+        this._agentRtt.lastAt = Date.now();
         this._agentPostLog("H8","src/services/ColyseusService.ts:pong","client<->server rtt",{
-          rttMs: Math.round(rttMs * 10) / 10
+          rttMs: this._agentRtt.lastMs
         });
       } finally {
         this._agentPing.pendingT0 = null;
@@ -464,6 +521,29 @@ class ColyseusService {
     }
   }
 
+  // --- Turn-based PvP (micro-turn) API ---
+  sendPlan(plan: TurnPlanSubmit): boolean {
+    if (!this.room || !this.isConnected) return false;
+    try {
+      this.room.send("plan_submit", plan);
+      return true;
+    } catch (error) {
+      console.error('Failed to send plan:', error);
+      return false;
+    }
+  }
+
+  lockPlan(): boolean {
+    if (!this.room || !this.isConnected) return false;
+    try {
+      this.room.send("plan_lock", {});
+      return true;
+    } catch (error) {
+      console.error('Failed to lock plan:', error);
+      return false;
+    }
+  }
+
   // Leave room
   async leaveRoom(): Promise<void> {
     if (this.room) {
@@ -491,6 +571,16 @@ class ColyseusService {
   getState(): RoomState | null {
     return this.room?.state || null;
   }
+
+  // #region agent log
+  getAgentRttMs(): number | null {
+    return this._agentRtt.lastMs;
+  }
+  getAgentRttAgeMs(): number {
+    if (!this._agentRtt.lastAt) return Number.POSITIVE_INFINITY;
+    return Math.max(0, Date.now() - this._agentRtt.lastAt);
+  }
+  // #endregion
 }
 
 // Export singleton instance

@@ -1,5 +1,19 @@
 export interface PlayerInput {
-  type: 'click' | 'arrow' | 'projectile' | 'position' | 'arrow_position' | 'projectile_position' | 'line' | 'projectile_explode' | 'stats' | 'bullet' | 'hit';
+  type:
+    | 'click'
+    | 'arrow'
+    | 'projectile'
+    | 'position'
+    | 'arrow_position'
+    | 'projectile_position'
+    | 'line'
+    | 'projectile_explode'
+    | 'stats'
+    | 'bullet'
+    | 'hit'
+    | 'mine'
+    | 'healthpack'
+    | 'healthpack_pickup';
   timestamp: number;
   x?: number; // Click position or arrow/projectile start X or player position X or arrow/projectile current X
   y?: number; // Click position or arrow/projectile start Y or player position Y or arrow/projectile current Y

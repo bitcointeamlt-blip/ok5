@@ -314,9 +314,14 @@ function startPvPMatchOnServer(serverEndpoint?: string): void {
   }
 
   const endpointToUse = serverEndpoint || getSelectedServerEndpoint();
+  // Preserve desired PvP mode across cleanupPvP()
+  const desiredTurnMode = TURN_BASED_PVP_ENABLED;
+  const desiredRoomName = pvpOnlineRoomName;
   const previousMode = gameMode;
   gameMode = 'PvP';
   cleanupPvP();
+  TURN_BASED_PVP_ENABLED = desiredTurnMode;
+  pvpOnlineRoomName = desiredRoomName;
 
   if (!endpointToUse) {
     walletError = 'No PvP server available';
@@ -791,6 +796,299 @@ let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
 let myPlayerId: string | null = null; // My player ID
 let opponentId: string | null = null; // Opponent player ID
 
+// PvP mid-wall: split arena into left/right halves (players cannot cross; projectiles can).
+type PvPSide = 'left' | 'right';
+let pvpSideById: { [playerId: string]: PvPSide } = {};
+const PVP_MID_WALL_THICKNESS = 12; // Visual + collision thickness (px)
+
+function getPvpMidWallX(): number {
+  return (pvpBounds.left + pvpBounds.right) / 2;
+}
+
+function ensurePvpSide(playerId: string, fallbackX: number): PvPSide {
+  const existing = pvpSideById[playerId];
+  if (existing === 'left' || existing === 'right') return existing;
+  const side: PvPSide = fallbackX < getPvpMidWallX() ? 'left' : 'right';
+  pvpSideById[playerId] = side;
+  return side;
+}
+
+function enforcePvpMidWall(playerId: string, player: PvPPlayer): void {
+  if (gameMode !== 'PvP' && gameMode !== 'Training') return;
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(playerId, player.x);
+
+  if (side === 'left') {
+    const maxX = midX - half - player.radius;
+    if (player.x > maxX) {
+      player.x = maxX;
+      if (player.vx > 0) player.vx = 0;
+    }
+  } else {
+    const minX = midX + half + player.radius;
+    if (player.x < minX) {
+      player.x = minX;
+      if (player.vx < 0) player.vx = 0;
+    }
+  }
+}
+
+// --- Turn-based PvP (micro-turn) ---
+// This is enabled only when player chooses "5SEC PVP" mode.
+let TURN_BASED_PVP_ENABLED = false;
+type TurnPhase = 'lobby' | 'planning' | 'execute';
+type TurnShotType = 'arrow' | 'bullet' | 'projectile';
+type TurnShotPlan = { tMs: number; type: TurnShotType; aimX: number; aimY: number };
+type TurnPlan = { destX: number; destY: number; shots: TurnShotPlan[]; stats?: { dmg?: number; critChance?: number } };
+
+let turnPhase: TurnPhase = 'lobby';
+let turnRoundId = 0;
+let turnPhaseEndsAt = 0;
+let turnExecuteStartAt = 0;
+let turnExecuteDurationMs = 5000;
+let turnMoveSpeed = 900; // px/s (server authoritative)
+let turnWindupMs = 200;
+let turnWeapon: TurnShotType = 'bullet';
+let turnLocked = false;
+let turnServerSynced = false; // becomes true only after seeing server phase/execute payload
+let turnWaitStartAt = 0; // used to detect outdated server (no phase messages)
+let autoReadySent = false;
+
+// Payload from server for current execute phase
+let turnPlansById: Record<string, TurnPlan> = {};
+let turnEvents: any[] = [];
+let turnExecuteSeed = 0;
+let turnFinalPlayers: Record<string, { x: number; y: number; hp: number; armor: number }> = {};
+
+// Local playback state
+let turnStartPosById: Record<string, { x: number; y: number }> = {};
+let turnSpawnedProjectiles: Set<string> = new Set();
+let turnProjectiles: Array<{ id: string; shooterId: string; projType: TurnShotType; x: number; y: number; vx: number; vy: number }> = [];
+let turnNextEventIndex = 0;
+
+const TURN_MAX_SHOTS = 3;
+const TURN_SHOT_TIMES_MS = [1000, 2500, 4000]; // 3 shots per execute
+
+function isTurnBasedPvP(): boolean {
+  // Don't depend on currentMatch (it can be null during transitions); Colyseus connection is enough.
+  return TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom() && turnServerSynced && turnPhase !== 'lobby';
+}
+
+function isTurnBasedPvPDesired(): boolean {
+  // If we're in online PvP and connected to Colyseus, we require turn-based mode (no legacy realtime).
+  return TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom();
+}
+
+function resetTurnBasedPlayback(): void {
+  turnSpawnedProjectiles = new Set();
+  turnProjectiles = [];
+  turnNextEventIndex = 0;
+  turnStartPosById = {};
+}
+
+function clampTurnDestForMySide(x: number, y: number): { x: number; y: number } {
+  if (!myPlayerId || !pvpPlayers[myPlayerId]) return { x, y };
+  // Reuse existing mid-wall constraints
+  const p = pvpPlayers[myPlayerId];
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(myPlayerId, p.x);
+  const minX = side === 'left' ? pvpBounds.left + p.radius : midX + half + p.radius;
+  const maxX = side === 'left' ? midX - half - p.radius : pvpBounds.right - p.radius;
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(pvpBounds.top + p.radius, Math.min(pvpBounds.bottom - p.radius, y))
+  };
+}
+
+function getMyTurnPlan(): TurnPlan {
+  const p = (myPlayerId && pvpPlayers[myPlayerId]) ? pvpPlayers[myPlayerId] : null;
+  const destFallback = p ? { x: p.x, y: p.y } : { x: 600, y: 400 };
+  const existing = (myPlayerId && turnPlansById[myPlayerId]) ? turnPlansById[myPlayerId] : null;
+  return existing || { destX: destFallback.x, destY: destFallback.y, shots: [], stats: { dmg, critChance } };
+}
+
+function setMyTurnDest(x: number, y: number): void {
+  if (!myPlayerId) return;
+  const clamped = clampTurnDestForMySide(x, y);
+  const plan = getMyTurnPlan();
+  turnPlansById[myPlayerId] = { ...plan, destX: clamped.x, destY: clamped.y, stats: { dmg, critChance } };
+  turnLocked = false;
+  colyseusService.sendPlan(turnPlansById[myPlayerId]);
+}
+
+function addMyTurnShot(aimX: number, aimY: number): void {
+  if (!myPlayerId) return;
+  const plan = getMyTurnPlan();
+  if (plan.shots.length >= TURN_MAX_SHOTS) return;
+  const tMs = TURN_SHOT_TIMES_MS[plan.shots.length] ?? 1000;
+  const shots = [...plan.shots, { tMs, type: turnWeapon, aimX, aimY }];
+  turnPlansById[myPlayerId] = { ...plan, shots, stats: { dmg, critChance } };
+  turnLocked = false;
+  colyseusService.sendPlan(turnPlansById[myPlayerId]);
+}
+
+function clearMyTurnShots(): void {
+  if (!myPlayerId) return;
+  const plan = getMyTurnPlan();
+  turnPlansById[myPlayerId] = { ...plan, shots: [], stats: { dmg, critChance } };
+  turnLocked = false;
+  colyseusService.sendPlan(turnPlansById[myPlayerId]);
+}
+
+function updateTurnBasedPvP(nowMs: number): void {
+  // If turn-based is desired but server hasn't started sending phase yet, freeze legacy controls
+  // and show "waiting" overlay (render does that).
+  if (isTurnBasedPvPDesired() && !turnServerSynced) {
+    for (const pid in pvpPlayers) {
+      pvpPlayers[pid].vx = 0;
+      pvpPlayers[pid].vy = 0;
+    }
+    return;
+  }
+  if (!isTurnBasedPvP()) return;
+  const dtSec = 1 / 60; // This codebase runs most physics in "per-frame" terms
+
+  // Freeze world during planning
+  if (turnPhase === 'planning') {
+    for (const pid in pvpPlayers) {
+      pvpPlayers[pid].vx = 0;
+      pvpPlayers[pid].vy = 0;
+    }
+    // No projectiles during planning
+    turnProjectiles = [];
+    turnSpawnedProjectiles.clear();
+    turnNextEventIndex = 0;
+    return;
+  }
+
+  if (turnPhase !== 'execute' || !turnExecuteStartAt || nowMs < turnExecuteStartAt) {
+    return; // waiting for execute start
+  }
+
+  const tMs = Math.max(0, Math.min(turnExecuteDurationMs, nowMs - turnExecuteStartAt));
+  const tSec = tMs / 1000;
+
+  // Move players along their planned destinations
+  for (const pid of Object.keys(turnPlansById || {})) {
+    const pl = pvpPlayers[pid];
+    const plan = turnPlansById[pid];
+    if (!pl || !plan) continue;
+
+    const start = turnStartPosById[pid] || { x: pl.x, y: pl.y };
+    const dx = plan.destX - start.x;
+    const dy = plan.destY - start.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 0.001) {
+      const travel = Math.min(dist, turnMoveSpeed * tSec);
+      const nx = dx / dist;
+      const ny = dy / dist;
+      pl.x = start.x + nx * travel;
+      pl.y = start.y + ny * travel;
+      pl.vx = (nx * turnMoveSpeed) / 60; // approximate px/frame for existing visuals
+      pl.vy = (ny * turnMoveSpeed) / 60;
+    } else {
+      pl.x = start.x;
+      pl.y = start.y;
+      pl.vx = 0;
+      pl.vy = 0;
+    }
+    enforcePvpMidWall(pid, pl);
+  }
+
+  // Process events up to current time
+  // Events are time-ordered by server.
+  while (turnNextEventIndex < turnEvents.length) {
+    const evt = turnEvents[turnNextEventIndex];
+    if (!evt || typeof evt.tMs !== 'number') {
+      turnNextEventIndex++;
+      continue;
+    }
+    if (evt.tMs > tMs) break;
+
+    if (evt.type === 'projectile_spawn') {
+      const projId = String(evt.projectileId);
+      if (!turnSpawnedProjectiles.has(projId)) {
+        turnSpawnedProjectiles.add(projId);
+        const projType = (evt.projType === 'arrow' || evt.projType === 'bullet' || evt.projType === 'projectile') ? evt.projType : 'bullet';
+        const spawnX = Number(evt.x);
+        const spawnY = Number(evt.y);
+        const spawnVx = Number(evt.vx);
+        const spawnVy = Number(evt.vy);
+        // Fast-forward to current time so late processing doesn't "pop" projectiles
+        const elapsedSec = Math.max(0, (tMs - evt.tMs) / 1000);
+        const g = projType === 'projectile' ? (0.32 * 60 * 60) : 0;
+        const x = spawnX + spawnVx * elapsedSec;
+        const y = spawnY + spawnVy * elapsedSec + 0.5 * g * elapsedSec * elapsedSec;
+        const vy = spawnVy + g * elapsedSec;
+        turnProjectiles.push({ id: projId, shooterId: String(evt.shooterId), projType, x, y, vx: spawnVx, vy });
+      }
+    }
+
+    if (evt.type === 'hit') {
+      const targetId = String(evt.targetId);
+      const dmgAmount = Number(evt.damage) || 0;
+      const isCritHit = !!evt.isCrit;
+
+      const target = pvpPlayers[targetId];
+      if (target && dmgAmount > 0) {
+        const absorbed = Math.min(dmgAmount, target.armor);
+        target.armor -= absorbed;
+        const remaining = dmgAmount - absorbed;
+        target.hp = Math.max(0, target.hp - remaining);
+
+        safePushDamageNumber({
+          x: target.x + (Math.random() - 0.5) * 40,
+          y: target.y - 20,
+          value: dmgAmount,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+      }
+
+      // Remove projectile when it hits
+      const projId = String(evt.projectileId);
+      turnProjectiles = turnProjectiles.filter(p => p.id !== projId);
+    }
+
+    turnNextEventIndex++;
+  }
+
+  // Update projectiles forward
+  const g = 0.32 * 60 * 60;
+  for (let i = turnProjectiles.length - 1; i >= 0; i--) {
+    const p = turnProjectiles[i];
+    p.x += p.vx * dtSec;
+    p.y += p.vy * dtSec;
+    if (p.projType === 'projectile') {
+      p.vy += g * dtSec;
+    }
+    if (p.x < pvpBounds.left - 200 || p.x > pvpBounds.right + 200 || p.y < pvpBounds.top - 200 || p.y > pvpBounds.bottom + 200) {
+      turnProjectiles.splice(i, 1);
+    }
+  }
+
+  // End of execute: snap to server final state (prevents drift)
+  if (tMs >= turnExecuteDurationMs && turnFinalPlayers && typeof turnFinalPlayers === 'object') {
+    for (const pid of Object.keys(turnFinalPlayers)) {
+      const fp = turnFinalPlayers[pid];
+      const pl = pvpPlayers[pid];
+      if (!fp || !pl) continue;
+      pl.x = fp.x;
+      pl.y = fp.y;
+      pl.hp = fp.hp;
+      pl.armor = fp.armor;
+      pl.vx = 0;
+      pl.vy = 0;
+      enforcePvpMidWall(pid, pl);
+    }
+  }
+}
+
 // Collision damage cooldown tracking - prevent infinite damage when players are stuck together
 // Key format: "playerId1_playerId2" (sorted alphabetically to ensure same key for both players)
 let lastCollisionDamageTime: { [key: string]: number } = {};
@@ -1060,9 +1358,10 @@ let isPressingGameMode = false;
 let isHoveringPvPOnline = false;
 let isPressingPvPOnline = false;
 
-// New button state
+// 5SEC PvP button state
 let isHoveringNewButton = false;
 let isPressingNewButton = false;
+let pvpOnlineRoomName: 'pvp_room' | 'pvp_5sec_room' = 'pvp_room';
 
 // Wallet connection button state
 let isHoveringWallet = false;
@@ -1300,6 +1599,7 @@ function soloDmgToPvpMaxImpulse(dmg: number): number {
 function initializePvP(): void {
   // Clear any existing players first
   pvpPlayers = {};
+  pvpSideById = {};
   
   // Clear death animations when starting new game
   deathAnimations.clear();
@@ -1352,9 +1652,13 @@ function initializePvP(): void {
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
   };
   
   pvpPlayers[myPlayerId] = myPlayer;
+  pvpSideById[myPlayerId] = 'left';
   
   console.log(`PvP stats: mass=${pvpMass.toFixed(2)}, maxImpulse=${pvpMaxImpulse}`);
   
@@ -1395,10 +1699,14 @@ function initializePvP(): void {
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
     profilePicture: undefined, // Will be synced from opponent
   };
   
   pvpPlayers[opponentId] = opponent;
+  pvpSideById[opponentId] = 'right';
   
   console.log('PvP initialized', { myPlayerId, opponentId });
 }
@@ -1406,11 +1714,27 @@ function initializePvP(): void {
 // PvP cleanup (when switching back to Solo)
 function cleanupPvP(): void {
   pvpPlayers = {};
+  pvpSideById = {};
   myPlayerId = null;
   opponentId = null;
   isInLobby = false;
   isSearchingForMatch = false;
   currentMatch = null;
+  // Reset selected PvP mode back to legacy
+  TURN_BASED_PVP_ENABLED = false;
+  pvpOnlineRoomName = 'pvp_room';
+  // Reset turn-based PvP state
+  turnPhase = 'lobby';
+  turnRoundId = 0;
+  turnPhaseEndsAt = 0;
+  turnExecuteStartAt = 0;
+  turnPlansById = {};
+  turnEvents = [];
+  turnFinalPlayers = {};
+  turnLocked = false;
+  turnServerSynced = false;
+  autoReadySent = false;
+  resetTurnBasedPlayback();
   // Cleanup Colyseus connection
   colyseusService.leaveRoom().catch(console.error);
   
@@ -1527,10 +1851,29 @@ async function loadPlayerNfts(walletAddress: string): Promise<void> {
 }
 
 function syncReadyStateFromRoom(room: any): void {
-  if (!room || !currentMatch || !room.state || !room.state.players) {
+  if (!room || !room.state || !room.state.players) {
     return;
   }
 
+  // Turn-based PvP phase sync via state patches (fallback if onMessage ordering drops/arrives early)
+  if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
+    const phase = (room.state as any)?.phase;
+    if (phase === 'planning' || phase === 'execute' || phase === 'lobby') {
+      turnPhase = phase;
+      turnServerSynced = true;
+    } else if ((room.state as any)?.gameStarted && turnPhase === 'lobby') {
+      // If game started but phase isn't present yet, do NOT assume planning (would cause fake overlay).
+    }
+    const endsAt = (room.state as any)?.phaseEndsAt;
+    if (typeof endsAt === 'number') turnPhaseEndsAt = endsAt;
+    const executeStartAt = (room.state as any)?.executeStartAt;
+    if (typeof executeStartAt === 'number') turnExecuteStartAt = executeStartAt;
+    const roundId = (room.state as any)?.roundId;
+    if (typeof roundId === 'number') turnRoundId = roundId;
+  }
+
+  // If currentMatch is missing (transitions), still keep basic flags consistent.
+  // (We only write into currentMatch when it exists.)
   const walletState = walletService.getState();
   const myAddress = walletState.address || '';
   const mySessionId = room.sessionId;
@@ -1544,11 +1887,28 @@ function syncReadyStateFromRoom(room: any): void {
     return;
   }
 
-  if (orderedPlayers[0]?.address) {
-    currentMatch.p1 = orderedPlayers[0].address;
+  // If 2 players are present but the server didn't start yet, ensure we send ready at least once.
+  // This avoids "I pressed ready but it didn't start" cases due to UI/state transitions.
+  if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
+    const playersCount = orderedPlayers.length;
+    const started = !!room.state.gameStarted;
+    if (playersCount >= 2 && !started && !autoReadySent) {
+      autoReadySent = true;
+      isReady = true;
+      colyseusService.sendReady(true);
+    }
+    if (started) {
+      autoReadySent = false;
+    }
   }
-  if (orderedPlayers[1]?.address) {
-    currentMatch.p2 = orderedPlayers[1].address;
+
+  if (currentMatch) {
+    if (orderedPlayers[0]?.address) {
+      currentMatch.p1 = orderedPlayers[0].address;
+    }
+    if (orderedPlayers[1]?.address) {
+      currentMatch.p2 = orderedPlayers[1].address;
+    }
   }
 
   const myPlayer =
@@ -1568,15 +1928,17 @@ function syncReadyStateFromRoom(room: any): void {
   }
 
   const amPlayer1 =
-    (myAddress && currentMatch.p1 === myAddress) ||
+    (myAddress && currentMatch && currentMatch.p1 === myAddress) ||
     (orderedPlayers[0] && orderedPlayers[0].sessionId === myPlayer.sessionId);
 
-  if (amPlayer1) {
-    currentMatch.p1Ready = myPlayer.ready;
-    currentMatch.p2Ready = opponent ? opponent.ready : false;
-  } else {
-    currentMatch.p1Ready = opponent ? opponent.ready : false;
-    currentMatch.p2Ready = myPlayer.ready;
+  if (currentMatch) {
+    if (amPlayer1) {
+      currentMatch.p1Ready = myPlayer.ready;
+      currentMatch.p2Ready = opponent ? opponent.ready : false;
+    } else {
+      currentMatch.p1Ready = opponent ? opponent.ready : false;
+      currentMatch.p2Ready = myPlayer.ready;
+    }
   }
 
   isReady = myPlayer.ready;
@@ -1657,7 +2019,7 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
     console.log('✅ Connected to Colyseus server, joining room...');
     
     // Join or create room (Colyseus handles matchmaking automatically)
-    const room = await colyseusService.joinOrCreateRoom(myAddress, handleOpponentInput);
+    const room = await colyseusService.joinOrCreateRoom(pvpOnlineRoomName, myAddress, handleOpponentInput);
     
     if (!room) {
       throw new Error('Failed to join Colyseus room - room is null');
@@ -1666,6 +2028,68 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
     console.log('✅ Successfully joined Colyseus room:', room.id);
     console.log('✅ Using Colyseus as primary PvP system');
     
+    // Turn-based PvP (micro-turn) handlers
+    room.onMessage("phase", (msg: any) => {
+      if (!TURN_BASED_PVP_ENABLED) return;
+      turnServerSynced = true;
+      turnWaitStartAt = 0;
+      const phase = msg?.phase as TurnPhase;
+      turnPhase = (phase === 'planning' || phase === 'execute' || phase === 'lobby') ? phase : turnPhase;
+      if (typeof msg?.roundId === 'number') turnRoundId = msg.roundId;
+      if (typeof msg?.endsAt === 'number') turnPhaseEndsAt = msg.endsAt;
+      turnLocked = false;
+
+      if (turnPhase === 'planning') {
+        // Reset local playback state at the start of each planning phase.
+        resetTurnBasedPlayback();
+        // Ensure we have a default plan (stand still) so server always has something.
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const p = pvpPlayers[myPlayerId];
+          turnPlansById[myPlayerId] = { destX: p.x, destY: p.y, shots: [], stats: { dmg, critChance } };
+          colyseusService.sendPlan(turnPlansById[myPlayerId]);
+        }
+      }
+    });
+
+    room.onMessage("plan_ack", (msg: any) => {
+      if (!TURN_BASED_PVP_ENABLED) return;
+      if (typeof msg?.locked === 'boolean') {
+        turnLocked = msg.locked;
+      }
+    });
+
+    room.onMessage("round_execute", (payload: any) => {
+      if (!TURN_BASED_PVP_ENABLED) return;
+      turnServerSynced = true;
+      turnWaitStartAt = 0;
+      turnPhase = 'execute';
+      if (typeof payload?.roundId === 'number') turnRoundId = payload.roundId;
+      if (typeof payload?.startAt === 'number') turnExecuteStartAt = payload.startAt;
+      if (typeof payload?.durationMs === 'number') turnExecuteDurationMs = payload.durationMs;
+      if (typeof payload?.moveSpeed === 'number') turnMoveSpeed = payload.moveSpeed;
+      if (typeof payload?.windupMs === 'number') turnWindupMs = payload.windupMs;
+      if (typeof payload?.seed === 'number') turnExecuteSeed = payload.seed;
+      turnEvents = Array.isArray(payload?.events) ? payload.events : [];
+      turnPlansById = (payload?.plans && typeof payload.plans === 'object') ? payload.plans : turnPlansById;
+      turnFinalPlayers = (payload?.finalState?.players && typeof payload.finalState.players === 'object') ? payload.finalState.players : {};
+
+      // Capture start positions for deterministic local playback.
+      resetTurnBasedPlayback();
+      // Clear legacy realtime projectile state to avoid double-simulation.
+      bullets = [];
+      opponentBulletFlying = false;
+      projectileFlying = false;
+      pvpKatanaFlying = false;
+      opponentArrowFlying = false;
+      opponentProjectileFlying = false;
+      for (const pid of Object.keys(turnPlansById || {})) {
+        const pl = pvpPlayers[pid];
+        if (pl) {
+          turnStartPosById[pid] = { x: pl.x, y: pl.y };
+        }
+      }
+    });
+
     // Set up room event handlers
     room.onMessage("player_joined", (message: any) => {
       console.log('Player joined:', message);
@@ -1703,6 +2127,10 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       waitingForOpponentReady = false;
       isInLobby = false; // Exit lobby when game starts
       gameMode = 'PvP'; // Ensure game mode is set to PvP
+      if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
+        // Start "waiting for turn loop" timer (detect outdated server / wrong endpoint)
+        turnWaitStartAt = Date.now();
+      }
       // Initialize PvP game
       const roomState = colyseusService.getState();
       if (roomState) {
@@ -1885,6 +2313,7 @@ async function setPlayerReady(): Promise<void> {
     return;
   }
 
+  // Restore legacy behavior: require currentMatch (keeps old UI/flow consistent)
   if (!currentMatch) {
     console.error('Cannot set ready: no current match');
     return;
@@ -1904,11 +2333,13 @@ async function setPlayerReady(): Promise<void> {
     console.log('✅ Player ready status sent to Colyseus:', isReady);
     
     // Update local match state (will be synced via onStateChange)
-    const isPlayer1 = currentMatch.p1 === walletState.address;
-    if (isPlayer1) {
-      currentMatch.p1Ready = isReady;
-    } else {
-      currentMatch.p2Ready = isReady;
+    if (currentMatch) {
+      const isPlayer1 = currentMatch.p1 === walletState.address;
+      if (isPlayer1) {
+        currentMatch.p1Ready = isReady;
+      } else {
+        currentMatch.p2Ready = isReady;
+      }
     }
   } else {
     console.error('❌ Failed to send ready to Colyseus');
@@ -1922,6 +2353,7 @@ async function setPlayerReady(): Promise<void> {
 function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessionId: string): void {
   // Clear any existing players first
   pvpPlayers = {};
+  pvpSideById = {};
   
   // Clear death animations when starting new game
   deathAnimations.clear();
@@ -2007,6 +2439,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
+  pvpSideById[myPlayerId] = isMePlayer1 ? 'left' : 'right';
   
   // Send initial profile picture to opponent
   if (myPlayer.profilePicture) {
@@ -2054,6 +2487,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   };
 
   pvpPlayers[opponentId] = opponent;
+  pvpSideById[opponentId] = isMePlayer1 ? 'right' : 'left';
 
   // Initialize wall spikes
   initializeWallSpikes();
@@ -2075,6 +2509,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
 function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
   // Clear any existing players first
   pvpPlayers = {};
+  pvpSideById = {};
   
   // Clear death animations when starting new game
   deathAnimations.clear();
@@ -2148,6 +2583,7 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
+  pvpSideById[myPlayerId] = isMePlayer1 ? 'left' : 'right';
   
   // Send initial profile picture to opponent
   if (myPlayer.profilePicture) {
@@ -2195,6 +2631,7 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
   };
 
   pvpPlayers[opponentId] = opponent;
+  pvpSideById[opponentId] = isMePlayer1 ? 'right' : 'left';
 
   console.log('PvP initialized with match', { 
     matchId: match.id, 
@@ -2247,7 +2684,7 @@ function handleOpponentInput(input: any): void {
         averageNetworkLatency = Math.round(sum / networkLatencyHistory.length);
         lastNetworkUpdateTime = Date.now();
       }
-      
+
       // OPTIMIZED for high latency (557ms): Use adaptive correction based on latency
       // With high latency, we need to trust client-side prediction more
       const dx = input.x - opponent.x;
@@ -2263,6 +2700,17 @@ function handleOpponentInput(input: any): void {
         // Significant difference - smoothly interpolate towards network position
         // With high latency, use slower correction to avoid jitter
         const correctionFactor = averageNetworkLatency > 200 ? 0.3 : 0.6; // Slower correction for high latency
+      // #region agent log
+      try {
+        const win: any = (typeof window !== 'undefined') ? window : {};
+        const now = Date.now();
+        const ss = win.__agentSnapStats || (win.__agentSnapStats = { lastTs: 0 });
+        if (now - ss.lastTs > 500) {
+          ss.lastTs = now;
+          fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:handleOpponentInput',message:'opponent position snap correction',data:{dx,dy,distanceSquared,maxCorrectionDistance,correctionFactor,averageNetworkLatency,serverTimestamp:input.serverTimestamp??null,timestamp:input.timestamp??null},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H10'})}).catch(()=>{});
+        }
+      } catch {}
+      // #endregion
         opponent.x += dx * correctionFactor;
         opponent.y += dy * correctionFactor;
       } else {
@@ -2272,6 +2720,9 @@ function handleOpponentInput(input: any): void {
         opponent.x += dx * smallCorrectionFactor;
         opponent.y += dy * smallCorrectionFactor;
       }
+
+      // Keep opponent on their side of the mid-wall (prevents network correction pushing through wall).
+      enforcePvpMidWall(opponentId, opponent);
       
       // Always update velocity from network (critical for physics prediction)
       // This ensures client-side prediction is accurate
@@ -3803,7 +4254,7 @@ function render() {
     ctx.fillText('Click to change server', pvpOnlineButtonX, pvpOnlineButtonY + pvpOnlineButtonHeight + 38);
   }
 
-  // New button (placeholder - does nothing yet)
+  // 5SEC PvP button (turn-based online)
   const newButtonX = 20;
   const newButtonY = pvpOnlineButtonY + pvpOnlineButtonHeight + 10; // Below PvP Online button
   const newButtonWidth = 200;
@@ -3847,7 +4298,7 @@ function render() {
   ctx.font = 'bold 10px "Press Start 2P"';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`NEW BUTTON`, newButtonX + newButtonWidth/2, newButtonY + newButtonHeight/2);
+  ctx.fillText(`5SEC PVP`, newButtonX + newButtonWidth/2, newButtonY + newButtonHeight/2);
 
   // FPS Statistics Frame (at bottom of panel) - EXPANDED to show network latency and frame time
   const fpsFrameX = 20;
@@ -3877,12 +4328,13 @@ function render() {
   ctx.fillText(frameTimeText, fpsFrameX + 10, fpsFrameY + 22);
   
   // Network latency text (only in PvP mode)
-  if (gameMode === 'PvP' && averageNetworkLatency > 0) {
+  if (gameMode === 'PvP') {
     ctx.font = 'bold 8px "Press Start 2P"';
-    const latencyColor = averageNetworkLatency < 50 ? '#00ff00' : averageNetworkLatency < 100 ? '#ffff00' : '#ff0000';
-    ctx.fillStyle = latencyColor;
-    ctx.fillText(`Network: ${averageNetworkLatency}ms`, fpsFrameX + 10, fpsFrameY + 36);
-    ctx.fillStyle = '#000000'; // Reset color
+    const rttMs = colyseusService.getAgentRttMs?.() ?? null;
+    const rttColor = rttMs === null ? '#000000' : (rttMs < 60 ? '#00ff00' : rttMs < 120 ? '#ffff00' : '#ff0000');
+    ctx.fillStyle = rttColor;
+    ctx.fillText(`Ping: ${rttMs === null ? '--' : rttMs}ms`, fpsFrameX + 10, fpsFrameY + 36);
+    ctx.fillStyle = '#000000';
   }
   
   // FPS bar (visual indicator)
@@ -5403,9 +5855,178 @@ function render() {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
     ctx.strokeRect(playRight, wallTopY, 5, wallBottomY - wallTopY);
+
+    // Mid-wall (players cannot cross; projectiles are not blocked)
+    if (gameMode === 'PvP' || gameMode === 'Training') {
+      const midX = (pvpBounds.left + pvpBounds.right) / 2;
+      const half = PVP_MID_WALL_THICKNESS / 2;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(midX - half, pvpBounds.top, PVP_MID_WALL_THICKNESS, wallBottomY - pvpBounds.top);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(midX - half, pvpBounds.top, PVP_MID_WALL_THICKNESS, wallBottomY - pvpBounds.top);
+    }
     
     // Highlight borders (top, left, right)
     drawPerimeterHighlight(ctx);
+
+    // Turn-based PvP overlay (planning/execution timers)
+    if (TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom()) {
+      const now = Date.now();
+      const room = colyseusService.getRoom() as any;
+      const playersCount =
+        room?.state?.players?.size ??
+        (typeof room?.state?.players?.length === 'number' ? room.state.players.length : 0);
+      const started = !!room?.state?.gameStarted;
+      const statePhase = room?.state?.phase;
+      const roomId = room?.id || room?.roomId || 'unknown';
+
+      // Debug/status line (shows why countdown might be missing)
+      ctx.save();
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      // Background for readability
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(canvas.width / 2 - 520, 18, 1040, 28);
+      ctx.globalAlpha = 1;
+      // Use shadow instead of strokeText (stroke blurs pixel fonts)
+      ctx.shadowColor = '#000000';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(
+        `ROOM ${String(roomId)}: players=${playersCount} started=${started ? 'YES' : 'NO'} phase=${String(statePhase || turnPhase)} endsAt=${turnPhaseEndsAt || 0}`,
+        canvas.width / 2,
+        36
+      );
+      ctx.restore();
+
+      // If we don't have 2 players yet, show waiting message and don't expect timers.
+      if (playersCount < 2) {
+        ctx.save();
+        ctx.font = 'bold 16px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(canvas.width / 2 - 260, 44, 520, 34);
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('WAITING FOR OPPONENT...', canvas.width / 2, 62);
+        ctx.restore();
+      }
+
+      // If server doesn't support micro-turn (no phase messages), show clear warning after a short wait.
+      if (!turnServerSynced && started) {
+        if (!turnWaitStartAt) {
+          turnWaitStartAt = now;
+        }
+        const waitedMs = now - turnWaitStartAt;
+        if (waitedMs > 1200) {
+          ctx.save();
+          ctx.globalAlpha = 0.65;
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(canvas.width / 2 - 520, 90, 1040, 52);
+          ctx.globalAlpha = 1;
+          ctx.shadowColor = '#000000';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 3;
+          ctx.shadowOffsetY = 3;
+          ctx.fillStyle = '#ff4444';
+          ctx.font = 'bold 14px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          ctx.fillText('TURN LOOP NOT RECEIVED FROM SERVER', canvas.width / 2, 112);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.fillText('This Colyseus server is OLD. You must redeploy the updated server.', canvas.width / 2, 134);
+          ctx.restore();
+        }
+      }
+
+      if (turnPhase === 'planning') {
+        const msLeft = Math.max(0, turnPhaseEndsAt - now);
+        const sLeft = Math.ceil(msLeft / 1000);
+        const plan = getMyTurnPlan();
+
+        // Semi-transparent freeze overlay in play area
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(pvpBounds.left, pvpBounds.top, pvpBounds.right - pvpBounds.left, pvpBounds.bottom - pvpBounds.top);
+        ctx.restore();
+
+        ctx.save();
+        // Text panel background for readability
+        ctx.globalAlpha = 0.65;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(canvas.width / 2 - 700, 44, 1400, 54);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        ctx.font = 'bold 16px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`PLANNING: ${sLeft}s  |  Weapon: ${turnWeapon.toUpperCase()}  |  Shots: ${plan.shots.length}/3  |  ${turnLocked ? 'LOCKED' : 'EDITING'}`, canvas.width / 2, 60);
+        ctx.font = 'bold 12px "Press Start 2P"';
+        ctx.fillText('Click = move target • SHIFT+Click = add shot • Enter = lock • Backspace = clear shots • 1/2/3 = weapon', canvas.width / 2, 84);
+
+        // Draw my planned destination + shot markers
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const me = pvpPlayers[myPlayerId];
+          ctx.strokeStyle = '#00ffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(me.x, me.y);
+          ctx.lineTo(plan.destX, plan.destY);
+          ctx.stroke();
+          ctx.fillStyle = '#00ffff';
+          ctx.beginPath();
+          ctx.arc(plan.destX, plan.destY, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          for (const shot of plan.shots) {
+            ctx.fillStyle = '#ffcc00';
+            ctx.beginPath();
+            ctx.arc(shot.aimX, shot.aimY, 6, 0, Math.PI * 2);
+            ctx.fill();
+            // Shot time label with shadow (cleaner than outline)
+            ctx.shadowColor = '#000000';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 10px "Press Start 2P"';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${Math.round(shot.tMs / 100) / 10}s`, shot.aimX + 8, shot.aimY - 8);
+          }
+        }
+        ctx.restore();
+      } else if (turnPhase === 'execute') {
+        const msLeft = Math.max(0, (turnExecuteStartAt + turnExecuteDurationMs) - now);
+        const sLeft = Math.ceil(msLeft / 1000);
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(canvas.width / 2 - 170, 44, 340, 34);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        ctx.font = 'bold 16px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`EXECUTE: ${sLeft}s`, canvas.width / 2, 60);
+        ctx.restore();
+      }
+    }
     
     // Draw wall spikes (PvP mode only)
     if (gameMode === 'PvP' || gameMode === 'Training') {
@@ -6205,6 +6826,38 @@ function render() {
       ctx.stroke();
       
       ctx.restore();
+    }
+
+    // Turn-based PvP: draw server-driven projectiles
+    if (isTurnBasedPvP() && turnProjectiles.length > 0) {
+      for (const p of turnProjectiles) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        const angle = Math.atan2(p.vy, p.vx);
+        ctx.rotate(angle);
+        if (p.projType === 'bullet') {
+          ctx.fillStyle = '#00ff00';
+          ctx.beginPath();
+          ctx.arc(0, 0, 6, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (p.projType === 'arrow') {
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(-10, -2, 20, 4);
+          ctx.fillStyle = '#ff0000';
+          ctx.beginPath();
+          ctx.moveTo(10, 0);
+          ctx.lineTo(2, -6);
+          ctx.lineTo(2, 6);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.fillStyle = '#8B4513';
+          ctx.beginPath();
+          ctx.arc(0, 0, 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
     }
     
     // PvP mode: Draw mines/traps (bomb-like appearance)
@@ -7853,7 +8506,7 @@ if (!(window as any).__mousemoveListenerAdded) {
         if (arrowReady && !arrowFired && mouseX > 240 && !isDrawing && gameState === 'Alive') {
           // Custom arrow cursor
           canvas.style.cursor = 'crosshair';
-  } else if (((gameMode === 'Solo' && (isHoveringUpgrade || isHoveringCrit || isHoveringAccuracy || hoveredLevel >= 0)) || isOverProfile || isOverWallet || isHoveringGameMode || isHoveringPvPOnline || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
+  } else if (((gameMode === 'Solo' && (isHoveringUpgrade || isHoveringCrit || isHoveringAccuracy || hoveredLevel >= 0)) || isOverProfile || isOverWallet || isHoveringGameMode || isHoveringPvPOnline || isHoveringNewButton || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
           canvas.style.cursor = 'pointer';
         } else if (isDrawing) {
           canvas.style.cursor = 'crosshair';
@@ -7931,6 +8584,24 @@ if (!(window as any).__mousedownListenerAdded) {
       isPressingCancel = true;
       return; // Don't process other clicks
     }
+  }
+
+  // Turn-based PvP planning input: click to set destination; SHIFT+click to queue a shot
+  if (isTurnBasedPvPDesired() && turnPhase === 'planning' && e.button === 0 && myPlayerId && pvpPlayers[myPlayerId] && !waitingForOpponentReady) {
+    // Only accept clicks in play area
+    if (mouseX > 240) {
+      if ((e as any).shiftKey) {
+        addMyTurnShot(mouseX, mouseY);
+      } else {
+        setMyTurnDest(mouseX, mouseY);
+      }
+      return;
+    }
+  }
+
+  // Turn-based PvP: block legacy realtime PvP mouse controls in play area
+  if (isTurnBasedPvPDesired() && mouseX > 240) {
+    return;
   }
   
   // Check if clicking upgrade buttons - Solo mode only
@@ -8251,6 +8922,16 @@ if (!(window as any).__mousedownListenerAdded) {
 if (!(window as any).__mouseupListenerAdded) {
   (window as any).__mouseupListenerAdded = true;
   canvas.addEventListener('mouseup', (e) => {
+  // Turn-based PvP: block legacy realtime mouse actions in play area.
+  // (A lot of the old PvP logic is handled on mouseup, so we must stop it here too.)
+  try {
+    const posTB = getCanvasMousePos(e);
+    if (isTurnBasedPvPDesired() && posTB.x > 240) {
+      // In planning we already handle click on mousedown; ignore mouseup to prevent "mode switching" feel.
+      return;
+    }
+  } catch {}
+
   // PvP mode: Projectile firing is now handled by keyboard (key "2"), not mouse
   
   // Bullet firing is now handled by keyboard (key "3"), not mouse
@@ -8542,6 +9223,9 @@ if (!(window as any).__mouseupListenerAdded) {
     
     if (isOverPvPOnline) {
       if (gameMode === 'PvP') {
+        // Leaving PvP (realtime)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
         leaveLobby().catch((error) => {
           console.error('Failed to leave lobby:', error);
         });
@@ -8554,6 +9238,9 @@ if (!(window as any).__mouseupListenerAdded) {
           walletError = 'Connect Ronin Wallet to play PvP Online';
           console.log('Cannot open PvP server list: Wallet not connected');
         } else {
+          // Start realtime PvP
+          TURN_BASED_PVP_ENABLED = false;
+          pvpOnlineRoomName = 'pvp_room';
           openServerBrowser();
         }
       }
@@ -8561,11 +9248,47 @@ if (!(window as any).__mouseupListenerAdded) {
     isPressingPvPOnline = false;
   }
   
-  // Reset new button press state and handle click
+  // 5SEC PvP button press state and handle click
   if (isPressingNewButton) {
-    // TODO: Add functionality here later
-    // For now, just log that button was clicked
-    console.log('New button clicked (no functionality yet)');
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+
+    let trainingButtonY = 500;
+    try {
+      const walletStateForClick = walletService.getState();
+      if (walletStateForClick.isConnected && walletStateForClick.address) {
+        trainingButtonY = 450 + 40 + 60;
+      }
+    } catch {}
+    const pvpOnlineButtonY = trainingButtonY + 50;
+    const newButtonY = pvpOnlineButtonY + 50;
+    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+
+    if (isOverNewButton) {
+      if (gameMode === 'PvP') {
+        // Leaving PvP (5sec/turn-based)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
+        leaveLobby().catch((error) => {
+          console.error('Failed to leave lobby:', error);
+        });
+        gameMode = 'Solo';
+        cleanupPvP();
+        console.log('Left 5SEC PvP, switched to Solo mode');
+      } else {
+        const walletState = walletService.getState();
+        if (!walletState.isConnected || !walletState.address) {
+          walletError = 'Connect Ronin Wallet to play 5SEC PvP';
+          console.log('Cannot open 5SEC PvP server list: Wallet not connected');
+        } else {
+          // Start 5sec turn-based PvP
+          TURN_BASED_PVP_ENABLED = true;
+          pvpOnlineRoomName = 'pvp_5sec_room';
+          openServerBrowser();
+        }
+      }
+    }
     isPressingNewButton = false;
   }
   
@@ -8673,6 +9396,35 @@ if (!(window as any).__contextmenuListenerAdded) {
 if (!(window as any).__keydownListenerAdded) {
   (window as any).__keydownListenerAdded = true;
   window.addEventListener('keydown', (e) => {
+  // Turn-based PvP (planning): keys select weapon and lock plan
+  if (isTurnBasedPvPDesired() && turnPhase === 'planning') {
+    if (e.key === '1') {
+      turnWeapon = 'arrow';
+      return;
+    }
+    if (e.key === '2') {
+      turnWeapon = 'projectile';
+      return;
+    }
+    if (e.key === '3') {
+      turnWeapon = 'bullet';
+      return;
+    }
+    if (e.key === 'Enter') {
+      colyseusService.lockPlan();
+      turnLocked = true;
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      clearMyTurnShots();
+      return;
+    }
+  }
+  // Turn-based PvP: ignore the old realtime PvP hotkeys during execute (and generally).
+  if (isTurnBasedPvPDesired()) {
+    return;
+  }
+
   // Solo mode: Arrow activation
   if (e.key === '1' && gameMode === 'Solo' && gameState === 'Alive' && !arrowFired) {
     // Toggle arrow ready state
@@ -9932,9 +10684,12 @@ function gameLoop() {
   
   // Check wallet balance periodically (non-blocking)
   checkWalletBalance();
+
+  // Turn-based PvP update (freeze planning / deterministic execute playback)
+  updateTurnBasedPvP(Date.now());
   
   // PvP/Training mode: Reset burst counter if too much time passed since last shot
-  if ((gameMode === 'PvP' || gameMode === 'Training') && shotsInBurst > 0) {
+  if (!isTurnBasedPvPDesired() && (gameMode === 'PvP' || gameMode === 'Training') && shotsInBurst > 0) {
     const now = Date.now();
     const timeSinceLastShot = now - lastBurstShotTime;
     // If more than cooldown time passed, reset burst counter (allows new burst)
@@ -9944,7 +10699,7 @@ function gameLoop() {
   }
   
   // PvP/Training mode: Update bullet physics and collision
-  if ((gameMode === 'PvP' || gameMode === 'Training') && bullets.length > 0) {
+  if (!isTurnBasedPvPDesired() && (gameMode === 'PvP' || gameMode === 'Training') && bullets.length > 0) {
     const now = Date.now();
     const bulletsToRemove: number[] = []; // Indices of bullets to remove
     
@@ -11181,7 +11936,8 @@ function gameLoop() {
   }
   
   // PvP/Training mode: Physics update for all players (copied from Solo DOT physics)
-  if (gameMode === 'PvP' || gameMode === 'Training') {
+  // NOTE: Disabled for turn-based PvP (we drive movement from server plans/events instead).
+  if ((gameMode === 'PvP' || gameMode === 'Training') && !isTurnBasedPvPDesired()) {
     for (const playerId in pvpPlayers) {
       const player = pvpPlayers[playerId];
       
@@ -11205,6 +11961,7 @@ function gameLoop() {
         }
         player.x += player.vx;
         player.y += player.vy;
+        enforcePvpMidWall(playerId, player);
         // Apply air resistance
         player.vx *= 0.995;
         player.vy *= 0.995;
@@ -11341,6 +12098,7 @@ function gameLoop() {
       // Update position
       player.x += player.vx;
       player.y += player.vy;
+      enforcePvpMidWall(playerId, player);
       
       // Check if player is out of bounds (any side) - no damage, just tracking for death animation
       const isOutOfBounds = player.x < pvpBounds.left || 
@@ -12811,8 +13569,8 @@ function gameLoop() {
       }
     }
     
-    // Collision detection between players
-    if (myPlayerId && opponentId && pvpPlayers[myPlayerId] && pvpPlayers[opponentId]) {
+    // Collision detection between players (disabled for turn-based PvP)
+    if (!isTurnBasedPvPDesired() && myPlayerId && opponentId && pvpPlayers[myPlayerId] && pvpPlayers[opponentId]) {
       const player1 = pvpPlayers[myPlayerId];
       const player2 = pvpPlayers[opponentId];
       
@@ -13484,6 +14242,32 @@ function gameLoop() {
   if (frameTimeHistory.length > 60) {
     frameTimeHistory.shift(); // Keep last 60 frames
   }
+
+  // #region agent log
+  try {
+    // Only log big stutters (jank). Rate-limited.
+    if (frameTime > 25) {
+      const win: any = (typeof window !== 'undefined') ? window : {};
+      const s = win.__agentFrameSpike || (win.__agentFrameSpike = { lastTs: 0 });
+      const now = Date.now();
+      if (now - s.lastTs > 500) {
+        s.lastTs = now;
+        let speedTrailTotal = 0;
+        let speedTrailMax = 0;
+        if (typeof pvpPlayers === 'object' && pvpPlayers) {
+          for (const pid in pvpPlayers) {
+            const st = (pvpPlayers as any)[pid]?.speedTrail;
+            const len = Array.isArray(st) ? st.length : 0;
+            speedTrailTotal += len;
+            speedTrailMax = Math.max(speedTrailMax, len);
+          }
+        }
+        const rttMs = colyseusService.getAgentRttMs?.() ?? null;
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:gameLoop',message:'FRAME_SPIKE',data:{gameMode,frameTimeMs:Math.round(frameTime*10)/10,currentFPS,averageFrameTime,maxFrameTime,rttMs,counts:{clickParticles:(typeof clickParticles!=='undefined'&&Array.isArray(clickParticles))?clickParticles.length:null,damageNumbers:(typeof damageNumbers!=='undefined'&&Array.isArray(damageNumbers))?damageNumbers.length:null,clickSmudges:(typeof clickSmudges!=='undefined'&&Array.isArray(clickSmudges))?clickSmudges.length:null,drawnLines:(typeof drawnLines!=='undefined'&&Array.isArray(drawnLines))?drawnLines.length:null,deathAnimations:(typeof deathAnimations!=='undefined'&&deathAnimations&&typeof deathAnimations.size==='number')?deathAnimations.size:null,speedTrailTotal,speedTrailMax}},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H9'})}).catch(()=>{});
+      }
+    }
+  } catch {}
+  // #endregion
   
   requestAnimationFrame(gameLoop);
 }
