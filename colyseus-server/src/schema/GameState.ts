@@ -11,6 +11,9 @@ export class Player extends Schema {
   @type("number") maxHP: number = 100;
   @type("number") armor: number = 50;
   @type("number") maxArmor: number = 50;
+  // Jetpack fuel (shared info during PLANNING)
+  @type("number") fuel: number = 100;
+  @type("number") maxFuel: number = 100;
   @type("boolean") ready: boolean = false;
 
   // Arrow state

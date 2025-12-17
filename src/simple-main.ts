@@ -796,6 +796,23 @@ let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
 let myPlayerId: string | null = null; // My player ID
 let opponentId: string | null = null; // Opponent player ID
 
+// Jetpack fuel carryover between PvP rounds/resets (no auto-refill)
+let pvpFuelCarryoverById: { [playerId: string]: number } = {};
+function snapshotPvpFuelCarryover(): void {
+  try {
+    for (const id of Object.keys(pvpPlayers || {})) {
+      const f: any = (pvpPlayers as any)?.[id]?.fuel;
+      if (typeof f === 'number' && Number.isFinite(f)) {
+        pvpFuelCarryoverById[id] = Math.max(0, Math.min(100, f));
+      }
+    }
+  } catch {}
+}
+function getCarryoverFuel(playerId: string, fallback: number = 100): number {
+  const f = pvpFuelCarryoverById[playerId];
+  return (typeof f === 'number' && Number.isFinite(f)) ? Math.max(0, Math.min(100, f)) : fallback;
+}
+
 // PvP mid-wall: split arena into left/right halves (players cannot cross; projectiles can).
 type PvPSide = 'left' | 'right';
 let pvpSideById: { [playerId: string]: PvPSide } = {};
@@ -840,7 +857,7 @@ let TURN_BASED_PVP_ENABLED = false;
 type TurnPhase = 'lobby' | 'planning' | 'execute';
 type TurnShotType = 'arrow' | 'bullet' | 'projectile';
 type TurnShotPlan = { tMs: number; type: TurnShotType; aimX: number; aimY: number };
-type TurnPlan = { destX: number; destY: number; shots: TurnShotPlan[]; stats?: { dmg?: number; critChance?: number } };
+type TurnPlan = { track: Array<{ tMs: number; x: number; y: number }>; spawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }>; stats?: { dmg?: number; critChance?: number } };
 
 let turnPhase: TurnPhase = 'lobby';
 let turnRoundId = 0;
@@ -854,16 +871,27 @@ let turnLocked = false;
 let turnServerSynced = false; // becomes true only after seeing server phase/execute payload
 let turnWaitStartAt = 0; // used to detect outdated server (no phase messages)
 let autoReadySent = false;
+let turnServerClockOffsetMs = 0; // serverNow - clientNow
+let turnPlanStartServerTs = 0;
+let turnPlanDurationMs = 5000;
+let turnLastTrackSampleServerTs = 0;
+let turnLastPlanSendServerTs = 0;
+let turnLocalTrack: Array<{ tMs: number; x: number; y: number }> = [];
+let turnLocalSpawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }> = [];
+let turnPlanSendFailCount = 0;
 
 // Payload from server for current execute phase
 let turnPlansById: Record<string, TurnPlan> = {};
 let turnEvents: any[] = [];
 let turnExecuteSeed = 0;
 let turnFinalPlayers: Record<string, { x: number; y: number; hp: number; armor: number }> = {};
+let turnLastRoundExecuteAt = 0;
+let turnExecuteLoggedRound = 0;
 
 // Local playback state
 let turnStartPosById: Record<string, { x: number; y: number }> = {};
 let turnSpawnedProjectiles: Set<string> = new Set();
+let turnProcessedHits: Set<string> = new Set();
 let turnProjectiles: Array<{ id: string; shooterId: string; projType: TurnShotType; x: number; y: number; vx: number; vy: number }> = [];
 let turnNextEventIndex = 0;
 
@@ -876,15 +904,21 @@ function isTurnBasedPvP(): boolean {
 }
 
 function isTurnBasedPvPDesired(): boolean {
-  // If we're in online PvP and connected to Colyseus, we require turn-based mode (no legacy realtime).
-  return TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom();
+  // Used to disable legacy realtime simulation *only during EXECUTE replay* for 5SEC PVP.
+  return is5SecPvPMode() && turnPhase === 'execute' && turnServerSynced;
 }
 
 function resetTurnBasedPlayback(): void {
   turnSpawnedProjectiles = new Set();
+  turnProcessedHits = new Set();
   turnProjectiles = [];
   turnNextEventIndex = 0;
   turnStartPosById = {};
+  turnLastTrackSampleServerTs = 0;
+  turnLastPlanSendServerTs = 0;
+  turnLocalTrack = [];
+  turnLocalSpawns = [];
+  turnPlanSendFailCount = 0;
 }
 
 function clampTurnDestForMySide(x: number, y: number): { x: number; y: number } {
@@ -903,38 +937,107 @@ function clampTurnDestForMySide(x: number, y: number): { x: number; y: number } 
 }
 
 function getMyTurnPlan(): TurnPlan {
-  const p = (myPlayerId && pvpPlayers[myPlayerId]) ? pvpPlayers[myPlayerId] : null;
-  const destFallback = p ? { x: p.x, y: p.y } : { x: 600, y: 400 };
+  // Legacy helper (old turn-based prototype). 5SEC PVP uses shadow recording (track+spawns).
   const existing = (myPlayerId && turnPlansById[myPlayerId]) ? turnPlansById[myPlayerId] : null;
-  return existing || { destX: destFallback.x, destY: destFallback.y, shots: [], stats: { dmg, critChance } };
+  return existing || ({ track: [], spawns: [], stats: { dmg, critChance } } as any);
 }
 
 function setMyTurnDest(x: number, y: number): void {
-  if (!myPlayerId) return;
-  const clamped = clampTurnDestForMySide(x, y);
-  const plan = getMyTurnPlan();
-  turnPlansById[myPlayerId] = { ...plan, destX: clamped.x, destY: clamped.y, stats: { dmg, critChance } };
-  turnLocked = false;
-  colyseusService.sendPlan(turnPlansById[myPlayerId]);
+  // Deprecated (old prototype)
+  void x; void y;
 }
 
 function addMyTurnShot(aimX: number, aimY: number): void {
-  if (!myPlayerId) return;
-  const plan = getMyTurnPlan();
-  if (plan.shots.length >= TURN_MAX_SHOTS) return;
-  const tMs = TURN_SHOT_TIMES_MS[plan.shots.length] ?? 1000;
-  const shots = [...plan.shots, { tMs, type: turnWeapon, aimX, aimY }];
-  turnPlansById[myPlayerId] = { ...plan, shots, stats: { dmg, critChance } };
-  turnLocked = false;
-  colyseusService.sendPlan(turnPlansById[myPlayerId]);
+  // Deprecated (old prototype)
+  void aimX; void aimY;
 }
 
 function clearMyTurnShots(): void {
-  if (!myPlayerId) return;
-  const plan = getMyTurnPlan();
-  turnPlansById[myPlayerId] = { ...plan, shots: [], stats: { dmg, critChance } };
-  turnLocked = false;
-  colyseusService.sendPlan(turnPlansById[myPlayerId]);
+  // Deprecated (old prototype)
+}
+
+function is5SecPvPMode(): boolean {
+  return TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom() && pvpOnlineRoomName === 'pvp_5sec_room';
+}
+
+function ensure5SecPvPPlayersFromRoom(): void {
+  if (!is5SecPvPMode()) return;
+  const room: any = colyseusService.getRoom();
+  const state: any = room?.state;
+  if (!room || !state?.players) return;
+  const keys: string[] = Array.from(state.players.keys ? state.players.keys() : []) as string[];
+  if (keys.length < 2) return;
+  const mySid: string | null = typeof room.sessionId === 'string' ? room.sessionId : null;
+  const oppSid: string | null = (mySid ? (keys.find((k) => k !== mySid) || null) : null);
+  if (!mySid || !oppSid) return;
+  if (!myPlayerId || !pvpPlayers[mySid] || !opponentId || !pvpPlayers[oppSid]) {
+    // Ensure side assignment + player objects exist as early as possible (phase may arrive before game_start handler runs)
+    initializePvPWithColyseus(room, mySid, oppSid);
+  }
+}
+
+function getServerNowMs(): number {
+  return Date.now() + (turnServerClockOffsetMs || 0);
+}
+
+function recordTurnTrackAndMaybeSend(): void {
+  if (!is5SecPvPMode() || turnPhase !== 'planning' || !myPlayerId || !pvpPlayers[myPlayerId] || !turnPlanStartServerTs) return;
+  const nowServer = getServerNowMs();
+  const duration = turnExecuteDurationMs || 5000;
+  const tMs = Math.max(0, Math.min(duration, Math.round(nowServer - turnPlanStartServerTs)));
+  if (turnLocalTrack.length === 0) {
+    const me0 = pvpPlayers[myPlayerId];
+    turnLocalTrack.push({ tMs: 0, x: me0.x, y: me0.y });
+  }
+  if (nowServer - turnLastTrackSampleServerTs >= 100) {
+    turnLastTrackSampleServerTs = nowServer;
+    const me = pvpPlayers[myPlayerId];
+    // Ensure mid-wall enforced (track must be valid)
+    enforcePvpMidWall(myPlayerId, me);
+    turnLocalTrack.push({ tMs, x: me.x, y: me.y });
+    if (turnLocalTrack.length > 90) {
+      turnLocalTrack.shift();
+    }
+  }
+
+  // Periodically send plan updates to server (keeps latest shadow recording)
+  if (nowServer - turnLastPlanSendServerTs >= 250) {
+    turnLastPlanSendServerTs = nowServer;
+    const me = pvpPlayers[myPlayerId];
+    const ok = colyseusService.sendPlan({
+      track: turnLocalTrack,
+      spawns: turnLocalSpawns,
+      // Share limited live intel during planning: fuel usage.
+      stats: { dmg, critChance, fuel: me?.fuel, maxFuel: me?.maxFuel }
+    });
+    if (!ok) turnPlanSendFailCount++;
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:recordTurnTrackAndMaybeSend',message:'client sendPlan tick',data:{phase:turnPhase,myPlayerId,trackN:turnLocalTrack.length,spawnsN:turnLocalSpawns.length,sendOk:ok,sendFail:turnPlanSendFailCount,planStartServerTs:turnPlanStartServerTs,serverNow:nowServer},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2'})}).catch(()=>{});
+    } catch {}
+    // #endregion
+  }
+}
+
+function recordTurnSpawn(projType: TurnShotType, x: number, y: number, vxPerFrame: number, vyPerFrame: number): void {
+  if (!is5SecPvPMode() || turnPhase !== 'planning' || !turnPlanStartServerTs) return;
+  const nowServer = getServerNowMs();
+  const duration = turnExecuteDurationMs || 5000;
+  const tMs = Math.max(0, Math.min(duration, Math.round(nowServer - turnPlanStartServerTs)));
+  // Convert px/frame -> px/sec (game uses ~60fps units for velocities)
+  const vx = vxPerFrame * 60;
+  const vy = vyPerFrame * 60;
+  turnLocalSpawns.push({ tMs, projType, x, y, vx, vy });
+  if (turnLocalSpawns.length > 60) {
+    turnLocalSpawns.shift();
+  }
+  // Send immediately on spawn for responsiveness
+  const ok = colyseusService.sendPlan({
+    track: turnLocalTrack,
+    spawns: turnLocalSpawns,
+    stats: { dmg, critChance }
+  });
+  if (!ok) turnPlanSendFailCount++;
 }
 
 function updateTurnBasedPvP(nowMs: number): void {
@@ -950,16 +1053,8 @@ function updateTurnBasedPvP(nowMs: number): void {
   if (!isTurnBasedPvP()) return;
   const dtSec = 1 / 60; // This codebase runs most physics in "per-frame" terms
 
-  // Freeze world during planning
+  // 5SEC PvP: planning is "shadow play" (do not freeze). Execute uses deterministic replay.
   if (turnPhase === 'planning') {
-    for (const pid in pvpPlayers) {
-      pvpPlayers[pid].vx = 0;
-      pvpPlayers[pid].vy = 0;
-    }
-    // No projectiles during planning
-    turnProjectiles = [];
-    turnSpawnedProjectiles.clear();
-    turnNextEventIndex = 0;
     return;
   }
 
@@ -968,37 +1063,53 @@ function updateTurnBasedPvP(nowMs: number): void {
   }
 
   const tMs = Math.max(0, Math.min(turnExecuteDurationMs, nowMs - turnExecuteStartAt));
-  const tSec = tMs / 1000;
+  const sampleTrack = (track: Array<{ tMs: number; x: number; y: number }>, atMs: number): { x: number; y: number } | null => {
+    if (!track || track.length === 0) return null;
+    if (atMs <= track[0].tMs) return { x: track[0].x, y: track[0].y };
+    for (let i = 0; i < track.length - 1; i++) {
+      const a = track[i];
+      const b = track[i + 1];
+      if (atMs >= a.tMs && atMs <= b.tMs) {
+        const span = Math.max(1, b.tMs - a.tMs);
+        const t = (atMs - a.tMs) / span;
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      }
+    }
+    const last = track[track.length - 1];
+    return { x: last.x, y: last.y };
+  };
 
-  // Move players along their planned destinations
+  // Move players along their recorded tracks
   for (const pid of Object.keys(turnPlansById || {})) {
     const pl = pvpPlayers[pid];
     const plan = turnPlansById[pid];
     if (!pl || !plan) continue;
 
-    const start = turnStartPosById[pid] || { x: pl.x, y: pl.y };
-    const dx = plan.destX - start.x;
-    const dy = plan.destY - start.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > 0.001) {
-      const travel = Math.min(dist, turnMoveSpeed * tSec);
-      const nx = dx / dist;
-      const ny = dy / dist;
-      pl.x = start.x + nx * travel;
-      pl.y = start.y + ny * travel;
-      pl.vx = (nx * turnMoveSpeed) / 60; // approximate px/frame for existing visuals
-      pl.vy = (ny * turnMoveSpeed) / 60;
-    } else {
-      pl.x = start.x;
-      pl.y = start.y;
-      pl.vx = 0;
-      pl.vy = 0;
-    }
+    const pos = sampleTrack(plan.track, tMs) || { x: pl.x, y: pl.y };
+    pl.vx = (pos.x - pl.x); // approx px/frame
+    pl.vy = (pos.y - pl.y);
+    pl.x = pos.x;
+    pl.y = pos.y;
     enforcePvpMidWall(pid, pl);
   }
 
+  // #region agent log
+  try {
+    if (turnExecuteLoggedRound !== turnRoundId) {
+      turnExecuteLoggedRound = turnRoundId;
+      const keys = Object.keys(turnPlansById || {});
+      const firstKey = keys[0];
+      const firstPlan: any = firstKey ? (turnPlansById as any)[firstKey] : null;
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:updateTurnBasedPvP',message:'client execute tick started',data:{roundId:turnRoundId,nowMs,executeStartAt:turnExecuteStartAt,tMs,planKeys:keys,firstTrackN:Array.isArray(firstPlan?.track)?firstPlan.track.length:0,pvpPlayersKeys:Object.keys(pvpPlayers||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H7'})}).catch(()=>{});
+    }
+  } catch {}
+  // #endregion
+
   // Process events up to current time
   // Events are time-ordered by server.
+  const mySid: string | null = (() => {
+    try { return (colyseusService.getRoom() as any)?.sessionId ?? null; } catch { return null; }
+  })();
   while (turnNextEventIndex < turnEvents.length) {
     const evt = turnEvents[turnNextEventIndex];
     if (!evt || typeof evt.tMs !== 'number') {
@@ -1012,6 +1123,13 @@ function updateTurnBasedPvP(nowMs: number): void {
       if (!turnSpawnedProjectiles.has(projId)) {
         turnSpawnedProjectiles.add(projId);
         const projType = (evt.projType === 'arrow' || evt.projType === 'bullet' || evt.projType === 'projectile') ? evt.projType : 'bullet';
+        // Execute SFX: play shot sound when projectile spawns
+        try {
+          void audioManager.resumeContext();
+          if (projType === 'bullet') audioManager.playBulletShot();
+          else if (projType === 'arrow') audioManager.playArrowShot();
+          else audioManager.playProjectileLaunch();
+        } catch {}
         const spawnX = Number(evt.x);
         const spawnY = Number(evt.y);
         const spawnVx = Number(evt.vx);
@@ -1030,6 +1148,24 @@ function updateTurnBasedPvP(nowMs: number): void {
       const targetId = String(evt.targetId);
       const dmgAmount = Number(evt.damage) || 0;
       const isCritHit = !!evt.isCrit;
+      const shooterId = String(evt.shooterId);
+
+      // Execute SFX: play damage sound once per hit event
+      try {
+        const hitKey = `${String(evt.projectileId)}:${shooterId}:${targetId}:${String(evt.tMs)}`;
+        if (!turnProcessedHits.has(hitKey)) {
+          turnProcessedHits.add(hitKey);
+          void audioManager.resumeContext();
+          if (mySid && shooterId === mySid) {
+            audioManager.playDamageDealt(isCritHit);
+          } else if (mySid && targetId === mySid) {
+            audioManager.playDamageReceived(isCritHit);
+          } else {
+            // Fallback: generic impact for spectator hits
+            audioManager.playDotHit();
+          }
+        }
+      } catch {}
 
       const target = pvpPlayers[targetId];
       if (target && dmgAmount > 0) {
@@ -1066,6 +1202,19 @@ function updateTurnBasedPvP(nowMs: number): void {
     p.y += p.vy * dtSec;
     if (p.projType === 'projectile') {
       p.vy += g * dtSec;
+      // Match Weapon 2 smoke trail (pixel smoke) during EXECUTE replay:
+      // Create smoke only when falling (positive vy), same as realtime projectile.
+      if (p.vy > 0) {
+        safePushProjectileSmokeParticle({
+          x: p.x + (Math.random() - 0.5) * 4,
+          y: p.y + (Math.random() - 0.5) * 4,
+          vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
+          vy: -0.3 - Math.random() * 0.2, // Rises slowly
+          life: 30 + Math.random() * 20, // 30-50 frames
+          maxLife: 30 + Math.random() * 20,
+          size: 4 + Math.random() * 3 // 4-7 pixels
+        });
+      }
     }
     if (p.x < pvpBounds.left - 200 || p.x > pvpBounds.right + 200 || p.y < pvpBounds.top - 200 || p.y > pvpBounds.bottom + 200) {
       turnProjectiles.splice(i, 1);
@@ -1597,6 +1746,8 @@ function soloDmgToPvpMaxImpulse(dmg: number): number {
 
 // PvP initialization
 function initializePvP(): void {
+  // Preserve jetpack fuel between PvP "rounds" (when PvP is re-initialized)
+  snapshotPvpFuelCarryover();
   // Clear any existing players first
   pvpPlayers = {};
   pvpSideById = {};
@@ -1643,11 +1794,11 @@ function initializePvP(): void {
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
     lastArmorRegen: Date.now(), // When armor was last regenerated
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: 100, // Start with full fuel
+    fuel: getCarryoverFuel(myPlayerId, 100), // Carry over fuel from previous round
     maxFuel: 100, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
-    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
@@ -1690,11 +1841,11 @@ function initializePvP(): void {
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: 100, // Start with full fuel
+    fuel: getCarryoverFuel(opponentId, 100), // Carry over fuel from previous round (local fallback)
     maxFuel: 100, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
-    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
@@ -2018,8 +2169,18 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
     
     console.log('✅ Connected to Colyseus server, joining room...');
     
+    // Calculate player stats (prevents 100/61 mismatches - server uses these on join)
+    const nftBonuses = calculateNftBonuses();
+    const totalMaxHP = dotMaxHP + nftBonuses.hp;
+    const playerStats = {
+      hp: dotHP, // Current HP (not maxHP, use actual current)
+      maxHP: totalMaxHP,
+      armor: dotArmor,
+      maxArmor: dotMaxArmor
+    };
+    
     // Join or create room (Colyseus handles matchmaking automatically)
-    const room = await colyseusService.joinOrCreateRoom(pvpOnlineRoomName, myAddress, handleOpponentInput);
+    const room = await colyseusService.joinOrCreateRoom(pvpOnlineRoomName, myAddress, handleOpponentInput, playerStats);
     
     if (!room) {
       throw new Error('Failed to join Colyseus room - room is null');
@@ -2033,6 +2194,20 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       if (!TURN_BASED_PVP_ENABLED) return;
       turnServerSynced = true;
       turnWaitStartAt = 0;
+      if (typeof msg?.serverNow === 'number') {
+        turnServerClockOffsetMs = msg.serverNow - Date.now();
+      }
+      if (typeof msg?.planMs === 'number') {
+        turnPlanDurationMs = Math.max(1000, Math.min(60000, msg.planMs));
+      }
+      if (typeof msg?.executeMs === 'number') {
+        turnExecuteDurationMs = Math.max(1000, Math.min(60000, msg.executeMs));
+      }
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:phase:onMessage',message:'client received phase',data:{phase:msg?.phase,roundId:msg?.roundId,endsAt:msg?.endsAt,planMs:msg?.planMs??null,executeMs:msg?.executeMs??null,serverNow:msg?.serverNow??null,clockOffset:turnServerClockOffsetMs},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E2'})}).catch(()=>{});
+      } catch {}
+      // #endregion
       const phase = msg?.phase as TurnPhase;
       turnPhase = (phase === 'planning' || phase === 'execute' || phase === 'lobby') ? phase : turnPhase;
       if (typeof msg?.roundId === 'number') turnRoundId = msg.roundId;
@@ -2042,11 +2217,18 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       if (turnPhase === 'planning') {
         // Reset local playback state at the start of each planning phase.
         resetTurnBasedPlayback();
+        // Ensure player objects exist even if game_start handler ordering was weird
+        ensure5SecPvPPlayersFromRoom();
+        // Shadow plan recording timebase (server-aligned)
+        if (typeof msg?.endsAt === 'number') {
+          turnPlanStartServerTs = msg.endsAt - (turnPlanDurationMs || 5000);
+        }
         // Ensure we have a default plan (stand still) so server always has something.
         if (myPlayerId && pvpPlayers[myPlayerId]) {
           const p = pvpPlayers[myPlayerId];
-          turnPlansById[myPlayerId] = { destX: p.x, destY: p.y, shots: [], stats: { dmg, critChance } };
-          colyseusService.sendPlan(turnPlansById[myPlayerId]);
+          turnLocalTrack = [{ tMs: 0, x: p.x, y: p.y }];
+          turnLocalSpawns = [];
+          colyseusService.sendPlan({ track: turnLocalTrack, spawns: turnLocalSpawns, stats: { dmg, critChance } });
         }
       }
     });
@@ -2062,6 +2244,7 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       if (!TURN_BASED_PVP_ENABLED) return;
       turnServerSynced = true;
       turnWaitStartAt = 0;
+      turnLastRoundExecuteAt = Date.now();
       turnPhase = 'execute';
       if (typeof payload?.roundId === 'number') turnRoundId = payload.roundId;
       if (typeof payload?.startAt === 'number') turnExecuteStartAt = payload.startAt;
@@ -2072,6 +2255,13 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       turnEvents = Array.isArray(payload?.events) ? payload.events : [];
       turnPlansById = (payload?.plans && typeof payload.plans === 'object') ? payload.plans : turnPlansById;
       turnFinalPlayers = (payload?.finalState?.players && typeof payload.finalState.players === 'object') ? payload.finalState.players : {};
+      // #region agent log
+      try {
+        const keys = Object.keys(turnPlansById || {});
+        const first: any = keys[0] ? (turnPlansById as any)[keys[0]] : null;
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:round_execute:onMessage',message:'client received round_execute',data:{roomId:(room as any)?.id||null,roundId:payload?.roundId||null,plansKeys:keys,firstTrackN:Array.isArray(first?.track)?first.track.length:0,firstSpawnsN:Array.isArray(first?.spawns)?first.spawns.length:0,eventsN:turnEvents.length,startAt:turnExecuteStartAt,durationMs:turnExecuteDurationMs},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H4'})}).catch(()=>{});
+      } catch {}
+      // #endregion
 
       // Capture start positions for deterministic local playback.
       resetTurnBasedPlayback();
@@ -2351,6 +2541,8 @@ async function setPlayerReady(): Promise<void> {
 
 // Initialize PvP with Colyseus room
 function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessionId: string): void {
+  // Preserve jetpack fuel between PvP "rounds" (when PvP is re-initialized)
+  snapshotPvpFuelCarryover();
   // Clear any existing players first
   pvpPlayers = {};
   pvpSideById = {};
@@ -2394,17 +2586,45 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   const nftBonuses = calculateNftBonuses();
   const totalMaxHP = dotMaxHP + nftBonuses.hp;
 
-  // Determine if I'm player 1 or 2 based on session ID order
+  // Prefer authoritative spawn positions from Colyseus room state (server decides sides).
+  // This avoids "roles swapped" / mirrored mid-wall issues when clients derive sides differently.
+  const midX = getPvpMidWallX();
+  const meState: any = (() => {
+    try { return roomState?.players?.get ? roomState.players.get(mySessionId) : null; } catch { return null; }
+  })();
+  const oppState: any = (() => {
+    try { return roomState?.players?.get ? roomState.players.get(opponentSessionId) : null; } catch { return null; }
+  })();
+  const serverMeX = (typeof meState?.x === 'number') ? meState.x : null;
+  const serverMeY = (typeof meState?.y === 'number') ? meState.y : null;
+  const serverOppX = (typeof oppState?.x === 'number') ? oppState.x : null;
+  const serverOppY = (typeof oppState?.y === 'number') ? oppState.y : null;
+  // Legacy fallback (only used if state missing x/y)
   const sessionIds = [mySessionId, opponentSessionId].sort();
   const isMePlayer1 = mySessionId === sessionIds[0];
+  const fallbackMeX = isMePlayer1
+    ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25
+    : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75;
+  const fallbackOppX = isMePlayer1
+    ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75
+    : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25;
+  const meX = serverMeX ?? fallbackMeX;
+  const meY = serverMeY ?? (pvpBounds.bottom / 2);
+  const oppX = serverOppX ?? fallbackOppX;
+  const oppY = serverOppY ?? (pvpBounds.bottom / 2);
+  const meSide: PvPSide = meX < midX ? 'left' : 'right';
+  const oppSide: PvPSide = oppX < midX ? 'left' : 'right';
+  // #region agent log
+  try {
+    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:initializePvPWithColyseus',message:'spawn/side mapping',data:{mySessionId,opponentSessionId,serverMeX,serverMeY,serverOppX,serverOppY,fallbackMeX,fallbackOppX,meX,meY,oppX,oppY,meSide,oppSide,midX},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H8'})}).catch(()=>{});
+  } catch {}
+  // #endregion
   
   // Initialize my player
   const myPlayer: PvPPlayer = {
     id: myPlayerId,
-    x: isMePlayer1 
-      ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25  // LEFT if I'm p1
-      : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75,  // RIGHT if I'm p2
-    y: pvpBounds.bottom / 2,
+    x: meX,
+    y: meY,
     vx: 0,
     vy: 0,
     mass: pvpMass,
@@ -2423,11 +2643,11 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: 100, // Start with full fuel
+    fuel: getCarryoverFuel(myPlayerId, 100), // Carry over fuel from previous round
     maxFuel: 100, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
-    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
@@ -2439,20 +2659,22 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   };
 
   pvpPlayers[myPlayerId] = myPlayer;
-  pvpSideById[myPlayerId] = isMePlayer1 ? 'left' : 'right';
+  pvpSideById[myPlayerId] = meSide;
   
   // Send initial profile picture to opponent
   if (myPlayer.profilePicture) {
     sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
   }
 
-  // Initialize opponent
+  // Initialize opponent (use server state HP/armor to prevent 100/61 mismatches)
+  const serverOppHP = (typeof oppState?.hp === 'number') ? oppState.hp : null;
+  const serverOppMaxHP = (typeof oppState?.maxHP === 'number') ? oppState.maxHP : null;
+  const serverOppArmor = (typeof oppState?.armor === 'number') ? oppState.armor : null;
+  const serverOppMaxArmor = (typeof oppState?.maxArmor === 'number') ? oppState.maxArmor : null;
   const opponent: PvPPlayer = {
     id: opponentId,
-    x: isMePlayer1 
-      ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75  // RIGHT if I'm p1
-      : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25, // LEFT if I'm p2
-    y: pvpBounds.bottom / 2,
+    x: oppX,
+    y: oppY,
     vx: 0,
     vy: 0,
     mass: 1.0, // Will be synced from network
@@ -2463,19 +2685,19 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     gravityLocked: true,
     gravityActiveUntil: 0, // Gravity inactive initially
     speedTrail: [],
-    hp: dotMaxHP, // Will be synced from network
-    maxHP: dotMaxHP,
-    armor: dotMaxArmor,
-    maxArmor: dotMaxArmor,
+    hp: serverOppHP ?? dotMaxHP, // Use server state HP (prevents 100/61 mismatch)
+    maxHP: serverOppMaxHP ?? dotMaxHP,
+    armor: serverOppArmor ?? dotMaxArmor,
+    maxArmor: serverOppMaxArmor ?? dotMaxArmor,
     outOfBoundsStartTime: null,
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: 100, // Start with full fuel
+    fuel: getCarryoverFuel(opponentId, 100), // Carry over fuel from previous round (local fallback)
     maxFuel: 100, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
-    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
@@ -2487,7 +2709,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   };
 
   pvpPlayers[opponentId] = opponent;
-  pvpSideById[opponentId] = isMePlayer1 ? 'right' : 'left';
+  pvpSideById[opponentId] = oppSide;
 
   // Initialize wall spikes
   initializeWallSpikes();
@@ -2507,6 +2729,8 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
 
 // Initialize PvP with match data (Supabase version - kept for compatibility)
 function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
+  // Preserve jetpack fuel between PvP "rounds" (when PvP is re-initialized)
+  snapshotPvpFuelCarryover();
   // Clear any existing players first
   pvpPlayers = {};
   pvpSideById = {};
@@ -2567,11 +2791,11 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: 100, // Start with full fuel
+    fuel: getCarryoverFuel(myPlayerId, 100), // Carry over fuel from previous round
     maxFuel: 100, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
-    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
@@ -2615,11 +2839,11 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: 100, // Start with full fuel
+    fuel: getCarryoverFuel(opponentId, 100), // Carry over fuel from previous round (local fallback)
     maxFuel: 100, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
-    lastFuelRegenTime: Date.now(), // When fuel was last regenerated
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
@@ -2660,6 +2884,10 @@ function handleOpponentInput(input: any): void {
   const __agentOppType = input?.type ?? 'unknown';
   // #endregion
   try {
+    // 5SEC PVP: opponent actions are applied only during EXECUTE replay, not via realtime messages.
+    if (is5SecPvPMode()) {
+      return;
+    }
     if (!opponentId || !pvpPlayers[opponentId]) {
       console.warn('handleOpponentInput: opponentId or opponent not found', { opponentId, players: Object.keys(pvpPlayers) });
       return;
@@ -3644,44 +3872,83 @@ function render() {
     ctx.fillText(`SPEED: ${currentSpeed.toFixed(2)}`, canvas.width / 2, 18);
     
     // Fuel bar display (below speed)
-    const fuelBarWidth = 200;
-    const fuelBarHeight = 12;
-    const fuelBarX = canvas.width / 2 - fuelBarWidth / 2;
+    const fuelBarWidth = 220;
+    const fuelBarHeight = 10;
     const fuelBarY = 30;
-    const fuelPercent = myPlayer.fuel / myPlayer.maxFuel;
-    
-    // Fuel bar background
-    ctx.fillStyle = '#cccccc';
-    ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
-    
-    // Fuel bar fill - red when overheated, orange when using, green when not
-    let fuelBarColor = '#00ff00'; // Green default
-    if (myPlayer.isOverheated) {
-      fuelBarColor = '#ff0000'; // Red when overheated
-    } else if (myPlayer.isUsingJetpack) {
-      fuelBarColor = '#ff6600'; // Orange when using
+    const midX = (pvpBounds.left + pvpBounds.right) / 2;
+    const leftCenterX = (pvpBounds.left + midX) / 2;
+    const rightCenterX = (midX + pvpBounds.right) / 2;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+    // In 5SEC PvP (turn-based), show BOTH fuel bars (YOU + OPP) and keep them visible
+    // across planning + execute (fuel value is last-known from planning, unless updated).
+    const showBothFuel =
+      TURN_BASED_PVP_ENABLED &&
+      gameMode === 'PvP' &&
+      colyseusService.isConnectedToRoom() &&
+      pvpOnlineRoomName === 'pvp_5sec_room' &&
+      (turnPhase === 'planning' || turnPhase === 'execute');
+
+    const drawFuelBar = (label: string, fuel: number, maxFuel: number, x: number, y: number, color: string) => {
+      const pct = maxFuel > 0 ? Math.max(0, Math.min(1, fuel / maxFuel)) : 0;
+      const barX = clamp(x, pvpBounds.left + 8, pvpBounds.right - fuelBarWidth - 8);
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(barX, y, fuelBarWidth, fuelBarHeight);
+      ctx.fillStyle = color;
+      ctx.fillRect(barX, y, fuelBarWidth * pct, fuelBarHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(barX, y, fuelBarWidth, fuelBarHeight);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, barX - 52, y + fuelBarHeight);
+    };
+
+    if (showBothFuel) {
+      const room: any = colyseusService.getRoom();
+      const players: any = room?.state?.players;
+      const mySid: string | null = typeof room?.sessionId === 'string' ? room.sessionId : null;
+      const keys: string[] = players?.keys ? Array.from(players.keys()) : [];
+      const oppSid: string | null = (mySid ? (keys.find((k) => k !== mySid) || null) : null);
+      const meState: any = (mySid && players?.get) ? players.get(mySid) : null;
+      const oppState: any = (oppSid && players?.get) ? players.get(oppSid) : null;
+      const meFuel = (typeof meState?.fuel === 'number') ? meState.fuel : myPlayer.fuel;
+      const meMaxFuel = (typeof meState?.maxFuel === 'number') ? meState.maxFuel : myPlayer.maxFuel;
+      const oppFuel = (typeof oppState?.fuel === 'number') ? oppState.fuel : 100;
+      const oppMaxFuel = (typeof oppState?.maxFuel === 'number') ? oppState.maxFuel : 100;
+
+      const meX = (typeof meState?.x === 'number') ? meState.x : (pvpPlayers[myPlayerId!]?.x ?? leftCenterX);
+      const oppX = (typeof oppState?.x === 'number') ? oppState.x : rightCenterX;
+      const meIsLeft = meX < midX;
+      const oppIsLeft = oppX < midX;
+      const meBarX = (meIsLeft ? leftCenterX : rightCenterX) - fuelBarWidth / 2;
+      const oppBarX = (oppIsLeft ? leftCenterX : rightCenterX) - fuelBarWidth / 2;
+
+      // Both bars are green (match the old look you liked)
+      // Align them on the same horizontal line (each on its own side)
+      drawFuelBar('YOU', meFuel, meMaxFuel, meBarX, fuelBarY, '#00ff00');
+      drawFuelBar('OPP', oppFuel, oppMaxFuel, oppBarX, fuelBarY, '#00ff00');
+      ctx.textAlign = 'left';
+    } else {
+      // Default (single) fuel bar
+      const fuelPercent = myPlayer.fuel / myPlayer.maxFuel;
+      const fuelBarX = canvas.width / 2 - fuelBarWidth / 2;
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
+      let fuelBarColor = '#00ff00';
+      if (myPlayer.isOverheated) fuelBarColor = '#ff0000';
+      else if (myPlayer.isUsingJetpack) fuelBarColor = '#ff6600';
+      ctx.fillStyle = fuelBarColor;
+      ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth * fuelPercent, fuelBarHeight);
+      ctx.strokeStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
+      ctx.lineWidth = myPlayer.isOverheated ? 3 : 2;
+      ctx.strokeRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
+      ctx.fillStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}%`, canvas.width / 2, fuelBarY + fuelBarHeight + 14);
     }
-    ctx.fillStyle = fuelBarColor;
-    ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth * fuelPercent, fuelBarHeight);
-    
-    // Overheat effect - pulsing red glow
-    if (myPlayer.isOverheated) {
-      const overheatDuration = (Date.now() - myPlayer.overheatStartTime) / 1000;
-      const pulse = Math.sin(overheatDuration * Math.PI * 4) * 0.3 + 0.7; // Pulsing effect
-      ctx.fillStyle = `rgba(255, 0, 0, ${pulse * 0.3})`;
-      ctx.fillRect(fuelBarX - 2, fuelBarY - 2, fuelBarWidth + 4, fuelBarHeight + 4);
-    }
-    
-    // Fuel bar border
-    ctx.strokeStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
-    ctx.lineWidth = myPlayer.isOverheated ? 3 : 2;
-    ctx.strokeRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
-    
-    // Fuel text
-    ctx.fillStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
-    ctx.font = 'bold 10px "Press Start 2P"';
-    ctx.textAlign = 'center';
-    ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}%`, canvas.width / 2, fuelBarY + fuelBarHeight + 14);
     
     // Jetpack status text
     if (myPlayer.isUsingJetpack) {
@@ -5865,168 +6132,74 @@ function render() {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1;
       ctx.strokeRect(midX - half, pvpBounds.top, PVP_MID_WALL_THICKNESS, wallBottomY - pvpBounds.top);
+
+      // Mid-wall "timer body": rises bottom->top over a full 10s (planning+execute) cycle.
+      // Visible to players (no debug text). Only for 5SEC PvP mode when connected.
+      try {
+        if (TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom()) {
+          const room: any = colyseusService.getRoom();
+          const started = !!room?.state?.gameStarted;
+          if (started && (turnPhase === 'planning' || turnPhase === 'execute')) {
+            const nowServer = getServerNowMs();
+            const planDur = (typeof turnPlanDurationMs === 'number' && turnPlanDurationMs > 0) ? turnPlanDurationMs : 5000;
+            const execDur = (typeof turnExecuteDurationMs === 'number' && turnExecuteDurationMs > 0) ? turnExecuteDurationMs : 5000;
+            const total = Math.max(1, planDur + execDur); // ~10s
+            const planStart =
+              (typeof turnPlanStartServerTs === 'number' && turnPlanStartServerTs > 0)
+                ? turnPlanStartServerTs
+                : ((typeof turnExecuteStartAt === 'number' && turnExecuteStartAt > 0) ? (turnExecuteStartAt - planDur) : nowServer);
+
+            const topY = pvpBounds.top;
+            const bottomY = wallBottomY;
+
+            // Movement rule:
+            // - PLANNING: body rises bottom -> top
+            // - EXECUTE:  body descends top -> bottom
+            const elapsedInPlan = Math.max(0, Math.min(planDur, nowServer - planStart));
+            const execStart =
+              (typeof turnExecuteStartAt === 'number' && turnExecuteStartAt > 0)
+                ? turnExecuteStartAt
+                : (planStart + planDur);
+            const elapsedInExec = Math.max(0, Math.min(execDur, nowServer - execStart));
+
+            let y: number;
+            if (turnPhase === 'planning') {
+              const tUp = Math.max(0, Math.min(1, elapsedInPlan / planDur));
+              y = bottomY - tUp * (bottomY - topY);
+            } else {
+              const tDown = Math.max(0, Math.min(1, elapsedInExec / execDur));
+              y = topY + tDown * (bottomY - topY);
+            }
+
+            // Draw a small "body" on the wall (pixel-friendly)
+            const bodyW = 18;
+            const bodyH = 18;
+            const bodyX = Math.round(midX - bodyW / 2);
+            const bodyY = Math.round(y - bodyH / 2);
+
+            ctx.save();
+            // subtle background plate so it pops on black wall
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(bodyX, bodyY, bodyW, bodyH);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bodyX + 1, bodyY + 1, bodyW - 2, bodyH - 2);
+            // center dot (gives "body" feel)
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(bodyX + Math.floor(bodyW / 2) - 2, bodyY + Math.floor(bodyH / 2) - 2, 4, 4);
+            ctx.restore();
+          }
+        }
+      } catch {}
     }
     
     // Highlight borders (top, left, right)
     drawPerimeterHighlight(ctx);
 
-    // Turn-based PvP overlay (planning/execution timers)
-    if (TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom()) {
-      const now = Date.now();
-      const room = colyseusService.getRoom() as any;
-      const playersCount =
-        room?.state?.players?.size ??
-        (typeof room?.state?.players?.length === 'number' ? room.state.players.length : 0);
-      const started = !!room?.state?.gameStarted;
-      const statePhase = room?.state?.phase;
-      const roomId = room?.id || room?.roomId || 'unknown';
-
-      // Debug/status line (shows why countdown might be missing)
-      ctx.save();
-      ctx.font = 'bold 10px "Press Start 2P"';
-      ctx.textAlign = 'center';
-      // Background for readability
-      ctx.globalAlpha = 0.6;
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(canvas.width / 2 - 520, 18, 1040, 28);
-      ctx.globalAlpha = 1;
-      // Use shadow instead of strokeText (stroke blurs pixel fonts)
-      ctx.shadowColor = '#000000';
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetX = 2;
-      ctx.shadowOffsetY = 2;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(
-        `ROOM ${String(roomId)}: players=${playersCount} started=${started ? 'YES' : 'NO'} phase=${String(statePhase || turnPhase)} endsAt=${turnPhaseEndsAt || 0}`,
-        canvas.width / 2,
-        36
-      );
-      ctx.restore();
-
-      // If we don't have 2 players yet, show waiting message and don't expect timers.
-      if (playersCount < 2) {
-        ctx.save();
-        ctx.font = 'bold 16px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(canvas.width / 2 - 260, 44, 520, 34);
-        ctx.globalAlpha = 1;
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('WAITING FOR OPPONENT...', canvas.width / 2, 62);
-        ctx.restore();
-      }
-
-      // If server doesn't support micro-turn (no phase messages), show clear warning after a short wait.
-      if (!turnServerSynced && started) {
-        if (!turnWaitStartAt) {
-          turnWaitStartAt = now;
-        }
-        const waitedMs = now - turnWaitStartAt;
-        if (waitedMs > 1200) {
-          ctx.save();
-          ctx.globalAlpha = 0.65;
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(canvas.width / 2 - 520, 90, 1040, 52);
-          ctx.globalAlpha = 1;
-          ctx.shadowColor = '#000000';
-          ctx.shadowBlur = 0;
-          ctx.shadowOffsetX = 3;
-          ctx.shadowOffsetY = 3;
-          ctx.fillStyle = '#ff4444';
-          ctx.font = 'bold 14px "Press Start 2P"';
-          ctx.textAlign = 'center';
-          ctx.fillText('TURN LOOP NOT RECEIVED FROM SERVER', canvas.width / 2, 112);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 10px "Press Start 2P"';
-          ctx.fillText('This Colyseus server is OLD. You must redeploy the updated server.', canvas.width / 2, 134);
-          ctx.restore();
-        }
-      }
-
-      if (turnPhase === 'planning') {
-        const msLeft = Math.max(0, turnPhaseEndsAt - now);
-        const sLeft = Math.ceil(msLeft / 1000);
-        const plan = getMyTurnPlan();
-
-        // Semi-transparent freeze overlay in play area
-        ctx.save();
-        ctx.globalAlpha = 0.18;
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(pvpBounds.left, pvpBounds.top, pvpBounds.right - pvpBounds.left, pvpBounds.bottom - pvpBounds.top);
-        ctx.restore();
-
-        ctx.save();
-        // Text panel background for readability
-        ctx.globalAlpha = 0.65;
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(canvas.width / 2 - 700, 44, 1400, 54);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
-        ctx.font = 'bold 16px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.fillText(`PLANNING: ${sLeft}s  |  Weapon: ${turnWeapon.toUpperCase()}  |  Shots: ${plan.shots.length}/3  |  ${turnLocked ? 'LOCKED' : 'EDITING'}`, canvas.width / 2, 60);
-        ctx.font = 'bold 12px "Press Start 2P"';
-        ctx.fillText('Click = move target • SHIFT+Click = add shot • Enter = lock • Backspace = clear shots • 1/2/3 = weapon', canvas.width / 2, 84);
-
-        // Draw my planned destination + shot markers
-        if (myPlayerId && pvpPlayers[myPlayerId]) {
-          const me = pvpPlayers[myPlayerId];
-          ctx.strokeStyle = '#00ffff';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(me.x, me.y);
-          ctx.lineTo(plan.destX, plan.destY);
-          ctx.stroke();
-          ctx.fillStyle = '#00ffff';
-          ctx.beginPath();
-          ctx.arc(plan.destX, plan.destY, 10, 0, Math.PI * 2);
-          ctx.fill();
-
-          for (const shot of plan.shots) {
-            ctx.fillStyle = '#ffcc00';
-            ctx.beginPath();
-            ctx.arc(shot.aimX, shot.aimY, 6, 0, Math.PI * 2);
-            ctx.fill();
-            // Shot time label with shadow (cleaner than outline)
-            ctx.shadowColor = '#000000';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 10px "Press Start 2P"';
-            ctx.textAlign = 'left';
-            ctx.fillText(`${Math.round(shot.tMs / 100) / 10}s`, shot.aimX + 8, shot.aimY - 8);
-          }
-        }
-        ctx.restore();
-      } else if (turnPhase === 'execute') {
-        const msLeft = Math.max(0, (turnExecuteStartAt + turnExecuteDurationMs) - now);
-        const sLeft = Math.ceil(msLeft / 1000);
-        ctx.save();
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(canvas.width / 2 - 170, 44, 340, 34);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
-        ctx.font = 'bold 16px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.fillText(`EXECUTE: ${sLeft}s`, canvas.width / 2, 60);
-        ctx.restore();
-      }
-    }
+    // Turn-based PvP overlay: intentionally hidden.
+    // Players see timing only via the mid-wall indicator.
     
     // Draw wall spikes (PvP mode only)
     if (gameMode === 'PvP' || gameMode === 'Training') {
@@ -6092,6 +6265,11 @@ function render() {
     }
     
     // Draw all players
+    const shadowPlanning =
+      TURN_BASED_PVP_ENABLED &&
+      gameMode === 'PvP' &&
+      colyseusService.isConnectedToRoom() &&
+      turnPhase === 'planning';
     for (const playerId in pvpPlayers) {
       const player = pvpPlayers[playerId];
       
@@ -6099,6 +6277,10 @@ function render() {
       if (deathAnimations.has(playerId)) {
         continue; // Don't draw player during death animation
       }
+
+      // Shadow planning effect: make moving entities feel "non-live" during planning
+      ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
       
       // Draw fading shadow tail (behind the player) - same as Solo
       {
@@ -6730,6 +6912,8 @@ function render() {
           }
         }
       }
+
+      ctx.restore();
     }
     
     // PvP mode: Draw projectile trajectory (dotted line) when aiming
@@ -6786,6 +6970,7 @@ function render() {
     // PvP mode: Draw flying bullets (my bullets) - doubled size for heavier look
     for (const bullet of bullets) {
       ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
       ctx.translate(bullet.x, bullet.y);
       
       // Calculate angle from velocity
@@ -6836,25 +7021,128 @@ function render() {
         const angle = Math.atan2(p.vy, p.vx);
         ctx.rotate(angle);
         if (p.projType === 'bullet') {
+          // Match realtime bullet art (so PLANNING and EXECUTE look the same)
+          const bulletLength = 24;
+          const bulletWidth = 4;
+          const tipLength = 8;
+
+          // Body
+          ctx.fillStyle = '#666666';
+          ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+
+          // Tip
           ctx.fillStyle = '#00ff00';
           ctx.beginPath();
-          ctx.arc(0, 0, 6, 0, Math.PI * 2);
+          ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+          ctx.lineTo(bulletLength / 2, 0);
+          ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+          ctx.closePath();
           ctx.fill();
-        } else if (p.projType === 'arrow') {
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(-10, -2, 20, 4);
-          ctx.fillStyle = '#ff0000';
+
+          // Outline
+          ctx.strokeStyle = '#444444';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+          ctx.strokeStyle = '#00aa00';
+          ctx.lineWidth = 1.5;
           ctx.beginPath();
-          ctx.moveTo(10, 0);
-          ctx.lineTo(2, -6);
-          ctx.lineTo(2, 6);
+          ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+          ctx.lineTo(bulletLength / 2, 0);
+          ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+          ctx.closePath();
+          ctx.stroke();
+        } else if (p.projType === 'arrow') {
+          // Match realtime PvP arrow art (same as the regular arrow render)
+          const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+          const shaftStartX = arrowFletchingLength;
+          ctx.fillStyle = 'rgba(101, 67, 33, 1)'; // Brown wood color
+          ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+
+          const headStartX = arrowLength - arrowHeadLength;
+
+          // Base arrowhead layer (dark metal)
+          ctx.fillStyle = 'rgba(80, 80, 90, 1)'; // Dark steel
+          ctx.beginPath();
+          ctx.moveTo(headStartX, -arrowShaftWidth * 2.5);
+          ctx.lineTo(arrowLength, 0);
+          ctx.lineTo(headStartX, arrowShaftWidth * 2.5);
+          ctx.closePath();
+          ctx.fill();
+
+          // Middle layer (medium metal)
+          ctx.fillStyle = 'rgba(120, 120, 130, 1)'; // Medium steel
+          ctx.beginPath();
+          ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8);
+          ctx.lineTo(arrowLength, 0);
+          ctx.lineTo(headStartX + arrowHeadLength * 0.3, arrowShaftWidth * 1.8);
+          ctx.closePath();
+          ctx.fill();
+
+          // Top highlight layer (bright metal edge) - left edge
+          ctx.fillStyle = 'rgba(200, 200, 210, 1)'; // Bright steel highlight
+          ctx.beginPath();
+          ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2);
+          ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2);
+          ctx.lineTo(arrowLength, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          // Top highlight layer (bright metal edge) - right edge
+          ctx.beginPath();
+          ctx.moveTo(headStartX + arrowHeadLength * 0.5, arrowShaftWidth / 2);
+          ctx.lineTo(arrowLength - arrowHeadLength * 0.1, arrowShaftWidth * 1.2);
+          ctx.lineTo(arrowLength, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          // Extra sharp tip accent (white/silver)
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White tip
+          ctx.beginPath();
+          ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
+          ctx.lineTo(arrowLength, 0);
+          ctx.lineTo(arrowLength - arrowHeadLength * 0.2, arrowShaftWidth * 0.5);
+          ctx.closePath();
+          ctx.fill();
+
+          // Fletching (feathers at back)
+          ctx.fillStyle = 'rgba(150, 150, 150, 1)'; // Gray feathers
+          ctx.beginPath();
+          ctx.moveTo(0, -arrowShaftWidth * 1.5);
+          ctx.lineTo(arrowFletchingLength, -arrowShaftWidth * 2);
+          ctx.lineTo(arrowFletchingLength, 0);
+          ctx.lineTo(0, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(0, arrowShaftWidth * 1.5);
+          ctx.lineTo(arrowFletchingLength, arrowShaftWidth * 2);
+          ctx.lineTo(arrowFletchingLength, 0);
+          ctx.lineTo(0, 0);
           ctx.closePath();
           ctx.fill();
         } else {
+          // Match realtime heavy projectile art (cannonball + pointed tip)
+          const length = 24;
+          const width = 12;
+          const tipLength = 8;
           ctx.fillStyle = '#8B4513';
+          ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
           ctx.beginPath();
-          ctx.arc(0, 0, 10, 0, Math.PI * 2);
+          ctx.moveTo(length / 2 - tipLength, -width / 2);
+          ctx.lineTo(length / 2, 0);
+          ctx.lineTo(length / 2 - tipLength, width / 2);
+          ctx.closePath();
           ctx.fill();
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+          ctx.beginPath();
+          ctx.moveTo(length / 2 - tipLength, -width / 2);
+          ctx.lineTo(length / 2, 0);
+          ctx.lineTo(length / 2 - tipLength, width / 2);
+          ctx.closePath();
+          ctx.stroke();
         }
         ctx.restore();
       }
@@ -6920,6 +7208,7 @@ function render() {
     // PvP mode: Draw spikes (from exploded mines)
     for (const spike of spikes) {
       ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
       ctx.translate(spike.x, spike.y);
       
       // Calculate angle from velocity
@@ -6946,6 +7235,7 @@ function render() {
     // PvP mode: Draw opponent bullet - doubled size for heavier look
     if (opponentBulletFlying && gameMode === 'PvP') {
       ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
       ctx.translate(opponentBulletX, opponentBulletY);
       
       // Calculate angle from velocity
@@ -6991,6 +7281,7 @@ function render() {
     // PvP mode: Draw flying projectile (my projectile) - cannonball shape with pointed tip
     if (projectileFlying) {
       ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
       ctx.translate(projectileX, projectileY);
       
       // Calculate angle from velocity
@@ -7033,6 +7324,7 @@ function render() {
     // PvP mode: Draw opponent's flying projectile - cannonball shape with pointed tip
     if (opponentProjectileFlying && gameMode === 'PvP') {
       ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
       ctx.translate(opponentProjectileX, opponentProjectileY);
       
       // Calculate angle from velocity
@@ -9285,7 +9577,15 @@ if (!(window as any).__mouseupListenerAdded) {
           // Start 5sec turn-based PvP
           TURN_BASED_PVP_ENABLED = true;
           pvpOnlineRoomName = 'pvp_5sec_room';
-          openServerBrowser();
+          // Local dev: ALWAYS use local Colyseus server for 5SEC PVP (cloud may be on an older protocol)
+          const isLocalHost =
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1';
+          if (isLocalHost) {
+            startPvPMatchOnServer('ws://localhost:2567');
+          } else {
+            openServerBrowser();
+          }
         }
       }
     }
@@ -9573,6 +9873,10 @@ if (!(window as any).__keydownListenerAdded) {
       
       // Add bullet to array
       bullets.push(newBullet);
+      // 5SEC PVP shadow recording: record this projectile spawn (hidden until EXECUTE)
+      if (is5SecPvPMode() && turnPhase === 'planning') {
+        recordTurnSpawn('bullet', newBullet.x, newBullet.y, newBullet.vx, newBullet.vy);
+      }
       
       // Update burst tracking
       shotsInBurst++;
@@ -9686,7 +9990,7 @@ if (!(window as any).__keyupListenerAdded) {
     // Deactivate jetpack
     if (myPlayer.isUsingJetpack) {
       myPlayer.isUsingJetpack = false;
-      myPlayer.lastFuelRegenTime = Date.now(); // Start fuel regeneration
+      myPlayer.lastFuelRegenTime = 0; // Fuel regeneration disabled (no auto-refill)
       audioManager['stopJetpackSound']();
       console.log('Jetpack deactivated. Fuel:', myPlayer.fuel);
     }
@@ -10076,6 +10380,11 @@ if (!(window as any).__clickListenerAdded) {
         pvpKatanaVy = (dy / distance) * pvpKatanaSpeed;
         pvpKatanaAngle = Math.atan2(dy, dx);
       }
+
+      // 5SEC PVP shadow recording: record arrow spawn at launch
+      if (is5SecPvPMode() && turnPhase === 'planning') {
+        recordTurnSpawn('arrow', pvpKatanaX, pvpKatanaY, pvpKatanaVx, pvpKatanaVy);
+      }
       
       // Play arrow shot sound effect (like arrow flying through air - fffiiiit)
       audioManager.resumeContext().then(() => {
@@ -10152,6 +10461,11 @@ if (!(window as any).__clickListenerAdded) {
     projectileY = myPlayer.y + dirY * spawnOffset;
     projectileVx = dirX * projectileLaunchSpeed;
     projectileVy = dirY * projectileLaunchSpeed;
+
+    // 5SEC PVP shadow recording: record heavy projectile spawn at launch
+    if (is5SecPvPMode() && turnPhase === 'planning') {
+      recordTurnSpawn('projectile', projectileX, projectileY, projectileVx, projectileVy);
+    }
 
     // Heavy shell no longer pushes the player back (removed recoil)
 
@@ -10687,6 +11001,8 @@ function gameLoop() {
 
   // Turn-based PvP update (freeze planning / deterministic execute playback)
   updateTurnBasedPvP(Date.now());
+  // 5SEC PVP: during planning we allow realtime control, but record shadow actions for commit.
+  recordTurnTrackAndMaybeSend();
   
   // PvP/Training mode: Reset burst counter if too much time passed since last shot
   if (!isTurnBasedPvPDesired() && (gameMode === 'PvP' || gameMode === 'Training') && shotsInBurst > 0) {
@@ -12007,7 +12323,7 @@ function gameLoop() {
         if (jetpackUseTime >= maxJetpackTime) {
           // Max usage time reached - deactivate jetpack
           player.isUsingJetpack = false;
-          player.lastFuelRegenTime = now;
+          player.lastFuelRegenTime = 0; // Fuel regeneration disabled (no auto-refill)
           audioManager.stopJetpackSound();
           console.log(`Jetpack max usage time reached (${maxJetpackTime}s). Fuel:`, player.fuel);
         } else {
@@ -12053,7 +12369,7 @@ function gameLoop() {
             player.fuel = 0;
             player.isOverheated = true;
             player.overheatStartTime = now;
-            player.lastFuelRegenTime = now; // Reset regen time for after overheat
+            player.lastFuelRegenTime = 0; // Fuel regeneration disabled (no auto-refill)
             audioManager.stopJetpackSound();
             console.log('Jetpack fuel depleted! Overheat started.');
           }
@@ -12070,30 +12386,17 @@ function gameLoop() {
         
         // Check if overheat duration passed (4 seconds)
         if (overheatDuration >= overheatTime) {
-          // Overheat finished - start fuel regeneration
+          // Overheat finished (fuel does NOT regenerate)
           player.isOverheated = false;
           player.overheatStartTime = 0;
-          player.lastFuelRegenTime = now; // Start regeneration now
-          console.log('Overheat finished! Fuel regeneration started.');
+          player.lastFuelRegenTime = 0;
+          console.log('Overheat finished!');
         }
         // During overheat, fuel regeneration is blocked (handled below)
       }
       
-      // Fuel regeneration (only when not using jetpack, not overheated, and regeneration has started)
-      if (playerId === myPlayerId && !player.isUsingJetpack && !player.isOverheated && player.fuel < player.maxFuel && player.lastFuelRegenTime > 0) {
-        const timeSinceLastRegen = now - player.lastFuelRegenTime;
-        
-        // Fuel regenerates fully in 18 seconds (much slower recovery to prevent spam) - increased from 12 to 18 seconds
-        const regenRate = player.maxFuel / 18000; // Fuel per millisecond (100 / 18000 = ~0.0056 per ms)
-        const fuelRegenerated = regenRate * timeSinceLastRegen;
-        const newFuel = player.fuel + fuelRegenerated;
-        player.fuel = Math.min(player.maxFuel, newFuel);
-        
-        // Update last regen time only if fuel is still regenerating
-        if (player.fuel < player.maxFuel) {
-          player.lastFuelRegenTime = now;
-        }
-      }
+      // Fuel regeneration intentionally disabled:
+      // Fuel only decreases when used and carries over between PvP rounds.
       
       // Update position
       player.x += player.vx;

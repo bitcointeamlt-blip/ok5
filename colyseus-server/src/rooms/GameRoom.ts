@@ -89,11 +89,12 @@ interface TurnShotPlan {
 interface TurnPlayerStats {
   dmg?: number;
   critChance?: number; // %
+  fuel?: number; // 0..maxFuel
+  maxFuel?: number; // usually 100
 }
 interface TurnPlan {
-  destX: number;
-  destY: number;
-  shots: TurnShotPlan[]; // max 3
+  track: Array<{ tMs: number; x: number; y: number }>; // sampled shadow trajectory (0..EXECUTE_MS)
+  spawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }>; // projectile spawns (vx/vy in px/s)
   stats?: TurnPlayerStats;
 }
 interface TurnEventBase {
@@ -121,11 +122,16 @@ interface TurnHitEvent extends TurnEventBase {
 }
 type TurnEvent = TurnSpawnEvent | TurnHitEvent;
 
-const TURN_PLAN_MS = 5000;
-const TURN_EXECUTE_MS = 5000;
-const TURN_WINDUP_MS = 200;
-const TURN_MAX_SHOTS = 3;
-const TURN_MIN_SHOT_SPACING_MS = 300;
+// Turn timing:
+// - Planning: player inputs/recording window
+// - Sync buffer: short gap for submit/lock/clock sync before execute starts
+// - Execute: deterministic replay window
+const TURN_PLAN_MS = 9000;
+const TURN_SYNC_BUFFER_MS = 1000;
+const TURN_EXECUTE_MS = 10000;
+const TURN_WINDUP_MS = 0;
+const TURN_MAX_TRACK_POINTS = 90;
+const TURN_MAX_SPAWNS = 60;
 
 // Arena (match client canvas coordinates)
 const ARENA_LEFT = 240;
@@ -152,6 +158,7 @@ export class GameRoom extends Room<GameState> {
   private lastContinuousBroadcasts = new Map<string, Map<PlayerInputType, ContinuousSnapshot>>();
 
   // Turn-based PvP state
+  private _turnEnabled = false;
   private _turnPlans = new Map<string, TurnPlan>();
   private _turnLocked = new Set<string>();
   private _turnPhaseTimer: any = null;
@@ -216,6 +223,12 @@ export class GameRoom extends Room<GameState> {
     try {
       console.log("GameRoom created:", this.roomId);
       registerRoom(this.roomId);
+      this._turnEnabled = (this.roomName === "pvp_5sec_room");
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:onCreate',message:'turn mode enabled?',data:{roomId:this.roomId,roomName:this.roomName,turnEnabled:this._turnEnabled},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1'})}).catch(()=>{});
+      } catch {}
+      // #endregion
 
       // #region agent log
       try {
@@ -294,10 +307,19 @@ export class GameRoom extends Room<GameState> {
     const isFirstPlayer = this.state.players.size === 0;
     player.x = isFirstPlayer ? ARENA_LEFT + (ARENA_RIGHT - ARENA_LEFT) * 0.25 : ARENA_LEFT + (ARENA_RIGHT - ARENA_LEFT) * 0.75;
     player.y = options.y || (ARENA_BOTTOM / 2);
-    player.hp = 100;
-    player.maxHP = 100;
-    player.armor = 50;
-    player.maxArmor = 50;
+    // Initialize stats from client (prevents 100/61 mismatches). Clamp to sane bounds.
+    const clampNum = (v: any, min: number, max: number, fallback: number) => {
+      const n = (typeof v === "number" && Number.isFinite(v)) ? v : fallback;
+      return Math.max(min, Math.min(max, n));
+    };
+    const maxHP = clampNum(options?.maxHP, 1, 10000, 100);
+    const hp = clampNum(options?.hp, 0, maxHP, maxHP);
+    const maxArmor = clampNum(options?.maxArmor, 0, 10000, 50);
+    const armor = clampNum(options?.armor, 0, maxArmor, maxArmor);
+    player.maxHP = Math.round(maxHP);
+    player.hp = Math.round(hp);
+    player.maxArmor = Math.round(maxArmor);
+    player.armor = Math.round(armor);
     player.ready = false;
     
     // Add player to state
@@ -393,7 +415,7 @@ export class GameRoom extends Room<GameState> {
     // Check if both players are ready
     const allReady = Array.from(this.state.players.values()).every(p => p.ready);
     
-    if (allReady && this.state.players.size === 2 && !this.state.gameStarted) {
+    if (this._turnEnabled && allReady && this.state.players.size === 2 && !this.state.gameStarted) {
       this.broadcast("game_start", {
         message: "Game starting!"
       });
@@ -405,6 +427,7 @@ export class GameRoom extends Room<GameState> {
 
   // --- Turn-based PvP handlers ---
   private handlePlanSubmit(client: Client, message: any): void {
+    if (!this._turnEnabled) return;
     if (!this.state.gameStarted) return;
     if (this.state.phase !== "planning") return;
     const player = this.state.players.get(client.sessionId);
@@ -412,12 +435,41 @@ export class GameRoom extends Room<GameState> {
 
     const plan = this.sanitizePlan(client.sessionId, message);
     this._turnPlans.set(client.sessionId, plan);
+    // Share limited "planning intel": fuel usage is visible live to both players.
+    try {
+      const p = this.state.players.get(client.sessionId);
+      const f = plan?.stats?.fuel;
+      const mf = plan?.stats?.maxFuel;
+      if (p && typeof f === "number" && Number.isFinite(f)) {
+        const maxFuel = (typeof mf === "number" && Number.isFinite(mf) && mf > 0) ? mf : (p.maxFuel || 100);
+        p.maxFuel = Math.max(1, Math.min(1000, Math.round(maxFuel)));
+        p.fuel = Math.max(0, Math.min(p.maxFuel, Math.round(f)));
+      }
+    } catch {}
     // Any new submit unlocks (player changed plan)
     this._turnLocked.delete(client.sessionId);
     client.send("plan_ack", { roundId: this.state.roundId, locked: false });
+    // #region agent log
+    try {
+      const tn = Array.isArray((plan as any).track) ? (plan as any).track.length : 0;
+      const sn = Array.isArray((plan as any).spawns) ? (plan as any).spawns.length : 0;
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:handlePlanSubmit',message:'server received plan_submit',data:{roomId:this.roomId,sid:client.sessionId,phase:this.state.phase,roundId:this.state.roundId,trackN:tn,spawnsN:sn},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3'})}).catch(()=>{});
+    } catch {}
+    // #endregion
+    try {
+      const tn = Array.isArray((plan as any).track) ? (plan as any).track.length : 0;
+      const sn = Array.isArray((plan as any).spawns) ? (plan as any).spawns.length : 0;
+      if ((globalThis as any).__turnLogLastAt == null) (globalThis as any).__turnLogLastAt = 0;
+      const now = Date.now();
+      if (now - (globalThis as any).__turnLogLastAt > 500) {
+        (globalThis as any).__turnLogLastAt = now;
+        console.log(`[TURN] plan_submit room=${this.roomId} sid=${client.sessionId} track=${tn} spawns=${sn} phaseEndsAt=${this.state.phaseEndsAt}`);
+      }
+    } catch {}
   }
 
   private handlePlanLock(client: Client): void {
+    if (!this._turnEnabled) return;
     if (!this.state.gameStarted) return;
     if (this.state.phase !== "planning") return;
     if (!this.state.players.has(client.sessionId)) return;
@@ -431,6 +483,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private startTurnBasedLoop(): void {
+    if (!this._turnEnabled) return;
     const now = Date.now();
     this.state.phase = "planning";
     this.state.roundId = Math.max(1, this.state.roundId + 1);
@@ -444,9 +497,11 @@ export class GameRoom extends Room<GameState> {
     // Create default plans from current positions (so even if player doesn't submit, round can run).
     for (const [sid, p] of this.state.players.entries()) {
       this._turnPlans.set(sid, {
-        destX: p.x,
-        destY: p.y,
-        shots: [],
+        track: [
+          { tMs: 0, x: p.x, y: p.y },
+          { tMs: TURN_EXECUTE_MS, x: p.x, y: p.y }
+        ],
+        spawns: [],
         stats: {}
       });
     }
@@ -454,7 +509,10 @@ export class GameRoom extends Room<GameState> {
     this.broadcast("phase", {
       phase: "planning" as TurnPhase,
       roundId: this.state.roundId,
-      endsAt: this.state.phaseEndsAt
+      endsAt: this.state.phaseEndsAt,
+      serverNow: now,
+      planMs: TURN_PLAN_MS,
+      executeMs: TURN_EXECUTE_MS
     });
 
     if (this._turnPhaseTimer) {
@@ -465,6 +523,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private beginExecutePhase(): void {
+    if (!this._turnEnabled) return;
     if (!this.state.gameStarted) return;
     if (this.state.phase === "execute") return;
     if (this.state.players.size !== 2) return;
@@ -476,13 +535,41 @@ export class GameRoom extends Room<GameState> {
     }
 
     const now = Date.now();
-    const startAt = now + 300; // small buffer so both clients can start together
+    const startAt = now + TURN_SYNC_BUFFER_MS; // buffer so both clients can start together & sync
     this.state.phase = "execute";
     this.state.executeStartAt = startAt;
     this.state.phaseEndsAt = startAt + TURN_EXECUTE_MS;
 
     // Simulate the whole execute window right now and send deterministic events.
     const sim = this.simulateExecuteRound(this._turnPlans, this._turnRoundSeed);
+    // #region agent log
+    try {
+      const ids = Object.keys(sim.plans || {});
+      const p0: any = (ids[0] ? (sim.plans as any)[ids[0]] : null);
+      const p1: any = (ids[1] ? (sim.plans as any)[ids[1]] : null);
+      const t0 = Array.isArray(p0?.track) ? p0.track.length : 0;
+      const t1 = Array.isArray(p1?.track) ? p1.track.length : 0;
+      const s0 = Array.isArray(p0?.spawns) ? p0.spawns.length : 0;
+      const s1 = Array.isArray(p1?.spawns) ? p1.spawns.length : 0;
+      const summarizeTrack = (track: any[]) => {
+        if (!Array.isArray(track) || track.length === 0) return null;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        const first = track[0];
+        const last = track[track.length - 1];
+        for (const pt of track) {
+          const x = typeof pt?.x === 'number' ? pt.x : 0;
+          const y = typeof pt?.y === 'number' ? pt.y : 0;
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+        return { first, last, minX, maxX, minY, maxY, dx: (last?.x ?? 0) - (first?.x ?? 0), dy: (last?.y ?? 0) - (first?.y ?? 0) };
+      };
+      const a = summarizeTrack(p0?.track || []);
+      const b = summarizeTrack(p1?.track || []);
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:beginExecutePhase',message:'server broadcasting round_execute',data:{roomId:this.roomId,roundId:this.state.roundId,startAt,plansKeys:ids,trackN:[t0,t1],spawnsN:[s0,s1],eventsN:sim.events.length},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H5'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:beginExecutePhase',message:'server track summary',data:{roomId:this.roomId,roundId:this.state.roundId,keys:ids,track0:a,track1:b},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H6'})}).catch(()=>{});
+    } catch {}
+    // #endregion
 
     // Broadcast one payload that lets clients play the whole round offline (no jitter).
     this.broadcast("round_execute", {
@@ -505,6 +592,16 @@ export class GameRoom extends Room<GameState> {
       events: sim.events,
       finalState: sim.finalState
     });
+    try {
+      const ids = Object.keys(sim.plans || {});
+      const p0: any = (ids[0] ? (sim.plans as any)[ids[0]] : null);
+      const p1: any = (ids[1] ? (sim.plans as any)[ids[1]] : null);
+      const t0 = Array.isArray(p0?.track) ? p0.track.length : 0;
+      const t1 = Array.isArray(p1?.track) ? p1.track.length : 0;
+      const s0 = Array.isArray(p0?.spawns) ? p0.spawns.length : 0;
+      const s1 = Array.isArray(p1?.spawns) ? p1.spawns.length : 0;
+      console.log(`[TURN] round_execute room=${this.roomId} round=${this.state.roundId} startAt=${startAt} plans(track=${t0}/${t1},spawns=${s0}/${s1}) events=${sim.events.length}`);
+    } catch {}
 
     // Apply final state on the server at the end of the execute window.
     const delayMs = Math.max(0, this.state.phaseEndsAt - Date.now());
@@ -531,31 +628,51 @@ export class GameRoom extends Room<GameState> {
     const currentX = p?.x ?? (ARENA_LEFT + (ARENA_RIGHT - ARENA_LEFT) * 0.25);
     const currentY = p?.y ?? (ARENA_BOTTOM / 2);
 
-    const destXRaw = typeof message?.destX === "number" ? message.destX : currentX;
-    const destYRaw = typeof message?.destY === "number" ? message.destY : currentY;
-    const dest = this.clampDestToSide(sessionId, destXRaw, destYRaw);
-
     const stats: TurnPlayerStats = {
       dmg: typeof message?.stats?.dmg === "number" ? Math.max(0, Math.min(999, message.stats.dmg)) : undefined,
-      critChance: typeof message?.stats?.critChance === "number" ? Math.max(0, Math.min(100, message.stats.critChance)) : undefined
+      critChance: typeof message?.stats?.critChance === "number" ? Math.max(0, Math.min(100, message.stats.critChance)) : undefined,
+      maxFuel: typeof message?.stats?.maxFuel === "number" ? Math.max(1, Math.min(1000, message.stats.maxFuel)) : undefined,
+      fuel: typeof message?.stats?.fuel === "number" ? Math.max(0, Math.min(1000, message.stats.fuel)) : undefined
     };
 
-    const shotsIn: any[] = Array.isArray(message?.shots) ? message.shots : [];
-    const shots: TurnShotPlan[] = [];
-    let lastT = -Infinity;
-    for (const s of shotsIn) {
-      if (shots.length >= TURN_MAX_SHOTS) break;
-      const tMs = typeof s?.tMs === "number" ? Math.round(s.tMs) : 0;
+    const trackIn: any[] = Array.isArray(message?.track) ? message.track : [];
+    const track: Array<{ tMs: number; x: number; y: number }> = [];
+    let lastT = -1;
+    for (const pt of trackIn) {
+      if (track.length >= TURN_MAX_TRACK_POINTS) break;
+      const tMs = typeof pt?.tMs === "number" ? Math.round(pt.tMs) : 0;
       if (tMs < 0 || tMs > TURN_EXECUTE_MS) continue;
-      if (tMs - lastT < TURN_MIN_SHOT_SPACING_MS) continue;
-      const type: TurnShotType = (s?.type === "arrow" || s?.type === "bullet" || s?.type === "projectile") ? s.type : "bullet";
-      const aimX = typeof s?.aimX === "number" ? s.aimX : MID_WALL_X;
-      const aimY = typeof s?.aimY === "number" ? s.aimY : (ARENA_BOTTOM / 2);
-      shots.push({ tMs, type, aimX, aimY });
+      if (tMs < lastT) continue;
+      const xRaw = typeof pt?.x === "number" ? pt.x : currentX;
+      const yRaw = typeof pt?.y === "number" ? pt.y : currentY;
+      const clamped = this.clampDestToSide(sessionId, xRaw, yRaw);
+      track.push({ tMs, x: clamped.x, y: clamped.y });
       lastT = tMs;
     }
+    if (track.length === 0) {
+      const clamped = this.clampDestToSide(sessionId, currentX, currentY);
+      track.push({ tMs: 0, x: clamped.x, y: clamped.y });
+      track.push({ tMs: TURN_EXECUTE_MS, x: clamped.x, y: clamped.y });
+    }
 
-    return { destX: dest.x, destY: dest.y, shots, stats };
+    const spawnsIn: any[] = Array.isArray(message?.spawns) ? message.spawns : [];
+    const spawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }> = [];
+    for (const s of spawnsIn) {
+      if (spawns.length >= TURN_MAX_SPAWNS) break;
+      const tMs = typeof s?.tMs === "number" ? Math.round(s.tMs) : 0;
+      if (tMs < 0 || tMs > TURN_EXECUTE_MS) continue;
+      const projType: TurnShotType = (s?.projType === "arrow" || s?.projType === "bullet" || s?.projType === "projectile") ? s.projType : "bullet";
+      const x = typeof s?.x === "number" ? s.x : currentX;
+      const y = typeof s?.y === "number" ? s.y : currentY;
+      const vx = typeof s?.vx === "number" ? s.vx : 0;
+      const vy = typeof s?.vy === "number" ? s.vy : 0;
+      // Clamp spawn position to arena bounds (projectiles can be anywhere in arena, mid-wall doesn't block)
+      const cx = Math.max(ARENA_LEFT, Math.min(ARENA_RIGHT, x));
+      const cy = Math.max(ARENA_TOP, Math.min(ARENA_BOTTOM, y));
+      spawns.push({ tMs, projType, x: cx, y: cy, vx: Math.max(-5000, Math.min(5000, vx)), vy: Math.max(-5000, Math.min(5000, vy)) });
+    }
+
+    return { track, spawns, stats };
   }
 
   private clampDestToSide(sessionId: string, x: number, y: number): { x: number; y: number } {
@@ -581,8 +698,8 @@ export class GameRoom extends Room<GameState> {
     const pA0 = this.state.players.get(sidA)!;
     const pB0 = this.state.players.get(sidB)!;
 
-    const planA = plans.get(sidA) || { destX: pA0.x, destY: pA0.y, shots: [], stats: {} };
-    const planB = plans.get(sidB) || { destX: pB0.x, destY: pB0.y, shots: [], stats: {} };
+    const planA = plans.get(sidA) || { track: [{ tMs: 0, x: pA0.x, y: pA0.y }, { tMs: TURN_EXECUTE_MS, x: pA0.x, y: pA0.y }], spawns: [], stats: {} };
+    const planB = plans.get(sidB) || { track: [{ tMs: 0, x: pB0.x, y: pB0.y }, { tMs: TURN_EXECUTE_MS, x: pB0.x, y: pB0.y }], spawns: [], stats: {} };
 
     const outPlans: Record<string, TurnPlan> = {
       [sidA]: planA,
@@ -597,9 +714,9 @@ export class GameRoom extends Room<GameState> {
     };
 
     const events: TurnEvent[] = [];
-    const players: Record<string, { x: number; y: number; hp: number; armor: number; startX: number; startY: number; destX: number; destY: number; }> = {
-      [sidA]: { x: pA0.x, y: pA0.y, hp: pA0.hp, armor: pA0.armor, startX: pA0.x, startY: pA0.y, destX: planA.destX, destY: planA.destY },
-      [sidB]: { x: pB0.x, y: pB0.y, hp: pB0.hp, armor: pB0.armor, startX: pB0.x, startY: pB0.y, destX: planB.destX, destY: planB.destY }
+    const players: Record<string, { x: number; y: number; hp: number; armor: number; }> = {
+      [sidA]: { x: pA0.x, y: pA0.y, hp: pA0.hp, armor: pA0.armor },
+      [sidB]: { x: pB0.x, y: pB0.y, hp: pB0.hp, armor: pB0.armor }
     };
 
     const planBySid: Record<string, TurnPlan> = { [sidA]: planA, [sidB]: planB };
@@ -620,30 +737,33 @@ export class GameRoom extends Room<GameState> {
     const dtMs = SIMULATION_INTERVAL_MS; // 33ms
     const dtSec = dtMs / 1000;
 
-    // Precompute spawn schedules per shooter
-    type PendingSpawn = { spawnAtMs: number; shot: TurnShotPlan; shooterId: string };
+    // Precompute spawn schedules per shooter (recorded spawns)
+    type PendingSpawn = { spawnAtMs: number; shooterId: string; projType: TurnShotType; x: number; y: number; vx: number; vy: number };
     const pendingSpawns: PendingSpawn[] = [];
     for (const sid of [sidA, sidB]) {
-      for (let i = 0; i < (planBySid[sid].shots || []).length; i++) {
-        const shot = planBySid[sid].shots[i];
-        const spawnAtMs = Math.max(0, Math.min(TURN_EXECUTE_MS, shot.tMs + TURN_WINDUP_MS));
-        pendingSpawns.push({ spawnAtMs, shot, shooterId: sid });
+      for (const sp of planBySid[sid].spawns || []) {
+        const spawnAtMs = Math.max(0, Math.min(TURN_EXECUTE_MS, sp.tMs + TURN_WINDUP_MS));
+        pendingSpawns.push({ spawnAtMs, shooterId: sid, projType: sp.projType, x: sp.x, y: sp.y, vx: sp.vx, vy: sp.vy });
       }
     }
     pendingSpawns.sort((a, b) => a.spawnAtMs - b.spawnAtMs);
     let nextSpawnIdx = 0;
     let projCounter = 0;
 
-    const posAt = (sid: string, tSec: number) => {
-      const pl = players[sid];
-      const dx = pl.destX - pl.startX;
-      const dy = pl.destY - pl.startY;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0;
-      if (dist <= 0.001) return { x: pl.startX, y: pl.startY };
-      const travel = Math.min(dist, MOVE_SPEED_PX_PER_S * tSec);
-      const nx = dx / dist;
-      const ny = dy / dist;
-      return { x: pl.startX + nx * travel, y: pl.startY + ny * travel };
+    const trackAt = (track: Array<{ tMs: number; x: number; y: number }>, tMs: number) => {
+      if (!track || track.length === 0) return null;
+      if (tMs <= track[0].tMs) return { x: track[0].x, y: track[0].y };
+      for (let i = 0; i < track.length - 1; i++) {
+        const a = track[i];
+        const b = track[i + 1];
+        if (tMs >= a.tMs && tMs <= b.tMs) {
+          const span = Math.max(1, b.tMs - a.tMs);
+          const t = (tMs - a.tMs) / span;
+          return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        }
+      }
+      const last = track[track.length - 1];
+      return { x: last.x, y: last.y };
     };
 
     const projParams = (type: TurnShotType) => {
@@ -680,11 +800,9 @@ export class GameRoom extends Room<GameState> {
     };
 
     for (let tMs = 0; tMs <= TURN_EXECUTE_MS; tMs += dtMs) {
-      const tSec = tMs / 1000;
-
-      // Update player positions (deterministic)
+      // Update player positions from recorded tracks (deterministic)
       for (const sid of [sidA, sidB]) {
-        const p = posAt(sid, tSec);
+        const p = trackAt(planBySid[sid].track, tMs) || { x: players[sid].x, y: players[sid].y };
         players[sid].x = p.x;
         players[sid].y = p.y;
       }
@@ -693,26 +811,19 @@ export class GameRoom extends Room<GameState> {
       while (nextSpawnIdx < pendingSpawns.length && pendingSpawns[nextSpawnIdx].spawnAtMs <= tMs) {
         const ps = pendingSpawns[nextSpawnIdx++];
         const shooterId = ps.shooterId;
-        const shot = ps.shot;
-        const shooterPos = posAt(shooterId, ps.spawnAtMs / 1000);
-        const params = projParams(shot.type);
-        const dx = shot.aimX - shooterPos.x;
-        const dy = shot.aimY - shooterPos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const ux = dx / dist;
-        const uy = dy / dist;
-        const vx = ux * params.speed;
-        const vy = uy * params.speed;
+        const projType = ps.projType;
+        const vx = ps.vx;
+        const vy = ps.vy;
         const id = `p${this.roomId}_${this.state.roundId}_${projCounter++}`;
-        projectiles.push({ id, shooterId, type: shot.type, x: shooterPos.x, y: shooterPos.y, vx, vy, alive: true, hit: false });
+        projectiles.push({ id, shooterId, type: projType, x: ps.x, y: ps.y, vx, vy, alive: true, hit: false });
         events.push({
           type: "projectile_spawn",
           tMs: ps.spawnAtMs,
           projectileId: id,
           shooterId,
-          projType: shot.type,
-          x: shooterPos.x,
-          y: shooterPos.y,
+          projType,
+          x: ps.x,
+          y: ps.y,
           vx,
           vy
         });
@@ -736,10 +847,11 @@ export class GameRoom extends Room<GameState> {
         }
 
         const targetId = (proj.shooterId === sidA) ? sidB : sidA;
+        const tpPos = trackAt(planBySid[targetId].track, tMs) || players[targetId];
         const tp = players[targetId];
         if (tp.hp <= 0) continue;
-        const dx = tp.x - proj.x;
-        const dy = tp.y - proj.y;
+        const dx = tpPos.x - proj.x;
+        const dy = tpPos.y - proj.y;
         const hitR = PLAYER_RADIUS + params.radius;
         if (dx * dx + dy * dy <= hitR * hitR) {
           const dmgRes = computeDamage(proj.shooterId, proj.type);
@@ -761,8 +873,8 @@ export class GameRoom extends Room<GameState> {
 
     const finalState = {
       players: {
-        [sidA]: { x: players[sidA].x, y: players[sidA].y, hp: players[sidA].hp, armor: players[sidA].armor },
-        [sidB]: { x: players[sidB].x, y: players[sidB].y, hp: players[sidB].hp, armor: players[sidB].armor }
+        [sidA]: { x: (trackAt(planBySid[sidA].track, TURN_EXECUTE_MS) || players[sidA]).x, y: (trackAt(planBySid[sidA].track, TURN_EXECUTE_MS) || players[sidA]).y, hp: players[sidA].hp, armor: players[sidA].armor },
+        [sidB]: { x: (trackAt(planBySid[sidB].track, TURN_EXECUTE_MS) || players[sidB]).x, y: (trackAt(planBySid[sidB].track, TURN_EXECUTE_MS) || players[sidB]).y, hp: players[sidB].hp, armor: players[sidB].armor }
       }
     };
 

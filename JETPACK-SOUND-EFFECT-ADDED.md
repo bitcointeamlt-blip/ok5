@@ -122,3 +122,6 @@ Jetpack sistema dabar turi **garso efektą**, kuris aiškiai rodo degalų būsen
 
 
 
+
+
+

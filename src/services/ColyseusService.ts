@@ -58,15 +58,15 @@ export interface TurnShotPlan {
 }
 
 export interface TurnPlanSubmit {
-  destX: number;
-  destY: number;
-  shots: TurnShotPlan[];
-  stats?: { dmg?: number; critChance?: number };
+  track: Array<{ tMs: number; x: number; y: number }>;
+  spawns: Array<{ tMs: number; projType: 'arrow' | 'bullet' | 'projectile'; x: number; y: number; vx: number; vy: number }>;
+  stats?: { dmg?: number; critChance?: number; fuel?: number; maxFuel?: number };
 }
 
 class ColyseusService {
   private client: Client | null = null;
   private room: Room<RoomState> | null = null;
+  private roomName: string | null = null;
   private inputCallback: OpponentInputCallback | null = null;
   private isConnected: boolean = false;
 
@@ -235,7 +235,12 @@ class ColyseusService {
   }
 
   // Join or create a PvP room
-  async joinOrCreateRoom(roomName: string, address: string, onOpponentInput: OpponentInputCallback): Promise<Room<RoomState> | null> {
+  async joinOrCreateRoom(
+    roomName: string,
+    address: string,
+    onOpponentInput: OpponentInputCallback,
+    stats?: { hp?: number; maxHP?: number; armor?: number; maxArmor?: number }
+  ): Promise<Room<RoomState> | null> {
     if (!this.client) {
       console.error('❌ Colyseus client not initialized');
       return null;
@@ -257,11 +262,15 @@ class ColyseusService {
       console.log('🔵 Client endpoint:', clientEndpoint);
       console.log('🔵 Address:', address);
       
-      // Join or create room with timeout
+      // Join or create room with timeout (include stats to prevent 100/61 mismatches)
       const joinPromise = this.client.joinOrCreate<RoomState>(roomName, {
         address: address,
         x: 960,
-        y: 540
+        y: 540,
+        hp: stats?.hp,
+        maxHP: stats?.maxHP,
+        armor: stats?.armor,
+        maxArmor: stats?.maxArmor
       });
       
       // Add timeout (30 seconds)
@@ -275,6 +284,7 @@ class ColyseusService {
         console.error('❌ Room is null after joinOrCreate');
         return null;
       }
+      this.roomName = roomName;
 
       this.inputCallback = onOpponentInput;
       this.isConnected = true;
@@ -284,6 +294,15 @@ class ColyseusService {
 
       console.log('✅ Successfully joined Colyseus room:', this.room.id);
       console.log('✅ Room state:', this.room.state);
+      // #region agent log
+      try {
+        const clientEndpoint = (this as any)?._currentEndpoint ||
+                             (this.client as any)?.endpoint ||
+                             (this.client as any)?.transport?.endpoint ||
+                             'unknown';
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/services/ColyseusService.ts:joinOrCreateRoom',message:'client joined room (mode debug)',data:{roomName,roomId:this.room.id,endpoint:clientEndpoint,addressPresent:!!address},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E1'})}).catch(()=>{});
+      } catch {}
+      // #endregion
       // #region agent log
       try {
         const clientEndpoint = (this as any)?._currentEndpoint ||
@@ -473,6 +492,10 @@ class ColyseusService {
     if (!this.room || !this.isConnected) {
       return false;
     }
+    // 5SEC PVP uses plan_submit/round_execute, not realtime inputs.
+    if (this.roomName === 'pvp_5sec_room') {
+      return false;
+    }
 
     try {
       // #region agent log
@@ -553,6 +576,7 @@ class ColyseusService {
         console.error('Failed to leave room:', error);
       }
       this.room = null;
+      this.roomName = null;
       this.isConnected = false;
     }
   }
