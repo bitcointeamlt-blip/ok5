@@ -3,6 +3,8 @@ import { Schema, MapSchema, type } from "@colyseus/schema";
 export class Player extends Schema {
   @type("string") sessionId: string = "";
   @type("string") address: string = ""; // Ronin wallet address (nullable handled as empty string)
+  // NFT profile picture URL to render inside UFO (synced to opponent)
+  @type("string") profilePicture: string = "";
   @type("number") x: number = 960;
   @type("number") y: number = 540;
   @type("number") vx: number = 0;
@@ -12,8 +14,8 @@ export class Player extends Schema {
   @type("number") armor: number = 50;
   @type("number") maxArmor: number = 50;
   // Jetpack fuel (shared info during PLANNING)
-  @type("number") fuel: number = 100;
-  @type("number") maxFuel: number = 100;
+  @type("number") fuel: number = 150;
+  @type("number") maxFuel: number = 150;
   @type("boolean") ready: boolean = false;
 
   // Arrow state

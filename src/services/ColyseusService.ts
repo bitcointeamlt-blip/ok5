@@ -239,7 +239,7 @@ class ColyseusService {
     roomName: string,
     address: string,
     onOpponentInput: OpponentInputCallback,
-    stats?: { hp?: number; maxHP?: number; armor?: number; maxArmor?: number }
+    stats?: { hp?: number; maxHP?: number; armor?: number; maxArmor?: number; profilePicture?: string }
   ): Promise<Room<RoomState> | null> {
     if (!this.client) {
       console.error('❌ Colyseus client not initialized');
@@ -270,7 +270,8 @@ class ColyseusService {
         hp: stats?.hp,
         maxHP: stats?.maxHP,
         armor: stats?.armor,
-        maxArmor: stats?.maxArmor
+        maxArmor: stats?.maxArmor,
+        profilePicture: stats?.profilePicture
       });
       
       // Add timeout (30 seconds)

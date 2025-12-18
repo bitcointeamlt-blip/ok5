@@ -295,6 +295,41 @@ function closeServerBrowser(): void {
   serverStatusLoading = false;
 }
 
+// PvP identity:
+// - If wallet connected, use wallet address
+// - Otherwise, use an ephemeral guest id (sessionStorage), so guests can play PvP but never save progression.
+function getMyPvpAddress(): string {
+  const walletState = walletService.getState();
+  // Some flows restore address asynchronously; prefer a real Ronin address whenever present.
+  if (walletState.address) return walletState.address;
+  try {
+    const stored = localStorage.getItem('ronin_address');
+    if (stored) return stored;
+  } catch {}
+  try {
+    const existing = sessionStorage.getItem('guest_pvp_id');
+    if (existing) return existing;
+    const id = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    sessionStorage.setItem('guest_pvp_id', id);
+    return id;
+  } catch {
+    return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function getRoninAddressForPersistence(): string | null {
+  try {
+    const walletAddr = walletService.getState().address;
+    if (walletAddr) return walletAddr;
+  } catch {}
+  try {
+    const stored = localStorage.getItem('ronin_address');
+    return stored || null;
+  } catch {
+    return null;
+  }
+}
+
 function handleServerSelection(serverId: string): void {
   const server = serverStatuses.find((item) => item.id === serverId);
   if (!server) {
@@ -307,11 +342,8 @@ function handleServerSelection(serverId: string): void {
 }
 
 function startPvPMatchOnServer(serverEndpoint?: string): void {
-  const walletState = walletService.getState();
-  if (!walletState.isConnected || !walletState.address) {
-    walletError = 'Connect Ronin Wallet to play PvP Online';
-    return;
-  }
+  // Allow guests to play PvP (no wallet). Progress is not saved for guests.
+  walletError = null;
 
   const endpointToUse = serverEndpoint || getSelectedServerEndpoint();
   // Preserve desired PvP mode across cleanupPvP()
@@ -440,6 +472,14 @@ try {
   walletService.onStateChange((state) => {
     console.log('Wallet state changed:', state);
     console.log('isConnected:', state.isConnected, 'address:', state.address);
+    // If the user connects after startup, restore local save immediately (old behavior).
+    try {
+      if ((state.isConnected && state.address) && !(window as any).__saveLoadedAfterWalletConnect) {
+        (window as any).__saveLoadedAfterWalletConnect = true;
+        const saveData = saveManager.load();
+        if (saveData) loadGameState(saveData);
+      }
+    } catch {}
     // UI will update automatically on next render
   });
   
@@ -769,10 +809,11 @@ type PvPPlayer = {
   // Bullet paralysis
   paralyzedUntil: number; // Timestamp when paralysis ends (0 = not paralyzed)
   // Jetpack fuel system
-  fuel: number; // Current fuel (0-100)
-  maxFuel: number; // Maximum fuel (100)
+  fuel: number; // Current fuel (0-maxFuel)
+  maxFuel: number; // Maximum fuel
   isUsingJetpack: boolean; // Whether jetpack is currently active
   jetpackStartTime: number; // When jetpack was started (for fuel consumption)
+  jetpackLastFuelTickTime: number; // Last timestamp when fuel was consumed (for dt-based consumption)
   lastFuelRegenTime: number; // When fuel was last regenerated
   // Overheat system
   isOverheated: boolean; // Whether jetpack is overheated
@@ -797,20 +838,25 @@ let myPlayerId: string | null = null; // My player ID
 let opponentId: string | null = null; // Opponent player ID
 
 // Jetpack fuel carryover between PvP rounds/resets (no auto-refill)
+const PVP_DEFAULT_MAX_FUEL = 150; // Increased fuel capacity for longer travel
 let pvpFuelCarryoverById: { [playerId: string]: number } = {};
 function snapshotPvpFuelCarryover(): void {
   try {
     for (const id of Object.keys(pvpPlayers || {})) {
       const f: any = (pvpPlayers as any)?.[id]?.fuel;
+      const mf: any = (pvpPlayers as any)?.[id]?.maxFuel;
+      const maxFuel = (typeof mf === 'number' && Number.isFinite(mf) && mf > 0) ? mf : PVP_DEFAULT_MAX_FUEL;
       if (typeof f === 'number' && Number.isFinite(f)) {
-        pvpFuelCarryoverById[id] = Math.max(0, Math.min(100, f));
+        pvpFuelCarryoverById[id] = Math.max(0, Math.min(maxFuel, f));
       }
     }
   } catch {}
 }
-function getCarryoverFuel(playerId: string, fallback: number = 100): number {
+function getCarryoverFuel(playerId: string, fallback: number = PVP_DEFAULT_MAX_FUEL, maxFuel: number = PVP_DEFAULT_MAX_FUEL): number {
   const f = pvpFuelCarryoverById[playerId];
-  return (typeof f === 'number' && Number.isFinite(f)) ? Math.max(0, Math.min(100, f)) : fallback;
+  const mf = (typeof maxFuel === 'number' && Number.isFinite(maxFuel) && maxFuel > 0) ? maxFuel : PVP_DEFAULT_MAX_FUEL;
+  const fb = (typeof fallback === 'number' && Number.isFinite(fallback)) ? fallback : mf;
+  return (typeof f === 'number' && Number.isFinite(f)) ? Math.max(0, Math.min(mf, f)) : Math.max(0, Math.min(mf, fb));
 }
 
 // PvP mid-wall: split arena into left/right halves (players cannot cross; projectiles can).
@@ -1004,11 +1050,16 @@ function recordTurnTrackAndMaybeSend(): void {
   if (nowServer - turnLastPlanSendServerTs >= 250) {
     turnLastPlanSendServerTs = nowServer;
     const me = pvpPlayers[myPlayerId];
+    // IMPORTANT: Server computes EXECUTE damage from plan.stats.dmg/critChance.
+    // Include Ronkeverse NFT bonuses here so EXECUTE matches what you see during planning.
+    const nftBonuses = calculateNftBonuses();
+    const totalDmg = dmg + (nftBonuses?.dmg || 0);
+    const totalCritChance = critChance + (nftBonuses?.critChance || 0);
     const ok = colyseusService.sendPlan({
       track: turnLocalTrack,
       spawns: turnLocalSpawns,
       // Share limited live intel during planning: fuel usage.
-      stats: { dmg, critChance, fuel: me?.fuel, maxFuel: me?.maxFuel }
+      stats: { dmg: totalDmg, critChance: totalCritChance, fuel: me?.fuel, maxFuel: me?.maxFuel }
     });
     if (!ok) turnPlanSendFailCount++;
     // #region agent log
@@ -1032,10 +1083,14 @@ function recordTurnSpawn(projType: TurnShotType, x: number, y: number, vxPerFram
     turnLocalSpawns.shift();
   }
   // Send immediately on spawn for responsiveness
+  // Include NFT bonuses so server uses correct damage/crit for EXECUTE.
+  const nftBonuses = calculateNftBonuses();
+  const totalDmg = dmg + (nftBonuses?.dmg || 0);
+  const totalCritChance = critChance + (nftBonuses?.critChance || 0);
   const ok = colyseusService.sendPlan({
     track: turnLocalTrack,
     spawns: turnLocalSpawns,
-    stats: { dmg, critChance }
+    stats: { dmg: totalDmg, critChance: totalCritChance }
   });
   if (!ok) turnPlanSendFailCount++;
 }
@@ -1091,6 +1146,31 @@ function updateTurnBasedPvP(nowMs: number): void {
     pl.x = pos.x;
     pl.y = pos.y;
     enforcePvpMidWall(pid, pl);
+  }
+
+  // EXECUTE replay: generate the same UFO speed shadow tail based on replay velocity.
+  // (Legacy realtime physics is disabled during execute, so without this the tail never appears.)
+  for (const pid of Object.keys(turnPlansById || {})) {
+    const pl = pvpPlayers[pid];
+    if (!pl) continue;
+    const speedSquared = pl.vx * pl.vx + pl.vy * pl.vy;
+    const speed = Math.sqrt(speedSquared);
+    if (speed >= 2) {
+      pl.speedTrail.push({
+        x: pl.x,
+        y: pl.y,
+        vx: 0,
+        vy: 0,
+        life: 16,
+        maxLife: 16,
+        size: pl.radius * 1.2
+      });
+      if (pl.speedTrail.length > 8) pl.speedTrail.shift();
+    }
+    for (let i = pl.speedTrail.length - 1; i >= 0; i--) {
+      pl.speedTrail[i].life--;
+      if (pl.speedTrail[i].life <= 0) pl.speedTrail.splice(i, 1);
+    }
   }
 
   // #region agent log
@@ -1253,7 +1333,9 @@ const pvpBounds = {
 };
 
 // PvP physics constants
-const pvpFriction = 0.98; // Air resistance/friction
+// Velocity damping (air resistance). Lower = more friction / less inertia.
+const pvpFriction = 0.985; // baseline damping (applied every frame)
+const pvpFrictionCoast = 0.97; // stronger damping when coasting (helps stop jetpack inertia)
 const pvpGravity = 0.05; // Same as Solo gravity
 
 // PvP Bot AI
@@ -1695,6 +1777,14 @@ function loadGameState(saveData: SaveDataV2): void {
 
 // Load game on startup
 function loadGame(): void {
+  // Guest mode: allow play without wallet, but NEVER save progress.
+  // For returning Ronin users, allow loading if we can identify a Ronin address (connected or stored).
+  const roninAddr = getRoninAddressForPersistence();
+  if (!roninAddr) {
+    console.log('Guest mode: skipping load (no Ronin address). Progress will not be saved.');
+    return;
+  }
+
   const saveData = saveManager.load();
   if (saveData) {
     loadGameState(saveData);
@@ -1705,11 +1795,8 @@ function loadGame(): void {
 
 // Save game (only if wallet is connected)
 function saveGame(): void {
-  // Check if wallet is connected - only save if connected
-  const walletState = walletService.getState();
-  const isWalletConnected = walletState.isConnected && walletState.address;
-  
-  if (!isWalletConnected) {
+  // Only save if user has a Ronin address (connected or previously stored).
+  if (!getRoninAddressForPersistence()) {
     // Wallet not connected - don't save (game continues but progress is not saved)
     return;
   }
@@ -1720,11 +1807,8 @@ function saveGame(): void {
 
 // Force save (call after important events) - only if wallet is connected
 function forceSaveGame(): void {
-  // Check if wallet is connected - only save if connected
-  const walletState = walletService.getState();
-  const isWalletConnected = walletState.isConnected && walletState.address;
-  
-  if (!isWalletConnected) {
+  // Only save if user has a Ronin address (connected or previously stored).
+  if (!getRoninAddressForPersistence()) {
     // Wallet not connected - don't save (game continues but progress is not saved)
     return;
   }
@@ -1794,10 +1878,11 @@ function initializePvP(): void {
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
     lastArmorRegen: Date.now(), // When armor was last regenerated
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: getCarryoverFuel(myPlayerId, 100), // Carry over fuel from previous round
-    maxFuel: 100, // Maximum fuel
+    fuel: getCarryoverFuel(myPlayerId), // Carry over fuel from previous round
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
     lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
@@ -1841,10 +1926,11 @@ function initializePvP(): void {
     lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: getCarryoverFuel(opponentId, 100), // Carry over fuel from previous round (local fallback)
-    maxFuel: 100, // Maximum fuel
+    fuel: getCarryoverFuel(opponentId), // Carry over fuel from previous round (local fallback)
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
     lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
@@ -2006,6 +2092,23 @@ function syncReadyStateFromRoom(room: any): void {
     return;
   }
 
+  // Sync cosmetic data (e.g. NFT profile picture) from authoritative room state.
+  try {
+    room.state.players.forEach((player: any) => {
+      const sid = String(player?.sessionId || '');
+      if (!sid || !pvpPlayers[sid]) return;
+      if (typeof player.profilePicture === 'string') {
+        const url = player.profilePicture || undefined;
+        if (pvpPlayers[sid].profilePicture !== url) {
+          pvpPlayers[sid].profilePicture = url;
+          if (url && !nftImageCache.has(url)) {
+            loadNftImage(url, `profile_${sid}`);
+          }
+        }
+      }
+    });
+  } catch {}
+
   // Turn-based PvP phase sync via state patches (fallback if onMessage ordering drops/arrives early)
   if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
     const phase = (room.state as any)?.phase;
@@ -2025,8 +2128,7 @@ function syncReadyStateFromRoom(room: any): void {
 
   // If currentMatch is missing (transitions), still keep basic flags consistent.
   // (We only write into currentMatch when it exists.)
-  const walletState = walletService.getState();
-  const myAddress = walletState.address || '';
+  const myAddress = getMyPvpAddress();
   const mySessionId = room.sessionId;
 
   const orderedPlayers: any[] = [];
@@ -2102,13 +2204,7 @@ function syncReadyStateFromRoom(room: any): void {
 
 // Enter PvP lobby (Colyseus primary, Supabase fallback)
 async function enterLobby(forcedEndpoint?: string): Promise<void> {
-  const walletState = walletService.getState();
-  if (!walletState.isConnected || !walletState.address) {
-    walletError = 'Connect Ronin Wallet to play PvP';
-    return;
-  }
-
-  const myAddress = walletState.address;
+  const myAddress = getMyPvpAddress();
   isInLobby = true;
   isSearchingForMatch = true;
   lobbySearchStartTime = Date.now();
@@ -2176,7 +2272,8 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       hp: dotHP, // Current HP (not maxHP, use actual current)
       maxHP: totalMaxHP,
       armor: dotArmor,
-      maxArmor: dotMaxArmor
+      maxArmor: dotMaxArmor,
+      profilePicture: profileManager.getProfilePicture()
     };
     
     // Join or create room (Colyseus handles matchmaking automatically)
@@ -2228,7 +2325,10 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
           const p = pvpPlayers[myPlayerId];
           turnLocalTrack = [{ tMs: 0, x: p.x, y: p.y }];
           turnLocalSpawns = [];
-          colyseusService.sendPlan({ track: turnLocalTrack, spawns: turnLocalSpawns, stats: { dmg, critChance } });
+          const nftBonuses = calculateNftBonuses();
+          const totalDmg = dmg + (nftBonuses?.dmg || 0);
+          const totalCritChance = critChance + (nftBonuses?.critChance || 0);
+          colyseusService.sendPlan({ track: turnLocalTrack, spawns: turnLocalSpawns, stats: { dmg: totalDmg, critChance: totalCritChance } });
         }
       }
     });
@@ -2394,9 +2494,6 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
 
 // Leave PvP lobby
 async function leaveLobby(): Promise<void> {
-  const walletState = walletService.getState();
-  if (!walletState.address) return;
-
   // Leave Colyseus room if connected
   if (colyseusService.isConnectedToRoom()) {
     await colyseusService.leaveRoom().catch(console.error);
@@ -2508,12 +2605,7 @@ async function setPlayerReady(): Promise<void> {
     console.error('Cannot set ready: no current match');
     return;
   }
-  
-  const walletState = walletService.getState();
-  if (!walletState.address) {
-    console.error('Cannot set ready: wallet not connected');
-    return;
-  }
+  const myAddress = getMyPvpAddress();
 
   // Use Colyseus only
   isReady = !isReady; // Toggle ready state
@@ -2524,7 +2616,7 @@ async function setPlayerReady(): Promise<void> {
     
     // Update local match state (will be synced via onStateChange)
     if (currentMatch) {
-      const isPlayer1 = currentMatch.p1 === walletState.address;
+      const isPlayer1 = currentMatch.p1 === myAddress;
       if (isPlayer1) {
         currentMatch.p1Ready = isReady;
       } else {
@@ -2556,8 +2648,7 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   healthPackPositionIndex = 0; // Reset to center position
   pvpGameStartTime = Date.now(); // Record game start time for initial spawn delay
   
-  const walletState = walletService.getState();
-  const myAddress = walletState.address || '';
+  const myAddress = getMyPvpAddress();
   
   // CRITICAL: Get opponent wallet address from room state
   const roomState = colyseusService.getState();
@@ -2643,10 +2734,11 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: getCarryoverFuel(myPlayerId, 100), // Carry over fuel from previous round
-    maxFuel: 100, // Maximum fuel
+    fuel: getCarryoverFuel(myPlayerId), // Carry over fuel from previous round
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
     lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
@@ -2693,20 +2785,26 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: getCarryoverFuel(opponentId, 100), // Carry over fuel from previous round (local fallback)
-    maxFuel: 100, // Maximum fuel
+    fuel: getCarryoverFuel(opponentId), // Carry over fuel from previous round (local fallback)
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
     lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
     toxicWaterStartTime: null, // Not in toxic water initially
     toxicWaterLastDamageTime: 0, // When last toxic water damage was dealt
-    profilePicture: undefined, // Will be synced from opponent
+    profilePicture: (typeof oppState?.profilePicture === 'string' && oppState.profilePicture) ? oppState.profilePicture : undefined,
     ufoTilt: 0, // Initial tilt angle
     lastVx: 0, // Previous velocity X
     lastVy: 0, // Previous velocity Y
   };
+
+  // Preload opponent profile picture if available
+  if (opponent.profilePicture && !nftImageCache.has(opponent.profilePicture)) {
+    loadNftImage(opponent.profilePicture, 'opponent_profile');
+  }
 
   pvpPlayers[opponentId] = opponent;
   pvpSideById[opponentId] = oppSide;
@@ -2791,10 +2889,11 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: getCarryoverFuel(myPlayerId, 100), // Carry over fuel from previous round
-    maxFuel: 100, // Maximum fuel
+    fuel: getCarryoverFuel(myPlayerId), // Carry over fuel from previous round
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
     lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
@@ -2839,10 +2938,11 @@ function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
     lastOutOfBoundsDamageTime: 0,
     lastArmorRegen: Date.now(),
     paralyzedUntil: 0, // Not paralyzed initially
-    fuel: getCarryoverFuel(opponentId, 100), // Carry over fuel from previous round (local fallback)
-    maxFuel: 100, // Maximum fuel
+    fuel: getCarryoverFuel(opponentId), // Carry over fuel from previous round (local fallback)
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
     isUsingJetpack: false, // Not using jetpack initially
     jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
     lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
     isOverheated: false, // Not overheated initially
     overheatStartTime: 0, // When overheat started
@@ -3915,8 +4015,8 @@ function render() {
       const oppState: any = (oppSid && players?.get) ? players.get(oppSid) : null;
       const meFuel = (typeof meState?.fuel === 'number') ? meState.fuel : myPlayer.fuel;
       const meMaxFuel = (typeof meState?.maxFuel === 'number') ? meState.maxFuel : myPlayer.maxFuel;
-      const oppFuel = (typeof oppState?.fuel === 'number') ? oppState.fuel : 100;
-      const oppMaxFuel = (typeof oppState?.maxFuel === 'number') ? oppState.maxFuel : 100;
+      const oppFuel = (typeof oppState?.fuel === 'number') ? oppState.fuel : PVP_DEFAULT_MAX_FUEL;
+      const oppMaxFuel = (typeof oppState?.maxFuel === 'number') ? oppState.maxFuel : PVP_DEFAULT_MAX_FUEL;
 
       const meX = (typeof meState?.x === 'number') ? meState.x : (pvpPlayers[myPlayerId!]?.x ?? leftCenterX);
       const oppX = (typeof oppState?.x === 'number') ? oppState.x : rightCenterX;
@@ -3953,8 +4053,9 @@ function render() {
     // Jetpack status text
     if (myPlayer.isUsingJetpack) {
       const jetpackUseTime = (Date.now() - myPlayer.jetpackStartTime) / 1000;
-      const maxJetpackTime = 1.5; // 1.5 seconds
-      const speedBoost = 1 + (jetpackUseTime / maxJetpackTime) * 4; // Linear from 1 to 5 (higher top speed)
+      const jetpackRampTime = 1.5; // seconds to reach max boost
+      const t = jetpackRampTime > 0 ? Math.max(0, Math.min(1, jetpackUseTime / jetpackRampTime)) : 1;
+      const speedBoost = 1 + t * 4; // 1..5
       ctx.fillStyle = '#ff6600';
       ctx.fillText(`JETPACK: +${speedBoost.toFixed(1)} SPEED`, canvas.width / 2, fuelBarY + fuelBarHeight + 28);
     } else if (myPlayer.isOverheated) {
@@ -6432,11 +6533,8 @@ function render() {
       }
       
       ctx.restore();
-      
-      // Draw player outline
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      // NOTE: Do NOT call ctx.stroke() here without a fresh path.
+      // It would stroke the last arc path (often the speedTrail segment) and create an ugly black outline.
       
       // Draw magnetic wave animation when gravity is active
       const now = Date.now();
@@ -9525,16 +9623,10 @@ if (!(window as any).__mouseupListenerAdded) {
         cleanupPvP();
         console.log('Left PvP Online, switched to Solo mode');
       } else {
-        const walletState = walletService.getState();
-        if (!walletState.isConnected || !walletState.address) {
-          walletError = 'Connect Ronin Wallet to play PvP Online';
-          console.log('Cannot open PvP server list: Wallet not connected');
-        } else {
-          // Start realtime PvP
-          TURN_BASED_PVP_ENABLED = false;
-          pvpOnlineRoomName = 'pvp_room';
-          openServerBrowser();
-        }
+        // Start realtime PvP (guests allowed)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
+        openServerBrowser();
       }
     }
     isPressingPvPOnline = false;
@@ -9815,6 +9907,7 @@ if (!(window as any).__keydownListenerAdded) {
     if (myPlayer.fuel > 0 && !myPlayer.isUsingJetpack) {
       myPlayer.isUsingJetpack = true;
       myPlayer.jetpackStartTime = Date.now();
+      myPlayer.jetpackLastFuelTickTime = myPlayer.jetpackStartTime;
       console.log('Jetpack activated! Fuel:', myPlayer.fuel);
     }
   }
@@ -12279,8 +12372,8 @@ function gameLoop() {
         player.y += player.vy;
         enforcePvpMidWall(playerId, player);
         // Apply air resistance
-        player.vx *= 0.995;
-        player.vy *= 0.995;
+        player.vx *= pvpFriction;
+        player.vy *= pvpFriction;
         continue; // Skip rest of physics update (no input handling)
       }
       
@@ -12294,7 +12387,7 @@ function gameLoop() {
       // Jetpack system - only for my player
       if (playerId === myPlayerId && player.isUsingJetpack && player.fuel > 0 && !player.isOverheated) {
         const jetpackUseTime = (now - player.jetpackStartTime) / 1000; // Time in seconds
-        const maxJetpackTime = 1.5; // Reduced from 3 to 1.5 seconds
+        const jetpackRampTime = 1.5; // seconds to reach max boost (then stays max)
         
         // Calculate fuel percent for sound effect
         const fuelPercent = player.fuel / player.maxFuel;
@@ -12319,16 +12412,10 @@ function gameLoop() {
           audioManager.stopJetpackSound();
         }
         
-        // Check if max usage time reached (1.5 seconds)
-        if (jetpackUseTime >= maxJetpackTime) {
-          // Max usage time reached - deactivate jetpack
-          player.isUsingJetpack = false;
-          player.lastFuelRegenTime = 0; // Fuel regeneration disabled (no auto-refill)
-          audioManager.stopJetpackSound();
-          console.log(`Jetpack max usage time reached (${maxJetpackTime}s). Fuel:`, player.fuel);
-        } else {
-          // Calculate speed boost (from +1 to +5 over 1.5 seconds) - increased for higher top speed
-          const speedBoost = 1 + (jetpackUseTime / maxJetpackTime) * 4; // Linear from 1 to 5 (higher top speed)
+        {
+          // Calculate speed boost (ramps up, then stays at max)
+          const t = jetpackRampTime > 0 ? Math.max(0, Math.min(1, jetpackUseTime / jetpackRampTime)) : 1;
+          const speedBoost = 1 + t * 4; // 1..5
           
           // Move towards mouse cursor position
           // Use global mouse position (updated in mousemove event)
@@ -12358,10 +12445,14 @@ function gameLoop() {
             }
           }
           
-          // Consume fuel (15 fuel over 1.5 seconds = ~10 per second) - much slower consumption for longer usage
-          const fuelConsumptionRate = 15 / maxJetpackTime; // Fuel per second (15 fuel per 1.5s = much slower consumption)
-          const fuelConsumed = (fuelConsumptionRate * (now - player.jetpackStartTime)) / 1000;
-          player.fuel = Math.max(0, player.fuel - fuelConsumed);
+          // Consume fuel using dt (so bigger maxFuel actually extends travel).
+          const lastTick = (typeof player.jetpackLastFuelTickTime === 'number' && player.jetpackLastFuelTickTime > 0)
+            ? player.jetpackLastFuelTickTime
+            : now;
+          const dtSec = Math.max(0, Math.min(0.1, (now - lastTick) / 1000));
+          player.jetpackLastFuelTickTime = now;
+          const fuelConsumptionRate = 20; // fuel per second (100 fuel ~= 5s, 150 fuel ~= 7.5s)
+          player.fuel = Math.max(0, player.fuel - fuelConsumptionRate * dtSec);
           
           // If fuel runs out, start overheat
           if (player.fuel <= 0) {
@@ -12402,6 +12493,12 @@ function gameLoop() {
       player.x += player.vx;
       player.y += player.vy;
       enforcePvpMidWall(playerId, player);
+
+      // Apply friction every frame to reduce inertia.
+      // Make coasting (not using jetpack) slow down faster for the local player.
+      const friction = (playerId === myPlayerId && !player.isUsingJetpack) ? pvpFrictionCoast : pvpFriction;
+      player.vx *= friction;
+      player.vy *= friction;
       
       // Check if player is out of bounds (any side) - no damage, just tracking for death animation
       const isOutOfBounds = player.x < pvpBounds.left || 
@@ -13407,7 +13504,8 @@ function gameLoop() {
       } else {
         playerSpeed = cachedPlayerSpeeds[playerId].speed;
       }
-      if (Math.round(playerSpeed) >= 7) {
+      // Start showing UFO "shadow tail" earlier since inertia/friction is higher now
+      if (playerSpeed >= 2) {
         // Add a new segment at current position
         player.speedTrail.push({
           x: player.x,
@@ -14318,7 +14416,8 @@ function gameLoop() {
       cachedDotSpeed = Math.sqrt(cachedDotSpeedSquared);
       cachedDotSpeedFrame = currentFrame;
     }
-    if (Math.round(cachedDotSpeed) >= 7) {
+    // Start showing UFO "shadow tail" earlier since inertia/friction is higher now
+    if (cachedDotSpeed >= 2) {
       // Add a new segment at current position
       speedTrail.push({
         x: dotX,

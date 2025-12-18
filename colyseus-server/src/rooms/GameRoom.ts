@@ -303,6 +303,11 @@ export class GameRoom extends Room<GameState> {
     const player = new Player();
     player.sessionId = client.sessionId;
     player.address = options.address || ""; // Ronin wallet address
+    // Optional: NFT profile picture URL (shown inside UFO for opponent)
+    if (typeof options?.profilePicture === "string") {
+      // Keep it bounded to avoid abusive payload sizes
+      player.profilePicture = options.profilePicture.slice(0, 512);
+    }
     // Spawn players on fixed sides (helps turn-based PvP + avoids mid-wall issues)
     const isFirstPlayer = this.state.players.size === 0;
     player.x = isFirstPlayer ? ARENA_LEFT + (ARENA_RIGHT - ARENA_LEFT) * 0.25 : ARENA_LEFT + (ARENA_RIGHT - ARENA_LEFT) * 0.75;
@@ -441,7 +446,7 @@ export class GameRoom extends Room<GameState> {
       const f = plan?.stats?.fuel;
       const mf = plan?.stats?.maxFuel;
       if (p && typeof f === "number" && Number.isFinite(f)) {
-        const maxFuel = (typeof mf === "number" && Number.isFinite(mf) && mf > 0) ? mf : (p.maxFuel || 100);
+        const maxFuel = (typeof mf === "number" && Number.isFinite(mf) && mf > 0) ? mf : (p.maxFuel || 150);
         p.maxFuel = Math.max(1, Math.min(1000, Math.round(maxFuel)));
         p.fuel = Math.max(0, Math.min(p.maxFuel, Math.round(f)));
       }
