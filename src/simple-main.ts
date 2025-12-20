@@ -2512,6 +2512,12 @@ async function leaveLobby(): Promise<void> {
 
 // Subscribe to match updates to detect when both players are ready
 function subscribeToMatchUpdates(matchId: string, myAddress: string, isPlayer1: boolean): void {
+  // 5SEC PvP is Colyseus-only. Never start the legacy Supabase match flow here,
+  // otherwise we can re-initialize players using wallet-address IDs and break EXECUTE replay
+  // (server sends turn plans keyed by sessionId).
+  if (TURN_BASED_PVP_ENABLED || pvpOnlineRoomName === 'pvp_5sec_room') {
+    return;
+  }
   const client = supabaseService.getClient();
   if (!client) {
     console.error('Cannot subscribe to match updates: Supabase client is null');
@@ -2573,6 +2579,8 @@ function subscribeToMatchUpdates(matchId: string, myAddress: string, isPlayer1: 
           console.log('Unsubscribed from match updates');
           
           // Initialize PvP with match data
+          // Guard: 5SEC PvP uses Colyseus sessionIds; never re-init via Supabase match IDs.
+          if (TURN_BASED_PVP_ENABLED || pvpOnlineRoomName === 'pvp_5sec_room') return;
           initializePvPWithMatch(match, isPlayer1);
         }
       }
