@@ -4,6 +4,7 @@ import { Client, Room } from "colyseus.js";
 export interface PlayerInput {
   type:
     | 'click'
+    | 'dash'
     | 'arrow'
     | 'projectile'
     | 'position'
@@ -26,6 +27,7 @@ export interface PlayerInput {
   targetY?: number;
   chargeTime?: number;
   isCrit?: boolean;
+  shooterId?: string; // Server-authoritative hit source
   angle?: number;
   points?: Array<{ x: number; y: number }>; // For drawn lines
   hp?: number; // Player HP (for stats sync)
@@ -33,6 +35,7 @@ export interface PlayerInput {
   maxHP?: number; // Player Max HP (for stats sync)
   maxArmor?: number; // Player Max Armor (for stats sync)
   dmg?: number; // Player damage stat (for arrow/projectile damage calculation)
+  critChance?: number; // Crit chance % (for server-authoritative arrow hit)
   damage?: number; // Damage dealt (for hit event)
   targetPlayerId?: string; // Target player ID (for hit event)
   isBullet?: boolean; // Whether this is a bullet hit (for paralysis)
@@ -493,10 +496,7 @@ class ColyseusService {
     if (!this.room || !this.isConnected) {
       return false;
     }
-    // 5SEC PVP uses plan_submit/round_execute, not realtime inputs.
-    if (this.roomName === 'pvp_5sec_room') {
-      return false;
-    }
+    // NOTE: pvp_5sec_room now runs as live realtime gameplay (replay/turn loop removed).
 
     try {
       // #region agent log
@@ -567,6 +567,8 @@ class ColyseusService {
       return false;
     }
   }
+
+  // (attacker/defender API removed; 5SEC PvP uses plan_submit/round_execute)
 
   // Leave room
   async leaveRoom(): Promise<void> {

@@ -70,6 +70,34 @@ export class AudioManager {
     this.playSound(200, 0.3, 'sawtooth');
   }
 
+  // Play "action denied" sound (short negative blip)
+  playActionDenied(): void {
+    if (this.isMuted || !this.context) return;
+    try {
+      const oscillator = this.context.createOscillator();
+      const gainNode = this.context.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(this.context.destination);
+
+      const startFreq = 420;
+      const endFreq = 220;
+      const duration = 0.08; // 80ms
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.setValueAtTime(startFreq, this.context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(endFreq, this.context.currentTime + duration);
+
+      gainNode.gain.setValueAtTime(0, this.context.currentTime);
+      gainNode.gain.linearRampToValueAtTime(this.masterVolume * 0.12, this.context.currentTime + 0.005);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, this.context.currentTime + duration);
+
+      oscillator.start(this.context.currentTime);
+      oscillator.stop(this.context.currentTime + duration);
+    } catch (error) {
+      console.warn('Failed to play action denied sound:', error);
+    }
+  }
+
   // Play insufficient currency sound
   playInsufficientCurrency(): void {
     this.playSound(150, 0.4, 'sawtooth');

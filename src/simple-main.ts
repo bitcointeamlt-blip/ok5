@@ -1,3 +1,7 @@
+// Arrow range limiting (performance + clarity)
+const PVP_ARROW_RANGE_PX = 700;
+const PVP_ARROW_FADE_PX = 50; // after range, fade out over this distance
+
 // Simple version without complex imports
 // Force rebuild - wallet button fix (v2)
 import { SaveManagerV2 } from './persistence/SaveManagerV2';
@@ -837,6 +841,151 @@ let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
 let myPlayerId: string | null = null; // My player ID
 let opponentId: string | null = null; // Opponent player ID
 
+// PvP/Training: global action rate limit (reduces spam + network load).
+// "One action per 1 second": dash/shot/mine/click-hit are gated, but movement position sync continues.
+const PVP_ACTION_COOLDOWN_MS = 1000;
+const PVP_ACTION_PENALTY_MS = 2000;
+const PVP_ACTION_DENIED_SFX_COOLDOWN_MS = 120;
+const PVP_ACTION_INDICATOR_SHAKE_MS = 150;
+const PVP_ACTION_INDICATOR_SHAKE_PX = 2.5;
+let pvpNextActionAtById: { [playerId: string]: number } = {};
+let pvpActionWindowMsById: { [playerId: string]: number } = {};
+let pvpLastActionDeniedSfxAt = 0;
+let pvpActionIndicatorShakeUntil = 0;
+function canPerformPvpAction(playerId: string, now: number = Date.now()): boolean {
+  const nextAt = pvpNextActionAtById[playerId] || 0;
+  return now >= nextAt;
+}
+function commitPvpAction(playerId: string, now: number = Date.now()): void {
+  pvpNextActionAtById[playerId] = now + PVP_ACTION_COOLDOWN_MS;
+  pvpActionWindowMsById[playerId] = PVP_ACTION_COOLDOWN_MS;
+}
+function applyPvpActionPenalty(playerId: string, now: number = Date.now()): void {
+  // Local feedback (sound + tiny indicator shake) when you attempt an action too early.
+  if (playerId === myPlayerId) {
+    if (now - pvpLastActionDeniedSfxAt >= PVP_ACTION_DENIED_SFX_COOLDOWN_MS) {
+      pvpLastActionDeniedSfxAt = now;
+      pvpActionIndicatorShakeUntil = Math.max(pvpActionIndicatorShakeUntil, now + PVP_ACTION_INDICATOR_SHAKE_MS);
+      try {
+        void audioManager.resumeContext();
+        // Prefer a dedicated short "denied" blip, fall back to an existing fail sound.
+        (audioManager as any).playActionDenied?.() ?? audioManager.playUpgradeFail();
+      } catch {}
+    } else {
+      pvpActionIndicatorShakeUntil = Math.max(pvpActionIndicatorShakeUntil, now + Math.floor(PVP_ACTION_INDICATOR_SHAKE_MS * 0.6));
+    }
+  }
+
+  const prevNextAt = pvpNextActionAtById[playerId] || 0;
+  const penaltyNextAt = now + PVP_ACTION_PENALTY_MS;
+  // Never reduce an existing longer lockout; only extend.
+  if (penaltyNextAt > prevNextAt) {
+    pvpNextActionAtById[playerId] = penaltyNextAt;
+    pvpActionWindowMsById[playerId] = PVP_ACTION_PENALTY_MS;
+  }
+}
+
+// PvP Dash (Space): short burst "blink" movement for snappier gameplay with minimal network spam.
+const PVP_DASH_DISTANCE = 152; // px (instant displacement) (20% shorter)
+const PVP_DASH_COOLDOWN_MS = 900; // ms
+const PVP_DASH_FUEL_COST = 22; // fuel per dash (reuses existing fuel bar)
+const PVP_DASH_EXIT_IMPULSE = 3.8; // additional velocity kick (px/frame)
+let pvpDashCooldownUntilById: { [playerId: string]: number } = {};
+
+function clampPvpPosForPlayer(playerId: string, x: number, y: number, radius: number): { x: number; y: number } {
+  // Use mid-wall side constraints + arena bounds
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(playerId, x);
+  const minX = side === 'left' ? pvpBounds.left + radius : midX + half + radius;
+  const maxX = side === 'left' ? midX - half - radius : pvpBounds.right - radius;
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(pvpBounds.top + radius, Math.min(pvpBounds.bottom - radius, y))
+  };
+}
+
+function tryDashPlayer(playerId: string, player: PvPPlayer, aimX: number, aimY: number, send: (input: any) => void): void {
+  const now = Date.now();
+  if (player.isOut || player.hp <= 0 || deathAnimations.has(playerId)) return;
+  if (player.paralyzedUntil > now) return;
+
+  // Global action limit: dash counts as an action.
+  if (!canPerformPvpAction(playerId, now)) {
+    applyPvpActionPenalty(playerId, now);
+    return;
+  }
+
+  const cdUntil = pvpDashCooldownUntilById[playerId] || 0;
+  if (now < cdUntil) return;
+  if (player.fuel < PVP_DASH_FUEL_COST) return;
+
+  // Direction: towards cursor; fallback to current velocity direction.
+  let dx = aimX - player.x;
+  let dy = aimY - player.y;
+  let dist = Math.sqrt(dx * dx + dy * dy);
+  if (!(dist > 0.5)) {
+    const v = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+    if (v > 0.5) {
+      dx = player.vx;
+      dy = player.vy;
+      dist = v;
+    } else {
+      // No direction information -> do nothing (prevents random blink)
+      return;
+    }
+  }
+  const dirX = dx / dist;
+  const dirY = dy / dist;
+
+  const fromX = player.x;
+  const fromY = player.y;
+  const target = clampPvpPosForPlayer(playerId, player.x + dirX * PVP_DASH_DISTANCE, player.y + dirY * PVP_DASH_DISTANCE, player.radius);
+  player.x = target.x;
+  player.y = target.y;
+  // Small exit impulse so it feels like a burst, not a teleport.
+  player.vx += dirX * PVP_DASH_EXIT_IMPULSE;
+  player.vy += dirY * PVP_DASH_EXIT_IMPULSE;
+  enforcePvpMidWall(playerId, player);
+
+  // Consume fuel and set cooldown (reuses existing fuel UI).
+  player.fuel = Math.max(0, player.fuel - PVP_DASH_FUEL_COST);
+  pvpDashCooldownUntilById[playerId] = now + PVP_DASH_COOLDOWN_MS;
+  commitPvpAction(playerId, now);
+
+  // Visual: inject a denser speed trail along the dash path (no new renderer needed).
+  const steps = 8;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    player.speedTrail.push({
+      x: fromX + (player.x - fromX) * t,
+      y: fromY + (player.y - fromY) * t,
+      vx: 0,
+      vy: 0,
+      life: 22,
+      maxLife: 22,
+      size: player.radius * 1.8
+    });
+  }
+  while (player.speedTrail.length > 18) player.speedTrail.shift();
+
+  // Audio: reuse an existing short "burst" sound (keeps changes minimal).
+  try {
+    void audioManager.resumeContext();
+    audioManager.playBounce();
+  } catch {}
+
+  // Network: broadcast discrete dash event so opponent sees it instantly (not waiting for position stream).
+  send({
+    type: 'dash',
+    timestamp: now,
+    x: player.x,
+    y: player.y,
+    vx: player.vx,
+    vy: player.vy
+  });
+}
+
 // Jetpack fuel carryover between PvP rounds/resets (no auto-refill)
 const PVP_DEFAULT_MAX_FUEL = 150; // Increased fuel capacity for longer travel
 let pvpFuelCarryoverById: { [playerId: string]: number } = {};
@@ -904,6 +1053,7 @@ type TurnPhase = 'lobby' | 'planning' | 'execute';
 type TurnShotType = 'arrow' | 'bullet' | 'projectile';
 type TurnShotPlan = { tMs: number; type: TurnShotType; aimX: number; aimY: number };
 type TurnPlan = { track: Array<{ tMs: number; x: number; y: number }>; spawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }>; stats?: { dmg?: number; critChance?: number } };
+type DefendDir = 'up' | 'down' | 'stay';
 
 let turnPhase: TurnPhase = 'lobby';
 let turnRoundId = 0;
@@ -918,6 +1068,21 @@ let turnServerSynced = false; // becomes true only after seeing server phase/exe
 let turnWaitStartAt = 0; // used to detect outdated server (no phase messages)
 let autoReadySent = false;
 let turnServerClockOffsetMs = 0; // serverNow - clientNow
+
+// (attacker/defender model state removed; 5SEC PvP uses planning + replay)
+let turnAttackerId: string | null = null;
+let turnDefenderId: string | null = null;
+let turnDefendOptions: DefendDir[] = [];
+let turnDefendChoice: DefendDir | null = null;
+let turnDefendChoiceSentForRound = 0;
+let turnDefendOptionsRoundId = 0;
+let turnDefendUiRects: Array<{ x: number; y: number; w: number; h: number; choice: DefendDir }> = [];
+let turnAttackClickMarker: { x: number; y: number; untilMs: number } | null = null;
+let turnDefendMs = 3000;
+let turnSyncMs = 1000;
+let turnAttackMs = 4000;
+let turnResolveMs = 2000;
+let turnDefenderMoveSpeed = 900;
 let turnPlanStartServerTs = 0;
 let turnPlanDurationMs = 5000;
 let turnLastTrackSampleServerTs = 0;
@@ -954,6 +1119,14 @@ function isTurnBasedPvPDesired(): boolean {
   return is5SecPvPMode() && turnPhase === 'execute' && turnServerSynced;
 }
 
+function isMyTurnDefender(): boolean {
+  return !!myPlayerId && !!turnDefenderId && myPlayerId === turnDefenderId;
+}
+
+function isMyTurnAttacker(): boolean {
+  return !!myPlayerId && !!turnAttackerId && myPlayerId === turnAttackerId;
+}
+
 function resetTurnBasedPlayback(): void {
   turnSpawnedProjectiles = new Set();
   turnProcessedHits = new Set();
@@ -965,6 +1138,12 @@ function resetTurnBasedPlayback(): void {
   turnLocalTrack = [];
   turnLocalSpawns = [];
   turnPlanSendFailCount = 0;
+  // IMPORTANT: do NOT wipe `turnDefendOptions` here.
+  // Server may deliver `defend_options` before the `phase` message; if we clear here, defender can't pick a direction.
+  turnDefendChoice = null;
+  turnDefendChoiceSentForRound = 0;
+  turnDefendUiRects = [];
+  turnAttackClickMarker = null;
 }
 
 function clampTurnDestForMySide(x: number, y: number): { x: number; y: number } {
@@ -1062,11 +1241,6 @@ function recordTurnTrackAndMaybeSend(): void {
       stats: { dmg: totalDmg, critChance: totalCritChance, fuel: me?.fuel, maxFuel: me?.maxFuel }
     });
     if (!ok) turnPlanSendFailCount++;
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:recordTurnTrackAndMaybeSend',message:'client sendPlan tick',data:{phase:turnPhase,myPlayerId,trackN:turnLocalTrack.length,spawnsN:turnLocalSpawns.length,sendOk:ok,sendFail:turnPlanSendFailCount,planStartServerTs:turnPlanStartServerTs,serverNow:nowServer},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2'})}).catch(()=>{});
-    } catch {}
-    // #endregion
   }
 }
 
@@ -1173,20 +1347,7 @@ function updateTurnBasedPvP(nowMs: number): void {
     }
   }
 
-  // #region agent log
-  try {
-    if (turnExecuteLoggedRound !== turnRoundId) {
-      turnExecuteLoggedRound = turnRoundId;
-      const keys = Object.keys(turnPlansById || {});
-      const firstKey = keys[0];
-      const firstPlan: any = firstKey ? (turnPlansById as any)[firstKey] : null;
-      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:updateTurnBasedPvP',message:'client execute tick started',data:{roundId:turnRoundId,nowMs,executeStartAt:turnExecuteStartAt,tMs,planKeys:keys,firstTrackN:Array.isArray(firstPlan?.track)?firstPlan.track.length:0,pvpPlayersKeys:Object.keys(pvpPlayers||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H7'})}).catch(()=>{});
-    }
-  } catch {}
-  // #endregion
-
-  // Process events up to current time
-  // Events are time-ordered by server.
+  // Process events up to current time (projectile spawns + hits)
   const mySid: string | null = (() => {
     try { return (colyseusService.getRoom() as any)?.sessionId ?? null; } catch { return null; }
   })();
@@ -1203,7 +1364,6 @@ function updateTurnBasedPvP(nowMs: number): void {
       if (!turnSpawnedProjectiles.has(projId)) {
         turnSpawnedProjectiles.add(projId);
         const projType = (evt.projType === 'arrow' || evt.projType === 'bullet' || evt.projType === 'projectile') ? evt.projType : 'bullet';
-        // Execute SFX: play shot sound when projectile spawns
         try {
           void audioManager.resumeContext();
           if (projType === 'bullet') audioManager.playBulletShot();
@@ -1214,7 +1374,6 @@ function updateTurnBasedPvP(nowMs: number): void {
         const spawnY = Number(evt.y);
         const spawnVx = Number(evt.vx);
         const spawnVy = Number(evt.vy);
-        // Fast-forward to current time so late processing doesn't "pop" projectiles
         const elapsedSec = Math.max(0, (tMs - evt.tMs) / 1000);
         const g = projType === 'projectile' ? (0.32 * 60 * 60) : 0;
         const x = spawnX + spawnVx * elapsedSec;
@@ -1230,20 +1389,14 @@ function updateTurnBasedPvP(nowMs: number): void {
       const isCritHit = !!evt.isCrit;
       const shooterId = String(evt.shooterId);
 
-      // Execute SFX: play damage sound once per hit event
       try {
         const hitKey = `${String(evt.projectileId)}:${shooterId}:${targetId}:${String(evt.tMs)}`;
         if (!turnProcessedHits.has(hitKey)) {
           turnProcessedHits.add(hitKey);
           void audioManager.resumeContext();
-          if (mySid && shooterId === mySid) {
-            audioManager.playDamageDealt(isCritHit);
-          } else if (mySid && targetId === mySid) {
-            audioManager.playDamageReceived(isCritHit);
-          } else {
-            // Fallback: generic impact for spectator hits
-            audioManager.playDotHit();
-          }
+          if (mySid && shooterId === mySid) audioManager.playDamageDealt(isCritHit);
+          else if (mySid && targetId === mySid) audioManager.playDamageReceived(isCritHit);
+          else audioManager.playDotHit();
         }
       } catch {}
 
@@ -1266,7 +1419,6 @@ function updateTurnBasedPvP(nowMs: number): void {
         });
       }
 
-      // Remove projectile when it hits
       const projId = String(evt.projectileId);
       turnProjectiles = turnProjectiles.filter(p => p.id !== projId);
     }
@@ -1274,7 +1426,7 @@ function updateTurnBasedPvP(nowMs: number): void {
     turnNextEventIndex++;
   }
 
-  // Update projectiles forward
+  // Update projectiles forward (visual only)
   const g = 0.32 * 60 * 60;
   for (let i = turnProjectiles.length - 1; i >= 0; i--) {
     const p = turnProjectiles[i];
@@ -1282,17 +1434,15 @@ function updateTurnBasedPvP(nowMs: number): void {
     p.y += p.vy * dtSec;
     if (p.projType === 'projectile') {
       p.vy += g * dtSec;
-      // Match Weapon 2 smoke trail (pixel smoke) during EXECUTE replay:
-      // Create smoke only when falling (positive vy), same as realtime projectile.
       if (p.vy > 0) {
         safePushProjectileSmokeParticle({
           x: p.x + (Math.random() - 0.5) * 4,
           y: p.y + (Math.random() - 0.5) * 4,
-          vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
-          vy: -0.3 - Math.random() * 0.2, // Rises slowly
-          life: 30 + Math.random() * 20, // 30-50 frames
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: -0.3 - Math.random() * 0.2,
+          life: 30 + Math.random() * 20,
           maxLife: 30 + Math.random() * 20,
-          size: 4 + Math.random() * 3 // 4-7 pixels
+          size: 4 + Math.random() * 3
         });
       }
     }
@@ -1356,6 +1506,7 @@ let projectileVy = 0; // Projectile velocity Y
 let projectileSpawnTime = 0; // When projectile was spawned (for 5 second lifetime)
 let projectileBounceCount = 0; // How many times players have bounced on this projectile
 let projectileLastShotTime = 0; // When projectile was last fired (for cooldown after hit)
+let projectileLastUpdateAt = 0; // For time-based stepping (reduces FPS drift)
 const projectileGravity = 0.32; // Stronger gravity for heavier arc
 const projectileLaunchSpeed = 14.5; // Fixed launch speed (longer range)
 const projectileRadius = 16; // Projectile size (doubled)
@@ -1482,7 +1633,10 @@ const POSITION_HEARTBEAT_INTERVAL = 500; // Always send at least every 500ms to 
 const POSITION_DISTANCE_EPSILON = 8; // Only send if moved at least 8px (was 4px)
 const VELOCITY_EPSILON = 1.0; // Only send if speed changed significantly (was 0.5)
 const ARROW_ANGLE_EPSILON = 0.12; // Minimal radian change before sending arrow rotation (was 0.08)
-const PROJECTILE_DISTANCE_EPSILON = 12; // Projectiles move fast, allow slightly larger threshold (was 6px)
+// Heavy projectile is simulated locally; we only need rare corrections to avoid long-term drift.
+// IMPORTANT: do NOT use velocityEpsilon here (gravity changes vy every frame, which would spam packets).
+const PROJECTILE_DISTANCE_EPSILON = 24; // Larger threshold to reduce network traffic
+const PROJECTILE_HEARTBEAT_INTERVAL = 900; // Rare correction ~1/s
 interface MovementSnapshot {
   x: number;
   y: number;
@@ -1540,8 +1694,17 @@ let pvpKatanaVx = 0; // Arrow velocity X
 let pvpKatanaVy = 0; // Arrow velocity Y
 let pvpKatanaAngle = 0; // Arrow rotation angle
 const pvpKatanaSpeed = 15; // Arrow flying speed
+let pvpKatanaLastUpdateAt = 0;
+let pvpKatanaTravelPx = 0;
 let pvpArrowLastShotTime = 0; // When arrow was last shot (for cooldown)
 const pvpArrowCooldown = 10000; // Arrow cooldown in milliseconds (10 seconds)
+
+// PvP arrow charge (delayed fire)
+const PVP_ARROW_CHARGE_MS = 300;
+let pvpArrowCharging = false;
+let pvpArrowChargeFireAt = 0;
+let pvpArrowChargeAimX = 0;
+let pvpArrowChargeAimY = 0;
 
 // Opponent arrow/projectile state (synced from network)
 let opponentArrowFlying = false;
@@ -1550,6 +1713,8 @@ let opponentArrowY = 0;
 let opponentArrowVx = 0;
 let opponentArrowVy = 0;
 let opponentArrowAngle = 0;
+let opponentArrowLastUpdateAt = 0;
+let opponentArrowTravelPx = 0;
 
 let opponentProjectileFlying = false;
 let opponentProjectileX = 0;
@@ -1558,6 +1723,7 @@ let opponentProjectileVx = 0;
 let opponentProjectileVy = 0;
 let opponentProjectileSpawnTime = 0; // When opponent projectile was spawned
 let opponentProjectileBounceCount = 0; // How many times players have bounced on opponent projectile
+let opponentProjectileLastUpdateAt = 0; // For time-based stepping (reduces FPS drift)
 
 // Opponent bullet state (synced from network)
 let opponentBulletFlying = false;
@@ -1694,7 +1860,7 @@ let arrowStartY = 0;
 let katanaAngle = 0; // Arrow rotation angle
 let isHoveringKatana = false;
 let isPressingKatana = false;
-const arrowLength = 85; // Arrow total length
+const arrowLength = 56; // Arrow total length (+10% from 51; still shorter than original 85)
 const arrowShaftWidth = 2.5; // Arrow shaft width
 const arrowHeadLength = 25; // Arrowhead length (longer, sharper tip)
 const arrowFletchingLength = 15; // Fletching length (feathers at back)
@@ -2113,7 +2279,7 @@ function syncReadyStateFromRoom(room: any): void {
   if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
     const phase = (room.state as any)?.phase;
     if (phase === 'planning' || phase === 'execute' || phase === 'lobby') {
-      turnPhase = phase;
+      turnPhase = phase as TurnPhase;
       turnServerSynced = true;
     } else if ((room.state as any)?.gameStarted && turnPhase === 'lobby') {
       // If game started but phase isn't present yet, do NOT assume planning (would cause fake overlay).
@@ -2355,13 +2521,6 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       turnEvents = Array.isArray(payload?.events) ? payload.events : [];
       turnPlansById = (payload?.plans && typeof payload.plans === 'object') ? payload.plans : turnPlansById;
       turnFinalPlayers = (payload?.finalState?.players && typeof payload.finalState.players === 'object') ? payload.finalState.players : {};
-      // #region agent log
-      try {
-        const keys = Object.keys(turnPlansById || {});
-        const first: any = keys[0] ? (turnPlansById as any)[keys[0]] : null;
-        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:round_execute:onMessage',message:'client received round_execute',data:{roomId:(room as any)?.id||null,roundId:payload?.roundId||null,plansKeys:keys,firstTrackN:Array.isArray(first?.track)?first.track.length:0,firstSpawnsN:Array.isArray(first?.spawns)?first.spawns.length:0,eventsN:turnEvents.length,startAt:turnExecuteStartAt,durationMs:turnExecuteDurationMs},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H4'})}).catch(()=>{});
-      } catch {}
-      // #endregion
 
       // Capture start positions for deterministic local playback.
       resetTurnBasedPlayback();
@@ -2992,10 +3151,7 @@ function handleOpponentInput(input: any): void {
   const __agentOppType = input?.type ?? 'unknown';
   // #endregion
   try {
-    // 5SEC PVP: opponent actions are applied only during EXECUTE replay, not via realtime messages.
-    if (is5SecPvPMode()) {
-      return;
-    }
+    // 5SEC PvP now uses attacker/defender phases (not replay), so we DO process realtime messages.
     if (!opponentId || !pvpPlayers[opponentId]) {
       console.warn('handleOpponentInput: opponentId or opponent not found', { opponentId, players: Object.keys(pvpPlayers) });
       return;
@@ -3086,12 +3242,42 @@ function handleOpponentInput(input: any): void {
         opponent.gravityLocked = false;
       }
     }
+
+    // Dash (Space): discrete blink movement, applied instantly for snappy feel.
+    if (input.type === 'dash' && typeof input.x === 'number' && typeof input.y === 'number') {
+      const fromX = opponent.x;
+      const fromY = opponent.y;
+      opponent.x = input.x;
+      opponent.y = input.y;
+      if (typeof input.vx === 'number') opponent.vx = input.vx;
+      if (typeof input.vy === 'number') opponent.vy = input.vy;
+      enforcePvpMidWall(opponentId, opponent);
+
+      // Visual: dense trail between old and new position
+      const steps = 8;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        opponent.speedTrail.push({
+          x: fromX + (opponent.x - fromX) * t,
+          y: fromY + (opponent.y - fromY) * t,
+          vx: 0,
+          vy: 0,
+          life: 22,
+          maxLife: 22,
+          size: opponent.radius * 1.8
+        });
+      }
+      while (opponent.speedTrail.length > 18) opponent.speedTrail.shift();
+      return;
+    }
     
     // Handle arrow input from opponent (launch event)
     if (input.type === 'arrow' && input.x !== undefined && input.y !== undefined) {
     opponentArrowFlying = true;
     opponentArrowX = input.x;
     opponentArrowY = input.y;
+    opponentArrowLastUpdateAt = Date.now();
+    opponentArrowTravelPx = 0;
     if (input.targetX !== undefined && input.targetY !== undefined) {
       const dx = input.targetX - input.x;
       const dy = input.targetY - input.y;
@@ -3105,24 +3291,15 @@ function handleOpponentInput(input: any): void {
     console.log('Opponent arrow launched', { x: input.x, y: input.y, targetX: input.targetX, targetY: input.targetY });
   }
   
-  // Handle arrow position sync from opponent (real-time position updates)
-  if (input.type === 'arrow_position' && input.x !== undefined && input.y !== undefined) {
-    if (!opponentArrowFlying) {
-      // Arrow was launched but we missed the launch event - initialize it
-      opponentArrowFlying = true;
-    }
-    opponentArrowX = input.x;
-    opponentArrowY = input.y;
-    if (input.vx !== undefined) opponentArrowVx = input.vx;
-    if (input.vy !== undefined) opponentArrowVy = input.vy;
-    if (input.angle !== undefined) opponentArrowAngle = input.angle;
-  }
+  // Arrow position sync disabled (bandwidth optimization). We simulate from launch event only.
+  // (If we ever re-enable, do it as a rare correction/heartbeat.)
   
   // Handle projectile input from opponent (launch event)
   if (input.type === 'projectile' && input.x !== undefined && input.y !== undefined) {
     opponentProjectileFlying = true;
     opponentProjectileX = input.x;
     opponentProjectileY = input.y;
+    opponentProjectileLastUpdateAt = Date.now();
     opponentProjectileSpawnTime = input.timestamp || Date.now(); // Record spawn time for lifetime
     opponentProjectileBounceCount = 0; // Reset bounce count
     
@@ -3157,6 +3334,7 @@ function handleOpponentInput(input: any): void {
     opponentProjectileY = input.y;
     if (input.vx !== undefined) opponentProjectileVx = input.vx;
     if (input.vy !== undefined) opponentProjectileVy = input.vy;
+    opponentProjectileLastUpdateAt = Date.now();
   }
   
   // Handle drawn line from opponent
@@ -3284,8 +3462,72 @@ function handleOpponentInput(input: any): void {
   // When opponent hits us, they send their calculated damage, and we apply it
   // This ensures both players see/feel the EXACT same damage
   if (input.type === 'hit' && input.damage !== undefined && input.isCrit !== undefined && input.targetPlayerId !== undefined) {
+    // If this was our own hit (server-authoritative), show attacker-side feedback.
+    // (Target will apply damage in the branch below.)
+    if (input.shooterId && input.shooterId === myPlayerId && opponentId && input.targetPlayerId === opponentId) {
+      const hitDamage = input.damage;
+      const isCritHit = input.isCrit;
+      // Stop our local arrow on confirmed hit (keeps visuals consistent).
+      if (pvpKatanaFlying) {
+        pvpKatanaFlying = false;
+        pvpArrowFired = false;
+        pvpKatanaX = 0;
+        pvpKatanaY = 0;
+        pvpKatanaVx = 0;
+        pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+      }
+      // Attacker feedback
+      if (isCritHit) {
+        screenShake = Math.max(screenShake, 30);
+      }
+      audioManager.resumeContext().then(() => {
+        audioManager.playDamageDealt(isCritHit);
+      });
+      if (opponentId && pvpPlayers[opponentId]) {
+        const opp = pvpPlayers[opponentId];
+        safePushDamageNumber({
+          x: opp.x + (Math.random() - 0.5) * 40,
+          y: opp.y - 20,
+          value: hitDamage,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+        for (let i = 0; i < 10; i++) {
+          const angle = (Math.PI * 2 * i) / 10;
+          const speed = 2 + Math.random() * 3;
+          safePushClickParticle({
+            x: opp.x,
+            y: opp.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 30,
+            maxLife: 30,
+            size: 3 + Math.random() * 2
+          });
+        }
+      }
+      // Profile: track damage dealt (now that server confirmed hit)
+      profileManager.addDamageDealt(hitDamage);
+    }
+
     // Only process if this hit is targeting us (myPlayerId)
     if (input.targetPlayerId === myPlayerId && myPlayerId && pvpPlayers[myPlayerId]) {
+      // Stop opponent arrow visuals on confirmed server hit
+      if (input.shooterId && opponentId && input.shooterId === opponentId) {
+        opponentArrowFlying = false;
+        opponentArrowX = 0;
+        opponentArrowY = 0;
+        opponentArrowVx = 0;
+        opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
+      }
       const myPlayer = pvpPlayers[myPlayerId];
       const hitDamage = input.damage;
       const isCritHit = input.isCrit;
@@ -3995,7 +4237,7 @@ function render() {
       gameMode === 'PvP' &&
       colyseusService.isConnectedToRoom() &&
       pvpOnlineRoomName === 'pvp_5sec_room' &&
-      (turnPhase === 'planning' || turnPhase === 'execute');
+      (turnPhase !== 'lobby');
 
     const drawFuelBar = (label: string, fuel: number, maxFuel: number, x: number, y: number, color: string) => {
       const pct = maxFuel > 0 ? Math.max(0, Math.min(1, fuel / maxFuel)) : 0;
@@ -4074,6 +4316,66 @@ function render() {
     }
     
     ctx.textAlign = 'left'; // Reset alignment
+  }
+
+  // Cursor-following action cooldown indicator (client-side UI only; no network cost).
+  // Shows when the next "action" is available (1 action / 1 sec).
+  if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId] && !isServerBrowserOpen) {
+    const now = Date.now();
+    const nextAt = pvpNextActionAtById[myPlayerId] || 0;
+    const remainingMs = Math.max(0, nextAt - now);
+    const windowMs = Math.max(1, pvpActionWindowMsById[myPlayerId] || PVP_ACTION_COOLDOWN_MS);
+    const pct = 1 - Math.max(0, Math.min(1, remainingMs / windowMs));
+
+    // Only draw in play area (avoid clutter over left UI panel)
+    if (globalMouseX > 240) {
+      const baseX = globalMouseX + 18 + 10;
+      const baseY = globalMouseY + 18 - 25 - 5;
+      const isShaking = now < pvpActionIndicatorShakeUntil;
+      const sx = isShaking ? (Math.random() - 0.5) * 2 * PVP_ACTION_INDICATOR_SHAKE_PX : 0;
+      const sy = isShaking ? (Math.random() - 0.5) * 2 * PVP_ACTION_INDICATOR_SHAKE_PX : 0;
+      const x = baseX + sx;
+      const y = baseY + sy;
+      const r = 12;
+      const lw = 3;
+      const start = -Math.PI / 2;
+      const end = start + Math.PI * 2 * pct;
+      const ready = remainingMs <= 0;
+
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+
+      // Background ring
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      // Progress ring
+      ctx.beginPath();
+      ctx.arc(x, y, r, start, end);
+      ctx.strokeStyle = ready ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 120, 0, 0.9)';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = ready ? 'rgba(0, 200, 0, 0.95)' : 'rgba(255, 120, 0, 0.95)';
+      ctx.fill();
+
+      // Small time text when cooling down
+      if (!ready) {
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 7px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${(remainingMs / 1000).toFixed(1)}s`, x, y + 22);
+      }
+
+      ctx.restore();
+      ctx.textAlign = 'left';
+    }
   }
   
   // Apply screen shake
@@ -5581,26 +5883,29 @@ function render() {
     
     const alpha = katanaSlashing ? (1 - Math.min(1, (Date.now() - katanaSlashStartTime) / katanaSlashDuration) * 0.5) : 1;
     
-    // Arrow shaft (brown wooden) - main body
+    // Arrow shaft - high-contrast (more visible against UFO)
     const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
     const shaftStartX = arrowFletchingLength;
-    ctx.fillStyle = `rgba(101, 67, 33, ${alpha})`; // Brown wood color
+    // Outer stroke (black) + inner neon (cyan)
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.9})`;
+    ctx.fillRect(shaftStartX, -arrowShaftWidth / 2 - 1.3, shaftLength, arrowShaftWidth + 2.6);
+    ctx.fillStyle = `rgba(0, 240, 255, ${alpha})`; // Neon cyan
     ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
     
     // New arrowhead design - elegant, sharp, multi-layered (pointing forward)
     const headStartX = arrowLength - arrowHeadLength;
     
-    // Base arrowhead layer (dark metal) - triangle pointing forward
-    ctx.fillStyle = `rgba(80, 80, 90, ${alpha})`; // Dark steel
+    // Base arrowhead layer - high contrast (black outline)
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.9})`;
     ctx.beginPath();
-    ctx.moveTo(headStartX, -arrowShaftWidth * 2.5); // Top of base (left point)
+    ctx.moveTo(headStartX, -arrowShaftWidth * 2.7); // Top of base (left point)
     ctx.lineTo(arrowLength, 0); // Sharp tip (forward, center)
-    ctx.lineTo(headStartX, arrowShaftWidth * 2.5); // Bottom of base (right point)
+    ctx.lineTo(headStartX, arrowShaftWidth * 2.7); // Bottom of base (right point)
     ctx.closePath();
     ctx.fill();
     
-    // Middle layer (medium metal) - smaller triangle inside
-    ctx.fillStyle = `rgba(120, 120, 130, ${alpha})`; // Medium steel
+    // Middle layer (neon cyan) - smaller triangle inside
+    ctx.fillStyle = `rgba(0, 240, 255, ${alpha})`;
     ctx.beginPath();
     ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8); // Top
     ctx.lineTo(arrowLength, 0); // Sharp tip
@@ -5608,8 +5913,8 @@ function render() {
     ctx.closePath();
     ctx.fill();
     
-    // Top highlight layer (bright metal edge) - left edge
-    ctx.fillStyle = `rgba(200, 200, 210, ${alpha})`; // Bright steel highlight
+    // Top highlight layer (white) - left edge
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
     ctx.beginPath();
     ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2); // Top
     ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2); // Middle
@@ -5625,14 +5930,25 @@ function render() {
     ctx.closePath();
     ctx.fill();
     
-    // Extra sharp tip accent (white/silver)
-    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.9})`; // White tip
+    // Extra sharp tip accent (hot pink) - easiest to see on dark/green UFO
+    ctx.fillStyle = `rgba(255, 0, 180, ${alpha * 0.95})`;
     ctx.beginPath();
     ctx.moveTo(arrowLength - 2, -arrowShaftWidth * 0.8); // Top
     ctx.lineTo(arrowLength, 0); // Sharp tip
     ctx.lineTo(arrowLength - 2, arrowShaftWidth * 0.8); // Bottom
     ctx.closePath();
     ctx.fill();
+
+    // Subtle glow around arrow for readability
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * 0.35})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(shaftStartX, 0);
+    ctx.lineTo(arrowLength, 0);
+    ctx.stroke();
+    ctx.restore();
     
     // Fletching (feathers at back) - colorful feathers
     ctx.fillStyle = `rgba(180, 40, 40, ${alpha})`; // Red feather
@@ -5734,7 +6050,7 @@ function render() {
     ctx.fill();
     
     // Extra sharp tip accent (white/silver)
-    ctx.fillStyle = `rgba(255, 255, 255, ${slashAlpha * 0.9})`; // White tip
+    ctx.fillStyle = `rgba(0, 200, 0, ${slashAlpha * 0.9})`; // Green tip
     ctx.beginPath();
     ctx.moveTo(arrowLength - 2, -arrowShaftWidth * 0.8); // Top
     ctx.lineTo(arrowLength, 0); // Sharp tip
@@ -6243,12 +6559,12 @@ function render() {
       ctx.strokeRect(midX - half, pvpBounds.top, PVP_MID_WALL_THICKNESS, wallBottomY - pvpBounds.top);
 
       // Mid-wall "timer body": rises bottom->top over a full 10s (planning+execute) cycle.
-      // Visible to players (no debug text). Only for 5SEC PvP mode when connected.
+      // Visible to players. Only for 5SEC PvP mode when connected.
       try {
         if (TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom()) {
           const room: any = colyseusService.getRoom();
           const started = !!room?.state?.gameStarted;
-          if (started && (turnPhase === 'planning' || turnPhase === 'execute')) {
+          if (started && (turnPhase !== 'lobby')) {
             const nowServer = getServerNowMs();
             const planDur = (typeof turnPlanDurationMs === 'number' && turnPlanDurationMs > 0) ? turnPlanDurationMs : 5000;
             const execDur = (typeof turnExecuteDurationMs === 'number' && turnExecuteDurationMs > 0) ? turnExecuteDurationMs : 5000;
@@ -6299,6 +6615,34 @@ function render() {
             ctx.fillStyle = '#000000';
             ctx.fillRect(bodyX + Math.floor(bodyW / 2) - 2, bodyY + Math.floor(bodyH / 2) - 2, 4, 4);
             ctx.restore();
+
+            // Phase timer text: countdown + "PLANNING"/"REPLAY" label.
+            // Use server-synced timestamps so both players see consistent time.
+            try {
+              const phaseEndsAt = (typeof turnPhaseEndsAt === 'number' && turnPhaseEndsAt > 0) ? turnPhaseEndsAt : 0;
+              let remainingMs = 0;
+              if (phaseEndsAt > 0) {
+                remainingMs = Math.max(0, phaseEndsAt - nowServer);
+              } else if (turnPhase === 'planning') {
+                remainingMs = Math.max(0, planDur - (nowServer - planStart));
+              } else {
+                remainingMs = Math.max(0, execDur - (nowServer - execStart));
+              }
+              const remainingSec = (remainingMs / 1000);
+              const label = (turnPhase === 'planning') ? 'PLANNING' : 'REPLAY';
+              const text = `${label} ${remainingSec.toFixed(1)}s`;
+              ctx.save();
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'top';
+              ctx.font = 'bold 18px "Press Start 2P"';
+              // outline for readability
+              ctx.lineWidth = 4;
+              ctx.strokeStyle = '#000000';
+              ctx.strokeText(text, midX, pvpBounds.top + 8);
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText(text, midX, pvpBounds.top + 8);
+              ctx.restore();
+            } catch {}
           }
         }
       } catch {}
@@ -6307,8 +6651,7 @@ function render() {
     // Highlight borders (top, left, right)
     drawPerimeterHighlight(ctx);
 
-    // Turn-based PvP overlay: intentionally hidden.
-    // Players see timing only via the mid-wall indicator.
+    // Turn-based PvP: show time via mid-wall + timer text.
     
     // Draw wall spikes (PvP mode only)
     if (gameMode === 'PvP' || gameMode === 'Training') {
@@ -6374,11 +6717,7 @@ function render() {
     }
     
     // Draw all players
-    const shadowPlanning =
-      TURN_BASED_PVP_ENABLED &&
-      gameMode === 'PvP' &&
-      colyseusService.isConnectedToRoom() &&
-      turnPhase === 'planning';
+    const shadowPlanning = false;
     for (const playerId in pvpPlayers) {
       const player = pvpPlayers[playerId];
       
@@ -6387,9 +6726,11 @@ function render() {
         continue; // Don't draw player during death animation
       }
 
-      // Shadow planning effect: make moving entities feel "non-live" during planning
+      // Turn-based role tint: defender slightly darker, attacker stays original
       ctx.save();
-      if (shadowPlanning) ctx.globalAlpha = 0.75;
+      if (isTurnBasedPvP() && turnDefenderId && playerId === turnDefenderId) {
+        ctx.globalAlpha = 0.75;
+      }
       
       // Draw fading shadow tail (behind the player) - same as Solo
       {
@@ -7202,7 +7543,7 @@ function render() {
           ctx.fill();
 
           // Extra sharp tip accent (white/silver)
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White tip
+          ctx.fillStyle = 'rgba(0, 200, 0, 0.9)'; // Green tip
           ctx.beginPath();
           ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
           ctx.lineTo(arrowLength, 0);
@@ -7618,8 +7959,12 @@ function render() {
       ctx.restore();
     }
     
-    // PvP mode: Draw arrow (ready or flying) - always near player, follows mouse like trajectory line
-    if ((pvpArrowReady && !pvpArrowFired && myPlayerId && pvpPlayers[myPlayerId]) || (pvpKatanaFlying && myPlayerId && pvpPlayers[myPlayerId])) {
+    // PvP mode: Draw arrow (ready, charging, or flying)
+    if (
+      ((pvpArrowReady && !pvpArrowFired && myPlayerId && pvpPlayers[myPlayerId]) ||
+        (pvpArrowCharging && myPlayerId && pvpPlayers[myPlayerId]) ||
+        (pvpKatanaFlying && myPlayerId && pvpPlayers[myPlayerId]))
+    ) {
       ctx.save();
       
       if (!myPlayerId || !pvpPlayers[myPlayerId]) {
@@ -7636,6 +7981,11 @@ function render() {
       if (pvpKatanaFlying) {
         // Flying - use stored angle
         currentArrowAngle = pvpKatanaAngle;
+      } else if (pvpArrowCharging) {
+        // Charging - point towards stored aim point (captured on click)
+        const dx = pvpArrowChargeAimX - myPlayer.x;
+        const dy = pvpArrowChargeAimY - myPlayer.y;
+        currentArrowAngle = Math.atan2(dy, dx);
       } else {
         // Ready state - point arrow towards mouse (arrow stays at player position, but aims at mouse)
         const dx = globalMouseX - myPlayer.x;
@@ -7645,6 +7995,35 @@ function render() {
       
       ctx.translate(arrowPosX, arrowPosY);
       ctx.rotate(currentArrowAngle);
+
+      // Fade out when exceeding range (only when flying)
+      if (pvpKatanaFlying) {
+        const fadeT = Math.max(0, Math.min(1, (pvpKatanaTravelPx - PVP_ARROW_RANGE_PX) / Math.max(1, PVP_ARROW_FADE_PX)));
+        ctx.globalAlpha *= (1 - fadeT);
+      }
+
+      // Charge animation: "tension" effect before release (pull back + stretch)
+      if (pvpArrowCharging) {
+        const now = Date.now();
+        const chargeT = Math.max(0, Math.min(1, 1 - ((pvpArrowChargeFireAt - now) / Math.max(1, PVP_ARROW_CHARGE_MS))));
+        // Pull back then snap forward as it reaches full charge
+        const pullBackPx = (1 - chargeT) * 18;
+        const stretchX = 0.8 + 0.2 * chargeT; // 80% -> 100%
+        ctx.translate(-pullBackPx, 0);
+        ctx.scale(stretchX, 1);
+        ctx.globalAlpha *= (0.65 + 0.35 * chargeT);
+
+        // Simple "string/tension" line behind the arrow
+        ctx.save();
+        ctx.strokeStyle = `rgba(0, 0, 0, ${0.15 + 0.35 * chargeT})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-10, -6);
+        ctx.lineTo(-10 - pullBackPx * 0.8, 0);
+        ctx.lineTo(-10, 6);
+        ctx.stroke();
+        ctx.restore();
+      }
       
       // Arrow shaft (brown wooden) - main body
       const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
@@ -7691,7 +8070,7 @@ function render() {
       ctx.fill();
       
       // Extra sharp tip accent (white/silver)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White tip
+      ctx.fillStyle = 'rgba(0, 200, 0, 0.9)'; // Green tip
       ctx.beginPath();
       ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
       ctx.lineTo(arrowLength, 0);
@@ -7723,6 +8102,9 @@ function render() {
     // PvP mode: Draw opponent's flying arrow
     if (opponentArrowFlying && gameMode === 'PvP' && opponentId) {
       ctx.save();
+
+      const fadeT = Math.max(0, Math.min(1, (opponentArrowTravelPx - PVP_ARROW_RANGE_PX) / Math.max(1, PVP_ARROW_FADE_PX)));
+      ctx.globalAlpha *= (1 - fadeT);
       
       ctx.translate(opponentArrowX, opponentArrowY);
       ctx.rotate(opponentArrowAngle);
@@ -7772,7 +8154,7 @@ function render() {
       ctx.fill();
       
       // Extra sharp tip accent (white/silver)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White tip
+      ctx.fillStyle = 'rgba(0, 200, 0, 0.9)'; // Green tip
       ctx.beginPath();
       ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
       ctx.lineTo(arrowLength, 0);
@@ -8984,19 +9366,6 @@ if (!(window as any).__mousedownListenerAdded) {
     }
   }
 
-  // Turn-based PvP planning input: click to set destination; SHIFT+click to queue a shot
-  if (isTurnBasedPvPDesired() && turnPhase === 'planning' && e.button === 0 && myPlayerId && pvpPlayers[myPlayerId] && !waitingForOpponentReady) {
-    // Only accept clicks in play area
-    if (mouseX > 240) {
-      if ((e as any).shiftKey) {
-        addMyTurnShot(mouseX, mouseY);
-      } else {
-        setMyTurnDest(mouseX, mouseY);
-      }
-      return;
-    }
-  }
-
   // Turn-based PvP: block legacy realtime PvP mouse controls in play area
   if (isTurnBasedPvPDesired() && mouseX > 240) {
     return;
@@ -9674,10 +10043,10 @@ if (!(window as any).__mouseupListenerAdded) {
           walletError = 'Connect Ronin Wallet to play 5SEC PvP';
           console.log('Cannot open 5SEC PvP server list: Wallet not connected');
         } else {
-          // Start 5sec turn-based PvP
-          TURN_BASED_PVP_ENABLED = true;
+          // Start 5SEC PvP (LIVE) - replay/turn loop removed; this is realtime gameplay in a separate matchmaking pool.
+          TURN_BASED_PVP_ENABLED = false;
           pvpOnlineRoomName = 'pvp_5sec_room';
-          // Local dev: ALWAYS use local Colyseus server for 5SEC PVP (cloud may be on an older protocol)
+          // Local dev: allow direct localhost connect
           const isLocalHost =
             window.location.hostname === 'localhost' ||
             window.location.hostname === '127.0.0.1';
@@ -9796,31 +10165,7 @@ if (!(window as any).__contextmenuListenerAdded) {
 if (!(window as any).__keydownListenerAdded) {
   (window as any).__keydownListenerAdded = true;
   window.addEventListener('keydown', (e) => {
-  // Turn-based PvP (planning): keys select weapon and lock plan
-  if (isTurnBasedPvPDesired() && turnPhase === 'planning') {
-    if (e.key === '1') {
-      turnWeapon = 'arrow';
-      return;
-    }
-    if (e.key === '2') {
-      turnWeapon = 'projectile';
-      return;
-    }
-    if (e.key === '3') {
-      turnWeapon = 'bullet';
-      return;
-    }
-    if (e.key === 'Enter') {
-      colyseusService.lockPlan();
-      turnLocked = true;
-      return;
-    }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      clearMyTurnShots();
-      return;
-    }
-  }
-  // Turn-based PvP: ignore the old realtime PvP hotkeys during execute (and generally).
+  // Turn-based PvP: ignore realtime gameplay hotkeys during execute replay.
   if (isTurnBasedPvPDesired()) {
     return;
   }
@@ -9897,27 +10242,33 @@ if (!(window as any).__keydownListenerAdded) {
     }
   }
   
-  // PvP/Training mode: Jetpack activation (key "Space")
+  // PvP/Training mode: Dash / Blink (Space) - instant burst movement towards cursor.
   if (e.key === ' ' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
     const myPlayer = pvpPlayers[myPlayerId];
-    
-    // Block input if player is dead
-    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
-      return; // Dead - can't use jetpack
+
+    // 5SEC PvP: during EXECUTE replay, inputs must be frozen (dash would desync replay).
+    if (isTurnBasedPvPDesired()) {
+      return;
     }
-    
-    // Check if paralyzed
-    if (myPlayer.paralyzedUntil > Date.now()) {
-      return; // Paralyzed - can't use jetpack
+
+    // Ensure we never leave jetpack sound running (Space no longer toggles jetpack in PvP)
+    if (myPlayer.isUsingJetpack) {
+      myPlayer.isUsingJetpack = false;
+      try { audioManager.stopJetpackSound(); } catch {}
     }
-    
-    // Check if player has fuel and is not already using jetpack
-    if (myPlayer.fuel > 0 && !myPlayer.isUsingJetpack) {
-      myPlayer.isUsingJetpack = true;
-      myPlayer.jetpackStartTime = Date.now();
-      myPlayer.jetpackLastFuelTickTime = myPlayer.jetpackStartTime;
-      console.log('Jetpack activated! Fuel:', myPlayer.fuel);
-    }
+
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
+    // In PvP we require a match connection to broadcast to opponent.
+    if (gameMode === 'PvP' && (!currentMatch || !isSyncing)) return;
+
+    const send =
+      (gameMode === 'PvP' && isSyncing)
+        ? (useColyseus ? (input: any) => colyseusService.sendInput(input) : (input: any) => pvpSyncService.sendInput(input))
+        : (_input: any) => {};
+
+    tryDashPlayer(myPlayerId, myPlayer, globalMouseX, globalMouseY, send);
   }
   
   // PvP/Training mode: Fire bullet (key "3") - Burst fire: 2 shots with 0.2s delay, then cooldown
@@ -9934,6 +10285,15 @@ if (!(window as any).__keydownListenerAdded) {
     if (myPlayer.paralyzedUntil > now) {
       return; // Paralyzed - can't fire bullet
     }
+
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, now)) {
+      applyPvpActionPenalty(myPlayerId, now);
+      return;
+    }
+
+    // Disable old burst-fire behavior: enforce 1 bullet action per second.
+    shotsInBurst = 0;
     
     // Check if we can fire (burst system: 2 shots with 0.2s delay, then cooldown)
     if (shotsInBurst === 0) {
@@ -9980,14 +10340,10 @@ if (!(window as any).__keydownListenerAdded) {
       }
       
       // Update burst tracking
-      shotsInBurst++;
+      shotsInBurst = 0;
       lastBurstShotTime = now;
-      
-      // If this is the second shot, start cooldown
-      if (shotsInBurst === 2) {
-        bulletLastShotTime = now;
-        shotsInBurst = 0; // Reset burst counter after cooldown starts
-      }
+      bulletLastShotTime = now;
+      commitPvpAction(myPlayerId, now);
       
       // Play bullet shot sound effect (like gunshot from barrel)
       audioManager.resumeContext().then(() => {
@@ -10031,6 +10387,12 @@ if (!(window as any).__keydownListenerAdded) {
     if (myPlayer.paralyzedUntil > now) {
       return; // Paralyzed - can't place mine
     }
+
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, now)) {
+      applyPvpActionPenalty(myPlayerId, now);
+      return;
+    }
     
     // Check cooldown
     const timeSinceLastPlace = now - mineLastPlaceTime;
@@ -10048,6 +10410,7 @@ if (!(window as any).__keydownListenerAdded) {
     
     mines.push(newMine);
     mineLastPlaceTime = now;
+    commitPvpAction(myPlayerId, now);
     
     // Play mine placement sound effect
     audioManager.resumeContext().then(() => {
@@ -10084,18 +10447,8 @@ if (!(window as any).__keydownListenerAdded) {
 if (!(window as any).__keyupListenerAdded) {
   (window as any).__keyupListenerAdded = true;
   window.addEventListener('keyup', (e) => {
-  // PvP/Training mode: Jetpack deactivation (key "Space" released)
-  if (e.key === ' ' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
-    const myPlayer = pvpPlayers[myPlayerId];
-    
-    // Deactivate jetpack
-    if (myPlayer.isUsingJetpack) {
-      myPlayer.isUsingJetpack = false;
-      myPlayer.lastFuelRegenTime = 0; // Fuel regeneration disabled (no auto-refill)
-      audioManager['stopJetpackSound']();
-      console.log('Jetpack deactivated. Fuel:', myPlayer.fuel);
-    }
-  }
+  // PvP/Training: Space is dash on keydown; nothing to do on keyup.
+  // (Keep this block intentionally empty for Space to avoid HMR duplication changes.)
   
   });
 } else {
@@ -10112,6 +10465,8 @@ if (!(window as any).__clickListenerAdded) {
   const pos = getCanvasMousePos(e);
   const mouseX = pos.x;
   const mouseY = pos.y;
+
+  // (5SEC PvP micro-turn: no special click UI; replay-only gating happens elsewhere)
 
   // Handle match result modal clicks
   if (gameMode === 'PvP' && showingMatchResult && matchResult) {
@@ -10448,6 +10803,9 @@ if (!(window as any).__clickListenerAdded) {
 
   // PvP/Training mode: Handle arrow throw - click to launch arrow (only if ready and cooldown passed)
   if ((gameMode === 'PvP' || gameMode === 'Training') && pvpArrowReady && mouseX > 240 && myPlayerId && pvpPlayers[myPlayerId] && !pvpKatanaFlying && e.button === 0) {
+    if (isTurnBasedPvPDesired()) {
+      return;
+    }
     const myPlayer = pvpPlayers[myPlayerId];
     
     // Block input if player is dead
@@ -10460,61 +10818,26 @@ if (!(window as any).__clickListenerAdded) {
       return; // Paralyzed - can't fire arrow
     }
     const currentTime = Date.now();
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, currentTime)) {
+      applyPvpActionPenalty(myPlayerId, currentTime);
+      return;
+    }
     const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
     
     // Check if cooldown has passed
     if (timeSinceLastShot >= pvpArrowCooldown) {
-      // Launch arrow from player position towards mouse position (like Solo mode)
-      pvpKatanaFlying = true;
-      pvpArrowFired = true; // Mark as fired
-      pvpArrowReady = false; // Reset ready state
-      pvpArrowLastShotTime = currentTime; // Update last shot time
-      pvpKatanaX = myPlayer.x; // Start from current player position
-      pvpKatanaY = myPlayer.y; // Start from current player position
-      
-      // Calculate direction to mouse (like Solo mode)
-      const dx = mouseX - myPlayer.x;
-      const dy = mouseY - myPlayer.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance > 0) {
-        pvpKatanaVx = (dx / distance) * pvpKatanaSpeed;
-        pvpKatanaVy = (dy / distance) * pvpKatanaSpeed;
-        pvpKatanaAngle = Math.atan2(dy, dx);
+      // Start charge: arrow fires after a short delay (reduces “instant spam” feel, gives more sync time).
+      if (!pvpArrowCharging) {
+        pvpArrowCharging = true;
+        pvpArrowChargeFireAt = currentTime + PVP_ARROW_CHARGE_MS;
+        pvpArrowChargeAimX = mouseX;
+        pvpArrowChargeAimY = mouseY;
+        pvpArrowReady = false; // consume ready state immediately
+        // Global 1-action-per-second limit: lock the action at charge start.
+        commitPvpAction(myPlayerId, currentTime);
       }
-
-      // 5SEC PVP shadow recording: record arrow spawn at launch
-      if (is5SecPvPMode() && turnPhase === 'planning') {
-        recordTurnSpawn('arrow', pvpKatanaX, pvpKatanaY, pvpKatanaVx, pvpKatanaVy);
-      }
-      
-      // Play arrow shot sound effect (like arrow flying through air - fffiiiit)
-      audioManager.resumeContext().then(() => {
-        audioManager.playArrowShot();
-      });
-      
-        // Removed console.log to reduce lag
-        // console.log(`PvP Arrow launched from player (${myPlayer.x}, ${myPlayer.y}) towards mouse (${mouseX}, ${mouseY}) at speed ${pvpKatanaSpeed}`);
-      
-      // Send arrow to opponent via network sync
-      const useColyseusArrow = colyseusService.isConnectedToRoom();
-      const isSyncingArrow = useColyseusArrow || pvpSyncService.isSyncing();
-      if (currentMatch && isSyncingArrow) {
-        const arrowInput = {
-          type: 'arrow' as const,
-          timestamp: currentTime,
-          x: myPlayer.x,
-          y: myPlayer.y,
-          targetX: mouseX,
-          targetY: mouseY,
-        };
-        if (useColyseusArrow) {
-          colyseusService.sendInput(arrowInput);
-        } else {
-          pvpSyncService.sendInput(arrowInput);
-        }
-      }
-      
-      return; // Don't process normal click when arrow is launched
+      return;
     } else {
       // Cooldown still active - cancel arrow ready state
       pvpArrowReady = false;
@@ -10525,6 +10848,10 @@ if (!(window as any).__clickListenerAdded) {
 
   // PvP/Training mode: fire heavy projectile when aiming
   if ((gameMode === 'PvP' || gameMode === 'Training') && projectileAiming && mouseX > 240 && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && e.button === 0) {
+    if (isTurnBasedPvPDesired()) {
+      projectileAiming = false;
+      return;
+    }
     const myPlayer = pvpPlayers[myPlayerId];
     if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
       projectileAiming = false;
@@ -10534,6 +10861,12 @@ if (!(window as any).__clickListenerAdded) {
       return;
     }
     const now = Date.now();
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, now)) {
+      applyPvpActionPenalty(myPlayerId, now);
+      projectileAiming = false;
+      return;
+    }
     const timeSinceLastShot = now - projectileLastShotTime;
     if (timeSinceLastShot < projectileCooldown) {
       projectileAiming = false;
@@ -10557,6 +10890,7 @@ if (!(window as any).__clickListenerAdded) {
     projectileAiming = false;
     projectileLastShotTime = now;
     projectileSpawnTime = now;
+    projectileLastUpdateAt = now;
     projectileBounceCount = 0;
     projectileX = myPlayer.x + dirX * spawnOffset;
     projectileY = myPlayer.y + dirY * spawnOffset;
@@ -10587,6 +10921,7 @@ if (!(window as any).__clickListenerAdded) {
 
     createProjectileExplosion(projectileX, projectileY);
     audioManager.playProjectileLaunch();
+    commitPvpAction(myPlayerId, now);
 
     const useColyseusProjectile = colyseusService.isConnectedToRoom();
     const isSyncingProjectile = useColyseusProjectile || pvpSyncService.isSyncing();
@@ -10619,11 +10954,21 @@ if (!(window as any).__clickListenerAdded) {
     
     // Only process clicks in play area
     if (mouseX > 240 && e.button === 0) {
+      if (isTurnBasedPvPDesired()) {
+        return;
+      }
       const myPlayer = pvpPlayers[myPlayerId];
       
       // Check if paralyzed
       if (myPlayer.paralyzedUntil > Date.now()) {
         return; // Paralyzed - can't click
+      }
+
+      // Global action limit (1 action per second) for click-hit (prevents spam knockback).
+      const now = Date.now();
+      if (!canPerformPvpAction(myPlayerId, now)) {
+        applyPvpActionPenalty(myPlayerId, now);
+        return;
       }
       
       // CRITICAL: Only allow controlling my player, never opponent
@@ -10638,6 +10983,9 @@ if (!(window as any).__clickListenerAdded) {
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance <= myPlayer.radius) {
+        // Self-click counts as an action (even if MISS) to keep a clear "1 action / 1 sec" rule.
+        commitPvpAction(myPlayerId, now);
+
         // Check for accuracy hit (same as Solo)
         const isHit = Math.random() < accuracy / 100;
         
@@ -12889,211 +13237,136 @@ function gameLoop() {
       }
     }
     
-    // PvP/Training mode: Update arrow physics and collision
-    if ((gameMode === 'PvP' || gameMode === 'Training') && pvpKatanaFlying && opponentId && pvpPlayers[opponentId]) {
-      // Update arrow position
-      pvpKatanaX += pvpKatanaVx;
-      pvpKatanaY += pvpKatanaVy;
-      
-      // Check collision with opponent - OPTIMIZED: Use squared distance
-      // Make sure we're hitting the opponent, not ourselves
-      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
-        return; // Safety check - don't hit ourselves
-      }
-      const opponent = pvpPlayers[opponentId];
-      const dx = opponent.x - pvpKatanaX;
-      const dy = opponent.y - pvpKatanaY;
-      const distanceSquared = dx * dx + dy * dy;
-      // Reduced hit radius - only arrow head should hit (much smaller collision box)
-      const hitRadius = opponent.radius + arrowHeadLength * 0.5; // Only half of arrow head length
-      const hitRadiusSquared = hitRadius * hitRadius;
-      
-      // Hit if arrow tip/body touches opponent
-      if (distanceSquared <= hitRadiusSquared) {
-        const distance = Math.sqrt(distanceSquared);
-        
-        // Double check - make sure opponent is not ourselves
-        if (opponent.id === myPlayerId) {
-          console.error('ERROR: Trying to damage ourselves!', { opponentId, myPlayerId, opponent: opponent.id });
-          return;
-        }
-        
-        // Check for crit hit (with NFT bonuses)
-        const nftBonuses = calculateNftBonuses();
-        const totalCritChance = critChance + nftBonuses.critChance;
-        const isCritHit = Math.random() < totalCritChance / 100;
-        // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
-        const totalDmg = dmg + nftBonuses.dmg;
-        const baseArrowDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
-        // Apply 50% variance (damage ranges from 50% to 100%)
-        const arrowDamage = applyDamageVariance(baseArrowDamage);
-        
-        // Profile: Track damage dealt (PvP mode - Arrow)
-        profileManager.addDamageDealt(arrowDamage);
-        
-        // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
-        // Opponent will apply damage when they receive the hit event
-        const useColyseus = colyseusService.isConnectedToRoom();
-        const isSyncing = useColyseus || pvpSyncService.isSyncing();
-        if (currentMatch && isSyncing && opponentId) {
-          const hitInput = {
-            type: 'hit' as const,
-            timestamp: Date.now(),
-            damage: arrowDamage,
-            isCrit: isCritHit,
-            targetPlayerId: opponentId // Tell opponent this hit is for them
-          };
-          
-          if (useColyseus) {
-            colyseusService.sendInput(hitInput);
-          } else {
-            pvpSyncService.sendInput(hitInput);
-          }
-        }
-        
-        // DON'T apply damage locally - opponent will apply it when they receive hit event
-        // This ensures both players see/feel the EXACT same damage
-        
-        // Screen shake for crit hits (we feel it when we hit)
-        if (isCritHit) {
-          screenShake = Math.max(screenShake, 30);
-        }
-        
-        // Play damage dealt sound effect (satisfying hit sound when dealing damage)
-        audioManager.resumeContext().then(() => {
-          audioManager.playDamageDealt(isCritHit);
-        });
-        
-        // Show damage number (we see it when we hit)
-        safePushDamageNumber({
-          x: opponent.x + (Math.random() - 0.5) * 40,
-          y: opponent.y - 20,
-          value: arrowDamage,
-          life: 60,
-          maxLife: 60,
-          vx: (Math.random() - 0.5) * 2,
-          vy: -2 - Math.random() * 2,
-          isCrit: isCritHit
-        });
-        
-        // Create particle effect
-        for (let i = 0; i < 10; i++) {
-          const angle = (Math.PI * 2 * i) / 10;
-          const speed = 2 + Math.random() * 3;
-          safePushClickParticle({
-            x: opponent.x,
-            y: opponent.y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 30,
-            maxLife: 30,
-            size: 3 + Math.random() * 2
-          });
-        }
-        
-        // Removed knockback: keep opponent in place to avoid desync/out-of-bounds
-        
-        // Check if opponent is dead - start death animation
-        if (opponent.hp <= 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
-          opponent.isOut = true;
-          
-          // Determine opponent color for death animation
-          let opponentColor = '#000000';
-          if (opponentId === myPlayerId) {
-            opponentColor = '#000000';
-          } else if (opponentId === opponentId && opponentId) {
-            opponentColor = '#000000';
-          } else {
-            opponentColor = opponent.color;
-          }
-          
-          // Start death animation
-          createDeathAnimation(opponentId, opponent.x, opponent.y, opponentColor, opponent.radius);
-        }
-        
-        // Remove arrow
+    // PvP/Training mode: Update arrow physics (time-based). Hit is server-authoritative.
+    if ((gameMode === 'PvP' || gameMode === 'Training') && pvpKatanaFlying) {
+      const now = Date.now();
+      if (!pvpKatanaLastUpdateAt) pvpKatanaLastUpdateAt = now;
+      const dtFrames = Math.max(0, (now - pvpKatanaLastUpdateAt) / (1000 / 60));
+      pvpKatanaLastUpdateAt = now;
+
+      // vx/vy are in px per 60fps frame (legacy), so scale by dtFrames
+      const stepX = pvpKatanaVx * dtFrames;
+      const stepY = pvpKatanaVy * dtFrames;
+      pvpKatanaX += stepX;
+      pvpKatanaY += stepY;
+      pvpKatanaTravelPx += Math.sqrt(stepX * stepX + stepY * stepY);
+
+      // Range limit: after 350px, fade for 50px then remove
+      if (pvpKatanaTravelPx >= (PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX)) {
         pvpKatanaFlying = false;
-        pvpArrowFired = false; // Reset fired state after hit
+        pvpArrowFired = false;
         pvpKatanaX = 0;
         pvpKatanaY = 0;
         pvpKatanaVx = 0;
         pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+        pvpKatanaTravelPx = 0;
       }
-      
+
       // Check if arrow is out of bounds
       if (pvpKatanaX < playLeft || pvpKatanaX > playRight || pvpKatanaY < 0 || pvpKatanaY > pvpBounds.bottom) {
         pvpKatanaFlying = false;
-        pvpArrowFired = false; // Reset fired state after hit
+        pvpArrowFired = false;
         pvpKatanaX = 0;
         pvpKatanaY = 0;
         pvpKatanaVx = 0;
         pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+        pvpKatanaTravelPx = 0;
+      }
+    }
+
+    // PvP/Training mode: Arrow charge -> delayed fire
+    if ((gameMode === 'PvP' || gameMode === 'Training') && pvpArrowCharging && myPlayerId && pvpPlayers[myPlayerId]) {
+      const now = Date.now();
+      if (now >= pvpArrowChargeFireAt) {
+        const me = pvpPlayers[myPlayerId];
+        // Cancel if dead/paralyzed at fire time
+        if (me.isOut || me.hp <= 0 || deathAnimations.has(myPlayerId) || me.paralyzedUntil > now) {
+          pvpArrowCharging = false;
+        } else {
+          // Fire arrow from current position towards stored aim
+          pvpKatanaFlying = true;
+          pvpArrowFired = true;
+          pvpArrowLastShotTime = now;
+          pvpKatanaX = me.x;
+          pvpKatanaY = me.y;
+          pvpKatanaLastUpdateAt = now;
+          pvpKatanaTravelPx = 0;
+
+          const dx = pvpArrowChargeAimX - me.x;
+          const dy = pvpArrowChargeAimY - me.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance > 0) {
+            pvpKatanaVx = (dx / distance) * pvpKatanaSpeed;
+            pvpKatanaVy = (dy / distance) * pvpKatanaSpeed;
+            pvpKatanaAngle = Math.atan2(dy, dx);
+          }
+
+          // 5SEC PVP shadow recording (legacy hook; harmless in LIVE)
+          if (is5SecPvPMode() && turnPhase === 'planning') {
+            recordTurnSpawn('arrow', pvpKatanaX, pvpKatanaY, pvpKatanaVx, pvpKatanaVy);
+          }
+
+          // Audio
+          audioManager.resumeContext().then(() => {
+            audioManager.playArrowShot();
+          });
+
+          // Send arrow to opponent (at fire time, not charge start)
+          const useColyseusArrow = colyseusService.isConnectedToRoom();
+          const isSyncingArrow = useColyseusArrow || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncingArrow) {
+            const nftBonuses = calculateNftBonuses();
+            const totalDmg = dmg + (nftBonuses?.dmg || 0);
+            const totalCritChance = critChance + (nftBonuses?.critChance || 0);
+            const arrowInput = {
+              type: 'arrow' as const,
+              timestamp: now,
+              x: me.x,
+              y: me.y,
+              targetX: pvpArrowChargeAimX,
+              targetY: pvpArrowChargeAimY,
+              dmg: totalDmg,
+              critChance: totalCritChance,
+            };
+            if (useColyseusArrow) {
+              colyseusService.sendInput(arrowInput);
+            } else {
+              pvpSyncService.sendInput(arrowInput);
+            }
+          }
+
+          pvpArrowCharging = false;
+        }
       }
     }
     
-    // PvP mode: Update opponent arrow physics and collision
-    if (gameMode === 'PvP' && opponentArrowFlying && myPlayerId && pvpPlayers[myPlayerId]) {
-      // Update opponent arrow position (position is synced from network, but we still update locally for smoothness)
-      // Network sync will override this, but this ensures smooth movement between syncs
-      opponentArrowX += opponentArrowVx;
-      opponentArrowY += opponentArrowVy;
-      
-      // Check collision with my player - OPTIMIZED: Use squared distance
-      const myPlayer = pvpPlayers[myPlayerId];
-      const dx = myPlayer.x - opponentArrowX;
-      const dy = myPlayer.y - opponentArrowY;
-      const distanceSquared = dx * dx + dy * dy;
-      // Reduced hit radius - only arrow head should hit (much smaller collision box)
-      const hitRadius = myPlayer.radius + arrowHeadLength * 0.5; // Only half of arrow head length
-      const hitRadiusSquared = hitRadius * hitRadius;
-      
-      // Hit if arrow tip/body touches my player
-      if (distanceSquared <= hitRadiusSquared) {
-        const distance = Math.sqrt(distanceSquared);
-        
-        // DON'T calculate damage locally - opponent will send hit event with their calculated damage
-        // This prevents using wrong stats (our stats instead of opponent's stats)
-        // Opponent will send hit event when their arrow hits us
-        
-        // Create particle effect
-        for (let i = 0; i < 10; i++) {
-          const angle = (Math.PI * 2 * i) / 10;
-          const speed = 2 + Math.random() * 3;
-          safePushClickParticle({
-            x: myPlayer.x,
-            y: myPlayer.y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 30,
-            maxLife: 30,
-            size: 3 + Math.random() * 2
-          });
-        }
-        
-        // Removed console.log to reduce lag
-        // console.log(`Opponent arrow hit me! Damage: ${arrowDamage}, HP: ${myPlayer.hp}/${myPlayer.maxHP}`);
-        
-        // Removed knockback to keep players inside arena bounds
-        
-        // Check if I'm dead - start death animation
-        if (myPlayer.hp <= 0 && !myPlayer.isOut && !deathAnimations.has(myPlayerId)) {
-          myPlayer.isOut = true;
-          
-          // Determine my player color for death animation
-          const myPlayerColor = '#000000'; // Black for my player
-          
-          // Start death animation
-          createDeathAnimation(myPlayerId, myPlayer.x, myPlayer.y, myPlayerColor, myPlayer.radius);
-        }
-        
-        // Remove opponent arrow
+    // PvP mode: Update opponent arrow physics (time-based). Hit is server-authoritative.
+    if (gameMode === 'PvP' && opponentArrowFlying) {
+      const now = Date.now();
+      if (!opponentArrowLastUpdateAt) opponentArrowLastUpdateAt = now;
+      const dtFrames = Math.max(0, (now - opponentArrowLastUpdateAt) / (1000 / 60));
+      opponentArrowLastUpdateAt = now;
+      const stepX = opponentArrowVx * dtFrames;
+      const stepY = opponentArrowVy * dtFrames;
+      opponentArrowX += stepX;
+      opponentArrowY += stepY;
+      opponentArrowTravelPx += Math.sqrt(stepX * stepX + stepY * stepY);
+
+      if (opponentArrowTravelPx >= (PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX)) {
         opponentArrowFlying = false;
         opponentArrowX = 0;
         opponentArrowY = 0;
         opponentArrowVx = 0;
         opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
       }
-      
+
       // Check if opponent arrow is out of bounds
       if (opponentArrowX < playLeft || opponentArrowX > playRight || opponentArrowY < 0 || opponentArrowY > pvpBounds.bottom) {
         opponentArrowFlying = false;
@@ -13101,10 +13374,13 @@ function gameLoop() {
         opponentArrowY = 0;
         opponentArrowVx = 0;
         opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
       }
     }
     
-    // PvP mode: Update opponent projectile physics (bouncing platform, NOT damage)
+    // PvP mode: Update opponent projectile physics (bouncing platform, NOT damage) - time-based (reduces FPS drift)
     if (gameMode === 'PvP' && opponentProjectileFlying) {
       // Check if opponent projectile lifetime expired (5 seconds)
       const now = Date.now();
@@ -13116,6 +13392,7 @@ function gameLoop() {
         opponentProjectileVx = 0;
         opponentProjectileVy = 0;
         opponentProjectileBounceCount = 0;
+        opponentProjectileLastUpdateAt = 0;
         console.log('Opponent projectile expired after 5 seconds');
       } else if (opponentProjectileBounceCount >= projectileMaxBounces) {
         // Max bounces reached - remove opponent projectile (no explosion animation)
@@ -13125,71 +13402,74 @@ function gameLoop() {
         opponentProjectileVx = 0;
         opponentProjectileVy = 0;
         opponentProjectileBounceCount = 0;
+        opponentProjectileLastUpdateAt = 0;
         console.log('Opponent projectile removed - max bounces reached');
       } else {
-        // Update opponent projectile position
-        opponentProjectileX += opponentProjectileVx;
-        opponentProjectileY += opponentProjectileVy;
-        opponentProjectileVy += projectileGravity; // Apply gravity
-        
-        // Create smoke trail (black smoke particles) - only when falling (positive vy)
-        if (opponentProjectileVy > 0) {
-          // Add smoke particle from projectile center
-          safePushProjectileSmokeParticle({
-            x: opponentProjectileX + (Math.random() - 0.5) * 4,
-            y: opponentProjectileY + (Math.random() - 0.5) * 4,
-            vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
-            vy: -0.3 - Math.random() * 0.2, // Rises slowly
-            life: 30 + Math.random() * 20, // 30-50 frames
-            maxLife: 30 + Math.random() * 20,
-            size: 4 + Math.random() * 3 // 4-7 pixels
-          });
-        }
-        
-        // Opponent projectile collision with players (damage + movement like arrow) - OPTIMIZED: Use squared distance
-        // Opponent projectile should only hit me (myPlayerId), not opponent themselves
-        if (myPlayerId && pvpPlayers[myPlayerId]) {
-          const player = pvpPlayers[myPlayerId];
-          const dx = opponentProjectileX - player.x;
-          const dy = opponentProjectileY - player.y;
-          const distanceSquared = dx * dx + dy * dy;
-          const collisionRadius = projectileRadius + player.radius;
-          const collisionRadiusSquared = collisionRadius * collisionRadius;
-          
-          // Check if projectile hits me (damage + push) - only hit myPlayerId, not opponent
-          if (distanceSquared <= collisionRadiusSquared) {
-            const distance = Math.sqrt(distanceSquared);
-            
-            // DON'T calculate damage locally - opponent will send hit event with their calculated damage
-            // This prevents using wrong stats (our stats instead of opponent's stats)
-            // Opponent will send hit event when their projectile hits us
-            
-            // Remove projectile after hit - damage will be applied when we receive hit event
+        if (!opponentProjectileLastUpdateAt) opponentProjectileLastUpdateAt = now;
+        const dtFramesTotal = Math.max(0, Math.min(6, (now - opponentProjectileLastUpdateAt) / (1000 / 60)));
+        opponentProjectileLastUpdateAt = now;
+
+        let framesLeft = dtFramesTotal;
+        while (framesLeft > 0 && opponentProjectileFlying) {
+          const step = Math.min(1, framesLeft);
+          framesLeft -= step;
+
+          // Update opponent projectile position
+          opponentProjectileX += opponentProjectileVx * step;
+          opponentProjectileY += opponentProjectileVy * step;
+          opponentProjectileVy += projectileGravity * step; // Apply gravity (scaled)
+
+          // Smoke trail scaled by time-step
+          if (opponentProjectileVy > 0 && Math.random() < step) {
+            safePushProjectileSmokeParticle({
+              x: opponentProjectileX + (Math.random() - 0.5) * 4,
+              y: opponentProjectileY + (Math.random() - 0.5) * 4,
+              vx: (Math.random() - 0.5) * 0.5,
+              vy: -0.3 - Math.random() * 0.2,
+              life: 30 + Math.random() * 20,
+              maxLife: 30 + Math.random() * 20,
+              size: 4 + Math.random() * 3
+            });
+          }
+
+          // Opponent projectile collision: it should only hit me (myPlayerId)
+          if (myPlayerId && pvpPlayers[myPlayerId]) {
+            const player = pvpPlayers[myPlayerId];
+            const dx = opponentProjectileX - player.x;
+            const dy = opponentProjectileY - player.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const collisionRadius = projectileRadius + player.radius;
+            const collisionRadiusSquared = collisionRadius * collisionRadius;
+
+            if (distanceSquared <= collisionRadiusSquared) {
+              opponentProjectileFlying = false;
+              opponentProjectileX = 0;
+              opponentProjectileY = 0;
+              opponentProjectileVx = 0;
+              opponentProjectileVy = 0;
+              opponentProjectileBounceCount = 0;
+              opponentProjectileLastUpdateAt = 0;
+              console.log('Opponent projectile hit me - waiting for hit event from opponent');
+              break;
+            }
+          }
+
+          // Out of bounds
+          if (opponentProjectileX < playLeft || opponentProjectileX > playRight || opponentProjectileY < 0 || opponentProjectileY > pvpBounds.bottom) {
             opponentProjectileFlying = false;
             opponentProjectileX = 0;
             opponentProjectileY = 0;
             opponentProjectileVx = 0;
             opponentProjectileVy = 0;
             opponentProjectileBounceCount = 0;
-            
-            console.log('Opponent projectile hit me - waiting for hit event from opponent');
+            opponentProjectileLastUpdateAt = 0;
+            break;
           }
-        }
-        
-        // Check if opponent projectile is out of bounds
-        if (opponentProjectileX < playLeft || opponentProjectileX > playRight || opponentProjectileY < 0 || opponentProjectileY > pvpBounds.bottom) {
-          // Opponent projectile out of bounds - remove it (no explosion animation)
-          opponentProjectileFlying = false;
-          opponentProjectileX = 0;
-          opponentProjectileY = 0;
-          opponentProjectileVx = 0;
-          opponentProjectileVy = 0;
-          opponentProjectileBounceCount = 0;
         }
       }
     }
     
-    // PvP/Training mode: Update projectile physics (bouncing platform, NOT damage)
+    // PvP/Training mode: Update projectile physics (bouncing platform, NOT damage) - time-based (reduces FPS drift)
     if ((gameMode === 'PvP' || gameMode === 'Training') && projectileFlying) {
       // Check if projectile lifetime expired (5 seconds)
       const now = Date.now();
@@ -13201,6 +13481,7 @@ function gameLoop() {
         projectileVx = 0;
         projectileVy = 0;
         projectileBounceCount = 0;
+        projectileLastUpdateAt = 0;
         console.log('Projectile expired after 5 seconds');
       } else if (projectileBounceCount >= projectileMaxBounces) {
         // Max bounces reached - remove projectile (no explosion animation)
@@ -13210,137 +13491,134 @@ function gameLoop() {
         projectileVx = 0;
         projectileVy = 0;
         projectileBounceCount = 0;
+        projectileLastUpdateAt = 0;
         console.log('Projectile removed - max bounces reached');
       } else {
-        // Update projectile position
-        projectileX += projectileVx;
-        projectileY += projectileVy;
-        projectileVy += projectileGravity; // Apply gravity
-        
-        // Create smoke trail (black smoke particles) - only when falling (positive vy)
-        if (projectileVy > 0) {
-          // Add smoke particle from projectile center
-          safePushProjectileSmokeParticle({
-            x: projectileX + (Math.random() - 0.5) * 4,
-            y: projectileY + (Math.random() - 0.5) * 4,
-            vx: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
-            vy: -0.3 - Math.random() * 0.2, // Rises slowly
-            life: 30 + Math.random() * 20, // 30-50 frames
-            maxLife: 30 + Math.random() * 20,
-            size: 4 + Math.random() * 3 // 4-7 pixels
-          });
-        }
-        
-        // Projectile collision with players (damage + movement like arrow) - OPTIMIZED: Use squared distance
-        for (const playerId in pvpPlayers) {
-          const player = pvpPlayers[playerId];
-          const dx = projectileX - player.x;
-          const dy = projectileY - player.y;
-          const distanceSquared = dx * dx + dy * dy;
-          const collisionRadius = projectileRadius + player.radius;
-          const collisionRadiusSquared = collisionRadius * collisionRadius;
-          
-          // Check if projectile hits player (damage + push) - only hit opponent, not self
-          if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
-            const distance = Math.sqrt(distanceSquared);
-            const opponent = player;
-            
-            // Check for crit hit - with NFT bonuses
-            const nftBonuses = calculateNftBonuses();
-            const totalCritChance = critChance + nftBonuses.critChance;
-            const isCritHit = Math.random() < totalCritChance / 100;
-            // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
-            const totalDmg = dmg + nftBonuses.dmg;
-            const baseProjectileDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
-            // Apply 50% variance (damage ranges from 50% to 100%)
-            const projectileDamage = applyDamageVariance(baseProjectileDamage);
-            
-            // Play damage dealt sound effect (satisfying hit sound when dealing damage)
-            audioManager.resumeContext().then(() => {
-              audioManager.playDamageDealt(isCritHit);
+        if (!projectileLastUpdateAt) projectileLastUpdateAt = now;
+        const dtFramesTotal = Math.max(0, Math.min(6, (now - projectileLastUpdateAt) / (1000 / 60)));
+        projectileLastUpdateAt = now;
+
+        let framesLeft = dtFramesTotal;
+        while (framesLeft > 0 && projectileFlying) {
+          const step = Math.min(1, framesLeft);
+          framesLeft -= step;
+
+          // Update projectile position
+          projectileX += projectileVx * step;
+          projectileY += projectileVy * step;
+          projectileVy += projectileGravity * step; // Apply gravity (scaled)
+
+          // Smoke trail scaled by time-step
+          if (projectileVy > 0 && Math.random() < step) {
+            safePushProjectileSmokeParticle({
+              x: projectileX + (Math.random() - 0.5) * 4,
+              y: projectileY + (Math.random() - 0.5) * 4,
+              vx: (Math.random() - 0.5) * 0.5,
+              vy: -0.3 - Math.random() * 0.2,
+              life: 30 + Math.random() * 20,
+              maxLife: 30 + Math.random() * 20,
+              size: 4 + Math.random() * 3
             });
-            
-            // Profile: Track damage dealt (PvP mode - Projectile)
-            profileManager.addDamageDealt(projectileDamage);
-            
-            // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
-            // Opponent will apply damage when they receive the hit event
-            const useColyseus = colyseusService.isConnectedToRoom();
-            const isSyncing = useColyseus || pvpSyncService.isSyncing();
-            if (currentMatch && isSyncing && opponentId) {
-              const hitInput = {
-                type: 'hit' as const,
-                timestamp: Date.now(),
-                damage: projectileDamage,
-                isCrit: isCritHit,
-                targetPlayerId: opponentId // Tell opponent this hit is for them
-              };
-              
-              if (useColyseus) {
-                colyseusService.sendInput(hitInput);
-              } else {
-                pvpSyncService.sendInput(hitInput);
-              }
-            }
-            
-            // DON'T apply damage locally - opponent will apply it when they receive hit event
-            // This ensures both players see/feel the EXACT same damage
-            
-            // Screen shake for crit hits (we feel it when we hit)
-            if (isCritHit) {
-              screenShake = Math.max(screenShake, 30);
-            }
-            
-            // Show damage number (we see it when we hit)
-            safePushDamageNumber({
-              x: opponent.x + (Math.random() - 0.5) * 40,
-              y: opponent.y - 20,
-              value: projectileDamage,
-              life: 60,
-              maxLife: 60,
-              vx: (Math.random() - 0.5) * 2,
-              vy: -2 - Math.random() * 2,
-              isCrit: isCritHit
-            });
-            
-            // Create particle effect
-            for (let i = 0; i < 10; i++) {
-              const angle = (Math.PI * 2 * i) / 10;
-              const speed = 2 + Math.random() * 3;
-              safePushClickParticle({
-                x: opponent.x,
-                y: opponent.y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                life: 30,
-                maxLife: 30,
-                size: 3 + Math.random() * 2
+          }
+
+          // Projectile collision with opponent only (damage event)
+          for (const playerId in pvpPlayers) {
+            const player = pvpPlayers[playerId];
+            const dx = projectileX - player.x;
+            const dy = projectileY - player.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const collisionRadius = projectileRadius + player.radius;
+            const collisionRadiusSquared = collisionRadius * collisionRadius;
+
+            if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
+              const opponent = player;
+
+              // Check for crit hit - with NFT bonuses
+              const nftBonuses = calculateNftBonuses();
+              const totalCritChance = critChance + nftBonuses.critChance;
+              const isCritHit = Math.random() < totalCritChance / 100;
+              // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
+              const totalDmg = dmg + nftBonuses.dmg;
+              const baseProjectileDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
+              const projectileDamage = applyDamageVariance(baseProjectileDamage);
+
+              audioManager.resumeContext().then(() => {
+                audioManager.playDamageDealt(isCritHit);
               });
+
+              profileManager.addDamageDealt(projectileDamage);
+
+              // Send hit event to opponent
+              const useColyseus = colyseusService.isConnectedToRoom();
+              const isSyncing = useColyseus || pvpSyncService.isSyncing();
+              if (currentMatch && isSyncing && opponentId) {
+                const hitInput = {
+                  type: 'hit' as const,
+                  timestamp: Date.now(),
+                  damage: projectileDamage,
+                  isCrit: isCritHit,
+                  targetPlayerId: opponentId
+                };
+                if (useColyseus) {
+                  colyseusService.sendInput(hitInput);
+                } else {
+                  pvpSyncService.sendInput(hitInput);
+                }
+              }
+
+              if (isCritHit) {
+                screenShake = Math.max(screenShake, 30);
+              }
+
+              safePushDamageNumber({
+                x: opponent.x + (Math.random() - 0.5) * 40,
+                y: opponent.y - 20,
+                value: projectileDamage,
+                life: 60,
+                maxLife: 60,
+                vx: (Math.random() - 0.5) * 2,
+                vy: -2 - Math.random() * 2,
+                isCrit: isCritHit
+              });
+
+              for (let i = 0; i < 10; i++) {
+                const angle = (Math.PI * 2 * i) / 10;
+                const speed = 2 + Math.random() * 3;
+                safePushClickParticle({
+                  x: opponent.x,
+                  y: opponent.y,
+                  vx: Math.cos(angle) * speed,
+                  vy: Math.sin(angle) * speed,
+                  life: 30,
+                  maxLife: 30,
+                  size: 3 + Math.random() * 2
+                });
+              }
+
+              // Remove projectile after hit
+              projectileFlying = false;
+              projectileX = 0;
+              projectileY = 0;
+              projectileVx = 0;
+              projectileVy = 0;
+              projectileBounceCount = 0;
+              projectileLastUpdateAt = 0;
+              console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
+              break;
             }
-            
-            // Remove projectile after hit
+          }
+
+          // Check if projectile is out of bounds
+          if (projectileFlying && (projectileX < playLeft || projectileX > playRight || projectileY < 0 || projectileY > pvpBounds.bottom)) {
             projectileFlying = false;
             projectileX = 0;
             projectileY = 0;
             projectileVx = 0;
             projectileVy = 0;
             projectileBounceCount = 0;
-            
-            // Cooldown already started when projectile was fired, no need to set again
-            console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
-            break; // Only hit one player
+            projectileLastUpdateAt = 0;
+            break;
           }
-        }
-        
-        // Check if projectile is out of bounds
-        if (projectileX < playLeft || projectileX > playRight || projectileY < 0 || projectileY > pvpBounds.bottom) {
-          // Projectile out of bounds - remove it (no explosion animation)
-          projectileFlying = false;
-          projectileX = 0;
-          projectileY = 0;
-          projectileVx = 0;
-          projectileVy = 0;
-          projectileBounceCount = 0;
         }
       }
     }
@@ -13634,36 +13912,10 @@ function gameLoop() {
           lastSentPositionSnapshot = positionSnapshot;
         }
         
+        // Arrow position streaming disabled: both clients simulate arrow locally from the launch event.
+        // (Lower bandwidth; server-authoritative hit decides outcome.)
         if (pvpKatanaFlying) {
-          const arrowSnapshot: MovementSnapshot = {
-            x: pvpKatanaX,
-            y: pvpKatanaY,
-            vx: pvpKatanaVx,
-            vy: pvpKatanaVy,
-            angle: pvpKatanaAngle,
-            timestamp: now
-          };
-          
-          if (
-            shouldSendSnapshot(arrowSnapshot, lastSentArrowSnapshot, {
-              distanceEpsilon: POSITION_DISTANCE_EPSILON,
-              velocityEpsilon: VELOCITY_EPSILON,
-              angleEpsilon: ARROW_ANGLE_EPSILON,
-              heartbeatInterval: POSITION_HEARTBEAT_INTERVAL
-            })
-          ) {
-            const arrowInput = {
-              type: 'arrow_position' as const,
-              timestamp: now,
-              x: pvpKatanaX,
-              y: pvpKatanaY,
-              vx: pvpKatanaVx,
-              vy: pvpKatanaVy,
-              angle: pvpKatanaAngle,
-            };
-            sendNetworkInput(arrowInput);
-            lastSentArrowSnapshot = arrowSnapshot;
-          }
+          // keep lastSentArrowSnapshot unused
         } else if (lastSentArrowSnapshot) {
           lastSentArrowSnapshot = null;
         }
@@ -13680,8 +13932,7 @@ function gameLoop() {
           if (
             shouldSendSnapshot(projectileSnapshot, lastSentProjectileSnapshot, {
               distanceEpsilon: PROJECTILE_DISTANCE_EPSILON,
-              velocityEpsilon: VELOCITY_EPSILON,
-              heartbeatInterval: POSITION_HEARTBEAT_INTERVAL
+              heartbeatInterval: PROJECTILE_HEARTBEAT_INTERVAL
             })
           ) {
             const projectileInput = {

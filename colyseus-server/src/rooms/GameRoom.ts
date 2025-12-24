@@ -4,6 +4,7 @@ import { registerRoom, unregisterRoom, updateRoomPlayerCount } from "../metrics/
 
 type PlayerInputType =
   | "click"
+  | "dash"
   | "arrow"
   | "projectile"
   | "position"
@@ -36,6 +37,7 @@ interface PlayerInputMessage {
   maxHP?: number;
   maxArmor?: number;
   dmg?: number;
+  critChance?: number;
   damage?: number;
   targetPlayerId?: string;
   isBullet?: boolean;
@@ -62,6 +64,11 @@ const PROJECTILE_BROADCAST_VELOCITY_EPSILON = 1;
 const PROJECTILE_BROADCAST_HEARTBEAT_MS = 350;
 const ARROW_BROADCAST_ANGLE_EPSILON = 0.12;
 const STATS_BROADCAST_HEARTBEAT_MS = 1500;
+
+// Global action rate limit: prevent spam (reduces server load + bandwidth).
+// We only rate-limit "event" inputs (not continuous position streams).
+const ACTION_COOLDOWN_MS = 1000;
+const ACTION_PENALTY_MS = 2000;
 
 interface ContinuousSnapshot {
   timestamp: number;
@@ -151,11 +158,36 @@ const BULLET_RADIUS = 8;
 const ARROW_RADIUS = 10;
 const HEAVY_RADIUS = 16;
 
+// --- Compound player hitbox (matches UFO sprite shape better than a single circle) ---
+// Two circles, centered vertically (top "dome" + bottom "body"), all in world px relative to Player.x/y.
+// Used for server-authoritative projectile hits (currently: arrows).
+const PLAYER_HITBOX_CIRCLES: Array<{ ox: number; oy: number; r: number }> = [
+  { ox: 0, oy: -14, r: 18 }, // top dome
+  { ox: 0, oy: 10, r: 24 }   // lower body
+];
+
 export class GameRoom extends Room<GameState> {
   maxClients = 2; // 2 players per match
   private latestPositionInputs = new Map<string, PendingInputEntry>();
   private pendingEventInputs = new Map<string, PendingInputEntry[]>();
   private lastContinuousBroadcasts = new Map<string, Map<PlayerInputType, ContinuousSnapshot>>();
+  private nextActionAtBySid = new Map<string, number>();
+
+  // Server-authoritative arrow simulation (for consistent hit/miss across clients)
+  private _liveArrows: Array<{
+    id: string;
+    shooterId: string;
+    targetId: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    lastAt: number;
+    dmg: number;
+    critChance: number;
+    travelPx: number;
+  }> = [];
+  private _liveArrowSeq = 0;
 
   // Turn-based PvP state
   private _turnEnabled = false;
@@ -223,7 +255,9 @@ export class GameRoom extends Room<GameState> {
     try {
       console.log("GameRoom created:", this.roomId);
       registerRoom(this.roomId);
-      this._turnEnabled = (this.roomName === "pvp_5sec_room");
+      // Replay/turn-based mode disabled: all rooms (including pvp_5sec_room) run as live realtime gameplay.
+      // (We keep the code around for potential future experiments, but it's not active.)
+      this._turnEnabled = false;
       // #region agent log
       try {
         fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'colyseus-server/src/rooms/GameRoom.ts:onCreate',message:'turn mode enabled?',data:{roomId:this.roomId,roomName:this.roomName,turnEnabled:this._turnEnabled},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1'})}).catch(()=>{});
@@ -402,6 +436,23 @@ export class GameRoom extends Room<GameState> {
     if (sanitizedInput.type === "position" || sanitizedInput.type === "arrow_position" || sanitizedInput.type === "projectile_position") {
       this.latestPositionInputs.set(client.sessionId, pending);
     } else {
+      // Rate-limit high-impact actions (1 per second). Drop excess to keep queues small.
+      // NOTE: We intentionally do NOT rate-limit 'hit' to avoid breaking damage pipelines.
+      const t = sanitizedInput.type;
+      const isRateLimitedAction =
+        t === "dash" || t === "click" || t === "bullet" || t === "arrow" || t === "projectile" || t === "mine" || t === "line";
+      if (isRateLimitedAction) {
+        const now = pending.timestamp;
+        const sid = client.sessionId;
+        const nextAt = this.nextActionAtBySid.get(sid) || 0;
+        if (now < nextAt) {
+          // Attempted action during cooldown => penalty lockout.
+          this.nextActionAtBySid.set(sid, now + ACTION_PENALTY_MS);
+          return;
+        }
+        // Action accepted -> start normal 1s cooldown.
+        this.nextActionAtBySid.set(sid, now + ACTION_COOLDOWN_MS);
+      }
       const queue = this.pendingEventInputs.get(client.sessionId) || [];
       if (queue.length >= MAX_EVENT_QUEUE_LENGTH) {
         queue.shift(); // drop oldest to keep queue bounded
@@ -420,13 +471,15 @@ export class GameRoom extends Room<GameState> {
     // Check if both players are ready
     const allReady = Array.from(this.state.players.values()).every(p => p.ready);
     
-    if (this._turnEnabled && allReady && this.state.players.size === 2 && !this.state.gameStarted) {
+    if (allReady && this.state.players.size === 2 && !this.state.gameStarted) {
       this.broadcast("game_start", {
         message: "Game starting!"
       });
       this.state.gameStarted = true;
-      // Start turn-based loop (planning -> execute) once both are ready.
-      this.startTurnBasedLoop();
+      // Start turn-based loop only if explicitly enabled.
+      if (this._turnEnabled) {
+        this.startTurnBasedLoop();
+      }
     }
   }
 
@@ -890,14 +943,11 @@ export class GameRoom extends Room<GameState> {
   }
 
   private processPendingInputs(): void {
-    if (this.latestPositionInputs.size === 0 && this.pendingEventInputs.size === 0) {
-      return;
-    }
-
     const serverTimestamp = Date.now();
     // #region agent log
     const _agentTickStart = serverTimestamp;
     // #endregion
+
 
     for (const [sessionId, pending] of this.latestPositionInputs.entries()) {
       this.applyInputToState(sessionId, pending.input);
@@ -925,6 +975,9 @@ export class GameRoom extends Room<GameState> {
       }
     }
 
+    // Tick server-authoritative arrows even if there were no inputs this frame.
+    this.tickLiveArrows(serverTimestamp);
+
     // #region agent log
     try {
       const tickMs = Date.now() - _agentTickStart;
@@ -935,6 +988,84 @@ export class GameRoom extends Room<GameState> {
       this._agentMaybeFlush(Date.now(), { queues: { latestPosition: this.latestPositionInputs.size, pendingEventTotal } });
     } catch {}
     // #endregion
+  }
+
+  private tickLiveArrows(now: number): void {
+    if (!this._liveArrows.length || this.state.players.size < 2) {
+      if (this._liveArrows.length) this._liveArrows = [];
+      return;
+    }
+    const ids = Array.from(this.state.players.keys());
+    if (ids.length < 2) return;
+    const clampNum = (v: any, min: number, max: number, fallback: number) => {
+      const n = (typeof v === "number" && Number.isFinite(v)) ? v : fallback;
+      return Math.max(min, Math.min(max, n));
+    };
+
+    const remaining: typeof this._liveArrows = [];
+    for (const a of this._liveArrows) {
+      const target = this.state.players.get(a.targetId);
+      const shooter = this.state.players.get(a.shooterId);
+      if (!target || !shooter) {
+        continue;
+      }
+      const dtSec = Math.max(0, (now - a.lastAt) / 1000);
+      a.lastAt = now;
+      const stepX = a.vx * dtSec;
+      const stepY = a.vy * dtSec;
+      a.x += stepX;
+      a.y += stepY;
+      a.travelPx += Math.sqrt(stepX * stepX + stepY * stepY);
+
+      // Range limit: 700px + 50px fade window (server just removes at end)
+      if (a.travelPx >= 750) {
+        continue;
+      }
+
+      // Bounds kill (slightly generous)
+      if (a.x < ARENA_LEFT - 200 || a.x > ARENA_RIGHT + 200 || a.y < ARENA_TOP - 200 || a.y > ARENA_BOTTOM + 200) {
+        continue;
+      }
+
+      // Collision with target
+      // Compound hitbox: check arrow point against 2 circles around the player center.
+      // This matches UFO sprite shape better than a single center circle.
+      let didHit = false;
+      for (const c of PLAYER_HITBOX_CIRCLES) {
+        const cx = target.x + c.ox;
+        const cy = target.y + c.oy;
+        const dx = cx - a.x;
+        const dy = cy - a.y;
+        const hitR = c.r + ARROW_RADIUS;
+        if (dx * dx + dy * dy <= hitR * hitR) {
+          didHit = true;
+          break;
+        }
+      }
+      if (didHit) {
+        const dmg = clampNum(a.dmg, 1, 100000, 1);
+        const critChance = clampNum(a.critChance, 0, 100, 4);
+        const isCrit = Math.random() < (critChance / 100);
+        const base = isCrit ? dmg * 3 : dmg * 2;
+        const variance = 0.5 + Math.random() * 0.5;
+        const damage = Math.max(0, Math.round(base * variance));
+
+        // Broadcast hit to BOTH players as a regular player_input payload (so clients reuse same handler).
+        this.broadcast("player_input", {
+          type: "hit",
+          timestamp: now,
+          serverTimestamp: now,
+          shooterId: a.shooterId,
+          targetPlayerId: a.targetId,
+          damage,
+          isCrit
+        });
+        continue; // arrow consumed
+      }
+
+      remaining.push(a);
+    }
+    this._liveArrows = remaining;
   }
 
   private emitInputToOpponents(pending: PendingInputEntry, serverTimestamp: number): void {
@@ -976,6 +1107,9 @@ export class GameRoom extends Room<GameState> {
       case "position":
         this.applyPosition(player, input);
         break;
+      case "dash":
+        this.applyDash(player, input);
+        break;
       case "arrow":
       case "arrow_position":
         this.applyArrow(player, input);
@@ -995,6 +1129,23 @@ export class GameRoom extends Room<GameState> {
         break;
       default:
         break;
+    }
+  }
+
+  private applyDash(player: Player, input: PlayerInputMessage): void {
+    // Dash is a discrete "blink" movement: set position directly (server-authoritative),
+    // and optionally accept velocity for client prediction smoothness.
+    if (typeof input.x === "number") {
+      player.x = input.x;
+    }
+    if (typeof input.y === "number") {
+      player.y = input.y;
+    }
+    if (typeof input.vx === "number") {
+      player.vx = input.vx;
+    }
+    if (typeof input.vy === "number") {
+      player.vy = input.vy;
     }
   }
 
@@ -1018,6 +1169,36 @@ export class GameRoom extends Room<GameState> {
     }
     player.arrowVx = typeof input.vx === "number" ? input.vx : player.arrowVx;
     player.arrowVy = typeof input.vy === "number" ? input.vy : player.arrowVy;
+
+    // When receiving an ARROW LAUNCH, create a server-authoritative projectile for hit detection.
+    if (input.type === "arrow" && typeof input.x === "number" && typeof input.y === "number" && typeof input.targetX === "number" && typeof input.targetY === "number") {
+      const ids = Array.from(this.state.players.keys());
+      const targetId = ids.find((id) => id !== player.sessionId);
+      if (targetId) {
+        const dx = input.targetX - input.x;
+        const dy = input.targetY - input.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0.0001) {
+          const vx = (dx / dist) * ARROW_SPEED_PX_PER_S;
+          const vy = (dy / dist) * ARROW_SPEED_PX_PER_S;
+          const dmg = (typeof input.dmg === "number" && Number.isFinite(input.dmg)) ? input.dmg : 1;
+          const critChance = (typeof input.critChance === "number" && Number.isFinite(input.critChance)) ? input.critChance : 4;
+          this._liveArrows.push({
+            id: `a_${this.roomId}_${++this._liveArrowSeq}`,
+            shooterId: player.sessionId,
+            targetId,
+            x: input.x,
+            y: input.y,
+            vx,
+            vy,
+            lastAt: Date.now(),
+            dmg,
+            critChance,
+            travelPx: 0
+          });
+        }
+      }
+    }
   }
 
   private applyProjectile(player: Player, input: PlayerInputMessage): void {
@@ -1075,6 +1256,7 @@ export class GameRoom extends Room<GameState> {
   private normalizeInputType(type: any): PlayerInputType {
     const allowedTypes: PlayerInputType[] = [
       "click",
+      "dash",
       "arrow",
       "projectile",
       "position",

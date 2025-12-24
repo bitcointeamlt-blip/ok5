@@ -40,7 +40,7 @@ export class GameState extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
   @type("boolean") gameStarted: boolean = false;
   @type("number") seed: number = 0;
-  // Turn-based PvP phase state
+  // Turn-based PvP phase state (used by pvp_5sec_room)
   @type("string") phase: string = "lobby"; // lobby | planning | execute
   @type("number") roundId: number = 0;
   @type("number") phaseEndsAt: number = 0; // server timestamp (ms)

@@ -1,6 +1,7 @@
 export interface PlayerInput {
   type:
     | 'click'
+    | 'dash'
     | 'arrow'
     | 'projectile'
     | 'position'
@@ -23,6 +24,7 @@ export interface PlayerInput {
   targetY?: number; // Arrow/projectile target Y
   chargeTime?: number; // For projectiles
   isCrit?: boolean; // Whether this was a crit hit
+  shooterId?: string; // Server-authoritative hit source
   angle?: number; // Arrow rotation angle
   points?: Array<{ x: number; y: number }>; // For drawn lines
   hp?: number; // Player HP (for stats sync)
@@ -30,6 +32,7 @@ export interface PlayerInput {
   maxHP?: number; // Player Max HP (for stats sync)
   maxArmor?: number; // Player Max Armor (for stats sync)
   dmg?: number; // Player damage stat (for arrow/projectile damage calculation)
+  critChance?: number; // Crit chance % (for server-authoritative arrow hit)
   damage?: number; // Damage dealt (for hit event)
   targetPlayerId?: string; // Target player ID (for hit event)
   isBullet?: boolean; // Whether this is a bullet hit (for paralysis)
