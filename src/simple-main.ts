@@ -576,6 +576,62 @@ let networkLatencyHistory: number[] = [];
 let averageNetworkLatency = 0;
 let lastNetworkUpdateTime = 0;
 
+// --- Opponent render interpolation (arrow-like smoothness) ---
+// We keep a short history of opponent positions (post-correction) and render slightly "in the past"
+// using interpolation between snapshots. This removes visible snap/jitter without changing gameplay physics.
+type OpponentPosSample = { t: number; x: number; y: number; vx: number; vy: number };
+let opponentPosSamples: OpponentPosSample[] = [];
+function resetOpponentInterpolation(): void {
+  opponentPosSamples = [];
+}
+function pushOpponentSample(now: number, p: PvPPlayer): void {
+  opponentPosSamples.push({ t: now, x: p.x, y: p.y, vx: p.vx, vy: p.vy });
+  // Keep only recent samples (2s is plenty)
+  const cutoff = now - 2000;
+  while (opponentPosSamples.length > 0 && opponentPosSamples[0].t < cutoff) {
+    opponentPosSamples.shift();
+  }
+  // Bound size to avoid growth in weird cases
+  if (opponentPosSamples.length > 120) {
+    opponentPosSamples.splice(0, opponentPosSamples.length - 120);
+  }
+}
+function getOpponentInterpolatedPos(now: number): { x: number; y: number } | null {
+  if (!opponentId || opponentPosSamples.length === 0) return null;
+
+  // Small adaptive delay: enough to always have two samples to interpolate, but still feels "instant".
+  const delayMs = Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
+  const targetT = now - delayMs;
+
+  // Ensure samples sorted by time (they should be, but be safe on out-of-order)
+  // (Tiny O(n) check avoided; assume ordered.)
+  const samples = opponentPosSamples;
+
+  // If target is before first sample, just use first.
+  if (targetT <= samples[0].t) {
+    return { x: samples[0].x, y: samples[0].y };
+  }
+
+  // Find the bracketing samples
+  for (let i = samples.length - 1; i >= 1; i--) {
+    const b = samples[i];
+    const a = samples[i - 1];
+    if (targetT >= a.t && targetT <= b.t) {
+      const span = Math.max(1, b.t - a.t);
+      const u = Math.max(0, Math.min(1, (targetT - a.t) / span));
+      const x = a.x + (b.x - a.x) * u;
+      const y = a.y + (b.y - a.y) * u;
+      return { x, y };
+    }
+  }
+
+  // Target is after the latest sample -> extrapolate a bit using last velocity.
+  const last = samples[samples.length - 1];
+  const dtMs = Math.max(0, Math.min(200, targetT - last.t)); // cap extrapolation to 200ms
+  const dtFrames = dtMs / (1000 / 60);
+  return { x: last.x + last.vx * dtFrames, y: last.y + last.vy * dtFrames };
+}
+
 // Combo system
 let comboProgress = 0; // 0-100%
 let comboActive = false; // Whether combo is active (100%)
@@ -632,6 +688,16 @@ let clickParticles: Particle[] = [];
 
 // Projectile smoke particles (black smoke trail)
 let projectileSmokeParticles: Particle[] = [];
+
+// Arrow air-resistance particles (subtle streaks while flying)
+let arrowAirParticles: Particle[] = [];
+const MAX_ARROW_AIR_PARTICLES = 140;
+function safePushArrowAirParticle(particle: Particle): void {
+  if (arrowAirParticles.length >= MAX_ARROW_AIR_PARTICLES) {
+    arrowAirParticles.shift();
+  }
+  arrowAirParticles.push(particle);
+}
 
 // Click smudges/blotches (pixel art smears)
 type ClickSmudge = {
@@ -1701,6 +1767,8 @@ const pvpArrowCooldown = 10000; // Arrow cooldown in milliseconds (10 seconds)
 
 // PvP arrow charge (delayed fire)
 const PVP_ARROW_CHARGE_MS = 300;
+const PVP_ARROW_SPAWN_OFFSET_Y = 55; // Spawn arrow lower than player center (matches sprite feel)
+const PVP_ARROW_SPRITE_LENGTH_FACTOR = 2.4; // world length = player.radius * factor (tuned for visibility)
 let pvpArrowCharging = false;
 let pvpArrowChargeFireAt = 0;
 let pvpArrowChargeAimX = 0;
@@ -1790,6 +1858,140 @@ const nftImageLoading: Set<string> = new Set();
 let ufoSprite: HTMLImageElement | null = null;
 const ufoSpritePath = '/ufo_sprite.png';
 
+// Arrow sprite cache (weapon 1)
+let arrowSprite: HTMLImageElement | null = null;
+let arrowSpriteProcessed: HTMLCanvasElement | null = null;
+const arrowSpritePath = '/sprite.arrow.png';
+
+// Boom sprite cache (weapon 2 - heavy projectile)
+let boomSprite: HTMLImageElement | null = null;
+let boomSpriteProcessed: HTMLCanvasElement | null = null;
+const boomSpritePath = '/sprite.boom.png';
+
+function processArrowSpriteToTransparent(img: HTMLImageElement): HTMLCanvasElement {
+  // Remove the baked-in gray background by keying out the corner color.
+  const c = document.createElement('canvas');
+  const w = img.naturalWidth || img.width || 1024;
+  const h = img.naturalHeight || img.height || 1024;
+  c.width = w;
+  c.height = h;
+  const ctx2 = c.getContext('2d', { willReadFrequently: true })!;
+  ctx2.clearRect(0, 0, w, h);
+  ctx2.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imageData = ctx2.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    // Sample top-left as background key color
+    const br = d[0], bg = d[1], bb = d[2];
+    const thr = 48; // tolerance
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const dr = r - br;
+      const dg = g - bg;
+      const db = b - bb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist < thr) {
+        d[i + 3] = 0; // transparent
+      }
+    }
+    ctx2.putImageData(imageData, 0, 0);
+
+    // Crop to non-transparent bounds so rotation pivot stays stable (prevents vertical bobbing).
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4 + 3; // alpha
+        if (d[idx] > 12) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX >= 0 && maxY >= 0) {
+      const pad = 6;
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+      const cw = Math.max(1, maxX - minX + 1);
+      const ch = Math.max(1, maxY - minY + 1);
+      const out = document.createElement('canvas');
+      out.width = cw;
+      out.height = ch;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, cw, ch);
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      return out;
+    }
+  } catch {
+    // If getImageData fails (tainted canvas), keep original.
+  }
+  return c;
+}
+
+function processBoomSpriteToTransparent(img: HTMLImageElement): HTMLCanvasElement {
+  // Same pipeline as arrow: key out corner background + crop to non-transparent bounds.
+  const c = document.createElement('canvas');
+  const w = img.naturalWidth || img.width || 1024;
+  const h = img.naturalHeight || img.height || 1024;
+  c.width = w;
+  c.height = h;
+  const ctx2 = c.getContext('2d', { willReadFrequently: true })!;
+  ctx2.clearRect(0, 0, w, h);
+  ctx2.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imageData = ctx2.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    const br = d[0], bg = d[1], bb = d[2];
+    const thr = 48;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const dr = r - br;
+      const dg = g - bg;
+      const db = b - bb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist < thr) d[i + 3] = 0;
+    }
+    ctx2.putImageData(imageData, 0, 0);
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4 + 3;
+        if (d[idx] > 12) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX >= 0 && maxY >= 0) {
+      const pad = 6;
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+      const cw = Math.max(1, maxX - minX + 1);
+      const ch = Math.max(1, maxY - minY + 1);
+      const out = document.createElement('canvas');
+      out.width = cw;
+      out.height = ch;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, cw, ch);
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      return out;
+    }
+  } catch {
+    // keep original if getImageData fails
+  }
+  return c;
+}
+
 // Load UFO sprite
 function loadUfoSprite(): void {
   if (ufoSprite) return; // Already loaded
@@ -1805,8 +2007,39 @@ function loadUfoSprite(): void {
   img.src = ufoSpritePath;
 }
 
+// Load arrow sprite on initialization
+function loadArrowSprite(): void {
+  if (arrowSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    arrowSprite = img;
+    arrowSpriteProcessed = processArrowSpriteToTransparent(img);
+    console.log('✅ Arrow sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load arrow sprite:', arrowSpritePath);
+  };
+  img.src = arrowSpritePath;
+}
+
+function loadBoomSprite(): void {
+  if (boomSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    boomSprite = img;
+    boomSpriteProcessed = processBoomSpriteToTransparent(img);
+    console.log('✅ Boom sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load boom sprite:', boomSpritePath);
+  };
+  img.src = boomSpritePath;
+}
+
 // Load UFO sprite on initialization
 loadUfoSprite();
+loadArrowSprite();
+loadBoomSprite();
 
 // Lobby state
 let isInLobby = false;
@@ -2110,6 +2343,8 @@ function initializePvP(): void {
   
   pvpPlayers[opponentId] = opponent;
   pvpSideById[opponentId] = 'right';
+  resetOpponentInterpolation();
+  pushOpponentSample(Date.now(), opponent);
   
   console.log('PvP initialized', { myPlayerId, opponentId });
 }
@@ -3220,6 +3455,9 @@ function handleOpponentInput(input: any): void {
       // This ensures client-side prediction is accurate
       if (input.vx !== undefined) opponent.vx = input.vx;
       if (input.vy !== undefined) opponent.vy = input.vy;
+
+      // Feed render interpolation buffer (use local receive time; post-correction state).
+      pushOpponentSample(Date.now(), opponent);
       
       return;
     }
@@ -3252,6 +3490,9 @@ function handleOpponentInput(input: any): void {
       if (typeof input.vx === 'number') opponent.vx = input.vx;
       if (typeof input.vy === 'number') opponent.vy = input.vy;
       enforcePvpMidWall(opponentId, opponent);
+      // Teleport-like movement: reset interpolation so we don't draw a long lerp trail.
+      resetOpponentInterpolation();
+      pushOpponentSample(Date.now(), opponent);
 
       // Visual: dense trail between old and new position
       const steps = 8;
@@ -3274,13 +3515,24 @@ function handleOpponentInput(input: any): void {
     // Handle arrow input from opponent (launch event)
     if (input.type === 'arrow' && input.x !== undefined && input.y !== undefined) {
     opponentArrowFlying = true;
-    opponentArrowX = input.x;
-    opponentArrowY = input.y;
+    // If opponent UFO is rendered with interpolation, their "visual" position is slightly delayed.
+    // To keep the arrow visually attached to the UFO on THIS client, shift the spawn point by the current render offset.
+    // (Hit is server-authoritative, so this is safe as a pure visual tweak.)
+    const now = Date.now();
+    let sx = 0;
+    let sy = 0;
+    const ip = getOpponentInterpolatedPos(now);
+    if (ip) {
+      sx = ip.x - opponent.x;
+      sy = ip.y - opponent.y;
+    }
+    opponentArrowX = input.x + sx;
+    opponentArrowY = input.y + sy;
     opponentArrowLastUpdateAt = Date.now();
     opponentArrowTravelPx = 0;
     if (input.targetX !== undefined && input.targetY !== undefined) {
-      const dx = input.targetX - input.x;
-      const dy = input.targetY - input.y;
+      const dx = input.targetX - (input.x + sx);
+      const dy = input.targetY - (input.y + sy);
       const distance = Math.sqrt(dx * dx + dy * dy);
       if (distance > 0) {
         opponentArrowVx = (dx / distance) * pvpKatanaSpeed;
@@ -5838,6 +6090,25 @@ function render() {
     const s = particle.size ?? 4;
     ctx.fillRect(particle.x, particle.y, s, s);
   }
+
+  // Arrow air-resistance particles (subtle streaks) - draw before arrow so it feels like a trail
+  if (arrowAirParticles.length > 0) {
+    ctx.save();
+    // Multiply reads well on white background and keeps it subtle.
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.lineCap = 'round';
+    for (const particle of arrowAirParticles) {
+      const a = Math.max(0, Math.min(1, particle.life / particle.maxLife));
+      const len = (particle.size ?? 3) * 3.2;
+      ctx.strokeStyle = `rgba(30, 50, 70, ${a * 0.35})`;
+      ctx.lineWidth = Math.max(1, (particle.size ?? 3) * 0.55);
+      ctx.beginPath();
+      ctx.moveTo(particle.x, particle.y);
+      ctx.lineTo(particle.x - particle.vx * len, particle.y - particle.vy * len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   
   // Arrow render - flying or following mouse
   // Only render if arrow is ready or flying (always show when flying for smooth animation)
@@ -6816,7 +7087,16 @@ function render() {
       ctx.save();
       
       // Translate to player position and rotate
-      ctx.translate(player.x, player.y);
+      let px = player.x;
+      let py = player.y;
+      if (playerId === opponentId) {
+        const ip = getOpponentInterpolatedPos(Date.now());
+        if (ip) {
+          px = ip.x;
+          py = ip.y;
+        }
+      }
+      ctx.translate(px, py);
       ctx.rotate(rotationAngle + player.ufoTilt); // Add tilt effect for balancing/sway
       
       // Apply horizontal flip (mirror effect) if moving left
@@ -7298,8 +7578,8 @@ function render() {
       {
         const barWidth = player.radius * 2 - 6; // Shorter bar width (6px shorter total)
         const barHeight = 4; // Thinner bar height - always same height
-        const barX = player.x - barWidth / 2;
-        const barY = player.y - player.radius - 8; // Bar position
+        const barX = px - barWidth / 2;
+        const barY = py - player.radius - 8; // Bar position
         
         // Draw "You" text above HP bar (only for my player)
         if (myPlayerId && playerId === myPlayerId) {
@@ -7307,7 +7587,7 @@ function render() {
           ctx.font = 'bold 8px "Press Start 2P"';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'bottom';
-          ctx.fillText('You', player.x, barY - 3);
+          ctx.fillText('You', px, barY - 3);
         }
         
         // Calculate percentages
@@ -7569,27 +7849,43 @@ function render() {
           ctx.closePath();
           ctx.fill();
         } else {
-          // Match realtime heavy projectile art (cannonball + pointed tip)
-          const length = 24;
-          const width = 12;
-          const tipLength = 8;
-          ctx.fillStyle = '#8B4513';
-          ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
-          ctx.beginPath();
-          ctx.moveTo(length / 2 - tipLength, -width / 2);
-          ctx.lineTo(length / 2, 0);
-          ctx.lineTo(length / 2 - tipLength, width / 2);
-          ctx.closePath();
-          ctx.fill();
-          ctx.strokeStyle = '#654321';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
-          ctx.beginPath();
-          ctx.moveTo(length / 2 - tipLength, -width / 2);
-          ctx.lineTo(length / 2, 0);
-          ctx.lineTo(length / 2 - tipLength, width / 2);
-          ctx.closePath();
-          ctx.stroke();
+          // Weapon 2 sprite (boom) - fallback to simple shape if sprite not loaded.
+          if (boomSpriteProcessed) {
+            const iw = boomSpriteProcessed.width || 1;
+            const ih = boomSpriteProcessed.height || 1;
+            const aspect = ih / iw;
+            const worldW = projectileRadius * 2.3;
+            const worldH = worldW * aspect;
+            const pivotX = 0.5;
+            const pivotY = 0.5;
+            // Sprite is authored facing the opposite direction; rotate 180deg so tip faces velocity.
+            ctx.save();
+            ctx.rotate(Math.PI);
+            ctx.drawImage(boomSpriteProcessed, -pivotX * worldW, -pivotY * worldH, worldW, worldH);
+            ctx.restore();
+          } else {
+            // Match realtime heavy projectile art (cannonball + pointed tip)
+            const length = 24;
+            const width = 12;
+            const tipLength = 8;
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+            ctx.beginPath();
+            ctx.moveTo(length / 2 - tipLength, -width / 2);
+            ctx.lineTo(length / 2, 0);
+            ctx.lineTo(length / 2 - tipLength, width / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+            ctx.beginPath();
+            ctx.moveTo(length / 2 - tipLength, -width / 2);
+            ctx.lineTo(length / 2, 0);
+            ctx.lineTo(length / 2 - tipLength, width / 2);
+            ctx.closePath();
+            ctx.stroke();
+          }
         }
         ctx.restore();
       }
@@ -7734,36 +8030,42 @@ function render() {
       // Calculate angle from velocity
       const angle = Math.atan2(projectileVy, projectileVx);
       ctx.rotate(angle);
-      
-      // Draw cannonball shape: short cylinder with pointed tip
-      const length = 24; // Short projectile (doubled from 12)
-      const width = 12; // Width of projectile (doubled from 6)
-      const tipLength = 8; // Pointed tip length (doubled from 4)
-      
-      ctx.fillStyle = '#8B4513'; // Brown cannonball color
-      ctx.beginPath();
-      
-      // Draw main body (rounded rectangle)
-      ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
-      
-      // Draw pointed tip (triangle)
-      ctx.beginPath();
-      ctx.moveTo(length / 2 - tipLength, -width / 2);
-      ctx.lineTo(length / 2, 0); // Point at tip
-      ctx.lineTo(length / 2 - tipLength, width / 2);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Dark outline
-      ctx.strokeStyle = '#654321';
-      ctx.lineWidth = 3; // Thicker outline (doubled from 1.5)
-      ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
-      ctx.beginPath();
-      ctx.moveTo(length / 2 - tipLength, -width / 2);
-      ctx.lineTo(length / 2, 0);
-      ctx.lineTo(length / 2 - tipLength, width / 2);
-      ctx.closePath();
-      ctx.stroke();
+
+      if (boomSpriteProcessed) {
+        const iw = boomSpriteProcessed.width || 1;
+        const ih = boomSpriteProcessed.height || 1;
+        const aspect = ih / iw;
+        // Scale from physics radius so it stays consistent with hitbox/feel.
+        const worldW = projectileRadius * 2.3;
+        const worldH = worldW * aspect;
+        ctx.save();
+        ctx.rotate(Math.PI);
+        ctx.drawImage(boomSpriteProcessed, -worldW * 0.5, -worldH * 0.5, worldW, worldH);
+        ctx.restore();
+      } else {
+        // Fallback: old cannonball+tip
+        const length = 24; // Short projectile (doubled from 12)
+        const width = 12; // Width of projectile (doubled from 6)
+        const tipLength = 8; // Pointed tip length (doubled from 4)
+        ctx.fillStyle = '#8B4513'; // Brown cannonball color
+        ctx.beginPath();
+        ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+        ctx.beginPath();
+        ctx.moveTo(length / 2 - tipLength, -width / 2);
+        ctx.lineTo(length / 2, 0);
+        ctx.lineTo(length / 2 - tipLength, width / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+        ctx.beginPath();
+        ctx.moveTo(length / 2 - tipLength, -width / 2);
+        ctx.lineTo(length / 2, 0);
+        ctx.lineTo(length / 2 - tipLength, width / 2);
+        ctx.closePath();
+        ctx.stroke();
+      }
       
       ctx.restore();
     }
@@ -7777,36 +8079,47 @@ function render() {
       // Calculate angle from velocity
       const angle = Math.atan2(opponentProjectileVy, opponentProjectileVx);
       ctx.rotate(angle);
-      
-      // Draw cannonball shape: short cylinder with pointed tip
-      const length = 24; // Short projectile (doubled from 12)
-      const width = 12; // Width of projectile (doubled from 6)
-      const tipLength = 8; // Pointed tip length (doubled from 4)
-      
-      ctx.fillStyle = '#CD853F'; // Lighter brown for opponent (different color to distinguish)
-      ctx.beginPath();
-      
-      // Draw main body (rounded rectangle)
-      ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
-      
-      // Draw pointed tip (triangle)
-      ctx.beginPath();
-      ctx.moveTo(length / 2 - tipLength, -width / 2);
-      ctx.lineTo(length / 2, 0); // Point at tip
-      ctx.lineTo(length / 2 - tipLength, width / 2);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Dark outline
-      ctx.strokeStyle = '#8B4513';
-      ctx.lineWidth = 3; // Thicker outline (doubled from 1.5)
-      ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
-      ctx.beginPath();
-      ctx.moveTo(length / 2 - tipLength, -width / 2);
-      ctx.lineTo(length / 2, 0);
-      ctx.lineTo(length / 2 - tipLength, width / 2);
-      ctx.closePath();
-      ctx.stroke();
+
+      if (boomSpriteProcessed) {
+        const iw = boomSpriteProcessed.width || 1;
+        const ih = boomSpriteProcessed.height || 1;
+        const aspect = ih / iw;
+        const worldW = projectileRadius * 2.3;
+        const worldH = worldW * aspect;
+        // Slight tint so you can still distinguish opponent projectile.
+        ctx.save();
+        ctx.save();
+        ctx.rotate(Math.PI);
+        ctx.drawImage(boomSpriteProcessed, -worldW * 0.5, -worldH * 0.5, worldW, worldH);
+        ctx.restore();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(255, 190, 120, 0.25)';
+        ctx.fillRect(-worldW * 0.5, -worldH * 0.5, worldW, worldH);
+        ctx.restore();
+      } else {
+        // Fallback: old cannonball+tip
+        const length = 24;
+        const width = 12;
+        const tipLength = 8;
+        ctx.fillStyle = '#CD853F';
+        ctx.beginPath();
+        ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+        ctx.beginPath();
+        ctx.moveTo(length / 2 - tipLength, -width / 2);
+        ctx.lineTo(length / 2, 0);
+        ctx.lineTo(length / 2 - tipLength, width / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+        ctx.beginPath();
+        ctx.moveTo(length / 2 - tipLength, -width / 2);
+        ctx.lineTo(length / 2, 0);
+        ctx.lineTo(length / 2 - tipLength, width / 2);
+        ctx.closePath();
+        ctx.stroke();
+      }
       
       ctx.restore();
     }
@@ -7972,9 +8285,34 @@ function render() {
         return;
       }
       const myPlayer = pvpPlayers[myPlayerId];
+
+      // Visual: small blue "energy emitter" under the UFO when arrow is ready/charging.
+      // This makes the arrow feel "held" by energy rather than floating.
+      if (!pvpKatanaFlying) {
+        const emitterX = myPlayer.x;
+        const emitterY = myPlayer.y + myPlayer.radius * 1.35; // near UFO bottom
+        const glowR = Math.max(10, myPlayer.radius * 0.55);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(emitterX, emitterY, 0, emitterX, emitterY, glowR * 2.4);
+        g.addColorStop(0, 'rgba(80, 180, 255, 0.55)');
+        g.addColorStop(0.35, 'rgba(40, 140, 255, 0.28)');
+        g.addColorStop(1, 'rgba(40, 140, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(emitterX, emitterY, glowR * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        // Core light
+        ctx.fillStyle = 'rgba(120, 220, 255, 0.85)';
+        ctx.beginPath();
+        ctx.arc(emitterX, emitterY, glowR * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       // Always use current player position (arrow stays near player, like trajectory line)
       const arrowPosX = pvpKatanaFlying ? pvpKatanaX : myPlayer.x;
-      const arrowPosY = pvpKatanaFlying ? pvpKatanaY : myPlayer.y;
+      const arrowPosY = pvpKatanaFlying ? pvpKatanaY : (myPlayer.y + PVP_ARROW_SPAWN_OFFSET_Y);
       
       // Calculate angle - arrow follows player position but points towards mouse (like Solo mode)
       let currentArrowAngle;
@@ -7984,18 +8322,18 @@ function render() {
       } else if (pvpArrowCharging) {
         // Charging - point towards stored aim point (captured on click)
         const dx = pvpArrowChargeAimX - myPlayer.x;
-        const dy = pvpArrowChargeAimY - myPlayer.y;
+        const dy = pvpArrowChargeAimY - (myPlayer.y + PVP_ARROW_SPAWN_OFFSET_Y);
         currentArrowAngle = Math.atan2(dy, dx);
       } else {
         // Ready state - point arrow towards mouse (arrow stays at player position, but aims at mouse)
         const dx = globalMouseX - myPlayer.x;
-        const dy = globalMouseY - myPlayer.y;
+        const dy = globalMouseY - (myPlayer.y + PVP_ARROW_SPAWN_OFFSET_Y);
         currentArrowAngle = Math.atan2(dy, dx);
       }
       
       ctx.translate(arrowPosX, arrowPosY);
       ctx.rotate(currentArrowAngle);
-
+      
       // Fade out when exceeding range (only when flying)
       if (pvpKatanaFlying) {
         const fadeT = Math.max(0, Math.min(1, (pvpKatanaTravelPx - PVP_ARROW_RANGE_PX) / Math.max(1, PVP_ARROW_FADE_PX)));
@@ -8017,84 +8355,33 @@ function render() {
         ctx.save();
         ctx.strokeStyle = `rgba(0, 0, 0, ${0.15 + 0.35 * chargeT})`;
         ctx.lineWidth = 1.5;
-        ctx.beginPath();
+      ctx.beginPath();
         ctx.moveTo(-10, -6);
         ctx.lineTo(-10 - pullBackPx * 0.8, 0);
         ctx.lineTo(-10, 6);
         ctx.stroke();
         ctx.restore();
       }
-      
-      // Arrow shaft (brown wooden) - main body
-      const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
-      const shaftStartX = arrowFletchingLength;
-      ctx.fillStyle = 'rgba(101, 67, 33, 1)'; // Brown wood color
-      ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
-      
-      // Arrowhead design (same as Solo)
-      const headStartX = arrowLength - arrowHeadLength;
-      
-      // Base arrowhead layer (dark metal)
-      ctx.fillStyle = 'rgba(80, 80, 90, 1)'; // Dark steel
-      ctx.beginPath();
-      ctx.moveTo(headStartX, -arrowShaftWidth * 2.5);
-      ctx.lineTo(arrowLength, 0);
-      ctx.lineTo(headStartX, arrowShaftWidth * 2.5);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Middle layer (medium metal)
-      ctx.fillStyle = 'rgba(120, 120, 130, 1)'; // Medium steel
-      ctx.beginPath();
-      ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8);
-      ctx.lineTo(arrowLength, 0);
-      ctx.lineTo(headStartX + arrowHeadLength * 0.3, arrowShaftWidth * 1.8);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Top highlight layer (bright metal edge) - left edge
-      ctx.fillStyle = 'rgba(200, 200, 210, 1)'; // Bright steel highlight
-      ctx.beginPath();
-      ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2);
-      ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2);
-      ctx.lineTo(arrowLength, 0);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Top highlight layer (bright metal edge) - right edge
-      ctx.beginPath();
-      ctx.moveTo(headStartX + arrowHeadLength * 0.5, arrowShaftWidth / 2);
-      ctx.lineTo(arrowLength - arrowHeadLength * 0.1, arrowShaftWidth * 1.2);
-      ctx.lineTo(arrowLength, 0);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Extra sharp tip accent (white/silver)
-      ctx.fillStyle = 'rgba(0, 200, 0, 0.9)'; // Green tip
-      ctx.beginPath();
-      ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
-      ctx.lineTo(arrowLength, 0);
-      ctx.lineTo(arrowLength - arrowHeadLength * 0.2, arrowShaftWidth * 0.5);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Fletching (feathers at back)
-      ctx.fillStyle = 'rgba(150, 150, 150, 1)'; // Gray feathers
-      ctx.beginPath();
-      ctx.moveTo(0, -arrowShaftWidth * 1.5);
-      ctx.lineTo(arrowFletchingLength, -arrowShaftWidth * 2);
-      ctx.lineTo(arrowFletchingLength, 0);
-      ctx.lineTo(0, 0);
-      ctx.closePath();
-      ctx.fill();
-      
-      ctx.beginPath();
-      ctx.moveTo(0, arrowShaftWidth * 1.5);
-      ctx.lineTo(arrowFletchingLength, arrowShaftWidth * 2);
-      ctx.lineTo(arrowFletchingLength, 0);
-      ctx.lineTo(0, 0);
-      ctx.closePath();
-      ctx.fill();
+
+      // Draw arrow sprite (fallback to vector if sprite not loaded)
+      if (arrowSpriteProcessed) {
+        const iw = arrowSpriteProcessed.width || 1;
+        const ih = arrowSpriteProcessed.height || 1;
+        const worldW = myPlayer.radius * PVP_ARROW_SPRITE_LENGTH_FACTOR;
+        const worldH = worldW * (ih / iw); // preserve aspect ratio
+        const pivotX = 0.5; // center pivot
+        const pivotY = 0.5;
+        const prevSmooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(arrowSpriteProcessed, -pivotX * worldW, -pivotY * worldH, worldW, worldH);
+        ctx.imageSmoothingEnabled = prevSmooth;
+      } else {
+        // Fallback: old vector arrow
+        const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+        const shaftStartX = arrowFletchingLength;
+        ctx.fillStyle = 'rgba(101, 67, 33, 1)';
+        ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+      }
       
       ctx.restore();
     }
@@ -8109,76 +8396,26 @@ function render() {
       ctx.translate(opponentArrowX, opponentArrowY);
       ctx.rotate(opponentArrowAngle);
       
-      // Arrow shaft (brown wooden) - main body
+      if (arrowSpriteProcessed) {
+        // Use local player's radius as a stable scale reference
+        const myR = (myPlayerId && pvpPlayers[myPlayerId]) ? pvpPlayers[myPlayerId].radius : 25;
+        const iw = arrowSpriteProcessed.width || 1;
+        const ih = arrowSpriteProcessed.height || 1;
+        const worldW = myR * PVP_ARROW_SPRITE_LENGTH_FACTOR;
+        const worldH = worldW * (ih / iw);
+        const pivotX = 0.5;
+        const pivotY = 0.5;
+        const prevSmooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(arrowSpriteProcessed, -pivotX * worldW, -pivotY * worldH, worldW, worldH);
+        ctx.imageSmoothingEnabled = prevSmooth;
+      } else {
+        // Minimal fallback
       const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
       const shaftStartX = arrowFletchingLength;
-      ctx.fillStyle = 'rgba(101, 67, 33, 1)'; // Brown wood color
+        ctx.fillStyle = 'rgba(101, 67, 33, 1)';
       ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
-      
-      // Arrowhead design (same as Solo)
-      const headStartX = arrowLength - arrowHeadLength;
-      
-      // Base arrowhead layer (dark metal)
-      ctx.fillStyle = 'rgba(80, 80, 90, 1)'; // Dark steel
-      ctx.beginPath();
-      ctx.moveTo(headStartX, -arrowShaftWidth * 2.5);
-      ctx.lineTo(arrowLength, 0);
-      ctx.lineTo(headStartX, arrowShaftWidth * 2.5);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Middle layer (medium metal)
-      ctx.fillStyle = 'rgba(120, 120, 130, 1)'; // Medium steel
-      ctx.beginPath();
-      ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8);
-      ctx.lineTo(arrowLength, 0);
-      ctx.lineTo(headStartX + arrowHeadLength * 0.3, arrowShaftWidth * 1.8);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Top highlight layer (bright metal edge) - left edge
-      ctx.fillStyle = 'rgba(200, 200, 210, 1)'; // Bright steel highlight
-      ctx.beginPath();
-      ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2);
-      ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2);
-      ctx.lineTo(arrowLength, 0);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Top highlight layer (bright metal edge) - right edge
-      ctx.beginPath();
-      ctx.moveTo(headStartX + arrowHeadLength * 0.5, arrowShaftWidth / 2);
-      ctx.lineTo(arrowLength - arrowHeadLength * 0.1, arrowShaftWidth * 1.2);
-      ctx.lineTo(arrowLength, 0);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Extra sharp tip accent (white/silver)
-      ctx.fillStyle = 'rgba(0, 200, 0, 0.9)'; // Green tip
-      ctx.beginPath();
-      ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
-      ctx.lineTo(arrowLength, 0);
-      ctx.lineTo(arrowLength - arrowHeadLength * 0.2, arrowShaftWidth * 0.5);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Fletching (feathers at back) - left feather
-      ctx.fillStyle = 'rgba(150, 150, 150, 1)'; // Gray feathers
-      ctx.beginPath();
-      ctx.moveTo(0, -arrowShaftWidth * 1.5);
-      ctx.lineTo(arrowFletchingLength, -arrowShaftWidth * 2);
-      ctx.lineTo(arrowFletchingLength, 0);
-      ctx.lineTo(0, 0);
-      ctx.closePath();
-      ctx.fill();
-      
-      ctx.beginPath();
-      ctx.moveTo(0, arrowShaftWidth * 1.5);
-      ctx.lineTo(arrowFletchingLength, arrowShaftWidth * 2);
-      ctx.lineTo(arrowFletchingLength, 0);
-      ctx.lineTo(0, 0);
-      ctx.closePath();
-      ctx.fill();
+      }
       
       ctx.restore();
     }
@@ -10245,7 +10482,7 @@ if (!(window as any).__keydownListenerAdded) {
   // PvP/Training mode: Dash / Blink (Space) - instant burst movement towards cursor.
   if (e.key === ' ' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
     const myPlayer = pvpPlayers[myPlayerId];
-
+    
     // 5SEC PvP: during EXECUTE replay, inputs must be frozen (dash would desync replay).
     if (isTurnBasedPvPDesired()) {
       return;
@@ -10342,7 +10579,7 @@ if (!(window as any).__keydownListenerAdded) {
       // Update burst tracking
       shotsInBurst = 0;
       lastBurstShotTime = now;
-      bulletLastShotTime = now;
+        bulletLastShotTime = now;
       commitPvpAction(myPlayerId, now);
       
       // Play bullet shot sound effect (like gunshot from barrel)
@@ -13249,7 +13486,30 @@ function gameLoop() {
       const stepY = pvpKatanaVy * dtFrames;
       pvpKatanaX += stepX;
       pvpKatanaY += stepY;
-      pvpKatanaTravelPx += Math.sqrt(stepX * stepX + stepY * stepY);
+      const stepDist = Math.sqrt(stepX * stepX + stepY * stepY);
+      pvpKatanaTravelPx += stepDist;
+
+      // Air resistance trail: small streaks behind the arrow while flying (purely visual).
+      {
+        const vmag = Math.sqrt(pvpKatanaVx * pvpKatanaVx + pvpKatanaVy * pvpKatanaVy);
+        if (vmag > 0.001 && stepDist > 0.5) {
+          const dirX = pvpKatanaVx / vmag;
+          const dirY = pvpKatanaVy / vmag;
+          const n = Math.max(1, Math.min(3, Math.floor(stepDist / 10)));
+          for (let i = 0; i < n; i++) {
+            const back = 10 + Math.random() * 14;
+            safePushArrowAirParticle({
+              x: pvpKatanaX - dirX * back + (Math.random() - 0.5) * 8,
+              y: pvpKatanaY - dirY * back + (Math.random() - 0.5) * 8,
+              vx: -dirX * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              vy: -dirY * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              life: 18 + Math.floor(Math.random() * 10),
+              maxLife: 18 + Math.floor(Math.random() * 10),
+              size: 2.6 + Math.random() * 1.2
+            });
+          }
+        }
+      }
 
       // Range limit: after 350px, fade for 50px then remove
       if (pvpKatanaTravelPx >= (PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX)) {
@@ -13263,7 +13523,7 @@ function gameLoop() {
         pvpKatanaLastUpdateAt = 0;
         pvpKatanaTravelPx = 0;
       }
-
+      
       // Check if arrow is out of bounds
       if (pvpKatanaX < playLeft || pvpKatanaX > playRight || pvpKatanaY < 0 || pvpKatanaY > pvpBounds.bottom) {
         pvpKatanaFlying = false;
@@ -13292,12 +13552,12 @@ function gameLoop() {
           pvpArrowFired = true;
           pvpArrowLastShotTime = now;
           pvpKatanaX = me.x;
-          pvpKatanaY = me.y;
+          pvpKatanaY = me.y + PVP_ARROW_SPAWN_OFFSET_Y;
           pvpKatanaLastUpdateAt = now;
           pvpKatanaTravelPx = 0;
 
           const dx = pvpArrowChargeAimX - me.x;
-          const dy = pvpArrowChargeAimY - me.y;
+          const dy = pvpArrowChargeAimY - (me.y + PVP_ARROW_SPAWN_OFFSET_Y);
           const distance = Math.sqrt(dx * dx + dy * dy);
           if (distance > 0) {
             pvpKatanaVx = (dx / distance) * pvpKatanaSpeed;
@@ -13326,7 +13586,7 @@ function gameLoop() {
               type: 'arrow' as const,
               timestamp: now,
               x: me.x,
-              y: me.y,
+              y: me.y + PVP_ARROW_SPAWN_OFFSET_Y,
               targetX: pvpArrowChargeAimX,
               targetY: pvpArrowChargeAimY,
               dmg: totalDmg,
@@ -13354,7 +13614,30 @@ function gameLoop() {
       const stepY = opponentArrowVy * dtFrames;
       opponentArrowX += stepX;
       opponentArrowY += stepY;
-      opponentArrowTravelPx += Math.sqrt(stepX * stepX + stepY * stepY);
+      const stepDist = Math.sqrt(stepX * stepX + stepY * stepY);
+      opponentArrowTravelPx += stepDist;
+
+      // Air resistance trail for opponent arrow as well (keeps visuals consistent).
+      {
+        const vmag = Math.sqrt(opponentArrowVx * opponentArrowVx + opponentArrowVy * opponentArrowVy);
+        if (vmag > 0.001 && stepDist > 0.5) {
+          const dirX = opponentArrowVx / vmag;
+          const dirY = opponentArrowVy / vmag;
+          const n = Math.max(1, Math.min(3, Math.floor(stepDist / 10)));
+          for (let i = 0; i < n; i++) {
+            const back = 10 + Math.random() * 14;
+            safePushArrowAirParticle({
+              x: opponentArrowX - dirX * back + (Math.random() - 0.5) * 8,
+              y: opponentArrowY - dirY * back + (Math.random() - 0.5) * 8,
+              vx: -dirX * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              vy: -dirY * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              life: 18 + Math.floor(Math.random() * 10),
+              maxLife: 18 + Math.floor(Math.random() * 10),
+              size: 2.6 + Math.random() * 1.2
+            });
+          }
+        }
+      }
 
       if (opponentArrowTravelPx >= (PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX)) {
         opponentArrowFlying = false;
@@ -13366,7 +13649,7 @@ function gameLoop() {
         opponentArrowLastUpdateAt = 0;
         opponentArrowTravelPx = 0;
       }
-
+      
       // Check if opponent arrow is out of bounds
       if (opponentArrowX < playLeft || opponentArrowX > playRight || opponentArrowY < 0 || opponentArrowY > pvpBounds.bottom) {
         opponentArrowFlying = false;
@@ -13414,54 +13697,54 @@ function gameLoop() {
           const step = Math.min(1, framesLeft);
           framesLeft -= step;
 
-          // Update opponent projectile position
+        // Update opponent projectile position
           opponentProjectileX += opponentProjectileVx * step;
           opponentProjectileY += opponentProjectileVy * step;
           opponentProjectileVy += projectileGravity * step; // Apply gravity (scaled)
 
           // Smoke trail scaled by time-step
           if (opponentProjectileVy > 0 && Math.random() < step) {
-            safePushProjectileSmokeParticle({
-              x: opponentProjectileX + (Math.random() - 0.5) * 4,
-              y: opponentProjectileY + (Math.random() - 0.5) * 4,
+          safePushProjectileSmokeParticle({
+            x: opponentProjectileX + (Math.random() - 0.5) * 4,
+            y: opponentProjectileY + (Math.random() - 0.5) * 4,
               vx: (Math.random() - 0.5) * 0.5,
               vy: -0.3 - Math.random() * 0.2,
               life: 30 + Math.random() * 20,
-              maxLife: 30 + Math.random() * 20,
+            maxLife: 30 + Math.random() * 20,
               size: 4 + Math.random() * 3
-            });
-          }
-
+          });
+        }
+        
           // Opponent projectile collision: it should only hit me (myPlayerId)
-          if (myPlayerId && pvpPlayers[myPlayerId]) {
-            const player = pvpPlayers[myPlayerId];
-            const dx = opponentProjectileX - player.x;
-            const dy = opponentProjectileY - player.y;
-            const distanceSquared = dx * dx + dy * dy;
-            const collisionRadius = projectileRadius + player.radius;
-            const collisionRadiusSquared = collisionRadius * collisionRadius;
-
-            if (distanceSquared <= collisionRadiusSquared) {
-              opponentProjectileFlying = false;
-              opponentProjectileX = 0;
-              opponentProjectileY = 0;
-              opponentProjectileVx = 0;
-              opponentProjectileVy = 0;
-              opponentProjectileBounceCount = 0;
-              opponentProjectileLastUpdateAt = 0;
-              console.log('Opponent projectile hit me - waiting for hit event from opponent');
-              break;
-            }
-          }
-
-          // Out of bounds
-          if (opponentProjectileX < playLeft || opponentProjectileX > playRight || opponentProjectileY < 0 || opponentProjectileY > pvpBounds.bottom) {
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const player = pvpPlayers[myPlayerId];
+          const dx = opponentProjectileX - player.x;
+          const dy = opponentProjectileY - player.y;
+          const distanceSquared = dx * dx + dy * dy;
+          const collisionRadius = projectileRadius + player.radius;
+          const collisionRadiusSquared = collisionRadius * collisionRadius;
+          
+          if (distanceSquared <= collisionRadiusSquared) {
             opponentProjectileFlying = false;
             opponentProjectileX = 0;
             opponentProjectileY = 0;
             opponentProjectileVx = 0;
             opponentProjectileVy = 0;
             opponentProjectileBounceCount = 0;
+              opponentProjectileLastUpdateAt = 0;
+            console.log('Opponent projectile hit me - waiting for hit event from opponent');
+              break;
+          }
+        }
+        
+          // Out of bounds
+        if (opponentProjectileX < playLeft || opponentProjectileX > playRight || opponentProjectileY < 0 || opponentProjectileY > pvpBounds.bottom) {
+          opponentProjectileFlying = false;
+          opponentProjectileX = 0;
+          opponentProjectileY = 0;
+          opponentProjectileVx = 0;
+          opponentProjectileVy = 0;
+          opponentProjectileBounceCount = 0;
             opponentProjectileLastUpdateAt = 0;
             break;
           }
@@ -13503,119 +13786,119 @@ function gameLoop() {
           const step = Math.min(1, framesLeft);
           framesLeft -= step;
 
-          // Update projectile position
+        // Update projectile position
           projectileX += projectileVx * step;
           projectileY += projectileVy * step;
           projectileVy += projectileGravity * step; // Apply gravity (scaled)
 
           // Smoke trail scaled by time-step
           if (projectileVy > 0 && Math.random() < step) {
-            safePushProjectileSmokeParticle({
-              x: projectileX + (Math.random() - 0.5) * 4,
-              y: projectileY + (Math.random() - 0.5) * 4,
+          safePushProjectileSmokeParticle({
+            x: projectileX + (Math.random() - 0.5) * 4,
+            y: projectileY + (Math.random() - 0.5) * 4,
               vx: (Math.random() - 0.5) * 0.5,
               vy: -0.3 - Math.random() * 0.2,
               life: 30 + Math.random() * 20,
-              maxLife: 30 + Math.random() * 20,
+            maxLife: 30 + Math.random() * 20,
               size: 4 + Math.random() * 3
-            });
-          }
-
+          });
+        }
+        
           // Projectile collision with opponent only (damage event)
-          for (const playerId in pvpPlayers) {
-            const player = pvpPlayers[playerId];
-            const dx = projectileX - player.x;
-            const dy = projectileY - player.y;
-            const distanceSquared = dx * dx + dy * dy;
-            const collisionRadius = projectileRadius + player.radius;
-            const collisionRadiusSquared = collisionRadius * collisionRadius;
-
-            if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
-              const opponent = player;
-
-              // Check for crit hit - with NFT bonuses
-              const nftBonuses = calculateNftBonuses();
-              const totalCritChance = critChance + nftBonuses.critChance;
-              const isCritHit = Math.random() < totalCritChance / 100;
-              // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
-              const totalDmg = dmg + nftBonuses.dmg;
-              const baseProjectileDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
-              const projectileDamage = applyDamageVariance(baseProjectileDamage);
-
-              audioManager.resumeContext().then(() => {
-                audioManager.playDamageDealt(isCritHit);
-              });
-
-              profileManager.addDamageDealt(projectileDamage);
-
+        for (const playerId in pvpPlayers) {
+          const player = pvpPlayers[playerId];
+          const dx = projectileX - player.x;
+          const dy = projectileY - player.y;
+          const distanceSquared = dx * dx + dy * dy;
+          const collisionRadius = projectileRadius + player.radius;
+          const collisionRadiusSquared = collisionRadius * collisionRadius;
+          
+          if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
+            const opponent = player;
+            
+            // Check for crit hit - with NFT bonuses
+            const nftBonuses = calculateNftBonuses();
+            const totalCritChance = critChance + nftBonuses.critChance;
+            const isCritHit = Math.random() < totalCritChance / 100;
+            // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
+            const totalDmg = dmg + nftBonuses.dmg;
+            const baseProjectileDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
+            const projectileDamage = applyDamageVariance(baseProjectileDamage);
+            
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageDealt(isCritHit);
+            });
+            
+            profileManager.addDamageDealt(projectileDamage);
+            
               // Send hit event to opponent
-              const useColyseus = colyseusService.isConnectedToRoom();
-              const isSyncing = useColyseus || pvpSyncService.isSyncing();
-              if (currentMatch && isSyncing && opponentId) {
-                const hitInput = {
-                  type: 'hit' as const,
-                  timestamp: Date.now(),
-                  damage: projectileDamage,
-                  isCrit: isCritHit,
+            const useColyseus = colyseusService.isConnectedToRoom();
+            const isSyncing = useColyseus || pvpSyncService.isSyncing();
+            if (currentMatch && isSyncing && opponentId) {
+              const hitInput = {
+                type: 'hit' as const,
+                timestamp: Date.now(),
+                damage: projectileDamage,
+                isCrit: isCritHit,
                   targetPlayerId: opponentId
-                };
-                if (useColyseus) {
-                  colyseusService.sendInput(hitInput);
-                } else {
-                  pvpSyncService.sendInput(hitInput);
-                }
+              };
+              if (useColyseus) {
+                colyseusService.sendInput(hitInput);
+              } else {
+                pvpSyncService.sendInput(hitInput);
               }
-
-              if (isCritHit) {
-                screenShake = Math.max(screenShake, 30);
-              }
-
-              safePushDamageNumber({
-                x: opponent.x + (Math.random() - 0.5) * 40,
-                y: opponent.y - 20,
-                value: projectileDamage,
-                life: 60,
-                maxLife: 60,
-                vx: (Math.random() - 0.5) * 2,
-                vy: -2 - Math.random() * 2,
-                isCrit: isCritHit
-              });
-
-              for (let i = 0; i < 10; i++) {
-                const angle = (Math.PI * 2 * i) / 10;
-                const speed = 2 + Math.random() * 3;
-                safePushClickParticle({
-                  x: opponent.x,
-                  y: opponent.y,
-                  vx: Math.cos(angle) * speed,
-                  vy: Math.sin(angle) * speed,
-                  life: 30,
-                  maxLife: 30,
-                  size: 3 + Math.random() * 2
-                });
-              }
-
-              // Remove projectile after hit
-              projectileFlying = false;
-              projectileX = 0;
-              projectileY = 0;
-              projectileVx = 0;
-              projectileVy = 0;
-              projectileBounceCount = 0;
-              projectileLastUpdateAt = 0;
-              console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
-              break;
             }
-          }
-
-          // Check if projectile is out of bounds
-          if (projectileFlying && (projectileX < playLeft || projectileX > playRight || projectileY < 0 || projectileY > pvpBounds.bottom)) {
+            
+            if (isCritHit) {
+              screenShake = Math.max(screenShake, 30);
+            }
+            
+            safePushDamageNumber({
+              x: opponent.x + (Math.random() - 0.5) * 40,
+              y: opponent.y - 20,
+              value: projectileDamage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: isCritHit
+            });
+            
+            for (let i = 0; i < 10; i++) {
+              const angle = (Math.PI * 2 * i) / 10;
+              const speed = 2 + Math.random() * 3;
+              safePushClickParticle({
+                x: opponent.x,
+                y: opponent.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 30,
+                maxLife: 30,
+                size: 3 + Math.random() * 2
+              });
+            }
+            
+            // Remove projectile after hit
             projectileFlying = false;
             projectileX = 0;
             projectileY = 0;
             projectileVx = 0;
             projectileVy = 0;
             projectileBounceCount = 0;
+              projectileLastUpdateAt = 0;
+            console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
+              break;
+          }
+        }
+        
+        // Check if projectile is out of bounds
+          if (projectileFlying && (projectileX < playLeft || projectileX > playRight || projectileY < 0 || projectileY > pvpBounds.bottom)) {
+          projectileFlying = false;
+          projectileX = 0;
+          projectileY = 0;
+          projectileVx = 0;
+          projectileVy = 0;
+          projectileBounceCount = 0;
             projectileLastUpdateAt = 0;
             break;
           }
@@ -14718,6 +15001,17 @@ function gameLoop() {
     
     if (particle.life <= 0) {
       projectileSmokeParticles.splice(i, 1);
+    }
+  }
+
+  // Update arrow air-resistance particles
+  for (let i = arrowAirParticles.length - 1; i >= 0; i--) {
+    const particle = arrowAirParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    if (particle.life <= 0) {
+      arrowAirParticles.splice(i, 1);
     }
   }
   
