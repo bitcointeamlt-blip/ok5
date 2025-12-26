@@ -50,3 +50,5 @@ if ($procs) {
 Start-Sleep -Seconds 2
 
 Write-Host "Done. You can now run start-local-servers.ps1" -ForegroundColor Cyan
+
+
