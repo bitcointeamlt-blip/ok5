@@ -1,0 +1,45 @@
+# Netlify configuration for DOT Arena
+[build]
+  command = "rm -rf dist node_modules && npm install && npm run build"
+  publish = "dist"
+  
+# Force new build by clearing dist first (uncomment if needed)
+# [build]
+#   command = "rm -rf dist && npm install && npm run build"
+#   publish = "dist"
+  
+# Clear cache before build to ensure fresh build
+[build.environment]
+  NODE_VERSION = "22.21.1"
+  NETLIFY_USE_YARN = "false"
+  
+# Force clear cache on each deploy
+[build.processing]
+  skip_processing = false
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers for security and CORS
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Environment variables (set these in Netlify dashboard)
+# VITE_SUPABASE_URL=your_supabase_url
+# VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
