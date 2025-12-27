@@ -72,6 +72,7 @@
   <div id="gameContainer">
     <canvas id="gameCanvas" width="1920" height="1080" style="border: 1px solid #000;"></canvas>
   </div>
-  <script type="module" src="/src/simple-main.ts"></script>
+  <!-- Use relative path so both local dev and Netlify build resolve consistently -->
+  <script type="module" src="./src/simple-main.ts"></script>
 </body>
 </html>

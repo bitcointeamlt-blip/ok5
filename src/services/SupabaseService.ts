@@ -51,11 +51,13 @@ export interface LeaderboardEntry {
 
 class SupabaseService {
   private client: SupabaseClient | null = null;
+  private debug: { configured: boolean; urlHost: string | null } = { configured: false, urlHost: null };
 
   constructor() {
     try {
-      const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-      const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+      // Vite injects VITE_* at build time
+      const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (import.meta as any).env?.VITE_PUBLIC_SUPABASE_URL || '';
+      const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_PUBLIC_SUPABASE_ANON_KEY || '';
 
       if (supabaseUrl && supabaseAnonKey) {
         // OPTIMIZED: Enable Realtime with WebSocket for low-latency PvP
@@ -68,17 +70,31 @@ class SupabaseService {
           },
         });
         console.log('Supabase client initialized with Realtime (WebSocket) support');
+        this.debug.configured = true;
+        try {
+          this.debug.urlHost = new URL(supabaseUrl).host;
+        } catch {
+          this.debug.urlHost = supabaseUrl ? supabaseUrl.substring(0, 48) : null;
+        }
       } else {
         console.warn('Supabase credentials not found. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env file or Netlify environment variables');
+        this.debug.configured = false;
+        this.debug.urlHost = null;
       }
     } catch (error) {
       console.error('Error initializing Supabase service:', error);
+      this.debug.configured = false;
+      this.debug.urlHost = null;
     }
   }
 
   // Check if Supabase is configured
   isConfigured(): boolean {
     return this.client !== null;
+  }
+
+  getDebugInfo(): { configured: boolean; urlHost: string | null } {
+    return { ...this.debug };
   }
 
   // Authenticate with Ronin signature
@@ -265,8 +281,8 @@ class SupabaseService {
         .limit(safeLimit);
 
       if (error) {
-        console.error('Error fetching leaderboard:', error);
-        return [];
+        // IMPORTANT: bubble up so UI can show the real reason (often RLS / permission denied)
+        throw new Error(error.message || 'Supabase error');
       }
 
       const rows: any[] = Array.isArray(data) ? data : [];
@@ -280,7 +296,7 @@ class SupabaseService {
       })).filter((x) => !!x.ronin_address);
     } catch (e) {
       console.error('Error in fetchLeaderboardEntries:', e);
-      return [];
+      throw e;
     }
   }
 

@@ -3839,6 +3839,11 @@ async function loadLeaderboard(force: boolean = false): Promise<void> {
       return;
     }
     const raw = await supabaseService.fetchLeaderboardEntries(800);
+    if (!raw || raw.length === 0) {
+      leaderboardRows = [];
+      leaderboardError = 'No leaderboard data. If you expected data, check Supabase RLS/policies for profiles SELECT.';
+      return;
+    }
     // Sort client-side (numeric) to avoid JSON ordering issues in PostgREST.
     raw.sort((a, b) => {
       const aw = a.wins || 0, bw = b.wins || 0;
@@ -10626,6 +10631,19 @@ function render() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(pageText, modalX + modalW / 2, modalY + modalH - 30);
+
+    // Debug hint (helps diagnose deploy env / RLS issues)
+    try {
+      const dbg = supabaseService.getDebugInfo();
+      const dbgText = dbg.configured
+        ? `Supabase: OK (${dbg.urlHost || 'unknown'})`
+        : 'Supabase: NOT CONFIGURED (check Netlify env vars)';
+      ctx.fillStyle = UI_TEXT_MUTED;
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(dbgText, modalX + 24, modalY + modalH - 16);
+    } catch {}
 
     // Arrows
     const arrowS = 26;
