@@ -5,6 +5,14 @@ export class AudioManager {
   // Jetpack continuous sound
   private jetpackOscillator: OscillatorNode | null = null;
   private jetpackGainNode: GainNode | null = null;
+  // UFO idle hum (subtle continuous engine vibration)
+  private ufoHumOsc1: OscillatorNode | null = null;
+  private ufoHumOsc2: OscillatorNode | null = null;
+  private ufoHumGain: GainNode | null = null; // base gain (volume)
+  private ufoHumSputterGain: GainNode | null = null; // post-gain for "engine sputter"
+  private ufoHumFilter: BiquadFilterNode | null = null;
+  private ufoHumLfo: OscillatorNode | null = null;
+  private ufoHumLfoGain: GainNode | null = null;
 
   constructor() {
     this.initializeAudioContext();
@@ -556,6 +564,169 @@ export class AudioManager {
   }
 
   // Toxic water / underwater sounds were removed.
+
+  // --- UFO speed SFX (8-bit engine vibe) ---
+  public startUfoHum(): void {
+    // Stop existing hum if playing
+    this.stopUfoHum();
+    if (this.isMuted || !this.context) return;
+    try {
+      const ctx = this.context;
+
+      // Two oscillators -> filter -> gain -> destination
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      const sputterGain = ctx.createGain();
+
+      // 8-bit engine vibe: keep some brightness but tame harshness
+      filter.type = 'lowpass';
+      filter.frequency.value = 1400;
+      filter.Q.value = 0.8;
+
+      // Chiptune engine: square + triangle (classic 8-bit palette)
+      osc1.type = 'square';
+      osc2.type = 'triangle';
+
+      // Base pitch (will be updated in updateUfoHum based on speed)
+      osc1.frequency.setValueAtTime(110, ctx.currentTime);
+      osc2.frequency.setValueAtTime(55, ctx.currentTime);
+      osc2.detune.setValueAtTime(-6, ctx.currentTime);
+
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(gain);
+      gain.connect(sputterGain);
+      sputterGain.connect(ctx.destination);
+      sputterGain.gain.setValueAtTime(1, ctx.currentTime);
+
+      // LFO for subtle pitch wobble (vibrato)
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.type = 'triangle';
+      lfo.frequency.setValueAtTime(5.5, ctx.currentTime);
+      // Detune in cents (very small)
+      lfoGain.gain.setValueAtTime(14, ctx.currentTime);
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc1.detune);
+      lfoGain.connect(osc2.detune);
+
+      // Start silent; we ramp in via updateUfoHum()
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+
+      osc1.start(ctx.currentTime);
+      osc2.start(ctx.currentTime);
+      lfo.start(ctx.currentTime);
+
+      this.ufoHumOsc1 = osc1;
+      this.ufoHumOsc2 = osc2;
+      this.ufoHumFilter = filter;
+      this.ufoHumGain = gain;
+      this.ufoHumSputterGain = sputterGain;
+      this.ufoHumLfo = lfo;
+      this.ufoHumLfoGain = lfoGain;
+    } catch (error) {
+      console.warn('Failed to start UFO hum:', error);
+      this.stopUfoHum();
+    }
+  }
+
+  public updateUfoHum(options: { enabled: boolean; intensity01?: number; speed01?: number; envelope01?: number }): void {
+    if (!this.context) return;
+    if (this.isMuted || !options.enabled) {
+      this.stopUfoHum();
+      return;
+    }
+
+    // Ensure running
+    if (!this.ufoHumGain || !this.ufoHumSputterGain || !this.ufoHumOsc1 || !this.ufoHumOsc2) {
+      this.startUfoHum();
+    }
+    if (!this.ufoHumGain || !this.ufoHumSputterGain || !this.ufoHumOsc1 || !this.ufoHumOsc2) return;
+
+    try {
+      const ctx = this.context;
+      const k = Math.max(0, Math.min(1, options.intensity01 ?? 0.35));
+      const sp = Math.max(0, Math.min(1, options.speed01 ?? 0));
+      const env = Math.max(0, Math.min(1, options.envelope01 ?? 1));
+
+      // Very subtle volume (scaled by master volume)
+      // Keep this VERY quiet (requested): frequent clicks shouldn't get annoying.
+      const base = 0.0045; // base hum level (was 0.010)
+      const extra = 0.0105; // how much it can grow (was 0.026)
+      const target = (base + extra * (0.45 * k + 0.55 * sp)) * this.masterVolume * env;
+
+      // 8-bit feel: quantize pitch to small steps ("steppy" engine).
+      const baseF = 92; // Hz
+      const spanF = 180; // Hz
+      const raw = baseF + spanF * (0.65 * sp + 0.35 * k);
+      const stepHz = 6; // quantization step
+      const f1 = Math.max(40, Math.round(raw / stepHz) * stepHz);
+      const f2 = Math.max(20, Math.round((f1 * 0.5) / (stepHz / 2)) * (stepHz / 2));
+      this.ufoHumOsc1.frequency.setTargetAtTime(f1, ctx.currentTime, 0.04);
+      this.ufoHumOsc2.frequency.setTargetAtTime(f2, ctx.currentTime, 0.04);
+
+      // Open filter a bit with speed so it feels "faster"
+      if (this.ufoHumFilter) {
+        this.ufoHumFilter.frequency.setTargetAtTime(900 + 1800 * sp, ctx.currentTime, 0.05);
+      }
+
+      // Smooth gain changes (soft attack to avoid "ear hit" on first note)
+      const g = this.ufoHumGain.gain;
+      const tNow = ctx.currentTime;
+      const cur = Number.isFinite(g.value) ? g.value : 0;
+      const attackSec = cur < 0.001 ? 0.18 : 0.08;
+      g.cancelScheduledValues(tNow);
+      g.setValueAtTime(cur, tNow);
+      g.setTargetAtTime(target, tNow, 0.09);
+      g.linearRampToValueAtTime(target, tNow + attackSec);
+
+      // NOTE: removed "sputter/cough" behavior for the 8-bit engine variant.
+    } catch (error) {
+      console.warn('Failed to update UFO hum:', error);
+    }
+  }
+
+  public stopUfoHum(): void {
+    if (!this.context) return;
+    const ctx = this.context;
+    try {
+      // Smooth fade-out so it doesn't feel "chopped".
+      const fadeOutSec = 0.28;
+      const stopAfterSec = 0.36;
+
+      if (this.ufoHumGain) {
+        const g = this.ufoHumGain.gain;
+        const now = ctx.currentTime;
+        const cur = Number.isFinite(g.value) ? g.value : 0;
+        g.cancelScheduledValues(now);
+        g.setValueAtTime(cur, now);
+        // Exponential-ish settle to zero (smoother than a hard linear ramp)
+        g.setTargetAtTime(0, now, 0.08);
+        g.linearRampToValueAtTime(0, now + fadeOutSec);
+      }
+      if (this.ufoHumSputterGain) {
+        const sg = this.ufoHumSputterGain.gain;
+        const now = ctx.currentTime;
+        const cur = Number.isFinite(sg.value) ? sg.value : 1;
+        sg.cancelScheduledValues(now);
+        sg.setValueAtTime(cur, now);
+        // Return to neutral smoothly
+        sg.setTargetAtTime(1, now, 0.05);
+      }
+      if (this.ufoHumOsc1) this.ufoHumOsc1.stop(ctx.currentTime + stopAfterSec);
+      if (this.ufoHumOsc2) this.ufoHumOsc2.stop(ctx.currentTime + stopAfterSec);
+      if (this.ufoHumLfo) this.ufoHumLfo.stop(ctx.currentTime + stopAfterSec);
+    } catch {}
+    this.ufoHumOsc1 = null;
+    this.ufoHumOsc2 = null;
+    this.ufoHumGain = null;
+    this.ufoHumSputterGain = null;
+    this.ufoHumFilter = null;
+    this.ufoHumLfo = null;
+    this.ufoHumLfoGain = null;
+  }
 
   // Play overheat sound - intense warning sound
   public playOverheatSound(): void {

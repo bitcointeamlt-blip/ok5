@@ -76,6 +76,10 @@ const STATS_BROADCAST_HEARTBEAT_MS = 1500;
 // 90s match duration + 5s grace to show result, then disconnect room to auto-dispose.
 const MATCH_DURATION_MS = 90_000;
 const MATCH_GRACE_MS = 5_000;
+// If a room sits with only 1 player for too long, kick/dispose it so matchmaking doesn't look "stuck".
+const LOBBY_WAIT_TIMEOUT_MS = 90_000;
+// If 2 players joined but nobody starts (READY not pressed), auto-cancel to prevent stuck matches.
+const READY_WAIT_TIMEOUT_MS = 35_000;
 
 // Global action rate limit: prevent spam (reduces server load + bandwidth).
 // We only rate-limit "event" inputs (not continuous position streams).
@@ -328,6 +332,8 @@ export class GameRoom extends Room<GameState> {
   private _matchEndAt = 0;
   private _matchEnded = false;
   private _endTimer: any = null;
+  private _lobbyWaitTimer: any = null;
+  private _readyWaitTimer: any = null;
 
   private endMatch(reason: "timeout" | "player_left", winnerSid: string | null): void {
     if (this._matchEnded) return;
@@ -415,6 +421,8 @@ export class GameRoom extends Room<GameState> {
   onCreate(options: any) {
     try {
       console.log("GameRoom created:", this.roomId);
+      // Ensure empty rooms are disposed automatically.
+      (this as any).autoDispose = true;
       registerRoom(this.roomId, "pvp");
       // Replay/turn-based mode disabled: all rooms (including pvp_5sec_room) run as live realtime gameplay.
       // (We keep the code around for potential future experiments, but it's not active.)
@@ -528,7 +536,28 @@ export class GameRoom extends Room<GameState> {
       this.state.players.set(client.sessionId, player);
     }
     
-    updateRoomPlayerCount(this.roomId, this.state.players.size);
+    // Metrics should reflect connected clients count (matchmaker shows "waiting players" based on this).
+    updateRoomPlayerCount(this.roomId, this.clients.length);
+
+    // Lobby wait timeout: if only one player sits here too long, clear the room.
+    try {
+      if (this._lobbyWaitTimer) {
+        try { this._lobbyWaitTimer.clear(); } catch {}
+        this._lobbyWaitTimer = null;
+      }
+      if (!this.state.gameStarted && this.clients.length === 1) {
+        this._lobbyWaitTimer = (this.clock as any).setTimeout(() => {
+          try {
+            if (!this.state.gameStarted && this.clients.length < 2) {
+              try {
+                this.broadcast("lobby_timeout", { reason: "no_opponent", timeoutMs: LOBBY_WAIT_TIMEOUT_MS });
+              } catch {}
+              try { (this as any).disconnect?.(); } catch {}
+            }
+          } catch {}
+        }, LOBBY_WAIT_TIMEOUT_MS);
+      }
+    } catch {}
     
     // Broadcast player joined
     this.broadcast("player_joined", {
@@ -538,6 +567,32 @@ export class GameRoom extends Room<GameState> {
     
     // If 2 players joined, notify both
     if (this.state.players.size === 2) {
+      // Cancel lobby wait timer once both players are present.
+      if (this._lobbyWaitTimer) {
+        try { this._lobbyWaitTimer.clear(); } catch {}
+        this._lobbyWaitTimer = null;
+      }
+
+      // Start "ready wait" timeout: if game doesn't start soon, disconnect room so players can requeue.
+      try {
+        if (this._readyWaitTimer) {
+          try { this._readyWaitTimer.clear(); } catch {}
+          this._readyWaitTimer = null;
+        }
+        if (!this.state.gameStarted) {
+          this._readyWaitTimer = (this.clock as any).setTimeout(() => {
+            try {
+              if (!this.state.gameStarted) {
+                try {
+                  this.broadcast("match_cancelled", { reason: "ready_timeout", timeoutMs: READY_WAIT_TIMEOUT_MS });
+                } catch {}
+                try { (this as any).disconnect?.(); } catch {}
+              }
+            } catch {}
+          }, READY_WAIT_TIMEOUT_MS);
+        }
+      } catch {}
+
       this.broadcast("match_ready", {
         message: "Both players joined! Get ready!"
       });
@@ -553,7 +608,7 @@ export class GameRoom extends Room<GameState> {
     this.pendingEventInputs.delete(client.sessionId);
     this.lastContinuousBroadcasts.delete(client.sessionId);
     
-    updateRoomPlayerCount(this.roomId, this.state.players.size);
+    updateRoomPlayerCount(this.roomId, this.clients.length);
     
     // Broadcast player left
     this.broadcast("player_left", {
@@ -566,6 +621,38 @@ export class GameRoom extends Room<GameState> {
       const remainingSid = Array.from(this.state.players.keys())[0] || null;
       this.endMatch("player_left", remainingSid);
     }
+
+    // If we drop below 2 players, cancel ready-wait timer (we're back to lobby waiting).
+    try {
+      if (this._readyWaitTimer && this.clients.length < 2) {
+        try { this._readyWaitTimer.clear(); } catch {}
+        this._readyWaitTimer = null;
+      }
+    } catch {}
+
+    // If we dropped back to 1 (or 0) players in lobby, restart/cancel lobby wait timer accordingly.
+    try {
+      if (this._lobbyWaitTimer) {
+        try { this._lobbyWaitTimer.clear(); } catch {}
+        this._lobbyWaitTimer = null;
+      }
+      if (!this.state.gameStarted && this.clients.length === 1) {
+        this._lobbyWaitTimer = (this.clock as any).setTimeout(() => {
+          try {
+            if (!this.state.gameStarted && this.clients.length < 2) {
+              try {
+                this.broadcast("lobby_timeout", { reason: "no_opponent", timeoutMs: LOBBY_WAIT_TIMEOUT_MS });
+              } catch {}
+              try { (this as any).disconnect?.(); } catch {}
+            }
+          } catch {}
+        }, LOBBY_WAIT_TIMEOUT_MS);
+      }
+      // If no clients remain, disconnect immediately (helps metrics clear fast).
+      if (this.clients.length === 0) {
+        try { (this as any).disconnect?.(); } catch {}
+      }
+    } catch {}
   }
 
   onDispose() {
@@ -582,6 +669,14 @@ export class GameRoom extends Room<GameState> {
     if (this._endTimer) {
       try { this._endTimer.clear(); } catch {}
       this._endTimer = null;
+    }
+    if (this._lobbyWaitTimer) {
+      try { this._lobbyWaitTimer.clear(); } catch {}
+      this._lobbyWaitTimer = null;
+    }
+    if (this._readyWaitTimer) {
+      try { this._readyWaitTimer.clear(); } catch {}
+      this._readyWaitTimer = null;
     }
     unregisterRoom(this.roomId);
   }
@@ -710,6 +805,12 @@ export class GameRoom extends Room<GameState> {
         message: "Game starting!"
       });
       this.state.gameStarted = true;
+
+      // Cancel ready-wait timer now that match started.
+      if (this._readyWaitTimer) {
+        try { this._readyWaitTimer.clear(); } catch {}
+        this._readyWaitTimer = null;
+      }
 
       // Lock room so matchmaker never places new players here even if someone leaves mid-game.
       try { (this as any).lock?.(); } catch {}

@@ -62,10 +62,13 @@ class PresenceService {
 
       // If we get disconnected, reconnect with backoff
       this.room.onLeave(() => {
+        // If we intentionally left while reconnecting, don't schedule another reconnect.
+        if (this.connecting) return;
         this.room = null;
         this.scheduleReconnect();
       });
       this.room.onError(() => {
+        if (this.connecting) return;
         this.scheduleReconnect();
       });
     } catch {
@@ -85,5 +88,6 @@ class PresenceService {
 }
 
 export const presenceService = new PresenceService();
+
 
 

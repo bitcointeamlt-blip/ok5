@@ -10,6 +10,10 @@ export interface SaveDataV2 {
   solo: {
     currency: number; // dotCurrency
     dmg: number; // Base damage
+    speedKmps: number; // Solo "flight speed" progression (km/s)
+    distanceKm: number; // Total distance traveled (km), accumulates over time
+    spins: number; // Slot spins available
+    spinMilestones: number; // How many 100k-km milestones have been granted as spins
     level: number; // currentLevel
     maxUnlockedLevel: number; // maxUnlockedLevel
     killsInCurrentLevel: number; // killsInCurrentLevel
@@ -57,6 +61,10 @@ export function migrateV1ToV2(v1Data: SaveDataV1): SaveDataV2 {
     solo: {
       currency: v1Data.player?.dotCurrency || 1000,
       dmg: v1Data.player?.dmg || 1,
+      speedKmps: 1,
+      distanceKm: 0,
+      spins: 0,
+      spinMilestones: 0,
       level: 1, // Default, V1 didn't have levels
       maxUnlockedLevel: 1,
       killsInCurrentLevel: 0,
@@ -87,6 +95,10 @@ export function createInitialSaveDataV2(): SaveDataV2 {
     solo: {
       currency: 1000,
       dmg: 1,
+      speedKmps: 1,
+      distanceKm: 0,
+      spins: 0,
+      spinMilestones: 0,
       level: 1,
       maxUnlockedLevel: 1,
       killsInCurrentLevel: 0,

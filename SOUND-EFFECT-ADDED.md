@@ -74,3 +74,9 @@ Garso efektas automatiškai nebus grojamas jei:
 
 
 
+
+
+
+
+
+

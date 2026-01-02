@@ -16,5 +16,12 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitAny": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "backup_pvp03_full",
+    "**/*.zip",
+    "**/*.log"
+  ]
 }

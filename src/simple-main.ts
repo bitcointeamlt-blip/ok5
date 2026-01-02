@@ -127,16 +127,30 @@ const ONLINE_COUNT_UPDATE_INTERVAL_MS = 10000; // Update every 10 seconds
 let isChatOpen = false;
 let isHoveringChat = false;
 let isPressingChat = false;
+let isHoveringSlotBell = false;
+let isPressingSlotBell = false;
+let slotBellNewSpins = 0; // badge count (clears when bell clicked)
+// No glow/flash: only badge count is shown (requested)
 let isHoveringChatSend = false;
 let isPressingChatSend = false;
 let isHoveringChatClose = false;
 let isPressingChatClose = false;
 let chatScrollOffset = 0; // 0 = bottom (latest)
-let chatHitRegions: Array<{ sessionId: string; x: number; y: number; w: number; h: number; address: string }> = [];
+let chatHitRegions: Array<{ sessionId: string; messageId: string; x: number; y: number; w: number; h: number; address: string }> = [];
 let chatSelectedUserSessionId: string | null = null;
 let chatSelectedUserAddress: string | null = null;
+let chatHoverSessionId: string | null = null;
+let chatHoverMessageId: string | null = null;
 let chatInviteFromSessionId: string | null = null;
 let chatInviteModalOpen = false;
+let chatInviteServerEndpoint: string | null = null;
+let chatInviteRoomName: 'pvp_room' | 'pvp_5sec_room' | null = null;
+let chatInviteFromAddress: string | null = null;
+let pendingDuelInviteToSessionId: string | null = null;
+let pendingDuelInviteAt = 0;
+
+// Duel-offer handshake state (rendered inside Opponent Profile panel)
+let duelOffer: import('./services/ChatService').DuelOffer | null = null;
 
 // Chat panel layout (single source of truth)
 const CHAT_PANEL_W = 490; // narrower (requested)
@@ -146,6 +160,55 @@ const CHAT_PANEL_TOP = 30;
 const CHAT_SEND_W = 96;
 const CHAT_INPUT_H = 44;
 const CHAT_GAP = 10;
+// Render chat messages in DOM overlay for crisp text. When enabled, do not use canvas hit-regions for nick clicks.
+const CHAT_USE_DOM_MESSAGES = true;
+
+// Smooth UI text styling (matches screenshot-like: white text + subtle dark outline)
+const UI_SMOOTH_FONT_STACK = '"Segoe UI", Arial, sans-serif';
+type OutlinedTextOptions = {
+  font?: string;
+  sizePx?: number;
+  weight?: number;
+  fill?: string;
+  stroke?: string;
+  lineWidth?: number;
+  align?: CanvasTextAlign;
+  baseline?: CanvasTextBaseline;
+};
+
+function drawOutlinedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  opts: OutlinedTextOptions = {}
+): void {
+  // Snap to integer pixels to reduce blur when the canvas is CSS-scaled.
+  // (Especially noticeable on outlined text + small font sizes.)
+  const rx = Math.round(x);
+  const ry = Math.round(y);
+  const fill = opts.fill ?? '#ffffff';
+  const stroke = opts.stroke ?? 'rgba(0, 0, 0, 0.85)';
+  const lineWidth = opts.lineWidth ?? 3;
+  const weight = opts.weight ?? 600;
+  const sizePx = opts.sizePx ?? 13;
+  const font = opts.font ?? `${weight} ${sizePx}px ${UI_SMOOTH_FONT_STACK}`;
+
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = opts.align ?? 'left';
+  ctx.textBaseline = opts.baseline ?? 'alphabetic';
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  if (lineWidth > 0) {
+    ctx.lineWidth = lineWidth;
+    ctx.strokeStyle = stroke;
+    ctx.strokeText(text, rx, ry);
+  }
+  ctx.fillStyle = fill;
+  ctx.fillText(text, rx, ry);
+  ctx.restore();
+}
 
 function shortAddr(addr: string): string {
   const a = String(addr || '');
@@ -164,40 +227,104 @@ function getDisplayNameForChatUser(u: { nickname?: string; address?: string; ses
 
 function openProfileForChatIdentity(address: string | null, sessionId: string | null): void {
   const addr = (address || '').trim();
-  if (!addr) {
-    walletError = 'Guest profile unavailable (no wallet address)';
-    return;
-  }
-  opponentAddressForResult = addr;
+  const sid = (sessionId || '').trim();
+
+  // SessionIds change on reconnect. If we have a stable address (wallet/auth/guest_pvp_id),
+  // resolve the *current* sessionId from the live users list so duel invites don't silently fail.
+  let resolvedSid = sid;
+  try {
+    if (addr) {
+      const u = chatService.getUsers().find((x) => (x?.address || '').trim() === addr);
+      if (u?.sessionId) resolvedSid = u.sessionId;
+    } else if (sid) {
+      // If address is unknown, at least verify the sessionId still exists.
+      const u = chatService.getUsers().find((x) => (x?.sessionId || '').trim() === sid);
+      if (!u) resolvedSid = sid;
+    }
+  } catch {}
+
+  // Always open the modal, even for guests (no wallet address).
   isOpponentProfileOpen = true;
   opponentProfileData = null;
-  chatSelectedUserSessionId = sessionId || null;
-  chatSelectedUserAddress = addr;
-  if (supabaseService.isConfigured()) {
+  chatSelectedUserSessionId = resolvedSid || null;
+  chatSelectedUserAddress = addr || null;
+
+  // Use wallet address when available; otherwise fall back to session id for display.
+  opponentAddressForResult = addr || (resolvedSid ? `guest_${resolvedSid.substring(0, 6)}` : 'guest');
+
+  // Only load Supabase profile when we have a real persistent identity (wallet/auth), not a guest id.
+  const isGuestLike = !addr || addr.startsWith('guest_');
+  const isAuthLike = addr.startsWith('auth_');
+  const isWalletLike = addr.startsWith('ronin:') || /^0x[a-fA-F0-9]{40}$/.test(addr);
+  if (!isGuestLike && (isAuthLike || isWalletLike) && supabaseService.isConfigured()) {
     supabaseService.getProfile(addr).then((p) => { opponentProfileData = p; }).catch(() => {});
   }
 }
 
-function ensureChatInput(): HTMLInputElement {
-  let inp = document.getElementById('chatInput') as HTMLInputElement;
+function getProfileNicknameEditRects(): {
+  row: { x: number; y: number; w: number; h: number };
+  btn: { x: number; y: number; w: number; h: number };
+  input: { x: number; y: number; w: number; h: number };
+} {
+  const profileWindowWidth = 900;
+  const profileWindowHeight = 750;
+  const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+  const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100;
+  const dataStartY = profileWindowY + 70;
+  const leftColumnWidth = 400;
+
+  // Row spans the nickname label+value area in left column
+  const rowX = profileWindowX + 20;
+  const rowY = dataStartY + 6;
+  const rowW = leftColumnWidth;
+  const rowH = 46;
+
+  // Edit button on the right side of the row
+  const btnW = 84;
+  const btnH = 26;
+  const btnX = rowX + rowW - 18 - btnW;
+  const btnY = rowY + Math.floor((rowH - btnH) / 2);
+
+  // Input overlay position (aligned to value line)
+  const inputX = rowX + 15; // +5px from left (requested)
+  const inputH = 28;
+  const inputY = rowY + Math.floor((rowH - inputH) / 2);
+  const inputW = rowW - 38 - btnW; // -10px total (5px each side)
+
+  return {
+    row: { x: rowX, y: rowY, w: rowW, h: rowH },
+    btn: { x: btnX, y: btnY, w: btnW, h: btnH },
+    input: { x: inputX, y: inputY, w: inputW, h: inputH },
+  };
+}
+
+function ensureChatInput(): HTMLTextAreaElement {
+  let inp = document.getElementById('chatInput') as HTMLTextAreaElement;
   if (!inp) {
-    inp = document.createElement('input');
+    inp = document.createElement('textarea');
     inp.id = 'chatInput';
-    inp.type = 'text';
     inp.maxLength = 220;
     inp.placeholder = 'Type message...';
     inp.autocomplete = 'off';
+    (inp as any).rows = 2; // always show 2 lines (auto-wrap)
+    inp.wrap = 'soft';
     inp.style.position = 'absolute';
     inp.style.display = 'none';
-    inp.style.fontFamily = '"Press Start 2P", monospace';
-    inp.style.fontSize = '10px';
+    // Match smooth UI text style (example screenshot)
+    inp.style.fontFamily = UI_SMOOTH_FONT_STACK;
+    inp.style.fontSize = '18px';
+    inp.style.fontWeight = '700';
+    inp.style.lineHeight = '22px';
     // Critical: keep width/height stable even with padding/border (prevents overflow vs SEND button)
     inp.style.boxSizing = 'border-box';
-    inp.style.padding = '8px';
+    inp.style.padding = '10px';
     inp.style.border = '2px solid rgba(210, 235, 255, 0.22)';
     inp.style.background = 'rgba(8, 10, 18, 0.85)';
     inp.style.color = '#ffffff';
     inp.style.outline = 'none';
+    inp.style.resize = 'none';
+    inp.style.overflow = 'hidden';
+    inp.style.lineHeight = '22px';
     // Keep above canvas
     inp.style.zIndex = '10000';
     document.body.appendChild(inp);
@@ -207,9 +334,14 @@ function ensureChatInput(): HTMLInputElement {
     inp.dataset.bound = '1';
     inp.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') {
+        ev.preventDefault();
         try {
-          chatService.sendChat(inp.value);
+          // Always send a single line (even if user pasted multi-line text)
+          const oneLine = String(inp.value || '').split(/\r?\n/)[0];
+          chatService.sendChat(oneLine);
           inp.value = '';
+          // keep 2-line box height
+          (inp as any).rows = 2;
         } catch {}
       } else if (ev.key === 'Escape') {
         inp.style.display = 'none';
@@ -249,12 +381,225 @@ function ensureChatSendButton(): HTMLButtonElement {
           return;
         }
         const inp = ensureChatInput();
-        chatService.sendChat(inp.value);
+        const oneLine = String(inp.value || '').split(/\r?\n/)[0];
+        chatService.sendChat(oneLine);
         inp.value = '';
+        (inp as any).rows = 2;
         inp.focus();
       } catch {}
     });
 
+    document.body.appendChild(btn);
+  }
+  return btn;
+}
+
+function escapeHtml(s: string): string {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+let chatOverlayLastKey = '';
+function ensureChatMessagesContainer(): HTMLDivElement {
+  let el = document.getElementById('chatMessages') as HTMLDivElement;
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'chatMessages';
+    // Make discoverable for accessibility tooling (and easier automated checks)
+    el.setAttribute('role', 'log');
+    el.setAttribute('aria-label', 'Chat messages');
+    el.setAttribute('aria-live', 'polite');
+    el.tabIndex = 0;
+    el.style.position = 'absolute';
+    el.style.display = 'none';
+    el.style.zIndex = '10000';
+    el.style.pointerEvents = 'auto';
+    el.style.boxSizing = 'border-box';
+    el.style.padding = '10px 10px';
+    el.style.overflowY = 'auto';
+    el.style.overflowX = 'hidden';
+    el.style.background = 'rgba(8, 10, 18, 0.35)'; // stronger lift for readability
+    el.style.border = '1px solid rgba(210, 235, 255, 0.14)';
+    el.style.borderRadius = '6px';
+
+    // Typography: crisp, readable even when the canvas is scaled.
+    el.style.fontFamily = UI_SMOOTH_FONT_STACK;
+    el.style.fontSize = '15px';
+    el.style.lineHeight = '1.25';
+    el.style.fontWeight = '700';
+    el.style.color = '#ffffff';
+    // Faux outline with shadow (works consistently across browsers)
+    el.style.textShadow = '0 2px 0 rgba(0,0,0,0.9), 0 -2px 0 rgba(0,0,0,0.9), 2px 0 0 rgba(0,0,0,0.9), -2px 0 0 rgba(0,0,0,0.9)';
+
+    // NOTE: Clicking nick does nothing (requested).
+
+    // Track whether user scrolled up (so we don't force-scroll while reading)
+    el.addEventListener('scroll', () => {
+      try {
+        const nearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 24;
+        el.dataset.pinned = nearBottom ? '1' : '0';
+      } catch {}
+    });
+
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function renderChatMessagesOverlay(el: HTMLDivElement): void {
+  try {
+    const msgs = chatService.getMessages().filter((m) => m && m.kind === 'chat' && String(m.text || '').trim().length);
+    const last = msgs.slice(-60); // keep DOM light
+    const key = `${last.length}:${last.map(m => m.id).join(',')}`;
+    if (key === chatOverlayLastKey) return;
+
+    // Preserve "pinned to bottom" behavior.
+    const pinned = el.dataset.pinned !== '0';
+
+    const parts: string[] = [];
+    for (const m of last) {
+      const name = getDisplayNameForChatUser({ nickname: m.fromNickname, address: m.fromAddress, sessionId: m.fromSessionId });
+      const text = String(m.text || '').trim();
+      let tsText = '';
+      try {
+        const ts = typeof m.ts === 'number' ? m.ts : Date.now();
+        const ageMs = Date.now() - ts;
+        const h = Math.floor(ageMs / (1000 * 60 * 60));
+        // Hide timestamps for very recent messages; show hours for 1..48h; otherwise show date.
+        if (h >= 1 && h <= 48) tsText = `${h}h ago`;
+        else if (h > 48) tsText = new Date(ts).toLocaleDateString('lt-LT');
+        else tsText = '';
+      } catch {}
+
+      const safeName = escapeHtml(name);
+      const safeText = escapeHtml(text);
+      const safeTs = escapeHtml(tsText);
+
+      parts.push(
+        `<div style="margin:0 0 12px 0;">` +
+          `<div style="display:flex; align-items:center; gap:10px;">` +
+            `<span style="cursor:default; color:#c06bff; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">${safeName}</span>` +
+            `<span style="margin-left:auto; color:rgba(230,240,255,0.72); font-size:0.78em; font-weight:700; white-space:nowrap;">${safeTs}</span>` +
+          `</div>` +
+          `<div style="margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">${safeText}</div>` +
+        `</div>`
+      );
+    }
+
+    el.innerHTML = parts.join('');
+    chatOverlayLastKey = key;
+
+    if (pinned) {
+      el.scrollTop = el.scrollHeight;
+      el.dataset.pinned = '1';
+    }
+  } catch {}
+}
+
+function ensureNicknameInput(): HTMLInputElement {
+  let inp = document.getElementById('nicknameInput') as HTMLInputElement;
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.id = 'nicknameInput';
+    inp.type = 'text';
+    inp.maxLength = 16;
+    inp.placeholder = 'Nickname...';
+    inp.autocomplete = 'off';
+    inp.style.position = 'absolute';
+    inp.style.fontFamily = '"Press Start 2P", monospace';
+    inp.style.fontSize = '10px';
+    inp.style.padding = '6px';
+    inp.style.boxSizing = 'border-box';
+    inp.style.border = '2px solid rgba(0,0,0,0.85)';
+    inp.style.backgroundColor = '#ffffff';
+    inp.style.color = '#000000';
+    inp.style.outline = 'none';
+    inp.style.display = 'none';
+    inp.style.zIndex = '20000';
+    document.body.appendChild(inp);
+  }
+  // Bind save handlers once (Enter/blur save; Escape cancels)
+  if (!inp.dataset.bound) {
+    inp.dataset.bound = '1';
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        persistNicknameFromUi(inp.value);
+        inp.style.display = 'none';
+        try { canvas.focus?.(); } catch {}
+      } else if (ev.key === 'Escape') {
+        inp.style.display = 'none';
+        try { canvas.focus?.(); } catch {}
+      }
+    });
+    inp.addEventListener('blur', () => {
+      if (inp.style.display !== 'none') {
+        persistNicknameFromUi(inp.value);
+        inp.style.display = 'none';
+      }
+    });
+  }
+  return inp;
+}
+
+function showNicknameInput(): void {
+  try {
+    console.log('[nickname] showNicknameInput()');
+    walletError = 'Editing nickname...';
+    window.setTimeout(() => { try { if (walletError === 'Editing nickname...') walletError = ''; } catch {} }, 1500);
+    const r = getProfileNicknameEditRects();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    const inp = ensureNicknameInput();
+    const profile = profileManager.getProfile();
+    inp.value = profile.nickname || '';
+    inp.style.display = 'block';
+    inp.style.left = `${rect.left + r.input.x * scaleX}px`;
+    inp.style.top = `${rect.top + r.input.y * scaleY}px`;
+    inp.style.width = `${Math.max(140, r.input.w * scaleX)}px`;
+    inp.style.height = `${Math.max(26, r.input.h * scaleY)}px`;
+    inp.focus();
+    inp.select();
+  } catch (e) {
+    console.error('[nickname] showNicknameInput failed', e);
+    walletError = 'Nickname edit failed (check console)';
+  }
+}
+
+function ensureNicknameEditButton(): HTMLButtonElement {
+  let btn = document.getElementById('nicknameEditBtn') as HTMLButtonElement;
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'nicknameEditBtn';
+    btn.type = 'button';
+    btn.textContent = 'EDIT';
+    btn.style.position = 'absolute';
+    btn.style.display = 'none';
+    btn.style.zIndex = '10003';
+    btn.style.background = 'transparent';
+    btn.style.border = 'none';
+    btn.style.padding = '0';
+    btn.style.margin = '0';
+    btn.style.cursor = 'pointer';
+    btn.style.color = 'transparent'; // visual is on canvas
+    btn.style.userSelect = 'none';
+    btn.style.outline = 'none';
+    btn.addEventListener('mouseenter', () => { isHoveringNicknameEdit = true; });
+    btn.addEventListener('mouseleave', () => { isHoveringNicknameEdit = false; isPressingNicknameEdit = false; });
+    btn.addEventListener('mousedown', () => { isPressingNicknameEdit = true; });
+    btn.addEventListener('mouseup', () => { isPressingNicknameEdit = false; });
+    btn.addEventListener('click', () => {
+      console.log('[nickname] EDIT click');
+      if (!isPersistenceConnected()) {
+        walletError = 'Nick will save locally. Connect wallet to sync.';
+        window.setTimeout(() => { try { if (walletError === 'Nick will save locally. Connect wallet to sync.') walletError = ''; } catch {} }, 2000);
+      }
+      showNicknameInput();
+    });
     document.body.appendChild(btn);
   }
   return btn;
@@ -293,10 +638,8 @@ async function updateOnlinePlayersCount(): Promise<void> {
   if (!serverStatusLoading) {
     serverStatusLoading = true;
     try {
-      const results = await Promise.all(serverStatuses.map(checkSingleServerStatus));
-      for (let i = 0; i < results.length; i++) {
-        serverStatuses[i] = results[i];
-      }
+      const results = await Promise.all(serverStatuses.map((server) => checkServerStatus(server)));
+      for (let i = 0; i < results.length; i++) serverStatuses[i] = results[i];
     } catch (e) {
       // ignore
     }
@@ -338,12 +681,71 @@ presenceService.start(getSelectedServerEndpoint() || fallbackColyseusEndpoint);
 // IMPORTANT: defer until after module initialization to avoid TDZ on `authUserId`.
 window.setTimeout(() => {
   try {
-    const myId = getPersistenceIdentity() || '';
+    // Use a stable guest id when not connected (prevents "random guest address" confusion on profile click)
+    const myId = getMyPvpAddress() || '';
     const myNick = (profileManager.getProfile().nickname || '').trim();
     chatService.start(getSelectedServerEndpoint() || fallbackColyseusEndpoint, { address: myId, nickname: myNick });
     chatService.onInvite = (fromSid) => {
       chatInviteFromSessionId = fromSid;
       chatInviteModalOpen = true;
+    };
+    chatService.onInvitePayload = (msg) => {
+      chatInviteFromSessionId = msg.fromSessionId || null;
+      chatInviteServerEndpoint = (msg.serverEndpoint || '').trim() || null;
+      const rn = (msg.roomName || '').trim();
+      chatInviteRoomName = (rn === 'pvp_room' || rn === 'pvp_5sec_room') ? (rn as any) : null;
+      chatInviteFromAddress = (msg.fromAddress || '').trim() || null;
+      chatInviteModalOpen = true;
+    };
+    chatService.onDuelOffer = (o) => {
+      duelOffer = o;
+      // Ensure both players see the handshake inside the Opponent Profile panel.
+      // If I'm the invitee, open the opponent profile automatically.
+      try {
+        const mySid = chatService.getRoomSessionId() || '';
+        const isInvitee = mySid && mySid === o.toSid;
+        if (isInvitee && !isOpponentProfileOpen) {
+          openProfileForChatIdentity((o.fromAddress || '').trim() || null, (o.fromSid || '').trim() || null);
+        }
+      } catch {}
+    };
+    chatService.onDuelOfferUpdate = (o) => {
+      duelOffer = o;
+      // keep open while pending
+      if (o.status === 'declined') walletError = 'Duel declined';
+      if (o.status === 'cancelled') walletError = 'Duel cancelled';
+      if (o.status === 'declined' || o.status === 'cancelled') {
+        window.setTimeout(() => { try { if (walletError === 'Duel declined' || walletError === 'Duel cancelled') walletError = null; } catch {} }, 2000);
+      }
+    };
+    chatService.onDuelOfferStart = (o) => {
+      duelOffer = null;
+      try {
+        const rn = (o.roomName || '').trim();
+        if (rn === 'pvp_room' || rn === 'pvp_5sec_room') pvpOnlineRoomName = rn as any;
+        startPvPMatchOnServer((o.serverEndpoint || '').trim() || getSelectedServerEndpoint() || undefined);
+      } catch {}
+    };
+    chatService.onInviteResponse = (msg) => {
+      // msg.fromSessionId = responder, msg.toSessionId = me
+      if (!msg?.fromSessionId) return;
+      if (msg.accepted) {
+        pendingDuelInviteToSessionId = null;
+        pendingDuelInviteAt = 0;
+        walletError = '✅ Duel invite accepted';
+        window.setTimeout(() => { try { if (walletError === '✅ Duel invite accepted') walletError = null; } catch {} }, 2000);
+        // Move inviter into the same "preparation/search" flow on the same server/room.
+        try {
+          const rn = (msg.roomName || '').trim();
+          if (rn === 'pvp_room' || rn === 'pvp_5sec_room') pvpOnlineRoomName = rn as any;
+          startPvPMatchOnServer((msg.serverEndpoint || '').trim() || getSelectedServerEndpoint() || undefined);
+        } catch {}
+      } else {
+        pendingDuelInviteToSessionId = null;
+        pendingDuelInviteAt = 0;
+        walletError = '❌ Duel invite declined';
+        window.setTimeout(() => { try { if (walletError === '❌ Duel invite declined') walletError = null; } catch {} }, 2000);
+      }
     };
   } catch {}
 }, 0);
@@ -380,7 +782,7 @@ function setSelectedServer(serverId: string): void {
   const endpoint = getSelectedServerEndpoint() || fallbackColyseusEndpoint;
   presenceService.setEndpoint(endpoint);
   // Chat should follow the selected server too.
-  const myId = getPersistenceIdentity() || '';
+  const myId = getMyPvpAddress() || '';
   const myNick = (profileManager.getProfile().nickname || '').trim();
   chatService.setEndpoint(endpoint, { address: myId, nickname: myNick });
 }
@@ -794,6 +1196,10 @@ function persistNicknameFromUi(raw: string): void {
   const newNickname = (typeof raw === 'string' ? raw.trim() : '');
   if (!newNickname) return;
   profileManager.setNickname(newNickname);
+  // Update nickname in live chat immediately (no reconnect needed).
+  try {
+    chatService.updateIdentity({ address: getMyPvpAddress() || '', nickname: newNickname });
+  } catch {}
   // Also persist to Supabase (best-effort) so other players/leaderboard/results can display it.
   const pid = getRoninAddressForPersistence();
   if (pid) {
@@ -832,7 +1238,10 @@ try {
           (window as any)[key] = true;
           supabaseService.getProfile(state.address).then((profile) => {
             const nick = getNicknameFromSupabaseProfile(profile);
-            if (nick) profileManager.setNickname(nick);
+            if (nick) {
+              profileManager.setNickname(nick);
+              try { chatService.updateIdentity({ address: getMyPvpAddress() || '', nickname: nick }); } catch {}
+            }
           }).catch(() => {});
         }
       } catch {}
@@ -860,7 +1269,10 @@ try {
             console.log('Profile loaded on startup:', profile);
             // Sync nickname from Supabase into local profile (so UI shows nickname everywhere).
             const nick = getNicknameFromSupabaseProfile(profile);
-            if (nick) profileManager.setNickname(nick);
+            if (nick) {
+              profileManager.setNickname(nick);
+              try { chatService.updateIdentity({ address: getMyPvpAddress() || '', nickname: nick }); } catch {}
+            }
           }
         }).catch((error) => {
           console.error('Error loading profile:', error);
@@ -921,9 +1333,179 @@ try {
 // Audio Manager
 const audioManager = new AudioManager();
 
+// UFO speed SFX: update at low rate (keeps CPU low)
+let ufoHumLastUpdateAt = 0;
+let ufoHumLastStopAt = 0;
+
 // Game state
 let dotCurrency = 1000;
 let dmg = 1;
+// Solo progression: "flight speed" (km/s). Starts at 1 and grows on successful hits.
+let soloSpeedKmps = 1;
+// Solo progression: total distance traveled (km). Increases live as speed * time.
+let soloDistanceKm = 0;
+let soloDistanceLastPerfMs = 0;
+const AU_KM = 149_597_870.7; // Astronomical Unit in km (approx)
+
+// Distance rewards: every 100k km => +1 slot spin
+const SOLO_SPIN_MILESTONE_KM = 100_000;
+let soloSpins = 0;
+let soloSpinMilestones = 0;
+let soloXp = 0;
+
+// Slot machine UI/state
+let slotModalOpen = false;
+let slotIsSpinning = false;
+let slotSpinStartedAt = 0;
+let slotSpinStopsAt: [number, number, number] = [0, 0, 0];
+let slotReelPos: [number, number, number] = [0, 0, 0]; // float index for animation
+let slotReelResult: [string, string, string] = ['?', '?', '?'];
+let slotLastPayoutText: string | null = null;
+// Prevent the "open click" from instantly being interpreted as an outside-click-close.
+let slotIgnoreClicksUntilTs = 0;
+
+function getSlotBellRect(): { x: number; y: number; w: number; h: number } {
+  // Must match render + input hit-tests (bell is left of LIVE CHAT)
+  const onlineBoxW = 120;
+  const onlineBoxX = canvas.width - 16 - onlineBoxW;
+  const onlineBoxY = 10 + 25;
+  const chatW = 120;
+  const btnH = 22;
+  const gap = 10;
+  const chatX = onlineBoxX - gap - chatW;
+  const bellW = 32;
+  const bellGap = 8;
+  const bellX = chatX - bellGap - bellW;
+  const bellY = onlineBoxY;
+  return { x: bellX, y: bellY, w: bellW, h: btnH };
+}
+// Slot symbols:
+// - X is an "empty" symbol (losing unless you hit 3x X, which awards spins).
+// - LUCK has been renamed to CRIT.
+const SLOT_SYMBOLS = ['DOT', 'DMG', 'CRIT', 'HP', 'ARMOR', 'ACCURACY', 'XP', 'X'] as const;
+type SlotSymbol = typeof SLOT_SYMBOLS[number];
+
+function rollSlotSymbol(): SlotSymbol {
+  // Weights (per reel) per latest balance request:
+  // - DOT: 1%
+  // - DMG: 1%
+  // - HP: 1%
+  // - ARMOR: 0.5%
+  // - ACCURACY: 1%
+  // - XP: 1%
+  // - X: 40%
+  // - CRIT: remaining (default/common)
+  const r = Math.random();
+  if (r < 0.01) return 'DOT';
+  if (r < 0.02) return 'DMG';
+  if (r < 0.03) return 'HP';
+  if (r < 0.035) return 'ARMOR';
+  if (r < 0.045) return 'ACCURACY';
+  if (r < 0.055) return 'XP';
+  if (r < 0.455) return 'X';
+  return 'CRIT';
+}
+
+function round1(x: number): number {
+  return Math.round(x * 10) / 10;
+}
+
+function randRangeSlot(lo: number, hi: number): number {
+  return lo + Math.random() * (hi - lo);
+}
+
+function startSlotSpin(now: number = Date.now()): void {
+  if (slotIsSpinning) return;
+  if (soloSpins <= 0) return;
+  soloSpins = Math.max(0, soloSpins - 1);
+  forceSaveGame();
+
+  slotIsSpinning = true;
+  slotSpinStartedAt = now;
+  // Each reel stops slightly later
+  slotSpinStopsAt = [now + 1100, now + 1500, now + 1900];
+  slotReelResult = [rollSlotSymbol(), rollSlotSymbol(), rollSlotSymbol()];
+  slotLastPayoutText = null;
+  // Randomize starting positions so it feels alive
+  slotReelPos = [Math.random() * 40, Math.random() * 40, Math.random() * 40];
+  try {
+    void audioManager.resumeContext();
+    audioManager.playUpgradeSuccess();
+  } catch {}
+}
+
+function finishSlotSpinIfDone(now: number = Date.now()): void {
+  if (!slotIsSpinning) return;
+  if (now < slotSpinStopsAt[2]) return;
+  slotIsSpinning = false;
+
+  const [a, b, c] = slotReelResult;
+  const same3 = a === b && b === c;
+  const same2 =
+    !same3 && (a === b || b === c || a === c);
+
+  // Payouts (simple and useful)
+  let payoutText = 'NO WIN';
+  // X is a losing symbol unless you hit 3x X, which awards spins.
+  const hasX = (a === 'X' || b === 'X' || c === 'X');
+  if (same3 && a === 'X') {
+    soloSpins += 2;
+    payoutText = '+2 SPINS';
+  } else if (!hasX && same3) {
+    if (a === 'DOT') { dotCurrency = Math.min(999999999, dotCurrency + 5000); payoutText = '+5000 DOT'; }
+    else if (a === 'DMG') { dmg += 3; payoutText = '+3 DMG'; }
+    else if (a === 'HP') { dotMaxHP += 3; dotHP += 3; payoutText = '+3 MAX HP'; }
+    else if (a === 'ARMOR') { dotMaxArmor += 2; dotArmor += 2; payoutText = '+2 ARMOR'; }
+    else if (a === 'ACCURACY') {
+      accuracy = Math.min(100, round1(accuracy + 0.3));
+      payoutText = '+0.3% ACC';
+    }
+    else if (a === 'XP') { soloXp += 30; payoutText = '+30 XP'; }
+    else {
+      const add = round1(randRangeSlot(0.2, 0.3)); // +0.2%..+0.3%
+      critChance = Math.min(95, round1(critChance + add));
+      payoutText = `+${add.toFixed(1)}% CRIT`;
+    }
+  } else if (!hasX && same2) {
+    const sym = (a === b) ? a : (b === c ? b : a);
+    if (sym === 'DOT') { dotCurrency = Math.min(999999999, dotCurrency + 1000); payoutText = '+1000 DOT'; }
+    else if (sym === 'DMG') { dmg += 1; payoutText = '+1 DMG'; }
+    else if (sym === 'HP') { dotMaxHP += 1; dotHP += 1; payoutText = '+1 MAX HP'; }
+    else if (sym === 'ARMOR') { dotMaxArmor += 1; dotArmor += 1; payoutText = '+1 ARMOR'; }
+    else if (sym === 'ACCURACY') {
+      accuracy = Math.min(100, round1(accuracy + 0.1)); // requested: gives 0.1%
+      payoutText = '+0.1% ACC';
+    }
+    else if (sym === 'XP') { soloXp += 10; payoutText = '+10 XP'; }
+    else {
+      const add = round1(randRangeSlot(0.1, 0.2)); // +0.1%..+0.2%
+      critChance = Math.min(95, round1(critChance + add));
+      payoutText = `+${add.toFixed(1)}% CRIT`;
+    }
+  }
+
+  slotLastPayoutText = payoutText;
+  // Small popup feedback
+  try {
+    safePushDamageNumber({
+      x: dotX,
+      y: Math.max(40, dotY - 40),
+      value: same2 || same3 ? `WIN ${payoutText}` : 'NO WIN',
+      life: 70,
+      maxLife: 70,
+      vx: (Math.random() - 0.5) * 1.2,
+      vy: -1.6,
+      isCrit: same3,
+    });
+  } catch {}
+  forceSaveGame();
+  try {
+    void audioManager.resumeContext();
+    (same2 || same3) ? audioManager.playUpgradeSuccess() : audioManager.playUpgradeFail();
+  } catch {}
+}
+
+// Slot UI moved next to Live Chat (bell + badge); no panel rect needed.
 
 // Wallet DOT token balance (read-only display)
 const DOT_TOKEN_ADDRESS = '0x4a4e24b057b595f530417860a901f3a540995256';
@@ -934,7 +1516,7 @@ const BALANCE_CHECK_INTERVAL = 30000; // Check balance every 30 seconds (reduced
 // Ronke token (PewPew) config
 const RONKE_TOKEN_ADDRESS =
   (import.meta as any).env?.VITE_RONKE_TOKEN_ADDRESS ||
-  '0x75ae353997242927c701d4d6c2722ebef43fd2d3';
+  '0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb';
 const RONKE_POOL_ADDRESS =
   (import.meta as any).env?.VITE_RONKE_POOL_ADDRESS ||
   (import.meta as any).env?.VITE_RONKE_TREASURY_ADDRESS || '';
@@ -1330,6 +1912,55 @@ let isHoveringCrit = false;
 let isPressingCrit = false;
 let isHoveringAccuracy = false;
 let isPressingAccuracy = false;
+let isHoveringClaimDot = false;
+
+// Dev/QA helper: claim DOT so you can keep testing clicks even at 0 balance.
+const CLAIM_DOT_AMOUNT = 100;
+const CLAIM_DOT_COOLDOWN_MS = 5000;
+const CLAIM_DOT_PENALTY_MS = 2000; // spam penalty window (same idea as PvP)
+const CLAIM_DOT_DENIED_SFX_COOLDOWN_MS = 120;
+const CLAIM_DOT_INDICATOR_SHAKE_MS = 150;
+const CLAIM_DOT_INDICATOR_SHAKE_PX = 2.5;
+let claimDotNextAt = 0;
+let claimDotWindowMs = CLAIM_DOT_COOLDOWN_MS;
+let claimDotIndicatorShakeUntil = 0;
+let claimDotLastDeniedSfxAt = 0;
+
+function canClaimDot(now: number = Date.now()): boolean {
+  return now >= (claimDotNextAt || 0);
+}
+
+function commitClaimDot(now: number = Date.now()): void {
+  claimDotNextAt = now + CLAIM_DOT_COOLDOWN_MS;
+  claimDotWindowMs = CLAIM_DOT_COOLDOWN_MS;
+}
+
+function applyClaimDotPenalty(now: number = Date.now()): void {
+  // Local feedback (sound + tiny shake) when you attempt claim too early.
+  if (now - claimDotLastDeniedSfxAt >= CLAIM_DOT_DENIED_SFX_COOLDOWN_MS) {
+    claimDotLastDeniedSfxAt = now;
+    claimDotIndicatorShakeUntil = Math.max(claimDotIndicatorShakeUntil, now + CLAIM_DOT_INDICATOR_SHAKE_MS);
+    try {
+      void audioManager.resumeContext();
+      (audioManager as any).playActionDenied?.() ?? audioManager.playUpgradeFail();
+    } catch {}
+  } else {
+    claimDotIndicatorShakeUntil = Math.max(claimDotIndicatorShakeUntil, now + Math.floor(CLAIM_DOT_INDICATOR_SHAKE_MS * 0.6));
+  }
+
+  const prevNextAt = claimDotNextAt || 0;
+  const penaltyNextAt = now + CLAIM_DOT_PENALTY_MS;
+  // Never reduce an existing longer lockout; only extend.
+  if (penaltyNextAt > prevNextAt) {
+    claimDotNextAt = penaltyNextAt;
+    claimDotWindowMs = CLAIM_DOT_PENALTY_MS;
+  }
+}
+
+function getClaimDotButtonRect(): { x: number; y: number; w: number; h: number } {
+  // Under the DOT balance (left panel)
+  return { x: 20, y: 110, w: 200, h: 28 };
+}
 
 // DOT position and physics
 let dotX = 240 + (1920 - 240) / 2;
@@ -1341,6 +1972,314 @@ let dotVy = 0; // Vertical velocity
 let soloUfoTilt = 0; // Current tilt angle (for balancing effect)
 let soloLastVx = 0; // Previous velocity X (for acceleration calculation)
 let soloLastVy = 0; // Previous velocity Y (for acceleration calculation)
+
+// --- Solo "idle flight" FX (wallet-connected main screen): thrust particles + warp streaks ---
+type SoloWarpStreak = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  len: number;
+  w: number;
+  life: number;
+  maxLife: number;
+};
+
+type SoloThrustParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  life: number;
+  maxLife: number;
+};
+
+let soloWarpStreaks: SoloWarpStreak[] = [];
+let soloThrustParticles: SoloThrustParticle[] = [];
+let soloFlightFxLastAt = 0;
+let soloWarpSpawnCarry = 0;
+let soloThrustSpawnCarry = 0;
+
+// Click-boost (successful click on UFO): quick forward lunge + smooth return.
+let soloClickBoostStartAt = 0;
+let soloClickBoostStartOffsetX = 0;
+let soloClickBoostPeakOffsetX = 0;
+let soloClickBoostOffsetX = 0;
+const SOLO_CLICK_BOOST_PX = 114; // +50px vs previous (requested)
+const SOLO_CLICK_BOOST_MAX_PX = 170;
+const SOLO_CLICK_BOOST_FORWARD_MS = 220;
+const SOLO_CLICK_BOOST_HOLD_MS = 1000;
+const SOLO_CLICK_BOOST_RETURN_MS = 2200;
+// Cursor-following green ring (like PvP): shows "boost ready" cooldown visually.
+const SOLO_BOOST_RING_COOLDOWN_MS = 900;
+const SOLO_BOOST_RING_PENALTY_MS = 2000;
+const SOLO_BOOST_RING_DENIED_SFX_COOLDOWN_MS = 120;
+const SOLO_BOOST_RING_INDICATOR_SHAKE_MS = 150;
+const SOLO_BOOST_RING_INDICATOR_SHAKE_PX = 2.5;
+let soloBoostRingNextAt = 0;
+let soloBoostRingWindowMs = SOLO_BOOST_RING_COOLDOWN_MS;
+let soloBoostRingLastDeniedSfxAt = 0;
+let soloBoostRingShakeUntil = 0;
+
+// --- Solo "Solar System map" zoom ---
+// 1 = fully zoomed out (fit whole system). Zooming in focuses on "ME" (Earth for now).
+let solarMapZoom = 1;
+const SOLAR_MAP_ZOOM_MIN = 1;
+// Allow much deeper zoom so you can inspect Earth–Moon and local area clearly.
+const SOLAR_MAP_ZOOM_MAX = 400;
+// Smaller per-click step => more zoom levels ("x") to play with.
+const SOLAR_MAP_ZOOM_FACTOR = 1.6;
+
+function canPerformSoloBoostAction(now: number = Date.now()): boolean {
+  return now >= (soloBoostRingNextAt || 0);
+}
+function commitSoloBoostAction(now: number = Date.now()): void {
+  soloBoostRingNextAt = now + SOLO_BOOST_RING_COOLDOWN_MS;
+  soloBoostRingWindowMs = SOLO_BOOST_RING_COOLDOWN_MS;
+}
+function applySoloBoostActionPenalty(now: number = Date.now()): void {
+  // Match PvP feel: denied blip + tiny indicator shake, and extend lockout.
+  if (now - soloBoostRingLastDeniedSfxAt >= SOLO_BOOST_RING_DENIED_SFX_COOLDOWN_MS) {
+    soloBoostRingLastDeniedSfxAt = now;
+    soloBoostRingShakeUntil = Math.max(soloBoostRingShakeUntil, now + SOLO_BOOST_RING_INDICATOR_SHAKE_MS);
+    try {
+      void audioManager.resumeContext();
+      (audioManager as any).playActionDenied?.() ?? audioManager.playUpgradeFail();
+    } catch {}
+  } else {
+    soloBoostRingShakeUntil = Math.max(soloBoostRingShakeUntil, now + Math.floor(SOLO_BOOST_RING_INDICATOR_SHAKE_MS * 0.6));
+  }
+
+  const prevNextAt = soloBoostRingNextAt || 0;
+  const penaltyNextAt = now + SOLO_BOOST_RING_PENALTY_MS;
+  // Restart / extend to 2s (never shorten an existing longer penalty).
+  if (penaltyNextAt > prevNextAt) {
+    soloBoostRingNextAt = penaltyNextAt;
+    soloBoostRingWindowMs = SOLO_BOOST_RING_PENALTY_MS;
+  }
+}
+
+function easeOutCubic(t: number): number {
+  const x = clamp(t, 0, 1);
+  return 1 - Math.pow(1 - x, 3);
+}
+
+function getSoloUfoVisualPos(): { x: number; y: number } {
+  return { x: dotX + soloClickBoostOffsetX, y: dotY };
+}
+
+function triggerSoloClickBoost(): void {
+  if (!isWalletConnectedForSoloFx()) return;
+  const now = Date.now();
+  // Start from current offset (supports rapid repeated clicks).
+  soloClickBoostStartAt = now;
+  soloClickBoostStartOffsetX = soloClickBoostOffsetX;
+  const base = Math.max(0, soloClickBoostOffsetX);
+  soloClickBoostPeakOffsetX = Math.min(SOLO_CLICK_BOOST_MAX_PX, base + SOLO_CLICK_BOOST_PX);
+  // Also spike the flight FX briefly so "boost" feels fast.
+  try {
+    soloWarpSpawnCarry += 10;
+    soloThrustSpawnCarry += 8;
+  } catch {}
+}
+
+function isWalletConnectedForSoloFx(): boolean {
+  try {
+    const st = walletService.getState();
+    return !!(st?.isConnected && st.address);
+  } catch {
+    return false;
+  }
+}
+
+function updateSoloIdleFlightFx(nowMs: number): void {
+  // Solo flight FX: make speed progression feel stronger (testable via SPEED FX +/-).
+  const active = (gameMode === 'Solo' && gameState === 'Alive');
+  const last = soloFlightFxLastAt || nowMs;
+  const dt = Math.max(0, Math.min(0.05, (nowMs - last) / 1000));
+  soloFlightFxLastAt = nowMs;
+  if (dt <= 0) return;
+
+  // Decay when inactive (fade out quickly).
+  if (!active) {
+    for (let i = soloWarpStreaks.length - 1; i >= 0; i--) {
+      const p = soloWarpStreaks[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.life <= 0) soloWarpStreaks.splice(i, 1);
+    }
+    for (let i = soloThrustParticles.length - 1; i >= 0; i--) {
+      const p = soloThrustParticles[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.life <= 0) soloThrustParticles.splice(i, 1);
+    }
+    return;
+  }
+
+  // Update click-boost offset (quick forward + smooth return).
+  if (soloClickBoostStartAt) {
+    const elapsed = nowMs - soloClickBoostStartAt;
+    if (elapsed <= SOLO_CLICK_BOOST_FORWARD_MS) {
+      const t = easeOutCubic(elapsed / SOLO_CLICK_BOOST_FORWARD_MS);
+      soloClickBoostOffsetX = soloClickBoostStartOffsetX + (soloClickBoostPeakOffsetX - soloClickBoostStartOffsetX) * t;
+    } else if (elapsed <= (SOLO_CLICK_BOOST_FORWARD_MS + SOLO_CLICK_BOOST_HOLD_MS)) {
+      // Hold at peak for a short time (requested)
+      soloClickBoostOffsetX = soloClickBoostPeakOffsetX;
+    } else if (elapsed <= (SOLO_CLICK_BOOST_FORWARD_MS + SOLO_CLICK_BOOST_HOLD_MS + SOLO_CLICK_BOOST_RETURN_MS)) {
+      const t = easeOutCubic((elapsed - SOLO_CLICK_BOOST_FORWARD_MS - SOLO_CLICK_BOOST_HOLD_MS) / SOLO_CLICK_BOOST_RETURN_MS);
+      soloClickBoostOffsetX = soloClickBoostPeakOffsetX * (1 - t);
+    } else {
+      soloClickBoostOffsetX = 0;
+      soloClickBoostStartAt = 0;
+      soloClickBoostStartOffsetX = 0;
+      soloClickBoostPeakOffsetX = 0;
+    }
+  } else {
+    soloClickBoostOffsetX = 0;
+  }
+
+  // Higher intensity when basically standing still.
+  const speed = Math.sqrt(dotVx * dotVx + dotVy * dotVy);
+  const idle = clamp(1 - (speed / 3.5), 0, 1);
+  // Slight boost in FX intensity during the click-boost (sells the "faster flight" moment).
+  const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+  // As speed (km/s) grows, visuals get slightly stronger (progress feel).
+  const spK = clamp((Math.max(1, soloSpeedKmps) - 1) / 25, 0, 1); // 0..1 over ~1..26 km/s
+  const baseIntensity = (0.16 + 0.55 * idle + spK * 0.35) * (1 + boostK * 1.25);
+  // Auto-raise SPEED FX as soloSpeedKmps increases (monotonic).
+  try {
+    const autoIdx = getSpeedFxAutoIdxForSpeedKmps(soloSpeedKmps);
+    if (autoIdx > speedFxAutoMinIdx) speedFxAutoMinIdx = autoIdx;
+    if (speedFxLevelIdx < speedFxAutoMinIdx) speedFxLevelIdx = speedFxAutoMinIdx;
+  } catch {}
+  const fxMul = getSpeedFxMultiplier();
+  const intensity = baseIntensity * fxMul;
+
+  // Spawn side-scroll warp streaks (2D side-view): stars move right->left,
+  // which makes the UFO feel like it's flying left->right.
+  // Rate tuned for subtle but visible effect.
+  const warpRatePerSec = 22 * intensity; // scaled by SPEED FX multiplier
+  soloWarpSpawnCarry += warpRatePerSec * dt;
+  while (soloWarpSpawnCarry >= 1) {
+    soloWarpSpawnCarry -= 1;
+    const sx = playRight + 30 + Math.random() * 40;
+    const sy = Math.random() * canvas.height;
+    const sp = (260 + Math.random() * 520) * (0.75 + 0.65 * intensity); // px/s
+    const vx = -sp; // move left
+    const vy = (Math.random() - 0.5) * 40; // tiny vertical drift
+    const localBoost = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+    const baseLen = 8 + Math.random() * 18; // baseline
+    soloWarpStreaks.push({
+      x: sx,
+      y: sy,
+      vx,
+      vy,
+      len: baseLen * (0.95 + localBoost * 0.85) * (0.85 + 0.35 * fxMul), // longer as FX increases
+      w: 0.9 + Math.random() * 1.2,
+      life: 0.55 + Math.random() * 0.45,
+      maxLife: 0.55 + Math.random() * 0.45,
+    });
+    const maxStreaks = Math.min(520, Math.floor(260 * (0.9 + 0.6 * fxMul)));
+    if (soloWarpStreaks.length > maxStreaks) soloWarpStreaks.shift();
+  }
+
+  // Spawn thrust particles behind UFO (to the left in local space; side-view flight).
+  const thrustRatePerSec = 22 * intensity; // scaled by SPEED FX multiplier
+  soloThrustSpawnCarry += thrustRatePerSec * dt;
+  while (soloThrustSpawnCarry >= 1) {
+    soloThrustSpawnCarry -= 1;
+    soloThrustParticles.push({
+      x: -dotRadius * 1.85 - Math.random() * 10,
+      y: (Math.random() - 0.5) * 10,
+      vx: -(90 + Math.random() * 140),
+      vy: (Math.random() - 0.5) * 18,
+      size: (2 + Math.random() * 3.5) * (0.9 + 0.35 * fxMul),
+      life: 0.22 + Math.random() * 0.28,
+      maxLife: 0.22 + Math.random() * 0.28,
+    });
+    const maxThrust = Math.min(360, Math.floor(160 * (0.9 + 0.7 * fxMul)));
+    if (soloThrustParticles.length > maxThrust) soloThrustParticles.shift();
+  }
+
+  // Integrate + cull (warp streaks)
+  for (let i = soloWarpStreaks.length - 1; i >= 0; i--) {
+    const p = soloWarpStreaks[i];
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    // Kill if out of play area bounds
+    if (p.life <= 0 || p.x < playLeft - 80 || p.x > playRight + 80 || p.y < -80 || p.y > canvas.height + 80) {
+      soloWarpStreaks.splice(i, 1);
+    }
+  }
+
+  // Integrate + cull (thrust particles) - local space, so only lifetime matters.
+  for (let i = soloThrustParticles.length - 1; i >= 0; i--) {
+    const p = soloThrustParticles[i];
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.life <= 0) soloThrustParticles.splice(i, 1);
+  }
+}
+
+function drawSoloWarpStreaks(ctx: CanvasRenderingContext2D): void {
+  if (!soloWarpStreaks.length) return;
+  ctx.save();
+  // Keep it subtle on the dark arena background
+  ctx.globalCompositeOperation = 'screen';
+  const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+  const fxMul = getSpeedFxMultiplier();
+  for (const p of soloWarpStreaks) {
+    const t = clamp(p.life / p.maxLife, 0, 1);
+    const a = Math.min(1, (t * t) * (0.30 + 0.55 * boostK) * (0.85 + 0.35 * fxMul)); // brighter as FX increases
+    // Streak direction: opposite of velocity (so it "trails" behind).
+    const dx = -p.vx;
+    const dy = -p.vy;
+    const d = Math.max(0.0001, Math.sqrt(dx * dx + dy * dy));
+    const nx = dx / d;
+    const ny = dy / d;
+    const ex = p.x + nx * p.len;
+    const ey = p.y + ny * p.len;
+    ctx.strokeStyle = `rgba(220, 235, 255, ${a})`;
+    ctx.lineWidth = p.w * (0.9 + 0.25 * fxMul);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSoloThrustFx(ctx: CanvasRenderingContext2D): void {
+  if (!soloThrustParticles.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+  const fxMul = getSpeedFxMultiplier();
+  // Core thruster glow (pixel-ish: small ellipse via arc)
+  const pulse = 0.55 + Math.sin(Date.now() * 0.012) * 0.15;
+  ctx.globalAlpha = Math.min(1, (0.38 + boostK * 0.35) * (0.85 + 0.35 * fxMul)); // brighter as FX increases
+  ctx.fillStyle = `rgba(170, 210, 255, ${pulse})`;
+  ctx.beginPath();
+  // Behind the ship (left side)
+  ctx.arc(-dotRadius * 1.55, 0, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Particles
+  for (const p of soloThrustParticles) {
+    const t = clamp(p.life / p.maxLife, 0, 1);
+    const a = Math.min(1, (t * t) * (0.55 + 0.55 * boostK) * (0.85 + 0.35 * fxMul));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(230, 245, 255, 1)';
+    ctx.fillRect(p.x - p.size * 0.5, p.y - p.size * 0.5, p.size, p.size);
+  }
+  ctx.restore();
+}
 const gravity = 0.05; // Reduced gravity (was 0.1)
 const groundY = 1080 - 220; // Invisible ground 220px from bottom
 // Former toxic-water band bottom floor: keep as a normal playable area.
@@ -2824,22 +3763,22 @@ function connectWalletWithProvider(providerType: WalletProviderType): void {
       console.log('Wallet connected:', result.address);
       walletError = null;
 
-      // Check DOT token balance after connection
+      // Check RONKE token balance after connection
       if (result.address) {
         // Auto-load NFTs immediately after connect (bonuses will apply once loaded; no need to open PROFILE).
         maybeAutoLoadNfts('wallet_connect');
 
-        walletService.getTokenBalance(DOT_TOKEN_ADDRESS)
+        walletService.getTokenBalance(RONKE_TOKEN_ADDRESS)
           .then((balance) => {
             if (balance !== null) {
-              walletDotBalance = balance;
-              console.log('Wallet DOT balance (after auth success):', balance);
+              ronkeBalance = balance;
+              console.log('Wallet RONKE balance (after auth success):', balance);
             } else {
-              console.log('Wallet DOT balance: null (check failed)');
+              console.log('Wallet RONKE balance: null (check failed)');
             }
           })
           .catch((error) => {
-            console.error('Failed to get DOT balance:', error);
+            console.error('Failed to get RONKE balance:', error);
           });
       }
     } else {
@@ -2858,6 +3797,8 @@ function connectWalletWithProvider(providerType: WalletProviderType): void {
 let isProfileOpen = false;
 let isHoveringProfile = false;
 let isPressingProfile = false;
+let isHoveringNicknameEdit = false;
+let isPressingNicknameEdit = false;
 
 // Leaderboard UI state
 let isLeaderboardOpen = false;
@@ -2876,6 +3817,63 @@ let isHoveringPewPew = false;
 let isPressingPewPew = false;
 let isHoveringPewPewCraft = false;
 let isPressingPewPewCraft = false;
+
+// Speed FX knob (Solo): controls UFO thruster smoke + warp streaks intensity.
+// Auto progression (requested):
+// - start: 0.5x
+// - >= 100 km/s: 1.0x
+// - >= 500 km/s: 1.25x
+// - >= 1000 km/s: 1.5x
+const SPEED_FX_LEVELS = [0.5, 1, 1.25, 1.5, 2, 2.5, 3] as const;
+let speedFxLevelIdx = 0; // start at 0.5x
+let speedFxAutoMinIdx = 0; // monotonic (never decreases)
+let isHoveringSpeedFxMinus = false;
+let isHoveringSpeedFxPlus = false;
+let isPressingSpeedFxMinus = false;
+let isPressingSpeedFxPlus = false;
+
+function getSpeedFxControlRect(): { x: number; y: number; w: number; h: number } {
+  // Place just above PEWPEW button (requested: near the PewPew button)
+  const pew = getPewPewButtonRect();
+  const h = 26;
+  const w = PEWPEW_BTN_W;
+  const x = pew.x;
+  const y = Math.max(10, pew.y - 8 - h);
+  return { x, y, w, h };
+}
+
+function getSpeedFxMinusRect(): { x: number; y: number; w: number; h: number } {
+  const r = getSpeedFxControlRect();
+  const s = r.h;
+  return { x: r.x, y: r.y, w: s, h: s };
+}
+
+function getSpeedFxPlusRect(): { x: number; y: number; w: number; h: number } {
+  const r = getSpeedFxControlRect();
+  const s = r.h;
+  return { x: r.x + r.w - s, y: r.y, w: s, h: s };
+}
+
+function getSpeedFxMultiplier(): number {
+  const v = SPEED_FX_LEVELS[Math.max(0, Math.min(SPEED_FX_LEVELS.length - 1, speedFxLevelIdx))] || 1;
+  return Number(v) || 1;
+}
+
+function getSpeedFxAutoIdxForSpeedKmps(speedKmps: number): number {
+  const s = Number.isFinite(speedKmps) ? speedKmps : 0;
+  if (s >= 1000) return 3; // 1.5x
+  if (s >= 500) return 2; // 1.25x
+  if (s >= 100) return 1; // 1.0x
+  return 0; // 0.5x
+}
+
+function formatSpeedFxMultiplier(m: number): string {
+  const v = Number(m);
+  if (!Number.isFinite(v)) return '1.0';
+  // keep 1 decimal for .0/.5, but show 2 decimals for 1.25
+  const hasQuarter = Math.abs(v * 4 - Math.round(v * 4)) < 1e-6 && Math.abs(v * 2 - Math.round(v * 2)) > 1e-6;
+  return hasQuarter ? v.toFixed(2) : v.toFixed(1);
+}
 
 function getPewPewCraftButtonRect(mr: { x: number; y: number; w: number; h: number }): { x: number; y: number; w: number; h: number } {
   // Smaller + more consistent with main UI buttons
@@ -3003,7 +4001,7 @@ function getContactModalRect(): { x: number; y: number; w: number; h: number } {
   const y = Math.max(10, btn.y - gap - CONTACT_MODAL_H + CONTACT_MODAL_OFFSET_Y);
   return { x, y, w: CONTACT_MODAL_W, h: CONTACT_MODAL_H };
 }
-type LeaderboardRow = { ronin_address: string; nickname?: string; wins: number; losses: number; elo: number; maxHP: number };
+type LeaderboardRow = { ronin_address: string; nickname?: string; wins: number; losses: number; elo: number; maxHP: number; xp?: number };
 let leaderboardRows: LeaderboardRow[] = [];
 let leaderboardLoading = false;
 let leaderboardError: string | null = null;
@@ -3033,6 +4031,11 @@ const nftImageLoading: Set<string> = new Set();
 // UFO sprite cache
 let ufoSprite: HTMLImageElement | null = null;
 const ufoSpritePath = './ufo_sprite.png';
+
+// Slot bell sprite (top-right)
+let bellSprite: HTMLImageElement | null = null;
+let bellSpriteProcessed: HTMLCanvasElement | null = null;
+const bellSpritePath = './bell.png';
 
 // Arrow sprite cache (weapon 1)
 let arrowSprite: HTMLImageElement | null = null;
@@ -3509,6 +4512,25 @@ function loadUfoSprite(): void {
   img.src = ufoSpritePath;
 }
 
+function loadBellSprite(): void {
+  if (bellSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    bellSprite = img;
+    // Attempt to crop/key-out background if the image isn't truly transparent.
+    try {
+      bellSpriteProcessed = processStoneSpriteToCropped(img);
+    } catch {
+      bellSpriteProcessed = null;
+    }
+    console.log('✅ Bell sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load bell sprite:', bellSpritePath);
+  };
+  img.src = bellSpritePath;
+}
+
 // Load arrow sprite on initialization
 function loadArrowSprite(): void {
   if (arrowSprite) return;
@@ -3687,6 +4709,7 @@ loadLightBandSprite();
 loadGalaxySprite();
 loadGalaxySprite2();
 loadRonkeSprite();
+loadBellSprite();
 
 // Lobby state
 let isInLobby = false;
@@ -3787,6 +4810,10 @@ function getCurrentSaveData(): SaveDataV2 {
     solo: {
       currency: dotCurrency,
       dmg: dmg,
+      speedKmps: soloSpeedKmps,
+      distanceKm: soloDistanceKm,
+      spins: soloSpins,
+      spinMilestones: soloSpinMilestones,
       level: currentLevel,
       maxUnlockedLevel: maxUnlockedLevel,
       killsInCurrentLevel: killsInCurrentLevel,
@@ -3812,6 +4839,19 @@ function loadGameState(saveData: SaveDataV2): void {
   
   dotCurrency = saveData.solo.currency;
   dmg = saveData.solo.dmg;
+  soloSpeedKmps = (typeof (saveData as any)?.solo?.speedKmps === 'number' && Number.isFinite((saveData as any).solo.speedKmps))
+    ? Math.max(1, (saveData as any).solo.speedKmps)
+    : 1;
+  soloDistanceKm = (typeof (saveData as any)?.solo?.distanceKm === 'number' && Number.isFinite((saveData as any).solo.distanceKm))
+    ? Math.max(0, (saveData as any).solo.distanceKm)
+    : 0;
+  soloSpins = (typeof (saveData as any)?.solo?.spins === 'number' && Number.isFinite((saveData as any).solo.spins))
+    ? Math.max(0, Math.floor((saveData as any).solo.spins))
+    : 0;
+  soloSpinMilestones = (typeof (saveData as any)?.solo?.spinMilestones === 'number' && Number.isFinite((saveData as any).solo.spinMilestones))
+    ? Math.max(0, Math.floor((saveData as any).solo.spinMilestones))
+    : 0;
+  soloDistanceLastPerfMs = 0; // re-init accumulator on load
   currentLevel = saveData.solo.level;
   maxUnlockedLevel = saveData.solo.maxUnlockedLevel;
   killsInCurrentLevel = saveData.solo.killsInCurrentLevel;
@@ -7030,6 +8070,328 @@ function render() {
       ctx.textAlign = 'left';
     }
   }
+
+  // Solo/PvE: cursor-following green ring (same style as PvP).
+  // Here it represents the "UFO boost click" cadence (visual only).
+  if (gameMode === 'Solo' && gameState === 'Alive' && !isServerBrowserOpen) {
+    try {
+      const walletOk = isWalletConnectedForSoloFx();
+      if (walletOk && globalMouseX > 240) {
+        const now = Date.now();
+        const nextAt = soloBoostRingNextAt || 0;
+        const remainingMs = Math.max(0, nextAt - now);
+        const windowMs = Math.max(1, soloBoostRingWindowMs || SOLO_BOOST_RING_COOLDOWN_MS);
+        const pct = 1 - Math.max(0, Math.min(1, remainingMs / windowMs));
+        const ready = remainingMs <= 0;
+
+        const baseX = globalMouseX + 18 + 10;
+        const baseY = globalMouseY + 18 - 25 - 5;
+        const shake = now < soloBoostRingShakeUntil ? SOLO_BOOST_RING_INDICATOR_SHAKE_PX : 0;
+        const x = baseX + (shake ? (Math.random() - 0.5) * shake * 2 : 0);
+        const y = baseY + (shake ? (Math.random() - 0.5) * shake * 2 : 0);
+        const r = 12;
+        const lw = 3;
+        const start = -Math.PI / 2;
+        const end = start + Math.PI * 2 * pct;
+
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+
+        // Background ring
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = lw;
+        ctx.stroke();
+
+        // Progress ring
+        ctx.beginPath();
+        ctx.arc(x, y, r, start, end);
+        ctx.strokeStyle = ready ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 120, 0, 0.9)';
+        ctx.lineWidth = lw;
+        ctx.stroke();
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = ready ? 'rgba(0, 200, 0, 0.95)' : 'rgba(255, 120, 0, 0.95)';
+        ctx.fill();
+
+        // Small time text when cooling down
+        if (!ready) {
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+          ctx.fillStyle = '#ffffff';
+          const t = `${(remainingMs / 1000).toFixed(1)}s`;
+          ctx.strokeText(t, x, y + 22);
+          ctx.fillText(t, x, y + 22);
+        }
+
+        ctx.restore();
+        ctx.textAlign = 'left';
+      }
+    } catch {}
+  }
+
+  // Solo progression speed overlay (always visible on the playfield)
+  if (gameMode === 'Solo') {
+    const sp = Math.max(1, Number.isFinite(soloSpeedKmps) ? soloSpeedKmps : 1);
+    const text = `SPEED: ${sp.toFixed(1)} KM/S`;
+    const x = (playLeft + playRight) / 2;
+    const y = 22;
+    ctx.save();
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(text).width;
+    const padX = 10;
+    const padY = 7;
+    // Dark plate behind for readability
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.45)';
+    ctx.fillRect(x - tw / 2 - padX, y - 12 - padY, tw + padX * 2, 24 + padY * 2);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - tw / 2 - padX, y - 12 - padY, tw + padX * 2, 24 + padY * 2);
+    // Outlined text
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeText(text, x, y + 1);
+    ctx.fillText(text, x, y + 1);
+    ctx.restore();
+
+    // Distance overlay (same style, live-updating)
+    const dist = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+    const distText = `DIST: ${Math.floor(dist).toLocaleString('en-US')} KM`;
+    const y2 = y + 34;
+    ctx.save();
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw2 = ctx.measureText(distText).width;
+    const padX2 = 10;
+    const padY2 = 7;
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.45)';
+    ctx.fillRect(x - tw2 / 2 - padX2, y2 - 12 - padY2, tw2 + padX2 * 2, 24 + padY2 * 2);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - tw2 / 2 - padX2, y2 - 12 - padY2, tw2 + padX2 * 2, 24 + padY2 * 2);
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeText(distText, x, y2 + 1);
+    ctx.fillText(distText, x, y2 + 1);
+    ctx.restore();
+
+    // Solar System map (line with planets), lower by +30px (requested)
+    const mapY = y + 110;
+    // Realistic spacing (semi-major axis in AU, approx). Linear scale will cluster inner planets,
+    // but dot positions reflect true relative distances.
+    const planets = [
+      { key: 'MERCURY', au: 0.387, isStart: false },
+      { key: 'VENUS', au: 0.723, isStart: false },
+      { key: 'EARTH', au: 1.0, isStart: true }, // start planet
+      // Moon: shown right next to Earth. Real Earth-Moon distance is ~0.00257 AU.
+      // We keep AU-based placement but enforce a minimum pixel offset so it remains visible.
+      { key: 'MOON', au: 1.00257, isStart: false, isMoon: true },
+      { key: 'MARS', au: 1.524, isStart: false },
+      { key: 'JUPITER', au: 5.203, isStart: false },
+      { key: 'SATURN', au: 9.537, isStart: false },
+      { key: 'URANUS', au: 19.191, isStart: false },
+      { key: 'NEPTUNE', au: 30.07, isStart: false },
+    ];
+
+    const left = playLeft + 70;
+    const right = playRight - 70;
+    const lineW = Math.max(220, right - left);
+    const minAu = Math.min(...planets.map(p => p.au));
+    const maxAu = Math.max(...planets.map(p => p.au));
+    const fitX = (au: number) => left + ((au - minAu) / Math.max(0.0001, (maxAu - minAu))) * lineW;
+    // ME position: start at Earth (1 AU), then move outward by traveled distance (km) converted to AU.
+    const meAu = 1.0 + (Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0) / AU_KM);
+    // Focus on ME. At zoom=1 we show full system; any zoom-in focuses on your current position.
+    const focusAu = meAu;
+    const mapCenterX = (left + right) / 2;
+    const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+    // When zooming in at all, focus immediately on ME (so we actually use the available space).
+    const tFocus = z > 1.01 ? 1 : 0;
+    // Focus scaling uses a local AU window around ME (not the full system range),
+    // so inner planets actually expand and use the available width.
+    const baseHalfSpanAu = 2.8; // at zoom=1: show roughly ME +/- 2.8 AU (inner system)
+    // Lower clamp so very deep zoom can show tiny distances (Moon, etc.)
+    const halfSpanAu = Math.max(0.01, baseHalfSpanAu / Math.max(1, z));
+    const focusScalePxPerAu = lineW / (2 * halfSpanAu);
+    const focusX = (au: number) => mapCenterX + (au - focusAu) * focusScalePxPerAu;
+    const auToX = (au: number) => fitX(au) * (1 - tFocus) + focusX(au) * tFocus;
+
+    ctx.save();
+    // background plate for readability (taller frame: +20px top +20px bottom)
+    const platePadY = 20;
+    const plateH = 42 + platePadY * 2;
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.32)';
+    ctx.fillRect(left - 24, mapY - 22 - platePadY, lineW + 48, plateH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left - 24, mapY - 22 - platePadY, lineW + 48, plateH);
+
+    // Line
+    ctx.strokeStyle = 'rgba(230, 240, 255, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(left, mapY);
+    ctx.lineTo(right, mapY);
+    ctx.stroke();
+
+    // Zoom buttons (clickable)
+    const btnSize = 16;
+    const plateX = left - 24;
+    const plateW = lineW + 48;
+    const btnGap = 6;
+    // Buttons: nudge down so they are easier to see inside the taller plate
+    const btnY = mapY + 8;
+    const btnMinusX = plateX + plateW - 10 - btnSize * 2 - btnGap;
+    const btnPlusX = plateX + plateW - 10 - btnSize;
+
+    const drawBtn = (bx: number, label: string, enabled: boolean) => {
+      ctx.save();
+      ctx.fillStyle = enabled ? 'rgba(18, 22, 36, 0.85)' : 'rgba(18, 22, 36, 0.45)';
+      ctx.fillRect(bx, btnY, btnSize, btnSize);
+      ctx.strokeStyle = 'rgba(210, 235, 255, 0.20)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, btnY, btnSize, btnSize);
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = enabled ? '#ffffff' : 'rgba(255,255,255,0.55)';
+      ctx.strokeText(label, bx + btnSize / 2, btnY + btnSize / 2 + 1);
+      ctx.fillText(label, bx + btnSize / 2, btnY + btnSize / 2 + 1);
+      ctx.restore();
+    };
+    drawBtn(btnMinusX, '-', z > SOLAR_MAP_ZOOM_MIN + 1e-6);
+    drawBtn(btnPlusX, '+', z < SOLAR_MAP_ZOOM_MAX - 1e-6);
+
+    // Zoom indicator
+    ctx.save();
+    ctx.font = 'bold 7px "Press Start 2P"';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.70)';
+    ctx.fillStyle = 'rgba(230, 240, 255, 0.85)';
+    const zText = `ZOOM x${z.toFixed(2)}`;
+    ctx.strokeText(zText, btnMinusX - 10, mapY + 8);
+    ctx.fillText(zText, btnMinusX - 10, mapY + 8);
+    ctx.restore();
+
+    // Nodes + labels
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const earthPx = auToX(1.0);
+
+    // Progress segment: Earth -> ME (clipped to viewport)
+    {
+      const mePxRaw = auToX(meAu);
+      const a = clamp(earthPx, left, right);
+      const b = clamp(mePxRaw, left, right);
+      const segL = Math.min(a, b);
+      const segR = Math.max(a, b);
+      if (Math.abs(segR - segL) > 1) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(80, 255, 160, 0.55)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(segL, mapY);
+        ctx.lineTo(segR, mapY);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    for (let i = 0; i < planets.length; i++) {
+      const p = planets[i];
+      let px = auToX(p.au);
+      // Ensure Moon is visible at all zoom levels (otherwise it sits on top of Earth).
+      if ((p as any).isMoon) {
+        const rawDx = px - earthPx;
+        const minDx = 12;
+        px = earthPx + (rawDx >= 0 ? Math.max(minDx, rawDx) : -Math.max(minDx, Math.abs(rawDx)));
+      }
+
+      // Skip nodes that are fully outside the map viewport (zooming in will push outer planets out)
+      if (px < left - 30 || px > right + 30) continue;
+
+      const isEarth = p.isStart;
+      const isMoon = !!(p as any).isMoon;
+      const dotR = isEarth ? 5 : (isMoon ? 3 : 3.5);
+      ctx.fillStyle = isEarth
+        ? 'rgba(120, 210, 255, 0.95)'
+        : (isMoon ? 'rgba(220, 230, 240, 0.85)' : 'rgba(230, 240, 255, 0.75)');
+      ctx.beginPath();
+      ctx.arc(px, mapY, dotR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // tiny outline for contrast
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, mapY, dotR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = '#ffffff';
+      // Stagger labels a bit so inner planets remain readable even when clustered.
+      const labelY = isMoon ? (mapY - 18) : (mapY - (i % 2 === 0 ? 6 : 14));
+      ctx.strokeText(p.key, px, labelY);
+      ctx.fillText(p.key, px, labelY);
+    }
+
+    // ME marker (moves live based on distance)
+    {
+      const raw = auToX(meAu);
+      const clampedX = clamp(raw, left + 6, right - 6);
+      const offLeft = raw < left + 6;
+      const offRight = raw > right - 6;
+
+      ctx.save();
+      // Marker: ring + dot
+      ctx.strokeStyle = 'rgba(80, 255, 160, 0.95)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(clampedX, mapY, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(80, 255, 160, 0.95)';
+      ctx.beginPath();
+      ctx.arc(clampedX, mapY, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Label + arrows if offscreen
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = 'rgba(80, 255, 160, 0.95)';
+      const meLabel = offLeft ? '< ME' : (offRight ? 'ME >' : 'ME');
+      ctx.strokeText(meLabel, clampedX, mapY + 10);
+      ctx.fillText(meLabel, clampedX, mapY + 10);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
   
   // Apply screen shake
   let shakeX = 0;
@@ -7061,6 +8423,93 @@ function render() {
     ctx.font = 'bold 16px "Press Start 2P"';
     ctx.textAlign = 'left';
     ctx.fillText(`DOT: ${dotCurrency}`, 20, 40);
+    // Solo progression: speed (km/s)
+    if (gameMode === 'Solo') {
+      ctx.fillStyle = UI_TEXT;
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      const sp = Math.max(1, Number.isFinite(soloSpeedKmps) ? soloSpeedKmps : 1);
+      ctx.fillText(`SPEED: ${sp.toFixed(1)} KM/S`, 20, 92);
+    }
+
+    // Claim DOT button (quick refill for testing)
+    if (gameMode === 'Solo') {
+      const r = getClaimDotButtonRect();
+      const now = Date.now();
+      const remainingMs = Math.max(0, (claimDotNextAt || 0) - now);
+      const windowMs = Math.max(1, claimDotWindowMs || CLAIM_DOT_COOLDOWN_MS);
+      const pct = 1 - Math.max(0, Math.min(1, remainingMs / windowMs));
+      const ready = remainingMs <= 0;
+      const label = ready ? `CLAIM +${CLAIM_DOT_AMOUNT}` : `CLAIM (${Math.ceil(remainingMs / 1000)}s)`;
+
+      const x = r.x;
+      const y = r.y;
+      const w = r.w;
+      const h = r.h;
+      const isShaking = now < claimDotIndicatorShakeUntil;
+      const sx = isShaking ? (Math.random() - 0.5) * 2 * CLAIM_DOT_INDICATOR_SHAKE_PX : 0;
+      const sy = isShaking ? (Math.random() - 0.5) * 2 * CLAIM_DOT_INDICATOR_SHAKE_PX : 0;
+
+      ctx.save();
+      // shadow
+      ctx.fillStyle = UI_BTN_SHADOW;
+      ctx.fillRect(x + 2 + sx, y + 2 + sy, w, h);
+      // bg
+      if (!ready) ctx.fillStyle = 'rgba(120, 120, 120, 0.25)';
+      else if (isHoveringClaimDot) ctx.fillStyle = UI_BTN_BG_HOVER;
+      else ctx.fillStyle = UI_BTN_BG;
+      ctx.fillRect(x + sx, y + sy, w, h);
+      // highlight + border
+      ctx.fillStyle = UI_BTN_HILITE;
+      ctx.fillRect(x + sx, y + sy, w, 2);
+      ctx.fillRect(x + sx, y + sy, 2, h);
+      ctx.fillStyle = UI_BTN_BORDER;
+      ctx.fillRect(x + sx + w - 2, y + sy, 2, h);
+      ctx.fillRect(x + sx, y + sy + h - 2, w, 2);
+      ctx.strokeStyle = UI_BTN_BORDER;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + sx, y + sy, w, h);
+      // text
+      ctx.fillStyle = UI_TEXT;
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + sx + w / 2, y + sy + h / 2 + 0.5);
+
+      // PvP-style green/orange progress ring (integrated anti-spam indicator)
+      {
+        const cx = x + sx + w - 16;
+        const cy = y + sy + h / 2;
+        const rr = 10;
+        const lw = 3;
+        const start = -Math.PI / 2;
+        const end = start + Math.PI * 2 * pct;
+        ctx.globalAlpha = 0.92;
+        // bg ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = lw;
+        ctx.stroke();
+        // progress ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, rr, start, end);
+        ctx.strokeStyle = ready ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 120, 0, 0.9)';
+        ctx.lineWidth = lw;
+        ctx.stroke();
+        // center dot
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.0, 0, Math.PI * 2);
+        ctx.fillStyle = ready ? 'rgba(0, 200, 0, 0.95)' : 'rgba(255, 120, 0, 0.95)';
+        ctx.fill();
+      }
+
+      ctx.restore();
+
+      ctx.textAlign = 'left';
+    }
+
+    // Slot UI moved next to Live Chat (bell + badge). Keep panel clean.
 
   // Contact button (top-right)
   {
@@ -7131,6 +8580,48 @@ function render() {
     ctx.textBaseline = 'middle';
     ctx.fillText('PEWPEW', x + w / 2, y + h / 2);
     ctx.textAlign = 'left';
+  }
+
+  // SPEED FX control (above PEWPEW): +/- to scale Solo thruster smoke + warp streaks
+  {
+    const r = getSpeedFxControlRect();
+    const minusR = getSpeedFxMinusRect();
+    const plusR = getSpeedFxPlusRect();
+    const y = r.y;
+    const x = r.x;
+    const w = r.w;
+    const h = r.h;
+
+    // frame
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+
+    // minus button
+    ctx.fillStyle = isPressingSpeedFxMinus ? 'rgba(40, 80, 140, 0.55)' : (isHoveringSpeedFxMinus ? 'rgba(18, 22, 36, 0.70)' : 'rgba(8, 10, 18, 0.35)');
+    ctx.fillRect(minusR.x, minusR.y, minusR.w, minusR.h);
+    ctx.strokeRect(minusR.x, minusR.y, minusR.w, minusR.h);
+
+    // plus button
+    ctx.fillStyle = isPressingSpeedFxPlus ? 'rgba(40, 80, 140, 0.55)' : (isHoveringSpeedFxPlus ? 'rgba(18, 22, 36, 0.70)' : 'rgba(8, 10, 18, 0.35)');
+    ctx.fillRect(plusR.x, plusR.y, plusR.w, plusR.h);
+    ctx.strokeRect(plusR.x, plusR.y, plusR.w, plusR.h);
+
+    // labels
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('-', minusR.x + minusR.w / 2, minusR.y + minusR.h / 2 + 0.5);
+    ctx.fillText('+', plusR.x + plusR.w / 2, plusR.y + plusR.h / 2 + 0.5);
+
+    ctx.font = 'bold 8px "Press Start 2P"';
+    const mul = getSpeedFxMultiplier();
+    ctx.fillText(`SPEED FX x${formatSpeedFxMultiplier(mul)}`, x + w / 2, y + h / 2 + 0.5);
+    ctx.restore();
   }
 
   // Contact modal (links)
@@ -7351,7 +8842,7 @@ function render() {
   ctx.textAlign = 'center';
   
   // Crit chance info
-  ctx.fillText(`CRIT CHANCE ${critChance}%`, critButtonX + critButtonWidth/2, critButtonY + 20);
+  ctx.fillText(`CRIT CHANCE ${Number(critChance).toFixed(1)}%`, critButtonX + critButtonWidth/2, critButtonY + 20);
   
   // Crit upgrade cost info (cached to avoid recalculating Math.pow every frame)
   if (cachedCritLevel !== critUpgradeLevel) {
@@ -7412,7 +8903,7 @@ function render() {
   ctx.textAlign = 'center';
   
   // Accuracy info
-  ctx.fillText(`ACCURACY ${accuracy}%`, accuracyButtonX + accuracyButtonWidth/2, accuracyButtonY + 20);
+  ctx.fillText(`ACCURACY ${Number(accuracy).toFixed(1)}%`, accuracyButtonX + accuracyButtonWidth/2, accuracyButtonY + 20);
   
   // Accuracy upgrade cost info (cached to avoid recalculating Math.pow every frame)
   if (cachedAccuracyLevel !== accuracyUpgradeLevel) {
@@ -7740,7 +9231,7 @@ function render() {
     ctx.fillText(walletError.substring(0, 30), walletButtonX + 5, walletButtonY + walletButtonHeight + 15);
   }
 
-  // Wallet DOT Balance Frame (only if wallet is connected)
+  // Wallet info frame (only if wallet is connected)
   try {
     const walletStateForBalance = walletService.getState();
     if (walletStateForBalance.isConnected && walletStateForBalance.address) {
@@ -7758,18 +9249,18 @@ function render() {
     ctx.lineWidth = 2;
     ctx.strokeRect(balanceFrameX, balanceFrameY, balanceFrameWidth, balanceFrameHeight);
     
-    // Balance text
+    // Ronke balance (from connected wallet)
     ctx.fillStyle = UI_TEXT;
     ctx.font = 'bold 10px "Press Start 2P"';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     
-    if (walletDotBalance !== null) {
-      ctx.fillText(`Wallet DOT:`, balanceFrameX + 10, balanceFrameY + 6);
+    ctx.fillText(`RONKE:`, balanceFrameX + 10, balanceFrameY + 6);
+    if (ronkeBalance !== null) {
       ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${walletDotBalance} DOT`, balanceFrameX + 10, balanceFrameY + 20);
+      // Avoid duplicating the "RONKE" label (it's already in the header).
+      ctx.fillText(`${ronkeBalance}`, balanceFrameX + 10, balanceFrameY + 20);
     } else {
-      ctx.fillText(`Wallet DOT:`, balanceFrameX + 10, balanceFrameY + 6);
       ctx.font = 'bold 10px "Press Start 2P"';
       ctx.fillText(`Checking...`, balanceFrameX + 10, balanceFrameY + 20);
     }
@@ -8284,6 +9775,13 @@ function render() {
       // Solo mode: Draw UFO sprite with profile picture inside
       if (gameMode === 'Solo') {
         const profilePicture = profileManager.getProfilePicture();
+        const ufoPos = getSoloUfoVisualPos();
+        const ufoX = ufoPos.x;
+        const ufoY = ufoPos.y;
+
+        // Space-flight illusion (wallet connected): warp streaks behind the UFO.
+        // Draw before we transform/rotate the UFO so streaks stay in world space.
+        try { drawSoloWarpStreaks(ctx); } catch {}
         
         // Calculate movement direction angle (where DOT is moving)
         const speed = Math.sqrt(dotVx * dotVx + dotVy * dotVy);
@@ -8316,7 +9814,7 @@ function render() {
         ctx.save();
         
         // Translate to DOT position and rotate
-        ctx.translate(dotX, dotY);
+        ctx.translate(ufoX, ufoY);
         ctx.rotate(rotationAngle + soloUfoTilt); // Add tilt effect for balancing/sway
         
         // Apply horizontal flip (mirror effect) if moving left
@@ -8324,6 +9822,9 @@ function render() {
           ctx.scale(-1, 1); // Flip horizontally
         }
         
+        // Thruster FX behind UFO (in local space so it rotates with the ship)
+        try { drawSoloThrustFx(ctx); } catch {}
+
         // Draw UFO sprite (base layer)
         if (ufoSprite && ufoSprite.complete) {
           try {
@@ -8416,7 +9917,7 @@ function render() {
           ctx.font = 'bold 8px "Press Start 2P"'; // Smaller font
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(seconds.toString(), dotX, dotY);
+          ctx.fillText(seconds.toString(), ufoX, ufoY);
         }
       }
     }
@@ -11858,6 +13359,45 @@ function render() {
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 12px "Press Start 2P"';
     ctx.fillText(`${profile.nickname || '(not set)'}`, profileWindowX + 30, yOffset + 10);
+
+    // Nickname edit button (✎ EDIT) - clearly visible & clickable
+    {
+      const r = getProfileNicknameEditRects();
+      ctx.save();
+      // subtle highlight when hovering the nickname row
+      if (isHoveringNicknameEdit) {
+        ctx.fillStyle = 'rgba(0, 170, 0, 0.08)';
+        ctx.fillRect(r.row.x, r.row.y, r.row.w, r.row.h);
+      }
+      // edit button
+      if (!isPersistenceConnected()) {
+        ctx.fillStyle = 'rgba(0,0,0,0.10)';
+      } else if (isPressingNicknameEdit) {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      } else if (isHoveringNicknameEdit) {
+        ctx.fillStyle = 'rgba(0,0,0,0.16)';
+      } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      }
+      ctx.fillRect(r.btn.x, r.btn.y, r.btn.w, r.btn.h);
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(r.btn.x, r.btn.y, r.btn.w, r.btn.h);
+
+      // pencil glyph
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(r.btn.x + 12, r.btn.y + 18);
+      ctx.lineTo(r.btn.x + 20, r.btn.y + 10);
+      ctx.stroke();
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('EDIT', r.btn.x + 26, r.btn.y + r.btn.h / 2 + 1);
+      ctx.restore();
+    }
     yOffset += 35;
     
     ctx.fillStyle = '#666666';
@@ -11886,12 +13426,12 @@ function render() {
     
     ctx.fillStyle = '#666666';
     ctx.font = 'bold 8px "Press Start 2P"';
-    ctx.fillText('WALLET BALANCE', profileWindowX + 30, yOffset - 5);
+    ctx.fillText('RONKE', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 12px "Press Start 2P"';
-    // Show Ronin wallet DOT balance if available, otherwise show "Not connected"
-    const walletBalanceText = walletDotBalance !== null ? `${walletDotBalance} DOT` : 'Not connected';
-    ctx.fillText(walletBalanceText, profileWindowX + 30, yOffset + 10);
+    // Avoid duplicating the "RONKE" label in the value text.
+    const ronkeBalText = ronkeBalance !== null ? `${ronkeBalance}` : 'Not connected';
+    ctx.fillText(ronkeBalText, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
     ctx.fillStyle = '#666666';
@@ -11938,10 +13478,10 @@ function render() {
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 12px "Press Start 2P"';
     const totalCritChance = critChance + nftBonuses.critChance;
-    ctx.fillText(`${critChance}%`, profileWindowX + 30, yOffset + 10);
+    ctx.fillText(`${Number(critChance).toFixed(1)}%`, profileWindowX + 30, yOffset + 10);
     if (nftBonuses.critChance > 0) {
       ctx.fillStyle = '#00aa00'; // Green color for bonus
-      ctx.fillText(`+${nftBonuses.critChance}%`, profileWindowX + 30 + ctx.measureText(`${critChance}% `).width, yOffset + 10);
+      ctx.fillText(`+${nftBonuses.critChance}%`, profileWindowX + 30 + ctx.measureText(`${Number(critChance).toFixed(1)}% `).width, yOffset + 10);
     }
     yOffset += 35;
     
@@ -11950,7 +13490,16 @@ function render() {
     ctx.fillText('ACCURACY', profileWindowX + 30, yOffset - 5);
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 12px "Press Start 2P"';
-    ctx.fillText(`${accuracy}%`, profileWindowX + 30, yOffset + 10);
+    ctx.fillText(`${Number(accuracy).toFixed(1)}%`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+
+    // XP (from slot machine)
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('XP', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${Math.floor(soloXp)}`, profileWindowX + 30, yOffset + 10);
     yOffset += 35;
     
     // Move MAX HP and MAX ARMOR to left side
@@ -12394,118 +13943,77 @@ function render() {
     ctx.lineWidth = 1;
     ctx.strokeRect(opponentProfileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
     
-    // Opponent profile data (left side)
-    let yOffset = dataStartY + 25;
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 12px "Press Start 2P"';
-    ctx.fillStyle = '#000000';
-    
-    // Label style
-    ctx.fillStyle = '#666666';
-    ctx.font = 'bold 9px "Press Start 2P"';
-    ctx.fillText('NICKNAME', opponentProfileWindowX + 30, yOffset - 5);
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 12px "Press Start 2P"';
+    // --- Two-player duel card: YOU vs OPPONENT ---
+    const meProfile = profileManager.getProfile();
+    const meAddrRaw = String(getMyPvpAddress() || '').trim();
+    const meNick = (meProfile.nickname || '').trim();
+    const meDisplayName = meNick || (meAddrRaw ? shortAddr(meAddrRaw) : 'guest');
+
     const opponentNickname =
       opponentProfileData?.nickname ||
       opponentProfileData?.pvp_data?.nickname ||
       opponentNicknameForResult ||
       '(not set)';
-    ctx.fillText(opponentNickname, opponentProfileWindowX + 30, yOffset + 10);
-    yOffset += 35;
-    
-    ctx.fillStyle = '#666666';
-    ctx.font = 'bold 8px "Press Start 2P"';
-    ctx.fillText('ADDRESS', opponentProfileWindowX + 30, yOffset - 5);
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 9px "Press Start 2P"';
-    const displayAddress = opponentAddressForResult.length > 20 
-      ? opponentAddressForResult.substring(0, 17) + '...' 
-      : opponentAddressForResult;
-    ctx.fillText(displayAddress, opponentProfileWindowX + 30, yOffset + 10);
-    yOffset += 35;
-    
-    // PvP stats from Supabase profile
-    if (opponentProfileData && opponentProfileData.pvp_data) {
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('PVP WINS', opponentProfileWindowX + 30, yOffset - 5);
-      ctx.fillStyle = '#00aa00';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.pvp_data.wins || 0}`, opponentProfileWindowX + 30, yOffset + 10);
-      yOffset += 35;
-      
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('PVP LOSSES', opponentProfileWindowX + 30, yOffset - 5);
-      ctx.fillStyle = '#aa0000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.pvp_data.losses || 0}`, opponentProfileWindowX + 30, yOffset + 10);
-      yOffset += 35;
-      
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('ELO RATING', opponentProfileWindowX + 30, yOffset - 5);
+
+    const addrRaw = (opponentAddressForResult || '').trim();
+    const displayAddress = addrRaw.length > 20
+      ? addrRaw.substring(0, 17) + '...'
+      : (addrRaw || 'guest');
+
+    const drawHeader = (title: string, x: number, y: number) => {
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.pvp_data.elo || 1000}`, opponentProfileWindowX + 30, yOffset + 10);
-      yOffset += 35;
-    }
-    
-    // Solo stats from Supabase profile
-    if (opponentProfileData && opponentProfileData.solo_data) {
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(title, x, y);
+    };
+
+    const drawStat = (label: string, value: string, x: number, y: number, valueColor: string = '#000000') => {
       ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('SOLO LEVEL', opponentProfileWindowX + 30, yOffset - 5);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.solo_data.level || 1}`, opponentProfileWindowX + 30, yOffset + 10);
-      yOffset += 35;
-      
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('SOLO DMG', opponentProfileWindowX + 30, yOffset - 5);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.solo_data.dmg || 1}`, opponentProfileWindowX + 30, yOffset + 10);
-      yOffset += 35;
-      
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('CRIT CHANCE', opponentProfileWindowX + 30, yOffset - 5);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      const critChanceOpponent = opponentProfileData.solo_data.upgrades?.critChance || 4;
-      ctx.fillText(`${critChanceOpponent}%`, opponentProfileWindowX + 30, yOffset + 10);
-      yOffset += 35;
-      
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('ACCURACY', opponentProfileWindowX + 30, yOffset - 5);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      const accuracyOpponent = opponentProfileData.solo_data.upgrades?.accuracy || 60;
-      ctx.fillText(`${accuracyOpponent}%`, opponentProfileWindowX + 30, yOffset + 10);
-    }
-    
-    // Right column - Max stats
-    yOffset = dataStartY + 25;
-    if (opponentProfileData && opponentProfileData.solo_data) {
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('MAX HP', opponentProfileWindowX + 330, yOffset - 5);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.solo_data.maxHP || 10}`, opponentProfileWindowX + 330, yOffset + 10);
-      yOffset += 35;
-      
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 8px "Press Start 2P"';
-      ctx.fillText('MAX ARMOR', opponentProfileWindowX + 330, yOffset - 5);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 12px "Press Start 2P"';
-      ctx.fillText(`${opponentProfileData.solo_data.maxArmor || 5}`, opponentProfileWindowX + 330, yOffset + 10);
-    }
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(label, x, y);
+      ctx.fillStyle = valueColor;
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(value, x, y + 14);
+    };
+
+    const youX = opponentProfileWindowX + 30;
+    const oppX = opponentProfileWindowX + 330;
+    const topY = dataStartY + 28;
+    const rowGap = 30;
+
+    // YOU column
+    drawHeader('YOU', youX, topY);
+    drawStat('NAME', meDisplayName, youX, topY + 22);
+    drawStat('ADDRESS', meAddrRaw ? (meAddrRaw.length > 20 ? (meAddrRaw.substring(0, 17) + '...') : meAddrRaw) : 'guest', youX, topY + 22 + rowGap);
+    drawStat('PVP W', String(meProfile.winsPvP || 0), youX, topY + 22 + rowGap * 2, '#00aa00');
+    drawStat('PVP L', String(meProfile.lossesPvP || 0), youX, topY + 22 + rowGap * 3, '#aa0000');
+    drawStat('XP', String(meProfile.xp || 0), youX, topY + 22 + rowGap * 4);
+    const myBon = calculateNftBonuses();
+    drawStat('DMG', String((dmg || 1) + (myBon.dmg || 0)), youX, topY + 22 + rowGap * 5);
+    drawStat('MAX HP', String((dotMaxHP + (myBon.hp || 0)) || 10), youX, topY + 22 + rowGap * 6);
+    drawStat('MAX ARM', String(dotMaxArmor || 5), youX, topY + 22 + rowGap * 7);
+
+    // OPP column
+    drawHeader('OPPONENT', oppX, topY);
+    drawStat('NAME', String(opponentNickname || '(not set)'), oppX, topY + 22);
+    drawStat('ADDRESS', displayAddress, oppX, topY + 22 + rowGap);
+    const oppW = opponentProfileData?.pvp_data?.wins ?? 0;
+    const oppL = opponentProfileData?.pvp_data?.losses ?? 0;
+    const oppXp =
+      (typeof opponentProfileData?.pvp_data?.xp === 'number' ? opponentProfileData.pvp_data.xp : null) ??
+      (typeof opponentProfileData?.xp === 'number' ? opponentProfileData.xp : 0);
+    const oppDmg = opponentProfileData?.solo_data?.dmg ?? 1;
+    const oppMaxHP = opponentProfileData?.solo_data?.maxHP ?? 10;
+    const oppMaxArmor = opponentProfileData?.solo_data?.maxArmor ?? 5;
+    drawStat('PVP W', String(oppW || 0), oppX, topY + 22 + rowGap * 2, '#00aa00');
+    drawStat('PVP L', String(oppL || 0), oppX, topY + 22 + rowGap * 3, '#aa0000');
+    drawStat('XP', String(oppXp || 0), oppX, topY + 22 + rowGap * 4);
+    drawStat('DMG', String(oppDmg || 1), oppX, topY + 22 + rowGap * 5);
+    drawStat('MAX HP', String(oppMaxHP || 10), oppX, topY + 22 + rowGap * 6);
+    drawStat('MAX ARM', String(oppMaxArmor || 5), oppX, topY + 22 + rowGap * 7);
     
     // Loading message if profile not loaded yet
     if (!opponentProfileData) {
@@ -12520,7 +14028,7 @@ function render() {
     const closeButtonY = opponentProfileWindowY + 10;
     const closeButtonSize = 30;
 
-    // Invite to duel button (shown when opened from chat selection)
+    // Duel handshake / Invite button (shown when opened from chat selection)
     const inviteBtnW = 260;
     const inviteBtnH = 40;
     const inviteBtnX = opponentProfileWindowX + opponentProfileWindowWidth / 2 - inviteBtnW / 2;
@@ -12528,16 +14036,88 @@ function render() {
     const canInvite = !!chatSelectedUserSessionId && chatSelectedUserSessionId !== chatService.getRoomSessionId();
 
     ctx.save();
-    ctx.fillStyle = canInvite ? 'rgba(40, 80, 140, 0.75)' : 'rgba(120, 120, 120, 0.35)';
-    ctx.fillRect(inviteBtnX, inviteBtnY, inviteBtnW, inviteBtnH);
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(inviteBtnX, inviteBtnY, inviteBtnW, inviteBtnH);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 10px "Press Start 2P"';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('INVITE TO DUEL', inviteBtnX + inviteBtnW / 2, inviteBtnY + inviteBtnH / 2 + 1);
+    const mySid = chatService.getRoomSessionId() || '';
+    const isInThisOffer =
+      !!duelOffer &&
+      duelOffer.status === 'pending' &&
+      ((mySid && (mySid === duelOffer.fromSid || mySid === duelOffer.toSid)) ||
+        (chatSelectedUserSessionId && (chatSelectedUserSessionId === duelOffer.fromSid || chatSelectedUserSessionId === duelOffer.toSid)));
+    const isInviter = isInThisOffer && mySid && duelOffer && mySid === duelOffer.fromSid;
+    const meAccepted = isInThisOffer && duelOffer ? (isInviter ? duelOffer.fromAccepted : duelOffer.toAccepted) : false;
+    const oppAccepted = isInThisOffer && duelOffer ? (isInviter ? duelOffer.toAccepted : duelOffer.fromAccepted) : false;
+
+    // When offer pending => show 2x2 buttons (both sides visible)
+    if (isInThisOffer && duelOffer) {
+      const btnW = 120;
+      const btnH = 32;
+      const gap = 10;
+      const myColX = opponentProfileWindowX + 20;
+      const oppColX = opponentProfileWindowX + 320;
+      const btnY = inviteBtnY + 2;
+
+      // Labels above
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(meAccepted ? 'YOU: READY' : 'YOU: WAIT', myColX + 10, btnY - 10);
+      ctx.fillText(oppAccepted ? 'OPP: READY' : 'OPP: WAIT', oppColX + 10, btnY - 10);
+
+      // Your buttons (clickable)
+      const myAcceptX = myColX + 10;
+      const myCancelX = myAcceptX + btnW + gap;
+      ctx.fillStyle = meAccepted ? 'rgba(0, 160, 80, 0.35)' : 'rgba(0, 160, 80, 0.75)';
+      ctx.fillRect(myAcceptX, btnY, btnW, btnH);
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.75)';
+      ctx.fillRect(myCancelX, btnY, btnW, btnH);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(myAcceptX, btnY, btnW, btnH);
+      ctx.strokeRect(myCancelX, btnY, btnW, btnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(meAccepted ? 'READY' : 'ACCEPT', myAcceptX + btnW / 2, btnY + btnH / 2 + 1);
+      ctx.fillText('CANCEL', myCancelX + btnW / 2, btnY + btnH / 2 + 1);
+
+      // Opponent buttons (visual-only)
+      const oppAcceptX = oppColX + 10;
+      const oppCancelX = oppAcceptX + btnW + gap;
+      ctx.fillStyle = oppAccepted ? 'rgba(0, 160, 80, 0.35)' : 'rgba(0, 160, 80, 0.20)';
+      ctx.fillRect(oppAcceptX, btnY, btnW, btnH);
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.20)';
+      ctx.fillRect(oppCancelX, btnY, btnW, btnH);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(oppAcceptX, btnY, btnW, btnH);
+      ctx.strokeRect(oppCancelX, btnY, btnW, btnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(oppAccepted ? 'READY' : 'WAIT', oppAcceptX + btnW / 2, btnY + btnH / 2 + 1);
+      ctx.fillText('...', oppCancelX + btnW / 2, btnY + btnH / 2 + 1);
+
+      // Hint
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('Both players must ACCEPT to start', opponentProfileWindowX + opponentProfileWindowWidth / 2, btnY + btnH + 18);
+    } else {
+      // No active offer: show INVITE button
+      ctx.fillStyle = canInvite ? 'rgba(40, 80, 140, 0.75)' : 'rgba(120, 120, 120, 0.35)';
+      ctx.fillRect(inviteBtnX, inviteBtnY, inviteBtnW, inviteBtnH);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(inviteBtnX, inviteBtnY, inviteBtnW, inviteBtnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('INVITE TO DUEL', inviteBtnX + inviteBtnW / 2, inviteBtnY + inviteBtnH / 2 + 1);
+    }
     ctx.restore();
     
     // Close button shadow
@@ -12592,6 +14172,22 @@ if (!(window as any).__mousemoveListenerAdded) {
     isHoveringChat = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH;
   }
 
+  // Slot bell hover (left of LIVE CHAT)
+  {
+    const onlineBoxW = 120;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 25;
+    const chatW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const chatX = onlineBoxX - gap - chatW;
+    const bellW = 32;
+    const bellGap = 8;
+    const bellX = chatX - bellGap - bellW;
+    const bellY = onlineBoxY;
+    isHoveringSlotBell = mouseX >= bellX && mouseX <= bellX + bellW && mouseY >= bellY && mouseY <= bellY + btnH;
+  }
+
   // Chat send hover + pointer cursor
   isHoveringChatSend = false;
   isHoveringChatClose = false;
@@ -12623,8 +14219,18 @@ if (!(window as any).__mousemoveListenerAdded) {
 
   // Pointer cursor when hovering interactive chat UI
   try {
-    const overName = isChatOpen && chatHitRegions.some(r => mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h);
-    const shouldPointer = isHoveringChat || isHoveringChatSend || isHoveringChatClose || overName;
+    let overName = false;
+    chatHoverSessionId = null;
+    chatHoverMessageId = null;
+    if (isChatOpen) {
+      const hit = chatHitRegions.find(r => mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h);
+      if (hit) {
+        overName = true;
+        chatHoverSessionId = hit.sessionId || null;
+        chatHoverMessageId = hit.messageId || null;
+      }
+    }
+        const shouldPointer = isHoveringChat || isHoveringSlotBell || isHoveringChatSend || isHoveringChatClose || overName || isHoveringNicknameEdit || isHoveringSpeedFxMinus || isHoveringSpeedFxPlus;
     canvas.classList.toggle('pointer', shouldPointer);
   } catch {}
   
@@ -12702,6 +14308,17 @@ if (!(window as any).__mousemoveListenerAdded) {
           const isOverAccuracy = mouseX >= 20 && mouseX <= 220 && mouseY >= 280 && mouseY <= 320;
           isHoveringAccuracy = isOverAccuracy && !upgradeAnimation && !isDrawing;
 
+          // Claim DOT hover (Solo)
+          try {
+            const r = getClaimDotButtonRect();
+            isHoveringClaimDot =
+              mouseX >= r.x && mouseX <= r.x + r.w &&
+              mouseY >= r.y && mouseY <= r.y + r.h &&
+              !upgradeAnimation && !isDrawing;
+          } catch {
+            isHoveringClaimDot = false;
+          }
+
           // Check level buttons hover
           hoveredLevel = -1;
           for (const btn of levelButtons) {
@@ -12719,6 +14336,7 @@ if (!(window as any).__mousemoveListenerAdded) {
           isHoveringUpgrade = false;
           isHoveringCrit = false;
           isHoveringAccuracy = false;
+          isHoveringClaimDot = false;
           hoveredLevel = -1;
         }
 
@@ -12728,6 +14346,15 @@ if (!(window as any).__mousemoveListenerAdded) {
         const isOverContact = mouseX >= contactRect.x && mouseX <= contactRect.x + contactRect.w && mouseY >= contactRect.y && mouseY <= contactRect.y + contactRect.h;
         const pewPewRect = getPewPewButtonRect();
         const isOverPewPew = mouseX >= pewPewRect.x && mouseX <= pewPewRect.x + pewPewRect.w && mouseY >= pewPewRect.y && mouseY <= pewPewRect.y + pewPewRect.h;
+        const speedFxR = getSpeedFxControlRect();
+        const speedFxMinusR = getSpeedFxMinusRect();
+        const speedFxPlusR = getSpeedFxPlusRect();
+        isHoveringSpeedFxMinus =
+          mouseX >= speedFxMinusR.x && mouseX <= speedFxMinusR.x + speedFxMinusR.w &&
+          mouseY >= speedFxMinusR.y && mouseY <= speedFxMinusR.y + speedFxMinusR.h;
+        isHoveringSpeedFxPlus =
+          mouseX >= speedFxPlusR.x && mouseX <= speedFxPlusR.x + speedFxPlusR.w &&
+          mouseY >= speedFxPlusR.y && mouseY <= speedFxPlusR.y + speedFxPlusR.h;
         const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
         const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
         isHoveringContact = isOverContact && !upgradeAnimation && !isDrawing && !isContactOpen;
@@ -12766,6 +14393,15 @@ if (!(window as any).__mousemoveListenerAdded) {
         } else {
           nftPaginationHoverLeft = false;
           nftPaginationHoverRight = false;
+        }
+
+        // Nickname edit hover (profile open)
+        isHoveringNicknameEdit = false;
+        if (isProfileOpen && isPersistenceConnected()) {
+          const r = getProfileNicknameEditRects();
+          isHoveringNicknameEdit =
+            (mouseX >= r.row.x && mouseX <= r.row.x + r.row.w && mouseY >= r.row.y && mouseY <= r.row.y + r.row.h) ||
+            (mouseX >= r.btn.x && mouseX <= r.btn.x + r.btn.w && mouseY >= r.btn.y && mouseY <= r.btn.y + r.btn.h);
         }
 
         // Training button hover detection (must match render)
@@ -12866,6 +14502,25 @@ if (!(window as any).__mousedownListenerAdded) {
     const btnY = onlineBoxY;
     if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH) {
       isPressingChat = true;
+      return;
+    }
+  }
+
+  // Slot bell press (left of LIVE CHAT)
+  {
+    const onlineBoxW = 120;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 25;
+    const chatW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const chatX = onlineBoxX - gap - chatW;
+    const bellW = 32;
+    const bellGap = 8;
+    const bellX = chatX - bellGap - bellW;
+    const bellY = onlineBoxY;
+    if (mouseX >= bellX && mouseX <= bellX + bellW && mouseY >= bellY && mouseY <= bellY + btnH) {
+      isPressingSlotBell = true;
       return;
     }
   }
@@ -13025,19 +14680,53 @@ if (!(window as any).__mousedownListenerAdded) {
     const closeButtonY = opponentProfileWindowY + 10;
     const closeButtonSize = 30;
 
-    // Invite button region (bottom)
+    // Invite / Duel handshake button region (bottom)
     const inviteBtnW = 260;
     const inviteBtnH = 40;
     const inviteBtnX = opponentProfileWindowX + opponentProfileWindowWidth / 2 - inviteBtnW / 2;
     const inviteBtnY = opponentProfileWindowY + opponentProfileWindowHeight - 70;
     const canInvite = !!chatSelectedUserSessionId && chatSelectedUserSessionId !== chatService.getRoomSessionId();
-    if (canInvite &&
-        mouseX >= inviteBtnX && mouseX <= inviteBtnX + inviteBtnW &&
+    if (mouseX >= inviteBtnX && mouseX <= inviteBtnX + inviteBtnW &&
         mouseY >= inviteBtnY && mouseY <= inviteBtnY + inviteBtnH) {
-      chatService.sendInvite(chatSelectedUserSessionId!);
-      // also open chat so player sees feedback
-      isChatOpen = true;
-      return;
+      try {
+        const mySid = chatService.getRoomSessionId() || '';
+        const inOffer = !!duelOffer && duelOffer.status === 'pending' && mySid && (mySid === duelOffer.fromSid || mySid === duelOffer.toSid);
+        if (inOffer && duelOffer) {
+          // Buttons are in the left column (YOU): ACCEPT + CANCEL
+          const myColX = opponentProfileWindowX + 20;
+          const btnY = inviteBtnY + 2;
+          const btnW = 120;
+          const btnH = 32;
+          const gap = 10;
+          const myAcceptX = myColX + 10;
+          const myCancelX = myAcceptX + btnW + gap;
+          const clickedAccept =
+            mouseX >= myAcceptX && mouseX <= myAcceptX + btnW &&
+            mouseY >= btnY && mouseY <= btnY + btnH;
+          const clickedCancel =
+            mouseX >= myCancelX && mouseX <= myCancelX + btnW &&
+            mouseY >= btnY && mouseY <= btnY + btnH;
+          const isInviter = mySid === duelOffer.fromSid;
+          if (clickedAccept) {
+            chatService.sendDuelOfferAction(duelOffer.id, 'accept');
+            return;
+          }
+          if (clickedCancel) {
+            chatService.sendDuelOfferAction(duelOffer.id, isInviter ? 'cancel' : 'decline');
+            return;
+          }
+        } else if (canInvite) {
+          // Create a new offer
+          chatService.sendDuelOfferCreate(chatSelectedUserSessionId!, {
+            serverEndpoint: getSelectedServerEndpoint() || fallbackColyseusEndpoint,
+            roomName: pvpOnlineRoomName,
+          });
+          walletError = 'Duel offer sent...';
+          window.setTimeout(() => { try { if (walletError === 'Duel offer sent...') walletError = null; } catch {} }, 2000);
+          isChatOpen = true;
+          return;
+        }
+      } catch {}
     }
     
     if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
@@ -13150,55 +14839,20 @@ if (!(window as any).__mousedownListenerAdded) {
       }
     }
     
-    // Click on nickname area to edit
-    const nicknameY = profileWindowY + 70;
-    if (mouseX >= profileWindowX + 20 && mouseX <= profileWindowX + 300 &&
-        mouseY >= nicknameY - 10 && mouseY <= nicknameY + 10) {
-      // Show HTML input for nickname editing
-      const profile = profileManager.getProfile();
-      let nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
-      if (!nicknameInput) {
-        nicknameInput = document.createElement('input');
-        nicknameInput.id = 'nicknameInput';
-        nicknameInput.type = 'text';
-        nicknameInput.maxLength = 16;
-        nicknameInput.style.position = 'absolute';
-        nicknameInput.style.fontFamily = '"Press Start 2P", monospace';
-        nicknameInput.style.fontSize = '10px';
-        nicknameInput.style.padding = '5px';
-        nicknameInput.style.border = '2px solid #000000';
-        nicknameInput.style.backgroundColor = '#ffffff';
-        nicknameInput.style.color = '#000000';
-        document.body.appendChild(nicknameInput);
+    // Click nickname row / EDIT button to edit
+    {
+      const r = getProfileNicknameEditRects();
+      const overNickRow =
+        mouseX >= r.row.x && mouseX <= r.row.x + r.row.w &&
+        mouseY >= r.row.y && mouseY <= r.row.y + r.row.h;
+      const overEditBtn =
+        mouseX >= r.btn.x && mouseX <= r.btn.x + r.btn.w &&
+        mouseY >= r.btn.y && mouseY <= r.btn.y + r.btn.h;
+      if (overNickRow || overEditBtn) {
+        // Use shared helper (also used by HTML overlay button)
+        showNicknameInput();
+        return; // Don't process other clicks
       }
-      // Bind save handlers once (Enter/blur save; Escape cancels)
-      if (!nicknameInput.dataset.bound) {
-        nicknameInput.dataset.bound = '1';
-        nicknameInput.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter') {
-            persistNicknameFromUi(nicknameInput.value);
-            nicknameInput.style.display = 'none';
-            try { canvas.focus?.(); } catch {}
-          } else if (ev.key === 'Escape') {
-            nicknameInput.style.display = 'none';
-            try { canvas.focus?.(); } catch {}
-          }
-        });
-        nicknameInput.addEventListener('blur', () => {
-          if (nicknameInput.style.display !== 'none') {
-            persistNicknameFromUi(nicknameInput.value);
-            nicknameInput.style.display = 'none';
-          }
-        });
-      }
-      nicknameInput.value = profile.nickname || '';
-      nicknameInput.style.display = 'block';
-      nicknameInput.style.left = `${profileWindowX + 20}px`;
-      nicknameInput.style.top = `${nicknameY - 5}px`;
-      nicknameInput.style.width = '280px';
-      nicknameInput.focus();
-      nicknameInput.select();
-      return; // Don't process other clicks
     }
   }
   
@@ -13260,6 +14914,22 @@ if (!(window as any).__mousedownListenerAdded) {
   if (isOverContact) {
     isPressingContact = true;
     return;
+  }
+
+  // Speed FX +/- (above PEWPEW)
+  {
+    const minusR = getSpeedFxMinusRect();
+    const plusR = getSpeedFxPlusRect();
+    const overMinus = mouseX >= minusR.x && mouseX <= minusR.x + minusR.w && mouseY >= minusR.y && mouseY <= minusR.y + minusR.h;
+    const overPlus = mouseX >= plusR.x && mouseX <= plusR.x + plusR.w && mouseY >= plusR.y && mouseY <= plusR.y + plusR.h;
+    if (overMinus) {
+      isPressingSpeedFxMinus = true;
+      return;
+    }
+    if (overPlus) {
+      isPressingSpeedFxPlus = true;
+      return;
+    }
   }
 
   // Check if clicking PewPew button (above CONTACT)
@@ -13383,15 +15053,30 @@ if (!(window as any).__mouseupListenerAdded) {
         // Minimal implementation: start searching PvP online (not a private room yet).
         // This still satisfies "invite to duel" as a flow starter.
         try {
-          startPvPMatchOnServer(getSelectedServerEndpoint() || undefined);
-          chatService.sendChat(`(system) accepted duel invite from ${fromSid}`);
+          // Join on inviter's server if provided (ensures both end up together).
+          const ep = chatInviteServerEndpoint || getSelectedServerEndpoint() || undefined;
+          if (chatInviteRoomName) pvpOnlineRoomName = chatInviteRoomName;
+          startPvPMatchOnServer(ep);
+          chatService.sendInviteResponse(fromSid, true, {
+            serverEndpoint: ep || '',
+            roomName: chatInviteRoomName || '',
+            toAddress: chatInviteFromAddress || '',
+          });
         } catch {}
       } else {
-        try { chatService.sendChat(`(system) declined duel invite from ${fromSid}`); } catch {}
+        try {
+          chatService.sendInviteResponse(fromSid, false, {
+            serverEndpoint: chatInviteServerEndpoint || '',
+            roomName: chatInviteRoomName || '',
+            toAddress: chatInviteFromAddress || '',
+          });
+        } catch {}
       }
       return;
     }
   }
+
+  // Duel offer handshake is handled inside the Opponent Profile panel now.
 
   // Live chat toggle button click
   if (isPressingChat) {
@@ -13421,6 +15106,22 @@ if (!(window as any).__mouseupListenerAdded) {
       } catch {}
     }
     isPressingChat = false;
+    return;
+  }
+
+  // Slot bell click => open slot machine immediately
+  if (isPressingSlotBell) {
+    const r = getSlotBellRect();
+    const overBell = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+    if (overBell) {
+      slotModalOpen = true;
+      slotLastPayoutText = null;
+      slotBellNewSpins = 0;
+      // Clear cached region and ignore the next click (same gesture) so it doesn't close immediately.
+      (window as any).__slotModalRegion = null;
+      slotIgnoreClicksUntilTs = Date.now() + 250;
+    }
+    isPressingSlotBell = false;
     return;
   }
 
@@ -13470,8 +15171,10 @@ if (!(window as any).__mouseupListenerAdded) {
           walletError = 'Chat server offline (start Colyseus server)';
         } else {
           const inp = ensureChatInput();
-          chatService.sendChat(inp.value);
+          const oneLine = String(inp.value || '').split(/\r?\n/)[0];
+          chatService.sendChat(oneLine);
           inp.value = '';
+          (inp as any).rows = 2;
           inp.focus();
         }
       } catch {}
@@ -13480,11 +15183,19 @@ if (!(window as any).__mouseupListenerAdded) {
     }
     isPressingChatSend = false;
 
-    // Click message row -> open profile
-    for (const r of chatHitRegions) {
-      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
-        openProfileForChatIdentity(r.address || null, r.sessionId || null);
-        return;
+    // Click nick -> open profile (canvas mode only). In DOM mode, selection is handled by the overlay click handler.
+    if (!CHAT_USE_DOM_MESSAGES) {
+      let clickedNick = false;
+      for (const r of chatHitRegions) {
+        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+          openProfileForChatIdentity(r.address || null, r.sessionId || null);
+          clickedNick = true;
+          return;
+        }
+      }
+      if (!clickedNick) {
+        chatSelectedUserSessionId = null;
+        chatSelectedUserAddress = null;
       }
     }
   }
@@ -13822,6 +15533,27 @@ if (!(window as any).__mouseupListenerAdded) {
       }
     }
     isPressingContact = false;
+  }
+
+  // Handle SPEED FX +/- (above PEWPEW)
+  if (isPressingSpeedFxMinus || isPressingSpeedFxPlus) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    if (isPressingSpeedFxMinus) {
+      const r = getSpeedFxMinusRect();
+      const over = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+      if (over) speedFxLevelIdx = Math.max(speedFxAutoMinIdx, Math.max(0, speedFxLevelIdx - 1));
+      isPressingSpeedFxMinus = false;
+    }
+    if (isPressingSpeedFxPlus) {
+      const r = getSpeedFxPlusRect();
+      const over = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+      if (over) speedFxLevelIdx = Math.min(SPEED_FX_LEVELS.length - 1, speedFxLevelIdx + 1);
+      isPressingSpeedFxPlus = false;
+    }
+    // Keep it from also toggling PEWPEW on the same mouseup.
+    return;
   }
 
   // Handle PewPew button click (opens a small info modal)
@@ -14208,6 +15940,30 @@ if (!(window as any).__mouseupListenerAdded) {
   console.warn('⚠️ Mouseup listener already added - skipping duplicate (HMR protection)');
 }
 
+// Slot bell open: capture clicks even if a DOM overlay is on top of the canvas.
+// This fixes "bell doesn't open slots" when the click is intercepted by chat DOM elements.
+if (!(window as any).__slotBellCaptureMouseUpAdded) {
+  (window as any).__slotBellCaptureMouseUpAdded = true;
+  window.addEventListener('mouseup', (e: MouseEvent) => {
+    try {
+      // Only left button
+      if (typeof e.button === 'number' && e.button !== 0) return;
+      const pos = getCanvasMousePos(e);
+      // Ignore if outside canvas bounds
+      if (pos.x < 0 || pos.y < 0 || pos.x > canvas.width || pos.y > canvas.height) return;
+      const r = getSlotBellRect();
+      const overBell = pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h;
+      if (!overBell) return;
+
+      slotModalOpen = true;
+      slotLastPayoutText = null;
+      slotBellNewSpins = 0;
+      (window as any).__slotModalRegion = null;
+      slotIgnoreClicksUntilTs = Date.now() + 250;
+    } catch {}
+  }, true);
+}
+
 // Prevent context menu on right click (for drawing)
 // CRITICAL: Prevent duplicate event listeners (HMR protection)
 if (!(window as any).__contextmenuListenerAdded) {
@@ -14527,6 +16283,84 @@ if (!(window as any).__clickListenerAdded) {
 
   // (5SEC PvP micro-turn: no special click UI; replay-only gating happens elsewhere)
 
+  // Slot modal clicks (close / spin)
+  if (slotModalOpen && e.button === 0) {
+    // If the modal was just opened by the bell, ignore this same click gesture.
+    if (slotIgnoreClicksUntilTs && Date.now() < slotIgnoreClicksUntilTs) {
+      return;
+    }
+    const r = (window as any).__slotModalRegion as any;
+    if (r && typeof r.x === 'number') {
+      const inClose =
+        mouseX >= r.closeX && mouseX <= r.closeX + r.closeW &&
+        mouseY >= r.closeY && mouseY <= r.closeY + r.closeH;
+      if (inClose) {
+        slotModalOpen = false;
+        slotIsSpinning = false;
+        return;
+      }
+      const inSpin =
+        mouseX >= r.spinX && mouseX <= r.spinX + r.spinW &&
+        mouseY >= r.spinY && mouseY <= r.spinY + r.spinH;
+      if (inSpin) {
+        if (!slotIsSpinning && soloSpins > 0) {
+          startSlotSpin(Date.now());
+        } else {
+          try { audioManager.playUpgradeFail(); } catch {}
+        }
+        return;
+      }
+      // Click outside modal closes it
+      const inside =
+        mouseX >= r.x && mouseX <= r.x + r.w &&
+        mouseY >= r.y && mouseY <= r.y + r.h;
+      if (!inside) {
+        slotModalOpen = false;
+        slotIsSpinning = false;
+        return;
+      }
+    }
+  }
+
+  // Solo: Solar map zoom buttons (must be handled before DOT charging / click-to-hit)
+  if (gameMode === 'Solo' && e.button === 0) {
+    try {
+      const speedY = 22;
+      const mapY = speedY + 110;
+      const left = playLeft + 70;
+      const right = playRight - 70;
+      const lineW = Math.max(220, right - left);
+      const plateX = left - 24;
+      const plateW = lineW + 48;
+      const btnSize = 16;
+      const btnGap = 6;
+      const btnY = mapY + 8;
+      const btnMinusX = plateX + plateW - 10 - btnSize * 2 - btnGap;
+      const btnPlusX = plateX + plateW - 10 - btnSize;
+
+      const hitMinus =
+        mouseX >= btnMinusX && mouseX <= btnMinusX + btnSize &&
+        mouseY >= btnY && mouseY <= btnY + btnSize;
+      const hitPlus =
+        mouseX >= btnPlusX && mouseX <= btnPlusX + btnSize &&
+        mouseY >= btnY && mouseY <= btnY + btnSize;
+
+      if (hitMinus || hitPlus) {
+        const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        if (hitPlus && z < SOLAR_MAP_ZOOM_MAX - 1e-6) {
+          solarMapZoom = clamp(z * SOLAR_MAP_ZOOM_FACTOR, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        } else if (hitMinus && z > SOLAR_MAP_ZOOM_MIN + 1e-6) {
+          solarMapZoom = clamp(z / SOLAR_MAP_ZOOM_FACTOR, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        } else {
+          // If at limit, treat as denied (tiny feedback)
+          screenShake = Math.max(screenShake, 2);
+          try { audioManager.playUpgradeFail(); } catch {}
+        }
+        return;
+      }
+    } catch {}
+  }
+
   // Handle match result modal clicks
   if (gameMode === 'PvP' && showingMatchResult && matchResult) {
     const modalX = canvas.width / 2 - 250;
@@ -14587,10 +16421,35 @@ if (!(window as any).__clickListenerAdded) {
   const isOverUpgrade = mouseX >= 20 && mouseX <= 220 && mouseY >= 160 && mouseY <= 200;
   const isOverCrit = mouseX >= 20 && mouseX <= 220 && mouseY >= 220 && mouseY <= 260;
   const isOverAccuracy = mouseX >= 20 && mouseX <= 220 && mouseY >= 280 && mouseY <= 320;
+  const claimR = getClaimDotButtonRect();
+  const isOverClaimDot =
+    gameMode === 'Solo' &&
+    mouseX >= claimR.x && mouseX <= claimR.x + claimR.w &&
+    mouseY >= claimR.y && mouseY <= claimR.y + claimR.h;
   const isOnUI = mouseX <= 240; // Left panel
+
+  // Claim DOT button
+  if (isOverClaimDot && e.button === 0) {
+    const now = Date.now();
+    const remainingMs = Math.max(0, (claimDotNextAt || 0) - now);
+    if (remainingMs > 0) {
+      applyClaimDotPenalty(now);
+      walletError = `Claim cooldown: ${Math.ceil(remainingMs / 1000)}s`;
+      window.setTimeout(() => { try { if (walletError?.startsWith('Claim cooldown')) walletError = null; } catch {} }, 1200);
+      return;
+    }
+    commitClaimDot(now);
+    dotCurrency = Math.min(999999999, dotCurrency + CLAIM_DOT_AMOUNT);
+    balanceFlashUntil = now + 800;
+    try {
+      safePushRewardPopup({ x: 120, y: 70, value: CLAIM_DOT_AMOUNT, startTime: now, durationMs: 650 });
+    } catch {}
+    forceSaveGame();
+    return;
+  }
   
   // Solo mode: Charge -1 DOT for every click (except UI buttons and right-click for drawing)
-  if (gameMode === 'Solo' && !isOverUpgrade && !isOverCrit && !isOverAccuracy && e.button === 0) {
+  if (gameMode === 'Solo' && !isOverUpgrade && !isOverCrit && !isOverAccuracy && !isOverClaimDot && e.button === 0) {
     // Only charge if have DOT to spend
     if (dotCurrency > 0) {
       dotCurrency -= 1;
@@ -14642,13 +16501,26 @@ if (!(window as any).__clickListenerAdded) {
 
   // Solo mode: Check DOT click
   if (gameMode === 'Solo') {
-    const dx = mouseX - dotX;
-    const dy = mouseY - dotY;
+    const ufoPos = getSoloUfoVisualPos();
+    const dx = mouseX - ufoPos.x;
+    const dy = mouseY - ufoPos.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance <= dotRadius && gameState === 'Alive') {
+    const now = Date.now();
+    const walletOk = isWalletConnectedForSoloFx();
+    // Anti-spam (match PvP): if you try to act while the ring is not ready, do NOTHING
+    // and restart/extend cooldown to a 2s penalty.
+    if (walletOk && !canPerformSoloBoostAction(now)) {
+      applySoloBoostActionPenalty(now);
+      return;
+    }
     // Check if have enough DOT to attempt hit (need at least dmg amount)
     if (dotCurrency >= dmg) {
+      // Consume Solo "boost action" cooldown on attempt (even if miss) to prevent spam.
+      if (walletOk) {
+        commitSoloBoostAction(now);
+      }
       // Additional cost for actual damage attempt (already deducted -1 above)
       // But we need at least dmg amount total, so subtract (dmg - 1) more
       const additionalCost = dmg - 1;
@@ -14679,156 +16551,61 @@ if (!(window as any).__clickListenerAdded) {
         // Apply 50% variance (damage ranges from 50% to 100%)
         let totalDamage = applyDamageVariance(damageWithCrit);
         
-        // Move DOT opposite to click direction - crit hits give more force
-        const clickAngle = Math.atan2(dy, dx);
-        const oppositeAngle = clickAngle + Math.PI; // Add 180 degrees for opposite direction
-        const force = isCritHit ? PVP_CLICK_FORCE_CRIT : PVP_CLICK_FORCE;
-        dotVx += Math.cos(oppositeAngle) * force;
-        dotVy += Math.sin(oppositeAngle) * force;
+        // Successful hit: instead of pushing in click direction, do a short "forward boost" (side-view).
+        // This is a visual-only lunge to the right, then smooth return (feels like brief speed-up).
+        triggerSoloClickBoost();
+
+        // Speed SFX will follow the actual boost animation (boostK) in the physics loop,
+        // so it stays perfectly synced (no time-based drift).
+        try { void audioManager.resumeContext(); } catch {}
         
-        // Play dot hit sound effect (like hammer hitting a nail)
-        audioManager.resumeContext().then(() => {
-          audioManager.playDotHit();
-        });
+        // Solo mode: disable click "hit" sound (requested) so speed SFX reads cleanly.
+        // (Keep the sound in PvP/Training elsewhere.)
         
         // Update last hit time and unlock gravity (but don't activate gravity on self-click)
         lastHitTime = Date.now();
         gravityLocked = false; // enable gravity after the very first successful hit
         // Note: Gravity is NOT activated on self-click - only on damage from opponent
-        
-        // Check if combo reached 100% from previous platform/line bounces and trigger bonus
+
+        // NEW PROGRESSION: Successful hit no longer hurts you.
+        // Instead, your persistent flight speed (km/s) increases by the damage amount.
+        // Combo 100% becomes a bonus speed burst (instead of self-damage).
         if (comboProgress >= 100 && !comboActive) {
-          const bonusDamage = Math.floor(dmg * 4);
-          const absorbedB = Math.min(bonusDamage, dotArmor);
-          dotArmor -= absorbedB;
-          const remainingB = bonusDamage - absorbedB;
-          dotHP = Math.max(0, dotHP - remainingB);
-          
-          // Play damage received sound effect (pain/impact sound when receiving damage)
-          audioManager.resumeContext().then(() => {
-            audioManager.playDamageReceived(false);
-          });
-          
+          const bonus = Math.max(1, Math.round(dmg * 4));
+          soloSpeedKmps = Math.max(1, soloSpeedKmps + bonus);
           safePushDamageNumber({
             x: dotX + (Math.random() - 0.5) * 40,
             y: dotY - 28,
-            value: bonusDamage,
+            value: `+${bonus} KM/S`,
             life: 60,
             maxLife: 60,
             vx: (Math.random() - 0.5) * 2,
             vy: -2 - Math.random() * 2,
-            isCrit: true // render as black with lightning
+            isCrit: true
           });
-          screenShake = Math.max(screenShake, 30);
-          // Reset combo
+          screenShake = Math.max(screenShake, 14);
           comboProgress = 0;
           comboActive = false;
           comboMultiplier = 1;
-          
-          // Check death after combo 4x damage
-          if (dotHP <= 0) {
-            gameState = 'Dying';
-            deathAnimation = true;
-            deathTimer = 0;
-            respawnTimer = 0;
-            awaitingRestart = false;
-            rewardGranted = false;
-            deathStartX = dotX;
-            deathStartY = dotY;
-            
-            // Leveling system: increment kill counter
-            killsInCurrentLevel++;
-            console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
-            
-            if (killsInCurrentLevel >= killsNeededPerLevel) {
-              killsInCurrentLevel = 0;
-              if (maxUnlockedLevel === currentLevel) {
-                maxUnlockedLevel = currentLevel + 1;
-                console.log(`Level ${maxUnlockedLevel} unlocked!`);
-                forceSaveGame(); // Save after level unlock
-              }
-            }
-            
-            console.log('DOT is dying! (combo 4x damage)');
-          }
         }
-        
-        // Apply damage - DOT takes exactly the DMG amount
-        const absorbed = Math.min(totalDamage, dotArmor);
-        dotArmor -= absorbed;
-        const remainingDamage = totalDamage - absorbed;
-        dotHP = Math.max(0, dotHP - remainingDamage); // Don't go below 0
-        
-        // Play damage received sound effect (pain/impact sound when receiving damage)
-        audioManager.resumeContext().then(() => {
-          audioManager.playDamageReceived(isCritHit);
-        });
-        
-        // Profile: Track damage taken (Solo mode)
-        profileManager.addDamageTaken(totalDamage);
 
-        // Add damage number animation
+        const inc = Math.max(1, Math.round(totalDamage));
+        soloSpeedKmps = Math.max(1, soloSpeedKmps + inc);
         safePushDamageNumber({
           x: dotX + (Math.random() - 0.5) * 40,
-          y: dotY - 20, // Both crit and normal go up
-          value: totalDamage,
-          life: 60, // 1 second at 60 FPS
+          y: dotY - 20,
+          value: `+${inc} KM/S`,
+          life: 60,
           maxLife: 60,
           vx: (Math.random() - 0.5) * 2,
-          vy: -2 - Math.random() * 2, // Both crit and normal go up
-          isCrit: isCritHit // crit style only for regular crits; 4x bonus above already marked
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
         });
+        // Small flash feedback
+        balanceFlashUntil = Math.max(balanceFlashUntil, Date.now() + 250);
+        forceSaveGame();
 
-        console.log(`${isCritHit ? 'CRIT HIT!' : 'Hit!'} DMG: ${totalDamage}, HP: ${dotHP}, Armor: ${dotArmor}`);
-
-        // Check for decay particles when HP is 50% or less
-        if (dotHP <= dotMaxHP * 0.5 && dotHP > 0) {
-          // Create decay particles occasionally
-          if (Math.random() < 0.3) {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * dotRadius;
-            const particleX = dotX + Math.cos(angle) * distance;
-            const particleY = dotY + Math.sin(angle) * distance;
-            
-            safePushDotDecayParticle({
-              x: particleX,
-              y: particleY,
-              vx: (Math.random() - 0.5) * 3,
-              vy: (Math.random() - 0.5) * 3,
-              life: 60,
-              maxLife: 60,
-              size: 2 + Math.random() * 3
-            });
-          }
-        }
-        
-        // Check death
-        if (dotHP <= 0) {
-          gameState = 'Dying';
-          deathAnimation = true;
-          deathTimer = 0;
-          respawnTimer = 0; // Reset respawn timer
-          awaitingRestart = false; // cancel any pending ground restart
-          rewardGranted = false; // Reset reward flag for new death
-          deathStartX = dotX; // Save death position
-          deathStartY = dotY; // Save death position
-          
-          // Leveling system: increment kill counter
-          killsInCurrentLevel++;
-          console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
-          
-          // If reached kills needed, unlock next level
-          if (killsInCurrentLevel >= killsNeededPerLevel) {
-            killsInCurrentLevel = 0; // Reset counter
-            if (maxUnlockedLevel === currentLevel) {
-              maxUnlockedLevel = currentLevel + 1;
-              console.log(`Level ${maxUnlockedLevel} unlocked!`);
-            }
-          }
-          
-          // Don't grant reward yet - wait for 10% of death animation
-          console.log('DOT is dying!');
-        }
+        console.log(`${isCritHit ? 'CRIT HIT!' : 'Hit!'} +${inc} KM/S (speed=${soloSpeedKmps.toFixed(2)})`);
       } else {
         // Miss - show MISS text (falls down) but don't move DOT
         safePushDamageNumber({
@@ -15429,7 +17206,7 @@ function drawServerBrowserOverlay() {
 }
 
 // Game loop
-// Periodically check wallet DOT balance (non-blocking)
+// Periodically check wallet RONKE balance (non-blocking)
 function checkWalletBalance() {
   const walletState = walletService.getState();
   if (walletState.isConnected && walletState.address) {
@@ -15437,11 +17214,11 @@ function checkWalletBalance() {
     if (now - lastBalanceCheck > BALANCE_CHECK_INTERVAL) {
       lastBalanceCheck = now;
       // Check balance asynchronously (don't await - non-blocking)
-      walletService.getTokenBalance(DOT_TOKEN_ADDRESS)
+      walletService.getTokenBalance(RONKE_TOKEN_ADDRESS)
         .then((balance) => {
           if (balance !== null) {
-            walletDotBalance = balance;
-            console.log('Wallet DOT balance updated:', balance);
+            ronkeBalance = balance;
+            console.log('Wallet RONKE balance updated:', balance);
           }
         })
         .catch((error) => {
@@ -15449,12 +17226,51 @@ function checkWalletBalance() {
         });
     }
   } else {
-    walletDotBalance = null;
+    ronkeBalance = null;
   }
 }
 
 function gameLoop() {
   const frameStartTime = performance.now();
+  // Solo: accumulate distance traveled (km) based on current speed (km/s) and real elapsed time.
+  // Uses performance.now() delta so it stays correct even if FPS fluctuates.
+  if (gameMode === 'Solo' && gameState === 'Alive') {
+    const last = soloDistanceLastPerfMs || frameStartTime;
+    const dtSec = Math.max(0, Math.min(0.25, (frameStartTime - last) / 1000)); // cap to avoid huge jumps on tab-switch
+    soloDistanceLastPerfMs = frameStartTime;
+    const sp = Math.max(1, Number.isFinite(soloSpeedKmps) ? soloSpeedKmps : 1);
+    soloDistanceKm = Math.max(0, soloDistanceKm + sp * dtSec);
+
+    // Award spins every 100k km traveled (persistent milestones)
+    const milestones = Math.floor(soloDistanceKm / SOLO_SPIN_MILESTONE_KM);
+    if (milestones > soloSpinMilestones) {
+      const delta = milestones - soloSpinMilestones;
+      soloSpinMilestones = milestones;
+      soloSpins += delta;
+      slotBellNewSpins += delta;
+      try {
+        safePushDamageNumber({
+          x: playLeft + 120,
+          y: 120,
+          value: `SPIN +${delta}`,
+          life: 90,
+          maxLife: 90,
+          vx: 0,
+          vy: -1.2,
+          isCrit: true,
+        });
+      } catch {}
+      forceSaveGame();
+    }
+  } else {
+    // Keep accumulator stable; don’t add distance outside active Solo gameplay.
+    soloDistanceLastPerfMs = frameStartTime;
+  }
+
+  // Slot machine: finalize spin when last reel stops
+  if (slotIsSpinning) {
+    finishSlotSpinIfDone(Date.now());
+  }
   // Profile: Update max stats periodically
   profileManager.updateMaxStats(dotMaxHP, dotMaxArmor);
   
@@ -16817,6 +18633,36 @@ function gameLoop() {
     // Update last velocities
     soloLastVx = dotVx;
     soloLastVy = dotVy;
+
+    // Update Solo "idle flight" FX (thrust + warp) for wallet-connected main screen feel.
+    updateSoloIdleFlightFx(Date.now());
+
+    // UFO speed SFX: follow the actual "successful click boost" animation (boostK),
+    // so sound stays perfectly synced with the visuals (no time-window drift).
+    try {
+      const now = Date.now();
+      const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+      // Envelope is literally the boost animation amount (0..1..0), so it matches 1:1.
+      const env01 = boostK;
+      const enabled = (soloClickBoostOffsetX > 1) && (env01 > 0.001);
+      if (enabled) {
+        // Update more frequently while active so it doesn't feel "late" or steppy.
+        if (now - (ufoHumLastUpdateAt || 0) > 33) {
+          ufoHumLastUpdateAt = now;
+          const sp01 = clamp((Math.max(1, soloSpeedKmps) - 1) / 1000, 0, 1); // 0..1 over 1..1001 km/s
+          const mul = getSpeedFxMultiplier();
+          const mul01 = clamp((mul - 0.5) / 2.5, 0, 1);
+          const k01 = clamp(0.25 + 0.55 * boostK + 0.20 * mul01, 0, 1);
+          audioManager.updateUfoHum({ enabled: true, intensity01: k01, speed01: sp01, envelope01: env01 });
+        }
+      } else {
+        // Stop sparingly (avoid spamming stop every frame)
+        if (now - (ufoHumLastStopAt || 0) > 220) {
+          ufoHumLastStopAt = now;
+          audioManager.stopUfoHum?.();
+        }
+      }
+    } catch {}
   }
   
   // PvP/Training mode: Physics update for all players (copied from Solo DOT physics)
@@ -19206,15 +21052,15 @@ function gameLoop() {
     const onlineCount = globalOnlinePlayersCount !== null ? globalOnlinePlayersCount : '...';
     const onlineText = `${onlineCount} online`;
 
-    ctx.font = 'bold 9px "Press Start 2P"';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeText(onlineText, dotX + dotRadius + 8, dotY + 1);
-    ctx.fillText(onlineText, dotX + dotRadius + 8, dotY + 1);
+    drawOutlinedText(ctx, onlineText, dotX + dotRadius + 8, dotY + 0.5, {
+      sizePx: 13,
+      weight: 600,
+      align: 'left',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: '#ffffff',
+    });
     ctx.restore();
   }
 
@@ -19243,21 +21089,22 @@ function gameLoop() {
     ctx.restore();
 
     ctx.save();
-    ctx.font = 'bold 9px "Press Start 2P"';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeText('LIVE CHAT', btnX + btnW / 2, btnY + btnH / 2 + 1);
-    ctx.fillText('LIVE CHAT', btnX + btnW / 2, btnY + btnH / 2 + 1);
+    drawOutlinedText(ctx, 'LIVE CHAT', btnX + btnW / 2, btnY + btnH / 2 + 0.5, {
+      sizePx: 13,
+      weight: 700,
+      align: 'center',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: '#ffffff',
+    });
     ctx.restore();
 
-    // Show/hide chat input HTML element based on open state
+    // Show/hide chat input HTML element + HTML chat messages overlay based on open state
     try {
       const inp = ensureChatInput();
       const sendBtn = ensureChatSendButton();
+      const msgsEl = ensureChatMessagesContainer();
       const rect = canvas.getBoundingClientRect();
       const scaleX = rect.width / canvas.width;
       const scaleY = rect.height / canvas.height;
@@ -19267,7 +21114,15 @@ function gameLoop() {
         const panelH = CHAT_PANEL_H;
         const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
         const panelY = Math.floor(CHAT_PANEL_TOP);
-        const inputH = CHAT_INPUT_H;
+        const headerH = 46;
+        // Fixed 2-line input box (wraps automatically; no Shift+Enter newline)
+        let inputH = CHAT_INPUT_H;
+        try {
+          (inp as any).rows = 2;
+          const fs = parseInt(String(inp.style.fontSize || '18'), 10);
+          const extra = Number.isFinite(fs) ? Math.max(22, Math.round(fs * 1.25)) : 26;
+          inputH = CHAT_INPUT_H + extra;
+        } catch {}
         const sendW = CHAT_SEND_W;
         const gap = CHAT_GAP;
         const inputX = panelX + 18;
@@ -19287,12 +21142,58 @@ function gameLoop() {
         sendBtn.style.top = `${rect.top + sendY * scaleY}px`;
         sendBtn.style.width = `${Math.max(40, sendW * scaleX)}px`;
         sendBtn.style.height = `${Math.max(28, inputH * scaleY)}px`;
+
+        // Messages overlay area (crisp DOM text)
+        const listX = panelX + 18;
+        const listY = panelY + headerH + 12;
+        const listW = panelW - 36;
+        const listH = panelH - headerH - inputH - 40;
+        msgsEl.style.display = 'block';
+        msgsEl.style.left = `${Math.round(rect.left + listX * scaleX)}px`;
+        msgsEl.style.top = `${Math.round(rect.top + listY * scaleY)}px`;
+        msgsEl.style.width = `${Math.max(120, Math.round(listW * scaleX))}px`;
+        msgsEl.style.height = `${Math.max(60, Math.round(listH * scaleY))}px`;
+        // Dynamic readability boost: if the game is scaled down, increase font size in screen px.
+        try {
+          const s = Math.max(0.55, Math.min(1.0, Math.min(scaleX, scaleY)));
+        // Slightly smaller (2px) to fit more text into the 2-line clamp.
+        const fontPx = Math.round(Math.max(15, Math.min(23, 15 / s)));
+          msgsEl.style.fontSize = `${fontPx}px`;
+          msgsEl.style.lineHeight = `${Math.round(fontPx * 1.28)}px`;
+          // Match input size to overlay so typing feels consistent
+          inp.style.fontSize = `${fontPx}px`;
+          inp.style.lineHeight = `${Math.round(fontPx * 1.22)}px`;
+        } catch {}
+        renderChatMessagesOverlay(msgsEl);
       } else {
         inp.style.display = 'none';
         sendBtn.style.display = 'none';
+        msgsEl.style.display = 'none';
       }
     } catch {}
   }
+
+  // Show/hide nickname EDIT overlay button (profile)
+  try {
+    const editBtn = ensureNicknameEditButton();
+    // Show whenever profile is open (works for wallet + guest/local)
+    if (isProfileOpen) {
+      const r = getProfileNicknameEditRects();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width / canvas.width;
+      const scaleY = rect.height / canvas.height;
+      editBtn.style.display = 'block';
+      editBtn.style.left = `${rect.left + r.btn.x * scaleX}px`;
+      editBtn.style.top = `${rect.top + r.btn.y * scaleY}px`;
+      editBtn.style.width = `${Math.max(40, r.btn.w * scaleX)}px`;
+      editBtn.style.height = `${Math.max(22, r.btn.h * scaleY)}px`;
+    } else {
+      editBtn.style.display = 'none';
+      // Also hide nickname input when profile isn't open
+      const inp = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (inp) inp.style.display = 'none';
+    }
+  } catch {}
 
   // Live chat panel
   if (isChatOpen) {
@@ -19301,7 +21202,15 @@ function gameLoop() {
     const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
     const panelY = Math.floor(CHAT_PANEL_TOP);
     const headerH = 46;
-    const inputH = CHAT_INPUT_H;
+    // Fixed 2-line input box (wraps automatically; no Shift+Enter newline)
+    let inputH = CHAT_INPUT_H;
+    try {
+      const inp = ensureChatInput();
+      (inp as any).rows = 2;
+      const fs = parseInt(String(inp.style.fontSize || '18'), 10);
+      const extra = Number.isFinite(fs) ? Math.max(22, Math.round(fs * 1.25)) : 26;
+      inputH = CHAT_INPUT_H + extra;
+    } catch {}
     const sendW = CHAT_SEND_W;
     const gap = CHAT_GAP;
 
@@ -19316,11 +21225,15 @@ function gameLoop() {
     // Header
     ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
     ctx.fillRect(panelX, panelY, panelW, headerH);
-    ctx.font = 'bold 14px "Press Start 2P"';
-    ctx.fillStyle = '#ff9a00';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('LIVE CHAT', panelX + 18, panelY + headerH / 2 + 1);
+    drawOutlinedText(ctx, 'LIVE CHAT', panelX + 18, panelY + headerH / 2 + 0.5, {
+      sizePx: 16,
+      weight: 800,
+      align: 'left',
+      baseline: 'middle',
+      lineWidth: 4,
+      stroke: 'rgba(0, 0, 0, 0.9)',
+      fill: '#ff9a00',
+    });
 
     const chatConn = chatService.getConnectionState();
     const chatConnected = chatService.isConnected();
@@ -19358,16 +21271,27 @@ function gameLoop() {
     ctx.arc(dotCx, dotCy, 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 10px "Press Start 2P"';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${onlineCount} online`, dotCx + 10, dotCy + 1);
+    drawOutlinedText(ctx, `${onlineCount} online`, dotCx + 10, dotCy + 0.5, {
+      sizePx: 13,
+      weight: 700,
+      align: 'left',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: '#ffffff',
+    });
 
     // Chat connection status (small)
-    ctx.fillStyle = chatConnected ? 'rgba(230, 240, 255, 0.68)' : 'rgba(255, 120, 120, 0.95)';
-    ctx.font = 'bold 8px "Press Start 2P"';
-    ctx.textAlign = 'right';
     const statusText = chatConnected ? 'LIVE' : (chatConn === 'connecting' ? 'CONNECTING' : 'OFFLINE');
-    ctx.fillText(statusText, closeX - 10, panelY + headerH / 2 + 1);
+    drawOutlinedText(ctx, statusText, closeX - 10, panelY + headerH / 2 + 0.5, {
+      sizePx: 12,
+      weight: 700,
+      align: 'right',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: chatConnected ? 'rgba(230, 240, 255, 0.75)' : 'rgba(255, 120, 120, 0.95)',
+    });
 
     // Messages area
     const listX = panelX + 18;
@@ -19377,50 +21301,180 @@ function gameLoop() {
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(listX, listY, listW, listH);
+    // Expand clip a bit so outlined text doesn't get visually "cut" at the edges.
+    ctx.rect(listX, listY - 8, listW, listH + 16);
     ctx.clip();
 
     chatHitRegions = [];
     // Only show actual chat messages (no system/invite spam)
-    const messages = chatService.getMessages().filter((m) => m && m.kind === 'chat' && String(m.text || '').trim().length);
-    const lineH = 22;
-    const maxLines = Math.floor(listH / lineH);
-    const totalLines = messages.length;
-    // scroll: 0 => bottom
-    const startIndex = Math.max(0, totalLines - maxLines - chatScrollOffset);
-    const endIndex = Math.min(totalLines, startIndex + maxLines);
+    if (!CHAT_USE_DOM_MESSAGES) {
+      const messages = chatService.getMessages().filter((m) => m && m.kind === 'chat' && String(m.text || '').trim().length);
+      // Layout like the example: per message block => (nick line + msg line(s))
+      // Readable typography (bigger so you can read without leaning toward the monitor)
+      const nickFont = `800 18px ${UI_SMOOTH_FONT_STACK}`;
+      const msgFont = `700 18px ${UI_SMOOTH_FONT_STACK}`;
+      const tsFont = `700 14px ${UI_SMOOTH_FONT_STACK}`;
+      const msgLineH = 22;
+      const maxMsgLines = 2;
+      const blockH = 24 + msgLineH * maxMsgLines + 10; // fixed 2-line message area
+      const maxMsgs = Math.max(1, Math.floor(listH / blockH));
+      const totalMsgs = messages.length;
+      // scroll: 0 => bottom (counted in messages)
+      const startIndex = Math.max(0, totalMsgs - maxMsgs - chatScrollOffset);
+      const endIndex = Math.min(totalMsgs, startIndex + maxMsgs);
 
-    let y = listY + 10;
-    ctx.font = 'bold 10px "Press Start 2P"';
-    for (let i = startIndex; i < endIndex; i++) {
-      const m = messages[i];
-      const name = getDisplayNameForChatUser({ nickname: m.fromNickname, address: m.fromAddress, sessionId: m.fromSessionId });
-      const text = String(m.text || '').trim();
-      const color = '#ffffff';
-      const nameColor = '#b04cff';
+      // Keep integer y positions to avoid blurry text at non-integer scales.
+      let y = Math.round(listY + 12);
+      ctx.font = nickFont;
+      for (let i = startIndex; i < endIndex; i++) {
+        y = Math.round(y);
+        const m = messages[i];
+        const name = getDisplayNameForChatUser({ nickname: m.fromNickname, address: m.fromAddress, sessionId: m.fromSessionId });
+        const text = String(m.text || '').trim();
+        const nameColor = '#c06bff';
+        const msgColor = '#ffffff';
 
-      // Clickable line region (name + message)
-      ctx.fillStyle = nameColor;
+      // Hover dominates selection
+      const activeHoverSid = chatHoverSessionId;
+      const activeSelectedSid = !activeHoverSid ? chatSelectedUserSessionId : null;
+      const isInHoverGroup = !!activeHoverSid && m.fromSessionId === activeHoverSid;
+      const isInSelectedGroup = !!activeSelectedSid && m.fromSessionId === activeSelectedSid;
+      const isThisHovered = !!chatHoverMessageId && m.id === chatHoverMessageId;
+
+      // Background highlight for the whole message block
+      if (isInSelectedGroup || isInHoverGroup) {
+        ctx.save();
+        const baseFill = isInSelectedGroup ? 'rgba(255, 210, 106, 0.12)' : 'rgba(176, 76, 255, 0.10)';
+        ctx.fillStyle = baseFill;
+        ctx.fillRect(listX - 6, y - 16, listW + 12, blockH - 4);
+        ctx.strokeStyle = isInSelectedGroup ? 'rgba(255, 210, 106, 0.22)' : 'rgba(176, 76, 255, 0.22)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(listX - 6, y - 16, listW + 12, blockH - 4);
+        if (isInHoverGroup && isThisHovered) {
+          ctx.fillStyle = 'rgba(176, 76, 255, 0.16)';
+          ctx.fillRect(listX - 6, y - 16, listW + 12, blockH - 4);
+          ctx.strokeStyle = 'rgba(216, 166, 255, 0.55)';
+          ctx.strokeRect(listX - 6, y - 16, listW + 12, blockH - 4);
+        }
+        ctx.restore();
+      }
+
+      // Timestamp formatting: recent => "Xh ago", else date (lt-LT)
+      let tsText = '';
+      try {
+        const ts = typeof m.ts === 'number' ? m.ts : Date.now();
+        const ageMs = Date.now() - ts;
+        const h = Math.floor(ageMs / (1000 * 60 * 60));
+        // Hide timestamps for very recent messages; show hours for 1..48h; otherwise show date.
+        if (h >= 1 && h <= 48) tsText = `${h}h ago`;
+        else if (h > 48) tsText = new Date(ts).toLocaleDateString('lt-LT');
+        else tsText = '';
+      } catch {
+        tsText = '';
+      }
+
+      // Nick line (clickable only on nick)
+      ctx.save();
+      ctx.font = nickFont;
       ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillText(name, listX, y);
+      ctx.textBaseline = 'top';
+      const effectiveNameColor = isInSelectedGroup ? '#ffd26a' : (isInHoverGroup ? '#d8a6ff' : nameColor);
+      drawOutlinedText(ctx, name, listX, y, {
+        font: nickFont,
+        align: 'left',
+        baseline: 'top',
+        lineWidth: 3,
+        stroke: 'rgba(0, 0, 0, 0.9)',
+        fill: effectiveNameColor,
+      });
       const nameW = ctx.measureText(name).width;
+
+      // underline for hovered row / selected group
+      if (isInSelectedGroup || (isInHoverGroup && isThisHovered)) {
+        ctx.strokeStyle = isInSelectedGroup ? 'rgba(255, 210, 106, 0.85)' : 'rgba(216, 166, 255, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const underlineY = y + 22;
+        ctx.moveTo(listX, underlineY);
+        ctx.lineTo(listX + Math.max(8, nameW), underlineY);
+        ctx.stroke();
+      }
+
+      // Right timestamp on nick line
+      if (tsText) {
+        drawOutlinedText(ctx, tsText, listX + listW, y, {
+          font: tsFont,
+          align: 'right',
+          baseline: 'top',
+          lineWidth: 3,
+          stroke: 'rgba(0, 0, 0, 0.85)',
+          fill: 'rgba(230, 240, 255, 0.55)',
+        });
+      }
+      ctx.restore();
+
       chatHitRegions.push({
         sessionId: m.fromSessionId,
+        messageId: m.id || '',
         address: m.fromAddress,
         x: listX,
-        y: y - 12,
-        // whole row clickable (requested)
-        w: listW,
+        y,
+        w: Math.max(8, nameW),
         h: 18
       });
 
-      // Message text
-      ctx.fillStyle = color;
+      // Message lines (below) - wrap into max 2 lines
+      ctx.save();
+      ctx.font = msgFont;
       ctx.textAlign = 'left';
-      ctx.fillText(`: ${text}`, listX + Math.min(220, nameW + 6), y);
+      const maxMsgW = listW - 6;
+      const words = text.split(/\s+/).filter(Boolean);
+      const lines: string[] = [];
+      let current = '';
+      for (const w of words) {
+        const next = current ? `${current} ${w}` : w;
+        if (ctx.measureText(next).width <= maxMsgW) {
+          current = next;
+        } else {
+          lines.push(current || w);
+          current = current && ctx.measureText(w).width <= maxMsgW ? w : w;
+          if (lines.length >= maxMsgLines) break;
+        }
+      }
+      if (lines.length < maxMsgLines && current) lines.push(current);
 
-      y += lineH;
+      // If we overflowed, ellipsize the last line
+      const hasMore = words.length > 0 && (lines.length >= maxMsgLines) && (
+        (() => {
+          // crude: if we broke early or still have unused words
+          const joined = lines.join(' ');
+          return joined.length < text.length;
+        })()
+      );
+      if (hasMore && lines.length) {
+        let last = lines[lines.length - 1];
+        while (last.length > 0 && ctx.measureText(`${last}…`).width > maxMsgW) {
+          last = last.slice(0, -1);
+        }
+        lines[lines.length - 1] = `${last}…`;
+      }
+
+      // draw up to 2 lines (second line can be empty)
+      for (let li = 0; li < maxMsgLines; li++) {
+        const t = lines[li] || '';
+        drawOutlinedText(ctx, t, listX, y + 26 + li * msgLineH, {
+          font: msgFont,
+          align: 'left',
+          baseline: 'top',
+          lineWidth: 3,
+          stroke: 'rgba(0, 0, 0, 0.9)',
+          fill: msgColor,
+        });
+      }
+      ctx.restore();
+
+        y += blockH;
+      }
     }
     ctx.restore();
 
@@ -19446,13 +21500,107 @@ function gameLoop() {
     ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
     ctx.lineWidth = 1;
     ctx.strokeRect(sendX, sendY, sendW, inputH);
-    ctx.fillStyle = chatConnected ? '#ff9a00' : 'rgba(230, 240, 255, 0.45)';
-    ctx.font = 'bold 12px "Press Start 2P"';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('SEND', sendX + sendW / 2, sendY + inputH / 2 + 1);
+    drawOutlinedText(ctx, 'SEND', sendX + sendW / 2, sendY + inputH / 2 + 0.5, {
+      sizePx: 15,
+      weight: 800,
+      align: 'center',
+      baseline: 'middle',
+      lineWidth: 4,
+      stroke: 'rgba(0, 0, 0, 0.9)',
+      fill: chatConnected ? '#ff9a00' : 'rgba(230, 240, 255, 0.55)',
+    });
 
     ctx.restore();
+  }
+
+  // Slot bell button (next to LIVE CHAT)
+  {
+    const onlineBoxW = 120;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 25;
+    const chatW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const chatX = onlineBoxX - gap - chatW;
+    const bellW = 32;
+    const bellGap = 8;
+    const bellX = chatX - bellGap - bellW;
+    const bellY = onlineBoxY;
+
+    const now = Date.now();
+
+    // Background (match LIVE CHAT style: translucent, subtle).
+    // IMPORTANT: when a free spin arrives, we only "light up" the bell icon itself,
+    // not the outer button background.
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = isHoveringSlotBell ? 'rgba(18, 22, 36, 0.70)' : 'rgba(8, 10, 18, 0.55)';
+    ctx.fillRect(bellX, bellY, bellW, btnH);
+    ctx.restore();
+
+    // Bell icon: use provided bell.png (no pulsing/tint; only badge changes)
+    {
+      const img: any = bellSpriteProcessed || bellSprite;
+      if (img) {
+        // Smaller icon inside the button (requested)
+        const size = Math.min(btnH + 6, bellW - 8);
+        const dx = Math.round(bellX + (bellW - size) / 2);
+        const dy = Math.round(bellY + (btnH - size) / 2);
+        ctx.save();
+        ctx.globalAlpha = 0.72;
+        (ctx as any).imageSmoothingEnabled = false;
+        ctx.drawImage(img, dx, dy, size, size);
+        ctx.restore();
+      } else {
+        // Fallback silhouette
+        ctx.save();
+        ctx.globalAlpha = 0.72;
+        const cx = bellX + bellW / 2;
+        const cy = bellY + btnH / 2 + 1;
+        // If the icon isn't loaded yet, keep the fallback stable (no pulsing).
+        // We can still slightly "warm" the color when there are new spins.
+        const bellGlow = slotBellNewSpins > 0;
+        ctx.fillStyle = bellGlow ? 'rgba(255, 210, 90, 0.95)' : 'rgba(255, 230, 160, 0.90)';
+        ctx.beginPath();
+        ctx.arc(cx, cy - 10, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy - 3, 7.8, Math.PI * 1.08, Math.PI * 1.92, false);
+        ctx.lineTo(cx + 7.2, cy + 4);
+        ctx.quadraticCurveTo(cx + 6.6, cy + 8.2, cx + 2.6, cy + 8.2);
+        ctx.lineTo(cx - 2.6, cy + 8.2);
+        ctx.quadraticCurveTo(cx - 6.6, cy + 8.2, cx - 7.2, cy + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.beginPath();
+        ctx.arc(cx, cy + 8.8, 1.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Badge: +N (cap at +9)
+    if (slotBellNewSpins > 0) {
+      ctx.save();
+      const bx = bellX + bellW - 6;
+      const by = bellY + 5;
+      ctx.fillStyle = 'rgba(255, 80, 80, 0.95)';
+      ctx.beginPath();
+      ctx.arc(bx, by, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const txt = `+${Math.min(9, slotBellNewSpins)}`;
+      ctx.strokeText(txt, bx, by + 0.5);
+      ctx.fillText(txt, bx, by + 0.5);
+      ctx.restore();
+    }
   }
 
   // Duel invite modal (from chat)
@@ -19505,6 +21653,136 @@ function gameLoop() {
     ctx.fillText('DECLINE', denyX + btnW / 2, btnY + btnH / 2 + 1);
     ctx.restore();
   }
+
+  // --- Slot machine modal (Solo distance reward) ---
+  if (slotModalOpen) {
+    const modalW = 560;
+    const modalH = 320;
+    const modalX = Math.floor(canvas.width / 2 - modalW / 2);
+    const modalY = Math.floor(canvas.height / 2 - modalH / 2);
+    const reelY = modalY + 110;
+    const reelW = 140;
+    const reelH = 90;
+    const gap = 26;
+    const reelsX0 = modalX + Math.floor((modalW - (reelW * 3 + gap * 2)) / 2);
+
+    // Animate reel positions while spinning
+    if (slotIsSpinning) {
+      const now = Date.now();
+      const speed = 22; // symbols per second
+      for (let i = 0; i < 3; i++) {
+        if (now < slotSpinStopsAt[i]) {
+          const dt = 1 / 60;
+          slotReelPos[i] = (slotReelPos[i] + speed * dt) % 9999;
+        } else {
+          // Snap to result
+          const idx = SLOT_SYMBOLS.indexOf(slotReelResult[i] as any);
+          if (idx >= 0) slotReelPos[i] = idx;
+        }
+      }
+    }
+
+    const drawReel = (i: number) => {
+      const x = reelsX0 + i * (reelW + gap);
+      const y = reelY;
+      const symIdx = Math.floor(Math.abs(slotReelPos[i])) % SLOT_SYMBOLS.length;
+      const sym = slotIsSpinning ? SLOT_SYMBOLS[symIdx] : (slotReelResult[i] as any);
+      ctx.save();
+      ctx.fillStyle = 'rgba(8, 10, 18, 0.92)';
+      ctx.fillRect(x, y, reelW, reelH);
+      ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, reelW, reelH);
+      // inner highlight
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 2, y + 2, reelW - 4, reelH - 4);
+
+      ctx.font = 'bold 22px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      const symText = String(sym);
+      // Visual request: make X red.
+      ctx.fillStyle = (symText === 'X') ? '#ff4d4d' : '#ffffff';
+      ctx.strokeText(symText, x + reelW / 2, y + reelH / 2 + 2);
+      ctx.fillText(symText, x + reelW / 2, y + reelH / 2 + 2);
+      ctx.restore();
+    };
+
+    // Backdrop
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.94)';
+    ctx.fillRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalW, modalH);
+
+    // Title
+    ctx.fillStyle = '#ff9a00';
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SLOT MACHINE', modalX + modalW / 2, modalY + 42);
+
+    // Spins count
+    ctx.fillStyle = 'rgba(230, 240, 255, 0.85)';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.fillText(`SPINS: ${Math.max(0, soloSpins | 0)}`, modalX + modalW / 2, modalY + 70);
+
+    // Reels
+    drawReel(0);
+    drawReel(1);
+    drawReel(2);
+
+    // Result / last payout
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 9px "Press Start 2P"';
+    const msg = slotIsSpinning
+      ? 'SPINNING...'
+      : (slotLastPayoutText ? `RESULT: ${slotLastPayoutText}` : 'PRESS SPIN');
+    ctx.fillText(msg, modalX + modalW / 2, modalY + 220);
+
+    // Buttons
+    const btnW = 220;
+    const btnH = 34;
+    const spinX = modalX + Math.floor(modalW / 2 - btnW / 2);
+    const spinY = modalY + 238;
+    const closeX = modalX + modalW - 38;
+    const closeY = modalY + 14;
+
+    // Close X
+    ctx.fillStyle = 'rgba(18, 22, 36, 0.92)';
+    ctx.fillRect(closeX, closeY, 24, 24);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(closeX, closeY, 24, 24);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText('X', closeX + 12, closeY + 13);
+
+    // Spin button
+    const canSpin = (!slotIsSpinning) && soloSpins > 0;
+    ctx.fillStyle = canSpin ? 'rgba(20, 28, 48, 0.85)' : 'rgba(120, 120, 120, 0.25)';
+    ctx.fillRect(spinX, spinY, btnW, btnH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(spinX, spinY, btnW, btnH);
+    ctx.fillStyle = canSpin ? '#ff9a00' : 'rgba(230, 240, 255, 0.55)';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.fillText('SPIN', spinX + btnW / 2, spinY + btnH / 2 + 1);
+
+    // Cache modal hit regions (for click handler)
+    (window as any).__slotModalRegion = { x: modalX, y: modalY, w: modalW, h: modalH, spinX, spinY, spinW: btnW, spinH: btnH, closeX, closeY, closeW: 24, closeH: 24 };
+
+    ctx.restore();
+  }
+
+  // Duel offer handshake is rendered inside the Opponent Profile panel.
   
   if (isServerBrowserOpen) {
     drawServerBrowserOverlay();
@@ -19557,4 +21835,14 @@ if (!(window as any).__gameLoopRunning) {
   gameLoop();
 } else {
   console.warn('⚠️ Game loop already running - skipping duplicate start (HMR protection)');
+}
+
+// Stop continuous audio on tab hide (prevents stuck hum)
+if (!(window as any).__ufoHumVisibilityListenerAdded) {
+  (window as any).__ufoHumVisibilityListenerAdded = true;
+  document.addEventListener('visibilitychange', () => {
+    try {
+      if (document.hidden) audioManager.stopUfoHum?.();
+    } catch {}
+  });
 }

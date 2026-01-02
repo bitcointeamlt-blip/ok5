@@ -130,3 +130,9 @@ PM2 post-deploy agent tiesiog log'ina kiekvieną deployment'ą, bet tai neturėt
 
 
 
+
+
+
+
+
+
