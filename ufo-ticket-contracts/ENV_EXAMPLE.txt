@@ -1,0 +1,13 @@
+# Copy this to `ufo-ticket-contracts/.env` locally. Do NOT commit real keys.
+
+# Deployer EOA private key (use a fresh wallet, not your main wallet)
+DEPLOYER_PRIVATE_KEY=
+
+# Ronin RPC (optional overrides)
+RONIN_RPC_URL=https://api.roninchain.com/rpc
+SAIGON_RPC_URL=https://saigon-testnet.roninchain.com/rpc
+
+# RONKE token address (you provided)
+RONKE_TOKEN_ADDRESS=0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb
+
+
