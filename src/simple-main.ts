@@ -1,0 +1,23417 @@
+// Arrow range limiting (performance + clarity)
+const PVP_ARROW_RANGE_PX = 700;
+const PVP_ARROW_FADE_PX = 50; // after range, fade out over this distance
+
+// Simple version without complex imports
+// Force rebuild - wallet button fix (v2)
+import { SaveManagerV2 } from './persistence/SaveManagerV2';
+import { SaveDataV2, createInitialSaveDataV2 } from './persistence/SaveDataV2';
+import { walletService, type WalletProviderType } from './services/WalletService';
+import { supabaseService } from './services/SupabaseService';
+import { matchmakingService } from './services/MatchmakingService';
+import { pvpSyncService } from './services/PvPSyncService';
+import { colyseusService } from './services/ColyseusService';
+import { presenceService } from './services/PresenceService';
+import { chatService } from './services/ChatService';
+import type { Match } from './services/SupabaseService';
+import { ProfileManager } from './profile/ProfileManager';
+import { nftService } from './services/NftService';
+import type { NftItem } from './types/nft';
+import { AudioManager } from './audio/AudioManager';
+
+type PvpServerPreset = {
+  id: string;
+  name: string;
+  region: string;
+  endpoint: string;
+  description?: string;
+};
+
+type PvpServerStatus = PvpServerPreset & {
+  status: 'checking' | 'online' | 'offline';
+  pingMs: number | null;
+  waitingPlayers: number | null;
+  waitingRooms: number | null;
+  activeRooms: number | null;
+  totalPlayers: number | null;
+  presencePlayers: number | null;
+  lastUpdated: number | null;
+  error?: string;
+};
+
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const defaultLocalColyseusHttp = 'http://localhost:2567';
+const defaultCloudColyseusHttp = 'https://de-fra-f8820c12.colyseus.cloud';
+
+// Prefer local endpoint when running locally. Production should use Cloud (or explicit env var).
+const fallbackColyseusEndpoint =
+  import.meta.env.VITE_COLYSEUS_ENDPOINT || (isLocalhost ? defaultLocalColyseusHttp : defaultCloudColyseusHttp);
+
+const serverPresets: PvpServerPreset[] = isLocalhost
+  ? [
+      {
+        id: 'local',
+        name: 'Localhost',
+        region: 'LOCAL',
+        endpoint: defaultLocalColyseusHttp,
+        description: 'Local Colyseus server'
+      },
+      {
+        id: 'eu-central',
+        name: 'Europe - Frankfurt',
+        region: 'EU',
+        endpoint: defaultCloudColyseusHttp,
+        description: 'Primary Colyseus Cloud server'
+      }
+    ]
+  : [
+  {
+    id: 'eu-central',
+    name: 'Europe - Frankfurt',
+    region: 'EU',
+    endpoint: fallbackColyseusEndpoint,
+    description: 'Primary Colyseus Cloud server'
+  }
+];
+
+const PVP_SERVER_PRESETS: PvpServerPreset[] = serverPresets.filter(
+  (preset, index, array) =>
+    !!preset.endpoint &&
+    index === array.findIndex((other) => other.id === preset.id)
+);
+
+let serverStatuses: PvpServerStatus[] = PVP_SERVER_PRESETS.map((preset) => ({
+  ...preset,
+  status: 'checking',
+  pingMs: null,
+  waitingPlayers: null,
+  waitingRooms: null,
+  activeRooms: null,
+  totalPlayers: null,
+  presencePlayers: null,
+  lastUpdated: null
+}));
+
+const storedServerId = (() => {
+  try {
+    return localStorage.getItem('pvp_server_id');
+  } catch (error) {
+    return null;
+  }
+})();
+
+let selectedServerId: string | null =
+  (storedServerId && serverStatuses.some((server) => server.id === storedServerId) && storedServerId) ||
+  serverStatuses[0]?.id ||
+  null;
+
+let isServerBrowserOpen = false;
+let serverBrowserError = '';
+let serverBrowserHoverId: string | null = null;
+let serverBrowserHoverClose = false;
+let serverStatusLoading = false;
+let serverBrowserHitRegions: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
+let serverBrowserCloseRegion = { x: 0, y: 0, width: 0, height: 0 };
+let serverBrowserModalRegion = { x: 0, y: 0, width: 0, height: 0 };
+let serverStatusInterval: number | null = null;
+
+// Global online players count (from all servers combined)
+let globalOnlinePlayersCount: number | null = null;
+let lastOnlineCountUpdate = 0;
+const ONLINE_COUNT_UPDATE_INTERVAL_MS = 10000; // Update every 10 seconds
+
+// --- Live Chat UI state ---
+let isChatOpen = false;
+let isHoveringChat = false;
+let isPressingChat = false;
+let isHoveringSlotBell = false;
+let isHoveringSlotModalSpin = false;
+let isHoveringSlotModalBoost = false;
+let isHoveringSlotModalClose = false;
+let isPressingSlotBell = false;
+let slotBellNewSpins = 0; // badge count (clears when bell clicked)
+let slotSpinGlowUntil = 0; // short pulse when a spin is generated
+// No glow/flash: only badge count is shown (requested)
+let isHoveringChatSend = false;
+let isPressingChatSend = false;
+let isHoveringChatClose = false;
+let isPressingChatClose = false;
+let chatScrollOffset = 0; // 0 = bottom (latest)
+let chatHitRegions: Array<{ sessionId: string; messageId: string; x: number; y: number; w: number; h: number; address: string }> = [];
+let chatSelectedUserSessionId: string | null = null;
+let chatSelectedUserAddress: string | null = null;
+let chatHoverSessionId: string | null = null;
+let chatHoverMessageId: string | null = null;
+let chatInviteFromSessionId: string | null = null;
+let chatInviteModalOpen = false;
+let chatInviteServerEndpoint: string | null = null;
+let chatInviteRoomName: 'pvp_room' | 'pvp_5sec_room' | 'pvp_fun_room' | null = null;
+let chatInviteFromAddress: string | null = null;
+let pendingDuelInviteToSessionId: string | null = null;
+let pendingDuelInviteAt = 0;
+
+// Duel-offer handshake state (rendered inside Opponent Profile panel)
+let duelOffer: import('./services/ChatService').DuelOffer | null = null;
+
+// Chat panel layout (single source of truth)
+const CHAT_PANEL_W = 490; // narrower (requested)
+const CHAT_PANEL_H = 905; // taller (requested)
+const CHAT_PANEL_MARGIN_RIGHT = 16;
+const CHAT_PANEL_TOP = 30 + 80; // moved 80px down total (requested)
+const CHAT_SEND_W = 96;
+const CHAT_INPUT_H = 44;
+const CHAT_GAP = 10;
+// Render chat messages in DOM overlay for crisp text. When enabled, do not use canvas hit-regions for nick clicks.
+const CHAT_USE_DOM_MESSAGES = true;
+
+// Smooth UI text styling (matches screenshot-like: white text + subtle dark outline)
+const UI_SMOOTH_FONT_STACK = '"Segoe UI", Arial, sans-serif';
+type OutlinedTextOptions = {
+  font?: string;
+  sizePx?: number;
+  weight?: number;
+  fill?: string;
+  stroke?: string;
+  lineWidth?: number;
+  align?: CanvasTextAlign;
+  baseline?: CanvasTextBaseline;
+};
+
+function drawOutlinedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  opts: OutlinedTextOptions = {}
+): void {
+  // Snap to integer pixels to reduce blur when the canvas is CSS-scaled.
+  // (Especially noticeable on outlined text + small font sizes.)
+  const rx = Math.round(x);
+  const ry = Math.round(y);
+  const fill = opts.fill ?? '#ffffff';
+  const stroke = opts.stroke ?? 'rgba(0, 0, 0, 0.85)';
+  const lineWidth = opts.lineWidth ?? 3;
+  const weight = opts.weight ?? 600;
+  const sizePx = opts.sizePx ?? 13;
+  const font = opts.font ?? `${weight} ${sizePx}px ${UI_SMOOTH_FONT_STACK}`;
+
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = opts.align ?? 'left';
+  ctx.textBaseline = opts.baseline ?? 'alphabetic';
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  if (lineWidth > 0) {
+    ctx.lineWidth = lineWidth;
+    ctx.strokeStyle = stroke;
+    ctx.strokeText(text, rx, ry);
+  }
+  ctx.fillStyle = fill;
+  ctx.fillText(text, rx, ry);
+  ctx.restore();
+}
+
+function shortAddr(addr: string): string {
+  const a = String(addr || '');
+  if (a.length <= 12) return a;
+  return `${a.substring(0, 6)}...${a.substring(Math.max(0, a.length - 4))}`;
+}
+
+function getDisplayNameForChatUser(u: { nickname?: string; address?: string; sessionId?: string }): string {
+  const nick = (u?.nickname || '').trim();
+  if (nick) return nick;
+  const addr = (u?.address || '').trim();
+  if (addr) return shortAddr(addr);
+  const sid = (u?.sessionId || '').trim();
+  return sid ? `guest_${sid.substring(0, 6)}` : 'guest';
+}
+
+function openProfileForChatIdentity(address: string | null, sessionId: string | null): void {
+  const addr = (address || '').trim();
+  const sid = (sessionId || '').trim();
+
+  // SessionIds change on reconnect. If we have a stable address (wallet/auth/guest_pvp_id),
+  // resolve the *current* sessionId from the live users list so duel invites don't silently fail.
+  let resolvedSid = sid;
+  try {
+    if (addr) {
+      const u = chatService.getUsers().find((x) => (x?.address || '').trim() === addr);
+      if (u?.sessionId) resolvedSid = u.sessionId;
+    } else if (sid) {
+      // If address is unknown, at least verify the sessionId still exists.
+      const u = chatService.getUsers().find((x) => (x?.sessionId || '').trim() === sid);
+      if (!u) resolvedSid = sid;
+    }
+  } catch {}
+
+  // Always open the modal, even for guests (no wallet address).
+  isOpponentProfileOpen = true;
+  opponentProfileData = null;
+  chatSelectedUserSessionId = resolvedSid || null;
+  chatSelectedUserAddress = addr || null;
+
+  // Use wallet address when available; otherwise fall back to session id for display.
+  opponentAddressForResult = addr || (resolvedSid ? `guest_${resolvedSid.substring(0, 6)}` : 'guest');
+
+  // Only load Supabase profile when we have a real persistent identity (wallet/auth), not a guest id.
+  const isGuestLike = !addr || addr.startsWith('guest_');
+  const isAuthLike = addr.startsWith('auth_');
+  const isWalletLike = addr.startsWith('ronin:') || /^0x[a-fA-F0-9]{40}$/.test(addr);
+  if (!isGuestLike && (isAuthLike || isWalletLike) && supabaseService.isConfigured()) {
+    supabaseService.getProfile(addr).then((p) => { opponentProfileData = p; }).catch(() => {});
+  }
+}
+
+function getProfileNicknameEditRects(): {
+  row: { x: number; y: number; w: number; h: number };
+  btn: { x: number; y: number; w: number; h: number };
+  input: { x: number; y: number; w: number; h: number };
+} {
+  const profileWindowWidth = 900;
+  const profileWindowHeight = 750;
+  const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+  const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100;
+  const dataStartY = profileWindowY + 70;
+  const leftColumnWidth = 400;
+
+  // Row spans the nickname label+value area in left column
+  const rowX = profileWindowX + 20;
+  const rowY = dataStartY + 6;
+  const rowW = leftColumnWidth;
+  const rowH = 46;
+
+  // Edit button on the right side of the row
+  const btnW = 84;
+  const btnH = 26;
+  const btnX = rowX + rowW - 18 - btnW;
+  const btnY = rowY + Math.floor((rowH - btnH) / 2);
+
+  // Input overlay position (aligned to value line)
+  const inputX = rowX + 15; // +5px from left (requested)
+  const inputH = 28;
+  const inputY = rowY + Math.floor((rowH - inputH) / 2);
+  const inputW = rowW - 38 - btnW; // -10px total (5px each side)
+
+  return {
+    row: { x: rowX, y: rowY, w: rowW, h: rowH },
+    btn: { x: btnX, y: btnY, w: btnW, h: btnH },
+    input: { x: inputX, y: inputY, w: inputW, h: inputH },
+  };
+}
+
+function ensureChatInput(): HTMLTextAreaElement {
+  let inp = document.getElementById('chatInput') as HTMLTextAreaElement;
+  if (!inp) {
+    inp = document.createElement('textarea');
+    inp.id = 'chatInput';
+    inp.maxLength = 220;
+    inp.placeholder = 'Type message...';
+    inp.autocomplete = 'off';
+    (inp as any).rows = 2; // always show 2 lines (auto-wrap)
+    inp.wrap = 'soft';
+    inp.style.position = 'absolute';
+    inp.style.display = 'none';
+    // Match smooth UI text style (example screenshot)
+    inp.style.fontFamily = UI_SMOOTH_FONT_STACK;
+    inp.style.fontSize = '18px';
+    inp.style.fontWeight = '700';
+    inp.style.lineHeight = '22px';
+    // Critical: keep width/height stable even with padding/border (prevents overflow vs SEND button)
+    inp.style.boxSizing = 'border-box';
+    inp.style.padding = '10px';
+    inp.style.border = '2px solid rgba(210, 235, 255, 0.22)';
+    inp.style.background = 'rgba(8, 10, 18, 0.85)';
+    inp.style.color = '#ffffff';
+    inp.style.outline = 'none';
+    inp.style.resize = 'none';
+    inp.style.overflow = 'hidden';
+    inp.style.lineHeight = '22px';
+    // Keep above canvas
+    inp.style.zIndex = '10000';
+    document.body.appendChild(inp);
+  }
+  // Bind send handlers once (Enter sends)
+  if (!inp.dataset.bound) {
+    inp.dataset.bound = '1';
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        try {
+          // Always send a single line (even if user pasted multi-line text)
+          const oneLine = String(inp.value || '').split(/\r?\n/)[0];
+          chatService.sendChat(oneLine);
+          inp.value = '';
+          // keep 2-line box height
+          (inp as any).rows = 2;
+        } catch {}
+      } else if (ev.key === 'Escape') {
+        inp.style.display = 'none';
+      }
+    });
+  }
+  return inp;
+}
+
+function ensureChatSendButton(): HTMLButtonElement {
+  let btn = document.getElementById('chatSendBtn') as HTMLButtonElement;
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'chatSendBtn';
+    btn.type = 'button';
+    btn.textContent = 'SEND';
+    btn.style.position = 'absolute';
+    btn.style.display = 'none';
+    btn.style.zIndex = '10001';
+    btn.style.background = 'transparent';
+    btn.style.border = 'none';
+    btn.style.padding = '0';
+    btn.style.margin = '0';
+    btn.style.cursor = 'pointer';
+    btn.style.color = 'transparent'; // visually handled by canvas
+    btn.style.userSelect = 'none';
+    btn.style.outline = 'none';
+
+    btn.addEventListener('mouseenter', () => { isHoveringChatSend = true; });
+    btn.addEventListener('mouseleave', () => { isHoveringChatSend = false; isPressingChatSend = false; });
+    btn.addEventListener('mousedown', () => { isPressingChatSend = true; });
+    btn.addEventListener('mouseup', () => { isPressingChatSend = false; });
+    btn.addEventListener('click', () => {
+      try {
+        if (!chatService.isConnected()) {
+          walletError = 'Chat server offline (start Colyseus server)';
+          return;
+        }
+        const inp = ensureChatInput();
+        const oneLine = String(inp.value || '').split(/\r?\n/)[0];
+        chatService.sendChat(oneLine);
+        inp.value = '';
+        (inp as any).rows = 2;
+        inp.focus();
+      } catch {}
+    });
+
+    document.body.appendChild(btn);
+  }
+  return btn;
+}
+
+function escapeHtml(s: string): string {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+let chatOverlayLastKey = '';
+let chatHasUnread = false;
+let chatUnreadCount = 0;
+function ensureChatMessagesContainer(): HTMLDivElement {
+  let el = document.getElementById('chatMessages') as HTMLDivElement;
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'chatMessages';
+    // Make discoverable for accessibility tooling (and easier automated checks)
+    el.setAttribute('role', 'log');
+    el.setAttribute('aria-label', 'Chat messages');
+    el.setAttribute('aria-live', 'polite');
+    el.tabIndex = 0;
+    el.style.position = 'absolute';
+    el.style.display = 'none';
+    el.style.zIndex = '10000';
+    el.style.pointerEvents = 'auto';
+    el.style.boxSizing = 'border-box';
+    el.style.padding = '10px 10px';
+    el.style.overflowY = 'auto';
+    el.style.overflowX = 'hidden';
+    el.style.background = 'rgba(8, 10, 18, 0.35)'; // stronger lift for readability
+    el.style.border = '1px solid rgba(210, 235, 255, 0.14)';
+    el.style.borderRadius = '6px';
+
+    // Typography: crisp, readable even when the canvas is scaled.
+    el.style.fontFamily = UI_SMOOTH_FONT_STACK;
+    el.style.fontSize = '15px';
+    el.style.lineHeight = '1.25';
+    el.style.fontWeight = '700';
+    el.style.color = '#ffffff';
+    // Faux outline with shadow (works consistently across browsers)
+    el.style.textShadow = '0 2px 0 rgba(0,0,0,0.9), 0 -2px 0 rgba(0,0,0,0.9), 2px 0 0 rgba(0,0,0,0.9), -2px 0 0 rgba(0,0,0,0.9)';
+
+    // NOTE: Clicking nick does nothing (requested).
+
+    // Track whether user scrolled up (so we don't force-scroll while reading)
+    el.addEventListener('scroll', () => {
+      try {
+        const nearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 24;
+        el.dataset.pinned = nearBottom ? '1' : '0';
+      } catch {}
+    });
+
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function renderChatMessagesOverlay(el: HTMLDivElement): void {
+  try {
+    const msgs = chatService.getMessages().filter((m) => m && m.kind === 'chat' && String(m.text || '').trim().length);
+    const last = msgs.slice(-60); // keep DOM light
+    const key = `${last.length}:${last.map(m => m.id).join(',')}`;
+    if (key === chatOverlayLastKey) return;
+
+    // Unread indicator: if chat is closed and someone else writes, light up LIVE CHAT.
+    try {
+      if (isChatOpen) {
+        chatHasUnread = false;
+        chatUnreadCount = 0;
+      } else {
+        const prevKey = chatOverlayLastKey;
+        const lastMsg: any = last.length ? last[last.length - 1] : null;
+        const myAddr = (getMyPvpAddress?.() || '').trim();
+        const fromAddr = String(lastMsg?.fromAddress || '').trim();
+        const isFromMe = !!myAddr && fromAddr === myAddr;
+        if (prevKey && !isFromMe) {
+          chatHasUnread = true;
+          chatUnreadCount = Math.min(99, (chatUnreadCount | 0) + 1);
+        }
+      }
+    } catch {}
+
+    // Preserve "pinned to bottom" behavior.
+    const pinned = el.dataset.pinned !== '0';
+
+    const parts: string[] = [];
+    for (const m of last) {
+      const name = getDisplayNameForChatUser({ nickname: m.fromNickname, address: m.fromAddress, sessionId: m.fromSessionId });
+      const text = String(m.text || '').trim();
+      let tsText = '';
+      try {
+        const ts = typeof m.ts === 'number' ? m.ts : Date.now();
+        const ageMs = Date.now() - ts;
+        const h = Math.floor(ageMs / (1000 * 60 * 60));
+        // Hide timestamps for very recent messages; show hours for 1..48h; otherwise show date.
+        if (h >= 1 && h <= 48) tsText = `${h}h ago`;
+        else if (h > 48) tsText = new Date(ts).toLocaleDateString('lt-LT');
+        else tsText = '';
+      } catch {}
+
+      const safeName = escapeHtml(name);
+      const safeText = escapeHtml(text);
+      const safeTs = escapeHtml(tsText);
+
+      parts.push(
+        `<div style="margin:0 0 12px 0;">` +
+          `<div style="display:flex; align-items:center; gap:10px;">` +
+            `<span style="cursor:default; color:#c06bff; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">${safeName}</span>` +
+            `<span style="margin-left:auto; color:rgba(230,240,255,0.72); font-size:0.78em; font-weight:700; white-space:nowrap;">${safeTs}</span>` +
+          `</div>` +
+          `<div style="margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">${safeText}</div>` +
+        `</div>`
+      );
+    }
+
+    el.innerHTML = parts.join('');
+    chatOverlayLastKey = key;
+
+    if (pinned) {
+      el.scrollTop = el.scrollHeight;
+      el.dataset.pinned = '1';
+    }
+  } catch {}
+}
+
+function ensureNicknameInput(): HTMLInputElement {
+  let inp = document.getElementById('nicknameInput') as HTMLInputElement;
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.id = 'nicknameInput';
+    inp.type = 'text';
+    inp.maxLength = 16;
+    inp.placeholder = 'Nickname...';
+    inp.autocomplete = 'off';
+    inp.style.position = 'absolute';
+    inp.style.fontFamily = '"Press Start 2P", monospace';
+    inp.style.fontSize = '10px';
+    inp.style.padding = '6px';
+    inp.style.boxSizing = 'border-box';
+    inp.style.border = '2px solid rgba(0,0,0,0.85)';
+    inp.style.backgroundColor = '#ffffff';
+    inp.style.color = '#000000';
+    inp.style.outline = 'none';
+    inp.style.display = 'none';
+    inp.style.zIndex = '20000';
+    document.body.appendChild(inp);
+  }
+  // Bind save handlers once (Enter/blur save; Escape cancels)
+  if (!inp.dataset.bound) {
+    inp.dataset.bound = '1';
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        persistNicknameFromUi(inp.value);
+        inp.style.display = 'none';
+        try { canvas.focus?.(); } catch {}
+      } else if (ev.key === 'Escape') {
+        inp.style.display = 'none';
+        try { canvas.focus?.(); } catch {}
+      }
+    });
+    inp.addEventListener('blur', () => {
+      if (inp.style.display !== 'none') {
+        persistNicknameFromUi(inp.value);
+        inp.style.display = 'none';
+      }
+    });
+  }
+  return inp;
+}
+
+function showNicknameInput(): void {
+  try {
+    console.log('[nickname] showNicknameInput()');
+    walletError = 'Editing nickname...';
+    window.setTimeout(() => { try { if (walletError === 'Editing nickname...') walletError = ''; } catch {} }, 1500);
+    const r = getProfileNicknameEditRects();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    const inp = ensureNicknameInput();
+    const profile = profileManager.getProfile();
+    inp.value = profile.nickname || '';
+    inp.style.display = 'block';
+    inp.style.left = `${rect.left + r.input.x * scaleX}px`;
+    inp.style.top = `${rect.top + r.input.y * scaleY}px`;
+    inp.style.width = `${Math.max(140, r.input.w * scaleX)}px`;
+    inp.style.height = `${Math.max(26, r.input.h * scaleY)}px`;
+    inp.focus();
+    inp.select();
+  } catch (e) {
+    console.error('[nickname] showNicknameInput failed', e);
+    walletError = 'Nickname edit failed (check console)';
+  }
+}
+
+function ensureNicknameEditButton(): HTMLButtonElement {
+  let btn = document.getElementById('nicknameEditBtn') as HTMLButtonElement;
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'nicknameEditBtn';
+    btn.type = 'button';
+    btn.textContent = 'EDIT';
+    btn.style.position = 'absolute';
+    btn.style.display = 'none';
+    btn.style.zIndex = '10003';
+    btn.style.background = 'transparent';
+    btn.style.border = 'none';
+    btn.style.padding = '0';
+    btn.style.margin = '0';
+    btn.style.cursor = 'pointer';
+    btn.style.color = 'transparent'; // visual is on canvas
+    btn.style.userSelect = 'none';
+    btn.style.outline = 'none';
+    btn.addEventListener('mouseenter', () => { isHoveringNicknameEdit = true; });
+    btn.addEventListener('mouseleave', () => { isHoveringNicknameEdit = false; isPressingNicknameEdit = false; });
+    btn.addEventListener('mousedown', () => { isPressingNicknameEdit = true; });
+    btn.addEventListener('mouseup', () => { isPressingNicknameEdit = false; });
+    btn.addEventListener('click', () => {
+      console.log('[nickname] EDIT click');
+      if (!isPersistenceConnected()) {
+        walletError = 'Nick will save locally. Connect wallet to sync.';
+        window.setTimeout(() => { try { if (walletError === 'Nick will save locally. Connect wallet to sync.') walletError = ''; } catch {} }, 2000);
+      }
+      showNicknameInput();
+    });
+    document.body.appendChild(btn);
+  }
+  return btn;
+}
+
+// Function to get total online players from all servers
+function getGlobalOnlinePlayersCount(): number | null {
+  const onlineServers = serverStatuses.filter(s => s.status === 'online');
+  if (onlineServers.length === 0) return null;
+  
+  let total = 0;
+  let hasData = false;
+  for (const server of onlineServers) {
+    // Prefer presencePlayers (counts visitors with the website open).
+    if (typeof server.presencePlayers === 'number') {
+      total += server.presencePlayers;
+      hasData = true;
+      continue;
+    }
+    // Fallback for older servers: totalPlayers (matchmaking rooms only)
+    if (typeof server.totalPlayers === 'number') {
+      total += server.totalPlayers;
+      hasData = true;
+    }
+  }
+  return hasData ? total : null;
+}
+
+// Update online count periodically
+async function updateOnlinePlayersCount(): Promise<void> {
+  const now = Date.now();
+  if (now - lastOnlineCountUpdate < ONLINE_COUNT_UPDATE_INTERVAL_MS) return;
+  lastOnlineCountUpdate = now;
+  
+  // Update server statuses first (will refresh totalPlayers)
+  if (!serverStatusLoading) {
+    serverStatusLoading = true;
+    try {
+      const results = await Promise.all(serverStatuses.map((server) => checkServerStatus(server)));
+      for (let i = 0; i < results.length; i++) serverStatuses[i] = results[i];
+    } catch (e) {
+      // ignore
+    }
+    serverStatusLoading = false;
+  }
+  
+  globalOnlinePlayersCount = getGlobalOnlinePlayersCount();
+}
+
+// Verbose logging control (prevents spam in production and lowers frame stutter)
+const originalConsoleLog = console.log.bind(console);
+let verboseLogsEnabled = (window as any).__ENABLE_VERBOSE_LOGS;
+if (typeof verboseLogsEnabled !== 'boolean') {
+  const host = window.location.hostname;
+  verboseLogsEnabled = host === 'localhost' || host === '127.0.0.1';
+}
+
+(window as any).__ENABLE_VERBOSE_LOGS = verboseLogsEnabled;
+
+function setGameLogVerbosity(enabled: boolean) {
+  verboseLogsEnabled = enabled;
+  (window as any).__ENABLE_VERBOSE_LOGS = enabled;
+  originalConsoleLog(`[Game] Verbose logs ${enabled ? 'enabled' : 'muted'}`);
+}
+
+console.log = (...args: any[]) => {
+  if (verboseLogsEnabled) {
+    originalConsoleLog(...args);
+  }
+};
+
+(window as any).setGameLogVerbosity = setGameLogVerbosity;
+
+console.info('Starting simple game...');
+// Presence: count every visitor as "online" as soon as they open the website.
+// We connect to the currently selected server (or fallback).
+presenceService.start(getSelectedServerEndpoint() || fallbackColyseusEndpoint);
+// Live chat: connect on page load so users are visible in chat even if not playing.
+// IMPORTANT: defer until after module initialization to avoid TDZ on `authUserId`.
+window.setTimeout(() => {
+  try {
+    // Use a stable guest id when not connected (prevents "random guest address" confusion on profile click)
+    const myId = getMyPvpAddress() || '';
+    const myNick = (profileManager.getProfile().nickname || '').trim();
+    chatService.start(getSelectedServerEndpoint() || fallbackColyseusEndpoint, { address: myId, nickname: myNick });
+    chatService.onInvite = (fromSid) => {
+      chatInviteFromSessionId = fromSid;
+      chatInviteModalOpen = true;
+    };
+    chatService.onInvitePayload = (msg) => {
+      chatInviteFromSessionId = msg.fromSessionId || null;
+      chatInviteServerEndpoint = (msg.serverEndpoint || '').trim() || null;
+      const rn = (msg.roomName || '').trim();
+      chatInviteRoomName = (rn === 'pvp_room' || rn === 'pvp_5sec_room' || rn === 'pvp_fun_room') ? (rn as any) : null;
+      chatInviteFromAddress = (msg.fromAddress || '').trim() || null;
+      chatInviteModalOpen = true;
+    };
+    chatService.onDuelOffer = (o) => {
+      duelOffer = o;
+      // Ensure both players see the handshake inside the Opponent Profile panel.
+      // If I'm the invitee, open the opponent profile automatically.
+      try {
+        const mySid = chatService.getRoomSessionId() || '';
+        const isInvitee = mySid && mySid === o.toSid;
+        if (isInvitee && !isOpponentProfileOpen) {
+          openProfileForChatIdentity((o.fromAddress || '').trim() || null, (o.fromSid || '').trim() || null);
+        }
+      } catch {}
+    };
+    chatService.onDuelOfferUpdate = (o) => {
+      duelOffer = o;
+      // keep open while pending
+      if (o.status === 'declined') walletError = 'Duel declined';
+      if (o.status === 'cancelled') walletError = 'Duel cancelled';
+      if (o.status === 'declined' || o.status === 'cancelled') {
+        window.setTimeout(() => { try { if (walletError === 'Duel declined' || walletError === 'Duel cancelled') walletError = null; } catch {} }, 2000);
+      }
+    };
+    chatService.onDuelOfferStart = (o) => {
+      duelOffer = null;
+        try {
+          const rn = (o.roomName || '').trim();
+          if (rn === 'pvp_room' || rn === 'pvp_5sec_room' || rn === 'pvp_fun_room') pvpOnlineRoomName = rn as any;
+        startPvPMatchOnServer((o.serverEndpoint || '').trim() || getSelectedServerEndpoint() || undefined);
+      } catch {}
+    };
+    chatService.onInviteResponse = (msg) => {
+      // msg.fromSessionId = responder, msg.toSessionId = me
+      if (!msg?.fromSessionId) return;
+      if (msg.accepted) {
+        pendingDuelInviteToSessionId = null;
+        pendingDuelInviteAt = 0;
+        walletError = '✅ Duel invite accepted';
+        window.setTimeout(() => { try { if (walletError === '✅ Duel invite accepted') walletError = null; } catch {} }, 2000);
+        // Move inviter into the same "preparation/search" flow on the same server/room.
+        try {
+          const rn = (msg.roomName || '').trim();
+          if (rn === 'pvp_room' || rn === 'pvp_5sec_room' || rn === 'pvp_fun_room') pvpOnlineRoomName = rn as any;
+          startPvPMatchOnServer((msg.serverEndpoint || '').trim() || getSelectedServerEndpoint() || undefined);
+        } catch {}
+      } else {
+        pendingDuelInviteToSessionId = null;
+        pendingDuelInviteAt = 0;
+        walletError = '❌ Duel invite declined';
+        window.setTimeout(() => { try { if (walletError === '❌ Duel invite declined') walletError = null; } catch {} }, 2000);
+      }
+    };
+  } catch {}
+}, 0);
+
+function normalizeServerEndpoint(endpoint: string): string {
+  if (!endpoint) return endpoint;
+  const trimmed = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
+  // Health/status endpoints are HTTP(S). If a WS endpoint is provided, convert it for fetch().
+  return trimmed
+    .replace(/^wss:\/\//, 'https://')
+    .replace(/^ws:\/\//, 'http://');
+}
+
+function getSelectedServer(): PvpServerStatus | undefined {
+  if (!selectedServerId) {
+    return serverStatuses[0];
+  }
+  return serverStatuses.find((server) => server.id === selectedServerId) || serverStatuses[0];
+}
+
+function getSelectedServerEndpoint(): string | null {
+  const server = getSelectedServer();
+  return server?.endpoint || null;
+}
+
+function setSelectedServer(serverId: string): void {
+  selectedServerId = serverId;
+  try {
+    localStorage.setItem('pvp_server_id', serverId);
+  } catch (error) {
+    // Ignore storage errors (private mode, etc.)
+  }
+  // Presence should follow the selected server so the visitor gets counted.
+  const endpoint = getSelectedServerEndpoint() || fallbackColyseusEndpoint;
+  presenceService.setEndpoint(endpoint);
+  // Chat should follow the selected server too.
+  const myId = getMyPvpAddress() || '';
+  const myNick = (profileManager.getProfile().nickname || '').trim();
+  chatService.setEndpoint(endpoint, { address: myId, nickname: myNick });
+}
+
+async function fetchWithTimeout(url: string, timeoutMs = 4000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function checkServerStatus(server: PvpServerPreset | PvpServerStatus): Promise<PvpServerStatus> {
+  const normalizedEndpoint = normalizeServerEndpoint(server.endpoint);
+  const baseStatus: PvpServerStatus = {
+    ...server,
+    status: 'checking',
+    pingMs: null,
+    waitingPlayers: null,
+    waitingRooms: null,
+    activeRooms: null,
+    totalPlayers: null,
+    presencePlayers: null,
+    lastUpdated: null,
+    error: undefined
+  };
+
+  if (!normalizedEndpoint) {
+    return {
+      ...baseStatus,
+      status: 'offline',
+      error: 'No endpoint configured',
+      lastUpdated: Date.now()
+    };
+  }
+
+  try {
+    const healthUrl = `${normalizedEndpoint}/health?ts=${Date.now()}`;
+    const startTime = performance.now();
+    const healthResponse = await fetchWithTimeout(healthUrl, 4000);
+
+    if (!healthResponse.ok) {
+      throw new Error(`Health check failed (${healthResponse.status})`);
+    }
+
+    // Some deployments might return non-JSON. Ignore parsing errors.
+    try {
+      await healthResponse.json();
+    } catch (error) {
+      // ignore
+    }
+
+    const pingMs = Math.max(1, Math.round(performance.now() - startTime));
+
+    let waitingPlayers: number | null = null;
+    let waitingRooms: number | null = null;
+    let activeRooms: number | null = null;
+    let totalPlayers: number | null = null;
+    let presencePlayers: number | null = null;
+
+    try {
+      const statusResponse = await fetchWithTimeout(`${normalizedEndpoint}/status?ts=${Date.now()}`, 4000);
+      if (statusResponse.ok) {
+        const data = await statusResponse.json();
+        waitingPlayers = typeof data.waitingPlayers === 'number' ? data.waitingPlayers : null;
+        waitingRooms = typeof data.waitingRooms === 'number' ? data.waitingRooms : null;
+        activeRooms = typeof data.activeRooms === 'number' ? data.activeRooms : null;
+        totalPlayers = typeof data.totalPlayers === 'number' ? data.totalPlayers : null;
+        presencePlayers = typeof data.presencePlayers === 'number' ? data.presencePlayers : null;
+      }
+    } catch (error) {
+      // Older server versions may not have /status - ignore
+    }
+
+    return {
+      ...server,
+      status: 'online',
+      pingMs,
+      waitingPlayers,
+      waitingRooms,
+      activeRooms,
+      totalPlayers,
+      presencePlayers,
+      lastUpdated: Date.now(),
+      error: undefined
+    };
+  } catch (error: any) {
+    return {
+      ...server,
+      status: 'offline',
+      pingMs: null,
+      waitingPlayers: null,
+      waitingRooms: null,
+      activeRooms: null,
+      totalPlayers: null,
+      presencePlayers: null,
+      lastUpdated: Date.now(),
+      error: error?.message || 'Unavailable'
+    };
+  }
+}
+
+async function refreshServerStatuses(): Promise<void> {
+  if (serverStatuses.length === 0 || serverStatusLoading) {
+    return;
+  }
+  if (!isServerBrowserOpen) {
+    return;
+  }
+
+  serverStatusLoading = true;
+  try {
+    const results = await Promise.all(serverStatuses.map((server) => checkServerStatus(server)));
+    if (isServerBrowserOpen) {
+      serverStatuses = results;
+    }
+  } finally {
+    serverStatusLoading = false;
+  }
+}
+
+function startServerStatusAutoRefresh(): void {
+  if (serverStatusInterval !== null) {
+    return;
+  }
+  serverStatusInterval = window.setInterval(() => {
+    if (!isServerBrowserOpen) {
+      return;
+    }
+    refreshServerStatuses().catch(() => {
+      serverBrowserError = 'Failed to refresh server status';
+    });
+  }, 5000);
+}
+
+function stopServerStatusAutoRefresh(): void {
+  if (serverStatusInterval !== null) {
+    clearInterval(serverStatusInterval);
+    serverStatusInterval = null;
+  }
+}
+
+function openServerBrowser(): void {
+  serverBrowserError = '';
+  serverBrowserHoverId = null;
+  serverBrowserHoverClose = false;
+  isServerBrowserOpen = true;
+  startServerStatusAutoRefresh();
+  refreshServerStatuses().catch(() => {
+    serverBrowserError = 'Failed to refresh server status';
+  });
+}
+
+function closeServerBrowser(): void {
+  isServerBrowserOpen = false;
+  serverBrowserHoverId = null;
+  serverBrowserHoverClose = false;
+  stopServerStatusAutoRefresh();
+  serverStatusLoading = false;
+}
+
+// PvP identity:
+// - If wallet connected, use wallet address
+// - Otherwise, use an ephemeral guest id (sessionStorage), so guests can play PvP but never save progression.
+let authUserId: string | null = null;
+let authEmail: string | null = null;
+let authConnecting = false;
+let emailLoginModalOpen = false;
+let emailLoginStatus: string | null = null;
+
+function openEmailLoginModal(): void {
+  emailLoginModalOpen = true;
+  emailLoginStatus = null;
+  let inp = document.getElementById('emailLoginInput') as HTMLInputElement | null;
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.id = 'emailLoginInput';
+    inp.type = 'email';
+    inp.placeholder = 'email@example.com';
+    inp.autocomplete = 'email';
+    inp.style.position = 'absolute';
+    inp.style.fontFamily = '"Press Start 2P", monospace';
+    inp.style.fontSize = '10px';
+    inp.style.padding = '6px';
+    inp.style.border = '2px solid #000000';
+    inp.style.backgroundColor = '#ffffff';
+    inp.style.color = '#000000';
+    inp.style.zIndex = '9999';
+    document.body.appendChild(inp);
+  }
+  // Position roughly above wallet button (UI panel area)
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width / canvas.width;
+  const scaleY = rect.height / canvas.height;
+  const x = 20;
+  const y = 450 - 10 - 56;
+  inp.style.left = `${rect.left + x * scaleX}px`;
+  inp.style.top = `${rect.top + y * scaleY}px`;
+  inp.style.width = `${200 * scaleX}px`;
+  inp.style.display = 'block';
+  inp.focus();
+  inp.select();
+}
+
+function closeEmailLoginModal(): void {
+  emailLoginModalOpen = false;
+  const inp = document.getElementById('emailLoginInput') as HTMLInputElement | null;
+  if (inp) inp.style.display = 'none';
+}
+
+function getAuthIdentityForGame(): string | null {
+  return authUserId ? `auth_${authUserId}` : null;
+}
+
+function getPersistenceIdentity(): string | null {
+  try {
+    const walletAddr = walletService.getState().address;
+    if (walletAddr) return walletAddr;
+  } catch {}
+  const authId = getAuthIdentityForGame();
+  if (authId) return authId;
+  return null;
+}
+
+function isPersistenceConnected(): boolean {
+  return !!getPersistenceIdentity();
+}
+
+function getMyPvpAddress(): string {
+  const walletState = walletService.getState();
+  // Some flows restore address asynchronously; prefer a real Ronin address whenever present.
+  if (walletState.address) return walletState.address;
+  const authId = getAuthIdentityForGame();
+  if (authId) return authId;
+  try {
+    const stored = localStorage.getItem('ronin_address');
+    if (stored) return stored;
+  } catch {}
+  try {
+    const existing = sessionStorage.getItem('guest_pvp_id');
+    if (existing) return existing;
+    const id = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    sessionStorage.setItem('guest_pvp_id', id);
+    return id;
+  } catch {
+    return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function getRoninAddressForPersistence(): string | null {
+  // Legacy name: returns the "persistent identity" for saving profile/progress.
+  // Wallet address wins; if not present, use Supabase auth identity (auth_<userId>).
+  const id = getPersistenceIdentity();
+  if (id) return id;
+    return null;
+}
+
+function handleServerSelection(serverId: string): void {
+  const server = serverStatuses.find((item) => item.id === serverId);
+  if (!server) {
+    return;
+  }
+
+  setSelectedServer(serverId);
+  closeServerBrowser();
+  startPvPMatchOnServer(server.endpoint);
+}
+
+function startPvPMatchOnServer(serverEndpoint?: string): void {
+  // PvP Online (competitive) may require UFO Ticket (RONKE-minted).
+  // IMPORTANT: Do not trust localStorage for security gating; server enforces on-chain ticket ownership.
+  walletError = null;
+  try {
+    const st = walletService.getState();
+    const hasWallet = !!(st && st.isConnected && st.address);
+    if (!hasWallet) {
+      walletError = (pvpOnlineRoomName === 'pvp_room')
+        ? 'Connect Ronin wallet (UFO Ticket required)'
+        : (pvpOnlineRoomName === 'pvp_fun_room')
+          ? 'Connect Ronin wallet to play FUN PvP'
+          : 'Connect Ronin wallet to play PvP';
+      return;
+    }
+  } catch {}
+
+  const endpointToUse = serverEndpoint || getSelectedServerEndpoint();
+  // Preserve desired PvP mode across cleanupPvP()
+  const desiredTurnMode = TURN_BASED_PVP_ENABLED;
+  const desiredRoomName = pvpOnlineRoomName;
+  const previousMode = gameMode;
+  gameMode = 'PvP';
+  cleanupPvP();
+  TURN_BASED_PVP_ENABLED = desiredTurnMode;
+  pvpOnlineRoomName = desiredRoomName;
+
+  if (!endpointToUse) {
+    walletError = 'No PvP server available';
+    gameMode = previousMode;
+    return;
+  }
+
+  enterLobby(endpointToUse).catch((error) => {
+    console.error('Failed to enter lobby:', error);
+    gameMode = previousMode;
+    isInLobby = false;
+    isSearchingForMatch = false;
+    currentMatch = null;
+    walletError = 'Failed to enter lobby';
+  });
+
+  console.log('Entered PvP Online lobby via server:', endpointToUse);
+  forceSaveGame();
+}
+
+function updateServerBrowserHover(mouseX: number, mouseY: number): void {
+  serverBrowserHoverId = null;
+  serverBrowserHoverClose = false;
+
+  for (const region of serverBrowserHitRegions) {
+    if (mouseX >= region.x && mouseX <= region.x + region.width &&
+        mouseY >= region.y && mouseY <= region.y + region.height) {
+      serverBrowserHoverId = region.id;
+      break;
+    }
+  }
+
+  serverBrowserHoverClose =
+    mouseX >= serverBrowserCloseRegion.x && mouseX <= serverBrowserCloseRegion.x + serverBrowserCloseRegion.width &&
+    mouseY >= serverBrowserCloseRegion.y && mouseY <= serverBrowserCloseRegion.y + serverBrowserCloseRegion.height;
+
+  if (serverBrowserHoverId || serverBrowserHoverClose) {
+    canvas.style.cursor = 'pointer';
+  } else {
+    canvas.style.cursor = 'default';
+  }
+}
+
+function isPointInsideRegion(
+  mouseX: number,
+  mouseY: number,
+  region: { x: number; y: number; width: number; height: number }
+): boolean {
+  return (
+    mouseX >= region.x &&
+    mouseX <= region.x + region.width &&
+    mouseY >= region.y &&
+    mouseY <= region.y + region.height
+  );
+}
+
+function getServerDisplayHost(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    return url.host;
+  } catch (error) {
+    return endpoint;
+  }
+}
+
+function getServerStatusColor(status: PvpServerStatus): string {
+  if (status.status === 'online') {
+    if (typeof status.pingMs === 'number' && status.pingMs <= 80) {
+      return '#00aa00';
+    }
+    if (typeof status.pingMs === 'number' && status.pingMs <= 140) {
+      return '#ffaa00';
+    }
+    return '#ff5500';
+  }
+  if (status.status === 'checking') {
+    return '#ffaa00';
+  }
+  return '#ff1e1e';
+}
+
+function getServerPingText(status: PvpServerStatus): string {
+  if (status.status === 'online' && typeof status.pingMs === 'number') {
+    return `${status.pingMs}ms`;
+  }
+  if (status.status === 'offline') {
+    return 'offline';
+  }
+  return 'checking...';
+}
+
+const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+const ctx = canvas.getContext('2d')!;
+
+console.log('Canvas:', canvas);
+console.log('Context:', ctx);
+
+// Helper function to convert mouse coordinates to canvas coordinates
+// This handles canvas scaling correctly
+function getCanvasMousePos(e: MouseEvent): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+// Profile Manager (local profile: nickname/xp/etc.)
+// Keep this initialized early so wallet restore can sync nickname from Supabase.
+const profileManager = new ProfileManager();
+
+function getNicknameFromSupabaseProfile(profile: any): string | null {
+  const raw =
+    (typeof profile?.nickname === 'string' && profile.nickname.trim().length ? profile.nickname : null) ||
+    (typeof profile?.pvp_data?.nickname === 'string' && profile.pvp_data.nickname.trim().length ? profile.pvp_data.nickname : null);
+  if (!raw) return null;
+  return String(raw).trim().substring(0, 16);
+}
+
+function persistNicknameFromUi(raw: string): void {
+  const newNickname = (typeof raw === 'string' ? raw.trim() : '');
+  if (!newNickname) return;
+  profileManager.setNickname(newNickname);
+  // Update nickname in live chat immediately (no reconnect needed).
+  try {
+    chatService.updateIdentity({ address: getMyPvpAddress() || '', nickname: newNickname });
+  } catch {}
+  // Also persist to Supabase (best-effort) so other players/leaderboard/results can display it.
+  const pid = getRoninAddressForPersistence();
+  if (pid) {
+    try {
+      const p = profileManager.getProfile();
+      const computedMaxHP = dotMaxHP + calculateNftBonuses().hp;
+      supabaseService.updatePvpSnapshot(pid, { maxHP: computedMaxHP, xp: p.xp || 0, nickname: newNickname }).catch(() => {});
+      supabaseService.updateNickname(pid, newNickname).catch(() => {});
+    } catch {}
+  }
+}
+
+// Initialize wallet service - try to restore connection on startup
+try {
+  console.log('Initializing wallet service...');
+  
+  // Listen to wallet state changes to update UI
+  walletService.onStateChange((state) => {
+    console.log('Wallet state changed:', state);
+    console.log('isConnected:', state.isConnected, 'address:', state.address);
+    // If the user connects after startup, restore local save immediately (old behavior).
+    try {
+      if ((state.isConnected && state.address) && !(window as any).__saveLoadedAfterWalletConnect) {
+        (window as any).__saveLoadedAfterWalletConnect = true;
+        const saveData = saveManager.load();
+        if (saveData) {
+          loadGameState(saveData);
+        } else {
+          // No local save: treat as new wallet player for local session and grant starter pack.
+          try { applyStarterPackForNewWalletPlayer(); } catch {}
+          // If local save is missing (common when origin/port changes), try cloud restore.
+          // Guard per-wallet to avoid repeated network calls.
+          const key = `__soloCloudLoadedAfterWalletConnect_${state.address}`;
+          if (!(window as any)[key]) {
+            (window as any)[key] = true;
+            try { maybeCloudLoadSoloOnStartup(); } catch {}
+          }
+        }
+      }
+    } catch {}
+    // Auto-load NFTs in the background after wallet connects (so bonuses apply without opening PROFILE).
+    if (state.isConnected && state.address) {
+      maybeAutoLoadNfts('wallet_state_change');
+      // Sync nickname from Supabase once per wallet identity (so nick shows everywhere, not just local).
+      try {
+        const key = `__supabaseProfileSynced_${state.address}`;
+        if (!(window as any)[key]) {
+          (window as any)[key] = true;
+          supabaseService.getProfile(state.address).then((profile) => {
+            const nick = getNicknameFromSupabaseProfile(profile);
+            if (nick) {
+              profileManager.setNickname(nick);
+              try { chatService.updateIdentity({ address: getMyPvpAddress() || '', nickname: nick }); } catch {}
+            }
+          }).catch(() => {});
+        }
+      } catch {}
+    } else {
+      // Wallet disconnected: clear cached NFT state (prevents stale bonuses).
+      nftList = [];
+      nftCurrentPage = 0;
+      nftError = null;
+      isLoadingNfts = false;
+      nftLoadedWalletAddress = null;
+      nftLoadedAt = 0;
+      nftLoadedOnce = false;
+    }
+    // UI will update automatically on next render
+  });
+  
+  walletService.restoreConnection().then((restored) => {
+    if (restored) {
+      console.log('Wallet connection restored');
+      const address = walletService.getAddress();
+      if (address) {
+        // Load profile from Supabase
+        supabaseService.getProfile(address).then((profile) => {
+          if (profile) {
+            console.log('Profile loaded on startup:', profile);
+            // Sync nickname from Supabase into local profile (so UI shows nickname everywhere).
+            const nick = getNicknameFromSupabaseProfile(profile);
+            if (nick) {
+              profileManager.setNickname(nick);
+              try { chatService.updateIdentity({ address: getMyPvpAddress() || '', nickname: nick }); } catch {}
+            }
+          }
+        }).catch((error) => {
+          console.error('Error loading profile:', error);
+        });
+        // Auto-load NFTs on restored wallet session too.
+        maybeAutoLoadNfts('wallet_restore');
+      }
+    } else {
+      console.log('No wallet connection to restore');
+    }
+  }).catch((error) => {
+    console.error('Error restoring wallet connection:', error);
+  });
+} catch (error) {
+  console.error('Error initializing wallet service:', error);
+}
+
+// Initialize Supabase Auth session (Email/OAuth) on startup
+try {
+  if (supabaseService.isConfigured()) {
+    supabaseService.getAuthSession().then(({ userId, email }) => {
+      authUserId = userId;
+      authEmail = email;
+      if (authUserId) {
+        // Keep compatibility with existing code that reads ronin_address from localStorage.
+        const ident = `auth_${authUserId}`;
+        try {
+          localStorage.setItem('ronin_address', ident);
+        } catch {}
+        // Load profile (saved progress) for this identity
+        supabaseService.getProfile(ident).catch(() => {});
+      }
+    }).catch(() => {});
+
+    supabaseService.onAuthStateChange((userId, email) => {
+      authUserId = userId;
+      authEmail = email;
+      if (authUserId) {
+        const ident = `auth_${authUserId}`;
+        try {
+          localStorage.setItem('ronin_address', ident);
+        } catch {}
+      } else {
+        // If user signed out and no wallet is connected, clear legacy address key.
+        try {
+          const walletAddr = walletService.getState().address;
+          if (!walletAddr) localStorage.removeItem('ronin_address');
+        } catch {
+          try { localStorage.removeItem('ronin_address'); } catch {}
+        }
+      }
+    });
+  }
+} catch (e) {
+  console.warn('Supabase auth init failed:', e);
+}
+
+// Audio Manager
+const audioManager = new AudioManager();
+
+// UFO speed SFX disabled (requested).
+
+// Game state
+let dotCurrency = 0;
+const STARTER_GUEST_RICE = 100;
+const STARTER_WALLET_RICE = 200;
+let starterGuestGrantedThisSession = false;
+let starterWalletGrantedThisSession = false;
+let dmg = 1;
+// Solo progression: "flight speed" (km/s). Starts at 1 and grows on successful hits.
+let soloSpeedKmps = 1;
+// Solo progression: total distance traveled (km). Increases live as speed * time.
+let soloDistanceKm = 0;
+
+// Slot onboarding: first ever real spin is guaranteed to be a win (HP or DMG).
+let soloSlotFirstGuaranteedUsed = false;
+
+// UI pulse states (micro feedback, pixel-friendly)
+let speedUiLastShown = 1;
+let speedUiPulseUntil = 0;
+let soloDistanceLastPerfMs = 0;
+const AU_KM = 149_597_870.7; // Astronomical Unit in km (approx)
+const LY_KM = 9_460_730_472_580.8; // Light-year in km (approx)
+const C_KMPS = 299_792.458; // speed of light in km/s (approx)
+
+// Space event trigger baseline (prevents flybys from firing instantly on load when distance is already high).
+let spaceEventsPrevDistanceKm = 0;
+let spaceEventsPrevDistanceInited = false;
+function initSpaceEventsPrevDistance(): void {
+  spaceEventsPrevDistanceKm = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+  spaceEventsPrevDistanceInited = true;
+}
+
+// Cinematic boot delay: wait a moment for save/cloud/wallet state to settle before deciding cinematics.
+let cinematicBootUntilMs = 0;
+function markCinematicBoot(now: number = Date.now(), ms: number = 1000): void {
+  cinematicBootUntilMs = Math.max(cinematicBootUntilMs || 0, now + Math.max(0, ms | 0));
+}
+
+// Distance rewards -> slot spins (dynamic requirement):
+// - First spin at 100k km
+// - After each awarded spin, next one requires +10k km more than the previous
+//   (so: 100k, 110k, 120k, ...)
+const SOLO_SPIN_BASE_KM = 100_000;
+const SOLO_SPIN_STEP_KM = 10_000;
+const SOLO_SPINS_CAP = 200;
+let soloSpins = 0;
+let soloSpinMilestones = 0;
+let soloSpinsGeneratedTotal = 0; // lifetime counter (doesn't decrease when you spend spins)
+let soloXp = 0;
+
+function soloDistanceRequiredForSpinCount(spinCount: number): number {
+  // Total distance (km) needed to have earned `spinCount` spins:
+  // sum_{i=0..spinCount-1} (BASE + STEP*i)
+  // = spinCount*BASE + STEP*spinCount*(spinCount-1)/2
+  const n = Math.max(0, Math.floor(spinCount));
+  return n * SOLO_SPIN_BASE_KM + (SOLO_SPIN_STEP_KM * n * (n - 1)) / 2;
+}
+
+function computeSpinMilestonesForDistance(distanceKm: number): number {
+  const d = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
+  const B = SOLO_SPIN_BASE_KM;
+  const S = SOLO_SPIN_STEP_KM;
+  if (S <= 0) return Math.floor(d / Math.max(1, B));
+  // Solve quadratic for n in:
+  // d >= (S/2)n^2 + (B - S/2)n
+  const a = S / 2;
+  const b = B - S / 2;
+  const disc = b * b + 4 * a * d;
+  const n = Math.floor((-b + Math.sqrt(Math.max(0, disc))) / (2 * a));
+  return Math.max(0, n);
+}
+
+function addSoloSpins(amount: number): { spinsAdded: number } {
+  const a = Math.max(0, Math.floor(amount));
+  if (a <= 0) return { spinsAdded: 0 };
+
+  // Track lifetime generated spins regardless of cap/spend.
+  soloSpinsGeneratedTotal = Math.max(0, (soloSpinsGeneratedTotal | 0) + a);
+
+  const before = soloSpins | 0;
+  const cap = SOLO_SPINS_CAP;
+  const canAdd = Math.max(0, cap - before);
+  const spinsAdded = Math.min(a, canAdd);
+  soloSpins = before + spinsAdded;
+  // Any overflow beyond cap is intentionally discarded (shards system removed).
+  return { spinsAdded };
+}
+
+// Slot machine UI/state
+let slotModalOpen = false;
+let slotIsSpinning = false;
+let slotSpinStartedAt = 0;
+let slotSpinStopsAt: [number, number, number] = [0, 0, 0];
+let slotReelPos: [number, number, number] = [0, 0, 0]; // float index for animation
+let slotReelResult: [string, string, string] = ['?', '?', '?'];
+let slotLastPayoutText: string | null = null;
+let slotBoost2xEnabled = false;
+let slotReelStoppedAt: [number, number, number] = [0, 0, 0]; // per-reel stop time for 4-frame settle
+// Prevent the "open click" from instantly being interpreted as an outside-click-close.
+let slotIgnoreClicksUntilTs = 0;
+
+// Starter claim (slot teaser)
+const STARTER_CLAIM_SPINS_BASE = 5;
+const STARTER_CLAIM_WALLET_BONUS_SPINS = 2; // wallet total = 7
+const STARTER_CLAIM_WALLET_RICE = 200;
+let soloStarterClaimed = false; // persisted for wallet/auth identities
+let guestStarterClaimedThisSession = false; // not persisted
+
+function getSlotBellRect(): { x: number; y: number; w: number; h: number } {
+  // Panel placement (requested): make it obvious there is something interesting.
+  // Place between DOT stats box (y~120..170) and the big buttons list.
+  return { x: 20, y: 180, w: 200, h: 40 };
+}
+// Slot symbols:
+// - X is an "empty" symbol (losing unless you hit 3x X, which awards spins).
+// - LUCK has been renamed to CRIT.
+const SLOT_SYMBOLS = ['RICE', 'DMG', 'CRIT', 'HP', 'ARMOR', '🎯', 'XP', 'X'] as const;
+type SlotSymbol = typeof SLOT_SYMBOLS[number];
+
+type SlotSpinMode = 'normal' | 'boost2x';
+
+// Slot odds:
+// - X chance reduced to 5%
+// - All other symbols share the remaining probability equally
+// => X = 5% ; all other 7 symbols are 13.571428...% each
+const SLOT_P_X = 0.05; // 5%
+const SLOT_P_OTHER = (1 - SLOT_P_X) / 7; // RICE/DMG/CRIT/HP/ARMOR/🎯/XP
+
+function rollSlotSymbol(mode: SlotSpinMode = 'normal'): SlotSymbol {
+  // Special mode: burn 10 spins -> 1 spin with "2x chance" for all non-X and "X/2".
+  // Implemented as weights:
+  // - w(X) = pX / 2
+  // - w(non-X) = p(non-X) * 2
+  // then normalized to sum to 1.
+  const isBoost = mode === 'boost2x';
+  const weights: Array<[SlotSymbol, number]> = [
+    ['RICE', SLOT_P_OTHER],
+    ['DMG', SLOT_P_OTHER],
+    ['CRIT', SLOT_P_OTHER],
+    ['HP', SLOT_P_OTHER],
+    ['ARMOR', SLOT_P_OTHER],
+    ['🎯', SLOT_P_OTHER],
+    ['XP', SLOT_P_OTHER],
+    ['X', SLOT_P_X],
+  ];
+
+  let totalW = 0;
+  const scaled: Array<[SlotSymbol, number]> = weights.map(([sym, p]) => {
+    const w = isBoost ? (sym === 'X' ? (p / 2) : (p * 2)) : p;
+    totalW += w;
+    return [sym, w];
+  });
+
+  let r = Math.random() * totalW;
+  for (const [sym, w] of scaled) {
+    r -= w;
+    if (r <= 0) return sym;
+  }
+  return 'X';
+}
+
+function round1(x: number): number {
+  return Math.round(x * 10) / 10;
+}
+
+function randRangeSlot(lo: number, hi: number): number {
+  return lo + Math.random() * (hi - lo);
+}
+
+function startSlotSpin(mode: SlotSpinMode = 'normal', now: number = Date.now()): void {
+  if (slotIsSpinning) return;
+  const cost = (mode === 'boost2x') ? 10 : 1;
+  if (soloSpins < cost) return;
+  soloSpins = Math.max(0, soloSpins - cost);
+
+  slotIsSpinning = true;
+  slotSpinStartedAt = now;
+  slotReelStoppedAt = [0, 0, 0];
+  // Each reel stops slightly later
+  slotSpinStopsAt = [now + 1100, now + 1500, now + 1900];
+  // First-time guarantee (normal mode only): force 3x HP or 3x DMG.
+  if (mode === 'normal' && !soloSlotFirstGuaranteedUsed) {
+    const sym: SlotSymbol = (Math.random() < 0.5) ? 'DMG' : 'HP';
+    slotReelResult = [sym, sym, sym];
+    soloSlotFirstGuaranteedUsed = true;
+  } else {
+    slotReelResult = [rollSlotSymbol(mode), rollSlotSymbol(mode), rollSlotSymbol(mode)];
+  }
+  slotLastPayoutText = null;
+  // Randomize starting positions so it feels alive
+  slotReelPos = [Math.random() * 40, Math.random() * 40, Math.random() * 40];
+  forceSaveGame();
+  try {
+    void audioManager.resumeContext();
+    audioManager.playUpgradeSuccess();
+  } catch {}
+}
+
+function finishSlotSpinIfDone(now: number = Date.now()): void {
+  if (!slotIsSpinning) return;
+  if (now < slotSpinStopsAt[2]) return;
+  slotIsSpinning = false;
+
+  const [a, b, c] = slotReelResult;
+  const same3 = a === b && b === c;
+  const same2 =
+    !same3 && (a === b || b === c || a === c);
+
+  // Payouts (simple and useful)
+  let payoutText = 'NO WIN';
+  // X is a losing symbol unless you hit 3x X, which awards spins.
+  const hasX = (a === 'X' || b === 'X' || c === 'X');
+  if (same3 && a === 'X') {
+    const r = addSoloSpins(2);
+    if (r.spinsAdded > 0) payoutText = `+${r.spinsAdded} SPINS`;
+    else payoutText = 'SPINS FULL';
+  } else if (!hasX && same3) {
+    if (a === 'RICE') { dotCurrency = Math.min(999999999, dotCurrency + 5000); payoutText = '+5000 Rice'; }
+    else if (a === 'DMG') { dmg += 3; payoutText = '+3 DMG'; }
+    else if (a === 'HP') { dotMaxHP += 3; dotHP += 3; payoutText = '+3 MAX HP'; }
+    else if (a === 'ARMOR') { dotMaxArmor += 2; dotArmor += 2; payoutText = '+2 ARMOR'; }
+    else if (a === '🎯') {
+      accuracy = Math.min(100, round1(accuracy + 0.3));
+      payoutText = '+0.3% ACC';
+    }
+    else if (a === 'XP') { soloXp += 30; payoutText = '+30 XP'; }
+    else {
+      const add = round1(randRangeSlot(0.2, 0.3)); // +0.2%..+0.3%
+      critChance = Math.min(95, round1(critChance + add));
+      payoutText = `+${add.toFixed(1)}% CRIT`;
+    }
+  } else if (!hasX && same2) {
+    const sym = (a === b) ? a : (b === c ? b : a);
+    if (sym === 'RICE') { dotCurrency = Math.min(999999999, dotCurrency + 1000); payoutText = '+1000 Rice'; }
+    else if (sym === 'DMG') { dmg += 1; payoutText = '+1 DMG'; }
+    else if (sym === 'HP') { dotMaxHP += 1; dotHP += 1; payoutText = '+1 MAX HP'; }
+    else if (sym === 'ARMOR') { dotMaxArmor += 1; dotArmor += 1; payoutText = '+1 ARMOR'; }
+    else if (sym === '🎯') {
+      accuracy = Math.min(100, round1(accuracy + 0.1)); // requested: gives 0.1%
+      payoutText = '+0.1% ACC';
+    }
+    else if (sym === 'XP') { soloXp += 10; payoutText = '+10 XP'; }
+    else {
+      const add = round1(randRangeSlot(0.1, 0.2)); // +0.1%..+0.2%
+      critChance = Math.min(95, round1(critChance + add));
+      payoutText = `+${add.toFixed(1)}% CRIT`;
+    }
+  }
+
+  slotLastPayoutText = payoutText;
+  // Small popup feedback
+  try {
+    safePushDamageNumber({
+      x: dotX,
+      y: Math.max(40, dotY - 40),
+      value: same2 || same3 ? `WIN ${payoutText}` : 'NO WIN',
+      life: 70,
+      maxLife: 70,
+      vx: (Math.random() - 0.5) * 1.2,
+      vy: -1.6,
+      isCrit: same3,
+    });
+  } catch {}
+  forceSaveGame();
+  try {
+    void audioManager.resumeContext();
+    (same2 || same3) ? audioManager.playUpgradeSuccess() : audioManager.playUpgradeFail();
+  } catch {}
+}
+
+// Slot UI moved next to Live Chat (bell + badge); no panel rect needed.
+
+// Wallet DOT token balance (read-only display)
+const DOT_TOKEN_ADDRESS = '0x4a4e24b057b595f530417860a901f3a540995256';
+let walletDotBalance: string | null = null;
+let lastBalanceCheck = 0;
+const BALANCE_CHECK_INTERVAL = 30000; // Check balance every 30 seconds (reduced frequency to prevent lag)
+
+// Ronke token (PewPew) config
+const RONKE_TOKEN_ADDRESS =
+  (import.meta as any).env?.VITE_RONKE_TOKEN_ADDRESS ||
+  '0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb';
+const RONKE_POOL_ADDRESS =
+  (import.meta as any).env?.VITE_RONKE_POOL_ADDRESS ||
+  (import.meta as any).env?.VITE_RONKE_TREASURY_ADDRESS ||
+  // Default treasury/pool (provided): receives player deposits.
+  '0xca5822880e797d9167b3b844a2cdf723493281b7';
+// UFO Ticket (SBT) contract (set after deploy). If set, client can do approve+mint on-chain.
+const UFO_TICKET_CONTRACT_ADDRESS =
+  (import.meta as any).env?.VITE_UFO_TICKET_CONTRACT_ADDRESS || '';
+const RONKE_CRAFT_COST = 200; // RONKE tokens
+const PEWPEW_UFO_CRAFTED_KEY = 'pewpew_ufo_crafted';
+const PEWPEW_UFO_TICKET_TOKEN_ID_KEY = 'pewpew_ufo_ticket_token_id_v1';
+let ronkeBalance: string | null = null;
+let pewPewCraftStatus: string | null = null;
+let pewPewCraftTxHash: string | null = null;
+let pewPewCrafting = false;
+let pewPewOnchainTicketTokenId: string | null = null;
+let pewPewOnchainTicketLastCheckAt = 0;
+let pewPewOnchainTicketChecking = false;
+let dotHP = 10;
+let dotMaxHP = 10;
+let dotArmor = 5;
+let dotMaxArmor = 5;
+let gameState = 'Alive'; // 'Alive', 'Dying', 'Dead'
+
+// Crit hit system
+let critChance = 4; // 4% base crit chance
+let critUpgradeLevel = 0; // Track upgrade level for cost calculation
+
+// Accuracy system
+let accuracy = 60; // 60% base accuracy
+let accuracyUpgradeLevel = 0; // Track upgrade level for cost calculation
+
+// NFT Bonus system (Ronkeverse collection)
+// Tiered/capped bonuses (do NOT scale beyond thresholds):
+// - >= 2 NFTs: +5 HP
+// - >= 3 NFTs: +2% crit chance
+// - >= 5 NFTs: +3 dmg
+function calculateNftBonuses(): { dmg: number; critChance: number; hp: number } {
+  const nftCount = nftList.length;
+  return {
+    dmg: nftCount >= 5 ? 3 : 0,
+    critChance: nftCount >= 3 ? 2 : 0,
+    hp: nftCount >= 2 ? 5 : 0
+  };
+}
+
+// Armor regen rule for Ronkeverse NFTs:
+// If you have >= 1 NFT, armor regen ticks restore +2 armor (not +1), capped (doesn't scale with more NFTs).
+function getNftArmorRegenAmount(): number {
+  return (nftList.length >= 1) ? 2 : 1;
+}
+
+// Cache for upgrade costs (to avoid recalculating Math.pow every frame)
+let cachedAccuracyCost: number | null = null;
+let cachedAccuracyLevel: number = -1;
+
+// FPS tracking for performance monitoring
+let fpsFrameCount = 0;
+let fpsLastTime = Date.now();
+let currentFPS = 60;
+
+function lerpAngle(a: number, b: number, t: number): number {
+  // Interpolate angles along the shortest arc.
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+// Frame-rate independent smoothing factor (same feel at 60fps and 30fps)
+function smoothT(perFrameTAt60: number, dtMs: number): number {
+  const dtFrames = clamp(dtMs / (1000 / 60), 0, 6);
+  // Convert "per-frame lerp t" into an equivalent over dtFrames
+  // t_eff = 1 - (1 - t)^dtFrames
+  const t = clamp(perFrameTAt60, 0, 1);
+  return 1 - Math.pow(1 - t, dtFrames);
+}
+
+// Frame time tracking (to detect frame pacing issues)
+let frameTimeHistory: number[] = [];
+let averageFrameTime = 16.67; // 60 FPS = 16.67ms per frame
+let maxFrameTime = 16.67;
+
+// Network latency tracking (for PvP mode)
+let networkLatencyHistory: number[] = [];
+let averageNetworkLatency = 0;
+let lastNetworkUpdateTime = 0;
+
+// --- Opponent render interpolation (arrow-like smoothness) ---
+// We keep a short history of opponent positions (post-correction) and render slightly "in the past"
+// using interpolation between snapshots. This removes visible snap/jitter without changing gameplay physics.
+type OpponentPosSample = { t: number; x: number; y: number; vx: number; vy: number };
+let opponentPosSamples: OpponentPosSample[] = [];
+function resetOpponentInterpolation(): void {
+  opponentPosSamples = [];
+}
+function pushOpponentSample(now: number, p: PvPPlayer): void {
+  opponentPosSamples.push({ t: now, x: p.x, y: p.y, vx: p.vx, vy: p.vy });
+  // Keep only recent samples (2s is plenty)
+  const cutoff = now - 2000;
+  while (opponentPosSamples.length > 0 && opponentPosSamples[0].t < cutoff) {
+    opponentPosSamples.shift();
+  }
+  // Bound size to avoid growth in weird cases
+  if (opponentPosSamples.length > 120) {
+    opponentPosSamples.splice(0, opponentPosSamples.length - 120);
+  }
+}
+function getOpponentInterpolatedPos(now: number): { x: number; y: number } | null {
+  if (!opponentId || opponentPosSamples.length === 0) return null;
+
+  // Small adaptive delay: enough to always have two samples to interpolate, but still feels "instant".
+  const delayMs = Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
+  const targetT = now - delayMs;
+
+  // Ensure samples sorted by time (they should be, but be safe on out-of-order)
+  // (Tiny O(n) check avoided; assume ordered.)
+  const samples = opponentPosSamples;
+
+  // If target is before first sample, just use first.
+  if (targetT <= samples[0].t) {
+    return { x: samples[0].x, y: samples[0].y };
+  }
+
+  // Find the bracketing samples
+  for (let i = samples.length - 1; i >= 1; i--) {
+    const b = samples[i];
+    const a = samples[i - 1];
+    if (targetT >= a.t && targetT <= b.t) {
+      const span = Math.max(1, b.t - a.t);
+      const u = Math.max(0, Math.min(1, (targetT - a.t) / span));
+      const x = a.x + (b.x - a.x) * u;
+      const y = a.y + (b.y - a.y) * u;
+      return { x, y };
+    }
+  }
+
+  // Target is after the latest sample -> extrapolate a bit using last velocity.
+  const last = samples[samples.length - 1];
+  const dtMs = Math.max(0, Math.min(200, targetT - last.t)); // cap extrapolation to 200ms
+  const dtFrames = dtMs / (1000 / 60);
+  return { x: last.x + last.vx * dtFrames, y: last.y + last.vy * dtFrames };
+}
+
+function getOpponentInterpolatedState(now: number): { x: number; y: number; vx: number; vy: number } | null {
+  if (!opponentId || opponentPosSamples.length === 0) return null;
+  const delayMs = Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
+  const targetT = now - delayMs;
+  const samples = opponentPosSamples;
+
+  if (targetT <= samples[0].t) {
+    const s = samples[0];
+    return { x: s.x, y: s.y, vx: s.vx, vy: s.vy };
+  }
+
+  for (let i = samples.length - 1; i >= 1; i--) {
+    const b = samples[i];
+    const a = samples[i - 1];
+    if (targetT >= a.t && targetT <= b.t) {
+      const span = Math.max(1, b.t - a.t);
+      const u = Math.max(0, Math.min(1, (targetT - a.t) / span));
+      return {
+        x: a.x + (b.x - a.x) * u,
+        y: a.y + (b.y - a.y) * u,
+        // Interpolate velocity too so rotation uses the same "render time" signal.
+        vx: a.vx + (b.vx - a.vx) * u,
+        vy: a.vy + (b.vy - a.vy) * u,
+      };
+    }
+  }
+
+  const last = samples[samples.length - 1];
+  const dtMs = Math.max(0, Math.min(200, targetT - last.t));
+  const dtFrames = dtMs / (1000 / 60);
+  return { x: last.x + last.vx * dtFrames, y: last.y + last.vy * dtFrames, vx: last.vx, vy: last.vy };
+}
+
+// Combo system
+let comboProgress = 0; // 0-100%
+let comboActive = false; // Whether combo is active (100%)
+let comboMultiplier = 1; // Damage multiplier (1x normal, 4x with combo)
+
+// Armor regeneration
+let lastArmorRegen = 0;
+
+// Animation state
+let deathTimer = 0;
+let deathAnimation = false;
+let respawnTimer = 0; // Timer for respawn delay after death animation
+let upgradeMessage = '';
+let upgradeMessageTimer = 0;
+let upgradeSuccess = false;
+let upgradeMessageX = 0; // X position where message should appear
+let upgradeMessageY = 0; // Y position where message should appear
+
+// Upgrade animation
+let upgradeAnimation = false;
+let upgradeProgress = 0; // 0 to 1
+let upgradeType = ''; // 'crit' | 'accuracy'
+let upgradeCost = 0;
+let upgradeParticles: Particle[] = [];
+let upgradeWillSucceed = false; // Known immediately when upgrade starts
+let upgradeFailAt = 1.0; // Progress where animation stops if fail (random %)
+
+// Screen shake for crit hits
+let screenShake = 0;
+
+// Click particles
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size?: number;
+  color?: string; // optional rgba()/css color override (default: black)
+};
+type DamageNumber = {
+  x: number;
+  y: number;
+  value: number | string;
+  life: number;
+  maxLife: number;
+  vx: number;
+  vy: number;
+  isCrit?: boolean;
+  isMiss?: boolean;
+};
+
+let clickParticles: Particle[] = [];
+
+// Projectile smoke particles (black smoke trail)
+let projectileSmokeParticles: Particle[] = [];
+
+// Arrow air-resistance particles (subtle streaks while flying)
+let arrowAirParticles: Particle[] = [];
+// Keep this low: it's purely visual and can get expensive on weaker machines / high-latency stutter frames.
+const MAX_ARROW_AIR_PARTICLES = 80;
+function safePushArrowAirParticle(particle: Particle): void {
+  if (arrowAirParticles.length >= MAX_ARROW_AIR_PARTICLES) {
+    arrowAirParticles.shift();
+  }
+  arrowAirParticles.push(particle);
+}
+
+// Click smudges/blotches (pixel art smears)
+type ClickSmudge = {
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+};
+let clickSmudges: ClickSmudge[] = [];
+
+// DOT decay particles
+let dotDecayParticles: Particle[] = [];
+
+// Damage numbers animation
+let damageNumbers: DamageNumber[] = [];
+
+// Supersonic shadow tail (comet effect)
+let speedTrail: Particle[] = [];
+
+// Perf toggle: disable PvP UFO shadow tail (speed>=2) if it causes perceived stutter on remote clients.
+// (Dash trail uses the same buffer; keep disabled for consistency.)
+const PVP_UFO_SPEED_TRAIL_ENABLED = true;
+
+// Perf toggle: disable agent debug logs that post to localhost (can cause micro-stutters in production).
+const AGENT_DEBUG_LOGS_ENABLED = false;
+
+// --- UI theme (left panel) ---
+// Keep a cohesive "dark space / neon" look (panel used to be bright and looked out of place).
+const UI_PANEL_W = 240;
+const UI_PANEL_BG = 'rgba(8, 10, 18, 0.92)';
+const UI_PANEL_BORDER = 'rgba(210, 235, 255, 0.18)';
+const UI_PANEL_BORDER_STRONG = 'rgba(210, 235, 255, 0.30)';
+const UI_TEXT = '#e6f0ff';
+const UI_TEXT_MUTED = 'rgba(230, 240, 255, 0.68)';
+const UI_FRAME_BG = 'rgba(18, 22, 36, 0.92)';
+const UI_BTN_SHADOW = 'rgba(0, 0, 0, 0.55)';
+const UI_BTN_BG = 'rgba(18, 22, 36, 0.96)';
+const UI_BTN_BG_HOVER = 'rgba(28, 34, 54, 0.98)';
+const UI_BTN_BG_PRESSED = 'rgba(10, 12, 20, 0.98)';
+const UI_BTN_BORDER = 'rgba(210, 235, 255, 0.22)';
+const UI_BTN_HILITE = 'rgba(255, 255, 255, 0.10)';
+const UI_ACCENT_GREEN = 'rgba(80, 255, 160, 0.95)';
+const UI_ACCENT_YELLOW = 'rgba(255, 240, 120, 0.95)';
+
+// Pixel Art Mastery (UI): crisp pixel edges, consistent bevel, no blurry 1px strokes.
+// - Avoid Canvas strokeRect for 1px frames (it can land on half-pixels and blur).
+// - Use solid 1px fills and integer-aligned coords.
+const UI_BTN_OUTER = 'rgba(0, 0, 0, 0.85)'; // outer dark outline (readability)
+const UI_BTN_INNER = 'rgba(230, 240, 255, 0.18)'; // inner light frame (matches theme)
+const UI_BTN_BEVEL_LIGHT = 'rgba(255, 255, 255, 0.12)'; // top/left (lit)
+const UI_BTN_BEVEL_DARK = 'rgba(0, 0, 0, 0.45)'; // bottom/right (shadow)
+
+type PixelRect = { x: number; y: number; w: number; h: number };
+type PixelButtonFrameOpts = {
+  hovering?: boolean;
+  pressing?: boolean;
+  disabled?: boolean;
+  borderColor?: string; // inner frame color (optional accent)
+  bgColor?: string;
+  bgHoverColor?: string;
+  bgPressedColor?: string;
+  drawShadow?: boolean;
+};
+
+function px(n: number): number { return Math.round(n); }
+
+function drawPixelButtonFrame(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  opts: PixelButtonFrameOpts = {}
+): PixelRect {
+  const pressing = !!opts.pressing;
+  const hovering = !!opts.hovering;
+  const disabled = !!opts.disabled;
+  const drawShadow = opts.drawShadow !== false;
+
+  const rx = px(x);
+  const ry = px(y) + (pressing ? 1 : 0);
+  const rw = Math.max(1, px(w));
+  const rh = Math.max(1, px(h));
+
+  // Shadow (simple pixel offset; no blur)
+  if (drawShadow && !pressing) {
+    ctx.fillStyle = UI_BTN_SHADOW;
+    ctx.fillRect(rx + 2, ry + 2, rw, rh);
+  }
+
+  // Background
+  const bg =
+    disabled
+      ? 'rgba(120, 130, 150, 0.18)'
+      : (pressing ? (opts.bgPressedColor || UI_BTN_BG_PRESSED) : (hovering ? (opts.bgHoverColor || UI_BTN_BG_HOVER) : (opts.bgColor || UI_BTN_BG)));
+  ctx.fillStyle = bg;
+  ctx.fillRect(rx, ry, rw, rh);
+
+  // Outer 1px frame (dark outline)
+  ctx.fillStyle = UI_BTN_OUTER;
+  ctx.fillRect(rx, ry, rw, 1);
+  ctx.fillRect(rx, ry + rh - 1, rw, 1);
+  ctx.fillRect(rx, ry, 1, rh);
+  ctx.fillRect(rx + rw - 1, ry, 1, rh);
+
+  // Inner 1px frame (accent-able)
+  const inner = opts.borderColor || UI_BTN_INNER;
+  if (rw >= 3 && rh >= 3) {
+    ctx.fillStyle = inner;
+    ctx.fillRect(rx + 1, ry + 1, rw - 2, 1);
+    ctx.fillRect(rx + 1, ry + rh - 2, rw - 2, 1);
+    ctx.fillRect(rx + 1, ry + 1, 1, rh - 2);
+    ctx.fillRect(rx + rw - 2, ry + 1, 1, rh - 2);
+  }
+
+  // 1px bevel (inside inner frame). Invert when pressed.
+  if (rw >= 5 && rh >= 5) {
+    const light = pressing ? UI_BTN_BEVEL_DARK : UI_BTN_BEVEL_LIGHT;
+    const dark = pressing ? UI_BTN_BEVEL_LIGHT : UI_BTN_BEVEL_DARK;
+    // top/left
+    ctx.fillStyle = light;
+    ctx.fillRect(rx + 2, ry + 2, rw - 4, 1);
+    ctx.fillRect(rx + 2, ry + 2, 1, rh - 4);
+    // bottom/right
+    ctx.fillStyle = dark;
+    ctx.fillRect(rx + 2, ry + rh - 3, rw - 4, 1);
+    ctx.fillRect(rx + rw - 3, ry + 2, 1, rh - 4);
+  }
+
+  return { x: rx, y: ry, w: rw, h: rh };
+}
+
+function drawPixelPanelFrame(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  bgColor: string,
+  innerFrameColor: string = UI_BTN_INNER
+): PixelRect {
+  const rx = px(x);
+  const ry = px(y);
+  const rw = Math.max(1, px(w));
+  const rh = Math.max(1, px(h));
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(rx, ry, rw, rh);
+
+  // Outer frame
+  ctx.fillStyle = UI_BTN_OUTER;
+  ctx.fillRect(rx, ry, rw, 1);
+  ctx.fillRect(rx, ry + rh - 1, rw, 1);
+  ctx.fillRect(rx, ry, 1, rh);
+  ctx.fillRect(rx + rw - 1, ry, 1, rh);
+
+  // Inner frame
+  if (rw >= 3 && rh >= 3) {
+    ctx.fillStyle = innerFrameColor;
+    ctx.fillRect(rx + 1, ry + 1, rw - 2, 1);
+    ctx.fillRect(rx + 1, ry + rh - 2, rw - 2, 1);
+    ctx.fillRect(rx + 1, ry + 1, 1, rh - 2);
+    ctx.fillRect(rx + rw - 2, ry + 1, 1, rh - 2);
+  }
+
+  return { x: rx, y: ry, w: rw, h: rh };
+}
+
+// (removed) pixel-segment ring helper — user preferred the original smooth arc ring.
+
+function drawPixelText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  font: string,
+  color: string,
+  shadowColor: string = 'rgba(0, 0, 0, 0.65)'
+): void {
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // Pixel-safe 1px shadow (no blur)
+  ctx.fillStyle = shadowColor;
+  ctx.fillText(text, px(x) + 1, px(y) + 1);
+  ctx.fillStyle = color;
+  ctx.fillText(text, px(x), px(y));
+}
+
+function drawPixelTextLeft(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  xLeft: number,
+  y: number,
+  font: string,
+  color: string,
+  shadowColor: string = 'rgba(0, 0, 0, 0.65)'
+): void {
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = shadowColor;
+  ctx.fillText(text, px(xLeft) + 1, px(y) + 1);
+  ctx.fillStyle = color;
+  ctx.fillText(text, px(xLeft), px(y));
+  ctx.restore();
+}
+
+function drawPixelTextRight(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  xRight: number,
+  y: number,
+  font: string,
+  color: string,
+  shadowColor: string = 'rgba(0, 0, 0, 0.65)'
+): void {
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = shadowColor;
+  ctx.fillText(text, px(xRight) + 1, px(y) + 1);
+  ctx.fillStyle = color;
+  ctx.fillText(text, px(xRight), px(y));
+  ctx.restore();
+}
+
+// --- UI layout constants (keep render + hitboxes consistent) ---
+const UI_WALLET_BUTTON_Y = 450;
+const UI_WALLET_BUTTON_H = 40;
+const UI_WALLET_BALANCE_GAP_TOP = 10;
+const UI_WALLET_BALANCE_H = 58; // DOT + NFT status (matches render)
+const UI_WALLET_BALANCE_GAP_BOTTOM = 10;
+
+function getTrainingButtonY(): number {
+  // Default placement when no wallet balance frame is shown
+  let y = 500;
+  try {
+    const walletState = walletService.getState();
+    if (walletState.isConnected && walletState.address) {
+      y = UI_WALLET_BUTTON_Y + UI_WALLET_BUTTON_H + UI_WALLET_BALANCE_GAP_TOP + UI_WALLET_BALANCE_H + UI_WALLET_BALANCE_GAP_BOTTOM;
+    }
+  } catch {}
+  return y;
+}
+
+// Reward popup animation (big center number)
+type RewardPopup = {
+  x: number;
+  y: number;
+  value: number;
+  startTime: number;
+  durationMs: number;
+  state?: 'up' | 'fly';
+  flyStartTime?: number;
+  flyDurationMs?: number;
+};
+let rewardPopups: RewardPopup[] = [];
+
+// CRITICAL: Helper functions to limit array sizes and prevent memory leaks
+function safePushRewardPopup(popup: RewardPopup): void {
+  const MAX_REWARD_POPUPS = 10;
+  if (rewardPopups.length >= MAX_REWARD_POPUPS) {
+    rewardPopups.shift(); // Remove oldest if at limit
+  }
+  rewardPopups.push(popup);
+}
+
+function safePushDamageNumber(damage: DamageNumber): void {
+  const MAX_DAMAGE_NUMBERS = 50;
+  if (damageNumbers.length >= MAX_DAMAGE_NUMBERS) {
+    damageNumbers.shift(); // Remove oldest if at limit
+  }
+  damageNumbers.push(damage);
+}
+
+function safePushClickParticle(particle: Particle): void {
+  const MAX_CLICK_PARTICLES = 100;
+  if (clickParticles.length >= MAX_CLICK_PARTICLES) {
+    clickParticles.shift(); // Remove oldest if at limit
+  }
+  clickParticles.push(particle);
+}
+
+function safePushProjectileSmokeParticle(particle: Particle): void {
+  const MAX_PROJECTILE_SMOKE_PARTICLES = 50;
+  if (projectileSmokeParticles.length >= MAX_PROJECTILE_SMOKE_PARTICLES) {
+    projectileSmokeParticles.shift(); // Remove oldest if at limit
+  }
+  projectileSmokeParticles.push(particle);
+}
+
+function safePushDotDecayParticle(particle: Particle): void {
+  const MAX_DOT_DECAY_PARTICLES = 200;
+  if (dotDecayParticles.length >= MAX_DOT_DECAY_PARTICLES) {
+    dotDecayParticles.shift(); // Remove oldest if at limit
+  }
+  dotDecayParticles.push(particle);
+}
+
+function safePushUpgradeParticle(particle: Particle): void {
+  const MAX_UPGRADE_PARTICLES = 50;
+  if (upgradeParticles.length >= MAX_UPGRADE_PARTICLES) {
+    upgradeParticles.shift(); // Remove oldest if at limit
+  }
+  upgradeParticles.push(particle);
+}
+
+// Balance flash timing after reward merges
+let balanceFlashUntil = 0;
+
+// Drawing system
+type DrawnLine = {
+  points: Array<{ x: number; y: number }>; // Array of points for freehand drawing
+  life: number;
+  maxLife: number;
+  hits: number; // Number of times DOT has hit this line
+  maxHits: number; // Maximum hits before line disappears (2)
+  ownerId?: string; // Player ID who drew this line (undefined = my line, opponentId = opponent's line)
+};
+let drawnLines: DrawnLine[] = [];
+let isDrawing = false;
+let currentDrawPoints: Array<{ x: number; y: number }> = []; // Points for current drawing
+let lastDrawEndTime = 0; // When the last drawing ended
+const drawCooldown = 5000; // 5 seconds cooldown between drawings
+const maxDrawLength = 80; // Maximum total length of drawn line
+
+// UI state
+// (removed) Solo upgrade buttons
+
+// DOT position and physics
+let dotX = 240 + (1920 - 240) / 2;
+let dotY = 1080 / 2;
+const dotRadius = 25; // Increased from 15 to 25
+let dotVx = 0; // Horizontal velocity
+let dotVy = 0; // Vertical velocity
+// UFO tilt/sway effect for Solo mode
+let soloUfoTilt = 0; // Current tilt angle (for balancing effect)
+let soloLastVx = 0; // Previous velocity X (for acceleration calculation)
+let soloLastVy = 0; // Previous velocity Y (for acceleration calculation)
+
+// --- Solo "idle flight" FX (wallet-connected main screen): thrust particles + warp streaks ---
+type SoloWarpStreak = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  len: number;
+  w: number;
+  life: number;
+  maxLife: number;
+};
+
+type SoloThrustParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  life: number;
+  maxLife: number;
+  color?: string; // optional override (used for milestone particles)
+};
+
+let soloWarpStreaks: SoloWarpStreak[] = [];
+let soloThrustParticles: SoloThrustParticle[] = [];
+let soloFlightFxLastAt = 0;
+let soloWarpSpawnCarry = 0;
+let soloThrustSpawnCarry = 0;
+let soloThrustSpawnCarry2 = 0; // 2nd engine spawn accumulator
+let soloYellowMilestoneCarry = 0; // 1 per 1s at high speed (>= 2000 km/s)
+let soloBlueMilestoneCarry = 0; // 1 per 2s at high speed (>= 2000 km/s)
+let soloBrightYellowMilestoneCarry = 0; // 1 per 1s at high speed (>= 2000 km/s)
+let soloWasOver2kKmps = false;
+
+// Click-boost (successful click on UFO): quick forward lunge + smooth return.
+let soloClickBoostStartAt = 0;
+let soloClickBoostStartOffsetX = 0;
+let soloClickBoostPeakOffsetX = 0;
+let soloClickBoostOffsetX = 0;
+const SOLO_CLICK_BOOST_PX = 114; // +50px vs previous (requested)
+const SOLO_CLICK_BOOST_MAX_PX = 170;
+const SOLO_CLICK_BOOST_FORWARD_MS = 220;
+const SOLO_CLICK_BOOST_HOLD_MS = 1000;
+const SOLO_CLICK_BOOST_RETURN_MS = 2200;
+// Cursor-following green ring (like PvP): shows "boost ready" cooldown visually.
+const SOLO_BOOST_RING_COOLDOWN_MS = 900;
+const SOLO_BOOST_RING_PENALTY_MS = 2000;
+const SOLO_BOOST_RING_DENIED_SFX_COOLDOWN_MS = 120;
+const SOLO_BOOST_RING_INDICATOR_SHAKE_MS = 150;
+const SOLO_BOOST_RING_INDICATOR_SHAKE_PX = 2.5;
+let soloBoostRingNextAt = 0;
+let soloBoostRingWindowMs = SOLO_BOOST_RING_COOLDOWN_MS;
+let soloBoostRingLastDeniedSfxAt = 0;
+let soloBoostRingShakeUntil = 0;
+
+// --- Solo "Solar System map" zoom ---
+// 1 = fully zoomed out (fit whole system). Zooming in focuses on "ME" (Earth for now).
+let solarMapZoom = 1;
+// Pan (drag) is enabled only when zoom > 1x. At zoom=1, pan is disabled/reset.
+let solarMapPanAu = 0; // offset relative to ME focus, in AU
+let solarMapIsDragging = false;
+let solarMapDragStartX = 0;
+let solarMapDragStartPanAu = 0;
+const SOLAR_MAP_ZOOM_MIN = 1;
+// Allow much deeper zoom so you can inspect Earth–Moon and local area clearly.
+const SOLAR_MAP_ZOOM_MAX = 400;
+// Smaller per-click step => more zoom levels ("x") to play with.
+const SOLAR_MAP_ZOOM_FACTOR = 1.6;
+
+function canPerformSoloBoostAction(now: number = Date.now()): boolean {
+  return now >= (soloBoostRingNextAt || 0);
+}
+function commitSoloBoostAction(now: number = Date.now()): void {
+  soloBoostRingNextAt = now + SOLO_BOOST_RING_COOLDOWN_MS;
+  soloBoostRingWindowMs = SOLO_BOOST_RING_COOLDOWN_MS;
+}
+function applySoloBoostActionPenalty(now: number = Date.now()): void {
+  // Match PvP feel: denied blip + tiny indicator shake, and extend lockout.
+  if (now - soloBoostRingLastDeniedSfxAt >= SOLO_BOOST_RING_DENIED_SFX_COOLDOWN_MS) {
+    soloBoostRingLastDeniedSfxAt = now;
+    soloBoostRingShakeUntil = Math.max(soloBoostRingShakeUntil, now + SOLO_BOOST_RING_INDICATOR_SHAKE_MS);
+    try {
+      void audioManager.resumeContext();
+      (audioManager as any).playActionDenied?.() ?? audioManager.playUpgradeFail();
+    } catch {}
+  } else {
+    soloBoostRingShakeUntil = Math.max(soloBoostRingShakeUntil, now + Math.floor(SOLO_BOOST_RING_INDICATOR_SHAKE_MS * 0.6));
+  }
+
+  const prevNextAt = soloBoostRingNextAt || 0;
+  const penaltyNextAt = now + SOLO_BOOST_RING_PENALTY_MS;
+  // Restart / extend to 2s (never shorten an existing longer penalty).
+  if (penaltyNextAt > prevNextAt) {
+    soloBoostRingNextAt = penaltyNextAt;
+    soloBoostRingWindowMs = SOLO_BOOST_RING_PENALTY_MS;
+  }
+}
+
+function easeOutCubic(t: number): number {
+  const x = clamp(t, 0, 1);
+  return 1 - Math.pow(1 - x, 3);
+}
+
+function getSoloUfoVisualPos(): { x: number; y: number } {
+  return { x: dotX + soloClickBoostOffsetX, y: dotY };
+}
+
+function triggerSoloClickBoost(): void {
+  const now = Date.now();
+  // Start from current offset (supports rapid repeated clicks).
+  soloClickBoostStartAt = now;
+  soloClickBoostStartOffsetX = soloClickBoostOffsetX;
+  const base = Math.max(0, soloClickBoostOffsetX);
+  soloClickBoostPeakOffsetX = Math.min(SOLO_CLICK_BOOST_MAX_PX, base + SOLO_CLICK_BOOST_PX);
+  // Also spike the flight FX briefly so "boost" feels fast.
+  try {
+    soloWarpSpawnCarry += 10;
+    soloThrustSpawnCarry += 8;
+  } catch {}
+}
+
+function isWalletConnectedForSoloFx(): boolean {
+  // Requested: guest players should feel the same gameplay vibe (ring + boost FX),
+  // even though their progress is not saved.
+  try {
+    const st = walletService.getState();
+    if (st?.isConnected && st.address) return true;
+  } catch {}
+  return true;
+}
+
+function updateSoloIdleFlightFx(nowMs: number): void {
+  // Solo flight FX: make speed progression feel stronger (testable via SPEED FX +/-).
+  const active = (gameMode === 'Solo' && gameState === 'Alive');
+  const last = soloFlightFxLastAt || nowMs;
+  const dt = Math.max(0, Math.min(0.05, (nowMs - last) / 1000));
+  soloFlightFxLastAt = nowMs;
+  if (dt <= 0) return;
+
+  // Decay when inactive (fade out quickly).
+  if (!active) {
+    for (let i = soloWarpStreaks.length - 1; i >= 0; i--) {
+      const p = soloWarpStreaks[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.life <= 0) soloWarpStreaks.splice(i, 1);
+    }
+    for (let i = soloThrustParticles.length - 1; i >= 0; i--) {
+      const p = soloThrustParticles[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.life <= 0) soloThrustParticles.splice(i, 1);
+    }
+    return;
+  }
+
+  // Update click-boost offset (quick forward + smooth return).
+  if (soloClickBoostStartAt) {
+    const elapsed = nowMs - soloClickBoostStartAt;
+    if (elapsed <= SOLO_CLICK_BOOST_FORWARD_MS) {
+      const t = easeOutCubic(elapsed / SOLO_CLICK_BOOST_FORWARD_MS);
+      soloClickBoostOffsetX = soloClickBoostStartOffsetX + (soloClickBoostPeakOffsetX - soloClickBoostStartOffsetX) * t;
+    } else if (elapsed <= (SOLO_CLICK_BOOST_FORWARD_MS + SOLO_CLICK_BOOST_HOLD_MS)) {
+      // Hold at peak for a short time (requested)
+      soloClickBoostOffsetX = soloClickBoostPeakOffsetX;
+    } else if (elapsed <= (SOLO_CLICK_BOOST_FORWARD_MS + SOLO_CLICK_BOOST_HOLD_MS + SOLO_CLICK_BOOST_RETURN_MS)) {
+      const t = easeOutCubic((elapsed - SOLO_CLICK_BOOST_FORWARD_MS - SOLO_CLICK_BOOST_HOLD_MS) / SOLO_CLICK_BOOST_RETURN_MS);
+      soloClickBoostOffsetX = soloClickBoostPeakOffsetX * (1 - t);
+    } else {
+      soloClickBoostOffsetX = 0;
+      soloClickBoostStartAt = 0;
+      soloClickBoostStartOffsetX = 0;
+      soloClickBoostPeakOffsetX = 0;
+    }
+  } else {
+    soloClickBoostOffsetX = 0;
+  }
+
+  // Higher intensity when basically standing still.
+  const speed = Math.sqrt(dotVx * dotVx + dotVy * dotVy);
+  const idle = clamp(1 - (speed / 3.5), 0, 1);
+  // Slight boost in FX intensity during the click-boost (sells the "faster flight" moment).
+  const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+  // As speed (km/s) grows, visuals get slightly stronger (progress feel).
+  const spK = clamp((Math.max(1, soloSpeedKmps) - 1) / 25, 0, 1); // 0..1 over ~1..26 km/s
+  const baseIntensity = (0.16 + 0.55 * idle + spK * 0.35) * (1 + boostK * 1.25);
+  // Auto-raise SPEED FX as soloSpeedKmps increases (monotonic).
+  try {
+    const autoIdx = getSpeedFxAutoIdxForSpeedKmps(soloSpeedKmps);
+    if (autoIdx > speedFxAutoMinIdx) speedFxAutoMinIdx = autoIdx;
+    if (speedFxLevelIdx < speedFxAutoMinIdx) speedFxLevelIdx = speedFxAutoMinIdx;
+  } catch {}
+  const fxMul = getSpeedFxMultiplier();
+  const intensity = baseIntensity * fxMul;
+
+  // Spawn side-scroll warp streaks (2D side-view): stars move right->left,
+  // which makes the UFO feel like it's flying left->right.
+  // Rate tuned for subtle but visible effect.
+  const warpRatePerSec = 22 * intensity; // scaled by SPEED FX multiplier
+  soloWarpSpawnCarry += warpRatePerSec * dt;
+  while (soloWarpSpawnCarry >= 1) {
+    soloWarpSpawnCarry -= 1;
+    const sx = playRight + 30 + Math.random() * 40;
+    const sy = Math.random() * canvas.height;
+    const sp = (260 + Math.random() * 520) * (0.75 + 0.65 * intensity); // px/s
+    const vx = -sp; // move left
+    const vy = (Math.random() - 0.5) * 40; // tiny vertical drift
+    const localBoost = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+    const baseLen = 8 + Math.random() * 18; // baseline
+    soloWarpStreaks.push({
+      x: sx,
+      y: sy,
+      vx,
+      vy,
+      len: baseLen * (0.95 + localBoost * 0.85) * (0.85 + 0.35 * fxMul), // longer as FX increases
+      w: 0.9 + Math.random() * 1.2,
+      life: 0.55 + Math.random() * 0.45,
+      maxLife: 0.55 + Math.random() * 0.45,
+    });
+    const maxStreaks = Math.min(520, Math.floor(260 * (0.9 + 0.6 * fxMul)));
+    if (soloWarpStreaks.length > maxStreaks) soloWarpStreaks.shift();
+  }
+
+  // Spawn thrust particles behind UFO (to the left in local space; side-view flight).
+  const thrustRatePerSec = 22 * intensity; // scaled by SPEED FX multiplier
+  soloThrustSpawnCarry += thrustRatePerSec * dt;
+  while (soloThrustSpawnCarry >= 1) {
+    soloThrustSpawnCarry -= 1;
+    // From 2000 km/s, make the smoke trail a bit longer (requested).
+    const trailMul = soloSpeedKmps >= 2000 ? 1.25 : 1.0;
+    soloThrustParticles.push({
+      x: -dotRadius * 1.85 - Math.random() * 10,
+      y: (Math.random() - 0.5) * 10,
+      vx: -(90 + Math.random() * 140),
+      vy: (Math.random() - 0.5) * 18,
+      size: (2 + Math.random() * 3.5) * (0.9 + 0.35 * fxMul),
+      life: (0.22 + Math.random() * 0.28) * trailMul,
+      maxLife: (0.22 + Math.random() * 0.28) * trailMul,
+    });
+    const maxThrust = Math.min(360, Math.floor(160 * (0.9 + 0.7 * fxMul)));
+    if (soloThrustParticles.length > maxThrust) soloThrustParticles.shift();
+  }
+
+  // Second engine (requested): unlocked at >= 50k km/s, appears when player selects 4x SPEED FX.
+  const secondEngineEnabled = soloSpeedKmps >= 50000 && fxMul >= 4;
+  if (secondEngineEnabled) {
+    const ratePerSec2 = 14 * intensity;
+    soloThrustSpawnCarry2 += ratePerSec2 * dt;
+    while (soloThrustSpawnCarry2 >= 1) {
+      soloThrustSpawnCarry2 -= 1;
+      const trailMul = soloSpeedKmps >= 2000 ? 1.25 : 1.0;
+      soloThrustParticles.push({
+        x: -dotRadius * 1.85 - Math.random() * 10,
+        // lower nozzle: same smoke, just below
+        y: 12 + (Math.random() - 0.5) * 10,
+        vx: -(90 + Math.random() * 140),
+        vy: (Math.random() - 0.5) * 18,
+        size: (2 + Math.random() * 3.5) * (0.9 + 0.35 * fxMul),
+        life: (0.22 + Math.random() * 0.28) * trailMul,
+        maxLife: (0.22 + Math.random() * 0.28) * trailMul,
+      });
+      const maxThrust = Math.min(420, Math.floor(190 * (0.9 + 0.7 * fxMul)));
+      if (soloThrustParticles.length > maxThrust) soloThrustParticles.shift();
+    }
+  } else {
+    soloThrustSpawnCarry2 = 0;
+  }
+
+  // Milestone: at >= 2000 km/s, emit two distinct particles on long intervals (requested).
+  // Make the first one fire immediately on reaching 2000 km/s so it's noticeable.
+  if (soloSpeedKmps >= 2000) {
+    if (!soloWasOver2kKmps) {
+      soloWasOver2kKmps = true;
+      soloYellowMilestoneCarry = 1;
+      soloBlueMilestoneCarry = 1;
+      soloBrightYellowMilestoneCarry = 1;
+    }
+    // Yellow: ~1 per 1 second
+    soloYellowMilestoneCarry += dt / 1;
+    while (soloYellowMilestoneCarry >= 1) {
+      soloYellowMilestoneCarry -= 1;
+      soloThrustParticles.push({
+        x: -dotRadius * 1.95 - 10,
+        y: (Math.random() - 0.5) * 8,
+        vx: -(210 + Math.random() * 160),
+        vy: (Math.random() - 0.5) * 10,
+        // Same size/feel as normal thrust particles; only color differs (requested).
+        size: (2 + Math.random() * 3.5) * (0.9 + 0.35 * fxMul),
+        life: (0.22 + Math.random() * 0.28) * (soloSpeedKmps >= 2000 ? 1.25 : 1.0),
+        maxLife: (0.22 + Math.random() * 0.28) * (soloSpeedKmps >= 2000 ? 1.25 : 1.0),
+        color: 'rgba(255, 220, 90, 1)', // yellow
+      });
+      // keep it rare/cheap: cap total particles
+      const hardMax = 380;
+      if (soloThrustParticles.length > hardMax) soloThrustParticles.shift();
+    }
+
+    // Bright yellow: ~1 per 1 second
+    soloBrightYellowMilestoneCarry += dt / 1;
+    while (soloBrightYellowMilestoneCarry >= 1) {
+      soloBrightYellowMilestoneCarry -= 1;
+      soloThrustParticles.push({
+        x: -dotRadius * 1.95 - 10,
+        y: (Math.random() - 0.5) * 8,
+        vx: -(210 + Math.random() * 160),
+        vy: (Math.random() - 0.5) * 10,
+        // Same size/feel as normal thrust particles; only color differs (requested).
+        size: (2 + Math.random() * 3.5) * (0.9 + 0.35 * fxMul),
+        life: (0.22 + Math.random() * 0.28) * (soloSpeedKmps >= 2000 ? 1.25 : 1.0),
+        maxLife: (0.22 + Math.random() * 0.28) * (soloSpeedKmps >= 2000 ? 1.25 : 1.0),
+        color: 'rgba(255, 255, 120, 1)', // bright yellow
+      });
+      const hardMax = 380;
+      if (soloThrustParticles.length > hardMax) soloThrustParticles.shift();
+    }
+
+    // Light blue: ~1 per 2 seconds
+    soloBlueMilestoneCarry += dt / 2;
+    while (soloBlueMilestoneCarry >= 1) {
+      soloBlueMilestoneCarry -= 1;
+      soloThrustParticles.push({
+        x: -dotRadius * 1.95 - 10,
+        y: (Math.random() - 0.5) * 8,
+        vx: -(190 + Math.random() * 150),
+        vy: (Math.random() - 0.5) * 10,
+        // Same size/feel as normal thrust particles; only color differs (requested).
+        size: (2 + Math.random() * 3.5) * (0.9 + 0.35 * fxMul),
+        life: (0.22 + Math.random() * 0.28) * (soloSpeedKmps >= 2000 ? 1.25 : 1.0),
+        maxLife: (0.22 + Math.random() * 0.28) * (soloSpeedKmps >= 2000 ? 1.25 : 1.0),
+        color: 'rgba(150, 235, 255, 1)', // light blue
+      });
+      const hardMax = 380;
+      if (soloThrustParticles.length > hardMax) soloThrustParticles.shift();
+    }
+  } else {
+    soloWasOver2kKmps = false;
+    soloYellowMilestoneCarry = 0;
+    soloBlueMilestoneCarry = 0;
+    soloBrightYellowMilestoneCarry = 0;
+  }
+
+  // Integrate + cull (warp streaks)
+  for (let i = soloWarpStreaks.length - 1; i >= 0; i--) {
+    const p = soloWarpStreaks[i];
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    // Kill if out of play area bounds
+    if (p.life <= 0 || p.x < playLeft - 80 || p.x > playRight + 80 || p.y < -80 || p.y > canvas.height + 80) {
+      soloWarpStreaks.splice(i, 1);
+    }
+  }
+
+  // Integrate + cull (thrust particles) - local space, so only lifetime matters.
+  for (let i = soloThrustParticles.length - 1; i >= 0; i--) {
+    const p = soloThrustParticles[i];
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.life <= 0) soloThrustParticles.splice(i, 1);
+  }
+}
+
+function drawSoloWarpStreaks(ctx: CanvasRenderingContext2D): void {
+  if (!soloWarpStreaks.length) return;
+  ctx.save();
+  // Keep it subtle on the dark arena background
+  ctx.globalCompositeOperation = 'screen';
+  const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+  const fxMul = getSpeedFxMultiplier();
+  for (const p of soloWarpStreaks) {
+    const t = clamp(p.life / p.maxLife, 0, 1);
+    const a = Math.min(1, (t * t) * (0.30 + 0.55 * boostK) * (0.85 + 0.35 * fxMul)); // brighter as FX increases
+    // Streak direction: opposite of velocity (so it "trails" behind).
+    const dx = -p.vx;
+    const dy = -p.vy;
+    const d = Math.max(0.0001, Math.sqrt(dx * dx + dy * dy));
+    const nx = dx / d;
+    const ny = dy / d;
+    const ex = p.x + nx * p.len;
+    const ey = p.y + ny * p.len;
+    ctx.strokeStyle = `rgba(220, 235, 255, ${a})`;
+    ctx.lineWidth = p.w * (0.9 + 0.25 * fxMul);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSoloThrustFx(ctx: CanvasRenderingContext2D): void {
+  if (!soloThrustParticles.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const boostK = clamp(soloClickBoostOffsetX / Math.max(1, SOLO_CLICK_BOOST_PX), 0, 1);
+  const fxMul = getSpeedFxMultiplier();
+  const secondEngineEnabled = soloSpeedKmps >= 50000 && fxMul >= 4;
+  // Core thruster glow (pixel-ish: small ellipse via arc)
+  const pulse = 0.55 + Math.sin(Date.now() * 0.012) * 0.15;
+  ctx.globalAlpha = Math.min(1, (0.38 + boostK * 0.35) * (0.85 + 0.35 * fxMul)); // brighter as FX increases
+  ctx.fillStyle = `rgba(170, 210, 255, ${pulse})`;
+  ctx.beginPath();
+  // Behind the ship (left side)
+  ctx.arc(-dotRadius * 1.55, 0, 7, 0, Math.PI * 2);
+  ctx.fill();
+  if (secondEngineEnabled) {
+    // 2nd engine glow below (requested)
+    ctx.globalAlpha = Math.min(1, (0.30 + boostK * 0.32) * (0.85 + 0.35 * fxMul));
+    ctx.beginPath();
+    ctx.arc(-dotRadius * 1.55, 12, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Particles
+  for (const p of soloThrustParticles) {
+    const t = clamp(p.life / p.maxLife, 0, 1);
+    const a = Math.min(1, (t * t) * (0.55 + 0.55 * boostK) * (0.85 + 0.35 * fxMul));
+    const isMilestone = !!p.color;
+    // Same look/size/fade as all other particles; only color differs for milestone ones (requested).
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color || 'rgba(230, 245, 255, 1)';
+    ctx.fillRect(p.x - p.size * 0.5, p.y - p.size * 0.5, p.size, p.size);
+  }
+  ctx.restore();
+}
+const gravity = 0.05; // Reduced gravity (was 0.1)
+const groundY = 1080 - 220; // Invisible ground 220px from bottom
+// Former toxic-water band bottom floor: keep as a normal playable area.
+// movingPlatformY = groundY - 2, bottomFloorY = movingPlatformY + 100 => groundY + 98
+const PVP_BOTTOM_FLOOR_Y = groundY + 98;
+let lastHitTime = 0; // Track when DOT was last hit
+const gravityDelay = 1000; // 1 second delay before gravity starts (moved up another 60px)
+let awaitingRestart = false;
+let scheduledRestartAt = 0;
+let groundShrinkStartAt = 0;
+let gravityLocked = true; // Disable gravity until first successful DMG click
+let gravityActiveUntil = 0; // When gravity should stop being active (0 = inactive)
+const gravityActiveDuration = 5000; // Gravity active for 5 seconds after damage
+const DAMAGE_GRAVITY_ENABLED = false; // Disable knockdown gravity after taking damage
+// Force-next-crit after high-speed platform bounce
+let nextHitForceCrit = false;
+let nextHitForceCritExpiresAt = 0;
+
+// Slow-motion system
+let mouseHoldStartTime = 0; // When mouse button was pressed down
+let slowMotionActive = false; // Whether slow-motion is active
+let slowMotionStartTime = 0; // When slow-motion started
+const slowMotionHoldDelay = 600; // 0.6 seconds hold to activate
+const slowMotionFreezeDuration = 600; // 0.6 seconds freeze
+let savedDotVx = 0; // Save DOT velocity before freeze
+let savedDotVy = 0;
+
+// Reward: grant 10% of max HP + 10% of max Armor on death
+// Track if reward has been granted for current death
+let rewardGranted = false;
+let deathStartX = 0;
+let deathStartY = 0;
+
+// Game mode system
+type GameMode = 'Solo' | 'Training' | 'PvP' | 'Replay';
+let gameMode: GameMode = 'Solo'; // Current game mode
+
+// PvP system
+type PvPPlayer = {
+  id: string; // Player ID
+  x: number; // Position X
+  y: number; // Position Y
+  vx: number; // Velocity X
+  vy: number; // Velocity Y
+  mass: number; // Base mass (from Solo level conversion)
+  radius: number; // DOT radius
+  isOut: boolean; // Whether player is out of bounds
+  color: string; // Player color for rendering
+  // Solo DOT physics state (copied from Solo)
+  lastHitTime: number; // Track when player was last hit
+  gravityLocked: boolean; // Disable gravity until first successful hit
+  gravityActiveUntil: number; // When gravity should stop being active (0 = inactive)
+  speedTrail: Particle[]; // Supersonic shadow tail
+  // HP and Armor system (from Solo)
+  hp: number; // Current HP
+  maxHP: number; // Maximum HP (from Solo)
+  armor: number; // Current Armor
+  maxArmor: number; // Maximum Armor (from Solo)
+  // Out of bounds tracking
+  outOfBoundsStartTime: number | null; // When player first went out of bounds
+  lastOutOfBoundsDamageTime: number; // When last damage was dealt for being out of bounds
+  // Armor regeneration
+  lastArmorRegen: number; // When armor was last regenerated
+  // Bullet paralysis
+  paralyzedUntil: number; // Timestamp when paralysis ends (0 = not paralyzed)
+  // Jetpack fuel system
+  fuel: number; // Current fuel (0-maxFuel)
+  maxFuel: number; // Maximum fuel
+  isUsingJetpack: boolean; // Whether jetpack is currently active
+  jetpackStartTime: number; // When jetpack was started (for fuel consumption)
+  jetpackLastFuelTickTime: number; // Last timestamp when fuel was consumed (for dt-based consumption)
+  lastFuelRegenTime: number; // When fuel was last regenerated
+  // Overheat system
+  isOverheated: boolean; // Whether jetpack is overheated
+  overheatStartTime: number; // When overheat started (for 3 second duration)
+  // Toxic water system removed
+  // Profile picture (NFT image URL)
+  profilePicture?: string; // NFT image URL for profile picture
+  // UFO tilt/sway effect
+  ufoTilt: number; // Current tilt angle (for balancing effect)
+  lastVx: number; // Previous velocity X (for acceleration calculation)
+  lastVy: number; // Previous velocity Y (for acceleration calculation)
+  // UFO render smoothing (prevents flicker when vx crosses ~0 while drifting to neutral)
+  facingLeft: boolean; // Stable facing direction (with hysteresis)
+  renderAngle: number; // Smoothed render rotation angle
+};
+
+function setDamageGravity(player: PvPPlayer, now: number = Date.now()): void {
+  player.gravityActiveUntil = DAMAGE_GRAVITY_ENABLED ? now + gravityActiveDuration : 0;
+}
+
+let pvpPlayers: { [playerId: string]: PvPPlayer } = {};
+let myPlayerId: string | null = null; // My player ID
+let opponentId: string | null = null; // Opponent player ID
+
+// PvP/Training: global action rate limit (reduces spam + network load).
+// "One action per 1 second": dash/shot/mine/click-hit are gated, but movement position sync continues.
+const PVP_ACTION_COOLDOWN_MS = 1000;
+const PVP_ACTION_PENALTY_MS = 2000;
+const PVP_ACTION_DENIED_SFX_COOLDOWN_MS = 120;
+const PVP_ACTION_INDICATOR_SHAKE_MS = 150;
+const PVP_ACTION_INDICATOR_SHAKE_PX = 2.5;
+let pvpNextActionAtById: { [playerId: string]: number } = {};
+let pvpActionWindowMsById: { [playerId: string]: number } = {};
+let pvpLastActionDeniedSfxAt = 0;
+let pvpActionIndicatorShakeUntil = 0;
+function canPerformPvpAction(playerId: string, now: number = Date.now()): boolean {
+  const nextAt = pvpNextActionAtById[playerId] || 0;
+  return now >= nextAt;
+}
+function commitPvpAction(playerId: string, now: number = Date.now()): void {
+  pvpNextActionAtById[playerId] = now + PVP_ACTION_COOLDOWN_MS;
+  pvpActionWindowMsById[playerId] = PVP_ACTION_COOLDOWN_MS;
+}
+function applyPvpActionPenalty(playerId: string, now: number = Date.now()): void {
+  // Local feedback (sound + tiny indicator shake) when you attempt an action too early.
+  if (playerId === myPlayerId) {
+    if (now - pvpLastActionDeniedSfxAt >= PVP_ACTION_DENIED_SFX_COOLDOWN_MS) {
+      pvpLastActionDeniedSfxAt = now;
+      pvpActionIndicatorShakeUntil = Math.max(pvpActionIndicatorShakeUntil, now + PVP_ACTION_INDICATOR_SHAKE_MS);
+      try {
+        void audioManager.resumeContext();
+        // Prefer a dedicated short "denied" blip, fall back to an existing fail sound.
+        (audioManager as any).playActionDenied?.() ?? audioManager.playUpgradeFail();
+      } catch {}
+    } else {
+      pvpActionIndicatorShakeUntil = Math.max(pvpActionIndicatorShakeUntil, now + Math.floor(PVP_ACTION_INDICATOR_SHAKE_MS * 0.6));
+    }
+  }
+
+  const prevNextAt = pvpNextActionAtById[playerId] || 0;
+  const penaltyNextAt = now + PVP_ACTION_PENALTY_MS;
+  // Never reduce an existing longer lockout; only extend.
+  if (penaltyNextAt > prevNextAt) {
+    pvpNextActionAtById[playerId] = penaltyNextAt;
+    pvpActionWindowMsById[playerId] = PVP_ACTION_PENALTY_MS;
+  }
+}
+
+// PvP Dash (Space): short burst "blink" movement for snappier gameplay with minimal network spam.
+const PVP_DASH_DISTANCE = 152; // px (instant displacement) (20% shorter)
+const PVP_DASH_COOLDOWN_MS = 900; // ms
+const PVP_DASH_FUEL_COST = 22; // fuel per dash (reuses existing fuel bar)
+const PVP_DASH_EXIT_IMPULSE = 3.8; // additional velocity kick (px/frame)
+let pvpDashCooldownUntilById: { [playerId: string]: number } = {};
+// Kill tiny subpixel drift to avoid "pixel-y" jitter at the end of movement.
+const PVP_VELOCITY_DEADZONE = 0.12; // px/frame
+
+function clampPvpPosForPlayer(playerId: string, x: number, y: number, radius: number): { x: number; y: number } {
+  // Use mid-wall side constraints + arena bounds (or full width when mid-wall disabled)
+  if (!PVP_MID_WALL_ENABLED) {
+    let nx = Math.max(pvpBounds.left + radius, Math.min(pvpBounds.right - radius, x));
+    let ny = Math.max(pvpBounds.top + radius, Math.min(pvpBounds.bottom - radius, y));
+    // Keep dashes/teleports from landing inside the center obstacle.
+    if (PVP_CENTER_OBSTACLE_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
+      const hit = collideCircleWithStone(nx, ny, radius);
+      if (hit) {
+        nx += hit.nx * (hit.depth + 0.25);
+        ny += hit.ny * (hit.depth + 0.25);
+      }
+    }
+    return { x: nx, y: ny };
+  }
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(playerId, x);
+  const minX = side === 'left' ? pvpBounds.left + radius : midX + half + radius;
+  const maxX = side === 'left' ? midX - half - radius : pvpBounds.right - radius;
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(pvpBounds.top + radius, Math.min(pvpBounds.bottom - radius, y))
+  };
+}
+
+function clampPvpBoundsOnlyForPlayer(playerId: string, x: number, y: number, radius: number): { x: number; y: number } {
+  // Same as clampPvpPosForPlayer but WITHOUT center-stone pushout.
+  if (!PVP_MID_WALL_ENABLED) {
+    return {
+      x: Math.max(pvpBounds.left + radius, Math.min(pvpBounds.right - radius, x)),
+      y: Math.max(pvpBounds.top + radius, Math.min(pvpBounds.bottom - radius, y))
+    };
+  }
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(playerId, x);
+  const minX = side === 'left' ? pvpBounds.left + radius : midX + half + radius;
+  const maxX = side === 'left' ? midX - half - radius : pvpBounds.right - radius;
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(pvpBounds.top + radius, Math.min(pvpBounds.bottom - radius, y))
+  };
+}
+
+function resolveStonePushOut(x: number, y: number, r: number): { x: number; y: number } {
+  let nx = x, ny = y;
+  // A few iterations in case we start slightly inside multiple sub-circles.
+  for (let i = 0; i < 4; i++) {
+    const hit = collideCircleWithStone(nx, ny, r);
+    if (!hit) break;
+    nx += hit.nx * (hit.depth + 0.35);
+    ny += hit.ny * (hit.depth + 0.35);
+  }
+  return { x: nx, y: ny };
+}
+
+function dashStopBeforeStone(fromX: number, fromY: number, toX: number, toY: number, r: number): { x: number; y: number } {
+  if (!PVP_CENTER_OBSTACLE_ENABLED || !(gameMode === 'PvP' || gameMode === 'Training')) {
+    return { x: toX, y: toY };
+  }
+
+  // Ensure start isn't already inside (rare edge case).
+  const start = resolveStonePushOut(fromX, fromY, r);
+  fromX = start.x; fromY = start.y;
+
+  // If the path crosses the stone, stop at the first contact instead of "tunneling" through.
+  const steps = 18;
+  let firstHitT: number | null = null;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const px = fromX + (toX - fromX) * t;
+    const py = fromY + (toY - fromY) * t;
+    if (collideCircleWithStone(px, py, r)) {
+      firstHitT = t;
+      break;
+    }
+  }
+  if (firstHitT === null) {
+    // No hit along the dash path.
+    return resolveStonePushOut(toX, toY, r);
+  }
+
+  // Binary search the boundary: find the last non-colliding point.
+  let lo = Math.max(0, firstHitT - 1 / steps);
+  let hi = firstHitT;
+  for (let it = 0; it < 11; it++) {
+    const mid = (lo + hi) / 2;
+    const px = fromX + (toX - fromX) * mid;
+    const py = fromY + (toY - fromY) * mid;
+    if (collideCircleWithStone(px, py, r)) hi = mid;
+    else lo = mid;
+  }
+
+  // Back off a tiny bit so we don't land "inside" due to float jitter.
+  const back = 0.005; // 0.5% of path
+  const tFinal = Math.max(0, lo - back);
+  const fx = fromX + (toX - fromX) * tFinal;
+  const fy = fromY + (toY - fromY) * tFinal;
+  return resolveStonePushOut(fx, fy, r);
+}
+
+function tryDashPlayer(playerId: string, player: PvPPlayer, aimX: number, aimY: number, send: (input: any) => void): void {
+  const now = Date.now();
+  if (player.isOut || player.hp <= 0 || deathAnimations.has(playerId)) return;
+  if (player.paralyzedUntil > now) return;
+
+  // Global action limit: dash counts as an action.
+  if (!canPerformPvpAction(playerId, now)) {
+    applyPvpActionPenalty(playerId, now);
+    return;
+  }
+
+  const cdUntil = pvpDashCooldownUntilById[playerId] || 0;
+  if (now < cdUntil) return;
+  if (player.fuel < PVP_DASH_FUEL_COST) return;
+
+  // Direction: towards cursor; fallback to current velocity direction.
+  let dx = aimX - player.x;
+  let dy = aimY - player.y;
+  let dist = Math.sqrt(dx * dx + dy * dy);
+  if (!(dist > 0.5)) {
+    const v = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+    if (v > 0.5) {
+      dx = player.vx;
+      dy = player.vy;
+      dist = v;
+    } else {
+      // No direction information -> do nothing (prevents random blink)
+      return;
+    }
+  }
+  const dirX = dx / dist;
+  const dirY = dy / dist;
+
+  const fromX = player.x;
+  const fromY = player.y;
+  const desired = { x: player.x + dirX * PVP_DASH_DISTANCE, y: player.y + dirY * PVP_DASH_DISTANCE };
+  const bounded = clampPvpBoundsOnlyForPlayer(playerId, desired.x, desired.y, player.radius);
+  const stopped = dashStopBeforeStone(fromX, fromY, bounded.x, bounded.y, player.radius);
+  const target = clampPvpPosForPlayer(playerId, stopped.x, stopped.y, player.radius);
+  player.x = target.x;
+  player.y = target.y;
+  // Small exit impulse so it feels like a burst, not a teleport.
+  player.vx += dirX * PVP_DASH_EXIT_IMPULSE;
+  player.vy += dirY * PVP_DASH_EXIT_IMPULSE;
+  if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(playerId, player);
+
+  // Consume fuel and set cooldown (reuses existing fuel UI).
+  player.fuel = Math.max(0, player.fuel - PVP_DASH_FUEL_COST);
+  pvpDashCooldownUntilById[playerId] = now + PVP_DASH_COOLDOWN_MS;
+  commitPvpAction(playerId, now);
+
+  if (PVP_UFO_SPEED_TRAIL_ENABLED) {
+    // Visual: inject a denser speed trail along the dash path (no new renderer needed).
+    const steps = 8;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      player.speedTrail.push({
+        x: fromX + (player.x - fromX) * t,
+        y: fromY + (player.y - fromY) * t,
+        vx: 0,
+        vy: 0,
+        life: 22,
+        maxLife: 22,
+        size: player.radius * 1.8
+      });
+    }
+    while (player.speedTrail.length > 18) player.speedTrail.shift();
+  } else if (player.speedTrail.length) {
+    player.speedTrail.length = 0;
+  }
+
+  // Audio: reuse an existing short "burst" sound (keeps changes minimal).
+  try {
+    void audioManager.resumeContext();
+    audioManager.playBounce();
+  } catch {}
+
+  // Network: broadcast discrete dash event so opponent sees it instantly (not waiting for position stream).
+  send({
+    type: 'dash',
+    timestamp: now,
+    x: player.x,
+    y: player.y,
+    vx: player.vx,
+    vy: player.vy
+  });
+}
+
+// Jetpack fuel carryover between PvP rounds/resets (no auto-refill)
+const PVP_DEFAULT_MAX_FUEL = 150; // Increased fuel capacity for longer travel
+let pvpFuelCarryoverById: { [playerId: string]: number } = {};
+function snapshotPvpFuelCarryover(): void {
+  try {
+    for (const id of Object.keys(pvpPlayers || {})) {
+      const f: any = (pvpPlayers as any)?.[id]?.fuel;
+      const mf: any = (pvpPlayers as any)?.[id]?.maxFuel;
+      const maxFuel = (typeof mf === 'number' && Number.isFinite(mf) && mf > 0) ? mf : PVP_DEFAULT_MAX_FUEL;
+      if (typeof f === 'number' && Number.isFinite(f)) {
+        pvpFuelCarryoverById[id] = Math.max(0, Math.min(maxFuel, f));
+      }
+    }
+  } catch {}
+}
+function getCarryoverFuel(playerId: string, fallback: number = PVP_DEFAULT_MAX_FUEL, maxFuel: number = PVP_DEFAULT_MAX_FUEL): number {
+  const f = pvpFuelCarryoverById[playerId];
+  const mf = (typeof maxFuel === 'number' && Number.isFinite(maxFuel) && maxFuel > 0) ? maxFuel : PVP_DEFAULT_MAX_FUEL;
+  const fb = (typeof fallback === 'number' && Number.isFinite(fallback)) ? fallback : mf;
+  return (typeof f === 'number' && Number.isFinite(f)) ? Math.max(0, Math.min(mf, f)) : Math.max(0, Math.min(mf, fb));
+}
+
+// PvP mid-wall: split arena into left/right halves (players cannot cross; projectiles can).
+// NOTE: User requested to remove the middle wall (full arena movement). Keep the code gated so it can be re-enabled later.
+type PvPSide = 'left' | 'right';
+let pvpSideById: { [playerId: string]: PvPSide } = {};
+const PVP_MID_WALL_ENABLED = false;
+const PVP_MID_WALL_THICKNESS = 12; // Visual + collision thickness (px)
+
+// Center obstacle (replaces the old mid-wall): stone sprite + compound collision (matches silhouette).
+const PVP_CENTER_OBSTACLE_ENABLED = true;
+const PVP_CENTER_OBSTACLE_RENDER_RADIUS = 132; // px (visual size)
+const PVP_CENTER_OBSTACLE_SOFT_PUSH = 0.22; // how much velocity to damp along normal when colliding
+// Visual: halo/rim-light around stone (like an eclipse, as if a bright light source is behind the stone).
+const PVP_STONE_HALO_ENABLED = true;
+const PVP_STONE_HALO_COLOR = 'rgba(210, 235, 255, 0.55)';
+const PVP_STONE_HALO_COLOR_INNER = 'rgba(255, 255, 255, 0.22)';
+const PVP_STONE_HALO_BLUR_PX = 22;
+const PVP_STONE_HALO_BLUR_INNER_PX = 10;
+// Visual: weapon glow (cached/pre-rendered; cheap at runtime)
+const WEAPON_GLOW_ENABLED = true;
+const ARROW_GLOW_COLOR = 'rgba(170, 220, 255, 0.55)';
+const ARROW_GLOW_COLOR_INNER = 'rgba(255, 255, 255, 0.18)';
+const ARROW_GLOW_BLUR_PX = 14;
+const ARROW_GLOW_BLUR_INNER_PX = 7;
+const BOOM_GLOW_COLOR = 'rgba(255, 200, 120, 0.45)';
+const BOOM_GLOW_COLOR_INNER = 'rgba(255, 255, 255, 0.16)';
+const BOOM_GLOW_BLUR_PX = 16;
+const BOOM_GLOW_BLUR_INNER_PX = 8;
+// Stone sprite is 1536x1024 => aspect = 0.6667 (height/width).
+const PVP_STONE_ASPECT = 0.6667;
+// Compound hitbox circles in normalized space:
+// - u, v are relative to stone half-width/half-height
+// - r is relative to stone base radius (= half-height)
+const PVP_STONE_HITBOX: Array<{ u: number; v: number; r: number }> = [
+  { u: 0.02, v: 0.06, r: 0.92 },  // main mass
+  { u: -0.44, v: 0.10, r: 0.62 }, // left bulge
+  { u: 0.46, v: -0.02, r: 0.62 }, // right bulge
+  { u: -0.06, v: 0.58, r: 0.56 }, // bottom mass
+  // Top was sticking out too much; make it tighter so arrows don't "hit air" above the sprite.
+  { u: -0.10, v: -0.36, r: 0.32 }, // top mass (reduced)
+  { u: 0.18, v: -0.26, r: 0.28 }   // top-right bump (reduced)
+];
+
+// Debug: visualize stone compound hitbox circles (numbered) to tune collision fairness.
+// Keep OFF by default (hitboxes are meant to be invisible in gameplay).
+const PVP_STONE_HITBOX_DEBUG = false;
+
+function getPvpCenterObstacle(): { x: number; y: number; renderR: number; halfW: number; halfH: number; baseR: number } {
+  const x = (pvpBounds.left + pvpBounds.right) / 2;
+  // Place slightly above vertical center so it feels like an arena centerpiece.
+  const y = pvpBounds.top + (PVP_BOTTOM_FLOOR_Y - pvpBounds.top) * 0.50;
+  return {
+    x,
+    y,
+    renderR: PVP_CENTER_OBSTACLE_RENDER_RADIUS,
+    // Match render sizing used in draw: worldW = renderR * 2.05 => halfW = renderR * 1.025
+    halfW: PVP_CENTER_OBSTACLE_RENDER_RADIUS * 1.025,
+    halfH: PVP_CENTER_OBSTACLE_RENDER_RADIUS * 1.025 * PVP_STONE_ASPECT,
+    baseR: PVP_CENTER_OBSTACLE_RENDER_RADIUS * 1.025 * PVP_STONE_ASPECT
+  };
+}
+
+function collideCircleWithStone(cx: number, cy: number, cr: number): null | { nx: number; ny: number; depth: number } {
+  if (!PVP_CENTER_OBSTACLE_ENABLED) return null;
+  if (gameMode !== 'PvP' && gameMode !== 'Training') return null;
+  const o = getPvpCenterObstacle();
+  // Quick reject: bounding circle
+  const br = Math.max(o.halfW, o.halfH) + cr + 4;
+  const qx = cx - o.x;
+  const qy = cy - o.y;
+  if (qx * qx + qy * qy > br * br) return null;
+
+  let best: null | { nx: number; ny: number; depth: number } = null;
+  for (const c of PVP_STONE_HITBOX) {
+    const sx = o.x + c.u * o.halfW;
+    const sy = o.y + c.v * o.halfH;
+    const rr = c.r * o.baseR;
+    const dx = cx - sx;
+    const dy = cy - sy;
+    const minDist = cr + rr;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= minDist * minDist) continue;
+    const d = Math.max(0.0001, Math.sqrt(d2));
+    const nx = dx / d;
+    const ny = dy / d;
+    const depth = (minDist - d);
+    if (!best || depth > best.depth) best = { nx, ny, depth };
+  }
+  return best;
+}
+
+function enforcePvpCenterObstacle(player: PvPPlayer): void {
+  if (!PVP_CENTER_OBSTACLE_ENABLED) return;
+  if (gameMode !== 'PvP' && gameMode !== 'Training') return;
+  const hit = collideCircleWithStone(player.x, player.y, player.radius);
+  if (!hit) return;
+  player.x += hit.nx * (hit.depth + 0.25);
+  player.y += hit.ny * (hit.depth + 0.25);
+  const vn = player.vx * hit.nx + player.vy * hit.ny;
+  if (vn < 0) {
+    player.vx -= vn * hit.nx * (1 + PVP_CENTER_OBSTACLE_SOFT_PUSH);
+    player.vy -= vn * hit.ny * (1 + PVP_CENTER_OBSTACLE_SOFT_PUSH);
+  }
+}
+
+function getPvpMidWallX(): number {
+  return (pvpBounds.left + pvpBounds.right) / 2;
+}
+
+function ensurePvpSide(playerId: string, fallbackX: number): PvPSide {
+  const existing = pvpSideById[playerId];
+  if (existing === 'left' || existing === 'right') return existing;
+  const side: PvPSide = fallbackX < getPvpMidWallX() ? 'left' : 'right';
+  pvpSideById[playerId] = side;
+  return side;
+}
+
+function enforcePvpMidWall(playerId: string, player: PvPPlayer): void {
+  if (gameMode !== 'PvP' && gameMode !== 'Training') return;
+  if (!PVP_MID_WALL_ENABLED) return;
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(playerId, player.x);
+
+  if (side === 'left') {
+    const maxX = midX - half - player.radius;
+    if (player.x > maxX) {
+      player.x = maxX;
+      if (player.vx > 0) player.vx = 0;
+    }
+  } else {
+    const minX = midX + half + player.radius;
+    if (player.x < minX) {
+      player.x = minX;
+      if (player.vx < 0) player.vx = 0;
+    }
+  }
+}
+
+// --- Turn-based PvP (micro-turn) ---
+// This is enabled only when player chooses "5SEC PVP" mode.
+let TURN_BASED_PVP_ENABLED = false;
+type TurnPhase = 'lobby' | 'planning' | 'execute';
+type TurnShotType = 'arrow' | 'bullet' | 'projectile';
+type TurnShotPlan = { tMs: number; type: TurnShotType; aimX: number; aimY: number };
+type TurnPlan = { track: Array<{ tMs: number; x: number; y: number }>; spawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }>; stats?: { dmg?: number; critChance?: number } };
+type DefendDir = 'up' | 'down' | 'stay';
+
+let turnPhase: TurnPhase = 'lobby';
+let turnRoundId = 0;
+let turnPhaseEndsAt = 0;
+let turnExecuteStartAt = 0;
+let turnExecuteDurationMs = 5000;
+let turnMoveSpeed = 900; // px/s (server authoritative)
+let turnWindupMs = 200;
+let turnWeapon: TurnShotType = 'bullet';
+let turnLocked = false;
+let turnServerSynced = false; // becomes true only after seeing server phase/execute payload
+let turnWaitStartAt = 0; // used to detect outdated server (no phase messages)
+let autoReadySent = false;
+let turnServerClockOffsetMs = 0; // serverNow - clientNow
+
+// (attacker/defender model state removed; 5SEC PvP uses planning + replay)
+let turnAttackerId: string | null = null;
+let turnDefenderId: string | null = null;
+let turnDefendOptions: DefendDir[] = [];
+let turnDefendChoice: DefendDir | null = null;
+let turnDefendChoiceSentForRound = 0;
+let turnDefendOptionsRoundId = 0;
+let turnDefendUiRects: Array<{ x: number; y: number; w: number; h: number; choice: DefendDir }> = [];
+let turnAttackClickMarker: { x: number; y: number; untilMs: number } | null = null;
+let turnDefendMs = 3000;
+let turnSyncMs = 1000;
+let turnAttackMs = 4000;
+let turnResolveMs = 2000;
+let turnDefenderMoveSpeed = 900;
+let turnPlanStartServerTs = 0;
+let turnPlanDurationMs = 5000;
+let turnLastTrackSampleServerTs = 0;
+let turnLastPlanSendServerTs = 0;
+let turnLocalTrack: Array<{ tMs: number; x: number; y: number }> = [];
+let turnLocalSpawns: Array<{ tMs: number; projType: TurnShotType; x: number; y: number; vx: number; vy: number }> = [];
+let turnPlanSendFailCount = 0;
+
+// Payload from server for current execute phase
+let turnPlansById: Record<string, TurnPlan> = {};
+let turnEvents: any[] = [];
+let turnExecuteSeed = 0;
+let turnFinalPlayers: Record<string, { x: number; y: number; hp: number; armor: number }> = {};
+let turnLastRoundExecuteAt = 0;
+let turnExecuteLoggedRound = 0;
+
+// Local playback state
+let turnStartPosById: Record<string, { x: number; y: number }> = {};
+let turnSpawnedProjectiles: Set<string> = new Set();
+let turnProcessedHits: Set<string> = new Set();
+let turnProjectiles: Array<{ id: string; shooterId: string; projType: TurnShotType; x: number; y: number; vx: number; vy: number }> = [];
+let turnNextEventIndex = 0;
+
+const TURN_MAX_SHOTS = 3;
+const TURN_SHOT_TIMES_MS = [1000, 2500, 4000]; // 3 shots per execute
+
+function isTurnBasedPvP(): boolean {
+  // Don't depend on currentMatch (it can be null during transitions); Colyseus connection is enough.
+  return TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom() && turnServerSynced && turnPhase !== 'lobby';
+}
+
+function isTurnBasedPvPDesired(): boolean {
+  // Used to disable legacy realtime simulation *only during EXECUTE replay* for 5SEC PVP.
+  return is5SecPvPMode() && turnPhase === 'execute' && turnServerSynced;
+}
+
+function isMyTurnDefender(): boolean {
+  return !!myPlayerId && !!turnDefenderId && myPlayerId === turnDefenderId;
+}
+
+function isMyTurnAttacker(): boolean {
+  return !!myPlayerId && !!turnAttackerId && myPlayerId === turnAttackerId;
+}
+
+function resetTurnBasedPlayback(): void {
+  turnSpawnedProjectiles = new Set();
+  turnProcessedHits = new Set();
+  turnProjectiles = [];
+  turnNextEventIndex = 0;
+  turnStartPosById = {};
+  turnLastTrackSampleServerTs = 0;
+  turnLastPlanSendServerTs = 0;
+  turnLocalTrack = [];
+  turnLocalSpawns = [];
+  turnPlanSendFailCount = 0;
+  // IMPORTANT: do NOT wipe `turnDefendOptions` here.
+  // Server may deliver `defend_options` before the `phase` message; if we clear here, defender can't pick a direction.
+  turnDefendChoice = null;
+  turnDefendChoiceSentForRound = 0;
+  turnDefendUiRects = [];
+  turnAttackClickMarker = null;
+}
+
+function clampTurnDestForMySide(x: number, y: number): { x: number; y: number } {
+  if (!myPlayerId || !pvpPlayers[myPlayerId]) return { x, y };
+  const p = pvpPlayers[myPlayerId];
+  // If mid-wall is disabled, clamp only to arena bounds (full width movement).
+  if (!PVP_MID_WALL_ENABLED) {
+    let nx = Math.max(pvpBounds.left + p.radius, Math.min(pvpBounds.right - p.radius, x));
+    let ny = Math.max(pvpBounds.top + p.radius, Math.min(pvpBounds.bottom - p.radius, y));
+    if (PVP_CENTER_OBSTACLE_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
+      const hit = collideCircleWithStone(nx, ny, p.radius);
+      if (hit) {
+        nx += hit.nx * (hit.depth + 0.25);
+        ny += hit.ny * (hit.depth + 0.25);
+      }
+    }
+    return { x: nx, y: ny };
+  }
+  // Otherwise reuse mid-wall side constraints
+  const midX = getPvpMidWallX();
+  const half = PVP_MID_WALL_THICKNESS / 2;
+  const side = ensurePvpSide(myPlayerId, p.x);
+  const minX = side === 'left' ? pvpBounds.left + p.radius : midX + half + p.radius;
+  const maxX = side === 'left' ? midX - half - p.radius : pvpBounds.right - p.radius;
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(pvpBounds.top + p.radius, Math.min(pvpBounds.bottom - p.radius, y))
+  };
+}
+
+function getMyTurnPlan(): TurnPlan {
+  // Legacy helper (old turn-based prototype). 5SEC PVP uses shadow recording (track+spawns).
+  const existing = (myPlayerId && turnPlansById[myPlayerId]) ? turnPlansById[myPlayerId] : null;
+  return existing || ({ track: [], spawns: [], stats: { dmg, critChance } } as any);
+}
+
+function setMyTurnDest(x: number, y: number): void {
+  // Deprecated (old prototype)
+  void x; void y;
+}
+
+function addMyTurnShot(aimX: number, aimY: number): void {
+  // Deprecated (old prototype)
+  void aimX; void aimY;
+}
+
+function clearMyTurnShots(): void {
+  // Deprecated (old prototype)
+}
+
+function is5SecPvPMode(): boolean {
+  return TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom() && pvpOnlineRoomName === 'pvp_5sec_room';
+}
+
+function ensure5SecPvPPlayersFromRoom(): void {
+  if (!is5SecPvPMode()) return;
+  const room: any = colyseusService.getRoom();
+  const state: any = room?.state;
+  if (!room || !state?.players) return;
+  const keys: string[] = Array.from(state.players.keys ? state.players.keys() : []) as string[];
+  if (keys.length < 2) return;
+  const mySid: string | null = typeof room.sessionId === 'string' ? room.sessionId : null;
+  const oppSid: string | null = (mySid ? (keys.find((k) => k !== mySid) || null) : null);
+  if (!mySid || !oppSid) return;
+  if (!myPlayerId || !pvpPlayers[mySid] || !opponentId || !pvpPlayers[oppSid]) {
+    // Ensure side assignment + player objects exist as early as possible (phase may arrive before game_start handler runs)
+    initializePvPWithColyseus(room, mySid, oppSid);
+  }
+}
+
+function getServerNowMs(): number {
+  return Date.now() + (turnServerClockOffsetMs || 0);
+}
+
+function recordTurnTrackAndMaybeSend(): void {
+  if (!is5SecPvPMode() || turnPhase !== 'planning' || !myPlayerId || !pvpPlayers[myPlayerId] || !turnPlanStartServerTs) return;
+  const nowServer = getServerNowMs();
+  const duration = turnExecuteDurationMs || 5000;
+  const tMs = Math.max(0, Math.min(duration, Math.round(nowServer - turnPlanStartServerTs)));
+  if (turnLocalTrack.length === 0) {
+    const me0 = pvpPlayers[myPlayerId];
+    turnLocalTrack.push({ tMs: 0, x: me0.x, y: me0.y });
+  }
+  if (nowServer - turnLastTrackSampleServerTs >= 100) {
+    turnLastTrackSampleServerTs = nowServer;
+    const me = pvpPlayers[myPlayerId];
+    // Mid-wall can be disabled (full arena movement)
+    if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(myPlayerId, me);
+    turnLocalTrack.push({ tMs, x: me.x, y: me.y });
+    if (turnLocalTrack.length > 90) {
+      turnLocalTrack.shift();
+    }
+  }
+
+  // Periodically send plan updates to server (keeps latest shadow recording)
+  if (nowServer - turnLastPlanSendServerTs >= 250) {
+    turnLastPlanSendServerTs = nowServer;
+    const me = pvpPlayers[myPlayerId];
+    // IMPORTANT: Server computes EXECUTE damage from plan.stats.dmg/critChance.
+    // Include Ronkeverse NFT bonuses here so EXECUTE matches what you see during planning.
+    const nftBonuses = calculateNftBonuses();
+    const totalDmg = dmg + (nftBonuses?.dmg || 0);
+    const totalCritChance = critChance + (nftBonuses?.critChance || 0);
+    const ok = colyseusService.sendPlan({
+      track: turnLocalTrack,
+      spawns: turnLocalSpawns,
+      // Share limited live intel during planning: fuel usage.
+      stats: { dmg: totalDmg, critChance: totalCritChance, fuel: me?.fuel, maxFuel: me?.maxFuel }
+    });
+    if (!ok) turnPlanSendFailCount++;
+  }
+}
+
+function recordTurnSpawn(projType: TurnShotType, x: number, y: number, vxPerFrame: number, vyPerFrame: number): void {
+  if (!is5SecPvPMode() || turnPhase !== 'planning' || !turnPlanStartServerTs) return;
+  const nowServer = getServerNowMs();
+  const duration = turnExecuteDurationMs || 5000;
+  const tMs = Math.max(0, Math.min(duration, Math.round(nowServer - turnPlanStartServerTs)));
+  // Convert px/frame -> px/sec (game uses ~60fps units for velocities)
+  const vx = vxPerFrame * 60;
+  const vy = vyPerFrame * 60;
+  turnLocalSpawns.push({ tMs, projType, x, y, vx, vy });
+  if (turnLocalSpawns.length > 60) {
+    turnLocalSpawns.shift();
+  }
+  // Send immediately on spawn for responsiveness
+  // Include NFT bonuses so server uses correct damage/crit for EXECUTE.
+  const nftBonuses = calculateNftBonuses();
+  const totalDmg = dmg + (nftBonuses?.dmg || 0);
+  const totalCritChance = critChance + (nftBonuses?.critChance || 0);
+  const ok = colyseusService.sendPlan({
+    track: turnLocalTrack,
+    spawns: turnLocalSpawns,
+    stats: { dmg: totalDmg, critChance: totalCritChance }
+  });
+  if (!ok) turnPlanSendFailCount++;
+}
+
+function updateTurnBasedPvP(nowMs: number): void {
+  // If turn-based is desired but server hasn't started sending phase yet, freeze legacy controls
+  // and show "waiting" overlay (render does that).
+  if (isTurnBasedPvPDesired() && !turnServerSynced) {
+    for (const pid in pvpPlayers) {
+      pvpPlayers[pid].vx = 0;
+      pvpPlayers[pid].vy = 0;
+    }
+    return;
+  }
+  if (!isTurnBasedPvP()) return;
+  const dtSec = 1 / 60; // This codebase runs most physics in "per-frame" terms
+
+  // 5SEC PvP: planning is "shadow play" (do not freeze). Execute uses deterministic replay.
+  if (turnPhase === 'planning') {
+    return;
+  }
+
+  if (turnPhase !== 'execute' || !turnExecuteStartAt || nowMs < turnExecuteStartAt) {
+    return; // waiting for execute start
+  }
+
+  const tMs = Math.max(0, Math.min(turnExecuteDurationMs, nowMs - turnExecuteStartAt));
+  const sampleTrack = (track: Array<{ tMs: number; x: number; y: number }>, atMs: number): { x: number; y: number } | null => {
+    if (!track || track.length === 0) return null;
+    if (atMs <= track[0].tMs) return { x: track[0].x, y: track[0].y };
+    for (let i = 0; i < track.length - 1; i++) {
+      const a = track[i];
+      const b = track[i + 1];
+      if (atMs >= a.tMs && atMs <= b.tMs) {
+        const span = Math.max(1, b.tMs - a.tMs);
+        const t = (atMs - a.tMs) / span;
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      }
+    }
+    const last = track[track.length - 1];
+    return { x: last.x, y: last.y };
+  };
+
+  // Move players along their recorded tracks
+  for (const pid of Object.keys(turnPlansById || {})) {
+    const pl = pvpPlayers[pid];
+    const plan = turnPlansById[pid];
+    if (!pl || !plan) continue;
+
+    const pos = sampleTrack(plan.track, tMs) || { x: pl.x, y: pl.y };
+    pl.vx = (pos.x - pl.x); // approx px/frame
+    pl.vy = (pos.y - pl.y);
+    pl.x = pos.x;
+    pl.y = pos.y;
+    enforcePvpMidWall(pid, pl);
+  }
+
+  // EXECUTE replay: generate the same UFO speed shadow tail based on replay velocity.
+  // (Legacy realtime physics is disabled during execute, so without this the tail never appears.)
+  for (const pid of Object.keys(turnPlansById || {})) {
+    const pl = pvpPlayers[pid];
+    if (!pl) continue;
+    const speedSquared = pl.vx * pl.vx + pl.vy * pl.vy;
+    const speed = Math.sqrt(speedSquared);
+    if (PVP_UFO_SPEED_TRAIL_ENABLED && speed >= 2) {
+      pl.speedTrail.push({
+        x: pl.x,
+        y: pl.y,
+        vx: 0,
+        vy: 0,
+        life: 16,
+        maxLife: 16,
+        size: pl.radius * 1.2
+      });
+      if (pl.speedTrail.length > 8) pl.speedTrail.shift();
+    } else if (!PVP_UFO_SPEED_TRAIL_ENABLED && pl.speedTrail.length) {
+      pl.speedTrail.length = 0;
+    }
+    for (let i = pl.speedTrail.length - 1; i >= 0; i--) {
+      pl.speedTrail[i].life--;
+      if (pl.speedTrail[i].life <= 0) pl.speedTrail.splice(i, 1);
+    }
+  }
+
+  // Process events up to current time (projectile spawns + hits)
+  const mySid: string | null = (() => {
+    try { return (colyseusService.getRoom() as any)?.sessionId ?? null; } catch { return null; }
+  })();
+  while (turnNextEventIndex < turnEvents.length) {
+    const evt = turnEvents[turnNextEventIndex];
+    if (!evt || typeof evt.tMs !== 'number') {
+      turnNextEventIndex++;
+      continue;
+    }
+    if (evt.tMs > tMs) break;
+
+    if (evt.type === 'projectile_spawn') {
+      const projId = String(evt.projectileId);
+      if (!turnSpawnedProjectiles.has(projId)) {
+        turnSpawnedProjectiles.add(projId);
+        const projType = (evt.projType === 'arrow' || evt.projType === 'bullet' || evt.projType === 'projectile') ? evt.projType : 'bullet';
+        try {
+          void audioManager.resumeContext();
+          if (projType === 'bullet') audioManager.playBulletShot();
+          else if (projType === 'arrow') audioManager.playArrowShot();
+          else audioManager.playProjectileLaunch();
+        } catch {}
+        const spawnX = Number(evt.x);
+        const spawnY = Number(evt.y);
+        const spawnVx = Number(evt.vx);
+        const spawnVy = Number(evt.vy);
+        const elapsedSec = Math.max(0, (tMs - evt.tMs) / 1000);
+        const g = projType === 'projectile' ? (0.32 * 60 * 60) : 0;
+        const x = spawnX + spawnVx * elapsedSec;
+        const y = spawnY + spawnVy * elapsedSec + 0.5 * g * elapsedSec * elapsedSec;
+        const vy = spawnVy + g * elapsedSec;
+        turnProjectiles.push({ id: projId, shooterId: String(evt.shooterId), projType, x, y, vx: spawnVx, vy });
+      }
+    }
+
+    if (evt.type === 'hit') {
+      const targetId = String(evt.targetId);
+      const dmgAmount = Number(evt.damage) || 0;
+      const isCritHit = !!evt.isCrit;
+      const shooterId = String(evt.shooterId);
+
+      try {
+        const hitKey = `${String(evt.projectileId)}:${shooterId}:${targetId}:${String(evt.tMs)}`;
+        if (!turnProcessedHits.has(hitKey)) {
+          turnProcessedHits.add(hitKey);
+          void audioManager.resumeContext();
+          if (mySid && shooterId === mySid) audioManager.playDamageDealt(isCritHit);
+          else if (mySid && targetId === mySid) audioManager.playDamageReceived(isCritHit);
+          else audioManager.playDotHit();
+        }
+      } catch {}
+
+      const target = pvpPlayers[targetId];
+      if (target && dmgAmount > 0) {
+        const absorbed = Math.min(dmgAmount, target.armor);
+        target.armor -= absorbed;
+        const remaining = dmgAmount - absorbed;
+        target.hp = Math.max(0, target.hp - remaining);
+
+        safePushDamageNumber({
+          x: target.x + (Math.random() - 0.5) * 40,
+          y: target.y - 20,
+          value: dmgAmount,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+      }
+
+      const projId = String(evt.projectileId);
+      turnProjectiles = turnProjectiles.filter(p => p.id !== projId);
+    }
+
+    turnNextEventIndex++;
+  }
+
+  // Update projectiles forward (visual only)
+  const g = 0.32 * 60 * 60;
+  for (let i = turnProjectiles.length - 1; i >= 0; i--) {
+    const p = turnProjectiles[i];
+    p.x += p.vx * dtSec;
+    p.y += p.vy * dtSec;
+    if (p.projType === 'projectile') {
+      p.vy += g * dtSec;
+      if (p.vy > 0) {
+        safePushProjectileSmokeParticle({
+          x: p.x + (Math.random() - 0.5) * 4,
+          y: p.y + (Math.random() - 0.5) * 4,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: -0.3 - Math.random() * 0.2,
+          life: 30 + Math.random() * 20,
+          maxLife: 30 + Math.random() * 20,
+          size: 4 + Math.random() * 3
+        });
+      }
+      // Keep stone as solid cover in turn-based visuals too.
+      if (PVP_CENTER_OBSTACLE_ENABLED) {
+        const hit = collideCircleWithStone(p.x, p.y, projectileRadius);
+        if (hit) {
+          triggerStoneShake(p.x, p.y, 1.2);
+          createProjectileExplosion(p.x, p.y);
+          createStoneImpactParticles(p.x, p.y);
+          turnProjectiles.splice(i, 1);
+          continue;
+        }
+      }
+    }
+    if (p.x < pvpBounds.left - 200 || p.x > pvpBounds.right + 200 || p.y < pvpBounds.top - 200 || p.y > pvpBounds.bottom + 200) {
+      turnProjectiles.splice(i, 1);
+    }
+  }
+
+  // End of execute: snap to server final state (prevents drift)
+  if (tMs >= turnExecuteDurationMs && turnFinalPlayers && typeof turnFinalPlayers === 'object') {
+    for (const pid of Object.keys(turnFinalPlayers)) {
+      const fp = turnFinalPlayers[pid];
+      const pl = pvpPlayers[pid];
+      if (!fp || !pl) continue;
+      pl.x = fp.x;
+      pl.y = fp.y;
+      pl.hp = fp.hp;
+      pl.armor = fp.armor;
+      pl.vx = 0;
+      pl.vy = 0;
+      if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(pid, pl);
+      if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(pid, pl);
+    }
+  }
+}
+
+// Collision damage cooldown tracking - prevent infinite damage when players are stuck together
+// Key format: "playerId1_playerId2" (sorted alphabetically to ensure same key for both players)
+let lastCollisionDamageTime: { [key: string]: number } = {};
+const COLLISION_DAMAGE_COOLDOWN = 500; // 500ms cooldown between collision damage
+const COLLISION_DAMAGE_MIN_DISTANCE = 5; // Minimum distance (in speed units) to reset cooldown
+
+// PvP arena bounds
+const pvpBounds = {
+  left: 240, // Same as playLeft
+  right: 1920, // Same as playRight
+  top: 0,
+  bottom: PVP_BOTTOM_FLOOR_Y, // Use the true bottom floor so projectiles don't vanish in the former toxic-water band
+};
+
+// PvP physics constants
+// Velocity damping (air resistance). Lower = more friction / less inertia.
+const pvpFriction = 0.985; // baseline damping (applied every frame)
+const pvpFrictionCoast = 0.97; // stronger damping when coasting (helps stop jetpack inertia)
+const pvpGravity = 0.05; // Same as Solo gravity
+
+// PvP movement feel: reducing impulse reduces perceived jitter under network correction.
+const PVP_CLICK_FORCE = 3.9; // was ~4.6
+const PVP_CLICK_FORCE_CRIT = 7.35; // was ~8.625
+
+// Training Bot AI (offline opponent). This bot should behave like a "real opponent":
+// - Moves itself a bit
+// - Randomly uses weapons by emitting the SAME input types we normally receive from a network opponent
+let trainingBotNextMoveAt = 0;
+let trainingBotNextDashAt = 0;
+let trainingBotNextBulletAt = 0;
+let trainingBotNextArrowAt = 0;
+let trainingBotNextProjectileAt = 0;
+let trainingBotNextMineAt = 0;
+
+function randRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
+function runTrainingBot(now: number = Date.now()): void {
+  if (gameMode !== 'Training') return;
+  if (isTurnBasedPvPDesired()) return;
+  if (!myPlayerId || !opponentId) return;
+  const me = pvpPlayers?.[myPlayerId];
+  const bot = pvpPlayers?.[opponentId];
+  if (!me || !bot) return;
+  if (bot.isOut || bot.hp <= 0 || deathAnimations.has(opponentId)) return;
+  if (me.isOut || me.hp <= 0 || deathAnimations.has(myPlayerId)) return;
+
+  // Keep opponent interpolation fed in offline mode (Training has no network position packets).
+  try { pushOpponentSample(now, bot); } catch {}
+
+  // Safety: avoid touching arena walls (walls can instantly kill).
+  const BOT_WALL_MARGIN = 90; // px away from walls
+  const safeMinX = pvpBounds.left + bot.radius + BOT_WALL_MARGIN;
+  const safeMaxX = pvpBounds.right - bot.radius - BOT_WALL_MARGIN;
+  const safeMinY = pvpBounds.top + bot.radius + BOT_WALL_MARGIN;
+  const safeMaxY = pvpBounds.bottom - bot.radius - BOT_WALL_MARGIN;
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const pickSafeX = () => clampN(randRange(safeMinX, safeMaxX), pvpBounds.left + bot.radius, pvpBounds.right - bot.radius);
+  const pickSafeY = () => clampN(randRange(safeMinY, safeMaxY), pvpBounds.top + bot.radius, pvpBounds.bottom - bot.radius);
+  const wallBias = () => {
+    let dx = 0;
+    let dy = 0;
+    if (bot.x < safeMinX) dx += 1;
+    else if (bot.x > safeMaxX) dx -= 1;
+    if (bot.y < safeMinY) dy += 1;
+    else if (bot.y > safeMaxY) dy -= 1;
+    return { dx, dy };
+  };
+
+  // --- Movement (self-click impulse) ---
+  if (now >= trainingBotNextMoveAt) {
+    trainingBotNextMoveAt = now + randRange(900, 1400);
+    // If close to walls, always push inward; otherwise random roaming.
+    const wb = wallBias();
+    let ang = Math.random() * Math.PI * 2;
+    if (wb.dx !== 0 || wb.dy !== 0) {
+      ang = Math.atan2(wb.dy, wb.dx);
+      // Extra urgency when we're REALLY close to walls.
+      const nearX = clamp01(Math.max(0, Math.max(safeMinX - bot.x, bot.x - safeMaxX)) / 120);
+      const nearY = clamp01(Math.max(0, Math.max(safeMinY - bot.y, bot.y - safeMaxY)) / 120);
+      const urgency = clamp01(Math.max(nearX, nearY));
+      // Pull movement schedule a bit faster when in danger.
+      trainingBotNextMoveAt = now + randRange(120, 260) * (1 - urgency) + randRange(60, 120) * urgency;
+    }
+    // Respect the same "1 action per second" rule as the player.
+    if (canPerformPvpAction(opponentId, now)) {
+      const dist = bot.radius * randRange(1.0, 2.0);
+      // click point must be BEHIND the bot to push it towards ang (since click adds velocity away from click)
+      const clickX = bot.x - Math.cos(ang) * dist;
+      const clickY = bot.y - Math.sin(ang) * dist;
+      handleOpponentInput({
+        type: 'click',
+        timestamp: now,
+        x: clickX,
+        y: clickY,
+        isCrit: false
+      });
+      commitPvpAction(opponentId, now);
+    }
+  }
+
+  // --- Dash sometimes ---
+  if (now >= trainingBotNextDashAt) {
+    trainingBotNextDashAt = now + randRange(4200, 6500);
+    if (Math.random() < 0.45) {
+      // Never dash towards walls: pick a safe aim point.
+      const aimX = pickSafeX();
+      const aimY = pickSafeY();
+      // Use the exact same dash logic as the player (stone-safe sweep, cooldowns, trail).
+      tryDashPlayer(opponentId, bot, aimX, aimY, (_input: any) => {});
+      try { pushOpponentSample(now, bot); } catch {}
+    }
+  }
+
+  // Shared bot offensive stats (mirror player upgrades; no NFTs for bot).
+  const botDmg = dmg;
+  const botCritChance = critChance;
+
+  // --- Bullet (random shots towards player) ---
+  if (now >= trainingBotNextBulletAt) {
+    trainingBotNextBulletAt = now + randRange(1600, 2600);
+    if (!opponentBulletFlying && Math.random() < 0.75 && canPerformPvpAction(opponentId, now)) {
+      const spread = 180;
+      const tx = me.x + (Math.random() - 0.5) * spread;
+      const ty = me.y + (Math.random() - 0.5) * spread;
+      const dx = tx - bot.x;
+      const dy = ty - bot.y;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 > 0.0001) {
+        const inv = 1 / Math.sqrt(dist2);
+        const vx = dx * inv * bulletSpeed;
+        const vy = dy * inv * bulletSpeed;
+        // Safety: if bot is near walls, slow down on shooting frequency rather than staying in danger.
+        handleOpponentInput({ type: 'bullet', timestamp: now, x: bot.x, y: bot.y, vx, vy });
+        commitPvpAction(opponentId, now);
+      }
+    }
+  }
+
+  // --- Arrow (less frequent) ---
+  if (now >= trainingBotNextArrowAt) {
+    trainingBotNextArrowAt = now + randRange(8000, 12000);
+    if (!opponentArrowFlying && Math.random() < 0.45 && canPerformPvpAction(opponentId, now)) {
+      const spread = 120;
+      const tx = me.x + (Math.random() - 0.5) * spread;
+      const ty = me.y + (Math.random() - 0.5) * spread;
+      handleOpponentInput({
+        type: 'arrow',
+        timestamp: now,
+        x: bot.x,
+        y: bot.y + PVP_ARROW_SPAWN_OFFSET_Y,
+        targetX: tx,
+        targetY: ty,
+        dmg: botDmg,
+        critChance: botCritChance
+      });
+      commitPvpAction(opponentId, now);
+    }
+  }
+
+  // --- Heavy projectile (weapon 2) ---
+  if (now >= trainingBotNextProjectileAt) {
+    trainingBotNextProjectileAt = now + randRange(9000, 14000);
+    if (!opponentProjectileFlying && Math.random() < 0.35 && canPerformPvpAction(opponentId, now)) {
+      const spread = 140;
+      const tx = me.x + (Math.random() - 0.5) * spread;
+      const ty = me.y + (Math.random() - 0.5) * spread;
+      handleOpponentInput({
+        type: 'projectile',
+        timestamp: now,
+        x: bot.x,
+        y: bot.y,
+        targetX: tx,
+        targetY: ty,
+        dmg: botDmg,
+        critChance: botCritChance
+      });
+      commitPvpAction(opponentId, now);
+    }
+  }
+
+  // --- Mine (weapon 4) ---
+  if (now >= trainingBotNextMineAt) {
+    trainingBotNextMineAt = now + randRange(7000, 12000);
+    if (Math.random() < 0.25 && canPerformPvpAction(opponentId, now)) {
+      handleOpponentInput({ type: 'mine', timestamp: now, x: bot.x, y: bot.y });
+      commitPvpAction(opponentId, now);
+    }
+  }
+}
+
+// PvP Heavy projectile (instant fire with arcing trajectory)
+let projectileAiming = false; // Whether heavy shot is armed/aiming
+let projectileFlying = false; // Whether projectile is flying
+let projectileX = 0; // Current projectile position
+let projectileY = 0;
+let projectileVx = 0; // Projectile velocity X
+let projectileVy = 0; // Projectile velocity Y
+let projectileSpawnTime = 0; // When projectile was spawned (for 5 second lifetime)
+let projectileBounceCount = 0; // How many times players have bounced on this projectile
+let projectileLastShotTime = 0; // When projectile was last fired (for cooldown after hit)
+let projectileLastUpdateAt = 0; // For time-based stepping (reduces FPS drift)
+const projectileGravity = 0.32; // Stronger gravity for heavier arc
+const projectileLaunchSpeed = 14.5; // Fixed launch speed (longer range)
+const projectileRadius = 16; // Projectile size (doubled)
+const projectileLifetime = 4500; // Projectile lifetime in milliseconds
+const projectileMaxBounces = 2; // Maximum number of bounces allowed on projectile
+const projectileCooldown = 3000; // Cooldown between shots (3 seconds)
+
+// Bullet system (simple projectile, faster than arrow, smaller than projectile)
+// Changed to array to support multiple bullets (burst fire)
+interface Bullet {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spawnTime: number;
+}
+let bullets: Bullet[] = []; // Array of flying bullets
+let bulletLastShotTime = 0; // When bullet was last fired (for cooldown)
+let shotsInBurst = 0; // Number of shots fired in current burst (0-2)
+let lastBurstShotTime = 0; // When last shot in burst was fired
+const bulletSpeed = 18; // Bullet speed (20% faster than arrow: 15 * 1.2 = 18)
+const bulletRadius = 8; // Bullet size (doubled for heavier look)
+const bulletCooldown = 5000; // Cooldown after burst (5 seconds after 2 shots)
+const bulletBurstDelay = 200; // Delay between shots in burst (0.2 seconds)
+const bulletLifetime = 3000; // Bullet lifetime in milliseconds (3 seconds)
+
+// Mine/Trap system
+interface Mine {
+  x: number;
+  y: number;
+  spawnTime: number;
+  exploded: boolean;
+}
+interface Spike {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spawnTime: number;
+}
+let mines: Mine[] = []; // Array of placed mines
+let spikes: Spike[] = []; // Array of flying spikes from exploded mines
+let mineLastPlaceTime = 0; // When mine was last placed (for cooldown)
+const mineCooldown = 8000; // Cooldown between placing mines (8 seconds)
+const mineLifetime = 10000; // Mine lifetime before auto-explosion (10 seconds)
+const mineRadius = 12; // Mine collision radius (restored to original size)
+const spikeSpeed = 12; // Spike speed after explosion
+const spikeRadius = 4; // Spike collision radius (reduced from 6 to 4 for smaller spikes)
+const spikeLifetime = 800; // Spike lifetime in milliseconds (reduced from 1.2s to 0.8s for even shorter flight distance)
+const mineDamageMultiplier = 2.0; // Damage multiplier when stepping on mine (2x)
+const spikeDamageMultiplier = 0.5; // Damage multiplier for spikes (50% of basic damage)
+
+// Health pack system (HP pakai) - only one at a time, fixed positions
+const HEALTH_PACKS_ENABLED = false; // Fully disable HP packs in PvP
+interface HealthPack {
+  x: number;
+  y: number;
+  spawnTime: number;
+  id: string; // Unique ID for network sync
+  positionIndex: number; // Which position in the cycle (0=center, 1=left, 2=right)
+}
+let healthPack: HealthPack | null = null; // Only one health pack at a time
+let lastHealthPackPickupTime = 0; // When last health pack was picked up
+let healthPackPositionIndex = 0; // Current position index in cycle (0=center, 1=left, 2=right)
+let pvpGameStartTime = 0; // When PvP game started (for initial spawn delay)
+const healthPackSpawnDelay = 25000; // Spawn 25 seconds after pickup or game start
+const healthPackRadius = 15; // Health pack collision radius
+const healthPackMinHeal = 10; // Minimum HP restored
+const healthPackMaxHeal = 15; // Maximum HP restored
+
+// Fixed health pack positions (always same locations)
+const healthPackPositions = [
+  { x: (pvpBounds.left + pvpBounds.right) / 2, y: (pvpBounds.top + pvpBounds.bottom) / 2 }, // Center
+  { x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25, y: (pvpBounds.top + pvpBounds.bottom) / 2 }, // Left quarter
+  { x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75, y: (pvpBounds.top + pvpBounds.bottom) / 2 }, // Right quarter
+];
+
+// Performance optimization: Cache speed calculations
+let cachedDotSpeed = 0;
+let cachedDotSpeedSquared = 0;
+let cachedDotSpeedFrame = -1;
+let cachedPlayerSpeeds: { [playerId: string]: { speed: number; speedSquared: number; frame: number } } = {};
+let currentFrame = 0;
+
+// Clean up cached player speeds periodically to prevent memory leaks
+function cleanupCachedPlayerSpeeds(): void {
+  // Remove entries for players that no longer exist
+  for (const playerId in cachedPlayerSpeeds) {
+    if (!pvpPlayers[playerId]) {
+      delete cachedPlayerSpeeds[playerId];
+    }
+  }
+  // Reset frame counter periodically to prevent overflow (every 1 million frames)
+  if (currentFrame > 1000000) {
+    currentFrame = 0;
+    cachedDotSpeedFrame = -1;
+    // Reset all cached speeds
+    for (const playerId in cachedPlayerSpeeds) {
+      cachedPlayerSpeeds[playerId].frame = -1;
+    }
+  }
+}
+
+// Apply 50% damage variance (damage ranges from 50% to 100% of base damage)
+function applyDamageVariance(baseDamage: number): number {
+  // Random multiplier between 0.5 and 1.0 (50% to 100%)
+  const varianceMultiplier = 0.5 + Math.random() * 0.5;
+  // Round to nearest integer (no decimals)
+  return Math.round(baseDamage * varianceMultiplier);
+}
+
+function applyLocalTrainingHit(
+  targetPlayerId: string,
+  damage: number,
+  isCrit: boolean,
+  opts: { isBullet?: boolean; paralysisDuration?: number; showNumber?: boolean } = {}
+): void {
+  // Training mode is offline/local: apply damage directly instead of sending a network hit packet.
+  if (gameMode !== 'Training') return;
+  const t = pvpPlayers?.[targetPlayerId];
+  if (!t) return;
+  if (t.isOut || t.hp <= 0 || deathAnimations.has(targetPlayerId)) return;
+
+  const hitDamage = (typeof damage === 'number' && Number.isFinite(damage)) ? Math.max(0, Math.round(damage)) : 0;
+  if (!hitDamage) return;
+
+  const absorbed = Math.min(hitDamage, t.armor);
+  t.armor -= absorbed;
+  const remaining = hitDamage - absorbed;
+  t.hp = Math.max(0, t.hp - remaining);
+  setDamageGravity(t);
+
+  if (opts.isBullet && typeof opts.paralysisDuration === 'number' && Number.isFinite(opts.paralysisDuration)) {
+    t.paralyzedUntil = Date.now() + Math.max(0, Math.round(opts.paralysisDuration));
+  }
+
+  // Sound feedback: if the player (me) is taking damage, play "damage received".
+  if (myPlayerId && targetPlayerId === myPlayerId) {
+    audioManager.resumeContext().then(() => {
+      audioManager.playDamageReceived(isCrit);
+    });
+    profileManager.addDamageTaken(hitDamage);
+  }
+
+  const showNumber = opts.showNumber !== false;
+  if (showNumber) {
+    // Defender-side damage number (use same style as PvP receive)
+    safePushDamageNumber({
+      x: t.x + (Math.random() - 0.5) * 40,
+      y: t.y - 20,
+      value: hitDamage,
+      life: 60,
+      maxLife: 60,
+      vx: (Math.random() - 0.5) * 2,
+      vy: -2 - Math.random() * 2,
+      isCrit
+    });
+  }
+
+  if (t.hp <= 0 && !t.isOut && !deathAnimations.has(targetPlayerId)) {
+    t.isOut = true;
+    createDeathAnimation(targetPlayerId, t.x, t.y, '#000000', t.radius);
+  }
+}
+
+// PvP Arrow system (from Solo mode)
+let pvpArrowReady = false; // Whether arrow is ready to be fired in PvP (toggled by key "1")
+let pvpArrowFired = false; // Whether arrow has been fired in PvP
+let pvpKatanaFlying = false; // Whether arrow is flying in PvP
+let pvpKatanaX = 0; // Arrow current position
+let pvpKatanaY = 0;
+
+// PvP position sync - OPTIMIZED for network latency
+// Reduced frequency to prevent lag: 100ms = 10 times per second (was 50ms = 20 times per second)
+let lastPositionSyncTime = 0;
+const POSITION_SYNC_INTERVAL = 100; // Sync position every 100ms (10 times per second) - reduced to prevent network lag
+const POSITION_HEARTBEAT_INTERVAL = 500; // Always send at least every 500ms to avoid timeouts
+const POSITION_DISTANCE_EPSILON = 8; // Only send if moved at least 8px (was 4px)
+const VELOCITY_EPSILON = 1.0; // Only send if speed changed significantly (was 0.5)
+const ARROW_ANGLE_EPSILON = 0.12; // Minimal radian change before sending arrow rotation (was 0.08)
+// Heavy projectile is simulated locally; we only need rare corrections to avoid long-term drift.
+// IMPORTANT: do NOT use velocityEpsilon here (gravity changes vy every frame, which would spam packets).
+const PROJECTILE_DISTANCE_EPSILON = 24; // Larger threshold to reduce network traffic
+const PROJECTILE_HEARTBEAT_INTERVAL = 900; // Rare correction ~1/s
+interface MovementSnapshot {
+  x: number;
+  y: number;
+  vx?: number;
+  vy?: number;
+  angle?: number;
+  timestamp: number;
+}
+let lastSentPositionSnapshot: MovementSnapshot | null = null;
+let lastSentArrowSnapshot: MovementSnapshot | null = null;
+let lastSentProjectileSnapshot: MovementSnapshot | null = null;
+
+function shouldSendSnapshot(
+  current: MovementSnapshot,
+  last: MovementSnapshot | null,
+  options: {
+    distanceEpsilon: number;
+    velocityEpsilon?: number;
+    angleEpsilon?: number;
+    heartbeatInterval: number;
+  }
+): boolean {
+  if (!last) {
+    return true;
+  }
+
+  const dx = current.x - last.x;
+  const dy = current.y - last.y;
+  const distanceSquared = dx * dx + dy * dy;
+  if (distanceSquared >= options.distanceEpsilon * options.distanceEpsilon) {
+    return true;
+  }
+
+  if (typeof options.velocityEpsilon === 'number') {
+    const dvx = Math.abs((current.vx || 0) - (last.vx || 0));
+    const dvy = Math.abs((current.vy || 0) - (last.vy || 0));
+    if (dvx > options.velocityEpsilon || dvy > options.velocityEpsilon) {
+      return true;
+    }
+  }
+
+  if (
+    typeof options.angleEpsilon === 'number' &&
+    typeof current.angle === 'number' &&
+    typeof last.angle === 'number'
+  ) {
+    if (Math.abs(current.angle - last.angle) > options.angleEpsilon) {
+      return true;
+    }
+  }
+
+  return current.timestamp - last.timestamp >= options.heartbeatInterval;
+}
+let pvpKatanaVx = 0; // Arrow velocity X
+let pvpKatanaVy = 0; // Arrow velocity Y
+let pvpKatanaAngle = 0; // Arrow rotation angle
+const pvpKatanaSpeed = 15; // Arrow flying speed
+let pvpKatanaLastUpdateAt = 0;
+let pvpKatanaTravelPx = 0;
+let pvpArrowStoneBounceCount = 0;
+let pvpArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+let pvpArrowExpireAt = 0;
+let pvpArrowLastShotTime = 0; // When arrow was last shot (for cooldown)
+const pvpArrowCooldown = 10000; // Arrow cooldown in milliseconds (10 seconds)
+
+// PvP arrow charge (delayed fire)
+const PVP_ARROW_CHARGE_MS = 300;
+const PVP_ARROW_SPAWN_OFFSET_Y = 55; // Spawn arrow lower than player center (matches sprite feel)
+const PVP_ARROW_SPRITE_LENGTH_FACTOR = 2.4; // world length = player.radius * factor (tuned for visibility)
+const PVP_ARROW_COLLISION_RADIUS = 7; // px (tighter vs stone so it doesn't look like it hits "from distance")
+let pvpArrowCharging = false;
+let pvpArrowChargeFireAt = 0;
+let pvpArrowChargeAimX = 0;
+let pvpArrowChargeAimY = 0;
+
+// Opponent arrow/projectile state (synced from network)
+let opponentArrowFlying = false;
+let opponentArrowX = 0;
+let opponentArrowY = 0;
+let opponentArrowVx = 0;
+let opponentArrowVy = 0;
+let opponentArrowAngle = 0;
+let opponentArrowLastUpdateAt = 0;
+let opponentArrowTravelPx = 0;
+let opponentArrowStoneBounceCount = 0;
+let opponentArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+let opponentArrowExpireAt = 0;
+
+let opponentProjectileFlying = false;
+let opponentProjectileX = 0;
+let opponentProjectileY = 0;
+let opponentProjectileVx = 0;
+let opponentProjectileVy = 0;
+let opponentProjectileSpawnTime = 0; // When opponent projectile was spawned
+let opponentProjectileBounceCount = 0; // How many times players have bounced on opponent projectile
+let opponentProjectileLastUpdateAt = 0; // For time-based stepping (reduces FPS drift)
+
+// Opponent bullet state (synced from network)
+let opponentBulletFlying = false;
+let opponentBulletX = 0;
+let opponentBulletY = 0;
+let opponentBulletVx = 0;
+let opponentBulletVy = 0;
+let opponentBulletSpawnTime = 0;
+
+// Opponent mines state (synced from network)
+let opponentMines: Mine[] = []; // Array of opponent's mines
+let opponentSpikes: Spike[] = []; // Array of opponent's spikes from exploded mines
+
+
+// Leveling system
+let currentLevel = 1; // Current active level
+let maxUnlockedLevel = 1; // Highest level unlocked
+let killsInCurrentLevel = 0; // Kill counter for current level (need 5 kills to advance)
+const killsNeededPerLevel = 5; // Kills needed to unlock next level
+let levelButtons: Array<{x: number, y: number, level: number, hovered: boolean, pressed: boolean}> = [];
+let isHoveringLevelButton = false;
+let isPressingLevelButton = false;
+let hoveredLevel = -1;
+let pressedLevel = -1;
+
+// Game Mode toggle button state
+let isHoveringGameMode = false;
+let isPressingGameMode = false;
+let isHoveringPvPOnline = false;
+let isPressingPvPOnline = false;
+let isHoveringPvpFun = false;
+let isPressingPvpFun = false;
+
+// 5SEC PvP button state
+let isHoveringNewButton = false;
+let isPressingNewButton = false;
+let pvpOnlineRoomName: 'pvp_room' | 'pvp_fun_room' | 'pvp_5sec_room' = 'pvp_room';
+
+// Faucet (Rice) button: +50 only when Rice=0, cooldown 2 minutes
+const FAUCET_RICE_REWARD = 50;
+const FAUCET_COOLDOWN_MS = 2 * 60 * 1000;
+let isHoveringFaucet = false;
+let isPressingFaucet = false;
+let faucetStorageKeyCached = '';
+let faucetLastClaimAt = 0;
+
+function getFaucetButtonRect(): { x: number; y: number; w: number; h: number } {
+  // Under currency, above stats frame (fits in left UI panel)
+  return { x: 20, y: 70, w: 200, h: 40 };
+}
+
+function getFaucetIdentityKeyPart(): string {
+  // Prefer persistent identity when available; otherwise fall back to guest PvP identity.
+  try {
+    const pid = getPersistenceIdentity();
+    if (pid) return pid;
+  } catch {}
+  try {
+    return getMyPvpAddress() || 'guest';
+  } catch {
+    return 'guest';
+  }
+}
+
+function refreshFaucetStateFromStorage(): void {
+  try {
+    const key = `dot_faucet_last_claim_at_v2:${getFaucetIdentityKeyPart()}`;
+    if (key !== faucetStorageKeyCached) {
+      faucetStorageKeyCached = key;
+      const raw = localStorage.getItem(key);
+      const v = raw ? Math.floor(Number(raw)) : 0;
+      faucetLastClaimAt = (Number.isFinite(v) && v > 0) ? v : 0;
+    }
+  } catch {
+    faucetStorageKeyCached = '';
+    faucetLastClaimAt = 0;
+  }
+}
+
+function getFaucetRemainingMs(now: number = Date.now()): number {
+  refreshFaucetStateFromStorage();
+  const nextAt = (faucetLastClaimAt || 0) + FAUCET_COOLDOWN_MS;
+  return Math.max(0, nextAt - now);
+}
+
+function formatCooldownShort(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  if (m <= 0) return `${ss}s`;
+  return `${m}m ${ss.toString().padStart(2, '0')}s`;
+}
+
+function canUseFaucet(now: number = Date.now()): boolean {
+  // Requested: only usable when Rice balance is exactly 0.
+  if ((dotCurrency | 0) !== 0) return false;
+  return getFaucetRemainingMs(now) <= 0;
+}
+
+function tryClaimFaucet(now: number = Date.now()): boolean {
+  if (!canUseFaucet(now)) return false;
+
+  dotCurrency = Math.min(999999999, Math.max(0, dotCurrency + FAUCET_RICE_REWARD));
+
+  faucetLastClaimAt = now;
+  try {
+    if (!faucetStorageKeyCached) refreshFaucetStateFromStorage();
+    if (faucetStorageKeyCached) localStorage.setItem(faucetStorageKeyCached, String(now));
+  } catch {}
+
+  // Same animation style as DMG numbers (requested): use the existing damage-number popup.
+  try {
+    const r = getFaucetButtonRect();
+    const fx = r.x + r.w / 2;
+    const fy = r.y + r.h / 2;
+    safePushDamageNumber({
+      // Spawn from the faucet button (UI), not from the UFO (dot sprite).
+      x: fx,
+      y: fy,
+      value: `+${FAUCET_RICE_REWARD} Rice`,
+      life: 70,
+      maxLife: 70,
+      vx: (Math.random() - 0.5) * 1.0,
+      vy: -1.6,
+      isCrit: false,
+    });
+  } catch {}
+
+  try { forceSaveGame(); } catch {}
+  return true;
+}
+
+// Wallet connection button state
+let isHoveringWallet = false;
+let isPressingWallet = false;
+let walletConnecting = false;
+let walletError: string | null = null;
+let walletProviderModalOpen = false;
+
+function connectWalletWithProvider(providerType: WalletProviderType): void {
+  walletConnecting = true;
+  walletError = null;
+  walletProviderModalOpen = false;
+  walletService.connect(providerType).then((result) => {
+    if (result) {
+      console.log('Wallet connected:', result.address);
+      walletError = null;
+
+      // Check RONKE token balance after connection
+      if (result.address) {
+        // Auto-load NFTs immediately after connect (bonuses will apply once loaded; no need to open PROFILE).
+        maybeAutoLoadNfts('wallet_connect');
+
+        walletService.getTokenBalance(RONKE_TOKEN_ADDRESS)
+          .then((balance) => {
+            if (balance !== null) {
+              ronkeBalance = balance;
+              console.log('Wallet RONKE balance (after auth success):', balance);
+            } else {
+              console.log('Wallet RONKE balance: null (check failed)');
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to get RONKE balance:', error);
+          });
+      }
+    } else {
+      console.error('Wallet connect() returned null!');
+      walletError = 'Connection failed';
+    }
+    walletConnecting = false;
+  }).catch((error: any) => {
+    console.error('Wallet connect() error:', error);
+    walletError = error.message || 'Connection error';
+    walletConnecting = false;
+  });
+}
+
+// Profile UI state
+let isProfileOpen = false;
+let isHoveringProfile = false;
+let isPressingProfile = false;
+let isHoveringNicknameEdit = false;
+let isPressingNicknameEdit = false;
+
+// Leaderboard UI state
+let isLeaderboardOpen = false;
+let isHoveringLeaderboard = false;
+let isPressingLeaderboard = false;
+
+// Contact UI state
+let isContactOpen = false;
+let isHoveringContact = false;
+let isPressingContact = false;
+let contactOpenError: string | null = null;
+
+// PewPew button (token PvP) UI state
+let isPewPewOpen = false;
+let isHoveringPewPew = false;
+let isPressingPewPew = false;
+let isHoveringPewPewCraft = false;
+let isPressingPewPewCraft = false;
+
+// Speed FX knob (Solo): controls UFO thruster smoke + warp streaks intensity.
+// Auto progression (requested):
+// - start: 0.5x
+// - >= 100 km/s: 1.0x
+// - >= 500 km/s: 1.25x
+// - >= 1000 km/s: 1.5x
+// - >= 5000 km/s: 2.0x
+// - >= 10000 km/s: 2.5x
+// - >= 20000 km/s: 3.0x
+// - >= 50000 km/s: 4.0x (and unlocks 2nd engine when you select 4x) (requested)
+const SPEED_FX_LEVELS = [0.5, 1, 1.25, 1.5, 2, 2.5, 3, 4] as const;
+let speedFxLevelIdx = 0; // start at 0.5x
+let speedFxAutoMinIdx = 0; // monotonic (never decreases)
+let isHoveringSpeedFxMinus = false;
+let isHoveringSpeedFxPlus = false;
+let isPressingSpeedFxMinus = false;
+let isPressingSpeedFxPlus = false;
+
+function getSpeedFxControlRect(): { x: number; y: number; w: number; h: number } {
+  // Place just above PEWPEW button (requested: near the PewPew button)
+  const pew = getPewPewButtonRect();
+  const h = 26;
+  const w = PEWPEW_BTN_W;
+  const x = pew.x;
+  const y = Math.max(10, pew.y - 8 - h);
+  return { x, y, w, h };
+}
+
+function getSpeedFxMinusRect(): { x: number; y: number; w: number; h: number } {
+  const r = getSpeedFxControlRect();
+  const s = r.h;
+  return { x: r.x, y: r.y, w: s, h: s };
+}
+
+function getSpeedFxPlusRect(): { x: number; y: number; w: number; h: number } {
+  const r = getSpeedFxControlRect();
+  const s = r.h;
+  return { x: r.x + r.w - s, y: r.y, w: s, h: s };
+}
+
+function getSpeedFxMultiplier(): number {
+  const v = SPEED_FX_LEVELS[Math.max(0, Math.min(SPEED_FX_LEVELS.length - 1, speedFxLevelIdx))] || 1;
+  return Number(v) || 1;
+}
+
+function getSpeedFxAutoIdxForSpeedKmps(speedKmps: number): number {
+  const s = Number.isFinite(speedKmps) ? speedKmps : 0;
+  if (s >= 50000) return 7; // 4.0x
+  if (s >= 20000) return 6; // 3.0x
+  if (s >= 10000) return 5; // 2.5x
+  if (s >= 5000) return 4; // 2.0x
+  if (s >= 1000) return 3; // 1.5x
+  if (s >= 500) return 2; // 1.25x
+  if (s >= 100) return 1; // 1.0x
+  return 0; // 0.5x
+}
+
+function formatSpeedFxMultiplier(m: number): string {
+  const v = Number(m);
+  if (!Number.isFinite(v)) return '1.0';
+  // keep 1 decimal for .0/.5, but show 2 decimals for 1.25
+  const hasQuarter = Math.abs(v * 4 - Math.round(v * 4)) < 1e-6 && Math.abs(v * 2 - Math.round(v * 2)) > 1e-6;
+  return hasQuarter ? v.toFixed(2) : v.toFixed(1);
+}
+
+function getPewPewCraftButtonRect(mr: { x: number; y: number; w: number; h: number }): { x: number; y: number; w: number; h: number } {
+  // Smaller + more consistent with main UI buttons
+  const w = 260;
+  const h = 44;
+  const x = mr.x + 24;
+  const y = mr.y + mr.h - 24 - h;
+  return { x, y, w, h };
+}
+
+function isPewPewUfoCrafted(): boolean {
+  try {
+    return localStorage.getItem(PEWPEW_UFO_CRAFTED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setPewPewUfoCrafted(v: boolean): void {
+  try {
+    localStorage.setItem(PEWPEW_UFO_CRAFTED_KEY, v ? '1' : '0');
+  } catch {}
+}
+
+function getPewPewUfoTicketTokenId(): string | null {
+  try {
+    const v = (localStorage.getItem(PEWPEW_UFO_TICKET_TOKEN_ID_KEY) || '').trim();
+    return v ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function setPewPewUfoTicketTokenId(tokenId: string | null): void {
+  try {
+    if (!tokenId) localStorage.removeItem(PEWPEW_UFO_TICKET_TOKEN_ID_KEY);
+    else localStorage.setItem(PEWPEW_UFO_TICKET_TOKEN_ID_KEY, tokenId);
+  } catch {}
+}
+
+function clearPewPewUfoTicketLocal(): void {
+  setPewPewUfoCrafted(false);
+  setPewPewUfoTicketTokenId(null);
+}
+
+async function refreshPewPewOnchainTicketStatus(force: boolean = false): Promise<void> {
+  try {
+    const now = Date.now();
+    if (!force && now - pewPewOnchainTicketLastCheckAt < 15000) return; // at most every 15s
+    if (pewPewOnchainTicketChecking) return;
+    pewPewOnchainTicketLastCheckAt = now;
+
+    const st = walletService.getState();
+    const addr = (st.address || '').trim();
+    if (!st.isConnected || !addr) {
+      pewPewOnchainTicketTokenId = null;
+      return;
+    }
+    if (!UFO_TICKET_CONTRACT_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(UFO_TICKET_CONTRACT_ADDRESS)) {
+      pewPewOnchainTicketTokenId = null;
+      return;
+    }
+
+    pewPewOnchainTicketChecking = true;
+    const { JsonRpcProvider, Contract } = await import('ethers');
+    const rpc = new JsonRpcProvider('https://api.roninchain.com/rpc');
+    const ufo = new Contract(
+      UFO_TICKET_CONTRACT_ADDRESS,
+      ['function activeTokenIdOf(address owner) view returns (uint256)'],
+      rpc
+    );
+    const tokenId: bigint = await ufo.activeTokenIdOf(addr);
+    if (tokenId && tokenId > 0n) {
+      pewPewOnchainTicketTokenId = tokenId.toString();
+      // Keep local hint in sync (helps faster join payload + UI)
+      setPewPewUfoTicketTokenId(pewPewOnchainTicketTokenId);
+      setPewPewUfoCrafted(true);
+    } else {
+      pewPewOnchainTicketTokenId = null;
+    }
+  } catch {
+    // Silent: status will remain stale until next successful check.
+  } finally {
+    pewPewOnchainTicketChecking = false;
+  }
+}
+
+async function refreshRonkeBalance(): Promise<void> {
+  try {
+    const st = walletService.getState();
+    if (!st.isConnected || !st.address) {
+      ronkeBalance = null;
+      return;
+    }
+    ronkeBalance = await walletService.getTokenBalance(RONKE_TOKEN_ADDRESS);
+  } catch {
+    ronkeBalance = null;
+  }
+}
+
+async function craftPewPewUfo(): Promise<void> {
+  if (pewPewCrafting) return;
+  pewPewCraftStatus = null;
+  pewPewCraftTxHash = null;
+
+  const st = walletService.getState();
+  if (!st.isConnected || !st.address) {
+    pewPewCraftStatus = 'Connect wallet first';
+    return;
+  }
+  const hasUfoContract = !!(UFO_TICKET_CONTRACT_ADDRESS && /^0x[a-fA-F0-9]{40}$/.test(UFO_TICKET_CONTRACT_ADDRESS));
+  if (!hasUfoContract) {
+    if (!RONKE_POOL_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(RONKE_POOL_ADDRESS)) {
+      pewPewCraftStatus = 'Pool not configured (set VITE_RONKE_POOL_ADDRESS)';
+      return;
+    }
+  }
+
+  const decimals = await walletService.getErc20Decimals(RONKE_TOKEN_ADDRESS);
+  const amountWei = BigInt(RONKE_CRAFT_COST) * 10n ** BigInt(decimals);
+  pewPewCrafting = true;
+  pewPewCraftStatus = 'Confirm transaction in wallet...';
+  try {
+    if (hasUfoContract) {
+      // Ensure we're on Ronin mainnet before approve/mint (prevents wrong-network approvals).
+      await walletService.ensureRoninMainnet();
+      pewPewCraftStatus = 'Approving RONKE (if needed)...';
+      const provider = walletService.getEip1193Provider();
+      if (!provider) throw new Error('Wallet provider missing');
+
+      const { BrowserProvider, Contract } = await import('ethers');
+      const bp = new BrowserProvider(provider as any);
+      const signer = await bp.getSigner();
+      const me = await signer.getAddress();
+
+      const erc20Abi = [
+        'function allowance(address owner, address spender) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)',
+      ];
+      const ufoAbi = [
+        'function mint((uint16 maxHP,uint16 maxArmor,uint16 dmg,uint8 critChance,uint8 accuracy,uint16 maxFuel) s) returns (uint256)',
+        'function activeTokenIdOf(address owner) view returns (uint256)',
+      ];
+
+      const ronke = new Contract(RONKE_TOKEN_ADDRESS, erc20Abi, signer);
+      const ufo = new Contract(UFO_TICKET_CONTRACT_ADDRESS, ufoAbi, signer);
+
+      const allowance: bigint = await ronke.allowance(me, UFO_TICKET_CONTRACT_ADDRESS);
+      if (allowance < amountWei) {
+        // Safer approve pattern: reset to 0 then set to amount (avoids non-zero->non-zero allowance issues).
+        try {
+          const tx0 = await ronke.approve(UFO_TICKET_CONTRACT_ADDRESS, 0n);
+          pewPewCraftTxHash = (tx0?.hash || '').toString() || null;
+          await tx0.wait?.(1);
+        } catch {}
+        const txA = await ronke.approve(UFO_TICKET_CONTRACT_ADDRESS, amountWei);
+        pewPewCraftTxHash = (txA?.hash || '').toString() || null;
+        await txA.wait?.(1);
+      }
+
+      pewPewCraftStatus = 'Minting UFO Ticket...';
+      const s = {
+        maxHP: Math.max(1, Math.min(65535, Math.floor(dotMaxHP))),
+        maxArmor: Math.max(0, Math.min(65535, Math.floor(dotMaxArmor))),
+        dmg: Math.max(1, Math.min(65535, Math.floor(dmg))),
+        critChance: Math.max(0, Math.min(255, Math.floor(critChance))),
+        accuracy: Math.max(0, Math.min(255, Math.floor(accuracy))),
+        // Snapshot current fuel capacity for PvP jetpack (defaults to PVP_DEFAULT_MAX_FUEL)
+        maxFuel: Math.max(0, Math.min(65535, Math.floor(PVP_DEFAULT_MAX_FUEL))),
+      };
+
+      const txM = await ufo.mint(s);
+      pewPewCraftTxHash = (txM?.hash || '').toString() || null;
+      await txM.wait?.(1);
+
+      const tokenId: bigint = await ufo.activeTokenIdOf(me);
+      if (tokenId && tokenId > 0n) {
+        setPewPewUfoTicketTokenId(tokenId.toString());
+        pewPewOnchainTicketTokenId = tokenId.toString();
+        setPewPewUfoCrafted(true);
+        pewPewCraftStatus = `Minted! tokenId=${tokenId.toString()}`;
+      } else {
+        setPewPewUfoCrafted(true);
+        pewPewCraftStatus = 'Minted (tokenId unknown)';
+      }
+
+      void refreshRonkeBalance();
+    } else {
+      const hash = await walletService.sendErc20Transfer({
+        tokenAddress: RONKE_TOKEN_ADDRESS,
+        to: RONKE_POOL_ADDRESS,
+        amountWei,
+      });
+      pewPewCraftTxHash = hash;
+      pewPewCraftStatus = 'Deposit sent! (Mint happens on-chain; PvP requires active UFO Ticket)';
+      setPewPewUfoCrafted(true); // TEMP local gate until on-chain mint is wired in client
+      void refreshRonkeBalance();
+    }
+  } catch (e: any) {
+    pewPewCraftStatus = e?.message || 'Craft failed';
+  } finally {
+    pewPewCrafting = false;
+  }
+}
+
+// Contact links
+const CONTACT_X_PROJECT_URL = 'https://x.com/0x_PewPew';
+const CONTACT_X_CREATOR_URL = 'https://x.com/j0vany1';
+const CONTACT_DISCORD_URL = 'https://discord.gg/XgVbrr7wfW';
+
+// Contact button/layout (left UI panel)
+const CONTACT_BTN_W = 170;
+const CONTACT_BTN_H = 28;
+const CONTACT_MODAL_W = 220;
+const CONTACT_MODAL_H = 170;
+const CONTACT_MODAL_OFFSET_Y = 20; // requested: move popup 20px down (relative to default)
+
+// PewPew button/layout (token PvP)
+const PEWPEW_BTN_W = 200;
+const PEWPEW_BTN_H = 40;
+const PEWPEW_MODAL_W = 920;
+const PEWPEW_MODAL_H = 520;
+function getContactButtonRect(): { x: number; y: number; w: number; h: number } {
+  // Bottom-right in left panel (requested): keep a small margin from bottom.
+  // Lift it up a bit so it doesn't sit on the very bottom.
+  // Requested: move the button 50px down from the previous placement and center it in the panel.
+  // Requested now: move button 20px further down.
+  const marginBottom = 18 + 150 - 50 - 20;
+  const x = Math.floor((UI_PANEL_W - CONTACT_BTN_W) / 2);
+  return { x, y: canvas.height - marginBottom - CONTACT_BTN_H, w: CONTACT_BTN_W, h: CONTACT_BTN_H };
+}
+
+function getPewPewButtonRect(): { x: number; y: number; w: number; h: number } {
+  // Place directly above CONTACT for a stable, low-risk spot in the UI.
+  const contact = getContactButtonRect();
+  const gap = 10;
+  const x = 20; // normalized like other big buttons
+  const y = Math.max(10, contact.y - gap - PEWPEW_BTN_H);
+  return { x, y, w: PEWPEW_BTN_W, h: PEWPEW_BTN_H };
+}
+
+function getPewPewModalRect(): { x: number; y: number; w: number; h: number } {
+  // Modal opens in the play area (right side), so it doesn't clutter the left UI panel.
+  const playX = UI_PANEL_W;
+  const playW = canvas.width - UI_PANEL_W;
+  const w = Math.min(PEWPEW_MODAL_W, Math.max(360, playW - 80));
+  const h = PEWPEW_MODAL_H;
+  const x = Math.floor(playX + (playW - w) / 2);
+  const y = Math.floor(canvas.height / 2 - h / 2);
+  return { x, y, w, h };
+}
+function getContactModalRect(): { x: number; y: number; w: number; h: number } {
+  // Open above the button so it never goes off-screen at the bottom.
+  const btn = getContactButtonRect();
+  const gap = 8;
+  const x = Math.floor((UI_PANEL_W - CONTACT_MODAL_W) / 2);
+  const y = Math.max(10, btn.y - gap - CONTACT_MODAL_H + CONTACT_MODAL_OFFSET_Y);
+  return { x, y, w: CONTACT_MODAL_W, h: CONTACT_MODAL_H };
+}
+type LeaderboardRow = { ronin_address: string; nickname?: string; wins: number; losses: number; elo: number; maxHP: number; xp?: number };
+let leaderboardRows: LeaderboardRow[] = [];
+let leaderboardLoading = false;
+let leaderboardError: string | null = null;
+let leaderboardPage = 0;
+const leaderboardPageSize = 12;
+let leaderboardLastLoadedAt = 0;
+
+// NFT state
+let nftList: NftItem[] = [];
+let isLoadingNfts = false;
+let nftError: string | null = null;
+let nftCurrentPage = 0;
+const nftsPerPage = 4;
+let nftPaginationHoverLeft = false;
+let nftPaginationHoverRight = false;
+let nftPaginationPressLeft = false;
+let nftPaginationPressRight = false;
+let nftLoadedWalletAddress: string | null = null;
+let nftLoadedAt = 0;
+let nftLoadedOnce = false;
+const NFT_AUTOLOAD_COOLDOWN_MS = 5 * 60 * 1000; // refresh at most every 5 minutes
+
+// NFT image cache
+const nftImageCache: Map<string, HTMLImageElement> = new Map();
+const nftImageLoading: Set<string> = new Set();
+
+// UFO sprite cache
+let ufoSprite: HTMLImageElement | null = null;
+const ufoSpritePath = './ufo_sprite.png';
+
+// Slot bell sprite (top-right)
+let bellSprite: HTMLImageElement | null = null;
+let bellSpriteProcessed: HTMLCanvasElement | null = null;
+const bellSpritePath = './bell.png';
+
+// Moon sprite (flyby)
+let moonSprite: HTMLImageElement | null = null;
+// Cache-bust so replacing moon.png actually reloads in dev/prod without hard refresh.
+const moonSpritePath = './moon.png?v=2';
+let moonSpriteProcessed: HTMLCanvasElement | null = null;
+let moonHaloProcessed: HTMLCanvasElement | null = null;
+let moonHaloPadPx: number = 0;
+let moonHaloSrcW: number = 0;
+let moonHaloSrcH: number = 0;
+
+// Moon rim-light / halo (similar to PvP stone halo, but tuned for the moon flyby)
+const MOON_HALO_ENABLED = true;
+const MOON_HALO_COLOR = 'rgba(210, 225, 255, 0.95)';
+const MOON_HALO_COLOR_INNER = 'rgba(255, 255, 255, 0.75)';
+const MOON_HALO_BLUR_PX = 16;
+const MOON_HALO_BLUR_INNER_PX = 7;
+
+// Earth sprite (intro flyby)
+let earthSprite: HTMLImageElement | null = null;
+// IMPORTANT: use Vite asset URL so it works on production (dist) without needing er.png copied manually.
+const earthSpritePath = new URL('../er.png', import.meta.url).href;
+let earthSpriteProcessed: HTMLCanvasElement | null = null;
+let earthHaloProcessed: HTMLCanvasElement | null = null;
+let earthHaloPadPx: number = 0;
+let earthHaloSrcW: number = 0;
+let earthHaloSrcH: number = 0;
+
+const EARTH_HALO_ENABLED = true;
+const EARTH_HALO_COLOR = 'rgba(170, 210, 255, 0.85)';
+const EARTH_HALO_COLOR_INNER = 'rgba(255, 255, 255, 0.55)';
+const EARTH_HALO_BLUR_PX = 14;
+const EARTH_HALO_BLUR_INNER_PX = 6;
+
+// Mars sprite (flyby test)
+let marsSprite: HTMLImageElement | null = null;
+// Cache-bust so replacing mars.png reloads without hard refresh.
+const marsSpritePath = './mars.png?v=1';
+let marsSpriteProcessed: HTMLCanvasElement | null = null;
+let marsHaloProcessed: HTMLCanvasElement | null = null;
+let marsHaloPadPx: number = 0;
+let marsHaloSrcW: number = 0;
+let marsHaloSrcH: number = 0;
+
+const MARS_HALO_ENABLED = true;
+const MARS_HALO_COLOR = 'rgba(255, 170, 120, 0.85)';
+const MARS_HALO_COLOR_INNER = 'rgba(255, 235, 220, 0.55)';
+const MARS_HALO_BLUR_PX = 14;
+const MARS_HALO_BLUR_INNER_PX = 6;
+
+// Arrow sprite cache (weapon 1)
+let arrowSprite: HTMLImageElement | null = null;
+let arrowSpriteProcessed: HTMLCanvasElement | null = null;
+const arrowSpritePath = './sprite.arrow.png';
+let arrowGlowProcessed: HTMLCanvasElement | null = null;
+let arrowGlowPadPx: number = 0;
+
+// Boom sprite cache (weapon 2 - heavy projectile)
+let boomSprite: HTMLImageElement | null = null;
+let boomSpriteProcessed: HTMLCanvasElement | null = null;
+const boomSpritePath = './sprite.boom.png';
+let boomGlowProcessed: HTMLCanvasElement | null = null;
+let boomGlowPadPx: number = 0;
+
+// Center stone sprite (arena obstacle)
+let stoneSprite: HTMLImageElement | null = null;
+let stoneSpriteProcessed: HTMLCanvasElement | null = null;
+const stoneSpritePath = './sprite.stone.png';
+// Pre-rendered stone halo (for performance): generated once from the processed sprite.
+let stoneHaloProcessed: HTMLCanvasElement | null = null;
+let stoneHaloPadPx: number = 0;
+
+function buildStoneHaloSprite(src: HTMLCanvasElement): { canvas: HTMLCanvasElement; padPx: number } | null {
+  try {
+    const sw = src.width || 1;
+    const sh = src.height || 1;
+    // Pad large enough so blur doesn't get clipped.
+    const padPx = Math.ceil(Math.max(PVP_STONE_HALO_BLUR_PX, PVP_STONE_HALO_BLUR_INNER_PX) * 2 + 8);
+    const w = sw + padPx * 2;
+    const h = sh + padPx * 2;
+
+    const makeTintedMask = (color: string): HTMLCanvasElement => {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cctx = c.getContext('2d')!;
+      cctx.clearRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      cctx.drawImage(src, padPx, padPx, sw, sh);
+      // Convert alpha mask into a colored silhouette.
+      cctx.globalCompositeOperation = 'source-in';
+      cctx.fillStyle = color;
+      cctx.fillRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      return c;
+    };
+
+    const outerMask = makeTintedMask(PVP_STONE_HALO_COLOR);
+    const innerMask = makeTintedMask(PVP_STONE_HALO_COLOR_INNER);
+
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext('2d')!;
+    octx.clearRect(0, 0, w, h);
+    octx.globalCompositeOperation = 'source-over';
+    // Outer glow
+    (octx as any).imageSmoothingEnabled = false;
+    octx.filter = `blur(${PVP_STONE_HALO_BLUR_PX}px)`;
+    octx.drawImage(outerMask, 0, 0);
+    // Inner ring (tighter, brighter). Use additive blend so it feels like a rim-light.
+    octx.globalCompositeOperation = 'lighter';
+    octx.filter = `blur(${PVP_STONE_HALO_BLUR_INNER_PX}px)`;
+    octx.drawImage(innerMask, 0, 0);
+    octx.filter = 'none';
+    octx.globalCompositeOperation = 'source-over';
+
+    return { canvas: out, padPx };
+  } catch {
+    return null;
+  }
+}
+
+function buildMoonHaloSprite(src: HTMLCanvasElement): { canvas: HTMLCanvasElement; padPx: number } | null {
+  try {
+    const sw = src.width || 1;
+    const sh = src.height || 1;
+    const padPx = Math.ceil(Math.max(MOON_HALO_BLUR_PX, MOON_HALO_BLUR_INNER_PX) * 2 + 10);
+    const w = sw + padPx * 2;
+    const h = sh + padPx * 2;
+
+    const makeTintedMask = (color: string): HTMLCanvasElement => {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cctx = c.getContext('2d')!;
+      cctx.clearRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      cctx.drawImage(src, padPx, padPx, sw, sh);
+      cctx.globalCompositeOperation = 'source-in';
+      cctx.fillStyle = color;
+      cctx.fillRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      return c;
+    };
+
+    const outerMask = makeTintedMask(MOON_HALO_COLOR);
+    const innerMask = makeTintedMask(MOON_HALO_COLOR_INNER);
+
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext('2d')!;
+    octx.clearRect(0, 0, w, h);
+    octx.globalCompositeOperation = 'source-over';
+    (octx as any).imageSmoothingEnabled = true;
+    octx.filter = `blur(${MOON_HALO_BLUR_PX}px)`;
+    octx.drawImage(outerMask, 0, 0);
+    octx.globalCompositeOperation = 'lighter';
+    octx.filter = `blur(${MOON_HALO_BLUR_INNER_PX}px)`;
+    octx.drawImage(innerMask, 0, 0);
+    octx.filter = 'none';
+    octx.globalCompositeOperation = 'source-over';
+
+    return { canvas: out, padPx };
+  } catch {
+    return null;
+  }
+}
+
+function buildEarthHaloSprite(src: HTMLCanvasElement): { canvas: HTMLCanvasElement; padPx: number } | null {
+  try {
+    const sw = src.width || 1;
+    const sh = src.height || 1;
+    const padPx = Math.ceil(Math.max(EARTH_HALO_BLUR_PX, EARTH_HALO_BLUR_INNER_PX) * 2 + 10);
+    const w = sw + padPx * 2;
+    const h = sh + padPx * 2;
+
+    const makeTintedMask = (color: string): HTMLCanvasElement => {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cctx = c.getContext('2d')!;
+      cctx.clearRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      cctx.drawImage(src, padPx, padPx, sw, sh);
+      cctx.globalCompositeOperation = 'source-in';
+      cctx.fillStyle = color;
+      cctx.fillRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      return c;
+    };
+
+    const outerMask = makeTintedMask(EARTH_HALO_COLOR);
+    const innerMask = makeTintedMask(EARTH_HALO_COLOR_INNER);
+
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext('2d')!;
+    octx.clearRect(0, 0, w, h);
+    octx.globalCompositeOperation = 'source-over';
+    (octx as any).imageSmoothingEnabled = true;
+    octx.filter = `blur(${EARTH_HALO_BLUR_PX}px)`;
+    octx.drawImage(outerMask, 0, 0);
+    octx.globalCompositeOperation = 'lighter';
+    octx.filter = `blur(${EARTH_HALO_BLUR_INNER_PX}px)`;
+    octx.drawImage(innerMask, 0, 0);
+    octx.filter = 'none';
+    octx.globalCompositeOperation = 'source-over';
+
+    return { canvas: out, padPx };
+  } catch {
+    return null;
+  }
+}
+
+function buildMarsHaloSprite(src: HTMLCanvasElement): { canvas: HTMLCanvasElement; padPx: number } | null {
+  try {
+    const sw = src.width || 1;
+    const sh = src.height || 1;
+    const padPx = Math.ceil(Math.max(MARS_HALO_BLUR_PX, MARS_HALO_BLUR_INNER_PX) * 2 + 10);
+    const w = sw + padPx * 2;
+    const h = sh + padPx * 2;
+
+    const makeTintedMask = (color: string): HTMLCanvasElement => {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cctx = c.getContext('2d')!;
+      cctx.clearRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      cctx.drawImage(src, padPx, padPx, sw, sh);
+      cctx.globalCompositeOperation = 'source-in';
+      cctx.fillStyle = color;
+      cctx.fillRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      return c;
+    };
+
+    const outerMask = makeTintedMask(MARS_HALO_COLOR);
+    const innerMask = makeTintedMask(MARS_HALO_COLOR_INNER);
+
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext('2d')!;
+    octx.clearRect(0, 0, w, h);
+    octx.globalCompositeOperation = 'source-over';
+    (octx as any).imageSmoothingEnabled = true;
+    octx.filter = `blur(${MARS_HALO_BLUR_PX}px)`;
+    octx.drawImage(outerMask, 0, 0);
+    octx.globalCompositeOperation = 'lighter';
+    octx.filter = `blur(${MARS_HALO_BLUR_INNER_PX}px)`;
+    octx.drawImage(innerMask, 0, 0);
+    octx.filter = 'none';
+    octx.globalCompositeOperation = 'source-over';
+
+    return { canvas: out, padPx };
+  } catch {
+    return null;
+  }
+}
+
+function buildGlowSprite(
+  src: HTMLCanvasElement,
+  outerColor: string,
+  outerBlurPx: number,
+  innerColor: string,
+  innerBlurPx: number
+): { canvas: HTMLCanvasElement; padPx: number } | null {
+  try {
+    const sw = src.width || 1;
+    const sh = src.height || 1;
+    const padPx = Math.ceil(Math.max(outerBlurPx, innerBlurPx) * 2 + 8);
+    const w = sw + padPx * 2;
+    const h = sh + padPx * 2;
+
+    const makeTintedMask = (color: string): HTMLCanvasElement => {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cctx = c.getContext('2d')!;
+      cctx.clearRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      cctx.drawImage(src, padPx, padPx, sw, sh);
+      cctx.globalCompositeOperation = 'source-in';
+      cctx.fillStyle = color;
+      cctx.fillRect(0, 0, w, h);
+      cctx.globalCompositeOperation = 'source-over';
+      return c;
+    };
+
+    const outerMask = makeTintedMask(outerColor);
+    const innerMask = makeTintedMask(innerColor);
+
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext('2d')!;
+    octx.clearRect(0, 0, w, h);
+    (octx as any).imageSmoothingEnabled = false;
+
+    octx.globalCompositeOperation = 'source-over';
+    octx.filter = `blur(${outerBlurPx}px)`;
+    octx.drawImage(outerMask, 0, 0);
+
+    octx.globalCompositeOperation = 'lighter';
+    octx.filter = `blur(${innerBlurPx}px)`;
+    octx.drawImage(innerMask, 0, 0);
+
+    octx.filter = 'none';
+    octx.globalCompositeOperation = 'source-over';
+    return { canvas: out, padPx };
+  } catch {
+    return null;
+  }
+}
+
+// Stone shake (visual only)
+let pvpStoneShakeUntil = 0;
+let pvpStoneShakeDirX = 0;
+let pvpStoneShakeDirY = 0;
+let pvpStoneShakeMag = 0;
+function triggerStoneShake(impactX?: number, impactY?: number, strength: number = 1): void {
+  if (!PVP_CENTER_OBSTACLE_ENABLED) return;
+  const now = Date.now();
+  const o = getPvpCenterObstacle();
+  const ix = (typeof impactX === 'number' && Number.isFinite(impactX)) ? impactX : o.x;
+  const iy = (typeof impactY === 'number' && Number.isFinite(impactY)) ? impactY : o.y;
+  const dx = ix - o.x;
+  const dy = iy - o.y;
+  const d = Math.max(0.0001, Math.sqrt(dx * dx + dy * dy));
+  pvpStoneShakeDirX = dx / d;
+  pvpStoneShakeDirY = dy / d;
+  // Stronger & longer so it is clearly visible (still cheap).
+  pvpStoneShakeMag = Math.max(pvpStoneShakeMag, 10 * strength);
+  pvpStoneShakeUntil = Math.max(pvpStoneShakeUntil, now + 260);
+}
+function getStoneShakeOffset(now: number): { x: number; y: number } {
+  if (now >= pvpStoneShakeUntil || pvpStoneShakeMag <= 0.01) return { x: 0, y: 0 };
+  const t = (pvpStoneShakeUntil - now) / 260; // 1..0
+  const amp = pvpStoneShakeMag * (t * t);
+  const ph = now * 0.06; // fast oscillation
+  const s = Math.sin(ph) * 0.85 + Math.sin(ph * 1.9) * 0.35;
+  // Shake mostly along impact normal, with slight perpendicular jitter
+  const nx = pvpStoneShakeDirX;
+  const ny = pvpStoneShakeDirY;
+  const px = -ny;
+  const py = nx;
+  return {
+    x: (nx * s + px * Math.sin(ph * 1.3) * 0.25) * amp,
+    y: (ny * s + py * Math.sin(ph * 1.3) * 0.25) * amp
+  };
+}
+
+// Arena background sprite (play area background)
+let arenaBgSprite: HTMLImageElement | null = null;
+const arenaBgSpritePath = './sprite.background.png';
+
+// Nebula / depth layer (parallax overlay)
+let nebulaBgSprite: HTMLImageElement | null = null;
+const nebulaBgSpritePath = './sprite.nebula.png';
+
+// Light band / atmosphere layer (very subtle polish)
+let lightBandSprite: HTMLImageElement | null = null;
+const lightBandSpritePath = './sprite.lightband.png';
+
+// Very distant galaxy layer (tiny, slowest parallax)
+let galaxySprite: HTMLImageElement | null = null;
+let galaxySpriteProcessed: HTMLCanvasElement | null = null;
+const galaxySpritePath = './sprite.galaxy.png';
+// Second galaxy layer (optional) - lets us show two galaxies at once
+let galaxySprite2: HTMLImageElement | null = null;
+let galaxySprite2Processed: HTMLCanvasElement | null = null;
+const galaxySprite2Path = './sprite.galaxy2.png';
+
+// Ronke sprite for craft button
+let ronkeSprite: HTMLImageElement | null = null;
+const ronkeSpritePath = './$ronke.png';
+
+function processGalaxySpriteToTransparent(img: HTMLImageElement): HTMLCanvasElement {
+  // Key out corner background color (usually black) and crop to visible bounds.
+  const c = document.createElement('canvas');
+  const w = img.naturalWidth || img.width || 1024;
+  const h = img.naturalHeight || img.height || 1024;
+  c.width = w;
+  c.height = h;
+  const ctx2 = c.getContext('2d', { willReadFrequently: true })!;
+  ctx2.clearRect(0, 0, w, h);
+  ctx2.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imageData = ctx2.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    // Sample top-left as background key color
+    const br = d[0], bg = d[1], bb = d[2];
+    const thr = 42; // tolerance (slightly tighter than arrow to preserve dark details)
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const dr = r - br;
+      const dg = g - bg;
+      const db = b - bb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist < thr) d[i + 3] = 0;
+    }
+    ctx2.putImageData(imageData, 0, 0);
+
+    // Crop to non-transparent bounds
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4 + 3; // alpha
+        if (d[idx] > 12) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX >= 0 && maxY >= 0) {
+      const pad = 4;
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+      const cw = Math.max(1, maxX - minX + 1);
+      const ch = Math.max(1, maxY - minY + 1);
+      const out = document.createElement('canvas');
+      out.width = cw;
+      out.height = ch;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, cw, ch);
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      return out;
+    }
+  } catch {
+    // keep original if getImageData fails
+  }
+  return c;
+}
+
+function processArrowSpriteToTransparent(img: HTMLImageElement): HTMLCanvasElement {
+  // Remove the baked-in gray background by keying out the corner color.
+  const c = document.createElement('canvas');
+  const w = img.naturalWidth || img.width || 1024;
+  const h = img.naturalHeight || img.height || 1024;
+  c.width = w;
+  c.height = h;
+  const ctx2 = c.getContext('2d', { willReadFrequently: true })!;
+  ctx2.clearRect(0, 0, w, h);
+  ctx2.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imageData = ctx2.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    // Sample top-left as background key color
+    const br = d[0], bg = d[1], bb = d[2];
+    const thr = 48; // tolerance
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const dr = r - br;
+      const dg = g - bg;
+      const db = b - bb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist < thr) {
+        d[i + 3] = 0; // transparent
+      }
+    }
+    ctx2.putImageData(imageData, 0, 0);
+
+    // Crop to non-transparent bounds so rotation pivot stays stable (prevents vertical bobbing).
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4 + 3; // alpha
+        if (d[idx] > 12) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX >= 0 && maxY >= 0) {
+      const pad = 6;
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+      const cw = Math.max(1, maxX - minX + 1);
+      const ch = Math.max(1, maxY - minY + 1);
+      const out = document.createElement('canvas');
+      out.width = cw;
+      out.height = ch;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, cw, ch);
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      return out;
+    }
+  } catch {
+    // If getImageData fails (tainted canvas), keep original.
+  }
+  return c;
+}
+
+function processBoomSpriteToTransparent(img: HTMLImageElement): HTMLCanvasElement {
+  // Same pipeline as arrow: key out corner background + crop to non-transparent bounds.
+  const c = document.createElement('canvas');
+  const w = img.naturalWidth || img.width || 1024;
+  const h = img.naturalHeight || img.height || 1024;
+  c.width = w;
+  c.height = h;
+  const ctx2 = c.getContext('2d', { willReadFrequently: true })!;
+  ctx2.clearRect(0, 0, w, h);
+  ctx2.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imageData = ctx2.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    const br = d[0], bg = d[1], bb = d[2];
+    const thr = 48;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const dr = r - br;
+      const dg = g - bg;
+      const db = b - bb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist < thr) d[i + 3] = 0;
+    }
+    ctx2.putImageData(imageData, 0, 0);
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4 + 3;
+        if (d[idx] > 12) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX >= 0 && maxY >= 0) {
+      const pad = 6;
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+      const cw = Math.max(1, maxX - minX + 1);
+      const ch = Math.max(1, maxY - minY + 1);
+      const out = document.createElement('canvas');
+      out.width = cw;
+      out.height = ch;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, cw, ch);
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      return out;
+    }
+  } catch {
+    // keep original if getImageData fails
+  }
+  return c;
+}
+
+function processStoneSpriteToCropped(img: HTMLImageElement): HTMLCanvasElement {
+  // Some images come with a checkerboard baked in (not real transparency).
+  // We key out the corner background colors (can be 2 tones) and then crop.
+  const c = document.createElement('canvas');
+  const w = img.naturalWidth || img.width || 1024;
+  const h = img.naturalHeight || img.height || 1024;
+  c.width = w;
+  c.height = h;
+  const ctx2 = c.getContext('2d', { willReadFrequently: true })!;
+  ctx2.clearRect(0, 0, w, h);
+  ctx2.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imageData = ctx2.getImageData(0, 0, w, h);
+    const d = imageData.data;
+
+    // Collect a small palette of "background" colors from corners/near-corners.
+    const sample = (x: number, y: number) => {
+      const ix = Math.max(0, Math.min(w - 1, x));
+      const iy = Math.max(0, Math.min(h - 1, y));
+      const idx = (iy * w + ix) * 4;
+      return { r: d[idx], g: d[idx + 1], b: d[idx + 2] };
+    };
+    const bg = [
+      sample(0, 0),
+      sample(1, 0),
+      sample(0, 1),
+      sample(1, 1),
+      sample(w - 1, 0),
+      sample(0, h - 1),
+      sample(w - 1, h - 1)
+    ];
+    const thr = 34; // tolerance for checkerboard tones
+    const closeTo = (r: number, g: number, b: number, c0: { r: number; g: number; b: number }) => {
+      const dr = r - c0.r;
+      const dg = g - c0.g;
+      const db = b - c0.b;
+      return Math.sqrt(dr * dr + dg * dg + db * db) < thr;
+    };
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      // If pixel matches ANY of sampled background colors, make it transparent.
+      let isBg = false;
+      for (let k = 0; k < bg.length; k++) {
+        if (closeTo(r, g, b, bg[k])) { isBg = true; break; }
+      }
+      if (isBg) d[i + 3] = 0;
+    }
+    ctx2.putImageData(imageData, 0, 0);
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4 + 3;
+        if (d[idx] > 12) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX >= 0 && maxY >= 0) {
+      const pad = 4;
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+      const cw = Math.max(1, maxX - minX + 1);
+      const ch = Math.max(1, maxY - minY + 1);
+      const out = document.createElement('canvas');
+      out.width = cw;
+      out.height = ch;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, cw, ch);
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      return out;
+    }
+  } catch {
+    // keep original if getImageData fails
+  }
+  return c;
+}
+
+// Load UFO sprite
+function loadUfoSprite(): void {
+  if (ufoSprite) return; // Already loaded
+  
+  const img = new Image();
+  img.onload = () => {
+    ufoSprite = img;
+    console.log('✅ UFO sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load UFO sprite');
+  };
+  img.src = ufoSpritePath;
+}
+
+function loadBellSprite(): void {
+  if (bellSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    bellSprite = img;
+    // Attempt to crop/key-out background if the image isn't truly transparent.
+    try {
+      bellSpriteProcessed = processStoneSpriteToCropped(img);
+    } catch {
+      bellSpriteProcessed = null;
+    }
+    console.log('✅ Bell sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load bell sprite:', bellSpritePath);
+  };
+  img.src = bellSpritePath;
+}
+
+function loadMoonSprite(): void {
+  if (moonSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    moonSprite = img;
+    moonSpriteProcessed = null;
+    moonHaloProcessed = null;
+    moonHaloPadPx = 0;
+    moonHaloSrcW = 0;
+    moonHaloSrcH = 0;
+    // Try to crop/key-out background if the PNG isn't truly transparent (same technique as stone).
+    try {
+      moonSpriteProcessed = processStoneSpriteToCropped(img);
+    } catch {
+      moonSpriteProcessed = null;
+    }
+    // Build halo once (for performance) from whichever source we have.
+    try {
+      if (MOON_HALO_ENABLED) {
+        const src = moonSpriteProcessed || (() => {
+          const c = document.createElement('canvas');
+          const w = img.naturalWidth || img.width || 1;
+          const h = img.naturalHeight || img.height || 1;
+          c.width = w;
+          c.height = h;
+          const cctx = c.getContext('2d')!;
+          cctx.clearRect(0, 0, w, h);
+          cctx.drawImage(img, 0, 0, w, h);
+          return c;
+        })();
+        moonHaloSrcW = src.width || 0;
+        moonHaloSrcH = src.height || 0;
+        const built = buildMoonHaloSprite(src);
+        if (built) {
+          moonHaloProcessed = built.canvas;
+          moonHaloPadPx = built.padPx;
+        }
+      }
+    } catch {
+      moonHaloProcessed = null;
+      moonHaloPadPx = 0;
+      moonHaloSrcW = 0;
+      moonHaloSrcH = 0;
+    }
+    console.log('✅ Moon sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load moon sprite:', moonSpritePath);
+  };
+  img.src = moonSpritePath;
+}
+
+function loadEarthSprite(): void {
+  if (earthSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    earthSprite = img;
+    earthSpriteProcessed = null;
+    earthHaloProcessed = null;
+    earthHaloPadPx = 0;
+    earthHaloSrcW = 0;
+    earthHaloSrcH = 0;
+    try {
+      earthSpriteProcessed = processStoneSpriteToCropped(img);
+    } catch {
+      earthSpriteProcessed = null;
+    }
+    try {
+      if (EARTH_HALO_ENABLED) {
+        const src = earthSpriteProcessed || (() => {
+          const c = document.createElement('canvas');
+          const w = img.naturalWidth || img.width || 1;
+          const h = img.naturalHeight || img.height || 1;
+          c.width = w;
+          c.height = h;
+          const cctx = c.getContext('2d')!;
+          cctx.clearRect(0, 0, w, h);
+          cctx.drawImage(img, 0, 0, w, h);
+          return c;
+        })();
+        earthHaloSrcW = src.width || 0;
+        earthHaloSrcH = src.height || 0;
+        const built = buildEarthHaloSprite(src);
+        if (built) {
+          earthHaloProcessed = built.canvas;
+          earthHaloPadPx = built.padPx;
+        }
+      }
+    } catch {
+      earthHaloProcessed = null;
+      earthHaloPadPx = 0;
+      earthHaloSrcW = 0;
+      earthHaloSrcH = 0;
+    }
+    console.log('✅ Earth sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load earth sprite:', earthSpritePath);
+  };
+  img.src = earthSpritePath;
+}
+
+function loadMarsSprite(): void {
+  if (marsSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    marsSprite = img;
+    marsSpriteProcessed = null;
+    marsHaloProcessed = null;
+    marsHaloPadPx = 0;
+    marsHaloSrcW = 0;
+    marsHaloSrcH = 0;
+    try {
+      marsSpriteProcessed = processStoneSpriteToCropped(img);
+    } catch {
+      marsSpriteProcessed = null;
+    }
+    try {
+      if (MARS_HALO_ENABLED) {
+        const src = marsSpriteProcessed || (() => {
+          const c = document.createElement('canvas');
+          const w = img.naturalWidth || img.width || 1;
+          const h = img.naturalHeight || img.height || 1;
+          c.width = w;
+          c.height = h;
+          const cctx = c.getContext('2d')!;
+          cctx.clearRect(0, 0, w, h);
+          cctx.drawImage(img, 0, 0, w, h);
+          return c;
+        })();
+        marsHaloSrcW = src.width || 0;
+        marsHaloSrcH = src.height || 0;
+        const built = buildMarsHaloSprite(src);
+        if (built) {
+          marsHaloProcessed = built.canvas;
+          marsHaloPadPx = built.padPx;
+        }
+      }
+    } catch {
+      marsHaloProcessed = null;
+      marsHaloPadPx = 0;
+      marsHaloSrcW = 0;
+      marsHaloSrcH = 0;
+    }
+    console.log('✅ Mars sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load mars sprite:', marsSpritePath);
+  };
+  img.src = marsSpritePath;
+}
+
+// Load arrow sprite on initialization
+function loadArrowSprite(): void {
+  if (arrowSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    arrowSprite = img;
+    arrowSpriteProcessed = processArrowSpriteToTransparent(img);
+    arrowGlowProcessed = null;
+    arrowGlowPadPx = 0;
+    if (WEAPON_GLOW_ENABLED && arrowSpriteProcessed) {
+      const built = buildGlowSprite(
+        arrowSpriteProcessed,
+        ARROW_GLOW_COLOR,
+        ARROW_GLOW_BLUR_PX,
+        ARROW_GLOW_COLOR_INNER,
+        ARROW_GLOW_BLUR_INNER_PX
+      );
+      if (built) {
+        arrowGlowProcessed = built.canvas;
+        arrowGlowPadPx = built.padPx;
+      }
+    }
+    console.log('✅ Arrow sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load arrow sprite:', arrowSpritePath);
+  };
+  img.src = arrowSpritePath;
+}
+
+function loadBoomSprite(): void {
+  if (boomSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    boomSprite = img;
+    boomSpriteProcessed = processBoomSpriteToTransparent(img);
+    boomGlowProcessed = null;
+    boomGlowPadPx = 0;
+    if (WEAPON_GLOW_ENABLED && boomSpriteProcessed) {
+      const built = buildGlowSprite(
+        boomSpriteProcessed,
+        BOOM_GLOW_COLOR,
+        BOOM_GLOW_BLUR_PX,
+        BOOM_GLOW_COLOR_INNER,
+        BOOM_GLOW_BLUR_INNER_PX
+      );
+      if (built) {
+        boomGlowProcessed = built.canvas;
+        boomGlowPadPx = built.padPx;
+      }
+    }
+    console.log('✅ Boom sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load boom sprite:', boomSpritePath);
+  };
+  img.src = boomSpritePath;
+}
+
+function loadStoneSprite(): void {
+  if (stoneSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    stoneSprite = img;
+    stoneSpriteProcessed = processStoneSpriteToCropped(img);
+    // Build cached halo once (avoids per-frame drop-shadow filters).
+    stoneHaloProcessed = null;
+    stoneHaloPadPx = 0;
+    if (PVP_STONE_HALO_ENABLED && stoneSpriteProcessed) {
+      const built = buildStoneHaloSprite(stoneSpriteProcessed);
+      if (built) {
+        stoneHaloProcessed = built.canvas;
+        stoneHaloPadPx = built.padPx;
+      }
+    }
+    console.log('✅ Stone sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load stone sprite:', stoneSpritePath);
+  };
+  img.src = stoneSpritePath;
+}
+
+function loadArenaBackgroundSprite(): void {
+  if (arenaBgSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    arenaBgSprite = img;
+    console.log('✅ Arena background sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load arena background sprite:', arenaBgSpritePath);
+  };
+  img.src = arenaBgSpritePath;
+}
+
+function loadNebulaBackgroundSprite(): void {
+  if (nebulaBgSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    nebulaBgSprite = img;
+    console.log('✅ Nebula background sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load nebula background sprite:', nebulaBgSpritePath);
+  };
+  img.src = nebulaBgSpritePath;
+}
+
+function loadLightBandSprite(): void {
+  if (lightBandSprite) return;
+  const img = new Image();
+  img.onload = () => {
+    lightBandSprite = img;
+    console.log('✅ Light-band sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load light-band sprite:', lightBandSpritePath);
+  };
+  img.src = lightBandSpritePath;
+}
+
+function loadGalaxySprite(): void {
+  if (galaxySprite) return;
+  const img = new Image();
+  img.onload = () => {
+    galaxySprite = img;
+    // Ensure no gray/black rectangle background even if the PNG isn't transparent.
+    galaxySpriteProcessed = processGalaxySpriteToTransparent(img);
+    console.log('✅ Galaxy sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load galaxy sprite:', galaxySpritePath);
+  };
+  img.src = galaxySpritePath;
+}
+
+function loadGalaxySprite2(): void {
+  if (galaxySprite2) return;
+  const img = new Image();
+  img.onload = () => {
+    galaxySprite2 = img;
+    galaxySprite2Processed = processGalaxySpriteToTransparent(img);
+    console.log('✅ Galaxy2 sprite loaded successfully');
+  };
+  img.onerror = () => {
+    // optional layer; don't spam errors if missing
+    console.warn('⚠️ Galaxy2 sprite not found:', galaxySprite2Path);
+  };
+  img.src = galaxySprite2Path;
+}
+
+// Load Ronke sprite
+function loadRonkeSprite(): void {
+  if (ronkeSprite) return; // Already loaded
+  
+  const img = new Image();
+  img.onload = () => {
+    ronkeSprite = img;
+    console.log('✅ Ronke sprite loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load Ronke sprite');
+  };
+  img.src = ronkeSpritePath;
+}
+
+// Load UFO sprite on initialization
+loadUfoSprite();
+loadArrowSprite();
+loadBoomSprite();
+loadStoneSprite();
+loadArenaBackgroundSprite();
+loadNebulaBackgroundSprite();
+loadLightBandSprite();
+loadGalaxySprite();
+loadGalaxySprite2();
+loadRonkeSprite();
+loadBellSprite();
+loadMoonSprite();
+loadEarthSprite();
+loadMarsSprite();
+
+// --- Moon flyby (triggered) ---
+// Show the flyby ONCE when the player reaches Moon distance (~384,000 km).
+const MOON_DISTANCE_TRIGGER_KM = 384_000;
+const MOON_FLYBY_DURATION_MS = 180_000; // keep current tuned duration
+let moonFlybyActive = false;
+let moonFlybyStartAt = 0;
+let moonFlybyBaseY = 0;
+let moonFlybyPhase = 0;
+
+let moonFlybySeenKeyCached = '';
+let moonFlybySeen = false;
+
+function getMoonFlybyIdentityKeyPart(): string {
+  // Prefer persistent identity when available; otherwise fall back to guest PvP identity.
+  try {
+    const pid = getPersistenceIdentity();
+    if (pid) return pid;
+  } catch {}
+  try {
+    return getMyPvpAddress() || 'guest';
+  } catch {
+    return 'guest';
+  }
+}
+
+function refreshMoonFlybySeenFromStorage(): void {
+  try {
+    const key = `dot_moon_flyby_seen_v1:${getMoonFlybyIdentityKeyPart()}`;
+    if (key !== moonFlybySeenKeyCached) {
+      moonFlybySeenKeyCached = key;
+      const raw = localStorage.getItem(key);
+      moonFlybySeen = raw === '1' || raw === 'true';
+    }
+  } catch {
+    // If storage is blocked, treat as not seen (best-effort).
+    moonFlybySeenKeyCached = '';
+    moonFlybySeen = false;
+  }
+}
+
+function markMoonFlybySeen(): void {
+  moonFlybySeen = true;
+  try {
+    if (!moonFlybySeenKeyCached) refreshMoonFlybySeenFromStorage();
+    if (moonFlybySeenKeyCached) localStorage.setItem(moonFlybySeenKeyCached, '1');
+  } catch {}
+}
+
+function easeInOutCubic(t: number): number {
+  const x = clamp(t, 0, 1);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
+function startMoonFlyby(now: number): void {
+  moonFlybyActive = true;
+  moonFlybyStartAt = now;
+  moonFlybyBaseY = canvas.height * (0.26 + Math.random() * 0.46);
+  moonFlybyPhase = Math.random() * Math.PI * 2;
+}
+
+function updateMoonFlyby(now: number): void {
+  // Only trigger in active Solo gameplay.
+  if (gameMode !== 'Solo' || gameState !== 'Alive') return;
+
+  if (!moonFlybyActive) {
+    refreshMoonFlybySeenFromStorage();
+    // Trigger only when we CROSS the threshold (prevents instant trigger on load).
+    const prev = spaceEventsPrevDistanceKm;
+    const cur = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+    if (!moonFlybySeen && prev < MOON_DISTANCE_TRIGGER_KM && cur >= MOON_DISTANCE_TRIGGER_KM) {
+      startMoonFlyby(now);
+      markMoonFlybySeen();
+    }
+    return;
+  }
+  const t = (now - moonFlybyStartAt) / MOON_FLYBY_DURATION_MS;
+  if (t >= 1) {
+    moonFlybyActive = false;
+  }
+}
+
+function drawMoonFlyby(now: number): void {
+  if (!moonFlybyActive) return;
+  if (!moonSprite || !moonSprite.complete) return;
+
+  const tRaw = (now - moonFlybyStartAt) / MOON_FLYBY_DURATION_MS;
+  const t = clamp(tRaw, 0, 1);
+  const tt = easeInOutCubic(t);
+
+  const marginX = 420;
+  const x0 = playRight + marginX;
+  const x1 = playLeft - marginX;
+  const x = x0 + (x1 - x0) * tt;
+
+  const peak = Math.sin(Math.PI * t); // 0..1..0
+  const z = 0.18 + 0.92 * peak;
+  const alpha = 0.18 + 0.82 * peak;
+
+  const wobble = Math.sin(t * Math.PI * 2 + moonFlybyPhase) * (18 + 22 * (1 - peak));
+  const y = moonFlybyBaseY + wobble;
+
+  // Base size for the flyby (tune this to control how big the moon feels on screen)
+  const baseSize = 330;
+  const size = baseSize * z;
+
+  const srcIsCanvas = !!moonSpriteProcessed;
+  const srcW = srcIsCanvas ? (moonSpriteProcessed!.width || 1) : (moonSprite.naturalWidth || moonSprite.width || 1);
+  const srcH = srcIsCanvas ? (moonSpriteProcessed!.height || 1) : (moonSprite.naturalHeight || moonSprite.height || 1);
+  const aspect = srcH / srcW;
+  const drawW = size;
+  const drawH = size * aspect;
+  const rot = (Math.sin(t * Math.PI * 2 + moonFlybyPhase * 0.6) * 0.025);
+
+  ctx.save();
+  // Clip to play area so it doesn't overlap UI panel.
+  ctx.beginPath();
+  ctx.rect(playLeft, 0, playRight - playLeft, canvas.height);
+  ctx.clip();
+
+  (ctx as any).imageSmoothingEnabled = true;
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  // Halo behind the moon (like the PvP stone "nice lighting")
+  if (MOON_HALO_ENABLED && moonHaloProcessed && moonHaloSrcW > 0 && moonHaloSrcH > 0) {
+    const scale = drawW / Math.max(1, moonHaloSrcW);
+    const haloW = (moonHaloSrcW + 2 * moonHaloPadPx) * scale;
+    const haloH = (moonHaloSrcH + 2 * moonHaloPadPx) * scale;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(1, alpha * 0.85);
+    ctx.drawImage(moonHaloProcessed, -haloW / 2, -haloH / 2, haloW, haloH);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  ctx.globalAlpha = alpha;
+  if (moonSpriteProcessed) ctx.drawImage(moonSpriteProcessed, -drawW / 2, -drawH / 2, drawW, drawH);
+  else ctx.drawImage(moonSprite, -drawW / 2, -drawH / 2, drawW, drawH);
+  ctx.restore();
+}
+
+// --- Earth intro (start-of-run) ---
+// Big Earth on the left (more than half visible), slowly slides left and fades out.
+const EARTH_INTRO_DURATION_MS = 60_000; // ~1 min
+const EARTH_ANIM_TRIGGER_DISTANCE_KM = 100; // start animation when crossing 100km
+
+let earthIntroActive = false;
+let earthIntroStartAt = 0;
+let earthIntroPlayedThisSession = false;
+let earthIntroMode: 'off' | 'static' | 'anim' = 'off';
+let earthIntroPrevDistanceKm: number | null = null;
+
+// Persist only when the animation is FULLY completed (requested: "pilnai parodyta").
+// This prevents refresh mid-animation from permanently skipping it.
+let earthIntroAnimDoneKeyCached = '';
+let earthIntroAnimDone = false;
+// Non-persistent "done" for the current session (used for true guests).
+let earthIntroAnimDoneLocal = false;
+let earthIntroIdentityLast: string | null = null;
+
+let earthIntroGuestSessionId: string | null = null;
+
+function getEarthIntroIdentityInfo(): { id: string; persist: boolean } {
+  // Earth cinematic rules:
+  // - Wallet / Auth users: persist "animation done" so it plays only once.
+  // - True guest (no wallet, no auth): do NOT persist; show again every time (requested).
+  //
+  // Priority:
+  // - wallet address (0x...) when available => persist
+  // - auth identity (auth_<id>) when available => persist
+  // - per-session guest id => NOT persist
+  const isHex = (a: string) => /^0x[a-fA-F0-9]{40}$/.test(a);
+  try {
+    const st = walletService.getState();
+    const addrLive = (st?.address || '').trim();
+    if (addrLive && isHex(addrLive)) return { id: addrLive, persist: true };
+  } catch {}
+  try {
+    const authId = getAuthIdentityForGame();
+    if (authId) return { id: authId, persist: true };
+  } catch {}
+  // Guest: per page-load session id (NOT persisted).
+  if (!earthIntroGuestSessionId) {
+    earthIntroGuestSessionId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+  return { id: earthIntroGuestSessionId, persist: false };
+}
+
+function refreshEarthIntroSeenFromStorage(): void {
+  try {
+    const info = getEarthIntroIdentityInfo();
+    // Reset local session-done when identity changes (wallet connect, auth change, etc.)
+    if (info.id !== earthIntroIdentityLast) {
+      earthIntroIdentityLast = info.id;
+      earthIntroAnimDoneLocal = false;
+      // Also reset cached key so we re-read storage for the new identity.
+      earthIntroAnimDoneKeyCached = '';
+    }
+    // For guests we do NOT read/write storage, but we still keep the in-session done flag.
+    if (!info.persist) {
+      earthIntroAnimDone = earthIntroAnimDoneLocal;
+      return;
+    }
+    const keyDone = `dot_earth_anim_done_v1:${info.id}`;
+    // Back-compat: earlier versions wrote "seen" at animation start. Treat it as done.
+    const keySeenLegacy = `dot_earth_anim_seen_v1:${info.id}`;
+    if (keyDone !== earthIntroAnimDoneKeyCached) {
+      earthIntroAnimDoneKeyCached = keyDone;
+      const rawDone = localStorage.getItem(keyDone);
+      const rawLegacy = localStorage.getItem(keySeenLegacy);
+      const persistedDone =
+        rawDone === '1' || rawDone === 'true' ||
+        rawLegacy === '1' || rawLegacy === 'true';
+      earthIntroAnimDone = earthIntroAnimDoneLocal || persistedDone;
+    } else {
+      // Keep local OR persisted.
+      earthIntroAnimDone = earthIntroAnimDoneLocal || earthIntroAnimDone;
+    }
+  } catch {
+    earthIntroAnimDoneKeyCached = '';
+    earthIntroAnimDone = false;
+  }
+}
+
+function markEarthIntroSeen(): void {
+  earthIntroAnimDone = true;
+  earthIntroAnimDoneLocal = true;
+  try {
+    const info = getEarthIntroIdentityInfo();
+    // Guest: do not persist anything (requested).
+    if (!info.persist) {
+      return;
+    }
+    const keyDone = `dot_earth_anim_done_v1:${info.id}`;
+    earthIntroAnimDoneKeyCached = keyDone;
+    localStorage.setItem(keyDone, '1');
+  } catch {}
+}
+
+function updateEarthIntro(now: number): void {
+  // Behavior (simplified; removed 2k km logic per request):
+  // - Show Earth (static) from the start until you reach 100 km
+  // - Start a one-time fly-away animation when crossing 100 km
+  // - After the animation finishes, Earth is gone for the rest of the session/identity
+  if (gameMode !== 'Solo' || gameState !== 'Alive') return;
+  // Wait for save/cloud/wallet to settle before deciding (prevents false triggers on load).
+  if (now < (cinematicBootUntilMs || 0)) return;
+
+  // Identify player (wallet/auth/guest) for one-time gating.
+  // Even without wallet, the cinematic should run (requested).
+  getEarthIntroIdentityInfo();
+
+  const curDist = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+
+  refreshEarthIntroSeenFromStorage();
+
+  // If animation was already fully shown for this identity/session, never show Earth again.
+  // (Matches your request: after leaving Earth, it shouldn't reappear later.)
+  if (earthIntroAnimDone && earthIntroMode !== 'anim') {
+    earthIntroActive = false;
+    earthIntroMode = 'off';
+    earthIntroStartAt = 0;
+    earthIntroPrevDistanceKm = curDist;
+    return;
+  }
+
+  // Initialize per-session baseline so we can detect "crossing 100km" reliably.
+  if (earthIntroPrevDistanceKm === null) {
+    earthIntroPrevDistanceKm = curDist;
+  }
+
+  // Trigger animation ONLY on crossing the threshold, and only once per identity/session.
+  const crossed100 =
+    !earthIntroAnimDone &&
+    (earthIntroPrevDistanceKm < EARTH_ANIM_TRIGGER_DISTANCE_KM) &&
+    (curDist >= EARTH_ANIM_TRIGGER_DISTANCE_KM);
+
+  // IMPORTANT: do not restart animation mid-flight.
+  // If we started at 100km, reaching 2k km during the 60s animation should NOT trigger again.
+  if (crossed100 && earthIntroMode !== 'anim') {
+    earthIntroMode = 'anim';
+    earthIntroActive = true;
+    earthIntroStartAt = now;
+    earthIntroPlayedThisSession = true;
+  } else if (!earthIntroActive || earthIntroMode !== 'anim') {
+    // Default: static Earth before the 100km trigger.
+    earthIntroMode = (curDist < EARTH_ANIM_TRIGGER_DISTANCE_KM) ? 'static' : 'off';
+    earthIntroActive = earthIntroMode !== 'off';
+    earthIntroStartAt = 0;
+  }
+
+  // End animation after duration; THEN persist "done" so it never replays for this wallet.
+  if (earthIntroMode === 'anim' && earthIntroStartAt > 0) {
+    const t = (now - earthIntroStartAt) / EARTH_INTRO_DURATION_MS;
+    if (t >= 1) {
+      markEarthIntroSeen(); // now considered "fully shown"
+      // After the fly-away animation, Earth should be gone (requested).
+      earthIntroMode = 'off';
+      earthIntroStartAt = 0;
+      earthIntroActive = earthIntroMode !== 'off';
+    }
+  }
+
+  // Update baseline for next frame.
+  earthIntroPrevDistanceKm = curDist;
+}
+
+function drawEarthIntro(now: number): void {
+  if (!earthIntroActive) return;
+  if (!earthSprite || !earthSprite.complete) return;
+
+  const isAnim = earthIntroMode === 'anim' && earthIntroStartAt > 0;
+  const tRaw = isAnim ? ((now - earthIntroStartAt) / EARTH_INTRO_DURATION_MS) : 0;
+  const t = clamp(tRaw, 0, 1);
+  const tt = easeInOutCubic(t);
+
+  const srcIsCanvas = !!earthSpriteProcessed;
+  const srcW = srcIsCanvas ? (earthSpriteProcessed!.width || 1) : (earthSprite.naturalWidth || earthSprite.width || 1);
+  const srcH = srcIsCanvas ? (earthSpriteProcessed!.height || 1) : (earthSprite.naturalHeight || earthSprite.height || 1);
+  const aspect = srcH / srcW;
+
+  // Static: big planet on the left.
+  // Anim: fly away and disappear off-screen (requested).
+  const baseW = 980;
+  const drawW = isAnim ? (baseW * (1 - tt * 0.10)) : baseW; // gently shrink as we "leave"
+  const drawH = drawW * aspect;
+
+  // Keep >50% visible from the left side.
+  const startX = playLeft + drawW * 0.15;
+  const endX = playLeft - drawW * 0.85; // fully off-screen to the left
+  const x = isAnim ? (startX + (endX - startX) * tt) : startX;
+  const y = canvas.height * 0.55;
+
+  const alpha = isAnim ? (Math.max(0, 1 - tt) * 0.95) : 0.95;
+  const rot = isAnim ? (-0.02 + Math.sin(tt * Math.PI) * 0.01) : -0.02;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(playLeft, 0, playRight - playLeft, canvas.height);
+  ctx.clip();
+
+  (ctx as any).imageSmoothingEnabled = true;
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+
+  // Halo behind Earth
+  if (EARTH_HALO_ENABLED && earthHaloProcessed && earthHaloSrcW > 0 && earthHaloSrcH > 0) {
+    const scale = drawW / Math.max(1, earthHaloSrcW);
+    const haloW = (earthHaloSrcW + 2 * earthHaloPadPx) * scale;
+    const haloH = (earthHaloSrcH + 2 * earthHaloPadPx) * scale;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(1, alpha * 0.55);
+    ctx.drawImage(earthHaloProcessed, -haloW / 2, -haloH / 2, haloW, haloH);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  ctx.globalAlpha = alpha;
+  if (earthSpriteProcessed) ctx.drawImage(earthSpriteProcessed, -drawW / 2, -drawH / 2, drawW, drawH);
+  else ctx.drawImage(earthSprite, -drawW / 2, -drawH / 2, drawW, drawH);
+  ctx.restore();
+}
+
+// --- Mars flyby (triggered) ---
+// Trigger ONCE when the player reaches the Earth->Mars map distance (~78M km).
+const MARS_DISTANCE_TRIGGER_KM = 78_000_000;
+const MARS_FLYBY_DURATION_MS = 240_000;
+let marsFlybyActive = false;
+let marsFlybyStartAt = 0;
+let marsFlybyBaseY = 0;
+let marsFlybyPhase = 0;
+
+let marsFlybySeenKeyCached = '';
+let marsFlybySeen = false;
+let marsFlybyPending = false;
+
+function getMarsFlybyIdentityKeyPart(): string {
+  // Prefer persistent identity when available; otherwise fall back to guest PvP identity.
+  try {
+    const pid = getPersistenceIdentity();
+    if (pid) return pid;
+  } catch {}
+  try {
+    return getMyPvpAddress() || 'guest';
+  } catch {
+    return 'guest';
+  }
+}
+
+function refreshMarsFlybySeenFromStorage(): void {
+  try {
+    const key = `dot_mars_flyby_seen_v1:${getMarsFlybyIdentityKeyPart()}`;
+    if (key !== marsFlybySeenKeyCached) {
+      marsFlybySeenKeyCached = key;
+      const raw = localStorage.getItem(key);
+      marsFlybySeen = raw === '1' || raw === 'true';
+    }
+  } catch {
+    marsFlybySeenKeyCached = '';
+    marsFlybySeen = false;
+  }
+}
+
+function markMarsFlybySeen(): void {
+  marsFlybySeen = true;
+  try {
+    if (!marsFlybySeenKeyCached) refreshMarsFlybySeenFromStorage();
+    if (marsFlybySeenKeyCached) localStorage.setItem(marsFlybySeenKeyCached, '1');
+  } catch {}
+}
+
+function startMarsFlyby(now: number): void {
+  marsFlybyActive = true;
+  marsFlybyStartAt = now;
+  marsFlybyBaseY = canvas.height * (0.26 + Math.random() * 0.46);
+  marsFlybyPhase = Math.random() * Math.PI * 2;
+}
+
+function updateMarsFlyby(now: number): void {
+  // Only trigger in active Solo gameplay.
+  if (gameMode !== 'Solo' || gameState !== 'Alive') return;
+
+  if (!marsFlybyActive) {
+    refreshMarsFlybySeenFromStorage();
+    const prev = spaceEventsPrevDistanceKm;
+    const cur = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+    const crossed = (!marsFlybySeen && prev < MARS_DISTANCE_TRIGGER_KM && cur >= MARS_DISTANCE_TRIGGER_KM);
+    if (crossed) marsFlybyPending = true;
+
+    // Start when pending and nothing else is currently playing (prevents overlapping with Moon).
+    if (marsFlybyPending && !marsFlybySeen && !moonFlybyActive) {
+      marsFlybyPending = false;
+      startMarsFlyby(now);
+      markMarsFlybySeen();
+    }
+    return;
+  }
+  const t = (now - marsFlybyStartAt) / MARS_FLYBY_DURATION_MS;
+  if (t >= 1) {
+    marsFlybyActive = false;
+  }
+}
+
+function drawMarsFlyby(now: number): void {
+  if (!marsFlybyActive) return;
+  if (!marsSprite || !marsSprite.complete) return;
+
+  const tRaw = (now - marsFlybyStartAt) / MARS_FLYBY_DURATION_MS;
+  const t = clamp(tRaw, 0, 1);
+  const tt = easeInOutCubic(t);
+
+  const marginX = 420;
+  const x0 = playRight + marginX;
+  const x1 = playLeft - marginX;
+  const x = x0 + (x1 - x0) * tt;
+
+  const peak = Math.sin(Math.PI * t);
+  const z = 0.18 + 0.92 * peak;
+  const alpha = 0.18 + 0.82 * peak;
+
+  const wobble = Math.sin(t * Math.PI * 2 + marsFlybyPhase) * (18 + 22 * (1 - peak));
+  const y = marsFlybyBaseY + wobble;
+
+  // Bigger than the moon (test)
+  const baseSize = 600;
+  const size = baseSize * z;
+
+  const srcIsCanvas = !!marsSpriteProcessed;
+  const srcW = srcIsCanvas ? (marsSpriteProcessed!.width || 1) : (marsSprite.naturalWidth || marsSprite.width || 1);
+  const srcH = srcIsCanvas ? (marsSpriteProcessed!.height || 1) : (marsSprite.naturalHeight || marsSprite.height || 1);
+  const aspect = srcH / srcW;
+  const drawW = size;
+  const drawH = size * aspect;
+  const rot = (Math.sin(t * Math.PI * 2 + marsFlybyPhase * 0.6) * 0.025);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(playLeft, 0, playRight - playLeft, canvas.height);
+  ctx.clip();
+
+  (ctx as any).imageSmoothingEnabled = true;
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+
+  if (MARS_HALO_ENABLED && marsHaloProcessed && marsHaloSrcW > 0 && marsHaloSrcH > 0) {
+    const scale = drawW / Math.max(1, marsHaloSrcW);
+    const haloW = (marsHaloSrcW + 2 * marsHaloPadPx) * scale;
+    const haloH = (marsHaloSrcH + 2 * marsHaloPadPx) * scale;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(1, alpha * 0.85);
+    ctx.drawImage(marsHaloProcessed, -haloW / 2, -haloH / 2, haloW, haloH);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  ctx.globalAlpha = alpha;
+  if (marsSpriteProcessed) ctx.drawImage(marsSpriteProcessed, -drawW / 2, -drawH / 2, drawW, drawH);
+  else ctx.drawImage(marsSprite, -drawW / 2, -drawH / 2, drawW, drawH);
+  ctx.restore();
+}
+
+// Lobby state
+let isInLobby = false;
+let isSearchingForMatch = false;
+let currentMatch: Match | null = null;
+let isReady = false; // Whether I have clicked Ready
+let waitingForOpponentReady = false; // Whether we're waiting for opponent to be ready
+let lobbySearchStartTime = 0;
+let isHoveringReady = false;
+let isPressingReady = false;
+let isHoveringCancel = false;
+let isPressingCancel = false;
+
+// Match result state
+let matchResult: 'victory' | 'defeat' | null = null;
+let matchResultEloChange = 0;
+let showingMatchResult = false;
+let lastReplayId: string | null = null;
+let lastReplayLink: string | null = null;
+let lastReplayViewerLink: string | null = null;
+
+// Server-driven PvP match timer (authoritative on server; used for client UI)
+let pvpMatchEndAt = 0;
+let pvpMatchStartedAt = 0;
+let pendingMatchEnd: { winnerSid: string | null; reason?: string } | null = null;
+// Server-authoritative match end marker (prevents client-side premature "victory" / wrong payouts).
+let pvpMatchEndedByServer = false;
+let pvpMatchEndedServerAt = 0;
+let pvpMatchEndReason: string | null = null;
+let pvpWinnerSidFromServer: string | null = null;
+
+// Periodic Supabase sync (every 5 minutes) for leaderboard-visible stats.
+let lastPvpMaxHpSyncAt = 0;
+const PVP_MAXHP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+let opponentNicknameForResult: string | null = null; // Opponent nickname for result screen
+let opponentAddressForResult: string | null = null; // Opponent address for result screen (saved when match ends)
+let savedCurrentMatch: Match | null = null; // Saved copy of currentMatch for result screen
+let opponentWalletAddress: string | null = null; // Opponent wallet address (for Colyseus mode)
+
+// Opponent profile state
+let isOpponentProfileOpen = false;
+let opponentProfileData: any = null; // Opponent profile data from Supabase
+
+// Death animation system - pixel art particles
+interface DeathParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  color: string;
+  rotation: number;
+  rotationSpeed: number;
+}
+
+const deathAnimations: Map<string, DeathParticle[]> = new Map(); // playerId -> particles
+const deathAnimationDuration = 1500; // 1.5 seconds
+
+// Arrow weapon system
+let arrowReady = false; // Whether arrow is ready to be fired (toggled by key "1")
+let arrowFired = false; // Whether arrow has been fired in this DOT lifetime (can only fire once)
+let katanaX = 0; // Arrow current position - flies towards DOT
+let katanaY = 0;
+let arrowStartX = 0; // Arrow launch position (where it was fired from)
+let arrowStartY = 0;
+let katanaAngle = 0; // Arrow rotation angle
+let isHoveringKatana = false;
+let isPressingKatana = false;
+const arrowLength = 56; // Arrow total length (+10% from 51; still shorter than original 85)
+const arrowShaftWidth = 2.5; // Arrow shaft width
+const arrowHeadLength = 25; // Arrowhead length (longer, sharper tip)
+const arrowFletchingLength = 15; // Fletching length (feathers at back)
+
+// Katana flying system
+let katanaFlying = false; // Whether katana is flying towards DOT
+let katanaVx = 0; // Katana velocity X
+let katanaVy = 0; // Katana velocity Y
+const katanaSpeed = 15; // Katana flying speed
+
+
+// Katana slash animation (happens on impact)
+let katanaSlashing = false; // Whether katana is performing a slash
+let katanaSlashStartTime = 0;
+const katanaSlashDuration = 200; // Slash animation duration (0.2 seconds - quick strike)
+let katanaHitTargets = new Set<number>(); // Track which DOT positions already hit (to avoid multiple hits)
+
+// Save system
+const saveManager = new SaveManagerV2();
+
+// Convert current game state to SaveDataV2
+let profileCreatedAt: number | null = null; // Track when profile was created
+let localLastPlayedAt: number = 0; // For cloud conflict resolution
+
+function getCurrentSaveData(): SaveDataV2 {
+  // If profileCreatedAt is not set, use current time (first save)
+  if (profileCreatedAt === null) {
+    profileCreatedAt = Date.now();
+  }
+  
+  return {
+    version: 2,
+    profile: {
+      createdAt: profileCreatedAt,
+      lastPlayed: Date.now(),
+    },
+    solo: {
+      currency: dotCurrency,
+      dmg: dmg,
+      speedKmps: soloSpeedKmps,
+      distanceKm: soloDistanceKm,
+      spins: soloSpins,
+      spinMilestones: soloSpinMilestones,
+      spinsGeneratedTotal: soloSpinsGeneratedTotal,
+      slotFirstGuaranteedUsed: soloSlotFirstGuaranteedUsed,
+      starterClaimed: soloStarterClaimed,
+      level: currentLevel,
+      maxUnlockedLevel: maxUnlockedLevel,
+      killsInCurrentLevel: killsInCurrentLevel,
+      upgrades: {
+        critChance: critChance,
+        critUpgradeLevel: critUpgradeLevel,
+        accuracy: accuracy,
+        accuracyUpgradeLevel: accuracyUpgradeLevel,
+      },
+      maxHP: dotMaxHP,
+      maxArmor: dotMaxArmor,
+    },
+    settings: {
+      mute: false, // TODO: Add mute setting if needed
+    },
+  };
+}
+
+// Load game state from SaveDataV2
+function loadGameState(saveData: SaveDataV2): void {
+  // Restore profile creation time
+  profileCreatedAt = saveData.profile.createdAt;
+  localLastPlayedAt =
+    (typeof saveData?.profile?.lastPlayed === 'number' && Number.isFinite(saveData.profile.lastPlayed))
+      ? Math.max(0, Math.floor(saveData.profile.lastPlayed))
+      : 0;
+  
+  // Restore Rice balance from save (starter pack depends on this being persistent).
+  dotCurrency =
+    (typeof (saveData as any)?.solo?.currency === 'number' && Number.isFinite((saveData as any).solo.currency))
+      ? Math.max(0, Math.floor((saveData as any).solo.currency))
+      : 0;
+  dmg = saveData.solo.dmg;
+  soloSpeedKmps = (typeof (saveData as any)?.solo?.speedKmps === 'number' && Number.isFinite((saveData as any).solo.speedKmps))
+    ? Math.max(1, (saveData as any).solo.speedKmps)
+    : 1;
+  soloDistanceKm = (typeof (saveData as any)?.solo?.distanceKm === 'number' && Number.isFinite((saveData as any).solo.distanceKm))
+    ? Math.max(0, (saveData as any).solo.distanceKm)
+    : 0;
+  // Prevent space flybys from firing instantly due to loaded distance.
+  initSpaceEventsPrevDistance();
+  // Give the game a moment to settle before triggering cinematics.
+  markCinematicBoot(Date.now(), 1000);
+  soloSpins = (typeof (saveData as any)?.solo?.spins === 'number' && Number.isFinite((saveData as any).solo.spins))
+    ? Math.max(0, Math.floor((saveData as any).solo.spins))
+    : 0;
+  soloSpinMilestones = (typeof (saveData as any)?.solo?.spinMilestones === 'number' && Number.isFinite((saveData as any).solo.spinMilestones))
+    ? Math.max(0, Math.floor((saveData as any).solo.spinMilestones))
+    : 0;
+  soloSpinsGeneratedTotal = (typeof (saveData as any)?.solo?.spinsGeneratedTotal === 'number' && Number.isFinite((saveData as any).solo.spinsGeneratedTotal))
+    ? Math.max(0, Math.floor((saveData as any).solo.spinsGeneratedTotal))
+    : Math.max(0, soloSpinMilestones | 0);
+
+  soloSlotFirstGuaranteedUsed = !!(saveData as any)?.solo?.slotFirstGuaranteedUsed;
+  soloStarterClaimed = !!(saveData as any)?.solo?.starterClaimed;
+
+  // Enforce cap on load (overflow discarded; shards system removed).
+  if (soloSpins > SOLO_SPINS_CAP) {
+    soloSpins = SOLO_SPINS_CAP;
+  }
+
+  // Ensure milestones aren't ahead of what current distance could have earned (prevents weird future negatives/freebies).
+  const maxMilestones = computeSpinMilestonesForDistance(soloDistanceKm);
+  soloSpinMilestones = Math.min(soloSpinMilestones, maxMilestones);
+  soloDistanceLastPerfMs = 0; // re-init accumulator on load
+  currentLevel = saveData.solo.level;
+  maxUnlockedLevel = saveData.solo.maxUnlockedLevel;
+  killsInCurrentLevel = saveData.solo.killsInCurrentLevel;
+  critChance = saveData.solo.upgrades.critChance;
+  critUpgradeLevel = saveData.solo.upgrades.critUpgradeLevel;
+  accuracy = saveData.solo.upgrades.accuracy;
+  accuracyUpgradeLevel = saveData.solo.upgrades.accuracyUpgradeLevel;
+  dotMaxHP = saveData.solo.maxHP;
+  dotMaxArmor = saveData.solo.maxArmor;
+  
+  // Reset current DOT state (don't restore HP/armor, start fresh)
+  dotHP = dotMaxHP;
+  dotArmor = dotMaxArmor;
+  gameState = 'Alive';
+  
+  console.log('Game state loaded from save');
+}
+
+// Cloud save (Supabase) throttling: persist Solo progress across servers/origins.
+const SOLO_CLOUD_SAVE_INTERVAL_MS = 120_000; // ~2 minutes
+let soloCloudSaveLastAt = 0;
+let soloCloudSaveInFlight = false;
+
+function maybeCloudSaveSolo(now: number): void {
+  try {
+    const pid = getRoninAddressForPersistence();
+    if (!pid) return;
+    if (!supabaseService.isConfigured()) return;
+    if (soloCloudSaveInFlight) return;
+    if (now - soloCloudSaveLastAt < SOLO_CLOUD_SAVE_INTERVAL_MS) return;
+
+    soloCloudSaveLastAt = now;
+    soloCloudSaveInFlight = true;
+
+    const snapshot: any = {
+      currency: dotCurrency,
+      dmg: dmg,
+      speedKmps: soloSpeedKmps,
+      distanceKm: soloDistanceKm,
+      spins: soloSpins,
+      spinMilestones: soloSpinMilestones,
+      spinsGeneratedTotal: soloSpinsGeneratedTotal,
+      slotFirstGuaranteedUsed: soloSlotFirstGuaranteedUsed,
+      starterClaimed: soloStarterClaimed,
+      savedAt: now,
+      level: currentLevel,
+      maxUnlockedLevel: maxUnlockedLevel,
+      killsInCurrentLevel: killsInCurrentLevel,
+      upgrades: {
+        critChance: critChance,
+        critUpgradeLevel: critUpgradeLevel,
+        accuracy: accuracy,
+        accuracyUpgradeLevel: accuracyUpgradeLevel,
+      },
+      maxHP: dotMaxHP,
+      maxArmor: dotMaxArmor,
+    };
+
+    supabaseService.updateSoloSnapshot(pid, snapshot)
+      .catch(() => {})
+      .finally(() => { soloCloudSaveInFlight = false; });
+  } catch {
+    soloCloudSaveInFlight = false;
+  }
+}
+
+function maybeCloudLoadSoloOnStartup(): void {
+  try {
+    const pid = getRoninAddressForPersistence();
+    if (!pid) return;
+    if (!supabaseService.isConfigured()) return;
+
+    supabaseService.getProfile(pid).then((profile) => {
+      try {
+        const sd: any = (profile as any)?.solo_data;
+        const savedAt = (typeof sd?.savedAt === 'number' && Number.isFinite(sd.savedAt)) ? Math.floor(sd.savedAt) : 0;
+        if (!savedAt) return;
+        // Only apply cloud state if it's newer than our locally loaded save.
+        if (savedAt <= (localLastPlayedAt | 0)) return;
+
+        // Restore Rice from cloud snapshot.
+        if (typeof sd.currency === 'number' && Number.isFinite(sd.currency)) dotCurrency = Math.max(0, Math.floor(sd.currency));
+        if (typeof sd.dmg === 'number' && Number.isFinite(sd.dmg)) dmg = Math.max(1, Math.round(sd.dmg));
+        if (typeof sd.speedKmps === 'number' && Number.isFinite(sd.speedKmps)) soloSpeedKmps = Math.max(1, sd.speedKmps);
+        if (typeof sd.distanceKm === 'number' && Number.isFinite(sd.distanceKm)) soloDistanceKm = Math.max(0, sd.distanceKm);
+        // Prevent space flybys from firing instantly due to cloud-loaded distance.
+        initSpaceEventsPrevDistance();
+        // Give the game a moment to settle before triggering cinematics.
+        markCinematicBoot(Date.now(), 1000);
+        if (typeof sd.spins === 'number' && Number.isFinite(sd.spins)) soloSpins = Math.max(0, Math.floor(sd.spins));
+        if (typeof sd.spinMilestones === 'number' && Number.isFinite(sd.spinMilestones)) soloSpinMilestones = Math.max(0, Math.floor(sd.spinMilestones));
+        if (typeof sd.spinsGeneratedTotal === 'number' && Number.isFinite(sd.spinsGeneratedTotal)) soloSpinsGeneratedTotal = Math.max(0, Math.floor(sd.spinsGeneratedTotal));
+        if (typeof sd.slotFirstGuaranteedUsed === 'boolean') soloSlotFirstGuaranteedUsed = sd.slotFirstGuaranteedUsed;
+        if (typeof sd.starterClaimed === 'boolean') soloStarterClaimed = sd.starterClaimed;
+        if (typeof sd.level === 'number' && Number.isFinite(sd.level)) currentLevel = Math.max(1, Math.floor(sd.level));
+        if (typeof sd.maxUnlockedLevel === 'number' && Number.isFinite(sd.maxUnlockedLevel)) maxUnlockedLevel = Math.max(1, Math.floor(sd.maxUnlockedLevel));
+        if (typeof sd.killsInCurrentLevel === 'number' && Number.isFinite(sd.killsInCurrentLevel)) killsInCurrentLevel = Math.max(0, Math.floor(sd.killsInCurrentLevel));
+        if (sd.upgrades && typeof sd.upgrades === 'object') {
+          const u: any = sd.upgrades;
+          if (typeof u.critChance === 'number' && Number.isFinite(u.critChance)) critChance = u.critChance;
+          if (typeof u.critUpgradeLevel === 'number' && Number.isFinite(u.critUpgradeLevel)) critUpgradeLevel = Math.max(0, Math.floor(u.critUpgradeLevel));
+          if (typeof u.accuracy === 'number' && Number.isFinite(u.accuracy)) accuracy = u.accuracy;
+          if (typeof u.accuracyUpgradeLevel === 'number' && Number.isFinite(u.accuracyUpgradeLevel)) accuracyUpgradeLevel = Math.max(0, Math.floor(u.accuracyUpgradeLevel));
+        }
+        if (typeof sd.maxHP === 'number' && Number.isFinite(sd.maxHP)) dotMaxHP = Math.max(1, Math.floor(sd.maxHP));
+        if (typeof sd.maxArmor === 'number' && Number.isFinite(sd.maxArmor)) dotMaxArmor = Math.max(0, Math.floor(sd.maxArmor));
+
+        // Enforce cap (overflow discarded; shards system removed)
+        if (soloSpins > SOLO_SPINS_CAP) {
+          soloSpins = SOLO_SPINS_CAP;
+        }
+        // Ensure milestones sane vs distance
+        const maxM = computeSpinMilestonesForDistance(soloDistanceKm);
+        soloSpinMilestones = Math.min(soloSpinMilestones, maxM);
+        // Ensure lifetime counter is at least distance milestones (backfill older saves)
+        soloSpinsGeneratedTotal = Math.max(soloSpinsGeneratedTotal | 0, soloSpinMilestones | 0);
+
+        dotHP = dotMaxHP;
+        dotArmor = dotMaxArmor;
+        gameState = 'Alive';
+        soloDistanceLastPerfMs = 0;
+        localLastPlayedAt = savedAt;
+
+        // Persist locally so refresh keeps this state even if Supabase is slow later.
+        try { forceSaveGame(); } catch {}
+      } catch {}
+    }).catch(() => {});
+  } catch {}
+}
+
+function applyStarterPackForGuest(): void {
+  // Guest: give a small Rice starter every session (progress not saved).
+  if (starterGuestGrantedThisSession) return;
+  starterGuestGrantedThisSession = true;
+  dotCurrency = Math.max(dotCurrency | 0, STARTER_GUEST_RICE);
+}
+
+function applyStarterPackForNewWalletPlayer(): void {
+  // Wallet-connected new player: grant starter Rice once when no save exists.
+  if (starterWalletGrantedThisSession) return;
+  starterWalletGrantedThisSession = true;
+  dotCurrency = Math.max(dotCurrency | 0, STARTER_WALLET_RICE);
+  // Persist immediately so refresh doesn't lose it.
+  try { forceSaveGame(); } catch {}
+}
+
+// Load game on startup
+function loadGame(): void {
+  // Guest mode: allow play without wallet, but NEVER save progress.
+  // For returning Ronin users, allow loading if we can identify a Ronin address (connected or stored).
+  const roninAddr = getRoninAddressForPersistence();
+  if (!roninAddr) {
+    console.log('Guest mode: skipping load (no Ronin address). Progress will not be saved.');
+    applyStarterPackForGuest();
+    return;
+  }
+
+  const saveData = saveManager.load();
+  if (saveData) {
+    loadGameState(saveData);
+  } else {
+    console.log('No save data found, starting fresh game');
+    applyStarterPackForNewWalletPlayer();
+  }
+
+  // Pull latest Solo state from Supabase (if configured) so progress persists across servers/origins.
+  maybeCloudLoadSoloOnStartup();
+}
+
+// Save game (only if wallet is connected)
+function saveGame(): void {
+  // Only save if user has a Ronin address (connected or previously stored).
+  if (!getRoninAddressForPersistence()) {
+    // Wallet not connected - don't save (game continues but progress is not saved)
+    return;
+  }
+  
+  const saveData = getCurrentSaveData();
+  saveManager.save(saveData);
+  localLastPlayedAt = Date.now();
+}
+
+// Force save (call after important events) - only if wallet is connected
+function forceSaveGame(): void {
+  // Only save if user has a Ronin address (connected or previously stored).
+  if (!getRoninAddressForPersistence()) {
+    // Wallet not connected - don't save (game continues but progress is not saved)
+    return;
+  }
+  
+  const saveData = getCurrentSaveData();
+  saveManager.forceSave(saveData);
+  localLastPlayedAt = Date.now();
+}
+
+// Solo to PvP conversion functions
+function soloLevelToPvpMass(level: number): number {
+  // Convert Solo level to PvP base mass: clamp(1.0 + level * 0.05, 1.0, 2.0)
+  return Math.max(1.0, Math.min(2.0, 1.0 + level * 0.05));
+}
+
+function soloDmgToPvpMaxImpulse(dmg: number): number {
+  // Convert Solo dmg to PvP max impulse: clamp(200 + dmg * 5, 200, 400)
+  return Math.max(200, Math.min(400, 200 + dmg * 5));
+}
+
+// PvP initialization
+function initializePvP(): void {
+  // Preserve jetpack fuel between PvP "rounds" (when PvP is re-initialized)
+  snapshotPvpFuelCarryover();
+  // Clear any existing players first
+  pvpPlayers = {};
+  pvpSideById = {};
+  
+  // Clear death animations when starting new game
+  deathAnimations.clear();
+  
+  // Reset health packs when starting new PvP game
+  healthPack = null;
+  lastHealthPackPickupTime = 0;
+  healthPackPositionIndex = 0; // Reset to center position
+  
+  // Generate player IDs if not set
+  if (!myPlayerId) {
+    myPlayerId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  
+  // Convert Solo stats to PvP stats
+  const pvpMass = soloLevelToPvpMass(currentLevel);
+  const pvpMaxImpulse = soloDmgToPvpMaxImpulse(dmg);
+  
+  // Initialize my player (left side) - with NFT bonuses
+  const nftBonuses = calculateNftBonuses();
+  const totalMaxHP = dotMaxHP + nftBonuses.hp;
+  const myPlayer: PvPPlayer = {
+    id: myPlayerId,
+    x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25, // Left quarter
+    y: pvpBounds.bottom / 2, // Middle vertically
+    vx: 0,
+    vy: 0,
+    mass: pvpMass, // Converted from Solo level
+    radius: dotRadius,
+    isOut: false,
+    color: '#000000', // Black for my player
+    lastHitTime: 0,
+    gravityLocked: true, // Same as Solo - disable gravity until first hit
+    gravityActiveUntil: 0, // Gravity inactive initially
+    speedTrail: [], // Supersonic shadow tail
+    hp: totalMaxHP, // Use Solo max HP + NFT bonus
+    maxHP: totalMaxHP, // Use Solo max HP + NFT bonus
+    armor: dotMaxArmor, // Use Solo max Armor
+    maxArmor: dotMaxArmor, // Use Solo max Armor
+    outOfBoundsStartTime: null, // Track when player goes out of bounds
+    lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
+    lastArmorRegen: Date.now(), // When armor was last regenerated
+    paralyzedUntil: 0, // Not paralyzed initially
+    fuel: getCarryoverFuel(myPlayerId), // Carry over fuel from previous round
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    // Toxic water removed
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
+    facingLeft: false,
+    renderAngle: 0,
+  };
+  
+  pvpPlayers[myPlayerId] = myPlayer;
+  pvpSideById[myPlayerId] = 'left';
+  
+  console.log(`PvP stats: mass=${pvpMass.toFixed(2)}, maxImpulse=${pvpMaxImpulse}`);
+  
+  // Initialize opponent (right side) - will be synced from network later
+  // For testing: create a test opponent if no network opponent
+  if (!opponentId) {
+    opponentId = `opponent_test_${Date.now()}`;
+  }
+  
+  const opponent: PvPPlayer = {
+    id: opponentId,
+    x: pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75, // Right quarter
+    y: pvpBounds.bottom / 2, // Middle vertically
+    vx: 0,
+    vy: 0,
+    mass: 1.0, // Default, will be synced from network
+    radius: dotRadius,
+    isOut: false,
+    color: '#000000', // Black for opponent
+    lastHitTime: 0,
+    gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
+    speedTrail: [],
+    hp: dotMaxHP, // Use Solo max HP (same as my player for now)
+    maxHP: dotMaxHP, // Use Solo max HP
+    armor: dotMaxArmor, // Use Solo max Armor (same as my player for now)
+    maxArmor: dotMaxArmor, // Use Solo max Armor
+    outOfBoundsStartTime: null, // Track when player goes out of bounds
+    lastOutOfBoundsDamageTime: 0, // Track last damage time for out of bounds
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
+    fuel: getCarryoverFuel(opponentId), // Carry over fuel from previous round (local fallback)
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    // Toxic water removed
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
+    profilePicture: undefined, // Will be synced from opponent
+    facingLeft: false,
+    renderAngle: 0,
+  };
+  
+  pvpPlayers[opponentId] = opponent;
+  pvpSideById[opponentId] = 'right';
+  resetOpponentInterpolation();
+  pushOpponentSample(Date.now(), opponent);
+  
+  console.log('PvP initialized', { myPlayerId, opponentId });
+}
+
+// PvP cleanup (when switching back to Solo)
+function cleanupPvP(): void {
+  pvpPlayers = {};
+  pvpSideById = {};
+  myPlayerId = null;
+  opponentId = null;
+  isInLobby = false;
+  isSearchingForMatch = false;
+  currentMatch = null;
+  // Reset selected PvP mode back to legacy
+  TURN_BASED_PVP_ENABLED = false;
+  pvpOnlineRoomName = 'pvp_room';
+  // Reset turn-based PvP state
+  turnPhase = 'lobby';
+  turnRoundId = 0;
+  turnPhaseEndsAt = 0;
+  turnExecuteStartAt = 0;
+  turnPlansById = {};
+  turnEvents = [];
+  turnFinalPlayers = {};
+  turnLocked = false;
+  turnServerSynced = false;
+  autoReadySent = false;
+  resetTurnBasedPlayback();
+  // Cleanup Colyseus connection
+  colyseusService.leaveRoom().catch(console.error);
+  
+  // Cleanup Supabase sync (for compatibility)
+  pvpSyncService.stopSync();
+  matchmakingService.clearMatch();
+  // Reset server-driven match timer UI
+  pvpMatchEndAt = 0;
+  pvpMatchStartedAt = 0;
+  console.log('PvP cleaned up');
+}
+
+// Get CORS proxy URL for images
+function getCorsProxyUrl(url: string): string {
+  // Use CORS proxy for S3 URLs and other external URLs that might have CORS issues
+  if (url.includes('s3.amazonaws.com') || url.includes('s3.')) {
+    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
+// Load NFT image asynchronously
+function loadNftImage(imageUrl: string, tokenId: string): void {
+  if (!imageUrl || imageUrl.trim() === '') {
+    console.warn(`No image URL for token ${tokenId}`);
+    return;
+  }
+  
+  if (nftImageCache.has(imageUrl) || nftImageLoading.has(imageUrl)) {
+    return; // Already loaded or loading
+  }
+  
+  console.log(`Loading NFT image for token ${tokenId}:`, imageUrl);
+  nftImageLoading.add(imageUrl);
+  
+  const img = new Image();
+  
+  // Try direct load first (for IPFS and other CORS-enabled sources)
+  img.crossOrigin = 'anonymous'; // Allow CORS
+  
+  img.onload = () => {
+    nftImageCache.set(imageUrl, img);
+    nftImageLoading.delete(imageUrl);
+    console.log(`✅ NFT image loaded successfully for token ${tokenId}:`, imageUrl, `(${img.width}x${img.height})`);
+  };
+  
+  img.onerror = (error) => {
+    console.warn(`Direct load failed for token ${tokenId}, trying CORS proxy...`);
+    nftImageLoading.delete(imageUrl);
+    
+    // If direct load failed (likely CORS), try CORS proxy
+    if (imageUrl.includes('s3.amazonaws.com') || imageUrl.includes('s3.')) {
+      const proxyUrl = getCorsProxyUrl(imageUrl);
+      console.log(`Trying CORS proxy for token ${tokenId}:`, proxyUrl);
+      
+      const proxyImg = new Image();
+      proxyImg.crossOrigin = 'anonymous';
+      
+      proxyImg.onload = () => {
+        nftImageCache.set(imageUrl, proxyImg); // Cache with original URL as key
+        nftImageLoading.delete(imageUrl);
+        console.log(`✅ NFT image loaded via proxy for token ${tokenId}:`, imageUrl, `(${proxyImg.width}x${proxyImg.height})`);
+      };
+      
+      proxyImg.onerror = (proxyError) => {
+        console.error(`❌ Failed to load NFT image via proxy for token ${tokenId}:`, imageUrl, proxyError);
+        nftImageLoading.delete(imageUrl);
+      };
+      
+      try {
+        proxyImg.src = proxyUrl;
+      } catch (proxyError) {
+        console.error(`❌ Error setting proxy image src for token ${tokenId}:`, proxyError);
+        nftImageLoading.delete(imageUrl);
+      }
+    } else {
+      console.error(`❌ Failed to load NFT image for token ${tokenId}:`, imageUrl, error);
+    }
+  };
+  
+  try {
+    img.src = imageUrl;
+  } catch (error) {
+    console.error(`❌ Error setting image src for token ${tokenId}:`, error);
+    nftImageLoading.delete(imageUrl);
+  }
+}
+
+// Load player NFTs
+async function loadPlayerNfts(walletAddress: string, opts: { force?: boolean; reason?: string } = {}): Promise<void> {
+  if (isLoadingNfts) return; // Already loading
+  
+  const force = !!opts.force;
+  const reason = opts.reason || 'manual';
+  const normalized = String(walletAddress || '');
+  if (!normalized) return;
+
+  const addressChanged = !!(nftLoadedWalletAddress && nftLoadedWalletAddress !== normalized);
+  // Avoid unnecessary reloads (but allow force reload).
+  if (!force && !addressChanged && nftLoadedOnce && (Date.now() - nftLoadedAt) < NFT_AUTOLOAD_COOLDOWN_MS) {
+    return;
+  }
+  
+  isLoadingNfts = true;
+  nftError = null;
+  // IMPORTANT: Don't wipe the current list when reloading for the same wallet (prevents bonus/UI flicker).
+  // Only clear when wallet changes or we've never loaded before.
+  if (addressChanged || !nftLoadedOnce) {
+  nftList = [];
+  nftCurrentPage = 0;
+  }
+  
+  try {
+    console.log('Loading NFTs for wallet:', normalized, `(reason=${reason}${force ? ', force' : ''})`);
+    nftLoadedWalletAddress = normalized;
+    const nfts = await nftService.loadPlayerNfts(normalized);
+    nftList = nfts;
+    nftLoadedAt = Date.now();
+    nftLoadedOnce = true;
+    console.log(`Loaded ${nfts.length} NFTs`);
+    
+    // Preload images for all NFTs
+    nfts.forEach((nft) => {
+      if (nft.image) {
+        loadNftImage(nft.image, nft.tokenId);
+      }
+    });
+  } catch (error: any) {
+    console.error('Failed to load NFTs:', error);
+    nftError = error.message || 'Could not load your Ronkeverse NFTs. Please try again later.';
+    // If loading fails, keep previously loaded list (if any) to avoid flicker.
+    if (!nftLoadedOnce || addressChanged) {
+    nftList = [];
+    }
+  } finally {
+    isLoadingNfts = false;
+  }
+}
+
+function maybeAutoLoadNfts(reason: string, force: boolean = false): void {
+  try {
+    const state = walletService.getState();
+    const addr = state?.address;
+    if (!state?.isConnected || !addr) return;
+    void loadPlayerNfts(addr, { reason, force });
+  } catch {}
+}
+
+function syncReadyStateFromRoom(room: any): void {
+  if (!room || !room.state || !room.state.players) {
+    return;
+  }
+
+  // Sync cosmetic data (e.g. NFT profile picture) from authoritative room state.
+  try {
+    room.state.players.forEach((player: any) => {
+      const sid = String(player?.sessionId || '');
+      if (!sid || !pvpPlayers[sid]) return;
+      if (typeof player.profilePicture === 'string') {
+        const url = player.profilePicture || undefined;
+        if (pvpPlayers[sid].profilePicture !== url) {
+          pvpPlayers[sid].profilePicture = url;
+          if (url && !nftImageCache.has(url)) {
+            loadNftImage(url, `profile_${sid}`);
+          }
+        }
+      }
+    });
+  } catch {}
+
+  // Turn-based PvP phase sync via state patches (fallback if onMessage ordering drops/arrives early)
+  if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
+    const phase = (room.state as any)?.phase;
+    if (phase === 'planning' || phase === 'execute' || phase === 'lobby') {
+      turnPhase = phase as TurnPhase;
+      turnServerSynced = true;
+    } else if ((room.state as any)?.gameStarted && turnPhase === 'lobby') {
+      // If game started but phase isn't present yet, do NOT assume planning (would cause fake overlay).
+    }
+    const endsAt = (room.state as any)?.phaseEndsAt;
+    if (typeof endsAt === 'number') turnPhaseEndsAt = endsAt;
+    const executeStartAt = (room.state as any)?.executeStartAt;
+    if (typeof executeStartAt === 'number') turnExecuteStartAt = executeStartAt;
+    const roundId = (room.state as any)?.roundId;
+    if (typeof roundId === 'number') turnRoundId = roundId;
+  }
+
+  // If currentMatch is missing (transitions), still keep basic flags consistent.
+  // (We only write into currentMatch when it exists.)
+  const myAddress = getMyPvpAddress();
+  const mySessionId = room.sessionId;
+
+  const orderedPlayers: any[] = [];
+  room.state.players.forEach((player: any) => {
+    orderedPlayers.push(player);
+  });
+
+  if (orderedPlayers.length === 0) {
+    return;
+  }
+
+  // If 2 players are present but the server didn't start yet, ensure we send ready at least once.
+  // This avoids "I pressed ready but it didn't start" cases due to UI/state transitions.
+  if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
+    const playersCount = orderedPlayers.length;
+    const started = !!room.state.gameStarted;
+    if (playersCount >= 2 && !started && !autoReadySent) {
+      autoReadySent = true;
+      isReady = true;
+      colyseusService.sendReady(true);
+    }
+    if (started) {
+      autoReadySent = false;
+    }
+  }
+
+  if (currentMatch) {
+    if (orderedPlayers[0]?.address) {
+      currentMatch.p1 = orderedPlayers[0].address;
+    }
+    if (orderedPlayers[1]?.address) {
+      currentMatch.p2 = orderedPlayers[1].address;
+    }
+  }
+
+  const myPlayer =
+    orderedPlayers.find((p) => p.sessionId === mySessionId) ||
+    orderedPlayers.find((p) => p.address === myAddress);
+
+  const opponent =
+    orderedPlayers.find((p) => p.sessionId !== (myPlayer?.sessionId || '')) ||
+    orderedPlayers.find((p) => p.address && p.address !== myPlayer?.address);
+
+  if (!myPlayer) {
+    return;
+  }
+
+  if (opponent?.address) {
+    opponentWalletAddress = opponent.address;
+  }
+
+  const amPlayer1 =
+    (myAddress && currentMatch && currentMatch.p1 === myAddress) ||
+    (orderedPlayers[0] && orderedPlayers[0].sessionId === myPlayer.sessionId);
+
+  if (currentMatch) {
+    if (amPlayer1) {
+      currentMatch.p1Ready = myPlayer.ready;
+      currentMatch.p2Ready = opponent ? opponent.ready : false;
+    } else {
+      currentMatch.p1Ready = opponent ? opponent.ready : false;
+      currentMatch.p2Ready = myPlayer.ready;
+    }
+  }
+
+  isReady = myPlayer.ready;
+  waitingForOpponentReady = !room.state.gameStarted && orderedPlayers.length >= 2;
+  if (orderedPlayers.length >= 2) {
+    isInLobby = false;
+    isSearchingForMatch = false;
+  }
+}
+
+// Enter PvP lobby (Colyseus primary, Supabase fallback)
+async function enterLobby(forcedEndpoint?: string): Promise<void> {
+  const myAddress = getMyPvpAddress();
+  isInLobby = true;
+  isSearchingForMatch = true;
+  lobbySearchStartTime = Date.now();
+  currentMatch = null;
+  isReady = false;
+  waitingForOpponentReady = false;
+
+  // Check if Colyseus endpoint is configured
+  // IMPORTANT: Vite replaces import.meta.env.VITE_* at build time
+  // For local development, use default ws://localhost:2567
+  // For production (Netlify), use Colyseus Cloud endpoint
+  const isProduction = import.meta.env.PROD || 
+    (window.location.hostname !== 'localhost' && 
+     window.location.hostname !== '127.0.0.1');
+  
+  // Default endpoints
+  const defaultLocalEndpoint = 'ws://localhost:2567';
+  
+  // Use environment variable if set, otherwise use default based on environment
+  let colyseusEndpoint = import.meta.env.VITE_COLYSEUS_ENDPOINT;
+  
+  const selectedServerEndpoint = forcedEndpoint || getSelectedServerEndpoint();
+  if (selectedServerEndpoint) {
+    colyseusEndpoint = selectedServerEndpoint;
+  }
+
+  if (!colyseusEndpoint) {
+    if (isProduction) {
+      // Production: Try to use default Colyseus Cloud endpoint as fallback
+      colyseusEndpoint = 'https://de-fra-f8820c12.colyseus.cloud';
+      console.warn('⚠️ VITE_COLYSEUS_ENDPOINT not set, using default Colyseus Cloud endpoint');
+    } else {
+      // Local: use localhost endpoint
+      colyseusEndpoint = defaultLocalEndpoint;
+      console.log('🔵 Using default localhost endpoint for local development');
+    }
+  }
+  
+  console.log('🔍 Environment check in enterLobby:', {
+    hasEnv: !!import.meta.env.VITE_COLYSEUS_ENDPOINT,
+    endpoint: colyseusEndpoint ? colyseusEndpoint.substring(0, 50) + '...' : 'not set',
+    isProduction: isProduction,
+    hostname: window.location.hostname,
+    allEnvKeys: Object.keys(import.meta.env).filter(k => k.startsWith('VITE_'))
+  });
+  
+  console.log('🔵 Attempting Colyseus connection first...', colyseusEndpoint);
+
+  // TRY COLYSEUS FIRST (Primary System)
+  try {
+    console.log('🔵 Connecting to Colyseus server...', { endpoint: colyseusEndpoint });
+    
+    // Always create new client with the correct endpoint (overrides constructor default)
+    const connected = await colyseusService.connect(colyseusEndpoint);
+    if (!connected) {
+      throw new Error(`Failed to connect to Colyseus server at ${colyseusEndpoint}`);
+    }
+    
+    console.log('✅ Connected to Colyseus server, joining room...');
+    
+    // Calculate player stats (prevents 100/61 mismatches - server uses these on join)
+    const nftBonuses = calculateNftBonuses();
+    const totalMaxHP = dotMaxHP + nftBonuses.hp;
+    const playerStats = {
+      hp: dotHP, // Current HP (not maxHP, use actual current)
+      maxHP: totalMaxHP,
+      armor: dotArmor,
+      maxArmor: dotMaxArmor,
+      profilePicture: profileManager.getProfilePicture(),
+      // UFO ticket gating (optional; server will verify if enabled)
+      ufoTicketTokenId: getPewPewUfoTicketTokenId() || undefined
+    };
+    
+    // Join or create room (Colyseus handles matchmaking automatically)
+    const room = await colyseusService.joinOrCreateRoom(pvpOnlineRoomName, myAddress, handleOpponentInput, playerStats);
+    
+    if (!room) {
+      throw new Error('Failed to join Colyseus room - room is null');
+    }
+
+    console.log('✅ Successfully joined Colyseus room:', room.id);
+    console.log('✅ Using Colyseus as primary PvP system');
+    
+    // Turn-based PvP (micro-turn) handlers
+    room.onMessage("phase", (msg: any) => {
+      if (!TURN_BASED_PVP_ENABLED) return;
+      turnServerSynced = true;
+      turnWaitStartAt = 0;
+      if (typeof msg?.serverNow === 'number') {
+        turnServerClockOffsetMs = msg.serverNow - Date.now();
+      }
+      if (typeof msg?.planMs === 'number') {
+        turnPlanDurationMs = Math.max(1000, Math.min(60000, msg.planMs));
+      }
+      if (typeof msg?.executeMs === 'number') {
+        turnExecuteDurationMs = Math.max(1000, Math.min(60000, msg.executeMs));
+      }
+      // #region agent log
+      try {
+        if (AGENT_DEBUG_LOGS_ENABLED) {
+        fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:phase:onMessage',message:'client received phase',data:{phase:msg?.phase,roundId:msg?.roundId,endsAt:msg?.endsAt,planMs:msg?.planMs??null,executeMs:msg?.executeMs??null,serverNow:msg?.serverNow??null,clockOffset:turnServerClockOffsetMs},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E2'})}).catch(()=>{});
+        }
+      } catch {}
+      // #endregion
+      const phase = msg?.phase as TurnPhase;
+      turnPhase = (phase === 'planning' || phase === 'execute' || phase === 'lobby') ? phase : turnPhase;
+      if (typeof msg?.roundId === 'number') turnRoundId = msg.roundId;
+      if (typeof msg?.endsAt === 'number') turnPhaseEndsAt = msg.endsAt;
+      turnLocked = false;
+
+      if (turnPhase === 'planning') {
+        // Reset local playback state at the start of each planning phase.
+        resetTurnBasedPlayback();
+        // Ensure player objects exist even if game_start handler ordering was weird
+        ensure5SecPvPPlayersFromRoom();
+        // Shadow plan recording timebase (server-aligned)
+        if (typeof msg?.endsAt === 'number') {
+          turnPlanStartServerTs = msg.endsAt - (turnPlanDurationMs || 5000);
+        }
+        // Ensure we have a default plan (stand still) so server always has something.
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const p = pvpPlayers[myPlayerId];
+          turnLocalTrack = [{ tMs: 0, x: p.x, y: p.y }];
+          turnLocalSpawns = [];
+          const nftBonuses = calculateNftBonuses();
+          const totalDmg = dmg + (nftBonuses?.dmg || 0);
+          const totalCritChance = critChance + (nftBonuses?.critChance || 0);
+          colyseusService.sendPlan({ track: turnLocalTrack, spawns: turnLocalSpawns, stats: { dmg: totalDmg, critChance: totalCritChance } });
+        }
+      }
+    });
+
+    room.onMessage("plan_ack", (msg: any) => {
+      if (!TURN_BASED_PVP_ENABLED) return;
+      if (typeof msg?.locked === 'boolean') {
+        turnLocked = msg.locked;
+      }
+    });
+
+    room.onMessage("round_execute", (payload: any) => {
+      if (!TURN_BASED_PVP_ENABLED) return;
+      turnServerSynced = true;
+      turnWaitStartAt = 0;
+      turnLastRoundExecuteAt = Date.now();
+      turnPhase = 'execute';
+      if (typeof payload?.roundId === 'number') turnRoundId = payload.roundId;
+      if (typeof payload?.startAt === 'number') turnExecuteStartAt = payload.startAt;
+      if (typeof payload?.durationMs === 'number') turnExecuteDurationMs = payload.durationMs;
+      if (typeof payload?.moveSpeed === 'number') turnMoveSpeed = payload.moveSpeed;
+      if (typeof payload?.windupMs === 'number') turnWindupMs = payload.windupMs;
+      if (typeof payload?.seed === 'number') turnExecuteSeed = payload.seed;
+      turnEvents = Array.isArray(payload?.events) ? payload.events : [];
+      turnPlansById = (payload?.plans && typeof payload.plans === 'object') ? payload.plans : turnPlansById;
+      turnFinalPlayers = (payload?.finalState?.players && typeof payload.finalState.players === 'object') ? payload.finalState.players : {};
+
+      // Capture start positions for deterministic local playback.
+      resetTurnBasedPlayback();
+      // Clear legacy realtime projectile state to avoid double-simulation.
+      bullets = [];
+      opponentBulletFlying = false;
+      projectileFlying = false;
+      pvpKatanaFlying = false;
+      opponentArrowFlying = false;
+      opponentProjectileFlying = false;
+      for (const pid of Object.keys(turnPlansById || {})) {
+        const pl = pvpPlayers[pid];
+        if (pl) {
+          turnStartPosById[pid] = { x: pl.x, y: pl.y };
+        }
+      }
+    });
+
+    // Set up room event handlers
+    room.onMessage("player_joined", (message: any) => {
+      console.log('Player joined:', message);
+      if (message.playerCount === 2) {
+        isInLobby = false;
+        isSearchingForMatch = false;
+        waitingForOpponentReady = true;
+        console.log('Both players joined! Waiting for ready...');
+        
+        // Update currentMatch with opponent info
+        if (currentMatch) {
+          const players = Array.from(room.state.players.values());
+          const opponent = players.find(p => p.sessionId !== room.sessionId);
+          if (opponent && opponent.address) {
+            currentMatch.p2 = opponent.address;
+            // CRITICAL: Save opponent wallet address for result screen
+            opponentWalletAddress = opponent.address;
+            console.log('Saved opponent wallet address:', opponentWalletAddress);
+          }
+        }
+        
+        syncReadyStateFromRoom(room);
+      }
+    });
+
+    // Match timer (server-authoritative)
+    room.onMessage("match_timer", (msg: any) => {
+      if (typeof msg?.endAt === 'number') {
+        pvpMatchEndAt = msg.endAt;
+      }
+      if (typeof msg?.startAt === 'number') {
+        pvpMatchStartedAt = msg.startAt;
+      }
+    });
+
+    // Match end (server-authoritative)
+    room.onMessage("match_end", (msg: any) => {
+      const winnerSid: string | null = (typeof msg?.winnerSid === 'string') ? msg.winnerSid : null;
+      const reason: string | undefined = (typeof msg?.reason === 'string') ? msg.reason : undefined;
+      pvpMatchEndedByServer = true;
+      pvpMatchEndedServerAt = Date.now();
+      pvpMatchEndReason = reason || null;
+      pvpWinnerSidFromServer = winnerSid;
+      // Replay id (server-side recorder)
+      lastReplayId = (typeof msg?.replayId === 'string' && msg.replayId.trim()) ? msg.replayId.trim() : null;
+      try {
+        const ep = (getSelectedServerEndpoint() || '').trim();
+        const httpEp = ep.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+        lastReplayLink = (lastReplayId && httpEp) ? `${httpEp.replace(/\/$/, '')}/replays/${lastReplayId}` : (lastReplayId ? `/replays/${lastReplayId}` : null);
+        lastReplayViewerLink = lastReplayId
+          ? `${window.location.origin.replace(/\/$/, '')}/replay.html?endpoint=${encodeURIComponent(httpEp || '')}&id=${encodeURIComponent(lastReplayId)}`
+          : null;
+        (window as any).__lastReplayId = lastReplayId;
+        (window as any).__lastReplayLink = lastReplayLink;
+        (window as any).__lastReplayViewerLink = lastReplayViewerLink;
+        if (lastReplayId) console.log('[REPLAY] saved:', { replayId: lastReplayId, link: lastReplayLink, viewer: lastReplayViewerLink, reason });
+      } catch {}
+
+      // If IDs not ready yet, defer decision.
+      if (!myPlayerId) {
+        pendingMatchEnd = { winnerSid, reason };
+        return;
+      }
+
+      if (winnerSid && myPlayerId) {
+        matchResult = (winnerSid === myPlayerId) ? 'victory' : 'defeat';
+      } else {
+        // Draw: treat as defeat for now (we can add DRAW UI later if you want)
+        matchResult = 'defeat';
+      }
+      // If I lost, my UFO Ticket is considered destroyed (must mint again).
+      if (matchResult === 'defeat') {
+        clearPewPewUfoTicketLocal();
+      }
+      matchResultEloChange = (matchResult === 'victory') ? 10 : -5;
+      showingMatchResult = true;
+
+      // Apply XP/W/L now (server-authoritative).
+      try {
+        if (matchResult === 'victory') {
+          profileManager.addWinPvP();
+          profileManager.addXP(3);
+        } else {
+          profileManager.addLossPvP();
+          profileManager.addXP(-1);
+        }
+      } catch {}
+    });
+
+    // If server denies join (UFO ticket required/invalid), show error and leave.
+    room.onMessage("join_denied", (msg: any) => {
+      const r = (msg?.reason || '').toString();
+      walletError = r ? `PvP denied: ${r}` : 'PvP denied';
+      try { void leaveLobby(); } catch {}
+    });
+
+    // Listen to room state changes for ready status
+    room.onStateChange((state) => {
+      if (state && state.players) {
+        syncReadyStateFromRoom(room);
+      }
+    });
+
+    room.onMessage("game_start", (message: any) => {
+      console.log('Game started!', message);
+      waitingForOpponentReady = false;
+      isInLobby = false; // Exit lobby when game starts
+      gameMode = 'PvP'; // Ensure game mode is set to PvP
+      if (TURN_BASED_PVP_ENABLED && colyseusService.isConnectedToRoom()) {
+        // Start "waiting for turn loop" timer (detect outdated server / wrong endpoint)
+        turnWaitStartAt = Date.now();
+      }
+      // Initialize PvP game
+      const roomState = colyseusService.getState();
+      if (roomState) {
+        // Get opponent session ID
+        const players = Array.from(roomState.players.keys());
+        const mySessionId = room.sessionId;
+        const opponentSessionId = players.find(id => id !== mySessionId);
+        
+        if (opponentSessionId) {
+          // Initialize PvP with Colyseus room data
+          initializePvPWithColyseus(room, mySessionId, opponentSessionId);
+          console.log('PvP game initialized, players:', Object.keys(pvpPlayers));
+        }
+      }
+
+      // If server already ended match and we queued it (rare ordering), apply now.
+      if (pendingMatchEnd) {
+        const winnerSid = pendingMatchEnd.winnerSid;
+        if (winnerSid && myPlayerId) {
+          matchResult = (winnerSid === myPlayerId) ? 'victory' : 'defeat';
+        } else {
+          matchResult = 'defeat';
+        }
+        matchResultEloChange = (matchResult === 'victory') ? 10 : -5;
+        showingMatchResult = true;
+        pendingMatchEnd = null;
+        pvpMatchEndedByServer = true;
+        pvpMatchEndedServerAt = Date.now();
+        pvpWinnerSidFromServer = winnerSid;
+        // Apply XP/W/L now (server-authoritative).
+        try {
+          if (matchResult === 'victory') {
+            profileManager.addWinPvP();
+            profileManager.addXP(3);
+          } else {
+            profileManager.addLossPvP();
+            profileManager.addXP(-1);
+          }
+        } catch {}
+      }
+    });
+
+    // Create a mock match object for compatibility
+    currentMatch = {
+      id: room.id,
+      p1: myAddress,
+      p2: '', // Will be set when opponent joins
+      state: 'waiting' as const,
+      seed: room.state?.seed || Math.floor(Math.random() * 1000000),
+      winner: null,
+      p1Ready: false,
+      p2Ready: false,
+      created_at: new Date().toISOString()
+    };
+
+    // Ensure ready UI syncs with current room state (handles joining second)
+    syncReadyStateFromRoom(room);
+
+    // Successfully connected to Colyseus - return early
+    return;
+
+  } catch (error: any) {
+    console.error('❌ Colyseus connection failed:', error);
+    console.error('❌ Error details:', {
+      message: error?.message,
+      endpoint: colyseusEndpoint,
+      isProduction: isProduction,
+      errorType: error?.name,
+      errorCode: error?.code,
+      stack: error?.stack
+    });
+    
+    // Check for specific error types
+    if (error?.message?.includes('CORS') || error?.message?.includes('Access-Control')) {
+      walletError = 'CORS Error: Colyseus serveris blokuoja request\'us. Reikia redeploy\'inti serverį su nauja CORS konfigūracija.';
+      console.error('❌ CORS ERROR DETECTED!');
+      console.error('❌ Sprendimas: Colyseus Cloud → Deployments → Redeploy');
+    } else if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError') || error?.message?.includes('ERR_FAILED')) {
+      walletError = 'Network Error: Negaliu pasiekti Colyseus serverio. Patikrinkite ar serveris veikia.';
+      console.error('❌ NETWORK ERROR DETECTED!');
+      console.error('❌ Patikrinkite: https://de-fra-f8820c12.colyseus.cloud/health');
+    } else if (error?.message?.includes('room is null')) {
+      walletError = 'Colyseus Room Error: Negaliu prisijungti prie room. Patikrinkite ar serveris deploy\'intas su nauja versija.';
+      console.error('❌ ROOM NULL ERROR DETECTED!');
+      console.error('❌ Sprendimas: Colyseus Cloud → Deployments → Redeploy');
+    } else {
+      walletError = `Colyseus Error: ${error?.message || 'Unknown error'}. Patikrinkite serverio status.`;
+    }
+    
+    isInLobby = false;
+    isSearchingForMatch = false;
+    
+    // NO SUPABASE FALLBACK - Focus only on Colyseus
+    console.warn('⚠️ Colyseus failed - no fallback. Please fix Colyseus server.');
+  }
+}
+
+async function loadLeaderboard(force: boolean = false): Promise<void> {
+  if (leaderboardLoading) return;
+  const now = Date.now();
+  if (!force && leaderboardRows.length > 0 && now - leaderboardLastLoadedAt < 30_000) {
+    return;
+  }
+  leaderboardLoading = true;
+  leaderboardError = null;
+  try {
+    if (!supabaseService.isConfigured()) {
+      leaderboardRows = [];
+      leaderboardError = 'Leaderboard unavailable. Set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY in .env.local and restart.';
+      return;
+    }
+
+    // Best-effort: update my PvP maxHP snapshot before fetching (so I show correctly).
+    try {
+      const pid = getRoninAddressForPersistence();
+      if (pid) {
+        // Prefer live PvP maxHP if available; fallback to computed PvP maxHP.
+        const liveMaxHP =
+          (gameMode === 'PvP' && myPlayerId && pvpPlayers[myPlayerId] && typeof pvpPlayers[myPlayerId].maxHP === 'number')
+            ? pvpPlayers[myPlayerId].maxHP
+            : (dotMaxHP + calculateNftBonuses().hp);
+        const p = profileManager.getProfile();
+        const xp = p.xp || 0;
+        const nickname = p.nickname || '';
+        await supabaseService.updatePvpSnapshot(pid, { maxHP: liveMaxHP, xp, nickname });
+      }
+    } catch {}
+
+    const raw = await supabaseService.fetchLeaderboardEntries(800);
+    if (!raw || raw.length === 0) {
+      leaderboardRows = [];
+      leaderboardError = 'No leaderboard data. If you expected data, check Supabase RLS/policies for profiles SELECT.';
+      return;
+    }
+    // Sort client-side (numeric) to avoid JSON ordering issues in PostgREST.
+    raw.sort((a, b) => {
+      const aw = a.wins || 0, bw = b.wins || 0;
+      if (bw !== aw) return bw - aw; // wins desc
+      const al = a.losses || 0, bl = b.losses || 0;
+      if (al !== bl) return al - bl; // losses asc
+      const ah = a.maxHP || 0, bh = b.maxHP || 0;
+      if (bh !== ah) return bh - ah; // maxHP desc
+      const ae = a.elo || 0, be = b.elo || 0;
+      return be - ae; // elo desc
+    });
+    leaderboardRows = raw;
+    leaderboardLastLoadedAt = Date.now();
+    // Clamp page in case list shrunk
+    const maxPage = Math.max(0, Math.ceil(leaderboardRows.length / leaderboardPageSize) - 1);
+    leaderboardPage = Math.max(0, Math.min(leaderboardPage, maxPage));
+  } catch (e: any) {
+    leaderboardRows = [];
+    leaderboardError = e?.message || 'Failed to load leaderboard';
+  } finally {
+    leaderboardLoading = false;
+  }
+}
+
+// Leave PvP lobby
+async function leaveLobby(): Promise<void> {
+  // Leave Colyseus room if connected
+  if (colyseusService.isConnectedToRoom()) {
+    await colyseusService.leaveRoom().catch(console.error);
+  }
+
+  // Note: Supabase matchmaking cleanup removed - using Colyseus only
+
+  isInLobby = false;
+  isSearchingForMatch = false;
+  currentMatch = null;
+  isReady = false;
+  waitingForOpponentReady = false;
+  walletError = null;
+  cleanupPvP();
+}
+
+// Subscribe to match updates to detect when both players are ready
+function subscribeToMatchUpdates(matchId: string, myAddress: string, isPlayer1: boolean): void {
+  // 5SEC PvP is Colyseus-only. Never start the legacy Supabase match flow here,
+  // otherwise we can re-initialize players using wallet-address IDs and break EXECUTE replay
+  // (server sends turn plans keyed by sessionId).
+  if (TURN_BASED_PVP_ENABLED || pvpOnlineRoomName === 'pvp_5sec_room') {
+    return;
+  }
+  const client = supabaseService.getClient();
+  if (!client) {
+    console.error('Cannot subscribe to match updates: Supabase client is null');
+    return;
+  }
+
+  // CRITICAL: Prevent duplicate subscriptions (HMR protection)
+  const channelKey = `matchChannel_${matchId}`;
+  if ((window as any)[channelKey]) {
+    console.warn(`⚠️ Match channel ${matchId} already exists - skipping duplicate subscription (HMR protection)`);
+    return;
+  }
+
+  console.log('Subscribing to match updates...', { matchId, myAddress, isPlayer1 });
+
+  // Listen to match state changes
+  const matchChannel = client
+    .channel(`match_ready_${matchId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
+        filter: `id.eq.${matchId}`,
+      },
+      async (payload: any) => {
+        console.log('Received match update via subscription:', payload);
+        const match = payload.new as Match;
+        console.log('Match updated via subscription:', match);
+        
+        // Always update currentMatch to reflect latest state
+        currentMatch = match;
+        
+        // Update local ready state
+        const isMePlayer1 = match.p1 === myAddress;
+        if (isMePlayer1) {
+          isReady = match.p1Ready === true;
+        } else {
+          isReady = match.p2Ready === true;
+        }
+        
+        console.log('Match state updated via subscription:', { 
+          p1Ready: match.p1Ready, 
+          p2Ready: match.p2Ready, 
+          state: match.state,
+          myReady: isReady,
+          isMePlayer1
+        });
+        
+        // Check if both players are ready
+        if (match.p1Ready === true && match.p2Ready === true && match.state === 'active') {
+          console.log('Both players ready! Starting game...');
+          waitingForOpponentReady = false;
+          
+          // CRITICAL: Unsubscribe from match updates BEFORE starting game
+          // This frees up Supabase connection and prevents rate limiting
+          await matchChannel.unsubscribe();
+          console.log('Unsubscribed from match updates');
+          
+          // Initialize PvP with match data
+          // Guard: 5SEC PvP uses Colyseus sessionIds; never re-init via Supabase match IDs.
+          if (TURN_BASED_PVP_ENABLED || pvpOnlineRoomName === 'pvp_5sec_room') return;
+          initializePvPWithMatch(match, isPlayer1);
+        }
+      }
+    )
+    .subscribe((status: string) => {
+      console.log('Match subscription status:', status);
+      if (status === 'SUBSCRIBED') {
+        console.log('Successfully subscribed to match updates');
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error('Error subscribing to match updates');
+      }
+    });
+  
+  // Store channel reference for cleanup
+  (window as any)[`matchChannel_${matchId}`] = matchChannel;
+}
+
+// Set player ready (Colyseus only - no Supabase fallback)
+async function setPlayerReady(): Promise<void> {
+  console.log('=== setPlayerReady() called ===');
+  
+  if (!colyseusService.isConnectedToRoom()) {
+    console.error('❌ Cannot set ready: Colyseus not connected');
+    walletError = 'Not connected to game server. Please reconnect.';
+    return;
+  }
+
+  // Restore legacy behavior: require currentMatch (keeps old UI/flow consistent)
+  if (!currentMatch) {
+    console.error('Cannot set ready: no current match');
+    return;
+  }
+  const myAddress = getMyPvpAddress();
+
+  // Use Colyseus only
+  isReady = !isReady; // Toggle ready state
+  const success = colyseusService.sendReady(isReady);
+  
+  if (success) {
+    console.log('✅ Player ready status sent to Colyseus:', isReady);
+    
+    // Update local match state (will be synced via onStateChange)
+    if (currentMatch) {
+      const isPlayer1 = currentMatch.p1 === myAddress;
+      if (isPlayer1) {
+        currentMatch.p1Ready = isReady;
+      } else {
+        currentMatch.p2Ready = isReady;
+      }
+    }
+  } else {
+    console.error('❌ Failed to send ready to Colyseus');
+    isReady = false;
+  }
+  
+  console.log('=== setPlayerReady() completed ===');
+}
+
+// Initialize PvP with Colyseus room
+function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessionId: string): void {
+  // Preserve jetpack fuel between PvP "rounds" (when PvP is re-initialized)
+  snapshotPvpFuelCarryover();
+  // Clear any existing players first
+  pvpPlayers = {};
+  pvpSideById = {};
+  
+  // Clear death animations when starting new game
+  deathAnimations.clear();
+  
+  // Reset health packs when starting new PvP game
+  healthPack = null;
+  lastHealthPackPickupTime = 0;
+  healthPackPositionIndex = 0; // Reset to center position
+  pvpGameStartTime = Date.now(); // Record game start time for initial spawn delay
+  
+  const myAddress = getMyPvpAddress();
+  
+  // CRITICAL: Get opponent wallet address from room state
+  const roomState = colyseusService.getState();
+  if (roomState && roomState.players) {
+    const players = Array.from(roomState.players.values());
+    const opponent = players.find(p => p.sessionId === opponentSessionId);
+    if (opponent && opponent.address) {
+      opponentWalletAddress = opponent.address;
+      // Update currentMatch.p2 if not already set
+      if (currentMatch && !currentMatch.p2) {
+        currentMatch.p2 = opponent.address;
+      }
+      console.log('Saved opponent wallet address in initializePvPWithColyseus:', opponentWalletAddress);
+    }
+  }
+  
+  // Set player IDs based on session IDs
+  myPlayerId = mySessionId;
+  opponentId = opponentSessionId;
+
+  // Convert Solo stats to PvP stats
+  const pvpMass = soloLevelToPvpMass(currentLevel);
+  const pvpMaxImpulse = soloDmgToPvpMaxImpulse(dmg);
+
+  // Calculate NFT bonuses for HP
+  const nftBonuses = calculateNftBonuses();
+  const totalMaxHP = dotMaxHP + nftBonuses.hp;
+
+  // Prefer authoritative spawn positions from Colyseus room state (server decides sides).
+  // This avoids "roles swapped" / mirrored mid-wall issues when clients derive sides differently.
+  const midX = getPvpMidWallX();
+  const meState: any = (() => {
+    try { return roomState?.players?.get ? roomState.players.get(mySessionId) : null; } catch { return null; }
+  })();
+  const oppState: any = (() => {
+    try { return roomState?.players?.get ? roomState.players.get(opponentSessionId) : null; } catch { return null; }
+  })();
+  const serverMeX = (typeof meState?.x === 'number') ? meState.x : null;
+  const serverMeY = (typeof meState?.y === 'number') ? meState.y : null;
+  const serverOppX = (typeof oppState?.x === 'number') ? oppState.x : null;
+  const serverOppY = (typeof oppState?.y === 'number') ? oppState.y : null;
+  // Legacy fallback (only used if state missing x/y)
+  const sessionIds = [mySessionId, opponentSessionId].sort();
+  const isMePlayer1 = mySessionId === sessionIds[0];
+  const fallbackMeX = isMePlayer1
+    ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25
+    : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75;
+  const fallbackOppX = isMePlayer1
+    ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75
+    : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25;
+  const meX = serverMeX ?? fallbackMeX;
+  const meY = serverMeY ?? (pvpBounds.bottom / 2);
+  const oppX = serverOppX ?? fallbackOppX;
+  const oppY = serverOppY ?? (pvpBounds.bottom / 2);
+  const meSide: PvPSide = meX < midX ? 'left' : 'right';
+  const oppSide: PvPSide = oppX < midX ? 'left' : 'right';
+  // #region agent log
+  try {
+    if (AGENT_DEBUG_LOGS_ENABLED) {
+    fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:initializePvPWithColyseus',message:'spawn/side mapping',data:{mySessionId,opponentSessionId,serverMeX,serverMeY,serverOppX,serverOppY,fallbackMeX,fallbackOppX,meX,meY,oppX,oppY,meSide,oppSide,midX},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H8'})}).catch(()=>{});
+    }
+  } catch {}
+  // #endregion
+  
+  // Initialize my player
+  const myPlayer: PvPPlayer = {
+    id: myPlayerId,
+    x: meX,
+    y: meY,
+    vx: 0,
+    vy: 0,
+    mass: pvpMass,
+    radius: dotRadius,
+    isOut: false,
+    color: '#000000', // Black - ALWAYS black for my player
+    lastHitTime: 0,
+    gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
+    speedTrail: [],
+    hp: totalMaxHP,
+    maxHP: totalMaxHP,
+    armor: dotMaxArmor,
+    maxArmor: dotMaxArmor,
+    outOfBoundsStartTime: null,
+    lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
+    fuel: getCarryoverFuel(myPlayerId), // Carry over fuel from previous round
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    // Toxic water removed
+    profilePicture: profileManager.getProfilePicture(), // Set my profile picture
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
+    facingLeft: false,
+    renderAngle: 0,
+  };
+
+  pvpPlayers[myPlayerId] = myPlayer;
+  pvpSideById[myPlayerId] = meSide;
+  
+  // Send initial profile picture to opponent
+  if (myPlayer.profilePicture) {
+    sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+  }
+
+  // Initialize opponent (use server state HP/armor to prevent 100/61 mismatches)
+  const serverOppHP = (typeof oppState?.hp === 'number') ? oppState.hp : null;
+  const serverOppMaxHP = (typeof oppState?.maxHP === 'number') ? oppState.maxHP : null;
+  const serverOppArmor = (typeof oppState?.armor === 'number') ? oppState.armor : null;
+  const serverOppMaxArmor = (typeof oppState?.maxArmor === 'number') ? oppState.maxArmor : null;
+  const opponent: PvPPlayer = {
+    id: opponentId,
+    x: oppX,
+    y: oppY,
+    vx: 0,
+    vy: 0,
+    mass: 1.0, // Will be synced from network
+    radius: dotRadius,
+    isOut: false,
+    color: '#000000', // Black - ALWAYS black for opponent
+    lastHitTime: 0,
+    gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
+    speedTrail: [],
+    hp: serverOppHP ?? dotMaxHP, // Use server state HP (prevents 100/61 mismatch)
+    maxHP: serverOppMaxHP ?? dotMaxHP,
+    armor: serverOppArmor ?? dotMaxArmor,
+    maxArmor: serverOppMaxArmor ?? dotMaxArmor,
+    outOfBoundsStartTime: null,
+    lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
+    fuel: getCarryoverFuel(opponentId), // Carry over fuel from previous round (local fallback)
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    // Toxic water removed
+    profilePicture: (typeof oppState?.profilePicture === 'string' && oppState.profilePicture) ? oppState.profilePicture : undefined,
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
+    facingLeft: false,
+    renderAngle: 0,
+  };
+
+  // Preload opponent profile picture if available
+  if (opponent.profilePicture && !nftImageCache.has(opponent.profilePicture)) {
+    loadNftImage(opponent.profilePicture, 'opponent_profile');
+  }
+
+  pvpPlayers[opponentId] = opponent;
+  pvpSideById[opponentId] = oppSide;
+
+  // Initialize wall spikes
+  initializeWallSpikes();
+
+  // Ensure we're not in lobby anymore
+  isInLobby = false;
+  gameMode = 'PvP';
+
+  console.log('PvP initialized with Colyseus', { 
+    myPlayerId, 
+    opponentId, 
+    players: Object.keys(pvpPlayers),
+    gameMode,
+    isInLobby 
+  });
+}
+
+// Initialize PvP with match data (Supabase version - kept for compatibility)
+function initializePvPWithMatch(match: Match, isPlayer1: boolean): void {
+  // Preserve jetpack fuel between PvP "rounds" (when PvP is re-initialized)
+  snapshotPvpFuelCarryover();
+  // Clear any existing players first
+  pvpPlayers = {};
+  pvpSideById = {};
+  
+  // Clear death animations when starting new game
+  deathAnimations.clear();
+  
+  // Set player IDs based on match and our identity (wallet/email/guest)
+  const myAddress = getMyPvpAddress();
+  
+  // Determine which player I am based on my wallet address
+  if (match.p1 === myAddress) {
+    myPlayerId = match.p1;
+    opponentId = match.p2;
+  } else if (match.p2 === myAddress) {
+    myPlayerId = match.p2;
+    opponentId = match.p1;
+  } else {
+    // Fallback to isPlayer1 flag if address doesn't match
+    myPlayerId = isPlayer1 ? match.p1 : match.p2;
+    opponentId = isPlayer1 ? match.p2 : match.p1;
+    console.warn('Wallet address does not match match players, using isPlayer1 flag', { myAddress, match });
+  }
+
+  // Convert Solo stats to PvP stats
+  const pvpMass = soloLevelToPvpMass(currentLevel);
+  const pvpMaxImpulse = soloDmgToPvpMaxImpulse(dmg);
+
+  // CRITICAL: Player 1 (p1) always starts on LEFT, Player 2 (p2) always starts on RIGHT
+  // This ensures both players see themselves in the correct position
+  const isMePlayer1 = myPlayerId === match.p1;
+  
+  // Initialize my player - ALWAYS on the side based on whether I'm p1 or p2 - with NFT bonuses
+  const nftBonuses = calculateNftBonuses();
+  const totalMaxHP = dotMaxHP + nftBonuses.hp;
+  const myPlayer: PvPPlayer = {
+    id: myPlayerId,
+    x: isMePlayer1 
+      ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25  // LEFT if I'm p1
+      : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75,  // RIGHT if I'm p2
+    y: pvpBounds.bottom / 2,
+    vx: 0,
+    vy: 0,
+    mass: pvpMass,
+    radius: dotRadius,
+    isOut: false,
+    color: '#000000', // Black - ALWAYS black for my player
+    lastHitTime: 0,
+    gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
+    speedTrail: [],
+    hp: totalMaxHP,
+    maxHP: totalMaxHP,
+    armor: dotMaxArmor,
+    maxArmor: dotMaxArmor,
+    outOfBoundsStartTime: null,
+    lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
+    fuel: getCarryoverFuel(myPlayerId), // Carry over fuel from previous round
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    // Toxic water removed
+    profilePicture: profileManager.getProfilePicture(), // Set my profile picture
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
+    facingLeft: false,
+    renderAngle: 0,
+  };
+
+  pvpPlayers[myPlayerId] = myPlayer;
+  pvpSideById[myPlayerId] = isMePlayer1 ? 'left' : 'right';
+  
+  // Send initial profile picture to opponent
+  if (myPlayer.profilePicture) {
+    sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+  }
+
+  // Initialize opponent - ALWAYS on the opposite side
+  const opponent: PvPPlayer = {
+    id: opponentId,
+    x: isMePlayer1 
+      ? pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.75  // RIGHT if I'm p1
+      : pvpBounds.left + (pvpBounds.right - pvpBounds.left) * 0.25, // LEFT if I'm p2
+    y: pvpBounds.bottom / 2,
+    vx: 0,
+    vy: 0,
+    mass: 1.0, // Will be synced from network
+    radius: dotRadius,
+    isOut: false,
+    color: '#000000', // Black - ALWAYS black for opponent
+    lastHitTime: 0,
+    gravityLocked: true,
+    gravityActiveUntil: 0, // Gravity inactive initially
+    speedTrail: [],
+    hp: dotMaxHP, // Will be synced from network
+    maxHP: dotMaxHP,
+    armor: dotMaxArmor,
+    maxArmor: dotMaxArmor,
+    outOfBoundsStartTime: null,
+    lastOutOfBoundsDamageTime: 0,
+    lastArmorRegen: Date.now(),
+    paralyzedUntil: 0, // Not paralyzed initially
+    fuel: getCarryoverFuel(opponentId), // Carry over fuel from previous round (local fallback)
+    maxFuel: PVP_DEFAULT_MAX_FUEL, // Maximum fuel
+    isUsingJetpack: false, // Not using jetpack initially
+    jetpackStartTime: 0, // When jetpack was started
+    jetpackLastFuelTickTime: 0, // Fuel consumption tick
+    lastFuelRegenTime: 0, // Fuel regeneration disabled (no auto-refill)
+    isOverheated: false, // Not overheated initially
+    overheatStartTime: 0, // When overheat started
+    // Toxic water removed
+    profilePicture: undefined, // Will be synced from opponent
+    ufoTilt: 0, // Initial tilt angle
+    lastVx: 0, // Previous velocity X
+    lastVy: 0, // Previous velocity Y
+    facingLeft: false,
+    renderAngle: 0,
+  };
+
+  pvpPlayers[opponentId] = opponent;
+  pvpSideById[opponentId] = isMePlayer1 ? 'right' : 'left';
+
+  console.log('PvP initialized with match', { 
+    matchId: match.id, 
+    isPlayer1: isMePlayer1,
+    seed: match.seed,
+    myPlayerId,
+    opponentId,
+    myPlayerPosition: pvpPlayers[myPlayerId]?.x,
+    opponentPosition: pvpPlayers[opponentId]?.x,
+    myPlayerColor: pvpPlayers[myPlayerId]?.color,
+    opponentColor: pvpPlayers[opponentId]?.color,
+    players: Object.keys(pvpPlayers),
+    matchP1: match.p1,
+    matchP2: match.p2,
+    myAddress: myAddress
+  });
+  
+  // Initialize wall spikes
+  initializeWallSpikes();
+}
+
+// Handle opponent input from network
+function handleOpponentInput(input: any): void {
+  // #region agent log
+  const __agentOppT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const __agentOppType = input?.type ?? 'unknown';
+  // #endregion
+  try {
+    // 5SEC PvP now uses attacker/defender phases (not replay), so we DO process realtime messages.
+    if (!opponentId || !pvpPlayers[opponentId]) {
+      console.warn('handleOpponentInput: opponentId or opponent not found', { opponentId, players: Object.keys(pvpPlayers) });
+      return;
+    }
+
+    const opponent = pvpPlayers[opponentId];
+
+    // Handle position sync (real-time position updates)
+    // OPTIMIZED: Use client-side prediction - opponent moves via physics between network updates
+    // Only correct position if there's a significant difference (smooth interpolation)
+    if (input.type === 'position' && input.x !== undefined && input.y !== undefined) {
+      // Track network latency (time since input was created)
+      const timestampSource = input.serverTimestamp ?? input.timestamp;
+      if (timestampSource) {
+        const latency = Math.max(0, Date.now() - timestampSource);
+        networkLatencyHistory.push(latency);
+        if (networkLatencyHistory.length > 60) {
+          networkLatencyHistory.shift(); // Keep last 60 measurements
+        }
+        // Calculate average latency
+        const sum = networkLatencyHistory.reduce((a, b) => a + b, 0);
+        averageNetworkLatency = Math.round(sum / networkLatencyHistory.length);
+        lastNetworkUpdateTime = Date.now();
+      }
+
+      // OPTIMIZED for high latency (557ms): Use adaptive correction based on latency
+      // With high latency, we need to trust client-side prediction more
+      const dx = input.x - opponent.x;
+      const dy = input.y - opponent.y;
+      const distanceSquared = dx * dx + dy * dy;
+      
+      // Adaptive correction distance based on latency
+      // Higher latency = larger correction distance (trust prediction more)
+      const adaptiveCorrectionDistance = Math.max(50, averageNetworkLatency / 10); // 50px base, +10px per 100ms latency
+      const maxCorrectionDistance = adaptiveCorrectionDistance;
+      
+      if (distanceSquared > maxCorrectionDistance * maxCorrectionDistance) {
+        // Significant difference - smoothly interpolate towards network position
+        // With high latency, use slower correction to avoid jitter
+        const correctionFactor = averageNetworkLatency > 200 ? 0.3 : 0.6; // Slower correction for high latency
+      // #region agent log
+      try {
+        const win: any = (typeof window !== 'undefined') ? window : {};
+        const now = Date.now();
+        const ss = win.__agentSnapStats || (win.__agentSnapStats = { lastTs: 0 });
+        if (now - ss.lastTs > 500) {
+          ss.lastTs = now;
+          if (AGENT_DEBUG_LOGS_ENABLED) fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:handleOpponentInput',message:'opponent position snap correction',data:{dx,dy,distanceSquared,maxCorrectionDistance,correctionFactor,averageNetworkLatency,serverTimestamp:input.serverTimestamp??null,timestamp:input.timestamp??null},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H10'})}).catch(()=>{});
+        }
+      } catch {}
+      // #endregion
+        opponent.x += dx * correctionFactor;
+        opponent.y += dy * correctionFactor;
+      } else {
+        // Small difference - trust client-side prediction (opponent moves via physics)
+        // Only apply small correction to prevent drift
+        const smallCorrectionFactor = 0.1; // Very small correction to prevent drift
+        opponent.x += dx * smallCorrectionFactor;
+        opponent.y += dy * smallCorrectionFactor;
+      }
+
+      // Keep opponent on their side of the mid-wall (prevents network correction pushing through wall).
+      if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(opponentId, opponent);
+      
+      // Always update velocity from network (critical for physics prediction)
+      // This ensures client-side prediction is accurate
+      if (input.vx !== undefined) opponent.vx = input.vx;
+      if (input.vy !== undefined) opponent.vy = input.vy;
+
+      // Feed render interpolation buffer (use local receive time; post-correction state).
+      pushOpponentSample(Date.now(), opponent);
+      
+      return;
+    }
+
+    // Apply input to opponent (simulate click/action)
+    if (input.type === 'click' && input.x !== undefined && input.y !== undefined) {
+      // Calculate direction from click to opponent
+      const dx = input.x - opponent.x;
+      const dy = input.y - opponent.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance > 0) {
+        const angle = Math.atan2(dy, dx);
+        const oppositeAngle = angle + Math.PI;
+        const force = input.isCrit ? PVP_CLICK_FORCE_CRIT : PVP_CLICK_FORCE; // Use crit flag from input
+        
+        opponent.vx += Math.cos(oppositeAngle) * force;
+        opponent.vy += Math.sin(oppositeAngle) * force;
+        opponent.lastHitTime = input.timestamp;
+        opponent.gravityLocked = false;
+      }
+    }
+
+    // Dash (Space): discrete blink movement, applied instantly for snappy feel.
+    if (input.type === 'dash' && typeof input.x === 'number' && typeof input.y === 'number') {
+      const fromX = opponent.x;
+      const fromY = opponent.y;
+      opponent.x = input.x;
+      opponent.y = input.y;
+      if (typeof input.vx === 'number') opponent.vx = input.vx;
+      if (typeof input.vy === 'number') opponent.vy = input.vy;
+      if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(opponentId, opponent);
+      // Teleport-like movement: reset interpolation so we don't draw a long lerp trail.
+      resetOpponentInterpolation();
+      pushOpponentSample(Date.now(), opponent);
+
+      if (PVP_UFO_SPEED_TRAIL_ENABLED) {
+        // Visual: dense trail between old and new position
+        const steps = 8;
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          opponent.speedTrail.push({
+            x: fromX + (opponent.x - fromX) * t,
+            y: fromY + (opponent.y - fromY) * t,
+            vx: 0,
+            vy: 0,
+            life: 22,
+            maxLife: 22,
+            size: opponent.radius * 1.8
+          });
+        }
+        while (opponent.speedTrail.length > 18) opponent.speedTrail.shift();
+      } else if (opponent.speedTrail.length) {
+        opponent.speedTrail.length = 0;
+      }
+      return;
+    }
+    
+    // Handle arrow input from opponent (launch event)
+    if (input.type === 'arrow' && input.x !== undefined && input.y !== undefined) {
+    opponentArrowFlying = true;
+    // If opponent UFO is rendered with interpolation, their "visual" position is slightly delayed.
+    // To keep the arrow visually attached to the UFO on THIS client, shift the spawn point by the current render offset.
+    // (Hit is server-authoritative, so this is safe as a pure visual tweak.)
+    const now = Date.now();
+    let sx = 0;
+    let sy = 0;
+    const ip = getOpponentInterpolatedPos(now);
+    if (ip) {
+      sx = ip.x - opponent.x;
+      sy = ip.y - opponent.y;
+    }
+    opponentArrowX = input.x + sx;
+    opponentArrowY = input.y + sy;
+    opponentArrowLastUpdateAt = Date.now();
+    opponentArrowTravelPx = 0;
+    opponentArrowStoneBounceCount = 0;
+    opponentArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+    opponentArrowExpireAt = 0;
+    if (input.targetX !== undefined && input.targetY !== undefined) {
+      const dx = input.targetX - (input.x + sx);
+      const dy = input.targetY - (input.y + sy);
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > 0) {
+        opponentArrowVx = (dx / distance) * pvpKatanaSpeed;
+        opponentArrowVy = (dy / distance) * pvpKatanaSpeed;
+        opponentArrowAngle = Math.atan2(dy, dx);
+      }
+    }
+    console.log('Opponent arrow launched', { x: input.x, y: input.y, targetX: input.targetX, targetY: input.targetY });
+  }
+  
+  // Arrow position sync disabled (bandwidth optimization). We simulate from launch event only.
+  // (If we ever re-enable, do it as a rare correction/heartbeat.)
+  
+  // Handle projectile input from opponent (launch event)
+  if (input.type === 'projectile' && input.x !== undefined && input.y !== undefined) {
+    opponentProjectileFlying = true;
+    opponentProjectileX = input.x;
+    opponentProjectileY = input.y;
+    opponentProjectileLastUpdateAt = Date.now();
+    // IMPORTANT: Use local clock for lifetime to avoid clock-skew making projectile instantly disappear on some clients.
+    opponentProjectileSpawnTime = Date.now();
+    opponentProjectileBounceCount = 0; // Reset bounce count
+    
+    // Create explosion animation at opponent's launch position
+    createProjectileExplosion(opponentProjectileX, opponentProjectileY);
+    
+    if (typeof input.vx === 'number' && typeof input.vy === 'number') {
+      opponentProjectileVx = input.vx;
+      opponentProjectileVy = input.vy;
+    } else if (input.targetX !== undefined && input.targetY !== undefined) {
+      const dx = input.targetX - input.x;
+      const dy = input.targetY - input.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > 0) {
+        const fallbackSpeed = projectileLaunchSpeed;
+        opponentProjectileVx = (dx / distance) * fallbackSpeed;
+        opponentProjectileVy = (dy / distance) * fallbackSpeed;
+      }
+    }
+    console.log('Opponent projectile launched', { x: input.x, y: input.y, targetX: input.targetX, targetY: input.targetY });
+  }
+  
+  // Handle projectile position sync from opponent (real-time position updates)
+  if (input.type === 'projectile_position' && input.x !== undefined && input.y !== undefined) {
+    if (!opponentProjectileFlying) {
+      // Projectile was launched but we missed the launch event - initialize it
+      opponentProjectileFlying = true;
+      // IMPORTANT: Use local clock for lifetime to avoid clock-skew issues.
+      opponentProjectileSpawnTime = Date.now();
+      opponentProjectileBounceCount = 0;
+    }
+    opponentProjectileX = input.x;
+    opponentProjectileY = input.y;
+    if (input.vx !== undefined) opponentProjectileVx = input.vx;
+    if (input.vy !== undefined) opponentProjectileVy = input.vy;
+    opponentProjectileLastUpdateAt = Date.now();
+  }
+  
+  // Handle drawn line from opponent
+  if (input.type === 'line' && input.points && input.points.length >= 2) {
+    // Add opponent's drawn line to our drawnLines array
+    drawnLines.push({
+      points: input.points.map((p: any) => ({ x: p.x, y: p.y })), // Copy points
+      life: 240, // 4 seconds at 60 FPS
+      maxLife: 240,
+      hits: 0, // Start with 0 hits
+      maxHits: 2, // Line can take 2 hits before disappearing
+      ownerId: opponentId // Mark as opponent's line
+    });
+    console.log('Received opponent drawn line', { pointCount: input.points.length });
+  }
+  
+  // Handle bullet input from opponent (fire event)
+  if (input.type === 'bullet' && input.x !== undefined && input.y !== undefined && input.vx !== undefined && input.vy !== undefined) {
+    // Spawn opponent bullet
+    opponentBulletFlying = true;
+    opponentBulletX = input.x;
+    opponentBulletY = input.y;
+    opponentBulletVx = input.vx;
+    opponentBulletVy = input.vy;
+    opponentBulletSpawnTime = Date.now();
+    
+    console.log('Opponent bullet fired', { x: input.x, y: input.y, vx: input.vx, vy: input.vy });
+  }
+
+  // Stone bounce event (server-authoritative): bounce arrow + shake stone for both players.
+  if (input.type === 'stone_bounce') {
+    const shooterId = (typeof input.shooterId === 'string') ? input.shooterId : null;
+    const projType = (input.projType === 'arrow' || input.projType === 'bullet' || input.projType === 'projectile') ? input.projType : 'arrow';
+    if (projType === 'arrow') {
+      // Apply bounce to the correct arrow simulation (my arrow or opponent arrow).
+      if (shooterId && myPlayerId && shooterId === myPlayerId && pvpKatanaFlying && pvpArrowStoneBounceCount === 0) {
+        const hit = collideCircleWithStone(pvpKatanaX, pvpKatanaY, PVP_ARROW_COLLISION_RADIUS);
+        if (hit) {
+          pvpKatanaX += hit.nx * (hit.depth + 0.5);
+          pvpKatanaY += hit.ny * (hit.depth + 0.5);
+          const vn = pvpKatanaVx * hit.nx + pvpKatanaVy * hit.ny;
+          if (vn < 0) {
+            pvpKatanaVx = (pvpKatanaVx - 2 * vn * hit.nx) * 0.55;
+            pvpKatanaVy = (pvpKatanaVy - 2 * vn * hit.ny) * 0.55;
+            pvpKatanaAngle = Math.atan2(pvpKatanaVy, pvpKatanaVx);
+          }
+          pvpArrowStoneBounceCount = 1;
+          pvpArrowMaxTravelPx = Math.min(pvpArrowMaxTravelPx, pvpKatanaTravelPx + 140);
+          pvpArrowExpireAt = Date.now() + 100;
+        }
+      } else if (opponentId && shooterId && shooterId === opponentId && opponentArrowFlying && opponentArrowStoneBounceCount === 0) {
+        const hit = collideCircleWithStone(opponentArrowX, opponentArrowY, PVP_ARROW_COLLISION_RADIUS);
+        if (hit) {
+          opponentArrowX += hit.nx * (hit.depth + 0.5);
+          opponentArrowY += hit.ny * (hit.depth + 0.5);
+          const vn = opponentArrowVx * hit.nx + opponentArrowVy * hit.ny;
+          if (vn < 0) {
+            opponentArrowVx = (opponentArrowVx - 2 * vn * hit.nx) * 0.55;
+            opponentArrowVy = (opponentArrowVy - 2 * vn * hit.ny) * 0.55;
+            opponentArrowAngle = Math.atan2(opponentArrowVy, opponentArrowVx);
+          }
+          opponentArrowStoneBounceCount = 1;
+          opponentArrowMaxTravelPx = Math.min(opponentArrowMaxTravelPx, opponentArrowTravelPx + 140);
+          opponentArrowExpireAt = Date.now() + 100;
+        }
+      }
+      triggerStoneShake(input.impactX, input.impactY, 1);
+    }
+  }
+
+  // Stone collision event (server-authoritative): destroy arrow + shake stone for both players.
+  if (input.type === 'stone_hit') {
+    const shooterId = (typeof input.shooterId === 'string') ? input.shooterId : null;
+    const projType = (input.projType === 'arrow' || input.projType === 'bullet' || input.projType === 'projectile') ? input.projType : 'arrow';
+    if (projType === 'arrow') {
+      if (shooterId && myPlayerId && shooterId === myPlayerId) {
+        // My arrow hit the stone -> remove locally
+        pvpKatanaFlying = false;
+        pvpArrowFired = false;
+        pvpKatanaX = 0;
+        pvpKatanaY = 0;
+        pvpKatanaVx = 0;
+        pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+        pvpKatanaTravelPx = 0;
+        pvpArrowStoneBounceCount = 0;
+        pvpArrowExpireAt = 0;
+      } else if (opponentId && shooterId && shooterId === opponentId) {
+        opponentArrowFlying = false;
+        opponentArrowX = 0;
+        opponentArrowY = 0;
+        opponentArrowVx = 0;
+        opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
+        opponentArrowStoneBounceCount = 0;
+        opponentArrowExpireAt = 0;
+      } else {
+        // Fallback: if we can't identify, remove both (rare)
+        opponentArrowFlying = false;
+        pvpKatanaFlying = false;
+      }
+      triggerStoneShake(input.impactX, input.impactY, 1);
+      try {
+        void audioManager.resumeContext();
+        audioManager.playBounce();
+      } catch {}
+    } else if (projType === 'projectile') {
+      // Heavy projectile hits the stone: explode + remove projectile on the owning side.
+      if (shooterId && myPlayerId && shooterId === myPlayerId) {
+        if (projectileFlying) {
+          createProjectileExplosion(projectileX, projectileY);
+          createStoneImpactParticles(projectileX, projectileY);
+          projectileFlying = false;
+          projectileX = 0;
+          projectileY = 0;
+          projectileVx = 0;
+          projectileVy = 0;
+          projectileBounceCount = 0;
+          projectileLastUpdateAt = 0;
+        }
+      } else if (opponentId && shooterId && shooterId === opponentId) {
+        if (opponentProjectileFlying) {
+          createProjectileExplosion(opponentProjectileX, opponentProjectileY);
+          createStoneImpactParticles(opponentProjectileX, opponentProjectileY);
+          opponentProjectileFlying = false;
+          opponentProjectileX = 0;
+          opponentProjectileY = 0;
+          opponentProjectileVx = 0;
+          opponentProjectileVy = 0;
+          opponentProjectileBounceCount = 0;
+          opponentProjectileLastUpdateAt = 0;
+        }
+      } else {
+        // Fallback: remove both (rare desync)
+        if (projectileFlying) {
+          createProjectileExplosion(projectileX, projectileY);
+          createStoneImpactParticles(projectileX, projectileY);
+        }
+        if (opponentProjectileFlying) {
+          createProjectileExplosion(opponentProjectileX, opponentProjectileY);
+          createStoneImpactParticles(opponentProjectileX, opponentProjectileY);
+        }
+        projectileFlying = false;
+        opponentProjectileFlying = false;
+        projectileX = projectileY = projectileVx = projectileVy = 0;
+        opponentProjectileX = opponentProjectileY = opponentProjectileVx = opponentProjectileVy = 0;
+        projectileBounceCount = 0;
+        opponentProjectileBounceCount = 0;
+        projectileLastUpdateAt = 0;
+        opponentProjectileLastUpdateAt = 0;
+      }
+      triggerStoneShake(input.impactX, input.impactY, 1.2);
+      try {
+        void audioManager.resumeContext();
+        audioManager.playMineExplosion();
+      } catch {}
+    }
+  }
+  
+  // Handle mine input from opponent (placement event)
+  if (input.type === 'mine' && input.x !== undefined && input.y !== undefined) {
+    // Spawn opponent mine
+    const opponentMine: Mine = {
+      x: input.x,
+      y: input.y,
+      spawnTime: input.timestamp || Date.now(),
+      exploded: false,
+    };
+    opponentMines.push(opponentMine);
+    
+    // Play mine placement sound effect
+    audioManager.resumeContext().then(() => {
+      audioManager.playMinePlacement();
+    });
+    
+    console.log('Opponent mine placed', { x: input.x, y: input.y });
+  }
+  
+  // Handle health pack spawn from opponent (using fixed positions)
+  if (HEALTH_PACKS_ENABLED && input.type === 'healthpack' && input.positionIndex !== undefined && input.id !== undefined) {
+    // Check if health pack already exists (avoid duplicates)
+    if (!healthPack || healthPack.id !== input.id) {
+      // Use same position index as opponent
+      const position = healthPackPositions[input.positionIndex];
+      
+      healthPack = {
+        x: position.x,
+        y: position.y,
+        spawnTime: input.timestamp || Date.now(),
+        id: input.id,
+        positionIndex: input.positionIndex,
+      };
+      
+      // Update our position index to match opponent's cycle
+      healthPackPositionIndex = (input.positionIndex + 1) % healthPackPositions.length;
+      
+      // Play spawn sound effect
+      audioManager.resumeContext().then(() => {
+        audioManager.playHealthPackSpawn();
+      });
+      
+      console.log('Health pack spawned (from opponent)', { x: position.x, y: position.y, positionIndex: input.positionIndex, id: input.id });
+    }
+  }
+  
+  // Handle health pack pickup from opponent
+  if (HEALTH_PACKS_ENABLED && input.type === 'healthpack_pickup' && input.healthPackId !== undefined) {
+    // Remove health pack that opponent picked up (always remove if we have a pack, even if ID doesn't match)
+    if (healthPack) {
+      // Check if ID matches, or if it's the only pack (force remove to prevent desync)
+      if (healthPack.id === input.healthPackId || healthPack.id === undefined) {
+        const pickupTime = input.timestamp || Date.now();
+        lastHealthPackPickupTime = pickupTime;
+        healthPack = null;
+        
+        // Play pickup sound effect (opponent picked it up)
+        audioManager.resumeContext().then(() => {
+          audioManager.playHealthPackPickup();
+        });
+        
+        // Show pickup notification for opponent (if we have opponent player data)
+        if (opponentId && pvpPlayers[opponentId]) {
+          const opponent = pvpPlayers[opponentId];
+          const healAmount = input.healAmount || 0;
+          
+          // Show only HP amount (armor is ignored)
+          if (healAmount > 0) {
+            safePushDamageNumber({
+              x: opponent.x + (Math.random() - 0.5) * 20,
+              y: opponent.y - opponent.radius - 20,
+              value: `+${healAmount}`,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 1,
+              vy: -2 - Math.random() * 1,
+              isCrit: false
+            });
+          }
+        }
+        
+        console.log('Health pack picked up by opponent', { id: input.healthPackId, healAmount: input.healAmount });
+      } else {
+        // ID doesn't match but we have a pack - log warning and remove anyway to prevent desync
+        console.warn('Health pack ID mismatch, removing anyway to prevent desync', { 
+          localId: healthPack.id, 
+          remoteId: input.healthPackId 
+        });
+        lastHealthPackPickupTime = input.timestamp || Date.now();
+        healthPack = null;
+      }
+    }
+  }
+  
+  // Handle hit event from opponent (damage sync)
+  // When opponent hits us, they send their calculated damage, and we apply it
+  // This ensures both players see/feel the EXACT same damage
+  if (input.type === 'hit' && input.damage !== undefined && input.isCrit !== undefined && input.targetPlayerId !== undefined) {
+    // If this was our own hit (server-authoritative), show attacker-side feedback.
+    // (Target will apply damage in the branch below.)
+    if (input.shooterId && input.shooterId === myPlayerId && opponentId && input.targetPlayerId === opponentId) {
+      const hitDamage = input.damage;
+      const isCritHit = input.isCrit;
+      // Stop our local arrow on confirmed hit (keeps visuals consistent).
+      if (pvpKatanaFlying) {
+        pvpKatanaFlying = false;
+        pvpArrowFired = false;
+        pvpKatanaX = 0;
+        pvpKatanaY = 0;
+        pvpKatanaVx = 0;
+        pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+      }
+      // Attacker feedback
+      if (isCritHit) {
+        screenShake = Math.max(screenShake, 30);
+      }
+      audioManager.resumeContext().then(() => {
+        audioManager.playDamageDealt(isCritHit);
+      });
+      if (opponentId && pvpPlayers[opponentId]) {
+        const opp = pvpPlayers[opponentId];
+        safePushDamageNumber({
+          x: opp.x + (Math.random() - 0.5) * 40,
+          y: opp.y - 20,
+          value: hitDamage,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+        for (let i = 0; i < 10; i++) {
+          const angle = (Math.PI * 2 * i) / 10;
+          const speed = 2 + Math.random() * 3;
+          safePushClickParticle({
+            x: opp.x,
+            y: opp.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 30,
+            maxLife: 30,
+            size: 3 + Math.random() * 2
+          });
+        }
+      }
+      // Profile: track damage dealt (now that server confirmed hit)
+      profileManager.addDamageDealt(hitDamage);
+    }
+
+    // Only process if this hit is targeting us (myPlayerId)
+    if (input.targetPlayerId === myPlayerId && myPlayerId && pvpPlayers[myPlayerId]) {
+      // Stop opponent arrow visuals on confirmed server hit
+      if (input.shooterId && opponentId && input.shooterId === opponentId) {
+        opponentArrowFlying = false;
+        opponentArrowX = 0;
+        opponentArrowY = 0;
+        opponentArrowVx = 0;
+        opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
+      }
+      const myPlayer = pvpPlayers[myPlayerId];
+      const hitDamage = input.damage;
+      const isCritHit = input.isCrit;
+      
+      // Apply damage (armor first, then HP) - using EXACT damage from opponent
+      const absorbed = Math.min(hitDamage, myPlayer.armor);
+      myPlayer.armor -= absorbed;
+      const remainingDamage = hitDamage - absorbed;
+      myPlayer.hp = Math.max(0, myPlayer.hp - remainingDamage);
+      // Reset armor regen timer on taking damage (prevents instant regen after a hit)
+      myPlayer.lastArmorRegen = Date.now();
+      
+      // Activate gravity for 5 seconds after damage (disabled via DAMAGE_GRAVITY_ENABLED)
+      setDamageGravity(myPlayer);
+      
+      // Play damage received sound effect (pain/impact sound when receiving damage)
+      audioManager.resumeContext().then(() => {
+        audioManager.playDamageReceived(isCritHit);
+      });
+      
+      // Profile: Track damage taken (PvP mode - I receive damage)
+      profileManager.addDamageTaken(hitDamage);
+      
+      // Apply paralysis if this is a bullet hit
+      if (input.isBullet && input.paralysisDuration !== undefined) {
+        myPlayer.paralyzedUntil = Date.now() + input.paralysisDuration;
+      }
+      
+      // Show damage number (EXACT same as attacker sees)
+      safePushDamageNumber({
+        x: myPlayer.x + (Math.random() - 0.5) * 40,
+        y: myPlayer.y - 20,
+        value: hitDamage,
+        life: 60,
+        maxLife: 60,
+        vx: (Math.random() - 0.5) * 2,
+        vy: -2 - Math.random() * 2,
+        isCrit: isCritHit
+      });
+      
+      // Screen shake for crit hits (same as attacker feels)
+      if (isCritHit) {
+        screenShake = Math.max(screenShake, 30);
+      }
+      
+      // Send stats update back to opponent (include paralyzedUntil for paralysis sync)
+      // Only send paralyzedUntil if player is actually paralyzed (paralyzedUntil > Date.now())
+      const paralyzedUntilToSend = (myPlayer.paralyzedUntil > Date.now()) ? myPlayer.paralyzedUntil : undefined;
+      sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor, paralyzedUntilToSend);
+      
+      // Check if I died - start death animation
+      if (myPlayer.hp <= 0 && !myPlayer.isOut && !deathAnimations.has(myPlayerId)) {
+        myPlayer.isOut = true;
+        const myPlayerColor = '#000000';
+        createDeathAnimation(myPlayerId, myPlayer.x, myPlayer.y, myPlayerColor, myPlayer.radius);
+      }
+    }
+    return;
+  }
+  
+  // Handle stats update from opponent (HP/Armor sync)
+  if (input.type === 'stats' && input.hp !== undefined && input.armor !== undefined) {
+    // Update opponent's stats from network
+    if (opponentId && pvpPlayers[opponentId]) {
+      const opponent = pvpPlayers[opponentId];
+      const oldHP = opponent.hp;
+      const oldArmor = opponent.armor;
+      opponent.hp = input.hp;
+      opponent.armor = input.armor;
+      if (input.maxHP !== undefined) opponent.maxHP = input.maxHP;
+      if (input.maxArmor !== undefined) opponent.maxArmor = input.maxArmor;
+      
+      // Sync paralysis state (paralyzedUntil)
+      if (input.paralyzedUntil !== undefined && input.paralyzedUntil > Date.now()) {
+        opponent.paralyzedUntil = input.paralyzedUntil;
+      } else if (input.paralyzedUntil !== undefined && input.paralyzedUntil <= Date.now()) {
+        // Clear paralysis if it expired
+        opponent.paralyzedUntil = 0;
+      }
+      
+      // Sync profile picture
+      if (input.profilePicture !== undefined) {
+        opponent.profilePicture = input.profilePicture;
+        // Preload opponent's profile picture image if not already cached
+        if (input.profilePicture && !nftImageCache.has(input.profilePicture)) {
+          loadNftImage(input.profilePicture, 'opponent_profile');
+        }
+      }
+      
+      console.log('Received opponent stats update', { hp: input.hp, armor: input.armor, paralyzedUntil: input.paralyzedUntil, profilePicture: input.profilePicture });
+
+      // If opponent armor increased (e.g. regen tick), show the correct +X popup on THIS client too.
+      if (typeof oldArmor === 'number' && typeof opponent.armor === 'number' && opponent.armor > oldArmor) {
+        const delta = opponent.armor - oldArmor;
+        safePushDamageNumber({
+          x: opponent.x + (Math.random() - 0.5) * 20,
+          y: opponent.y - opponent.radius - 20,
+          value: `+${delta}`,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 1,
+          vy: -2 - Math.random() * 1,
+          isCrit: false
+        });
+      }
+      
+      // Check if opponent died (HP reached 0) - start death animation
+      if (opponent.hp <= 0 && oldHP > 0 && !opponent.isOut && !deathAnimations.has(opponentId)) {
+        opponent.isOut = true;
+        
+        // Determine opponent color for death animation
+        const opponentColor = '#000000'; // Black for opponent
+        
+        // Start death animation at opponent's current position
+        createDeathAnimation(opponentId, opponent.x, opponent.y, opponentColor, opponent.radius);
+      }
+    }
+    }
+  } finally {
+    // #region agent log
+    try {
+      const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const dtMs = Math.max(0, t1 - __agentOppT0);
+      const win: any = (typeof window !== 'undefined') ? window : {};
+      const s = win.__agentOpponentStats || (win.__agentOpponentStats = { lastFlushTs: 0, count: 0, msTotal: 0, byType: {} as Record<string, number> });
+      s.count += 1;
+      s.msTotal += dtMs;
+      s.byType[__agentOppType] = (s.byType[__agentOppType] || 0) + 1;
+      const now = Date.now();
+      if (now - s.lastFlushTs >= 1000) {
+        s.lastFlushTs = now;
+        if (AGENT_DEBUG_LOGS_ENABLED) fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:handleOpponentInput',message:'opponent input processing cost (1s window)',data:{count:s.count,msAvg:s.count?Math.round((s.msTotal/s.count)*1000)/1000:0,byType:s.byType},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H5'})}).catch(()=>{});
+        if (AGENT_DEBUG_LOGS_ENABLED) fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:netLatency',message:'client measured network latency (1s window)',data:{averageNetworkLatency,ageSinceLastNetworkUpdateMs:Math.max(0,Date.now()-lastNetworkUpdateTime)},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H6'})}).catch(()=>{});
+        s.count = 0;
+        s.msTotal = 0;
+        s.byType = {};
+      }
+    } catch {}
+    // #endregion
+  }
+}
+
+// Send stats update to opponent
+function sendStatsUpdate(hp: number, armor: number, maxHP: number, maxArmor: number, paralyzedUntil?: number): void {
+  if (gameMode === 'PvP' && currentMatch) {
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
+    
+    if (isSyncing) {
+      const statsInput: any = {
+        type: 'stats' as const,
+        timestamp: Date.now(),
+        hp: hp,
+        armor: armor,
+        maxHP: maxHP,
+        maxArmor: maxArmor
+      };
+      
+      // Include paralyzedUntil if provided (for paralysis sync)
+      if (paralyzedUntil !== undefined) {
+        statsInput.paralyzedUntil = paralyzedUntil;
+      }
+      
+      // Include profile picture if available
+      const myProfilePicture = profileManager.getProfilePicture();
+      if (myProfilePicture) {
+        statsInput.profilePicture = myProfilePicture;
+      }
+      
+      if (useColyseus) {
+        colyseusService.sendInput(statsInput);
+      } else {
+        pvpSyncService.sendInput(statsInput);
+      }
+    }
+  }
+}
+
+// Create death animation - pixel art particles that disintegrate
+function createDeathAnimation(playerId: string, x: number, y: number, color: string, radius: number): void {
+  const particles: DeathParticle[] = [];
+  const particleCount = 30; // Number of pixel art pieces
+  
+  // Ensure minimum particle size for visibility
+  const minParticleSize = 4; // Minimum 4 pixels
+  const maxParticleSize = 8; // Maximum 8 pixels
+  
+  const normalizedColor = (color ?? '').trim().toLowerCase();
+  const isBlack =
+    normalizedColor === '#000' ||
+    normalizedColor === '#000000' ||
+    normalizedColor === 'black' ||
+    normalizedColor === 'rgb(0,0,0)' ||
+    normalizedColor === 'rgb(0, 0, 0)' ||
+    normalizedColor === 'rgba(0,0,0,1)' ||
+    normalizedColor === 'rgba(0, 0, 0, 1)';
+
+  // If the base is black, use multiple gray shades for better visibility and depth.
+  // Red particles are added separately below and must remain red.
+  const basePalette = isBlack
+    ? ['#e6edf3', '#c9d1d9', '#a9b4bf', '#8b97a3', '#6b7280']
+    : [color];
+
+  for (let i = 0; i < particleCount; i++) {
+    // Random position within the player circle
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * radius;
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance;
+    
+    // Random velocity - particles fly outward
+    const speed = 3 + Math.random() * 5; // Increased speed for better visibility
+    const vAngle = angle + (Math.random() - 0.5) * 0.8; // More spread
+    const vx = Math.cos(vAngle) * speed;
+    const vy = Math.sin(vAngle) * speed - 2; // More upward bias
+    
+    // Random particle size within range
+    const particleSize = minParticleSize + Math.random() * (maxParticleSize - minParticleSize);
+    
+    particles.push({
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
+      life: deathAnimationDuration,
+      maxLife: deathAnimationDuration,
+      size: particleSize,
+      color: basePalette[Math.floor(Math.random() * basePalette.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.15 // Slightly faster rotation
+    });
+  }
+  
+  // Add 10 red particles on top for better visual effect
+  const redParticleCount = 10;
+  for (let i = 0; i < redParticleCount; i++) {
+    // Random position within the player circle (slightly above center)
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * radius * 0.8; // Slightly closer to center
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance - radius * 0.3; // Slightly above center
+    
+    // Random velocity - particles fly outward and upward
+    const speed = 4 + Math.random() * 6; // Faster than regular particles
+    const vAngle = angle + (Math.random() - 0.5) * 1.0; // More spread
+    const vx = Math.cos(vAngle) * speed;
+    const vy = Math.sin(vAngle) * speed - 3; // More upward bias
+    
+    // Random particle size within range (slightly larger)
+    const particleSize = minParticleSize + Math.random() * (maxParticleSize - minParticleSize + 2);
+    
+    particles.push({
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
+      life: deathAnimationDuration,
+      maxLife: deathAnimationDuration,
+      size: particleSize,
+      color: '#ff0000', // Red color
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.2 // Faster rotation
+    });
+  }
+  
+  deathAnimations.set(playerId, particles);
+}
+
+// Create projectile explosion animation (particles)
+function createProjectileExplosion(x: number, y: number): void {
+  for (let i = 0; i < 4; i++) {
+    const angle = (Math.PI * 2 * i) / 4;
+    const speed = 1.5 + Math.random() * 2.5;
+    safePushClickParticle({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 24 + Math.floor(Math.random() * 10),
+      maxLife: 24 + Math.floor(Math.random() * 10),
+      size: 2.5 + Math.random() * 2.5
+    });
+  }
+  screenShake = Math.max(screenShake, 5);
+}
+
+// Extra tiny particles for stone impact (weapon 2): subtle "chips/dust" burst.
+// IMPORTANT: keep separate from createProjectileExplosion(), because that is also used at projectile launch.
+function createStoneImpactParticles(x: number, y: number): void {
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.8 + Math.random() * 2.0;
+    const spread = 0.35 + Math.random() * 0.65;
+    const vx = Math.cos(angle) * speed * spread;
+    const vy = Math.sin(angle) * speed * spread - (Math.random() * 0.4); // slight upward bias
+    safePushClickParticle({
+      x: x + (Math.random() - 0.5) * 4,
+      y: y + (Math.random() - 0.5) * 4,
+      vx,
+      vy,
+      life: 10 + Math.floor(Math.random() * 10),
+      maxLife: 10 + Math.floor(Math.random() * 10),
+      size: 1.2 + Math.random() * 1.4,
+      // Light gray chips so they read on dark arena background
+      color: 'rgba(210, 220, 235, 0.95)'
+    });
+  }
+  screenShake = Math.max(screenShake, 2);
+}
+
+function grantDeathReward() {
+  // Base reward = max HP + 25%
+  const baseReward = Math.floor(dotMaxHP * 1.25);
+  
+  // Calculate reward multiplier based on probability
+  // Priority order (highest first): 1% 8x, 5% 5x, 40% 2x, 10% 1.5x, 44% 1x
+  let rewardMultiplier = 1.0; // Default (44% chance - remaining)
+  const random = Math.random() * 100; // 0-100
+  
+  if (random < 1) {
+    // 1% chance (0-1%) - 8x reward
+    rewardMultiplier = 8.0;
+    console.log('LUCKY! 8x reward!');
+  } else if (random < 6) {
+    // 5% chance (1-6%) - 5x reward
+    rewardMultiplier = 5.0;
+    console.log('JACKPOT! 5x reward!');
+  } else if (random < 46) {
+    // 40% chance (6-46%) - 2x reward
+    rewardMultiplier = 2.0;
+    console.log('DOUBLE! 2x reward!');
+  } else if (random < 56) {
+    // 10% chance (46-56%) - 1.5x reward
+    rewardMultiplier = 1.5;
+    console.log('BONUS! 1.5x reward!');
+  }
+  // else: 44% chance (56-100%) - 1x reward (default)
+  
+  // Apply 25% bonus to all rewards, then additional 10% (except for 10x rewards)
+  let finalReward = Math.floor(baseReward * rewardMultiplier * 1.25);
+  // Don't increase 10x rewards (8x multiplier * 1.25 = 10x) further
+  if (rewardMultiplier < 8.0) {
+    finalReward = Math.floor(finalReward * 1.1); // Additional 10% for rewards below 10x
+  }
+  
+  if (finalReward > 0) {
+    // Big reward popup at DOT death position (use saved death position)
+    safePushRewardPopup({
+      x: deathStartX, // Use saved DOT's death position
+      y: deathStartY, // Use saved DOT's death position
+      value: finalReward,
+      startTime: Date.now(),
+      durationMs: 3000
+    });
+    // Sparkles
+    for (let i = 0; i < 18; i++) {
+      const a = (Math.PI * 2 * i) / 18 + (Math.random() - 0.5) * 0.3;
+      const s = 1 + Math.random() * 2;
+      safePushDotDecayParticle({
+        x: (canvas.width + 240) / 2 + Math.cos(a) * 4,
+        y: canvas.height / 2 - 200 + Math.sin(a) * 4,
+        vx: Math.cos(a) * (1 + Math.random() * 2),
+        vy: Math.sin(a) * (1 + Math.random() * 2),
+        life: 24,
+        maxLife: 24,
+        size: s
+      });
+    }
+    rewardGranted = true; // Mark reward as granted
+    
+    // Profile: Solo kill + XP
+    profileManager.addSoloKill();
+    profileManager.addXP(3);
+    profileManager.addDot(finalReward); // Track DOT balance increase
+    
+    forceSaveGame(); // Save after death reward (currency increase)
+  }
+}
+
+// Moving platform (sliding horizontally across screen)
+const TOXIC_PLATFORMS_ENABLED = false; // Legacy toggle (toxic water system removed)
+const TOXIC_WATER_ENABLED = false; // Toxic water removed (kept as a hard-off safety gate)
+const WALL_DEATH_PADDING = 10; // Extra padding so UFO sprite also triggers wall death
+const movingPlatformWidth = 400; // increased by 100px
+const movingPlatformArcHeight = 6; // bow depth
+const movingPlatformY = groundY - 2; // just above ground
+const movingPlatformThickness = 13; // platform thickness for 3D effect (increased by 5px)
+const playLeft = 240;
+const playRight = 1920;
+let movingPlatformX = playLeft + movingPlatformWidth / 2; // center of platform
+let movingPlatformVx = 1.5; // horizontal speed
+let movingPlatformFlashTimer = 0;
+
+// PvP platforms (static positions)
+const pvpPlatformLeftX = playLeft + (playRight - playLeft) * 0.25 - 50; // Left platform (25% from left, shifted 50px left)
+const pvpPlatformCenterX = (playLeft + playRight) / 2; // Center platform (50% - middle)
+const pvpPlatformRightX = playLeft + (playRight - playLeft) * 0.75 + 50; // Right platform (75% from left, shifted 50px right)
+const pvpPlatformSideWidth = movingPlatformWidth * 0.5; // Left and right platforms are 50% of center platform width
+
+// Wall spikes system
+interface WallSpike {
+  id: string;
+  side: 'left' | 'right'; // Which wall
+  y: number; // Vertical position
+  state: 'extending' | 'extended' | 'retracting' | 'retracted'; // Animation state
+  progress: number; // 0-1, animation progress
+  extendDuration: number; // 4 seconds = 4000ms
+  retractDuration: number; // 5 seconds = 5000ms
+  startTime: number; // When current state started
+  length: number; // Spike length when fully extended (in pixels)
+  width: number; // Spike width
+  damagePercent: number; // 5% of max HP
+  lastDamageTime: { [playerId: string]: number }; // Track damage cooldown per player
+}
+
+let wallSpikes: WallSpike[] = [];
+const SPIKE_DAMAGE_COOLDOWN = 500; // 500ms cooldown between damage ticks
+const SPIKE_LENGTH = 40; // Spike length when fully extended
+const SPIKE_WIDTH = 8; // Spike width
+const SPIKE_SPACING = 120; // Vertical spacing between spikes
+
+// Initialize wall spikes
+function initializeWallSpikes() {
+  wallSpikes = [];
+  // Spikes at the top (ceiling), centered vertically
+  const spikeAreaTop = pvpBounds.top + 100; // Start 100px from top
+  const spikeAreaBottom = pvpBounds.top + 300; // End 300px from top (200px height area)
+  const centerY = (spikeAreaTop + spikeAreaBottom) / 2; // Center of spike area
+  
+  // Create spikes on left wall - centered vertically
+  wallSpikes.push({
+    id: `left_center`,
+    side: 'left',
+    y: centerY,
+    state: 'retracted',
+    progress: 0,
+    extendDuration: 4000, // 4 seconds
+    retractDuration: 5000, // 5 seconds
+    startTime: Date.now() + Math.random() * 2000, // Random start time (0-2s delay)
+    length: SPIKE_LENGTH,
+    width: SPIKE_WIDTH,
+    damagePercent: 5, // 5% of max HP
+    lastDamageTime: {}
+  });
+  
+  // Create spikes on right wall - centered vertically
+  wallSpikes.push({
+    id: `right_center`,
+    side: 'right',
+    y: centerY,
+    state: 'retracted',
+    progress: 0,
+    extendDuration: 4000, // 4 seconds
+    retractDuration: 5000, // 5 seconds
+    startTime: Date.now() + Math.random() * 2000, // Random start time (0-2s delay)
+    length: SPIKE_LENGTH,
+    width: SPIKE_WIDTH,
+    damagePercent: 5, // 5% of max HP
+    lastDamageTime: {}
+  });
+}
+
+// Sewer background rendering function
+function drawSewerBackground() {
+  // Dark sewer background color (dirty gray-green)
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw brick wall pattern
+  const brickWidth = 40;
+  const brickHeight = 20;
+  const brickColor1 = '#4a3a2a'; // Dark brown brick
+  const brickColor2 = '#3a2a1a'; // Darker brown brick
+  const mortarColor = '#1a1a1a'; // Dark mortar
+  
+  // Draw bricks in background
+  for (let y = 0; y < canvas.height; y += brickHeight) {
+    for (let x = 240; x < canvas.width; x += brickWidth) {
+      const offset = (y / brickHeight) % 2 === 0 ? 0 : brickWidth / 2; // Staggered pattern
+      const brickX = x + offset;
+      
+      // Skip if outside canvas
+      if (brickX >= canvas.width) continue;
+      
+      // Random brick color variation
+      const isDark = Math.floor((x + y) / brickWidth) % 3 === 0;
+      ctx.fillStyle = isDark ? brickColor2 : brickColor1;
+      
+      // Draw brick with slight 3D effect (some bricks protrude)
+      const protrude = Math.floor((x + y * 7) / (brickWidth * 3)) % 5 === 0;
+      const protrudeAmount = protrude ? 2 : 0;
+      
+      ctx.fillRect(brickX, y, brickWidth - 2, brickHeight - 2);
+      
+      // Draw mortar lines
+      ctx.fillStyle = mortarColor;
+      ctx.fillRect(brickX, y, brickWidth - 2, 1); // Top mortar
+      ctx.fillRect(brickX, y + brickHeight - 3, brickWidth - 2, 1); // Bottom mortar
+      ctx.fillRect(brickX, y, 1, brickHeight - 2); // Left mortar
+      ctx.fillRect(brickX + brickWidth - 3, y, 1, brickHeight - 2); // Right mortar
+      
+      // Draw 3D shadow on protruding bricks
+      if (protrude) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(brickX + brickWidth - 4, y + 1, 2, brickHeight - 4);
+        ctx.fillRect(brickX + 1, y + brickHeight - 4, brickWidth - 4, 2);
+      }
+    }
+  }
+  
+  // Draw pipes with spider webs
+  const pipeY1 = canvas.height * 0.2;
+  const pipeY2 = canvas.height * 0.6;
+  const pipeY3 = canvas.height * 0.85;
+  const pipeRadius = 15;
+  const pipeColor = '#1a1a1a';
+  const pipeHighlight = '#3a3a3a';
+  
+  // Pipe 1 (top)
+  const pipe1X = 240 + 50;
+  ctx.fillStyle = pipeColor;
+  ctx.beginPath();
+  ctx.arc(pipe1X, pipeY1, pipeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(pipe1X - pipeRadius, pipeY1, pipeRadius * 2, 100);
+  
+  // Pipe joint/connection
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(pipe1X - pipeRadius - 2, pipeY1 + 40, pipeRadius * 2 + 4, 8);
+  ctx.fillRect(pipe1X - pipeRadius - 2, pipeY1 + 80, pipeRadius * 2 + 4, 8);
+  
+  // Pipe highlight
+  ctx.fillStyle = pipeHighlight;
+  ctx.beginPath();
+  ctx.arc(pipe1X, pipeY1, pipeRadius - 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Rust stains on pipe
+  ctx.fillStyle = 'rgba(100, 50, 20, 0.5)';
+  ctx.beginPath();
+  ctx.arc(pipe1X + 5, pipeY1 + 50, 8, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Spider web on pipe 1
+  drawSpiderWeb(pipe1X, pipeY1 + 30, 25);
+  
+  // Pipe 2 (middle)
+  const pipe2X = canvas.width - 80;
+  ctx.fillStyle = pipeColor;
+  ctx.beginPath();
+  ctx.arc(pipe2X, pipeY2, pipeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(pipe2X - pipeRadius, pipeY2, pipeRadius * 2, 80);
+  
+  // Pipe joint/connection
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(pipe2X - pipeRadius - 2, pipeY2 + 30, pipeRadius * 2 + 4, 8);
+  ctx.fillRect(pipe2X - pipeRadius - 2, pipeY2 + 60, pipeRadius * 2 + 4, 8);
+  
+  // Pipe highlight
+  ctx.fillStyle = pipeHighlight;
+  ctx.beginPath();
+  ctx.arc(pipe2X, pipeY2, pipeRadius - 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Rust stains on pipe
+  ctx.fillStyle = 'rgba(100, 50, 20, 0.5)';
+  ctx.beginPath();
+  ctx.arc(pipe2X - 5, pipeY2 + 40, 6, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Spider web on pipe 2
+  drawSpiderWeb(pipe2X, pipeY2 + 25, 20);
+  
+  // Pipe 3 (bottom)
+  const pipe3X = 240 + 120;
+  ctx.fillStyle = pipeColor;
+  ctx.beginPath();
+  ctx.arc(pipe3X, pipeY3, pipeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(pipe3X - pipeRadius, pipeY3, pipeRadius * 2, 60);
+  
+  // Pipe joint/connection
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(pipe3X - pipeRadius - 2, pipeY3 + 25, pipeRadius * 2 + 4, 8);
+  ctx.fillRect(pipe3X - pipeRadius - 2, pipeY3 + 45, pipeRadius * 2 + 4, 8);
+  
+  // Pipe highlight
+  ctx.fillStyle = pipeHighlight;
+  ctx.beginPath();
+  ctx.arc(pipe3X, pipeY3, pipeRadius - 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Rust stains on pipe
+  ctx.fillStyle = 'rgba(100, 50, 20, 0.5)';
+  ctx.beginPath();
+  ctx.arc(pipe3X + 8, pipeY3 + 30, 7, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Draw grime and stains
+  ctx.fillStyle = 'rgba(50, 40, 30, 0.4)';
+  for (let i = 0; i < 15; i++) {
+    const stainX = 240 + Math.random() * (canvas.width - 240);
+    const stainY = Math.random() * canvas.height;
+    const stainSize = 20 + Math.random() * 40;
+    ctx.beginPath();
+    ctx.arc(stainX, stainY, stainSize, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Draw water stains/drips
+  ctx.strokeStyle = 'rgba(100, 80, 60, 0.3)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    const dripX = 240 + Math.random() * (canvas.width - 240);
+    const dripStartY = Math.random() * canvas.height * 0.5;
+    const dripLength = 30 + Math.random() * 50;
+    ctx.beginPath();
+    ctx.moveTo(dripX, dripStartY);
+    ctx.lineTo(dripX + (Math.random() - 0.5) * 10, dripStartY + dripLength);
+    ctx.stroke();
+  }
+}
+
+function drawPerimeterHighlight(ctx: CanvasRenderingContext2D): void {
+  const borderColor = '#000000';
+  const lineWidth = 4;
+
+  ctx.save();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+
+  // Left border
+  ctx.beginPath();
+  ctx.moveTo(playLeft, pvpBounds.top);
+  ctx.lineTo(playLeft, pvpBounds.bottom);
+  ctx.stroke();
+
+  // Right border
+  ctx.beginPath();
+  ctx.moveTo(playRight, pvpBounds.top);
+  ctx.lineTo(playRight, pvpBounds.bottom);
+  ctx.stroke();
+
+  // Top border
+  ctx.beginPath();
+  ctx.moveTo(playLeft, pvpBounds.top);
+  ctx.lineTo(playRight, pvpBounds.top);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+
+function killPlayerByWall(playerId: string, player: PvPPlayer, reason: 'left_wall' | 'right_wall' | 'top_wall'): void {
+  if (player.isOut || deathAnimations.has(playerId)) {
+    return;
+  }
+
+  player.hp = 0;
+  player.isOut = true;
+  player.vx = 0;
+  player.vy = 0;
+
+  let playerColor = player.color;
+  if (playerId === myPlayerId || playerId === opponentId) {
+    playerColor = '#000000';
+  }
+
+  createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
+  console.log(`Player ${playerId} died by wall contact (${reason}).`);
+
+  if (playerId === myPlayerId) {
+    sendStatsUpdate(player.hp, player.armor, player.maxHP, player.maxArmor);
+  }
+}
+
+function shouldKillByWall(player: PvPPlayer): { hit: boolean; reason: 'left_wall' | 'right_wall' | 'top_wall' } | null {
+  if (player.isOut) {
+    return null;
+  }
+
+  if (player.x - player.radius - WALL_DEATH_PADDING <= playLeft) {
+    return { hit: true, reason: 'left_wall' };
+  }
+  if (player.x + player.radius + WALL_DEATH_PADDING >= playRight) {
+    return { hit: true, reason: 'right_wall' };
+  }
+  if (player.y - player.radius - WALL_DEATH_PADDING <= pvpBounds.top) {
+    return { hit: true, reason: 'top_wall' };
+  }
+
+  return null;
+}
+
+
+// Helper function to draw spider web
+function drawSpiderWeb(centerX: number, centerY: number, radius: number) {
+  ctx.strokeStyle = 'rgba(180, 180, 180, 0.5)';
+  ctx.lineWidth = 1;
+  
+  // Draw radial lines (spokes)
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+    ctx.stroke();
+  }
+  
+  // Draw concentric circles (spiral web pattern)
+  for (let r = radius * 0.25; r <= radius; r += radius * 0.12) {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  // Draw some broken/irregular web lines for realism
+  ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)';
+  for (let i = 0; i < 3; i++) {
+    const angle1 = (Math.PI * 2 * Math.random());
+    const angle2 = (Math.PI * 2 * Math.random());
+    const r1 = radius * (0.3 + Math.random() * 0.4);
+    const r2 = radius * (0.5 + Math.random() * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(centerX + Math.cos(angle1) * r1, centerY + Math.sin(angle1) * r1);
+    ctx.lineTo(centerX + Math.cos(angle2) * r2, centerY + Math.sin(angle2) * r2);
+    ctx.stroke();
+  }
+}
+
+// Render function
+function render() {
+  // Clear canvas with white background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Arena background (draw only in play area; keep UI panel area white)
+  if (arenaBgSprite && arenaBgSprite.complete) {
+    const targetX = playLeft;
+    const targetY = 0;
+    const targetW = playRight - playLeft;
+    const targetH = canvas.height;
+    const iw = arenaBgSprite.naturalWidth || arenaBgSprite.width || 1;
+    const ih = arenaBgSprite.naturalHeight || arenaBgSprite.height || 1;
+    const scale = Math.max(targetW / iw, targetH / ih); // cover (no stretching)
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = targetX + (targetW - dw) * 0.5;
+    const dy = targetY + (targetH - dh) * 0.5;
+    ctx.save();
+    // Keep pixel art crisp if scaled
+    (ctx as any).imageSmoothingEnabled = false;
+    ctx.drawImage(arenaBgSprite, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // If both galaxies are visible, we'll add small pulsating light sources between their centers.
+  // (Purely visual, pixel-art style; no blur; negligible cost.)
+  let galaxy1Core: { x: number; y: number } | null = null;
+  let galaxy2Core: { x: number; y: number } | null = null;
+
+  // Very distant galaxy (small, slow parallax, subtle pulse at core)
+  // Z-order: above base, below nebula/light band.
+  if (galaxySpriteProcessed && galaxySprite && galaxySprite.complete) {
+    const targetX = playLeft;
+    const targetY = 0;
+    const targetW = playRight - playLeft;
+    const targetH = canvas.height;
+
+    const GALAXY_SCREEN_FRACTION = 0.077; // ~10% bigger than before
+    const GALAXY_PARALLAX = 0.035; // 0.02..0.05
+    // Move galaxy to a different corner (top-right area of playfield)
+    const GALAXY_POS_X = 0.82;
+    const GALAXY_POS_Y = 0.10;
+
+    const PULSE_PERIOD_MS = 6000; // 4..8 seconds
+    const PULSE_MIN_A = 0.30;
+    const PULSE_MAX_A = 0.60;
+
+    const iw = galaxySpriteProcessed.width || (galaxySprite.naturalWidth || galaxySprite.width || 1);
+    const ih = galaxySpriteProcessed.height || (galaxySprite.naturalHeight || galaxySprite.height || 1);
+    const worldW = targetW * GALAXY_SCREEN_FRACTION;
+    const worldH = worldW * (ih / iw);
+
+    const cx = targetX + targetW / 2;
+    const cy = targetY + targetH / 2;
+    let px = cx;
+    let py = cy;
+    if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+      px = pvpPlayers[myPlayerId].x;
+      py = pvpPlayers[myPlayerId].y;
+    }
+
+    const baseX = targetX + targetW * GALAXY_POS_X - 100; // move 100px to the left
+    const baseY = targetY + targetH * GALAXY_POS_Y;
+    const offX = clamp(-(px - cx) * GALAXY_PARALLAX, -18, 18);
+    const offY = clamp(-(py - cy) * (GALAXY_PARALLAX * 0.7), -12, 12);
+
+    const dx = baseX + offX;
+    const dy = baseY + offY;
+
+    // Smooth pulse (opacity only)
+    const phase = ((Date.now() % PULSE_PERIOD_MS) / PULSE_PERIOD_MS) * Math.PI * 2;
+    const t = (Math.sin(phase) + 1) * 0.5;
+    const ease = t * t * (3 - 2 * t);
+    const pulseA = PULSE_MIN_A + (PULSE_MAX_A - PULSE_MIN_A) * ease;
+
+    ctx.save();
+    (ctx as any).imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.40;
+    ctx.drawImage(galaxySpriteProcessed, dx, dy, worldW, worldH);
+
+    // Core pulse dot (pixel-art, no gradient/blur)
+    ctx.globalAlpha = pulseA;
+    ctx.fillStyle = 'rgba(170, 195, 255, 1)';
+    const coreX = Math.floor(dx + worldW * 0.52);
+    const coreY = Math.floor(dy + worldH * 0.50);
+    ctx.fillRect(coreX, coreY, 2, 2);
+    galaxy1Core = { x: coreX + 1, y: coreY + 1 };
+    ctx.restore();
+  }
+
+  // Second distant galaxy (optional) - lets us keep the "old" galaxy visible too
+  if (galaxySprite2Processed && galaxySprite2) {
+    const targetX = playLeft;
+    const targetY = 0;
+    const targetW = playRight - playLeft;
+    const targetH = canvas.height;
+
+    const GALAXY2_SCREEN_FRACTION = 0.058; // smaller left galaxy
+    const GALAXY2_PARALLAX = 0.030;
+    // Different location (top-left-ish) so both galaxies are visible
+    const GALAXY2_POS_X = 0.10;
+    const GALAXY2_POS_Y = 0.18;
+
+    const PULSE_PERIOD_MS = 7200;
+    const PULSE_MIN_A = 0.22;
+    const PULSE_MAX_A = 0.50;
+
+    const iw = galaxySprite2Processed.width || (galaxySprite2.naturalWidth || galaxySprite2.width || 1);
+    const ih = galaxySprite2Processed.height || (galaxySprite2.naturalHeight || galaxySprite2.height || 1);
+    const worldW = targetW * GALAXY2_SCREEN_FRACTION;
+    const worldH = worldW * (ih / iw);
+
+    const cx = targetX + targetW / 2;
+    const cy = targetY + targetH / 2;
+    let px = cx;
+    let py = cy;
+    if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+      px = pvpPlayers[myPlayerId].x;
+      py = pvpPlayers[myPlayerId].y;
+    }
+
+    const baseX = targetX + targetW * GALAXY2_POS_X;
+    const baseY = targetY + targetH * GALAXY2_POS_Y;
+    const offX = clamp(-(px - cx) * GALAXY2_PARALLAX, -14, 14);
+    const offY = clamp(-(py - cy) * (GALAXY2_PARALLAX * 0.7), -10, 10);
+
+    const dx = baseX + offX;
+    const dy = baseY + offY;
+
+    const phase = ((Date.now() % PULSE_PERIOD_MS) / PULSE_PERIOD_MS) * Math.PI * 2;
+    const t = (Math.sin(phase) + 1) * 0.5;
+    const ease = t * t * (3 - 2 * t);
+    const pulseA = PULSE_MIN_A + (PULSE_MAX_A - PULSE_MIN_A) * ease;
+
+    ctx.save();
+    (ctx as any).imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.42;
+    ctx.drawImage(galaxySprite2Processed, dx, dy, worldW, worldH);
+
+    // Slight core pulse
+    ctx.globalAlpha = pulseA;
+    ctx.fillStyle = 'rgba(170, 195, 255, 1)';
+    const coreX = Math.floor(dx + worldW * 0.50);
+    const coreY = Math.floor(dy + worldH * 0.50);
+    ctx.fillRect(coreX, coreY, 2, 2);
+    galaxy2Core = { x: coreX + 1, y: coreY + 1 };
+    ctx.restore();
+  }
+
+  // Nebula / depth layer (must NOT replace base background)
+  // Subtle opacity + gentle parallax so it adds depth without drawing attention.
+  if (nebulaBgSprite && nebulaBgSprite.complete) {
+    const targetX = playLeft;
+    const targetY = 0;
+    const targetW = playRight - playLeft;
+    const targetH = canvas.height;
+
+    // Config: keep in requested range (8%..20%)
+    const NEBULA_ALPHA = 0.12;
+    const NEBULA_PARALLAX = 0.20; // ~0.15..0.25
+    const NEBULA_MAX_SHIFT_X = 60;
+    const NEBULA_MAX_SHIFT_Y = 40;
+    const NEBULA_AUTO_DRIFT_PX = 6; // very subtle
+
+    const niw = nebulaBgSprite.naturalWidth || nebulaBgSprite.width || 1;
+    const nih = nebulaBgSprite.naturalHeight || nebulaBgSprite.height || 1;
+    const baseScale = Math.max(targetW / niw, targetH / nih);
+    const scale = baseScale * 1.15; // extra margin so parallax doesn't reveal edges
+    const dw = niw * scale;
+    const dh = nih * scale;
+
+    const cx = targetX + targetW / 2;
+    const cy = targetY + targetH / 2;
+
+    let px = cx;
+    let py = cy;
+    if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+      px = pvpPlayers[myPlayerId].x;
+      py = pvpPlayers[myPlayerId].y;
+    }
+    // Parallax offset based on player position relative to arena center (clamped)
+    const offX = clamp(-(px - cx) * NEBULA_PARALLAX, -NEBULA_MAX_SHIFT_X, NEBULA_MAX_SHIFT_X);
+    const offY = clamp(-(py - cy) * (NEBULA_PARALLAX * 0.7), -NEBULA_MAX_SHIFT_Y, NEBULA_MAX_SHIFT_Y);
+    const drift = Math.sin(Date.now() * 0.00006) * NEBULA_AUTO_DRIFT_PX;
+
+    const dx = targetX + (targetW - dw) * 0.5 + offX + drift;
+    const dy = targetY + (targetH - dh) * 0.5 + offY;
+
+    ctx.save();
+    (ctx as any).imageSmoothingEnabled = false;
+    ctx.globalAlpha = Math.max(0.08, Math.min(0.20, NEBULA_ALPHA));
+    // Normal blend keeps it subtle; can be changed to 'screen' later if needed.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(nebulaBgSprite, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // Light band / atmosphere layer (Z=2): barely noticeable composition polish
+  if (lightBandSprite && lightBandSprite.complete) {
+    const targetX = playLeft;
+    const targetY = 0;
+    const targetW = playRight - playLeft;
+    const targetH = canvas.height;
+
+    const BAND_ALPHA = 0.09; // 6%..15%
+    const BAND_PARALLAX = 0.14; // 0.1..0.2
+    const BAND_MAX_SHIFT_X = 42;
+    const BAND_MAX_SHIFT_Y = 26;
+    const BAND_DRIFT_PX = 4; // extremely slow/subtle
+
+    const iw = lightBandSprite.naturalWidth || lightBandSprite.width || 1;
+    const ih = lightBandSprite.naturalHeight || lightBandSprite.height || 1;
+    const baseScale = Math.max(targetW / iw, targetH / ih);
+    const scale = baseScale * 1.10; // margin to avoid edges when shifting
+    const dw = iw * scale;
+    const dh = ih * scale;
+
+    const cx = targetX + targetW / 2;
+    const cy = targetY + targetH / 2;
+    let px = cx;
+    let py = cy;
+    if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+      px = pvpPlayers[myPlayerId].x;
+      py = pvpPlayers[myPlayerId].y;
+    }
+
+    const offX = clamp(-(px - cx) * BAND_PARALLAX, -BAND_MAX_SHIFT_X, BAND_MAX_SHIFT_X);
+    const offY = clamp(-(py - cy) * (BAND_PARALLAX * 0.7), -BAND_MAX_SHIFT_Y, BAND_MAX_SHIFT_Y);
+    const drift = Math.sin(Date.now() * 0.000035) * BAND_DRIFT_PX;
+
+    const dx = targetX + (targetW - dw) * 0.5 + offX + drift;
+    const dy = targetY + (targetH - dh) * 0.5 + offY;
+
+    ctx.save();
+    (ctx as any).imageSmoothingEnabled = false;
+    ctx.globalAlpha = Math.max(0.06, Math.min(0.15, BAND_ALPHA));
+    // Slight "screen" helps the band feel like light without becoming dominant.
+    ctx.globalCompositeOperation = 'screen';
+    ctx.drawImage(lightBandSprite, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // Moon flyby (fake 3D pass-by) - draw before gameplay sprites so UFO can appear "in front".
+  try { drawMoonFlyby(Date.now()); } catch {}
+  // Earth intro (start-of-run) - draw early so gameplay sprites render over it.
+  try { drawEarthIntro(Date.now()); } catch {}
+  // Mars flyby (test) - draw early so gameplay sprites render over it.
+  try { drawMarsFlyby(Date.now()); } catch {}
+
+  // 1s boot fade (play area only): gives time for save/cloud/wallet to settle.
+  try {
+    const now = Date.now();
+    const until = cinematicBootUntilMs || 0;
+    if (now < until) {
+      const t = clamp(1 - (until - now) / 1000, 0, 1); // 0..1
+      const a = Math.max(0, Math.min(0.85, 0.85 * (1 - t))); // 0.85..0
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(playLeft, 0, playRight - playLeft, canvas.height);
+      ctx.clip();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(playLeft, 0, playRight - playLeft, canvas.height);
+      ctx.restore();
+    }
+  } catch {}
+
+  // Draw small pulsating light sources between galaxy centers (adds depth/connection).
+  // The points are scattered (not a perfect line) but still mostly live in the "space between" galaxies.
+  // Draw AFTER nebula/light-band so it stays visible.
+  if (galaxy1Core && galaxy2Core) {
+    const now = Date.now();
+    const ax = galaxy1Core.x;
+    const ay = galaxy1Core.y;
+    const bx = galaxy2Core.x;
+    const by = galaxy2Core.y;
+
+    const segDx = bx - ax;
+    const segDy = by - ay;
+    const segLen = Math.max(1, Math.sqrt(segDx * segDx + segDy * segDy));
+    const nx = -segDy / segLen;
+    const ny = segDx / segLen;
+
+    // Small deterministic PRNG so the scatter is stable (doesn't jump each frame)
+    const mulberry32 = (seed: number) => () => {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const rnd = mulberry32(0xA1B2C3D4);
+
+    // More points, irregularly scattered
+    const lights = 22;
+    const targetX = playLeft;
+    const targetW = playRight - playLeft;
+    const targetH = canvas.height;
+
+    ctx.save();
+    (ctx as any).imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (let i = 0; i < lights; i++) {
+      // 75% of lights: inside a "capsule" around the segment between galaxies.
+      // 25%: anywhere in arena (subtle) so it feels more organic.
+      const inBridge = i < Math.floor(lights * 0.75);
+
+      let x = 0;
+      let y = 0;
+
+      if (inBridge) {
+        // Random t along the segment (avoid super-close to the galaxy cores)
+        const t = 0.12 + rnd() * 0.76;
+        // Width is bigger near the middle, smaller near the ends
+        const mid = 1 - Math.abs(t - 0.5) * 2; // 0..1
+        const maxW = 130; // pixels
+        const w = 18 + maxW * (mid * mid);
+        const perp = (rnd() * 2 - 1) * w;
+        const along = (rnd() * 2 - 1) * 10;
+        x = ax + segDx * t + nx * perp + (segDx / segLen) * along;
+        y = ay + segDy * t + ny * perp + (segDy / segLen) * along;
+      } else {
+        // Subtle "ambient" points across arena
+        const u = rnd();
+        const v = rnd();
+        x = targetX + u * targetW;
+        y = v * targetH;
+      }
+
+      // Tiny drift so it feels alive, but keeps the overall scatter shape
+      const drift = Math.sin(now * (0.00022 + i * 0.00001) + i * 1.9) * 2.0;
+      x += nx * drift;
+      y += ny * drift;
+
+      const period = 3200 + i * 420;
+      const phase = ((now + i * 913) % period) / period * Math.PI * 2;
+      const s = (Math.sin(phase) + 1) * 0.5;
+      const ease = s * s * (3 - 2 * s);
+
+      // Bridge points are brighter; ambient are fainter
+      const a = inBridge ? (0.18 + 0.72 * ease) : (0.06 + 0.24 * ease);
+      const c = i % 3 === 0 ? 'rgba(200, 225, 255, 1)' : (i % 3 === 1 ? 'rgba(215, 195, 255, 1)' : 'rgba(180, 210, 255, 1)');
+
+      const px = Math.floor(x);
+      const py = Math.floor(y);
+
+      ctx.fillStyle = c;
+      ctx.globalAlpha = a * 0.16;
+      ctx.fillRect(px - 2, py - 2, 7, 7);
+
+      ctx.globalAlpha = a * 0.55;
+      ctx.fillRect(px - 1, py - 1, 5, 5);
+
+      ctx.globalAlpha = a;
+      ctx.fillRect(px, py, 3, 3);
+
+      if (a > (inBridge ? 0.55 : 0.22)) {
+        ctx.globalAlpha = a * 0.70;
+        ctx.fillRect(px - 2, py + 1, 2, 1);
+        ctx.fillRect(px + 3, py + 1, 2, 1);
+        ctx.fillRect(px + 1, py - 2, 1, 2);
+        ctx.fillRect(px + 1, py + 3, 1, 2);
+      }
+    }
+
+    ctx.restore();
+  }
+  
+  // Speed display at top (PvP/Training mode only) - render before shake so it's always visible
+  if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    // Calculate current speed
+    const speedSquared = myPlayer.vx * myPlayer.vx + myPlayer.vy * myPlayer.vy;
+    const currentSpeed = Math.sqrt(speedSquared);
+    
+    // Speed text (centered) - readable on dark arena background
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeText(`SPEED: ${currentSpeed.toFixed(2)}`, canvas.width / 2, 18);
+    ctx.fillText(`SPEED: ${currentSpeed.toFixed(2)}`, canvas.width / 2, 18);
+
+    // PvP match timer (server-authoritative, 90s) - render in top-right so it doesn't overlap fuel UI.
+    if (gameMode === 'PvP' && colyseusService.isConnectedToRoom() && pvpMatchEndAt > Date.now()) {
+      const msLeft = Math.max(0, pvpMatchEndAt - Date.now());
+      const sLeft = Math.ceil(msLeft / 1000);
+      const mm = String(Math.floor(sLeft / 60)).padStart(2, '0');
+      const ss = String(sLeft % 60).padStart(2, '0');
+      const text = `${mm}:${ss}`;
+
+      const boxW = 92;
+      const boxH = 26;
+      const boxX = canvas.width - 16 - boxW;
+      const boxY = 10;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeText(text, boxX + boxW / 2, boxY + boxH / 2 + 1);
+      ctx.fillText(text, boxX + boxW / 2, boxY + boxH / 2 + 1);
+      ctx.restore();
+    }
+
+    // Fuel bar display (below speed)
+    const fuelBarWidth = 220;
+    const fuelBarHeight = 10;
+    const fuelBarY = 30;
+    const midX = (pvpBounds.left + pvpBounds.right) / 2;
+    const leftCenterX = (pvpBounds.left + midX) / 2;
+    const rightCenterX = (midX + pvpBounds.right) / 2;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+    // In 5SEC PvP (turn-based), show BOTH fuel bars (YOU + OPP) and keep them visible
+    // across planning + execute (fuel value is last-known from planning, unless updated).
+    const showBothFuel =
+      TURN_BASED_PVP_ENABLED &&
+      gameMode === 'PvP' &&
+      colyseusService.isConnectedToRoom() &&
+      pvpOnlineRoomName === 'pvp_5sec_room' &&
+      (turnPhase !== 'lobby');
+
+    const drawFuelBar = (label: string, fuel: number, maxFuel: number, x: number, y: number, color: string) => {
+      const pct = maxFuel > 0 ? Math.max(0, Math.min(1, fuel / maxFuel)) : 0;
+      const barX = clamp(x, pvpBounds.left + 8, pvpBounds.right - fuelBarWidth - 8);
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(barX, y, fuelBarWidth, fuelBarHeight);
+      ctx.fillStyle = color;
+      ctx.fillRect(barX, y, fuelBarWidth * pct, fuelBarHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(barX, y, fuelBarWidth, fuelBarHeight);
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      // Label readable on dark arena background
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeText(label, barX - 52, y + fuelBarHeight);
+      ctx.fillText(label, barX - 52, y + fuelBarHeight);
+    };
+
+    if (showBothFuel) {
+      const room: any = colyseusService.getRoom();
+      const players: any = room?.state?.players;
+      const mySid: string | null = typeof room?.sessionId === 'string' ? room.sessionId : null;
+      const keys: string[] = players?.keys ? Array.from(players.keys()) : [];
+      const oppSid: string | null = (mySid ? (keys.find((k) => k !== mySid) || null) : null);
+      const meState: any = (mySid && players?.get) ? players.get(mySid) : null;
+      const oppState: any = (oppSid && players?.get) ? players.get(oppSid) : null;
+      const meFuel = (typeof meState?.fuel === 'number') ? meState.fuel : myPlayer.fuel;
+      const meMaxFuel = (typeof meState?.maxFuel === 'number') ? meState.maxFuel : myPlayer.maxFuel;
+      const oppFuel = (typeof oppState?.fuel === 'number') ? oppState.fuel : PVP_DEFAULT_MAX_FUEL;
+      const oppMaxFuel = (typeof oppState?.maxFuel === 'number') ? oppState.maxFuel : PVP_DEFAULT_MAX_FUEL;
+
+      const meX = (typeof meState?.x === 'number') ? meState.x : (pvpPlayers[myPlayerId!]?.x ?? leftCenterX);
+      const oppX = (typeof oppState?.x === 'number') ? oppState.x : rightCenterX;
+      const meIsLeft = meX < midX;
+      const oppIsLeft = oppX < midX;
+      const meBarX = (meIsLeft ? leftCenterX : rightCenterX) - fuelBarWidth / 2;
+      const oppBarX = (oppIsLeft ? leftCenterX : rightCenterX) - fuelBarWidth / 2;
+
+      // Both bars are green (match the old look you liked)
+      // Align them on the same horizontal line (each on its own side)
+      drawFuelBar('YOU', meFuel, meMaxFuel, meBarX, fuelBarY, '#00ff00');
+      drawFuelBar('OPP', oppFuel, oppMaxFuel, oppBarX, fuelBarY, '#00ff00');
+      ctx.textAlign = 'left';
+    } else {
+      // Default (single) fuel bar
+      const fuelPercent = myPlayer.fuel / myPlayer.maxFuel;
+      const fuelBarX = canvas.width / 2 - fuelBarWidth / 2;
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
+      let fuelBarColor = '#00ff00';
+      if (myPlayer.isOverheated) fuelBarColor = '#ff0000';
+      else if (myPlayer.isUsingJetpack) fuelBarColor = '#ff6600';
+      ctx.fillStyle = fuelBarColor;
+      ctx.fillRect(fuelBarX, fuelBarY, fuelBarWidth * fuelPercent, fuelBarHeight);
+      ctx.strokeStyle = myPlayer.isOverheated ? '#ff0000' : '#000000';
+      ctx.lineWidth = myPlayer.isOverheated ? 3 : 2;
+      ctx.strokeRect(fuelBarX, fuelBarY, fuelBarWidth, fuelBarHeight);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      // FUEL text readable on dark arena background
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = myPlayer.isOverheated ? '#ff4040' : '#ffffff';
+      ctx.strokeText(`FUEL: ${Math.floor(myPlayer.fuel)}%`, canvas.width / 2, fuelBarY + fuelBarHeight + 14);
+      ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}%`, canvas.width / 2, fuelBarY + fuelBarHeight + 14);
+    }
+    
+    // Jetpack status text
+    if (myPlayer.isUsingJetpack) {
+      const jetpackUseTime = (Date.now() - myPlayer.jetpackStartTime) / 1000;
+      const jetpackRampTime = 1.5; // seconds to reach max boost
+      const t = jetpackRampTime > 0 ? Math.max(0, Math.min(1, jetpackUseTime / jetpackRampTime)) : 1;
+      const speedBoost = 1 + t * 4; // 1..5
+      ctx.fillStyle = '#ff6600';
+      ctx.fillText(`JETPACK: +${speedBoost.toFixed(1)} SPEED`, canvas.width / 2, fuelBarY + fuelBarHeight + 28);
+    } else if (myPlayer.isOverheated) {
+      const overheatDuration = (Date.now() - myPlayer.overheatStartTime) / 1000;
+      const remainingTime = Math.max(0, 4 - overheatDuration); // 4 seconds overheat
+      ctx.fillStyle = '#ff0000';
+      ctx.fillText(`OVERHEAT: ${remainingTime.toFixed(1)}s`, canvas.width / 2, fuelBarY + fuelBarHeight + 28);
+    }
+    
+    ctx.textAlign = 'left'; // Reset alignment
+  }
+
+  // Cursor-following action cooldown indicator (client-side UI only; no network cost).
+  // Shows when the next "action" is available (1 action / 1 sec).
+  if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId] && !isServerBrowserOpen) {
+    const now = Date.now();
+    const nextAt = pvpNextActionAtById[myPlayerId] || 0;
+    const remainingMs = Math.max(0, nextAt - now);
+    const windowMs = Math.max(1, pvpActionWindowMsById[myPlayerId] || PVP_ACTION_COOLDOWN_MS);
+    const pct = 1 - Math.max(0, Math.min(1, remainingMs / windowMs));
+
+    // Only draw in play area (avoid clutter over left UI panel)
+    if (globalMouseX > 240) {
+      const baseX = globalMouseX + 18 + 10;
+      const baseY = globalMouseY + 18 - 25 - 5;
+      const isShaking = now < pvpActionIndicatorShakeUntil;
+      const sx = isShaking ? (Math.random() - 0.5) * 2 * PVP_ACTION_INDICATOR_SHAKE_PX : 0;
+      const sy = isShaking ? (Math.random() - 0.5) * 2 * PVP_ACTION_INDICATOR_SHAKE_PX : 0;
+      const x = baseX + sx;
+      const y = baseY + sy;
+      const r = 12;
+      const lw = 3;
+      const start = -Math.PI / 2;
+      const end = start + Math.PI * 2 * pct;
+      const ready = remainingMs <= 0;
+
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+
+      // Background ring
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      // Progress ring
+      ctx.beginPath();
+      ctx.arc(x, y, r, start, end);
+      ctx.strokeStyle = ready ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 120, 0, 0.9)';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = ready ? 'rgba(0, 200, 0, 0.95)' : 'rgba(255, 120, 0, 0.95)';
+      ctx.fill();
+
+      // Small time text when cooling down
+      if (!ready) {
+        // Readable on dark arena background
+        ctx.font = 'bold 7px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillStyle = '#ffffff';
+        const t = `${(remainingMs / 1000).toFixed(1)}s`;
+        ctx.strokeText(t, x, y + 22);
+        ctx.fillText(t, x, y + 22);
+      }
+
+      ctx.restore();
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // Solo/PvE: cursor-following green ring (same style as PvP).
+  // Here it represents the "UFO boost click" cadence (visual only).
+  if (gameMode === 'Solo' && gameState === 'Alive' && !isServerBrowserOpen) {
+    try {
+      const walletOk = isWalletConnectedForSoloFx();
+      if (walletOk && globalMouseX > 240) {
+        const now = Date.now();
+        const nextAt = soloBoostRingNextAt || 0;
+        const remainingMs = Math.max(0, nextAt - now);
+        const windowMs = Math.max(1, soloBoostRingWindowMs || SOLO_BOOST_RING_COOLDOWN_MS);
+        const pct = 1 - Math.max(0, Math.min(1, remainingMs / windowMs));
+        const ready = remainingMs <= 0;
+
+        const baseX = globalMouseX + 18 + 10;
+        const baseY = globalMouseY + 18 - 25 - 5;
+        const shake = now < soloBoostRingShakeUntil ? SOLO_BOOST_RING_INDICATOR_SHAKE_PX : 0;
+        const x = baseX + (shake ? (Math.random() - 0.5) * shake * 2 : 0);
+        const y = baseY + (shake ? (Math.random() - 0.5) * shake * 2 : 0);
+        const r = 12;
+        const lw = 3;
+        const start = -Math.PI / 2;
+        const end = start + Math.PI * 2 * pct;
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+
+        // Background ring
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = lw;
+        ctx.stroke();
+
+        // Progress ring
+        ctx.beginPath();
+        ctx.arc(x, y, r, start, end);
+        ctx.strokeStyle = ready ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 120, 0, 0.9)';
+        ctx.lineWidth = lw;
+        ctx.stroke();
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = ready ? 'rgba(0, 200, 0, 0.95)' : 'rgba(255, 120, 0, 0.95)';
+        ctx.fill();
+
+        // Small time text when cooling down
+        if (!ready) {
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+          ctx.fillStyle = '#ffffff';
+          const t = `${(remainingMs / 1000).toFixed(1)}s`;
+          ctx.strokeText(t, x, y + 22);
+          ctx.fillText(t, x, y + 22);
+        }
+
+        ctx.restore();
+        ctx.textAlign = 'left';
+      }
+    } catch {}
+  }
+
+  // Solo progression overlays (playfield): SPEED + DIST
+  if (gameMode === 'Solo') {
+    const x = (playLeft + playRight) / 2 - 10; // shift left by 10px (requested)
+    const y = 52; // move the whole combined plate down by +20px (requested)
+
+    // Combined SPEED + DIST overlay (single line, requested)
+    {
+      const now = Date.now();
+
+      const sp = Math.max(1, Number.isFinite(soloSpeedKmps) ? soloSpeedKmps : 1);
+      const spShown = sp >= 1000 ? Math.round(sp) : Math.round(sp * 10) / 10;
+      if (spShown !== speedUiLastShown) {
+        speedUiLastShown = spShown;
+        speedUiPulseUntil = now + 450;
+      }
+      const spText = sp >= 1000 ? `${Math.round(sp).toLocaleString('en-US')}` : sp.toFixed(1);
+      const pulsing = now < speedUiPulseUntil;
+
+      const dist = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+      const distKmText = `${Math.floor(dist).toLocaleString('en-US')}`;
+      const au = dist / AU_KM;
+      const ly = dist / LY_KM;
+      // AU + LY: fixed 3 decimals (requested 0.000 style).
+      const auVal = au.toFixed(3);
+      const lyVal = ly.toFixed(3);
+      // Prefer KM early, but when it gets huge, switch to AU/LY so it still fits nicely.
+      const useKmAsPrimary = dist < 1_000_000_000; // < 1B KM: keep KM
+      const showKmDefault = useKmAsPrimary;
+      const showAuDefault = !useKmAsPrimary;
+      const showLyDefault = !useKmAsPrimary;
+
+      // Auto-fit: start with KM, then add AU/LY only when KM is huge or when there's room.
+      const maxW = Math.max(220, (playRight - playLeft) - 40);
+      let showKm = showKmDefault;
+      let showAu = showAuDefault;
+      let showLy = showLyDefault;
+      // Bigger text by default (user preferred larger). We'll step down only if we must.
+      let fontSize = 12; // closer to the classic HUD feel (screenshot)
+      const measureLine = (fs: number, opts: { km: boolean; au: boolean; ly: boolean }): number => {
+        ctx.font = `bold ${fs}px \"Press Start 2P\"`;
+        const sep = ' | '; // tighter spacing (requested)
+        const parts: string[] = [];
+        parts.push(`SPEED! ${spText} KM/S`);
+        if (opts.km) parts.push(`DIST: ${distKmText} KM`);
+        if (opts.au) parts.push(`AU: ${auVal}`);
+        if (opts.ly) parts.push(`LY: ${lyVal}`);
+        return ctx.measureText(parts.join(sep)).width;
+      };
+      // If KM is primary, try to also show AU/LY as secondary when space allows.
+      if (useKmAsPrimary) {
+        // Keep the classic look early: show KM only by default.
+        showAu = false;
+        showLy = false;
+      }
+      // Fit loop: drop LY -> AU -> KM (last resort), then reduce font.
+      const fits = () => measureLine(fontSize, { km: showKm, au: showAu, ly: showLy }) <= maxW;
+      if (!fits()) showLy = false;
+      if (!fits()) showAu = false;
+      if (!fits() && showKm) {
+        // If still too wide, drop KM and show AU/LY (which can be shorter in extreme values).
+        showKm = false;
+        showAu = true;
+        showLy = true;
+        if (!fits()) showLy = false;
+        if (!fits()) showAu = false;
+      }
+      if (!fits()) fontSize = 11;
+      if (!fits()) fontSize = 10;
+      if (!fits()) fontSize = 9;
+
+      const font = `bold ${fontSize}px \"Press Start 2P\"`;
+      ctx.save();
+      ctx.font = font;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      // Segment widths
+      // Classic HUD look: mostly white text, minimal tinting (matches screenshot).
+      const labelCol = '#ffffff';
+      const sepCol = 'rgba(255, 255, 255, 0.55)';
+      const segs: Array<{ t: string; color: string }> = [
+        { t: 'SPEED! ', color: labelCol },
+        // Green flash on speed increase (requested)
+        { t: spText, color: pulsing ? '#39ff6a' : '#ffffff' },
+        { t: ' KM/S', color: labelCol },
+      ];
+      if (showKm) {
+        segs.push({ t: ' | ', color: sepCol });
+        segs.push({ t: 'DIST: ', color: labelCol });
+        segs.push({ t: distKmText, color: '#ffffff' });
+        segs.push({ t: ' KM', color: labelCol });
+      }
+      if (showAu) {
+        segs.push({ t: ' | ', color: sepCol });
+        segs.push({ t: 'AU: ', color: labelCol });
+        segs.push({ t: auVal, color: '#ffffff' });
+      }
+      if (showLy) {
+        segs.push({ t: ' | ', color: sepCol });
+        segs.push({ t: 'LY: ', color: labelCol });
+        segs.push({ t: lyVal, color: '#ffffff' });
+      }
+
+      let totalW = 0;
+      for (const s of segs) totalW += ctx.measureText(s.t).width;
+
+      const padX = 12; // slightly tighter while keeping the classic readability
+      const plateW = totalW + padX * 2;
+      const plateH = 52; // bigger plate height (user preferred larger)
+      const rr = drawPixelPanelFrame(ctx, x - plateW / 2, y - plateH / 2, plateW, plateH, 'rgba(8, 10, 18, 0.50)', 'rgba(210, 235, 255, 0.16)');
+
+      // Draw segments left-to-right
+      let cx = rr.x + padX;
+      const yy = rr.y + rr.h / 2 + 0.5;
+      // No panel "popup" motion: keep the plate stable; only color flash the speed number.
+      for (const s of segs) {
+        drawPixelTextLeft(ctx, s.t, cx, yy, font, s.color, 'rgba(0, 0, 0, 0.85)');
+        cx += ctx.measureText(s.t).width;
+      }
+      ctx.restore();
+    }
+
+    // Guest notice (below SPEED/DIST and above Solar Map)
+    if (!getRoninAddressForPersistence()) {
+      try {
+        const msg = 'GUEST MODE — CONNECT WALLET TO SAVE PROGRESS';
+        // Add a tiny readable tag behind the text (improves contrast on bright planets).
+        const fs = 12;
+        ctx.save();
+        ctx.font = `bold ${fs}px "Press Start 2P"`;
+        const tw = ctx.measureText(msg).width;
+        const tagPadX = 10;
+        const tagPadY = 6;
+        const tagW = tw + tagPadX * 2;
+        const tagH = fs + tagPadY * 2;
+        const tagX = Math.floor(x - tagW / 2);
+        const tagY = Math.floor(y + 52 - tagH / 2);
+        drawPixelPanelFrame(ctx, tagX, tagY, tagW, tagH, 'rgba(8, 10, 18, 0.58)', 'rgba(210, 235, 255, 0.14)');
+        drawPixelText(ctx, msg, x, y + 52, `bold ${fs}px "Press Start 2P"`, '#ffffff', 'rgba(0, 0, 0, 0.92)');
+        ctx.restore();
+      } catch {}
+    }
+
+    // Solar System map (line with planets), lower by +30px (requested)
+    const mapY = y + 110;
+    // Realistic spacing (semi-major axis in AU, approx). Linear scale will cluster inner planets,
+    // but dot positions reflect true relative distances.
+    const planets = [
+      { key: 'MERCURY', au: 0.387, isStart: false },
+      { key: 'VENUS', au: 0.723, isStart: false },
+      { key: 'EARTH', au: 1.0, isStart: true }, // start planet
+      // Moon: shown right next to Earth. Real Earth-Moon distance is ~0.00257 AU.
+      // We keep AU-based placement but enforce a minimum pixel offset so it remains visible.
+      { key: 'MOON', au: 1.00257, isStart: false, isMoon: true },
+      { key: 'MARS', au: 1.524, isStart: false },
+      { key: 'JUPITER', au: 5.203, isStart: false },
+      { key: 'SATURN', au: 9.537, isStart: false },
+      { key: 'URANUS', au: 19.191, isStart: false },
+      { key: 'NEPTUNE', au: 30.07, isStart: false },
+    ];
+
+    const left = playLeft + 70;
+    const right = playRight - 70;
+    const lineW = Math.max(220, right - left);
+    const minAu = Math.min(...planets.map(p => p.au));
+    const maxAu = Math.max(...planets.map(p => p.au));
+    const fitX = (au: number) => left + ((au - minAu) / Math.max(0.0001, (maxAu - minAu))) * lineW;
+    // ME position: start at Earth (1 AU), then move outward by traveled distance (km) converted to AU.
+    const meAu = 1.0 + (Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0) / AU_KM);
+    const mapCenterX = (left + right) / 2;
+    const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+    // When zooming in at all, focus immediately on ME (so we actually use the available space).
+    const tFocus = z > 1.01 ? 1 : 0;
+    // Focus scaling uses a local AU window around ME (not the full system range),
+    // so inner planets actually expand and use the available width.
+    const baseHalfSpanAu = 2.8; // at zoom=1: show roughly ME +/- 2.8 AU (inner system)
+    // Lower clamp so very deep zoom can show tiny distances (Moon, etc.)
+    const halfSpanAu = Math.max(0.01, baseHalfSpanAu / Math.max(1, z));
+    const focusScalePxPerAu = lineW / (2 * halfSpanAu);
+    // Focus/pan: when zoomed in, allow dragging left/right to browse the whole map.
+    // At zoom=1, pan is disabled because everything is already visible (requested).
+    const worldMinAu = minAu;
+    const worldMaxAu = Math.max(maxAu, meAu);
+    let focusAu = meAu;
+    if (tFocus > 0) {
+      const focusRaw = meAu + (Number.isFinite(solarMapPanAu) ? solarMapPanAu : 0);
+      const minFocusAu = worldMinAu + halfSpanAu;
+      const maxFocusAu = worldMaxAu - halfSpanAu;
+      if (minFocusAu <= maxFocusAu) {
+        focusAu = clamp(focusRaw, minFocusAu, maxFocusAu);
+      } else {
+        focusAu = (worldMinAu + worldMaxAu) / 2;
+      }
+      // Keep stored pan in sync with clamping.
+      solarMapPanAu = focusAu - meAu;
+    } else {
+      solarMapPanAu = 0;
+      solarMapIsDragging = false;
+    }
+    const focusX = (au: number) => mapCenterX + (au - focusAu) * focusScalePxPerAu;
+    const auToX = (au: number) => fitX(au) * (1 - tFocus) + focusX(au) * tFocus;
+
+    ctx.save();
+    // background plate for readability (taller frame: +23px top +23px bottom)
+    const platePadY = 23;
+    const plateH = 42 + platePadY * 2;
+    const plateRect = drawPixelPanelFrame(
+      ctx,
+      left - 24,
+      mapY - 22 - platePadY,
+      lineW + 48,
+      plateH,
+      'rgba(8, 10, 18, 0.32)',
+      'rgba(210, 235, 255, 0.12)'
+    );
+
+    // Line
+    ctx.fillStyle = 'rgba(230, 240, 255, 0.30)';
+    ctx.fillRect(px(left), px(mapY) - 1, Math.max(1, px(right - left)), 2);
+
+    // Zoom + pan buttons (clickable)
+    const btnSize = 22; // keep current size
+    const plateX = left - 24;
+    const plateW = lineW + 48;
+    const btnGap = 6;
+    // Old placement: right side of the plate
+    const btnY = mapY + 8;
+    const zoomXOffset = -70; // requested: move zoom UI left to avoid Neptune label overlap
+    const uiRightX = plateX + plateW - 10 + zoomXOffset;
+    // Order (left->right): ◀  -  +  ▶
+    // Requested spacing: zoom buttons (-/+) left by 30px, arrows (◀/▶) right by 20px.
+    // Also requested: arrows should be stuck together (no gap).
+    const zoomOffsetX = -30;
+    const arrowsOffsetX = +20;
+    const btnRightX = uiRightX - btnSize + arrowsOffsetX;
+    const btnLeftX = btnRightX - btnSize; // touch ▶ (no gap)
+    const btnPlusX = (btnLeftX - btnGap - btnSize) + zoomOffsetX;
+    const btnMinusX = (btnPlusX - btnGap - btnSize);
+
+    const drawBtn = (bx: number, label: string, enabled: boolean) => {
+      ctx.save();
+      const rr = drawPixelButtonFrame(ctx, bx, btnY, btnSize, btnSize, {
+        disabled: !enabled,
+        hovering: false,
+        pressing: false,
+        borderColor: 'rgba(210, 235, 255, 0.16)',
+        bgColor: 'rgba(18, 22, 36, 0.85)',
+        bgHoverColor: 'rgba(24, 28, 46, 0.90)',
+        bgPressedColor: 'rgba(10, 12, 20, 0.90)',
+        drawShadow: false,
+      });
+
+      // Draw crisp symbols as lines (avoids blurry font glyphs)
+      const cx = Math.round(rr.x + rr.w / 2);
+      const cy = Math.round(rr.y + rr.h / 2);
+      const half = Math.max(5, Math.floor(btnSize * 0.28));
+      const baseW = Math.max(2, Math.floor(btnSize / 8));
+      const fg = enabled ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.55)';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      const drawSymbol = (strokeStyle: string, lineWidth: number) => {
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        if (label === '<' || label === '>') {
+          const k = Math.max(5, Math.floor(btnSize * 0.24));
+          if (label === '<') {
+            ctx.moveTo(cx + k, cy - k);
+            ctx.lineTo(cx - k, cy);
+            ctx.lineTo(cx + k, cy + k);
+          } else {
+            ctx.moveTo(cx - k, cy - k);
+            ctx.lineTo(cx + k, cy);
+            ctx.lineTo(cx - k, cy + k);
+          }
+        } else {
+          // horizontal
+          ctx.moveTo(cx - half, cy);
+          ctx.lineTo(cx + half, cy);
+          // vertical for plus
+          if (label === '+') {
+            ctx.moveTo(cx, cy - half);
+            ctx.lineTo(cx, cy + half);
+          }
+        }
+        ctx.stroke();
+      };
+
+      // outline then foreground
+      drawSymbol('rgba(0, 0, 0, 0.75)', baseW + 2);
+      drawSymbol(fg, baseW);
+      ctx.restore();
+    };
+    const panEnabled = z > 1.01;
+    drawBtn(btnLeftX, '<', panEnabled);
+    drawBtn(btnMinusX, '-', z > SOLAR_MAP_ZOOM_MIN + 1e-6);
+    drawBtn(btnPlusX, '+', z < SOLAR_MAP_ZOOM_MAX - 1e-6);
+    drawBtn(btnRightX, '>', panEnabled);
+
+    // Zoom indicator (pixel shadow instead of strokeText)
+    {
+      const zText = `ZOOM x${z.toFixed(2)}`;
+      ctx.save();
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      // drawPixelText is centered; shift x by half width to keep right-align feel
+      ctx.font = 'bold 10px \"Press Start 2P\"';
+      const tw = ctx.measureText(zText).width;
+      drawPixelText(ctx, zText, (btnMinusX - 10) - tw / 2, mapY + 15, 'bold 10px \"Press Start 2P\"', 'rgba(230, 240, 255, 0.85)', 'rgba(0, 0, 0, 0.70)');
+      ctx.restore();
+    }
+
+    // Nodes + labels
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const earthPx = auToX(1.0);
+
+    // Progress segment: Earth -> ME (clipped to viewport) (pixel line)
+    {
+      const mePxRaw = auToX(meAu);
+      const a = clamp(earthPx, left, right);
+      const b = clamp(mePxRaw, left, right);
+      const segL = Math.min(a, b);
+      const segR = Math.max(a, b);
+      if (Math.abs(segR - segL) > 1) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(80, 255, 160, 0.45)';
+        ctx.fillRect(px(segL), px(mapY) - 1, Math.max(1, px(segR - segL)), 3);
+        ctx.restore();
+      }
+    }
+
+    for (let i = 0; i < planets.length; i++) {
+      const p = planets[i];
+      let nodePx = auToX(p.au);
+      // Ensure Moon is visible at all zoom levels (otherwise it sits on top of Earth).
+      if ((p as any).isMoon) {
+        const rawDx = nodePx - earthPx;
+        const minDx = 12;
+        nodePx = earthPx + (rawDx >= 0 ? Math.max(minDx, rawDx) : -Math.max(minDx, Math.abs(rawDx)));
+      }
+
+      // Skip nodes that are fully outside the map viewport (zooming in will push outer planets out)
+      if (nodePx < left - 30 || nodePx > right + 30) continue;
+
+      const isEarth = p.isStart;
+      const isMoon = !!(p as any).isMoon;
+      const dotSize = isEarth ? 10 : (isMoon ? 6 : 7); // pixel-friendly sizes
+      const nodeX = px(nodePx);
+      const nodeY = px(mapY);
+      const dotX = nodeX - Math.floor(dotSize / 2);
+      const dotY = nodeY - Math.floor(dotSize / 2);
+      const dotFill = isEarth
+        ? 'rgba(120, 210, 255, 0.95)'
+        : (isMoon ? 'rgba(220, 230, 240, 0.85)' : 'rgba(230, 240, 255, 0.75)');
+      // pixel marker (square) with 1px outline
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillRect(dotX - 1, dotY - 1, dotSize + 2, dotSize + 2);
+      ctx.fillStyle = dotFill;
+      ctx.fillRect(dotX, dotY, dotSize, dotSize);
+
+      // Labels (pixel shadow instead of strokeText to avoid blur)
+      // Stagger labels a bit so inner planets remain readable even when clustered.
+      const labelY = isMoon ? (mapY - 18) : (mapY - (i % 2 === 0 ? 6 : 14));
+      drawPixelText(ctx, p.key, nodeX, labelY, 'bold 8px \"Press Start 2P\"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+    }
+
+    // ME marker (moves live based on distance)
+    {
+      const raw = auToX(meAu);
+      const clampedX = clamp(raw, left + 6, right - 6);
+      const offLeft = raw < left + 6;
+      const offRight = raw > right - 6;
+
+      ctx.save();
+      // Marker: pixel ring + dot (no arcs => no AA)
+      const mcx = px(clampedX);
+      const mcy = px(mapY);
+      // outer ring (11x11)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillRect(mcx - 5, mcy - 5, 11, 11);
+      ctx.fillStyle = 'rgba(80, 255, 160, 0.95)';
+      ctx.fillRect(mcx - 4, mcy - 4, 9, 9);
+      ctx.fillStyle = 'rgba(8, 10, 18, 0.80)';
+      ctx.fillRect(mcx - 3, mcy - 3, 7, 7);
+      ctx.fillStyle = 'rgba(80, 255, 160, 0.95)';
+      ctx.fillRect(mcx - 1, mcy - 1, 3, 3);
+
+      // Label + arrows if offscreen
+      const meLabel = offLeft ? '< ME' : (offRight ? 'ME >' : 'ME');
+      drawPixelText(ctx, meLabel, mcx, mcy + 10, 'bold 8px \"Press Start 2P\"', 'rgba(80, 255, 160, 0.95)', 'rgba(0, 0, 0, 0.75)');
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+  
+  // Apply screen shake
+  let shakeX = 0;
+  let shakeY = 0;
+  if (screenShake > 0) {
+    shakeX = (Math.random() - 0.5) * 4; // Reduced from 8 to 4
+    shakeY = (Math.random() - 0.5) * 4; // Reduced from 8 to 4
+  }
+  
+  // Save context for shake (UI panel is not affected by camera)
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  // Draw UI panel
+  ctx.fillStyle = UI_PANEL_BG;
+  ctx.fillRect(0, 0, UI_PANEL_W, canvas.height);
+  
+  // Panel border
+  ctx.strokeStyle = UI_PANEL_BORDER;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(0, 0, UI_PANEL_W, canvas.height);
+  // subtle inner border
+  ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(2, 2, UI_PANEL_W - 4, canvas.height - 4);
+
+    // Currency
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 16px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Rice: ${dotCurrency}`, 20, 40);
+    // Guest hint: show clearly that progress won't be saved, but provide test resources.
+    if (!getRoninAddressForPersistence()) {
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.fillStyle = 'rgba(255, 210, 120, 0.95)';
+      ctx.fillText('GUEST: NO SAVE', 20, 58);
+      ctx.fillStyle = UI_TEXT;
+    }
+    // (hidden) Solo progression speed (km/s) - removed from UI (requested)
+
+    // Faucet button (+50 Rice) - usable only when Rice=0 and cooldown passed
+    {
+      const r = getFaucetButtonRect();
+      const x = r.x;
+      const y = r.y;
+      const w = r.w;
+      const h = r.h;
+      const remaining = getFaucetRemainingMs();
+      const ready = canUseFaucet();
+      const hasRice = (dotCurrency | 0) > 0;
+      const borderColor = ready ? UI_ACCENT_GREEN : UI_BTN_INNER;
+
+      const rr = drawPixelButtonFrame(ctx, x, y, w, h, {
+        hovering: isHoveringFaucet,
+        pressing: isPressingFaucet,
+        disabled: !ready,
+        borderColor,
+        drawShadow: true,
+      });
+
+      // Full-button messaging (requested): use the entire button face to explain state.
+      const cx = rr.x + rr.w / 2;
+      const midY = rr.y + rr.h / 2 + 0.5;
+
+      if (remaining > 0) {
+        // After claiming: show cooldown using the full button.
+        drawPixelText(ctx, 'NEXT CLAIM IN', cx, rr.y + 14, 'bold 8px "Press Start 2P"', UI_TEXT_MUTED, 'rgba(0, 0, 0, 0.65)');
+        drawPixelText(ctx, formatCooldownShort(remaining), cx, rr.y + 30, 'bold 11px "Press Start 2P"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+      } else if (hasRice) {
+        // Blocked by balance: explain why user can't claim.
+        drawPixelText(ctx, 'FAUCET ONLY WHEN', cx, rr.y + 14, 'bold 8px "Press Start 2P"', UI_TEXT_MUTED, 'rgba(0, 0, 0, 0.65)');
+        drawPixelText(ctx, 'RICE = 0', cx, rr.y + 30, 'bold 11px "Press Start 2P"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+      } else {
+        // Ready: big centered claim label.
+        drawPixelText(ctx, 'CLAIM 50 RICE', cx, midY, 'bold 12px "Press Start 2P"', '#39ff6a', 'rgba(0, 0, 0, 0.88)');
+      }
+
+      ctx.textAlign = 'left';
+    }
+
+    // Slot UI moved next to Live Chat (button + badge). Keep panel clean.
+
+  // Contact button (top-right)
+  {
+    const r = getContactButtonRect();
+    const x = r.x;
+    const y = r.y;
+    const w = r.w;
+    const h = r.h;
+    const rr = drawPixelButtonFrame(ctx, x, y, w, h, {
+      hovering: isHoveringContact || isContactOpen,
+      pressing: isPressingContact,
+      borderColor: isContactOpen ? UI_ACCENT_YELLOW : UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'CONTACT', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 9px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // PewPew button (above CONTACT)
+  {
+    const r = getPewPewButtonRect();
+    const x = r.x;
+    const y = r.y;
+    const w = r.w;
+    const h = r.h;
+    const rr = drawPixelButtonFrame(ctx, x, y, w, h, {
+      hovering: isHoveringPewPew || isPewPewOpen,
+      pressing: isPressingPewPew,
+      borderColor: isPewPewOpen ? UI_ACCENT_GREEN : UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'PEWPEW', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // SPEED FX control (above PEWPEW): +/- to scale Solo thruster smoke + warp streaks
+  {
+    const r = getSpeedFxControlRect();
+    const minusR = getSpeedFxMinusRect();
+    const plusR = getSpeedFxPlusRect();
+    const y = r.y;
+    const x = r.x;
+    const w = r.w;
+    const h = r.h;
+
+    // frame
+    ctx.save();
+    drawPixelPanelFrame(ctx, x, y, w, h, 'rgba(8, 10, 18, 0.55)', 'rgba(210, 235, 255, 0.16)');
+
+    // minus button
+    {
+      const rr = drawPixelButtonFrame(ctx, minusR.x, minusR.y, minusR.w, minusR.h, {
+        hovering: isHoveringSpeedFxMinus,
+        pressing: isPressingSpeedFxMinus,
+        borderColor: UI_BTN_INNER,
+        bgColor: 'rgba(8, 10, 18, 0.35)',
+        bgHoverColor: 'rgba(18, 22, 36, 0.70)',
+        bgPressedColor: 'rgba(40, 80, 140, 0.55)',
+        drawShadow: false,
+      });
+      drawPixelText(ctx, '-', rr.x + rr.w / 2, rr.y + rr.h / 2 + 0.5, 'bold 10px \"Press Start 2P\"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+    }
+
+    // plus button
+    {
+      const rr = drawPixelButtonFrame(ctx, plusR.x, plusR.y, plusR.w, plusR.h, {
+        hovering: isHoveringSpeedFxPlus,
+        pressing: isPressingSpeedFxPlus,
+        borderColor: UI_BTN_INNER,
+        bgColor: 'rgba(8, 10, 18, 0.35)',
+        bgHoverColor: 'rgba(18, 22, 36, 0.70)',
+        bgPressedColor: 'rgba(40, 80, 140, 0.55)',
+        drawShadow: false,
+      });
+      drawPixelText(ctx, '+', rr.x + rr.w / 2, rr.y + rr.h / 2 + 0.5, 'bold 10px \"Press Start 2P\"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+    }
+
+    // labels
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 8px \"Press Start 2P\"';
+    const mul = getSpeedFxMultiplier();
+    drawPixelText(ctx, `SPEED FX x${formatSpeedFxMultiplier(mul)}`, x + w / 2, y + h / 2 + 0.5, 'bold 8px \"Press Start 2P\"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+    ctx.restore();
+  }
+
+  // Contact modal (links)
+  if (isContactOpen) {
+    const mr = getContactModalRect();
+    const modalX = mr.x;
+    const modalY = mr.y;
+    const modalW = mr.w;
+    const modalH = mr.h;
+    const btnX = modalX + 10;
+    const btnW = modalW - 20;
+    const btnH = 34;
+    const gap = 8;
+    const y0 = modalY + 30;
+
+    ctx.save();
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalW, modalH);
+
+    // Title
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('CONTACT', modalX + 10, modalY + 8);
+    // Close X
+    ctx.textAlign = 'right';
+    ctx.fillText('X', modalX + modalW - 10, modalY + 8);
+
+    // Buttons
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 10px "Press Start 2P"';
+
+    // Project X
+    ctx.fillStyle = 'rgba(74, 163, 255, 0.25)';
+    ctx.fillRect(btnX, y0, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(btnX, y0, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText('X: @0x_PewPew', btnX + btnW / 2, y0 + btnH / 2);
+
+    // Creator X
+    const y1 = y0 + btnH + gap;
+    ctx.fillStyle = 'rgba(74, 163, 255, 0.25)';
+    ctx.fillRect(btnX, y1, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(btnX, y1, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText('X: @j0vany1', btnX + btnW / 2, y1 + btnH / 2);
+
+    // Discord
+    const y2 = y1 + btnH + gap;
+    ctx.fillStyle = 'rgba(140, 120, 255, 0.22)';
+    ctx.fillRect(btnX, y2, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(btnX, y2, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText('DISCORD', btnX + btnW / 2, y2 + btnH / 2);
+
+    // Popup-blocked hint
+    if (contactOpenError) {
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.95)';
+      ctx.font = 'bold 6px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(contactOpenError.substring(0, 28), modalX + modalW / 2, modalY + modalH - 8);
+    }
+
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
+
+  // DOT stats with frame - Solo mode only
+  if (gameMode === 'Solo') {
+    const statsX = 20;
+    const statsY = 70 + 50;
+    const statsWidth = 200;
+    const statsHeight = 50;
+    
+    // Frame background
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(statsX, statsY, statsWidth, statsHeight);
+    
+    // Frame border
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(statsX, statsY, statsWidth, statsHeight);
+    
+    // HP and Armor text
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 12px "Press Start 2P"';
+    const nftBonuses = calculateNftBonuses();
+    const totalMaxHP = dotMaxHP + nftBonuses.hp;
+    ctx.fillText(`HP: ${dotHP}/${dotMaxHP}`, statsX + 10, statsY + 20);
+    if (nftBonuses.hp > 0) {
+      ctx.fillStyle = UI_ACCENT_GREEN; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.hp}`, statsX + 10 + ctx.measureText(`HP: ${dotHP}/${dotMaxHP} `).width, statsY + 20);
+    }
+    
+    // Armor text
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText(`ARMOR: ${dotArmor}/${dotMaxArmor}`, statsX + 10, statsY + 40);
+  }
+
+  // (removed) Upgrade buttons - Solo mode only
+  // Level selection section - REMOVED (hidden from UI)
+  // Level system still exists in code but is not displayed in UI panel
+
+  // Arrow status indicator (replaces katana button) - Solo mode only
+  if (gameMode === 'Solo') {
+    // Solo weapon UI removed (we'll revisit later)
+  }
+
+  // Profile button (above wallet button)
+  // Leaderboard button (above Profile)
+  const leaderboardButtonX = 20;
+  const leaderboardButtonY = 350;
+  const leaderboardButtonWidth = 200;
+  const leaderboardButtonHeight = 40;
+  {
+    const rr = drawPixelButtonFrame(ctx, leaderboardButtonX, leaderboardButtonY, leaderboardButtonWidth, leaderboardButtonHeight, {
+      hovering: isHoveringLeaderboard,
+      pressing: isPressingLeaderboard,
+      borderColor: UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'LEADERBOARD', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // Profile button
+  const profileButtonX = 20;
+  const profileButtonY = 400; // Above wallet button
+  const profileButtonWidth = 200;
+  const profileButtonHeight = 40;
+  {
+    const rr = drawPixelButtonFrame(ctx, profileButtonX, profileButtonY, profileButtonWidth, profileButtonHeight, {
+      hovering: isHoveringProfile,
+      pressing: isPressingProfile,
+      borderColor: UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'PROFILE', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // Wallet connection button (moved down to avoid overlapping with other info) - ALWAYS render, regardless of game mode
+  const walletButtonX = 20;
+  const walletButtonY = 450; // Moved down below Profile button
+  const walletButtonWidth = 200;
+  const walletButtonHeight = 40;
+  
+  // DEBUG: Log wallet button rendering (only once per session)
+  if (!(window as any).walletButtonDebugLogged) {
+    console.log('Rendering wallet button at:', { x: walletButtonX, y: walletButtonY, width: walletButtonWidth, height: walletButtonHeight });
+    (window as any).walletButtonDebugLogged = true;
+  }
+  
+  // Wallet button: keep the "connected green / disconnected orange" cue,
+  // but render with the same pixel frame as other UI buttons.
+  let anyConnectedForWallet = false;
+  try {
+    const ws = walletService.getState();
+    anyConnectedForWallet = (ws.isConnected && !!ws.address) || !!authUserId;
+  } catch {}
+  const walletBaseBg = anyConnectedForWallet ? 'rgba(40, 220, 120, 0.95)' : 'rgba(255, 160, 60, 0.95)';
+  const walletHoverBg = anyConnectedForWallet ? 'rgba(60, 245, 145, 0.98)' : 'rgba(255, 185, 90, 0.98)';
+  const walletPressedBg = anyConnectedForWallet ? 'rgba(20, 135, 75, 0.98)' : 'rgba(185, 105, 25, 0.98)';
+  const walletRR = drawPixelButtonFrame(ctx, walletButtonX, walletButtonY, walletButtonWidth, walletButtonHeight, {
+    hovering: isHoveringWallet,
+    pressing: isPressingWallet,
+    borderColor: UI_BTN_INNER,
+    bgColor: walletBaseBg,
+    bgHoverColor: walletHoverBg,
+    bgPressedColor: walletPressedBg,
+    drawShadow: true,
+  });
+  const walletCX = walletRR.x + walletRR.w / 2;
+  const walletCY = walletRR.y + walletRR.h / 2;
+  const walletTextColor = 'rgba(5, 7, 13, 0.95)'; // dark text on bright fill
+  const walletTextShadow = 'rgba(255, 255, 255, 0.22)';
+  try {
+    const walletState = walletService.getState();
+    // Debug: Log state on every render (only once per second to avoid spam)
+    const now = Date.now();
+    if (!(window as any).lastWalletStateLog || now - (window as any).lastWalletStateLog > 1000) {
+      // Removed excessive logging to reduce lag - only log if there's an issue
+      // console.log('Render: walletState =', walletState, 'walletConnecting =', walletConnecting);
+      (window as any).lastWalletStateLog = now;
+    }
+    
+    if (walletConnecting) {
+      drawPixelText(ctx, 'CONNECTING...', walletCX, walletCY, 'bold 8px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+    } else if (walletState.isConnected && walletState.address) {
+      // Prefer nickname (if set) over address
+      const nick = (profileManager.getProfile().nickname || '').trim();
+      const shortAddress = walletState.address.length > 12
+        ? `${walletState.address.substring(0, 6)}...${walletState.address.substring(walletState.address.length - 4)}`
+        : walletState.address;
+      const display = nick.length ? nick : shortAddress;
+      drawPixelText(ctx, display, walletCX, walletCY - 5, 'bold 6px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'DISCONNECT', walletCX, walletCY + 8, 'bold 6px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+    } else if (authUserId) {
+      // Email/OAuth session connected via Supabase
+      const label = authEmail
+        ? (authEmail.length > 16 ? `${authEmail.substring(0, 13)}...` : authEmail)
+        : 'EMAIL LOGIN';
+      drawPixelText(ctx, label, walletCX, walletCY - 5, 'bold 6px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'LOGOUT', walletCX, walletCY + 8, 'bold 6px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+    } else {
+      drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, 'bold 8px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+    }
+  } catch (error) {
+    console.error('Error rendering wallet button text:', error);
+    drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, 'bold 8px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+  }
+
+  // Wallet/Auth picker (Ronin / MetaMask / Email)
+  if (walletProviderModalOpen) {
+    const uiPanelW = 240;
+    const modalW = 190; // narrower (better proportions)
+    const modalH = 150;
+    const modalX = Math.floor((uiPanelW - modalW) / 2);
+    const modalY = walletButtonY - 10 - modalH;
+    ctx.save();
+    // Panel
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalW, modalH);
+    // Title
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('SELECT WALLET', modalX + 10, modalY + 8);
+    // Close X
+    ctx.textAlign = 'right';
+    ctx.fillText('X', modalX + modalW - 10, modalY + 8);
+
+    const canEmail = supabaseService.isConfigured();
+    const available = walletService.getAvailableWallets();
+
+    // Buttons
+    const btnX = modalX + 10;
+    const btnW = modalW - 20;
+    const btnH = 30;
+    const roninY = modalY + 34;
+    const mmY = roninY + btnH + 8;
+    const emailY = mmY + btnH + 8;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 9px "Press Start 2P"';
+    // Ronin
+    ctx.fillStyle = available.ronin ? 'rgba(74, 163, 255, 0.35)' : 'rgba(120, 130, 150, 0.18)';
+    ctx.fillRect(btnX, roninY, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(btnX, roninY, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText(available.ronin ? 'RONIN' : 'RONIN (NO)', btnX + btnW / 2, roninY + btnH / 2);
+    // MetaMask
+    ctx.fillStyle = available.metamask ? 'rgba(255, 170, 0, 0.30)' : 'rgba(120, 130, 150, 0.18)';
+    ctx.fillRect(btnX, mmY, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(btnX, mmY, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText(available.metamask ? 'METAMASK' : 'METAMASK (NO)', btnX + btnW / 2, mmY + btnH / 2);
+
+    // Email (Supabase Auth)
+    ctx.fillStyle = canEmail ? 'rgba(80, 255, 160, 0.22)' : 'rgba(120, 130, 150, 0.18)';
+    ctx.fillRect(btnX, emailY, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(btnX, emailY, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText(canEmail ? 'EMAIL' : 'EMAIL (NO)', btnX + btnW / 2, emailY + btnH / 2);
+
+    ctx.restore();
+  }
+
+  // Email login modal (input is an HTML element; this draws the buttons/status)
+  if (emailLoginModalOpen) {
+    const boxX = 20;
+    const boxY = 450 - 10 - 90;
+    const boxW = 200;
+    const boxH = 86;
+    ctx.save();
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 7px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('EMAIL LOGIN', boxX + 10, boxY + 8);
+    if (emailLoginStatus) {
+      ctx.font = 'bold 6px "Press Start 2P"';
+      ctx.fillText(emailLoginStatus.substring(0, 18), boxX + 10, boxY + 28);
+    }
+
+    const btnW = 92;
+    const btnH = 24;
+    const btnY = 450 - 10 - 26;
+    // SEND
+    ctx.fillStyle = 'rgba(80, 255, 160, 0.22)';
+    ctx.fillRect(boxX, btnY, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(boxX, btnY, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 7px "Press Start 2P"';
+    ctx.fillText('SEND', boxX + btnW / 2, btnY + btnH / 2);
+    // CANCEL
+    const cancelX = boxX + btnW + 10;
+    ctx.fillStyle = 'rgba(255, 120, 120, 0.22)';
+    ctx.fillRect(cancelX, btnY, btnW, btnH);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(cancelX, btnY, btnW, btnH);
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText('CANCEL', cancelX + btnW / 2, btnY + btnH / 2);
+    ctx.restore();
+  }
+  
+  // Show error if any
+  if (walletError) {
+    ctx.fillStyle = 'rgba(255, 120, 120, 0.95)';
+    ctx.font = 'bold 6px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillText(walletError.substring(0, 30), walletButtonX + 5, walletButtonY + walletButtonHeight + 15);
+  }
+
+  // Wallet info frame (only if wallet is connected)
+  try {
+    const walletStateForBalance = walletService.getState();
+    if (walletStateForBalance.isConnected && walletStateForBalance.address) {
+    const balanceFrameX = 20;
+    const balanceFrameY = walletButtonY + walletButtonHeight + 10; // Below wallet button
+    const balanceFrameWidth = 200;
+    const balanceFrameHeight = UI_WALLET_BALANCE_H; // DOT + NFT status
+    
+    // Frame background
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(balanceFrameX, balanceFrameY, balanceFrameWidth, balanceFrameHeight);
+    
+    // Frame border
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(balanceFrameX, balanceFrameY, balanceFrameWidth, balanceFrameHeight);
+    
+    // Ronke balance (from connected wallet)
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    
+    ctx.fillText(`RONKE:`, balanceFrameX + 10, balanceFrameY + 6);
+    if (ronkeBalance !== null) {
+      ctx.font = 'bold 12px "Press Start 2P"';
+      // Avoid duplicating the "RONKE" label (it's already in the header).
+      ctx.fillText(`${ronkeBalance}`, balanceFrameX + 10, balanceFrameY + 20);
+    } else {
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.fillText(`Checking...`, balanceFrameX + 10, balanceFrameY + 20);
+    }
+
+    // NFT loading status (Ronkeverse) - shows that bonuses will apply automatically once loaded.
+    ctx.font = 'bold 9px "Press Start 2P"';
+    ctx.fillStyle = UI_TEXT_MUTED;
+    let nftLine = 'NFT: ...';
+    if (isLoadingNfts) {
+      nftLine = 'NFT: loading...';
+      ctx.fillStyle = UI_ACCENT_YELLOW;
+    } else if (nftError) {
+      nftLine = `NFT: error`;
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.95)';
+    } else if (nftLoadedOnce) {
+      nftLine = `NFT: ${nftList.length}`;
+      ctx.fillStyle = nftList.length > 0 ? UI_ACCENT_GREEN : UI_TEXT_MUTED;
+    } else {
+      nftLine = 'NFT: none';
+      ctx.fillStyle = UI_TEXT_MUTED;
+    }
+    ctx.fillText(nftLine, balanceFrameX + 10, balanceFrameY + 44);
+    } // End of wallet connected check
+  } catch (error) {
+    // Ignore error - balance frame won't show
+  }
+
+  // Training Mode button (PvP with bot)
+  const trainingButtonX = 20;
+  const trainingButtonY = getTrainingButtonY();
+  const trainingButtonWidth = 200;
+  const trainingButtonHeight = 40;
+  {
+    const rr = drawPixelButtonFrame(ctx, trainingButtonX, trainingButtonY, trainingButtonWidth, trainingButtonHeight, {
+      hovering: isHoveringGameMode,
+      pressing: isPressingGameMode,
+      borderColor: (gameMode === 'Training') ? UI_ACCENT_YELLOW : UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'TRAINING', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+  
+  // PvP Online button (real multiplayer)
+  const pvpOnlineButtonX = 20;
+  const pvpOnlineButtonY = trainingButtonY + trainingButtonHeight + 10; // Below training button
+  const pvpOnlineButtonWidth = 200;
+  const pvpOnlineButtonHeight = 40;
+  {
+    const rr = drawPixelButtonFrame(ctx, pvpOnlineButtonX, pvpOnlineButtonY, pvpOnlineButtonWidth, pvpOnlineButtonHeight, {
+      hovering: isHoveringPvPOnline,
+      pressing: isPressingPvPOnline,
+      borderColor: (gameMode === 'PvP') ? UI_ACCENT_GREEN : UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'PvP ONLINE', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // PvP FUN button (no stakes)
+  const pvpFunButtonX = 20;
+  const pvpFunButtonY = pvpOnlineButtonY + pvpOnlineButtonHeight + 10;
+  const pvpFunButtonW = 200;
+  const pvpFunButtonH = 40;
+  {
+    const rr = drawPixelButtonFrame(ctx, pvpFunButtonX, pvpFunButtonY, pvpFunButtonW, pvpFunButtonH, {
+      hovering: isHoveringPvpFun,
+      pressing: isPressingPvpFun,
+      borderColor: (gameMode === 'PvP' && pvpOnlineRoomName === 'pvp_fun_room') ? UI_ACCENT_GREEN : UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, 'PVP FUN', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // 5SEC PvP button (turn-based online)
+  const newButtonX = 20;
+  const newButtonY = pvpFunButtonY + pvpFunButtonH + 10; // Below PvP FUN button
+  const newButtonWidth = 200;
+  const newButtonHeight = 40;
+  {
+    const rr = drawPixelButtonFrame(ctx, newButtonX, newButtonY, newButtonWidth, newButtonHeight, {
+      hovering: isHoveringNewButton,
+      pressing: isPressingNewButton,
+      borderColor: UI_BTN_INNER,
+      drawShadow: true,
+    });
+    drawPixelText(ctx, '5SEC PVP', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    ctx.textAlign = 'left';
+  }
+
+  // Server info block (moved below buttons so it never overlaps PVP FUN)
+  const selectedServer = getSelectedServer();
+  if (selectedServer) {
+    const statusColor = getServerStatusColor(selectedServer);
+    const infoY0 = newButtonY + newButtonHeight + 10;
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = UI_TEXT;
+    ctx.fillText(`Server: ${selectedServer.name}`, pvpOnlineButtonX, infoY0);
+    ctx.fillStyle = statusColor;
+    ctx.fillText(`Ping: ${getServerPingText(selectedServer)}`, pvpOnlineButtonX, infoY0 + 12);
+    if (typeof selectedServer.waitingPlayers === 'number') {
+      ctx.fillStyle = UI_TEXT;
+      ctx.fillText(`${selectedServer.waitingPlayers} waiting`, pvpOnlineButtonX + 120, infoY0 + 12);
+    }
+    ctx.fillStyle = UI_TEXT_MUTED;
+    ctx.fillText('Click to change server', pvpOnlineButtonX, infoY0 + 24);
+  }
+
+  // FPS Statistics Frame (at bottom of panel) - EXPANDED to show network latency and frame time
+  const fpsFrameX = 20;
+  const fpsFrameY = canvas.height - 80; // 80px from bottom (increased height)
+  const fpsFrameWidth = 200;
+  const fpsFrameHeight = 70; // Increased height to show more info
+  
+  // Frame background
+  ctx.fillStyle = UI_FRAME_BG;
+  ctx.fillRect(fpsFrameX, fpsFrameY, fpsFrameWidth, fpsFrameHeight);
+  
+  // Frame border
+  ctx.strokeStyle = UI_BTN_BORDER;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(fpsFrameX, fpsFrameY, fpsFrameWidth, fpsFrameHeight);
+  
+  // FPS text
+  ctx.fillStyle = UI_TEXT;
+  ctx.font = 'bold 10px "Press Start 2P"';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`FPS: ${currentFPS}`, fpsFrameX + 10, fpsFrameY + 8);
+  
+  // Frame time text (shows how long each frame takes)
+  ctx.font = 'bold 8px "Press Start 2P"';
+  const frameTimeText = `Frame: ${averageFrameTime.toFixed(1)}ms (max: ${maxFrameTime.toFixed(1)}ms)`;
+  ctx.fillText(frameTimeText, fpsFrameX + 10, fpsFrameY + 22);
+  
+  // Network latency text (only in PvP mode)
+  if (gameMode === 'PvP') {
+    ctx.font = 'bold 8px "Press Start 2P"';
+    const rttMs = colyseusService.getAgentRttMs?.() ?? null;
+    const rttColor = rttMs === null ? UI_TEXT : (rttMs < 60 ? '#00ff00' : rttMs < 120 ? '#ffff00' : '#ff0000');
+    ctx.fillStyle = rttColor;
+    ctx.fillText(`Ping: ${rttMs === null ? '--' : rttMs}ms`, fpsFrameX + 10, fpsFrameY + 36);
+    ctx.fillStyle = UI_TEXT;
+  }
+  
+  // FPS bar (visual indicator)
+  const maxFPS = 60;
+  const fpsBarWidth = fpsFrameWidth - 20;
+  const fpsBarHeight = 12;
+  const fpsBarX = fpsFrameX + 10;
+  const fpsBarY = fpsFrameY + 50; // Moved down
+  
+  // FPS bar background
+  ctx.fillStyle = 'rgba(120, 130, 150, 0.22)';
+  ctx.fillRect(fpsBarX, fpsBarY, fpsBarWidth, fpsBarHeight);
+  
+  // FPS bar fill (green if >= 55, yellow if >= 30, red if < 30)
+  const fpsRatio = Math.min(currentFPS / maxFPS, 1);
+  const fpsBarFillWidth = fpsBarWidth * fpsRatio;
+  
+  if (currentFPS >= 55) {
+    ctx.fillStyle = '#00ff00'; // Green
+  } else if (currentFPS >= 30) {
+    ctx.fillStyle = '#ffff00'; // Yellow
+  } else {
+    ctx.fillStyle = '#ff0000'; // Red
+  }
+  ctx.fillRect(fpsBarX, fpsBarY, fpsBarFillWidth, fpsBarHeight);
+  
+  // FPS bar border
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(fpsBarX, fpsBarY, fpsBarWidth, fpsBarHeight);
+  
+  // Performance status text
+  ctx.fillStyle = '#000000';
+  ctx.font = 'bold 6px "Press Start 2P"';
+  let statusText = '';
+  if (currentFPS >= 55 && averageFrameTime < 20) {
+    statusText = 'EXCELLENT';
+  } else if (currentFPS >= 30 && averageFrameTime < 35) {
+    statusText = 'GOOD';
+  } else {
+    statusText = 'LAGGING';
+  }
+  ctx.fillText(statusText, fpsFrameX + 10, fpsFrameY + 65);
+
+  // DOT (Solo mode only)
+  if (gameMode === 'Solo' && (gameState === 'Alive' || gameState === 'Dying')) {
+    // Draw fading shadow tail (behind the DOT)
+    {
+      ctx.save();
+      for (const seg of speedTrail) {
+        const alpha = (seg.life / seg.maxLife) * 0.25; // subtle shadow
+        const radius = (seg.size ?? (dotRadius * 1.2)) * (seg.life / seg.maxLife);
+        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(seg.x, seg.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // 1) Classic death animation takes precedence
+    if (gameState === 'Dying' && deathAnimation) {
+      // Pulsing + decay particles, shrink to nothing over 1s
+      const progress = Math.min(1, deathTimer / 1000);
+      const pulse = Math.sin(progress * Math.PI * 8) * 0.3 + 1;
+      const baseRadius = dotRadius * pulse;
+      const decayRadius = baseRadius * (1 - progress);
+
+      // Emit decay particles heavily while dying
+      if (Math.random() < 0.9) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * Math.max(1, decayRadius);
+        const particleX = dotX + Math.cos(angle) * distance;
+        const particleY = dotY + Math.sin(angle) * distance;
+        safePushDotDecayParticle({
+          x: particleX,
+          y: particleY,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          life: 90,
+          maxLife: 90,
+          size: 2 + Math.random() * 4
+        });
+      }
+
+      if (decayRadius > 0) {
+        ctx.fillStyle = '#000000'; // Black
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, decayRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // 2) Ground-touch shrink (only when Alive and awaiting restart)
+    else if (awaitingRestart && gameState === 'Alive') {
+      const now = Date.now();
+      const duration = Math.max(1, scheduledRestartAt - groundShrinkStartAt);
+      const t = Math.min(1, (now - groundShrinkStartAt) / duration);
+      const fade = 1 - t;
+      const shrinkRadius = Math.max(0, dotRadius * fade);
+      if (Math.random() < 0.3 && shrinkRadius > 0) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * shrinkRadius;
+        safePushDotDecayParticle({
+          x: dotX + Math.cos(angle) * dist,
+          y: dotY + Math.sin(angle) * dist,
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2,
+          life: 30,
+          maxLife: 30,
+          size: 1 + Math.random() * 2
+        });
+      }
+      if (shrinkRadius > 0) {
+        ctx.fillStyle = '#000000'; // Black
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, shrinkRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // 3) Normal dot
+    else {
+      // Magnetic field braking effect when mouse is being held (only before slow-motion activates)
+      // Shows magnetic field on the side where DOT is moving (braking barrier effect)
+      if (mouseHoldStartTime > 0 && !slowMotionActive && gameState === 'Alive') {
+        const holdTime = Date.now() - mouseHoldStartTime;
+        const t = Date.now() * 0.006; // Slightly slower animation for smoother effect
+        const holdProgress = Math.min(1, holdTime / slowMotionHoldDelay); // 0 to 1 as hold approaches 1 second
+        
+        // Calculate DOT movement direction
+        const speed = Math.sqrt(dotVx * dotVx + dotVy * dotVy);
+        let moveAngle = 0;
+        if (speed > 0.1) {
+          moveAngle = Math.atan2(dotVy, dotVx); // Direction DOT is moving
+        } else {
+          // If DOT is barely moving, use last known direction or default
+          moveAngle = Math.atan2(dotVy || 1, dotVx || 0);
+        }
+        
+        ctx.save();
+        
+        // Draw magnetic field barrier on the side where DOT is moving (smoother, shorter waves)
+        const baseDistance = dotRadius + 6; // Closer to DOT
+        const waveSpread = 0.7; // Shorter arc span (reduced from PI/2 to 0.7 radians ~ 40 degrees)
+        
+        // Draw semi-circular magnetic field barrier in movement direction (shorter waves)
+        const startAngle = moveAngle - waveSpread; // Shorter arc
+        const endAngle = moveAngle + waveSpread; // Shorter arc
+        
+        // Smooth gradient effect for waves
+        const waveCount = 4;
+        for (let wave = 0; wave < waveCount; wave++) {
+          const waveOffset = wave * 4; // Closer waves
+          const pulseAmount = Math.sin(t * 1.2 + wave * 0.5) * 2;
+          const waveRadius = baseDistance + waveOffset + pulseAmount;
+          
+          // Fade out effect - waves get more transparent as they get farther
+          const baseAlpha = 0.6 - wave * 0.15;
+          const waveAlpha = (baseAlpha + Math.sin(t + wave * 0.8) * 0.1) * holdProgress;
+          
+          // Black color gradient - darker as they get farther
+          const colorIntensity = 0 + wave * 20; // Starts at 0 (black), gets slightly lighter
+          ctx.strokeStyle = `rgba(${colorIntensity}, ${colorIntensity}, ${colorIntensity}, ${waveAlpha})`;
+          ctx.lineWidth = 1.5 + (1 - wave / waveCount) * 0.5; // Thinner outer waves
+          ctx.lineCap = 'round';
+          
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, waveRadius, startAngle, endAngle);
+          ctx.stroke();
+        }
+        
+        // Draw magnetic field particles in front (more subtle and smoother)
+        const particleCount = 6;
+        for (let i = 0; i < particleCount; i++) {
+          const particleSpread = waveSpread * 0.8; // Match wave spread
+          const particleAngle = moveAngle + (i - particleCount / 2) * (particleSpread / particleCount);
+          const particleDist = baseDistance + 8 + Math.sin(t * 2.5 + i * 0.7) * 4;
+          const particleX = dotX + Math.cos(particleAngle) * particleDist;
+          const particleY = dotY + Math.sin(particleAngle) * particleDist;
+          
+          // Smoother particle alpha with fade
+          const particleAlpha = (0.5 + Math.sin(t * 3 + i) * 0.2) * holdProgress;
+          
+          ctx.fillStyle = `rgba(0, 0, 0, ${particleAlpha})`; // Black particles
+          // Smaller, smoother particles
+          const particleSize = 2 + Math.sin(t * 2 + i) * 0.5;
+          ctx.fillRect(
+            Math.floor(particleX - particleSize / 2),
+            Math.floor(particleY - particleSize / 2),
+            particleSize,
+            particleSize
+          );
+        }
+        
+        // Draw subtle magnetic field force lines (smoother, pointing towards DOT)
+        ctx.strokeStyle = `rgba(0, 0, 0, ${0.3 * holdProgress})`; // Black lines
+        ctx.lineWidth = 0.8;
+        ctx.lineCap = 'round';
+        const lineCount = 5;
+        const lineSpread = waveSpread * 0.6; // Match wave spread
+        for (let i = 0; i < lineCount; i++) {
+          const lineAngle = moveAngle + (i - lineCount / 2) * (lineSpread / lineCount);
+          const lineStartDist = baseDistance + 10;
+          const lineEndDist = baseDistance + 2;
+          const startX = dotX + Math.cos(lineAngle) * lineStartDist;
+          const startY = dotY + Math.sin(lineAngle) * lineStartDist;
+          const endX = dotX + Math.cos(lineAngle) * lineEndDist;
+          const endY = dotY + Math.sin(lineAngle) * lineEndDist;
+          
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+        
+        ctx.restore();
+      }
+      
+      // Solo mode: Draw UFO sprite with profile picture inside
+      if (gameMode === 'Solo') {
+        const profilePicture = profileManager.getProfilePicture();
+        const ufoPos = getSoloUfoVisualPos();
+        const ufoX = ufoPos.x;
+        const ufoY = ufoPos.y;
+
+        // Space-flight illusion (wallet connected): warp streaks behind the UFO.
+        // Draw before we transform/rotate the UFO so streaks stay in world space.
+        try { drawSoloWarpStreaks(ctx); } catch {}
+        
+        // Calculate movement direction angle (where DOT is moving)
+        const speed = Math.sqrt(dotVx * dotVx + dotVy * dotVy);
+        let rotationAngle = 0; // Default rotation (right)
+        let isMovingLeft = false; // Track if moving left for mirror effect
+        
+        if (speed > 0.1) {
+          // DOT is moving - check horizontal direction
+          if (Math.abs(dotVx) > 0.1) {
+            // Moving horizontally - determine left/right
+            isMovingLeft = dotVx < 0;
+            // Use vertical component for rotation angle (up/down movement)
+            rotationAngle = Math.atan2(dotVy, Math.abs(dotVx)); // Use absolute vx to prevent upside down
+          } else {
+            // Moving only vertically - use last horizontal direction from speed trail
+            if (speedTrail.length > 0) {
+              const lastTrail = speedTrail[speedTrail.length - 1];
+              const secondLastTrail = speedTrail[speedTrail.length - 2];
+              if (secondLastTrail) {
+                const dx = lastTrail.x - secondLastTrail.x;
+                if (Math.abs(dx) > 0.1) {
+                  isMovingLeft = dx < 0;
+                }
+              }
+            }
+            rotationAngle = Math.atan2(dotVy, 1); // Use positive x for angle calculation
+          }
+        }
+        
+        ctx.save();
+        
+        // Translate to DOT position and rotate
+        ctx.translate(ufoX, ufoY);
+        ctx.rotate(rotationAngle + soloUfoTilt); // Add tilt effect for balancing/sway
+        
+        // Apply horizontal flip (mirror effect) if moving left
+        if (isMovingLeft) {
+          ctx.scale(-1, 1); // Flip horizontally
+        }
+        
+        // Thruster FX behind UFO (in local space so it rotates with the ship)
+        try { drawSoloThrustFx(ctx); } catch {}
+
+        // Draw UFO sprite (base layer)
+        if (ufoSprite && ufoSprite.complete) {
+          try {
+            // Draw UFO sprite scaled to fit dot radius
+            const spriteSize = dotRadius * 5.0; // Even larger sprite size
+            ctx.drawImage(ufoSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+          } catch (error) {
+            console.error('Error drawing UFO sprite:', error);
+            // Fallback to black circle
+            ctx.fillStyle = '#000000'; // Black
+            ctx.beginPath();
+            ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          // UFO sprite not loaded - show black circle
+          ctx.fillStyle = '#000000'; // Black
+          ctx.beginPath();
+          ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        // Draw profile picture inside UFO sprite (if available)
+        if (profilePicture) {
+          const cachedImage = nftImageCache.get(profilePicture);
+          if (cachedImage && cachedImage.complete) {
+            try {
+            // Create clipping path for profile picture (smaller circle inside UFO)
+            ctx.beginPath();
+            const profileRadius = dotRadius * 1.2 - 8; // Profile picture, smaller (8px less radius)
+            ctx.arc(0, -dotRadius * 0.2, profileRadius, 0, Math.PI * 2); // Slightly above center for dome position
+              ctx.clip();
+              
+              // Calculate aspect ratio to fit image in circle
+              const imgAspect = cachedImage.width / cachedImage.height;
+              let drawWidth = profileRadius * 2;
+              let drawHeight = profileRadius * 2;
+              let drawX = -profileRadius;
+              let drawY = -dotRadius * 0.2 - profileRadius; // Position in dome area
+              
+              if (imgAspect > 1) {
+                // Image is wider - fit to height
+                drawWidth = profileRadius * 2 * imgAspect;
+                drawX = -drawWidth / 2;
+              } else {
+                // Image is taller - fit to width
+                drawHeight = profileRadius * 2 / imgAspect;
+                drawY = -dotRadius * 0.2 - drawHeight / 2;
+              }
+              
+              ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+            } catch (error) {
+              console.error('Error drawing profile picture inside UFO:', error);
+            }
+          }
+        }
+        
+        ctx.restore();
+        
+        // Draw magnetic wave animation when gravity is active (Solo mode)
+        const now = Date.now();
+        if (gravityActiveUntil > now) {
+          const timeRemaining = gravityActiveUntil - now;
+          const waveProgress = 1 - (timeRemaining / gravityActiveDuration); // 0 to 1
+          const waveSpeed = 0.02; // Speed of wave animation
+          const waveTime = Date.now() * waveSpeed;
+          
+          // Draw multiple concentric waves
+          for (let i = 0; i < 3; i++) {
+            const waveOffset = (waveTime + i * 0.5) % (Math.PI * 2);
+            const waveRadius = dotRadius + 10 + Math.sin(waveOffset) * 5 + i * 8;
+            const waveAlpha = 0.3 * (1 - waveProgress) * (1 - i * 0.3); // Fade out as gravity ends
+            
+            ctx.strokeStyle = `rgba(100, 100, 100, ${waveAlpha})`; // Gray magnetic waves
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, waveRadius, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        
+        // Draw cooldown timer in center of dot (visual indicator only)
+        const timeSinceLastDraw = now - lastDrawEndTime;
+        const remainingCooldown = Math.max(0, drawCooldown - timeSinceLastDraw);
+        const canDraw = remainingCooldown <= 0;
+        
+        if (!canDraw) {
+          const seconds = Math.ceil(remainingCooldown / 1000);
+          ctx.fillStyle = '#ffffff'; // White text
+          ctx.font = 'bold 8px "Press Start 2P"'; // Smaller font
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(seconds.toString(), ufoX, ufoY);
+        }
+      }
+    }
+
+    // Supersonic animation when speed >= 7 (Solo mode only)
+    // OPTIMIZED: Use squared speed for comparison to avoid Math.sqrt
+    if (gameMode === 'Solo') {
+      const speedSquared = dotVx * dotVx + dotVy * dotVy;
+      if (speedSquared >= 49) { // 7^2 = 49
+        const speed = Math.sqrt(speedSquared); // Only calculate sqrt when needed
+        const t = Date.now() * 0.004;
+        // Pulsing white ring around the dot
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        const ringRadius = dotRadius + 3 + Math.sin(t) * 1.5;
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, ringRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Motion streaks in direction of velocity
+        const angle = Math.atan2(dotVy, dotVx);
+        const backAngle = angle + Math.PI;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        for (let i = -2; i <= 2; i++) {
+          const offset = i * 3;
+          const sx = dotX + Math.cos(backAngle + i * 0.08) * (dotRadius + 2);
+          const sy = dotY + Math.sin(backAngle + i * 0.08) * (dotRadius + 2);
+          const ex = sx + Math.cos(backAngle + i * 0.08) * (6 + Math.min(12, speed));
+          const ey = sy + Math.sin(backAngle + i * 0.08) * (6 + Math.min(12, speed));
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+        }
+
+        // Small white highlights on the rim
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 6; i++) {
+          const a = angle + i * (Math.PI / 3) + Math.sin(t + i) * 0.2;
+          const hx = dotX + Math.cos(a) * (dotRadius + 1);
+          const hy = dotY + Math.sin(a) * (dotRadius + 1);
+          ctx.fillRect(hx - 1, hy - 1, 2, 2);
+        }
+      }
+    }
+
+    // No death messages - only pixel art animation
+  }
+
+  // Reward popups render (on top of play area)
+  {
+    ctx.save();
+    ctx.textAlign = 'center';
+    for (let i = rewardPopups.length - 1; i >= 0; i--) {
+      const rp = rewardPopups[i];
+      const now = Date.now();
+      // Target (DOT balance number in UI panel)
+      // Calculate the center position of the current balance number
+      ctx.font = 'bold 16px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      const prefixWidth = ctx.measureText(`Rice: `).width; // Measure "Rice: " width
+      const currentBalanceWidth = ctx.measureText(`${dotCurrency}`).width; // Current balance width
+      const targetX = 20 + prefixWidth + currentBalanceWidth / 2; // Middle of the current balance number
+      const targetY = 40 - 10;
+
+      if (!rp.state || rp.state === 'up') {
+        const tRaw = Math.min(1, Math.max(0, (now - rp.startTime) / rp.durationMs));
+        const t = 1 - Math.pow(1 - tRaw, 3);
+        const shown = Math.floor(rp.value * t);
+        const alpha = 0.95;
+        const scale = 1 + t * 0.5;
+        const y = rp.y - 20 * t;
+        ctx.font = `bold ${Math.floor(12 * scale)}px "Press Start 2P"`;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+        ctx.strokeText(`+${shown} Rice`, rp.x, y);
+        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+        ctx.fillText(`+${shown} Rice`, rp.x, y);
+        if (tRaw >= 1) {
+          // Start fly phase
+          rp.state = 'fly';
+          rp.flyStartTime = now;
+          rp.flyDurationMs = 600; // fast merge
+        }
+      } else if (rp.state === 'fly') {
+        const flyStart = rp.flyStartTime ?? now;
+        const flyDur = rp.flyDurationMs ?? 600;
+        const tf = Math.min(1, Math.max(0, (now - flyStart) / flyDur));
+        const ease = 1 - Math.pow(1 - tf, 3);
+        // Interpolate position towards target
+        const x = rp.x + (targetX - rp.x) * ease;
+        const y = rp.y - 20 + (targetY - (rp.y - 20)) * ease;
+        // Count down number while flying
+        const shown = Math.max(0, Math.floor(rp.value * (1 - ease)));
+        // Shrink and fade
+        const scale = Math.max(0.6, 1 - ease * 0.6);
+        const alpha = 0.7 * (1 - ease) + 0.3;
+        ctx.font = `bold ${Math.floor(12 * scale)}px "Press Start 2P"`;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+        ctx.strokeText(`+${shown} Rice`, x, y);
+        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+        ctx.fillText(`+${shown} Rice`, x, y);
+        if (tf >= 1) {
+          // Merge finished: add to balance
+          dotCurrency += rp.value;
+          // Profile: Track DOT balance increase
+          profileManager.addDot(rp.value);
+          rewardPopups.splice(i, 1);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // Moving platform render (straight, smooth, proper 3D effect)
+  if (TOXIC_PLATFORMS_ENABLED) {
+    const halfW = movingPlatformWidth / 2;
+    const centerX = movingPlatformX;
+    const topY = Math.floor(movingPlatformY);
+    const bottomY = Math.floor(movingPlatformY + movingPlatformThickness);
+    const baseColor = movingPlatformFlashTimer > 0 ? '#555555' : '#000000';
+    const highlightColor = '#c0c0c0'; // light highlight
+    const whiteHighlight = '#ffffff'; // brightest highlight
+    
+    // Main platform body (straight rectangular)
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(centerX - halfW, topY, movingPlatformWidth, movingPlatformThickness);
+    
+    // Top surface highlight (bright white line)
+    ctx.fillStyle = whiteHighlight;
+    ctx.fillRect(centerX - halfW, topY, movingPlatformWidth, 2);
+  }
+  
+  // PvP/Training mode: Render additional left and right platforms
+  if (TOXIC_PLATFORMS_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
+    const topY = Math.floor(movingPlatformY);
+    const baseColor = '#000000';
+    const whiteHighlight = '#ffffff';
+    
+    // Helper function to draw a platform with custom width
+    const drawPlatform = (centerX: number, width: number) => {
+      const halfW = width / 2;
+      // Main platform body
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(centerX - halfW, topY, width, movingPlatformThickness);
+      
+      // Top surface highlight
+      ctx.fillStyle = whiteHighlight;
+      ctx.fillRect(centerX - halfW, topY, width, 2);
+    };
+    
+    // Draw left platform (50% width)
+    drawPlatform(pvpPlatformLeftX, pvpPlatformSideWidth);
+    
+    // Draw right platform (50% width)
+    drawPlatform(pvpPlatformRightX, pvpPlatformSideWidth);
+  }
+  
+  // Bottom floor (former toxic-water band). Keep gameplay floor, but remove extra visuals.
+  const bottomFloorY = PVP_BOTTOM_FLOOR_Y;
+  
+  // Toxic water visuals removed (kept behind a hard-off flag for safety).
+  if (TOXIC_WATER_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
+    const lavaTopY = movingPlatformY + movingPlatformThickness; // Start from platform bottom
+    const lavaBottomY = bottomFloorY; // End at bottom floor
+    const lavaHeight = lavaBottomY - lavaTopY;
+    
+    // Lava animation time
+    const time = Date.now() * 0.002; // Slow animation
+    
+    // Draw lava with wave animation
+    ctx.save();
+    
+    // Create gradient for toxic water (gray/white with green tones, brighter at top, darker at bottom) - no white, only bubbles are white
+    const lavaGradient = ctx.createLinearGradient(playLeft, lavaTopY, playLeft, lavaBottomY);
+    lavaGradient.addColorStop(0, 'rgba(200, 220, 200, 0.8)'); // Light gray-green at top (toxic water surface)
+    lavaGradient.addColorStop(0.2, 'rgba(150, 200, 150, 0.85)'); // Light toxic green in upper middle
+    lavaGradient.addColorStop(0.4, 'rgba(100, 160, 120, 0.9)'); // Medium toxic green in middle
+    lavaGradient.addColorStop(0.7, 'rgba(60, 120, 80, 0.95)'); // Dark toxic green lower middle
+    lavaGradient.addColorStop(1, 'rgba(30, 80, 50, 0.95)'); // Very dark toxic green at bottom
+    
+    // Draw lava base
+    ctx.fillStyle = lavaGradient;
+    ctx.fillRect(playLeft, lavaTopY, playRight - playLeft, lavaHeight);
+    
+    // Draw wave animation on top of toxic water (light gray with green tones) - calm waves (not white, only bubbles are white)
+    ctx.strokeStyle = 'rgba(180, 220, 200, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    const wavePoints = 50; // Number of wave points
+    const waveAmplitude = 3; // Wave height (back to original)
+    for (let i = 0; i <= wavePoints; i++) {
+      const x = playLeft + (playRight - playLeft) * (i / wavePoints);
+      const waveOffset = Math.sin(time + i * 0.3) * waveAmplitude; // Original calm wave movement
+      const y = lavaTopY + waveOffset;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    
+    // Draw additional smaller waves for depth (gray with green tones) - calm
+    ctx.strokeStyle = 'rgba(160, 200, 180, 0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= wavePoints; i++) {
+      const x = playLeft + (playRight - playLeft) * (i / wavePoints);
+      const waveOffset = Math.sin(time * 1.5 + i * 0.4) * (waveAmplitude * 0.6); // Original calm
+      const y = lavaTopY + waveOffset + 5;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    
+    // Draw lava bubbles that rise from bottom to top and pop randomly during rise
+    const bubbleCount = 12; // Increased from 7 to 12
+    for (let i = 0; i < bubbleCount; i++) {
+      // Each bubble has its own cycle - starts at bottom, rises to top
+      const bubbleCycle = (time * 0.25 + i * 0.7) % (Math.PI * 2); // Slow rise cycle
+      const bubbleProgress = bubbleCycle / (Math.PI * 2); // 0 to 1
+      
+      // Random spawn position for each bubble (better spread)
+      // Use seeded random based on bubble index to get consistent random positions
+      const seedX = i * 1234.567; // Seed for X position
+      const seedY = i * 987.654; // Seed for Y spawn timing
+      const randomX = (Math.sin(seedX) * 0.5 + 0.5); // 0 to 1
+      const baseX = playLeft + (playRight - playLeft) * randomX; // Full width spread (0% to 100%)
+      const horizontalDrift = Math.sin(time * 0.4 + i * 1.3) * 12; // Gentle horizontal drift
+      const bubbleX = baseX + horizontalDrift;
+      
+      // Random pop point for each bubble (can pop anywhere during rise, not just at surface)
+      const randomPopPoint = (Math.sin(seedY) * 0.5 + 0.5) * 0.7 + 0.2; // Pop between 20% and 90% of the way up
+      
+      // Bubble Y position - rises from bottom to top
+      const bubbleY = lavaBottomY - 10 - bubbleProgress * (lavaHeight - 20); // Rises from bottom
+      
+      // Bubble size - grows as it rises
+      let bubbleSize = 2 + bubbleProgress * 2.5; // Grows from 2 to 4.5 as it rises
+      
+      // Bubble pulsing/expanding effect (simulating bubble growth)
+      const bubblePulse = Math.sin(bubbleCycle * 4) * 0.4 + 1; // Pulsing effect
+      bubbleSize *= bubblePulse;
+      
+      // Bubble glow intensity - brighter as it rises
+      const bubbleGlow = 0.4 + bubbleProgress * 0.5; // Gets brighter as it rises
+      
+      // Check if bubble should pop (random pop point reached)
+      const shouldPop = bubbleProgress >= randomPopPoint && bubbleProgress < randomPopPoint + 0.1;
+      
+      // Draw bubble if it's still rising (not popped yet)
+      if (!shouldPop && bubbleProgress < randomPopPoint + 0.1) {
+        ctx.globalAlpha = bubbleGlow;
+        // Gray/white bubbles with green tones - lighter as they rise (toxic bubbles)
+        const bubbleGray = 200 + bubbleProgress * 55; // 200-255 (light gray to white)
+        const bubbleGreen = 220 - bubbleProgress * 50; // 220-170 (green-gray tones)
+        ctx.fillStyle = `rgba(${bubbleGray - 20}, ${bubbleGreen}, ${bubbleGray - 30}, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(bubbleX, bubbleY, bubbleSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw bubble highlight (white)
+        ctx.fillStyle = `rgba(255, 255, 255, ${bubbleGlow * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(bubbleX - bubbleSize * 0.3, bubbleY - bubbleSize * 0.3, bubbleSize * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (shouldPop) {
+        // Bubble pops during rise - draw explosion particles
+        const popProgress = (bubbleProgress - randomPopPoint) / 0.1; // 0 to 1 during pop
+        if (popProgress < 1.0) {
+          const explosionParticles = 8;
+          for (let j = 0; j < explosionParticles; j++) {
+            const angle = (Math.PI * 2 * j) / explosionParticles;
+            const distance = popProgress * 15;
+            const particleX = bubbleX + Math.cos(angle) * distance;
+            const particleY = bubbleY + Math.sin(angle) * distance - popProgress * 5; // Slight upward
+            const particleSize = (1 - popProgress) * 3;
+            const particleAlpha = (1 - popProgress) * 0.8;
+            
+            ctx.globalAlpha = particleAlpha;
+            // Gray/white particles with green tones when bubble pops (toxic particles)
+            const particleGray = 220 - popProgress * 50; // 220-170 (light gray to darker gray)
+            const particleGreen = 200 - popProgress * 80; // 200-120 (green-gray tones)
+            ctx.fillStyle = `rgba(${particleGray - 20}, ${particleGreen}, ${particleGray - 30}, 1)`;
+            ctx.beginPath();
+            ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+    ctx.globalAlpha = 1.0;
+    
+    ctx.restore();
+  }
+  
+  // Removed the bottom-floor line so the area looks like normal white space.
+
+  // Drawn lines render (with fade-out animation)
+  {
+    for (let i = drawnLines.length - 1; i >= 0; i--) {
+      const line = drawnLines[i];
+      const progress = line.life / line.maxLife; // 1.0 = full, 0.0 = gone
+      const alpha = Math.max(0, Math.min(1, progress)); // Fade out based on progress
+      
+      if (line.points.length < 2) continue; // Skip degenerate lines
+      
+      // Draw the line with fade-out effect
+      ctx.strokeStyle = `rgba(0, 0, 0, ${alpha * 0.9})`;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(line.points[0].x, line.points[0].y);
+      for (let j = 1; j < line.points.length; j++) {
+        ctx.lineTo(line.points[j].x, line.points[j].y);
+      }
+      ctx.stroke();
+      
+      // White highlight on top (also fades out)
+      if (progress > 0.2) {
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.4})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(line.points[0].x, line.points[0].y);
+        for (let j = 1; j < line.points.length; j++) {
+          ctx.lineTo(line.points[j].x, line.points[j].y);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Current drawing line preview (while drawing) - pencil tool
+  if (isDrawing && currentDrawPoints.length >= 2) {
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(currentDrawPoints[0].x, currentDrawPoints[0].y);
+    for (let i = 1; i < currentDrawPoints.length; i++) {
+      ctx.lineTo(currentDrawPoints[i].x, currentDrawPoints[i].y);
+    }
+    ctx.stroke();
+    
+    // White highlight
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(currentDrawPoints[0].x, currentDrawPoints[0].y);
+    for (let i = 1; i < currentDrawPoints.length; i++) {
+      ctx.lineTo(currentDrawPoints[i].x, currentDrawPoints[i].y);
+    }
+    ctx.stroke();
+  }
+
+  // Click particles
+  for (const particle of clickParticles) {
+    const alpha = particle.life / particle.maxLife;
+    if (particle.color) {
+      // If a specific color is provided, trust it (it may already include alpha).
+      // We still fade out by multiplying global alpha to keep behavior consistent.
+      ctx.save();
+      ctx.globalAlpha = ctx.globalAlpha * alpha;
+      ctx.fillStyle = particle.color;
+      const s = particle.size ?? 2;
+      ctx.fillRect(particle.x, particle.y, s, s);
+      ctx.restore();
+      continue;
+    }
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+    const s = particle.size ?? 2;
+    ctx.fillRect(particle.x, particle.y, s, s);
+  }
+  
+  // Projectile smoke particles (black smoke trail)
+  for (const particle of projectileSmokeParticles) {
+    const alpha = particle.life / particle.maxLife;
+    // Lighter "pixel smoke" so it reads on the dark arena background.
+    ctx.fillStyle = `rgba(210, 220, 235, ${alpha * 0.75})`;
+    const s = particle.size ?? 4;
+    ctx.fillRect(particle.x, particle.y, s, s);
+  }
+
+  // Arrow air-resistance particles (subtle streaks) - draw before arrow so it feels like a trail
+  if (arrowAirParticles.length > 0) {
+    ctx.save();
+    // Arena background is dark; use screen blend so streaks are visible but not overpowering.
+    ctx.globalCompositeOperation = 'screen';
+    ctx.lineCap = 'round';
+    for (const particle of arrowAirParticles) {
+      const a = Math.max(0, Math.min(1, particle.life / particle.maxLife));
+      const len = (particle.size ?? 3) * 3.2;
+      ctx.strokeStyle = `rgba(210, 235, 255, ${a * 0.55})`;
+      ctx.lineWidth = Math.max(1, (particle.size ?? 3) * 0.75);
+      ctx.beginPath();
+      ctx.moveTo(particle.x, particle.y);
+      ctx.lineTo(particle.x - particle.vx * len, particle.y - particle.vy * len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  
+  // Arrow render - flying or following mouse
+  // Only render if arrow is ready or flying (always show when flying for smooth animation)
+  if ((arrowReady && !arrowFired && gameState === 'Alive') || (katanaFlying && gameState === 'Alive')) {
+    ctx.save();
+    
+    // Use flying position or mouse position
+    const katanaPosX = katanaFlying ? katanaX : globalMouseX;
+    const katanaPosY = katanaFlying ? katanaY : globalMouseY;
+    
+    // Only render if position is within reasonable bounds (allow some overflow for smooth animation)
+    const renderMargin = 100; // Allow rendering slightly outside bounds
+    const shouldRender = katanaPosX >= 240 - renderMargin && katanaPosX <= 1920 + renderMargin &&
+                         katanaPosY >= 0 - renderMargin && katanaPosY <= 1080 + renderMargin;
+    
+    if (shouldRender) {
+    
+    // Calculate angle
+    let currentKatanaAngle;
+    if (katanaSlashing) {
+      // During slash, use animated angle
+      const now = Date.now();
+      const slashProgress = Math.min(1, (now - katanaSlashStartTime) / katanaSlashDuration);
+      const angleRange = Math.PI / 12;
+      const startAngle = katanaAngle - angleRange;
+      const endAngle = katanaAngle + angleRange;
+      const easedProgress = slashProgress < 0.5 
+        ? 2 * slashProgress * slashProgress
+        : 1 - 2 * (1 - slashProgress) * (1 - slashProgress);
+      currentKatanaAngle = startAngle + (endAngle - startAngle) * easedProgress;
+    } else if (katanaFlying) {
+      // Flying - use stored angle (pointing towards DOT)
+      currentKatanaAngle = katanaAngle;
+    } else {
+      // Normal state - point blade towards DOT (handle at mouse, blade extends towards DOT)
+      const dx = dotX - katanaPosX;
+      const dy = dotY - katanaPosY;
+      currentKatanaAngle = Math.atan2(dy, dx); // Blade points towards DOT
+    }
+    
+    ctx.translate(katanaPosX, katanaPosY);
+    ctx.rotate(currentKatanaAngle);
+    
+    const alpha = katanaSlashing ? (1 - Math.min(1, (Date.now() - katanaSlashStartTime) / katanaSlashDuration) * 0.5) : 1;
+    
+    // Arrow shaft - high-contrast (more visible against UFO)
+    const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+    const shaftStartX = arrowFletchingLength;
+    // Outer stroke (black) + inner neon (cyan)
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.9})`;
+    ctx.fillRect(shaftStartX, -arrowShaftWidth / 2 - 1.3, shaftLength, arrowShaftWidth + 2.6);
+    ctx.fillStyle = `rgba(0, 240, 255, ${alpha})`; // Neon cyan
+    ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+    
+    // New arrowhead design - elegant, sharp, multi-layered (pointing forward)
+    const headStartX = arrowLength - arrowHeadLength;
+    
+    // Base arrowhead layer - high contrast (black outline)
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.9})`;
+    ctx.beginPath();
+    ctx.moveTo(headStartX, -arrowShaftWidth * 2.7); // Top of base (left point)
+    ctx.lineTo(arrowLength, 0); // Sharp tip (forward, center)
+    ctx.lineTo(headStartX, arrowShaftWidth * 2.7); // Bottom of base (right point)
+    ctx.closePath();
+    ctx.fill();
+    
+    // Middle layer (neon cyan) - smaller triangle inside
+    ctx.fillStyle = `rgba(0, 240, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8); // Top
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.lineTo(headStartX + arrowHeadLength * 0.3, arrowShaftWidth * 1.8); // Bottom
+    ctx.closePath();
+    ctx.fill();
+    
+    // Top highlight layer (white) - left edge
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2); // Top
+    ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2); // Middle
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.closePath();
+    ctx.fill();
+    
+    // Top highlight layer (bright metal edge) - right edge
+    ctx.beginPath();
+    ctx.moveTo(headStartX + arrowHeadLength * 0.5, arrowShaftWidth / 2); // Bottom
+    ctx.lineTo(arrowLength - arrowHeadLength * 0.1, arrowShaftWidth * 1.2); // Middle
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.closePath();
+    ctx.fill();
+    
+    // Extra sharp tip accent (hot pink) - easiest to see on dark/green UFO
+    ctx.fillStyle = `rgba(255, 0, 180, ${alpha * 0.95})`;
+    ctx.beginPath();
+    ctx.moveTo(arrowLength - 2, -arrowShaftWidth * 0.8); // Top
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.lineTo(arrowLength - 2, arrowShaftWidth * 0.8); // Bottom
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle glow around arrow for readability
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * 0.35})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(shaftStartX, 0);
+    ctx.lineTo(arrowLength, 0);
+    ctx.stroke();
+    ctx.restore();
+    
+    // Fletching (feathers at back) - colorful feathers
+    ctx.fillStyle = `rgba(180, 40, 40, ${alpha})`; // Red feather
+    ctx.fillRect(0, -arrowShaftWidth * 2.5, 5, arrowShaftWidth * 1.5);
+    ctx.fillRect(0, arrowShaftWidth, 5, arrowShaftWidth * 1.5);
+    
+    ctx.fillStyle = `rgba(40, 40, 180, ${alpha})`; // Blue feather
+    ctx.fillRect(5, -arrowShaftWidth * 2.5, 5, arrowShaftWidth * 1.5);
+    ctx.fillRect(5, arrowShaftWidth, 5, arrowShaftWidth * 1.5);
+    
+    ctx.fillStyle = `rgba(180, 40, 40, ${alpha})`; // Red feather
+    ctx.fillRect(10, -arrowShaftWidth * 2.5, 5, arrowShaftWidth * 1.5);
+    ctx.fillRect(10, arrowShaftWidth, 5, arrowShaftWidth * 1.5);
+    
+    // Motion trail effect during slash (only early in animation)
+    if (katanaSlashing) {
+      const now = Date.now();
+      const slashProgress = Math.min(1, (now - katanaSlashStartTime) / katanaSlashDuration);
+      if (slashProgress < 0.7) {
+        ctx.fillStyle = `rgba(200, 200, 255, ${alpha * 0.3})`;
+        ctx.fillRect(-10, -arrowShaftWidth - 1, 10, arrowShaftWidth * 2 + 2);
+      }
+    }
+    
+    ctx.restore();
+    }
+  }
+
+  // Arrow slash animation render (only when slashing) - quick strike on impact
+  if (katanaSlashing) {
+    ctx.save();
+    
+    const now = Date.now();
+    const slashProgress = Math.min(1, (now - katanaSlashStartTime) / katanaSlashDuration);
+    
+    // Quick strike animation - small angle sweep for quick, sharp movement
+    // Arrow points towards DOT (no flip needed)
+    const angleRange = Math.PI / 12; // Small range: 15 degrees (quick strike, not clock rotation)
+    const startAngle = katanaAngle - angleRange; // Start angle (arrow towards DOT)
+    const endAngle = katanaAngle + angleRange; // End angle (arrow towards DOT)
+    
+    // Use easing for quick strike effect (fast start, slow end for impact feel)
+    const easedProgress = slashProgress < 0.5 
+      ? 2 * slashProgress * slashProgress // Fast acceleration
+      : 1 - 2 * (1 - slashProgress) * (1 - slashProgress); // Slow deceleration
+    const currentAngle = startAngle + (endAngle - startAngle) * easedProgress;
+    
+    // Static position (use saved position for slash)
+    const slashX = katanaX;
+    const slashY = katanaY;
+    const slashAlpha = 1 - slashProgress * 0.5; // Fade out faster for quick strike
+    
+    // Draw arrow at impact position
+    ctx.translate(slashX, slashY);
+    ctx.rotate(currentAngle);
+    
+    // Arrow shaft (brown wooden) - main body
+    const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+    const shaftStartX = arrowFletchingLength;
+    ctx.fillStyle = `rgba(101, 67, 33, ${slashAlpha})`; // Brown wood color
+    ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+    
+    // New arrowhead design - elegant, sharp, multi-layered (pointing forward)
+    const headStartX = arrowLength - arrowHeadLength;
+    
+    // Base arrowhead layer (dark metal) - triangle pointing forward
+    ctx.fillStyle = `rgba(80, 80, 90, ${slashAlpha})`; // Dark steel
+    ctx.beginPath();
+    ctx.moveTo(headStartX, -arrowShaftWidth * 2.5); // Top of base (left point)
+    ctx.lineTo(arrowLength, 0); // Sharp tip (forward, center)
+    ctx.lineTo(headStartX, arrowShaftWidth * 2.5); // Bottom of base (right point)
+    ctx.closePath();
+    ctx.fill();
+    
+    // Middle layer (medium metal) - smaller triangle inside
+    ctx.fillStyle = `rgba(120, 120, 130, ${slashAlpha})`; // Medium steel
+    ctx.beginPath();
+    ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8); // Top
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.lineTo(headStartX + arrowHeadLength * 0.3, arrowShaftWidth * 1.8); // Bottom
+    ctx.closePath();
+    ctx.fill();
+    
+    // Top highlight layer (bright metal edge) - left edge
+    ctx.fillStyle = `rgba(200, 200, 210, ${slashAlpha})`; // Bright steel highlight
+    ctx.beginPath();
+    ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2); // Top
+    ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2); // Middle
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.closePath();
+    ctx.fill();
+    
+    // Top highlight layer (bright metal edge) - right edge
+    ctx.beginPath();
+    ctx.moveTo(headStartX + arrowHeadLength * 0.5, arrowShaftWidth / 2); // Bottom
+    ctx.lineTo(arrowLength - arrowHeadLength * 0.1, arrowShaftWidth * 1.2); // Middle
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.closePath();
+    ctx.fill();
+    
+    // Extra sharp tip accent (white/silver)
+    ctx.fillStyle = `rgba(0, 200, 0, ${slashAlpha * 0.9})`; // Green tip
+    ctx.beginPath();
+    ctx.moveTo(arrowLength - 2, -arrowShaftWidth * 0.8); // Top
+    ctx.lineTo(arrowLength, 0); // Sharp tip
+    ctx.lineTo(arrowLength - 2, arrowShaftWidth * 0.8); // Bottom
+    ctx.closePath();
+    ctx.fill();
+    
+    // Fletching (feathers at back) - colorful feathers
+    ctx.fillStyle = `rgba(180, 40, 40, ${slashAlpha})`; // Red feather
+    ctx.fillRect(0, -arrowShaftWidth * 2.5, 5, arrowShaftWidth * 1.5);
+    ctx.fillRect(0, arrowShaftWidth, 5, arrowShaftWidth * 1.5);
+    
+    ctx.fillStyle = `rgba(40, 40, 180, ${slashAlpha})`; // Blue feather
+    ctx.fillRect(5, -arrowShaftWidth * 2.5, 5, arrowShaftWidth * 1.5);
+    ctx.fillRect(5, arrowShaftWidth, 5, arrowShaftWidth * 1.5);
+    
+    ctx.fillStyle = `rgba(180, 40, 40, ${slashAlpha})`; // Red feather
+    ctx.fillRect(10, -arrowShaftWidth * 2.5, 5, arrowShaftWidth * 1.5);
+    ctx.fillRect(10, arrowShaftWidth, 5, arrowShaftWidth * 1.5);
+    
+    ctx.restore();
+    
+    // Hit zone indicator removed - not visible to user (invisible for collision detection only)
+  }
+
+  // Click smudges (pixel art smears)
+  for (const smudge of clickSmudges) {
+    const alpha = smudge.life / smudge.maxLife;
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.6})`; // Slightly transparent
+    // Draw small pixel art smudge (3x3 pixels)
+    const pixelSize = 3;
+    ctx.fillRect(
+      Math.floor(smudge.x - pixelSize / 2),
+      Math.floor(smudge.y - pixelSize / 2),
+      pixelSize,
+      pixelSize
+    );
+  }
+  
+  // DOT decay particles
+  for (const particle of dotDecayParticles) {
+    const alpha = particle.life / particle.maxLife;
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+    const s = particle.size ?? 2;
+    ctx.fillRect(particle.x, particle.y, s, s);
+  }
+
+  // Damage numbers
+  for (let i = damageNumbers.length - 1; i >= 0; i--) {
+    const dmgNum = damageNumbers[i];
+    
+    // Update position
+    dmgNum.x += dmgNum.vx;
+    dmgNum.y += dmgNum.vy;
+    dmgNum.vy += 0.1; // Gravity
+    
+    // Update life
+    dmgNum.life--;
+    
+    // Render damage number
+    const alpha = dmgNum.life / dmgNum.maxLife;
+    const t = 1 - alpha; // 0..1 from spawn->end
+    const pop = t < 0.18 ? (1 - (t / 0.18)) : 0; // quick “pop” then settle
+    
+    // Different colors for crit hits and misses
+    if (dmgNum.isCrit) {
+      // Draw pixel art lightning bolt for crit - top right corner
+      const lightningX = dmgNum.x + 18;
+      const lightningY = dmgNum.y - 23;
+      
+      // Lightning bolt - bright yellow
+      ctx.fillStyle = `rgba(255, 235, 80, ${alpha})`;
+      ctx.fillRect(lightningX, lightningY, 2, 2);
+      ctx.fillRect(lightningX - 2, lightningY + 2, 2, 2);
+      ctx.fillRect(lightningX - 4, lightningY + 4, 2, 2);
+      ctx.fillRect(lightningX - 2, lightningY + 6, 2, 2);
+      ctx.fillRect(lightningX - 4, lightningY + 8, 2, 2);
+      ctx.fillRect(lightningX - 6, lightningY + 10, 2, 2);
+      
+      // Crit damage number - yellow with dark outline
+      ctx.fillStyle = `rgba(255, 235, 80, ${alpha})`;
+      ctx.strokeStyle = `rgba(0, 0, 0, ${Math.min(0.9, alpha * 0.9)})`;
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
+      ctx.font = `bold ${14 + pop * 8}px "Press Start 2P"`; // Bigger at start, then settles
+    } else if (dmgNum.isMiss) {
+      // Miss text - gray, smaller size
+      ctx.fillStyle = `rgba(128, 128, 128, ${alpha})`;
+      ctx.strokeStyle = `rgba(0, 0, 0, ${Math.min(0.7, alpha * 0.8)})`;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.font = `bold ${8 + pop * 4}px "Press Start 2P"`;
+    } else if (typeof dmgNum.value === 'string' && dmgNum.value.startsWith('+')) {
+      // Green for armor regeneration (+1)
+      ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`; // Green for armor regen
+      ctx.strokeStyle = `rgba(0, 0, 0, ${Math.min(0.8, alpha * 0.85)})`;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.font = `bold ${12 + pop * 6}px "Press Start 2P"`;
+    } else {
+      // Normal damage: red with outline for readability (pixel-friendly)
+      ctx.fillStyle = `rgba(255, 70, 70, ${alpha})`;
+      ctx.strokeStyle = `rgba(0, 0, 0, ${Math.min(0.85, alpha * 0.9)})`;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.font = `bold ${12 + pop * 6}px "Press Start 2P"`;
+    }
+    
+    ctx.textAlign = 'center';
+    // Outline for readability (crit already outlines; now all numbers do)
+    ctx.strokeText(`${dmgNum.value}`, dmgNum.x, dmgNum.y);
+    ctx.fillText(`${dmgNum.value}`, dmgNum.x, dmgNum.y);
+    
+    // Remove dead damage numbers
+    if (dmgNum.life <= 0) {
+      damageNumbers.splice(i, 1);
+    }
+  }
+
+  // Upgrade animation - pixel art particles
+  if (upgradeAnimation) {
+    const buttonX = 20;
+    let buttonY = 160; // Crit
+    if (upgradeType === 'accuracy') buttonY = 220;
+    const buttonWidth = 200;
+    const buttonHeight = 40;
+    
+    // Draw pixelated progress bar inside button
+    // If failed, show reverse animation (progress going back)
+    let actualProgress;
+    if (!upgradeWillSucceed && upgradeProgress >= upgradeFailAt) {
+      // Failed - show reverse animation (2x faster)
+      const reverseProgress = Math.max(0, 1 - (upgradeProgress - upgradeFailAt) * 4);
+      actualProgress = upgradeFailAt * reverseProgress;
+    } else {
+      // Normal progress
+      actualProgress = Math.min(upgradeProgress, upgradeFailAt);
+    }
+    const progressWidth = buttonWidth * actualProgress;
+    
+    // Draw progress in 8px chunks for cleaner pixel art effect
+    const chunkSize = 8;
+    for (let x = 0; x < progressWidth; x += chunkSize) {
+      const chunkWidth = Math.min(chunkSize, progressWidth - x);
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(buttonX + x, buttonY, chunkWidth, buttonHeight);
+    }
+    
+    // Add pixel art "loading" pattern inside progress - smaller, more subtle
+    ctx.fillStyle = '#000000';
+    for (let x = 4; x < progressWidth - 4; x += 8) {
+      for (let y = 4; y < buttonHeight - 4; y += 8) {
+        if ((x + y) % 16 === 0) {
+          ctx.fillRect(buttonX + x, buttonY + y, 2, 2); // Smaller squares
+        }
+      }
+    }
+    
+    // Add jagged edge effect at progress end
+    const edgeX = Math.floor(progressWidth / chunkSize) * chunkSize;
+    ctx.fillStyle = '#000000';
+    for (let y = 0; y < buttonHeight; y += 4) {
+      const offset = (y % 8 === 0) ? 2 : 0;
+      ctx.fillRect(buttonX + edgeX + offset, buttonY + y, 2, 2);
+    }
+    
+    // Add pixel art border to progress bar
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(buttonX, buttonY, progressWidth, buttonHeight);
+    
+    // Draw particles
+    ctx.fillStyle = '#000000';
+    for (const particle of upgradeParticles) {
+      const alpha = particle.life / particle.maxLife;
+      ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+      // Make particles more pixelated
+      const pixelX = Math.floor(particle.x);
+      const pixelY = Math.floor(particle.y);
+      ctx.fillRect(pixelX, pixelY, 3, 3);
+    }
+  }
+  
+  // Upgrade message - centered with main info in black pixel art style
+  if (upgradeMessageTimer > 0) {
+    ctx.fillStyle = '#000000'; // Black pixel art style
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    // Center the message with the stats frame (statsX + statsWidth/2)
+    ctx.fillText(upgradeMessage, upgradeMessageX + 100, upgradeMessageY);
+    upgradeMessageTimer -= 16; // Assuming 60 FPS
+  }
+
+  // PvP/Training mode: Lobby screen or Arena
+  if (gameMode === 'PvP' || gameMode === 'Training') {
+    // Show lobby screen if searching for match (only for PvP Online, not Training)
+    if (gameMode === 'PvP' && isInLobby && !currentMatch) {
+      // Lobby screen - searching for opponent
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
+      
+      // Lobby text
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 24px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      const searchTime = Math.floor((Date.now() - lobbySearchStartTime) / 1000);
+      ctx.fillText('SEARCHING FOR OPPONENT...', canvas.width / 2, canvas.height / 2 - 50);
+      ctx.fillText(`${searchTime}s`, canvas.width / 2, canvas.height / 2);
+      
+      // Animated dots
+      const dotCount = (Math.floor(Date.now() / 500) % 4);
+      let dots = '';
+      for (let i = 0; i < dotCount; i++) {
+        dots += '.';
+      }
+      ctx.fillText(dots, canvas.width / 2, canvas.height / 2 + 30);
+      
+      // Cancel button
+      const cancelButtonX = canvas.width / 2 - 100;
+      const cancelButtonY = canvas.height / 2 + 80;
+      const cancelButtonWidth = 200;
+      const cancelButtonHeight = 40;
+      
+      ctx.fillStyle = '#c0c0c0';
+      ctx.fillRect(cancelButtonX, cancelButtonY, cancelButtonWidth, cancelButtonHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cancelButtonX, cancelButtonY, cancelButtonWidth, cancelButtonHeight);
+      
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.fillText('CANCEL', canvas.width / 2, cancelButtonY + cancelButtonHeight / 2);
+      
+      return; // Don't render arena if in lobby
+    }
+    
+    // PvP Online: Show Ready screen if match found but waiting for both players to be ready
+    // REMOVED: Polling causes lag - rely only on real-time subscriptions from subscribeToMatchUpdates
+    if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady) {
+      // Ready screen
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 24px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      ctx.fillText('OPPONENT FOUND!', canvas.width / 2, canvas.height / 2 - 100);
+      
+      // Show ready status
+      const walletState = walletService.getState();
+      if (!walletState.address) {
+        console.error('Wallet not connected in Ready screen!');
+        return;
+      }
+      
+      const isPlayer1 = currentMatch.p1 === walletState.address;
+      // Handle null/undefined ready states
+      const myReady = isPlayer1 
+        ? (currentMatch.p1Ready === true) 
+        : (currentMatch.p2Ready === true);
+      const opponentReady = isPlayer1 
+        ? (currentMatch.p2Ready === true) 
+        : (currentMatch.p1Ready === true);
+      
+      // Removed console.log to reduce lag - only log if there's an issue
+      
+      // Debug info (remove in production)
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillStyle = '#888888';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Match ID: ${currentMatch.id.substring(0, 8)}...`, 250, 30);
+      ctx.fillText(`P1: ${currentMatch.p1Ready === true ? 'READY' : 'NOT READY'}`, 250, 50);
+      ctx.fillText(`P2: ${currentMatch.p2Ready === true ? 'READY' : 'NOT READY'}`, 250, 70);
+      ctx.fillText(`State: ${currentMatch.state}`, 250, 90);
+      ctx.fillText(`My Ready: ${isReady}`, 250, 110);
+      ctx.textAlign = 'center';
+      
+      ctx.font = 'bold 16px "Press Start 2P"';
+      ctx.fillStyle = myReady ? '#00ff00' : '#ff0000';
+      ctx.fillText(`YOU: ${myReady ? 'READY' : 'NOT READY'}`, canvas.width / 2, canvas.height / 2 - 40);
+      
+      ctx.fillStyle = opponentReady ? '#00ff00' : '#ff0000';
+      ctx.fillText(`OPPONENT: ${opponentReady ? 'READY' : 'WAITING...'}`, canvas.width / 2, canvas.height / 2);
+      
+      // Ready button (if not ready yet)
+      if (!isReady) {
+        // Calculate button position relative to play area (not full canvas)
+        const playAreaX = 240; // Play area starts at x=240
+        const playAreaWidth = canvas.width - playAreaX;
+        const readyButtonX = playAreaX + playAreaWidth / 2 - 100;
+        const readyButtonY = canvas.height / 2 + 60;
+        const readyButtonWidth = 200;
+        const readyButtonHeight = 50;
+        
+        // Button shadow (dark gray) - only if not pressed
+        if (!isPressingReady) {
+          ctx.fillStyle = '#404040';
+          ctx.fillRect(readyButtonX + 2, readyButtonY + 2, readyButtonWidth, readyButtonHeight);
+        }
+        
+        // Button main
+        if (isPressingReady) {
+          ctx.fillStyle = '#909090';
+        } else if (isHoveringReady) {
+          ctx.fillStyle = '#b0ffb0'; // Lighter green on hover
+        } else {
+          ctx.fillStyle = '#00ff00'; // Green
+        }
+        ctx.fillRect(readyButtonX, readyButtonY, readyButtonWidth, readyButtonHeight);
+        
+        // Button highlight (white) - only if not pressed
+        if (!isPressingReady) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(readyButtonX, readyButtonY, readyButtonWidth, 2);
+          ctx.fillRect(readyButtonX, readyButtonY, 2, readyButtonHeight);
+        }
+        
+        // Button shadow (dark gray)
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(readyButtonX + readyButtonWidth - 2, readyButtonY, 2, readyButtonHeight);
+        ctx.fillRect(readyButtonX, readyButtonY + readyButtonHeight - 2, readyButtonWidth, 2);
+        
+        // Button border (black)
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(readyButtonX, readyButtonY, readyButtonWidth, readyButtonHeight);
+        
+        // Button text
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 16px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('READY', readyButtonX + readyButtonWidth / 2, readyButtonY + readyButtonHeight / 2);
+      } else {
+        ctx.fillStyle = '#ffff00';
+        ctx.font = 'bold 14px "Press Start 2P"';
+        ctx.fillText('Waiting for opponent...', canvas.width / 2, canvas.height / 2 + 60);
+      }
+      
+      // Cancel button
+      const playAreaX = 240; // Play area starts at x=240
+      const playAreaWidth = canvas.width - playAreaX;
+      const cancelButtonX = playAreaX + playAreaWidth / 2 - 100;
+      const cancelButtonY = canvas.height / 2 + 130;
+      const cancelButtonWidth = 200;
+      const cancelButtonHeight = 40;
+      
+      // Button shadow (dark gray) - only if not pressed
+      if (!isPressingCancel) {
+        ctx.fillStyle = UI_BTN_SHADOW;
+        ctx.fillRect(cancelButtonX + 2, cancelButtonY + 2, cancelButtonWidth, cancelButtonHeight);
+      }
+      
+      // Button main
+      if (isPressingCancel) {
+        ctx.fillStyle = UI_BTN_BG_PRESSED;
+      } else if (isHoveringCancel) {
+        ctx.fillStyle = UI_BTN_BG_HOVER;
+      } else {
+        ctx.fillStyle = UI_BTN_BG;
+      }
+      ctx.fillRect(cancelButtonX, cancelButtonY, cancelButtonWidth, cancelButtonHeight);
+      
+      // Button highlight (white) - only if not pressed
+      if (!isPressingCancel) {
+        ctx.fillStyle = UI_BTN_HILITE;
+        ctx.fillRect(cancelButtonX, cancelButtonY, cancelButtonWidth, 2);
+        ctx.fillRect(cancelButtonX, cancelButtonY, 2, cancelButtonHeight);
+      }
+      
+      // Button shadow (dark gray)
+      ctx.fillStyle = UI_BTN_BORDER;
+      ctx.fillRect(cancelButtonX + cancelButtonWidth - 2, cancelButtonY, 2, cancelButtonHeight);
+      ctx.fillRect(cancelButtonX, cancelButtonY + cancelButtonHeight - 2, cancelButtonWidth, 2);
+      
+      // Button border (black)
+      ctx.strokeStyle = UI_BTN_BORDER;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cancelButtonX, cancelButtonY, cancelButtonWidth, cancelButtonHeight);
+      
+      // Button text
+      ctx.fillStyle = UI_TEXT;
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('CANCEL', cancelButtonX + cancelButtonWidth / 2, cancelButtonY + cancelButtonHeight / 2);
+      
+      return; // Don't render arena if waiting for ready
+    }
+    
+    // PvP Online: If in PvP mode but not in lobby and no match/players, show error
+    if (gameMode === 'PvP' && !isInLobby && !currentMatch && (!myPlayerId || !pvpPlayers[myPlayerId])) {
+      // Show error message
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
+      
+      // Dark modal card
+      const cardW = 760;
+      const cardH = 220;
+      const cardX = Math.floor((canvas.width + 240) / 2 - cardW / 2);
+      const cardY = Math.floor(canvas.height / 2 - cardH / 2);
+      ctx.fillStyle = UI_FRAME_BG;
+      ctx.fillRect(cardX, cardY, cardW, cardH);
+      ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cardX, cardY, cardW, cardH);
+      ctx.strokeStyle = UI_PANEL_BORDER;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cardX + 3, cardY + 3, cardW - 6, cardH - 6);
+
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.95)';
+      ctx.font = 'bold 24px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('FAILED TO ENTER LOBBY', cardX + cardW / 2, cardY + 58);
+      
+      if (walletError) {
+        ctx.fillStyle = UI_TEXT;
+        ctx.font = 'bold 12px "Press Start 2P"';
+        // keep it readable; truncate to avoid overflow
+        const msg = walletError.length > 64 ? walletError.substring(0, 61) + '...' : walletError;
+        ctx.fillText(msg, cardX + cardW / 2, cardY + 118);
+      }
+      
+      ctx.fillStyle = UI_TEXT_MUTED;
+      ctx.font = 'bold 12px "Press Start 2P"';
+      const retryLabel =
+        (pvpOnlineRoomName === 'pvp_fun_room') ? 'Click PVP FUN button to retry' : 'Click PvP ONLINE button to retry';
+      ctx.fillText(retryLabel, cardX + cardW / 2, cardY + cardH - 56);
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.fillText('Press ESC to return to Solo', cardX + cardW / 2, cardY + cardH - 30);
+      
+      return; // Don't render arena if error
+    }
+    
+    if (TOXIC_PLATFORMS_ENABLED) {
+      // Draw arena bounds (visual indicator) - but skip dotted line where platforms are located
+      ctx.strokeStyle = '#888888';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]); // Dashed line
+      
+      // Calculate platform edges
+      const halfW = movingPlatformWidth / 2;
+      const halfSideW = pvpPlatformSideWidth / 2;
+      const leftPlatformLeftEdge = pvpPlatformLeftX - halfSideW;
+      const leftPlatformRightEdge = pvpPlatformLeftX + halfSideW;
+      const centerPlatformLeftEdge = pvpPlatformCenterX - halfW;
+      const centerPlatformRightEdge = pvpPlatformCenterX + halfW;
+      const rightPlatformLeftEdge = pvpPlatformRightX - halfSideW;
+      const rightPlatformRightEdge = pvpPlatformRightX + halfSideW;
+      const platformY = movingPlatformY; // Platform Y position
+      const platformBottomY = platformY + movingPlatformThickness; // Platform bottom Y position
+      
+      // Draw top line segments only over platforms (not in empty spaces)
+      // Left platform segment: over left platform only
+      ctx.beginPath();
+      ctx.moveTo(leftPlatformLeftEdge, pvpBounds.top);
+      ctx.lineTo(leftPlatformRightEdge, pvpBounds.top);
+      ctx.stroke();
+      
+      // Center platform segment: over center platform only
+      ctx.beginPath();
+      ctx.moveTo(centerPlatformLeftEdge, pvpBounds.top);
+      ctx.lineTo(centerPlatformRightEdge, pvpBounds.top);
+      ctx.stroke();
+      
+      // Right platform segment: over right platform only
+      ctx.beginPath();
+      ctx.moveTo(rightPlatformLeftEdge, pvpBounds.top);
+      ctx.lineTo(rightPlatformRightEdge, pvpBounds.top);
+      ctx.stroke();
+      
+      // Draw bottom line segments only over platforms (not in empty spaces)
+      // Left platform segment: over left platform only
+      ctx.beginPath();
+      ctx.moveTo(leftPlatformLeftEdge, pvpBounds.bottom);
+      ctx.lineTo(leftPlatformRightEdge, pvpBounds.bottom);
+      ctx.stroke();
+      
+      // Center platform segment: over center platform only
+      ctx.beginPath();
+      ctx.moveTo(centerPlatformLeftEdge, pvpBounds.bottom);
+      ctx.lineTo(centerPlatformRightEdge, pvpBounds.bottom);
+      ctx.stroke();
+      
+      // Right platform segment: over right platform only
+      ctx.beginPath();
+      ctx.moveTo(rightPlatformLeftEdge, pvpBounds.bottom);
+      ctx.lineTo(rightPlatformRightEdge, pvpBounds.bottom);
+      ctx.stroke();
+      
+      // Draw left side segments only over left platform (not in empty spaces)
+      // Left platform vertical segment: over left platform only
+      ctx.beginPath();
+      ctx.moveTo(pvpBounds.left, platformY);
+      ctx.lineTo(pvpBounds.left, platformBottomY);
+      ctx.stroke();
+      
+      // Draw right side segments only over right platform (not in empty spaces)
+      // Right platform vertical segment: over right platform only
+      ctx.beginPath();
+      ctx.moveTo(pvpBounds.right, platformY);
+      ctx.lineTo(pvpBounds.right, platformBottomY);
+      ctx.stroke();
+      
+      ctx.setLineDash([]); // Reset line dash
+    } else {
+      ctx.setLineDash([]); // Ensure solid lines when platforms disabled
+    }
+    
+    // Draw side walls from platform to bottom floor (prevent players from going through UI panel)
+    // Use existing bottomFloorY from render function scope (declared above)
+    const wallTopY = movingPlatformY; // Start from platform level
+    const wallBottomY = bottomFloorY; // End at bottom floor (bottomFloorY already declared above)
+    
+    // Left wall (prevents going through UI panel)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(playLeft - 5, wallTopY, 5, wallBottomY - wallTopY);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(playLeft - 5, wallTopY, 5, wallBottomY - wallTopY);
+    
+    // Right wall
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(playRight, wallTopY, 5, wallBottomY - wallTopY);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(playRight, wallTopY, 5, wallBottomY - wallTopY);
+
+    // Center obstacle (replaces mid-wall): stone sprite that blocks players (and bullets).
+    if (PVP_CENTER_OBSTACLE_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
+      const o0 = getPvpCenterObstacle();
+      const shake = getStoneShakeOffset(Date.now());
+      // Render-only shake: collision uses stable center in physics.
+      const o = { ...o0, x: o0.x + shake.x, y: o0.y + shake.y };
+
+      // Draw sprite if available (fallback: keep a simple circle so obstacle is still visible)
+      if (stoneSpriteProcessed) {
+        const iw = stoneSpriteProcessed.width || 1;
+        const ih = stoneSpriteProcessed.height || 1;
+        // Fit sprite to the collider radius (slightly larger so visuals match collision)
+        const worldW = o.renderR * 2.05; // render size independent from collision
+        const worldH = worldW * (ih / iw);
+        const dx = Math.round(o.x - worldW / 2);
+        const dy = Math.round(o.y - worldH / 2);
+
+        // Halo/rim-light behind the stone (cached/pre-rendered for performance).
+        // Draw halo first, then draw the sprite normally on top (so the glow is only around the contour).
+        if (PVP_STONE_HALO_ENABLED) {
+          if (stoneHaloProcessed && stoneHaloPadPx > 0) {
+            const sw = stoneSpriteProcessed.width || 1;
+            const sh = stoneSpriteProcessed.height || 1;
+            const pad = stoneHaloPadPx;
+            const sx = worldW / sw;
+            const sy = worldH / sh;
+            const haloW = worldW + pad * 2 * sx;
+            const haloH = worldH + pad * 2 * sy;
+            const hdx = dx - pad * sx;
+            const hdy = dy - pad * sy;
+        ctx.save();
+        (ctx as any).imageSmoothingEnabled = false;
+            ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+            ctx.filter = 'none';
+            ctx.drawImage(stoneHaloProcessed, hdx, hdy, haloW, haloH);
+            ctx.restore();
+          } else {
+            // Fallback: if cached halo failed to build, use the old per-frame drop-shadow.
+            ctx.save();
+            (ctx as any).imageSmoothingEnabled = false;
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.filter = `drop-shadow(0 0 ${PVP_STONE_HALO_BLUR_PX}px ${PVP_STONE_HALO_COLOR}) drop-shadow(0 0 ${PVP_STONE_HALO_BLUR_INNER_PX}px ${PVP_STONE_HALO_COLOR_INNER})`;
+            ctx.globalAlpha = 1;
+            ctx.drawImage(stoneSpriteProcessed, dx, dy, worldW, worldH);
+            ctx.restore();
+          }
+        }
+
+        ctx.save();
+        (ctx as any).imageSmoothingEnabled = false;
+        ctx.filter = 'none';
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(stoneSpriteProcessed, dx, dy, worldW, worldH);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        // Fallback stone circle + halo so it still reads like an eclipse.
+        if (PVP_STONE_HALO_ENABLED) {
+          ctx.save();
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = PVP_STONE_HALO_COLOR;
+          ctx.lineWidth = 10;
+          ctx.shadowColor = PVP_STONE_HALO_COLOR;
+          ctx.shadowBlur = PVP_STONE_HALO_BLUR_PX;
+          ctx.beginPath();
+          ctx.arc(o.x, o.y, o.renderR + 2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, o.renderR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Debug overlay: draw compound hit circles + numbers
+      if (PVP_STONE_HITBOX_DEBUG) {
+        const halfW = o0.halfW; // use stable geometry (no shake) so it matches collision exactly
+        const halfH = o0.halfH;
+        const baseR = o0.baseR;
+        ctx.save();
+        (ctx as any).imageSmoothingEnabled = false;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.lineWidth = 2;
+        ctx.font = 'bold 12px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < PVP_STONE_HITBOX.length; i++) {
+          const c = PVP_STONE_HITBOX[i];
+          const cx = o0.x + c.u * halfW;
+          const cy = o0.y + c.v * halfH;
+          const rr = c.r * baseR;
+          ctx.strokeStyle = 'rgba(0, 255, 80, 0.95)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // center dot
+          ctx.fillStyle = 'rgba(0, 255, 80, 0.95)';
+          ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 3, 3);
+
+          // label
+          const label = String(i);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.strokeText(label, cx, cy);
+          ctx.lineWidth = 2;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(label, cx, cy);
+        }
+        ctx.restore();
+      }
+    }
+
+    // Mid-wall rendering disabled (we keep the code gated for potential future modes).
+    if (PVP_MID_WALL_ENABLED && (gameMode === 'PvP' || gameMode === 'Training')) {
+      const midX = (pvpBounds.left + pvpBounds.right) / 2;
+      const half = PVP_MID_WALL_THICKNESS / 2;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(midX - half, pvpBounds.top, PVP_MID_WALL_THICKNESS, wallBottomY - pvpBounds.top);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(midX - half, pvpBounds.top, PVP_MID_WALL_THICKNESS, wallBottomY - pvpBounds.top);
+
+      // Mid-wall "timer body": rises bottom->top over a full 10s (planning+execute) cycle.
+      // Visible to players. Only for 5SEC PvP mode when connected.
+      try {
+        if (TURN_BASED_PVP_ENABLED && gameMode === 'PvP' && colyseusService.isConnectedToRoom()) {
+          const room: any = colyseusService.getRoom();
+          const started = !!room?.state?.gameStarted;
+          if (started && (turnPhase !== 'lobby')) {
+            const nowServer = getServerNowMs();
+            const planDur = (typeof turnPlanDurationMs === 'number' && turnPlanDurationMs > 0) ? turnPlanDurationMs : 5000;
+            const execDur = (typeof turnExecuteDurationMs === 'number' && turnExecuteDurationMs > 0) ? turnExecuteDurationMs : 5000;
+            const total = Math.max(1, planDur + execDur); // ~10s
+            const planStart =
+              (typeof turnPlanStartServerTs === 'number' && turnPlanStartServerTs > 0)
+                ? turnPlanStartServerTs
+                : ((typeof turnExecuteStartAt === 'number' && turnExecuteStartAt > 0) ? (turnExecuteStartAt - planDur) : nowServer);
+
+            const topY = pvpBounds.top;
+            const bottomY = wallBottomY;
+
+            // Movement rule:
+            // - PLANNING: body rises bottom -> top
+            // - EXECUTE:  body descends top -> bottom
+            const elapsedInPlan = Math.max(0, Math.min(planDur, nowServer - planStart));
+            const execStart =
+              (typeof turnExecuteStartAt === 'number' && turnExecuteStartAt > 0)
+                ? turnExecuteStartAt
+                : (planStart + planDur);
+            const elapsedInExec = Math.max(0, Math.min(execDur, nowServer - execStart));
+
+            let y: number;
+            if (turnPhase === 'planning') {
+              const tUp = Math.max(0, Math.min(1, elapsedInPlan / planDur));
+              y = bottomY - tUp * (bottomY - topY);
+            } else {
+              const tDown = Math.max(0, Math.min(1, elapsedInExec / execDur));
+              y = topY + tDown * (bottomY - topY);
+            }
+
+            // Draw a small "body" on the wall (pixel-friendly)
+            const bodyW = 18;
+            const bodyH = 18;
+            const bodyX = Math.round(midX - bodyW / 2);
+            const bodyY = Math.round(y - bodyH / 2);
+
+            ctx.save();
+            // subtle background plate so it pops on black wall
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(bodyX, bodyY, bodyW, bodyH);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bodyX + 1, bodyY + 1, bodyW - 2, bodyH - 2);
+            // center dot (gives "body" feel)
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(bodyX + Math.floor(bodyW / 2) - 2, bodyY + Math.floor(bodyH / 2) - 2, 4, 4);
+            ctx.restore();
+
+            // Phase timer text: countdown + "PLANNING"/"REPLAY" label.
+            // Use server-synced timestamps so both players see consistent time.
+            try {
+              const phaseEndsAt = (typeof turnPhaseEndsAt === 'number' && turnPhaseEndsAt > 0) ? turnPhaseEndsAt : 0;
+              let remainingMs = 0;
+              if (phaseEndsAt > 0) {
+                remainingMs = Math.max(0, phaseEndsAt - nowServer);
+              } else if (turnPhase === 'planning') {
+                remainingMs = Math.max(0, planDur - (nowServer - planStart));
+              } else {
+                remainingMs = Math.max(0, execDur - (nowServer - execStart));
+              }
+              const remainingSec = (remainingMs / 1000);
+              const label = (turnPhase === 'planning') ? 'PLANNING' : 'REPLAY';
+              const text = `${label} ${remainingSec.toFixed(1)}s`;
+              ctx.save();
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'top';
+              ctx.font = 'bold 18px "Press Start 2P"';
+              // outline for readability
+              ctx.lineWidth = 4;
+              ctx.strokeStyle = '#000000';
+              ctx.strokeText(text, midX, pvpBounds.top + 8);
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText(text, midX, pvpBounds.top + 8);
+              ctx.restore();
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+    
+    // Highlight borders (top, left, right)
+    drawPerimeterHighlight(ctx);
+
+    // Turn-based PvP: show time via mid-wall + timer text.
+    
+    // Draw wall spikes (PvP mode only)
+    if (gameMode === 'PvP' || gameMode === 'Training') {
+      for (const spike of wallSpikes) {
+        // Only draw spikes that are extending or extended
+        if (spike.state === 'retracted' || spike.state === 'retracting') continue;
+        
+        const spikeCurrentLength = spike.length * spike.progress;
+        if (spikeCurrentLength <= 0) continue;
+        
+        const spikeX = spike.side === 'left' ? playLeft : playRight;
+        const spikeTopY = spike.y - spike.width / 2;
+        const spikeBottomY = spike.y + spike.width / 2;
+        
+        // Draw spike (triangle pointing inward)
+        ctx.save();
+        ctx.fillStyle = '#8B0000'; // Dark red
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        
+        ctx.beginPath();
+        if (spike.side === 'left') {
+          // Left spike pointing right
+          ctx.moveTo(spikeX, spikeTopY);
+          ctx.lineTo(spikeX + spikeCurrentLength, spike.y);
+          ctx.lineTo(spikeX, spikeBottomY);
+          ctx.closePath();
+        } else {
+          // Right spike pointing left
+          ctx.moveTo(spikeX, spikeTopY);
+          ctx.lineTo(spikeX - spikeCurrentLength, spike.y);
+          ctx.lineTo(spikeX, spikeBottomY);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    
+    // Draw death animations (pixel art particles) - draw before players so they appear behind
+    for (const [playerId, particles] of deathAnimations.entries()) {
+      for (const particle of particles) {
+        const lifeRatio = particle.life / particle.maxLife;
+        const alpha = lifeRatio; // Fade out as life decreases
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(particle.x, particle.y);
+        ctx.rotate(particle.rotation);
+        
+        // Draw pixel art square piece - make sure it's visible
+        ctx.fillStyle = particle.color;
+        ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+        
+        // Draw outline for pixel art look
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1; // Increased line width for better visibility
+        ctx.strokeRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+        
+        ctx.restore();
+      }
+    }
+    
+    // Draw all players
+    const shadowPlanning = false;
+    for (const playerId in pvpPlayers) {
+      const player = pvpPlayers[playerId];
+      
+      // Skip drawing player if death animation is playing
+      if (deathAnimations.has(playerId)) {
+        continue; // Don't draw player during death animation
+      }
+
+      // Turn-based role tint: defender slightly darker, attacker stays original
+      ctx.save();
+      if (isTurnBasedPvP() && turnDefenderId && playerId === turnDefenderId) {
+        ctx.globalAlpha = 0.75;
+      }
+      
+      // Draw fading trail (behind the player)
+      if (PVP_UFO_SPEED_TRAIL_ENABLED) {
+        // IMPORTANT: Opponent UFO is rendered with interpolation (a slight visual delay),
+        // while physics state (player.x/y) is "now". To keep the shadow tail visually attached,
+        // shift tail segments by the same render offset we apply to the opponent UFO.
+        let offX = 0;
+        let offY = 0;
+        if (playerId === opponentId) {
+          const ip = getOpponentInterpolatedPos(Date.now());
+          if (ip) {
+            offX = ip.x - player.x;
+            offY = ip.y - player.y;
+          }
+        }
+        ctx.save();
+        // Arena background is now dark; use a lighter (almost "starlight") trail so it stays visible.
+        const SHADOW_TAIL_ALPHA = 0.22;
+        for (const seg of player.speedTrail) {
+          const alpha = (seg.life / seg.maxLife) * SHADOW_TAIL_ALPHA;
+          const radius = (seg.size ?? (player.radius * 1.2)) * (seg.life / seg.maxLife);
+          ctx.fillStyle = `rgba(200, 225, 255, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(seg.x + offX, seg.y + offY, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      
+      // Draw player DOT
+      // CRITICAL: Ensure correct color based on player ID
+      // Both players are black
+      let dotColor: string;
+      if (playerId === myPlayerId) {
+        dotColor = '#000000'; // Black for my player
+      } else if (playerId === opponentId && opponentId) {
+        dotColor = '#000000'; // Black for opponent
+      } else {
+        // Fallback to player's stored color (should not happen)
+        dotColor = player.color;
+        console.warn('Unknown player ID in render', { playerId, myPlayerId, opponentId, allPlayers: Object.keys(pvpPlayers) });
+      }
+      
+      // Draw player with UFO sprite and profile picture inside
+      const profilePicture = playerId === myPlayerId 
+        ? profileManager.getProfilePicture() 
+        : player.profilePicture;
+      
+      // UFO render direction + rotation smoothing (prevents flicker when vx crosses ~0 while drifting to neutral)
+      const nowForRender = Date.now();
+      const ipState = (playerId === opponentId) ? getOpponentInterpolatedState(nowForRender) : null;
+      const rvx = ipState ? ipState.vx : player.vx;
+      const rvy = ipState ? ipState.vy : player.vy;
+      const speed = Math.sqrt(rvx * rvx + rvy * rvy);
+
+      // Stable facing with hysteresis
+      const VX_FACE_ON = 0.35;
+      if (player.facingLeft) {
+        if (rvx > VX_FACE_ON) player.facingLeft = false;
+        } else {
+        if (rvx < -VX_FACE_ON) player.facingLeft = true;
+      }
+
+      // Continuous target angle: remove the hard branch on |vx| and smoothly return to neutral
+      const absVx = Math.abs(rvx);
+      const denom = absVx + 0.9; // bias removes snap when absVx -> 0
+      // IMPORTANT: no hard "speed < threshold => 0" snap.
+      // Instead, fade rotation towards neutral as speed approaches 0.
+      const baseAngle = Math.atan2(rvy, denom);
+      const fade = clamp((speed - 0.03) / 0.55, 0, 1);
+      const targetAngle = baseAngle * fade;
+
+      // Smooth it (visual only)
+      const tAngle = smoothT(0.18, averageFrameTime);
+      player.renderAngle = lerpAngle(player.renderAngle || 0, targetAngle, tAngle);
+
+      const rotationAngle = player.renderAngle;
+      const isMovingLeft = player.facingLeft;
+      
+      ctx.save();
+      
+      // Translate to player position and rotate
+      let px = player.x;
+      let py = player.y;
+      if (playerId === opponentId) {
+        if (ipState) {
+          px = ipState.x;
+          py = ipState.y;
+        } else {
+          const ip = getOpponentInterpolatedPos(nowForRender);
+          if (ip) {
+            px = ip.x;
+            py = ip.y;
+          }
+        }
+      }
+      ctx.translate(px, py);
+      ctx.rotate(rotationAngle + player.ufoTilt); // Add tilt effect for balancing/sway
+      
+      // Apply horizontal flip (mirror effect) if moving left
+      if (isMovingLeft) {
+        ctx.scale(-1, 1); // Flip horizontally
+      }
+      
+      // Draw UFO sprite (base layer)
+      if (ufoSprite && ufoSprite.complete) {
+        try {
+          // Draw UFO sprite scaled to fit player radius
+          const spriteSize = player.radius * 5.0; // Even larger sprite size
+          ctx.drawImage(ufoSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+        } catch (error) {
+          console.error('Error drawing UFO sprite:', error);
+          // Fallback to black circle
+          ctx.fillStyle = dotColor;
+          ctx.beginPath();
+          ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // UFO sprite not loaded - show black circle
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Draw profile picture inside UFO sprite (if available)
+      if (profilePicture) {
+        const cachedImage = nftImageCache.get(profilePicture);
+        if (cachedImage && cachedImage.complete) {
+          try {
+            // Create clipping path for profile picture (smaller circle inside UFO)
+            ctx.beginPath();
+            const profileRadius = player.radius * 1.2 - 8; // Profile picture, smaller (8px less radius)
+            ctx.arc(0, -player.radius * 0.2, profileRadius, 0, Math.PI * 2); // Slightly above center for dome position
+            ctx.clip();
+            
+            // Calculate aspect ratio to fit image in circle
+            const imgAspect = cachedImage.width / cachedImage.height;
+            let drawWidth = profileRadius * 2;
+            let drawHeight = profileRadius * 2;
+            let drawX = -profileRadius;
+            let drawY = -player.radius * 0.2 - profileRadius; // Position in dome area
+            
+            if (imgAspect > 1) {
+              // Image is wider - fit to height
+              drawWidth = profileRadius * 2 * imgAspect;
+              drawX = -drawWidth / 2;
+            } else {
+              // Image is taller - fit to width
+              drawHeight = profileRadius * 2 / imgAspect;
+              drawY = -player.radius * 0.2 - drawHeight / 2;
+            }
+            
+            ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+          } catch (error) {
+            console.error('Error drawing profile picture inside UFO:', error);
+          }
+        }
+      }
+      
+      ctx.restore();
+      // NOTE: Do NOT call ctx.stroke() here without a fresh path.
+      // It would stroke the last arc path (often the speedTrail segment) and create an ugly black outline.
+      
+      // Draw magnetic wave animation when gravity is active
+      const now = Date.now();
+      if (player.gravityActiveUntil > now) {
+        const timeRemaining = player.gravityActiveUntil - now;
+        const waveProgress = 1 - (timeRemaining / gravityActiveDuration); // 0 to 1
+        const waveSpeed = 0.02; // Speed of wave animation
+        const waveTime = Date.now() * waveSpeed;
+        
+        // Draw multiple concentric waves
+        for (let i = 0; i < 3; i++) {
+          const waveOffset = (waveTime + i * 0.5) % (Math.PI * 2);
+          const waveRadius = player.radius + 10 + Math.sin(waveOffset) * 5 + i * 8;
+          const waveAlpha = 0.3 * (1 - waveProgress) * (1 - i * 0.3); // Fade out as gravity ends
+          
+          ctx.strokeStyle = `rgba(100, 100, 100, ${waveAlpha})`; // Gray magnetic waves
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, waveRadius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      
+      // Draw magnetic wave animation when paralyzed
+      if (player.paralyzedUntil > Date.now()) {
+        const time = Date.now() * 0.003; // Slow animation
+        const waveRadius = player.radius + 8 + Math.sin(time * 2) * 3; // Gentle wave
+        const waveCount = 3; // Number of wave rings
+        
+        for (let i = 0; i < waveCount; i++) {
+          const offset = i * 0.5;
+          const alpha = 0.3 - (i * 0.1); // Fade out
+          const radius = waveRadius + i * 4 + Math.sin(time * 2 + offset) * 2;
+          
+          ctx.strokeStyle = `rgba(100, 100, 120, ${alpha})`; // Gray-blue magnetic color
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        
+        // Draw small black dot in center (paralyzed indicator)
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Supersonic animation when speed >= 7 (same as Solo)
+      // OPTIMIZED: Use squared speed for comparison to avoid Math.sqrt
+      {
+        const speedSquared = player.vx * player.vx + player.vy * player.vy;
+        if (speedSquared >= 49) { // 7^2 = 49
+          const speed = Math.sqrt(speedSquared); // Only calculate sqrt when needed
+          const t = Date.now() * 0.004;
+          // Pulsing white ring around the player
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          const ringRadius = player.radius + 3 + Math.sin(t) * 1.5;
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, ringRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Motion streaks in direction of velocity
+          const angle = Math.atan2(player.vy, player.vx);
+          const backAngle = angle + Math.PI;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          for (let i = -2; i <= 2; i++) {
+            const offset = i * 3;
+            const sx = player.x + Math.cos(backAngle + i * 0.08) * (player.radius + 2);
+            const sy = player.y + Math.sin(backAngle + i * 0.08) * (player.radius + 2);
+            const ex = sx + Math.cos(backAngle + i * 0.08) * (6 + Math.min(12, speed));
+            const ey = sy + Math.sin(backAngle + i * 0.08) * (6 + Math.min(12, speed));
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+          }
+
+          // Small white highlights on the rim
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 6; i++) {
+            const a = angle + i * (Math.PI / 3) + Math.sin(t + i) * 0.2;
+            const hx = player.x + Math.cos(a) * (player.radius + 1);
+            const hy = player.y + Math.sin(a) * (player.radius + 1);
+            ctx.fillRect(hx - 1, hy - 1, 2, 2);
+          }
+        }
+      }
+      
+      // Draw player HP and Armor stats - positioned right after DOT balance (top left)
+      if (myPlayerId && playerId === myPlayerId) {
+        // My player stats - draw in UI panel right after DOT balance
+        const statsX = 20;
+        const statsY = 65; // Moved 5px down from 60 to 65
+        const statsWidth = 200;
+        const statsHeight = 60; // Increased height from 50 to 60 for better visibility
+        
+        // Frame background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(statsX, statsY, statsWidth, statsHeight);
+        
+        // Frame border
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(statsX, statsY, statsWidth, statsHeight);
+        
+        // HP and Armor text (same format as Solo, no label to save space)
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 12px "Press Start 2P"';
+        ctx.textAlign = 'left';
+        ctx.fillText(`HP: ${player.hp}/${player.maxHP}`, statsX + 10, statsY + 20);
+        ctx.fillText(`ARMOR: ${player.armor}/${player.maxArmor}`, statsX + 10, statsY + 40);
+      }
+      
+      // Weapon info panels - PvP mode only (shows weapon status and cooldowns)
+      if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && playerId === myPlayerId) {
+        const weaponPanelX = 20;
+        const weaponPanelWidth = 200;
+        const weaponPanelHeight = 50;
+        
+        // Arrow weapon panel
+        {
+          const weaponPanelY = 160;
+          const currentTime = Date.now();
+          const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
+          const remainingCooldown = Math.max(0, pvpArrowCooldown - timeSinceLastShot);
+          const isOnCooldown = remainingCooldown > 0;
+          const isFlying = pvpKatanaFlying;
+          
+          // Frame background
+          ctx.fillStyle = isFlying ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if flying, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('ARROW', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 1', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isFlying) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+          
+          // Cooldown bar
+          if (isOnCooldown) {
+            const cooldownProgress = remainingCooldown / pvpArrowCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          }
+        }
+        
+        // Projectile weapon panel
+        {
+          const weaponPanelY = 220;
+          const isFlying = projectileFlying;
+          const isAiming = projectileAiming;
+          const currentTime = Date.now();
+          const timeSinceLastShot = currentTime - projectileLastShotTime;
+          const remainingCooldown = Math.max(0, projectileCooldown - timeSinceLastShot);
+          const isOnCooldown = remainingCooldown > 0;
+          
+          // Frame background
+          ctx.fillStyle = isFlying ? '#ffff00' : (isAiming ? '#ffcc00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'));
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('PROJECTILE', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 2', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isFlying) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isAiming) {
+            ctx.fillStyle = '#ffaa00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('AIMING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+            
+            // Cooldown bar
+            const cooldownProgress = remainingCooldown / projectileCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+        }
+        
+        // Mine/Trap weapon panel
+        {
+          const weaponPanelY = 340;
+          const currentTime = Date.now();
+          const timeSinceLastPlace = currentTime - mineLastPlaceTime;
+          const remainingCooldown = Math.max(0, mineCooldown - timeSinceLastPlace);
+          const isOnCooldown = remainingCooldown > 0;
+          const hasMines = mines.length > 0 && mines.some(m => !m.exploded);
+          
+          // Frame background
+          ctx.fillStyle = hasMines ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if mines active, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('MINE', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 4', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (hasMines) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('ACTIVE', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+          
+          // Cooldown bar
+          if (isOnCooldown) {
+            const cooldownProgress = remainingCooldown / mineCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            const barX = weaponPanelX + 10;
+            const barY = weaponPanelY + weaponPanelHeight - 8;
+            const barHeight = 4;
+            
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+          }
+        }
+        
+        // Bullet weapon panel
+        {
+          const weaponPanelY = 280;
+          const currentTime = Date.now();
+          const timeSinceLastShot = currentTime - bulletLastShotTime;
+          const remainingCooldown = Math.max(0, bulletCooldown - timeSinceLastShot);
+          const isOnCooldown = remainingCooldown > 0;
+          const isFlying = bullets.length > 0;
+          const canFireNext = shotsInBurst < 2 && (shotsInBurst === 0 || (currentTime - lastBurstShotTime >= bulletBurstDelay));
+          
+          // Frame background
+          ctx.fillStyle = isFlying ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if flying, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Weapon name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('BULLET', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('Press 3', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isFlying) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('FLYING', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (shotsInBurst === 1 && !canFireNext) {
+            // Waiting for burst delay
+            const timeUntilNext = bulletBurstDelay - (currentTime - lastBurstShotTime);
+            ctx.fillStyle = '#ffaa00';
+            ctx.font = 'bold 7px "Press Start 2P"';
+            ctx.fillText(`${(timeUntilNext / 1000).toFixed(1)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`READY (${shotsInBurst}/2)`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+          
+          // Cooldown bar
+          if (isOnCooldown) {
+            const cooldownProgress = remainingCooldown / bulletCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          }
+        }
+        
+        // Drawing/Line skill panel
+        {
+          const weaponPanelY = 340;
+          const currentTime = Date.now();
+          const timeSinceLastDraw = currentTime - lastDrawEndTime;
+          const remainingCooldown = Math.max(0, drawCooldown - timeSinceLastDraw);
+          const isOnCooldown = remainingCooldown > 0;
+          const isActive = isDrawing;
+          
+          // Frame background
+          ctx.fillStyle = isActive ? '#ffff00' : (isOnCooldown ? '#ffcccc' : '#ccffcc'); // Yellow if drawing, light red if cooldown, light green if ready
+          ctx.fillRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Frame border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(weaponPanelX, weaponPanelY, weaponPanelWidth, weaponPanelHeight);
+          
+          // Skill name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "Press Start 2P"';
+          ctx.textAlign = 'left';
+          ctx.fillText('DRAW LINE', weaponPanelX + 10, weaponPanelY + 15);
+          
+          // Key hint (always black, left side)
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText('RMB', weaponPanelX + 10, weaponPanelY + 30);
+          
+          // Status text (right side)
+          ctx.textAlign = 'right';
+          if (isActive) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('DRAWING...', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          } else if (isOnCooldown) {
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText(`CD: ${Math.ceil(remainingCooldown / 1000)}s`, weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+            
+            // Cooldown bar
+            const cooldownProgress = remainingCooldown / drawCooldown;
+            const barWidth = (weaponPanelWidth - 20) * (1 - cooldownProgress);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(weaponPanelX + 10, weaponPanelY + 38, barWidth, 8);
+          } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.fillText('READY', weaponPanelX + weaponPanelWidth - 10, weaponPanelY + 30);
+          }
+          ctx.textAlign = 'left'; // Reset alignment
+        }
+      }
+      
+      // Draw Armor and HP bars above player head (combined bar - always same height)
+      {
+        const barWidth = player.radius * 2 - 6; // Shorter bar width (6px shorter total)
+        const barHeight = 4; // Thinner bar height - always same height
+        const barX = px - barWidth / 2;
+        const barY = py - player.radius - 8; // Bar position
+        
+        // Draw "You" text above HP bar (only for my player)
+        if (myPlayerId && playerId === myPlayerId) {
+          ctx.font = 'bold 8px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          // Readable on dark arena background
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeText('You', px, barY - 3);
+          ctx.fillText('You', px, barY - 3);
+        }
+        
+        // Calculate percentages
+        const armorPercentage = Math.max(0, Math.min(1, player.armor / player.maxArmor));
+        const hpPercentage = Math.max(0, Math.min(1, player.hp / player.maxHP));
+        
+        // Draw bar background (thin black outline) - always same height
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1; // Thin outline
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Draw HP bar (green/yellow/red) first - always draw it, but armor will cover it
+        if (player.maxArmor > 0) {
+          // Show HP bar when armor exists (armor will cover it)
+          if (hpPercentage > 0.6) {
+            ctx.fillStyle = '#00ff00'; // Green when HP > 60%
+          } else if (hpPercentage > 0.3) {
+            ctx.fillStyle = '#ffff00'; // Yellow when HP 30-60%
+          } else {
+            ctx.fillStyle = '#ff0000'; // Red when HP < 30%
+          }
+          
+          const fillWidth = barWidth * hpPercentage;
+          if (fillWidth > 0) {
+            ctx.fillRect(barX + 0.5, barY + 0.5, fillWidth - 1, barHeight - 1);
+          }
+        } else {
+          // If no armor, show HP bar only
+          if (hpPercentage > 0.6) {
+            ctx.fillStyle = '#00ff00'; // Green when HP > 60%
+          } else if (hpPercentage > 0.3) {
+            ctx.fillStyle = '#ffff00'; // Yellow when HP 30-60%
+          } else {
+            ctx.fillStyle = '#ff0000'; // Red when HP < 30%
+          }
+          
+          const fillWidth = barWidth * hpPercentage;
+          if (fillWidth > 0) {
+            ctx.fillRect(barX + 0.5, barY + 0.5, fillWidth - 1, barHeight - 1);
+          }
+        }
+        
+        // Draw Armor bar (blue) on top - always visible if armor exists, covers HP bar
+        if (player.maxArmor > 0 && armorPercentage > 0) {
+          ctx.fillStyle = '#0000ff'; // Blue for armor
+          const armorFillWidth = barWidth * armorPercentage;
+          if (armorFillWidth > 0) {
+            ctx.fillRect(barX + 0.5, barY + 0.5, armorFillWidth - 1, barHeight - 1); // Covers HP
+          }
+        }
+      }
+
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw projectile trajectory (dotted line) when aiming
+    if (projectileAiming && myPlayerId && pvpPlayers[myPlayerId]) {
+      const myPlayer = pvpPlayers[myPlayerId];
+      
+      // Always use current player position (not the initial charging position)
+      const currentStartX = myPlayer.x;
+      const currentStartY = myPlayer.y;
+      
+      // Calculate direction to mouse position (player controls trajectory with mouse)
+      const dx = globalMouseX - currentStartX;
+      const dy = globalMouseY - currentStartY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance > 0) {
+        const vx = (dx / distance) * projectileLaunchSpeed;
+        const vy = (dy / distance) * projectileLaunchSpeed;
+        
+        // Simulate trajectory (parabolic path with gravity)
+        ctx.strokeStyle = '#cccccc'; // Lighter gray color (more visible)
+        ctx.lineWidth = 3; // Thicker line (more visible)
+        ctx.setLineDash([8, 4]); // Longer dashes (more visible)
+        ctx.beginPath();
+        
+        let trajX = currentStartX;
+        let trajY = currentStartY;
+        let trajVx = vx;
+        let trajVy = vy;
+        
+        ctx.moveTo(trajX, trajY);
+        
+        // Draw trajectory for shorter duration (shorter line)
+        // Use reduced gravity for trajectory visualization (less curved)
+        const trajectoryGravity = projectileGravity;
+        for (let i = 0; i < 40; i++) {
+          trajX += trajVx;
+          trajY += trajVy;
+          trajVy += trajectoryGravity; // Apply reduced gravity for visualization
+          
+          ctx.lineTo(trajX, trajY);
+          
+          // Stop if out of bounds
+          if (trajX < playLeft || trajX > playRight || trajY > pvpBounds.bottom) {
+            break;
+          }
+        }
+        
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset line dash
+      }
+    }
+    
+    // PvP mode: Draw flying bullets (my bullets) - doubled size for heavier look
+    for (const bullet of bullets) {
+      ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
+      ctx.translate(bullet.x, bullet.y);
+      
+      // Calculate angle from velocity
+      const bulletAngle = Math.atan2(bullet.vy, bullet.vx);
+      ctx.rotate(bulletAngle);
+      
+      // Bullet dimensions - doubled size for heavier look, maintaining form
+      const bulletLength = 24; // Length of bullet (doubled from 12)
+      const bulletWidth = 4; // Width of bullet (doubled from 2)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      
+      // Draw bullet body (gray cylinder) - heavier look
+      ctx.fillStyle = '#666666'; // Darker gray for heavier look
+      ctx.beginPath();
+      ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      
+      // Draw pointed tip (triangle) - green color for poisoned look
+      ctx.fillStyle = '#00ff00'; // Green color for poisoned tip
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0); // Point at tip
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw darker outline - thicker for heavier look
+      ctx.strokeStyle = '#444444'; // Darker outline
+      ctx.lineWidth = 1.5; // Thicker outline (doubled from 0.5)
+      ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      // Green outline for tip
+      ctx.strokeStyle = '#00aa00'; // Darker green for tip outline
+      ctx.lineWidth = 1.5; // Thicker outline
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0);
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+
+    // Turn-based PvP: draw server-driven projectiles
+    if (isTurnBasedPvP() && turnProjectiles.length > 0) {
+      for (const p of turnProjectiles) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        const angle = Math.atan2(p.vy, p.vx);
+        ctx.rotate(angle);
+        if (p.projType === 'bullet') {
+          // Match realtime bullet art (so PLANNING and EXECUTE look the same)
+          const bulletLength = 24;
+          const bulletWidth = 4;
+          const tipLength = 8;
+
+          // Body
+          ctx.fillStyle = '#666666';
+          ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+
+          // Tip
+          ctx.fillStyle = '#00ff00';
+          ctx.beginPath();
+          ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+          ctx.lineTo(bulletLength / 2, 0);
+          ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+          ctx.closePath();
+          ctx.fill();
+
+          // Outline
+          ctx.strokeStyle = '#444444';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+          ctx.strokeStyle = '#00aa00';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+          ctx.lineTo(bulletLength / 2, 0);
+          ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+          ctx.closePath();
+          ctx.stroke();
+        } else if (p.projType === 'arrow') {
+          // Match realtime PvP arrow art (same as the regular arrow render)
+          const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+          const shaftStartX = arrowFletchingLength;
+          ctx.fillStyle = 'rgba(101, 67, 33, 1)'; // Brown wood color
+          ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+
+          const headStartX = arrowLength - arrowHeadLength;
+
+          // Base arrowhead layer (dark metal)
+          ctx.fillStyle = 'rgba(80, 80, 90, 1)'; // Dark steel
+          ctx.beginPath();
+          ctx.moveTo(headStartX, -arrowShaftWidth * 2.5);
+          ctx.lineTo(arrowLength, 0);
+          ctx.lineTo(headStartX, arrowShaftWidth * 2.5);
+          ctx.closePath();
+          ctx.fill();
+
+          // Middle layer (medium metal)
+          ctx.fillStyle = 'rgba(120, 120, 130, 1)'; // Medium steel
+          ctx.beginPath();
+          ctx.moveTo(headStartX + arrowHeadLength * 0.3, -arrowShaftWidth * 1.8);
+          ctx.lineTo(arrowLength, 0);
+          ctx.lineTo(headStartX + arrowHeadLength * 0.3, arrowShaftWidth * 1.8);
+          ctx.closePath();
+          ctx.fill();
+
+          // Top highlight layer (bright metal edge) - left edge
+          ctx.fillStyle = 'rgba(200, 200, 210, 1)'; // Bright steel highlight
+          ctx.beginPath();
+          ctx.moveTo(headStartX + arrowHeadLength * 0.5, -arrowShaftWidth / 2);
+          ctx.lineTo(arrowLength - arrowHeadLength * 0.1, -arrowShaftWidth * 1.2);
+          ctx.lineTo(arrowLength, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          // Top highlight layer (bright metal edge) - right edge
+          ctx.beginPath();
+          ctx.moveTo(headStartX + arrowHeadLength * 0.5, arrowShaftWidth / 2);
+          ctx.lineTo(arrowLength - arrowHeadLength * 0.1, arrowShaftWidth * 1.2);
+          ctx.lineTo(arrowLength, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          // Extra sharp tip accent (white/silver)
+          ctx.fillStyle = 'rgba(0, 200, 0, 0.9)'; // Green tip
+          ctx.beginPath();
+          ctx.moveTo(arrowLength - arrowHeadLength * 0.2, -arrowShaftWidth * 0.5);
+          ctx.lineTo(arrowLength, 0);
+          ctx.lineTo(arrowLength - arrowHeadLength * 0.2, arrowShaftWidth * 0.5);
+          ctx.closePath();
+          ctx.fill();
+
+          // Fletching (feathers at back)
+          ctx.fillStyle = 'rgba(150, 150, 150, 1)'; // Gray feathers
+          ctx.beginPath();
+          ctx.moveTo(0, -arrowShaftWidth * 1.5);
+          ctx.lineTo(arrowFletchingLength, -arrowShaftWidth * 2);
+          ctx.lineTo(arrowFletchingLength, 0);
+          ctx.lineTo(0, 0);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(0, arrowShaftWidth * 1.5);
+          ctx.lineTo(arrowFletchingLength, arrowShaftWidth * 2);
+          ctx.lineTo(arrowFletchingLength, 0);
+          ctx.lineTo(0, 0);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          // Weapon 2 sprite (boom) - fallback to simple shape if sprite not loaded.
+          if (boomSpriteProcessed) {
+            const iw = boomSpriteProcessed.width || 1;
+            const ih = boomSpriteProcessed.height || 1;
+            const aspect = ih / iw;
+            const worldW = projectileRadius * 2.3;
+            const worldH = worldW * aspect;
+            const pivotX = 0.5;
+            const pivotY = 0.5;
+            // Sprite is authored facing the opposite direction; rotate 180deg so tip faces velocity.
+            ctx.save();
+            ctx.rotate(Math.PI);
+            ctx.drawImage(boomSpriteProcessed, -pivotX * worldW, -pivotY * worldH, worldW, worldH);
+            ctx.restore();
+        } else {
+          // Match realtime heavy projectile art (cannonball + pointed tip)
+          const length = 24;
+          const width = 12;
+          const tipLength = 8;
+          ctx.fillStyle = '#8B4513';
+          ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+          ctx.beginPath();
+          ctx.moveTo(length / 2 - tipLength, -width / 2);
+          ctx.lineTo(length / 2, 0);
+          ctx.lineTo(length / 2 - tipLength, width / 2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+          ctx.beginPath();
+          ctx.moveTo(length / 2 - tipLength, -width / 2);
+          ctx.lineTo(length / 2, 0);
+          ctx.lineTo(length / 2 - tipLength, width / 2);
+          ctx.closePath();
+          ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+    }
+    
+    // PvP mode: Draw mines/traps (bomb-like appearance)
+    for (const mine of mines) {
+      if (mine.exploded) continue; // Skip exploded mines
+      
+      const now = Date.now();
+      const mineAge = now - mine.spawnTime;
+      const timeUntilExplosion = mineLifetime - mineAge;
+      const explosionProgress = mineAge / mineLifetime; // 0 to 1
+      
+      ctx.save();
+      ctx.translate(mine.x, mine.y);
+      
+      // Smaller pulsing effect - subtle pulse
+      const pulse = Math.sin(explosionProgress * Math.PI * 8) * 0.1 + 0.95; // Reduced from 0.3 to 0.1, slower pulse
+      const mineSize = mineRadius * pulse;
+      
+      // Draw mine body (dark bomb-like circle)
+      ctx.fillStyle = explosionProgress > 0.8 ? '#440000' : '#220000'; // Dark red/black bomb color
+      ctx.beginPath();
+      ctx.arc(0, 0, mineSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw mine outline (thicker for bomb look)
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw burning fuse (klanas) - shrinks as explosion approaches
+      const fuseHeight = Math.max(2, (1 - explosionProgress) * 12); // Shrinks from 12px to 2px
+      const fuseWidth = 3;
+      const fuseY = -mineSize - fuseHeight / 2; // Above the mine
+      
+      // Draw fuse body (brown/black)
+      ctx.fillStyle = '#331100'; // Dark brown fuse color
+      ctx.fillRect(-fuseWidth / 2, fuseY, fuseWidth, fuseHeight);
+      
+      // Draw burning flame at top of fuse (shrinks as fuse burns)
+      const flameSize = Math.max(1, fuseHeight * 0.6); // Flame size relative to fuse
+      const flameColors = ['#ff6600', '#ff9900', '#ffff00']; // Orange to yellow gradient
+      
+      // Draw flame layers (from outer to inner)
+      for (let i = 0; i < flameColors.length; i++) {
+        const layerSize = flameSize * (1 - i * 0.3);
+        ctx.fillStyle = flameColors[i];
+        ctx.beginPath();
+        // Draw flame shape (teardrop/triangle pointing up)
+        ctx.moveTo(0, fuseY - fuseHeight / 2); // Top center
+        ctx.lineTo(-layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top left
+        ctx.lineTo(0, fuseY - fuseHeight / 2 - layerSize * 1.2); // Top point
+        ctx.lineTo(layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top right
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw spikes (from exploded mines)
+    for (const spike of spikes) {
+      ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
+      ctx.translate(spike.x, spike.y);
+      
+      // Calculate angle from velocity
+      const spikeAngle = Math.atan2(spike.vy, spike.vx);
+      ctx.rotate(spikeAngle);
+      
+      // Draw spike as a small red triangle (smaller size)
+      ctx.fillStyle = '#ff0000'; // Red color
+      ctx.beginPath();
+      ctx.moveTo(spikeRadius * 1.5, 0); // Point forward (reduced from 2x to 1.5x)
+      ctx.lineTo(-spikeRadius * 0.8, -spikeRadius * 0.8); // Smaller base
+      ctx.lineTo(-spikeRadius * 0.8, spikeRadius * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw outline
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent bullet - doubled size for heavier look
+    if (opponentBulletFlying && (gameMode === 'PvP' || gameMode === 'Training')) {
+      ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
+      ctx.translate(opponentBulletX, opponentBulletY);
+      
+      // Calculate angle from velocity
+      const bulletAngle = Math.atan2(opponentBulletVy, opponentBulletVx);
+      ctx.rotate(bulletAngle);
+      
+      // Bullet dimensions - doubled size for heavier look, maintaining form
+      const bulletLength = 24; // Length of bullet (doubled from 12)
+      const bulletWidth = 4; // Width of bullet (doubled from 2)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      
+      // Draw bullet body (gray cylinder) - heavier look
+      ctx.fillStyle = '#666666'; // Darker gray for heavier look
+      ctx.beginPath();
+      ctx.fillRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      
+      // Draw pointed tip (triangle) - green color for poisoned look
+      ctx.fillStyle = '#00ff00'; // Green color for poisoned tip
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0); // Point at tip
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw darker outline - thicker for heavier look
+      ctx.strokeStyle = '#444444'; // Darker outline
+      ctx.lineWidth = 1.5; // Thicker outline (doubled from 0.5)
+      ctx.strokeRect(-bulletLength / 2, -bulletWidth / 2, bulletLength - tipLength, bulletWidth);
+      // Green outline for tip
+      ctx.strokeStyle = '#00aa00'; // Darker green for tip outline
+      ctx.lineWidth = 1.5; // Thicker outline
+      ctx.beginPath();
+      ctx.moveTo(bulletLength / 2 - tipLength, -bulletWidth / 2);
+      ctx.lineTo(bulletLength / 2, 0);
+      ctx.lineTo(bulletLength / 2 - tipLength, bulletWidth / 2);
+      ctx.closePath();
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw flying projectile (my projectile) - cannonball shape with pointed tip
+    if (projectileFlying) {
+      ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
+      ctx.translate(projectileX, projectileY);
+      
+      // Calculate angle from velocity
+      const angle = Math.atan2(projectileVy, projectileVx);
+      ctx.rotate(angle);
+      
+      if (boomSpriteProcessed) {
+        const iw = boomSpriteProcessed.width || 1;
+        const ih = boomSpriteProcessed.height || 1;
+        const aspect = ih / iw;
+        // Scale from physics radius so it stays consistent with hitbox/feel.
+        const worldW = projectileRadius * 2.3;
+        const worldH = worldW * aspect;
+        ctx.save();
+        ctx.rotate(Math.PI);
+        if (WEAPON_GLOW_ENABLED && boomGlowProcessed && boomGlowPadPx > 0) {
+          const sw = boomSpriteProcessed.width || 1;
+          const sh = boomSpriteProcessed.height || 1;
+          const pad = boomGlowPadPx;
+          const sx = worldW / sw;
+          const sy = worldH / sh;
+          const glowW = worldW + pad * 2 * sx;
+          const glowH = worldH + pad * 2 * sy;
+          const gx = -worldW * 0.5 - pad * sx;
+          const gy = -worldH * 0.5 - pad * sy;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = ctx.globalAlpha * 0.9;
+          ctx.drawImage(boomGlowProcessed, gx, gy, glowW, glowH);
+          ctx.restore();
+        }
+        ctx.drawImage(boomSpriteProcessed, -worldW * 0.5, -worldH * 0.5, worldW, worldH);
+        ctx.restore();
+      } else {
+        // Fallback: old cannonball+tip
+      const length = 24; // Short projectile (doubled from 12)
+      const width = 12; // Width of projectile (doubled from 6)
+      const tipLength = 8; // Pointed tip length (doubled from 4)
+      ctx.fillStyle = '#8B4513'; // Brown cannonball color
+      ctx.beginPath();
+      ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+        ctx.lineTo(length / 2, 0);
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 3;
+      ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+      ctx.lineTo(length / 2, 0);
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.stroke();
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent's flying projectile - cannonball shape with pointed tip
+    if (opponentProjectileFlying && (gameMode === 'PvP' || gameMode === 'Training')) {
+      ctx.save();
+      if (shadowPlanning) ctx.globalAlpha = 0.75;
+      ctx.translate(opponentProjectileX, opponentProjectileY);
+      
+      // Calculate angle from velocity
+      const angle = Math.atan2(opponentProjectileVy, opponentProjectileVx);
+      ctx.rotate(angle);
+      
+      if (boomSpriteProcessed) {
+        const iw = boomSpriteProcessed.width || 1;
+        const ih = boomSpriteProcessed.height || 1;
+        const aspect = ih / iw;
+        const worldW = projectileRadius * 2.3;
+        const worldH = worldW * aspect;
+        // Slight tint so you can still distinguish opponent projectile.
+        ctx.save();
+        ctx.save();
+        ctx.rotate(Math.PI);
+        if (WEAPON_GLOW_ENABLED && boomGlowProcessed && boomGlowPadPx > 0) {
+          const sw = boomSpriteProcessed.width || 1;
+          const sh = boomSpriteProcessed.height || 1;
+          const pad = boomGlowPadPx;
+          const sx = worldW / sw;
+          const sy = worldH / sh;
+          const glowW = worldW + pad * 2 * sx;
+          const glowH = worldH + pad * 2 * sy;
+          const gx = -worldW * 0.5 - pad * sx;
+          const gy = -worldH * 0.5 - pad * sy;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = ctx.globalAlpha * 0.75;
+          ctx.drawImage(boomGlowProcessed, gx, gy, glowW, glowH);
+          ctx.restore();
+        }
+        ctx.drawImage(boomSpriteProcessed, -worldW * 0.5, -worldH * 0.5, worldW, worldH);
+        ctx.restore();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(255, 190, 120, 0.25)';
+        ctx.fillRect(-worldW * 0.5, -worldH * 0.5, worldW, worldH);
+        ctx.restore();
+      } else {
+        // Fallback: old cannonball+tip
+        const length = 24;
+        const width = 12;
+        const tipLength = 8;
+        ctx.fillStyle = '#CD853F';
+      ctx.beginPath();
+      ctx.fillRect(-length / 2, -width / 2, length - tipLength, width);
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+        ctx.lineTo(length / 2, 0);
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 3;
+      ctx.strokeRect(-length / 2, -width / 2, length - tipLength, width);
+      ctx.beginPath();
+      ctx.moveTo(length / 2 - tipLength, -width / 2);
+      ctx.lineTo(length / 2, 0);
+      ctx.lineTo(length / 2 - tipLength, width / 2);
+      ctx.closePath();
+      ctx.stroke();
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw health pack (only one at a time) - beautiful medical cross
+    if (HEALTH_PACKS_ENABLED && healthPack) {
+      ctx.save();
+      ctx.translate(healthPack.x, healthPack.y);
+      
+      const size = healthPackRadius;
+      const timeSinceSpawn = Date.now() - healthPack.spawnTime;
+      const pulse = Math.sin(timeSinceSpawn / 400) * 0.1 + 0.9; // Gentle pulsing effect
+      const pulseSize = size * pulse;
+      
+      // Draw outer glow circle (subtle green glow)
+      ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseSize * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw main circle background (bright green)
+      ctx.fillStyle = '#00ff00'; // Bright green
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw white plus sign (+) - clean and elegant
+      ctx.fillStyle = '#ffffff'; // White color
+      const plusLength = pulseSize * 0.6; // Length of plus bars
+      const plusThickness = pulseSize * 0.2; // Thickness of plus bars
+      
+      // Helper function to draw rounded rectangle using quadratic curves
+      const drawRoundedRect = (x: number, y: number, w: number, h: number, r: number) => {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.fill();
+      };
+      
+      // Draw horizontal bar of plus sign with rounded corners
+      drawRoundedRect(-plusLength / 2, -plusThickness / 2, plusLength, plusThickness, plusThickness / 2);
+      
+      // Draw vertical bar of plus sign with rounded corners
+      drawRoundedRect(-plusThickness / 2, -plusLength / 2, plusThickness, plusLength, plusThickness / 2);
+      
+      // Draw outline for better visibility
+      ctx.strokeStyle = '#00cc00'; // Darker green outline
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseSize, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Draw inner highlight for depth (subtle shine effect)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.beginPath();
+      ctx.arc(0, -pulseSize * 0.3, pulseSize * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent mines/traps (bomb-like appearance)
+    for (const mine of opponentMines) {
+      if (mine.exploded) continue; // Skip exploded mines
+      
+      const now = Date.now();
+      const mineAge = now - mine.spawnTime;
+      const timeUntilExplosion = mineLifetime - mineAge;
+      const explosionProgress = mineAge / mineLifetime; // 0 to 1
+      
+      ctx.save();
+      ctx.translate(mine.x, mine.y);
+      
+      // Smaller pulsing effect - subtle pulse
+      const pulse = Math.sin(explosionProgress * Math.PI * 8) * 0.1 + 0.95; // Reduced from 0.3 to 0.1, slower pulse
+      const mineSize = mineRadius * pulse;
+      
+      // Draw mine body (dark bomb-like circle)
+      ctx.fillStyle = explosionProgress > 0.8 ? '#440000' : '#220000'; // Dark red/black bomb color
+      ctx.beginPath();
+      ctx.arc(0, 0, mineSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw mine outline (thicker for bomb look)
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw burning fuse (klanas) - shrinks as explosion approaches
+      const fuseHeight = Math.max(2, (1 - explosionProgress) * 12); // Shrinks from 12px to 2px
+      const fuseWidth = 3;
+      const fuseY = -mineSize - fuseHeight / 2; // Above the mine
+      
+      // Draw fuse body (brown/black)
+      ctx.fillStyle = '#331100'; // Dark brown fuse color
+      ctx.fillRect(-fuseWidth / 2, fuseY, fuseWidth, fuseHeight);
+      
+      // Draw burning flame at top of fuse (shrinks as fuse burns)
+      const flameSize = Math.max(1, fuseHeight * 0.6); // Flame size relative to fuse
+      const flameColors = ['#ff6600', '#ff9900', '#ffff00']; // Orange to yellow gradient
+      
+      // Draw flame layers (from outer to inner)
+      for (let i = 0; i < flameColors.length; i++) {
+        const layerSize = flameSize * (1 - i * 0.3);
+        ctx.fillStyle = flameColors[i];
+        ctx.beginPath();
+        // Draw flame shape (teardrop/triangle pointing up)
+        ctx.moveTo(0, fuseY - fuseHeight / 2); // Top center
+        ctx.lineTo(-layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top left
+        ctx.lineTo(0, fuseY - fuseHeight / 2 - layerSize * 1.2); // Top point
+        ctx.lineTo(layerSize / 2, fuseY - fuseHeight / 2 - layerSize); // Top right
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent spikes (from exploded mines)
+    for (const spike of opponentSpikes) {
+      ctx.save();
+      ctx.translate(spike.x, spike.y);
+      
+      // Calculate angle from velocity
+      const spikeAngle = Math.atan2(spike.vy, spike.vx);
+      ctx.rotate(spikeAngle);
+      
+      // Draw spike as a small red triangle (smaller size)
+      ctx.fillStyle = '#ff0000'; // Red color
+      ctx.beginPath();
+      ctx.moveTo(spikeRadius * 1.5, 0); // Point forward (reduced from 2x to 1.5x)
+      ctx.lineTo(-spikeRadius * 0.8, -spikeRadius * 0.8); // Smaller base
+      ctx.lineTo(-spikeRadius * 0.8, spikeRadius * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw outline
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw arrow (ready, charging, or flying)
+    if (
+      ((pvpArrowReady && !pvpArrowFired && myPlayerId && pvpPlayers[myPlayerId]) ||
+        (pvpArrowCharging && myPlayerId && pvpPlayers[myPlayerId]) ||
+        (pvpKatanaFlying && myPlayerId && pvpPlayers[myPlayerId]))
+    ) {
+      ctx.save();
+      
+      if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+        ctx.restore();
+        return;
+      }
+      const myPlayer = pvpPlayers[myPlayerId];
+
+      // Visual: small blue "energy emitter" under the UFO when arrow is ready/charging.
+      // This makes the arrow feel "held" by energy rather than floating.
+      if (!pvpKatanaFlying) {
+        const emitterX = myPlayer.x;
+        const emitterY = myPlayer.y + myPlayer.radius * 1.35; // near UFO bottom
+        const glowR = Math.max(10, myPlayer.radius * 0.55);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(emitterX, emitterY, 0, emitterX, emitterY, glowR * 2.4);
+        g.addColorStop(0, 'rgba(80, 180, 255, 0.55)');
+        g.addColorStop(0.35, 'rgba(40, 140, 255, 0.28)');
+        g.addColorStop(1, 'rgba(40, 140, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(emitterX, emitterY, glowR * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        // Core light
+        ctx.fillStyle = 'rgba(120, 220, 255, 0.85)';
+        ctx.beginPath();
+        ctx.arc(emitterX, emitterY, glowR * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Always use current player position (arrow stays near player, like trajectory line)
+      const arrowPosX = pvpKatanaFlying ? pvpKatanaX : myPlayer.x;
+      const arrowPosY = pvpKatanaFlying ? pvpKatanaY : (myPlayer.y + PVP_ARROW_SPAWN_OFFSET_Y);
+      
+      // Calculate angle - arrow follows player position but points towards mouse (like Solo mode)
+      let currentArrowAngle;
+      if (pvpKatanaFlying) {
+        // Flying - use stored angle
+        currentArrowAngle = pvpKatanaAngle;
+      } else if (pvpArrowCharging) {
+        // Charging - point towards stored aim point (captured on click)
+        const dx = pvpArrowChargeAimX - myPlayer.x;
+        const dy = pvpArrowChargeAimY - (myPlayer.y + PVP_ARROW_SPAWN_OFFSET_Y);
+        currentArrowAngle = Math.atan2(dy, dx);
+      } else {
+        // Ready state - point arrow towards mouse (arrow stays at player position, but aims at mouse)
+        const dx = globalMouseX - myPlayer.x;
+        const dy = globalMouseY - (myPlayer.y + PVP_ARROW_SPAWN_OFFSET_Y);
+        currentArrowAngle = Math.atan2(dy, dx);
+      }
+      
+      ctx.translate(arrowPosX, arrowPosY);
+      ctx.rotate(currentArrowAngle);
+      
+      // Fade out when exceeding range (only when flying)
+      if (pvpKatanaFlying) {
+        const fadeT = Math.max(0, Math.min(1, (pvpKatanaTravelPx - PVP_ARROW_RANGE_PX) / Math.max(1, PVP_ARROW_FADE_PX)));
+        ctx.globalAlpha *= (1 - fadeT);
+      }
+
+      // Charge animation: "tension" effect before release (pull back + stretch)
+      if (pvpArrowCharging) {
+        const now = Date.now();
+        const chargeT = Math.max(0, Math.min(1, 1 - ((pvpArrowChargeFireAt - now) / Math.max(1, PVP_ARROW_CHARGE_MS))));
+        // Pull back then snap forward as it reaches full charge
+        const pullBackPx = (1 - chargeT) * 18;
+        const stretchX = 0.8 + 0.2 * chargeT; // 80% -> 100%
+        ctx.translate(-pullBackPx, 0);
+        ctx.scale(stretchX, 1);
+        ctx.globalAlpha *= (0.65 + 0.35 * chargeT);
+
+        // Simple "string/tension" line behind the arrow
+        ctx.save();
+        ctx.strokeStyle = `rgba(0, 0, 0, ${0.15 + 0.35 * chargeT})`;
+        ctx.lineWidth = 1.5;
+      ctx.beginPath();
+        ctx.moveTo(-10, -6);
+        ctx.lineTo(-10 - pullBackPx * 0.8, 0);
+        ctx.lineTo(-10, 6);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw arrow sprite (fallback to vector if sprite not loaded)
+      if (arrowSpriteProcessed) {
+        const iw = arrowSpriteProcessed.width || 1;
+        const ih = arrowSpriteProcessed.height || 1;
+        const worldW = myPlayer.radius * PVP_ARROW_SPRITE_LENGTH_FACTOR;
+        const worldH = worldW * (ih / iw); // preserve aspect ratio
+        const pivotX = 0.5; // center pivot
+        const pivotY = 0.5;
+        const prevSmooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false;
+        // Cached glow behind the arrow (cheap).
+        if (WEAPON_GLOW_ENABLED && arrowGlowProcessed && arrowGlowPadPx > 0) {
+          const sw = arrowSpriteProcessed.width || 1;
+          const sh = arrowSpriteProcessed.height || 1;
+          const pad = arrowGlowPadPx;
+          const sx = worldW / sw;
+          const sy = worldH / sh;
+          const glowW = worldW + pad * 2 * sx;
+          const glowH = worldH + pad * 2 * sy;
+          const gx = -pivotX * worldW - pad * sx;
+          const gy = -pivotY * worldH - pad * sy;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = ctx.globalAlpha * 0.95;
+          ctx.drawImage(arrowGlowProcessed, gx, gy, glowW, glowH);
+          ctx.restore();
+        }
+        ctx.drawImage(arrowSpriteProcessed, -pivotX * worldW, -pivotY * worldH, worldW, worldH);
+        ctx.imageSmoothingEnabled = prevSmooth;
+      } else {
+        // Fallback: old vector arrow
+        const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+        const shaftStartX = arrowFletchingLength;
+        ctx.fillStyle = 'rgba(101, 67, 33, 1)';
+        ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+      }
+      
+      ctx.restore();
+    }
+    
+    // PvP mode: Draw opponent's flying arrow
+    if (opponentArrowFlying && (gameMode === 'PvP' || gameMode === 'Training') && opponentId) {
+      ctx.save();
+
+      const fadeT = Math.max(0, Math.min(1, (opponentArrowTravelPx - PVP_ARROW_RANGE_PX) / Math.max(1, PVP_ARROW_FADE_PX)));
+      ctx.globalAlpha *= (1 - fadeT);
+      
+      ctx.translate(opponentArrowX, opponentArrowY);
+      ctx.rotate(opponentArrowAngle);
+      
+      if (arrowSpriteProcessed) {
+        // Use local player's radius as a stable scale reference
+        const myR = (myPlayerId && pvpPlayers[myPlayerId]) ? pvpPlayers[myPlayerId].radius : 25;
+        const iw = arrowSpriteProcessed.width || 1;
+        const ih = arrowSpriteProcessed.height || 1;
+        const worldW = myR * PVP_ARROW_SPRITE_LENGTH_FACTOR;
+        const worldH = worldW * (ih / iw);
+        const pivotX = 0.5;
+        const pivotY = 0.5;
+        const prevSmooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false;
+        if (WEAPON_GLOW_ENABLED && arrowGlowProcessed && arrowGlowPadPx > 0) {
+          const sw = arrowSpriteProcessed.width || 1;
+          const sh = arrowSpriteProcessed.height || 1;
+          const pad = arrowGlowPadPx;
+          const sx = worldW / sw;
+          const sy = worldH / sh;
+          const glowW = worldW + pad * 2 * sx;
+          const glowH = worldH + pad * 2 * sy;
+          const gx = -pivotX * worldW - pad * sx;
+          const gy = -pivotY * worldH - pad * sy;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = ctx.globalAlpha * 0.9;
+          ctx.drawImage(arrowGlowProcessed, gx, gy, glowW, glowH);
+          ctx.restore();
+        }
+        ctx.drawImage(arrowSpriteProcessed, -pivotX * worldW, -pivotY * worldH, worldW, worldH);
+        ctx.imageSmoothingEnabled = prevSmooth;
+      } else {
+        // Minimal fallback
+      const shaftLength = arrowLength - arrowHeadLength - arrowFletchingLength;
+      const shaftStartX = arrowFletchingLength;
+        ctx.fillStyle = 'rgba(101, 67, 33, 1)';
+      ctx.fillRect(shaftStartX, -arrowShaftWidth / 2, shaftLength, arrowShaftWidth);
+      }
+      
+      ctx.restore();
+    }
+  }
+
+  // PvP Match Result Modal
+  if (gameMode === 'PvP' && showingMatchResult && matchResult) {
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
+    
+    // Modal background (larger to fit more info)
+    const modalX = canvas.width / 2 - 250;
+    const modalY = canvas.height / 2 - 200;
+    const modalWidth = 500;
+    const modalHeight = 400;
+    
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
+    ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(modalX, modalY, modalWidth, modalHeight);
+    // subtle inner border
+    ctx.strokeStyle = UI_PANEL_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(modalX + 3, modalY + 3, modalWidth - 6, modalHeight - 6);
+    
+    // Result text
+    ctx.fillStyle = matchResult === 'victory' ? UI_ACCENT_GREEN : 'rgba(255, 120, 120, 0.95)';
+    ctx.font = 'bold 32px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText(matchResult === 'victory' ? 'VICTORY!' : 'DEFEAT', canvas.width / 2, modalY + 50);
+    
+    // Opponent info - use saved address from when match ended
+    // CRITICAL: Always use opponentAddressForResult first, then fallback to currentMatch/opponentId
+    let opponentAddress = '';
+    
+    // First priority: use saved address from when match ended
+    if (opponentAddressForResult) {
+      opponentAddress = opponentAddressForResult;
+      console.log('Render: Using saved opponentAddressForResult:', opponentAddress);
+    } else {
+      // Fallback: try to get from currentMatch or opponentId
+      const myAddress = getMyPvpAddress();
+      
+      // Try currentMatch or savedCurrentMatch first (most reliable)
+      const matchToUse = currentMatch || savedCurrentMatch;
+      if (matchToUse && myAddress) {
+        // Determine opponent: if I'm p1, opponent is p2; if I'm p2, opponent is p1
+        if (matchToUse.p1 === myAddress) {
+          opponentAddress = matchToUse.p2;
+        } else if (matchToUse.p2 === myAddress) {
+          opponentAddress = matchToUse.p1;
+        } else {
+          opponentAddress = opponentId || '';
+        }
+        console.log('Render: Fallback - Using opponent address from match:', opponentAddress, { 
+          myAddress, 
+          p1: matchToUse.p1, 
+          p2: matchToUse.p2,
+          usedSavedMatch: !currentMatch && !!savedCurrentMatch
+        });
+      } else if (opponentId) {
+        // Fallback to opponentId
+        opponentAddress = opponentId;
+        console.log('Render: Fallback - Using opponentId as address:', opponentAddress);
+      } else {
+        opponentAddress = 'Unknown';
+        console.warn('Render: No opponent address found!', { 
+          opponentAddressForResult, 
+          currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null, 
+          opponentId, 
+          myAddress 
+        });
+      }
+    }
+    
+    // Opponent address/nickname
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillText('OPPONENT:', modalX + 20, modalY + 90);
+    ctx.font = 'bold 10px "Press Start 2P"';
+    // Always show opponent address (nickname is optional)
+    // Priority: nickname > saved address > fallback address > 'Unknown'
+    const opponentDisplay = opponentNicknameForResult || opponentAddress || 'Unknown';
+    console.log('Rendering opponent info:', { 
+      matchResult, 
+      opponentNicknameForResult, 
+      opponentAddress, 
+      opponentAddressForResult, 
+      currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null,
+      display: opponentDisplay 
+    });
+    // Truncate address if too long (only if it's an address, not nickname)
+    const displayOpponent = (opponentNicknameForResult || opponentAddress) && (opponentNicknameForResult || opponentAddress).length > 30 
+      ? (opponentNicknameForResult || opponentAddress).substring(0, 27) + '...' 
+      : (opponentNicknameForResult || opponentAddress || 'Unknown');
+    ctx.fillText(displayOpponent, modalX + 20, modalY + 110);
+    
+    // XP change
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText('XP CHANGE:', modalX + 20, modalY + 140);
+    ctx.font = 'bold 20px "Press Start 2P"';
+    const xpChange = matchResult === 'victory' ? 3 : -1;
+    ctx.fillStyle = matchResult === 'victory' ? UI_ACCENT_GREEN : 'rgba(255, 120, 120, 0.95)';
+    const xpText = xpChange > 0 ? `+${xpChange} XP` : `${xpChange} XP`;
+    ctx.fillText(xpText, modalX + 20, modalY + 160);
+    
+    // ELO change
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText('ELO CHANGE:', modalX + 20, modalY + 190);
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.fillStyle = matchResultEloChange > 0 ? UI_ACCENT_GREEN : 'rgba(255, 120, 120, 0.95)';
+    const eloText = matchResultEloChange > 0 ? `+${matchResultEloChange} ELO` : `${matchResultEloChange} ELO`;
+    ctx.fillText(eloText, modalX + 20, modalY + 210);
+
+    // Replay id (server-side)
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 10px "Press Start 2P"';
+    const rid = lastReplayId ? (lastReplayId.length > 28 ? lastReplayId.slice(0, 25) + '...' : lastReplayId) : 'N/A';
+    ctx.fillText(`REPLAY: ${rid}`, modalX + 20, modalY + 235);
+    ctx.fillStyle = 'rgba(220, 220, 220, 0.9)';
+    ctx.font = 'bold 9px "Press Start 2P"';
+    ctx.fillText('Press R to copy replay link | V to view', modalX + 20, modalY + 252);
+    
+    // Close button (X) - top right
+    const closeButtonX = modalX + modalWidth - 40;
+    const closeButtonY = modalY + 10;
+    const closeButtonSize = 30;
+    
+    ctx.fillStyle = 'rgba(255, 120, 120, 0.22)';
+    ctx.fillRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
+    
+    // Back to Lobby button
+    const backButtonX = canvas.width / 2 - 100;
+    const backButtonY = modalY + 320;
+    const backButtonWidth = 200;
+    const backButtonHeight = 40;
+    
+    ctx.fillStyle = UI_BTN_BG;
+    ctx.fillRect(backButtonX, backButtonY, backButtonWidth, backButtonHeight);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(backButtonX, backButtonY, backButtonWidth, backButtonHeight);
+    
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('BACK TO LOBBY', canvas.width / 2, backButtonY + backButtonHeight / 2);
+  }
+
+  // Debug info
+  ctx.fillStyle = '#000000';
+  ctx.font = '8px "Press Start 2P"';
+  ctx.textAlign = 'left';
+  ctx.fillText(`STATE: ${gameState}`, 10, canvas.height - 20);
+  if (gameMode === 'PvP') {
+    ctx.fillText(`MODE: PvP | MyID: ${myPlayerId?.substr(0, 8)}...`, 10, canvas.height - 10);
+    if (currentMatch) {
+      ctx.fillText(`MATCH: ${currentMatch.id.substring(0, 8)}...`, 10, canvas.height - 30);
+    }
+  }
+  
+  // Restore context from shake
+  ctx.restore();
+
+  // PewPew modal: draw at the VERY TOP layer (after all arena + UI),
+  // so no particles/sprites can overlap it.
+  if (isPewPewOpen && !isLeaderboardOpen) {
+    const mr = getPewPewModalRect();
+    const modalX = mr.x;
+    const modalY = mr.y;
+    const modalW = mr.w;
+    const modalH = mr.h;
+
+    ctx.save();
+    // Ensure no camera/shake transform affects this overlay.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // overlay only on the play area (right side)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.fillRect(UI_PANEL_W, 0, canvas.width - UI_PANEL_W, canvas.height);
+
+    // modal frame
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = UI_PANEL_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(modalX + 3, modalY + 3, modalW - 6, modalH - 6);
+
+    // Title
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('PEWPEW', modalX + modalW / 2, modalY + 46);
+
+    // Close X
+    ctx.font = 'bold 20px "Press Start 2P"';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('X', modalX + modalW - 20, modalY + 44);
+
+    // Body
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = UI_TEXT_MUTED;
+    ctx.font = 'bold 15px "Press Start 2P"';
+    const lines = [
+      'UFO Ticket (SBT) PvP.',
+      'Rules:',
+      '- Mint UFO Ticket: 200 RONKE',
+      '- Winner gets +100 RONKE',
+      '- Loser loses the ticket (must mint again)',
+      '',
+      'PvP stats are LOCKED to your current UFO snapshot.',
+      'Mint a new ticket to update stats (HP/DMG/FUEL...).',
+      'Or keep playing until you lose — next ticket can be stronger.',
+      '',
+      isPewPewUfoCrafted() ? 'Status: READY (local gate)' : 'Status: NOT MINTED',
+      pewPewCraftTxHash ? `Last tx: ${pewPewCraftTxHash.slice(0, 10)}...` : ''
+    ].filter(Boolean);
+    let ty = modalY + 104;
+    for (const line of lines) {
+      ctx.fillText(line, modalX + 18, ty);
+      ty += 28;
+    }
+
+    // Craft section (bottom) - show only the button (no extra labels around it)
+    // Craft button (smaller + consistent UI style; hover + pressed)
+    const craftR = getPewPewCraftButtonRect({ x: modalX, y: modalY, w: modalW, h: modalH });
+    const craftBtnX = craftR.x;
+    const craftBtnY = craftR.y + (isPressingPewPewCraft ? 2 : 0);
+    const craftBtnW = craftR.w;
+    const craftBtnH = craftR.h;
+
+    // Live on-chain status refresh (best-effort) while the modal is open
+    try { void refreshPewPewOnchainTicketStatus(false); } catch {}
+
+    // Shadow (only when not pressed)
+    if (!isPressingPewPewCraft) {
+      ctx.fillStyle = UI_BTN_SHADOW;
+      ctx.fillRect(craftBtnX + 2, craftBtnY + 2, craftBtnW, craftBtnH);
+    }
+
+    if (pewPewCrafting) ctx.fillStyle = UI_BTN_BG_PRESSED;
+    else if (isPressingPewPewCraft) ctx.fillStyle = UI_BTN_BG_PRESSED;
+    else if (isHoveringPewPewCraft) ctx.fillStyle = UI_BTN_BG_HOVER;
+    else ctx.fillStyle = UI_BTN_BG;
+    ctx.fillRect(craftBtnX, craftBtnY, craftBtnW, craftBtnH);
+
+    // Highlight (only when not pressed)
+    if (!isPressingPewPewCraft) {
+      ctx.fillStyle = UI_BTN_HILITE;
+      ctx.fillRect(craftBtnX, craftBtnY, craftBtnW, 2);
+      ctx.fillRect(craftBtnX, craftBtnY, 2, craftBtnH);
+    }
+
+    // Border
+    ctx.strokeStyle = isHoveringPewPewCraft && !pewPewCrafting ? UI_ACCENT_GREEN : UI_BTN_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(craftBtnX, craftBtnY, craftBtnW, craftBtnH);
+
+    // Label
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const craftLabel = pewPewCrafting ? 'MINTING...' : 'MINT UFO TICKET (200 RONKE)';
+    ctx.fillText(craftLabel, craftBtnX + craftBtnW / 2, craftBtnY + craftBtnH / 2 + 1);
+    ctx.textAlign = 'left';
+
+    // Status badge next to the craft button (YES/NO + tokenId)
+    try {
+      const tokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+      const hasTicket = !!tokenId;
+      const badgeText = hasTicket ? `UFO: YES #${tokenId}` : (pewPewOnchainTicketChecking ? 'UFO: CHECKING...' : 'UFO: NO');
+
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      const padX = 10;
+      const padY = 8;
+      const maxW = Math.min(360, Math.max(140, (modalX + modalW - 24) - (craftBtnX + craftBtnW + 12)));
+      const rawW = Math.ceil(ctx.measureText(badgeText).width);
+      const badgeW = Math.min(maxW, rawW + padX * 2);
+      const badgeH = 28;
+      const badgeX = craftBtnX + craftBtnW + 12;
+      const badgeY = craftBtnY + Math.floor(craftBtnH / 2 - badgeH / 2);
+
+      ctx.fillStyle = hasTicket ? 'rgba(46, 204, 113, 0.10)' : 'rgba(255, 255, 255, 0.06)';
+      ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+      ctx.strokeStyle = hasTicket ? UI_ACCENT_GREEN : UI_BTN_BORDER;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+
+      ctx.fillStyle = hasTicket ? UI_ACCENT_GREEN : UI_TEXT_MUTED;
+      const clipped = (() => {
+        // simple clip by ellipsis if too long
+        if (rawW + padX * 2 <= badgeW) return badgeText;
+        let t = badgeText;
+        while (t.length > 0 && Math.ceil(ctx.measureText(t + '...').width) + padX * 2 > badgeW) {
+          t = t.slice(0, -1);
+        }
+        return t ? (t + '...') : '...';
+      })();
+      ctx.fillText(clipped, badgeX + padX, badgeY + badgeH / 2 + 1);
+    } catch {}
+
+    ctx.restore();
+  }
+  
+  // Leaderboard modal (render above arena; independent of wallet)
+  if (isLeaderboardOpen) {
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const modalW = 820;
+    const modalH = 560;
+    const modalX = Math.floor(canvas.width / 2 - modalW / 2);
+    const modalY = Math.floor(canvas.height / 2 - modalH / 2);
+
+    ctx.fillStyle = UI_FRAME_BG;
+    ctx.fillRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = UI_PANEL_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(modalX + 3, modalY + 3, modalW - 6, modalH - 6);
+
+    // Title
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 16px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('LEADERBOARD', modalX + modalW / 2, modalY + 34);
+
+    // Close button
+    const lbCloseX = modalX + modalW - 42;
+    const lbCloseY = modalY + 14;
+    const lbCloseS = 26;
+    ctx.fillStyle = 'rgba(255, 120, 120, 0.22)';
+    ctx.fillRect(lbCloseX, lbCloseY, lbCloseS, lbCloseS);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(lbCloseX, lbCloseY, lbCloseS, lbCloseS);
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('X', lbCloseX + lbCloseS / 2, lbCloseY + lbCloseS / 2 + 1);
+
+    // Content
+    const contentX = modalX + 24;
+    const contentY = modalY + 60;
+    const contentW = modalW - 48;
+    const contentH = modalH - 120;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(contentX, contentY, contentW, contentH);
+    ctx.strokeStyle = UI_PANEL_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(contentX, contentY, contentW, contentH);
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+
+    if (leaderboardLoading) {
+      ctx.fillStyle = UI_TEXT_MUTED;
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('Loading leaderboard...', modalX + modalW / 2, contentY + contentH / 2);
+    } else if (leaderboardError) {
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.95)';
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText(leaderboardError, modalX + modalW / 2, contentY + contentH / 2);
+    } else {
+      // Header row
+      const rowH = 28;
+      const headerY = contentY + 26;
+      ctx.fillStyle = UI_TEXT_MUTED;
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.fillText('#', contentX + 10, headerY);
+      ctx.fillText('PLAYER', contentX + 60, headerY);
+      ctx.fillText('W', contentX + 470, headerY);
+      ctx.fillText('L', contentX + 530, headerY);
+      ctx.fillText('MAX HP', contentX + 590, headerY);
+      ctx.fillText('XP', contentX + 700, headerY);
+
+      const start = leaderboardPage * leaderboardPageSize;
+      const end = Math.min(leaderboardRows.length, start + leaderboardPageSize);
+      let y = contentY + 56;
+      ctx.font = 'bold 10px "Press Start 2P"';
+
+      for (let i = start; i < end; i++) {
+        const r = leaderboardRows[i];
+        const rank = i + 1;
+        const name = (r.nickname && r.nickname.trim().length) ? r.nickname.trim() : `${r.ronin_address.substring(0, 6)}...${r.ronin_address.substring(Math.max(0, r.ronin_address.length - 4))}`;
+
+        // alternating row bg
+        if ((i - start) % 2 === 0) {
+          ctx.fillStyle = 'rgba(255,255,255,0.04)';
+          ctx.fillRect(contentX + 2, y - 18, contentW - 4, rowH);
+        }
+
+        ctx.fillStyle = UI_TEXT;
+        ctx.fillText(String(rank), contentX + 10, y);
+        ctx.fillText(name.substring(0, 28), contentX + 60, y);
+        ctx.fillText(String(r.wins ?? 0), contentX + 470, y);
+        ctx.fillText(String(r.losses ?? 0), contentX + 530, y);
+        ctx.fillText(String(r.maxHP ?? 10), contentX + 620, y);
+        ctx.fillText(String(r.xp ?? 0), contentX + 700, y);
+        y += rowH;
+      }
+    }
+
+    // Pagination
+    const totalPages = Math.max(1, Math.ceil(leaderboardRows.length / leaderboardPageSize));
+    const pageText = `Page ${leaderboardPage + 1} / ${totalPages}`;
+    ctx.fillStyle = UI_TEXT_MUTED;
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pageText, modalX + modalW / 2, modalY + modalH - 30);
+
+    // Debug hint (helps diagnose deploy env / RLS issues)
+    try {
+      const dbg = supabaseService.getDebugInfo();
+      const dbgText = dbg.configured
+        ? `Supabase: OK (${dbg.urlHost || 'unknown'})`
+        : 'Supabase: NOT CONFIGURED (check Netlify env vars)';
+      ctx.fillStyle = UI_TEXT_MUTED;
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(dbgText, modalX + 24, modalY + modalH - 16);
+    } catch {}
+
+    // Arrows
+    const arrowS = 26;
+    const lbLeftX = modalX + 24;
+    const lbArrowY = modalY + modalH - 43;
+    const lbRightX = modalX + modalW - 24 - arrowS;
+    const canLeft = leaderboardPage > 0;
+    const canRight = leaderboardPage < totalPages - 1;
+
+    ctx.fillStyle = canLeft ? UI_BTN_BG : 'rgba(255,255,255,0.06)';
+    ctx.fillRect(lbLeftX, lbArrowY, arrowS, arrowS);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(lbLeftX, lbArrowY, arrowS, arrowS);
+    ctx.fillStyle = canLeft ? UI_TEXT : UI_TEXT_MUTED;
+    ctx.fillText('<', lbLeftX + arrowS / 2, lbArrowY + arrowS / 2);
+
+    ctx.fillStyle = canRight ? UI_BTN_BG : 'rgba(255,255,255,0.06)';
+    ctx.fillRect(lbRightX, lbArrowY, arrowS, arrowS);
+    ctx.strokeStyle = UI_BTN_BORDER;
+    ctx.strokeRect(lbRightX, lbArrowY, arrowS, arrowS);
+    ctx.fillStyle = canRight ? UI_TEXT : UI_TEXT_MUTED;
+    ctx.fillText('>', lbRightX + arrowS / 2, lbArrowY + arrowS / 2);
+  }
+  
+  // Profile panel (render LAST - highest layer) - no overlay, game continues in background
+  // Only show profile panel if wallet is connected
+  const isWalletConnectedForProfile = isPersistenceConnected();
+  
+  // Close profile if wallet disconnects
+  if (isProfileOpen && !isWalletConnectedForProfile) {
+    isProfileOpen = false;
+    // Hide nickname input if visible
+    const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+    if (nicknameInput) {
+      nicknameInput.style.display = 'none';
+    }
+  }
+  
+  if (isProfileOpen && isWalletConnectedForProfile) {
+    // Profile window (centered, moved up 100px)
+    const profileWindowWidth = 900;
+    const profileWindowHeight = 750;
+    const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
+    
+    // Window shadow (dark gray, offset)
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(profileWindowX + 4, profileWindowY + 4, profileWindowWidth, profileWindowHeight);
+    
+    // Window background (light gray)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(profileWindowX, profileWindowY, profileWindowWidth, profileWindowHeight);
+    
+    // Window border (thick black)
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(profileWindowX, profileWindowY, profileWindowWidth, profileWindowHeight);
+    
+    // Inner border (white highlight)
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(profileWindowX + 2, profileWindowY + 2, profileWindowWidth - 4, profileWindowHeight - 4);
+    
+    // Title bar background
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(profileWindowX, profileWindowY, profileWindowWidth, 50);
+    
+    // Title text (white on black)
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 19px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('PROFILE', profileWindowX + profileWindowWidth / 2, profileWindowY + 32);
+    
+    // Get profile data
+    const profile = profileManager.getProfile();
+    
+    // Profile data container (with background)
+    const dataStartY = profileWindowY + 70;
+    const dataEndY = profileWindowY + profileWindowHeight - 20;
+    
+    // Left column background (wider for larger window)
+    const leftColumnWidth = 400;
+    const rightColumnWidth = 450;
+    const columnSpacing = 30;
+    
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(profileWindowX + 20, dataStartY, leftColumnWidth, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(profileWindowX + 20, dataStartY, leftColumnWidth, dataEndY - dataStartY);
+    
+    // Right column background (NFT gallery)
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(profileWindowX + 20 + leftColumnWidth + columnSpacing, dataStartY, rightColumnWidth, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(profileWindowX + 20 + leftColumnWidth + columnSpacing, dataStartY, rightColumnWidth, dataEndY - dataStartY);
+    
+    // Profile data (left side)
+    let yOffset = dataStartY + 25;
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillStyle = '#000000';
+    
+    // Label style
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 9px "Press Start 2P"';
+    ctx.fillText('NICKNAME', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.nickname || '(not set)'}`, profileWindowX + 30, yOffset + 10);
+
+    // Nickname edit button (✎ EDIT) - clearly visible & clickable
+    {
+      const r = getProfileNicknameEditRects();
+      ctx.save();
+      // subtle highlight when hovering the nickname row
+      if (isHoveringNicknameEdit) {
+        ctx.fillStyle = 'rgba(0, 170, 0, 0.08)';
+        ctx.fillRect(r.row.x, r.row.y, r.row.w, r.row.h);
+      }
+      // edit button
+      if (!isPersistenceConnected()) {
+        ctx.fillStyle = 'rgba(0,0,0,0.10)';
+      } else if (isPressingNicknameEdit) {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      } else if (isHoveringNicknameEdit) {
+        ctx.fillStyle = 'rgba(0,0,0,0.16)';
+      } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      }
+      ctx.fillRect(r.btn.x, r.btn.y, r.btn.w, r.btn.h);
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(r.btn.x, r.btn.y, r.btn.w, r.btn.h);
+
+      // pencil glyph
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(r.btn.x + 12, r.btn.y + 18);
+      ctx.lineTo(r.btn.x + 20, r.btn.y + 10);
+      ctx.stroke();
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('EDIT', r.btn.x + 26, r.btn.y + r.btn.h / 2 + 1);
+      ctx.restore();
+    }
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('XP', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.xp}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('PVP WINS', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#00aa00';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.winsPvP}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('PVP LOSSES', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#aa0000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.lossesPvP}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('RONKE', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    // Avoid duplicating the "RONKE" label in the value text.
+    const ronkeBalText = ronkeBalance !== null ? `${ronkeBalance}` : 'Not connected';
+    ctx.fillText(ronkeBalText, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('SOLO KILLS', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.totalSoloKills}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('UPGRADE ATTEMPTS', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.totalUpgradeAttempts}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('UPGRADE SUCCESS CHANCE', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.upgradeSuccessChance}%`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('BASIC DMG', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    const nftBonuses = calculateNftBonuses();
+    const totalDmg = dmg + nftBonuses.dmg;
+    ctx.fillText(`${dmg}`, profileWindowX + 30, yOffset + 10);
+    if (nftBonuses.dmg > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.dmg}`, profileWindowX + 30 + ctx.measureText(`${dmg} `).width, yOffset + 10);
+    }
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('CRIT CHANCE', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    const totalCritChance = critChance + nftBonuses.critChance;
+    ctx.fillText(`${Number(critChance).toFixed(1)}%`, profileWindowX + 30, yOffset + 10);
+    if (nftBonuses.critChance > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.critChance}%`, profileWindowX + 30 + ctx.measureText(`${Number(critChance).toFixed(1)}% `).width, yOffset + 10);
+    }
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('ACCURACY', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${Number(accuracy).toFixed(1)}%`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+
+    // XP (from slot machine)
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('XP', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${Math.floor(soloXp)}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+    
+    // Move MAX HP and MAX ARMOR to left side
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('MAX HP', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.maxHP}`, profileWindowX + 30, yOffset + 10);
+    if (nftBonuses.hp > 0) {
+      ctx.fillStyle = '#00aa00'; // Green color for bonus
+      ctx.fillText(`+${nftBonuses.hp}`, profileWindowX + 30 + ctx.measureText(`${profile.maxHP} `).width, yOffset + 10);
+    }
+    yOffset += 35;
+    
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('MAX ARMOR', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.fillText(`${profile.maxArmor}`, profileWindowX + 30, yOffset + 10);
+    yOffset += 35;
+
+    // Armor regeneration (tiered by Ronkeverse NFTs; capped)
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillText('ARMOR REGEN', profileWindowX + 30, yOffset - 5);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Press Start 2P"';
+    // Base is always +1. If NFT bonus applies, show it in green next to base (like other stats).
+    const baseArmorRegen = 1;
+    const armorRegenAmt = getNftArmorRegenAmount(); // total (1 or 2)
+    const bonusArmorRegen = Math.max(0, armorRegenAmt - baseArmorRegen);
+    const baseText = `+${baseArmorRegen} / tick`;
+    ctx.fillText(baseText, profileWindowX + 30, yOffset + 10);
+    if (bonusArmorRegen > 0) {
+      ctx.fillStyle = '#00aa00';
+      ctx.fillText(`+${bonusArmorRegen}`, profileWindowX + 30 + ctx.measureText(`${baseText} `).width, yOffset + 10);
+    }
+    
+    // NFT Gallery (right side)
+    const nftSectionX = profileWindowX + 20 + leftColumnWidth + columnSpacing;
+    const nftSectionY = dataStartY;
+    const nftSectionWidth = rightColumnWidth;
+    const nftSectionHeight = dataEndY - dataStartY;
+    
+    // NFT Section Title
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 11px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('RONKEVERSE NFT COLLECTION', nftSectionX + nftSectionWidth / 2, nftSectionY + 20);
+    
+    // NFT Content Area (reduced height to make room for profile picture selection)
+    const nftContentY = nftSectionY + 35;
+    const nftContentHeight = nftSectionHeight - 180; // Leave space for pagination and profile picture selection
+    
+    // Loading state
+    if (isLoadingNfts) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('Loading Ronkeverse collection...', nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2);
+    }
+    // Error state
+    else if (nftError) {
+      ctx.fillStyle = '#aa0000';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      const errorLines = nftError.match(/.{1,35}/g) || [nftError];
+      errorLines.forEach((line, i) => {
+        ctx.fillText(line, nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2 + i * 15);
+      });
+    }
+    // Empty state
+    else if (nftList.length === 0) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('You don\'t own any', nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2 - 10);
+      ctx.fillText('Ronkeverse NFTs yet.', nftSectionX + nftSectionWidth / 2, nftContentY + nftContentHeight / 2 + 10);
+    }
+    // NFT Grid (2x2)
+    else {
+      const totalPages = Math.ceil(nftList.length / nftsPerPage);
+      const startIndex = nftCurrentPage * nftsPerPage;
+      const endIndex = Math.min(startIndex + nftsPerPage, nftList.length);
+      const currentNfts = nftList.slice(startIndex, endIndex);
+      
+      // Grid layout: 2 rows x 2 columns (larger cards for bigger window)
+      const cardWidth = 200;
+      const cardHeight = 200;
+      const cardSpacing = 15;
+      const gridStartX = nftSectionX + (nftSectionWidth - (cardWidth * 2 + cardSpacing)) / 2;
+      const gridStartY = nftContentY + 10;
+      
+      for (let i = 0; i < nftsPerPage; i++) {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const cardX = gridStartX + col * (cardWidth + cardSpacing);
+        const cardY = gridStartY + row * (cardHeight + cardSpacing);
+        
+        if (i < currentNfts.length) {
+          const nft = currentNfts[i];
+          
+          // Card background
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+          
+          // NFT Image (if available)
+          const imageAreaX = cardX + 5;
+          const imageAreaY = cardY + 5;
+          const imageAreaWidth = cardWidth - 10;
+          const imageAreaHeight = cardHeight - 40;
+          
+          if (nft.image) {
+            const cachedImage = nftImageCache.get(nft.image);
+            
+            if (cachedImage && cachedImage.complete) {
+              // Draw image
+              try {
+                // Calculate aspect ratio to fit image in area
+                const imgAspect = cachedImage.width / cachedImage.height;
+                const areaAspect = imageAreaWidth / imageAreaHeight;
+                
+                let drawWidth = imageAreaWidth;
+                let drawHeight = imageAreaHeight;
+                let drawX = imageAreaX;
+                let drawY = imageAreaY;
+                
+                if (imgAspect > areaAspect) {
+                  // Image is wider - fit to width
+                  drawHeight = imageAreaWidth / imgAspect;
+                  drawY = imageAreaY + (imageAreaHeight - drawHeight) / 2;
+                } else {
+                  // Image is taller - fit to height
+                  drawWidth = imageAreaHeight * imgAspect;
+                  drawX = imageAreaX + (imageAreaWidth - drawWidth) / 2;
+                }
+                
+                ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+              } catch (error) {
+                console.error('Error drawing NFT image:', error);
+                // Fallback to placeholder
+                ctx.fillStyle = '#e0e0e0';
+                ctx.fillRect(imageAreaX, imageAreaY, imageAreaWidth, imageAreaHeight);
+                ctx.fillStyle = '#666666';
+                ctx.font = 'bold 8px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.fillText('ERROR', cardX + cardWidth / 2, cardY + cardHeight / 2 - 20);
+              }
+            } else {
+              // Image is loading - show placeholder
+              ctx.fillStyle = '#e0e0e0';
+              ctx.fillRect(imageAreaX, imageAreaY, imageAreaWidth, imageAreaHeight);
+              ctx.fillStyle = '#666666';
+              ctx.font = 'bold 8px "Press Start 2P"';
+              ctx.textAlign = 'center';
+              ctx.fillText('LOADING...', cardX + cardWidth / 2, cardY + cardHeight / 2 - 20);
+              
+              // Try to load image if not already loading
+              if (!nftImageLoading.has(nft.image)) {
+                loadNftImage(nft.image, nft.tokenId);
+              }
+            }
+          } else {
+            // No image URL
+            ctx.fillStyle = '#e0e0e0';
+            ctx.fillRect(imageAreaX, imageAreaY, imageAreaWidth, imageAreaHeight);
+            ctx.fillStyle = '#666666';
+            ctx.font = 'bold 8px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('NO IMAGE', cardX + cardWidth / 2, cardY + cardHeight / 2 - 20);
+          }
+          
+          // NFT Name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 8px "Press Start 2P"';
+          ctx.textAlign = 'center';
+          const nameText = nft.name.length > 18 ? nft.name.substring(0, 15) + '...' : nft.name;
+          ctx.fillText(nameText, cardX + cardWidth / 2, cardY + cardHeight - 25);
+          
+          // Token ID
+          ctx.fillStyle = '#666666';
+          ctx.font = 'bold 7px "Press Start 2P"';
+          ctx.fillText(`#${nft.tokenId}`, cardX + cardWidth / 2, cardY + cardHeight - 10);
+          
+          // Highlight if this NFT is selected as profile picture
+          const currentProfilePicture = profileManager.getProfilePicture();
+          if (currentProfilePicture === nft.image) {
+            // Draw green border to indicate selected
+            ctx.strokeStyle = '#00aa00';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(cardX - 2, cardY - 2, cardWidth + 4, cardHeight + 4);
+          }
+        } else {
+          // Empty slot
+          ctx.fillStyle = '#f5f5f5';
+          ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+          ctx.strokeStyle = '#cccccc';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+        }
+      }
+      
+      // Pagination controls
+      if (totalPages > 1) {
+        const paginationY = nftSectionY + nftSectionHeight - 40;
+        const arrowSize = 20;
+        const arrowY = paginationY + 10;
+        
+        // Left arrow
+        const leftArrowX = nftSectionX + 20;
+        const canGoLeft = nftCurrentPage > 0;
+        
+        ctx.fillStyle = canGoLeft ? (nftPaginationPressLeft ? '#666666' : (nftPaginationHoverLeft ? '#999999' : '#cccccc')) : '#e0e0e0';
+        ctx.fillRect(leftArrowX, arrowY, arrowSize, arrowSize);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(leftArrowX, arrowY, arrowSize, arrowSize);
+        
+        // Left arrow symbol (<)
+        ctx.fillStyle = canGoLeft ? '#000000' : '#999999';
+        ctx.font = 'bold 15px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText('<', leftArrowX + arrowSize / 2, arrowY + arrowSize / 2 + 5);
+        
+        // Page indicator
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 9px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Page ${nftCurrentPage + 1} / ${totalPages}`, nftSectionX + nftSectionWidth / 2, arrowY + arrowSize / 2 + 5);
+        
+        // Right arrow
+        const rightArrowX = nftSectionX + nftSectionWidth - arrowSize - 20;
+        const canGoRight = nftCurrentPage < totalPages - 1;
+        
+        ctx.fillStyle = canGoRight ? (nftPaginationPressRight ? '#666666' : (nftPaginationHoverRight ? '#999999' : '#cccccc')) : '#e0e0e0';
+        ctx.fillRect(rightArrowX, arrowY, arrowSize, arrowSize);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(rightArrowX, arrowY, arrowSize, arrowSize);
+        
+        // Right arrow symbol (>)
+        ctx.fillStyle = canGoRight ? '#000000' : '#999999';
+        ctx.font = 'bold 15px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText('>', rightArrowX + arrowSize / 2, arrowY + arrowSize / 2 + 5);
+      }
+    }
+    
+    // Profile Picture Selection Section (below NFT collection)
+    const profilePictureSectionY = nftSectionY + nftSectionHeight - 140;
+    const profilePictureSectionHeight = 120;
+    
+    // Profile Picture Section Background
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(nftSectionX, profilePictureSectionY, nftSectionWidth, profilePictureSectionHeight);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(nftSectionX, profilePictureSectionY, nftSectionWidth, profilePictureSectionHeight);
+    
+    // Profile Picture Section Title
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('SELECT PROFILE PICTURE', nftSectionX + nftSectionWidth / 2, profilePictureSectionY + 18);
+    
+    // Current Profile Picture Preview
+    const previewSize = 60;
+    const previewX = nftSectionX + 20;
+    const previewY = profilePictureSectionY + 30;
+    const previewCenterX = previewX + previewSize / 2;
+    const previewCenterY = previewY + previewSize / 2;
+    
+    const currentProfilePicture = profileManager.getProfilePicture();
+    if (currentProfilePicture) {
+      const cachedImage = nftImageCache.get(currentProfilePicture);
+      if (cachedImage && cachedImage.complete) {
+        try {
+          // Draw profile picture preview
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+          ctx.clip();
+          
+          // Calculate aspect ratio to fit image in circle
+          const imgAspect = cachedImage.width / cachedImage.height;
+          let drawWidth = previewSize;
+          let drawHeight = previewSize;
+          let drawX = previewX;
+          let drawY = previewY;
+          
+          if (imgAspect > 1) {
+            // Image is wider - fit to height
+            drawWidth = previewSize * imgAspect;
+            drawX = previewX - (drawWidth - previewSize) / 2;
+          } else {
+            // Image is taller - fit to width
+            drawHeight = previewSize / imgAspect;
+            drawY = previewY - (drawHeight - previewSize) / 2;
+          }
+          
+          ctx.drawImage(cachedImage, drawX, drawY, drawWidth, drawHeight);
+          ctx.restore();
+        } catch (error) {
+          console.error('Error drawing profile picture:', error);
+          // Fallback to black circle
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Loading - show black circle
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // No profile picture - show black circle (default)
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Preview border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(previewCenterX, previewCenterY, previewSize / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Instructions text
+    ctx.fillStyle = '#666666';
+    ctx.font = 'bold 7px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    const instructionText = 'Click on any NFT above to set it as your profile picture';
+    const instructionX = previewX + previewSize + 15;
+    const instructionY = profilePictureSectionY + 50;
+    ctx.fillText(instructionText, instructionX, instructionY);
+    
+    // Current selection indicator
+    if (currentProfilePicture) {
+      ctx.fillStyle = '#00aa00';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.fillText('ACTIVE', instructionX, instructionY + 20);
+    } else {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.fillText('(Default: Black)', instructionX, instructionY + 20);
+    }
+    
+    ctx.textAlign = 'left'; // Reset text align
+    
+    // Close button (better design)
+    const closeButtonX = profileWindowX + profileWindowWidth - 45;
+    const closeButtonY = profileWindowY + 10;
+    const closeButtonSize = 30;
+    
+    // Close button shadow
+    ctx.fillStyle = '#800000';
+    ctx.fillRect(closeButtonX + 2, closeButtonY + 2, closeButtonSize, closeButtonSize);
+    
+    // Close button background
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button highlight
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(closeButtonX + 1, closeButtonY + 1, closeButtonSize - 2, closeButtonSize - 2);
+    
+    // Close button text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 19px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
+  }
+  
+  // Opponent Profile panel (render AFTER profile panel - highest layer)
+  if (isOpponentProfileOpen && opponentAddressForResult) {
+    // Opponent profile window (centered)
+    const opponentProfileWindowWidth = 650;
+    const opponentProfileWindowHeight = 550;
+    const opponentProfileWindowX = (canvas.width - opponentProfileWindowWidth) / 2;
+    const opponentProfileWindowY = (canvas.height - opponentProfileWindowHeight) / 2;
+    
+    // Window shadow (dark gray, offset)
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(opponentProfileWindowX + 4, opponentProfileWindowY + 4, opponentProfileWindowWidth, opponentProfileWindowHeight);
+    
+    // Window background (light gray)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(opponentProfileWindowX, opponentProfileWindowY, opponentProfileWindowWidth, opponentProfileWindowHeight);
+    
+    // Window border (thick black)
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(opponentProfileWindowX, opponentProfileWindowY, opponentProfileWindowWidth, opponentProfileWindowHeight);
+    
+    // Inner border (white highlight)
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(opponentProfileWindowX + 2, opponentProfileWindowY + 2, opponentProfileWindowWidth - 4, opponentProfileWindowHeight - 4);
+    
+    // Title bar background
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(opponentProfileWindowX, opponentProfileWindowY, opponentProfileWindowWidth, 50);
+    
+    // Title text (white on black)
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('OPPONENT PROFILE', opponentProfileWindowX + opponentProfileWindowWidth / 2, opponentProfileWindowY + 32);
+    
+    // Opponent profile data container (with background)
+    const dataStartY = opponentProfileWindowY + 70;
+    const dataEndY = opponentProfileWindowY + opponentProfileWindowHeight - 20;
+    
+    // Left column background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(opponentProfileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(opponentProfileWindowX + 20, dataStartY, 280, dataEndY - dataStartY);
+    
+    // Right column background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(opponentProfileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(opponentProfileWindowX + 320, dataStartY, 310, dataEndY - dataStartY);
+    
+    // --- Two-player duel card: YOU vs OPPONENT ---
+    const meProfile = profileManager.getProfile();
+    const meAddrRaw = String(getMyPvpAddress() || '').trim();
+    const meNick = (meProfile.nickname || '').trim();
+    const meDisplayName = meNick || (meAddrRaw ? shortAddr(meAddrRaw) : 'guest');
+
+    const opponentNickname =
+      opponentProfileData?.nickname ||
+      opponentProfileData?.pvp_data?.nickname ||
+      opponentNicknameForResult ||
+      '(not set)';
+
+    const addrRaw = (opponentAddressForResult || '').trim();
+    const displayAddress = addrRaw.length > 20
+      ? addrRaw.substring(0, 17) + '...'
+      : (addrRaw || 'guest');
+
+    const drawHeader = (title: string, x: number, y: number) => {
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(title, x, y);
+    };
+
+    const drawStat = (label: string, value: string, x: number, y: number, valueColor: string = '#000000') => {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(label, x, y);
+      ctx.fillStyle = valueColor;
+      ctx.font = 'bold 11px "Press Start 2P"';
+      ctx.fillText(value, x, y + 14);
+    };
+
+    const youX = opponentProfileWindowX + 30;
+    const oppX = opponentProfileWindowX + 330;
+    const topY = dataStartY + 28;
+    const rowGap = 30;
+
+    // YOU column
+    drawHeader('YOU', youX, topY);
+    drawStat('NAME', meDisplayName, youX, topY + 22);
+    drawStat('ADDRESS', meAddrRaw ? (meAddrRaw.length > 20 ? (meAddrRaw.substring(0, 17) + '...') : meAddrRaw) : 'guest', youX, topY + 22 + rowGap);
+    drawStat('PVP W', String(meProfile.winsPvP || 0), youX, topY + 22 + rowGap * 2, '#00aa00');
+    drawStat('PVP L', String(meProfile.lossesPvP || 0), youX, topY + 22 + rowGap * 3, '#aa0000');
+    drawStat('XP', String(meProfile.xp || 0), youX, topY + 22 + rowGap * 4);
+    const myBon = calculateNftBonuses();
+    drawStat('DMG', String((dmg || 1) + (myBon.dmg || 0)), youX, topY + 22 + rowGap * 5);
+    drawStat('MAX HP', String((dotMaxHP + (myBon.hp || 0)) || 10), youX, topY + 22 + rowGap * 6);
+    drawStat('MAX ARM', String(dotMaxArmor || 5), youX, topY + 22 + rowGap * 7);
+
+    // OPP column
+    drawHeader('OPPONENT', oppX, topY);
+    drawStat('NAME', String(opponentNickname || '(not set)'), oppX, topY + 22);
+    drawStat('ADDRESS', displayAddress, oppX, topY + 22 + rowGap);
+    const oppW = opponentProfileData?.pvp_data?.wins ?? 0;
+    const oppL = opponentProfileData?.pvp_data?.losses ?? 0;
+    const oppXp =
+      (typeof opponentProfileData?.pvp_data?.xp === 'number' ? opponentProfileData.pvp_data.xp : null) ??
+      (typeof opponentProfileData?.xp === 'number' ? opponentProfileData.xp : 0);
+    const oppDmg = opponentProfileData?.solo_data?.dmg ?? 1;
+    const oppMaxHP = opponentProfileData?.solo_data?.maxHP ?? 10;
+    const oppMaxArmor = opponentProfileData?.solo_data?.maxArmor ?? 5;
+    drawStat('PVP W', String(oppW || 0), oppX, topY + 22 + rowGap * 2, '#00aa00');
+    drawStat('PVP L', String(oppL || 0), oppX, topY + 22 + rowGap * 3, '#aa0000');
+    drawStat('XP', String(oppXp || 0), oppX, topY + 22 + rowGap * 4);
+    drawStat('DMG', String(oppDmg || 1), oppX, topY + 22 + rowGap * 5);
+    drawStat('MAX HP', String(oppMaxHP || 10), oppX, topY + 22 + rowGap * 6);
+    drawStat('MAX ARM', String(oppMaxArmor || 5), oppX, topY + 22 + rowGap * 7);
+    
+    // Loading message if profile not loaded yet
+    if (!opponentProfileData) {
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText('Loading profile...', opponentProfileWindowX + opponentProfileWindowWidth / 2, opponentProfileWindowY + opponentProfileWindowHeight / 2);
+    }
+    
+    // Close button (better design)
+    const closeButtonX = opponentProfileWindowX + opponentProfileWindowWidth - 45;
+    const closeButtonY = opponentProfileWindowY + 10;
+    const closeButtonSize = 30;
+
+    // Duel handshake / Invite button (shown when opened from chat selection)
+    const inviteBtnW = 260;
+    const inviteBtnH = 40;
+    const inviteBtnX = opponentProfileWindowX + opponentProfileWindowWidth / 2 - inviteBtnW / 2;
+    const inviteBtnY = opponentProfileWindowY + opponentProfileWindowHeight - 70;
+    const canInvite = !!chatSelectedUserSessionId && chatSelectedUserSessionId !== chatService.getRoomSessionId();
+
+    ctx.save();
+    const mySid = chatService.getRoomSessionId() || '';
+    const isInThisOffer =
+      !!duelOffer &&
+      duelOffer.status === 'pending' &&
+      ((mySid && (mySid === duelOffer.fromSid || mySid === duelOffer.toSid)) ||
+        (chatSelectedUserSessionId && (chatSelectedUserSessionId === duelOffer.fromSid || chatSelectedUserSessionId === duelOffer.toSid)));
+    const isInviter = isInThisOffer && mySid && duelOffer && mySid === duelOffer.fromSid;
+    const meAccepted = isInThisOffer && duelOffer ? (isInviter ? duelOffer.fromAccepted : duelOffer.toAccepted) : false;
+    const oppAccepted = isInThisOffer && duelOffer ? (isInviter ? duelOffer.toAccepted : duelOffer.fromAccepted) : false;
+
+    // When offer pending => show 2x2 buttons (both sides visible)
+    if (isInThisOffer && duelOffer) {
+      const btnW = 120;
+      const btnH = 32;
+      const gap = 10;
+      const myColX = opponentProfileWindowX + 20;
+      const oppColX = opponentProfileWindowX + 320;
+      const btnY = inviteBtnY + 2;
+
+      // Labels above
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(meAccepted ? 'YOU: READY' : 'YOU: WAIT', myColX + 10, btnY - 10);
+      ctx.fillText(oppAccepted ? 'OPP: READY' : 'OPP: WAIT', oppColX + 10, btnY - 10);
+
+      // Your buttons (clickable)
+      const myAcceptX = myColX + 10;
+      const myCancelX = myAcceptX + btnW + gap;
+      ctx.fillStyle = meAccepted ? 'rgba(0, 160, 80, 0.35)' : 'rgba(0, 160, 80, 0.75)';
+      ctx.fillRect(myAcceptX, btnY, btnW, btnH);
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.75)';
+      ctx.fillRect(myCancelX, btnY, btnW, btnH);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(myAcceptX, btnY, btnW, btnH);
+      ctx.strokeRect(myCancelX, btnY, btnW, btnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(meAccepted ? 'READY' : 'ACCEPT', myAcceptX + btnW / 2, btnY + btnH / 2 + 1);
+      ctx.fillText('CANCEL', myCancelX + btnW / 2, btnY + btnH / 2 + 1);
+
+      // Opponent buttons (visual-only)
+      const oppAcceptX = oppColX + 10;
+      const oppCancelX = oppAcceptX + btnW + gap;
+      ctx.fillStyle = oppAccepted ? 'rgba(0, 160, 80, 0.35)' : 'rgba(0, 160, 80, 0.20)';
+      ctx.fillRect(oppAcceptX, btnY, btnW, btnH);
+      ctx.fillStyle = 'rgba(255, 120, 120, 0.20)';
+      ctx.fillRect(oppCancelX, btnY, btnW, btnH);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(oppAcceptX, btnY, btnW, btnH);
+      ctx.strokeRect(oppCancelX, btnY, btnW, btnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(oppAccepted ? 'READY' : 'WAIT', oppAcceptX + btnW / 2, btnY + btnH / 2 + 1);
+      ctx.fillText('...', oppCancelX + btnW / 2, btnY + btnH / 2 + 1);
+
+      // Hint
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 7px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('Both players must ACCEPT to start', opponentProfileWindowX + opponentProfileWindowWidth / 2, btnY + btnH + 18);
+    } else {
+      // No active offer: show INVITE button
+      ctx.fillStyle = canInvite ? 'rgba(40, 80, 140, 0.75)' : 'rgba(120, 120, 120, 0.35)';
+      ctx.fillRect(inviteBtnX, inviteBtnY, inviteBtnW, inviteBtnH);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(inviteBtnX, inviteBtnY, inviteBtnW, inviteBtnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('INVITE TO DUEL', inviteBtnX + inviteBtnW / 2, inviteBtnY + inviteBtnH / 2 + 1);
+    }
+    ctx.restore();
+    
+    // Close button shadow
+    ctx.fillStyle = '#800000';
+    ctx.fillRect(closeButtonX + 2, closeButtonY + 2, closeButtonSize, closeButtonSize);
+    
+    // Close button background
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button border
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize);
+    
+    // Close button highlight
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(closeButtonX + 1, closeButtonY + 1, closeButtonSize - 2, closeButtonSize - 2);
+    
+    // Close button text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
+  }
+}
+
+// Global mouse position for katana tracking
+let globalMouseX = 0;
+let globalMouseY = 0;
+
+// Mouse move handler for hover and drawing
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__mousemoveListenerAdded) {
+  (window as any).__mousemoveListenerAdded = true;
+  canvas.addEventListener('mousemove', (e) => {
+  const pos = getCanvasMousePos(e);
+  const mouseX = pos.x;
+  const mouseY = pos.y;
+
+  // Solo solar map: drag-to-pan (only when zoom > 1x)
+  if (solarMapIsDragging) {
+    try {
+      const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+      if (z <= 1.01) {
+        solarMapIsDragging = false;
+        solarMapPanAu = 0;
+      } else {
+        const speedY = 22;
+        const mapY = speedY + 110;
+        const left = playLeft + 70;
+        const right = playRight - 70;
+        const lineW = Math.max(220, right - left);
+        const baseHalfSpanAu = 2.8;
+        const halfSpanAu = Math.max(0.01, baseHalfSpanAu / Math.max(1, z));
+        const focusScalePxPerAu = lineW / (2 * halfSpanAu);
+        const dx = mouseX - solarMapDragStartX;
+        // Dragging right moves the content right => focus shifts left (natural "grab" behavior)
+        solarMapPanAu = solarMapDragStartPanAu - (dx / Math.max(0.0001, focusScalePxPerAu));
+      }
+    } catch {}
+    return;
+  }
+
+  // Live chat button hover (next to online indicator)
+  {
+    const onlineBoxW = 120;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 22;
+    const btnW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const btnX = onlineBoxX - gap - btnW;
+    const btnY = onlineBoxY;
+    isHoveringChat = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH;
+  }
+
+  // Slot "SPIN" button hover (left of LIVE CHAT)
+  {
+    if (gameMode !== 'Solo') {
+      isHoveringSlotBell = false;
+    } else {
+      const r = getSlotBellRect();
+      isHoveringSlotBell = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+    }
+  }
+
+  // Slot modal button hovers (SPIN / 2X / Close)
+  {
+    isHoveringSlotModalSpin = false;
+    isHoveringSlotModalBoost = false;
+    isHoveringSlotModalClose = false;
+    try {
+      if (slotModalOpen) {
+        const r = (window as any).__slotModalRegion as any;
+        if (r && typeof r.x === 'number') {
+          isHoveringSlotModalClose =
+            mouseX >= r.closeX && mouseX <= r.closeX + r.closeW &&
+            mouseY >= r.closeY && mouseY <= r.closeY + r.closeH;
+          isHoveringSlotModalSpin =
+            mouseX >= r.spinX && mouseX <= r.spinX + r.spinW &&
+            mouseY >= r.spinY && mouseY <= r.spinY + r.spinH;
+          isHoveringSlotModalBoost =
+            mouseX >= r.boostX && mouseX <= r.boostX + r.boostW &&
+            mouseY >= r.boostY && mouseY <= r.boostY + r.boostH;
+        }
+      }
+    } catch {}
+  }
+
+  // Chat send hover + pointer cursor
+  isHoveringChatSend = false;
+  isHoveringChatClose = false;
+  try {
+    if (isChatOpen) {
+      const panelW = CHAT_PANEL_W;
+      const panelH = CHAT_PANEL_H;
+      const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
+      const panelY = Math.floor(CHAT_PANEL_TOP);
+      const headerH = 46;
+      const inputH = CHAT_INPUT_H;
+      const sendW = CHAT_SEND_W;
+      const gap = CHAT_GAP;
+      const inputX = panelX + 18;
+      const inputY = panelY + panelH - inputH - 14;
+      const inputW = panelW - 18 - sendW - gap - 14;
+      const sendX = inputX + inputW + gap;
+      const sendY = inputY;
+      isHoveringChatSend = mouseX >= sendX && mouseX <= sendX + sendW && mouseY >= sendY && mouseY <= sendY + inputH;
+
+      // Close button hover
+      const closeS = 26;
+      const closePadR = 14;
+      const closeX = panelX + panelW - closePadR - closeS;
+      const closeY = panelY + Math.floor((headerH - closeS) / 2);
+      isHoveringChatClose = mouseX >= closeX && mouseX <= closeX + closeS && mouseY >= closeY && mouseY <= closeY + closeS;
+    }
+  } catch {}
+
+  // Pointer cursor when hovering interactive chat UI
+  try {
+    let overName = false;
+    chatHoverSessionId = null;
+    chatHoverMessageId = null;
+    if (isChatOpen) {
+      const hit = chatHitRegions.find(r => mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h);
+      if (hit) {
+        overName = true;
+        chatHoverSessionId = hit.sessionId || null;
+        chatHoverMessageId = hit.messageId || null;
+      }
+    }
+        const shouldPointer = isHoveringChat || isHoveringSlotBell || isHoveringSlotModalSpin || isHoveringSlotModalBoost || isHoveringSlotModalClose || isHoveringChatSend || isHoveringChatClose || overName || isHoveringNicknameEdit || isHoveringSpeedFxMinus || isHoveringSpeedFxPlus || isHoveringFaucet || isHoveringPvPOnline || isHoveringPvpFun || isHoveringNewButton;
+    canvas.classList.toggle('pointer', shouldPointer);
+  } catch {}
+  
+  if (isServerBrowserOpen) {
+    updateServerBrowserHover(mouseX, mouseY);
+    return;
+  }
+  
+  // Store global mouse position for katana
+  globalMouseX = mouseX;
+  globalMouseY = mouseY;
+
+  // PewPew modal: craft button hover
+  if (isPewPewOpen && !isLeaderboardOpen) {
+    const mr = getPewPewModalRect();
+    const craftR = getPewPewCraftButtonRect(mr);
+    isHoveringPewPewCraft =
+      !pewPewCrafting &&
+      mouseX >= craftR.x && mouseX <= craftR.x + craftR.w &&
+      mouseY >= craftR.y && mouseY <= craftR.y + craftR.h;
+  } else {
+    isHoveringPewPewCraft = false;
+    isPressingPewPewCraft = false;
+  }
+  
+  // Update drawing with pencil tool - add points as mouse moves
+  if (isDrawing) {
+    const lastPoint = currentDrawPoints[currentDrawPoints.length - 1];
+    
+    // Calculate distance from last point
+    const dx = mouseX - lastPoint.x;
+    const dy = mouseY - lastPoint.y;
+    const distToLast = Math.sqrt(dx * dx + dy * dy);
+    
+    // Add point if moved enough (at least 2 pixels) to avoid too many points
+    if (distToLast >= 2) {
+      // Calculate total length so far
+      let totalLength = 0;
+      for (let i = 1; i < currentDrawPoints.length; i++) {
+        const prev = currentDrawPoints[i - 1];
+        const curr = currentDrawPoints[i];
+        totalLength += Math.sqrt((curr.x - prev.x) ** 2 + (curr.y - prev.y) ** 2);
+      }
+      
+      // Check if adding this point would exceed max length
+      const newLength = totalLength + distToLast;
+      if (newLength <= maxDrawLength) {
+        // Add the point
+        currentDrawPoints.push({ x: mouseX, y: mouseY });
+      } else {
+        // Limit to max length - add final point at max distance
+        const remainingLength = maxDrawLength - totalLength;
+        if (remainingLength > 0) {
+          const angle = Math.atan2(dy, dx);
+          currentDrawPoints.push({
+            x: lastPoint.x + Math.cos(angle) * remainingLength,
+            y: lastPoint.y + Math.sin(angle) * remainingLength
+          });
+        }
+        // Stop drawing when max length reached (mouseup will finish it)
+      }
+    }
+  }
+  
+  // Check upgrade button hover - Solo mode only
+        if (gameMode === 'Solo') {
+
+          // Check level buttons hover
+          hoveredLevel = -1;
+          for (const btn of levelButtons) {
+            if (mouseX >= btn.x && mouseX <= btn.x + 32 && mouseY >= btn.y && mouseY <= btn.y + 32) {
+              const levelDiff = currentLevel - btn.level;
+              const canAccess = btn.level <= maxUnlockedLevel && levelDiff <= 2 && levelDiff >= 0;
+              if (canAccess) {
+                hoveredLevel = btn.level;
+                break;
+              }
+            }
+          }
+        } else {
+          // Reset hover states in PvP mode
+          hoveredLevel = -1;
+        }
+
+        // Check wallet button hover
+        // Profile button hover
+        const contactRect = getContactButtonRect();
+        const isOverContact = mouseX >= contactRect.x && mouseX <= contactRect.x + contactRect.w && mouseY >= contactRect.y && mouseY <= contactRect.y + contactRect.h;
+        const pewPewRect = getPewPewButtonRect();
+        const isOverPewPew = mouseX >= pewPewRect.x && mouseX <= pewPewRect.x + pewPewRect.w && mouseY >= pewPewRect.y && mouseY <= pewPewRect.y + pewPewRect.h;
+        const faucetRect = getFaucetButtonRect();
+        const isOverFaucet = mouseX >= faucetRect.x && mouseX <= faucetRect.x + faucetRect.w && mouseY >= faucetRect.y && mouseY <= faucetRect.y + faucetRect.h;
+        const speedFxR = getSpeedFxControlRect();
+        const speedFxMinusR = getSpeedFxMinusRect();
+        const speedFxPlusR = getSpeedFxPlusRect();
+        isHoveringSpeedFxMinus =
+          mouseX >= speedFxMinusR.x && mouseX <= speedFxMinusR.x + speedFxMinusR.w &&
+          mouseY >= speedFxMinusR.y && mouseY <= speedFxMinusR.y + speedFxMinusR.h;
+        isHoveringSpeedFxPlus =
+          mouseX >= speedFxPlusR.x && mouseX <= speedFxPlusR.x + speedFxPlusR.w &&
+          mouseY >= speedFxPlusR.y && mouseY <= speedFxPlusR.y + speedFxPlusR.h;
+        const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
+        const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+        isHoveringFaucet = isOverFaucet && canUseFaucet() && !upgradeAnimation && !isDrawing;
+        isHoveringContact = isOverContact && !upgradeAnimation && !isDrawing && !isContactOpen;
+        isHoveringPewPew = isOverPewPew && !upgradeAnimation && !isDrawing && !isPewPewOpen;
+        isHoveringLeaderboard = isOverLeaderboard && !upgradeAnimation && !isDrawing && !isLeaderboardOpen;
+        isHoveringProfile = isOverProfile && !upgradeAnimation && !isDrawing && !isProfileOpen;
+        
+        const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
+        isHoveringWallet = isOverWallet && !upgradeAnimation && !isDrawing;
+        
+        // NFT pagination hover (only when profile is open)
+        if (isProfileOpen && nftList.length > 0) {
+          const totalPages = Math.ceil(nftList.length / nftsPerPage);
+          const profileWindowWidth = 900;
+          const profileWindowHeight = 750;
+          const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+          const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
+          const dataStartY = profileWindowY + 70;
+          const dataEndY = profileWindowY + profileWindowHeight - 20;
+          const nftSectionX = profileWindowX + 20 + 400 + 30; // leftColumnWidth + columnSpacing
+          const nftSectionHeight = dataEndY - dataStartY;
+          const paginationY = dataStartY + nftSectionHeight - 40;
+          const arrowSize = 20;
+          const arrowY = paginationY + 10;
+          
+          const leftArrowX = nftSectionX + 20;
+          const rightArrowX = nftSectionX + 310 - arrowSize - 20;
+          
+          const canGoLeft = nftCurrentPage > 0;
+          const canGoRight = nftCurrentPage < totalPages - 1;
+          
+          nftPaginationHoverLeft = canGoLeft && mouseX >= leftArrowX && mouseX <= leftArrowX + arrowSize &&
+                                   mouseY >= arrowY && mouseY <= arrowY + arrowSize;
+          nftPaginationHoverRight = canGoRight && mouseX >= rightArrowX && mouseX <= rightArrowX + arrowSize &&
+                                    mouseY >= arrowY && mouseY <= arrowY + arrowSize;
+        } else {
+          nftPaginationHoverLeft = false;
+          nftPaginationHoverRight = false;
+        }
+
+        // Nickname edit hover (profile open)
+        isHoveringNicknameEdit = false;
+        if (isProfileOpen && isPersistenceConnected()) {
+          const r = getProfileNicknameEditRects();
+          isHoveringNicknameEdit =
+            (mouseX >= r.row.x && mouseX <= r.row.x + r.row.w && mouseY >= r.row.y && mouseY <= r.row.y + r.row.h) ||
+            (mouseX >= r.btn.x && mouseX <= r.btn.x + r.btn.w && mouseY >= r.btn.y && mouseY <= r.btn.y + r.btn.h);
+        }
+
+        // Training button hover detection (must match render)
+        const trainingButtonY = getTrainingButtonY();
+        const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 40;
+        isHoveringGameMode = isOverTraining && !upgradeAnimation && !isDrawing;
+
+        // PvP Online button hover detection
+        const pvpOnlineButtonY = trainingButtonY + 50;
+        const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
+        isHoveringPvPOnline = isOverPvPOnline && !upgradeAnimation && !isDrawing;
+
+        // PvP FUN hover detection
+        const pvpFunButtonY = pvpOnlineButtonY + 50;
+        const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 40;
+        isHoveringPvpFun = isOverPvpFun && !upgradeAnimation && !isDrawing;
+
+        // 5SEC PvP hover detection (below FUN)
+        const newButtonY = pvpFunButtonY + 50;
+        const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+        isHoveringNewButton = isOverNewButton && !upgradeAnimation && !isDrawing;
+        
+        // Ready/Cancel button hover detection (in Ready screen)
+        if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady) {
+          const playAreaX = 240; // Play area starts at x=240
+          const playAreaWidth = canvas.width - playAreaX;
+          const readyButtonX = playAreaX + playAreaWidth / 2 - 100;
+          const readyButtonY = canvas.height / 2 + 60;
+          const readyButtonWidth = 200;
+          const readyButtonHeight = 50;
+          const cancelButtonX = playAreaX + playAreaWidth / 2 - 100;
+          const cancelButtonY = canvas.height / 2 + 130;
+          const cancelButtonWidth = 200;
+          const cancelButtonHeight = 40;
+          
+          if (!isReady) {
+            const isOverReady = mouseX >= readyButtonX && mouseX <= readyButtonX + readyButtonWidth &&
+                                mouseY >= readyButtonY && mouseY <= readyButtonY + readyButtonHeight;
+            isHoveringReady = isOverReady;
+          } else {
+            isHoveringReady = false;
+          }
+          
+          const isOverCancel = mouseX >= cancelButtonX && mouseX <= cancelButtonX + cancelButtonWidth &&
+                               mouseY >= cancelButtonY && mouseY <= cancelButtonY + cancelButtonHeight;
+          isHoveringCancel = isOverCancel;
+        } else {
+          isHoveringReady = false;
+          isHoveringCancel = false;
+        }
+
+        // Change cursor - show arrow icon when arrow is ready
+        if (arrowReady && !arrowFired && mouseX > 240 && !isDrawing && gameState === 'Alive') {
+          // Custom arrow cursor
+          canvas.style.cursor = 'crosshair';
+  } else if (((gameMode === 'Solo' && (hoveredLevel >= 0)) || isOverFaucet || isOverContact || isOverPewPew || isOverProfile || isOverWallet || isHoveringFaucet || isHoveringContact || isHoveringPewPew || isHoveringPewPewCraft || isHoveringGameMode || isHoveringPvPOnline || isHoveringPvpFun || isHoveringNewButton || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
+          canvas.style.cursor = 'pointer';
+        } else if (isDrawing) {
+          canvas.style.cursor = 'crosshair';
+        } else if (mouseX > 240) {
+          // In play area - show default when katana not active
+          canvas.style.cursor = 'default';
+        } else {
+          canvas.style.cursor = 'default';
+        }
+  });
+} else {
+  console.warn('⚠️ Mousemove listener already added - skipping duplicate (HMR protection)');
+}
+
+// Mouse leave / window blur: reset "pressed/hover" states so buttons never get stuck.
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__mouseLeaveResetListenerAdded) {
+  (window as any).__mouseLeaveResetListenerAdded = true;
+  canvas.addEventListener('mouseleave', () => {
+    isHoveringPewPewCraft = false;
+    isPressingPewPewCraft = false;
+    isHoveringFaucet = false;
+    isPressingFaucet = false;
+    solarMapIsDragging = false;
+  });
+  window.addEventListener('blur', () => {
+    isHoveringPewPewCraft = false;
+    isPressingPewPewCraft = false;
+    isHoveringFaucet = false;
+    isPressingFaucet = false;
+    solarMapIsDragging = false;
+  });
+}
+
+// Mouse down handler
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__mousedownListenerAdded) {
+  (window as any).__mousedownListenerAdded = true;
+  canvas.addEventListener('mousedown', (e) => {
+  const pos = getCanvasMousePos(e);
+  const mouseX = pos.x;
+  const mouseY = pos.y;
+
+  // Live chat toggle button press
+  {
+    const onlineBoxW = 120;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 22;
+    const btnW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const btnX = onlineBoxX - gap - btnW;
+    const btnY = onlineBoxY;
+    if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH) {
+      isPressingChat = true;
+      return;
+    }
+  }
+
+  // Slot "SPIN" press (left of LIVE CHAT)
+  {
+    if (gameMode === 'Solo') {
+      const r = getSlotBellRect();
+      if (mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
+        isPressingSlotBell = true;
+        return;
+      }
+    }
+  }
+
+  // Chat send button press (inside chat panel)
+  if (isChatOpen) {
+    const panelW = CHAT_PANEL_W;
+    const panelH = CHAT_PANEL_H;
+    const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
+    const panelY = Math.floor(CHAT_PANEL_TOP);
+    const inputH = CHAT_INPUT_H;
+    const sendW = CHAT_SEND_W;
+    const gap = CHAT_GAP;
+    const inputX = panelX + 18;
+    const inputY = panelY + panelH - inputH - 14;
+    const inputW = panelW - 18 - sendW - gap - 14;
+    const sendX = inputX + inputW + gap;
+    const sendY = inputY;
+    if (mouseX >= sendX && mouseX <= sendX + sendW && mouseY >= sendY && mouseY <= sendY + inputH) {
+      isPressingChatSend = true;
+      return;
+    }
+
+    // Chat close (X) button press
+    {
+      const headerH = 46;
+      const closeS = 26;
+      const closePadR = 14;
+      const closeX = panelX + panelW - closePadR - closeS;
+      const closeY = panelY + Math.floor((headerH - closeS) / 2);
+      if (mouseX >= closeX && mouseX <= closeX + closeS && mouseY >= closeY && mouseY <= closeY + closeS) {
+        isPressingChatClose = true;
+        return;
+      }
+    }
+  }
+  
+  if (isServerBrowserOpen) {
+    if (isPointInsideRegion(mouseX, mouseY, serverBrowserCloseRegion)) {
+      closeServerBrowser();
+      return;
+    }
+
+    if (isPointInsideRegion(mouseX, mouseY, serverBrowserModalRegion)) {
+      const targetRegion = serverBrowserHitRegions.find(
+        (region) =>
+          mouseX >= region.x && mouseX <= region.x + region.width &&
+          mouseY >= region.y && mouseY <= region.y + region.height
+      );
+
+      if (targetRegion) {
+        handleServerSelection(targetRegion.id);
+      }
+    } else {
+      closeServerBrowser();
+    }
+    return;
+  }
+
+  // Faucet press (UI panel)
+  {
+    const r = getFaucetButtonRect();
+    if (canUseFaucet() && mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
+      isPressingFaucet = true;
+      return;
+    }
+  }
+
+  // PewPew modal: craft button press (mousedown) - must be set here (not on mousemove).
+  if (isPewPewOpen && !isLeaderboardOpen) {
+    const mr = getPewPewModalRect();
+    const craftR = getPewPewCraftButtonRect(mr);
+    const isOnCraft =
+      !pewPewCrafting &&
+      mouseX >= craftR.x && mouseX <= craftR.x + craftR.w &&
+      mouseY >= craftR.y && mouseY <= craftR.y + craftR.h;
+    if (isOnCraft) {
+      isPressingPewPewCraft = true;
+      return;
+    }
+  }
+  
+  // PvP Online: Handle Ready button press (in Ready screen)
+  if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady && !isReady) {
+    // Calculate button position relative to play area (not full canvas) - MUST MATCH click handler
+    const playAreaX = 240; // Play area starts at x=240
+    const playAreaWidth = canvas.width - playAreaX;
+    const readyButtonX = playAreaX + playAreaWidth / 2 - 100;
+    const readyButtonY = canvas.height / 2 + 60;
+    const readyButtonWidth = 200;
+    const readyButtonHeight = 50;
+    
+    // Removed console.log to reduce lag
+    if (mouseX >= readyButtonX && mouseX <= readyButtonX + readyButtonWidth &&
+        mouseY >= readyButtonY && mouseY <= readyButtonY + readyButtonHeight) {
+      isPressingReady = true;
+      return; // Don't process other clicks
+    }
+  }
+  
+  // PvP Online: Handle Cancel button press (in Ready screen)
+  if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady) {
+    const playAreaX = 240; // Play area starts at x=240
+    const playAreaWidth = canvas.width - playAreaX;
+    const cancelButtonX = playAreaX + playAreaWidth / 2 - 100;
+    const cancelButtonY = canvas.height / 2 + 130;
+    const cancelButtonWidth = 200;
+    const cancelButtonHeight = 40;
+    
+    if (mouseX >= cancelButtonX && mouseX <= cancelButtonX + cancelButtonWidth &&
+        mouseY >= cancelButtonY && mouseY <= cancelButtonY + cancelButtonHeight) {
+      isPressingCancel = true;
+      return; // Don't process other clicks
+    }
+  }
+
+  // Turn-based PvP: block legacy realtime PvP mouse controls in play area
+  if (isTurnBasedPvPDesired() && mouseX > 240) {
+    return;
+  }
+  
+  // (removed) Solo upgrade buttons
+  
+  // Check if clicking level button - Solo mode only
+  if (gameMode === 'Solo') {
+    for (const btn of levelButtons) {
+      if (mouseX >= btn.x && mouseX <= btn.x + 32 && mouseY >= btn.y && mouseY <= btn.y + 32) {
+        const levelDiff = currentLevel - btn.level;
+        const canAccess = btn.level <= maxUnlockedLevel && levelDiff <= 2 && levelDiff >= 0;
+        if (canAccess && btn.level !== currentLevel) {
+          pressedLevel = btn.level;
+          return; // Don't start drawing if clicking level button
+        }
+      }
+    }
+  }
+  
+  // Opponent profile panel close button click (check FIRST)
+  if (isOpponentProfileOpen) {
+    const opponentProfileWindowWidth = 650;
+    const opponentProfileWindowHeight = 550;
+    const opponentProfileWindowX = (canvas.width - opponentProfileWindowWidth) / 2;
+    const opponentProfileWindowY = (canvas.height - opponentProfileWindowHeight) / 2;
+    const closeButtonX = opponentProfileWindowX + opponentProfileWindowWidth - 45;
+    const closeButtonY = opponentProfileWindowY + 10;
+    const closeButtonSize = 30;
+
+    // Invite / Duel handshake button region (bottom)
+    const inviteBtnW = 260;
+    const inviteBtnH = 40;
+    const inviteBtnX = opponentProfileWindowX + opponentProfileWindowWidth / 2 - inviteBtnW / 2;
+    const inviteBtnY = opponentProfileWindowY + opponentProfileWindowHeight - 70;
+    const canInvite = !!chatSelectedUserSessionId && chatSelectedUserSessionId !== chatService.getRoomSessionId();
+    if (mouseX >= inviteBtnX && mouseX <= inviteBtnX + inviteBtnW &&
+        mouseY >= inviteBtnY && mouseY <= inviteBtnY + inviteBtnH) {
+      try {
+        const mySid = chatService.getRoomSessionId() || '';
+        const inOffer = !!duelOffer && duelOffer.status === 'pending' && mySid && (mySid === duelOffer.fromSid || mySid === duelOffer.toSid);
+        if (inOffer && duelOffer) {
+          // Buttons are in the left column (YOU): ACCEPT + CANCEL
+          const myColX = opponentProfileWindowX + 20;
+          const btnY = inviteBtnY + 2;
+          const btnW = 120;
+          const btnH = 32;
+          const gap = 10;
+          const myAcceptX = myColX + 10;
+          const myCancelX = myAcceptX + btnW + gap;
+          const clickedAccept =
+            mouseX >= myAcceptX && mouseX <= myAcceptX + btnW &&
+            mouseY >= btnY && mouseY <= btnY + btnH;
+          const clickedCancel =
+            mouseX >= myCancelX && mouseX <= myCancelX + btnW &&
+            mouseY >= btnY && mouseY <= btnY + btnH;
+          const isInviter = mySid === duelOffer.fromSid;
+          if (clickedAccept) {
+            chatService.sendDuelOfferAction(duelOffer.id, 'accept');
+            return;
+          }
+          if (clickedCancel) {
+            chatService.sendDuelOfferAction(duelOffer.id, isInviter ? 'cancel' : 'decline');
+            return;
+          }
+        } else if (canInvite) {
+          // Create a new offer
+          chatService.sendDuelOfferCreate(chatSelectedUserSessionId!, {
+            serverEndpoint: getSelectedServerEndpoint() || fallbackColyseusEndpoint,
+            roomName: pvpOnlineRoomName,
+          });
+          walletError = 'Duel offer sent...';
+          window.setTimeout(() => { try { if (walletError === 'Duel offer sent...') walletError = null; } catch {} }, 2000);
+          isChatOpen = true;
+          return;
+        }
+      } catch {}
+    }
+    
+    if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
+        mouseY >= closeButtonY && mouseY <= closeButtonY + closeButtonSize) {
+      isOpponentProfileOpen = false;
+      opponentProfileData = null; // Clear profile data
+      return; // Don't process other clicks
+    }
+  }
+  
+  // Profile panel close button click (check AFTER opponent profile)
+  // Only allow closing if persistence identity is connected (wallet or email auth)
+  const isWalletConnectedForClose = isPersistenceConnected();
+  
+  if (isProfileOpen && isWalletConnectedForClose) {
+    const profileWindowWidth = 900;
+    const profileWindowHeight = 750;
+    const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
+    const closeButtonX = profileWindowX + profileWindowWidth - 45;
+    const closeButtonY = profileWindowY + 10;
+    const closeButtonSize = 30;
+    
+    if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
+        mouseY >= closeButtonY && mouseY <= closeButtonY + closeButtonSize) {
+      isProfileOpen = false;
+      // Hide nickname input if visible
+      const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (nicknameInput) {
+        nicknameInput.style.display = 'none';
+        persistNicknameFromUi(nicknameInput.value);
+      }
+      return; // Don't process other clicks
+    }
+    
+    // NFT pagination click handlers
+    if (nftList.length > 0) {
+      const totalPages = Math.ceil(nftList.length / nftsPerPage);
+      const leftColumnWidth = 400;
+      const rightColumnWidth = 450;
+      const columnSpacing = 30;
+      const nftSectionX = profileWindowX + 20 + leftColumnWidth + columnSpacing;
+      const dataStartY = profileWindowY + 70;
+      const dataEndY = profileWindowY + profileWindowHeight - 20;
+      const nftSectionHeight = dataEndY - dataStartY;
+      const paginationY = dataStartY + nftSectionHeight - 40;
+      const arrowSize = 20;
+      const arrowY = paginationY + 10;
+      
+      const leftArrowX = nftSectionX + 20;
+      const rightArrowX = nftSectionX + rightColumnWidth - arrowSize - 20;
+      
+      // Left arrow click
+      if (nftCurrentPage > 0 && mouseX >= leftArrowX && mouseX <= leftArrowX + arrowSize &&
+          mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+        nftCurrentPage--;
+        return; // Don't process other clicks
+      }
+      
+      // Right arrow click
+      if (nftCurrentPage < totalPages - 1 && mouseX >= rightArrowX && mouseX <= rightArrowX + arrowSize &&
+          mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+        nftCurrentPage++;
+        return; // Don't process other clicks
+      }
+      
+      // NFT card click handler (select as profile picture)
+      const nftContentY = dataStartY + 35;
+      const nftContentHeight = nftSectionHeight - 180; // Match render function
+      const cardWidth = 200;
+      const cardHeight = 200;
+      const cardSpacing = 15;
+      const gridStartX = nftSectionX + (rightColumnWidth - (cardWidth * 2 + cardSpacing)) / 2;
+      const gridStartY = nftContentY + 10;
+      
+      const startIndex = nftCurrentPage * nftsPerPage;
+      const endIndex = Math.min(startIndex + nftsPerPage, nftList.length);
+      const currentNfts = nftList.slice(startIndex, endIndex);
+      
+      for (let i = 0; i < currentNfts.length; i++) {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const cardX = gridStartX + col * (cardWidth + cardSpacing);
+        const cardY = gridStartY + row * (cardHeight + cardSpacing);
+        
+        // Check if click is within NFT card bounds
+        if (mouseX >= cardX && mouseX <= cardX + cardWidth &&
+            mouseY >= cardY && mouseY <= cardY + cardHeight) {
+          const nft = currentNfts[i];
+          if (nft.image) {
+            // Set this NFT as profile picture
+            profileManager.setProfilePicture(nft.image);
+            
+            // Update my player's profile picture
+            if (myPlayerId && pvpPlayers[myPlayerId]) {
+              pvpPlayers[myPlayerId].profilePicture = nft.image;
+              // Send profile picture update to opponent
+              sendStatsUpdate(
+                pvpPlayers[myPlayerId].hp,
+                pvpPlayers[myPlayerId].armor,
+                pvpPlayers[myPlayerId].maxHP,
+                pvpPlayers[myPlayerId].maxArmor
+              );
+            }
+            
+            console.log('Profile picture set to:', nft.name, nft.image);
+            return; // Don't process other clicks
+          }
+        }
+      }
+    }
+    
+    // Click nickname row / EDIT button to edit
+    {
+      const r = getProfileNicknameEditRects();
+      const overNickRow =
+        mouseX >= r.row.x && mouseX <= r.row.x + r.row.w &&
+        mouseY >= r.row.y && mouseY <= r.row.y + r.row.h;
+      const overEditBtn =
+        mouseX >= r.btn.x && mouseX <= r.btn.x + r.btn.w &&
+        mouseY >= r.btn.y && mouseY <= r.btn.y + r.btn.h;
+      if (overNickRow || overEditBtn) {
+        // Use shared helper (also used by HTML overlay button)
+        showNicknameInput();
+        return; // Don't process other clicks
+      }
+    }
+  }
+  
+  // Check if clicking profile button
+  if (!isProfileOpen) {
+    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+    if (isOverProfile) {
+      isPressingProfile = true;
+      return; // Don't process other clicks
+    }
+  }
+  
+  // NFT pagination button press (when profile is open)
+  if (isProfileOpen && nftList.length > 0) {
+    const profileWindowWidth = 900;
+    const profileWindowHeight = 750;
+    const profileWindowX = (canvas.width - profileWindowWidth) / 2;
+    const profileWindowY = (canvas.height - profileWindowHeight) / 2 - 100; // Move up 100px
+    const leftColumnWidth = 400;
+    const rightColumnWidth = 450;
+    const columnSpacing = 30;
+    const nftSectionX = profileWindowX + 20 + leftColumnWidth + columnSpacing;
+    const dataStartY = profileWindowY + 70;
+    const dataEndY = profileWindowY + profileWindowHeight - 20;
+    const nftSectionHeight = dataEndY - dataStartY;
+    const paginationY = dataStartY + nftSectionHeight - 40;
+    const arrowSize = 20;
+    const arrowY = paginationY + 10;
+    
+    const leftArrowX = nftSectionX + 20;
+    const rightArrowX = nftSectionX + rightColumnWidth - arrowSize - 20;
+    const totalPages = Math.ceil(nftList.length / nftsPerPage);
+    
+    // Left arrow press
+    if (nftCurrentPage > 0 && mouseX >= leftArrowX && mouseX <= leftArrowX + arrowSize &&
+        mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+      nftPaginationPressLeft = true;
+      return;
+    }
+    
+    // Right arrow press
+    if (nftCurrentPage < totalPages - 1 && mouseX >= rightArrowX && mouseX <= rightArrowX + arrowSize &&
+        mouseY >= arrowY && mouseY <= arrowY + arrowSize) {
+      nftPaginationPressRight = true;
+      return;
+    }
+  }
+  
+  // Check if clicking wallet button
+  const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
+  if (isOverWallet) {
+    isPressingWallet = true;
+    return; // Don't start drawing if clicking wallet button
+  }
+  
+  // Check if clicking contact button
+  const contactRect = getContactButtonRect();
+  const isOverContact = mouseX >= contactRect.x && mouseX <= contactRect.x + contactRect.w && mouseY >= contactRect.y && mouseY <= contactRect.y + contactRect.h;
+  if (isOverContact) {
+    isPressingContact = true;
+    return;
+  }
+
+  // Speed FX +/- (above PEWPEW)
+  {
+    const minusR = getSpeedFxMinusRect();
+    const plusR = getSpeedFxPlusRect();
+    const overMinus = mouseX >= minusR.x && mouseX <= minusR.x + minusR.w && mouseY >= minusR.y && mouseY <= minusR.y + minusR.h;
+    const overPlus = mouseX >= plusR.x && mouseX <= plusR.x + plusR.w && mouseY >= plusR.y && mouseY <= plusR.y + plusR.h;
+    if (overMinus) {
+      isPressingSpeedFxMinus = true;
+      return;
+    }
+    if (overPlus) {
+      isPressingSpeedFxPlus = true;
+      return;
+    }
+  }
+
+  // Check if clicking PewPew button (above CONTACT)
+  const pewPewRect = getPewPewButtonRect();
+  const isOverPewPew = mouseX >= pewPewRect.x && mouseX <= pewPewRect.x + pewPewRect.w && mouseY >= pewPewRect.y && mouseY <= pewPewRect.y + pewPewRect.h;
+  if (isOverPewPew) {
+    isPressingPewPew = true;
+    return;
+  }
+
+  // Check if clicking leaderboard button
+  const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
+  if (isOverLeaderboard) {
+    isPressingLeaderboard = true;
+    return; // Don't start drawing if clicking UI
+  }
+  
+  // Check if clicking training button
+  const trainingButtonY = getTrainingButtonY();
+  const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 40;
+  if (isOverTraining) {
+    isPressingGameMode = true;
+    return; // Don't start drawing if clicking training button
+  }
+  
+  // Check if clicking PvP Online button
+  const pvpOnlineButtonY = trainingButtonY + 50;
+  const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
+  if (isOverPvPOnline) {
+    isPressingPvPOnline = true;
+    return; // Don't start drawing if clicking PvP Online button
+  }
+  
+  // PvP FUN button click detection
+  const pvpFunButtonY = pvpOnlineButtonY + 50;
+  const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 40;
+  if (isOverPvpFun) {
+    isPressingPvpFun = true;
+    return; // Don't start drawing if clicking PvP FUN button
+  }
+  
+  // 5SEC PvP button click detection (below FUN)
+  const newButtonY = pvpFunButtonY + 50;
+  const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+  if (isOverNewButton) {
+    isPressingNewButton = true;
+    return; // Don't start drawing if clicking 5SEC PvP button
+  }
+  
+  // PvP mode: Projectile charging is now handled by keyboard (key "2"), not mouse
+  
+  // Start drawing immediately if not on UI panel, cooldown is ready, and right mouse button
+  if (mouseX > 240 && e.button === 2) { // Only in play area and right mouse button (for drawing)
+    const now = Date.now();
+    const timeSinceLastDraw = now - lastDrawEndTime;
+    const canDraw = timeSinceLastDraw >= drawCooldown;
+    
+    if (canDraw) {
+      // Start drawing immediately
+      isDrawing = true;
+      currentDrawPoints = [{ x: mouseX, y: mouseY }]; // Initialize with first point
+    }
+  }
+  
+  // Track left mouse button hold for slow-motion (only in play area, not on UI)
+  if (mouseX > 240 && e.button === 0 && gameState === 'Alive') {
+    mouseHoldStartTime = Date.now();
+  }
+  
+  // Bullet firing is handled in mouseup event (no charging needed)
+  });
+} else {
+  console.warn('⚠️ Mousedown listener already added - skipping duplicate (HMR protection)');
+}
+
+// Periodic leaderboard stat sync (HMR-safe)
+if (!(window as any).__pvpMaxHpSyncIntervalAdded) {
+  (window as any).__pvpMaxHpSyncIntervalAdded = true;
+  setInterval(() => {
+    try {
+      if (!supabaseService.isConfigured()) return;
+      const pid = getRoninAddressForPersistence();
+      if (!pid) return;
+      const now = Date.now();
+      if (now - lastPvpMaxHpSyncAt < PVP_MAXHP_SYNC_INTERVAL_MS) return;
+      // Only sync when we have meaningful values (either in PvP or at least computed)
+      const maxHP =
+        (gameMode === 'PvP' && myPlayerId && pvpPlayers[myPlayerId] && typeof pvpPlayers[myPlayerId].maxHP === 'number')
+          ? pvpPlayers[myPlayerId].maxHP
+          : (dotMaxHP + calculateNftBonuses().hp);
+      if (!maxHP || !Number.isFinite(maxHP)) return;
+      lastPvpMaxHpSyncAt = now;
+      const p = profileManager.getProfile();
+      const xp = p.xp || 0;
+      const nickname = p.nickname || '';
+      void supabaseService.updatePvpSnapshot(pid, { maxHP, xp, nickname });
+    } catch {}
+  }, 60_000);
+}
+
+// Mouse up handler
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__mouseupListenerAdded) {
+  (window as any).__mouseupListenerAdded = true;
+  canvas.addEventListener('mouseup', (e) => {
+  const posClick = getCanvasMousePos(e);
+  const mx = posClick.x;
+  const my = posClick.y;
+
+  // Solo solar map: end drag-to-pan, and swallow the mouseup so it doesn't trigger clicks.
+  if (solarMapIsDragging) {
+    solarMapIsDragging = false;
+    return;
+  }
+
+  // Duel invite modal clicks (Accept/Decline)
+  if (chatInviteModalOpen && chatInviteFromSessionId) {
+    const modalW = 520;
+    const modalH = 220;
+    const modalX = Math.floor(canvas.width / 2 - modalW / 2);
+    const modalY = Math.floor(canvas.height / 2 - modalH / 2);
+    const btnW = 180;
+    const btnH = 40;
+    const acceptX = modalX + 60;
+    const denyX = modalX + modalW - 60 - btnW;
+    const btnY = modalY + modalH - 70;
+    const overAccept = mx >= acceptX && mx <= acceptX + btnW && my >= btnY && my <= btnY + btnH;
+    const overDecline = mx >= denyX && mx <= denyX + btnW && my >= btnY && my <= btnY + btnH;
+    if (overAccept || overDecline) {
+      const fromSid = chatInviteFromSessionId;
+      chatInviteModalOpen = false;
+      chatInviteFromSessionId = null;
+      if (overAccept) {
+        // Minimal implementation: start searching PvP online (not a private room yet).
+        // This still satisfies "invite to duel" as a flow starter.
+        try {
+          // Join on inviter's server if provided (ensures both end up together).
+          const ep = chatInviteServerEndpoint || getSelectedServerEndpoint() || undefined;
+          if (chatInviteRoomName) pvpOnlineRoomName = chatInviteRoomName;
+          startPvPMatchOnServer(ep);
+          chatService.sendInviteResponse(fromSid, true, {
+            serverEndpoint: ep || '',
+            roomName: chatInviteRoomName || '',
+            toAddress: chatInviteFromAddress || '',
+          });
+        } catch {}
+      } else {
+        try {
+          chatService.sendInviteResponse(fromSid, false, {
+            serverEndpoint: chatInviteServerEndpoint || '',
+            roomName: chatInviteRoomName || '',
+            toAddress: chatInviteFromAddress || '',
+          });
+        } catch {}
+      }
+      return;
+    }
+  }
+
+  // Duel offer handshake is handled inside the Opponent Profile panel now.
+
+  // Faucet click (UI panel)
+  if (isPressingFaucet) {
+    const r = getFaucetButtonRect();
+    const over = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+    if (over) {
+      tryClaimFaucet();
+    }
+    isPressingFaucet = false;
+    return;
+  }
+
+  // Live chat toggle button click
+  if (isPressingChat) {
+    const onlineBoxW = 120;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 22;
+    const btnW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const btnX = onlineBoxX - gap - btnW;
+    const btnY = onlineBoxY;
+    const overBtn = mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH;
+    if (overBtn) {
+      isChatOpen = !isChatOpen;
+      chatScrollOffset = 0;
+      if (isChatOpen) {
+        chatHasUnread = false;
+        chatUnreadCount = 0;
+      }
+      try {
+        const inp = ensureChatInput();
+        const btn = ensureChatSendButton();
+        if (isChatOpen) {
+          inp.style.display = 'block';
+          btn.style.display = 'block';
+          inp.focus();
+        } else {
+          inp.style.display = 'none';
+          btn.style.display = 'none';
+        }
+      } catch {}
+    }
+    isPressingChat = false;
+    return;
+  }
+
+  // Slot "SPIN" click => open slot machine immediately
+  if (isPressingSlotBell) {
+    if (gameMode !== 'Solo') {
+      isPressingSlotBell = false;
+      return;
+    }
+    const r = getSlotBellRect();
+    const overBell = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+    if (overBell) {
+      slotModalOpen = true;
+      slotLastPayoutText = null;
+      slotBellNewSpins = 0;
+      slotSpinGlowUntil = 0;
+      slotBoost2xEnabled = false;
+      // Clear cached region and ignore the next click (same gesture) so it doesn't close immediately.
+      (window as any).__slotModalRegion = null;
+      slotIgnoreClicksUntilTs = Date.now() + 250;
+    }
+    isPressingSlotBell = false;
+    return;
+  }
+
+  // Chat panel interactions (send + click username)
+  if (isChatOpen) {
+    const panelW = CHAT_PANEL_W;
+    const panelH = CHAT_PANEL_H;
+    const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
+    const panelY = Math.floor(CHAT_PANEL_TOP);
+    const headerH = 46;
+    const inputH = CHAT_INPUT_H;
+    const sendW = CHAT_SEND_W;
+    const gap = CHAT_GAP;
+
+    const inputX = panelX + 18;
+    const inputY = panelY + panelH - inputH - 14;
+    const inputW = panelW - 18 - sendW - gap - 14;
+    const sendX = inputX + inputW + gap;
+    const sendY = inputY;
+
+    // Close X click
+    if (isPressingChatClose) {
+      const headerH = 46;
+      const closeS = 26;
+      const closePadR = 14;
+      const closeX = panelX + panelW - closePadR - closeS;
+      const closeY = panelY + Math.floor((headerH - closeS) / 2);
+      const overClose = mx >= closeX && mx <= closeX + closeS && my >= closeY && my <= closeY + closeS;
+      if (overClose) {
+        isChatOpen = false;
+        try {
+          const inp = ensureChatInput();
+          const btn = ensureChatSendButton();
+          inp.style.display = 'none';
+          btn.style.display = 'none';
+        } catch {}
+      }
+      isPressingChatClose = false;
+      return;
+    }
+
+    const overSend = mx >= sendX && mx <= sendX + sendW && my >= sendY && my <= sendY + inputH;
+    if (isPressingChatSend && overSend) {
+      try {
+        if (!chatService.isConnected()) {
+          // Don't swallow click silently if server isn't running.
+          walletError = 'Chat server offline (start Colyseus server)';
+        } else {
+          const inp = ensureChatInput();
+          const oneLine = String(inp.value || '').split(/\r?\n/)[0];
+          chatService.sendChat(oneLine);
+          inp.value = '';
+          (inp as any).rows = 2;
+          inp.focus();
+        }
+      } catch {}
+      isPressingChatSend = false;
+      return;
+    }
+    isPressingChatSend = false;
+
+    // Click nick -> open profile (canvas mode only). In DOM mode, selection is handled by the overlay click handler.
+    if (!CHAT_USE_DOM_MESSAGES) {
+      let clickedNick = false;
+      for (const r of chatHitRegions) {
+        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+          openProfileForChatIdentity(r.address || null, r.sessionId || null);
+          clickedNick = true;
+          return;
+        }
+      }
+      if (!clickedNick) {
+        chatSelectedUserSessionId = null;
+        chatSelectedUserAddress = null;
+      }
+    }
+  }
+
+  // Turn-based PvP: block legacy realtime mouse actions in play area.
+  // (A lot of the old PvP logic is handled on mouseup, so we must stop it here too.)
+  try {
+    const posTB = getCanvasMousePos(e);
+    if (isTurnBasedPvPDesired() && posTB.x > 240) {
+      // In planning we already handle click on mousedown; ignore mouseup to prevent "mode switching" feel.
+      return;
+    }
+  } catch {}
+
+  // PvP mode: Projectile firing is now handled by keyboard (key "2"), not mouse
+  
+  // Bullet firing is now handled by keyboard (key "3"), not mouse
+  
+  // (removed) upgrade buttons
+  isPressingReady = false;
+  isPressingCancel = false;
+
+  // Leaderboard modal click handling
+  if (isLeaderboardOpen) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const modalW = 820;
+    const modalH = 560;
+    const modalX = Math.floor(canvas.width / 2 - modalW / 2);
+    const modalY = Math.floor(canvas.height / 2 - modalH / 2);
+    const closeX = modalX + modalW - 42;
+    const closeY = modalY + 14;
+    const closeS = 26;
+
+    const arrowS = 26;
+    const leftX = modalX + 24;
+    const arrowY = modalY + modalH - 43;
+    const rightX = modalX + modalW - 24 - arrowS;
+    const totalPages = Math.max(1, Math.ceil(leaderboardRows.length / leaderboardPageSize));
+
+    const isInside = mouseX >= modalX && mouseX <= modalX + modalW && mouseY >= modalY && mouseY <= modalY + modalH;
+    const isOnClose = mouseX >= closeX && mouseX <= closeX + closeS && mouseY >= closeY && mouseY <= closeY + closeS;
+    const isOnLeft = mouseX >= leftX && mouseX <= leftX + arrowS && mouseY >= arrowY && mouseY <= arrowY + arrowS;
+    const isOnRight = mouseX >= rightX && mouseX <= rightX + arrowS && mouseY >= arrowY && mouseY <= arrowY + arrowS;
+
+    if (!isInside || isOnClose) {
+      isLeaderboardOpen = false;
+      isPressingLeaderboard = false;
+      return;
+    }
+    if (isOnLeft && leaderboardPage > 0) {
+      leaderboardPage = Math.max(0, leaderboardPage - 1);
+      return;
+    }
+    if (isOnRight && leaderboardPage < totalPages - 1) {
+      leaderboardPage = Math.min(totalPages - 1, leaderboardPage + 1);
+      return;
+    }
+  }
+
+  // Wallet provider picker click handling (works even if wallet button isn't pressed)
+  if (walletProviderModalOpen) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const uiPanelW = 240;
+    const modalW = 190;
+    const modalH = 150;
+    const modalX = Math.floor((uiPanelW - modalW) / 2);
+    const modalY = 450 - 10 - modalH;
+    const btnX = modalX + 10;
+    const btnW = modalW - 20;
+    const btnH = 30;
+    const roninY = modalY + 34;
+    const mmY = roninY + btnH + 8;
+    const emailY = mmY + btnH + 8;
+    const closeX = modalX + modalW - 20;
+    const closeY = modalY + 6;
+
+    const canEmail = supabaseService.isConfigured();
+    const available = walletService.getAvailableWallets();
+
+    const isInModal = mouseX >= modalX && mouseX <= modalX + modalW && mouseY >= modalY && mouseY <= modalY + modalH;
+    const isOnClose = mouseX >= closeX && mouseX <= closeX + 14 && mouseY >= closeY && mouseY <= closeY + 14;
+    const isOnRonin = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= roninY && mouseY <= roninY + btnH;
+    const isOnMetaMask = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= mmY && mouseY <= mmY + btnH;
+    const isOnEmail = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= emailY && mouseY <= emailY + btnH;
+
+    if (isOnClose || !isInModal) {
+      walletProviderModalOpen = false;
+    } else if (isOnRonin) {
+      if (!available.ronin) {
+        walletError = 'Ronin not installed';
+        walletProviderModalOpen = false;
+      } else {
+      connectWalletWithProvider('ronin');
+      }
+    } else if (isOnMetaMask) {
+      if (!available.metamask) {
+        walletError = 'MetaMask not installed';
+        walletProviderModalOpen = false;
+      } else {
+      connectWalletWithProvider('metamask');
+      }
+    } else if (isOnEmail) {
+      walletProviderModalOpen = false;
+      if (!canEmail) {
+        walletError = 'Supabase not configured for email login';
+      } else {
+        walletError = 'Enter email and press SEND';
+        openEmailLoginModal();
+      }
+    }
+    isPressingWallet = false;
+    return;
+  }
+
+  // Contact modal click handling
+  if (isContactOpen) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const mr = getContactModalRect();
+    const modalX = mr.x;
+    const modalY = mr.y;
+    const modalW = mr.w;
+    const modalH = mr.h;
+    const btnX = modalX + 10;
+    const btnW = modalW - 20;
+    const btnH = 34;
+    const gap = 8;
+    const y0 = modalY + 30;
+    const y1 = y0 + btnH + gap;
+    const y2 = y1 + btnH + gap;
+    const closeX = modalX + modalW - 20;
+    const closeY = modalY + 6;
+
+    const isInModal = mouseX >= modalX && mouseX <= modalX + modalW && mouseY >= modalY && mouseY <= modalY + modalH;
+    const isOnClose = mouseX >= closeX && mouseX <= closeX + 14 && mouseY >= closeY && mouseY <= closeY + 14;
+    const isOnXProject = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= y0 && mouseY <= y0 + btnH;
+    const isOnXCreator = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= y1 && mouseY <= y1 + btnH;
+    const isOnDiscord = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= y2 && mouseY <= y2 + btnH;
+
+    const openExternal = (url: string) => {
+      try {
+        const w = window.open(url, '_blank', 'noopener,noreferrer');
+        // Keep game tab open; if popup is blocked, show a small hint.
+        if (!w) {
+          contactOpenError = 'Popup blocked (allow popups)';
+        } else {
+          contactOpenError = null;
+        }
+      } catch {
+        contactOpenError = 'Popup blocked (allow popups)';
+      }
+    };
+
+    if (isOnClose || !isInModal) {
+      isContactOpen = false;
+      isPressingContact = false;
+      return;
+    }
+    if (isOnXProject) {
+      isContactOpen = false;
+      isPressingContact = false;
+      openExternal(CONTACT_X_PROJECT_URL);
+      return;
+    }
+    if (isOnXCreator) {
+      isContactOpen = false;
+      isPressingContact = false;
+      openExternal(CONTACT_X_CREATOR_URL);
+      return;
+    }
+    if (isOnDiscord) {
+      isContactOpen = false;
+      isPressingContact = false;
+      openExternal(CONTACT_DISCORD_URL);
+      return;
+    }
+  }
+
+  // PewPew modal click handling (close on X or click outside)
+  if (isPewPewOpen) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const mr = getPewPewModalRect();
+    const closeX = mr.x + mr.w - 20;
+    const closeY = mr.y + 6;
+    const isInModal = mouseX >= mr.x && mouseX <= mr.x + mr.w && mouseY >= mr.y && mouseY <= mr.y + mr.h;
+    const isOnClose = mouseX >= closeX - 14 && mouseX <= closeX + 6 && mouseY >= closeY && mouseY <= closeY + 14;
+    if (!isInModal || isOnClose) {
+      isPewPewOpen = false;
+      isPressingPewPew = false;
+      isPressingPewPewCraft = false;
+      return;
+    }
+
+    // Craft button click (inside modal)
+    const craftR = getPewPewCraftButtonRect(mr);
+    const isOnCraft =
+      !pewPewCrafting &&
+      mouseX >= craftR.x && mouseX <= craftR.x + craftR.w &&
+      mouseY >= craftR.y && mouseY <= craftR.y + craftR.h;
+    if (isPressingPewPewCraft) {
+      isPressingPewPewCraft = false;
+      if (isOnCraft) {
+        void craftPewPewUfo();
+        return;
+      }
+    }
+  }
+
+  // Email login modal click handling (SEND / CANCEL)
+  if (emailLoginModalOpen) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    // Buttons are in UI panel area
+    const btnW = 92;
+    const btnH = 24;
+    const btnY = 450 - 10 - 26;
+    const sendX = 20;
+    const cancelX = 20 + btnW + 10;
+    const isOnSend = mouseX >= sendX && mouseX <= sendX + btnW && mouseY >= btnY && mouseY <= btnY + btnH;
+    const isOnCancel = mouseX >= cancelX && mouseX <= cancelX + btnW && mouseY >= btnY && mouseY <= btnY + btnH;
+
+    if (isOnCancel) {
+      closeEmailLoginModal();
+      isPressingWallet = false;
+      return;
+    }
+    if (isOnSend) {
+      const inp = document.getElementById('emailLoginInput') as HTMLInputElement | null;
+      const email = (inp?.value || '').trim();
+      if (!email) {
+        emailLoginStatus = 'Enter email';
+        isPressingWallet = false;
+        return;
+      }
+      authConnecting = true;
+      emailLoginStatus = 'Sending...';
+      supabaseService.signInWithEmailMagicLink(email, `${window.location.origin}/`)
+        .then((res) => {
+          authConnecting = false;
+          if (res.success) {
+            emailLoginStatus = 'Check email link';
+            walletError = 'Check your email for the login link';
+            closeEmailLoginModal();
+          } else {
+            emailLoginStatus = res.error || 'Email login failed';
+            walletError = emailLoginStatus;
+          }
+        })
+        .catch((err: any) => {
+          authConnecting = false;
+          emailLoginStatus = err?.message || 'Email login failed';
+          walletError = emailLoginStatus;
+        });
+      isPressingWallet = false;
+      return;
+    }
+  }
+  
+  // Handle wallet button click (always allow, even if not connected)
+  if (isPressingWallet) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
+    
+    if (isOverWallet) {
+      // Check current wallet state
+      const walletState = walletService.getState();
+      if (walletState.isConnected && walletState.address) {
+        // Disconnect wallet
+        walletService.disconnect().then(() => {
+          console.log('Wallet disconnected');
+          walletError = null;
+          // Reset game mode to Solo if in PvP
+          if (gameMode === 'PvP') {
+            gameMode = 'Solo';
+            cleanupPvP();
+          }
+        }).catch((error) => {
+          console.error('Error disconnecting wallet:', error);
+          walletError = 'Failed to disconnect';
+        });
+      } else {
+        // If email auth is active, wallet button acts as logout.
+        if (authUserId) {
+          authConnecting = true;
+          supabaseService.signOutAuth().finally(() => {
+            authConnecting = false;
+            authUserId = null;
+            authEmail = null;
+            try { localStorage.removeItem('ronin_address'); } catch {}
+          });
+        walletError = null;
+                  } else {
+          // Open picker modal (wallets + email)
+          const available = walletService.getAvailableWallets();
+          const canEmail = supabaseService.isConfigured();
+          if (!available.ronin && !available.metamask && !canEmail) {
+            walletError = 'Install Ronin/MetaMask or configure email login';
+          } else {
+            walletProviderModalOpen = true;
+            walletError = null;
+          }
+        }
+      }
+    }
+    isPressingWallet = false;
+  }
+
+  // Handle contact button click (opens a small modal with links)
+  if (isPressingContact) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const r = getContactButtonRect();
+    const isOverContact = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+    if (isOverContact) {
+      isContactOpen = !isContactOpen;
+      if (isContactOpen) contactOpenError = null;
+      // Close other small modals to avoid overlap
+      if (isContactOpen) {
+        walletProviderModalOpen = false;
+        emailLoginModalOpen = false;
+      }
+    }
+    isPressingContact = false;
+  }
+
+  // Handle SPEED FX +/- (above PEWPEW)
+  if (isPressingSpeedFxMinus || isPressingSpeedFxPlus) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    if (isPressingSpeedFxMinus) {
+      const r = getSpeedFxMinusRect();
+      const over = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+      if (over) speedFxLevelIdx = Math.max(speedFxAutoMinIdx, Math.max(0, speedFxLevelIdx - 1));
+      isPressingSpeedFxMinus = false;
+    }
+    if (isPressingSpeedFxPlus) {
+      const r = getSpeedFxPlusRect();
+      const over = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+      if (over) speedFxLevelIdx = Math.min(SPEED_FX_LEVELS.length - 1, speedFxLevelIdx + 1);
+      isPressingSpeedFxPlus = false;
+    }
+    // Keep it from also toggling PEWPEW on the same mouseup.
+    return;
+  }
+
+  // Handle PewPew button click (opens a small info modal)
+  if (isPressingPewPew) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const r = getPewPewButtonRect();
+    const isOverPewPew = mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h;
+    if (isOverPewPew) {
+      isPewPewOpen = !isPewPewOpen;
+      if (isPewPewOpen) {
+        // Close other small modals to avoid overlap
+        walletProviderModalOpen = false;
+        emailLoginModalOpen = false;
+        isContactOpen = false;
+        isLeaderboardOpen = false;
+        isProfileOpen = false;
+        pewPewCraftStatus = null;
+        pewPewCraftTxHash = null;
+        void refreshRonkeBalance();
+      }
+    }
+    isPressingPewPew = false;
+  }
+  
+  // Handle profile button click (only if wallet is connected)
+  if (isPressingProfile) {
+    // Check if wallet is connected - only allow profile if connected
+    const isWalletConnected = isPersistenceConnected();
+    
+    if (!isWalletConnected) {
+      // Wallet not connected - don't open profile
+      isPressingProfile = false;
+      return;
+    }
+    
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+    if (isOverProfile) {
+      const wasOpen = isProfileOpen;
+      isProfileOpen = !isProfileOpen;
+      
+      // Load NFTs when opening profile
+      if (isProfileOpen && !wasOpen) {
+        const walletState = walletService.getState();
+        if (walletState.address) {
+          loadPlayerNfts(walletState.address);
+        }
+      }
+      
+      // Show/hide nickname input
+      const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (nicknameInput) {
+        if (isProfileOpen) {
+          nicknameInput.style.display = 'none'; // Hide initially, will show when clicking nickname
+        } else {
+          nicknameInput.style.display = 'none';
+          persistNicknameFromUi(nicknameInput.value);
+        }
+      }
+    }
+    isPressingProfile = false;
+  }
+
+  // Handle leaderboard button click
+  if (isPressingLeaderboard) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
+    if (isOverLeaderboard) {
+      const wasOpen = isLeaderboardOpen;
+      isLeaderboardOpen = !isLeaderboardOpen;
+      // close profile if opening leaderboard
+      if (isLeaderboardOpen && isProfileOpen) {
+        isProfileOpen = false;
+        const nicknameInput = document.getElementById('nicknameInput') as HTMLInputElement;
+        if (nicknameInput) nicknameInput.style.display = 'none';
+      }
+      leaderboardPage = 0;
+      if (isLeaderboardOpen && !wasOpen) {
+        void loadLeaderboard(true);
+      }
+    }
+    isPressingLeaderboard = false;
+  }
+  
+  // Reset NFT pagination press states
+  nftPaginationPressLeft = false;
+  nftPaginationPressRight = false;
+  
+  // PvP Online: Handle Ready button click
+  // Removed excessive logging to reduce lag - only log if there's an issue
+  // if (gameMode === 'PvP') {
+  //   console.log('Mouse up in PvP mode:', {
+  //     hasCurrentMatch: !!currentMatch,
+  //     waitingForOpponentReady,
+  //     isReady,
+  //     gameMode,
+  //     currentMatchId: currentMatch?.id
+  //   });
+  // }
+  
+  if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady && !isReady) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    
+    // Calculate button position relative to play area (not full canvas)
+    const playAreaX = 240; // Play area starts at x=240
+    const playAreaWidth = canvas.width - playAreaX;
+    const readyButtonX = playAreaX + playAreaWidth / 2 - 100;
+    const readyButtonY = canvas.height / 2 + 60;
+    const readyButtonWidth = 200;
+    const readyButtonHeight = 50;
+    
+    // Removed excessive console.log to reduce lag - only log errors
+    if (mouseX >= readyButtonX && mouseX <= readyButtonX + readyButtonWidth &&
+        mouseY >= readyButtonY && mouseY <= readyButtonY + readyButtonHeight) {
+      setPlayerReady().catch((error) => {
+        console.error('❌ Error in setPlayerReady():', error);
+      });
+      return; // Don't process other clicks
+    }
+  }
+  
+  // PvP Online: Handle Cancel button click (in Ready screen)
+  if (gameMode === 'PvP' && currentMatch && waitingForOpponentReady) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    
+    // Calculate button position relative to play area (not full canvas)
+    const playAreaX = 240; // Play area starts at x=240
+    const playAreaWidth = canvas.width - playAreaX;
+    const cancelButtonX = playAreaX + playAreaWidth / 2 - 100;
+    const cancelButtonY = canvas.height / 2 + 130;
+    const cancelButtonWidth = 200;
+    const cancelButtonHeight = 40;
+    
+    if (mouseX >= cancelButtonX && mouseX <= cancelButtonX + cancelButtonWidth &&
+        mouseY >= cancelButtonY && mouseY <= cancelButtonY + cancelButtonHeight) {
+      console.log('Cancel button clicked!');
+      // Leave lobby and go back to Solo
+      leaveLobby();
+      gameMode = 'Solo';
+      cleanupPvP();
+      return; // Don't process other clicks
+    }
+  }
+  
+  // PvP Online: Handle Cancel button click (in Lobby screen)
+  if (gameMode === 'PvP' && isInLobby && !currentMatch) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    
+    const cancelButtonX = canvas.width / 2 - 100;
+    const cancelButtonY = canvas.height / 2 + 80;
+    const cancelButtonWidth = 200;
+    const cancelButtonHeight = 40;
+    
+    if (mouseX >= cancelButtonX && mouseX <= cancelButtonX + cancelButtonWidth &&
+        mouseY >= cancelButtonY && mouseY <= cancelButtonY + cancelButtonHeight) {
+      // Leave lobby and go back to Solo
+      leaveLobby();
+      gameMode = 'Solo';
+      cleanupPvP();
+      return; // Don't process other clicks
+    }
+  }
+  
+  // Handle level button click - Solo mode only
+  if (gameMode === 'Solo' && pressedLevel >= 0 && pressedLevel !== currentLevel) {
+    const levelDiff = currentLevel - pressedLevel;
+    const canAccess = pressedLevel <= maxUnlockedLevel && levelDiff <= 2 && levelDiff >= 0;
+    if (canAccess) {
+      // Check if can't stay on same level - must progress first
+      // If going back, must have progressed beyond that level first
+      const wasProgressedBeyond = maxUnlockedLevel > pressedLevel;
+      if (wasProgressedBeyond) {
+        currentLevel = pressedLevel;
+        killsInCurrentLevel = 0; // Reset kills when switching level
+        console.log(`Switched to level ${currentLevel}`);
+      }
+    }
+    pressedLevel = -1;
+  }
+  
+  // Handle training button click
+  if (isPressingGameMode) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    
+    const trainingButtonY = getTrainingButtonY();
+    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 40;
+    
+    if (isOverTraining) {
+      // Toggle Training mode
+      if (gameMode === 'Training') {
+        // Switching from Training to Solo
+        gameMode = 'Solo';
+        cleanupPvP();
+        console.log('Switched to Solo mode');
+      } else {
+        // Switching to Training (PvP with bot)
+        gameMode = 'Training';
+        cleanupPvP(); // Cleanup any existing PvP state
+        initializePvP();
+        console.log('Switched to Training mode');
+      }
+      
+      forceSaveGame(); // Save after mode switch
+    }
+    isPressingGameMode = false;
+  }
+  
+  // Handle PvP Online button click
+  if (isPressingPvPOnline) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    
+    const trainingButtonY = getTrainingButtonY();
+    const pvpOnlineButtonY = trainingButtonY + 50;
+    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
+    
+    if (isOverPvPOnline) {
+      if (gameMode === 'PvP') {
+        // Leaving PvP (realtime)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
+        leaveLobby().catch((error) => {
+          console.error('Failed to leave lobby:', error);
+        });
+        gameMode = 'Solo';
+        cleanupPvP();
+        console.log('Left PvP Online, switched to Solo mode');
+      } else {
+        // Start realtime PvP (guests allowed)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
+        openServerBrowser();
+      }
+    }
+    isPressingPvPOnline = false;
+  }
+
+  // Handle PvP FUN button click
+  if (isPressingPvpFun) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    const trainingButtonY = getTrainingButtonY();
+    const pvpOnlineButtonY = trainingButtonY + 50;
+    const pvpFunButtonY = pvpOnlineButtonY + 50;
+    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 40;
+    if (isOverPvpFun) {
+      if (gameMode === 'PvP' && pvpOnlineRoomName === 'pvp_fun_room') {
+        // Leaving FUN PvP
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
+        leaveLobby().catch((error) => console.error('Failed to leave lobby:', error));
+        gameMode = 'Solo';
+        cleanupPvP();
+      } else {
+        // Start FUN PvP (no stakes)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_fun_room';
+        openServerBrowser();
+      }
+    }
+    isPressingPvpFun = false;
+  }
+  
+  // 5SEC PvP button press state and handle click
+  if (isPressingNewButton) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+
+    const trainingButtonY = getTrainingButtonY();
+    const pvpOnlineButtonY = trainingButtonY + 50;
+    const pvpFunButtonY = pvpOnlineButtonY + 50;
+    const newButtonY = pvpFunButtonY + 50;
+    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+
+    if (isOverNewButton) {
+      if (gameMode === 'PvP') {
+        // Leaving PvP (5sec/turn-based)
+        TURN_BASED_PVP_ENABLED = false;
+        pvpOnlineRoomName = 'pvp_room';
+        leaveLobby().catch((error) => {
+          console.error('Failed to leave lobby:', error);
+        });
+        gameMode = 'Solo';
+        cleanupPvP();
+        console.log('Left 5SEC PvP, switched to Solo mode');
+      } else {
+        const walletState = walletService.getState();
+        if (!walletState.isConnected || !walletState.address) {
+          walletError = 'Connect Wallet to play 5SEC PvP';
+          console.log('Cannot open 5SEC PvP server list: Wallet not connected');
+        } else {
+          // Start 5SEC PvP (LIVE) - replay/turn loop removed; this is realtime gameplay in a separate matchmaking pool.
+          TURN_BASED_PVP_ENABLED = false;
+          pvpOnlineRoomName = 'pvp_5sec_room';
+          // Local dev: allow direct localhost connect
+          const isLocalHost =
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1';
+          if (isLocalHost) {
+            startPvPMatchOnServer('ws://localhost:2567');
+          } else {
+            openServerBrowser();
+          }
+        }
+      }
+    }
+    isPressingNewButton = false;
+  }
+
+  // Reset mouse hold tracking when mouse is released
+  // (slow-motion is now auto-activated in gameLoop when hold reaches 1 second)
+  if (e.button === 0 && mouseHoldStartTime > 0) {
+    // Only reset if slow-motion hasn't been activated yet
+    // If slow-motion is active, keep tracking until it finishes
+    if (!slowMotionActive) {
+      mouseHoldStartTime = 0; // Reset only if slow-motion wasn't triggered
+    }
+  }
+  
+  // If upgrade animation is running and mouse is released before completion, fail the upgrade
+  if (upgradeAnimation && upgradeProgress < upgradeFailAt) {
+    upgradeAnimation = false;
+    upgradeProgress = 0;
+    upgradeParticles = [];
+    
+    // Refund the cost
+    dotCurrency += upgradeCost;
+    
+    upgradeMessage = 'FAILED!';
+    upgradeSuccess = false;
+    upgradeMessageX = 20;
+    if (upgradeType === 'accuracy') upgradeMessageY = 213;
+    upgradeMessageTimer = 2000;
+    
+    // Profile: Track upgrade failure (mouse released early)
+    profileManager.addUpgradeFailure();
+    
+    console.log('Upgrade failed - mouse released!');
+  }
+  
+  // Only process drawing if right mouse button was released
+  if (e.button === 2) {
+    // Finish drawing if active
+    if (isDrawing) {
+      // Only create line if has enough points (at least 2 for a segment)
+      if (currentDrawPoints.length >= 2) {
+        const newLine = {
+          points: [...currentDrawPoints], // Copy the points array
+          life: 240, // 4 seconds at 60 FPS
+          maxLife: 240,
+          hits: 0, // Start with 0 hits
+          maxHits: 2, // Line can take 2 hits before disappearing
+          ownerId: undefined // My line (undefined = my line)
+        };
+        drawnLines.push(newLine);
+        
+        // Send line to opponent via network sync (PvP mode only)
+        if (gameMode === 'PvP' && currentMatch) {
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          
+          if (isSyncing) {
+            const lineInput = {
+              type: 'line' as const,
+              timestamp: Date.now(),
+              points: newLine.points
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(lineInput);
+            } else {
+              pvpSyncService.sendInput(lineInput);
+            }
+          }
+        }
+        
+        // Start cooldown timer when drawing ends
+        lastDrawEndTime = Date.now();
+      }
+      
+      isDrawing = false;
+      currentDrawPoints = [];
+    }
+  }
+  });
+} else {
+  console.warn('⚠️ Mouseup listener already added - skipping duplicate (HMR protection)');
+}
+
+// Slot bell open: capture clicks even if a DOM overlay is on top of the canvas.
+// This fixes "bell doesn't open slots" when the click is intercepted by chat DOM elements.
+if (!(window as any).__slotBellCaptureMouseUpAdded) {
+  (window as any).__slotBellCaptureMouseUpAdded = true;
+  window.addEventListener('mouseup', (e: MouseEvent) => {
+    try {
+      // Only left button
+      if (typeof e.button === 'number' && e.button !== 0) return;
+      if (gameMode !== 'Solo') return;
+      const pos = getCanvasMousePos(e);
+      // Ignore if outside canvas bounds
+      if (pos.x < 0 || pos.y < 0 || pos.x > canvas.width || pos.y > canvas.height) return;
+      const r = getSlotBellRect();
+      const overBell = pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h;
+      if (!overBell) return;
+
+      const isWallet = (() => {
+        try {
+          const st = walletService.getState();
+          return !!(st?.isConnected && st.address);
+        } catch {
+          return false;
+        }
+      })();
+
+      const claimed = isWallet ? soloStarterClaimed : guestStarterClaimedThisSession;
+      if (!claimed) {
+        // Claim starter bundle:
+        // - everyone: +5 spins
+        // - wallet: +2 spins bonus, and +200 Rice
+        const spinsToGrant = STARTER_CLAIM_SPINS_BASE + (isWallet ? STARTER_CLAIM_WALLET_BONUS_SPINS : 0);
+        const spinsBefore = soloSpins | 0;
+        soloSpins = Math.min(SOLO_SPINS_CAP, spinsBefore + spinsToGrant);
+        if (isWallet) {
+          dotCurrency = Math.max(dotCurrency | 0, STARTER_CLAIM_WALLET_RICE);
+          soloStarterClaimed = true;
+          try { forceSaveGame(); } catch {}
+        } else {
+          guestStarterClaimedThisSession = true;
+        }
+        // small glow feedback on the button
+        slotSpinGlowUntil = Date.now() + 2200;
+        slotBellNewSpins = 0;
+        // Show slots right away after claiming so it's obvious what to do next.
+        slotModalOpen = true;
+        slotLastPayoutText = null;
+        (window as any).__slotModalRegion = null;
+        slotIgnoreClicksUntilTs = Date.now() + 250;
+        return;
+      }
+
+      // After claiming (or if already claimed), open the slot machine UI.
+      slotModalOpen = true;
+      slotLastPayoutText = null;
+      slotBellNewSpins = 0;
+      slotSpinGlowUntil = 0;
+      (window as any).__slotModalRegion = null;
+      slotIgnoreClicksUntilTs = Date.now() + 250;
+    } catch {}
+  }, true);
+}
+
+// Prevent context menu on right click (for drawing)
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__contextmenuListenerAdded) {
+  (window as any).__contextmenuListenerAdded = true;
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+  });
+} else {
+  console.warn('⚠️ Contextmenu listener already added - skipping duplicate (HMR protection)');
+}
+
+// Keyboard handler for arrow activation (key "1")
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__keydownListenerAdded) {
+  (window as any).__keydownListenerAdded = true;
+  window.addEventListener('keydown', (e) => {
+  // Global escape hatch:
+  // - closes server selector
+  // - exits "FAILED TO ENTER LOBBY" state back to Solo
+  if (e.key === 'Escape') {
+    if (isServerBrowserOpen) {
+      closeServerBrowser();
+      return;
+    }
+    if (gameMode === 'PvP' && !isInLobby && !currentMatch && (!myPlayerId || !pvpPlayers[myPlayerId])) {
+      // Exit back to Solo cleanly
+      try { leaveLobby().catch(() => {}); } catch {}
+      gameMode = 'Solo';
+      cleanupPvP();
+      walletError = null;
+      return;
+    }
+  }
+  // Copy replay link (when match result modal is open)
+  if ((e.key === 'r' || e.key === 'R') && gameMode === 'PvP' && showingMatchResult && lastReplayId) {
+    try {
+      const text = lastReplayViewerLink || lastReplayLink || lastReplayId;
+      (navigator as any)?.clipboard?.writeText?.(text).catch(() => {});
+      console.log('[REPLAY] copied:', text);
+    } catch {}
+  }
+  // Open replay viewer (when match result modal is open)
+  if ((e.key === 'v' || e.key === 'V') && gameMode === 'PvP' && showingMatchResult && lastReplayViewerLink) {
+    try {
+      window.open(lastReplayViewerLink, '_blank', 'noopener');
+    } catch {}
+  }
+  // Turn-based PvP: ignore realtime gameplay hotkeys during execute replay.
+  if (isTurnBasedPvPDesired()) {
+    return;
+  }
+
+  // Solo: weapon hotkeys disabled (we'll revisit later)
+  
+  // PvP/Training mode: Arrow activation
+  if (e.key === '1' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't use arrow
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't activate arrow
+    }
+    const currentTime = Date.now();
+    const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
+    
+    // Check if cooldown has passed
+    if (timeSinceLastShot >= pvpArrowCooldown) {
+      // Toggle arrow ready state (only if cooldown passed)
+      pvpArrowReady = !pvpArrowReady;
+      if (pvpArrowReady) {
+        console.log('PvP Arrow ready - press left click to fire!');
+      } else {
+        console.log('PvP Arrow cancelled');
+      }
+    } else {
+      // Cooldown still active
+      const remainingTime = Math.ceil((pvpArrowCooldown - timeSinceLastShot) / 1000);
+      console.log(`PvP Arrow on cooldown: ${remainingTime}s remaining`);
+    }
+  }
+  
+  // PvP/Training mode: Toggle heavy projectile aiming (key "2")
+  if (e.key === '2' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return;
+    }
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return;
+    }
+    if (projectileFlying) {
+      console.log('Projectile already in flight');
+      return;
+    }
+    const now = Date.now();
+    const timeSinceLastProjectileShot = now - projectileLastShotTime;
+    if (timeSinceLastProjectileShot < projectileCooldown) {
+      const remaining = Math.ceil((projectileCooldown - timeSinceLastProjectileShot) / 1000);
+      console.log(`Projectile on cooldown: ${remaining}s remaining`);
+      projectileAiming = false;
+      return;
+    }
+    projectileAiming = !projectileAiming;
+    if (projectileAiming) {
+      console.log('Heavy shot armed - left click to fire!');
+    } else {
+      console.log('Heavy shot cancelled');
+    }
+  }
+
+  // Solo: weapon hotkeys disabled (we'll revisit later)
+  
+  // PvP/Training mode: Dash / Blink (Space) - instant burst movement towards cursor.
+  if (e.key === ' ' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // 5SEC PvP: during EXECUTE replay, inputs must be frozen (dash would desync replay).
+    if (isTurnBasedPvPDesired()) {
+      return;
+    }
+
+    // Ensure we never leave jetpack sound running (Space no longer toggles jetpack in PvP)
+    if (myPlayer.isUsingJetpack) {
+      myPlayer.isUsingJetpack = false;
+      try { audioManager.stopJetpackSound(); } catch {}
+    }
+
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
+    // In PvP we require a match connection to broadcast to opponent.
+    if (gameMode === 'PvP' && (!currentMatch || !isSyncing)) return;
+
+    const send =
+      (gameMode === 'PvP' && isSyncing)
+        ? (useColyseus ? (input: any) => colyseusService.sendInput(input) : (input: any) => pvpSyncService.sendInput(input))
+        : (_input: any) => {};
+
+    tryDashPlayer(myPlayerId, myPlayer, globalMouseX, globalMouseY, send);
+  }
+  
+  // PvP/Training mode: Fire bullet (key "3") - Burst fire: 2 shots with 0.2s delay, then cooldown
+  if (e.key === '3' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    const now = Date.now();
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't fire bullet
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > now) {
+      return; // Paralyzed - can't fire bullet
+    }
+
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, now)) {
+      applyPvpActionPenalty(myPlayerId, now);
+      return;
+    }
+
+    // Disable old burst-fire behavior: enforce 1 bullet action per second.
+    shotsInBurst = 0;
+    
+    // Check if we can fire (burst system: 2 shots with 0.2s delay, then cooldown)
+    if (shotsInBurst === 0) {
+      // First shot in burst - check cooldown from last burst
+      const timeSinceLastBurst = now - bulletLastShotTime;
+      if (timeSinceLastBurst < bulletCooldown) {
+        return; // Still on cooldown from last burst
+      }
+    } else if (shotsInBurst === 1) {
+      // Second shot in burst - check delay between shots (0.2s)
+      const timeSinceLastShot = now - lastBurstShotTime;
+      if (timeSinceLastShot < bulletBurstDelay) {
+        return; // Too soon, wait for 0.2s delay
+      }
+    } else {
+      // Already fired 2 shots, need to wait for cooldown
+      return;
+    }
+    
+    // Calculate direction to mouse position
+    const dx = globalMouseX - myPlayer.x;
+    const dy = globalMouseY - myPlayer.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 0) {
+      // Normalize direction
+      const dirX = dx / distance;
+      const dirY = dy / distance;
+      
+      // Create new bullet
+      const newBullet: Bullet = {
+        x: myPlayer.x,
+        y: myPlayer.y,
+        vx: dirX * bulletSpeed,
+        vy: dirY * bulletSpeed,
+        spawnTime: now,
+      };
+      
+      // Add bullet to array
+      bullets.push(newBullet);
+      // 5SEC PVP shadow recording: record this projectile spawn (hidden until EXECUTE)
+      if (is5SecPvPMode() && turnPhase === 'planning') {
+        recordTurnSpawn('bullet', newBullet.x, newBullet.y, newBullet.vx, newBullet.vy);
+      }
+      
+      // Update burst tracking
+      shotsInBurst = 0;
+      lastBurstShotTime = now;
+        bulletLastShotTime = now;
+      commitPvpAction(myPlayerId, now);
+      
+      // Play bullet shot sound effect (like gunshot from barrel)
+      audioManager.resumeContext().then(() => {
+        audioManager.playBulletShot();
+      });
+      
+      // Send to opponent via network sync
+      const useColyseus = colyseusService.isConnectedToRoom();
+      const isSyncing = useColyseus || pvpSyncService.isSyncing();
+      if (currentMatch && isSyncing) {
+        const bulletInput = {
+          type: 'bullet' as const,
+          timestamp: now,
+          x: myPlayer.x,
+          y: myPlayer.y,
+          vx: newBullet.vx,
+          vy: newBullet.vy,
+        };
+        if (useColyseus) {
+          colyseusService.sendInput(bulletInput);
+        } else {
+          pvpSyncService.sendInput(bulletInput);
+        }
+      }
+      
+      console.log(`Bullet fired! (${shotsInBurst === 0 ? '2nd' : '1st'} in burst)`, { x: newBullet.x, y: newBullet.y, vx: newBullet.vx, vy: newBullet.vy });
+    }
+  }
+
+  // Solo: weapon hotkeys disabled (we'll revisit later)
+  
+  // PvP/Training mode: Place mine/trap (key "4")
+  if (e.key === '4' && (gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const myPlayer = pvpPlayers[myPlayerId];
+    const now = Date.now();
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't place mine
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > now) {
+      return; // Paralyzed - can't place mine
+    }
+
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, now)) {
+      applyPvpActionPenalty(myPlayerId, now);
+      return;
+    }
+    
+    // Check cooldown
+    const timeSinceLastPlace = now - mineLastPlaceTime;
+    if (timeSinceLastPlace < mineCooldown) {
+      return; // Still on cooldown
+    }
+    
+    // Place mine at player position
+    const newMine: Mine = {
+      x: myPlayer.x,
+      y: myPlayer.y,
+      spawnTime: now,
+      exploded: false,
+    };
+    
+    mines.push(newMine);
+    mineLastPlaceTime = now;
+    commitPvpAction(myPlayerId, now);
+    
+    // Play mine placement sound effect
+    audioManager.resumeContext().then(() => {
+      audioManager.playMinePlacement();
+    });
+    
+    console.log('Mine placed!', { x: newMine.x, y: newMine.y });
+    
+    // Send to opponent via network sync
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
+    if (currentMatch && isSyncing) {
+      const mineInput = {
+        type: 'mine' as const,
+        timestamp: now,
+        x: myPlayer.x,
+        y: myPlayer.y,
+      };
+      if (useColyseus) {
+        colyseusService.sendInput(mineInput);
+      } else {
+        pvpSyncService.sendInput(mineInput);
+      }
+    }
+  }
+  });
+} else {
+  console.warn('⚠️ Keydown listener already added - skipping duplicate (HMR protection)');
+}
+
+// Keyboard handler for projectile firing (key "2" release)
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__keyupListenerAdded) {
+  (window as any).__keyupListenerAdded = true;
+  window.addEventListener('keyup', (e) => {
+  // PvP/Training: Space is dash on keydown; nothing to do on keyup.
+  // (Keep this block intentionally empty for Space to avoid HMR duplication changes.)
+  
+  });
+} else {
+  console.warn('⚠️ Keyup listener already added - skipping duplicate (HMR protection)');
+}
+
+// Katana slash handler moved to click handler below
+
+// Click handler
+// CRITICAL: Prevent duplicate event listeners (HMR protection)
+if (!(window as any).__clickListenerAdded) {
+  (window as any).__clickListenerAdded = true;
+  canvas.addEventListener('click', (e) => {
+  const pos = getCanvasMousePos(e);
+  const mouseX = pos.x;
+  const mouseY = pos.y;
+
+  // (5SEC PvP micro-turn: no special click UI; replay-only gating happens elsewhere)
+
+  // Slot modal clicks (close / spin)
+  if (slotModalOpen && e.button === 0) {
+    // If the modal was just opened by the bell, ignore this same click gesture.
+    if (slotIgnoreClicksUntilTs && Date.now() < slotIgnoreClicksUntilTs) {
+      return;
+    }
+    const r = (window as any).__slotModalRegion as any;
+    if (r && typeof r.x === 'number') {
+      const inClose =
+        mouseX >= r.closeX && mouseX <= r.closeX + r.closeW &&
+        mouseY >= r.closeY && mouseY <= r.closeY + r.closeH;
+      if (inClose) {
+        slotModalOpen = false;
+        slotIsSpinning = false;
+        return;
+      }
+      const inSpin =
+        mouseX >= r.spinX && mouseX <= r.spinX + r.spinW &&
+        mouseY >= r.spinY && mouseY <= r.spinY + r.spinH;
+      if (inSpin) {
+        const wantBoost = !!r.boostEnabled;
+        const cost = wantBoost ? 10 : 1;
+        if (!slotIsSpinning && soloSpins >= cost) {
+          startSlotSpin(wantBoost ? 'boost2x' : 'normal', Date.now());
+        } else {
+          try { audioManager.playUpgradeFail(); } catch {}
+        }
+        return;
+      }
+      const inBoost =
+        mouseX >= r.boostX && mouseX <= r.boostX + r.boostW &&
+        mouseY >= r.boostY && mouseY <= r.boostY + r.boostH;
+      if (inBoost) {
+        // Toggle 2X mode (doesn't spin immediately).
+        if (!slotIsSpinning) {
+          slotBoost2xEnabled = !slotBoost2xEnabled;
+          // If not enough spins for boost, keep it enabled but user can't spin until they have 10.
+          try { audioManager.playUpgradeSuccess(); } catch {}
+        } else {
+          try { audioManager.playUpgradeFail(); } catch {}
+        }
+        return;
+      }
+      // Click outside modal closes it
+      const inside =
+        mouseX >= r.x && mouseX <= r.x + r.w &&
+        mouseY >= r.y && mouseY <= r.y + r.h;
+      if (!inside) {
+        slotModalOpen = false;
+        slotIsSpinning = false;
+        return;
+      }
+    }
+  }
+
+  // Solo: Solar map zoom buttons (must be handled before DOT charging / click-to-hit)
+  if (gameMode === 'Solo' && e.button === 0) {
+    try {
+      const speedY = 22;
+      const mapY = speedY + 110;
+      const left = playLeft + 70;
+      const right = playRight - 70;
+      const lineW = Math.max(220, right - left);
+      const plateX = left - 24;
+      const plateW = lineW + 48;
+      const btnSize = 22; // keep current size
+      const btnGap = 6;
+      const btnY = mapY + 8;
+      const zoomXOffset = -70; // requested: move zoom UI left to avoid Neptune label overlap
+      const uiRightX = plateX + plateW - 10 + zoomXOffset;
+      // Requested spacing: zoom buttons (-/+) left by 30px, arrows (◀/▶) right by 20px.
+      // Also requested: arrows should be stuck together (no gap).
+      const zoomOffsetX = -30;
+      const arrowsOffsetX = +20;
+      const btnRightX = uiRightX - btnSize + arrowsOffsetX;
+      const btnLeftX = btnRightX - btnSize; // touch ▶ (no gap)
+      const btnPlusX = (btnLeftX - btnGap - btnSize) + zoomOffsetX;
+      const btnMinusX = (btnPlusX - btnGap - btnSize);
+
+      const hitMinus =
+        mouseX >= btnMinusX && mouseX <= btnMinusX + btnSize &&
+        mouseY >= btnY && mouseY <= btnY + btnSize;
+      const hitPlus =
+        mouseX >= btnPlusX && mouseX <= btnPlusX + btnSize &&
+        mouseY >= btnY && mouseY <= btnY + btnSize;
+      const hitLeft =
+        mouseX >= btnLeftX && mouseX <= btnLeftX + btnSize &&
+        mouseY >= btnY && mouseY <= btnY + btnSize;
+      const hitRight =
+        mouseX >= btnRightX && mouseX <= btnRightX + btnSize &&
+        mouseY >= btnY && mouseY <= btnY + btnSize;
+
+      if (hitMinus || hitPlus) {
+        const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        if (hitPlus && z < SOLAR_MAP_ZOOM_MAX - 1e-6) {
+          solarMapZoom = clamp(z * SOLAR_MAP_ZOOM_FACTOR, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        } else if (hitMinus && z > SOLAR_MAP_ZOOM_MIN + 1e-6) {
+          solarMapZoom = clamp(z / SOLAR_MAP_ZOOM_FACTOR, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        } else {
+          // If at limit, treat as denied (tiny feedback)
+          screenShake = Math.max(screenShake, 2);
+          try { audioManager.playUpgradeFail(); } catch {}
+        }
+        return;
+      }
+
+      // Pan buttons (only when zoom > 1x)
+      {
+        const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+        if ((hitLeft || hitRight) && z > 1.01) {
+          const baseHalfSpanAu = 2.8;
+          const halfSpanAu = Math.max(0.01, baseHalfSpanAu / Math.max(1, z));
+          const stepAu = halfSpanAu * 0.6;
+          solarMapPanAu += hitRight ? stepAu : -stepAu;
+          return;
+        }
+      }
+
+      // Drag-to-pan on the map plate (only when zoom > 1x)
+      const z = clamp(solarMapZoom, SOLAR_MAP_ZOOM_MIN, SOLAR_MAP_ZOOM_MAX);
+      if (z > 1.01) {
+        const platePadY = 23;
+        const plateH = 42 + platePadY * 2;
+        const plateY = mapY - 22 - platePadY;
+        const insidePlate =
+          mouseX >= plateX && mouseX <= plateX + plateW &&
+          mouseY >= plateY && mouseY <= plateY + plateH;
+        if (insidePlate) {
+          solarMapIsDragging = true;
+          solarMapDragStartX = mouseX;
+          solarMapDragStartPanAu = solarMapPanAu;
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  // Handle match result modal clicks
+  if (gameMode === 'PvP' && showingMatchResult && matchResult) {
+    const modalX = canvas.width / 2 - 250;
+    const modalY = canvas.height / 2 - 200;
+    const modalWidth = 500;
+    const modalHeight = 400;
+    
+    // Close button (X) - top right
+    const closeButtonX = modalX + modalWidth - 40;
+    const closeButtonY = modalY + 10;
+    const closeButtonSize = 30;
+    
+    if (mouseX >= closeButtonX && mouseX <= closeButtonX + closeButtonSize &&
+        mouseY >= closeButtonY && mouseY <= closeButtonY + closeButtonSize) {
+      // Safety: never leave an in-progress online match from this UI.
+      // (match_end is server-authoritative; leaving early can forfeit payout)
+      if (colyseusService.isConnectedToRoom() && !pvpMatchEndedByServer) {
+        return;
+      }
+      // Close result modal
+      showingMatchResult = false;
+      matchResult = null;
+      matchResultEloChange = 0;
+      opponentNicknameForResult = null; // Reset opponent nickname
+      opponentAddressForResult = null; // Reset opponent address
+      savedCurrentMatch = null; // Reset saved match
+      opponentWalletAddress = null; // Reset opponent wallet address
+      isOpponentProfileOpen = false; // Close opponent profile if open
+      opponentProfileData = null; // Clear opponent profile data
+      // Return to lobby
+      leaveLobby();
+      gameMode = 'Solo';
+      cleanupPvP();
+      return;
+    }
+    
+    // Back to Lobby button
+    const backButtonX = canvas.width / 2 - 100;
+    const backButtonY = modalY + 320;
+    const backButtonWidth = 200;
+    const backButtonHeight = 40;
+    
+    if (mouseX >= backButtonX && mouseX <= backButtonX + backButtonWidth &&
+        mouseY >= backButtonY && mouseY <= backButtonY + backButtonHeight) {
+      // Safety: never leave an in-progress online match from this UI.
+      if (colyseusService.isConnectedToRoom() && !pvpMatchEndedByServer) {
+        return;
+      }
+      // Close result modal and return to lobby
+      showingMatchResult = false;
+      matchResult = null;
+      matchResultEloChange = 0;
+      opponentNicknameForResult = null; // Reset opponent nickname
+      opponentAddressForResult = null; // Reset opponent address
+      savedCurrentMatch = null; // Reset saved match
+      opponentWalletAddress = null; // Reset opponent wallet address
+      isOpponentProfileOpen = false; // Close opponent profile if open
+      opponentProfileData = null; // Clear opponent profile data
+      leaveLobby();
+      gameMode = 'Solo';
+      cleanupPvP();
+      return;
+    }
+  }
+
+  const isOnUI = mouseX <= 240; // Left panel
+
+  // Solo mode: Charge -1 per click (except UI buttons and right-click for drawing)
+  if (gameMode === 'Solo' && e.button === 0) {
+    // Only charge if have DOT to spend
+    if (dotCurrency > 0) {
+      dotCurrency -= 1;
+    }
+    
+    // Create click smudge at click position (unless on UI panel)
+    if (!isOnUI && gameState === 'Alive') {
+      clickSmudges.push({
+        x: mouseX,
+        y: mouseY,
+        life: 300, // 5 seconds at 60 FPS (300 frames)
+        maxLife: 300
+      });
+    }
+  }
+
+  // Solo: weapon clicks disabled (we'll revisit later)
+
+  // Solo: weapon clicks disabled (we'll revisit later)
+
+  // Solo mode: Check DOT click
+  if (gameMode === 'Solo') {
+    const ufoPos = getSoloUfoVisualPos();
+    const dx = mouseX - ufoPos.x;
+    const dy = mouseY - ufoPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance <= dotRadius && gameState === 'Alive') {
+    const now = Date.now();
+    // Anti-spam (match PvP): if you try to act while the ring is not ready, do NOTHING
+    // and restart/extend cooldown to a 2s penalty.
+    if (!canPerformSoloBoostAction(now)) {
+      applySoloBoostActionPenalty(now);
+      return;
+    }
+    // Check if have enough DOT to attempt hit (need at least dmg amount)
+    if (dotCurrency >= dmg) {
+      // Consume Solo "boost action" cooldown on attempt (even if miss) to prevent spam.
+      commitSoloBoostAction(now);
+      // Additional cost for actual damage attempt (already deducted -1 above)
+      // But we need at least dmg amount total, so subtract (dmg - 1) more
+      const additionalCost = dmg - 1;
+      dotCurrency -= additionalCost;
+      
+      // Check for accuracy hit
+      const isHit = Math.random() < accuracy / 100;
+      
+      if (isHit) {
+        // Katana damage multiplier (if active and in slash zone, handled in gameLoop)
+        const katanaDamageMultiplier = 1; // Normal click damage
+        
+        // Check for crit hit (only if we hit) - with NFT bonuses
+        const nftBonuses = calculateNftBonuses();
+        const totalCritChance = critChance + nftBonuses.critChance;
+        let isCritHit = Math.random() < totalCritChance / 100;
+        // Apply force-crit if available and not expired
+        if (nextHitForceCrit && Date.now() <= nextHitForceCritExpiresAt) {
+          isCritHit = true;
+          nextHitForceCrit = false;
+        } else if (Date.now() > nextHitForceCritExpiresAt) {
+          nextHitForceCrit = false;
+        }
+        // Calculate base damage with katana multiplier and crit (with NFT bonuses)
+        const totalDmg = dmg + nftBonuses.dmg;
+        const baseDamage = totalDmg * katanaDamageMultiplier;
+        const damageWithCrit = isCritHit ? baseDamage * 2 : baseDamage;
+        // Apply 50% variance (damage ranges from 50% to 100%)
+        let totalDamage = applyDamageVariance(damageWithCrit);
+        
+        // Successful hit: instead of pushing in click direction, do a short "forward boost" (side-view).
+        // This is a visual-only lunge to the right, then smooth return (feels like brief speed-up).
+        triggerSoloClickBoost();
+
+        // Play hit/click sound on successful click (requested).
+        audioManager.resumeContext().then(() => {
+          audioManager.playDotHit();
+        });
+        
+        // Update last hit time and unlock gravity (but don't activate gravity on self-click)
+        lastHitTime = Date.now();
+        gravityLocked = false; // enable gravity after the very first successful hit
+        // Note: Gravity is NOT activated on self-click - only on damage from opponent
+
+        // NEW PROGRESSION: Successful hit no longer hurts you.
+        // Instead, your persistent flight speed (km/s) increases by the damage amount.
+        // Combo 100% becomes a bonus speed burst (instead of self-damage).
+        if (comboProgress >= 100 && !comboActive) {
+          const bonus = Math.max(1, Math.round(dmg * 4));
+          soloSpeedKmps = Math.max(1, soloSpeedKmps + bonus);
+          safePushDamageNumber({
+            x: dotX + (Math.random() - 0.5) * 40,
+            y: dotY - 28,
+            value: `+${bonus} KM/S`,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: true
+          });
+          screenShake = Math.max(screenShake, 14);
+          comboProgress = 0;
+          comboActive = false;
+          comboMultiplier = 1;
+        }
+
+        const inc = Math.max(1, Math.round(totalDamage));
+        soloSpeedKmps = Math.max(1, soloSpeedKmps + inc);
+        safePushDamageNumber({
+          x: dotX + (Math.random() - 0.5) * 40,
+          y: dotY - 20,
+          value: `+${inc} KM/S`,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+        // Small flash feedback
+        balanceFlashUntil = Math.max(balanceFlashUntil, Date.now() + 250);
+        forceSaveGame();
+
+        console.log(`${isCritHit ? 'CRIT HIT!' : 'Hit!'} +${inc} KM/S (speed=${soloSpeedKmps.toFixed(2)})`);
+      } else {
+        // Miss - show MISS text (falls down) but don't move DOT
+        safePushDamageNumber({
+          x: dotX + (Math.random() - 0.5) * 40,
+          y: dotY + 20, // Start below DOT
+          value: 'MISS',
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: 0.5 + Math.random() * 0.5, // Falls down slowly
+          isCrit: false,
+          isMiss: true // Mark as miss
+        });
+        
+        // Create click smudge on miss (no safePush helper for clickSmudges - they have natural limit via life)
+        clickSmudges.push({
+          x: dotX,
+          y: dotY,
+          life: 300, // 5 seconds at 60 FPS (300 frames)
+          maxLife: 300
+        });
+        
+        console.log('MISS!');
+        // DOT doesn't move on miss
+      }
+    } else {
+      console.log(`Not enough Rice! Need ${dmg}, have ${dotCurrency}`);
+    }
+    } // End if (distance <= dotRadius)
+  } // End Solo mode check for DOT click
+
+  // PvP/Training mode: Handle arrow throw - click to launch arrow (only if ready and cooldown passed)
+  if ((gameMode === 'PvP' || gameMode === 'Training') && pvpArrowReady && mouseX > 240 && myPlayerId && pvpPlayers[myPlayerId] && !pvpKatanaFlying && e.button === 0) {
+    if (isTurnBasedPvPDesired()) {
+      return;
+    }
+    const myPlayer = pvpPlayers[myPlayerId];
+    
+    // Block input if player is dead
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      return; // Dead - can't fire arrow
+    }
+    
+    // Check if paralyzed
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return; // Paralyzed - can't fire arrow
+    }
+    const currentTime = Date.now();
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, currentTime)) {
+      applyPvpActionPenalty(myPlayerId, currentTime);
+      return;
+    }
+    const timeSinceLastShot = currentTime - pvpArrowLastShotTime;
+    
+    // Check if cooldown has passed
+    if (timeSinceLastShot >= pvpArrowCooldown) {
+      // Start charge: arrow fires after a short delay (reduces “instant spam” feel, gives more sync time).
+      if (!pvpArrowCharging) {
+        pvpArrowCharging = true;
+        pvpArrowChargeFireAt = currentTime + PVP_ARROW_CHARGE_MS;
+        pvpArrowChargeAimX = mouseX;
+        pvpArrowChargeAimY = mouseY;
+        pvpArrowReady = false; // consume ready state immediately
+        // Global 1-action-per-second limit: lock the action at charge start.
+        commitPvpAction(myPlayerId, currentTime);
+      }
+      return;
+    } else {
+      // Cooldown still active - cancel arrow ready state
+      pvpArrowReady = false;
+      const remainingTime = Math.ceil((pvpArrowCooldown - timeSinceLastShot) / 1000);
+      console.log(`PvP Arrow on cooldown: ${remainingTime}s remaining`);
+    }
+  }
+
+  // PvP/Training mode: fire heavy projectile when aiming
+  if ((gameMode === 'PvP' || gameMode === 'Training') && projectileAiming && mouseX > 240 && myPlayerId && pvpPlayers[myPlayerId] && !projectileFlying && e.button === 0) {
+    if (isTurnBasedPvPDesired()) {
+      projectileAiming = false;
+      return;
+    }
+    const myPlayer = pvpPlayers[myPlayerId];
+    if (myPlayer.isOut || myPlayer.hp <= 0 || deathAnimations.has(myPlayerId)) {
+      projectileAiming = false;
+      return;
+    }
+    if (myPlayer.paralyzedUntil > Date.now()) {
+      return;
+    }
+    const now = Date.now();
+    // Global action limit (1 action per second)
+    if (!canPerformPvpAction(myPlayerId, now)) {
+      applyPvpActionPenalty(myPlayerId, now);
+      projectileAiming = false;
+      return;
+    }
+    const timeSinceLastShot = now - projectileLastShotTime;
+    if (timeSinceLastShot < projectileCooldown) {
+      projectileAiming = false;
+      const remaining = Math.ceil((projectileCooldown - timeSinceLastShot) / 1000);
+      console.log(`Projectile on cooldown: ${remaining}s remaining`);
+      return;
+    }
+
+    const dx = mouseX - myPlayer.x;
+    const dy = mouseY - myPlayer.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance <= 0) {
+      return;
+    }
+
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    const spawnOffset = 18;
+
+    projectileFlying = true;
+    projectileAiming = false;
+    projectileLastShotTime = now;
+    projectileSpawnTime = now;
+    projectileLastUpdateAt = now;
+    projectileBounceCount = 0;
+    projectileX = myPlayer.x + dirX * spawnOffset;
+    projectileY = myPlayer.y + dirY * spawnOffset;
+    projectileVx = dirX * projectileLaunchSpeed;
+    projectileVy = dirY * projectileLaunchSpeed;
+
+    // 5SEC PVP shadow recording: record heavy projectile spawn at launch
+    if (is5SecPvPMode() && turnPhase === 'planning') {
+      recordTurnSpawn('projectile', projectileX, projectileY, projectileVx, projectileVy);
+    }
+
+    // Heavy shell no longer pushes the player back (removed recoil)
+
+    for (let i = 0; i < 4; i++) {
+      const angle = (Math.PI * 2 * i) / 8 + Math.atan2(dirY, dirX) + Math.PI;
+      const particleSpeed = 2 + Math.random() * 3;
+      safePushClickParticle({
+        x: myPlayer.x,
+        y: myPlayer.y,
+        vx: Math.cos(angle) * particleSpeed,
+        vy: Math.sin(angle) * particleSpeed,
+        life: 28,
+        maxLife: 28,
+        size: 3 + Math.random() * 2
+      });
+    }
+    screenShake = Math.max(screenShake, 8);
+
+    createProjectileExplosion(projectileX, projectileY);
+    audioManager.playProjectileLaunch();
+    commitPvpAction(myPlayerId, now);
+
+    const useColyseusProjectile = colyseusService.isConnectedToRoom();
+    const isSyncingProjectile = useColyseusProjectile || pvpSyncService.isSyncing();
+    if (currentMatch && isSyncingProjectile) {
+      const projectileInput = {
+        type: 'projectile' as const,
+        timestamp: now,
+        x: projectileX,
+        y: projectileY,
+        vx: projectileVx,
+        vy: projectileVy,
+        targetX: mouseX,
+        targetY: mouseY,
+      };
+      if (useColyseusProjectile) {
+        colyseusService.sendInput(projectileInput);
+      } else {
+        pvpSyncService.sendInput(projectileInput);
+      }
+    }
+
+    return;
+  }
+
+  // PvP/Training mode: Click handler (same as Solo DOT click system with accuracy/miss)
+  if ((gameMode === 'PvP' || gameMode === 'Training') && myPlayerId && pvpPlayers[myPlayerId]) {
+    const pos = getCanvasMousePos(e);
+    const mouseX = pos.x;
+    const mouseY = pos.y;
+    
+    // Only process clicks in play area
+    if (mouseX > 240 && e.button === 0) {
+      if (isTurnBasedPvPDesired()) {
+        return;
+      }
+      const myPlayer = pvpPlayers[myPlayerId];
+      
+      // Check if paralyzed
+      if (myPlayer.paralyzedUntil > Date.now()) {
+        return; // Paralyzed - can't click
+      }
+
+      // Global action limit (1 action per second) for click-hit (prevents spam knockback).
+      const now = Date.now();
+      if (!canPerformPvpAction(myPlayerId, now)) {
+        applyPvpActionPenalty(myPlayerId, now);
+        return;
+      }
+      
+      // CRITICAL: Only allow controlling my player, never opponent
+      if (myPlayer.id !== myPlayerId) {
+        console.warn('Attempted to control wrong player!', { clickedPlayerId: myPlayer.id, myPlayerId });
+        return;
+      }
+      
+      // Check if clicking on my player (same as Solo DOT click detection)
+      const dx = mouseX - myPlayer.x;
+      const dy = mouseY - myPlayer.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance <= myPlayer.radius) {
+        // Self-click counts as an action (even if MISS) to keep a clear "1 action / 1 sec" rule.
+        commitPvpAction(myPlayerId, now);
+
+        // Check for accuracy hit (same as Solo)
+        const isHit = Math.random() < accuracy / 100;
+        
+        if (isHit) {
+          // Clicked on player - move opposite to click direction (same as Solo DOT)
+          const clickAngle = Math.atan2(dy, dx);
+          const oppositeAngle = clickAngle + Math.PI; // Add 180 degrees for opposite direction
+          
+          // Check for crit hit (same as Solo) - with NFT bonuses
+          const nftBonuses = calculateNftBonuses();
+          const totalCritChance = critChance + nftBonuses.critChance;
+          let isCritHit = Math.random() < totalCritChance / 100;
+          
+          // Use same force as Solo DOT - crit hits give more force
+          const force = isCritHit ? PVP_CLICK_FORCE_CRIT : PVP_CLICK_FORCE;
+          
+          // Apply force to player velocity (same as Solo DOT)
+          myPlayer.vx += Math.cos(oppositeAngle) * force;
+          myPlayer.vy += Math.sin(oppositeAngle) * force;
+          
+          // Play dot hit sound effect (like hammer hitting a nail)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDotHit();
+          });
+          
+          // Update last hit time and unlock gravity (but don't activate gravity on self-click)
+          myPlayer.lastHitTime = Date.now();
+          myPlayer.gravityLocked = false; // Enable gravity after first hit
+          // Note: Gravity is NOT activated on self-click - only on damage from opponent
+          
+          // Send input to opponent via network sync
+          const useColyseusClick = colyseusService.isConnectedToRoom();
+          const isSyncingClick = useColyseusClick || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncingClick) {
+            const clickInput = {
+              type: 'click' as const,
+              timestamp: Date.now(),
+              x: mouseX,
+              y: mouseY,
+              isCrit: isCritHit,
+            };
+            if (useColyseusClick) {
+              colyseusService.sendInput(clickInput);
+            } else {
+              pvpSyncService.sendInput(clickInput);
+            }
+          }
+          
+          // Create particle effect at click position (PvP hit feedback)
+          const clickX = myPlayer.x + Math.cos(clickAngle) * myPlayer.radius;
+          const clickY = myPlayer.y + Math.sin(clickAngle) * myPlayer.radius;
+          
+          if (isCritHit) {
+            // Crit hit - create more particles with special effect
+            // Create 8-12 particles in a burst (more than normal hit)
+            const particleCount = 8 + Math.floor(Math.random() * 5); // 8-12 particles
+            for (let i = 0; i < particleCount; i++) {
+              const angle = Math.random() * Math.PI * 2; // Random direction
+              const speed = 2 + Math.random() * 3; // Faster speed for crit
+              safePushClickParticle({
+                x: clickX,
+                y: clickY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 30 + Math.floor(Math.random() * 30), // 30-60 frames (longer for crit)
+                maxLife: 30 + Math.floor(Math.random() * 30),
+                size: 3 + Math.random() * 3 // 3-6 pixels (bigger for crit)
+              });
+            }
+            
+            // Screen shake for crit hits (same as Solo)
+            screenShake = Math.max(screenShake, 30);
+            
+            console.log(`PvP CRIT HIT! - force applied: (${Math.cos(oppositeAngle) * force}, ${Math.sin(oppositeAngle) * force})`);
+          } else {
+            // Normal hit - create 4-6 small particles in a burst
+            const particleCount = 4 + Math.floor(Math.random() * 3); // 4-6 particles
+            for (let i = 0; i < particleCount; i++) {
+              const angle = Math.random() * Math.PI * 2; // Random direction
+              const speed = 1 + Math.random() * 2; // Random speed
+              safePushClickParticle({
+                x: clickX,
+                y: clickY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 20 + Math.floor(Math.random() * 20), // 20-40 frames
+                maxLife: 20 + Math.floor(Math.random() * 20),
+                size: 2 + Math.random() * 2 // 2-4 pixels
+              });
+            }
+            
+            console.log(`PvP player clicked - force applied: (${Math.cos(oppositeAngle) * force}, ${Math.sin(oppositeAngle) * force})`);
+          }
+        } else {
+          // Miss - show MISS text (falls down) but don't move player (same as Solo)
+          safePushDamageNumber({
+            x: myPlayer.x + (Math.random() - 0.5) * 40,
+            y: myPlayer.y + 20, // Start below player
+            value: 'MISS',
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: 0.5 + Math.random() * 0.5, // Falls down slowly
+            isCrit: false,
+            isMiss: true // Mark as miss
+          });
+          
+          // Create click smudge on miss (no safePush helper for clickSmudges - they have natural limit via life)
+          clickSmudges.push({
+            x: myPlayer.x,
+            y: myPlayer.y,
+            life: 300, // 5 seconds at 60 FPS (300 frames)
+            maxLife: 300
+          });
+          
+          console.log('PvP MISS!');
+          // Player doesn't move on miss
+        }
+      }
+    }
+  }
+
+  // (removed) Solo upgrade button click logic
+  });
+} else {
+  console.warn('⚠️ Click listener already added - skipping duplicate (HMR protection)');
+}
+
+function drawServerBrowserOverlay() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const modalWidth = Math.min(900, canvas.width - 80);
+  const modalHeight = Math.min(520, canvas.height - 80);
+  const modalX = (canvas.width - modalWidth) / 2;
+  const modalY = (canvas.height - modalHeight) / 2;
+
+  serverBrowserModalRegion = { x: modalX, y: modalY, width: modalWidth, height: modalHeight };
+  serverBrowserHitRegions = [];
+
+  ctx.fillStyle = '#f3f3f3';
+  ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(modalX, modalY, modalWidth, modalHeight);
+
+  ctx.fillStyle = '#000000';
+  ctx.font = 'bold 18px "Press Start 2P"';
+  ctx.textAlign = 'left';
+  ctx.fillText('SELECT PvP SERVER', modalX + 30, modalY + 45);
+
+
+  if (serverStatusLoading) {
+    ctx.fillStyle = '#666666';
+    ctx.fillText('Refreshing status...', modalX + 30, modalY + 95);
+  } else if (serverBrowserError) {
+    ctx.fillStyle = '#ff2222';
+    ctx.fillText(serverBrowserError, modalX + 30, modalY + 95);
+  }
+
+  // Close button
+  serverBrowserCloseRegion = { x: modalX + modalWidth - 50, y: modalY + 20, width: 30, height: 30 };
+  ctx.fillStyle = serverBrowserHoverClose ? '#ff6666' : '#ff9999';
+  ctx.fillRect(serverBrowserCloseRegion.x, serverBrowserCloseRegion.y, serverBrowserCloseRegion.width, serverBrowserCloseRegion.height);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(serverBrowserCloseRegion.x, serverBrowserCloseRegion.y, serverBrowserCloseRegion.width, serverBrowserCloseRegion.height);
+  ctx.beginPath();
+  ctx.moveTo(serverBrowserCloseRegion.x + 6, serverBrowserCloseRegion.y + 6);
+  ctx.lineTo(serverBrowserCloseRegion.x + serverBrowserCloseRegion.width - 6, serverBrowserCloseRegion.y + serverBrowserCloseRegion.height - 6);
+  ctx.moveTo(serverBrowserCloseRegion.x + serverBrowserCloseRegion.width - 6, serverBrowserCloseRegion.y + 6);
+  ctx.lineTo(serverBrowserCloseRegion.x + 6, serverBrowserCloseRegion.y + serverBrowserCloseRegion.height - 6);
+  ctx.stroke();
+
+  const listStartY = modalY + 120;
+  const rowHeight = 90;
+  const rowGap = 12;
+  const rowWidth = modalWidth - 60;
+
+  if (serverStatuses.length === 0) {
+    ctx.fillStyle = '#000000';
+    ctx.font = '12px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('No servers configured', modalX + modalWidth / 2, listStartY + 40);
+  } else {
+    ctx.textAlign = 'left';
+    serverStatuses.forEach((server, index) => {
+      const rowY = listStartY + index * (rowHeight + rowGap);
+      if (rowY + rowHeight > modalY + modalHeight - 30) {
+        return;
+      }
+
+      const isSelected = server.id === selectedServerId;
+      const isHovered = serverBrowserHoverId === server.id;
+
+      ctx.fillStyle = isHovered ? '#e7f7ff' : isSelected ? '#d6f1ff' : '#ffffff';
+      ctx.fillRect(modalX + 30, rowY, rowWidth, rowHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(modalX + 30, rowY, rowWidth, rowHeight);
+
+      serverBrowserHitRegions.push({
+        id: server.id,
+        x: modalX + 30,
+        y: rowY,
+        width: rowWidth,
+        height: rowHeight
+      });
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 12px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.fillText(server.name, modalX + 50, rowY + 26);
+
+      const joinWidth = 150;
+      const joinHeight = 32;
+      const joinX = modalX + 30 + rowWidth - joinWidth - 30;
+      const joinY = rowY + rowHeight - joinHeight - 32;
+      const statusAreaRight = joinX - 40;
+
+      const statusColor = getServerStatusColor(server);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = statusColor;
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.fillText(`${server.status.toUpperCase()} • ${getServerPingText(server)}`, statusAreaRight, rowY + 26);
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 8px "Press Start 2P"';
+      const queueText = typeof server.waitingPlayers === 'number'
+        ? `${server.waitingPlayers} player${server.waitingPlayers === 1 ? '' : 's'} waiting`
+        : 'Queue: n/a';
+      ctx.fillText(queueText, statusAreaRight, rowY + 46);
+
+      if (typeof server.activeRooms === 'number' || typeof server.totalPlayers === 'number') {
+        const roomsText = typeof server.activeRooms === 'number'
+          ? `Matches: ${server.activeRooms}`
+          : '';
+        const playersText = typeof server.totalPlayers === 'number'
+          ? `Players: ${server.totalPlayers}`
+          : '';
+        ctx.fillText(`${roomsText}${roomsText && playersText ? ' • ' : ''}${playersText}`, statusAreaRight, rowY + 62);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isHovered ? '#9cf19c' : '#c8f7c5';
+      ctx.fillRect(joinX, joinY, joinWidth, joinHeight);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(joinX, joinY, joinWidth, joinHeight);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 10px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillText(isHovered ? 'CLICK TO JOIN' : 'JOIN', joinX + joinWidth / 2, joinY + joinHeight / 2 + 4);
+      ctx.textAlign = 'left';
+
+      // removed "CURRENT" label to avoid clutter
+    });
+  }
+
+  // Footer tip removed (looked odd / distracting in UI, requested)
+
+  ctx.restore();
+}
+
+// Game loop
+// Periodically check wallet RONKE balance (non-blocking)
+function checkWalletBalance() {
+  const walletState = walletService.getState();
+  if (walletState.isConnected && walletState.address) {
+    const now = Date.now();
+    if (now - lastBalanceCheck > BALANCE_CHECK_INTERVAL) {
+      lastBalanceCheck = now;
+      // Check balance asynchronously (don't await - non-blocking)
+      walletService.getTokenBalance(RONKE_TOKEN_ADDRESS)
+        .then((balance) => {
+          if (balance !== null) {
+            ronkeBalance = balance;
+            console.log('Wallet RONKE balance updated:', balance);
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to check wallet balance:', error);
+        });
+    }
+  } else {
+    ronkeBalance = null;
+  }
+}
+
+function gameLoop() {
+  const frameStartTime = performance.now();
+  // Init baseline once (covers cases with no save load path).
+  if (!spaceEventsPrevDistanceInited) {
+    try { initSpaceEventsPrevDistance(); } catch {}
+  }
+  // Moon flyby test animation (Solo only)
+  try { updateMoonFlyby(Date.now()); } catch {}
+  // Earth intro animation (start-of-run, Solo only)
+  try { updateEarthIntro(Date.now()); } catch {}
+  // Mars flyby test animation (Solo only)
+  try { updateMarsFlyby(Date.now()); } catch {}
+  // Solo: accumulate distance traveled (km) based on current speed (km/s) and real elapsed time.
+  // Uses performance.now() delta so it stays correct even if FPS fluctuates.
+  if (gameMode === 'Solo' && gameState === 'Alive') {
+    const last = soloDistanceLastPerfMs || frameStartTime;
+    const dtSec = Math.max(0, Math.min(0.25, (frameStartTime - last) / 1000)); // cap to avoid huge jumps on tab-switch
+    soloDistanceLastPerfMs = frameStartTime;
+    const sp = Math.max(1, Number.isFinite(soloSpeedKmps) ? soloSpeedKmps : 1);
+    soloDistanceKm = Math.max(0, soloDistanceKm + sp * dtSec);
+    // Update baseline after distance advance so "crossing" checks work next frame.
+    spaceEventsPrevDistanceKm = soloDistanceKm;
+
+    // Award spins based on dynamic km requirements (persistent milestones).
+    // Cap spins at SOLO_SPINS_CAP; overflow is discarded (shards system removed).
+    const milestones = computeSpinMilestonesForDistance(soloDistanceKm);
+    if (milestones > soloSpinMilestones) {
+      const delta = milestones - soloSpinMilestones;
+      soloSpinMilestones = milestones;
+      const r = addSoloSpins(delta);
+      if (r.spinsAdded > 0) {
+        slotBellNewSpins += r.spinsAdded;
+        slotSpinGlowUntil = Date.now() + 2200;
+      }
+      try {
+        safePushDamageNumber({
+          x: playLeft + 120,
+          y: 120,
+          value: (r.spinsAdded > 0) ? `SPIN +${r.spinsAdded}` : 'SPINS FULL',
+          life: 90,
+          maxLife: 90,
+          vx: 0,
+          vy: -1.2,
+          isCrit: true,
+        });
+      } catch {}
+      forceSaveGame();
+    }
+  } else {
+    // Keep accumulator stable; don’t add distance outside active Solo gameplay.
+    soloDistanceLastPerfMs = frameStartTime;
+  }
+
+  // Solo weapons disabled (we'll revisit later)
+
+  // Slot machine: finalize spin when last reel stops
+  if (slotIsSpinning) {
+    finishSlotSpinIfDone(Date.now());
+  }
+  // Profile: Update max stats periodically
+  profileManager.updateMaxStats(dotMaxHP, dotMaxArmor);
+  
+  // Update death animations
+  for (const [playerId, particles] of deathAnimations.entries()) {
+    const aliveParticles: DeathParticle[] = [];
+    
+    for (const particle of particles) {
+      // Update particle position
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      
+      // Apply gravity
+      particle.vy += 0.1;
+      
+      // Update rotation
+      particle.rotation += particle.rotationSpeed;
+      
+      // Decrease life
+      particle.life -= 16; // ~60 FPS, decrease by ~16ms per frame
+      
+      // Keep particle if still alive
+      if (particle.life > 0) {
+        aliveParticles.push(particle);
+      }
+    }
+    
+    // Remove animation if all particles are dead
+    if (aliveParticles.length === 0) {
+      deathAnimations.delete(playerId);
+      
+      // Remove dead player from game - they will only reappear in a new game
+      if (pvpPlayers[playerId]) {
+        delete pvpPlayers[playerId];
+      }
+    } else {
+      deathAnimations.set(playerId, aliveParticles);
+    }
+  }
+  
+  // Track frame time (to detect frame pacing issues) - measure entire gameLoop
+  currentFrame++;
+  
+  // Clean up cached player speeds periodically (every 1000 frames to reduce overhead)
+  if (currentFrame % 1000 === 0) {
+    cleanupCachedPlayerSpeeds();
+  }
+  
+  // Check wallet balance periodically (non-blocking)
+  checkWalletBalance();
+
+  // Turn-based PvP update (freeze planning / deterministic execute playback)
+  updateTurnBasedPvP(Date.now());
+  // 5SEC PVP: during planning we allow realtime control, but record shadow actions for commit.
+  recordTurnTrackAndMaybeSend();
+  
+  // PvP/Training mode: Reset burst counter if too much time passed since last shot
+  if (!isTurnBasedPvPDesired() && (gameMode === 'PvP' || gameMode === 'Training') && shotsInBurst > 0) {
+    const now = Date.now();
+    const timeSinceLastShot = now - lastBurstShotTime;
+    // If more than cooldown time passed, reset burst counter (allows new burst)
+    if (timeSinceLastShot > bulletCooldown) {
+      shotsInBurst = 0;
+    }
+  }
+  
+  // PvP/Training mode: Update bullet physics and collision
+  if (!isTurnBasedPvPDesired() && (gameMode === 'PvP' || gameMode === 'Training') && bullets.length > 0) {
+    const now = Date.now();
+    // Players can stand on the "bottom floor" (below pvpBounds.bottom). Don't cull bullets until that floor.
+    const pvpBulletBottomY = PVP_BOTTOM_FLOOR_Y;
+    const bulletsToRemove: number[] = []; // Indices of bullets to remove
+    
+    // Process each bullet
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const bullet = bullets[i];
+      
+      // Update bullet position
+      bullet.x += bullet.vx;
+      bullet.y += bullet.vy;
+
+      // Bounce off center stone obstacle (solid)
+      if (PVP_CENTER_OBSTACLE_ENABLED) {
+        const hit = collideCircleWithStone(bullet.x, bullet.y, bulletRadius);
+        if (hit) {
+          bullet.x += hit.nx * (hit.depth + 0.5);
+          bullet.y += hit.ny * (hit.depth + 0.5);
+          const vn = bullet.vx * hit.nx + bullet.vy * hit.ny;
+          if (vn < 0) {
+            bullet.vx = (bullet.vx - 2 * vn * hit.nx) * 0.78;
+            bullet.vy = (bullet.vy - 2 * vn * hit.ny) * 0.78;
+          }
+        }
+      }
+      
+      // Check lifetime
+      const bulletAge = now - bullet.spawnTime;
+      if (bulletAge > bulletLifetime) {
+        bulletsToRemove.push(i);
+        continue;
+      }
+      
+      // Check collision with opponent
+      // Make sure we're hitting the opponent, not ourselves
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        // Skip if no opponent or opponent is ourselves
+      } else {
+        const opponent = pvpPlayers[opponentId];
+        const dx = bullet.x - opponent.x;
+        const dy = bullet.y - opponent.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = bulletRadius + opponent.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Double check - make sure opponent is not ourselves
+          if (opponent.id === myPlayerId) {
+            console.error('ERROR: Trying to damage ourselves with bullet!', { opponentId, myPlayerId, opponent: opponent.id });
+            bulletsToRemove.push(i);
+            continue;
+          }
+          
+          // Hit opponent! Remove bullet
+          bulletsToRemove.push(i);
+          
+          // Check for crit hit - with NFT bonuses
+          const nftBonuses = calculateNftBonuses();
+          const totalCritChance = critChance + nftBonuses.critChance;
+          const isCritHit = Math.random() < totalCritChance / 100;
+          // Damage: 50% of basic damage, 2x crit (using MY stats + NFT bonuses)
+          const totalDmg = dmg + nftBonuses.dmg;
+          const baseBulletDamage = totalDmg * 0.5; // 50% of base damage
+          const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
+          // Apply 50% variance (damage ranges from 50% to 100%)
+          const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
+          
+          // Profile: Track damage dealt (PvP mode - Bullet)
+          profileManager.addDamageDealt(bulletDamage);
+          
+          // Send hit event to opponent with damage (so they see/feel the EXACT same damage)
+          // Opponent will apply damage when they receive the hit event
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing && opponentId) {
+            const hitInput = {
+              type: 'hit' as const,
+              timestamp: now,
+              damage: bulletDamage,
+              isCrit: isCritHit,
+              targetPlayerId: opponentId, // Tell opponent this hit is for them
+              projType: 'bullet',
+              isBullet: true, // Indicate this is a bullet hit (for paralysis)
+              paralysisDuration: 2000 // 2 seconds paralysis
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(hitInput);
+            } else {
+              pvpSyncService.sendInput(hitInput);
+            }
+          }
+          
+          // DON'T apply damage locally - opponent will apply it when they receive hit event
+          // This ensures both players see/feel the EXACT same damage
+          if (gameMode === 'Training' && opponentId) {
+            // Attacker-side already shows the number; don't duplicate defender-side number.
+            applyLocalTrainingHit(opponentId, bulletDamage, isCritHit, { isBullet: true, paralysisDuration: 2000, showNumber: false });
+          }
+          
+          // DON'T apply paralysis locally - opponent will apply it when they receive hit event
+          // This ensures both players have the same paralysis timing
+          
+          // Screen shake for crit hits (we feel it when we hit)
+          if (isCritHit) {
+            screenShake = Math.max(screenShake, 30);
+          }
+          
+          // Play damage dealt sound effect (satisfying hit sound when dealing damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageDealt(isCritHit);
+          });
+        
+          // Show damage number (we see it when we hit)
+          safePushDamageNumber({
+            x: opponent.x + (Math.random() - 0.5) * 40,
+            y: opponent.y - 20,
+            value: bulletDamage,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: isCritHit
+          });
+          
+          // No push effect - bullet doesn't move target (like arrow/projectile)
+          
+          console.log(`Bullet hit opponent! Damage: ${bulletDamage}, Crit: ${isCritHit}, Paralyzed for 2s`);
+          continue; // Skip bounds check since we're removing this bullet
+        }
+      }
+      
+      // Check if bullet is out of bounds
+      if (bullet.x < pvpBounds.left || bullet.x > pvpBounds.right || bullet.y < pvpBounds.top || bullet.y > pvpBulletBottomY) {
+        bulletsToRemove.push(i);
+      }
+    }
+    
+    // Remove bullets that hit or expired (remove from end to preserve indices)
+    bulletsToRemove.sort((a, b) => b - a); // Sort descending
+    for (const index of bulletsToRemove) {
+      bullets.splice(index, 1);
+    }
+  }
+  
+  // PvP mode: Update opponent bullet physics and collision
+  if ((gameMode === 'PvP' || gameMode === 'Training') && opponentBulletFlying && myPlayerId && pvpPlayers[myPlayerId]) {
+    // Players can stand on the "bottom floor" (below pvpBounds.bottom). Don't cull bullets until that floor.
+    const pvpBulletBottomY = PVP_BOTTOM_FLOOR_Y;
+    // Update opponent bullet position
+    opponentBulletX += opponentBulletVx;
+    opponentBulletY += opponentBulletVy;
+
+    // Bounce off center stone obstacle (visual + avoids "going through rock")
+    if (PVP_CENTER_OBSTACLE_ENABLED) {
+      const hit = collideCircleWithStone(opponentBulletX, opponentBulletY, bulletRadius);
+      if (hit) {
+        opponentBulletX += hit.nx * (hit.depth + 0.5);
+        opponentBulletY += hit.ny * (hit.depth + 0.5);
+        const vn = opponentBulletVx * hit.nx + opponentBulletVy * hit.ny;
+        if (vn < 0) {
+          opponentBulletVx = (opponentBulletVx - 2 * vn * hit.nx) * 0.78;
+          opponentBulletVy = (opponentBulletVy - 2 * vn * hit.ny) * 0.78;
+        }
+      }
+    }
+    
+    // Check lifetime
+    const bulletAge = Date.now() - opponentBulletSpawnTime;
+    if (bulletAge > bulletLifetime) {
+      opponentBulletFlying = false;
+      opponentBulletX = 0;
+      opponentBulletY = 0;
+      opponentBulletVx = 0;
+      opponentBulletVy = 0;
+    }
+    
+    // Check collision with my player
+    const myPlayer = pvpPlayers[myPlayerId];
+    const dx = opponentBulletX - myPlayer.x;
+    const dy = opponentBulletY - myPlayer.y;
+    const distanceSquared = dx * dx + dy * dy;
+    const collisionRadius = bulletRadius + myPlayer.radius;
+    const collisionRadiusSquared = collisionRadius * collisionRadius;
+    
+    if (distanceSquared <= collisionRadiusSquared) {
+      // Hit me!
+      opponentBulletFlying = false;
+      opponentBulletX = 0;
+      opponentBulletY = 0;
+      opponentBulletVx = 0;
+      opponentBulletVy = 0;
+      
+      if (gameMode === 'Training') {
+        // Training is offline: calculate bot bullet damage locally and apply immediately.
+        const botDmg = dmg; // mirror player upgrades for now (same as a "real" opponent)
+        const botCritChance = critChance;
+        const isCritHit = Math.random() < (Math.max(0, botCritChance) / 100);
+        const baseBulletDamage = botDmg * 0.5;
+        const bulletDamageWithCrit = isCritHit ? baseBulletDamage * 2 : baseBulletDamage;
+        const bulletDamage = applyDamageVariance(bulletDamageWithCrit);
+        applyLocalTrainingHit(myPlayerId, bulletDamage, isCritHit, { isBullet: true, paralysisDuration: 2000 });
+      } else {
+        // PvP: server/opponent will send hit event with their calculated damage.
+      console.log('Opponent bullet hit me - waiting for hit event from opponent');
+      }
+    }
+    
+    // Check if bullet is out of bounds
+    if (opponentBulletX < pvpBounds.left || opponentBulletX > pvpBounds.right || opponentBulletY < pvpBounds.top || opponentBulletY > pvpBulletBottomY) {
+      opponentBulletFlying = false;
+      opponentBulletX = 0;
+      opponentBulletY = 0;
+      opponentBulletVx = 0;
+      opponentBulletVy = 0;
+    }
+  }
+  
+  // Update death animation
+  if (gameState === 'Dying' && deathAnimation) {
+    deathTimer += 16; // Assuming 60 FPS
+    
+    // Grant reward when death animation reaches 10% (100ms out of 1000ms)
+    if (deathTimer >= 100 && !rewardGranted) {
+      grantDeathReward();
+    }
+    
+    if (deathTimer >= 1000) { // 1 second death animation (kept original)
+      // Death animation finished, start respawn delay
+      gameState = 'Dead';
+      deathAnimation = false;
+      respawnTimer = 0; // Start respawn timer
+      rewardGranted = false; // Reset for next death
+      console.log('DOT death animation finished, waiting for respawn...');
+    }
+  }
+  
+  // PvP/Training mode: Update mines and spikes
+  if ((gameMode === 'PvP' || gameMode === 'Training')) {
+    const now = Date.now();
+    const minesToRemove: number[] = [];
+    const spikesToRemove: number[] = [];
+    
+    // Process mines
+    for (let i = mines.length - 1; i >= 0; i--) {
+      const mine = mines[i];
+      
+      if (mine.exploded) {
+        minesToRemove.push(i);
+        continue;
+      }
+      
+      const mineAge = now - mine.spawnTime;
+      
+      // Check if mine lifetime expired (auto-explode after 10 seconds)
+      if (mineAge >= mineLifetime) {
+        // Play explosion sound effect
+        audioManager.resumeContext().then(() => {
+          audioManager.playMineExplosion();
+        });
+        
+        // Explode mine - spawn 8 spikes in 8 directions (4 cardinal + 4 diagonal)
+        const directions = [
+          { x: 1, y: 0 },      // Right
+          { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+          { x: 0, y: 1 },      // Down
+          { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+          { x: -1, y: 0 },     // Left
+          { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+          { x: 0, y: -1 },     // Up
+          { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+        ];
+        
+        for (const dir of directions) {
+          const spike: Spike = {
+            x: mine.x,
+            y: mine.y,
+            vx: dir.x * spikeSpeed,
+            vy: dir.y * spikeSpeed,
+            spawnTime: now,
+          };
+          spikes.push(spike);
+        }
+        
+        mine.exploded = true;
+        minesToRemove.push(i);
+        console.log('Mine auto-exploded!', { x: mine.x, y: mine.y });
+        continue;
+      }
+      
+      // Check collision with opponent (stepping on mine)
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        // Skip if no opponent
+      } else {
+        const opponent = pvpPlayers[opponentId];
+        const dx = mine.x - opponent.x;
+        const dy = mine.y - opponent.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = mineRadius + opponent.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Opponent stepped on mine - explode and deal 2x damage
+          if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+            // Skip if no my player
+            continue;
+          }
+          const myPlayer = pvpPlayers[myPlayerId];
+          const nftBonuses = calculateNftBonuses();
+          const totalDmg = dmg + nftBonuses.dmg;
+          const mineDamage = totalDmg * mineDamageMultiplier; // 2x damage
+          const mineDamageWithVariance = applyDamageVariance(mineDamage);
+          
+          // Profile: Track damage dealt (PvP mode - Mine)
+          profileManager.addDamageDealt(mineDamageWithVariance);
+          
+          // Send hit event to opponent
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing && opponentId) {
+            const hitInput = {
+              type: 'hit' as const,
+              timestamp: now,
+              damage: mineDamageWithVariance,
+              isCrit: false,
+              targetPlayerId: opponentId,
+              projType: 'mine',
+              isMine: true, // Indicate this is a mine hit
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(hitInput);
+            } else {
+              pvpSyncService.sendInput(hitInput);
+            }
+          }
+          
+          // Show damage number
+          safePushDamageNumber({
+            x: opponent.x + (Math.random() - 0.5) * 40,
+            y: opponent.y - 20,
+            value: mineDamageWithVariance,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: false
+          });
+          
+          // Play explosion sound effect
+          audioManager.resumeContext().then(() => {
+            audioManager.playMineExplosion();
+          });
+
+          // Training: apply damage locally (offline)
+          if (gameMode === 'Training' && opponentId) {
+            applyLocalTrainingHit(opponentId, mineDamageWithVariance, false, { isBullet: false, showNumber: false });
+          }
+          
+          // Explode mine - spawn 8 spikes in 8 directions (4 cardinal + 4 diagonal)
+          const directions = [
+            { x: 1, y: 0 },      // Right
+            { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+            { x: 0, y: 1 },      // Down
+            { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+            { x: -1, y: 0 },     // Left
+            { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+            { x: 0, y: -1 },     // Up
+            { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+          ];
+          
+          for (const dir of directions) {
+            const spike: Spike = {
+              x: mine.x,
+              y: mine.y,
+              vx: dir.x * spikeSpeed,
+              vy: dir.y * spikeSpeed,
+              spawnTime: now,
+            };
+            spikes.push(spike);
+          }
+          
+          mine.exploded = true;
+          minesToRemove.push(i);
+          console.log('Mine exploded on contact!', { x: mine.x, y: mine.y, damage: mineDamageWithVariance });
+        }
+      }
+    }
+    
+    // Remove exploded mines
+    minesToRemove.sort((a, b) => b - a);
+    for (const index of minesToRemove) {
+      mines.splice(index, 1);
+    }
+    
+    // Process spikes
+    for (let i = spikes.length - 1; i >= 0; i--) {
+      const spike = spikes[i];
+      
+      // Update spike position
+      spike.x += spike.vx;
+      spike.y += spike.vy;
+      
+      // Check lifetime
+      const spikeAge = now - spike.spawnTime;
+      if (spikeAge > spikeLifetime) {
+        spikesToRemove.push(i);
+        continue;
+      }
+      
+      // Check collision with opponent
+      if (!opponentId || !pvpPlayers[opponentId] || opponentId === myPlayerId) {
+        // Skip if no opponent
+      } else {
+        const opponent = pvpPlayers[opponentId];
+        const dx = spike.x - opponent.x;
+        const dy = spike.y - opponent.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = spikeRadius + opponent.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Spike hit opponent - deal 50% basic damage
+          if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+            // Skip if no my player
+            continue;
+          }
+          const myPlayer = pvpPlayers[myPlayerId];
+          const nftBonuses = calculateNftBonuses();
+          const totalDmg = dmg + nftBonuses.dmg;
+          const spikeDamage = totalDmg * spikeDamageMultiplier; // 50% damage
+          const spikeDamageWithVariance = applyDamageVariance(spikeDamage);
+          
+          // Profile: Track damage dealt (PvP mode - Spike)
+          profileManager.addDamageDealt(spikeDamageWithVariance);
+          
+          // Send hit event to opponent
+          const useColyseus = colyseusService.isConnectedToRoom();
+          const isSyncing = useColyseus || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncing && opponentId) {
+            const hitInput = {
+              type: 'hit' as const,
+              timestamp: now,
+              damage: spikeDamageWithVariance,
+              isCrit: false,
+              targetPlayerId: opponentId,
+              projType: 'spike',
+              isSpike: true, // Indicate this is a spike hit
+            };
+            
+            if (useColyseus) {
+              colyseusService.sendInput(hitInput);
+            } else {
+              pvpSyncService.sendInput(hitInput);
+            }
+          }
+          
+          // Show damage number
+          safePushDamageNumber({
+            x: opponent.x + (Math.random() - 0.5) * 40,
+            y: opponent.y - 20,
+            value: spikeDamageWithVariance,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: false
+          });
+          
+          spikesToRemove.push(i);
+          // Training: apply damage locally (offline)
+          if (gameMode === 'Training' && opponentId) {
+            applyLocalTrainingHit(opponentId, spikeDamageWithVariance, false, { isBullet: false, showNumber: false });
+          }
+          console.log('Spike hit opponent!', { x: spike.x, y: spike.y, damage: spikeDamageWithVariance });
+          continue;
+        }
+      }
+      
+      // Check if spike is out of bounds
+      if (spike.x < pvpBounds.left || spike.x > pvpBounds.right || spike.y < pvpBounds.top || spike.y > pvpBounds.bottom) {
+        spikesToRemove.push(i);
+      }
+    }
+    
+    // Remove expired or hit spikes
+    spikesToRemove.sort((a, b) => b - a);
+    for (const index of spikesToRemove) {
+      spikes.splice(index, 1);
+    }
+    
+    // Process opponent mines
+    const opponentMinesToRemove: number[] = [];
+    const opponentSpikesToRemove: number[] = [];
+    
+    // Process opponent mines
+    for (let i = opponentMines.length - 1; i >= 0; i--) {
+      const mine = opponentMines[i];
+      
+      if (mine.exploded) {
+        opponentMinesToRemove.push(i);
+        continue;
+      }
+      
+      const mineAge = now - mine.spawnTime;
+      
+      // Check if mine lifetime expired (auto-explode after 10 seconds)
+      if (mineAge >= mineLifetime) {
+        // Explode opponent mine - spawn 8 spikes in 8 directions
+        const directions = [
+          { x: 1, y: 0 },      // Right
+          { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+          { x: 0, y: 1 },      // Down
+          { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+          { x: -1, y: 0 },     // Left
+          { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+          { x: 0, y: -1 },     // Up
+          { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+        ];
+        
+        for (const dir of directions) {
+          const spike: Spike = {
+            x: mine.x,
+            y: mine.y,
+            vx: dir.x * spikeSpeed,
+            vy: dir.y * spikeSpeed,
+            spawnTime: now,
+          };
+          opponentSpikes.push(spike);
+        }
+        
+        // Play explosion sound effect
+        audioManager.resumeContext().then(() => {
+          audioManager.playMineExplosion();
+        });
+        
+        mine.exploded = true;
+        opponentMinesToRemove.push(i);
+        console.log('Opponent mine auto-exploded!', { x: mine.x, y: mine.y });
+        continue;
+      }
+      
+      // Check collision with my player (stepping on opponent mine)
+      if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+        // Skip if no my player
+      } else {
+        const myPlayer = pvpPlayers[myPlayerId];
+        const dx = mine.x - myPlayer.x;
+        const dy = mine.y - myPlayer.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = mineRadius + myPlayer.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // My player stepped on opponent mine - explode and deal 2x damage
+          if (gameMode === 'Training') {
+            // Offline: apply damage immediately.
+            const botDmg = dmg;
+            const mineDamage = applyDamageVariance(botDmg * mineDamageMultiplier);
+            applyLocalTrainingHit(myPlayerId, mineDamage, false);
+          }
+          
+          // Explode opponent mine - spawn 8 spikes in 8 directions
+          const directions = [
+            { x: 1, y: 0 },      // Right
+            { x: 0.707, y: 0.707 },  // Down-Right (diagonal)
+            { x: 0, y: 1 },      // Down
+            { x: -0.707, y: 0.707 }, // Down-Left (diagonal)
+            { x: -1, y: 0 },     // Left
+            { x: -0.707, y: -0.707 }, // Up-Left (diagonal)
+            { x: 0, y: -1 },     // Up
+            { x: 0.707, y: -0.707 },  // Up-Right (diagonal)
+          ];
+          
+          for (const dir of directions) {
+            const spike: Spike = {
+              x: mine.x,
+              y: mine.y,
+              vx: dir.x * spikeSpeed,
+              vy: dir.y * spikeSpeed,
+              spawnTime: now,
+            };
+            opponentSpikes.push(spike);
+          }
+          
+          // Play explosion sound effect
+          audioManager.resumeContext().then(() => {
+            audioManager.playMineExplosion();
+          });
+          
+          mine.exploded = true;
+          opponentMinesToRemove.push(i);
+          console.log('Opponent mine exploded on contact!', { x: mine.x, y: mine.y });
+        }
+      }
+    }
+    
+    // Remove exploded opponent mines
+    opponentMinesToRemove.sort((a, b) => b - a);
+    for (const index of opponentMinesToRemove) {
+      opponentMines.splice(index, 1);
+    }
+    
+    // Process opponent spikes
+    for (let i = opponentSpikes.length - 1; i >= 0; i--) {
+      const spike = opponentSpikes[i];
+      
+      // Update spike position
+      spike.x += spike.vx;
+      spike.y += spike.vy;
+      
+      // Check lifetime
+      const spikeAge = now - spike.spawnTime;
+      if (spikeAge > spikeLifetime) {
+        opponentSpikesToRemove.push(i);
+        continue;
+      }
+      
+      // Check collision with my player
+      if (!myPlayerId || !pvpPlayers[myPlayerId]) {
+        // Skip if no my player
+      } else {
+        const myPlayer = pvpPlayers[myPlayerId];
+        const dx = spike.x - myPlayer.x;
+        const dy = spike.y - myPlayer.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const collisionRadius = spikeRadius + myPlayer.radius;
+        const collisionRadiusSquared = collisionRadius * collisionRadius;
+        
+        if (distanceSquared <= collisionRadiusSquared) {
+          // Opponent spike hit my player
+          if (gameMode === 'Training') {
+            const botDmg = dmg;
+            const spikeDamage = applyDamageVariance(botDmg * spikeDamageMultiplier);
+            applyLocalTrainingHit(myPlayerId, spikeDamage, false);
+          }
+          opponentSpikesToRemove.push(i);
+          console.log('Opponent spike hit me!', { x: spike.x, y: spike.y });
+          continue;
+        }
+      }
+      
+      // Check if spike is out of bounds
+      if (spike.x < pvpBounds.left || spike.x > pvpBounds.right || spike.y < pvpBounds.top || spike.y > pvpBounds.bottom) {
+        opponentSpikesToRemove.push(i);
+      }
+    }
+    
+    // Remove expired or hit opponent spikes
+    opponentSpikesToRemove.sort((a, b) => b - a);
+    for (const index of opponentSpikesToRemove) {
+      opponentSpikes.splice(index, 1);
+    }
+    
+    if (HEALTH_PACKS_ENABLED) {
+      // Health pack spawn system - only one at a time, spawns 25 seconds after pickup or game start
+      // Spawn new health pack if none exists and enough time has passed
+      const timeSinceLastPickup = lastHealthPackPickupTime === 0 
+        ? (pvpGameStartTime === 0 ? now : now - pvpGameStartTime) 
+        : now - lastHealthPackPickupTime;
+      if (!healthPack && timeSinceLastPickup >= healthPackSpawnDelay) {
+        // Get fixed position based on cycle (center -> left -> right -> center -> ...)
+        const position = healthPackPositions[healthPackPositionIndex];
+        
+        healthPack = {
+          x: position.x,
+          y: position.y,
+          spawnTime: now,
+          id: `hp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          positionIndex: healthPackPositionIndex,
+        };
+        
+        // Move to next position in cycle
+        healthPackPositionIndex = (healthPackPositionIndex + 1) % healthPackPositions.length;
+        
+        // Play spawn sound effect
+        audioManager.resumeContext().then(() => {
+          audioManager.playHealthPackSpawn();
+        });
+        
+        // Send to opponent via network sync (only position index, not coordinates)
+        const useColyseus = colyseusService.isConnectedToRoom();
+        const isSyncing = useColyseus || pvpSyncService.isSyncing();
+        if (currentMatch && isSyncing) {
+          const healthPackInput = {
+            type: 'healthpack' as const,
+            timestamp: now,
+            positionIndex: healthPack.positionIndex, // The position index we just used
+            id: healthPack.id,
+          };
+          if (useColyseus) {
+            colyseusService.sendInput(healthPackInput);
+          } else {
+            pvpSyncService.sendInput(healthPackInput);
+          }
+        }
+        
+        console.log('Health pack spawned!', { x: position.x, y: position.y, positionIndex: healthPack.positionIndex, id: healthPack.id });
+      }
+      
+      // Process health pack - check collision with players (only one at a time)
+      if (healthPack) {
+        // Check collision with my player
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const myPlayer = pvpPlayers[myPlayerId];
+          const dx = healthPack.x - myPlayer.x;
+          const dy = healthPack.y - myPlayer.y;
+          const distanceSquared = dx * dx + dy * dy;
+          const collisionRadius = healthPackRadius + myPlayer.radius;
+          const collisionRadiusSquared = collisionRadius * collisionRadius;
+          
+          if (distanceSquared <= collisionRadiusSquared) {
+            // My player picked up health pack - restore ONLY HP, armor is ignored
+            const healAmount = Math.floor(Math.random() * (healthPackMaxHeal - healthPackMinHeal + 1)) + healthPackMinHeal; // 10-15 HP
+            
+            const oldHP = myPlayer.hp;
+            
+            // Restore HP only (armor is not touched)
+            myPlayer.hp = Math.min(myPlayer.maxHP, myPlayer.hp + healAmount);
+            
+            const actualHealAmount = myPlayer.hp - oldHP;
+            
+            // Play pickup sound effect
+            audioManager.resumeContext().then(() => {
+              audioManager.playHealthPackPickup();
+            });
+            
+            // Show healing number animation (only HP amount)
+            if (actualHealAmount > 0) {
+              safePushDamageNumber({
+                x: myPlayer.x + (Math.random() - 0.5) * 20,
+                y: myPlayer.y - myPlayer.radius - 20,
+                value: `+${actualHealAmount}`,
+                life: 60,
+                maxLife: 60,
+                vx: (Math.random() - 0.5) * 1,
+                vy: -2 - Math.random() * 1,
+                isCrit: false
+              });
+            }
+            
+            // Send stats update
+            sendStatsUpdate(myPlayer.hp, myPlayer.armor, myPlayer.maxHP, myPlayer.maxArmor);
+            
+            // Remove health pack FIRST (before sending network event to prevent double pickup)
+            const pickedUpHealthPackId = healthPack.id;
+            lastHealthPackPickupTime = now;
+            healthPack = null;
+            
+            // Send pickup event to opponent (with heal amount for display)
+            const useColyseus = colyseusService.isConnectedToRoom();
+            const isSyncing = useColyseus || pvpSyncService.isSyncing();
+            if (currentMatch && isSyncing) {
+              const pickupInput = {
+                type: 'healthpack_pickup' as const,
+                timestamp: now,
+                healthPackId: pickedUpHealthPackId,
+                playerId: myPlayerId,
+                healAmount: actualHealAmount,
+              };
+              if (useColyseus) {
+                colyseusService.sendInput(pickupInput);
+              } else {
+                pvpSyncService.sendInput(pickupInput);
+              }
+            }
+            
+            console.log(`Health pack picked up! +${actualHealAmount} HP (armor ignored)`, { id: pickedUpHealthPackId });
+          }
+        }
+        
+        // Note: Opponent pickup is handled via network sync (healthpack_pickup event)
+        // We don't check collision with opponent here to avoid conflicts
+      }
+    }
+  }
+  
+  // Update respawn delay
+  if (gameState === 'Dead') {
+    respawnTimer += 16; // Assuming 60 FPS
+    
+    if (respawnTimer >= 2000) { // 2 seconds delay after death animation
+      // Respawn
+      dotMaxHP = Math.round(dotMaxHP * 1.25);
+      dotMaxArmor = Math.round(dotMaxArmor * 1.2);
+      dotHP = dotMaxHP;
+      dotArmor = dotMaxArmor;
+      gameState = 'Alive';
+      forceSaveGame(); // Save after respawn (HP/Armor increase)
+      respawnTimer = 0;
+      // Reset DOT position and physics
+      dotX = 240 + (1920 - 240) / 2;
+      dotY = 1080 / 2;
+      dotVx = 0;
+      dotVy = 0;
+      lastHitTime = 0; // Reset hit time
+      gravityActiveUntil = 0; // Reset gravity active timer
+      // Reset combo on respawn
+      comboProgress = 0;
+      comboActive = false;
+      comboMultiplier = 1;
+      gravityLocked = true; // gravity disabled until first successful hit
+      nextHitForceCrit = false; // clear pending force-crit on respawn
+      
+      // Reset slow-motion on respawn
+      slowMotionActive = false;
+      mouseHoldStartTime = 0;
+      savedDotVx = 0;
+      savedDotVy = 0;
+      
+      // Reset arrow on respawn - arrow becomes available again after DOT dies
+      arrowReady = false;
+      arrowFired = false;
+      
+      console.log('DOT respawned!');
+    }
+  }
+  
+  // Solo mode: DOT physics (only when alive)
+  if (gameMode === 'Solo' && gameState === 'Alive') {
+    // Check if mouse has been held for 1 second to auto-activate slow-motion (without releasing)
+    if (mouseHoldStartTime > 0 && !slowMotionActive) {
+      const holdTime = Date.now() - mouseHoldStartTime;
+      if (holdTime >= slowMotionHoldDelay) {
+        // Auto-activate slow-motion after 1 second of holding
+        slowMotionActive = true;
+        slowMotionStartTime = Date.now();
+        // Save current velocity before freeze
+        savedDotVx = dotVx;
+        savedDotVy = dotVy;
+        // Freeze DOT (set velocity to 0)
+        dotVx = 0;
+        dotVy = 0;
+        console.log('Slow-motion auto-activated after 1 second hold!');
+      }
+    }
+    
+    // Handle slow-motion effect (when mouse is held and reaches 1 second)
+    if (slowMotionActive) {
+      const now = Date.now();
+      const timeSinceSlowMotionStart = now - slowMotionStartTime;
+      
+      if (timeSinceSlowMotionStart < slowMotionFreezeDuration) {
+        // Freeze phase (0.3 seconds) - DOT is completely stopped
+        dotVx = 0;
+        dotVy = 0;
+      } else {
+        // Slow-motion finished - immediately restore full speed and normal physics
+        dotVx = savedDotVx;
+        dotVy = savedDotVy;
+        slowMotionActive = false;
+        savedDotVx = 0;
+        savedDotVy = 0;
+        mouseHoldStartTime = 0; // Reset hold tracking when slow-motion ends
+      }
+    }
+    
+    // Apply gravity only if active (after damage) and not in slow-motion freeze
+    if (!slowMotionActive) {
+      const now = Date.now();
+      // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
+      if (DAMAGE_GRAVITY_ENABLED && gravityActiveUntil > now) {
+        dotVy += gravity;
+      }
+    }
+    
+    // Update position
+    dotX += dotVx;
+    dotY += dotVy;
+
+    // Drawn lines collision (pencil tool - check all segments)
+    {
+      for (let i = drawnLines.length - 1; i >= 0; i--) {
+        const line = drawnLines[i];
+        if (line.points.length < 2) continue; // Skip degenerate lines
+        
+        let collisionFound = false;
+        
+        // Check collision with each segment
+        for (let j = 0; j < line.points.length - 1; j++) {
+          const p1 = line.points[j];
+          const p2 = line.points[j + 1];
+          
+            // Line segment collision detection - OPTIMIZED: Cache len calculation
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const lenSquared = dx * dx + dy * dy;
+            if (lenSquared < 0.01) continue; // Skip degenerate segments (0.1^2 = 0.01)
+            const len = Math.sqrt(lenSquared);
+            
+            // Distance from DOT center to line segment - OPTIMIZED: Use squared distance
+            const t = Math.max(0, Math.min(1, ((dotX - p1.x) * dx + (dotY - p1.y) * dy) / lenSquared));
+            const closestX = p1.x + t * dx;
+            const closestY = p1.y + t * dy;
+            const distX = dotX - closestX;
+            const distY = dotY - closestY;
+            const distanceSquared = distX * distX + distY * distY;
+            const distance = Math.sqrt(distanceSquared);
+          
+            // Collision if DOT is close to line and moving towards it - OPTIMIZED: Use squared distance
+            const lineThickness = 3;
+            const collisionRadius = dotRadius + lineThickness / 2;
+            const collisionRadiusSquared = collisionRadius * collisionRadius;
+            if (distanceSquared <= collisionRadiusSquared && dotVy > 0) {
+            // Calculate normal to line (perpendicular)
+            const nx = -dy / len;
+            const ny = dx / len;
+            
+            // Reflect velocity off line
+            const dot = dotVx * nx + dotVy * ny;
+            dotVx -= 2 * dot * nx;
+            dotVy -= 2 * dot * ny;
+            
+            // Push DOT away from line
+            const pushDist = (dotRadius + lineThickness / 2) - distance;
+            dotX += nx * pushDist;
+            dotY += ny * pushDist;
+            
+            // Bounce effect
+            dotVy = -Math.max(2, Math.abs(dotVy) * 0.6 + 3);
+            screenShake = Math.max(screenShake, 6);
+            
+            // Play bounce sound effect (like spring or trampoline)
+            audioManager.resumeContext().then(() => {
+              audioManager.playBounce();
+            });
+            
+            collisionFound = true;
+            break; // Only handle first collision
+          }
+        }
+        
+        if (collisionFound) {
+          // Increment hit counter for this line
+          line.hits++;
+          
+          // Remove line only after 2 hits
+          if (line.hits >= line.maxHits) {
+            drawnLines.splice(i, 1);
+          }
+          
+          // Update combo progress on line bounce
+          comboProgress = Math.min(100, comboProgress + 10); // Each line bounce adds 10%
+          
+          // If combo just reached 100%, immediately deal a one-time 4x bonus damage and reset combo
+          if (comboProgress >= 100 && !comboActive) {
+            const bonusDamage = Math.floor(dmg * 4);
+            const absorbedB = Math.min(bonusDamage, dotArmor);
+            dotArmor -= absorbedB;
+            const remainingB = bonusDamage - absorbedB;
+            dotHP = Math.max(0, dotHP - remainingB);
+            
+          // Play damage received sound effect (pain/impact sound when receiving damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageReceived(true); // Combo bonus is crit-like
+          });
+          
+          safePushDamageNumber({
+              x: dotX + (Math.random() - 0.5) * 40,
+              y: dotY - 28,
+              value: bonusDamage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: true
+            });
+            screenShake = Math.max(screenShake, 30);
+            // Reset combo
+            comboProgress = 0;
+            comboActive = false;
+            comboMultiplier = 1;
+            
+            // Check death after combo 4x damage (line bounce)
+            if (dotHP <= 0) {
+              gameState = 'Dying';
+              deathAnimation = true;
+              deathTimer = 0;
+              respawnTimer = 0;
+              awaitingRestart = false;
+              rewardGranted = false;
+              deathStartX = dotX;
+              deathStartY = dotY;
+              
+              // Leveling system: increment kill counter
+              killsInCurrentLevel++;
+              console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
+              
+              if (killsInCurrentLevel >= killsNeededPerLevel) {
+                killsInCurrentLevel = 0;
+                if (maxUnlockedLevel === currentLevel) {
+                  maxUnlockedLevel = currentLevel + 1;
+                  console.log(`Level ${maxUnlockedLevel} unlocked!`);
+                  forceSaveGame(); // Save after level unlock
+                }
+              }
+              
+              console.log('DOT is dying! (combo 4x damage from line)');
+            }
+          }
+          
+          // Speed >= 7 bonus damage (same as platform) - OPTIMIZED: Use cached speed
+          if (cachedDotSpeedFrame !== currentFrame) {
+            cachedDotSpeedSquared = dotVx * dotVx + dotVy * dotVy;
+            cachedDotSpeed = Math.sqrt(cachedDotSpeedSquared);
+            cachedDotSpeedFrame = currentFrame;
+          }
+          if (Math.round(cachedDotSpeed) >= 7) {
+            nextHitForceCrit = true;
+            nextHitForceCritExpiresAt = Date.now() + 1500;
+            const bonusDamage = dmg * 2;
+            const absorbed = Math.min(bonusDamage, dotArmor);
+            dotArmor -= absorbed;
+            const remainingDamage = bonusDamage - absorbed;
+            dotHP = Math.max(0, dotHP - remainingDamage);
+            
+          // Play damage received sound effect (pain/impact sound when receiving damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageReceived(true); // Speed bonus is crit-like
+          });
+          
+          safePushDamageNumber({
+              x: dotX + (Math.random() - 0.5) * 40,
+              y: dotY - 20,
+              value: bonusDamage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: true
+            });
+            screenShake = Math.max(screenShake, 14);
+              if (dotHP <= 0) {
+                gameState = 'Dying';
+                deathAnimation = true;
+                deathTimer = 0;
+                respawnTimer = 0;
+                awaitingRestart = false;
+                rewardGranted = false; // Reset reward flag for new death
+                deathStartX = dotX; // Save death position
+                deathStartY = dotY; // Save death position
+                
+                // Leveling system: increment kill counter
+                killsInCurrentLevel++;
+                console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
+                
+                // If reached kills needed, unlock next level
+                if (killsInCurrentLevel >= killsNeededPerLevel) {
+                  killsInCurrentLevel = 0; // Reset counter
+                  if (maxUnlockedLevel === currentLevel) {
+                    maxUnlockedLevel = currentLevel + 1;
+                    console.log(`Level ${maxUnlockedLevel} unlocked!`);
+                  }
+                }
+                
+                // Don't grant reward yet - wait for 10% of death animation
+                console.log('DOT is dying! (line bonus dmg)');
+              }
+          }
+        }
+      }
+    }
+
+    // Moving platform collision (straight platform)
+    if (TOXIC_PLATFORMS_ENABLED) {
+      const halfW = movingPlatformWidth / 2;
+      const surfaceY = movingPlatformY; // straight top surface
+      if (dotX >= movingPlatformX - halfW - dotRadius && dotX <= movingPlatformX + halfW + dotRadius) {
+        if (dotY + dotRadius >= surfaceY && dotVy > 0) {
+          dotY = surfaceY - dotRadius;
+          dotVy = -Math.max(2, Math.abs(dotVy) * 0.6 + 3);
+          // Slight horizontal deflection
+          const localX = dotX - movingPlatformX;
+          dotVx += (localX / halfW) * 1.2;
+          movingPlatformFlashTimer = 6;
+          screenShake = Math.max(screenShake, 6);
+          
+          // Play bounce sound effect (like spring or trampoline)
+          audioManager.resumeContext().then(() => {
+            audioManager.playBounce();
+          });
+          
+          // Update combo progress on platform bounce
+          comboProgress = Math.min(100, comboProgress + 10); // Each platform bounce adds 10%
+          
+          // If combo just reached 100%, immediately deal a one-time 4x bonus damage and reset combo
+          if (comboProgress >= 100 && !comboActive) {
+            const bonusDamage = Math.floor(dmg * 4);
+            const absorbedB = Math.min(bonusDamage, dotArmor);
+            dotArmor -= absorbedB;
+            const remainingB = bonusDamage - absorbedB;
+            dotHP = Math.max(0, dotHP - remainingB);
+            
+          // Play damage received sound effect (pain/impact sound when receiving damage)
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageReceived(true); // Combo bonus is crit-like
+          });
+          
+          safePushDamageNumber({
+              x: dotX + (Math.random() - 0.5) * 40,
+              y: dotY - 28,
+              value: bonusDamage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: true
+            });
+            screenShake = Math.max(screenShake, 30);
+            // Reset combo
+            comboProgress = 0;
+            comboActive = false;
+            comboMultiplier = 1;
+            
+            // Check death after combo 4x damage (platform bounce)
+            if (dotHP <= 0) {
+              gameState = 'Dying';
+              deathAnimation = true;
+              deathTimer = 0;
+              respawnTimer = 0;
+              awaitingRestart = false;
+              rewardGranted = false;
+              deathStartX = dotX;
+              deathStartY = dotY;
+              
+              // Leveling system: increment kill counter
+              killsInCurrentLevel++;
+              console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
+              
+              if (killsInCurrentLevel >= killsNeededPerLevel) {
+                killsInCurrentLevel = 0;
+                if (maxUnlockedLevel === currentLevel) {
+                  maxUnlockedLevel = currentLevel + 1;
+                  console.log(`Level ${maxUnlockedLevel} unlocked!`);
+                  forceSaveGame(); // Save after level unlock
+                }
+              }
+              
+              console.log('DOT is dying! (combo 4x damage from platform)');
+            }
+          }
+          
+          // If current speed is >=7, award a force-crit for next hit and bonus damage - OPTIMIZED: Use cached speed
+          if (cachedDotSpeedFrame !== currentFrame) {
+            cachedDotSpeedSquared = dotVx * dotVx + dotVy * dotVy;
+            cachedDotSpeed = Math.sqrt(cachedDotSpeedSquared);
+            cachedDotSpeedFrame = currentFrame;
+          }
+          if (Math.round(cachedDotSpeed) >= 7) {
+            nextHitForceCrit = true;
+            nextHitForceCritExpiresAt = Date.now() + 1500;
+            // Immediate bonus damage as 2x (crit-like) without clicking
+            {
+              const bonusDamage = dmg * 2;
+              const absorbed = Math.min(bonusDamage, dotArmor);
+              dotArmor -= absorbed;
+              const remainingDamage = bonusDamage - absorbed;
+              dotHP = Math.max(0, dotHP - remainingDamage);
+              safePushDamageNumber({
+                x: dotX + (Math.random() - 0.5) * 40,
+                y: dotY - 20,
+                value: bonusDamage,
+                life: 60,
+                maxLife: 60,
+                vx: (Math.random() - 0.5) * 2,
+                vy: -2 - Math.random() * 2,
+                isCrit: true
+              });
+              screenShake = Math.max(screenShake, 14);
+              if (dotHP <= 0) {
+                gameState = 'Dying';
+                deathAnimation = true;
+                deathTimer = 0;
+                respawnTimer = 0;
+                awaitingRestart = false;
+                rewardGranted = false; // Reset reward flag for new death
+                deathStartX = dotX; // Save death position
+                deathStartY = dotY; // Save death position
+                
+                // Leveling system: increment kill counter
+                killsInCurrentLevel++;
+                console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
+                
+                // If reached kills needed, unlock next level
+                if (killsInCurrentLevel >= killsNeededPerLevel) {
+                  killsInCurrentLevel = 0; // Reset counter
+                  if (maxUnlockedLevel === currentLevel) {
+                    maxUnlockedLevel = currentLevel + 1;
+                    console.log(`Level ${maxUnlockedLevel} unlocked!`);
+                  }
+                }
+                
+                // Don't grant reward yet - wait for 10% of death animation
+                console.log('DOT is dying! (platform bonus dmg)');
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Bottom floor collision (100px below moving platform) - DOT lands but doesn't bounce
+    const bottomFloorY = PVP_BOTTOM_FLOOR_Y;
+    if (dotY + dotRadius >= bottomFloorY && dotVy >= 0) {
+      // DOT lands on bottom floor - stop falling but allow horizontal movement
+      dotY = bottomFloorY - dotRadius;
+      dotVy = 0; // Stop falling (no bounce)
+      dotVx *= 0.95; // Light friction (can still move horizontally)
+    }
+    
+    // Ground collision (invisible ground at 150px from bottom) - only if not on bottom floor
+    if (dotY < bottomFloorY - dotRadius && dotY >= groundY) {
+      dotY = groundY;
+      dotVy = 0; // Stop falling
+      dotVx *= 0.8; // Friction
+      
+      // Only handle combo reset and restart scheduling if still Alive (not during Dying)
+      if (gameState === 'Alive') {
+        // Reset combo when DOT hits ground
+        if (comboProgress > 0) {
+          comboProgress = 0;
+          comboActive = false;
+          comboMultiplier = 1;
+          console.log('Combo reset - DOT hit ground!');
+        }
+        // Schedule restart after 2 seconds if not already scheduled
+        if (!awaitingRestart) {
+          awaitingRestart = true;
+          scheduledRestartAt = Date.now() + 2000;
+          groundShrinkStartAt = Date.now();
+          gravityLocked = true; // lock gravity during awaiting restart
+        }
+      }
+    }
+    
+    // Check if DOT goes out of bounds (without bouncing) - triggers restart without reward
+    const isOutOfBounds = dotX < 240 || dotX > 1920 || dotY < 0 || dotY > 1080;
+    if (isOutOfBounds && !awaitingRestart) {
+      // DOT went out of bounds - restart without reward (no death animation)
+      awaitingRestart = true;
+      scheduledRestartAt = Date.now() + 500; // Quick restart (0.5 seconds)
+      groundShrinkStartAt = Date.now();
+      gravityLocked = true;
+      
+      // Reset arrow when DOT goes out of bounds
+      arrowReady = false;
+      arrowFired = false;
+      katanaFlying = false;
+      katanaVx = 0;
+      katanaVy = 0;
+      katanaSlashing = false;
+      
+      console.log('DOT out of bounds - restarting without reward');
+    }
+    
+    // Side walls collision (keep DOT in play area) - only if not out of bounds
+    if (!isOutOfBounds) {
+      if (dotX < 240 + dotRadius) {
+        dotX = 240 + dotRadius;
+        dotVx = -dotVx * 0.8; // Bounce with friction
+      }
+      if (dotX > 1920 - dotRadius) {
+        dotX = 1920 - dotRadius;
+        dotVx = -dotVx * 0.8; // Bounce with friction
+      }
+      
+      // Top wall collision
+      if (dotY < dotRadius) {
+        dotY = dotRadius;
+        dotVy = -dotVy * 0.8; // Bounce with friction
+      }
+    }
+    
+    // Apply air resistance
+    dotVx *= 0.995;
+    dotVy *= 0.995;
+    
+    // Update UFO tilt/sway effect for Solo mode
+    const accelX = dotVx - soloLastVx;
+    const accelY = dotVy - soloLastVy;
+    const acceleration = Math.sqrt(accelX * accelX + accelY * accelY);
+    
+    // Add tilt based on acceleration (stronger acceleration = more tilt)
+    const tiltAmount = acceleration * 0.15; // Adjust sensitivity
+    const tiltDirection = Math.atan2(accelY, accelX);
+    soloUfoTilt += Math.sin(tiltDirection) * tiltAmount;
+    
+    // Damping - slowly return to neutral position
+    soloUfoTilt *= 0.92; // Damping factor (0.92 = 8% reduction per frame)
+    
+    // Limit maximum tilt
+    soloUfoTilt = Math.max(-0.3, Math.min(0.3, soloUfoTilt));
+    
+    // Update last velocities
+    soloLastVx = dotVx;
+    soloLastVy = dotVy;
+
+    // Update Solo "idle flight" FX (thrust + warp) for wallet-connected main screen feel.
+    updateSoloIdleFlightFx(Date.now());
+
+    // UFO speed SFX disabled (requested).
+  }
+  
+  // PvP/Training mode: Physics update for all players (copied from Solo DOT physics)
+  // NOTE: Disabled for turn-based PvP (we drive movement from server plans/events instead).
+  if ((gameMode === 'PvP' || gameMode === 'Training') && !isTurnBasedPvPDesired()) {
+    for (const playerId in pvpPlayers) {
+      const player = pvpPlayers[playerId];
+      
+      // Skip physics update if player is dead (isOut, hp <= 0, or death animation playing)
+      const isDead = player.isOut || player.hp <= 0 || deathAnimations.has(playerId);
+      if (isDead) {
+        // Stop all movement when dead
+        player.vx = 0;
+        player.vy = 0;
+        continue; // Skip physics update for dead player
+      }
+      
+      // Skip movement if paralyzed (stuck on spike)
+      const isParalyzed = player.paralyzedUntil > Date.now();
+      if (isParalyzed) {
+        // Still apply gravity and air resistance, but don't allow movement input
+        const now = Date.now();
+        // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
+        if (DAMAGE_GRAVITY_ENABLED && player.gravityActiveUntil > now) {
+          player.vy += pvpGravity;
+        }
+        player.x += player.vx;
+        player.y += player.vy;
+        if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(playerId, player);
+        enforcePvpCenterObstacle(player);
+        // Apply air resistance
+        player.vx *= pvpFriction;
+        player.vy *= pvpFriction;
+        continue; // Skip rest of physics update (no input handling)
+      }
+      
+      // Apply gravity only if active (after damage) - gravity is triggered by damage, not always active
+      const now = Date.now(); // Declare once for entire scope
+      // Gravity is active only if gravityActiveUntil > now (gravity was triggered by damage)
+      if (DAMAGE_GRAVITY_ENABLED && player.gravityActiveUntil > now) {
+        player.vy += pvpGravity;
+      }
+      
+      // Jetpack system - only for my player
+      if (playerId === myPlayerId && player.isUsingJetpack && player.fuel > 0 && !player.isOverheated) {
+        const jetpackUseTime = (now - player.jetpackStartTime) / 1000; // Time in seconds
+        const jetpackRampTime = 1.5; // seconds to reach max boost (then stays max)
+        
+        // Calculate fuel percent for sound effect
+        const fuelPercent = player.fuel / player.maxFuel;
+        
+        // Start/update jetpack sound effect only after 25% fuel is used (fuel <= 75%)
+        const FUEL_THRESHOLD_FOR_SOUND = 0.75; // Start sound when fuel <= 75% (25% used)
+        if (fuelPercent <= FUEL_THRESHOLD_FOR_SOUND) {
+          // Calculate adjusted fuel percent for sound (0.0 = 75% fuel, 1.0 = 0% fuel)
+          const adjustedFuelPercent = fuelPercent / FUEL_THRESHOLD_FOR_SOUND; // 0.0 to 1.0 range
+          
+          audioManager.resumeContext().then(() => {
+            if (!(audioManager as any).jetpackOscillator) {
+              // Start jetpack sound if not already playing
+              audioManager.startJetpackSound(adjustedFuelPercent);
+            } else {
+              // Update jetpack sound based on adjusted fuel level
+              audioManager.updateJetpackSound(adjustedFuelPercent);
+            }
+          });
+        } else {
+          // Stop sound if fuel is above threshold (above 75%)
+          audioManager.stopJetpackSound();
+        }
+        
+        {
+          // Calculate speed boost (ramps up, then stays at max)
+          const t = jetpackRampTime > 0 ? Math.max(0, Math.min(1, jetpackUseTime / jetpackRampTime)) : 1;
+          const speedBoost = 1 + t * 4; // 1..5
+          
+          // Move towards mouse cursor position
+          // Use global mouse position (updated in mousemove event)
+          if (typeof globalMouseX !== 'undefined' && typeof globalMouseY !== 'undefined') {
+            // Calculate direction to mouse cursor
+            const dx = globalMouseX - player.x;
+            const dy = globalMouseY - player.y;
+            const distanceToMouse = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distanceToMouse > 0.1) {
+              // Normalize direction to mouse
+              const dirX = dx / distanceToMouse;
+              const dirY = dy / distanceToMouse;
+              // Apply speed boost towards mouse cursor
+              player.vx += dirX * speedBoost * 0.2; // Increased from 0.15 to 0.2 for stronger effect
+              player.vy += dirY * speedBoost * 0.2;
+            }
+          } else {
+            // Fallback: if mouse position not available, use current movement direction
+            const currentSpeed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+            if (currentSpeed > 0.1) {
+              // Apply speed boost in current direction - increased multiplier for better feel
+              const dirX = player.vx / currentSpeed;
+              const dirY = player.vy / currentSpeed;
+              player.vx += dirX * speedBoost * 0.2; // Increased from 0.15 to 0.2 for stronger effect
+              player.vy += dirY * speedBoost * 0.2;
+            }
+          }
+          
+          // Consume fuel using dt (so bigger maxFuel actually extends travel).
+          const lastTick = (typeof player.jetpackLastFuelTickTime === 'number' && player.jetpackLastFuelTickTime > 0)
+            ? player.jetpackLastFuelTickTime
+            : now;
+          const dtSec = Math.max(0, Math.min(0.1, (now - lastTick) / 1000));
+          player.jetpackLastFuelTickTime = now;
+          const fuelConsumptionRate = 20; // fuel per second (100 fuel ~= 5s, 150 fuel ~= 7.5s)
+          player.fuel = Math.max(0, player.fuel - fuelConsumptionRate * dtSec);
+          
+          // If fuel runs out, start overheat
+          if (player.fuel <= 0) {
+            player.isUsingJetpack = false;
+            player.fuel = 0;
+            player.isOverheated = true;
+            player.overheatStartTime = now;
+            player.lastFuelRegenTime = 0; // Fuel regeneration disabled (no auto-refill)
+            audioManager.stopJetpackSound();
+            console.log('Jetpack fuel depleted! Overheat started.');
+          }
+        }
+      } else if (playerId === myPlayerId && !player.isUsingJetpack) {
+        // Stop jetpack sound when not using
+        audioManager['stopJetpackSound']();
+      }
+      
+      // Overheat system - only for my player
+      if (playerId === myPlayerId && player.isOverheated) {
+        const overheatDuration = (now - player.overheatStartTime) / 1000; // Time in seconds
+        const overheatTime = 4; // 4 seconds overheat (increased from 3 to 4 seconds)
+        
+        // Check if overheat duration passed (4 seconds)
+        if (overheatDuration >= overheatTime) {
+          // Overheat finished (fuel does NOT regenerate)
+          player.isOverheated = false;
+          player.overheatStartTime = 0;
+          player.lastFuelRegenTime = 0;
+          console.log('Overheat finished!');
+        }
+        // During overheat, fuel regeneration is blocked (handled below)
+      }
+      
+      // Fuel regeneration intentionally disabled:
+      // Fuel only decreases when used and carries over between PvP rounds.
+      
+      // Update position
+      player.x += player.vx;
+      player.y += player.vy;
+      if (PVP_MID_WALL_ENABLED) enforcePvpMidWall(playerId, player);
+      enforcePvpCenterObstacle(player);
+      // Training: keep opponent interpolation buffer updated (otherwise opponent can appear stuck).
+      if (gameMode === 'Training' && opponentId && playerId === opponentId) {
+        try { pushOpponentSample(now, player); } catch {}
+      }
+
+      // Apply friction every frame to reduce inertia.
+      // Make coasting (not using jetpack) slow down faster for the local player.
+      let friction = (playerId === myPlayerId && !player.isUsingJetpack) ? pvpFrictionCoast : pvpFriction;
+      player.vx *= friction;
+      player.vy *= friction;
+      // Velocity deadzone: eliminate tiny subpixel drift that looks like jitter at the end of motion.
+      if (!player.isUsingJetpack) {
+        const vx = player.vx;
+        const vy = player.vy;
+        if ((vx * vx + vy * vy) < (PVP_VELOCITY_DEADZONE * PVP_VELOCITY_DEADZONE)) {
+          player.vx = 0;
+          player.vy = 0;
+        }
+      }
+      
+      // Check if player is out of bounds (any side) - no damage, just tracking for death animation
+      const isOutOfBounds = player.x < pvpBounds.left || 
+                            player.x > pvpBounds.right || 
+                            player.y < pvpBounds.top || 
+                            player.y > pvpBounds.bottom;
+      
+      // Out of bounds tracking (no damage)
+      // Note: 'now' is already declared above in this scope
+      if (isOutOfBounds) {
+        if (player.outOfBoundsStartTime === null) {
+          player.outOfBoundsStartTime = now;
+        }
+      } else {
+        // Player is back in safe area - reset out of bounds tracking
+        if (player.outOfBoundsStartTime !== null) {
+          player.outOfBoundsStartTime = null;
+          player.lastOutOfBoundsDamageTime = 0;
+        }
+      }
+      
+      // Toxic water system removed
+      const bottomFloorY = PVP_BOTTOM_FLOOR_Y;
+      
+      // Bottom floor collision (100px below moving platform) - player lands but doesn't bounce
+      const wallTopY = movingPlatformY; // Start from platform level
+      const wallBottomY = bottomFloorY; // End at bottom floor
+      
+      if (player.y + player.radius >= bottomFloorY && player.vy >= 0) {
+        // Player lands on bottom floor - stop falling but allow horizontal movement
+        player.y = bottomFloorY - player.radius;
+        player.vy = 0; // Stop falling (no bounce)
+        player.vx *= 0.95; // Light friction (can still move horizontally)
+      }
+      
+      // Ground collision (same as Solo) - only if in bounds and not on bottom floor
+      if (!isOutOfBounds && player.y < bottomFloorY - player.radius && player.y >= pvpBounds.bottom) {
+        player.y = pvpBounds.bottom;
+        player.vy = 0; // Stop falling
+        player.vx *= 0.8; // Friction
+      }
+      
+      // Side walls collision with extended walls (from platform to bottom floor)
+      const wallThickness = 5; // Wall thickness
+      
+      // Check if player is in the wall zone (between platform and bottom floor)
+      const isInWallZone = player.y >= wallTopY && player.y <= wallBottomY;
+      
+      // Track if player is stuck on a spike (for paralysis)
+      let isStuckOnSpike = false;
+      
+      if (isInWallZone) {
+        // Check collision with wall spikes first
+        for (const spike of wallSpikes) {
+          // Only check spikes that are extended or extending
+          if (spike.state === 'retracted' || spike.state === 'retracting') continue;
+          
+          const spikeCurrentLength = spike.length * spike.progress;
+          if (spikeCurrentLength <= 0) continue;
+          
+          // Check if player is touching this spike
+          const spikeX = spike.side === 'left' ? playLeft : playRight;
+          const spikeTopY = spike.y - spike.width / 2;
+          const spikeBottomY = spike.y + spike.width / 2;
+          
+          // Check if player is in spike's vertical range
+          if (player.y + player.radius >= spikeTopY && player.y - player.radius <= spikeBottomY) {
+            // Check if player is touching spike horizontally
+            if (spike.side === 'left') {
+              if (player.x - player.radius <= spikeX + spikeCurrentLength && player.x - player.radius >= spikeX) {
+                // Player is touching left spike
+                isStuckOnSpike = true;
+                
+                // Apply paralysis (can't move while stuck)
+                player.paralyzedUntil = Date.now() + 1000; // 1 second paralysis
+                
+                // Apply damage (5% of max HP) with cooldown
+                const now = Date.now();
+                const lastDamage = spike.lastDamageTime[playerId] || 0;
+                if (now - lastDamage >= SPIKE_DAMAGE_COOLDOWN) {
+                  const damage = Math.ceil(player.maxHP * (spike.damagePercent / 100));
+                  const absorbed = Math.min(damage, player.armor);
+                  player.armor -= absorbed;
+                  const remainingDamage = damage - absorbed;
+                  player.hp = Math.max(0, player.hp - remainingDamage);
+                  // Reset armor regen timer on taking damage (prevents instant regen after spike hit)
+                  player.lastArmorRegen = now;
+                  
+                  // Activate gravity for 5 seconds after damage
+                  const now = Date.now();
+                  setDamageGravity(player, now);
+                  
+                  // Play damage received sound effect (pain/impact sound when receiving damage)
+                  audioManager.resumeContext().then(() => {
+                    audioManager.playDamageReceived(false);
+                  });
+                  
+                  spike.lastDamageTime[playerId] = now;
+                  
+                  // Show damage number
+                  safePushDamageNumber({
+                    x: player.x + (Math.random() - 0.5) * 40,
+                    y: player.y - 20,
+                    value: damage,
+                    life: 60,
+                    maxLife: 60,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: -2 - Math.random() * 2,
+                    isCrit: false
+                  });
+                  
+                  console.log(`PvP: Player ${playerId} hit by left spike - ${damage} damage. HP: ${player.hp}/${player.maxHP}`);
+                }
+                
+                // Push player away from spike
+                player.x = spikeX + spikeCurrentLength + player.radius;
+                player.vx = 0; // Stop horizontal movement
+              }
+            } else {
+              // Right spike
+              if (player.x + player.radius >= spikeX - spikeCurrentLength && player.x + player.radius <= spikeX) {
+                // Player is touching right spike
+                isStuckOnSpike = true;
+                
+                // Apply paralysis (can't move while stuck)
+                player.paralyzedUntil = Date.now() + 1000; // 1 second paralysis
+                
+                // Apply damage (5% of max HP) with cooldown
+                const now = Date.now();
+                const lastDamage = spike.lastDamageTime[playerId] || 0;
+                if (now - lastDamage >= SPIKE_DAMAGE_COOLDOWN) {
+                  const damage = Math.ceil(player.maxHP * (spike.damagePercent / 100));
+                  const absorbed = Math.min(damage, player.armor);
+                  player.armor -= absorbed;
+                  const remainingDamage = damage - absorbed;
+                  player.hp = Math.max(0, player.hp - remainingDamage);
+                  // Reset armor regen timer on taking damage (prevents instant regen after spike hit)
+                  player.lastArmorRegen = now;
+                  
+                  // Activate gravity for 5 seconds after damage
+                  const now = Date.now();
+                  setDamageGravity(player, now);
+                  
+                  // Play damage received sound effect (pain/impact sound when receiving damage)
+                  audioManager.resumeContext().then(() => {
+                    audioManager.playDamageReceived(false);
+                  });
+                  
+                  spike.lastDamageTime[playerId] = now;
+                  
+                  // Show damage number
+                  safePushDamageNumber({
+                    x: player.x + (Math.random() - 0.5) * 40,
+                    y: player.y - 20,
+                    value: damage,
+                    life: 60,
+                    maxLife: 60,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: -2 - Math.random() * 2,
+                    isCrit: false
+                  });
+                  
+                  console.log(`PvP: Player ${playerId} hit by right spike - ${damage} damage. HP: ${player.hp}/${player.maxHP}`);
+                }
+                
+                // Push player away from spike
+                player.x = spikeX - spikeCurrentLength - player.radius;
+                player.vx = 0; // Stop horizontal movement
+              }
+            }
+          }
+        }
+        
+        // If not stuck on spike, handle normal wall collision
+        if (!isStuckOnSpike) {
+          // Left wall collision (prevents going through UI panel)
+          if (player.x - player.radius < playLeft) {
+            player.x = playLeft + player.radius;
+            player.vx = -player.vx * 0.8; // Bounce with friction
+          }
+          // Right wall collision
+          if (player.x + player.radius > playRight) {
+            player.x = playRight - player.radius;
+            player.vx = -player.vx * 0.8; // Bounce with friction
+          }
+        }
+      }
+      
+      // Side walls collision (same as Solo) - only if in bounds and not in wall zone
+      if (!isOutOfBounds && !isInWallZone) {
+        if (player.x < pvpBounds.left + player.radius) {
+          player.x = pvpBounds.left + player.radius;
+          player.vx = -player.vx * 0.8; // Bounce with friction
+        }
+        if (player.x > pvpBounds.right - player.radius) {
+          player.x = pvpBounds.right - player.radius;
+          player.vx = -player.vx * 0.8; // Bounce with friction
+        }
+      }
+      
+      // Top wall collision (same as Solo) - only if in bounds
+      if (!isOutOfBounds) {
+        if (player.y < pvpBounds.top + player.radius) {
+          player.y = pvpBounds.top + player.radius;
+          player.vy = -player.vy * 0.8; // Bounce with friction
+        }
+      }
+      
+      // Apply air resistance (same as Solo: 0.995)
+      player.vx *= 0.995;
+      player.vy *= 0.995;
+      
+      // Update UFO tilt/sway effect for PvP players
+      const accelX = player.vx - player.lastVx;
+      const accelY = player.vy - player.lastVy;
+      const acceleration = Math.sqrt(accelX * accelX + accelY * accelY);
+      
+      // Add tilt based on acceleration (stronger acceleration = more tilt)
+      const tiltAmount = acceleration * 0.15; // Adjust sensitivity
+      const tiltDirection = Math.atan2(accelY, accelX);
+      player.ufoTilt += Math.sin(tiltDirection) * tiltAmount;
+      
+      // Damping - slowly return to neutral position
+      player.ufoTilt *= 0.92; // Damping factor (0.92 = 8% reduction per frame)
+      
+      // Limit maximum tilt
+      player.ufoTilt = Math.max(-0.3, Math.min(0.3, player.ufoTilt));
+      
+      // Update last velocities
+      player.lastVx = player.vx;
+      player.lastVy = player.vy;
+    }
+    
+    // Update wall spikes animation (PvP mode only)
+    if (gameMode === 'PvP' || gameMode === 'Training') {
+      const now = Date.now();
+      for (const spike of wallSpikes) {
+        const elapsed = now - spike.startTime;
+        
+        if (spike.state === 'retracted') {
+          // Start extending after retracted duration
+          if (elapsed >= spike.retractDuration) {
+            spike.state = 'extending';
+            spike.startTime = now;
+            spike.progress = 0;
+          }
+        } else if (spike.state === 'extending') {
+          // Extend over extendDuration
+          spike.progress = Math.min(1, elapsed / spike.extendDuration);
+          if (spike.progress >= 1) {
+            spike.state = 'extended';
+            spike.startTime = now;
+            spike.progress = 1;
+          }
+        } else if (spike.state === 'extended') {
+          // Stay extended for extendDuration
+          if (elapsed >= spike.extendDuration) {
+            spike.state = 'retracting';
+            spike.startTime = now;
+            spike.progress = 1;
+          }
+        } else if (spike.state === 'retracting') {
+          // Retract over retractDuration
+          spike.progress = Math.max(0, 1 - (elapsed / spike.retractDuration));
+          if (spike.progress <= 0) {
+            spike.state = 'retracted';
+            spike.startTime = now;
+            spike.progress = 0;
+            // Clear damage cooldown when spike retracts (player is free)
+            spike.lastDamageTime = {};
+          }
+        }
+      }
+    }
+    
+    // PvP/Training mode: Update arrow physics (time-based). Hit is server-authoritative.
+    if ((gameMode === 'PvP' || gameMode === 'Training') && pvpKatanaFlying) {
+      const now = Date.now();
+      if (!pvpKatanaLastUpdateAt) pvpKatanaLastUpdateAt = now;
+      // After stone bounce, arrow should disappear quickly.
+      if (pvpArrowExpireAt && now >= pvpArrowExpireAt) {
+        pvpKatanaFlying = false;
+        pvpArrowFired = false;
+        pvpKatanaX = 0;
+        pvpKatanaY = 0;
+        pvpKatanaVx = 0;
+        pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+        pvpKatanaTravelPx = 0;
+        pvpArrowStoneBounceCount = 0;
+        pvpArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+        pvpArrowExpireAt = 0;
+      } else {
+      // Clamp dt to avoid visible "jumps" on occasional slow frames / tab throttling.
+      const dtFrames = Math.max(0, Math.min(6, (now - pvpKatanaLastUpdateAt) / (1000 / 60)));
+      pvpKatanaLastUpdateAt = now;
+
+      // vx/vy are in px per 60fps frame (legacy), so scale by dtFrames
+      const stepX = pvpKatanaVx * dtFrames;
+      const stepY = pvpKatanaVy * dtFrames;
+      pvpKatanaX += stepX;
+      pvpKatanaY += stepY;
+      const stepDist = Math.sqrt(stepX * stepX + stepY * stepY);
+      pvpKatanaTravelPx += stepDist;
+
+      // If arrow hits the center stone, destroy it immediately (visual) and shake stone.
+      // Server will also send a 'stone_hit' event to sync both clients.
+      if (PVP_CENTER_OBSTACLE_ENABLED) {
+        const hit = collideCircleWithStone(pvpKatanaX, pvpKatanaY, PVP_ARROW_COLLISION_RADIUS);
+        if (hit) {
+          triggerStoneShake(pvpKatanaX, pvpKatanaY, 1);
+          if (pvpArrowStoneBounceCount <= 0) {
+            // 1st impact: bounce
+            pvpKatanaX += hit.nx * (hit.depth + 0.5);
+            pvpKatanaY += hit.ny * (hit.depth + 0.5);
+            const vn = pvpKatanaVx * hit.nx + pvpKatanaVy * hit.ny;
+            if (vn < 0) {
+              // After stone bounce, arrow should not travel far.
+              pvpKatanaVx = (pvpKatanaVx - 2 * vn * hit.nx) * 0.55;
+              pvpKatanaVy = (pvpKatanaVy - 2 * vn * hit.ny) * 0.55;
+              pvpKatanaAngle = Math.atan2(pvpKatanaVy, pvpKatanaVx);
+            }
+            pvpArrowStoneBounceCount = 1;
+            pvpArrowMaxTravelPx = Math.min(pvpArrowMaxTravelPx, pvpKatanaTravelPx + 140);
+            pvpArrowExpireAt = now + 100;
+          } else {
+            // 2nd impact: destroy
+            pvpKatanaFlying = false;
+            pvpArrowFired = false;
+            pvpKatanaX = 0;
+            pvpKatanaY = 0;
+            pvpKatanaVx = 0;
+            pvpKatanaVy = 0;
+            pvpKatanaAngle = 0;
+            pvpKatanaLastUpdateAt = 0;
+            pvpKatanaTravelPx = 0;
+            pvpArrowStoneBounceCount = 0;
+            pvpArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+            pvpArrowExpireAt = 0;
+          }
+        }
+      }
+
+      // Air resistance trail: small streaks behind the arrow while flying (purely visual).
+      {
+        const vmag = Math.sqrt(pvpKatanaVx * pvpKatanaVx + pvpKatanaVy * pvpKatanaVy);
+        if (vmag > 0.001 && stepDist > 0.5) {
+          const dirX = pvpKatanaVx / vmag;
+          const dirY = pvpKatanaVy / vmag;
+          const n = Math.max(1, Math.min(2, Math.floor(stepDist / 12)));
+          for (let i = 0; i < n; i++) {
+            const back = 10 + Math.random() * 14;
+            safePushArrowAirParticle({
+              x: pvpKatanaX - dirX * back + (Math.random() - 0.5) * 8,
+              y: pvpKatanaY - dirY * back + (Math.random() - 0.5) * 8,
+              vx: -dirX * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              vy: -dirY * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              life: 18 + Math.floor(Math.random() * 10),
+              maxLife: 18 + Math.floor(Math.random() * 10),
+              size: 2.6 + Math.random() * 1.2
+            });
+          }
+        }
+      }
+
+      // Training-only: local arrow hit detection (offline mode has no server-authoritative hit).
+      if (gameMode === 'Training' && opponentId && pvpPlayers[opponentId]) {
+        const opp = pvpPlayers[opponentId];
+        const dx = pvpKatanaX - opp.x;
+        const dy = pvpKatanaY - opp.y;
+        const r = PVP_ARROW_COLLISION_RADIUS + opp.radius;
+        if ((dx * dx + dy * dy) <= r * r) {
+          const nftBonuses = calculateNftBonuses();
+          const totalCritChance = critChance + nftBonuses.critChance;
+          const isCritHit = Math.random() < totalCritChance / 100;
+          const totalDmg = dmg + nftBonuses.dmg;
+          const base = isCritHit ? totalDmg * 3 : totalDmg * 2;
+          const arrowDamage = applyDamageVariance(base);
+
+          // Attacker feedback (same as PvP)
+          if (isCritHit) screenShake = Math.max(screenShake, 30);
+          audioManager.resumeContext().then(() => {
+            audioManager.playDamageDealt(isCritHit);
+          });
+          safePushDamageNumber({
+            x: opp.x + (Math.random() - 0.5) * 40,
+            y: opp.y - 20,
+            value: arrowDamage,
+            life: 60,
+            maxLife: 60,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random() * 2,
+            isCrit: isCritHit
+          });
+
+          // Attacker-side already shows the number; don't duplicate defender-side number.
+          applyLocalTrainingHit(opponentId, arrowDamage, isCritHit, { showNumber: false });
+
+          // Stop arrow on hit
+          pvpKatanaFlying = false;
+          pvpArrowFired = false;
+          pvpKatanaX = 0;
+          pvpKatanaY = 0;
+          pvpKatanaVx = 0;
+          pvpKatanaVy = 0;
+          pvpKatanaAngle = 0;
+          pvpKatanaLastUpdateAt = 0;
+          pvpKatanaTravelPx = 0;
+          pvpArrowStoneBounceCount = 0;
+          pvpArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+          pvpArrowExpireAt = 0;
+        }
+      }
+
+      // Range limit: fade after range and remove at max travel (can be shortened after stone bounce)
+      if (pvpKatanaTravelPx >= pvpArrowMaxTravelPx) {
+        pvpKatanaFlying = false;
+        pvpArrowFired = false;
+        pvpKatanaX = 0;
+        pvpKatanaY = 0;
+        pvpKatanaVx = 0;
+        pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+        pvpKatanaTravelPx = 0;
+        pvpArrowStoneBounceCount = 0;
+        pvpArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+      }
+      
+      // Check if arrow is out of bounds
+      if (pvpKatanaX < playLeft || pvpKatanaX > playRight || pvpKatanaY < 0 || pvpKatanaY > pvpBounds.bottom) {
+        pvpKatanaFlying = false;
+        pvpArrowFired = false;
+        pvpKatanaX = 0;
+        pvpKatanaY = 0;
+        pvpKatanaVx = 0;
+        pvpKatanaVy = 0;
+        pvpKatanaAngle = 0;
+        pvpKatanaLastUpdateAt = 0;
+        pvpKatanaTravelPx = 0;
+      }
+      } // end else (not expired)
+    }
+
+    // PvP/Training mode: Arrow charge -> delayed fire
+    if ((gameMode === 'PvP' || gameMode === 'Training') && pvpArrowCharging && myPlayerId && pvpPlayers[myPlayerId]) {
+      const now = Date.now();
+      if (now >= pvpArrowChargeFireAt) {
+        const me = pvpPlayers[myPlayerId];
+        // Cancel if dead/paralyzed at fire time
+        if (me.isOut || me.hp <= 0 || deathAnimations.has(myPlayerId) || me.paralyzedUntil > now) {
+          pvpArrowCharging = false;
+        } else {
+          // Fire arrow from current position towards stored aim
+          pvpKatanaFlying = true;
+          pvpArrowFired = true;
+          pvpArrowLastShotTime = now;
+          pvpKatanaX = me.x;
+          pvpKatanaY = me.y + PVP_ARROW_SPAWN_OFFSET_Y;
+          pvpKatanaLastUpdateAt = now;
+          pvpKatanaTravelPx = 0;
+          pvpArrowStoneBounceCount = 0;
+          pvpArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+          pvpArrowExpireAt = 0;
+
+          const dx = pvpArrowChargeAimX - me.x;
+          const dy = pvpArrowChargeAimY - (me.y + PVP_ARROW_SPAWN_OFFSET_Y);
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance > 0) {
+            pvpKatanaVx = (dx / distance) * pvpKatanaSpeed;
+            pvpKatanaVy = (dy / distance) * pvpKatanaSpeed;
+            pvpKatanaAngle = Math.atan2(dy, dx);
+          }
+
+          // 5SEC PVP shadow recording (legacy hook; harmless in LIVE)
+          if (is5SecPvPMode() && turnPhase === 'planning') {
+            recordTurnSpawn('arrow', pvpKatanaX, pvpKatanaY, pvpKatanaVx, pvpKatanaVy);
+          }
+
+          // Audio
+          audioManager.resumeContext().then(() => {
+            audioManager.playArrowShot();
+          });
+
+          // Send arrow to opponent (at fire time, not charge start)
+          const useColyseusArrow = colyseusService.isConnectedToRoom();
+          const isSyncingArrow = useColyseusArrow || pvpSyncService.isSyncing();
+          if (currentMatch && isSyncingArrow) {
+            const nftBonuses = calculateNftBonuses();
+            const totalDmg = dmg + (nftBonuses?.dmg || 0);
+            const totalCritChance = critChance + (nftBonuses?.critChance || 0);
+            const arrowInput = {
+              type: 'arrow' as const,
+              timestamp: now,
+              x: me.x,
+              y: me.y + PVP_ARROW_SPAWN_OFFSET_Y,
+              targetX: pvpArrowChargeAimX,
+              targetY: pvpArrowChargeAimY,
+              dmg: totalDmg,
+              critChance: totalCritChance,
+            };
+            if (useColyseusArrow) {
+              colyseusService.sendInput(arrowInput);
+            } else {
+              pvpSyncService.sendInput(arrowInput);
+            }
+          }
+
+          pvpArrowCharging = false;
+        }
+      }
+    }
+    
+    // PvP mode: Update opponent arrow physics (time-based). Hit is server-authoritative.
+    if ((gameMode === 'PvP' || gameMode === 'Training') && opponentArrowFlying) {
+      const now = Date.now();
+      if (!opponentArrowLastUpdateAt) opponentArrowLastUpdateAt = now;
+      if (opponentArrowExpireAt && now >= opponentArrowExpireAt) {
+        opponentArrowFlying = false;
+        opponentArrowX = 0;
+        opponentArrowY = 0;
+        opponentArrowVx = 0;
+        opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
+        opponentArrowStoneBounceCount = 0;
+        opponentArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+        opponentArrowExpireAt = 0;
+      } else {
+      // Clamp dt to avoid visible "jumps" on occasional slow frames / tab throttling.
+      const dtFrames = Math.max(0, Math.min(6, (now - opponentArrowLastUpdateAt) / (1000 / 60)));
+      opponentArrowLastUpdateAt = now;
+      const stepX = opponentArrowVx * dtFrames;
+      const stepY = opponentArrowVy * dtFrames;
+      opponentArrowX += stepX;
+      opponentArrowY += stepY;
+      const stepDist = Math.sqrt(stepX * stepX + stepY * stepY);
+      opponentArrowTravelPx += stepDist;
+
+      // Visual: remove opponent arrow if it hits the stone (server will also broadcast stone_hit).
+      if (PVP_CENTER_OBSTACLE_ENABLED) {
+        const hit = collideCircleWithStone(opponentArrowX, opponentArrowY, PVP_ARROW_COLLISION_RADIUS);
+        if (hit) {
+          triggerStoneShake(opponentArrowX, opponentArrowY, 1);
+          if (opponentArrowStoneBounceCount <= 0) {
+            // 1st impact: bounce
+            opponentArrowX += hit.nx * (hit.depth + 0.5);
+            opponentArrowY += hit.ny * (hit.depth + 0.5);
+            const vn = opponentArrowVx * hit.nx + opponentArrowVy * hit.ny;
+            if (vn < 0) {
+              opponentArrowVx = (opponentArrowVx - 2 * vn * hit.nx) * 0.55;
+              opponentArrowVy = (opponentArrowVy - 2 * vn * hit.ny) * 0.55;
+              opponentArrowAngle = Math.atan2(opponentArrowVy, opponentArrowVx);
+            }
+            opponentArrowStoneBounceCount = 1;
+            opponentArrowMaxTravelPx = Math.min(opponentArrowMaxTravelPx, opponentArrowTravelPx + 140);
+            opponentArrowExpireAt = now + 100;
+          } else {
+            // 2nd impact: destroy
+            opponentArrowFlying = false;
+            opponentArrowX = 0;
+            opponentArrowY = 0;
+            opponentArrowVx = 0;
+            opponentArrowVy = 0;
+            opponentArrowAngle = 0;
+            opponentArrowLastUpdateAt = 0;
+            opponentArrowTravelPx = 0;
+            opponentArrowStoneBounceCount = 0;
+            opponentArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+            opponentArrowExpireAt = 0;
+          }
+        }
+      }
+
+      // Air resistance trail for opponent arrow as well (keeps visuals consistent).
+      {
+        const vmag = Math.sqrt(opponentArrowVx * opponentArrowVx + opponentArrowVy * opponentArrowVy);
+        if (vmag > 0.001 && stepDist > 0.5) {
+          const dirX = opponentArrowVx / vmag;
+          const dirY = opponentArrowVy / vmag;
+          const n = Math.max(1, Math.min(3, Math.floor(stepDist / 10)));
+          for (let i = 0; i < n; i++) {
+            const back = 10 + Math.random() * 14;
+            safePushArrowAirParticle({
+              x: opponentArrowX - dirX * back + (Math.random() - 0.5) * 8,
+              y: opponentArrowY - dirY * back + (Math.random() - 0.5) * 8,
+              vx: -dirX * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              vy: -dirY * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.15,
+              life: 18 + Math.floor(Math.random() * 10),
+              maxLife: 18 + Math.floor(Math.random() * 10),
+              size: 2.6 + Math.random() * 1.2
+            });
+          }
+        }
+      }
+
+      // Training-only: local arrow hit detection (offline mode has no server-authoritative hit).
+      if (gameMode === 'Training' && myPlayerId && pvpPlayers[myPlayerId]) {
+        const me = pvpPlayers[myPlayerId];
+        const dx = opponentArrowX - me.x;
+        const dy = opponentArrowY - me.y;
+        const r = PVP_ARROW_COLLISION_RADIUS + me.radius;
+        if ((dx * dx + dy * dy) <= r * r) {
+          const botDmg = dmg;
+          const botCritChance = critChance;
+          const isCritHit = Math.random() < (Math.max(0, botCritChance) / 100);
+          const base = isCritHit ? botDmg * 3 : botDmg * 2;
+          const arrowDamage = applyDamageVariance(base);
+          applyLocalTrainingHit(myPlayerId, arrowDamage, isCritHit);
+
+          opponentArrowFlying = false;
+          opponentArrowX = 0;
+          opponentArrowY = 0;
+          opponentArrowVx = 0;
+          opponentArrowVy = 0;
+          opponentArrowAngle = 0;
+          opponentArrowLastUpdateAt = 0;
+          opponentArrowTravelPx = 0;
+          opponentArrowStoneBounceCount = 0;
+          opponentArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+          opponentArrowExpireAt = 0;
+          // no further processing this frame
+          // (falls through to bounds checks, but arrow is already reset)
+        }
+      }
+
+      if (opponentArrowTravelPx >= opponentArrowMaxTravelPx) {
+        opponentArrowFlying = false;
+        opponentArrowX = 0;
+        opponentArrowY = 0;
+        opponentArrowVx = 0;
+        opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
+        opponentArrowStoneBounceCount = 0;
+        opponentArrowMaxTravelPx = PVP_ARROW_RANGE_PX + PVP_ARROW_FADE_PX;
+      }
+      
+      // Check if opponent arrow is out of bounds
+      if (opponentArrowX < playLeft || opponentArrowX > playRight || opponentArrowY < 0 || opponentArrowY > pvpBounds.bottom) {
+        opponentArrowFlying = false;
+        opponentArrowX = 0;
+        opponentArrowY = 0;
+        opponentArrowVx = 0;
+        opponentArrowVy = 0;
+        opponentArrowAngle = 0;
+        opponentArrowLastUpdateAt = 0;
+        opponentArrowTravelPx = 0;
+      }
+      } // end else (not expired)
+    }
+    
+    // PvP mode: Update opponent projectile physics (bouncing platform, NOT damage) - time-based (reduces FPS drift)
+    if ((gameMode === 'PvP' || gameMode === 'Training') && opponentProjectileFlying) {
+      // Check if opponent projectile lifetime expired (5 seconds)
+      const now = Date.now();
+      if (now - opponentProjectileSpawnTime >= projectileLifetime) {
+        // Opponent projectile expired - remove it (no explosion animation)
+        opponentProjectileFlying = false;
+        opponentProjectileX = 0;
+        opponentProjectileY = 0;
+        opponentProjectileVx = 0;
+        opponentProjectileVy = 0;
+        opponentProjectileBounceCount = 0;
+        opponentProjectileLastUpdateAt = 0;
+        console.log('Opponent projectile expired after 5 seconds');
+      } else if (opponentProjectileBounceCount >= projectileMaxBounces) {
+        // Max bounces reached - remove opponent projectile (no explosion animation)
+        opponentProjectileFlying = false;
+        opponentProjectileX = 0;
+        opponentProjectileY = 0;
+        opponentProjectileVx = 0;
+        opponentProjectileVy = 0;
+        opponentProjectileBounceCount = 0;
+        opponentProjectileLastUpdateAt = 0;
+        console.log('Opponent projectile removed - max bounces reached');
+      } else {
+        if (!opponentProjectileLastUpdateAt) opponentProjectileLastUpdateAt = now;
+        const dtFramesTotal = Math.max(0, Math.min(6, (now - opponentProjectileLastUpdateAt) / (1000 / 60)));
+        opponentProjectileLastUpdateAt = now;
+
+        let framesLeft = dtFramesTotal;
+        while (framesLeft > 0 && opponentProjectileFlying) {
+          const step = Math.min(1, framesLeft);
+          framesLeft -= step;
+
+        // Update opponent projectile position
+          opponentProjectileX += opponentProjectileVx * step;
+          opponentProjectileY += opponentProjectileVy * step;
+          opponentProjectileVy += projectileGravity * step; // Apply gravity (scaled)
+
+          // Projectile vs stone: heavy projectile detonates on first impact (stone acts as cover).
+          if (PVP_CENTER_OBSTACLE_ENABLED) {
+            const hit = collideCircleWithStone(opponentProjectileX, opponentProjectileY, projectileRadius);
+            if (hit) {
+              triggerStoneShake(opponentProjectileX, opponentProjectileY, 1.2);
+              createProjectileExplosion(opponentProjectileX, opponentProjectileY);
+              createStoneImpactParticles(opponentProjectileX, opponentProjectileY);
+              try { void audioManager.resumeContext(); audioManager.playMineExplosion(); } catch {}
+              opponentProjectileFlying = false;
+              opponentProjectileX = 0;
+              opponentProjectileY = 0;
+              opponentProjectileVx = 0;
+              opponentProjectileVy = 0;
+              opponentProjectileBounceCount = 0;
+              opponentProjectileLastUpdateAt = 0;
+              break;
+            }
+          }
+
+          // Smoke trail scaled by time-step
+          if (opponentProjectileVy > 0 && Math.random() < step) {
+          safePushProjectileSmokeParticle({
+            x: opponentProjectileX + (Math.random() - 0.5) * 4,
+            y: opponentProjectileY + (Math.random() - 0.5) * 4,
+              vx: (Math.random() - 0.5) * 0.5,
+              vy: -0.3 - Math.random() * 0.2,
+              life: 30 + Math.random() * 20,
+            maxLife: 30 + Math.random() * 20,
+              size: 4 + Math.random() * 3
+          });
+        }
+        
+          // Opponent projectile collision: it should only hit me (myPlayerId)
+        if (myPlayerId && pvpPlayers[myPlayerId]) {
+          const player = pvpPlayers[myPlayerId];
+          const dx = opponentProjectileX - player.x;
+          const dy = opponentProjectileY - player.y;
+          const distanceSquared = dx * dx + dy * dy;
+          const collisionRadius = projectileRadius + player.radius;
+          const collisionRadiusSquared = collisionRadius * collisionRadius;
+          
+          if (distanceSquared <= collisionRadiusSquared) {
+            opponentProjectileFlying = false;
+            opponentProjectileX = 0;
+            opponentProjectileY = 0;
+            opponentProjectileVx = 0;
+            opponentProjectileVy = 0;
+            opponentProjectileBounceCount = 0;
+              opponentProjectileLastUpdateAt = 0;
+            if (gameMode === 'Training') {
+              const botDmg = dmg;
+              const botCritChance = critChance;
+              const isCritHit = Math.random() < (Math.max(0, botCritChance) / 100);
+              const base = isCritHit ? botDmg * 3 : botDmg * 2;
+              const projDamage = applyDamageVariance(base);
+              applyLocalTrainingHit(myPlayerId, projDamage, isCritHit);
+            } else {
+            console.log('Opponent projectile hit me - waiting for hit event from opponent');
+            }
+              break;
+          }
+        }
+        
+          // Out of bounds
+        if (opponentProjectileX < playLeft || opponentProjectileX > playRight || opponentProjectileY < 0 || opponentProjectileY > pvpBounds.bottom) {
+          opponentProjectileFlying = false;
+          opponentProjectileX = 0;
+          opponentProjectileY = 0;
+          opponentProjectileVx = 0;
+          opponentProjectileVy = 0;
+          opponentProjectileBounceCount = 0;
+            opponentProjectileLastUpdateAt = 0;
+            break;
+          }
+        }
+      }
+    }
+    
+    // PvP/Training mode: Update projectile physics (bouncing platform, NOT damage) - time-based (reduces FPS drift)
+    if ((gameMode === 'PvP' || gameMode === 'Training') && projectileFlying) {
+      // Check if projectile lifetime expired (5 seconds)
+      const now = Date.now();
+      if (now - projectileSpawnTime >= projectileLifetime) {
+        // Projectile expired - remove it (no explosion animation)
+        projectileFlying = false;
+        projectileX = 0;
+        projectileY = 0;
+        projectileVx = 0;
+        projectileVy = 0;
+        projectileBounceCount = 0;
+        projectileLastUpdateAt = 0;
+        console.log('Projectile expired after 5 seconds');
+      } else if (projectileBounceCount >= projectileMaxBounces) {
+        // Max bounces reached - remove projectile (no explosion animation)
+        projectileFlying = false;
+        projectileX = 0;
+        projectileY = 0;
+        projectileVx = 0;
+        projectileVy = 0;
+        projectileBounceCount = 0;
+        projectileLastUpdateAt = 0;
+        console.log('Projectile removed - max bounces reached');
+      } else {
+        if (!projectileLastUpdateAt) projectileLastUpdateAt = now;
+        const dtFramesTotal = Math.max(0, Math.min(6, (now - projectileLastUpdateAt) / (1000 / 60)));
+        projectileLastUpdateAt = now;
+
+        let framesLeft = dtFramesTotal;
+        while (framesLeft > 0 && projectileFlying) {
+          const step = Math.min(1, framesLeft);
+          framesLeft -= step;
+
+        // Update projectile position
+          projectileX += projectileVx * step;
+          projectileY += projectileVy * step;
+          projectileVy += projectileGravity * step; // Apply gravity (scaled)
+
+          // Projectile vs stone: heavy projectile detonates on first impact (stone acts as cover).
+          if (PVP_CENTER_OBSTACLE_ENABLED) {
+            const hit = collideCircleWithStone(projectileX, projectileY, projectileRadius);
+            if (hit) {
+              triggerStoneShake(projectileX, projectileY, 1.2);
+              createProjectileExplosion(projectileX, projectileY);
+              createStoneImpactParticles(projectileX, projectileY);
+              try { void audioManager.resumeContext(); audioManager.playMineExplosion(); } catch {}
+              projectileFlying = false;
+              projectileX = 0;
+              projectileY = 0;
+              projectileVx = 0;
+              projectileVy = 0;
+              projectileBounceCount = 0;
+              projectileLastUpdateAt = 0;
+              break;
+            }
+          }
+
+          // Smoke trail scaled by time-step
+          if (projectileVy > 0 && Math.random() < step) {
+          safePushProjectileSmokeParticle({
+            x: projectileX + (Math.random() - 0.5) * 4,
+            y: projectileY + (Math.random() - 0.5) * 4,
+              vx: (Math.random() - 0.5) * 0.5,
+              vy: -0.3 - Math.random() * 0.2,
+              life: 30 + Math.random() * 20,
+            maxLife: 30 + Math.random() * 20,
+              size: 4 + Math.random() * 3
+          });
+        }
+        
+          // Projectile collision with opponent only (damage event)
+        for (const playerId in pvpPlayers) {
+          const player = pvpPlayers[playerId];
+          const dx = projectileX - player.x;
+          const dy = projectileY - player.y;
+          const distanceSquared = dx * dx + dy * dy;
+          const collisionRadius = projectileRadius + player.radius;
+          const collisionRadiusSquared = collisionRadius * collisionRadius;
+          
+          if (distanceSquared <= collisionRadiusSquared && playerId !== myPlayerId && playerId === opponentId) {
+            const opponent = player;
+            
+            // Check for crit hit - with NFT bonuses
+            const nftBonuses = calculateNftBonuses();
+            const totalCritChance = critChance + nftBonuses.critChance;
+            const isCritHit = Math.random() < totalCritChance / 100;
+            // Damage: 2x normal, 3x crit (using MY stats + NFT bonuses)
+            const totalDmg = dmg + nftBonuses.dmg;
+            const baseProjectileDamage = isCritHit ? totalDmg * 3 : totalDmg * 2;
+            const projectileDamage = applyDamageVariance(baseProjectileDamage);
+            
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageDealt(isCritHit);
+            });
+            
+            profileManager.addDamageDealt(projectileDamage);
+            
+              // Send hit event to opponent
+            const useColyseus = colyseusService.isConnectedToRoom();
+            const isSyncing = useColyseus || pvpSyncService.isSyncing();
+            if (currentMatch && isSyncing && opponentId) {
+              const hitInput = {
+                type: 'hit' as const,
+                timestamp: Date.now(),
+                damage: projectileDamage,
+                isCrit: isCritHit,
+                targetPlayerId: opponentId,
+                projType: 'projectile'
+              };
+              if (useColyseus) {
+                colyseusService.sendInput(hitInput);
+              } else {
+                pvpSyncService.sendInput(hitInput);
+              }
+            }
+            
+            if (isCritHit) {
+              screenShake = Math.max(screenShake, 30);
+            }
+            
+            safePushDamageNumber({
+              x: opponent.x + (Math.random() - 0.5) * 40,
+              y: opponent.y - 20,
+              value: projectileDamage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: isCritHit
+            });
+            
+            for (let i = 0; i < 10; i++) {
+              const angle = (Math.PI * 2 * i) / 10;
+              const speed = 2 + Math.random() * 3;
+              safePushClickParticle({
+                x: opponent.x,
+                y: opponent.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 30,
+                maxLife: 30,
+                size: 3 + Math.random() * 2
+              });
+            }
+
+            // Training: apply damage locally (offline)
+            if (gameMode === 'Training' && opponentId) {
+            // Attacker-side already shows the number; don't duplicate defender-side number.
+            applyLocalTrainingHit(opponentId, projectileDamage, isCritHit, { showNumber: false });
+            }
+            
+            // Remove projectile after hit
+            projectileFlying = false;
+            projectileX = 0;
+            projectileY = 0;
+            projectileVx = 0;
+            projectileVy = 0;
+            projectileBounceCount = 0;
+              projectileLastUpdateAt = 0;
+            console.log(`Projectile hit opponent! Damage: ${projectileDamage}`);
+              break;
+          }
+        }
+        
+        // Check if projectile is out of bounds
+          if (projectileFlying && (projectileX < playLeft || projectileX > playRight || projectileY < 0 || projectileY > pvpBounds.bottom)) {
+          projectileFlying = false;
+          projectileX = 0;
+          projectileY = 0;
+          projectileVx = 0;
+          projectileVy = 0;
+          projectileBounceCount = 0;
+            projectileLastUpdateAt = 0;
+            break;
+          }
+        }
+      }
+    }
+    
+    // PvP/Training mode: Update each player's physics (including drawn lines and platform collision)
+    if (gameMode === 'PvP' || gameMode === 'Training') {
+      for (const playerId in pvpPlayers) {
+      const player = pvpPlayers[playerId];
+      
+      const initialWallCheck = shouldKillByWall(player);
+      if (initialWallCheck) {
+        killPlayerByWall(playerId, player, initialWallCheck.reason);
+        continue;
+      }
+      
+      // Drawn lines collision (pencil tool - same as Solo)
+      {
+        for (let i = drawnLines.length - 1; i >= 0; i--) {
+          const line = drawnLines[i];
+          if (line.points.length < 2) continue; // Skip degenerate lines
+          
+          // Only collide with lines that belong to the current player (my lines affect me, opponent's lines affect opponent)
+          // If line.ownerId is undefined, it's my line - only affect me
+          // If line.ownerId is opponentId, it's opponent's line - only affect opponent
+          const isMyLine = line.ownerId === undefined;
+          const isOpponentLine = line.ownerId === opponentId;
+          
+          // Only check collision if this line belongs to the current player being checked
+          // My lines only affect me, opponent's lines only affect opponent
+          if ((isMyLine && playerId !== myPlayerId) || (isOpponentLine && playerId !== opponentId)) {
+            continue; // Skip - this line doesn't belong to the current player
+          }
+          
+          let collisionFound = false;
+          
+          // Check collision with each segment
+          for (let j = 0; j < line.points.length - 1; j++) {
+            const p1 = line.points[j];
+            const p2 = line.points[j + 1];
+            
+            // Line segment collision detection - OPTIMIZED: Cache len calculation
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const lenSquared = dx * dx + dy * dy;
+            if (lenSquared < 0.01) continue; // Skip degenerate segments (0.1^2 = 0.01)
+            const len = Math.sqrt(lenSquared);
+            
+            // Distance from player center to line segment - OPTIMIZED: Use squared distance
+            const t = Math.max(0, Math.min(1, ((player.x - p1.x) * dx + (player.y - p1.y) * dy) / lenSquared));
+            const closestX = p1.x + t * dx;
+            const closestY = p1.y + t * dy;
+            const distX = player.x - closestX;
+            const distY = player.y - closestY;
+            const distanceSquared = distX * distX + distY * distY;
+            const distance = Math.sqrt(distanceSquared);
+            
+            // Collision if player is close to line and moving towards it - OPTIMIZED: Use squared distance
+            const lineThickness = 3;
+            const collisionRadius = player.radius + lineThickness / 2;
+            const collisionRadiusSquared = collisionRadius * collisionRadius;
+            if (distanceSquared <= collisionRadiusSquared && player.vy > 0) {
+              // Calculate normal to line (perpendicular)
+              const nx = -dy / len;
+              const ny = dx / len;
+              
+              // Reflect velocity off line
+              const dot = player.vx * nx + player.vy * ny;
+              player.vx -= 2 * dot * nx;
+              player.vy -= 2 * dot * ny;
+              
+              // Push player away from line
+              const pushDist = (player.radius + lineThickness / 2) - distance;
+              player.x += nx * pushDist;
+              player.y += ny * pushDist;
+              
+              // Bounce effect (same as Solo)
+              player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
+              screenShake = Math.max(screenShake, 6);
+              
+              // Play bounce sound effect (like spring or trampoline)
+              audioManager.resumeContext().then(() => {
+                audioManager.playBounce();
+              });
+              
+              collisionFound = true;
+              break; // Only handle first collision
+            }
+          }
+          
+          if (collisionFound) {
+            // Increment hit counter for this line
+            line.hits++;
+            
+            // Remove line only after 2 hits
+            if (line.hits >= line.maxHits) {
+              drawnLines.splice(i, 1);
+            }
+          }
+        }
+      }
+      
+      if (TOXIC_PLATFORMS_ENABLED) {
+        // Moving platform collision (same as Solo)
+        {
+          const halfW = movingPlatformWidth / 2;
+          const surfaceY = movingPlatformY; // straight top surface
+          if (player.x >= movingPlatformX - halfW - player.radius && player.x <= movingPlatformX + halfW + player.radius) {
+            if (player.y + player.radius >= surfaceY && player.vy > 0) {
+              player.y = surfaceY - player.radius;
+              player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
+              // Slight horizontal deflection
+              const localX = player.x - movingPlatformX;
+              player.vx += (localX / halfW) * 1.2;
+              movingPlatformFlashTimer = 6;
+              screenShake = Math.max(screenShake, 6);
+              
+              // Play bounce sound effect (like spring or trampoline)
+              audioManager.resumeContext().then(() => {
+                audioManager.playBounce();
+              });
+            }
+          }
+        }
+        
+        // PvP/Training mode: Collision with left and right platforms
+        if (gameMode === 'PvP' || gameMode === 'Training') {
+          const surfaceY = movingPlatformY;
+          
+          // Helper function to check collision with a platform (with custom width)
+          const checkPlatformCollision = (platformX: number, width: number) => {
+            const halfW = width / 2;
+            if (player.x >= platformX - halfW - player.radius && player.x <= platformX + halfW + player.radius) {
+              if (player.y + player.radius >= surfaceY && player.vy > 0) {
+                player.y = surfaceY - player.radius;
+                player.vy = -Math.max(2, Math.abs(player.vy) * 0.6 + 3);
+                // Slight horizontal deflection
+                const localX = player.x - platformX;
+                player.vx += (localX / halfW) * 1.2;
+                screenShake = Math.max(screenShake, 6);
+                
+                // Play bounce sound effect (like spring or trampoline)
+                audioManager.resumeContext().then(() => {
+                  audioManager.playBounce();
+                });
+              }
+            }
+          };
+          
+          // Check collision with left platform (50% width)
+          checkPlatformCollision(pvpPlatformLeftX, pvpPlatformSideWidth);
+          
+          // Check collision with right platform (50% width)
+          checkPlatformCollision(pvpPlatformRightX, pvpPlatformSideWidth);
+        }
+
+      const postPhysicsWallCheck = shouldKillByWall(player);
+      if (postPhysicsWallCheck) {
+        killPlayerByWall(playerId, player, postPhysicsWallCheck.reason);
+        continue;
+      }
+      }
+      
+      // Update speed trail (supersonic animation - same as Solo) - OPTIMIZED: Cache speed
+      let playerSpeed = 0;
+      if (!cachedPlayerSpeeds[playerId] || cachedPlayerSpeeds[playerId].frame !== currentFrame) {
+        const speedSquared = player.vx * player.vx + player.vy * player.vy;
+        playerSpeed = Math.sqrt(speedSquared);
+        cachedPlayerSpeeds[playerId] = { speed: playerSpeed, speedSquared, frame: currentFrame };
+      } else {
+        playerSpeed = cachedPlayerSpeeds[playerId].speed;
+      }
+      // Start showing UFO "shadow tail" earlier since inertia/friction is higher now
+      if (PVP_UFO_SPEED_TRAIL_ENABLED && playerSpeed >= 2) {
+        player.speedTrail.push({
+          x: player.x,
+          y: player.y,
+          vx: 0,
+          vy: 0,
+          life: 16,
+          maxLife: 16,
+          size: player.radius * 1.2
+        });
+        if (player.speedTrail.length > 8) {
+          player.speedTrail.shift();
+        }
+      } else if (!PVP_UFO_SPEED_TRAIL_ENABLED && player.speedTrail.length) {
+        // Keep buffer empty when feature disabled
+        player.speedTrail.length = 0;
+      }
+      
+      // Update speed trail particles (fade out)
+      for (let i = player.speedTrail.length - 1; i >= 0; i--) {
+        player.speedTrail[i].life--;
+        if (player.speedTrail[i].life <= 0) {
+          player.speedTrail.splice(i, 1);
+        }
+      }
+      
+      // Check if player is dead (HP <= 0) - set isOut flag and start death animation
+      if (player.hp <= 0 && !player.isOut && !deathAnimations.has(playerId)) {
+        player.isOut = true;
+        
+        // Determine player color for death animation
+        let playerColor = '#000000'; // Default black
+        if (playerId === myPlayerId) {
+          playerColor = '#000000'; // Black for my player
+        } else if (playerId === opponentId && opponentId) {
+          playerColor = '#000000'; // Black for opponent
+        } else {
+          playerColor = player.color;
+        }
+        
+        // Start death animation
+        createDeathAnimation(playerId, player.x, player.y, playerColor, player.radius);
+      }
+      
+      // Armor regeneration - PvP mode
+      // IMPORTANT: Only regen armor for MY player locally.
+      // Opponent's armor is synced via network stats updates; regenerating it locally causes incorrect +1 popups.
+      if (playerId === myPlayerId && player.armor < player.maxArmor && player.maxArmor > 0) {
+        const now = Date.now();
+        // Ensure lastArmorRegen is initialized
+        if (!player.lastArmorRegen) {
+          player.lastArmorRegen = now;
+        }
+        
+        if (now - player.lastArmorRegen >= 5000) { // 5 seconds
+          const oldArmor = player.armor;
+          const regenAmt = getNftArmorRegenAmount();
+          player.armor = Math.min(player.maxArmor, player.armor + regenAmt);
+          player.lastArmorRegen = now;
+          
+          // Show "+X" animation in green when armor regenerates
+          if (player.armor > oldArmor) {
+            safePushDamageNumber({
+              x: player.x + (Math.random() - 0.5) * 20,
+              y: player.y - player.radius - 20,
+              value: `+${player.armor - oldArmor}`,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 1,
+              vy: -2 - Math.random() * 1,
+              isCrit: false
+            });
+            
+            // Send stats update after armor regeneration (only for my player)
+            if (playerId === myPlayerId) {
+              sendStatsUpdate(player.hp, player.armor, player.maxHP, player.maxArmor);
+            }
+          }
+        }
+      }
+      }
+    }
+    
+    // PvP mode: Sync position with opponent (real-time position updates)
+    // Use Colyseus if available, otherwise fallback to Supabase
+    const useColyseus = colyseusService.isConnectedToRoom();
+    const useSupabaseFallback = !useColyseus && pvpSyncService.isSyncing();
+    const isSyncing = useColyseus || useSupabaseFallback;
+    
+    if (gameMode === 'PvP' && currentMatch && myPlayerId && pvpPlayers[myPlayerId] && isSyncing) {
+      const now = Date.now();
+      if (now - lastPositionSyncTime >= POSITION_SYNC_INTERVAL) {
+        lastPositionSyncTime = now;
+        const myPlayer = pvpPlayers[myPlayerId];
+        const sendNetworkInput = useColyseus
+          ? (input: any) => colyseusService.sendInput(input)
+          : (input: any) => pvpSyncService.sendInput(input);
+
+        const positionSnapshot: MovementSnapshot = {
+          x: myPlayer.x,
+          y: myPlayer.y,
+          vx: myPlayer.vx,
+          vy: myPlayer.vy,
+          timestamp: now
+        };
+
+        if (
+          shouldSendSnapshot(positionSnapshot, lastSentPositionSnapshot, {
+            distanceEpsilon: POSITION_DISTANCE_EPSILON,
+            velocityEpsilon: VELOCITY_EPSILON,
+            heartbeatInterval: POSITION_HEARTBEAT_INTERVAL
+          })
+        ) {
+          const positionInput = {
+            type: 'position' as const,
+            timestamp: now,
+            x: myPlayer.x,
+            y: myPlayer.y,
+            vx: myPlayer.vx,
+            vy: myPlayer.vy
+          };
+          sendNetworkInput(positionInput);
+          lastSentPositionSnapshot = positionSnapshot;
+        }
+        
+        // Arrow position streaming disabled: both clients simulate arrow locally from the launch event.
+        // (Lower bandwidth; server-authoritative hit decides outcome.)
+        if (pvpKatanaFlying) {
+          // keep lastSentArrowSnapshot unused
+        } else if (lastSentArrowSnapshot) {
+          lastSentArrowSnapshot = null;
+        }
+        
+        if (projectileFlying) {
+          const projectileSnapshot: MovementSnapshot = {
+            x: projectileX,
+            y: projectileY,
+            vx: projectileVx,
+            vy: projectileVy,
+            timestamp: now
+          };
+          
+          if (
+            shouldSendSnapshot(projectileSnapshot, lastSentProjectileSnapshot, {
+              distanceEpsilon: PROJECTILE_DISTANCE_EPSILON,
+              heartbeatInterval: PROJECTILE_HEARTBEAT_INTERVAL
+            })
+          ) {
+            const projectileInput = {
+              type: 'projectile_position' as const,
+              timestamp: now,
+              x: projectileX,
+              y: projectileY,
+              vx: projectileVx,
+              vy: projectileVy,
+            };
+            sendNetworkInput(projectileInput);
+            lastSentProjectileSnapshot = projectileSnapshot;
+          }
+        } else if (lastSentProjectileSnapshot) {
+          lastSentProjectileSnapshot = null;
+        }
+      }
+    }
+    
+    // PvP mode: Win/loss is server-authoritative (match_end). Do NOT decide locally for online PvP,
+    // otherwise a player can close the modal early, leave the room, and accidentally forfeit payout.
+    if (gameMode === 'PvP' && currentMatch && myPlayerId && opponentId && !showingMatchResult && !colyseusService.isConnectedToRoom()) {
+      const myPlayer = pvpPlayers[myPlayerId];
+      const opponent = pvpPlayers[opponentId];
+      const walletState = walletService.getState();
+      
+      // CRITICAL: Save currentMatch copy BEFORE checking win/loss conditions
+      // This ensures we have match data even if currentMatch is cleared later
+      if (currentMatch && !savedCurrentMatch) {
+        savedCurrentMatch = { ...currentMatch }; // Deep copy
+        console.log('Saved currentMatch copy for result screen:', savedCurrentMatch);
+      }
+      
+      // Check if opponent is dead (removed from game or HP <= 0 or isOut)
+      // Wait for death animation to finish before showing result
+      const opponentDeathAnimPlaying = deathAnimations.has(opponentId);
+      const opponentIsDead = !opponent || opponent.isOut || opponent.hp <= 0;
+      
+      // Check if I am dead (removed from game or HP <= 0 or isOut)
+      const myDeathAnimPlaying = deathAnimations.has(myPlayerId);
+      const iAmDead = !myPlayer || myPlayer.isOut || myPlayer.hp <= 0;
+      
+      // Check if I won (opponent is dead and death animation finished)
+      if (opponentIsDead && !opponentDeathAnimPlaying && !iAmDead) {
+        console.log('PvP: You won!');
+        
+        // CRITICAL: Save opponent address BEFORE setting showingMatchResult = true
+        // Save opponent address for result screen - ALWAYS save opponent address
+        // Logic: If I'm p1 → opponent is p2; If I'm p2 → opponent is p1
+        // Use savedCurrentMatch if currentMatch is null (defense against race conditions)
+        const matchToUse = currentMatch || savedCurrentMatch;
+        const myAddress = getMyPvpAddress();
+        if (matchToUse && myAddress) {
+          // Determine opponent: if I'm p1, opponent is p2; if I'm p2, opponent is p1
+          if (matchToUse.p1 === myAddress) {
+            // I'm p1, opponent is p2
+            opponentAddressForResult = matchToUse.p2 || opponentWalletAddress || null;
+            console.log('Victory: I am p1, opponent is p2:', opponentAddressForResult);
+          } else if (matchToUse.p2 === myAddress) {
+            // I'm p2, opponent is p1
+            opponentAddressForResult = matchToUse.p1 || opponentWalletAddress || null;
+            console.log('Victory: I am p2, opponent is p1:', opponentAddressForResult);
+          } else {
+            // Fallback: use opponentWalletAddress or opponentId
+            opponentAddressForResult = opponentWalletAddress || opponentId || null;
+            console.warn('Victory: My address does not match p1 or p2, using opponentWalletAddress/opponentId:', opponentAddressForResult, {
+              myAddress,
+              p1: matchToUse.p1,
+              p2: matchToUse.p2,
+              opponentWalletAddress
+            });
+          }
+          console.log('Victory: Saved opponent address from match:', opponentAddressForResult, { 
+            myAddress, 
+            p1: matchToUse.p1, 
+            p2: matchToUse.p2,
+            opponentId,
+            opponentWalletAddress,
+            usedSavedMatch: !currentMatch && !!savedCurrentMatch
+          });
+        } else if (opponentWalletAddress) {
+          // CRITICAL: Use opponentWalletAddress for Colyseus mode (where opponentId is session ID)
+          opponentAddressForResult = opponentWalletAddress;
+          console.log('Victory: Saved opponent address from opponentWalletAddress:', opponentAddressForResult);
+        } else if (opponentId) {
+          opponentAddressForResult = opponentId;
+          console.log('Victory: Saved opponent address from opponentId (fallback):', opponentAddressForResult);
+        } else {
+          // Last resort: try to get from opponent player object
+          if (opponent && opponentId) {
+            // opponentId should be the address
+            opponentAddressForResult = opponentId;
+            console.log('Victory: Saved opponent address from opponentId (last resort):', opponentAddressForResult);
+          } else {
+            opponentAddressForResult = null;
+            console.error('Victory: Could not determine opponent address!', { 
+              currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null, 
+              opponentId, 
+              walletAddress: walletState.address,
+              opponent: opponent ? 'exists' : 'null',
+              myPlayerId
+            });
+          }
+        }
+        
+        matchResult = 'victory';
+        matchResultEloChange = 10; // +10 ELO for win
+        showingMatchResult = true;
+        
+        // Get opponent nickname from profile (async)
+        opponentNicknameForResult = null; // Reset first
+        if (opponentAddressForResult) {
+          supabaseService.getProfile(opponentAddressForResult).then((opponentProfile) => {
+            const nick = getNicknameFromSupabaseProfile(opponentProfile);
+            opponentNicknameForResult = nick || null;
+          }).catch(() => {
+            opponentNicknameForResult = null;
+          });
+        }
+        
+      // Profile updates are applied in server-authoritative match_end handler.
+        
+        // Update match result in Supabase (only for persistent identities)
+        const persistId = getRoninAddressForPersistence();
+        if (persistId && currentMatch) {
+          supabaseService.updateMatchResult(currentMatch.id, persistId);
+          supabaseService.getProfile(persistId).then(async (profile) => {
+              if (profile) {
+                const newElo = profile.pvp_data.elo + 10;
+                const newWins = profile.pvp_data.wins + 1;
+              await supabaseService.updatePvpData(persistId, {
+                  elo: newElo,
+                  wins: newWins,
+                  losses: profile.pvp_data.losses,
+                });
+              }
+            });
+        }
+      }
+      
+      // Check if I lost (I am dead and death animation finished)
+      if (iAmDead && !myDeathAnimPlaying && !opponentIsDead) {
+        console.log('PvP: You lost!');
+        
+        // CRITICAL: Save opponent address BEFORE setting showingMatchResult = true
+        // Save opponent address for result screen - ALWAYS save opponent address
+        // Logic: If I'm p1 → opponent is p2; If I'm p2 → opponent is p1
+        // Use savedCurrentMatch if currentMatch is null (defense against race conditions)
+        const matchToUse = currentMatch || savedCurrentMatch;
+        const myAddress = getMyPvpAddress();
+        if (matchToUse && myAddress) {
+          // Determine opponent: if I'm p1, opponent is p2; if I'm p2, opponent is p1
+          if (matchToUse.p1 === myAddress) {
+            // I'm p1, opponent is p2
+            opponentAddressForResult = matchToUse.p2 || opponentWalletAddress || null;
+            console.log('Defeat: I am p1, opponent is p2:', opponentAddressForResult);
+          } else if (matchToUse.p2 === myAddress) {
+            // I'm p2, opponent is p1
+            opponentAddressForResult = matchToUse.p1 || opponentWalletAddress || null;
+            console.log('Defeat: I am p2, opponent is p1:', opponentAddressForResult);
+          } else {
+            // Fallback: use opponentWalletAddress or opponentId
+            opponentAddressForResult = opponentWalletAddress || opponentId || null;
+            console.warn('Defeat: My address does not match p1 or p2, using opponentWalletAddress/opponentId:', opponentAddressForResult, {
+              myAddress,
+              p1: matchToUse.p1,
+              p2: matchToUse.p2,
+              opponentWalletAddress
+            });
+          }
+          console.log('Defeat: Saved opponent address from match:', opponentAddressForResult, { 
+            myAddress, 
+            p1: matchToUse.p1, 
+            p2: matchToUse.p2,
+            opponentId,
+            opponentWalletAddress,
+            usedSavedMatch: !currentMatch && !!savedCurrentMatch
+          });
+        } else if (opponentWalletAddress) {
+          // CRITICAL: Use opponentWalletAddress for Colyseus mode (where opponentId is session ID)
+          opponentAddressForResult = opponentWalletAddress;
+          console.log('Defeat: Saved opponent address from opponentWalletAddress:', opponentAddressForResult);
+        } else if (opponentId) {
+          opponentAddressForResult = opponentId;
+          console.log('Defeat: Saved opponent address from opponentId (fallback):', opponentAddressForResult);
+        } else {
+          // Last resort: try to get from opponent player object
+          if (opponent && opponentId) {
+            // opponentId should be the address
+            opponentAddressForResult = opponentId;
+            console.log('Defeat: Saved opponent address from opponentId (last resort):', opponentAddressForResult);
+          } else {
+            opponentAddressForResult = null;
+            console.error('Defeat: Could not determine opponent address!', { 
+              currentMatch: currentMatch ? { p1: currentMatch.p1, p2: currentMatch.p2 } : null, 
+              opponentId, 
+              walletAddress: walletState.address,
+              opponent: opponent ? 'exists' : 'null',
+              myPlayerId
+            });
+          }
+        }
+        
+        matchResult = 'defeat';
+        matchResultEloChange = -5; // -5 ELO for loss
+        showingMatchResult = true;
+        
+        // Get opponent nickname from profile (async)
+        opponentNicknameForResult = null; // Reset first
+        if (opponentAddressForResult) {
+          supabaseService.getProfile(opponentAddressForResult).then((opponentProfile) => {
+            const nick = getNicknameFromSupabaseProfile(opponentProfile);
+            opponentNicknameForResult = nick || null;
+          }).catch(() => {
+            opponentNicknameForResult = null;
+          });
+        }
+        
+      // Profile updates are applied in server-authoritative match_end handler.
+        
+        // Update match result in Supabase (only for persistent identities)
+        const persistId = getRoninAddressForPersistence();
+        if (persistId && currentMatch) {
+          supabaseService.updateMatchResult(currentMatch.id, opponentId);
+          supabaseService.getProfile(persistId).then(async (profile) => {
+              if (profile) {
+                const newElo = Math.max(0, profile.pvp_data.elo - 5);
+                const newLosses = profile.pvp_data.losses + 1;
+              await supabaseService.updatePvpData(persistId, {
+                  elo: newElo,
+                  wins: profile.pvp_data.wins,
+                  losses: newLosses,
+                });
+              }
+            });
+        }
+      }
+    }
+    
+    // Training bot tick (offline opponent).
+    runTrainingBot(Date.now());
+    
+    // Collision detection between players (disabled for turn-based PvP)
+    if (!isTurnBasedPvPDesired() && myPlayerId && opponentId && pvpPlayers[myPlayerId] && pvpPlayers[opponentId]) {
+      const player1 = pvpPlayers[myPlayerId];
+      const player2 = pvpPlayers[opponentId];
+      
+      // Calculate distance between players - OPTIMIZED: Use squared distance
+      const dx = player2.x - player1.x;
+      const dy = player2.y - player1.y;
+      const distanceSquared = dx * dx + dy * dy;
+      const minDistance = player1.radius + player2.radius;
+      const minDistanceSquared = minDistance * minDistance;
+      
+      if (distanceSquared < minDistanceSquared && distanceSquared > 0) {
+        const distance = Math.sqrt(distanceSquared);
+        // Collision detected - calculate collision normal
+        const nx = dx / distance;
+        const ny = dy / distance;
+        
+        // Calculate relative velocity
+        const relVx = player2.vx - player1.vx;
+        const relVy = player2.vy - player1.vy;
+        const relSpeed = relVx * nx + relVy * ny;
+        
+        // Only resolve collision if players are moving towards each other
+        // Also check if collision happened (distance < minDistance)
+        // Damage is dealt ONLY when players collide
+        // The player with higher speed wins and deals damage to opponent
+        {
+          // Determine which player dominates (faster speed) - OPTIMIZED: Cache speeds
+          let speed1 = 0;
+          let speed2 = 0;
+          if (!cachedPlayerSpeeds[myPlayerId!] || cachedPlayerSpeeds[myPlayerId!].frame !== currentFrame) {
+            const speed1Squared = player1.vx * player1.vx + player1.vy * player1.vy;
+            speed1 = Math.sqrt(speed1Squared);
+            cachedPlayerSpeeds[myPlayerId!] = { speed: speed1, speedSquared: speed1Squared, frame: currentFrame };
+          } else {
+            speed1 = cachedPlayerSpeeds[myPlayerId!].speed;
+          }
+          if (!cachedPlayerSpeeds[opponentId!] || cachedPlayerSpeeds[opponentId!].frame !== currentFrame) {
+            const speed2Squared = player2.vx * player2.vx + player2.vy * player2.vy;
+            speed2 = Math.sqrt(speed2Squared);
+            cachedPlayerSpeeds[opponentId!] = { speed: speed2, speedSquared: speed2Squared, frame: currentFrame };
+          } else {
+            speed2 = cachedPlayerSpeeds[opponentId!].speed;
+          }
+          
+          // Deal damage when players collide - the one with higher speed wins
+          // Damage is dealt ONLY ONCE per collision, then requires cooldown and separation
+          
+          // Create collision key (sorted alphabetically for consistency)
+          const collisionKey = [myPlayerId!, opponentId!].sort().join('_');
+          const lastDamageTime = lastCollisionDamageTime[collisionKey] || 0;
+          const timeSinceLastDamage = Date.now() - lastDamageTime;
+          
+          // Check if players are separated enough to reset cooldown
+          const separationDistance = distance - minDistance; // How far apart they are beyond collision
+          const canDealDamage = timeSinceLastDamage >= COLLISION_DAMAGE_COOLDOWN || 
+                                separationDistance >= COLLISION_DAMAGE_MIN_DISTANCE;
+          
+          // Damage is only dealt if speed >= 5
+          const MIN_SPEED_FOR_DAMAGE = 5;
+          
+          if (speed1 > speed2 && canDealDamage && speed1 >= MIN_SPEED_FOR_DAMAGE) {
+            // Player 1 has higher speed - deals damage to player 2
+            // Use base dmg from Solo stat (not 2x, just base dmg)
+            const baseDamage = dmg; // Base damage from Solo dmg stat
+            // Apply 50% variance (damage ranges from 50% to 100%)
+            const damage = applyDamageVariance(baseDamage);
+            const absorbed = Math.min(damage, player2.armor);
+            player2.armor -= absorbed;
+            const remainingDamage = damage - absorbed;
+            player2.hp = Math.max(0, player2.hp - remainingDamage);
+            // Reset armor regen timer on taking damage
+            player2.lastArmorRegen = Date.now();
+            
+            // Activate gravity for 5 seconds after damage
+            const now = Date.now();
+            setDamageGravity(player2, now);
+            
+            // Play damage dealt sound effect (satisfying hit sound when dealing damage)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageDealt(false);
+            });
+            
+            // Profile: Track damage dealt (PvP mode - I deal damage if I'm player 1)
+            if (myPlayerId && myPlayerId === player1.id) {
+              profileManager.addDamageDealt(damage);
+            }
+            
+            // Record damage time
+            lastCollisionDamageTime[collisionKey] = Date.now();
+            
+            // Show damage number
+            safePushDamageNumber({
+              x: player2.x + (Math.random() - 0.5) * 40,
+              y: player2.y - 20,
+              value: damage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: false
+            });
+            screenShake = Math.max(screenShake, 6);
+            
+            console.log(`PvP Collision: Player 1 (speed ${speed1.toFixed(2)}) hits Player 2 (speed ${speed2.toFixed(2)}) for ${damage} damage. Player 2 HP: ${player2.hp}/${player2.maxHP}, Armor: ${player2.armor}/${player2.maxArmor}`);
+            
+            // Check if player 2 is dead - start death animation
+            if (player2.hp <= 0 && !player2.isOut && !deathAnimations.has(opponentId!)) {
+              player2.isOut = true;
+              
+              // Determine player color for death animation
+              let playerColor = '#000000';
+              if (opponentId === myPlayerId) {
+                playerColor = '#000000';
+              } else {
+                playerColor = player2.color;
+              }
+              
+              // Start death animation
+              createDeathAnimation(opponentId!, player2.x, player2.y, playerColor, player2.radius);
+            }
+          } else if (speed2 > speed1 && canDealDamage && speed2 >= MIN_SPEED_FOR_DAMAGE) {
+            // Player 2 has higher speed - deals damage to player 1
+            // Use base dmg from Solo stat (not 2x, just base dmg)
+            const baseDamage = dmg; // Base damage from Solo dmg stat
+            // Apply 50% variance (damage ranges from 50% to 100%)
+            const damage = applyDamageVariance(baseDamage);
+            const absorbed = Math.min(damage, player1.armor);
+            player1.armor -= absorbed;
+            const remainingDamage = damage - absorbed;
+            player1.hp = Math.max(0, player1.hp - remainingDamage);
+            // Reset armor regen timer on taking damage
+            player1.lastArmorRegen = Date.now();
+            
+            // Activate gravity for 5 seconds after damage
+            const now = Date.now();
+            setDamageGravity(player1, now);
+            
+            // Play damage received sound effect (pain/impact sound when receiving damage)
+            audioManager.resumeContext().then(() => {
+              audioManager.playDamageReceived(false);
+            });
+            
+            // Record damage time
+            lastCollisionDamageTime[collisionKey] = Date.now();
+            
+            // Show damage number
+            safePushDamageNumber({
+              x: player1.x + (Math.random() - 0.5) * 40,
+              y: player1.y - 20,
+              value: damage,
+              life: 60,
+              maxLife: 60,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random() * 2,
+              isCrit: false
+            });
+            screenShake = Math.max(screenShake, 6);
+            
+            console.log(`PvP Collision: Player 2 (speed ${speed2.toFixed(2)}) hits Player 1 (speed ${speed1.toFixed(2)}) for ${damage} damage. Player 1 HP: ${player1.hp}/${player1.maxHP}, Armor: ${player1.armor}/${player1.maxArmor}`);
+            
+            // Check if player 1 is dead - start death animation
+            if (player1.hp <= 0 && !player1.isOut && !deathAnimations.has(myPlayerId!)) {
+              player1.isOut = true;
+              
+              // Determine player color for death animation
+              let playerColor = '#000000';
+              if (myPlayerId === opponentId) {
+                playerColor = '#000000';
+              } else {
+                playerColor = player1.color;
+              }
+              
+              // Start death animation
+              createDeathAnimation(myPlayerId!, player1.x, player1.y, playerColor, player1.radius);
+            }
+          }
+          
+          // Physics resolution (separate from damage)
+          if (relSpeed < 0) {
+            if (speed1 > speed2) {
+              // Player 1 dominates - reduce its speed by 50%
+              player1.vx *= 0.5;
+              player1.vy *= 0.5;
+              
+              // Push player 2 away
+              const pushForce = Math.abs(relSpeed) * 0.2;
+              player2.vx += nx * pushForce;
+              player2.vy += ny * pushForce;
+            } else {
+              // Player 2 dominates - reduce its speed by 50%
+              player2.vx *= 0.5;
+              player2.vy *= 0.5;
+              
+              // Push player 1 away
+              const pushForce = Math.abs(relSpeed) * 0.2;
+              player1.vx -= nx * pushForce;
+              player1.vy -= ny * pushForce;
+            }
+            
+            // Separate players to prevent overlap
+            const overlap = minDistance - distance;
+            const separationX = nx * overlap * 0.5;
+            const separationY = ny * overlap * 0.5;
+            player1.x -= separationX;
+            player1.y -= separationY;
+            player2.x += separationX;
+            player2.y += separationY;
+            
+            // Update last hit time and unlock gravity (same as Solo)
+            const now = Date.now();
+            player1.lastHitTime = now;
+            player2.lastHitTime = now;
+            player1.gravityLocked = false;
+            player2.gravityLocked = false;
+          }
+        }
+      }
+    }
+    
+    // Check win condition: opponent is out of bounds
+    if (myPlayerId && opponentId && pvpPlayers[myPlayerId] && pvpPlayers[opponentId]) {
+      const myPlayer = pvpPlayers[myPlayerId];
+      const opponent = pvpPlayers[opponentId];
+      
+      if (opponent.isOut && !myPlayer.isOut) {
+        console.log('You win! Opponent is out of bounds');
+        // TODO: Show win screen
+      } else if (myPlayer.isOut && !opponent.isOut) {
+        console.log('You lose! You are out of bounds');
+        // TODO: Show lose screen
+      }
+    }
+  }
+
+  // Armor regeneration - Solo mode only
+  if (gameMode === 'Solo' && gameState === 'Alive' && dotArmor < dotMaxArmor) {
+    const now = Date.now();
+    if (now - lastArmorRegen >= 2000) { // 2 seconds
+      dotArmor = Math.min(dotMaxArmor, dotArmor + getNftArmorRegenAmount());
+      lastArmorRegen = now;
+    }
+  }
+  
+  // Update screen shake
+  if (screenShake > 0) {
+    screenShake--;
+  }
+
+  // Update moving platform position (Solo mode only - PvP platform is static in center)
+  if (TOXIC_PLATFORMS_ENABLED) {
+    if (gameMode !== 'PvP' && gameMode !== 'Training') {
+      movingPlatformX += movingPlatformVx;
+      // Bounce off edges
+      const halfW = movingPlatformWidth / 2;
+      if (movingPlatformX - halfW <= playLeft || movingPlatformX + halfW >= playRight) {
+        movingPlatformVx = -movingPlatformVx;
+        // Keep within bounds
+        movingPlatformX = Math.max(playLeft + halfW, Math.min(playRight - halfW, movingPlatformX));
+      }
+    } else {
+      // PvP/Training mode: Platform is static in center
+      movingPlatformX = (playLeft + playRight) / 2; // Center of play area
+    }
+  } else {
+    // Keep coordinates centered when platforms are disabled
+    movingPlatformX = (playLeft + playRight) / 2;
+  }
+
+  // Platform flash timer
+  if (movingPlatformFlashTimer > 0) {
+    movingPlatformFlashTimer--;
+  }
+
+  // Update katana slash animation and check collisions
+  // Update arrow slash animation (visual only - damage already applied when arrow hits target during flight)
+  if (katanaSlashing && gameState === 'Alive') {
+    const now = Date.now();
+    const slashProgress = Math.min(1, (now - katanaSlashStartTime) / katanaSlashDuration);
+    
+    // End slash animation after duration
+    if (slashProgress >= 1) {
+      katanaSlashing = false;
+      katanaHitTargets.clear();
+      // Reset arrow after slash - ready for next shot
+      katanaFlying = false;
+      katanaVx = 0;
+      katanaVy = 0;
+    }
+  }
+
+  // Update katana/arrow flying physics
+  if (katanaFlying && gameState === 'Alive') {
+    // Update position
+    katanaX += katanaVx;
+    katanaY += katanaVy;
+
+    // Weapons disabled in Solo for now; keep original arrow-vs-DOT behavior.
+    // Check collision with DOT - OPTIMIZED: Use squared distance
+    const dx = dotX - katanaX;
+    const dy = dotY - katanaY;
+    const distanceSquared = dx * dx + dy * dy;
+    const hitRadius = dotRadius + (arrowLength - arrowFletchingLength);
+    const hitRadiusSquared = hitRadius * hitRadius;
+
+    // Hit if arrow tip/body touches DOT
+    if (distanceSquared <= hitRadiusSquared) {
+      const distance = Math.sqrt(distanceSquared);
+      // Impact! Apply damage immediately when arrow hits target
+      // 100% hit chance - if arrow hits target, damage is guaranteed
+      // Arrow is completely free - no DOT currency cost
+
+      // Arrow always hits if it physically hits the target (no accuracy check)
+      // Arrow does strong damage (3x for impact strike)
+      const arrowDamageMultiplier = 3;
+
+        // Check for crit hit - with NFT bonuses
+        const nftBonuses = calculateNftBonuses();
+        const totalCritChance = critChance + nftBonuses.critChance;
+        let isCritHit = Math.random() < totalCritChance / 100;
+        if (nextHitForceCrit && Date.now() <= nextHitForceCritExpiresAt) {
+          isCritHit = true;
+          nextHitForceCrit = false;
+        } else if (Date.now() > nextHitForceCritExpiresAt) {
+          nextHitForceCrit = false;
+        }
+
+        // Calculate base damage with arrow multiplier and crit (with NFT bonuses)
+        const totalDmg = dmg + nftBonuses.dmg;
+        const baseDamage = totalDmg * arrowDamageMultiplier;
+        const damageWithCrit = isCritHit ? baseDamage * 2 : baseDamage;
+        // Apply 50% variance (damage ranges from 50% to 100%)
+        let totalDamage = applyDamageVariance(damageWithCrit);
+
+        // Apply damage
+        const absorbed = Math.min(totalDamage, dotArmor);
+        dotArmor -= absorbed;
+        const remainingDamage = totalDamage - absorbed;
+        dotHP = Math.max(0, dotHP - remainingDamage);
+
+        // Play damage received sound effect (pain/impact sound when receiving damage)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDamageReceived(isCritHit);
+        });
+
+        // Add damage number animation
+        safePushDamageNumber({
+          x: dotX + (Math.random() - 0.5) * 40,
+          y: dotY - 20,
+          value: totalDamage,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -2 - Math.random() * 2,
+          isCrit: isCritHit
+        });
+
+        // Push DOT in opposite direction from arrow's origin (like click logic)
+        const clickDx = arrowStartX - dotX;
+        const clickDy = arrowStartY - dotY;
+        const clickAngle = Math.atan2(clickDy, clickDx);
+        const oppositeAngle = clickAngle + Math.PI;
+        const force = isCritHit ? 11.5 : 9.2;
+
+        dotVx += Math.cos(oppositeAngle) * force;
+        dotVy += Math.sin(oppositeAngle) * force;
+
+        // Play dot hit sound effect (like hammer hitting a nail)
+        audioManager.resumeContext().then(() => {
+          audioManager.playDotHit();
+        });
+
+        // Screen shake on impact (stronger than normal hits)
+        screenShake = Math.max(screenShake, isCritHit ? 30 : 20);
+
+        // Update last hit time to disable gravity temporarily
+        lastHitTime = Date.now();
+
+        // Check death
+        if (dotHP <= 0) {
+          gameState = 'Dying';
+          deathAnimation = true;
+          deathTimer = 0;
+          respawnTimer = 0;
+          awaitingRestart = false;
+          rewardGranted = false;
+          deathStartX = dotX;
+          deathStartY = dotY;
+
+          // Leveling system: increment kill counter
+          killsInCurrentLevel++;
+          console.log(`Kills in level ${currentLevel}: ${killsInCurrentLevel}/${killsNeededPerLevel}`);
+
+          if (killsInCurrentLevel >= killsNeededPerLevel) {
+            killsInCurrentLevel = 0;
+            if (maxUnlockedLevel === currentLevel) {
+              maxUnlockedLevel = currentLevel + 1;
+              console.log(`Level ${maxUnlockedLevel} unlocked!`);
+            }
+          }
+
+          console.log('DOT is dying! (arrow hit)');
+        }
+
+      // Start slash animation after impact
+      katanaFlying = false;
+      katanaVx = 0;
+      katanaVy = 0;
+      katanaSlashing = true;
+      katanaSlashStartTime = Date.now();
+
+      katanaAngle = Math.atan2(dy, dx);
+      katanaHitTargets.clear();
+
+      console.log(`Arrow impact! Starting slash at (${katanaX}, ${katanaY})`);
+    }
+
+    // Boundary check - allow arrow to fly out of bounds but stop it visually
+    if (katanaX < 240 || katanaX > 1920 || katanaY < 0 || katanaY > 1080) {
+      // keep
+    }
+  }
+
+  // Damage only happens during slash animation (handled above)
+
+  // Update drawn lines (fade out animation)
+  for (let i = drawnLines.length - 1; i >= 0; i--) {
+    drawnLines[i].life--;
+    if (drawnLines[i].life <= 0) {
+      drawnLines.splice(i, 1);
+    }
+  }
+
+  // Update supersonic shadow tail (comet effect) - OPTIMIZED: Use cached speed
+  {
+    if (cachedDotSpeedFrame !== currentFrame) {
+      cachedDotSpeedSquared = dotVx * dotVx + dotVy * dotVy;
+      cachedDotSpeed = Math.sqrt(cachedDotSpeedSquared);
+      cachedDotSpeedFrame = currentFrame;
+    }
+    // Start showing UFO "shadow tail" earlier since inertia/friction is higher now
+    if (cachedDotSpeed >= 2) {
+      // Add a new segment at current position
+      speedTrail.push({
+        x: dotX,
+        y: dotY,
+        vx: 0,
+        vy: 0,
+        life: 16,
+        maxLife: 16,
+        size: dotRadius * 1.2
+      });
+      // Limit length
+      if (speedTrail.length > 40) speedTrail.shift();
+    }
+    // Fade out segments
+    for (let i = speedTrail.length - 1; i >= 0; i--) {
+      speedTrail[i].life--;
+      if (speedTrail[i].life <= 0) speedTrail.splice(i, 1);
+    }
+  }
+
+  // Update click particles
+  for (let i = clickParticles.length - 1; i >= 0; i--) {
+    const particle = clickParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    
+    if (particle.life <= 0) {
+      clickParticles.splice(i, 1);
+    }
+  }
+  
+  // Update projectile smoke particles
+  for (let i = projectileSmokeParticles.length - 1; i >= 0; i--) {
+    const particle = projectileSmokeParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    
+    if (particle.life <= 0) {
+      projectileSmokeParticles.splice(i, 1);
+    }
+  }
+
+  // Update arrow air-resistance particles
+  for (let i = arrowAirParticles.length - 1; i >= 0; i--) {
+    const particle = arrowAirParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    if (particle.life <= 0) {
+      arrowAirParticles.splice(i, 1);
+    }
+  }
+  
+  // Update click smudges
+  for (let i = clickSmudges.length - 1; i >= 0; i--) {
+    clickSmudges[i].life--;
+    if (clickSmudges[i].life <= 0) {
+      clickSmudges.splice(i, 1);
+    }
+  }
+  
+  // Update DOT decay particles
+  for (let i = dotDecayParticles.length - 1; i >= 0; i--) {
+    const particle = dotDecayParticles[i];
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life--;
+    
+    if (particle.life <= 0) {
+      dotDecayParticles.splice(i, 1);
+    }
+  }
+  
+  // Update upgrade animation
+  if (upgradeAnimation) {
+    upgradeProgress += 16 / 2000; // 2 seconds at 60 FPS
+    
+    // Show FAILED message when reverse animation starts
+    if (!upgradeWillSucceed && upgradeProgress >= upgradeFailAt && upgradeMessageTimer === 0) {
+      upgradeMessage = 'FAILED!';
+      upgradeSuccess = false;
+      upgradeMessageX = 20;
+      if (upgradeType === 'accuracy') upgradeMessageY = 213;
+      upgradeMessageTimer = 1000; // 1 second instead of 2
+      console.log('Upgrade failed at', upgradeFailAt);
+    }
+    
+    // Stop animation after reverse effect
+    if (!upgradeWillSucceed && upgradeProgress >= upgradeFailAt + 0.25) {
+      upgradeAnimation = false;
+      upgradeProgress = 0;
+      upgradeParticles = [];
+      
+      // Profile: Track upgrade failure
+      profileManager.addUpgradeFailure();
+    }
+    
+    // Add particles during animation
+    if (Math.random() < 0.3) {
+      const buttonX = 20;
+      let buttonY = 160; // Crit
+      if (upgradeType === 'accuracy') buttonY = 220;
+      safePushUpgradeParticle({
+        x: buttonX + Math.random() * 200,
+        y: buttonY + Math.random() * 40,
+        vx: (Math.random() - 0.5) * 2,
+        vy: -Math.random() * 3 - 1,
+        life: 30,
+        maxLife: 30
+      });
+    }
+    
+    // Update particles
+    for (let i = upgradeParticles.length - 1; i >= 0; i--) {
+      const particle = upgradeParticles[i];
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      particle.life--;
+      
+      if (particle.life <= 0) {
+        upgradeParticles.splice(i, 1);
+      }
+    }
+    
+    // IMPORTANT: upgrades are disabled (no upgrade buttons exist).
+    // Even if a modded client tries to trigger the upgrade animation, it must never grant stats.
+    if (upgradeProgress >= 0) {
+      upgradeAnimation = false;
+      upgradeProgress = 0;
+      upgradeParticles = [];
+      upgradeWillSucceed = false;
+      upgradeMessage = '';
+      upgradeMessageTimer = 0;
+      upgradeSuccess = false;
+    }
+  }
+  
+  // Handle delayed restart after ground touch or out of bounds
+  if (awaitingRestart && Date.now() >= scheduledRestartAt) {
+    // Full restore and restart from center
+    dotHP = dotMaxHP;
+    dotArmor = dotMaxArmor;
+    dotX = 240 + (1920 - 240) / 2;
+    dotY = 1080 / 2;
+    dotVx = 0;
+    dotVy = 0;
+    lastHitTime = 0;
+    awaitingRestart = false;
+    gravityLocked = true; // keep gravity off until first successful click
+    nextHitForceCrit = false; // clear any pending force-crit on restart
+    
+    // Reset slow-motion on restart
+    slowMotionActive = false;
+    mouseHoldStartTime = 0;
+    savedDotVx = 0;
+    savedDotVy = 0;
+    
+    // Reset arrow on restart (both ground touch and out of bounds)
+    arrowReady = false;
+    arrowFired = false;
+    katanaFlying = false;
+    katanaVx = 0;
+    katanaVy = 0;
+    katanaSlashing = false;
+  }
+
+  // Autosave check (~every couple minutes)
+  if (saveManager.shouldAutoSave()) {
+    saveGame();
+    // Also persist Solo progress to Supabase for cross-server persistence.
+    maybeCloudSaveSolo(Date.now());
+  }
+
+  // Update FPS counter (every second)
+  fpsFrameCount++;
+  const now = Date.now();
+  if (now - fpsLastTime >= 1000) {
+    currentFPS = fpsFrameCount;
+    fpsFrameCount = 0;
+    fpsLastTime = now;
+    
+    // Calculate average frame time
+    if (frameTimeHistory.length > 0) {
+      const sum = frameTimeHistory.reduce((a, b) => a + b, 0);
+      averageFrameTime = sum / frameTimeHistory.length;
+      maxFrameTime = Math.max(...frameTimeHistory);
+      frameTimeHistory = []; // Reset for next second
+    }
+
+    // #region agent log
+    try {
+      if (AGENT_DEBUG_LOGS_ENABLED) {
+      fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:gameLoop',message:'fps + frametime (1s window)',data:{gameMode,currentFPS,averageFrameTime, maxFrameTime},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H7'})}).catch(()=>{});
+      }
+    } catch {}
+    // #endregion
+  }
+
+  render();
+  
+  // Global online players count display (top-right, ~25px below the timer area)
+  // Update online count in background
+  updateOnlinePlayersCount();
+  {
+    const onlineBoxW = 120;
+    const onlineBoxH = 22;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 22;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+    ctx.fillRect(onlineBoxX, onlineBoxY, onlineBoxW, onlineBoxH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(onlineBoxX, onlineBoxY, onlineBoxW, onlineBoxH);
+
+    const dotRadius = 4;
+    const dotX = onlineBoxX + 12;
+    const dotY = onlineBoxY + onlineBoxH / 2;
+
+    // Green glow
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, dotRadius + 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
+    ctx.fill();
+
+    // Green dot
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#00ff64';
+    ctx.fill();
+
+    const onlineCount = globalOnlinePlayersCount !== null ? globalOnlinePlayersCount : '...';
+    const onlineText = `${onlineCount} online`;
+
+    drawOutlinedText(ctx, onlineText, dotX + dotRadius + 8, dotY + 0.5, {
+      sizePx: 13,
+      weight: 600,
+      align: 'left',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: '#ffffff',
+    });
+    ctx.restore();
+  }
+
+  // Live chat toggle button (50% transparent) next to online indicator
+  {
+    const onlineBoxW = 120;
+    const onlineBoxH = 22;
+    const onlineBoxX = canvas.width - 16 - onlineBoxW;
+    const onlineBoxY = 10 + 22;
+
+    const btnW = 120;
+    const btnH = 22;
+    const gap = 10;
+    const btnX = onlineBoxX - gap - btnW;
+    const btnY = onlineBoxY;
+
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    const chatPulseK = (!isChatOpen && chatHasUnread) ? (0.55 + 0.45 * Math.sin(Date.now() / 220)) : 0;
+    ctx.fillStyle = isChatOpen
+      ? 'rgba(40, 80, 140, 0.75)'
+      : (!isChatOpen && chatHasUnread
+        ? `rgba(255, 160, 50, ${0.55 + chatPulseK * 0.35})`
+        : (isHoveringChat ? 'rgba(18, 22, 36, 0.70)' : 'rgba(8, 10, 18, 0.55)'));
+    ctx.fillRect(btnX, btnY, btnW, btnH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(btnX, btnY, btnW, btnH);
+    ctx.restore();
+
+    // Unread dot / badge (subtle)
+    if (!isChatOpen && chatHasUnread) {
+      ctx.save();
+      const bx = btnX + btnW - 10;
+      const by = btnY + 7;
+      ctx.fillStyle = 'rgba(255, 200, 90, 0.95)';
+      ctx.beginPath();
+      ctx.arc(bx, by, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      if ((chatUnreadCount | 0) > 0) {
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 7px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const t = String(Math.min(9, chatUnreadCount | 0));
+        ctx.strokeText(t, bx, by + 0.5);
+        ctx.fillText(t, bx, by + 0.5);
+      }
+      ctx.restore();
+    }
+
+    ctx.save();
+    drawOutlinedText(ctx, 'LIVE CHAT', btnX + btnW / 2, btnY + btnH / 2 + 0.5, {
+      sizePx: 13,
+      weight: 700,
+      align: 'center',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: '#ffffff',
+    });
+    ctx.restore();
+
+    // Show/hide chat input HTML element + HTML chat messages overlay based on open state
+    try {
+      const inp = ensureChatInput();
+      const sendBtn = ensureChatSendButton();
+      const msgsEl = ensureChatMessagesContainer();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width / canvas.width;
+      const scaleY = rect.height / canvas.height;
+      if (isChatOpen) {
+        // Chat panel layout (bottom input bar)
+        const panelW = CHAT_PANEL_W;
+        const panelH = CHAT_PANEL_H;
+        const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
+        const panelY = Math.floor(CHAT_PANEL_TOP);
+        const headerH = 46;
+        // Fixed 2-line input box (wraps automatically; no Shift+Enter newline)
+        let inputH = CHAT_INPUT_H;
+        try {
+          (inp as any).rows = 2;
+          const fs = parseInt(String(inp.style.fontSize || '18'), 10);
+          const extra = Number.isFinite(fs) ? Math.max(22, Math.round(fs * 1.25)) : 26;
+          inputH = CHAT_INPUT_H + extra;
+        } catch {}
+        const sendW = CHAT_SEND_W;
+        const gap = CHAT_GAP;
+        const inputX = panelX + 18;
+        const inputY = panelY + panelH - inputH - 14;
+        const inputW = panelW - 18 - sendW - gap - 14;
+        const sendX = inputX + inputW + gap;
+        const sendY = inputY;
+        inp.style.display = 'block';
+        inp.style.left = `${rect.left + inputX * scaleX}px`;
+        inp.style.top = `${rect.top + inputY * scaleY}px`;
+        inp.style.width = `${Math.max(120, inputW * scaleX)}px`;
+        inp.style.height = `${Math.max(28, inputH * scaleY)}px`;
+
+        // Overlay send button click area (keeps SEND clickable even if input overlaps canvas)
+        sendBtn.style.display = 'block';
+        sendBtn.style.left = `${rect.left + sendX * scaleX}px`;
+        sendBtn.style.top = `${rect.top + sendY * scaleY}px`;
+        sendBtn.style.width = `${Math.max(40, sendW * scaleX)}px`;
+        sendBtn.style.height = `${Math.max(28, inputH * scaleY)}px`;
+
+        // Messages overlay area (crisp DOM text)
+        const listX = panelX + 18;
+        const listY = panelY + headerH + 12;
+        const listW = panelW - 36;
+        const listH = panelH - headerH - inputH - 40;
+        msgsEl.style.display = 'block';
+        msgsEl.style.left = `${Math.round(rect.left + listX * scaleX)}px`;
+        msgsEl.style.top = `${Math.round(rect.top + listY * scaleY)}px`;
+        msgsEl.style.width = `${Math.max(120, Math.round(listW * scaleX))}px`;
+        msgsEl.style.height = `${Math.max(60, Math.round(listH * scaleY))}px`;
+        // Dynamic readability boost: if the game is scaled down, increase font size in screen px.
+        try {
+          const s = Math.max(0.55, Math.min(1.0, Math.min(scaleX, scaleY)));
+        // Slightly smaller (2px) to fit more text into the 2-line clamp.
+        const fontPx = Math.round(Math.max(15, Math.min(23, 15 / s)));
+          msgsEl.style.fontSize = `${fontPx}px`;
+          msgsEl.style.lineHeight = `${Math.round(fontPx * 1.28)}px`;
+          // Match input size to overlay so typing feels consistent
+          inp.style.fontSize = `${fontPx}px`;
+          inp.style.lineHeight = `${Math.round(fontPx * 1.22)}px`;
+        } catch {}
+        renderChatMessagesOverlay(msgsEl);
+      } else {
+        inp.style.display = 'none';
+        sendBtn.style.display = 'none';
+        msgsEl.style.display = 'none';
+      }
+    } catch {}
+  }
+
+  // Show/hide nickname EDIT overlay button (profile)
+  try {
+    const editBtn = ensureNicknameEditButton();
+    // Show whenever profile is open (works for wallet + guest/local)
+    if (isProfileOpen) {
+      const r = getProfileNicknameEditRects();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width / canvas.width;
+      const scaleY = rect.height / canvas.height;
+      editBtn.style.display = 'block';
+      editBtn.style.left = `${rect.left + r.btn.x * scaleX}px`;
+      editBtn.style.top = `${rect.top + r.btn.y * scaleY}px`;
+      editBtn.style.width = `${Math.max(40, r.btn.w * scaleX)}px`;
+      editBtn.style.height = `${Math.max(22, r.btn.h * scaleY)}px`;
+    } else {
+      editBtn.style.display = 'none';
+      // Also hide nickname input when profile isn't open
+      const inp = document.getElementById('nicknameInput') as HTMLInputElement;
+      if (inp) inp.style.display = 'none';
+    }
+  } catch {}
+
+  // Live chat panel
+  if (isChatOpen) {
+    const panelW = CHAT_PANEL_W;
+    const panelH = CHAT_PANEL_H;
+    const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
+    const panelY = Math.floor(CHAT_PANEL_TOP);
+    const headerH = 46;
+    // Fixed 2-line input box (wraps automatically; no Shift+Enter newline)
+    let inputH = CHAT_INPUT_H;
+    try {
+      const inp = ensureChatInput();
+      (inp as any).rows = 2;
+      const fs = parseInt(String(inp.style.fontSize || '18'), 10);
+      const extra = Number.isFinite(fs) ? Math.max(22, Math.round(fs * 1.25)) : 26;
+      inputH = CHAT_INPUT_H + extra;
+    } catch {}
+    const sendW = CHAT_SEND_W;
+    const gap = CHAT_GAP;
+
+    // Panel background
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.92)';
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+    // Header
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(panelX, panelY, panelW, headerH);
+    drawOutlinedText(ctx, 'LIVE CHAT', panelX + 18, panelY + headerH / 2 + 0.5, {
+      sizePx: 16,
+      weight: 800,
+      align: 'left',
+      baseline: 'middle',
+      lineWidth: 4,
+      stroke: 'rgba(0, 0, 0, 0.9)',
+      fill: '#ff9a00',
+    });
+
+    const chatConn = chatService.getConnectionState();
+    const chatConnected = chatService.isConnected();
+
+    // Close (X) button in header (top-right)
+    const closeS = 26;
+    const closePadR = 14;
+    const closeX = panelX + panelW - closePadR - closeS;
+    const closeY = panelY + Math.floor((headerH - closeS) / 2);
+    ctx.save();
+    ctx.fillStyle = isPressingChatClose
+      ? 'rgba(255, 120, 120, 0.45)'
+      : (isHoveringChatClose ? 'rgba(255, 120, 120, 0.30)' : 'rgba(255, 120, 120, 0.18)');
+    ctx.fillRect(closeX, closeY, closeS, closeS);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(closeX, closeY, closeS, closeS);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(closeX + 8, closeY + 8);
+    ctx.lineTo(closeX + closeS - 8, closeY + closeS - 8);
+    ctx.moveTo(closeX + closeS - 8, closeY + 8);
+    ctx.lineTo(closeX + 8, closeY + closeS - 8);
+    ctx.stroke();
+    ctx.restore();
+
+    // Online indicator in header (reuse globalOnlinePlayersCount) - shifted left so it doesn't overlap X
+    const onlineCount = globalOnlinePlayersCount !== null ? globalOnlinePlayersCount : 0;
+    const rightEdge = closeX - 14;
+    const dotCx = rightEdge - 110;
+    const dotCy = panelY + headerH / 2;
+    ctx.fillStyle = '#00ff64';
+    ctx.beginPath();
+    ctx.arc(dotCx, dotCy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    drawOutlinedText(ctx, `${onlineCount} online`, dotCx + 10, dotCy + 0.5, {
+      sizePx: 13,
+      weight: 700,
+      align: 'left',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: '#ffffff',
+    });
+
+    // Chat connection status (small)
+    const statusText = chatConnected ? 'LIVE' : (chatConn === 'connecting' ? 'CONNECTING' : 'OFFLINE');
+    drawOutlinedText(ctx, statusText, closeX - 10, panelY + headerH / 2 + 0.5, {
+      sizePx: 12,
+      weight: 700,
+      align: 'right',
+      baseline: 'middle',
+      lineWidth: 3,
+      stroke: 'rgba(0, 0, 0, 0.85)',
+      fill: chatConnected ? 'rgba(230, 240, 255, 0.75)' : 'rgba(255, 120, 120, 0.95)',
+    });
+
+    // Messages area
+    const listX = panelX + 18;
+    const listY = panelY + headerH + 12;
+    const listW = panelW - 36;
+    const listH = panelH - headerH - inputH - 40;
+
+    ctx.save();
+    ctx.beginPath();
+    // Expand clip a bit so outlined text doesn't get visually "cut" at the edges.
+    ctx.rect(listX, listY - 8, listW, listH + 16);
+    ctx.clip();
+
+    chatHitRegions = [];
+    // Only show actual chat messages (no system/invite spam)
+    if (!CHAT_USE_DOM_MESSAGES) {
+      const messages = chatService.getMessages().filter((m) => m && m.kind === 'chat' && String(m.text || '').trim().length);
+      // Layout like the example: per message block => (nick line + msg line(s))
+      // Readable typography (bigger so you can read without leaning toward the monitor)
+      const nickFont = `800 18px ${UI_SMOOTH_FONT_STACK}`;
+      const msgFont = `700 18px ${UI_SMOOTH_FONT_STACK}`;
+      const tsFont = `700 14px ${UI_SMOOTH_FONT_STACK}`;
+      const msgLineH = 22;
+      const maxMsgLines = 2;
+      const blockH = 24 + msgLineH * maxMsgLines + 10; // fixed 2-line message area
+      const maxMsgs = Math.max(1, Math.floor(listH / blockH));
+      const totalMsgs = messages.length;
+      // scroll: 0 => bottom (counted in messages)
+      const startIndex = Math.max(0, totalMsgs - maxMsgs - chatScrollOffset);
+      const endIndex = Math.min(totalMsgs, startIndex + maxMsgs);
+
+      // Keep integer y positions to avoid blurry text at non-integer scales.
+      let y = Math.round(listY + 12);
+      ctx.font = nickFont;
+      for (let i = startIndex; i < endIndex; i++) {
+        y = Math.round(y);
+        const m = messages[i];
+        const name = getDisplayNameForChatUser({ nickname: m.fromNickname, address: m.fromAddress, sessionId: m.fromSessionId });
+        const text = String(m.text || '').trim();
+        const nameColor = '#c06bff';
+        const msgColor = '#ffffff';
+
+      // Hover dominates selection
+      const activeHoverSid = chatHoverSessionId;
+      const activeSelectedSid = !activeHoverSid ? chatSelectedUserSessionId : null;
+      const isInHoverGroup = !!activeHoverSid && m.fromSessionId === activeHoverSid;
+      const isInSelectedGroup = !!activeSelectedSid && m.fromSessionId === activeSelectedSid;
+      const isThisHovered = !!chatHoverMessageId && m.id === chatHoverMessageId;
+
+      // Background highlight for the whole message block
+      if (isInSelectedGroup || isInHoverGroup) {
+        ctx.save();
+        const baseFill = isInSelectedGroup ? 'rgba(255, 210, 106, 0.12)' : 'rgba(176, 76, 255, 0.10)';
+        ctx.fillStyle = baseFill;
+        ctx.fillRect(listX - 6, y - 16, listW + 12, blockH - 4);
+        ctx.strokeStyle = isInSelectedGroup ? 'rgba(255, 210, 106, 0.22)' : 'rgba(176, 76, 255, 0.22)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(listX - 6, y - 16, listW + 12, blockH - 4);
+        if (isInHoverGroup && isThisHovered) {
+          ctx.fillStyle = 'rgba(176, 76, 255, 0.16)';
+          ctx.fillRect(listX - 6, y - 16, listW + 12, blockH - 4);
+          ctx.strokeStyle = 'rgba(216, 166, 255, 0.55)';
+          ctx.strokeRect(listX - 6, y - 16, listW + 12, blockH - 4);
+        }
+        ctx.restore();
+      }
+
+      // Timestamp formatting: recent => "Xh ago", else date (lt-LT)
+      let tsText = '';
+      try {
+        const ts = typeof m.ts === 'number' ? m.ts : Date.now();
+        const ageMs = Date.now() - ts;
+        const h = Math.floor(ageMs / (1000 * 60 * 60));
+        // Hide timestamps for very recent messages; show hours for 1..48h; otherwise show date.
+        if (h >= 1 && h <= 48) tsText = `${h}h ago`;
+        else if (h > 48) tsText = new Date(ts).toLocaleDateString('lt-LT');
+        else tsText = '';
+      } catch {
+        tsText = '';
+      }
+
+      // Nick line (clickable only on nick)
+      ctx.save();
+      ctx.font = nickFont;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const effectiveNameColor = isInSelectedGroup ? '#ffd26a' : (isInHoverGroup ? '#d8a6ff' : nameColor);
+      drawOutlinedText(ctx, name, listX, y, {
+        font: nickFont,
+        align: 'left',
+        baseline: 'top',
+        lineWidth: 3,
+        stroke: 'rgba(0, 0, 0, 0.9)',
+        fill: effectiveNameColor,
+      });
+      const nameW = ctx.measureText(name).width;
+
+      // underline for hovered row / selected group
+      if (isInSelectedGroup || (isInHoverGroup && isThisHovered)) {
+        ctx.strokeStyle = isInSelectedGroup ? 'rgba(255, 210, 106, 0.85)' : 'rgba(216, 166, 255, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const underlineY = y + 22;
+        ctx.moveTo(listX, underlineY);
+        ctx.lineTo(listX + Math.max(8, nameW), underlineY);
+        ctx.stroke();
+      }
+
+      // Right timestamp on nick line
+      if (tsText) {
+        drawOutlinedText(ctx, tsText, listX + listW, y, {
+          font: tsFont,
+          align: 'right',
+          baseline: 'top',
+          lineWidth: 3,
+          stroke: 'rgba(0, 0, 0, 0.85)',
+          fill: 'rgba(230, 240, 255, 0.55)',
+        });
+      }
+      ctx.restore();
+
+      chatHitRegions.push({
+        sessionId: m.fromSessionId,
+        messageId: m.id || '',
+        address: m.fromAddress,
+        x: listX,
+        y,
+        w: Math.max(8, nameW),
+        h: 18
+      });
+
+      // Message lines (below) - wrap into max 2 lines
+      ctx.save();
+      ctx.font = msgFont;
+      ctx.textAlign = 'left';
+      const maxMsgW = listW - 6;
+      const words = text.split(/\s+/).filter(Boolean);
+      const lines: string[] = [];
+      let current = '';
+      for (const w of words) {
+        const next = current ? `${current} ${w}` : w;
+        if (ctx.measureText(next).width <= maxMsgW) {
+          current = next;
+        } else {
+          lines.push(current || w);
+          current = current && ctx.measureText(w).width <= maxMsgW ? w : w;
+          if (lines.length >= maxMsgLines) break;
+        }
+      }
+      if (lines.length < maxMsgLines && current) lines.push(current);
+
+      // If we overflowed, ellipsize the last line
+      const hasMore = words.length > 0 && (lines.length >= maxMsgLines) && (
+        (() => {
+          // crude: if we broke early or still have unused words
+          const joined = lines.join(' ');
+          return joined.length < text.length;
+        })()
+      );
+      if (hasMore && lines.length) {
+        let last = lines[lines.length - 1];
+        while (last.length > 0 && ctx.measureText(`${last}…`).width > maxMsgW) {
+          last = last.slice(0, -1);
+        }
+        lines[lines.length - 1] = `${last}…`;
+      }
+
+      // draw up to 2 lines (second line can be empty)
+      for (let li = 0; li < maxMsgLines; li++) {
+        const t = lines[li] || '';
+        drawOutlinedText(ctx, t, listX, y + 26 + li * msgLineH, {
+          font: msgFont,
+          align: 'left',
+          baseline: 'top',
+          lineWidth: 3,
+          stroke: 'rgba(0, 0, 0, 0.9)',
+          fill: msgColor,
+        });
+      }
+      ctx.restore();
+
+        y += blockH;
+      }
+    }
+    ctx.restore();
+
+    // Input bar + send button
+    const inputX = panelX + 18;
+    const inputY = panelY + panelH - inputH - 14;
+    const inputW = panelW - 18 - sendW - gap - 14;
+    const sendX = inputX + inputW + gap;
+    const sendY = inputY;
+
+    // Draw send button (input itself is HTML)
+    // Button shadow + hover
+    if (!isPressingChatSend) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.fillRect(sendX + 2, sendY + 2, sendW, inputH);
+    }
+    ctx.fillStyle = !chatConnected
+      ? 'rgba(120, 120, 120, 0.25)'
+      : (isPressingChatSend
+      ? 'rgba(40, 80, 140, 0.55)'
+      : (isHoveringChatSend ? 'rgba(20, 28, 48, 0.70)' : 'rgba(8, 10, 18, 0.55)'));
+    ctx.fillRect(sendX, sendY, sendW, inputH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sendX, sendY, sendW, inputH);
+    drawOutlinedText(ctx, 'SEND', sendX + sendW / 2, sendY + inputH / 2 + 0.5, {
+      sizePx: 15,
+      weight: 800,
+      align: 'center',
+      baseline: 'middle',
+      lineWidth: 4,
+      stroke: 'rgba(0, 0, 0, 0.9)',
+      fill: chatConnected ? '#ff9a00' : 'rgba(230, 240, 255, 0.55)',
+    });
+
+    ctx.restore();
+  }
+
+  // Slot / Starter claim button (moved into left panel)
+  if (gameMode === 'Solo') {
+    const r = getSlotBellRect();
+    const bellX = r.x;
+    const bellY = r.y;
+    const bellW = r.w;
+    const btnH = r.h;
+
+    // Button background (requested: cleaner look, no whole-button green tint/pulse)
+    const now = Date.now();
+    const spinHasNew = slotBellNewSpins > 0 || now < (slotSpinGlowUntil | 0);
+    const spinBg = isHoveringSlotBell ? 'rgba(18, 22, 36, 0.70)' : 'rgba(8, 10, 18, 0.55)';
+    const border = spinHasNew ? 'rgba(80, 255, 160, 0.35)' : UI_BTN_INNER;
+    const rrSpin = drawPixelButtonFrame(ctx, bellX, bellY, bellW, btnH, {
+      hovering: isHoveringSlotBell,
+      pressing: false,
+      borderColor: border,
+      bgColor: spinBg,
+      bgHoverColor: spinBg,
+      bgPressedColor: spinBg,
+      drawShadow: false,
+    });
+    // Tiny indicator strip (instead of tinting the whole button)
+    if (spinHasNew) {
+      ctx.fillStyle = 'rgba(80, 255, 160, 0.22)';
+      ctx.fillRect(rrSpin.x + 2, rrSpin.y + rrSpin.h - 4, rrSpin.w - 4, 2);
+    }
+
+    // Label: CLAIM 5 SPINS (guest) / CLAIM 7 SPINS (wallet) (or SPIN after claimed)
+    {
+      let isWallet = false;
+      try {
+        const st = walletService.getState();
+        isWallet = !!(st?.isConnected && st.address);
+      } catch {}
+      const claimed = isWallet ? soloStarterClaimed : guestStarterClaimedThisSession;
+      const label = claimed ? 'SPIN' : (isWallet ? 'CLAIM 7 SPINS' : 'CLAIM 5 SPINS');
+      drawPixelText(
+        ctx,
+        label,
+        bellX + bellW / 2,
+        // Center vertically inside the button (requested)
+        bellY + btnH / 2 + 0.5,
+        // +3px for CLAIM text (requested)
+        claimed ? 'bold 10px \"Press Start 2P\"' : 'bold 12px \"Press Start 2P\"',
+        claimed ? (spinHasNew ? '#b6ffd0' : '#ff9a00') : '#39ff6a',
+        'rgba(0, 0, 0, 0.88)'
+      );
+      if (!claimed && isWallet) {
+        // Keep the bonus line near the bottom so it doesn't collide with the bigger centered label
+        drawPixelText(ctx, '+200 RICE', bellX + bellW / 2, bellY + btnH - 6, 'bold 6px \"Press Start 2P\"', 'rgba(230, 240, 255, 0.78)', 'rgba(0,0,0,0.85)');
+      }
+    }
+
+    // Badge: +N (cap at +9)
+    if (slotBellNewSpins > 0) {
+      ctx.save();
+      const bx = px(bellX + bellW - 14);
+      const by = px(bellY + 3);
+      const bw = 14;
+      const bh = 12;
+      // pixel badge
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = 'rgba(255, 80, 80, 0.95)';
+      ctx.fillRect(bx + 1, by + 1, bw - 2, bh - 2);
+      const txt = `+${Math.min(9, slotBellNewSpins)}`;
+      drawPixelText(ctx, txt, bx + bw / 2, by + bh / 2 + 0.5, 'bold 7px \"Press Start 2P\"', '#ffffff', 'rgba(0, 0, 0, 0.75)');
+      ctx.restore();
+    }
+
+    // NEXT spin info plate (2 lines, green label; under the claim/spin button)
+    {
+      const dist = Math.max(0, Number.isFinite(soloDistanceKm) ? soloDistanceKm : 0);
+      const nextMilestone = Math.max(0, (soloSpinMilestones | 0) + 1);
+      const nextAtKm = soloDistanceRequiredForSpinCount(nextMilestone);
+      const remKm = Math.max(0, nextAtKm - dist);
+      const spinsNow = Math.max(0, soloSpins | 0);
+      const isFull = spinsNow >= SOLO_SPINS_CAP;
+
+      const line1 = 'NEXT SPIN IN';
+      const line2 = isFull ? 'SPINS FULL' : `~${Math.ceil(remKm).toLocaleString('en-US')} KM`;
+
+      const boxY = bellY + btnH + 8;
+      const boxH = 42; // bigger (requested)
+      const rr = drawPixelPanelFrame(ctx, bellX, boxY, bellW, boxH, 'rgba(8, 10, 18, 0.55)', 'rgba(210, 235, 255, 0.14)');
+      // font sizes +3px (requested)
+      drawPixelText(ctx, line1, rr.x + rr.w / 2, rr.y + 15, 'bold 11px \"Press Start 2P\"', '#39ff6a', 'rgba(0, 0, 0, 0.90)');
+      drawPixelText(ctx, line2, rr.x + rr.w / 2, rr.y + 32, 'bold 12px \"Press Start 2P\"', '#ffffff', 'rgba(0, 0, 0, 0.90)');
+    }
+  }
+
+  // Duel invite modal (from chat)
+  if (chatInviteModalOpen && chatInviteFromSessionId) {
+    const modalW = 520;
+    const modalH = 220;
+    const modalX = Math.floor(canvas.width / 2 - modalW / 2);
+    const modalY = Math.floor(canvas.height / 2 - modalH / 2);
+    const fromUser = chatService.getUsers().find(u => u.sessionId === chatInviteFromSessionId);
+    const fromName = getDisplayNameForChatUser(fromUser || { sessionId: chatInviteFromSessionId });
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.92)';
+    ctx.fillRect(modalX, modalY, modalW, modalH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalW, modalH);
+
+    ctx.fillStyle = '#ff9a00';
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('DUEL INVITE', modalX + modalW / 2, modalY + 42);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.fillText(`${fromName} invited you`, modalX + modalW / 2, modalY + 86);
+
+    // Buttons
+    const btnW = 180;
+    const btnH = 40;
+    const acceptX = modalX + 60;
+    const denyX = modalX + modalW - 60 - btnW;
+    const btnY = modalY + modalH - 70;
+
+    ctx.fillStyle = 'rgba(0, 160, 80, 0.75)';
+    ctx.fillRect(acceptX, btnY, btnW, btnH);
+    ctx.fillStyle = 'rgba(255, 120, 120, 0.75)';
+    ctx.fillRect(denyX, btnY, btnW, btnH);
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(acceptX, btnY, btnW, btnH);
+    ctx.strokeRect(denyX, btnY, btnW, btnH);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.fillText('ACCEPT', acceptX + btnW / 2, btnY + btnH / 2 + 1);
+    ctx.fillText('DECLINE', denyX + btnW / 2, btnY + btnH / 2 + 1);
+    ctx.restore();
+  }
+
+  // --- Slot machine modal (Solo distance reward) ---
+  if (slotModalOpen) {
+    const modalW = 660;
+    const modalH = 400;
+    const modalX = Math.floor(canvas.width / 2 - modalW / 2);
+    const modalY = Math.floor(canvas.height / 2 - modalH / 2);
+    const reelY = modalY + 150;
+    const reelW = 140;
+    const reelH = 90;
+    const gap = 26;
+    const reelsX0 = modalX + Math.floor((modalW - (reelW * 3 + gap * 2)) / 2);
+
+    // Animate reel positions while spinning
+    if (slotIsSpinning) {
+      const now = Date.now();
+      const speed = 22; // symbols per second
+      for (let i = 0; i < 3; i++) {
+        if (now < slotSpinStopsAt[i]) {
+          const dt = 1 / 60;
+          slotReelPos[i] = (slotReelPos[i] + speed * dt) % 9999;
+        } else {
+          // Snap to result once, then mark stop time for 4-frame settle
+          if (!slotReelStoppedAt[i]) slotReelStoppedAt[i] = now;
+          const idx = SLOT_SYMBOLS.indexOf(slotReelResult[i] as any);
+          if (idx >= 0) slotReelPos[i] = idx;
+        }
+      }
+    }
+
+    const symDisplay = (symRaw: string): string => (symRaw === 'RICE') ? 'Rice' : symRaw;
+    const symColor = (symRaw: string): string => {
+      if (symRaw === 'X') return '#ff4d4d';
+      if (symRaw === 'CRIT') return 'rgba(255, 240, 120, 0.98)';
+      if (symRaw === 'DMG') return 'rgba(255, 120, 120, 0.98)';
+      if (symRaw === 'HP') return 'rgba(80, 255, 160, 0.98)';
+      if (symRaw === 'ARMOR') return 'rgba(120, 210, 255, 0.98)';
+      if (symRaw === 'XP') return 'rgba(200, 170, 255, 0.98)';
+      if (symRaw === '🎯') return 'rgba(255, 190, 80, 0.98)';
+      return '#ffffff';
+    };
+
+    const drawReel = (i: number) => {
+      const x = reelsX0 + i * (reelW + gap);
+      const y = reelY;
+      const symIdx = Math.floor(Math.abs(slotReelPos[i])) % SLOT_SYMBOLS.length;
+      const sym = slotIsSpinning ? SLOT_SYMBOLS[symIdx] : (slotReelResult[i] as any);
+      ctx.save();
+      // Reel window: pixel frame + subtle inner “glass”
+      const rr = drawPixelPanelFrame(ctx, x, y, reelW, reelH, 'rgba(8, 10, 18, 0.92)', 'rgba(210, 235, 255, 0.18)');
+      // Background “mixing” (as before) but ONLY 3 thin stripes (requested).
+      // 1) top highlight stripe
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.fillRect(rr.x + 3, rr.y + 10, rr.w - 6, 1);
+      // 2) center payline stripe
+      ctx.fillStyle = 'rgba(80, 255, 160, 0.14)';
+      ctx.fillRect(rr.x + 3, rr.y + Math.floor(rr.h / 2), rr.w - 6, 1);
+      // 3) bottom shadow stripe
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      ctx.fillRect(rr.x + 3, rr.y + rr.h - 12, rr.w - 6, 1);
+
+      const symRaw = String(sym);
+      const symText = symDisplay(symRaw);
+      const fill = symColor(symRaw);
+      // Spinning effect: jitter vertical position slightly + fade to simulate motion
+      const nowMs = Date.now();
+      const bob = slotIsSpinning ? (Math.sin((nowMs / 60) + i * 1.7) * 2) : 0;
+      const alpha = slotIsSpinning ? 0.92 : 1;
+      ctx.globalAlpha = alpha;
+      // 4-frame settle/bounce when a reel stops (frame economy)
+      let settleOff = 0;
+      if (!slotIsSpinning && slotReelStoppedAt[i]) {
+        const dt = Math.max(0, nowMs - slotReelStoppedAt[i]);
+        if (dt < 160) {
+          const frame = Math.min(3, Math.floor(dt / 40));
+          const seq = [-2, 0, 1, 0];
+          settleOff = seq[frame] || 0;
+        }
+      }
+      drawPixelText(ctx, symText, rr.x + rr.w / 2, rr.y + rr.h / 2 + 2 + bob + settleOff, 'bold 22px \"Press Start 2P\"', fill, 'rgba(0, 0, 0, 0.88)');
+
+      // Tiny hint label under (for readability when emoji shows)
+      if (symRaw === '🎯') {
+        drawPixelText(ctx, 'AIM', rr.x + rr.w / 2, rr.y + rr.h - 12, 'bold 8px \"Press Start 2P\"', 'rgba(230, 240, 255, 0.80)', 'rgba(0,0,0,0.75)');
+      }
+      ctx.restore();
+    };
+
+    // Backdrop
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const modalRR = drawPixelPanelFrame(ctx, modalX, modalY, modalW, modalH, 'rgba(8, 10, 18, 0.94)', 'rgba(210, 235, 255, 0.18)');
+    // subtle top shine (reduced so the title has nicer space)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.fillRect(modalRR.x + 2, modalRR.y + 2, modalRR.w - 4, 22);
+
+    // Title
+    // Raised slightly so it sits nicer in the top band
+    drawPixelText(ctx, 'SLOT MACHINE', modalX + modalW / 2, modalY + 34, 'bold 14px \"Press Start 2P\"', '#ff9a00', 'rgba(0,0,0,0.90)');
+    // Orange accent divider (pixel line) — “casino header” feel
+    ctx.fillStyle = 'rgba(255, 154, 0, 0.35)';
+    ctx.fillRect(modalX + 18, modalY + 54, modalW - 36, 1);
+
+    // Spins count
+    const spinsNow = Math.max(0, soloSpins | 0);
+    const spinsGenNow = Math.max(0, soloSpinsGeneratedTotal | 0);
+    {
+      const statsY1 = modalY + 75;
+      const statsY2 = modalY + 100;
+      const leftText = `SPINS: ${spinsNow}/${SOLO_SPINS_CAP}`;
+      const font = 'bold 10px \"Press Start 2P\"';
+      ctx.save();
+      ctx.font = font;
+      const w1 = ctx.measureText(leftText).width;
+      const totalW = w1;
+      const startX = (modalX + modalW / 2) - totalW / 2;
+      drawPixelTextLeft(ctx, leftText, startX, statsY1, font, 'rgba(230, 240, 255, 0.85)', 'rgba(0,0,0,0.80)');
+      ctx.restore();
+      drawPixelText(ctx, `TOTAL GENERATED: ${spinsGenNow}`, modalX + modalW / 2, statsY2, font, 'rgba(230, 240, 255, 0.70)', 'rgba(0,0,0,0.75)');
+    }
+
+    // Reels
+    drawReel(0);
+    drawReel(1);
+    drawReel(2);
+
+    // Result / last payout (pixel plate)
+    const msg = slotIsSpinning
+      ? 'SPINNING...'
+      : (slotLastPayoutText ? `RESULT: ${slotLastPayoutText}` : 'PRESS SPIN');
+    {
+      ctx.save();
+      ctx.font = slotLastPayoutText ? 'bold 14px \"Press Start 2P\"' : 'bold 9px \"Press Start 2P\"';
+      const tw = ctx.measureText(msg).width;
+      const padX = 14;
+      const plateW = Math.min(modalW - 40, tw + padX * 2);
+      const plateH = slotLastPayoutText ? 34 : 28;
+      const rr = drawPixelPanelFrame(ctx, modalX + modalW / 2 - plateW / 2, modalY + 285 - plateH / 2, plateW, plateH, 'rgba(8, 10, 18, 0.55)', 'rgba(210, 235, 255, 0.14)');
+      const col = slotLastPayoutText ? '#39ff6a' : '#ffffff';
+      drawPixelText(ctx, msg, rr.x + rr.w / 2, rr.y + rr.h / 2 + 0.5, ctx.font, col, 'rgba(0,0,0,0.90)');
+      ctx.restore();
+    }
+
+    // Buttons
+    const btnW = 220;
+    const btnH = 34;
+    const btnGap = 18;
+    const spinY = modalY + 320;
+    const spinX = modalX + Math.floor((modalW - (btnW * 2 + btnGap)) / 2);
+    const boostX = spinX + btnW + btnGap;
+    const boostY = spinY;
+    const closeX = modalX + modalW - 38;
+    const closeY = modalY + 14;
+
+    // Close X (pixel button)
+    {
+      const rr = drawPixelButtonFrame(ctx, closeX, closeY, 24, 24, {
+        hovering: isHoveringSlotModalClose,
+        pressing: false,
+        borderColor: UI_BTN_INNER,
+        bgColor: 'rgba(18, 22, 36, 0.92)',
+        bgHoverColor: 'rgba(28, 34, 54, 0.96)',
+        bgPressedColor: 'rgba(10, 12, 20, 0.96)',
+        drawShadow: false,
+      });
+      drawPixelText(ctx, 'X', rr.x + rr.w / 2, rr.y + rr.h / 2 + 0.5, 'bold 12px \"Press Start 2P\"', '#ffffff', 'rgba(0,0,0,0.85)');
+    }
+
+    const boostEnabled = !!slotBoost2xEnabled;
+    const spinCost = boostEnabled ? 10 : 1;
+
+    // Spin button (normal/boost)
+    const canSpin = (!slotIsSpinning) && soloSpins >= spinCost;
+    {
+      const rr = drawPixelButtonFrame(ctx, spinX, spinY, btnW, btnH, {
+        disabled: !canSpin,
+        hovering: isHoveringSlotModalSpin,
+        pressing: false,
+        borderColor: canSpin ? 'rgba(255, 154, 0, 0.45)' : UI_BTN_INNER,
+        bgColor: 'rgba(20, 28, 48, 0.85)',
+        bgHoverColor: 'rgba(26, 38, 64, 0.90)',
+        bgPressedColor: 'rgba(10, 12, 20, 0.90)',
+        drawShadow: true,
+      });
+      // Shimmer (only when available): 1px moving highlight to “invite” spins
+      if (canSpin && !slotIsSpinning) {
+        const t = Date.now();
+        const k = ((t / 80) | 0) % Math.max(1, rr.w - 10);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fillRect(rr.x + 5 + k, rr.y + 3, 6, 1);
+      }
+      drawPixelText(ctx, boostEnabled ? 'SPIN (-10)' : 'SPIN', rr.x + rr.w / 2, rr.y + rr.h / 2 + 1, 'bold 11px \"Press Start 2P\"', (canSpin ? '#ff9a00' : 'rgba(230, 240, 255, 0.55)'), 'rgba(0,0,0,0.90)');
+    }
+
+    // Boost button (burn 10 spins)
+    const canToggle = !slotIsSpinning;
+    const boostBg = boostEnabled ? 'rgba(50, 170, 255, 0.22)' : 'rgba(20, 28, 48, 0.85)';
+    {
+      const rr = drawPixelButtonFrame(ctx, boostX, boostY, btnW, btnH, {
+        disabled: !canToggle,
+        hovering: isHoveringSlotModalBoost,
+        pressing: false,
+        borderColor: boostEnabled ? 'rgba(160, 230, 255, 0.45)' : UI_BTN_INNER,
+        bgColor: boostBg,
+        bgHoverColor: boostEnabled ? 'rgba(70, 190, 255, 0.28)' : 'rgba(26, 38, 64, 0.90)',
+        bgPressedColor: 'rgba(10, 12, 20, 0.90)',
+        drawShadow: true,
+      });
+      const label = boostEnabled ? '2X ON' : '2X';
+      drawPixelText(ctx, label, rr.x + rr.w / 2, rr.y + rr.h / 2 + 1, 'bold 9px \"Press Start 2P\"', (canToggle ? '#9fe6ff' : 'rgba(230, 240, 255, 0.55)'), 'rgba(0,0,0,0.90)');
+    }
+
+    // (removed) Shards exchange UI
+
+    // Cache modal hit regions (for click handler)
+    (window as any).__slotModalRegion = {
+      x: modalX, y: modalY, w: modalW, h: modalH,
+      spinX, spinY, spinW: btnW, spinH: btnH,
+      boostX, boostY, boostW: btnW, boostH: btnH,
+      closeX, closeY, closeW: 24, closeH: 24,
+      boostEnabled
+    };
+
+    ctx.restore();
+  }
+
+  // Duel offer handshake is rendered inside the Opponent Profile panel.
+  
+  if (isServerBrowserOpen) {
+    drawServerBrowserOverlay();
+  }
+  
+  // Track frame time for this frame (measure entire gameLoop including render)
+  const frameEndTime = performance.now();
+  const frameTime = frameEndTime - frameStartTime;
+  frameTimeHistory.push(frameTime);
+  if (frameTimeHistory.length > 60) {
+    frameTimeHistory.shift(); // Keep last 60 frames
+  }
+
+  // #region agent log
+  try {
+    // Only log big stutters (jank). Rate-limited.
+    if (frameTime > 25) {
+      const win: any = (typeof window !== 'undefined') ? window : {};
+      const s = win.__agentFrameSpike || (win.__agentFrameSpike = { lastTs: 0 });
+      const now = Date.now();
+      if (now - s.lastTs > 500) {
+        s.lastTs = now;
+        let speedTrailTotal = 0;
+        let speedTrailMax = 0;
+        if (typeof pvpPlayers === 'object' && pvpPlayers) {
+          for (const pid in pvpPlayers) {
+            const st = (pvpPlayers as any)[pid]?.speedTrail;
+            const len = Array.isArray(st) ? st.length : 0;
+            speedTrailTotal += len;
+            speedTrailMax = Math.max(speedTrailMax, len);
+          }
+        }
+        const rttMs = colyseusService.getAgentRttMs?.() ?? null;
+        if (AGENT_DEBUG_LOGS_ENABLED) fetch('http://127.0.0.1:7242/ingest/b2c16d13-1eb7-4cea-94bc-55ab1f89cac0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/simple-main.ts:gameLoop',message:'FRAME_SPIKE',data:{gameMode,frameTimeMs:Math.round(frameTime*10)/10,currentFPS,averageFrameTime,maxFrameTime,rttMs,counts:{clickParticles:(typeof clickParticles!=='undefined'&&Array.isArray(clickParticles))?clickParticles.length:null,damageNumbers:(typeof damageNumbers!=='undefined'&&Array.isArray(damageNumbers))?damageNumbers.length:null,clickSmudges:(typeof clickSmudges!=='undefined'&&Array.isArray(clickSmudges))?clickSmudges.length:null,drawnLines:(typeof drawnLines!=='undefined'&&Array.isArray(drawnLines))?drawnLines.length:null,deathAnimations:(typeof deathAnimations!=='undefined'&&deathAnimations&&typeof deathAnimations.size==='number')?deathAnimations.size:null,speedTrailTotal,speedTrailMax}},timestamp:Date.now(),sessionId:'debug-session',runId:'baseline',hypothesisId:'H9'})}).catch(()=>{});
+      }
+    }
+  } catch {}
+  // #endregion
+  
+  requestAnimationFrame(gameLoop);
+}
+
+// Start game
+// CRITICAL: Prevent duplicate game loops (HMR protection)
+// Use window object to persist flag across HMR updates
+if (!(window as any).__gameLoopRunning) {
+  (window as any).__gameLoopRunning = true;
+  console.log('Starting game loop...');
+  loadGame(); // Load saved game state on startup
+  gameLoop();
+} else {
+  console.warn('⚠️ Game loop already running - skipping duplicate start (HMR protection)');
+}
+
+// Stop continuous audio on tab hide (prevents stuck hum)
+if (!(window as any).__ufoHumVisibilityListenerAdded) {
+  (window as any).__ufoHumVisibilityListenerAdded = true;
+  document.addEventListener('visibilitychange', () => {
+    try {
+      // UFO speed SFX disabled (requested).
+    } catch {}
+  });
+}
