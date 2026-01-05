@@ -27,20 +27,26 @@ contract UfoTicket /* is ERC721 */ {
     uint16 dmg;
     uint8 critChance;
     uint8 accuracy;
+    uint16 maxFuel; // example: jetpack fuel capacity snapshot
     // extend as needed (levels, upgrades, etc.)
   }
 
   address public immutable ronke;
   uint256 public constant MINT_COST = 200e18; // assumes 18 decimals
   uint256 public constant WIN_REWARD = 100e18;
+  uint256 public constant LOSS_FEE = MINT_COST - WIN_REWARD;
+
+  // Where the remaining 100 RONKE goes when a loser ticket is destroyed.
+  address public feeRecipient;
 
   uint256 private _nextId = 1;
   mapping(uint256 => Stats) public statsOf;
   mapping(uint256 => bool) public isDestroyed;
   mapping(address => uint256) public activeTokenIdOf; // 0 = none
 
-  constructor(address ronkeToken) {
+  constructor(address ronkeToken, address feeRecipient_) {
     ronke = ronkeToken;
+    feeRecipient = feeRecipient_;
   }
 
   // Mint with snapshot stats. In production, enforce "one active token per wallet".
@@ -65,7 +71,9 @@ contract UfoTicket /* is ERC721 */ {
     activeTokenIdOf[loser] = 0;
     // _burn(loserTokenId);
     require(IERC20(ronke).transfer(winner, WIN_REWARD), "ronke payout failed");
+    require(IERC20(ronke).transfer(feeRecipient, LOSS_FEE), "fee payout failed");
   }
 }
+
 
 

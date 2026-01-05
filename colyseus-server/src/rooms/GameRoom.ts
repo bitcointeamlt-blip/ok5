@@ -3,6 +3,8 @@ import { GameState, Player } from "../schema/GameState";
 import { registerRoom, unregisterRoom, updateRoomPlayerCount } from "../metrics/RoomMetrics";
 import { fetchSoloStatsForAddress } from "../services/SupabaseStats";
 import { ufoTicketService } from "../services/UfoTicketService";
+import { MatchRecorder } from "../replay/MatchRecorder";
+import type { ReplayEndReason } from "../replay/ReplayTypes";
 
 type PlayerInputType =
   | "click"
@@ -304,6 +306,12 @@ function clampNum(v: any, min: number, max: number, fallback: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+function envBool(name: string, fallback = false): boolean {
+  const v = (process.env[name] || "").trim().toLowerCase();
+  if (!v) return fallback;
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 function hash32(x: number): number {
   // xorshift-ish avalanche for deterministic pseudo-rng
   x |= 0;
@@ -333,6 +341,13 @@ export class GameRoom extends Room<GameState> {
   private lastFireAtBySid = new Map<string, { bullet: number; projectile: number; mine: number; spike: number }>();
   // UFO ticket (SBT) enforcement: tokenId per session (server-side only; not synced to clients).
   private ticketTokenIdBySid = new Map<string, bigint>();
+
+  // Replay recorder (server-side logging + replay support)
+  private _recorder: MatchRecorder | null = null;
+
+  private isFunRoom(): boolean {
+    return (this.roomName || "") === "pvp_fun_room";
+  }
   private _hitSeq = 0;
 
   // Server-authoritative arrow simulation (for consistent hit/miss across clients)
@@ -375,19 +390,29 @@ export class GameRoom extends Room<GameState> {
     this._matchEnded = true;
 
     const now = Date.now();
+    const replayId = this._recorder?.getId() || null;
     try {
       const players = Array.from(this.state.players.values());
       this.broadcast("match_end", {
         reason,
         winnerSid, // sessionId (null => draw)
         serverTs: now,
-        players: players.map((p) => ({ sid: p.sessionId, hp: p.hp, armor: p.armor }))
+        players: players.map((p) => ({ sid: p.sessionId, hp: p.hp, armor: p.armor })),
+        replayId
       } as any);
     } catch {}
 
-    // UFO ticket: if we have a clear winner/loser, burn loser ticket and payout winner (100 RONKE) via contract.
+    // Record match end + final snapshot
     try {
-      if (winnerSid) {
+      const endReason: ReplayEndReason = reason === "timeout" ? "timeout" : "player_left";
+      this._recorder?.endMatch({ endedAt: now, reason: endReason, winnerSid });
+      this._recorder?.maybeSnapshot(this.state, this.state.players as any, true);
+    } catch {}
+
+    // UFO ticket: if we have a clear winner/loser, burn loser ticket and payout winner (100 RONKE) via contract.
+    // FUN PvP: never burn/payout.
+    try {
+      if (!this.isFunRoom() && winnerSid) {
         // In "player_left" flow, state.players might already be size=1 (loser removed),
         // so we derive loserSid from the server-side ticket map (still present until cleanup finishes).
         const allTicketSids = Array.from(this.ticketTokenIdBySid.keys());
@@ -396,7 +421,22 @@ export class GameRoom extends Room<GameState> {
         const loserTokenId = loserSid ? (this.ticketTokenIdBySid.get(loserSid) || 0n) : 0n;
         const winnerAddr = (winner?.address || "").trim();
         if (loserTokenId && winnerAddr) {
-          ufoTicketService.resolveMatchBurnAndPayout(loserTokenId, winnerAddr).catch(() => {});
+          // Capture settlement details for replay/audit (txHash filled async)
+          try {
+            this._recorder?.setSettlement({
+              loserTokenId: loserTokenId.toString(),
+              winnerAddress: winnerAddr
+            });
+          } catch {}
+
+          ufoTicketService
+            .resolveMatchBurnAndPayout(loserTokenId, winnerAddr)
+            .then((hash) => {
+              try {
+                if (hash) this._recorder?.setSettlement({ txHash: hash });
+              } catch {}
+            })
+            .catch(() => {});
         }
       }
     } catch {}
@@ -472,6 +512,10 @@ export class GameRoom extends Room<GameState> {
   onCreate(options: any) {
     try {
       console.log("GameRoom created:", this.roomId);
+      // Start replay recorder early (captures joins and pre-start state).
+      try {
+        this._recorder = new MatchRecorder({ roomId: this.roomId, roomName: this.roomName, snapshotIntervalMs: 100 });
+      } catch {}
       // Ensure empty rooms are disposed automatically.
       (this as any).autoDispose = true;
       registerRoom(this.roomId, "pvp");
@@ -585,7 +629,11 @@ export class GameRoom extends Room<GameState> {
     player.ready = false;
 
     // UFO ticket gating (optional, env-driven). If required and invalid/missing => deny join.
+    // FUN PvP: skip gating entirely.
     try {
+      if (this.isFunRoom()) {
+        // no-op
+      } else {
       const addr = (player.address || "").trim();
       const tokenIdOptRaw = options?.ufoTicketTokenId;
       let tokenIdOpt: bigint | null = null;
@@ -604,6 +652,50 @@ export class GameRoom extends Room<GameState> {
       if (check.tokenId) {
         this.ticketTokenIdBySid.set(client.sessionId, check.tokenId);
       }
+      }
+    } catch {}
+
+    // Record join metadata (include ticket tokenId if present).
+    try {
+      const tokenId = this.ticketTokenIdBySid.get(client.sessionId) || 0n;
+      this._recorder?.recordJoin({
+        sid: client.sessionId,
+        address: (player.address || "").trim(),
+        profilePicture: (player as any)?.profilePicture,
+        ufoTicketTokenId: tokenId ? tokenId.toString() : undefined
+      });
+    } catch {}
+
+    // If configured, enforce on-chain ticket stats as the ONLY source of truth for PvP Online.
+    // This prevents client spoofing and removes Supabase dependence for competitive stats.
+    let usedOnchainStats = false;
+    try {
+      const enforce = envBool("UFO_TICKET_USE_ONCHAIN_STATS", true);
+      const tokenId = this.ticketTokenIdBySid.get(client.sessionId) || 0n;
+      if (!this.isFunRoom() && enforce && tokenId) {
+        const s = await ufoTicketService.getStats(tokenId);
+        if (s) {
+          usedOnchainStats = true;
+          // Apply authoritative stats (clamped to sane bounds).
+          const maxHP2 = clampNum(s.maxHP, 1, 250, 100);
+          const maxArmor2 = clampNum(s.maxArmor, 0, 200, 50);
+          const dmg2 = clampNum(s.dmg, 1, 999, 1);
+          const crit2 = clampNum(s.critChance, 0, 95, 4);
+          const acc2 = clampNum(s.accuracy, 0, 100, 60);
+          const maxFuel2 = clampNum(s.maxFuel, 0, 1000, 150);
+
+          player.maxHP = Math.round(maxHP2);
+          player.hp = Math.round(maxHP2);
+          player.maxArmor = Math.round(maxArmor2);
+          player.armor = Math.round(maxArmor2);
+          player.maxFuel = Math.round(maxFuel2);
+          player.fuel = Math.round(maxFuel2);
+
+          this.dmgBySid.set(client.sessionId, dmg2);
+          this.critChanceBySid.set(client.sessionId, crit2);
+          this.accuracyBySid.set(client.sessionId, acc2);
+        }
+      }
     } catch {}
     
     // Add player to state
@@ -613,6 +705,9 @@ export class GameRoom extends Room<GameState> {
 
     // Competitive: authoritative stat fetch from Supabase (one-time on join; cached).
     try {
+      if (usedOnchainStats) {
+        // Skip Supabase overrides if on-chain stats are enforced.
+      } else {
       const addr = (player.address || "").trim();
       if (addr) {
         const timeoutMs = 1200;
@@ -637,6 +732,7 @@ export class GameRoom extends Room<GameState> {
           player.maxArmor = Math.round(maxArmor2);
           player.armor = Math.round(maxArmor2);
         }
+      }
       }
     } catch {}
     
@@ -705,6 +801,7 @@ export class GameRoom extends Room<GameState> {
 
   onLeave(client: Client, consented: boolean) {
     console.log(`Player ${client.sessionId} left room ${this.roomId}`);
+    try { this._recorder?.recordLeave(client.sessionId); } catch {}
     
     // IMPORTANT (UFO Ticket economy):
     // If a match is running, we must be able to burn the leaver's ticket and pay the winner.
@@ -773,6 +870,8 @@ export class GameRoom extends Room<GameState> {
 
   onDispose() {
     console.log("GameRoom disposed:", this.roomId);
+    // Persist replay file on dispose (best-effort).
+    try { void this._recorder?.finalize(); } catch {}
     this.latestPositionInputs.clear();
     this.pendingEventInputs.clear();
     this.lastContinuousBroadcasts.clear();
@@ -819,7 +918,9 @@ export class GameRoom extends Room<GameState> {
         (sanitizedInput as any).maxHP = undefined;
         (sanitizedInput as any).maxArmor = undefined;
 
-        // Clamp hp/armor within server-known bounds and limit upward deltas.
+        // Competitive hardening:
+        // If we enforce on-chain ticket stats, DO NOT let clients raise hp/armor via stats packets.
+        // (Allow only decreases; server is authoritative via applyHit.)
         const curHP = typeof player.hp === "number" ? player.hp : 0;
         const curArmor = typeof player.armor === "number" ? player.armor : 0;
         const maxHP = typeof player.maxHP === "number" ? player.maxHP : 100;
@@ -827,17 +928,27 @@ export class GameRoom extends Room<GameState> {
 
         if (typeof sanitizedInput.hp === "number") {
           let nextHP = Math.max(0, Math.min(maxHP, Math.round(sanitizedInput.hp)));
-          const dhp = nextHP - curHP;
-          if (dhp > MAX_HP_INCREASE_PER_STATS) {
-            nextHP = curHP + MAX_HP_INCREASE_PER_STATS;
+          const enforce = !this.isFunRoom() && envBool("UFO_TICKET_USE_ONCHAIN_STATS", true);
+          if (enforce) {
+            nextHP = Math.min(curHP, nextHP);
+          } else {
+            const dhp = nextHP - curHP;
+            if (dhp > MAX_HP_INCREASE_PER_STATS) {
+              nextHP = curHP + MAX_HP_INCREASE_PER_STATS;
+            }
           }
           (sanitizedInput as any).hp = nextHP;
         }
         if (typeof sanitizedInput.armor === "number") {
           let nextArmor = Math.max(0, Math.min(maxArmor, Math.round(sanitizedInput.armor)));
-          const dArmor = nextArmor - curArmor;
-          if (dArmor > MAX_ARMOR_INCREASE_PER_STATS) {
-            nextArmor = curArmor + MAX_ARMOR_INCREASE_PER_STATS;
+          const enforce = !this.isFunRoom() && envBool("UFO_TICKET_USE_ONCHAIN_STATS", true);
+          if (enforce) {
+            nextArmor = Math.min(curArmor, nextArmor);
+          } else {
+            const dArmor = nextArmor - curArmor;
+            if (dArmor > MAX_ARMOR_INCREASE_PER_STATS) {
+              nextArmor = curArmor + MAX_ARMOR_INCREASE_PER_STATS;
+            }
           }
           (sanitizedInput as any).armor = nextArmor;
         }
@@ -916,6 +1027,10 @@ export class GameRoom extends Room<GameState> {
       this._agentStats.inByType[t] = (this._agentStats.inByType[t] || 0) + 1;
     } catch {}
     // #endregion
+    // Record sanitized input (for replay + dispute analysis).
+    try {
+      this._recorder?.recordInput({ t: Date.now(), sid: client.sessionId, input: sanitizedInput });
+    } catch {}
     const pending: PendingInputEntry = {
       client,
       input: sanitizedInput,
@@ -979,6 +1094,7 @@ export class GameRoom extends Room<GameState> {
       this._matchStartAt = Date.now();
       this._matchEndAt = this._matchStartAt + MATCH_DURATION_MS;
       this._matchEnded = false;
+      try { this._recorder?.startMatch({ startedAt: this._matchStartAt, plannedEndAt: this._matchEndAt }); } catch {}
       this.broadcast("match_timer", {
         startAt: this._matchStartAt,
         endAt: this._matchEndAt,
@@ -1522,6 +1638,11 @@ export class GameRoom extends Room<GameState> {
 
     // Tick server-authoritative arrows even if there were no inputs this frame.
     this.tickLiveArrows(serverTimestamp);
+
+    // Snapshot after applying inputs & server arrows (throttled).
+    try {
+      this._recorder?.maybeSnapshot(this.state, this.state.players as any, false);
+    } catch {}
 
     // #region agent log
     try {

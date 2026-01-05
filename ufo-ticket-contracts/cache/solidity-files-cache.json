@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "C:\\Users\\p3p3l\\Downloads\\pvp03-new\\ufo-ticket-contracts\\contracts\\UfoTicket.sol": {
-      "lastModificationDate": 1767519008978,
-      "contentHash": "27d65028792cd2edde76e047472826aa",
+      "lastModificationDate": 1767624714287,
+      "contentHash": "bf6786bbc6b6e2fae7a88aa178fab38d",
       "sourceName": "contracts/UfoTicket.sol",
       "solcConfig": {
         "version": "0.8.20",

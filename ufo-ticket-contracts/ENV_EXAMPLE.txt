@@ -10,4 +10,8 @@ SAIGON_RPC_URL=https://saigon-testnet.roninchain.com/rpc
 # RONKE token address (you provided)
 RONKE_TOKEN_ADDRESS=0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb
 
+# Where the remaining 100 RONKE goes when a loser ticket is burned (developer/treasury wallet)
+FEE_RECIPIENT_ADDRESS=
+
+
 

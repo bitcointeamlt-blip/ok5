@@ -82,3 +82,4 @@ Jetpack sistema dabar turi **tik jetpack garso efektą**, o perkaitimo metu yra 
 
 
 
+

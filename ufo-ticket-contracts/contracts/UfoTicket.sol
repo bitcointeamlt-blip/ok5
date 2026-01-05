@@ -26,23 +26,48 @@ contract UfoTicket is ERC721, Ownable, ReentrancyGuard {
     uint16 dmg;
     uint8 critChance;
     uint8 accuracy;
+    uint16 maxFuel; // jetpack fuel capacity snapshot (extendable)
   }
 
   event TicketMinted(address indexed owner, uint256 indexed tokenId);
-  event TicketDestroyed(uint256 indexed tokenId, address indexed loser, address indexed winner, uint256 payoutRonke);
+  event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
+  event TicketDestroyed(
+    uint256 indexed tokenId,
+    address indexed loser,
+    address indexed winner,
+    uint256 payoutRonke,
+    address feeRecipient,
+    uint256 feeRonke
+  );
 
   IERC20 public immutable ronke;
   uint256 public constant MINT_COST = 200e18; // assumes RONKE has 18 decimals
   uint256 public constant WIN_REWARD = 100e18;
+  uint256 public constant LOSS_FEE = MINT_COST - WIN_REWARD; // 100 RONKE (developer/treasury fee)
+
+  // Where the "remaining 100 RONKE" goes when a ticket is burned (loser fee).
+  address public feeRecipient;
 
   uint256 private _nextId = 1;
   mapping(uint256 => Stats) public statsOf;
   mapping(uint256 => bool) public isDestroyed;
   mapping(address => uint256) public activeTokenIdOf; // 0 => none
 
-  constructor(address ronkeToken) ERC721("PewPew UFO Ticket", "UFO") Ownable(msg.sender) {
+  constructor(address ronkeToken, address feeRecipient_)
+    ERC721("PewPew UFO Ticket", "UFO")
+    Ownable(msg.sender)
+  {
     require(ronkeToken != address(0), "ronke=0");
+    require(feeRecipient_ != address(0), "feeRecipient=0");
     ronke = IERC20(ronkeToken);
+    feeRecipient = feeRecipient_;
+  }
+
+  function setFeeRecipient(address next) external onlyOwner {
+    require(next != address(0), "feeRecipient=0");
+    address prev = feeRecipient;
+    feeRecipient = next;
+    emit FeeRecipientUpdated(prev, next);
   }
 
   function mint(Stats calldata s) external nonReentrant returns (uint256 tokenId) {
@@ -73,8 +98,10 @@ contract UfoTicket is ERC721, Ownable, ReentrancyGuard {
 
     _burn(loserTokenId);
     require(ronke.transfer(winner, WIN_REWARD), "ronke payout failed");
+    // Make the remaining 100 RONKE liquid (goes to game creator / treasury).
+    require(ronke.transfer(feeRecipient, LOSS_FEE), "fee payout failed");
 
-    emit TicketDestroyed(loserTokenId, loser, winner, WIN_REWARD);
+    emit TicketDestroyed(loserTokenId, loser, winner, WIN_REWARD, feeRecipient, LOSS_FEE);
   }
 
   // --- SBT: make token non-transferable ---
@@ -84,5 +111,6 @@ contract UfoTicket is ERC721, Ownable, ReentrancyGuard {
     require(from == address(0) || to == address(0), "SBT: non-transferable");
   }
 }
+
 
 

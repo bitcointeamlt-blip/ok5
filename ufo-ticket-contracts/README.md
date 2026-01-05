@@ -17,6 +17,7 @@ Copy `ENV_EXAMPLE.txt` → `.env` and fill:
 
 - `DEPLOYER_PRIVATE_KEY=...`
 - `RONKE_TOKEN_ADDRESS=0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb`
+- `FEE_RECIPIENT_ADDRESS=0x...`  (where the remaining **100 RONKE** goes on each match resolve)
 
 2) Install
 
@@ -53,5 +54,14 @@ Use the deployed address in:
 Also decide who is **contract owner** (only owner can call `resolveMatch`):
 
 - Recommended: deploy from the same wallet that the server will use as signer.
+
+### Economics (important)
+
+- Player mints ticket: pays **200 RONKE** into contract.
+- On `resolveMatch(loserTokenId, winner)`:
+  - burns loser ticket
+  - pays **100 RONKE** to `winner`
+  - pays the remaining **100 RONKE** to `feeRecipient` (**liquid**, not stuck in escrow)
+
 
 

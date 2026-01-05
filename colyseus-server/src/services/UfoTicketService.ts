@@ -18,6 +18,7 @@ const UFO_TICKET_ABI = [
   "function activeTokenIdOf(address owner) view returns (uint256)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function isDestroyed(uint256 tokenId) view returns (bool)",
+  "function statsOf(uint256 tokenId) view returns (uint16 maxHP,uint16 maxArmor,uint16 dmg,uint8 critChance,uint8 accuracy,uint16 maxFuel)",
   "function resolveMatch(uint256 loserTokenId, address winner) external",
 ];
 
@@ -34,6 +35,15 @@ function safeLower(a: string): string {
 export type UfoTicketJoinCheck =
   | { ok: true; tokenId: bigint }
   | { ok: false; reason: string };
+
+export type UfoTicketStats = {
+  maxHP: number;
+  maxArmor: number;
+  dmg: number;
+  critChance: number;
+  accuracy: number;
+  maxFuel: number;
+};
 
 class UfoTicketService {
   private _provider: JsonRpcProvider | null = null;
@@ -148,6 +158,26 @@ class UfoTicketService {
     const task = this._resolveQueue.then(run, run);
     this._resolveQueue = task.then(() => {}, () => {});
     return await task;
+  }
+
+  async getStats(tokenId: bigint): Promise<UfoTicketStats | null> {
+    this.init();
+    if (!this._contract) return null;
+    if (!tokenId) return null;
+    try {
+      const s = await this._contract!.statsOf(tokenId);
+      // ethers returns a Result that supports both positional + named props
+      const maxHP = Number(s?.maxHP ?? s?.[0] ?? 0);
+      const maxArmor = Number(s?.maxArmor ?? s?.[1] ?? 0);
+      const dmg = Number(s?.dmg ?? s?.[2] ?? 0);
+      const critChance = Number(s?.critChance ?? s?.[3] ?? 0);
+      const accuracy = Number(s?.accuracy ?? s?.[4] ?? 0);
+      const maxFuel = Number(s?.maxFuel ?? s?.[5] ?? 0);
+      return { maxHP, maxArmor, dmg, critChance, accuracy, maxFuel };
+    } catch (e: any) {
+      console.warn("[UFO_TICKET] statsOf failed:", e?.message || e);
+      return null;
+    }
   }
 }
 
