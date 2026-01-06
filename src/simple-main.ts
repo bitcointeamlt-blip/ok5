@@ -1764,10 +1764,17 @@ let lastNetworkUpdateTime = 0;
 // using interpolation between snapshots. This removes visible snap/jitter without changing gameplay physics.
 type OpponentPosSample = { t: number; x: number; y: number; vx: number; vy: number };
 let opponentPosSamples: OpponentPosSample[] = [];
+let opponentPosOwnerId: string | null = null;
 function resetOpponentInterpolation(): void {
   opponentPosSamples = [];
+  opponentPosOwnerId = opponentId || null;
 }
 function pushOpponentSample(now: number, p: PvPPlayer): void {
+  // If opponent id changed (new match / reconnect), drop old samples so we don't render ghosts.
+  if (opponentPosOwnerId && opponentId && opponentPosOwnerId !== opponentId) {
+    opponentPosSamples = [];
+  }
+  opponentPosOwnerId = opponentId || opponentPosOwnerId;
   opponentPosSamples.push({ t: now, x: p.x, y: p.y, vx: p.vx, vy: p.vy });
   // Keep only recent samples (2s is plenty)
   const cutoff = now - 2000;
@@ -1781,9 +1788,14 @@ function pushOpponentSample(now: number, p: PvPPlayer): void {
 }
 function getOpponentInterpolatedPos(now: number): { x: number; y: number } | null {
   if (!opponentId || opponentPosSamples.length === 0) return null;
+  if (opponentPosOwnerId && opponentPosOwnerId !== opponentId) return null;
 
   // Small adaptive delay: enough to always have two samples to interpolate, but still feels "instant".
-  const delayMs = Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
+  // IMPORTANT: In online PvP, render should match hit/collision feel. Avoid "render in the past" delay.
+  const delayMs =
+    (gameMode === 'PvP' && colyseusService.isConnectedToRoom())
+      ? 0
+      : Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
   const targetT = now - delayMs;
 
   // Ensure samples sorted by time (they should be, but be safe on out-of-order)
@@ -1817,7 +1829,11 @@ function getOpponentInterpolatedPos(now: number): { x: number; y: number } | nul
 
 function getOpponentInterpolatedState(now: number): { x: number; y: number; vx: number; vy: number } | null {
   if (!opponentId || opponentPosSamples.length === 0) return null;
-  const delayMs = Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
+  if (opponentPosOwnerId && opponentPosOwnerId !== opponentId) return null;
+  const delayMs =
+    (gameMode === 'PvP' && colyseusService.isConnectedToRoom())
+      ? 0
+      : Math.max(70, Math.min(160, Math.round((averageNetworkLatency || 0) * 0.35)));
   const targetT = now - delayMs;
   const samples = opponentPosSamples;
 
@@ -6737,6 +6753,7 @@ function cleanupPvP(): void {
   pvpSideById = {};
   myPlayerId = null;
   opponentId = null;
+  resetOpponentInterpolation();
   isInLobby = false;
   isSearchingForMatch = false;
   currentMatch = null;
@@ -7304,6 +7321,24 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       if (state && state.players) {
         syncReadyStateFromRoom(room);
       }
+      // Safety: if game already started but we didn't initialize IDs/players yet (rare race),
+      // initialize from the current server state so the player isn't "invisible".
+      try {
+        if (
+          gameMode === 'PvP' &&
+          colyseusService.isConnectedToRoom() &&
+          state?.gameStarted &&
+          room?.sessionId &&
+          (!myPlayerId || !opponentId || !pvpPlayers || Object.keys(pvpPlayers).length === 0)
+        ) {
+          const players = Array.from(state.players.keys());
+          const mySid = room.sessionId;
+          const oppSid = players.find((id: any) => id !== mySid);
+          if (oppSid) {
+            initializePvPWithColyseus(room, mySid, String(oppSid));
+          }
+        }
+      } catch {}
     });
 
     room.onMessage("game_start", (message: any) => {
@@ -7658,6 +7693,8 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
   // Set player IDs based on session IDs
   myPlayerId = mySessionId;
   opponentId = opponentSessionId;
+  // Reset opponent interpolation for this new match/session (prevents "ghost" rendering from previous games).
+  resetOpponentInterpolation();
 
   // Use server-authoritative combat stats when available (UFO ticket / Supabase enforced on server).
   // This keeps PvP balance identical for both players and avoids "it used to feel right" drift.
@@ -7804,6 +7841,9 @@ function initializePvPWithColyseus(room: any, mySessionId: string, opponentSessi
     facingLeft: false,
     renderAngle: 0,
   };
+
+  // Seed interpolation buffer with the initial server-provided position so render/collision match immediately.
+  try { pushOpponentSample(Date.now(), opponent); } catch {}
 
   // Preload opponent profile picture if available
   if (opponent.profilePicture && !nftImageCache.has(opponent.profilePicture)) {

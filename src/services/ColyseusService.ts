@@ -578,16 +578,21 @@ class ColyseusService {
 
   // Leave room
   async leaveRoom(): Promise<void> {
-    if (this.room) {
+    const leavingRoom = this.room;
+    if (leavingRoom) {
       try {
-        await this.room.leave();
+        await leavingRoom.leave();
       } catch (error) {
         console.error('Failed to leave room:', error);
       }
-      this.room = null;
-      this.roomName = null;
-      this.inputCallback = null;
-      this.isConnected = false;
+      // IMPORTANT: avoid races where an old leave() finishes after a new join() and nukes the new room.
+      // Only clear if we're still pointing at the same room instance we started leaving.
+      if (this.room === leavingRoom) {
+        this.room = null;
+        this.roomName = null;
+        this.inputCallback = null;
+        this.isConnected = false;
+      }
     }
   }
 
