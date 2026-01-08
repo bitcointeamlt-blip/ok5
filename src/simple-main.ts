@@ -121,6 +121,14 @@ let serverBrowserCloseRegion = { x: 0, y: 0, width: 0, height: 0 };
 let serverBrowserCraftRegion = { x: 0, y: 0, width: 0, height: 0 };
 let serverBrowserModalRegion = { x: 0, y: 0, width: 0, height: 0 };
 let serverStatusInterval: number | null = null;
+// Typewriter animation state
+let serverBrowserTextAnimationStarted = false;
+let serverBrowserTextAnimationStartTime = 0;
+let serverBrowserTextCharsTyped: number[] = [0, 0, 0]; // Characters typed for each line
+let serverBrowserTextAnimationCompleted = false; // Flag to track if animation was already shown once
+const SERVER_BROWSER_TEXT_DELAY = 1000; // 1 second delay before starting
+const SERVER_BROWSER_TEXT_SPEED = 80; // ms per character (slower)
+const SERVER_BROWSER_CURSOR_BLINK = 500; // ms for cursor blink
 
 // Global online players count (from all servers combined)
 let globalOnlinePlayersCount: number | null = null;
@@ -964,6 +972,13 @@ function openServerBrowser(): void {
   serverBrowserHoverId = null;
   serverBrowserHoverClose = false;
   isServerBrowserOpen = true;
+  // Only reset typewriter animation if it hasn't been completed yet
+  // Once completed, show full text immediately without animation
+  if (!serverBrowserTextAnimationCompleted) {
+    serverBrowserTextAnimationStarted = false;
+    serverBrowserTextAnimationStartTime = Date.now();
+    serverBrowserTextCharsTyped = [0, 0, 0];
+  }
   startServerStatusAutoRefresh();
   refreshServerStatuses().catch(() => {
     serverBrowserError = 'Failed to refresh server status';
@@ -974,6 +989,10 @@ function closeServerBrowser(): void {
   isServerBrowserOpen = false;
   serverBrowserHoverId = null;
   serverBrowserHoverClose = false;
+  // Reset typewriter animation
+  serverBrowserTextAnimationStarted = false;
+  serverBrowserTextAnimationStartTime = 0;
+  serverBrowserTextCharsTyped = [0, 0, 0];
   stopServerStatusAutoRefresh();
   serverStatusLoading = false;
 }
@@ -1150,8 +1169,14 @@ function updateServerBrowserHover(mouseX: number, mouseY: number): void {
     mouseX >= serverBrowserCloseRegion.x && mouseX <= serverBrowserCloseRegion.x + serverBrowserCloseRegion.width &&
     mouseY >= serverBrowserCloseRegion.y && mouseY <= serverBrowserCloseRegion.y + serverBrowserCloseRegion.height;
 
+  // Check if user already has UFO ticket
+  const hoverTokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+  const hoverHasTicket = !!hoverTokenId;
+  const hoverIsButtonDisabled = hoverHasTicket && !pewPewCrafting;
+  
   serverBrowserHoverCraft =
     !pewPewCrafting &&
+    !hoverIsButtonDisabled &&
     mouseX >= serverBrowserCraftRegion.x && mouseX <= serverBrowserCraftRegion.x + serverBrowserCraftRegion.width &&
     mouseY >= serverBrowserCraftRegion.y && mouseY <= serverBrowserCraftRegion.y + serverBrowserCraftRegion.height;
 
@@ -2358,9 +2383,23 @@ let soloBoostRingShakeUntil = 0;
 
 // --- Solo "Solar System map" zoom ---
 // 1 = fully zoomed out (fit whole system). Zooming in focuses on "ME" (Earth for now).
-let solarMapZoom = 1;
+// Map segments: automatically switch zoom/pan based on distance traveled
+const SOLAR_MAP_SEGMENT_1_DISTANCE_KM = 0; // First segment: start
+const SOLAR_MAP_SEGMENT_1_ZOOM = 150; // First segment: 150x zoom
+const SOLAR_MAP_SEGMENT_1_PAN_AU = 0.015; // First segment: shift left to see behind
+const SOLAR_MAP_SEGMENT_2_DISTANCE_KM = 4_000_000; // Second segment: starts at 4M km
+const SOLAR_MAP_SEGMENT_2_ZOOM = 125; // Second segment: 125x zoom (to see Mars)
+const SOLAR_MAP_SEGMENT_2_PAN_AU = 0; // Second segment: centered on ME
+// Mars is at ~78M km from Earth, third segment starts after Mars + 4M km
+const SOLAR_MAP_SEGMENT_3_DISTANCE_KM = 82_000_000; // Third segment: after Mars + 4M km
+const SOLAR_MAP_SEGMENT_3_ZOOM = 1; // Third segment: 1x zoom (full map view)
+const SOLAR_MAP_SEGMENT_3_PAN_AU = 0; // Third segment: centered (pan disabled at 1x)
+
+// Default zoom set to first segment (150x) to automatically show current situation
+let solarMapZoom = SOLAR_MAP_SEGMENT_1_ZOOM;
 // Pan (drag) is enabled only when zoom > 1x. At zoom=1, pan is disabled/reset.
-let solarMapPanAu = 0; // offset relative to ME focus, in AU
+// Default pan offset to right so we can see what's behind/to the left of ME position
+let solarMapPanAu = SOLAR_MAP_SEGMENT_1_PAN_AU; // offset relative to ME focus, in AU
 let solarMapIsDragging = false;
 let solarMapDragStartX = 0;
 let solarMapDragStartPanAu = 0;
@@ -4529,6 +4568,15 @@ async function refreshRonkeBalance(): Promise<void> {
 
 async function craftPewPewUfo(): Promise<void> {
   if (pewPewCrafting) return;
+  
+  // Check if user already has UFO ticket - prevent minting if already has one
+  const tokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+  const hasTicket = !!tokenId;
+  if (hasTicket) {
+    pewPewCraftStatus = 'You already have a UFO ticket';
+    return;
+  }
+  
   pewPewCraftStatus = null;
   pewPewCraftTxHash = null;
 
@@ -6474,6 +6522,17 @@ function loadGameState(saveData: SaveDataV2): void {
   soloDistanceKm = (typeof (saveData as any)?.solo?.distanceKm === 'number' && Number.isFinite((saveData as any).solo.distanceKm))
     ? Math.max(0, (saveData as any).solo.distanceKm)
     : 0;
+  // Set correct map segment based on loaded distance
+  if (soloDistanceKm >= SOLAR_MAP_SEGMENT_3_DISTANCE_KM) {
+    solarMapZoom = SOLAR_MAP_SEGMENT_3_ZOOM;
+    solarMapPanAu = SOLAR_MAP_SEGMENT_3_PAN_AU;
+  } else if (soloDistanceKm >= SOLAR_MAP_SEGMENT_2_DISTANCE_KM) {
+    solarMapZoom = SOLAR_MAP_SEGMENT_2_ZOOM;
+    solarMapPanAu = SOLAR_MAP_SEGMENT_2_PAN_AU;
+  } else {
+    solarMapZoom = SOLAR_MAP_SEGMENT_1_ZOOM;
+    solarMapPanAu = SOLAR_MAP_SEGMENT_1_PAN_AU;
+  }
   // Prevent space flybys from firing instantly due to loaded distance.
   initSpaceEventsPrevDistance();
   // Give the game a moment to settle before triggering cinematics.
@@ -6585,6 +6644,17 @@ function maybeCloudLoadSoloOnStartup(): void {
         if (typeof sd.dmg === 'number' && Number.isFinite(sd.dmg)) dmg = Math.max(1, Math.round(sd.dmg));
         if (typeof sd.speedKmps === 'number' && Number.isFinite(sd.speedKmps)) soloSpeedKmps = Math.max(1, sd.speedKmps);
         if (typeof sd.distanceKm === 'number' && Number.isFinite(sd.distanceKm)) soloDistanceKm = Math.max(0, sd.distanceKm);
+        // Set correct map segment based on cloud-loaded distance
+        if (soloDistanceKm >= SOLAR_MAP_SEGMENT_3_DISTANCE_KM) {
+          solarMapZoom = SOLAR_MAP_SEGMENT_3_ZOOM;
+          solarMapPanAu = SOLAR_MAP_SEGMENT_3_PAN_AU;
+        } else if (soloDistanceKm >= SOLAR_MAP_SEGMENT_2_DISTANCE_KM) {
+          solarMapZoom = SOLAR_MAP_SEGMENT_2_ZOOM;
+          solarMapPanAu = SOLAR_MAP_SEGMENT_2_PAN_AU;
+        } else {
+          solarMapZoom = SOLAR_MAP_SEGMENT_1_ZOOM;
+          solarMapPanAu = SOLAR_MAP_SEGMENT_1_PAN_AU;
+        }
         // Prevent space flybys from firing instantly due to cloud-loaded distance.
         initSpaceEventsPrevDistance();
         // Give the game a moment to settle before triggering cinematics.
@@ -6840,6 +6910,8 @@ function cleanupPvP(): void {
   isInLobby = false;
   isSearchingForMatch = false;
   currentMatch = null;
+  // Clear ticket denial flag when cleaning up PvP
+  (window as any).__isTicketDeniedError = false;
   // Reset selected PvP mode back to legacy
   TURN_BASED_PVP_ENABLED = false;
   pvpOnlineRoomName = 'pvp_room';
@@ -7395,6 +7467,8 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       if (myJoinNonce !== activePvpRoomJoinNonce || room.id !== activePvpRoomId) return;
       const r = (msg?.reason || '').toString();
       walletError = r ? `PvP denied: ${r}` : 'PvP denied';
+      // Mark this as a ticket-related error for UI display
+      (window as any).__isTicketDeniedError = true;
       try { void leaveLobby(); } catch {}
     });
 
@@ -7504,6 +7578,15 @@ async function enterLobby(forcedEndpoint?: string): Promise<void> {
       errorCode: error?.code,
       stack: error?.stack
     });
+    
+    // Don't overwrite ticket denial errors - they have priority
+    // If we already have a ticket denial flag, keep the existing walletError
+    if ((window as any).__isTicketDeniedError) {
+      console.log('⚠️ Ticket denial error already set, not overwriting with Colyseus error');
+      isInLobby = false;
+      isSearchingForMatch = false;
+      return;
+    }
     
     // Check for specific error types
     if (error?.message?.includes('CORS') || error?.message?.includes('Access-Control')) {
@@ -10225,16 +10308,20 @@ function render() {
     const worldMaxAu = Math.max(maxAu, meAu);
     let focusAu = meAu;
     if (tFocus > 0) {
-      const focusRaw = meAu + (Number.isFinite(solarMapPanAu) ? solarMapPanAu : 0);
+      const currentPanAu = Number.isFinite(solarMapPanAu) ? solarMapPanAu : 0;
+      const focusRaw = meAu + currentPanAu;
       const minFocusAu = worldMinAu + halfSpanAu;
       const maxFocusAu = worldMaxAu - halfSpanAu;
       if (minFocusAu <= maxFocusAu) {
         focusAu = clamp(focusRaw, minFocusAu, maxFocusAu);
+        // Only update pan if clamping actually changed the value (preserve default offset if valid)
+        if (Math.abs(focusAu - focusRaw) > 1e-6) {
+          solarMapPanAu = focusAu - meAu;
+        }
       } else {
         focusAu = (worldMinAu + worldMaxAu) / 2;
+        solarMapPanAu = focusAu - meAu;
       }
-      // Keep stored pan in sync with clamping.
-      solarMapPanAu = focusAu - meAu;
     } else {
       solarMapPanAu = 0;
       solarMapIsDragging = false;
@@ -12492,47 +12579,90 @@ function render() {
       return; // Don't render arena if waiting for ready
     }
     
-    // PvP Online: If in PvP mode but not in lobby and no match/players, show error
+    // PvP Online: If in PvP mode but not in lobby and no match/players, show error message
     if (gameMode === 'PvP' && !isInLobby && !currentMatch && (!myPlayerId || !pvpPlayers[myPlayerId])) {
-      // Show error message
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
+      // Store walletError for hover detection
+      (window as any).__currentWalletError = walletError;
       
-      // Dark modal card
-      const cardW = 760;
-      const cardH = 220;
-      const cardX = Math.floor((canvas.width + 240) / 2 - cardW / 2);
-      const cardY = Math.floor(canvas.height / 2 - cardH / 2);
-      ctx.fillStyle = UI_FRAME_BG;
-      ctx.fillRect(cardX, cardY, cardW, cardH);
-      ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(cardX, cardY, cardW, cardH);
-      ctx.strokeStyle = UI_PANEL_BORDER;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cardX + 3, cardY + 3, cardW - 6, cardH - 6);
+      // Always show UFO ticket error message with BACK button for any error
+      {
+        // Dark overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(240, 0, canvas.width - 240, canvas.height);
+        
+        // Modal card
+        const cardW = 760;
+        const cardH = 280;
+        const cardX = Math.floor((canvas.width + 240) / 2 - cardW / 2);
+        const cardY = Math.floor(canvas.height / 2 - cardH / 2);
+        ctx.fillStyle = UI_FRAME_BG;
+        ctx.fillRect(cardX, cardY, cardW, cardH);
+        ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cardX, cardY, cardW, cardH);
+        ctx.strokeStyle = UI_PANEL_BORDER;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cardX + 3, cardY + 3, cardW - 6, cardH - 6);
 
-      ctx.fillStyle = 'rgba(255, 120, 120, 0.95)';
-      ctx.font = 'bold 24px "Press Start 2P"';
+      // Title
+      ctx.fillStyle = 'rgba(255, 200, 0, 0.95)';
+      ctx.font = 'bold 20px "Press Start 2P"';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('FAILED TO ENTER LOBBY', cardX + cardW / 2, cardY + 58);
+      ctx.fillText('UFO TICKET REQUIRED', cardX + cardW / 2, cardY + 50);
       
-      if (walletError) {
-        ctx.fillStyle = UI_TEXT;
-        ctx.font = 'bold 12px "Press Start 2P"';
-        // keep it readable; truncate to avoid overflow
-        const msg = walletError.length > 64 ? walletError.substring(0, 61) + '...' : walletError;
-        ctx.fillText(msg, cardX + cardW / 2, cardY + 118);
-      }
-      
-      ctx.fillStyle = UI_TEXT_MUTED;
+      // Main message
+      ctx.fillStyle = UI_TEXT;
       ctx.font = 'bold 12px "Press Start 2P"';
-      const retryLabel =
-        (pvpOnlineRoomName === 'pvp_fun_room') ? 'Click PVP FUN button to retry' : 'Click PvP ONLINE button to retry';
-      ctx.fillText(retryLabel, cardX + cardW / 2, cardY + cardH - 56);
-      ctx.font = 'bold 10px "Press Start 2P"';
-      ctx.fillText('Press ESC to return to Solo', cardX + cardW / 2, cardY + cardH - 30);
+      ctx.textAlign = 'center';
+      ctx.fillText('To play PvP you need to have a UFO ticket', cardX + cardW / 2, cardY + 100);
+        
+        // Button to go to server browser (where UFO ticket can be minted)
+        const buttonW = 320;
+        const buttonH = 45;
+        const buttonX = cardX + (cardW - buttonW) / 2;
+        const buttonY = cardY + cardH - buttonH - 40;
+        
+        // Store button region for click detection
+        if (!(window as any).__ticketErrorButtonRegion) {
+          (window as any).__ticketErrorButtonRegion = { x: buttonX, y: buttonY, w: buttonW, h: buttonH };
+        } else {
+          (window as any).__ticketErrorButtonRegion.x = buttonX;
+          (window as any).__ticketErrorButtonRegion.y = buttonY;
+          (window as any).__ticketErrorButtonRegion.w = buttonW;
+          (window as any).__ticketErrorButtonRegion.h = buttonH;
+        }
+        
+        // Check if hovering over button (from mousemove handler)
+        const isHoveringTicketButton = (window as any).__isHoveringTicketButton || false;
+        
+        // Button shadow
+        ctx.fillStyle = UI_BTN_SHADOW;
+        ctx.fillRect(buttonX + 2, buttonY + 2, buttonW, buttonH);
+        
+        // Button background
+        ctx.fillStyle = isHoveringTicketButton ? UI_BTN_BG_HOVER : UI_BTN_BG;
+        ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+        
+        // Button highlight
+        ctx.fillStyle = UI_BTN_HILITE;
+        ctx.fillRect(buttonX, buttonY, buttonW, 2);
+        ctx.fillRect(buttonX, buttonY, 2, buttonH);
+        
+        // Button border
+        ctx.strokeStyle = isHoveringTicketButton ? UI_ACCENT_GREEN : UI_BTN_BORDER;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(buttonX, buttonY, buttonW, buttonH);
+        
+        // Button text
+        ctx.fillStyle = UI_TEXT;
+        ctx.font = 'bold 11px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('BACK', buttonX + buttonW / 2, buttonY + buttonH / 2 + 1);
+        
+        ctx.textAlign = 'left';
+      }
       
       return; // Don't render arena if error
     }
@@ -14671,6 +14801,11 @@ function render() {
     // Live on-chain status refresh (best-effort) while the modal is open
     try { void refreshPewPewOnchainTicketStatus(false); } catch {}
 
+    // Check if button should be disabled (check once, reuse variable)
+    const craftTokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+    const craftHasTicket = !!craftTokenId;
+    const craftIsButtonDisabled = craftHasTicket && !pewPewCrafting;
+
     // Shadow (only when not pressed)
     if (!isPressingPewPewCraft) {
       ctx.fillStyle = UI_BTN_SHADOW;
@@ -14678,6 +14813,7 @@ function render() {
     }
 
     if (pewPewCrafting) ctx.fillStyle = UI_BTN_BG_PRESSED;
+    else if (craftIsButtonDisabled) ctx.fillStyle = 'rgba(80, 80, 80, 0.3)'; // Disabled background
     else if (isPressingPewPewCraft) ctx.fillStyle = UI_BTN_BG_PRESSED;
     else if (isHoveringPewPewCraft) ctx.fillStyle = UI_BTN_BG_HOVER;
     else ctx.fillStyle = UI_BTN_BG;
@@ -14690,17 +14826,23 @@ function render() {
       ctx.fillRect(craftBtnX, craftBtnY, 2, craftBtnH);
     }
 
-    // Border
-    ctx.strokeStyle = isHoveringPewPewCraft && !pewPewCrafting ? UI_ACCENT_GREEN : UI_BTN_BORDER;
+    // Border - disabled if has ticket
+    ctx.strokeStyle = (craftIsButtonDisabled) 
+      ? UI_BTN_BORDER 
+      : (isHoveringPewPewCraft && !pewPewCrafting ? UI_ACCENT_GREEN : UI_BTN_BORDER);
     ctx.lineWidth = 2;
     ctx.strokeRect(craftBtnX, craftBtnY, craftBtnW, craftBtnH);
-
+    
     // Label
-    ctx.fillStyle = UI_TEXT;
+    ctx.fillStyle = craftIsButtonDisabled ? UI_TEXT_MUTED : UI_TEXT;
     ctx.font = 'bold 11px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const craftLabel = pewPewCrafting ? 'MINTING...' : 'MINT UFO TICKET (200 RONKE)';
+    const craftLabel = pewPewCrafting 
+      ? 'MINTING...' 
+      : (craftHasTicket 
+        ? 'MINTED' 
+        : 'MINT UFO TICKET (200 RONKE)');
     ctx.fillText(craftLabel, craftBtnX + craftBtnW / 2, craftBtnY + craftBtnH / 2 + 1);
     ctx.textAlign = 'left';
 
@@ -15909,12 +16051,16 @@ if (!(window as any).__mousemoveListenerAdded) {
   globalMouseX = mouseX;
   globalMouseY = mouseY;
 
-  // PewPew modal: craft button hover
+  // PewPew modal: craft button hover (disabled if has ticket)
   if (isPewPewOpen && !isLeaderboardOpen) {
     const mr = getPewPewModalRect();
     const craftR = getPewPewCraftButtonRect(mr);
+    const hoverPewTokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+    const hoverPewHasTicket = !!hoverPewTokenId;
+    const hoverPewIsButtonDisabled = hoverPewHasTicket && !pewPewCrafting;
     isHoveringPewPewCraft =
       !pewPewCrafting &&
+      !hoverPewIsButtonDisabled &&
       mouseX >= craftR.x && mouseX <= craftR.x + craftR.w &&
       mouseY >= craftR.y && mouseY <= craftR.y + craftR.h;
   } else {
@@ -16068,6 +16214,20 @@ if (!(window as any).__mousemoveListenerAdded) {
         const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
         isHoveringNewButton = isOverNewButton && !upgradeAnimation && !isDrawing;
         
+        // Ticket error button hover detection (BACK button)
+        if (gameMode === 'PvP' && !isInLobby && !currentMatch && (!myPlayerId || !pvpPlayers[myPlayerId])) {
+          if ((window as any).__ticketErrorButtonRegion) {
+            const btnR = (window as any).__ticketErrorButtonRegion;
+            const isOverButton = mouseX >= btnR.x && mouseX <= btnR.x + btnR.w &&
+                                mouseY >= btnR.y && mouseY <= btnR.y + btnR.h;
+            (window as any).__isHoveringTicketButton = isOverButton;
+          } else {
+            (window as any).__isHoveringTicketButton = false;
+          }
+        } else {
+          (window as any).__isHoveringTicketButton = false;
+        }
+
         // Ready/Cancel button hover detection (in Ready screen) - Colyseus authoritative (no currentMatch dependency)
         if (gameMode === 'PvP' && waitingForOpponentReady && colyseusService.isConnectedToRoom()) {
           const playAreaX = 240; // Play area starts at x=240
@@ -16102,6 +16262,8 @@ if (!(window as any).__mousemoveListenerAdded) {
           // Custom arrow cursor
           canvas.style.cursor = 'crosshair';
   } else if (((gameMode === 'Solo' && (hoveredLevel >= 0)) || isOverFaucet || isOverContact || isOverPewPew || isOverProfile || isOverWallet || isHoveringFaucet || isHoveringContact || isHoveringPewPew || isHoveringPewPewCraft || isHoveringGameMode || isHoveringPvPOnline || isHoveringPvpFun || isHoveringNewButton || isHoveringReady || isHoveringCancel) && !upgradeAnimation && !isDrawing) {
+          canvas.style.cursor = 'pointer';
+        } else if ((window as any).__isHoveringTicketButton) {
           canvas.style.cursor = 'pointer';
         } else if (isDrawing) {
           canvas.style.cursor = 'crosshair';
@@ -16206,8 +16368,11 @@ if (!(window as any).__mousedownListenerAdded) {
   }
   
   if (isServerBrowserOpen) {
-    // Craft button press
-    if (isPointInsideRegion(mouseX, mouseY, serverBrowserCraftRegion) && !pewPewCrafting) {
+    // Craft button press (disabled if has ticket)
+    const pressTokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+    const pressHasTicket = !!pressTokenId;
+    const pressIsButtonDisabled = pressHasTicket && !pewPewCrafting;
+    if (isPointInsideRegion(mouseX, mouseY, serverBrowserCraftRegion) && !pewPewCrafting && !pressIsButtonDisabled) {
       serverBrowserPressingCraft = true;
       return;
     }
@@ -16231,6 +16396,20 @@ if (!(window as any).__mousedownListenerAdded) {
       closeServerBrowser();
     }
     return;
+  }
+
+  // Ticket error button press (BACK button - opens server browser to mint UFO ticket)
+  if (gameMode === 'PvP' && !isInLobby && !currentMatch && (!myPlayerId || !pvpPlayers[myPlayerId])) {
+    if ((window as any).__ticketErrorButtonRegion) {
+      const btnR = (window as any).__ticketErrorButtonRegion;
+      if (mouseX >= btnR.x && mouseX <= btnR.x + btnR.w && mouseY >= btnR.y && mouseY <= btnR.y + btnR.h) {
+        // Return to Solo mode and open server browser
+        gameMode = 'Solo';
+        cleanupPvP();
+        openServerBrowser();
+        return;
+      }
+    }
   }
 
   // Faucet press (UI panel)
@@ -16875,10 +17054,13 @@ if (!(window as any).__mouseupListenerAdded) {
     }
   }
 
-  // Server browser: craft button click
+  // Server browser: craft button click (disabled if has ticket)
   if (isServerBrowserOpen && serverBrowserPressingCraft) {
+    const clickTokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+    const clickHasTicket = !!clickTokenId;
+    const clickIsButtonDisabled = clickHasTicket && !pewPewCrafting;
     const overCraft = isPointInsideRegion(mx, my, serverBrowserCraftRegion);
-    if (overCraft && !pewPewCrafting) {
+    if (overCraft && !pewPewCrafting && !clickIsButtonDisabled) {
       void craftPewPewUfo();
     }
     serverBrowserPressingCraft = false;
@@ -18782,39 +18964,126 @@ function drawServerBrowserOverlay() {
   const craftGlowYellowBg = 'rgba(255, 255, 180, 0.25)'; // Light yellow background
   const craftGlowYellowBgHover = 'rgba(255, 255, 200, 0.35)'; // Brighter background on hover
   
+  // Check if button should be disabled (check once, reuse variable)
+  const sbTokenId = (pewPewOnchainTicketTokenId || getPewPewUfoTicketTokenId() || '').trim();
+  const sbHasTicket = !!sbTokenId;
+  const sbIsButtonDisabled = sbHasTicket && !pewPewCrafting;
+  
   const craftButtonFrame = drawPixelButtonFrame(ctx, craftButtonX, craftButtonY, craftButtonWidth, craftButtonHeight, {
-    hovering: serverBrowserHoverCraft,
-    pressing: serverBrowserPressingCraft,
-    borderColor: serverBrowserHoverCraft ? craftGlowYellowHover : craftGlowYellow,
-    bgColor: serverBrowserHoverCraft ? craftGlowYellowBgHover : craftGlowYellowBg,
+    hovering: serverBrowserHoverCraft && !sbIsButtonDisabled,
+    pressing: serverBrowserPressingCraft && !sbIsButtonDisabled,
+    borderColor: sbIsButtonDisabled 
+      ? UI_BTN_BORDER 
+      : (serverBrowserHoverCraft ? craftGlowYellowHover : craftGlowYellow),
+    bgColor: sbIsButtonDisabled 
+      ? 'rgba(80, 80, 80, 0.3)' 
+      : (serverBrowserHoverCraft ? craftGlowYellowBgHover : craftGlowYellowBg),
     bgHoverColor: craftGlowYellowBgHover,
-    drawShadow: true,
+    drawShadow: !sbIsButtonDisabled,
   });
   
   // Mint button text (light glowing yellow)
   const craftText = pewPewCrafting 
     ? 'MINTING...' 
-    : (isPewPewUfoCrafted() 
-      ? 'MINTED ✓' 
+    : (sbHasTicket 
+      ? 'MINTED' 
       : `MINT UFO TICKET (${RONKE_CRAFT_COST}) RONKE`);
   const craftTextColor = pewPewCrafting 
     ? UI_TEXT_MUTED 
-    : (isPewPewUfoCrafted() 
+    : (sbHasTicket 
       ? UI_ACCENT_GREEN 
       : (serverBrowserHoverCraft ? craftGlowYellowHover : craftGlowYellow));
   drawPixelText(ctx, craftText, craftButtonX + craftButtonWidth / 2, craftButtonY + craftButtonHeight / 2, 'bold 10px "Press Start 2P"', craftTextColor);
   
-  // PvP Rules description - next to craft button
+  // PvP Rules description - next to craft button (typewriter animation)
   const rulesStartY = craftButtonY - 60; // Above craft button
   const rulesText = [
     { text: 'UFO TICKET REQUIRED: 200 RONKE', color: UI_TEXT_MUTED },
     { text: 'WIN REWARD: +100 RONKE per victory', color: UI_ACCENT_GREEN },
     { text: 'PLAY UNTIL YOU LOSE: Re-craft only if defeated', color: UI_TEXT_MUTED }
   ];
-  rulesText.forEach((item, index) => {
-    // 7px spacing between lines: font size (11px) + 7px gap = 18px total
-    drawPixelText(ctx, item.text, craftButtonX + craftButtonWidth / 2, rulesStartY + index * 18, '11px "Press Start 2P"', item.color);
-  });
+  
+  // Typewriter animation logic - show only once, then display full text immediately
+  const now = Date.now();
+  
+  // If animation was already completed, show full text immediately
+  if (serverBrowserTextAnimationCompleted) {
+    const textX = craftButtonX + craftButtonWidth / 2;
+    rulesText.forEach((item, index) => {
+      drawPixelText(ctx, item.text, textX, rulesStartY + index * 22, '12px "Press Start 2P"', item.color);
+    });
+  } else {
+    // Show animation only once
+    const elapsed = now - serverBrowserTextAnimationStartTime;
+    
+    if (elapsed >= SERVER_BROWSER_TEXT_DELAY) {
+      if (!serverBrowserTextAnimationStarted) {
+        serverBrowserTextAnimationStarted = true;
+      }
+      
+      const animationElapsed = elapsed - SERVER_BROWSER_TEXT_DELAY;
+      let allLinesComplete = true;
+      
+      rulesText.forEach((item, index) => {
+        // Calculate when this line should start (after previous lines are done)
+        const lineStartTime = rulesText.slice(0, index).reduce((sum, r) => sum + r.text.length * SERVER_BROWSER_TEXT_SPEED, 0);
+        const lineElapsed = animationElapsed - lineStartTime;
+        
+        // Always draw full text (invisible/transparent) to reserve space and keep position fixed
+        const textX = craftButtonX + craftButtonWidth / 2;
+        ctx.save();
+        ctx.globalAlpha = 0.01; // Almost invisible but reserves space
+        drawPixelText(ctx, item.text, textX, rulesStartY + index * 22, '12px "Press Start 2P"', item.color);
+        ctx.restore();
+        
+        if (lineElapsed >= 0) {
+          const charsToShow = Math.min(
+            item.text.length,
+            Math.floor(lineElapsed / SERVER_BROWSER_TEXT_SPEED)
+          );
+          
+          if (charsToShow > 0) {
+            const displayedText = item.text.substring(0, charsToShow);
+            const isLineComplete = charsToShow >= item.text.length;
+            
+            if (!isLineComplete) {
+              allLinesComplete = false;
+            }
+            
+            // Draw revealed text portion (visible, fixed position - doesn't move)
+            drawPixelText(ctx, displayedText, textX, rulesStartY + index * 22, '12px "Press Start 2P"', item.color);
+            
+            // Draw blinking cursor after revealed text (only when line is not complete)
+            if (!isLineComplete) {
+              const showCursor = Math.floor(now / SERVER_BROWSER_CURSOR_BLINK) % 2 === 0;
+              if (showCursor) {
+                // Measure displayed text width to position cursor correctly after text
+                ctx.font = '12px "Press Start 2P"';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                const displayedWidth = ctx.measureText(displayedText).width;
+                // Cursor position: center of full text + half of displayed text width + small gap
+                const cursorX = textX + displayedWidth / 2 + 4;
+                ctx.textAlign = 'left';
+                ctx.fillStyle = item.color;
+                ctx.fillText('_', cursorX, rulesStartY + index * 22);
+                ctx.textAlign = 'center';
+              }
+            }
+          } else {
+            allLinesComplete = false;
+          }
+        } else {
+          allLinesComplete = false;
+        }
+      });
+      
+      // Mark animation as completed when all lines are fully displayed
+      if (allLinesComplete) {
+        serverBrowserTextAnimationCompleted = true;
+      }
+    }
+  }
 
   const listStartY = modalY + 100; // Server list starts here
   const rowHeight = 90;
@@ -18954,6 +19223,27 @@ function gameLoop() {
     soloDistanceKm = Math.max(0, soloDistanceKm + sp * dtSec);
     // Update baseline after distance advance so "crossing" checks work next frame.
     spaceEventsPrevDistanceKm = soloDistanceKm;
+
+    // Auto-switch map segments based on distance traveled
+    if (soloDistanceKm >= SOLAR_MAP_SEGMENT_3_DISTANCE_KM) {
+      // Third segment: 1x zoom (full map view), centered
+      if (solarMapZoom !== SOLAR_MAP_SEGMENT_3_ZOOM || solarMapPanAu !== SOLAR_MAP_SEGMENT_3_PAN_AU) {
+        solarMapZoom = SOLAR_MAP_SEGMENT_3_ZOOM;
+        solarMapPanAu = SOLAR_MAP_SEGMENT_3_PAN_AU;
+      }
+    } else if (soloDistanceKm >= SOLAR_MAP_SEGMENT_2_DISTANCE_KM) {
+      // Second segment: 125x zoom, centered on ME (to see Mars)
+      if (solarMapZoom !== SOLAR_MAP_SEGMENT_2_ZOOM || solarMapPanAu !== SOLAR_MAP_SEGMENT_2_PAN_AU) {
+        solarMapZoom = SOLAR_MAP_SEGMENT_2_ZOOM;
+        solarMapPanAu = SOLAR_MAP_SEGMENT_2_PAN_AU;
+      }
+    } else {
+      // First segment: 150x zoom, shifted left to see behind
+      if (solarMapZoom !== SOLAR_MAP_SEGMENT_1_ZOOM || solarMapPanAu !== SOLAR_MAP_SEGMENT_1_PAN_AU) {
+        solarMapZoom = SOLAR_MAP_SEGMENT_1_ZOOM;
+        solarMapPanAu = SOLAR_MAP_SEGMENT_1_PAN_AU;
+      }
+    }
 
     // Award spins based on dynamic km requirements (persistent milestones).
     // Cap spins at SOLO_SPINS_CAP; overflow is discarded (shards system removed).
