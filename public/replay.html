@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PewPew Replay Viewer</title>
+    <style>
+      :root {
+        --bg: #0b0f16;
+        --panel: #121a26;
+        --text: #e8eefc;
+        --muted: rgba(232, 238, 252, 0.7);
+        --accent: #55d18a;
+        --danger: #ff6b6b;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        background: linear-gradient(180deg, rgba(18,26,38,0.85), rgba(18,26,38,0.35));
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .pill {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 12px;
+        padding: 12px;
+      }
+      @media (max-width: 1000px) {
+        main { grid-template-columns: 1fr; }
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      canvas { display: block; width: 100%; height: 640px; background: #05070b; }
+      .controls {
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: auto auto 1fr auto;
+        gap: 10px;
+        align-items: center;
+        border-top: 1px solid rgba(255,255,255,0.08);
+      }
+      button {
+        background: rgba(255,255,255,0.08);
+        color: var(--text);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 10px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      button:hover { border-color: rgba(255,255,255,0.22); }
+      input[type="range"] { width: 100%; }
+      .side { padding: 12px; }
+      .kv { font-size: 12px; color: var(--muted); line-height: 1.5; }
+      .kv b { color: var(--text); }
+      .err { color: var(--danger); white-space: pre-wrap; font-size: 12px; }
+      .ok { color: var(--accent); }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="row">
+        <div style="font-weight: 700;">PewPew Replay Viewer</div>
+        <div id="status" class="pill">Loading…</div>
+      </div>
+      <div class="row pill mono" id="meta"></div>
+    </header>
+
+    <main>
+      <div class="card">
+        <canvas id="c" width="1280" height="640"></canvas>
+        <div class="controls">
+          <button id="playBtn">Play</button>
+          <button id="restartBtn">Restart</button>
+          <input id="scrub" type="range" min="0" max="1000" value="0" />
+          <div class="pill mono" id="time">0.0s</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="side">
+          <div style="font-weight: 700; margin-bottom: 8px;">Details</div>
+          <div id="details" class="kv"></div>
+          <div id="error" class="err" style="margin-top: 10px;"></div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const qs = new URLSearchParams(location.search);
+      const endpoint = (qs.get('endpoint') || '').trim().replace(/\/$/, '');
+      const id = (qs.get('id') || '').trim();
+      const urlParam = (qs.get('url') || '').trim();
+
+      const statusEl = document.getElementById('status');
+      const metaEl = document.getElementById('meta');
+      const detailsEl = document.getElementById('details');
+      const errEl = document.getElementById('error');
+
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+
+      const playBtn = document.getElementById('playBtn');
+      const restartBtn = document.getElementById('restartBtn');
+      const scrub = document.getElementById('scrub');
+      const timeEl = document.getElementById('time');
+
+      let replay = null;
+      let playing = false;
+      let t0 = 0; // replay timeline start (ms)
+      let tNow = 0; // current time within replay (ms)
+      let lastWall = 0;
+
+      function setStatus(text, ok = false) {
+        statusEl.textContent = text;
+        statusEl.className = 'pill ' + (ok ? 'ok' : '');
+      }
+
+      function fmtAddr(a) {
+        if (!a) return '';
+        if (a.length <= 12) return a;
+        return a.slice(0, 6) + '…' + a.slice(-4);
+      }
+
+      function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+      function pickSnapshot(ms) {
+        if (!replay || !replay.snapshots || replay.snapshots.length === 0) return null;
+        const snaps = replay.snapshots;
+        // linear scan is OK for <= 2k; if grows, switch to binary search.
+        let best = snaps[0];
+        for (let i = 1; i < snaps.length; i++) {
+          if (snaps[i].t <= t0 + ms) best = snaps[i];
+          else break;
+        }
+        return best;
+      }
+
+      function drawArena() {
+        ctx.fillStyle = '#05070b';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // simple bounds
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
+        // center obstacle hint
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(canvas.width / 2 - 18, canvas.height / 2 - 140, 36, 280);
+      }
+
+      function drawPlayers(snap) {
+        const ps = (snap && snap.players) ? snap.players : [];
+        for (let i = 0; i < ps.length; i++) {
+          const p = ps[i];
+          const x = p.x || 0;
+          const y = p.y || 0;
+          const isP1 = i === 0;
+          const color = isP1 ? '#55d18a' : '#6aa6ff';
+
+          // body
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(x, y, 16, 0, Math.PI * 2);
+          ctx.fill();
+
+          // hp bar
+          const maxHP = Math.max(1, p.maxHP || 1);
+          const hp = clamp(p.hp || 0, 0, maxHP);
+          const w = 90;
+          const h = 8;
+          const bx = x - w / 2;
+          const by = y - 34;
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          ctx.fillRect(bx, by, w, h);
+          ctx.fillStyle = '#ff6b6b';
+          ctx.fillRect(bx, by, w * (hp / maxHP), h);
+
+          // label
+          ctx.fillStyle = 'rgba(255,255,255,0.85)';
+          ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(fmtAddr(p.address), x, y + 34);
+        }
+      }
+
+      function renderFrame() {
+        drawArena();
+        const snap = pickSnapshot(tNow);
+        drawPlayers(snap);
+        // time
+        timeEl.textContent = (tNow / 1000).toFixed(1) + 's';
+      }
+
+      function tick(wallMs) {
+        if (!playing) return;
+        if (!lastWall) lastWall = wallMs;
+        const dt = wallMs - lastWall;
+        lastWall = wallMs;
+        tNow = Math.min(tNow + dt, getDurationMs());
+        scrub.value = String(Math.floor((tNow / Math.max(1, getDurationMs())) * 1000));
+        renderFrame();
+        if (tNow >= getDurationMs()) {
+          playing = false;
+          playBtn.textContent = 'Play';
+          return;
+        }
+        requestAnimationFrame(tick);
+      }
+
+      function getDurationMs() {
+        if (!replay || !replay.snapshots || replay.snapshots.length < 2) return 1;
+        const a = replay.snapshots[0].t;
+        const b = replay.snapshots[replay.snapshots.length - 1].t;
+        return Math.max(1, b - a);
+      }
+
+      async function loadReplay() {
+        errEl.textContent = '';
+        let url = urlParam;
+        if (!url) {
+          if (!endpoint || !id) throw new Error('Missing params. Provide ?endpoint=...&id=... or ?url=...');
+          url = endpoint + '/replays/' + encodeURIComponent(id);
+        }
+        setStatus('Fetching replay…');
+        const res = await fetch(url, { credentials: 'omit' });
+        const json = await res.json();
+        if (!json || json.ok !== true) throw new Error('Replay fetch failed: ' + JSON.stringify(json));
+        replay = json.replay;
+        if (!replay || !Array.isArray(replay.snapshots)) throw new Error('Invalid replay payload');
+        t0 = replay.snapshots.length ? replay.snapshots[0].t : Date.now();
+        tNow = 0;
+        setStatus('Loaded', true);
+        metaEl.textContent = (replay.roomName || '') + '  ·  ' + (replay.id || '');
+        detailsEl.innerHTML = `
+          <div><b>Room</b>: <span class="mono">${replay.roomId}</span></div>
+          <div><b>Match</b>: ${replay.match?.endReason || 'n/a'} · winnerSid=${replay.match?.winnerSid ?? 'null'}</div>
+          <div><b>Snapshots</b>: ${replay.snapshots.length}</div>
+          <div><b>Inputs</b>: ${Array.isArray(replay.inputs) ? replay.inputs.length : 0}</div>
+          <div><b>Settlement</b>: ${replay.settlement?.txHash ? `<span class="mono">${replay.settlement.txHash}</span>` : 'n/a'}</div>
+        `;
+        renderFrame();
+      }
+
+      playBtn.addEventListener('click', () => {
+        if (!replay) return;
+        playing = !playing;
+        playBtn.textContent = playing ? 'Pause' : 'Play';
+        if (playing) {
+          lastWall = 0;
+          requestAnimationFrame(tick);
+        }
+      });
+
+      restartBtn.addEventListener('click', () => {
+        tNow = 0;
+        scrub.value = '0';
+        renderFrame();
+      });
+
+      scrub.addEventListener('input', () => {
+        if (!replay) return;
+        const v = Number(scrub.value) || 0;
+        tNow = (v / 1000) * getDurationMs();
+        renderFrame();
+      });
+
+      loadReplay().catch((e) => {
+        console.error(e);
+        setStatus('Failed');
+        errEl.textContent = String(e && e.message ? e.message : e);
+      });
+    </script>
+  </body>
+</html>
+
+
