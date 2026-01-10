@@ -1,0 +1,13 @@
+# Frontend env (Vite). Put these in Netlify env vars or local `.env` (not committed).
+
+# Ronke token address (you provided)
+VITE_RONKE_TOKEN_ADDRESS=0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb
+
+# Treasury/pool address (you provided)
+VITE_RONKE_POOL_ADDRESS=0xca5822880e797d9167b3b844a2cdf723493281b7
+
+# Deployed UFO Ticket contract address (fill after deploy)
+VITE_UFO_TICKET_CONTRACT_ADDRESS=
+
+
+
