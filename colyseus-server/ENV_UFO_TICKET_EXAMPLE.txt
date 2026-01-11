@@ -1,0 +1,24 @@
+# UFO Ticket server-side enforcement (copy into your hosting env / .env)
+
+# RPC endpoint used by server to check ownership + send resolveMatch tx
+UFO_TICKET_RPC_URL=https://api.roninchain.com/rpc
+
+# Deployed UFO Ticket (SBT) contract address (fill after deploy)
+UFO_TICKET_CONTRACT_ADDRESS=
+
+# If true: server denies PvP joins unless wallet has active ticket
+UFO_TICKET_REQUIRED=true
+
+# If true: PvP Online stats are enforced from on-chain UFO ticket `statsOf(tokenId)` (anti-cheat).
+# This makes the mint-time snapshot the authoritative stats in PvP (HP/armor/dmg/crit/accuracy/maxFuel).
+UFO_TICKET_USE_ONCHAIN_STATS=true
+
+# Server signer key (must be the OWNER of the UFO Ticket contract to call resolveMatch)
+# Never commit this key.
+UFO_TICKET_SIGNER_PRIVATE_KEY=
+
+# Optional: where server stores replay json files (default: <cwd>/replays)
+# REPLAY_DIR=/var/data/pewpew-replays
+
+
+
