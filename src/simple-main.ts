@@ -7608,18 +7608,19 @@ const nftImageLoading: Set<string> = new Set();
 let ufoSprites: HTMLImageElement[] = [];
 let ufoSpritesProcessed: HTMLCanvasElement[] = [];
 // UFO spin animation - 11 frames (removed first 4 dark glass frames)
+// Added ?v=2 cache-bust to force reload
 const ufoSpritePaths: string[] = [
-  './ufo-spin/ezgif-frame-005-removebg-preview.png',
-  './ufo-spin/ezgif-frame-006-removebg-preview.png',
-  './ufo-spin/ezgif-frame-007-removebg-preview.png',
-  './ufo-spin/ezgif-frame-008-removebg-preview.png',
-  './ufo-spin/ezgif-frame-009-removebg-preview.png',
-  './ufo-spin/ezgif-frame-010-removebg-preview.png',
-  './ufo-spin/ezgif-frame-011-removebg-preview.png',
-  './ufo-spin/ezgif-frame-012-removebg-preview.png',
-  './ufo-spin/ezgif-frame-013-removebg-preview.png',
-  './ufo-spin/ezgif-frame-014-removebg-preview.png',
-  './ufo-spin/ezgif-frame-015-removebg-preview.png'
+  './ufo-spin/ezgif-frame-005-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-006-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-007-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-008-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-009-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-010-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-011-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-012-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-013-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-014-removebg-preview.png?v=2',
+  './ufo-spin/ezgif-frame-015-removebg-preview.png?v=2'
 ];
 let ufoAnimationFrame = 0;
 let ufoAnimationLastTime = 0;

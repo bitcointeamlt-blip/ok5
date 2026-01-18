@@ -27,10 +27,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: undefined, // Don't split chunks - bundle everything together
-        // Simple filenames in root for itch.io compatibility (no hashes, no assets folder)
-        entryFileNames: `[name].js`,
-        chunkFileNames: `[name].js`,
-        assetFileNames: `[name].[ext]`
+        // Add content hash to bust CDN cache on each deploy
+        entryFileNames: `[name]-[hash].js`,
+        chunkFileNames: `[name]-[hash].js`,
+        assetFileNames: `[name]-[hash].[ext]`
       }
     }
   }
