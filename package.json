@@ -1,0 +1,49 @@
+{
+  "name": "dot-clicker",
+  "private": true,
+  "version": "1.0.19",
+  "type": "module",
+  "overrides": {
+    "esbuild": ">=0.24.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy:zip": "powershell -ExecutionPolicy Bypass -File create-deploy-zip.ps1",
+    "build:gg1": "powershell -ExecutionPolicy Bypass -File build-gg1.ps1",
+    "deploy:gg1": "npm run build:gg1",
+    "build:gg2": "powershell -ExecutionPolicy Bypass -File build-gg2.ps1",
+    "deploy:gg2": "npm run build:gg2",
+    "build:gg3": "powershell -ExecutionPolicy Bypass -File build-gg3.ps1",
+    "deploy:gg3": "npm run build:gg3",
+    "build:gg4": "powershell -ExecutionPolicy Bypass -File build-gg4.ps1",
+    "deploy:gg4": "npm run build:gg4",
+    "build:gg5": "powershell -ExecutionPolicy Bypass -File build-gg5.ps1",
+    "deploy:gg5": "npm run build:gg5",
+    "build:gg6": "powershell -ExecutionPolicy Bypass -File build-gg6.ps1",
+    "deploy:gg6": "npm run build:gg6",
+    "build:gg7": "powershell -ExecutionPolicy Bypass -File build-gg7.ps1",
+    "deploy:gg7": "npm run build:gg7",
+    "build:gg8": "powershell -ExecutionPolicy Bypass -File build-gg8.ps1",
+    "deploy:gg8": "npm run build:gg8",
+    "build:gg10": "powershell -ExecutionPolicy Bypass -File build-gg10.ps1",
+    "deploy:gg10": "npm run build:gg10",
+    "build:gg11": "powershell -ExecutionPolicy Bypass -File build-gg11.ps1",
+    "deploy:gg11": "npm run build:gg11",
+    "build:gg15": "powershell -ExecutionPolicy Bypass -File build-gg15.ps1",
+    "deploy:gg15": "npm run build:gg15",
+    "build:gg16": "powershell -ExecutionPolicy Bypass -File build-gg16.ps1",
+    "deploy:gg16": "npm run build:gg16"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.80.0",
+    "colyseus.js": "^0.15.0",
+    "ethers": "^6.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}
