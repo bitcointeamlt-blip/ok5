@@ -67,6 +67,12 @@ interface Planet {
   connected: boolean;
   color: string; // planet's natural color (visual)
   craters: { x: number; y: number; r: number }[]; // visual detail
+  // Moon orbit properties (only for moons)
+  isMoon?: boolean;
+  parentId?: number; // parent planet id
+  orbitAngle?: number; // current angle
+  orbitRadius?: number; // distance from parent
+  orbitSpeed?: number; // radians per second
 }
 
 interface Player {
@@ -240,13 +246,23 @@ function generatePlanets(): void {
         });
       }
 
+      // Larger planets have more starting HP (units)
+      let startingUnits: number;
+      switch (size) {
+        case PlanetSize.ASTEROID: startingUnits = Math.floor(Math.random() * 30) + 10; break;
+        case PlanetSize.SMALL: startingUnits = Math.floor(Math.random() * 80) + 30; break;
+        case PlanetSize.MEDIUM: startingUnits = Math.floor(Math.random() * 150) + 80; break;
+        case PlanetSize.LARGE: startingUnits = Math.floor(Math.random() * 300) + 150; break;
+        case PlanetSize.GIANT: startingUnits = Math.floor(Math.random() * 500) + 300; break;
+      }
+
       planets.push({
         id: id++,
         x, y,
         radius,
         size,
         ownerId: -1,
-        units: Math.floor(Math.random() * props.maxUnits * 0.3) + 10,
+        units: startingUnits,
         maxUnits: props.maxUnits,
         defense: props.defense,
         growthRate: props.growth,
@@ -254,6 +270,42 @@ function generatePlanets(): void {
         connected: false,
         color: PLANET_COLORS[Math.floor(Math.random() * PLANET_COLORS.length)],
         craters
+      });
+    }
+  }
+
+  // Add moons to LARGE and GIANT planets
+  const mainPlanets = [...planets]; // copy to avoid modifying during iteration
+  for (const parent of mainPlanets) {
+    if (parent.size === PlanetSize.LARGE || parent.size === PlanetSize.GIANT) {
+      const moonOrbitRadius = parent.radius + 30 + Math.random() * 20;
+      const moonAngle = Math.random() * Math.PI * 2;
+      const moonX = parent.x + Math.cos(moonAngle) * moonOrbitRadius;
+      const moonY = parent.y + Math.sin(moonAngle) * moonOrbitRadius;
+
+      planets.push({
+        id: id++,
+        x: moonX,
+        y: moonY,
+        radius: 8 + Math.random() * 4, // small moon radius
+        size: PlanetSize.ASTEROID,
+        ownerId: -1,
+        units: 100,
+        maxUnits: 100,
+        defense: 0.8,
+        growthRate: 0.3,
+        stability: 50,
+        connected: false,
+        color: '#aaa8a0',
+        craters: [
+          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 2 },
+          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 1.5 }
+        ],
+        isMoon: true,
+        parentId: parent.id,
+        orbitAngle: moonAngle,
+        orbitRadius: moonOrbitRadius,
+        orbitSpeed: 0.3 + Math.random() * 0.3 // radians per second
       });
     }
   }
@@ -280,6 +332,7 @@ function initPlayers(): void {
     for (const p of planets) {
       if (usedPlanets.has(p.id)) continue;
       if (p.size !== PlanetSize.ASTEROID) continue;
+      if (p.isMoon) continue; // don't start on a moon
 
       const dist = Math.sqrt((p.x - corners[i].x) ** 2 + (p.y - corners[i].y) ** 2);
       if (dist < bestDist) {
@@ -1021,6 +1074,28 @@ function render(): void {
   // Supply lines (behind planets)
   renderSupplyLines();
 
+  // Moon orbit rings (behind planets)
+  for (const moon of planets) {
+    if (!moon.isMoon || moon.parentId === undefined) continue;
+    const parent = planets.find(p => p.id === moon.parentId);
+    if (!parent) continue;
+
+    const parentScreen = worldToScreen(parent.x, parent.y);
+    const orbitR = (moon.orbitRadius || 0) * camera.zoom;
+
+    // Skip if off screen
+    if (parentScreen.x + orbitR < 0 || parentScreen.x - orbitR > gameWidth) continue;
+    if (parentScreen.y + orbitR < 0 || parentScreen.y - orbitR > gameHeight) continue;
+
+    ctx.beginPath();
+    ctx.arc(parentScreen.x, parentScreen.y, orbitR, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(200, 200, 200, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // Planets
   for (const planet of planets) {
     renderPlanet(planet);
@@ -1061,10 +1136,27 @@ function render(): void {
   renderUI();
 }
 
+// ========== MOON ORBIT ==========
+function updateMoons(dt: number): void {
+  for (const moon of planets) {
+    if (!moon.isMoon || moon.parentId === undefined) continue;
+
+    const parent = planets.find(p => p.id === moon.parentId);
+    if (!parent) continue;
+
+    // Rotate moon around parent
+    moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.4) * dt;
+    const orbitR = moon.orbitRadius || (parent.radius + 40);
+    moon.x = parent.x + Math.cos(moon.orbitAngle) * orbitR;
+    moon.y = parent.y + Math.sin(moon.orbitAngle) * orbitR;
+  }
+}
+
 // ========== GAME LOOP ==========
 function update(dt: number): void {
   gameTime += dt * 1000;
 
+  updateMoons(dt);
   updateGrowth(dt);
   updateStability(dt);
   updateAttacks(dt);
