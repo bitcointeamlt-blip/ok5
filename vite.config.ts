@@ -21,6 +21,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         pewpew: resolve(__dirname, 'pewpew/index.html'),
+        units: resolve(__dirname, 'units/index.html'),
       },
       output: {
         manualChunks: undefined,
