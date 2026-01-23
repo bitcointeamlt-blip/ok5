@@ -19,6 +19,228 @@ import { nftService } from './services/NftService';
 import type { NftItem } from './types/nft';
 import { AudioManager } from './audio/AudioManager';
 import { enhanceSprite, setupPixelPerfectContext, snapToPixel } from './utils/PixelArtEnhancer';
+import { animate } from 'animejs';
+
+// ========== SCREEN SHAKE SYSTEM ==========
+let screenShakeActive = false;
+
+function triggerScreenShake(intensity: number = 5, duration: number = 200): void {
+  if (screenShakeActive) return; // Don't stack shakes
+
+  const canvas = document.getElementById('gameCanvas');
+  if (!canvas) return;
+
+  screenShakeActive = true;
+
+  // Create shake animation using anime.js v4 API
+  animate(canvas, {
+    translateX: [
+      { to: -intensity, duration: duration / 8, ease: 'inOutSine' },
+      { to: intensity, duration: duration / 8, ease: 'inOutSine' },
+      { to: -intensity * 0.7, duration: duration / 8, ease: 'inOutSine' },
+      { to: intensity * 0.7, duration: duration / 8, ease: 'inOutSine' },
+      { to: -intensity * 0.4, duration: duration / 8, ease: 'inOutSine' },
+      { to: intensity * 0.4, duration: duration / 8, ease: 'inOutSine' },
+      { to: 0, duration: duration / 4, ease: 'outSine' }
+    ],
+    translateY: [
+      { to: intensity * 0.5, duration: duration / 8, ease: 'inOutSine' },
+      { to: -intensity * 0.5, duration: duration / 8, ease: 'inOutSine' },
+      { to: intensity * 0.3, duration: duration / 8, ease: 'inOutSine' },
+      { to: -intensity * 0.3, duration: duration / 8, ease: 'inOutSine' },
+      { to: intensity * 0.1, duration: duration / 8, ease: 'inOutSine' },
+      { to: -intensity * 0.1, duration: duration / 8, ease: 'inOutSine' },
+      { to: 0, duration: duration / 4, ease: 'outSine' }
+    ],
+    onComplete: () => {
+      screenShakeActive = false;
+      // Reset transform to avoid permanent offset
+      if (canvas) {
+        canvas.style.transform = '';
+      }
+    }
+  });
+}
+
+// ========== PANEL SLIDE-IN ANIMATION SYSTEM ==========
+type SlideDirection = 'left' | 'right' | 'top' | 'bottom';
+
+interface PanelAnimationState {
+  offset: number;       // Current offset (0 = fully visible)
+  targetOffset: number; // Target offset (0 = visible, >0 = hidden)
+  isAnimating: boolean;
+}
+
+// Track animation state for each panel type
+const panelAnimations: Record<string, PanelAnimationState> = {};
+
+function getPanelAnimation(panelId: string): PanelAnimationState {
+  if (!panelAnimations[panelId]) {
+    panelAnimations[panelId] = { offset: 1, targetOffset: 1, isAnimating: false };
+  }
+  return panelAnimations[panelId];
+}
+
+function triggerPanelSlideIn(
+  panelId: string,
+  direction: SlideDirection = 'left',
+  duration: number = 400
+): void {
+  const state = getPanelAnimation(panelId);
+
+  if (state.isAnimating) return;
+  state.isAnimating = true;
+  state.offset = 1; // Start fully hidden
+
+  // Animate offset from 1 to 0
+  const animTarget = { offset: 1 };
+  animate(animTarget, {
+    offset: [{ to: 0, duration, ease: 'outExpo' }],
+    onUpdate: () => {
+      state.offset = animTarget.offset;
+    },
+    onComplete: () => {
+      state.offset = 0;
+      state.targetOffset = 0;
+      state.isAnimating = false;
+    }
+  });
+}
+
+function triggerPanelSlideOut(
+  panelId: string,
+  direction: SlideDirection = 'left',
+  duration: number = 300
+): void {
+  const state = getPanelAnimation(panelId);
+
+  if (state.isAnimating) return;
+  state.isAnimating = true;
+
+  const animTarget = { offset: state.offset };
+  animate(animTarget, {
+    offset: [{ to: 1, duration, ease: 'inExpo' }],
+    onUpdate: () => {
+      state.offset = animTarget.offset;
+    },
+    onComplete: () => {
+      state.offset = 1;
+      state.targetOffset = 1;
+      state.isAnimating = false;
+    }
+  });
+}
+
+// Get slide offset for rendering (returns pixel offset based on direction and panel size)
+function getPanelSlideOffset(panelId: string, panelSize: number, direction: SlideDirection): { x: number; y: number } {
+  const state = getPanelAnimation(panelId);
+  const offset = state.offset * panelSize;
+
+  switch (direction) {
+    case 'left': return { x: -offset, y: 0 };
+    case 'right': return { x: offset, y: 0 };
+    case 'top': return { x: 0, y: -offset };
+    case 'bottom': return { x: 0, y: offset };
+    default: return { x: 0, y: 0 };
+  }
+}
+
+// ========== BUTTON RIPPLE EFFECT SYSTEM ==========
+interface RippleEffect {
+  x: number;
+  y: number;
+  radius: number;
+  maxRadius: number;
+  opacity: number;
+  color: string;
+  startTime: number;
+}
+
+const activeRipples: RippleEffect[] = [];
+const RIPPLE_DURATION = 500; // ms
+const RIPPLE_MAX_RADIUS = 80;
+
+function triggerRipple(
+  x: number,
+  y: number,
+  maxRadius: number = RIPPLE_MAX_RADIUS,
+  color: string = 'rgba(255, 255, 255, 0.4)'
+): void {
+  const ripple: RippleEffect = {
+    x,
+    y,
+    radius: 0,
+    maxRadius,
+    opacity: 0.6,
+    color,
+    startTime: performance.now()
+  };
+
+  activeRipples.push(ripple);
+
+  // Clean up old ripples (keep max 10)
+  while (activeRipples.length > 10) {
+    activeRipples.shift();
+  }
+}
+
+function updateAndDrawRipples(ctx: CanvasRenderingContext2D): void {
+  const now = performance.now();
+
+  // Update and draw each ripple
+  for (let i = activeRipples.length - 1; i >= 0; i--) {
+    const ripple = activeRipples[i];
+    const elapsed = now - ripple.startTime;
+    const progress = Math.min(1, elapsed / RIPPLE_DURATION);
+
+    if (progress >= 1) {
+      activeRipples.splice(i, 1);
+      continue;
+    }
+
+    // Ease out the radius expansion
+    const easeOut = 1 - Math.pow(1 - progress, 3);
+    ripple.radius = ripple.maxRadius * easeOut;
+    ripple.opacity = 0.6 * (1 - progress);
+
+    // Draw ripple
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = ripple.color.replace(/[\d.]+\)$/, `${ripple.opacity})`);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Inner glow
+    ctx.beginPath();
+    ctx.arc(ripple.x, ripple.y, ripple.radius * 0.7, 0, Math.PI * 2);
+    ctx.strokeStyle = ripple.color.replace(/[\d.]+\)$/, `${ripple.opacity * 0.5})`);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Helper to trigger ripple on button click
+function triggerButtonRipple(
+  buttonX: number,
+  buttonY: number,
+  buttonW: number,
+  buttonH: number,
+  clickX: number,
+  clickY: number
+): void {
+  // Calculate ripple center relative to button
+  const relX = clickX;
+  const relY = clickY;
+
+  // Calculate max radius to cover entire button
+  const maxDistX = Math.max(clickX - buttonX, buttonX + buttonW - clickX);
+  const maxDistY = Math.max(clickY - buttonY, buttonY + buttonH - clickY);
+  const maxRadius = Math.sqrt(maxDistX * maxDistX + maxDistY * maxDistY) * 1.2;
+
+  triggerRipple(relX, relY, Math.min(maxRadius, 120), 'rgba(100, 200, 255, 0.5)');
+}
 
 type PvpServerPreset = {
   id: string;
@@ -170,7 +392,7 @@ let duelOffer: import('./services/ChatService').DuelOffer | null = null;
 
 // Chat panel layout (single source of truth)
 const CHAT_PANEL_W = 490; // narrower (requested)
-const CHAT_PANEL_H = 905; // taller (requested)
+const CHAT_PANEL_H_MAX = 905; // max height, will be clamped to fit screen
 const CHAT_PANEL_MARGIN_RIGHT = 16;
 const CHAT_PANEL_TOP = 30 + 80; // moved 80px down total (requested)
 const CHAT_SEND_W = 96;
@@ -712,7 +934,11 @@ console.log = (...args: any[]) => {
 console.info('Starting simple game...');
 // Presence: count every visitor as "online" as soon as they open the website.
 // We connect to the currently selected server (or fallback).
-presenceService.start(getSelectedServerEndpoint() || fallbackColyseusEndpoint);
+try {
+  presenceService.start(getSelectedServerEndpoint() || fallbackColyseusEndpoint);
+} catch (e) {
+  console.error('Presence service init error:', e);
+}
 // Live chat: connect on page load so users are visible in chat even if not playing.
 // IMPORTANT: defer until after module initialization to avoid TDZ on `authUserId`.
 window.setTimeout(() => {
@@ -972,6 +1198,7 @@ function openServerBrowser(): void {
   serverBrowserHoverId = null;
   serverBrowserHoverClose = false;
   isServerBrowserOpen = true;
+  triggerPanelSlideIn('serverBrowser', 'right', 400);
   // Only reset typewriter animation if it hasn't been completed yet
   // Once completed, show full text immediately without animation
   if (!serverBrowserTextAnimationCompleted) {
@@ -1240,6 +1467,28 @@ const ctx = canvas.getContext('2d')!;
 
 console.log('Canvas:', canvas);
 console.log('Context:', ctx);
+
+// ========== DYNAMIC CANVAS SIZING ==========
+// Game dimensions that adapt to screen size
+let gameWidth = window.innerWidth;
+let gameHeight = window.innerHeight;
+
+// Update canvas size to match window
+function updateCanvasSize(): void {
+  gameWidth = window.innerWidth;
+  gameHeight = window.innerHeight;
+  canvas.width = gameWidth;
+  canvas.height = gameHeight;
+  console.log(`Canvas resized to: ${gameWidth}x${gameHeight}`);
+}
+
+// Initialize canvas size
+updateCanvasSize();
+
+// Listen for window resize
+window.addEventListener('resize', () => {
+  updateCanvasSize();
+});
 
 // Helper function to convert mouse coordinates to canvas coordinates
 // This handles canvas scaling correctly
@@ -1593,12 +1842,99 @@ function loadPixSprite(): void {
   pixSpriteImg = new Image();
   pixSpriteImg.onload = () => {
     pixSpriteLoaded = true;
-    console.log('Pix sprite loaded');
+    console.log('✅ Pix sprite loaded successfully:', pixSpriteImg.width, 'x', pixSpriteImg.height);
   };
-  pixSpriteImg.onerror = () => {
-    console.error('Failed to load pix sprite');
+  pixSpriteImg.onerror = (e) => {
+    console.error('❌ Failed to load pix sprite from ./pix.png', e);
+    // Try alternate path
+    pixSpriteImg = new Image();
+    pixSpriteImg.onload = () => {
+      pixSpriteLoaded = true;
+      console.log('✅ Pix sprite loaded from alternate path');
+    };
+    pixSpriteImg.src = '/pix.png';
   };
   pixSpriteImg.src = './pix.png';
+}
+
+// RonkeTV Animation (replaces Space Junk visual)
+const RONKETV_FRAME_COUNT = 16;
+const RONKETV_FRAME_DURATION = 100; // ms per frame (10 FPS animation)
+let ronkeTvFrames: HTMLImageElement[] = [];
+let ronkeTvFramesLoaded = 0;
+let ronkeTvCurrentFrame = 0;
+let ronkeTvLastFrameTime = 0;
+let ronkeTvAnimationReady = false;
+
+function loadRonkeTvFrames(): void {
+  ronkeTvFrames = [];
+  ronkeTvFramesLoaded = 0;
+
+  for (let i = 1; i <= RONKETV_FRAME_COUNT; i++) {
+    const frameNum = i.toString().padStart(3, '0');
+    const img = new Image();
+    img.onload = () => {
+      ronkeTvFramesLoaded++;
+      if (ronkeTvFramesLoaded === RONKETV_FRAME_COUNT) {
+        ronkeTvAnimationReady = true;
+        console.log('🎬 RonkeTV animation loaded! (16 frames)');
+      }
+    };
+    img.onerror = () => {
+      console.error(`❌ Failed to load RonkeTV frame ${i}`);
+    };
+    img.src = `./ronketv/ezgif-frame-${frameNum}-removebg-preview.png`;
+    ronkeTvFrames.push(img);
+  }
+}
+
+function updateRonkeTvAnimation(): void {
+  if (!ronkeTvAnimationReady) return;
+  const now = performance.now();
+  if (now - ronkeTvLastFrameTime >= RONKETV_FRAME_DURATION) {
+    ronkeTvCurrentFrame = (ronkeTvCurrentFrame + 1) % RONKETV_FRAME_COUNT;
+    ronkeTvLastFrameTime = now;
+  }
+}
+
+// RonkeWas Animation (replaces Ice asteroid visual - washing machine)
+const RONKEWAS_FRAME_COUNT = 16;
+const RONKEWAS_FRAME_DURATION = 80; // ms per frame (12.5 FPS - faster spin)
+let ronkeWasFrames: HTMLImageElement[] = [];
+let ronkeWasFramesLoaded = 0;
+let ronkeWasCurrentFrame = 0;
+let ronkeWasLastFrameTime = 0;
+let ronkeWasAnimationReady = false;
+
+function loadRonkeWasFrames(): void {
+  ronkeWasFrames = [];
+  ronkeWasFramesLoaded = 0;
+
+  for (let i = 1; i <= RONKEWAS_FRAME_COUNT; i++) {
+    const frameNum = i.toString().padStart(3, '0');
+    const img = new Image();
+    img.onload = () => {
+      ronkeWasFramesLoaded++;
+      if (ronkeWasFramesLoaded === RONKEWAS_FRAME_COUNT) {
+        ronkeWasAnimationReady = true;
+        console.log('🧺 RonkeWas animation loaded! (16 frames)');
+      }
+    };
+    img.onerror = () => {
+      console.error(`❌ Failed to load RonkeWas frame ${i}`);
+    };
+    img.src = `./ronkewas/ezgif-frame-${frameNum}-removebg-preview.png`;
+    ronkeWasFrames.push(img);
+  }
+}
+
+function updateRonkeWasAnimation(): void {
+  if (!ronkeWasAnimationReady) return;
+  const now = performance.now();
+  if (now - ronkeWasLastFrameTime >= RONKEWAS_FRAME_DURATION) {
+    ronkeWasCurrentFrame = (ronkeWasCurrentFrame + 1) % RONKEWAS_FRAME_COUNT;
+    ronkeWasLastFrameTime = now;
+  }
 }
 
 const DROP_LIFETIME_MS = 20000; // 20 seconds before despawn
@@ -1813,6 +2149,95 @@ function drawInventory(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
 }
 
+// ========== UFO MODEL SELECTOR UI ==========
+const UFO_SELECTOR_WIDTH = 200; // Same width as other UI buttons
+const UFO_SELECTOR_HEIGHT = 32; // Compact height
+let isHoveringUfoSelector = false;
+
+function getUfoSelectorRect(): { x: number; y: number; w: number; h: number } {
+  // Position above SPEED FX control (test buttons grouped together)
+  const speedFx = getSpeedFxControlRect();
+  const gap = 6;
+  const x = speedFx.x;
+  const y = Math.max(10, speedFx.y - gap - UFO_SELECTOR_HEIGHT);
+  return { x, y, w: UFO_SELECTOR_WIDTH, h: UFO_SELECTOR_HEIGHT };
+}
+
+function drawUfoModelSelector(ctx: CanvasRenderingContext2D): void {
+  if (gameMode !== 'Solo') return; // Only show in Solo mode
+
+  const model = getCurrentUfoModel();
+  const rect = getUfoSelectorRect();
+
+  // Use same pixel button frame as other UI buttons
+  const rr = drawPixelButtonFrame(ctx, rect.x, rect.y, rect.w, rect.h, {
+    hovering: isHoveringUfoSelector,
+    pressing: false,
+    borderColor: isHoveringUfoSelector ? 'rgba(0, 255, 255, 0.6)' : UI_BTN_INNER,
+    drawShadow: true,
+  });
+
+  const centerY = rr.y + rr.h / 2;
+
+  // Left arrow (<)
+  ctx.save();
+  ctx.fillStyle = isHoveringUfoSelector ? '#00FFFF' : '#AAAAFF';
+  ctx.font = 'bold 12px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('<', rr.x + 18, centerY);
+
+  // Model name in center
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 8px "Press Start 2P"';
+  ctx.fillText(model.name, rr.x + rr.w / 2, centerY);
+
+  // Right arrow (>)
+  ctx.fillStyle = isHoveringUfoSelector ? '#00FFFF' : '#AAAAFF';
+  ctx.font = 'bold 12px "Press Start 2P"';
+  ctx.fillText('>', rr.x + rr.w - 18, centerY);
+
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+function handleUfoSelectorClick(mouseX: number, mouseY: number): boolean {
+  if (gameMode !== 'Solo') return false;
+
+  const rect = getUfoSelectorRect();
+
+  // Check if click is in selector area
+  if (mouseX >= rect.x && mouseX <= rect.x + rect.w &&
+      mouseY >= rect.y && mouseY <= rect.y + rect.h) {
+
+    // Left third = previous model
+    if (mouseX < rect.x + rect.w / 3) {
+      switchUfoModel(-1);
+    }
+    // Right third = next model
+    else if (mouseX > rect.x + rect.w * 2 / 3) {
+      switchUfoModel(1);
+    }
+    // Middle = also next model
+    else {
+      switchUfoModel(1);
+    }
+
+    return true;
+  }
+  return false;
+}
+
+function updateUfoSelectorHover(mouseX: number, mouseY: number): void {
+  if (gameMode !== 'Solo') {
+    isHoveringUfoSelector = false;
+    return;
+  }
+  const rect = getUfoSelectorRect();
+  isHoveringUfoSelector = mouseX >= rect.x && mouseX <= rect.x + rect.w &&
+                          mouseY >= rect.y && mouseY <= rect.y + rect.h;
+}
+
 // Solo crosshair position (follows mouse)
 let soloCrosshairX = 960;
 let soloCrosshairY = 540;
@@ -1930,7 +2355,8 @@ function spawnSoloAsteroid(now: number): void {
 }
 
 function spawnSoloIceAsteroid(now: number): void {
-  // Spawn from left or right side randomly
+  // RonkeWas - flying washing machine (replaces Ice asteroid)
+  // Spawns from any direction, flies slower and rotates gently
   const fromLeft = Math.random() < 0.5;
   const startX = fromLeft ? -50 : 1970;
   const startY = 200 + Math.random() * 600;
@@ -1938,19 +2364,19 @@ function spawnSoloIceAsteroid(now: number): void {
   const baseSpeed = SOLO_ASTEROID_MIN_SPEED + Math.random() * (SOLO_ASTEROID_MAX_SPEED - SOLO_ASTEROID_MIN_SPEED);
   const ufoSpeedFactor = Math.min(4, Math.sqrt(soloSpeedKmps) / 3);
 
-  // Speed variation: each asteroid has slightly different speed (0.6x to 1.4x)
-  const speedVariation = 0.6 + Math.random() * 0.8;
+  // Speed variation: slower than other asteroids (0.4x to 0.8x)
+  const speedVariation = 0.4 + Math.random() * 0.4;
 
   let vx: number;
   if (fromLeft) {
-    // From behind - moderate approach
-    vx = (baseSpeed * 0.6 + ufoSpeedFactor * 0.3) * speedVariation;
+    // From behind - slow drift
+    vx = (baseSpeed * 0.3 + ufoSpeedFactor * 0.15) * speedVariation;
   } else {
-    // From front - moderate-fast approach
-    vx = -(baseSpeed * 1.5 + ufoSpeedFactor * 1.5) * speedVariation;
+    // From front - slow approach
+    vx = -(baseSpeed * 0.7 + ufoSpeedFactor * 0.7) * speedVariation;
   }
 
-  const vy = (Math.random() - 0.5) * 2.5;
+  const vy = (Math.random() - 0.5) * 1.5; // Less vertical movement
 
   const type = 'small';
   const size = 18 + Math.random() * 12; // Slightly larger than typical small
@@ -1966,7 +2392,8 @@ function spawnSoloIceAsteroid(now: number): void {
     hp,
     maxHp: hp,
     rotation: Math.random() * Math.PI * 2,
-    rotationSpeed: (Math.random() - 0.5) * 0.08,
+    // RonkeWas rotates slowly and gently
+    rotationSpeed: (Math.random() - 0.5) * 0.03,
     type,
     spawnedAt: now,
     isIce: true,
@@ -1976,8 +2403,8 @@ function spawnSoloIceAsteroid(now: number): void {
 }
 
 function spawnSoloSpaceJunk(now: number): void {
-  // Space Junk - broken satellite debris
-  // Spawns from any direction, metallic/tech look
+  // RonkeTV - flying old TV (replaces Space Junk)
+  // Spawns from any direction, flies slower and rotates gently
   const fromLeft = Math.random() < 0.5;
   const startX = fromLeft ? -60 : 1980;
   const startY = 150 + Math.random() * 700;
@@ -1985,19 +2412,19 @@ function spawnSoloSpaceJunk(now: number): void {
   const baseSpeed = SOLO_ASTEROID_MIN_SPEED + Math.random() * (SOLO_ASTEROID_MAX_SPEED - SOLO_ASTEROID_MIN_SPEED);
   const ufoSpeedFactor = Math.min(4, Math.sqrt(soloSpeedKmps) / 3);
 
-  // Speed variation: each piece has slightly different speed (0.6x to 1.4x)
-  const speedVariation = 0.6 + Math.random() * 0.8;
+  // Speed variation: slower than other asteroids (0.4x to 0.8x)
+  const speedVariation = 0.4 + Math.random() * 0.4;
 
   let vx: number;
   if (fromLeft) {
-    // From behind - moderate approach
-    vx = (baseSpeed * 0.6 + ufoSpeedFactor * 0.3) * speedVariation;
+    // From behind - slow drift
+    vx = (baseSpeed * 0.3 + ufoSpeedFactor * 0.15) * speedVariation;
   } else {
-    // From front - moderate-fast approach
-    vx = -(baseSpeed * 1.5 + ufoSpeedFactor * 1.5) * speedVariation;
+    // From front - slow approach
+    vx = -(baseSpeed * 0.7 + ufoSpeedFactor * 0.7) * speedVariation;
   }
 
-  const vy = (Math.random() - 0.5) * 3;
+  const vy = (Math.random() - 0.5) * 1.5; // Less vertical movement
 
   const type = 'small';
   const size = 22 + Math.random() * 15; // Slightly larger debris
@@ -2013,8 +2440,8 @@ function spawnSoloSpaceJunk(now: number): void {
     hp,
     maxHp: hp,
     rotation: Math.random() * Math.PI * 2,
-    // Space junk tumbles faster (unstable rotation)
-    rotationSpeed: (Math.random() - 0.5) * 0.15,
+    // RonkeTV rotates slowly and gently
+    rotationSpeed: (Math.random() - 0.5) * 0.03,
     type,
     spawnedAt: now,
     isSpaceJunk: true,
@@ -2051,9 +2478,31 @@ function updateSoloAsteroids(now: number): void {
 
   // Update positions and spawn trail particles
   for (const a of soloAsteroids) {
-    a.x += a.vx;
-    a.y += a.vy;
-    a.rotation += a.rotationSpeed;
+    // Check blackhole effect (pull + consumption)
+    const bhResult = checkBlackholeEffect(a.x, a.y, a.vx, a.vy, a.size, `asteroid_${a.spawnedAt}`);
+    if (bhResult.consumed) {
+      a.hp = 0; // Mark for removal
+      continue;
+    }
+    // Store shrink factor for drawing
+    (a as any).bhShrink = bhResult.shrinkFactor;
+
+    // Update position based on blackhole state
+    if (bhResult.snapToCenter) {
+      // Snap to center and freeze
+      a.x = bhResult.centerX;
+      a.y = bhResult.centerY;
+      a.vx = 0;
+      a.vy = 0;
+    } else if (!bhResult.frozen) {
+      // Apply blackhole pull to velocity
+      a.vx += bhResult.pullVx;
+      a.vy += bhResult.pullVy;
+      // Update position
+      a.x += a.vx;
+      a.y += a.vy;
+      a.rotation += a.rotationSpeed;
+    }
 
     // Check asteroid collision with destructible terrain (Worms-style)
     const terrainHit = checkTerrainCollisionCircle(a.x, a.y, a.size * 0.6);
@@ -2618,6 +3067,8 @@ function checkWeaponAsteroidCollisions(): void {
         // Then reduce HP
         if (remainingDamage > 0) {
           dotHP = Math.max(0, dotHP - remainingDamage);
+          // Screen shake on damage!
+          triggerScreenShake(Math.min(10, remainingDamage * 2), 250);
         }
 
         // ALSO reduce speed by damage amount (asteroid slows you down!)
@@ -2900,7 +3351,7 @@ let guestStarterClaimedThisSession = false; // not persisted
 function getSlotBellRect(): { x: number; y: number; w: number; h: number } {
   // Panel placement (requested): make it obvious there is something interesting.
   // Place between DOT stats box (y~120..170) and the big buttons list.
-  return { x: 20, y: 188, w: 200, h: 40 }; // Lowered 8px
+  return { x: 20, y: scaleY(188), w: 200, h: scaleSize(40) };
 }
 // Slot symbols:
 // - X is an "empty" symbol (losing unless you hit 3x X, which awards spins).
@@ -3548,7 +3999,87 @@ const AGENT_DEBUG_LOGS_ENABLED = false;
 
 // --- UI theme (left panel) ---
 // Keep a cohesive "dark space / neon" look (panel used to be bright and looked out of place).
-const UI_PANEL_W = 240;
+// REDESIGNED: Narrower, cleaner panel
+const UI_PANEL_W = 240; // Original panel width
+const UI_PANEL_COLLAPSED_W = 32; // Width when collapsed (just toggle button)
+
+// ========== UI SCALING FOR SMALL SCREENS ==========
+const UI_DESIGN_HEIGHT = 1080; // UI was designed for this height
+
+function getUIScale(): number {
+  const h = canvas.height || window.innerHeight;
+  if (h >= UI_DESIGN_HEIGHT) return 1;
+  return h / UI_DESIGN_HEIGHT;
+}
+
+// Scale a Y position from design coords to actual screen coords
+function scaleY(designY: number): number {
+  return Math.round(designY * getUIScale());
+}
+
+// Scale a size (height, font) from design coords to actual screen coords
+function scaleSize(designSize: number): number {
+  return Math.max(Math.round(designSize * getUIScale()), 1);
+}
+
+// Get scaled font string
+function scaledFont(weight: string, designPx: number, family: string): string {
+  return `${weight} ${scaleSize(designPx)}px ${family}`;
+}
+
+// ========== COLLAPSIBLE PANEL SYSTEM ==========
+let isPanelCollapsed = false;
+let panelCollapseProgress = 0; // 0 = expanded, 1 = collapsed
+let isPanelAnimating = false;
+let isHoveringPanelToggle = false;
+let isPressingPanelToggle = false;
+
+// Get current panel width based on collapse state
+function getCurrentPanelWidth(): number {
+  const expanded = UI_PANEL_W;
+  const collapsed = UI_PANEL_COLLAPSED_W;
+  return expanded - (expanded - collapsed) * panelCollapseProgress;
+}
+
+// Get current play area left edge
+function getPlayLeft(): number {
+  return getCurrentPanelWidth();
+}
+
+// Toggle panel collapse with animation
+function togglePanelCollapse(): void {
+  if (isPanelAnimating) return;
+
+  isPanelAnimating = true;
+  const targetCollapsed = !isPanelCollapsed;
+  isPanelCollapsed = targetCollapsed;
+
+  const startProgress = panelCollapseProgress;
+  const endProgress = targetCollapsed ? 1 : 0;
+
+  const animTarget = { progress: startProgress };
+  animate(animTarget, {
+    progress: [{ to: endProgress, duration: 300, ease: 'outExpo' }],
+    onUpdate: () => {
+      panelCollapseProgress = animTarget.progress;
+    },
+    onComplete: () => {
+      panelCollapseProgress = endProgress;
+      isPanelAnimating = false;
+    }
+  });
+}
+
+// Get panel toggle button rect - small arrow at top
+function getPanelToggleRect(): { x: number; y: number; w: number; h: number } {
+  const panelW = getCurrentPanelWidth();
+  return {
+    x: panelW - 38,
+    y: 6,
+    w: 34,
+    h: 38
+  };
+}
 const UI_PANEL_BG = 'rgba(8, 10, 18, 0.92)';
 const UI_PANEL_BORDER = 'rgba(210, 235, 255, 0.18)';
 const UI_PANEL_BORDER_STRONG = 'rgba(210, 235, 255, 0.30)';
@@ -3900,10 +4431,10 @@ function drawSkillBar(ctx: CanvasRenderingContext2D): void {
   const barHeight = slotSize + barPadding * 2 + 20;
 
   // Position: bottom center of play area (not over left panel)
-  const playAreaLeft = 240;
-  const playAreaWidth = 1920 - playAreaLeft;
+  const playAreaLeft = playLeft;
+  const playAreaWidth = playRight - playAreaLeft;
   const barX = playAreaLeft + (playAreaWidth - totalWidth) / 2;
-  const barY = 1080 - barHeight - 20;
+  const barY = gameHeight - barHeight - 20;
 
   ctx.save();
 
@@ -4191,10 +4722,10 @@ function drawInventoryWindow(ctx: CanvasRenderingContext2D): void {
   const slotsCount = 6;
   const skillBarWidth = slotsCount * slotSize + (slotsCount - 1) * slotGap + barPadding * 2;
   const skillBarHeight = slotSize + barPadding * 2 + 20;
-  const playAreaLeft = 240;
-  const playAreaWidth = 1920 - playAreaLeft;
+  const playAreaLeft = playLeft;
+  const playAreaWidth = playRight - playAreaLeft;
   const skillBarX = playAreaLeft + (playAreaWidth - skillBarWidth) / 2;
-  const skillBarY = 1080 - skillBarHeight - 20;
+  const skillBarY = gameHeight - skillBarHeight - 20;
 
   // Position inventory above skill bar
   const invWidth = 470; // 7 slots * 52 + 6 gaps * 8 + padding
@@ -4397,22 +4928,23 @@ function drawInventoryWindow(ctx: CanvasRenderingContext2D): void {
 }
 
 // --- UI layout constants (keep render + hitboxes consistent) ---
-const UI_WALLET_BUTTON_Y = 456;
-const UI_WALLET_BUTTON_H = 48;
+// These are DESIGN values (for 1080px height) - use scaleY()/scaleSize() when rendering
+const UI_WALLET_BUTTON_Y_DESIGN = 456;
+const UI_WALLET_BUTTON_H_DESIGN = 48;
 const UI_WALLET_BALANCE_GAP_TOP = 10;
 const UI_WALLET_BALANCE_H = 58; // DOT + NFT status (matches render)
 const UI_WALLET_BALANCE_GAP_BOTTOM = 10;
 
 function getTrainingButtonY(): number {
   // Default placement when no wallet balance frame is shown
-  let y = 500;
+  let designY = 500;
   try {
     const walletState = walletService.getState();
     if (walletState.isConnected && walletState.address) {
-      y = UI_WALLET_BUTTON_Y + UI_WALLET_BUTTON_H + UI_WALLET_BALANCE_GAP_TOP + UI_WALLET_BALANCE_H + UI_WALLET_BALANCE_GAP_BOTTOM;
+      designY = UI_WALLET_BUTTON_Y_DESIGN + UI_WALLET_BUTTON_H_DESIGN + UI_WALLET_BALANCE_GAP_TOP + UI_WALLET_BALANCE_H + UI_WALLET_BALANCE_GAP_BOTTOM;
     }
   } catch { }
-  return y;
+  return scaleY(designY);
 }
 
 // Reward popup animation (big center number)
@@ -4500,8 +5032,8 @@ const maxDrawLength = 80; // Maximum total length of drawn line
 // (removed) Solo upgrade buttons
 
 // DOT position and physics
-let dotX = 240 + (1920 - 240) / 2;
-let dotY = 1080 / 2;
+let dotX = UI_PANEL_W + (gameWidth - UI_PANEL_W) / 2;
+let dotY = gameHeight / 2;
 const dotRadius = 25; // Increased from 15 to 25
 let dotVx = 0; // Horizontal velocity
 let dotVy = 0; // Vertical velocity
@@ -4946,7 +5478,7 @@ function spawnFlyingStone(): void {
   const h = terrainCacheCanvas.height;
 
   // Spawn from right edge
-  terrainPosX = 1920 + 50;
+  terrainPosX = gameWidth + 50;
 
   // Choose flight path: 40% straight middle, 30% straight top, 30% diagonal
   const pathRoll = Math.random();
@@ -4967,7 +5499,7 @@ function spawnFlyingStone(): void {
   } else {
     // Diagonal (original behavior)
     pathType = 'diagonal';
-    terrainPosY = 150 + Math.random() * (1080 - 400);
+    terrainPosY = 150 + Math.random() * (gameHeight - 400);
     terrainVelX = -20 - Math.random() * 15; // Fast: -20 to -35
     terrainVelY = (Math.random() - 0.5) * 30; // Diagonal drift
   }
@@ -5586,10 +6118,17 @@ function drawSoloThrustFx(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
 }
 const gravity = 0.05; // Reduced gravity (was 0.1)
-const groundY = 1080 - 220; // Invisible ground 220px from bottom
+// groundY is now dynamic based on screen height
+function getGroundY(): number {
+  return gameHeight - 220; // Invisible ground 220px from bottom
+}
+let groundY = gameHeight - 220; // Updated each frame
 // Former toxic-water band bottom floor: keep as a normal playable area.
 // movingPlatformY = groundY - 2, bottomFloorY = movingPlatformY + 100 => groundY + 98
-const PVP_BOTTOM_FLOOR_Y = groundY + 98;
+function getPvpBottomFloorY(): number {
+  return getGroundY() + 98;
+}
+let PVP_BOTTOM_FLOOR_Y = groundY + 98;
 let lastHitTime = 0; // Track when DOT was last hit
 const gravityDelay = 1000; // 1 second delay before gravity starts (moved up another 60px)
 let awaitingRestart = false;
@@ -6540,8 +7079,8 @@ const COLLISION_DAMAGE_MIN_DISTANCE = 5; // Minimum distance (in speed units) to
 
 // PvP arena bounds
 const pvpBounds = {
-  left: 240, // Same as playLeft
-  right: 1920, // Same as playRight
+  left: UI_PANEL_W, // Same as playLeft
+  right: gameWidth, // Same as playRight (dynamic)
   top: 0,
   bottom: PVP_BOTTOM_FLOOR_Y, // Use the true bottom floor so projectiles don't vanish in the former toxic-water band
 };
@@ -7086,7 +7625,7 @@ let faucetWasReadyLastFrame = false; // Track state to detect when faucet become
 
 function getFaucetButtonRect(): { x: number; y: number; w: number; h: number } {
   // Under currency, above stats frame (fits in left UI panel)
-  return { x: 20, y: 70, w: 200, h: 40 };
+  return { x: 20, y: scaleY(70), w: 200, h: scaleSize(40) };
 }
 
 function getFaucetIdentityKeyPart(): string {
@@ -7630,10 +8169,182 @@ let ufoSprite: HTMLImageElement | null = null;
 let ufoSpriteProcessed: HTMLCanvasElement | null = null;
 const ufoSpritePath = './ufo_sprite.png';
 
+// ========== UFO MODEL SELECTION SYSTEM ==========
+// Multiple UFO models that player can switch between
+interface UfoModel {
+  id: string;
+  name: string;
+  frames: HTMLImageElement[];
+  framesProcessed: HTMLCanvasElement[];
+  framePaths: string[];
+  loaded: boolean;
+  frameCount: number;
+  scale: number; // Size multiplier (1.0 = normal, 1.3 = 30% bigger)
+  // Profile picture position offsets (relative to UFO center)
+  profileOffsetX: number;
+  profileOffsetY: number;
+  profileScale: number; // Profile picture size multiplier
+  // HP bar position offsets (relative to UFO center)
+  hpBarOffsetX: number;
+  hpBarOffsetY: number;
+  // Per-frame offsets for animations with wobble (optional)
+  frameOffsets?: Array<{ x: number; y: number }>;
+  // Whether to show profile picture inside UFO (default true)
+  showProfile?: boolean;
+}
+
+const UFO_MODELS: UfoModel[] = [
+  {
+    id: 'ronke1',
+    name: 'Ronke Classic',
+    frames: [],
+    framesProcessed: [],
+    framePaths: [
+      './ufo-spin/ezgif-frame-005-removebg-preview.png',
+      './ufo-spin/ezgif-frame-006-removebg-preview.png',
+      './ufo-spin/ezgif-frame-007-removebg-preview.png',
+      './ufo-spin/ezgif-frame-008-removebg-preview.png',
+      './ufo-spin/ezgif-frame-009-removebg-preview.png',
+      './ufo-spin/ezgif-frame-010-removebg-preview.png',
+      './ufo-spin/ezgif-frame-011-removebg-preview.png',
+      './ufo-spin/ezgif-frame-012-removebg-preview.png',
+      './ufo-spin/ezgif-frame-013-removebg-preview.png',
+      './ufo-spin/ezgif-frame-014-removebg-preview.png',
+      './ufo-spin/ezgif-frame-015-removebg-preview.png'
+    ],
+    loaded: false,
+    frameCount: 11,
+    scale: 1.0, // Normal size
+    // Current Classic profile/HP positions (baseline)
+    profileOffsetX: 0,
+    profileOffsetY: -3, // Raised 3px up (from domeOffsetY calculation)
+    profileScale: 1.0,
+    hpBarOffsetX: 0,
+    hpBarOffsetY: 0
+  },
+  {
+    id: 'ronke2',
+    name: 'Ronke LVL2',
+    frames: [],
+    framesProcessed: [],
+    framePaths: [
+      './ufo2,55/ezgif-frame-001-removebg-preview.png',
+      './ufo2,55/ezgif-frame-002-removebg-preview.png',
+      './ufo2,55/ezgif-frame-003-removebg-preview.png',
+      './ufo2,55/ezgif-frame-004-removebg-preview.png',
+      './ufo2,55/ezgif-frame-005-removebg-preview.png',
+      './ufo2,55/ezgif-frame-006-removebg-preview.png',
+      './ufo2,55/ezgif-frame-007-removebg-preview.png',
+      './ufo2,55/ezgif-frame-008-removebg-preview.png',
+      './ufo2,55/ezgif-frame-009-removebg-preview.png',
+      './ufo2,55/ezgif-frame-010-removebg-preview.png',
+      './ufo2,55/ezgif-frame-011-removebg-preview.png'
+    ],
+    loaded: false,
+    frameCount: 11,
+    scale: 1.4, // 40% bigger to match Classic size visually
+    // LVL2 has different shape - adjust positions here
+    profileOffsetX: 0, // 5px to the right (from -5 to 0)
+    profileOffsetY: -11, // 11px up
+    profileScale: 1.2, // bigger (+1px more)
+    hpBarOffsetX: 0, // 5px more to the left
+    hpBarOffsetY: -13 // 2px higher
+  },
+  {
+    id: 'ronke3',
+    name: 'Ronke LVL3',
+    frames: [],
+    framesProcessed: [],
+    framePaths: [
+      './ufo2,55/ezgif-frame-001-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-002-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-003-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-004-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-005-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-006-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-007-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-008-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-009-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-010-removebg-preview.png?v=3',
+      './ufo2,55/ezgif-frame-011-removebg-preview.png?v=3'
+    ],
+    loaded: false,
+    frameCount: 11,
+    scale: 1.4,
+    profileOffsetX: 10, // 1px more to the right
+    profileOffsetY: -13, // 2px higher
+    profileScale: 1.05, // 1px bigger
+    hpBarOffsetX: 9, // 4px more to the right
+    hpBarOffsetY: -15, // 2px higher
+    showProfile: false // Don't show profile - original UFO
+  }
+];
+
+let currentUfoModelIndex = 0; // Which model is currently selected
+let ufoModelAnimFrame = 0;
+let ufoModelAnimLastTime = 0;
+const UFO_MODEL_ANIM_DURATION = 100; // ms per frame
+
+function loadAllUfoModels(): void {
+  UFO_MODELS.forEach((model, modelIndex) => {
+    let loadedCount = 0;
+    model.frames = new Array(model.framePaths.length);
+    model.framesProcessed = new Array(model.framePaths.length);
+
+    model.framePaths.forEach((path, frameIndex) => {
+      const img = new Image();
+      img.onload = () => {
+        model.frames[frameIndex] = img;
+        model.framesProcessed[frameIndex] = enhanceSprite(img, {
+          outlineColor: '#FFFFFF',
+          outlineWidth: 1,
+          glowColor: 'rgba(255, 255, 255, 0.3)',
+          glowBlur: 4
+        });
+        loadedCount++;
+        if (loadedCount === model.framePaths.length) {
+          model.loaded = true;
+          console.log(`✅ UFO Model "${model.name}" loaded (${model.frameCount} frames)`);
+        }
+      };
+      img.onerror = () => {
+        console.error(`❌ Failed to load UFO model frame: ${path}`);
+      };
+      img.src = path;
+    });
+  });
+}
+
+function getCurrentUfoModel(): UfoModel {
+  return UFO_MODELS[currentUfoModelIndex];
+}
+
+function switchUfoModel(direction: number): void {
+  currentUfoModelIndex = (currentUfoModelIndex + direction + UFO_MODELS.length) % UFO_MODELS.length;
+  ufoModelAnimFrame = 0; // Reset animation
+  console.log(`🛸 Switched to UFO: ${getCurrentUfoModel().name}`);
+}
+
+function updateUfoModelAnimation(): void {
+  const now = performance.now();
+  if (now - ufoModelAnimLastTime >= UFO_MODEL_ANIM_DURATION) {
+    const model = getCurrentUfoModel();
+    if (model.loaded && model.frames.length > 0) {
+      ufoModelAnimFrame = (ufoModelAnimFrame + 1) % model.frames.length;
+    }
+    ufoModelAnimLastTime = now;
+  }
+}
+
 // Slot bell sprite (top-right)
 let bellSprite: HTMLImageElement | null = null;
 let bellSpriteProcessed: HTMLCanvasElement | null = null;
 const bellSpritePath = './bell.png';
+
+// Blackhole GIF sprite (center screen test) - use HTML img for animation
+let blackholeElement: HTMLImageElement | null = null;
+const blackholeSpritePath = './blackhole-ezgif.com-optimize.gif';
+let blackholeVisible = false;
 
 // Moon sprite (flyby)
 let moonSprite: HTMLImageElement | null = null;
@@ -7652,10 +8363,10 @@ const MOON_HALO_COLOR_INNER = 'rgba(255, 255, 255, 0.75)';
 const MOON_HALO_BLUR_PX = 16;
 const MOON_HALO_BLUR_INNER_PX = 7;
 
-// Earth sprite (intro flyby)
+// Earth sprite (intro flyby) - DISABLED: er.png file missing
 let earthSprite: HTMLImageElement | null = null;
-// IMPORTANT: use Vite asset URL so it works on production (dist) without needing er.png copied manually.
-const earthSpritePath = new URL('../er.png', import.meta.url).href;
+// Earth sprite disabled - file doesn't exist
+const earthSpritePath = ''; // Disabled - was: new URL('../er.png', import.meta.url).href
 let earthSpriteProcessed: HTMLCanvasElement | null = null;
 let earthHaloProcessed: HTMLCanvasElement | null = null;
 let earthHaloPadPx: number = 0;
@@ -8011,9 +8722,9 @@ let galaxySprite2: HTMLImageElement | null = null;
 let galaxySprite2Processed: HTMLCanvasElement | null = null;
 const galaxySprite2Path = './sprite.galaxy2.png';
 
-// Ronke sprite for craft button
+// Ronke sprite for craft button - DISABLED: file doesn't exist
 let ronkeSprite: HTMLImageElement | null = null;
-const ronkeSpritePath = './$ronke.png';
+const ronkeSpritePath = ''; // Disabled - was: './$ronke.png'
 
 function processGalaxySpriteToTransparent(img: HTMLImageElement): HTMLCanvasElement {
   // Key out corner background color (usually black) and crop to visible bounds.
@@ -8348,10 +9059,28 @@ function loadFallbackUfoSprite(): void {
 }
 
 // Get current UFO sprite for animation
-function getCurrentUfoSprite(): { sprite: HTMLImageElement | null; processed: HTMLCanvasElement | null } {
-  // Return animated frame if available, otherwise fallback
-  if (ufoSprites.length > 0) {
+function getCurrentUfoSprite(): { sprite: HTMLImageElement | null; processed: HTMLCanvasElement | null; frameIndex: number } {
+  // Use the new UFO model system
+  const model = getCurrentUfoModel();
+
+  if (model.loaded && model.frames.length > 0) {
     // Calculate frame based on continuous time - ensures smooth endless loop
+    const now = performance.now();
+    const totalAnimationDuration = UFO_MODEL_ANIM_DURATION * model.frames.length;
+    const timeInCycle = now % totalAnimationDuration;
+    const frameIndex = Math.floor(timeInCycle / UFO_MODEL_ANIM_DURATION);
+
+    if (model.frames[frameIndex]?.complete) {
+      return {
+        sprite: model.frames[frameIndex],
+        processed: model.framesProcessed[frameIndex] || null,
+        frameIndex: frameIndex
+      };
+    }
+  }
+
+  // Fallback to old system if new model not loaded
+  if (ufoSprites.length > 0) {
     const now = performance.now();
     const totalAnimationDuration = UFO_ANIMATION_FRAME_DURATION_MS * ufoSprites.length;
     const timeInCycle = now % totalAnimationDuration;
@@ -8360,7 +9089,8 @@ function getCurrentUfoSprite(): { sprite: HTMLImageElement | null; processed: HT
     if (ufoSprites[frameIndex]?.complete) {
       return {
         sprite: ufoSprites[frameIndex],
-        processed: ufoSpritesProcessed[frameIndex] || null
+        processed: ufoSpritesProcessed[frameIndex] || null,
+        frameIndex: frameIndex
       };
     }
   }
@@ -8368,7 +9098,8 @@ function getCurrentUfoSprite(): { sprite: HTMLImageElement | null; processed: HT
   // Fallback to single sprite
   return {
     sprite: ufoSprite,
-    processed: ufoSpriteProcessed
+    processed: ufoSpriteProcessed,
+    frameIndex: 0
   };
 }
 
@@ -8445,6 +9176,7 @@ function loadMoonSprite(): void {
 
 function loadEarthSprite(): void {
   if (earthSprite) return;
+  if (!earthSpritePath) return; // Disabled - file doesn't exist
   const img = new Image();
   img.onload = () => {
     earthSprite = img;
@@ -8721,6 +9453,7 @@ function loadGalaxySprite2(): void {
 // Load Ronke sprite
 function loadRonkeSprite(): void {
   if (ronkeSprite) return; // Already loaded
+  if (!ronkeSpritePath) return; // Disabled - file doesn't exist
 
   const img = new Image();
   img.onload = () => {
@@ -8733,21 +9466,188 @@ function loadRonkeSprite(): void {
   img.src = ronkeSpritePath;
 }
 
-// Load UFO sprite on initialization
-loadUfoSprite();
-loadArrowSprite();
-loadBoomSprite();
-loadStoneSprite();
-loadArenaBackgroundSprite();
-loadNebulaBackgroundSprite();
-loadLightBandSprite();
-loadGalaxySprite();
-loadGalaxySprite2();
-loadRonkeSprite();
-loadBellSprite();
-loadMoonSprite();
-loadEarthSprite();
-loadMarsSprite();
+// Load sprites on initialization - wrapped in try-catch to prevent blocking
+try { loadUfoSprite(); } catch (e) { console.error('loadUfoSprite error:', e); }
+try { loadArrowSprite(); } catch (e) { console.error('loadArrowSprite error:', e); }
+try { loadBoomSprite(); } catch (e) { console.error('loadBoomSprite error:', e); }
+try { loadStoneSprite(); } catch (e) { console.error('loadStoneSprite error:', e); }
+try { loadArenaBackgroundSprite(); } catch (e) { console.error('loadArenaBackgroundSprite error:', e); }
+try { loadNebulaBackgroundSprite(); } catch (e) { console.error('loadNebulaBackgroundSprite error:', e); }
+try { loadLightBandSprite(); } catch (e) { console.error('loadLightBandSprite error:', e); }
+try { loadGalaxySprite(); } catch (e) { console.error('loadGalaxySprite error:', e); }
+try { loadGalaxySprite2(); } catch (e) { console.error('loadGalaxySprite2 error:', e); }
+try { loadRonkeSprite(); } catch (e) { console.error('loadRonkeSprite error:', e); }
+try { loadBellSprite(); } catch (e) { console.error('loadBellSprite error:', e); }
+try { loadMoonSprite(); } catch (e) { console.error('loadMoonSprite error:', e); }
+try { loadEarthSprite(); } catch (e) { console.error('loadEarthSprite error:', e); }
+try { loadMarsSprite(); } catch (e) { console.error('loadMarsSprite error:', e); }
+
+// Load blackhole GIF as HTML element for animation
+function loadBlackholeElement(): void {
+  if (blackholeElement) return;
+  if (!blackholeSpritePath) return;
+  const img = document.createElement('img');
+  img.src = blackholeSpritePath;
+  img.style.position = 'fixed';
+  img.style.width = '150px';
+  img.style.height = '150px';
+  img.style.right = '150px';
+  img.style.top = '50%';
+  img.style.transform = 'translateY(-50%)';
+  img.style.zIndex = '100';
+  img.style.pointerEvents = 'none';
+  img.style.mixBlendMode = 'screen'; // Makes black background transparent
+  img.style.display = 'none'; // Hidden by default
+  img.onload = () => {
+    console.log('✅ Blackhole GIF loaded successfully');
+  };
+  img.onerror = () => {
+    console.error('❌ Failed to load blackhole GIF:', blackholeSpritePath);
+  };
+  if (document.body) {
+    document.body.appendChild(img);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.appendChild(img);
+    });
+  }
+  blackholeElement = img;
+  blackholeVisible = false;
+}
+
+// Function to show/hide blackhole
+function setBlackholeVisible(visible: boolean): void {
+  if (blackholeElement) {
+    blackholeElement.style.display = visible ? 'block' : 'none';
+    blackholeVisible = visible;
+  }
+}
+
+// Initialize blackhole when DOM is ready
+function initBlackhole(): void {
+  try {
+    loadBlackholeElement();
+    // Show blackhole in Solo mode
+    setBlackholeVisible(true);
+  } catch (e) {
+    console.error('Blackhole init error:', e);
+  }
+}
+
+// Blackhole initialization is deferred - called from game loop when in Solo mode
+// (removed auto-init setTimeout to fix browser compatibility issues)
+
+
+// ========== BLACKHOLE PHYSICS SYSTEM ==========
+// Get blackhole center position in CANVAS coordinates
+function getBlackholeCenter(): { x: number; y: number } {
+  const canvas = document.querySelector('canvas');
+  if (!canvas || !blackholeElement) return { x: 1695, y: 540 };
+
+  // Get blackhole element position in viewport
+  const bhRect = blackholeElement.getBoundingClientRect();
+  const bhCenterViewportX = bhRect.left + bhRect.width / 2;
+  const bhCenterViewportY = bhRect.top + bhRect.height / 2;
+
+  // Get canvas position and scale
+  const canvasRect = canvas.getBoundingClientRect();
+
+  // Convert viewport coords to canvas coords
+  // (viewport pos - canvas offset) * (canvas internal size / canvas display size)
+  const scaleX = canvas.width / canvasRect.width;
+  const scaleY = canvas.height / canvasRect.height;
+
+  const x = (bhCenterViewportX - canvasRect.left) * scaleX;
+  const y = (bhCenterViewportY - canvasRect.top) * scaleY;
+
+  return { x, y };
+}
+
+// Track objects being consumed by blackhole
+interface BlackholeConsumedObject {
+  id: string;
+  startTime: number;
+  originalSize: number;
+}
+const blackholeConsumedObjects: Map<string, BlackholeConsumedObject> = new Map();
+const BLACKHOLE_CONSUME_DURATION = 1000; // 1 second to shrink and disappear
+const BLACKHOLE_CENTER_RADIUS = 30; // Radius to trigger consumption (freeze + shrink)
+const BLACKHOLE_PULL_RADIUS = 150; // Radius where gravitational pull starts
+const BLACKHOLE_PULL_STRENGTH = 2.0; // How strong the pull is
+
+// UFO blackhole shrink state
+let ufoBhShrink: number = 1;
+
+// Check blackhole effect on object - returns pull force, shrink, and consumption state
+function checkBlackholeEffect(
+  x: number, y: number,
+  vx: number, vy: number,
+  size: number,
+  objectId: string
+): { pullVx: number; pullVy: number; shrinkFactor: number; frozen: boolean; consumed: boolean; snapToCenter: boolean; centerX: number; centerY: number } {
+  const defaultResult = { pullVx: 0, pullVy: 0, shrinkFactor: 1, frozen: false, consumed: false, snapToCenter: false, centerX: 0, centerY: 0 };
+
+  if (!blackholeVisible) {
+    blackholeConsumedObjects.delete(objectId);
+    return defaultResult;
+  }
+
+  const center = getBlackholeCenter();
+  const dx = center.x - x;
+  const dy = center.y - y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // Check if object is already being consumed (don't reset even if it moved slightly)
+  const existingConsumeState = blackholeConsumedObjects.get(objectId);
+  if (existingConsumeState) {
+    // Continue consumption - snap to center
+    const elapsed = Date.now() - existingConsumeState.startTime;
+    const progress = Math.min(1, elapsed / BLACKHOLE_CONSUME_DURATION);
+
+    if (progress >= 1) {
+      // Fully consumed
+      blackholeConsumedObjects.delete(objectId);
+      return { pullVx: 0, pullVy: 0, shrinkFactor: 0, frozen: true, consumed: true, snapToCenter: true, centerX: center.x, centerY: center.y };
+    }
+
+    // Shrinking - object is frozen at center and shrinking
+    return { pullVx: 0, pullVy: 0, shrinkFactor: 1 - progress, frozen: true, consumed: false, snapToCenter: true, centerX: center.x, centerY: center.y };
+  }
+
+  // Outside pull radius - no effect
+  if (distance > BLACKHOLE_PULL_RADIUS) {
+    return defaultResult;
+  }
+
+  // Inside center radius - start freeze and shrink
+  if (distance < BLACKHOLE_CENTER_RADIUS) {
+    // Start consumption
+    const consumeState = {
+      id: objectId,
+      startTime: Date.now(),
+      originalSize: size
+    };
+    blackholeConsumedObjects.set(objectId, consumeState);
+
+    // Snap to center and start shrinking
+    return { pullVx: 0, pullVy: 0, shrinkFactor: 1, frozen: true, consumed: false, snapToCenter: true, centerX: center.x, centerY: center.y };
+  }
+
+  // Between pull radius and center - apply gravitational pull
+  // Calculate pull strength (stronger as closer)
+  const pullFactor = 1 - (distance / BLACKHOLE_PULL_RADIUS);
+  const pullStrength = BLACKHOLE_PULL_STRENGTH * pullFactor * pullFactor; // Quadratic increase
+
+  // Normalize direction towards center
+  const dirX = dx / distance;
+  const dirY = dy / distance;
+
+  // Calculate pull velocity
+  const pullVx = dirX * pullStrength;
+  const pullVy = dirY * pullStrength;
+
+  return { pullVx, pullVy, shrinkFactor: 1, frozen: false, consumed: false, snapToCenter: false, centerX: center.x, centerY: center.y };
+}
 
 // --- Moon flyby (triggered) ---
 // Show the flyby ONCE when the player reaches Moon distance (~384,000 km).
@@ -12107,9 +13007,16 @@ const movingPlatformWidth = 400; // increased by 100px
 const movingPlatformArcHeight = 6; // bow depth
 const movingPlatformY = groundY - 2; // just above ground
 const movingPlatformThickness = 13; // platform thickness for 3D effect (increased by 5px)
-const playLeft = 240;
-const playRight = 1920;
-let movingPlatformX = playLeft + movingPlatformWidth / 2; // center of platform
+// playLeft is now dynamic based on panel collapse state
+const playLeftDefault = UI_PANEL_W; // Use panel width constant
+let playLeft = playLeftDefault; // Updated each frame based on panel state
+// playRight is now dynamic based on screen width
+function getPlayRight(): number {
+  return gameWidth;
+}
+let playRight = gameWidth; // Updated each frame
+
+let movingPlatformX = playLeftDefault + movingPlatformWidth / 2; // center of platform
 let movingPlatformVx = 1.5; // horizontal speed
 let movingPlatformFlashTimer = 0;
 
@@ -12454,12 +13361,20 @@ function drawSpiderWeb(centerX: number, centerY: number, radius: number) {
 
 // Render function
 function render() {
+  // Update dynamic playLeft based on panel collapse state
+  playLeft = getPlayLeft();
+  // Update dynamic playRight based on screen width
+  playRight = getPlayRight();
+  // Update dynamic groundY based on screen height
+  groundY = getGroundY();
+  PVP_BOTTOM_FLOOR_Y = getPvpBottomFloorY();
+
   // Setup pixel-perfect rendering context
   setupPixelPerfectContext(ctx);
 
-  // Clear canvas with white background
+  // Clear canvas with full dimensions
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, gameWidth, gameHeight);
 
   // Arena background (draw only in play area; keep UI panel area white)
   if (arenaBgSprite && arenaBgSprite.complete) {
@@ -12991,7 +13906,7 @@ function render() {
   // Moved to bottom left corner, near skill bar area
   if (gameMode === 'Solo') {
     const x = playLeft + 300; // left side of play area, moved right to avoid panel overlap
-    const y = 1080 - 80; // bottom left, same height as skill bar area
+    const y = gameHeight - 80; // bottom left, same height as skill bar area
 
     // Combined SPEED + DIST overlay (single line, requested)
     {
@@ -13439,29 +14354,74 @@ function render() {
   ctx.save();
   ctx.translate(shakeX, shakeY);
 
-  // Draw UI panel
+  // Get current panel width (accounts for collapse animation)
+  const currentPanelW = getCurrentPanelWidth();
+
+  // Draw UI panel background
   ctx.fillStyle = UI_PANEL_BG;
-  ctx.fillRect(0, 0, UI_PANEL_W, canvas.height);
+  ctx.fillRect(0, 0, currentPanelW, canvas.height);
 
   // Panel border
   ctx.strokeStyle = UI_PANEL_BORDER;
   ctx.lineWidth = 2;
-  ctx.strokeRect(0, 0, UI_PANEL_W, canvas.height);
+  ctx.strokeRect(0, 0, currentPanelW, canvas.height);
   // subtle inner border
   ctx.strokeStyle = UI_PANEL_BORDER_STRONG;
   ctx.lineWidth = 1;
-  ctx.strokeRect(2, 2, UI_PANEL_W - 4, canvas.height - 4);
+  ctx.strokeRect(2, 2, currentPanelW - 4, canvas.height - 4);
 
-  // Currency
-  ctx.fillStyle = UI_TEXT;
-  ctx.font = 'bold 16px "Press Start 2P"';
-  ctx.textAlign = 'left';
-  ctx.fillText(`🍚 ${dotCurrency}`, 20, 40);
+  // Draw panel toggle button (small arrow at top)
+  {
+    const toggleRect = getPanelToggleRect();
+    const isHovering = isHoveringPanelToggle;
+    const isPressing = isPressingPanelToggle;
+
+    // Small circular/rounded button background
+    const centerX = toggleRect.x + toggleRect.w / 2;
+    const centerY = toggleRect.y + toggleRect.h / 2;
+    const radius = 16;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = isPressing
+      ? 'rgba(255, 80, 80, 0.7)'
+      : (isHovering ? 'rgba(255, 60, 60, 0.55)' : 'rgba(255, 50, 50, 0.4)');
+    ctx.fill();
+
+    // Border - always visible for attention
+    ctx.strokeStyle = isHovering ? 'rgba(255, 100, 100, 0.9)' : 'rgba(255, 80, 80, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Arrow icon (< or > based on collapse state)
+    ctx.fillStyle = isHovering ? '#ffffff' : 'rgba(255, 255, 255, 0.7)';
+    ctx.font = 'bold 14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const arrowChar = isPanelCollapsed ? '>' : '<';
+    ctx.fillText(arrowChar, centerX, centerY);
+  }
+
+  // Only draw panel content if not fully collapsed
+  const showPanelContent = panelCollapseProgress < 0.9;
+
+  if (showPanelContent) {
+    // Apply clip to hide content that would overflow during collapse animation
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, currentPanelW - 5, canvas.height);
+    ctx.clip();
+
+    // Currency - COMPACT
+    ctx.fillStyle = UI_TEXT;
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillText(`🍚 ${dotCurrency}`, 10, 28);
   // Guest hint: show clearly that progress won't be saved, but provide test resources.
   if (!getRoninAddressForPersistence()) {
-    ctx.font = 'bold 7px "Press Start 2P"';
+    ctx.font = 'bold 6px "Press Start 2P"';
     ctx.fillStyle = 'rgba(255, 210, 120, 0.95)';
-    ctx.fillText('GUEST: NO SAVE', 20, 58);
+    ctx.fillText('GUEST', 10, 42);
     ctx.fillStyle = UI_TEXT;
   }
   // (hidden) Solo progression speed (km/s) - removed from UI (requested)
@@ -13688,19 +14648,19 @@ function render() {
   // DOT stats panel (HP/Armor) - Solo mode only
   if (gameMode === 'Solo') {
     const statsX = 20;
-    const statsY = 117; // Below faucet button (raised 3px)
+    const statsY = scaleY(117); // Below faucet button
     const statsWidth = 200;
-    const statsHeight = 72; // Taller panel for bigger bars
+    const statsHeight = scaleSize(72); // Taller panel for bigger bars
 
     // Panel background
     const rr = drawPixelPanelFrame(ctx, statsX, statsY, statsWidth, statsHeight, 'rgba(8, 10, 18, 0.65)', 'rgba(210, 235, 255, 0.18)');
 
     // HP bar
-    const barMargin = 12;
-    const barHeight = 22; // Thicker bars (was 14)
+    const barMargin = 8;
+    const barHeight = scaleSize(22); // Thicker bars
     const barWidth = statsWidth - barMargin * 2;
     const hpBarX = statsX + barMargin;
-    const hpBarY = statsY + 10;
+    const hpBarY = statsY + scaleSize(10);
 
     // HP percentage
     const hpPct = dotMaxHP > 0 ? Math.max(0, Math.min(1, dotHP / dotMaxHP)) : 0;
@@ -13722,12 +14682,12 @@ function render() {
     ctx.lineWidth = 1;
     ctx.strokeRect(hpBarX, hpBarY, barWidth, barHeight);
 
-    // HP text (bigger font)
+    // HP text (scaled font)
     const hpText = `HP: ${dotHP}/${dotMaxHP}`;
-    drawPixelText(ctx, hpText, hpBarX + barWidth / 2, hpBarY + barHeight / 2 + 1, 'bold 11px "Press Start 2P"', '#ffffff', 'rgba(0, 0, 0, 0.85)');
+    drawPixelText(ctx, hpText, hpBarX + barWidth / 2, hpBarY + barHeight / 2 + 1, scaledFont('bold', 11, '"Press Start 2P"'), '#ffffff', 'rgba(0, 0, 0, 0.85)');
 
     // Armor bar (below HP)
-    const armorBarY = hpBarY + barHeight + 6;
+    const armorBarY = hpBarY + barHeight + scaleSize(6);
     const armorPct = dotMaxArmor > 0 ? Math.max(0, Math.min(1, dotArmor / dotMaxArmor)) : 0;
 
     // Armor bar background
@@ -13743,9 +14703,9 @@ function render() {
     ctx.lineWidth = 1;
     ctx.strokeRect(hpBarX, armorBarY, barWidth, barHeight);
 
-    // Armor text with shield icon (bigger font)
+    // Armor text with shield icon (scaled font)
     const armorText = `🛡️ ${dotArmor}/${dotMaxArmor}`;
-    drawPixelText(ctx, armorText, hpBarX + barWidth / 2, armorBarY + barHeight / 2 + 1, 'bold 11px "Press Start 2P"', '#ffffff', 'rgba(0, 0, 0, 0.85)');
+    drawPixelText(ctx, armorText, hpBarX + barWidth / 2, armorBarY + barHeight / 2 + 1, scaledFont('bold', 11, '"Press Start 2P"'), '#ffffff', 'rgba(0, 0, 0, 0.85)');
   }
 
   // (removed) Upgrade buttons - Solo mode only
@@ -13757,12 +14717,16 @@ function render() {
     // Solo weapon UI removed (we'll revisit later)
   }
 
-  // Profile button (above wallet button)
-  // Leaderboard button (above Profile)
+  // UFO Model Selector (Solo mode only) - allows switching between UFO models
+  if (gameMode === 'Solo') {
+    drawUfoModelSelector(ctx);
+  }
+
+  // Leaderboard button - scaled position
   const leaderboardButtonX = 20;
-  const leaderboardButtonY = 340;
+  const leaderboardButtonY = scaleY(340);
   const leaderboardButtonWidth = 200;
-  const leaderboardButtonHeight = 48;
+  const leaderboardButtonHeight = scaleSize(48);
   {
     const rr = drawPixelButtonFrame(ctx, leaderboardButtonX, leaderboardButtonY, leaderboardButtonWidth, leaderboardButtonHeight, {
       hovering: isHoveringLeaderboard,
@@ -13770,15 +14734,15 @@ function render() {
       borderColor: UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'LEADERBOARD', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    drawPixelText(ctx, 'LEADERBOARD', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
     ctx.textAlign = 'left';
   }
 
-  // Profile button
+  // Profile button - scaled position
   const profileButtonX = 20;
-  const profileButtonY = 398; // Above wallet button
+  const profileButtonY = scaleY(398);
   const profileButtonWidth = 200;
-  const profileButtonHeight = 48;
+  const profileButtonHeight = scaleSize(48);
   {
     const rr = drawPixelButtonFrame(ctx, profileButtonX, profileButtonY, profileButtonWidth, profileButtonHeight, {
       hovering: isHoveringProfile,
@@ -13786,15 +14750,15 @@ function render() {
       borderColor: UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'PROFILE', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    drawPixelText(ctx, 'PROFILE', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
     ctx.textAlign = 'left';
   }
 
-  // Wallet connection button (moved down to avoid overlapping with other info) - ALWAYS render, regardless of game mode
+  // Wallet connection button - scaled position
   const walletButtonX = 20;
-  const walletButtonY = 456; // Moved down below Profile button
+  const walletButtonY = scaleY(456);
   const walletButtonWidth = 200;
-  const walletButtonHeight = 48;
+  const walletButtonHeight = scaleSize(48);
 
   // DEBUG: Log wallet button rendering (only once per session)
   if (!(window as any).walletButtonDebugLogged) {
@@ -13836,7 +14800,7 @@ function render() {
     }
 
     if (walletConnecting) {
-      drawPixelText(ctx, 'CONNECTING...', walletCX, walletCY, 'bold 12px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'CONNECTING...', walletCX, walletCY, scaledFont('bold', 12, '"Press Start 2P"'), walletTextColor, walletTextShadow);
     } else if (walletState.isConnected && walletState.address) {
       // Prefer nickname (if set) over address
       const nick = (profileManager.getProfile().nickname || '').trim();
@@ -13844,21 +14808,21 @@ function render() {
         ? `${walletState.address.substring(0, 6)}...${walletState.address.substring(walletState.address.length - 4)}`
         : walletState.address;
       const display = nick.length ? nick : shortAddress;
-      drawPixelText(ctx, display, walletCX, walletCY - 6, 'bold 9px \"Press Start 2P\"', walletTextColor, walletTextShadow);
-      drawPixelText(ctx, 'DISCONNECT', walletCX, walletCY + 10, 'bold 10px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, display, walletCX, walletCY - scaleSize(6), scaledFont('bold', 9, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'DISCONNECT', walletCX, walletCY + scaleSize(10), scaledFont('bold', 10, '"Press Start 2P"'), walletTextColor, walletTextShadow);
     } else if (authUserId) {
       // Email/OAuth session connected via Supabase
       const label = authEmail
         ? (authEmail.length > 16 ? `${authEmail.substring(0, 13)}...` : authEmail)
         : 'EMAIL LOGIN';
-      drawPixelText(ctx, label, walletCX, walletCY - 6, 'bold 9px \"Press Start 2P\"', walletTextColor, walletTextShadow);
-      drawPixelText(ctx, 'LOGOUT', walletCX, walletCY + 10, 'bold 10px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, label, walletCX, walletCY - scaleSize(6), scaledFont('bold', 9, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'LOGOUT', walletCX, walletCY + scaleSize(10), scaledFont('bold', 10, '"Press Start 2P"'), walletTextColor, walletTextShadow);
     } else {
-      drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, 'bold 11px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, scaledFont('bold', 11, '"Press Start 2P"'), walletTextColor, walletTextShadow);
     }
   } catch (error) {
     console.error('Error rendering wallet button text:', error);
-    drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, 'bold 11px \"Press Start 2P\"', walletTextColor, walletTextShadow);
+    drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, scaledFont('bold', 11, '"Press Start 2P"'), walletTextColor, walletTextShadow);
   }
 
   // === ENCOUNTER WARNING OVERLAY ===
@@ -13982,7 +14946,7 @@ function render() {
 
   // Wallet/Auth picker (Ronin / MetaMask / Email)
   if (walletProviderModalOpen) {
-    const uiPanelW = 240;
+    const uiPanelW = UI_PANEL_W;
     const modalW = 190; // narrower (better proportions)
     const modalH = 150;
     const modalX = Math.floor((uiPanelW - modalW) / 2);
@@ -14156,11 +15120,12 @@ function render() {
     // Ignore error - balance frame won't show
   }
 
-  // Training Mode button (PvP with bot)
+  // Training Mode button (PvP with bot) - scaled sizing
   const trainingButtonX = 20;
   const trainingButtonY = getTrainingButtonY();
   const trainingButtonWidth = 200;
-  const trainingButtonHeight = 48;
+  const trainingButtonHeight = scaleSize(48);
+  const btnGap = scaleSize(10);
   {
     const rr = drawPixelButtonFrame(ctx, trainingButtonX, trainingButtonY, trainingButtonWidth, trainingButtonHeight, {
       hovering: isHoveringGameMode,
@@ -14168,15 +15133,15 @@ function render() {
       borderColor: (gameMode === 'Training') ? UI_ACCENT_YELLOW : UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'TRAINING', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    drawPixelText(ctx, 'TRAINING', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
     ctx.textAlign = 'left';
   }
 
-  // PvP Online button (real multiplayer)
+  // PvP Online button (real multiplayer) - scaled sizing
   const pvpOnlineButtonX = 20;
-  const pvpOnlineButtonY = trainingButtonY + trainingButtonHeight + 10; // Below training button
+  const pvpOnlineButtonY = trainingButtonY + trainingButtonHeight + btnGap;
   const pvpOnlineButtonWidth = 200;
-  const pvpOnlineButtonHeight = 48;
+  const pvpOnlineButtonHeight = scaleSize(48);
   {
     const rr = drawPixelButtonFrame(ctx, pvpOnlineButtonX, pvpOnlineButtonY, pvpOnlineButtonWidth, pvpOnlineButtonHeight, {
       hovering: isHoveringPvPOnline,
@@ -14184,15 +15149,15 @@ function render() {
       borderColor: (gameMode === 'PvP') ? UI_ACCENT_GREEN : UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'PvP ONLINE', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    drawPixelText(ctx, 'PVP ONLINE', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
     ctx.textAlign = 'left';
   }
 
-  // PvP FUN button (no stakes)
+  // PvP FUN button (no stakes) - scaled sizing
   const pvpFunButtonX = 20;
-  const pvpFunButtonY = pvpOnlineButtonY + pvpOnlineButtonHeight + 10;
+  const pvpFunButtonY = pvpOnlineButtonY + pvpOnlineButtonHeight + btnGap;
   const pvpFunButtonW = 200;
-  const pvpFunButtonH = 40;
+  const pvpFunButtonH = scaleSize(48);
   {
     const rr = drawPixelButtonFrame(ctx, pvpFunButtonX, pvpFunButtonY, pvpFunButtonW, pvpFunButtonH, {
       hovering: isHoveringPvpFun,
@@ -14200,15 +15165,15 @@ function render() {
       borderColor: (gameMode === 'PvP' && pvpOnlineRoomName === 'pvp_fun_room') ? UI_ACCENT_GREEN : UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'PVP FUN', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    drawPixelText(ctx, 'PVP FUN', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
     ctx.textAlign = 'left';
   }
 
-  // 5SEC PvP button (turn-based online)
+  // 5SEC PvP button (turn-based online) - scaled sizing
   const newButtonX = 20;
-  const newButtonY = pvpFunButtonY + pvpFunButtonH + 10; // Below PvP FUN button
+  const newButtonY = pvpFunButtonY + pvpFunButtonH + btnGap;
   const newButtonWidth = 200;
-  const newButtonHeight = 48;
+  const newButtonHeight = scaleSize(48);
   {
     const rr = drawPixelButtonFrame(ctx, newButtonX, newButtonY, newButtonWidth, newButtonHeight, {
       hovering: isHoveringNewButton,
@@ -14216,7 +15181,7 @@ function render() {
       borderColor: UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, '5SEC PVP', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 10px \"Press Start 2P\"', UI_TEXT);
+    drawPixelText(ctx, '5SEC PVP', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
     ctx.textAlign = 'left';
   }
 
@@ -14318,12 +15283,18 @@ function render() {
   }
   ctx.fillText(statusText, fpsFrameX + 10, fpsFrameY + 65);
 
+  } // End of showPanelContent check
+  // Restore context from panel content clip
+  if (panelCollapseProgress < 0.9) {
+    ctx.restore();
+  }
+
   // ========== SOLO ASTEROID SHOOTING RENDERING ==========
   if (gameMode === 'Solo' && gameState === 'Alive' && soloShootingEnabled) {
-    // Clip asteroids to game area (not over left panel)
+    // Clip asteroids to game area (not over left panel - uses dynamic playLeft)
     ctx.save();
     ctx.beginPath();
-    ctx.rect(240, 0, 1920 - 240, 1080);
+    ctx.rect(playLeft, 0, playRight - playLeft, canvas.height);
     ctx.clip();
 
     // Apply screen shake effect when UFO is hit
@@ -14395,7 +15366,10 @@ function render() {
       const PIXEL_LIGHT = '#8B6914';   // Light - highlights
       const PIXEL_BRIGHT = '#C4A35A';  // Brightest - top highlight
 
-      const s = Math.floor(asteroid.size);
+      // Apply blackhole shrink factor
+      const bhShrink = (asteroid as any).bhShrink ?? 1;
+      const s = Math.floor(asteroid.size * bhShrink);
+      if (s < 2) continue; // Skip if too small (or shrunk to nothing)
       const pixelSize = Math.max(2, Math.floor(s / 6)); // Pixel block size
 
       // Apply rotation
@@ -14405,75 +15379,59 @@ function render() {
 
       // Draw pixelated asteroid shape using blocks (centered at 0,0)
       if (asteroid.isSpaceJunk) {
-        // SPACE JUNK PALETTE (Metallic satellite debris)
-        const JUNK_DARK = '#2A2A2A';    // Dark metal - shadow
-        const JUNK_MID = '#5A5A5A';     // Medium metal - main body
-        const JUNK_LIGHT = '#8C8C8C';   // Light metal - highlights
-        const JUNK_GOLD = '#FFD700';    // Gold - solar panel accent
-        const JUNK_RED = '#FF4500';     // Red - warning/tech accent
-        const JUNK_BRIGHT = '#FFFFFF';  // White - glint
+        // RONKE TV - Animated TV sprite instead of Space Junk!
+        updateRonkeTvAnimation(); // Update animation frame
 
-        // Main body (irregular metallic shape - broken satellite piece)
-        ctx.fillStyle = JUNK_MID;
-        ctx.fillRect(-s * 0.5, -s * 0.2, s * 0.7, s * 0.4); // Main panel
-        ctx.fillRect(-s * 0.2, -s * 0.5, s * 0.5, s * 0.3); // Top piece
-        ctx.fillRect(-s * 0.3, s * 0.1, s * 0.4, s * 0.4);  // Bottom piece
-
-        // Dark shadows (depth)
-        ctx.fillStyle = JUNK_DARK;
-        ctx.fillRect(-s * 0.55, -s * 0.15, pixelSize * 2, s * 0.3);
-        ctx.fillRect(s * 0.15, -s * 0.45, pixelSize * 2, s * 0.25);
-        ctx.fillRect(-s * 0.25, s * 0.4, s * 0.35, pixelSize * 2);
-
-        // Light metallic reflections
-        ctx.fillStyle = JUNK_LIGHT;
-        ctx.fillRect(-s * 0.4, -s * 0.15, s * 0.25, pixelSize * 2);
-        ctx.fillRect(-s * 0.15, -s * 0.4, pixelSize * 2, s * 0.15);
-        ctx.fillRect(s * 0.05, s * 0.15, s * 0.2, pixelSize * 2);
-
-        // Solar panel accent (gold stripe)
-        ctx.fillStyle = JUNK_GOLD;
-        ctx.fillRect(-s * 0.45, -s * 0.05, s * 0.55, pixelSize * 2);
-        ctx.fillRect(s * 0.1, -s * 0.35, pixelSize * 2, s * 0.2);
-
-        // Tech accent (red warning stripe)
-        ctx.fillStyle = JUNK_RED;
-        ctx.fillRect(-s * 0.1, s * 0.25, s * 0.2, pixelSize);
-        ctx.fillRect(-s * 0.35, -s * 0.3, pixelSize, pixelSize * 2);
-
-        // Bright glints (metallic shine)
-        ctx.fillStyle = JUNK_BRIGHT;
-        ctx.fillRect(-s * 0.3, -s * 0.1, pixelSize, pixelSize);
-        ctx.fillRect(s * 0.05, -s * 0.25, pixelSize, pixelSize);
-        ctx.fillRect(-s * 0.1, s * 0.1, pixelSize, pixelSize);
+        if (ronkeTvAnimationReady && ronkeTvFrames[ronkeTvCurrentFrame]) {
+          // Draw RonkeTV animated sprite
+          const tvSize = s * 2.5; // Scale TV to match asteroid size
+          ctx.imageSmoothingEnabled = false; // Keep pixel art crisp
+          ctx.drawImage(
+            ronkeTvFrames[ronkeTvCurrentFrame],
+            -tvSize / 2,
+            -tvSize / 2,
+            tvSize,
+            tvSize
+          );
+        } else {
+          // Fallback: simple TV shape while loading
+          ctx.fillStyle = '#333333';
+          ctx.fillRect(-s * 0.6, -s * 0.5, s * 1.2, s * 0.9);
+          ctx.fillStyle = '#00FF00';
+          ctx.fillRect(-s * 0.5, -s * 0.4, s * 1.0, s * 0.7);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = '10px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('TV', 0, 5);
+        }
       } else if (asteroid.isIce) {
-        // ICE PALETTE (Crystal look)
-        const ICE_DARK = '#4A90E2';    // Deep blue - shadow
-        const ICE_MID = '#A5D6E1';     // Light blue - main body
-        const ICE_LIGHT = '#D1F0F7';   // Very light - highlights
-        const ICE_BRIGHT = '#FFFFFF';  // Pure white - glint
+        // RONKE WAS - Animated washing machine sprite instead of Ice!
+        updateRonkeWasAnimation(); // Update animation frame
 
-        // Main geometric body (ice crystal style)
-        ctx.fillStyle = ICE_MID;
-        ctx.fillRect(-s * 0.45, -s * 0.35, s * 0.9, s * 0.7);
-        ctx.fillRect(-s * 0.3, -s * 0.55, s * 0.6, s * 1.1);
-
-        // Deep blue shadows
-        ctx.fillStyle = ICE_DARK;
-        ctx.fillRect(-s * 0.5, -s * 0.2, pixelSize, s * 0.4);
-        ctx.fillRect(s * 0.4, -s * 0.2, pixelSize, s * 0.4);
-        ctx.fillRect(-s * 0.25, s * 0.45, s * 0.5, pixelSize);
-
-        // Light crystal facets
-        ctx.fillStyle = ICE_LIGHT;
-        ctx.fillRect(-s * 0.35, -s * 0.45, s * 0.2, pixelSize);
-        ctx.fillRect(-s * 0.45, -s * 0.25, pixelSize, s * 0.2);
-
-        // Glints (sparkles)
-        ctx.fillStyle = ICE_BRIGHT;
-        ctx.fillRect(-s * 0.2, -s * 0.3, pixelSize, pixelSize);
-        ctx.fillRect(s * 0.1, s * 0.1, pixelSize, pixelSize);
-        ctx.fillRect(0, -s * 0.1, pixelSize, pixelSize);
+        if (ronkeWasAnimationReady && ronkeWasFrames[ronkeWasCurrentFrame]) {
+          // Draw RonkeWas animated sprite
+          const wasSize = s * 2.5; // Scale washing machine to match asteroid size
+          ctx.imageSmoothingEnabled = false; // Keep pixel art crisp
+          ctx.drawImage(
+            ronkeWasFrames[ronkeWasCurrentFrame],
+            -wasSize / 2,
+            -wasSize / 2,
+            wasSize,
+            wasSize
+          );
+        } else {
+          // Fallback: simple washing machine shape while loading
+          ctx.fillStyle = '#CCCCCC';
+          ctx.fillRect(-s * 0.5, -s * 0.5, s * 1.0, s * 1.0);
+          ctx.fillStyle = '#4A90E2';
+          ctx.beginPath();
+          ctx.arc(0, 0, s * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = '8px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('WAS', 0, s * 0.6);
+        }
       } else {
         // ROCK PALETTE
         // Main body (medium color)
@@ -14771,8 +15729,9 @@ function render() {
         const currentUfo = getCurrentUfoSprite();
         if (currentUfo.sprite && currentUfo.sprite.complete) {
           try {
-            // Draw UFO sprite scaled to fit dot radius
-            const spriteSize = dotRadius * 5.0; // Even larger sprite size
+            // Draw UFO sprite scaled to fit dot radius, with model-specific scale + blackhole shrink
+            const modelScale = getCurrentUfoModel().scale || 1.0;
+            const spriteSize = dotRadius * 5.0 * modelScale * ufoBhShrink; // Apply model scale + blackhole shrink
             const spriteToDraw = currentUfo.processed || currentUfo.sprite;
             ctx.drawImage(spriteToDraw, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
           } catch (error) {
@@ -14791,29 +15750,45 @@ function render() {
           ctx.fill();
         }
 
-        // Draw profile picture inside UFO glass dome (if available)
-        if (profilePicture) {
+        // Draw profile picture inside UFO glass dome (if available and model allows it)
+        const ufoModelForProfile = getCurrentUfoModel();
+        if (profilePicture && ufoModelForProfile.showProfile !== false) {
           const cachedImage = nftImageCache.get(profilePicture);
           if (cachedImage && cachedImage.complete) {
             try {
+              // Get model-specific profile position offsets
+              const ufoModel = ufoModelForProfile;
+              let profileOffsetX = ufoModel.profileOffsetX || 0;
+              let profileOffsetY = ufoModel.profileOffsetY || -3;
+              const profileScaleMult = ufoModel.profileScale || 1.0;
+
+              // Apply per-frame offset if available (for sprites with wobble)
+              if (ufoModel.frameOffsets && ufoModel.frameOffsets.length > 0) {
+                const frameIdx = currentUfo.frameIndex % ufoModel.frameOffsets.length;
+                profileOffsetX += ufoModel.frameOffsets[frameIdx].x;
+                profileOffsetY += ufoModel.frameOffsets[frameIdx].y;
+              }
+
               // Create clipping path for profile picture (circle inside glass dome)
               ctx.beginPath();
-              const profileRadius = dotRadius * 1.2 - 8; // Profile picture size
-              const domeOffsetY = -dotRadius * 0.2 - 3; // Raised 3px up
-              ctx.arc(0, domeOffsetY, profileRadius, 0, Math.PI * 2);
+              const baseProfileRadius = dotRadius * 1.2 - 8;
+              const profileRadius = baseProfileRadius * profileScaleMult * ufoBhShrink; // Apply model scale + blackhole shrink
+              const domeOffsetX = profileOffsetX * ufoBhShrink;
+              const domeOffsetY = (-dotRadius * 0.2 + profileOffsetY) * ufoBhShrink; // Base + model offset + blackhole shrink
+              ctx.arc(domeOffsetX, domeOffsetY, profileRadius, 0, Math.PI * 2);
               ctx.clip();
 
               // Calculate aspect ratio to fit image in circle
               const imgAspect = cachedImage.width / cachedImage.height;
               let drawWidth = profileRadius * 2;
               let drawHeight = profileRadius * 2;
-              let drawX = -profileRadius;
+              let drawX = domeOffsetX - profileRadius;
               let drawY = domeOffsetY - profileRadius;
 
               if (imgAspect > 1) {
                 // Image is wider - fit to height
                 drawWidth = profileRadius * 2 * imgAspect;
-                drawX = -drawWidth / 2;
+                drawX = domeOffsetX - drawWidth / 2;
               } else {
                 // Image is taller - fit to width
                 drawHeight = profileRadius * 2 / imgAspect;
@@ -14831,10 +15806,15 @@ function render() {
 
         // Draw HP and Armor bars above Solo UFO
         {
+          // Get model-specific HP bar offset
+          const ufoModelForHp = getCurrentUfoModel();
+          const hpBarOffsetX = ufoModelForHp.hpBarOffsetX || 0;
+          const hpBarOffsetY = ufoModelForHp.hpBarOffsetY || 0;
+
           const barWidth = dotRadius * 2.5 - 20; // 10px shorter from each side
           const barHeight = 4; // 2px thinner
-          const barX = ufoX - barWidth / 2;
-          const barY = ufoY - dotRadius * 2.8 + 30; // Above UFO (lowered 30px)
+          const barX = ufoX - barWidth / 2 + hpBarOffsetX;
+          const barY = ufoY - dotRadius * 2.8 + 30 + hpBarOffsetY; // Above UFO (lowered 30px) + model offset
 
           // Calculate percentages
           const hpPercentage = Math.max(0, Math.min(1, dotHP / dotMaxHP));
@@ -15328,8 +16308,8 @@ function render() {
 
     // Only render if position is within reasonable bounds (allow some overflow for smooth animation)
     const renderMargin = 100; // Allow rendering slightly outside bounds
-    const shouldRender = katanaPosX >= 240 - renderMargin && katanaPosX <= 1920 + renderMargin &&
-      katanaPosY >= 0 - renderMargin && katanaPosY <= 1080 + renderMargin;
+    const shouldRender = katanaPosX >= playLeft - renderMargin && katanaPosX <= playRight + renderMargin &&
+      katanaPosY >= 0 - renderMargin && katanaPosY <= gameHeight + renderMargin;
 
     if (shouldRender) {
 
@@ -16520,8 +17500,9 @@ function render() {
       const currentUfoPvP = getCurrentUfoSprite();
       if (currentUfoPvP.sprite && currentUfoPvP.sprite.complete) {
         try {
-          // Draw UFO sprite scaled to fit player radius
-          const spriteSize = player.radius * 5.0; // Even larger sprite size
+          // Draw UFO sprite scaled to fit player radius, with model-specific scale
+          const modelScale = getCurrentUfoModel().scale || 1.0;
+          const spriteSize = player.radius * 5.0 * modelScale; // Apply model scale
           const spriteToDraw = currentUfoPvP.processed || currentUfoPvP.sprite;
           ctx.drawImage(spriteToDraw, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
         } catch (error) {
@@ -16540,29 +17521,45 @@ function render() {
         ctx.fill();
       }
 
-      // Draw profile picture inside UFO glass dome (if available)
-      if (profilePicture) {
+      // Draw profile picture inside UFO glass dome (if available and model allows it)
+      const ufoModelForProfilePvP = getCurrentUfoModel();
+      if (profilePicture && ufoModelForProfilePvP.showProfile !== false) {
         const cachedImage = nftImageCache.get(profilePicture);
         if (cachedImage && cachedImage.complete) {
           try {
+            // Get model-specific profile position offsets
+            const ufoModel = ufoModelForProfilePvP;
+            let profileOffsetXModel = ufoModel.profileOffsetX || 0;
+            let profileOffsetYModel = ufoModel.profileOffsetY || -3;
+            const profileScaleMult = ufoModel.profileScale || 1.0;
+
+            // Apply per-frame offset if available (for sprites with wobble)
+            if (ufoModel.frameOffsets && ufoModel.frameOffsets.length > 0) {
+              const frameIdx = currentUfoPvP.frameIndex % ufoModel.frameOffsets.length;
+              profileOffsetXModel += ufoModel.frameOffsets[frameIdx].x;
+              profileOffsetYModel += ufoModel.frameOffsets[frameIdx].y;
+            }
+
             // Create clipping path for profile picture (circle inside glass dome)
             ctx.beginPath();
-            const profileRadius = player.radius * 1.2 - 8; // Profile picture size
-            const domeOffsetY = -player.radius * 0.2 - 3; // Raised 3px up
-            ctx.arc(0, domeOffsetY, profileRadius, 0, Math.PI * 2);
+            const baseProfileRadius = player.radius * 1.2 - 8;
+            const profileRadius = baseProfileRadius * profileScaleMult; // Apply model scale
+            const domeOffsetX = profileOffsetXModel;
+            const domeOffsetY = -player.radius * 0.2 + profileOffsetYModel; // Base + model offset
+            ctx.arc(domeOffsetX, domeOffsetY, profileRadius, 0, Math.PI * 2);
             ctx.clip();
 
             // Calculate aspect ratio to fit image in circle
             const imgAspect = cachedImage.width / cachedImage.height;
             let drawWidth = profileRadius * 2;
             let drawHeight = profileRadius * 2;
-            let drawX = -profileRadius;
+            let drawX = domeOffsetX - profileRadius;
             let drawY = domeOffsetY - profileRadius;
 
             if (imgAspect > 1) {
               // Image is wider - fit to height
               drawWidth = profileRadius * 2 * imgAspect;
-              drawX = -drawWidth / 2;
+              drawX = domeOffsetX - drawWidth / 2;
             } else {
               // Image is taller - fit to width
               drawHeight = profileRadius * 2 / imgAspect;
@@ -17055,10 +18052,15 @@ function render() {
 
       // Draw Armor and HP bars above player head (combined bar - always same height)
       {
+        // Get model-specific HP bar offset
+        const ufoModelForHpPvP = getCurrentUfoModel();
+        const hpBarOffsetXPvP = ufoModelForHpPvP.hpBarOffsetX || 0;
+        const hpBarOffsetYPvP = ufoModelForHpPvP.hpBarOffsetY || 0;
+
         const barWidth = player.radius * 2 - 6; // Shorter bar width (6px shorter total)
         const barHeight = 4; // Thinner bar height - always same height
-        const barX = px - barWidth / 2;
-        const barY = py - player.radius - 8; // Bar position
+        const barX = px - barWidth / 2 + hpBarOffsetXPvP;
+        const barY = py - player.radius - 8 + hpBarOffsetYPvP; // Bar position + model offset
 
         // Draw "You" text above HP bar (only for my player)
         if (myPlayerId && playerId === myPlayerId) {
@@ -19410,6 +20412,9 @@ function render() {
     ctx.fillText('X', closeButtonX + closeButtonSize / 2, closeButtonY + closeButtonSize / 2 + 6);
   }
 
+  // ========== RIPPLE EFFECTS - DRAWN ON TOP OF UI ==========
+  updateAndDrawRipples(ctx);
+
   // ========== COOLDOWN RING - DRAWN LAST (TOP LAYER) ==========
   // Cursor-following action cooldown indicator (client-side UI only; no network cost).
   // Shows when the next "action" is available (1 action / 1 sec).
@@ -19491,6 +20496,13 @@ if (!(window as any).__mousemoveListenerAdded) {
     const mouseX = pos.x;
     const mouseY = pos.y;
 
+    // Panel toggle button hover
+    {
+      const toggleRect = getPanelToggleRect();
+      isHoveringPanelToggle = mouseX >= toggleRect.x && mouseX <= toggleRect.x + toggleRect.w &&
+                              mouseY >= toggleRect.y && mouseY <= toggleRect.y + toggleRect.h;
+    }
+
     // Update solo crosshair position
     if (soloShootingEnabled && gameMode === 'Solo' && gameState === 'Alive') {
       soloCrosshairX = mouseX;
@@ -19544,6 +20556,11 @@ if (!(window as any).__mousemoveListenerAdded) {
       }
     }
 
+    // UFO Model Selector hover (Solo mode only)
+    if (gameMode === 'Solo') {
+      updateUfoSelectorHover(mouseX, mouseY);
+    }
+
     // Slot modal button hovers (SPIN / 2X / Close)
     {
       isHoveringSlotModalSpin = false;
@@ -19573,7 +20590,7 @@ if (!(window as any).__mousemoveListenerAdded) {
     try {
       if (isChatOpen) {
         const panelW = CHAT_PANEL_W;
-        const panelH = CHAT_PANEL_H;
+        const panelH = Math.min(CHAT_PANEL_H_MAX, canvas.height - CHAT_PANEL_TOP - 10);
         const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
         const panelY = Math.floor(CHAT_PANEL_TOP);
         const headerH = 46;
@@ -19715,15 +20732,15 @@ if (!(window as any).__mousemoveListenerAdded) {
     isHoveringSpeedFxPlus =
       mouseX >= speedFxPlusR.x && mouseX <= speedFxPlusR.x + speedFxPlusR.w &&
       mouseY >= speedFxPlusR.y && mouseY <= speedFxPlusR.y + speedFxPlusR.h;
-    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
-    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(340) && mouseY <= scaleY(340) + scaleSize(48);
+    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(398) && mouseY <= scaleY(398) + scaleSize(48);
     isHoveringFaucet = isOverFaucet && canUseFaucet() && !upgradeAnimation && !isDrawing;
     isHoveringContact = isOverContact && !upgradeAnimation && !isDrawing && !isContactOpen;
     isHoveringPewPew = isOverPewPew && !upgradeAnimation && !isDrawing && !isPewPewOpen;
     isHoveringLeaderboard = isOverLeaderboard && !upgradeAnimation && !isDrawing && !isLeaderboardOpen;
     isHoveringProfile = isOverProfile && !upgradeAnimation && !isDrawing && !isProfileOpen;
 
-    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
+    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(456) && mouseY <= scaleY(456) + scaleSize(48);
     isHoveringWallet = isOverWallet && !upgradeAnimation && !isDrawing;
 
     // Encounter warning button hover detection
@@ -19784,22 +20801,22 @@ if (!(window as any).__mousemoveListenerAdded) {
 
     // Training button hover detection (must match render)
     const trainingButtonY = getTrainingButtonY();
-    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 40;
+    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + scaleSize(48);
     isHoveringGameMode = isOverTraining && !upgradeAnimation && !isDrawing;
 
     // PvP Online button hover detection
-    const pvpOnlineButtonY = trainingButtonY + 50;
-    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
+    const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
+    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + scaleSize(48);
     isHoveringPvPOnline = isOverPvPOnline && !upgradeAnimation && !isDrawing;
 
     // PvP FUN hover detection
-    const pvpFunButtonY = pvpOnlineButtonY + 50;
-    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 40;
+    const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
+    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + scaleSize(48);
     isHoveringPvpFun = isOverPvpFun && !upgradeAnimation && !isDrawing;
 
     // 5SEC PvP hover detection (below FUN)
-    const newButtonY = pvpFunButtonY + 50;
-    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+    const newButtonY = pvpFunButtonY + scaleSize(48) + scaleSize(10);
+    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + scaleSize(48);
     isHoveringNewButton = isOverNewButton && !upgradeAnimation && !isDrawing;
 
     // Ticket error button hover detection (BACK button)
@@ -19903,6 +20920,16 @@ if (!(window as any).__mousedownListenerAdded) {
     const mouseX = pos.x;
     const mouseY = pos.y;
 
+    // Panel collapse toggle button press
+    {
+      const toggleRect = getPanelToggleRect();
+      if (mouseX >= toggleRect.x && mouseX <= toggleRect.x + toggleRect.w &&
+          mouseY >= toggleRect.y && mouseY <= toggleRect.y + toggleRect.h) {
+        isPressingPanelToggle = true;
+        return;
+      }
+    }
+
     // Live chat toggle button press
     {
       const onlineBoxW = 120;
@@ -19933,7 +20960,7 @@ if (!(window as any).__mousedownListenerAdded) {
     // Chat send button press (inside chat panel)
     if (isChatOpen) {
       const panelW = CHAT_PANEL_W;
-      const panelH = CHAT_PANEL_H;
+      const panelH = Math.min(CHAT_PANEL_H_MAX, canvas.height - CHAT_PANEL_TOP - 10);
       const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
       const panelY = Math.floor(CHAT_PANEL_TOP);
       const inputH = CHAT_INPUT_H;
@@ -20274,7 +21301,7 @@ if (!(window as any).__mousedownListenerAdded) {
 
     // Check if clicking profile button
     if (!isProfileOpen) {
-      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(398) && mouseY <= scaleY(398) + scaleSize(48);
       if (isOverProfile) {
         isPressingProfile = true;
         return; // Don't process other clicks
@@ -20318,7 +21345,7 @@ if (!(window as any).__mousedownListenerAdded) {
     }
 
     // Check if clicking wallet button
-    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
+    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(456) && mouseY <= scaleY(456) + scaleSize(48);
     if (isOverWallet) {
       isPressingWallet = true;
       return; // Don't start drawing if clicking wallet button
@@ -20357,7 +21384,7 @@ if (!(window as any).__mousedownListenerAdded) {
     }
 
     // Check if clicking leaderboard button
-    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
+    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(340) && mouseY <= scaleY(340) + scaleSize(48);
     if (isOverLeaderboard) {
       isPressingLeaderboard = true;
       return; // Don't start drawing if clicking UI
@@ -20365,31 +21392,31 @@ if (!(window as any).__mousedownListenerAdded) {
 
     // Check if clicking training button
     const trainingButtonY = getTrainingButtonY();
-    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 40;
+    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + scaleSize(48);
     if (isOverTraining) {
       isPressingGameMode = true;
       return; // Don't start drawing if clicking training button
     }
 
     // Check if clicking PvP Online button
-    const pvpOnlineButtonY = trainingButtonY + 50;
-    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
+    const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
+    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + scaleSize(48);
     if (isOverPvPOnline) {
       isPressingPvPOnline = true;
       return; // Don't start drawing if clicking PvP Online button
     }
 
     // PvP FUN button click detection
-    const pvpFunButtonY = pvpOnlineButtonY + 50;
-    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 40;
+    const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
+    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + scaleSize(48);
     if (isOverPvpFun) {
       isPressingPvpFun = true;
       return; // Don't start drawing if clicking PvP FUN button
     }
 
     // 5SEC PvP button click detection (below FUN)
-    const newButtonY = pvpFunButtonY + 50;
-    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+    const newButtonY = pvpFunButtonY + scaleSize(48) + scaleSize(10);
+    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + scaleSize(48);
     if (isOverNewButton) {
       isPressingNewButton = true;
       return; // Don't start drawing if clicking 5SEC PvP button
@@ -20461,6 +21488,19 @@ if (!(window as any).__mouseupListenerAdded) {
     // starting a hold in the play area
     if (e.button === 0 && mouseHoldStartTime > 0 && !slowMotionActive) {
       mouseHoldStartTime = 0;
+    }
+
+    // Panel collapse toggle button release
+    if (isPressingPanelToggle) {
+      const toggleRect = getPanelToggleRect();
+      const overToggle = mx >= toggleRect.x && mx <= toggleRect.x + toggleRect.w &&
+                         my >= toggleRect.y && my <= toggleRect.y + toggleRect.h;
+      if (overToggle) {
+        togglePanelCollapse();
+        triggerButtonRipple(toggleRect.x, toggleRect.y, toggleRect.w, toggleRect.h, mx, my);
+      }
+      isPressingPanelToggle = false;
+      return;
     }
 
     // Solo solar map: end drag-to-pan, and swallow the mouseup so it doesn't trigger clicks.
@@ -20538,12 +21578,16 @@ if (!(window as any).__mouseupListenerAdded) {
       const btnY = onlineBoxY;
       const overBtn = mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH;
       if (overBtn) {
+        const wasOpen = isChatOpen;
         isChatOpen = !isChatOpen;
         chatScrollOffset = 0;
         if (isChatOpen) {
           chatHasUnread = false;
           chatUnreadCount = 0;
+          triggerPanelSlideIn('chat', 'bottom', 350);
         }
+        // Trigger ripple on button click
+        triggerButtonRipple(btnX, btnY, btnW, btnH, mx, my);
         try {
           const inp = ensureChatInput();
           const btn = ensureChatSendButton();
@@ -20571,6 +21615,8 @@ if (!(window as any).__mouseupListenerAdded) {
       const overBell = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
       if (overBell) {
         slotModalOpen = true;
+        triggerPanelSlideIn('slotModal', 'top', 400);
+        triggerButtonRipple(r.x, r.y, r.w, r.h, mx, my);
         slotLastPayoutText = null;
         slotBellNewSpins = 0;
         slotSpinGlowUntil = 0;
@@ -20586,7 +21632,7 @@ if (!(window as any).__mouseupListenerAdded) {
     // Chat panel interactions (send + click username)
     if (isChatOpen) {
       const panelW = CHAT_PANEL_W;
-      const panelH = CHAT_PANEL_H;
+      const panelH = Math.min(CHAT_PANEL_H_MAX, canvas.height - CHAT_PANEL_TOP - 10);
       const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
       const panelY = Math.floor(CHAT_PANEL_TOP);
       const headerH = 46;
@@ -20733,7 +21779,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const uiPanelW = 240;
+      const uiPanelW = UI_PANEL_W;
       const modalW = 190;
       const modalH = 150;
       const modalX = Math.floor((uiPanelW - modalW) / 2);
@@ -20938,7 +21984,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 450 && mouseY <= 490;
+      const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(456) && mouseY <= scaleY(456) + scaleSize(48);
 
       if (isOverWallet) {
         // Check current wallet state
@@ -21062,7 +22108,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 400 && mouseY <= 440;
+      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(398) && mouseY <= scaleY(398) + scaleSize(48);
       if (isOverProfile) {
         const wasOpen = isProfileOpen;
         isProfileOpen = !isProfileOpen;
@@ -21094,7 +22140,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 350 && mouseY <= 390;
+      const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(340) && mouseY <= scaleY(340) + scaleSize(48);
       if (isOverLeaderboard) {
         const wasOpen = isLeaderboardOpen;
         isLeaderboardOpen = !isLeaderboardOpen;
@@ -21221,9 +22267,12 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseY = pos.y;
 
       const trainingButtonY = getTrainingButtonY();
-      const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 40;
+      const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + scaleSize(48);
 
       if (isOverTraining) {
+        // Trigger ripple effect on button
+        triggerButtonRipple(20, trainingButtonY, 200, 40, mouseX, mouseY);
+
         // Toggle Training mode
         if (gameMode === 'Training') {
           // Switching from Training to Solo
@@ -21250,10 +22299,13 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseY = pos.y;
 
       const trainingButtonY = getTrainingButtonY();
-      const pvpOnlineButtonY = trainingButtonY + 50;
-      const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 40;
+      const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
+      const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + scaleSize(48);
 
       if (isOverPvPOnline) {
+        // Trigger ripple effect
+        triggerButtonRipple(20, pvpOnlineButtonY, 200, 40, mouseX, mouseY);
+
         if (gameMode === 'PvP') {
           // Leaving PvP (realtime)
           TURN_BASED_PVP_ENABLED = false;
@@ -21280,10 +22332,13 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseX = pos.x;
       const mouseY = pos.y;
       const trainingButtonY = getTrainingButtonY();
-      const pvpOnlineButtonY = trainingButtonY + 50;
-      const pvpFunButtonY = pvpOnlineButtonY + 50;
-      const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 40;
+      const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
+      const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
+      const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + scaleSize(48);
       if (isOverPvpFun) {
+        // Trigger ripple effect
+        triggerButtonRipple(20, pvpFunButtonY, 200, 40, mouseX, mouseY);
+
         if (gameMode === 'PvP' && pvpOnlineRoomName === 'pvp_fun_room') {
           // Leaving FUN PvP
           TURN_BASED_PVP_ENABLED = false;
@@ -21308,10 +22363,10 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseY = pos.y;
 
       const trainingButtonY = getTrainingButtonY();
-      const pvpOnlineButtonY = trainingButtonY + 50;
-      const pvpFunButtonY = pvpOnlineButtonY + 50;
-      const newButtonY = pvpFunButtonY + 50;
-      const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 40;
+      const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
+      const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
+      const newButtonY = pvpFunButtonY + scaleSize(48) + scaleSize(10);
+      const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + scaleSize(48);
 
       if (isOverNewButton) {
         if (gameMode === 'PvP') {
@@ -21688,8 +22743,8 @@ if (!(window as any).__keydownListenerAdded) {
           }
 
           // Keep in bounds
-          dotX = Math.max(240 + dotRadius, Math.min(1920 - dotRadius, dotX));
-          dotY = Math.max(dotRadius, Math.min(1080 - dotRadius, dotY));
+          dotX = Math.max(240 + dotRadius, Math.min(playRight - dotRadius, dotX));
+          dotY = Math.max(dotRadius, Math.min(gameHeight - dotRadius, dotY));
 
           // Set cooldown
           soloDashCooldownUntil = now + SOLO_DASH_COOLDOWN_MS;
@@ -22020,10 +23075,10 @@ if (!(window as any).__clickListenerAdded) {
       const slotsCount = 6;
       const skillBarWidth = slotsCount * slotSize + (slotsCount - 1) * slotGap + barPadding * 2;
       const skillBarHeight = slotSize + barPadding * 2 + 20;
-      const playAreaLeft = 240;
-      const playAreaWidth = 1920 - playAreaLeft;
+      const playAreaLeft = playLeft;
+      const playAreaWidth = playRight - playAreaLeft;
       const skillBarX = playAreaLeft + (playAreaWidth - skillBarWidth) / 2;
-      const skillBarY = 1080 - skillBarHeight - 20;
+      const skillBarY = gameHeight - skillBarHeight - 20;
 
       const invWidth = 470;
       const invHeight = 280;
@@ -22214,7 +23269,14 @@ if (!(window as any).__clickListenerAdded) {
       }
     }
 
-    const isOnUI = mouseX <= 240; // Left panel
+    const isOnUI = mouseX <= getCurrentPanelWidth(); // Left panel (dynamic)
+
+    // UFO Model Selector click handling (Solo mode only)
+    if (gameMode === 'Solo' && isOnUI && e.button === 0) {
+      if (handleUfoSelectorClick(mouseX, mouseY)) {
+        return; // Click was handled by UFO selector
+      }
+    }
 
     // Solo mode: Charge -1 per click (except UI buttons and right-click for drawing)
     if (gameMode === 'Solo' && e.button === 0) {
@@ -22762,13 +23824,19 @@ function drawServerBrowserOverlay() {
   setupPixelPerfectContext(ctx);
 
   // Dark overlay background (pixel art style - no blur)
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  // Fade in the overlay based on panel animation
+  const panelState = getPanelAnimation('serverBrowser');
+  const overlayAlpha = 0.75 * (1 - panelState.offset);
+  ctx.fillStyle = `rgba(0, 0, 0, ${overlayAlpha})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const modalWidth = Math.min(900, canvas.width - 80);
   const modalHeight = Math.min(520, canvas.height - 80);
-  const modalX = px((canvas.width - modalWidth) / 2);
-  const modalY = px((canvas.height - modalHeight) / 2);
+
+  // Apply slide-in animation offset (slide from right)
+  const slideOffset = getPanelSlideOffset('serverBrowser', modalWidth, 'right');
+  const modalX = px((canvas.width - modalWidth) / 2) + slideOffset.x;
+  const modalY = px((canvas.height - modalHeight) / 2) + slideOffset.y;
 
   serverBrowserModalRegion = { x: modalX, y: modalY, width: modalWidth, height: modalHeight };
   serverBrowserHitRegions = [];
@@ -23073,6 +24141,14 @@ function gameLoop() {
 
   // Update flying destructible stone (Solo only) - runs independently of UFO position
   if (gameMode === 'Solo') {
+    // Initialize blackhole on first Solo frame (deferred init for browser compatibility)
+    try {
+      if (!blackholeElement && document.body) {
+        initBlackhole();
+      }
+    } catch (e) {
+      // Blackhole init can fail silently
+    }
     try {
       if (terrainInitialized && terrainSpriteLoaded) {
         checkTerrainRespawn();
@@ -24167,8 +25243,8 @@ function gameLoop() {
       forceSaveGame(); // Save after respawn
       respawnTimer = 0;
       // Reset DOT position and physics
-      dotX = 240 + (1920 - 240) / 2;
-      dotY = 1080 / 2;
+      dotX = playLeft + (playRight - playLeft) / 2;
+      dotY = gameHeight / 2;
       dotVx = 0;
       dotVy = 0;
       lastHitTime = 0; // Reset hit time
@@ -24250,9 +25326,40 @@ function gameLoop() {
       }
     }
 
-    // Update position
-    dotX += dotVx;
-    dotY += dotVy;
+    // Check blackhole effect for UFO (Solo mode) - pull + consumption
+    let ufoFrozenByBlackhole = false;
+    if (gameMode === 'Solo') {
+      const bhResult = checkBlackholeEffect(dotX, dotY, dotVx, dotVy, dotRadius * 2, 'player_ufo');
+      if (bhResult.consumed) {
+        // UFO consumed - reset position
+        dotX = 600;
+        dotY = 540;
+        dotVx = 0;
+        dotVy = 0;
+        ufoBhShrink = 1;
+      } else {
+        ufoBhShrink = bhResult.shrinkFactor;
+        ufoFrozenByBlackhole = bhResult.frozen;
+
+        // Snap to center if being consumed
+        if (bhResult.snapToCenter) {
+          dotX = bhResult.centerX;
+          dotY = bhResult.centerY;
+          dotVx = 0;
+          dotVy = 0;
+        } else if (!bhResult.frozen) {
+          // Apply blackhole pull to UFO velocity
+          dotVx += bhResult.pullVx;
+          dotVy += bhResult.pullVy;
+        }
+      }
+    }
+
+    // Update position (if not frozen by blackhole)
+    if (!ufoFrozenByBlackhole) {
+      dotX += dotVx;
+      dotY += dotVy;
+    }
 
     // UFO collision with destructible terrain (Solo mode) - BOUNCE OFF ONLY (solid stone)
     if (gameMode === 'Solo') {
@@ -24441,6 +25548,8 @@ function gameLoop() {
             dotArmor -= absorbed;
             const remainingDamage = bonusDamage - absorbed;
             dotHP = Math.max(0, dotHP - remainingDamage);
+            // Screen shake on PvP damage!
+            triggerScreenShake(Math.min(12, remainingDamage), 200);
 
             // Play damage received sound effect (pain/impact sound when receiving damage)
             audioManager.resumeContext().then(() => {
@@ -24649,8 +25758,8 @@ function gameLoop() {
     // UFO now bounces off bottom floor (PVP_BOTTOM_FLOOR_Y) instead
 
     // Check if DOT goes out of bounds (without bouncing) - triggers restart without reward
-    // NOTE: Bottom (dotY > 1080) removed from death zone - UFO bounces off bottom instead
-    const isOutOfBounds = dotX < 240 || dotX > 1920 || dotY < 0;
+    // NOTE: Bottom (dotY > gameHeight) removed from death zone - UFO bounces off bottom instead
+    const isOutOfBounds = dotX < 240 || dotX > playRight || dotY < 0;
     if (isOutOfBounds && !awaitingRestart) {
       // DOT went out of bounds - restart without reward (no death animation)
       awaitingRestart = true;
@@ -24675,8 +25784,8 @@ function gameLoop() {
         dotX = 240 + dotRadius;
         dotVx = -dotVx * 0.8; // Bounce with friction
       }
-      if (dotX > 1920 - dotRadius) {
-        dotX = 1920 - dotRadius;
+      if (dotX > playRight - dotRadius) {
+        dotX = playRight - dotRadius;
         dotVx = -dotVx * 0.8; // Bounce with friction
       }
 
@@ -24687,8 +25796,8 @@ function gameLoop() {
       }
 
       // Bottom wall collision (UFO bounces off bottom instead of dying)
-      if (dotY > 1080 - dotRadius) {
-        dotY = 1080 - dotRadius;
+      if (dotY > gameHeight - dotRadius) {
+        dotY = gameHeight - dotRadius;
         dotVy = -dotVy * 0.8; // Bounce with friction
       }
     }
@@ -26807,6 +27916,8 @@ function gameLoop() {
       dotArmor -= absorbed;
       const remainingDamage = totalDamage - absorbed;
       dotHP = Math.max(0, dotHP - remainingDamage);
+      // Screen shake on arrow hit - bigger shake for crits!
+      triggerScreenShake(isCritHit ? 15 : Math.min(10, remainingDamage), isCritHit ? 300 : 200);
 
       // Play damage received sound effect (pain/impact sound when receiving damage)
       audioManager.resumeContext().then(() => {
@@ -26889,7 +28000,7 @@ function gameLoop() {
     }
 
     // Boundary check - allow arrow to fly out of bounds but stop it visually
-    if (katanaX < 240 || katanaX > 1920 || katanaY < 0 || katanaY > 1080) {
+    if (katanaX < 240 || katanaX > playRight || katanaY < 0 || katanaY > gameHeight) {
       // keep
     }
   }
@@ -27057,8 +28168,8 @@ function gameLoop() {
     // Full restore and restart from center
     dotHP = dotMaxHP;
     dotArmor = dotMaxArmor;
-    dotX = 240 + (1920 - 240) / 2;
-    dotY = 1080 / 2;
+    dotX = playLeft + (playRight - playLeft) / 2;
+    dotY = gameHeight / 2;
     dotVx = 0;
     dotVy = 0;
     lastHitTime = 0;
@@ -27236,7 +28347,7 @@ function gameLoop() {
       if (isChatOpen) {
         // Chat panel layout (bottom input bar)
         const panelW = CHAT_PANEL_W;
-        const panelH = CHAT_PANEL_H;
+        const panelH = Math.min(CHAT_PANEL_H_MAX, canvas.height - CHAT_PANEL_TOP - 10);
         const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
         const panelY = Math.floor(CHAT_PANEL_TOP);
         const headerH = 46;
@@ -27323,9 +28434,11 @@ function gameLoop() {
   // Live chat panel
   if (isChatOpen) {
     const panelW = CHAT_PANEL_W;
-    const panelH = CHAT_PANEL_H;
+    const panelH = Math.min(CHAT_PANEL_H_MAX, canvas.height - CHAT_PANEL_TOP - 10);
+    // Apply slide-in animation (slide from bottom)
+    const chatSlideOffset = getPanelSlideOffset('chat', panelH, 'bottom');
     const panelX = Math.floor(canvas.width - CHAT_PANEL_MARGIN_RIGHT - panelW);
-    const panelY = Math.floor(CHAT_PANEL_TOP);
+    const panelY = Math.floor(CHAT_PANEL_TOP) + chatSlideOffset.y;
     const headerH = 46;
     // Fixed 2-line input box (wraps automatically; no Shift+Enter newline)
     let inputH = CHAT_INPUT_H;
@@ -27639,7 +28752,8 @@ function gameLoop() {
   }
 
   // Slot / Starter claim button (moved into left panel)
-  if (gameMode === 'Solo') {
+  // Hide when panel is collapsed
+  if (gameMode === 'Solo' && panelCollapseProgress < 0.9) {
     const r = getSlotBellRect();
     const bellX = r.x;
     const bellY = r.y;
@@ -28062,9 +29176,14 @@ function gameLoop() {
 if (!(window as any).__gameLoopRunning) {
   (window as any).__gameLoopRunning = true;
   console.log('Starting game loop...');
-  loadGame(); // Load saved game state on startup
-  initDestructibleTerrain(); // Initialize Worms-style destructible terrain
-  loadPixSprite(); // Load PIX resource sprite
+  // Wrap all initialization in try-catch to prevent blocking game start
+  try { loadPixSprite(); } catch (e) { console.error('loadPixSprite error:', e); }
+  try { loadRonkeTvFrames(); } catch (e) { console.error('loadRonkeTvFrames error:', e); }
+  try { loadRonkeWasFrames(); } catch (e) { console.error('loadRonkeWasFrames error:', e); }
+  try { loadAllUfoModels(); } catch (e) { console.error('loadAllUfoModels error:', e); }
+  try { loadGame(); } catch (e) { console.error('loadGame error:', e); }
+  try { initDestructibleTerrain(); } catch (e) { console.error('initDestructibleTerrain error:', e); }
+  // Game loop MUST start even if assets fail to load
   gameLoop();
 } else {
   console.warn('⚠️ Game loop already running - skipping duplicate start (HMR protection)');
