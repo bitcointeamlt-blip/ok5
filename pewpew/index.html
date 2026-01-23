@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>PewPew PvP</title>
+  <link rel="icon" type="image/png" href="../target.png">
+  <link rel="apple-touch-icon" href="../target.png">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    
+    * {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      font-family: 'Press Start 2P', monospace;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+      overflow: hidden;
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+    
+    #gameContainer {
+      background: #0a0a1a;
+      border: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    #gameCanvas {
+      display: block;
+      cursor: default;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+      /* Fixed internal resolution (1080p height) scaled to fill screen via CSS */
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+    
+    /* Portrait orientation overlay */
+    #portraitOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    
+    #portraitOverlay.hidden {
+      display: none;
+    }
+    
+    #portraitOverlay .icon {
+      font-size: 80px;
+      margin-bottom: 30px;
+      animation: rotate 2s ease-in-out infinite;
+    }
+    
+    @keyframes rotate {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(90deg); }
+    }
+    
+    #portraitOverlay h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+      text-shadow: 3px 3px 0px #000;
+      line-height: 1.4;
+    }
+    
+    #portraitOverlay p {
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 300px;
+      text-shadow: 2px 2px 0px #000;
+      opacity: 0.9;
+    }
+    
+    /* Responsive scaling - canvas auto-resizes via JS */
+    @media (orientation: landscape) {
+      #portraitOverlay {
+        display: none !important;
+      }
+    }
+
+    /* Mobile portrait - hide game, show overlay */
+    @media (orientation: portrait) and (max-width: 1024px) {
+      #gameContainer {
+        display: none;
+      }
+
+      #portraitOverlay {
+        display: flex;
+      }
+    }
+
+    /* Desktop - hide portrait overlay */
+    @media (min-width: 1025px) {
+      #portraitOverlay {
+        display: none !important;
+      }
+    }
+    
+    #gameCanvas.pointer {
+      cursor: pointer;
+    }
+    
+    /* Prevent text selection on mobile */
+    @media (max-width: 1024px) {
+      * {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+    }
+
+    /* Loading screen */
+    #loadingScreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0f1f4a 100%);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+      transition: opacity 0.5s ease-out;
+    }
+
+    #loadingScreen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #loadingScreen.removed {
+      display: none;
+    }
+
+    .loading-ufo {
+      font-size: 64px;
+      animation: float 2s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+
+    .loading-title {
+      font-size: 28px;
+      margin: 20px 0 10px;
+      text-shadow: 3px 3px 0px #000, 0 0 20px rgba(255, 200, 100, 0.5);
+      color: #FFD700;
+    }
+
+    .loading-bar-container {
+      width: 200px;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px solid #FFD700;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 20px;
+    }
+
+    .loading-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #FFD700, #FFA500);
+      animation: loading 2s ease-in-out forwards;
+    }
+
+    @keyframes loading {
+      0% { width: 0%; }
+      50% { width: 70%; }
+      100% { width: 100%; }
+    }
+
+    .loading-text {
+      font-size: 12px;
+      margin-top: 15px;
+      opacity: 0.8;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="loadingScreen">
+    <div class="loading-ufo">🛸</div>
+    <div class="loading-title">PewPew</div>
+    <div class="loading-bar-container">
+      <div class="loading-bar"></div>
+    </div>
+    <div class="loading-text">Loading game...</div>
+  </div>
+
+  <!-- Portrait orientation overlay -->
+  <div id="portraitOverlay">
+    <div class="icon">📱</div>
+    <h1>Rotate Your Phone</h1>
+    <p>This game requires landscape orientation. Please rotate your device.</p>
+  </div>
+  
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="1920" height="1080"></canvas>
+  </div>
+  
+  <script>
+    // Orientation detection and overlay management
+    function checkOrientation() {
+      const overlay = document.getElementById('portraitOverlay');
+      const gameContainer = document.getElementById('gameContainer');
+      
+      if (!overlay || !gameContainer) return;
+      
+      // Check if device is mobile
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isTablet = /iPad|Android/i.test(navigator.userAgent) && window.innerWidth >= 768;
+      
+      // For mobile devices, check orientation
+      if (isMobile || isTablet) {
+        const isPortrait = window.innerHeight > window.innerWidth;
+        
+        if (isPortrait) {
+          overlay.classList.remove('hidden');
+          gameContainer.style.display = 'none';
+        } else {
+          overlay.classList.add('hidden');
+          gameContainer.style.display = 'flex';
+        }
+      } else {
+        // Desktop - always show game
+        overlay.classList.add('hidden');
+        gameContainer.style.display = 'flex';
+      }
+    }
+    
+    // Check on load
+    window.addEventListener('load', checkOrientation);
+    
+    // Check on orientation change
+    window.addEventListener('orientationchange', () => {
+      setTimeout(checkOrientation, 100);
+    });
+    
+    // Check on resize (for desktop window resizing)
+    window.addEventListener('resize', checkOrientation);
+    
+    // Lock orientation to landscape on mobile (if supported)
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {
+        // Lock failed, that's okay - overlay will handle it
+      });
+    }
+    
+    // Touch event support for mobile devices
+    // Convert touch events to mouse events so the game works on touch screens
+    function setupTouchSupport() {
+      const canvas = document.getElementById('gameCanvas');
+      if (!canvas) return;
+      
+      // Prevent default touch behaviors that interfere with game
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          button: 0,
+          bubbles: true,
+          cancelable: true
+        });
+        canvas.dispatchEvent(mouseEvent);
+      }, { passive: false });
+      
+      canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          bubbles: true,
+          cancelable: true
+        });
+        canvas.dispatchEvent(mouseEvent);
+      }, { passive: false });
+      
+      canvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        const mouseEvent = new MouseEvent('mouseup', {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          button: 0,
+          bubbles: true,
+          cancelable: true
+        });
+        canvas.dispatchEvent(mouseEvent);
+      }, { passive: false });
+      
+      canvas.addEventListener('touchcancel', (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        const mouseEvent = new MouseEvent('mouseup', {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          button: 0,
+          bubbles: true,
+          cancelable: true
+        });
+        canvas.dispatchEvent(mouseEvent);
+      }, { passive: false });
+    }
+    
+    // Setup touch support after canvas is loaded
+    window.addEventListener('load', () => {
+      setTimeout(setupTouchSupport, 100);
+
+      // Hide loading screen after game loads
+      setTimeout(() => {
+        const loadingScreen = document.getElementById('loadingScreen');
+        if (loadingScreen) {
+          loadingScreen.classList.add('hidden');
+          setTimeout(() => {
+            loadingScreen.classList.add('removed');
+          }, 500);
+        }
+      }, 2000); // Wait for loading animation to complete
+    });
+    
+    // Prevent context menu on long press (mobile)
+    document.addEventListener('contextmenu', (e) => {
+      if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+        e.preventDefault();
+      }
+    });
+  </script>
+  
+  <!-- Use relative path so both local dev and Netlify build resolve consistently -->
+  <script type="module" src="../src/simple-main.ts"></script>
+</body>
+</html>
