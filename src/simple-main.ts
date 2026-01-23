@@ -1860,7 +1860,7 @@ function loadPixSprite(): void {
     };
     pixSpriteImg.src = '/pix.png';
   };
-  pixSpriteImg.src = './pix.png';
+  pixSpriteImg.src = '/pix.png';
 }
 
 // RonkeTV Animation (replaces Space Junk visual)
@@ -1889,7 +1889,7 @@ function loadRonkeTvFrames(): void {
     img.onerror = () => {
       console.error(`❌ Failed to load RonkeTV frame ${i}`);
     };
-    img.src = `./ronketv/ezgif-frame-${frameNum}-removebg-preview.png`;
+    img.src = `/ronketv/ezgif-frame-${frameNum}-removebg-preview.png`;
     ronkeTvFrames.push(img);
   }
 }
@@ -1929,7 +1929,7 @@ function loadRonkeWasFrames(): void {
     img.onerror = () => {
       console.error(`❌ Failed to load RonkeWas frame ${i}`);
     };
-    img.src = `./ronkewas/ezgif-frame-${frameNum}-removebg-preview.png`;
+    img.src = `/ronkewas/ezgif-frame-${frameNum}-removebg-preview.png`;
     ronkeWasFrames.push(img);
   }
 }
@@ -5107,7 +5107,7 @@ let soloBoostRingShakeUntil = 0;
 // --- Solo Destructible Terrain (Worms-style) ---
 // Sprite-based terrain that can be destroyed by weapons, creating craters
 const TERRAIN_CELL_SIZE = 2; // Each cell is 2x2 pixels (smaller = more detail for sprite)
-const TERRAIN_SPRITE_PATH = './stone.01.png';
+const TERRAIN_SPRITE_PATH = '/stone.01.png';
 const TERRAIN_SCALE = 0.9; // Scale for the sprite
 const TERRAIN_RESPAWN_TIME = 3000; // Respawn 3 seconds after leaving screen
 const TERRAIN_SPEED = 40; // Pixels per second (slow movement)
@@ -8130,17 +8130,17 @@ let ufoSpritesProcessed: HTMLCanvasElement[] = [];
 // UFO spin animation - 11 frames (removed first 4 dark glass frames)
 // Added ?v=2 cache-bust to force reload
 const ufoSpritePaths: string[] = [
-  './ufo-spin/ezgif-frame-005-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-006-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-007-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-008-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-009-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-010-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-011-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-012-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-013-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-014-removebg-preview.png?v=2',
-  './ufo-spin/ezgif-frame-015-removebg-preview.png?v=2'
+  '/ufo-spin/ezgif-frame-005-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-006-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-007-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-008-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-009-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-010-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-011-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-012-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-013-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-014-removebg-preview.png?v=2',
+  '/ufo-spin/ezgif-frame-015-removebg-preview.png?v=2'
 ];
 let ufoAnimationFrame = 0;
 let ufoAnimationLastTime = 0;
@@ -8148,7 +8148,7 @@ const UFO_ANIMATION_FRAME_DURATION_MS = 100; // Slower, smoother spin
 // Fallback to original sprite if new ones don't load
 let ufoSprite: HTMLImageElement | null = null;
 let ufoSpriteProcessed: HTMLCanvasElement | null = null;
-const ufoSpritePath = './ufo_sprite.png';
+const ufoSpritePath = '/ufo_sprite.png';
 
 // ========== UFO MODEL SELECTION SYSTEM ==========
 // Multiple UFO models that player can switch between
@@ -8181,17 +8181,17 @@ const UFO_MODELS: UfoModel[] = [
     frames: [],
     framesProcessed: [],
     framePaths: [
-      './ufo-spin/ezgif-frame-005-removebg-preview.png',
-      './ufo-spin/ezgif-frame-006-removebg-preview.png',
-      './ufo-spin/ezgif-frame-007-removebg-preview.png',
-      './ufo-spin/ezgif-frame-008-removebg-preview.png',
-      './ufo-spin/ezgif-frame-009-removebg-preview.png',
-      './ufo-spin/ezgif-frame-010-removebg-preview.png',
-      './ufo-spin/ezgif-frame-011-removebg-preview.png',
-      './ufo-spin/ezgif-frame-012-removebg-preview.png',
-      './ufo-spin/ezgif-frame-013-removebg-preview.png',
-      './ufo-spin/ezgif-frame-014-removebg-preview.png',
-      './ufo-spin/ezgif-frame-015-removebg-preview.png'
+      '/ufo-spin/ezgif-frame-005-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-006-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-007-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-008-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-009-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-010-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-011-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-012-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-013-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-014-removebg-preview.png',
+      '/ufo-spin/ezgif-frame-015-removebg-preview.png'
     ],
     loaded: false,
     frameCount: 11,
@@ -8209,17 +8209,17 @@ const UFO_MODELS: UfoModel[] = [
     frames: [],
     framesProcessed: [],
     framePaths: [
-      './ufo2,55/ezgif-frame-001-removebg-preview.png',
-      './ufo2,55/ezgif-frame-002-removebg-preview.png',
-      './ufo2,55/ezgif-frame-003-removebg-preview.png',
-      './ufo2,55/ezgif-frame-004-removebg-preview.png',
-      './ufo2,55/ezgif-frame-005-removebg-preview.png',
-      './ufo2,55/ezgif-frame-006-removebg-preview.png',
-      './ufo2,55/ezgif-frame-007-removebg-preview.png',
-      './ufo2,55/ezgif-frame-008-removebg-preview.png',
-      './ufo2,55/ezgif-frame-009-removebg-preview.png',
-      './ufo2,55/ezgif-frame-010-removebg-preview.png',
-      './ufo2,55/ezgif-frame-011-removebg-preview.png'
+      '/ufo2,55/ezgif-frame-001-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-002-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-003-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-004-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-005-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-006-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-007-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-008-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-009-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-010-removebg-preview.png',
+      '/ufo2,55/ezgif-frame-011-removebg-preview.png'
     ],
     loaded: false,
     frameCount: 11,
@@ -8237,17 +8237,17 @@ const UFO_MODELS: UfoModel[] = [
     frames: [],
     framesProcessed: [],
     framePaths: [
-      './ufo2,55/ezgif-frame-001-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-002-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-003-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-004-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-005-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-006-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-007-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-008-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-009-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-010-removebg-preview.png?v=3',
-      './ufo2,55/ezgif-frame-011-removebg-preview.png?v=3'
+      '/ufo2,55/ezgif-frame-001-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-002-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-003-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-004-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-005-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-006-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-007-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-008-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-009-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-010-removebg-preview.png?v=3',
+      '/ufo2,55/ezgif-frame-011-removebg-preview.png?v=3'
     ],
     loaded: false,
     frameCount: 11,
@@ -8320,17 +8320,17 @@ function updateUfoModelAnimation(): void {
 // Slot bell sprite (top-right)
 let bellSprite: HTMLImageElement | null = null;
 let bellSpriteProcessed: HTMLCanvasElement | null = null;
-const bellSpritePath = './bell.png';
+const bellSpritePath = '/bell.png';
 
 // Blackhole GIF sprite (center screen test) - use HTML img for animation
 let blackholeElement: HTMLImageElement | null = null;
-const blackholeSpritePath = './blackhole-ezgif.com-optimize.gif';
+const blackholeSpritePath = '/blackhole-ezgif.com-optimize.gif';
 let blackholeVisible = false;
 
 // Moon sprite (flyby)
 let moonSprite: HTMLImageElement | null = null;
 // Cache-bust so replacing moon.png actually reloads in dev/prod without hard refresh.
-const moonSpritePath = './moon.png?v=2';
+const moonSpritePath = '/moon.png?v=2';
 let moonSpriteProcessed: HTMLCanvasElement | null = null;
 let moonHaloProcessed: HTMLCanvasElement | null = null;
 let moonHaloPadPx: number = 0;
@@ -8363,7 +8363,7 @@ const EARTH_HALO_BLUR_INNER_PX = 6;
 // Mars sprite (flyby test)
 let marsSprite: HTMLImageElement | null = null;
 // Cache-bust so replacing mars.png reloads without hard refresh.
-const marsSpritePath = './mars.png?v=1';
+const marsSpritePath = '/mars.png?v=1';
 let marsSpriteProcessed: HTMLCanvasElement | null = null;
 let marsHaloProcessed: HTMLCanvasElement | null = null;
 let marsHaloPadPx: number = 0;
@@ -8379,21 +8379,21 @@ const MARS_HALO_BLUR_INNER_PX = 6;
 // Arrow sprite cache (weapon 1)
 let arrowSprite: HTMLImageElement | null = null;
 let arrowSpriteProcessed: HTMLCanvasElement | null = null;
-const arrowSpritePath = './sprite.arrow.png';
+const arrowSpritePath = '/sprite.arrow.png';
 let arrowGlowProcessed: HTMLCanvasElement | null = null;
 let arrowGlowPadPx: number = 0;
 
 // Boom sprite cache (weapon 2 - heavy projectile)
 let boomSprite: HTMLImageElement | null = null;
 let boomSpriteProcessed: HTMLCanvasElement | null = null;
-const boomSpritePath = './sprite.boom.png';
+const boomSpritePath = '/sprite.boom.png';
 let boomGlowProcessed: HTMLCanvasElement | null = null;
 let boomGlowPadPx: number = 0;
 
 // Center stone sprite (arena obstacle)
 let stoneSprite: HTMLImageElement | null = null;
 let stoneSpriteProcessed: HTMLCanvasElement | null = null;
-const stoneSpritePath = './sprite.stone.png';
+const stoneSpritePath = '/sprite.stone.png';
 // Pre-rendered stone halo (for performance): generated once from the processed sprite.
 let stoneHaloProcessed: HTMLCanvasElement | null = null;
 let stoneHaloPadPx: number = 0;
@@ -8684,24 +8684,24 @@ function getStoneShakeOffset(now: number): { x: number; y: number } {
 
 // Arena background sprite (play area background)
 let arenaBgSprite: HTMLImageElement | null = null;
-const arenaBgSpritePath = './sprite.background.png';
+const arenaBgSpritePath = '/sprite.background.png';
 
 // Nebula / depth layer (parallax overlay)
 let nebulaBgSprite: HTMLImageElement | null = null;
-const nebulaBgSpritePath = './sprite.nebula.png';
+const nebulaBgSpritePath = '/sprite.nebula.png';
 
 // Light band / atmosphere layer (very subtle polish)
 let lightBandSprite: HTMLImageElement | null = null;
-const lightBandSpritePath = './sprite.lightband.png';
+const lightBandSpritePath = '/sprite.lightband.png';
 
 // Very distant galaxy layer (tiny, slowest parallax)
 let galaxySprite: HTMLImageElement | null = null;
 let galaxySpriteProcessed: HTMLCanvasElement | null = null;
-const galaxySpritePath = './sprite.galaxy.png';
+const galaxySpritePath = '/sprite.galaxy.png';
 // Second galaxy layer (optional) - lets us show two galaxies at once
 let galaxySprite2: HTMLImageElement | null = null;
 let galaxySprite2Processed: HTMLCanvasElement | null = null;
-const galaxySprite2Path = './sprite.galaxy2.png';
+const galaxySprite2Path = '/sprite.galaxy2.png';
 
 // Ronke sprite for craft button - DISABLED: file doesn't exist
 let ronkeSprite: HTMLImageElement | null = null;
