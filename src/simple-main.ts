@@ -1468,18 +1468,24 @@ const ctx = canvas.getContext('2d')!;
 console.log('Canvas:', canvas);
 console.log('Context:', ctx);
 
-// ========== DYNAMIC CANVAS SIZING ==========
-// Game dimensions that adapt to screen size
-let gameWidth = window.innerWidth;
-let gameHeight = window.innerHeight;
+// ========== FIXED INTERNAL RESOLUTION + CSS SCALING ==========
+// Canvas always uses 1080px height internally. Width adjusts to screen aspect ratio.
+// The browser scales the canvas visually via CSS (width:100vw, height:100vh).
+const INTERNAL_HEIGHT = 1080;
+let gameWidth = Math.round(INTERNAL_HEIGHT * (window.innerWidth / window.innerHeight));
+let gameHeight = INTERNAL_HEIGHT;
 
-// Update canvas size to match window
+// Update canvas internal resolution (keeps height at 1080, adjusts width for aspect ratio)
 function updateCanvasSize(): void {
-  gameWidth = window.innerWidth;
-  gameHeight = window.innerHeight;
+  const aspect = window.innerWidth / window.innerHeight;
+  gameWidth = Math.round(INTERNAL_HEIGHT * aspect);
+  gameHeight = INTERNAL_HEIGHT;
   canvas.width = gameWidth;
   canvas.height = gameHeight;
-  console.log(`Canvas resized to: ${gameWidth}x${gameHeight}`);
+  // CSS handles the visual scaling to fill the screen
+  canvas.style.width = '100vw';
+  canvas.style.height = '100vh';
+  console.log(`Canvas internal: ${gameWidth}x${gameHeight} (aspect: ${aspect.toFixed(2)})`);
 }
 
 // Initialize canvas size
@@ -3351,7 +3357,7 @@ let guestStarterClaimedThisSession = false; // not persisted
 function getSlotBellRect(): { x: number; y: number; w: number; h: number } {
   // Panel placement (requested): make it obvious there is something interesting.
   // Place between DOT stats box (y~120..170) and the big buttons list.
-  return { x: 20, y: scaleY(188), w: 200, h: scaleSize(40) };
+  return { x: 20, y: 188, w: 200, h: 40 };
 }
 // Slot symbols:
 // - X is an "empty" symbol (losing unless you hit 3x X, which awards spins).
@@ -4002,30 +4008,6 @@ const AGENT_DEBUG_LOGS_ENABLED = false;
 // REDESIGNED: Narrower, cleaner panel
 const UI_PANEL_W = 240; // Original panel width
 const UI_PANEL_COLLAPSED_W = 32; // Width when collapsed (just toggle button)
-
-// ========== UI SCALING FOR SMALL SCREENS ==========
-const UI_DESIGN_HEIGHT = 1080; // UI was designed for this height
-
-function getUIScale(): number {
-  const h = canvas.height || window.innerHeight;
-  if (h >= UI_DESIGN_HEIGHT) return 1;
-  return h / UI_DESIGN_HEIGHT;
-}
-
-// Scale a Y position from design coords to actual screen coords
-function scaleY(designY: number): number {
-  return Math.round(designY * getUIScale());
-}
-
-// Scale a size (height, font) from design coords to actual screen coords
-function scaleSize(designSize: number): number {
-  return Math.max(Math.round(designSize * getUIScale()), 1);
-}
-
-// Get scaled font string
-function scaledFont(weight: string, designPx: number, family: string): string {
-  return `${weight} ${scaleSize(designPx)}px ${family}`;
-}
 
 // ========== COLLAPSIBLE PANEL SYSTEM ==========
 let isPanelCollapsed = false;
@@ -4928,23 +4910,22 @@ function drawInventoryWindow(ctx: CanvasRenderingContext2D): void {
 }
 
 // --- UI layout constants (keep render + hitboxes consistent) ---
-// These are DESIGN values (for 1080px height) - use scaleY()/scaleSize() when rendering
-const UI_WALLET_BUTTON_Y_DESIGN = 456;
-const UI_WALLET_BUTTON_H_DESIGN = 48;
+const UI_WALLET_BUTTON_Y = 456;
+const UI_WALLET_BUTTON_H = 48;
 const UI_WALLET_BALANCE_GAP_TOP = 10;
 const UI_WALLET_BALANCE_H = 58; // DOT + NFT status (matches render)
 const UI_WALLET_BALANCE_GAP_BOTTOM = 10;
 
 function getTrainingButtonY(): number {
   // Default placement when no wallet balance frame is shown
-  let designY = 500;
+  let y = 500;
   try {
     const walletState = walletService.getState();
     if (walletState.isConnected && walletState.address) {
-      designY = UI_WALLET_BUTTON_Y_DESIGN + UI_WALLET_BUTTON_H_DESIGN + UI_WALLET_BALANCE_GAP_TOP + UI_WALLET_BALANCE_H + UI_WALLET_BALANCE_GAP_BOTTOM;
+      y = UI_WALLET_BUTTON_Y + UI_WALLET_BUTTON_H + UI_WALLET_BALANCE_GAP_TOP + UI_WALLET_BALANCE_H + UI_WALLET_BALANCE_GAP_BOTTOM;
     }
   } catch { }
-  return scaleY(designY);
+  return y;
 }
 
 // Reward popup animation (big center number)
@@ -7625,7 +7606,7 @@ let faucetWasReadyLastFrame = false; // Track state to detect when faucet become
 
 function getFaucetButtonRect(): { x: number; y: number; w: number; h: number } {
   // Under currency, above stats frame (fits in left UI panel)
-  return { x: 20, y: scaleY(70), w: 200, h: scaleSize(40) };
+  return { x: 20, y: 70, w: 200, h: 40 };
 }
 
 function getFaucetIdentityKeyPart(): string {
@@ -14648,19 +14629,19 @@ function render() {
   // DOT stats panel (HP/Armor) - Solo mode only
   if (gameMode === 'Solo') {
     const statsX = 20;
-    const statsY = scaleY(117); // Below faucet button
+    const statsY = 117; // Below faucet button
     const statsWidth = 200;
-    const statsHeight = scaleSize(72); // Taller panel for bigger bars
+    const statsHeight = 72; // Taller panel for bigger bars
 
     // Panel background
     const rr = drawPixelPanelFrame(ctx, statsX, statsY, statsWidth, statsHeight, 'rgba(8, 10, 18, 0.65)', 'rgba(210, 235, 255, 0.18)');
 
     // HP bar
     const barMargin = 8;
-    const barHeight = scaleSize(22); // Thicker bars
+    const barHeight = 22; // Thicker bars
     const barWidth = statsWidth - barMargin * 2;
     const hpBarX = statsX + barMargin;
-    const hpBarY = statsY + scaleSize(10);
+    const hpBarY = statsY + 10;
 
     // HP percentage
     const hpPct = dotMaxHP > 0 ? Math.max(0, Math.min(1, dotHP / dotMaxHP)) : 0;
@@ -14684,10 +14665,10 @@ function render() {
 
     // HP text (scaled font)
     const hpText = `HP: ${dotHP}/${dotMaxHP}`;
-    drawPixelText(ctx, hpText, hpBarX + barWidth / 2, hpBarY + barHeight / 2 + 1, scaledFont('bold', 11, '"Press Start 2P"'), '#ffffff', 'rgba(0, 0, 0, 0.85)');
+    drawPixelText(ctx, hpText, hpBarX + barWidth / 2, hpBarY + barHeight / 2 + 1, 'bold 11px "Press Start 2P"', '#ffffff', 'rgba(0, 0, 0, 0.85)');
 
     // Armor bar (below HP)
-    const armorBarY = hpBarY + barHeight + scaleSize(6);
+    const armorBarY = hpBarY + barHeight + 6;
     const armorPct = dotMaxArmor > 0 ? Math.max(0, Math.min(1, dotArmor / dotMaxArmor)) : 0;
 
     // Armor bar background
@@ -14705,7 +14686,7 @@ function render() {
 
     // Armor text with shield icon (scaled font)
     const armorText = `🛡️ ${dotArmor}/${dotMaxArmor}`;
-    drawPixelText(ctx, armorText, hpBarX + barWidth / 2, armorBarY + barHeight / 2 + 1, scaledFont('bold', 11, '"Press Start 2P"'), '#ffffff', 'rgba(0, 0, 0, 0.85)');
+    drawPixelText(ctx, armorText, hpBarX + barWidth / 2, armorBarY + barHeight / 2 + 1, 'bold 11px "Press Start 2P"', '#ffffff', 'rgba(0, 0, 0, 0.85)');
   }
 
   // (removed) Upgrade buttons - Solo mode only
@@ -14724,9 +14705,9 @@ function render() {
 
   // Leaderboard button - scaled position
   const leaderboardButtonX = 20;
-  const leaderboardButtonY = scaleY(340);
+  const leaderboardButtonY = 340;
   const leaderboardButtonWidth = 200;
-  const leaderboardButtonHeight = scaleSize(48);
+  const leaderboardButtonHeight = 48;
   {
     const rr = drawPixelButtonFrame(ctx, leaderboardButtonX, leaderboardButtonY, leaderboardButtonWidth, leaderboardButtonHeight, {
       hovering: isHoveringLeaderboard,
@@ -14734,15 +14715,15 @@ function render() {
       borderColor: UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'LEADERBOARD', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
+    drawPixelText(ctx, 'LEADERBOARD', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 12px "Press Start 2P"', UI_TEXT);
     ctx.textAlign = 'left';
   }
 
   // Profile button - scaled position
   const profileButtonX = 20;
-  const profileButtonY = scaleY(398);
+  const profileButtonY = 398;
   const profileButtonWidth = 200;
-  const profileButtonHeight = scaleSize(48);
+  const profileButtonHeight = 48;
   {
     const rr = drawPixelButtonFrame(ctx, profileButtonX, profileButtonY, profileButtonWidth, profileButtonHeight, {
       hovering: isHoveringProfile,
@@ -14750,15 +14731,15 @@ function render() {
       borderColor: UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'PROFILE', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
+    drawPixelText(ctx, 'PROFILE', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 12px "Press Start 2P"', UI_TEXT);
     ctx.textAlign = 'left';
   }
 
   // Wallet connection button - scaled position
   const walletButtonX = 20;
-  const walletButtonY = scaleY(456);
+  const walletButtonY = 456;
   const walletButtonWidth = 200;
-  const walletButtonHeight = scaleSize(48);
+  const walletButtonHeight = 48;
 
   // DEBUG: Log wallet button rendering (only once per session)
   if (!(window as any).walletButtonDebugLogged) {
@@ -14800,7 +14781,7 @@ function render() {
     }
 
     if (walletConnecting) {
-      drawPixelText(ctx, 'CONNECTING...', walletCX, walletCY, scaledFont('bold', 12, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'CONNECTING...', walletCX, walletCY, 'bold 12px "Press Start 2P"', walletTextColor, walletTextShadow);
     } else if (walletState.isConnected && walletState.address) {
       // Prefer nickname (if set) over address
       const nick = (profileManager.getProfile().nickname || '').trim();
@@ -14808,21 +14789,21 @@ function render() {
         ? `${walletState.address.substring(0, 6)}...${walletState.address.substring(walletState.address.length - 4)}`
         : walletState.address;
       const display = nick.length ? nick : shortAddress;
-      drawPixelText(ctx, display, walletCX, walletCY - scaleSize(6), scaledFont('bold', 9, '"Press Start 2P"'), walletTextColor, walletTextShadow);
-      drawPixelText(ctx, 'DISCONNECT', walletCX, walletCY + scaleSize(10), scaledFont('bold', 10, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+      drawPixelText(ctx, display, walletCX, walletCY - 6, 'bold 9px "Press Start 2P"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'DISCONNECT', walletCX, walletCY + 10, 'bold 10px "Press Start 2P"', walletTextColor, walletTextShadow);
     } else if (authUserId) {
       // Email/OAuth session connected via Supabase
       const label = authEmail
         ? (authEmail.length > 16 ? `${authEmail.substring(0, 13)}...` : authEmail)
         : 'EMAIL LOGIN';
-      drawPixelText(ctx, label, walletCX, walletCY - scaleSize(6), scaledFont('bold', 9, '"Press Start 2P"'), walletTextColor, walletTextShadow);
-      drawPixelText(ctx, 'LOGOUT', walletCX, walletCY + scaleSize(10), scaledFont('bold', 10, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+      drawPixelText(ctx, label, walletCX, walletCY - 6, 'bold 9px "Press Start 2P"', walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'LOGOUT', walletCX, walletCY + 10, 'bold 10px "Press Start 2P"', walletTextColor, walletTextShadow);
     } else {
-      drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, scaledFont('bold', 11, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+      drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, 'bold 11px "Press Start 2P"', walletTextColor, walletTextShadow);
     }
   } catch (error) {
     console.error('Error rendering wallet button text:', error);
-    drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, scaledFont('bold', 11, '"Press Start 2P"'), walletTextColor, walletTextShadow);
+    drawPixelText(ctx, 'CONNECT WALLET', walletCX, walletCY, 'bold 11px "Press Start 2P"', walletTextColor, walletTextShadow);
   }
 
   // === ENCOUNTER WARNING OVERLAY ===
@@ -15124,8 +15105,8 @@ function render() {
   const trainingButtonX = 20;
   const trainingButtonY = getTrainingButtonY();
   const trainingButtonWidth = 200;
-  const trainingButtonHeight = scaleSize(48);
-  const btnGap = scaleSize(10);
+  const trainingButtonHeight = 48;
+  const btnGap = 10;
   {
     const rr = drawPixelButtonFrame(ctx, trainingButtonX, trainingButtonY, trainingButtonWidth, trainingButtonHeight, {
       hovering: isHoveringGameMode,
@@ -15133,7 +15114,7 @@ function render() {
       borderColor: (gameMode === 'Training') ? UI_ACCENT_YELLOW : UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'TRAINING', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
+    drawPixelText(ctx, 'TRAINING', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 12px "Press Start 2P"', UI_TEXT);
     ctx.textAlign = 'left';
   }
 
@@ -15141,7 +15122,7 @@ function render() {
   const pvpOnlineButtonX = 20;
   const pvpOnlineButtonY = trainingButtonY + trainingButtonHeight + btnGap;
   const pvpOnlineButtonWidth = 200;
-  const pvpOnlineButtonHeight = scaleSize(48);
+  const pvpOnlineButtonHeight = 48;
   {
     const rr = drawPixelButtonFrame(ctx, pvpOnlineButtonX, pvpOnlineButtonY, pvpOnlineButtonWidth, pvpOnlineButtonHeight, {
       hovering: isHoveringPvPOnline,
@@ -15149,7 +15130,7 @@ function render() {
       borderColor: (gameMode === 'PvP') ? UI_ACCENT_GREEN : UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'PVP ONLINE', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
+    drawPixelText(ctx, 'PVP ONLINE', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 12px "Press Start 2P"', UI_TEXT);
     ctx.textAlign = 'left';
   }
 
@@ -15157,7 +15138,7 @@ function render() {
   const pvpFunButtonX = 20;
   const pvpFunButtonY = pvpOnlineButtonY + pvpOnlineButtonHeight + btnGap;
   const pvpFunButtonW = 200;
-  const pvpFunButtonH = scaleSize(48);
+  const pvpFunButtonH = 48;
   {
     const rr = drawPixelButtonFrame(ctx, pvpFunButtonX, pvpFunButtonY, pvpFunButtonW, pvpFunButtonH, {
       hovering: isHoveringPvpFun,
@@ -15165,7 +15146,7 @@ function render() {
       borderColor: (gameMode === 'PvP' && pvpOnlineRoomName === 'pvp_fun_room') ? UI_ACCENT_GREEN : UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, 'PVP FUN', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
+    drawPixelText(ctx, 'PVP FUN', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 12px "Press Start 2P"', UI_TEXT);
     ctx.textAlign = 'left';
   }
 
@@ -15173,7 +15154,7 @@ function render() {
   const newButtonX = 20;
   const newButtonY = pvpFunButtonY + pvpFunButtonH + btnGap;
   const newButtonWidth = 200;
-  const newButtonHeight = scaleSize(48);
+  const newButtonHeight = 48;
   {
     const rr = drawPixelButtonFrame(ctx, newButtonX, newButtonY, newButtonWidth, newButtonHeight, {
       hovering: isHoveringNewButton,
@@ -15181,7 +15162,7 @@ function render() {
       borderColor: UI_BTN_INNER,
       drawShadow: true,
     });
-    drawPixelText(ctx, '5SEC PVP', rr.x + rr.w / 2, rr.y + rr.h / 2, scaledFont('bold', 12, '"Press Start 2P"'), UI_TEXT);
+    drawPixelText(ctx, '5SEC PVP', rr.x + rr.w / 2, rr.y + rr.h / 2, 'bold 12px "Press Start 2P"', UI_TEXT);
     ctx.textAlign = 'left';
   }
 
@@ -20732,15 +20713,15 @@ if (!(window as any).__mousemoveListenerAdded) {
     isHoveringSpeedFxPlus =
       mouseX >= speedFxPlusR.x && mouseX <= speedFxPlusR.x + speedFxPlusR.w &&
       mouseY >= speedFxPlusR.y && mouseY <= speedFxPlusR.y + speedFxPlusR.h;
-    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(340) && mouseY <= scaleY(340) + scaleSize(48);
-    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(398) && mouseY <= scaleY(398) + scaleSize(48);
+    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 340 && mouseY <= 340 + 48;
+    const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 398 && mouseY <= 398 + 48;
     isHoveringFaucet = isOverFaucet && canUseFaucet() && !upgradeAnimation && !isDrawing;
     isHoveringContact = isOverContact && !upgradeAnimation && !isDrawing && !isContactOpen;
     isHoveringPewPew = isOverPewPew && !upgradeAnimation && !isDrawing && !isPewPewOpen;
     isHoveringLeaderboard = isOverLeaderboard && !upgradeAnimation && !isDrawing && !isLeaderboardOpen;
     isHoveringProfile = isOverProfile && !upgradeAnimation && !isDrawing && !isProfileOpen;
 
-    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(456) && mouseY <= scaleY(456) + scaleSize(48);
+    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 456 && mouseY <= 456 + 48;
     isHoveringWallet = isOverWallet && !upgradeAnimation && !isDrawing;
 
     // Encounter warning button hover detection
@@ -20801,22 +20782,22 @@ if (!(window as any).__mousemoveListenerAdded) {
 
     // Training button hover detection (must match render)
     const trainingButtonY = getTrainingButtonY();
-    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + scaleSize(48);
+    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 48;
     isHoveringGameMode = isOverTraining && !upgradeAnimation && !isDrawing;
 
     // PvP Online button hover detection
-    const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
-    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + scaleSize(48);
+    const pvpOnlineButtonY = trainingButtonY + 48 + 10;
+    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 48;
     isHoveringPvPOnline = isOverPvPOnline && !upgradeAnimation && !isDrawing;
 
     // PvP FUN hover detection
-    const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
-    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + scaleSize(48);
+    const pvpFunButtonY = pvpOnlineButtonY + 48 + 10;
+    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 48;
     isHoveringPvpFun = isOverPvpFun && !upgradeAnimation && !isDrawing;
 
     // 5SEC PvP hover detection (below FUN)
-    const newButtonY = pvpFunButtonY + scaleSize(48) + scaleSize(10);
-    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + scaleSize(48);
+    const newButtonY = pvpFunButtonY + 48 + 10;
+    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 48;
     isHoveringNewButton = isOverNewButton && !upgradeAnimation && !isDrawing;
 
     // Ticket error button hover detection (BACK button)
@@ -21301,7 +21282,7 @@ if (!(window as any).__mousedownListenerAdded) {
 
     // Check if clicking profile button
     if (!isProfileOpen) {
-      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(398) && mouseY <= scaleY(398) + scaleSize(48);
+      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 398 && mouseY <= 398 + 48;
       if (isOverProfile) {
         isPressingProfile = true;
         return; // Don't process other clicks
@@ -21345,7 +21326,7 @@ if (!(window as any).__mousedownListenerAdded) {
     }
 
     // Check if clicking wallet button
-    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(456) && mouseY <= scaleY(456) + scaleSize(48);
+    const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 456 && mouseY <= 456 + 48;
     if (isOverWallet) {
       isPressingWallet = true;
       return; // Don't start drawing if clicking wallet button
@@ -21384,7 +21365,7 @@ if (!(window as any).__mousedownListenerAdded) {
     }
 
     // Check if clicking leaderboard button
-    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(340) && mouseY <= scaleY(340) + scaleSize(48);
+    const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 340 && mouseY <= 340 + 48;
     if (isOverLeaderboard) {
       isPressingLeaderboard = true;
       return; // Don't start drawing if clicking UI
@@ -21392,31 +21373,31 @@ if (!(window as any).__mousedownListenerAdded) {
 
     // Check if clicking training button
     const trainingButtonY = getTrainingButtonY();
-    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + scaleSize(48);
+    const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 48;
     if (isOverTraining) {
       isPressingGameMode = true;
       return; // Don't start drawing if clicking training button
     }
 
     // Check if clicking PvP Online button
-    const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
-    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + scaleSize(48);
+    const pvpOnlineButtonY = trainingButtonY + 48 + 10;
+    const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 48;
     if (isOverPvPOnline) {
       isPressingPvPOnline = true;
       return; // Don't start drawing if clicking PvP Online button
     }
 
     // PvP FUN button click detection
-    const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
-    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + scaleSize(48);
+    const pvpFunButtonY = pvpOnlineButtonY + 48 + 10;
+    const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 48;
     if (isOverPvpFun) {
       isPressingPvpFun = true;
       return; // Don't start drawing if clicking PvP FUN button
     }
 
     // 5SEC PvP button click detection (below FUN)
-    const newButtonY = pvpFunButtonY + scaleSize(48) + scaleSize(10);
-    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + scaleSize(48);
+    const newButtonY = pvpFunButtonY + 48 + 10;
+    const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 48;
     if (isOverNewButton) {
       isPressingNewButton = true;
       return; // Don't start drawing if clicking 5SEC PvP button
@@ -21984,7 +21965,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(456) && mouseY <= scaleY(456) + scaleSize(48);
+      const isOverWallet = mouseX >= 20 && mouseX <= 220 && mouseY >= 456 && mouseY <= 456 + 48;
 
       if (isOverWallet) {
         // Check current wallet state
@@ -22108,7 +22089,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(398) && mouseY <= scaleY(398) + scaleSize(48);
+      const isOverProfile = mouseX >= 20 && mouseX <= 220 && mouseY >= 398 && mouseY <= 398 + 48;
       if (isOverProfile) {
         const wasOpen = isProfileOpen;
         isProfileOpen = !isProfileOpen;
@@ -22140,7 +22121,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const pos = getCanvasMousePos(e);
       const mouseX = pos.x;
       const mouseY = pos.y;
-      const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= scaleY(340) && mouseY <= scaleY(340) + scaleSize(48);
+      const isOverLeaderboard = mouseX >= 20 && mouseX <= 220 && mouseY >= 340 && mouseY <= 340 + 48;
       if (isOverLeaderboard) {
         const wasOpen = isLeaderboardOpen;
         isLeaderboardOpen = !isLeaderboardOpen;
@@ -22267,7 +22248,7 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseY = pos.y;
 
       const trainingButtonY = getTrainingButtonY();
-      const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + scaleSize(48);
+      const isOverTraining = mouseX >= 20 && mouseX <= 220 && mouseY >= trainingButtonY && mouseY <= trainingButtonY + 48;
 
       if (isOverTraining) {
         // Trigger ripple effect on button
@@ -22299,8 +22280,8 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseY = pos.y;
 
       const trainingButtonY = getTrainingButtonY();
-      const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
-      const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + scaleSize(48);
+      const pvpOnlineButtonY = trainingButtonY + 48 + 10;
+      const isOverPvPOnline = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpOnlineButtonY && mouseY <= pvpOnlineButtonY + 48;
 
       if (isOverPvPOnline) {
         // Trigger ripple effect
@@ -22332,9 +22313,9 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseX = pos.x;
       const mouseY = pos.y;
       const trainingButtonY = getTrainingButtonY();
-      const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
-      const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
-      const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + scaleSize(48);
+      const pvpOnlineButtonY = trainingButtonY + 48 + 10;
+      const pvpFunButtonY = pvpOnlineButtonY + 48 + 10;
+      const isOverPvpFun = mouseX >= 20 && mouseX <= 220 && mouseY >= pvpFunButtonY && mouseY <= pvpFunButtonY + 48;
       if (isOverPvpFun) {
         // Trigger ripple effect
         triggerButtonRipple(20, pvpFunButtonY, 200, 40, mouseX, mouseY);
@@ -22363,10 +22344,10 @@ if (!(window as any).__mouseupListenerAdded) {
       const mouseY = pos.y;
 
       const trainingButtonY = getTrainingButtonY();
-      const pvpOnlineButtonY = trainingButtonY + scaleSize(48) + scaleSize(10);
-      const pvpFunButtonY = pvpOnlineButtonY + scaleSize(48) + scaleSize(10);
-      const newButtonY = pvpFunButtonY + scaleSize(48) + scaleSize(10);
-      const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + scaleSize(48);
+      const pvpOnlineButtonY = trainingButtonY + 48 + 10;
+      const pvpFunButtonY = pvpOnlineButtonY + 48 + 10;
+      const newButtonY = pvpFunButtonY + 48 + 10;
+      const isOverNewButton = mouseX >= 20 && mouseX <= 220 && mouseY >= newButtonY && mouseY <= newButtonY + 48;
 
       if (isOverNewButton) {
         if (gameMode === 'PvP') {
