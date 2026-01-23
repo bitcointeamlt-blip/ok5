@@ -1,4 +1,4 @@
-// ========== UNITS - Real-Time Strategy Grid Game ==========
+// ========== UNITS - Space Strategy Game ==========
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -22,49 +22,51 @@ updateCanvasSize();
 window.addEventListener('resize', updateCanvasSize);
 
 // ========== CONSTANTS ==========
-const MAP_SIZE = 128; // 128x128 grid
-const TILE_SIZE = 32; // pixels per tile at zoom 1.0
-const MAX_UNITS_PER_TILE = 999;
-const BASE_GROWTH_RATE = 2; // units per second for a normal tile
+const WORLD_SIZE = 5000; // 5000x5000 world
+const BASE_GROWTH_RATE = 1.5; // units per second
 const STABILITY_MAX = 100;
-const SUPPLY_CHECK_INTERVAL = 2000; // ms between supply recalculations
-const ATTACK_SPEED = 200; // pixels per second for attack animations
+const SUPPLY_CHECK_INTERVAL = 2000;
+const SUPPLY_RANGE = 400; // max distance for supply connection
 
-// Empire degradation thresholds
-const EMPIRE_SLOW_THRESHOLD = 15; // tiles before growth slows
-const EMPIRE_DECAY_THRESHOLD = 40; // tiles before units start decaying
-const EMPIRE_GROWTH_PENALTY = 0.06; // growth multiplier reduction per tile over threshold
+// Planet generation
+const PLANET_COUNT = 80; // total planets on map
+const MIN_PLANET_DISTANCE = 120; // minimum distance between planets
 
-// Stability constants
-const STABILITY_DECAY_RATE = 2; // per second when conditions bad
-const STABILITY_RECOVER_RATE = 5; // per second when conditions good
-const STABILITY_DISTANCE_FACTOR = 3; // stability loss per tile distance from core
+// Empire degradation
+const EMPIRE_SLOW_THRESHOLD = 8;
+const EMPIRE_DECAY_THRESHOLD = 20;
+const EMPIRE_GROWTH_PENALTY = 0.08;
 
-// Attack constants
-const DISTANCE_PENALTY_PER_TILE = 0.08; // 8% loss per tile distance
-const MIN_ATTACK_EFFICIENCY = 0.2; // minimum 20% of units arrive
+// Attack
+const DISTANCE_PENALTY_PER_100PX = 0.05; // 5% loss per 100px distance
+const MIN_ATTACK_EFFICIENCY = 0.2;
+const ATTACK_BASE_SPEED = 250; // pixels per second
 
 // ========== ENUMS ==========
-enum TileType {
-  NEUTRAL = 'neutral',
-  NORMAL = 'normal',
-  CAPITAL = 'capital',
-  BUFF = 'buff',
-  WALL = 'wall',
-  INTERCEPTOR = 'interceptor',
-  RADAR = 'radar'
+enum PlanetSize {
+  ASTEROID = 'asteroid',     // radius 12-18
+  SMALL = 'small',           // radius 22-30
+  MEDIUM = 'medium',         // radius 35-50
+  LARGE = 'large',           // radius 55-75
+  GIANT = 'giant'            // radius 80-100
 }
 
 // ========== INTERFACES ==========
-interface Tile {
+interface Planet {
+  id: number;
   x: number;
   y: number;
-  ownerId: number; // -1 = neutral, 0+ = player index
+  radius: number;
+  size: PlanetSize;
+  ownerId: number; // -1 = neutral
   units: number;
-  tileType: TileType;
+  maxUnits: number;
+  defense: number;
+  growthRate: number;
   stability: number;
-  connected: boolean; // supply chain connected to capital
-  lastAction: number; // timestamp
+  connected: boolean;
+  color: string; // planet's natural color (visual)
+  craters: { x: number; y: number; r: number }[]; // visual detail
 }
 
 interface Player {
@@ -72,23 +74,20 @@ interface Player {
   name: string;
   color: string;
   colorDark: string;
-  tileCount: number;
+  planetCount: number;
   totalUnits: number;
-  capitalX: number;
-  capitalY: number;
+  homeId: number; // starting planet id
   alive: boolean;
   isAI: boolean;
 }
 
 interface AttackAnimation {
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
+  fromId: number;
+  toId: number;
   units: number;
   playerId: number;
   progress: number; // 0-1
-  speed: number;
+  speed: number; // progress per second
 }
 
 interface Camera {
@@ -103,17 +102,27 @@ interface Camera {
   dragCamStartY: number;
 }
 
+interface Star {
+  x: number;
+  y: number;
+  brightness: number;
+  size: number;
+}
+
 // ========== GAME STATE ==========
-let tiles: Tile[][] = [];
+let planets: Planet[] = [];
 let players: Player[] = [];
 let attacks: AttackAnimation[] = [];
-let selectedTile: { x: number; y: number } | null = null;
-let hoveredTile: { x: number; y: number } | null = null;
+let selectedPlanet: number | null = null; // planet id
+let hoveredPlanet: number | null = null;
 let gameTime = 0;
 let lastTime = 0;
 let lastSupplyCheck = 0;
 let lastAITick = 0;
-const AI_TICK_INTERVAL = 1500; // ms between AI decisions
+const AI_TICK_INTERVAL = 2000;
+
+// Background stars
+let stars: Star[] = [];
 
 // Camera
 const camera: Camera = {
@@ -129,9 +138,7 @@ const camera: Camera = {
 };
 
 // UI State
-let showTileInfo = false;
 let attackMode = false;
-let tileTypeMenu = false;
 let mouseX = 0;
 let mouseY = 0;
 
@@ -142,72 +149,112 @@ const PLAYER_COLORS = [
   { color: '#44cc44', dark: '#228822' }, // Green
   { color: '#ffaa00', dark: '#aa7700' }, // Orange
   { color: '#cc44cc', dark: '#882288' }, // Purple
-  { color: '#44cccc', dark: '#228888' }, // Cyan
 ];
 
-const NEUTRAL_COLOR = '#333344';
-const NEUTRAL_COLOR_DARK = '#222233';
+// Planet natural colors (for neutral planets)
+const PLANET_COLORS = [
+  '#6b5b4a', '#7a6655', '#5c5c6e', '#4a5a4a', '#6e5a5a',
+  '#5a5a4a', '#4a4a5a', '#6a5a6a', '#5a6a5a', '#7a5a4a',
+  '#8a7a6a', '#5a4a3a', '#6a6a7a', '#7a7a5a', '#4a5a6a'
+];
 
-// ========== TILE TYPE PROPERTIES ==========
-function getTileDefense(type: TileType): number {
-  switch (type) {
-    case TileType.WALL: return 3.0;
-    case TileType.CAPITAL: return 1.5;
-    case TileType.NORMAL: return 1.0;
-    case TileType.BUFF: return 0.5;
-    case TileType.INTERCEPTOR: return 0.7;
-    case TileType.RADAR: return 0.6;
-    default: return 0.8;
-  }
-}
-
-function getTileGrowthMultiplier(type: TileType): number {
-  switch (type) {
-    case TileType.CAPITAL: return 2.0;
-    case TileType.NORMAL: return 1.0;
-    case TileType.BUFF: return 0.5;
-    case TileType.WALL: return 0.1;
-    case TileType.INTERCEPTOR: return 0.3;
-    case TileType.RADAR: return 0.3;
-    default: return 0.5;
-  }
-}
-
-function getTileMaxUnits(type: TileType): number {
-  switch (type) {
-    case TileType.CAPITAL: return 500;
-    case TileType.NORMAL: return 200;
-    case TileType.BUFF: return 80;
-    case TileType.WALL: return 400;
-    case TileType.INTERCEPTOR: return 150;
-    case TileType.RADAR: return 60;
-    default: return 100;
-  }
-}
-
-function getTileStabilityRadius(type: TileType): number {
-  switch (type) {
-    case TileType.CAPITAL: return 8;
-    case TileType.BUFF: return 3;
-    default: return 0;
+// ========== PLANET SIZE PROPERTIES ==========
+function getPlanetProperties(size: PlanetSize): { minR: number; maxR: number; maxUnits: number; defense: number; growth: number } {
+  switch (size) {
+    case PlanetSize.ASTEROID:
+      return { minR: 12, maxR: 18, maxUnits: 100, defense: 0.8, growth: 0.5 };
+    case PlanetSize.SMALL:
+      return { minR: 22, maxR: 30, maxUnits: 200, defense: 1.0, growth: 1.0 };
+    case PlanetSize.MEDIUM:
+      return { minR: 35, maxR: 50, maxUnits: 400, defense: 1.5, growth: 1.5 };
+    case PlanetSize.LARGE:
+      return { minR: 55, maxR: 75, maxUnits: 700, defense: 2.0, growth: 2.0 };
+    case PlanetSize.GIANT:
+      return { minR: 80, maxR: 100, maxUnits: 1200, defense: 3.0, growth: 2.5 };
   }
 }
 
 // ========== INITIALIZATION ==========
-function initMap(): void {
-  tiles = [];
-  for (let y = 0; y < MAP_SIZE; y++) {
-    tiles[y] = [];
-    for (let x = 0; x < MAP_SIZE; x++) {
-      tiles[y][x] = {
+function generateStars(): void {
+  stars = [];
+  for (let i = 0; i < 500; i++) {
+    stars.push({
+      x: Math.random() * WORLD_SIZE,
+      y: Math.random() * WORLD_SIZE,
+      brightness: Math.random() * 0.6 + 0.2,
+      size: Math.random() < 0.1 ? 2 : 1
+    });
+  }
+}
+
+function generatePlanets(): void {
+  planets = [];
+  let id = 0;
+
+  // Distribution: many small, fewer large
+  const sizeDistribution: { size: PlanetSize; count: number }[] = [
+    { size: PlanetSize.ASTEROID, count: 30 },
+    { size: PlanetSize.SMALL, count: 25 },
+    { size: PlanetSize.MEDIUM, count: 15 },
+    { size: PlanetSize.LARGE, count: 7 },
+    { size: PlanetSize.GIANT, count: 3 },
+  ];
+
+  for (const { size, count } of sizeDistribution) {
+    for (let i = 0; i < count; i++) {
+      const props = getPlanetProperties(size);
+      const radius = props.minR + Math.random() * (props.maxR - props.minR);
+
+      // Find valid position (not too close to other planets)
+      let x = 0, y = 0;
+      let valid = false;
+      let attempts = 0;
+
+      while (!valid && attempts < 100) {
+        x = radius + Math.random() * (WORLD_SIZE - radius * 2);
+        y = radius + Math.random() * (WORLD_SIZE - radius * 2);
+
+        valid = true;
+        for (const p of planets) {
+          const dist = Math.sqrt((x - p.x) ** 2 + (y - p.y) ** 2);
+          if (dist < p.radius + radius + MIN_PLANET_DISTANCE) {
+            valid = false;
+            break;
+          }
+        }
+        attempts++;
+      }
+
+      if (!valid) continue; // skip if can't place
+
+      // Generate craters for visual detail
+      const craterCount = Math.floor(radius / 10) + Math.floor(Math.random() * 3);
+      const craters: { x: number; y: number; r: number }[] = [];
+      for (let c = 0; c < craterCount; c++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * radius * 0.6;
+        craters.push({
+          x: Math.cos(angle) * dist,
+          y: Math.sin(angle) * dist,
+          r: 2 + Math.random() * (radius * 0.15)
+        });
+      }
+
+      planets.push({
+        id: id++,
         x, y,
+        radius,
+        size,
         ownerId: -1,
-        units: Math.floor(Math.random() * 30) + 10, // neutral tiles have 10-40 units
-        tileType: TileType.NEUTRAL,
+        units: Math.floor(Math.random() * props.maxUnits * 0.3) + 10,
+        maxUnits: props.maxUnits,
+        defense: props.defense,
+        growthRate: props.growth,
         stability: 50,
         connected: false,
-        lastAction: 0
-      };
+        color: PLANET_COLORS[Math.floor(Math.random() * PLANET_COLORS.length)],
+        craters
+      });
     }
   }
 }
@@ -215,115 +262,121 @@ function initMap(): void {
 function initPlayers(): void {
   players = [];
 
-  // Player (human)
-  const startPositions = [
-    { x: 32, y: 32 },
-    { x: 96, y: 96 },
-    { x: 32, y: 96 },
-    { x: 96, y: 32 },
+  // Find 4 asteroids near the corners for starting positions
+  const corners = [
+    { x: WORLD_SIZE * 0.2, y: WORLD_SIZE * 0.2 },
+    { x: WORLD_SIZE * 0.8, y: WORLD_SIZE * 0.8 },
+    { x: WORLD_SIZE * 0.2, y: WORLD_SIZE * 0.8 },
+    { x: WORLD_SIZE * 0.8, y: WORLD_SIZE * 0.2 },
   ];
 
-  // Create human player
-  players.push({
-    id: 0,
-    name: 'You',
-    color: PLAYER_COLORS[0].color,
-    colorDark: PLAYER_COLORS[0].dark,
-    tileCount: 0,
-    totalUnits: 0,
-    capitalX: startPositions[0].x,
-    capitalY: startPositions[0].y,
-    alive: true,
-    isAI: false
-  });
+  const usedPlanets = new Set<number>();
 
-  // Create 3 AI players
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 0; i < 4; i++) {
+    // Find closest asteroid to corner
+    let bestPlanet: Planet | null = null;
+    let bestDist = Infinity;
+
+    for (const p of planets) {
+      if (usedPlanets.has(p.id)) continue;
+      if (p.size !== PlanetSize.ASTEROID) continue;
+
+      const dist = Math.sqrt((p.x - corners[i].x) ** 2 + (p.y - corners[i].y) ** 2);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestPlanet = p;
+      }
+    }
+
+    if (!bestPlanet) {
+      // Fallback: use any small planet
+      for (const p of planets) {
+        if (usedPlanets.has(p.id)) continue;
+        if (p.size === PlanetSize.ASTEROID || p.size === PlanetSize.SMALL) {
+          bestPlanet = p;
+          break;
+        }
+      }
+    }
+
+    if (!bestPlanet) continue;
+
+    usedPlanets.add(bestPlanet.id);
+
+    // Assign to player
+    bestPlanet.ownerId = i;
+    bestPlanet.units = 100;
+    bestPlanet.stability = STABILITY_MAX;
+    bestPlanet.connected = true;
+
     players.push({
       id: i,
-      name: `AI ${i}`,
+      name: i === 0 ? 'You' : `AI ${i}`,
       color: PLAYER_COLORS[i].color,
       colorDark: PLAYER_COLORS[i].dark,
-      tileCount: 0,
-      totalUnits: 0,
-      capitalX: startPositions[i].x,
-      capitalY: startPositions[i].y,
+      planetCount: 1,
+      totalUnits: 100,
+      homeId: bestPlanet.id,
       alive: true,
-      isAI: true
+      isAI: i !== 0
     });
   }
 
-  // Place starting tiles
-  for (const player of players) {
-    const tile = tiles[player.capitalY][player.capitalX];
-    tile.ownerId = player.id;
-    tile.units = 100;
-    tile.tileType = TileType.CAPITAL;
-    tile.stability = STABILITY_MAX;
-    tile.connected = true;
-    tile.lastAction = 0;
-    player.tileCount = 1;
-    player.totalUnits = 100;
+  // Center camera on player's home
+  if (players.length > 0) {
+    const home = planets[players[0].homeId];
+    if (home) {
+      camera.x = home.x * camera.zoom - gameWidth / 2;
+      camera.y = home.y * camera.zoom - gameHeight / 2;
+    }
   }
-
-  // Center camera on player
-  camera.x = players[0].capitalX * TILE_SIZE - gameWidth / 2;
-  camera.y = players[0].capitalY * TILE_SIZE - gameHeight / 2;
 }
 
 function initGame(): void {
-  initMap();
+  generateStars();
+  generatePlanets();
   initPlayers();
-  console.log('⚔️ UNITS initialized - map:', MAP_SIZE, 'x', MAP_SIZE);
+  console.log('⚔️ UNITS Space initialized -', planets.length, 'planets');
 }
 
 // ========== SUPPLY / CONNECTIVITY ==========
+function getDistance(a: Planet, b: Planet): number {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
 function recalculateSupply(): void {
-  // Reset all connectivity
-  for (let y = 0; y < MAP_SIZE; y++) {
-    for (let x = 0; x < MAP_SIZE; x++) {
-      tiles[y][x].connected = false;
-    }
+  // Reset
+  for (const p of planets) {
+    p.connected = false;
   }
 
-  // BFS from each player's capital
+  // BFS from each player's home planet
   for (const player of players) {
     if (!player.alive) continue;
 
-    const capital = tiles[player.capitalY]?.[player.capitalX];
-    if (!capital || capital.ownerId !== player.id) {
-      // Capital lost!
+    const home = planets.find(p => p.id === player.homeId);
+    if (!home || home.ownerId !== player.id) {
       player.alive = false;
       continue;
     }
 
-    // BFS flood fill from capital
-    const queue: { x: number; y: number }[] = [{ x: player.capitalX, y: player.capitalY }];
-    const visited = new Set<string>();
-    visited.add(`${player.capitalX},${player.capitalY}`);
+    // BFS through owned planets within supply range
+    const queue: Planet[] = [home];
+    const visited = new Set<number>();
+    visited.add(home.id);
 
     while (queue.length > 0) {
-      const pos = queue.shift()!;
-      const tile = tiles[pos.y][pos.x];
-      tile.connected = true;
+      const current = queue.shift()!;
+      current.connected = true;
 
-      // Check 4 neighbors
-      const neighbors = [
-        { x: pos.x - 1, y: pos.y },
-        { x: pos.x + 1, y: pos.y },
-        { x: pos.x, y: pos.y - 1 },
-        { x: pos.x, y: pos.y + 1 },
-      ];
+      for (const p of planets) {
+        if (visited.has(p.id)) continue;
+        if (p.ownerId !== player.id) continue;
 
-      for (const n of neighbors) {
-        if (n.x < 0 || n.x >= MAP_SIZE || n.y < 0 || n.y >= MAP_SIZE) continue;
-        const key = `${n.x},${n.y}`;
-        if (visited.has(key)) continue;
-
-        const nTile = tiles[n.y][n.x];
-        if (nTile.ownerId === player.id) {
-          visited.add(key);
-          queue.push(n);
+        const dist = getDistance(current, p);
+        if (dist <= SUPPLY_RANGE) {
+          visited.add(p.id);
+          queue.push(p);
         }
       }
     }
@@ -331,207 +384,156 @@ function recalculateSupply(): void {
 }
 
 // ========== STABILITY ==========
-function getDistanceToNearestCapital(x: number, y: number, playerId: number): number {
-  const player = players[playerId];
-  if (!player) return 999;
-  return Math.abs(x - player.capitalX) + Math.abs(y - player.capitalY);
-}
-
-function getBuffBonus(x: number, y: number, playerId: number): number {
-  let bonus = 0;
-  // Check nearby tiles for buff type
-  for (let dy = -3; dy <= 3; dy++) {
-    for (let dx = -3; dx <= 3; dx++) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || nx >= MAP_SIZE || ny < 0 || ny >= MAP_SIZE) continue;
-      const t = tiles[ny][nx];
-      if (t.ownerId === playerId && t.tileType === TileType.BUFF) {
-        const dist = Math.abs(dx) + Math.abs(dy);
-        bonus += Math.max(0, (4 - dist) * 0.1); // closer = more bonus
-      }
-    }
-  }
-  return Math.min(bonus, 0.5); // cap at 50% bonus
-}
-
 function updateStability(dt: number): void {
-  for (let y = 0; y < MAP_SIZE; y++) {
-    for (let x = 0; x < MAP_SIZE; x++) {
-      const tile = tiles[y][x];
-      if (tile.ownerId === -1) continue;
+  for (const planet of planets) {
+    if (planet.ownerId === -1) continue;
 
-      const player = players[tile.ownerId];
-      if (!player || !player.alive) continue;
+    const player = players[planet.ownerId];
+    if (!player || !player.alive) continue;
 
-      // Calculate target stability
-      let targetStability = STABILITY_MAX;
+    let targetStability = STABILITY_MAX;
 
-      // Distance from capital reduces stability
-      const dist = getDistanceToNearestCapital(x, y, tile.ownerId);
-      targetStability -= dist * STABILITY_DISTANCE_FACTOR;
+    // Distance from home planet
+    const home = planets.find(p => p.id === player.homeId);
+    if (home) {
+      const dist = getDistance(planet, home);
+      targetStability -= (dist / 200) * 3; // lose stability over distance
+    }
 
-      // Capital tile stabilizes
-      const capitalRadius = getTileStabilityRadius(TileType.CAPITAL);
-      if (dist <= capitalRadius) {
-        targetStability = Math.max(targetStability, 80);
-      }
+    // Not connected = bad
+    if (!planet.connected) {
+      targetStability = Math.min(targetStability, 20);
+    }
 
-      // Not connected = bad
-      if (!tile.connected) {
-        targetStability = Math.min(targetStability, 20);
-      }
+    // Empire size penalty
+    if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
+      const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
+      targetStability -= excess * 3;
+    }
 
-      // Empire size penalty
-      if (player.tileCount > EMPIRE_SLOW_THRESHOLD) {
-        const excess = player.tileCount - EMPIRE_SLOW_THRESHOLD;
-        targetStability -= excess * 1.5;
-      }
+    targetStability = Math.max(0, Math.min(STABILITY_MAX, targetStability));
 
-      // Buff bonus
-      const buff = getBuffBonus(x, y, tile.ownerId);
-      targetStability += buff * 30;
+    // Move toward target
+    const rate = planet.stability < targetStability ? 5 : 2;
+    if (planet.stability < targetStability) {
+      planet.stability = Math.min(targetStability, planet.stability + rate * dt);
+    } else {
+      planet.stability = Math.max(targetStability, planet.stability - rate * dt);
+    }
 
-      // Clamp
-      targetStability = Math.max(0, Math.min(STABILITY_MAX, targetStability));
-
-      // Move stability toward target
-      if (tile.stability < targetStability) {
-        tile.stability = Math.min(targetStability, tile.stability + STABILITY_RECOVER_RATE * dt);
-      } else if (tile.stability > targetStability) {
-        tile.stability = Math.max(targetStability, tile.stability - STABILITY_DECAY_RATE * dt);
-      }
-
-      // If stability hits 0, tile goes neutral
-      if (tile.stability <= 0) {
-        tile.ownerId = -1;
-        tile.tileType = TileType.NEUTRAL;
-        tile.units = Math.floor(tile.units * 0.3);
-      }
+    // Stability 0 = planet goes neutral
+    if (planet.stability <= 0) {
+      planet.ownerId = -1;
+      planet.units = Math.floor(planet.units * 0.3);
     }
   }
 }
 
 // ========== UNITS GROWTH ==========
-function updateUnitsGrowth(dt: number): void {
+function updateGrowth(dt: number): void {
+  // Reset counts
   for (const player of players) {
-    player.tileCount = 0;
+    player.planetCount = 0;
     player.totalUnits = 0;
   }
 
-  for (let y = 0; y < MAP_SIZE; y++) {
-    for (let x = 0; x < MAP_SIZE; x++) {
-      const tile = tiles[y][x];
-      if (tile.ownerId === -1) continue;
+  for (const planet of planets) {
+    if (planet.ownerId === -1) continue;
 
-      const player = players[tile.ownerId];
-      if (!player || !player.alive) continue;
+    const player = players[planet.ownerId];
+    if (!player || !player.alive) continue;
 
-      player.tileCount++;
-      player.totalUnits += tile.units;
+    player.planetCount++;
+    player.totalUnits += planet.units;
 
-      // Growth calculation
-      let growth = BASE_GROWTH_RATE * getTileGrowthMultiplier(tile.tileType);
+    // Calculate growth
+    let growth = BASE_GROWTH_RATE * planet.growthRate;
 
-      // Stability affects growth
-      if (tile.stability < 30) {
-        growth = -1; // Decay
-      } else if (tile.stability < 70) {
-        growth *= 0.3; // Slow
-      }
+    // Stability affects growth
+    if (planet.stability < 30) {
+      growth = -1; // decay
+    } else if (planet.stability < 70) {
+      growth *= 0.3;
+    }
 
-      // Empire size penalty
-      if (player.tileCount > EMPIRE_SLOW_THRESHOLD) {
-        const excess = player.tileCount - EMPIRE_SLOW_THRESHOLD;
-        growth *= Math.max(0.1, 1.0 - excess * EMPIRE_GROWTH_PENALTY);
-      }
+    // Empire size penalty
+    if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
+      const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
+      growth *= Math.max(0.1, 1.0 - excess * EMPIRE_GROWTH_PENALTY);
+    }
 
-      // Decay if empire too large
-      if (player.tileCount > EMPIRE_DECAY_THRESHOLD) {
-        growth -= 0.5;
-      }
+    if (player.planetCount > EMPIRE_DECAY_THRESHOLD) {
+      growth -= 0.5;
+    }
 
-      // Not connected = no growth
-      if (!tile.connected) {
-        growth = Math.min(growth, -0.5);
-      }
+    // Not connected = no growth
+    if (!planet.connected) {
+      growth = Math.min(growth, -0.5);
+    }
 
-      // Buff bonus
-      growth += growth * getBuffBonus(x, y, tile.ownerId);
+    // Apply
+    planet.units = Math.max(0, Math.min(planet.maxUnits, planet.units + growth * dt));
 
-      // Apply growth
-      const maxUnits = getTileMaxUnits(tile.tileType);
-      tile.units = Math.max(0, Math.min(maxUnits, tile.units + growth * dt));
-
-      // If units hit 0, tile goes neutral
-      if (tile.units <= 0) {
-        tile.ownerId = -1;
-        tile.tileType = TileType.NEUTRAL;
-        tile.units = 0;
-      }
+    if (planet.units <= 0) {
+      planet.ownerId = -1;
+      planet.units = 0;
     }
   }
 }
 
-// ========== ATTACK SYSTEM ==========
-function calculateAttackEfficiency(distance: number): number {
-  const penalty = distance * DISTANCE_PENALTY_PER_TILE;
-  return Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
-}
+// ========== ATTACK ==========
+function launchAttack(fromId: number, toId: number): void {
+  const from = planets.find(p => p.id === fromId);
+  const to = planets.find(p => p.id === toId);
+  if (!from || !to) return;
+  if (from.ownerId === -1) return;
+  if (from.units < 2) return;
 
-function launchAttack(fromX: number, fromY: number, toX: number, toY: number): void {
-  const fromTile = tiles[fromY][fromX];
-  if (fromTile.ownerId === -1) return;
-  if (fromTile.units < 2) return;
+  const unitsToSend = Math.floor(from.units * 0.5);
+  from.units -= unitsToSend;
 
-  // Send half the units (keep at least 1)
-  const unitsToSend = Math.floor(fromTile.units * 0.5);
-  fromTile.units -= unitsToSend;
-
-  const dx = toX - fromX;
-  const dy = toY - fromY;
-  const distance = Math.abs(dx) + Math.abs(dy);
+  const dist = getDistance(from, to);
+  const travelTime = dist / ATTACK_BASE_SPEED;
 
   attacks.push({
-    fromX, fromY,
-    toX, toY,
+    fromId,
+    toId,
     units: unitsToSend,
-    playerId: fromTile.ownerId,
+    playerId: from.ownerId,
     progress: 0,
-    speed: 1.0 / (distance * 0.15 + 0.3) // slower over distance
+    speed: 1.0 / travelTime
   });
 }
 
 function resolveAttack(attack: AttackAnimation): void {
-  const toTile = tiles[attack.toY][attack.toX];
-  const distance = Math.abs(attack.toX - attack.fromX) + Math.abs(attack.toY - attack.fromY);
-  const efficiency = calculateAttackEfficiency(distance);
+  const to = planets.find(p => p.id === attack.toId);
+  const from = planets.find(p => p.id === attack.fromId);
+  if (!to || !from) return;
+
+  const dist = getDistance(from, to);
+  const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
+  const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
   const arrivingUnits = Math.floor(attack.units * efficiency);
 
-  if (toTile.ownerId === attack.playerId) {
-    // Reinforcement
-    const max = getTileMaxUnits(toTile.tileType);
-    toTile.units = Math.min(max, toTile.units + arrivingUnits);
+  if (to.ownerId === attack.playerId) {
+    // Reinforce
+    to.units = Math.min(to.maxUnits, to.units + arrivingUnits);
   } else {
     // Attack
-    const defense = getTileDefense(toTile.tileType);
-    const defenseStrength = toTile.units * defense;
+    const defenseStrength = to.units * to.defense;
 
     if (arrivingUnits > defenseStrength) {
       // Attacker wins
       const remaining = arrivingUnits - defenseStrength;
-      toTile.ownerId = attack.playerId;
-      toTile.units = Math.max(1, Math.floor(remaining));
-      toTile.tileType = TileType.NORMAL;
-      toTile.stability = 50;
-      toTile.connected = false;
-      toTile.lastAction = gameTime;
+      to.ownerId = attack.playerId;
+      to.units = Math.max(1, Math.floor(remaining));
+      to.stability = 50;
+      to.connected = false;
     } else {
       // Defender wins
-      toTile.units = Math.max(0, Math.floor((defenseStrength - arrivingUnits) / defense));
-      if (toTile.units <= 0) {
-        toTile.ownerId = -1;
-        toTile.tileType = TileType.NEUTRAL;
+      to.units = Math.max(0, Math.floor((defenseStrength - arrivingUnits) / to.defense));
+      if (to.units <= 0) {
+        to.ownerId = -1;
       }
     }
   }
@@ -539,113 +541,72 @@ function resolveAttack(attack: AttackAnimation): void {
 
 function updateAttacks(dt: number): void {
   for (let i = attacks.length - 1; i >= 0; i--) {
-    const attack = attacks[i];
-    attack.progress += attack.speed * dt;
-
-    if (attack.progress >= 1.0) {
-      resolveAttack(attack);
+    attacks[i].progress += attacks[i].speed * dt;
+    if (attacks[i].progress >= 1.0) {
+      resolveAttack(attacks[i]);
       attacks.splice(i, 1);
     }
   }
 }
 
-// ========== INTERCEPTOR LOGIC ==========
-function checkInterceptors(attack: AttackAnimation): number {
-  const dx = attack.toX - attack.fromX;
-  const dy = attack.toY - attack.fromY;
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
-  let intercepted = 0;
-
-  for (let s = 1; s < steps; s++) {
-    const px = Math.round(attack.fromX + (dx / steps) * s);
-    const py = Math.round(attack.fromY + (dy / steps) * s);
-
-    // Check 1-tile radius for interceptors
-    for (let iy = -1; iy <= 1; iy++) {
-      for (let ix = -1; ix <= 1; ix++) {
-        const nx = px + ix;
-        const ny = py + iy;
-        if (nx < 0 || nx >= MAP_SIZE || ny < 0 || ny >= MAP_SIZE) continue;
-        const t = tiles[ny][nx];
-        if (t.tileType === TileType.INTERCEPTOR && t.ownerId !== attack.playerId && t.units > 5) {
-          // Intercept: remove some units from attack
-          const interceptPower = Math.min(t.units * 0.3, attack.units * 0.2);
-          intercepted += interceptPower;
-          t.units -= Math.floor(interceptPower * 0.5);
-        }
-      }
-    }
-  }
-  return intercepted;
-}
-
-// ========== AI SYSTEM ==========
+// ========== AI ==========
 function aiTick(player: Player): void {
   if (!player.alive || !player.isAI) return;
 
-  // Find all player tiles
-  const myTiles: Tile[] = [];
-  for (let y = 0; y < MAP_SIZE; y++) {
-    for (let x = 0; x < MAP_SIZE; x++) {
-      if (tiles[y][x].ownerId === player.id) {
-        myTiles.push(tiles[y][x]);
-      }
-    }
-  }
+  const myPlanets = planets.filter(p => p.ownerId === player.id);
+  if (myPlanets.length === 0) { player.alive = false; return; }
 
-  if (myTiles.length === 0) {
-    player.alive = false;
-    return;
-  }
+  // Find attack candidates
+  interface AiCandidate { from: Planet; to: Planet; priority: number }
+  const candidates: AiCandidate[] = [];
 
-  // AI strategy: expand to adjacent neutral tiles, attack weak enemies
-  const candidates: { from: Tile; to: Tile; priority: number }[] = [];
+  for (const mine of myPlanets) {
+    if (mine.units < 40) continue;
 
-  for (const tile of myTiles) {
-    if (tile.units < 30) continue; // not enough units to attack
-
-    // Check 4 neighbors
-    const neighbors = [
-      { x: tile.x - 1, y: tile.y },
-      { x: tile.x + 1, y: tile.y },
-      { x: tile.x, y: tile.y - 1 },
-      { x: tile.x, y: tile.y + 1 },
-    ];
-
-    for (const n of neighbors) {
-      if (n.x < 0 || n.x >= MAP_SIZE || n.y < 0 || n.y >= MAP_SIZE) continue;
-      const target = tiles[n.y][n.x];
+    // Find nearby planets to attack
+    for (const target of planets) {
       if (target.ownerId === player.id) continue;
+
+      const dist = getDistance(mine, target);
+      if (dist > 600) continue; // don't attack too far
 
       let priority = 0;
 
       if (target.ownerId === -1) {
-        // Neutral - easy target
-        priority = 10 - target.units * 0.1;
+        // Neutral
+        priority = 10 - (target.units / target.maxUnits) * 5;
+        // Prefer closer planets
+        priority += (600 - dist) / 100;
+        // Prefer larger planets
+        if (target.size === PlanetSize.LARGE || target.size === PlanetSize.GIANT) priority += 5;
       } else {
-        // Enemy - attack if we're stronger
-        const defense = target.units * getTileDefense(target.tileType);
-        if (tile.units * 0.5 > defense) {
-          priority = 5;
-          if (target.tileType === TileType.CAPITAL) priority = 20; // prioritize capitals
-          if (target.tileType === TileType.BUFF) priority = 15;
+        // Enemy - only if we can win
+        const defStr = target.units * target.defense;
+        const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
+        const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
+        const arriving = mine.units * 0.5 * efficiency;
+
+        if (arriving > defStr * 1.2) {
+          priority = 8;
+          // Prioritize home planets
+          const enemyPlayer = players[target.ownerId];
+          if (enemyPlayer && target.id === enemyPlayer.homeId) priority += 10;
         }
       }
 
       if (priority > 0) {
-        candidates.push({ from: tile, to: target, priority });
+        candidates.push({ from: mine, to: target, priority });
       }
     }
   }
 
-  // Sort by priority and execute top action
   candidates.sort((a, b) => b.priority - a.priority);
 
-  const maxActions = Math.min(2, candidates.length); // AI does max 2 actions per tick
+  // Execute top 1-2 actions
+  const maxActions = Math.min(2, candidates.length);
   for (let i = 0; i < maxActions; i++) {
-    const action = candidates[i];
-    if (action.from.units > 30) {
-      launchAttack(action.from.x, action.from.y, action.to.x, action.to.y);
+    if (candidates[i].from.units > 40) {
+      launchAttack(candidates[i].from.id, candidates[i].to.id);
     }
   }
 }
@@ -661,23 +622,31 @@ function getCanvasMousePos(e: MouseEvent): { x: number; y: number } {
 
 function screenToWorld(sx: number, sy: number): { x: number; y: number } {
   return {
-    x: (sx + camera.x) / (TILE_SIZE * camera.zoom),
-    y: (sy + camera.y) / (TILE_SIZE * camera.zoom)
+    x: (sx + camera.x) / camera.zoom,
+    y: (sy + camera.y) / camera.zoom
   };
 }
 
 function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   return {
-    x: wx * TILE_SIZE * camera.zoom - camera.x,
-    y: wy * TILE_SIZE * camera.zoom - camera.y
+    x: wx * camera.zoom - camera.x,
+    y: wy * camera.zoom - camera.y
   };
+}
+
+function getPlanetAtScreen(sx: number, sy: number): Planet | null {
+  const world = screenToWorld(sx, sy);
+  for (const p of planets) {
+    const dist = Math.sqrt((world.x - p.x) ** 2 + (world.y - p.y) ** 2);
+    if (dist <= p.radius) return p;
+  }
+  return null;
 }
 
 canvas.addEventListener('mousedown', (e) => {
   const pos = getCanvasMousePos(e);
 
   if (e.button === 2 || e.button === 1) {
-    // Right/middle click = pan
     camera.dragging = true;
     camera.dragStartX = pos.x;
     camera.dragStartY = pos.y;
@@ -688,24 +657,22 @@ canvas.addEventListener('mousedown', (e) => {
   }
 
   // Left click
-  const world = screenToWorld(pos.x, pos.y);
-  const tileX = Math.floor(world.x);
-  const tileY = Math.floor(world.y);
+  const planet = getPlanetAtScreen(pos.x, pos.y);
 
-  if (tileX < 0 || tileX >= MAP_SIZE || tileY < 0 || tileY >= MAP_SIZE) return;
-
-  if (attackMode && selectedTile) {
-    // Launch attack
-    launchAttack(selectedTile.x, selectedTile.y, tileX, tileY);
+  if (attackMode && selectedPlanet !== null) {
+    if (planet && planet.id !== selectedPlanet) {
+      launchAttack(selectedPlanet, planet.id);
+    }
     attackMode = false;
-    selectedTile = null;
-  } else if (tileTypeMenu && selectedTile) {
-    // Tile type menu handled in UI
+    selectedPlanet = null;
   } else {
-    // Select tile
-    selectedTile = { x: tileX, y: tileY };
-    attackMode = false;
-    tileTypeMenu = false;
+    if (planet) {
+      selectedPlanet = planet.id;
+      attackMode = false;
+    } else {
+      selectedPlanet = null;
+      attackMode = false;
+    }
   }
 });
 
@@ -720,15 +687,8 @@ canvas.addEventListener('mousemove', (e) => {
     return;
   }
 
-  const world = screenToWorld(pos.x, pos.y);
-  const tileX = Math.floor(world.x);
-  const tileY = Math.floor(world.y);
-
-  if (tileX >= 0 && tileX < MAP_SIZE && tileY >= 0 && tileY < MAP_SIZE) {
-    hoveredTile = { x: tileX, y: tileY };
-  } else {
-    hoveredTile = null;
-  }
+  const planet = getPlanetAtScreen(pos.x, pos.y);
+  hoveredPlanet = planet ? planet.id : null;
 });
 
 canvas.addEventListener('mouseup', () => {
@@ -737,360 +697,383 @@ canvas.addEventListener('mouseup', () => {
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  const pos = getCanvasMousePos(e);
+  const worldBefore = screenToWorld(pos.x, pos.y);
+
   const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-  camera.targetZoom = Math.max(0.3, Math.min(4.0, camera.targetZoom * zoomFactor));
+  camera.targetZoom = Math.max(0.15, Math.min(3.0, camera.targetZoom * zoomFactor));
+  camera.zoom = camera.targetZoom; // instant for precise zooming
+
+  // Zoom toward mouse position
+  const worldAfter = screenToWorld(pos.x, pos.y);
+  camera.x += (worldBefore.x - worldAfter.x) * camera.zoom;
+  camera.y += (worldBefore.y - worldAfter.y) * camera.zoom;
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Keyboard
 document.addEventListener('keydown', (e) => {
   if (e.key === 'a' || e.key === 'A') {
-    if (selectedTile) {
-      const tile = tiles[selectedTile.y][selectedTile.x];
-      if (tile.ownerId === 0) { // player's tile
+    if (selectedPlanet !== null) {
+      const planet = planets.find(p => p.id === selectedPlanet);
+      if (planet && planet.ownerId === 0) {
         attackMode = !attackMode;
-        tileTypeMenu = false;
-      }
-    }
-  }
-  if (e.key === 't' || e.key === 'T') {
-    if (selectedTile) {
-      const tile = tiles[selectedTile.y][selectedTile.x];
-      if (tile.ownerId === 0) {
-        tileTypeMenu = !tileTypeMenu;
-        attackMode = false;
       }
     }
   }
   if (e.key === 'Escape') {
-    selectedTile = null;
+    selectedPlanet = null;
     attackMode = false;
-    tileTypeMenu = false;
   }
-  // Tile type shortcuts (when menu is open)
-  if (tileTypeMenu && selectedTile) {
-    const tile = tiles[selectedTile.y][selectedTile.x];
-    if (tile.ownerId === 0) {
-      if (e.key === '1') { tile.tileType = TileType.NORMAL; tileTypeMenu = false; }
-      if (e.key === '2') { tile.tileType = TileType.BUFF; tileTypeMenu = false; }
-      if (e.key === '3') { tile.tileType = TileType.WALL; tileTypeMenu = false; }
-      if (e.key === '4') { tile.tileType = TileType.INTERCEPTOR; tileTypeMenu = false; }
-      if (e.key === '5') { tile.tileType = TileType.RADAR; tileTypeMenu = false; }
+  // Space = center on home
+  if (e.key === ' ') {
+    e.preventDefault();
+    const home = planets.find(p => p.id === players[0]?.homeId);
+    if (home) {
+      camera.x = home.x * camera.zoom - gameWidth / 2;
+      camera.y = home.y * camera.zoom - gameHeight / 2;
     }
   }
 });
 
 // ========== RENDERING ==========
-function getTileColor(tile: Tile): string {
-  if (tile.ownerId === -1) return NEUTRAL_COLOR;
-  const player = players[tile.ownerId];
-  if (!player) return NEUTRAL_COLOR;
+function renderStars(): void {
+  for (const star of stars) {
+    const screen = worldToScreen(star.x, star.y);
+    if (screen.x < -5 || screen.x > gameWidth + 5 || screen.y < -5 || screen.y > gameHeight + 5) continue;
 
-  // Darken based on stability
-  if (tile.stability < 30) return player.colorDark;
-  return player.color;
-}
-
-function getTileBorderColor(tile: Tile): string {
-  if (tile.ownerId === -1) return NEUTRAL_COLOR_DARK;
-  const player = players[tile.ownerId];
-  if (!player) return NEUTRAL_COLOR_DARK;
-  return player.colorDark;
-}
-
-function getTileTypeSymbol(type: TileType): string {
-  switch (type) {
-    case TileType.CAPITAL: return '★';
-    case TileType.BUFF: return '+';
-    case TileType.WALL: return '▓';
-    case TileType.INTERCEPTOR: return '×';
-    case TileType.RADAR: return '◎';
-    default: return '';
+    ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+    ctx.fillRect(Math.floor(screen.x), Math.floor(screen.y), star.size, star.size);
   }
 }
 
-function render(): void {
-  // Clear
-  ctx.fillStyle = '#0a0a0f';
-  ctx.fillRect(0, 0, gameWidth, gameHeight);
+function renderSupplyLines(): void {
+  // Draw supply connections between owned planets
+  for (const player of players) {
+    if (!player.alive) continue;
 
-  // Smooth zoom
-  camera.zoom += (camera.targetZoom - camera.zoom) * 0.1;
+    const owned = planets.filter(p => p.ownerId === player.id && p.connected);
 
-  const tileScreenSize = TILE_SIZE * camera.zoom;
+    for (let i = 0; i < owned.length; i++) {
+      for (let j = i + 1; j < owned.length; j++) {
+        const dist = getDistance(owned[i], owned[j]);
+        if (dist <= SUPPLY_RANGE) {
+          const from = worldToScreen(owned[i].x, owned[i].y);
+          const to = worldToScreen(owned[j].x, owned[j].y);
 
-  // Calculate visible range
-  const startX = Math.max(0, Math.floor(camera.x / tileScreenSize));
-  const startY = Math.max(0, Math.floor(camera.y / tileScreenSize));
-  const endX = Math.min(MAP_SIZE, Math.ceil((camera.x + gameWidth) / tileScreenSize));
-  const endY = Math.min(MAP_SIZE, Math.ceil((camera.y + gameHeight) / tileScreenSize));
-
-  // Draw tiles
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
-      const tile = tiles[y][x];
-      const screenX = x * tileScreenSize - camera.x;
-      const screenY = y * tileScreenSize - camera.y;
-
-      // Tile background
-      ctx.fillStyle = getTileColor(tile);
-      ctx.fillRect(
-        Math.floor(screenX + 1),
-        Math.floor(screenY + 1),
-        Math.ceil(tileScreenSize - 2),
-        Math.ceil(tileScreenSize - 2)
-      );
-
-      // Stability indicator (dark overlay for low stability)
-      if (tile.ownerId !== -1 && tile.stability < 70) {
-        const alpha = (70 - tile.stability) / 70 * 0.4;
-        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
-        ctx.fillRect(
-          Math.floor(screenX + 1),
-          Math.floor(screenY + 1),
-          Math.ceil(tileScreenSize - 2),
-          Math.ceil(tileScreenSize - 2)
-        );
-      }
-
-      // Not connected indicator
-      if (tile.ownerId !== -1 && !tile.connected) {
-        ctx.strokeStyle = '#ff000066';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([3, 3]);
-        ctx.strokeRect(
-          Math.floor(screenX + 2),
-          Math.floor(screenY + 2),
-          Math.ceil(tileScreenSize - 4),
-          Math.ceil(tileScreenSize - 4)
-        );
-        ctx.setLineDash([]);
-      }
-
-      // Units number (only if zoomed in enough)
-      if (tileScreenSize > 20 && tile.units > 0) {
-        const fontSize = Math.max(8, Math.min(14, tileScreenSize * 0.35));
-        ctx.font = `${fontSize}px "Press Start 2P"`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#fff';
-        ctx.fillText(
-          Math.floor(tile.units).toString(),
-          Math.floor(screenX + tileScreenSize / 2),
-          Math.floor(screenY + tileScreenSize / 2 + (tile.tileType !== TileType.NEUTRAL && tile.tileType !== TileType.NORMAL ? -fontSize * 0.4 : 0))
-        );
-      }
-
-      // Tile type symbol
-      if (tileScreenSize > 24 && tile.tileType !== TileType.NEUTRAL && tile.tileType !== TileType.NORMAL) {
-        const symbolSize = Math.max(6, Math.min(10, tileScreenSize * 0.25));
-        ctx.font = `${symbolSize}px "Press Start 2P"`;
-        ctx.fillStyle = '#ffffff88';
-        ctx.fillText(
-          getTileTypeSymbol(tile.tileType),
-          Math.floor(screenX + tileScreenSize / 2),
-          Math.floor(screenY + tileScreenSize * 0.75)
-        );
+          ctx.strokeStyle = player.color + '22';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.stroke();
+        }
       }
     }
   }
+}
 
-  // Draw attack animations
+function renderPlanet(planet: Planet): void {
+  const screen = worldToScreen(planet.x, planet.y);
+  const screenRadius = planet.radius * camera.zoom;
+
+  // Cull off-screen
+  if (screen.x + screenRadius < 0 || screen.x - screenRadius > gameWidth) return;
+  if (screen.y + screenRadius < 0 || screen.y - screenRadius > gameHeight) return;
+
+  // Planet body
+  let bodyColor = planet.color;
+  if (planet.ownerId !== -1) {
+    const player = players[planet.ownerId];
+    if (player) {
+      bodyColor = planet.stability < 30 ? player.colorDark : player.color;
+    }
+  }
+
+  ctx.beginPath();
+  ctx.arc(screen.x, screen.y, screenRadius, 0, Math.PI * 2);
+  ctx.fillStyle = bodyColor;
+  ctx.fill();
+
+  // Craters (visual detail) - only if big enough on screen
+  if (screenRadius > 10) {
+    for (const crater of planet.craters) {
+      const cx = screen.x + crater.x * camera.zoom;
+      const cy = screen.y + crater.y * camera.zoom;
+      const cr = crater.r * camera.zoom;
+      if (cr < 1) continue;
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.fill();
+    }
+  }
+
+  // Planet outline
+  ctx.beginPath();
+  ctx.arc(screen.x, screen.y, screenRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = planet.ownerId !== -1 ? (players[planet.ownerId]?.colorDark || '#444') : '#444';
+  ctx.lineWidth = planet.ownerId !== -1 ? 2 : 1;
+  ctx.stroke();
+
+  // Disconnected indicator
+  if (planet.ownerId !== -1 && !planet.connected) {
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, screenRadius + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ff000066';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Units number
+  if (screenRadius > 8 && planet.units > 0) {
+    const fontSize = Math.max(8, Math.min(16, screenRadius * 0.5));
+    ctx.font = `bold ${fontSize}px "Press Start 2P"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 3;
+    ctx.fillText(Math.floor(planet.units).toString(), screen.x, screen.y);
+    ctx.shadowBlur = 0;
+  }
+
+  // Size label for large planets (if zoomed enough)
+  if (screenRadius > 30 && (planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT)) {
+    ctx.font = '7px "Press Start 2P"';
+    ctx.fillStyle = '#ffffff66';
+    ctx.fillText(planet.size.toUpperCase(), screen.x, screen.y + screenRadius * 0.5);
+  }
+}
+
+function renderAttacks(): void {
   for (const attack of attacks) {
-    const from = worldToScreen(attack.fromX + 0.5, attack.fromY + 0.5);
-    const to = worldToScreen(attack.toX + 0.5, attack.toY + 0.5);
-    const cx = from.x + (to.x - from.x) * attack.progress;
-    const cy = from.y + (to.y - from.y) * attack.progress;
+    const from = planets.find(p => p.id === attack.fromId);
+    const to = planets.find(p => p.id === attack.toId);
+    if (!from || !to) continue;
+
+    const fromScreen = worldToScreen(from.x, from.y);
+    const toScreen = worldToScreen(to.x, to.y);
+    const cx = fromScreen.x + (toScreen.x - fromScreen.x) * attack.progress;
+    const cy = fromScreen.y + (toScreen.y - fromScreen.y) * attack.progress;
 
     const player = players[attack.playerId];
     if (!player) continue;
 
-    // Trail
-    ctx.strokeStyle = player.color + '44';
-    ctx.lineWidth = 2;
+    // Trail line
+    ctx.strokeStyle = player.color + '33';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
+    ctx.moveTo(fromScreen.x, fromScreen.y);
     ctx.lineTo(cx, cy);
     ctx.stroke();
 
-    // Unit dot
-    ctx.fillStyle = player.color;
+    // Moving dot
+    const dotSize = Math.max(3, 5 * camera.zoom);
     ctx.beginPath();
-    ctx.arc(cx, cy, Math.max(3, tileScreenSize * 0.15), 0, Math.PI * 2);
+    ctx.arc(cx, cy, dotSize, 0, Math.PI * 2);
+    ctx.fillStyle = player.color;
     ctx.fill();
 
-    // Unit count
-    if (tileScreenSize > 15) {
+    // Unit count label
+    if (camera.zoom > 0.4) {
       ctx.font = '8px "Press Start 2P"';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
-      ctx.fillText(Math.floor(attack.units).toString(), cx, cy - 8);
+      ctx.fillText(Math.floor(attack.units).toString(), cx, cy - dotSize - 4);
     }
   }
-
-  // Selection highlight
-  if (selectedTile) {
-    const screenPos = worldToScreen(selectedTile.x, selectedTile.y);
-    ctx.strokeStyle = attackMode ? '#ff4444' : '#ffffff';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(
-      Math.floor(screenPos.x),
-      Math.floor(screenPos.y),
-      Math.ceil(tileScreenSize),
-      Math.ceil(tileScreenSize)
-    );
-  }
-
-  // Hover highlight
-  if (hoveredTile && (!selectedTile || hoveredTile.x !== selectedTile.x || hoveredTile.y !== selectedTile.y)) {
-    const screenPos = worldToScreen(hoveredTile.x, hoveredTile.y);
-    ctx.strokeStyle = '#ffffff44';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(
-      Math.floor(screenPos.x),
-      Math.floor(screenPos.y),
-      Math.ceil(tileScreenSize),
-      Math.ceil(tileScreenSize)
-    );
-  }
-
-  // Attack mode line
-  if (attackMode && selectedTile && hoveredTile) {
-    const from = worldToScreen(selectedTile.x + 0.5, selectedTile.y + 0.5);
-    const to = worldToScreen(hoveredTile.x + 0.5, hoveredTile.y + 0.5);
-    const distance = Math.abs(hoveredTile.x - selectedTile.x) + Math.abs(hoveredTile.y - selectedTile.y);
-    const efficiency = calculateAttackEfficiency(distance);
-
-    ctx.strokeStyle = `rgba(255, ${Math.floor(efficiency * 255)}, 0, 0.6)`;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Show efficiency
-    const midX = (from.x + to.x) / 2;
-    const midY = (from.y + to.y) / 2;
-    ctx.font = '10px "Press Start 2P"';
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${Math.floor(efficiency * 100)}%`, midX, midY - 10);
-  }
-
-  // ========== UI ==========
-  renderUI();
 }
 
 function renderUI(): void {
   // Top-left: Player stats
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(10, 10, 250, 90);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(10, 10, 260, 100);
+  ctx.strokeStyle = '#4488ff44';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(10, 10, 260, 100);
 
-  ctx.font = '12px "Press Start 2P"';
+  ctx.font = '14px "Press Start 2P"';
   ctx.textAlign = 'left';
-  ctx.fillStyle = players[0].color;
-  ctx.fillText('UNITS', 20, 35);
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('UNITS', 22, 38);
 
   ctx.font = '9px "Press Start 2P"';
   ctx.fillStyle = '#aaa';
-  ctx.fillText(`Tiles: ${players[0].tileCount}`, 20, 55);
-  ctx.fillText(`Units: ${Math.floor(players[0].totalUnits)}`, 20, 72);
-  ctx.fillText(`Zoom: ${camera.zoom.toFixed(1)}x`, 20, 89);
+  ctx.fillText(`Planets: ${players[0]?.planetCount || 0}`, 22, 60);
+  ctx.fillText(`Total Units: ${Math.floor(players[0]?.totalUnits || 0)}`, 22, 78);
+  ctx.fillText(`Zoom: ${camera.zoom.toFixed(2)}x`, 22, 96);
 
-  // Top-right: Controls help
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(gameWidth - 280, 10, 270, 110);
+  // Top-right: Controls
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(gameWidth - 290, 10, 280, 120);
 
   ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#888';
-  ctx.fillText('Right-click: Pan', gameWidth - 20, 30);
+  ctx.fillStyle = '#666';
+  ctx.fillText('Right-click drag: Pan', gameWidth - 20, 30);
   ctx.fillText('Scroll: Zoom', gameWidth - 20, 46);
-  ctx.fillText('Click: Select tile', gameWidth - 20, 62);
+  ctx.fillText('Click planet: Select', gameWidth - 20, 62);
   ctx.fillText('[A] Attack mode', gameWidth - 20, 78);
-  ctx.fillText('[T] Tile type menu', gameWidth - 20, 94);
+  ctx.fillText('[SPACE] Home planet', gameWidth - 20, 94);
   ctx.fillText('[ESC] Deselect', gameWidth - 20, 110);
 
-  // Selected tile info
-  if (selectedTile) {
-    const tile = tiles[selectedTile.y][selectedTile.x];
-    const panelW = 260;
-    const panelH = tileTypeMenu ? 180 : 120;
-    const panelX = 10;
-    const panelY = gameHeight - panelH - 10;
+  // Selected planet info
+  if (selectedPlanet !== null) {
+    const planet = planets.find(p => p.id === selectedPlanet);
+    if (planet) {
+      const panelW = 270;
+      const panelH = 130;
+      const panelX = 10;
+      const panelY = gameHeight - panelH - 10;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(panelX, panelY, panelW, panelH);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+      ctx.strokeStyle = '#ffffff22';
+      ctx.strokeRect(panelX, panelY, panelW, panelH);
 
-    ctx.font = '9px "Press Start 2P"';
-    ctx.textAlign = 'left';
+      ctx.font = '9px "Press Start 2P"';
+      ctx.textAlign = 'left';
 
-    const owner = tile.ownerId === -1 ? 'Neutral' : players[tile.ownerId]?.name || '?';
-    ctx.fillStyle = tile.ownerId === -1 ? '#888' : (players[tile.ownerId]?.color || '#888');
-    ctx.fillText(`Owner: ${owner}`, panelX + 10, panelY + 20);
+      const owner = planet.ownerId === -1 ? 'Neutral' : players[planet.ownerId]?.name || '?';
+      ctx.fillStyle = planet.ownerId === -1 ? '#888' : (players[planet.ownerId]?.color || '#888');
+      ctx.fillText(`${owner}`, panelX + 12, panelY + 20);
 
-    ctx.fillStyle = '#ccc';
-    ctx.fillText(`Type: ${tile.tileType}`, panelX + 10, panelY + 38);
-    ctx.fillText(`Units: ${Math.floor(tile.units)}`, panelX + 10, panelY + 56);
-    ctx.fillText(`Stability: ${Math.floor(tile.stability)}%`, panelX + 10, panelY + 74);
-    ctx.fillText(`Connected: ${tile.connected ? 'YES' : 'NO'}`, panelX + 10, panelY + 92);
+      ctx.fillStyle = '#ccc';
+      ctx.fillText(`Size: ${planet.size}`, panelX + 12, panelY + 40);
+      ctx.fillText(`Units: ${Math.floor(planet.units)} / ${planet.maxUnits}`, panelX + 12, panelY + 58);
+      ctx.fillText(`Defense: ${planet.defense.toFixed(1)}x`, panelX + 12, panelY + 76);
+      ctx.fillText(`Stability: ${Math.floor(planet.stability)}%`, panelX + 12, panelY + 94);
+      ctx.fillText(`Supply: ${planet.connected ? 'Connected' : 'CUT OFF'}`, panelX + 12, panelY + 112);
 
-    if (attackMode) {
-      ctx.fillStyle = '#ff4444';
-      ctx.fillText('ATTACK MODE - click target', panelX + 10, panelY + 112);
-    }
-
-    // Tile type menu
-    if (tileTypeMenu && tile.ownerId === 0) {
-      ctx.fillStyle = '#FFD700';
-      ctx.fillText('Set type:', panelX + 10, panelY + 125);
-      ctx.fillStyle = '#aaa';
-      ctx.font = '8px "Press Start 2P"';
-      ctx.fillText('[1] Normal  [2] Buff', panelX + 10, panelY + 143);
-      ctx.fillText('[3] Wall  [4] Intercept', panelX + 10, panelY + 158);
-      ctx.fillText('[5] Radar', panelX + 10, panelY + 173);
+      if (attackMode) {
+        ctx.fillStyle = '#ff4444';
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillText('ATTACK - click target', panelX + 12, panelY + panelH - 5);
+      }
     }
   }
 
-  // Player list (bottom-right)
-  const listW = 200;
-  const listH = players.length * 20 + 10;
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(gameWidth - listW - 10, gameHeight - listH - 10, listW, listH);
+  // Attack mode line preview
+  if (attackMode && selectedPlanet !== null && hoveredPlanet !== null && hoveredPlanet !== selectedPlanet) {
+    const from = planets.find(p => p.id === selectedPlanet);
+    const to = planets.find(p => p.id === hoveredPlanet);
+    if (from && to) {
+      const fromScreen = worldToScreen(from.x, from.y);
+      const toScreen = worldToScreen(to.x, to.y);
+      const dist = getDistance(from, to);
+      const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
+      const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
+
+      // Line
+      ctx.strokeStyle = `rgba(255, ${Math.floor(efficiency * 200)}, 0, 0.5)`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath();
+      ctx.moveTo(fromScreen.x, fromScreen.y);
+      ctx.lineTo(toScreen.x, toScreen.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Efficiency label
+      const midX = (fromScreen.x + toScreen.x) / 2;
+      const midY = (fromScreen.y + toScreen.y) / 2;
+      ctx.font = '10px "Press Start 2P"';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${Math.floor(efficiency * 100)}% eff`, midX, midY - 12);
+      ctx.font = '8px "Press Start 2P"';
+      ctx.fillStyle = '#aaa';
+      ctx.fillText(`${Math.floor(from.units * 0.5)} units`, midX, midY + 6);
+    }
+  }
+
+  // Player scoreboard (bottom-right)
+  const sbW = 220;
+  const sbH = players.length * 22 + 16;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(gameWidth - sbW - 10, gameHeight - sbH - 10, sbW, sbH);
 
   ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'left';
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
-    ctx.fillStyle = p.alive ? p.color : '#555';
-    const text = `${p.name}: ${p.tileCount}t`;
-    ctx.fillText(text, gameWidth - listW, gameHeight - listH + 10 + i * 20);
+    ctx.fillStyle = p.alive ? p.color : '#444';
+    ctx.fillText(
+      `${p.name}: ${p.planetCount}P ${Math.floor(p.totalUnits)}U`,
+      gameWidth - sbW,
+      gameHeight - sbH + 8 + i * 22
+    );
   }
+}
+
+function render(): void {
+  // Clear
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, gameWidth, gameHeight);
+
+  // Stars
+  renderStars();
+
+  // Supply lines (behind planets)
+  renderSupplyLines();
+
+  // Planets
+  for (const planet of planets) {
+    renderPlanet(planet);
+  }
+
+  // Selection ring
+  if (selectedPlanet !== null) {
+    const planet = planets.find(p => p.id === selectedPlanet);
+    if (planet) {
+      const screen = worldToScreen(planet.x, planet.y);
+      const r = planet.radius * camera.zoom;
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, r + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = attackMode ? '#ff4444' : '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // Hover ring
+  if (hoveredPlanet !== null && hoveredPlanet !== selectedPlanet) {
+    const planet = planets.find(p => p.id === hoveredPlanet);
+    if (planet) {
+      const screen = worldToScreen(planet.x, planet.y);
+      const r = planet.radius * camera.zoom;
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, r + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff44';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Attacks
+  renderAttacks();
+
+  // UI overlay
+  renderUI();
 }
 
 // ========== GAME LOOP ==========
 function update(dt: number): void {
   gameTime += dt * 1000;
 
-  // Update units growth
-  updateUnitsGrowth(dt);
-
-  // Update stability
+  updateGrowth(dt);
   updateStability(dt);
-
-  // Update attacks
   updateAttacks(dt);
 
-  // Recalculate supply periodically
   if (gameTime - lastSupplyCheck > SUPPLY_CHECK_INTERVAL) {
     recalculateSupply();
     lastSupplyCheck = gameTime;
   }
 
-  // AI ticks
   if (gameTime - lastAITick > AI_TICK_INTERVAL) {
     for (const player of players) {
       if (player.isAI) aiTick(player);
@@ -1100,7 +1083,7 @@ function update(dt: number): void {
 }
 
 function gameLoop(timestamp: number): void {
-  const dt = Math.min((timestamp - lastTime) / 1000, 0.1); // cap at 100ms
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
   lastTime = timestamp;
 
   update(dt);
@@ -1116,4 +1099,4 @@ requestAnimationFrame((t) => {
   gameLoop(t);
 });
 
-console.log('⚔️ UNITS game started');
+console.log('⚔️ UNITS Space - planets:', planets.length, ', players:', players.length);
