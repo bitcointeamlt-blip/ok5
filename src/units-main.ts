@@ -21,36 +21,72 @@ function updateCanvasSize(): void {
 updateCanvasSize();
 window.addEventListener('resize', updateCanvasSize);
 
+// ========== ENUMS ==========
+enum PlanetSize {
+  ASTEROID = 'asteroid',
+  SMALL = 'small',
+  MEDIUM = 'medium',
+  LARGE = 'large',
+  GIANT = 'giant'
+}
+
+enum GameState {
+  PLAYING = 'playing',
+  PAUSED = 'paused',
+  GAMEOVER = 'gameover'
+}
+
+enum Difficulty {
+  EASY = 'easy',
+  MEDIUM = 'medium',
+  HARD = 'hard'
+}
+
 // ========== CONSTANTS ==========
-const WORLD_SIZE = 5000; // 5000x5000 world
-const BASE_GROWTH_RATE = 1.5; // units per second
+const WORLD_SIZE = 10000;
 const STABILITY_MAX = 100;
 const SUPPLY_CHECK_INTERVAL = 2000;
-const SUPPLY_RANGE = 400; // max distance for supply connection
+const SUPPLY_RANGE = 400;
 
 // Planet generation
-const PLANET_COUNT = 80; // total planets on map
-const MIN_PLANET_DISTANCE = 120; // minimum distance between planets
+const PLANET_COUNT = 220;
+const MIN_PLANET_DISTANCE = 100;
 
 // Empire degradation
 const EMPIRE_SLOW_THRESHOLD = 8;
 const EMPIRE_DECAY_THRESHOLD = 20;
 const EMPIRE_GROWTH_PENALTY = 0.08;
-const EMPIRE_DEGRADE_UNIT_THRESHOLD = 2000; // degradation only starts after 2k total units
+const EMPIRE_DEGRADE_UNIT_THRESHOLD = 2000;
 
 // Attack
-const DISTANCE_PENALTY_PER_100PX = 0.05; // 5% loss per 100px distance
+const DISTANCE_PENALTY_PER_100PX = 0.05;
 const MIN_ATTACK_EFFICIENCY = 0.2;
-const ATTACK_BASE_SPEED = 250; // pixels per second
+const ATTACK_BASE_SPEED = 250;
 
-// ========== ENUMS ==========
-enum PlanetSize {
-  ASTEROID = 'asteroid',     // radius 12-18
-  SMALL = 'small',           // radius 22-30
-  MEDIUM = 'medium',         // radius 35-50
-  LARGE = 'large',           // radius 55-75
-  GIANT = 'giant'            // radius 80-100
-}
+// Fog of War
+const FOG_REVEAL_DURATION = 5000;  // full vision for first 5 seconds
+const FOG_FADE_IN_DURATION = 3000; // fog fades in over 3 seconds after reveal
+const FOG_VISION_BY_SIZE: Record<string, number> = {
+  [PlanetSize.ASTEROID]: 600,
+  [PlanetSize.SMALL]: 900,
+  [PlanetSize.MEDIUM]: 1200,
+  [PlanetSize.LARGE]: 1700,
+  [PlanetSize.GIANT]: 2200
+};
+
+// Difficulty settings
+const DIFFICULTY_SETTINGS = {
+  [Difficulty.EASY]: { growthRate: 0.8, aiInterval: 3000, startUnits: 150 },
+  [Difficulty.MEDIUM]: { growthRate: 0.6, aiInterval: 2000, startUnits: 100 },
+  [Difficulty.HARD]: { growthRate: 0.4, aiInterval: 1200, startUnits: 80 }
+};
+
+// Special abilities
+const ABILITY_COOLDOWNS = {
+  blitz: 30000,   // 30s
+  shield: 45000,  // 45s
+  nuke: 60000     // 60s
+};
 
 // ========== INTERFACES ==========
 interface Planet {
@@ -59,21 +95,24 @@ interface Planet {
   y: number;
   radius: number;
   size: PlanetSize;
-  ownerId: number; // -1 = neutral
+  ownerId: number;
   units: number;
   maxUnits: number;
   defense: number;
   growthRate: number;
   stability: number;
   connected: boolean;
-  color: string; // planet's natural color (visual)
-  craters: { x: number; y: number; r: number }[]; // visual detail
-  // Moon orbit properties (only for moons)
+  generating: boolean; // whether this planet actively generates units
+  color: string;
+  craters: { x: number; y: number; r: number }[];
   isMoon?: boolean;
-  parentId?: number; // parent planet id
-  orbitAngle?: number; // current angle
-  orbitRadius?: number; // distance from parent
-  orbitSpeed?: number; // radians per second
+  parentId?: number;
+  orbitAngle?: number;
+  orbitRadius?: number;
+  orbitSpeed?: number;
+  // Visual
+  pulsePhase: number;
+  shieldTimer: number; // remaining shield time
 }
 
 interface Player {
@@ -83,7 +122,7 @@ interface Player {
   colorDark: string;
   planetCount: number;
   totalUnits: number;
-  homeId: number; // starting planet id
+  homeId: number;
   alive: boolean;
   isAI: boolean;
 }
@@ -93,8 +132,9 @@ interface AttackAnimation {
   toId: number;
   units: number;
   playerId: number;
-  progress: number; // 0-1
-  speed: number; // progress per second
+  progress: number;
+  speed: number;
+  isBlitz: boolean;
 }
 
 interface Camera {
@@ -107,6 +147,9 @@ interface Camera {
   dragStartY: number;
   dragCamStartX: number;
   dragCamStartY: number;
+  shakeX: number;
+  shakeY: number;
+  shakeIntensity: number;
 }
 
 interface Star {
@@ -116,11 +159,85 @@ interface Star {
   size: number;
 }
 
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  size: number;
+}
+
+interface ClickAnim {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+}
+
+interface ActionPopup {
+  targetId: number;
+  screenX: number;
+  screenY: number;
+  buttons: { label: string; action: string }[];
+  openTime: number; // performance.now() when opened, for animation
+}
+
+interface SupplyConnection {
+  fromId: number;
+  toId: number;
+  playerId: number;
+}
+
+interface Ability {
+  id: string;
+  name: string;
+  lastUsed: number; // timestamp
+  cooldown: number;
+}
+
+interface Probe {
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+  speed: number;
+  playerId: number;
+  done: boolean;
+}
+
+interface RevealZone {
+  x: number;
+  y: number;
+  radius: number;
+  timeLeft: number;
+  permanent: boolean;
+}
+
+interface Battle {
+  planetId: number;
+  attackUnits: number;
+  attackPlayerId: number;
+  defendUnits: number;
+  defendPlayerId: number;
+  startTime: number;
+  duration: number; // in seconds
+  efficiency: number;
+  isBlitz: boolean;
+  resolved: boolean;
+}
+
 // ========== GAME STATE ==========
 let planets: Planet[] = [];
+let planetMap: Map<number, Planet> = new Map(); // O(1) lookup
 let players: Player[] = [];
 let attacks: AttackAnimation[] = [];
-let selectedPlanet: number | null = null; // planet id
+let battles: Battle[] = [];
+let selectedPlanets: Set<number> = new Set(); // multi-select
 let hoveredPlanet: number | null = null;
 let gameTime = 0;
 let lastTime = 0;
@@ -128,51 +245,84 @@ let lastSupplyCheck = 0;
 let lastAITick = 0;
 const AI_TICK_INTERVAL = 2000;
 
+// Game state
+let gameState: GameState = GameState.PLAYING;
+let gameResult: 'win' | 'lose' | null = null;
+let difficulty: Difficulty = Difficulty.MEDIUM;
+
 // Background stars
 let stars: Star[] = [];
 
+// Particles
+let particles: Particle[] = [];
+let clickAnims: ClickAnim[] = [];
+
+// Cached supply connections
+let supplyConnections: SupplyConnection[] = [];
+
 // Camera
 const camera: Camera = {
-  x: 0,
-  y: 0,
-  zoom: 1.0,
-  targetZoom: 1.0,
+  x: 0, y: 0,
+  zoom: 1.0, targetZoom: 1.0,
   dragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
-  dragCamStartX: 0,
-  dragCamStartY: 0
+  dragStartX: 0, dragStartY: 0,
+  dragCamStartX: 0, dragCamStartY: 0,
+  shakeX: 0, shakeY: 0, shakeIntensity: 0
 };
 
 // UI State
 let mouseX = 0;
 let mouseY = 0;
-let sendPercent = 50; // % of units to send (10-100)
-let sliderDragging = false;
-let sliderScreenY = 0; // computed each frame based on panel position
+let sendPercent = 50;
+let popupSliderDragging = false;
+let actionPopup: ActionPopup | null = null;
+let planetMode: 'none' | 'scout' | 'boost' = 'none';
+let modePlanetId: number | null = null;
 
-// Slider geometry
-const SLIDER_X = 22;
-const SLIDER_W = 240;
-const SLIDER_H = 14;
+// Fog of war offscreen canvas
+let fogCanvas: HTMLCanvasElement | null = null;
+let fogCtx: CanvasRenderingContext2D | null = null;
+
+// Probes & reveal zones
+let probes: Probe[] = [];
+let revealZones: RevealZone[] = [];
+const PROBE_SPEED = 350;       // px/sec
+const PROBE_REVEAL_RADIUS = 200; // radius of each reveal circle
+const PROBE_REVEAL_DURATION = 60000; // 1 min
+const PROBE_DROP_INTERVAL = 80; // drop reveal zone every 80px
+const PROBE_UNIT_COST_PER_100PX = 5; // 5 units per 100px distance
+
+// Abilities
+let abilities: Ability[] = [
+  { id: 'blitz', name: 'BLITZ', lastUsed: -99999, cooldown: ABILITY_COOLDOWNS.blitz },
+  { id: 'shield', name: 'SHIELD', lastUsed: -99999, cooldown: ABILITY_COOLDOWNS.shield },
+  { id: 'nuke', name: 'NUKE', lastUsed: -99999, cooldown: ABILITY_COOLDOWNS.nuke }
+];
+
+// Explore drag state
+let exploreDragging = false;
+let explorePlanetId: number | null = null;
+let exploreStartX = 0;
+let exploreStartY = 0;
+let activeAbility: string | null = null; // currently activated ability waiting for target
 
 // Player colors
 const PLAYER_COLORS = [
-  { color: '#4488ff', dark: '#2255aa' }, // Blue (player)
-  { color: '#ff4444', dark: '#aa2222' }, // Red
-  { color: '#44cc44', dark: '#228822' }, // Green
-  { color: '#ffaa00', dark: '#aa7700' }, // Orange
-  { color: '#cc44cc', dark: '#882288' }, // Purple
+  { color: '#4488ff', dark: '#2255aa' },
+  { color: '#ff4444', dark: '#aa2222' },
+  { color: '#44cc44', dark: '#228822' },
+  { color: '#ffaa00', dark: '#aa7700' },
+  { color: '#cc44cc', dark: '#882288' },
 ];
 
-// Planet natural colors (for neutral planets)
+// Planet natural colors
 const PLANET_COLORS = [
   '#6b5b4a', '#7a6655', '#5c5c6e', '#4a5a4a', '#6e5a5a',
   '#5a5a4a', '#4a4a5a', '#6a5a6a', '#5a6a5a', '#7a5a4a',
   '#8a7a6a', '#5a4a3a', '#6a6a7a', '#7a7a5a', '#4a5a6a'
 ];
 
-// ========== PLANET SIZE PROPERTIES ==========
+// ========== HELPERS ==========
 function getPlanetProperties(size: PlanetSize): { minR: number; maxR: number; maxUnits: number; defense: number; growth: number } {
   switch (size) {
     case PlanetSize.ASTEROID:
@@ -186,6 +336,59 @@ function getPlanetProperties(size: PlanetSize): { minR: number; maxR: number; ma
     case PlanetSize.GIANT:
       return { minR: 80, maxR: 100, maxUnits: 1200, defense: 3.0, growth: 2.5 };
   }
+}
+
+function getDistance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+function getVisionRange(planet: Planet): number {
+  return FOG_VISION_BY_SIZE[planet.size] || 450;
+}
+
+function isVisibleToPlayer(planet: Planet): boolean {
+  // Player's own planets are always visible
+  if (planet.ownerId === 0) return true;
+  // Check if any player planet is within its vision range
+  for (const p of planets) {
+    if (p.ownerId === 0) {
+      if (getDistance(p, planet) <= getVisionRange(p)) return true;
+    }
+  }
+  // Check reveal zones
+  for (const zone of revealZones) {
+    if (getDistance(zone, planet) <= zone.radius) return true;
+  }
+  return false;
+}
+
+function spawnParticles(x: number, y: number, color: string, count: number, speed: number): void {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = speed * (0.5 + Math.random() * 0.5);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: 1.0,
+      maxLife: 0.6 + Math.random() * 0.4,
+      color,
+      size: 2 + Math.random() * 3
+    });
+  }
+}
+
+function triggerShake(intensity: number): void {
+  camera.shakeIntensity = Math.max(camera.shakeIntensity, intensity);
+}
+
+function getAbilityCooldownRemaining(ability: Ability): number {
+  const elapsed = gameTime - ability.lastUsed;
+  return Math.max(0, ability.cooldown - elapsed);
+}
+
+function isAbilityReady(ability: Ability): boolean {
+  return getAbilityCooldownRemaining(ability) <= 0;
 }
 
 // ========== INITIALIZATION ==========
@@ -203,9 +406,9 @@ function generateStars(): void {
 
 function generatePlanets(): void {
   planets = [];
+  planetMap.clear();
   let id = 0;
 
-  // Distribution: many small, fewer large
   const sizeDistribution: { size: PlanetSize; count: number }[] = [
     { size: PlanetSize.ASTEROID, count: 30 },
     { size: PlanetSize.SMALL, count: 25 },
@@ -219,7 +422,6 @@ function generatePlanets(): void {
       const props = getPlanetProperties(size);
       const radius = props.minR + Math.random() * (props.maxR - props.minR);
 
-      // Find valid position (not too close to other planets)
       let x = 0, y = 0;
       let valid = false;
       let attempts = 0;
@@ -239,9 +441,8 @@ function generatePlanets(): void {
         attempts++;
       }
 
-      if (!valid) continue; // skip if can't place
+      if (!valid) continue;
 
-      // Generate craters for visual detail
       const craterCount = Math.floor(radius / 10) + Math.floor(Math.random() * 3);
       const craters: { x: number; y: number; r: number }[] = [];
       for (let c = 0; c < craterCount; c++) {
@@ -254,7 +455,6 @@ function generatePlanets(): void {
         });
       }
 
-      // Larger planets have more starting HP (units)
       let startingUnits: number;
       switch (size) {
         case PlanetSize.ASTEROID: startingUnits = Math.floor(Math.random() * 30) + 10; break;
@@ -264,11 +464,9 @@ function generatePlanets(): void {
         case PlanetSize.GIANT: startingUnits = Math.floor(Math.random() * 500) + 300; break;
       }
 
-      planets.push({
+      const planet: Planet = {
         id: id++,
-        x, y,
-        radius,
-        size,
+        x, y, radius, size,
         ownerId: -1,
         units: startingUnits,
         maxUnits: props.maxUnits,
@@ -276,14 +474,19 @@ function generatePlanets(): void {
         growthRate: props.growth,
         stability: 50,
         connected: false,
+        generating: false,
         color: PLANET_COLORS[Math.floor(Math.random() * PLANET_COLORS.length)],
-        craters
-      });
+        craters,
+        pulsePhase: Math.random() * Math.PI * 2,
+        shieldTimer: 0
+      };
+      planets.push(planet);
+      planetMap.set(planet.id, planet);
     }
   }
 
   // Add moons to LARGE and GIANT planets
-  const mainPlanets = [...planets]; // copy to avoid modifying during iteration
+  const mainPlanets = [...planets];
   for (const parent of mainPlanets) {
     if (parent.size === PlanetSize.LARGE || parent.size === PlanetSize.GIANT) {
       const moonOrbitRadius = parent.radius + 30 + Math.random() * 20;
@@ -291,19 +494,19 @@ function generatePlanets(): void {
       const moonX = parent.x + Math.cos(moonAngle) * moonOrbitRadius;
       const moonY = parent.y + Math.sin(moonAngle) * moonOrbitRadius;
 
-      planets.push({
+      const moon: Planet = {
         id: id++,
-        x: moonX,
-        y: moonY,
-        radius: 8 + Math.random() * 4, // small moon radius
+        x: moonX, y: moonY,
+        radius: 8 + Math.random() * 4,
         size: PlanetSize.ASTEROID,
         ownerId: -1,
-        units: 100,
-        maxUnits: 100,
+        units: 99,
+        maxUnits: 99,
         defense: 0.8,
         growthRate: 0.3,
         stability: 50,
         connected: false,
+        generating: false,
         color: '#aaa8a0',
         craters: [
           { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 2 },
@@ -313,16 +516,20 @@ function generatePlanets(): void {
         parentId: parent.id,
         orbitAngle: moonAngle,
         orbitRadius: moonOrbitRadius,
-        orbitSpeed: 0.3 + Math.random() * 0.3 // radians per second
-      });
+        orbitSpeed: 0.3 + Math.random() * 0.3,
+        pulsePhase: Math.random() * Math.PI * 2,
+        shieldTimer: 0
+      };
+      planets.push(moon);
+      planetMap.set(moon.id, moon);
     }
   }
 }
 
 function initPlayers(): void {
   players = [];
+  const settings = DIFFICULTY_SETTINGS[difficulty];
 
-  // Find 4 asteroids near the corners for starting positions
   const corners = [
     { x: WORLD_SIZE * 0.2, y: WORLD_SIZE * 0.2 },
     { x: WORLD_SIZE * 0.8, y: WORLD_SIZE * 0.8 },
@@ -333,14 +540,14 @@ function initPlayers(): void {
   const usedPlanets = new Set<number>();
 
   for (let i = 0; i < 4; i++) {
-    // Find closest asteroid to corner
     let bestPlanet: Planet | null = null;
     let bestDist = Infinity;
 
+    // Start on SMALL planets instead of asteroids
     for (const p of planets) {
       if (usedPlanets.has(p.id)) continue;
-      if (p.size !== PlanetSize.ASTEROID) continue;
-      if (p.isMoon) continue; // don't start on a moon
+      if (p.size !== PlanetSize.SMALL) continue;
+      if (p.isMoon) continue;
 
       const dist = Math.sqrt((p.x - corners[i].x) ** 2 + (p.y - corners[i].y) ** 2);
       if (dist < bestDist) {
@@ -350,10 +557,10 @@ function initPlayers(): void {
     }
 
     if (!bestPlanet) {
-      // Fallback: use any small planet
+      // Fallback: any small/medium
       for (const p of planets) {
         if (usedPlanets.has(p.id)) continue;
-        if (p.size === PlanetSize.ASTEROID || p.size === PlanetSize.SMALL) {
+        if (p.size === PlanetSize.SMALL || p.size === PlanetSize.MEDIUM) {
           bestPlanet = p;
           break;
         }
@@ -363,12 +570,11 @@ function initPlayers(): void {
     if (!bestPlanet) continue;
 
     usedPlanets.add(bestPlanet.id);
-
-    // Assign to player
     bestPlanet.ownerId = i;
-    bestPlanet.units = 100;
+    bestPlanet.units = settings.startUnits;
     bestPlanet.stability = STABILITY_MAX;
     bestPlanet.connected = true;
+    bestPlanet.generating = true;
 
     players.push({
       id: i,
@@ -376,7 +582,7 @@ function initPlayers(): void {
       color: PLAYER_COLORS[i].color,
       colorDark: PLAYER_COLORS[i].dark,
       planetCount: 1,
-      totalUnits: 100,
+      totalUnits: settings.startUnits,
       homeId: bestPlanet.id,
       alive: true,
       isAI: i !== 0
@@ -385,7 +591,7 @@ function initPlayers(): void {
 
   // Center camera on player's home
   if (players.length > 0) {
-    const home = planets[players[0].homeId];
+    const home = planetMap.get(players[0].homeId);
     if (home) {
       camera.x = home.x * camera.zoom - gameWidth / 2;
       camera.y = home.y * camera.zoom - gameHeight / 2;
@@ -397,31 +603,54 @@ function initGame(): void {
   generateStars();
   generatePlanets();
   initPlayers();
+  particles = [];
+  attacks = [];
+  battles = [];
+  probes = [];
+  revealZones = [];
+  selectedPlanets.clear();
+  actionPopup = null;
+  activeAbility = null;
+  gameState = GameState.PLAYING;
+  gameResult = null;
+  gameTime = 0;
+  lastSupplyCheck = 0;
+  lastAITick = 0;
+  abilities.forEach(a => a.lastUsed = -99999);
+
+  // Add permanent reveal zone around starting position (covers initial viewport)
+  if (players.length > 0) {
+    const home = planetMap.get(players[0].homeId);
+    if (home) {
+      revealZones.push({
+        x: home.x,
+        y: home.y,
+        radius: 1500,
+        timeLeft: 0,
+        permanent: true
+      });
+    }
+  }
+
   console.log('⚔️ UNITS Space initialized -', planets.length, 'planets');
 }
 
 // ========== SUPPLY / CONNECTIVITY ==========
-function getDistance(a: Planet, b: Planet): number {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
-}
-
 function recalculateSupply(): void {
-  // Reset
   for (const p of planets) {
     p.connected = false;
   }
+  supplyConnections = [];
 
-  // BFS from each player's home planet
   for (const player of players) {
     if (!player.alive) continue;
 
-    const home = planets.find(p => p.id === player.homeId);
+    const home = planetMap.get(player.homeId);
     if (!home || home.ownerId !== player.id) {
       player.alive = false;
       continue;
     }
 
-    // BFS through owned planets within supply range
     const queue: Planet[] = [home];
     const visited = new Set<number>();
     visited.add(home.id);
@@ -438,6 +667,8 @@ function recalculateSupply(): void {
         if (dist <= SUPPLY_RANGE) {
           visited.add(p.id);
           queue.push(p);
+          // Cache this connection for rendering
+          supplyConnections.push({ fromId: current.id, toId: p.id, playerId: player.id });
         }
       }
     }
@@ -454,21 +685,17 @@ function updateStability(dt: number): void {
 
     let targetStability = STABILITY_MAX;
 
-    // Skip degradation if player has fewer than 2k total units
     if (player.totalUnits >= EMPIRE_DEGRADE_UNIT_THRESHOLD) {
-      // Distance from home planet
-      const home = planets.find(p => p.id === player.homeId);
+      const home = planetMap.get(player.homeId);
       if (home) {
         const dist = getDistance(planet, home);
-        targetStability -= (dist / 200) * 3; // lose stability over distance
+        targetStability -= (dist / 200) * 3;
       }
 
-      // Not connected = bad
       if (!planet.connected) {
         targetStability = Math.min(targetStability, 20);
       }
 
-      // Empire size penalty
       if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
         const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
         targetStability -= excess * 3;
@@ -477,7 +704,6 @@ function updateStability(dt: number): void {
 
     targetStability = Math.max(0, Math.min(STABILITY_MAX, targetStability));
 
-    // Move toward target
     const rate = planet.stability < targetStability ? 5 : 2;
     if (planet.stability < targetStability) {
       planet.stability = Math.min(targetStability, planet.stability + rate * dt);
@@ -485,17 +711,53 @@ function updateStability(dt: number): void {
       planet.stability = Math.max(targetStability, planet.stability - rate * dt);
     }
 
-    // Stability 0 = planet goes neutral
     if (planet.stability <= 0) {
+      const prevOwner = planet.ownerId;
       planet.ownerId = -1;
       planet.units = Math.floor(planet.units * 0.3);
+      planet.generating = false;
+      if (prevOwner !== -1) enforceGeneratorSlots(prevOwner);
     }
   }
 }
 
+// ========== GENERATOR SLOTS ==========
+function getMaxGenerators(planetCount: number): number {
+  if (planetCount <= 5) return planetCount;
+  return 5 + Math.floor((planetCount - 5) / 5);
+}
+
+function getActiveGeneratorCount(playerId: number): number {
+  let count = 0;
+  for (const p of planets) {
+    if (p.ownerId === playerId && p.generating) count++;
+  }
+  return count;
+}
+
+function enforceGeneratorSlots(playerId: number): void {
+  const owned = planets.filter(p => p.ownerId === playerId);
+  const maxGen = getMaxGenerators(owned.length);
+  let activeCount = owned.filter(p => p.generating).length;
+
+  // If too many generators active, deactivate excess (smallest first)
+  if (activeCount > maxGen) {
+    const generators = owned.filter(p => p.generating).sort((a, b) => a.radius - b.radius);
+    for (let i = 0; i < generators.length && activeCount > maxGen; i++) {
+      generators[i].generating = false;
+      activeCount--;
+    }
+  }
+}
+
+function isPlanetInBattle(planetId: number): boolean {
+  return battles.some(b => b.planetId === planetId);
+}
+
 // ========== UNITS GROWTH ==========
 function updateGrowth(dt: number): void {
-  // Reset and count totals first
+  const settings = DIFFICULTY_SETTINGS[difficulty];
+
   for (const player of players) {
     player.planetCount = 0;
     player.totalUnits = 0;
@@ -509,26 +771,26 @@ function updateGrowth(dt: number): void {
     player.totalUnits += planet.units;
   }
 
-  // Apply growth
   for (const planet of planets) {
     if (planet.ownerId === -1) continue;
 
     const player = players[planet.ownerId];
     if (!player || !player.alive) continue;
 
-    // Calculate growth
-    let growth = BASE_GROWTH_RATE * planet.growthRate;
+    // Only generating planets grow units
+    if (!planet.generating) continue;
+    // No growth during active battle
+    if (isPlanetInBattle(planet.id)) continue;
 
-    // Degradation only applies after 2k total units
+    let growth = settings.growthRate * planet.growthRate;
+
     if (player.totalUnits >= EMPIRE_DEGRADE_UNIT_THRESHOLD) {
-      // Stability affects growth
       if (planet.stability < 30) {
-        growth = -1; // decay
+        growth = -1;
       } else if (planet.stability < 70) {
         growth *= 0.3;
       }
 
-      // Empire size penalty
       if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
         const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
         growth *= Math.max(0.1, 1.0 - excess * EMPIRE_GROWTH_PENALTY);
@@ -538,51 +800,51 @@ function updateGrowth(dt: number): void {
         growth -= 0.5;
       }
 
-      // Not connected = no growth
       if (!planet.connected) {
         growth = Math.min(growth, -0.5);
       }
     }
 
-    // Apply
     planet.units = Math.max(0, Math.min(planet.maxUnits, planet.units + growth * dt));
 
     if (planet.units <= 0) {
       planet.ownerId = -1;
       planet.units = 0;
+      planet.generating = false;
     }
   }
 }
 
 // ========== ATTACK ==========
-function launchAttack(fromId: number, toId: number): void {
-  const from = planets.find(p => p.id === fromId);
-  const to = planets.find(p => p.id === toId);
+function launchAttack(fromId: number, toId: number, blitz: boolean = false): void {
+  const from = planetMap.get(fromId);
+  const to = planetMap.get(toId);
   if (!from || !to) return;
   if (from.ownerId === -1) return;
   if (from.units < 2) return;
 
-  const percent = from.ownerId === 0 ? sendPercent : 50; // player uses slider, AI uses 50%
+  const percent = from.ownerId === 0 ? sendPercent : 50;
   const unitsToSend = Math.floor(from.units * (percent / 100));
   if (unitsToSend < 1) return;
   from.units -= unitsToSend;
 
   const dist = getDistance(from, to);
-  const travelTime = dist / ATTACK_BASE_SPEED;
+  const speed = blitz ? ATTACK_BASE_SPEED * 2 : ATTACK_BASE_SPEED;
+  const travelTime = dist / speed;
 
   attacks.push({
-    fromId,
-    toId,
+    fromId, toId,
     units: unitsToSend,
     playerId: from.ownerId,
     progress: 0,
-    speed: 1.0 / travelTime
+    speed: 1.0 / travelTime,
+    isBlitz: blitz
   });
 }
 
 function resolveAttack(attack: AttackAnimation): void {
-  const to = planets.find(p => p.id === attack.toId);
-  const from = planets.find(p => p.id === attack.fromId);
+  const to = planetMap.get(attack.toId);
+  const from = planetMap.get(attack.fromId);
   if (!to || !from) return;
 
   const dist = getDistance(from, to);
@@ -590,25 +852,101 @@ function resolveAttack(attack: AttackAnimation): void {
   const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
   const arrivingUnits = Math.floor(attack.units * efficiency);
 
-  if (to.ownerId === attack.playerId) {
-    // Reinforce
-    to.units = Math.min(to.maxUnits, to.units + arrivingUnits);
-  } else {
-    // Attack
-    const defenseStrength = to.units * to.defense;
+  const toScreen = worldToScreen(to.x, to.y);
 
-    if (arrivingUnits > defenseStrength) {
-      // Attacker wins
-      const remaining = arrivingUnits - defenseStrength;
-      to.ownerId = attack.playerId;
-      to.units = Math.max(1, Math.floor(remaining));
-      to.stability = 50;
-      to.connected = false;
+  if (to.ownerId === attack.playerId) {
+    // Reinforce - instant, no battle
+    to.units = Math.min(to.maxUnits, to.units + arrivingUnits);
+    spawnParticles(toScreen.x, toScreen.y, players[attack.playerId]?.color || '#fff', 6, 80);
+  } else {
+    // Start a battle animation instead of instant resolution
+    const totalUnits = arrivingUnits + to.units;
+    const duration = Math.min(3.0, Math.max(1.0, totalUnits / 80)); // 1-3 seconds based on units
+    battles.push({
+      planetId: to.id,
+      attackUnits: arrivingUnits,
+      attackPlayerId: attack.playerId,
+      defendUnits: to.units,
+      defendPlayerId: to.ownerId,
+      startTime: performance.now(),
+      duration,
+      efficiency,
+      isBlitz: attack.isBlitz,
+      resolved: false
+    });
+  }
+}
+
+function resolveBattle(battle: Battle): void {
+  const to = planetMap.get(battle.planetId);
+  if (!to) return;
+
+  const toScreen = worldToScreen(to.x, to.y);
+  const defenseMultiplier = to.shieldTimer > 0 ? to.defense * 2 : to.defense;
+  const defenseStrength = battle.defendUnits * defenseMultiplier;
+
+  if (battle.attackUnits > defenseStrength) {
+    const previousOwner = battle.defendPlayerId;
+    const remaining = battle.attackUnits - defenseStrength;
+    to.ownerId = battle.attackPlayerId;
+    to.units = Math.max(1, Math.floor(remaining));
+    to.stability = 50;
+    to.connected = false;
+    to.shieldTimer = 0;
+    // Generator: auto-activate if slot available
+    const newOwnerPlanets = planets.filter(p => p.ownerId === battle.attackPlayerId);
+    const maxGen = getMaxGenerators(newOwnerPlanets.length);
+    const activeGen = newOwnerPlanets.filter(p => p.generating).length;
+    to.generating = activeGen < maxGen;
+    // Enforce slots for previous owner who lost a planet
+    if (previousOwner !== -1) {
+      enforceGeneratorSlots(previousOwner);
+    }
+    // Capture particles
+    spawnParticles(toScreen.x, toScreen.y, players[battle.attackPlayerId]?.color || '#fff', 20, 150);
+    // Shake if player's planet was captured
+    if (previousOwner === 0) {
+      triggerShake(8);
+    }
+  } else {
+    const prevOwner = to.ownerId;
+    to.units = Math.max(0, Math.floor((defenseStrength - battle.attackUnits) / defenseMultiplier));
+    spawnParticles(toScreen.x, toScreen.y, '#ff6644', 10, 100);
+    if (to.units <= 0) {
+      to.ownerId = -1;
+      to.generating = false;
+      if (prevOwner !== -1) enforceGeneratorSlots(prevOwner);
+    }
+    // Shake if player's planet was attacked
+    if (to.ownerId === 0) {
+      triggerShake(4);
+    }
+  }
+}
+
+function updateBattles(): void {
+  const now = performance.now();
+  for (let i = battles.length - 1; i >= 0; i--) {
+    const b = battles[i];
+    const elapsed = (now - b.startTime) / 1000;
+
+    if (elapsed >= b.duration && !b.resolved) {
+      b.resolved = true;
+      resolveBattle(b);
+      battles.splice(i, 1);
     } else {
-      // Defender wins
-      to.units = Math.max(0, Math.floor((defenseStrength - arrivingUnits) / to.defense));
-      if (to.units <= 0) {
-        to.ownerId = -1;
+      // Spawn clash particles during battle
+      const planet = planetMap.get(b.planetId);
+      if (planet && Math.random() < 0.3) {
+        const screen = worldToScreen(planet.x, planet.y);
+        const angle = Math.random() * Math.PI * 2;
+        const r = planet.radius * camera.zoom * 0.8;
+        const px = screen.x + Math.cos(angle) * r;
+        const py = screen.y + Math.sin(angle) * r;
+        const attackerColor = players[b.attackPlayerId]?.color || '#ff4444';
+        const defenderColor = players[b.defendPlayerId]?.color || '#4444ff';
+        const color = Math.random() > 0.5 ? attackerColor : defenderColor;
+        spawnParticles(px, py, color, 1, 40);
       }
     }
   }
@@ -619,8 +957,172 @@ function updateAttacks(dt: number): void {
     attacks[i].progress += attacks[i].speed * dt;
     if (attacks[i].progress >= 1.0) {
       resolveAttack(attacks[i]);
-      attacks.splice(i, 1);
+      // Swap-and-pop instead of splice
+      attacks[i] = attacks[attacks.length - 1];
+      attacks.pop();
     }
+  }
+}
+
+// ========== PARTICLES ==========
+function updateParticles(dt: number): void {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt / p.maxLife;
+    p.vx *= 0.95;
+    p.vy *= 0.95;
+    if (p.life <= 0) {
+      particles[i] = particles[particles.length - 1];
+      particles.pop();
+    }
+  }
+}
+
+// ========== CAMERA SHAKE ==========
+function updateShake(dt: number): void {
+  if (camera.shakeIntensity > 0) {
+    camera.shakeX = (Math.random() - 0.5) * camera.shakeIntensity * 2;
+    camera.shakeY = (Math.random() - 0.5) * camera.shakeIntensity * 2;
+    camera.shakeIntensity *= Math.pow(0.05, dt); // decay
+    if (camera.shakeIntensity < 0.1) {
+      camera.shakeIntensity = 0;
+      camera.shakeX = 0;
+      camera.shakeY = 0;
+    }
+  }
+}
+
+// ========== SHIELD TIMER ==========
+function updateShields(dt: number): void {
+  for (const planet of planets) {
+    if (planet.shieldTimer > 0) {
+      planet.shieldTimer -= dt * 1000;
+      if (planet.shieldTimer < 0) planet.shieldTimer = 0;
+    }
+  }
+}
+
+// ========== CLICK ANIMATIONS ==========
+function updateClickAnims(_dt: number): void {
+  for (let i = clickAnims.length - 1; i >= 0; i--) {
+    const anim = clickAnims[i];
+    anim.x += anim.vx;
+    anim.y += anim.vy;
+    anim.vy += 0.1; // gravity
+    anim.life--;
+    if (anim.life <= 0) {
+      clickAnims.splice(i, 1);
+    }
+  }
+}
+
+function renderClickAnims(): void {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const anim of clickAnims) {
+    const alpha = anim.life / anim.maxLife;
+    const t = 1 - alpha;
+    const pop = t < 0.18 ? (1 - (t / 0.18)) : 0;
+    const fontSize = 12 + pop * 6;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = `bold ${Math.floor(fontSize)}px "Press Start 2P"`;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = `rgba(0, 0, 0, ${Math.min(0.9, alpha * 0.9)})`;
+    ctx.strokeText('+1', anim.x, anim.y);
+    ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
+    ctx.fillText('+1', anim.x, anim.y);
+    ctx.restore();
+  }
+}
+
+// ========== PROBES & REVEAL ZONES ==========
+function updateProbes(dt: number): void {
+  // Update reveal zone timers
+  for (let i = revealZones.length - 1; i >= 0; i--) {
+    const zone = revealZones[i];
+    if (zone.permanent) continue;
+    zone.timeLeft -= dt * 1000;
+    if (zone.timeLeft <= 0) {
+      revealZones[i] = revealZones[revealZones.length - 1];
+      revealZones.pop();
+    }
+  }
+
+  // Move probes and drop reveal zones along path
+  for (let i = probes.length - 1; i >= 0; i--) {
+    const probe = probes[i];
+    if (probe.done) {
+      probes[i] = probes[probes.length - 1];
+      probes.pop();
+      continue;
+    }
+
+    const dx = probe.targetX - probe.x;
+    const dy = probe.targetY - probe.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 10) {
+      // Reached destination
+      probe.done = true;
+      revealZones.push({
+        x: probe.x, y: probe.y,
+        radius: PROBE_REVEAL_RADIUS,
+        timeLeft: PROBE_REVEAL_DURATION,
+        permanent: false
+      });
+      continue;
+    }
+
+    const moveAmount = PROBE_SPEED * dt;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    probe.x += nx * moveAmount;
+    probe.y += ny * moveAmount;
+
+    // Drop reveal zone every PROBE_DROP_INTERVAL px
+    // Check how far from last reveal zone
+    const nearestRevealDist = revealZones.reduce((min, z) => {
+      if (z.permanent) return min;
+      const d = Math.sqrt((z.x - probe.x) ** 2 + (z.y - probe.y) ** 2);
+      return Math.min(min, d);
+    }, Infinity);
+
+    if (nearestRevealDist > PROBE_DROP_INTERVAL) {
+      revealZones.push({
+        x: probe.x, y: probe.y,
+        radius: PROBE_REVEAL_RADIUS,
+        timeLeft: PROBE_REVEAL_DURATION,
+        permanent: false
+      });
+    }
+  }
+}
+
+// ========== WIN/LOSE CHECK ==========
+function checkGameOver(): void {
+  if (gameState !== GameState.PLAYING) return;
+
+  const player = players[0];
+  if (!player) return;
+
+  // Check if player lost (no planets)
+  if (player.planetCount === 0) {
+    gameState = GameState.GAMEOVER;
+    gameResult = 'lose';
+    return;
+  }
+
+  // Check if player won (all AI dead)
+  const aiAlive = players.some(p => p.isAI && p.alive && p.planetCount > 0);
+  if (!aiAlive) {
+    gameState = GameState.GAMEOVER;
+    gameResult = 'win';
   }
 }
 
@@ -631,31 +1133,34 @@ function aiTick(player: Player): void {
   const myPlanets = planets.filter(p => p.ownerId === player.id);
   if (myPlanets.length === 0) { player.alive = false; return; }
 
-  // Find attack candidates
+  // AI generator management: assign best planets as generators
+  const maxGen = getMaxGenerators(myPlanets.length);
+  // Reset all, then assign biggest planets
+  for (const p of myPlanets) p.generating = false;
+  const sorted = [...myPlanets].sort((a, b) => b.radius - a.radius);
+  for (let i = 0; i < Math.min(maxGen, sorted.length); i++) {
+    sorted[i].generating = true;
+  }
+
   interface AiCandidate { from: Planet; to: Planet; priority: number }
   const candidates: AiCandidate[] = [];
 
   for (const mine of myPlanets) {
     if (mine.units < 40) continue;
 
-    // Find nearby planets to attack
     for (const target of planets) {
       if (target.ownerId === player.id) continue;
 
       const dist = getDistance(mine, target);
-      if (dist > 600) continue; // don't attack too far
+      if (dist > 600) continue;
 
       let priority = 0;
 
       if (target.ownerId === -1) {
-        // Neutral
         priority = 10 - (target.units / target.maxUnits) * 5;
-        // Prefer closer planets
         priority += (600 - dist) / 100;
-        // Prefer larger planets
         if (target.size === PlanetSize.LARGE || target.size === PlanetSize.GIANT) priority += 5;
       } else {
-        // Enemy - only if we can win
         const defStr = target.units * target.defense;
         const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
         const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
@@ -663,7 +1168,6 @@ function aiTick(player: Player): void {
 
         if (arriving > defStr * 1.2) {
           priority = 8;
-          // Prioritize home planets
           const enemyPlayer = players[target.ownerId];
           if (enemyPlayer && target.id === enemyPlayer.homeId) priority += 10;
         }
@@ -677,7 +1181,6 @@ function aiTick(player: Player): void {
 
   candidates.sort((a, b) => b.priority - a.priority);
 
-  // Execute top 1-2 actions
   const maxActions = Math.min(2, candidates.length);
   for (let i = 0; i < maxActions; i++) {
     if (candidates[i].from.units > 40) {
@@ -697,15 +1200,15 @@ function getCanvasMousePos(e: MouseEvent): { x: number; y: number } {
 
 function screenToWorld(sx: number, sy: number): { x: number; y: number } {
   return {
-    x: (sx + camera.x) / camera.zoom,
-    y: (sy + camera.y) / camera.zoom
+    x: (sx - camera.shakeX + camera.x) / camera.zoom,
+    y: (sy - camera.shakeY + camera.y) / camera.zoom
   };
 }
 
 function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   return {
-    x: wx * camera.zoom - camera.x,
-    y: wy * camera.zoom - camera.y
+    x: wx * camera.zoom - camera.x + camera.shakeX,
+    y: wy * camera.zoom - camera.y + camera.shakeY
   };
 }
 
@@ -718,27 +1221,95 @@ function getPlanetAtScreen(sx: number, sy: number): Planet | null {
   return null;
 }
 
-// Helper: check if click is on the slider
-function isOnSlider(px: number, py: number): boolean {
-  if (selectedPlanet === null) return false;
-  const planet = planets.find(p => p.id === selectedPlanet);
-  if (!planet || planet.ownerId !== 0) return false;
+// Check if click is on popup button
+function getPopupButtonAt(px: number, py: number): string | null {
+  if (!actionPopup) return null;
 
-  const sX = 10 + SLIDER_X; // panelX + SLIDER_X
-  const sY = sliderScreenY + 4;
-  return px >= sX && px <= sX + SLIDER_W && py >= sY - 4 && py <= sY + SLIDER_H + 4;
+  const { btnW, btnH, hasSlider, percentRowH, percentGap, startX, startY } = getPopupLayout(actionPopup);
+
+  // Check slider row (only for attack popups)
+  if (hasSlider && px >= startX && px <= startX + btnW && py >= startY && py <= startY + percentRowH) {
+    return 'popup_slider';
+  }
+
+  // Check action buttons
+  let by = startY + percentRowH + percentGap;
+  for (const btn of actionPopup.buttons) {
+    if (px >= startX && px <= startX + btnW && py >= by && py <= by + btnH) {
+      return btn.action;
+    }
+    by += btnH + 4;
+  }
+  return null;
 }
 
-function updateSliderFromMouse(px: number): void {
-  const sX = 10 + SLIDER_X;
-  const ratio = Math.max(0, Math.min(1, (px - sX) / SLIDER_W));
-  sendPercent = Math.max(10, Math.min(100, Math.round(ratio * 100 / 5) * 5)); // snap to 5%
+function updatePopupSlider(px: number): void {
+  if (!actionPopup) return;
+  const { btnW, startX } = getPopupLayout(actionPopup);
+  const sliderPad = 4;
+  const sliderStartX = startX + sliderPad;
+  const sliderW = btnW - sliderPad * 2;
+  const ratio = Math.max(0, Math.min(1, (px - sliderStartX) / sliderW));
+  sendPercent = Math.max(10, Math.min(100, Math.round(ratio * 100 / 5) * 5));
+}
+
+// Check if click is on ability button
+function getAbilityButtonAt(px: number, py: number): string | null {
+  const btnW = 70;
+  const btnH = 28;
+  const gap = 6;
+  const totalW = abilities.length * btnW + (abilities.length - 1) * gap;
+  const abX = gameWidth - totalW - 15;
+  const abY = gameHeight - 45;
+
+  for (let i = 0; i < abilities.length; i++) {
+    const bx = abX + i * (btnW + gap);
+    if (px >= bx && px <= bx + btnW && py >= abY && py <= abY + btnH) {
+      return abilities[i].id;
+    }
+  }
+  return null;
 }
 
 canvas.addEventListener('mousedown', (e) => {
+  if (gameState === GameState.GAMEOVER) {
+    // Check restart button click
+    const pos = getCanvasMousePos(e);
+    const btnX = gameWidth / 2 - 80;
+    const btnY = gameHeight / 2 + 40;
+    if (pos.x >= btnX && pos.x <= btnX + 160 && pos.y >= btnY && pos.y <= btnY + 40) {
+      initGame();
+      return;
+    }
+    return;
+  }
+
+  if (gameState === GameState.PAUSED) return;
+
   const pos = getCanvasMousePos(e);
 
   if (e.button === 2 || e.button === 1) {
+    // Right-click on own planet → context menu
+    if (e.button === 2) {
+      const rPlanet = getPlanetAtScreen(pos.x, pos.y);
+      if (rPlanet && rPlanet.ownerId === 0) {
+        const screen = worldToScreen(rPlanet.x, rPlanet.y);
+        const genLabel = rPlanet.generating ? 'GEN OFF' : 'GEN ON';
+        actionPopup = {
+          targetId: rPlanet.id,
+          screenX: screen.x + rPlanet.radius * camera.zoom + 14,
+          screenY: screen.y,
+          openTime: performance.now(),
+          buttons: [
+            { label: genLabel, action: 'toggle_gen' },
+            { label: 'BOOST', action: 'boost' },
+            { label: 'SCOUT', action: 'scout' }
+          ]
+        };
+        e.preventDefault();
+        return;
+      }
+    }
     camera.dragging = true;
     camera.dragStartX = pos.x;
     camera.dragStartY = pos.y;
@@ -748,30 +1319,214 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
 
-  // Check slider first
-  if (isOnSlider(pos.x, pos.y)) {
-    sliderDragging = true;
-    updateSliderFromMouse(pos.x);
+  // Check popup button click first
+  if (actionPopup) {
+    const action = getPopupButtonAt(pos.x, pos.y);
+    if (action) {
+      if (action === 'popup_slider') {
+        popupSliderDragging = true;
+        updatePopupSlider(pos.x);
+        return;
+      }
+      if (action === 'toggle_gen') {
+        const targetPlanet = planetMap.get(actionPopup.targetId);
+        if (targetPlanet) {
+          if (targetPlanet.generating) {
+            // Turn off generating
+            targetPlanet.generating = false;
+          } else {
+            // Turn on generating if slot available
+            const owned = planets.filter(p => p.ownerId === 0);
+            const maxGen = getMaxGenerators(owned.length);
+            const activeGen = owned.filter(p => p.generating).length;
+            if (activeGen < maxGen) {
+              targetPlanet.generating = true;
+            }
+          }
+        }
+      } else if (action === 'boost') {
+        planetMode = 'boost';
+        modePlanetId = actionPopup.targetId;
+        selectedPlanets.clear();
+        selectedPlanets.add(actionPopup.targetId);
+      } else if (action === 'scout') {
+        planetMode = 'scout';
+        modePlanetId = actionPopup.targetId;
+        selectedPlanets.clear();
+        selectedPlanets.add(actionPopup.targetId);
+      } else if (action === 'attack') {
+        // Launch attack from all selected planets to popup target
+        const useBlitz = activeAbility === 'blitz';
+        for (const fromId of selectedPlanets) {
+          const from = planetMap.get(fromId);
+          if (from && from.ownerId === 0) {
+            launchAttack(fromId, actionPopup.targetId, useBlitz);
+          }
+        }
+        if (useBlitz) {
+          const blitzAbility = abilities.find(a => a.id === 'blitz');
+          if (blitzAbility) blitzAbility.lastUsed = gameTime;
+          activeAbility = null;
+        }
+      }
+      actionPopup = null;
+      return;
+    }
+    // Click outside popup = close it
+    actionPopup = null;
+  }
+
+  // Check ability buttons
+  const abilityId = getAbilityButtonAt(pos.x, pos.y);
+  if (abilityId) {
+    const ability = abilities.find(a => a.id === abilityId);
+    if (ability && isAbilityReady(ability)) {
+      if (abilityId === 'shield') {
+        // Shield: apply to first selected own planet
+        for (const pid of selectedPlanets) {
+          const p = planetMap.get(pid);
+          if (p && p.ownerId === 0) {
+            p.shieldTimer = 10000; // 10 seconds
+            ability.lastUsed = gameTime;
+            spawnParticles(worldToScreen(p.x, p.y).x, worldToScreen(p.x, p.y).y, '#44aaff', 15, 100);
+            break;
+          }
+        }
+      } else if (abilityId === 'nuke') {
+        activeAbility = 'nuke';
+      } else if (abilityId === 'blitz') {
+        activeAbility = 'blitz';
+      }
+    }
     return;
   }
 
-  // Left click
+  // Left click on game
   const planet = getPlanetAtScreen(pos.x, pos.y);
 
-  if (selectedPlanet !== null && planet && planet.id !== selectedPlanet) {
-    // If own planet selected → clicking another planet sends units
-    const selected = planets.find(p => p.id === selectedPlanet);
-    if (selected && selected.ownerId === 0) {
-      launchAttack(selectedPlanet, planet.id);
-      return;
+  // Nuke ability targeting
+  if (activeAbility === 'nuke' && planet) {
+    if (planet.ownerId !== 0) {
+      const nukeAbility = abilities.find(a => a.id === 'nuke');
+      // Check range - must have own planet within 500px
+      let inRange = false;
+      for (const p of planets) {
+        if (p.ownerId === 0 && getDistance(p, planet) <= 500) {
+          inRange = true;
+          break;
+        }
+      }
+      if (inRange && nukeAbility) {
+        planet.units = Math.floor(planet.units * 0.5);
+        nukeAbility.lastUsed = gameTime;
+        const screen = worldToScreen(planet.x, planet.y);
+        spawnParticles(screen.x, screen.y, '#ff4400', 30, 200);
+        triggerShake(10);
+      }
     }
+    activeAbility = null;
+    return;
   }
 
-  // Select/deselect
   if (planet) {
-    selectedPlanet = planet.id;
+    if (selectedPlanets.size > 0 && planet.ownerId !== 0) {
+      // Can only attack visible planets (not in fog)
+      if (!isVisibleToPlayer(planet)) return;
+
+      // Has selection + clicking non-own planet = show popup
+      const hasOwnSelected = [...selectedPlanets].some(id => {
+        const p = planetMap.get(id);
+        return p && p.ownerId === 0;
+      });
+
+      if (hasOwnSelected) {
+        const screen = worldToScreen(planet.x, planet.y);
+        const buttons = [{ label: 'ATTACK', action: 'attack' }];
+        actionPopup = {
+          targetId: planet.id,
+          screenX: screen.x + planet.radius * camera.zoom + 14,
+          screenY: screen.y,
+          openTime: performance.now(),
+          buttons
+        };
+        return;
+      }
+    }
+
+    if (planet.ownerId === 0 && selectedPlanets.size > 0) {
+      // Clicking own planet while having selection
+      const hasOwnSelected = [...selectedPlanets].some(id => {
+        const p = planetMap.get(id);
+        return p && p.ownerId === 0;
+      });
+
+      if (hasOwnSelected && !selectedPlanets.has(planet.id)) {
+        // Show popup for sending units
+        const screen = worldToScreen(planet.x, planet.y);
+        actionPopup = {
+          targetId: planet.id,
+          screenX: screen.x + planet.radius * camera.zoom + 14,
+          screenY: screen.y,
+          openTime: performance.now(),
+          buttons: [
+            { label: 'SEND', action: 'attack' }
+          ]
+        };
+        return;
+      }
+    }
+
+    // Select/multi-select
+    if (planet.ownerId === 0) {
+      // Boost mode: +1 unit per click
+      if (planetMode === 'boost' && modePlanetId === planet.id) {
+        if (planet.units < planet.maxUnits) {
+          planet.units += 1;
+          const screen = worldToScreen(planet.x, planet.y);
+          clickAnims.push({
+            x: screen.x + (Math.random() - 0.5) * 20,
+            y: screen.y - planet.radius * camera.zoom - 10,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random(),
+            life: 60,
+            maxLife: 60
+          });
+        }
+        return;
+      }
+
+      // Scout mode: start explore drag
+      if (planetMode === 'scout' && modePlanetId === planet.id) {
+        exploreDragging = true;
+        explorePlanetId = planet.id;
+        exploreStartX = pos.x;
+        exploreStartY = pos.y;
+        return;
+      }
+
+      // Normal: just select
+      if (!selectedPlanets.has(planet.id)) {
+        selectedPlanets.add(planet.id);
+      }
+      // Clear mode if clicking different planet
+      if (modePlanetId !== planet.id) {
+        planetMode = 'none';
+        modePlanetId = null;
+      }
+    } else {
+      // Non-own planet: just select it
+      selectedPlanets.clear();
+      selectedPlanets.add(planet.id);
+      planetMode = 'none';
+      modePlanetId = null;
+    }
   } else {
-    selectedPlanet = null;
+    // Click empty space = deselect
+    selectedPlanets.clear();
+    actionPopup = null;
+    activeAbility = null;
+    planetMode = 'none';
+    modePlanetId = null;
   }
 });
 
@@ -780,8 +1535,8 @@ canvas.addEventListener('mousemove', (e) => {
   mouseX = pos.x;
   mouseY = pos.y;
 
-  if (sliderDragging) {
-    updateSliderFromMouse(pos.x);
+  if (popupSliderDragging) {
+    updatePopupSlider(pos.x);
     return;
   }
 
@@ -797,19 +1552,65 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', () => {
   camera.dragging = false;
-  sliderDragging = false;
+  popupSliderDragging = false;
+
+  // Handle explore drag release
+  if (exploreDragging && explorePlanetId !== null) {
+    const dragDist = Math.sqrt((mouseX - exploreStartX) ** 2 + (mouseY - exploreStartY) ** 2);
+
+    if (dragDist > 15) {
+      // Dragged far enough → send exploration probe
+      const planet = planetMap.get(explorePlanetId);
+      if (planet && planet.ownerId === 0) {
+        const worldTarget = screenToWorld(mouseX, mouseY);
+        const worldDist = getDistance(planet, worldTarget);
+        const unitCost = Math.max(5, Math.ceil(worldDist / 100 * PROBE_UNIT_COST_PER_100PX));
+        const actualCost = Math.min(unitCost, Math.floor(planet.units - 5));
+
+        if (actualCost > 0) {
+          planet.units -= actualCost;
+          const maxDist = (actualCost / PROBE_UNIT_COST_PER_100PX) * 100;
+          const dx = worldTarget.x - planet.x;
+          const dy = worldTarget.y - planet.y;
+          const clickDist = Math.sqrt(dx * dx + dy * dy);
+          const travelDist = Math.min(maxDist, clickDist);
+          const nx = dx / (clickDist || 1);
+          const ny = dy / (clickDist || 1);
+
+          probes.push({
+            x: planet.x,
+            y: planet.y,
+            targetX: planet.x + nx * travelDist,
+            targetY: planet.y + ny * travelDist,
+            speed: PROBE_SPEED,
+            playerId: 0,
+            done: false
+          });
+
+          const screen = worldToScreen(planet.x, planet.y);
+          spawnParticles(screen.x, screen.y, '#44ff88', 8, 80);
+        }
+      }
+    } else {
+      // Just a click (no drag) → deselect the planet
+      selectedPlanets.delete(explorePlanetId);
+    }
+
+    exploreDragging = false;
+    explorePlanetId = null;
+  }
 });
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  actionPopup = null;
   const pos = getCanvasMousePos(e);
   const worldBefore = screenToWorld(pos.x, pos.y);
 
   const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
   camera.targetZoom = Math.max(0.15, Math.min(3.0, camera.targetZoom * zoomFactor));
-  camera.zoom = camera.targetZoom; // instant for precise zooming
+  camera.zoom = camera.targetZoom;
 
-  // Zoom toward mouse position
   const worldAfter = screenToWorld(pos.x, pos.y);
   camera.x += (worldBefore.x - worldAfter.x) * camera.zoom;
   camera.y += (worldBefore.y - worldAfter.y) * camera.zoom;
@@ -819,15 +1620,29 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    selectedPlanet = null;
+    if (actionPopup) {
+      actionPopup = null;
+      activeAbility = null;
+    } else if (gameState === GameState.PAUSED) {
+      gameState = GameState.PLAYING;
+    } else {
+      selectedPlanets.clear();
+      activeAbility = null;
+    }
   }
-  // Space = center on home
   if (e.key === ' ') {
     e.preventDefault();
-    const home = planets.find(p => p.id === players[0]?.homeId);
+    const home = planetMap.get(players[0]?.homeId);
     if (home) {
       camera.x = home.x * camera.zoom - gameWidth / 2;
       camera.y = home.y * camera.zoom - gameHeight / 2;
+    }
+  }
+  if (e.key === 'p' || e.key === 'P') {
+    if (gameState === GameState.PLAYING) {
+      gameState = GameState.PAUSED;
+    } else if (gameState === GameState.PAUSED) {
+      gameState = GameState.PLAYING;
     }
   }
 });
@@ -844,28 +1659,23 @@ function renderStars(): void {
 }
 
 function renderSupplyLines(): void {
-  // Draw supply connections between owned planets
-  for (const player of players) {
-    if (!player.alive) continue;
+  for (const conn of supplyConnections) {
+    const fromP = planetMap.get(conn.fromId);
+    const toP = planetMap.get(conn.toId);
+    if (!fromP || !toP) continue;
 
-    const owned = planets.filter(p => p.ownerId === player.id && p.connected);
+    const player = players[conn.playerId];
+    if (!player) continue;
 
-    for (let i = 0; i < owned.length; i++) {
-      for (let j = i + 1; j < owned.length; j++) {
-        const dist = getDistance(owned[i], owned[j]);
-        if (dist <= SUPPLY_RANGE) {
-          const from = worldToScreen(owned[i].x, owned[i].y);
-          const to = worldToScreen(owned[j].x, owned[j].y);
+    const from = worldToScreen(fromP.x, fromP.y);
+    const to = worldToScreen(toP.x, toP.y);
 
-          ctx.strokeStyle = player.color + '22';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(from.x, from.y);
-          ctx.lineTo(to.x, to.y);
-          ctx.stroke();
-        }
-      }
-    }
+    ctx.strokeStyle = player.color + '22';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
   }
 }
 
@@ -873,9 +1683,39 @@ function renderPlanet(planet: Planet): void {
   const screen = worldToScreen(planet.x, planet.y);
   const screenRadius = planet.radius * camera.zoom;
 
-  // Cull off-screen
   if (screen.x + screenRadius < 0 || screen.x - screenRadius > gameWidth) return;
   if (screen.y + screenRadius < 0 || screen.y - screenRadius > gameHeight) return;
+
+  // Fog of war: check visibility (used for hiding unit counts)
+  const visible = isVisibleToPlayer(planet);
+
+  // Planet pulse/glow for owned planets
+  let glowRadius = 0;
+  if (planet.ownerId !== -1 && visible) {
+    planet.pulsePhase += 0.02;
+    glowRadius = screenRadius + 3 + Math.sin(planet.pulsePhase) * 2;
+  }
+
+  // Glow effect
+  if (glowRadius > 0 && planet.ownerId !== -1) {
+    const player = players[planet.ownerId];
+    if (player) {
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, glowRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = player.color + '33';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+
+  // Shield visual
+  if (planet.shieldTimer > 0) {
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, screenRadius + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(68, 170, 255, ${0.5 + Math.sin(gameTime / 200) * 0.3})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
 
   // Planet body
   let bodyColor = planet.color;
@@ -891,7 +1731,7 @@ function renderPlanet(planet: Planet): void {
   ctx.fillStyle = bodyColor;
   ctx.fill();
 
-  // Craters (visual detail) - only if big enough on screen
+  // Craters
   if (screenRadius > 10) {
     for (const crater of planet.craters) {
       const cx = screen.x + crater.x * camera.zoom;
@@ -924,31 +1764,64 @@ function renderPlanet(planet: Planet): void {
     ctx.setLineDash([]);
   }
 
-  // Units number
-  if (screenRadius > 8 && planet.units > 0) {
-    const fontSize = Math.max(8, Math.min(16, screenRadius * 0.5));
-    ctx.font = `bold ${fontSize}px "Press Start 2P"`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.shadowColor = '#000';
-    ctx.shadowBlur = 3;
-    ctx.fillText(Math.floor(planet.units).toString(), screen.x, screen.y);
-    ctx.shadowBlur = 0;
+  // Generator indicator (pulsing yellow-green glow for generating planets)
+  if (planet.ownerId === 0 && planet.generating && screenRadius > 6) {
+    const pulse = 0.4 + Math.sin(planet.pulsePhase + performance.now() * 0.003) * 0.3;
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, screenRadius + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(180, 255, 50, ${pulse})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
 
-  // Size label for large planets (if zoomed enough)
+  // Units number (fog of war: hide enemy unit counts if not visible)
+  if (screenRadius > 8 && planet.units > 0) {
+    const showUnits = visible || planet.ownerId === 0;
+    if (showUnits) {
+      const fontSize = Math.max(8, Math.min(16, screenRadius * 0.5));
+      ctx.font = `bold ${fontSize}px "Press Start 2P"`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 3;
+      ctx.fillText(Math.floor(planet.units).toString(), screen.x, screen.y);
+      ctx.shadowBlur = 0;
+    } else {
+      // Show "?" for hidden enemies
+      const fontSize = Math.max(8, Math.min(14, screenRadius * 0.4));
+      ctx.font = `bold ${fontSize}px "Press Start 2P"`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#666';
+      ctx.fillText('?', screen.x, screen.y);
+    }
+  }
+
+  // Size label
   if (screenRadius > 30 && (planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT)) {
     ctx.font = '7px "Press Start 2P"';
     ctx.fillStyle = '#ffffff66';
+    ctx.textAlign = 'center';
     ctx.fillText(planet.size.toUpperCase(), screen.x, screen.y + screenRadius * 0.5);
   }
+
+  // Mode indicator (SCOUT label only, BOOST uses green ring)
+  if (planet.ownerId === 0 && modePlanetId === planet.id && planetMode === 'scout') {
+    ctx.font = '6px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#66ccff';
+    ctx.fillText('SCOUT', screen.x, screen.y - screenRadius - 4);
+  }
+
+  ctx.globalAlpha = 1.0;
 }
 
 function renderAttacks(): void {
   for (const attack of attacks) {
-    const from = planets.find(p => p.id === attack.fromId);
-    const to = planets.find(p => p.id === attack.toId);
+    const from = planetMap.get(attack.fromId);
+    const to = planetMap.get(attack.toId);
     if (!from || !to) continue;
 
     const fromScreen = worldToScreen(from.x, from.y);
@@ -971,7 +1844,7 @@ function renderAttacks(): void {
     const dotSize = Math.max(3, 5 * camera.zoom);
     ctx.beginPath();
     ctx.arc(cx, cy, dotSize, 0, Math.PI * 2);
-    ctx.fillStyle = player.color;
+    ctx.fillStyle = attack.isBlitz ? '#FFD700' : player.color;
     ctx.fill();
 
     // Unit count label
@@ -984,13 +1857,451 @@ function renderAttacks(): void {
   }
 }
 
+function renderProbes(): void {
+  for (const probe of probes) {
+    if (probe.done) continue;
+    const screen = worldToScreen(probe.x, probe.y);
+
+    // Trail line from origin
+    const originScreen = worldToScreen(
+      probe.x - (probe.x - probe.targetX) * 0.1,
+      probe.y - (probe.y - probe.targetY) * 0.1
+    );
+
+    ctx.strokeStyle = '#44ff8855';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(originScreen.x, originScreen.y);
+    ctx.lineTo(screen.x, screen.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Probe dot (green pulsing)
+    const pulse = 1 + Math.sin(gameTime / 100) * 0.3;
+    const dotSize = 4 * camera.zoom * pulse;
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, dotSize, 0, Math.PI * 2);
+    ctx.fillStyle = '#44ff88';
+    ctx.fill();
+
+    // Glow
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, dotSize + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = '#44ff8844';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function renderParticles(): void {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1.0;
+}
+
+function renderBattles(): void {
+  const now = performance.now();
+  for (const battle of battles) {
+    const planet = planetMap.get(battle.planetId);
+    if (!planet) continue;
+
+    const screen = worldToScreen(planet.x, planet.y);
+    const r = planet.radius * camera.zoom;
+    const elapsed = (now - battle.startTime) / 1000;
+    const progress = Math.min(1, elapsed / battle.duration);
+
+    // Pulsing battle ring
+    const pulseSpeed = 8 + progress * 12; // speeds up as battle progresses
+    const pulse = 0.5 + Math.sin(elapsed * pulseSpeed) * 0.3;
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, r + 6 + Math.sin(elapsed * 6) * 3, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 100, 50, ${pulse})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Outer shockwave ring expanding
+    const waveR = r + 10 + progress * 20;
+    const waveAlpha = 0.4 * (1 - progress);
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, waveR, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 200, 50, ${waveAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Clash sparks (small lines radiating from planet)
+    const sparkCount = 4 + Math.floor(progress * 4);
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = (i / sparkCount) * Math.PI * 2 + elapsed * 3;
+      const sparkR = r + 4 + Math.sin(elapsed * 10 + i * 2) * 6;
+      const sparkLen = 4 + Math.random() * 4;
+      const sx = screen.x + Math.cos(angle) * sparkR;
+      const sy = screen.y + Math.sin(angle) * sparkR;
+      const ex = screen.x + Math.cos(angle) * (sparkR + sparkLen);
+      const ey = screen.y + Math.sin(angle) * (sparkR + sparkLen);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = `rgba(255, 255, 150, ${0.3 + Math.random() * 0.5})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Battle progress bar below planet
+    const barW = r * 2;
+    const barH = 4;
+    const barX = screen.x - barW / 2;
+    const barY = screen.y + r + 10;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+    ctx.fillStyle = `rgba(255, ${Math.floor(100 + progress * 155)}, 50, 0.9)`;
+    ctx.fillRect(barX, barY, barW * progress, barH);
+
+    // Attacker vs Defender unit labels
+    if (r > 12) {
+      ctx.font = '6px "Press Start 2P"';
+      ctx.textBaseline = 'middle';
+      const attackColor = players[battle.attackPlayerId]?.color || '#ff4444';
+      const defendColor = players[battle.defendPlayerId]?.color || '#4444ff';
+
+      // Show units decreasing during battle
+      const attackShow = Math.floor(battle.attackUnits * (1 - progress * 0.3));
+      const defendShow = Math.floor(battle.defendUnits * (1 - progress * 0.5));
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = attackColor;
+      ctx.fillText(`${attackShow}`, screen.x - 4, screen.y);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = defendColor;
+      ctx.fillText(`${defendShow}`, screen.x + 4, screen.y);
+
+      // VS symbol
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.font = '5px "Press Start 2P"';
+      ctx.fillText('x', screen.x, screen.y);
+    }
+  }
+}
+
+function renderFogOfWar(): void {
+  // No fog during initial reveal period
+  if (gameTime < FOG_REVEAL_DURATION) return;
+
+  // Calculate fog opacity (fades in after reveal)
+  const fadeProgress = Math.min(1, (gameTime - FOG_REVEAL_DURATION) / FOG_FADE_IN_DURATION);
+  const fogOpacity = 0.93 * fadeProgress;
+  if (fogOpacity < 0.01) return;
+
+  // Create/resize offscreen canvas
+  if (!fogCanvas || fogCanvas.width !== gameWidth || fogCanvas.height !== gameHeight) {
+    fogCanvas = document.createElement('canvas');
+    fogCanvas.width = gameWidth;
+    fogCanvas.height = gameHeight;
+    fogCtx = fogCanvas.getContext('2d')!;
+  }
+
+  const fc = fogCtx!;
+
+  // Fill with darkness (opacity increases during fade-in)
+  fc.globalCompositeOperation = 'source-over';
+  fc.fillStyle = `rgba(5, 5, 16, ${fogOpacity})`;
+  fc.fillRect(0, 0, gameWidth, gameHeight);
+
+  // Cut out vision circles around player-owned planets
+  fc.globalCompositeOperation = 'destination-out';
+
+  for (const planet of planets) {
+    if (planet.ownerId !== 0) continue;
+
+    const screen = worldToScreen(planet.x, planet.y);
+    const visionRadius = getVisionRange(planet) * camera.zoom;
+
+    // Radial gradient for smooth edge
+    const gradient = fc.createRadialGradient(
+      screen.x, screen.y, visionRadius * 0.5,
+      screen.x, screen.y, visionRadius
+    );
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    fc.fillStyle = gradient;
+    fc.beginPath();
+    fc.arc(screen.x, screen.y, visionRadius, 0, Math.PI * 2);
+    fc.fill();
+  }
+
+  // Cut out light from flying attacks (player only)
+  for (const attack of attacks) {
+    if (attack.playerId !== 0) continue;
+    const from = planetMap.get(attack.fromId);
+    const to = planetMap.get(attack.toId);
+    if (!from || !to) continue;
+
+    const wx = from.x + (to.x - from.x) * attack.progress;
+    const wy = from.y + (to.y - from.y) * attack.progress;
+    const screen = worldToScreen(wx, wy);
+    const lightRadius = 250 * camera.zoom;
+
+    const gradient = fc.createRadialGradient(
+      screen.x, screen.y, lightRadius * 0.3,
+      screen.x, screen.y, lightRadius
+    );
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    fc.fillStyle = gradient;
+    fc.beginPath();
+    fc.arc(screen.x, screen.y, lightRadius, 0, Math.PI * 2);
+    fc.fill();
+  }
+
+  // Cut out light from probes (scouts)
+  for (const probe of probes) {
+    if (probe.done) continue;
+    const screen = worldToScreen(probe.x, probe.y);
+    const lightRadius = 300 * camera.zoom;
+
+    const gradient = fc.createRadialGradient(
+      screen.x, screen.y, lightRadius * 0.3,
+      screen.x, screen.y, lightRadius
+    );
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    fc.fillStyle = gradient;
+    fc.beginPath();
+    fc.arc(screen.x, screen.y, lightRadius, 0, Math.PI * 2);
+    fc.fill();
+  }
+
+  // Cut out reveal zones (from probes and permanent start zone)
+  for (const zone of revealZones) {
+    const screen = worldToScreen(zone.x, zone.y);
+    const zoneRadius = zone.radius * camera.zoom;
+
+    // Fade out near end of life
+    let alpha = 1.0;
+    if (!zone.permanent && zone.timeLeft < 3000) {
+      alpha = zone.timeLeft / 3000;
+    }
+
+    const gradient = fc.createRadialGradient(
+      screen.x, screen.y, zoneRadius * 0.6,
+      screen.x, screen.y, zoneRadius
+    );
+    gradient.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    fc.fillStyle = gradient;
+    fc.beginPath();
+    fc.arc(screen.x, screen.y, zoneRadius, 0, Math.PI * 2);
+    fc.fill();
+  }
+
+  fc.globalCompositeOperation = 'source-over';
+
+  // Draw fog overlay on main canvas
+  ctx.drawImage(fogCanvas, 0, 0);
+
+  // Brighten revealed areas with subtle glow
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const planet of planets) {
+    if (planet.ownerId !== 0) continue;
+    const screen = worldToScreen(planet.x, planet.y);
+    const visionRadius = getVisionRange(planet) * camera.zoom;
+
+    const glow = ctx.createRadialGradient(
+      screen.x, screen.y, 0,
+      screen.x, screen.y, visionRadius * 0.7
+    );
+    glow.addColorStop(0, 'rgba(40, 50, 80, 0.12)');
+    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, visionRadius * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function getPopupLayout(popup: ActionPopup) {
+  const btnW = 90;
+  const btnH = 22;
+  const padding = 8;
+  const hasSlider = popup.buttons.some(b => b.action === 'attack');
+  const percentRowH = hasSlider ? 24 : 0;
+  const percentGap = hasSlider ? 4 : 0;
+  const totalH = percentRowH + percentGap + popup.buttons.length * (btnH + 4) + padding * 2 - 4;
+  const arrowW = 10;
+  const startX = popup.screenX + arrowW;
+  const startY = popup.screenY - totalH / 2;
+  return { btnW, btnH, padding, hasSlider, percentRowH, percentGap, totalH, arrowW, startX, startY };
+}
+
+function renderPopup(): void {
+  if (!actionPopup) return;
+
+  const { btnW, btnH, padding, hasSlider, percentRowH, percentGap, totalH, arrowW, startX, startY } = getPopupLayout(actionPopup);
+
+  // Animation: scale + fade in
+  const elapsed = performance.now() - actionPopup.openTime;
+  const animDuration = 180; // ms
+  const t = Math.min(1, elapsed / animDuration);
+  // Ease-out cubic
+  const ease = 1 - Math.pow(1 - t, 3);
+  const scale = 0.6 + 0.4 * ease;
+  const alpha = ease;
+
+  // Transform origin = left center (arrow tip)
+  const originX = actionPopup.screenX;
+  const originY = actionPopup.screenY;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(originX, originY);
+  ctx.scale(scale, scale);
+  ctx.translate(-originX, -originY);
+
+  // Background with rounded corners effect
+  const bgX = startX - padding;
+  const bgY = startY - padding;
+  const bgW = btnW + padding * 2;
+  const bgH = totalH + padding;
+  const radius = 4;
+
+  ctx.beginPath();
+  ctx.moveTo(bgX + radius, bgY);
+  ctx.lineTo(bgX + bgW - radius, bgY);
+  ctx.quadraticCurveTo(bgX + bgW, bgY, bgX + bgW, bgY + radius);
+  ctx.lineTo(bgX + bgW, bgY + bgH - radius);
+  ctx.quadraticCurveTo(bgX + bgW, bgY + bgH, bgX + bgW - radius, bgY + bgH);
+  ctx.lineTo(bgX + radius, bgY + bgH);
+  ctx.quadraticCurveTo(bgX, bgY + bgH, bgX, bgY + bgH - radius);
+  ctx.lineTo(bgX, bgY + radius);
+  ctx.quadraticCurveTo(bgX, bgY, bgX + radius, bgY);
+  ctx.closePath();
+
+  ctx.fillStyle = 'rgba(5, 8, 22, 0.92)';
+  ctx.fill();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Arrow pointing left toward planet
+  ctx.fillStyle = 'rgba(5, 8, 22, 0.92)';
+  ctx.beginPath();
+  ctx.moveTo(bgX, originY - 6);
+  ctx.lineTo(bgX - arrowW, originY);
+  ctx.lineTo(bgX, originY + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Cover the arrow's inner edge
+  ctx.fillStyle = 'rgba(5, 8, 22, 0.92)';
+  ctx.fillRect(bgX - 1, originY - 5, 3, 10);
+
+  // Slider row (only for attack popups)
+  if (hasSlider) {
+    const sliderTrackH = 8;
+    const sliderPad = 4;
+    const sliderY = startY + (percentRowH - sliderTrackH) / 2;
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillRect(startX + sliderPad, sliderY, btnW - sliderPad * 2, sliderTrackH);
+
+    const sliderW = btnW - sliderPad * 2;
+    const fillW = sliderW * (sendPercent / 100);
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(startX + sliderPad, sliderY, fillW, sliderTrackH);
+
+    const handleX = startX + sliderPad + fillW - 3;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(handleX, sliderY - 2, 6, sliderTrackH + 4);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Action buttons
+  ctx.font = '7px "Press Start 2P"';
+  let by = startY + percentRowH + percentGap;
+  for (const btn of actionPopup.buttons) {
+    const isHovered = mouseX >= startX && mouseX <= startX + btnW && mouseY >= by && mouseY <= by + btnH;
+    ctx.fillStyle = isHovered ? 'rgba(255, 215, 0, 0.25)' : 'rgba(255, 255, 255, 0.06)';
+    ctx.fillRect(startX, by, btnW, btnH);
+    ctx.strokeStyle = isHovered ? '#FFD700' : '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(startX, by, btnW, btnH);
+
+    ctx.fillStyle = isHovered ? '#FFD700' : '#ccc';
+    ctx.fillText(btn.label, startX + btnW / 2, by + btnH / 2);
+
+    by += btnH + 4;
+  }
+
+  ctx.restore();
+}
+
+
+function renderAbilities(): void {
+  const btnW = 70;
+  const btnH = 28;
+  const gap = 6;
+  const totalW = abilities.length * btnW + (abilities.length - 1) * gap;
+  const abX = gameWidth - totalW - 15;
+  const abY = gameHeight - 45;
+
+  ctx.font = '7px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i < abilities.length; i++) {
+    const ability = abilities[i];
+    const bx = abX + i * (btnW + gap);
+    const ready = isAbilityReady(ability);
+    const isActive = activeAbility === ability.id;
+
+    // Button bg
+    ctx.fillStyle = isActive ? 'rgba(255, 215, 0, 0.3)' : ready ? 'rgba(40, 40, 80, 0.9)' : 'rgba(20, 20, 40, 0.9)';
+    ctx.fillRect(bx, abY, btnW, btnH);
+    ctx.strokeStyle = isActive ? '#FFD700' : ready ? '#4488ff' : '#333';
+    ctx.lineWidth = isActive ? 2 : 1;
+    ctx.strokeRect(bx, abY, btnW, btnH);
+
+    // Cooldown overlay
+    if (!ready) {
+      const remaining = getAbilityCooldownRemaining(ability);
+      const ratio = remaining / ability.cooldown;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(bx, abY, btnW * ratio, btnH);
+
+      // Cooldown text
+      ctx.fillStyle = '#666';
+      ctx.fillText(`${Math.ceil(remaining / 1000)}s`, bx + btnW / 2, abY + btnH / 2);
+    } else {
+      ctx.fillStyle = isActive ? '#FFD700' : '#fff';
+      ctx.fillText(ability.name, bx + btnW / 2, abY + btnH / 2);
+    }
+  }
+}
+
 function renderUI(): void {
   // Top-left: Player stats
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(10, 10, 260, 100);
+  ctx.fillRect(10, 10, 260, 118);
   ctx.strokeStyle = '#4488ff44';
   ctx.lineWidth = 1;
-  ctx.strokeRect(10, 10, 260, 100);
+  ctx.strokeRect(10, 10, 260, 118);
 
   ctx.font = '14px "Press Start 2P"';
   ctx.textAlign = 'left';
@@ -999,9 +2310,15 @@ function renderUI(): void {
 
   ctx.font = '9px "Press Start 2P"';
   ctx.fillStyle = '#aaa';
-  ctx.fillText(`Planets: ${players[0]?.planetCount || 0}`, 22, 60);
+  const playerPlanetCount = players[0]?.planetCount || 0;
+  const activeGen = getActiveGeneratorCount(0);
+  const maxGen = getMaxGenerators(playerPlanetCount);
+  ctx.fillText(`Planets: ${playerPlanetCount}`, 22, 60);
   ctx.fillText(`Total Units: ${Math.floor(players[0]?.totalUnits || 0)}`, 22, 78);
-  ctx.fillText(`Zoom: ${camera.zoom.toFixed(2)}x`, 22, 96);
+  ctx.fillStyle = '#b4ff32';
+  ctx.fillText(`Generators: ${activeGen}/${maxGen}`, 22, 96);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`Difficulty: ${difficulty}`, 22, 114);
 
   // Top-right: Controls
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
@@ -1012,111 +2329,79 @@ function renderUI(): void {
   ctx.fillStyle = '#666';
   ctx.fillText('Right-click drag: Pan', gameWidth - 20, 30);
   ctx.fillText('Scroll: Zoom', gameWidth - 20, 46);
-  ctx.fillText('Click: Select planet', gameWidth - 20, 62);
-  ctx.fillText('Click target: Send units', gameWidth - 20, 78);
-  ctx.fillText('[SPACE] Home  [ESC] Deselect', gameWidth - 20, 94);
+  ctx.fillText('Click own: Multi-select', gameWidth - 20, 62);
+  ctx.fillText('Click target: Action menu', gameWidth - 20, 78);
+  ctx.fillText('[SPACE] Home [P] Pause [ESC] Clear', gameWidth - 20, 94);
 
-  // Selected planet info
-  if (selectedPlanet !== null) {
-    const planet = planets.find(p => p.id === selectedPlanet);
-    if (planet) {
-      const panelW = 270;
-      const panelH = planet.ownerId === 0 ? 170 : 130;
-      const panelX = 10;
-      const panelY = gameHeight - panelH - 10;
+  // Active ability indicator
+  if (activeAbility) {
+    ctx.font = '10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText(`${activeAbility.toUpperCase()} - Click target`, gameWidth / 2, 30);
+  }
 
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-      ctx.fillRect(panelX, panelY, panelW, panelH);
-      ctx.strokeStyle = '#ffffff22';
-      ctx.strokeRect(panelX, panelY, panelW, panelH);
+  // Abilities bar
+  renderAbilities();
 
-      ctx.font = '9px "Press Start 2P"';
-      ctx.textAlign = 'left';
 
-      const owner = planet.ownerId === -1 ? 'Neutral' : players[planet.ownerId]?.name || '?';
-      ctx.fillStyle = planet.ownerId === -1 ? '#888' : (players[planet.ownerId]?.color || '#888');
-      ctx.fillText(`${owner}`, panelX + 12, panelY + 20);
+  // Attack/send line preview (only for visible targets)
+  if (selectedPlanets.size > 0 && hoveredPlanet !== null && !selectedPlanets.has(hoveredPlanet)) {
+    const to = planetMap.get(hoveredPlanet);
+    if (to && isVisibleToPlayer(to)) {
+      const hasOwnSelected = [...selectedPlanets].some(id => {
+        const p = planetMap.get(id);
+        return p && p.ownerId === 0;
+      });
 
-      ctx.fillStyle = '#ccc';
-      ctx.fillText(`Size: ${planet.size}`, panelX + 12, panelY + 40);
-      ctx.fillText(`Units: ${Math.floor(planet.units)} / ${planet.maxUnits}`, panelX + 12, panelY + 58);
-      ctx.fillText(`Defense: ${planet.defense.toFixed(1)}x`, panelX + 12, panelY + 76);
-      ctx.fillText(`Stability: ${Math.floor(planet.stability)}%`, panelX + 12, panelY + 94);
-      ctx.fillText(`Supply: ${planet.connected ? 'Connected' : 'CUT OFF'}`, panelX + 12, panelY + 112);
+      if (hasOwnSelected) {
+        const toScreen = worldToScreen(to.x, to.y);
+        for (const fromId of selectedPlanets) {
+          const from = planetMap.get(fromId);
+          if (!from || from.ownerId !== 0) continue;
 
-      // Send percentage slider (only for player's own planets)
-      if (planet.ownerId === 0) {
-        const sX = panelX + SLIDER_X;
-        const sY = panelY + 125;
-        sliderScreenY = sY;
+          const fromScreen = worldToScreen(from.x, from.y);
+          const dist = getDistance(from, to);
+          const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
+          const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
 
-        // Label
-        ctx.font = '8px "Press Start 2P"';
-        ctx.fillStyle = '#FFD700';
-        ctx.fillText(`Send: ${sendPercent}%`, sX, sY - 3);
+          ctx.strokeStyle = `rgba(255, ${Math.floor(efficiency * 200)}, 0, 0.4)`;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 4]);
+          ctx.beginPath();
+          ctx.moveTo(fromScreen.x, fromScreen.y);
+          ctx.lineTo(toScreen.x, toScreen.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
 
-        // Slider background
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-        ctx.fillRect(sX, sY + 4, SLIDER_W, SLIDER_H);
-
-        // Slider fill
-        const fillW = SLIDER_W * (sendPercent / 100);
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(sX, sY + 4, fillW, SLIDER_H);
-
-        // Slider handle
-        const handleX = sX + fillW - 3;
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(handleX, sY + 2, 6, SLIDER_H + 4);
-
-        // Unit count preview
-        ctx.font = '7px "Press Start 2P"';
-        ctx.fillStyle = '#aaa';
-        ctx.fillText(`${Math.floor(planet.units * sendPercent / 100)} units`, sX, sY + SLIDER_H + 14);
+        // Efficiency label at target
+        const firstFrom = planetMap.get([...selectedPlanets].find(id => {
+          const p = planetMap.get(id);
+          return p && p.ownerId === 0;
+        })!);
+        if (firstFrom) {
+          const dist = getDistance(firstFrom, to);
+          const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
+          const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
+          ctx.font = '9px "Press Start 2P"';
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${Math.floor(efficiency * 100)}% eff`, toScreen.x, toScreen.y - to.radius * camera.zoom - 16);
+        }
       }
-
     }
   }
 
-  // Attack/send line preview (when own planet selected and hovering another)
-  if (selectedPlanet !== null && hoveredPlanet !== null && hoveredPlanet !== selectedPlanet) {
-    const from = planets.find(p => p.id === selectedPlanet);
-    const to = planets.find(p => p.id === hoveredPlanet);
-    if (from && to && from.ownerId === 0) {
-      const fromScreen = worldToScreen(from.x, from.y);
-      const toScreen = worldToScreen(to.x, to.y);
-      const dist = getDistance(from, to);
-      const penalty = (dist / 100) * DISTANCE_PENALTY_PER_100PX;
-      const efficiency = Math.max(MIN_ATTACK_EFFICIENCY, 1.0 - penalty);
+  // Popup
+  renderPopup();
 
-      // Line
-      ctx.strokeStyle = `rgba(255, ${Math.floor(efficiency * 200)}, 0, 0.5)`;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([8, 4]);
-      ctx.beginPath();
-      ctx.moveTo(fromScreen.x, fromScreen.y);
-      ctx.lineTo(toScreen.x, toScreen.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Efficiency label
-      const midX = (fromScreen.x + toScreen.x) / 2;
-      const midY = (fromScreen.y + toScreen.y) / 2;
-      ctx.font = '10px "Press Start 2P"';
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${Math.floor(efficiency * 100)}% eff`, midX, midY - 12);
-      ctx.font = '8px "Press Start 2P"';
-      ctx.fillStyle = '#aaa';
-      ctx.fillText(`${Math.floor(from.units * (sendPercent / 100))} units (${sendPercent}%)`, midX, midY + 6);
-    }
-  }
-
-  // Player scoreboard (bottom-right)
+  // Player scoreboard (bottom-right, above abilities)
   const sbW = 220;
   const sbH = players.length * 22 + 16;
+  const sbY = gameHeight - sbH - 65;
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(gameWidth - sbW - 10, gameHeight - sbH - 10, sbW, sbH);
+  ctx.fillRect(gameWidth - sbW - 10, sbY, sbW, sbH);
 
   ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'left';
@@ -1126,32 +2411,123 @@ function renderUI(): void {
     ctx.fillText(
       `${p.name}: ${p.planetCount}P ${Math.floor(p.totalUnits)}U`,
       gameWidth - sbW,
-      gameHeight - sbH + 8 + i * 22
+      sbY + 14 + i * 22
     );
   }
 }
 
+function renderExploreDrag(): void {
+  if (!exploreDragging || explorePlanetId === null) return;
+
+  const planet = planetMap.get(explorePlanetId);
+  if (!planet) return;
+
+  const planetScreen = worldToScreen(planet.x, planet.y);
+  const worldTarget = screenToWorld(mouseX, mouseY);
+  const worldDist = getDistance(planet, worldTarget);
+  const unitCost = Math.max(5, Math.ceil(worldDist / 100 * PROBE_UNIT_COST_PER_100PX));
+  const affordable = planet.units - 5 >= unitCost;
+
+  // Dashed line from planet to cursor
+  ctx.strokeStyle = affordable ? '#44ff88' : '#ff4444';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  ctx.moveTo(planetScreen.x, planetScreen.y);
+  ctx.lineTo(mouseX, mouseY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Target circle (reveal preview)
+  const previewRadius = PROBE_REVEAL_RADIUS * camera.zoom;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, previewRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = affordable ? '#44ff8866' : '#ff444466';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Cost label
+  const costText = `${unitCost} units`;
+  const distText = `${Math.round(worldDist)}px`;
+  const midX = (planetScreen.x + mouseX) / 2;
+  const midY = (planetScreen.y + mouseY) / 2;
+
+  ctx.font = '9px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Background for text
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(midX - 60, midY - 18, 120, 36);
+
+  ctx.fillStyle = affordable ? '#44ff88' : '#ff4444';
+  ctx.fillText(costText, midX, midY - 6);
+  ctx.fillStyle = '#888';
+  ctx.font = '7px "Press Start 2P"';
+  ctx.fillText(distText, midX, midY + 10);
+}
+
+function renderGameOver(): void {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(0, 0, gameWidth, gameHeight);
+
+  ctx.font = '36px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = gameResult === 'win' ? '#FFD700' : '#ff4444';
+  ctx.fillText(gameResult === 'win' ? 'VICTORY!' : 'DEFEATED', gameWidth / 2, gameHeight / 2 - 30);
+
+  ctx.font = '12px "Press Start 2P"';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`Planets: ${players[0]?.planetCount || 0} | Units: ${Math.floor(players[0]?.totalUnits || 0)}`, gameWidth / 2, gameHeight / 2 + 10);
+
+  // Restart button
+  const btnX = gameWidth / 2 - 80;
+  const btnY = gameHeight / 2 + 40;
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.2)';
+  ctx.fillRect(btnX, btnY, 160, 40);
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(btnX, btnY, 160, 40);
+  ctx.font = '12px "Press Start 2P"';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('RESTART', gameWidth / 2, btnY + 24);
+}
+
+function renderPaused(): void {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(0, 0, gameWidth, gameHeight);
+
+  ctx.font = '28px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('PAUSED', gameWidth / 2, gameHeight / 2);
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Press P to resume', gameWidth / 2, gameHeight / 2 + 30);
+}
+
 function render(): void {
-  // Clear
   ctx.fillStyle = '#050510';
   ctx.fillRect(0, 0, gameWidth, gameHeight);
 
-  // Stars
-  renderStars();
+  // Apply camera shake offset
+  ctx.save();
+  ctx.translate(camera.shakeX, camera.shakeY);
 
-  // Supply lines (behind planets)
+  renderStars();
   renderSupplyLines();
 
-  // Moon orbit rings (behind planets)
+  // Moon orbit rings
   for (const moon of planets) {
     if (!moon.isMoon || moon.parentId === undefined) continue;
-    const parent = planets.find(p => p.id === moon.parentId);
+    const parent = planetMap.get(moon.parentId);
     if (!parent) continue;
 
     const parentScreen = worldToScreen(parent.x, parent.y);
     const orbitR = (moon.orbitRadius || 0) * camera.zoom;
 
-    // Skip if off screen
     if (parentScreen.x + orbitR < 0 || parentScreen.x - orbitR > gameWidth) continue;
     if (parentScreen.y + orbitR < 0 || parentScreen.y - orbitR > gameHeight) continue;
 
@@ -1169,24 +2545,25 @@ function render(): void {
     renderPlanet(planet);
   }
 
-  // Selection ring
-  if (selectedPlanet !== null) {
-    const planet = planets.find(p => p.id === selectedPlanet);
+  // Selection rings (multi-select)
+  for (const id of selectedPlanets) {
+    const planet = planetMap.get(id);
     if (planet) {
       const screen = worldToScreen(planet.x, planet.y);
       const r = planet.radius * camera.zoom;
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, r + 6, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ffffff';
+      const isBoost = planetMode === 'boost' && modePlanetId === planet.id;
+      ctx.strokeStyle = isBoost ? '#00ff66' : (planet.ownerId === 0 ? '#ffffff' : '#ffffff88');
       ctx.lineWidth = 2;
       ctx.stroke();
     }
   }
 
-  // Hover ring
-  if (hoveredPlanet !== null && hoveredPlanet !== selectedPlanet) {
-    const planet = planets.find(p => p.id === hoveredPlanet);
-    if (planet) {
+  // Hover ring (only for visible planets)
+  if (hoveredPlanet !== null && !selectedPlanets.has(hoveredPlanet)) {
+    const planet = planetMap.get(hoveredPlanet);
+    if (planet && (planet.ownerId === 0 || isVisibleToPlayer(planet))) {
       const screen = worldToScreen(planet.x, planet.y);
       const r = planet.radius * camera.zoom;
       ctx.beginPath();
@@ -1200,8 +2577,35 @@ function render(): void {
   // Attacks
   renderAttacks();
 
-  // UI overlay
+  // Battles
+  renderBattles();
+
+  // Probes
+  renderProbes();
+
+  // Click +1 anims
+  renderClickAnims();
+
+  // Particles
+  renderParticles();
+
+  ctx.restore();
+
+  // Fog of war overlay (covers world, not UI)
+  renderFogOfWar();
+
+  // UI overlay (not affected by shake)
   renderUI();
+
+  // Explore drag overlay
+  renderExploreDrag();
+
+  // Game state overlays
+  if (gameState === GameState.GAMEOVER) {
+    renderGameOver();
+  } else if (gameState === GameState.PAUSED) {
+    renderPaused();
+  }
 }
 
 // ========== MOON ORBIT ==========
@@ -1209,10 +2613,9 @@ function updateMoons(dt: number): void {
   for (const moon of planets) {
     if (!moon.isMoon || moon.parentId === undefined) continue;
 
-    const parent = planets.find(p => p.id === moon.parentId);
+    const parent = planetMap.get(moon.parentId);
     if (!parent) continue;
 
-    // Rotate moon around parent
     moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.4) * dt;
     const orbitR = moon.orbitRadius || (parent.radius + 40);
     moon.x = parent.x + Math.cos(moon.orbitAngle) * orbitR;
@@ -1222,12 +2625,20 @@ function updateMoons(dt: number): void {
 
 // ========== GAME LOOP ==========
 function update(dt: number): void {
+  if (gameState !== GameState.PLAYING) return;
+
   gameTime += dt * 1000;
 
   updateMoons(dt);
   updateGrowth(dt);
   updateStability(dt);
   updateAttacks(dt);
+  updateBattles();
+  updateParticles(dt);
+  updateShake(dt);
+  updateShields(dt);
+  updateProbes(dt);
+  updateClickAnims(dt);
 
   if (gameTime - lastSupplyCheck > SUPPLY_CHECK_INTERVAL) {
     recalculateSupply();
@@ -1240,6 +2651,10 @@ function update(dt: number): void {
     }
     lastAITick = gameTime;
   }
+
+
+
+  checkGameOver();
 }
 
 function gameLoop(timestamp: number): void {
