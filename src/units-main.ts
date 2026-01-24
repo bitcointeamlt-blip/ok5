@@ -148,6 +148,13 @@ let attackMode = false;
 let mouseX = 0;
 let mouseY = 0;
 let sendPercent = 50; // % of units to send (10-100)
+let sliderDragging = false;
+let sliderScreenY = 0; // computed each frame based on panel position
+
+// Slider geometry
+const SLIDER_X = 22;
+const SLIDER_W = 240;
+const SLIDER_H = 14;
 
 // Player colors
 const PLAYER_COLORS = [
@@ -699,6 +706,23 @@ function getPlanetAtScreen(sx: number, sy: number): Planet | null {
   return null;
 }
 
+// Helper: check if click is on the slider
+function isOnSlider(px: number, py: number): boolean {
+  if (selectedPlanet === null) return false;
+  const planet = planets.find(p => p.id === selectedPlanet);
+  if (!planet || planet.ownerId !== 0) return false;
+
+  const sX = 10 + SLIDER_X; // panelX + SLIDER_X
+  const sY = sliderScreenY + 4;
+  return px >= sX && px <= sX + SLIDER_W && py >= sY - 4 && py <= sY + SLIDER_H + 4;
+}
+
+function updateSliderFromMouse(px: number): void {
+  const sX = 10 + SLIDER_X;
+  const ratio = Math.max(0, Math.min(1, (px - sX) / SLIDER_W));
+  sendPercent = Math.max(10, Math.min(100, Math.round(ratio * 100 / 5) * 5)); // snap to 5%
+}
+
 canvas.addEventListener('mousedown', (e) => {
   const pos = getCanvasMousePos(e);
 
@@ -709,6 +733,13 @@ canvas.addEventListener('mousedown', (e) => {
     camera.dragCamStartX = camera.x;
     camera.dragCamStartY = camera.y;
     e.preventDefault();
+    return;
+  }
+
+  // Check slider first
+  if (isOnSlider(pos.x, pos.y)) {
+    sliderDragging = true;
+    updateSliderFromMouse(pos.x);
     return;
   }
 
@@ -737,6 +768,11 @@ canvas.addEventListener('mousemove', (e) => {
   mouseX = pos.x;
   mouseY = pos.y;
 
+  if (sliderDragging) {
+    updateSliderFromMouse(pos.x);
+    return;
+  }
+
   if (camera.dragging) {
     camera.x = camera.dragCamStartX - (pos.x - camera.dragStartX);
     camera.y = camera.dragCamStartY - (pos.y - camera.dragStartY);
@@ -749,6 +785,7 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', () => {
   camera.dragging = false;
+  sliderDragging = false;
 });
 
 canvas.addEventListener('wheel', (e) => {
@@ -789,20 +826,6 @@ document.addEventListener('keydown', (e) => {
       camera.x = home.x * camera.zoom - gameWidth / 2;
       camera.y = home.y * camera.zoom - gameHeight / 2;
     }
-  }
-  // Number keys 1-9 = 10%-90%, 0 = 100%
-  if (e.key >= '1' && e.key <= '9') {
-    sendPercent = parseInt(e.key) * 10;
-  }
-  if (e.key === '0') {
-    sendPercent = 100;
-  }
-  // Q/E to fine-tune by 5%
-  if (e.key === 'q' || e.key === 'Q') {
-    sendPercent = Math.max(10, sendPercent - 5);
-  }
-  if (e.key === 'e' || e.key === 'E') {
-    sendPercent = Math.min(100, sendPercent + 5);
   }
 });
 
@@ -979,7 +1002,7 @@ function renderUI(): void {
 
   // Top-right: Controls
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(gameWidth - 290, 10, 280, 152);
+  ctx.fillRect(gameWidth - 290, 10, 280, 120);
 
   ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'right';
@@ -990,18 +1013,13 @@ function renderUI(): void {
   ctx.fillText('[A] Attack mode', gameWidth - 20, 78);
   ctx.fillText('[SPACE] Home planet', gameWidth - 20, 94);
   ctx.fillText('[ESC] Deselect', gameWidth - 20, 110);
-  ctx.fillText('[1-9,0] Send %  [Q/E] ±5%', gameWidth - 20, 126);
-
-  // Send percentage indicator
-  ctx.fillStyle = '#FFD700';
-  ctx.fillText(`Send: ${sendPercent}%`, gameWidth - 20, 146);
 
   // Selected planet info
   if (selectedPlanet !== null) {
     const planet = planets.find(p => p.id === selectedPlanet);
     if (planet) {
       const panelW = 270;
-      const panelH = 130;
+      const panelH = planet.ownerId === 0 ? 170 : 130;
       const panelX = 10;
       const panelY = gameHeight - panelH - 10;
 
@@ -1023,6 +1041,37 @@ function renderUI(): void {
       ctx.fillText(`Defense: ${planet.defense.toFixed(1)}x`, panelX + 12, panelY + 76);
       ctx.fillText(`Stability: ${Math.floor(planet.stability)}%`, panelX + 12, panelY + 94);
       ctx.fillText(`Supply: ${planet.connected ? 'Connected' : 'CUT OFF'}`, panelX + 12, panelY + 112);
+
+      // Send percentage slider (only for player's own planets)
+      if (planet.ownerId === 0) {
+        const sX = panelX + SLIDER_X;
+        const sY = panelY + 125;
+        sliderScreenY = sY;
+
+        // Label
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(`Send: ${sendPercent}%`, sX, sY - 3);
+
+        // Slider background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fillRect(sX, sY + 4, SLIDER_W, SLIDER_H);
+
+        // Slider fill
+        const fillW = SLIDER_W * (sendPercent / 100);
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(sX, sY + 4, fillW, SLIDER_H);
+
+        // Slider handle
+        const handleX = sX + fillW - 3;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(handleX, sY + 2, 6, SLIDER_H + 4);
+
+        // Unit count preview
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillStyle = '#aaa';
+        ctx.fillText(`${Math.floor(planet.units * sendPercent / 100)} units`, sX, sY + SLIDER_H + 14);
+      }
 
       if (attackMode) {
         ctx.fillStyle = '#ff4444';
