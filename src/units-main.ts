@@ -147,6 +147,7 @@ const camera: Camera = {
 let attackMode = false;
 let mouseX = 0;
 let mouseY = 0;
+let sendPercent = 50; // % of units to send (10-100)
 
 // Player colors
 const PLAYER_COLORS = [
@@ -542,7 +543,9 @@ function launchAttack(fromId: number, toId: number): void {
   if (from.ownerId === -1) return;
   if (from.units < 2) return;
 
-  const unitsToSend = Math.floor(from.units * 0.5);
+  const percent = from.ownerId === 0 ? sendPercent : 50; // player uses slider, AI uses 50%
+  const unitsToSend = Math.floor(from.units * (percent / 100));
+  if (unitsToSend < 1) return;
   from.units -= unitsToSend;
 
   const dist = getDistance(from, to);
@@ -787,6 +790,20 @@ document.addEventListener('keydown', (e) => {
       camera.y = home.y * camera.zoom - gameHeight / 2;
     }
   }
+  // Number keys 1-9 = 10%-90%, 0 = 100%
+  if (e.key >= '1' && e.key <= '9') {
+    sendPercent = parseInt(e.key) * 10;
+  }
+  if (e.key === '0') {
+    sendPercent = 100;
+  }
+  // Q/E to fine-tune by 5%
+  if (e.key === 'q' || e.key === 'Q') {
+    sendPercent = Math.max(10, sendPercent - 5);
+  }
+  if (e.key === 'e' || e.key === 'E') {
+    sendPercent = Math.min(100, sendPercent + 5);
+  }
 });
 
 // ========== RENDERING ==========
@@ -962,7 +979,7 @@ function renderUI(): void {
 
   // Top-right: Controls
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(gameWidth - 290, 10, 280, 120);
+  ctx.fillRect(gameWidth - 290, 10, 280, 152);
 
   ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'right';
@@ -973,6 +990,11 @@ function renderUI(): void {
   ctx.fillText('[A] Attack mode', gameWidth - 20, 78);
   ctx.fillText('[SPACE] Home planet', gameWidth - 20, 94);
   ctx.fillText('[ESC] Deselect', gameWidth - 20, 110);
+  ctx.fillText('[1-9,0] Send %  [Q/E] ±5%', gameWidth - 20, 126);
+
+  // Send percentage indicator
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText(`Send: ${sendPercent}%`, gameWidth - 20, 146);
 
   // Selected planet info
   if (selectedPlanet !== null) {
@@ -1040,7 +1062,7 @@ function renderUI(): void {
       ctx.fillText(`${Math.floor(efficiency * 100)}% eff`, midX, midY - 12);
       ctx.font = '8px "Press Start 2P"';
       ctx.fillStyle = '#aaa';
-      ctx.fillText(`${Math.floor(from.units * 0.5)} units`, midX, midY + 6);
+      ctx.fillText(`${Math.floor(from.units * (sendPercent / 100))} units (${sendPercent}%)`, midX, midY + 6);
     }
   }
 
