@@ -36,6 +36,7 @@ const MIN_PLANET_DISTANCE = 120; // minimum distance between planets
 const EMPIRE_SLOW_THRESHOLD = 8;
 const EMPIRE_DECAY_THRESHOLD = 20;
 const EMPIRE_GROWTH_PENALTY = 0.08;
+const EMPIRE_DEGRADE_UNIT_THRESHOLD = 2000; // degradation only starts after 2k total units
 
 // Attack
 const DISTANCE_PENALTY_PER_100PX = 0.05; // 5% loss per 100px distance
@@ -453,22 +454,25 @@ function updateStability(dt: number): void {
 
     let targetStability = STABILITY_MAX;
 
-    // Distance from home planet
-    const home = planets.find(p => p.id === player.homeId);
-    if (home) {
-      const dist = getDistance(planet, home);
-      targetStability -= (dist / 200) * 3; // lose stability over distance
-    }
+    // Skip degradation if player has fewer than 2k total units
+    if (player.totalUnits >= EMPIRE_DEGRADE_UNIT_THRESHOLD) {
+      // Distance from home planet
+      const home = planets.find(p => p.id === player.homeId);
+      if (home) {
+        const dist = getDistance(planet, home);
+        targetStability -= (dist / 200) * 3; // lose stability over distance
+      }
 
-    // Not connected = bad
-    if (!planet.connected) {
-      targetStability = Math.min(targetStability, 20);
-    }
+      // Not connected = bad
+      if (!planet.connected) {
+        targetStability = Math.min(targetStability, 20);
+      }
 
-    // Empire size penalty
-    if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
-      const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
-      targetStability -= excess * 3;
+      // Empire size penalty
+      if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
+        const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
+        targetStability -= excess * 3;
+      }
     }
 
     targetStability = Math.max(0, Math.min(STABILITY_MAX, targetStability));
@@ -491,7 +495,7 @@ function updateStability(dt: number): void {
 
 // ========== UNITS GROWTH ==========
 function updateGrowth(dt: number): void {
-  // Reset counts
+  // Reset and count totals first
   for (const player of players) {
     player.planetCount = 0;
     player.totalUnits = 0;
@@ -499,36 +503,45 @@ function updateGrowth(dt: number): void {
 
   for (const planet of planets) {
     if (planet.ownerId === -1) continue;
+    const player = players[planet.ownerId];
+    if (!player || !player.alive) continue;
+    player.planetCount++;
+    player.totalUnits += planet.units;
+  }
+
+  // Apply growth
+  for (const planet of planets) {
+    if (planet.ownerId === -1) continue;
 
     const player = players[planet.ownerId];
     if (!player || !player.alive) continue;
 
-    player.planetCount++;
-    player.totalUnits += planet.units;
-
     // Calculate growth
     let growth = BASE_GROWTH_RATE * planet.growthRate;
 
-    // Stability affects growth
-    if (planet.stability < 30) {
-      growth = -1; // decay
-    } else if (planet.stability < 70) {
-      growth *= 0.3;
-    }
+    // Degradation only applies after 2k total units
+    if (player.totalUnits >= EMPIRE_DEGRADE_UNIT_THRESHOLD) {
+      // Stability affects growth
+      if (planet.stability < 30) {
+        growth = -1; // decay
+      } else if (planet.stability < 70) {
+        growth *= 0.3;
+      }
 
-    // Empire size penalty
-    if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
-      const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
-      growth *= Math.max(0.1, 1.0 - excess * EMPIRE_GROWTH_PENALTY);
-    }
+      // Empire size penalty
+      if (player.planetCount > EMPIRE_SLOW_THRESHOLD) {
+        const excess = player.planetCount - EMPIRE_SLOW_THRESHOLD;
+        growth *= Math.max(0.1, 1.0 - excess * EMPIRE_GROWTH_PENALTY);
+      }
 
-    if (player.planetCount > EMPIRE_DECAY_THRESHOLD) {
-      growth -= 0.5;
-    }
+      if (player.planetCount > EMPIRE_DECAY_THRESHOLD) {
+        growth -= 0.5;
+      }
 
-    // Not connected = no growth
-    if (!planet.connected) {
-      growth = Math.min(growth, -0.5);
+      // Not connected = no growth
+      if (!planet.connected) {
+        growth = Math.min(growth, -0.5);
+      }
     }
 
     // Apply
