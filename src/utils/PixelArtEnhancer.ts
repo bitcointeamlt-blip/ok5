@@ -321,6 +321,123 @@ export function snapToPixel(value: number): number {
 }
 
 /**
+ * Fill inner transparent areas (like glass domes/windows) with a solid color
+ * Uses flood fill from edges to identify exterior, then fills interior transparent pixels
+ */
+export function fillInnerTransparent(
+  canvas: HTMLCanvasElement,
+  fillColor: string = '#000000'
+): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const width = canvas.width;
+  const height = canvas.height;
+
+  // Create output canvas
+  const output = document.createElement('canvas');
+  output.width = width;
+  output.height = height;
+  const outputCtx = output.getContext('2d', { willReadFrequently: true })!;
+  const outputData = outputCtx.createImageData(width, height);
+  const outputPixels = outputData.data;
+
+  // Parse fill color
+  const colorMatch = fillColor.match(/#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+  const fillR = colorMatch ? parseInt(colorMatch[1], 16) : 0;
+  const fillG = colorMatch ? parseInt(colorMatch[2], 16) : 0;
+  const fillB = colorMatch ? parseInt(colorMatch[3], 16) : 0;
+
+  // Track which pixels are "exterior" (reachable from edges via transparent pixels)
+  const exterior = new Uint8Array(width * height);
+
+  // Flood fill from all edge pixels to mark exterior transparent areas
+  const queue: number[] = [];
+
+  // Add all edge transparent pixels to queue
+  for (let x = 0; x < width; x++) {
+    // Top edge
+    const topIdx = x;
+    if (data[topIdx * 4 + 3] < 128) {
+      queue.push(topIdx);
+      exterior[topIdx] = 1;
+    }
+    // Bottom edge
+    const bottomIdx = (height - 1) * width + x;
+    if (data[bottomIdx * 4 + 3] < 128) {
+      queue.push(bottomIdx);
+      exterior[bottomIdx] = 1;
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    // Left edge
+    const leftIdx = y * width;
+    if (data[leftIdx * 4 + 3] < 128 && !exterior[leftIdx]) {
+      queue.push(leftIdx);
+      exterior[leftIdx] = 1;
+    }
+    // Right edge
+    const rightIdx = y * width + (width - 1);
+    if (data[rightIdx * 4 + 3] < 128 && !exterior[rightIdx]) {
+      queue.push(rightIdx);
+      exterior[rightIdx] = 1;
+    }
+  }
+
+  // BFS flood fill to mark all exterior transparent pixels
+  while (queue.length > 0) {
+    const idx = queue.shift()!;
+    const x = idx % width;
+    const y = Math.floor(idx / width);
+
+    // Check 4 neighbors (up, down, left, right)
+    const neighbors = [
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+      { dx: -1, dy: 0 },
+      { dx: 1, dy: 0 }
+    ];
+
+    for (const { dx, dy } of neighbors) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+        const nIdx = ny * width + nx;
+        if (!exterior[nIdx] && data[nIdx * 4 + 3] < 128) {
+          exterior[nIdx] = 1;
+          queue.push(nIdx);
+        }
+      }
+    }
+  }
+
+  // Copy original and fill interior transparent pixels
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const pixelIdx = idx * 4;
+
+      if (data[pixelIdx + 3] < 128 && !exterior[idx]) {
+        // Interior transparent pixel - fill with black
+        outputPixels[pixelIdx] = fillR;
+        outputPixels[pixelIdx + 1] = fillG;
+        outputPixels[pixelIdx + 2] = fillB;
+        outputPixels[pixelIdx + 3] = 255; // Full opacity
+      } else {
+        // Keep original pixel
+        outputPixels[pixelIdx] = data[pixelIdx];
+        outputPixels[pixelIdx + 1] = data[pixelIdx + 1];
+        outputPixels[pixelIdx + 2] = data[pixelIdx + 2];
+        outputPixels[pixelIdx + 3] = data[pixelIdx + 3];
+      }
+    }
+  }
+
+  outputCtx.putImageData(outputData, 0, 0);
+  return output;
+}
+
+/**
  * Get subpixel offset for smooth animation (for non-pixel elements)
  */
 export function getSubpixelOffset(frame: number, speed: number = 1): number {
