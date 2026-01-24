@@ -1840,19 +1840,62 @@ function renderAttacks(): void {
     ctx.lineTo(cx, cy);
     ctx.stroke();
 
-    // Moving dot
-    const dotSize = Math.max(3, 5 * camera.zoom);
+    // Direction angle
+    const angle = Math.atan2(toScreen.y - fromScreen.y, toScreen.x - fromScreen.x);
+    const shipSize = Math.max(5, 8 * camera.zoom);
+    const shipColor = attack.isBlitz ? '#FFD700' : player.color;
+    const time = performance.now() / 1000;
+
+    // Main ship (triangle pointing in travel direction)
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+
+    // Ship body
     ctx.beginPath();
-    ctx.arc(cx, cy, dotSize, 0, Math.PI * 2);
-    ctx.fillStyle = attack.isBlitz ? '#FFD700' : player.color;
+    ctx.moveTo(shipSize, 0); // nose
+    ctx.lineTo(-shipSize * 0.7, -shipSize * 0.5); // top-left wing
+    ctx.lineTo(-shipSize * 0.3, 0); // back indent
+    ctx.lineTo(-shipSize * 0.7, shipSize * 0.5); // bottom-left wing
+    ctx.closePath();
+    ctx.fillStyle = shipColor;
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Engine glow
+    const glowPulse = 0.6 + Math.sin(time * 15) * 0.4;
+    ctx.beginPath();
+    ctx.arc(-shipSize * 0.4, 0, shipSize * 0.25 * glowPulse, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 200, 100, ${glowPulse * 0.7})`;
+    ctx.fill();
+
+    ctx.restore();
+
+    // Escort ships (small dots orbiting the main ship)
+    const escortCount = Math.min(5, Math.max(2, Math.floor(attack.units / 30)));
+    for (let e = 0; e < escortCount; e++) {
+      const orbitR = shipSize * 1.5 + Math.sin(time * 3 + e * 1.7) * shipSize * 0.5;
+      const orbitAngle = (e / escortCount) * Math.PI * 2 + time * 4;
+      const ex = cx + Math.cos(orbitAngle) * orbitR;
+      const ey = cy + Math.sin(orbitAngle) * orbitR;
+      const eSize = Math.max(1.5, 2.5 * camera.zoom);
+
+      ctx.beginPath();
+      ctx.arc(ex, ey, eSize, 0, Math.PI * 2);
+      ctx.fillStyle = shipColor;
+      ctx.globalAlpha = 0.6 + Math.sin(time * 8 + e) * 0.3;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
 
     // Unit count label
     if (camera.zoom > 0.4) {
       ctx.font = '8px "Press Start 2P"';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
-      ctx.fillText(Math.floor(attack.units).toString(), cx, cy - dotSize - 4);
+      ctx.fillText(Math.floor(attack.units).toString(), cx, cy - shipSize - 6);
     }
   }
 }
