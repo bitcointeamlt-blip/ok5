@@ -144,7 +144,6 @@ const camera: Camera = {
 };
 
 // UI State
-let attackMode = false;
 let mouseX = 0;
 let mouseY = 0;
 let sendPercent = 50; // % of units to send (10-100)
@@ -746,20 +745,20 @@ canvas.addEventListener('mousedown', (e) => {
   // Left click
   const planet = getPlanetAtScreen(pos.x, pos.y);
 
-  if (attackMode && selectedPlanet !== null) {
-    if (planet && planet.id !== selectedPlanet) {
+  if (selectedPlanet !== null && planet && planet.id !== selectedPlanet) {
+    // If own planet selected → clicking another planet sends units
+    const selected = planets.find(p => p.id === selectedPlanet);
+    if (selected && selected.ownerId === 0) {
       launchAttack(selectedPlanet, planet.id);
+      return;
     }
-    attackMode = false;
-    selectedPlanet = null;
+  }
+
+  // Select/deselect
+  if (planet) {
+    selectedPlanet = planet.id;
   } else {
-    if (planet) {
-      selectedPlanet = planet.id;
-      attackMode = false;
-    } else {
-      selectedPlanet = null;
-      attackMode = false;
-    }
+    selectedPlanet = null;
   }
 });
 
@@ -806,17 +805,8 @@ canvas.addEventListener('wheel', (e) => {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'a' || e.key === 'A') {
-    if (selectedPlanet !== null) {
-      const planet = planets.find(p => p.id === selectedPlanet);
-      if (planet && planet.ownerId === 0) {
-        attackMode = !attackMode;
-      }
-    }
-  }
   if (e.key === 'Escape') {
     selectedPlanet = null;
-    attackMode = false;
   }
   // Space = center on home
   if (e.key === ' ') {
@@ -1002,17 +992,16 @@ function renderUI(): void {
 
   // Top-right: Controls
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(gameWidth - 290, 10, 280, 120);
+  ctx.fillRect(gameWidth - 290, 10, 280, 104);
 
   ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'right';
   ctx.fillStyle = '#666';
   ctx.fillText('Right-click drag: Pan', gameWidth - 20, 30);
   ctx.fillText('Scroll: Zoom', gameWidth - 20, 46);
-  ctx.fillText('Click planet: Select', gameWidth - 20, 62);
-  ctx.fillText('[A] Attack mode', gameWidth - 20, 78);
-  ctx.fillText('[SPACE] Home planet', gameWidth - 20, 94);
-  ctx.fillText('[ESC] Deselect', gameWidth - 20, 110);
+  ctx.fillText('Click: Select planet', gameWidth - 20, 62);
+  ctx.fillText('Click target: Send units', gameWidth - 20, 78);
+  ctx.fillText('[SPACE] Home  [ESC] Deselect', gameWidth - 20, 94);
 
   // Selected planet info
   if (selectedPlanet !== null) {
@@ -1073,19 +1062,14 @@ function renderUI(): void {
         ctx.fillText(`${Math.floor(planet.units * sendPercent / 100)} units`, sX, sY + SLIDER_H + 14);
       }
 
-      if (attackMode) {
-        ctx.fillStyle = '#ff4444';
-        ctx.font = '10px "Press Start 2P"';
-        ctx.fillText('ATTACK - click target', panelX + 12, panelY + panelH - 5);
-      }
     }
   }
 
-  // Attack mode line preview
-  if (attackMode && selectedPlanet !== null && hoveredPlanet !== null && hoveredPlanet !== selectedPlanet) {
+  // Attack/send line preview (when own planet selected and hovering another)
+  if (selectedPlanet !== null && hoveredPlanet !== null && hoveredPlanet !== selectedPlanet) {
     const from = planets.find(p => p.id === selectedPlanet);
     const to = planets.find(p => p.id === hoveredPlanet);
-    if (from && to) {
+    if (from && to && from.ownerId === 0) {
       const fromScreen = worldToScreen(from.x, from.y);
       const toScreen = worldToScreen(to.x, to.y);
       const dist = getDistance(from, to);
@@ -1180,7 +1164,7 @@ function render(): void {
       const r = planet.radius * camera.zoom;
       ctx.beginPath();
       ctx.arc(screen.x, screen.y, r + 6, 0, Math.PI * 2);
-      ctx.strokeStyle = attackMode ? '#ff4444' : '#ffffff';
+      ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
