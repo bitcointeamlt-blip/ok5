@@ -46,6 +46,16 @@ if (isMobile) {
   canvas.style.touchAction = 'none';
 }
 
+// Virtual joystick state (mobile only)
+const JOYSTICK_SIZE = 120; // outer circle size
+const JOYSTICK_INNER = 50; // inner thumb size
+const JOYSTICK_X = 80; // center X position from left
+const JOYSTICK_Y_OFFSET = 150; // offset from bottom
+let joystickActive = false;
+let joystickTouchId: number | null = null;
+let joystickX = 0; // thumb position relative to center (-1 to 1)
+let joystickY = 0;
+
 // ========== ENUMS ==========
 enum PlanetSize {
   ASTEROID = 'asteroid',
@@ -2921,6 +2931,15 @@ function showContextMenu(pos: { x: number; y: number }): void {
   }
 }
 
+// Check if touch is on joystick area
+function isOnJoystick(x: number, y: number): boolean {
+  if (!isMobile) return false;
+  const centerX = JOYSTICK_X;
+  const centerY = gameHeight - JOYSTICK_Y_OFFSET;
+  const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+  return dist <= JOYSTICK_SIZE / 2 + 20; // +20 for easier touch
+}
+
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
 
@@ -2938,6 +2957,26 @@ canvas.addEventListener('touchstart', (e) => {
 
   const touch = e.touches[0];
   const pos = getTouchPos(touch);
+
+  // Check joystick touch (mobile only)
+  if (isMobile && isOnJoystick(pos.x, pos.y)) {
+    joystickActive = true;
+    joystickTouchId = touch.identifier;
+    // Calculate joystick position
+    const centerX = JOYSTICK_X;
+    const centerY = gameHeight - JOYSTICK_Y_OFFSET;
+    const maxDist = JOYSTICK_SIZE / 2 - JOYSTICK_INNER / 2;
+    const dx = pos.x - centerX;
+    const dy = pos.y - centerY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 0) {
+      const clampedDist = Math.min(dist, maxDist);
+      joystickX = (dx / dist) * (clampedDist / maxDist);
+      joystickY = (dy / dist) * (clampedDist / maxDist);
+    }
+    return; // Don't process other touch events when using joystick
+  }
+
   touchStartTime = performance.now();
   touchStartX = pos.x;
   touchStartY = pos.y;
@@ -3028,6 +3067,30 @@ canvas.addEventListener('touchmove', (e) => {
 
   if (gameState !== GameState.PLAYING) return;
 
+  // Handle joystick movement
+  if (joystickActive && joystickTouchId !== null) {
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === joystickTouchId) {
+        const pos = getTouchPos(e.touches[i]);
+        const centerX = JOYSTICK_X;
+        const centerY = gameHeight - JOYSTICK_Y_OFFSET;
+        const maxDist = JOYSTICK_SIZE / 2 - JOYSTICK_INNER / 2;
+        const dx = pos.x - centerX;
+        const dy = pos.y - centerY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0) {
+          const clampedDist = Math.min(dist, maxDist);
+          joystickX = (dx / dist) * (clampedDist / maxDist);
+          joystickY = (dy / dist) * (clampedDist / maxDist);
+        } else {
+          joystickX = 0;
+          joystickY = 0;
+        }
+        return;
+      }
+    }
+  }
+
   // Two-finger pinch zoom + pan
   if (e.touches.length === 2) {
     isPinching = true;
@@ -3089,6 +3152,23 @@ canvas.addEventListener('touchmove', (e) => {
 
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
+
+  // Check if joystick touch ended
+  if (joystickActive && joystickTouchId !== null) {
+    let stillActive = false;
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === joystickTouchId) {
+        stillActive = true;
+        break;
+      }
+    }
+    if (!stillActive) {
+      joystickActive = false;
+      joystickTouchId = null;
+      joystickX = 0;
+      joystickY = 0;
+    }
+  }
 
   if (longPressTimer) {
     clearTimeout(longPressTimer);
@@ -3189,11 +3269,42 @@ canvas.addEventListener('touchend', (e) => {
     const planet = getPlanetAtScreen(pos.x, pos.y);
     if (planet) {
       if (planet.ownerId === controlledPlayerId) {
-        // Own planet - select/deselect
+        // BOOST mode: +1 unit per tap
+        if (planetMode === 'boost' && modePlanetId === planet.id) {
+          if (planet.units < planet.maxUnits) {
+            planet.units += 1;
+            const screen = worldToScreen(planet.x, planet.y);
+            clickAnims.push({
+              x: screen.x + (Math.random() - 0.5) * 20,
+              y: screen.y - planet.radius * camera.zoom - 10,
+              vx: (Math.random() - 0.5) * 2,
+              vy: -2 - Math.random(),
+              life: 60,
+              maxLife: 60
+            });
+          }
+          return;
+        }
+
+        // SCOUT mode: start explore drag (on touch, just toggle select for now)
+        if (planetMode === 'scout' && modePlanetId === planet.id) {
+          exploreDragging = true;
+          explorePlanetId = planet.id;
+          exploreStartX = pos.x;
+          exploreStartY = pos.y;
+          return;
+        }
+
+        // Normal: select/deselect
         if (selectedPlanets.has(planet.id)) {
           selectedPlanets.delete(planet.id);
         } else {
           selectedPlanets.add(planet.id);
+        }
+        // Clear mode if tapping different planet
+        if (modePlanetId !== planet.id) {
+          planetMode = 'none';
+          modePlanetId = null;
         }
       } else {
         // Enemy/neutral planet with selection - show attack popup
@@ -4857,12 +4968,12 @@ function renderResourceBar(): void {
   }
   prevUnits = totalUnits;
 
-  // Bar dimensions (scaled for mobile)
-  const barH = Math.round(36 * UI_SCALE);
+  // Bar dimensions - COMPACT on mobile to fit screen
+  const barH = isMobile ? 32 : 36;
   const barW = gameWidth;
-  const slotW = Math.round(150 * UI_SCALE);
+  const slotW = isMobile ? Math.floor(gameWidth / 7.5) : 150; // Auto-fit on mobile
   const totalSlots = 7; // 5 resources + units + planets
-  const startX = (gameWidth - slotW * totalSlots) / 2;
+  const startX = isMobile ? 5 : (gameWidth - slotW * totalSlots) / 2;
   const planetCount = players[controlledPlayerId]?.planetCount || 0;
 
   // Background
@@ -4877,7 +4988,13 @@ function renderResourceBar(): void {
   ctx.lineTo(barW, barH);
   ctx.stroke();
 
-  // Draw each resource
+  // Draw each resource (compact on mobile)
+  const iconR = isMobile ? 8 : 12;
+  const iconFont = isMobile ? 'bold 8px "Press Start 2P"' : 'bold 12px "Press Start 2P"';
+  const amountFont = isMobile ? '8px "Press Start 2P"' : '11px "Press Start 2P"';
+  const iconOffset = isMobile ? 12 : 18;
+  const textOffset = isMobile ? 24 : 38;
+
   for (let i = 0; i < allTypes.length; i++) {
     const type = allTypes[i];
     const info = DEPOSIT_INFO[type];
@@ -4887,31 +5004,33 @@ function renderResourceBar(): void {
     // Icon background
     ctx.fillStyle = info.color;
     ctx.beginPath();
-    ctx.arc(x + 18, barH / 2, 12, 0, Math.PI * 2);
+    ctx.arc(x + iconOffset, barH / 2, iconR, 0, Math.PI * 2);
     ctx.fill();
 
     // Icon letter
-    ctx.font = 'bold 12px "Press Start 2P"';
+    ctx.font = iconFont;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000';
-    ctx.fillText(info.icon, x + 18, barH / 2 + 1);
+    ctx.fillText(info.icon, x + iconOffset, barH / 2 + 1);
 
     // Amount
-    ctx.font = '11px "Press Start 2P"';
+    ctx.font = amountFont;
     ctx.textAlign = 'left';
     ctx.fillStyle = '#fff';
-    ctx.fillText(Math.floor(amount).toString(), x + 38, barH / 2 + 1);
+    ctx.fillText(Math.floor(amount).toString(), x + textOffset, barH / 2 + 1);
 
-    // Change indicator (fade out over 2 seconds)
-    const change = resourceChanges[type];
-    const elapsed = now - change.time;
-    if (elapsed < 2000 && change.amount !== 0) {
-      const alpha = 1 - elapsed / 2000;
-      const changeText = change.amount > 0 ? `+${change.amount}` : `${change.amount}`;
-      ctx.font = '10px "Press Start 2P"';
-      ctx.fillStyle = change.amount > 0 ? `rgba(100, 255, 100, ${alpha})` : `rgba(255, 100, 100, ${alpha})`;
-      ctx.fillText(changeText, x + 77, barH / 2 + 1);
+    // Change indicator (fade out over 2 seconds) - skip on mobile to save space
+    if (!isMobile) {
+      const change = resourceChanges[type];
+      const elapsed = now - change.time;
+      if (elapsed < 2000 && change.amount !== 0) {
+        const alpha = 1 - elapsed / 2000;
+        const changeText = change.amount > 0 ? `+${change.amount}` : `${change.amount}`;
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillStyle = change.amount > 0 ? `rgba(100, 255, 100, ${alpha})` : `rgba(255, 100, 100, ${alpha})`;
+        ctx.fillText(changeText, x + 77, barH / 2 + 1);
+      }
     }
   }
 
@@ -4921,30 +5040,32 @@ function renderResourceBar(): void {
   // Icon background (yellow/gold for units)
   ctx.fillStyle = '#FFD700';
   ctx.beginPath();
-  ctx.arc(unitsX + 18, barH / 2, 12, 0, Math.PI * 2);
+  ctx.arc(unitsX + iconOffset, barH / 2, iconR, 0, Math.PI * 2);
   ctx.fill();
 
   // Icon letter
-  ctx.font = 'bold 12px "Press Start 2P"';
+  ctx.font = iconFont;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#000';
-  ctx.fillText('U', unitsX + 18, barH / 2 + 1);
+  ctx.fillText('U', unitsX + iconOffset, barH / 2 + 1);
 
   // Amount
-  ctx.font = '11px "Press Start 2P"';
+  ctx.font = amountFont;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#fff';
-  ctx.fillText(totalUnits.toString(), unitsX + 38, barH / 2 + 1);
+  ctx.fillText(totalUnits.toString(), unitsX + textOffset, barH / 2 + 1);
 
-  // Units change indicator
-  const unitsElapsed = now - unitsChange.time;
-  if (unitsElapsed < 2000 && unitsChange.amount !== 0) {
-    const alpha = 1 - unitsElapsed / 2000;
-    const changeText = unitsChange.amount > 0 ? `+${Math.floor(unitsChange.amount)}` : `${Math.floor(unitsChange.amount)}`;
-    ctx.font = '10px "Press Start 2P"';
-    ctx.fillStyle = unitsChange.amount > 0 ? `rgba(100, 255, 100, ${alpha})` : `rgba(255, 100, 100, ${alpha})`;
-    ctx.fillText(changeText, unitsX + 72, barH / 2 + 1);
+  // Units change indicator - skip on mobile
+  if (!isMobile) {
+    const unitsElapsed = now - unitsChange.time;
+    if (unitsElapsed < 2000 && unitsChange.amount !== 0) {
+      const alpha = 1 - unitsElapsed / 2000;
+      const changeText = unitsChange.amount > 0 ? `+${Math.floor(unitsChange.amount)}` : `${Math.floor(unitsChange.amount)}`;
+      ctx.font = '10px "Press Start 2P"';
+      ctx.fillStyle = unitsChange.amount > 0 ? `rgba(100, 255, 100, ${alpha})` : `rgba(255, 100, 100, ${alpha})`;
+      ctx.fillText(changeText, unitsX + 72, barH / 2 + 1);
+    }
   }
 
   // Planets display (last slot)
@@ -4953,21 +5074,21 @@ function renderResourceBar(): void {
   // Icon background (cyan for planets)
   ctx.fillStyle = '#44aaff';
   ctx.beginPath();
-  ctx.arc(planetsX + 18, barH / 2, 12, 0, Math.PI * 2);
+  ctx.arc(planetsX + iconOffset, barH / 2, iconR, 0, Math.PI * 2);
   ctx.fill();
 
   // Icon letter
-  ctx.font = 'bold 12px "Press Start 2P"';
+  ctx.font = iconFont;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#000';
-  ctx.fillText('P', planetsX + 18, barH / 2 + 1);
+  ctx.fillText('P', planetsX + iconOffset, barH / 2 + 1);
 
   // Amount
-  ctx.font = '11px "Press Start 2P"';
+  ctx.font = amountFont;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#fff';
-  ctx.fillText(planetCount.toString(), planetsX + 38, barH / 2 + 1);
+  ctx.fillText(planetCount.toString(), planetsX + textOffset, barH / 2 + 1);
 
   // Tooltip on hover
   if (mouseY < barH && mouseY > 0) {
@@ -5024,9 +5145,56 @@ function renderResourceBar(): void {
   }
 }
 
+// Render virtual joystick (mobile only)
+function renderJoystick(): void {
+  if (!isMobile) return;
+
+  const centerX = JOYSTICK_X;
+  const centerY = gameHeight - JOYSTICK_Y_OFFSET;
+  const outerR = JOYSTICK_SIZE / 2;
+  const innerR = JOYSTICK_INNER / 2;
+
+  // Outer circle (base)
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, outerR, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner circle (thumb) - moves with joystick
+  const thumbX = centerX + joystickX * (outerR - innerR);
+  const thumbY = centerY + joystickY * (outerR - innerR);
+
+  ctx.beginPath();
+  ctx.arc(thumbX, thumbY, innerR, 0, Math.PI * 2);
+  ctx.fillStyle = joystickActive ? 'rgba(255, 215, 0, 0.6)' : 'rgba(255, 255, 255, 0.3)';
+  ctx.fill();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Direction indicator arrows
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('▲', centerX, centerY - outerR + 12);
+  ctx.fillText('▼', centerX, centerY + outerR - 12);
+  ctx.fillText('◀', centerX - outerR + 12, centerY);
+  ctx.fillText('▶', centerX + outerR - 12, centerY);
+}
+
 function renderUI(): void {
   // Resource bar at top
   renderResourceBar();
+
+  // Ability bar (bottom right)
+  renderAbilities();
+
+  // Virtual joystick (mobile only, bottom left)
+  renderJoystick();
 
   // Player control indicator (test mode)
   if (players.filter(p => p.alive).length > 1) {
@@ -5486,6 +5654,13 @@ function updateMining(): void {
 
 function update(dt: number): void {
   if (gameState !== GameState.PLAYING) return;
+
+  // Joystick camera movement (mobile)
+  if (isMobile && (joystickX !== 0 || joystickY !== 0)) {
+    const JOYSTICK_CAMERA_SPEED = 800; // pixels per second
+    camera.x += joystickX * JOYSTICK_CAMERA_SPEED * dt;
+    camera.y += joystickY * JOYSTICK_CAMERA_SPEED * dt;
+  }
 
   gameTime += dt * 1000;
 
