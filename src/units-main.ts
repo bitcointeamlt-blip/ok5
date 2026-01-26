@@ -535,29 +535,16 @@ for (let i = 1; i <= MASS_FRAME_COUNT; i++) {
   massFrames.push(img);
 }
 
-// Spaceship sprites (8 directions)
-const SHIP_DIRECTIONS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
-const shipSprites: Map<string, HTMLImageElement> = new Map();
-let shipSpritesLoaded = 0;
-for (const dir of SHIP_DIRECTIONS) {
-  const img = new Image();
-  img.src = `./spaceship/ship-${dir}.png`;
-  img.onload = () => { shipSpritesLoaded++; };
-  shipSprites.set(dir, img);
-}
+// Spaceship sprites (pod for 1-100 units, fighter for 101-250 units)
+const podSprite = new Image();
+podSprite.src = '/spaceship/pod.png';
+let podSpriteLoaded = false;
+podSprite.onload = () => { podSpriteLoaded = true; };
 
-// Get ship sprite for a given angle (in radians)
-function getShipSpriteForAngle(angle: number): HTMLImageElement | null {
-  // Normalize angle to 0-2PI
-  let normalizedAngle = angle % (Math.PI * 2);
-  if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
-
-  // Convert to 8 directions (each direction covers 45 degrees = PI/4)
-  // East is 0, going clockwise: SE=45, S=90, SW=135, W=180, NW=225, N=270, NE=315
-  const directionIndex = Math.round(normalizedAngle / (Math.PI / 4)) % 8;
-  const direction = SHIP_DIRECTIONS[directionIndex];
-  return shipSprites.get(direction) || null;
-}
+const fighterSprite = new Image();
+fighterSprite.src = '/spaceship/fighter.png';
+let fighterSpriteLoaded = false;
+fighterSprite.onload = () => { fighterSpriteLoaded = true; };
 
 // Fog of war offscreen canvas
 let fogCanvas: HTMLCanvasElement | null = null;
@@ -3772,49 +3759,118 @@ function renderAttacks(): void {
 
     // Use stored angle (homing direction)
     const angle = attack.angle;
-    const shipSize = Math.max(12, 20 * camera.zoom); // Bigger for sprite
     const shipColor = attack.isBlitz ? '#FFD700' : player.color;
     const time = performance.now() / 1000;
 
-    // Get ship sprite for this angle
-    const shipSprite = getShipSpriteForAngle(angle);
+    // Choose ship type based on unit count: pod (1-100), fighter (101+)
+    const usePod = attack.units <= 100;
 
     ctx.save();
     ctx.translate(cx, cy);
 
-    // Draw sprite if loaded, otherwise fallback to triangle
-    if (shipSprite && shipSprite.complete && shipSprite.naturalWidth > 0) {
-      const spriteSize = shipSize * 2;
+    if (usePod && podSpriteLoaded && podSprite.complete && podSprite.naturalWidth > 0) {
+      // === POD (small rocket, 1-100 units) ===
+      const podSize = Math.max(14, 22 * camera.zoom);
+      const spriteSize = podSize * 1.3;
 
-      // Draw colored glow behind ship (player color)
-      const glowPulse = 0.6 + Math.sin(time * 15) * 0.4;
+      // Rotate to face travel direction (sprite points UP by default, so add PI/2)
+      ctx.rotate(angle + Math.PI / 2);
+
+      // Drill spin effect - oscillate scale X to simulate cylinder spinning
+      const drillSpin = time * 10;
+      const scaleX = 0.75 + Math.abs(Math.sin(drillSpin)) * 0.25;
+
+      // Yellow/orange engine flame (behind pod = positive Y)
+      const flameFlicker = 0.6 + Math.sin(time * 30) * 0.4;
+      const flameSize = spriteSize * 0.4 * flameFlicker;
+
+      // Outer flame (orange)
       ctx.beginPath();
-      ctx.arc(0, 0, spriteSize * 0.5, 0, Math.PI * 2);
-      const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, spriteSize * 0.5);
-      glowGradient.addColorStop(0, shipColor + '66');
-      glowGradient.addColorStop(0.5, shipColor + '33');
-      glowGradient.addColorStop(1, shipColor + '00');
-      ctx.fillStyle = glowGradient;
+      ctx.ellipse(0, spriteSize * 0.5, spriteSize * 0.12, flameSize, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 120, 20, ${0.8 * flameFlicker})`;
       ctx.fill();
 
-      // Draw the sprite
-      ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
-
-      // Engine trail effect
+      // Middle flame (yellow)
       ctx.beginPath();
-      ctx.arc(0, spriteSize * 0.2, spriteSize * 0.15 * glowPulse, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(100, 180, 255, ${glowPulse * 0.5})`;
+      ctx.ellipse(0, spriteSize * 0.45, spriteSize * 0.08, flameSize * 0.7, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 200, 50, ${0.9 * flameFlicker})`;
+      ctx.fill();
+
+      // Inner flame (white-yellow core)
+      ctx.beginPath();
+      ctx.ellipse(0, spriteSize * 0.4, spriteSize * 0.04, flameSize * 0.4, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 200, ${flameFlicker})`;
+      ctx.fill();
+
+      // Draw pod sprite with drill rotation effect (scale X for spinning look)
+      ctx.save();
+      ctx.scale(scaleX, 1);
+      ctx.drawImage(podSprite, -spriteSize / 2 / scaleX, -spriteSize / 2, spriteSize / scaleX, spriteSize);
+      ctx.restore();
+
+      // Spinning highlight moving around the cylinder
+      const highlightX = Math.sin(drillSpin * 2) * spriteSize * 0.1;
+      ctx.beginPath();
+      ctx.arc(highlightX, -spriteSize * 0.15, spriteSize * 0.04, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + Math.sin(drillSpin) * 0.2})`;
+      ctx.fill();
+
+    } else if (!usePod && fighterSpriteLoaded && fighterSprite.complete && fighterSprite.naturalWidth > 0) {
+      // === FIGHTER (large ship, 101+ units) ===
+      const shipSize = Math.max(16, 28 * camera.zoom);
+      const spriteSize = shipSize * 1.5;
+
+      // Rotate to face travel direction
+      ctx.rotate(angle + Math.PI / 2);
+
+      // Engine thruster glow (behind ship)
+      const glowPulse = 0.5 + Math.sin(time * 20) * 0.3;
+      const engineFlicker = 0.7 + Math.sin(time * 35) * 0.3;
+
+      // Main engine flame
+      ctx.beginPath();
+      ctx.ellipse(0, spriteSize * 0.45, spriteSize * 0.15 * engineFlicker, spriteSize * 0.3 * glowPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0, 200, 255, ${0.8 * engineFlicker})`;
+      ctx.fill();
+
+      // Inner hot core
+      ctx.beginPath();
+      ctx.ellipse(0, spriteSize * 0.4, spriteSize * 0.08 * engineFlicker, spriteSize * 0.15 * glowPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200, 255, 255, ${0.9 * engineFlicker})`;
+      ctx.fill();
+
+      // Draw fighter sprite
+      ctx.drawImage(fighterSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+
+      // Cockpit light blink
+      const blinkOn = Math.sin(time * 4) > 0.3;
+      if (blinkOn) {
+        ctx.beginPath();
+        ctx.arc(0, -spriteSize * 0.25, spriteSize * 0.05, 0, Math.PI * 2);
+        ctx.fillStyle = attack.isBlitz ? '#FFD700' : '#00ff88';
+        ctx.fill();
+      }
+
+      // Player color aura
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.6, 0, Math.PI * 2);
+      const auraGradient = ctx.createRadialGradient(0, 0, spriteSize * 0.3, 0, 0, spriteSize * 0.6);
+      auraGradient.addColorStop(0, shipColor + '00');
+      auraGradient.addColorStop(0.7, shipColor + '22');
+      auraGradient.addColorStop(1, shipColor + '00');
+      ctx.fillStyle = auraGradient;
       ctx.fill();
     } else {
       // Fallback: draw triangle if sprites not loaded
+      const fallbackSize = Math.max(12, 20 * camera.zoom);
       ctx.rotate(angle);
 
       // Ship body (triangle)
       ctx.beginPath();
-      ctx.moveTo(shipSize, 0);
-      ctx.lineTo(-shipSize * 0.7, -shipSize * 0.5);
-      ctx.lineTo(-shipSize * 0.3, 0);
-      ctx.lineTo(-shipSize * 0.7, shipSize * 0.5);
+      ctx.moveTo(fallbackSize, 0);
+      ctx.lineTo(-fallbackSize * 0.7, -fallbackSize * 0.5);
+      ctx.lineTo(-fallbackSize * 0.3, 0);
+      ctx.lineTo(-fallbackSize * 0.7, fallbackSize * 0.5);
       ctx.closePath();
       ctx.fillStyle = shipColor;
       ctx.fill();
@@ -3825,58 +3881,20 @@ function renderAttacks(): void {
       // Engine glow
       const glowPulse = 0.6 + Math.sin(time * 15) * 0.4;
       ctx.beginPath();
-      ctx.arc(-shipSize * 0.4, 0, shipSize * 0.25 * glowPulse, 0, Math.PI * 2);
+      ctx.arc(-fallbackSize * 0.4, 0, fallbackSize * 0.25 * glowPulse, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255, 200, 100, ${glowPulse * 0.7})`;
       ctx.fill();
     }
 
-    // Flame effect when degrading (units < startUnits)
-    if (attack.units < attack.startUnits) {
-      const degradeRatio = 1 - (attack.units / attack.startUnits);
-      const flameSize = shipSize * (0.5 + degradeRatio * 1.5);
-
-      // Multiple flame layers behind ship
-      for (let f = 0; f < 3; f++) {
-        const flicker = Math.sin(time * 20 + f * 2) * 0.3 + 0.7;
-        const fOffset = -shipSize * (0.8 + f * 0.4) + Math.sin(time * 25 + f) * 3;
-        const fSize = flameSize * (1 - f * 0.25) * flicker;
-
-        ctx.beginPath();
-        ctx.arc(fOffset, Math.sin(time * 30 + f * 3) * 2, fSize, 0, Math.PI * 2);
-
-        if (f === 0) ctx.fillStyle = `rgba(255, 100, 30, ${0.8 * flicker})`;
-        else if (f === 1) ctx.fillStyle = `rgba(255, 170, 50, ${0.6 * flicker})`;
-        else ctx.fillStyle = `rgba(255, 220, 100, ${0.4 * flicker})`;
-
-        ctx.fill();
-      }
-    }
-
     ctx.restore();
-
-    // Escort ships (small dots orbiting the main ship)
-    const escortCount = Math.min(5, Math.max(2, Math.floor(attack.units / 30)));
-    for (let e = 0; e < escortCount; e++) {
-      const orbitR = shipSize * 1.5 + Math.sin(time * 3 + e * 1.7) * shipSize * 0.5;
-      const orbitAngle = (e / escortCount) * Math.PI * 2 + time * 4;
-      const ex = cx + Math.cos(orbitAngle) * orbitR;
-      const ey = cy + Math.sin(orbitAngle) * orbitR;
-      const eSize = Math.max(1.5, 2.5 * camera.zoom);
-
-      ctx.beginPath();
-      ctx.arc(ex, ey, eSize, 0, Math.PI * 2);
-      ctx.fillStyle = shipColor;
-      ctx.globalAlpha = 0.6 + Math.sin(time * 8 + e) * 0.3;
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-    }
 
     // Unit count label
     if (camera.zoom > 0.4) {
+      const labelOffset = usePod ? 18 : 28;
       ctx.font = '10px "Press Start 2P"';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
-      ctx.fillText(Math.floor(attack.units).toString(), cx, cy - shipSize - 6);
+      ctx.fillText(Math.floor(attack.units).toString(), cx, cy - labelOffset * camera.zoom);
     }
   }
 }
