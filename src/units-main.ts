@@ -21,6 +21,31 @@ function updateCanvasSize(): void {
 updateCanvasSize();
 window.addEventListener('resize', updateCanvasSize);
 
+// ========== MOBILE DETECTION ==========
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+  ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const UI_SCALE = isMobile ? 1.5 : 1.0; // Scale up UI for mobile
+
+// Touch state
+let touchStartTime = 0;
+let touchStartX = 0;
+let touchStartY = 0;
+let lastTouchX = 0;
+let lastTouchY = 0;
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let pinchStartDist = 0;
+let pinchStartZoom = 1;
+let isTouchDragging = false;
+let isPinching = false;
+const LONG_PRESS_DURATION = 500; // ms for context menu
+
+// Prevent default touch behaviors on canvas
+if (isMobile) {
+  document.body.style.overflow = 'hidden';
+  document.body.style.touchAction = 'none';
+  canvas.style.touchAction = 'none';
+}
+
 // ========== ENUMS ==========
 enum PlanetSize {
   ASTEROID = 'asteroid',
@@ -324,6 +349,7 @@ interface ActionPopup {
   screenY: number;
   buttons: { label: string; action: string }[];
   openTime: number; // performance.now() when opened, for animation
+  attackPercent?: number; // optional attack percentage for slider
 }
 
 interface SupplyConnection {
@@ -586,7 +612,9 @@ function isVisibleToPlayer(planet: Planet): boolean {
 }
 
 function spawnParticles(x: number, y: number, color: string, count: number, speed: number): void {
-  for (let i = 0; i < count; i++) {
+  // Reduce particle count on mobile for better performance
+  const actualCount = isMobile ? Math.ceil(count * 0.5) : count;
+  for (let i = 0; i < actualCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const spd = speed * (0.5 + Math.random() * 0.5);
     particles.push({
@@ -622,7 +650,9 @@ function isAbilityReady(ability: Ability): boolean {
 // ========== INITIALIZATION ==========
 function generateStars(): void {
   stars = [];
-  for (let i = 0; i < 500; i++) {
+  // Reduce star count on mobile for better performance
+  const starCount = isMobile ? 200 : 500;
+  for (let i = 0; i < starCount; i++) {
     stars.push({
       x: Math.random() * WORLD_SIZE,
       y: Math.random() * WORLD_SIZE,
@@ -2317,9 +2347,12 @@ function worldToScreen(wx: number, wy: number): { x: number; y: number } {
 
 function getPlanetAtScreen(sx: number, sy: number): Planet | null {
   const world = screenToWorld(sx, sy);
+  // On mobile, increase touch target (minimum 30px for finger tap)
+  const minTouchRadius = isMobile ? 30 / camera.zoom : 0;
   for (const p of planets) {
     const dist = Math.sqrt((world.x - p.x) ** 2 + (world.y - p.y) ** 2);
-    if (dist <= p.radius) return p;
+    const hitRadius = Math.max(p.radius, minTouchRadius);
+    if (dist <= hitRadius) return p;
   }
   return null;
 }
@@ -2358,12 +2391,12 @@ function updatePopupSlider(px: number): void {
 
 // Check if click is on ability button
 function getAbilityButtonAt(px: number, py: number): string | null {
-  const btnW = 92;
-  const btnH = 40;
-  const gap = 6;
+  const btnW = Math.round(92 * UI_SCALE);
+  const btnH = Math.round(40 * UI_SCALE);
+  const gap = Math.round(6 * UI_SCALE);
   const totalW = abilities.length * btnW + (abilities.length - 1) * gap;
   const abX = gameWidth - totalW - 15;
-  const abY = gameHeight - 52;
+  const abY = gameHeight - Math.round(52 * UI_SCALE);
 
   for (let i = 0; i < abilities.length; i++) {
     const bx = abX + i * (btnW + gap);
@@ -2843,6 +2876,378 @@ canvas.addEventListener('wheel', (e) => {
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ========== MOBILE TOUCH CONTROLS ==========
+function getTouchPos(touch: Touch): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (touch.clientX - rect.left) * (canvas.width / rect.width),
+    y: (touch.clientY - rect.top) * (canvas.height / rect.height)
+  };
+}
+
+function getTouchDistance(t1: Touch, t2: Touch): number {
+  const dx = t1.clientX - t2.clientX;
+  const dy = t1.clientY - t2.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function showContextMenu(pos: { x: number; y: number }): void {
+  const planet = getPlanetAtScreen(pos.x, pos.y);
+  if (planet && planet.ownerId === controlledPlayerId) {
+    const screen = worldToScreen(planet.x, planet.y);
+    const genLabel = planet.generating ? 'GEN OFF' : 'GEN ON';
+    const isHomePlanet = planet.id === players[controlledPlayerId]?.homeId;
+    const buttons: { label: string; action: string }[] = [
+      { label: genLabel, action: 'toggle_gen' }
+    ];
+    if (isHomePlanet) {
+      buttons.push({ label: 'BOOST', action: 'boost' });
+    }
+    buttons.push(
+      { label: 'SCOUT', action: 'scout' },
+      { label: 'INFO', action: 'info' }
+    );
+    if (planet.size !== PlanetSize.ASTEROID) {
+      buttons.push({ label: 'BUILD', action: 'build' });
+    }
+    actionPopup = {
+      targetId: planet.id,
+      screenX: screen.x + planet.radius * camera.zoom + 14,
+      screenY: screen.y,
+      openTime: performance.now(),
+      buttons
+    };
+  }
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+
+  if (gameState === GameState.GAMEOVER) {
+    const pos = getTouchPos(e.touches[0]);
+    const btnX = gameWidth / 2 - 80;
+    const btnY = gameHeight / 2 + 40;
+    if (pos.x >= btnX && pos.x <= btnX + 160 && pos.y >= btnY && pos.y <= btnY + 40) {
+      initGame();
+    }
+    return;
+  }
+
+  if (gameState === GameState.PAUSED) return;
+
+  const touch = e.touches[0];
+  const pos = getTouchPos(touch);
+  touchStartTime = performance.now();
+  touchStartX = pos.x;
+  touchStartY = pos.y;
+  lastTouchX = pos.x;
+  lastTouchY = pos.y;
+  mouseX = pos.x;
+  mouseY = pos.y;
+
+  // Two-finger pinch/pan
+  if (e.touches.length === 2) {
+    isPinching = true;
+    isTouchDragging = false;
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    pinchStartDist = getTouchDistance(e.touches[0], e.touches[1]);
+    pinchStartZoom = camera.zoom;
+    // Pan start (center of two fingers)
+    const p1 = getTouchPos(e.touches[0]);
+    const p2 = getTouchPos(e.touches[1]);
+    camera.dragging = true;
+    camera.dragStartX = (p1.x + p2.x) / 2;
+    camera.dragStartY = (p1.y + p2.y) / 2;
+    camera.dragCamStartX = camera.x;
+    camera.dragCamStartY = camera.y;
+    return;
+  }
+
+  // Close info panel on any touch
+  if (infoPlanetId !== null) {
+    infoPlanetId = null;
+  }
+
+  // Check build panel
+  if (buildPanelPlanetId !== null) {
+    const buildAction = getBuildPanelClickAt(pos.x, pos.y);
+    if (buildAction) {
+      handleBuildPanelClick(buildAction);
+      return;
+    }
+    buildPanelPlanetId = null;
+    buildPanelSlot = null;
+  }
+
+  // Check transport panel
+  if (transportPanelOpen && transportSourceId !== null && transportTargetId !== null) {
+    const transportAction = getTransportPanelClickAt(pos.x, pos.y);
+    if (transportAction) {
+      handleTransportPanelClick(transportAction);
+      return;
+    }
+    transportPanelOpen = false;
+    transportSourceId = null;
+    transportTargetId = null;
+  }
+
+  // Check popup button
+  if (actionPopup) {
+    const action = getPopupButtonAt(pos.x, pos.y);
+    if (action) {
+      // Simulate mouse click handler for popup actions
+      const fakeEvent = { button: 0, preventDefault: () => {} } as MouseEvent;
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0
+      }));
+      return;
+    }
+  }
+
+  // Long press timer for context menu
+  longPressTimer = setTimeout(() => {
+    const moveDist = Math.sqrt((lastTouchX - touchStartX) ** 2 + (lastTouchY - touchStartY) ** 2);
+    if (moveDist < 20) {
+      showContextMenu(pos);
+      // Vibrate feedback if available
+      if (navigator.vibrate) navigator.vibrate(50);
+    }
+    longPressTimer = null;
+  }, LONG_PRESS_DURATION);
+
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+
+  if (gameState !== GameState.PLAYING) return;
+
+  // Two-finger pinch zoom + pan
+  if (e.touches.length === 2) {
+    isPinching = true;
+    const newDist = getTouchDistance(e.touches[0], e.touches[1]);
+    const scale = newDist / pinchStartDist;
+    camera.targetZoom = Math.max(0.04, Math.min(3.0, pinchStartZoom * scale));
+    camera.zoom = camera.targetZoom;
+
+    // Pan with two fingers
+    const p1 = getTouchPos(e.touches[0]);
+    const p2 = getTouchPos(e.touches[1]);
+    const centerX = (p1.x + p2.x) / 2;
+    const centerY = (p1.y + p2.y) / 2;
+    camera.x = camera.dragCamStartX - (centerX - camera.dragStartX);
+    camera.y = camera.dragCamStartY - (centerY - camera.dragStartY);
+    return;
+  }
+
+  const pos = getTouchPos(e.touches[0]);
+  lastTouchX = pos.x;
+  lastTouchY = pos.y;
+  mouseX = pos.x;
+  mouseY = pos.y;
+
+  const moveDist = Math.sqrt((pos.x - touchStartX) ** 2 + (pos.y - touchStartY) ** 2);
+
+  // Cancel long press if moved too much
+  if (moveDist > 15 && longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  // Start drag for camera pan (single finger)
+  if (moveDist > 10 && !isTouchDragging && !actionPopup) {
+    isTouchDragging = true;
+    camera.dragging = true;
+    camera.dragStartX = touchStartX;
+    camera.dragStartY = touchStartY;
+    camera.dragCamStartX = camera.x;
+    camera.dragCamStartY = camera.y;
+  }
+
+  // Camera panning
+  if (isTouchDragging && camera.dragging) {
+    camera.x = camera.dragCamStartX - (pos.x - camera.dragStartX);
+    camera.y = camera.dragCamStartY - (pos.y - camera.dragStartY);
+  }
+
+  // Popup slider dragging
+  if (popupSliderDragging) {
+    updatePopupSlider(pos.x);
+  }
+
+  // Update hovered planet
+  const planet = getPlanetAtScreen(pos.x, pos.y);
+  hoveredPlanet = planet ? planet.id : null;
+
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  if (gameState !== GameState.PLAYING) return;
+
+  // If was pinching and now only one finger, reset
+  if (isPinching && e.touches.length < 2) {
+    isPinching = false;
+    camera.dragging = false;
+    return;
+  }
+
+  // Check if it was a tap (short press, no drag)
+  const tapDuration = performance.now() - touchStartTime;
+  const moveDist = Math.sqrt((lastTouchX - touchStartX) ** 2 + (lastTouchY - touchStartY) ** 2);
+
+  camera.dragging = false;
+  popupSliderDragging = false;
+
+  // Handle explore drag release (like mouse)
+  if (exploreDragging && explorePlanetId !== null) {
+    if (moveDist > 15) {
+      const planet = planetMap.get(explorePlanetId);
+      if (planet && planet.ownerId === controlledPlayerId) {
+        const worldTarget = screenToWorld(lastTouchX, lastTouchY);
+        const worldDist = getDistance(planet, worldTarget);
+        const unitCost = Math.max(5, Math.ceil(worldDist / 100 * PROBE_UNIT_COST_PER_100PX));
+        const actualCost = Math.min(unitCost, Math.floor(planet.units - 5));
+        if (actualCost > 0) {
+          planet.units -= actualCost;
+          const maxDist = (actualCost / PROBE_UNIT_COST_PER_100PX) * 100;
+          const dx = worldTarget.x - planet.x;
+          const dy = worldTarget.y - planet.y;
+          const clickDist = Math.sqrt(dx * dx + dy * dy);
+          const travelDist = Math.min(maxDist, clickDist);
+          const nx = dx / (clickDist || 1);
+          const ny = dy / (clickDist || 1);
+          probes.push({
+            x: planet.x, y: planet.y,
+            targetX: planet.x + nx * travelDist,
+            targetY: planet.y + ny * travelDist,
+            speed: PROBE_SPEED, playerId: 0, done: false
+          });
+          const screen = worldToScreen(planet.x, planet.y);
+          spawnParticles(screen.x, screen.y, '#44ff88', 8, 80);
+        }
+      }
+    } else {
+      selectedPlanets.delete(explorePlanetId);
+    }
+    exploreDragging = false;
+    explorePlanetId = null;
+    isTouchDragging = false;
+    return;
+  }
+
+  isTouchDragging = false;
+
+  // Tap detection (short tap, minimal movement)
+  if (tapDuration < 300 && moveDist < 20) {
+    const pos = { x: lastTouchX, y: lastTouchY };
+
+    // Check popup buttons first
+    if (actionPopup) {
+      const action = getPopupButtonAt(pos.x, pos.y);
+      if (action) {
+        // Dispatch a fake mousedown to reuse existing logic
+        canvas.dispatchEvent(new MouseEvent('mousedown', {
+          clientX: pos.x,
+          clientY: pos.y,
+          button: 0
+        }));
+        return;
+      }
+      // Tap outside popup closes it
+      actionPopup = null;
+      activeAbility = null;
+      return;
+    }
+
+    // Check ability bar tap
+    const ability = getAbilityButtonAt(pos.x, pos.y);
+    if (ability) {
+      const ab = abilities.find(a => a.id === ability);
+      if (ab) {
+        const cd = ab.cooldown - (gameTime - ab.lastUsed);
+        if (cd <= 0) {
+          activeAbility = activeAbility === ability ? null : ability;
+        }
+      }
+      return;
+    }
+
+    // Check planet tap
+    const planet = getPlanetAtScreen(pos.x, pos.y);
+    if (planet) {
+      if (planet.ownerId === controlledPlayerId) {
+        // Own planet - select/deselect
+        if (selectedPlanets.has(planet.id)) {
+          selectedPlanets.delete(planet.id);
+        } else {
+          selectedPlanets.add(planet.id);
+        }
+      } else {
+        // Enemy/neutral planet with selection - show attack popup
+        if (selectedPlanets.size > 0) {
+          const screen = worldToScreen(planet.x, planet.y);
+          const attackBtns: { label: string; action: string }[] = [
+            { label: 'ATTACK', action: 'attack' }
+          ];
+          // Check if we have multiple connected planets for ALL IN
+          const connectedPlanets = getConnectedPlanets(controlledPlayerId);
+          const planetsWithUnits = connectedPlanets.filter(p => p.units >= 5);
+          if (planetsWithUnits.length > 1) {
+            attackBtns.push({ label: 'ALL IN', action: 'all_in' });
+          }
+          if (planetMode === 'scout') {
+            attackBtns.push({ label: 'PROBE', action: 'scout_probe' });
+          }
+          actionPopup = {
+            targetId: planet.id,
+            screenX: screen.x + planet.radius * camera.zoom + 14,
+            screenY: screen.y,
+            openTime: performance.now(),
+            buttons: attackBtns,
+            attackPercent: 100
+          };
+        }
+      }
+    } else {
+      // Tap on empty space - deselect
+      selectedPlanets.clear();
+      actionPopup = null;
+      activeAbility = null;
+      planetMode = 'none';
+      modePlanetId = null;
+    }
+  }
+
+}, { passive: false });
+
+// Prevent page zoom on double tap
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length > 1) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+let lastTap = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTap < 300) {
+    e.preventDefault();
+  }
+  lastTap = now;
+}, { passive: false });
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -3792,9 +4197,9 @@ function renderFogOfWar(): void {
 }
 
 function getPopupLayout(popup: ActionPopup) {
-  const btnW = 120;
-  const btnH = 38;
-  const padding = 10;
+  const btnW = Math.round(120 * UI_SCALE);
+  const btnH = Math.round(38 * UI_SCALE);
+  const padding = Math.round(10 * UI_SCALE);
   const hasSlider = popup.buttons.some(b => b.action === 'attack');
   const percentRowH = hasSlider ? 24 : 0;
   const percentGap = hasSlider ? 4 : 0;
@@ -4358,14 +4763,14 @@ function renderTransportPanel(): void {
 }
 
 function renderAbilities(): void {
-  const btnW = 92;
-  const btnH = 40;
-  const gap = 6;
+  const btnW = Math.round(92 * UI_SCALE);
+  const btnH = Math.round(40 * UI_SCALE);
+  const gap = Math.round(6 * UI_SCALE);
   const totalW = abilities.length * btnW + (abilities.length - 1) * gap;
   const abX = gameWidth - totalW - 15;
-  const abY = gameHeight - 52;
+  const abY = gameHeight - Math.round(52 * UI_SCALE);
 
-  ctx.font = '10px "Press Start 2P"';
+  ctx.font = `${Math.round(10 * UI_SCALE)}px "Press Start 2P"`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -4452,10 +4857,10 @@ function renderResourceBar(): void {
   }
   prevUnits = totalUnits;
 
-  // Bar dimensions
-  const barH = 36;
+  // Bar dimensions (scaled for mobile)
+  const barH = Math.round(36 * UI_SCALE);
   const barW = gameWidth;
-  const slotW = 150;
+  const slotW = Math.round(150 * UI_SCALE);
   const totalSlots = 7; // 5 resources + units + planets
   const startX = (gameWidth - slotW * totalSlots) / 2;
   const planetCount = players[controlledPlayerId]?.planetCount || 0;
