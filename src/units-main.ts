@@ -29,7 +29,9 @@ enum PlanetSize {
   MEDIUM = 'medium',
   LARGE = 'large',
   GIANT = 'giant',
-  MEGA = 'mega'
+  MEGA = 'mega',
+  TITAN = 'titan',
+  COLOSSUS = 'colossus'
 }
 
 enum GameState {
@@ -68,9 +70,9 @@ const EMPIRE_GROWTH_PENALTY = 0.08;
 const EMPIRE_DEGRADE_UNIT_THRESHOLD = 2000;
 
 // Attack
-const DISTANCE_NO_PENALTY = 400;      // no penalty for first 400px
-const DISTANCE_PENALTY_PER_10PX = 1;  // lose 1 unit per 10px after 400px
-const ATTACK_BASE_SPEED = 50;
+const DISTANCE_NO_PENALTY = 700;      // no penalty for first 700px
+const DISTANCE_PENALTY_PER_30PX = 1;  // lose 1 unit per 30px after 700px
+const ATTACK_BASE_SPEED = 70;
 
 // Fog of War
 const FOG_REVEAL_DURATION = 5000;  // full vision for first 5 seconds
@@ -82,7 +84,9 @@ const FOG_VISION_BY_SIZE: Record<string, number> = {
   [PlanetSize.MEDIUM]: 1200,
   [PlanetSize.LARGE]: 1700,
   [PlanetSize.GIANT]: 2200,
-  [PlanetSize.MEGA]: 3000
+  [PlanetSize.MEGA]: 3000,
+  [PlanetSize.TITAN]: 4000,
+  [PlanetSize.COLOSSUS]: 5000
 };
 
 // Difficulty settings
@@ -154,7 +158,7 @@ const DEPOSIT_INFO: Record<DepositType, { name: string; color: string; icon: str
 };
 
 // ========== BUILDINGS ==========
-type BuildingType = 'turret' | 'mine' | 'factory' | 'shield_gen' | 'lab';
+type BuildingType = 'turret' | 'mine' | 'factory' | 'shield_gen' | 'drone';
 
 interface BuildingDef {
   name: string;
@@ -175,8 +179,11 @@ const BUILDINGS: BuildingDef[] = [
   { type: 'mine', name: 'MINE', cost: { metal: 20, crystal: 25 }, description: '+GROW', color: '#88cc44', icon: 'M' },
   { type: 'factory', name: 'FACTORY', cost: { carbon: 30, gas: 20 }, description: '+MAX', color: '#cc8844', icon: 'F' },
   { type: 'shield_gen', name: 'SHIELD', cost: { crystal: 30, gas: 25 }, description: '1x BLOCK', color: '#44aaff', icon: 'S' },
-  { type: 'lab', name: 'LAB', cost: { water: 25, crystal: 20 }, description: '-CD', color: '#b868d8', icon: 'L' }
+  { type: 'drone', name: 'DRONE', cost: { water: 25, crystal: 20 }, description: '+20%DMG DEF', color: '#b868d8', icon: 'D' }
 ];
+
+const DRONE_INTERCEPT_RANGE = 400; // drones intercept missiles within 400px
+const DRONE_HIT_CHANCE = 0.5; // 50% chance to hit incoming missile
 
 interface Planet {
   id: number;
@@ -208,6 +215,8 @@ interface Planet {
   buildings: (Building | null)[]; // 3 building slots
   // Mining
   nextMineTime: number; // game time when next resource will be mined
+  // Turret cooldown (per-planet, not per-attack)
+  nextTurretFireTime?: number;
 }
 
 interface Player {
@@ -226,12 +235,22 @@ interface AttackAnimation {
   fromId: number;
   toId: number;
   units: number;
+  startUnits: number; // original units sent (for distance degradation)
   playerId: number;
   progress: number;
   speed: number;
   isBlitz: boolean;
-  nextTurretFireTime?: number; // when turret can fire again (random 1-3 sec)
   shieldHit?: boolean; // true if this attack already hit a shield
+  lastDegradeUnits?: number; // last unit count for showing degradation
+  // Homing missile fields
+  x: number; // current world position
+  y: number;
+  startX: number; // starting position (for trail)
+  startY: number;
+  angle: number; // current direction angle (radians)
+  traveledDist: number; // total distance traveled (for degradation)
+  droneCount: number; // number of drones (0-3) for intercept hit chance
+  lastDroneFireTime?: number; // cooldown for drone shots
 }
 
 interface TurretMissile {
@@ -240,11 +259,22 @@ interface TurretMissile {
   targetAttackIndex: number;
   speed: number; // pixels per second
   planetId: number; // planet that fired this missile
+  delay: number; // delay before missile starts moving (ms)
 }
 
-const TURRET_FIRE_DISTANCE = 500;    // fire when enemy is 500px from planet
+interface DroneProjectile {
+  x: number;
+  y: number;
+  targetMissileIndex: number; // index in turretMissiles array
+  speed: number;
+  willHit: boolean; // determined at launch (50% chance)
+}
+
+let droneProjectiles: DroneProjectile[] = [];
+
+const TURRET_FIRE_DISTANCE = 800;    // fire when enemy is 800px from planet
 const TURRET_DAMAGE_DIVISOR = 10;    // damage = planet.units / 10
-const TURRET_MISSILE_SPEED = 200;    // pixels per second
+const TURRET_MISSILE_SPEED = 140;    // pixels per second (slower, less OP)
 // Turret fire interval: random 1-3 seconds (set in updateTurrets)
 
 interface Camera {
@@ -524,6 +554,10 @@ function getPlanetProperties(size: PlanetSize): { minR: number; maxR: number; ma
       return { minR: 80, maxR: 100, maxUnits: 1200, defense: 3.0, growth: 2.5 };
     case PlanetSize.MEGA:
       return { minR: 110, maxR: 140, maxUnits: 2000, defense: 4.0, growth: 3.0 };
+    case PlanetSize.TITAN:
+      return { minR: 150, maxR: 190, maxUnits: 3500, defense: 5.0, growth: 4.0 };
+    case PlanetSize.COLOSSUS:
+      return { minR: 200, maxR: 250, maxUnits: 5000, defense: 6.0, growth: 5.0 };
   }
 }
 
@@ -568,15 +602,10 @@ function spawnParticles(x: number, y: number, color: string, count: number, spee
 }
 
 function getLabCount(): number {
-  let count = 0;
-  for (const planet of planets) {
-    if (planet.ownerId === controlledPlayerId) {
-      for (const b of planet.buildings) {
-        if (b && b.type === 'lab') count++;
-      }
-    }
-  }
-  return count;
+  // LAB building was replaced with DRONE (different bonuses)
+  // DRONE provides +20% damage and anti-missile defense, not cooldown reduction
+  // Returning 0 to disable the old lab cooldown bonus
+  return 0;
 }
 
 function getAbilityCooldownRemaining(ability: Ability): number {
@@ -615,7 +644,9 @@ function generatePlanets(): void {
     { size: PlanetSize.MEDIUM, count: 150 },
     { size: PlanetSize.LARGE, count: 70 },
     { size: PlanetSize.GIANT, count: 30 },
-    { size: PlanetSize.MEGA, count: 10 },
+    { size: PlanetSize.MEGA, count: 30 },
+    { size: PlanetSize.TITAN, count: 15 },
+    { size: PlanetSize.COLOSSUS, count: 5 },
   ];
 
   for (const { size, count } of sizeDistribution) {
@@ -672,6 +703,8 @@ function generatePlanets(): void {
         case PlanetSize.LARGE: startingUnits = Math.floor(Math.random() * 300) + 150; break;
         case PlanetSize.GIANT: startingUnits = Math.floor(Math.random() * 500) + 300; break;
         case PlanetSize.MEGA: startingUnits = Math.floor(Math.random() * 800) + 500; break;
+        case PlanetSize.TITAN: startingUnits = Math.floor(Math.random() * 1200) + 800; break;
+        case PlanetSize.COLOSSUS: startingUnits = Math.floor(Math.random() * 1500) + 1200; break;
       }
 
       // Random color from palette
@@ -679,7 +712,7 @@ function generatePlanets(): void {
 
       // Generate random deposit types (1-5 per planet, bigger planets get more) - start with 0, must mine
       const allDepositTypes: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
-      const maxDeposits = size === PlanetSize.MEGA ? 5 : size === PlanetSize.GIANT ? 4 : size === PlanetSize.LARGE ? 3 : size === PlanetSize.MEDIUM ? 2 : 1;
+      const maxDeposits = size === PlanetSize.COLOSSUS ? 5 : size === PlanetSize.TITAN ? 5 : size === PlanetSize.MEGA ? 5 : size === PlanetSize.GIANT ? 4 : size === PlanetSize.LARGE ? 3 : size === PlanetSize.MEDIUM ? 2 : 1;
       const numDeposits = Math.max(1, Math.floor(Math.random() * maxDeposits) + 1);
       const shuffled = [...allDepositTypes].sort(() => Math.random() - 0.5);
       const deposits: ResourceDeposit[] = shuffled.slice(0, numDeposits).map(type => ({
@@ -740,41 +773,77 @@ function generatePlanets(): void {
   planets.push(sunPlanet);
   planetMap.set(sunPlanet.id, sunPlanet);
 
-  // Add moons to LARGE and GIANT planets (not the sun)
+  // Add moons to LARGE, GIANT, MEGA, TITAN, and COLOSSUS planets (not the sun)
+  // LARGE: asteroid, GIANT: small, MEGA: small, TITAN: medium, COLOSSUS: 2x medium
   const mainPlanets = [...planets];
   for (const parent of mainPlanets) {
-    if ((parent.size === PlanetSize.LARGE || parent.size === PlanetSize.GIANT) && parent.radius !== SUN_RADIUS) {
-      const moonOrbitRadius = parent.radius + 30 + Math.random() * 20;
-      const moonAngle = Math.random() * Math.PI * 2;
+    if (parent.radius === SUN_RADIUS) continue;
+
+    let moonCount = 0;
+    let moonSize: PlanetSize = PlanetSize.ASTEROID;
+
+    if (parent.size === PlanetSize.LARGE) {
+      moonCount = 1;
+      moonSize = PlanetSize.ASTEROID;
+    } else if (parent.size === PlanetSize.GIANT) {
+      moonCount = 1;
+      moonSize = PlanetSize.SMALL;
+    } else if (parent.size === PlanetSize.MEGA) {
+      moonCount = 1;
+      moonSize = PlanetSize.SMALL;
+    } else if (parent.size === PlanetSize.TITAN) {
+      moonCount = 1;
+      moonSize = PlanetSize.MEDIUM;
+    } else if (parent.size === PlanetSize.COLOSSUS) {
+      moonCount = 2;
+      moonSize = PlanetSize.MEDIUM;
+    }
+
+    for (let m = 0; m < moonCount; m++) {
+      const moonProps = getPlanetProperties(moonSize);
+      const moonRadius = moonProps.minR + Math.random() * (moonProps.maxR - moonProps.minR);
+      const moonOrbitRadius = parent.radius + moonRadius + 20 + Math.random() * 30 + m * 50;
+      const moonAngle = Math.random() * Math.PI * 2 + m * Math.PI; // spread moons apart
       const moonX = parent.x + Math.cos(moonAngle) * moonOrbitRadius;
       const moonY = parent.y + Math.sin(moonAngle) * moonOrbitRadius;
 
-      // Moon gets 1 random deposit
-      const moonDepositType: DepositType = (['carbon', 'water', 'gas', 'metal', 'crystal'] as DepositType[])[Math.floor(Math.random() * 5)];
+      // Moon deposits based on size
+      const allDepositTypes: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
+      const numDeposits = moonSize === PlanetSize.MEDIUM ? 2 : moonSize === PlanetSize.SMALL ? 1 : 1;
+      const shuffled = [...allDepositTypes].sort(() => Math.random() - 0.5);
+      const moonDeposits: ResourceDeposit[] = shuffled.slice(0, numDeposits).map(type => ({ type, amount: 0 }));
+
+      // Starting units based on moon size
+      let moonUnits = 50;
+      if (moonSize === PlanetSize.SMALL) moonUnits = Math.floor(Math.random() * 80) + 30;
+      else if (moonSize === PlanetSize.MEDIUM) moonUnits = Math.floor(Math.random() * 150) + 80;
+
+      const moonColor = PLANET_PALETTE[Math.floor(Math.random() * PLANET_PALETTE.length)];
+
       const moon: Planet = {
         id: id++,
         x: moonX, y: moonY,
-        radius: 8 + Math.random() * 4,
-        size: PlanetSize.ASTEROID,
+        radius: moonRadius,
+        size: moonSize,
         ownerId: -1,
-        units: 99,
-        maxUnits: 99,
-        defense: 0.8,
-        growthRate: 0.3,
+        units: moonUnits,
+        maxUnits: moonProps.maxUnits,
+        defense: moonProps.defense,
+        growthRate: moonProps.growth,
         stability: 50,
         connected: false,
         generating: false,
-        deposits: [{ type: moonDepositType, amount: 0 }], // start with 0, must mine
-        color: '#aaa8a0',
+        deposits: moonDeposits,
+        color: moonColor,
         craters: [
-          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 2 },
-          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 1.5 }
+          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 2 + moonRadius * 0.05 },
+          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 1.5 + moonRadius * 0.03 }
         ],
         isMoon: true,
         parentId: parent.id,
         orbitAngle: moonAngle,
         orbitRadius: moonOrbitRadius,
-        orbitSpeed: 0.3 + Math.random() * 0.3,
+        orbitSpeed: 0.2 + Math.random() * 0.2,
         pulsePhase: Math.random() * Math.PI * 2,
         shieldTimer: 0,
         hasShield: false,
@@ -1078,6 +1147,17 @@ function recalculateSupply(): void {
   }
 }
 
+// Get all connected planets in a player's network (for ALL IN attack)
+function getConnectedPlanets(playerId: number): Planet[] {
+  const connected: Planet[] = [];
+  for (const planet of planets) {
+    if (planet.ownerId === playerId && planet.connected) {
+      connected.push(planet);
+    }
+  }
+  return connected;
+}
+
 // ========== STABILITY ==========
 function updateStability(dt: number): void {
   for (const planet of planets) {
@@ -1235,13 +1315,29 @@ function launchAttack(fromId: number, toId: number, blitz: boolean = false): voi
   const speed = ATTACK_BASE_SPEED;
   const travelTime = dist / speed;
 
+  // Calculate initial angle towards target
+  const initialAngle = Math.atan2(to.y - from.y, to.x - from.x);
+
+  // Count drone buildings on the planet (for stacking hit chance)
+  const droneCount = from.buildings.filter(b => b && b.type === 'drone').length;
+
   attacks.push({
     fromId, toId,
     units: unitsToSend,
+    startUnits: unitsToSend,
     playerId: from.ownerId,
     progress: 0,
     speed: 1.0 / travelTime,
-    isBlitz: blitz
+    isBlitz: blitz,
+    lastDegradeUnits: unitsToSend,
+    // Homing missile fields
+    x: from.x,
+    y: from.y,
+    startX: from.x,
+    startY: from.y,
+    angle: initialAngle,
+    traveledDist: 0,
+    droneCount: droneCount
   });
 
   // Discover target planet when player attacks it
@@ -1256,7 +1352,7 @@ function calculateArrivingUnits(sentUnits: number, distance: number): number {
     return sentUnits; // no penalty
   }
   const extraDistance = distance - DISTANCE_NO_PENALTY;
-  const unitsLost = Math.floor(extraDistance / 10) * DISTANCE_PENALTY_PER_10PX;
+  const unitsLost = Math.floor(extraDistance / 30) * DISTANCE_PENALTY_PER_30PX;
   return Math.max(0, sentUnits - unitsLost);
 }
 
@@ -1265,8 +1361,13 @@ function resolveAttack(attack: AttackAnimation): void {
   const from = planetMap.get(attack.fromId);
   if (!to || !from) return;
 
-  const dist = getDistance(from, to);
-  const arrivingUnits = calculateArrivingUnits(attack.units, dist);
+  // Units already degraded during travel - use current count
+  let arrivingUnits = attack.units;
+
+  // Drone bonus: +20% damage (if has at least 1 drone)
+  if (attack.droneCount > 0) {
+    arrivingUnits = Math.floor(arrivingUnits * 1.2);
+  }
 
   const toScreen = worldToScreen(to.x, to.y);
 
@@ -1276,20 +1377,37 @@ function resolveAttack(attack: AttackAnimation): void {
     spawnParticles(toScreen.x, toScreen.y, players[attack.playerId]?.color || '#fff', 6, 80);
   } else {
     // Shield collision is handled in updateAttacks() at 50px from planet
-    // Start a battle animation instead of instant resolution
-    const totalUnits = arrivingUnits + to.units;
-    const duration = Math.min(3.0, Math.max(1.0, totalUnits / 80)); // 1-3 seconds based on units
-    battles.push({
-      planetId: to.id,
-      attackUnits: arrivingUnits,
-      attackPlayerId: attack.playerId,
-      defendUnits: to.units,
-      defendPlayerId: to.ownerId,
-      startTime: performance.now(),
-      duration,
-      isBlitz: attack.isBlitz,
-      resolved: false
-    });
+
+    // Check if there's already an ongoing battle at this planet from same attacker
+    const existingBattle = battles.find(b =>
+      b.planetId === to.id &&
+      b.attackPlayerId === attack.playerId &&
+      !b.resolved
+    );
+
+    if (existingBattle) {
+      // JOIN existing battle - add units to the attack
+      existingBattle.attackUnits += arrivingUnits;
+      // Extend duration slightly for the reinforcements
+      existingBattle.duration = Math.min(4.0, existingBattle.duration + 0.5);
+      // Show reinforcement particles
+      spawnParticles(toScreen.x, toScreen.y, players[attack.playerId]?.color || '#fff', 8, 60);
+    } else {
+      // Start a NEW battle animation
+      const totalUnits = arrivingUnits + to.units;
+      const duration = Math.min(3.0, Math.max(1.0, totalUnits / 80)); // 1-3 seconds based on units
+      battles.push({
+        planetId: to.id,
+        attackUnits: arrivingUnits,
+        attackPlayerId: attack.playerId,
+        defendUnits: to.units,
+        defendPlayerId: to.ownerId,
+        startTime: performance.now(),
+        duration,
+        isBlitz: attack.isBlitz,
+        resolved: false
+      });
+    }
   }
 }
 
@@ -1371,85 +1489,140 @@ function updateBattles(): void {
 const SHIELD_RADIUS = 100; // shield is 100px from planet center
 
 function updateAttacks(dt: number): void {
+  const TURN_SPEED = 5.0; // radians per second - how fast missile can turn
+
   for (let i = attacks.length - 1; i >= 0; i--) {
     const attack = attacks[i];
-    attack.progress += attack.speed * dt;
+    const to = planetMap.get(attack.toId);
+    if (!to) {
+      attacks[i] = attacks[attacks.length - 1];
+      attacks.pop();
+      continue;
+    }
 
-    // Check for shield collision (before reaching planet)
-    if (!attack.shieldHit) {
-      const to = planetMap.get(attack.toId);
-      const from = planetMap.get(attack.fromId);
-      if (to && from && to.hasShield && to.ownerId !== attack.playerId) {
-        // Calculate shield progress threshold
-        const totalDist = Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2);
-        const shieldProgress = 1 - (SHIELD_RADIUS / totalDist);
+    // Calculate desired angle to target's CURRENT position (homing)
+    const dx = to.x - attack.x;
+    const dy = to.y - attack.y;
+    const targetAngle = Math.atan2(dy, dx);
+    const distToTarget = Math.sqrt(dx * dx + dy * dy);
 
-        if (attack.progress >= shieldProgress) {
-          // Attack hit the shield!
-          attack.shieldHit = true;
+    // Smooth rotation towards target (homing behavior)
+    let angleDiff = targetAngle - attack.angle;
+    // Normalize angle difference to [-PI, PI]
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-          // Shield strength = planet's units
-          const shieldStrength = to.units;
+    // Turn towards target (limited by turn speed)
+    const maxTurn = TURN_SPEED * dt;
+    if (Math.abs(angleDiff) < maxTurn) {
+      attack.angle = targetAngle;
+    } else {
+      attack.angle += Math.sign(angleDiff) * maxTurn;
+    }
 
-          // Calculate shield position (50px from planet)
-          const shieldX = from.x + (to.x - from.x) * shieldProgress;
-          const shieldY = from.y + (to.y - from.y) * shieldProgress;
+    // Move in current facing direction
+    const moveSpeed = ATTACK_BASE_SPEED * dt;
+    const oldX = attack.x;
+    const oldY = attack.y;
+    attack.x += Math.cos(attack.angle) * moveSpeed;
+    attack.y += Math.sin(attack.angle) * moveSpeed;
 
-          // Create flicker effect
-          shieldFlickers.push({
-            x: to.x,
-            y: to.y,
-            radius: SHIELD_RADIUS,
-            life: 45,
-            maxLife: 45
-          });
+    // Track total distance traveled (for degradation)
+    const stepDist = Math.sqrt((attack.x - oldX) ** 2 + (attack.y - oldY) ** 2);
+    attack.traveledDist += stepDist;
 
-          // Explosion at shield location
-          const shieldScreen = worldToScreen(shieldX, shieldY);
-          spawnParticles(shieldScreen.x, shieldScreen.y, '#44aaff', 25, 100);
-          spawnParticles(shieldScreen.x, shieldScreen.y, '#88ddff', 15, 70);
+    // Update progress (approximate, for compatibility)
+    const initialDist = Math.sqrt((to.x - attack.startX) ** 2 + (to.y - attack.startY) ** 2);
+    attack.progress = Math.min(0.99, attack.traveledDist / initialDist);
 
-          // Shield blocks up to planet's units
-          const blocked = Math.min(attack.units, shieldStrength);
-          attack.units -= blocked;
+    // Distance degradation - units lost during travel
+    const currentUnits = calculateArrivingUnits(attack.startUnits, attack.traveledDist);
+    attack.units = currentUnits;
 
-          // Show blocked amount
-          clickAnims.push({
-            x: shieldScreen.x, y: shieldScreen.y - 20,
-            vx: 0, vy: -1.5,
-            life: 60, maxLife: 60,
-            text: `-${blocked}`, color: '#44aaff'
-          });
+    // Track degradation (flame rendered in renderAttacks)
+    if (attack.lastDegradeUnits && currentUnits < attack.lastDegradeUnits) {
+      attack.lastDegradeUnits = currentUnits;
+    }
 
-          // Remove shield and building
-          to.hasShield = false;
-          for (let b = 0; b < to.buildings.length; b++) {
-            if (to.buildings[b]?.type === 'shield_gen') {
-              to.buildings[b] = null;
-              break;
-            }
+    // If all units lost during travel, destroy attack
+    if (currentUnits <= 0) {
+      const screen = worldToScreen(attack.x, attack.y);
+      spawnParticles(screen.x, screen.y, '#ff4400', 20, 80);
+      spawnParticles(screen.x, screen.y, '#ffaa00', 10, 50);
+      clickAnims.push({
+        x: screen.x, y: screen.y - 30,
+        vx: 0, vy: -2,
+        life: 90, maxLife: 90,
+        text: 'LOST!', color: '#ff4400'
+      });
+      attacks[i] = attacks[attacks.length - 1];
+      attacks.pop();
+      continue;
+    }
+
+    // Check for shield collision
+    if (!attack.shieldHit && to.hasShield && to.ownerId !== attack.playerId) {
+      if (distToTarget <= SHIELD_RADIUS) {
+        // Attack hit the shield!
+        attack.shieldHit = true;
+
+        // Shield strength = planet's units
+        const shieldStrength = to.units;
+
+        // Create flicker effect
+        shieldFlickers.push({
+          x: to.x,
+          y: to.y,
+          radius: SHIELD_RADIUS,
+          life: 45,
+          maxLife: 45
+        });
+
+        // Explosion at shield location
+        const shieldScreen = worldToScreen(attack.x, attack.y);
+        spawnParticles(shieldScreen.x, shieldScreen.y, '#44aaff', 25, 100);
+        spawnParticles(shieldScreen.x, shieldScreen.y, '#88ddff', 15, 70);
+
+        // Shield blocks up to planet's units
+        const blocked = Math.min(attack.units, shieldStrength);
+        attack.units -= blocked;
+
+        // Show blocked amount
+        clickAnims.push({
+          x: shieldScreen.x, y: shieldScreen.y - 20,
+          vx: 0, vy: -1.5,
+          life: 60, maxLife: 60,
+          text: `-${blocked}`, color: '#44aaff'
+        });
+
+        // Remove shield and building
+        to.hasShield = false;
+        for (let b = 0; b < to.buildings.length; b++) {
+          if (to.buildings[b]?.type === 'shield_gen') {
+            to.buildings[b] = null;
+            break;
           }
-
-          // If attack has no units left, destroy it completely
-          if (attack.units <= 0) {
-            clickAnims.push({
-              x: shieldScreen.x, y: shieldScreen.y - 40,
-              vx: 0, vy: -2,
-              life: 90, maxLife: 90,
-              text: 'BLOCKED!', color: '#44aaff'
-            });
-            attacks[i] = attacks[attacks.length - 1];
-            attacks.pop();
-            continue;
-          }
-          // Otherwise attack continues with remaining units
         }
+
+        // If attack has no units left, destroy it completely
+        if (attack.units <= 0) {
+          clickAnims.push({
+            x: shieldScreen.x, y: shieldScreen.y - 40,
+            vx: 0, vy: -2,
+            life: 90, maxLife: 90,
+            text: 'BLOCKED!', color: '#44aaff'
+          });
+          attacks[i] = attacks[attacks.length - 1];
+          attacks.pop();
+          continue;
+        }
+        // Otherwise attack continues with remaining units
       }
     }
 
-    if (attack.progress >= 1.0) {
+    // Check if reached target (within planet radius)
+    if (distToTarget <= to.radius + 5) {
       resolveAttack(attack);
-      // Swap-and-pop instead of splice
       attacks[i] = attacks[attacks.length - 1];
       attacks.pop();
     }
@@ -1458,13 +1631,7 @@ function updateAttacks(dt: number): void {
 
 // ========== TURRET RADAR & MISSILES ==========
 function getAttackCurrentPosition(attack: AttackAnimation): { x: number; y: number } | null {
-  const from = planetMap.get(attack.fromId);
-  const to = planetMap.get(attack.toId);
-  if (!from || !to) return null;
-
-  const x = from.x + (to.x - from.x) * attack.progress;
-  const y = from.y + (to.y - from.y) * attack.progress;
-  return { x, y };
+  return { x: attack.x, y: attack.y };
 }
 
 function updateTurrets(): void {
@@ -1472,43 +1639,110 @@ function updateTurrets(): void {
   for (const planet of planets) {
     if (planet.ownerId === -1) continue;
 
-    const hasTurret = planet.buildings.some(b => b && b.type === 'turret');
-    if (!hasTurret) continue;
+    // Count turrets on this planet
+    const turretCount = planet.buildings.filter(b => b && b.type === 'turret').length;
+    if (turretCount === 0) continue;
 
-    // Scan for enemy attacks targeting THIS planet
+    // Check planet's turret cooldown (per-planet, not per-attack)
+    if (planet.nextTurretFireTime && gameTime < planet.nextTurretFireTime) continue;
+
+    // Find all enemy attacks in radar range, prioritize closest threat
+    let closestAttack: { attack: AttackAnimation; index: number; dist: number; pos: { x: number; y: number } } | null = null;
+
     for (let i = 0; i < attacks.length; i++) {
       const attack = attacks[i];
-
-      // Only target attacks heading to this planet
-      if (attack.toId !== planet.id) continue;
 
       // Skip friendly attacks (same owner)
       if (attack.playerId === planet.ownerId) continue;
 
-      // Skip if turret cooldown not ready (random 1-3 sec between shots)
-      if (attack.nextTurretFireTime && gameTime < attack.nextTurretFireTime) continue;
+      // Check if attack targets this planet or a friendly planet
+      const targetPlanet = planetMap.get(attack.toId);
+      if (!targetPlanet) continue;
+
+      // Must target this planet OR a friendly planet (same owner)
+      const targetsThisPlanet = attack.toId === planet.id;
+      const targetsFriendly = targetPlanet.ownerId === planet.ownerId;
+      if (!targetsThisPlanet && !targetsFriendly) continue;
 
       // Get current attack position
       const pos = getAttackCurrentPosition(attack);
       if (!pos) continue;
 
-      // Check if attack is within 500px of this planet
+      // Check if attack is within radar range of this planet
       const dist = Math.sqrt((pos.x - planet.x) ** 2 + (pos.y - planet.y) ** 2);
       if (dist <= TURRET_FIRE_DISTANCE) {
-        // Fire missile! Set next fire time to random 1-3 seconds
-        attack.nextTurretFireTime = gameTime + 1000 + Math.random() * 2000;
+        // Track closest threat
+        if (!closestAttack || dist < closestAttack.dist) {
+          closestAttack = { attack, index: i, dist, pos };
+        }
+      }
+    }
+
+    // If we found a target, fire at it
+    if (closestAttack) {
+      // Set planet's turret cooldown (2-5 seconds - slower firing)
+      planet.nextTurretFireTime = gameTime + 2000 + Math.random() * 3000;
+
+      // Calculate angle to attack for positioning turrets
+      const angleToAttack = Math.atan2(closestAttack.pos.y - planet.y, closestAttack.pos.x - planet.x);
+      const perpAngle = angleToAttack + Math.PI / 2; // perpendicular to attack direction
+
+      // Fire missiles from different positions based on turret count
+      // 1 turret: center, 2 turrets: left+right, 3 turrets: left+center+right
+      const firePositions: { x: number; y: number }[] = [];
+      const offset = planet.radius * 0.7; // how far from center
+
+      if (turretCount === 1) {
+        firePositions.push({ x: planet.x, y: planet.y });
+      } else if (turretCount === 2) {
+        firePositions.push({
+          x: planet.x + Math.cos(perpAngle) * offset,
+          y: planet.y + Math.sin(perpAngle) * offset
+        });
+        firePositions.push({
+          x: planet.x - Math.cos(perpAngle) * offset,
+          y: planet.y - Math.sin(perpAngle) * offset
+        });
+      } else { // 3 turrets
+        firePositions.push({ x: planet.x, y: planet.y }); // center
+        firePositions.push({
+          x: planet.x + Math.cos(perpAngle) * offset,
+          y: planet.y + Math.sin(perpAngle) * offset
+        }); // right
+        firePositions.push({
+          x: planet.x - Math.cos(perpAngle) * offset,
+          y: planet.y - Math.sin(perpAngle) * offset
+        }); // left
+      }
+
+      // Fire with STAGGERED delays - missiles never fire all at once
+      // Each missile has a random base delay + cumulative offset
+      // This creates patterns like: 1-2-3, 1--2--3, 1-23, etc.
+      let cumulativeDelay = 0;
+      const shuffledPositions = [...firePositions].sort(() => Math.random() - 0.5); // randomize order
+
+      for (let m = 0; m < shuffledPositions.length; m++) {
+        const firePos = shuffledPositions[m];
+
+        // Add random gap between each missile (300-1200ms)
+        // First missile: 0-500ms delay
+        // Subsequent missiles: previous delay + 300-1200ms
+        if (m === 0) {
+          cumulativeDelay = Math.random() * 500;
+        } else {
+          cumulativeDelay += 300 + Math.random() * 900; // 300-1200ms between shots
+        }
+
+        const randomSpeed = TURRET_MISSILE_SPEED * (0.6 + Math.random() * 0.5); // 60%-110% of base speed (slower)
 
         turretMissiles.push({
-          x: planet.x,
-          y: planet.y,
-          targetAttackIndex: i,
-          speed: TURRET_MISSILE_SPEED,
-          planetId: planet.id
+          x: firePos.x,
+          y: firePos.y,
+          targetAttackIndex: closestAttack.index,
+          speed: randomSpeed,
+          planetId: planet.id,
+          delay: cumulativeDelay
         });
-
-        // Visual feedback
-        const screen = worldToScreen(planet.x, planet.y);
-        spawnParticles(screen.x, screen.y, '#ff6644', 5, 60);
       }
     }
   }
@@ -1519,13 +1753,29 @@ function updateTurretMissiles(dt: number): void {
     const missile = turretMissiles[i];
     const attack = attacks[missile.targetAttackIndex];
 
-    // If attack no longer exists, remove missile with small explosion
+    // If attack no longer exists, remove missile
     if (!attack) {
-      const screen = worldToScreen(missile.x, missile.y);
-      spawnParticles(screen.x, screen.y, '#ff4400', 5, 50);
+      // Only show explosion if missile was already launched
+      if (missile.delay <= 0) {
+        const screen = worldToScreen(missile.x, missile.y);
+        spawnParticles(screen.x, screen.y, '#ff4400', 5, 50);
+      }
       turretMissiles[i] = turretMissiles[turretMissiles.length - 1];
       turretMissiles.pop();
       continue;
+    }
+
+    // Handle delay - missile waits before launching
+    if (missile.delay > 0) {
+      const wasDelayed = missile.delay > 0;
+      missile.delay -= dt * 1000; // dt is in seconds, delay in ms
+
+      // Spawn particles when missile actually fires
+      if (wasDelayed && missile.delay <= 0) {
+        const screen = worldToScreen(missile.x, missile.y);
+        spawnParticles(screen.x, screen.y, '#ff6644', 5, 60);
+      }
+      continue; // Don't move yet
     }
 
     // Get current attack position
@@ -1571,8 +1821,10 @@ function updateTurretMissiles(dt: number): void {
         attacks[missile.targetAttackIndex] = attacks[attacks.length - 1];
         attacks.pop();
       } else {
-        // Partial damage
+        // Partial damage - reduce both units and startUnits so degradation doesn't overwrite
         attack.units -= damage;
+        attack.startUnits -= damage;
+        if (attack.startUnits < attack.units) attack.startUnits = attack.units;
 
         // Small explosion particles
         spawnParticles(screen.x, screen.y, '#ff4400', 15, 120);
@@ -1598,6 +1850,108 @@ function updateTurretMissiles(dt: number): void {
       const moveSpeed = missile.speed * dt;
       missile.x += (dx / dist) * moveSpeed;
       missile.y += (dy / dist) * moveSpeed;
+    }
+  }
+}
+
+// ========== DRONE INTERCEPT ==========
+// Hit chance based on drone count: 1=50%, 2=70%, 3=85%
+function getDroneHitChance(droneCount: number): number {
+  if (droneCount <= 0) return 0;
+  if (droneCount === 1) return 0.50;
+  if (droneCount === 2) return 0.70;
+  return 0.85; // 3+ drones
+}
+
+function updateDroneIntercept(): void {
+  // Attacks with drones can shoot at incoming turret missiles
+  for (const attack of attacks) {
+    if (attack.droneCount <= 0) continue;
+
+    // Cooldown between drone shots (1 second)
+    if (attack.lastDroneFireTime && gameTime < attack.lastDroneFireTime) continue;
+
+    // Find nearby turret missiles targeting this attack
+    for (let i = 0; i < turretMissiles.length; i++) {
+      const missile = turretMissiles[i];
+
+      // Skip missiles still in delay
+      if (missile.delay > 0) continue;
+
+      // Check if this missile is targeting our attack
+      if (attacks[missile.targetAttackIndex] !== attack) continue;
+
+      // Check distance
+      const dx = missile.x - attack.x;
+      const dy = missile.y - attack.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist <= DRONE_INTERCEPT_RANGE) {
+        // Set cooldown (1 second)
+        attack.lastDroneFireTime = gameTime + 1000;
+
+        // Launch drone projectile! Hit chance based on drone count: 1=50%, 2=70%, 3=85%
+        const hitChance = getDroneHitChance(attack.droneCount);
+        droneProjectiles.push({
+          x: attack.x,
+          y: attack.y,
+          targetMissileIndex: i,
+          speed: 400, // faster than turret missiles
+          willHit: Math.random() < hitChance
+        });
+
+        // Visual feedback - drone fires
+        const attackScreen = worldToScreen(attack.x, attack.y);
+        spawnParticles(attackScreen.x, attackScreen.y, '#b868d8', 5, 40);
+
+        break; // One shot per update
+      }
+    }
+  }
+}
+
+function updateDroneProjectiles(dt: number): void {
+  for (let i = droneProjectiles.length - 1; i >= 0; i--) {
+    const proj = droneProjectiles[i];
+    const missile = turretMissiles[proj.targetMissileIndex];
+
+    // If target missile no longer exists, remove projectile
+    if (!missile) {
+      droneProjectiles[i] = droneProjectiles[droneProjectiles.length - 1];
+      droneProjectiles.pop();
+      continue;
+    }
+
+    // Move toward missile
+    const dx = missile.x - proj.x;
+    const dy = missile.y - proj.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 20) {
+      // Reached target
+      const missileScreen = worldToScreen(missile.x, missile.y);
+
+      if (proj.willHit) {
+        // Hit! Destroy the missile
+        spawnParticles(missileScreen.x, missileScreen.y, '#b868d8', 12, 70);
+        spawnParticles(missileScreen.x, missileScreen.y, '#ff4400', 8, 50);
+
+        // Remove turret missile
+        turretMissiles[proj.targetMissileIndex] = turretMissiles[turretMissiles.length - 1];
+        turretMissiles.pop();
+      } else {
+        // Miss - projectile flies past
+        spawnParticles(missileScreen.x, missileScreen.y, '#b868d8', 4, 30);
+      }
+
+      // Remove drone projectile
+      droneProjectiles[i] = droneProjectiles[droneProjectiles.length - 1];
+      droneProjectiles.pop();
+    } else {
+      // Move toward target
+      const moveSpeed = proj.speed * dt;
+      proj.x += (dx / dist) * moveSpeed;
+      proj.y += (dy / dist) * moveSpeed;
     }
   }
 }
@@ -2166,6 +2520,26 @@ canvas.addEventListener('mousedown', (e) => {
           if (blitzAbility) blitzAbility.lastUsed = gameTime;
           activeAbility = null;
         }
+      } else if (action === 'all_in') {
+        // ALL IN: Launch attack from ALL connected planets to target
+        const useBlitz = activeAbility === 'blitz';
+        const connectedPlanets = getConnectedPlanets(controlledPlayerId);
+        let attackCount = 0;
+        for (const planet of connectedPlanets) {
+          // Only attack from planets with enough units (at least 5)
+          if (planet.units >= 5) {
+            launchAttack(planet.id, actionPopup.targetId, useBlitz);
+            attackCount++;
+            // Spawn particles to show ALL IN effect
+            const screen = worldToScreen(planet.x, planet.y);
+            spawnParticles(screen.x, screen.y, '#ff4444', 8, 80);
+          }
+        }
+        if (useBlitz && attackCount > 0) {
+          const blitzAbility = abilities.find(a => a.id === 'blitz');
+          if (blitzAbility) blitzAbility.lastUsed = gameTime;
+          activeAbility = null;
+        }
       } else if (action === 'scout_probe') {
         // Send orbit probe from first selected planet to target
         const targetPlanet = planetMap.get(actionPopup.targetId);
@@ -2279,10 +2653,17 @@ canvas.addEventListener('mousedown', (e) => {
       if (hasOwnSelected) {
         const screen = worldToScreen(planet.x, planet.y);
         const hasOrbitProbe = orbitProbes.some(p => p.targetPlanetId === planet.id && p.playerId === controlledPlayerId);
+        // Check if player has connected network (more than 1 connected planet)
+        const connectedPlanets = getConnectedPlanets(controlledPlayerId);
+        const hasNetwork = connectedPlanets.length > 1;
         const buttons = [
           { label: 'ATTACK', action: 'attack' },
-          { label: 'SCOUT', action: 'scout_probe' }
         ];
+        // Add ALL IN button if player has connected network
+        if (hasNetwork) {
+          buttons.push({ label: 'ALL IN', action: 'all_in' });
+        }
+        buttons.push({ label: 'SCOUT', action: 'scout_probe' });
         if (hasOrbitProbe) {
           buttons.push({ label: 'INFO', action: 'info' });
         }
@@ -2832,28 +3213,25 @@ function renderPlanet(planet: Planet): void {
 
 function renderAttacks(): void {
   for (const attack of attacks) {
-    const from = planetMap.get(attack.fromId);
-    const to = planetMap.get(attack.toId);
-    if (!from || !to) continue;
-
-    const fromScreen = worldToScreen(from.x, from.y);
-    const toScreen = worldToScreen(to.x, to.y);
-    const cx = fromScreen.x + (toScreen.x - fromScreen.x) * attack.progress;
-    const cy = fromScreen.y + (toScreen.y - fromScreen.y) * attack.progress;
-
     const player = players[attack.playerId];
     if (!player) continue;
 
-    // Trail line
+    // Use stored world position and convert to screen
+    const startScreen = worldToScreen(attack.startX, attack.startY);
+    const currentScreen = worldToScreen(attack.x, attack.y);
+    const cx = currentScreen.x;
+    const cy = currentScreen.y;
+
+    // Trail line from start to current position
     ctx.strokeStyle = player.color + '33';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(fromScreen.x, fromScreen.y);
+    ctx.moveTo(startScreen.x, startScreen.y);
     ctx.lineTo(cx, cy);
     ctx.stroke();
 
-    // Direction angle
-    const angle = Math.atan2(toScreen.y - fromScreen.y, toScreen.x - fromScreen.x);
+    // Use stored angle (homing direction)
+    const angle = attack.angle;
     const shipSize = Math.max(5, 8 * camera.zoom);
     const shipColor = attack.isBlitz ? '#FFD700' : player.color;
     const time = performance.now() / 1000;
@@ -2882,6 +3260,28 @@ function renderAttacks(): void {
     ctx.arc(-shipSize * 0.4, 0, shipSize * 0.25 * glowPulse, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(255, 200, 100, ${glowPulse * 0.7})`;
     ctx.fill();
+
+    // Flame effect when degrading (units < startUnits)
+    if (attack.units < attack.startUnits) {
+      const degradeRatio = 1 - (attack.units / attack.startUnits);
+      const flameSize = shipSize * (0.5 + degradeRatio * 1.5);
+
+      // Multiple flame layers behind ship
+      for (let f = 0; f < 3; f++) {
+        const flicker = Math.sin(time * 20 + f * 2) * 0.3 + 0.7;
+        const fOffset = -shipSize * (0.8 + f * 0.4) + Math.sin(time * 25 + f) * 3;
+        const fSize = flameSize * (1 - f * 0.25) * flicker;
+
+        ctx.beginPath();
+        ctx.arc(fOffset, Math.sin(time * 30 + f * 3) * 2, fSize, 0, Math.PI * 2);
+
+        if (f === 0) ctx.fillStyle = `rgba(255, 100, 30, ${0.8 * flicker})`;
+        else if (f === 1) ctx.fillStyle = `rgba(255, 170, 50, ${0.6 * flicker})`;
+        else ctx.fillStyle = `rgba(255, 220, 100, ${0.4 * flicker})`;
+
+        ctx.fill();
+      }
+    }
 
     ctx.restore();
 
@@ -2962,6 +3362,9 @@ function renderTurretRadars(): void {
 
 function renderTurretMissiles(): void {
   for (const missile of turretMissiles) {
+    // Don't render missiles still waiting to launch
+    if (missile.delay > 0) continue;
+
     const screen = worldToScreen(missile.x, missile.y);
     const attack = attacks[missile.targetAttackIndex];
 
@@ -3004,6 +3407,49 @@ function renderTurretMissiles(): void {
     ctx.beginPath();
     ctx.arc(screen.x, screen.y, 6, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 68, 0, 0.4)';
+    ctx.fill();
+  }
+}
+
+function renderDroneProjectiles(): void {
+  for (const proj of droneProjectiles) {
+    const missile = turretMissiles[proj.targetMissileIndex];
+    if (!missile) continue;
+
+    const screen = worldToScreen(proj.x, proj.y);
+    const targetScreen = worldToScreen(missile.x, missile.y);
+
+    // Calculate direction angle
+    const angle = Math.atan2(targetScreen.y - screen.y, targetScreen.x - screen.x);
+
+    // Small purple projectile
+    ctx.save();
+    ctx.translate(screen.x, screen.y);
+    ctx.rotate(angle);
+
+    // Projectile body (small triangle)
+    ctx.beginPath();
+    ctx.moveTo(5, 0); // nose
+    ctx.lineTo(-3, -2);
+    ctx.lineTo(-3, 2);
+    ctx.closePath();
+    ctx.fillStyle = '#b868d8';
+    ctx.fill();
+
+    // Trail
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(-10, 0);
+    ctx.strokeStyle = '#d898f8';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.restore();
+
+    // Glow
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(184, 104, 216, 0.5)';
     ctx.fill();
   }
 }
@@ -3584,7 +4030,9 @@ function handleBuildPanelClick(action: string): void {
         [PlanetSize.MEDIUM]: 150,
         [PlanetSize.LARGE]: 200,
         [PlanetSize.GIANT]: 300,
-        [PlanetSize.MEGA]: 400
+        [PlanetSize.MEGA]: 400,
+        [PlanetSize.TITAN]: 600,
+        [PlanetSize.COLOSSUS]: 800
       };
       planet.maxUnits += factoryBonus[planet.size] || 50;
     }
@@ -4210,7 +4658,7 @@ function renderUI(): void {
 
           const fromScreen = worldToScreen(from.x, from.y);
           const dist = getDistance(from, to);
-          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / 10) * DISTANCE_PENALTY_PER_10PX;
+          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / 30) * DISTANCE_PENALTY_PER_30PX;
           const colorVal = Math.max(0, 200 - unitsLost * 2);
 
           ctx.strokeStyle = `rgba(255, ${colorVal}, 0, 0.4)`;
@@ -4230,7 +4678,7 @@ function renderUI(): void {
         })!);
         if (firstFrom) {
           const dist = getDistance(firstFrom, to);
-          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / 10) * DISTANCE_PENALTY_PER_10PX;
+          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / 30) * DISTANCE_PENALTY_PER_30PX;
           ctx.font = '10px "Press Start 2P"';
           ctx.textAlign = 'center';
           if (unitsLost > 0) {
@@ -4515,6 +4963,9 @@ function render(): void {
   // Turret missiles
   renderTurretMissiles();
 
+  // Drone projectiles
+  renderDroneProjectiles();
+
   // Battles
   renderBattles();
 
@@ -4602,6 +5053,10 @@ function updateMining(): void {
         mineAmount = 5; mineTimeMin = 10000; mineTimeMax = 15000; break;
       case PlanetSize.MEGA:
         mineAmount = 8; mineTimeMin = 5000; mineTimeMax = 10000; break;
+      case PlanetSize.TITAN:
+        mineAmount = 12; mineTimeMin = 4000; mineTimeMax = 8000; break;
+      case PlanetSize.COLOSSUS:
+        mineAmount = 16; mineTimeMin = 3000; mineTimeMax = 6000; break;
     }
     deposit.amount += mineAmount;
 
@@ -4636,6 +5091,8 @@ function update(dt: number): void {
   updateAttacks(dt);
   updateTurrets();
   updateTurretMissiles(dt);
+  updateDroneIntercept();
+  updateDroneProjectiles(dt);
   updateBattles();
   updateParticles(dt);
   updateShields(dt);
