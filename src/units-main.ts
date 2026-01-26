@@ -535,6 +535,30 @@ for (let i = 1; i <= MASS_FRAME_COUNT; i++) {
   massFrames.push(img);
 }
 
+// Spaceship sprites (8 directions)
+const SHIP_DIRECTIONS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+const shipSprites: Map<string, HTMLImageElement> = new Map();
+let shipSpritesLoaded = 0;
+for (const dir of SHIP_DIRECTIONS) {
+  const img = new Image();
+  img.src = `./spaceship/ship-${dir}.png`;
+  img.onload = () => { shipSpritesLoaded++; };
+  shipSprites.set(dir, img);
+}
+
+// Get ship sprite for a given angle (in radians)
+function getShipSpriteForAngle(angle: number): HTMLImageElement | null {
+  // Normalize angle to 0-2PI
+  let normalizedAngle = angle % (Math.PI * 2);
+  if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
+
+  // Convert to 8 directions (each direction covers 45 degrees = PI/4)
+  // East is 0, going clockwise: SE=45, S=90, SW=135, W=180, NW=225, N=270, NE=315
+  const directionIndex = Math.round(normalizedAngle / (Math.PI / 4)) % 8;
+  const direction = SHIP_DIRECTIONS[directionIndex];
+  return shipSprites.get(direction) || null;
+}
+
 // Fog of war offscreen canvas
 let fogCanvas: HTMLCanvasElement | null = null;
 let fogCtx: CanvasRenderingContext2D | null = null;
@@ -3748,34 +3772,63 @@ function renderAttacks(): void {
 
     // Use stored angle (homing direction)
     const angle = attack.angle;
-    const shipSize = Math.max(5, 8 * camera.zoom);
+    const shipSize = Math.max(12, 20 * camera.zoom); // Bigger for sprite
     const shipColor = attack.isBlitz ? '#FFD700' : player.color;
     const time = performance.now() / 1000;
 
-    // Main ship (triangle pointing in travel direction)
+    // Get ship sprite for this angle
+    const shipSprite = getShipSpriteForAngle(angle);
+
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(angle);
 
-    // Ship body
-    ctx.beginPath();
-    ctx.moveTo(shipSize, 0); // nose
-    ctx.lineTo(-shipSize * 0.7, -shipSize * 0.5); // top-left wing
-    ctx.lineTo(-shipSize * 0.3, 0); // back indent
-    ctx.lineTo(-shipSize * 0.7, shipSize * 0.5); // bottom-left wing
-    ctx.closePath();
-    ctx.fillStyle = shipColor;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    // Draw sprite if loaded, otherwise fallback to triangle
+    if (shipSprite && shipSprite.complete && shipSprite.naturalWidth > 0) {
+      const spriteSize = shipSize * 2;
 
-    // Engine glow
-    const glowPulse = 0.6 + Math.sin(time * 15) * 0.4;
-    ctx.beginPath();
-    ctx.arc(-shipSize * 0.4, 0, shipSize * 0.25 * glowPulse, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 200, 100, ${glowPulse * 0.7})`;
-    ctx.fill();
+      // Draw colored glow behind ship (player color)
+      const glowPulse = 0.6 + Math.sin(time * 15) * 0.4;
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.5, 0, Math.PI * 2);
+      const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, spriteSize * 0.5);
+      glowGradient.addColorStop(0, shipColor + '66');
+      glowGradient.addColorStop(0.5, shipColor + '33');
+      glowGradient.addColorStop(1, shipColor + '00');
+      ctx.fillStyle = glowGradient;
+      ctx.fill();
+
+      // Draw the sprite
+      ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+
+      // Engine trail effect
+      ctx.beginPath();
+      ctx.arc(0, spriteSize * 0.2, spriteSize * 0.15 * glowPulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(100, 180, 255, ${glowPulse * 0.5})`;
+      ctx.fill();
+    } else {
+      // Fallback: draw triangle if sprites not loaded
+      ctx.rotate(angle);
+
+      // Ship body (triangle)
+      ctx.beginPath();
+      ctx.moveTo(shipSize, 0);
+      ctx.lineTo(-shipSize * 0.7, -shipSize * 0.5);
+      ctx.lineTo(-shipSize * 0.3, 0);
+      ctx.lineTo(-shipSize * 0.7, shipSize * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = shipColor;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Engine glow
+      const glowPulse = 0.6 + Math.sin(time * 15) * 0.4;
+      ctx.beginPath();
+      ctx.arc(-shipSize * 0.4, 0, shipSize * 0.25 * glowPulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 200, 100, ${glowPulse * 0.7})`;
+      ctx.fill();
+    }
 
     // Flame effect when degrading (units < startUnits)
     if (attack.units < attack.startUnits) {
