@@ -4438,6 +4438,25 @@ function renderPlanet(planet: Planet): void {
   }
 
 
+  // "YOU" label above home planet
+  if (isHomePlanet && visible) {
+    ctx.save();
+    ctx.font = '14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+
+    // Black outline for visibility
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.strokeText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 8));
+
+    // Green text (player color)
+    ctx.fillStyle = '#44ff66';
+    ctx.fillText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 8));
+    ctx.restore();
+  }
+
   // Size label - DISABLED
   // if (screenRadius > 30 && (planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT)) {
   //   ctx.font = '10px "Press Start 2P"';
