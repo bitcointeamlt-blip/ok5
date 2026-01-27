@@ -4294,16 +4294,23 @@ function renderPlanet(planet: Planet): void {
     }
 
     if (auraColor) {
+      // Gentle pulsing effect - each planet has unique phase
+      const pulseSpeed = 0.002; // Slow pulse
+      const pulseAmount = 0.15; // 15% intensity variation
+      const pulse = Math.sin(performance.now() * pulseSpeed + planet.id * 0.5) * pulseAmount;
+      const pulsedIntensity = auraIntensity + pulse * auraIntensity;
+      const pulsedRadius = screenRadius * (1.5 + pulse * 0.2);
+
       const auraGradient = ctx.createRadialGradient(
         screen.x, screen.y, screenRadius * 0.8,
-        screen.x, screen.y, screenRadius * 1.6
+        screen.x, screen.y, pulsedRadius
       );
-      auraGradient.addColorStop(0, `rgba(${auraColor}, ${auraIntensity})`);
-      auraGradient.addColorStop(0.5, `rgba(${auraColor}, ${auraIntensity * 0.4})`);
+      auraGradient.addColorStop(0, `rgba(${auraColor}, ${pulsedIntensity})`);
+      auraGradient.addColorStop(0.5, `rgba(${auraColor}, ${pulsedIntensity * 0.4})`);
       auraGradient.addColorStop(1, `rgba(${auraColor}, 0)`);
 
       ctx.beginPath();
-      ctx.arc(screen.x, screen.y, screenRadius * 1.6, 0, Math.PI * 2);
+      ctx.arc(screen.x, screen.y, pulsedRadius, 0, Math.PI * 2);
       ctx.fillStyle = auraGradient;
       ctx.fill();
     }
