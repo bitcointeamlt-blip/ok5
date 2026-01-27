@@ -1440,12 +1440,43 @@ function initPlayers(): void {
   if (players.length > 0) {
     const home = planetMap.get(players[0].homeId);
     if (home) {
-      // Place black hole at a random direction from home planet
-      const bhAngle = Math.random() * Math.PI * 2;
-      const bhDistance = 400 + Math.random() * 200; // 400-600 units away
-      const bhX = home.x + Math.cos(bhAngle) * bhDistance;
-      const bhY = home.y + Math.sin(bhAngle) * bhDistance;
       const bhRadius = 80; // Black hole radius
+      let bhX = 0, bhY = 0;
+      let validPosition = false;
+
+      // Try to find a valid position that doesn't overlap with other planets or sun
+      for (let attempt = 0; attempt < 50 && !validPosition; attempt++) {
+        const bhAngle = Math.random() * Math.PI * 2;
+        const bhDistance = 500 + Math.random() * 300; // 500-800 units away
+        bhX = home.x + Math.cos(bhAngle) * bhDistance;
+        bhY = home.y + Math.sin(bhAngle) * bhDistance;
+
+        validPosition = true;
+
+        // Check distance from sun
+        const sunDist = Math.sqrt((bhX - SUN_X) ** 2 + (bhY - SUN_Y) ** 2);
+        if (sunDist < SUN_RADIUS + bhRadius + 200) {
+          validPosition = false;
+          continue;
+        }
+
+        // Check distance from all other planets
+        for (const p of planets) {
+          const dist = Math.sqrt((bhX - p.x) ** 2 + (bhY - p.y) ** 2);
+          if (dist < p.radius + bhRadius + 50) {
+            validPosition = false;
+            break;
+          }
+        }
+      }
+
+      // Only create black hole if valid position found
+      if (!validPosition) {
+        // Fallback: place far from home in opposite direction of sun
+        const awayFromSun = Math.atan2(home.y - SUN_Y, home.x - SUN_X);
+        bhX = home.x + Math.cos(awayFromSun) * 600;
+        bhY = home.y + Math.sin(awayFromSun) * 600;
+      }
 
       const blackHole: Planet = {
         id: planets.length + 9000, // unique id for black hole
@@ -4449,26 +4480,6 @@ function renderPlanet(planet: Planet): void {
       ctx.fillStyle = '#888';
       ctx.fillText('?', screen.x, screen.y);
     }
-  }
-
-
-  // "YOU" label above home planet
-  if (isHomePlanet && visible) {
-    ctx.save();
-    ctx.font = 'bold 12px Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-
-    // Black outline for visibility
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.lineJoin = 'round';
-    ctx.strokeText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 18));
-
-    // Softer green text
-    ctx.fillStyle = '#88cc99';
-    ctx.fillText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 18));
-    ctx.restore();
   }
 
   // Size label - DISABLED
