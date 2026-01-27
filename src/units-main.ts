@@ -620,6 +620,18 @@ for (let i = 1; i <= MEDIUM_TRAN02_FRAME_COUNT; i++) {
   mediumTran02Frames.push(img);
 }
 
+// Black hole animation frames (40 frames from GIF)
+const BLACK_HOLE_FRAME_COUNT = 40;
+const BLACK_HOLE_FRAME_DURATION = 80; // ms per frame
+const blackHoleFrames: HTMLImageElement[] = [];
+let blackHoleFramesLoaded = 0;
+for (let i = 1; i <= BLACK_HOLE_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/blackhole-frames/${i}.png`;
+  img.onload = () => { blackHoleFramesLoaded++; };
+  blackHoleFrames.push(img);
+}
+
 // Moon animation frames (60 frames rotation)
 const MOON_FRAME_COUNT = 60;
 const MOON_FRAME_DURATION = 100; // ms per frame (normal rotation speed)
@@ -1422,6 +1434,52 @@ function initPlayers(): void {
       alive: true,
       isAI: false  // Both players are user-controlled
     });
+  }
+
+  // Add black hole near player 0's starting planet
+  if (players.length > 0) {
+    const home = planetMap.get(players[0].homeId);
+    if (home) {
+      // Place black hole at a random direction from home planet
+      const bhAngle = Math.random() * Math.PI * 2;
+      const bhDistance = 400 + Math.random() * 200; // 400-600 units away
+      const bhX = home.x + Math.cos(bhAngle) * bhDistance;
+      const bhY = home.y + Math.sin(bhAngle) * bhDistance;
+      const bhRadius = 80; // Black hole radius
+
+      const blackHole: Planet = {
+        id: planets.length + 9000, // unique id for black hole
+        x: bhX,
+        y: bhY,
+        radius: bhRadius,
+        size: PlanetSize.GIANT, // Treat as giant for gameplay
+        ownerId: -1, // Neutral
+        units: 10000,
+        maxUnits: 15000,
+        defense: 5.0,
+        growthRate: 0, // Black holes don't grow
+        stability: STABILITY_MAX,
+        connected: false,
+        generating: false,
+        deposits: [
+          { type: 'crystal', amount: 0 },
+          { type: 'gas', amount: 0 },
+          { type: 'metal', amount: 0 }
+        ],
+        color: '#1a0a2e',
+        craters: [],
+        pulsePhase: Math.random() * Math.PI * 2,
+        shieldTimer: 0,
+        hasShield: false,
+        spriteType: null,
+        buildings: [null, null, null],
+        nextMineTime: 60000,
+        isBlackHole: true
+      };
+      planets.push(blackHole);
+      planetMap.set(blackHole.id, blackHole);
+      discoveredPlanets.add(blackHole.id); // Make it visible from start
+    }
   }
 
   // Center camera on player's home
@@ -4111,10 +4169,13 @@ function renderPlanet(planet: Planet): void {
   const mediumTran02Ready = mediumTran02FramesLoaded === MEDIUM_TRAN02_FRAME_COUNT;
   const largeSpritesReady = largePlanetFramesLoaded === LARGE_PLANET_FRAME_COUNT;
   const giantSpritesReady = giantPlanetFramesLoaded === GIANT_PLANET_FRAME_COUNT;
+  const blackHoleReady = blackHoleFramesLoaded === BLACK_HOLE_FRAME_COUNT;
 
   // Determine sprite type for this planet
-  let spriteType: 'moon' | 'ice' | 'moon2' | 'moon3' | 'home' | 'mediumDesert' | 'mediumLava' | 'mediumLava3' | 'mediumTran02' | 'large' | 'giant' | 'none' = 'none';
-  if (isHomePlanet && homeSpritesReady) {
+  let spriteType: 'moon' | 'ice' | 'moon2' | 'moon3' | 'home' | 'mediumDesert' | 'mediumLava' | 'mediumLava3' | 'mediumTran02' | 'large' | 'giant' | 'blackHole' | 'none' = 'none';
+  if (planet.isBlackHole && blackHoleReady) {
+    spriteType = 'blackHole';
+  } else if (isHomePlanet && homeSpritesReady) {
     spriteType = 'home';
   } else if (planet.isMoon || isSmallPlanet) {
     // Small planets alternate between 4 variants: moon, ice, moon2, moon3
@@ -4194,6 +4255,10 @@ function renderPlanet(planet: Planet): void {
       frames = mediumTran02Frames;
       frameCount = MEDIUM_TRAN02_FRAME_COUNT;
       frameDuration = MEDIUM_TRAN02_FRAME_DURATION;
+    } else if (spriteType === 'blackHole') {
+      frames = blackHoleFrames;
+      frameCount = BLACK_HOLE_FRAME_COUNT;
+      frameDuration = BLACK_HOLE_FRAME_DURATION;
     } else if (spriteType === 'giant') {
       // Giant planets alternate between 4 variants
       const giantVariant = planet.id % 4;
