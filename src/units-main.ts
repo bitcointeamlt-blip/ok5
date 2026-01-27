@@ -6243,6 +6243,23 @@ function renderUI(): void {
     }
   }
 
+  // Zoom indicator (bottom left corner, above joystick on mobile)
+  const zoomPercent = Math.round(camera.zoom * 100);
+  const zoomText = `${zoomPercent}%`;
+  const zoomX = 20;
+  const zoomY = isMobile ? gameHeight - 180 : gameHeight - 30;
+
+  ctx.font = '12px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  // Background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(zoomX - 5, zoomY - 10, 55, 20);
+
+  // Text
+  ctx.fillStyle = '#aaaaaa';
+  ctx.fillText(zoomText, zoomX, zoomY);
 }
 
 function renderExploreDrag(): void {
