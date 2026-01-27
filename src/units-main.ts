@@ -514,7 +514,7 @@ const marsFrames: HTMLImageElement[] = [];
 let marsFramesLoaded = 0;
 for (let i = 1; i <= MARS_FRAME_COUNT; i++) {
   const img = new Image();
-  img.src = `../mars.unit/ezgif-frame-${String(i).padStart(3, '0')}-removebg-preview.png`;
+  img.src = `/mars.unit/ezgif-frame-${String(i).padStart(3, '0')}-removebg-preview.png`;
   img.onload = () => { marsFramesLoaded++; };
   marsFrames.push(img);
 }
@@ -526,7 +526,7 @@ const iceFrames: HTMLImageElement[] = [];
 let iceFramesLoaded = 0;
 for (let i = 1; i <= ICE_FRAME_COUNT; i++) {
   const img = new Image();
-  img.src = `../ice.unit/ezgif-frame-${String(i).padStart(3, '0')}-removebg-preview.png`;
+  img.src = `/ice.unit/ezgif-frame-${String(i).padStart(3, '0')}-removebg-preview.png`;
   img.onload = () => { iceFramesLoaded++; };
   iceFrames.push(img);
 }
@@ -538,7 +538,7 @@ const massFrames: HTMLImageElement[] = [];
 let massFramesLoaded = 0;
 for (let i = 1; i <= MASS_FRAME_COUNT; i++) {
   const img = new Image();
-  img.src = `../massplanet/mass-frame-${String(i).padStart(3, '0')}.png`;
+  img.src = `/massplanet/mass-frame-${String(i).padStart(3, '0')}.png`;
   img.onload = () => { massFramesLoaded++; };
   massFrames.push(img);
 }
