@@ -4441,19 +4441,19 @@ function renderPlanet(planet: Planet): void {
   // "YOU" label above home planet
   if (isHomePlanet && visible) {
     ctx.save();
-    ctx.font = '14px "Press Start 2P"';
+    ctx.font = '10px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
 
     // Black outline for visibility
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
-    ctx.strokeText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 8));
+    ctx.strokeText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 13));
 
-    // Green text (player color)
-    ctx.fillStyle = '#44ff66';
-    ctx.fillText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 8));
+    // Softer green text
+    ctx.fillStyle = '#88cc99';
+    ctx.fillText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 13));
     ctx.restore();
   }
 
