@@ -4258,6 +4258,57 @@ function renderPlanet(planet: Planet): void {
     spriteType = 'giant';
   }
 
+  // Planet type aura glow (rendered BEFORE planet sprite)
+  if (spriteType !== 'none' && !isPlayerPlanet) {
+    let auraColor: string | null = null;
+    let auraIntensity = 0.3;
+
+    // Set aura color based on planet type
+    if (spriteType === 'mediumLava' || spriteType === 'mediumLava3') {
+      auraColor = '255, 80, 30'; // Red/orange for lava
+      auraIntensity = 0.4;
+    } else if (spriteType === 'ice') {
+      auraColor = '200, 230, 255'; // White/blue for ice
+      auraIntensity = 0.35;
+    } else if (spriteType === 'mediumDesert') {
+      auraColor = '220, 180, 100'; // Sandy yellow for desert
+      auraIntensity = 0.25;
+    } else if (spriteType === 'home') {
+      auraColor = '100, 180, 255'; // Blue for earth-like
+      auraIntensity = 0.3;
+    } else if (spriteType === 'mediumTran02') {
+      auraColor = '150, 100, 200'; // Purple for alien
+      auraIntensity = 0.3;
+    } else if (spriteType === 'moon' || spriteType === 'moon2' || spriteType === 'moon3') {
+      auraColor = '180, 180, 190'; // Gray for moons
+      auraIntensity = 0.2;
+    } else if (spriteType === 'large') {
+      auraColor = '100, 200, 150'; // Green-ish for large
+      auraIntensity = 0.3;
+    } else if (spriteType === 'giant') {
+      auraColor = '200, 150, 100'; // Orange-brown for giant
+      auraIntensity = 0.35;
+    } else if (spriteType === 'blackHole') {
+      auraColor = '100, 50, 150'; // Dark purple for black hole
+      auraIntensity = 0.5;
+    }
+
+    if (auraColor) {
+      const auraGradient = ctx.createRadialGradient(
+        screen.x, screen.y, screenRadius * 0.8,
+        screen.x, screen.y, screenRadius * 1.6
+      );
+      auraGradient.addColorStop(0, `rgba(${auraColor}, ${auraIntensity})`);
+      auraGradient.addColorStop(0.5, `rgba(${auraColor}, ${auraIntensity * 0.4})`);
+      auraGradient.addColorStop(1, `rgba(${auraColor}, 0)`);
+
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, screenRadius * 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = auraGradient;
+      ctx.fill();
+    }
+  }
+
   if (spriteType !== 'none') {
     // Render planet using animated sprite frames with alpha blending
     let frames: HTMLImageElement[];
