@@ -126,9 +126,9 @@ const FOG_VISION_BY_SIZE: Record<string, number> = {
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
-  [Difficulty.EASY]: { growthRate: 0.8, aiInterval: 3000, startUnits: 150 },
-  [Difficulty.MEDIUM]: { growthRate: 0.6, aiInterval: 2000, startUnits: 100 },
-  [Difficulty.HARD]: { growthRate: 0.4, aiInterval: 1200, startUnits: 80 }
+  [Difficulty.EASY]: { growthRate: 0.8, aiInterval: 3000, startUnits: 200 },
+  [Difficulty.MEDIUM]: { growthRate: 0.6, aiInterval: 2000, startUnits: 200 },
+  [Difficulty.HARD]: { growthRate: 0.4, aiInterval: 1200, startUnits: 200 }
 };
 
 // Special abilities
@@ -252,6 +252,8 @@ interface Planet {
   nextMineTime: number; // game time when next resource will be mined
   // Turret cooldown (per-planet, not per-attack)
   nextTurretFireTime?: number;
+  // Black hole - special planet type
+  isBlackHole?: boolean;
 }
 
 interface Player {
@@ -437,8 +439,10 @@ let turretMissiles: TurretMissile[] = [];
 let battles: Battle[] = [];
 let shieldFlickers: ShieldFlicker[] = [];
 let selectedPlanets: Set<number> = new Set(); // multi-select
+let planetSelectTime: Map<number, number> = new Map(); // track when planet was selected for flash effect
 let discoveredPlanets: Set<number> = new Set(); // planets whose type/color has been revealed
 let hoveredPlanet: number | null = null;
+let hoverStartTime: number = 0; // When hover started (for popup animation)
 let gameTime = 0;
 let lastTime = 0;
 let lastSupplyCheck = 0;
@@ -471,6 +475,10 @@ const camera: Camera = {
   dragStartX: 0, dragStartY: 0,
   dragCamStartX: 0, dragCamStartY: 0
 };
+
+// Parallax background offset (only updates on pan, not zoom)
+let parallaxOffsetX = 0;
+let parallaxOffsetY = 0;
 
 // UI State
 let mouseX = 0;
@@ -545,6 +553,299 @@ const fighterSprite = new Image();
 fighterSprite.src = '/spaceship/fighter.png';
 let fighterSpriteLoaded = false;
 fighterSprite.onload = () => { fighterSpriteLoaded = true; };
+
+// Space background image
+const spaceBackground = new Image();
+spaceBackground.src = '/space-bg.png';
+let spaceBackgroundLoaded = false;
+spaceBackground.onload = () => { spaceBackgroundLoaded = true; };
+
+// Home planet animation frames (120 frames rotation)
+const HOME_PLANET_FRAME_COUNT = 120;
+const HOME_PLANET_FRAME_DURATION = 100; // ms per frame (fast rotation like moon)
+const homePlanetFrames: HTMLImageElement[] = [];
+let homePlanetFramesLoaded = 0;
+for (let i = 1; i <= HOME_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/planet-frames/planet-frame-${String(i).padStart(3, '0')}.png`;
+  img.onload = () => { homePlanetFramesLoaded++; };
+  homePlanetFrames.push(img);
+}
+
+// Medium planet variant 2 (desert02) - 60 frames
+const MEDIUM_DESERT_FRAME_COUNT = 60;
+const MEDIUM_DESERT_FRAME_DURATION = 100;
+const mediumDesertFrames: HTMLImageElement[] = [];
+let mediumDesertFramesLoaded = 0;
+for (let i = 1; i <= MEDIUM_DESERT_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/desert02/${i}.png`;
+  img.onload = () => { mediumDesertFramesLoaded++; };
+  mediumDesertFrames.push(img);
+}
+
+// Medium planet variant 3 (lava01) - 60 frames
+const MEDIUM_LAVA_FRAME_COUNT = 60;
+const MEDIUM_LAVA_FRAME_DURATION = 100;
+const mediumLavaFrames: HTMLImageElement[] = [];
+let mediumLavaFramesLoaded = 0;
+for (let i = 1; i <= MEDIUM_LAVA_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/lava01/${i}.png`;
+  img.onload = () => { mediumLavaFramesLoaded++; };
+  mediumLavaFrames.push(img);
+}
+
+// Medium planet variant 4 (lava3) - 60 frames
+const MEDIUM_LAVA3_FRAME_COUNT = 60;
+const MEDIUM_LAVA3_FRAME_DURATION = 100;
+const mediumLava3Frames: HTMLImageElement[] = [];
+let mediumLava3FramesLoaded = 0;
+for (let i = 1; i <= MEDIUM_LAVA3_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/lava3/${i}.png`;
+  img.onload = () => { mediumLava3FramesLoaded++; };
+  mediumLava3Frames.push(img);
+}
+
+// Medium planet variant 5 (tran02) - 60 frames
+const MEDIUM_TRAN02_FRAME_COUNT = 60;
+const MEDIUM_TRAN02_FRAME_DURATION = 100;
+const mediumTran02Frames: HTMLImageElement[] = [];
+let mediumTran02FramesLoaded = 0;
+for (let i = 1; i <= MEDIUM_TRAN02_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/tran02/${i}.png`;
+  img.onload = () => { mediumTran02FramesLoaded++; };
+  mediumTran02Frames.push(img);
+}
+
+// Moon animation frames (60 frames rotation)
+const MOON_FRAME_COUNT = 60;
+const MOON_FRAME_DURATION = 100; // ms per frame (normal rotation speed)
+const moonFrames: HTMLImageElement[] = [];
+let moonFramesLoaded = 0;
+for (let i = 1; i <= MOON_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/moon-frames/moon-frame-${String(i).padStart(3, '0')}.png`;
+  img.onload = () => { moonFramesLoaded++; };
+  moonFrames.push(img);
+}
+
+// Ice planet animation frames (60 frames) - variant for small planets
+const ICE_PLANET_FRAME_COUNT = 60;
+const ICE_PLANET_FRAME_DURATION = 100; // ms per frame
+const icePlanetFrames: HTMLImageElement[] = [];
+let icePlanetFramesLoaded = 0;
+for (let i = 1; i <= ICE_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/ice/${i}.png`;
+  img.onload = () => { icePlanetFramesLoaded++; };
+  icePlanetFrames.push(img);
+}
+
+// Moon variant 2 (moon04) - 60 frames for small planets
+const MOON2_FRAME_COUNT = 60;
+const MOON2_FRAME_DURATION = 100; // ms per frame
+const moon2Frames: HTMLImageElement[] = [];
+let moon2FramesLoaded = 0;
+for (let i = 1; i <= MOON2_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/moon04/${i}.png`;
+  img.onload = () => { moon2FramesLoaded++; };
+  moon2Frames.push(img);
+}
+
+// Moon variant 3 (moon03) - 60 frames for small planets
+const MOON3_FRAME_COUNT = 60;
+const MOON3_FRAME_DURATION = 100; // ms per frame
+const moon3Frames: HTMLImageElement[] = [];
+let moon3FramesLoaded = 0;
+for (let i = 1; i <= MOON3_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/moon03/${i}.png`;
+  img.onload = () => { moon3FramesLoaded++; };
+  moon3Frames.push(img);
+}
+
+// Large planet animation frames (120 frames rotation) - 2 variants for variety
+const LARGE_PLANET_FRAME_COUNT = 120;
+const LARGE_PLANET_FRAME_DURATION = 100; // ms per frame (fast rotation like moon)
+const largePlanetFrames: HTMLImageElement[] = [];
+let largePlanetFramesLoaded = 0;
+for (let i = 1; i <= LARGE_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/large-frames/large-frame-${String(i).padStart(3, '0')}.png`;
+  img.onload = () => { largePlanetFramesLoaded++; };
+  largePlanetFrames.push(img);
+}
+
+// Large planet variant 2 (no clouds)
+const largePlanetFrames2: HTMLImageElement[] = [];
+let largePlanetFrames2Loaded = 0;
+for (let i = 1; i <= LARGE_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/large-frames-2/large-frame-${String(i).padStart(3, '0')}.png`;
+  img.onload = () => { largePlanetFrames2Loaded++; };
+  largePlanetFrames2.push(img);
+}
+
+// Large planet variant 3 (with clouds - new)
+const largePlanetFrames3: HTMLImageElement[] = [];
+let largePlanetFrames3Loaded = 0;
+for (let i = 1; i <= LARGE_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/large-frames-3/${i}.png`;
+  img.onload = () => { largePlanetFrames3Loaded++; };
+  largePlanetFrames3.push(img);
+}
+
+// Large planet variant 4 (without clouds - new)
+const largePlanetFrames4: HTMLImageElement[] = [];
+let largePlanetFrames4Loaded = 0;
+for (let i = 1; i <= LARGE_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/large-frames-4/${i}.png`;
+  img.onload = () => { largePlanetFrames4Loaded++; };
+  largePlanetFrames4.push(img);
+}
+
+// Large planet variant 5 (desert01) - 60 frames
+const DESERT_PLANET_FRAME_COUNT = 60;
+const largePlanetFrames5: HTMLImageElement[] = [];
+let largePlanetFrames5Loaded = 0;
+for (let i = 1; i <= DESERT_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/desert01/${i}.png`;
+  img.onload = () => { largePlanetFrames5Loaded++; };
+  largePlanetFrames5.push(img);
+}
+
+// Giant planet animation frames (60 frames) - 2 variants
+const GIANT_PLANET_FRAME_COUNT = 60;
+const GIANT_PLANET_FRAME_DURATION = 100; // ms per frame
+const giantPlanetFrames: HTMLImageElement[] = [];
+let giantPlanetFramesLoaded = 0;
+for (let i = 1; i <= GIANT_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/gigant1/${i}.png`;
+  img.onload = () => { giantPlanetFramesLoaded++; };
+  giantPlanetFrames.push(img);
+}
+
+// Giant planet variant 2
+const giantPlanetFrames2: HTMLImageElement[] = [];
+let giantPlanetFrames2Loaded = 0;
+for (let i = 1; i <= GIANT_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/giga02/${i}.png`;
+  img.onload = () => { giantPlanetFrames2Loaded++; };
+  giantPlanetFrames2.push(img);
+}
+
+// Giant planet variant 3
+const giantPlanetFrames3: HTMLImageElement[] = [];
+let giantPlanetFrames3Loaded = 0;
+for (let i = 1; i <= GIANT_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/giga03/${i}.png`;
+  img.onload = () => { giantPlanetFrames3Loaded++; };
+  giantPlanetFrames3.push(img);
+}
+
+// Giant planet variant 4
+const giantPlanetFrames4: HTMLImageElement[] = [];
+let giantPlanetFrames4Loaded = 0;
+for (let i = 1; i <= GIANT_PLANET_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/giga04/${i}.png`;
+  img.onload = () => { giantPlanetFrames4Loaded++; };
+  giantPlanetFrames4.push(img);
+}
+
+// Sun animation frames (30 frames)
+const SUN_FRAME_COUNT = 30;
+const SUN_FRAME_DURATION = 100; // ms per frame (normal speed animation)
+const sunFrames: HTMLImageElement[] = [];
+let sunFramesLoaded = 0;
+for (let i = 1; i <= SUN_FRAME_COUNT; i++) {
+  const img = new Image();
+  img.src = `/sun-frames/sun-frame-${String(i).padStart(3, '0')}.png`;
+  img.onload = () => { sunFramesLoaded++; };
+  sunFrames.push(img);
+}
+
+// Parallax background layers (3 layers for depth effect)
+const bgLayer1 = new Image(); // Farthest (slowest)
+const bgLayer2 = new Image(); // Middle
+const bgLayer3 = new Image(); // Closest (fastest)
+bgLayer1.src = '/bg-layer1.png';
+bgLayer2.src = '/bg-layer2.png';
+bgLayer3.src = '/bg-layer3.png';
+let bgLayersLoaded = 0;
+bgLayer1.onload = () => { bgLayersLoaded++; };
+bgLayer2.onload = () => { bgLayersLoaded++; };
+bgLayer3.onload = () => { bgLayersLoaded++; };
+
+// Animated background stars (blue and yellow)
+const ANIM_STAR_FRAME_COUNT = 8;
+const ANIM_STAR_FRAME_DURATION = 150; // ms per frame
+const blueStarFrames: HTMLImageElement[] = [];
+const yellowStarFrames: HTMLImageElement[] = [];
+let blueStarFramesLoaded = 0;
+let yellowStarFramesLoaded = 0;
+for (let i = 1; i <= ANIM_STAR_FRAME_COUNT; i++) {
+  const blueImg = new Image();
+  blueImg.src = `/blue-star/star${i}.png`;
+  blueImg.onload = () => { blueStarFramesLoaded++; };
+  blueStarFrames.push(blueImg);
+
+  const yellowImg = new Image();
+  yellowImg.src = `/yellow-star/star${i}.png`;
+  yellowImg.onload = () => { yellowStarFramesLoaded++; };
+  yellowStarFrames.push(yellowImg);
+}
+
+// Animated star positions (generated once)
+interface AnimStar {
+  x: number;
+  y: number;
+  type: 'blue' | 'yellow';
+  offset: number; // animation offset for variety
+  scale: number;
+}
+let animStars: AnimStar[] = [];
+
+// Animated comets (blue and yellow) - change position every 2 min
+const COMET_FRAME_COUNT = 8;
+const COMET_FRAME_DURATION = 100; // ms per frame
+const COMET_REPOSITION_INTERVAL = 10000; // 10 seconds
+const blueCometFrames: HTMLImageElement[] = [];
+const yellowCometFrames: HTMLImageElement[] = [];
+let blueCometFramesLoaded = 0;
+let yellowCometFramesLoaded = 0;
+for (let i = 1; i <= COMET_FRAME_COUNT; i++) {
+  const blueImg = new Image();
+  blueImg.src = `/blue-comet/star${i}.png`;
+  blueImg.onload = () => { blueCometFramesLoaded++; };
+  blueCometFrames.push(blueImg);
+
+  const yellowImg = new Image();
+  yellowImg.src = `/yellow-comet/star${i}.png`;
+  yellowImg.onload = () => { yellowCometFramesLoaded++; };
+  yellowCometFrames.push(yellowImg);
+}
+
+// Comet positions (change every 2 min)
+interface Comet {
+  x: number;
+  y: number;
+  type: 'blue' | 'yellow';
+  lastReposition: number; // timestamp of last position change
+  offset: number; // animation offset
+  scale: number;
+}
+let comets: Comet[] = [];
 
 // Fog of war offscreen canvas
 let fogCanvas: HTMLCanvasElement | null = null;
@@ -679,6 +980,33 @@ function generateStars(): void {
       y: Math.random() * WORLD_SIZE,
       brightness: Math.random() * 0.6 + 0.2,
       size: Math.random() < 0.1 ? 2 : 1
+    });
+  }
+
+  // Generate animated stars (100 total - 50 blue, 50 yellow)
+  animStars = [];
+  for (let i = 0; i < 100; i++) {
+    animStars.push({
+      x: Math.random() * WORLD_SIZE,
+      y: Math.random() * WORLD_SIZE,
+      type: i < 50 ? 'blue' : 'yellow',
+      offset: Math.random() * 1000, // random animation offset
+      scale: 0.8 + Math.random() * 0.6 // random size 0.8-1.4
+    });
+  }
+
+  // Generate comets (50 total - 25 blue, 25 yellow)
+  // Each comet repositions every 2 minutes
+  comets = [];
+  const now = performance.now();
+  for (let i = 0; i < 50; i++) {
+    comets.push({
+      x: Math.random() * WORLD_SIZE,
+      y: Math.random() * WORLD_SIZE,
+      type: i < 25 ? 'blue' : 'yellow',
+      lastReposition: now - Math.random() * COMET_REPOSITION_INTERVAL, // stagger repositions
+      offset: Math.random() * 1000,
+      scale: 1.0 + Math.random() * 0.5
     });
   }
 }
@@ -853,7 +1181,7 @@ function generatePlanets(): void {
     for (let m = 0; m < moonCount; m++) {
       const moonProps = getPlanetProperties(moonSize);
       const moonRadius = moonProps.minR + Math.random() * (moonProps.maxR - moonProps.minR);
-      const moonOrbitRadius = parent.radius + moonRadius + 20 + Math.random() * 30 + m * 50;
+      const moonOrbitRadius = parent.radius + moonRadius + 70 + Math.random() * 30 + m * 50;
       const moonAngle = Math.random() * Math.PI * 2 + m * Math.PI; // spread moons apart
       const moonX = parent.x + Math.cos(moonAngle) * moonOrbitRadius;
       const moonY = parent.y + Math.sin(moonAngle) * moonOrbitRadius;
@@ -894,7 +1222,7 @@ function generatePlanets(): void {
         parentId: parent.id,
         orbitAngle: moonAngle,
         orbitRadius: moonOrbitRadius,
-        orbitSpeed: 0.2 + Math.random() * 0.2,
+        orbitSpeed: 0.05 + Math.random() * 0.05,
         pulsePhase: Math.random() * Math.PI * 2,
         shieldTimer: 0,
         hasShield: false,
@@ -1025,7 +1353,7 @@ function initPlayers(): void {
 
     // Add orbiting asteroid to the LARGE planet
     const moonRadius = 10 + Math.random() * 4;
-    const moonOrbitRadius = largeRadius + 30 + Math.random() * 20;
+    const moonOrbitRadius = largeRadius + 80 + Math.random() * 20;
 
     // Find valid position for moon (no overlap)
     let moonX = 0, moonY = 0, moonAngle = 0;
@@ -1070,7 +1398,7 @@ function initPlayers(): void {
       parentId: largePlanet.id,
       orbitAngle: moonAngle,
       orbitRadius: moonOrbitRadius,
-      orbitSpeed: 0.3 + Math.random() * 0.3,
+      orbitSpeed: 0.08 + Math.random() * 0.07,
       pulsePhase: Math.random() * Math.PI * 2,
       shieldTimer: 0,
       hasShield: false,
@@ -2547,11 +2875,13 @@ canvas.addEventListener('mousedown', (e) => {
         modePlanetId = actionPopup.targetId;
         selectedPlanets.clear();
         selectedPlanets.add(actionPopup.targetId);
+        planetSelectTime.set(actionPopup.targetId, performance.now());
       } else if (action === 'scout') {
         planetMode = 'scout';
         modePlanetId = actionPopup.targetId;
         selectedPlanets.clear();
         selectedPlanets.add(actionPopup.targetId);
+        planetSelectTime.set(actionPopup.targetId, performance.now());
       } else if (action === 'info') {
         infoPlanetId = actionPopup.targetId;
       } else if (action === 'build') {
@@ -2787,6 +3117,7 @@ canvas.addEventListener('mousedown', (e) => {
       // Normal: just select
       if (!selectedPlanets.has(planet.id)) {
         selectedPlanets.add(planet.id);
+        planetSelectTime.set(planet.id, performance.now());
       }
       // Clear mode if clicking different planet
       if (modePlanetId !== planet.id) {
@@ -2797,6 +3128,7 @@ canvas.addEventListener('mousedown', (e) => {
       // Non-own planet: just select it
       selectedPlanets.clear();
       selectedPlanets.add(planet.id);
+      planetSelectTime.set(planet.id, performance.now());
       planetMode = 'none';
       modePlanetId = null;
     }
@@ -2821,13 +3153,28 @@ canvas.addEventListener('mousemove', (e) => {
   }
 
   if (camera.dragging) {
-    camera.x = camera.dragCamStartX - (pos.x - camera.dragStartX);
-    camera.y = camera.dragCamStartY - (pos.y - camera.dragStartY);
+    const deltaX = pos.x - camera.dragStartX;
+    const deltaY = pos.y - camera.dragStartY;
+    camera.x = camera.dragCamStartX - deltaX;
+    camera.y = camera.dragCamStartY - deltaY;
+    // Update parallax offset (only on drag, not zoom)
+    parallaxOffsetX -= deltaX * 0.01;
+    parallaxOffsetY -= deltaY * 0.01;
+    camera.dragStartX = pos.x;
+    camera.dragStartY = pos.y;
+    camera.dragCamStartX = camera.x;
+    camera.dragCamStartY = camera.y;
     return;
   }
 
   const planet = getPlanetAtScreen(pos.x, pos.y);
-  hoveredPlanet = planet ? planet.id : null;
+  const newHoveredPlanet = planet ? planet.id : null;
+  if (newHoveredPlanet !== hoveredPlanet) {
+    hoveredPlanet = newHoveredPlanet;
+    if (hoveredPlanet !== null) {
+      hoverStartTime = performance.now();
+    }
+  }
 });
 
 canvas.addEventListener('mouseup', () => {
@@ -3146,8 +3493,17 @@ canvas.addEventListener('touchmove', (e) => {
 
   // Camera panning
   if (isTouchDragging && camera.dragging) {
-    camera.x = camera.dragCamStartX - (pos.x - camera.dragStartX);
-    camera.y = camera.dragCamStartY - (pos.y - camera.dragStartY);
+    const deltaX = pos.x - camera.dragStartX;
+    const deltaY = pos.y - camera.dragStartY;
+    camera.x = camera.dragCamStartX - deltaX;
+    camera.y = camera.dragCamStartY - deltaY;
+    // Update parallax offset (only on drag, not zoom)
+    parallaxOffsetX -= deltaX * 0.01;
+    parallaxOffsetY -= deltaY * 0.01;
+    camera.dragStartX = pos.x;
+    camera.dragStartY = pos.y;
+    camera.dragCamStartX = camera.x;
+    camera.dragCamStartY = camera.y;
   }
 
   // Popup slider dragging
@@ -3157,7 +3513,13 @@ canvas.addEventListener('touchmove', (e) => {
 
   // Update hovered planet
   const planet = getPlanetAtScreen(pos.x, pos.y);
-  hoveredPlanet = planet ? planet.id : null;
+  const newHoveredPlanet = planet ? planet.id : null;
+  if (newHoveredPlanet !== hoveredPlanet) {
+    hoveredPlanet = newHoveredPlanet;
+    if (hoveredPlanet !== null) {
+      hoverStartTime = performance.now();
+    }
+  }
 
 }, { passive: false });
 
@@ -3311,6 +3673,7 @@ canvas.addEventListener('touchend', (e) => {
           selectedPlanets.delete(planet.id);
         } else {
           selectedPlanets.add(planet.id);
+          planetSelectTime.set(planet.id, performance.now());
         }
         // Clear mode if tapping different planet
         if (modePlanetId !== planet.id) {
@@ -3414,6 +3777,58 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ========== RENDERING ==========
+
+// Parallax background with world-space - 3D depth effect
+function renderParallaxBackground(): void {
+  if (bgLayersLoaded < 3) return;
+
+  const layers = [bgLayer1, bgLayer2, bgLayer3];
+  const alphas = [0.3, 0.4, 0.5];
+  const depths = [0.3, 0.6, 0.9]; // How much each layer moves (0=fixed, 1=full)
+
+  // Background tile size in world coordinates
+  const tileSize = 2000;
+
+  for (let i = 0; i < 3; i++) {
+    const layer = layers[i];
+    if (!layer.complete || !layer.naturalWidth) continue;
+
+    ctx.globalAlpha = alphas[i];
+    const depth = depths[i];
+
+    // Apply parallax - deeper layers move less with camera
+    const parallaxCamX = camera.x * depth;
+    const parallaxCamY = camera.y * depth;
+
+    // Calculate visible area with parallax offset
+    const worldLeft = parallaxCamX / camera.zoom;
+    const worldTop = parallaxCamY / camera.zoom;
+    const worldRight = worldLeft + gameWidth / camera.zoom;
+    const worldBottom = worldTop + gameHeight / camera.zoom;
+
+    // Calculate tile range needed
+    const startTileX = Math.floor(worldLeft / tileSize);
+    const startTileY = Math.floor(worldTop / tileSize);
+    const endTileX = Math.ceil(worldRight / tileSize);
+    const endTileY = Math.ceil(worldBottom / tileSize);
+
+    // Draw tiles with parallax
+    for (let tx = startTileX; tx <= endTileX; tx++) {
+      for (let ty = startTileY; ty <= endTileY; ty++) {
+        const worldX = tx * tileSize;
+        const worldY = ty * tileSize;
+        // Custom worldToScreen with parallax camera
+        const screenX = worldX * camera.zoom - parallaxCamX;
+        const screenY = worldY * camera.zoom - parallaxCamY;
+        const screenSize = tileSize * camera.zoom;
+        ctx.drawImage(layer, screenX, screenY, screenSize, screenSize);
+      }
+    }
+  }
+
+  ctx.globalAlpha = 1;
+}
+
 function renderStars(): void {
   for (const star of stars) {
     const screen = worldToScreen(star.x, star.y);
@@ -3421,6 +3836,61 @@ function renderStars(): void {
 
     ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
     ctx.fillRect(Math.floor(screen.x), Math.floor(screen.y), star.size, star.size);
+  }
+}
+
+function renderAnimStars(): void {
+  // Check if frames are loaded
+  if (blueStarFramesLoaded < ANIM_STAR_FRAME_COUNT || yellowStarFramesLoaded < ANIM_STAR_FRAME_COUNT) return;
+
+  const now = performance.now();
+
+  for (const star of animStars) {
+    const screen = worldToScreen(star.x, star.y);
+    // Skip if off screen
+    if (screen.x < -20 || screen.x > gameWidth + 20 || screen.y < -20 || screen.y > gameHeight + 20) continue;
+
+    // Calculate frame with offset for variety
+    const frameIndex = Math.floor(((now + star.offset) / ANIM_STAR_FRAME_DURATION) % ANIM_STAR_FRAME_COUNT);
+    const frames = star.type === 'blue' ? blueStarFrames : yellowStarFrames;
+    const frame = frames[frameIndex];
+
+    if (!frame || !frame.complete) continue;
+
+    // Draw animated star
+    const size = 16 * star.scale * camera.zoom;
+    ctx.drawImage(frame, screen.x - size / 2, screen.y - size / 2, size, size);
+  }
+}
+
+function renderComets(): void {
+  // Check if frames are loaded
+  if (blueCometFramesLoaded < COMET_FRAME_COUNT || yellowCometFramesLoaded < COMET_FRAME_COUNT) return;
+
+  const now = performance.now();
+
+  for (const comet of comets) {
+    // Check if comet needs to reposition (every 2 min)
+    if (now - comet.lastReposition > COMET_REPOSITION_INTERVAL) {
+      comet.x = Math.random() * WORLD_SIZE;
+      comet.y = Math.random() * WORLD_SIZE;
+      comet.lastReposition = now;
+    }
+
+    const screen = worldToScreen(comet.x, comet.y);
+    // Skip if off screen
+    if (screen.x < -30 || screen.x > gameWidth + 30 || screen.y < -30 || screen.y > gameHeight + 30) continue;
+
+    // Calculate frame with offset for variety
+    const frameIndex = Math.floor(((now + comet.offset) / COMET_FRAME_DURATION) % COMET_FRAME_COUNT);
+    const frames = comet.type === 'blue' ? blueCometFrames : yellowCometFrames;
+    const frame = frames[frameIndex];
+
+    if (!frame || !frame.complete) continue;
+
+    // Draw animated comet (slightly larger than stars)
+    const size = 24 * comet.scale * camera.zoom;
+    ctx.drawImage(frame, screen.x - size / 2, screen.y - size / 2, size, size);
   }
 }
 
@@ -3488,42 +3958,35 @@ function renderSun(): void {
   ctx.fillStyle = innerGrad;
   ctx.fill();
 
-  // Sun body (solid bright circle)
-  const bodyGrad = ctx.createRadialGradient(
-    screen.x - screenRadius * 0.2, screen.y - screenRadius * 0.2, 0,
-    screen.x, screen.y, screenRadius
-  );
-  bodyGrad.addColorStop(0, '#fffae0');
-  bodyGrad.addColorStop(0.3, '#ffd040');
-  bodyGrad.addColorStop(0.7, '#ff9020');
-  bodyGrad.addColorStop(1.0, '#e06010');
-  ctx.beginPath();
-  ctx.arc(screen.x, screen.y, screenRadius, 0, Math.PI * 2);
-  ctx.fillStyle = bodyGrad;
-  ctx.fill();
+  // Use sun sprite animation if loaded
+  if (sunFramesLoaded === SUN_FRAME_COUNT) {
+    const frameIndex = Math.floor((performance.now() / SUN_FRAME_DURATION) % SUN_FRAME_COUNT);
+    const frame = sunFrames[frameIndex];
 
-  // Surface details (darker spots)
-  if (screenRadius > 20) {
-    const spotCount = 5;
-    for (let i = 0; i < spotCount; i++) {
-      const angle = (i / spotCount) * Math.PI * 2 + time * 0.1;
-      const dist = screenRadius * (0.3 + Math.sin(time * 0.3 + i * 2) * 0.2);
-      const sx = screen.x + Math.cos(angle) * dist;
-      const sy = screen.y + Math.sin(angle) * dist;
-      const spotR = screenRadius * (0.08 + Math.sin(time * 0.5 + i) * 0.03);
-      ctx.beginPath();
-      ctx.arc(sx, sy, spotR, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(200, 100, 20, 0.3)';
-      ctx.fill();
+    if (frame && frame.complete) {
+      const spriteSize = screenRadius * 2.2;
+      const drawX = screen.x - spriteSize / 2;
+      const drawY = screen.y - spriteSize / 2;
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(frame, drawX, drawY, spriteSize, spriteSize);
+      ctx.restore();
     }
+  } else {
+    // Fallback: simple orange circle while loading
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, screenRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff9020';
+    ctx.fill();
   }
 
-  // Solar flares (animated rays)
+  // Solar flares (animated rays) - shorter
   if (screenRadius > 10) {
     const flareCount = 8;
     for (let i = 0; i < flareCount; i++) {
       const angle = (i / flareCount) * Math.PI * 2 + time * 0.2;
-      const flareLen = screenRadius * (0.3 + Math.sin(time * 2 + i * 1.5) * 0.2);
+      const flareLen = screenRadius * (0.1 + Math.sin(time * 2 + i * 1.5) * 0.05); // Shorter flares
       const startR = screenRadius * 0.95;
       const sx = screen.x + Math.cos(angle) * startR;
       const sy = screen.y + Math.sin(angle) * startR;
@@ -3593,6 +4056,30 @@ function renderPlanet(planet: Planet): void {
     }
   }
 
+  // === PLAYER OWNED PLANET EFFECTS ===
+  const isPlayerPlanet = planet.ownerId === 0;
+
+  // Effect 1: Glowing aura (švytinti aura) - rendered BEFORE planet - GREEN - constant
+  if (isPlayerPlanet && visible) {
+    const auraPulse = 0.7; // Constant glow, no pulsing
+
+    // Outer aura glow - stronger at planet edge - GREEN
+    const auraGradient = ctx.createRadialGradient(
+      screen.x, screen.y, screenRadius * 0.9,
+      screen.x, screen.y, screenRadius * 2.0
+    );
+    auraGradient.addColorStop(0, `rgba(100, 255, 120, ${auraPulse * 0.9})`);
+    auraGradient.addColorStop(0.2, `rgba(80, 220, 100, ${auraPulse * 0.7})`);
+    auraGradient.addColorStop(0.5, `rgba(60, 180, 80, ${auraPulse * 0.35})`);
+    auraGradient.addColorStop(0.8, `rgba(50, 150, 60, ${auraPulse * 0.1})`);
+    auraGradient.addColorStop(1, 'rgba(50, 150, 60, 0)');
+
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, screenRadius * 2.0, 0, Math.PI * 2);
+    ctx.fillStyle = auraGradient;
+    ctx.fill();
+  }
+
   // Shield is INVISIBLE until hit - no rendering here
   // Shield flicker effect is rendered separately when attack hits it
 
@@ -3602,37 +4089,177 @@ function renderPlanet(planet: Planet): void {
 
   const isPlayerOwned = planet.ownerId === 0 && !isHomePlanet;
 
-  // Check if we should render as sprite (home planet with mass sprite)
-  // DISABLED - using static blue planet instead
-  const useHomePlanetSprite = false;
+  // Determine which sprite set to use for this planet (ALL planets use sprites now)
+  // Small planets (asteroid, tiny, small, moons): moon sprites (60 frames)
+  // Medium planets: home planet sprites (120 frames)
+  // Large+ planets (large, giant, mega, titan, colossus) + home: large/home sprites (120 frames)
+  const isSmallPlanet = planet.size === PlanetSize.ASTEROID || planet.size === PlanetSize.TINY || planet.size === PlanetSize.SMALL;
+  const isMediumPlanet = planet.size === PlanetSize.MEDIUM;
+  const isLargePlanet = planet.size === PlanetSize.LARGE;
+  const isGiantPlanet = planet.size === PlanetSize.GIANT || planet.size === PlanetSize.MEGA ||
+                        planet.size === PlanetSize.TITAN || planet.size === PlanetSize.COLOSSUS;
 
-  if (useHomePlanetSprite) {
-    // Render home planet using animated mass sprite
-    const frameIndex = Math.floor((performance.now() / MASS_FRAME_DURATION) % MASS_FRAME_COUNT);
-    const frame = massFrames[frameIndex];
+  // Check if sprites are loaded
+  const moonSpritesReady = moonFramesLoaded === MOON_FRAME_COUNT;
+  const iceSpritesReady = icePlanetFramesLoaded === ICE_PLANET_FRAME_COUNT;
+  const moon2SpritesReady = moon2FramesLoaded === MOON2_FRAME_COUNT;
+  const moon3SpritesReady = moon3FramesLoaded === MOON3_FRAME_COUNT;
+  const homeSpritesReady = homePlanetFramesLoaded === HOME_PLANET_FRAME_COUNT;
+  const mediumDesertReady = mediumDesertFramesLoaded === MEDIUM_DESERT_FRAME_COUNT;
+  const mediumLavaReady = mediumLavaFramesLoaded === MEDIUM_LAVA_FRAME_COUNT;
+  const mediumLava3Ready = mediumLava3FramesLoaded === MEDIUM_LAVA3_FRAME_COUNT;
+  const mediumTran02Ready = mediumTran02FramesLoaded === MEDIUM_TRAN02_FRAME_COUNT;
+  const largeSpritesReady = largePlanetFramesLoaded === LARGE_PLANET_FRAME_COUNT;
+  const giantSpritesReady = giantPlanetFramesLoaded === GIANT_PLANET_FRAME_COUNT;
+
+  // Determine sprite type for this planet
+  let spriteType: 'moon' | 'ice' | 'moon2' | 'moon3' | 'home' | 'mediumDesert' | 'mediumLava' | 'mediumLava3' | 'mediumTran02' | 'large' | 'giant' | 'none' = 'none';
+  if (isHomePlanet && homeSpritesReady) {
+    spriteType = 'home';
+  } else if (planet.isMoon || isSmallPlanet) {
+    // Small planets alternate between 4 variants: moon, ice, moon2, moon3
+    const smallVariant = planet.id % 4;
+    if (smallVariant === 0 && moonSpritesReady) {
+      spriteType = 'moon';
+    } else if (smallVariant === 1 && iceSpritesReady) {
+      spriteType = 'ice';
+    } else if (smallVariant === 2 && moon2SpritesReady) {
+      spriteType = 'moon2';
+    } else if (moon3SpritesReady) {
+      spriteType = 'moon3';
+    } else if (moonSpritesReady) {
+      spriteType = 'moon';
+    }
+  } else if (isMediumPlanet) {
+    // Medium planets alternate between 5 variants: home, desert02, lava01, lava3, tran02
+    const mediumVariant = planet.id % 5;
+    if (mediumVariant === 0 && homeSpritesReady) {
+      spriteType = 'home';
+    } else if (mediumVariant === 1 && mediumDesertReady) {
+      spriteType = 'mediumDesert';
+    } else if (mediumVariant === 2 && mediumLavaReady) {
+      spriteType = 'mediumLava';
+    } else if (mediumVariant === 3 && mediumLava3Ready) {
+      spriteType = 'mediumLava3';
+    } else if (mediumTran02Ready) {
+      spriteType = 'mediumTran02';
+    } else if (homeSpritesReady) {
+      spriteType = 'home';
+    }
+  } else if (isLargePlanet && largeSpritesReady) {
+    spriteType = 'large';
+  } else if (isGiantPlanet && giantSpritesReady) {
+    spriteType = 'giant';
+  }
+
+  if (spriteType !== 'none') {
+    // Render planet using animated sprite frames with alpha blending
+    let frames: HTMLImageElement[];
+    let frameCount: number;
+    let frameDuration: number;
+
+    if (spriteType === 'moon') {
+      frames = moonFrames;
+      frameCount = MOON_FRAME_COUNT;
+      frameDuration = MOON_FRAME_DURATION;
+    } else if (spriteType === 'ice') {
+      frames = icePlanetFrames;
+      frameCount = ICE_PLANET_FRAME_COUNT;
+      frameDuration = ICE_PLANET_FRAME_DURATION;
+    } else if (spriteType === 'moon2') {
+      frames = moon2Frames;
+      frameCount = MOON2_FRAME_COUNT;
+      frameDuration = MOON2_FRAME_DURATION;
+    } else if (spriteType === 'moon3') {
+      frames = moon3Frames;
+      frameCount = MOON3_FRAME_COUNT;
+      frameDuration = MOON3_FRAME_DURATION;
+    } else if (spriteType === 'home') {
+      frames = homePlanetFrames;
+      frameCount = HOME_PLANET_FRAME_COUNT;
+      frameDuration = HOME_PLANET_FRAME_DURATION;
+    } else if (spriteType === 'mediumDesert') {
+      frames = mediumDesertFrames;
+      frameCount = MEDIUM_DESERT_FRAME_COUNT;
+      frameDuration = MEDIUM_DESERT_FRAME_DURATION;
+    } else if (spriteType === 'mediumLava') {
+      frames = mediumLavaFrames;
+      frameCount = MEDIUM_LAVA_FRAME_COUNT;
+      frameDuration = MEDIUM_LAVA_FRAME_DURATION;
+    } else if (spriteType === 'mediumLava3') {
+      frames = mediumLava3Frames;
+      frameCount = MEDIUM_LAVA3_FRAME_COUNT;
+      frameDuration = MEDIUM_LAVA3_FRAME_DURATION;
+    } else if (spriteType === 'mediumTran02') {
+      frames = mediumTran02Frames;
+      frameCount = MEDIUM_TRAN02_FRAME_COUNT;
+      frameDuration = MEDIUM_TRAN02_FRAME_DURATION;
+    } else if (spriteType === 'giant') {
+      // Giant planets alternate between 4 variants
+      const giantVariant = planet.id % 4;
+      if (giantVariant === 0 && giantPlanetFramesLoaded === GIANT_PLANET_FRAME_COUNT) {
+        frames = giantPlanetFrames;
+      } else if (giantVariant === 1 && giantPlanetFrames2Loaded === GIANT_PLANET_FRAME_COUNT) {
+        frames = giantPlanetFrames2;
+      } else if (giantVariant === 2 && giantPlanetFrames3Loaded === GIANT_PLANET_FRAME_COUNT) {
+        frames = giantPlanetFrames3;
+      } else if (giantPlanetFrames4Loaded === GIANT_PLANET_FRAME_COUNT) {
+        frames = giantPlanetFrames4;
+      } else {
+        frames = giantPlanetFrames;
+      }
+      frameCount = GIANT_PLANET_FRAME_COUNT;
+      frameDuration = GIANT_PLANET_FRAME_DURATION;
+    } else {
+      // Large planet - pick variant based on planet id (5 variants for variety)
+      const variant = planet.id % 5;
+      if (variant === 0 && largePlanetFramesLoaded === LARGE_PLANET_FRAME_COUNT) {
+        frames = largePlanetFrames;
+        frameCount = LARGE_PLANET_FRAME_COUNT;
+        frameDuration = LARGE_PLANET_FRAME_DURATION;
+      } else if (variant === 1 && largePlanetFrames2Loaded === LARGE_PLANET_FRAME_COUNT) {
+        frames = largePlanetFrames2;
+        frameCount = LARGE_PLANET_FRAME_COUNT;
+        frameDuration = LARGE_PLANET_FRAME_DURATION;
+      } else if (variant === 2 && largePlanetFrames3Loaded === LARGE_PLANET_FRAME_COUNT) {
+        frames = largePlanetFrames3;
+        frameCount = LARGE_PLANET_FRAME_COUNT;
+        frameDuration = LARGE_PLANET_FRAME_DURATION;
+      } else if (variant === 3 && largePlanetFrames4Loaded === LARGE_PLANET_FRAME_COUNT) {
+        frames = largePlanetFrames4;
+        frameCount = LARGE_PLANET_FRAME_COUNT;
+        frameDuration = LARGE_PLANET_FRAME_DURATION;
+      } else if (variant === 4 && largePlanetFrames5Loaded === DESERT_PLANET_FRAME_COUNT) {
+        frames = largePlanetFrames5;
+        frameCount = DESERT_PLANET_FRAME_COUNT;
+        frameDuration = LARGE_PLANET_FRAME_DURATION;
+      } else {
+        frames = largePlanetFrames; // fallback
+        frameCount = LARGE_PLANET_FRAME_COUNT;
+        frameDuration = LARGE_PLANET_FRAME_DURATION;
+      }
+    }
+
+    // Each planet has slightly different rotation speed for variety
+    const speedVariation = 0.7 + (planet.id % 7) * 0.1; // 0.7x to 1.3x speed
+    const adjustedDuration = frameDuration / speedVariation;
+
+    // All planets rotate
+    const frameIndex = Math.floor((performance.now() / adjustedDuration) % frameCount);
+    const frame = frames[frameIndex];
+
     if (frame && frame.complete) {
-      const spriteSize = screenRadius * 2.5; // Slightly larger to look impressive
+      const spriteSize = screenRadius * 2.2;
+      const drawX = screen.x - spriteSize / 2;
+      const drawY = screen.y - spriteSize / 2;
+
       ctx.save();
       ctx.imageSmoothingEnabled = false; // Keep pixel art crisp
-      ctx.drawImage(
-        frame,
-        screen.x - spriteSize / 2,
-        screen.y - spriteSize / 2,
-        spriteSize,
-        spriteSize
-      );
+      ctx.drawImage(frame, drawX, drawY, spriteSize, spriteSize);
       ctx.restore();
-
-      // Golden glow for home planet
-      ctx.beginPath();
-      ctx.arc(screen.x, screen.y, screenRadius * 1.15, 0, Math.PI * 2);
-      const glowPulse = 0.3 + Math.sin(performance.now() * 0.002) * 0.15;
-      ctx.strokeStyle = `rgba(255, 215, 0, ${glowPulse})`;
-      ctx.lineWidth = 3;
-      ctx.stroke();
     }
   } else {
-    // Regular circle planet
+    // Fallback: Regular circle planet (only if sprites not loaded)
     let bodyColor = isDiscovered ? planet.color : '#4a4a4a';
     if (planet.ownerId !== -1) {
       const player = players[planet.ownerId];
@@ -3660,8 +4287,10 @@ function renderPlanet(planet: Planet): void {
         ctx.fill();
       }
     }
+  }
 
-    // Planet outline
+  // Planet outline (skip for sprite planets)
+  if (spriteType === 'none') {
     ctx.beginPath();
     ctx.arc(screen.x, screen.y, screenRadius, 0, Math.PI * 2);
     ctx.strokeStyle = planet.ownerId !== -1 ? (players[planet.ownerId]?.colorDark || '#444') : '#444';
@@ -3669,8 +4298,9 @@ function renderPlanet(planet: Planet): void {
     ctx.stroke();
   }
 
-  // Disconnected indicator
-  if (planet.ownerId !== -1 && !planet.connected) {
+
+  // Disconnected indicator (skip for large sprite planets)
+  if (planet.ownerId !== -1 && !planet.connected && spriteType !== 'large') {
     ctx.beginPath();
     ctx.arc(screen.x, screen.y, screenRadius + 4, 0, Math.PI * 2);
     ctx.strokeStyle = '#ff000066';
@@ -3680,8 +4310,8 @@ function renderPlanet(planet: Planet): void {
     ctx.setLineDash([]);
   }
 
-  // Generator indicator (pulsing yellow-green glow for generating planets)
-  if (planet.ownerId === 0 && planet.generating && screenRadius > 6) {
+  // Generator indicator (skip for large sprite planets)
+  if (planet.ownerId === 0 && planet.generating && screenRadius > 6 && spriteType !== 'large') {
     const pulse = 0.4 + Math.sin(planet.pulsePhase + performance.now() * 0.003) * 0.3;
     ctx.beginPath();
     ctx.arc(screen.x, screen.y, screenRadius + 3, 0, Math.PI * 2);
@@ -3690,39 +4320,66 @@ function renderPlanet(planet: Planet): void {
     ctx.stroke();
   }
 
-  // Units number (fog of war: hide enemy unit counts if not visible)
+  // Units number - on all planets (thin and bright font)
   if (screenRadius > 8 && planet.units > 0) {
     const showUnits = visible || planet.ownerId === 0;
     if (showUnits) {
-      const fontSize = Math.max(8, Math.min(16, screenRadius * 0.5));
-      ctx.font = `bold ${fontSize}px "Press Start 2P"`;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+
+      // Thinner font - use Arial or sans-serif instead of pixel font
+      const fontSize = Math.max(13, Math.min(17, screenRadius * 0.5));
+      ctx.font = `${fontSize}px Arial, sans-serif`;
+
+      // Cap display at 99 for very small planets
+      const isVerySmall = planet.size === PlanetSize.ASTEROID || planet.size === PlanetSize.TINY;
+      const rawUnits = isVerySmall ? Math.min(99, Math.floor(planet.units)) : Math.floor(planet.units);
+      let unitsText: string;
+      if (rawUnits >= 1000) {
+        const k = rawUnits / 1000;
+        if (k === Math.floor(k)) {
+          unitsText = `${Math.floor(k)}k`;
+        } else {
+          unitsText = `${k.toFixed(1)}k`;
+        }
+      } else {
+        unitsText = rawUnits.toString();
+      }
+
+      // All white color
+      const textColor = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#fff';
-      ctx.shadowColor = '#000';
-      ctx.shadowBlur = 3;
-      const unitsY = screen.y;
-      ctx.fillText(Math.floor(planet.units).toString(), screen.x, unitsY);
-      ctx.shadowBlur = 0;
+
+      // Black outline for visibility on any background
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(unitsText, Math.round(screen.x), Math.round(screen.y));
+
+      // Main text - bright
+      ctx.fillStyle = textColor;
+      ctx.fillText(unitsText, Math.round(screen.x), Math.round(screen.y));
+
+      ctx.restore();
     } else {
-      // Show "?" for hidden enemies
       const fontSize = Math.max(8, Math.min(14, screenRadius * 0.4));
-      ctx.font = `bold ${fontSize}px "Press Start 2P"`;
+      ctx.font = `${fontSize}px Arial, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#666';
+      ctx.fillStyle = '#888';
       ctx.fillText('?', screen.x, screen.y);
     }
   }
 
 
-  // Size label
-  if (screenRadius > 30 && (planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT)) {
-    ctx.font = '10px "Press Start 2P"';
-    ctx.fillStyle = '#ffffff66';
-    ctx.textAlign = 'center';
-    ctx.fillText(planet.size.toUpperCase(), screen.x, screen.y + screenRadius * 0.5);
-  }
+  // Size label - DISABLED
+  // if (screenRadius > 30 && (planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT)) {
+  //   ctx.font = '10px "Press Start 2P"';
+  //   ctx.fillStyle = '#ffffff66';
+  //   ctx.textAlign = 'center';
+  //   ctx.fillText(planet.size.toUpperCase(), screen.x, screen.y + screenRadius * 0.5);
+  // }
 
   // Mode indicator (SCOUT label, BOOST uses green ring)
   if (planet.ownerId === 0 && modePlanetId === planet.id) {
@@ -3732,6 +4389,46 @@ function renderPlanet(planet: Planet): void {
       ctx.textBaseline = 'bottom';
       ctx.fillStyle = '#66ccff';
       ctx.fillText('SCOUT MODE', Math.round(screen.x), Math.round(screen.y - screenRadius - 6));
+    }
+  }
+
+  // === PLAYER OWNED PLANET EFFECTS (AFTER PLANET) ===
+  if (isPlayerPlanet && visible) {
+    const time = performance.now() / 1000;
+
+    // Effect: Energy shield bubble (energijos skydas)
+    const shieldRadius = screenRadius * 1.15;
+    const shieldPulse = 0.15 + Math.sin(time * 3 + planet.id) * 0.05;
+
+    // Shield outer ring
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, shieldRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(100, 255, 150, ${shieldPulse})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Shield inner glow ring
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, shieldRadius - 2, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(150, 255, 200, ${shieldPulse * 0.5})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Hexagonal pattern hint (pixel art style shield segments)
+    const segmentCount = 6;
+    for (let i = 0; i < segmentCount; i++) {
+      const segAngle = (i / segmentCount) * Math.PI * 2 + time * 0.5;
+      const segX1 = screen.x + Math.cos(segAngle) * shieldRadius;
+      const segY1 = screen.y + Math.sin(segAngle) * shieldRadius;
+      const segX2 = screen.x + Math.cos(segAngle) * (shieldRadius - 6);
+      const segY2 = screen.y + Math.sin(segAngle) * (shieldRadius - 6);
+
+      ctx.beginPath();
+      ctx.moveTo(segX1, segY1);
+      ctx.lineTo(segX2, segY2);
+      ctx.strokeStyle = `rgba(100, 255, 150, ${shieldPulse * 0.8})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
   }
 
@@ -5535,9 +6232,16 @@ function render(): void {
   ctx.fillStyle = '#050510';
   ctx.fillRect(0, 0, gameWidth, gameHeight);
 
+  // Render space background
+  if (spaceBackgroundLoaded) {
+    ctx.drawImage(spaceBackground, 0, 0, gameWidth, gameHeight);
+  }
+
   ctx.save();
 
   renderStars();
+  renderAnimStars();
+  renderComets();
   renderSupplyLines();
 
   // Moon orbit rings
@@ -5569,32 +6273,215 @@ function render(): void {
     renderPlanet(planet);
   }
 
-  // Selection rings (multi-select)
+  // Own planet rings - blue ring on player's planets (thin normally, thick on hover)
+  for (const planet of planets) {
+    if (planet.ownerId !== 0) continue; // Only player's planets
+    if (selectedPlanets.has(planet.id)) continue; // Skip if selected (will draw selection ring instead)
+
+    const screen = worldToScreen(planet.x, planet.y);
+    const r = planet.radius * camera.zoom;
+    const isLargePlus = planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT ||
+                        planet.size === PlanetSize.MEGA || planet.size === PlanetSize.TITAN ||
+                        planet.size === PlanetSize.COLOSSUS;
+    const ringRadius = isLargePlus ? (r * 1.1 + 10) : (r + 6);
+
+    // Check if hovered
+    const isHovered = hoveredPlanet === planet.id;
+
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, ringRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = players[0]?.color || '#4488ff';
+    ctx.lineWidth = isHovered ? 5 : 2; // Thick on hover, thin normally
+    ctx.stroke();
+  }
+
+  // Selection rings (multi-select) - with one-time flash for own planets
+  const now = performance.now();
+  const FLASH_DURATION = 300; // ms
   for (const id of selectedPlanets) {
     const planet = planetMap.get(id);
     if (planet) {
       const screen = worldToScreen(planet.x, planet.y);
       const r = planet.radius * camera.zoom;
+      // Calculate ring radius based on sprite type
+      const isLargePlus = planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT ||
+                          planet.size === PlanetSize.MEGA || planet.size === PlanetSize.TITAN ||
+                          planet.size === PlanetSize.COLOSSUS;
+      const ringRadius = isLargePlus ? (r * 1.1 + 10) : (r + 6);
+
       ctx.beginPath();
-      ctx.arc(screen.x, screen.y, r + 6, 0, Math.PI * 2);
+      ctx.arc(screen.x, screen.y, ringRadius, 0, Math.PI * 2);
       const isBoost = planetMode === 'boost' && modePlanetId === planet.id;
-      ctx.strokeStyle = isBoost ? '#00ff66' : (planet.ownerId === 0 ? '#ffffff' : '#ffffff88');
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = isBoost ? '#00ff66' : (planet.ownerId !== -1 ? (players[planet.ownerId]?.color || '#FFD700') : '#FFD700');
+
+      // One-time flash effect for own planets when just selected
+      if (planet.ownerId === 0) {
+        const selectTime = planetSelectTime.get(planet.id) || 0;
+        const elapsed = now - selectTime;
+        if (elapsed < FLASH_DURATION) {
+          // Flash: bright -> normal (1.0 -> 0.3 -> 1.0)
+          const progress = elapsed / FLASH_DURATION;
+          const flash = progress < 0.5
+            ? 1.0 - progress * 1.4  // 1.0 -> 0.3
+            : 0.3 + (progress - 0.5) * 1.4; // 0.3 -> 1.0
+          ctx.globalAlpha = flash;
+        }
+        ctx.lineWidth = 5;
+      } else {
+        ctx.lineWidth = 3;
+      }
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }
 
-  // Hover ring (only for visible planets)
+  // Hover ring (only for visible planets, not selected) - yellow, thin
   if (hoveredPlanet !== null && !selectedPlanets.has(hoveredPlanet)) {
     const planet = planetMap.get(hoveredPlanet);
     if (planet && (planet.ownerId === 0 || isVisibleToPlayer(planet))) {
       const screen = worldToScreen(planet.x, planet.y);
       const r = planet.radius * camera.zoom;
+      // Calculate ring radius based on sprite type
+      const isLargePlus = planet.size === PlanetSize.LARGE || planet.size === PlanetSize.GIANT ||
+                          planet.size === PlanetSize.MEGA || planet.size === PlanetSize.TITAN ||
+                          planet.size === PlanetSize.COLOSSUS;
+      const ringRadius = isLargePlus ? (r * 1.1 + 10) : (r + 4);
+
       ctx.beginPath();
-      ctx.arc(screen.x, screen.y, r + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ffffff44';
-      ctx.lineWidth = 1;
+      ctx.arc(screen.x, screen.y, ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = planet.ownerId !== -1 ? (players[planet.ownerId]?.color || '#FFD700') : '#FFD700';
+      ctx.lineWidth = 1; // Thin when just hovered
       ctx.stroke();
+
+      // Pixel art hover popup - DISABLED FOR NOW
+      /*
+      const popupWidth = 100;
+      const popupHeight = 60;
+      const popupOffsetX = ringRadius + 20;
+      const popupOffsetY = -ringRadius - 30;
+      const popupX = screen.x + popupOffsetX;
+      const popupY = screen.y + popupOffsetY;
+
+      // Animation timing
+      const animTime = performance.now() - hoverStartTime;
+      const lineAnimDuration = 200; // Line draws in 200ms
+      const panelAnimDuration = 150; // Panel appears in 150ms
+      const lineProgress = Math.min(1, animTime / lineAnimDuration);
+      const panelProgress = Math.max(0, Math.min(1, (animTime - lineAnimDuration) / panelAnimDuration));
+
+      // Easing function for smooth animation
+      const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+      const easedLineProgress = easeOut(lineProgress);
+      const easedPanelProgress = easeOut(panelProgress);
+
+      // Animated border pulse (only after panel is visible)
+      const pulseTime = performance.now() / 500;
+      const pulseFactor = 0.5 + Math.sin(pulseTime) * 0.5;
+
+      // Connection line points
+      const lineStartX = screen.x + ringRadius * 0.7;
+      const lineStartY = screen.y - ringRadius * 0.7;
+      const lineMidX = lineStartX + (popupX - lineStartX) * 0.5;
+      const lineMidY = lineStartY;
+      const lineEndX = popupX;
+      const lineEndY = popupY + popupHeight / 2;
+
+      // Draw animated line (pixel art style - stepped)
+      if (lineProgress > 0) {
+        ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + pulseFactor * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(lineStartX, lineStartY);
+
+        if (easedLineProgress < 0.5) {
+          // First half: draw to mid point
+          const p = easedLineProgress * 2;
+          const currentX = lineStartX + (lineMidX - lineStartX) * p;
+          const currentY = lineStartY + (lineMidY - lineStartY) * p;
+          ctx.lineTo(currentX, currentY);
+        } else {
+          // Second half: draw to end point
+          ctx.lineTo(lineMidX, lineMidY);
+          const p = (easedLineProgress - 0.5) * 2;
+          const currentX = lineMidX + (lineEndX - lineMidX) * p;
+          const currentY = lineMidY + (lineEndY - lineMidY) * p;
+          ctx.lineTo(currentX, currentY);
+        }
+        ctx.stroke();
+      }
+
+      // Draw panel only after line is complete
+      if (panelProgress > 0) {
+        ctx.save();
+
+        // Scale animation from center
+        const scale = easedPanelProgress;
+        const centerX = popupX + popupWidth / 2;
+        const centerY = popupY + popupHeight / 2;
+        ctx.translate(centerX, centerY);
+        ctx.scale(scale, scale);
+        ctx.translate(-centerX, -centerY);
+
+        ctx.globalAlpha = easedPanelProgress;
+
+        // Popup background (dark with pixel border)
+        ctx.fillStyle = 'rgba(10, 10, 30, 0.9)';
+        ctx.fillRect(popupX, popupY, popupWidth, popupHeight);
+
+        // Pixel art border (animated glow)
+        const borderColor = `rgba(255, 215, 0, ${0.7 + pulseFactor * 0.3})`;
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(popupX, popupY, popupWidth, popupHeight);
+
+        // Inner border (pixel art double border effect)
+        ctx.strokeStyle = 'rgba(255, 180, 0, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(popupX + 3, popupY + 3, popupWidth - 6, popupHeight - 6);
+
+        // Corner decorations (pixel art style)
+        ctx.fillStyle = borderColor;
+        ctx.fillRect(popupX - 2, popupY - 2, 6, 6);
+        ctx.fillRect(popupX + popupWidth - 4, popupY - 2, 6, 6);
+        ctx.fillRect(popupX - 2, popupY + popupHeight - 4, 6, 6);
+        ctx.fillRect(popupX + popupWidth - 4, popupY + popupHeight - 4, 6, 6);
+
+        // Planet info text
+        ctx.font = '10px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const lineHeight = 14;
+        const startY = popupY + 12;
+
+        // Line 1: Size
+        const sizeText = planet.size.toUpperCase();
+        ctx.fillStyle = '#000';
+        ctx.fillText(sizeText, popupX + popupWidth / 2 + 1, startY + 1);
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(sizeText, popupX + popupWidth / 2, startY);
+
+        // Line 2: Max units
+        const maxText = `MAX: ${planet.maxUnits}`;
+        ctx.fillStyle = '#000';
+        ctx.fillText(maxText, popupX + popupWidth / 2 + 1, startY + lineHeight + 1);
+        ctx.fillStyle = '#88ccff';
+        ctx.fillText(maxText, popupX + popupWidth / 2, startY + lineHeight);
+
+        // Line 3: Owner
+        const ownerText = planet.ownerId === 0 ? 'YOU' : (planet.ownerId === -1 ? 'NEUTRAL' : 'UNKNOWN');
+        const ownerColor = planet.ownerId === 0 ? '#66ff66' : (planet.ownerId === -1 ? '#888888' : '#ff6666');
+        ctx.fillStyle = '#000';
+        ctx.fillText(ownerText, popupX + popupWidth / 2 + 1, startY + lineHeight * 2 + 1);
+        ctx.fillStyle = ownerColor;
+        ctx.fillText(ownerText, popupX + popupWidth / 2, startY + lineHeight * 2);
+
+        ctx.restore();
+      }
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      */
     }
   }
 
@@ -5653,8 +6540,8 @@ function updateMoons(dt: number): void {
     const parent = planetMap.get(moon.parentId);
     if (!parent) continue;
 
-    moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.4) * dt;
-    const orbitR = moon.orbitRadius || (parent.radius + 40);
+    moon.orbitAngle = (moon.orbitAngle || 0) + (moon.orbitSpeed || 0.1) * dt;
+    const orbitR = moon.orbitRadius || (parent.radius + 90);
     moon.x = parent.x + Math.cos(moon.orbitAngle) * orbitR;
     moon.y = parent.y + Math.sin(moon.orbitAngle) * orbitR;
   }
