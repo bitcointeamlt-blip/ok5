@@ -3335,7 +3335,7 @@ canvas.addEventListener('wheel', (e) => {
   const worldBefore = screenToWorld(pos.x, pos.y);
 
   const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-  camera.targetZoom = Math.max(0.04, Math.min(3.0, camera.targetZoom * zoomFactor));
+  camera.targetZoom = Math.max(0.08, Math.min(3.0, camera.targetZoom * zoomFactor));
   camera.zoom = camera.targetZoom;
 
   const worldAfter = screenToWorld(pos.x, pos.y);
@@ -3555,7 +3555,7 @@ canvas.addEventListener('touchmove', (e) => {
     isPinching = true;
     const newDist = getTouchDistance(e.touches[0], e.touches[1]);
     const scale = newDist / pinchStartDist;
-    camera.targetZoom = Math.max(0.04, Math.min(3.0, pinchStartZoom * scale));
+    camera.targetZoom = Math.max(0.08, Math.min(3.0, pinchStartZoom * scale));
     camera.zoom = camera.targetZoom;
 
     // Pan with two fingers
