@@ -4449,11 +4449,11 @@ function renderPlanet(planet: Planet): void {
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
-    ctx.strokeText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 23));
+    ctx.strokeText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 18));
 
     // Softer green text
     ctx.fillStyle = '#88cc99';
-    ctx.fillText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 23));
+    ctx.fillText('YOU', Math.round(screen.x), Math.round(screen.y - screenRadius - 18));
     ctx.restore();
   }
 
