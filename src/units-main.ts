@@ -2752,6 +2752,16 @@ function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   };
 }
 
+// Clamp camera to world bounds to prevent lag from scrolling too far
+function clampCamera(): void {
+  const minX = -gameWidth;
+  const minY = -gameHeight;
+  const maxX = WORLD_SIZE * camera.zoom;
+  const maxY = WORLD_SIZE * camera.zoom;
+  camera.x = Math.max(minX, Math.min(maxX, camera.x));
+  camera.y = Math.max(minY, Math.min(maxY, camera.y));
+}
+
 function getPlanetAtScreen(sx: number, sy: number): Planet | null {
   const world = screenToWorld(sx, sy);
   // On mobile, increase touch target (minimum 30px for finger tap)
@@ -3215,6 +3225,7 @@ canvas.addEventListener('mousemove', (e) => {
     const deltaY = pos.y - camera.dragStartY;
     camera.x = camera.dragCamStartX - deltaX;
     camera.y = camera.dragCamStartY - deltaY;
+    clampCamera();
     // Update parallax offset (only on drag, not zoom)
     parallaxOffsetX -= deltaX * 0.01;
     parallaxOffsetY -= deltaY * 0.01;
@@ -3299,6 +3310,7 @@ canvas.addEventListener('wheel', (e) => {
   const worldAfter = screenToWorld(pos.x, pos.y);
   camera.x += (worldBefore.x - worldAfter.x) * camera.zoom;
   camera.y += (worldBefore.y - worldAfter.y) * camera.zoom;
+  clampCamera();
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -3522,6 +3534,7 @@ canvas.addEventListener('touchmove', (e) => {
     const centerY = (p1.y + p2.y) / 2;
     camera.x = camera.dragCamStartX - (centerX - camera.dragStartX);
     camera.y = camera.dragCamStartY - (centerY - camera.dragStartY);
+    clampCamera();
     return;
   }
 
@@ -3555,6 +3568,7 @@ canvas.addEventListener('touchmove', (e) => {
     const deltaY = pos.y - camera.dragStartY;
     camera.x = camera.dragCamStartX - deltaX;
     camera.y = camera.dragCamStartY - deltaY;
+    clampCamera();
     // Update parallax offset (only on drag, not zoom)
     parallaxOffsetX -= deltaX * 0.01;
     parallaxOffsetY -= deltaY * 0.01;
@@ -6702,6 +6716,7 @@ function update(dt: number): void {
     const JOYSTICK_CAMERA_SPEED = 800; // pixels per second
     camera.x += joystickX * JOYSTICK_CAMERA_SPEED * dt;
     camera.y += joystickY * JOYSTICK_CAMERA_SPEED * dt;
+    clampCamera();
   }
 
   gameTime += dt * 1000;
