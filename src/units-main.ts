@@ -2304,8 +2304,8 @@ function resolveBattle(battle: Battle): void {
     to.connected = false;
     to.shieldTimer = 0;
     to.hasShield = false;
-    // Assign random sprite type on capture by player
-    if (battle.attackPlayerId === 0) {
+    // Assign random sprite type on capture by controlled player
+    if (battle.attackPlayerId === controlledPlayerId) {
       discoveredPlanets.add(battle.planetId);
       if (!to.spriteType) {
         to.spriteType = Math.random() < 0.5 ? 'mars' : 'ice';
@@ -2320,14 +2320,26 @@ function resolveBattle(battle: Battle): void {
     if (previousOwner !== -1) {
       enforceGeneratorSlots(previousOwner);
     }
-    // Capture particles
+    // Capture particles + floating text
     spawnParticles(toScreen.x, toScreen.y, players[battle.attackPlayerId]?.color || '#fff', 20, 150);
+    clickAnims.push({
+      x: toScreen.x, y: toScreen.y - to.radius * camera.zoom - 20,
+      vx: 0, vy: -2,
+      life: 120, maxLife: 120,
+      text: `CAPTURED! ${to.units}`, color: players[battle.attackPlayerId]?.color || '#44ff44'
+    });
     // Save after planet capture
     forceSaveUnitsGame();
   } else {
     const prevOwner = to.ownerId;
     to.units = Math.max(0, Math.floor((defenseStrength - battle.attackUnits) / defenseMultiplier));
     spawnParticles(toScreen.x, toScreen.y, '#ff6644', 10, 100);
+    clickAnims.push({
+      x: toScreen.x, y: toScreen.y - to.radius * camera.zoom - 20,
+      vx: 0, vy: -2,
+      life: 90, maxLife: 90,
+      text: `DEFENDED ${to.units}`, color: '#ff6644'
+    });
     if (to.units <= 0) {
       to.ownerId = -1;
       to.generating = false;
@@ -4254,20 +4266,18 @@ canvas.addEventListener('touchend', (e) => {
     const planet = getPlanetAtScreen(pos.x, pos.y);
     if (planet) {
       if (planet.ownerId === controlledPlayerId) {
-        // BOOST mode: +1 unit per tap
+        // BOOST mode: +1 unit per tap (always works, no capacity limit)
         if (planetMode === 'boost' && modePlanetId === planet.id) {
-          if (planet.units < planet.maxUnits) {
-            planet.units = Math.floor(planet.units) + 1;
-            const screen = worldToScreen(planet.x, planet.y);
-            clickAnims.push({
-              x: screen.x + (Math.random() - 0.5) * 20,
-              y: screen.y - planet.radius * camera.zoom - 10,
-              vx: (Math.random() - 0.5) * 2,
-              vy: -2 - Math.random(),
-              life: 60,
-              maxLife: 60
-            });
-          }
+          planet.units = Math.floor(planet.units) + 1;
+          const screen = worldToScreen(planet.x, planet.y);
+          clickAnims.push({
+            x: screen.x + (Math.random() - 0.5) * 20,
+            y: screen.y - planet.radius * camera.zoom - 10,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -2 - Math.random(),
+            life: 60,
+            maxLife: 60
+          });
           return;
         }
 
@@ -7932,12 +7942,24 @@ function connectToMultiplayer(): void {
         const screen = worldToScreen(planet.x, planet.y);
         if (event.won) {
           spawnParticles(screen.x, screen.y, players[event.attackPlayerId]?.color || '#fff', 20, 150);
+          clickAnims.push({
+            x: screen.x, y: screen.y - planet.radius * camera.zoom - 20,
+            vx: 0, vy: -2,
+            life: 120, maxLife: 120,
+            text: `CAPTURED! ${event.remainingUnits}`, color: players[event.attackPlayerId]?.color || '#44ff44'
+          });
           // Discover planet if we captured it
           if (event.attackPlayerId === controlledPlayerId) {
             discoveredPlanets.add(event.planetId);
           }
         } else {
           spawnParticles(screen.x, screen.y, '#ff6644', 10, 100);
+          clickAnims.push({
+            x: screen.x, y: screen.y - planet.radius * camera.zoom - 20,
+            vx: 0, vy: -2,
+            life: 90, maxLife: 90,
+            text: `DEFENDED ${event.remainingUnits}`, color: '#ff6644'
+          });
         }
       }
     },
@@ -7993,6 +8015,9 @@ function connectToMultiplayer(): void {
     if (!success) {
       console.log('[MP] Failed to connect, playing offline');
       multiplayerConnected = false;
+      networkService = null;
+      // Load saved game now that we know we're offline
+      loadUnitsGame();
     }
   });
 }
