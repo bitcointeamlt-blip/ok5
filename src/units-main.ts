@@ -30,8 +30,12 @@ let multiplayerConnected = false;
 let multiplayerSeed = 0;
 let myPlayerId = -1;
 let serverGameTime = 0;
-// Server URL (same host in dev, configurable for prod)
-const COLYSEUS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.hostname + ':2567';
+// Server URL - use VITE_COLYSEUS_ENDPOINT (same as PvP), fallback to same-host:2567 for dev
+const COLYSEUS_URL = (() => {
+  const env = (import.meta as any).env?.VITE_COLYSEUS_ENDPOINT;
+  if (env) return env.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
+  return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.hostname + ':2567';
+})();
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
