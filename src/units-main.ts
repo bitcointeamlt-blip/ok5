@@ -3624,7 +3624,7 @@ canvas.addEventListener('mousedown', (e) => {
       // Boost mode: +1 unit per click
       if (planetMode === 'boost' && modePlanetId === planet.id) {
         if (planet.units < planet.maxUnits) {
-          planet.units += 1;
+          planet.units = Math.floor(planet.units) + 1;
           const screen = worldToScreen(planet.x, planet.y);
           clickAnims.push({
             x: screen.x + (Math.random() - 0.5) * 20,
@@ -4189,7 +4189,7 @@ canvas.addEventListener('touchend', (e) => {
         // BOOST mode: +1 unit per tap
         if (planetMode === 'boost' && modePlanetId === planet.id) {
           if (planet.units < planet.maxUnits) {
-            planet.units += 1;
+            planet.units = Math.floor(planet.units) + 1;
             const screen = worldToScreen(planet.x, planet.y);
             clickAnims.push({
               x: screen.x + (Math.random() - 0.5) * 20,
