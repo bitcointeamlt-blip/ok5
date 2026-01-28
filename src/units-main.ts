@@ -1937,17 +1937,20 @@ function initGame(): void {
   lastAITick = 0;
   abilities.forEach(a => a.lastUsed = -99999);
 
-  // Add permanent reveal zone around both players' starting positions
-  for (const player of players) {
-    const home = planetMap.get(player.homeId);
-    if (home) {
-      revealZones.push({
-        x: home.x,
-        y: home.y,
-        radius: 1500,
-        timeLeft: 0,
-        permanent: true
-      });
+  // Add permanent reveal zone around players' starting positions (OFFLINE ONLY)
+  // In multiplayer, fog of war is based purely on owned planets' vision ranges.
+  if (!multiplayerConnected) {
+    for (const player of players) {
+      const home = planetMap.get(player.homeId);
+      if (home) {
+        revealZones.push({
+          x: home.x,
+          y: home.y,
+          radius: 1500,
+          timeLeft: 0,
+          permanent: true
+        });
+      }
     }
   }
 
@@ -8035,20 +8038,9 @@ function applyPlayersFromServer(allPlayers: Map<number, any>): void {
     }
   });
 
-  // Set reveal zones for our player's home
+  // In multiplayer: NO permanent reveal zones - fog of war is based purely on owned planets' vision.
+  // Players must discover each other through gameplay.
   revealZones = revealZones.filter(z => !z.permanent);
-  const me = players[controlledPlayerId];
-  if (me) {
-    const home = planetMap.get(me.homeId);
-    if (home) {
-      revealZones.push({
-        x: home.x, y: home.y,
-        radius: 1500,
-        timeLeft: 0,
-        permanent: true,
-      });
-    }
-  }
 
   // Discover our planets
   for (const p of planets) {

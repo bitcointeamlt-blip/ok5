@@ -26,7 +26,20 @@ export class UnitsRoom extends Room<UnitsState> {
     this.maxClients = MAX_PLAYERS;
 
     this.galaxyId = options.galaxyId || "default";
-    this.seed = options.seed || (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
+
+    // Deterministic seed from galaxyId so same galaxy = same map always.
+    // If a saved galaxy exists, its seed is used via applySaveToLogic.
+    // Otherwise, hash the galaxyId string into a stable seed.
+    if (options.seed) {
+      this.seed = options.seed;
+    } else {
+      let h = 0x811c9dc5; // FNV-1a
+      for (let i = 0; i < this.galaxyId.length; i++) {
+        h ^= this.galaxyId.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+      }
+      this.seed = h >>> 0;
+    }
 
     // Create state
     const state = new UnitsState();

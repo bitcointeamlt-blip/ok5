@@ -297,21 +297,28 @@ export function pickStartingPlanet<T extends PickablePlanet>(
   existingHomeIds: number[],
   rng: SeededRNG,
 ): T | null {
-  const MIN_DISTANCE_FROM_OTHERS = 2000;
+  // Players start in the OUTER RING (far from sun) so the goal is to conquer toward center.
+  // Players are placed as NEIGHBORS (~1500-2500px apart) so they can discover each other
+  // through fog of war during gameplay. SMALL vision=900px, MEDIUM vision=1200px,
+  // so at ~1500px apart they won't see each other immediately.
+  const MIN_SUN_DISTANCE = 12000;       // Must be far from sun (sun at 20000,20000)
+  const NEIGHBOR_MIN_DIST = 1500;       // Too close = instant visibility
+  const NEIGHBOR_MAX_DIST = 3000;       // Too far = never find each other
+  const MIN_DISTANCE_FROM_OTHERS = 1200; // Absolute minimum between homes
 
   // Collect positions of existing homes
   const homePositions = existingHomeIds
     .map(hid => planets.find(p => p.id === hid))
     .filter((p): p is T => !!p);
 
-  // Candidates: SMALL or MEDIUM, not owned, not moon, not sun/blackhole
-  const candidates = planets.filter(p => {
+  // Base filter: SMALL or MEDIUM, unowned, not moon/sun/blackhole
+  const baseCandidates = planets.filter(p => {
     if (p.ownerId !== -1) return false;
     if (p.isMoon) return false;
     if (p.isBlackHole) return false;
     if (p.radius === SUN_RADIUS) return false;
     if (p.size !== PlanetSize.SMALL && p.size !== PlanetSize.MEDIUM) return false;
-    // Must be far enough from other homes
+    // Not too close to any existing home
     for (const home of homePositions) {
       const dist = Math.sqrt((p.x - home.x) ** 2 + (p.y - home.y) ** 2);
       if (dist < MIN_DISTANCE_FROM_OTHERS) return false;
@@ -319,12 +326,76 @@ export function pickStartingPlanet<T extends PickablePlanet>(
     return true;
   });
 
-  if (candidates.length === 0) {
+  if (baseCandidates.length === 0) {
     // Fallback: any unowned non-moon
     const fallback = planets.filter(p => p.ownerId === -1 && !p.isMoon && !p.isBlackHole && p.radius !== SUN_RADIUS);
     if (fallback.length === 0) return null;
     return fallback[rng.int(0, fallback.length - 1)];
   }
 
-  return candidates[rng.int(0, candidates.length - 1)];
+  // First player: pick from outer ring (far from sun), prefer farthest
+  if (homePositions.length === 0) {
+    const outerCandidates = baseCandidates.filter(p => {
+      const sunDist = Math.sqrt((p.x - SUN_X) ** 2 + (p.y - SUN_Y) ** 2);
+      return sunDist >= MIN_SUN_DISTANCE;
+    });
+
+    if (outerCandidates.length > 0) {
+      // Sort by distance from sun (farthest first) and pick from top candidates
+      outerCandidates.sort((a, b) => {
+        const distA = Math.sqrt((a.x - SUN_X) ** 2 + (a.y - SUN_Y) ** 2);
+        const distB = Math.sqrt((b.x - SUN_X) ** 2 + (b.y - SUN_Y) ** 2);
+        return distB - distA;
+      });
+      // Pick randomly from the top 20% farthest candidates
+      const topCount = Math.max(1, Math.floor(outerCandidates.length * 0.2));
+      return outerCandidates[rng.int(0, topCount - 1)];
+    }
+
+    // No outer ring planets, just pick farthest from sun
+    baseCandidates.sort((a, b) => {
+      const distA = Math.sqrt((a.x - SUN_X) ** 2 + (a.y - SUN_Y) ** 2);
+      const distB = Math.sqrt((b.x - SUN_X) ** 2 + (b.y - SUN_Y) ** 2);
+      return distB - distA;
+    });
+    return baseCandidates[0];
+  }
+
+  // Subsequent players: place as NEIGHBORS - near existing homes but hidden by fog
+  // Score candidates by: close to an existing home (neighbor distance) + far from sun
+  const scored = baseCandidates.map(p => {
+    const sunDist = Math.sqrt((p.x - SUN_X) ** 2 + (p.y - SUN_Y) ** 2);
+
+    // Find closest existing home
+    let closestHomeDist = Infinity;
+    for (const home of homePositions) {
+      const dist = Math.sqrt((p.x - home.x) ** 2 + (p.y - home.y) ** 2);
+      if (dist < closestHomeDist) closestHomeDist = dist;
+    }
+
+    // Neighbor score: best when closestHomeDist is in [NEIGHBOR_MIN_DIST, NEIGHBOR_MAX_DIST]
+    let neighborScore = 0;
+    if (closestHomeDist >= NEIGHBOR_MIN_DIST && closestHomeDist <= NEIGHBOR_MAX_DIST) {
+      // Perfect range - higher score for being in the sweet spot
+      neighborScore = 100;
+    } else if (closestHomeDist < NEIGHBOR_MIN_DIST) {
+      // Too close (would be visible immediately)
+      neighborScore = (closestHomeDist / NEIGHBOR_MIN_DIST) * 50;
+    } else {
+      // Too far (would never find each other)
+      neighborScore = Math.max(0, 80 - (closestHomeDist - NEIGHBOR_MAX_DIST) / 100);
+    }
+
+    // Sun distance score: prefer outer ring
+    const sunScore = sunDist >= MIN_SUN_DISTANCE ? 50 : (sunDist / MIN_SUN_DISTANCE) * 30;
+
+    return { planet: p, score: neighborScore + sunScore };
+  });
+
+  // Sort by score (highest first)
+  scored.sort((a, b) => b.score - a.score);
+
+  // Pick randomly from top candidates
+  const topCount = Math.max(1, Math.min(10, Math.floor(scored.length * 0.1)));
+  return scored[rng.int(0, topCount - 1)].planet;
 }
