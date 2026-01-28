@@ -1168,16 +1168,56 @@ let activeAbility: string | null = null; // currently activated ability waiting 
 
 // Player colors
 const PLAYER_COLORS = [
-  { color: '#4488ff', dark: '#2255aa' },  // Blue
-  { color: '#ff4444', dark: '#aa2222' },  // Red
-  { color: '#44cc44', dark: '#228822' },  // Green
-  { color: '#ffaa00', dark: '#aa7700' },  // Gold
-  { color: '#cc44cc', dark: '#882288' },  // Purple
-  { color: '#44cccc', dark: '#228888' },  // Cyan
-  { color: '#ff8844', dark: '#aa5522' },  // Orange
-  { color: '#88ff44', dark: '#55aa22' },  // Lime
-  { color: '#ff44aa', dark: '#aa2277' },  // Pink
-  { color: '#aaaaff', dark: '#6666aa' },  // Lavender
+  { color: '#4488ff', dark: '#2255aa' },  // 1  Blue
+  { color: '#ff4444', dark: '#aa2222' },  // 2  Red
+  { color: '#44cc44', dark: '#228822' },  // 3  Green
+  { color: '#ffaa00', dark: '#aa7700' },  // 4  Gold
+  { color: '#cc44cc', dark: '#882288' },  // 5  Purple
+  { color: '#44cccc', dark: '#228888' },  // 6  Cyan
+  { color: '#ff8844', dark: '#aa5522' },  // 7  Orange
+  { color: '#88ff44', dark: '#55aa22' },  // 8  Lime
+  { color: '#ff44aa', dark: '#aa2277' },  // 9  Pink
+  { color: '#aaaaff', dark: '#6666aa' },  // 10 Lavender
+  { color: '#ffff44', dark: '#aaaa22' },  // 11 Yellow
+  { color: '#44ff88', dark: '#22aa55' },  // 12 Mint
+  { color: '#ff6688', dark: '#aa3355' },  // 13 Rose
+  { color: '#88ccff', dark: '#5588aa' },  // 14 Sky
+  { color: '#cc8844', dark: '#885522' },  // 15 Brown
+  { color: '#aa44ff', dark: '#7722aa' },  // 16 Violet
+  { color: '#44ffcc', dark: '#22aa88' },  // 17 Aqua
+  { color: '#ff4488', dark: '#aa2255' },  // 18 Magenta
+  { color: '#ccff44', dark: '#88aa22' },  // 19 Chartreuse
+  { color: '#4466ff', dark: '#2233aa' },  // 20 Royal Blue
+  { color: '#ff8888', dark: '#aa5555' },  // 21 Salmon
+  { color: '#88ff88', dark: '#55aa55' },  // 22 Light Green
+  { color: '#ffcc44', dark: '#aa8822' },  // 23 Amber
+  { color: '#cc88ff', dark: '#8855aa' },  // 24 Orchid
+  { color: '#44ffff', dark: '#22aaaa' },  // 25 Turquoise
+  { color: '#ff4466', dark: '#aa2233' },  // 26 Crimson
+  { color: '#66ff44', dark: '#33aa22' },  // 27 Neon Green
+  { color: '#ff88cc', dark: '#aa5588' },  // 28 Bubblegum
+  { color: '#8888ff', dark: '#5555aa' },  // 29 Periwinkle
+  { color: '#ffaa44', dark: '#aa7722' },  // 30 Tangerine
+  { color: '#44ccaa', dark: '#228877' },  // 31 Teal
+  { color: '#dd6644', dark: '#993322' },  // 32 Rust
+  { color: '#66aaff', dark: '#3377aa' },  // 33 Cornflower
+  { color: '#aaff44', dark: '#77aa22' },  // 34 Yellow Green
+  { color: '#ff66cc', dark: '#aa3388' },  // 35 Hot Pink
+  { color: '#44aa88', dark: '#227755' },  // 36 Jade
+  { color: '#ddaa66', dark: '#997733' },  // 37 Sand
+  { color: '#aa66ff', dark: '#7733aa' },  // 38 Amethyst
+  { color: '#66ffaa', dark: '#33aa77' },  // 39 Sea Green
+  { color: '#ff6644', dark: '#aa3322' },  // 40 Vermilion
+  { color: '#aaccff', dark: '#7788aa' },  // 41 Ice Blue
+  { color: '#ccaa44', dark: '#887722' },  // 42 Olive
+  { color: '#ff44cc', dark: '#aa2288' },  // 43 Fuchsia
+  { color: '#88ffcc', dark: '#55aa88' },  // 44 Seafoam
+  { color: '#cc6644', dark: '#883322' },  // 45 Terra Cotta
+  { color: '#6688cc', dark: '#335588' },  // 46 Steel Blue
+  { color: '#ccff88', dark: '#88aa55' },  // 47 Honeydew
+  { color: '#cc44aa', dark: '#882277' },  // 48 Plum
+  { color: '#88ddaa', dark: '#559977' },  // 49 Sage
+  { color: '#ffcc88', dark: '#aa8855' },  // 50 Peach
 ];
 
 // ========== HELPERS ==========
