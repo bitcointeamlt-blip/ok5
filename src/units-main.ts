@@ -1,4 +1,37 @@
-// ========== UNITS - Space Strategy Game ==========
+// ========== UNITS - Space Strategy Game (Multiplayer) ==========
+import { walletService, type WalletProviderType } from './services/WalletService';
+import { UnitsNetworkService, type SyncPlanetData, type AttackLaunchedEvent, type BattleStartedEvent, type BattleResolvedEvent } from './services/UnitsNetworkService';
+
+// ========== SEEDED RNG (mulberry32) - matches server ==========
+class SeededRNG {
+  private state: number;
+  constructor(seed: number) { this.state = seed; }
+  next(): number {
+    this.state |= 0;
+    this.state = (this.state + 0x6d2b79f5) | 0;
+    let t = Math.imul(this.state ^ (this.state >>> 15), 1 | this.state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  int(min: number, max: number): number { return min + Math.floor(this.next() * (max - min + 1)); }
+  float(min: number, max: number): number { return min + this.next() * (max - min); }
+  shuffle<T>(arr: T[]): T[] {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(this.next() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+}
+
+// ========== MULTIPLAYER STATE ==========
+let networkService: UnitsNetworkService | null = null;
+let multiplayerConnected = false;
+let multiplayerSeed = 0;
+let myPlayerId = -1;
+let serverGameTime = 0;
+// Server URL (same host in dev, configurable for prod)
+const COLYSEUS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.hostname + ':2567';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -288,6 +321,7 @@ interface AttackAnimation {
   traveledDist: number; // total distance traveled (for degradation)
   droneCount: number; // number of drones (0-3) for intercept hit chance
   lastDroneFireTime?: number; // cooldown for drone shots
+  shipType: 'pod' | 'startrek' | 'mothership' | 'fighter' | 'cargo'; // ship type determined at launch, stays same throughout
 }
 
 interface TurretMissile {
@@ -457,6 +491,198 @@ let difficulty: Difficulty = Difficulty.MEDIUM;
 // Test mode - control multiple players with TAB
 let controlledPlayerId = 0;
 
+// ========== WALLET CONNECTION ==========
+let walletState = walletService.getState();
+let walletConnecting = false;
+let walletError: string | null = null;
+let walletProviderModalOpen = false;
+let isHoveringWallet = false;
+let isPressingWallet = false;
+
+// Wallet state listener
+walletService.onStateChange((state) => {
+  walletState = state;
+  if (state.isConnected && state.address) {
+    walletError = null;
+    // Connect to multiplayer server when wallet connects
+    connectToMultiplayer();
+  }
+});
+
+// Restore wallet connection on startup
+walletService.restoreConnection().then((restored) => {
+  if (restored) {
+    walletState = walletService.getState();
+    // In multiplayer mode, connectToMultiplayer will be triggered by wallet state listener
+    // Only load local save if not connecting to multiplayer
+    if (!multiplayerConnected && !networkService) {
+      loadUnitsGame();
+    }
+  }
+});
+
+function connectWalletWithProvider(providerType: WalletProviderType): void {
+  walletConnecting = true;
+  walletError = null;
+  walletProviderModalOpen = false;
+  walletService.connect(providerType).then((result) => {
+    if (result) {
+      walletError = null;
+    } else {
+      walletError = 'Connection failed';
+    }
+    walletConnecting = false;
+  }).catch((error: any) => {
+    walletError = error.message || 'Connection error';
+    walletConnecting = false;
+  });
+}
+
+// ========== SAVE / LOAD SYSTEM ==========
+const UNITS_SAVE_KEY = 'units_galaxy_save';
+const AUTOSAVE_INTERVAL = 120; // seconds
+let lastSaveTime = 0;
+
+interface UnitsSaveData {
+  version: number;
+  walletAddress: string;
+  timestamp: number;
+  gameTime: number;
+  difficulty: string;
+  controlledPlayerId: number;
+  planets: {
+    id: number;
+    ownerId: number;
+    units: number;
+    maxUnits: number;
+    defense: number;
+    growthRate: number;
+    stability: number;
+    hasShield: boolean;
+    deposits: { type: string; amount: number }[];
+    buildings: ({ type: string; slot: number } | null)[];
+  }[];
+  players: {
+    id: number;
+    name: string;
+    alive: boolean;
+    homeId: number;
+  }[];
+  discoveredPlanets: number[];
+}
+
+function getWalletSaveKey(): string {
+  const addr = walletState.address || localStorage.getItem('wallet_address') || localStorage.getItem('ronin_address');
+  if (!addr) return UNITS_SAVE_KEY;
+  return `${UNITS_SAVE_KEY}_${addr.toLowerCase()}`;
+}
+
+function saveUnitsGame(): void {
+  const addr = walletState.address || localStorage.getItem('wallet_address') || localStorage.getItem('ronin_address');
+  if (!addr) return; // Guest mode - no save
+
+  const saveData: UnitsSaveData = {
+    version: 1,
+    walletAddress: addr,
+    timestamp: Date.now(),
+    gameTime,
+    difficulty,
+    controlledPlayerId,
+    planets: planets.map(p => ({
+      id: p.id,
+      ownerId: p.ownerId,
+      units: Math.floor(p.units),
+      maxUnits: p.maxUnits,
+      defense: p.defense,
+      growthRate: p.growthRate,
+      stability: p.stability,
+      hasShield: p.hasShield,
+      deposits: p.deposits.map(d => ({
+        type: d.type,
+        amount: d.amount,
+      })),
+      buildings: p.buildings.map(b => b ? { type: b.type, slot: b.slot } : null),
+    })),
+    players: players.map(p => ({
+      id: p.id,
+      name: p.name,
+      alive: p.alive,
+      homeId: p.homeId,
+    })),
+    discoveredPlanets: Array.from(discoveredPlanets),
+  };
+
+  try {
+    localStorage.setItem(getWalletSaveKey(), JSON.stringify(saveData));
+    lastSaveTime = Date.now();
+  } catch (e) {
+    console.error('Failed to save Units game:', e);
+  }
+}
+
+function loadUnitsGame(): void {
+  try {
+    const raw = localStorage.getItem(getWalletSaveKey());
+    if (!raw) return;
+
+    const save: UnitsSaveData = JSON.parse(raw);
+    if (save.version !== 1) return;
+
+    // Restore planet state
+    for (const sp of save.planets) {
+      const planet = planetMap.get(sp.id);
+      if (!planet) continue;
+      planet.ownerId = sp.ownerId;
+      planet.units = sp.units;
+      planet.maxUnits = sp.maxUnits;
+      planet.defense = sp.defense;
+      planet.growthRate = sp.growthRate;
+      planet.stability = sp.stability;
+      planet.hasShield = sp.hasShield;
+      // Restore deposits
+      if (sp.deposits && sp.deposits.length === planet.deposits.length) {
+        for (let i = 0; i < sp.deposits.length; i++) {
+          planet.deposits[i].amount = sp.deposits[i].amount;
+        }
+      }
+      // Restore buildings
+      if (sp.buildings) {
+        planet.buildings = sp.buildings.map(b =>
+          b ? { type: b.type as any, slot: b.slot } : null
+        );
+      }
+    }
+
+    // Restore players
+    for (const sp of save.players) {
+      if (players[sp.id]) {
+        players[sp.id].alive = sp.alive;
+      }
+    }
+
+    // Restore discovered planets
+    discoveredPlanets.clear();
+    for (const id of save.discoveredPlanets) {
+      discoveredPlanets.add(id);
+    }
+
+    gameTime = save.gameTime || 0;
+    controlledPlayerId = save.controlledPlayerId || 0;
+
+    console.log('Units game loaded from save (wallet:', save.walletAddress, ')');
+  } catch (e) {
+    console.error('Failed to load Units game:', e);
+  }
+}
+
+function forceSaveUnitsGame(): void {
+  saveUnitsGame();
+}
+
+function shouldAutoSave(): boolean {
+  return (Date.now() - lastSaveTime) / 1000 >= AUTOSAVE_INTERVAL;
+}
+
 // Background stars
 let stars: Star[] = [];
 
@@ -479,6 +705,39 @@ const camera: Camera = {
 // Parallax background offset (only updates on pan, not zoom)
 let parallaxOffsetX = 0;
 let parallaxOffsetY = 0;
+
+// Cosmic dust clouds
+interface CosmicDust {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  alpha: number;
+  color: string;
+  speedX: number;
+  speedY: number;
+  rotation: number;
+  rotationSpeed: number;
+}
+
+const cosmicDustClouds: CosmicDust[] = [];
+const COSMIC_DUST_COUNT = 15;
+
+// Initialize cosmic dust clouds
+for (let i = 0; i < COSMIC_DUST_COUNT; i++) {
+  cosmicDustClouds.push({
+    x: Math.random() * 40000,
+    y: Math.random() * 40000,
+    width: 800 + Math.random() * 1500,
+    height: 400 + Math.random() * 800,
+    alpha: 0.03 + Math.random() * 0.05,
+    color: ['180,150,200', '150,180,220', '200,180,150', '150,200,180'][Math.floor(Math.random() * 4)],
+    speedX: (Math.random() - 0.5) * 8,
+    speedY: (Math.random() - 0.5) * 5,
+    rotation: Math.random() * Math.PI * 2,
+    rotationSpeed: (Math.random() - 0.5) * 0.0002
+  });
+}
 
 // UI State
 let mouseX = 0;
@@ -543,16 +802,31 @@ for (let i = 1; i <= MASS_FRAME_COUNT; i++) {
   massFrames.push(img);
 }
 
-// Spaceship sprites (pod for 1-100 units, fighter for 101-250 units)
+// Spaceship sprites (pod 1-100, cargo 101-200, warship 201-300, startrek 301-400, mothership 401+)
 const podSprite = new Image();
 podSprite.src = '/spaceship/pod.png';
 let podSpriteLoaded = false;
 podSprite.onload = () => { podSpriteLoaded = true; };
 
+const startrekSprite = new Image();
+startrekSprite.src = '/spaceship/startrek.png'; // Star Trek style with warp nacelles
+let startrekSpriteLoaded = false;
+startrekSprite.onload = () => { startrekSpriteLoaded = true; };
+
+const mothershipSprite = new Image();
+mothershipSprite.src = '/spaceship/mothership.png'; // Drone mothership with green lights
+let mothershipSpriteLoaded = false;
+mothershipSprite.onload = () => { mothershipSpriteLoaded = true; };
+
 const fighterSprite = new Image();
-fighterSprite.src = '/spaceship/fighter.png';
+fighterSprite.src = '/spaceship/warship2.png'; // Military warship with blue engines
 let fighterSpriteLoaded = false;
 fighterSprite.onload = () => { fighterSpriteLoaded = true; };
+
+const cargoSprite = new Image();
+cargoSprite.src = '/spaceship/cargo.png';
+let cargoSpriteLoaded = false;
+cargoSprite.onload = () => { cargoSpriteLoaded = true; };
 
 // Space background image
 const spaceBackground = new Image();
@@ -890,11 +1164,16 @@ let activeAbility: string | null = null; // currently activated ability waiting 
 
 // Player colors
 const PLAYER_COLORS = [
-  { color: '#4488ff', dark: '#2255aa' },
-  { color: '#ff4444', dark: '#aa2222' },
-  { color: '#44cc44', dark: '#228822' },
-  { color: '#ffaa00', dark: '#aa7700' },
-  { color: '#cc44cc', dark: '#882288' },
+  { color: '#4488ff', dark: '#2255aa' },  // Blue
+  { color: '#ff4444', dark: '#aa2222' },  // Red
+  { color: '#44cc44', dark: '#228822' },  // Green
+  { color: '#ffaa00', dark: '#aa7700' },  // Gold
+  { color: '#cc44cc', dark: '#882288' },  // Purple
+  { color: '#44cccc', dark: '#228888' },  // Cyan
+  { color: '#ff8844', dark: '#aa5522' },  // Orange
+  { color: '#88ff44', dark: '#55aa22' },  // Lime
+  { color: '#ff44aa', dark: '#aa2277' },  // Pink
+  { color: '#aaaaff', dark: '#6666aa' },  // Lavender
 ];
 
 // ========== HELPERS ==========
@@ -930,15 +1209,26 @@ function getVisionRange(planet: Planet): number {
 }
 
 function isVisibleToPlayer(planet: Planet): boolean {
-  // Both players' planets are always visible (both are user-controlled)
+  // In multiplayer: only our own planets provide vision
+  if (multiplayerConnected) {
+    if (planet.ownerId === controlledPlayerId) return true;
+    for (const p of planets) {
+      if (p.ownerId === controlledPlayerId) {
+        if (getDistance(p, planet) <= getVisionRange(p)) return true;
+      }
+    }
+    for (const zone of revealZones) {
+      if (getDistance(zone, planet) <= zone.radius) return true;
+    }
+    return false;
+  }
+  // Offline: both player 0 and 1 are user-controlled
   if (planet.ownerId === 0 || planet.ownerId === 1) return true;
-  // Check if any player planet is within its vision range
   for (const p of planets) {
     if (p.ownerId === 0 || p.ownerId === 1) {
       if (getDistance(p, planet) <= getVisionRange(p)) return true;
     }
   }
-  // Check reveal zones
   for (const zone of revealZones) {
     if (getDistance(zone, planet) <= zone.radius) return true;
   }
@@ -1023,7 +1313,9 @@ function generateStars(): void {
   }
 }
 
-function generatePlanets(): void {
+// Seeded planet generation for multiplayer (deterministic from seed)
+function generatePlanetsFromSeed(seed: number): void {
+  const rng = new SeededRNG(seed);
   planets = [];
   planetMap.clear();
   let id = 0;
@@ -1043,15 +1335,15 @@ function generatePlanets(): void {
   for (const { size, count } of sizeDistribution) {
     for (let i = 0; i < count; i++) {
       const props = getPlanetProperties(size);
-      const radius = props.minR + Math.random() * (props.maxR - props.minR);
+      const radius = rng.float(props.minR, props.maxR);
 
       let x = 0, y = 0;
       let valid = false;
       let attempts = 0;
 
       while (!valid && attempts < 100) {
-        x = radius + Math.random() * (WORLD_SIZE - radius * 2);
-        y = radius + Math.random() * (WORLD_SIZE - radius * 2);
+        x = radius + rng.float(0, WORLD_SIZE - radius * 2);
+        y = radius + rng.float(0, WORLD_SIZE - radius * 2);
 
         valid = true;
         // Check sun distance
@@ -1073,39 +1365,39 @@ function generatePlanets(): void {
 
       if (!valid) continue;
 
-      const craterCount = Math.floor(radius / 10) + Math.floor(Math.random() * 3);
+      const craterCount = Math.floor(radius / 10) + rng.int(0, 2);
       const craters: { x: number; y: number; r: number }[] = [];
       for (let c = 0; c < craterCount; c++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = Math.random() * radius * 0.6;
+        const angle = rng.float(0, Math.PI * 2);
+        const dist = rng.next() * radius * 0.6;
         craters.push({
           x: Math.cos(angle) * dist,
           y: Math.sin(angle) * dist,
-          r: 2 + Math.random() * (radius * 0.15)
+          r: 2 + rng.next() * (radius * 0.15)
         });
       }
 
       let startingUnits: number;
       switch (size) {
-        case PlanetSize.ASTEROID: startingUnits = Math.floor(Math.random() * 30) + 10; break;
-        case PlanetSize.TINY: startingUnits = Math.floor(Math.random() * 40) + 15; break;
-        case PlanetSize.SMALL: startingUnits = Math.floor(Math.random() * 80) + 30; break;
-        case PlanetSize.MEDIUM: startingUnits = Math.floor(Math.random() * 150) + 80; break;
-        case PlanetSize.LARGE: startingUnits = Math.floor(Math.random() * 300) + 150; break;
-        case PlanetSize.GIANT: startingUnits = Math.floor(Math.random() * 500) + 300; break;
-        case PlanetSize.MEGA: startingUnits = Math.floor(Math.random() * 800) + 500; break;
-        case PlanetSize.TITAN: startingUnits = Math.floor(Math.random() * 1200) + 800; break;
-        case PlanetSize.COLOSSUS: startingUnits = Math.floor(Math.random() * 1500) + 1200; break;
+        case PlanetSize.ASTEROID: startingUnits = rng.int(10, 39); break;
+        case PlanetSize.TINY: startingUnits = rng.int(15, 54); break;
+        case PlanetSize.SMALL: startingUnits = rng.int(30, 109); break;
+        case PlanetSize.MEDIUM: startingUnits = rng.int(80, 229); break;
+        case PlanetSize.LARGE: startingUnits = rng.int(150, 449); break;
+        case PlanetSize.GIANT: startingUnits = rng.int(300, 799); break;
+        case PlanetSize.MEGA: startingUnits = rng.int(500, 1299); break;
+        case PlanetSize.TITAN: startingUnits = rng.int(800, 1999); break;
+        case PlanetSize.COLOSSUS: startingUnits = rng.int(1200, 2699); break;
       }
 
-      // Random color from palette
-      const planetColor = PLANET_PALETTE[Math.floor(Math.random() * PLANET_PALETTE.length)];
+      // Random color from palette (seeded)
+      const planetColor = PLANET_PALETTE[rng.int(0, PLANET_PALETTE.length - 1)];
 
       // Generate random deposit types (1-5 per planet, bigger planets get more) - start with 0, must mine
       const allDepositTypes: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
       const maxDeposits = size === PlanetSize.COLOSSUS ? 5 : size === PlanetSize.TITAN ? 5 : size === PlanetSize.MEGA ? 5 : size === PlanetSize.GIANT ? 4 : size === PlanetSize.LARGE ? 3 : size === PlanetSize.MEDIUM ? 2 : 1;
-      const numDeposits = Math.max(1, Math.floor(Math.random() * maxDeposits) + 1);
-      const shuffled = [...allDepositTypes].sort(() => Math.random() - 0.5);
+      const numDeposits = Math.max(1, rng.int(1, maxDeposits));
+      const shuffled = rng.shuffle([...allDepositTypes]);
       const deposits: ResourceDeposit[] = shuffled.slice(0, numDeposits).map(type => ({
         type,
         amount: 0 // start with 0, resources are gained by mining
@@ -1125,12 +1417,12 @@ function generatePlanets(): void {
         deposits,
         color: planetColor,
         craters,
-        pulsePhase: Math.random() * Math.PI * 2,
+        pulsePhase: rng.float(0, Math.PI * 2),
         shieldTimer: 0,
         hasShield: false,
         spriteType: null,
         buildings: [null, null, null],
-        nextMineTime: 5000 + Math.random() * 5000 // first mine in 5-10 sec
+        nextMineTime: 5000 + rng.float(0, 5000) // first mine in 5-10 sec
       };
       planets.push(planet);
       planetMap.set(planet.id, planet);
@@ -1192,24 +1484,24 @@ function generatePlanets(): void {
 
     for (let m = 0; m < moonCount; m++) {
       const moonProps = getPlanetProperties(moonSize);
-      const moonRadius = moonProps.minR + Math.random() * (moonProps.maxR - moonProps.minR);
-      const moonOrbitRadius = parent.radius + moonRadius + 70 + Math.random() * 30 + m * 50;
-      const moonAngle = Math.random() * Math.PI * 2 + m * Math.PI; // spread moons apart
+      const moonRadius = rng.float(moonProps.minR, moonProps.maxR);
+      const moonOrbitRadius = parent.radius + moonRadius + 70 + rng.float(0, 30) + m * 50;
+      const moonAngle = rng.float(0, Math.PI * 2) + m * Math.PI; // spread moons apart
       const moonX = parent.x + Math.cos(moonAngle) * moonOrbitRadius;
       const moonY = parent.y + Math.sin(moonAngle) * moonOrbitRadius;
 
       // Moon deposits based on size
-      const allDepositTypes: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
-      const numDeposits = moonSize === PlanetSize.MEDIUM ? 2 : moonSize === PlanetSize.SMALL ? 1 : 1;
-      const shuffled = [...allDepositTypes].sort(() => Math.random() - 0.5);
-      const moonDeposits: ResourceDeposit[] = shuffled.slice(0, numDeposits).map(type => ({ type, amount: 0 }));
+      const allDepositTypes2: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
+      const numDeposits2 = moonSize === PlanetSize.MEDIUM ? 2 : 1;
+      const shuffled2 = rng.shuffle([...allDepositTypes2]);
+      const moonDeposits: ResourceDeposit[] = shuffled2.slice(0, numDeposits2).map(type => ({ type, amount: 0 }));
 
       // Starting units based on moon size
       let moonUnits = 50;
-      if (moonSize === PlanetSize.SMALL) moonUnits = Math.floor(Math.random() * 80) + 30;
-      else if (moonSize === PlanetSize.MEDIUM) moonUnits = Math.floor(Math.random() * 150) + 80;
+      if (moonSize === PlanetSize.SMALL) moonUnits = rng.int(30, 109);
+      else if (moonSize === PlanetSize.MEDIUM) moonUnits = rng.int(80, 229);
 
-      const moonColor = PLANET_PALETTE[Math.floor(Math.random() * PLANET_PALETTE.length)];
+      const moonColor = PLANET_PALETTE[rng.int(0, PLANET_PALETTE.length - 1)];
 
       const moon: Planet = {
         id: id++,
@@ -1227,25 +1519,63 @@ function generatePlanets(): void {
         deposits: moonDeposits,
         color: moonColor,
         craters: [
-          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 2 + moonRadius * 0.05 },
-          { x: Math.random() * 4 - 2, y: Math.random() * 4 - 2, r: 1.5 + moonRadius * 0.03 }
+          { x: rng.float(-2, 2), y: rng.float(-2, 2), r: 2 + moonRadius * 0.05 },
+          { x: rng.float(-2, 2), y: rng.float(-2, 2), r: 1.5 + moonRadius * 0.03 }
         ],
         isMoon: true,
         parentId: parent.id,
         orbitAngle: moonAngle,
         orbitRadius: moonOrbitRadius,
-        orbitSpeed: 0.05 + Math.random() * 0.05,
-        pulsePhase: Math.random() * Math.PI * 2,
+        orbitSpeed: rng.float(0.05, 0.1),
+        pulsePhase: rng.float(0, Math.PI * 2),
         shieldTimer: 0,
         hasShield: false,
         spriteType: null,
         buildings: [null, null, null],
-        nextMineTime: 5000 + Math.random() * 5000
+        nextMineTime: 5000 + rng.float(0, 5000)
       };
       planets.push(moon);
       planetMap.set(moon.id, moon);
     }
   }
+
+  // Add black hole (seeded position)
+  const bhRadius = 80;
+  const bhAngle = rng.float(0, Math.PI * 2);
+  const bhDist = rng.float(3000, 8000);
+  let bhX = Math.max(bhRadius + 100, Math.min(WORLD_SIZE - bhRadius - 100, SUN_X + Math.cos(bhAngle) * bhDist));
+  let bhY = Math.max(bhRadius + 100, Math.min(WORLD_SIZE - bhRadius - 100, SUN_Y + Math.sin(bhAngle) * bhDist));
+  const blackHole: Planet = {
+    id: id++,
+    x: bhX, y: bhY,
+    radius: bhRadius,
+    size: PlanetSize.GIANT,
+    ownerId: -1,
+    units: 10000,
+    maxUnits: 15000,
+    defense: 5.0,
+    growthRate: 0,
+    stability: STABILITY_MAX,
+    connected: false,
+    generating: false,
+    deposits: [
+      { type: 'crystal', amount: 0 },
+      { type: 'gas', amount: 0 },
+      { type: 'metal', amount: 0 }
+    ],
+    color: '#1a0a2e',
+    craters: [],
+    pulsePhase: rng.float(0, Math.PI * 2),
+    shieldTimer: 0,
+    hasShield: false,
+    spriteType: null,
+    buildings: [null, null, null],
+    nextMineTime: 60000,
+    isBlackHole: true
+  };
+  planets.push(blackHole);
+  planetMap.set(blackHole.id, blackHole);
+  discoveredPlanets.add(blackHole.id);
 }
 
 function initPlayers(): void {
@@ -1523,10 +1853,21 @@ function initPlayers(): void {
   }
 }
 
+// Legacy non-seeded generation (fallback for offline mode)
+function generatePlanets(): void {
+  generatePlanetsFromSeed((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
+}
+
 function initGame(): void {
   generateStars();
-  generatePlanets();
-  initPlayers();
+  if (multiplayerConnected && multiplayerSeed) {
+    generatePlanetsFromSeed(multiplayerSeed);
+  } else {
+    generatePlanets();
+  }
+  if (!multiplayerConnected) {
+    initPlayers();
+  }
   particles = [];
   attacks = [];
   turretMissiles = [];
@@ -1774,6 +2115,17 @@ function launchAttack(fromId: number, toId: number, blitz: boolean = false): voi
   if (from.ownerId === -1) return;
   if (from.units < 2) return;
 
+  // In multiplayer mode, send command to server instead of executing locally
+  if (multiplayerConnected && networkService) {
+    const percent = from.ownerId === controlledPlayerId ? sendPercent : 50;
+    networkService.sendLaunchAttack(fromId, toId, percent, blitz);
+    // Discover target planet when player attacks it
+    if (from.ownerId === controlledPlayerId) {
+      discoveredPlanets.add(toId);
+    }
+    return;
+  }
+
   const percent = from.ownerId === controlledPlayerId ? sendPercent : 50;
   const unitsToSend = Math.floor(from.units * (percent / 100));
   if (unitsToSend < 1) return;
@@ -1805,7 +2157,8 @@ function launchAttack(fromId: number, toId: number, blitz: boolean = false): voi
     startY: from.y,
     angle: initialAngle,
     traveledDist: 0,
-    droneCount: droneCount
+    droneCount: droneCount,
+    shipType: unitsToSend >= 401 ? 'mothership' : (unitsToSend >= 301 ? 'startrek' : (unitsToSend >= 201 ? 'fighter' : (unitsToSend >= 101 ? 'cargo' : 'pod'))) // pod 1-100, cargo 101-200, warship 201-300, startrek 301-400, mothership 401+
   });
 
   // Discover target planet when player attacks it
@@ -1914,6 +2267,8 @@ function resolveBattle(battle: Battle): void {
     }
     // Capture particles
     spawnParticles(toScreen.x, toScreen.y, players[battle.attackPlayerId]?.color || '#fff', 20, 150);
+    // Save after planet capture
+    forceSaveUnitsGame();
   } else {
     const prevOwner = to.ownerId;
     to.units = Math.max(0, Math.floor((defenseStrength - battle.attackUnits) / defenseMultiplier));
@@ -2872,6 +3227,70 @@ canvas.addEventListener('mousedown', (e) => {
 
   const pos = getCanvasMousePos(e);
 
+  // Wallet button click detection (uses screen coords, not game coords)
+  {
+    const btnX = 20 * (canvas.width / gameWidth);
+    const btnY = (canvas.height - 70) * (canvas.height / gameHeight) ;
+    const btnW = 220 * (canvas.width / gameWidth);
+    const btnH = 48 * (canvas.height / gameHeight);
+    // Use raw pixel position for screen-space UI
+    const rawX = e.offsetX * (canvas.width / canvas.clientWidth);
+    const rawY = e.offsetY * (canvas.height / canvas.clientHeight);
+    // Wallet button uses canvas pixel coords directly (rendered in screen space)
+    const wBtnX = 20;
+    const wBtnY = canvas.height - 70;
+    const wBtnW = 220;
+    const wBtnH = 48;
+
+    if (walletProviderModalOpen) {
+      const modalX = wBtnX;
+      const modalY = wBtnY - 110;
+      const modalW = 230;
+      // Ronin button
+      const ronBtnY = modalY + 35;
+      if (rawX >= modalX + 10 && rawX <= modalX + modalW - 10 && rawY >= ronBtnY && rawY <= ronBtnY + 24) {
+        const avail = walletService.getAvailableWallets();
+        if (avail.ronin) connectWalletWithProvider('ronin');
+        walletProviderModalOpen = false;
+        return;
+      }
+      // MetaMask button
+      const mmBtnY = ronBtnY + 30;
+      if (rawX >= modalX + 10 && rawX <= modalX + modalW - 10 && rawY >= mmBtnY && rawY <= mmBtnY + 24) {
+        const avail = walletService.getAvailableWallets();
+        if (avail.metamask) connectWalletWithProvider('metamask');
+        walletProviderModalOpen = false;
+        return;
+      }
+      // Click outside modal = close
+      walletProviderModalOpen = false;
+      return;
+    }
+
+    if (rawX >= wBtnX && rawX <= wBtnX + wBtnW && rawY >= wBtnY && rawY <= wBtnY + wBtnH) {
+      if (walletConnecting) return;
+      if (walletState.isConnected && walletState.address) {
+        // Disconnect
+        forceSaveUnitsGame();
+        walletService.disconnect();
+        walletState = walletService.getState();
+      } else {
+        // Show provider picker if both available, otherwise connect directly
+        const avail = walletService.getAvailableWallets();
+        if (avail.ronin && avail.metamask) {
+          walletProviderModalOpen = true;
+        } else if (avail.ronin) {
+          connectWalletWithProvider('ronin');
+        } else if (avail.metamask) {
+          connectWalletWithProvider('metamask');
+        } else {
+          walletError = 'No wallet detected. Install Ronin Wallet.';
+        }
+      }
+      return;
+    }
+  }
+
   // Close info panel on any click
   if (infoPlanetId !== null) {
     infoPlanetId = null;
@@ -2956,16 +3375,20 @@ canvas.addEventListener('mousedown', (e) => {
       if (action === 'toggle_gen') {
         const targetPlanet = planetMap.get(actionPopup.targetId);
         if (targetPlanet) {
-          if (targetPlanet.generating) {
-            // Turn off generating
-            targetPlanet.generating = false;
+          if (multiplayerConnected && networkService) {
+            // Server-authoritative: send toggle command
+            networkService.sendToggleGen(actionPopup.targetId);
           } else {
-            // Turn on generating if slot available
-            const owned = planets.filter(p => p.ownerId === controlledPlayerId);
-            const maxGen = getMaxGenerators(owned.length);
-            const activeGen = owned.filter(p => p.generating).length;
-            if (activeGen < maxGen) {
-              targetPlanet.generating = true;
+            // Offline mode: apply locally
+            if (targetPlanet.generating) {
+              targetPlanet.generating = false;
+            } else {
+              const owned = planets.filter(p => p.ownerId === controlledPlayerId);
+              const maxGen = getMaxGenerators(owned.length);
+              const activeGen = owned.filter(p => p.generating).length;
+              if (activeGen < maxGen) {
+                targetPlanet.generating = true;
+              }
             }
           }
         }
@@ -3081,7 +3504,12 @@ canvas.addEventListener('mousedown', (e) => {
         for (const pid of selectedPlanets) {
           const p = planetMap.get(pid);
           if (p && p.ownerId === controlledPlayerId) {
-            p.shieldTimer = 10000; // 10 seconds
+            if (multiplayerConnected && networkService) {
+              // Server-authoritative: send shield ability
+              networkService.sendAbility('shield', pid);
+            } else {
+              p.shieldTimer = 10000; // 10 seconds
+            }
             ability.lastUsed = gameTime;
             spawnParticles(worldToScreen(p.x, p.y).x, worldToScreen(p.x, p.y).y, '#44aaff', 15, 100);
             break;
@@ -3112,7 +3540,13 @@ canvas.addEventListener('mousedown', (e) => {
         }
       }
       if (inRange && nukeAbility) {
-        planet.units = Math.floor(planet.units * 0.5);
+        if (multiplayerConnected && networkService) {
+          // Server-authoritative: send nuke ability
+          networkService.sendAbility('nuke', planet.id);
+        } else {
+          // Offline mode: apply locally
+          planet.units = Math.floor(planet.units * 0.5);
+        }
         nukeAbility.lastUsed = gameTime;
         const screen = worldToScreen(planet.x, planet.y);
         spawnParticles(screen.x, screen.y, '#ff4400', 30, 200);
@@ -3245,6 +3679,13 @@ canvas.addEventListener('mousemove', (e) => {
   const pos = getCanvasMousePos(e);
   mouseX = pos.x;
   mouseY = pos.y;
+
+  // Wallet button hover detection (screen-space)
+  {
+    const rawX = e.offsetX * (canvas.width / canvas.clientWidth);
+    const rawY = e.offsetY * (canvas.height / canvas.clientHeight);
+    isHoveringWallet = rawX >= 20 && rawX <= 240 && rawY >= canvas.height - 70 && rawY <= canvas.height - 22;
+  }
 
   if (popupSliderDragging) {
     updatePopupSlider(pos.x);
@@ -3942,6 +4383,51 @@ function renderStars(): void {
   }
 }
 
+function updateCosmicDust(dt: number): void {
+  for (const dust of cosmicDustClouds) {
+    // Move dust slowly
+    dust.x += dust.speedX * dt;
+    dust.y += dust.speedY * dt;
+    dust.rotation += dust.rotationSpeed;
+
+    // Wrap around world boundaries
+    if (dust.x < -dust.width) dust.x = WORLD_SIZE + dust.width;
+    if (dust.x > WORLD_SIZE + dust.width) dust.x = -dust.width;
+    if (dust.y < -dust.height) dust.y = WORLD_SIZE + dust.height;
+    if (dust.y > WORLD_SIZE + dust.height) dust.y = -dust.height;
+  }
+}
+
+function renderCosmicDust(): void {
+  for (const dust of cosmicDustClouds) {
+    const screen = worldToScreen(dust.x, dust.y);
+    const screenWidth = dust.width * camera.zoom;
+    const screenHeight = dust.height * camera.zoom;
+
+    // Skip if off screen (with margin for large clouds)
+    if (screen.x + screenWidth < 0 || screen.x - screenWidth > gameWidth) continue;
+    if (screen.y + screenHeight < 0 || screen.y - screenHeight > gameHeight) continue;
+
+    ctx.save();
+    ctx.translate(screen.x, screen.y);
+    ctx.rotate(dust.rotation);
+
+    // Create soft elliptical gradient for dust cloud
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, screenWidth / 2);
+    gradient.addColorStop(0, `rgba(${dust.color}, ${dust.alpha})`);
+    gradient.addColorStop(0.4, `rgba(${dust.color}, ${dust.alpha * 0.6})`);
+    gradient.addColorStop(0.7, `rgba(${dust.color}, ${dust.alpha * 0.3})`);
+    gradient.addColorStop(1, `rgba(${dust.color}, 0)`);
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, screenWidth / 2, screenHeight / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
 function renderAnimStars(): void {
   // Check if frames are loaded
   if (blueStarFramesLoaded < ANIM_STAR_FRAME_COUNT || yellowStarFramesLoaded < ANIM_STAR_FRAME_COUNT) return;
@@ -4599,6 +5085,34 @@ function renderPlanet(planet: Planet): void {
     }
   }
 
+  // === OWNERSHIP ICONS ABOVE PLANETS ===
+  // Only show when zoomed in enough (screenRadius > 10)
+  if (screenRadius > 10 && visible) {
+    const iconY = screen.y - screenRadius - 12;
+    const iconSize = Math.max(10, Math.min(16, screenRadius * 0.4));
+
+    ctx.font = `bold ${iconSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    if (planet.ownerId === controlledPlayerId) {
+      // Player's planet - green star ★
+      ctx.fillStyle = '#00ff66';
+      ctx.strokeStyle = '#003311';
+      ctx.lineWidth = 2;
+      ctx.strokeText('★', screen.x, iconY);
+      ctx.fillText('★', screen.x, iconY);
+    } else if (planet.ownerId !== -1) {
+      // Enemy planet - red warning ⚠
+      ctx.fillStyle = '#ff4444';
+      ctx.strokeStyle = '#330000';
+      ctx.lineWidth = 2;
+      ctx.strokeText('⚠', screen.x, iconY);
+      ctx.fillText('⚠', screen.x, iconY);
+    }
+    // Neutral planets - no icon (cleaner look)
+  }
+
   ctx.globalAlpha = 1.0;
 }
 
@@ -4626,13 +5140,13 @@ function renderAttacks(): void {
     const shipColor = attack.isBlitz ? '#FFD700' : player.color;
     const time = performance.now() / 1000;
 
-    // Choose ship type based on unit count: pod (1-100), fighter (101+)
-    const usePod = attack.units <= 100;
+    // Ship type determined at launch, stays same throughout flight
+    const shipType = attack.shipType;
 
     ctx.save();
     ctx.translate(cx, cy);
 
-    if (usePod && podSpriteLoaded && podSprite.complete && podSprite.naturalWidth > 0) {
+    if (shipType === 'pod' && podSpriteLoaded && podSprite.complete && podSprite.naturalWidth > 0) {
       // === POD (small rocket, 1-100 units) ===
       const podSize = Math.max(14, 22 * camera.zoom);
       const spriteSize = podSize * 1.3;
@@ -4679,39 +5193,57 @@ function renderAttacks(): void {
       ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + Math.sin(drillSpin) * 0.2})`;
       ctx.fill();
 
-    } else if (!usePod && fighterSpriteLoaded && fighterSprite.complete && fighterSprite.naturalWidth > 0) {
-      // === FIGHTER (large ship, 101+ units) ===
-      const shipSize = Math.max(16, 28 * camera.zoom);
-      const spriteSize = shipSize * 1.5;
+    } else if (shipType === 'startrek' && startrekSpriteLoaded && startrekSprite.complete && startrekSprite.naturalWidth > 0) {
+      // === STAR TREK (Federation style, 10-50 units) ===
+      const shipSize = Math.max(18, 30 * camera.zoom);
+      const spriteSize = shipSize * 1.6;
 
       // Rotate to face travel direction
       ctx.rotate(angle + Math.PI / 2);
 
-      // Engine thruster glow (behind ship)
-      const glowPulse = 0.5 + Math.sin(time * 20) * 0.3;
-      const engineFlicker = 0.7 + Math.sin(time * 35) * 0.3;
+      // Warp nacelle glow (left and right - blue warp engines)
+      const warpPulse = 0.6 + Math.sin(time * 12) * 0.4;
+      const warpFlicker = 0.8 + Math.sin(time * 25) * 0.2;
 
-      // Main engine flame
+      // Left warp nacelle glow
       ctx.beginPath();
-      ctx.ellipse(0, spriteSize * 0.45, spriteSize * 0.15 * engineFlicker, spriteSize * 0.3 * glowPulse, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(0, 200, 255, ${0.8 * engineFlicker})`;
+      ctx.ellipse(-spriteSize * 0.28, spriteSize * 0.1, spriteSize * 0.06, spriteSize * 0.2 * warpPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(100, 150, 255, ${0.7 * warpFlicker})`;
       ctx.fill();
 
-      // Inner hot core
+      // Right warp nacelle glow
       ctx.beginPath();
-      ctx.ellipse(0, spriteSize * 0.4, spriteSize * 0.08 * engineFlicker, spriteSize * 0.15 * glowPulse, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(200, 255, 255, ${0.9 * engineFlicker})`;
+      ctx.ellipse(spriteSize * 0.28, spriteSize * 0.1, spriteSize * 0.06, spriteSize * 0.2 * warpPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(100, 150, 255, ${0.7 * warpFlicker})`;
       ctx.fill();
 
-      // Draw fighter sprite
-      ctx.drawImage(fighterSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+      // Left nacelle inner core
+      ctx.beginPath();
+      ctx.ellipse(-spriteSize * 0.28, spriteSize * 0.1, spriteSize * 0.03, spriteSize * 0.1 * warpPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200, 220, 255, ${0.9 * warpFlicker})`;
+      ctx.fill();
 
-      // Cockpit light blink
-      const blinkOn = Math.sin(time * 4) > 0.3;
-      if (blinkOn) {
+      // Right nacelle inner core
+      ctx.beginPath();
+      ctx.ellipse(spriteSize * 0.28, spriteSize * 0.1, spriteSize * 0.03, spriteSize * 0.1 * warpPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200, 220, 255, ${0.9 * warpFlicker})`;
+      ctx.fill();
+
+      // Impulse engine glow (back of saucer)
+      ctx.beginPath();
+      ctx.ellipse(0, spriteSize * 0.35, spriteSize * 0.08, spriteSize * 0.15 * warpPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 100, 50, ${0.6 * warpFlicker})`;
+      ctx.fill();
+
+      // Draw Star Trek sprite
+      ctx.drawImage(startrekSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+
+      // Saucer deflector dish glow (front)
+      const deflectorPulse = Math.sin(time * 8) > 0.3;
+      if (deflectorPulse) {
         ctx.beginPath();
-        ctx.arc(0, -spriteSize * 0.25, spriteSize * 0.05, 0, Math.PI * 2);
-        ctx.fillStyle = attack.isBlitz ? '#FFD700' : '#00ff88';
+        ctx.arc(0, -spriteSize * 0.25, spriteSize * 0.04, 0, Math.PI * 2);
+        ctx.fillStyle = attack.isBlitz ? '#FFD700' : '#88ccff';
         ctx.fill();
       }
 
@@ -4724,6 +5256,186 @@ function renderAttacks(): void {
       auraGradient.addColorStop(1, shipColor + '00');
       ctx.fillStyle = auraGradient;
       ctx.fill();
+
+    } else if (shipType === 'mothership' && mothershipSpriteLoaded && mothershipSprite.complete && mothershipSprite.naturalWidth > 0) {
+      // === MOTHERSHIP (drone carrier, 10-40 units test) ===
+      const shipSize = Math.max(22, 40 * camera.zoom);
+      const spriteSize = shipSize * 1.7;
+
+      // Mothership rotates slowly on its own axis
+      const slowSpin = time * 0.3;
+      ctx.rotate(angle + Math.PI / 2 + slowSpin);
+
+      // Green reactor core glow (center)
+      const reactorPulse = 0.5 + Math.sin(time * 6) * 0.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.2 * reactorPulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0, 255, 80, ${0.6 * reactorPulse})`;
+      ctx.fill();
+
+      // Inner core
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.08 * reactorPulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(180, 255, 200, ${0.9 * reactorPulse})`;
+      ctx.fill();
+
+      // Draw mothership sprite
+      ctx.drawImage(mothershipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+
+      // Orbiting drone lights (4 small lights circling the ship)
+      for (let d = 0; d < 4; d++) {
+        const droneAngle = time * 2 + (d * Math.PI / 2);
+        const droneX = Math.cos(droneAngle) * spriteSize * 0.45;
+        const droneY = Math.sin(droneAngle) * spriteSize * 0.45;
+        ctx.beginPath();
+        ctx.arc(droneX, droneY, spriteSize * 0.025, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 255, 100, ${0.7 + Math.sin(time * 8 + d) * 0.3})`;
+        ctx.fill();
+      }
+
+      // Player color aura (larger for mothership)
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.7, 0, Math.PI * 2);
+      const msAura = ctx.createRadialGradient(0, 0, spriteSize * 0.35, 0, 0, spriteSize * 0.7);
+      msAura.addColorStop(0, shipColor + '00');
+      msAura.addColorStop(0.7, shipColor + '22');
+      msAura.addColorStop(1, shipColor + '00');
+      ctx.fillStyle = msAura;
+      ctx.fill();
+
+    } else if (shipType === 'fighter' && fighterSpriteLoaded && fighterSprite.complete && fighterSprite.naturalWidth > 0) {
+      // === WARSHIP (military ship, 51-199 units) ===
+      const shipSize = Math.max(18, 32 * camera.zoom);
+      const spriteSize = shipSize * 1.5;
+
+      // Rotate to face travel direction
+      ctx.rotate(angle + Math.PI / 2);
+
+      // Twin blue engine thrusters (left and right)
+      const glowPulse = 0.5 + Math.sin(time * 20) * 0.3;
+      const engineFlicker = 0.7 + Math.sin(time * 35) * 0.3;
+
+      // Left engine flame (outer blue)
+      ctx.beginPath();
+      ctx.ellipse(-spriteSize * 0.12, spriteSize * 0.45, spriteSize * 0.08 * engineFlicker, spriteSize * 0.28 * glowPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(30, 100, 255, ${0.85 * engineFlicker})`;
+      ctx.fill();
+
+      // Right engine flame (outer blue)
+      ctx.beginPath();
+      ctx.ellipse(spriteSize * 0.12, spriteSize * 0.45, spriteSize * 0.08 * engineFlicker, spriteSize * 0.28 * glowPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(30, 100, 255, ${0.85 * engineFlicker})`;
+      ctx.fill();
+
+      // Left engine inner core (bright blue-white)
+      ctx.beginPath();
+      ctx.ellipse(-spriteSize * 0.12, spriteSize * 0.4, spriteSize * 0.04 * engineFlicker, spriteSize * 0.12 * glowPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(150, 200, 255, ${0.95 * engineFlicker})`;
+      ctx.fill();
+
+      // Right engine inner core (bright blue-white)
+      ctx.beginPath();
+      ctx.ellipse(spriteSize * 0.12, spriteSize * 0.4, spriteSize * 0.04 * engineFlicker, spriteSize * 0.12 * glowPulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(150, 200, 255, ${0.95 * engineFlicker})`;
+      ctx.fill();
+
+      // Draw warship sprite
+      ctx.drawImage(fighterSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+
+      // Cockpit light blink (blue for warship)
+      const blinkOn = Math.sin(time * 4) > 0.3;
+      if (blinkOn) {
+        ctx.beginPath();
+        ctx.arc(0, -spriteSize * 0.2, spriteSize * 0.04, 0, Math.PI * 2);
+        ctx.fillStyle = attack.isBlitz ? '#FFD700' : '#4488ff';
+        ctx.fill();
+      }
+
+      // Player color aura
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.6, 0, Math.PI * 2);
+      const auraGradient = ctx.createRadialGradient(0, 0, spriteSize * 0.3, 0, 0, spriteSize * 0.6);
+      auraGradient.addColorStop(0, shipColor + '00');
+      auraGradient.addColorStop(0.7, shipColor + '22');
+      auraGradient.addColorStop(1, shipColor + '00');
+      ctx.fillStyle = auraGradient;
+      ctx.fill();
+
+    } else if (shipType === 'cargo' && cargoSpriteLoaded && cargoSprite.complete && cargoSprite.naturalWidth > 0) {
+      // === CARGO (large transport ship, 300+ units) ===
+      const shipSize = Math.max(20, 36 * camera.zoom);
+      const spriteSize = shipSize * 1.6;
+
+      // Rotate to face travel direction
+      ctx.rotate(angle + Math.PI / 2);
+
+      // Large engine flames (cargo has bigger thrusters)
+      const flameFlicker = 0.7 + Math.sin(time * 25) * 0.3;
+      const flamePulse = 0.6 + Math.sin(time * 18) * 0.4;
+
+      // Left engine flame
+      ctx.beginPath();
+      ctx.ellipse(-spriteSize * 0.15, spriteSize * 0.5, spriteSize * 0.08, spriteSize * 0.35 * flamePulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 100, 30, ${0.9 * flameFlicker})`;
+      ctx.fill();
+
+      // Right engine flame
+      ctx.beginPath();
+      ctx.ellipse(spriteSize * 0.15, spriteSize * 0.5, spriteSize * 0.08, spriteSize * 0.35 * flamePulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 100, 30, ${0.9 * flameFlicker})`;
+      ctx.fill();
+
+      // Center engine flame (main thruster)
+      ctx.beginPath();
+      ctx.ellipse(0, spriteSize * 0.55, spriteSize * 0.12, spriteSize * 0.45 * flamePulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 150, 50, ${0.85 * flameFlicker})`;
+      ctx.fill();
+
+      // Inner hot cores
+      ctx.beginPath();
+      ctx.ellipse(-spriteSize * 0.15, spriteSize * 0.45, spriteSize * 0.04, spriteSize * 0.15 * flamePulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 200, ${flameFlicker})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(spriteSize * 0.15, spriteSize * 0.45, spriteSize * 0.04, spriteSize * 0.15 * flamePulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 200, ${flameFlicker})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(0, spriteSize * 0.48, spriteSize * 0.06, spriteSize * 0.2 * flamePulse, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 220, ${flameFlicker})`;
+      ctx.fill();
+
+      // Draw cargo sprite
+      ctx.drawImage(cargoSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+
+      // Cargo bay lights blinking
+      const blink1 = Math.sin(time * 3) > 0.2;
+      const blink2 = Math.sin(time * 3 + 1) > 0.2;
+      if (blink1) {
+        ctx.beginPath();
+        ctx.arc(-spriteSize * 0.2, 0, spriteSize * 0.03, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff4444';
+        ctx.fill();
+      }
+      if (blink2) {
+        ctx.beginPath();
+        ctx.arc(spriteSize * 0.2, 0, spriteSize * 0.03, 0, Math.PI * 2);
+        ctx.fillStyle = '#44ff44';
+        ctx.fill();
+      }
+
+      // Player color aura (larger for cargo)
+      ctx.beginPath();
+      ctx.arc(0, 0, spriteSize * 0.7, 0, Math.PI * 2);
+      const cargoAura = ctx.createRadialGradient(0, 0, spriteSize * 0.35, 0, 0, spriteSize * 0.7);
+      cargoAura.addColorStop(0, shipColor + '00');
+      cargoAura.addColorStop(0.7, shipColor + '33');
+      cargoAura.addColorStop(1, shipColor + '00');
+      ctx.fillStyle = cargoAura;
+      ctx.fill();
+
     } else {
       // Fallback: draw triangle if sprites not loaded
       const fallbackSize = Math.max(12, 20 * camera.zoom);
@@ -4754,7 +5466,7 @@ function renderAttacks(): void {
 
     // Unit count label
     if (camera.zoom > 0.4) {
-      const labelOffset = usePod ? 18 : 28;
+      const labelOffset = shipType === 'pod' ? 18 : (shipType === 'startrek' ? 26 : (shipType === 'mothership' ? 42 : (shipType === 'cargo' ? 38 : 28)));
       ctx.font = '10px "Press Start 2P"';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
@@ -5460,40 +6172,50 @@ function handleBuildPanelClick(action: string): void {
     const def = BUILDINGS[buildIdx];
     if (!canAffordBuilding(planet, def)) return;
 
-    // Deduct costs from deposits
-    for (const [res, cost] of Object.entries(def.cost) as [DepositType, number][]) {
-      const dep = planet.deposits.find(d => d.type === res);
-      if (dep) dep.amount -= cost;
+    if (multiplayerConnected && networkService) {
+      // Server-authoritative: send build command, server handles costs + effects
+      networkService.sendBuild(buildPanelPlanetId!, buildPanelSlot, def.type);
+      // Optimistic particles
+      const screen = worldToScreen(planet.x, planet.y);
+      spawnParticles(screen.x, screen.y, def.color, 12, 80);
+      buildPanelSlot = null;
+    } else {
+      // Offline mode: apply locally
+      // Deduct costs from deposits
+      for (const [res, cost] of Object.entries(def.cost) as [DepositType, number][]) {
+        const dep = planet.deposits.find(d => d.type === res);
+        if (dep) dep.amount -= cost;
+      }
+
+      // Place building
+      planet.buildings[buildPanelSlot] = { type: def.type, slot: buildPanelSlot };
+
+      // Apply immediate effects
+      // Turret: no immediate effect, radar + missiles handled by updateTurrets()
+      if (def.type === 'mine') planet.growthRate *= 1.5;
+      if (def.type === 'factory') {
+        // Factory bonus based on planet size
+        const factoryBonus: Record<PlanetSize, number> = {
+          [PlanetSize.ASTEROID]: 25,
+          [PlanetSize.TINY]: 50,
+          [PlanetSize.SMALL]: 100,
+          [PlanetSize.MEDIUM]: 150,
+          [PlanetSize.LARGE]: 200,
+          [PlanetSize.GIANT]: 300,
+          [PlanetSize.MEGA]: 400,
+          [PlanetSize.TITAN]: 600,
+          [PlanetSize.COLOSSUS]: 800
+        };
+        planet.maxUnits += factoryBonus[planet.size] || 50;
+      }
+      if (def.type === 'shield_gen') planet.hasShield = true; // one-time shield
+
+      // Particles
+      const screen = worldToScreen(planet.x, planet.y);
+      spawnParticles(screen.x, screen.y, def.color, 12, 80);
+
+      buildPanelSlot = null; // close picker
     }
-
-    // Place building
-    planet.buildings[buildPanelSlot] = { type: def.type, slot: buildPanelSlot };
-
-    // Apply immediate effects
-    // Turret: no immediate effect, radar + missiles handled by updateTurrets()
-    if (def.type === 'mine') planet.growthRate *= 1.5;
-    if (def.type === 'factory') {
-      // Factory bonus based on planet size
-      const factoryBonus: Record<PlanetSize, number> = {
-        [PlanetSize.ASTEROID]: 25,
-        [PlanetSize.TINY]: 50,
-        [PlanetSize.SMALL]: 100,
-        [PlanetSize.MEDIUM]: 150,
-        [PlanetSize.LARGE]: 200,
-        [PlanetSize.GIANT]: 300,
-        [PlanetSize.MEGA]: 400,
-        [PlanetSize.TITAN]: 600,
-        [PlanetSize.COLOSSUS]: 800
-      };
-      planet.maxUnits += factoryBonus[planet.size] || 50;
-    }
-    if (def.type === 'shield_gen') planet.hasShield = true; // one-time shield
-
-    // Particles
-    const screen = worldToScreen(planet.x, planet.y);
-    spawnParticles(screen.x, screen.y, def.color, 12, 80);
-
-    buildPanelSlot = null; // close picker
   }
 }
 
@@ -6121,6 +6843,112 @@ function renderJoystick(): void {
   ctx.fillText('▶', centerX + outerR - 12, centerY);
 }
 
+function renderWalletButton(): void {
+  const btnX = 20;
+  const btnY = canvas.height - 70;
+  const btnW = 220;
+  const btnH = 48;
+
+  const isConnected = walletState.isConnected && !!walletState.address;
+  const bgColor = walletConnecting
+    ? 'rgba(100, 100, 100, 0.9)'
+    : isConnected
+    ? (isPressingWallet ? 'rgba(20, 135, 75, 0.95)' : isHoveringWallet ? 'rgba(60, 245, 145, 0.95)' : 'rgba(40, 220, 120, 0.95)')
+    : (isPressingWallet ? 'rgba(185, 105, 25, 0.95)' : isHoveringWallet ? 'rgba(255, 185, 90, 0.95)' : 'rgba(255, 160, 60, 0.95)');
+  const borderColor = isConnected ? '#00ff66' : '#FFD700';
+
+  // Button background
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(btnX, btnY, btnW, btnH, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Button text
+  ctx.font = 'bold 11px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#111';
+  const cx = btnX + btnW / 2;
+  const cy = btnY + btnH / 2;
+
+  if (walletConnecting) {
+    ctx.fillText('CONNECTING...', cx, cy);
+  } else if (isConnected && walletState.address) {
+    const shortAddr = walletState.address.slice(0, 6) + '...' + walletState.address.slice(-4);
+    ctx.font = 'bold 9px "Press Start 2P"';
+    ctx.fillText(shortAddr, cx, cy - 7);
+    ctx.font = 'bold 8px "Press Start 2P"';
+    ctx.fillStyle = '#003311';
+    ctx.fillText('DISCONNECT', cx, cy + 9);
+  } else {
+    ctx.fillText('CONNECT WALLET', cx, cy);
+  }
+
+  // Error text below
+  if (walletError) {
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ff4444';
+    ctx.fillText(walletError.substring(0, 35), btnX, btnY + btnH + 14);
+  }
+
+  // Guest mode warning (no wallet)
+  if (!isConnected && !walletConnecting) {
+    ctx.font = '7px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#887744';
+    ctx.fillText('GUEST MODE - NO SAVE', btnX, btnY - 8);
+  }
+
+  // Wallet provider modal (choose Ronin or MetaMask)
+  if (walletProviderModalOpen) {
+    const modalW = 230;
+    const modalH = 100;
+    const modalX = btnX;
+    const modalY = btnY - modalH - 10;
+
+    ctx.fillStyle = 'rgba(10, 15, 30, 0.95)';
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(modalX, modalY, modalW, modalH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = 'bold 10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText('SELECT WALLET', modalX + modalW / 2, modalY + 20);
+
+    // Ronin button
+    const ronBtnY = modalY + 35;
+    const available = walletService.getAvailableWallets();
+    const ronAvail = available.ronin;
+    ctx.fillStyle = ronAvail ? 'rgba(70, 130, 255, 0.9)' : 'rgba(60, 60, 60, 0.7)';
+    ctx.beginPath();
+    ctx.roundRect(modalX + 10, ronBtnY, modalW - 20, 24, 4);
+    ctx.fill();
+    ctx.font = 'bold 9px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = ronAvail ? '#fff' : '#666';
+    ctx.fillText(ronAvail ? 'RONIN WALLET' : 'RONIN (N/A)', modalX + modalW / 2, ronBtnY + 14);
+
+    // MetaMask button
+    const mmBtnY = ronBtnY + 30;
+    const mmAvail = available.metamask;
+    ctx.fillStyle = mmAvail ? 'rgba(240, 160, 50, 0.9)' : 'rgba(60, 60, 60, 0.7)';
+    ctx.beginPath();
+    ctx.roundRect(modalX + 10, mmBtnY, modalW - 20, 24, 4);
+    ctx.fill();
+    ctx.font = 'bold 9px "Press Start 2P"';
+    ctx.fillStyle = mmAvail ? '#fff' : '#666';
+    ctx.fillText(mmAvail ? 'METAMASK' : 'METAMASK (N/A)', modalX + modalW / 2, mmBtnY + 14);
+  }
+}
+
 function renderUI(): void {
   // Resource bar at top
   renderResourceBar();
@@ -6130,6 +6958,9 @@ function renderUI(): void {
 
   // Virtual joystick (mobile only, bottom left)
   renderJoystick();
+
+  // Wallet button (bottom left, above joystick on mobile)
+  renderWalletButton();
 
   // Player control indicator (test mode)
   if (players.filter(p => p.alive).length > 1) {
@@ -6424,6 +7255,7 @@ function render(): void {
   ctx.save();
 
   renderStars();
+  renderCosmicDust();
   renderAnimStars();
   renderComets();
   renderSupplyLines();
@@ -6805,40 +7637,64 @@ function update(dt: number): void {
     clampCamera();
   }
 
-  gameTime += dt * 1000;
+  if (multiplayerConnected) {
+    // In multiplayer mode: server is authoritative for game logic.
+    // Client only runs visual updates + animations.
+    // gameTime is synced from server via onGameTimeUpdated callback.
+    gameTime = serverGameTime;
 
-  updateMoons(dt);
-  updateMining();
-  updateGrowth(dt);
-  updateStability(dt);
-  updateAttacks(dt);
-  updateTurrets();
-  updateTurretMissiles(dt);
-  updateDroneIntercept();
-  updateDroneProjectiles(dt);
-  updateBattles();
-  updateParticles(dt);
-  updateShields(dt);
-  updateProbes(dt);
-  updateOrbitProbes(dt);
-  updateClickAnims(dt);
-  updateShieldFlickers();
+    // Moon orbits are visual-only, run locally for smooth animation
+    updateMoons(dt);
 
-  if (gameTime - lastSupplyCheck > SUPPLY_CHECK_INTERVAL) {
-    recalculateSupply();
-    lastSupplyCheck = gameTime;
-  }
+    // Visual-only updates (client animations, no gameplay effect)
+    updateAttacks(dt);       // animate missile positions locally
+    updateTurretMissiles(dt);
+    updateDroneIntercept();
+    updateDroneProjectiles(dt);
+    updateBattles();         // battle animation timer
+    updateParticles(dt);
+    updateCosmicDust(dt);
+    updateShields(dt);
+    updateProbes(dt);
+    updateOrbitProbes(dt);
+    updateClickAnims(dt);
+    updateShieldFlickers();
+  } else {
+    // Offline / single-player mode: all logic runs locally
+    gameTime += dt * 1000;
 
-  if (gameTime - lastAITick > AI_TICK_INTERVAL) {
-    for (const player of players) {
-      if (player.isAI) aiTick(player);
+    updateMoons(dt);
+    updateMining();
+    updateGrowth(dt);
+    updateStability(dt);
+    updateAttacks(dt);
+    updateTurrets();
+    updateTurretMissiles(dt);
+    updateDroneIntercept();
+    updateDroneProjectiles(dt);
+    updateBattles();
+    updateParticles(dt);
+    updateCosmicDust(dt);
+    updateShields(dt);
+    updateProbes(dt);
+    updateOrbitProbes(dt);
+    updateClickAnims(dt);
+    updateShieldFlickers();
+
+    if (gameTime - lastSupplyCheck > SUPPLY_CHECK_INTERVAL) {
+      recalculateSupply();
+      lastSupplyCheck = gameTime;
     }
-    lastAITick = gameTime;
+
+    if (gameTime - lastAITick > AI_TICK_INTERVAL) {
+      for (const player of players) {
+        if (player.isAI) aiTick(player);
+      }
+      lastAITick = gameTime;
+    }
+
+    checkGameOver();
   }
-
-
-
-  checkGameOver();
 }
 
 function gameLoop(timestamp: number): void {
@@ -6848,14 +7704,336 @@ function gameLoop(timestamp: number): void {
   update(dt);
   render();
 
+  // Autosave if wallet connected (offline only - server handles persistence in multiplayer)
+  if (!multiplayerConnected && shouldAutoSave()) {
+    saveUnitsGame();
+  }
+
   requestAnimationFrame(gameLoop);
+}
+
+// ========== MULTIPLAYER NETWORK INTEGRATION ==========
+
+function connectToMultiplayer(): void {
+  const address = walletState.address || '';
+  if (!address) {
+    console.log('[MP] No wallet address, playing offline');
+    return;
+  }
+
+  const name = address.substring(0, 8);
+  console.log(`[MP] Connecting to ${COLYSEUS_URL} as ${name}...`);
+
+  networkService = new UnitsNetworkService({
+    onConnected: (seed: number, playerId: number) => {
+      console.log(`[MP] Connected! seed=${seed}, playerId=${playerId}`);
+      multiplayerConnected = true;
+      multiplayerSeed = seed;
+      myPlayerId = playerId;
+      controlledPlayerId = playerId;
+
+      // Regenerate galaxy from server seed (deterministic)
+      generatePlanetsFromSeed(seed);
+      generateStars();
+
+      // Apply initial state from server
+      if (networkService) {
+        const allPlanets = networkService.getAllPlanets();
+        allPlanets.forEach((data, planetId) => {
+          applyPlanetSync(planetId, data);
+        });
+
+        const allPlayers = networkService.getAllPlayers();
+        applyPlayersFromServer(allPlayers);
+      }
+
+      // Center camera on our home planet
+      const me = players[playerId];
+      if (me) {
+        const home = planetMap.get(me.homeId);
+        if (home) {
+          camera.x = home.x * camera.zoom - gameWidth / 2;
+          camera.y = home.y * camera.zoom - gameHeight / 2;
+        }
+      }
+
+      gameState = GameState.PLAYING;
+    },
+
+    onDisconnected: (code: number, reason: string) => {
+      console.log(`[MP] Disconnected: ${code} ${reason}`);
+      multiplayerConnected = false;
+    },
+
+    onError: (message: string) => {
+      console.error(`[MP] Error: ${message}`);
+    },
+
+    onPlanetChanged: (planetId: number, data: SyncPlanetData) => {
+      applyPlanetSync(planetId, data);
+    },
+
+    onPlayerChanged: (playerId: number, data: any) => {
+      // Ensure player slot exists
+      while (players.length <= playerId) {
+        const idx = players.length;
+        const c = PLAYER_COLORS[idx % PLAYER_COLORS.length];
+        players.push({
+          id: idx, name: `Player ${idx + 1}`,
+          color: c.color, colorDark: c.dark,
+          planetCount: 0, totalUnits: 0,
+          homeId: -1, alive: true, isAI: false,
+        });
+      }
+      players[playerId].name = data.name || players[playerId].name;
+      players[playerId].color = data.color || players[playerId].color;
+      players[playerId].homeId = data.homeId ?? players[playerId].homeId;
+      players[playerId].alive = data.alive;
+      players[playerId].planetCount = data.planetCount;
+      players[playerId].totalUnits = data.totalUnits;
+    },
+
+    onAttackLaunched: (event: AttackLaunchedEvent) => {
+      // Create local attack animation from server event
+      const from = planetMap.get(event.fromId);
+      const to = planetMap.get(event.toId);
+      if (!from || !to) return;
+
+      const dist = getDistance(from, to);
+      const speed = ATTACK_BASE_SPEED;
+      const travelTime = dist / speed;
+      const initialAngle = Math.atan2(to.y - from.y, to.x - from.x);
+      const droneCount = from.buildings.filter(b => b && b.type === 'drone').length;
+
+      attacks.push({
+        fromId: event.fromId,
+        toId: event.toId,
+        units: event.units,
+        startUnits: event.units,
+        playerId: event.playerId,
+        progress: 0,
+        speed: 1.0 / travelTime,
+        isBlitz: event.isBlitz,
+        lastDegradeUnits: event.units,
+        x: from.x,
+        y: from.y,
+        startX: from.x,
+        startY: from.y,
+        angle: initialAngle,
+        traveledDist: 0,
+        droneCount: droneCount,
+        shipType: event.shipType as any,
+      });
+
+      // Discover target planet
+      if (event.playerId === controlledPlayerId) {
+        discoveredPlanets.add(event.toId);
+      }
+    },
+
+    onBattleStarted: (event: BattleStartedEvent) => {
+      const to = planetMap.get(event.planetId);
+      if (!to) return;
+      const totalUnits = event.attackUnits + event.defendUnits;
+      const duration = Math.min(3.0, Math.max(1.0, totalUnits / 80));
+      battles.push({
+        planetId: event.planetId,
+        attackUnits: event.attackUnits,
+        attackPlayerId: event.attackPlayerId,
+        defendUnits: event.defendUnits,
+        defendPlayerId: to.ownerId,
+        startTime: performance.now(),
+        duration: event.duration || duration,
+        isBlitz: false,
+        resolved: false,
+      });
+    },
+
+    onBattleResolved: (event: BattleResolvedEvent) => {
+      // Server has updated planet ownership via state sync
+      // Show visual feedback
+      const planet = planetMap.get(event.planetId);
+      if (planet) {
+        const screen = worldToScreen(planet.x, planet.y);
+        if (event.won) {
+          spawnParticles(screen.x, screen.y, players[event.attackPlayerId]?.color || '#fff', 20, 150);
+        } else {
+          spawnParticles(screen.x, screen.y, '#ff6644', 10, 100);
+        }
+      }
+    },
+
+    onTurretFired: (planetId: number, _targetAttackId: number) => {
+      // Visual feedback for turret firing
+      const planet = planetMap.get(planetId);
+      if (planet) {
+        const screen = worldToScreen(planet.x, planet.y);
+        spawnParticles(screen.x, screen.y, '#ff6644', 5, 60);
+      }
+    },
+
+    onAbilityUsed: (abilityId: string, targetPlanetId: number, _playerId: number) => {
+      const planet = planetMap.get(targetPlanetId);
+      if (planet) {
+        const screen = worldToScreen(planet.x, planet.y);
+        if (abilityId === 'nuke') {
+          spawnParticles(screen.x, screen.y, '#ff4400', 30, 200);
+        } else if (abilityId === 'shield') {
+          spawnParticles(screen.x, screen.y, '#44aaff', 15, 100);
+        }
+      }
+    },
+
+    onPlayerJoined: (event: any) => {
+      console.log(`[MP] Player joined: ${event.name} (${event.playerId})`);
+      // Players are synced via state; just show notification
+    },
+
+    onPlayerLeft: (playerId: number) => {
+      console.log(`[MP] Player left: ${playerId}`);
+    },
+
+    onReconnected: (playerId: number) => {
+      console.log(`[MP] Reconnected as player ${playerId}`);
+      myPlayerId = playerId;
+      controlledPlayerId = playerId;
+    },
+
+    onPhaseChanged: (phase: string) => {
+      console.log(`[MP] Phase changed: ${phase}`);
+      if (phase === 'playing') gameState = GameState.PLAYING;
+      else if (phase === 'gameover') gameState = GameState.GAMEOVER;
+    },
+
+    onGameTimeUpdated: (gt: number) => {
+      serverGameTime = gt;
+    },
+  });
+
+  networkService.connect(COLYSEUS_URL, address, name).then(success => {
+    if (!success) {
+      console.log('[MP] Failed to connect, playing offline');
+      multiplayerConnected = false;
+    }
+  });
+}
+
+function applyPlanetSync(planetId: number, data: SyncPlanetData): void {
+  const planet = planetMap.get(planetId);
+  if (!planet) return;
+
+  const prevOwner = planet.ownerId;
+  planet.ownerId = data.ownerId;
+  planet.units = data.units;
+  planet.maxUnits = data.maxUnits;
+  planet.stability = data.stability;
+  planet.connected = data.connected;
+  planet.generating = data.generating;
+  planet.hasShield = data.hasShield;
+  planet.defense = data.defense;
+  planet.growthRate = data.growthRate;
+
+  // Parse deposits
+  if (data.deposits) {
+    const parsed = UnitsNetworkService.parseDeposits(data.deposits);
+    for (let i = 0; i < planet.deposits.length && i < parsed.length; i++) {
+      planet.deposits[i].amount = parsed[i].amount;
+    }
+    // If server has more deposits, add them
+    while (planet.deposits.length < parsed.length) {
+      planet.deposits.push({ type: parsed[planet.deposits.length].type as DepositType, amount: parsed[planet.deposits.length].amount });
+    }
+  }
+
+  // Parse buildings
+  if (data.buildings !== undefined) {
+    const parsed = UnitsNetworkService.parseBuildings(data.buildings);
+    planet.buildings = parsed.map(b => b ? { type: b.type as any, slot: b.slot } : null);
+  }
+
+  // If ownership changed, discover the planet and handle visual effects
+  if (prevOwner !== planet.ownerId && planet.ownerId >= 0) {
+    discoveredPlanets.add(planetId);
+    if (planet.ownerId === controlledPlayerId && !planet.spriteType) {
+      planet.spriteType = Math.random() < 0.5 ? 'mars' : 'ice';
+    }
+  }
+}
+
+function applyPlayersFromServer(allPlayers: Map<number, any>): void {
+  // Ensure players array is large enough
+  const maxId = Math.max(...Array.from(allPlayers.keys()), -1);
+  while (players.length <= maxId) {
+    const idx = players.length;
+    const colors = PLAYER_COLORS[idx % PLAYER_COLORS.length];
+    players.push({
+      id: idx,
+      name: `Player ${idx + 1}`,
+      color: colors.color,
+      colorDark: colors.dark,
+      planetCount: 0,
+      totalUnits: 0,
+      homeId: -1,
+      alive: true,
+      isAI: false,
+    });
+  }
+
+  allPlayers.forEach((data, playerId) => {
+    if (players[playerId]) {
+      players[playerId].name = data.name || players[playerId].name;
+      players[playerId].color = data.color || players[playerId].color;
+      players[playerId].homeId = data.homeId;
+      players[playerId].alive = data.alive;
+      players[playerId].planetCount = data.planetCount;
+      players[playerId].totalUnits = data.totalUnits;
+      players[playerId].isAI = false;
+    }
+  });
+
+  // Set reveal zones for our player's home
+  revealZones = revealZones.filter(z => !z.permanent);
+  const me = players[controlledPlayerId];
+  if (me) {
+    const home = planetMap.get(me.homeId);
+    if (home) {
+      revealZones.push({
+        x: home.x, y: home.y,
+        radius: 1500,
+        timeLeft: 0,
+        permanent: true,
+      });
+    }
+  }
+
+  // Discover our planets
+  for (const p of planets) {
+    if (p.ownerId === controlledPlayerId) discoveredPlanets.add(p.id);
+    if (p.x === SUN_X && p.y === SUN_Y && p.radius === SUN_RADIUS) discoveredPlanets.add(p.id);
+  }
 }
 
 // ========== START ==========
 initGame();
+
+// Attempt multiplayer connection if wallet is already connected
+if (walletState.isConnected && walletState.address) {
+  connectToMultiplayer();
+}
+
 requestAnimationFrame((t) => {
   lastTime = t;
   gameLoop(t);
 });
 
 console.log('⚔️ UNITS Space - planets:', planets.length, ', players:', players.length);
+
+// Save on page unload (offline only)
+window.addEventListener('beforeunload', () => {
+  if (!multiplayerConnected) {
+    forceSaveUnitsGame();
+  }
+  if (networkService) {
+    networkService.disconnect();
+  }
+});

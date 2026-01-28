@@ -5,6 +5,7 @@ import express from "express";
 import { GameRoom } from "./rooms/GameRoom";
 import { PresenceRoom } from "./rooms/PresenceRoom";
 import { ChatRoom } from "./rooms/ChatRoom";
+import { UnitsRoom } from "./rooms/UnitsRoom";
 import { getRoomMetrics } from "./metrics/RoomMetrics";
 import { replayStore } from "./replay/ReplayStore";
 
@@ -37,6 +38,8 @@ export default config({
     gameServer.define("presence_room", PresenceRoom);
     // Register global chat room
     gameServer.define("chat_room", ChatRoom);
+    // Register Units galaxy conquest room (multiplayer)
+    gameServer.define("units_room", UnitsRoom);
 
     // Ensure matchmaker endpoints send CORS headers
     matchMaker.controller.getCorsHeaders = (req: any) => {
@@ -75,7 +78,7 @@ export default config({
       res.json({
         message: "Colyseus PvP Server",
         status: "running",
-        rooms: ["pvp_room", "pvp_5sec_room", "pvp_fun_room", "presence_room", "chat_room"],
+        rooms: ["pvp_room", "pvp_5sec_room", "pvp_fun_room", "presence_room", "chat_room", "units_room"],
         endpoints: {
           health: "/health",
           matchmake: "/matchmake"
