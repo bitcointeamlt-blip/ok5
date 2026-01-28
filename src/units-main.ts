@@ -2123,6 +2123,10 @@ function updateGrowth(dt: number): void {
 
     let growth = settings.growthRate * planet.growthRate;
 
+    // Mine building bonus
+    const mineCount = planet.buildings.filter(b => b && b.type === 'mine').length;
+    if (mineCount > 0) growth *= (1 + mineCount * 0.25);
+
     if (player.totalUnits >= EMPIRE_DEGRADE_UNIT_THRESHOLD) {
       if (planet.stability < 30) {
         growth = -1;
@@ -2144,7 +2148,11 @@ function updateGrowth(dt: number): void {
       }
     }
 
-    planet.units = Math.max(0, Math.min(planet.maxUnits, planet.units + growth * dt));
+    // Factory bonus: increased max units
+    const factoryCount = planet.buildings.filter(b => b && b.type === 'factory').length;
+    const effectiveMax = planet.maxUnits + factoryCount * 200;
+
+    planet.units = Math.max(0, Math.min(effectiveMax, planet.units + growth * dt));
 
     if (planet.units <= 0) {
       planet.ownerId = -1;
@@ -2336,7 +2344,12 @@ function updateBattles(): void {
 
     if (elapsed >= b.duration && !b.resolved) {
       b.resolved = true;
-      resolveBattle(b);
+      if (!multiplayerConnected) {
+        // Offline: resolve battle locally (change ownership, units)
+        resolveBattle(b);
+      }
+      // In multiplayer, server handles resolution via state sync.
+      // Just remove the battle animation.
       battles.splice(i, 1);
     } else {
       // Spawn clash particles during battle
@@ -2492,7 +2505,15 @@ function updateAttacks(dt: number): void {
 
     // Check if reached target (within planet radius)
     if (distToTarget <= to.radius + 5) {
-      resolveAttack(attack);
+      if (multiplayerConnected) {
+        // Multiplayer: server resolves attacks via state sync.
+        // Just remove the animation and show arrival particles.
+        const screen = worldToScreen(to.x, to.y);
+        spawnParticles(screen.x, screen.y, players[attack.playerId]?.color || '#fff', 6, 80);
+      } else {
+        // Offline: resolve locally
+        resolveAttack(attack);
+      }
       attacks[i] = attacks[attacks.length - 1];
       attacks.pop();
     }
@@ -7898,12 +7919,23 @@ function connectToMultiplayer(): void {
 
     onBattleResolved: (event: BattleResolvedEvent) => {
       // Server has updated planet ownership via state sync
+      // Remove any lingering battle animation for this planet
+      for (let i = battles.length - 1; i >= 0; i--) {
+        if (battles[i].planetId === event.planetId) {
+          battles[i].resolved = true;
+          battles.splice(i, 1);
+        }
+      }
       // Show visual feedback
       const planet = planetMap.get(event.planetId);
       if (planet) {
         const screen = worldToScreen(planet.x, planet.y);
         if (event.won) {
           spawnParticles(screen.x, screen.y, players[event.attackPlayerId]?.color || '#fff', 20, 150);
+          // Discover planet if we captured it
+          if (event.attackPlayerId === controlledPlayerId) {
+            discoveredPlanets.add(event.planetId);
+          }
         } else {
           spawnParticles(screen.x, screen.y, '#ff6644', 10, 100);
         }

@@ -311,13 +311,13 @@ export function pickStartingPlanet<T extends PickablePlanet>(
     .map(hid => planets.find(p => p.id === hid))
     .filter((p): p is T => !!p);
 
-  // Base filter: SMALL or MEDIUM, unowned, not moon/sun/blackhole
+  // Base filter: SMALL only (maxUnits=200), unowned, not moon/sun/blackhole
   const baseCandidates = planets.filter(p => {
     if (p.ownerId !== -1) return false;
     if (p.isMoon) return false;
     if (p.isBlackHole) return false;
     if (p.radius === SUN_RADIUS) return false;
-    if (p.size !== PlanetSize.SMALL && p.size !== PlanetSize.MEDIUM) return false;
+    if (p.size !== PlanetSize.SMALL) return false;
     // Not too close to any existing home
     for (const home of homePositions) {
       const dist = Math.sqrt((p.x - home.x) ** 2 + (p.y - home.y) ** 2);
