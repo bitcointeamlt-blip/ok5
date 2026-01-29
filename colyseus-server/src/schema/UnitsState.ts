@@ -31,6 +31,7 @@ export class SyncPlayer extends Schema {
   @type("string")  color: string     = "";
   @type("int16")   homeId: number    = -1;
   @type("boolean") alive: boolean    = true;
+  @type("boolean") online: boolean   = false;
   @type("uint16")  planetCount: number = 0;
   @type("uint32")  totalUnits: number  = 0;
 }

@@ -1,6 +1,6 @@
 // ========== UNITS - Space Strategy Game (Multiplayer) ==========
 import { walletService, type WalletProviderType } from './services/WalletService';
-import { UnitsNetworkService, type SyncPlanetData, type AttackLaunchedEvent, type BattleStartedEvent, type BattleResolvedEvent } from './services/UnitsNetworkService';
+import { UnitsNetworkService, type SyncPlanetData, type AttackLaunchedEvent, type BattleStartedEvent, type BattleResolvedEvent, type ActiveAttacksEvent } from './services/UnitsNetworkService';
 
 // ========== SEEDED RNG (mulberry32) - matches server ==========
 class SeededRNG {
@@ -303,6 +303,7 @@ interface Player {
   homeId: number;
   alive: boolean;
   isAI: boolean;
+  online: boolean;
 }
 
 interface AttackAnimation {
@@ -1806,7 +1807,8 @@ function initPlayers(): void {
       totalUnits: settings.startUnits,
       homeId: bestPlanet.id,
       alive: true,
-      isAI: false  // Both players are user-controlled
+      isAI: false,  // Both players are user-controlled
+      online: true,
     });
   }
 
@@ -4704,6 +4706,13 @@ function renderPlanet(planet: Planet): void {
   // Fog of war: check visibility (used for hiding unit counts)
   const visible = isVisibleToPlayer(planet);
 
+  // Reduce alpha for offline players' planets (multiplayer only)
+  const ownerPlayer = planet.ownerId >= 0 ? players[planet.ownerId] : null;
+  const isOfflineOwner = multiplayerConnected && ownerPlayer && !ownerPlayer.online && planet.ownerId !== controlledPlayerId;
+  if (isOfflineOwner) {
+    ctx.globalAlpha = 0.4;
+  }
+
   // Planet pulse/glow for owned planets
   let glowRadius = 0;
   if (planet.ownerId !== -1 && visible) {
@@ -7058,6 +7067,45 @@ function renderUI(): void {
     }
   }
 
+  // Player list (multiplayer only) - top right corner
+  if (multiplayerConnected && players.length > 0) {
+    const listX = canvas.width - 200;
+    let listY = 80;
+    const rowH = 20;
+    const listW = 195;
+    const alivePlayers = players.filter(p => p.alive);
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(listX, listY - 4, listW, alivePlayers.length * rowH + 8);
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(listX, listY - 4, listW, alivePlayers.length * rowH + 8);
+
+    for (const p of alivePlayers) {
+      // Online/offline dot
+      ctx.beginPath();
+      ctx.arc(listX + 10, listY + rowH / 2, 4, 0, Math.PI * 2);
+      ctx.fillStyle = p.online ? '#44ff44' : '#666666';
+      ctx.fill();
+
+      // Player name
+      ctx.font = '8px "Press Start 2P"';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = p.id === controlledPlayerId ? '#ffffff' : (p.online ? p.color : 'rgba(150,150,150,0.6)');
+      const label = p.name.length > 10 ? p.name.substring(0, 10) + '..' : p.name;
+      ctx.fillText(label, listX + 20, listY + rowH / 2);
+
+      // Planet count
+      ctx.textAlign = 'right';
+      ctx.fillStyle = p.online ? '#aaaaaa' : '#555555';
+      ctx.fillText(`${p.planetCount}P`, listX + listW - 8, listY + rowH / 2);
+
+      listY += rowH;
+    }
+  }
+
   // Attack/send line preview (only for visible targets)
   if (selectedPlanets.size > 0 && hoveredPlanet !== null && !selectedPlanets.has(hoveredPlanet)) {
     const to = planetMap.get(hoveredPlanet);
@@ -7718,8 +7766,13 @@ function update(dt: number): void {
   if (multiplayerConnected) {
     // In multiplayer mode: server is authoritative for game logic.
     // Client only runs visual updates + animations.
-    // gameTime is synced from server via onGameTimeUpdated callback.
-    gameTime = serverGameTime;
+    // Smooth gameTime interpolation: snap if >5s off, otherwise lerp
+    const timeDiff = serverGameTime - gameTime;
+    if (Math.abs(timeDiff) > 5000) {
+      gameTime = serverGameTime; // snap
+    } else {
+      gameTime += (timeDiff) * Math.min(1, dt * 3); // smooth approach
+    }
 
     // Moon orbits are visual-only, run locally for smooth animation
     updateMoons(dt);
@@ -7860,13 +7913,14 @@ function connectToMultiplayer(): void {
           id: idx, name: `Player ${idx + 1}`,
           color: c.color, colorDark: c.dark,
           planetCount: 0, totalUnits: 0,
-          homeId: -1, alive: true, isAI: false,
+          homeId: -1, alive: true, isAI: false, online: false,
         });
       }
       players[playerId].name = data.name || players[playerId].name;
       players[playerId].color = data.color || players[playerId].color;
       players[playerId].homeId = data.homeId ?? players[playerId].homeId;
       players[playerId].alive = data.alive;
+      players[playerId].online = data.online;
       players[playerId].planetCount = data.planetCount;
       players[playerId].totalUnits = data.totalUnits;
     },
@@ -7994,6 +8048,76 @@ function connectToMultiplayer(): void {
       console.log(`[MP] Player left: ${playerId}`);
     },
 
+    onPlayerOnline: (playerId: number) => {
+      console.log(`[MP] Player online: ${playerId}`);
+      if (players[playerId]) players[playerId].online = true;
+    },
+
+    onPlayerOffline: (playerId: number) => {
+      console.log(`[MP] Player offline: ${playerId}`);
+      if (players[playerId]) players[playerId].online = false;
+    },
+
+    onActiveAttacks: (event: ActiveAttacksEvent) => {
+      console.log(`[MP] Received active attacks: ${event.attacks.length} attacks, ${event.battles.length} battles`);
+      // Create local attack animations for in-flight attacks
+      for (const a of event.attacks) {
+        const from = planetMap.get(a.fromId);
+        const to = planetMap.get(a.toId);
+        if (!from || !to) continue;
+        // Check if we already have this attack locally (avoid duplicates)
+        const exists = attacks.some(atk => atk.fromId === a.fromId && atk.toId === a.toId && atk.playerId === a.playerId && Math.abs(atk.units - a.units) < 1);
+        if (exists) continue;
+
+        const dist = getDistance(from, to);
+        const speed = ATTACK_BASE_SPEED;
+        const travelTime = dist / speed;
+        // Estimate progress from server position
+        const dx = a.x - a.startX;
+        const dy = a.y - a.startY;
+        const traveled = Math.sqrt(dx * dx + dy * dy);
+        const progress = Math.min(0.99, traveled / dist);
+        const initialAngle = Math.atan2(to.y - from.y, to.x - from.x);
+        const droneCount = from.buildings.filter(b => b && b.type === 'drone').length;
+
+        attacks.push({
+          fromId: a.fromId,
+          toId: a.toId,
+          units: a.units,
+          startUnits: a.units,
+          playerId: a.playerId,
+          progress,
+          speed: 1.0 / travelTime,
+          isBlitz: a.isBlitz,
+          lastDegradeUnits: a.units,
+          x: a.x,
+          y: a.y,
+          startX: a.startX,
+          startY: a.startY,
+          angle: initialAngle,
+          traveledDist: traveled,
+          droneCount,
+          shipType: a.shipType as any,
+        });
+      }
+      // Create battle animations for active battles
+      for (const b of event.battles) {
+        const existing = battles.some(bt => bt.planetId === b.planetId && !bt.resolved);
+        if (existing) continue;
+        battles.push({
+          planetId: b.planetId,
+          attackUnits: b.attackUnits,
+          attackPlayerId: b.attackPlayerId,
+          defendUnits: b.defendUnits,
+          defendPlayerId: planetMap.get(b.planetId)?.ownerId ?? -1,
+          startTime: performance.now() - b.elapsed * 1000,
+          duration: b.duration,
+          isBlitz: false,
+          resolved: false,
+        });
+      }
+    },
+
     onReconnected: (playerId: number) => {
       console.log(`[MP] Reconnected as player ${playerId}`);
       myPlayerId = playerId;
@@ -8080,6 +8204,7 @@ function applyPlayersFromServer(allPlayers: Map<number, any>): void {
       homeId: -1,
       alive: true,
       isAI: false,
+      online: false,
     });
   }
 
@@ -8089,6 +8214,7 @@ function applyPlayersFromServer(allPlayers: Map<number, any>): void {
       players[playerId].color = data.color || players[playerId].color;
       players[playerId].homeId = data.homeId;
       players[playerId].alive = data.alive;
+      players[playerId].online = data.online;
       players[playerId].planetCount = data.planetCount;
       players[playerId].totalUnits = data.totalUnits;
       players[playerId].isAI = false;

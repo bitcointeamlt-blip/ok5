@@ -27,6 +27,7 @@ export interface SyncPlayerData {
   color: string;
   homeId: number;
   alive: boolean;
+  online: boolean;
   planetCount: number;
   totalUnits: number;
 }
@@ -63,6 +64,35 @@ export interface PlayerJoinedEvent {
   reconnected: boolean;
 }
 
+export interface ActiveAttackData {
+  attackId: number;
+  fromId: number;
+  toId: number;
+  units: number;
+  playerId: number;
+  shipType: string;
+  isBlitz: boolean;
+  progress: number;
+  startX: number;
+  startY: number;
+  x: number;
+  y: number;
+}
+
+export interface ActiveBattleData {
+  planetId: number;
+  attackUnits: number;
+  attackPlayerId: number;
+  defendUnits: number;
+  duration: number;
+  elapsed: number;
+}
+
+export interface ActiveAttacksEvent {
+  attacks: ActiveAttackData[];
+  battles: ActiveBattleData[];
+}
+
 export interface UnitsNetworkCallbacks {
   onConnected: (seed: number, myPlayerId: number) => void;
   onDisconnected: (code: number, reason: string) => void;
@@ -76,6 +106,9 @@ export interface UnitsNetworkCallbacks {
   onAbilityUsed: (abilityId: string, targetPlanetId: number, playerId: number) => void;
   onPlayerJoined: (event: PlayerJoinedEvent) => void;
   onPlayerLeft: (playerId: number) => void;
+  onPlayerOnline: (playerId: number) => void;
+  onPlayerOffline: (playerId: number) => void;
+  onActiveAttacks: (event: ActiveAttacksEvent) => void;
   onReconnected: (playerId: number) => void;
   onPhaseChanged: (phase: string) => void;
   onGameTimeUpdated: (gameTime: number) => void;
@@ -180,6 +213,7 @@ export class UnitsNetworkService {
           color: player.color,
           homeId: player.homeId,
           alive: player.alive,
+          online: player.online,
           planetCount: player.planetCount,
           totalUnits: player.totalUnits,
         });
@@ -234,6 +268,18 @@ export class UnitsNetworkService {
 
     this.room.onMessage("player_left", (msg: any) => {
       this.callbacks.onPlayerLeft(msg.playerId);
+    });
+
+    this.room.onMessage("player_online", (msg: any) => {
+      this.callbacks.onPlayerOnline(msg.playerId);
+    });
+
+    this.room.onMessage("player_offline", (msg: any) => {
+      this.callbacks.onPlayerOffline(msg.playerId);
+    });
+
+    this.room.onMessage("active_attacks", (msg: ActiveAttacksEvent) => {
+      this.callbacks.onActiveAttacks(msg);
     });
 
     this.room.onMessage("build_result", (_msg: any) => {
@@ -338,6 +384,7 @@ export class UnitsNetworkService {
         color: player.color,
         homeId: player.homeId,
         alive: player.alive,
+        online: player.online,
         planetCount: player.planetCount,
         totalUnits: player.totalUnits,
       });

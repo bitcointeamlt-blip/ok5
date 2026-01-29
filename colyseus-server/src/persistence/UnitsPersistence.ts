@@ -4,6 +4,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { UnitsGameLogic, ServerPlanet, ServerPlayer } from "../game/UnitsGameLogic";
+import { PLAYER_COLORS } from "../game/UnitsConstants";
 
 const DATA_DIR = path.resolve(__dirname, "../../data/galaxies");
 
@@ -82,27 +83,43 @@ export function saveGalaxy(galaxyId: string, seed: number, logic: UnitsGameLogic
   };
 
   const filePath = path.join(DATA_DIR, `${galaxyId}.json`);
+  const tmpPath = filePath + ".tmp";
+  const bakPath = filePath + ".bak";
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    // Backup existing save
+    if (fs.existsSync(filePath)) {
+      try { fs.copyFileSync(filePath, bakPath); } catch { /* ignore backup failure */ }
+    }
+    // Atomic write: write to tmp then rename
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpPath, filePath);
     console.log(`[UnitsPersistence] Saved galaxy ${galaxyId} (${data.planets.length} planets, ${data.players.length} players)`);
   } catch (e) {
     console.error(`[UnitsPersistence] Failed to save galaxy ${galaxyId}:`, e);
+    // Clean up tmp file if it exists
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch { /* ignore */ }
   }
 }
 
 export function loadGalaxy(galaxyId: string): GalaxySaveData | null {
   const filePath = path.join(DATA_DIR, `${galaxyId}.json`);
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const data: GalaxySaveData = JSON.parse(raw);
-    if (data.version !== 1) return null;
-    console.log(`[UnitsPersistence] Loaded galaxy ${galaxyId} (${data.planets.length} planets, ${data.players.length} players)`);
-    return data;
-  } catch (e) {
-    console.error(`[UnitsPersistence] Failed to load galaxy ${galaxyId}:`, e);
-    return null;
+  const bakPath = filePath + ".bak";
+
+  // Try main file first, fallback to .bak
+  for (const tryPath of [filePath, bakPath]) {
+    try {
+      if (!fs.existsSync(tryPath)) continue;
+      const raw = fs.readFileSync(tryPath, "utf-8");
+      const data: GalaxySaveData = JSON.parse(raw);
+      if (data.version !== 1) continue;
+      const source = tryPath === bakPath ? " (from backup)" : "";
+      console.log(`[UnitsPersistence] Loaded galaxy ${galaxyId}${source} (${data.planets.length} planets, ${data.players.length} players)`);
+      return data;
+    } catch (e) {
+      console.error(`[UnitsPersistence] Failed to load ${tryPath}:`, e);
+    }
   }
+  return null;
 }
 
 /**
@@ -137,13 +154,44 @@ export function applySaveToLogic(save: GalaxySaveData, logic: UnitsGameLogic): v
     }
   }
 
-  // Restore players
+  // Restore players — logic.players is empty after initFromGalaxy(),
+  // so we must create new ServerPlayer objects from save data.
   for (const sp of save.players) {
-    if (logic.players[sp.id]) {
-      logic.players[sp.id].address = sp.address;
-      logic.players[sp.id].name = sp.name;
-      logic.players[sp.id].alive = sp.alive;
-      logic.players[sp.id].homeId = sp.homeId;
+    const colorEntry = PLAYER_COLORS[sp.id % PLAYER_COLORS.length];
+    const player: ServerPlayer = {
+      id: sp.id,
+      sessionId: "",          // no session until they reconnect
+      address: sp.address,
+      name: sp.name,
+      color: sp.color || colorEntry.color,
+      colorDark: colorEntry.dark,
+      homeId: sp.homeId,
+      alive: sp.alive,
+      isAI: sp.isAI,
+      planetCount: 0,
+      totalUnits: 0,
+    };
+    // Ensure players array is filled in order (sparse-safe)
+    while (logic.players.length < sp.id) {
+      const fillColor = PLAYER_COLORS[logic.players.length % PLAYER_COLORS.length];
+      logic.players.push({
+        id: logic.players.length,
+        sessionId: "",
+        address: "",
+        name: `Player ${logic.players.length + 1}`,
+        color: fillColor.color,
+        colorDark: fillColor.dark,
+        homeId: -1,
+        alive: false,
+        isAI: false,
+        planetCount: 0,
+        totalUnits: 0,
+      });
+    }
+    if (logic.players.length === sp.id) {
+      logic.players.push(player);
+    } else {
+      logic.players[sp.id] = player;
     }
   }
 }

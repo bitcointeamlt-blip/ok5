@@ -6,8 +6,9 @@ import { PLAYER_COLORS, MAX_PLAYERS, STABILITY_MAX, type BuildingType } from "..
 import { saveGalaxy, loadGalaxy, applySaveToLogic } from "../persistence/UnitsPersistence";
 
 const TICK_RATE = 10;           // 10 Hz
-const AUTOSAVE_INTERVAL = 30000; // 30 seconds
-const RECONNECT_TIMEOUT = 120;   // seconds
+const AUTOSAVE_INTERVAL = 15000; // 15 seconds
+const RECONNECT_TIMEOUT = 600;   // seconds (10 minutes)
+const SAVE_DEBOUNCE_MS = 2000;   // min 2s between saves
 
 export class UnitsRoom extends Room<UnitsState> {
   logic!: UnitsGameLogic;
@@ -18,6 +19,8 @@ export class UnitsRoom extends Room<UnitsState> {
   autosaveInterval: ReturnType<typeof setInterval> | null = null;
   // Track disconnected players for reconnection
   disconnectedPlayers: Map<string, { playerId: number; sessionId: string; leftAt: number }> = new Map();
+  lastSaveTime = 0;
+  pendingSave = false;
 
   onCreate(options: any): void {
     console.log("[UnitsRoom] Creating room", this.roomId);
@@ -52,7 +55,10 @@ export class UnitsRoom extends Room<UnitsState> {
     const events: GameEvents = {
       onAttackLaunched: (attack) => this.broadcastAttackLaunched(attack),
       onBattleStarted: (battle) => this.broadcastBattleStarted(battle),
-      onBattleResolved: (battle, won, remaining) => this.broadcastBattleResolved(battle, won, remaining),
+      onBattleResolved: (battle, won, remaining) => {
+        this.broadcastBattleResolved(battle, won, remaining);
+        this.debouncedSave();
+      },
       onTurretFired: (planetId, targetId) => this.broadcast("turret_fired", { planetId, targetAttackId: targetId }),
       onPlanetCaptured: (planetId, newOwnerId, prevOwnerId) => {
         this.syncPlanet(planetId);
@@ -61,6 +67,7 @@ export class UnitsRoom extends Room<UnitsState> {
       onPlayerEliminated: (playerId) => {
         this.broadcast("player_left", { playerId });
         this.syncPlayers();
+        this.debouncedSave();
       },
     };
 
@@ -77,6 +84,27 @@ export class UnitsRoom extends Room<UnitsState> {
     if (saved && saved.seed === this.seed) {
       applySaveToLogic(saved, this.logic);
       console.log("[UnitsRoom] Restored saved galaxy:", this.galaxyId);
+    }
+
+    // Initialize synced player schemas from restored players (all offline until they connect)
+    for (const player of this.logic.players) {
+      const syncPlayer = new SyncPlayer();
+      syncPlayer.sessionId = "";
+      syncPlayer.address = player.address;
+      syncPlayer.playerId = player.id;
+      syncPlayer.name = player.name;
+      syncPlayer.color = player.color;
+      syncPlayer.homeId = player.homeId;
+      syncPlayer.alive = player.alive;
+      syncPlayer.online = false;
+      syncPlayer.planetCount = 0;
+      syncPlayer.totalUnits = 0;
+      state.players.set(String(player.id), syncPlayer);
+    }
+
+    // If we have restored players, start in playing phase immediately
+    if (this.logic.players.length > 0) {
+      state.phase = "playing";
     }
 
     // Initialize synced planet schemas
@@ -131,6 +159,7 @@ export class UnitsRoom extends Room<UnitsState> {
       if (syncPlayer) {
         syncPlayer.sessionId = client.sessionId;
         syncPlayer.alive = true;
+        syncPlayer.online = true;
       }
 
       console.log(`[UnitsRoom] Player reconnected: slot ${existingPlayer.id}, address: ${address}`);
@@ -141,6 +170,8 @@ export class UnitsRoom extends Room<UnitsState> {
         color: existingPlayer.color,
         reconnected: true,
       });
+      this.broadcast("player_online", { playerId: existingPlayer.id });
+      this.sendActiveAttacks(client);
       return;
     }
 
@@ -171,6 +202,7 @@ export class UnitsRoom extends Room<UnitsState> {
     syncPlayer.color = player.color;
     syncPlayer.homeId = player.homeId;
     syncPlayer.alive = true;
+    syncPlayer.online = true;
     this.state.players.set(String(player.id), syncPlayer);
 
     // Sync the home planet state
@@ -188,6 +220,8 @@ export class UnitsRoom extends Room<UnitsState> {
       color: player.color,
       reconnected: false,
     });
+    this.broadcast("player_online", { playerId: player.id });
+    this.sendActiveAttacks(client);
 
     this.save();
   }
@@ -199,6 +233,12 @@ export class UnitsRoom extends Room<UnitsState> {
 
     console.log(`[UnitsRoom] Player leaving: slot ${player.id}, consented: ${consented}`);
 
+    // Mark as offline
+    const syncPlayer = this.state.players.get(String(player.id));
+    if (syncPlayer) {
+      syncPlayer.online = false;
+    }
+
     // Track for reconnection
     this.disconnectedPlayers.set(player.address, {
       playerId: player.id,
@@ -206,6 +246,7 @@ export class UnitsRoom extends Room<UnitsState> {
       leftAt: Date.now(),
     });
 
+    this.broadcast("player_offline", { playerId: player.id });
     this.broadcast("player_left", { playerId: player.id });
 
     // Allow reconnection
@@ -389,8 +430,49 @@ export class UnitsRoom extends Room<UnitsState> {
     });
   }
 
+  // ── Active attacks sync ──────────────────────────────
+  sendActiveAttacks(client: Client): void {
+    const activeAttacks = this.logic.attacks.map(a => ({
+      attackId: a.id,
+      fromId: a.fromId,
+      toId: a.toId,
+      units: a.units,
+      playerId: a.playerId,
+      shipType: a.shipType,
+      isBlitz: a.isBlitz,
+      progress: a.traveledDist, // how far along
+      startX: a.startX,
+      startY: a.startY,
+      x: a.x,
+      y: a.y,
+    }));
+    const activeBattles = this.logic.battles.filter(b => !b.resolved).map(b => ({
+      planetId: b.planetId,
+      attackUnits: b.attackUnits,
+      attackPlayerId: b.attackPlayerId,
+      defendUnits: b.defendUnits,
+      duration: b.duration,
+      elapsed: (this.logic.gameTime - b.startTime) / 1000,
+    }));
+    client.send("active_attacks", { attacks: activeAttacks, battles: activeBattles });
+  }
+
   // ── Persistence ───────────────────────────────────────
+  debouncedSave(): void {
+    const now = Date.now();
+    if (now - this.lastSaveTime >= SAVE_DEBOUNCE_MS) {
+      this.save();
+    } else if (!this.pendingSave) {
+      this.pendingSave = true;
+      setTimeout(() => {
+        this.pendingSave = false;
+        this.save();
+      }, SAVE_DEBOUNCE_MS - (now - this.lastSaveTime));
+    }
+  }
+
   save(): void {
+    this.lastSaveTime = Date.now();
     saveGalaxy(this.galaxyId, this.seed, this.logic);
   }
 }
