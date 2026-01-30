@@ -17,6 +17,7 @@ export interface SyncPlanetData {
   buildings: string;
   defense: number;
   growthRate: number;
+  radius: number;
 }
 
 export interface SyncPlayerData {
@@ -100,6 +101,7 @@ export interface UnitsNetworkCallbacks {
   onPlanetChanged: (planetId: number, data: SyncPlanetData) => void;
   onPlayerChanged: (playerId: number, data: SyncPlayerData) => void;
   onAttackLaunched: (event: AttackLaunchedEvent) => void;
+  onAttackDestroyed: (attackId: number, playerId: number, reason: string) => void;
   onBattleStarted: (event: BattleStartedEvent) => void;
   onBattleResolved: (event: BattleResolvedEvent) => void;
   onTurretFired: (planetId: number, targetAttackId: number) => void;
@@ -112,6 +114,10 @@ export interface UnitsNetworkCallbacks {
   onReconnected: (playerId: number) => void;
   onPhaseChanged: (phase: string) => void;
   onGameTimeUpdated: (gameTime: number) => void;
+  onBuildResult: (success: boolean, planetId: number, slot: number, buildingType: string) => void;
+  onAbilityResult: (success: boolean, abilityId: string, reason?: string, remaining?: number) => void;
+  onWinnerChanged: (winnerId: string) => void;
+  onRevealZone: (x: number, y: number, radius: number, permanent: boolean) => void;
 }
 
 // ── Service ─────────────────────────────────────────────────
@@ -142,7 +148,15 @@ export class UnitsNetworkService {
       });
 
       this._connected = true;
-      this._seed = (this.room.state as any).seed;
+
+      // Read seed — may not be available immediately, so also listen for it
+      const state = this.room.state as any;
+      if (state.seed) {
+        this._seed = state.seed;
+      }
+      state.listen("seed", (value: number) => {
+        if (value) this._seed = value;
+      });
 
       // Listen for state changes
       this.setupStateListeners();
@@ -175,6 +189,11 @@ export class UnitsNetworkService {
       this.callbacks.onPhaseChanged(value);
     });
 
+    // Listen for winnerId changes
+    state.listen("winnerId", (value: string) => {
+      if (value) this.callbacks.onWinnerChanged(value);
+    });
+
     // Listen for gameTime changes
     state.listen("gameTime", (value: number) => {
       this.callbacks.onGameTimeUpdated(value);
@@ -197,6 +216,7 @@ export class UnitsNetworkService {
           buildings: planet.buildings,
           defense: planet.defense,
           growthRate: planet.growthRate,
+          radius: planet.radius,
         });
       });
     });
@@ -227,6 +247,9 @@ export class UnitsNetworkService {
 
     this.room.onMessage("reconnected", (msg: any) => {
       this.myPlayerId = msg.playerId;
+      if (!this._seed && this.room) {
+        this._seed = (this.room.state as any).seed || 0;
+      }
       this.callbacks.onReconnected(msg.playerId);
       this.callbacks.onConnected(this._seed, this.myPlayerId);
     });
@@ -237,6 +260,10 @@ export class UnitsNetworkService {
 
     this.room.onMessage("attack_launched", (msg: AttackLaunchedEvent) => {
       this.callbacks.onAttackLaunched(msg);
+    });
+
+    this.room.onMessage("attack_destroyed", (msg: any) => {
+      this.callbacks.onAttackDestroyed(msg.attackId, msg.playerId, msg.reason);
     });
 
     this.room.onMessage("battle_started", (msg: BattleStartedEvent) => {
@@ -261,6 +288,10 @@ export class UnitsNetworkService {
       if (this.myPlayerId < 0) {
         // First player_joined after our connect = us
         this.myPlayerId = msg.playerId;
+        // Re-read seed from state (it should be synced by now)
+        if (!this._seed && this.room) {
+          this._seed = (this.room.state as any).seed || 0;
+        }
         this.callbacks.onConnected(this._seed, this.myPlayerId);
       }
       this.callbacks.onPlayerJoined(msg);
@@ -282,8 +313,16 @@ export class UnitsNetworkService {
       this.callbacks.onActiveAttacks(msg);
     });
 
-    this.room.onMessage("build_result", (_msg: any) => {
-      // Client can use this for UI feedback
+    this.room.onMessage("build_result", (msg: any) => {
+      this.callbacks.onBuildResult(msg.success, msg.planetId, msg.slot, msg.buildingType);
+    });
+
+    this.room.onMessage("ability_result", (msg: any) => {
+      this.callbacks.onAbilityResult(msg.success, msg.abilityId, msg.reason, msg.remaining);
+    });
+
+    this.room.onMessage("reveal_zone", (msg: any) => {
+      this.callbacks.onRevealZone(msg.x, msg.y, msg.radius, msg.permanent ?? false);
     });
   }
 
@@ -365,6 +404,7 @@ export class UnitsNetworkService {
         buildings: planet.buildings,
         defense: planet.defense,
         growthRate: planet.growthRate,
+        radius: planet.radius,
       });
     });
     return result;

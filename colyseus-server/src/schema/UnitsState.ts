@@ -18,6 +18,7 @@ export class SyncPlanet extends Schema {
   @type("string")  buildings: string  = "";     // "turret:0,mine:1,"
   @type("float32") defense: number    = 1;
   @type("float32") growthRate: number = 1;
+  @type("float32") radius: number    = 0;
 }
 
 /**

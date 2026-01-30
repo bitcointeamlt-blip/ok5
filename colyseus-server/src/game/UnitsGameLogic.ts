@@ -6,7 +6,7 @@ import {
   WORLD_SIZE, STABILITY_MAX, SUPPLY_RANGE,
   EMPIRE_SLOW_THRESHOLD, EMPIRE_DECAY_THRESHOLD,
   EMPIRE_GROWTH_PENALTY, EMPIRE_DEGRADE_UNIT_THRESHOLD,
-  DISTANCE_NO_PENALTY, DISTANCE_PENALTY_PER_30PX,
+  DISTANCE_NO_PENALTY, DISTANCE_LOSS_INTERVAL,
   ATTACK_BASE_SPEED, TURRET_FIRE_DISTANCE, TURRET_DAMAGE_DIVISOR,
   TURRET_MISSILE_SPEED, DRONE_INTERCEPT_RANGE, SHIELD_RADIUS,
   DIFFICULTY_SETTINGS, PlanetSize, getPlanetProperties,
@@ -99,6 +99,7 @@ export interface ServerTurretMissile {
 // ── Event callbacks ─────────────────────────────────────────
 export interface GameEvents {
   onAttackLaunched(attack: ServerAttack): void;
+  onAttackDestroyed(attackId: number, playerId: number, reason: string): void;
   onBattleStarted(battle: ServerBattle): void;
   onBattleResolved(battle: ServerBattle, won: boolean, remainingUnits: number): void;
   onTurretFired(planetId: number, targetAttackId: number): void;
@@ -190,6 +191,7 @@ export class UnitsGameLogic {
       home.stability = STABILITY_MAX;
       home.connected = true;
       home.generating = true;
+      home.radius += 10; // Bigger starting planet (matches offline setup)
       // Give starting resources
       home.deposits = [
         { type: 'carbon', amount: 100 },
@@ -209,6 +211,23 @@ export class UnitsGameLogic {
 
   findPlayerByAddress(address: string): ServerPlayer | undefined {
     return this.players.find(p => p.address.toLowerCase() === address.toLowerCase());
+  }
+
+  /** Find nearest unowned planet of a given size to a position */
+  findNearestUnownedBySize(x: number, y: number, size: PlanetSize): ServerPlanet | null {
+    let best: ServerPlanet | null = null;
+    let bestDist = Infinity;
+    for (const p of this.planets) {
+      if (p.ownerId !== -1) continue;
+      if (p.size !== size) continue;
+      if (p.isMoon || p.isBlackHole) continue;
+      const dist = Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = p;
+      }
+    }
+    return best;
   }
 
   // ── Main tick (called at 10 Hz) ───────────────────────────
@@ -458,7 +477,7 @@ export class UnitsGameLogic {
   calculateArrivingUnits(sentUnits: number, distance: number): number {
     if (distance <= DISTANCE_NO_PENALTY) return sentUnits;
     const extra = distance - DISTANCE_NO_PENALTY;
-    const lost = Math.floor(extra / 30) * DISTANCE_PENALTY_PER_30PX;
+    const lost = Math.floor(extra / DISTANCE_LOSS_INTERVAL);
     return Math.max(0, sentUnits - lost);
   }
 
@@ -483,7 +502,7 @@ export class UnitsGameLogic {
       if (Math.abs(angleDiff) < maxTurn) attack.angle = targetAngle;
       else attack.angle += Math.sign(angleDiff) * maxTurn;
 
-      const moveSpeed = ATTACK_BASE_SPEED * dt;
+      const moveSpeed = ATTACK_BASE_SPEED * (attack.isBlitz ? 1.5 : 1.0) * dt;
       const oldX = attack.x, oldY = attack.y;
       attack.x += Math.cos(attack.angle) * moveSpeed;
       attack.y += Math.sin(attack.angle) * moveSpeed;
@@ -491,7 +510,11 @@ export class UnitsGameLogic {
 
       // Distance degradation
       attack.units = this.calculateArrivingUnits(attack.startUnits, attack.traveledDist);
-      if (attack.units <= 0) { this.removeAttack(i); continue; }
+      if (attack.units <= 0) {
+        this.events.onAttackDestroyed(attack.id, attack.playerId, "degradation");
+        this.removeAttack(i);
+        continue;
+      }
 
       // Shield collision
       if (!attack.shieldHit && to.hasShield && to.ownerId !== attack.playerId && distToTarget <= SHIELD_RADIUS) {
@@ -502,7 +525,11 @@ export class UnitsGameLogic {
         for (let b = 0; b < to.buildings.length; b++) {
           if (to.buildings[b]?.type === 'shield_gen') { to.buildings[b] = null; break; }
         }
-        if (attack.units <= 0) { this.removeAttack(i); continue; }
+        if (attack.units <= 0) {
+          this.events.onAttackDestroyed(attack.id, attack.playerId, "shield");
+          this.removeAttack(i);
+          continue;
+        }
       }
 
       // Arrival
@@ -818,6 +845,15 @@ export class UnitsGameLogic {
       else return false;
     }
     return true;
+  }
+
+  // ── Win condition ───────────────────────────────────────────
+  /** Returns winner playerId if only 1 alive player remains, or -1 */
+  checkGameOver(): number {
+    if (this.players.length < 2) return -1;
+    const alivePlayers = this.players.filter(p => p.alive);
+    if (alivePlayers.length === 1) return alivePlayers[0].id;
+    return -1;
   }
 
   // ── Encoding helpers ──────────────────────────────────────

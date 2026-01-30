@@ -25,9 +25,9 @@ export const EMPIRE_GROWTH_PENALTY = 0.08;
 export const EMPIRE_DEGRADE_UNIT_THRESHOLD = 2000;
 
 // Attack
-export const DISTANCE_NO_PENALTY = 700;
-export const DISTANCE_PENALTY_PER_30PX = 1;
-export const ATTACK_BASE_SPEED = 70;
+export const DISTANCE_NO_PENALTY = 2000;
+export const DISTANCE_LOSS_INTERVAL = 80;   // lose 1 unit per this many px beyond DISTANCE_NO_PENALTY
+export const ATTACK_BASE_SPEED = 90;
 
 // Turrets
 export const TURRET_FIRE_DISTANCE = 800;

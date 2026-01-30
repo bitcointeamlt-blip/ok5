@@ -142,9 +142,9 @@ const EMPIRE_GROWTH_PENALTY = 0.08;
 const EMPIRE_DEGRADE_UNIT_THRESHOLD = 2000;
 
 // Attack
-const DISTANCE_NO_PENALTY = 700;      // no penalty for first 700px
-const DISTANCE_PENALTY_PER_30PX = 1;  // lose 1 unit per 30px after 700px
-const ATTACK_BASE_SPEED = 70;
+const DISTANCE_NO_PENALTY = 2000;     // no penalty for first 2000px
+const DISTANCE_LOSS_INTERVAL = 80;    // lose 1 unit per 80px after threshold
+const ATTACK_BASE_SPEED = 90;
 
 // Fog of War
 const FOG_REVEAL_DURATION = 5000;  // full vision for first 5 seconds
@@ -509,7 +509,13 @@ walletService.onStateChange((state) => {
   walletState = state;
   if (state.isConnected && state.address) {
     walletError = null;
-    // Connect to multiplayer server when wallet connects
+    // If already connected with anon ID, disconnect and reconnect with real address
+    if (networkService && multiplayerConnected) {
+      console.log('[MP] Wallet connected, reconnecting with real address...');
+      networkService.disconnect();
+      multiplayerConnected = false;
+      networkService = null;
+    }
     connectToMultiplayer();
   }
 });
@@ -1146,12 +1152,12 @@ let fogCtx: CanvasRenderingContext2D | null = null;
 let probes: Probe[] = [];
 let orbitProbes: OrbitProbe[] = [];
 let revealZones: RevealZone[] = [];
-const PROBE_SPEED = 350;       // px/sec
-const PROBE_REVEAL_RADIUS = 200; // radius of each reveal circle
+const PROBE_SPEED = 450;       // px/sec
+const PROBE_REVEAL_RADIUS = 500; // radius of each reveal circle
 const ORBIT_PROBE_SPEED = 1.5; // radians per second
-const PROBE_REVEAL_DURATION = 60000; // 1 min
-const PROBE_DROP_INTERVAL = 80; // drop reveal zone every 80px
-const PROBE_UNIT_COST_PER_100PX = 5; // 5 units per 100px distance
+const PROBE_REVEAL_DURATION = 90000; // 1.5 min
+const PROBE_DROP_INTERVAL = 60; // drop reveal zone every 60px (denser trail)
+const PROBE_UNIT_COST_PER_100PX = 2; // 2 units per 100px distance (cheaper = flies farther)
 
 // Abilities
 let abilities: Ability[] = [
@@ -1911,9 +1917,7 @@ function initGame(): void {
   } else {
     generatePlanets();
   }
-  if (!multiplayerConnected) {
-    initPlayers();
-  }
+  // Server handles player setup — no initPlayers() call needed
   particles = [];
   attacks = [];
   turretMissiles = [];
@@ -1939,26 +1943,9 @@ function initGame(): void {
   lastAITick = 0;
   abilities.forEach(a => a.lastUsed = -99999);
 
-  // Add permanent reveal zone around players' starting positions (OFFLINE ONLY)
-  // In multiplayer, fog of war is based purely on owned planets' vision ranges.
-  if (!multiplayerConnected) {
-    for (const player of players) {
-      const home = planetMap.get(player.homeId);
-      if (home) {
-        revealZones.push({
-          x: home.x,
-          y: home.y,
-          radius: 1500,
-          timeLeft: 0,
-          permanent: true
-        });
-      }
-    }
-  }
-
-  // Auto-discover both players' planets and sun (all are user-controlled)
+  // Reveal zones are now sent by the server via "reveal_zone" messages.
+  // Auto-discover sun
   for (const p of planets) {
-    if (p.ownerId === 0 || p.ownerId === 1) discoveredPlanets.add(p.id);
     if (p.x === SUN_X && p.y === SUN_Y && p.radius === SUN_RADIUS) discoveredPlanets.add(p.id);
   }
 
@@ -2230,7 +2217,7 @@ function calculateArrivingUnits(sentUnits: number, distance: number): number {
     return sentUnits; // no penalty
   }
   const extraDistance = distance - DISTANCE_NO_PENALTY;
-  const unitsLost = Math.floor(extraDistance / 30) * DISTANCE_PENALTY_PER_30PX;
+  const unitsLost = Math.floor(extraDistance / DISTANCE_LOSS_INTERVAL);
   return Math.max(0, sentUnits - unitsLost);
 }
 
@@ -2417,8 +2404,8 @@ function updateAttacks(dt: number): void {
       attack.angle += Math.sign(angleDiff) * maxTurn;
     }
 
-    // Move in current facing direction
-    const moveSpeed = ATTACK_BASE_SPEED * dt;
+    // Move in current facing direction (blitz = 1.5x speed)
+    const moveSpeed = ATTACK_BASE_SPEED * (attack.isBlitz ? 1.5 : 1.0) * dt;
     const oldX = attack.x;
     const oldY = attack.y;
     attack.x += Math.cos(attack.angle) * moveSpeed;
@@ -3037,7 +3024,7 @@ function updateProbes(dt: number): void {
     probe.y += ny * moveAmount;
 
     // Discover nearby planets (probe reveals planet type)
-    if (probe.playerId === 0) {
+    if (probe.playerId === controlledPlayerId) {
       for (const p of planets) {
         if (discoveredPlanets.has(p.id)) continue;
         const pd = Math.sqrt((p.x - probe.x) ** 2 + (p.y - probe.y) ** 2);
@@ -3833,7 +3820,7 @@ canvas.addEventListener('mouseup', () => {
             targetX: planet.x + nx * travelDist,
             targetY: planet.y + ny * travelDist,
             speed: PROBE_SPEED,
-            playerId: 0,
+            playerId: controlledPlayerId,
             done: false
           });
 
@@ -4212,7 +4199,7 @@ canvas.addEventListener('touchend', (e) => {
             x: planet.x, y: planet.y,
             targetX: planet.x + nx * travelDist,
             targetY: planet.y + ny * travelDist,
-            speed: PROBE_SPEED, playerId: 0, done: false
+            speed: PROBE_SPEED, playerId: controlledPlayerId, done: false
           });
           const screen = worldToScreen(planet.x, planet.y);
           spawnParticles(screen.x, screen.y, '#44ff88', 8, 80);
@@ -5884,6 +5871,9 @@ function renderFogOfWar(): void {
   // No fog during initial reveal period
   if (gameTime < FOG_REVEAL_DURATION) return;
 
+  // No fog while waiting for multiplayer connection
+  if (!multiplayerConnected && networkService) return;
+
   // Calculate fog opacity (fades in after reveal)
   const fadeProgress = Math.min(1, (gameTime - FOG_REVEAL_DURATION) / FOG_FADE_IN_DURATION);
   const fogOpacity = 0.93 * fadeProgress;
@@ -5926,7 +5916,7 @@ function renderFogOfWar(): void {
   }
 
   for (const planet of planets) {
-    if (planet.ownerId !== 0) continue;
+    if (planet.ownerId !== controlledPlayerId) continue;
 
     const screen = worldToScreen(planet.x, planet.y);
     const visionRadius = getVisionRange(planet) * camera.zoom;
@@ -5947,7 +5937,7 @@ function renderFogOfWar(): void {
 
   // Cut out light from flying attacks (player only)
   for (const attack of attacks) {
-    if (attack.playerId !== 0) continue;
+    if (attack.playerId !== controlledPlayerId) continue;
     const from = planetMap.get(attack.fromId);
     const to = planetMap.get(attack.toId);
     if (!from || !to) continue;
@@ -6022,7 +6012,7 @@ function renderFogOfWar(): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const planet of planets) {
-    if (planet.ownerId !== 0) continue;
+    if (planet.ownerId !== controlledPlayerId) continue;
     const screen = worldToScreen(planet.x, planet.y);
     const visionRadius = getVisionRange(planet) * camera.zoom;
 
@@ -7123,7 +7113,7 @@ function renderUI(): void {
 
           const fromScreen = worldToScreen(from.x, from.y);
           const dist = getDistance(from, to);
-          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / 30) * DISTANCE_PENALTY_PER_30PX;
+          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / DISTANCE_LOSS_INTERVAL);
           const colorVal = Math.max(0, 200 - unitsLost * 2);
 
           ctx.strokeStyle = `rgba(255, ${colorVal}, 0, 0.4)`;
@@ -7143,7 +7133,7 @@ function renderUI(): void {
         })!);
         if (firstFrom) {
           const dist = getDistance(firstFrom, to);
-          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / 30) * DISTANCE_PENALTY_PER_30PX;
+          const unitsLost = dist <= DISTANCE_NO_PENALTY ? 0 : Math.floor((dist - DISTANCE_NO_PENALTY) / DISTANCE_LOSS_INTERVAL);
           ctx.font = '10px "Press Start 2P"';
           ctx.textAlign = 'center';
           if (unitsLost > 0) {
@@ -7846,10 +7836,17 @@ function gameLoop(timestamp: number): void {
 // ========== MULTIPLAYER NETWORK INTEGRATION ==========
 
 function connectToMultiplayer(): void {
-  const address = walletState.address || '';
+  // Use wallet address if available, otherwise generate/reuse anonymous ID
+  let address = walletState.address || '';
   if (!address) {
-    console.log('[MP] No wallet address, playing offline');
-    return;
+    let anonId = localStorage.getItem('units_anon_id');
+    if (!anonId) {
+      const hex = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+      anonId = `anon-${hex}`;
+      localStorage.setItem('units_anon_id', anonId);
+    }
+    address = anonId;
   }
 
   const name = address.substring(0, 8);
@@ -7963,7 +7960,22 @@ function connectToMultiplayer(): void {
       }
     },
 
+    onAttackDestroyed: (attackId: number, playerId: number, reason: string) => {
+      // Show feedback if it's our attack
+      if (playerId === controlledPlayerId) {
+        const msg = reason === "degradation" ? "ATTRITION - Units lost!" : "Attack destroyed!";
+        const cx = canvas.width / 2;
+        clickAnims.push({
+          x: cx, y: 80,
+          vx: 0, vy: -1,
+          life: 150, maxLife: 150,
+          text: msg, color: '#ff4444'
+        });
+      }
+    },
+
     onBattleStarted: (event: BattleStartedEvent) => {
+      // Battle started on server
       const to = planetMap.get(event.planetId);
       if (!to) return;
       const totalUnits = event.attackUnits + event.defendUnits;
@@ -7982,6 +7994,7 @@ function connectToMultiplayer(): void {
     },
 
     onBattleResolved: (event: BattleResolvedEvent) => {
+      // Battle resolved on server
       // Server has updated planet ownership via state sync
       // Remove any lingering battle animation for this planet
       for (let i = battles.length - 1; i >= 0; i--) {
@@ -8130,8 +8143,59 @@ function connectToMultiplayer(): void {
       else if (phase === 'gameover') gameState = GameState.GAMEOVER;
     },
 
+    onWinnerChanged: (winnerId: string) => {
+      const winnerPlayerId = parseInt(winnerId);
+      console.log(`[MP] Winner: player ${winnerPlayerId}`);
+      gameResult = winnerPlayerId === controlledPlayerId ? 'win' : 'lose';
+    },
+
     onGameTimeUpdated: (gt: number) => {
       serverGameTime = gt;
+    },
+
+    onBuildResult: (success: boolean, planetId: number, _slot: number, buildingType: string) => {
+      const planet = planetMap.get(planetId);
+      if (!planet) return;
+      const screen = worldToScreen(planet.x, planet.y);
+      if (success) {
+        clickAnims.push({
+          x: screen.x, y: screen.y - planet.radius * camera.zoom - 20,
+          vx: 0, vy: -2,
+          life: 90, maxLife: 90,
+          text: `BUILT ${buildingType.toUpperCase()}`, color: '#44ff44'
+        });
+      } else {
+        clickAnims.push({
+          x: screen.x, y: screen.y - planet.radius * camera.zoom - 20,
+          vx: 0, vy: -2,
+          life: 90, maxLife: 90,
+          text: 'BUILD FAILED', color: '#ff4444'
+        });
+      }
+    },
+
+    onAbilityResult: (success: boolean, abilityId: string, reason?: string, remaining?: number) => {
+      if (!success) {
+        const cx = canvas.width / 2;
+        let msg = `${abilityId.toUpperCase()} FAILED`;
+        if (reason === 'cooldown' && remaining !== undefined) {
+          msg = `${abilityId.toUpperCase()} COOLDOWN ${remaining}s`;
+        }
+        clickAnims.push({
+          x: cx, y: 120,
+          vx: 0, vy: -1,
+          life: 120, maxLife: 120,
+          text: msg, color: '#ff6644'
+        });
+      }
+    },
+
+    onRevealZone: (x: number, y: number, radius: number, permanent: boolean) => {
+      revealZones.push({
+        x, y, radius,
+        timeLeft: permanent ? 0 : 10000,
+        permanent,
+      });
     },
   });
 
@@ -8160,6 +8224,7 @@ function applyPlanetSync(planetId: number, data: SyncPlanetData): void {
   planet.hasShield = data.hasShield;
   planet.defense = data.defense;
   planet.growthRate = data.growthRate;
+  if (data.radius > 0) planet.radius = data.radius;
 
   // Parse deposits
   if (data.deposits) {
@@ -8221,9 +8286,8 @@ function applyPlayersFromServer(allPlayers: Map<number, any>): void {
     }
   });
 
-  // In multiplayer: NO permanent reveal zones - fog of war is based purely on owned planets' vision.
-  // Players must discover each other through gameplay.
-  revealZones = revealZones.filter(z => !z.permanent);
+  // Keep permanent reveal zones (sent by server), remove only transient ones
+  revealZones = revealZones.filter(z => z.permanent);
 
   // Discover our planets
   for (const p of planets) {
@@ -8235,10 +8299,8 @@ function applyPlayersFromServer(allPlayers: Map<number, any>): void {
 // ========== START ==========
 initGame();
 
-// Attempt multiplayer connection if wallet is already connected
-if (walletState.isConnected && walletState.address) {
-  connectToMultiplayer();
-}
+// Always connect to multiplayer (uses wallet address or anonymous ID)
+connectToMultiplayer();
 
 requestAnimationFrame((t) => {
   lastTime = t;

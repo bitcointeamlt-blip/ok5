@@ -33,6 +33,7 @@ export interface GalaxySaveData {
     connected: boolean;
     generating: boolean;
     hasShield: boolean;
+    radius: number;
     deposits: { type: string; amount: number }[];
     buildings: ({ type: string; slot: number } | null)[];
   }[];
@@ -68,6 +69,7 @@ export function saveGalaxy(galaxyId: string, seed: number, logic: UnitsGameLogic
       connected: p.connected,
       generating: p.generating,
       hasShield: p.hasShield,
+      radius: p.radius,
       deposits: p.deposits.map(d => ({ type: d.type, amount: d.amount })),
       buildings: p.buildings.map(b => b ? { type: b.type, slot: b.slot } : null),
     })),
@@ -142,6 +144,7 @@ export function applySaveToLogic(save: GalaxySaveData, logic: UnitsGameLogic): v
     planet.connected = sp.connected;
     planet.generating = sp.generating;
     planet.hasShield = sp.hasShield;
+    if (sp.radius) planet.radius = sp.radius;
     if (sp.deposits && sp.deposits.length === planet.deposits.length) {
       for (let i = 0; i < sp.deposits.length; i++) {
         planet.deposits[i].amount = sp.deposits[i].amount;

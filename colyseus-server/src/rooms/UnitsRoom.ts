@@ -2,7 +2,7 @@ import { Room, Client } from "@colyseus/core";
 import { UnitsState, SyncPlanet, SyncPlayer } from "../schema/UnitsState";
 import { UnitsGameLogic, type ServerAttack, type ServerBattle, type GameEvents } from "../game/UnitsGameLogic";
 import { generateGalaxy, pickStartingPlanet, SeededRNG } from "../game/UnitsGalaxyGenerator";
-import { PLAYER_COLORS, MAX_PLAYERS, STABILITY_MAX, type BuildingType } from "../game/UnitsConstants";
+import { PLAYER_COLORS, MAX_PLAYERS, STABILITY_MAX, ABILITY_COOLDOWNS, type BuildingType } from "../game/UnitsConstants";
 import { saveGalaxy, loadGalaxy, applySaveToLogic } from "../persistence/UnitsPersistence";
 
 const TICK_RATE = 10;           // 10 Hz
@@ -21,6 +21,11 @@ export class UnitsRoom extends Room<UnitsState> {
   disconnectedPlayers: Map<string, { playerId: number; sessionId: string; leftAt: number }> = new Map();
   lastSaveTime = 0;
   pendingSave = false;
+  // Ability cooldowns: playerId → abilityId → lastUsedTime (gameTime ms)
+  abilityCooldowns: Map<number, Map<string, number>> = new Map();
+  // Dirty planet tracking for optimized sync
+  dirtyPlanets: Set<number> = new Set();
+  tickCount = 0;
 
   onCreate(options: any): void {
     console.log("[UnitsRoom] Creating room", this.roomId);
@@ -54,19 +59,31 @@ export class UnitsRoom extends Room<UnitsState> {
     // Create game logic with event callbacks
     const events: GameEvents = {
       onAttackLaunched: (attack) => this.broadcastAttackLaunched(attack),
+      onAttackDestroyed: (attackId, playerId, reason) => {
+        this.broadcast("attack_destroyed", { attackId, playerId, reason });
+      },
       onBattleStarted: (battle) => this.broadcastBattleStarted(battle),
       onBattleResolved: (battle, won, remaining) => {
         this.broadcastBattleResolved(battle, won, remaining);
+        this.dirtyPlanets.add(battle.planetId);
         this.debouncedSave();
       },
       onTurretFired: (planetId, targetId) => this.broadcast("turret_fired", { planetId, targetAttackId: targetId }),
       onPlanetCaptured: (planetId, newOwnerId, prevOwnerId) => {
+        this.dirtyPlanets.add(planetId);
         this.syncPlanet(planetId);
         this.save();
       },
       onPlayerEliminated: (playerId) => {
         this.broadcast("player_left", { playerId });
         this.syncPlayers();
+        // Check win condition
+        const winnerId = this.logic.checkGameOver();
+        if (winnerId >= 0) {
+          this.state.phase = "gameover";
+          this.state.winnerId = String(winnerId);
+          console.log(`[UnitsRoom] Game over! Winner: player ${winnerId}`);
+        }
         this.debouncedSave();
       },
     };
@@ -119,6 +136,7 @@ export class UnitsRoom extends Room<UnitsState> {
       sp.hasShield = planet.hasShield;
       sp.defense = planet.defense;
       sp.growthRate = planet.growthRate;
+      sp.radius = planet.radius;
       sp.deposits = this.logic.encodeDeposits(planet.deposits);
       sp.buildings = this.logic.encodeBuildings(planet.buildings);
       state.planets.set(String(planet.id), sp);
@@ -142,9 +160,16 @@ export class UnitsRoom extends Room<UnitsState> {
 
   // ── Player join ─────────────────────────────────────────
   onJoin(client: Client, options: any): void {
-    const address = (options.address || "").toLowerCase();
+    const address = (options.address || "").toLowerCase().trim();
     const name = options.name || "";
     console.log(`[UnitsRoom] Player joining: ${client.sessionId}, address: ${address}`);
+
+    // Reject empty address
+    if (!address) {
+      client.send("error", { message: "Address is required" });
+      client.leave();
+      return;
+    }
 
     // Check for reconnecting player (same wallet address)
     let existingPlayer = this.logic.findPlayerByAddress(address);
@@ -172,6 +197,12 @@ export class UnitsRoom extends Room<UnitsState> {
       });
       this.broadcast("player_online", { playerId: existingPlayer.id });
       this.sendActiveAttacks(client);
+
+      // Send reveal zone around home planet
+      const reconnectHome = this.logic.planetMap.get(existingPlayer.homeId);
+      if (reconnectHome) {
+        client.send("reveal_zone", { x: reconnectHome.x, y: reconnectHome.y, radius: 1500, permanent: true });
+      }
       return;
     }
 
@@ -222,6 +253,9 @@ export class UnitsRoom extends Room<UnitsState> {
     });
     this.broadcast("player_online", { playerId: player.id });
     this.sendActiveAttacks(client);
+
+    // Send reveal zone around home planet
+    client.send("reveal_zone", { x: homePlanet.x, y: homePlanet.y, radius: 1500, permanent: true });
 
     this.save();
   }
@@ -278,12 +312,25 @@ export class UnitsRoom extends Room<UnitsState> {
     if (this.state.phase !== "playing") return;
 
     const dt = 1 / TICK_RATE;
-    this.logic.tick(dt);
+    try {
+      this.logic.tick(dt);
+    } catch (err) {
+      console.error(`[GAMETICK ERROR]`, err);
+    }
     this.state.gameTime = this.logic.gameTime;
+    this.tickCount++;
 
-    // Sync all planet state to schemas
-    this.syncAllPlanets();
-    this.syncPlayers();
+    // Sync dirty planets every tick
+    for (const planetId of this.dirtyPlanets) {
+      this.syncPlanet(planetId);
+    }
+    this.dirtyPlanets.clear();
+
+    // Full sync every 1s (10 ticks) as fallback for gradual changes (growth, mining, stability)
+    if (this.tickCount % 10 === 0) {
+      this.syncAllPlanets();
+      this.syncPlayers();
+    }
   }
 
   // ── State sync helpers ────────────────────────────────
@@ -302,6 +349,7 @@ export class UnitsRoom extends Room<UnitsState> {
     sp.hasShield = planet.hasShield;
     sp.defense = planet.defense;
     sp.growthRate = planet.growthRate;
+    sp.radius = planet.radius;
     sp.deposits = this.logic.encodeDeposits(planet.deposits);
     sp.buildings = this.logic.encodeBuildings(planet.buildings);
   }
@@ -344,6 +392,7 @@ export class UnitsRoom extends Room<UnitsState> {
 
     const success = this.logic.build(planetId, slot, buildingType as BuildingType, player.id);
     if (success) {
+      this.dirtyPlanets.add(planetId);
       this.syncPlanet(planetId);
       client.send("build_result", { success: true, planetId, slot, buildingType });
     } else {
@@ -359,6 +408,7 @@ export class UnitsRoom extends Room<UnitsState> {
     if (typeof planetId !== "number") return;
 
     this.logic.toggleGenerating(planetId, player.id);
+    this.dirtyPlanets.add(planetId);
     this.syncPlanet(planetId);
   }
 
@@ -367,7 +417,23 @@ export class UnitsRoom extends Room<UnitsState> {
     if (!player) return;
 
     const { abilityId, targetPlanetId } = msg;
-    if (abilityId === "nuke" && typeof targetPlanetId === "number") {
+    if (typeof abilityId !== "string" || typeof targetPlanetId !== "number") return;
+
+    // Cooldown enforcement
+    const cooldown = ABILITY_COOLDOWNS[abilityId];
+    if (cooldown === undefined) return; // unknown ability
+    if (!this.abilityCooldowns.has(player.id)) {
+      this.abilityCooldowns.set(player.id, new Map());
+    }
+    const playerCooldowns = this.abilityCooldowns.get(player.id)!;
+    const lastUsed = playerCooldowns.get(abilityId) || 0;
+    if (this.logic.gameTime - lastUsed < cooldown) {
+      const remaining = Math.ceil((cooldown - (this.logic.gameTime - lastUsed)) / 1000);
+      client.send("ability_result", { success: false, abilityId, reason: "cooldown", remaining });
+      return;
+    }
+
+    if (abilityId === "nuke") {
       const target = this.logic.planetMap.get(targetPlanetId);
       if (target && target.ownerId !== player.id) {
         // Check range
@@ -379,18 +445,27 @@ export class UnitsRoom extends Room<UnitsState> {
           }
         }
         if (inRange) {
+          playerCooldowns.set(abilityId, this.logic.gameTime);
           target.units = Math.floor(target.units * 0.5);
+          this.dirtyPlanets.add(targetPlanetId);
           this.syncPlanet(targetPlanetId);
           this.broadcast("ability_used", { abilityId, targetPlanetId, playerId: player.id });
         }
       }
-    } else if (abilityId === "shield" && typeof targetPlanetId === "number") {
+    } else if (abilityId === "shield") {
       const target = this.logic.planetMap.get(targetPlanetId);
       if (target && target.ownerId === player.id) {
+        playerCooldowns.set(abilityId, this.logic.gameTime);
         target.hasShield = true;
+        this.dirtyPlanets.add(targetPlanetId);
         this.syncPlanet(targetPlanetId);
         this.broadcast("ability_used", { abilityId, targetPlanetId, playerId: player.id });
       }
+    } else if (abilityId === "blitz") {
+      // Blitz is handled via launch_attack with blitz=true flag,
+      // but enforce cooldown here if client sends it as an ability
+      playerCooldowns.set(abilityId, this.logic.gameTime);
+      client.send("ability_result", { success: true, abilityId });
     }
   }
 

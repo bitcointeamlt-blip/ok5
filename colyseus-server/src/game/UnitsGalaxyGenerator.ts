@@ -297,11 +297,11 @@ export function pickStartingPlanet<T extends PickablePlanet>(
   existingHomeIds: number[],
   rng: SeededRNG,
 ): T | null {
-  // Players start in the OUTER RING (far from sun) so the goal is to conquer toward center.
-  // Players are placed as NEIGHBORS (~1500-2500px apart) so they can discover each other
+  // Players start NEAR THE SUN (center) so the goal is to expand outward.
+  // Players are placed as NEIGHBORS (~1500-3000px apart) so they can discover each other
   // through fog of war during gameplay. SMALL vision=900px, MEDIUM vision=1200px,
   // so at ~1500px apart they won't see each other immediately.
-  const MIN_SUN_DISTANCE = 12000;       // Must be far from sun (sun at 20000,20000)
+  const MAX_SUN_DISTANCE = 6000;        // Must be close to sun (sun at 20000,20000)
   const NEIGHBOR_MIN_DIST = 1500;       // Too close = instant visibility
   const NEIGHBOR_MAX_DIST = 3000;       // Too far = never find each other
   const MIN_DISTANCE_FROM_OTHERS = 1200; // Absolute minimum between homes
@@ -333,30 +333,30 @@ export function pickStartingPlanet<T extends PickablePlanet>(
     return fallback[rng.int(0, fallback.length - 1)];
   }
 
-  // First player: pick from outer ring (far from sun), prefer farthest
+  // First player: pick from inner ring (close to sun), prefer closest
   if (homePositions.length === 0) {
-    const outerCandidates = baseCandidates.filter(p => {
+    const innerCandidates = baseCandidates.filter(p => {
       const sunDist = Math.sqrt((p.x - SUN_X) ** 2 + (p.y - SUN_Y) ** 2);
-      return sunDist >= MIN_SUN_DISTANCE;
+      return sunDist <= MAX_SUN_DISTANCE;
     });
 
-    if (outerCandidates.length > 0) {
-      // Sort by distance from sun (farthest first) and pick from top candidates
-      outerCandidates.sort((a, b) => {
+    if (innerCandidates.length > 0) {
+      // Sort by distance from sun (closest first) and pick from top candidates
+      innerCandidates.sort((a, b) => {
         const distA = Math.sqrt((a.x - SUN_X) ** 2 + (a.y - SUN_Y) ** 2);
         const distB = Math.sqrt((b.x - SUN_X) ** 2 + (b.y - SUN_Y) ** 2);
-        return distB - distA;
+        return distA - distB;
       });
-      // Pick randomly from the top 20% farthest candidates
-      const topCount = Math.max(1, Math.floor(outerCandidates.length * 0.2));
-      return outerCandidates[rng.int(0, topCount - 1)];
+      // Pick randomly from the top 20% closest candidates
+      const topCount = Math.max(1, Math.floor(innerCandidates.length * 0.2));
+      return innerCandidates[rng.int(0, topCount - 1)];
     }
 
-    // No outer ring planets, just pick farthest from sun
+    // No inner ring planets, just pick closest to sun
     baseCandidates.sort((a, b) => {
       const distA = Math.sqrt((a.x - SUN_X) ** 2 + (a.y - SUN_Y) ** 2);
       const distB = Math.sqrt((b.x - SUN_X) ** 2 + (b.y - SUN_Y) ** 2);
-      return distB - distA;
+      return distA - distB;
     });
     return baseCandidates[0];
   }
@@ -386,8 +386,8 @@ export function pickStartingPlanet<T extends PickablePlanet>(
       neighborScore = Math.max(0, 80 - (closestHomeDist - NEIGHBOR_MAX_DIST) / 100);
     }
 
-    // Sun distance score: prefer outer ring
-    const sunScore = sunDist >= MIN_SUN_DISTANCE ? 50 : (sunDist / MIN_SUN_DISTANCE) * 30;
+    // Sun distance score: prefer inner ring (close to sun)
+    const sunScore = sunDist <= MAX_SUN_DISTANCE ? 50 : Math.max(0, 50 - (sunDist - MAX_SUN_DISTANCE) / 200);
 
     return { planet: p, score: neighborScore + sunScore };
   });
