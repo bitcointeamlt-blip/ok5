@@ -2023,12 +2023,30 @@ function recalculateSupply(): void {
 // Get planets in the same supply network as sourcePlanet (for ALL IN attack)
 // If no sourcePlanet, returns all connected planets for the player
 function getConnectedPlanets(playerId: number, sourcePlanet?: Planet): Planet[] {
+  let netId = sourcePlanet?.networkId ?? -1;
+
+  // If source planet is isolated, find the nearest connected planet in range
+  if (netId < 0 && sourcePlanet) {
+    let bestDist = Infinity;
+    for (const p of planets) {
+      if (p.ownerId !== playerId || !p.connected || p.networkId < 0) continue;
+      const d = getDistance(sourcePlanet, p);
+      if (d < bestDist) {
+        bestDist = d;
+        netId = p.networkId;
+      }
+    }
+  }
+
   const connected: Planet[] = [];
-  const netId = sourcePlanet?.networkId ?? -1;
   for (const planet of planets) {
     if (planet.ownerId !== playerId || !planet.connected) continue;
     if (netId >= 0 && planet.networkId !== netId) continue;
     connected.push(planet);
+  }
+  // Always include source planet itself (even if isolated)
+  if (sourcePlanet && sourcePlanet.ownerId === playerId && !connected.includes(sourcePlanet)) {
+    connected.push(sourcePlanet);
   }
   return connected;
 }
@@ -3237,14 +3255,21 @@ function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   };
 }
 
-// Clamp camera to world bounds to prevent lag from scrolling too far
+// Clamp camera so the visible area stays within world bounds (0,0)→(WORLD_SIZE,WORLD_SIZE)
 function clampCamera(): void {
-  const minX = -gameWidth;
-  const minY = -gameHeight;
-  const maxX = WORLD_SIZE * camera.zoom;
-  const maxY = WORLD_SIZE * camera.zoom;
-  camera.x = Math.max(minX, Math.min(maxX, camera.x));
-  camera.y = Math.max(minY, Math.min(maxY, camera.y));
+  const maxX = WORLD_SIZE * camera.zoom - gameWidth;
+  const maxY = WORLD_SIZE * camera.zoom - gameHeight;
+  // If world fits on screen (zoomed out), center it
+  if (maxX <= 0) {
+    camera.x = maxX / 2;
+  } else {
+    camera.x = Math.max(0, Math.min(maxX, camera.x));
+  }
+  if (maxY <= 0) {
+    camera.y = maxY / 2;
+  } else {
+    camera.y = Math.max(0, Math.min(maxY, camera.y));
+  }
 }
 
 function getPlanetAtScreen(sx: number, sy: number): Planet | null {
