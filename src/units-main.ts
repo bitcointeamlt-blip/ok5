@@ -2023,30 +2023,16 @@ function recalculateSupply(): void {
 // Get planets in the same supply network as sourcePlanet (for ALL IN attack)
 // If no sourcePlanet, returns all connected planets for the player
 function getConnectedPlanets(playerId: number, sourcePlanet?: Planet): Planet[] {
-  let netId = sourcePlanet?.networkId ?? -1;
-
-  // If source planet is isolated, find the nearest connected planet in range
-  if (netId < 0 && sourcePlanet) {
-    let bestDist = Infinity;
-    for (const p of planets) {
-      if (p.ownerId !== playerId || !p.connected || p.networkId < 0) continue;
-      const d = getDistance(sourcePlanet, p);
-      if (d < bestDist) {
-        bestDist = d;
-        netId = p.networkId;
-      }
-    }
-  }
-
+  const netId = sourcePlanet?.networkId ?? -1;
   const connected: Planet[] = [];
+
+  // Source planet must be in a network for ALL IN to work
+  if (netId < 0) return connected;
+
   for (const planet of planets) {
     if (planet.ownerId !== playerId || !planet.connected) continue;
-    if (netId >= 0 && planet.networkId !== netId) continue;
+    if (planet.networkId !== netId) continue;
     connected.push(planet);
-  }
-  // Always include source planet itself (even if isolated)
-  if (sourcePlanet && sourcePlanet.ownerId === playerId && !connected.includes(sourcePlanet)) {
-    connected.push(sourcePlanet);
   }
   return connected;
 }
