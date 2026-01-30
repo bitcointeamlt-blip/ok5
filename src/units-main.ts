@@ -123,7 +123,7 @@ enum Difficulty {
 const WORLD_SIZE = 40000;
 const STABILITY_MAX = 100;
 const SUPPLY_CHECK_INTERVAL = 2000;
-const SUPPLY_RANGE = 400;
+const SUPPLY_RANGE = 800;
 
 // Planet generation
 const PLANET_COUNT = 800;
@@ -270,6 +270,7 @@ interface Planet {
   growthRate: number;
   stability: number;
   connected: boolean;
+  networkId: number; // which supply network this planet belongs to (-1 = none)
   generating: boolean; // whether this planet actively generates units
   deposits: ResourceDeposit[]; // resource deposits available
   color: string;
@@ -1464,6 +1465,7 @@ function generatePlanetsFromSeed(seed: number): void {
         growthRate: props.growth,
         stability: 50,
         connected: false,
+        networkId: -1,
         generating: false,
         deposits,
         color: planetColor,
@@ -1566,6 +1568,7 @@ function generatePlanetsFromSeed(seed: number): void {
         growthRate: moonProps.growth,
         stability: 50,
         connected: false,
+        networkId: -1,
         generating: false,
         deposits: moonDeposits,
         color: moonColor,
@@ -1873,6 +1876,7 @@ function initPlayers(): void {
         growthRate: 0, // Black holes don't grow
         stability: STABILITY_MAX,
         connected: false,
+        networkId: -1,
         generating: false,
         deposits: [
           { type: 'crystal', amount: 0 },
@@ -1956,49 +1960,73 @@ function initGame(): void {
 function recalculateSupply(): void {
   for (const p of planets) {
     p.connected = false;
+    p.networkId = -1;
   }
   supplyConnections = [];
 
   for (const player of players) {
     if (!player.alive) continue;
 
-    const home = planetMap.get(player.homeId);
-    if (!home || home.ownerId !== player.id) {
-      player.alive = false;
-      continue;
+    // Collect all planets owned by this player
+    const owned: Planet[] = [];
+    for (const p of planets) {
+      if (p.ownerId === player.id) owned.push(p);
     }
 
-    const queue: Planet[] = [home];
-    const visited = new Set<number>();
-    visited.add(home.id);
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      current.connected = true;
-
-      for (const p of planets) {
-        if (visited.has(p.id)) continue;
-        if (p.ownerId !== player.id) continue;
-
-        const dist = getDistance(current, p);
+    // Build visual connections as a minimum spanning tree (no redundant lines)
+    // 1. Collect all possible edges within range
+    const edges: { a: number; b: number; dist: number }[] = [];
+    for (let i = 0; i < owned.length; i++) {
+      for (let j = i + 1; j < owned.length; j++) {
+        const dist = getDistance(owned[i], owned[j]);
         if (dist <= SUPPLY_RANGE) {
-          visited.add(p.id);
-          queue.push(p);
-          // Cache this connection for rendering
-          supplyConnections.push({ fromId: current.id, toId: p.id, playerId: player.id });
+          edges.push({ a: i, b: j, dist });
         }
+      }
+    }
+    // 2. Kruskal's MST: sort by distance, union-find
+    edges.sort((a, b) => a.dist - b.dist);
+    const parent = owned.map((_, i) => i);
+    const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    for (const e of edges) {
+      const ra = find(e.a), rb = find(e.b);
+      if (ra !== rb) {
+        parent[ra] = rb;
+        supplyConnections.push({ fromId: owned[e.a].id, toId: owned[e.b].id, playerId: player.id });
+      }
+    }
+
+    // Mark "connected" for all planets in a network of 2+ planets (for all-in attacks)
+    // Group planets by their union-find root
+    const groups = new Map<number, Planet[]>();
+    for (let i = 0; i < owned.length; i++) {
+      const root = find(i);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root)!.push(owned[i]);
+    }
+    // Any group with 2+ planets = connected, assign networkId
+    let netId = 0;
+    for (const group of groups.values()) {
+      if (group.length >= 2) {
+        for (const p of group) {
+          p.connected = true;
+          p.networkId = netId;
+        }
+        netId++;
       }
     }
   }
 }
 
-// Get all connected planets in a player's network (for ALL IN attack)
-function getConnectedPlanets(playerId: number): Planet[] {
+// Get planets in the same supply network as sourcePlanet (for ALL IN attack)
+// If no sourcePlanet, returns all connected planets for the player
+function getConnectedPlanets(playerId: number, sourcePlanet?: Planet): Planet[] {
   const connected: Planet[] = [];
+  const netId = sourcePlanet?.networkId ?? -1;
   for (const planet of planets) {
-    if (planet.ownerId === playerId && planet.connected) {
-      connected.push(planet);
-    }
+    if (planet.ownerId !== playerId || !planet.connected) continue;
+    if (netId >= 0 && planet.networkId !== netId) continue;
+    connected.push(planet);
   }
   return connected;
 }
@@ -3496,9 +3524,12 @@ canvas.addEventListener('mousedown', (e) => {
           activeAbility = null;
         }
       } else if (action === 'all_in') {
-        // ALL IN: Launch attack from ALL connected planets to target
+        // ALL IN: Launch attack from planets in the SAME network as selected planet
         const useBlitz = activeAbility === 'blitz';
-        const connectedPlanets = getConnectedPlanets(controlledPlayerId);
+        // Find source planet from selection to determine which network
+        const sourceId = selectedPlanets.values().next().value;
+        const sourcePlanet = sourceId !== undefined ? planetMap.get(sourceId) : undefined;
+        const connectedPlanets = getConnectedPlanets(controlledPlayerId, sourcePlanet ?? undefined);
         let attackCount = 0;
         for (const planet of connectedPlanets) {
           // Only attack from planets with enough units (at least 5)
@@ -3639,8 +3670,10 @@ canvas.addEventListener('mousedown', (e) => {
       if (hasOwnSelected) {
         const screen = worldToScreen(planet.x, planet.y);
         const hasOrbitProbe = orbitProbes.some(p => p.targetPlanetId === planet.id && p.playerId === controlledPlayerId);
-        // Check if player has connected network (more than 1 connected planet)
-        const connectedPlanets = getConnectedPlanets(controlledPlayerId);
+        // Check if player has connected network in same group as selected planet
+        const dSourceId = selectedPlanets.values().next().value;
+        const dSourcePlanet = dSourceId !== undefined ? planetMap.get(dSourceId) : undefined;
+        const connectedPlanets = getConnectedPlanets(controlledPlayerId, dSourcePlanet ?? undefined);
         const hasNetwork = connectedPlanets.length > 1;
         const buttons = [
           { label: 'ATTACK', action: 'attack' },
@@ -4298,8 +4331,10 @@ canvas.addEventListener('touchend', (e) => {
           const attackBtns: { label: string; action: string }[] = [
             { label: 'ATTACK', action: 'attack' }
           ];
-          // Check if we have multiple connected planets for ALL IN
-          const connectedPlanets = getConnectedPlanets(controlledPlayerId);
+          // Check if we have multiple connected planets in same network for ALL IN
+          const mSourceId = selectedPlanets.values().next().value;
+          const mSourcePlanet = mSourceId !== undefined ? planetMap.get(mSourceId) : undefined;
+          const connectedPlanets = getConnectedPlanets(controlledPlayerId, mSourcePlanet ?? undefined);
           const planetsWithUnits = connectedPlanets.filter(p => p.units >= 5);
           if (planetsWithUnits.length > 1) {
             attackBtns.push({ label: 'ALL IN', action: 'all_in' });
@@ -4551,6 +4586,8 @@ function renderComets(): void {
 }
 
 function renderSupplyLines(): void {
+  const pulse = 0.5 + 0.5 * Math.sin(gameTime * 0.002);
+
   for (const conn of supplyConnections) {
     const fromP = planetMap.get(conn.fromId);
     const toP = planetMap.get(conn.toId);
@@ -4559,15 +4596,33 @@ function renderSupplyLines(): void {
     const player = players[conn.playerId];
     if (!player) continue;
 
+    // Only show own supply lines
+    if (conn.playerId !== controlledPlayerId) continue;
+
     const from = worldToScreen(fromP.x, fromP.y);
     const to = worldToScreen(toP.x, toP.y);
 
-    ctx.strokeStyle = player.color + '22';
-    ctx.lineWidth = 1;
+    ctx.save();
+    // Outer glow
+    const glowAlpha = 0.15 + pulse * 0.1;
+    ctx.strokeStyle = `rgba(100, 255, 100, ${glowAlpha})`;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
+
+    // Inner dashed line
+    const innerAlpha = 0.4 + pulse * 0.3;
+    ctx.strokeStyle = `rgba(100, 255, 100, ${innerAlpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.lineDashOffset = -gameTime * 0.03;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -5868,6 +5923,9 @@ function renderBattles(): void {
 }
 
 function renderFogOfWar(): void {
+  // TEMP: fog disabled for multiplayer testing
+  return;
+
   // No fog during initial reveal period
   if (gameTime < FOG_REVEAL_DURATION) return;
 
@@ -7407,7 +7465,7 @@ function render(): void {
 
   // Own planet rings - blue ring on player's planets (thin normally, thick on hover)
   for (const planet of planets) {
-    if (planet.ownerId !== 0) continue; // Only player's planets
+    if (planet.ownerId !== controlledPlayerId) continue; // Only player's planets
     if (selectedPlanets.has(planet.id)) continue; // Skip if selected (will draw selection ring instead)
 
     const screen = worldToScreen(planet.x, planet.y);
@@ -7780,6 +7838,12 @@ function update(dt: number): void {
     updateOrbitProbes(dt);
     updateClickAnims(dt);
     updateShieldFlickers();
+
+    // Recalculate supply lines (visual + all-in logic)
+    if (gameTime - lastSupplyCheck > SUPPLY_CHECK_INTERVAL) {
+      recalculateSupply();
+      lastSupplyCheck = gameTime;
+    }
   } else {
     // Offline / single-player mode: all logic runs locally
     gameTime += dt * 1000;

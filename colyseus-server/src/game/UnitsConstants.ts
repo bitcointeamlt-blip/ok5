@@ -6,7 +6,7 @@
 export const WORLD_SIZE = 40000;
 export const STABILITY_MAX = 100;
 export const SUPPLY_CHECK_INTERVAL = 2000;  // ms
-export const SUPPLY_RANGE = 400;
+export const SUPPLY_RANGE = 800;
 
 // Planet generation
 export const PLANET_COUNT = 800;
