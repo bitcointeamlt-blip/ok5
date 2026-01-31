@@ -144,7 +144,7 @@ export class UnitsNetworkService {
       this.room = await this.client.joinOrCreate("units_room", {
         address,
         name,
-        galaxyId: galaxyId || "galaxy-v2",
+        galaxyId: galaxyId || "galaxy-v3",
       });
 
       this._connected = true;

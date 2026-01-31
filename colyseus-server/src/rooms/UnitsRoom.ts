@@ -33,7 +33,7 @@ export class UnitsRoom extends Room<UnitsState> {
     this.autoDispose = false;
     this.maxClients = MAX_PLAYERS;
 
-    this.galaxyId = options.galaxyId || "galaxy-v2";
+    this.galaxyId = options.galaxyId || "galaxy-v3";
 
     // Deterministic seed from galaxyId so same galaxy = same map always.
     // If a saved galaxy exists, its seed is used via applySaveToLogic.
