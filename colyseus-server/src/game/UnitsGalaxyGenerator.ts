@@ -222,13 +222,12 @@ export function generateGalaxy(seed: number): GeneratedPlanet[] {
       const moonX = parent.x + Math.cos(moonAngle) * moonOrbitRadius;
       const moonY = parent.y + Math.sin(moonAngle) * moonOrbitRadius;
 
-      const numDeposits = moonSize === PlanetSize.MEDIUM ? 2 : 1;
+      const numDeposits = 1;
       const shuffled2 = rng.shuffle([...ALL_DEPOSIT_TYPES]);
       const moonDeposits: ResourceDeposit[] = shuffled2.slice(0, numDeposits).map(type => ({ type, amount: 0 }));
 
       let moonUnits = 50;
       if (moonSize === PlanetSize.SMALL) moonUnits = rng.int(30, 109);
-      else if (moonSize === PlanetSize.MEDIUM) moonUnits = rng.int(80, 229);
 
       const moonColor = PLANET_PALETTE[rng.int(0, PLANET_PALETTE.length - 1)];
 
