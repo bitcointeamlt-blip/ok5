@@ -8321,11 +8321,69 @@ function connectToMultiplayer(): void {
     },
 
     onTurretFired: (planetId: number, _targetAttackId: number) => {
-      // Visual feedback for turret firing
       const planet = planetMap.get(planetId);
-      if (planet) {
-        const screen = worldToScreen(planet.x, planet.y);
-        spawnParticles(screen.x, screen.y, '#ff6644', 5, 60);
+      if (!planet) return;
+
+      // Visual feedback
+      const screen = worldToScreen(planet.x, planet.y);
+      spawnParticles(screen.x, screen.y, '#ff6644', 5, 60);
+
+      // Create local turret missiles so the player can see them
+      const turretCount = planet.buildings.filter(b => b && b.type === 'turret').length;
+      if (turretCount === 0) return;
+
+      // Find closest enemy attack in range (same logic as offline updateTurrets)
+      let closestAttack: { index: number; dist: number; pos: { x: number; y: number } } | null = null;
+      for (let i = 0; i < attacks.length; i++) {
+        const attack = attacks[i];
+        if (attack.playerId === planet.ownerId) continue;
+        const targetPlanet = planetMap.get(attack.toId);
+        if (!targetPlanet) continue;
+        if (attack.toId !== planet.id && targetPlanet.ownerId !== planet.ownerId) continue;
+        const pos = getAttackCurrentPosition(attack);
+        if (!pos) continue;
+        const dist = Math.sqrt((pos.x - planet.x) ** 2 + (pos.y - planet.y) ** 2);
+        if (dist <= TURRET_FIRE_DISTANCE) {
+          if (!closestAttack || dist < closestAttack.dist) {
+            closestAttack = { index: i, dist, pos };
+          }
+        }
+      }
+
+      if (!closestAttack) return;
+
+      // Calculate fire positions
+      const angleToAttack = Math.atan2(closestAttack.pos.y - planet.y, closestAttack.pos.x - planet.x);
+      const perpAngle = angleToAttack + Math.PI / 2;
+      const firePositions: { x: number; y: number }[] = [];
+      const offset = planet.radius * 0.7;
+
+      if (turretCount === 1) {
+        firePositions.push({ x: planet.x, y: planet.y });
+      } else if (turretCount === 2) {
+        firePositions.push({ x: planet.x + Math.cos(perpAngle) * offset, y: planet.y + Math.sin(perpAngle) * offset });
+        firePositions.push({ x: planet.x - Math.cos(perpAngle) * offset, y: planet.y - Math.sin(perpAngle) * offset });
+      } else {
+        firePositions.push({ x: planet.x, y: planet.y });
+        firePositions.push({ x: planet.x + Math.cos(perpAngle) * offset, y: planet.y + Math.sin(perpAngle) * offset });
+        firePositions.push({ x: planet.x - Math.cos(perpAngle) * offset, y: planet.y - Math.sin(perpAngle) * offset });
+      }
+
+      // Staggered fire
+      const shuffledPositions = [...firePositions].sort(() => Math.random() - 0.5);
+      let cumulativeDelay = 0;
+      for (let m = 0; m < shuffledPositions.length; m++) {
+        const firePos = shuffledPositions[m];
+        if (m === 0) { cumulativeDelay = Math.random() * 500; }
+        else { cumulativeDelay += 300 + Math.random() * 900; }
+        const randomSpeed = TURRET_MISSILE_SPEED * (0.6 + Math.random() * 0.5);
+        turretMissiles.push({
+          x: firePos.x, y: firePos.y,
+          targetAttackIndex: closestAttack.index,
+          speed: randomSpeed,
+          planetId: planet.id,
+          delay: cumulativeDelay
+        });
       }
     },
 
