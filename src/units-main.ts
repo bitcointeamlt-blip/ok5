@@ -1532,6 +1532,9 @@ function generatePlanetsFromSeed(seed: number): void {
   }
 
   // Add Sun as a planet (1M units, center of map)
+  // Consume RNG in same order as server's makePlanet defaults
+  const sunNextMine = 5000 + rng.float(0, 5000);
+  const sunPulse = rng.float(0, Math.PI * 2);
   const sunPlanet: Planet = {
     id: id++,
     x: SUN_X, y: SUN_Y,
