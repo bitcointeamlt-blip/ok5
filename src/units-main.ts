@@ -30,11 +30,13 @@ let multiplayerConnected = false;
 let multiplayerSeed = 0;
 let myPlayerId = -1;
 let serverGameTime = 0;
-// Server URL - use VITE_COLYSEUS_ENDPOINT (same as PvP), fallback to same-host:2567 for dev
+// Server URL - use VITE_COLYSEUS_ENDPOINT, fallback to Colyseus Cloud for production, localhost for dev
 const COLYSEUS_URL = (() => {
   const env = (import.meta as any).env?.VITE_COLYSEUS_ENDPOINT;
   if (env) return env.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
-  return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.hostname + ':2567';
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocalhost) return 'ws://localhost:2567';
+  return 'wss://de-fra-f8820c12.colyseus.cloud';
 })();
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
