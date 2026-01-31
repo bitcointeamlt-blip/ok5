@@ -3575,7 +3575,7 @@ const coordInput = document.createElement('input');
 coordInput.type = 'text';
 coordInput.placeholder = 'x, y';
 coordInput.style.cssText = `
-  position: fixed; bottom: 60px; left: 10px; width: 160px; height: 28px;
+  position: fixed; bottom: 160px; left: 10px; width: 160px; height: 28px;
   background: rgba(0,0,0,0.7); color: #44ff88; border: 1px solid #44ff88;
   font: 13px 'Press Start 2P', monospace; padding: 0 6px; outline: none;
   z-index: 100; border-radius: 3px;
@@ -3586,7 +3586,7 @@ document.body.appendChild(coordInput);
 const homeButton = document.createElement('button');
 homeButton.textContent = 'HOME';
 homeButton.style.cssText = `
-  position: fixed; bottom: 60px; left: 180px; height: 28px;
+  position: fixed; bottom: 160px; left: 180px; height: 28px;
   background: rgba(0,0,0,0.7); color: #44ff88; border: 1px solid #44ff88;
   font: 13px 'Press Start 2P', monospace; padding: 0 10px; outline: none;
   z-index: 100; border-radius: 3px; cursor: pointer;
@@ -7718,7 +7718,7 @@ function renderUI(): void {
   // Mouse world coordinates (bottom left, above zoom)
   const worldPos = screenToWorld(mouseX, mouseY);
   const coordText = `${Math.round(worldPos.x)}, ${Math.round(worldPos.y)}`;
-  const coordY = zoomY - 122;
+  const coordY = zoomY - 222;
   const copiedAgo = performance.now() - coordCopiedFlash;
   const showCopied = copiedAgo < 1500;
   ctx.font = '14px Arial, sans-serif';
