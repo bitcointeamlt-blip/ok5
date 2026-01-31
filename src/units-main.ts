@@ -1275,8 +1275,6 @@ function getVisionRange(planet: Planet): number {
 }
 
 function isVisibleToPlayer(planet: Planet): boolean {
-  // TEMP: fog disabled for testing — all planets visible
-  return true;
   // In multiplayer: only our own planets provide vision
   if (multiplayerConnected) {
     if (planet.ownerId === controlledPlayerId) return true;
@@ -6314,9 +6312,6 @@ function renderBattles(): void {
 }
 
 function renderFogOfWar(): void {
-  // TEMP: fog disabled for multiplayer testing
-  return;
-
   // No fog during initial reveal period
   if (gameTime < FOG_REVEAL_DURATION) return;
 
