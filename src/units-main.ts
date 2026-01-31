@@ -353,7 +353,7 @@ let droneProjectiles: DroneProjectile[] = [];
 
 const TURRET_FIRE_DISTANCE = 800;    // fire when enemy is 800px from planet
 const TURRET_DAMAGE_DIVISOR = 10;    // damage = planet.units / 10
-const TURRET_MISSILE_SPEED = 140;    // pixels per second (slower, less OP)
+const TURRET_MISSILE_SPEED = 280;    // pixels per second
 // Turret fire interval: random 1-3 seconds (set in updateTurrets)
 
 interface Camera {

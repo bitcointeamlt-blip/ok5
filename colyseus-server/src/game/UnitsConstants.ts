@@ -33,7 +33,7 @@ export const ATTACK_BASE_SPEED = 90;
 // Turrets
 export const TURRET_FIRE_DISTANCE = 800;
 export const TURRET_DAMAGE_DIVISOR = 10;
-export const TURRET_MISSILE_SPEED = 140;
+export const TURRET_MISSILE_SPEED = 280;
 
 // Drones
 export const DRONE_INTERCEPT_RANGE = 400;
