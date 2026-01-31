@@ -8340,12 +8340,37 @@ function connectToMultiplayer(): void {
 
       // Center camera on our home planet
       const me = players[playerId];
-      if (me) {
+      if (me && me.homeId >= 0) {
         const home = planetMap.get(me.homeId);
         if (home) {
           camera.x = home.x * camera.zoom - gameWidth / 2;
           camera.y = home.y * camera.zoom - gameHeight / 2;
+          console.log(`[MP] Centered on home planet ${me.homeId} at ${home.x},${home.y}`);
         }
+      } else {
+        // State patch may not have arrived yet (network latency).
+        // Retry after a short delay to let Colyseus state sync catch up.
+        console.log(`[MP] Home planet not yet available, will retry...`);
+        const retryCenter = (attempt: number) => {
+          if (attempt > 10) {
+            console.log(`[MP] Gave up waiting for home planet after 10 retries`);
+            return;
+          }
+          setTimeout(() => {
+            const p = players[playerId];
+            if (p && p.homeId >= 0) {
+              const home = planetMap.get(p.homeId);
+              if (home) {
+                camera.x = home.x * camera.zoom - gameWidth / 2;
+                camera.y = home.y * camera.zoom - gameHeight / 2;
+                console.log(`[MP] Centered on home planet ${p.homeId} (retry ${attempt})`);
+                return;
+              }
+            }
+            retryCenter(attempt + 1);
+          }, 200);
+        };
+        retryCenter(1);
       }
 
       gameState = GameState.PLAYING;
@@ -8376,6 +8401,7 @@ function connectToMultiplayer(): void {
           homeId: -1, alive: true, isAI: false, online: false,
         });
       }
+      const prevHomeId = players[playerId].homeId;
       players[playerId].name = data.name || players[playerId].name;
       players[playerId].color = data.color || players[playerId].color;
       players[playerId].homeId = data.homeId ?? players[playerId].homeId;
@@ -8383,6 +8409,16 @@ function connectToMultiplayer(): void {
       players[playerId].online = data.online;
       players[playerId].planetCount = data.planetCount;
       players[playerId].totalUnits = data.totalUnits;
+
+      // If this is our player and homeId just became valid, center camera
+      if (playerId === controlledPlayerId && prevHomeId < 0 && players[playerId].homeId >= 0) {
+        const home = planetMap.get(players[playerId].homeId);
+        if (home) {
+          camera.x = home.x * camera.zoom - gameWidth / 2;
+          camera.y = home.y * camera.zoom - gameHeight / 2;
+          console.log(`[MP] State sync: centered on home planet ${players[playerId].homeId}`);
+        }
+      }
     },
 
     onAttackLaunched: (event: AttackLaunchedEvent) => {
