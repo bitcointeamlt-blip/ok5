@@ -2476,7 +2476,8 @@ function updateSoloAsteroids(now: number): void {
   // Remove expired asteroids
   soloAsteroids = soloAsteroids.filter(a => {
     const age = now - a.spawnedAt;
-    if (age > SOLO_ASTEROID_LIFETIME_MS) return false;
+    const lifetime = a.isSpaceJunk ? 60000 : SOLO_ASTEROID_LIFETIME_MS; // RonkeTV: 60s (slower)
+    if (age > lifetime) return false;
     // Remove if off screen
     if (a.x < -100 || a.x > 2020 || a.y < -100 || a.y > 1180) return false;
     return true;
