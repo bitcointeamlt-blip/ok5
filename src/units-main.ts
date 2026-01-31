@@ -3580,6 +3580,31 @@ coordInput.style.cssText = `
 `;
 document.body.appendChild(coordInput);
 
+// Home button — navigates camera to home planet
+const homeButton = document.createElement('button');
+homeButton.textContent = 'HOME';
+homeButton.style.cssText = `
+  position: fixed; bottom: 60px; left: 180px; height: 28px;
+  background: rgba(0,0,0,0.7); color: #44ff88; border: 1px solid #44ff88;
+  font: 13px 'Press Start 2P', monospace; padding: 0 10px; outline: none;
+  z-index: 100; border-radius: 3px; cursor: pointer;
+`;
+homeButton.addEventListener('mouseenter', () => { homeButton.style.background = 'rgba(68,255,136,0.15)'; });
+homeButton.addEventListener('mouseleave', () => { homeButton.style.background = 'rgba(0,0,0,0.7)'; });
+homeButton.addEventListener('click', () => {
+  if (controlledPlayerId >= 0 && players[controlledPlayerId]) {
+    const homeId = players[controlledPlayerId].homeId;
+    if (homeId >= 0) {
+      const home = planetMap.get(homeId);
+      if (home) {
+        camera.x = home.x * camera.zoom - gameWidth / 2;
+        camera.y = home.y * camera.zoom - gameHeight / 2;
+      }
+    }
+  }
+});
+document.body.appendChild(homeButton);
+
 coordInput.addEventListener('focus', () => { coordInputActive = true; });
 coordInput.addEventListener('blur', () => { coordInputActive = false; });
 coordInput.addEventListener('keydown', (e) => {
