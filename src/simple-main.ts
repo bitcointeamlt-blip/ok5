@@ -8322,10 +8322,16 @@ let bellSprite: HTMLImageElement | null = null;
 let bellSpriteProcessed: HTMLCanvasElement | null = null;
 const bellSpritePath = '/bell.png';
 
-// Blackhole GIF sprite (center screen test) - use HTML img for animation
-let blackholeElement: HTMLImageElement | null = null;
-const blackholeSpritePath = '/blackhole-ezgif.com-optimize.gif';
+// Blackhole animated sprite (center screen) - uses PNG frames from /blackhole-frames/
+let blackholeElement: HTMLCanvasElement | null = null;
 let blackholeVisible = false;
+const BH_FRAME_COUNT = 40;
+const BH_FRAME_DURATION = 80;
+let bhFrames: HTMLImageElement[] = [];
+let bhFramesLoaded = 0;
+let bhCurrentFrame = 0;
+let bhLastFrameTime = 0;
+let bhAnimReady = false;
 
 // Moon sprite (flyby)
 let moonSprite: HTMLImageElement | null = null;
@@ -9463,37 +9469,63 @@ try { loadMoonSprite(); } catch (e) { console.error('loadMoonSprite error:', e);
 try { loadEarthSprite(); } catch (e) { console.error('loadEarthSprite error:', e); }
 try { loadMarsSprite(); } catch (e) { console.error('loadMarsSprite error:', e); }
 
-// Load blackhole GIF as HTML element for animation
+// Load blackhole PNG frames and create animated canvas element
 function loadBlackholeElement(): void {
   if (blackholeElement) return;
-  if (!blackholeSpritePath) return;
-  const img = document.createElement('img');
-  img.src = blackholeSpritePath;
-  img.style.position = 'fixed';
-  img.style.width = '150px';
-  img.style.height = '150px';
-  img.style.right = '150px';
-  img.style.top = '50%';
-  img.style.transform = 'translateY(-50%)';
-  img.style.zIndex = '100';
-  img.style.pointerEvents = 'none';
-  img.style.mixBlendMode = 'screen'; // Makes black background transparent
-  img.style.display = 'none'; // Hidden by default
-  img.onload = () => {
-    console.log('✅ Blackhole GIF loaded successfully');
-  };
-  img.onerror = () => {
-    console.error('❌ Failed to load blackhole GIF:', blackholeSpritePath);
-  };
-  if (document.body) {
-    document.body.appendChild(img);
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      document.body.appendChild(img);
-    });
+
+  // Load frames
+  for (let i = 1; i <= BH_FRAME_COUNT; i++) {
+    const img = new Image();
+    img.onload = () => {
+      bhFramesLoaded++;
+      if (bhFramesLoaded === BH_FRAME_COUNT) {
+        bhAnimReady = true;
+        console.log('✅ Blackhole frames loaded! (40 frames)');
+      }
+    };
+    img.onerror = () => { console.error(`❌ Failed to load blackhole frame ${i}`); };
+    img.src = `/blackhole-frames/${i}.png`;
+    bhFrames.push(img);
   }
-  blackholeElement = img;
+
+  // Create canvas overlay element
+  const cvs = document.createElement('canvas');
+  cvs.width = 150;
+  cvs.height = 150;
+  cvs.style.position = 'fixed';
+  cvs.style.width = '150px';
+  cvs.style.height = '150px';
+  cvs.style.right = '150px';
+  cvs.style.top = '50%';
+  cvs.style.transform = 'translateY(-50%)';
+  cvs.style.zIndex = '100';
+  cvs.style.pointerEvents = 'none';
+  cvs.style.display = 'none';
+  if (document.body) {
+    document.body.appendChild(cvs);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => document.body.appendChild(cvs));
+  }
+  blackholeElement = cvs;
   blackholeVisible = false;
+
+  // Animation loop
+  function animateBH() {
+    if (bhAnimReady && blackholeVisible && blackholeElement) {
+      const now = performance.now();
+      if (now - bhLastFrameTime >= BH_FRAME_DURATION) {
+        bhCurrentFrame = (bhCurrentFrame + 1) % BH_FRAME_COUNT;
+        bhLastFrameTime = now;
+      }
+      const bhCtx = blackholeElement.getContext('2d');
+      if (bhCtx && bhFrames[bhCurrentFrame]) {
+        bhCtx.clearRect(0, 0, 150, 150);
+        bhCtx.drawImage(bhFrames[bhCurrentFrame], 0, 0, 150, 150);
+      }
+    }
+    requestAnimationFrame(animateBH);
+  }
+  requestAnimationFrame(animateBH);
 }
 
 // Function to show/hide blackhole
