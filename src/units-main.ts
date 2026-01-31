@@ -735,6 +735,18 @@ interface CosmicDust {
 const cosmicDustClouds: CosmicDust[] = [];
 const COSMIC_DUST_COUNT = 15;
 
+// Nebula clouds (vivid gas clouds, brighter than cosmic dust)
+interface Nebula {
+  x: number; y: number;
+  width: number; height: number;
+  alpha: number;
+  color: string; // RGB string
+  rotation: number;
+  rotationSpeed: number;
+  speedX: number; speedY: number;
+}
+let nebulas: Nebula[] = [];
+
 // Initialize cosmic dust clouds
 for (let i = 0; i < COSMIC_DUST_COUNT; i++) {
   cosmicDustClouds.push({
@@ -1365,6 +1377,31 @@ function generateStars(): void {
       scale: 1.0 + Math.random() * 0.5
     });
   }
+
+  // Generate nebulas (40 vivid gas clouds)
+  const nebulaColors = [
+    '180, 80, 220',   // purple
+    '80, 200, 200',   // teal
+    '220, 100, 160',  // pink
+    '200, 120, 60',   // orange
+    '100, 120, 220',  // blue
+    '180, 220, 100',  // yellow-green
+  ];
+  nebulas = [];
+  for (let i = 0; i < 40; i++) {
+    nebulas.push({
+      x: Math.random() * WORLD_SIZE,
+      y: Math.random() * WORLD_SIZE,
+      width: 1500 + Math.random() * 2500,
+      height: 800 + Math.random() * 1700,
+      alpha: 0.06 + Math.random() * 0.06,
+      color: nebulaColors[Math.floor(Math.random() * nebulaColors.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.0001,
+      speedX: (Math.random() - 0.5) * 3,
+      speedY: (Math.random() - 0.5) * 3,
+    });
+  }
 }
 
 // Seeded planet generation for multiplayer (deterministic from seed)
@@ -1457,6 +1494,13 @@ function generatePlanetsFromSeed(seed: number): void {
         amount: 0 // start with 0, resources are gained by mining
       }));
 
+      // Orbit params: planet orbits the sun
+      const planetOrbitRadius = Math.sqrt((x - SUN_X) ** 2 + (y - SUN_Y) ** 2);
+      const planetOrbitAngle = Math.atan2(y - SUN_Y, x - SUN_X);
+      const linearSpeed = rng.float(0.3, 0.7); // px/sec
+      const direction = rng.float(0, 1) < 0.5 ? 1 : -1;
+      const planetOrbitSpeed = direction * linearSpeed / planetOrbitRadius; // rad/sec
+
       const planet: Planet = {
         id: id++,
         x, y, radius, size,
@@ -1472,6 +1516,9 @@ function generatePlanetsFromSeed(seed: number): void {
         deposits,
         color: planetColor,
         craters,
+        orbitRadius: planetOrbitRadius,
+        orbitAngle: planetOrbitAngle,
+        orbitSpeed: planetOrbitSpeed,
         pulsePhase: rng.float(0, Math.PI * 2),
         shieldTimer: 0,
         hasShield: false,
@@ -1520,21 +1567,12 @@ function generatePlanetsFromSeed(seed: number): void {
     let moonCount = 0;
     let moonSize: PlanetSize = PlanetSize.ASTEROID;
 
-    if (parent.size === PlanetSize.LARGE) {
-      moonCount = 1;
-      moonSize = PlanetSize.ASTEROID;
-    } else if (parent.size === PlanetSize.GIANT) {
+    if (parent.size === PlanetSize.TITAN) {
       moonCount = 1;
       moonSize = PlanetSize.SMALL;
-    } else if (parent.size === PlanetSize.MEGA) {
-      moonCount = 1;
-      moonSize = PlanetSize.SMALL;
-    } else if (parent.size === PlanetSize.TITAN) {
-      moonCount = 1;
-      moonSize = PlanetSize.MEDIUM;
     } else if (parent.size === PlanetSize.COLOSSUS) {
-      moonCount = 2;
-      moonSize = PlanetSize.MEDIUM;
+      moonCount = 1;
+      moonSize = PlanetSize.SMALL;
     }
 
     for (let m = 0; m < moonCount; m++) {
@@ -1601,6 +1639,9 @@ function generatePlanetsFromSeed(seed: number): void {
   const bhDist = rng.float(3000, 8000);
   let bhX = Math.max(bhRadius + 100, Math.min(WORLD_SIZE - bhRadius - 100, SUN_X + Math.cos(bhAngle) * bhDist));
   let bhY = Math.max(bhRadius + 100, Math.min(WORLD_SIZE - bhRadius - 100, SUN_Y + Math.sin(bhAngle) * bhDist));
+  // Consume RNG in same order as server's makePlanet defaults
+  const bhNextMine = 5000 + rng.float(0, 5000);
+  const bhPulse = rng.float(0, Math.PI * 2);
   const blackHole: Planet = {
     id: id++,
     x: bhX, y: bhY,
@@ -1621,17 +1662,200 @@ function generatePlanetsFromSeed(seed: number): void {
     ],
     color: '#1a0a2e',
     craters: [],
-    pulsePhase: rng.float(0, Math.PI * 2),
+    pulsePhase: bhPulse,
     shieldTimer: 0,
     hasShield: false,
     spriteType: null,
     buildings: [null, null, null],
-    nextMineTime: 60000,
+    nextMineTime: bhNextMine,
     isBlackHole: true
   };
   planets.push(blackHole);
   planetMap.set(blackHole.id, blackHole);
   discoveredPlanets.add(blackHole.id);
+
+  // ── Second black hole (fixed position) ──
+  const bh2X = 18597;
+  const bh2Y = 22628;
+  const bh2Radius = 80;
+  // Remove any planets overlapping with the target position
+  for (let i = planets.length - 1; i >= 0; i--) {
+    const p = planets[i];
+    if (p.isBlackHole) continue;
+    const dist = Math.sqrt((p.x - bh2X) ** 2 + (p.y - bh2Y) ** 2);
+    if (dist < p.radius + bh2Radius + MIN_PLANET_DISTANCE) {
+      planetMap.delete(p.id);
+      discoveredPlanets.delete(p.id);
+      planets.splice(i, 1);
+    }
+  }
+  // Consume RNG in same order as server's makePlanet defaults
+  const bh2NextMine = 5000 + rng.float(0, 5000);
+  const bh2Pulse = rng.float(0, Math.PI * 2);
+  const blackHole2: Planet = {
+    id: id++,
+    x: bh2X, y: bh2Y,
+    radius: bh2Radius,
+    size: PlanetSize.GIANT,
+    ownerId: -1,
+    units: 10000,
+    maxUnits: 15000,
+    defense: 5.0,
+    growthRate: 0,
+    stability: STABILITY_MAX,
+    connected: false,
+    generating: false,
+    deposits: [
+      { type: 'crystal', amount: 0 },
+      { type: 'gas', amount: 0 },
+      { type: 'metal', amount: 0 }
+    ],
+    color: '#1a0a2e',
+    craters: [],
+    pulsePhase: bh2Pulse,
+    shieldTimer: 0,
+    hasShield: false,
+    spriteType: null,
+    buildings: [null, null, null],
+    nextMineTime: bh2NextMine,
+    isBlackHole: true
+  };
+  planets.push(blackHole2);
+  planetMap.set(blackHole2.id, blackHole2);
+  discoveredPlanets.add(blackHole2.id);
+
+  // ── Third black hole (fixed position) ──
+  const bh3X = 16834;
+  const bh3Y = 5720;
+  const bh3Radius = 80;
+  for (let i = planets.length - 1; i >= 0; i--) {
+    const p = planets[i];
+    if (p.isBlackHole) continue;
+    const dist = Math.sqrt((p.x - bh3X) ** 2 + (p.y - bh3Y) ** 2);
+    if (dist < p.radius + bh3Radius + MIN_PLANET_DISTANCE) {
+      planetMap.delete(p.id);
+      discoveredPlanets.delete(p.id);
+      planets.splice(i, 1);
+    }
+  }
+  const bh3NextMine = 5000 + rng.float(0, 5000);
+  const bh3Pulse = rng.float(0, Math.PI * 2);
+  const blackHole3: Planet = {
+    id: id++,
+    x: bh3X, y: bh3Y,
+    radius: bh3Radius,
+    size: PlanetSize.GIANT,
+    ownerId: -1,
+    units: 10000,
+    maxUnits: 15000,
+    defense: 5.0,
+    growthRate: 0,
+    stability: STABILITY_MAX,
+    connected: false,
+    generating: false,
+    deposits: [
+      { type: 'crystal', amount: 0 },
+      { type: 'gas', amount: 0 },
+      { type: 'metal', amount: 0 }
+    ],
+    color: '#1a0a2e',
+    craters: [],
+    pulsePhase: bh3Pulse,
+    shieldTimer: 0,
+    hasShield: false,
+    spriteType: null,
+    buildings: [null, null, null],
+    nextMineTime: bh3NextMine,
+    isBlackHole: true
+  };
+  planets.push(blackHole3);
+  planetMap.set(blackHole3.id, blackHole3);
+  discoveredPlanets.add(blackHole3.id);
+
+  // ── Fortress planets (fill empty zones) ──
+  const GRID_SIZE = 5;
+  const CELL_SIZE = WORLD_SIZE / GRID_SIZE; // 8000px
+
+  for (let gx = 0; gx < GRID_SIZE; gx++) {
+    for (let gy = 0; gy < GRID_SIZE; gy++) {
+      const cellX = gx * CELL_SIZE;
+      const cellY = gy * CELL_SIZE;
+
+      // Count planets in this cell
+      const cellCount = planets.filter(p =>
+        p.x >= cellX && p.x < cellX + CELL_SIZE &&
+        p.y >= cellY && p.y < cellY + CELL_SIZE
+      ).length;
+
+      if (cellCount >= 30) continue; // cell has enough planets (~36 avg per cell)
+
+      // Place 1-2 fortress planets in empty cell
+      const numFortress = cellCount < 15 ? 2 : 1;
+      for (let f = 0; f < numFortress; f++) {
+        const fRadius = rng.float(80, 100);
+        const fx = cellX + CELL_SIZE * 0.2 + rng.float(0, CELL_SIZE * 0.6);
+        const fy = cellY + CELL_SIZE * 0.2 + rng.float(0, CELL_SIZE * 0.6);
+
+        // Skip if too close to sun
+        const fSunDist = Math.sqrt((fx - SUN_X) ** 2 + (fy - SUN_Y) ** 2);
+        if (fSunDist < SUN_NO_SPAWN_RADIUS + fRadius) continue;
+
+        // Check min distance to other planets
+        let fValid = true;
+        for (const p of planets) {
+          const dist = Math.sqrt((fx - p.x) ** 2 + (fy - p.y) ** 2);
+          if (dist < p.radius + fRadius + MIN_PLANET_DISTANCE) { fValid = false; break; }
+        }
+        if (!fValid) continue;
+
+        // Orbit params
+        const fOrbitRadius = Math.sqrt((fx - SUN_X) ** 2 + (fy - SUN_Y) ** 2);
+        const fOrbitAngle = Math.atan2(fy - SUN_Y, fx - SUN_X);
+        const fLinearSpeed = rng.float(0.3, 0.7);
+        const fDirection = rng.float(0, 1) < 0.5 ? 1 : -1;
+        const fOrbitSpeed = fDirection * fLinearSpeed / fOrbitRadius;
+
+        // Deposits: 3 random resource types
+        const fDepTypes: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
+        const shuffledF = rng.shuffle([...fDepTypes]);
+        const fDeposits: ResourceDeposit[] = shuffledF.slice(0, 3).map(type => ({ type, amount: 0 }));
+
+        // Consume RNG in same order as server's makePlanet defaults
+        const fNextMine = 5000 + rng.float(0, 5000);
+        const fPulse = rng.float(0, Math.PI * 2);
+
+        const fortress: Planet = {
+          id: id++,
+          x: fx, y: fy,
+          radius: fRadius,
+          size: PlanetSize.GIANT,
+          ownerId: -1,
+          units: 10000,
+          maxUnits: 15000,
+          defense: 3.0,
+          growthRate: 0,
+          stability: STABILITY_MAX,
+          connected: false,
+          networkId: -1,
+          generating: false,
+          deposits: fDeposits,
+          color: '#8b0000',
+          craters: [],
+          orbitRadius: fOrbitRadius,
+          orbitAngle: fOrbitAngle,
+          orbitSpeed: fOrbitSpeed,
+          pulsePhase: fPulse,
+          shieldTimer: 0,
+          hasShield: false,
+          spriteType: null,
+          buildings: [null, null, null],
+          nextMineTime: fNextMine
+        };
+        planets.push(fortress);
+        planetMap.set(fortress.id, fortress);
+      }
+    }
+  }
 }
 
 function initPlayers(): void {
@@ -1710,6 +1934,12 @@ function initPlayers(): void {
       largeY = bestPlanet.y + Math.sin(angle) * distance;
 
       validLarge = true;
+      // Check sun distance
+      const largeSunDist = Math.sqrt((largeX - SUN_X) ** 2 + (largeY - SUN_Y) ** 2);
+      if (largeSunDist < SUN_NO_SPAWN_RADIUS + largeRadius) {
+        validLarge = false;
+        continue;
+      }
       for (const p of planets) {
         const dist = Math.sqrt((largeX - p.x) ** 2 + (largeY - p.y) ** 2);
         if (dist < p.radius + largeRadius + 50) {
@@ -1762,6 +1992,12 @@ function initPlayers(): void {
       moonY = largeY + Math.sin(moonAngle) * moonOrbitRadius;
 
       validMoon = true;
+      // Check sun distance
+      const moonSunDist = Math.sqrt((moonX - SUN_X) ** 2 + (moonY - SUN_Y) ** 2);
+      if (moonSunDist < SUN_NO_SPAWN_RADIUS + moonRadius) {
+        validMoon = false;
+        continue;
+      }
       for (const p of planets) {
         if (p.id === largePlanet.id) continue; // skip parent
         const dist = Math.sqrt((moonX - p.x) ** 2 + (moonY - p.y) ** 2);
@@ -1863,6 +2099,14 @@ function initPlayers(): void {
         const awayFromSun = Math.atan2(home.y - SUN_Y, home.x - SUN_X);
         bhX = home.x + Math.cos(awayFromSun) * 600;
         bhY = home.y + Math.sin(awayFromSun) * 600;
+
+        // If fallback is still too close to sun, push it further out
+        const fallbackSunDist = Math.sqrt((bhX - SUN_X) ** 2 + (bhY - SUN_Y) ** 2);
+        if (fallbackSunDist < SUN_NO_SPAWN_RADIUS + bhRadius) {
+          const safeDist = SUN_NO_SPAWN_RADIUS + bhRadius + 200;
+          bhX = SUN_X + Math.cos(awayFromSun) * safeDist;
+          bhY = SUN_Y + Math.sin(awayFromSun) * safeDist;
+        }
       }
 
       const blackHole: Planet = {
@@ -3320,7 +3564,65 @@ function getAbilityButtonAt(px: number, py: number): string | null {
   return null;
 }
 
+// ── Coordinate goto input field ──
+let coordInputActive = false;
+const coordInput = document.createElement('input');
+coordInput.type = 'text';
+coordInput.placeholder = 'x, y';
+coordInput.style.cssText = `
+  position: fixed; bottom: 60px; left: 10px; width: 160px; height: 28px;
+  background: rgba(0,0,0,0.7); color: #44ff88; border: 1px solid #44ff88;
+  font: 13px 'Press Start 2P', monospace; padding: 0 6px; outline: none;
+  z-index: 100; border-radius: 3px;
+`;
+document.body.appendChild(coordInput);
+
+coordInput.addEventListener('focus', () => { coordInputActive = true; });
+coordInput.addEventListener('blur', () => { coordInputActive = false; });
+coordInput.addEventListener('keydown', (e) => {
+  e.stopPropagation(); // prevent game keydown handler
+  if (e.key === 'Enter') {
+    const text = coordInput.value.trim();
+    const parts = text.split(/[,\s]+/).map(s => parseFloat(s.trim()));
+    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      const wx = Math.max(0, Math.min(WORLD_SIZE, parts[0]));
+      const wy = Math.max(0, Math.min(WORLD_SIZE, parts[1]));
+      camera.zoom = 1.0;
+      camera.targetZoom = 1.0;
+      camera.x = wx * camera.zoom - gameWidth / 2;
+      camera.y = wy * camera.zoom - gameHeight / 2;
+      coordInput.value = '';
+      coordInput.blur();
+    }
+  }
+  if (e.key === 'Escape') {
+    coordInput.value = '';
+    coordInput.blur();
+  }
+});
+
+// Triple-click to copy coordinates
+let tripleClickTimes: number[] = [];
+let tripleClickPos = { x: 0, y: 0 };
+let coordCopiedFlash = 0; // timestamp when coords were copied (for visual feedback)
+
 canvas.addEventListener('mousedown', (e) => {
+  // Triple-click detection: copy world coordinates
+  const now = performance.now();
+  const clickDist = Math.sqrt((e.offsetX - tripleClickPos.x) ** 2 + (e.offsetY - tripleClickPos.y) ** 2);
+  if (clickDist > 30) tripleClickTimes = []; // reset if mouse moved too far
+  tripleClickPos = { x: e.offsetX, y: e.offsetY };
+  tripleClickTimes.push(now);
+  // Keep only clicks within last 600ms
+  tripleClickTimes = tripleClickTimes.filter(t => now - t < 600);
+  if (tripleClickTimes.length >= 3) {
+    const wp = screenToWorld(mouseX, mouseY);
+    const coordStr = `${Math.round(wp.x)}, ${Math.round(wp.y)}`;
+    navigator.clipboard.writeText(coordStr);
+    coordCopiedFlash = now;
+    tripleClickTimes = [];
+  }
+
   if (gameState === GameState.GAMEOVER) {
     // Check restart button click
     const pos = getCanvasMousePos(e);
@@ -4394,6 +4696,7 @@ document.addEventListener('touchend', (e) => {
 }, { passive: false });
 
 document.addEventListener('keydown', (e) => {
+  if (coordInputActive) return; // ignore game keys while typing coordinates
   if (e.key === 'Escape') {
     if (actionPopup) {
       actionPopup = null;
@@ -4533,6 +4836,51 @@ function renderCosmicDust(): void {
     gradient.addColorStop(0.4, `rgba(${dust.color}, ${dust.alpha * 0.6})`);
     gradient.addColorStop(0.7, `rgba(${dust.color}, ${dust.alpha * 0.3})`);
     gradient.addColorStop(1, `rgba(${dust.color}, 0)`);
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, screenWidth / 2, screenHeight / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+function updateNebulas(dt: number): void {
+  for (const neb of nebulas) {
+    neb.x += neb.speedX * dt;
+    neb.y += neb.speedY * dt;
+    neb.rotation += neb.rotationSpeed;
+
+    // Wrap around world boundaries
+    if (neb.x < -neb.width) neb.x = WORLD_SIZE + neb.width;
+    if (neb.x > WORLD_SIZE + neb.width) neb.x = -neb.width;
+    if (neb.y < -neb.height) neb.y = WORLD_SIZE + neb.height;
+    if (neb.y > WORLD_SIZE + neb.height) neb.y = -neb.height;
+  }
+}
+
+function renderNebulas(): void {
+  for (const neb of nebulas) {
+    const screen = worldToScreen(neb.x, neb.y);
+    const screenWidth = neb.width * camera.zoom;
+    const screenHeight = neb.height * camera.zoom;
+
+    // Skip if off screen (with margin for large clouds)
+    if (screen.x + screenWidth < 0 || screen.x - screenWidth > gameWidth) continue;
+    if (screen.y + screenHeight < 0 || screen.y - screenHeight > gameHeight) continue;
+
+    ctx.save();
+    ctx.translate(screen.x, screen.y);
+    ctx.rotate(neb.rotation);
+
+    // Multi-layered gradient for depth (brighter than cosmic dust)
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, screenWidth / 2);
+    gradient.addColorStop(0, `rgba(${neb.color}, ${neb.alpha})`);
+    gradient.addColorStop(0.3, `rgba(${neb.color}, ${neb.alpha * 0.7})`);
+    gradient.addColorStop(0.6, `rgba(${neb.color}, ${neb.alpha * 0.4})`);
+    gradient.addColorStop(0.85, `rgba(${neb.color}, ${neb.alpha * 0.15})`);
+    gradient.addColorStop(1, `rgba(${neb.color}, 0)`);
 
     ctx.fillStyle = gradient;
     ctx.beginPath();
@@ -7336,6 +7684,20 @@ function renderUI(): void {
   // Text
   ctx.fillStyle = '#aaaaaa';
   ctx.fillText(zoomText, zoomX, zoomY);
+
+  // Mouse world coordinates (bottom left, above zoom)
+  const worldPos = screenToWorld(mouseX, mouseY);
+  const coordText = `${Math.round(worldPos.x)}, ${Math.round(worldPos.y)}`;
+  const coordY = zoomY - 122;
+  const copiedAgo = performance.now() - coordCopiedFlash;
+  const showCopied = copiedAgo < 1500;
+  ctx.font = '14px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(zoomX - 5, coordY - 10, 150, 22);
+  ctx.fillStyle = showCopied ? '#44ff88' : '#888888';
+  ctx.fillText(showCopied ? 'Copied!' : coordText, zoomX, coordY);
 }
 
 function renderExploreDrag(): void {
@@ -7443,6 +7805,7 @@ function render(): void {
 
   renderStars();
   renderCosmicDust();
+  renderNebulas();
   renderAnimStars();
   renderComets();
   renderSupplyLines();
@@ -7735,6 +8098,22 @@ function render(): void {
   }
 }
 
+// ========== PLANET ORBITS AROUND SUN ==========
+// Uses absolute gameTime to compute angle (no incremental drift).
+// orbitAngle stores the INITIAL angle and is never mutated.
+function updatePlanetOrbits(_dt: number): void {
+  const t = gameTime / 1000; // seconds since game start
+  for (const planet of planets) {
+    if (planet.isMoon || planet.isBlackHole) continue;
+    if (planet.x === SUN_X && planet.y === SUN_Y && planet.radius === SUN_RADIUS) continue; // skip sun
+    if (!planet.orbitSpeed) continue;
+
+    const angle = (planet.orbitAngle || 0) + planet.orbitSpeed * t;
+    planet.x = SUN_X + Math.cos(angle) * planet.orbitRadius!;
+    planet.y = SUN_Y + Math.sin(angle) * planet.orbitRadius!;
+  }
+}
+
 // ========== MOON ORBIT ==========
 function updateMoons(dt: number): void {
   for (const moon of planets) {
@@ -7835,7 +8214,8 @@ function update(dt: number): void {
       gameTime += (timeDiff) * Math.min(1, dt * 3); // smooth approach
     }
 
-    // Moon orbits are visual-only, run locally for smooth animation
+    // Planet + moon orbits are visual-only, run locally for smooth animation
+    updatePlanetOrbits(dt);
     updateMoons(dt);
 
     // Visual-only updates (client animations, no gameplay effect)
@@ -7846,6 +8226,7 @@ function update(dt: number): void {
     updateBattles();         // battle animation timer
     updateParticles(dt);
     updateCosmicDust(dt);
+    updateNebulas(dt);
     updateShields(dt);
     updateProbes(dt);
     updateOrbitProbes(dt);
@@ -7861,6 +8242,7 @@ function update(dt: number): void {
     // Offline / single-player mode: all logic runs locally
     gameTime += dt * 1000;
 
+    updatePlanetOrbits(dt);
     updateMoons(dt);
     updateMining();
     updateGrowth(dt);
@@ -7873,6 +8255,7 @@ function update(dt: number): void {
     updateBattles();
     updateParticles(dt);
     updateCosmicDust(dt);
+    updateNebulas(dt);
     updateShields(dt);
     updateProbes(dt);
     updateOrbitProbes(dt);

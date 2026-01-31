@@ -4,6 +4,7 @@
 
 import {
   WORLD_SIZE, STABILITY_MAX, SUPPLY_RANGE,
+  SUN_X, SUN_Y, SUN_RADIUS,
   EMPIRE_SLOW_THRESHOLD, EMPIRE_DECAY_THRESHOLD,
   EMPIRE_GROWTH_PENALTY, EMPIRE_DEGRADE_UNIT_THRESHOLD,
   DISTANCE_NO_PENALTY, DISTANCE_LOSS_INTERVAL,
@@ -234,6 +235,7 @@ export class UnitsGameLogic {
   tick(dtSeconds: number): void {
     this.gameTime += dtSeconds * 1000;
 
+    this.updatePlanetOrbits(dtSeconds);
     this.updateMoons(dtSeconds);
     this.updateMining();
     this.updateGrowth(dtSeconds);
@@ -254,6 +256,22 @@ export class UnitsGameLogic {
         if (player.isAI) this.aiTick(player);
       }
       this.lastAITick = this.gameTime;
+    }
+  }
+
+  // ── Planet orbits around the sun ─────────────────────────
+  // Uses absolute gameTime to compute angle (no incremental drift).
+  // orbitAngle stores the INITIAL angle and is never mutated.
+  updatePlanetOrbits(_dt: number): void {
+    const t = this.gameTime / 1000; // seconds since game start
+    for (const planet of this.planets) {
+      if (planet.isMoon || planet.isBlackHole) continue;
+      if (planet.x === SUN_X && planet.y === SUN_Y) continue; // skip sun
+      if (!planet.orbitSpeed) continue;
+
+      const angle = planet.orbitAngle + planet.orbitSpeed * t;
+      planet.x = SUN_X + Math.cos(angle) * planet.orbitRadius;
+      planet.y = SUN_Y + Math.sin(angle) * planet.orbitRadius;
     }
   }
 

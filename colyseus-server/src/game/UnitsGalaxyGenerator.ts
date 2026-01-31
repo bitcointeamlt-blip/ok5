@@ -165,6 +165,13 @@ export function generateGalaxy(seed: number): GeneratedPlanet[] {
       const shuffled = rng.shuffle([...ALL_DEPOSIT_TYPES]);
       const deposits: ResourceDeposit[] = shuffled.slice(0, numDeposits).map(type => ({ type, amount: 0 }));
 
+      // Orbit params: planet orbits the sun
+      const orbitRadius = Math.sqrt((x - SUN_X) ** 2 + (y - SUN_Y) ** 2);
+      const orbitAngle = Math.atan2(y - SUN_Y, x - SUN_X);
+      const linearSpeed = rng.float(0.3, 0.7); // px/sec
+      const direction = rng.float(0, 1) < 0.5 ? 1 : -1;
+      const orbitSpeed = direction * linearSpeed / orbitRadius; // rad/sec
+
       planets.push(makePlanet({
         x, y, radius, size,
         units: startingUnits,
@@ -174,6 +181,9 @@ export function generateGalaxy(seed: number): GeneratedPlanet[] {
         deposits,
         color: planetColor,
         craters,
+        orbitRadius,
+        orbitAngle,
+        orbitSpeed,
       }));
     }
   }
@@ -201,11 +211,8 @@ export function generateGalaxy(seed: number): GeneratedPlanet[] {
 
     let moonCount = 0;
     let moonSize: PlanetSize = PlanetSize.ASTEROID;
-    if (parent.size === PlanetSize.LARGE)    { moonCount = 1; moonSize = PlanetSize.ASTEROID; }
-    else if (parent.size === PlanetSize.GIANT)    { moonCount = 1; moonSize = PlanetSize.SMALL; }
-    else if (parent.size === PlanetSize.MEGA)     { moonCount = 1; moonSize = PlanetSize.SMALL; }
-    else if (parent.size === PlanetSize.TITAN)    { moonCount = 1; moonSize = PlanetSize.MEDIUM; }
-    else if (parent.size === PlanetSize.COLOSSUS) { moonCount = 2; moonSize = PlanetSize.MEDIUM; }
+    if (parent.size === PlanetSize.TITAN)    { moonCount = 1; moonSize = PlanetSize.SMALL; }
+    else if (parent.size === PlanetSize.COLOSSUS) { moonCount = 1; moonSize = PlanetSize.SMALL; }
 
     for (let m = 0; m < moonCount; m++) {
       const moonProps = getPlanetProperties(moonSize);
@@ -248,15 +255,12 @@ export function generateGalaxy(seed: number): GeneratedPlanet[] {
     }
   }
 
-  // ── Black hole (placed later, after player homes are assigned) ──
-  // We generate it as part of the galaxy so the seed is deterministic
+  // ── Black hole ──
   const bhRadius = 80;
-  // Place black hole in a random quadrant, well away from sun
   const bhAngle = rng.float(0, Math.PI * 2);
   const bhDist = rng.float(3000, 8000);
   let bhX = SUN_X + Math.cos(bhAngle) * bhDist;
   let bhY = SUN_Y + Math.sin(bhAngle) * bhDist;
-  // Clamp to world bounds
   bhX = Math.max(bhRadius + 100, Math.min(WORLD_SIZE - bhRadius - 100, bhX));
   bhY = Math.max(bhRadius + 100, Math.min(WORLD_SIZE - bhRadius - 100, bhY));
 
@@ -278,6 +282,136 @@ export function generateGalaxy(seed: number): GeneratedPlanet[] {
     craters: [],
     isBlackHole: true,
   }));
+
+  // ── Second black hole (fixed position) ──
+  const bh2X = 18597;
+  const bh2Y = 22628;
+  const bh2Radius = 80;
+  // Remove any planets overlapping with the target position
+  for (let i = planets.length - 1; i >= 0; i--) {
+    const p = planets[i];
+    if (p.isBlackHole) continue; // Don't remove the first black hole
+    const dist = Math.sqrt((p.x - bh2X) ** 2 + (p.y - bh2Y) ** 2);
+    if (dist < p.radius + bh2Radius + MIN_PLANET_DISTANCE) {
+      planets.splice(i, 1);
+    }
+  }
+  planets.push(makePlanet({
+    x: bh2X, y: bh2Y,
+    radius: bh2Radius,
+    size: PlanetSize.GIANT,
+    units: 10000,
+    maxUnits: 15000,
+    defense: 5.0,
+    growthRate: 0,
+    stability: STABILITY_MAX,
+    deposits: [
+      { type: 'crystal', amount: 0 },
+      { type: 'gas', amount: 0 },
+      { type: 'metal', amount: 0 },
+    ],
+    color: '#1a0a2e',
+    craters: [],
+    isBlackHole: true,
+  }));
+
+  // ── Third black hole (fixed position) ──
+  const bh3X = 16834;
+  const bh3Y = 5720;
+  const bh3Radius = 80;
+  for (let i = planets.length - 1; i >= 0; i--) {
+    const p = planets[i];
+    if (p.isBlackHole) continue;
+    const dist = Math.sqrt((p.x - bh3X) ** 2 + (p.y - bh3Y) ** 2);
+    if (dist < p.radius + bh3Radius + MIN_PLANET_DISTANCE) {
+      planets.splice(i, 1);
+    }
+  }
+  planets.push(makePlanet({
+    x: bh3X, y: bh3Y,
+    radius: bh3Radius,
+    size: PlanetSize.GIANT,
+    units: 10000,
+    maxUnits: 15000,
+    defense: 5.0,
+    growthRate: 0,
+    stability: STABILITY_MAX,
+    deposits: [
+      { type: 'crystal', amount: 0 },
+      { type: 'gas', amount: 0 },
+      { type: 'metal', amount: 0 },
+    ],
+    color: '#1a0a2e',
+    craters: [],
+    isBlackHole: true,
+  }));
+
+  // ── Fortress planets (fill empty zones) ──
+  const GRID_SIZE = 5;
+  const CELL_SIZE = WORLD_SIZE / GRID_SIZE; // 8000px
+
+  for (let gx = 0; gx < GRID_SIZE; gx++) {
+    for (let gy = 0; gy < GRID_SIZE; gy++) {
+      const cellX = gx * CELL_SIZE;
+      const cellY = gy * CELL_SIZE;
+
+      // Count planets in this cell
+      const count = planets.filter(p =>
+        p.x >= cellX && p.x < cellX + CELL_SIZE &&
+        p.y >= cellY && p.y < cellY + CELL_SIZE
+      ).length;
+
+      if (count >= 30) continue; // cell has enough planets (~36 avg per cell)
+
+      // Place 1-2 fortress planets in empty cell
+      const numFortress = count < 15 ? 2 : 1;
+      for (let f = 0; f < numFortress; f++) {
+        const fRadius = rng.float(80, 100);
+        const fx = cellX + CELL_SIZE * 0.2 + rng.float(0, CELL_SIZE * 0.6);
+        const fy = cellY + CELL_SIZE * 0.2 + rng.float(0, CELL_SIZE * 0.6);
+
+        // Skip if too close to sun
+        const sunDist = Math.sqrt((fx - SUN_X) ** 2 + (fy - SUN_Y) ** 2);
+        if (sunDist < SUN_NO_SPAWN_RADIUS + fRadius) continue;
+
+        // Check min distance to other planets
+        let fValid = true;
+        for (const p of planets) {
+          const dist = Math.sqrt((fx - p.x) ** 2 + (fy - p.y) ** 2);
+          if (dist < p.radius + fRadius + MIN_PLANET_DISTANCE) { fValid = false; break; }
+        }
+        if (!fValid) continue;
+
+        // Orbit params
+        const fOrbitRadius = Math.sqrt((fx - SUN_X) ** 2 + (fy - SUN_Y) ** 2);
+        const fOrbitAngle = Math.atan2(fy - SUN_Y, fx - SUN_X);
+        const fLinearSpeed = rng.float(0.3, 0.7);
+        const fDirection = rng.float(0, 1) < 0.5 ? 1 : -1;
+        const fOrbitSpeed = fDirection * fLinearSpeed / fOrbitRadius;
+
+        // Deposits: 3 random resource types
+        const shuffledF = rng.shuffle([...ALL_DEPOSIT_TYPES]);
+        const fDeposits = shuffledF.slice(0, 3).map(type => ({ type, amount: 0 }));
+
+        planets.push(makePlanet({
+          x: fx, y: fy,
+          radius: fRadius,
+          size: PlanetSize.GIANT,
+          units: 10000,
+          maxUnits: 15000,
+          defense: 3.0,
+          growthRate: 0,
+          stability: STABILITY_MAX,
+          deposits: fDeposits,
+          color: '#8b0000',
+          craters: [],
+          orbitRadius: fOrbitRadius,
+          orbitAngle: fOrbitAngle,
+          orbitSpeed: fOrbitSpeed,
+        }));
+      }
+    }
+  }
 
   return planets;
 }

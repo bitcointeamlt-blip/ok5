@@ -11,6 +11,7 @@ export const SUPPLY_RANGE = 800;
 // Planet generation
 export const PLANET_COUNT = 800;
 export const MIN_PLANET_DISTANCE = 100;
+export const FORTRESS_COUNT = 30;
 
 // Sun
 export const SUN_X = WORLD_SIZE / 2;
