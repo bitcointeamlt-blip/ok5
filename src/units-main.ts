@@ -1275,6 +1275,9 @@ function getVisionRange(planet: Planet): number {
 }
 
 function isVisibleToPlayer(planet: Planet): boolean {
+  // Black holes are always visible (cosmic objects)
+  if (planet.isBlackHole) return true;
+
   // In multiplayer: only our own planets provide vision
   if (multiplayerConnected) {
     if (planet.ownerId === controlledPlayerId) return true;
@@ -6359,6 +6362,23 @@ function renderFogOfWar(): void {
     fc.fill();
   }
 
+  // Black holes are always visible
+  for (const planet of planets) {
+    if (!planet.isBlackHole) continue;
+    const screen = worldToScreen(planet.x, planet.y);
+    const bhRadius = planet.radius * 3 * camera.zoom;
+    const bhGrad = fc.createRadialGradient(
+      screen.x, screen.y, bhRadius * 0.4,
+      screen.x, screen.y, bhRadius
+    );
+    bhGrad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+    bhGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    fc.fillStyle = bhGrad;
+    fc.beginPath();
+    fc.arc(screen.x, screen.y, bhRadius, 0, Math.PI * 2);
+    fc.fill();
+  }
+
   for (const planet of planets) {
     if (planet.ownerId !== controlledPlayerId) continue;
 
@@ -6382,13 +6402,8 @@ function renderFogOfWar(): void {
   // Cut out light from flying attacks (player only)
   for (const attack of attacks) {
     if (attack.playerId !== controlledPlayerId) continue;
-    const from = planetMap.get(attack.fromId);
-    const to = planetMap.get(attack.toId);
-    if (!from || !to) continue;
 
-    const wx = from.x + (to.x - from.x) * attack.progress;
-    const wy = from.y + (to.y - from.y) * attack.progress;
-    const screen = worldToScreen(wx, wy);
+    const screen = worldToScreen(attack.x, attack.y);
     const lightRadius = 250 * camera.zoom;
 
     const gradient = fc.createRadialGradient(
