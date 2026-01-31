@@ -237,7 +237,7 @@ type BuildingType = 'turret' | 'mine' | 'factory' | 'shield_gen' | 'drone';
 interface BuildingDef {
   name: string;
   type: BuildingType;
-  cost: Partial<Record<DepositType, number>>;
+  cost: number; // unit cost deducted from planet
   description: string;
   color: string;
   icon: string;
@@ -249,11 +249,11 @@ interface Building {
 }
 
 const BUILDINGS: BuildingDef[] = [
-  { type: 'turret', name: 'TURRET', cost: { metal: 30, carbon: 20 }, description: 'RADAR', color: '#ff6644', icon: 'T' },
-  { type: 'mine', name: 'MINE', cost: { metal: 20, crystal: 25 }, description: '+GROW', color: '#88cc44', icon: 'M' },
-  { type: 'factory', name: 'FACTORY', cost: { carbon: 30, gas: 20 }, description: '+MAX', color: '#cc8844', icon: 'F' },
-  { type: 'shield_gen', name: 'SHIELD', cost: { crystal: 30, gas: 25 }, description: '1x BLOCK', color: '#44aaff', icon: 'S' },
-  { type: 'drone', name: 'DRONE', cost: { water: 25, crystal: 20 }, description: '+20%DMG DEF', color: '#b868d8', icon: 'D' }
+  { type: 'turret', name: 'TURRET', cost: 100, description: 'RADAR', color: '#ff6644', icon: 'T' },
+  { type: 'mine', name: 'MINE', cost: 80, description: '+GROW', color: '#88cc44', icon: 'M' },
+  { type: 'factory', name: 'FACTORY', cost: 120, description: '+MAX', color: '#cc8844', icon: 'F' },
+  { type: 'shield_gen', name: 'SHIELD', cost: 150, description: '1x BLOCK', color: '#44aaff', icon: 'S' },
+  { type: 'drone', name: 'DRONE', cost: 100, description: '+20%DMG DEF', color: '#b868d8', icon: 'D' }
 ];
 
 const DRONE_INTERCEPT_RANGE = 400; // drones intercept missiles within 400px
@@ -6605,11 +6605,7 @@ function renderPopup(): void {
 // ========== BUILD PANEL ==========
 
 function canAffordBuilding(planet: Planet, def: BuildingDef): boolean {
-  for (const [res, cost] of Object.entries(def.cost) as [DepositType, number][]) {
-    const dep = planet.deposits.find(d => d.type === res);
-    if (!dep || dep.amount < cost) return false;
-  }
-  return true;
+  return planet.units >= def.cost;
 }
 
 function getBuildPanelLayout() {
@@ -6707,11 +6703,8 @@ function handleBuildPanelClick(action: string): void {
       buildPanelSlot = null;
     } else {
       // Offline mode: apply locally
-      // Deduct costs from deposits
-      for (const [res, cost] of Object.entries(def.cost) as [DepositType, number][]) {
-        const dep = planet.deposits.find(d => d.type === res);
-        if (dep) dep.amount -= cost;
-      }
+      // Deduct unit cost from planet
+      planet.units -= def.cost;
 
       // Place building
       planet.buildings[buildPanelSlot] = { type: def.type, slot: buildPanelSlot };
@@ -6870,9 +6863,11 @@ function renderBuildPanel(): void {
       ctx.lineWidth = 1;
       ctx.strokeRect(sx, buildY, slotW, slotH);
 
-      // Building name - use precise centering
+      // Building name + unit cost - use precise centering
       const textColor = affordable ? def.color : '#444444';
-      drawTextCentered(def.name, pickerFontSize, textColor, sx + slotW / 2, buildY + slotH / 2);
+      const costColor = affordable ? '#FFD700' : '#444444';
+      drawTextLeft(`${def.name}`, pickerFontSize, textColor, sx + 6, buildY + slotH / 2);
+      drawTextLeft(`${def.cost}u`, pickerFontSize, costColor, sx + slotW - 46, buildY + slotH / 2);
     }
   }
 
@@ -7098,235 +7093,6 @@ function renderAbilities(): void {
   }
 }
 
-// Calculate total resources for a player across all their planets
-function getPlayerTotalResources(playerId: number): Record<DepositType, number> {
-  const totals: Record<DepositType, number> = {
-    carbon: 0, water: 0, gas: 0, metal: 0, crystal: 0
-  };
-
-  for (const planet of planets) {
-    if (planet.ownerId === playerId) {
-      for (const dep of planet.deposits) {
-        totals[dep.type] += dep.amount;
-      }
-    }
-  }
-
-  return totals;
-}
-
-// Track previous resource values for change indicators
-let prevResources: Record<DepositType, number> = { carbon: 0, water: 0, gas: 0, metal: 0, crystal: 0 };
-let resourceChanges: Record<DepositType, { amount: number; time: number }> = {
-  carbon: { amount: 0, time: 0 },
-  water: { amount: 0, time: 0 },
-  gas: { amount: 0, time: 0 },
-  metal: { amount: 0, time: 0 },
-  crystal: { amount: 0, time: 0 }
-};
-
-// Track previous units for change indicator
-let prevUnits = 0;
-let unitsChange = { amount: 0, time: 0 };
-
-function renderResourceBar(): void {
-  const resources = getPlayerTotalResources(controlledPlayerId);
-  const allTypes: DepositType[] = ['carbon', 'water', 'gas', 'metal', 'crystal'];
-  const totalUnits = Math.floor(players[controlledPlayerId]?.totalUnits || 0);
-
-  // Check for changes
-  const now = performance.now();
-  for (const type of allTypes) {
-    const diff = resources[type] - prevResources[type];
-    if (diff !== 0) {
-      resourceChanges[type] = { amount: diff, time: now };
-    }
-    prevResources[type] = resources[type];
-  }
-
-  // Check units change
-  const unitsDiff = totalUnits - prevUnits;
-  if (Math.abs(unitsDiff) >= 1) {
-    unitsChange = { amount: unitsDiff, time: now };
-  }
-  prevUnits = totalUnits;
-
-  // Bar dimensions - COMPACT on mobile to fit screen
-  const barH = isMobile ? 32 : 36;
-  const barW = gameWidth;
-  const slotW = isMobile ? Math.floor(gameWidth / 7.5) : 150; // Auto-fit on mobile
-  const totalSlots = 7; // 5 resources + units + planets
-  const startX = isMobile ? 5 : (gameWidth - slotW * totalSlots) / 2;
-  const planetCount = players[controlledPlayerId]?.planetCount || 0;
-
-  // Background
-  ctx.fillStyle = 'rgba(10, 15, 30, 0.9)';
-  ctx.fillRect(0, 0, barW, barH);
-
-  // Bottom border
-  ctx.strokeStyle = '#FFD700';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, barH);
-  ctx.lineTo(barW, barH);
-  ctx.stroke();
-
-  // Draw each resource (compact on mobile)
-  const iconR = isMobile ? 8 : 12;
-  const iconFont = isMobile ? 'bold 8px "Press Start 2P"' : 'bold 12px "Press Start 2P"';
-  const amountFont = isMobile ? '8px "Press Start 2P"' : '11px "Press Start 2P"';
-  const iconOffset = isMobile ? 12 : 18;
-  const textOffset = isMobile ? 24 : 38;
-
-  for (let i = 0; i < allTypes.length; i++) {
-    const type = allTypes[i];
-    const info = DEPOSIT_INFO[type];
-    const amount = resources[type];
-    const x = startX + i * slotW;
-
-    // Icon background
-    ctx.fillStyle = info.color;
-    ctx.beginPath();
-    ctx.arc(x + iconOffset, barH / 2, iconR, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Icon letter
-    ctx.font = iconFont;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#000';
-    ctx.fillText(info.icon, x + iconOffset, barH / 2 + 1);
-
-    // Amount
-    ctx.font = amountFont;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(Math.floor(amount).toString(), x + textOffset, barH / 2 + 1);
-
-    // Change indicator (fade out over 2 seconds) - skip on mobile to save space
-    if (!isMobile) {
-      const change = resourceChanges[type];
-      const elapsed = now - change.time;
-      if (elapsed < 2000 && change.amount !== 0) {
-        const alpha = 1 - elapsed / 2000;
-        const changeText = change.amount > 0 ? `+${change.amount}` : `${change.amount}`;
-        ctx.font = '10px "Press Start 2P"';
-        ctx.fillStyle = change.amount > 0 ? `rgba(100, 255, 100, ${alpha})` : `rgba(255, 100, 100, ${alpha})`;
-        ctx.fillText(changeText, x + 77, barH / 2 + 1);
-      }
-    }
-  }
-
-  // Units display (last slot)
-  const unitsX = startX + 5 * slotW;
-
-  // Icon background (yellow/gold for units)
-  ctx.fillStyle = '#FFD700';
-  ctx.beginPath();
-  ctx.arc(unitsX + iconOffset, barH / 2, iconR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Icon letter
-  ctx.font = iconFont;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#000';
-  ctx.fillText('U', unitsX + iconOffset, barH / 2 + 1);
-
-  // Amount
-  ctx.font = amountFont;
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#fff';
-  ctx.fillText(totalUnits.toString(), unitsX + textOffset, barH / 2 + 1);
-
-  // Units change indicator - skip on mobile
-  if (!isMobile) {
-    const unitsElapsed = now - unitsChange.time;
-    if (unitsElapsed < 2000 && unitsChange.amount !== 0) {
-      const alpha = 1 - unitsElapsed / 2000;
-      const changeText = unitsChange.amount > 0 ? `+${Math.floor(unitsChange.amount)}` : `${Math.floor(unitsChange.amount)}`;
-      ctx.font = '10px "Press Start 2P"';
-      ctx.fillStyle = unitsChange.amount > 0 ? `rgba(100, 255, 100, ${alpha})` : `rgba(255, 100, 100, ${alpha})`;
-      ctx.fillText(changeText, unitsX + 72, barH / 2 + 1);
-    }
-  }
-
-  // Planets display (last slot)
-  const planetsX = startX + 6 * slotW;
-
-  // Icon background (cyan for planets)
-  ctx.fillStyle = '#44aaff';
-  ctx.beginPath();
-  ctx.arc(planetsX + iconOffset, barH / 2, iconR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Icon letter
-  ctx.font = iconFont;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#000';
-  ctx.fillText('P', planetsX + iconOffset, barH / 2 + 1);
-
-  // Amount
-  ctx.font = amountFont;
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#fff';
-  ctx.fillText(planetCount.toString(), planetsX + textOffset, barH / 2 + 1);
-
-  // Tooltip on hover
-  if (mouseY < barH && mouseY > 0) {
-    let hoveredSlot = -1;
-    let tooltipText = '';
-
-    // Check which slot mouse is over
-    for (let i = 0; i < 7; i++) {
-      const slotX = startX + i * slotW;
-      if (mouseX >= slotX && mouseX < slotX + slotW) {
-        hoveredSlot = i;
-        break;
-      }
-    }
-
-    if (hoveredSlot >= 0 && hoveredSlot < 5) {
-      const type = allTypes[hoveredSlot];
-      tooltipText = DEPOSIT_INFO[type].name;
-    } else if (hoveredSlot === 5) {
-      tooltipText = 'Units';
-    } else if (hoveredSlot === 6) {
-      tooltipText = 'Planets';
-    }
-
-    if (tooltipText) {
-      const tooltipX = startX + hoveredSlot * slotW + slotW / 2;
-      const tooltipY = barH + 6;
-
-      ctx.font = '11px "Press Start 2P"';
-      const textW = ctx.measureText(tooltipText).width;
-      const boxW = textW + 18;
-      const boxH = 28;
-      const boxX = tooltipX - boxW / 2;
-
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-      ctx.fillRect(boxX, tooltipY, boxW, boxH);
-      ctx.strokeStyle = '#FFD700';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(boxX, tooltipY, boxW, boxH);
-
-      // Arrow pointing up
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-      ctx.beginPath();
-      ctx.moveTo(tooltipX - 6, tooltipY);
-      ctx.lineTo(tooltipX + 6, tooltipY);
-      ctx.lineTo(tooltipX, tooltipY - 5);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#FFD700';
-      ctx.fillText(tooltipText, tooltipX, tooltipY + 19);
-    }
-  }
-}
 
 // Render virtual joystick (mobile only)
 function renderJoystick(): void {
@@ -7476,9 +7242,6 @@ function renderWalletButton(): void {
 }
 
 function renderUI(): void {
-  // Resource bar at top
-  renderResourceBar();
-
   // Ability bar (bottom right)
   renderAbilities();
 

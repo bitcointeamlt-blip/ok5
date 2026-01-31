@@ -11,7 +11,7 @@ import {
   ATTACK_BASE_SPEED, TURRET_FIRE_DISTANCE, TURRET_DAMAGE_DIVISOR,
   TURRET_MISSILE_SPEED, DRONE_INTERCEPT_RANGE, SHIELD_RADIUS,
   DIFFICULTY_SETTINGS, PlanetSize, getPlanetProperties,
-  getDistance, getMiningParams, type DepositType, type BuildingType,
+  getDistance, type BuildingType,
   PLAYER_COLORS, MAX_PLAYERS,
 } from "./UnitsConstants";
 import type { GeneratedPlanet, ResourceDeposit } from "./UnitsGalaxyGenerator";
@@ -288,19 +288,9 @@ export class UnitsGameLogic {
     }
   }
 
-  // ── Mining ────────────────────────────────────────────────
+  // ── Mining (disabled — buildings now cost units) ─────────
   updateMining(): void {
-    for (const planet of this.planets) {
-      if (planet.ownerId < 0) continue;
-      if (planet.deposits.length === 0) continue;
-      if (this.gameTime < planet.nextMineTime) continue;
-
-      const params = getMiningParams(planet.size);
-      const deposit = planet.deposits[Math.floor(Math.random() * planet.deposits.length)];
-      deposit.amount += params.amount;
-
-      planet.nextMineTime = this.gameTime + params.minTime + Math.random() * (params.maxTime - params.minTime);
-    }
+    // No-op: resource mining removed, buildings cost units instead
   }
 
   // ── Growth ────────────────────────────────────────────────
@@ -787,18 +777,11 @@ export class UnitsGameLogic {
     if (planet.buildings[slot] !== null) return false;
     if (planet.size === PlanetSize.ASTEROID) return false;
 
-    // Cost check
-    const costs = this.getBuildingCost(buildingType);
-    if (!costs) return false;
-
-    // Check affordability across all player's planets
-    const totalResources = this.getPlayerTotalResources(playerId);
-    for (const [type, amount] of Object.entries(costs)) {
-      if ((totalResources[type as DepositType] || 0) < amount) return false;
-    }
-
-    // Deduct costs
-    this.deductResources(playerId, costs);
+    // Cost check — deduct units from this planet
+    const unitCost = this.getBuildingUnitCost(buildingType);
+    if (unitCost === null) return false;
+    if (planet.units < unitCost) return false;
+    planet.units -= unitCost;
 
     planet.buildings[slot] = { type: buildingType, slot };
 
@@ -808,45 +791,17 @@ export class UnitsGameLogic {
     return true;
   }
 
-  getBuildingCost(type: BuildingType): Partial<Record<DepositType, number>> | null {
+  getBuildingUnitCost(type: BuildingType): number | null {
     switch (type) {
-      case 'turret':     return { metal: 30, carbon: 20 };
-      case 'mine':       return { metal: 20, crystal: 25 };
-      case 'factory':    return { carbon: 30, gas: 20 };
-      case 'shield_gen': return { crystal: 30, gas: 25 };
-      case 'drone':      return { water: 25, crystal: 20 };
+      case 'turret':     return 100;
+      case 'mine':       return 80;
+      case 'factory':    return 120;
+      case 'shield_gen': return 150;
+      case 'drone':      return 100;
       default: return null;
     }
   }
 
-  getPlayerTotalResources(playerId: number): Record<DepositType, number> {
-    const totals: Record<DepositType, number> = { carbon: 0, water: 0, gas: 0, metal: 0, crystal: 0 };
-    for (const planet of this.planets) {
-      if (planet.ownerId !== playerId) continue;
-      for (const dep of planet.deposits) {
-        totals[dep.type] += dep.amount;
-      }
-    }
-    return totals;
-  }
-
-  deductResources(playerId: number, costs: Partial<Record<DepositType, number>>): void {
-    for (const [type, amount] of Object.entries(costs)) {
-      let remaining = amount as number;
-      for (const planet of this.planets) {
-        if (planet.ownerId !== playerId) continue;
-        for (const dep of planet.deposits) {
-          if (dep.type === type && dep.amount > 0) {
-            const take = Math.min(dep.amount, remaining);
-            dep.amount -= take;
-            remaining -= take;
-            if (remaining <= 0) break;
-          }
-        }
-        if (remaining <= 0) break;
-      }
-    }
-  }
 
   // ── Toggle generating ─────────────────────────────────────
   toggleGenerating(planetId: number, playerId: number): boolean {
