@@ -330,6 +330,17 @@ canvas { display:block; width:100%; height:100%; }
   </div>
 
 
+  <!-- PAUSE BUTTON -->
+  <div id="pause-btn" style="position:absolute;top:4px;right:8px;z-index:25;font-size:16px;color:#555;cursor:pointer;padding:4px 8px;background:#0a0a14;border:2px solid #1a1a2e;">⏸</div>
+
+  <!-- PAUSE SCREEN -->
+  <div id="pause-screen" class="screen-overlay" style="background:rgba(5,5,15,0.92);">
+    <div style="font-size:16px;color:#ffcc44;margin-bottom:30px;letter-spacing:3px;">PAUSED</div>
+    <button id="resume-btn" class="big-btn green" style="margin-bottom:12px;min-width:180px;">RESUME</button>
+    <button id="sound-toggle-btn" class="big-btn" style="margin-bottom:12px;min-width:180px;border-color:#4488ff;background:#0a1428;">SOUND: ON</button>
+    <button id="pause-restart-btn" class="big-btn red" style="min-width:180px;">RESTART</button>
+  </div>
+
   <!-- NO AMMO WARNING -->
   <div id="no-ammo-warn">NO AMMO!</div>
 
@@ -394,6 +405,7 @@ const AudioCtx=window.AudioContext||window.webkitAudioContext;
 let audioCtx;
 function ensureAudio(){if(!audioCtx)audioCtx=new AudioCtx();if(audioCtx.state==='suspended')audioCtx.resume();}
 function playSound(type){
+  if(typeof soundOn!=='undefined'&&!soundOn)return;
   ensureAudio();if(!audioCtx)return;
   const o=audioCtx.createOscillator(),g=audioCtx.createGain();
   o.connect(g);g.connect(audioCtx.destination);const t=audioCtx.currentTime;
@@ -411,6 +423,20 @@ function playSound(type){
   }
 }
 
+// Parallax starfield
+const STAR_LAYERS=[
+  {count:40,speed:.08,size:1,color:'rgba(255,255,255,.2)'},
+  {count:25,speed:.2,size:1.5,color:'rgba(255,255,255,.35)'},
+  {count:15,speed:.45,size:2,color:'rgba(255,255,255,.55)'},
+];
+let stars=[];
+function initStars(){
+  stars=[];
+  for(const l of STAR_LAYERS)for(let i=0;i<l.count;i++)
+    stars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,speed:l.speed,size:l.size,color:l.color});
+}
+initStars();
+
 // State
 const GRID=36,PLAYER_Y_OFF=160;
 let game={};
@@ -423,6 +449,7 @@ function resetGame(){
     player:{x:canvas.width/2,y:canvas.height-PLAYER_Y_OFF,hp:100,maxHp:100,damage:10,fireRate:220,
       critChance:.05,critMulti:2,lastShot:0,angle:-Math.PI/2,
       damageLvl:0,fireRateLvl:0,hpLvl:0,critLvl:0,trapEffLvl:0,wallDurLvl:0,
+      bulletType:'normal',
       trail:[],_rapidTimer:0,_shieldTimer:0,_dmgBoostTimer:0},
     enemies:[],bullets:[],buildings:[],particles:[],floatingTexts:[],
     screenShake:{x:0,y:0,intensity:0,decay:.88}};
@@ -581,8 +608,20 @@ function tryShoot(){
   const p=game.player;
   game.ammo--;game.totalShots++;
   const dx=shootTarget.x-p.x,dy=shootTarget.y-p.y,a=Math.atan2(dy,dx);p.angle=a;
-  game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null});
-  playSound('shoot');spawnParticles(p.x,p.y-12,'#ffcc44',2,1.5,6);
+  const bt=p.bulletType||'normal';
+  if(bt==='spread'){
+    for(let i=-1;i<=1;i++){
+      const sa=a+i*.18;
+      game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(sa)*8,vy:Math.sin(sa)*8,damage:Math.ceil(p.damage*.6),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'spread'});
+    }
+  }else if(bt==='piercing'){
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*10,vy:Math.sin(a)*10,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'piercing',pierce:true});
+  }else if(bt==='explosive'){
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*7,vy:Math.sin(a)*7,damage:Math.ceil(p.damage*.7),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'explosive'});
+  }else{
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'normal'});
+  }
+  playSound('shoot');spawnParticles(p.x,p.y-12,bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',2,1.5,6);
   if(game.ammo<=0)document.getElementById('no-ammo-warn').classList.add('show');
   // Start cooldown (rapid fire = much shorter)
   canShoot=false;shootCooldown=game.player._rapidTimer>0?400:SHOOT_CD;
@@ -756,21 +795,29 @@ const UPGRADES=[
   {id:'firerate',icon:'🔥',name:'FIRE RATE',desc:'Shoot faster',cost:l=>35+l*25,apply:p=>{p.fireRateLvl++;p.fireRate=Math.max(60,220-p.fireRateLvl*22);},level:p=>p.fireRateLvl,max:8},
   {id:'hp',icon:'❤️',name:'HEALTH',desc:'+25 HP & full heal',cost:l=>25+l*15,apply:p=>{p.hpLvl++;p.maxHp=100+p.hpLvl*25;p.hp=p.maxHp;},level:p=>p.hpLvl,max:10},
   {id:'crit',icon:'💥',name:'CRITICAL',desc:'Crit chance & dmg',cost:l=>40+l*25,apply:p=>{p.critLvl++;p.critChance=.05+p.critLvl*.05;p.critMulti=2+p.critLvl*.3;},level:p=>p.critLvl,max:8},
-  {id:'trap',icon:'🪤',name:'TRAPS',desc:'Trap effectiveness',cost:l=>30+l*20,apply:p=>{p.trapEffLvl++;},level:p=>p.trapEffLvl,max:8},
-  {id:'wall',icon:'🛡️',name:'FORTIFY',desc:'Wall durability',cost:l=>30+l*20,apply:p=>{p.wallDurLvl++;},level:p=>p.wallDurLvl,max:8},
+  {id:'spread',icon:'◇',name:'SPREAD',desc:'3-way shot (60% dmg)',cost:l=>50,apply:p=>{p.bulletType='spread';},level:p=>p.bulletType==='spread'?1:0,max:1},
+  {id:'piercing',icon:'▸',name:'PIERCING',desc:'Goes through enemies',cost:l=>50,apply:p=>{p.bulletType='piercing';},level:p=>p.bulletType==='piercing'?1:0,max:1},
+  {id:'explosive',icon:'✸',name:'EXPLOSIVE',desc:'AoE blast on hit',cost:l=>50,apply:p=>{p.bulletType='explosive';},level:p=>p.bulletType==='explosive'?1:0,max:1},
+  {id:'normal',icon:'•',name:'NORMAL',desc:'Standard ricochet',cost:l=>0,apply:p=>{p.bulletType='normal';},level:p=>p.bulletType==='normal'?1:0,max:1},
 ];
 function showUpgradeScreen(){
   const scr=document.getElementById('upgrade-screen'),grid=document.getElementById('upgrade-grid');
   document.getElementById('up-badge').textContent=`LEVEL ${game.level}`;
   document.getElementById('up-money').textContent=`$ ${game.money}`;
   grid.innerHTML='';
+  const isBulletType=id=>['spread','piercing','explosive','normal'].includes(id);
   for(const u of UPGRADES){
     const l=u.level(game.player),c=u.cost(l),mx=l>=u.max;
     const card=document.createElement('div');
-    card.className='upgrade-card'+(mx||game.money<c?' disabled':'');
-    let dots='';const sm=Math.min(u.max,8);for(let i=0;i<sm;i++)dots+=`<div class="dot${i<l?' on':''}"></div>`;
-    card.innerHTML=`<div class="u-icon">${u.icon}</div><div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div><div class="u-cost">${mx?'MAX':'$'+c}</div><div class="u-dots">${dots}</div>`;
-    if(!mx&&game.money>=c)card.addEventListener('click',()=>{game.money-=c;u.apply(game.player);playSound('upgrade');showUpgradeScreen();});
+    const isActive=isBulletType(u.id)&&l>=1;
+    const cantBuy=isBulletType(u.id)?isActive||game.money<c:mx||game.money<c;
+    card.className='upgrade-card'+(cantBuy?' disabled':'');
+    if(isActive)card.style.borderColor='#ffcc44';
+    let dots='';
+    if(!isBulletType(u.id)){const sm=Math.min(u.max,8);for(let i=0;i<sm;i++)dots+=`<div class="dot${i<l?' on':''}"></div>`;}
+    const costText=isBulletType(u.id)?(isActive?'ACTIVE':c===0?'FREE':'$'+c):(mx?'MAX':'$'+c);
+    card.innerHTML=`<div class="u-icon">${u.icon}</div><div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div><div class="u-cost">${costText}</div>${dots?'<div class="u-dots">'+dots+'</div>':''}`;
+    if(!cantBuy)card.addEventListener('click',()=>{if(c>0)game.money-=c;u.apply(game.player);playSound('upgrade');showUpgradeScreen();});
     grid.appendChild(card);
   }
   scr.classList.add('show');
@@ -806,6 +853,19 @@ function handleDown(x,y){
   tryShoot();
   shootTarget.active=false;
 }
+let soundOn=true;
+document.getElementById('pause-btn').addEventListener('click',()=>{
+  if(game.state==='playing'){game.state='paused';document.getElementById('pause-screen').classList.add('show');}
+});
+document.getElementById('resume-btn').addEventListener('click',()=>{
+  game.state='playing';document.getElementById('pause-screen').classList.remove('show');lastTime=0;
+});
+document.getElementById('sound-toggle-btn').addEventListener('click',()=>{
+  soundOn=!soundOn;document.getElementById('sound-toggle-btn').textContent='SOUND: '+(soundOn?'ON':'OFF');
+});
+document.getElementById('pause-restart-btn').addEventListener('click',()=>{
+  document.getElementById('pause-screen').classList.remove('show');resetGame();startPlaying();
+});
 document.getElementById('play-btn').addEventListener('click',()=>{ensureAudio();document.getElementById('start-screen').classList.remove('show');resetGame();tutorialStep=0;tutorialTimer=0;startPlaying();});
 // Show best stats on start screen
 {const s=loadStats();if(s.gamesPlayed>0){const v=document.querySelector('.start-ver');v.textContent=`BEST: LVL ${s.bestLevel} | ${s.highScore} PTS | ${s.totalKills} KILLS`;}}
@@ -868,12 +928,33 @@ function update(dt){
       const dx=b.x-e.x,dy=b.y-e.y,dd=dx*dx+dy*dy;
       if(dd<e.size*e.size){
         damageEnemy(e,b.damage);
+        // Explosive: AoE blast on hit
+        if(b.btype==='explosive'){
+          b.alive=false;
+          const blastR=50;
+          spawnParticles(b.x,b.y,'#ff6644',12,4,15);
+          spawnParticles(b.x,b.y,'#ffaa44',8,3,12);
+          playSound('explode');shakeScreen(4);
+          for(const o of game.enemies){if(!o.alive||o===e)continue;
+            const ox=o.x-b.x,oy=o.y-b.y;
+            if(Math.sqrt(ox*ox+oy*oy)<blastR){damageEnemy(o,Math.ceil(b.damage*.5));
+              if(o.alive){const od=Math.sqrt(ox*ox+oy*oy)||1;o.vx+=ox/od*.15;o.vy+=oy/od*.15;}}}
+          break;
+        }
         // Absorber: swallows bullet completely — no ricochet
         if(e.type==='absorber'){
           b.alive=false;
           spawnParticles(b.x,b.y,'#6020aa',4,1.5,10);
           spawnFloatingText(e.x,e.y-e.size-4,'ABSORBED','#aa55ff',10);
           break;
+        }
+        // Piercing: go through enemy, don't ricochet
+        if(b.pierce){
+          b.lastHit=e;b.damage=Math.ceil(b.damage*.85);
+          spawnParticles(b.x,b.y,'#44ffaa',3,2,6);
+          // Knockback
+          if(e.alive){const kf=e.knockable?.18:.04;e.vx+=b.vx*kf;e.vy+=b.vy*kf;}
+          continue; // don't break — check next enemy
         }
         b.bounces++;b.lastHit=e;
         // Reflect bullet away from enemy center
@@ -986,6 +1067,8 @@ function update(dt){
   for(const pt of game.particles){pt.x+=pt.vx*ds;pt.y+=pt.vy*ds;pt.vx*=.95;pt.vy*=.95;pt.life--;}
   {let wi=0;for(let ri=0;ri<game.particles.length;ri++){if(game.particles[ri].life>0){game.particles[wi++]=game.particles[ri];}else{releaseParticle(game.particles[ri]);}}game.particles.length=wi;}
   for(const ft of game.floatingTexts){ft.y-=1.2*ds;ft.life--;}
+  // Parallax stars scroll
+  for(const s of stars){s.y+=s.speed*ds;if(s.y>H){s.y=-2;s.x=Math.random()*W;}}
   game.floatingTexts=game.floatingTexts.filter(ft=>ft.life>0);
   if(game.screenShake.intensity>.1){game.screenShake.x=(Math.random()-.5)*game.screenShake.intensity*2;game.screenShake.y=(Math.random()-.5)*game.screenShake.intensity*2;game.screenShake.intensity*=game.screenShake.decay;}else{game.screenShake.x=0;game.screenShake.y=0;game.screenShake.intensity=0;}
   if(game.comboTimer>0)game.comboTimer--;else game.combo=0;
@@ -1027,6 +1110,10 @@ function render(){
   const grad=ctx.createLinearGradient(0,0,0,H);
   grad.addColorStop(0,'#08080f');grad.addColorStop(0.5,'#0c0c18');grad.addColorStop(1,'#0a0a14');
   ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+  // Parallax stars
+  ctx.imageSmoothingEnabled=false;
+  for(const s of stars){ctx.fillStyle=s.color;ctx.fillRect(Math.round(s.x),Math.round(s.y),s.size,s.size);}
+  ctx.imageSmoothingEnabled=true;
   // Grid
   ctx.strokeStyle='rgba(255,255,255,0.02)';ctx.lineWidth=1;
   for(let x=0;x<W;x+=GRID){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
@@ -1043,9 +1130,11 @@ function render(){
   // Bullets (with ricochet trail)
   for(const b of game.bullets){if(!b.alive)continue;
     const dim=1-b.bounces*.15;
-    ctx.fillStyle=b.bounces>0?`rgba(255,${180+b.bounces*20},${68+b.bounces*40},${dim})`:'#ffcc44';
-    ctx.shadowColor=b.bounces>0?'#ff8844':'#ffcc44';ctx.shadowBlur=8;
-    ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill();
+    const bc=b.btype==='explosive'?'#ff6644':b.btype==='piercing'?'#44ffaa':b.btype==='spread'?'#88aaff':'#ffcc44';
+    ctx.fillStyle=b.bounces>0?`rgba(255,${180+b.bounces*20},${68+b.bounces*40},${dim})`:bc;
+    ctx.shadowColor=bc;ctx.shadowBlur=8;
+    const br=b.btype==='explosive'?4:b.btype==='spread'?2.5:3;
+    ctx.beginPath();ctx.arc(b.x,b.y,br,0,Math.PI*2);ctx.fill();
     // Trail behind
     const tl=b.bounces>0?3:2;
     for(let i=1;i<=tl;i++){
