@@ -22,6 +22,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         pewpew: resolve(__dirname, 'pewpew/index.html'),
         units: resolve(__dirname, 'units/index.html'),
+        wavebreaker: resolve(__dirname, 'wavebreaker/index.html'),
       },
       output: {
         manualChunks: undefined,
