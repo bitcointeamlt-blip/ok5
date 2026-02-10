@@ -42,8 +42,6 @@ canvas { display:block; width:100%; height:100%; }
   font-size:5px; color:#555568; letter-spacing:1px;
   margin-top:2px;
 }
-@keyframes ammoPulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
-
 #score-pill {
   position:absolute; top:24px; left:50%; transform:translateX(-50%);
   background:#0a0a14; border:2px solid #2a2a0a;
@@ -68,7 +66,7 @@ canvas { display:block; width:100%; height:100%; }
 }
 #xp-text {
   text-align:center;
-  font-size:5px; color:#887744; margin-top:2px;
+  font-size:7px; color:#ccaa44; margin-top:2px;
   letter-spacing:1px;
 }
 
@@ -83,15 +81,6 @@ canvas { display:block; width:100%; height:100%; }
 #level-announce.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
 
 
-/* ===== NO AMMO WARNING ===== */
-#no-ammo-warn {
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  font-size:16px; color:#ff3333;
-  letter-spacing:2px; z-index:30; opacity:0; pointer-events:none;
-  background:#1a0000; border:2px solid #ff3333; padding:8px 16px;
-  transition:opacity 0.2s;
-}
-#no-ammo-warn.show { opacity:1; animation:ammoPulse .4s ease-in-out infinite; }
 
 /* ===== COMBO ===== */
 #combo-display {
@@ -129,32 +118,6 @@ canvas { display:block; width:100%; height:100%; }
   border-top:2px solid #1a1a2e;
   z-index:20; display:flex; flex-direction:column; align-items:center; padding-top:4px;
 }
-#mode-indicator {
-  font-size:6px; letter-spacing:2px; margin-bottom:3px;
-  padding:2px 8px; transition:all 0.2s;
-}
-#mode-indicator.shoot { color:#ccaa44; background:#14120a; border:2px solid #332a0a; }
-#mode-indicator.build { color:#44aaff; background:#0a1014; border:2px solid #0a2a44; }
-
-#build-bar { display:flex; gap:3px; margin-bottom:4px; }
-.build-btn {
-  width:52px; height:50px;
-  border:2px solid #2a2a3e;
-  background:#0e0e1a;
-  color:#fff; cursor:pointer;
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:0px; transition:all 0.1s; position:relative; overflow:hidden;
-}
-.build-btn:active, .build-btn.active {
-  border-color:#4488ff;
-  background:#0a1428;
-}
-.build-btn .b-icon { font-size:18px; line-height:1; }
-.build-btn .b-name { font-size:5px; opacity:0.8; letter-spacing:0.5px; }
-.build-btn .b-cost { font-size:6px; color:#44ff88; }
-.buy-ammo-btn { border-color:#0a2838; }
-.buy-ammo-btn:active { border-color:#44aaff; background:#0a1828; }
-
 /* Joystick */
 #controls-row {
   display:flex; align-items:center; justify-content:space-between;
@@ -174,16 +137,20 @@ canvas { display:block; width:100%; height:100%; }
   background:#2244aa;
   border:2px solid #4488ff;
   position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  transition:transform 0.05s;
+  transition:transform 0.05s, background 0.1s, box-shadow 0.1s;
+}
+#joystick-knob.active {
+  background:#3366cc; border-color:#66aaff;
+  box-shadow:0 0 10px rgba(68,136,255,.5);
 }
 #move-label { font-size:5px; color:#333348; letter-spacing:2px; }
 #money-display {
-  font-size:9px; color:#44ff88; min-width:48px; text-align:center;
-  background:#0a140a; border:2px solid #1a3318; padding:4px 8px;
+  font-size:11px; color:#44ff88; min-width:56px; text-align:center;
+  background:#0a140a; border:2px solid #1a3318; padding:6px 10px;
 }
-#stats-left { display:flex; flex-direction:column; gap:3px; min-width:48px; }
+#stats-left { display:flex; flex-direction:column; gap:4px; min-width:56px; }
 .stat-mini {
-  font-size:7px; color:#ff6655; padding:3px 6px;
+  font-size:8px; color:#ff6655; padding:4px 8px;
   background:#140a0a; border:2px solid #2a1010; text-align:center;
 }
 .stat-mini.lvl { color:#ffcc44; background:#14120a; border-color:#2a2a0a; }
@@ -269,7 +236,7 @@ canvas { display:block; width:100%; height:100%; }
 }
 .stat-card .s-icon { font-size:16px; margin-bottom:4px; }
 .stat-card .s-val { font-size:14px; color:#fff; }
-.stat-card .s-label { font-size:5px; color:#444458; letter-spacing:1px; margin-top:3px; }
+.stat-card .s-label { font-size:7px; color:#777; letter-spacing:1px; margin-top:4px; }
 
 /* Upgrade */
 #upgrade-screen { background:rgba(5,5,15,0.96); }
@@ -297,15 +264,15 @@ canvas { display:block; width:100%; height:100%; }
 }
 .upgrade-card:hover { border-color:#ffcc44; transform:translateY(-2px); box-shadow:0 4px 16px rgba(255,204,68,.2); }
 .upgrade-card:active { transform:translateY(0); border-color:#fff; }
-.upgrade-card .u-icon { font-size:24px; }
-.upgrade-card .u-name { color:#fff; font-size:6px; margin-top:6px; letter-spacing:0.5px; }
-.upgrade-card .u-desc { color:#888; font-size:5px; margin-top:3px; line-height:1.6; }
+.upgrade-card .u-icon { font-size:28px; }
+.upgrade-card .u-name { color:#fff; font-size:8px; margin-top:6px; letter-spacing:0.5px; }
+.upgrade-card .u-desc { color:#aaa; font-size:6px; margin-top:4px; line-height:1.8; }
 .upgrade-card .u-lvl {
-  font-size:6px; margin-top:5px; color:#ffcc44; letter-spacing:1px;
+  font-size:7px; margin-top:6px; color:#ffcc44; letter-spacing:1px;
 }
-.upgrade-card .u-dots { display:flex; gap:2px; justify-content:center; margin-top:4px; }
+.upgrade-card .u-dots { display:flex; gap:3px; justify-content:center; margin-top:5px; }
 .upgrade-card .u-dots .dot {
-  width:6px; height:3px; background:#1a1a2e;
+  width:7px; height:4px; background:#1a1a2e;
   transition:all 0.2s;
 }
 .upgrade-card .u-dots .dot.on { background:#ffcc44; }
@@ -333,7 +300,7 @@ canvas { display:block; width:100%; height:100%; }
 
 
   <!-- PAUSE BUTTON -->
-  <div id="pause-btn" style="position:absolute;top:4px;right:8px;z-index:25;font-size:16px;color:#555;cursor:pointer;padding:4px 8px;background:#0a0a14;border:2px solid #1a1a2e;">⏸</div>
+  <div id="pause-btn" style="position:absolute;top:6px;right:8px;z-index:25;font-size:20px;color:#aaa;cursor:pointer;padding:8px 12px;background:#0a0a14;border:2px solid #333;border-radius:4px;">⏸</div>
 
   <!-- PAUSE SCREEN -->
   <div id="pause-screen" class="screen-overlay" style="background:rgba(5,5,15,0.92);">
@@ -344,7 +311,6 @@ canvas { display:block; width:100%; height:100%; }
   </div>
 
   <!-- NO AMMO WARNING -->
-  <div id="no-ammo-warn">NO AMMO!</div>
 
   <!-- Bottom -->
   <div id="bottom-panel">
@@ -810,7 +776,6 @@ function startPlaying(){
   if(!cannonSprite)cannonSprite=genCannon();
   game.state='playing';game.spawnTimer=0;canShoot=true;shootCooldown=0;chargeTimer=0;killStreak=0;killStreakTimer=0;
   document.getElementById('upgrade-screen').classList.remove('show');
-  document.getElementById('no-ammo-warn').classList.remove('show');
 }
 function levelUp(){
   game.xp-=game.xpNeeded;
@@ -836,7 +801,7 @@ function levelUp(){
   showUpgradeScreen();
 }
 function gameOver(){
-  game.state='gameover';document.getElementById('no-ammo-warn').classList.remove('show');
+  game.state='gameover';
   saveStats();
   const saved=loadStats();
   document.getElementById('go-wave-text').textContent=`REACHED LEVEL ${game.level}`;
@@ -919,9 +884,9 @@ function showUpgradeScreen(){
 let joystickActive=false,joystickStartX=0,joystickDelta=0;
 const jKnob=document.getElementById('joystick-knob'),jZone=document.getElementById('joystick-zone');
 
-function jStart(x){joystickActive=true;joystickStartX=x;joystickDelta=0;}
+function jStart(x){joystickActive=true;joystickStartX=x;joystickDelta=0;jKnob.classList.add('active');}
 function jMove(x){if(!joystickActive)return;joystickDelta=Math.max(-25,Math.min(25,x-joystickStartX));jKnob.style.transform=`translate(calc(-50% + ${joystickDelta}px), -50%)`;}
-function jEnd(){joystickActive=false;joystickDelta=0;jKnob.style.transform='translate(-50%,-50%)';}
+function jEnd(){joystickActive=false;joystickDelta=0;jKnob.style.transform='translate(-50%,-50%)';jKnob.classList.remove('active');}
 
 jZone.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();ensureAudio();jStart(e.touches[0].clientX);},{passive:false});
 jZone.addEventListener('touchmove',e=>{e.preventDefault();e.stopPropagation();jMove(e.touches[0].clientX);},{passive:false});
@@ -1184,7 +1149,7 @@ function update(dt){
   document.getElementById('xp-bar').style.width=`${Math.min(xpRatio*100,100)}%`;
   document.getElementById('xp-text').textContent=`${game.xp} / ${game.xpNeeded} XP`;
   const co=document.getElementById('combo-display');
-  if(game.combo>=5){co.textContent=`${game.combo}x COMBO`;co.classList.add('show');}else co.classList.remove('show');
+  if(game.combo>=2){co.textContent=`${game.combo}x COMBO`;co.classList.add('show');}else co.classList.remove('show');
   // Powerup update
   for(const pw of powerups){
     pw.y+=pw.vy*ds;pw.vy+=.005*ds;pw.life--;pw.pulse+=.1*ds;
@@ -1464,6 +1429,13 @@ function render(){
     // Blue glow around player when full
     if(full){ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);ctx.strokeStyle=`rgba(68,170,255,${pulse*.5})`;ctx.lineWidth=2;ctx.stroke();}
   }
+  // Bullet type indicator under player
+  const btIcons={normal:'•',spread:'◇',piercing:'▸',explosive:'✸'};
+  const btColors={normal:'#ffcc44',spread:'#88aaff',piercing:'#44ffaa',explosive:'#ff6644'};
+  const cbt=p.bulletType||'normal';
+  ctx.font='8px "Press Start 2P",monospace';ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.fillStyle=btColors[cbt];
+  ctx.fillText(btIcons[cbt]+' '+cbt.toUpperCase(),p.x,p.y+26);
   // Crosshair + ricochet prediction
   if(shootTarget.active&&game.state==='playing'){
     const sx=shootTarget.x,sy=shootTarget.y;
@@ -1588,10 +1560,10 @@ function render(){
 // Tutorial hints
 let tutorialStep=0,tutorialTimer=0;
 const TUTORIALS=[
-  {text:'DRAG JOYSTICK TO MOVE',dur:3500},
-  {text:'TAP SCREEN TO SHOOT',dur:3500},
-  {text:'WAIT FOR COOLDOWN!',dur:3000},
-  {text:'BULLETS RICOCHET OFF WALLS',dur:3000},
+  {text:'DRAG JOYSTICK TO MOVE',dur:5000},
+  {text:'TAP SCREEN TO SHOOT',dur:5000},
+  {text:'HOLD FOR CHARGED SHOT!',dur:4500},
+  {text:'BULLETS RICOCHET OFF WALLS',dur:4500},
 ];
 function renderTutorial(){
   if(tutorialStep>=TUTORIALS.length||game.state!=='playing')return;
