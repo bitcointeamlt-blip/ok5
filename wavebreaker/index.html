@@ -388,6 +388,7 @@ function playSound(type){
     case'ricochet':o.type='square';o.frequency.setValueAtTime(1800,t);o.frequency.exponentialRampToValueAtTime(400,t+.06);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.06);o.start(t);o.stop(t+.06);break;
     case'slot':o.type='sine';o.frequency.setValueAtTime(900+Math.random()*400,t);o.frequency.exponentialRampToValueAtTime(400,t+.04);g.gain.setValueAtTime(.05,t);g.gain.exponentialRampToValueAtTime(.001,t+.04);o.start(t);o.stop(t+.04);break;
     case'slotland':o.type='sine';o.frequency.setValueAtTime(500,t);o.frequency.setValueAtTime(800,t+.08);o.frequency.setValueAtTime(1100,t+.16);g.gain.setValueAtTime(.12,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2);break;
+    case'heavyhit':o.type='sawtooth';o.frequency.setValueAtTime(180,t);o.frequency.exponentialRampToValueAtTime(40,t+.15);g.gain.setValueAtTime(.14,t);g.gain.exponentialRampToValueAtTime(.001,t+.15);o.start(t);o.stop(t+.15);const hb=audioCtx.createBuffer(1,audioCtx.sampleRate*.08,audioCtx.sampleRate);const hd=hb.getChannelData(0);for(let i=0;i<hd.length;i++)hd[i]=(Math.random()*2-1)*.15;const hn=audioCtx.createBufferSource(),hg=audioCtx.createGain();hn.buffer=hb;hn.connect(hg);hg.connect(audioCtx.destination);hg.gain.setValueAtTime(.12,t);hg.gain.exponentialRampToValueAtTime(.001,t+.08);hn.start(t);hn.stop(t+.08);break;
   }
 }
 
@@ -420,7 +421,7 @@ function resetGame(){
       bulletType:'normal',
       trail:[],_rapidTimer:0,_shieldTimer:0,_dmgBoostTimer:0},
     enemies:[],bullets:[],buildings:[],particles:[],floatingTexts:[],
-    screenShake:{x:0,y:0,intensity:0,decay:.88}};
+    screenShake:{x:0,y:0,trauma:0}};
   screenFlash={color:'#fff',alpha:0,decay:.92};
   powerups=[];
 }
@@ -618,7 +619,15 @@ function trySpawnPowerup(x,y){
   const t=POWERUP_TYPES[Math.floor(Math.random()*POWERUP_TYPES.length)];
   powerups.push({x,y,type:t,life:400,vy:-.3,pulse:0});
 }
-function shakeScreen(i){game.screenShake.intensity=Math.max(game.screenShake.intensity,i);}
+function shakeScreen(i){game.screenShake.trauma=Math.min(1,game.screenShake.trauma+i*.08);}
+
+// Hitstop system — brief pause on impact to sell hits
+let hitstopFrames=0;
+function applyHitstop(frames){hitstopFrames=Math.max(hitstopFrames,frames);}
+
+// Time-slow system — brief slowmo for big moments
+let timeScale=1,timeScaleTarget=1,timeScaleReturn=1,timeSlowTimer=0;
+function pulseTimeSlow(scale,durationMs){timeScale=scale;timeScaleTarget=scale;timeSlowTimer=durationMs;timeScaleReturn=1;}
 
 // Combat
 let shootTarget={x:0,y:0,active:false};
@@ -671,7 +680,9 @@ function damageEnemy(e,dmg,isCharged){
   e.hp-=fd;e.flashTimer=5;
   const dmgCol=cr?'#ffff44':isCharged?'#44aaff':'#ffffff';
   spawnFloatingText(e.x+(Math.random()-.5)*16,e.y-10,(cr?'CRIT ':'')+fd,dmgCol,cr?20:isCharged?15:13);
-  if(cr){playSound('crit');shakeScreen(2.5);spawnParticles(e.x,e.y,'#ffff44',5,3,10);}else playSound('hit');
+  if(cr){playSound('crit');playSound('heavyhit');shakeScreen(2.5);applyHitstop(4);spawnParticles(e.x,e.y,'#ffff44',5,3,10);}
+  else if(fd>30){playSound('heavyhit');shakeScreen(1.5);applyHitstop(2);}
+  else playSound('hit');
   spawnParticles(e.x,e.y,'#6a6a7a',3,1.5,8);game.combo++;game.comboTimer=100;
   if(game.combo>game.maxCombo)game.maxCombo=game.combo;
   if(e.hp<=0)killEnemy(e);
@@ -688,6 +699,9 @@ function killEnemy(e){
   e.alive=false;game.kills++;
   game.score+=e.reward*(1+Math.floor(game.combo/10));game.money+=e.reward;
   playSound('kill');shakeScreen(3);
+  // Hitstop on kill — bigger enemies = longer freeze
+  const killStop=e.type==='boss'?8:e.type==='tank'||e.type==='megasplit'?5:e.type==='exploder'?4:3;
+  applyHitstop(killStop);
   // Kill streak
   killStreak++;killStreakTimer=1500;
   for(let i=STREAK_NAMES.length-1;i>=0;i--){
@@ -695,6 +709,9 @@ function killEnemy(e){
       const s=STREAK_NAMES[i];
       spawnFloatingText(canvas.width/2,canvas.height*.35,s.text,s.color,s.size,90);
       flashScreen(s.color,.2);shakeScreen(s.size*.3);
+      // Time-slow for big streaks
+      if(s.n>=5)pulseTimeSlow(.3,250);
+      else if(s.n>=3)pulseTimeSlow(.5,150);
       break;
     }
   }
@@ -713,7 +730,7 @@ function killEnemy(e){
   spawnFloatingText(e.x,e.y-22,`+$${e.reward}${cb>0?' x'+(cb+1):''}`,`#44ff88`,13);
   spawnFloatingText(e.x+20,e.y-10,`+${xpGain}XP`,'#ccaa22',10);
   trySpawnPowerup(e.x,e.y);
-  if(e.type==='exploder'){playSound('explode');shakeScreen(7);spawnParticles(e.x,e.y,'#ff4444',25,4.5,28);spawnParticles(e.x,e.y,'#ff8844',15,5,22);
+  if(e.type==='exploder'){playSound('explode');shakeScreen(7);applyHitstop(4);spawnParticles(e.x,e.y,'#ff4444',25,4.5,28);spawnParticles(e.x,e.y,'#ff8844',15,5,22);
     for(const o of game.enemies){if(!o.alive||o===e)continue;const dx=o.x-e.x,dy=o.y-e.y;if(Math.sqrt(dx*dx+dy*dy)<e.explodeRadius)damageEnemy(o,30);}
     for(const b of game.buildings){if(!b.alive)continue;const dx=b.x+GRID/2-e.x,dy=b.y+GRID/2-e.y;if(Math.sqrt(dx*dx+dy*dy)<e.explodeRadius){b.hp-=40;if(b.hp<=0){b.alive=false;spawnParticles(b.x+GRID/2,b.y+GRID/2,BUILD_COLORS[b.type],8,3,18);}}}
   }
@@ -736,6 +753,7 @@ function killEnemy(e){
   if(e.type==='boss'){
     game.bossActive=false;
     playSound('explode');shakeScreen(12);flashScreen('#ff4400',.4);
+    pulseTimeSlow(.15,500); // epic slowmo for boss kill
     spawnParticles(e.x,e.y,'#ff4444',35,5,30);
     spawnParticles(e.x,e.y,'#ffcc44',25,6,25);
     spawnParticles(e.x,e.y,'#ffffff',15,4,20);
@@ -775,6 +793,7 @@ function placeBuilding(gx,gy,type){
 function startPlaying(){
   if(!cannonSprite)cannonSprite=genCannon();
   game.state='playing';game.spawnTimer=0;canShoot=true;shootCooldown=0;chargeTimer=0;killStreak=0;killStreakTimer=0;
+  hitstopFrames=0;timeScale=1;timeSlowTimer=0;
   document.getElementById('upgrade-screen').classList.remove('show');
 }
 function levelUp(){
@@ -1136,7 +1155,15 @@ function update(dt){
   // Parallax stars scroll
   for(const s of stars){s.y+=s.speed*ds;if(s.y>H){s.y=-2;s.x=Math.random()*W;}}
   game.floatingTexts=game.floatingTexts.filter(ft=>ft.life>0);
-  if(game.screenShake.intensity>.1){game.screenShake.x=(Math.random()-.5)*game.screenShake.intensity*2;game.screenShake.y=(Math.random()-.5)*game.screenShake.intensity*2;game.screenShake.intensity*=game.screenShake.decay;}else{game.screenShake.x=0;game.screenShake.y=0;game.screenShake.intensity=0;}
+  // Trauma-based screen shake with quadratic falloff
+  if(game.screenShake.trauma>0.01){
+    const shake=game.screenShake.trauma*game.screenShake.trauma; // quadratic = natural feel
+    const maxOff=12;
+    game.screenShake.x=(Math.random()-.5)*shake*maxOff*2;
+    game.screenShake.y=(Math.random()-.5)*shake*maxOff*2;
+    game.screenShake.trauma*=.92; // decay per frame
+    if(game.screenShake.trauma<0.01)game.screenShake.trauma=0;
+  }else{game.screenShake.x=0;game.screenShake.y=0;game.screenShake.trauma=0;}
   if(game.comboTimer>0)game.comboTimer--;else game.combo=0;
   if(killStreakTimer>0){killStreakTimer-=dt;if(killStreakTimer<=0)killStreak=0;}
   // HUD
@@ -1580,7 +1607,16 @@ function renderTutorial(){
   ctx.globalAlpha=1;
 }
 
-function gameLoop(ts){if(!lastTime)lastTime=ts;const dt=Math.min(ts-lastTime,50);lastTime=ts;update(dt);render();renderTutorial();requestAnimationFrame(gameLoop);}
+function gameLoop(ts){
+  if(!lastTime)lastTime=ts;
+  let dt=Math.min(ts-lastTime,50);lastTime=ts;
+  // Hitstop: skip update but still render
+  if(hitstopFrames>0){hitstopFrames--;render();renderTutorial();requestAnimationFrame(gameLoop);return;}
+  // Time-slow
+  if(timeSlowTimer>0){timeSlowTimer-=dt;if(timeSlowTimer<=0){timeScale=1;timeSlowTimer=0;}else{timeScale+=(timeScaleReturn-timeScale)*.05;}}
+  dt*=timeScale;
+  update(dt);render();renderTutorial();requestAnimationFrame(gameLoop);
+}
 requestAnimationFrame(gameLoop);
 </script>
 </body>
