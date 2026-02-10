@@ -590,10 +590,10 @@ function shakeScreen(i){game.screenShake.intensity=Math.max(game.screenShake.int
 
 // Combat
 let shootTarget={x:0,y:0,active:false};
-const SHOOT_CD=2000; // 2 second cooldown
+const SHOOT_CD=1500; // 1.5s cooldown
 let shootCooldown=0; // ms remaining
 let canShoot=true;
-const CHARGE_TIME=2000; // 2s to fully charge
+const CHARGE_TIME=1500; // 1.5s to fully charge
 let chargeTimer=0; // ms accumulated while holding after ready
 function tryShoot(){
   if(!canShoot){
