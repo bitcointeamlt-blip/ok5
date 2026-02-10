@@ -286,23 +286,22 @@ canvas { display:block; width:100%; height:100%; }
   font-size:16px; color:#44ff88;
 }
 .upgrade-grid {
-  display:grid; grid-template-columns:1fr 1fr; gap:6px;
-  max-width:330px; width:90%;
+  display:flex; gap:8px; justify-content:center;
+  max-width:360px; width:95%;
 }
 .upgrade-card {
   background:#0e0e1a; border:2px solid #2a2a3e;
-  padding:10px 6px 8px; text-align:center; cursor:pointer;
-  transition:all 0.1s; position:relative; overflow:hidden;
+  padding:14px 8px 10px; text-align:center; cursor:pointer;
+  transition:all 0.15s; position:relative; overflow:hidden;
+  flex:1; max-width:110px;
 }
-.upgrade-card:active:not(.disabled) {
-  border-color:#ffcc44;
-}
-.upgrade-card.disabled { opacity:0.3; pointer-events:none; }
-.upgrade-card .u-icon { font-size:20px; }
-.upgrade-card .u-name { color:#fff; font-size:6px; margin-top:4px; letter-spacing:0.5px; }
-.upgrade-card .u-desc { color:#444458; font-size:5px; margin-top:2px; }
-.upgrade-card .u-cost {
-  font-size:8px; margin-top:4px; color:#44ff88;
+.upgrade-card:hover { border-color:#ffcc44; transform:translateY(-2px); box-shadow:0 4px 16px rgba(255,204,68,.2); }
+.upgrade-card:active { transform:translateY(0); border-color:#fff; }
+.upgrade-card .u-icon { font-size:24px; }
+.upgrade-card .u-name { color:#fff; font-size:6px; margin-top:6px; letter-spacing:0.5px; }
+.upgrade-card .u-desc { color:#888; font-size:5px; margin-top:3px; line-height:1.6; }
+.upgrade-card .u-lvl {
+  font-size:6px; margin-top:5px; color:#ffcc44; letter-spacing:1px;
 }
 .upgrade-card .u-dots { display:flex; gap:2px; justify-content:center; margin-top:4px; }
 .upgrade-card .u-dots .dot {
@@ -384,11 +383,9 @@ canvas { display:block; width:100%; height:100%; }
   <div id="upgrade-screen" class="screen-overlay">
     <div class="up-header">
       <div class="up-badge" id="up-badge">LEVEL UP!</div>
-      <div class="up-title">UPGRADE</div>
-      <div class="up-money" id="up-money">$120</div>
+      <div class="up-title">CHOOSE ONE</div>
     </div>
     <div class="upgrade-grid" id="upgrade-grid"></div>
-    <button id="start-wave-btn" class="big-btn green" style="margin-top:16px; padding:13px 44px; font-size:10px;">CONTINUE ►</button>
   </div>
 </div>
 
@@ -800,8 +797,7 @@ function levelUp(){
   // Level up announcement
   const a=document.getElementById('level-announce');
   a.innerHTML=`<div class="wa-num">LEVEL ${game.level}</div>`+
-    `<div class="wa-ammo">+$${15+game.level*8}</div>`+
-    `<div class="wa-miss">CHOOSE UPGRADES</div>`;
+    `<div class="wa-miss">CHOOSE AN UPGRADE</div>`;
   a.classList.add('show');
   playSound('wave');setTimeout(()=>a.classList.remove('show'),2200);
   showUpgradeScreen();
@@ -824,35 +820,44 @@ function gameOver(){
 
 // Upgrades
 const UPGRADES=[
-  {id:'damage',icon:'⚔️',name:'DAMAGE',desc:'+5 bullet damage',cost:l=>30+l*20,apply:p=>{p.damageLvl++;p.damage=10+p.damageLvl*5;},level:p=>p.damageLvl,max:10},
-  {id:'firerate',icon:'🔥',name:'FIRE RATE',desc:'Shoot faster',cost:l=>35+l*25,apply:p=>{p.fireRateLvl++;p.fireRate=Math.max(60,220-p.fireRateLvl*22);},level:p=>p.fireRateLvl,max:8},
-  {id:'hp',icon:'❤️',name:'HEALTH',desc:'+25 HP & full heal',cost:l=>25+l*15,apply:p=>{p.hpLvl++;p.maxHp=100+p.hpLvl*25;p.hp=p.maxHp;},level:p=>p.hpLvl,max:10},
-  {id:'crit',icon:'💥',name:'CRITICAL',desc:'Crit chance & dmg',cost:l=>40+l*25,apply:p=>{p.critLvl++;p.critChance=.05+p.critLvl*.05;p.critMulti=2+p.critLvl*.3;},level:p=>p.critLvl,max:8},
-  {id:'spread',icon:'◇',name:'SPREAD',desc:'3-way shot (60% dmg)',cost:l=>50,apply:p=>{p.bulletType='spread';},level:p=>p.bulletType==='spread'?1:0,max:1},
-  {id:'piercing',icon:'▸',name:'PIERCING',desc:'Goes through enemies',cost:l=>50,apply:p=>{p.bulletType='piercing';},level:p=>p.bulletType==='piercing'?1:0,max:1},
-  {id:'explosive',icon:'✸',name:'EXPLOSIVE',desc:'AoE blast on hit',cost:l=>50,apply:p=>{p.bulletType='explosive';},level:p=>p.bulletType==='explosive'?1:0,max:1},
-  {id:'normal',icon:'•',name:'NORMAL',desc:'Standard ricochet',cost:l=>0,apply:p=>{p.bulletType='normal';},level:p=>p.bulletType==='normal'?1:0,max:1},
+  {id:'damage',icon:'⚔️',name:'DAMAGE',desc:'+5 bullet damage',apply:p=>{p.damageLvl++;p.damage=10+p.damageLvl*5;},level:p=>p.damageLvl,max:10},
+  {id:'firerate',icon:'🔥',name:'FIRE RATE',desc:'Shoot faster',apply:p=>{p.fireRateLvl++;p.fireRate=Math.max(60,220-p.fireRateLvl*22);},level:p=>p.fireRateLvl,max:8},
+  {id:'hp',icon:'❤️',name:'HEALTH',desc:'+25 HP & full heal',apply:p=>{p.hpLvl++;p.maxHp=100+p.hpLvl*25;p.hp=p.maxHp;},level:p=>p.hpLvl,max:10},
+  {id:'crit',icon:'💥',name:'CRITICAL',desc:'Crit chance & dmg',apply:p=>{p.critLvl++;p.critChance=.05+p.critLvl*.05;p.critMulti=2+p.critLvl*.3;},level:p=>p.critLvl,max:8},
+  {id:'spread',icon:'◇',name:'SPREAD',desc:'3-way shot (60% dmg)',apply:p=>{p.bulletType='spread';},level:p=>p.bulletType==='spread'?1:0,max:1},
+  {id:'piercing',icon:'▸',name:'PIERCING',desc:'Goes through enemies',apply:p=>{p.bulletType='piercing';},level:p=>p.bulletType==='piercing'?1:0,max:1},
+  {id:'explosive',icon:'✸',name:'EXPLOSIVE',desc:'AoE blast on hit',apply:p=>{p.bulletType='explosive';},level:p=>p.bulletType==='explosive'?1:0,max:1},
+  {id:'normal',icon:'•',name:'NORMAL',desc:'Standard ricochet',apply:p=>{p.bulletType='normal';},level:p=>p.bulletType==='normal'?1:0,max:1},
 ];
 function showUpgradeScreen(){
   const scr=document.getElementById('upgrade-screen'),grid=document.getElementById('upgrade-grid');
   document.getElementById('up-badge').textContent=`LEVEL ${game.level}`;
-  document.getElementById('up-money').textContent=`$ ${game.money}`;
   grid.innerHTML='';
-  const isBulletType=id=>['spread','piercing','explosive','normal'].includes(id);
-  for(const u of UPGRADES){
-    const l=u.level(game.player),c=u.cost(l),mx=l>=u.max;
+  // Filter available upgrades (not maxed)
+  const available=UPGRADES.filter(u=>u.level(game.player)<u.max);
+  // Pick 3 random (or fewer if not enough)
+  const picks=[];
+  const pool=[...available];
+  const count=Math.min(3,pool.length);
+  for(let i=0;i<count;i++){
+    const idx=Math.floor(Math.random()*pool.length);
+    picks.push(pool[idx]);
+    pool.splice(idx,1);
+  }
+  for(const u of picks){
+    const l=u.level(game.player);
     const card=document.createElement('div');
-    const isActive=isBulletType(u.id)&&l>=1;
-    const cantBuy=isBulletType(u.id)?isActive||game.money<c:mx||game.money<c;
-    card.className='upgrade-card'+(cantBuy?' disabled':'');
-    if(isActive)card.style.borderColor='#ffcc44';
+    card.className='upgrade-card';
     let dots='';
-    if(!isBulletType(u.id)){const sm=Math.min(u.max,8);for(let i=0;i<sm;i++)dots+=`<div class="dot${i<l?' on':''}"></div>`;}
-    const costText=isBulletType(u.id)?(isActive?'ACTIVE':c===0?'FREE':'$'+c):(mx?'MAX':'$'+c);
-    card.innerHTML=`<div class="u-icon">${u.icon}</div><div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div><div class="u-cost">${costText}</div>${dots?'<div class="u-dots">'+dots+'</div>':''}`;
-    if(!cantBuy)card.addEventListener('click',()=>{if(c>0)game.money-=c;u.apply(game.player);playSound('upgrade');showUpgradeScreen();});
+    const sm=Math.min(u.max,8);
+    for(let i=0;i<sm;i++)dots+=`<div class="dot${i<l?' on':''}"></div>`;
+    const lvlText=l>0?`LV ${l+1}`:'NEW';
+    card.innerHTML=`<div class="u-icon">${u.icon}</div><div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div><div class="u-lvl">${lvlText}</div>${dots?'<div class="u-dots">'+dots+'</div>':''}`;
+    card.addEventListener('click',()=>{u.apply(game.player);playSound('upgrade');startPlaying();});
     grid.appendChild(card);
   }
+  // If no upgrades available, auto-continue
+  if(picks.length===0){startPlaying();return;}
   scr.classList.add('show');
 }
 
@@ -902,7 +907,6 @@ document.getElementById('pause-restart-btn').addEventListener('click',()=>{
 document.getElementById('play-btn').addEventListener('click',()=>{ensureAudio();document.getElementById('start-screen').classList.remove('show');resetGame();tutorialStep=0;tutorialTimer=0;startPlaying();});
 // Show best stats on start screen
 {const s=loadStats();if(s.gamesPlayed>0){const v=document.querySelector('.start-ver');v.textContent=`BEST: LVL ${s.bestLevel} | ${s.highScore} PTS | ${s.totalKills} KILLS`;}}
-document.getElementById('start-wave-btn').addEventListener('click',()=>{ensureAudio();startPlaying();});
 document.getElementById('retry-btn').addEventListener('click',()=>{document.getElementById('gameover-screen').classList.remove('show');resetGame();startPlaying();});
 
 // Game loop
