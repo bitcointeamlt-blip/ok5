@@ -309,6 +309,9 @@ canvas { display:block; width:100%; height:100%; }
   transition:all 0.2s;
 }
 .upgrade-card .u-dots .dot.on { background:#ffcc44; }
+.upgrade-card.spinning { pointer-events:none; border-color:#444; }
+.upgrade-card.landed { animation:slotLand .3s ease-out; border-color:#ffcc44; box-shadow:0 0 12px rgba(255,204,68,.3); }
+@keyframes slotLand { 0%{transform:scale(1.1);} 50%{transform:scale(.95);} 100%{transform:scale(1);} }
 </style>
 </head>
 <body>
@@ -829,36 +832,57 @@ const UPGRADES=[
   {id:'explosive',icon:'✸',name:'EXPLOSIVE',desc:'AoE blast on hit',apply:p=>{p.bulletType='explosive';},level:p=>p.bulletType==='explosive'?1:0,max:1},
   {id:'normal',icon:'•',name:'NORMAL',desc:'Standard ricochet',apply:p=>{p.bulletType='normal';},level:p=>p.bulletType==='normal'?1:0,max:1},
 ];
+function cardHTML(u){
+  const l=u.level(game.player);
+  let dots='';const sm=Math.min(u.max,8);
+  for(let i=0;i<sm;i++)dots+=`<div class="dot${i<l?' on':''}"></div>`;
+  const lvlText=l>0?`LV ${l+1}`:'NEW';
+  return `<div class="u-icon">${u.icon}</div><div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div><div class="u-lvl">${lvlText}</div>${dots?'<div class="u-dots">'+dots+'</div>':''}`;
+}
 function showUpgradeScreen(){
   const scr=document.getElementById('upgrade-screen'),grid=document.getElementById('upgrade-grid');
   document.getElementById('up-badge').textContent=`LEVEL ${game.level}`;
   grid.innerHTML='';
   // Filter available upgrades (not maxed)
   const available=UPGRADES.filter(u=>u.level(game.player)<u.max);
-  // Pick 3 random (or fewer if not enough)
-  const picks=[];
-  const pool=[...available];
+  if(available.length===0){startPlaying();return;}
+  // Pick 3 random
+  const picks=[];const pool=[...available];
   const count=Math.min(3,pool.length);
+  for(let i=0;i<count;i++){const idx=Math.floor(Math.random()*pool.length);picks.push(pool[idx]);pool.splice(idx,1);}
+  // Create 3 card slots
+  const cards=[];
   for(let i=0;i<count;i++){
-    const idx=Math.floor(Math.random()*pool.length);
-    picks.push(pool[idx]);
-    pool.splice(idx,1);
-  }
-  for(const u of picks){
-    const l=u.level(game.player);
     const card=document.createElement('div');
-    card.className='upgrade-card';
-    let dots='';
-    const sm=Math.min(u.max,8);
-    for(let i=0;i<sm;i++)dots+=`<div class="dot${i<l?' on':''}"></div>`;
-    const lvlText=l>0?`LV ${l+1}`:'NEW';
-    card.innerHTML=`<div class="u-icon">${u.icon}</div><div class="u-name">${u.name}</div><div class="u-desc">${u.desc}</div><div class="u-lvl">${lvlText}</div>${dots?'<div class="u-dots">'+dots+'</div>':''}`;
-    card.addEventListener('click',()=>{u.apply(game.player);playSound('upgrade');startPlaying();});
+    card.className='upgrade-card spinning';
+    card.innerHTML=cardHTML(UPGRADES[0]);
     grid.appendChild(card);
+    cards.push(card);
   }
-  // If no upgrades available, auto-continue
-  if(picks.length===0){startPlaying();return;}
   scr.classList.add('show');
+  // Slot spin: each card cycles through random upgrades then lands
+  const spinsPerCard=[8,12,16]; // left stops first, right last
+  const spinInterval=80;
+  cards.forEach((card,ci)=>{
+    let tick=0;
+    const total=spinsPerCard[ci]||12;
+    const iv=setInterval(()=>{
+      tick++;
+      const rand=UPGRADES[Math.floor(Math.random()*UPGRADES.length)];
+      card.innerHTML=cardHTML(rand);
+      playSound('ricochet');
+      if(tick>=total){
+        clearInterval(iv);
+        // Land on final pick
+        const u=picks[ci];
+        card.innerHTML=cardHTML(u);
+        card.className='upgrade-card landed';
+        playSound('upgrade');
+        // Enable click after landing
+        card.addEventListener('click',()=>{u.apply(game.player);playSound('upgrade');startPlaying();});
+      }
+    },spinInterval);
+  });
 }
 
 // Input
