@@ -593,6 +593,8 @@ let shootTarget={x:0,y:0,active:false};
 const SHOOT_CD=2000; // 2 second cooldown
 let shootCooldown=0; // ms remaining
 let canShoot=true;
+const CHARGE_TIME=2000; // 2s to fully charge
+let chargeTimer=0; // ms accumulated while holding after ready
 function tryShoot(){
   if(!canShoot){
     // Punish: reset cooldown back to full
@@ -608,20 +610,25 @@ function tryShoot(){
   const p=game.player;
   game.ammo--;game.totalShots++;
   const dx=shootTarget.x-p.x,dy=shootTarget.y-p.y,a=Math.atan2(dy,dx);p.angle=a;
+  // Charge bonus: +20% dmg & knockback when fully charged
+  const charged=chargeTimer>=CHARGE_TIME;
+  const dmgMult=charged?1.2:1;
   const bt=p.bulletType||'normal';
   if(bt==='spread'){
     for(let i=-1;i<=1;i++){
       const sa=a+i*.18;
-      game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(sa)*8,vy:Math.sin(sa)*8,damage:Math.ceil(p.damage*.6),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'spread',trail:[]});
+      game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(sa)*8,vy:Math.sin(sa)*8,damage:Math.ceil(p.damage*.6*dmgMult),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'spread',trail:[],charged});
     }
   }else if(bt==='piercing'){
-    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*10,vy:Math.sin(a)*10,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'piercing',pierce:true,trail:[]});
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*10,vy:Math.sin(a)*10,damage:Math.ceil(p.damage*dmgMult),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'piercing',pierce:true,trail:[],charged});
   }else if(bt==='explosive'){
-    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*7,vy:Math.sin(a)*7,damage:Math.ceil(p.damage*.7),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'explosive',trail:[]});
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*7,vy:Math.sin(a)*7,damage:Math.ceil(p.damage*.7*dmgMult),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'explosive',trail:[],charged});
   }else{
-    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'normal',trail:[]});
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:Math.ceil(p.damage*dmgMult),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'normal',trail:[],charged});
   }
-  playSound('shoot');spawnParticles(p.x,p.y-12,bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',2,1.5,6);
+  if(charged){spawnFloatingText(p.x,p.y-30,'CHARGED!','#ffee44',13);shakeScreen(3);}
+  playSound('shoot');spawnParticles(p.x,p.y-12,bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',charged?5:2,charged?2.5:1.5,charged?10:6);
+  chargeTimer=0;
   if(game.ammo<=0)document.getElementById('no-ammo-warn').classList.add('show');
   // Start cooldown (rapid fire = much shorter)
   canShoot=false;shootCooldown=game.player._rapidTimer>0?400:SHOOT_CD;
@@ -722,7 +729,7 @@ function placeBuilding(gx,gy,type){
 }
 
 function startPlaying(){
-  game.state='playing';game.spawnTimer=0;canShoot=true;shootCooldown=0;
+  game.state='playing';game.spawnTimer=0;canShoot=true;shootCooldown=0;chargeTimer=0;
   document.getElementById('upgrade-screen').classList.remove('show');
   document.getElementById('no-ammo-warn').classList.remove('show');
 }
@@ -861,8 +868,10 @@ function update(dt){
   if(p.trail)p.trail.unshift({x:p.x,y:p.y,life:8});
   if(p.trail&&p.trail.length>8)p.trail.length=8;
   for(const t of p.trail||[])t.life--;
-  // Shoot cooldown tick
-  if(!canShoot){shootCooldown-=dt;if(shootCooldown<=0){shootCooldown=0;canShoot=true;}}
+  // Shoot cooldown tick + charge
+  if(!canShoot){shootCooldown-=dt;if(shootCooldown<=0){shootCooldown=0;canShoot=true;chargeTimer=0;}}
+  if(canShoot&&shootTarget.active){chargeTimer=Math.min(chargeTimer+dt,CHARGE_TIME);}
+  if(canShoot&&!shootTarget.active){chargeTimer=0;}
   // Continuous enemy spawning
   game.gameTime+=dt;game.spawnTimer+=dt;
   const spawnInterval=Math.max(350,1100-game.level*45);
@@ -942,12 +951,13 @@ function update(dt){
         const dist=Math.sqrt(dd)||1;
         const nx=dx/dist,ny=dy/dist;
         const dot=b.vx*nx+b.vy*ny;
-        // Knockback: small = strong push, big = subtle nudge
+        // Knockback: small = strong push, big = subtle nudge, charged = 2.5x all
         if(e.alive){
-          const knockForce=e.knockable?.18:.04;
+          const chMult=b.charged?2.5:1;
+          const knockForce=(e.knockable?.18:.04)*chMult;
           e.vx+=b.vx*knockForce;
           e.vy+=b.vy*knockForce;
-          e.rotSpeed+=(Math.random()-.5)*(e.knockable?.04:.01);
+          e.rotSpeed+=(Math.random()-.5)*(e.knockable?.04:.01)*chMult;
         }
         b.vx-=2*dot*nx;b.vy-=2*dot*ny;
         // Push bullet outside enemy
@@ -1303,7 +1313,7 @@ function render(){
     ctx.fillRect(sx,barY,segW,segH);
     if(i<ammoFill){ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(sx,barY,segW,1);}
   }
-  // Cooldown bar — under player
+  // Cooldown bar — under player (+ charge indicator)
   const cbW=30,cbH=3,cbX=Math.round(p.x-cbW/2),cbY=Math.round(p.y+20);
   if(!canShoot){
     const cdProg=1-shootCooldown/SHOOT_CD;
@@ -1312,6 +1322,19 @@ function render(){
     ctx.fillStyle='#1a1a2e';ctx.fillRect(cbX,cbY,cbW,cbH);
     ctx.fillStyle='#cc4422';
     ctx.fillRect(cbX,cbY,fillW,cbH);
+  }else if(chargeTimer>=CHARGE_TIME){
+    // Fully charged — pulsing gold bar
+    const pulse=.7+Math.sin(performance.now()*.008)*.3;
+    ctx.fillStyle=`rgba(255,238,68,${pulse})`;ctx.fillRect(cbX,cbY,cbW,cbH);
+    // Glow around player
+    ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,238,68,${pulse*.4})`;ctx.lineWidth=2;ctx.stroke();
+  }else if(chargeTimer>0){
+    // Charging — fill gold over green
+    const chProg=chargeTimer/CHARGE_TIME;
+    const chW=Math.round(cbW*chProg);
+    ctx.fillStyle='#44ff88';ctx.fillRect(cbX,cbY,cbW,cbH);
+    ctx.fillStyle='#ffee44';ctx.fillRect(cbX,cbY,chW,cbH);
   }else{
     ctx.fillStyle='#44ff88';ctx.fillRect(cbX,cbY,cbW,cbH);
   }
