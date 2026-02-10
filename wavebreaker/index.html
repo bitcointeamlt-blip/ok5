@@ -875,7 +875,7 @@ function update(dt){
   for(const b of game.bullets){if(!b.alive)continue;
     // Record trail position every other frame
     if(!b._tf){b._tf=0;}b._tf++;
-    if(b._tf%3===0){b.trail.push({x:b.x,y:b.y});if(b.trail.length>5)b.trail.shift();}
+    if(b._tf%4===0){b.trail.push({x:b.x,y:b.y});if(b.trail.length>3)b.trail.shift();}
     b.x+=b.vx*ds;b.y+=b.vy*ds;
     // Screen edge ricochet (left, right, top)
     let bounced=false;
@@ -1117,19 +1117,11 @@ function render(){
   for(const b of game.bullets){if(!b.alive)continue;
     const bc=b.btype==='explosive'?'#ff6644':b.btype==='piercing'?'#44ffaa':b.btype==='spread'?'#88aaff':'#ffcc44';
     const br=b.btype==='explosive'?4:b.btype==='spread'?2.5:3;
-    // Draw persistent trail
+    // Short trail glow
     const tr=b.trail;
-    if(tr.length>1){
-      for(let i=1;i<tr.length;i++){
-        const t=i/tr.length;
-        const r=br*t*.7;
-        ctx.globalAlpha=t*.35;
-        ctx.fillStyle=bc;
-        ctx.beginPath();ctx.arc(tr[i].x,tr[i].y,r,0,Math.PI*2);ctx.fill();
-      }
-      // Draw trail line for extra glow
-      ctx.globalAlpha=.12;
-      ctx.strokeStyle=bc;ctx.lineWidth=br*1.2;
+    if(tr.length>0){
+      ctx.globalAlpha=.08;
+      ctx.strokeStyle=bc;ctx.lineWidth=br*.8;
       ctx.beginPath();ctx.moveTo(tr[0].x,tr[0].y);
       for(let i=1;i<tr.length;i++)ctx.lineTo(tr[i].x,tr[i].y);
       ctx.lineTo(b.x,b.y);ctx.stroke();
