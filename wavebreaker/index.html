@@ -531,11 +531,11 @@ function genAsteroid(sz,type){
 
 // Pixel art cannon sprite (base + barrel)
 function genCannon(){
-  const px=2,gs=16,cs=gs*px;
+  const px=2,gs=20,cs=gs*px;
   // Base (top-down circular platform)
   const base=document.createElement('canvas');base.width=cs;base.height=cs;
   const bx=base.getContext('2d');
-  const mid=gs/2,rad=6.5;
+  const mid=gs/2,rad=8.5;
   const basePal=['#0a1428','#152244','#1e3366','#2a4488','#3366aa','#4488cc','#66aadd'];
   for(let y=0;y<gs;y++)for(let x=0;x<gs;x++){
     const dx=x-mid+.5,dy=y-mid+.5,d=Math.sqrt(dx*dx+dy*dy);
@@ -558,7 +558,7 @@ function genCannon(){
     }
   }
   // Barrel (rectangular gun)
-  const bw=5,bh=12;
+  const bw=5,bh=16;
   const barrel=document.createElement('canvas');barrel.width=bw*px;barrel.height=bh*px;
   const brx=barrel.getContext('2d');
   const barPal=['#0a1428','#1a2a44','#2a3a55','#3a5577','#5588aa','#77bbdd'];
@@ -574,9 +574,9 @@ function genCannon(){
     // Muzzle tip
     if(y<2)sh=5;
     // Band details
-    if((y===3||y===7||y===10)&&edge<.6)sh=1;
+    if((y===3||y===7||y===11||y===14)&&edge<.6)sh=1;
     // Rivet
-    if((y===4||y===8)&&Math.abs(cx)<.8)sh=5;
+    if((y===4||y===8||y===12)&&Math.abs(cx)<.8)sh=5;
     brx.fillStyle=barPal[sh];
     brx.fillRect(x*px,y*px,px,px);
   }
@@ -1316,7 +1316,7 @@ function render(){
     ctx.drawImage(brl,-brl.width/2,-brl.height+4,brl.width,brl.height);
     ctx.restore();
     // Muzzle glow at tip
-    const gl=20,gx=p.x+Math.cos(p.angle)*gl,gy=p.y+Math.sin(p.angle)*gl;
+    const gl=26,gx=p.x+Math.cos(p.angle)*gl,gy=p.y+Math.sin(p.angle)*gl;
     const mzAlpha=canShoot?(chargeTimer>=CHARGE_TIME?.6:.3):.1;
     const mzColor=chargeTimer>=CHARGE_TIME&&canShoot?'#44aaff':'#ffcc44';
     ctx.fillStyle=mzColor;ctx.shadowColor=mzColor;ctx.shadowBlur=8;ctx.globalAlpha=mzAlpha;
