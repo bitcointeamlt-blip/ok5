@@ -875,7 +875,7 @@ function update(dt){
   for(const b of game.bullets){if(!b.alive)continue;
     // Record trail position every other frame
     if(!b._tf){b._tf=0;}b._tf++;
-    if(b._tf%2===0){b.trail.push({x:b.x,y:b.y});if(b.trail.length>12)b.trail.shift();}
+    if(b._tf%3===0){b.trail.push({x:b.x,y:b.y});if(b.trail.length>5)b.trail.shift();}
     b.x+=b.vx*ds;b.y+=b.vy*ds;
     // Screen edge ricochet (left, right, top)
     let bounced=false;
