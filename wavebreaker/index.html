@@ -612,14 +612,14 @@ function tryShoot(){
   if(bt==='spread'){
     for(let i=-1;i<=1;i++){
       const sa=a+i*.18;
-      game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(sa)*8,vy:Math.sin(sa)*8,damage:Math.ceil(p.damage*.6),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'spread'});
+      game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(sa)*8,vy:Math.sin(sa)*8,damage:Math.ceil(p.damage*.6),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'spread',trail:[]});
     }
   }else if(bt==='piercing'){
-    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*10,vy:Math.sin(a)*10,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'piercing',pierce:true});
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*10,vy:Math.sin(a)*10,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'piercing',pierce:true,trail:[]});
   }else if(bt==='explosive'){
-    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*7,vy:Math.sin(a)*7,damage:Math.ceil(p.damage*.7),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'explosive'});
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*7,vy:Math.sin(a)*7,damage:Math.ceil(p.damage*.7),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'explosive',trail:[]});
   }else{
-    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'normal'});
+    game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:p.damage,alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'normal',trail:[]});
   }
   playSound('shoot');spawnParticles(p.x,p.y-12,bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',2,1.5,6);
   if(game.ammo<=0)document.getElementById('no-ammo-warn').classList.add('show');
@@ -873,6 +873,9 @@ function update(dt){
     game.enemies.push(makeEnemy(type,game.level));
   }
   for(const b of game.bullets){if(!b.alive)continue;
+    // Record trail position every other frame
+    if(!b._tf){b._tf=0;}b._tf++;
+    if(b._tf%2===0){b.trail.push({x:b.x,y:b.y});if(b.trail.length>12)b.trail.shift();}
     b.x+=b.vx*ds;b.y+=b.vy*ds;
     // Screen edge ricochet (left, right, top)
     let bounced=false;
@@ -1110,20 +1113,36 @@ function render(){
       case'bomb':ctx.fillStyle='#221808';ctx.beginPath();ctx.roundRect(b.x+2,b.y+2,GRID-4,GRID-4,3);ctx.fill();ctx.fillStyle='#ff8844';ctx.beginPath();ctx.arc(cx,cy,8,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffcc44';ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();break;
     }
   }
-  // Bullets (with ricochet trail)
+  // Bullets (with light trail)
   for(const b of game.bullets){if(!b.alive)continue;
-    const dim=1-b.bounces*.15;
     const bc=b.btype==='explosive'?'#ff6644':b.btype==='piercing'?'#44ffaa':b.btype==='spread'?'#88aaff':'#ffcc44';
-    ctx.fillStyle=b.bounces>0?`rgba(255,${180+b.bounces*20},${68+b.bounces*40},${dim})`:bc;
-    ctx.shadowColor=bc;ctx.shadowBlur=8;
     const br=b.btype==='explosive'?4:b.btype==='spread'?2.5:3;
-    ctx.beginPath();ctx.arc(b.x,b.y,br,0,Math.PI*2);ctx.fill();
-    // Trail behind
-    const tl=b.bounces>0?3:2;
-    for(let i=1;i<=tl;i++){
-      ctx.fillStyle=`rgba(255,200,68,${.15/i})`;
-      ctx.beginPath();ctx.arc(b.x-b.vx*.4*i,b.y-b.vy*.4*i,2.5-i*.4,0,Math.PI*2);ctx.fill();
+    // Draw persistent trail
+    const tr=b.trail;
+    if(tr.length>1){
+      for(let i=1;i<tr.length;i++){
+        const t=i/tr.length;
+        const r=br*t*.7;
+        ctx.globalAlpha=t*.35;
+        ctx.fillStyle=bc;
+        ctx.beginPath();ctx.arc(tr[i].x,tr[i].y,r,0,Math.PI*2);ctx.fill();
+      }
+      // Draw trail line for extra glow
+      ctx.globalAlpha=.12;
+      ctx.strokeStyle=bc;ctx.lineWidth=br*1.2;
+      ctx.beginPath();ctx.moveTo(tr[0].x,tr[0].y);
+      for(let i=1;i<tr.length;i++)ctx.lineTo(tr[i].x,tr[i].y);
+      ctx.lineTo(b.x,b.y);ctx.stroke();
+      ctx.globalAlpha=1;
     }
+    // Draw bullet head
+    const dim=1-b.bounces*.15;
+    ctx.fillStyle=b.bounces>0?`rgba(255,${180+b.bounces*20},${68+b.bounces*40},${dim})`:bc;
+    ctx.shadowColor=bc;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.arc(b.x,b.y,br,0,Math.PI*2);ctx.fill();
+    // Bright core
+    ctx.fillStyle='rgba(255,255,255,.7)';
+    ctx.beginPath();ctx.arc(b.x,b.y,br*.4,0,Math.PI*2);ctx.fill();
     ctx.shadowBlur=0;
   }
   // Enemies (pixel art asteroids)
