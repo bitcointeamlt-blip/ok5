@@ -420,6 +420,8 @@ function playSound(type){
     case'wave':o.type='sine';o.frequency.setValueAtTime(300,t);o.frequency.setValueAtTime(500,t+.15);o.frequency.setValueAtTime(300,t+.3);o.frequency.setValueAtTime(600,t+.45);g.gain.setValueAtTime(.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.5);o.start(t);o.stop(t+.5);break;
     case'playerHit':o.type='sawtooth';o.frequency.setValueAtTime(200,t);o.frequency.exponentialRampToValueAtTime(60,t+.12);g.gain.setValueAtTime(.15,t);g.gain.exponentialRampToValueAtTime(.001,t+.12);o.start(t);o.stop(t+.12);break;
     case'ricochet':o.type='square';o.frequency.setValueAtTime(1800,t);o.frequency.exponentialRampToValueAtTime(400,t+.06);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.06);o.start(t);o.stop(t+.06);break;
+    case'slot':o.type='sine';o.frequency.setValueAtTime(900+Math.random()*400,t);o.frequency.exponentialRampToValueAtTime(400,t+.04);g.gain.setValueAtTime(.05,t);g.gain.exponentialRampToValueAtTime(.001,t+.04);o.start(t);o.stop(t+.04);break;
+    case'slotland':o.type='sine';o.frequency.setValueAtTime(500,t);o.frequency.setValueAtTime(800,t+.08);o.frequency.setValueAtTime(1100,t+.16);g.gain.setValueAtTime(.12,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2);break;
   }
 }
 
@@ -898,14 +900,14 @@ function showUpgradeScreen(){
       tick++;
       const rand=UPGRADES[Math.floor(Math.random()*UPGRADES.length)];
       card.innerHTML=cardHTML(rand);
-      playSound('ricochet');
+      playSound('slot');
       if(tick>=total){
         clearInterval(iv);
         // Land on final pick
         const u=picks[ci];
         card.innerHTML=cardHTML(u);
         card.className='upgrade-card landed';
-        playSound('upgrade');
+        playSound('slotland');
         // Enable click after landing
         card.addEventListener('click',()=>{u.apply(game.player);playSound('upgrade');startPlaying();});
       }
