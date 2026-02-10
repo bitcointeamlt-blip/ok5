@@ -603,12 +603,8 @@ function tryShoot(){
     spawnFloatingText(game.player.x,game.player.y-30,'WAIT!','#ff4444',12);
     return;
   }
-  if(game.ammo<=0){
-    document.getElementById('no-ammo-warn').classList.add('show');
-    return;
-  }
   const p=game.player;
-  game.ammo--;game.totalShots++;
+  game.totalShots++;
   const dx=shootTarget.x-p.x,dy=shootTarget.y-p.y,a=Math.atan2(dy,dx);p.angle=a;
   // Charge bonus: +20% dmg & knockback when fully charged
   const charged=chargeTimer>=CHARGE_TIME;
@@ -629,7 +625,6 @@ function tryShoot(){
   if(charged){spawnFloatingText(p.x,p.y-30,'CHARGED!','#ffee44',13);shakeScreen(3);}
   playSound('shoot');spawnParticles(p.x,p.y-12,bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',charged?5:2,charged?2.5:1.5,charged?10:6);
   chargeTimer=0;
-  if(game.ammo<=0)document.getElementById('no-ammo-warn').classList.add('show');
   // Start cooldown (rapid fire = much shorter)
   canShoot=false;shootCooldown=game.player._rapidTimer>0?400:SHOOT_CD;
 }
@@ -652,11 +647,9 @@ function killEnemy(e){
   e.alive=false;game.kills++;
   game.score+=e.reward*(1+Math.floor(game.combo/10));game.money+=e.reward;
   playSound('kill');shakeScreen(3);
-  // XP + ammo reward
+  // XP reward
   const xpGain=XP_REWARD[e.type]||XP_REWARD.default;
-  const ammoGain=AMMO_DROP[e.type]||AMMO_DROP.default;
-  game.xp+=xpGain;game.ammo+=ammoGain;game.maxAmmo=Math.max(game.maxAmmo,game.ammo);
-  document.getElementById('no-ammo-warn').classList.remove('show');
+  game.xp+=xpGain;
   // Rocky debris particles
   const debrisColors=['#5a5a6a','#3a3a4a','#7a7a8a','#888','#555'];
   const dc=e.type==='tank'?20:e.type==='megasplit'?25:e.type==='exploder'?15:10;
@@ -738,8 +731,7 @@ function levelUp(){
   game.level++;
   game.xpNeeded=Math.floor(40+game.level*25+game.level*game.level*2);
   game.money+=15+game.level*8;
-  // Bonus ammo on level up
-  const bonusAmmo=5+game.level*2;game.ammo+=bonusAmmo;game.maxAmmo=Math.max(game.maxAmmo,game.ammo);
+  // Level up
   // Spawn boss every 5 levels
   if(game.level%5===0){
     const boss=makeEnemy('boss',game.level);
@@ -752,7 +744,7 @@ function levelUp(){
   // Level up announcement
   const a=document.getElementById('level-announce');
   a.innerHTML=`<div class="wa-num">LEVEL ${game.level}</div>`+
-    `<div class="wa-ammo">+${bonusAmmo} AMMO  +$${15+game.level*8}</div>`+
+    `<div class="wa-ammo">+$${15+game.level*8}</div>`+
     `<div class="wa-miss">CHOOSE UPGRADES</div>`;
   a.classList.add('show');
   playSound('wave');setTimeout(()=>a.classList.remove('show'),2200);
@@ -1291,52 +1283,50 @@ function render(){
     // Top highlight on filled segments
     if(i<hpFill){ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(sx,barY,segW,1);}
   }
-  // RIGHT — AMMO
-  const ammoDisp=Math.min(game.ammo,60);
-  const ammoRatio=ammoDisp/60;
-  const ammoFill=Math.ceil(ammoRatio*segCount);
-  // Ammo background frame
-  const amTotalW=Math.round(segCount*(segW+segGap));
+  // RIGHT — CHARGE indicator (replaces ammo)
+  const chTotalW=Math.round(segCount*(segW+segGap));
   ctx.fillStyle='rgba(0,0,0,.4)';
-  ctx.fillRect(Math.round(p.x+startOff-2),barY-2,amTotalW+4,segH+4);
-  // Ammo icon
-  ctx.fillStyle=game.ammo>8?'#44aaff':'#ff4444';
-  ctx.textAlign='left';
-  ctx.fillText('◆',Math.round(p.x+startOff+amTotalW+4),barY+2);
-  for(let i=0;i<segCount;i++){
-    const sx=Math.round(p.x+startOff+i*(segW+segGap));
-    if(i<ammoFill){
-      const bright=1-(i/segCount)*.3;
-      if(game.ammo>8)ctx.fillStyle=`rgb(${Math.round(34*bright)},${Math.round(100*bright)},${Math.round(200*bright)})`;
-      else ctx.fillStyle=`rgb(${Math.round(200*bright)},${Math.round(68*bright)},${Math.round(34*bright)})`;
-    }else{ctx.fillStyle='rgba(255,255,255,.05)';}
-    ctx.fillRect(sx,barY,segW,segH);
-    if(i<ammoFill){ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(sx,barY,segW,1);}
-  }
-  // Cooldown bar — under player (+ charge indicator)
-  const cbW=30,cbH=3,cbX=Math.round(p.x-cbW/2),cbY=Math.round(p.y+20);
+  ctx.fillRect(Math.round(p.x+startOff-2),barY-2,chTotalW+4,segH+4);
   if(!canShoot){
-    const cdProg=1-shootCooldown/SHOOT_CD;
-    const fillW=Math.round(cbW*cdProg);
-    ctx.fillStyle='#000';ctx.fillRect(cbX-1,cbY-1,cbW+2,cbH+2);
-    ctx.fillStyle='#1a1a2e';ctx.fillRect(cbX,cbY,cbW,cbH);
-    ctx.fillStyle='#cc4422';
-    ctx.fillRect(cbX,cbY,fillW,cbH);
-  }else if(chargeTimer>=CHARGE_TIME){
-    // Fully charged — pulsing gold bar
-    const pulse=.7+Math.sin(performance.now()*.008)*.3;
-    ctx.fillStyle=`rgba(255,238,68,${pulse})`;ctx.fillRect(cbX,cbY,cbW,cbH);
-    // Glow around player
-    ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(255,238,68,${pulse*.4})`;ctx.lineWidth=2;ctx.stroke();
+    // Cooldown — red filling up
+    const cdProg=1-shootCooldown/(game.player._rapidTimer>0?400:SHOOT_CD);
+    const cdFill=Math.ceil(cdProg*segCount);
+    ctx.fillStyle='#cc4422';ctx.textAlign='left';
+    ctx.fillText('⏳',Math.round(p.x+startOff+chTotalW+4),barY+2);
+    for(let i=0;i<segCount;i++){
+      const sx=Math.round(p.x+startOff+i*(segW+segGap));
+      if(i<cdFill){const bright=1-(i/segCount)*.3;ctx.fillStyle=`rgb(${Math.round(200*bright)},${Math.round(50*bright)},${Math.round(30*bright)})`;}
+      else{ctx.fillStyle='rgba(255,255,255,.05)';}
+      ctx.fillRect(sx,barY,segW,segH);
+    }
   }else if(chargeTimer>0){
-    // Charging — fill gold over green
-    const chProg=chargeTimer/CHARGE_TIME;
-    const chW=Math.round(cbW*chProg);
-    ctx.fillStyle='#44ff88';ctx.fillRect(cbX,cbY,cbW,cbH);
-    ctx.fillStyle='#ffee44';ctx.fillRect(cbX,cbY,chW,cbH);
+    // Charging or fully charged
+    const full=chargeTimer>=CHARGE_TIME;
+    const chProg=full?1:chargeTimer/CHARGE_TIME;
+    const chFill=Math.ceil(chProg*segCount);
+    const pulse=full?.7+Math.sin(performance.now()*.008)*.3:1;
+    ctx.fillStyle=full?`rgba(255,238,68,${pulse})`:'#ffee44';ctx.textAlign='left';
+    ctx.fillText('⚡',Math.round(p.x+startOff+chTotalW+4),barY+2);
+    for(let i=0;i<segCount;i++){
+      const sx=Math.round(p.x+startOff+i*(segW+segGap));
+      if(i<chFill){const bright=1-(i/segCount)*.3;ctx.fillStyle=`rgba(255,${Math.round(238*bright)},${Math.round(68*bright)},${pulse})`;}
+      else{ctx.fillStyle='rgba(255,255,255,.05)';}
+      ctx.fillRect(sx,barY,segW,segH);
+      if(i<chFill){ctx.fillStyle=`rgba(255,255,255,${.15*pulse})`;ctx.fillRect(sx,barY,segW,1);}
+    }
+    // Glow around player when full
+    if(full){ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);ctx.strokeStyle=`rgba(255,238,68,${pulse*.4})`;ctx.lineWidth=2;ctx.stroke();}
   }else{
-    ctx.fillStyle='#44ff88';ctx.fillRect(cbX,cbY,cbW,cbH);
+    // Ready — green
+    ctx.fillStyle='#44ff88';ctx.textAlign='left';
+    ctx.fillText('✦',Math.round(p.x+startOff+chTotalW+4),barY+2);
+    for(let i=0;i<segCount;i++){
+      const sx=Math.round(p.x+startOff+i*(segW+segGap));
+      const bright=1-(i/segCount)*.3;
+      ctx.fillStyle=`rgb(${Math.round(40*bright)},${Math.round(200*bright)},${Math.round(80*bright)})`;
+      ctx.fillRect(sx,barY,segW,segH);
+      ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(sx,barY,segW,1);
+    }
   }
   // Crosshair + ricochet prediction
   if(shootTarget.active&&game.state==='playing'){
@@ -1349,8 +1339,11 @@ function render(){
     ctx.beginPath();ctx.moveTo(sx+G,sy);ctx.lineTo(sx+L,sy);ctx.stroke();
     ctx.beginPath();ctx.moveTo(sx,sy-L);ctx.lineTo(sx,sy-G);ctx.stroke();
     ctx.beginPath();ctx.moveTo(sx,sy+G);ctx.lineTo(sx,sy+L);ctx.stroke();
-    // Aim line from player toward target
-    ctx.strokeStyle='rgba(255,200,68,.1)';ctx.lineWidth=1;ctx.setLineDash([3,5]);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(sx,sy);ctx.stroke();ctx.setLineDash([]);
+    // Short aim line from gun barrel
+    const adist=Math.sqrt((sx-p.x)**2+(sy-p.y)**2)||1;
+    const anx=(sx-p.x)/adist,any=(sy-p.y)/adist;
+    ctx.strokeStyle='rgba(100,180,255,.25)';ctx.lineWidth=1;ctx.setLineDash([3,5]);
+    ctx.beginPath();ctx.moveTo(p.x+anx*14,p.y+any*14);ctx.lineTo(p.x+anx*50,p.y+any*50);ctx.stroke();ctx.setLineDash([]);
     // Ricochet prediction raycast
     const adx=sx-p.x,ady=sy-p.y,ad=Math.sqrt(adx*adx+ady*ady)||1;
     let rvx=adx/ad*8,rvy=ady/ad*8;
