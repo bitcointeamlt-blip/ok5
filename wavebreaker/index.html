@@ -862,8 +862,7 @@ function update(dt){
   for(const t of p.trail||[])t.life--;
   // Shoot cooldown tick + charge
   if(!canShoot){shootCooldown-=dt;if(shootCooldown<=0){shootCooldown=0;canShoot=true;chargeTimer=0;}}
-  if(canShoot&&shootTarget.active){chargeTimer=Math.min(chargeTimer+dt,CHARGE_TIME);}
-  if(canShoot&&!shootTarget.active){chargeTimer=0;}
+  if(canShoot){chargeTimer=Math.min(chargeTimer+dt,CHARGE_TIME);}
   // Continuous enemy spawning
   game.gameTime+=dt;game.spawnTimer+=dt;
   const spawnInterval=Math.max(350,1100-game.level*45);
