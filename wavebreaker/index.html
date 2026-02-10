@@ -622,8 +622,8 @@ function tryShoot(){
   }else{
     game.bullets.push({x:p.x,y:p.y-12,vx:Math.cos(a)*8,vy:Math.sin(a)*8,damage:Math.ceil(p.damage*dmgMult),alive:true,bounces:0,maxBounces:3,lastHit:null,btype:'normal',trail:[],charged});
   }
-  if(charged){spawnFloatingText(p.x,p.y-30,'CHARGED!','#ffee44',13);shakeScreen(3);}
-  playSound('shoot');spawnParticles(p.x,p.y-12,bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',charged?5:2,charged?2.5:1.5,charged?10:6);
+  if(charged){spawnFloatingText(p.x,p.y-30,'CHARGED!','#44aaff',13);shakeScreen(3);}
+  playSound('shoot');spawnParticles(p.x,p.y-12,charged?'#44aaff':bt==='explosive'?'#ff6644':bt==='piercing'?'#44ffaa':bt==='spread'?'#88aaff':'#ffcc44',charged?5:2,charged?2.5:1.5,charged?10:6);
   chargeTimer=0;
   // Start cooldown (rapid fire = much shorter)
   canShoot=false;shootCooldown=game.player._rapidTimer>0?400:SHOOT_CD;
@@ -1117,8 +1117,8 @@ function render(){
   }
   // Bullets (with light trail)
   for(const b of game.bullets){if(!b.alive)continue;
-    const bc=b.btype==='explosive'?'#ff6644':b.btype==='piercing'?'#44ffaa':b.btype==='spread'?'#88aaff':'#ffcc44';
-    const br=b.btype==='explosive'?4:b.btype==='spread'?2.5:3;
+    const bc=b.charged?'#44aaff':b.btype==='explosive'?'#ff6644':b.btype==='piercing'?'#44ffaa':b.btype==='spread'?'#88aaff':'#ffcc44';
+    const br=b.charged?4:b.btype==='explosive'?4:b.btype==='spread'?2.5:3;
     // Short trail glow
     const tr=b.trail;
     if(tr.length>0){
@@ -1299,34 +1299,30 @@ function render(){
       else{ctx.fillStyle='rgba(255,255,255,.05)';}
       ctx.fillRect(sx,barY,segW,segH);
     }
-  }else if(chargeTimer>0){
-    // Charging or fully charged
+  }else{
+    // Ready — green base, blue charge fills on top
     const full=chargeTimer>=CHARGE_TIME;
-    const chProg=full?1:chargeTimer/CHARGE_TIME;
+    const chProg=chargeTimer>0?(full?1:chargeTimer/CHARGE_TIME):0;
     const chFill=Math.ceil(chProg*segCount);
     const pulse=full?.7+Math.sin(performance.now()*.008)*.3:1;
-    ctx.fillStyle=full?`rgba(255,238,68,${pulse})`:'#ffee44';ctx.textAlign='left';
-    ctx.fillText('⚡',Math.round(p.x+startOff+chTotalW+4),barY+2);
-    for(let i=0;i<segCount;i++){
-      const sx=Math.round(p.x+startOff+i*(segW+segGap));
-      if(i<chFill){const bright=1-(i/segCount)*.3;ctx.fillStyle=`rgba(255,${Math.round(238*bright)},${Math.round(68*bright)},${pulse})`;}
-      else{ctx.fillStyle='rgba(255,255,255,.05)';}
-      ctx.fillRect(sx,barY,segW,segH);
-      if(i<chFill){ctx.fillStyle=`rgba(255,255,255,${.15*pulse})`;ctx.fillRect(sx,barY,segW,1);}
-    }
-    // Glow around player when full
-    if(full){ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);ctx.strokeStyle=`rgba(255,238,68,${pulse*.4})`;ctx.lineWidth=2;ctx.stroke();}
-  }else{
-    // Ready — green
-    ctx.fillStyle='#44ff88';ctx.textAlign='left';
-    ctx.fillText('✦',Math.round(p.x+startOff+chTotalW+4),barY+2);
+    ctx.textAlign='left';
+    ctx.fillStyle=full?`rgba(68,170,255,${pulse})`:'#44ff88';
+    ctx.fillText(full?'⚡':'✦',Math.round(p.x+startOff+chTotalW+4),barY+2);
     for(let i=0;i<segCount;i++){
       const sx=Math.round(p.x+startOff+i*(segW+segGap));
       const bright=1-(i/segCount)*.3;
-      ctx.fillStyle=`rgb(${Math.round(40*bright)},${Math.round(200*bright)},${Math.round(80*bright)})`;
+      if(i<chFill){
+        // Blue charged segment
+        ctx.fillStyle=`rgba(${Math.round(44*bright)},${Math.round(140*bright)},${Math.round(255*bright)},${pulse})`;
+      }else{
+        // Green ready segment
+        ctx.fillStyle=`rgb(${Math.round(40*bright)},${Math.round(200*bright)},${Math.round(80*bright)})`;
+      }
       ctx.fillRect(sx,barY,segW,segH);
       ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(sx,barY,segW,1);
     }
+    // Blue glow around player when full
+    if(full){ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);ctx.strokeStyle=`rgba(68,170,255,${pulse*.5})`;ctx.lineWidth=2;ctx.stroke();}
   }
   // Crosshair + ricochet prediction
   if(shootTarget.active&&game.state==='playing'){
