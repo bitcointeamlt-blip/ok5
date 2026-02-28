@@ -155,12 +155,53 @@ function logEvent(msg, type = 'info') {
   container.scrollTop = container.scrollHeight;
 }
 
+const UTYPE_ICONS = {};
+
 function getUtypeIcon(utype) {
-  if (utype === 'bug') return '<span style="color:#ff3c55">👾</span>';
-  if (utype === 'worm') return '<span style="color:#ff9900">🐛</span>';
-  if (utype === 'leak') return '<span style="color:#00ffaa">🦠</span>';
-  if (utype === 'corrupt') return '<span style="color:#bb33ff">👾</span>';
-  return '<span style="color:#ffffff">💀</span>';
+  let color = '#ffffff';
+  if (utype === 'worm') color = '#00ffaa';
+  else if (utype === 'leak') color = '#ff6622';
+  else if (utype === 'corrupt') color = '#cc30ff';
+  else if (utype === 'overflow') color = '#dd1a40';
+  else if (utype === 'bug' || utype === 'glitch') color = '#ff3c55';
+
+  if (!UTYPE_ICONS[utype]) {
+    try {
+      const offBase = document.createElement('canvas');
+      offBase.width = 34; // CELL width
+      offBase.height = 34;
+      const offCtx = offBase.getContext('2d');
+      const oldCtx = ctx;
+      ctx = offCtx; // override global context temporarily
+
+      const dummyU = {
+        x: 0, y: 0, px: 0, py: 0, rx: 0, ry: 0,
+        scale: 1.0, color: color, facing: { dx: 0, dy: 1 },
+        utype: utype, hitFlash: 0, hp: 1, maxHp: 1, id: 999
+      };
+
+      ctx.save();
+      if (utype === 'worm') {
+        dummyU.trail = [{ x: 0, y: -1 }, { x: 0, y: -2 }];
+        if (typeof drawEnemyWorm === 'function') drawEnemyWorm(17, 17, dummyU, 1.0);
+      } else if (utype === 'leak' || utype === 'corrupt') {
+        if (typeof drawEnemyBinarySwarm === 'function') drawEnemyBinarySwarm(17, 17, dummyU, 1.0);
+      } else {
+        if (typeof drawEnemyPixelArt === 'function') drawEnemyPixelArt(17, 17, dummyU, 1.0);
+      }
+      ctx.restore();
+
+      UTYPE_ICONS[utype] = offBase.toDataURL();
+      ctx = oldCtx; // restore global context
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  if (UTYPE_ICONS[utype]) {
+    return `<img src="${UTYPE_ICONS[utype]}" style="width:14px; height:14px; vertical-align: middle; margin: 0 4px; filter: drop-shadow(0 0 3px ${color})">`;
+  }
+  return `<span style="color:${color}">💀</span>`;
 }
 
 // ── Retro Sound System — synthesized 8-bit sounds ────────────────
