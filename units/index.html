@@ -1,44 +1,380 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>UNITS | 0x-PewPew</title>
-  <link rel="icon" type="image/png" href="../target.png">
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      background: #0a0a1a;
-      overflow: hidden;
-      position: fixed;
-      width: 100%;
-      height: 100%;
-      font-family: 'Press Start 2P', monospace;
-      image-rendering: pixelated;
-    }
-
-    #gameCanvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      image-rendering: pixelated;
-      image-rendering: -moz-crisp-edges;
-      image-rendering: crisp-edges;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TIMELOCK BOARD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&family=Syncopate:wght@400;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/units/style.css">
 </head>
+
 <body>
-  <canvas id="gameCanvas" width="1920" height="1080"></canvas>
-  <script type="module" src="../src/units-main.ts"></script>
+  <div id="app">
+
+    <!-- ══════════════ MENU ══════════════ -->
+    <div id="screen-menu" class="screen active">
+      <div class="menu-wrap">
+        <div class="title-block">
+          <div class="title-main">TIMELOCK</div>
+          <div class="title-sub">MAINFRAME</div>
+        </div>
+
+        <div class="tagline">
+          <p>Time pulses only with your data.</p>
+          <p class="dim">Cyber-Grid Tactical · 12×12 Hardware · Antivirus vs Glitches</p>
+        </div>
+
+        <div class="controls-card">
+          <div class="ctrl-player">
+            <div class="ctrl-label cyan">PLAYER 1</div>
+            <div class="ctrl-rows">
+              <div class="ctrl-row"><kbd>CLICK unit</kbd><span>Select</span></div>
+              <div class="ctrl-row"><kbd>W A S D</kbd><span>Move</span></div>
+              <div class="ctrl-row"><kbd>SPACE / CLICK</kbd><span>Shoot</span></div>
+              <div class="ctrl-row"><kbd>Q</kbd><span>Switch weapon</span></div>
+            </div>
+          </div>
+          <div class="ctrl-vs">VS</div>
+          <div class="ctrl-player right">
+            <div class="ctrl-label red">PLAYER 2</div>
+            <div class="ctrl-rows">
+              <div class="ctrl-row"><kbd>U / I / O</kbd><span>Select 1/2/3</span></div>
+              <div class="ctrl-row"><kbd>↑ ↓ ← →</kbd><span>Move</span></div>
+              <div class="ctrl-row"><kbd>ENTER</kbd><span>Shoot</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mechanics-card">
+          <div class="mech-item"><span class="mech-icon">⏸</span><span>No input → time frozen</span></div>
+          <div class="mech-item"><span class="mech-icon">▶</span><span>Act → all entities move</span></div>
+          <div class="mech-item"><span class="mech-icon">✦</span><span>1 bullet / tick · aim with mouse</span></div>
+          <div class="mech-item"><span class="mech-icon">◈</span><span>3 units · 5 HP each · ammo regens</span></div>
+        </div>
+
+        <div class="mode-select">
+          <button id="btn-adv" class="btn-adventure pulse">MAINFRAME</button>
+          <button id="btn-1p" class="btn-primary">1 PLAYER</button>
+          <button id="btn-2p" class="btn-secondary">2 PLAYERS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ GAME ══════════════ -->
+    <div id="screen-game" class="screen">
+      <div class="game-layout">
+
+        <!-- P1 Panel -->
+        <div class="side-panel left-panel" id="panel-p1">
+          <div class="panel-name cyan">PLAYER 1</div>
+          <div class="panel-controls dim">W A S D · SPACE</div>
+
+          <div class="unit-list">
+            <div class="unit-row" id="p1-r0">
+              <span class="u-sel" id="p1-s0"></span>
+              <span class="u-num cyan">1</span>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p1-fill" id="p1-u0-hp"></div>
+                </div>
+              </div>
+              <div class="u-ammo" id="p1-u0-ammo"></div>
+            </div>
+            <div class="unit-row" id="p1-r1">
+              <span class="u-sel" id="p1-s1"></span>
+              <span class="u-num cyan">2</span>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p1-fill" id="p1-u1-hp"></div>
+                </div>
+              </div>
+              <div class="u-ammo" id="p1-u1-ammo"></div>
+            </div>
+            <div class="unit-row" id="p1-r2">
+              <span class="u-sel" id="p1-s2"></span>
+              <span class="u-num cyan">3</span>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p1-fill" id="p1-u2-hp"></div>
+                </div>
+              </div>
+              <div class="u-ammo" id="p1-u2-ammo"></div>
+            </div>
+          </div>
+
+          <div class="action-badge" id="p1-badge">READY</div>
+
+          <div class="clock-display" id="p1-clock">2:00.0</div>
+
+          <div class="skill-header">
+            <span class="skill-header-lbl">WEAPONS</span>
+            <kbd class="skill-key">Q</kbd>
+          </div>
+          <div class="skill-bar" id="p1-skillbar">
+            <div class="skill-slot sk-active" id="p1-sk-0" title="Bullet (default)">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- barrel -->
+                  <rect x="0" y="6" width="12" height="2.5" rx="0.5" />
+                  <!-- body/slide -->
+                  <rect x="8" y="3" width="10" height="8" rx="1.2" />
+                  <!-- trigger guard -->
+                  <rect x="10" y="11" width="4" height="3" rx="0.5" />
+                  <!-- muzzle lip -->
+                  <rect x="0" y="5.5" width="1.5" height="3.5" rx="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">GUN</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-1" title="Laser [Q] · fires in 2 ticks">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- compact housing -->
+                  <rect x="4" y="3" width="9" height="8" rx="1.5" />
+                  <!-- thin emitter barrel -->
+                  <rect x="0" y="6.3" width="4" height="1.4" rx="0.4" />
+                  <!-- energy orb -->
+                  <circle cx="18" cy="7" r="3.2" />
+                  <!-- inner core highlight -->
+                  <circle cx="18" cy="7" r="1.4" fill="white" opacity="0.45" />
+                  <!-- scope/lens on top -->
+                  <rect x="7" y="1.5" width="3" height="2" rx="0.4" />
+                </svg>
+              </div>
+              <div class="sk-label">LASER</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-2" title="Cannon [Q] · 2dmg · 1 cell/tick · pierces bullets">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- thick heavy barrel -->
+                  <rect x="0" y="4.5" width="13" height="5" rx="1.5" />
+                  <!-- reinforced muzzle band -->
+                  <rect x="0" y="4" width="3.5" height="6" rx="0.8" />
+                  <!-- heavy cannonball -->
+                  <circle cx="17.5" cy="7" r="3.8" />
+                  <!-- ball shine -->
+                  <circle cx="16.2" cy="5.5" r="1" fill="white" opacity="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">CANNON</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-3" title="Shotgun [Q] · 3 pellets spread · short range">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- long barrel -->
+                  <rect x="0" y="6.2" width="14" height="1.6" rx="0.4" />
+                  <!-- pump body -->
+                  <rect x="7" y="4.5" width="7" height="5" rx="1" />
+                  <!-- spread: 3 pellets fanning out -->
+                  <circle cx="17.5" cy="2.5" r="1.8" />
+                  <circle cx="19.5" cy="7" r="1.8" />
+                  <circle cx="17.5" cy="11.5" r="1.8" />
+                  <!-- spread lines -->
+                  <line x1="14" y1="7" x2="16" y2="3" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="17.5" y2="7" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="16" y2="11" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="sk-label">SHOT</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-4" title="Knife [Q] · Melee · 2-3 dmg · 1 cell range">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- knife blade -->
+                  <path d="M4 7 L16 3 L16 11 Z" />
+                  <!-- knife handle -->
+                  <rect x="16" y="5.5" width="5" height="3" rx="1" />
+                </svg>
+              </div>
+              <div class="sk-label">KNIFE</div>
+              <div class="sk-cd"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Canvas + Energy HUD -->
+        <div class="center-col">
+          <div class="energy-hud" id="energy-hud">
+            <span class="energy-hud-label">VOLTS</span>
+            <div class="energy-track">
+              <div class="energy-fill nrg-high" id="energy-fill"></div>
+            </div>
+            <span class="energy-hud-val" id="energy-val">100</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- P2 Panel -->
+        <div class="side-panel right-panel" id="panel-p2">
+          <div class="panel-name red">PLAYER 2</div>
+          <div class="panel-controls dim" id="p2-controls">↑↓←→ · ENTER · U/I/O</div>
+
+          <div class="unit-list">
+            <div class="unit-row" id="p2-r0">
+              <div class="u-ammo" id="p2-u0-ammo"></div>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p2-fill" id="p2-u0-hp"></div>
+                </div>
+              </div>
+              <span class="u-num red">1</span>
+            </div>
+            <div class="unit-row" id="p2-r1">
+              <div class="u-ammo" id="p2-u1-ammo"></div>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p2-fill" id="p2-u1-hp"></div>
+                </div>
+              </div>
+              <span class="u-num red">2</span>
+            </div>
+            <div class="unit-row" id="p2-r2">
+              <div class="u-ammo" id="p2-u2-ammo"></div>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p2-fill" id="p2-u2-hp"></div>
+                </div>
+              </div>
+              <span class="u-num red">3</span>
+            </div>
+          </div>
+
+          <div class="action-badge" id="p2-badge">READY</div>
+
+          <div class="clock-display" id="p2-clock">2:00.0</div>
+
+          <div class="skill-header">
+            <span class="skill-header-lbl">WEAPONS</span>
+            <kbd class="skill-key">P</kbd>
+          </div>
+          <div class="skill-bar" id="p2-skillbar">
+            <div class="skill-slot sk-active sk-p2" id="p2-sk-0">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- barrel -->
+                  <rect x="0" y="6" width="12" height="2.5" rx="0.5" />
+                  <!-- body/slide -->
+                  <rect x="8" y="3" width="10" height="8" rx="1.2" />
+                  <!-- trigger guard -->
+                  <rect x="10" y="11" width="4" height="3" rx="0.5" />
+                  <!-- muzzle lip -->
+                  <rect x="0" y="5.5" width="1.5" height="3.5" rx="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">GUN</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-1">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- compact housing -->
+                  <rect x="4" y="3" width="9" height="8" rx="1.5" />
+                  <!-- thin emitter barrel -->
+                  <rect x="0" y="6.3" width="4" height="1.4" rx="0.4" />
+                  <!-- energy orb -->
+                  <circle cx="18" cy="7" r="3.2" />
+                  <!-- inner core highlight -->
+                  <circle cx="18" cy="7" r="1.4" fill="white" opacity="0.45" />
+                  <!-- scope/lens on top -->
+                  <rect x="7" y="1.5" width="3" height="2" rx="0.4" />
+                </svg>
+              </div>
+              <div class="sk-label">LASER</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-2">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- thick heavy barrel -->
+                  <rect x="0" y="4.5" width="13" height="5" rx="1.5" />
+                  <!-- reinforced muzzle band -->
+                  <rect x="0" y="4" width="3.5" height="6" rx="0.8" />
+                  <!-- heavy cannonball -->
+                  <circle cx="17.5" cy="7" r="3.8" />
+                  <!-- ball shine -->
+                  <circle cx="16.2" cy="5.5" r="1" fill="white" opacity="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">CANNON</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-3">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- long barrel -->
+                  <rect x="0" y="6.2" width="14" height="1.6" rx="0.4" />
+                  <!-- pump body -->
+                  <rect x="7" y="4.5" width="7" height="5" rx="1" />
+                  <!-- spread: 3 pellets fanning out -->
+                  <circle cx="17.5" cy="2.5" r="1.8" />
+                  <circle cx="19.5" cy="7" r="1.8" />
+                  <circle cx="17.5" cy="11.5" r="1.8" />
+                  <!-- spread lines -->
+                  <line x1="14" y1="7" x2="16" y2="3" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="17.5" y2="7" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="16" y2="11" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="sk-label">SHOT</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-4" title="Knife [P] · Melee · 2-3 dmg · 1 cell range">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- knife blade -->
+                  <path d="M4 7 L16 3 L16 11 Z" />
+                  <!-- knife handle -->
+                  <rect x="16" y="5.5" width="5" height="3" rx="1" />
+                </svg>
+              </div>
+              <div class="sk-label">KNIFE</div>
+              <div class="sk-cd"></div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /game-layout -->
+
+      <div class="bottom-bar">
+        <div class="time-block">
+          <div class="time-label-text">TIME</div>
+          <div class="time-status" id="time-status">FROZEN</div>
+        </div>
+        <div class="tick-display" id="tick-display">TICK 0</div>
+        <button class="btn-esc" id="btn-esc">ESC</button>
+      </div>
+    </div>
+
+    <!-- ══════════════ GAME OVER ══════════════ -->
+    <div id="screen-gameover" class="screen">
+      <div class="gameover-wrap">
+        <div class="go-announce" id="go-announce">TEAM 1 WINS</div>
+        <div class="go-subtitle" id="go-subtitle">TACTICAL SUPREMACY</div>
+        <div class="go-stats" id="go-stats"></div>
+        <div class="go-buttons">
+          <button class="btn-primary" id="btn-rematch">REMATCH</button>
+          <button class="btn-secondary" id="btn-menu-go">MENU</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <script src="/units/game.js"></script>
 </body>
+
 </html>
