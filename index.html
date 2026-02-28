@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -42,8 +43,15 @@
     }
 
     @keyframes twinkle {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 1; }
+
+      0%,
+      100% {
+        opacity: 0.3;
+      }
+
+      50% {
+        opacity: 1;
+      }
     }
 
     /* Main content */
@@ -77,8 +85,15 @@
     }
 
     @keyframes logoGlow {
-      0%, 100% { text-shadow: 4px 4px 0px #000, 0 0 30px rgba(255, 215, 0, 0.5); }
-      50% { text-shadow: 4px 4px 0px #000, 0 0 50px rgba(255, 215, 0, 0.8), 0 0 80px rgba(255, 165, 0, 0.4); }
+
+      0%,
+      100% {
+        text-shadow: 4px 4px 0px #000, 0 0 30px rgba(255, 215, 0, 0.5);
+      }
+
+      50% {
+        text-shadow: 4px 4px 0px #000, 0 0 50px rgba(255, 215, 0, 0.8), 0 0 80px rgba(255, 165, 0, 0.4);
+      }
     }
 
     .subtitle {
@@ -141,8 +156,15 @@
     }
 
     @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-10px);
+      }
     }
 
     .game-card-info {
@@ -239,18 +261,22 @@
       .logo {
         font-size: 28px;
       }
+
       .subtitle {
         font-size: 10px;
       }
+
       .games-grid {
         grid-template-columns: 1fr;
       }
+
       .container {
         padding: 20px 15px;
       }
     }
   </style>
 </head>
+
 <body>
   <!-- Starfield -->
   <div class="stars" id="stars"></div>
@@ -272,7 +298,8 @@
         </div>
         <div class="game-card-info">
           <h2 class="game-card-title">PewPew PvP</h2>
-          <p class="game-card-desc">Space UFO arena - fight other players online, collect RONKE tokens, upgrade your ship and dominate the leaderboard!</p>
+          <p class="game-card-desc">Space UFO arena - fight other players online, collect RONKE tokens, upgrade your
+            ship and dominate the leaderboard!</p>
           <div class="game-card-tags">
             <span class="tag">PVP</span>
             <span class="tag">MULTIPLAYER</span>
@@ -282,18 +309,21 @@
         </div>
       </a>
 
-      <!-- UNITS Game -->
+      <!-- Adventure Game (formerly UNITS) -->
       <a href="./units/" class="game-card">
         <div class="game-card-play">PLAY</div>
-        <div class="game-card-image">
-          <span class="emoji" style="animation-delay: 0.5s;">⚔️</span>
+        <div class="game-card-image"
+          style="background: linear-gradient(135deg, #1a0a0a 0%, #2f1010 50%, #1a0a0a 100%);">
+          <span class="emoji" style="animation-delay: 0.5s;">👾</span>
         </div>
         <div class="game-card-info">
-          <h2 class="game-card-title">UNITS</h2>
-          <p class="game-card-desc">Command your units in tactical combat. Build, fight and conquer!</p>
+          <h2 class="game-card-title">DATA CRAWLER</h2>
+          <p class="game-card-desc">Solo roguelite shooter! Navigate procedurally generated dungeons, blast enemies with
+            lasers and shotguns, and push deeper into the mainframe.</p>
           <div class="game-card-tags">
-            <span class="tag">STRATEGY</span>
-            <span class="tag">UNITS</span>
+            <span class="tag">ROGUELITE</span>
+            <span class="tag">SHOOTER</span>
+            <span class="tag">DUNGEON</span>
           </div>
         </div>
       </a>
@@ -301,12 +331,14 @@
       <!-- Wave Breaker Game -->
       <a href="./wavebreaker/" class="game-card">
         <div class="game-card-play">PLAY</div>
-        <div class="game-card-image" style="background: linear-gradient(135deg, #0a0a1e 0%, #1a0a2e 50%, #0a1428 100%);">
+        <div class="game-card-image"
+          style="background: linear-gradient(135deg, #0a0a1e 0%, #1a0a2e 50%, #0a1428 100%);">
           <span class="emoji" style="animation-delay: 1s;">☄️</span>
         </div>
         <div class="game-card-info">
           <h2 class="game-card-title">WAVE BREAKER</h2>
-          <p class="game-card-desc">Defend against endless pixel asteroids! Ricochet bullets, knockback physics, level up and upgrade your weapons!</p>
+          <p class="game-card-desc">Defend against endless pixel asteroids! Ricochet bullets, knockback physics, level
+            up and upgrade your weapons!</p>
           <div class="game-card-tags">
             <span class="tag">DEFENSE</span>
             <span class="tag">SHOOTER</span>
@@ -339,4 +371,5 @@
     }
   </script>
 </body>
+
 </html>

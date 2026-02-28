@@ -1293,16 +1293,16 @@ kbd {
   transition: width 0.13s ease-out, background 0.25s, box-shadow 0.25s;
 }
 
-/* 10-segment divider overlay */
+/* 150-segment divider overlay (1 tick = 1 energy) */
 .energy-track::after {
   content: '';
   position: absolute;
   inset: 0;
   background: repeating-linear-gradient(to right,
       transparent 0,
-      transparent calc(10% - 1px),
-      rgba(0, 0, 0, 0.6) calc(10% - 1px),
-      rgba(0, 0, 0, 0.6) 10%);
+      transparent calc(100% / 150 - 1px),
+      rgba(0, 0, 0, 0.85) calc(100% / 150 - 1px),
+      rgba(0, 0, 0, 0.85) calc(100% / 150));
   pointer-events: none;
 }
 

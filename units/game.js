@@ -8,8 +8,8 @@ const BASE_COLS = 20;
 const BASE_ROWS = 16;
 const ADV_COLS = 42;   // adventure viewport width  (cells visible on screen)
 const ADV_CANVAS_H = 848;  // adventure viewport height in pixels (fixed, not tied to CELL)
-const ADV_MAP_COLS = 48;   // adventure full map width
-const ADV_MAP_ROWS = 32;   // adventure full map height
+let ADV_MAP_COLS = 48;   // adventure full map width
+let ADV_MAP_ROWS = 32;   // adventure full map height
 let COLS = BASE_COLS;
 let ROWS = BASE_ROWS;
 const CELL = 34;
@@ -170,6 +170,7 @@ const SFX = {
     setTimeout(() => this.play(50, 0.2, 0.1, 'sawtooth', -20), 50);
   },
   death() { this.play(300, 0.5, 0.1, 'square', -280); },
+  bulletClash() { this.play(500, 0.1, 0.06, 'sawtooth', -300); },
   tick() { this.play(1200, 0.05, 0.03, 'sine'); },
   select() { this.play(1800, 0.08, 0.02, 'sine'); },
   win() {
@@ -475,8 +476,30 @@ function isWall(x, y) {
 
 // ── Adventure mode ────────────────────────────────────────────────
 function initAdventure() {
+  S.floor = S.floor || 1;
+
+  // Graduali progresavimo seka
+  const floorProgression = [
+    { w: 1, h: 1 }, // Floor 1: 1 room
+    { w: 1, h: 1 }, // Floor 2: 1 room
+    { w: 2, h: 1 }, // Floor 3: 2 rooms
+    { w: 3, h: 1 }, // Floor 4: 3 rooms
+    { w: 2, h: 2 }, // Floor 5: 4 rooms
+    { w: 3, h: 2 }, // Floor 6: 6 rooms
+    { w: 3, h: 3 }, // Floor 7: 9 rooms
+    { w: 4, h: 3 }, // Floor 8: 12 rooms
+    { w: 4, h: 4 }, // Floor 9: 16 rooms
+  ];
+
+  const configIdx = Math.min(S.floor - 1, floorProgression.length - 1);
+  S.gridW = floorProgression[configIdx].w;
+  S.gridH = floorProgression[configIdx].h;
+
+  ADV_MAP_COLS = 13 * S.gridW + 2;
+  ADV_MAP_ROWS = 11 * S.gridH + 2;
   COLS = ADV_MAP_COLS;
   ROWS = ADV_MAP_ROWS;
+
   // Must be initialized BEFORE generateDungeon() which pushes into these arrays
   S.shrines = [];
   S.bloodStains = [];
@@ -507,83 +530,86 @@ function initAdventure() {
   ];
   S.selectedId = [0, 3];
 
-  // Enemies in rooms 0-8, typed by zone difficulty (room 0 = start room, 1-3 scouts)
+  // Enemies dynamic distribution
   let eid = 3;
-  [0, 1, 2, 3, 4, 5, 6, 7, 8].forEach(ri => {
-    const r = S.rooms[ri];
-    const cx = Math.floor(r.x + r.w / 2), cy = Math.floor(r.y + r.h / 2);
-    // early rooms: scouts/grunts | mid: grunts/elites | late: heavies/elites
-    const pool = ri === 0 ? [ENEMY_TYPES[1], ENEMY_TYPES[4]]          // start room: leak, worm
-      : ri <= 2 ? [ENEMY_TYPES[0], ENEMY_TYPES[1]]
-        : ri <= 5 ? [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4]]
-          : [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]];
+  const numRooms = S.rooms.length;
+
+  const poolByRoom = (ri) => {
+    if (ri === 0) return [ENEMY_TYPES[1]]; // Leaks only
+    if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
+    if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1]];
+    return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4]]; // Mid-Late
+  };
+
+  S.rooms.forEach((r, ri) => {
+    let count = 4; // Pagal nutylėjimą kiekviename kambaryje 4 priešai
+
+    if (S.floor === 1) {
+      count = 3;
+    } else if (S.floor === 2) {
+      count = 4;
+    } else {
+      // Nuo 3 lygio papildomai po truputį padidiname priešų skaičių kiekviename kambaryje
+      count = 4 + Math.floor(Math.random() * Math.min(S.floor - 2, 2));
+    }
+
+    const pool = poolByRoom(ri);
     const pick = () => pool[Math.floor(Math.random() * pool.length)];
-    const count = ri === 0 ? (Math.random() < 0.5 ? 1 : 3)           // start room: 1 or 3
-      : ri <= 2 ? 4 : ri <= 5 ? 6 : 8;
-    // spread offsets within the room
-    const offsets = [
-      [0, 0], [-2, 0], [2, 0], [0, -2],
-      [-2, -2], [2, -2], [-1, 2], [1, 2],
-      [-3, 0], [3, 0], [0, -3], [0, 3],
-      [-3, -2], [3, 2], [-2, 3], [2, -3]
-    ];
+
     for (let i = 0; i < count; i++) {
-      const [ox, oy] = offsets[i] || [0, 0];
-      let ex = Math.max(r.x + 1, Math.min(r.x + r.w - 2, cx + ox));
-      let ey = Math.max(r.y + 1, Math.min(r.y + r.h - 2, cy + oy));
-
-      // Safety: if we hit a pillar, try adjacent cells
-      if (isWall(ex, ey)) {
-        const alt = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-        for (const [adx, ady] of alt) {
-          if (!isWall(ex + adx, ey + ady)) { ex += adx; ey += ady; break; }
-        }
-      }
-
+      let ex = r.x + 1 + Math.floor(Math.random() * (r.w - 2));
+      let ey = r.y + 1 + Math.floor(Math.random() * (r.h - 2));
+      if (isWall(ex, ey)) { ex = r.x + Math.floor(r.w / 2); ey = r.y + Math.floor(r.h / 2); }
       S.units.push(mkUnit(eid++, 1, ex, ey, -1, pick()));
     }
   });
   S.totalEnemies = S.units.filter(u => u.team === 1).length;
 
-  // Chests in rooms 2, 3, 6, 8 — fractional positions work for any room size
-  [[2, 0.55, 0.45], [3, 0.3, 0.5], [6, 0.6, 0.4], [8, 0.35, 0.5]].forEach(([ri, fx, fy]) => {
+  // Chests scaling
+  const targetChests = S.floor <= 2 ? 0 : Math.min(8, 2 + Math.floor(S.floor / 3));
+  for (let c = 0; c < targetChests; c++) {
+    const ri = Math.max(1, Math.floor(Math.random() * numRooms));
     const r = S.rooms[ri];
-    S.chests.push({ x: r.x + Math.floor(r.w * fx), y: r.y + Math.floor(r.h * fy), opened: false });
-  });
+    S.chests.push({ x: r.x + 1 + Math.floor(Math.random() * (r.w - 2)), y: r.y + 1 + Math.floor(Math.random() * (r.h - 2)), opened: false });
+  }
 
-  // Exit portal in boss room (room 8) — placed toward far corner
-  const er = S.rooms[8];
-  S.exit = { x: er.x + Math.floor(er.w * 0.65), y: er.y + Math.floor(er.h * 0.55), used: false };
-  S.floor = S.floor || 1;
+  // Exit portal in last room (top-right corner)
+  const er = S.rooms[numRooms - 1];
+  S.exit = { x: er.x + er.w - 2, y: er.y + 1, used: false };
 
   // Reveal starting area
   S.units.filter(u => u.team === 0).forEach(u => revealFog(u.x, u.y));
   stats = { ticks: 0, shots: [0, 0], hits: [0, 0] };
 
-  // Snap camera to hero starting position
+  // Snap camera
   const hero0 = S.units.find(u => u.team === 0);
   if (hero0) {
     const hx0 = hero0.x * CELL + CELL * 0.5;
     const hy0 = hero0.y * CELL + CELL * 0.5;
-    const snapX = Math.max(0, Math.min(ADV_MAP_COLS * CELL - ADV_COLS * CELL, hx0 - ADV_COLS * CELL * 0.5));
-    const snapY = Math.max(0, Math.min(ADV_MAP_ROWS * CELL - ADV_CANVAS_H, hy0 - ADV_CANVAS_H * 0.5));
-    S.cam.x = snapX; S.cam.tx = snapX;
-    S.cam.y = snapY; S.cam.ty = snapY;
+    let snapX = Math.max(0, Math.min(ADV_MAP_COLS * CELL - ADV_COLS * CELL, hx0 - ADV_COLS * CELL * 0.5));
+    let snapY = Math.max(0, Math.min(ADV_MAP_ROWS * CELL - ADV_CANVAS_H, hy0 - ADV_CANVAS_H * 0.5));
+    // Jei lygio dydis mažesnis už ekrano matomumą, centruojame jį ekrano viduryje
+    if (ADV_MAP_COLS * CELL < ADV_COLS * CELL) snapX = -(ADV_COLS * CELL - ADV_MAP_COLS * CELL) / 2;
+    if (ADV_MAP_ROWS * CELL < ADV_CANVAS_H) snapY = -(ADV_CANVAS_H - ADV_MAP_ROWS * CELL) / 2;
+    S.cam.x = Math.round(snapX); S.cam.tx = S.cam.x;
+    S.cam.y = Math.round(snapY); S.cam.ty = S.cam.y;
   }
 
-  // Moving Platforms (Idea 2: Environmental Obstacles)
+  // Platforms
   S.platforms = [];
-  const platCount = 2 + Math.floor(Math.random() * 4); // 2-5 platforms
-  for (let i = 0; i < platCount; i++) {
-    const r = S.rooms[Math.floor(Math.random() * (S.rooms.length - 1)) + 1]; // not start room
-    const px = r.x + 2 + Math.floor(Math.random() * (r.w - 4));
-    const py = r.y + 2 + Math.floor(Math.random() * (r.h - 4));
-    const isVert = Math.random() < 0.5;
-    S.platforms.push({
-      x: px, y: py, lx: px, ly: py, px: px, py: py,
-      x1: px, y1: py, x2: px + (isVert ? 0 : 3), y2: py + (isVert ? 3 : 0),
-      dir: 1, speed: 0.1
-    });
+  if (S.floor > 1) {
+    const platCount = Math.min(6, 1 + Math.floor(S.floor / 2));
+    for (let i = 0; i < platCount; i++) {
+      const r = S.rooms[Math.floor(Math.random() * (numRooms - 1)) + 1];
+      const px = r.x + 2 + Math.floor(Math.random() * (r.w - 4));
+      const py = r.y + 2 + Math.floor(Math.random() * (r.h - 4));
+      const isVert = Math.random() < 0.5;
+      S.platforms.push({
+        x: px, y: py, lx: px, ly: py, px: px, py: py,
+        x1: px, y1: py, x2: px + (isVert ? 0 : 3), y2: py + (isVert ? 3 : 0),
+        dir: 1, speed: 0.1
+      });
+    }
   }
 }
 
@@ -591,86 +617,113 @@ function generateDungeon() {
   S.dungeon = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   S.rooms = [];
 
-  // 3×3 sector grid — dynamically sized from COLS/ROWS each run
-  const cw = Math.floor((COLS - 3) / 3);
-  const ch = Math.floor((ROWS - 3) / 3);
-  const c0 = 1, c1 = c0 + cw + 1, c2 = c1 + cw + 1;
-  const r0 = 1, r1 = r0 + ch + 1, r2 = r1 + ch + 1;
-  const sw2 = COLS - c2 - 1, sh2 = ROWS - r2 - 1;
-  const sectors = [
-    { x0: c0, y0: r0, sw: cw, sh: ch }, { x0: c1, y0: r0, sw: cw, sh: ch }, { x0: c2, y0: r0, sw: sw2, sh: ch },
-    { x0: c0, y0: r1, sw: cw, sh: ch }, { x0: c1, y0: r1, sw: cw, sh: ch }, { x0: c2, y0: r1, sw: sw2, sh: ch },
-    { x0: c0, y0: r2, sw: cw, sh: sh2 }, { x0: c1, y0: r2, sw: cw, sh: sh2 }, { x0: c2, y0: r2, sw: sw2, sh: sh2 },
-  ];
+  const gw = S.gridW;
+  const gh = S.gridH;
+  const totalRooms = gw * gh;
 
-  // Fixed room dimensions so corridors between adjacent rooms are exactly 2 cells.
-  // colW[i] = distance between sector[i] start and sector[i+1] start minus 2.
-  // With c0=1,c1=9,c2=17: colW=[6,6,6], rowH=[4,4,4].
-  const colX = [c0, c1, c2];
-  const rowY = [r0, r1, r2];
-  const colW = [c1 - c0 - 2, c2 - c1 - 2, COLS - c2 - 1];
-  const rowH = [r1 - r0 - 2, r2 - r1 - 2, ROWS - r2 - 1];
+  const cw = Math.floor((COLS - gw) / gw);
+  const ch = Math.floor((ROWS - gh) / gh);
 
-  sectors.forEach((s, si) => {
-    const sci = si % 3;
-    const srj = Math.floor(si / 3);
-    const w = Math.max(3, colW[sci]);
-    const h = Math.max(2, rowH[srj]);
-    const x = colX[sci];
-    const y = rowY[srj];
-    for (let ry = y; ry < y + h && ry < ROWS; ry++)
-      for (let rx = x; rx < x + w && rx < COLS; rx++)
-        S.dungeon[ry][rx] = 1;
+  const colsX = [];
+  let cx = 1;
+  for (let i = 0; i < gw; i++) { colsX.push(cx); cx += cw + 1; }
+  const rowsY = [];
+  let ry = 1;
+  for (let i = 0; i < gh; i++) { rowsY.push(ry); ry += ch + 1; }
+
+  const sectors = [];
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const sx = colsX[x];
+      const sy = rowsY[y];
+      const sw = (x === gw - 1) ? Math.max(cw, COLS - sx - 1) : cw;
+      const sh = (y === gh - 1) ? Math.max(ch, ROWS - sy - 1) : ch;
+      sectors.push({ x0: sx, y0: sy, sw, sh });
+    }
+  }
+
+  // Stamp rooms
+  sectors.forEach((s) => {
+    let w = Math.max(4, s.sw - 2);
+    let h = Math.max(3, s.sh - 2);
+
+    // Jeigu sektorius per didelis (pvz 1 lygyje gaunasi belekokio ilgio),
+    // apribojame iki normalaus "kambario" dydžio
+    if (w > 13) w = 8 + Math.floor(Math.random() * 4); // nuo 8 iki 11
+    if (h > 10) h = 6 + Math.floor(Math.random() * 4); // nuo 6 iki 9
+
+    // Išcentruojame kambarius atitinkamai sektoriui,
+    // kad kaimyninių kambarių sienos ir horizontalios ašys sutaptų koridoriams.
+    const x = s.x0 + Math.floor((s.sw - w) / 2);
+    const y = s.y0 + Math.floor((s.sh - h) / 2);
+
+    for (let j = y; j < y + h && j < ROWS; j++) {
+      for (let i = x; i < x + w && i < COLS; i++) {
+        S.dungeon[j][i] = 1;
+      }
+    }
     S.rooms.push({ x, y, w, h });
   });
 
-  // Build random spanning tree via Prim's — guarantees full connectivity
-  // with dead-end rooms (leaf nodes get only 1 corridor)
-  const gridAdj = {
-    0: [1, 3], 1: [0, 2, 4], 2: [1, 5],
-    3: [0, 4, 6], 4: [1, 3, 5, 7], 5: [2, 4, 8],
-    6: [3, 7], 7: [4, 6, 8], 8: [5, 7]
-  };
+  // Calculate adjacency spanning tree
+  const gridAdj = {};
+  for (let i = 0; i < totalRooms; i++) gridAdj[i] = [];
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const idx = y * gw + x;
+      if (x > 0) gridAdj[idx].push(idx - 1);
+      if (x < gw - 1) gridAdj[idx].push(idx + 1);
+      if (y > 0) gridAdj[idx].push(idx - gw);
+      if (y < gh - 1) gridAdj[idx].push(idx + gw);
+    }
+  }
+
   const visited = new Set([0]);
   const treeEdges = [];
-  while (visited.size < 9) {
+  while (visited.size < totalRooms) {
     const frontier = [];
-    for (const v of visited)
-      for (const n of gridAdj[v])
+    for (const v of visited) {
+      for (const n of gridAdj[v]) {
         if (!visited.has(n)) frontier.push([v, n]);
+      }
+    }
     const pick = frontier[Math.floor(Math.random() * frontier.length)];
     treeEdges.push(pick);
     visited.add(pick[1]);
   }
-  // Count how many corridors each room gets from the spanning tree
-  const degree = new Array(9).fill(0);
+
+  const degree = new Array(totalRooms).fill(0);
   treeEdges.forEach(([a, b]) => { degree[a]++; degree[b]++; });
 
   treeEdges.forEach(([a, b]) => {
-    connectRooms(S.rooms[a], S.rooms[b], 1); // always 1-wide — wide corridors hide dead ends
-  });
-
-  // Add 1-2 bonus loops only between rooms that already have ≥2 corridors —
-  // this preserves leaf nodes (degree 1) as dead ends
-  const allAdj = [[0, 1], [1, 2], [3, 4], [4, 5], [6, 7], [7, 8], [0, 3], [3, 6], [1, 4], [4, 7], [2, 5], [5, 8]];
-  const treeSet = new Set(treeEdges.map(([a, b]) => `${Math.min(a, b)}-${Math.max(a, b)}`));
-  const nonTree = allAdj.filter(([a, b]) =>
-    !treeSet.has(`${Math.min(a, b)}-${Math.max(a, b)}`) &&
-    degree[a] >= 2 && degree[b] >= 2   // never touch dead-end rooms
-  );
-  nonTree.sort(() => Math.random() - 0.5).slice(0, 2).forEach(([a, b]) => {
     connectRooms(S.rooms[a], S.rooms[b], 1);
   });
 
+  // Add 1-2 random loops for floors > 1 to increase path options
+  if (S.floor > 1 && totalRooms > 3) {
+    const allAdj = [];
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const idx = y * gw + x;
+        if (x < gw - 1) allAdj.push([idx, idx + 1]);
+        if (y < gh - 1) allAdj.push([idx, idx + gw]);
+      }
+    }
+    const treeSet = new Set(treeEdges.map(([a, b]) => `${Math.min(a, b)}-${Math.max(a, b)}`));
+    const nonTree = allAdj.filter(([a, b]) => !treeSet.has(`${Math.min(a, b)}-${Math.max(a, b)}`) && degree[a] >= 1 && degree[b] >= 1);
+    nonTree.sort(() => Math.random() - 0.5).slice(0, Math.floor(S.floor / 2) + 1).forEach(([a, b]) => {
+      connectRooms(S.rooms[a], S.rooms[b], 1);
+    });
+  }
+
   // ── Room types ─────────────────────────────────────────────────
   S.rooms[0].type = 'start';
-  S.rooms[8].type = 'boss';
-  const typePool = ['shrine', 'armory', 'vault', 'normal', 'normal', 'normal', 'normal']
-    .sort(() => Math.random() - 0.5);
-  [1, 2, 3, 4, 5, 6, 7].forEach((ri, i) => {
-    S.rooms[ri].type = typePool[i];
-    S.rooms[ri].armoryUsed = false;
-  });
+  S.rooms[totalRooms - 1].type = 'boss';
+  const typePool = ['shrine', 'armory', 'vault', 'normal', 'normal', 'normal', 'normal'];
+  for (let i = 1; i < totalRooms - 1; i++) {
+    S.rooms[i].type = typePool[Math.floor(Math.random() * typePool.length)];
+    S.rooms[i].armoryUsed = false;
+  }
 
   // Shrine objects — placed in quarter of shrine rooms
   S.rooms.forEach((r, ri) => {
@@ -1563,7 +1616,7 @@ document.addEventListener('keydown', e => {
     if (S.clockSide !== team) return;
     const unit = S.units.find(u => u.id === S.selectedId[team] && u.alive);
     if (unit && !isAdjacentToEnemy(unit)) {
-      const cycle = ['bullet', 'laser', 'heavy', 'shotgun', 'melee'];
+      const cycle = ['bullet', 'laser', 'heavy', 'shotgun'];
       unit.weapon = cycle[(cycle.indexOf(unit.weapon || 'bullet') + 1) % cycle.length];
       updateSkillBar(team);
     }
@@ -1640,6 +1693,8 @@ function resolveTick() {
   S.bullets.forEach(b => { b.px = b.x; b.py = b.y; });
 
   applyActions();
+  S.pending = [null, null];
+  setActionBadge(0, null); setActionBadge(1, null);
 
   // Adventure: enemy melee contact — hits hero once per tick when adjacent
   if (gameMode === 'adventure') {
@@ -1673,7 +1728,6 @@ function resolveTick() {
 
   // Adventure: energy, fog reveal, chests
   if (gameMode === 'adventure') {
-    if (S.pending[0]) S.energy = Math.max(0, S.energy - 1);
     S.units.filter(u => u.team === 0 && u.alive).forEach(u => revealFog(u.x, u.y));
     // Move platforms grid-wise
     if (S.platforms) {
@@ -1825,9 +1879,13 @@ function applyActions() {
       const nx = unit.x + a.dx, ny = unit.y + a.dy;
       if (!isWall(nx, ny)) {
         // Footstep trail — save old position before moving
-        if (gameMode === 'adventure' && unit.team === 0 && S.footsteps) {
-          S.footsteps.push({ x: unit.x, y: unit.y, alpha: 1.0 });
-          if (S.footsteps.length > 12) S.footsteps.shift();
+        if (gameMode === 'adventure' && unit.team === 0) {
+          if (S.footsteps) {
+            S.footsteps.push({ x: unit.x, y: unit.y, alpha: 1.0 });
+            if (S.footsteps.length > 12) S.footsteps.shift();
+          }
+          S.energy = Math.max(0, S.energy - 1);
+          spawnDmgNumber(unit.x, unit.y, '-1⚡', '#00f5ff', 12, 'normal');
         }
         unit.x = nx; unit.y = ny;
       }
@@ -2027,6 +2085,7 @@ function detectCollisions() {
       const aMidOnBPrev = bothOld && !sameDir && aMidX === b.px && aMidY === b.py;
       const bMidOnAPrev = bothOld && !sameDir && bMidX === a.px && bMidY === a.py;
       if (same || crossed || midSame || aEndBMid || bEndAMid || aLandedOnB || bLandedOnA || aMidOnBPrev || bMidOnAPrev) {
+        SFX.bulletClash();
         const aPow = a.power || 1, bPow = b.power || 1;
         if (aPow > bPow) {
           // Heavy absorbs light
@@ -2094,11 +2153,7 @@ function checkWin() {
   const t1 = S.units.some(u => u.team === 1 && u.alive);
   if (gameMode === 'adventure') {
     // In adventure: player units never die (damage → energy), only energy=0 triggers loss
-    // Win only when all enemies cleared
-    if (!t1) {
-      SFX.win();
-      S.winner = 0; S.pendingGameover = true;
-    }
+    // Win is handled by stepping into the exit portal now, so we do nothing if (!t1)
     if (S.energyDepleted) {
       BGM.stinger('loss');
       S.winner = 1; S.pendingGameover = true;
@@ -2412,10 +2467,8 @@ function loop(now) {
         else b.deadTicks++;
         return b.deadTicks < 2;
       });
-      S.pending = [null, null];
       S.meleeStrikes = [];
       if (gameMode !== 'adventure') S.clockSide = 1 - S.clockSide;
-      setActionBadge(0, null); setActionBadge(1, null);
       if (S.pendingGameover) { S.phase = 'gameover'; setTimeout(showGameOver, 500); }
       else {
         S.phase = 'frozen'; setTimeStatus('frozen');
@@ -2520,8 +2573,13 @@ function updateCamera() {
   if (heroSX > vpW - margin) tx = hx - (vpW - margin);
   if (heroSY < margin) ty = hy - margin;
   if (heroSY > vpH - margin) ty = hy - (vpH - margin);
+
   tx = Math.max(0, Math.min(mapW - vpW, tx));
   ty = Math.max(0, Math.min(mapH - vpH, ty));
+  // Jei žemėlapis mažesnis negu kamera, priverstinai išlaikom jį centre
+  if (mapW < vpW) tx = -(vpW - mapW) / 2;
+  if (mapH < vpH) ty = -(vpH - mapH) / 2;
+
   S.cam.tx = tx;
   S.cam.ty = ty;
 
@@ -4120,8 +4178,8 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
       return { action: { t: 'move', dx: unit.facing.dx, dy: unit.facing.dy }, score: 100 };
     }
 
-    // Padidinam kirmino matomumo spindulį iki 8, kad agresyviau sektų
-    if (distToHead <= 8) {
+    // Ypač agresyvus kirminas - matomumas iki 20 celių
+    if (distToHead <= 20) {
       let bestMove = safeMoves.length > 0 ? safeMoves[Math.floor(Math.random() * safeMoves.length)] : moves[0];
       let q = [{ x: unit.x, y: unit.y, move: null, d: 0 }];
       let visited = new Set([`${unit.x},${unit.y}`]);
@@ -4172,42 +4230,63 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
   }
   // --- END OF WORM AI ---
 
-  // 1. Dodge — tik 50% tikimybė kad pastebės pavojų
-  if (!curSafe && safeMoves.length > 0 && Math.random() > 0.5) {
+  // --- GRUNT / SHOOTER AI ---
+  // 1. Dodge (85% tikimybė)
+  if (!curSafe && safeMoves.length > 0 && Math.random() < 0.85) {
     const m = safeMoves[Math.floor(Math.random() * safeMoves.length)];
     unit.facing = { dx: m.dx, dy: m.dy };
-    return { action: { t: 'move', dx: m.dx, dy: m.dy }, score: 80 };
+    return { action: { t: 'move', dx: m.dx, dy: m.dy }, score: 90 };
   }
 
-  // 2. Shoot — tik kardinaliai (ne įstrižai), tik 40% tikimybė
-  if (unit.ammo > 0 && Math.random() < 0.4) {
+  // 2. Shoot (agresyvus - 100% jeigu tiesi lauko matrica ir nera sienu)
+  // Check if player is on the same row/col and clear line of sight
+  if (unit.ammo > 0) {
     for (const hu of p1Future) {
       const ddx = hu.x - unit.x, ddy = hu.y - unit.y;
-      if (unit.y === hu.y && ddx !== 0) {
-        const fo = { dx: Math.sign(ddx), dy: 0 };
-        return { action: { t: 'shoot', fo }, score: 100 - nearest.dist };
-      }
-      if (unit.x === hu.x && ddy !== 0) {
-        const fo = { dx: 0, dy: Math.sign(ddy) };
-        return { action: { t: 'shoot', fo }, score: 100 - nearest.dist };
+      if (ddx === 0 || ddy === 0) {
+        let isClear = true;
+        const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
+        const stx = Math.sign(ddx), sty = Math.sign(ddy);
+        for (let i = 1; i < dist; i++) {
+          if (isWall(unit.x + stx * i, unit.y + sty * i)) { isClear = false; break; }
+        }
+        if (isClear) {
+          const fo = { dx: stx, dy: sty };
+          return { action: { t: 'shoot', fo }, score: 100 - nearest.dist };
+        }
       }
     }
   }
 
-  // 3. Atsitiktinis judesys (dažnai)
-  if (moves.length > 0 && Math.random() < 0.6) {
-    const m = moves[Math.floor(Math.random() * moves.length)];
+  // 3. Move closer and align to player
+  let bestMove = null;
+  let bestDist = Infinity;
+  const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+  for (const m of candidateMoves) {
+    const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+    // Give a bonus if moving here aligns them exactly on the same row/col as player
+    const alignBonus = (nearest.x === m.nx || nearest.y === m.ny) ? -1.5 : 0;
+    const finalScore = d + alignBonus;
+    if (finalScore < bestDist) {
+      bestDist = finalScore;
+      bestMove = m;
+    }
+  }
+
+  // Move smart 80% of the time, random 20%
+  if (bestMove && Math.random() < 0.8) {
+    unit.facing = { dx: bestMove.dx, dy: bestMove.dy };
+    return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 50 };
+  }
+
+  // 4. Random safe move
+  if (safeMoves.length > 0) {
+    const m = safeMoves[Math.floor(Math.random() * safeMoves.length)];
     unit.facing = { dx: m.dx, dy: m.dy };
     return { action: { t: 'move', dx: m.dx, dy: m.dy }, score: 10 };
   }
 
-  // 4. Retai šauna į bendrą kryptį
-  if (unit.ammo > 0 && Math.random() < 0.3) {
-    const fo = aiShootDir(unit, nearest.x, nearest.y);
-    return { action: { t: 'shoot', fo }, score: 5 };
-  }
-
-  // 5. Bet koks judesys
+  // 5. Random any move
   if (moves.length > 0) {
     const m = moves[Math.floor(Math.random() * moves.length)];
     unit.facing = { dx: m.dx, dy: m.dy };
@@ -4412,7 +4491,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Skill bar clicks (P1)
-  ['bullet', 'laser', 'heavy', 'shotgun', 'melee'].forEach((wep, i) => {
+  ['bullet', 'laser', 'heavy', 'shotgun'].forEach((wep, i) => {
     const slot = document.getElementById(`p1-sk-${i}`);
     if (slot) slot.addEventListener('click', () => {
       SFX.init();

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start:*)",
+      "Bash(node:*)",
+      "Bash(cd:*)",
+      "Bash(sleep 2:*)",
+      "Bash(curl:*)",
+      "Bash(claude mcp:*)",
+      "mcp__spawner__spawner_orchestrate",
+      "WebFetch(domain:api.pixellab.ai)",
+      "Bash(sleep 120 && curl -s --max-time 30 \"https://api.pixellab.ai/mcp\" \\\\\n  -H \"Authorization: Bearer e9468db3-bedf-4757-9813-d6d8a23ecb78\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\n    \"jsonrpc\":\"2.0\",\n    \"id\":9,\n    \"method\":\"tools/call\",\n    \"params\":{\n      \"name\":\"get_character\",\n      \"arguments\":{\n        \"character_id\":\"6d6c2bc6-10d4-4aec-b688-b1309cc8ea43\",\n        \"include_preview\":false\n      }\n    }\n  }' 2>&1 | python3 -c \"\nimport sys, json, re\ndata = sys.stdin.read\\(\\)\nm = re.search\\(r'data: \\(.+\\)', data\\)\nif m:\n    obj = json.loads\\(m.group\\(1\\)\\)\n    txt = obj['result']['content'][0]['text']\n    print\\(txt[:3000]\\)\n\" 2>&1)",
+      "Bash(mkdir:*)",
+      "WebFetch(domain:0x-pewpew.com)",
+      "Bash(tail:*)",
+      "Bash(cd /c/Users/p3p3l/Downloads/pvp03-new && git push origin main 2>&1)",
+      "Bash(cd /c/Users/p3p3l/Downloads/pvp03-new && git pull origin main --rebase 2>&1)",
+      "Bash(cd /c/Users/p3p3l/Downloads/pvp03-new && git stash && git pull origin main --rebase 2>&1 && git stash pop 2>&1)",
+      "Bash(cd /c/Users/p3p3l/Downloads/pvp03-new && git add index.html && git stash drop && git push origin main 2>&1)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "spawner"
+  ]
+}
