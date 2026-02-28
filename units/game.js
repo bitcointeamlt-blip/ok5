@@ -2013,7 +2013,7 @@ function applyActions() {
               hit.alive = false;
               spawnDeath(hit.x, hit.y, hit.color);
               if (gameMode === 'adventure') {
-                logEvent(`Target ${getUtypeIcon(hit.utype)} destroyed.`, 'warn');
+                logEvent(`Target <span style="color:#ffffff">💀</span> destroyed.`, 'warn');
                 spawnLoot(hit.x, hit.y);
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(hit.x, hit.y));
               }
@@ -2129,7 +2129,7 @@ function detectCollisions() {
               u.alive = false;
               spawnDeath(u.x, u.y, u.color);
               if (gameMode === 'adventure') {
-                logEvent(`Target ${getUtypeIcon(u.utype)} destroyed.`, 'warn');
+                logEvent(`Target <span style="color:#ffffff">💀</span> destroyed.`, 'warn');
                 spawnLoot(u.x, u.y);
                 S.kills = (S.kills || 0) + 1;
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
@@ -2340,7 +2340,7 @@ function advanceLasers() {
                 hit.alive = false;
                 spawnDeath(hit.x, hit.y, hit.color);
                 if (gameMode === 'adventure') {
-                  logEvent(`Target ${getUtypeIcon(hit.utype)} melted.`, 'warn');
+                  logEvent(`Target <span style="color:#ffffff">💀</span> melted.`, 'warn');
                   spawnLoot(hit.x, hit.y);
                 }
               }
