@@ -204,6 +204,15 @@ function getUtypeIcon(utype) {
   return `<span style="color:${color}">💀</span>`;
 }
 
+function getUtypeLabel(utype) {
+  if (!utype) return 'ALIEN';
+  if (typeof ENEMY_TYPES !== 'undefined') {
+    const t = ENEMY_TYPES.find(e => e.type === utype);
+    if (t) return t.label;
+  }
+  return utype.toUpperCase();
+}
+
 // ── Retro Sound System — synthesized 8-bit sounds ────────────────
 const SFX = {
   ctx: null,
@@ -2007,7 +2016,7 @@ function applyActions() {
             hit.hp -= dmg; hit.hitFlash = 1;
             SFX.hit();
             if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)}` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)}`, isCrit ? 'crit' : 'info');
+              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]`, isCrit ? 'crit' : 'info');
             }
             if (hit.hp <= 0) {
               hit.alive = false;
@@ -2123,7 +2132,7 @@ function detectCollisions() {
             u.hp -= dmg; u.hitFlash = 1;
             SFX.hit();
             if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(u.utype)}` : `Dealt ${dmg} dmg to ${getUtypeIcon(u.utype)}`, isCrit ? 'crit' : 'info');
+              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(u.utype)} [${getUtypeLabel(u.utype)}]` : `Dealt ${dmg} dmg to ${getUtypeIcon(u.utype)} [${getUtypeLabel(u.utype)}]`, isCrit ? 'crit' : 'info');
             }
             if (u.hp <= 0) {
               u.alive = false;
@@ -2334,7 +2343,7 @@ function advanceLasers() {
               hit.hp -= dmg; hit.hitFlash = 1;
               SFX.hit();
               if (gameMode === 'adventure') {
-                logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)}` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)}`, isCrit ? 'crit' : 'info');
+                logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]`, isCrit ? 'crit' : 'info');
               }
               if (hit.hp <= 0) {
                 hit.alive = false;
