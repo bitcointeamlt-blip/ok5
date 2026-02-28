@@ -538,8 +538,40 @@ kbd {
   overflow: hidden !important;
 }
 
-/* Adventure mode — remove ALL old PvP frames/borders */
-.adv-mode #panel-p1,
+/* Adventure mode styling for side panels */
+.adv-mode .side-panel {
+  background: rgba(4, 6, 14, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(0, 255, 238, 0.25) !important;
+  border-radius: 6px;
+  box-shadow: inset 0 0 25px rgba(0, 255, 238, 0.08), 0 10px 40px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 255, 238, 0.2) !important;
+  position: relative;
+}
+
+/* Sci-fi top and bottom glowing edges for UI */
+.adv-mode .side-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  box-shadow: 0 0 8px var(--cyan);
+}
+
+.adv-mode .side-panel::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+}
+
+/* Adventure mode — remove ALL old PvP frames/borders from center content */
 .adv-mode .canvas-wrap,
 .adv-mode .bottom-bar,
 .adv-mode .energy-hud,
@@ -1374,10 +1406,7 @@ kbd {
    COMBAT LOG / TERMINAL
    ════════════════════════════════════════ */
 #panel-log {
-  background: rgba(4, 4, 12, 0.85);
-  border: 1px solid rgba(0, 255, 238, 0.3);
-  box-shadow: inset 0 0 20px rgba(0, 255, 238, 0.05), 0 0 15px rgba(0, 0, 0, 0.8);
-  width: 180px;
+  width: 190px;
 }
 
 #panel-log .panel-name {
@@ -1399,6 +1428,24 @@ kbd {
   line-height: 1.5;
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  position: relative;
+}
+
+/* CRT Scanline Overlay for the terminal */
+.log-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: repeating-linear-gradient(0deg,
+      transparent,
+      transparent 1px,
+      rgba(0, 0, 0, 0.25) 1px,
+      rgba(0, 0, 0, 0.25) 2px);
+  pointer-events: none;
+  z-index: 10;
 }
 
 .log-entry {
@@ -1407,6 +1454,8 @@ kbd {
   text-shadow: 1px 1px 0 #000;
   opacity: 0;
   transform: translateX(10px);
+  position: relative;
+  z-index: 2;
 }
 
 @keyframes slideInLog {
