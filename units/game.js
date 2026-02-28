@@ -2016,7 +2016,7 @@ function applyActions() {
             hit.hp -= dmg; hit.hitFlash = 1;
             SFX.hit();
             if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]`, isCrit ? 'crit' : 'info');
+              logEvent(isCrit ? `CRIT [${getUtypeLabel(hit.utype)}]: -${dmg} HP` : `HIT [${getUtypeLabel(hit.utype)}]: -${dmg} HP`, isCrit ? 'crit' : 'info');
             }
             if (hit.hp <= 0) {
               hit.alive = false;
@@ -2132,7 +2132,7 @@ function detectCollisions() {
             u.hp -= dmg; u.hitFlash = 1;
             SFX.hit();
             if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(u.utype)} [${getUtypeLabel(u.utype)}]` : `Dealt ${dmg} dmg to ${getUtypeIcon(u.utype)} [${getUtypeLabel(u.utype)}]`, isCrit ? 'crit' : 'info');
+              logEvent(isCrit ? `CRIT [${getUtypeLabel(u.utype)}]: -${dmg} HP` : `HIT [${getUtypeLabel(u.utype)}]: -${dmg} HP`, isCrit ? 'crit' : 'info');
             }
             if (u.hp <= 0) {
               u.alive = false;
@@ -2343,7 +2343,7 @@ function advanceLasers() {
               hit.hp -= dmg; hit.hitFlash = 1;
               SFX.hit();
               if (gameMode === 'adventure') {
-                logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)} [${getUtypeLabel(hit.utype)}]`, isCrit ? 'crit' : 'info');
+                logEvent(isCrit ? `CRIT [${getUtypeLabel(hit.utype)}]: -${dmg} HP` : `HIT [${getUtypeLabel(hit.utype)}]: -${dmg} HP`, isCrit ? 'crit' : 'info');
               }
               if (hit.hp <= 0) {
                 hit.alive = false;
