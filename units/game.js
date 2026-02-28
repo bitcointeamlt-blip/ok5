@@ -147,12 +147,20 @@ function logEvent(msg, type = 'info') {
   if (!container) return;
   const el = document.createElement('div');
   el.className = `log-entry log-type-${type}`;
-  el.innerText = `> ${msg}`;
+  el.innerHTML = `> ${msg}`; // using innerHTML to enable emojis & tags if needed
   container.appendChild(el);
   while (container.childNodes.length > LOG_MAX_LINES) {
     container.removeChild(container.firstChild);
   }
   container.scrollTop = container.scrollHeight;
+}
+
+function getUtypeIcon(utype) {
+  if (utype === 'bug') return '<span style="color:#ff3c55">👾</span>';
+  if (utype === 'worm') return '<span style="color:#ff9900">🐛</span>';
+  if (utype === 'leak') return '<span style="color:#00ffaa">🦠</span>';
+  if (utype === 'corrupt') return '<span style="color:#bb33ff">👾</span>';
+  return '<span style="color:#ffffff">💀</span>';
 }
 
 // ── Retro Sound System — synthesized 8-bit sounds ────────────────
@@ -1958,13 +1966,13 @@ function applyActions() {
             hit.hp -= dmg; hit.hitFlash = 1;
             SFX.hit();
             if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to [${hit.utype || 'alien'}]` : `Dealt ${dmg} dmg to [${hit.utype || 'alien'}]`, isCrit ? 'crit' : 'info');
+              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)}` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)}`, isCrit ? 'crit' : 'info');
             }
             if (hit.hp <= 0) {
               hit.alive = false;
               spawnDeath(hit.x, hit.y, hit.color);
               if (gameMode === 'adventure') {
-                logEvent(`Target [${hit.utype || 'alien'}] destroyed.`, 'warn');
+                logEvent(`Target ${getUtypeIcon(hit.utype)} destroyed.`, 'warn');
                 spawnLoot(hit.x, hit.y);
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(hit.x, hit.y));
               }
@@ -2074,13 +2082,13 @@ function detectCollisions() {
             u.hp -= dmg; u.hitFlash = 1;
             SFX.hit();
             if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to [${u.utype || 'alien'}]` : `Dealt ${dmg} dmg to [${u.utype || 'alien'}]`, isCrit ? 'crit' : 'info');
+              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(u.utype)}` : `Dealt ${dmg} dmg to ${getUtypeIcon(u.utype)}`, isCrit ? 'crit' : 'info');
             }
             if (u.hp <= 0) {
               u.alive = false;
               spawnDeath(u.x, u.y, u.color);
               if (gameMode === 'adventure') {
-                logEvent(`Target [${u.utype || 'alien'}] destroyed.`, 'warn');
+                logEvent(`Target ${getUtypeIcon(u.utype)} destroyed.`, 'warn');
                 spawnLoot(u.x, u.y);
                 S.kills = (S.kills || 0) + 1;
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
@@ -2285,13 +2293,13 @@ function advanceLasers() {
               hit.hp -= dmg; hit.hitFlash = 1;
               SFX.hit();
               if (gameMode === 'adventure') {
-                logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to [${hit.utype || 'alien'}]` : `Dealt ${dmg} dmg to [${hit.utype || 'alien'}]`, isCrit ? 'crit' : 'info');
+                logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to ${getUtypeIcon(hit.utype)}` : `Dealt ${dmg} dmg to ${getUtypeIcon(hit.utype)}`, isCrit ? 'crit' : 'info');
               }
               if (hit.hp <= 0) {
                 hit.alive = false;
                 spawnDeath(hit.x, hit.y, hit.color);
                 if (gameMode === 'adventure') {
-                  logEvent(`Target [${hit.utype || 'alien'}] melted.`, 'warn');
+                  logEvent(`Target ${getUtypeIcon(hit.utype)} melted.`, 'warn');
                   spawnLoot(hit.x, hit.y);
                 }
               }
