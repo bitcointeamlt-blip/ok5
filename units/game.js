@@ -139,6 +139,22 @@ let S = {};
 let stats = {};
 let aiThinkInterval = null;
 
+// ── Event Log ────────────────────────────────────────────────────
+const LOG_MAX_LINES = 16;
+function logEvent(msg, type = 'info') {
+  if (gameMode !== 'adventure') return;
+  const container = document.getElementById('combat-log');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = `log-entry log-type-${type}`;
+  el.innerText = `> ${msg}`;
+  container.appendChild(el);
+  while (container.childNodes.length > LOG_MAX_LINES) {
+    container.removeChild(container.firstChild);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
 // ── Retro Sound System — synthesized 8-bit sounds ────────────────
 const SFX = {
   ctx: null,
@@ -1835,9 +1851,11 @@ function resolveTick() {
             S.energy = Math.min(ENERGY_MAX, S.energy + l.val);
             const her = S.units.find(un => un.team === 0 && un.alive);
             if (her) her.collectFlash = 1.0;
+            logEvent(`Recovered ${l.val} energy!`, 'loot');
             spawnDmgNumber(l.x, l.y, `+${l.val} VOLTS`, '#00ffee', 16, 'normal');
           } else {
             S.coins = (S.coins || 0) + l.val;
+            logEvent(`Found ${l.val} data fragments.`, 'loot');
             spawnDmgNumber(l.x, l.y, `+${l.val} CACHE`, '#ffee00', 16, 'normal');
           }
         }
@@ -2027,6 +2045,7 @@ function detectCollisions() {
       if (hitFinal || hitMid || hitPrev || hitMidPrev || hitWormBody) {
         b.active = false;
         if (Math.random() < MISS_CHANCE) {
+          logEvent(`Shot missed!`, 'info');
           spawnDmgNumber(u.x, u.y, 'MISS', '#88bbff', 13, 'miss');
           spawnHit(u.x, u.y, '#88bbff', 5);
         } else {
@@ -2042,6 +2061,7 @@ function detectCollisions() {
           S.shake = Math.max(S.shake, isCrit ? 14 : (heavy ? 12 : 9));
           if (gameMode === 'adventure' && u.team === 0) {
             S.energy = Math.max(0, S.energy - dmg);
+            logEvent(`SYSTEM DAMAGE: Hero took ${dmg} DMG!`, 'dmg');
             u.hitFlash = 1; u.hitTimer = 1000;
             SFX.heroHit();
           } else {
@@ -2051,6 +2071,7 @@ function detectCollisions() {
               u.alive = false;
               spawnDeath(u.x, u.y, u.color);
               if (gameMode === 'adventure') {
+                logEvent(`Target [${u.utype || 'alien'}] destroyed.`, 'info');
                 spawnLoot(u.x, u.y);
                 S.kills = (S.kills || 0) + 1;
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
@@ -2246,6 +2267,7 @@ function advanceLasers() {
             S.shake = Math.max(S.shake, isCrit ? 14 : 12);
             if (laserHeroHit) {
               S.energy = Math.max(0, S.energy - dmg);
+              logEvent(`SYSTEM DAMAGE (LASER): Hero took ${dmg} DMG!`, 'dmg');
               hit.hitFlash = 1; hit.hitTimer = 1000;
               SFX.heroHit();
             } else {
@@ -2254,7 +2276,10 @@ function advanceLasers() {
               if (hit.hp <= 0) {
                 hit.alive = false;
                 spawnDeath(hit.x, hit.y, hit.color);
-                if (gameMode === 'adventure') spawnLoot(hit.x, hit.y);
+                if (gameMode === 'adventure') {
+                  logEvent(`Target [${hit.utype || 'alien'}] melted.`, 'info');
+                  spawnLoot(hit.x, hit.y);
+                }
               }
             }
           }
@@ -4366,6 +4391,8 @@ function startGame(mode) {
       _p2PanelEl = panelP2;
       panelP2.parentNode.removeChild(panelP2);
     }
+    const logPanel = document.getElementById('panel-log');
+    if (logPanel) logPanel.style.display = 'flex';
     if (screenGame) screenGame.classList.add('adv-mode');
     advCanvasW = ADV_COLS * CELL;
     updateEnergyHud();
@@ -4378,8 +4405,12 @@ function startGame(mode) {
     if (unitList) unitList.style.display = '';
     if (p1badge) p1badge.style.display = '';
     if (_p2PanelEl && gameLayout && !document.getElementById('panel-p2')) {
-      gameLayout.appendChild(_p2PanelEl);
+      const logPanel = document.getElementById('panel-log');
+      if (logPanel) gameLayout.insertBefore(_p2PanelEl, logPanel);
+      else gameLayout.appendChild(_p2PanelEl);
     }
+    const logPanel = document.getElementById('panel-log');
+    if (logPanel) logPanel.style.display = 'none';
     if (screenGame) screenGame.classList.remove('adv-mode');
     advCanvasW = BOARD_W;
   }
