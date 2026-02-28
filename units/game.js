@@ -1951,15 +1951,20 @@ function applyActions() {
           S.shake = Math.max(S.shake, 15);
           if (meleeHeroHit) {
             S.energy = Math.max(0, S.energy - dmg);
+            logEvent(`SYSTEM DAMAGE: Hero took ${dmg} DMG! (Melee)`, 'dmg');
             hit.hitFlash = 1; hit.hitTimer = 1000;
             SFX.heroHit();
           } else {
             hit.hp -= dmg; hit.hitFlash = 1;
             SFX.hit();
+            if (gameMode === 'adventure') {
+              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to [${hit.utype || 'alien'}]` : `Dealt ${dmg} dmg to [${hit.utype || 'alien'}]`, isCrit ? 'crit' : 'info');
+            }
             if (hit.hp <= 0) {
               hit.alive = false;
               spawnDeath(hit.x, hit.y, hit.color);
               if (gameMode === 'adventure') {
+                logEvent(`Target [${hit.utype || 'alien'}] destroyed.`, 'warn');
                 spawnLoot(hit.x, hit.y);
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(hit.x, hit.y));
               }
@@ -2045,7 +2050,8 @@ function detectCollisions() {
       if (hitFinal || hitMid || hitPrev || hitMidPrev || hitWormBody) {
         b.active = false;
         if (Math.random() < MISS_CHANCE) {
-          logEvent(`Shot missed!`, 'info');
+          const isHero = gameMode === 'adventure' && u.team === 0;
+          logEvent(isHero ? `EVADED attack!` : `Shot missed!`, isHero ? 'loot' : 'warn');
           spawnDmgNumber(u.x, u.y, 'MISS', '#88bbff', 13, 'miss');
           spawnHit(u.x, u.y, '#88bbff', 5);
         } else {
@@ -2067,11 +2073,14 @@ function detectCollisions() {
           } else {
             u.hp -= dmg; u.hitFlash = 1;
             SFX.hit();
+            if (gameMode === 'adventure') {
+              logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to [${u.utype || 'alien'}]` : `Dealt ${dmg} dmg to [${u.utype || 'alien'}]`, isCrit ? 'crit' : 'info');
+            }
             if (u.hp <= 0) {
               u.alive = false;
               spawnDeath(u.x, u.y, u.color);
               if (gameMode === 'adventure') {
-                logEvent(`Target [${u.utype || 'alien'}] destroyed.`, 'info');
+                logEvent(`Target [${u.utype || 'alien'}] destroyed.`, 'warn');
                 spawnLoot(u.x, u.y);
                 S.kills = (S.kills || 0) + 1;
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
@@ -2254,6 +2263,8 @@ function advanceLasers() {
         });
         if (hit) {
           if (Math.random() < MISS_CHANCE) {
+            const isHero = gameMode === 'adventure' && hit.team === 0;
+            logEvent(isHero ? `EVADED laser attack!` : `Laser missed!`, isHero ? 'loot' : 'warn');
             spawnDmgNumber(hit.x, hit.y, 'MISS', '#88bbff', 13, 'miss');
             spawnHit(hit.x, hit.y, '#88bbff', 5);
           } else {
@@ -2273,11 +2284,14 @@ function advanceLasers() {
             } else {
               hit.hp -= dmg; hit.hitFlash = 1;
               SFX.hit();
+              if (gameMode === 'adventure') {
+                logEvent(isCrit ? `CRITICAL HIT! Dealt ${dmg} to [${hit.utype || 'alien'}]` : `Dealt ${dmg} dmg to [${hit.utype || 'alien'}]`, isCrit ? 'crit' : 'info');
+              }
               if (hit.hp <= 0) {
                 hit.alive = false;
                 spawnDeath(hit.x, hit.y, hit.color);
                 if (gameMode === 'adventure') {
-                  logEvent(`Target [${hit.utype || 'alien'}] melted.`, 'info');
+                  logEvent(`Target [${hit.utype || 'alien'}] melted.`, 'warn');
                   spawnLoot(hit.x, hit.y);
                 }
               }
