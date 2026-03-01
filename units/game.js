@@ -1980,7 +1980,7 @@ function applyActions() {
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 3;
         S.energy = Math.max(0, S.energy - nrgCost);
         // Atvaizduojame nubrauktą energiją ginklo šūviui vizualiai (greit asimiliuojasi)
-        nrgObj = spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
+        nrgObj = spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'fast');
       }
 
       if (wep === 'laser') {
@@ -2291,8 +2291,8 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
     x: (gx + 0.5) * CELL + (Math.random() - 0.5) * CELL * 0.5,
     y: (gy + 0.5) * CELL - CELL * 0.15 + (Math.random() - 0.5) * CELL * 0.4,
     vx: (Math.random() - 0.5) * 4.0, // Random horizontal drift
-    vy: type === 'miss' ? -0.8 - Math.random() * 0.6 : -1.5 - Math.random() * 1.5, // Random height
-    decay: type === 'miss' ? 0.02 + Math.random() * 0.015 : 0.01 + Math.random() * 0.012, // Random disappear speed
+    vy: type === 'miss' ? -0.8 - Math.random() * 0.6 : -1.5 - Math.random() * 1.5,
+    decay: type === 'fast' ? 0.05 + Math.random() * 0.015 : (type === 'miss' ? 0.02 + Math.random() * 0.015 : 0.01 + Math.random() * 0.012),
     text, color, size: size || 20,
     life: 1,
     scale: initScale, type,
@@ -2372,7 +2372,7 @@ function advanceLasers() {
       // Pradėti šūvio pasiliekamąjį efektą (nebe aktyvus logikoje, bet lieka vizualiai)
       laser.active = false;
       laser.firing = true;
-      laser.fireTimer = 1.5; // 1.5 sec
+      laser.fireTimer = 0.4; // 0.4 sec trumpas žybsnis (pvp mode fallback)
     }
   });
 }
@@ -2724,7 +2724,7 @@ function drawLasers() {
       if (laser.nrgObj) {
         intensity = Math.max(0, laser.nrgObj.life);
       } else {
-        intensity = (laser.fireTimer / 1.5); // Fades from 1 to 0 over 1.5 sec
+        intensity = (laser.fireTimer / 0.4); // Fades from 1 to 0 over 0.4 sec
       }
     } else {
       pulse = (Math.sin(now * 0.015) + 1) * 0.5;
