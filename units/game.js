@@ -2365,10 +2365,12 @@ function advanceLasers() {
         if (isWall(wx, wy)) spawnWallDust(wx, wy, laser.dx, laser.dy);
       }
       spawnLaserFire(laser);
+      // Pradėti šūvio pasiliekamąjį efektą (nebe aktyvus logikoje, bet lieka vizualiai)
       laser.active = false;
+      laser.firing = true;
+      laser.fireTimer = 1.5; // 1.5 sec
     }
   });
-  S.lasers = S.lasers.filter(l => l.active);
 }
 
 function spawnMeleeEffect(ux, uy, dx, dy, color) {
@@ -2616,6 +2618,16 @@ function loop(now) {
     return n.life > 0;
   });
 
+  S.lasers = S.lasers.filter(l => {
+    if (l.active) return true;
+    if (l.firing) {
+      l.fireTimer -= dt / 1000;
+      if (l.fireTimer <= 0) return false;
+      return true;
+    }
+    return false;
+  });
+
   // Draw
   ctx.save();
   if (S.shake > 0.3) ctx.translate((Math.random() - 0.5) * S.shake, (Math.random() - 0.5) * S.shake);
@@ -2696,10 +2708,20 @@ function clearCanvas() {
 function drawLasers() {
   const now = performance.now();
   S.lasers.forEach(laser => {
-    if (!laser.active || !laser.cells.length) return;
-    const pulse = (Math.sin(now * 0.015) + 1) * 0.5;
-    // laser.chargeLeft usually starts at 2 and counts down
-    const progress = Math.max(0, (2 - laser.chargeLeft) / 2); // 0 at start, larger as it nears firing
+    if (!laser.cells.length) return;
+
+    // Jeigu jau iššautas, jis blanksta. Jei dar kraunasi, jis ryškėja ir dreba.
+    let pulse, progress, intensity;
+
+    if (laser.firing) {
+      pulse = (Math.sin(now * 0.05) + 1) * 0.5;
+      progress = 1.0;
+      intensity = (laser.fireTimer / 1.5); // Fades from 1 to 0 over 1.5 sec
+    } else {
+      pulse = (Math.sin(now * 0.015) + 1) * 0.5;
+      progress = Math.max(0, (2 - laser.chargeLeft) / 2);
+      intensity = 0.2 + progress * 0.5 + pulse * 0.3;
+    }
 
     // (Blinking squares and crosshairs removed per user request)
     const sx = (laser.ox + 0.5) * CELL, sy = (laser.oy + 0.5) * CELL;
@@ -2714,7 +2736,6 @@ function drawLasers() {
     ctx.rotate(angle);
 
     // Unstable electrical/plasma thick beam
-    const intensity = 0.2 + progress * 0.5 + pulse * 0.3;
     ctx.globalAlpha = intensity;
     ctx.shadowColor = laser.color; ctx.shadowBlur = 25;
     ctx.fillStyle = laser.color;
@@ -2748,25 +2769,29 @@ function drawLasers() {
     ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
 
-    // Source gathering particles
-    ctx.globalAlpha = 0.8;
-    ctx.fillStyle = laser.color;
-    for (let p = 0; p < (4 + progress * 4); p++) {
-      const px = (Math.random() - 0.5) * 20;
-      const py = (Math.random() - 0.5) * 20;
-      ctx.beginPath(); ctx.arc(px, py, Math.random() * 2 + 0.5, 0, Math.PI * 2); ctx.fill();
+    // Source gathering particles (tik kraunantis)
+    if (!laser.firing) {
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = laser.color;
+      for (let p = 0; p < (4 + progress * 4); p++) {
+        const px = (Math.random() - 0.5) * 20;
+        const py = (Math.random() - 0.5) * 20;
+        ctx.beginPath(); ctx.arc(px, py, Math.random() * 2 + 0.5, 0, Math.PI * 2); ctx.fill();
+      }
     }
     ctx.restore();
 
-    // Projected text tracking endpoint
-    ctx.save();
-    ctx.globalAlpha = 0.9 + pulse * 0.1;
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = laser.color; ctx.shadowBlur = 18;
-    ctx.font = `bold ${Math.round(CELL * 0.45)}px Courier New`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(`[ ${laser.chargeLeft} ]`, ex, ey - CELL * 0.4);
-    ctx.restore();
+    // Projected text tracking endpoint (nerodomas kai jau šauna)
+    if (!laser.firing) {
+      ctx.save();
+      ctx.globalAlpha = 0.9 + pulse * 0.1;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = laser.color; ctx.shadowBlur = 18;
+      ctx.font = `bold ${Math.round(CELL * 0.45)}px Courier New`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`[ ${laser.chargeLeft} ]`, ex, ey - CELL * 0.4);
+      ctx.restore();
+    }
   });
 }
 
