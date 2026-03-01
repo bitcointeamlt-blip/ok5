@@ -1294,15 +1294,6 @@ function drawFog() {
           }
         }
       }
-      if (S.lasers) {
-        for (const laser of S.lasers) {
-          if (!laser.active && !laser.firing) continue;
-          for (const cell of laser.cells) {
-            const d = Math.hypot(c - cell.x, r - cell.y);
-            if (d < bDist && d <= 2.5 && !isShadowed(cell.x, cell.y, c, r)) bDist = d;
-          }
-        }
-      }
       const bulletLit = bDist <= 1.0;
       const bulletGlow = bDist <= 2.5;
 
@@ -2377,10 +2368,26 @@ function advanceLasers() {
         if (isWall(wx, wy)) spawnWallDust(wx, wy, laser.dx, laser.dy);
       }
       spawnLaserFire(laser);
+
+      if (gameMode === 'adventure') {
+        if (!S.lightGhosts) S.lightGhosts = [];
+        for (const cell of laser.cells) {
+          S.lightGhosts.push({
+            x: cell.x, y: cell.y,
+            bornTime: performance.now(),
+            holdMs: 3000,
+            fadeDur: 3000,
+            r: 2.5,
+            alpha: 0.35,
+            color: laser.color
+          });
+        }
+      }
+
       // Pradėti šūvio pasiliekamąjį efektą (nebe aktyvus logikoje, bet lieka vizualiai)
       laser.active = false;
       laser.firing = true;
-      laser.fireTimer = 0.4; // 0.4 sec trumpas žybsnis (pvp mode fallback)
+      laser.fireTimer = 0.4; // 0.4 sec trumpas žybsnis pačiai spindulio linijai
     }
   });
 }
