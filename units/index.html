@@ -65,6 +65,85 @@
       </div>
     </div>
 
+    <!-- ══════════════ HUB ROOM / BASE ══════════════ -->
+    <div id="screen-hub" class="screen">
+      <div class="hub-wrap">
+        <div class="hub-header">
+          <div class="hub-title">SYSTEM HUB <span class="blink">_</span></div>
+          <div class="hub-stats">
+            <div class="stat-box"><span class="stat-icon">💾</span> <span id="hub-cache">0</span> CACHE</div>
+            <div class="stat-box"><span class="stat-icon">⚡</span> <span id="hub-energy">100</span> MAX NRG</div>
+          </div>
+        </div>
+
+        <div class="hub-main">
+          <!-- UPGRADE TERMINAL -->
+          <div class="hub-panel left-panel">
+            <div class="panel-header">UPGRADES</div>
+            <div class="upgrades-list">
+              <!-- Energy Upgrade -->
+              <div class="upgrade-card" id="upg-energy">
+                <div class="upg-info">
+                  <div class="upg-name">BATTERY EXPANSION</div>
+                  <div class="upg-desc">+10 Max Energy</div>
+                  <div class="upg-lvl">LVL <span id="lvl-energy">0</span></div>
+                </div>
+                <button class="btn-buy" onclick="buyUpgrade('maxEnergy', 50, 10)">50 💾</button>
+              </div>
+
+              <!-- Melee Upgrade -->
+              <div class="upgrade-card" id="upg-melee">
+                <div class="upg-info">
+                  <div class="upg-name">KINETIC EDGE</div>
+                  <div class="upg-desc">+1 Melee Damage</div>
+                  <div class="upg-lvl">LVL <span id="lvl-melee">0</span></div>
+                </div>
+                <button class="btn-buy" onclick="buyUpgrade('meleeDmg', 100, 1)">100 💾</button>
+              </div>
+
+              <!-- HP / Armor Upgrade -->
+              <div class="upgrade-card" id="upg-armor">
+                <div class="upg-info">
+                  <div class="upg-name">STRUCTURAL INTEGRITY</div>
+                  <div class="upg-desc">+1 Max HP</div>
+                  <div class="upg-lvl">LVL <span id="lvl-armor">0</span></div>
+                </div>
+                <button class="btn-buy" onclick="buyUpgrade('armor', 75, 1)">75 💾</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- MISSION SELECT TERMINAL -->
+          <div class="hub-panel right-panel">
+            <div class="panel-header">MISSION SELECT</div>
+            <div class="mission-list">
+              <div class="mission-card" onclick="deployMission(1)">
+                <div class="mis-name">SECTOR 1 [ OUTSKIRTS ]</div>
+                <div class="mis-desc">Threat: Low | Size: Small</div>
+                <button class="btn-deploy">DEPLOY</button>
+              </div>
+              <div class="mission-card locked" id="mis-2" onclick="deployMission(2)">
+                <div class="mis-name">SECTOR 2 [ DATAFLOW ]</div>
+                <div class="mis-desc">Threat: Medium | Size: Med</div>
+                <button class="btn-deploy">LOCKED</button>
+              </div>
+              <div class="mission-card locked" id="mis-3" onclick="deployMission(3)">
+                <div class="mis-name">SECTOR 3 [ CORE ]</div>
+                <div class="mis-desc">Threat: High | Size: Large</div>
+                <button class="btn-deploy">LOCKED</button>
+              </div>
+            </div>
+
+            <div class="return-main">
+              <button class="btn-back"
+                onclick="document.getElementById('screen-hub').classList.remove('active'); document.getElementById('screen-menu').classList.add('active');">BACK
+                TO MENU</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══════════════ GAME ══════════════ -->
     <div id="screen-game" class="screen">
       <div class="game-layout">

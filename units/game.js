@@ -38,6 +38,90 @@ const CELL_DARK = '#07070f';
 const CELL_LIGHT = '#0a0a18';
 const GRID_COLOR = '#161630';
 
+// ── Persistent Profile System ────────────────────────────────────
+let Profile = {
+  cache: 0,
+  upgrades: {
+    maxEnergy: 0, // kiek vienetų bonus energijos turi (pvz. +10, +20)
+    meleeDmg: 0,  // kiek bonus žalos melee
+    armor: 0      // bonus MaxHP
+  },
+  highestSector: 1
+};
+
+function loadProfile() {
+  const saved = localStorage.getItem('timelock_profile');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      Profile = { ...Profile, ...parsed };
+      // Ensure nested upgrades exist in case of old save formats
+      if (!Profile.upgrades) Profile.upgrades = { maxEnergy: 0, meleeDmg: 0, armor: 0 };
+    } catch (e) { console.error("Could not load profile", e); }
+  }
+}
+
+function saveProfile() {
+  localStorage.setItem('timelock_profile', JSON.stringify(Profile));
+}
+
+function updateHubUI() {
+  const elCache = document.getElementById('hub-cache');
+  const elEnergy = document.getElementById('hub-energy');
+  const lvlEnergy = document.getElementById('lvl-energy');
+  const lvlMelee = document.getElementById('lvl-melee');
+  const lvlArmor = document.getElementById('lvl-armor');
+
+  if (elCache) elCache.innerText = Profile.cache;
+  // Bazinė energija yra 100, todėl atvaizduojame kiek iš viso pasiekta
+  if (elEnergy) elEnergy.innerText = 100 + (Profile.upgrades.maxEnergy || 0);
+
+  if (lvlEnergy) lvlEnergy.innerText = (Profile.upgrades.maxEnergy / 10) || 0;
+  if (lvlMelee) lvlMelee.innerText = Profile.upgrades.meleeDmg || 0;
+  if (lvlArmor) lvlArmor.innerText = Profile.upgrades.armor || 0;
+
+  // Unlock sectors based on progress
+  for (let i = 2; i <= 3; i++) {
+    const misCard = document.getElementById(`mis-${i}`);
+    if (misCard) {
+      if (Profile.highestSector >= i) {
+        misCard.classList.remove('locked');
+        misCard.querySelector('.btn-deploy').innerText = 'DEPLOY';
+      } else {
+        misCard.classList.add('locked');
+        misCard.querySelector('.btn-deploy').innerText = 'LOCKED';
+      }
+    }
+  }
+}
+
+window.buyUpgrade = function (type, cost, amount) {
+  if (Profile.cache >= cost) {
+    Profile.cache -= cost;
+    Profile.upgrades[type] = (Profile.upgrades[type] || 0) + amount;
+    saveProfile();
+    updateHubUI();
+    // Play some UI sound if applicable
+    if (SFX && SFX.pickup) SFX.pickup();
+  } else {
+    // Error sound or flash
+    const el = document.getElementById('hub-cache');
+    if (el) {
+      el.style.color = '#ff3c55';
+      setTimeout(() => el.style.color = '', 300);
+    }
+  }
+};
+
+window.deployMission = function (sector) {
+  if (Profile.highestSector < sector) return;
+  // Initialize game using sector info
+  // TODO: Add actual generation logic for harder sectors later
+  document.getElementById('screen-hub').classList.remove('active');
+  document.getElementById('screen-game').classList.add('active');
+  initGame('adventure');
+};
+
 
 // ── Animated hero sprite system (declared early so IIFE below can populate it) ─
 const heroAnimFrames = { idle: {}, walk: {}, fight: {} };
@@ -1880,24 +1964,28 @@ function resolveTick() {
       }
     });
     // Armory room logic removed because weapons use energy now 
-    // Exit portal
+    // Exit portal (Extraction Point)
     if (S.exit && !S.exit.used) {
       const onExit = S.units.find(u => u.team === 0 && u.alive && u.x === S.exit.x && u.y === S.exit.y);
       if (onExit) {
         S.exit.used = true;
         S.energy = Math.min(ENERGY_MAX, S.energy + 10);
         spawnDmgNumber(S.exit.x, S.exit.y, '+10 NRG', '#00ffaa', 20, 'normal');
-        S.floor = (S.floor || 1) + 1;
+
+        // Successful Extraction!
+        Profile.cache += (S.coins || 0);
+        if (S.floor > Profile.highestSector) Profile.highestSector = S.floor;
+        saveProfile();
+        updateHubUI();
+
         setTimeout(() => {
-          const savedEnergy = S.energy;
-          const savedFloor = S.floor;
-          initAdventure();
-          S.energy = savedEnergy;
-          S.floor = savedFloor;
+          document.getElementById('screen-game').classList.remove('active');
+          document.getElementById('screen-hub').classList.add('active');
+          S.phase = 'frozen'; // Stop ticks
         }, 1400);
       }
     }
-    if (S.energy <= 0 && !S.winner) { S.energyDepleted = true; S.winner = 1; S.pendingGameover = true; }
+    if (S.energy <= 0 && !S.winner && !S.pendingGameover) { S.energyDepleted = true; S.winner = 1; S.pendingGameover = true; }
 
     S.loot && S.loot.forEach(l => {
       if (!l.collected) {
@@ -2002,7 +2090,8 @@ function applyActions() {
         spawnMeleeEffect(unit.x, unit.y, sd.dx, sd.dy, unit.color);
         if (hit) {
           const isCrit = Math.random() < CRIT_CHANCE;
-          const dmg = isCrit ? 2 : 1;
+          const bonusMelee = Profile.upgrades?.meleeDmg || 0;
+          const dmg = (isCrit ? 2 : 1) + bonusMelee;
           stats.hits[team]++;
           const meleeHeroHit = gameMode === 'adventure' && hit.team === 0;
           spawnDmgNumber(hit.x, hit.y, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : (meleeHeroHit ? '#ff2222' : '#ff22aa'), 22, isCrit ? 'crit' : 'normal');
@@ -2241,13 +2330,19 @@ function checkWin() {
   const t0 = S.units.some(u => u.team === 0 && u.alive);
   const t1 = S.units.some(u => u.team === 1 && u.alive);
   if (gameMode === 'adventure') {
-    // In adventure: player units never die (damage → energy), only energy=0 triggers loss
-    // Win is handled by stepping into the exit portal now, so we do nothing if (!t1)
     if (S.energyDepleted) {
       BGM.stinger('loss');
       S.winner = 1; S.pendingGameover = true;
+      setTimeout(() => {
+        // Player Died: Lose collected cache for this run, return to Hub
+        updateHubUI();
+        document.getElementById('screen-game').classList.remove('active');
+        document.getElementById('screen-hub').classList.add('active');
+        S.phase = 'frozen';
+      }, 2500);
     }
   } else {
+    // PvP Game Over logic
     if (!t0 && !t1) {
       BGM.stinger('loss');
       S.winner = -1; S.pendingGameover = true;
@@ -4589,10 +4684,28 @@ document.addEventListener('DOMContentLoaded', () => {
   ctx = canvas.getContext('2d');
   canvas.width = BOARD_W; canvas.height = BOARD_H;
 
-  document.getElementById('btn-adv').addEventListener('click', () => { SFX.init(); startGame('adventure'); });
+  // Screen routing
+  document.getElementById('btn-adv').addEventListener('click', () => {
+    SFX.init();
+    loadProfile();
+    updateHubUI();
+    document.getElementById('screen-menu').classList.remove('active');
+    document.getElementById('screen-hub').classList.add('active');
+  });
+
   document.getElementById('btn-1p').addEventListener('click', () => { SFX.init(); startGame('pve'); });
   document.getElementById('btn-2p').addEventListener('click', () => { SFX.init(); startGame('pvp'); });
-  document.getElementById('btn-rematch').addEventListener('click', () => { SFX.init(); startGame(); });
+
+  document.getElementById('btn-rematch').addEventListener('click', () => {
+    SFX.init();
+    if (gameMode === 'adventure') {
+      document.getElementById('screen-gameover').classList.remove('active');
+      document.getElementById('screen-hub').classList.add('active');
+    } else {
+      startGame();
+    }
+  });
+
   document.getElementById('btn-menu-go').addEventListener('click', () => { SFX.init(); backToMenu(); });
   document.getElementById('btn-esc').addEventListener('click', () => { SFX.init(); backToMenu(); });
 
@@ -4601,7 +4714,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (S.phase === 'gameover') {
       if (e.code === 'Space' || e.key === 'r' || e.key === 'R') {
         SFX.init();
-        startGame();
+        if (gameMode === 'adventure') {
+          document.getElementById('screen-gameover').classList.remove('active');
+          document.getElementById('screen-hub').classList.add('active');
+        } else {
+          startGame();
+        }
       } else if (e.key === 'Escape') {
         SFX.init();
         backToMenu();
