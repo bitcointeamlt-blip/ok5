@@ -2701,24 +2701,7 @@ function drawLasers() {
     // laser.chargeLeft usually starts at 2 and counts down
     const progress = Math.max(0, (2 - laser.chargeLeft) / 2); // 0 at start, larger as it nears firing
 
-    // Warn zone overlays for affected cells
-    laser.cells.forEach(cell => {
-      const cx = (cell.x + 0.5) * CELL;
-      const cy = (cell.y + 0.5) * CELL;
-      const ss = CELL * (0.6 + progress * 0.2); // expands over time
-
-      ctx.save();
-      ctx.globalAlpha = 0.15 + pulse * 0.15 + progress * 0.1;
-      ctx.fillStyle = laser.color;
-      ctx.fillRect(cx - ss / 2, cy - ss / 2, ss, ss);
-
-      // Target crosshairs
-      ctx.globalAlpha = 0.4 + pulse * 0.4;
-      ctx.fillRect(cx - 1.5, cy - ss / 2, 3, ss);
-      ctx.fillRect(cx - ss / 2, cy - 1.5, ss, 3);
-      ctx.restore();
-    });
-
+    // (Blinking squares and crosshairs removed per user request)
     const sx = (laser.ox + 0.5) * CELL, sy = (laser.oy + 0.5) * CELL;
     const last = laser.cells[laser.cells.length - 1];
     const ex = (last.x + 0.5) * CELL, ey = (last.y + 0.5) * CELL;
