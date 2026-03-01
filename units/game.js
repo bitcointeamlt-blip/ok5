@@ -1976,7 +1976,7 @@ function applyActions() {
       let nrgObj = null;
       if (gameMode === 'adventure' && team === 0 && wep !== 'melee') {
         let nrgCost = 1;
-        if (wep === 'laser') nrgCost = 5;
+        if (wep === 'laser') nrgCost = 7;
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 3;
         S.energy = Math.max(0, S.energy - nrgCost);
         // Atvaizduojame nubrauktą energiją ginklo šūviui vizualiai (greit asimiliuojasi)
