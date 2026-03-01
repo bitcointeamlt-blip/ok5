@@ -1976,11 +1976,11 @@ function applyActions() {
       let nrgObj = null;
       if (gameMode === 'adventure' && team === 0 && wep !== 'melee') {
         let nrgCost = 1;
-        if (wep === 'laser') nrgCost = 2;
+        if (wep === 'laser') nrgCost = 5;
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 3;
         S.energy = Math.max(0, S.energy - nrgCost);
         // Atvaizduojame nubrauktą energiją ginklo šūviui vizualiai (greit asimiliuojasi)
-        nrgObj = spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'fast');
+        spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
       }
 
       if (wep === 'laser') {
@@ -1989,8 +1989,7 @@ function applyActions() {
         const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
-          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: unit.color, active: true,
-          nrgObj: nrgObj
+          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: unit.color, active: true
         });
       } else if (wep === 'melee') {
         const mx = unit.x + sd.dx, my = unit.y + sd.dy;
@@ -2625,7 +2624,6 @@ function loop(now) {
   S.lasers = S.lasers.filter(l => {
     if (l.active) return true;
     if (l.firing) {
-      if (l.nrgObj) return l.nrgObj.life > 0;
       l.fireTimer -= dt / 1000;
       if (l.fireTimer <= 0) return false;
       return true;
@@ -2721,11 +2719,7 @@ function drawLasers() {
     if (laser.firing) {
       pulse = (Math.sin(now * 0.05) + 1) * 0.5;
       progress = 1.0;
-      if (laser.nrgObj) {
-        intensity = Math.max(0, laser.nrgObj.life);
-      } else {
-        intensity = (laser.fireTimer / 0.4); // Fades from 1 to 0 over 0.4 sec
-      }
+      intensity = (laser.fireTimer / 0.4); // Fades from 1 to 0 over 0.4 sec
     } else {
       pulse = (Math.sin(now * 0.015) + 1) * 0.5;
       progress = Math.max(0, (2 - laser.chargeLeft) / 2);
