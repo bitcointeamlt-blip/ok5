@@ -2377,8 +2377,8 @@ function advanceLasers() {
             bornTime: performance.now(),
             holdMs: 3000,
             fadeDur: 3000,
-            r: 2.5,
-            alpha: 0.35,
+            r: 1.5, // Sumažintas spindulys, kad nebūtų toks ryškus „debesis“
+            alpha: 0.15,
             color: laser.color
           });
         }
