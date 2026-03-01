@@ -73,6 +73,8 @@ function updateHubUI() {
   const lvlArmor = document.getElementById('lvl-armor');
 
   if (elCache) elCache.innerText = Profile.cache;
+  const elSector = document.getElementById('hub-sector');
+  if (elSector) elSector.innerText = Profile.highestSector;
   // Bazinė energija yra 100, todėl atvaizduojame kiek iš viso pasiekta
   if (elEnergy) elEnergy.innerText = 100 + (Profile.upgrades.maxEnergy || 0);
 
@@ -632,8 +634,62 @@ function isWall(x, y) {
   return false;
 }
 
+// ── Hub Room Mode ────────────────────────────────────────────────
+function initHubRoom() {
+  S.isHubRoom = true;
+  S.gridW = 1; S.gridH = 1;
+  ADV_MAP_COLS = 13; ADV_MAP_ROWS = 12;
+  COLS = ADV_MAP_COLS; ROWS = ADV_MAP_ROWS;
+
+  S.dungeon = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+  S.rooms = [{ x: 1, y: 1, w: 11, h: 10, type: 'start' }];
+  for (let r = 1; r < ROWS - 1; r++) {
+    for (let c = 1; c < COLS - 1; c++) {
+      S.dungeon[r][c] = 1; // 1 = floor
+    }
+  }
+
+  // No regular objects
+  S.shrines = []; S.bloodStains = []; S.chests = []; S.loot = []; S.platforms = []; S.exit = null;
+  S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false)); // Fully revealed
+  S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(1)); // All is known
+  S.lightGhosts = [];
+  S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
+
+  // Apply Hub Upgrades to Hero (cosmetic, mostly for HP display)
+  const bonusEnergy = Profile.upgrades?.maxEnergy || 0;
+  S.energy = ENERGY_MAX + bonusEnergy;
+  const bonusArmor = Profile.upgrades?.armor || 0;
+  const heroHp = MAX_HP + bonusArmor;
+
+  S.units = [mkUnit(0, 0, 6, 8, 1)];
+  S.units[0].hp = heroHp; S.units[0].maxHp = heroHp;
+  S.selectedId = [0, 3];
+
+  S.phase = 'frozen'; S.tick = 0;
+  S.pending = [null, null];
+  S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
+  S.shake = 0; S.animT = 1;
+  S.winner = null; S.pendingGameover = false;
+  S.clock = [120000, 120000]; S.timeForfeited = -1; S.clockSide = 0;
+
+  // Set up the Hub Terminals (interactive interactables)
+  S.terminals = [
+    { x: 4, y: 3, type: 'upgrades', color: '#00ffaa', label: 'UPGRADES' },
+    { x: 8, y: 3, type: 'missions', color: '#ffaa00', label: 'MISSIONS' }
+  ];
+
+  stats = { ticks: 0, shots: [0, 0], hits: [0, 0] };
+
+  // Snap camera
+  S.cam.x = 0; S.cam.tx = 0;
+  S.cam.y = 0; S.cam.ty = 0;
+}
+
 // ── Adventure mode ────────────────────────────────────────────────
 function initAdventure() {
+  S.isHubRoom = false;
+  S.terminals = [];
   S.floor = S.floor || 1;
 
   // Graduali progresavimo seka
@@ -4610,7 +4666,11 @@ function startGame(mode) {
   stopAIThinking();
   if (raf) cancelAnimationFrame(raf);
   tickTimer = null; tickStart = null;
-  if (gameMode === 'adventure') initAdventure(); else initState();
+
+  if (gameMode === 'adventure') initAdventure();
+  else if (gameMode === 'hub') initHubRoom();
+  else initState();
+
   updateHUD(); setTimeStatus('frozen');
   const p2ctrl = document.getElementById('p2-controls');
   const p2name = document.querySelector('#panel-p2 .panel-name');
@@ -4622,8 +4682,10 @@ function startGame(mode) {
   const panelP2 = document.getElementById('panel-p2') || _p2PanelEl;
   const unitList = document.querySelector('#panel-p1 .unit-list');
   const p1badge = document.getElementById('p1-badge');
+  const combatHubStats = document.getElementById('combat-hub-stats');
   const screenGame = document.getElementById('screen-game');
-  if (gameMode === 'adventure') {
+
+  if (gameMode === 'adventure' || gameMode === 'hub') {
     if (p2ctrl) p2ctrl.textContent = 'ENEMIES';
     if (p2name) p2name.textContent = 'DUNGEON';
     if (p2clock) p2clock.style.display = 'none';
@@ -4631,12 +4693,14 @@ function startGame(mode) {
     if (energyHud) energyHud.style.display = 'flex';
     if (unitList) unitList.style.display = 'none';
     if (p1badge) p1badge.style.display = 'none';
+    if (combatHubStats) combatHubStats.style.display = 'block';
+
     if (panelP2 && panelP2.parentNode) {
       _p2PanelEl = panelP2;
       panelP2.parentNode.removeChild(panelP2);
     }
     const logPanel = document.getElementById('panel-log');
-    if (logPanel) logPanel.style.display = 'flex';
+    if (logPanel) logPanel.style.display = gameMode === 'hub' ? 'none' : 'flex'; // hide log in hub
     if (screenGame) screenGame.classList.add('adv-mode');
     advCanvasW = ADV_COLS * CELL;
     updateEnergyHud();
@@ -4708,6 +4772,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-menu-go').addEventListener('click', () => { SFX.init(); backToMenu(); });
   document.getElementById('btn-esc').addEventListener('click', () => { SFX.init(); backToMenu(); });
+  document.getElementById('btn-hub-back').addEventListener('click', () => { SFX.init(); showScreen('screen-menu'); });
 
   // Hook for quick restart from Game Over screen
   document.addEventListener('keydown', e => {

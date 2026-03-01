@@ -65,84 +65,111 @@
       </div>
     </div>
 
-    <!-- ══════════════ HUB ROOM / BASE ══════════════ -->
+
+
+    <!-- ══════════════ HUB ROOM ══════════════ -->
     <div id="screen-hub" class="screen">
-      <div class="hub-wrap">
+      <div class="hub-room">
+
+        <!-- Header -->
         <div class="hub-header">
-          <div class="hub-title">SYSTEM HUB <span class="blink">_</span></div>
-          <div class="hub-stats">
-            <div class="stat-box"><span class="stat-icon">💾</span> <span id="hub-cache">0</span> CACHE</div>
-            <div class="stat-box"><span class="stat-icon">⚡</span> <span id="hub-energy">100</span> MAX NRG</div>
+          <div class="hub-title">SAFE ROOM</div>
+          <div class="hub-subtitle">OPERATOR BASE · UPGRADE &amp; DEPLOY</div>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="hub-stats-bar">
+          <div class="hub-stat-item">
+            <span class="hub-stat-label">💾 CACHE</span>
+            <span class="hub-stat-val yellow" id="hub-cache">0</span>
+          </div>
+          <div class="hub-stat-item">
+            <span class="hub-stat-label">⚡ MAX VOLTS</span>
+            <span class="hub-stat-val cyan" id="hub-energy">100</span>
+          </div>
+          <div class="hub-stat-item">
+            <span class="hub-stat-label">📡 TOP SECTOR</span>
+            <span class="hub-stat-val green" id="hub-sector">1</span>
           </div>
         </div>
 
+        <!-- Main: Upgrades + Missions -->
         <div class="hub-main">
-          <!-- UPGRADE TERMINAL -->
-          <div class="hub-panel left-panel">
-            <div class="panel-header">UPGRADES</div>
+
+          <!-- Upgrade Terminal -->
+          <div class="hub-panel">
+            <div class="panel-header">⚙ UPGRADE TERMINAL</div>
             <div class="upgrades-list">
-              <!-- Energy Upgrade -->
-              <div class="upgrade-card" id="upg-energy">
+              <div class="upgrade-card">
                 <div class="upg-info">
-                  <div class="upg-name">BATTERY EXPANSION</div>
-                  <div class="upg-desc">+10 Max Energy</div>
+                  <div class="upg-name">VOLT CELL</div>
+                  <div class="upg-desc">+10 MAX ENERGY per level</div>
                   <div class="upg-lvl">LVL <span id="lvl-energy">0</span></div>
                 </div>
-                <button class="btn-buy" onclick="buyUpgrade('maxEnergy', 50, 10)">50 💾</button>
+                <button class="btn-buy" onclick="buyUpgrade('maxEnergy', 10, 10)">BUY · 10💾</button>
               </div>
-
-              <!-- Melee Upgrade -->
-              <div class="upgrade-card" id="upg-melee">
+              <div class="upgrade-card">
                 <div class="upg-info">
-                  <div class="upg-name">KINETIC EDGE</div>
-                  <div class="upg-desc">+1 Melee Damage</div>
+                  <div class="upg-name">BLADE MOD</div>
+                  <div class="upg-desc">+1 MELEE DAMAGE per level</div>
                   <div class="upg-lvl">LVL <span id="lvl-melee">0</span></div>
                 </div>
-                <button class="btn-buy" onclick="buyUpgrade('meleeDmg', 100, 1)">100 💾</button>
+                <button class="btn-buy" onclick="buyUpgrade('meleeDmg', 15, 1)">BUY · 15💾</button>
               </div>
-
-              <!-- HP / Armor Upgrade -->
-              <div class="upgrade-card" id="upg-armor">
+              <div class="upgrade-card">
                 <div class="upg-info">
-                  <div class="upg-name">STRUCTURAL INTEGRITY</div>
-                  <div class="upg-desc">+1 Max HP</div>
+                  <div class="upg-name">ARMOR PLATE</div>
+                  <div class="upg-desc">+1 ARMOR (damage reduction)</div>
                   <div class="upg-lvl">LVL <span id="lvl-armor">0</span></div>
                 </div>
-                <button class="btn-buy" onclick="buyUpgrade('armor', 75, 1)">75 💾</button>
+                <button class="btn-buy" onclick="buyUpgrade('armor', 20, 1)">BUY · 20💾</button>
               </div>
             </div>
           </div>
 
-          <!-- MISSION SELECT TERMINAL -->
-          <div class="hub-panel right-panel">
-            <div class="panel-header">MISSION SELECT</div>
+          <!-- Mission Board -->
+          <div class="hub-panel">
+            <div class="panel-header">📡 MISSION BOARD</div>
             <div class="mission-list">
-              <div class="mission-card" onclick="deployMission(1)">
-                <div class="mis-name">SECTOR 1 [ OUTSKIRTS ]</div>
-                <div class="mis-desc">Threat: Low | Size: Small</div>
-                <button class="btn-deploy">DEPLOY</button>
+              <div class="mission-card" id="mis-1">
+                <div class="mis-info">
+                  <div class="mis-name">SECTOR 01</div>
+                  <div class="mis-desc">Training grounds · Standard threat</div>
+                </div>
+                <button class="btn-deploy" onclick="deployMission(1)">DEPLOY</button>
               </div>
-              <div class="mission-card locked" id="mis-2" onclick="deployMission(2)">
-                <div class="mis-name">SECTOR 2 [ DATAFLOW ]</div>
-                <div class="mis-desc">Threat: Medium | Size: Med</div>
-                <button class="btn-deploy">LOCKED</button>
+              <div class="mission-card locked" id="mis-2">
+                <div class="mis-info">
+                  <div class="mis-name">SECTOR 02</div>
+                  <div class="mis-desc">Deep net · More enemies · Better loot</div>
+                </div>
+                <button class="btn-deploy" onclick="deployMission(2)">LOCKED</button>
               </div>
-              <div class="mission-card locked" id="mis-3" onclick="deployMission(3)">
-                <div class="mis-name">SECTOR 3 [ CORE ]</div>
-                <div class="mis-desc">Threat: High | Size: Large</div>
-                <button class="btn-deploy">LOCKED</button>
+              <div class="mission-card locked" id="mis-3">
+                <div class="mis-info">
+                  <div class="mis-name">SECTOR 03</div>
+                  <div class="mis-desc">Core mainframe · Max threat · Rare rewards</div>
+                </div>
+                <button class="btn-deploy" onclick="deployMission(3)">LOCKED</button>
               </div>
-            </div>
-
-            <div class="return-main">
-              <button class="btn-back"
-                onclick="document.getElementById('screen-hub').classList.remove('active'); document.getElementById('screen-menu').classList.add('active');">BACK
-                TO MENU</button>
             </div>
           </div>
+
+        </div><!-- /hub-main -->
+
+        <!-- Bottom: VS modes + back -->
+        <div class="hub-bottom">
+          <div class="hub-vs">
+            <span class="hub-vs-label">VS MODES</span>
+            <button class="btn-secondary" onclick="startGame('pve')">VS CPU</button>
+            <button class="btn-secondary" onclick="startGame('pvp')">2 PLAYERS</button>
+          </div>
+          <button class="btn-back" id="btn-hub-back">← MENU</button>
         </div>
-      </div>
+
+      </div><!-- /hub-room -->
     </div>
+
 
     <!-- ══════════════ GAME ══════════════ -->
     <div id="screen-game" class="screen">
@@ -150,7 +177,15 @@
 
         <!-- P1 Panel -->
         <div class="side-panel left-panel" id="panel-p1">
-          <div class="panel-name cyan">PLAYER 1</div>
+          <!-- Persistent Hub Stats Overlay (Only visible in 'hub' or adv mode if we want) -->
+          <div id="combat-hub-stats" style="display:none; margin-bottom: 20px; text-align:center;">
+            <div class="stat-box" style="font-size:1.5em; color:#ffee00; text-shadow: 0 0 10px #ffee00;"><span
+                class="stat-icon">💾</span> <span id="hub-cache">0</span> CACHE</div>
+            <div class="stat-box" style="font-size:1.2em; color:#00ffaa; margin-top:10px;"><span
+                class="stat-icon">⚡</span> <span id="hub-energy">100</span> MAX NRG</div>
+          </div>
+
+          <div class="panel-name cyan" id="p1-badge">PLAYER 1</div>
           <div class="panel-controls dim">W A S D · SPACE</div>
 
           <div class="unit-list">
