@@ -4192,9 +4192,9 @@ function updateSkillBar(team) {
 
     const ammo = getAmmo(unit);
     let nrgReq = 0;
-    if (w === 'bullet') nrgReq = 1;
-    if (w === 'laser') nrgReq = 2;
-    if (w === 'heavy' || w === 'shotgun') nrgReq = 3;
+    if (w === 'bullet') nrgReq = 2;
+    if (w === 'laser') nrgReq = 7;
+    if (w === 'heavy' || w === 'shotgun') nrgReq = 4;
 
     let empty = false;
     if (gameMode === 'adventure') {
