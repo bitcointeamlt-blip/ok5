@@ -29,7 +29,7 @@ const HEAVY_REGEN = 5;
 const MAX_SHOTGUN = 3;
 const SHOTGUN_REGEN = 4;
 const SHOTGUN_RANGE = 6; // cells before pellets fade
-const ENERGY_MAX = 150;
+const ENERGY_MAX = 100;
 const FOG_RADIUS = 3;
 const MISS_CHANCE = 0.15;   // 15 % tikimybė prasilenkti
 const CRIT_CHANCE = 0.22;   // 22 % tikimybė kritinio smūgio
@@ -1975,9 +1975,9 @@ function applyActions() {
       // Energijos mažinimas jei adventure mode (priklausomai nuo ginklo)
       let nrgObj = null;
       if (gameMode === 'adventure' && team === 0 && wep !== 'melee') {
-        let nrgCost = 1;
+        let nrgCost = 2;
         if (wep === 'laser') nrgCost = 7;
-        if (wep === 'heavy' || wep === 'shotgun') nrgCost = 3;
+        if (wep === 'heavy' || wep === 'shotgun') nrgCost = 4;
         S.energy = Math.max(0, S.energy - nrgCost);
         // Atvaizduojame nubrauktą energiją ginklo šūviui vizualiai (greit asimiliuojasi)
         spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
