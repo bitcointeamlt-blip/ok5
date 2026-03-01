@@ -1973,13 +1973,14 @@ function applyActions() {
       spawnMuzzle(unit, sd);
 
       // Energijos mažinimas jei adventure mode (priklausomai nuo ginklo)
+      let nrgObj = null;
       if (gameMode === 'adventure' && team === 0 && wep !== 'melee') {
         let nrgCost = 1;
         if (wep === 'laser') nrgCost = 2;
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 3;
         S.energy = Math.max(0, S.energy - nrgCost);
         // Atvaizduojame nubrauktą energiją ginklo šūviui vizualiai (greit asimiliuojasi)
-        spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
+        nrgObj = spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
       }
 
       if (wep === 'laser') {
@@ -1988,7 +1989,8 @@ function applyActions() {
         const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
-          dx: sd.dx, dy: sd.dy, cells, chargeLeft: 2, color: unit.color, active: true
+          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: unit.color, active: true,
+          nrgObj: nrgObj
         });
       } else if (wep === 'melee') {
         const mx = unit.x + sd.dx, my = unit.y + sd.dy;
@@ -2285,7 +2287,7 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
     }
   }
 
-  S.dmgNumbers.push({
+  const obj = {
     x: (gx + 0.5) * CELL + (Math.random() - 0.5) * CELL * 0.5,
     y: (gy + 0.5) * CELL - CELL * 0.15 + (Math.random() - 0.5) * CELL * 0.4,
     vx: (Math.random() - 0.5) * 4.0, // Random horizontal drift
@@ -2294,7 +2296,9 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
     text, color, size: size || 20,
     life: 1,
     scale: initScale, type,
-  });
+  };
+  S.dmgNumbers.push(obj);
+  return obj;
 }
 
 function laserCells(ox, oy, dx, dy) {
@@ -2621,6 +2625,7 @@ function loop(now) {
   S.lasers = S.lasers.filter(l => {
     if (l.active) return true;
     if (l.firing) {
+      if (l.nrgObj) return l.nrgObj.life > 0;
       l.fireTimer -= dt / 1000;
       if (l.fireTimer <= 0) return false;
       return true;
@@ -2716,7 +2721,11 @@ function drawLasers() {
     if (laser.firing) {
       pulse = (Math.sin(now * 0.05) + 1) * 0.5;
       progress = 1.0;
-      intensity = (laser.fireTimer / 1.5); // Fades from 1 to 0 over 1.5 sec
+      if (laser.nrgObj) {
+        intensity = Math.max(0, laser.nrgObj.life);
+      } else {
+        intensity = (laser.fireTimer / 1.5); // Fades from 1 to 0 over 1.5 sec
+      }
     } else {
       pulse = (Math.sin(now * 0.015) + 1) * 0.5;
       progress = Math.max(0, (2 - laser.chargeLeft) / 2);
