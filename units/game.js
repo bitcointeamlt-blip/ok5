@@ -2358,6 +2358,8 @@ function advanceLasers() {
               }
             }
           }
+          // Lazeris sustoja ties šiuo pataikymu, kirsti toliau (kiaurai) nebegali
+          laser.cells.length = laser.cells.indexOf(cell) + 1;
           break;
         }
       }
