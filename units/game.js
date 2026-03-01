@@ -1294,6 +1294,15 @@ function drawFog() {
           }
         }
       }
+      if (S.lasers) {
+        for (const laser of S.lasers) {
+          if (!laser.active && !laser.firing) continue;
+          for (const cell of laser.cells) {
+            const d = Math.hypot(c - cell.x, r - cell.y);
+            if (d < bDist && d <= 2.5 && !isShadowed(cell.x, cell.y, c, r)) bDist = d;
+          }
+        }
+      }
       const bulletLit = bDist <= 1.0;
       const bulletGlow = bDist <= 2.5;
 
