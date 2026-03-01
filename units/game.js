@@ -2697,44 +2697,92 @@ function drawLasers() {
   const now = performance.now();
   S.lasers.forEach(laser => {
     if (!laser.active || !laser.cells.length) return;
-    const pulse = (Math.sin(now * 0.018) + 1) * 0.5;
-    const intensity = (2 - laser.chargeLeft + 1) / 2 * (0.6 + pulse * 0.4);
+    const pulse = (Math.sin(now * 0.015) + 1) * 0.5;
+    // laser.chargeLeft usually starts at 2 and counts down
+    const progress = Math.max(0, (2 - laser.chargeLeft) / 2); // 0 at start, larger as it nears firing
 
-    // Cell overlay
+    // Warn zone overlays for affected cells
     laser.cells.forEach(cell => {
+      const cx = (cell.x + 0.5) * CELL;
+      const cy = (cell.y + 0.5) * CELL;
+      const ss = CELL * (0.6 + progress * 0.2); // expands over time
+
       ctx.save();
-      ctx.globalAlpha = 0.07 + intensity * 0.09;
+      ctx.globalAlpha = 0.15 + pulse * 0.15 + progress * 0.1;
       ctx.fillStyle = laser.color;
-      ctx.fillRect(cell.x * CELL, cell.y * CELL, CELL, CELL);
+      ctx.fillRect(cx - ss / 2, cy - ss / 2, ss, ss);
+
+      // Target crosshairs
+      ctx.globalAlpha = 0.4 + pulse * 0.4;
+      ctx.fillRect(cx - 1.5, cy - ss / 2, 3, ss);
+      ctx.fillRect(cx - ss / 2, cy - 1.5, ss, 3);
       ctx.restore();
     });
 
-    // Beam line
     const sx = (laser.ox + 0.5) * CELL, sy = (laser.oy + 0.5) * CELL;
     const last = laser.cells[laser.cells.length - 1];
     const ex = (last.x + 0.5) * CELL, ey = (last.y + 0.5) * CELL;
+
     ctx.save();
+    // Translate and rotate to align x-axis with beam
+    const angle = Math.atan2(ey - sy, ex - sx);
+    const dist = Math.hypot(ey - sy, ex - sx);
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+
+    // Unstable electrical/plasma thick beam
+    const intensity = 0.2 + progress * 0.5 + pulse * 0.3;
+    ctx.globalAlpha = intensity;
+    ctx.shadowColor = laser.color; ctx.shadowBlur = 25;
+    ctx.fillStyle = laser.color;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    const segments = Math.max(5, Math.floor(dist / 14));
+
+    // Draw top half of jitter
+    for (let i = 1; i < segments; i++) {
+      const segX = (i / segments) * dist;
+      const jitterY = (Math.random() - 0.5) * (6 + progress * 14);
+      ctx.lineTo(segX, jitterY);
+    }
+    ctx.lineTo(dist, 0);
+
+    // Draw bottom half of jitter returning
+    for (let i = segments - 1; i > 0; i--) {
+      const segX = (i / segments) * dist;
+      const jitterY = (Math.random() - 0.5) * (6 + progress * 14);
+      ctx.lineTo(segX, jitterY);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Hot central core line
+    ctx.globalAlpha = 0.7 + progress * 0.3;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1 + progress * 3 + Math.random() * 2;
+    ctx.shadowBlur = 10;
     ctx.lineCap = 'round';
-    // Outer glow
-    ctx.globalAlpha = 0.1 + intensity * 0.15;
-    ctx.shadowColor = laser.color; ctx.shadowBlur = 28;
-    ctx.strokeStyle = laser.color; ctx.lineWidth = 12;
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-    // Animated dashes
-    ctx.globalAlpha = 0.3 + intensity * 0.5;
-    ctx.lineWidth = 2.5; ctx.shadowBlur = 10;
-    ctx.setLineDash([14, 7]);
-    ctx.lineDashOffset = -(now * 0.13 % 21);
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-    ctx.setLineDash([]);
-    // Charge countdown at midpoint
-    const mid = laser.cells[Math.floor(laser.cells.length / 2)];
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
+
+    // Source gathering particles
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = laser.color;
+    for (let p = 0; p < (4 + progress * 4); p++) {
+      const px = (Math.random() - 0.5) * 20;
+      const py = (Math.random() - 0.5) * 20;
+      ctx.beginPath(); ctx.arc(px, py, Math.random() * 2 + 0.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
+    // Projected text tracking endpoint
+    ctx.save();
     ctx.globalAlpha = 0.9 + pulse * 0.1;
-    ctx.shadowBlur = 14; ctx.shadowColor = laser.color;
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${Math.round(CELL * 0.35)}px Courier New`;
+    ctx.shadowColor = laser.color; ctx.shadowBlur = 18;
+    ctx.font = `bold ${Math.round(CELL * 0.45)}px Courier New`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(laser.chargeLeft, (mid.x + 0.5) * CELL, (mid.y + 0.5) * CELL);
+    ctx.fillText(`[ ${laser.chargeLeft} ]`, ex, ey - CELL * 0.4);
     ctx.restore();
   });
 }
