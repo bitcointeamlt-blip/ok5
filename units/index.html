@@ -73,16 +73,12 @@
 
         <!-- Header -->
         <div class="hub-header">
-          <div class="hub-title">SAFE ROOM</div>
+          <div class="hub-title">TERMINAL</div>
           <div class="hub-subtitle">OPERATOR BASE · UPGRADE &amp; DEPLOY</div>
         </div>
 
         <!-- Stats bar -->
         <div class="hub-stats-bar">
-          <div class="hub-stat-item">
-            <span class="hub-stat-label">💾 CACHE</span>
-            <span class="hub-stat-val yellow" id="hub-cache">0</span>
-          </div>
           <div class="hub-stat-item">
             <span class="hub-stat-label">⚡ MAX VOLTS</span>
             <span class="hub-stat-val cyan" id="hub-energy">100</span>
@@ -98,31 +94,89 @@
 
           <!-- Upgrade Terminal -->
           <div class="hub-panel">
-            <div class="panel-header">⚙ UPGRADE TERMINAL</div>
+            <div class="panel-header">⚙ TERMINAL</div>
             <div class="upgrades-list">
-              <div class="upgrade-card">
-                <div class="upg-info">
-                  <div class="upg-name">VOLT CELL</div>
-                  <div class="upg-desc">+10 MAX ENERGY per level</div>
-                  <div class="upg-lvl">LVL <span id="lvl-energy">0</span></div>
+              <div class="upgrade-card volt-card" id="volts-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name">⚡ VOLT CELL</span>
+                  <span class="upg-arrow">▼</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-energy">0</span></span>
                 </div>
-                <button class="btn-buy" onclick="buyUpgrade('maxEnergy', 10, 10)">BUY · 10💾</button>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">MAX VOLTS</span>
+                    <span class="volt-stat-val" id="hub-energy-card">100</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS RATE</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="volts-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptTerminalUpgrade()">▶ INSTALL</button>
+                <div class="upg-status" id="volts-status"></div>
               </div>
-              <div class="upgrade-card">
-                <div class="upg-info">
-                  <div class="upg-name">BLADE MOD</div>
-                  <div class="upg-desc">+1 MELEE DAMAGE per level</div>
-                  <div class="upg-lvl">LVL <span id="lvl-melee">0</span></div>
+
+              <div class="upgrade-card volt-card" id="crit-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px"><rect x="0" y="0" width="2" height="2" fill="#ff3333"/><rect x="2" y="0" width="2" height="2" fill="#ff3333"/><rect x="10" y="0" width="2" height="2" fill="#ff3333"/><rect x="12" y="0" width="2" height="2" fill="#ff3333"/><rect x="0" y="2" width="2" height="2" fill="#ff3333"/><rect x="12" y="2" width="2" height="2" fill="#ff3333"/><rect x="6" y="6" width="2" height="2" fill="#ff3333"/><rect x="0" y="10" width="2" height="2" fill="#ff3333"/><rect x="12" y="10" width="2" height="2" fill="#ff3333"/><rect x="0" y="12" width="2" height="2" fill="#ff3333"/><rect x="2" y="12" width="2" height="2" fill="#ff3333"/><rect x="10" y="12" width="2" height="2" fill="#ff3333"/><rect x="12" y="12" width="2" height="2" fill="#ff3333"/></svg> CRIT MODULE</span>
+                  <span class="upg-arrow">▼</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-crit">0</span></span>
                 </div>
-                <button class="btn-buy" onclick="buyUpgrade('meleeDmg', 15, 1)">BUY · 15💾</button>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">CRIT CHANCE</span>
+                    <span class="volt-stat-val" id="hub-crit-pct">3.0%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">PER UPGRADE</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">+0.5%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">75%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="crit-cost-display"><span style="color:#aaaaaa">1○</span></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptCritUpgrade()">▶ INSTALL</button>
+                <div class="upg-status" id="crit-status"></div>
               </div>
-              <div class="upgrade-card">
-                <div class="upg-info">
-                  <div class="upg-name">ARMOR PLATE</div>
-                  <div class="upg-desc">+1 ARMOR (damage reduction)</div>
-                  <div class="upg-lvl">LVL <span id="lvl-armor">0</span></div>
+
+              <div class="upgrade-card volt-card" id="nano-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px"><rect x="6" y="0" width="2" height="2" fill="#00ff88"/><rect x="6" y="2" width="2" height="2" fill="#00ff88"/><rect x="6" y="4" width="2" height="2" fill="#00ff88"/><rect x="0" y="6" width="2" height="2" fill="#00ff88"/><rect x="2" y="6" width="2" height="2" fill="#00ff88"/><rect x="4" y="6" width="2" height="2" fill="#00ff88"/><rect x="6" y="6" width="2" height="2" fill="#00ff88"/><rect x="8" y="6" width="2" height="2" fill="#00ff88"/><rect x="10" y="6" width="2" height="2" fill="#00ff88"/><rect x="12" y="6" width="2" height="2" fill="#00ff88"/><rect x="6" y="8" width="2" height="2" fill="#00ff88"/><rect x="6" y="10" width="2" height="2" fill="#00ff88"/><rect x="6" y="12" width="2" height="2" fill="#00ff88"/></svg> NANO REPAIR</span>
+                  <span class="upg-arrow">▼</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-nano">0</span></span>
                 </div>
-                <button class="btn-buy" onclick="buyUpgrade('armor', 20, 1)">BUY · 20💾</button>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">HEAL RATE</span>
+                    <span class="volt-stat-val" id="nano-heal-rate">/ 20 STEPS</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">HEAL AMT</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)" id="nano-heal-amt">+1</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)" id="nano-success">90%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="nano-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptNanoRepairUpgrade()">▶ INSTALL</button>
+                <div class="upg-status" id="nano-status"></div>
               </div>
             </div>
           </div>
@@ -177,14 +231,6 @@
 
         <!-- P1 Panel -->
         <div class="side-panel left-panel" id="panel-p1">
-          <!-- Persistent Hub Stats Overlay (Only visible in 'hub' or adv mode if we want) -->
-          <div id="combat-hub-stats" style="display:none; margin-bottom: 20px; text-align:center;">
-            <div class="stat-box" style="font-size:1.5em; color:#ffee00; text-shadow: 0 0 10px #ffee00;"><span
-                class="stat-icon">💾</span> <span id="hub-cache">0</span> CACHE</div>
-            <div class="stat-box" style="font-size:1.2em; color:#00ffaa; margin-top:10px;"><span
-                class="stat-icon">⚡</span> <span id="hub-energy">100</span> MAX NRG</div>
-          </div>
-
           <div class="panel-name cyan" id="p1-badge">PLAYER 1</div>
           <div class="panel-controls dim">W A S D · SPACE</div>
 
@@ -229,7 +275,7 @@
             <span class="skill-header-lbl">WEAPONS</span>
             <kbd class="skill-key">Q</kbd>
           </div>
-          <div class="skill-bar" id="p1-skillbar">
+          <div class="skill-bar" id="p1-skillbar" style="position:relative;">
             <div class="skill-slot sk-active" id="p1-sk-0" title="Bullet (default)">
               <div class="sk-icon">
                 <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -303,6 +349,20 @@
               <div class="sk-cd"></div>
             </div>
           </div>
+
+          <!-- Inventory button (adventure only) -->
+          <button id="btn-inventory" onclick="window.toggleInventory()" title="Inventory [I]">
+            <span class="inv-btn-icon">◈</span>
+            <span class="inv-btn-label">BAG</span>
+            <span class="inv-btn-chips" id="inv-btn-chips">0⬡</span>
+          </button>
+
+          <button class="btn-wipe-inline" onclick="resetSaveData()" title="Wipe save data">⚠ WIPE</button>
+        </div>
+
+        <!-- Hub strip (adventure only) -->
+        <div id="hub-btn-strip">
+          <button id="btn-open-hub" onclick="toggleHubOverlay()" style="display:none;" title="Upgrade Terminal">⚡<br>HUB</button>
         </div>
 
         <!-- Canvas + Energy HUD -->
@@ -316,6 +376,35 @@
           </div>
           <div class="canvas-wrap">
             <canvas id="canvas"></canvas>
+
+            <!-- Inventory overlay -->
+            <div id="inv-overlay">
+              <div id="inv-panel">
+
+                <div class="inv-topbar">
+                  <span class="inv-title">INVENTORY</span>
+                  <span class="inv-sector">SECTOR <span id="inv-floor">1</span></span>
+                </div>
+
+                <!-- 12-slot grid, filled by JS -->
+                <div class="inv-grid" id="inv-grid"></div>
+
+                <!-- Hover info bar -->
+                <div class="inv-info-bar" id="inv-info-bar">— select a slot —</div>
+
+                <!-- Fragment progress -->
+                <div class="inv-frag-row">
+                  <span class="inv-frag-label">FRAG <span id="inv-frags-prog">0</span>/<span id="inv-frags-max">10</span></span>
+                  <div class="inv-frag-bar-track">
+                    <div class="inv-frag-bar-fill" id="inv-frag-bar"></div>
+                  </div>
+                  <span class="inv-frag-hint">= 1 CHIP</span>
+                </div>
+
+                <button id="inv-close-btn" onclick="window.closeInventory()">CLOSE &nbsp;[ I ]</button>
+
+              </div>
+            </div>
           </div>
         </div>
 
@@ -455,6 +544,126 @@
         <div class="tick-display" id="tick-display">TICK 0</div>
         <button class="btn-esc" id="btn-esc">ESC</button>
       </div>
+
+      <!-- ══ HUB OVERLAY (appears in-game after death) ══ -->
+      <div id="hub-overlay">
+        <div class="hub-ov-panel">
+          <div class="hub-ov-title">⚙ TERMINAL</div>
+
+
+          <div class="hub-ov-upgrades">
+            <div class="upgrade-card volt-card" id="hov-volts-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name">⚡ VOLT CELL</span>
+                <span class="upg-arrow">▼</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-energy">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">MAX VOLTS</span>
+                  <span class="volt-stat-val" id="hov-energy-card">100</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS RATE</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">COST</span>
+                  <span class="volt-stat-val"><span id="hov-ig-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptInGameUpgrade()">▶ INSTALL</button>
+              <div class="upg-status" id="hov-volts-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-crit-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px"><rect x="0" y="0" width="2" height="2" fill="#ff3333"/><rect x="2" y="0" width="2" height="2" fill="#ff3333"/><rect x="10" y="0" width="2" height="2" fill="#ff3333"/><rect x="12" y="0" width="2" height="2" fill="#ff3333"/><rect x="0" y="2" width="2" height="2" fill="#ff3333"/><rect x="12" y="2" width="2" height="2" fill="#ff3333"/><rect x="6" y="6" width="2" height="2" fill="#ff3333"/><rect x="0" y="10" width="2" height="2" fill="#ff3333"/><rect x="12" y="10" width="2" height="2" fill="#ff3333"/><rect x="0" y="12" width="2" height="2" fill="#ff3333"/><rect x="2" y="12" width="2" height="2" fill="#ff3333"/><rect x="10" y="12" width="2" height="2" fill="#ff3333"/><rect x="12" y="12" width="2" height="2" fill="#ff3333"/></svg> CRIT MODULE</span>
+                <span class="upg-arrow">▼</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-crit">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">CRIT CHANCE</span>
+                  <span class="volt-stat-val" id="hov-crit-pct">3.0%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">PER UPGRADE</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">+0.5%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">75%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-crit-cost-display"><span style="color:#aaaaaa">1○</span></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptCritUpgrade('hov')">▶ INSTALL</button>
+              <div class="upg-status" id="hov-crit-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-nano-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px"><rect x="6" y="0" width="2" height="2" fill="#00ff88"/><rect x="6" y="2" width="2" height="2" fill="#00ff88"/><rect x="6" y="4" width="2" height="2" fill="#00ff88"/><rect x="0" y="6" width="2" height="2" fill="#00ff88"/><rect x="2" y="6" width="2" height="2" fill="#00ff88"/><rect x="4" y="6" width="2" height="2" fill="#00ff88"/><rect x="6" y="6" width="2" height="2" fill="#00ff88"/><rect x="8" y="6" width="2" height="2" fill="#00ff88"/><rect x="10" y="6" width="2" height="2" fill="#00ff88"/><rect x="12" y="6" width="2" height="2" fill="#00ff88"/><rect x="6" y="8" width="2" height="2" fill="#00ff88"/><rect x="6" y="10" width="2" height="2" fill="#00ff88"/><rect x="6" y="12" width="2" height="2" fill="#00ff88"/></svg> NANO REPAIR</span>
+                <span class="upg-arrow">▼</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-nano">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">HEAL RATE</span>
+                  <span class="volt-stat-val" id="hov-nano-heal-rate">/ 20 STEPS</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">HEAL AMT</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)" id="hov-nano-heal-amt">+1</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)" id="hov-nano-success">90%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-nano-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptNanoRepairUpgrade('hov')">▶ INSTALL</button>
+              <div class="upg-status" id="hov-nano-status"></div>
+            </div>
+          </div>
+
+          <button class="btn-adventure pulse" onclick="deployMission(1)" style="width:100%; margin-top:8px;">▶ DEPLOY</button>
+          <div style="display:flex; gap:8px; width:100%;">
+            <button class="btn-secondary" onclick="toggleHubOverlay()" style="flex:1;">✕ CLOSE</button>
+            <button class="btn-secondary" onclick="backToMenu()" style="flex:1;">MENU</button>
+          </div>
+        </div>
+      </div>
+
+    <!-- ══════════════ SLOT MACHINE ══════════════ -->
+    <div id="slot-overlay">
+      <div id="slot-panel">
+        <div class="slot-header">⚡ LOOT TERMINAL</div>
+        <div class="slot-subtitle">// CACHE EXTRACTION UNIT</div>
+        <div class="slot-machine">
+          <div class="slot-window"><canvas id="sc-0" width="108" height="300"></canvas></div>
+          <div class="slot-window"><canvas id="sc-1" width="108" height="300"></canvas></div>
+          <div class="slot-window"><canvas id="sc-2" width="108" height="300"></canvas></div>
+          <div class="slot-window"><canvas id="sc-3" width="108" height="300"></canvas></div>
+        </div>
+        <div id="slot-paytable"></div>
+        <div id="slot-result">
+          <div id="slot-rarity-badge"></div>
+          <div id="slot-item-name"></div>
+          <button id="slot-claim-btn" onclick="window.claimSlotPrize()">▶ CLAIM</button>
+        </div>
+      </div>
+    </div>
+
     </div>
 
     <!-- ══════════════ GAME OVER ══════════════ -->

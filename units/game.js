@@ -3,6 +3,59 @@
 //  TIMELOCK BOARD — 3v3 edition  (12×12 grid)
 // ════════════════════════════════════════════════════════════════
 
+// ── Fragment System ───────────────────────────────────────────────
+const FRAG_PER_CHIP = 10; // fragments needed to assemble 1 chip
+
+// ── Slot Combination Prize Table ─────────────────────────────────
+// [matchCount][rarity] → prize
+const COMBO_PRIZES = {
+  4: {
+    common:    { val: 5, name: '5 CHIP', rarity: 'common' },
+    uncommon:  { val: 5, name: '5 CHIP', rarity: 'uncommon' },
+    rare:      { val: 5, name: '5 CHIP', rarity: 'rare' },
+    epic:      { val: 5, name: '5 CHIP', rarity: 'epic' },
+    legendary: { val: 5, name: '5 CHIP', rarity: 'legendary' },
+  },
+  3: {
+    common:    { val: 2, name: '2 CHIP', rarity: 'common' },
+    uncommon:  { val: 2, name: '2 CHIP', rarity: 'uncommon' },
+    rare:      { val: 2, name: '2 CHIP', rarity: 'rare' },
+    epic:      { val: 2, name: '2 CHIP', rarity: 'epic' },
+    legendary: { val: 2, name: '2 CHIP', rarity: 'legendary' },
+  },
+  2: {
+    common:    { val: 1, name: '1 CHIP', rarity: 'common' },
+    uncommon:  { val: 1, name: '1 CHIP', rarity: 'uncommon' },
+    rare:      { val: 1, name: '1 CHIP', rarity: 'rare' },
+    epic:      { val: 1, name: '1 CHIP', rarity: 'epic' },
+    legendary: { val: 1, name: '1 CHIP', rarity: 'legendary' },
+  },
+};
+const EMPTY_PRIZE = { val: 0, name: 'EMPTY', rarity: 'empty', matchCount: 0 };
+
+function evaluateCombination(reels) {
+  if (reels.includes('empty')) return EMPTY_PRIZE;
+  const counts = {};
+  for (const r of reels) counts[r] = (counts[r] || 0) + 1;
+  const order = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+  for (const n of [4, 3, 2]) {
+    for (const r of order) {
+      if ((counts[r] || 0) >= n && COMBO_PRIZES[n]?.[r])
+        return { ...COMBO_PRIZES[n][r], matchCount: n };
+    }
+  }
+  return EMPTY_PRIZE;
+}
+
+const RARITY_COLOR = {
+  empty: '#555566',
+  common: '#aaaaaa',
+  uncommon: '#44ff88',
+  rare: '#4499ff',
+  epic: '#cc44ff',
+  legendary: '#ffaa00',
+};
+
 // ── Constants ────────────────────────────────────────────────────
 const BASE_COLS = 20;
 const BASE_ROWS = 16;
@@ -32,7 +85,8 @@ const SHOTGUN_RANGE = 6; // cells before pellets fade
 const ENERGY_MAX = 100;
 const FOG_RADIUS = 3;
 const MISS_CHANCE = 0.15;   // 15 % tikimybė prasilenkti
-const CRIT_CHANCE = 0.22;   // 22 % tikimybė kritinio smūgio
+const CRIT_CHANCE_BASE = 0.03; // 3% base crit chance
+function getCritChance() { return CRIT_CHANCE_BASE + (Profile.upgrades?.critLevel || 0) * 0.005; }
 const CRIT_DMG = 2;
 const CELL_DARK = '#07070f';
 const CELL_LIGHT = '#0a0a18';
@@ -42,11 +96,12 @@ const GRID_COLOR = '#161630';
 let Profile = {
   cache: 0,
   upgrades: {
-    maxEnergy: 0, // kiek vienetų bonus energijos turi (pvz. +10, +20)
-    meleeDmg: 0,  // kiek bonus žalos melee
-    armor: 0      // bonus MaxHP
+    maxEnergy: 0,
+    voltsCostLevel: 0,
+    critLevel: 0       // # of successful CRIT upgrades (+0.5% crit each)
   },
-  highestSector: 1
+  highestSector: 1,
+  inventory: null      // persists chips/items across runs
 };
 
 function loadProfile() {
@@ -56,7 +111,12 @@ function loadProfile() {
       const parsed = JSON.parse(saved);
       Profile = { ...Profile, ...parsed };
       // Ensure nested upgrades exist in case of old save formats
-      if (!Profile.upgrades) Profile.upgrades = { maxEnergy: 0, meleeDmg: 0, armor: 0 };
+      if (!Profile.upgrades) Profile.upgrades = { maxEnergy: 0, voltsCostLevel: 0 };
+      if (Profile.upgrades.voltsCostLevel === undefined) Profile.upgrades.voltsCostLevel = 0;
+      if (Profile.upgrades.critLevel === undefined) Profile.upgrades.critLevel = 0;
+      if (Profile.upgrades.nanoLevel === undefined) Profile.upgrades.nanoLevel = 0;
+      if (!Profile.highestSector || Profile.highestSector < 1) Profile.highestSector = 1;
+      if (!Array.isArray(Profile.inventory)) Profile.inventory = null;
     } catch (e) { console.error("Could not load profile", e); }
   }
 }
@@ -65,26 +125,396 @@ function saveProfile() {
   localStorage.setItem('timelock_profile', JSON.stringify(Profile));
 }
 
+window.toggleUpgradeCard = function (card) {
+  if (!card) return;
+  const collapsing = !card.classList.contains('collapsed');
+  card.classList.toggle('collapsed');
+  // Small toggle click sound
+  if (collapsing) {
+    SFX.play(900, 0.06, 0.04, 'square', -300);
+  } else {
+    SFX.play(600, 0.05, 0.04, 'square', 300);
+  }
+};
+
+window.resetSaveData = function () {
+  if (!confirm('WIPE ALL SAVE DATA?\n\nCache · Upgrades · Sector progress\nThis cannot be undone.')) return;
+  localStorage.removeItem('timelock_profile');
+  Profile = { cache: 0, upgrades: { maxEnergy: 0, voltsCostLevel: 0 }, highestSector: 1, inventory: null };
+  updateHubUI();
+};
+
+// ── Cost helpers ────────────────────────────────────────────────────────────
+function getTerminalVoltsCost() {
+  return Math.ceil(10 * Math.pow(1.1, Profile.upgrades.voltsCostLevel || 0));
+}
+
+function getInGameVoltsCost() {
+  const lvl = S.inGameUpgradeLevel || 0;
+  if (lvl < 10) return lvl + 1;               // 1→2→...→10
+  return Math.ceil(10 * Math.pow(1.1, lvl - 9)); // then +10% each
+}
+
+// ── Small firework burst on successful upgrade ───────────────────────────────
+function spawnUpgradeFX(cardEl) {
+  const rect = cardEl.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const colors = ['#00ffcc', '#ffee00', '#00aaff', '#ff88dd', '#aaff44'];
+  const count = 13;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    const angle = Math.PI * 2 * (i / count) + (Math.random() - 0.5) * 0.5;
+    const dist = 28 + Math.random() * 44;
+    const tx = Math.cos(angle) * dist;
+    const ty = Math.sin(angle) * dist;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const size = 2.5 + Math.random() * 3.5;
+    const delay = Math.random() * 100;
+    const dur = 380 + Math.random() * 280;
+    el.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;width:${size}px;height:${size}px;`
+      + `background:${color};border-radius:50%;pointer-events:none;z-index:9999;`
+      + `box-shadow:0 0 5px ${color};`
+      + `--tx:${tx}px;--ty:${ty}px;`
+      + `animation:upgParticle ${dur}ms ${delay}ms ease-out forwards;`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), dur + delay + 50);
+  }
+}
+
+// ── Upgrade animation ───────────────────────────────────────────────────────
+function showUpgradeAnim(cardId, statusId, onComplete) {
+  const cardEl = document.getElementById(cardId);
+  const statusEl = document.getElementById(statusId);
+  if (!cardEl) { onComplete(); return; }
+
+  const btn = cardEl.querySelector('button');
+  if (btn) btn.disabled = true;
+
+  if (statusEl) { statusEl.textContent = 'SCANNING...'; statusEl.className = 'upg-status scanning'; }
+  cardEl.classList.add('upg-scanning');
+  SFX.upgradeScan();
+
+  // reset scan bar so animation can replay
+  const bar = cardEl.querySelector('.upg-scan-bar');
+  if (bar) { bar.style.animation = 'none'; bar.offsetHeight; bar.style.animation = ''; }
+
+  setTimeout(() => {
+    cardEl.classList.remove('upg-scanning');
+    const success = onComplete();
+    cardEl.classList.add(success ? 'upg-success' : 'upg-fail');
+    if (success) { SFX.upgradeSuccess(); spawnUpgradeFX(cardEl); } else SFX.upgradeFail();
+    if (statusEl) {
+      statusEl.textContent = success ? 'SUCCESS +1V' : '-- FAIL --';
+      statusEl.className = 'upg-status ' + (success ? 'ok' : 'err');
+    }
+
+    setTimeout(() => {
+      cardEl.classList.remove('upg-success', 'upg-fail');
+      if (statusEl) { statusEl.textContent = ''; statusEl.className = 'upg-status'; }
+      if (btn) btn.disabled = false;
+      updateHubUI();
+    }, 1100);
+  }, 1300);
+}
+
+// ── Crit upgrade cost table ───────────────────────────────────────────────
+// ── Mini icon renderers for cost displays ─────────────────────────
+function drawMiniChip(canvas, rarity) {
+  const ctx = canvas.getContext('2d');
+  const px = 2; // each art pixel = 2 screen pixels → 24×24
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const pal = CHIP_PALETTES[rarity] || CHIP_PALETTES.common;
+  const rows = CHIP_ART.length, cols = CHIP_ART[0].length;
+  const offX = Math.floor((W - cols * px) / 2);
+  const offY = Math.floor((H - rows * px) / 2);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const v = CHIP_ART[r][c]; if (!v) continue;
+      ctx.fillStyle = pal[v];
+      ctx.fillRect(offX + c * px, offY + r * px, px, px);
+    }
+  ctx.fillStyle = pal[4];
+  CHIP_CIRCUIT.forEach(([r, c]) =>
+    ctx.fillRect(offX + c * px, offY + r * px, px, px)
+  );
+}
+
+function drawMiniByte(canvas) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, r = W * 0.38;
+  ctx.fillStyle = '#ffcc00';
+  ctx.shadowColor = '#ffdd00'; ctx.shadowBlur = 3;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#886600'; ctx.lineWidth = 1.5; ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#664400';
+  ctx.font = `bold ${Math.round(r * 1.1)}px monospace`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('B', cx, cy + 1);
+}
+
+function renderCostIcons(containerId, cost, type, haveFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  el.style.cssText = 'display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;';
+
+  const addIcon = (rarity, qty, isBytes) => {
+    if (!qty) return;
+    const have = haveFn ? haveFn(rarity) : null;
+    const enough = have === null || have >= qty;
+    const iconCol = isBytes ? '#ffcc00' : RARITY_COLOR[rarity];
+
+    const wrap = document.createElement('span');
+    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:2px;';
+
+    const cv = document.createElement('canvas');
+    cv.width = 24; cv.height = 24;
+    cv.style.cssText = 'image-rendering:pixelated;vertical-align:middle;';
+    if (isBytes) drawMiniByte(cv); else drawMiniChip(cv, rarity);
+
+    const num = document.createElement('span');
+    num.style.cssText = `font-size:7px;font-family:'Press Start 2P',monospace;`;
+
+    if (have !== null) {
+      num.innerHTML =
+        `<span style="color:${iconCol}">×${qty}</span>`
+        + `<span style="color:#334455">/</span>`
+        + `<span style="color:${enough ? '#44ff88' : '#ff3c55'}">${have}</span>`;
+    } else {
+      num.innerHTML = `<span style="color:${iconCol}">×${qty}</span>`;
+    }
+
+    wrap.appendChild(cv); wrap.appendChild(num);
+    el.appendChild(wrap);
+  };
+
+  if (type === 'bytes') {
+    addIcon(null, cost, true);
+  } else {
+    if (cost.legendary) addIcon('legendary', cost.legendary);
+    if (cost.epic) addIcon('epic', cost.epic);
+    if (cost.rare) addIcon('rare', cost.rare);
+    if (cost.uncommon) addIcon('uncommon', cost.uncommon);
+    if (cost.common) addIcon('common', cost.common);
+  }
+}
+
+function getCritCost(level) {
+  if (level < 4) return { common: level + 1, uncommon: 0, rare: 0 };
+  if (level === 4) return { common: 1, uncommon: 1, rare: 0 };
+  if (level < 9) return { common: level - 3, uncommon: 1, rare: 0 };
+  return { common: 0, uncommon: 1, rare: 1 };
+}
+function formatCritCost(cost) {
+  const parts = [];
+  if (cost.rare) parts.push(`<span style="color:#4499ff">${cost.rare}★</span>`);
+  if (cost.uncommon) parts.push(`<span style="color:#44ff88">${cost.uncommon}◆</span>`);
+  if (cost.common) parts.push(`<span style="color:#aaaaaa">${cost.common}○</span>`);
+  return parts.join(' ');
+}
+function getNanoRepairCost(level) {
+  if (level === 0) return { rare: 1 };
+  if (level === 1) return { rare: 3 };
+  if (level === 2) return { rare: 3, epic: 1 };
+  if (level === 3) return { rare: 4, epic: 2 };
+  if (level === 4) return { epic: 2, legendary: 1 };
+  if (level === 5) return { epic: 4, legendary: 2 };
+  if (level === 6) return { epic: 6, legendary: 3 };
+  if (level === 7) return { epic: 7, legendary: 4 };
+  return null;
+}
+function getNanoSuccessRate(level) {
+  if (level === 0) return 0.90;
+  if (level === 1) return 0.85;
+  if (level === 2) return 0.80;
+  if (level === 3) return 0.80;
+  if (level === 4) return 0.75;
+  return 0.75;
+}
+function getNanoHealInterval(level) {
+  if (level >= 8) return 15;
+  if (level >= 7) return 17;
+  if (level >= 5) return 18;
+  if (level >= 3) return 19;
+  return 20;
+}
+
+function chipCount(rarity) {
+  if (!S.inventory) return 0;
+  const s = S.inventory.find(x => x && x.type === 'chip' && x.rarity === rarity);
+  return s ? s.qty : 0;
+}
+function spendChips(rarity, qty) {
+  if (!qty || !S.inventory) return;
+  const idx = S.inventory.findIndex(x => x && x.type === 'chip' && x.rarity === rarity);
+  if (idx < 0) return;
+  S.inventory[idx].qty -= qty;
+  if (S.inventory[idx].qty <= 0) S.inventory[idx] = null;
+  Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+  if (S.inventoryOpen) updateInventoryUI();
+}
+window.attemptCritUpgrade = function (prefix) {
+  const cardId = prefix === 'hov' ? 'hov-crit-card' : 'crit-upg-card';
+  const statId = prefix === 'hov' ? 'hov-crit-status' : 'crit-status';
+  const costEl = prefix === 'hov' ? 'hov-crit-cost-display' : 'crit-cost-display';
+  const level = Profile.upgrades.critLevel || 0;
+  const cost = getCritCost(level);
+  const canAfford = chipCount('common') >= cost.common
+    && chipCount('uncommon') >= cost.uncommon
+    && chipCount('rare') >= cost.rare;
+  if (!canAfford) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  spendChips('common', cost.common);
+  spendChips('uncommon', cost.uncommon);
+  spendChips('rare', cost.rare);
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => {
+    const success = Math.random() < 0.75;
+    if (success) { Profile.upgrades.critLevel++; saveProfile(); }
+    return success;
+  });
+};
+
+window.attemptNanoRepairUpgrade = function (prefix) {
+  const cardId = prefix === 'hov' ? 'hov-nano-card' : 'nano-upg-card';
+  const statId = prefix === 'hov' ? 'hov-nano-status' : 'nano-status';
+  const costEl = prefix === 'hov' ? 'hov-nano-cost-display' : 'nano-cost-display';
+  const level = Profile.upgrades.nanoLevel || 0;
+  if (level >= 8) return;
+  const cost = getNanoRepairCost(level);
+  const canAfford = chipCount('legendary') >= (cost.legendary || 0)
+    && chipCount('epic') >= (cost.epic || 0)
+    && chipCount('rare') >= (cost.rare || 0);
+  if (!canAfford) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  spendChips('legendary', cost.legendary || 0);
+  spendChips('epic', cost.epic || 0);
+  spendChips('rare', cost.rare || 0);
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => {
+    const success = Math.random() < getNanoSuccessRate(level);
+    if (success) { Profile.upgrades.nanoLevel++; saveProfile(); }
+    return success;
+  });
+};
+
+// ── Terminal upgrade (hub screen, uses Profile.cache) ──────────────────────
+window.attemptTerminalUpgrade = function () {
+  const cost = getTerminalVoltsCost();
+  if (Profile.cache < cost) {
+    const el = document.getElementById('hub-cache');
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 400); }
+    return;
+  }
+  Profile.cache -= cost;
+  saveProfile();
+  updateHubUI();
+
+  showUpgradeAnim('volts-upg-card', 'volts-status', () => {
+    const success = Math.random() < 0.7;
+    if (success) {
+      Profile.upgrades.maxEnergy = (Profile.upgrades.maxEnergy || 0) + 1;
+      Profile.upgrades.voltsCostLevel = (Profile.upgrades.voltsCostLevel || 0) + 1;
+      saveProfile();
+    }
+    return success;
+  });
+};
+
+// ── In-game upgrade (hub overlay, uses S.bytes from current run) ───────────
+window.attemptInGameUpgrade = function () {
+  const cost = getInGameVoltsCost();
+  if ((S.bytes || 0) < cost) {
+    const el = document.getElementById('hov-bytes');
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 400); }
+    return;
+  }
+  S.bytes -= cost;
+  syncByteSlot();
+  updateHubUI();
+
+  showUpgradeAnim('hov-volts-card', 'hov-volts-status', () => {
+    const success = Math.random() < 0.7;
+    if (success) {
+      Profile.upgrades.maxEnergy = (Profile.upgrades.maxEnergy || 0) + 1;
+      S.inGameUpgradeLevel = (S.inGameUpgradeLevel || 0) + 1;
+      S.energy = (S.energy || 0) + 1;
+      saveProfile();
+      updateEnergyHud();
+    }
+    return success;
+  });
+};
+
 function updateHubUI() {
-  const elCache = document.getElementById('hub-cache');
-  const elEnergy = document.getElementById('hub-energy');
-  const lvlEnergy = document.getElementById('lvl-energy');
-  const lvlMelee = document.getElementById('lvl-melee');
-  const lvlArmor = document.getElementById('lvl-armor');
+  const maxNrg = 100 + (Profile.upgrades.maxEnergy || 0);
+  const lvlE = Profile.upgrades.maxEnergy || 0;
+  const termCost = getTerminalVoltsCost();
+  const critLvl = Profile.upgrades.critLevel || 0;
+  const critPct = ((CRIT_CHANCE_BASE + critLvl * 0.005) * 100).toFixed(1) + '%';
 
-  if (elCache) elCache.innerText = Profile.cache;
-  const elSector = document.getElementById('hub-sector');
-  if (elSector) elSector.innerText = Profile.highestSector;
-  // Bazinė energija yra 100, todėl atvaizduojame kiek iš viso pasiekta
-  if (elEnergy) elEnergy.innerText = 100 + (Profile.upgrades.maxEnergy || 0);
+  const o = (id) => document.getElementById(id);
 
-  if (lvlEnergy) lvlEnergy.innerText = (Profile.upgrades.maxEnergy / 10) || 0;
-  if (lvlMelee) lvlMelee.innerText = Profile.upgrades.meleeDmg || 0;
-  if (lvlArmor) lvlArmor.innerText = Profile.upgrades.armor || 0;
+  // hub overlay IDs
+  if (o('hov-energy')) o('hov-energy').innerText = maxNrg;
+  if (o('hov-energy-card')) o('hov-energy-card').innerText = maxNrg;
+  if (o('hov-lvl-energy')) o('hov-lvl-energy').innerText = lvlE;
+  if (o('hov-bytes')) o('hov-bytes').innerText = S.bytes || 0;
+  if (o('hov-ig-cost')) o('hov-ig-cost').innerText = getInGameVoltsCost();
 
-  // Unlock sectors based on progress
+  // hub screen IDs
+  if (o('hub-energy')) o('hub-energy').innerText = maxNrg;
+  if (o('hub-energy-card')) o('hub-energy-card').innerText = maxNrg;
+  if (o('hub-sector')) o('hub-sector').innerText = Profile.highestSector;
+  if (o('lvl-energy')) o('lvl-energy').innerText = lvlE;
+  // volts-cost now rendered as canvas icons via renderCostIcons below
+  if (o('lvl-crit')) o('lvl-crit').innerText = critLvl;
+  if (o('hub-crit-pct')) o('hub-crit-pct').innerText = critPct;
+  if (o('hov-lvl-crit')) o('hov-lvl-crit').innerText = critLvl;
+  if (o('hov-crit-pct')) o('hov-crit-pct').innerText = critPct;
+  const critCost = getCritCost(critLvl);
+  renderCostIcons('crit-cost-display', critCost, 'chips', (r) => chipCount(r));
+  renderCostIcons('hov-crit-cost-display', critCost, 'chips', (r) => chipCount(r));
+  renderCostIcons('volts-cost-display', getTerminalVoltsCost(), 'bytes', () => Profile.cache);
+  renderCostIcons('hov-ig-cost-display', getInGameVoltsCost(), 'bytes', () => S.bytes || 0);
+
+  const nanoLvl = Profile.upgrades.nanoLevel || 0;
+  if (o('lvl-nano')) o('lvl-nano').innerText = nanoLvl;
+  if (o('hov-lvl-nano')) o('hov-lvl-nano').innerText = nanoLvl;
+  const nanoHealAmt = nanoLvl >= 1 ? `+${nanoLvl}` : '+1';
+  const nanoHealRate = `/ ${getNanoHealInterval(nanoLvl)} STEPS`;
+  if (o('nano-heal-amt')) o('nano-heal-amt').innerText = nanoHealAmt;
+  if (o('hov-nano-heal-amt')) o('hov-nano-heal-amt').innerText = nanoHealAmt;
+  if (o('nano-heal-rate')) o('nano-heal-rate').innerText = nanoHealRate;
+  if (o('hov-nano-heal-rate')) o('hov-nano-heal-rate').innerText = nanoHealRate;
+  const nanoSuccessPct = Math.round(getNanoSuccessRate(nanoLvl) * 100) + '%';
+  if (o('nano-success')) o('nano-success').innerText = nanoSuccessPct;
+  if (o('hov-nano-success')) o('hov-nano-success').innerText = nanoSuccessPct;
+  if (nanoLvl >= 8) {
+    ['nano-cost-display', 'hov-nano-cost-display'].forEach(id => {
+      const el = o(id); if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
+    });
+  } else {
+    const nanoCost = getNanoRepairCost(nanoLvl);
+    renderCostIcons('nano-cost-display', nanoCost, 'chips', (r) => chipCount(r));
+    renderCostIcons('hov-nano-cost-display', nanoCost, 'chips', (r) => chipCount(r));
+  }
+
   for (let i = 2; i <= 3; i++) {
-    const misCard = document.getElementById(`mis-${i}`);
+    const misCard = o(`mis-${i}`);
     if (misCard) {
       if (Profile.highestSector >= i) {
         misCard.classList.remove('locked');
@@ -97,31 +527,24 @@ function updateHubUI() {
   }
 }
 
-window.buyUpgrade = function (type, cost, amount) {
-  if (Profile.cache >= cost) {
-    Profile.cache -= cost;
-    Profile.upgrades[type] = (Profile.upgrades[type] || 0) + amount;
-    saveProfile();
-    updateHubUI();
-    // Play some UI sound if applicable
-    if (SFX && SFX.pickup) SFX.pickup();
+window.toggleHubOverlay = function () {
+  const ov = document.getElementById('hub-overlay');
+  if (ov.classList.contains('active')) {
+    ov.classList.remove('active');
+    BGM.start('game');
   } else {
-    // Error sound or flash
-    const el = document.getElementById('hub-cache');
-    if (el) {
-      el.style.color = '#ff3c55';
-      setTimeout(() => el.style.color = '', 300);
-    }
+    updateHubUI();
+    ov.classList.add('active');
+    BGM.start('hub');
+    document.querySelectorAll('#hub-overlay .upgrade-card').forEach(c => c.classList.add('collapsed'));
   }
 };
 
 window.deployMission = function (sector) {
   if (Profile.highestSector < sector) return;
-  // Initialize game using sector info
-  // TODO: Add actual generation logic for harder sectors later
-  document.getElementById('screen-hub').classList.remove('active');
-  document.getElementById('screen-game').classList.add('active');
-  initGame('adventure');
+  document.getElementById('hub-overlay').classList.remove('active');
+  S.floor = 1;
+  startGame('adventure');
 };
 
 
@@ -338,7 +761,140 @@ const SFX = {
     setTimeout(() => this.play(659.25, 0.1, 0.06, 'square'), 100);
     setTimeout(() => this.play(783.99, 0.3, 0.06, 'square'), 200);
   },
-  pickup() { this.play(800, 0.1, 0.04, 'sine', 400); }
+  pickup() { this.play(800, 0.1, 0.04, 'sine', 400); },
+  upgradeScan() {
+    // Rising hum — builds tension through the whole scan (~1.3s)
+    this.play(90, 1.15, 0.055, 'sawtooth', 480);
+    // Accelerating ticks — like a slot reel spinning, getting faster
+    [0, 210, 400, 570, 720, 840, 940, 1020, 1085, 1135, 1175, 1210].forEach(t =>
+      setTimeout(() => this.play(1000 + Math.random() * 700, 0.03, 0.02, 'square'), t)
+    );
+  },
+  upgradeSuccess() {
+    // Rising arpeggio — C4 E4 G4 C5
+    [523, 659, 784, 1047].forEach((f, i) =>
+      setTimeout(() => this.play(f, 0.20, 0.055, 'square', 30), i * 85)
+    );
+  },
+  upgradeFail() {
+    // Heavy descending buzz
+    this.play(260, 0.22, 0.07, 'sawtooth', -130);
+    setTimeout(() => this.play(160, 0.28, 0.06, 'sawtooth', -60), 210);
+  },
+  nanoHeal() {
+    this.play(660, 0.07, 0.03, 'sine', 330);
+    setTimeout(() => this.play(990, 0.07, 0.028, 'sine', 220), 55);
+    setTimeout(() => this.play(1320, 0.10, 0.035, 'sine', 180), 110);
+  },
+
+  // ── Slot machine sounds ──────────────────────────────────────────
+  slotClick() {
+    // Ratchet tick — rapid mechanical click while reels spin
+    this.play(1800 + Math.random() * 400, 0.018, 0.012, 'square', -600);
+  },
+  slotStop(reelIdx) {
+    // Mechanical clunk when a reel locks into place
+    const base = 70 + reelIdx * 18;
+    this.play(base, 0.14, 0.10, 'triangle', -25);
+    setTimeout(() => this.play(280 + reelIdx * 35, 0.08, 0.05, 'sine'), 55);
+  },
+  slotWin(rarity) {
+    if (rarity === 'empty') {
+      this.play(240, 0.22, 0.10, 'sawtooth', -110);
+      setTimeout(() => this.play(120, 0.28, 0.10, 'sawtooth', -55), 220);
+      return;
+    }
+    // Result fanfare — pitch based on rarity
+    const scales = {
+      common: [523, 659, 784],
+      uncommon: [523, 659, 784, 880],
+      rare: [659, 784, 988, 1047],
+      epic: [784, 988, 1047, 1319],
+      legendary: [880, 1047, 1319, 1760, 2093],
+    };
+    const notes = scales[rarity] || scales.common;
+    notes.forEach((f, i) => {
+      setTimeout(() => this.play(f, 0.25, 0.06, 'square'), i * 110);
+    });
+    // Final chord shimmer
+    setTimeout(() => {
+      this.play(notes[notes.length - 1], 0.6, 0.07, 'square');
+      this.play(notes[notes.length - 1] * 1.5, 0.4, 0.03, 'sine');
+    }, notes.length * 110 + 40);
+  },
+
+  chestSpawn() {
+    // Static burst — digital noise as chest data streams in
+    for (let i = 0; i < 7; i++)
+      setTimeout(() => this.play(900 + Math.random() * 1800, 0.018, 0.025, 'square'), i * 28);
+    // Rising materialization hum
+    this.play(60, 1.1, 0.04, 'sawtooth', 340);
+    // Mid confirmation thud at ~350ms
+    setTimeout(() => {
+      this.play(90, 0.18, 0.09, 'triangle', -40);
+      this.play(180, 0.12, 0.06, 'triangle', -20);
+    }, 350);
+    // Rising arpeggio as chest fully appears ~800ms
+    [330, 415, 523, 659].forEach((f, i) =>
+      setTimeout(() => this.play(f, 0.14, 0.05, 'square'), 780 + i * 70)
+    );
+    // Final shimmer ping
+    setTimeout(() => {
+      this.play(1047, 0.22, 0.07, 'sine');
+      this.play(1319, 0.14, 0.05, 'sine');
+    }, 1120);
+  },
+
+  extraction() {
+    // Three rapid warning taps — attention signal
+    [0, 95, 180].forEach((t, i) =>
+      setTimeout(() => this.play(1300 - i * 130, 0.055, 0.07, 'square'), t)
+    );
+    // Deep gravity pull — two bass layers holding
+    setTimeout(() => {
+      this.play(55, 0.62, 0.13, 'sawtooth', 0);
+      this.play(110, 0.52, 0.07, 'sawtooth', 0);
+    }, 210);
+    // Tunnel rush — sharp gliss rockets upward
+    setTimeout(() => this.play(95, 0.52, 0.12, 'sawtooth', 2000), 290);
+    // Glassy shimmer overtones
+    [0, 55, 115, 175].forEach(t =>
+      setTimeout(() => this.play(750 + Math.random() * 700, 0.09, 0.028, 'sine'), 360 + t)
+    );
+    // Arrival chord — clean and bright
+    setTimeout(() => {
+      this.play(523,  0.32, 0.09, 'sine');
+      this.play(659,  0.28, 0.06, 'sine');
+      this.play(1047, 0.22, 0.07, 'square');
+    }, 690);
+  },
+
+  chestOpen(explorer) {
+    if (explorer) {
+      // Epic reveal: dramatic low thud, rising sweep, triumphant fanfare
+      this.play(55, 0.28, 0.12, 'sawtooth', -20);
+      setTimeout(() => this.play(110, 0.22, 0.10, 'sawtooth', -15), 60);
+      // Rising chord sweep
+      setTimeout(() => this.play(220, 0.18, 0.14, 'sawtooth', 120), 140);
+      // Triumphant 5-note fanfare
+      [392, 523, 659, 784, 1047].forEach((f, i) =>
+        setTimeout(() => this.play(f, 0.24, 0.07, 'square', 15), 280 + i * 75)
+      );
+      // Long shimmer tail
+      setTimeout(() => {
+        this.play(1047, 0.45, 0.06, 'square');
+        this.play(1319, 0.28, 0.04, 'sine');
+        this.play(1568, 0.18, 0.04, 'sine');
+      }, 680);
+    } else {
+      // Regular: mechanical lid creak + sparkle cascade
+      this.play(180, 0.15, 0.07, 'sawtooth', 280);
+      setTimeout(() => this.play(440, 0.10, 0.05, 'sine', 180), 90);
+      [880, 1100, 1320].forEach((f, i) =>
+        setTimeout(() => this.play(f, 0.12, 0.04, 'sine'), 160 + i * 65)
+      );
+    }
+  },
 };
 
 // ── Retro Music System — Procedural BGM ───────────────────────────
@@ -361,6 +917,34 @@ const BGM = {
       arp: [60, 63, 67, 72, 60, 63, 67, 72, 60, 63, 67, 72, 60, 63, 67, 63],
       drums: [1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 1, 0, 2, 0, 0, 0], // 1=kick, 2=snare
       speed: 1,
+    },
+    hub: {
+      // 32-step casino/gamble loop — A minor, fast, syncopated
+      bass: [
+        45, 45, 47, 48, 50, 50, 52, 53,
+        52, 52, 51, 50, 48, 48, 47, 45,
+        45, 45, 47, 48, 50, 50, 52, 53,
+        55, 54, 52, 51, 50, 48, 47, 45
+      ],
+      chords: [
+        null, null, [57, 60, 64], null, null, null, [60, 64, 67], null,
+        null, null, [57, 62, 65], null, null, null, [59, 64, 68], null,
+        null, null, [57, 60, 64], null, null, null, [60, 64, 67], null,
+        null, null, [62, 65, 69], null, null, null, [59, 64, 68], null
+      ],
+      arp: [
+        57, 0, 60, 64, 67, 64, 60, 0,
+        60, 0, 59, 0, 57, 55, 0, 0,
+        57, 0, 60, 64, 67, 64, 60, 0,
+        64, 0, 62, 0, 60, 0, 57, 0
+      ],
+      drums: [
+        1, 0, 3, 3, 2, 0, 3, 0,
+        1, 3, 3, 0, 2, 0, 3, 3,
+        1, 0, 3, 3, 2, 3, 0, 3,
+        1, 3, 0, 3, 2, 0, 3, 0
+      ],
+      speed: 1.8,
     },
     game: {
       // 128-step sequence: building up, bridge tension, and release
@@ -545,6 +1129,54 @@ const BGM = {
   stop() {
     this.active = false;
     if (this.timer) clearTimeout(this.timer);
+  },
+
+  deathJingle() {
+    if (!this.ctx) return;
+    // Stop looping BGM and fade master out quickly
+    this.stop();
+    const t0 = this.ctx.currentTime;
+    this.masterGain.gain.cancelScheduledValues(t0);
+    this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, t0);
+    this.masterGain.gain.linearRampToValueAtTime(0.0001, t0 + 0.18);
+
+    // Jingle goes through its own gain node (bypasses the faded master)
+    const jGain = this.ctx.createGain();
+    jGain.gain.setValueAtTime(0.09, t0);
+    jGain.connect(this.ctx.destination);
+
+    const note = (midi, start, dur, type, vol) => {
+      const osc = this.ctx.createOscillator();
+      const gn = this.ctx.createGain();
+      const filt = this.ctx.createBiquadFilter();
+      osc.type = type;
+      osc.frequency.value = this.midiToFreq(midi);
+      filt.type = 'lowpass';
+      filt.frequency.setValueAtTime(1400, start);
+      filt.frequency.exponentialRampToValueAtTime(180, start + dur * 0.85);
+      gn.gain.setValueAtTime(0, start);
+      gn.gain.linearRampToValueAtTime(vol, start + 0.04);
+      gn.gain.exponentialRampToValueAtTime(0.001, start + dur);
+      osc.connect(filt); filt.connect(gn); gn.connect(jGain);
+      osc.start(start); osc.stop(start + dur + 0.05);
+    };
+
+    // Sad descending phrase in A minor
+    const s = t0 + 0.22;
+    note(76, s, 0.35, 'triangle', 1.0); // E5
+    note(72, s + 0.40, 0.35, 'triangle', 0.9); // C5
+    note(69, s + 0.80, 0.50, 'triangle', 0.9); // A4
+    note(64, s + 1.35, 0.45, 'triangle', 0.8); // E4
+    // Final A minor chord — low and heavy
+    note(45, s + 1.90, 2.40, 'sawtooth', 0.9); // A2 bass
+    note(48, s + 1.95, 2.10, 'triangle', 0.5); // C3
+    note(52, s + 1.95, 1.90, 'triangle', 0.4); // E3
+    note(57, s + 1.95, 1.70, 'sine', 0.3); // A3 top
+
+    // Restore master gain for next game
+    setTimeout(() => {
+      if (this.masterGain) this.masterGain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+    }, 5500);
   }
 };
 
@@ -569,6 +1201,9 @@ function mkUnit(id, team, x, y, faceDx, etype) {
     hitFlash: 0, deathT: 1.0, shootFlash: 0,
   };
 }
+
+// Applies armor floor buff to incoming hero damage (minimum 1)
+function heroDmg(raw) { return Math.max(1, raw - (S.floorBuffs?.armor || 0)); }
 
 function isAdjacentToEnemy(unit) {
   if (!unit || !unit.alive) return false;
@@ -711,6 +1346,10 @@ function initAdventure() {
 
   ADV_MAP_COLS = 13 * S.gridW + 2;
   ADV_MAP_ROWS = 11 * S.gridH + 2;
+  // Early floors are smaller: floor1 = -4, floor2 = -2, floor3+ = 0
+  const mapShrink = Math.max(0, (3 - S.floor) * 2);
+  ADV_MAP_COLS -= mapShrink;
+  ADV_MAP_ROWS -= mapShrink;
   COLS = ADV_MAP_COLS;
   ROWS = ADV_MAP_ROWS;
 
@@ -723,7 +1362,7 @@ function initAdventure() {
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   S.lightGhosts = [];
   S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
-  S.energy = ENERGY_MAX;
+  if (S.floor === 1) S.energy = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);  // reset on fresh run, include upgrade bonus
   S.energyDepleted = false;
   S.phase = 'frozen'; S.tick = 0;
   S.pending = [null, null];
@@ -732,9 +1371,21 @@ function initAdventure() {
   S.winner = null; S.pendingGameover = false;
   S.clock = [120000, 120000]; S.timeForfeited = -1; S.clockSide = 0;
   S.loot = [];
-  S.coins = 0;
+  S.inGameUpgradeLevel = 0;
+  // Global inventory — always load from Profile, derive counters from slots
+  S.inventory = (Array.isArray(Profile.inventory) && Profile.inventory.length > 0)
+    ? Profile.inventory.map(x => x ? { ...x } : null)
+    : new Array(INV_SLOTS).fill(null);
+  { const _b = S.inventory.find(s => s && s.type === 'byte'); S.bytes = _b ? _b.qty : 0; }
+  { const _f = S.inventory.find(s => s && s.type === 'fragment'); S.fragments = _f ? _f.qty : 0; }
+  { const _x = S.inventory.find(s => s && s.type === 'xptoken'); S.xpTokens = _x ? _x.qty : 0; }
   S.kills = 0;
+  S.explorerChestSpawned = false;
+  S.fullMapRevealed = false;
+  S.floorBuffs = { melee: 0, armor: 0, chipMul: 1 };
+  S.pendingSlotPrize = null;
   S.footsteps = [];
+  if (S.floor === 1) S.nanoSteps = 0;
 
   // Player units in start room
   const sr = S.rooms[0];
@@ -771,9 +1422,15 @@ function initAdventure() {
     const pick = () => pool[Math.floor(Math.random() * pool.length)];
 
     for (let i = 0; i < count; i++) {
-      let ex = r.x + 1 + Math.floor(Math.random() * (r.w - 2));
-      let ey = r.y + 1 + Math.floor(Math.random() * (r.h - 2));
-      if (isWall(ex, ey)) { ex = r.x + Math.floor(r.w / 2); ey = r.y + Math.floor(r.h / 2); }
+      let ex, ey, attempts = 0;
+      do {
+        ex = r.x + 1 + Math.floor(Math.random() * (r.w - 2));
+        ey = r.y + 1 + Math.floor(Math.random() * (r.h - 2));
+        attempts++;
+      } while (
+        attempts < 15 &&
+        (isWall(ex, ey) || S.units.some(u => u.x === ex && u.y === ey))
+      );
       S.units.push(mkUnit(eid++, 1, ex, ey, -1, pick()));
     }
   });
@@ -1039,6 +1696,934 @@ function revealFog(cx, cy) {
         S.fog[y][x] = true;
       }
     }
+  checkExplorationComplete();
+}
+
+// ── Chip Pixel Art ───────────────────────────────────────────────
+const CHIP_ART = [
+  [0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+  [0, 0, 1, 1, 2, 2, 2, 2, 1, 1, 0, 0],
+  [0, 1, 1, 2, 2, 3, 3, 2, 2, 1, 1, 0],
+  [1, 1, 2, 2, 3, 3, 3, 3, 2, 2, 1, 1],
+  [1, 2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 1],
+  [1, 2, 3, 3, 4, 5, 5, 4, 3, 3, 2, 1],
+  [1, 2, 3, 3, 4, 5, 5, 4, 3, 3, 2, 1],
+  [1, 2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 1],
+  [1, 1, 2, 2, 3, 3, 3, 3, 2, 2, 1, 1],
+  [0, 1, 1, 2, 2, 3, 3, 2, 2, 1, 1, 0],
+  [0, 0, 1, 1, 2, 2, 2, 2, 1, 1, 0, 0],
+  [0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+];
+const CHIP_CIRCUIT = [
+  [3, 4], [3, 7], [4, 3], [4, 8], [7, 3], [7, 8], [8, 4], [8, 7], [5, 3], [5, 8], [6, 3], [6, 8],
+];
+
+// Per-rarity color palettes  [null, rim, body, mid, bright, glow]
+const CHIP_PALETTES = {
+  common: [null, '#1c1c1c', '#383838', '#585858', '#888888', '#cccccc'],
+  uncommon: [null, '#002211', '#004433', '#006644', '#00aa66', '#44ff88'],
+  rare: [null, '#00001f', '#000055', '#0033aa', '#2266ee', '#66aaff'],
+  epic: [null, '#110011', '#330044', '#6600aa', '#aa33dd', '#ee55ff'],
+  legendary: [null, '#1a0800', '#442200', '#886600', '#ddaa00', '#ffcc22'],
+};
+
+// ── Traditional vertical-scroll slot reel system ─────────────────
+const REEL_TAPE = ['common', 'uncommon', 'rare', 'empty', 'epic', 'common', 'legendary', 'uncommon', 'rare', 'common'];
+const CHIP_SLOT_H = 100;  // px per chip slot on the reel tape
+const REEL_TAPE_LEN = REEL_TAPE.length * CHIP_SLOT_H; // 500 px full loop
+const REEL_VISIBLE = 3;    // chips visible at once
+const REEL_H = CHIP_SLOT_H * REEL_VISIBLE; // 300 px canvas height
+const REEL_W = 108;
+const CHIP_PX = 8;    // pixels per art pixel  (12*8=96)
+const CHIP_ART_SIZE = CHIP_ART.length * CHIP_PX;  // 96
+
+// Per-reel animation state
+const reelState = [0, 1, 2, 3].map(i => ({
+  offset: i * CHIP_SLOT_H * 1.5, // staggered so reels look different
+  speed: 0,
+  stopping: false,
+  locked: false,
+  startOffset: 0,
+  targetOffset: 0,
+  stopStartTime: 0,
+  stopDuration: 850,
+  stopTime: -1,
+}));
+let slotAnimActive = false;
+let slotSpinInterval = null;
+const winSpin = { active: false, angle: 0, mask: new Set() }; // 3D win spin state
+
+function drawChipFlat(ctx, x, y, rarity, glowing) {
+  if (rarity === 'empty') {
+    const s = CHIP_ART_SIZE;
+    ctx.save();
+    ctx.globalAlpha = glowing ? 1 : 0.55;
+    ctx.fillStyle = '#07070f';
+    ctx.fillRect(x, y, s, s);
+    ctx.strokeStyle = glowing ? '#ff3c55' : '#33333d';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x + 5, y + 5, s - 10, s - 10);
+    if (glowing) { ctx.shadowColor = '#ff3c55'; ctx.shadowBlur = 14; }
+    ctx.strokeStyle = glowing ? '#ff3c55' : '#555566';
+    ctx.lineWidth = glowing ? 7 : 4;
+    ctx.beginPath();
+    ctx.moveTo(x + 20, y + 20); ctx.lineTo(x + s - 20, y + s - 20);
+    ctx.moveTo(x + s - 20, y + 20); ctx.lineTo(x + 20, y + s - 20);
+    ctx.stroke();
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    ctx.restore();
+    return;
+  }
+  const pal = CHIP_PALETTES[rarity] || CHIP_PALETTES.common;
+  const rows = CHIP_ART.length, cols = CHIP_ART[0].length;
+  const px = CHIP_PX;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = CHIP_ART[r][c];
+      if (!v) continue;
+      ctx.fillStyle = pal[v];
+      ctx.fillRect(x + c * px, y + r * px, px, px);
+    }
+  }
+  // Circuit dots
+  const dotCol = glowing ? pal[5] : pal[4];
+  if (glowing) { ctx.shadowColor = pal[5]; ctx.shadowBlur = 8; }
+  ctx.fillStyle = dotCol;
+  CHIP_CIRCUIT.forEach(([r, c]) => {
+    ctx.fillRect(x + c * px + 1, y + r * px + 1, px - 2, px - 2);
+  });
+  ctx.shadowBlur = 0;
+  // Pulsing center glow when locked/highlighted
+  if (glowing) {
+    const pulse = (Math.sin(performance.now() / 180) * 0.5 + 0.5) * 0.45;
+    ctx.globalAlpha = pulse;
+    ctx.shadowColor = pal[5]; ctx.shadowBlur = 18;
+    ctx.fillStyle = pal[5];
+    ctx.fillRect(x + 5 * px, y + 5 * px, px * 2, px * 2);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+}
+
+function drawReel(ctx, reelIdx) {
+  const st = reelState[reelIdx];
+  const W = REEL_W, H = REEL_H;
+  ctx.clearRect(0, 0, W, H);
+
+  const offset = st.offset;
+  const chipOffX = (W - CHIP_ART_SIZE) / 2; // center horizontally
+
+  // First slot index that could be visible (one above to allow smooth entry)
+  const firstSlot = Math.floor(offset / CHIP_SLOT_H) - 1;
+
+  for (let slot = firstSlot; slot <= firstSlot + REEL_VISIBLE + 1; slot++) {
+    const slotY = slot * CHIP_SLOT_H - offset;
+    if (slotY > H + CHIP_SLOT_H || slotY < -CHIP_SLOT_H) continue;
+
+    // Which rarity at this tape position
+    const tapeIdx = ((slot % REEL_TAPE.length) + REEL_TAPE.length * 1000) % REEL_TAPE.length;
+    const rarity = REEL_TAPE[tapeIdx];
+    const chipY = slotY + (CHIP_SLOT_H - CHIP_ART_SIZE) / 2;
+
+    // Is this chip in the center (payline) slot?
+    const isCentre = slotY > CHIP_SLOT_H * 0.9 && slotY < CHIP_SLOT_H * 1.1;
+    const glowing = st.locked && isCentre;
+
+    // Clip to canvas
+    const clipTop = Math.max(0, slotY);
+    const clipBot = Math.min(H, slotY + CHIP_SLOT_H);
+    if (clipBot <= clipTop) continue;
+
+    const isWinner = st.locked && isCentre && winSpin.active && winSpin.mask.has(reelIdx);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, clipTop, W, clipBot - clipTop);
+    ctx.clip();
+    if (isWinner) {
+      // Same 3D Y-axis spin as inventory hover (cosA scale trick)
+      const cosA = Math.cos(winSpin.angle);
+      const cx   = chipOffX + CHIP_ART_SIZE / 2;
+      const cy   = chipY    + CHIP_ART_SIZE / 2;
+      ctx.translate(cx, cy);
+      ctx.scale(cosA, 1);
+      ctx.translate(-cx, -cy);
+      if (cosA >= 0) drawChipFlat(ctx, chipOffX, chipY, rarity, true);
+      else           drawChipBack(ctx, chipOffX, chipY, rarity);
+    } else {
+      drawChipFlat(ctx, chipOffX, chipY, rarity, glowing);
+    }
+    ctx.restore();
+  }
+
+  // Fade top & bottom for reel-window illusion
+  const fadeH = CHIP_SLOT_H * 0.55;
+  const gTop = ctx.createLinearGradient(0, 0, 0, fadeH);
+  gTop.addColorStop(0, '#000605'); gTop.addColorStop(1, 'rgba(0,6,5,0)');
+  ctx.fillStyle = gTop; ctx.fillRect(0, 0, W, fadeH);
+
+  const gBot = ctx.createLinearGradient(0, H - fadeH, 0, H);
+  gBot.addColorStop(0, 'rgba(0,6,5,0)'); gBot.addColorStop(1, '#000605');
+  ctx.fillStyle = gBot; ctx.fillRect(0, H - fadeH, W, fadeH);
+}
+
+function computeStopOffset(reelIdx, rarity) {
+  const st = reelState[reelIdx];
+  const ri = REEL_TAPE.indexOf(rarity);
+  const tapeSize = REEL_TAPE.length;
+  // Centre slot y = CHIP_SLOT_H (slot index 1 of 3)
+  // chip at tapeSlot is centred when: tapeSlot * CHIP_SLOT_H - offset = CHIP_SLOT_H
+  // → offset = (tapeSlot - 1) * CHIP_SLOT_H,  tapeSlot = ri + k*tapeSize
+  // Find k so offset > currentOffset + 3 full tape rotations
+  const minAdvance = st.offset + 3 * tapeSize * CHIP_SLOT_H;
+  const base = (ri - 1) * CHIP_SLOT_H;
+  const k = Math.ceil((minAdvance - base) / (tapeSize * CHIP_SLOT_H));
+  return base + k * tapeSize * CHIP_SLOT_H;
+}
+
+function runSlotAnims() {
+  if (!slotAnimActive) return;
+  const now = performance.now();
+  if (winSpin.active) winSpin.angle += 0.04; // advance 3D spin angle each frame
+  for (let i = 0; i < 4; i++) {
+    const canvas = document.getElementById(`sc-${i}`);
+    if (!canvas) continue;
+    const ctx = canvas.getContext('2d');
+    const st = reelState[i];
+
+    if (!st.locked) {
+      if (st.stopping) {
+        const t = Math.min(1, (now - st.stopStartTime) / st.stopDuration);
+        // Cubic ease-out
+        const eased = 1 - Math.pow(1 - t, 3);
+        st.offset = st.startOffset + (st.targetOffset - st.startOffset) * eased;
+        if (t >= 1) {
+          st.offset = st.targetOffset;
+          st.locked = true;
+          st.stopTime = now;
+          SFX.slotStop(i); // mechanical clunk on lock
+        }
+      } else {
+        st.offset += st.speed;
+      }
+    }
+    drawReel(ctx, i);
+  }
+  requestAnimationFrame(runSlotAnims);
+}
+
+// ── Slot Machine ─────────────────────────────────────────────────
+let paytableBuilt = false;
+function buildSlotPaytable() {
+  const el = document.getElementById('slot-paytable');
+  if (!el) return;
+  const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+  const syms = { common: '○', uncommon: '◆', rare: '★', epic: '◈', legendary: '✦' };
+  let h = '<div class="pt-title">— PAYTABLE —</div>';
+  h += '<table class="pt-table"><tr><th></th>';
+  for (const r of rarities)
+    h += `<th style="color:${RARITY_COLOR[r]}">${syms[r]}</th>`;
+  h += '</tr>';
+  for (const n of [4, 3, 2]) {
+    h += `<tr><td class="pt-count">${n}×</td>`;
+    for (const r of rarities) {
+      const p = COMBO_PRIZES[n]?.[r];
+      h += `<td style="color:${p ? RARITY_COLOR[r] : '#1e1e2e'}">${p ? p.val : '·'}</td>`;
+    }
+    h += '</tr>';
+  }
+  h += '</table>';
+  el.innerHTML = h;
+}
+
+function openChestSlot(ch) {
+  if (!paytableBuilt) { buildSlotPaytable(); paytableBuilt = true; }
+  const roll = () => REEL_TAPE[Math.floor(Math.random() * REEL_TAPE.length)];
+  const r0 = roll(), r1 = roll(), r2 = roll(), r3 = roll();
+  const prize = evaluateCombination([r0, r1, r2, r3]);
+  S.pendingSlotPrize = { prize, ch };
+
+  const ov = document.getElementById('slot-overlay');
+  const res = document.getElementById('slot-result');
+  const claimBtn = document.getElementById('slot-claim-btn');
+  ov.classList.add('active');
+  res.classList.remove('visible');
+  claimBtn.disabled = true;
+
+  // Reset all reels — spinning fast
+  reelState.forEach((st, i) => {
+    st.offset = i * CHIP_SLOT_H * 1.7; // stagger start
+    st.speed = 14; // px per frame at ~60fps
+    st.stopping = false;
+    st.locked = false;
+    st.stopTime = -1;
+  });
+  slotAnimActive = true;
+  requestAnimationFrame(runSlotAnims);
+
+  // Mute BGM — only slot sounds during spin
+  BGM.stop();
+
+  // Ratchet click ticker — fires while any reel is spinning
+  if (slotSpinInterval) clearInterval(slotSpinInterval);
+  slotSpinInterval = setInterval(() => {
+    if (!slotAnimActive) { clearInterval(slotSpinInterval); slotSpinInterval = null; return; }
+    const anySpinning = reelState.some(st => !st.locked);
+    if (anySpinning) {
+      SFX.slotClick();
+    } else {
+      clearInterval(slotSpinInterval);
+      slotSpinInterval = null;
+    }
+  }, 55); // ~18 clicks/sec
+
+  // Stop each reel at given delay, last one shows prize rarity
+  const stopReel = (i, rarity, isLast, delay) => setTimeout(() => {
+    const st = reelState[i];
+    st.startOffset = st.offset;
+    st.targetOffset = computeStopOffset(i, rarity);
+    st.stopping = true;
+    st.stopStartTime = performance.now();
+    if (isLast) {
+      const stopDelay = st.stopDuration + 120;
+      setTimeout(() => {
+        const col = RARITY_COLOR[prize.rarity];
+        const badge = prize.rarity === 'empty' ? 'EMPTY'
+          : `${prize.matchCount}× ${prize.rarity.toUpperCase()}`;
+        document.getElementById('slot-rarity-badge').textContent = badge;
+        document.getElementById('slot-rarity-badge').style.color = col;
+        document.getElementById('slot-item-name').textContent = prize.name;
+        document.getElementById('slot-item-name').style.color = col;
+        document.getElementById('slot-panel').style.borderColor = col;
+        document.getElementById('slot-panel').style.boxShadow = `0 0 50px ${col}66, inset 0 0 20px ${col}11`;
+        res.classList.add('visible');
+        SFX.slotWin(prize.rarity);
+        if (winSpin.mask.size > 0) winSpin.active = true; // start 3D spin on winning chips
+        setTimeout(() => { claimBtn.disabled = false; }, 280);
+      }, stopDelay);
+    }
+  }, delay);
+
+  // Build display reels that visually reflect the winning combination
+  let displayReels;
+  if (!prize || prize.rarity === 'empty' || !prize.matchCount) {
+    // Empty/no-match — show raw rolls so player sees why they lost
+    displayReels = [r0, r1, r2, r3];
+  } else {
+    const win = prize.rarity;
+    const n = prize.matchCount; // how many reels show the winning rarity
+    const others = ['common', 'uncommon', 'rare', 'epic', 'legendary'].filter(r => r !== win);
+    const fills = [];
+    for (let i = 0; i < n; i++) fills.push(win);           // winning symbols
+    for (let i = n; i < 4; i++) fills.push(others[(i - n) % others.length]); // fillers
+    // Shuffle so winning chips are spread naturally across reels
+    for (let i = fills.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [fills[i], fills[j]] = [fills[j], fills[i]];
+    }
+    displayReels = fills;
+  }
+
+  // Prepare win spin mask (activated only after last reel fully stops)
+  winSpin.active = false;
+  winSpin.angle  = 0;
+  winSpin.mask.clear();
+  if (prize.matchCount && prize.rarity !== 'empty') {
+    displayReels.forEach((r, i) => { if (r === prize.rarity) winSpin.mask.add(i); });
+  }
+
+  stopReel(0, displayReels[0], false, 900);
+  stopReel(1, displayReels[1], false, 1600);
+  stopReel(2, displayReels[2], false, 2350);
+  stopReel(3, displayReels[3], true,  3100);
+}
+
+window.claimSlotPrize = function () {
+  if (!S.pendingSlotPrize) return;
+  const { prize, ch } = S.pendingSlotPrize;
+  S.pendingSlotPrize = null;
+
+  if (prize.rarity === 'empty') {
+    spawnDmgNumber(ch.x, ch.y, 'EMPTY', '#555566', 20, 'miss');
+    logEvent('Chest was empty.', 'info');
+  } else {
+    const gain = prize.val;
+    addToInventory('chip', prize.rarity, gain);
+    spawnHit(ch.x, ch.y, RARITY_COLOR[prize.rarity], 22);
+    spawnDmgNumber(ch.x, ch.y, `+${gain} CHIP`, RARITY_COLOR[prize.rarity], 24, 'crit');
+    S.shake = Math.max(S.shake, 8);
+    logEvent(`+${gain} CHIP — ${prize.rarity.toUpperCase()}`, prize.rarity);
+  }
+
+  updateInventoryUI();
+  winSpin.active = false;
+  winSpin.mask.clear();
+  slotAnimActive = false;
+  if (slotSpinInterval) { clearInterval(slotSpinInterval); slotSpinInterval = null; }
+  const panel = document.getElementById('slot-panel');
+  panel.style.borderColor = '';
+  panel.style.boxShadow = '';
+  document.getElementById('slot-overlay').classList.remove('active');
+  // Resume game music after slot sounds finish
+  setTimeout(() => BGM.start('game'), 600);
+};
+
+// ── Inventory ─────────────────────────────────────────────────────
+const INV_SLOTS = 30;
+
+// item: { type:'chip'|'fragment', rarity:'common'|...|null, qty:N }
+function addToInventory(type, rarity, qty) {
+  if (!S.inventory) S.inventory = new Array(INV_SLOTS).fill(null);
+  const idx = S.inventory.findIndex(s => s && s.type === type && s.rarity === rarity);
+  if (idx >= 0) { S.inventory[idx].qty += qty; }
+  else {
+    const empty = S.inventory.findIndex(s => s === null);
+    if (empty >= 0) S.inventory[empty] = { type, rarity, qty };
+  }
+  // Persist ALL item types to global inventory
+  if (gameMode === 'adventure') {
+    Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+    saveProfile();
+  }
+  // Note: callers (sync functions / chest code) handle UI refresh themselves
+}
+
+function syncFragmentSlot() {
+  if (!S.inventory) return;
+  const frags = S.fragments || 0;
+  const idx = S.inventory.findIndex(s => s && s.type === 'fragment');
+  if (frags <= 0) {
+    if (idx >= 0) S.inventory[idx] = null;
+  } else if (idx >= 0) {
+    S.inventory[idx].qty = frags;
+  } else {
+    addToInventory('fragment', null, frags); // addToInventory saves internally
+  }
+  if (gameMode === 'adventure' && idx >= 0) {
+    Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+    saveProfile();
+  }
+  if (S.inventoryOpen) updateInventoryUI();
+}
+
+function syncByteSlot() {
+  if (!S.inventory) return;
+  const b = S.bytes || 0;
+  const idx = S.inventory.findIndex(s => s && s.type === 'byte');
+  if (b <= 0) {
+    if (idx >= 0) S.inventory[idx] = null;
+  } else if (idx >= 0) {
+    S.inventory[idx].qty = b;
+  } else {
+    addToInventory('byte', null, b); // addToInventory saves internally
+  }
+  if (gameMode === 'adventure' && idx >= 0) {
+    Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+    saveProfile();
+  }
+  // Always update the visible byte counter button
+  const btnEl = document.getElementById('inv-btn-chips');
+  if (btnEl) btnEl.textContent = b + '⬡';
+  // Full grid refresh only if panel is open
+  if (S.inventoryOpen) updateInventoryUI();
+}
+
+function syncXpTokenSlot() {
+  if (!S.inventory) return;
+  const xp = S.xpTokens || 0;
+  const idx = S.inventory.findIndex(s => s && s.type === 'xptoken');
+  if (xp <= 0) {
+    if (idx >= 0) S.inventory[idx] = null;
+  } else if (idx >= 0) {
+    S.inventory[idx].qty = xp;
+  } else {
+    addToInventory('xptoken', null, xp); // addToInventory saves internally
+  }
+  if (gameMode === 'adventure' && idx >= 0) {
+    Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+    saveProfile();
+  }
+  if (S.inventoryOpen) updateInventoryUI();
+}
+
+const INV_ITEM_NAMES = {
+  byte: 'BYTE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN',
+  chip_common: 'COMMON CHIP', chip_uncommon: 'UNCOMMON CHIP',
+  chip_rare: 'RARE CHIP', chip_epic: 'EPIC CHIP', chip_legendary: 'LEGENDARY CHIP',
+};
+const INV_ITEM_ICONS = {
+  byte: '&#9711;', fragment: '&#9830;', xptoken: '&#9733;',
+  chip_common: '&#11041;', chip_uncommon: '&#11041;', chip_rare: '&#11041;',
+  chip_epic: '&#11041;', chip_legendary: '&#11041;',
+};
+
+function updateInventoryUI() {
+  // Update fragment progress bar
+  const frags = S.fragments || 0;
+  const inProg = frags % FRAG_PER_CHIP;
+  const pct = inProg / FRAG_PER_CHIP;
+  const el = id => document.getElementById(id);
+  if (el('inv-frags-prog')) el('inv-frags-prog').textContent = inProg;
+  if (el('inv-frags-max')) el('inv-frags-max').textContent = FRAG_PER_CHIP;
+  if (el('inv-frag-bar')) el('inv-frag-bar').style.width = (pct * 100) + '%';
+  if (el('inv-floor')) el('inv-floor').textContent = S.floor || 1;
+
+  // Button chip count
+  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = (S.bytes || 0) + '⬡';
+
+  // Render slot grid
+  const grid = el('inv-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  for (let i = 0; i < INV_SLOTS; i++) {
+    const item = S.inventory ? S.inventory[i] : null;
+    const slot = document.createElement('div');
+
+    if (item) {
+      const col = item.type === 'byte' ? '#ffdd00'
+        : item.type === 'fragment' ? '#ff8800'
+          : item.type === 'xptoken' ? '#00ffcc'
+            : (RARITY_COLOR[item.rarity] || '#aaaaaa');
+      const label = item.type === 'byte' ? 'BYTE'
+        : item.type === 'fragment' ? 'FRAGMENT'
+          : item.type === 'xptoken' ? 'XP TOKEN'
+            : item.rarity.toUpperCase() + ' CHIP';
+      const name = item.type === 'byte' ? 'Byte'
+        : item.type === 'fragment' ? 'Chip Fragment'
+          : item.type === 'xptoken' ? 'XP Token'
+            : `${item.rarity} Chip`;
+
+      slot.className = 'inv-slot has-item';
+      slot.style.borderColor = col + '99';
+      slot.style.boxShadow = `inset 0 0 16px ${col}22, 0 0 6px ${col}44`;
+
+      if (item.type === 'chip') {
+        const cv = document.createElement('canvas');
+        cv.width = 96; cv.height = 96;
+        cv.className = 'inv-chip-canvas';
+        cv.dataset.rarity = item.rarity;
+        cv.dataset.phase = (i * 1.31).toFixed(3);
+        cv._angle = 0; cv._vel = 0; cv._hovered = false;
+        slot.addEventListener('mouseenter', () => { cv._hovered = true; });
+        slot.addEventListener('mouseleave', () => { cv._hovered = false; });
+        slot.appendChild(cv);
+      } else if (item.type === 'byte') {
+        const cv = document.createElement('canvas');
+        cv.width = 96; cv.height = 96;
+        cv.className = 'inv-byte-canvas';
+        cv.dataset.phase = (i * 1.31).toFixed(3);
+        cv._angle = 0; cv._vel = 0; cv._hovered = false;
+        slot.addEventListener('mouseenter', () => { cv._hovered = true; });
+        slot.addEventListener('mouseleave', () => { cv._hovered = false; });
+        slot.appendChild(cv);
+      } else if (item.type === 'xptoken') {
+        const cv = document.createElement('canvas');
+        cv.width = 96; cv.height = 96;
+        cv.className = 'inv-xp-canvas';
+        cv.dataset.phase = (i * 1.31).toFixed(3);
+        cv._angle = 0; cv._vel = 0; cv._hovered = false;
+        slot.addEventListener('mouseenter', () => { cv._hovered = true; });
+        slot.addEventListener('mouseleave', () => { cv._hovered = false; });
+        slot.appendChild(cv);
+      } else {
+        const cv = document.createElement('canvas');
+        cv.width = 96; cv.height = 96;
+        cv.className = 'inv-frag-canvas';
+        cv.dataset.phase = (i * 1.31).toFixed(3);
+        cv._angle = 0; cv._vel = 0; cv._hovered = false;
+        slot.addEventListener('mouseenter', () => { cv._hovered = true; });
+        slot.addEventListener('mouseleave', () => { cv._hovered = false; });
+        slot.appendChild(cv);
+      }
+
+      // Rarity / type label — bottom left
+      const rlabel = document.createElement('span');
+      rlabel.className = 'inv-slot-label';
+      rlabel.style.color = col;
+      rlabel.textContent = label;
+      slot.appendChild(rlabel);
+
+      // Quantity — bottom right
+      const qty = document.createElement('span');
+      qty.className = 'inv-slot-qty';
+      qty.textContent = item.qty;
+      slot.appendChild(qty);
+
+      // Hover info bar
+      slot.addEventListener('mouseenter', () => {
+        const info = el('inv-info-bar');
+        if (info) { info.textContent = `${name.toUpperCase()}  ×${item.qty}`; info.style.color = col; }
+      });
+      slot.addEventListener('mouseleave', () => {
+        const info = el('inv-info-bar');
+        if (info) { info.textContent = '— hover a slot —'; info.style.color = ''; }
+      });
+    } else {
+      slot.className = 'inv-slot empty';
+    }
+
+    grid.appendChild(slot);
+  }
+}
+
+// ── Inventory chip animation loop ────────────────────────────────
+let invAnimRaf = null;
+
+// BGA contact pad positions on chip back (row, col) — all land on body pixels
+const CHIP_BACK_PADS = [
+  [3, 3], [3, 6], [3, 9],
+  [6, 3], [6, 6], [6, 9],
+  [9, 3], [9, 6], [9, 9],
+];
+
+function drawChipBack(ctx, x, y, rarity) {
+  const pal = CHIP_PALETTES[rarity] || CHIP_PALETTES.common;
+  const rows = CHIP_ART.length, cols = CHIP_ART[0].length;
+  const px = CHIP_PX;
+
+  // Body — same silhouette as front, but dark flat colors
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = CHIP_ART[r][c];
+      if (!v) continue;
+      ctx.fillStyle = v === 1 ? pal[1] : pal[2];
+      ctx.fillRect(x + c * px, y + r * px, px, px);
+    }
+  }
+
+  // Thin horizontal trace lines across the body
+  ctx.fillStyle = pal[3];
+  [4, 6, 8].forEach(r => {
+    ctx.fillRect(x + 2 * px, y + r * px + 3, 8 * px, 2);
+  });
+
+  // 3×3 BGA contact pads — glowing dots in rarity glow color
+  ctx.shadowColor = pal[5];
+  ctx.shadowBlur = 7;
+  ctx.fillStyle = pal[5];
+  CHIP_BACK_PADS.forEach(([r, c]) => {
+    ctx.fillRect(x + c * px + 2, y + r * px + 2, px - 4, px - 4);
+  });
+  ctx.shadowBlur = 0;
+}
+
+// ── Fragment Shape (shared between loot draw + inventory canvas) ─
+// True 3D cube with orthographic projection + Y rotation + fixed X tilt
+// r = half-size, t = Y-rotation angle, pulse = glow 0..1
+function drawCubeFragment(ctx, r, t, pulse) {
+  const cY = Math.cos(t), sY = Math.sin(t);
+  const ax = 0.52; // fixed downward tilt so top face is always visible
+  const cX = Math.cos(ax), sX = Math.sin(ax);
+
+  // Project 3D point → 2D (orthographic, Y then X rotation)
+  function proj(x, y, z) {
+    const rx = x * cY + z * sY;          // Y rotation
+    const ry = y;
+    const rz = -x * sY + z * cY;
+    return { x: rx, y: ry * cX - rz * sX, z: ry * sX + rz * cX };
+  }
+
+  // 8 cube corners: top 4 (y=-r), bottom 4 (y=+r)
+  const raw = [
+    [-r, -r, -r], [r, -r, -r], [r, -r, r], [-r, -r, r],
+    [-r, r, -r], [r, r, -r], [r, r, r], [-r, r, r],
+  ];
+  const v = raw.map(([x, y, z]) => proj(x, y, z));
+
+  // 6 faces: vertex indices + amber face colors
+  const faces = [
+    { idx: [3, 2, 6, 7], col: [204, 85, 0] },  // front  (z=+r) — mid orange
+    { idx: [1, 0, 4, 5], col: [68, 17, 0] },  // back   (z=-r) — very dark
+    { idx: [2, 1, 5, 6], col: [170, 55, 0] },  // right  (x=+r) — darker
+    { idx: [0, 3, 7, 4], col: [85, 28, 0] },  // left   (x=-r) — darkest side
+    { idx: [0, 1, 2, 3], col: [255, 150, 0] },  // top    (y=-r) — brightest
+    { idx: [7, 6, 5, 4], col: [30, 8, 0] },  // bottom (y=+r) — nearly black
+  ];
+
+  // Back-to-front sort + face-culling via cross product
+  faces.forEach(f => {
+    f.cz = f.idx.reduce((s, i) => s + v[i].z, 0) / 4;
+    const [i0, i1, i2] = f.idx;
+    f.vis = (v[i1].x - v[i0].x) * (v[i2].y - v[i0].y)
+      - (v[i1].y - v[i0].y) * (v[i2].x - v[i0].x) > 0;
+  });
+  faces.sort((a, b) => a.cz - b.cz);
+
+  const edgeAlpha = (0.5 + 0.5 * pulse).toFixed(2);
+  faces.forEach(f => {
+    if (!f.vis) return;
+    const [fr, fg, fb] = f.col;
+    ctx.fillStyle = `rgb(${fr},${fg},${fb})`;
+    ctx.strokeStyle = `rgba(255,160,0,${edgeAlpha})`;
+    ctx.lineWidth = Math.max(0.5, r * 0.07);
+    ctx.beginPath();
+    f.idx.forEach((vi, j) => {
+      if (j === 0) ctx.moveTo(v[vi].x, v[vi].y);
+      else ctx.lineTo(v[vi].x, v[vi].y);
+    });
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+// ── XP Token Pixel Art ───────────────────────────────────────────
+const XP_ART_X = [
+  [1, 0, 0, 0, 1],
+  [0, 1, 0, 1, 0],
+  [0, 0, 1, 0, 0],
+  [0, 1, 0, 1, 0],
+  [1, 0, 0, 0, 1],
+];
+const XP_ART_P = [
+  [1, 1, 1, 0],
+  [1, 0, 0, 1],
+  [1, 1, 1, 0],
+  [1, 0, 0, 0],
+  [1, 0, 0, 0],
+];
+
+// Draw pixel-art "XP" centered at (cx, cy); px = pixels per art-pixel
+function drawXpPixelArt(ctx, cx, cy, px, color) {
+  const xCols = XP_ART_X[0].length;              // 5
+  const pCols = XP_ART_P[0].length;              // 4
+  const rows = XP_ART_X.length;                 // 5
+  const totalW = (xCols + 1 + pCols) * px;        // 10 * px
+  const sx = cx - totalW / 2;
+  const sy = cy - (rows * px) / 2;
+  ctx.fillStyle = color;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < xCols; c++) {
+      if (XP_ART_X[r][c]) ctx.fillRect(sx + c * px, sy + r * px, px, px);
+    }
+    const pOff = (xCols + 1) * px;
+    for (let c = 0; c < pCols; c++) {
+      if (XP_ART_P[r][c]) ctx.fillRect(sx + pOff + c * px, sy + r * px, px, px);
+    }
+  }
+}
+
+function drawInvChipCanvas(cv) {
+  const rarity = cv.dataset.rarity;
+  const phase = parseFloat(cv.dataset.phase || 0);
+  const cctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const now = performance.now();
+
+  // Velocity-based spin: accelerate on hover, decelerate on leave
+  if (cv._hovered) cv._vel = Math.min((cv._vel || 0) + 0.003, 0.05);
+  else cv._vel = Math.max((cv._vel || 0) - 0.002, 0);
+  cv._angle = (cv._angle || 0) + (cv._vel || 0);
+
+  cctx.clearRect(0, 0, W, H);
+
+  const cosA = Math.cos(cv._angle);
+  const isFront = cosA >= 0;
+  const bobY = Math.sin(now * 0.0011 + phase) * 3.5;
+  const half = CHIP_ART_SIZE / 2;
+
+  cctx.save();
+  cctx.translate(W / 2, H / 2 + bobY);
+  cctx.scale(cosA, 1);
+  cctx.translate(-half, -half);
+
+  if (isFront) drawChipFlat(cctx, 0, 0, rarity, true);
+  else drawChipBack(cctx, 0, 0, rarity);
+
+  cctx.restore();
+}
+
+function drawInvXpCanvas(cv) {
+  const phase = parseFloat(cv.dataset.phase || 0);
+  const cctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const now = performance.now();
+
+  if (cv._hovered) cv._vel = Math.min((cv._vel || 0) + 0.003, 0.05);
+  else cv._vel = Math.max((cv._vel || 0) - 0.002, 0);
+  cv._angle = (cv._angle || 0) + (cv._vel || 0);
+
+  cctx.clearRect(0, 0, W, H);
+
+  const cosA = Math.cos(cv._angle);
+  const isFront = cosA >= 0;
+  const bobY = Math.sin(now * 0.0011 + phase) * 3.5;
+  const pulse = 0.7 + 0.3 * Math.sin(now * 0.0022 + phase);
+
+  cctx.save();
+  cctx.translate(W / 2, H / 2 + bobY);
+  cctx.scale(cosA, 1);
+
+  if (isFront) {
+    cctx.shadowColor = '#00ffcc';
+    cctx.shadowBlur = 14 * pulse;
+    cctx.globalAlpha = 0.85 + 0.15 * pulse;
+    drawXpPixelArt(cctx, 0, 0, 7, '#00ffcc');
+    cctx.globalAlpha = 1;
+    cctx.shadowBlur = 0;
+  } else {
+    drawXpPixelArt(cctx, 0, 0, 7, '#003d2e');
+  }
+
+  cctx.restore();
+}
+
+function drawInvFragCanvas(cv) {
+  const phase = parseFloat(cv.dataset.phase || 0);
+  const cctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const now = performance.now();
+
+  if (cv._hovered) cv._vel = Math.min((cv._vel || 0) + 0.003, 0.05);
+  else cv._vel = Math.max((cv._vel || 0) - 0.002, 0);
+  cv._angle = (cv._angle || 0) + (cv._vel || 0);
+
+  cctx.clearRect(0, 0, W, H);
+
+  const bobY = Math.sin(now * 0.0011 + phase) * 3.5;
+  const pulse = 0.75 + 0.25 * Math.sin(now * 0.006 + phase);
+
+  cctx.save();
+  cctx.translate(W / 2, H / 2 + bobY);
+  cctx.shadowColor = '#ff8800';
+  cctx.shadowBlur = 14 * pulse;
+  drawCubeFragment(cctx, 22, cv._angle, pulse);
+  cctx.shadowBlur = 0;
+  cctx.restore();
+}
+
+function drawInvByteCanvas(cv) {
+  const phase = parseFloat(cv.dataset.phase || 0);
+  const cctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const now = performance.now();
+
+  if (cv._hovered) cv._vel = Math.min((cv._vel || 0) + 0.003, 0.05);
+  else cv._vel = Math.max((cv._vel || 0) - 0.002, 0);
+  cv._angle = (cv._angle || 0) + (cv._vel || 0);
+
+  cctx.clearRect(0, 0, W, H);
+
+  const spinX = Math.abs(Math.cos(cv._angle));
+  const bright = spinX > 0.5;
+  const bobY = Math.sin(now * 0.0011 + phase) * 3.5;
+  const r = 26;
+  const xR = Math.max(2, r * spinX);
+
+  cctx.save();
+  cctx.translate(W / 2, H / 2 + bobY);
+  cctx.shadowColor = '#ffdd00';
+  cctx.shadowBlur = 18;
+
+  // Coin body
+  cctx.fillStyle = bright ? '#ffcc00' : '#996600';
+  cctx.beginPath();
+  cctx.ellipse(0, 0, xR, r, 0, 0, Math.PI * 2);
+  cctx.fill();
+
+  // Shine highlight
+  if (spinX > 0.3) {
+    cctx.fillStyle = 'rgba(255,255,180,0.5)';
+    cctx.beginPath();
+    cctx.ellipse(-xR * 0.28, -r * 0.28, xR * 0.3, r * 0.42, 0, 0, Math.PI * 2);
+    cctx.fill();
+  }
+
+  // Rim
+  cctx.strokeStyle = bright ? '#ffee00' : '#774400';
+  cctx.lineWidth = 2;
+  cctx.beginPath();
+  cctx.ellipse(0, 0, xR, r, 0, 0, Math.PI * 2);
+  cctx.stroke();
+
+  // "B" label on front face
+  if (spinX > 0.35) {
+    cctx.shadowBlur = 0;
+    cctx.fillStyle = bright ? '#885500' : '#ffaa00';
+    cctx.font = `bold ${Math.max(8, Math.round(xR * 0.95))}px monospace`;
+    cctx.textAlign = 'center';
+    cctx.textBaseline = 'middle';
+    cctx.fillText('B', 0, 1);
+  }
+
+  cctx.shadowBlur = 0;
+  cctx.restore();
+}
+
+function startInvAnimations() {
+  if (invAnimRaf) return;
+  function frame() {
+    document.querySelectorAll('.inv-chip-canvas').forEach(drawInvChipCanvas);
+    document.querySelectorAll('.inv-byte-canvas').forEach(drawInvByteCanvas);
+    document.querySelectorAll('.inv-xp-canvas').forEach(drawInvXpCanvas);
+    document.querySelectorAll('.inv-frag-canvas').forEach(drawInvFragCanvas);
+    invAnimRaf = requestAnimationFrame(frame);
+  }
+  invAnimRaf = requestAnimationFrame(frame);
+}
+
+function stopInvAnimations() {
+  if (invAnimRaf) { cancelAnimationFrame(invAnimRaf); invAnimRaf = null; }
+}
+
+window.toggleInventory = function () {
+  const ov = document.getElementById('inv-overlay');
+  if (!ov) return;
+  if (S.inventoryOpen) {
+    window.closeInventory();
+  } else {
+    updateInventoryUI();
+    ov.classList.add('active');
+    S.inventoryOpen = true;
+    startInvAnimations();
+  }
+};
+
+window.closeInventory = function () {
+  const ov = document.getElementById('inv-overlay');
+  if (ov) ov.classList.remove('active');
+  S.inventoryOpen = false;
+  stopInvAnimations();
+};
+
+function checkExplorationComplete() {
+  if (!S.fog || S.explorerChestSpawned || gameMode !== 'adventure') return;
+  let total = 0, revealed = 0;
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (S.dungeon[y][x] > 0) { total++; if (S.fog[y][x]) revealed++; }
+  if (total > 0 && revealed >= total) spawnExplorerChest();
+}
+
+function spawnExplorerChest() {
+  S.explorerChestSpawned = true;
+  // Always reveal full map as reward for exploring
+  S.fullMapRevealed = true;
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (S.dungeon[y][x] > 0) S.fog[y][x] = true;
+
+  // Pick a random room from the first 3
+  const poolSize = Math.min(3, S.rooms.length);
+  const candidates = [];
+  for (let i = 0; i < poolSize; i++) {
+    const r = S.rooms[i];
+    const cx = r.x + Math.floor(r.w / 2);
+    const cy = r.y + Math.floor(r.h / 2);
+    if (S.dungeon[cy]?.[cx] > 0
+      && !(S.chests || []).some(c => c.x === cx && c.y === cy)
+      && !(S.exit && S.exit.x === cx && S.exit.y === cy)) {
+      candidates.push({ x: cx, y: cy });
+    }
+  }
+  if (candidates.length === 0) return;
+
+  const best = candidates[Math.floor(Math.random() * candidates.length)];
+  const chipVal = 40 + S.floor * 10;
+  S.chests.push({
+    x: best.x, y: best.y, opened: false, explorer: true, val: chipVal,
+    spawning: true, spawnStart: performance.now()
+  });
+  SFX.chestSpawn();
 }
 
 // Returns true if cell (x,y) is within current player vision radius or bullet illumination
@@ -1450,9 +3035,11 @@ function drawFog() {
           }
         }
       } else if (S.fog[r][c]) {
-        const alpha = bulletGlow ? 0.78 * Math.min(1, (bDist - 1.0) / 1.5) : 0.78;
-        ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(2)})`;
-        ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+        if (!S.fullMapRevealed) {
+          const alpha = bulletGlow ? 0.78 * Math.min(1, (bDist - 1.0) / 1.5) : 0.78;
+          ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(2)})`;
+          ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+        }
       } else {
         const alpha = bulletGlow ? Math.min(1, (bDist - 1.0) / 1.5) : 1.0;
         ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(2)})`;
@@ -1541,8 +3128,65 @@ function drawFootsteps() {
   });
 }
 
-// ── Adventure HUD — Floor + Kill counter (screen space) ───────────
-function drawAdvHUD() { }
+// ── Adventure HUD — Chip + Fragment counter (screen space) ─────────
+function drawAdvHUD() {
+  const bytes = S.bytes || 0;
+  const frags = S.fragments || 0;
+  const fragsInProgress = frags % FRAG_PER_CHIP;
+  const assembled = Math.floor(frags / FRAG_PER_CHIP);
+  const fragPct = fragsInProgress / FRAG_PER_CHIP;
+
+  ctx.save();
+  const x = 12, y = 16;
+  const barW = 80, barH = 6;
+  const now = performance.now();
+
+  // ── CHIP count ──
+  ctx.font = 'bold 12px monospace';
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#ffee00';
+  ctx.fillStyle = '#ffee00';
+  ctx.fillText(`⬡ ${bytes}`, x + 20, y);
+  // small chip icon (3-pixel art)
+  ctx.fillStyle = '#ffcc00';
+  ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6;
+  ctx.fillRect(x, y - 10, 10, 10);
+  ctx.strokeStyle = '#ffee88'; ctx.lineWidth = 1;
+  ctx.strokeRect(x, y - 10, 10, 10);
+
+  // ── FRAGMENT bar ──
+  const fy = y + 14;
+  ctx.font = '9px monospace';
+  ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 8;
+  ctx.fillStyle = '#ff8800';
+  ctx.fillText(`FRAG ${fragsInProgress}/${FRAG_PER_CHIP}`, x, fy);
+
+  // Bar background
+  ctx.fillStyle = 'rgba(80,30,0,0.7)';
+  ctx.shadowBlur = 0;
+  ctx.fillRect(x, fy + 3, barW, barH);
+  // Bar fill
+  const fragGlow = 0.85 + 0.15 * Math.sin(now * 0.007);
+  const barFill = ctx.createLinearGradient(x, 0, x + barW, 0);
+  barFill.addColorStop(0, '#cc5500');
+  barFill.addColorStop(1, '#ff9900');
+  ctx.fillStyle = barFill;
+  ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6 * fragGlow;
+  ctx.fillRect(x, fy + 3, barW * fragPct, barH);
+  // Bar border
+  ctx.strokeStyle = 'rgba(255,140,0,0.4)'; ctx.lineWidth = 1;
+  ctx.shadowBlur = 0;
+  ctx.strokeRect(x, fy + 3, barW, barH);
+
+  // Assembled chips ready indicator (if any extra full sets pending)
+  if (assembled > 0) {
+    ctx.font = 'bold 9px monospace';
+    ctx.fillStyle = '#00ffee'; ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 8;
+    ctx.fillText(`+${assembled} CHIP RDY`, x + barW + 6, fy + 9);
+  }
+
+  ctx.restore();
+}
 
 // ── Weapon HUD — current weapon + ammo (screen space, bottom left) ─
 function drawWeaponHUD() {
@@ -1595,7 +3239,7 @@ function drawScanlines() {
 function drawShrines() {
   if (!S.shrines) return;
   S.shrines.forEach(sh => {
-    if (!isVisible(sh.x, sh.y)) return;
+    if (!isVisible(sh.x, sh.y) && !(S.fullMapRevealed && S.fog?.[sh.y]?.[sh.x])) return;
     const cx = (sh.x + 0.5) * CELL, cy = (sh.y + 0.5) * CELL;
     ctx.save();
     if (!sh.used) {
@@ -1667,21 +3311,137 @@ function drawBloodStains() {
 function drawChests() {
   if (!S.chests) return;
   S.chests.forEach(ch => {
-    if (gameMode === 'adventure' && !isVisible(ch.x, ch.y)) return;
+    if (gameMode === 'adventure' && !isVisible(ch.x, ch.y) && !(S.fullMapRevealed && S.fog?.[ch.y]?.[ch.x])) return;
     const cx = (ch.x + 0.5) * CELL, cy = (ch.y + 0.5) * CELL;
     const w = CELL * 0.54, h = CELL * 0.4;
     ctx.save();
-    if (!ch.opened) {
-      ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 14;
-      ctx.fillStyle = '#2e1f00';
+    if (ch.spawning && !ch.opening) {
+      // ── Chest materialization animation ───────────────────────────
+      const elapsed = performance.now() - ch.spawnStart;
+      const SPAWN_DUR = 1500;
+      const t = Math.min(1, elapsed / SPAWN_DUR);
+      if (elapsed >= SPAWN_DUR) ch.spawning = false;
+      const cc = '#00ffee';
+
+      // Three staggered expanding rings (Removed as requested by user)
+
+      // Vertical scan beam sweeping through chest area
+      if (t < 0.65) {
+        const scanT = t / 0.65;
+        const beamY = (cy - CELL * 0.65) + scanT * CELL * 1.3;
+        const beamAlpha = Math.sin(scanT * Math.PI) * 0.85;
+        ctx.strokeStyle = `rgba(0,255,238,${beamAlpha.toFixed(2)})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = cc; ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(cx - CELL * 0.52, beamY);
+        ctx.lineTo(cx + CELL * 0.52, beamY);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // Chest flickers in starting at t=0.28
+      if (t > 0.28) {
+        const matT = (t - 0.28) / 0.72;
+        let alpha;
+        if (matT < 0.65) {
+          // Flicker: randomly visible/invisible early on
+          alpha = (Math.random() < 0.45 + matT * 0.55) ? matT * 0.9 : matT * 0.15;
+        } else {
+          alpha = 0.75 + matT * 0.25;
+        }
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.shadowColor = cc;
+        ctx.shadowBlur = 28 + (1 - matT) * 32;
+        ctx.fillStyle = '#001e1e';
+        ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+        ctx.strokeStyle = cc; ctx.lineWidth = 2.5;
+        ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+        ctx.beginPath();
+        ctx.moveTo(cx - w / 2, cy - h * 0.05);
+        ctx.lineTo(cx + w / 2, cy - h * 0.05);
+        ctx.stroke();
+        ctx.fillStyle = cc; ctx.shadowBlur = 10;
+        ctx.font = `${Math.round(h * 0.7)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('★', cx, cy + h * 0.1);
+        ctx.globalAlpha = 1;
+      }
+
+
+    } else if (ch.opening && !ch.opened) {
+      // ── Opening animation ─────────────────────────────────────
+      const elapsed = performance.now() - ch.openStart;
+      const progress = Math.min(1, elapsed / 720);
+      const cc = ch.explorer ? '#00ffee' : '#ffaa00';
+      const lidLift = Math.pow(progress, 0.6) * CELL * 1.1;
+      const glow = 16 + progress * 44;
+
+      ctx.shadowColor = cc; ctx.shadowBlur = glow;
+
+      // Light beam shooting upward
+      if (progress > 0.15) {
+        const beamH = CELL * 3.5 * Math.pow(progress, 0.7);
+        const beamA = Math.min(1, (progress - 0.15) / 0.25) * (1 - progress * 0.6);
+        const grad = ctx.createLinearGradient(cx, cy - h * 0.1, cx, cy - h * 0.1 - beamH);
+        grad.addColorStop(0, cc + 'bb');
+        grad.addColorStop(1, cc + '00');
+        ctx.globalAlpha = beamA;
+        ctx.fillStyle = grad;
+        ctx.fillRect(cx - w * 0.14, cy - h * 0.1 - beamH, w * 0.28, beamH);
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = glow;
+      }
+
+      // Chest body (stays)
+      ctx.fillStyle = ch.explorer ? '#001e1e' : '#2e1f00';
+      ctx.fillRect(cx - w / 2, cy - h * 0.05, w, h * 0.55);
+      ctx.strokeStyle = cc; ctx.lineWidth = 2;
+      ctx.strokeRect(cx - w / 2, cy - h * 0.05, w, h * 0.55);
+
+      // Chest lid (flies up + rotates slightly)
+      ctx.save();
+      ctx.translate(cx, cy - h * 0.05 - lidLift);
+      ctx.rotate((progress - 0.5) * 0.18);
+      ctx.fillStyle = ch.explorer ? '#002a2a' : '#3d2800';
+      ctx.fillRect(-w / 2, -h * 0.45, w, h * 0.45);
+      ctx.strokeStyle = cc; ctx.lineWidth = 2;
+      ctx.strokeRect(-w / 2, -h * 0.45, w, h * 0.45);
+      ctx.restore();
+
+      // Continuous particles flying out of chest
+      if (progress < 0.88 && Math.random() < 0.55) {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.4;
+        S.particles.push({
+          x: cx + (Math.random() - 0.5) * w * 0.8,
+          y: cy - h * 0.1,
+          vx: Math.cos(ang) * (0.4 + Math.random() * 2.2),
+          vy: Math.sin(ang) * (1.2 + Math.random() * 3.5),
+          life: 1, decay: 0.035 + Math.random() * 0.04,
+          r: 2 + Math.random() * 3.5, color: cc,
+        });
+      }
+
+    } else if (!ch.opened) {
+      const cc = ch.explorer ? '#00ffee' : '#ffaa00';
+      const t = performance.now() / 1000;
+      const pulse = ch.explorer ? (Math.sin(t * 3) * 0.5 + 0.5) : 0;
+      ctx.shadowColor = cc; ctx.shadowBlur = 14 + pulse * 16;
+      ctx.fillStyle = ch.explorer ? '#001e1e' : '#2e1f00';
       ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-      ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2;
+      ctx.strokeStyle = cc; ctx.lineWidth = ch.explorer ? 2.5 : 2;
       ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
       // lid line
       ctx.beginPath(); ctx.moveTo(cx - w / 2, cy - h * 0.05); ctx.lineTo(cx + w / 2, cy - h * 0.05); ctx.stroke();
-      // lock
-      ctx.fillStyle = '#ffaa00'; ctx.shadowBlur = 8;
-      ctx.beginPath(); ctx.arc(cx, cy + h * 0.08, 3.5, 0, Math.PI * 2); ctx.fill();
+      // lock / star
+      ctx.fillStyle = cc; ctx.shadowBlur = 8;
+      if (ch.explorer) {
+        ctx.font = `${Math.round(h * 0.7)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('★', cx, cy + h * 0.1);
+      } else {
+        ctx.beginPath(); ctx.arc(cx, cy + h * 0.08, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
     } else {
       ctx.globalAlpha = 0.28;
       ctx.fillStyle = '#2e1f00';
@@ -1695,7 +3455,7 @@ function drawChests() {
 
 function drawExit() {
   if (!S.exit || S.exit.used || gameMode !== 'adventure') return;
-  if (!isVisible(S.exit.x, S.exit.y)) return;
+  if (!isVisible(S.exit.x, S.exit.y) && !S.fullMapRevealed) return;
   const cx = (S.exit.x + 0.5) * CELL, cy = (S.exit.y + 0.5) * CELL;
   const r = CELL * 0.36;
   const t = performance.now() / 1000;
@@ -1722,9 +3482,29 @@ function drawExit() {
 }
 
 function spawnLoot(x, y) {
-  const type = Math.random() < 0.5 ? 'energy' : 'coin'; // 50/50
-  const val = type === 'energy' ? Math.floor(5 + Math.random() * 16) : Math.floor(5 + Math.random() * 21);
-  S.loot.push({ x, y, type, val, collected: false, age: 0 });
+  // One drop type max per kill — exclusive roll
+  // 30% byte | 20% fragment | 10% xptoken | 40% nothing
+  const roll = Math.random();
+  if (roll < 0.30) S.loot.push({ x, y, type: 'byte', val: 1, collected: false, age: 0 });
+  else if (roll < 0.50) S.loot.push({ x, y, type: 'fragment', val: 1, collected: false, age: 0 });
+  else if (roll < 0.60) S.loot.push({ x, y, type: 'xptoken', val: 1, collected: false, age: 0 });
+}
+
+function checkFragmentCombine(x, y) {
+  let assembled = 0;
+  while ((S.fragments || 0) >= FRAG_PER_CHIP) {
+    S.fragments -= FRAG_PER_CHIP;
+    assembled++;
+  }
+  syncFragmentSlot();
+  if (assembled > 0) {
+    addToInventory('chip', 'common', assembled);
+    spawnDmgNumber(x, y, `+${assembled} CHIP ASSEMBLED!`, '#00ffee', 20, 'crit');
+    spawnHit(x, y, '#00ffee', 18);
+    S.shake = Math.max(S.shake, 6);
+    logEvent(`◆ CHIP${assembled > 1 ? `S x${assembled}` : ''} ASSEMBLED`, 'assembled');
+  }
+  updateInventoryUI();
 }
 
 function drawLoot() {
@@ -1732,12 +3512,12 @@ function drawLoot() {
   const now = performance.now();
   S.loot.forEach(l => {
     if (l.collected) return;
-    if (gameMode === 'adventure' && !isVisible(l.x, l.y)) return;
+    if (gameMode === 'adventure' && !isVisible(l.x, l.y) && !(S.fullMapRevealed && S.fog?.[l.y]?.[l.x])) return;
     const cx = (l.x + 0.5) * CELL, cy = (l.y + 0.5) * CELL;
     const float = Math.sin(now * 0.005) * 4;
     ctx.save();
-    if (l.type === 'coin') {
-      // Mario-style spinning coin: squash X axis with cos to simulate 3D rotation
+    if (l.type === 'byte') {
+      // BYTE drop — Mario-style spinning coin: squash X axis with cos to simulate 3D rotation
       const spinPhase = now * 0.004;
       const spinX = Math.abs(Math.cos(spinPhase)); // 0..1
       const coinR = 9;
@@ -1759,15 +3539,37 @@ function drawLoot() {
       ctx.strokeStyle = bright ? '#ffee00' : '#aa6600'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
-    } else {
-      ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 12;
-      ctx.fillStyle = '#00ccff';
-      const sz = 12;
-      ctx.fillRect(cx - sz / 2, cy - sz / 2 + float, sz, sz);
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-      ctx.strokeRect(cx - sz / 2, cy - sz / 2 + float, sz, sz);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.moveTo(cx, cy - 4 + float); ctx.lineTo(cx - 3, cy + float); ctx.lineTo(cx, cy + float); ctx.lineTo(cx - 1, cy + 5 + float); ctx.lineTo(cx + 3, cy - 1 + float); ctx.lineTo(cx, cy - 1 + float); ctx.closePath(); ctx.fill();
+    } else if (l.type === 'fragment') {
+      // Broken chip fragment — 3D spinning cracked shard
+      const phase = l.x * 1.3 + l.y * 0.7;
+      const t = now * 0.0016 + phase;
+      const pulse = 0.75 + 0.25 * Math.sin(now * 0.006 + phase);
+      ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 10 * pulse;
+      ctx.save();
+      ctx.translate(cx, cy + float);
+      drawCubeFragment(ctx, 5, t, pulse);
+      ctx.restore();
+    } else if (l.type === 'xptoken') {
+      // XP Token — 3D spinning pixel-art "XP" (same as inventory animation)
+      const phase = l.x * 0.9 + l.y * 0.4;
+      const angle = now * 0.0016 + phase;
+      const cosA = Math.cos(angle);
+      const isFront = cosA >= 0;
+      const pulse = 0.7 + 0.3 * Math.sin(now * 0.0022 + phase);
+      ctx.save();
+      ctx.translate(cx, cy + float);
+      ctx.scale(cosA, 1);
+      if (isFront) {
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur = 10 * pulse;
+        ctx.globalAlpha = 0.85 + 0.15 * pulse;
+        drawXpPixelArt(ctx, 0, 0, 2, '#00ffcc');
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      } else {
+        drawXpPixelArt(ctx, 0, 0, 2, '#003d2e');
+      }
+      ctx.restore();
     }
     ctx.restore();
   });
@@ -1781,7 +3583,8 @@ function updateEnergyHud() {
   const coins = document.getElementById('energy-coins');
   if (!hud) return;
 
-  const pct = S.energy / ENERGY_MAX;
+  const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+  const pct = S.energy / effectiveMax;
   const isCrit = pct <= 0.15;
   const isLow = pct <= 0.30;
   const isMid = pct <= 0.60;
@@ -1822,6 +3625,15 @@ const PREVENT_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'Arr
 
 document.addEventListener('keydown', e => {
   if (PREVENT_KEYS.has(e.code)) e.preventDefault();
+  if (S.pendingSlotPrize) return; // slot machine open — block all input
+
+  // I — toggle inventory (works any time in adventure)
+  if (e.code === 'KeyI' && gameMode === 'adventure') {
+    window.toggleInventory();
+    return;
+  }
+  if (S.inventoryOpen) return; // inventory open — block game input
+
   if (S.phase !== 'frozen') return;
 
   // Q — P1 weapon toggle, P — P2 weapon toggle (pvp only)
@@ -1928,7 +3740,7 @@ function resolveTick() {
 
         if (canHit) {
           const isCrit = Math.random() < 0.15;
-          const dmg = isCrit ? 2 : 1;
+          const dmg = heroDmg(isCrit ? 2 : 1);
           S.energy = Math.max(0, S.energy - dmg);
           hero.hitFlash = 1; hero.hitTimer = 1000;
           SFX.heroHit();
@@ -1999,12 +3811,18 @@ function resolveTick() {
     }
 
     S.chests && S.chests.forEach(ch => {
-      if (!ch.opened) {
+      if (!ch.opened && !ch.opening && !S.pendingSlotPrize) {
         const on = S.units.find(u => u.team === 0 && u.alive && u.x === ch.x && u.y === ch.y);
         if (on) {
-          ch.opened = true;
-          S.energy = Math.min(ENERGY_MAX, S.energy + 5);
-          spawnDmgNumber(ch.x, ch.y, '+5 NRG', '#ffaa00', 15, 'normal');
+          ch.opening = true;
+          ch.openStart = performance.now();
+          SFX.chestOpen(ch.explorer);
+          spawnHit(ch.x, ch.y, ch.explorer ? '#00ffee' : '#ffaa00', 14);
+          S.shake = Math.max(S.shake, 7);
+          setTimeout(() => {
+            ch.opened = true;
+            openChestSlot(ch);
+          }, 720);
         }
       }
     });
@@ -2014,8 +3832,6 @@ function resolveTick() {
       const hero = S.units.find(u => u.team === 0 && u.alive && u.x === sh.x && u.y === sh.y);
       if (hero) {
         sh.used = true;
-        S.energy = Math.min(ENERGY_MAX, S.energy + 35);
-        spawnDmgNumber(sh.x, sh.y, '+35 NRG', '#4488ff', 18, 'normal');
         S.shake = Math.max(S.shake, 6);
       }
     });
@@ -2025,23 +3841,42 @@ function resolveTick() {
       const onExit = S.units.find(u => u.team === 0 && u.alive && u.x === S.exit.x && u.y === S.exit.y);
       if (onExit) {
         S.exit.used = true;
-        S.energy = Math.min(ENERGY_MAX, S.energy + 10);
-        spawnDmgNumber(S.exit.x, S.exit.y, '+10 NRG', '#00ffaa', 20, 'normal');
+        SFX.extraction();
 
-        // Successful Extraction!
-        Profile.cache += (S.coins || 0);
+        // Successful Extraction — next floor!
+        Profile.cache += (S.bytes || 0);
         if (S.floor > Profile.highestSector) Profile.highestSector = S.floor;
+        // Save full inventory (bytes carry over to next floor)
+        Profile.inventory = (S.inventory || []).map(x => x ? { ...x } : null);
         saveProfile();
-        updateHubUI();
 
         setTimeout(() => {
-          document.getElementById('screen-game').classList.remove('active');
-          document.getElementById('screen-hub').classList.add('active');
-          S.phase = 'frozen'; // Stop ticks
-        }, 1400);
+          S.floor++;
+          initAdventure(); // loads Profile.inventory automatically, derives S.bytes/fragments/xpTokens
+          updateHUD();
+          updateEnergyHud();
+        }, 800);
       }
     }
-    if (S.energy <= 0 && !S.winner && !S.pendingGameover) { S.energyDepleted = true; S.winner = 1; S.pendingGameover = true; }
+    if (S.energy <= 0 && !S.winner && !S.pendingGameover) {
+      S.energyDepleted = true; S.winner = 1; S.pendingGameover = true;
+      // Stop BGM and play funeral jingle
+      BGM.deathJingle();
+      const _hero = S.units.find(u => u.team === 0 && u.alive);
+      if (_hero) {
+        _hero.isDying = true;
+        _hero.deathStart = performance.now();
+        S.shake = 28;
+        _hero.hitFlash = 1;
+        spawnHit(_hero.x, _hero.y, '#ff2222', 40);
+        spawnDmgNumber(_hero.x, _hero.y, 'DEAD', '#ff3333', 30, 'crit');
+      }
+      setTimeout(() => {
+        updateHubUI();
+        document.getElementById('hub-overlay').classList.add('active');
+        BGM.start('hub');
+      }, 2800);
+    }
 
     S.loot && S.loot.forEach(l => {
       if (!l.collected) {
@@ -2049,16 +3884,25 @@ function resolveTick() {
         if (on) {
           l.collected = true;
           SFX.pickup();
-          if (l.type === 'energy') {
-            S.energy = Math.min(ENERGY_MAX, S.energy + l.val);
-            const her = S.units.find(un => un.team === 0 && un.alive);
-            if (her) her.collectFlash = 1.0;
-            logEvent(`Recovered ${l.val} energy!`, 'loot');
-            spawnDmgNumber(l.x, l.y, `+${l.val} VOLTS`, '#00ffee', 16, 'normal');
+          if (l.type === 'fragment') {
+            S.fragments = (S.fragments || 0) + l.val;
+            syncFragmentSlot();
+            logEvent(`+${l.val} CHIP FRAGMENT${l.val > 1 ? 'S' : ''}`, 'fragment');
+            spawnPickupFX(l.x, l.y, '#ff8800');
+            spawnDmgNumber(l.x, l.y, `+${l.val} FRAG`, '#ffaa22', 14, 'normal');
+            checkFragmentCombine(l.x, l.y);
+          } else if (l.type === 'xptoken') {
+            S.xpTokens = (S.xpTokens || 0) + l.val;
+            syncXpTokenSlot();
+            logEvent(`+${l.val} XP TOKEN`, 'xp');
+            spawnPickupFX(l.x, l.y, '#00ffcc');
+            spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
           } else {
-            S.coins = (S.coins || 0) + l.val;
-            logEvent(`Found ${l.val} data fragments.`, 'loot');
-            spawnDmgNumber(l.x, l.y, `+${l.val} CACHE`, '#ffee00', 16, 'normal');
+            S.bytes = (S.bytes || 0) + l.val;
+            syncByteSlot();
+            logEvent(`+${l.val} BYTE`, 'byte');
+            spawnPickupFX(l.x, l.y, '#ffee00');
+            spawnDmgNumber(l.x, l.y, `+${l.val} BYTE`, '#ffee00', 16, 'normal');
           }
         }
       }
@@ -2106,6 +3950,16 @@ function applyActions() {
           }
           S.energy = Math.max(0, S.energy - 1);
           spawnDmgNumber(unit.x, unit.y, '-1⚡', '#00f5ff', 12, 'normal');
+          S.nanoSteps = (S.nanoSteps || 0) + 1;
+          const _nLvl = Profile.upgrades?.nanoLevel || 0;
+          if (_nLvl >= 1 && S.nanoSteps % getNanoHealInterval(_nLvl) === 0) {
+            const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+            if (S.energy < effectiveMax) {
+              S.energy = Math.min(effectiveMax, S.energy + _nLvl);
+              spawnDmgNumber(unit.x, unit.y, `+${_nLvl}⚡`, '#00ff88', 14, 'normal');
+              SFX.nanoHeal();
+            }
+          }
         }
         unit.x = nx; unit.y = ny;
       }
@@ -2145,8 +3999,8 @@ function applyActions() {
         });
         spawnMeleeEffect(unit.x, unit.y, sd.dx, sd.dy, unit.color);
         if (hit) {
-          const isCrit = Math.random() < CRIT_CHANCE;
-          const bonusMelee = Profile.upgrades?.meleeDmg || 0;
+          const isCrit = Math.random() < getCritChance();
+          const bonusMelee = (Profile.upgrades?.meleeDmg || 0) + (S.floorBuffs?.melee || 0);
           const dmg = (isCrit ? 2 : 1) + bonusMelee;
           stats.hits[team]++;
           const meleeHeroHit = gameMode === 'adventure' && hit.team === 0;
@@ -2154,8 +4008,8 @@ function applyActions() {
           spawnHit(hit.x, hit.y, hit.color, 24);
           S.shake = Math.max(S.shake, 15);
           if (meleeHeroHit) {
-            S.energy = Math.max(0, S.energy - dmg);
-            logEvent(`SYSTEM DAMAGE: Hero took ${dmg} DMG! (Melee)`, 'dmg');
+            S.energy = Math.max(0, S.energy - heroDmg(dmg));
+            logEvent(`SYSTEM DAMAGE: Hero took ${heroDmg(dmg)} DMG! (Melee)`, 'dmg');
             hit.hitFlash = 1; hit.hitTimer = 1000;
             SFX.heroHit();
           } else {
@@ -2260,7 +4114,7 @@ function detectCollisions() {
           spawnHit(u.x, u.y, '#88bbff', 5);
         } else {
           const heavy = (b.power || 1) >= 2;
-          const isCrit = Math.random() < CRIT_CHANCE;
+          const isCrit = Math.random() < getCritChance();
           const dmg = isCrit ? 2 : 1;
           const bulletHeroHit = gameMode === 'adventure' && u.team === 0;
           const dColor = isCrit ? '#ffe033' : (bulletHeroHit ? '#ff2222' : (heavy ? '#ff9900' : '#ffffff'));
@@ -2270,8 +4124,8 @@ function detectCollisions() {
           spawnHit(u.x, u.y, u.color, isCrit ? 22 : (heavy ? 18 : 12));
           S.shake = Math.max(S.shake, isCrit ? 14 : (heavy ? 12 : 9));
           if (gameMode === 'adventure' && u.team === 0) {
-            S.energy = Math.max(0, S.energy - dmg);
-            logEvent(`SYSTEM DAMAGE: Hero took ${dmg} DMG!`, 'dmg');
+            S.energy = Math.max(0, S.energy - heroDmg(dmg));
+            logEvent(`SYSTEM DAMAGE: Hero took ${heroDmg(dmg)} DMG!`, 'dmg');
             u.hitFlash = 1; u.hitTimer = 1000;
             SFX.heroHit();
           } else {
@@ -2386,17 +4240,7 @@ function checkWin() {
   const t0 = S.units.some(u => u.team === 0 && u.alive);
   const t1 = S.units.some(u => u.team === 1 && u.alive);
   if (gameMode === 'adventure') {
-    if (S.energyDepleted) {
-      BGM.stinger('loss');
-      S.winner = 1; S.pendingGameover = true;
-      setTimeout(() => {
-        // Player Died: Lose collected cache for this run, return to Hub
-        updateHubUI();
-        document.getElementById('screen-game').classList.remove('active');
-        document.getElementById('screen-hub').classList.add('active');
-        S.phase = 'frozen';
-      }, 2500);
-    }
+    // death handled inline where energy hits 0
   } else {
     // PvP Game Over logic
     if (!t0 && !t1) {
@@ -2480,7 +4324,7 @@ function advanceLasers() {
             spawnDmgNumber(hit.x, hit.y, 'MISS', '#88bbff', 13, 'miss');
             spawnHit(hit.x, hit.y, '#88bbff', 5);
           } else {
-            const isCrit = Math.random() < CRIT_CHANCE;
+            const isCrit = Math.random() < getCritChance();
             const dmg = isCrit ? CRIT_DMG : 1;
             stats.hits[laser.owner]++;
             const laserHeroHit = gameMode === 'adventure' && hit.team === 0;
@@ -2489,8 +4333,8 @@ function advanceLasers() {
             spawnHit(hit.x, hit.y, hit.color, isCrit ? 22 : 14);
             S.shake = Math.max(S.shake, isCrit ? 14 : 12);
             if (laserHeroHit) {
-              S.energy = Math.max(0, S.energy - dmg);
-              logEvent(`SYSTEM DAMAGE (LASER): Hero took ${dmg} DMG!`, 'dmg');
+              S.energy = Math.max(0, S.energy - heroDmg(dmg));
+              logEvent(`SYSTEM DAMAGE (LASER): Hero took ${heroDmg(dmg)} DMG!`, 'dmg');
               hit.hitFlash = 1; hit.hitTimer = 1000;
               SFX.heroHit();
             } else {
@@ -2591,6 +4435,23 @@ function spawnMuzzle(unit, dir) {
       vx: d.dx * v + sp * CELL * 0.018, vy: d.dy * v + sp * CELL * 0.018,
       life: 1, decay: 0.09 + Math.random() * 0.07,
       r: 2 + Math.random() * 2.5, color: unit.color,
+    });
+  }
+}
+
+function spawnPickupFX(gx, gy, color) {
+  const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
+  // expanding shockwave ring — large enough to clearly see
+  S.particles.push({ x: wx, y: wy, vx: 0, vy: 0, life: 1, decay: 0.028, r: CELL * 2.4, color, type: 'ring' });
+  // second tighter ring for depth
+  S.particles.push({ x: wx, y: wy, vx: 0, vy: 0, life: 1, decay: 0.045, r: CELL * 1.2, color, type: 'ring' });
+  // sparks burst
+  for (let i = 0; i < 12; i++) {
+    const a = Math.PI * 2 * (i / 12) + (Math.random() - 0.5) * 0.4;
+    const s = (2.5 + Math.random() * 3.5) * CELL * 0.022;
+    S.particles.push({
+      x: wx, y: wy, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 1, decay: 0.02 + Math.random() * 0.02, r: 2 + Math.random() * 3, color, type: 'streak'
     });
   }
 }
@@ -2740,7 +4601,7 @@ function loop(now) {
       });
       S.meleeStrikes = [];
       if (gameMode !== 'adventure') S.clockSide = 1 - S.clockSide;
-      if (S.pendingGameover) { S.phase = 'gameover'; setTimeout(showGameOver, 500); }
+      if (S.pendingGameover) { S.phase = 'gameover'; if (gameMode !== 'adventure') setTimeout(showGameOver, 500); }
       else {
         S.phase = 'frozen'; setTimeStatus('frozen');
         if (gameMode === 'pve' && S.clockSide === 1) {
@@ -3994,7 +5855,64 @@ function drawUnits() {
 
     // ── Adventure hero: pixel art character ───────────────────────
     if (gameMode === 'adventure' && u.team === 0) {
-      drawHeroPixelArt(cx, cy, u, alpha, inactive);
+      if (u.isDying) {
+        const elapsed = performance.now() - u.deathStart;
+        const progress = Math.min(1, elapsed / 2400);
+
+        // ── Death visual effect ───────────────────────────────────────
+        if (progress < 0.9) {
+          // Continuous dissolve / fire particles
+          const burst = Math.floor(1 + progress * 3);
+          for (let i = 0; i < burst; i++) {
+            if (Math.random() < 0.55) {
+              const ang = Math.random() * Math.PI * 2;
+              const spd = 0.5 + Math.random() * 2.5;
+              S.particles.push({
+                x: cx + (Math.random() - 0.5) * r,
+                y: cy + (Math.random() - 0.5) * r,
+                vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 0.8,
+                life: 1, decay: 0.03 + Math.random() * 0.04,
+                r: 2 + Math.random() * 4,
+                color: Math.random() < 0.55 ? '#ff2222' : '#ff8800'
+              });
+            }
+          }
+          // Expanding ring burst at start of death
+          if (elapsed < 600) {
+            const rp = elapsed / 600;
+            ctx.save();
+            ctx.globalAlpha = (1 - rp) * 0.75 * alpha;
+            ctx.strokeStyle = '#ff2222';
+            ctx.lineWidth = 3 + (1 - rp) * 5;
+            ctx.shadowColor = '#ff3300'; ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * (0.8 + rp * 2.8), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+          // Red glow aura on hero body (fades in as death progresses)
+          if (progress > 0.05) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(progress * 1.5, 0.55) * alpha;
+            ctx.fillStyle = '#ff1100';
+            ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        // After 90% — fully hidden
+        if (progress >= 0.9) { ctx.restore(); return; }
+        // Flicker: fast oscillation, gets more frequent as death progresses
+        const flickRate = 60 + progress * 40;
+        if (progress > 0.25 && Math.sin(elapsed / flickRate) < 0) { ctx.restore(); return; }
+        const dyingAlpha = alpha * (1 - progress);
+        drawHeroPixelArt(cx, cy, u, dyingAlpha, inactive);
+      } else {
+        drawHeroPixelArt(cx, cy, u, alpha, inactive);
+      }
       ctx.restore();
       return; // skip hex rendering below
     }
@@ -4145,7 +6063,7 @@ function drawMeleeStrikes() {
 }
 
 function drawDmgNumbers() {
-  const PX_FONT = "'Press Start 2P', 'Courier New', monospace";
+  const PX_FONT = "'Press Start 2P', 'Courier New', 'Segoe UI Emoji', 'Apple Color Emoji', monospace";
   S.dmgNumbers.forEach(n => {
     if (n.life <= 0) return;
     const alpha = n.life < 0.38 ? n.life / 0.38 : 1;
@@ -4658,7 +6576,7 @@ function showGameOver() {
   showScreen('screen-gameover');
 }
 
-function startGame(mode) {
+window.startGame = function startGame(mode) {
   SFX.init();
   BGM.start('game');
   SFX.select();
@@ -4704,6 +6622,13 @@ function startGame(mode) {
     if (screenGame) screenGame.classList.add('adv-mode');
     advCanvasW = ADV_COLS * CELL;
     updateEnergyHud();
+    const hubBtn = document.getElementById('btn-open-hub');
+    if (hubBtn) hubBtn.style.display = 'block';
+    const invBtn = document.getElementById('btn-inventory');
+    if (invBtn) invBtn.style.display = 'flex';
+    const wipeBtn = document.querySelector('.btn-wipe-inline');
+    if (wipeBtn) wipeBtn.style.display = 'block';
+    document.getElementById('hub-overlay').classList.remove('active');
   } else {
     if (p2ctrl) p2ctrl.textContent = gameMode === 'pve' ? 'CPU · AUTO' : '↑↓←→ · ENTER · U/I/O';
     if (p2name) p2name.textContent = gameMode === 'pve' ? 'CPU' : 'PLAYER 2';
@@ -4721,6 +6646,12 @@ function startGame(mode) {
     if (logPanel) logPanel.style.display = 'none';
     if (screenGame) screenGame.classList.remove('adv-mode');
     advCanvasW = BOARD_W;
+    const hubBtn = document.getElementById('btn-open-hub');
+    if (hubBtn) hubBtn.style.display = 'none';
+    const invBtn = document.getElementById('btn-inventory');
+    if (invBtn) invBtn.style.display = 'none';
+    const wipeBtn = document.querySelector('.btn-wipe-inline');
+    if (wipeBtn) wipeBtn.style.display = 'none';
   }
   showScreen('screen-game');
   canvas.width = advCanvasW; canvas.height = gameMode === 'adventure' ? ADV_CANVAS_H : BOARD_H;
@@ -4728,6 +6659,10 @@ function startGame(mode) {
 }
 
 function backToMenu() {
+  if (gameMode === 'adventure' && S.inventory) {
+    Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+    saveProfile();
+  }
   BGM.start('menu');
   stopAIThinking();
   if (raf) { cancelAnimationFrame(raf); raf = null; }
@@ -4752,9 +6687,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-adv').addEventListener('click', () => {
     SFX.init();
     loadProfile();
-    updateHubUI();
-    document.getElementById('screen-menu').classList.remove('active');
-    document.getElementById('screen-hub').classList.add('active');
+    S.floor = 1;
+    startGame('adventure');
   });
 
   document.getElementById('btn-1p').addEventListener('click', () => { SFX.init(); startGame('pve'); });
@@ -4763,8 +6697,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-rematch').addEventListener('click', () => {
     SFX.init();
     if (gameMode === 'adventure') {
+      Profile.inventory = (S.inventory || []).map(x => x ? { ...x } : null);
+      saveProfile();
       document.getElementById('screen-gameover').classList.remove('active');
       document.getElementById('screen-hub').classList.add('active');
+      BGM.start('hub');
     } else {
       startGame();
     }
@@ -4772,7 +6709,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-menu-go').addEventListener('click', () => { SFX.init(); backToMenu(); });
   document.getElementById('btn-esc').addEventListener('click', () => { SFX.init(); backToMenu(); });
-  document.getElementById('btn-hub-back').addEventListener('click', () => { SFX.init(); showScreen('screen-menu'); });
+  document.getElementById('btn-hub-back').addEventListener('click', () => { SFX.init(); BGM.start('menu'); showScreen('screen-menu'); });
 
   // Hook for quick restart from Game Over screen
   document.addEventListener('keydown', e => {
@@ -4780,8 +6717,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.code === 'Space' || e.key === 'r' || e.key === 'R') {
         SFX.init();
         if (gameMode === 'adventure') {
+          Profile.inventory = (S.inventory || []).map(x => x ? { ...x } : null);
+          saveProfile();
           document.getElementById('screen-gameover').classList.remove('active');
           document.getElementById('screen-hub').classList.add('active');
+          BGM.start('hub');
         } else {
           startGame();
         }
