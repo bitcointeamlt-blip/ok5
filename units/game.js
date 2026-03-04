@@ -93,6 +93,12 @@ const CELL_DARK = '#07070f';
 const CELL_LIGHT = '#0a0a18';
 const GRID_COLOR = '#161630';
 
+// ── Wall FX: Data Packets & LED Chips ───────────────────────────────
+let wPktEdges = [], wPktMap = {}, wPktPackets = [], wallLedTiles = [];
+let wallLedState = false, wallLedPhase = 0;
+let wallLedIdleAccum = 0, wallLedIdleMs = 10000;
+let wallLedBlinkSeq = [], wallLedBlinkIdx = 0, wallLedBlinkAccum = 0;
+
 // ── Tutorial Steps ───────────────────────────────────────────────
 const TUTORIAL_STEPS = [
   {
@@ -598,6 +604,29 @@ function updateHubUI() {
       }
     }
   }
+
+  // ── Dim cards when player can't afford the upgrade ──────────────
+  const canAffordVolts = (S.bytes || 0) >= getInGameVoltsCost();
+  const hovV = o('hov-volts-card');
+  if (hovV) hovV.classList.toggle('upg-locked', !canAffordVolts);
+
+  const critCostNow = getCritCost(critLvl);
+  const canAffordCrit = chipCount('common') >= critCostNow.common
+    && chipCount('uncommon') >= critCostNow.uncommon
+    && chipCount('rare') >= critCostNow.rare;
+  const hovC = o('hov-crit-card');
+  if (hovC) hovC.classList.toggle('upg-locked', !canAffordCrit);
+
+  const nanoLvlNow = Profile.upgrades.nanoLevel || 0;
+  const nanoMaxedNow = nanoLvlNow >= 8;
+  const nanoCostNow = nanoMaxedNow ? {} : getNanoRepairCost(nanoLvlNow);
+  const canAffordNano = nanoMaxedNow || (
+    chipCount('legendary') >= (nanoCostNow.legendary || 0)
+    && chipCount('epic') >= (nanoCostNow.epic || 0)
+    && chipCount('rare') >= (nanoCostNow.rare || 0)
+  );
+  const hovN = o('hov-nano-card');
+  if (hovN) hovN.classList.toggle('upg-locked', !canAffordNano);
 }
 
 window.toggleHubOverlay = function () {
@@ -1661,6 +1690,7 @@ function initAdventure() {
   S.teleportUses = 0;
   S.reachedMaxEnergy = false;
   generateDungeon();
+  buildWallPackets();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   S.lightGhosts = [];
@@ -3328,6 +3358,150 @@ function drawDungeon() {
       ctx.shadowBlur = 0;
     });
   }
+}
+
+// ── Wall FX functions ─────────────────────────────────────────────
+function buildWallPackets() {
+  wPktEdges = []; wPktMap = {}; wallLedTiles = [];
+  const seen = new Set();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const tile = S.dungeon[r][c];
+      if (tile === 1 || tile === 3) {
+        const px = c * CELL, py = r * CELL;
+        const add = (x1, y1, x2, y2) => {
+          const k = `${x1},${y1},${x2},${y2}`;
+          if (!seen.has(k)) { seen.add(k); wPktEdges.push({ x1, y1, x2, y2 }); }
+        };
+        if (r > 0 && S.dungeon[r - 1][c] === 0) add(px, py, px + CELL, py);
+        if (r < ROWS - 1 && S.dungeon[r + 1][c] === 0) add(px, py + CELL, px + CELL, py + CELL);
+        if (c > 0 && S.dungeon[r][c - 1] === 0) add(px, py, px, py + CELL);
+        if (c < COLS - 1 && S.dungeon[r][c + 1] === 0) add(px + CELL, py, px + CELL, py + CELL);
+      }
+      if (tile === 0) {
+        const rType = Math.abs((r * 137 + c * 313) % 100);
+        if (rType < 40 && ((r * 17 + c * 31) % 5) === 0) {
+          wallLedTiles.push({ px: c * CELL, py: r * CELL });
+        }
+      }
+    }
+  }
+  wPktEdges.forEach((e, i) => {
+    const k1 = `${e.x1},${e.y1}`, k2 = `${e.x2},${e.y2}`;
+    (wPktMap[k1] = wPktMap[k1] || []).push(i);
+    (wPktMap[k2] = wPktMap[k2] || []).push(i);
+  });
+  wPktPackets = [];
+  const N = Math.min(10, Math.max(4, Math.floor(wPktEdges.length / 10)));
+  for (let i = 0; i < N; i++) spawnWPkt(null);
+  wallLedState = false; wallLedPhase = 0;
+  wallLedIdleAccum = 0; wallLedIdleMs = 10000 + Math.random() * 2000;
+}
+
+const WPT_COLORS = ['#00ff88', '#44aaff', '#aa44ff', '#ffcc00'];
+
+function spawnWPkt(pkt) {
+  if (!wPktEdges.length) return;
+  const ei = Math.floor(Math.random() * wPktEdges.length);
+  const e = wPktEdges[ei];
+  const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+  const d = {
+    ei, t: Math.random(),
+    forward: Math.random() < 0.5,
+    color: WPT_COLORS[Math.floor(Math.random() * WPT_COLORS.length)],
+    spd: (0.8 + Math.random() * 1.6) / len,
+    trail: []
+  };
+  if (pkt) Object.assign(pkt, d); else wPktPackets.push(d);
+}
+
+function updateWallFX(dt) {
+  if (!wPktEdges.length) return;
+  // Update data packets
+  for (const p of wPktPackets) {
+    const e = wPktEdges[p.ei];
+    p.trail.push({ x: e.x1 + (e.x2 - e.x1) * p.t, y: e.y1 + (e.y2 - e.y1) * p.t });
+    if (p.trail.length > 9) p.trail.shift();
+    p.t += p.forward ? p.spd : -p.spd;
+    if (p.t > 1 || p.t < 0) {
+      const ex = p.t > 1 ? e.x2 : e.x1, ey = p.t > 1 ? e.y2 : e.y1;
+      const nbrs = (wPktMap[`${ex},${ey}`] || []).filter(ni => ni !== p.ei);
+      if (nbrs.length > 0) {
+        const ni = nbrs[Math.floor(Math.random() * nbrs.length)];
+        const ne = wPktEdges[ni]; p.ei = ni;
+        if (Math.abs(ne.x1 - ex) < 1 && Math.abs(ne.y1 - ey) < 1) { p.t = 0; p.forward = true; }
+        else { p.t = 1; p.forward = false; }
+      } else spawnWPkt(p);
+    }
+  }
+  // LED blink timer (every 10-12 sec, 3 quick blinks)
+  wallLedIdleAccum += dt;
+  if (wallLedPhase === 0 && wallLedIdleAccum >= wallLedIdleMs) {
+    wallLedIdleAccum = 0; wallLedIdleMs = 10000 + Math.random() * 2000;
+    wallLedPhase = 1; wallLedBlinkIdx = 0; wallLedBlinkAccum = 0;
+    wallLedBlinkSeq = [120, 90, 130, 90, 120, 200]; // on/off/on/off/on/done
+    wallLedState = true;
+  }
+  if (wallLedPhase === 1) {
+    wallLedBlinkAccum += dt;
+    if (wallLedBlinkAccum >= wallLedBlinkSeq[wallLedBlinkIdx]) {
+      wallLedBlinkAccum = 0; wallLedBlinkIdx++;
+      if (wallLedBlinkIdx >= wallLedBlinkSeq.length) { wallLedPhase = 0; wallLedState = false; }
+      else wallLedState = !wallLedState;
+    }
+  }
+}
+
+function drawWallPackets() {
+  if (!wPktPackets.length || gameMode !== 'adventure') return;
+  ctx.save();
+  for (const p of wPktPackets) {
+    const tl = p.trail;
+    if (tl.length < 2) continue;
+    for (let i = 0; i < tl.length; i++) {
+      ctx.globalAlpha = ((i + 1) / tl.length) * 0.8;
+      if (i === tl.length - 1) {
+        ctx.shadowColor = p.color; ctx.shadowBlur = 6;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(tl[i].x - 2, tl[i].y - 2, 4, 4);
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(tl[i].x - 1, tl[i].y - 1, 2, 2);
+      }
+    }
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawWallLED() {
+  if (!wallLedTiles.length || gameMode !== 'adventure') return;
+  ctx.save();
+  // Tiny chip body (drawn over existing wall microchip graphics)
+  ctx.fillStyle = '#141420';
+  for (const t of wallLedTiles) ctx.fillRect(t.px + 24, t.py + 6, 14, 10);
+  // Gold pins
+  ctx.fillStyle = '#6a5500';
+  for (const t of wallLedTiles) {
+    ctx.fillRect(t.px + 21, t.py + 8, 4, 2);
+    ctx.fillRect(t.px + 21, t.py + 12, 4, 2);
+    ctx.fillRect(t.px + 37, t.py + 8, 4, 2);
+    ctx.fillRect(t.px + 37, t.py + 12, 4, 2);
+  }
+  // LED dot
+  if (wallLedState) {
+    ctx.shadowColor = '#00ff44'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#66ff99';
+  } else {
+    ctx.fillStyle = '#001800';
+  }
+  for (const t of wallLedTiles) {
+    ctx.beginPath();
+    ctx.arc(t.px + 33, t.py + 11, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0; ctx.restore();
 }
 
 function drawFog() {
@@ -5083,6 +5257,7 @@ function loop(now) {
     return p.life > 0;
   });
   if (S.footsteps) S.footsteps.forEach(f => { f.alpha = Math.max(0, f.alpha - dt * 0.004); });
+  if (gameMode === 'adventure') updateWallFX(dt);
 
   S.dmgNumbers = S.dmgNumbers.filter(n => {
     n.x += n.vx;
@@ -5112,7 +5287,7 @@ function loop(now) {
     updateCamera();
     ctx.translate(-S.cam.x, -S.cam.y);
   }
-  if (gameMode === 'adventure') drawDungeon(); else drawBoard();
+  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); drawWallPackets(); } else drawBoard();
   drawLasers();
   drawMeleeStrikes();
   drawShootPreview();
