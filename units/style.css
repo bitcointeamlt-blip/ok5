@@ -505,6 +505,59 @@ body {
   pointer-events: none;
 }
 
+/* ── Can't-afford dimmed state ─────────────────────────────────── */
+/* NOTE: cost display uses inline styles from renderCostIcons — stays colorful */
+.upgrade-card.upg-locked {
+  border-color: #161620 !important;
+  background: rgba(4, 4, 8, 0.6) !important;
+}
+.upgrade-card.upg-locked .volt-header {
+  border-bottom-color: #161620 !important;
+}
+.upgrade-card.upg-locked .volt-header:hover {
+  background: transparent !important;
+  border-left-color: #222 !important;
+}
+.upgrade-card.upg-locked .volt-name {
+  color: #ffffff !important;
+  text-shadow:
+    -1px -1px 0 #cc0000,
+     1px -1px 0 #cc0000,
+    -1px  1px 0 #cc0000,
+     1px  1px 0 #cc0000,
+    0 0 8px #ff224455 !important;
+}
+.upgrade-card.upg-locked .volt-name svg rect,
+.upgrade-card.upg-locked .volt-name svg circle {
+  fill: #cc2222 !important;
+}
+.upgrade-card.upg-locked .upg-arrow {
+  color: #222230 !important;
+  animation: none !important;
+}
+.upgrade-card.upg-locked .volt-lvl-badge {
+  background: transparent !important;
+  border-color: #161620 !important;
+  color: #252535 !important;
+}
+.upgrade-card.upg-locked .volt-stat-lbl {
+  color: #181828 !important;
+}
+.upgrade-card.upg-locked .volt-stat-val {
+  color: #252535 !important;
+}
+.upgrade-card.upg-locked .btn-volt-install {
+  color: #252535 !important;
+  border-color: #161620 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+}
+.upgrade-card.upg-locked .btn-volt-install:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 .volt-card .upg-status {
   padding: 6px 14px 10px;
   min-height: 20px;
