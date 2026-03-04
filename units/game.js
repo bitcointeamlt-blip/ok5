@@ -65,9 +65,10 @@ let ADV_MAP_COLS = 48;   // adventure full map width
 let ADV_MAP_ROWS = 32;   // adventure full map height
 let COLS = BASE_COLS;
 let ROWS = BASE_ROWS;
-const CELL = 34;
-const BOARD_W = BASE_COLS * CELL;   // 1080 — PvP canvas width (fixed)
-const BOARD_H = BASE_ROWS * CELL;   // 864 — viewport height (fixed)
+const CELL = 44;
+const UNIT_CELL = 34; // unit rendering size stays fixed
+const BOARD_W = BASE_COLS * UNIT_CELL;   // PvP canvas width (fixed, not scaled with CELL)
+const BOARD_H = BASE_ROWS * UNIT_CELL;   // PvP viewport height (fixed)
 const MAX_HP = 5;
 const MAX_AMMO = 5;
 const AMMO_REGEN = 4;
@@ -91,6 +92,72 @@ const CRIT_DMG = 2;
 const CELL_DARK = '#07070f';
 const CELL_LIGHT = '#0a0a18';
 const GRID_COLOR = '#161630';
+
+// ── Tutorial Steps ───────────────────────────────────────────────
+const TUTORIAL_STEPS = [
+  {
+    id: 'move',
+    title: 'MOVEMENT',
+    desc: 'Navigate the sector using WASD.\nTime only moves when YOU act — think before each step.',
+    keys: 'wasd',
+    hint: '▶ Press WASD to continue...',
+    trigger: 'move',
+    highlight: 'hero',
+  },
+  {
+    id: 'shoot',
+    title: 'COMBAT',
+    desc: 'Aim with the mouse cursor.\nFire to destroy enemy threats.',
+    keys: 'shoot',
+    hint: '▶ Shoot to continue...',
+    trigger: 'shoot',
+    highlight: 'none',
+  },
+  {
+    id: 'energy',
+    title: 'VOLTS',
+    desc: 'Every move and shot costs VOLTS.\nIf the bar reaches 0 — mission failed.',
+    keys: 'none',
+    hint: null,
+    trigger: 'button',
+    highlight: 'energy',
+  },
+  {
+    id: 'loot',
+    title: 'LOOT TERMINALS',
+    desc: 'Find chests on the map.\nWalk over them to spin the LOOT TERMINAL for rewards.',
+    keys: 'none',
+    hint: null,
+    trigger: 'button',
+    highlight: 'none',
+  },
+  {
+    id: 'exit',
+    title: 'OBJECTIVE',
+    desc: 'Find the green EXIT portal to advance to the next sector.\nGood luck, operator.',
+    keys: 'none',
+    hint: null,
+    trigger: 'button',
+    highlight: 'exit',
+  },
+];
+
+let tutorialActive = false;
+let tutorialStepIdx = 0;
+
+// ── Achievement Definitions ──────────────────────────────────────
+const ACHIEVEMENTS = [
+  { id: 'first_kill',    label: 'FIRST BLOOD',      desc: 'Destroy first enemy',         check: (p,s) => (s.totalKills||0) >= 1 },
+  { id: 'kills_10',     label: 'PEST CONTROL',      desc: 'Destroy 10 enemies',          check: (p,s) => (s.totalKills||0) >= 10 },
+  { id: 'kills_50',     label: 'GHOST PROTOCOL',    desc: 'Destroy 50 enemies',          check: (p,s) => (s.totalKills||0) >= 50 },
+  { id: 'kills_100',    label: 'TERMINATOR',         desc: 'Destroy 100 enemies',         check: (p,s) => (s.totalKills||0) >= 100 },
+  { id: 'floor_5',      label: 'DEEP NET',           desc: 'Reach sector 5',              check: (p,s) => (p.highestSector||1) >= 5 },
+  { id: 'floor_10',     label: 'MAINFRAME ACCESS',   desc: 'Reach sector 10',             check: (p,s) => (p.highestSector||1) >= 10 },
+  { id: 'nano_max',     label: 'SELF REPAIR',        desc: 'Max out Nano Repair',         check: (p,s) => (p.upgrades?.nanoLevel||0) >= 8 },
+  { id: 'crit_10',      label: 'SHARP MIND',         desc: 'Upgrade Crit Module 10x',     check: (p,s) => (p.upgrades?.critLevel||0) >= 10 },
+  { id: 'teleport_use', label: 'PHASE SHIFT',        desc: 'Use a teleport pad',          check: (p,s) => (s.teleportUses||0) >= 1 },
+  { id: 'full_energy',  label: 'FULLY CHARGED',      desc: 'Reach max energy',            check: (p,s) => (s.reachedMaxEnergy||false) },
+];
 
 // ── Persistent Profile System ────────────────────────────────────
 let Profile = {
@@ -117,8 +184,13 @@ function loadProfile() {
       if (Profile.upgrades.nanoLevel === undefined) Profile.upgrades.nanoLevel = 0;
       if (!Profile.highestSector || Profile.highestSector < 1) Profile.highestSector = 1;
       if (!Array.isArray(Profile.inventory)) Profile.inventory = null;
+      if (!Profile.achievements) Profile.achievements = {};
+      if (!Profile.stats) Profile.stats = { totalKills: 0 };
+      if (Profile.stats.totalKills === undefined) Profile.stats.totalKills = 0;
     } catch (e) { console.error("Could not load profile", e); }
   }
+  if (!Profile.achievements) Profile.achievements = {};
+  if (!Profile.stats) Profile.stats = { totalKills: 0 };
 }
 
 function saveProfile() {
@@ -379,7 +451,7 @@ window.attemptCritUpgrade = function (prefix) {
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
     const success = Math.random() < 0.75;
-    if (success) { Profile.upgrades.critLevel++; saveProfile(); }
+    if (success) { Profile.upgrades.critLevel++; saveProfile(); checkAchievements(); }
     return success;
   });
 };
@@ -406,7 +478,7 @@ window.attemptNanoRepairUpgrade = function (prefix) {
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
     const success = Math.random() < getNanoSuccessRate(level);
-    if (success) { Profile.upgrades.nanoLevel++; saveProfile(); }
+    if (success) { Profile.upgrades.nanoLevel++; saveProfile(); checkAchievements(); }
     return success;
   });
 };
@@ -429,6 +501,7 @@ window.attemptTerminalUpgrade = function () {
       Profile.upgrades.maxEnergy = (Profile.upgrades.maxEnergy || 0) + 1;
       Profile.upgrades.voltsCostLevel = (Profile.upgrades.voltsCostLevel || 0) + 1;
       saveProfile();
+      checkAchievements();
     }
     return success;
   });
@@ -542,6 +615,14 @@ window.toggleHubOverlay = function () {
 
 window.deployMission = function (sector) {
   if (Profile.highestSector < sector) return;
+  document.getElementById('hub-overlay').classList.remove('active');
+  S.floor = 1;
+  startGame('adventure');
+};
+
+window.replayTutorial = function () {
+  Profile.tutorialDone = false;
+  saveProfile();
   document.getElementById('hub-overlay').classList.remove('active');
   S.floor = 1;
   startGame('adventure');
@@ -662,6 +743,219 @@ function logEvent(msg, type = 'info') {
     container.removeChild(container.firstChild);
   }
   container.scrollTop = container.scrollHeight;
+}
+
+// ── Achievement System ───────────────────────────────────────────
+function checkAchievements() {
+  if (!Profile.achievements) Profile.achievements = {};
+  ACHIEVEMENTS.forEach(a => {
+    if (Profile.achievements[a.id]) return;
+    if (a.check(Profile, { ...Profile.stats, teleportUses: S.teleportUses || 0, reachedMaxEnergy: S.reachedMaxEnergy || false })) {
+      Profile.achievements[a.id] = Date.now();
+      saveProfile();
+      showAchievementPopup(a);
+    }
+  });
+}
+
+function showAchievementPopup(a) {
+  const popup = document.getElementById('achievement-popup');
+  if (!popup) return;
+  document.getElementById('ach-label-text').textContent = a.label;
+  document.getElementById('ach-desc-text').textContent = a.desc;
+  popup.classList.add('visible');
+  SFX.play(880, 0.1, 0.05, 'square');
+  setTimeout(() => SFX.play(1320, 0.15, 0.06, 'square'), 100);
+  logEvent(`🏆 ACHIEVEMENT: ${a.label}`, 'info');
+  setTimeout(() => popup.classList.remove('visible'), 3500);
+}
+
+// ── Game Notification Banner ─────────────────────────────────────
+// Generic slide-in notification (top-center, auto-dismiss).
+let _notifTimer = null;
+function showGameNotification(title, desc, color) {
+  color = color || '#00f5ff';
+  const el = document.getElementById('game-notif');
+  if (!el) return;
+  el.style.borderColor = color;
+  el.style.boxShadow = `0 0 24px ${color}44`;
+  const t = document.getElementById('game-notif-title');
+  const d = document.getElementById('game-notif-desc');
+  if (t) { t.textContent = title; t.style.color = color; t.style.textShadow = `0 0 8px ${color}`; }
+  if (d) d.textContent = desc;
+  el.classList.add('visible');
+  if (_notifTimer) clearTimeout(_notifTimer);
+  _notifTimer = setTimeout(() => el.classList.remove('visible'), 3200);
+}
+
+window.openAchievementsPanel = function () {
+  renderAchievementsPanel();
+  document.getElementById('ach-overlay').classList.add('active');
+  SFX.play(600, 0.08, 0.04, 'square', 200);
+};
+
+window.closeAchievementsPanel = function () {
+  document.getElementById('ach-overlay').classList.remove('active');
+  SFX.play(400, 0.06, 0.04, 'square', -200);
+};
+
+function renderAchievementsPanel() {
+  const grid = document.getElementById('ach-grid-main');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const unlocked = Profile.achievements || {};
+  const total = ACHIEVEMENTS.length;
+  const count = ACHIEVEMENTS.filter(a => unlocked[a.id]).length;
+
+  // Update count badge + progress bar
+  const badge = document.getElementById('ach-count-badge');
+  if (badge) badge.textContent = `${count} / ${total}`;
+  const fill = document.getElementById('ach-progress-fill');
+  if (fill) fill.style.width = `${(count / total) * 100}%`;
+
+  ACHIEVEMENTS.forEach(a => {
+    const isUnlocked = !!unlocked[a.id];
+    const div = document.createElement('div');
+    div.className = 'ach-item-card ' + (isUnlocked ? 'ach-card-unlocked' : 'ach-card-locked');
+
+    let dateStr = '';
+    if (isUnlocked && unlocked[a.id]) {
+      const d = new Date(unlocked[a.id]);
+      dateStr = `<div class="ach-card-date">${d.toLocaleDateString()}</div>`;
+    }
+
+    div.innerHTML = `
+      <div class="ach-card-icon">${isUnlocked ? '🏆' : '🔒'}</div>
+      <div class="ach-card-info">
+        <div class="ach-card-label">${a.label}</div>
+        <div class="ach-card-desc">${a.desc}</div>
+        ${dateStr}
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+// ── Tutorial System ──────────────────────────────────────────────
+function startTutorial() {
+  if (Profile.tutorialDone) return;
+  tutorialActive = true;
+  tutorialStepIdx = 0;
+  showTutorialStep(0);
+  document.getElementById('tutorial-card')?.classList.add('visible');
+}
+
+function showTutorialStep(idx) {
+  const step = TUTORIAL_STEPS[idx];
+  if (!step) return;
+
+  const numEl = document.getElementById('tut-step-num');
+  if (numEl) numEl.textContent = `${String(idx + 1).padStart(2, '0')} / ${TUTORIAL_STEPS.length}`;
+
+  const titleEl = document.getElementById('tut-title');
+  if (titleEl) titleEl.textContent = step.title;
+
+  const descEl = document.getElementById('tut-desc');
+  if (descEl) descEl.innerHTML = step.desc.replace(/\n/g, '<br>');
+
+  const keysEl = document.getElementById('tut-keys-area');
+  if (keysEl) {
+    if (step.keys === 'wasd') {
+      keysEl.innerHTML = `
+        <div class="tut-wasd">
+          <div class="tut-key-row"><span class="tut-key">W</span></div>
+          <div class="tut-key-row">
+            <span class="tut-key">A</span>
+            <span class="tut-key">S</span>
+            <span class="tut-key">D</span>
+          </div>
+        </div>`;
+    } else if (step.keys === 'shoot') {
+      keysEl.innerHTML = `
+        <div class="tut-shoot-keys">
+          <span class="tut-key tut-key-wide">SPACE</span>
+          <span class="tut-key-or">or</span>
+          <span class="tut-key tut-key-wide">🖱 CLICK</span>
+        </div>`;
+    } else {
+      keysEl.innerHTML = '';
+    }
+  }
+
+  const hintEl = document.getElementById('tut-hint');
+  if (hintEl) hintEl.textContent = step.hint || '';
+
+  const nextBtn = document.getElementById('tut-next-btn');
+  if (nextBtn) nextBtn.style.display = step.trigger === 'button' ? 'inline-block' : 'none';
+
+  // Energy highlight
+  const energyHud = document.getElementById('energy-hud');
+  if (energyHud) {
+    if (step.highlight === 'energy') energyHud.classList.add('tut-highlight');
+    else energyHud.classList.remove('tut-highlight');
+  }
+}
+
+window.advanceTutorial = function () {
+  tutorialStepIdx++;
+  if (tutorialStepIdx >= TUTORIAL_STEPS.length) {
+    endTutorial();
+  } else {
+    showTutorialStep(tutorialStepIdx);
+  }
+};
+
+window.skipTutorial = function () {
+  endTutorial();
+};
+
+function endTutorial() {
+  tutorialActive = false;
+  document.getElementById('tutorial-card')?.classList.remove('visible');
+  document.getElementById('energy-hud')?.classList.remove('tut-highlight');
+  Profile.tutorialDone = true;
+  saveProfile();
+}
+
+function drawTutorialHighlight() {
+  if (!tutorialActive) return;
+  const step = TUTORIAL_STEPS[tutorialStepIdx];
+  if (!step || step.highlight === 'none' || step.highlight === 'energy') return;
+  const t = performance.now() / 1000;
+
+  if (step.highlight === 'hero') {
+    const hero = S.units?.find(u => u.team === 0 && u.alive);
+    if (!hero) return;
+    const cx = (hero.x + 0.5) * CELL;
+    const cy = (hero.y + 0.5) * CELL;
+    ctx.save();
+    for (let ring = 0; ring < 3; ring++) {
+      const phase = ((t * 0.7) + ring * 0.33) % 1;
+      const r = CELL * 0.5 + phase * CELL * 0.8;
+      const alpha = (1 - phase) * 0.7;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#00f5ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  } else if (step.highlight === 'exit' && S.exit && !S.exit.used) {
+    if (!isVisible(S.exit.x, S.exit.y) && !S.fullMapRevealed) return;
+    const cx = (S.exit.x + 0.5) * CELL;
+    const cy = (S.exit.y + 0.5) * CELL;
+    ctx.save();
+    for (let ring = 0; ring < 3; ring++) {
+      const phase = ((t * 0.9) + ring * 0.33) % 1;
+      const r = CELL * 0.6 + phase * CELL * 0.9;
+      const alpha = (1 - phase) * 0.8;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#00ffaa';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 const UTYPE_ICONS = {};
@@ -785,6 +1079,11 @@ const SFX = {
     this.play(660, 0.07, 0.03, 'sine', 330);
     setTimeout(() => this.play(990, 0.07, 0.028, 'sine', 220), 55);
     setTimeout(() => this.play(1320, 0.10, 0.035, 'sine', 180), 110);
+  },
+  teleport() {
+    this.play(200, 0.05, 0.04, 'sine', 800);
+    setTimeout(() => this.play(1200, 0.12, 0.06, 'sine', -400), 60);
+    setTimeout(() => this.play(800, 0.18, 0.05, 'square', 300), 140);
   },
 
   // ── Slot machine sounds ──────────────────────────────────────────
@@ -1357,10 +1656,15 @@ function initAdventure() {
   S.shrines = [];
   S.bloodStains = [];
   S.chests = [];
+  S.teleports = [];
+  S.teleportCooldown = 0;
+  S.teleportUses = 0;
+  S.reachedMaxEnergy = false;
   generateDungeon();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   S.lightGhosts = [];
+  updateExplorationTracker();
   S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
   if (S.floor === 1) S.energy = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);  // reset on fresh run, include upgrade bonus
   S.energyDepleted = false;
@@ -1481,6 +1785,11 @@ function initAdventure() {
         dir: 1, speed: 0.1
       });
     }
+  }
+
+  // Start tutorial on first floor only
+  if (S.floor === 1 && !Profile.tutorialDone) {
+    setTimeout(() => startTutorial(), 700);
   }
 }
 
@@ -1612,6 +1921,31 @@ function generateDungeon() {
     S.chests.push({ x: cx, y: cy, opened: false });
   });
 
+  // ── Teleport pads — one pair, placed in two different non-start/non-boss rooms ──
+  if (S.rooms.length >= 3) {
+    const midRooms = S.rooms.slice(1, S.rooms.length - 1);
+    if (midRooms.length >= 2) {
+      // Pick two different rooms
+      const idxA = Math.floor(Math.random() * midRooms.length);
+      let idxB = Math.floor(Math.random() * (midRooms.length - 1));
+      if (idxB >= idxA) idxB++;
+      const rA = midRooms[idxA];
+      const rB = midRooms[idxB];
+      const findFreeTile = (r) => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const tx = r.x + 1 + Math.floor(Math.random() * (r.w - 2));
+          const ty = r.y + 1 + Math.floor(Math.random() * (r.h - 2));
+          if (S.dungeon[ty] && S.dungeon[ty][tx] === 1) return { x: tx, y: ty };
+        }
+        return { x: r.x + Math.floor(r.w / 2), y: r.y + Math.floor(r.h / 2) };
+      };
+      const posA = findFreeTile(rA);
+      const posB = findFreeTile(rB);
+      S.teleports.push({ x: posA.x, y: posA.y, pairIdx: 0 });
+      S.teleports.push({ x: posB.x, y: posB.y, pairIdx: 0 });
+    }
+  }
+
   // ── Pillars (tile 2) — placed after corridors so carveCorr can't block them
   S.rooms.forEach((r, ri) => {
     if (ri === 0) return; // never in start room
@@ -1697,6 +2031,7 @@ function revealFog(cx, cy) {
       }
     }
   checkExplorationComplete();
+  updateExplorationTracker();
 }
 
 // ── Chip Pixel Art ───────────────────────────────────────────────
@@ -2594,6 +2929,36 @@ function checkExplorationComplete() {
   if (total > 0 && revealed >= total) spawnExplorerChest();
 }
 
+function updateExplorationTracker() {
+  if (gameMode !== 'adventure' || !S.fog || !S.dungeon) return;
+  let total = 0, revealed = 0;
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (S.dungeon[y][x] > 0) { total++; if (S.fog[y][x]) revealed++; }
+  const pct = total > 0 ? Math.floor((revealed / total) * 100) : 0;
+  const done = pct >= 100;
+
+  const elPct      = document.getElementById('msw-pct');
+  const elPctSign  = document.querySelector('.msw-pct-sign');
+  const elFill     = document.getElementById('msw-bar-fill');
+  const elRevealed = document.getElementById('msw-revealed');
+  const elTotal    = document.getElementById('msw-total');
+  const elBadge    = document.getElementById('msw-badge');
+
+  if (elPct)      { elPct.textContent = pct; elPct.classList.toggle('complete', done); }
+  if (elPctSign)  { elPctSign.classList.toggle('complete', done); }
+  if (elFill)     { elFill.style.width = pct + '%'; elFill.classList.toggle('complete', done); }
+  if (elRevealed) { elRevealed.textContent = revealed; }
+  if (elTotal)    { elTotal.textContent = total; }
+  if (elBadge) {
+    if (done) { elBadge.textContent = 'COMPLETE'; elBadge.classList.add('complete'); }
+    else if (pct >= 75) { elBadge.textContent = 'ALMOST'; elBadge.classList.remove('complete'); }
+    else if (pct >= 50) { elBadge.textContent = 'DECRYPTING'; elBadge.classList.remove('complete'); }
+    else if (pct >= 25) { elBadge.textContent = 'MAPPING'; elBadge.classList.remove('complete'); }
+    else { elBadge.textContent = 'SCANNING'; elBadge.classList.remove('complete'); }
+  }
+}
+
 function spawnExplorerChest() {
   S.explorerChestSpawned = true;
   // Always reveal full map as reward for exploring
@@ -2624,6 +2989,7 @@ function spawnExplorerChest() {
     spawning: true, spawnStart: performance.now()
   });
   SFX.chestSpawn();
+  logEvent('🗺 SECTOR FULLY MAPPED — EXPLORER CACHE UNLOCKED', 'loot');
 }
 
 // Returns true if cell (x,y) is within current player vision radius or bullet illumination
@@ -3481,6 +3847,46 @@ function drawExit() {
   ctx.restore();
 }
 
+function drawTeleports() {
+  if (!S.teleports || gameMode !== 'adventure') return;
+  const t = performance.now() / 1000;
+  S.teleports.forEach((pad, i) => {
+    if (!isVisible(pad.x, pad.y) && !S.fullMapRevealed) return;
+    const cx = (pad.x + 0.5) * CELL, cy = (pad.y + 0.5) * CELL;
+    const r = CELL * 0.28;
+    const pulse = Math.sin(t * 3.2 + i * Math.PI) * 0.5 + 0.5;
+    ctx.save();
+    ctx.shadowColor = '#aa44ff'; ctx.shadowBlur = 8 + pulse * 10;
+    // Pulsing fill
+    ctx.globalAlpha = 0.08 + pulse * 0.10;
+    ctx.fillStyle = '#aa44ff';
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    // Outer ring
+    ctx.strokeStyle = '#aa44ff'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    // Rotating dashed ring
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 1.8 + i * Math.PI);
+    ctx.setLineDash([3, 4]);
+    ctx.strokeStyle = '#cc88ff'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.70, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    ctx.setLineDash([]);
+    // Center dot
+    ctx.fillStyle = '#aa44ff';
+    ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+    // Label A/B
+    const label = String.fromCharCode(65 + i); // A, B
+    ctx.shadowBlur = 6; ctx.fillStyle = '#cc88ff';
+    ctx.font = `bold ${Math.round(CELL * 0.18)}px Courier New`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, cx, cy);
+    ctx.restore();
+  });
+}
+
 function spawnLoot(x, y) {
   // One drop type max per kill — exclusive roll
   // 30% byte | 20% fragment | 10% xptoken | 40% nothing
@@ -3835,7 +4241,26 @@ function resolveTick() {
         S.shake = Math.max(S.shake, 6);
       }
     });
-    // Armory room logic removed because weapons use energy now 
+    // Teleport pad interaction
+    S.teleports && S.teleports.forEach((pad, i) => {
+      const hero = S.units.find(u => u.team === 0 && u.alive && u.x === pad.x && u.y === pad.y);
+      if (hero && !S.teleportCooldown) {
+        const partner = S.teleports.find((p, j) => p.pairIdx === pad.pairIdx && j !== i);
+        if (partner) {
+          hero.x = partner.x; hero.y = partner.y;
+          hero.rx = partner.x; hero.ry = partner.y;
+          S.teleportCooldown = 30;
+          S.teleportUses = (S.teleportUses || 0) + 1;
+          SFX.teleport();
+          spawnDmgNumber(partner.x, partner.y, 'TELEPORT', '#aa44ff', 18, 'crit');
+          logEvent('TELEPORT PAD activated', 'info');
+          showGameNotification('PHASE SHIFT', 'Teleport pad activated', '#aa44ff');
+          checkAchievements();
+        }
+      }
+    });
+    if (S.teleportCooldown > 0) S.teleportCooldown--;
+    // Armory room logic removed because weapons use energy now
     // Exit portal (Extraction Point)
     if (S.exit && !S.exit.used) {
       const onExit = S.units.find(u => u.team === 0 && u.alive && u.x === S.exit.x && u.y === S.exit.y);
@@ -3849,6 +4274,7 @@ function resolveTick() {
         // Save full inventory (bytes carry over to next floor)
         Profile.inventory = (S.inventory || []).map(x => x ? { ...x } : null);
         saveProfile();
+        checkAchievements();
 
         setTimeout(() => {
           S.floor++;
@@ -3874,6 +4300,7 @@ function resolveTick() {
       setTimeout(() => {
         updateHubUI();
         document.getElementById('hub-overlay').classList.add('active');
+        document.querySelectorAll('#hub-overlay .upgrade-card').forEach(c => c.classList.add('collapsed'));
         BGM.start('hub');
       }, 2800);
     }
@@ -3958,15 +4385,27 @@ function applyActions() {
               S.energy = Math.min(effectiveMax, S.energy + _nLvl);
               spawnDmgNumber(unit.x, unit.y, `+${_nLvl}⚡`, '#00ff88', 14, 'normal');
               SFX.nanoHeal();
+              if (S.energy >= effectiveMax) {
+                S.reachedMaxEnergy = true;
+                checkAchievements();
+              }
             }
           }
         }
         unit.x = nx; unit.y = ny;
+        // Tutorial: move trigger
+        if (tutorialActive && team === 0 && TUTORIAL_STEPS[tutorialStepIdx]?.trigger === 'move') {
+          advanceTutorial();
+        }
       }
     } else {
       const sd = (team === 0 && unit.aimDir) ? unit.aimDir : unit.facing;
       const wep = getCurrentWeapon(unit);
       stats.shots[team]++;
+      // Tutorial: shoot trigger
+      if (tutorialActive && team === 0 && TUTORIAL_STEPS[tutorialStepIdx]?.trigger === 'shoot') {
+        advanceTutorial();
+      }
       unit.shootFlash = 1;
       spawnMuzzle(unit, sd);
 
@@ -4141,6 +4580,10 @@ function detectCollisions() {
                 logEvent(`Target <span style="color:#ffffff">💀</span> destroyed.`, 'warn');
                 spawnLoot(u.x, u.y);
                 S.kills = (S.kills || 0) + 1;
+                if (!Profile.stats) Profile.stats = { totalKills: 0 };
+                Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+                saveProfile();
+                checkAchievements();
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
               }
             }
@@ -4683,6 +5126,8 @@ function loop(now) {
   drawShrines();
   drawChests();
   drawExit();
+  drawTeleports();
+  drawTutorialHighlight();
   drawLoot();
   drawUnits();
   drawFog();
@@ -4718,9 +5163,9 @@ function updateCamera() {
 
   tx = Math.max(0, Math.min(mapW - vpW, tx));
   ty = Math.max(0, Math.min(mapH - vpH, ty));
-  // Jei žemėlapis mažesnis negu kamera, priverstinai išlaikom jį centre
-  if (mapW < vpW) tx = -(vpW - mapW) / 2;
-  if (mapH < vpH) ty = -(vpH - mapH) / 2;
+  // Jei žemėlapis mažesnis negu kamera, fiksuojam viršuje kairėje
+  if (mapW < vpW) tx = 0;
+  if (mapH < vpH) ty = 0;
 
   S.cam.tx = tx;
   S.cam.ty = ty;
@@ -4733,7 +5178,7 @@ function updateCamera() {
 }
 
 function clearCanvas() {
-  ctx.fillStyle = '#05050e';
+  ctx.fillStyle = gameMode === 'adventure' ? '#000000' : '#05050e';
   const canvasH = gameMode === 'adventure' ? ADV_CANVAS_H : BOARD_H;
   ctx.fillRect(0, 0, advCanvasW, canvasH);
 }
@@ -5290,7 +5735,7 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
   if (isLowHp) { jitterX = (Math.random() - 0.5) * 2.5; jitterY = (Math.random() - 0.5) * 2.5; }
 
   const bob = Math.sin(t * 0.003) * 2;
-  const sz = CELL * 0.45;
+  const sz = UNIT_CELL * 0.45;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -5384,7 +5829,7 @@ function drawEnemyWorm(cx, cy, u, alpha) {
     const isHit = u.hitFlash > 0;
     const baseColor = isHit ? '#ffffff' : u.color;
     // Padarytas dar plonesnis kirminas (galva ir kūnas)
-    const sz = CELL * 0.18 * (u.scale || 1.0);
+    const sz = UNIT_CELL * 0.18 * (u.scale || 1.0);
 
     // Calculate dynamic trailing segment position
     let progress = 0;
@@ -5548,7 +5993,7 @@ function drawEnemyBinarySwarm(cx, cy, u, alpha) {
   try {
     const t = performance.now();
     const isHit = u.hitFlash > 0;
-    const sz = CELL * 0.45 * (u.scale || 1.0);
+    const sz = UNIT_CELL * 0.45 * (u.scale || 1.0);
     // Visi skaičiai visada balti (numatyta 'CRPT' ir 'LEAK' klasėms)
     const baseColor = '#ffffff';
 
@@ -5634,7 +6079,7 @@ function drawEnemyPixelArt(cx, cy, u, alpha) {
   try {
     const t = performance.now();
     const isHit = u.hitFlash > 0;
-    const sz = CELL * 0.6 * (u.scale || 1.0);
+    const sz = UNIT_CELL * 0.6 * (u.scale || 1.0);
     const baseColor = isHit ? '#ffffff' : u.color;
 
     const maxHealth = u.maxHp || 1;
@@ -5833,7 +6278,7 @@ function drawUnits() {
     if (gameMode === 'adventure' && u.team === 1 && !isVisible(u.x, u.y)) return;
     const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
     const alpha = u.alive ? 1 : u.deathT;
-    const r = CELL * 0.29 * (u.scale || 1.0);
+    const r = UNIT_CELL * 0.29 * (u.scale || 1.0);
     const isSel = u.team === 0 && u.id === S.selectedId[0];
     const inactive = S.phase === 'frozen' && S.clockSide !== u.team;
 
@@ -6620,15 +7065,17 @@ window.startGame = function startGame(mode) {
     const logPanel = document.getElementById('panel-log');
     if (logPanel) logPanel.style.display = gameMode === 'hub' ? 'none' : 'flex'; // hide log in hub
     if (screenGame) screenGame.classList.add('adv-mode');
-    advCanvasW = ADV_COLS * CELL;
+    advCanvasW = ADV_COLS * UNIT_CELL;
     updateEnergyHud();
     const hubBtn = document.getElementById('btn-open-hub');
     if (hubBtn) hubBtn.style.display = 'block';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'flex';
-    const wipeBtn = document.querySelector('.btn-wipe-inline');
-    if (wipeBtn) wipeBtn.style.display = 'block';
+    const bottomRow = document.querySelector('.btn-bottom-row');
+    if (bottomRow) bottomRow.style.display = 'flex';
     document.getElementById('hub-overlay').classList.remove('active');
+    const mc = document.getElementById('mobile-controls');
+    if (mc && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) mc.classList.add('visible');
   } else {
     if (p2ctrl) p2ctrl.textContent = gameMode === 'pve' ? 'CPU · AUTO' : '↑↓←→ · ENTER · U/I/O';
     if (p2name) p2name.textContent = gameMode === 'pve' ? 'CPU' : 'PLAYER 2';
@@ -6650,8 +7097,10 @@ window.startGame = function startGame(mode) {
     if (hubBtn) hubBtn.style.display = 'none';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'none';
-    const wipeBtn = document.querySelector('.btn-wipe-inline');
-    if (wipeBtn) wipeBtn.style.display = 'none';
+    const bottomRow = document.querySelector('.btn-bottom-row');
+    if (bottomRow) bottomRow.style.display = 'none';
+    const mc = document.getElementById('mobile-controls');
+    if (mc) mc.classList.remove('visible');
   }
   showScreen('screen-game');
   canvas.width = advCanvasW; canvas.height = gameMode === 'adventure' ? ADV_CANVAS_H : BOARD_H;
@@ -6727,7 +7176,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else if (e.key === 'Escape') {
         SFX.init();
-        backToMenu();
+        const achOverlay = document.getElementById('ach-overlay');
+        if (achOverlay && achOverlay.classList.contains('active')) {
+          closeAchievementsPanel();
+        } else if (tutorialActive) {
+          skipTutorial();
+        } else {
+          backToMenu();
+        }
       }
     }
   });
@@ -6792,6 +7248,41 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!tickTimer) tickTimer = setTimeout(resolveTick, TICK_WINDOW);
     }
   });
+
+  // ── Touch support ──────────────────────────────────────────────
+  canvas.addEventListener('touchstart', e => {
+    if (gameMode !== 'adventure') return;
+    e.preventDefault();
+    SFX.init();
+    const t = e.touches[0];
+    const { x, y } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
+    updateP1Aim(x, y);
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', e => {
+    if (gameMode !== 'adventure') return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const { x, y } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
+    updateP1Aim(x, y);
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', e => {
+    if (gameMode !== 'adventure') return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    canvas.dispatchEvent(new MouseEvent('click', { clientX: t.clientX, clientY: t.clientY, bubbles: true }));
+  }, { passive: false });
+
+  // D-pad: simulate key presses to reuse existing keydown logic
+  function mobileDpad(code) {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+  }
+  document.getElementById('dpad-up')   ?.addEventListener('touchstart', e => { e.preventDefault(); mobileDpad('KeyW'); }, { passive: false });
+  document.getElementById('dpad-down') ?.addEventListener('touchstart', e => { e.preventDefault(); mobileDpad('KeyS'); }, { passive: false });
+  document.getElementById('dpad-left') ?.addEventListener('touchstart', e => { e.preventDefault(); mobileDpad('KeyA'); }, { passive: false });
+  document.getElementById('dpad-right')?.addEventListener('touchstart', e => { e.preventDefault(); mobileDpad('KeyD'); }, { passive: false });
+  document.getElementById('dpad-shoot')?.addEventListener('touchstart', e => { e.preventDefault(); mobileDpad('Space'); }, { passive: false });
 
   // Skill bar clicks (P1)
   ['bullet', 'laser', 'heavy', 'shotgun'].forEach((wep, i) => {

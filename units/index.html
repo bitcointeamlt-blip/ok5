@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TIMELOCK BOARD</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -185,6 +185,13 @@
           <div class="hub-panel">
             <div class="panel-header">📡 MISSION BOARD</div>
             <div class="mission-list">
+              <div class="mission-card mission-card-tutorial" onclick="replayTutorial()">
+                <div class="mis-info">
+                  <div class="mis-name" style="color:#00ff88;">📖 TUTORIAL</div>
+                  <div class="mis-desc">Replay operator briefing · Controls &amp; basics</div>
+                </div>
+                <button class="btn-deploy btn-deploy-tutorial" onclick="replayTutorial()">REPLAY</button>
+              </div>
               <div class="mission-card" id="mis-1">
                 <div class="mis-info">
                   <div class="mis-name">SECTOR 01</div>
@@ -218,6 +225,7 @@
             <button class="btn-secondary" onclick="startGame('pve')">VS CPU</button>
             <button class="btn-secondary" onclick="startGame('pvp')">2 PLAYERS</button>
           </div>
+          <button class="btn-ach-open" onclick="openAchievementsPanel()">🏆 ACHIEVEMENTS</button>
           <button class="btn-back" id="btn-hub-back">← MENU</button>
         </div>
 
@@ -357,7 +365,35 @@
             <span class="inv-btn-chips" id="inv-btn-chips">0⬡</span>
           </button>
 
-          <button class="btn-wipe-inline" onclick="resetSaveData()" title="Wipe save data">⚠ WIPE</button>
+          <!-- Map Scan Widget (adventure only) -->
+          <div id="map-scan-widget">
+            <div class="msw-top">
+              <span class="msw-title">◈ MAP SCAN</span>
+              <span class="msw-badge" id="msw-badge">SCANNING</span>
+            </div>
+            <div class="msw-pct-row">
+              <span class="msw-pct" id="msw-pct">0</span><span class="msw-pct-sign">%</span>
+            </div>
+            <div class="msw-bar-track">
+              <div class="msw-bar-fill" id="msw-bar-fill"></div>
+            </div>
+            <div class="msw-counts">
+              <div class="msw-count-block">
+                <div class="msw-count-val" id="msw-revealed">0</div>
+                <div class="msw-count-lbl">REVEALED</div>
+              </div>
+              <div class="msw-divider"></div>
+              <div class="msw-count-block">
+                <div class="msw-count-val msw-dim" id="msw-total">0</div>
+                <div class="msw-count-lbl">TOTAL</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="btn-bottom-row">
+            <button class="btn-wipe-inline" onclick="resetSaveData()" title="Wipe save data">⚠ WIPE</button>
+            <button class="btn-tutorial-inline" onclick="replayTutorial()" title="Replay tutorial">📖 TUT</button>
+          </div>
         </div>
 
         <!-- Hub strip (adventure only) -->
@@ -641,6 +677,7 @@
             <button class="btn-secondary" onclick="toggleHubOverlay()" style="flex:1;">✕ CLOSE</button>
             <button class="btn-secondary" onclick="backToMenu()" style="flex:1;">MENU</button>
           </div>
+          <button class="btn-ach-open" onclick="openAchievementsPanel()" style="width:100%; margin-top:4px;">🏆 ACHIEVEMENTS</button>
         </div>
       </div>
 
@@ -680,6 +717,79 @@
     </div>
 
   </div>
+  <!-- Game Notification Banner (top-center) -->
+  <div id="game-notif">
+    <div id="game-notif-title">TITLE</div>
+    <div id="game-notif-desc">Description text here</div>
+  </div>
+
+  <!-- Tutorial Card -->
+  <div id="tutorial-card">
+    <div class="tut-header">
+      <span class="tut-badge">◈ OPERATOR BRIEFING</span>
+      <span class="tut-step" id="tut-step-num">01 / 05</span>
+    </div>
+    <div class="tut-body">
+      <div id="tut-keys-area"></div>
+      <div class="tut-text-area">
+        <div class="tut-title" id="tut-title">MOVEMENT</div>
+        <div class="tut-desc" id="tut-desc"></div>
+      </div>
+    </div>
+    <div class="tut-footer">
+      <span class="tut-hint" id="tut-hint"></span>
+      <div class="tut-btns">
+        <button id="tut-next-btn" onclick="advanceTutorial()" style="display:none;">NEXT →</button>
+        <button id="tut-skip-btn" onclick="skipTutorial()">SKIP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Achievements Panel Overlay -->
+  <div id="ach-overlay">
+    <div id="ach-panel-main">
+      <div class="ach-panel-header">
+        <span>🏆 ACHIEVEMENTS</span>
+        <span id="ach-count-badge" class="ach-count-badge">0 / 10</span>
+      </div>
+      <div id="ach-progress-wrap">
+        <div id="ach-progress-track"><div id="ach-progress-fill"></div></div>
+      </div>
+      <div id="ach-grid-main"></div>
+      <button class="btn-ach-close" onclick="closeAchievementsPanel()">✕ CLOSE</button>
+    </div>
+  </div>
+
+  <!-- Achievement Popup -->
+  <div id="achievement-popup" class="achievement-popup">
+    <div class="ach-icon">🏆</div>
+    <div class="ach-content">
+      <div class="ach-title">ACHIEVEMENT UNLOCKED</div>
+      <div class="ach-label" id="ach-label-text"></div>
+      <div class="ach-desc" id="ach-desc-text"></div>
+    </div>
+  </div>
+
+  <!-- Mobile D-pad controls (adventure only) -->
+  <div id="mobile-controls">
+    <div id="mobile-dpad">
+      <button class="dpad-btn" id="dpad-up">▲</button>
+      <div class="dpad-mid-row">
+        <button class="dpad-btn" id="dpad-left">◄</button>
+        <div class="dpad-gap"></div>
+        <button class="dpad-btn" id="dpad-right">►</button>
+      </div>
+      <button class="dpad-btn" id="dpad-down">▼</button>
+    </div>
+    <button id="dpad-shoot">⊙</button>
+  </div>
+
+  <!-- Portrait rotation hint -->
+  <div id="mobile-orient-hint">
+    <div class="orient-icon">↺</div>
+    <div class="orient-text">ROTATE DEVICE<br>FOR BEST EXPERIENCE</div>
+  </div>
+
   <script src="game.js"></script>
 </body>
 
