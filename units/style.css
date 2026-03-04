@@ -547,8 +547,14 @@ body {
   color: #252535 !important;
 }
 .upgrade-card.upg-locked .btn-volt-install {
-  color: #252535 !important;
-  border-color: #161620 !important;
+  color: #00ff88 !important;
+  text-shadow:
+    -1px -1px 0 #cc0000,
+     1px -1px 0 #cc0000,
+    -1px  1px 0 #cc0000,
+     1px  1px 0 #cc0000,
+    0 0 8px #ff224455 !important;
+  border-color: #cc0000 !important;
   background: transparent !important;
   box-shadow: none !important;
   cursor: not-allowed !important;
