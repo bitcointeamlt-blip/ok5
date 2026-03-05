@@ -374,6 +374,13 @@ function renderCostIcons(containerId, cost, type, haveFn) {
 
   if (type === 'bytes') {
     addIcon(null, cost, true);
+  } else if (type === 'mixed') {
+    if (cost.bytes) addIcon(null, cost.bytes, true);
+    if (cost.legendary) addIcon('legendary', cost.legendary);
+    if (cost.epic) addIcon('epic', cost.epic);
+    if (cost.rare) addIcon('rare', cost.rare);
+    if (cost.uncommon) addIcon('uncommon', cost.uncommon);
+    if (cost.common) addIcon('common', cost.common);
   } else {
     if (cost.legendary) addIcon('legendary', cost.legendary);
     if (cost.epic) addIcon('epic', cost.epic);
@@ -499,8 +506,9 @@ window.attemptFreeShotUpgrade = function (prefix) {
   const cardId = prefix === 'hov' ? 'hov-freeshot-card' : 'freeshot-upg-card';
   const statId = prefix === 'hov' ? 'hov-freeshot-status' : 'freeshot-status';
   const costEl = prefix === 'hov' ? 'hov-freeshot-cost-display' : 'freeshot-cost-display';
-  if ((Profile.upgrades.freeShotLevel || 0) >= 2) return;
-  const cost = getFreeShotCost(Profile.upgrades.freeShotLevel || 0);
+  const level = Profile.upgrades.freeShotLevel || 0;
+  if (level >= 2) return;
+  const cost = getFreeShotCost(level);
   const hasBytes = (S.bytes || 0) >= cost.bytes;
   const hasChips = chipCount('common') >= cost.common;
   if (!hasBytes || !hasChips) {
@@ -508,19 +516,20 @@ window.attemptFreeShotUpgrade = function (prefix) {
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
     return;
   }
-  // Spend bytes from inventory
   S.bytes -= cost.bytes;
-  const bIdx = S.inventory.findIndex(s => s && s.type === 'byte');
-  if (bIdx >= 0) { S.inventory[bIdx].qty = S.bytes; if (S.inventory[bIdx].qty <= 0) S.inventory[bIdx] = null; }
-  Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+  syncByteSlot();
   spendChips('common', cost.common);
   updateInventoryUI();
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
-    Profile.upgrades.freeShotLevel = (Profile.upgrades.freeShotLevel || 0) + 1;
-    S.shotsUntilFree = Profile.upgrades.freeShotLevel >= 2 ? 9 : 10;
-    saveProfile();
-    return true;
+    const success = Math.random() < 0.70;
+    if (success) {
+      Profile.upgrades.freeShotLevel = level + 1;
+      S.shotsUntilFree = level + 1 >= 2 ? 9 : 10;
+      saveProfile();
+      checkAchievements();
+    }
+    return success;
   });
 };
 
@@ -673,10 +682,11 @@ function updateHubUI() {
     if (o(`${p}lvl-freeshot`)) o(`${p}lvl-freeshot`).innerText = fsLvl;
     if (o(`${p}freeshot-shots-left`)) o(`${p}freeshot-shots-left`).innerText = fsLvl >= 1 ? `${shotsLeft} / ${fsInterval}` : '--';
     if (o(`${p}freeshot-interval`)) o(`${p}freeshot-interval`).innerText = `/ ${fsInterval} SHOTS`;
-    const cdEl = o(`${p}freeshot-cost-display`);
-    if (cdEl) {
-      if (fsMaxed) cdEl.innerHTML = '<span style="color:#00ff88">MAX</span>';
-      else cdEl.innerHTML = `<span style="color:#7dd3fc">${fsCost.bytes} BYTE${fsCost.bytes > 1 ? 'S' : ''}</span>&nbsp;<span style="color:#666">+</span>&nbsp;<span style="color:#9ca3af">${fsCost.common} COMMON</span>`;
+    const cdId = `${p}freeshot-cost-display`;
+    if (fsMaxed) {
+      const el = o(cdId); if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
+    } else {
+      renderCostIcons(cdId, fsCost, 'mixed', (r) => r === null ? (S.bytes || 0) : chipCount(r));
     }
   });
   const canAffordFs = fsMaxed || ((S.bytes || 0) >= fsCost.bytes && chipCount('common') >= fsCost.common);
