@@ -1655,35 +1655,22 @@ function initAdventure() {
   S.terminals = [];
   S.floor = S.floor || 1;
 
-  // Progresija su variance — lėtas augimas, variance kiekviename aukšte
-  const roomRanges = [
-    [1, 1],  // Floor 1:  visada 1
-    [1, 2],  // Floor 2:  1-2
-    [1, 2],  // Floor 3:  1-2
-    [2, 3],  // Floor 4:  2-3
-    [2, 3],  // Floor 5:  2-3
-    [2, 4],  // Floor 6:  2-4
-    [3, 4],  // Floor 7:  3-4
-    [3, 6],  // Floor 8:  3-6
-    [4, 6],  // Floor 9:  4-6
-    [4, 9],  // Floor 10+: 4-9
+  // Graduali progresavimo seka
+  const floorProgression = [
+    { w: 1, h: 1 }, // Floor 1: 1 room
+    { w: 1, h: 1 }, // Floor 2: 1 room
+    { w: 2, h: 1 }, // Floor 3: 2 rooms
+    { w: 3, h: 1 }, // Floor 4: 3 rooms
+    { w: 2, h: 2 }, // Floor 5: 4 rooms
+    { w: 3, h: 2 }, // Floor 6: 6 rooms
+    { w: 3, h: 3 }, // Floor 7: 9 rooms
+    { w: 4, h: 3 }, // Floor 8: 12 rooms
+    { w: 4, h: 4 }, // Floor 9: 16 rooms
   ];
-  const roomsToGrid = n => {
-    if (n <= 1) return { w: 1, h: 1 };
-    if (n <= 2) return { w: 2, h: 1 };
-    if (n <= 3) return { w: 3, h: 1 };
-    if (n <= 4) return { w: 2, h: 2 };
-    if (n <= 6) return { w: 3, h: 2 };
-    if (n <= 8) return { w: 4, h: 2 };
-    if (n <= 9) return { w: 3, h: 3 };
-    if (n <= 12) return { w: 4, h: 3 };
-    return { w: 4, h: 4 };
-  };
-  const [minR, maxR] = roomRanges[Math.min(S.floor - 1, roomRanges.length - 1)];
-  const roomCount = minR + Math.floor(Math.random() * (maxR - minR + 1));
-  const grid = roomsToGrid(roomCount);
-  S.gridW = grid.w;
-  S.gridH = grid.h;
+
+  const configIdx = Math.min(S.floor - 1, floorProgression.length - 1);
+  S.gridW = floorProgression[configIdx].w;
+  S.gridH = floorProgression[configIdx].h;
 
   ADV_MAP_COLS = 13 * S.gridW + 2;
   ADV_MAP_ROWS = 11 * S.gridH + 2;
@@ -1703,9 +1690,6 @@ function initAdventure() {
   S.teleportUses = 0;
   S.reachedMaxEnergy = false;
   generateDungeon();
-  // Room stats log
-  const _rStats = S.rooms.map((r, i) => `#${i + 1} ${r.w}×${r.h}=${r.w * r.h}`).join('  ');
-  logEvent(`SECTOR ${S.floor} — ${S.rooms.length} kamb: ${_rStats}`, 'info');
   buildWallPackets();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -1868,35 +1852,18 @@ function generateDungeon() {
     }
   }
 
-  // Stamp rooms — room size by floor tier for real variety
-  // tiny: 3-5×3-4 (~9-20), small: 5-7×4-5 (~20-35), medium: 7-10×5-7 (~35-70), large: 9-11×7-9 (~63-99)
-  const f = S.floor;
+  // Stamp rooms
   sectors.forEach((s) => {
-    const roll = Math.random();
-    let rw, rh;
-    if (f <= 2) {
-      // Mostly tiny, sometimes small
-      if (roll < 0.6) { rw = 3 + Math.floor(Math.random() * 3); rh = 3 + Math.floor(Math.random() * 2); }
-      else             { rw = 5 + Math.floor(Math.random() * 3); rh = 4 + Math.floor(Math.random() * 2); }
-    } else if (f <= 4) {
-      // Tiny / small / occasional medium
-      if (roll < 0.35)      { rw = 3 + Math.floor(Math.random() * 3); rh = 3 + Math.floor(Math.random() * 2); }
-      else if (roll < 0.75) { rw = 5 + Math.floor(Math.random() * 3); rh = 4 + Math.floor(Math.random() * 2); }
-      else                  { rw = 7 + Math.floor(Math.random() * 3); rh = 5 + Math.floor(Math.random() * 3); }
-    } else if (f <= 7) {
-      // Small / medium / large mix
-      if (roll < 0.2)       { rw = 5 + Math.floor(Math.random() * 2); rh = 4 + Math.floor(Math.random() * 2); }
-      else if (roll < 0.6)  { rw = 7 + Math.floor(Math.random() * 3); rh = 5 + Math.floor(Math.random() * 3); }
-      else                  { rw = 9 + Math.floor(Math.random() * 3); rh = 7 + Math.floor(Math.random() * 3); }
-    } else {
-      // Mostly large, some medium
-      if (roll < 0.25) { rw = 7 + Math.floor(Math.random() * 3);  rh = 5 + Math.floor(Math.random() * 3); }
-      else             { rw = 9 + Math.floor(Math.random() * 3);  rh = 7 + Math.floor(Math.random() * 3); }
-    }
-    // Clamp to sector bounds (leave 1-cell margin for corridors)
-    const w = Math.max(3, Math.min(rw, s.sw - 1));
-    const h = Math.max(3, Math.min(rh, s.sh - 1));
+    let w = Math.max(4, s.sw - 2);
+    let h = Math.max(3, s.sh - 2);
 
+    // Jeigu sektorius per didelis (pvz 1 lygyje gaunasi belekokio ilgio),
+    // apribojame iki normalaus "kambario" dydžio
+    if (w > 13) w = 8 + Math.floor(Math.random() * 4); // nuo 8 iki 11
+    if (h > 10) h = 6 + Math.floor(Math.random() * 4); // nuo 6 iki 9
+
+    // Išcentruojame kambarius atitinkamai sektoriui,
+    // kad kaimyninių kambarių sienos ir horizontalios ašys sutaptų koridoriams.
     const x = s.x0 + Math.floor((s.sw - w) / 2);
     const y = s.y0 + Math.floor((s.sh - h) / 2);
 
