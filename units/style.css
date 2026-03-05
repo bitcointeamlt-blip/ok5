@@ -2556,6 +2556,158 @@ kbd {
   color: #cccccc;
 }
 
+/* ── Inventory FORGE button ───────────────────────────────────────── */
+#inv-forge-btn {
+  width: 100%;
+  padding: 9px;
+  background: rgba(170,0,255,0.12);
+  border: 1px solid #550088;
+  color: #cc88ff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-shadow: 0 0 8px #cc00ff44;
+}
+#inv-forge-btn:hover {
+  background: rgba(170,0,255,0.25);
+  border-color: #cc00ff;
+  color: #ffffff;
+  text-shadow: 0 0 8px #cc00ff;
+}
+
+/* ── Chip Forge overlay ───────────────────────────────────────────── */
+#forge-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 62;
+  background: rgba(0,0,0,0.93);
+  align-items: center;
+  justify-content: center;
+}
+#forge-overlay.active { display: flex; }
+
+#forge-panel {
+  font-family: var(--font-mono);
+  background: #07000f;
+  border: 2px solid #660099;
+  box-shadow: 0 0 50px #cc00ff33, inset 0 0 30px rgba(170,0,255,0.04);
+  padding: 18px 16px 14px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.forge-title {
+  font-size: 11px;
+  letter-spacing: 5px;
+  color: #ffffff;
+  text-shadow: 0 0 12px #cc00ff, 0 0 24px #cc00ff44;
+}
+.forge-circle {
+  position: relative;
+  width: 260px;
+  height: 260px;
+}
+.forge-slot {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translate(-50%, -50%);
+}
+.forge-slot canvas {
+  image-rendering: pixelated;
+}
+.forge-slot-lbl {
+  font-size: 5px;
+  letter-spacing: 1px;
+  color: #666;
+}
+.forge-slot-qty {
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #888;
+}
+.forge-recipe-btns {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.forge-recipe-btn {
+  flex: 1;
+  padding: 7px 4px;
+  background: transparent;
+  border: 1px solid #333;
+  color: #555;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.forge-recipe-btn.active {
+  border-color: #cc00ff;
+  color: #ffffff;
+  background: rgba(170,0,255,0.12);
+  text-shadow: 0 0 6px #cc00ff;
+}
+.forge-recipe-btn:hover:not(.active) {
+  border-color: #555;
+  color: #aaa;
+}
+#forge-action-btn {
+  width: 100%;
+  padding: 10px;
+  background: rgba(170,0,255,0.2);
+  border: 2px solid #cc00ff;
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-shadow: 0 0 8px #cc00ff;
+}
+#forge-action-btn:hover:not(:disabled) {
+  background: rgba(170,0,255,0.4);
+  box-shadow: 0 0 20px #cc00ff44;
+}
+#forge-action-btn:disabled {
+  border-color: #333;
+  color: #444;
+  background: transparent;
+  cursor: not-allowed;
+  text-shadow: none;
+}
+#forge-status-msg {
+  font-size: 8px;
+  letter-spacing: 2px;
+  min-height: 12px;
+  color: #888;
+  text-align: center;
+}
+#forge-close-btn {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #555;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+#forge-close-btn:hover {
+  border-color: #555;
+  color: #999;
+}
+
 /* ── Chip rarity log colours ─────────────────────────────────────── */
 .log-type-legendary {
   color: #ffaa00;

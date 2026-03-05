@@ -543,6 +543,89 @@ window.attemptFreeShotUpgrade = function (prefix) {
   });
 };
 
+// ── In-game Chip Forge (inventory panel button) ─────────────────────────────
+const FORGE_RARITIES = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+const FORGE_RECIPES = [
+  { label: '90%',  chance: 0.90, cost: { common: 15, uncommon: 10, rare: 5, epic: 5, legendary: 3 } },
+  { label: '100%', chance: 1.00, cost: { common: 0,  uncommon: 0,  rare: 10, epic: 6, legendary: 5 } },
+];
+let _forgeRecipeIdx = 0;
+let _forgeWorking = false;
+
+window.openForge = function () {
+  _forgeWorking = false;
+  FORGE_RARITIES.forEach(r => {
+    const cv = document.getElementById(`fscv-${r}`);
+    if (cv) drawMiniChip(cv, r);
+  });
+  const mythCv = document.getElementById('fscv-mythic');
+  if (mythCv) drawMiniChip(mythCv, 'mythic');
+  _updateForgeUI();
+  document.getElementById('forge-overlay').classList.add('active');
+};
+window.closeForge = function () {
+  document.getElementById('forge-overlay').classList.remove('active');
+};
+window.selectForgeRecipe = function (idx) {
+  _forgeRecipeIdx = idx;
+  document.getElementById('forge-rec-0').classList.toggle('active', idx === 0);
+  document.getElementById('forge-rec-1').classList.toggle('active', idx === 1);
+  _updateForgeUI();
+};
+function _updateForgeUI() {
+  const recipe = FORGE_RECIPES[_forgeRecipeIdx];
+  let canAfford = true;
+  FORGE_RARITIES.forEach(r => {
+    const need = recipe.cost[r] || 0;
+    const have = chipCount(r);
+    const el = document.getElementById(`fsqty-${r}`);
+    if (!el) return;
+    if (need === 0) { el.textContent = '--'; el.style.color = '#333'; }
+    else {
+      el.textContent = `${have} / ${need}`;
+      el.style.color = have >= need ? '#44ff88' : '#ff3c55';
+      if (have < need) canAfford = false;
+    }
+  });
+  const mythEl = document.getElementById('fsqty-mythic');
+  if (mythEl) mythEl.textContent = `HAVE: ${chipCount('mythic')}`;
+  const btn = document.getElementById('forge-action-btn');
+  if (btn) btn.disabled = !canAfford || _forgeWorking;
+  const msg = document.getElementById('forge-status-msg');
+  if (msg && !_forgeWorking) msg.textContent = '';
+}
+window.attemptForge = function () {
+  if (_forgeWorking) return;
+  const recipe = FORGE_RECIPES[_forgeRecipeIdx];
+  for (const r of FORGE_RARITIES) { if (chipCount(r) < (recipe.cost[r] || 0)) return; }
+  _forgeWorking = true;
+  FORGE_RARITIES.forEach(r => spendChips(r, recipe.cost[r] || 0));
+  updateInventoryUI();
+  const btn = document.getElementById('forge-action-btn');
+  const msg = document.getElementById('forge-status-msg');
+  if (btn) btn.disabled = true;
+  if (msg) { msg.textContent = 'FORGING...'; msg.style.color = '#cc00ff'; }
+  setTimeout(() => {
+    const success = Math.random() < recipe.chance;
+    _forgeWorking = false;
+    if (success) {
+      addToInventory('chip', 'mythic', 1);
+      if (msg) { msg.textContent = '✦ MYTHIC CHIP FORGED!'; msg.style.color = '#ffffff'; }
+      SFX.play(880, 0.1, 0.06, 'square');
+      setTimeout(() => SFX.play(1320, 0.15, 0.07, 'square'), 100);
+      setTimeout(() => SFX.play(1760, 0.2, 0.08, 'square'), 220);
+      logEvent('✦ MYTHIC CHIP FORGED', 'assembled');
+    } else {
+      if (msg) { msg.textContent = 'FORGE FAILED — CHIPS LOST'; msg.style.color = '#ff3c55'; }
+      SFX.play(180, 0.12, 0.1, 'sawtooth');
+      logEvent('✦ FORGE FAILED', 'info');
+    }
+    updateInventoryUI();
+    updateHubUI();
+    _updateForgeUI();
+  }, 700);
+};
+
 // ── Mythic Chip Forge (2 legendary → 1 mythic, always succeeds) ────────────
 window.attemptMythicForge = function (prefix) {
   const cardId = prefix === 'hov' ? 'hov-mythic-forge-card' : 'mythic-forge-card';
