@@ -3231,8 +3231,17 @@ function drawDungeon() {
           ctx.fillStyle = `rgba(${_sr},${_sg},255,${0.05 + _sh * 0.22})`; ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
           // Core detail
           ctx.strokeStyle = '#3a3a40'; ctx.lineWidth = 1; ctx.strokeRect(px + 10, py + 10, CELL - 20, CELL - 20);
-          // Pin-1 activity pulse (occasional green glow)
-          const _act = (Math.sin(wallT * 2.1 + _ph0 * 0.4) + 1) * 0.5;
+          // Pin-1 activity pulse — varied rhythms per chip
+          const _blinkType = Math.abs((r * 41 + c * 67) % 10);
+          // 0-2 = no blink (30%), 3-4 = slow, 5-6 = medium, 7-8 = fast, 9 = erratic
+          let _act = 0;
+          if (_blinkType >= 3) {
+            const _spds = [0, 0, 0, 0.55, 0.75, 2.0, 2.6, 4.3, 5.5, 0];
+            const _raw = _blinkType === 9
+              ? Math.sin(wallT * 3.1 + _ph0) * Math.sin(wallT * 1.7 + _ph0 * 0.3)
+              : Math.sin(wallT * _spds[_blinkType] + _ph0 * 0.4);
+            _act = (_raw + 1) * 0.5;
+          }
           if (_act > 0.82) {
             ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 5;
             ctx.fillStyle = `rgba(0,255,136,${(_act - 0.82) * 5.5})`;
