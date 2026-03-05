@@ -2608,7 +2608,7 @@ kbd {
   border: 2px solid #660099;
   animation: forge-panel-pulse 3s ease-in-out infinite;
   padding: 14px 14px 12px;
-  width: 296px;
+  width: 314px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2650,11 +2650,11 @@ kbd {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   border: 1px solid #2a2a2a;
-  padding: 7px 6px 6px;
+  padding: 8px 7px 7px;
   background: rgba(0,0,0,0.55);
-  width: 86px;
+  width: 90px;
   transition: background 0.15s, box-shadow 0.15s;
   cursor: default;
 }

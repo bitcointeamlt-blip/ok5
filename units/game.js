@@ -551,16 +551,26 @@ const FORGE_RECIPES = [
 ];
 let _forgeRecipeIdx = 0;
 let _forgeWorking = false;
+let _forgeAnimRaf = null;
+
+function _startForgeAnim() {
+  if (_forgeAnimRaf) return;
+  function frame() {
+    document.querySelectorAll('.forge-chip-cv').forEach(drawInvChipCanvas);
+    _forgeAnimRaf = requestAnimationFrame(frame);
+  }
+  _forgeAnimRaf = requestAnimationFrame(frame);
+}
+function _stopForgeAnim() {
+  if (_forgeAnimRaf) { cancelAnimationFrame(_forgeAnimRaf); _forgeAnimRaf = null; }
+}
 
 window.openForge = function () {
   _forgeWorking = false;
-  // Init animated chips (picked up by startInvAnimations loop via inv-chip-canvas class)
   [...FORGE_RARITIES, 'mythic'].forEach(r => {
     const cv = document.getElementById(`fscv-${r}`);
     if (!cv) return;
-    cv._angle = cv._angle || 0;
-    cv._vel   = cv._vel   || 0;
-    cv._hovered = false;
+    cv._angle = 0; cv._vel = 0; cv._hovered = false;
     const card = cv.closest('.forge-ing-slot, .forge-result-slot');
     if (card && !card._forgeHover) {
       card._forgeHover = true;
@@ -570,9 +580,11 @@ window.openForge = function () {
   });
   _updateForgeUI();
   document.getElementById('forge-overlay').classList.add('active');
+  _startForgeAnim();
 };
 window.closeForge = function () {
   document.getElementById('forge-overlay').classList.remove('active');
+  _stopForgeAnim();
 };
 window.selectForgeRecipe = function (idx) {
   _forgeRecipeIdx = idx;
