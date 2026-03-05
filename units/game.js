@@ -681,15 +681,10 @@ function updateHubUI() {
   const fsLvl = Profile.upgrades.freeShotLevel || 0;
   const fsMaxed = fsLvl >= 4;
   const fsInterval = fsLvl >= 4 ? 7 : fsLvl >= 3 ? 8 : fsLvl >= 2 ? 9 : 10;
-  const shotsLeft = S.shotsUntilFree ?? fsInterval;
   const fsCost = getFreeShotCost(fsLvl);
-  const fsNextInterval = (fsLvl + 1 >= 4) ? 7 : (fsLvl + 1 >= 3) ? 8 : (fsLvl + 1 >= 2) ? 9 : 10;
-  const fsBonusText = fsMaxed ? '--' : (fsLvl === 0 ? `UNLOCK / ${fsNextInterval} SHOTS` : `/ ${fsNextInterval} SHOTS FREE`);
   ['', 'hov-'].forEach(p => {
     if (o(`${p}lvl-freeshot`)) o(`${p}lvl-freeshot`).innerText = fsLvl;
-    if (o(`${p}freeshot-shots-left`)) o(`${p}freeshot-shots-left`).innerText = fsLvl >= 1 ? `${shotsLeft} / ${fsInterval}` : '--';
     if (o(`${p}freeshot-interval`)) o(`${p}freeshot-interval`).innerText = fsLvl >= 1 ? `/ ${fsInterval} SHOTS` : '--';
-    if (o(`${p}freeshot-bonus`)) o(`${p}freeshot-bonus`).innerText = fsBonusText;
     const cdId = `${p}freeshot-cost-display`;
     if (fsMaxed) {
       const el = o(cdId); if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
