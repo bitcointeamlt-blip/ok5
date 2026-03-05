@@ -406,7 +406,8 @@ function formatCritCost(cost) {
 function getFreeShotCost(lvl) {
   if ((lvl || 0) === 0) return { bytes: 1, common: 1 };
   if ((lvl || 0) === 1) return { bytes: 5, common: 2 };
-  return { bytes: 5, uncommon: 2 };
+  if ((lvl || 0) === 2) return { bytes: 5, uncommon: 2 };
+  return { bytes: 10, rare: 2 };
 }
 
 function getNanoRepairCost(level) {
@@ -508,10 +509,10 @@ window.attemptFreeShotUpgrade = function (prefix) {
   const statId = prefix === 'hov' ? 'hov-freeshot-status' : 'freeshot-status';
   const costEl = prefix === 'hov' ? 'hov-freeshot-cost-display' : 'freeshot-cost-display';
   const level = Profile.upgrades.freeShotLevel || 0;
-  if (level >= 3) return;
+  if (level >= 4) return;
   const cost = getFreeShotCost(level);
   const hasBytes = (S.bytes || 0) >= cost.bytes;
-  const hasChips = chipCount('common') >= (cost.common || 0) && chipCount('uncommon') >= (cost.uncommon || 0);
+  const hasChips = chipCount('common') >= (cost.common || 0) && chipCount('uncommon') >= (cost.uncommon || 0) && chipCount('rare') >= (cost.rare || 0);
   if (!hasBytes || !hasChips) {
     const el = document.getElementById(costEl);
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
@@ -521,6 +522,7 @@ window.attemptFreeShotUpgrade = function (prefix) {
   syncByteSlot();
   spendChips('common', cost.common || 0);
   spendChips('uncommon', cost.uncommon || 0);
+  spendChips('rare', cost.rare || 0);
   updateInventoryUI();
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
@@ -528,7 +530,7 @@ window.attemptFreeShotUpgrade = function (prefix) {
     if (success) {
       const newLvl = level + 1;
       Profile.upgrades.freeShotLevel = newLvl;
-      S.shotsUntilFree = newLvl >= 3 ? 8 : newLvl >= 2 ? 9 : 10;
+      S.shotsUntilFree = newLvl >= 4 ? 7 : newLvl >= 3 ? 8 : newLvl >= 2 ? 9 : 10;
       saveProfile();
       checkAchievements();
     }
@@ -677,8 +679,8 @@ function updateHubUI() {
 
   // Free Shot card
   const fsLvl = Profile.upgrades.freeShotLevel || 0;
-  const fsMaxed = fsLvl >= 3;
-  const fsInterval = fsLvl >= 3 ? 8 : fsLvl >= 2 ? 9 : 10;
+  const fsMaxed = fsLvl >= 4;
+  const fsInterval = fsLvl >= 4 ? 7 : fsLvl >= 3 ? 8 : fsLvl >= 2 ? 9 : 10;
   const shotsLeft = S.shotsUntilFree ?? fsInterval;
   const fsCost = getFreeShotCost(fsLvl);
   ['', 'hov-'].forEach(p => {
@@ -692,7 +694,7 @@ function updateHubUI() {
       renderCostIcons(cdId, fsCost, 'mixed', (r) => r === null ? (S.bytes || 0) : chipCount(r));
     }
   });
-  const canAffordFs = fsMaxed || ((S.bytes || 0) >= fsCost.bytes && chipCount('common') >= (fsCost.common || 0) && chipCount('uncommon') >= (fsCost.uncommon || 0));
+  const canAffordFs = fsMaxed || ((S.bytes || 0) >= fsCost.bytes && chipCount('common') >= (fsCost.common || 0) && chipCount('uncommon') >= (fsCost.uncommon || 0) && chipCount('rare') >= (fsCost.rare || 0));
   const hovFs = o('hov-freeshot-card');
   if (hovFs) hovFs.classList.toggle('upg-locked', !canAffordFs);
 }
@@ -1756,7 +1758,7 @@ function initAdventure() {
   S.teleports = [];
   S.teleportCooldown = 0;
   S.teleportUses = 0;
-  if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 3 ? 8 : _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
+  if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 4 ? 7 : _fl >= 3 ? 8 : _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
   S.reachedMaxEnergy = false;
   generateDungeon();
   buildWallPackets();
@@ -4619,7 +4621,7 @@ function applyActions() {
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 4;
         // Free shot check: every 10/9 shots, 70% chance next shot is free
         const _fsLvl = Profile.upgrades?.freeShotLevel || 0;
-        const _fsInterval = _fsLvl >= 3 ? 8 : _fsLvl >= 2 ? 9 : 10;
+        const _fsInterval = _fsLvl >= 4 ? 7 : _fsLvl >= 3 ? 8 : _fsLvl >= 2 ? 9 : 10;
         const _atZero = _fsLvl >= 1 && (S.shotsUntilFree ?? _fsInterval) === 0;
         const _isFree = _atZero && Math.random() < 0.70;
         if (_fsLvl >= 1) {
