@@ -1655,17 +1655,18 @@ function initAdventure() {
   S.terminals = [];
   S.floor = S.floor || 1;
 
-  // Progresija su variance — min/max kambariai kiekvienam aukštui
+  // Progresija su variance — lėtas augimas, variance kiekviename aukšte
   const roomRanges = [
-    [1, 2],  // Floor 1
-    [1, 3],  // Floor 2
-    [2, 4],  // Floor 3
-    [2, 6],  // Floor 4
-    [3, 6],  // Floor 5
-    [4, 9],  // Floor 6
-    [4, 9],  // Floor 7
-    [6, 12], // Floor 8
-    [6, 16], // Floor 9+
+    [1, 1],  // Floor 1:  visada 1
+    [1, 2],  // Floor 2:  1-2
+    [1, 2],  // Floor 3:  1-2
+    [2, 3],  // Floor 4:  2-3
+    [2, 3],  // Floor 5:  2-3
+    [2, 4],  // Floor 6:  2-4
+    [3, 4],  // Floor 7:  3-4
+    [3, 6],  // Floor 8:  3-6
+    [4, 6],  // Floor 9:  4-6
+    [4, 9],  // Floor 10+: 4-9
   ];
   const roomsToGrid = n => {
     if (n <= 1) return { w: 1, h: 1 };
@@ -1702,6 +1703,9 @@ function initAdventure() {
   S.teleportUses = 0;
   S.reachedMaxEnergy = false;
   generateDungeon();
+  // Room stats log
+  const _rStats = S.rooms.map((r, i) => `#${i + 1} ${r.w}×${r.h}=${r.w * r.h}`).join('  ');
+  logEvent(`SECTOR ${S.floor} — ${S.rooms.length} kamb: ${_rStats}`, 'info');
   buildWallPackets();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -1864,18 +1868,35 @@ function generateDungeon() {
     }
   }
 
-  // Stamp rooms
+  // Stamp rooms — room size by floor tier for real variety
+  // tiny: 3-5×3-4 (~9-20), small: 5-7×4-5 (~20-35), medium: 7-10×5-7 (~35-70), large: 9-11×7-9 (~63-99)
+  const f = S.floor;
   sectors.forEach((s) => {
-    let w = Math.max(4, s.sw - 2);
-    let h = Math.max(3, s.sh - 2);
+    const roll = Math.random();
+    let rw, rh;
+    if (f <= 2) {
+      // Mostly tiny, sometimes small
+      if (roll < 0.6) { rw = 3 + Math.floor(Math.random() * 3); rh = 3 + Math.floor(Math.random() * 2); }
+      else             { rw = 5 + Math.floor(Math.random() * 3); rh = 4 + Math.floor(Math.random() * 2); }
+    } else if (f <= 4) {
+      // Tiny / small / occasional medium
+      if (roll < 0.35)      { rw = 3 + Math.floor(Math.random() * 3); rh = 3 + Math.floor(Math.random() * 2); }
+      else if (roll < 0.75) { rw = 5 + Math.floor(Math.random() * 3); rh = 4 + Math.floor(Math.random() * 2); }
+      else                  { rw = 7 + Math.floor(Math.random() * 3); rh = 5 + Math.floor(Math.random() * 3); }
+    } else if (f <= 7) {
+      // Small / medium / large mix
+      if (roll < 0.2)       { rw = 5 + Math.floor(Math.random() * 2); rh = 4 + Math.floor(Math.random() * 2); }
+      else if (roll < 0.6)  { rw = 7 + Math.floor(Math.random() * 3); rh = 5 + Math.floor(Math.random() * 3); }
+      else                  { rw = 9 + Math.floor(Math.random() * 3); rh = 7 + Math.floor(Math.random() * 3); }
+    } else {
+      // Mostly large, some medium
+      if (roll < 0.25) { rw = 7 + Math.floor(Math.random() * 3);  rh = 5 + Math.floor(Math.random() * 3); }
+      else             { rw = 9 + Math.floor(Math.random() * 3);  rh = 7 + Math.floor(Math.random() * 3); }
+    }
+    // Clamp to sector bounds (leave 1-cell margin for corridors)
+    const w = Math.max(3, Math.min(rw, s.sw - 1));
+    const h = Math.max(3, Math.min(rh, s.sh - 1));
 
-    // Jeigu sektorius per didelis (pvz 1 lygyje gaunasi belekokio ilgio),
-    // apribojame iki normalaus "kambario" dydžio
-    if (w > 13) w = 8 + Math.floor(Math.random() * 4); // nuo 8 iki 11
-    if (h > 10) h = 6 + Math.floor(Math.random() * 4); // nuo 6 iki 9
-
-    // Išcentruojame kambarius atitinkamai sektoriui,
-    // kad kaimyninių kambarių sienos ir horizontalios ašys sutaptų koridoriams.
     const x = s.x0 + Math.floor((s.sw - w) / 2);
     const y = s.y0 + Math.floor((s.sh - h) / 2);
 
