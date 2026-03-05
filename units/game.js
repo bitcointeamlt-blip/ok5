@@ -1655,22 +1655,34 @@ function initAdventure() {
   S.terminals = [];
   S.floor = S.floor || 1;
 
-  // Graduali progresavimo seka
-  const floorProgression = [
-    { w: 1, h: 1 }, // Floor 1: 1 room
-    { w: 1, h: 1 }, // Floor 2: 1 room
-    { w: 2, h: 1 }, // Floor 3: 2 rooms
-    { w: 3, h: 1 }, // Floor 4: 3 rooms
-    { w: 2, h: 2 }, // Floor 5: 4 rooms
-    { w: 3, h: 2 }, // Floor 6: 6 rooms
-    { w: 3, h: 3 }, // Floor 7: 9 rooms
-    { w: 4, h: 3 }, // Floor 8: 12 rooms
-    { w: 4, h: 4 }, // Floor 9: 16 rooms
+  // Progresija su variance — min/max kambariai kiekvienam aukštui
+  const roomRanges = [
+    [1, 2],  // Floor 1
+    [1, 3],  // Floor 2
+    [2, 4],  // Floor 3
+    [2, 6],  // Floor 4
+    [3, 6],  // Floor 5
+    [4, 9],  // Floor 6
+    [4, 9],  // Floor 7
+    [6, 12], // Floor 8
+    [6, 16], // Floor 9+
   ];
-
-  const configIdx = Math.min(S.floor - 1, floorProgression.length - 1);
-  S.gridW = floorProgression[configIdx].w;
-  S.gridH = floorProgression[configIdx].h;
+  const roomsToGrid = n => {
+    if (n <= 1) return { w: 1, h: 1 };
+    if (n <= 2) return { w: 2, h: 1 };
+    if (n <= 3) return { w: 3, h: 1 };
+    if (n <= 4) return { w: 2, h: 2 };
+    if (n <= 6) return { w: 3, h: 2 };
+    if (n <= 8) return { w: 4, h: 2 };
+    if (n <= 9) return { w: 3, h: 3 };
+    if (n <= 12) return { w: 4, h: 3 };
+    return { w: 4, h: 4 };
+  };
+  const [minR, maxR] = roomRanges[Math.min(S.floor - 1, roomRanges.length - 1)];
+  const roomCount = minR + Math.floor(Math.random() * (maxR - minR + 1));
+  const grid = roomsToGrid(roomCount);
+  S.gridW = grid.w;
+  S.gridH = grid.h;
 
   ADV_MAP_COLS = 13 * S.gridW + 2;
   ADV_MAP_ROWS = 11 * S.gridH + 2;
