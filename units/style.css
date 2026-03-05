@@ -2579,16 +2579,21 @@ kbd {
 
 /* ── Chip Forge overlay ───────────────────────────────────────────── */
 @keyframes forge-panel-pulse {
-  0%,100% { box-shadow: 0 0 40px #cc00ff22, inset 0 0 20px rgba(170,0,255,0.03); border-color: #660099; }
-  50%      { box-shadow: 0 0 70px #cc00ff55, inset 0 0 30px rgba(170,0,255,0.08); border-color: #bb00ee; }
+  0%,100% { box-shadow: 0 0 0 4px #09000e, 0 0 0 5px #440055, 0 0 50px #cc00ff1a; }
+  50%      { box-shadow: 0 0 0 4px #09000e, 0 0 0 5px #660077, 0 0 90px #cc00ff44; }
 }
 @keyframes mythic-result-pulse {
-  0%,100% { box-shadow: 0 0 14px #cc00ff33, inset 0 0 18px rgba(170,0,255,0.05); border-color: #550088; }
-  50%      { box-shadow: 0 0 32px #cc00ffaa, inset 0 0 28px rgba(170,0,255,0.14); border-color: #cc00ff; }
+  0%,100% { border-color: #770099; box-shadow: 0 0 20px #cc00ff33, inset 2px 2px 0 #160022, inset -2px -2px 0 #030008; }
+  50%      { border-color: #ee00ff; box-shadow: 0 0 44px #cc00ffaa, inset 2px 2px 0 #220030, inset -2px -2px 0 #060010; }
+}
+@keyframes forge-fire {
+  0%,100% { color: #ffcc00; text-shadow: 0 0 8px #ff8800, 0 0 18px #cc5500; }
+  40%      { color: #ff8800; text-shadow: 0 0 12px #ff4400, 0 0 24px #aa2200; }
+  70%      { color: #ffee55; text-shadow: 0 0 10px #ffaa00, 0 0 20px #cc7700; }
 }
 @keyframes forge-btn-ready {
-  0%,100% { box-shadow: 0 0 10px #cc00ff44; }
-  50%      { box-shadow: 0 0 26px #cc00ffaa, 0 0 5px #cc00ff inset; }
+  0%,100% { box-shadow: 0 0 10px #cc00ff33, inset 2px 2px 0 #1c0028, inset -2px -2px 0 #050010; }
+  50%      { box-shadow: 0 0 30px #cc00ffaa, inset 2px 2px 0 #280035, inset -2px -2px 0 #080018; }
 }
 
 #forge-overlay {
@@ -2596,191 +2601,255 @@ kbd {
   position: absolute;
   inset: 0;
   z-index: 62;
-  background: rgba(0,0,0,0.94);
+  background: rgba(0,0,0,0.95);
   align-items: center;
   justify-content: center;
 }
 #forge-overlay.active { display: flex; }
 
+/* RPG pixel-art double-border window */
 #forge-panel {
   font-family: var(--font-mono);
-  background: #06000e;
-  border: 2px solid #660099;
-  animation: forge-panel-pulse 3s ease-in-out infinite;
-  padding: 14px 14px 12px;
-  width: 314px;
+  background: #070010;
+  border: 2px solid #880099;
+  animation: forge-panel-pulse 3.5s ease-in-out infinite;
+  width: 382px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  align-items: stretch;
 }
-.forge-header {
+
+/* ── RPG title bar ── */
+.forge-titlebar {
+  background: linear-gradient(180deg, #1d002a 0%, #0e0016 100%);
+  border-bottom: 2px solid #660088;
+  padding: 10px 14px 9px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
 }
 .forge-title {
   font-size: 10px;
-  letter-spacing: 4px;
-  color: #ffffff;
-  text-shadow: 0 0 12px #cc00ff, 0 0 28px #cc00ff44;
+  letter-spacing: 5px;
+  color: #dd88ff;
+  text-shadow: 0 0 14px #cc00ff, 2px 2px 0 #000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.forge-title-icon { animation: forge-fire 2s ease-in-out infinite; }
 .forge-close-x {
-  background: transparent;
-  border: 1px solid #2a2a2a;
-  color: #555;
+  background: #1a0025;
+  border: 2px solid #4a0060;
+  color: #773399;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   cursor: pointer;
-  padding: 2px 7px;
+  padding: 3px 8px;
   line-height: 1;
-  transition: all 0.15s;
+  transition: all 0.12s;
+  box-shadow: inset 1px 1px 0 #280035, inset -1px -1px 0 #0a0010;
 }
-.forge-close-x:hover { border-color: #550088; color: #cc00ff; }
+.forge-close-x:hover { background: #2e003e; border-color: #cc00ff; color: #ee88ff; }
 
-/* ingredient slot rows */
+/* ── panel body ── */
+.forge-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── RPG category section headers ── */
+.forge-section-hdr {
+  font-size: 6px;
+  letter-spacing: 4px;
+  color: #550077;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -2px;
+}
+.forge-section-hdr::before,
+.forge-section-hdr::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #1e0028;
+}
+
+/* ── ingredient rows ── */
 .forge-ingredients {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
-  width: 100%;
 }
+
+/* pixel-art RPG item slot — inset/recessed look */
 .forge-ing-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  border: 1px solid #2a2a2a;
-  padding: 8px 7px 7px;
-  background: rgba(0,0,0,0.55);
-  width: 90px;
-  transition: background 0.15s, box-shadow 0.15s;
+  border: 2px solid #1e0028;
+  padding: 9px 8px 8px;
+  background: #040009;
+  width: 96px;
   cursor: default;
+  position: relative;
+  box-shadow: inset 2px 2px 0 #0c0014, inset -2px -2px 0 #020006;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.forge-ing-slot::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--rc, #333);
+  opacity: 0.55;
 }
 .forge-ing-slot:hover {
-  background: rgba(255,255,255,0.02);
-  box-shadow: inset 0 0 14px rgba(255,255,255,0.03);
+  background: #060012;
+  box-shadow: inset 2px 2px 0 #160022, inset -2px -2px 0 #020006,
+              0 0 12px rgba(180, 60, 255, 0.14);
 }
 .forge-ing-slot canvas { image-rendering: pixelated; display: block; }
 .forge-ing-lbl {
   font-size: 5px;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   text-align: center;
 }
 .forge-ing-qty {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 1px;
-  color: #555;
+  color: #4a3360;
 }
 
-/* arrow between ingredients and result */
+/* ── transmute arrow ── */
 .forge-arrow {
+  text-align: center;
   font-size: 6px;
-  letter-spacing: 4px;
-  color: #3d0055;
-  text-shadow: 0 0 10px #cc00ff33;
+  letter-spacing: 6px;
+  color: #440055;
+  text-shadow: 0 0 10px #cc00ff22;
 }
 
-/* mythic result slot */
+/* ── result ── */
+.forge-result-wrapper { display: flex; justify-content: center; }
 .forge-result-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  border: 1px solid #550088;
-  padding: 10px 18px 8px;
-  background: rgba(14,0,24,0.8);
+  gap: 6px;
+  border: 2px solid #770099;
+  padding: 14px 32px 12px;
+  background: #060012;
   animation: mythic-result-pulse 2s ease-in-out infinite;
+  position: relative;
+  box-shadow: inset 2px 2px 0 #140020, inset -2px -2px 0 #030008;
 }
+.forge-result-slot::before,
+.forge-result-slot::after {
+  content: '◆';
+  position: absolute;
+  font-size: 7px;
+  color: #440055;
+  line-height: 1;
+}
+.forge-result-slot::before { top: 5px; left: 7px; }
+.forge-result-slot::after  { top: 5px; right: 7px; }
 .forge-result-slot canvas { image-rendering: pixelated; display: block; }
 .forge-mythic-lbl {
-  font-size: 6px;
-  letter-spacing: 2px;
+  font-size: 7px;
+  letter-spacing: 3px;
   color: #cc00ff;
-  text-shadow: 0 0 8px #cc00ff;
+  text-shadow: 0 0 10px #cc00ff, 2px 2px 0 #000;
 }
 .forge-mythic-count {
   font-size: 7px;
-  color: #666;
-  letter-spacing: 1px;
+  color: #553366;
+  letter-spacing: 2px;
 }
 
 .forge-divider {
-  width: 100%;
   border: none;
-  border-top: 1px solid #140018;
+  border-top: 1px solid #160020;
+  width: 100%;
   margin: 0;
 }
-.forge-recipe-btns {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-}
+
+/* ── recipe selector (RPG scroll tabs) ── */
+.forge-recipe-btns { display: flex; gap: 8px; width: 100%; }
 .forge-recipe-btn {
   flex: 1;
-  padding: 8px 4px;
-  background: transparent;
-  border: 1px solid #1e1e2e;
-  color: #444;
+  padding: 10px 6px;
+  background: #040009;
+  border: 2px solid #1e0028;
+  color: #443355;
   font-family: var(--font-mono);
   font-size: 6px;
   letter-spacing: 1px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  line-height: 1.4;
+  gap: 5px;
+  box-shadow: inset 1px 1px 0 #0a0014, inset -1px -1px 0 #020006;
 }
 .forge-recipe-btn .recipe-pct {
-  font-size: 13px;
+  font-size: 18px;
   letter-spacing: 2px;
-  color: #555;
+  color: #443355;
 }
 .forge-recipe-btn .recipe-cost {
   font-size: 6px;
   letter-spacing: 0.5px;
-  color: #444;
-  line-height: 1.6;
+  color: #2c1a38;
+  line-height: 1.8;
 }
-.forge-recipe-btn.active { border-color: #770099; background: rgba(170,0,255,0.10); }
-.forge-recipe-btn.active .recipe-pct { color: #cc00ff; text-shadow: 0 0 8px #cc00ff; }
-.forge-recipe-btn.active .recipe-cost { color: #aa77cc; }
-.forge-recipe-btn:hover:not(.active) { border-color: #333; }
-.forge-recipe-btn:hover:not(.active) .recipe-pct { color: #666; }
+.forge-recipe-btn.active {
+  border-color: #880099;
+  background: #0b0018;
+  box-shadow: inset 1px 1px 0 #160025, inset -1px -1px 0 #04000f, 0 0 16px #cc00ff22;
+}
+.forge-recipe-btn.active .recipe-pct { color: #dd00ff; text-shadow: 0 0 10px #cc00ff, 2px 2px 0 #000; }
+.forge-recipe-btn.active .recipe-cost { color: #7733aa; }
+.forge-recipe-btn:hover:not(.active) { border-color: #380050; background: #060010; }
+.forge-recipe-btn:hover:not(.active) .recipe-pct { color: #664477; }
 
-#forge-action-btn {
-  width: 100%;
-  padding: 11px;
-  background: rgba(170,0,255,0.16);
-  border: 2px solid #cc00ff;
-  color: #ffffff;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 3px;
-  cursor: pointer;
-  transition: background 0.15s;
-  text-shadow: 0 0 8px #cc00ff;
-  animation: forge-btn-ready 1.6s ease-in-out infinite;
-}
-#forge-action-btn:hover:not(:disabled) { background: rgba(170,0,255,0.35); }
-#forge-action-btn:disabled {
-  border-color: #1e1e2e;
-  color: #2a2a3a;
-  background: transparent;
-  cursor: not-allowed;
-  text-shadow: none;
-  animation: none;
-  box-shadow: none;
-}
 #forge-status-msg {
   font-size: 8px;
   letter-spacing: 2px;
-  min-height: 12px;
-  color: #888;
+  min-height: 14px;
+  color: #664488;
   text-align: center;
+  text-shadow: 1px 1px 0 #000;
+}
+
+#forge-action-btn {
+  width: 100%;
+  padding: 14px;
+  background: #0e001c;
+  border: 2px solid #aa00cc;
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-shadow: 0 0 10px #cc00ff, 2px 2px 0 #000;
+  animation: forge-btn-ready 1.6s ease-in-out infinite;
+}
+#forge-action-btn:hover:not(:disabled) { background: #190028; }
+#forge-action-btn:disabled {
+  border-color: #1e1030;
+  color: #2a1a3a;
+  background: #030008;
+  cursor: not-allowed;
+  text-shadow: none;
+  animation: none;
+  box-shadow: inset 1px 1px 0 #08000f, inset -1px -1px 0 #010005;
 }
 
 /* ── Chip rarity log colours ─────────────────────────────────────── */
