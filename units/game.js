@@ -93,8 +93,8 @@ const CELL_DARK = '#07070f';
 const CELL_LIGHT = '#0a0a18';
 const GRID_COLOR = '#161630';
 
-// ── Wall FX: Data Packets & LED Chips ───────────────────────────────
-let wPktEdges = [], wPktMap = {}, wPktPackets = [], wallLedTiles = [];
+// ── Wall FX: LED Chips ───────────────────────────────────────────────
+let wallLedTiles = [];
 let wallLedState = false, wallLedPhase = 0;
 let wallLedIdleAccum = 0, wallLedIdleMs = 10000;
 let wallLedBlinkSeq = [], wallLedBlinkIdx = 0, wallLedBlinkAccum = 0;
@@ -3057,6 +3057,7 @@ function isVisible(x, y) {
 }
 
 function drawDungeon() {
+  const wallT = performance.now() * 0.001;
   // Pass 1: base fills
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -3223,10 +3224,21 @@ function drawDungeon() {
           ctx.fillStyle = '#1c1c1f'; ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8);
           // Etched core
           ctx.fillStyle = '#0a0a0c'; ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
-          // Silicon rainbow sheen (fake effect)
-          ctx.fillStyle = 'rgba(120, 50, 255, 0.15)'; ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
+          // Animated silicon rainbow sheen
+          const _ph0 = r * 7.3 + c * 13.7;
+          const _sh = (Math.sin(wallT * 0.7 + _ph0) + 1) * 0.5;
+          const _sr = Math.floor(80 + _sh * 140), _sg = Math.floor(20 + _sh * 60);
+          ctx.fillStyle = `rgba(${_sr},${_sg},255,${0.05 + _sh * 0.22})`; ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
           // Core detail
           ctx.strokeStyle = '#3a3a40'; ctx.lineWidth = 1; ctx.strokeRect(px + 10, py + 10, CELL - 20, CELL - 20);
+          // Pin-1 activity pulse (occasional green glow)
+          const _act = (Math.sin(wallT * 2.1 + _ph0 * 0.4) + 1) * 0.5;
+          if (_act > 0.82) {
+            ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 5;
+            ctx.fillStyle = `rgba(0,255,136,${(_act - 0.82) * 5.5})`;
+            ctx.beginPath(); ctx.arc(px + 12, py + 12, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+          }
         } else if (rType < 70) {
           // 30% chance: Detailed Transistor (TO-220 style package)
           ctx.fillStyle = '#111'; ctx.fillRect(px + 6, py + 6, CELL - 12, CELL - 12); // shadow
@@ -3254,6 +3266,11 @@ function drawDungeon() {
           // Manufacturer text
           ctx.fillStyle = '#aaa';
           ctx.fillRect(px + CELL * 0.25, py + CELL * 0.6, CELL * 0.5, 2);
+          // Thermal glow on heatsink tab
+          const _ph1 = r * 11.3 + c * 17.7;
+          const _heat = (Math.sin(wallT * 0.55 + _ph1) + 1) * 0.5;
+          ctx.fillStyle = `rgba(255,${Math.floor(70 + _heat * 110)},0,${_heat * 0.18})`;
+          ctx.fillRect(px + Math.floor(CELL * 0.2), py + Math.floor(CELL * 0.1), Math.floor(CELL * 0.6), Math.floor(CELL * 0.4));
         } else if (rType < 90) {
           // 20% chance: Detailed Axial Resistor
           // Tin wire leads
@@ -3271,6 +3288,14 @@ function drawDungeon() {
           ctx.fillRect(px + CELL * 0.3, py + CELL * 0.15, CELL * 0.4, CELL * 0.05);
           ctx.fillRect(px + CELL * 0.3, py + CELL * 0.8, CELL * 0.4, CELL * 0.05);
 
+          // Current flow dot traveling along the wire
+          const _ph2 = r * 5.7 + c * 19.3;
+          const _pos = ((wallT * 0.35 + _ph2 * 0.08) % 1.0);
+          const _dotY = py + CELL * 0.08 + _pos * CELL * 0.84;
+          ctx.shadowColor = '#ffff88'; ctx.shadowBlur = 4;
+          ctx.fillStyle = 'rgba(255,255,140,0.95)';
+          ctx.fillRect(Math.floor(px + CELL * 0.49), Math.floor(_dotY), 2, 2);
+          ctx.shadowBlur = 0;
           // 4 Color bands (Red, Violet, Orange, Gold) = 27k Ohm 5%
           const bw = CELL * 0.5;
           ctx.fillStyle = '#cc2222'; ctx.fillRect(px + CELL * 0.25, py + CELL * 0.25, bw, 4); // red
@@ -3294,6 +3319,11 @@ function drawDungeon() {
           ctx.fillStyle = '#2a3036';
           ctx.fillRect(px + CELL * 0.3, py + 6, 4, CELL - 12);
           ctx.fillRect(px + CELL * 0.6, py + 6, 4, CELL - 12);
+          // Thermal shimmer on fins
+          const _ph3 = r * 9.1 + c * 23.3;
+          const _glow = (Math.sin(wallT * 0.45 + _ph3) + 1) * 0.5;
+          ctx.fillStyle = `rgba(174,183,191,${0.2 + _glow * 0.55})`;
+          for (let _fi = 8; _fi < CELL - 8; _fi += 6) ctx.fillRect(px + 6, py + _fi, CELL - 12, 1);
         }
       }
     }
@@ -3362,84 +3392,27 @@ function drawDungeon() {
 
 // ── Wall FX functions ─────────────────────────────────────────────
 function buildWallPackets() {
-  wPktEdges = []; wPktMap = {}; wallLedTiles = [];
-  const seen = new Set();
+  wallLedTiles = [];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const tile = S.dungeon[r][c];
-      if (tile === 1 || tile === 3) {
-        const px = c * CELL, py = r * CELL;
-        const add = (x1, y1, x2, y2) => {
-          const k = `${x1},${y1},${x2},${y2}`;
-          if (!seen.has(k)) { seen.add(k); wPktEdges.push({ x1, y1, x2, y2 }); }
-        };
-        if (r > 0 && S.dungeon[r - 1][c] === 0) add(px, py, px + CELL, py);
-        if (r < ROWS - 1 && S.dungeon[r + 1][c] === 0) add(px, py + CELL, px + CELL, py + CELL);
-        if (c > 0 && S.dungeon[r][c - 1] === 0) add(px, py, px, py + CELL);
-        if (c < COLS - 1 && S.dungeon[r][c + 1] === 0) add(px + CELL, py, px + CELL, py + CELL);
-      }
-      if (tile === 0) {
-        const rType = Math.abs((r * 137 + c * 313) % 100);
-        if (rType < 40 && ((r * 17 + c * 31) % 5) === 0) {
-          wallLedTiles.push({ px: c * CELL, py: r * CELL });
-        }
+      if (S.dungeon[r][c] !== 0) continue;
+      const rType = Math.abs((r * 137 + c * 313) % 100);
+      if (rType < 40 && ((r * 17 + c * 31) % 5) === 0) {
+        wallLedTiles.push({ px: c * CELL, py: r * CELL });
       }
     }
   }
-  wPktEdges.forEach((e, i) => {
-    const k1 = `${e.x1},${e.y1}`, k2 = `${e.x2},${e.y2}`;
-    (wPktMap[k1] = wPktMap[k1] || []).push(i);
-    (wPktMap[k2] = wPktMap[k2] || []).push(i);
-  });
-  wPktPackets = [];
-  const N = Math.min(10, Math.max(4, Math.floor(wPktEdges.length / 10)));
-  for (let i = 0; i < N; i++) spawnWPkt(null);
   wallLedState = false; wallLedPhase = 0;
   wallLedIdleAccum = 0; wallLedIdleMs = 10000 + Math.random() * 2000;
 }
 
-const WPT_COLORS = ['#00ff88', '#44aaff', '#aa44ff', '#ffcc00'];
-
-function spawnWPkt(pkt) {
-  if (!wPktEdges.length) return;
-  const ei = Math.floor(Math.random() * wPktEdges.length);
-  const e = wPktEdges[ei];
-  const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
-  const d = {
-    ei, t: Math.random(),
-    forward: Math.random() < 0.5,
-    color: WPT_COLORS[Math.floor(Math.random() * WPT_COLORS.length)],
-    spd: (0.8 + Math.random() * 1.6) / len,
-    trail: []
-  };
-  if (pkt) Object.assign(pkt, d); else wPktPackets.push(d);
-}
-
 function updateWallFX(dt) {
-  if (!wPktEdges.length) return;
-  // Update data packets
-  for (const p of wPktPackets) {
-    const e = wPktEdges[p.ei];
-    p.trail.push({ x: e.x1 + (e.x2 - e.x1) * p.t, y: e.y1 + (e.y2 - e.y1) * p.t });
-    if (p.trail.length > 9) p.trail.shift();
-    p.t += p.forward ? p.spd : -p.spd;
-    if (p.t > 1 || p.t < 0) {
-      const ex = p.t > 1 ? e.x2 : e.x1, ey = p.t > 1 ? e.y2 : e.y1;
-      const nbrs = (wPktMap[`${ex},${ey}`] || []).filter(ni => ni !== p.ei);
-      if (nbrs.length > 0) {
-        const ni = nbrs[Math.floor(Math.random() * nbrs.length)];
-        const ne = wPktEdges[ni]; p.ei = ni;
-        if (Math.abs(ne.x1 - ex) < 1 && Math.abs(ne.y1 - ey) < 1) { p.t = 0; p.forward = true; }
-        else { p.t = 1; p.forward = false; }
-      } else spawnWPkt(p);
-    }
-  }
   // LED blink timer (every 10-12 sec, 3 quick blinks)
   wallLedIdleAccum += dt;
   if (wallLedPhase === 0 && wallLedIdleAccum >= wallLedIdleMs) {
     wallLedIdleAccum = 0; wallLedIdleMs = 10000 + Math.random() * 2000;
     wallLedPhase = 1; wallLedBlinkIdx = 0; wallLedBlinkAccum = 0;
-    wallLedBlinkSeq = [120, 90, 130, 90, 120, 200]; // on/off/on/off/on/done
+    wallLedBlinkSeq = [120, 90, 130, 90, 120, 200];
     wallLedState = true;
   }
   if (wallLedPhase === 1) {
@@ -3450,29 +3423,6 @@ function updateWallFX(dt) {
       else wallLedState = !wallLedState;
     }
   }
-}
-
-function drawWallPackets() {
-  if (!wPktPackets.length || gameMode !== 'adventure') return;
-  ctx.save();
-  for (const p of wPktPackets) {
-    const tl = p.trail;
-    if (tl.length < 2) continue;
-    for (let i = 0; i < tl.length; i++) {
-      ctx.globalAlpha = ((i + 1) / tl.length) * 0.8;
-      if (i === tl.length - 1) {
-        ctx.shadowColor = p.color; ctx.shadowBlur = 6;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(tl[i].x - 2, tl[i].y - 2, 4, 4);
-        ctx.shadowBlur = 0;
-      } else {
-        ctx.fillStyle = p.color;
-        ctx.fillRect(tl[i].x - 1, tl[i].y - 1, 2, 2);
-      }
-    }
-  }
-  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-  ctx.restore();
 }
 
 function drawWallLED() {
@@ -5287,7 +5237,7 @@ function loop(now) {
     updateCamera();
     ctx.translate(-S.cam.x, -S.cam.y);
   }
-  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); drawWallPackets(); } else drawBoard();
+  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); } else drawBoard();
   drawLasers();
   drawMeleeStrikes();
   drawShootPreview();
