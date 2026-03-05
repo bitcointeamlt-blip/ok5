@@ -54,6 +54,7 @@ const RARITY_COLOR = {
   rare: '#4499ff',
   epic: '#cc44ff',
   legendary: '#ffaa00',
+  mythic: '#ffffff',
 };
 
 // ── Constants ────────────────────────────────────────────────────
@@ -382,6 +383,7 @@ function renderCostIcons(containerId, cost, type, haveFn) {
     if (cost.uncommon) addIcon('uncommon', cost.uncommon);
     if (cost.common) addIcon('common', cost.common);
   } else {
+    if (cost.mythic) addIcon('mythic', cost.mythic);
     if (cost.legendary) addIcon('legendary', cost.legendary);
     if (cost.epic) addIcon('epic', cost.epic);
     if (cost.rare) addIcon('rare', cost.rare);
@@ -541,6 +543,23 @@ window.attemptFreeShotUpgrade = function (prefix) {
   });
 };
 
+// ── Mythic Chip Forge (2 legendary → 1 mythic, always succeeds) ────────────
+window.attemptMythicForge = function (prefix) {
+  const cardId = prefix === 'hov' ? 'hov-mythic-forge-card' : 'mythic-forge-card';
+  const statId = prefix === 'hov' ? 'hov-mythic-forge-status' : 'mythic-forge-status';
+  const costEl = prefix === 'hov' ? 'hov-mythic-forge-cost-display' : 'mythic-forge-cost-display';
+  if (chipCount('legendary') < 2) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  spendChips('legendary', 2);
+  addToInventory('chip', 'mythic', 1);
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => true);
+};
+
 // ── Terminal upgrade (hub screen, uses Profile.cache) ──────────────────────
 window.attemptTerminalUpgrade = function () {
   const cost = getTerminalVoltsCost();
@@ -698,6 +717,16 @@ function updateHubUI() {
   const canAffordFs = fsMaxed || ((S.bytes || 0) >= (fsCost.bytes || 0) && chipCount('common') >= (fsCost.common || 0) && chipCount('uncommon') >= (fsCost.uncommon || 0) && chipCount('rare') >= (fsCost.rare || 0) && chipCount('epic') >= (fsCost.epic || 0) && chipCount('legendary') >= (fsCost.legendary || 0));
   const hovFs = o('hov-freeshot-card');
   if (hovFs) hovFs.classList.toggle('upg-locked', !canAffordFs);
+
+  // Mythic Forge card
+  const mythicCount = chipCount('mythic');
+  const canForge = chipCount('legendary') >= 2;
+  ['', 'hov-'].forEach(p => {
+    if (o(`${p}mythic-chip-count`)) o(`${p}mythic-chip-count`).innerText = mythicCount;
+    renderCostIcons(`${p}mythic-forge-cost-display`, { legendary: 2 }, 'chips', (r) => chipCount(r));
+  });
+  const hovMythic = o('hov-mythic-forge-card');
+  if (hovMythic) hovMythic.classList.toggle('upg-locked', !canForge);
 }
 
 window.toggleHubOverlay = function () {
@@ -2162,6 +2191,7 @@ const CHIP_PALETTES = {
   rare: [null, '#00001f', '#000055', '#0033aa', '#2266ee', '#66aaff'],
   epic: [null, '#110011', '#330044', '#6600aa', '#aa33dd', '#ee55ff'],
   legendary: [null, '#1a0800', '#442200', '#886600', '#ddaa00', '#ffcc22'],
+  mythic: [null, '#0a0010', '#1a0033', '#4400aa', '#cc00ff', '#ffffff'],
 };
 
 // ── Traditional vertical-scroll slot reel system ─────────────────

@@ -207,6 +207,27 @@
                 <button class="btn-volt-install" onclick="attemptFreeShotUpgrade()">▶ INSTALL</button>
                 <div class="upg-status" id="freeshot-status"></div>
               </div>
+
+              <div class="upgrade-card volt-card" id="mythic-forge-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#ffffff;text-shadow:0 0 8px #cc00ff,0 0 16px #cc00ff44;">✦ MYTHIC CHIP</span>
+                  <span class="upg-arrow">▼</span>
+                  <span class="volt-lvl-badge">HAVE&nbsp;<span id="mythic-chip-count">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">RECIPE</span>
+                    <span class="volt-stat-val"><span id="mythic-forge-cost-display"></span></span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">100%</span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptMythicForge()">▶ FORGE</button>
+                <div class="upg-status" id="mythic-forge-status"></div>
+              </div>
             </div>
           </div>
 
@@ -727,6 +748,27 @@
               </div>
               <button class="btn-volt-install" onclick="attemptFreeShotUpgrade('hov')">▶ INSTALL</button>
               <div class="upg-status" id="hov-freeshot-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-mythic-forge-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#ffffff;text-shadow:0 0 8px #cc00ff,0 0 16px #cc00ff44;">✦ MYTHIC CHIP</span>
+                <span class="upg-arrow">▼</span>
+                <span class="volt-lvl-badge">HAVE&nbsp;<span id="hov-mythic-chip-count">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">RECIPE</span>
+                  <span class="volt-stat-val"><span id="hov-mythic-forge-cost-display"></span></span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">100%</span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptMythicForge('hov')">▶ FORGE</button>
+              <div class="upg-status" id="hov-mythic-forge-status"></div>
             </div>
           </div>
 
