@@ -396,7 +396,10 @@ function formatCritCost(cost) {
   if (cost.common) parts.push(`<span style="color:#aaaaaa">${cost.common}○</span>`);
   return parts.join(' ');
 }
-function getFreeShotCost() { return { bytes: 1, common: 1 }; }
+function getFreeShotCost(lvl) {
+  if ((lvl || 0) === 0) return { bytes: 1, common: 1 };
+  return { bytes: 5, common: 2 };
+}
 
 function getNanoRepairCost(level) {
   if (level === 0) return { rare: 1 };
@@ -496,8 +499,8 @@ window.attemptFreeShotUpgrade = function (prefix) {
   const cardId = prefix === 'hov' ? 'hov-freeshot-card' : 'freeshot-upg-card';
   const statId = prefix === 'hov' ? 'hov-freeshot-status' : 'freeshot-status';
   const costEl = prefix === 'hov' ? 'hov-freeshot-cost-display' : 'freeshot-cost-display';
-  if ((Profile.upgrades.freeShotLevel || 0) >= 1) return;
-  const cost = getFreeShotCost();
+  if ((Profile.upgrades.freeShotLevel || 0) >= 2) return;
+  const cost = getFreeShotCost(Profile.upgrades.freeShotLevel || 0);
   const hasBytes = (S.bytes || 0) >= cost.bytes;
   const hasChips = chipCount('common') >= cost.common;
   if (!hasBytes || !hasChips) {
@@ -514,8 +517,8 @@ window.attemptFreeShotUpgrade = function (prefix) {
   updateInventoryUI();
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
-    Profile.upgrades.freeShotLevel = 1;
-    S.shotsUntilFree = 10;
+    Profile.upgrades.freeShotLevel = (Profile.upgrades.freeShotLevel || 0) + 1;
+    S.shotsUntilFree = Profile.upgrades.freeShotLevel >= 2 ? 9 : 10;
     saveProfile();
     return true;
   });
@@ -662,18 +665,21 @@ function updateHubUI() {
 
   // Free Shot card
   const fsLvl = Profile.upgrades.freeShotLevel || 0;
-  const fsMaxed = fsLvl >= 1;
-  const shotsLeft = S.shotsUntilFree ?? 10;
+  const fsMaxed = fsLvl >= 2;
+  const fsInterval = fsLvl >= 2 ? 9 : 10;
+  const shotsLeft = S.shotsUntilFree ?? fsInterval;
+  const fsCost = getFreeShotCost(fsLvl);
   ['', 'hov-'].forEach(p => {
     if (o(`${p}lvl-freeshot`)) o(`${p}lvl-freeshot`).innerText = fsLvl;
-    if (o(`${p}freeshot-shots-left`)) o(`${p}freeshot-shots-left`).innerText = fsMaxed ? `${shotsLeft} / 10` : '--';
+    if (o(`${p}freeshot-shots-left`)) o(`${p}freeshot-shots-left`).innerText = fsLvl >= 1 ? `${shotsLeft} / ${fsInterval}` : '--';
+    if (o(`${p}freeshot-interval`)) o(`${p}freeshot-interval`).innerText = `/ ${fsInterval} SHOTS`;
     const cdEl = o(`${p}freeshot-cost-display`);
     if (cdEl) {
       if (fsMaxed) cdEl.innerHTML = '<span style="color:#00ff88">MAX</span>';
-      else cdEl.innerHTML = `<span style="color:#7dd3fc">1 BYTE</span>&nbsp;<span style="color:#666">+</span>&nbsp;<span style="color:#9ca3af">1 COMMON</span>`;
+      else cdEl.innerHTML = `<span style="color:#7dd3fc">${fsCost.bytes} BYTE${fsCost.bytes > 1 ? 'S' : ''}</span>&nbsp;<span style="color:#666">+</span>&nbsp;<span style="color:#9ca3af">${fsCost.common} COMMON</span>`;
     }
   });
-  const canAffordFs = fsMaxed || ((S.bytes || 0) >= 1 && chipCount('common') >= 1);
+  const canAffordFs = fsMaxed || ((S.bytes || 0) >= fsCost.bytes && chipCount('common') >= fsCost.common);
   const hovFs = o('hov-freeshot-card');
   if (hovFs) hovFs.classList.toggle('upg-locked', !canAffordFs);
 }
@@ -1737,7 +1743,7 @@ function initAdventure() {
   S.teleports = [];
   S.teleportCooldown = 0;
   S.teleportUses = 0;
-  if (S.floor === 1) S.shotsUntilFree = 10; // reset free shot counter on new run
+  if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
   S.reachedMaxEnergy = false;
   generateDungeon();
   buildWallPackets();
@@ -4598,12 +4604,14 @@ function applyActions() {
         let nrgCost = 2;
         if (wep === 'laser') nrgCost = 7;
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 4;
-        // Free shot check: every 11th shot is free (after 10 paid)
+        // Free shot check: every 10/9 shots, 70% chance next shot is free
         const _fsLvl = Profile.upgrades?.freeShotLevel || 0;
-        const _isFree = _fsLvl >= 1 && (S.shotsUntilFree ?? 10) === 0;
+        const _fsInterval = _fsLvl >= 2 ? 9 : 10;
+        const _atZero = _fsLvl >= 1 && (S.shotsUntilFree ?? _fsInterval) === 0;
+        const _isFree = _atZero && Math.random() < 0.70;
         if (_fsLvl >= 1) {
-          if (_isFree) { S.shotsUntilFree = 10; }
-          else { S.shotsUntilFree = Math.max(0, (S.shotsUntilFree ?? 10) - 1); }
+          if (_atZero) { S.shotsUntilFree = _fsInterval; }
+          else { S.shotsUntilFree = Math.max(0, (S.shotsUntilFree ?? _fsInterval) - 1); }
         }
         if (_isFree) {
           spawnDmgNumber(unit.x, unit.y, 'FREE!', '#ffcc00', 16, 'crit');
