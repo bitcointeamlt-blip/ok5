@@ -496,59 +496,52 @@
             <!-- Chip Forge overlay -->
             <div id="forge-overlay">
               <div id="forge-panel">
+
                 <div class="forge-header">
                   <span class="forge-title">✦ CHIP FORGE</span>
                   <button class="forge-close-x" onclick="window.closeForge()">✕</button>
                 </div>
 
-                <div class="forge-circle">
-                  <!-- SVG pentagon + spokes -->
-                  <svg class="forge-circle-svg" viewBox="0 0 280 280" width="280" height="280">
-                    <polygon points="140,44 231,110 196,218 84,218 49,110"
-                      fill="none" stroke="#330044" stroke-width="1" stroke-dasharray="4 3"/>
-                    <line x1="140" y1="44"  x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
-                    <line x1="231" y1="110" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
-                    <line x1="196" y1="218" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
-                    <line x1="84"  y1="218" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
-                    <line x1="49"  y1="110" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
-                  </svg>
+                <!-- Row 1: legendary · epic · rare -->
+                <div class="forge-ingredients">
+                  <div class="forge-ing-slot" id="fslot-legendary" style="border-color:#663300;">
+                    <canvas id="fscv-legendary" class="inv-chip-canvas" width="96" height="96" style="width:56px;height:56px;" data-rarity="legendary" data-phase="0.0"></canvas>
+                    <span class="forge-ing-lbl" style="color:#ffaa00;">LEGENDARY</span>
+                    <span class="forge-ing-qty" id="fsqty-legendary">0/3</span>
+                  </div>
+                  <div class="forge-ing-slot" id="fslot-epic" style="border-color:#551188;">
+                    <canvas id="fscv-epic" class="inv-chip-canvas" width="96" height="96" style="width:56px;height:56px;" data-rarity="epic" data-phase="1.3"></canvas>
+                    <span class="forge-ing-lbl" style="color:#cc44ff;">EPIC</span>
+                    <span class="forge-ing-qty" id="fsqty-epic">0/5</span>
+                  </div>
+                  <div class="forge-ing-slot" id="fslot-rare" style="border-color:#1a3d77;">
+                    <canvas id="fscv-rare" class="inv-chip-canvas" width="96" height="96" style="width:56px;height:56px;" data-rarity="rare" data-phase="2.6"></canvas>
+                    <span class="forge-ing-lbl" style="color:#4499ff;">RARE</span>
+                    <span class="forge-ing-qty" id="fsqty-rare">0/5</span>
+                  </div>
+                </div>
 
-                  <!-- legendary (top) -->
-                  <div class="forge-slot-card" style="left:140px;top:44px;border-color:#884400;">
-                    <canvas id="fscv-legendary" width="24" height="24" style="width:36px;height:36px;"></canvas>
-                    <div class="forge-slot-lbl" style="color:#ffaa00;">LEGENDARY</div>
-                    <div class="forge-slot-qty" id="fsqty-legendary">0/3</div>
+                <!-- Row 2: uncommon · common (centered) -->
+                <div class="forge-ingredients">
+                  <div class="forge-ing-slot" id="fslot-uncommon" style="border-color:#1a6640;">
+                    <canvas id="fscv-uncommon" class="inv-chip-canvas" width="96" height="96" style="width:56px;height:56px;" data-rarity="uncommon" data-phase="3.9"></canvas>
+                    <span class="forge-ing-lbl" style="color:#44ff88;">UNCOMMON</span>
+                    <span class="forge-ing-qty" id="fsqty-uncommon">0/10</span>
                   </div>
-                  <!-- epic (TR) -->
-                  <div class="forge-slot-card" style="left:231px;top:110px;border-color:#6622aa;">
-                    <canvas id="fscv-epic" width="24" height="24" style="width:36px;height:36px;"></canvas>
-                    <div class="forge-slot-lbl" style="color:#cc44ff;">EPIC</div>
-                    <div class="forge-slot-qty" id="fsqty-epic">0/5</div>
+                  <div class="forge-ing-slot" id="fslot-common" style="border-color:#3a3a3a;">
+                    <canvas id="fscv-common" class="inv-chip-canvas" width="96" height="96" style="width:56px;height:56px;" data-rarity="common" data-phase="5.2"></canvas>
+                    <span class="forge-ing-lbl" style="color:#aaaaaa;">COMMON</span>
+                    <span class="forge-ing-qty" id="fsqty-common">0/15</span>
                   </div>
-                  <!-- rare (BR) -->
-                  <div class="forge-slot-card" style="left:196px;top:218px;border-color:#224488;">
-                    <canvas id="fscv-rare" width="24" height="24" style="width:36px;height:36px;"></canvas>
-                    <div class="forge-slot-lbl" style="color:#4499ff;">RARE</div>
-                    <div class="forge-slot-qty" id="fsqty-rare">0/5</div>
-                  </div>
-                  <!-- uncommon (BL) -->
-                  <div class="forge-slot-card" style="left:84px;top:218px;border-color:#226644;">
-                    <canvas id="fscv-uncommon" width="24" height="24" style="width:36px;height:36px;"></canvas>
-                    <div class="forge-slot-lbl" style="color:#44ff88;">UNCOMMON</div>
-                    <div class="forge-slot-qty" id="fsqty-uncommon">0/10</div>
-                  </div>
-                  <!-- common (TL) -->
-                  <div class="forge-slot-card" style="left:49px;top:110px;border-color:#444444;">
-                    <canvas id="fscv-common" width="24" height="24" style="width:36px;height:36px;"></canvas>
-                    <div class="forge-slot-lbl" style="color:#aaaaaa;">COMMON</div>
-                    <div class="forge-slot-qty" id="fsqty-common">0/15</div>
-                  </div>
-                  <!-- center: mythic output -->
-                  <div class="forge-slot-mythic" style="left:140px;top:140px;">
-                    <canvas id="fscv-mythic" width="24" height="24" style="width:48px;height:48px;"></canvas>
-                    <div class="forge-mythic-lbl">MYTHIC</div>
-                    <div class="forge-mythic-count" id="fsqty-mythic">HAVE: 0</div>
-                  </div>
+                </div>
+
+                <div class="forge-arrow">▼ &nbsp; FORGE &nbsp; ▼</div>
+
+                <!-- Mythic result slot -->
+                <div class="forge-result-slot" id="fslot-mythic">
+                  <canvas id="fscv-mythic" class="inv-chip-canvas" width="96" height="96" style="width:72px;height:72px;" data-rarity="mythic" data-phase="0.7"></canvas>
+                  <span class="forge-mythic-lbl">MYTHIC</span>
+                  <span class="forge-mythic-count" id="fsqty-mythic">HAVE: 0</span>
                 </div>
 
                 <hr class="forge-divider">
@@ -556,7 +549,7 @@
                 <div class="forge-recipe-btns">
                   <button class="forge-recipe-btn active" id="forge-rec-0" onclick="window.selectForgeRecipe(0)">
                     <span class="recipe-pct">90%</span>
-                    <span class="recipe-cost">15C · 10U · 5R<br>5E · 3L</span>
+                    <span class="recipe-cost">15C · 10U · 5R · 5E · 3L</span>
                   </button>
                   <button class="forge-recipe-btn" id="forge-rec-1" onclick="window.selectForgeRecipe(1)">
                     <span class="recipe-pct">100%</span>
@@ -566,6 +559,7 @@
 
                 <div id="forge-status-msg"></div>
                 <button id="forge-action-btn" onclick="window.attemptForge()">▶ FORGE MYTHIC</button>
+
               </div>
             </div>
           </div>

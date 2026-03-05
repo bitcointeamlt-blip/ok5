@@ -554,12 +554,20 @@ let _forgeWorking = false;
 
 window.openForge = function () {
   _forgeWorking = false;
-  FORGE_RARITIES.forEach(r => {
+  // Init animated chips (picked up by startInvAnimations loop via inv-chip-canvas class)
+  [...FORGE_RARITIES, 'mythic'].forEach(r => {
     const cv = document.getElementById(`fscv-${r}`);
-    if (cv) drawMiniChip(cv, r);
+    if (!cv) return;
+    cv._angle = cv._angle || 0;
+    cv._vel   = cv._vel   || 0;
+    cv._hovered = false;
+    const card = cv.closest('.forge-ing-slot, .forge-result-slot');
+    if (card && !card._forgeHover) {
+      card._forgeHover = true;
+      card.addEventListener('mouseenter', () => { cv._hovered = true; });
+      card.addEventListener('mouseleave', () => { cv._hovered = false; });
+    }
   });
-  const mythCv = document.getElementById('fscv-mythic');
-  if (mythCv) drawMiniChip(mythCv, 'mythic');
   _updateForgeUI();
   document.getElementById('forge-overlay').classList.add('active');
 };
