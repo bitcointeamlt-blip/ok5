@@ -188,6 +188,7 @@ function loadProfile() {
       if (Profile.upgrades.voltsCostLevel === undefined) Profile.upgrades.voltsCostLevel = 0;
       if (Profile.upgrades.critLevel === undefined) Profile.upgrades.critLevel = 0;
       if (Profile.upgrades.nanoLevel === undefined) Profile.upgrades.nanoLevel = 0;
+      if (Profile.upgrades.freeShotLevel === undefined) Profile.upgrades.freeShotLevel = 0;
       if (!Profile.highestSector || Profile.highestSector < 1) Profile.highestSector = 1;
       if (!Array.isArray(Profile.inventory)) Profile.inventory = null;
       if (!Profile.achievements) Profile.achievements = {};
@@ -395,6 +396,8 @@ function formatCritCost(cost) {
   if (cost.common) parts.push(`<span style="color:#aaaaaa">${cost.common}○</span>`);
   return parts.join(' ');
 }
+function getFreeShotCost() { return { bytes: 1, common: 1 }; }
+
 function getNanoRepairCost(level) {
   if (level === 0) return { rare: 1 };
   if (level === 1) return { rare: 3 };
@@ -486,6 +489,35 @@ window.attemptNanoRepairUpgrade = function (prefix) {
     const success = Math.random() < getNanoSuccessRate(level);
     if (success) { Profile.upgrades.nanoLevel++; saveProfile(); checkAchievements(); }
     return success;
+  });
+};
+
+window.attemptFreeShotUpgrade = function (prefix) {
+  const cardId = prefix === 'hov' ? 'hov-freeshot-card' : 'freeshot-upg-card';
+  const statId = prefix === 'hov' ? 'hov-freeshot-status' : 'freeshot-status';
+  const costEl = prefix === 'hov' ? 'hov-freeshot-cost-display' : 'freeshot-cost-display';
+  if ((Profile.upgrades.freeShotLevel || 0) >= 1) return;
+  const cost = getFreeShotCost();
+  const hasBytes = (S.bytes || 0) >= cost.bytes;
+  const hasChips = chipCount('common') >= cost.common;
+  if (!hasBytes || !hasChips) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  // Spend bytes from inventory
+  S.bytes -= cost.bytes;
+  const bIdx = S.inventory.findIndex(s => s && s.type === 'byte');
+  if (bIdx >= 0) { S.inventory[bIdx].qty = S.bytes; if (S.inventory[bIdx].qty <= 0) S.inventory[bIdx] = null; }
+  Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+  spendChips('common', cost.common);
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => {
+    Profile.upgrades.freeShotLevel = 1;
+    S.shotsUntilFree = 10;
+    saveProfile();
+    return true;
   });
 };
 
@@ -627,6 +659,23 @@ function updateHubUI() {
   );
   const hovN = o('hov-nano-card');
   if (hovN) hovN.classList.toggle('upg-locked', !canAffordNano);
+
+  // Free Shot card
+  const fsLvl = Profile.upgrades.freeShotLevel || 0;
+  const fsMaxed = fsLvl >= 1;
+  const shotsLeft = S.shotsUntilFree ?? 10;
+  ['', 'hov-'].forEach(p => {
+    if (o(`${p}lvl-freeshot`)) o(`${p}lvl-freeshot`).innerText = fsLvl;
+    if (o(`${p}freeshot-shots-left`)) o(`${p}freeshot-shots-left`).innerText = fsMaxed ? `${shotsLeft} / 10` : '--';
+    const cdEl = o(`${p}freeshot-cost-display`);
+    if (cdEl) {
+      if (fsMaxed) cdEl.innerHTML = '<span style="color:#00ff88">MAX</span>';
+      else cdEl.innerHTML = `<span style="color:#7dd3fc">1 BYTE</span>&nbsp;<span style="color:#666">+</span>&nbsp;<span style="color:#9ca3af">1 COMMON</span>`;
+    }
+  });
+  const canAffordFs = fsMaxed || ((S.bytes || 0) >= 1 && chipCount('common') >= 1);
+  const hovFs = o('hov-freeshot-card');
+  if (hovFs) hovFs.classList.toggle('upg-locked', !canAffordFs);
 }
 
 window.toggleHubOverlay = function () {
@@ -1688,6 +1737,7 @@ function initAdventure() {
   S.teleports = [];
   S.teleportCooldown = 0;
   S.teleportUses = 0;
+  if (S.floor === 1) S.shotsUntilFree = 10; // reset free shot counter on new run
   S.reachedMaxEnergy = false;
   generateDungeon();
   buildWallPackets();
@@ -4548,9 +4598,20 @@ function applyActions() {
         let nrgCost = 2;
         if (wep === 'laser') nrgCost = 7;
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 4;
-        S.energy = Math.max(0, S.energy - nrgCost);
-        // Atvaizduojame nubrauktą energiją ginklo šūviui vizualiai (greit asimiliuojasi)
-        spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
+        // Free shot check: every 11th shot is free (after 10 paid)
+        const _fsLvl = Profile.upgrades?.freeShotLevel || 0;
+        const _isFree = _fsLvl >= 1 && (S.shotsUntilFree ?? 10) === 0;
+        if (_fsLvl >= 1) {
+          if (_isFree) { S.shotsUntilFree = 10; }
+          else { S.shotsUntilFree = Math.max(0, (S.shotsUntilFree ?? 10) - 1); }
+        }
+        if (_isFree) {
+          spawnDmgNumber(unit.x, unit.y, 'FREE!', '#ffcc00', 16, 'crit');
+          SFX.play(1200, 0.08, 0.05, 'square');
+        } else {
+          S.energy = Math.max(0, S.energy - nrgCost);
+          spawnDmgNumber(unit.x, unit.y, `-${nrgCost}⚡`, '#00f5ff', 14, 'normal');
+        }
       }
 
       if (wep === 'laser') {

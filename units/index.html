@@ -178,6 +178,31 @@
                 <button class="btn-volt-install" onclick="attemptNanoRepairUpgrade()">▶ INSTALL</button>
                 <div class="upg-status" id="nano-status"></div>
               </div>
+
+              <div class="upgrade-card volt-card" id="freeshot-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px"><rect x="4" y="0" width="6" height="2" fill="#ffcc00"/><rect x="2" y="2" width="10" height="2" fill="#ffcc00"/><rect x="0" y="4" width="14" height="6" fill="#ffcc00"/><rect x="2" y="10" width="10" height="2" fill="#ffcc00"/><rect x="4" y="12" width="6" height="2" fill="#ffcc00"/></svg> FREE SHOT</span>
+                  <span class="upg-arrow">▼</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-freeshot">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">INTERVAL</span>
+                    <span class="volt-stat-val">/ 10 SHOTS</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SHOTS LEFT</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)" id="freeshot-shots-left">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="freeshot-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptFreeShotUpgrade()">▶ INSTALL</button>
+                <div class="upg-status" id="freeshot-status"></div>
+              </div>
             </div>
           </div>
 
@@ -669,6 +694,31 @@
               </div>
               <button class="btn-volt-install" onclick="attemptNanoRepairUpgrade('hov')">▶ INSTALL</button>
               <div class="upg-status" id="hov-nano-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-freeshot-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px"><rect x="4" y="0" width="6" height="2" fill="#ffcc00"/><rect x="2" y="2" width="10" height="2" fill="#ffcc00"/><rect x="0" y="4" width="14" height="6" fill="#ffcc00"/><rect x="2" y="10" width="10" height="2" fill="#ffcc00"/><rect x="4" y="12" width="6" height="2" fill="#ffcc00"/></svg> FREE SHOT</span>
+                <span class="upg-arrow">▼</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-freeshot">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">INTERVAL</span>
+                  <span class="volt-stat-val">/ 10 SHOTS</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SHOTS LEFT</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)" id="hov-freeshot-shots-left">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-freeshot-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptFreeShotUpgrade('hov')">▶ INSTALL</button>
+              <div class="upg-status" id="hov-freeshot-status"></div>
             </div>
           </div>
 
