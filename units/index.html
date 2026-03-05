@@ -496,51 +496,76 @@
             <!-- Chip Forge overlay -->
             <div id="forge-overlay">
               <div id="forge-panel">
-                <div class="forge-title">✦ CHIP FORGE</div>
+                <div class="forge-header">
+                  <span class="forge-title">✦ CHIP FORGE</span>
+                  <button class="forge-close-x" onclick="window.closeForge()">✕</button>
+                </div>
 
                 <div class="forge-circle">
-                  <!-- outer slots: legendary(top), epic(tr), rare(br), uncommon(bl), common(tl) -->
-                  <div class="forge-slot" style="left:130px;top:30px;">
-                    <canvas id="fscv-legendary" width="24" height="24" style="width:44px;height:44px;"></canvas>
+                  <!-- SVG pentagon + spokes -->
+                  <svg class="forge-circle-svg" viewBox="0 0 280 280" width="280" height="280">
+                    <polygon points="140,44 231,110 196,218 84,218 49,110"
+                      fill="none" stroke="#330044" stroke-width="1" stroke-dasharray="4 3"/>
+                    <line x1="140" y1="44"  x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
+                    <line x1="231" y1="110" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
+                    <line x1="196" y1="218" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
+                    <line x1="84"  y1="218" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
+                    <line x1="49"  y1="110" x2="140" y2="140" stroke="#280038" stroke-width="1" stroke-dasharray="2 4"/>
+                  </svg>
+
+                  <!-- legendary (top) -->
+                  <div class="forge-slot-card" style="left:140px;top:44px;border-color:#884400;">
+                    <canvas id="fscv-legendary" width="24" height="24" style="width:36px;height:36px;"></canvas>
                     <div class="forge-slot-lbl" style="color:#ffaa00;">LEGENDARY</div>
                     <div class="forge-slot-qty" id="fsqty-legendary">0/3</div>
                   </div>
-                  <div class="forge-slot" style="left:225px;top:99px;">
-                    <canvas id="fscv-epic" width="24" height="24" style="width:44px;height:44px;"></canvas>
+                  <!-- epic (TR) -->
+                  <div class="forge-slot-card" style="left:231px;top:110px;border-color:#6622aa;">
+                    <canvas id="fscv-epic" width="24" height="24" style="width:36px;height:36px;"></canvas>
                     <div class="forge-slot-lbl" style="color:#cc44ff;">EPIC</div>
                     <div class="forge-slot-qty" id="fsqty-epic">0/5</div>
                   </div>
-                  <div class="forge-slot" style="left:189px;top:211px;">
-                    <canvas id="fscv-rare" width="24" height="24" style="width:44px;height:44px;"></canvas>
+                  <!-- rare (BR) -->
+                  <div class="forge-slot-card" style="left:196px;top:218px;border-color:#224488;">
+                    <canvas id="fscv-rare" width="24" height="24" style="width:36px;height:36px;"></canvas>
                     <div class="forge-slot-lbl" style="color:#4499ff;">RARE</div>
                     <div class="forge-slot-qty" id="fsqty-rare">0/5</div>
                   </div>
-                  <div class="forge-slot" style="left:71px;top:211px;">
-                    <canvas id="fscv-uncommon" width="24" height="24" style="width:44px;height:44px;"></canvas>
+                  <!-- uncommon (BL) -->
+                  <div class="forge-slot-card" style="left:84px;top:218px;border-color:#226644;">
+                    <canvas id="fscv-uncommon" width="24" height="24" style="width:36px;height:36px;"></canvas>
                     <div class="forge-slot-lbl" style="color:#44ff88;">UNCOMMON</div>
                     <div class="forge-slot-qty" id="fsqty-uncommon">0/10</div>
                   </div>
-                  <div class="forge-slot" style="left:35px;top:99px;">
-                    <canvas id="fscv-common" width="24" height="24" style="width:44px;height:44px;"></canvas>
+                  <!-- common (TL) -->
+                  <div class="forge-slot-card" style="left:49px;top:110px;border-color:#444444;">
+                    <canvas id="fscv-common" width="24" height="24" style="width:36px;height:36px;"></canvas>
                     <div class="forge-slot-lbl" style="color:#aaaaaa;">COMMON</div>
                     <div class="forge-slot-qty" id="fsqty-common">0/15</div>
                   </div>
                   <!-- center: mythic output -->
-                  <div class="forge-slot" style="left:130px;top:130px;">
-                    <canvas id="fscv-mythic" width="24" height="24" style="width:52px;height:52px;"></canvas>
-                    <div class="forge-slot-lbl" style="color:#cc00ff;text-shadow:0 0 6px #cc00ff;">MYTHIC</div>
-                    <div class="forge-slot-qty" id="fsqty-mythic" style="color:#666;">HAVE: 0</div>
+                  <div class="forge-slot-mythic" style="left:140px;top:140px;">
+                    <canvas id="fscv-mythic" width="24" height="24" style="width:48px;height:48px;"></canvas>
+                    <div class="forge-mythic-lbl">MYTHIC</div>
+                    <div class="forge-mythic-count" id="fsqty-mythic">HAVE: 0</div>
                   </div>
                 </div>
 
+                <hr class="forge-divider">
+
                 <div class="forge-recipe-btns">
-                  <button class="forge-recipe-btn active" id="forge-rec-0" onclick="window.selectForgeRecipe(0)">90% · 15C 10U 5R 5E 3L</button>
-                  <button class="forge-recipe-btn" id="forge-rec-1" onclick="window.selectForgeRecipe(1)">100% · 10R 6E 5L</button>
+                  <button class="forge-recipe-btn active" id="forge-rec-0" onclick="window.selectForgeRecipe(0)">
+                    <span class="recipe-pct">90%</span>
+                    <span class="recipe-cost">15C · 10U · 5R<br>5E · 3L</span>
+                  </button>
+                  <button class="forge-recipe-btn" id="forge-rec-1" onclick="window.selectForgeRecipe(1)">
+                    <span class="recipe-pct">100%</span>
+                    <span class="recipe-cost">10R · 6E · 5L</span>
+                  </button>
                 </div>
 
                 <div id="forge-status-msg"></div>
                 <button id="forge-action-btn" onclick="window.attemptForge()">▶ FORGE MYTHIC</button>
-                <button id="forge-close-btn" onclick="window.closeForge()">✕ CLOSE</button>
               </div>
             </div>
           </div>
