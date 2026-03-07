@@ -4777,10 +4777,20 @@ function drawJumpIndicator() {
   const range = jLvl >= 3 ? 3 : 2;
   const t = performance.now() / 1000;
   const pulse = Math.sin(t * 6) * 0.3 + 0.7;
-  const dirs = [{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
-  if (jLvl >= 1) dirs.push({dx:-1,dy:-1},{dx:1,dy:-1},{dx:-1,dy:1},{dx:1,dy:1});
+  const dirs = [
+    {dx:0,dy:-1, key:'W'},
+    {dx:0,dy:1,  key:'S'},
+    {dx:-1,dy:0, key:'A'},
+    {dx:1,dy:0,  key:'D'},
+  ];
+  if (jLvl >= 1) dirs.push(
+    {dx:-1,dy:-1, key:'Q'},
+    {dx:1,dy:-1,  key:'E'},
+    {dx:-1,dy:1,  key:'Y'},
+    {dx:1,dy:1,   key:'C'},
+  );
   const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
-  dirs.forEach(({dx, dy}) => {
+  dirs.forEach(({dx, dy, key}) => {
     let tx, ty;
     for (let r = range; r >= 1; r--) {
       if (ok(hero.x + dx * r, hero.y + dy * r)) { tx = hero.x + dx * r; ty = hero.y + dy * r; break; }
@@ -4795,6 +4805,13 @@ function drawJumpIndicator() {
     ctx.globalAlpha = pulse * 0.12;
     ctx.fillStyle = '#00ffee';
     ctx.fillRect(cx - CELL * 0.38, cy - CELL * 0.38, CELL * 0.76, CELL * 0.76);
+    // Key label
+    ctx.globalAlpha = pulse * 0.9;
+    ctx.fillStyle = '#00ffee';
+    ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 8;
+    ctx.font = `bold ${Math.round(CELL * 0.3)}px monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(key, cx, cy);
     ctx.restore();
   });
 }
@@ -5036,6 +5053,8 @@ document.addEventListener('keydown', e => {
     if ((Profile.upgrades?.jumpLevel || 0) >= 1) {
       jDirMap.Numpad7 = {dx:-1,dy:-1}; jDirMap.Numpad9 = {dx:1,dy:-1};
       jDirMap.Numpad1 = {dx:-1,dy:1};  jDirMap.Numpad3 = {dx:1,dy:1};
+      jDirMap.KeyQ = {dx:-1,dy:-1}; jDirMap.KeyE = {dx:1,dy:-1};
+      jDirMap.KeyY = {dx:-1,dy:1};  jDirMap.KeyC = {dx:1,dy:1};
     }
     const jDir = jDirMap[e.code];
     if (jDir) { e.preventDefault(); executeJump(jDir.dx, jDir.dy); return; }
