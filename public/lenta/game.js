@@ -1709,11 +1709,10 @@ const SFX = {
     setTimeout(() => this.play(800, 0.18, 0.05, 'square', 300), 140);
   },
   jump() {
-    // Whoosh + thud: quick low sweep up then body-impact thud
-    this.play(80, 0.06, 0.07, 'triangle', 600);
-    setTimeout(() => this.play(320, 0.05, 0.05, 'sine', 400), 40);
-    setTimeout(() => this.play(55, 0.12, 0.10, 'triangle', -30), 130);
-    setTimeout(() => this.play(90, 0.08, 0.06, 'square', -20), 160);
+    // Springy boing: fast pitch rise then snap down
+    this.play(300, 0.18, 0.06, 'sine', 900);
+    setTimeout(() => this.play(1400, 0.08, 0.04, 'sine', -1100), 90);
+    setTimeout(() => this.play(600, 0.10, 0.05, 'square', -500), 160);
   },
 
   // ---- Slot machine sounds -------------------------------------
