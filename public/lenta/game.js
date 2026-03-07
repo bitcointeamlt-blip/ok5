@@ -1709,10 +1709,10 @@ const SFX = {
     setTimeout(() => this.play(800, 0.18, 0.05, 'square', 300), 140);
   },
   jump() {
-    // Springy boing: fast pitch rise then snap down
-    this.play(300, 0.18, 0.06, 'sine', 900);
-    setTimeout(() => this.play(1400, 0.08, 0.04, 'sine', -1100), 90);
-    setTimeout(() => this.play(600, 0.10, 0.05, 'square', -500), 160);
+    // Sharp electric dash crack + trailing hiss
+    this.play(2200, 0.04, 0.08, 'sawtooth', -2000);
+    setTimeout(() => this.play(1800, 0.06, 0.06, 'sawtooth', -1600), 30);
+    setTimeout(() => this.play(400,  0.10, 0.04, 'sine',     -300),  70);
   },
 
   // ---- Slot machine sounds -------------------------------------
