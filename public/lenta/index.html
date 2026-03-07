@@ -515,6 +515,16 @@
               <div class="sk-label">SHOT</div>
               <div class="sk-cd"></div>
             </div>
+            <div class="skill-slot wep-jump" id="p1-sk-jump" title="JUMP - Leap 2 tiles [J]" onclick="(function(){SFX&&SFX.init&&SFX.init();if(S&&S.units){const h=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(h&&S.clockSide===0&&S.pending[0]===null){S.jumpMode=!S.jumpMode;updateJumpSlot();}}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 11 Q11 2 18 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+                  <polygon points="18,11 15,9 17,13" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="sk-label">JUMP</div>
+              <div class="sk-cd">FREE</div>
+            </div>
           </div>
 
           <!-- Inventory / hub buttons (adventure only) -->

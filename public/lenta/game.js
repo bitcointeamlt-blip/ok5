@@ -2332,6 +2332,8 @@ function initAdventure() {
   S.teleportCooldown = 0;
   S.teleportUses = 0;
   S.pendingTeleportSector = false;
+  S.jumpReady = true;
+  S.jumpMode = false;
   if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 5 ? 6 : _fl >= 4 ? 7 : _fl >= 3 ? 8 : _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
   S.reachedMaxEnergy = false;
   generateDungeon();
@@ -4650,6 +4652,83 @@ function drawChests() {
   });
 }
 
+function updateJumpSlot() {
+  const slot = document.getElementById('p1-sk-jump');
+  if (!slot) return;
+  const cd = slot.querySelector('.sk-cd');
+  slot.classList.toggle('sk-active', !!S.jumpMode);
+  if (cd) {
+    if (S.jumpReady) cd.textContent = 'FREE';
+    else if ((S.energy || 0) < 5) cd.textContent = 'NO\u26A1';
+    else cd.textContent = '-5\u26A1';
+  }
+}
+
+function executeJump(dx, dy) {
+  const hero = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+  if (!hero || S.pending[0] !== null) return;
+  const tx2 = hero.x + dx * 2, ty2 = hero.y + dy * 2;
+  const tx1 = hero.x + dx,     ty1 = hero.y + dy;
+  const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
+  let tx, ty;
+  if (ok(tx2, ty2))      { tx = tx2; ty = ty2; }
+  else if (ok(tx1, ty1)) { tx = tx1; ty = ty1; }
+  else {
+    spawnDmgNumber(hero.x, hero.y, 'BLOCKED!', '#ff4444', 14, 'normal');
+    S.jumpMode = false; updateJumpSlot(); return;
+  }
+  if (!S.jumpReady && (S.energy || 0) < 5) {
+    spawnDmgNumber(hero.x, hero.y, 'NO\u26A1 JUMP', '#ff4444', 14, 'normal');
+    S.jumpMode = false; updateJumpSlot(); return;
+  }
+  if (S.jumpReady) {
+    S.jumpReady = false;
+    spawnDmgNumber(tx, ty, 'JUMP FREE!', '#00ffee', 16, 'crit');
+  } else {
+    S.energy = Math.max(0, S.energy - 5);
+    spawnDmgNumber(hero.x, hero.y, '-5\u26A1', '#00f5ff', 14, 'normal');
+  }
+  hero.facing = { dx, dy };
+  hero.x = tx; hero.y = ty; hero.rx = tx; hero.ry = ty;
+  S.jumpMode = false;
+  SFX.teleport();
+  S.shake = Math.max(S.shake || 0, 3);
+  revealFog(tx, ty);
+  updateJumpSlot();
+  updateEnergyHud();
+  S.pending[0] = { unitId: hero.id, t: 'jump' };
+  aiQueueAction(false);
+  resolveTick();
+}
+
+function drawJumpIndicator() {
+  if (!S.jumpMode || gameMode !== 'adventure') return;
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+  const t = performance.now() / 1000;
+  const pulse = Math.sin(t * 6) * 0.3 + 0.7;
+  const dirs = [{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+  const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
+  dirs.forEach(({dx, dy}) => {
+    const tx2 = hero.x + dx*2, ty2 = hero.y + dy*2;
+    const tx1 = hero.x + dx,  ty1 = hero.y + dy;
+    let tx, ty;
+    if (ok(tx2, ty2))      { tx = tx2; ty = ty2; }
+    else if (ok(tx1, ty1)) { tx = tx1; ty = ty1; }
+    else return;
+    const cx = (tx + 0.5) * CELL, cy = (ty + 0.5) * CELL;
+    ctx.save();
+    ctx.globalAlpha = pulse * 0.75;
+    ctx.strokeStyle = '#00ffee'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 10;
+    ctx.strokeRect(cx - CELL * 0.38, cy - CELL * 0.38, CELL * 0.76, CELL * 0.76);
+    ctx.globalAlpha = pulse * 0.12;
+    ctx.fillStyle = '#00ffee';
+    ctx.fillRect(cx - CELL * 0.38, cy - CELL * 0.38, CELL * 0.76, CELL * 0.76);
+    ctx.restore();
+  });
+}
+
 function getMapRevealPercent() {
   if (!S.fog || !S.dungeon) return 0;
   let total = 0, revealed = 0;
@@ -4879,6 +4958,24 @@ document.addEventListener('keydown', e => {
 
   if (S.phase !== 'frozen') return;
 
+
+  // Jump mode direction intercept
+  if (S.jumpMode && gameMode === 'adventure') {
+    const jDir = { ArrowUp:{dx:0,dy:-1}, ArrowDown:{dx:0,dy:1}, ArrowLeft:{dx:-1,dy:0}, ArrowRight:{dx:1,dy:0},
+                   KeyW:{dx:0,dy:-1}, KeyS:{dx:0,dy:1}, KeyA:{dx:-1,dy:0}, KeyD:{dx:1,dy:0} }[e.code];
+    if (jDir) { e.preventDefault(); executeJump(jDir.dx, jDir.dy); return; }
+    if (e.code === 'Escape' || e.code === 'KeyJ') { S.jumpMode = false; updateJumpSlot(); return; }
+  }
+
+  // Jump skill toggle
+  if (e.code === 'KeyJ' && gameMode === 'adventure') {
+    const hero = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+    if (hero && S.clockSide === 0 && S.pending[0] === null) {
+      S.jumpMode = !S.jumpMode;
+      updateJumpSlot();
+    }
+    return;
+  }
 
   if (e.code === 'KeyQ' || (e.code === 'KeyP' && gameMode === 'pvp')) {
     const team = e.code === 'KeyQ' ? 0 : 1;
@@ -5202,6 +5299,7 @@ function applyActions() {
     const unit = S.units.find(u => u.id === a.unitId);
     if (!unit || !unit.alive) return;
 
+    if (a.t === 'jump') return; // already applied in executeJump
     if (a.t === 'move') {
       const nx = unit.x + a.dx, ny = unit.y + a.dy;
       if (!isWall(nx, ny)) {
@@ -5992,6 +6090,7 @@ function loop(now) {
   drawShrines();
   drawChests();
   drawTeleports();
+  drawJumpIndicator();
   drawTutorialHighlight();
   drawLoot();
   drawUnits();
@@ -8054,6 +8153,7 @@ function updateHUD() {
   if (td) td.textContent = 'TICK ' + S.tick;
   updateSkillBar(0);
   updateSkillBar(1);
+  updateJumpSlot();
 }
 
 function showScreen(id) {
