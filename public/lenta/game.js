@@ -5030,6 +5030,7 @@ document.addEventListener('keydown', e => {
   } else {
     const wep = getCurrentWeapon(unit);
     if (gameMode === 'adventure' && k.team === 0) {
+      if (S.jumpMode) return; // jump mode active – block shooting
       const _roomCleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
       if (_roomCleared && wep !== 'melee') return; // block all shooting when cleared
       let nrgReq = 0;
@@ -8203,8 +8204,10 @@ function updateSkillBar(team) {
     const slot = document.getElementById(`${pfx}-sk-${i}`);
     if (!slot) return;
 
-    // Active / weapon colour class
-    slot.classList.toggle('sk-active', w === wep);
+    // Active / weapon colour class – deactivate all when jump mode is on
+    const jumpActive = gameMode === 'adventure' && team === 0 && S.jumpMode;
+    slot.classList.toggle('sk-active', w === wep && !jumpActive);
+    slot.classList.toggle('sk-disabled', !!jumpActive);
     slot.className = slot.className.replace(/wep-\w+/g, '') + ' wep-' + w;
     slot.classList.remove('wep-bullet', 'wep-laser', 'wep-heavy', 'wep-shotgun');
     slot.classList.add(`wep-${w}`);
