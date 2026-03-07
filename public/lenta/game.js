@@ -4743,7 +4743,8 @@ function executeJump(dx, dy) {
     spawnDmgNumber(hero.x, hero.y, 'NO\u26A1 JUMP', '#ff4444', 14, 'normal');
     S.jumpMode = false; updateJumpSlot(); return;
   }
-  if (fc > 0) {
+  const usedFree = fc > 0;
+  if (usedFree) {
     S.jumpFreeCount--;
     spawnDmgNumber(tx, ty, 'JUMP FREE!', '#00ffee', 16, 'crit');
   } else {
@@ -4758,8 +4759,8 @@ function executeJump(dx, dy) {
   revealFog(tx, ty);
   updateJumpSlot();
   updateEnergyHud();
-  // LVL4: freeze all visible enemies for 1 turn
-  if (jLvl >= 4) {
+  // LVL4: freeze only on free jumps
+  if (jLvl >= 4 && usedFree) {
     let frozeAny = false;
     S.units.forEach(u => { if (u.team === 1 && u.alive && isVisible(u.x, u.y)) { u.frozenTurns = 1; frozeAny = true; } });
     if (frozeAny) spawnDmgNumber(tx, ty, 'FREEZE!', '#aaddff', 16, 'crit');
