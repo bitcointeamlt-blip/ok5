@@ -617,14 +617,14 @@ window.attemptJumpUpgrade = function (prefix) {
   const costEl = prefix === 'hov' ? 'hov-jump-cost-display' : 'jump-cost-display';
   const level = Profile.upgrades.jumpLevel || 0;
   if (level >= 4) return;
-  const cost = getJumpUpgradeCost(level);
-  if (chipCount('mythic') < cost) {
+  // TEST COST: 1 byte
+  if ((S.bytes || 0) < 1) {
     const el = document.getElementById(costEl);
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
     return;
   }
-  spendChips('mythic', cost);
-  updateInventoryUI();
+  S.bytes -= 1;
+  syncByteSlot();
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
     const success = Math.random() < 0.70;
@@ -1271,10 +1271,11 @@ function updateHubUI() {
       const el = o(`${p}jump-cost-display`);
       if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
     } else {
-      renderCostIcons(`${p}jump-cost-display`, { mythic: jCost }, 'chips', (r) => chipCount(r));
+      const el = o(`${p}jump-cost-display`);
+      if (el) el.innerHTML = '<span style="color:#00f5ff">1 BYTE (TEST)</span>';
     }
   });
-  const canAffordJump = jMaxed || chipCount('mythic') >= jCost;
+  const canAffordJump = jMaxed || (S.bytes || 0) >= 1;
   const hovJ = o('hov-jump-upg-card');
   if (hovJ) hovJ.classList.toggle('upg-locked', !canAffordJump);
 }
