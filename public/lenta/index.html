@@ -337,6 +337,31 @@
                 <button class="btn-volt-install" onclick="attemptMythicForge()">FORGE</button>
                 <div class="upg-status" id="mythic-forge-status"></div>
               </div>
+
+              <div class="upgrade-card volt-card" id="jump-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#00ffee;text-shadow:0 0 8px #00ffee44;">JUMP</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-jump">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT</span>
+                    <span class="volt-stat-val" id="jump-benefit" style="color:#00ffee">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="jump-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptJumpUpgrade()">INSTALL</button>
+                <div class="upg-status" id="jump-status"></div>
+              </div>
             </div>
           </div>
 
@@ -1026,6 +1051,31 @@
               </div>
               <button class="btn-volt-install" onclick="attemptMythicForge('hov')">FORGE</button>
               <div class="upg-status" id="hov-mythic-forge-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-jump-upg-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#00ffee;text-shadow:0 0 8px #00ffee44;">JUMP</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-jump">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT</span>
+                  <span class="volt-stat-val" id="hov-jump-benefit" style="color:#00ffee">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-jump-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptJumpUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-jump-status"></div>
             </div>
           </div>
 

@@ -250,6 +250,7 @@ function loadProfile() {
       if (Profile.upgrades.critLevel === undefined) Profile.upgrades.critLevel = 0;
       if (Profile.upgrades.nanoLevel === undefined) Profile.upgrades.nanoLevel = 0;
       if (Profile.upgrades.freeShotLevel === undefined) Profile.upgrades.freeShotLevel = 0;
+      if (Profile.upgrades.jumpLevel === undefined) Profile.upgrades.jumpLevel = 0;
       if (!Profile.highestSector || Profile.highestSector < 1) Profile.highestSector = 1;
       if (!Array.isArray(Profile.inventory)) Profile.inventory = null;
       if (!Profile.achievements) Profile.achievements = {};
@@ -596,6 +597,39 @@ window.attemptFreeShotUpgrade = function (prefix) {
       const newLvl = level + 1;
       Profile.upgrades.freeShotLevel = newLvl;
       S.shotsUntilFree = newLvl >= 5 ? 6 : newLvl >= 4 ? 7 : newLvl >= 3 ? 8 : newLvl >= 2 ? 9 : 10;
+      saveProfile();
+      checkAchievements();
+    }
+    return success;
+  });
+};
+
+// ---- Jump Upgrade -----------------------------------------------
+function getJumpUpgradeCost(level) {
+  return [1, 2, 3, 5][level] || 0; // mythic chips per level
+}
+
+const JUMP_BENEFITS = ['Diagonal Jump', '2 Free/room', '3-tile range', 'Freeze on Jump'];
+
+window.attemptJumpUpgrade = function (prefix) {
+  const cardId = prefix === 'hov' ? 'hov-jump-upg-card' : 'jump-upg-card';
+  const statId = prefix === 'hov' ? 'hov-jump-status' : 'jump-status';
+  const costEl = prefix === 'hov' ? 'hov-jump-cost-display' : 'jump-cost-display';
+  const level = Profile.upgrades.jumpLevel || 0;
+  if (level >= 4) return;
+  const cost = getJumpUpgradeCost(level);
+  if (chipCount('mythic') < cost) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  spendChips('mythic', cost);
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => {
+    const success = Math.random() < 0.70;
+    if (success) {
+      Profile.upgrades.jumpLevel = level + 1;
       saveProfile();
       checkAchievements();
     }
@@ -1225,6 +1259,24 @@ function updateHubUI() {
   });
   const hovMythic = o('hov-mythic-forge-card');
   if (hovMythic) hovMythic.classList.toggle('upg-locked', !canForge);
+
+  // Jump Upgrade card
+  const jLvl = Profile.upgrades.jumpLevel || 0;
+  const jMaxed = jLvl >= 4;
+  const jCost = getJumpUpgradeCost(jLvl);
+  ['', 'hov-'].forEach(p => {
+    if (o(`${p}lvl-jump`)) o(`${p}lvl-jump`).innerText = jLvl;
+    if (o(`${p}jump-benefit`)) o(`${p}jump-benefit`).innerText = jMaxed ? 'MAXED' : (JUMP_BENEFITS[jLvl] || '--');
+    if (jMaxed) {
+      const el = o(`${p}jump-cost-display`);
+      if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
+    } else {
+      renderCostIcons(`${p}jump-cost-display`, { mythic: jCost }, 'chips', (r) => chipCount(r));
+    }
+  });
+  const canAffordJump = jMaxed || chipCount('mythic') >= jCost;
+  const hovJ = o('hov-jump-upg-card');
+  if (hovJ) hovJ.classList.toggle('upg-locked', !canAffordJump);
 }
 
 window.toggleHubOverlay = function () {
@@ -2338,7 +2390,7 @@ function initAdventure() {
   S.teleportCooldown = 0;
   S.teleportUses = 0;
   S.pendingTeleportSector = false;
-  S.jumpReady = true;
+  S.jumpFreeCount = (Profile.upgrades?.jumpLevel || 0) >= 2 ? 2 : 1;
   S.jumpMode = false;
   if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 5 ? 6 : _fl >= 4 ? 7 : _fl >= 3 ? 8 : _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
   S.reachedMaxEnergy = false;
@@ -4664,7 +4716,8 @@ function updateJumpSlot() {
   const cd = slot.querySelector('.sk-cd');
   slot.classList.toggle('sk-active', !!S.jumpMode);
   if (cd) {
-    if (S.jumpReady) cd.textContent = 'FREE';
+    const fc = S.jumpFreeCount || 0;
+    if (fc > 0) cd.textContent = fc > 1 ? `${fc}FREE` : 'FREE';
     else if ((S.energy || 0) < 5) cd.textContent = 'NO\u26A1';
     else cd.textContent = '-5\u26A1';
   }
@@ -4673,22 +4726,24 @@ function updateJumpSlot() {
 function executeJump(dx, dy) {
   const hero = S.units.find(u => u.id === S.selectedId[0] && u.alive);
   if (!hero || S.pending[0] !== null) return;
-  const tx2 = hero.x + dx * 2, ty2 = hero.y + dy * 2;
-  const tx1 = hero.x + dx,     ty1 = hero.y + dy;
+  const jLvl = Profile.upgrades?.jumpLevel || 0;
+  const range = jLvl >= 3 ? 3 : 2;
   const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
   let tx, ty;
-  if (ok(tx2, ty2))      { tx = tx2; ty = ty2; }
-  else if (ok(tx1, ty1)) { tx = tx1; ty = ty1; }
-  else {
+  for (let r = range; r >= 1; r--) {
+    if (ok(hero.x + dx * r, hero.y + dy * r)) { tx = hero.x + dx * r; ty = hero.y + dy * r; break; }
+  }
+  if (tx === undefined) {
     spawnDmgNumber(hero.x, hero.y, 'BLOCKED!', '#ff4444', 14, 'normal');
     S.jumpMode = false; updateJumpSlot(); return;
   }
-  if (!S.jumpReady && (S.energy || 0) < 5) {
+  const fc = S.jumpFreeCount || 0;
+  if (fc <= 0 && (S.energy || 0) < 5) {
     spawnDmgNumber(hero.x, hero.y, 'NO\u26A1 JUMP', '#ff4444', 14, 'normal');
     S.jumpMode = false; updateJumpSlot(); return;
   }
-  if (S.jumpReady) {
-    S.jumpReady = false;
+  if (fc > 0) {
+    S.jumpFreeCount--;
     spawnDmgNumber(tx, ty, 'JUMP FREE!', '#00ffee', 16, 'crit');
   } else {
     S.energy = Math.max(0, S.energy - 5);
@@ -4702,6 +4757,12 @@ function executeJump(dx, dy) {
   revealFog(tx, ty);
   updateJumpSlot();
   updateEnergyHud();
+  // LVL4: freeze all visible enemies for 1 turn
+  if (jLvl >= 4) {
+    let frozeAny = false;
+    S.units.forEach(u => { if (u.team === 1 && u.alive && isVisible(u.x, u.y)) { u.frozenTurns = 1; frozeAny = true; } });
+    if (frozeAny) spawnDmgNumber(tx, ty, 'FREEZE!', '#aaddff', 16, 'crit');
+  }
   S.pending[0] = { unitId: hero.id, t: 'jump' };
   aiQueueAction(false);
   resolveTick();
@@ -4711,17 +4772,19 @@ function drawJumpIndicator() {
   if (!S.jumpMode || gameMode !== 'adventure') return;
   const hero = S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
+  const jLvl = Profile.upgrades?.jumpLevel || 0;
+  const range = jLvl >= 3 ? 3 : 2;
   const t = performance.now() / 1000;
   const pulse = Math.sin(t * 6) * 0.3 + 0.7;
   const dirs = [{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+  if (jLvl >= 1) dirs.push({dx:-1,dy:-1},{dx:1,dy:-1},{dx:-1,dy:1},{dx:1,dy:1});
   const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
   dirs.forEach(({dx, dy}) => {
-    const tx2 = hero.x + dx*2, ty2 = hero.y + dy*2;
-    const tx1 = hero.x + dx,  ty1 = hero.y + dy;
     let tx, ty;
-    if (ok(tx2, ty2))      { tx = tx2; ty = ty2; }
-    else if (ok(tx1, ty1)) { tx = tx1; ty = ty1; }
-    else return;
+    for (let r = range; r >= 1; r--) {
+      if (ok(hero.x + dx * r, hero.y + dy * r)) { tx = hero.x + dx * r; ty = hero.y + dy * r; break; }
+    }
+    if (tx === undefined) return;
     const cx = (tx + 0.5) * CELL, cy = (ty + 0.5) * CELL;
     ctx.save();
     ctx.globalAlpha = pulse * 0.75;
@@ -4967,8 +5030,13 @@ document.addEventListener('keydown', e => {
 
   // Jump mode direction intercept
   if (S.jumpMode && gameMode === 'adventure') {
-    const jDir = { ArrowUp:{dx:0,dy:-1}, ArrowDown:{dx:0,dy:1}, ArrowLeft:{dx:-1,dy:0}, ArrowRight:{dx:1,dy:0},
-                   KeyW:{dx:0,dy:-1}, KeyS:{dx:0,dy:1}, KeyA:{dx:-1,dy:0}, KeyD:{dx:1,dy:0} }[e.code];
+    const jDirMap = { ArrowUp:{dx:0,dy:-1}, ArrowDown:{dx:0,dy:1}, ArrowLeft:{dx:-1,dy:0}, ArrowRight:{dx:1,dy:0},
+                      KeyW:{dx:0,dy:-1}, KeyS:{dx:0,dy:1}, KeyA:{dx:-1,dy:0}, KeyD:{dx:1,dy:0} };
+    if ((Profile.upgrades?.jumpLevel || 0) >= 1) {
+      jDirMap.Numpad7 = {dx:-1,dy:-1}; jDirMap.Numpad9 = {dx:1,dy:-1};
+      jDirMap.Numpad1 = {dx:-1,dy:1};  jDirMap.Numpad3 = {dx:1,dy:1};
+    }
+    const jDir = jDirMap[e.code];
     if (jDir) { e.preventDefault(); executeJump(jDir.dx, jDir.dy); return; }
     if (e.code === 'Escape' || e.code === 'KeyJ') { S.jumpMode = false; updateJumpSlot(); return; }
   }
@@ -7475,6 +7543,25 @@ function drawUnits() {
       } else {
         drawEnemyPixelArt(cx, cy, u, alpha);
       }
+      // Frozen overlay
+      if ((u.frozenTurns || 0) > 0) {
+        const t = performance.now();
+        const flicker = 0.55 + 0.25 * Math.sin(t * 0.012);
+        ctx.save();
+        ctx.globalAlpha = alpha * flicker * 0.55;
+        ctx.fillStyle = '#aaddff';
+        ctx.shadowColor = '#88ccff'; ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL * 0.38, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.round(CELL * 0.32)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowBlur = 8; ctx.shadowColor = '#aaddff';
+        ctx.fillText('\u2744', cx, cy - CELL * 0.02);
+        ctx.restore();
+      }
       ctx.restore();
       return;
     }
@@ -7652,6 +7739,7 @@ function aiQueueAction(exec = true) {
   if (S.pending[1] !== null) return;
   const aiUnits = S.units.filter(u => {
     if (u.team !== 1 || !u.alive) return false;
+    if ((u.frozenTurns || 0) > 0) { u.frozenTurns--; return false; } // frozen this turn
     if (gameMode === 'adventure') return isVisible(u.x, u.y);
     return true;
   });
