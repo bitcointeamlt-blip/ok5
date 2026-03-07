@@ -4934,11 +4934,12 @@ document.addEventListener('keydown', e => {
     const wep = getCurrentWeapon(unit);
     if (gameMode === 'adventure' && k.team === 0) {
       const _roomCleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
+      if (_roomCleared && wep !== 'melee') return; // block all shooting when cleared
       let nrgReq = 0;
       if (wep === 'bullet') nrgReq = 2;
       if (wep === 'laser') nrgReq = 7;
       if (wep === 'heavy' || wep === 'shotgun') nrgReq = 4;
-      if (!_roomCleared && wep !== 'melee' && S.energy < nrgReq) return;
+      if (wep !== 'melee' && S.energy < nrgReq) return;
     } else {
       if (wep === 'bullet' && unit.ammo <= 0) return;
       if (wep === 'laser' && unit.laserAmmo <= 0) return;
@@ -5267,11 +5268,8 @@ function applyActions() {
           spawnDmgNumber(unit.x, unit.y, 'FREE!', '#ffcc00', 16, 'crit');
           SFX.play(1200, 0.08, 0.05, 'square');
         } else {
-          const _shotCleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
-          if (!_shotCleared) {
-            S.energy = Math.max(0, S.energy - nrgCost);
-            spawnDmgNumber(unit.x, unit.y, `-${nrgCost}\u26A1`, '#00f5ff', 14, 'normal');
-          }
+          S.energy = Math.max(0, S.energy - nrgCost);
+          spawnDmgNumber(unit.x, unit.y, `-${nrgCost}\u26A1`, '#00f5ff', 14, 'normal');
         }
       }
 
