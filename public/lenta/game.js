@@ -4715,9 +4715,10 @@ function updateJumpSlot() {
   const slot = document.getElementById('p1-sk-jump');
   if (!slot) return;
   const cd = slot.querySelector('.sk-cd');
+  const fc = S.jumpFreeCount || 0;
   slot.classList.toggle('sk-active', !!S.jumpMode);
+  slot.classList.toggle('jump-no-free', fc <= 0);
   if (cd) {
-    const fc = S.jumpFreeCount || 0;
     if (fc > 0) cd.textContent = fc > 1 ? `${fc}FREE` : 'FREE';
     else if ((S.energy || 0) < 5) cd.textContent = 'NO\u26A1';
     else cd.textContent = '-5\u26A1';
@@ -4746,7 +4747,6 @@ function executeJump(dx, dy) {
   const usedFree = fc > 0;
   if (usedFree) {
     S.jumpFreeCount--;
-    spawnDmgNumber(tx, ty, 'JUMP FREE!', '#00ffee', 16, 'crit');
   } else {
     S.energy = Math.max(0, S.energy - 5);
     spawnDmgNumber(hero.x, hero.y, '-5\u26A1', '#00f5ff', 14, 'normal');

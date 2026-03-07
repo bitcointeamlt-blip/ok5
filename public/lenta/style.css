@@ -1726,6 +1726,15 @@ kbd {
   color: #00ffee;
 }
 
+.wep-jump.jump-no-free {
+  color: #ffcc00;
+}
+
+.wep-jump.jump-no-free .sk-label,
+.wep-jump.jump-no-free .sk-cd {
+  color: #ffcc00;
+}
+
 .wep-bullet.sk-active {
   border-color: var(--cyan);
   background: rgba(0, 255, 238, 0.06);
