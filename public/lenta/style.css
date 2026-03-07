@@ -1727,12 +1727,13 @@ kbd {
 }
 
 .wep-jump.jump-no-free {
-  color: #ffcc00;
+  color: #ff8c00;
+  border-color: #ff8c0066;
 }
 
 .wep-jump.jump-no-free .sk-label,
 .wep-jump.jump-no-free .sk-cd {
-  color: #ffcc00;
+  color: #ff8c00;
 }
 
 .wep-bullet.sk-active {
