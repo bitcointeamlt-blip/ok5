@@ -5184,6 +5184,7 @@ function resolveTick() {
     if (hero) {
       S.units.forEach(enemy => {
         if (!enemy.alive || enemy.team !== 1) return;
+        if ((enemy.frozenTurns || 0) > 0) return; // frozen – skip attack
         const dx = Math.abs(enemy.x - hero.x);
         const dy = Math.abs(enemy.y - hero.y);
 
