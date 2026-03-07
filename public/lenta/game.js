@@ -1708,6 +1708,13 @@ const SFX = {
     setTimeout(() => this.play(1200, 0.12, 0.06, 'sine', -400), 60);
     setTimeout(() => this.play(800, 0.18, 0.05, 'square', 300), 140);
   },
+  jump() {
+    // Whoosh + thud: quick low sweep up then body-impact thud
+    this.play(80, 0.06, 0.07, 'triangle', 600);
+    setTimeout(() => this.play(320, 0.05, 0.05, 'sine', 400), 40);
+    setTimeout(() => this.play(55, 0.12, 0.10, 'triangle', -30), 130);
+    setTimeout(() => this.play(90, 0.08, 0.06, 'square', -20), 160);
+  },
 
   // ---- Slot machine sounds -------------------------------------
   slotClick() {
@@ -4691,7 +4698,7 @@ function executeJump(dx, dy) {
   hero.facing = { dx, dy };
   hero.x = tx; hero.y = ty; hero.rx = tx; hero.ry = ty;
   S.jumpMode = false;
-  SFX.teleport();
+  SFX.jump();
   S.shake = Math.max(S.shake || 0, 3);
   revealFog(tx, ty);
   updateJumpSlot();
