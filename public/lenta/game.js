@@ -5382,6 +5382,9 @@ function resolveTick() {
   autoSelectAlive();
   BGM.updateState();
 
+  // Decrement freeze after contact damage has already been checked
+  S.units.forEach(u => { if (u.team === 1 && (u.frozenTurns || 0) > 0) u.frozenTurns--; });
+
   tickStart = performance.now();
   S.animT = 0;
   updateHUD();
@@ -7760,7 +7763,7 @@ function aiQueueAction(exec = true) {
   if (S.pending[1] !== null) return;
   const aiUnits = S.units.filter(u => {
     if (u.team !== 1 || !u.alive) return false;
-    if ((u.frozenTurns || 0) > 0) { u.frozenTurns--; return false; } // frozen this turn
+    if ((u.frozenTurns || 0) > 0) { return false; } // frozen this turn (decremented after tick)
     if (gameMode === 'adventure') return isVisible(u.x, u.y);
     return true;
   });
