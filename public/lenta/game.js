@@ -1396,6 +1396,7 @@ const ENEMY_TYPES = [
   { type: 'overflow', hp: 1, color: '#dd1a40', scale: 1.18, label: 'OVR' },
   { type: 'corrupt', hp: 1, color: '#cc30ff', scale: 1.25, label: 'CRPT' },
   { type: 'idol', hp: 4, color: '#6fd6ff', scale: 1.65, label: 'NULL IDOL' },
+  { type: 'shield', hp: 3, color: '#44aaff', scale: 1.05, label: 'SHIELD' },
 ];
 
 
@@ -2443,7 +2444,7 @@ function initAdventure() {
     if (ri === 0) return [ENEMY_TYPES[1]]; // Leaks only
     if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
     if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1]];
-    return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4]]; // Mid-Late
+    return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6]]; // Mid-Late
   };
 
   S.rooms.forEach((r, ri) => {
@@ -2483,7 +2484,14 @@ function initAdventure() {
         attempts < 15 &&
         (isWall(ex, ey) || S.units.some(u => u.x === ex && u.y === ey))
       );
-      S.units.push(mkUnit(eid++, 1, ex, ey, -1, pick()));
+      const _etype = pick();
+      const _u = mkUnit(eid++, 1, ex, ey, -1, _etype);
+      if (_etype.type === 'shield') {
+        const _dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+        _u.shieldDir = _dirs[Math.floor(Math.random() * _dirs.length)];
+        _u.moveCooldown = 0;
+      }
+      S.units.push(_u);
     }
   });
   S.totalEnemies = S.units.filter(u => u.team === 1).length;
@@ -5186,6 +5194,11 @@ function resolveTick() {
       S.units.forEach(enemy => {
         if (!enemy.alive || enemy.team !== 1) return;
         if ((enemy.frozenTurns || 0) > 0) return; // frozen – skip attack
+        // Shield bot: skip melee if hero is on shield side
+        if (enemy.utype === 'shield' && enemy.shieldDir) {
+          const dot = (hero.x - enemy.x) * enemy.shieldDir.dx + (hero.y - enemy.y) * enemy.shieldDir.dy;
+          if (dot > 0) return;
+        }
         const dx = Math.abs(enemy.x - hero.x);
         const dy = Math.abs(enemy.y - hero.y);
 
@@ -5598,6 +5611,15 @@ function detectCollisions() {
       }
       if (hitFinal || hitMid || hitPrev || hitMidPrev || hitWormBody) {
         b.active = false;
+        // Shield bot: block bullets from shield side
+        if (u.utype === 'shield' && u.shieldDir && u.team !== b.owner) {
+          const dot = b.dx * u.shieldDir.dx + b.dy * u.shieldDir.dy;
+          if (dot < 0) {
+            spawnDmgNumber(u.x, u.y, 'BLOCKED', '#44aaff', 13, 'normal');
+            spawnHit(u.x, u.y, '#44aaff', 10);
+            return;
+          }
+        }
         if (Math.random() < MISS_CHANCE) {
           const isHero = gameMode === 'adventure' && u.team === 0;
           logEvent(isHero ? `EVADED attack!` : `Shot missed!`, isHero ? 'loot' : 'warn');
@@ -7061,6 +7083,108 @@ function drawEnemyWorm(cx, cy, u, alpha) {
   } catch (e) { console.error("Enemy render error:", e); }
 }
 
+function drawEnemyShieldBot(cx, cy, u, alpha) {
+  try {
+    const t = performance.now();
+    const isHit = u.hitFlash > 0;
+    const baseColor = isHit ? '#ffffff' : u.color;
+    const sz = CELL * 0.38 * (u.scale || 1.0);
+    const sd = u.shieldDir || { dx: 1, dy: 0 };
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Bob
+    const bob = Math.sin(t * 0.002 + u.id) * 2;
+
+    // Shadow
+    ctx.save();
+    ctx.translate(0, 6);
+    ctx.globalAlpha = alpha * 0.18;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + bob, sz * 0.8, sz * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Body glow
+    ctx.shadowColor = baseColor;
+    ctx.shadowBlur = isHit ? 30 : 14;
+
+    // Hexagonal body
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+      const px = cx + Math.cos(a) * sz;
+      const py = cy + bob + Math.sin(a) * sz;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fill();
+    ctx.strokeStyle = baseColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Core inner circle
+    ctx.beginPath();
+    ctx.arc(cx, cy + bob, sz * 0.38, 0, Math.PI * 2);
+    ctx.fillStyle = baseColor;
+    ctx.fill();
+
+    // Dark pupil
+    ctx.beginPath();
+    ctx.arc(cx + sd.dx * sz * 0.18, cy + bob + sd.dy * sz * 0.18, sz * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#010214';
+    ctx.fill();
+
+    // === SHIELD ARC on facing side ===
+    const shieldAngle = Math.atan2(sd.dy, sd.dx);
+    const shieldSpread = Math.PI * 0.65;
+    const shieldR = sz * 1.35;
+    const pulse = 0.75 + 0.25 * Math.sin(t * 0.006);
+
+    // Shield glow outer
+    ctx.save();
+    ctx.shadowColor = '#44aaff';
+    ctx.shadowBlur = 18 * pulse;
+    ctx.strokeStyle = `rgba(68,170,255,${0.35 * pulse})`;
+    ctx.lineWidth = sz * 0.45;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy + bob, shieldR, shieldAngle - shieldSpread, shieldAngle + shieldSpread);
+    ctx.stroke();
+    ctx.restore();
+
+    // Shield bright core
+    ctx.save();
+    ctx.shadowColor = '#aaddff';
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = isHit ? '#ffffff' : '#88ccff';
+    ctx.lineWidth = sz * 0.18;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy + bob, shieldR, shieldAngle - shieldSpread, shieldAngle + shieldSpread);
+    ctx.stroke();
+    ctx.restore();
+
+    // Shield edge dots
+    for (let s = -1; s <= 1; s += 2) {
+      const ea = shieldAngle + s * shieldSpread;
+      const ex = cx + Math.cos(ea) * shieldR;
+      const ey = cy + bob + Math.sin(ea) * shieldR;
+      ctx.beginPath();
+      ctx.arc(ex, ey, sz * 0.12, 0, Math.PI * 2);
+      ctx.fillStyle = '#aaddff';
+      ctx.shadowColor = '#aaddff';
+      ctx.shadowBlur = 8;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  } catch(e) { console.error('Shield render error:', e); }
+}
+
 function drawEnemyBinarySwarm(cx, cy, u, alpha) {
   try {
     const t = performance.now();
@@ -7563,6 +7687,8 @@ function drawUnits() {
         drawBoss01(cx, cy, u, alpha);
       } else if (u.utype === 'worm') {
         drawEnemyWorm(cx, cy, u, alpha);
+      } else if (u.utype === 'shield') {
+        drawEnemyShieldBot(cx, cy, u, alpha);
       } else if (u.utype === 'leak' || u.utype === 'corrupt') {
         drawEnemyBinarySwarm(cx, cy, u, alpha);
       } else {
@@ -7913,6 +8039,39 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     }
 
     return null;
+  }
+
+  // --- SPECIAL AI: SHIELD BOT ---
+  if (unit.utype === 'shield') {
+    // Always rotate shield to face player
+    const sdx = nearest.x - unit.x, sdy = nearest.y - unit.y;
+    const adx = Math.abs(sdx), ady = Math.abs(sdy);
+    if (adx >= ady) unit.shieldDir = { dx: Math.sign(sdx), dy: 0 };
+    else unit.shieldDir = { dx: 0, dy: Math.sign(sdy) };
+
+    // Slow movement: move only every 2nd turn
+    unit.moveCooldown = (unit.moveCooldown || 0) - 1;
+    if (unit.moveCooldown > 0) {
+      // Stand still but still turn shield
+      return { action: { t: 'move', dx: 0, dy: 0 }, score: 5 };
+    }
+    unit.moveCooldown = 2;
+
+    // Move toward player (prefer safe tiles)
+    const candidates = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidates.length > 0) {
+      let best = null, bestD = Infinity;
+      for (const m of candidates) {
+        const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+        if (d < bestD) { bestD = d; best = m; }
+      }
+      if (best && bestD < Math.abs(nearest.x - unit.x) + Math.abs(nearest.y - unit.y)) {
+        unit.facing = { dx: best.dx, dy: best.dy };
+        return { action: { t: 'move', dx: best.dx, dy: best.dy }, score: 60 };
+      }
+    }
+    // Stand still if can't improve position
+    return { action: { t: 'move', dx: 0, dy: 0 }, score: 5 };
   }
 
   // --- SPECIAL AI: DATA WORM CHASER ---
