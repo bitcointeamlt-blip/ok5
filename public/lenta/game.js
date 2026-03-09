@@ -161,33 +161,59 @@ const CARD_POOL = [
   { id: 'crit_surge',           name: 'CRIT SURGE', svgIcon: 'target', desc: '+10% crit chance',         rarity: 'rare',      color: '#ffaa00' },
 ];
 
-const CARD_SVG_ICONS = {
-  bolt: (sz, col) =>
-    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-    `<polygon points="13,1 5,14 11,14 10,23 19,10 13,10" fill="${col}"/>` +
-    `</svg>`,
-  ghost: (sz, col) =>
-    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-    `<path d="M12 2C7.5 2 3 6.5 3 12v9l2.5-2.5L8 21l2.5-2.5L13 21l2.5-2.5L18 21l2.5-2.5L23 21v-9C23 6.5 18.5 2 12 2z" fill="${col}"/>` +
-    `<circle cx="9" cy="11" r="2" fill="#00080f"/>` +
-    `<circle cx="15" cy="11" r="2" fill="#00080f"/>` +
-    `</svg>`,
-  cross: (sz, col) =>
-    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-    `<rect x="10" y="2" width="4" height="20" rx="1" fill="${col}"/>` +
-    `<rect x="2" y="10" width="20" height="4" rx="1" fill="${col}"/>` +
-    `</svg>`,
-  target: (sz, col) =>
-    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-    `<circle cx="12" cy="12" r="9" stroke="${col}" stroke-width="1.5" fill="none"/>` +
-    `<circle cx="12" cy="12" r="5" stroke="${col}" stroke-width="1.5" fill="none"/>` +
-    `<circle cx="12" cy="12" r="1.5" fill="${col}"/>` +
-    `<line x1="12" y1="2" x2="12" y2="6" stroke="${col}" stroke-width="1.5"/>` +
-    `<line x1="12" y1="18" x2="12" y2="22" stroke="${col}" stroke-width="1.5"/>` +
-    `<line x1="2" y1="12" x2="6" y2="12" stroke="${col}" stroke-width="1.5"/>` +
-    `<line x1="18" y1="12" x2="22" y2="12" stroke="${col}" stroke-width="1.5"/>` +
-    `</svg>`,
+// Pixel art grids — 1 = filled pixel, 0 = transparent
+const CARD_PIXEL_GRIDS = {
+  bolt: [
+    [0,0,0,1,0,0,0,0],
+    [0,0,1,1,0,0,0,0],
+    [0,1,1,1,0,0,0,0],
+    [1,1,1,1,1,1,0,0],
+    [0,0,1,1,0,0,0,0],
+    [0,0,0,1,1,1,0,0],
+    [0,0,0,0,1,1,0,0],
+    [0,0,0,0,0,1,0,0],
+  ],
+  ghost: [
+    [0,1,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1,1],
+    [1,0,1,1,1,1,0,1],
+    [1,0,1,1,1,1,0,1],
+    [1,1,1,1,1,1,1,1],
+    [1,1,1,1,1,1,1,1],
+    [1,0,1,0,1,0,1,0],
+  ],
+  cross: [
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [1,1,1,1,1,1,1,1],
+    [1,1,1,1,1,1,1,1],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,1,1,0,0,0],
+  ],
+  target: [
+    [0,0,0,0,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0],
+    [0,0,1,0,0,0,0,1,0,0],
+    [0,0,0,0,0,0,0,0,0,0],
+    [1,0,0,0,1,1,0,0,0,1],
+    [1,0,0,0,1,1,0,0,0,1],
+    [0,0,0,0,0,0,0,0,0,0],
+    [0,0,1,0,0,0,0,1,0,0],
+    [0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,0],
+  ],
 };
+
+function drawPixelGrid(ctx, W, H, grid, col) {
+  const rows = grid.length, cols = grid[0].length;
+  const pw = W / cols, ph = H / rows;
+  ctx.fillStyle = col;
+  grid.forEach((row, y) => row.forEach((on, x) => {
+    if (on) ctx.fillRect(Math.round(x * pw), Math.round(y * ph), Math.ceil(pw), Math.ceil(ph));
+  }));
+}
 
 function applyRunCardBuffs() {
   for (const cardId of (S.runCards || [])) {
@@ -268,95 +294,118 @@ function showCardPicker(onComplete) {
   drawn.forEach((finalCard, cardIdx) => {
     const isLocked = lockedSet.has(cardIdx);
 
-    // Card shell — portrait ratio like a real card (+20% bigger)
+    // Card shell — pixel art style, sharp corners, chunky border
     const el = document.createElement('div');
     el.style.cssText = [
       'width:132px;height:214px',
-      'border:2px solid #223344',
-      'border-radius:8px',
-      'background:linear-gradient(160deg,#0a0d18 0%,#060810 100%)',
+      'border:3px solid #1a2030',
+      'border-radius:0',
+      'background:#05080f',
+      'background-image:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.12) 3px,rgba(0,0,0,0.12) 4px),repeating-linear-gradient(90deg,transparent,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px)',
       'display:flex;flex-direction:column',
-      'transition:border-color 0.12s,box-shadow 0.12s,transform 0.15s',
+      'transition:border-color 0.1s,box-shadow 0.1s',
       'cursor:default;pointer-events:none;position:relative;overflow:hidden',
-      'box-shadow:2px 4px 14px rgba(0,0,0,0.7)',
+      'image-rendering:pixelated',
+      'box-shadow:4px 4px 0 0 #000,2px 2px 0 0 #000',
     ].join(';');
 
     // Top header strip
     const header = document.createElement('div');
     header.style.cssText = [
       'display:flex;align-items:center;justify-content:space-between',
-      'padding:6px 9px 5px',
-      'border-bottom:1px solid rgba(255,255,255,0.06)',
-      'background:rgba(0,0,0,0.35)',
+      'padding:5px 7px 4px',
+      'border-bottom:2px solid rgba(0,0,0,0.6)',
+      'background:#030610',
     ].join(';');
     const headerIcon = document.createElement('span');
-    headerIcon.style.cssText = 'display:flex;align-items:center;opacity:0.85;';
+    headerIcon.style.cssText = 'display:block;line-height:0;';
+    const hCanvas = document.createElement('canvas');
+    hCanvas.width = 10; hCanvas.height = 10;
+    hCanvas.style.cssText = 'image-rendering:pixelated;width:12px;height:12px;display:block;';
+    headerIcon.appendChild(hCanvas);
     const headerName = document.createElement('span');
-    headerName.style.cssText = 'font-size:6px;letter-spacing:1px;color:#334455;text-align:right;flex:1;padding-left:5px;';
+    headerName.style.cssText = 'font-size:6px;letter-spacing:1px;color:#1e2d3a;text-align:right;flex:1;padding-left:5px;';
     header.append(headerIcon, headerName);
 
-    // Center art area
+    // Center art area — pixel art canvas icon
     const artArea = document.createElement('div');
     artArea.style.cssText = [
       'flex:1;display:flex;align-items:center;justify-content:center',
-      'position:relative;margin:0 7px',
-      'border-bottom:1px solid rgba(255,255,255,0.05)',
+      'background:#040810',
+      'border-bottom:2px solid rgba(0,0,0,0.7)',
+      'position:relative',
     ].join(';');
-    const icon = document.createElement('div');
-    icon.style.cssText = 'display:flex;align-items:center;justify-content:center;';
-    artArea.appendChild(icon);
+    const iconWrap = document.createElement('div');
+    iconWrap.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+    const iconCanvas = document.createElement('canvas');
+    iconCanvas.width = 64; iconCanvas.height = 64;
+    iconCanvas.style.cssText = 'image-rendering:pixelated;width:60px;height:60px;display:block;';
+    iconWrap.appendChild(iconCanvas);
+    artArea.appendChild(iconWrap);
+    const icon = iconWrap; // alias for lock filter compatibility
 
     // Info section
     const info = document.createElement('div');
     info.style.cssText = [
-      'padding:7px 9px 5px',
-      'display:flex;flex-direction:column;gap:5px',
+      'padding:6px 8px 4px',
+      'display:flex;flex-direction:column;gap:4px',
+      'background:#040810',
+      'border-bottom:2px solid rgba(0,0,0,0.6)',
     ].join(';');
     const name = document.createElement('div');
-    name.style.cssText = 'font-size:8px;color:#334455;letter-spacing:1px;text-shadow:1px 1px 0 #000;';
+    name.style.cssText = 'font-size:8px;color:#1e2d3a;letter-spacing:1px;text-shadow:1px 1px 0 #000;';
     const desc = document.createElement('div');
-    desc.style.cssText = 'color:#2a3a44;font-size:7px;line-height:1.7;';
+    desc.style.cssText = 'color:#1a2a34;font-size:7px;line-height:1.6;';
 
-    // Footer rarity bar
+    // Footer — pixel rarity dots
     const footer = document.createElement('div');
     footer.style.cssText = [
-      'padding:5px 9px 6px',
-      'display:flex;align-items:center;justify-content:center',
-      'border-top:1px solid rgba(255,255,255,0.05)',
-      'background:rgba(0,0,0,0.3)',
+      'padding:5px 8px 5px',
+      'display:flex;align-items:center;justify-content:center;gap:5px',
+      'background:#030610',
     ].join(';');
     const badge = document.createElement('div');
-    badge.style.cssText = 'font-size:6px;letter-spacing:2px;color:#223344;';
+    badge.style.cssText = 'font-size:9px;letter-spacing:4px;color:#1a2030;text-shadow:1px 1px 0 #000;';
     footer.appendChild(badge);
 
+    // Scanline overlay
+    const scanlines = document.createElement('div');
+    scanlines.style.cssText = [
+      'position:absolute;inset:0;pointer-events:none;z-index:5',
+      'background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 3px)',
+    ].join(';');
+
     info.append(name, desc);
-    el.append(header, artArea, info, footer);
+    el.append(header, artArea, info, footer, scanlines);
     cardEls.push({ el, icon, name, desc, badge, headerIcon, headerName, isLocked });
     row.appendChild(el);
 
     // Update displayed card content
     function setDisplay(c) {
-      const svgFn = CARD_SVG_ICONS[c.svgIcon];
-      if (svgFn) {
-        icon.innerHTML = svgFn(52, c.color);
-        icon.style.filter = `drop-shadow(0 0 10px ${c.color}99) drop-shadow(0 0 4px ${c.color}55)`;
-        headerIcon.innerHTML = svgFn(14, c.color);
-      } else {
-        icon.textContent = c.icon || '?';
-        icon.style.fontSize = '52px';
-        headerIcon.textContent = c.icon || '?';
+      const grid = CARD_PIXEL_GRIDS[c.svgIcon];
+      if (grid) {
+        const ctx2 = iconCanvas.getContext('2d');
+        ctx2.clearRect(0, 0, 64, 64);
+        drawPixelGrid(ctx2, 64, 64, grid, c.color);
+        iconWrap.style.filter = `drop-shadow(0 0 10px ${c.color}cc) drop-shadow(0 0 4px ${c.color}77)`;
+        const hCtx = hCanvas.getContext('2d');
+        hCtx.clearRect(0, 0, 10, 10);
+        drawPixelGrid(hCtx, 10, 10, grid, c.color);
       }
       name.textContent = c.name;
       name.style.color = c.color;
       headerName.textContent = c.name;
-      headerName.style.color = c.color + 'bb';
+      headerName.style.color = c.color + 'aa';
       desc.textContent = c.desc;
-      desc.style.color = c.color + '88';
-      badge.textContent = '◆ ' + c.rarity.toUpperCase() + ' ◆';
-      badge.style.color = c.color + '99';
-      header.style.background = c.color + '22';
-      el.style.borderColor = c.color + '55';
-      el.style.boxShadow = `2px 4px 12px rgba(0,0,0,0.7), inset 0 0 0 1px ${c.color}11`;
+      desc.style.color = c.color + '77';
+      const rarityDots = { uncommon: '■', rare: '■ ■', epic: '■ ■ ■', legendary: '■ ■ ■ ■' };
+      badge.textContent = rarityDots[c.rarity] || '■';
+      badge.style.color = c.color;
+      badge.style.textShadow = `0 0 10px ${c.color}99, 1px 1px 0 #000`;
+      header.style.background = c.color + '18';
+      header.style.borderBottomColor = c.color + '55';
+      el.style.borderColor = c.color + '88';
+      el.style.boxShadow = `4px 4px 0 0 #000, 2px 2px 0 0 #000, inset 0 0 0 1px ${c.color}22`;
     }
 
     // Recursive cycling with slowdown near reveal
@@ -373,10 +422,10 @@ function showCardPicker(onComplete) {
         SFX.cardReveal(cardIdx);
 
         if (isLocked) {
-          el.style.borderColor = '#1a1a2a';
-          el.style.boxShadow = '0 0 14px #ffffff18';
+          el.style.borderColor = '#0d1018';
+          el.style.boxShadow = '4px 4px 0 0 #000, 2px 2px 0 0 #000';
           setTimeout(() => {
-            el.style.boxShadow = '2px 4px 12px rgba(0,0,0,0.7)';
+            el.style.boxShadow = '4px 4px 0 0 #000, 2px 2px 0 0 #000';
             icon.style.filter = 'grayscale(1) brightness(0.25)';
             header.style.filter = 'grayscale(1) brightness(0.2)';
             name.style.color = '#1e1e2a';
@@ -402,9 +451,9 @@ function showCardPicker(onComplete) {
           }, 280);
         } else {
           el.style.borderColor = finalCard.color;
-          el.style.boxShadow = `0 0 24px ${finalCard.color}66, 0 0 8px ${finalCard.color}44`;
+          el.style.boxShadow = `4px 4px 0 0 #000, 0 0 24px ${finalCard.color}88`;
           setTimeout(() => {
-            el.style.boxShadow = `2px 4px 14px rgba(0,0,0,0.8), inset 0 0 0 1px ${finalCard.color}22`;
+            el.style.boxShadow = `4px 4px 0 0 #000, 2px 2px 0 0 #000, inset 0 0 0 1px ${finalCard.color}33`;
             el.style.borderColor = finalCard.color + '88';
           }, 320);
         }
@@ -483,13 +532,13 @@ function showCardPicker(onComplete) {
 
       el.addEventListener('mouseenter', () => {
         el.style.borderColor = finalCard.color;
-        el.style.transform = 'translateY(-8px) scale(1.04)';
-        el.style.boxShadow = `0 14px 36px ${finalCard.color}55, inset 0 0 0 1px ${finalCard.color}44`;
+        el.style.transform = 'translateY(-8px)';
+        el.style.boxShadow = `6px 6px 0 0 #000, 4px 4px 0 0 #000, 0 0 28px ${finalCard.color}66, inset 0 0 0 1px ${finalCard.color}44`;
       });
       el.addEventListener('mouseleave', () => {
         el.style.borderColor = finalCard.color + '88';
         el.style.transform = '';
-        el.style.boxShadow = `2px 4px 14px rgba(0,0,0,0.8), inset 0 0 0 1px ${finalCard.color}22`;
+        el.style.boxShadow = `4px 4px 0 0 #000, 2px 2px 0 0 #000, inset 0 0 0 1px ${finalCard.color}22`;
       });
       el.addEventListener('click', () => {
         if (!S.runCards) S.runCards = [];
