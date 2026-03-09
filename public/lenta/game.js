@@ -148,7 +148,399 @@ const ENERGY_MAX = 100;
 const FOG_RADIUS = 3;
 const MISS_CHANCE = 0.15;   // 15% chance to miss
 const CRIT_CHANCE_BASE = 0.03; // 3% base crit chance
-function getCritChance() { return CRIT_CHANCE_BASE + (Profile.upgrades?.critLevel || 0) * 0.005; }
+function getCritChance() { return CRIT_CHANCE_BASE + (Profile.upgrades?.critLevel || 0) * 0.005 + ((S.floorBuffs?.critBonus || 0) / 100); }
+
+// ---- Run Card System -------------------------------------------------------
+// Temporary bonuses picked between rooms; cleared on death
+const CARD_POOL = [
+  { id: 'overcharge_rare',      name: 'OVERCHARGE', svgIcon: 'bolt',   desc: '+20 energy on room entry', rarity: 'rare',      color: '#ffdd00' },
+  { id: 'overcharge_epic',      name: 'OVERCHARGE', svgIcon: 'bolt',   desc: '+25 energy on room entry', rarity: 'epic',      color: '#cc44ff' },
+  { id: 'overcharge_legendary', name: 'OVERCHARGE', svgIcon: 'bolt',   desc: '+35 energy on room entry', rarity: 'legendary', color: '#ff8800' },
+  { id: 'ghost_step',           name: 'GHOST STEP', svgIcon: 'ghost',  desc: '+1 free jump per room',    rarity: 'uncommon',  color: '#44ffee' },
+  { id: 'nano_regen',           name: 'NANO REGEN', svgIcon: 'cross',  desc: '+1 energy per 10 steps',   rarity: 'uncommon',  color: '#88ff44' },
+  { id: 'crit_surge',           name: 'CRIT SURGE', svgIcon: 'target', desc: '+10% crit chance',         rarity: 'rare',      color: '#ffaa00' },
+];
+
+const CARD_SVG_ICONS = {
+  bolt: (sz, col) =>
+    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+    `<polygon points="13,1 5,14 11,14 10,23 19,10 13,10" fill="${col}"/>` +
+    `</svg>`,
+  ghost: (sz, col) =>
+    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+    `<path d="M12 2C7.5 2 3 6.5 3 12v9l2.5-2.5L8 21l2.5-2.5L13 21l2.5-2.5L18 21l2.5-2.5L23 21v-9C23 6.5 18.5 2 12 2z" fill="${col}"/>` +
+    `<circle cx="9" cy="11" r="2" fill="#00080f"/>` +
+    `<circle cx="15" cy="11" r="2" fill="#00080f"/>` +
+    `</svg>`,
+  cross: (sz, col) =>
+    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect x="10" y="2" width="4" height="20" rx="1" fill="${col}"/>` +
+    `<rect x="2" y="10" width="20" height="4" rx="1" fill="${col}"/>` +
+    `</svg>`,
+  target: (sz, col) =>
+    `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+    `<circle cx="12" cy="12" r="9" stroke="${col}" stroke-width="1.5" fill="none"/>` +
+    `<circle cx="12" cy="12" r="5" stroke="${col}" stroke-width="1.5" fill="none"/>` +
+    `<circle cx="12" cy="12" r="1.5" fill="${col}"/>` +
+    `<line x1="12" y1="2" x2="12" y2="6" stroke="${col}" stroke-width="1.5"/>` +
+    `<line x1="12" y1="18" x2="12" y2="22" stroke="${col}" stroke-width="1.5"/>` +
+    `<line x1="2" y1="12" x2="6" y2="12" stroke="${col}" stroke-width="1.5"/>` +
+    `<line x1="18" y1="12" x2="22" y2="12" stroke="${col}" stroke-width="1.5"/>` +
+    `</svg>`,
+};
+
+function applyRunCardBuffs() {
+  for (const cardId of (S.runCards || [])) {
+    switch (cardId) {
+      // overcharge: applied immediately on card pick (in showCardPicker click handler)
+      case 'ghost_step':           S.jumpFreeCount        += 1; break;
+      case 'crit_surge':           S.floorBuffs.critBonus += 10; break;
+      // nano_regen: handled per-step in the movement tick
+    }
+  }
+}
+
+function showCardPicker(onComplete) {
+  // Draw 5 unique random cards
+  const pool = [...CARD_POOL];
+  const drawn = [];
+  for (let i = 0; i < 5 && pool.length; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    drawn.push(pool.splice(idx, 1)[0]);
+  }
+
+  // Randomly pick 3 positions to lock (2 remain selectable)
+  const positions = [0, 1, 2, 3, 4];
+  for (let i = positions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [positions[i], positions[j]] = [positions[j], positions[i]];
+  }
+  const lockedSet = new Set(positions.slice(0, 3));
+
+  const overlay = document.createElement('div');
+  overlay.id = 'card-picker-overlay';
+  overlay.style.cssText = [
+    'position:fixed;inset:0;z-index:9999',
+    'background:transparent',
+    'display:flex;flex-direction:column;align-items:center;justify-content:flex-end',
+    'font-family:"Press Start 2P",monospace',
+    'gap:12px',
+    'padding-bottom:32px',
+    'pointer-events:none',
+  ].join(';');
+
+  const title = document.createElement('div');
+  title.textContent = 'CHOOSE A CARD';
+  title.style.cssText = [
+    'color:#00ffee;font-size:14px;letter-spacing:5px',
+    'text-shadow:0 0 20px #00ffee,2px 2px 0 #000',
+    'background:rgba(0,4,10,0.82);padding:6px 20px;border-bottom:1px solid #00ffee33',
+    'pointer-events:none',
+  ].join(';');
+  overlay.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.textContent = 'BONUS LASTS UNTIL YOU DIE';
+  sub.style.cssText = [
+    'color:#445566;font-size:7px;letter-spacing:2px',
+    'background:rgba(0,4,10,0.7);padding:3px 12px',
+    'pointer-events:none',
+  ].join(';');
+  overlay.appendChild(sub);
+
+  // Start reward music
+  BGM.stop();
+  setTimeout(() => BGM.start('reward'), 80);
+
+  const row = document.createElement('div');
+  row.style.cssText = [
+    'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;padding:8px 16px',
+    'background:rgba(0,3,8,0.78);backdrop-filter:blur(4px)',
+    'border-top:1px solid rgba(0,255,238,0.08)',
+    'pointer-events:auto',
+  ].join(';');
+
+  // Each card stops at a staggered time (ms)
+  const stopTimes = [900, 1350, 1750, 2100, 2400];
+  let revealedCount = 0;
+  const cardEls = [];
+
+  drawn.forEach((finalCard, cardIdx) => {
+    const isLocked = lockedSet.has(cardIdx);
+
+    // Card shell — portrait ratio like a real card (+20% bigger)
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'width:132px;height:214px',
+      'border:2px solid #223344',
+      'border-radius:8px',
+      'background:linear-gradient(160deg,#0a0d18 0%,#060810 100%)',
+      'display:flex;flex-direction:column',
+      'transition:border-color 0.12s,box-shadow 0.12s,transform 0.15s',
+      'cursor:default;pointer-events:none;position:relative;overflow:hidden',
+      'box-shadow:2px 4px 14px rgba(0,0,0,0.7)',
+    ].join(';');
+
+    // Top header strip
+    const header = document.createElement('div');
+    header.style.cssText = [
+      'display:flex;align-items:center;justify-content:space-between',
+      'padding:6px 9px 5px',
+      'border-bottom:1px solid rgba(255,255,255,0.06)',
+      'background:rgba(0,0,0,0.35)',
+    ].join(';');
+    const headerIcon = document.createElement('span');
+    headerIcon.style.cssText = 'display:flex;align-items:center;opacity:0.85;';
+    const headerName = document.createElement('span');
+    headerName.style.cssText = 'font-size:6px;letter-spacing:1px;color:#334455;text-align:right;flex:1;padding-left:5px;';
+    header.append(headerIcon, headerName);
+
+    // Center art area
+    const artArea = document.createElement('div');
+    artArea.style.cssText = [
+      'flex:1;display:flex;align-items:center;justify-content:center',
+      'position:relative;margin:0 7px',
+      'border-bottom:1px solid rgba(255,255,255,0.05)',
+    ].join(';');
+    const icon = document.createElement('div');
+    icon.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+    artArea.appendChild(icon);
+
+    // Info section
+    const info = document.createElement('div');
+    info.style.cssText = [
+      'padding:7px 9px 5px',
+      'display:flex;flex-direction:column;gap:5px',
+    ].join(';');
+    const name = document.createElement('div');
+    name.style.cssText = 'font-size:8px;color:#334455;letter-spacing:1px;text-shadow:1px 1px 0 #000;';
+    const desc = document.createElement('div');
+    desc.style.cssText = 'color:#2a3a44;font-size:7px;line-height:1.7;';
+
+    // Footer rarity bar
+    const footer = document.createElement('div');
+    footer.style.cssText = [
+      'padding:5px 9px 6px',
+      'display:flex;align-items:center;justify-content:center',
+      'border-top:1px solid rgba(255,255,255,0.05)',
+      'background:rgba(0,0,0,0.3)',
+    ].join(';');
+    const badge = document.createElement('div');
+    badge.style.cssText = 'font-size:6px;letter-spacing:2px;color:#223344;';
+    footer.appendChild(badge);
+
+    info.append(name, desc);
+    el.append(header, artArea, info, footer);
+    cardEls.push({ el, icon, name, desc, badge, headerIcon, headerName, isLocked });
+    row.appendChild(el);
+
+    // Update displayed card content
+    function setDisplay(c) {
+      const svgFn = CARD_SVG_ICONS[c.svgIcon];
+      if (svgFn) {
+        icon.innerHTML = svgFn(52, c.color);
+        icon.style.filter = `drop-shadow(0 0 10px ${c.color}99) drop-shadow(0 0 4px ${c.color}55)`;
+        headerIcon.innerHTML = svgFn(14, c.color);
+      } else {
+        icon.textContent = c.icon || '?';
+        icon.style.fontSize = '52px';
+        headerIcon.textContent = c.icon || '?';
+      }
+      name.textContent = c.name;
+      name.style.color = c.color;
+      headerName.textContent = c.name;
+      headerName.style.color = c.color + 'bb';
+      desc.textContent = c.desc;
+      desc.style.color = c.color + '88';
+      badge.textContent = '◆ ' + c.rarity.toUpperCase() + ' ◆';
+      badge.style.color = c.color + '99';
+      header.style.background = c.color + '22';
+      el.style.borderColor = c.color + '55';
+      el.style.boxShadow = `2px 4px 12px rgba(0,0,0,0.7), inset 0 0 0 1px ${c.color}11`;
+    }
+
+    // Recursive cycling with slowdown near reveal
+    const startTime = performance.now();
+    const revealAt = stopTimes[cardIdx];
+
+    function cycle() {
+      const elapsed = performance.now() - startTime;
+      const remaining = revealAt - elapsed;
+
+      if (remaining <= 0) {
+        // REVEAL: show card content, then apply lock overlay if needed
+        setDisplay(finalCard);
+        SFX.cardReveal(cardIdx);
+
+        if (isLocked) {
+          el.style.borderColor = '#1a1a2a';
+          el.style.boxShadow = '0 0 14px #ffffff18';
+          setTimeout(() => {
+            el.style.boxShadow = '2px 4px 12px rgba(0,0,0,0.7)';
+            icon.style.filter = 'grayscale(1) brightness(0.25)';
+            header.style.filter = 'grayscale(1) brightness(0.2)';
+            name.style.color = '#1e1e2a';
+            desc.style.color = '#151520';
+            badge.style.color = '#1a1a28';
+            const lockOverlay = document.createElement('div');
+            lockOverlay.style.cssText = [
+              'position:absolute;inset:0;border-radius:7px',
+              'background:rgba(2,2,10,0.86)',
+              'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px',
+            ].join(';');
+            const lockIcon = document.createElement('div');
+            lockIcon.textContent = '🔒';
+            lockIcon.style.cssText = 'font-size:28px;filter:grayscale(1) brightness(0.5);';
+            const lockLabel = document.createElement('div');
+            lockLabel.textContent = 'LOCKED';
+            lockLabel.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#2a2a40;letter-spacing:2px;';
+            const lockHint = document.createElement('div');
+            lockHint.textContent = 'UPGRADE TO UNLOCK';
+            lockHint.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:6px;color:#1e1e2e;letter-spacing:1px;text-align:center;line-height:1.8;';
+            lockOverlay.append(lockIcon, lockLabel, lockHint);
+            el.appendChild(lockOverlay);
+          }, 280);
+        } else {
+          el.style.borderColor = finalCard.color;
+          el.style.boxShadow = `0 0 24px ${finalCard.color}66, 0 0 8px ${finalCard.color}44`;
+          setTimeout(() => {
+            el.style.boxShadow = `2px 4px 14px rgba(0,0,0,0.8), inset 0 0 0 1px ${finalCard.color}22`;
+            el.style.borderColor = finalCard.color + '88';
+          }, 320);
+        }
+
+        revealedCount++;
+        if (revealedCount === drawn.length) {
+          setTimeout(() => enablePicking(), 150);
+        }
+        return;
+      }
+
+      // Speed: fast at start, slow near reveal
+      const speed = remaining < 350 ? 140 : remaining < 700 ? 80 : 52;
+      const randCard = CARD_POOL[Math.floor(Math.random() * CARD_POOL.length)];
+      setDisplay(randCard);
+      SFX.cardTick();
+      setTimeout(cycle, speed);
+    }
+
+    // Stagger the start of each card's cycling slightly
+    setTimeout(cycle, cardIdx * 40);
+  });
+
+  overlay.appendChild(row);
+
+  // Skip button — hidden during animation, shown after all reveal
+  const skipBtn = document.createElement('button');
+  skipBtn.textContent = 'SKIP';
+  skipBtn.style.cssText = [
+    'background:rgba(0,3,8,0.8);border:1px solid #223344;color:#223344',
+    'font-family:"Press Start 2P",monospace;font-size:7px',
+    'padding:6px 14px;cursor:pointer;letter-spacing:2px',
+    'transition:all 0.2s ease;opacity:0;pointer-events:none',
+  ].join(';');
+  skipBtn.addEventListener('mouseenter', () => { skipBtn.style.color='#667788'; skipBtn.style.borderColor='#667788'; });
+  skipBtn.addEventListener('mouseleave', () => { skipBtn.style.color='#334455'; skipBtn.style.borderColor='#334455'; });
+  skipBtn.addEventListener('click', () => { overlay.remove(); playCurrentLevelBGM(); onComplete(); });
+  overlay.appendChild(skipBtn);
+
+  // Active run cards indicator
+  if ((S.runCards || []).length > 0) {
+    const active = document.createElement('div');
+    active.style.cssText = [
+      'color:#1e2d36;font-size:6px;text-align:center;max-width:700px;line-height:2',
+      'background:rgba(0,3,8,0.75);padding:4px 14px',
+      'pointer-events:none',
+    ].join(';');
+    active.textContent = 'ACTIVE: ' + S.runCards.map(id => {
+      const c = CARD_POOL.find(x => x.id === id);
+      return c ? c.name : id;
+    }).join(' · ');
+    overlay.appendChild(active);
+  }
+
+  // Enable picking after all cards revealed
+  function enablePicking() {
+    // Fade in active indicator
+    const activeEl = overlay.querySelector('div:last-child');
+    if (activeEl) activeEl.style.color = '#2a3a44';
+
+    // Show skip button
+    skipBtn.style.opacity = '1';
+    skipBtn.style.pointerEvents = 'auto';
+    skipBtn.style.color = '#334455';
+    skipBtn.style.borderColor = '#334455';
+
+    cardEls.forEach(({ el, isLocked }, i) => {
+      const finalCard = drawn[i];
+      if (isLocked) {
+        el.style.cursor = 'not-allowed';
+        return; // locked cards are not interactive
+      }
+
+      el.style.cursor = 'pointer';
+      el.style.pointerEvents = 'auto';
+
+      el.addEventListener('mouseenter', () => {
+        el.style.borderColor = finalCard.color;
+        el.style.transform = 'translateY(-8px) scale(1.04)';
+        el.style.boxShadow = `0 14px 36px ${finalCard.color}55, inset 0 0 0 1px ${finalCard.color}44`;
+      });
+      el.addEventListener('mouseleave', () => {
+        el.style.borderColor = finalCard.color + '88';
+        el.style.transform = '';
+        el.style.boxShadow = `2px 4px 14px rgba(0,0,0,0.8), inset 0 0 0 1px ${finalCard.color}22`;
+      });
+      el.addEventListener('click', () => {
+        if (!S.runCards) S.runCards = [];
+        S.runCards.push(finalCard.id);
+        SFX.cardPicked();
+
+        // Detect energy gain cards
+        let _energyGain = 0;
+        if (finalCard.id === 'overcharge_rare')      _energyGain = 20;
+        else if (finalCard.id === 'overcharge_epic')      _energyGain = 25;
+        else if (finalCard.id === 'overcharge_legendary') _energyGain = 35;
+        const _oldEnergy = S.energy || 0;
+        if (_energyGain > 0) {
+          S.energy = _oldEnergy + _energyGain;
+          // Floating "+N⚡" popup on the card
+          const popup = document.createElement('div');
+          popup.textContent = `+${_energyGain}⚡`;
+          popup.style.cssText = [
+            'position:absolute;top:8px;left:50%;transform:translateX(-50%)',
+            `color:${finalCard.color};font-size:13px;font-family:"Press Start 2P",monospace`,
+            'text-shadow:0 0 14px currentColor,2px 2px 0 #000',
+            'pointer-events:none;z-index:10',
+          ].join(';');
+          el.appendChild(popup);
+          popup.animate([
+            { opacity: 1, transform: 'translateX(-50%) translateY(0)' },
+            { opacity: 0, transform: 'translateX(-50%) translateY(-44px)' },
+          ], { duration: 800, easing: 'ease-out', fill: 'forwards' });
+        }
+
+        el.style.background = finalCard.color + '44';
+        el.style.borderColor = finalCard.color;
+        el.style.boxShadow = `0 0 40px ${finalCard.color}66`;
+        cardEls.forEach(c => { c.el.style.pointerEvents = 'none'; });
+        skipBtn.style.pointerEvents = 'none';
+        setTimeout(() => {
+          overlay.remove();
+          playCurrentLevelBGM();
+          onComplete();
+          // Animate energy bar fill after new room loaded
+          if (_energyGain > 0) {
+            const _targetEnergy = _oldEnergy + _energyGain;
+            setTimeout(() => animateEnergyGain(_oldEnergy, _targetEnergy), 80);
+          }
+        }, 600);
+      });
+    });
+  }
+
+  document.body.appendChild(overlay);
+}
 const CRIT_DMG = 2;
 const CELL_DARK = '#07070f';
 const CELL_LIGHT = '#0a0a18';
@@ -1805,6 +2197,34 @@ const SFX = {
     }, notes.length * 110 + 40);
   },
 
+  // ---- Card picker sounds -------------------------------------
+  cardTick() {
+    // Soft rapid digital click while cards cycle (called every few frames)
+    this.play(1600 + Math.random() * 600, 0.022, 0.010, 'square', -400);
+  },
+  cardReveal(idx) {
+    // Satisfying lock-in clunk, escalating pitch per card (idx 0-3)
+    const bases = [330, 392, 494, 587]; // E4, G4, B4, D5
+    const base  = bases[idx] || 440;
+    this.play(base,       0.07, 0.10, 'square',   0);
+    setTimeout(() => this.play(base * 1.5, 0.10, 0.07, 'sine', 60), 55);
+    if (idx >= 2) {
+      // 3rd and 4th cards get an extra shimmer
+      setTimeout(() => this.play(base * 2,   0.09, 0.055, 'sine'), 120);
+    }
+    if (idx === 3) {
+      // Final card — full chord shimmer
+      setTimeout(() => this.play(base * 2.5, 0.07, 0.06, 'sine'), 185);
+      setTimeout(() => this.play(base * 3,   0.05, 0.05, 'sine'), 250);
+    }
+  },
+  cardPicked() {
+    // Confirmation sting when player clicks a card
+    [523, 659, 784, 1047].forEach((f, i) =>
+      setTimeout(() => this.play(f, 0.18, 0.07, 'square', 40), i * 75)
+    );
+  },
+
   chestSpawn() {
     // Static burst - digital noise as chest data streams in
     for (let i = 0; i < 7; i++)
@@ -1927,6 +2347,17 @@ const BGM = {
         1, 3, 0, 3, 2, 0, 3, 0
       ],
       speed: 1.8,
+    },
+    reward: {
+      // 16-step celebratory C-major loop for card picker
+      bass:   [48, 0, 48, 0, 55, 0, 55, 0, 48, 0, 48, 0, 52, 0, 55, 0],
+      chords: [
+        [60,64,67], null, null, null, [60,64,67], null, null, null,
+        [60,64,67], null, null, null, [59,62,67], null, null, null
+      ],
+      arp:    [72, 76, 79, 84, 79, 76, 72, 67, 72, 76, 79, 84, 83, 79, 76, 72],
+      drums:  [1, 3, 3, 3,  2, 3, 3, 3,  1, 3, 3, 3,  2, 3, 1, 3],
+      speed:  2.4,
     },
     game: {
       // 128-step sequence: building up, bridge tension, and release
@@ -2423,7 +2854,8 @@ function initAdventure() {
   S.kills = 0;
   S.explorerChestSpawned = false;
   S.fullMapRevealed = false;
-  S.floorBuffs = { melee: 0, armor: 0, chipMul: 1 };
+  if (S.floor <= 1) S.runCards = [];
+  S.floorBuffs = { melee: 0, armor: 0, chipMul: 1, critBonus: 0 };
   S.pendingSlotPrize = null;
   S.footsteps = [];
   if (S.floor === 1) S.nanoSteps = 0;
@@ -2538,6 +2970,9 @@ function initAdventure() {
       });
     }
   }
+
+  // Apply temporary run card bonuses (picked between rooms)
+  applyRunCardBuffs();
 
   // Start tutorial on first floor only
   if (S.floor === 1 && !Profile.tutorialDone) {
@@ -3708,11 +4143,13 @@ window.confirmTeleportUse = function () {
   saveProfile();
   checkAchievements();
   setTimeout(() => {
-    S.floor++;
-    initAdventure();
-    playCurrentLevelBGM();
-    updateHUD();
-    updateEnergyHud();
+    showCardPicker(() => {
+      S.floor++;
+      initAdventure();
+      playCurrentLevelBGM();
+      updateHUD();
+      updateEnergyHud();
+    });
   }, 600);
 };
 
@@ -4987,6 +5424,61 @@ function drawLoot() {
   });
 }
 
+function animateEnergyGain(fromEnergy, toEnergy) {
+  const track = document.querySelector('.energy-track');
+  const fill  = document.getElementById('energy-fill');
+  const val   = document.getElementById('energy-val');
+  if (!fill || !track) return;
+
+  const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+  const gain = Math.round(toEnergy - fromEnergy);
+  if (gain <= 0) return;
+
+  // Current fill snaps to fromEnergy position
+  const fromPct = Math.min(fromEnergy / effectiveMax, 1) * 100;
+  const toPct   = Math.min(toEnergy   / effectiveMax, 1) * 100;
+  const gainPct = toPct - fromPct; // visible bar width to fill
+
+  fill.style.transition = 'none';
+  fill.style.width = fromPct + '%';
+  void fill.offsetWidth; // force reflow
+  if (val) val.textContent = fromEnergy;
+
+  // Gray "incoming" fill — sits right after the current fill
+  const gainFill = document.createElement('div');
+  gainFill.style.cssText = [
+    'position:absolute;top:0;bottom:0',
+    `left:${fromPct}%`,
+    'width:0',
+    'background:#44444e',
+    'pointer-events:none;z-index:1',
+  ].join(';');
+  track.appendChild(gainFill);
+
+  let step = 0;
+  const stepPct = gainPct / gain; // bar % per 1 energy unit
+  const stepMs  = 1000;
+
+  const interval = setInterval(() => {
+    step++;
+    gainFill.style.width = (stepPct * step) + '%';
+    if (val) val.textContent = fromEnergy + step;
+    SFX.cardTick();
+
+    if (step >= gain) {
+      clearInterval(interval);
+      // Gray is fully filled — now transition to cyan/green
+      gainFill.style.transition = 'background 0.7s ease, box-shadow 0.7s ease';
+      gainFill.style.background = 'var(--cyan, #00ffee)';
+      gainFill.style.boxShadow  = '0 0 6px var(--cyan, #00ffee), 0 0 14px rgba(0,255,238,0.25)';
+      setTimeout(() => {
+        gainFill.remove();
+        updateEnergyHud();
+      }, 750);
+    }
+  }, stepMs);
+}
+
 function updateEnergyHud() {
   const hud = document.getElementById('energy-hud');
   const fill = document.getElementById('energy-fill');
@@ -4996,7 +5488,7 @@ function updateEnergyHud() {
   if (!hud) return;
 
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-  const pct = S.energy / effectiveMax;
+  const pct = Math.min(S.energy / effectiveMax, 1);
   const isCrit = pct <= 0.15;
   const isLow = pct <= 0.30;
   const isMid = pct <= 0.60;
@@ -5329,6 +5821,7 @@ function resolveTick() {
     if (S.teleportCooldown > 0) S.teleportCooldown--;
     if (S.energy <= 0 && !S.winner && !S.pendingGameover) {
       S.energyDepleted = true; S.winner = 1; S.pendingGameover = true;
+      S.runCards = []; // Temporary card bonuses lost on death
       // Stop BGM and play funeral jingle
       BGM.deathJingle();
       const _hero = S.units.find(u => u.team === 0 && u.alive);
@@ -5439,6 +5932,14 @@ function applyActions() {
                 S.reachedMaxEnergy = true;
                 checkAchievements();
               }
+            }
+          }
+          // Card: NANO REGEN — +1 energy every 10 steps
+          if ((S.runCards||[]).includes('nano_regen') && S.nanoSteps % 10 === 0) {
+            const _effMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+            if (S.energy < _effMax) {
+              S.energy = Math.min(_effMax, S.energy + 1);
+              spawnDmgNumber(unit.x, unit.y, '+1\u26A1', '#88ff44', 12, 'normal');
             }
           }
         }
