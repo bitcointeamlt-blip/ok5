@@ -153,74 +153,20 @@ function getCritChance() { return CRIT_CHANCE_BASE + (Profile.upgrades?.critLeve
 // ---- Run Card System -------------------------------------------------------
 // Temporary bonuses picked between rooms; cleared on death
 const CARD_POOL = [
-  { id: 'overcharge_rare',      name: 'OVERCHARGE', svgIcon: 'bolt',   desc: '+20 energy on room entry', rarity: 'rare',      color: '#ffdd00' },
-  { id: 'overcharge_epic',      name: 'OVERCHARGE', svgIcon: 'bolt',   desc: '+25 energy on room entry', rarity: 'epic',      color: '#cc44ff' },
-  { id: 'overcharge_legendary', name: 'OVERCHARGE', svgIcon: 'bolt',   desc: '+35 energy on room entry', rarity: 'legendary', color: '#ff8800' },
-  { id: 'ghost_step',           name: 'GHOST STEP', svgIcon: 'ghost',  desc: '+1 free jump per room',    rarity: 'uncommon',  color: '#44ffee' },
-  { id: 'nano_regen',           name: 'NANO REGEN', svgIcon: 'cross',  desc: '+1 energy per 10 steps',   rarity: 'uncommon',  color: '#88ff44' },
-  { id: 'crit_surge',           name: 'CRIT SURGE', svgIcon: 'target', desc: '+10% crit chance',         rarity: 'rare',      color: '#ffaa00' },
+  { id: 'overcharge_rare', name: 'OVERCHARGE', svgIcon: 'bolt', desc: '+20 energy on room entry', rarity: 'rare', color: '#ffdd00' },
+  { id: 'overcharge_epic', name: 'OVERCHARGE', svgIcon: 'bolt', desc: '+25 energy on room entry', rarity: 'epic', color: '#cc44ff' },
+  { id: 'overcharge_legendary', name: 'OVERCHARGE', svgIcon: 'bolt', desc: '+35 energy on room entry', rarity: 'legendary', color: '#ff8800' },
+  { id: 'ghost_step', name: 'GHOST STEP', svgIcon: 'ghost', desc: '+1 free jump per room', rarity: 'uncommon', color: '#44ffee' },
+  { id: 'nano_regen', name: 'NANO REGEN', svgIcon: 'cross', desc: '+1 energy per 10 steps', rarity: 'uncommon', color: '#88ff44' },
+  { id: 'crit_surge', name: 'CRIT SURGE', svgIcon: 'target', desc: '+10% crit chance', rarity: 'rare', color: '#ffaa00' },
 ];
-
-// Pixel art grids — 1 = filled pixel, 0 = transparent
-const CARD_PIXEL_GRIDS = {
-  bolt: [
-    [0,0,0,1,0,0,0,0],
-    [0,0,1,1,0,0,0,0],
-    [0,1,1,1,0,0,0,0],
-    [1,1,1,1,1,1,0,0],
-    [0,0,1,1,0,0,0,0],
-    [0,0,0,1,1,1,0,0],
-    [0,0,0,0,1,1,0,0],
-    [0,0,0,0,0,1,0,0],
-  ],
-  ghost: [
-    [0,1,1,1,1,1,1,0],
-    [1,1,1,1,1,1,1,1],
-    [1,0,1,1,1,1,0,1],
-    [1,0,1,1,1,1,0,1],
-    [1,1,1,1,1,1,1,1],
-    [1,1,1,1,1,1,1,1],
-    [1,0,1,0,1,0,1,0],
-  ],
-  cross: [
-    [0,0,0,1,1,0,0,0],
-    [0,0,0,1,1,0,0,0],
-    [0,0,0,1,1,0,0,0],
-    [1,1,1,1,1,1,1,1],
-    [1,1,1,1,1,1,1,1],
-    [0,0,0,1,1,0,0,0],
-    [0,0,0,1,1,0,0,0],
-    [0,0,0,1,1,0,0,0],
-  ],
-  target: [
-    [0,0,0,0,1,1,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0,0],
-    [0,0,1,0,0,0,0,1,0,0],
-    [0,0,0,0,0,0,0,0,0,0],
-    [1,0,0,0,1,1,0,0,0,1],
-    [1,0,0,0,1,1,0,0,0,1],
-    [0,0,0,0,0,0,0,0,0,0],
-    [0,0,1,0,0,0,0,1,0,0],
-    [0,0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,1,1,0,0,0,0],
-  ],
-};
-
-function drawPixelGrid(ctx, W, H, grid, col) {
-  const rows = grid.length, cols = grid[0].length;
-  const pw = W / cols, ph = H / rows;
-  ctx.fillStyle = col;
-  grid.forEach((row, y) => row.forEach((on, x) => {
-    if (on) ctx.fillRect(Math.round(x * pw), Math.round(y * ph), Math.ceil(pw), Math.ceil(ph));
-  }));
-}
 
 function applyRunCardBuffs() {
   for (const cardId of (S.runCards || [])) {
     switch (cardId) {
       // overcharge: applied immediately on card pick (in showCardPicker click handler)
-      case 'ghost_step':           S.jumpFreeCount        += 1; break;
-      case 'crit_surge':           S.floorBuffs.critBonus += 10; break;
+      case 'ghost_step': S.jumpFreeCount += 1; break;
+      case 'crit_surge': S.floorBuffs.critBonus += 10; break;
       // nano_regen: handled per-step in the movement tick
     }
   }
@@ -294,19 +240,18 @@ function showCardPicker(onComplete) {
   drawn.forEach((finalCard, cardIdx) => {
     const isLocked = lockedSet.has(cardIdx);
 
-    // Card shell — pixel art style, sharp corners, chunky border
+    // Card shell — premium pixel art style, glowing borders, darker richer background
     const el = document.createElement('div');
     el.style.cssText = [
-      'width:132px;height:214px',
-      'border:3px solid #1a2030',
-      'border-radius:0',
-      'background:#05080f',
-      'background-image:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.12) 3px,rgba(0,0,0,0.12) 4px),repeating-linear-gradient(90deg,transparent,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px)',
+      'width:150px;height:236px',
+      'border:2px solid #1a2030',
+      'border-radius:2px',
+      'background:linear-gradient(180deg, #05080f 0%, #020306 100%)',
       'display:flex;flex-direction:column',
-      'transition:border-color 0.1s,box-shadow 0.1s',
+      'transition:all 0.15s ease-out',
       'cursor:default;pointer-events:none;position:relative;overflow:hidden',
       'image-rendering:pixelated',
-      'box-shadow:4px 4px 0 0 #000,2px 2px 0 0 #000',
+      'box-shadow: 0 10px 20px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.05)',
     ].join(';');
 
     // Top header strip
@@ -324,21 +269,29 @@ function showCardPicker(onComplete) {
     hCanvas.style.cssText = 'image-rendering:pixelated;width:12px;height:12px;display:block;';
     headerIcon.appendChild(hCanvas);
     const headerName = document.createElement('span');
-    headerName.style.cssText = 'font-size:6px;letter-spacing:1px;color:#1e2d3a;text-align:right;flex:1;padding-left:5px;';
+    headerName.style.cssText = 'font-size:8px;letter-spacing:1px;color:#1e2d3a;text-align:right;flex:1;padding-left:5px;';
     header.append(headerIcon, headerName);
 
-    // Center art area — pixel art canvas icon
+    // Center art area — premium stage area with radial glow
     const artArea = document.createElement('div');
     artArea.style.cssText = [
       'flex:1;display:flex;align-items:center;justify-content:center',
-      'background:#040810',
-      'border-bottom:2px solid rgba(0,0,0,0.7)',
+      'background:radial-gradient(circle at center, rgba(30,40,50,0.4) 0%, #010204 100%)',
+      'border-bottom:1px solid rgba(255,255,255,0.05)',
       'position:relative',
+      'box-shadow: inset 0 4px 10px rgba(0,0,0,0.8)',
     ].join(';');
     const iconWrap = document.createElement('div');
-    iconWrap.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+    // Subtly float the icon
+    iconWrap.style.cssText = 'display:flex;align-items:center;justify-content:center; animation: floatIcon 3s ease-in-out infinite;';
+    if (!document.getElementById('card-animations')) {
+      const style = document.createElement('style');
+      style.id = 'card-animations';
+      style.textContent = '@keyframes floatIcon { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }';
+      document.head.appendChild(style);
+    }
     const iconCanvas = document.createElement('canvas');
-    iconCanvas.width = 64; iconCanvas.height = 64;
+    iconCanvas.width = 16; iconCanvas.height = 16;
     iconCanvas.style.cssText = 'image-rendering:pixelated;width:60px;height:60px;display:block;';
     iconWrap.appendChild(iconCanvas);
     artArea.appendChild(iconWrap);
@@ -347,22 +300,22 @@ function showCardPicker(onComplete) {
     // Info section
     const info = document.createElement('div');
     info.style.cssText = [
-      'padding:6px 8px 4px',
-      'display:flex;flex-direction:column;gap:4px',
-      'background:#040810',
-      'border-bottom:2px solid rgba(0,0,0,0.6)',
+      'padding:8px 10px',
+      'display:flex;flex-direction:column;gap:5px',
+      'background:linear-gradient(180deg, rgba(8,12,20,0.8) 0%, rgba(2,4,8,0.9) 100%)',
+      'border-bottom:1px solid rgba(0,0,0,0.8)',
     ].join(';');
     const name = document.createElement('div');
-    name.style.cssText = 'font-size:8px;color:#1e2d3a;letter-spacing:1px;text-shadow:1px 1px 0 #000;';
+    name.style.cssText = 'font-size:12px;text-align:center;color:#ffffff;letter-spacing:1px;text-shadow:0 0 4px rgba(255,255,255,0.3);';
     const desc = document.createElement('div');
-    desc.style.cssText = 'color:#1a2a34;font-size:7px;line-height:1.6;';
+    desc.style.cssText = 'color:#6b8096;font-size:12px;line-height:1.6;text-align:center;font-family:sans-serif;letter-spacing:0.5px;';
 
     // Footer — pixel rarity dots
     const footer = document.createElement('div');
     footer.style.cssText = [
-      'padding:5px 8px 5px',
+      'padding:6px 8px',
       'display:flex;align-items:center;justify-content:center;gap:5px',
-      'background:#030610',
+      'background:#020306',
     ].join(';');
     const badge = document.createElement('div');
     badge.style.cssText = 'font-size:9px;letter-spacing:4px;color:#1a2030;text-shadow:1px 1px 0 #000;';
@@ -382,30 +335,38 @@ function showCardPicker(onComplete) {
 
     // Update displayed card content
     function setDisplay(c) {
-      const grid = CARD_PIXEL_GRIDS[c.svgIcon];
-      if (grid) {
-        const ctx2 = iconCanvas.getContext('2d');
-        ctx2.clearRect(0, 0, 64, 64);
-        drawPixelGrid(ctx2, 64, 64, grid, c.color);
-        iconWrap.style.filter = `drop-shadow(0 0 10px ${c.color}cc) drop-shadow(0 0 4px ${c.color}77)`;
-        const hCtx = hCanvas.getContext('2d');
-        hCtx.clearRect(0, 0, 10, 10);
-        drawPixelGrid(hCtx, 10, 10, grid, c.color);
-      }
+      const emojiMap = { bolt: '⚡', ghost: '👻', cross: '💖', target: '🎯' };
+      const e = emojiMap[c.svgIcon] || '❓';
+
+      const ctx2 = iconCanvas.getContext('2d');
+      ctx2.clearRect(0, 0, 16, 16);
+      ctx2.textAlign = 'center';
+      ctx2.textBaseline = 'middle';
+      ctx2.font = '12px sans-serif';
+      ctx2.fillText(e, 8, 9);
+      iconWrap.style.filter = `drop-shadow(0 0 10px ${c.color}cc) drop-shadow(0 0 4px ${c.color}77)`;
+
+      const hCtx = hCanvas.getContext('2d');
+      hCtx.clearRect(0, 0, 10, 10);
+      hCtx.textAlign = 'center';
+      hCtx.textBaseline = 'middle';
+      hCtx.font = '8px sans-serif';
+      hCtx.fillText(e, 5, 5);
       name.textContent = c.name;
       name.style.color = c.color;
       headerName.textContent = c.name;
       headerName.style.color = c.color + 'aa';
       desc.textContent = c.desc;
-      desc.style.color = c.color + '77';
+      // Highlighting numbers inside description for extra polish
+      desc.innerHTML = c.desc.replace(/(\+\d+%?|-?\d+)/g, `<span style="color:${c.color};text-shadow:0 0 4px ${c.color}">$1</span>`);
       const rarityDots = { uncommon: '■', rare: '■ ■', epic: '■ ■ ■', legendary: '■ ■ ■ ■' };
       badge.textContent = rarityDots[c.rarity] || '■';
       badge.style.color = c.color;
-      badge.style.textShadow = `0 0 10px ${c.color}99, 1px 1px 0 #000`;
-      header.style.background = c.color + '18';
+      badge.style.textShadow = `0 0 8px ${c.color}, 0 0 2px #fff`;
+      header.style.background = `linear-gradient(90deg, ${c.color}22 0%, rgba(0,0,0,0) 100%)`;
       header.style.borderBottomColor = c.color + '55';
-      el.style.borderColor = c.color + '88';
-      el.style.boxShadow = `4px 4px 0 0 #000, 2px 2px 0 0 #000, inset 0 0 0 1px ${c.color}22`;
+      el.style.borderColor = c.color + '55';
+      el.style.boxShadow = `0 10px 25px rgba(0,0,0,0.9), inset 0 0 15px ${c.color}15, inset 0 0 0 1px ${c.color}33`;
     }
 
     // Recursive cycling with slowdown near reveal
@@ -423,37 +384,42 @@ function showCardPicker(onComplete) {
 
         if (isLocked) {
           el.style.borderColor = '#0d1018';
-          el.style.boxShadow = '4px 4px 0 0 #000, 2px 2px 0 0 #000';
+          el.style.boxShadow = '0 10px 20px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.05)';
           setTimeout(() => {
-            el.style.boxShadow = '4px 4px 0 0 #000, 2px 2px 0 0 #000';
-            icon.style.filter = 'grayscale(1) brightness(0.25)';
+            el.style.boxShadow = '0 10px 20px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.05)';
+            iconWrap.style.filter = 'grayscale(1) brightness(0.25)';
             header.style.filter = 'grayscale(1) brightness(0.2)';
-            name.style.color = '#1e1e2a';
-            desc.style.color = '#151520';
-            badge.style.color = '#1a1a28';
+            name.style.color = '#3e4d5a';
+            name.style.textShadow = 'none';
+            desc.style.color = '#354550';
+            desc.innerHTML = finalCard.desc; // remove colored numbers
+            badge.style.color = '#2a2a38';
+            badge.style.textShadow = 'none';
+            iconWrap.style.animation = 'none'; // Stop floating animation on locked cards
             const lockOverlay = document.createElement('div');
             lockOverlay.style.cssText = [
-              'position:absolute;inset:0;border-radius:7px',
-              'background:rgba(2,2,10,0.86)',
-              'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px',
+              'position:absolute;inset:0;border-radius:2px',
+              'background:rgba(2,4,8,0.88)',
+              'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px',
+              'z-index: 10', // ensure it appears above everything else
             ].join(';');
             const lockIcon = document.createElement('div');
             lockIcon.textContent = '🔒';
-            lockIcon.style.cssText = 'font-size:28px;filter:grayscale(1) brightness(0.5);';
+            lockIcon.style.cssText = 'font-size:38px; filter: drop-shadow(0 0 10px rgba(0,0,0,0.8));'; // removed float animation from lock to keep it static
             const lockLabel = document.createElement('div');
             lockLabel.textContent = 'LOCKED';
-            lockLabel.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#2a2a40;letter-spacing:2px;';
+            lockLabel.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:12px;color:#6b8096;letter-spacing:3px;text-shadow: 0 2px 4px #000;';
             const lockHint = document.createElement('div');
             lockHint.textContent = 'UPGRADE TO UNLOCK';
-            lockHint.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:6px;color:#1e1e2e;letter-spacing:1px;text-align:center;line-height:1.8;';
+            lockHint.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:10px;color:#4a5a70;letter-spacing:1px;text-align:center;line-height:1.8;text-shadow: 0 1px 2px #000;';
             lockOverlay.append(lockIcon, lockLabel, lockHint);
             el.appendChild(lockOverlay);
           }, 280);
         } else {
           el.style.borderColor = finalCard.color;
-          el.style.boxShadow = `4px 4px 0 0 #000, 0 0 24px ${finalCard.color}88`;
+          el.style.boxShadow = `0 0 40px ${finalCard.color}44, inset 0 0 20px ${finalCard.color}22, inset 0 0 0 1px ${finalCard.color}66`;
           setTimeout(() => {
-            el.style.boxShadow = `4px 4px 0 0 #000, 2px 2px 0 0 #000, inset 0 0 0 1px ${finalCard.color}33`;
+            el.style.boxShadow = `0 10px 25px rgba(0,0,0,0.9), inset 0 0 15px ${finalCard.color}15, inset 0 0 0 1px ${finalCard.color}44`;
             el.style.borderColor = finalCard.color + '88';
           }, 320);
         }
@@ -488,8 +454,8 @@ function showCardPicker(onComplete) {
     'padding:6px 14px;cursor:pointer;letter-spacing:2px',
     'transition:all 0.2s ease;opacity:0;pointer-events:none',
   ].join(';');
-  skipBtn.addEventListener('mouseenter', () => { skipBtn.style.color='#667788'; skipBtn.style.borderColor='#667788'; });
-  skipBtn.addEventListener('mouseleave', () => { skipBtn.style.color='#334455'; skipBtn.style.borderColor='#334455'; });
+  skipBtn.addEventListener('mouseenter', () => { skipBtn.style.color = '#667788'; skipBtn.style.borderColor = '#667788'; });
+  skipBtn.addEventListener('mouseleave', () => { skipBtn.style.color = '#334455'; skipBtn.style.borderColor = '#334455'; });
   skipBtn.addEventListener('click', () => { overlay.remove(); playCurrentLevelBGM(); onComplete(); });
   overlay.appendChild(skipBtn);
 
@@ -532,13 +498,13 @@ function showCardPicker(onComplete) {
 
       el.addEventListener('mouseenter', () => {
         el.style.borderColor = finalCard.color;
-        el.style.transform = 'translateY(-8px)';
-        el.style.boxShadow = `6px 6px 0 0 #000, 4px 4px 0 0 #000, 0 0 28px ${finalCard.color}66, inset 0 0 0 1px ${finalCard.color}44`;
+        el.style.transform = 'translateY(-10px) scale(1.02)';
+        el.style.boxShadow = `0 20px 40px rgba(0,0,0,0.9), 0 0 30px ${finalCard.color}55, inset 0 0 30px ${finalCard.color}33, inset 0 0 0 1px ${finalCard.color}88`;
       });
       el.addEventListener('mouseleave', () => {
-        el.style.borderColor = finalCard.color + '88';
+        el.style.borderColor = finalCard.color + '55';
         el.style.transform = '';
-        el.style.boxShadow = `4px 4px 0 0 #000, 2px 2px 0 0 #000, inset 0 0 0 1px ${finalCard.color}22`;
+        el.style.boxShadow = `0 10px 25px rgba(0,0,0,0.9), inset 0 0 15px ${finalCard.color}15, inset 0 0 0 1px ${finalCard.color}33`;
       });
       el.addEventListener('click', () => {
         if (!S.runCards) S.runCards = [];
@@ -547,8 +513,8 @@ function showCardPicker(onComplete) {
 
         // Detect energy gain cards
         let _energyGain = 0;
-        if (finalCard.id === 'overcharge_rare')      _energyGain = 20;
-        else if (finalCard.id === 'overcharge_epic')      _energyGain = 25;
+        if (finalCard.id === 'overcharge_rare') _energyGain = 20;
+        else if (finalCard.id === 'overcharge_epic') _energyGain = 25;
         else if (finalCard.id === 'overcharge_legendary') _energyGain = 35;
         const _oldEnergy = S.energy || 0;
         if (_energyGain > 0) {
@@ -1838,6 +1804,7 @@ const ENEMY_TYPES = [
   { type: 'corrupt', hp: 1, color: '#cc30ff', scale: 1.25, label: 'CRPT' },
   { type: 'idol', hp: 4, color: '#6fd6ff', scale: 1.65, label: 'NULL IDOL' },
   { type: 'shield', hp: 3, color: '#44aaff', scale: 1.05, label: 'SHIELD' },
+  { type: 'ironbox', hp: 5, color: '#8899aa', scale: 1.25, label: 'FORTRESS' },
 ];
 
 
@@ -2207,7 +2174,7 @@ const SFX = {
     // Sharp electric dash crack + trailing hiss
     this.play(2200, 0.04, 0.08, 'sawtooth', -2000);
     setTimeout(() => this.play(1800, 0.06, 0.06, 'sawtooth', -1600), 30);
-    setTimeout(() => this.play(400,  0.10, 0.04, 'sine',     -300),  70);
+    setTimeout(() => this.play(400, 0.10, 0.04, 'sine', -300), 70);
   },
 
   // ---- Slot machine sounds -------------------------------------
@@ -2254,17 +2221,17 @@ const SFX = {
   cardReveal(idx) {
     // Satisfying lock-in clunk, escalating pitch per card (idx 0-3)
     const bases = [330, 392, 494, 587]; // E4, G4, B4, D5
-    const base  = bases[idx] || 440;
-    this.play(base,       0.07, 0.10, 'square',   0);
+    const base = bases[idx] || 440;
+    this.play(base, 0.07, 0.10, 'square', 0);
     setTimeout(() => this.play(base * 1.5, 0.10, 0.07, 'sine', 60), 55);
     if (idx >= 2) {
       // 3rd and 4th cards get an extra shimmer
-      setTimeout(() => this.play(base * 2,   0.09, 0.055, 'sine'), 120);
+      setTimeout(() => this.play(base * 2, 0.09, 0.055, 'sine'), 120);
     }
     if (idx === 3) {
       // Final card — full chord shimmer
       setTimeout(() => this.play(base * 2.5, 0.07, 0.06, 'sine'), 185);
-      setTimeout(() => this.play(base * 3,   0.05, 0.05, 'sine'), 250);
+      setTimeout(() => this.play(base * 3, 0.05, 0.05, 'sine'), 250);
     }
   },
   cardPicked() {
@@ -2399,14 +2366,14 @@ const BGM = {
     },
     reward: {
       // 16-step celebratory C-major loop for card picker
-      bass:   [48, 0, 48, 0, 55, 0, 55, 0, 48, 0, 48, 0, 52, 0, 55, 0],
+      bass: [48, 0, 48, 0, 55, 0, 55, 0, 48, 0, 48, 0, 52, 0, 55, 0],
       chords: [
-        [60,64,67], null, null, null, [60,64,67], null, null, null,
-        [60,64,67], null, null, null, [59,62,67], null, null, null
+        [60, 64, 67], null, null, null, [60, 64, 67], null, null, null,
+        [60, 64, 67], null, null, null, [59, 62, 67], null, null, null
       ],
-      arp:    [72, 76, 79, 84, 79, 76, 72, 67, 72, 76, 79, 84, 83, 79, 76, 72],
-      drums:  [1, 3, 3, 3,  2, 3, 3, 3,  1, 3, 3, 3,  2, 3, 1, 3],
-      speed:  2.4,
+      arp: [72, 76, 79, 84, 79, 76, 72, 67, 72, 76, 79, 84, 83, 79, 76, 72],
+      drums: [1, 3, 3, 3, 2, 3, 3, 3, 1, 3, 3, 3, 2, 3, 1, 3],
+      speed: 2.4,
     },
     game: {
       // 128-step sequence: building up, bridge tension, and release
@@ -2922,10 +2889,12 @@ function initAdventure() {
   const numRooms = S.rooms.length;
 
   const poolByRoom = (ri) => {
-    if (ri === 0) return [ENEMY_TYPES[1]]; // Leaks only
-    if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
-    if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1]];
-    return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6]]; // Mid-Late
+    if (gameMode === 'adventure') {
+      if (ri === 0) return [ENEMY_TYPES[1], ENEMY_TYPES[7]]; // Leaks & Fortress testing
+      if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
+      if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1], ENEMY_TYPES[7]];
+      return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6]]; // Mid-Late
+    }
   };
 
   S.rooms.forEach((r, ri) => {
@@ -2944,6 +2913,12 @@ function initAdventure() {
       const bx = r.x + r.w - 2;
       const by = r.y + Math.max(1, Math.floor(r.h / 2));
       S.units.push(mkFirstRoomBoss(eid++, bx, by));
+
+      // Force spawn an Ironbox (Fortress) in the first room for testing
+      const ix = r.x + 2;
+      const iy = r.y + 2;
+      S.units.push(mkUnit(eid++, 1, ix, iy, -1, ENEMY_TYPES[7]));
+
       return;
     } else if (S.floor === 3 && ri === 0) {
       const bx = r.x + r.w - 2;
@@ -2968,7 +2943,7 @@ function initAdventure() {
       const _etype = pick();
       const _u = mkUnit(eid++, 1, ex, ey, -1, _etype);
       if (_etype.type === 'shield') {
-        const _dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+        const _dirs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
         _u.shieldDir = _dirs[Math.floor(Math.random() * _dirs.length)];
         _u.moveCooldown = 0;
       }
@@ -5273,19 +5248,19 @@ function drawJumpIndicator() {
   const t = performance.now() / 1000;
   const pulse = Math.sin(t * 6) * 0.3 + 0.7;
   const dirs = [
-    {dx:0,dy:-1, key:'W'},
-    {dx:0,dy:1,  key:'S'},
-    {dx:-1,dy:0, key:'A'},
-    {dx:1,dy:0,  key:'D'},
+    { dx: 0, dy: -1, key: 'W' },
+    { dx: 0, dy: 1, key: 'S' },
+    { dx: -1, dy: 0, key: 'A' },
+    { dx: 1, dy: 0, key: 'D' },
   ];
   if (jLvl >= 1) dirs.push(
-    {dx:-1,dy:-1, key:'Q'},
-    {dx:1,dy:-1,  key:'E'},
-    {dx:-1,dy:1,  key:'Y'},
-    {dx:1,dy:1,   key:'C'},
+    { dx: -1, dy: -1, key: 'Q' },
+    { dx: 1, dy: -1, key: 'E' },
+    { dx: -1, dy: 1, key: 'Y' },
+    { dx: 1, dy: 1, key: 'C' },
   );
   const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
-  dirs.forEach(({dx, dy, key}) => {
+  dirs.forEach(({ dx, dy, key }) => {
     let tx, ty;
     for (let r = range; r >= 1; r--) {
       if (ok(hero.x + dx * r, hero.y + dy * r)) { tx = hero.x + dx * r; ty = hero.y + dy * r; break; }
@@ -5475,8 +5450,8 @@ function drawLoot() {
 
 function animateEnergyGain(fromEnergy, toEnergy) {
   const track = document.querySelector('.energy-track');
-  const fill  = document.getElementById('energy-fill');
-  const val   = document.getElementById('energy-val');
+  const fill = document.getElementById('energy-fill');
+  const val = document.getElementById('energy-val');
   if (!fill || !track) return;
 
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
@@ -5485,7 +5460,7 @@ function animateEnergyGain(fromEnergy, toEnergy) {
 
   // Current fill snaps to fromEnergy position
   const fromPct = Math.min(fromEnergy / effectiveMax, 1) * 100;
-  const toPct   = Math.min(toEnergy   / effectiveMax, 1) * 100;
+  const toPct = Math.min(toEnergy / effectiveMax, 1) * 100;
   const gainPct = toPct - fromPct; // visible bar width to fill
 
   fill.style.transition = 'none';
@@ -5506,7 +5481,7 @@ function animateEnergyGain(fromEnergy, toEnergy) {
 
   let step = 0;
   const stepPct = gainPct / gain; // bar % per 1 energy unit
-  const stepMs  = 1000;
+  const stepMs = 1000;
 
   const interval = setInterval(() => {
     step++;
@@ -5519,7 +5494,7 @@ function animateEnergyGain(fromEnergy, toEnergy) {
       // Gray is fully filled — now transition to cyan/green
       gainFill.style.transition = 'background 0.7s ease, box-shadow 0.7s ease';
       gainFill.style.background = 'var(--cyan, #00ffee)';
-      gainFill.style.boxShadow  = '0 0 6px var(--cyan, #00ffee), 0 0 14px rgba(0,255,238,0.25)';
+      gainFill.style.boxShadow = '0 0 6px var(--cyan, #00ffee), 0 0 14px rgba(0,255,238,0.25)';
       setTimeout(() => {
         gainFill.remove();
         updateEnergyHud();
@@ -5598,13 +5573,15 @@ document.addEventListener('keydown', e => {
 
   // Jump mode direction intercept
   if (S.jumpMode && gameMode === 'adventure') {
-    const jDirMap = { ArrowUp:{dx:0,dy:-1}, ArrowDown:{dx:0,dy:1}, ArrowLeft:{dx:-1,dy:0}, ArrowRight:{dx:1,dy:0},
-                      KeyW:{dx:0,dy:-1}, KeyS:{dx:0,dy:1}, KeyA:{dx:-1,dy:0}, KeyD:{dx:1,dy:0} };
+    const jDirMap = {
+      ArrowUp: { dx: 0, dy: -1 }, ArrowDown: { dx: 0, dy: 1 }, ArrowLeft: { dx: -1, dy: 0 }, ArrowRight: { dx: 1, dy: 0 },
+      KeyW: { dx: 0, dy: -1 }, KeyS: { dx: 0, dy: 1 }, KeyA: { dx: -1, dy: 0 }, KeyD: { dx: 1, dy: 0 }
+    };
     if ((Profile.upgrades?.jumpLevel || 0) >= 1) {
-      jDirMap.Numpad7 = {dx:-1,dy:-1}; jDirMap.Numpad9 = {dx:1,dy:-1};
-      jDirMap.Numpad1 = {dx:-1,dy:1};  jDirMap.Numpad3 = {dx:1,dy:1};
-      jDirMap.KeyQ = {dx:-1,dy:-1}; jDirMap.KeyE = {dx:1,dy:-1};
-      jDirMap.KeyY = {dx:-1,dy:1};  jDirMap.KeyC = {dx:1,dy:1};
+      jDirMap.Numpad7 = { dx: -1, dy: -1 }; jDirMap.Numpad9 = { dx: 1, dy: -1 };
+      jDirMap.Numpad1 = { dx: -1, dy: 1 }; jDirMap.Numpad3 = { dx: 1, dy: 1 };
+      jDirMap.KeyQ = { dx: -1, dy: -1 }; jDirMap.KeyE = { dx: 1, dy: -1 };
+      jDirMap.KeyY = { dx: -1, dy: 1 }; jDirMap.KeyC = { dx: 1, dy: 1 };
     }
     const jDir = jDirMap[e.code];
     if (jDir) { e.preventDefault(); executeJump(jDir.dx, jDir.dy); return; }
@@ -5984,7 +5961,7 @@ function applyActions() {
             }
           }
           // Card: NANO REGEN — +1 energy every 10 steps
-          if ((S.runCards||[]).includes('nano_regen') && S.nanoSteps % 10 === 0) {
+          if ((S.runCards || []).includes('nano_regen') && S.nanoSteps % 10 === 0) {
             const _effMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
             if (S.energy < _effMax) {
               S.energy = Math.min(_effMax, S.energy + 1);
@@ -6052,6 +6029,19 @@ function applyActions() {
         });
         spawnMeleeEffect(unit.x, unit.y, sd.dx, sd.dy, unit.color);
         if (hit) {
+          // Ironbox: block melee almost everywhere, vulnerable only from the front
+          if (hit.utype === 'ironbox' && hit.team !== team) {
+            // A melee attack comes from unit, going in direction sd.
+            // If the sd direction is exactly opposite to Ironbox facing, it hits the front (vulnerable)
+            // Otherwise, it gets blocked by the heavy armor.
+            if (sd.dx !== -hit.facing.dx || sd.dy !== -hit.facing.dy) {
+              spawnDmgNumber(hit.x, hit.y, 'BLOCK', '#8899aa', 14, 'normal');
+              spawnHit(hit.x, hit.y, '#8899aa', 12);
+              SFX.play(150, 0.1, 0.1, 'square'); // Low thunk for block
+              return; // Blocked!
+            }
+          }
+
           const isCrit = Math.random() < getCritChance();
           const bonusMelee = (Profile.upgrades?.meleeDmg || 0) + (S.floorBuffs?.melee || 0);
           const dmg = (isCrit ? 2 : 1) + bonusMelee;
@@ -6170,6 +6160,18 @@ function detectCollisions() {
             return;
           }
         }
+        // Ironbox: block bullets from anywhere except the front
+        if (u.utype === 'ironbox' && u.team !== b.owner) {
+          // b.dx, b.dy is the direction the bullet is traveling.
+          // To hit the vulnerable front, the bullet must travel exactly opposite to the Ironbox's facing direction.
+          if (b.dx !== -u.facing.dx || b.dy !== -u.facing.dy) {
+            spawnDmgNumber(u.x, u.y, 'BLOCK', '#8899aa', 14, 'normal');
+            spawnHit(u.x, u.y, '#8899aa', 12);
+            SFX.play(150, 0.1, 0.1, 'square'); // Low thunk for block
+            return;
+          }
+        }
+
         if (Math.random() < MISS_CHANCE) {
           const isHero = gameMode === 'adventure' && u.team === 0;
           logEvent(isHero ? `EVADED attack!` : `Shot missed!`, isHero ? 'loot' : 'warn');
@@ -6389,6 +6391,19 @@ function advanceLasers() {
           return false;
         });
         if (hit) {
+          // Ironbox: block lasers from anywhere except the front
+          if (hit.utype === 'ironbox' && hit.team !== laser.owner) {
+            // laser.dx, laser.dy is the direction the laser is traveling
+            // If the laser is not going exactly opposite to the facing, it hits armor
+            if (laser.dx !== -hit.facing.dx || laser.dy !== -hit.facing.dy) {
+              spawnDmgNumber(hit.x, hit.y, 'BLOCK', '#8899aa', 14, 'normal');
+              spawnHit(hit.x, hit.y, '#8899aa', 12);
+              SFX.play(150, 0.1, 0.1, 'square'); // Low thunk for block
+              laser.cells.length = laser.cells.indexOf(cell) + 1;
+              break;
+            }
+          }
+
           if (Math.random() < MISS_CHANCE) {
             const isHero = gameMode === 'adventure' && hit.team === 0;
             logEvent(isHero ? `EVADED laser attack!` : `Laser missed!`, isHero ? 'loot' : 'warn');
@@ -7732,7 +7747,7 @@ function drawEnemyShieldBot(cx, cy, u, alpha) {
     }
 
     ctx.restore();
-  } catch(e) { console.error('Shield render error:', e); }
+  } catch (e) { console.error('Shield render error:', e); }
 }
 
 function drawEnemyBinarySwarm(cx, cy, u, alpha) {
@@ -7800,6 +7815,226 @@ function drawEnemyBinarySwarm(cx, cy, u, alpha) {
 
     ctx.restore();
   } catch (e) { console.error("Enemy render error:", e); }
+}
+
+function drawEnemyFortress(cx, cy, u, alpha) {
+  try {
+    const t = performance.now();
+    const isHit = u.hitFlash > 0;
+    const isDamaged = u.hp <= (u.maxHp || 1) * 0.4;
+    const sz = (UNIT_CELL * 0.65 * (u.scale || 1.0)) - 7; // sumazinta 3px is visu pusiu
+    const baseColor = isHit ? '#ffffff' : (isDamaged ? '#ff4444' : u.color);
+
+    // Slight shake & recoil
+    const shakeAmt = isDamaged ? 1.5 : 0;
+    const recoil = isHit ? -3 : 0;
+    const targetAngle = Math.atan2(u.facing.dy, u.facing.dx);
+    if (u.visualTargetAngle === undefined) u.visualTargetAngle = targetAngle;
+    if (u.renderAngle === undefined) u.renderAngle = targetAngle;
+
+    // Calculate logical difference between intent and visual target
+    let logicalDiff = targetAngle - u.visualTargetAngle;
+    while (logicalDiff > Math.PI) logicalDiff -= Math.PI * 2;
+    while (logicalDiff < -Math.PI) logicalDiff += Math.PI * 2;
+
+    // Always update visual target angle so the visual model matches the logical bounding box
+    u.visualTargetAngle = u.visualTargetAngle + logicalDiff;
+
+    // Smooth rotation (shortest path)
+    let diff = u.visualTargetAngle - u.renderAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    // 0.15 is rotation speed interpolation factor
+    u.renderAngle += diff * 0.15;
+
+    const cxRecoil = cx + Math.cos(targetAngle) * recoil + (Math.random() - 0.5) * shakeAmt;
+    const cyRecoil = cy + Math.sin(targetAngle) * recoil + (Math.random() - 0.5) * shakeAmt;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cxRecoil, cyRecoil);
+
+    // Shadow
+    ctx.save();
+    ctx.translate(0, 8);
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(-sz, -sz, sz * 2, sz * 2);
+    ctx.restore();
+
+    // Use smoothly interpolated angle for rotation
+    ctx.rotate(u.renderAngle);
+
+    // Thick Steel Box (Side view relative to facing)
+    ctx.fillStyle = isHit ? '#ffffff' : '#45505b'; // Dark steel base
+    ctx.strokeStyle = '#1a1f24'; // Very dark border
+    ctx.lineWidth = 3;
+
+    ctx.fillRect(-sz, -sz, sz * 2, sz * 2);
+    ctx.strokeRect(-sz, -sz, sz * 2, sz * 2);
+
+    // Tank Treads (Sides of the unit)
+    // Only animate treads when the unit is actively moving or changing position.
+    if (u.treadOffset === undefined) u.treadOffset = 0;
+
+    // Check if moving between cells
+    const moveDx = u.x - u.px;
+    const moveDy = u.y - u.py;
+    const isMoving = Math.abs(moveDx) > 0.01 || Math.abs(moveDy) > 0.01;
+
+    // Check if turning (renderAngle is lagging behind visualTargetAngle materially)
+    const isTurning = Math.abs(diff) > 0.02;
+
+    if (isMoving) {
+      const moveDot = moveDx * Math.cos(u.renderAngle) + moveDy * Math.sin(u.renderAngle);
+      u.treadOffset += (moveDot >= 0 ? 1.0 : -1.0); // Speed of tread animation during movement (forward or backward)
+    } else if (isTurning) {
+      u.treadOffset += (diff > 0 ? 1.5 : -1.5); // Turn treads based on rotation
+    }
+
+    ctx.fillStyle = '#111'; // Dark background of treads
+    ctx.strokeStyle = '#6a7885'; // Lighter steel tread links
+    ctx.lineWidth = sz * 0.35;
+
+    // Set a dashed line to simulate tread links
+    ctx.setLineDash([sz * 0.15, sz * 0.1]);
+    ctx.lineDashOffset = -(u.treadOffset % (sz * 0.6));
+
+    // "Left" tread (top in rotated view)
+    // Draw dark background
+    ctx.fillRect(-sz, -sz, sz * 2, sz * 0.35);
+    // Draw tread lines
+    ctx.beginPath();
+    ctx.moveTo(-sz, -sz + sz * 0.175);
+    ctx.lineTo(sz, -sz + sz * 0.175);
+    ctx.stroke();
+
+    // "Right" tread (bottom in rotated view)
+    // Draw dark background
+    ctx.fillRect(-sz, sz * 0.65, sz * 2, sz * 0.35);
+    // Draw tread lines (opposite offset direction for turning illusion if we wanted, but uniform is fine)
+    ctx.beginPath();
+    ctx.moveTo(-sz, sz * 0.825);
+    ctx.lineTo(sz, sz * 0.825);
+    ctx.stroke();
+
+    ctx.setLineDash([]); // Reset line dash
+    ctx.lineWidth = 3; // Reset line width
+
+
+    // Vulnerable Front & Back Grates
+    ctx.fillStyle = '#0a0d10'; // Darker cavity
+    // Back grate
+    ctx.fillRect(-sz, -sz * 0.4, sz * 0.25, sz * 0.8);
+    // Front grate (larger opening)
+    ctx.fillRect(sz * 0.75, -sz * 0.5, sz * 0.25, sz);
+
+    // Top Vents / Details
+    ctx.fillStyle = '#1a1f24';
+    ctx.fillRect(-sz * 0.5, -sz * 0.6, sz * 0.8, sz * 0.2); // Top-left vent
+    ctx.fillRect(-sz * 0.5, sz * 0.4, sz * 0.8, sz * 0.2);  // Bottom-left vent
+
+    // Vent slits
+    ctx.fillStyle = '#0a0d10';
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(-sz * 0.4 + i * (sz * 0.18), -sz * 0.55, sz * 0.08, sz * 0.1);
+      ctx.fillRect(-sz * 0.4 + i * (sz * 0.18), sz * 0.45, sz * 0.08, sz * 0.1);
+    }
+
+    // --- Heavy Back Armor Plate ---
+    ctx.fillStyle = '#45505b'; // Same as base armor
+    ctx.strokeStyle = '#1a1f24';
+    ctx.lineWidth = 2;
+    // Draw a thick plate covering the back grate
+    ctx.beginPath();
+    ctx.moveTo(-sz * 1.0, -sz * 0.7);
+    ctx.lineTo(-sz * 1.25, -sz * 0.5);
+    ctx.lineTo(-sz * 1.25, sz * 0.5);
+    ctx.lineTo(-sz * 1.0, sz * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Rivets/Details on Back Armor
+    ctx.fillStyle = '#1a1f24';
+    ctx.beginPath(); ctx.arc(-sz * 1.15, -sz * 0.4, sz * 0.06, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-sz * 1.15, sz * 0.4, sz * 0.06, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-sz * 1.15, 0, sz * 0.06, 0, Math.PI * 2); ctx.fill();
+
+    // --- Singleton Front Cannon ---
+    ctx.fillStyle = '#222830'; // Dark steel cannon barrels
+    ctx.strokeStyle = '#000000'; // Cannon outlines
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = '#000';
+
+    // Main heavy cannon sticking out the front center
+    ctx.fillRect(sz * 0.95, -sz * 0.15, sz * 0.5, sz * 0.3); // Base barrel
+    ctx.strokeRect(sz * 0.95, -sz * 0.15, sz * 0.5, sz * 0.3);
+
+    // Muzzle / Tip
+    ctx.fillStyle = '#11151a';
+    ctx.fillRect(sz * 1.45, -sz * 0.18, sz * 0.15, sz * 0.36);
+    ctx.strokeRect(sz * 1.45, -sz * 0.18, sz * 0.15, sz * 0.36);
+    // Inner hole
+    ctx.fillStyle = '#0a0d10';
+    ctx.fillRect(sz * 1.6, -sz * 0.08, sz * 0.05, sz * 0.16);
+
+    // Glowing Energy Core inside the grate
+    const corePulse = Math.sin(t * 0.002 + u.id); // Slower, smoother pulse
+    const coreGlow = 0.5 + 0.5 * Math.abs(corePulse); // Never fully dims
+    const coreColor = isDamaged ? '#ff2222' : '#00e5ff'; // Slightly cooler cyan
+
+    ctx.fillStyle = isHit ? '#ffffff' : coreColor;
+    ctx.shadowBlur = 10 + coreGlow * 10; // Smoother glow
+    ctx.shadowColor = coreColor;
+
+    // Draw the core glowing through the front (steady main block)
+    ctx.fillRect(sz * 0.78, -sz * 0.3, sz * 0.18, sz * 0.6);
+
+    // Core pulsing through the back slightly
+    ctx.fillStyle = isHit ? '#ffffff' : coreColor;
+    ctx.shadowBlur = 8 + coreGlow * 8;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillRect(-sz * 0.95, -sz * 0.25, sz * 0.1, sz * 0.5);
+    ctx.globalAlpha = alpha;
+
+    // --- NEW: Prominent Top-Down Mini Processor ---
+    // Draw directly in the center of the roof so it's clearly visible from top-down perspective
+    ctx.fillStyle = '#11151a'; // Dark tech color
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = '#000000';
+    ctx.fillRect(-sz * 0.2, -sz * 0.2, sz * 0.4, sz * 0.4); // Centered square processor
+
+    // Processor details (pins/lines)
+    ctx.fillStyle = '#6a7885';
+    ctx.fillRect(-sz * 0.25, -sz * 0.1, sz * 0.05, sz * 0.2); // Left pins
+    ctx.fillRect(sz * 0.2, -sz * 0.1, sz * 0.05, sz * 0.2); // Right pins
+
+    // Blinking Light on the Processor
+    const blinkCycle = (t * 0.003 + u.id) % 2;
+    const isBlinking = blinkCycle < 0.2 || (blinkCycle > 0.4 && blinkCycle < 0.6); // Double blink effect
+    if (isBlinking || isHit) {
+      ctx.fillStyle = isHit ? '#ffffff' : (isDamaged ? '#ffaaaa' : '#ff3333'); // Bright red blink
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = ctx.fillStyle;
+      // Tiny blinking dot on the processor itself
+      ctx.beginPath();
+      ctx.arc(sz * 0.08, -sz * 0.08, sz * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Subtle internal glow reflecting on the top armor
+    if (!isHit && !isDamaged) {
+      ctx.globalAlpha = alpha * 0.12 * coreGlow;
+      ctx.fillStyle = coreColor;
+      ctx.shadowBlur = 0;
+      ctx.fillRect(-sz * 0.2, -sz * 0.4, sz * 0.4, sz * 0.8);
+    }
+
+    ctx.restore();
+  } catch (e) { console.error("Fortress render error:", e); }
 }
 
 function drawEnemyPixelArt(cx, cy, u, alpha) {
@@ -8219,7 +8454,19 @@ function drawBoss01(cx, cy, u, alpha) {
 function drawUnits() {
   S.units.forEach(u => {
     if (!u.alive && u.deathT <= 0) return;
-    if (gameMode === 'adventure' && u.team === 1 && !isVisible(u.x, u.y)) return;
+
+    // Visibility check: Hide enemies if not directly visible, 
+    // EXCEPT for giant Ironbox Fortresses which can be seen if the tile they are on is revealed at all.
+    if (gameMode === 'adventure' && u.team === 1) {
+      const isDirectlyVisible = isVisible(u.x, u.y);
+      const isTileRevealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
+      const isHugeEnemy = u.utype === 'ironbox' || u.utype === 'boss01';
+
+      if (!isDirectlyVisible && !(isHugeEnemy && isTileRevealed)) {
+        return;
+      }
+    }
+
     const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
     const alpha = u.alive ? 1 : u.deathT;
     const r = UNIT_CELL * 0.29 * (u.scale || 1.0);
@@ -8239,6 +8486,13 @@ function drawUnits() {
         drawEnemyWorm(cx, cy, u, alpha);
       } else if (u.utype === 'shield') {
         drawEnemyShieldBot(cx, cy, u, alpha);
+      }
+      // ── Adventure enemy: pixel art character ──────────────────────
+      // Skirstome per pusę / pagal utype tipą:
+      // BUG ir OVR tampa TV Static, LEAK ir CRPT tampa Binary Swarm.
+      // IRONBOX tampa Fortress
+      else if (u.utype === 'ironbox') {
+        drawEnemyFortress(cx, cy, u, alpha);
       } else if (u.utype === 'leak' || u.utype === 'corrupt') {
         drawEnemyBinarySwarm(cx, cy, u, alpha);
       } else {
@@ -8441,7 +8695,15 @@ function aiQueueAction(exec = true) {
   const aiUnits = S.units.filter(u => {
     if (u.team !== 1 || !u.alive) return false;
     if ((u.frozenTurns || 0) > 0) { return false; } // frozen this turn (decremented after tick)
-    if (gameMode === 'adventure') return isVisible(u.x, u.y);
+    if (gameMode === 'adventure') {
+      const isDirectlyVisible = isVisible(u.x, u.y);
+      const isTileRevealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
+      const isHugeEnemy = u.utype === 'ironbox' || u.utype === 'boss01';
+
+      if (!isDirectlyVisible && !(isHugeEnemy && isTileRevealed)) {
+        return false;
+      }
+    }
     return true;
   });
   if (!aiUnits.length) {
@@ -8589,6 +8851,64 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     }
 
     return null;
+  }
+
+  // --- SPECIAL AI: IRONBOX FORTRESS ---
+  if (unit.utype === 'ironbox') {
+    let canSeePlayerInFront = false;
+    for (const hu of p1Future) {
+      const ddx = hu.x - unit.x, ddy = hu.y - unit.y;
+      // Is player exactly in front of the Ironbox?
+      if (Math.sign(ddx) === unit.facing.dx && ddy === 0 && unit.facing.dy === 0) canSeePlayerInFront = true;
+      if (Math.sign(ddy) === unit.facing.dy && ddx === 0 && unit.facing.dx === 0) canSeePlayerInFront = true;
+
+      if (canSeePlayerInFront) {
+        // Verify line of sight
+        let isClear = true;
+        const dist = Math.max(Math.abs(ddx), Math.abs(ddy));
+        for (let i = 1; i < dist; i++) {
+          if (isWall(unit.x + unit.facing.dx * i, unit.y + unit.facing.dy * i)) { isClear = false; break; }
+        }
+        if (!isClear) canSeePlayerInFront = false;
+      }
+      if (canSeePlayerInFront) break;
+    }
+
+    // chance to shoot blindly forward anyway to provide area denial
+    if (unit.ammo > 0 && (canSeePlayerInFront || Math.random() < 0.20)) {
+      // By explicitly passing fo = current facing, it won't snap-turn to aim at the player!
+      return { action: { t: 'shoot', fo: { dx: unit.facing.dx, dy: unit.facing.dy } }, score: 150 };
+    }
+
+    // Otherwise, move/turn towards the player
+    unit.moveCooldown = (unit.moveCooldown || 0) - 1;
+    if (unit.moveCooldown > 0) {
+      // Stand still
+      return { action: { t: 'move', dx: 0, dy: 0 }, score: 5 };
+    }
+    unit.moveCooldown = 2; // Very Slow movement
+
+    let bestMove = null;
+    let bestDist = Infinity;
+    const candidates = safeMoves.length > 0 ? safeMoves : moves;
+    for (const m of candidates) {
+      const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+      // Give a strong bonus for aligning lines of sight
+      const alignBonus = (nearest.x === m.nx || nearest.y === m.ny) ? -5 : 0;
+      const finalScore = d + alignBonus;
+      if (finalScore < bestDist) {
+        bestDist = finalScore;
+        bestMove = m;
+      }
+    }
+
+    if (bestMove) {
+      // Update facing ONLY when moving
+      unit.facing = { dx: bestMove.dx, dy: bestMove.dy };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 60 };
+    }
+
+    return { action: { t: 'move', dx: 0, dy: 0 }, score: 5 };
   }
 
   // --- SPECIAL AI: SHIELD BOT ---
