@@ -362,6 +362,56 @@
                 <button class="btn-volt-install" onclick="attemptJumpUpgrade()">INSTALL</button>
                 <div class="upg-status" id="jump-status"></div>
               </div>
+
+              <div class="upgrade-card volt-card" id="cardslot-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#ffaa00;text-shadow:0 0 8px #ffaa0044;">CARD SLOT</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-cardslot">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT</span>
+                    <span class="volt-stat-val" id="cardslot-benefit" style="color:#ffaa00">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="cardslot-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptCardSlotUpgrade('')">INSTALL</button>
+                <div class="upg-status" id="cardslot-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="bloodrush-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#ff3c55;text-shadow:0 0 8px #ff3c5544;">BLOOD RUSH</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-bloodrush">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT</span>
+                    <span class="volt-stat-val" id="bloodrush-benefit" style="color:#ff3c55">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" id="bloodrush-rate" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="bloodrush-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptBloodRushUpgrade('')">INSTALL</button>
+                <div class="upg-status" id="bloodrush-status"></div>
+              </div>
             </div>
           </div>
 
@@ -468,7 +518,8 @@
             <kbd class="skill-key">Q</kbd>
           </div>
           <div class="skill-bar" id="p1-skillbar" style="position:relative;">
-            <div class="skill-slot sk-active" id="p1-sk-0" title="Bullet (default)">
+            <div class="skill-slot sk-active" id="p1-sk-0" title="Bullet (default)"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='bullet';updateSkillBar(0);}})()">
               <div class="sk-icon">
                 <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                   <!-- barrel -->
@@ -484,7 +535,8 @@
               <div class="sk-label">GUN</div>
               <div class="sk-cd"></div>
             </div>
-            <div class="skill-slot" id="p1-sk-1" title="Laser [Q] - fires in 2 ticks">
+            <div class="skill-slot" id="p1-sk-1" title="Laser [Q] - fires in 2 ticks"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='laser';updateSkillBar(0);}})()">
               <div class="sk-icon">
                 <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                   <!-- compact housing -->
@@ -502,7 +554,8 @@
               <div class="sk-label">LASER</div>
               <div class="sk-cd"></div>
             </div>
-            <div class="skill-slot" id="p1-sk-2" title="Cannon [Q] - 2 dmg - 1 cell/tick - pierces bullets">
+            <div class="skill-slot" id="p1-sk-2" title="Cannon [Q] - 2 dmg - 1 cell/tick - pierces bullets"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='heavy';updateSkillBar(0);}})()">
               <div class="sk-icon">
                 <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                   <!-- thick heavy barrel -->
@@ -518,7 +571,8 @@
               <div class="sk-label">CANNON</div>
               <div class="sk-cd"></div>
             </div>
-            <div class="skill-slot" id="p1-sk-3" title="Shotgun [Q] - 3 pellets spread - short range">
+            <div class="skill-slot" id="p1-sk-3" title="Shotgun [Q] - 3 pellets spread - short range"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='shotgun';updateSkillBar(0);}})()">
               <div class="sk-icon">
                 <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                   <!-- long barrel -->
@@ -540,15 +594,57 @@
               <div class="sk-label">SHOT</div>
               <div class="sk-cd"></div>
             </div>
-            <div class="skill-slot wep-jump" id="p1-sk-jump" title="JUMP - Leap 2 tiles [J]" onclick="(function(){SFX&&SFX.init&&SFX.init();if(S&&S.units){const h=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(h&&S.clockSide===0&&S.pending[0]===null){S.jumpMode=!S.jumpMode;updateJumpSlot();}}})()">
+            <div class="skill-slot wep-jump" id="p1-sk-jump" title="JUMP - Leap 2 tiles [J]"
+              onclick="(function(){SFX&&SFX.init&&SFX.init();if(S&&S.units){const h=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(h&&S.clockSide===0&&S.pending[0]===null){S.jumpMode=!S.jumpMode;updateJumpSlot();}}})()">
               <div class="sk-icon">
                 <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 11 Q11 2 18 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
-                  <polygon points="18,11 15,9 17,13" fill="currentColor"/>
+                  <path d="M4 11 Q11 2 18 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
+                    fill="none" />
+                  <polygon points="18,11 15,9 17,13" fill="currentColor" />
                 </svg>
               </div>
               <div class="sk-label">JUMP</div>
               <div class="sk-cd">FREE</div>
+            </div>
+            <div class="skill-slot wep-flare" id="p1-sk-flare" title="FLARE - Reveal entire map [F] (once per floor)"
+              onclick="(function(){SFX&&SFX.init&&SFX.init();if(S&&!S.flareUsed){const h=S.units&&S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(h&&S.clockSide===0){S.flareMode=!S.flareMode;updateFlareSlot();}}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- rocket body -->
+                  <rect x="5" y="5" width="10" height="4" rx="1.2" fill="currentColor"/>
+                  <!-- nose cone -->
+                  <polygon points="15,5 15,9 20,7" fill="currentColor"/>
+                  <!-- tail fins -->
+                  <polygon points="5,5 5,9 2,11" fill="currentColor" opacity="0.7"/>
+                  <polygon points="5,5 5,9 2,3" fill="currentColor" opacity="0.7"/>
+                  <!-- exhaust glow -->
+                  <circle cx="3.5" cy="7" r="1.5" fill="currentColor" opacity="0.5"/>
+                </svg>
+              </div>
+              <div class="sk-label">FLARE</div>
+              <div class="sk-cd">READY</div>
+            </div>
+
+            <div class="skill-slot wep-hack" id="p1-sk-4" title="HACK [Q] - 50% freeze enemy 3 turns (2 shots/room)"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='hack';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- signal waves -->
+                  <path d="M3 7 Q5 4 7 7 Q9 10 11 7 Q13 4 15 7 Q17 10 19 7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                  <!-- center dot -->
+                  <circle cx="11" cy="7" r="1.5" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="sk-label">HACK</div>
+              <div class="sk-cd">2 SHOTS</div>
+            </div>
+            <div class="skill-slot wep-ronke" id="p1-sk-5" title="RONKE [Q] - blue laser, uses Ronke from inventory"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='ronke';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <img src="ronke.png" style="width:22px;height:22px;object-fit:contain;display:block;margin:auto;margin-top:-4px;filter:drop-shadow(0 0 4px #44aaff);" draggable="false">
+              </div>
+              <div class="sk-label"></div>
+              <div class="sk-cd" style="margin-top:5px;">EMPTY</div>
             </div>
           </div>
 
@@ -1076,6 +1172,56 @@
               </div>
               <button class="btn-volt-install" onclick="attemptJumpUpgrade('hov')">INSTALL</button>
               <div class="upg-status" id="hov-jump-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-cardslot-upg-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#ffaa00;text-shadow:0 0 8px #ffaa0044;">CARD SLOT</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-cardslot">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT</span>
+                  <span class="volt-stat-val" id="hov-cardslot-benefit" style="color:#ffaa00">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-cardslot-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptCardSlotUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-cardslot-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-bloodrush-upg-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#ff3c55;text-shadow:0 0 8px #ff3c5544;">BLOOD RUSH</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-bloodrush">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT</span>
+                  <span class="volt-stat-val" id="hov-bloodrush-benefit" style="color:#ff3c55">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" id="hov-bloodrush-rate" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-bloodrush-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptBloodRushUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-bloodrush-status"></div>
             </div>
           </div>
 

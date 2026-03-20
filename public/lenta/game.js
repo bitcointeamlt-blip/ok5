@@ -35,6 +35,10 @@ const EMPTY_PRIZE = { val: 0, name: 'EMPTY', rarity: 'empty', matchCount: 0 };
 
 function evaluateCombination(reels) {
   if (reels.includes('empty')) return EMPTY_PRIZE;
+  // Special: all 4 gems = PIXEL jackpot
+  if (reels.every(r => r === 'gem')) return { val: 5, name: '5 PIXEL', rarity: 'gem', matchCount: 4 };
+  // Special: all 4 ronke = RONKE jackpot
+  if (reels.every(r => r === 'ronke')) return { val: 5, name: '5 RONKE', rarity: 'ronke', matchCount: 4 };
   const counts = {};
   for (const r of reels) counts[r] = (counts[r] || 0) + 1;
   const order = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
@@ -159,6 +163,16 @@ const CARD_POOL = [
   { id: 'ghost_step', name: 'GHOST STEP', svgIcon: 'ghost', desc: '+1 free jump per room', rarity: 'uncommon', color: '#44ffee' },
   { id: 'nano_regen', name: 'NANO REGEN', svgIcon: 'cross', desc: '+1 energy per 10 steps', rarity: 'uncommon', color: '#88ff44' },
   { id: 'crit_surge', name: 'CRIT SURGE', svgIcon: 'target', desc: '+10% crit chance', rarity: 'rare', color: '#ffaa00' },
+  { id: 'hack_freeze', name: 'SIGNAL JAM', svgIcon: 'wave', desc: 'HACK freezes +1 turn (stacks)', rarity: 'rare', color: '#00ffcc' },
+  { id: 'hack_ammo', name: 'HACK CACHE', svgIcon: 'chip', desc: '+1 HACK shot per floor (stacks)', rarity: 'uncommon', color: '#00ffcc' },
+];
+
+// Blood Rush bonus cards — only appear if player has bloodRushLevel >= 1
+// Drawn with separate probability rolls before building the 5-card pool
+const BLOOD_RUSH_CARDS = [
+  { id: 'blood_rush_rare',      name: 'BLOOD RUSH', svgIcon: 'blood', desc: '+1⚡ per kill this run', rarity: 'rare',      color: '#ff6644', chance: 0.20 },
+  { id: 'blood_rush_epic',      name: 'BLOOD RUSH', svgIcon: 'blood', desc: '+2⚡ per kill this run', rarity: 'epic',      color: '#ff3388', chance: 0.10 },
+  { id: 'blood_rush_legendary', name: 'BLOOD RUSH', svgIcon: 'blood', desc: '+3⚡ per kill this run', rarity: 'legendary', color: '#ff0044', chance: 0.05 },
 ];
 
 function applyRunCardBuffs() {
@@ -167,27 +181,43 @@ function applyRunCardBuffs() {
       // overcharge: applied immediately on card pick (in showCardPicker click handler)
       case 'ghost_step': S.jumpFreeCount += 1; break;
       case 'crit_surge': S.floorBuffs.critBonus += 10; break;
+      case 'blood_rush_rare':      S.floorBuffs.bloodRushBonus = (S.floorBuffs.bloodRushBonus || 0) + 1; break;
+      case 'blood_rush_epic':      S.floorBuffs.bloodRushBonus = (S.floorBuffs.bloodRushBonus || 0) + 2; break;
+      case 'blood_rush_legendary': S.floorBuffs.bloodRushBonus = (S.floorBuffs.bloodRushBonus || 0) + 3; break;
+      case 'hack_freeze': S.floorBuffs.hackFreezeBonus = (S.floorBuffs.hackFreezeBonus || 0) + 1; break;
+      case 'hack_ammo': S.floorBuffs.hackAmmoBonus = (S.floorBuffs.hackAmmoBonus || 0) + 1; break;
       // nano_regen: handled per-step in the movement tick
     }
   }
 }
 
 function showCardPicker(onComplete) {
-  // Draw 5 unique random cards
+  // Build pool: base cards + blood rush bonus cards (if upgrade >= 1, each rolls independently)
   const pool = [...CARD_POOL];
+  if ((Profile.upgrades?.bloodRushLevel || 0) >= 1) {
+    for (const brc of BLOOD_RUSH_CARDS) {
+      if (Math.random() < brc.chance) pool.push(brc);
+    }
+  }
+  // Draw 5 unique random cards
   const drawn = [];
   for (let i = 0; i < 5 && pool.length; i++) {
     const idx = Math.floor(Math.random() * pool.length);
     drawn.push(pool.splice(idx, 1)[0]);
   }
 
-  // Randomly pick 3 positions to lock (2 remain selectable)
+  // Determine locked count based on cardSlotLevel upgrade
+  const _csLvl = Profile.upgrades?.cardSlotLevel || 0;
+  let _lockedCount = 3; // default: 2 selectable
+  if (_csLvl >= 2) _lockedCount = 2;       // lvl2: always 3 selectable
+  else if (_csLvl >= 1) _lockedCount = Math.random() < 0.5 ? 2 : 3; // lvl1: 50% chance 3rd unlocked
+
   const positions = [0, 1, 2, 3, 4];
   for (let i = positions.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [positions[i], positions[j]] = [positions[j], positions[i]];
   }
-  const lockedSet = new Set(positions.slice(0, 3));
+  const lockedSet = new Set(positions.slice(0, _lockedCount));
 
   const overlay = document.createElement('div');
   overlay.id = 'card-picker-overlay';
@@ -335,7 +365,7 @@ function showCardPicker(onComplete) {
 
     // Update displayed card content
     function setDisplay(c) {
-      const emojiMap = { bolt: '⚡', ghost: '👻', cross: '💖', target: '🎯' };
+      const emojiMap = { bolt: '⚡', ghost: '👻', cross: '💖', target: '🎯', blood: '🩸', wave: '〰️', chip: '💾' };
       const e = emojiMap[c.svgIcon] || '❓';
 
       const ctx2 = iconCanvas.getContext('2d');
@@ -546,8 +576,7 @@ function showCardPicker(onComplete) {
           onComplete();
           // Animate energy bar fill after new room loaded
           if (_energyGain > 0) {
-            const _targetEnergy = _oldEnergy + _energyGain;
-            setTimeout(() => animateEnergyGain(_oldEnergy, _targetEnergy), 80);
+            setTimeout(() => updateEnergyHud(), 80);
           }
         }, 600);
       });
@@ -658,6 +687,8 @@ function loadProfile() {
       if (Profile.upgrades.nanoLevel === undefined) Profile.upgrades.nanoLevel = 0;
       if (Profile.upgrades.freeShotLevel === undefined) Profile.upgrades.freeShotLevel = 0;
       if (Profile.upgrades.jumpLevel === undefined) Profile.upgrades.jumpLevel = 0;
+      if (Profile.upgrades.cardSlotLevel === undefined) Profile.upgrades.cardSlotLevel = 0;
+      if (Profile.upgrades.bloodRushLevel === undefined) Profile.upgrades.bloodRushLevel = 0;
       if (!Profile.highestSector || Profile.highestSector < 1) Profile.highestSector = 1;
       if (!Array.isArray(Profile.inventory)) Profile.inventory = null;
       if (!Profile.achievements) Profile.achievements = {};
@@ -1040,6 +1071,82 @@ window.attemptJumpUpgrade = function (prefix) {
       saveProfile();
       checkAchievements();
     }
+    return success;
+  });
+};
+
+window.attemptCardSlotUpgrade = function (prefix) {
+  const cardId = prefix === 'hov' ? 'hov-cardslot-upg-card' : 'cardslot-upg-card';
+  const statId = prefix === 'hov' ? 'hov-cardslot-status' : 'cardslot-status';
+  const costEl = prefix === 'hov' ? 'hov-cardslot-cost-display' : 'cardslot-cost-display';
+  const level = Profile.upgrades.cardSlotLevel || 0;
+  if (level >= 2) return;
+  if (chipCount('mythic') < 1) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  spendChips('mythic', 1);
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => {
+    const success = Math.random() < 0.70;
+    if (success) { Profile.upgrades.cardSlotLevel = level + 1; saveProfile(); checkAchievements(); }
+    return success;
+  });
+};
+
+function getBloodRushCost(lvl) {
+  return [
+    { common: 2 },                              // 0→1
+    { common: 3, uncommon: 1 },                 // 1→2
+    { uncommon: 2, bytes: 5 },                  // 2→3
+    { rare: 1, bytes: 10 },                     // 3→4
+    { rare: 2, epic: 1 },                       // 4→5
+    { legendary: 1, bytes: 10 },                // 5→6
+    { mythic: 1, legendary: 2 },                // 6→7
+  ][lvl] || {};
+}
+function getBloodRushSuccessRate(lvl) {
+  return [0.70, 0.70, 0.70, 0.70, 0.75, 0.70, 0.80][lvl] || 0.70;
+}
+const BLOOD_RUSH_BENEFITS = [
+  '+1⚡ per kill', '+2⚡ per kill', '+3⚡ per kill', '+4⚡ per kill',
+  '+5⚡ per kill', '+6⚡ per kill', '+8⚡ per kill',
+];
+
+window.attemptBloodRushUpgrade = function (prefix) {
+  prefix = prefix || '';
+  const cardId = prefix === 'hov' ? 'hov-bloodrush-upg-card' : 'bloodrush-upg-card';
+  const statId = prefix === 'hov' ? 'hov-bloodrush-status' : 'bloodrush-status';
+  const costEl = (prefix === 'hov' ? 'hov-' : '') + 'bloodrush-cost-display';
+  const level = Profile.upgrades.bloodRushLevel || 0;
+  if (level >= 7) return;
+  const cost = getBloodRushCost(level);
+  const canAfford = (chipCount('common') >= (cost.common || 0))
+    && (chipCount('uncommon') >= (cost.uncommon || 0))
+    && (chipCount('rare') >= (cost.rare || 0))
+    && (chipCount('epic') >= (cost.epic || 0))
+    && (chipCount('legendary') >= (cost.legendary || 0))
+    && (chipCount('mythic') >= (cost.mythic || 0))
+    && ((S.bytes || 0) >= (cost.bytes || 0));
+  if (!canAfford) {
+    const el = document.getElementById(costEl);
+    if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
+    return;
+  }
+  spendChips('common', cost.common || 0);
+  spendChips('uncommon', cost.uncommon || 0);
+  spendChips('rare', cost.rare || 0);
+  spendChips('epic', cost.epic || 0);
+  spendChips('legendary', cost.legendary || 0);
+  spendChips('mythic', cost.mythic || 0);
+  if (cost.bytes) { S.bytes = Math.max(0, (S.bytes || 0) - cost.bytes); syncByteSlot(); }
+  updateInventoryUI();
+  updateHubUI();
+  showUpgradeAnim(cardId, statId, () => {
+    const success = Math.random() < getBloodRushSuccessRate(level);
+    if (success) { Profile.upgrades.bloodRushLevel = level + 1; saveProfile(); checkAchievements(); }
     return success;
   });
 };
@@ -1685,6 +1792,53 @@ function updateHubUI() {
   const canAffordJump = jMaxed || (S.bytes || 0) >= 1;
   const hovJ = o('hov-jump-upg-card');
   if (hovJ) hovJ.classList.toggle('upg-locked', !canAffordJump);
+
+  // Card Slot upgrade
+  const csLvl = Profile.upgrades.cardSlotLevel || 0;
+  const csMaxed = csLvl >= 2;
+  const csBenefits = ['50% chance for 3rd card', '3rd card guaranteed'];
+  ['', 'hov-'].forEach(p => {
+    if (o(`${p}lvl-cardslot`)) o(`${p}lvl-cardslot`).innerText = csLvl;
+    if (o(`${p}cardslot-benefit`)) o(`${p}cardslot-benefit`).innerText = csMaxed ? 'MAXED' : (csBenefits[csLvl] || '--');
+    if (csMaxed) {
+      const el = o(`${p}cardslot-cost-display`);
+      if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
+    } else {
+      renderCostIcons(`${p}cardslot-cost-display`, { mythic: 1 }, 'chips', (r) => chipCount(r));
+    }
+  });
+  const canAffordCs = csMaxed || chipCount('mythic') >= 1;
+  const hovCs = o('hov-cardslot-upg-card');
+  if (hovCs) hovCs.classList.toggle('upg-locked', !canAffordCs);
+
+  // Blood Rush upgrade
+  const brLvl = Profile.upgrades.bloodRushLevel || 0;
+  const brMaxed = brLvl >= 7;
+  const brCost = getBloodRushCost(brLvl);
+  const brRate = Math.round(getBloodRushSuccessRate(brLvl) * 100);
+  ['', 'hov-'].forEach(p => {
+    if (o(`${p}lvl-bloodrush`)) o(`${p}lvl-bloodrush`).innerText = brLvl;
+    if (o(`${p}bloodrush-benefit`)) o(`${p}bloodrush-benefit`).innerText = brMaxed ? 'MAXED' : (BLOOD_RUSH_BENEFITS[brLvl] || '--');
+    if (o(`${p}bloodrush-rate`)) o(`${p}bloodrush-rate`).innerText = brMaxed ? '' : brRate + '%';
+    if (brMaxed) {
+      const el = o(`${p}bloodrush-cost-display`);
+      if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
+    } else {
+      const mixedCost = { ...brCost };
+      renderCostIcons(`${p}bloodrush-cost-display`, mixedCost, 'mixed', (r) => r === null ? (S.bytes || 0) : chipCount(r));
+    }
+  });
+  const canAffordBr = brMaxed || (
+    chipCount('common') >= (brCost.common || 0) &&
+    chipCount('uncommon') >= (brCost.uncommon || 0) &&
+    chipCount('rare') >= (brCost.rare || 0) &&
+    chipCount('epic') >= (brCost.epic || 0) &&
+    chipCount('legendary') >= (brCost.legendary || 0) &&
+    chipCount('mythic') >= (brCost.mythic || 0) &&
+    (S.bytes || 0) >= (brCost.bytes || 0)
+  );
+  const hovBr = o('hov-bloodrush-upg-card');
+  if (hovBr) hovBr.classList.toggle('upg-locked', !canAffordBr);
 }
 
 window.toggleHubOverlay = function () {
@@ -1739,6 +1893,8 @@ const HERO_WALK_FRAMES = {
   north: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABnklEQVR4nO1WPUvDUBQ9llY0k3WxIai0Qgc7COngVBARkYod3Vy76T/p3lUEBwf9AVo6SNHFIhbcLPgRHh2kFYdaRK5Lk9pYLfcmtYgeCIQb3nnn3dx77gP+8dcx4mEt+cElFUCGHsOUbgAAasqCpaoivoB0czfaMXdWBiLAVwS9LK4py7OAoWdAJKBdcH1jgxLwXaWzu0DShv0qncXJFUAAYJopAJ0i9OIHbAH25l+hXD5l8bLbcL7+hLBq4DDcWWqpKrbHZhDVQigz+UQ+ENVCsNRNV6yuTwCqweZid8HSyjI28qWe8bnVOFsAF2Q/hh6j0sIz7UYu6WMcgnnAElDIZqiSSzubNc9eCQBVcmkqZDMDFwC4Tlvcqnk6vXgW2CN59EqTUogE9LwLHCeuATgGxcqCL9NQC04D8Gc890NXF9jvd+tv4jrgZMBJv2mmHP839BiKFxXsZ06cbxwRol/gTvXmUQKzt4sSKp4VW6oK9zCKtOJ4uH9E8jwMjIs0sPDJ9ZKTa7QTzNNLs/UjTthTzEFgz3bE4aHtiL8P7x2DpGQx+kBRAAAAAElFTkSuQmCC', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABt0lEQVR4nO2WO08CQRRGD0aFrDExJD4IioFoSwGNRq1ssNDCWBkxVnbEWNjYWfkrLIxUlpYapaCWgkQTjYKPbNaloPTVjIWwICJkZiAW+lWzd3fvPZn7mIF//XW5NP4VrfClCiD8vhCDPj8AtmViWjklfx2qwWtVstXuSlsAWqpOnZ9ty9QG+PUdUAIoFVxTW7sAGlW6dBeotGGjSm87gACIRGbqvsxk0tI+pVOwEgwT6q/MgUwmrdUNSkU47TZZHXY7gU0rx9TlPQlPACSHkVYbjhYLzvpcFJV8SAMk81lnfe8dACDhCbB/cMPuzp00gNYkLPf+1myeq50rxi+GQO+EbSqR8AQEn3kWgEjFbfH68lZtk5J0CoJGF6frC1w/7gHwcGJx1HMo60YdoKy1sQ0Atl2LTMwtE/XGlCFk9SUFybNjkYrbIuqNKaVAqQjLFxLTyhHcnATgyX2t4ko6BQJwrmI/gLVtEAm/L0S96xhUWlIWQrkIq3fhxr6ta285gGnlvgV4Dz8zf9HrPMseTDJF6AJE6cj9EbDq25YD1DoWAN1ZA8PokwqqA/ANZmTYEIUlDS+/rQ/sfIeOyUdqiAAAAABJRU5ErkJggg==', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABlUlEQVR4nO2WQUsCQRTH/0alhJcOYsOcmjolFHgr8BAEQsGepKs3v0AfolPQV7Cgax/APISENw0DDwUrWMsiHioiIyReB91BV1Fn1i0i/zCHfezM++3b9948YKb/roCHvTSNs3QBiDOBKOMAgIZtwbJNrfPmdJ271bW5o+ILwFQ172Vzw7Y8A/x6BLQAugk31uYXwKhMV64CnTIcl+lKZ6oCEGcC25sJmM1OyEVEoFgpIMq4Vj9Q/gW7oTBC92X5bDZNWLaJjedXHH2qB1S5DJftFwBAqVYZtC8tKANoVcGqhqOpAYxyXmu1PcFMIupdF8YV5WJVctt9BchnDMpnDEKnIuhm640c+93Jvu8A2AmG6dTYIwCUi1WpfvD1Y1/vSDrLrtwSZ4JSyTRxJrQA/txlJIeRVDKN9egaLNuUXdF5x08AAEA8ntDZ5hmAAMg5cJh6RrWJo6DUijkT8sI5fzjDYvkdOBx8R2U28DSSBbMRAECpVOgD8FOyBD+K7WE9QLkUVZMw4KzL42s8PrX6bD1rpon1DU0anX8mD2blAAAAAElFTkSuQmCC', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABYUlEQVR4nO2XP0vDQBjGn4rQDo6iHAcONznfKOQLOPZjCC6tm5/BQZwUuvUTdHJzELrZQV0tKITQpSJkaEB4HZKDJk1q3/uDg/1BliPv3cN7T567AFv+Oy2HWvIxl60AkkLhUEgAwCyJESdTq/l2bBevUoxVuxJEgFd2XYpnSews4M87YCWgMNyvY6EErHO6y2e9GVIoQu72uocN14TUz1ro5UJKOQAAcTIlMLtg5YG6HDBiuHgzIQBoHQHMrWAL6M3fSu2fTB7R/fzGdVfjrPPFnY4toLS/Zu+faM5e2FZAI7eDB6T7B+w6pyg2jLMU74sUw9Ezu9ZbB+4vjvFydcqu89KB884R7i5frWrZQVQ3eLP4wEl7D+MsBUIHkRRqJQekUGZxNk4eaEi/sEG0zPKFpC6efQsgraOVA6jp3RACAOTRW8V4ojgLgkFSKNI6IuTdoDV3g42x/i/wMMcWAMAPjxByk0/niFoAAAAASUVORK5CYII='],
 };
 const heroImgs = {};
+const gemImg = new Image(); gemImg.src = 'pix.png';
+const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 (function () {
   Object.keys(HERO_SPRITE_DATA).forEach(dir => {
     const img = new Image(); img.src = HERO_SPRITE_DATA[dir]; heroImgs[dir] = img;
@@ -2175,6 +2331,24 @@ const SFX = {
     this.play(2200, 0.04, 0.08, 'sawtooth', -2000);
     setTimeout(() => this.play(1800, 0.06, 0.06, 'sawtooth', -1600), 30);
     setTimeout(() => this.play(400, 0.10, 0.04, 'sine', -300), 70);
+  },
+  flare() {
+    // Launch thump + rising whistle
+    this.play(120, 0.12, 0.10, 'sawtooth', -60);
+    setTimeout(() => this.play(300, 0.08, 0.06, 'sine', 800), 60);
+    setTimeout(() => this.play(900, 0.18, 0.05, 'sine', 600), 130);
+    setTimeout(() => this.play(1400, 0.22, 0.04, 'sine', -200), 260);
+  },
+  hack() {
+    // Electronic zap: high buzz + descending glitch tone
+    this.play(1200, 0.06, 0.07, 'square', -400);
+    setTimeout(() => this.play(800, 0.10, 0.06, 'sawtooth', -600), 40);
+    setTimeout(() => this.play(440, 0.14, 0.07, 'sine', -300), 100);
+  },
+  hackFail() {
+    // Fizzle/miss sound
+    this.play(300, 0.08, 0.05, 'sawtooth', -200);
+    setTimeout(() => this.play(180, 0.06, 0.05, 'square', -100), 80);
   },
 
   // ---- Slot machine sounds -------------------------------------
@@ -2697,7 +2871,6 @@ function isAdjacentToEnemy(unit) {
 
 function getCurrentWeapon(unit) {
   if (!unit) return 'bullet';
-  if (isAdjacentToEnemy(unit)) return 'melee';
   return unit.weapon || 'bullet';
 }
 
@@ -2818,14 +2991,16 @@ function initAdventure() {
     { w: 4, h: 4 }, // Floor 9: 16 rooms
   ];
 
-  const configIdx = Math.min(S.floor - 1, floorProgression.length - 1);
+  // At random string of 1-5 rooms (indices 0-4) forever
+  const configIdx = Math.floor(Math.random() * 5);
   S.gridW = floorProgression[configIdx].w;
   S.gridH = floorProgression[configIdx].h;
 
   ADV_MAP_COLS = 13 * S.gridW + 2;
   ADV_MAP_ROWS = 11 * S.gridH + 2;
-  // Early floors are smaller: floor1 = -4, floor2 = -2, floor3+ = 0
-  const mapShrink = Math.max(0, (3 - S.floor) * 2);
+
+  // Apply a random shrink so maps variation keeps happening (from 0 to 4 shrunk)
+  const mapShrink = Math.floor(Math.random() * 3) * 2;
   ADV_MAP_COLS -= mapShrink;
   ADV_MAP_ROWS -= mapShrink;
   COLS = ADV_MAP_COLS;
@@ -2870,6 +3045,10 @@ function initAdventure() {
   S.kills = 0;
   S.explorerChestSpawned = false;
   S.fullMapRevealed = false;
+  S.flareUsed = false;
+  S.flareMode = false;
+  S.flareProjectile = null;
+  S.flareRevealedCells = new Set();
   if (S.floor <= 1) S.runCards = [];
   S.floorBuffs = { melee: 0, armor: 0, chipMul: 1, critBonus: 0 };
   S.pendingSlotPrize = null;
@@ -2913,12 +3092,12 @@ function initAdventure() {
       const bx = r.x + r.w - 2;
       const by = r.y + Math.max(1, Math.floor(r.h / 2));
       S.units.push(mkFirstRoomBoss(eid++, bx, by));
-
-      // Force spawn an Ironbox (Fortress) in the first room for testing
-      const ix = r.x + 2;
-      const iy = r.y + 2;
+      return;
+    } else if (S.floor === 2 && ri === 0) {
+      // Force spawn an Ironbox (Fortress) in the second room alone
+      const ix = r.x + Math.floor(r.w / 2);
+      const iy = r.y + Math.floor(r.h / 2);
       S.units.push(mkUnit(eid++, 1, ix, iy, -1, ENEMY_TYPES[7]));
-
       return;
     } else if (S.floor === 3 && ri === 0) {
       const bx = r.x + r.w - 2;
@@ -2997,6 +3176,8 @@ function initAdventure() {
 
   // Apply temporary run card bonuses (picked between rooms)
   applyRunCardBuffs();
+  S.hackAmmo = 2 + (S.floorBuffs.hackAmmoBonus || 0);
+  S.hackAmmoMax = S.hackAmmo;
 
   // Start tutorial on first floor only
   if (S.floor === 1 && !Profile.tutorialDone) {
@@ -3039,11 +3220,8 @@ function generateDungeon() {
     let h = Math.max(3, s.sh - 2);
 
     // Jeigu sektorius per didelis (pvz 1 lygyje gaunasi belekokio ilgio),
-
     if (w > 13) w = 8 + Math.floor(Math.random() * 4); // nuo 8 iki 11
     if (h > 10) h = 6 + Math.floor(Math.random() * 4); // nuo 6 iki 9
-
-
 
     const x = s.x0 + Math.floor((s.sw - w) / 2);
     const y = s.y0 + Math.floor((s.sh - h) / 2);
@@ -3266,7 +3444,7 @@ const CHIP_PALETTES = {
 };
 
 // ---- Traditional vertical-scroll slot reel system --------------
-const REEL_TAPE = ['common', 'uncommon', 'rare', 'empty', 'epic', 'common', 'legendary', 'uncommon', 'rare', 'common'];
+const REEL_TAPE = ['common', 'uncommon', 'rare', 'empty', 'epic', 'common', 'legendary', 'uncommon', 'rare', 'gem', 'ronke'];
 const CHIP_SLOT_H = 100;  // px per chip slot on the reel tape
 const REEL_TAPE_LEN = REEL_TAPE.length * CHIP_SLOT_H; // 500 px full loop
 const REEL_VISIBLE = 3;    // chips visible at once
@@ -3292,6 +3470,54 @@ let slotSpinInterval = null;
 const winSpin = { active: false, angle: 0, mask: new Set() }; // 3D win spin state
 
 function drawChipFlat(ctx, x, y, rarity, glowing) {
+  if (rarity === 'ronke') {
+    const s = CHIP_ART_SIZE;
+    ctx.save();
+    // Draw a coin face
+    const cx2 = x + s / 2, cy2 = y + s / 2, cr = s * 0.42;
+    if (glowing) { ctx.shadowColor = '#44aaff'; ctx.shadowBlur = 18; }
+    ctx.globalAlpha = glowing ? 1 : 0.88;
+    ctx.fillStyle = glowing ? '#1a8fff' : '#0d5faa';
+    ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = glowing ? '#88ddff' : '#3399cc';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI * 2); ctx.stroke();
+    // Draw ronke image clipped to coin
+    if (ronkeImg.complete && ronkeImg.naturalWidth > 0) {
+      const iw = cr * 1.5, ih = cr * 1.5;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr - 2, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(ronkeImg, cx2 - iw / 2, cy2 - ih / 2, iw, ih);
+      ctx.restore();
+    }
+    if (glowing) {
+      const pulse = 0.3 + 0.3 * Math.sin(performance.now() / 200);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#44aaff';
+      ctx.shadowBlur = 24;
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    ctx.restore();
+    return;
+  }
+  if (rarity === 'gem') {
+    const s = CHIP_ART_SIZE;
+    ctx.save();
+    if (glowing) { ctx.shadowColor = '#44ff66'; ctx.shadowBlur = 18; }
+    ctx.globalAlpha = glowing ? 1 : 0.88;
+    ctx.drawImage(gemImg, x + (s - 72) / 2, y + (s - 62) / 2, 72, 62);
+    if (glowing) {
+      const pulse = 0.4 + 0.4 * Math.sin(performance.now() / 200);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#44ff66';
+      ctx.shadowBlur = 24;
+      ctx.drawImage(gemImg, x + (s - 72) / 2, y + (s - 62) / 2, 72, 62);
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    ctx.restore();
+    return;
+  }
   if (rarity === 'empty') {
     const s = CHIP_ART_SIZE;
     ctx.save();
@@ -3582,6 +3808,18 @@ window.claimSlotPrize = function () {
   if (prize.rarity === 'empty') {
     spawnDmgNumber(ch.x, ch.y, 'EMPTY', '#555566', 20, 'miss');
     logEvent('Chest was empty.', 'info');
+  } else if (prize.rarity === 'gem') {
+    addToInventory('gem', null, prize.val);
+    spawnHit(ch.x, ch.y, '#44ff66', 30);
+    spawnDmgNumber(ch.x, ch.y, `+${prize.val} PIXEL!`, '#44ff66', 28, 'crit');
+    S.shake = Math.max(S.shake, 20);
+    logEvent(`+${prize.val} PIXEL — JACKPOT!`, 'loot');
+  } else if (prize.rarity === 'ronke') {
+    addToInventory('ronke', null, prize.val);
+    spawnHit(ch.x, ch.y, '#44aaff', 30);
+    spawnDmgNumber(ch.x, ch.y, `+${prize.val} RONKE!`, '#44aaff', 28, 'crit');
+    S.shake = Math.max(S.shake, 20);
+    logEvent(`+${prize.val} RONKE — JACKPOT!`, 'loot');
   } else {
     const gain = prize.val;
     addToInventory('chip', prize.rarity, gain);
@@ -3692,12 +3930,12 @@ function syncXpTokenSlot() {
 }
 
 const INV_ITEM_NAMES = {
-  byte: 'BYTE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN',
+  byte: 'BYTE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'RONKE',
   chip_common: 'COMMON CHIP', chip_uncommon: 'UNCOMMON CHIP',
   chip_rare: 'RARE CHIP', chip_epic: 'EPIC CHIP', chip_legendary: 'LEGENDARY CHIP',
 };
 const INV_ITEM_ICONS = {
-  byte: '&#9711;', fragment: '&#9830;', xptoken: '&#9733;',
+  byte: '&#9711;', fragment: '&#9830;', xptoken: '&#9733;', gem: '&#9670;', ronke: '&#128049;',
   chip_common: '&#11041;', chip_uncommon: '&#11041;', chip_rare: '&#11041;',
   chip_epic: '&#11041;', chip_legendary: '&#11041;',
 };
@@ -3729,15 +3967,21 @@ function updateInventoryUI() {
       const col = item.type === 'byte' ? '#ffdd00'
         : item.type === 'fragment' ? '#ff8800'
           : item.type === 'xptoken' ? '#00ffcc'
-            : (RARITY_COLOR[item.rarity] || '#aaaaaa');
+            : item.type === 'gem' ? '#44ff66'
+              : item.type === 'ronke' ? '#44aaff'
+                : (RARITY_COLOR[item.rarity] || '#aaaaaa');
       const label = item.type === 'byte' ? 'BYTE'
         : item.type === 'fragment' ? 'FRAGMENT'
           : item.type === 'xptoken' ? 'XP TOKEN'
-            : item.rarity.toUpperCase() + ' CHIP';
+            : item.type === 'gem' ? 'PIXEL'
+              : item.type === 'ronke' ? 'RONKE'
+                : item.rarity.toUpperCase() + ' CHIP';
       const name = item.type === 'byte' ? 'Byte'
         : item.type === 'fragment' ? 'Chip Fragment'
           : item.type === 'xptoken' ? 'XP Token'
-            : `${item.rarity} Chip`;
+            : item.type === 'gem' ? 'Pixel'
+              : item.type === 'ronke' ? 'Ronke'
+                : `${item.rarity} Chip`;
 
       slot.className = 'inv-slot has-item';
       slot.style.borderColor = col + '99';
@@ -3762,6 +4006,16 @@ function updateInventoryUI() {
         slot.addEventListener('mouseenter', () => { cv._hovered = true; });
         slot.addEventListener('mouseleave', () => { cv._hovered = false; });
         slot.appendChild(cv);
+      } else if (item.type === 'ronke') {
+        const ri = document.createElement('img');
+        ri.src = 'ronke.png';
+        ri.style.cssText = 'width:56px;height:56px;object-fit:contain;display:block;margin:auto;margin-top:8px;filter:drop-shadow(0 0 6px #44aaff)';
+        slot.appendChild(ri);
+      } else if (item.type === 'gem') {
+        const gi = document.createElement('img');
+        gi.src = 'pix.png';
+        gi.style.cssText = 'width:56px;height:56px;object-fit:contain;display:block;margin:auto;margin-top:8px;image-rendering:pixelated;filter:drop-shadow(0 0 6px #44ff66)';
+        slot.appendChild(gi);
       } else if (item.type === 'xptoken') {
         const cv = document.createElement('canvas');
         cv.width = 96; cv.height = 96;
@@ -3798,12 +4052,30 @@ function updateInventoryUI() {
       // Hover info bar
       slot.addEventListener('mouseenter', () => {
         const info = el('inv-info-bar');
-        if (info) { info.textContent = `${name.toUpperCase()} x${item.qty}`; info.style.color = col; }
+        if (info) {
+          if (item.type === 'byte') {
+            info.innerHTML = `${name.toUpperCase()} x${item.qty} &nbsp;<span style="color:#aaa;font-size:7px;">(CLICK TO USE: +5⚡)</span>`;
+          } else if (item.type === 'gem') {
+            info.innerHTML = `${name.toUpperCase()} x${item.qty} &nbsp;<span style="color:#aaa;font-size:7px;">(+15⚡ ON PICKUP)</span>`;
+          } else {
+            info.textContent = `${name.toUpperCase()} x${item.qty}`;
+          }
+          info.style.color = col;
+        }
       });
       slot.addEventListener('mouseleave', () => {
         const info = el('inv-info-bar');
         if (info) { info.textContent = 'hover a slot'; info.style.color = ''; }
       });
+
+      // Click interaction
+      if (item.type === 'byte') {
+        slot.addEventListener('click', () => {
+          if (typeof window.useByteForEnergy === 'function') {
+            window.useByteForEnergy();
+          }
+        });
+      }
     } else {
       slot.className = 'inv-slot empty';
     }
@@ -3823,6 +4095,40 @@ const CHIP_BACK_PADS = [
 ];
 
 function drawChipBack(ctx, x, y, rarity) {
+  if (rarity === 'ronke') {
+    const s = CHIP_ART_SIZE;
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = '#001122';
+    ctx.fillRect(x, y, s, s);
+    const cx2 = x + s / 2, cy2 = y + s / 2, cr = s * 0.42;
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#1a8fff';
+    ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.4;
+    if (ronkeImg.complete && ronkeImg.naturalWidth > 0) {
+      const iw = cr * 1.5, ih = cr * 1.5;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr - 2, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(ronkeImg, cx2 - iw / 2, cy2 - ih / 2, iw, ih);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
+  }
+  if (rarity === 'gem') {
+    const s = CHIP_ART_SIZE;
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = '#002211';
+    ctx.fillRect(x, y, s, s);
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(gemImg, x + (s - 72) / 2, y + (s - 62) / 2, 72, 62);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
+  }
   const pal = CHIP_PALETTES[rarity] || CHIP_PALETTES.common;
   const rows = CHIP_ART.length, cols = CHIP_ART[0].length;
   const px = CHIP_PX;
@@ -4259,6 +4565,7 @@ function isVisible(x, y) {
   if (gameMode !== 'adventure') return true;
   const hero = S.units.find(u => u.team === 0 && u.alive);
   if (hero && Math.hypot(x - hero.x, y - hero.y) <= FOG_RADIUS) return true;
+  if (S.flareRevealedCells && S.flareRevealedCells.has(x + ',' + y)) return true;
 
   // Also visible if within bullet light radius (animated position)
   if (S.bullets) {
@@ -4923,15 +5230,16 @@ function drawWeaponHUD() {
   const pad = 14;
   const by = ADV_CANVAS_H - pad - 26;
 
-  const ICONS = { bullet: 'PISTOL', laser: 'LASER', heavy: 'HEAVY', shotgun: 'SHOTGUN', melee: 'MELEE' };
-  const COLORS = { bullet: '#aaccff', laser: '#88ffff', heavy: '#ffaa44', shotgun: '#ffdd88', melee: '#ff6688' };
-  const GLOWS = { bullet: '#4488ff', laser: '#00ffff', heavy: '#ff8800', shotgun: '#ffcc00', melee: '#ff2244' };
+  const ICONS = { bullet: 'PISTOL', laser: 'LASER', heavy: 'HEAVY', shotgun: 'SHOTGUN', ronke: 'RONKE' };
+  const COLORS = { bullet: '#aaccff', laser: '#88ffff', heavy: '#ffaa44', shotgun: '#ffdd88', ronke: '#44aaff' };
+  const GLOWS = { bullet: '#4488ff', laser: '#00ffff', heavy: '#ff8800', shotgun: '#ffcc00', ronke: '#1a8fff' };
 
   let ammoStr = '';
   if (wep === 'laser') ammoStr = `  ${hero.laserAmmo}/${MAX_LASER}`;
   else if (wep === 'heavy') ammoStr = `  ${hero.heavyAmmo}/${MAX_HEAVY}`;
   else if (wep === 'shotgun') ammoStr = `  ${hero.shotgunAmmo}/${MAX_SHOTGUN}`;
   else if (wep === 'bullet') ammoStr = `  ${hero.ammo}/${hero.maxAmmo}`;
+  else if (wep === 'ronke') ammoStr = `  ${S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0}`;
 
   ctx.save();
   ctx.font = 'bold 13px "Courier New", monospace';
@@ -5180,6 +5488,159 @@ function drawChests() {
   });
 }
 
+// ---- FLARE skill -------------------------------------------------------
+
+function updateFlareSlot() {
+  const slot = document.getElementById('p1-sk-flare');
+  if (!slot) return;
+  const cd = slot.querySelector('.sk-cd');
+  const used = S.flareUsed || false;
+  const mode = S.flareMode || false;
+  slot.classList.toggle('sk-used', used);
+  slot.classList.toggle('sk-active', mode);
+  if (cd) {
+    if (used) cd.textContent = 'USED';
+    else if (mode) cd.textContent = 'AIM';
+    else cd.textContent = 'READY';
+  }
+}
+
+function updateHackSlot() { updateSkillBar(0); }
+
+function fireFlareStraight(dx, dy) {
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+  S.flareMode = false;
+  S.flareUsed = true;
+  updateFlareSlot();
+
+  // Build path: fly in dx/dy direction, stop at walls or map edge
+  const path = [];
+  let cx = hero.x, cy = hero.y;
+  while (true) {
+    const nx = cx + dx, ny = cy + dy;
+    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) {
+      // Include the wall cell itself so it's revealed too
+      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) path.push({ x: nx, y: ny });
+      break;
+    }
+    path.push({ x: cx, y: cy });
+    cx = nx; cy = ny;
+  }
+
+  const stepMs = 45; // ms per cell
+  const fp = {
+    path,
+    step: 0,
+    startTime: performance.now(),
+    stepMs,
+    dx, dy,
+  };
+  S.flareProjectile = fp;
+
+  SFX.flare();
+  spawnDmgNumber(hero.x, hero.y, 'FLARE!', '#ffaa00', 16, 'crit');
+
+  const FLARE_RADIUS = 1;
+  function revealFlareCell(x, y) {
+    const now = performance.now();
+    for (let dy2 = -FLARE_RADIUS; dy2 <= FLARE_RADIUS; dy2++)
+      for (let dx2 = -FLARE_RADIUS; dx2 <= FLARE_RADIUS; dx2++) {
+        const nx = x + dx2, ny = y + dy2;
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+        if (!S.fog[ny][nx]) S.fogReveal[ny][nx] = now;
+        S.fog[ny][nx] = true;
+        S.flareRevealedCells.add(nx + ',' + ny);
+      }
+  }
+
+  function stepReveal(i) {
+    if (i >= path.length) {
+      S.flareProjectile = null;
+      checkExplorationComplete();
+      updateExplorationTracker();
+      return;
+    }
+    const { x, y } = path[i];
+    revealFlareCell(x, y);
+    S.flareProjectile.step = i;
+    setTimeout(() => stepReveal(i + 1), stepMs);
+  }
+  stepReveal(0);
+}
+
+function drawFlareProjectile() {
+  if (!S.flareProjectile) return;
+  const fp = S.flareProjectile;
+  const { path, step } = fp;
+  if (!path || step >= path.length) return;
+
+  const now = performance.now();
+  const { x, y } = path[step];
+  const pulse = 0.85 + 0.15 * Math.sin(now * 0.025);
+
+  const px = (x + 0.5) * CELL;
+  const py = (y + 0.5) * CELL;
+
+  ctx.save();
+  ctx.shadowColor = '#ffaa00';
+  ctx.shadowBlur = 28 * pulse;
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffcc00';
+  ctx.shadowBlur = 14;
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill();
+
+  // Trail along path
+  for (let i = 1; i <= Math.min(6, step); i++) {
+    const tp = path[step - i];
+    if (!tp) break;
+    const tpx = (tp.x + 0.5) * CELL;
+    const tpy = (tp.y + 0.5) * CELL;
+    ctx.globalAlpha = (1 - i / 7) * 0.5;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath(); ctx.arc(tpx, tpy, Math.max(0.5, 5 - i * 0.7), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawFlareAimIndicator() {
+  if (!S.flareMode || gameMode !== 'adventure') return;
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+  const t = performance.now() / 1000;
+  const pulse = Math.sin(t * 6) * 0.3 + 0.7;
+  const dirs = [
+    { dx: 0, dy: -1, key: 'W' }, { dx: 0, dy: 1, key: 'S' },
+    { dx: -1, dy: 0, key: 'A' }, { dx: 1, dy: 0, key: 'D' },
+  ];
+  dirs.forEach(({ dx, dy, key }) => {
+    // Show first 3 cells in each direction
+    for (let r = 1; r <= 3; r++) {
+      const ax = hero.x + dx * r, ay = hero.y + dy * r;
+      if (ax < 0 || ax >= COLS || ay < 0 || ay >= ROWS) break;
+      const cx2 = (ax + 0.5) * CELL, cy2 = (ay + 0.5) * CELL;
+      ctx.save();
+      ctx.globalAlpha = pulse * (0.6 - r * 0.15);
+      ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2;
+      ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 10;
+      ctx.strokeRect(cx2 - CELL * 0.38, cy2 - CELL * 0.38, CELL * 0.76, CELL * 0.76);
+      if (r === 1) {
+        ctx.globalAlpha = pulse * 0.9;
+        ctx.fillStyle = '#ffaa00';
+        ctx.shadowBlur = 8;
+        ctx.font = `bold ${Math.round(CELL * 0.3)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(key, cx2, cy2);
+      }
+      ctx.restore();
+    }
+  });
+}
+
+
 function updateJumpSlot() {
   const slot = document.getElementById('p1-sk-jump');
   if (!slot) return;
@@ -5355,12 +5816,13 @@ function drawTeleports() {
 }
 
 function spawnLoot(x, y) {
-  // One drop type max per kill - exclusive roll
-  // 30% byte | 20% fragment | 10% xptoken | 40% nothing
+  // gem 0.5% | ronke 50% (test) | byte 22% | fragment 18% | xptoken 9% | nothing ~0.5%
   const roll = Math.random();
-  if (roll < 0.30) S.loot.push({ x, y, type: 'byte', val: 1, collected: false, age: 0 });
-  else if (roll < 0.50) S.loot.push({ x, y, type: 'fragment', val: 1, collected: false, age: 0 });
-  else if (roll < 0.60) S.loot.push({ x, y, type: 'xptoken', val: 1, collected: false, age: 0 });
+  if (roll < 0.005) S.loot.push({ x, y, type: 'gem', val: 1, collected: false, age: 0 });
+  else if (roll < 0.505) S.loot.push({ x, y, type: 'ronke', val: 1, collected: false, age: 0 });
+  else if (roll < 0.725) S.loot.push({ x, y, type: 'byte', val: 1, collected: false, age: 0 });
+  else if (roll < 0.905) S.loot.push({ x, y, type: 'fragment', val: 1, collected: false, age: 0 });
+  else if (roll < 0.995) S.loot.push({ x, y, type: 'xptoken', val: 1, collected: false, age: 0 });
 }
 
 function checkFragmentCombine(x, y) {
@@ -5385,7 +5847,7 @@ function drawLoot() {
   const now = performance.now();
   S.loot.forEach(l => {
     if (l.collected) return;
-    if (gameMode === 'adventure' && !isVisible(l.x, l.y) && !(S.fullMapRevealed && S.fog?.[l.y]?.[l.x])) return;
+    if (gameMode === 'adventure' && !isVisible(l.x, l.y) && !S.fullMapRevealed) return;
     const cx = (l.x + 0.5) * CELL, cy = (l.y + 0.5) * CELL;
     const float = Math.sin(now * 0.005) * 4;
     ctx.save();
@@ -5422,6 +5884,44 @@ function drawLoot() {
       ctx.translate(cx, cy + float);
       drawCubeFragment(ctx, 5, t, pulse);
       ctx.restore();
+    } else if (l.type === 'ronke') {
+      const spinPhase = now * 0.0022 + l.x * 0.7 + l.y * 0.5;
+      const cosA = Math.cos(spinPhase);
+      const spinX = Math.abs(cosA);
+      const coinR = 18;
+      const xR = Math.max(0.8, coinR * spinX);
+      const yR = coinR;
+      const bright = spinX > 0.4;
+      ctx.save();
+      ctx.translate(cx, cy + float);
+      ctx.shadowColor = '#44aaff'; ctx.shadowBlur = bright ? 12 : 5;
+      // Coin body
+      ctx.fillStyle = bright ? '#1a8fff' : '#0d5faa';
+      ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.fill();
+      // Rim highlight
+      ctx.strokeStyle = bright ? '#88ddff' : '#3399cc';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.stroke();
+      // Ronke image in center (only when coin faces forward enough)
+      if (spinX > 0.35 && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
+        const imgW = xR * 1.6;
+        const imgH = yR * 1.6;
+        ctx.save();
+        ctx.beginPath(); ctx.ellipse(0, 0, xR - 1, yR - 1, 0, 0, Math.PI * 2); ctx.clip();
+        ctx.globalAlpha = Math.min(1, (spinX - 0.35) / 0.3);
+        ctx.drawImage(ronkeImg, -imgW / 2, -imgH / 2, imgW, imgH);
+        ctx.restore();
+      }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    } else if (l.type === 'gem') {
+      const gemPulse = 0.7 + 0.3 * Math.sin(now * 0.004 + l.x * 1.1 + l.y * 0.7);
+      ctx.save();
+      ctx.translate(cx, cy + float);
+      ctx.shadowColor = '#44ff66'; ctx.shadowBlur = 12 * gemPulse;
+      const gw = 42, gh = 37;
+      ctx.drawImage(gemImg, -gw / 2, -gh / 2, gw, gh);
+      ctx.restore();
     } else if (l.type === 'xptoken') {
       // XP Token - 3D spinning pixel-art "XP" (same as inventory animation)
       const phase = l.x * 0.9 + l.y * 0.4;
@@ -5456,16 +5956,19 @@ function animateEnergyGain(fromEnergy, toEnergy) {
 
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
   const gain = Math.round(toEnergy - fromEnergy);
-  if (gain <= 0) return;
+  if (gain <= 0) { S.energy = toEnergy; updateEnergyHud(); return; }
+
+  S.energyAnimating = true;
+  S.energy = fromEnergy; // hold at old value during animation
 
   // Current fill snaps to fromEnergy position
   const fromPct = Math.min(fromEnergy / effectiveMax, 1) * 100;
   const toPct = Math.min(toEnergy / effectiveMax, 1) * 100;
-  const gainPct = toPct - fromPct; // visible bar width to fill
+  const gainPct = toPct - fromPct;
 
   fill.style.transition = 'none';
   fill.style.width = fromPct + '%';
-  void fill.offsetWidth; // force reflow
+  void fill.offsetWidth;
   if (val) val.textContent = fromEnergy;
 
   // Gray "incoming" fill — sits right after the current fill
@@ -5481,24 +5984,25 @@ function animateEnergyGain(fromEnergy, toEnergy) {
 
   let step = 0;
   const stepPct = gainPct / gain; // bar % per 1 energy unit
-  const stepMs = 1000;
+  const stepMs = 30;
 
   const interval = setInterval(() => {
     step++;
+    S.energy = fromEnergy + step;
     gainFill.style.width = (stepPct * step) + '%';
-    if (val) val.textContent = fromEnergy + step;
-    SFX.cardTick();
+    if (val) val.textContent = S.energy;
 
     if (step >= gain) {
       clearInterval(interval);
-      // Gray is fully filled — now transition to cyan/green
-      gainFill.style.transition = 'background 0.7s ease, box-shadow 0.7s ease';
+      S.energy = toEnergy;
+      gainFill.style.transition = 'background 0.5s ease, box-shadow 0.5s ease';
       gainFill.style.background = 'var(--cyan, #00ffee)';
       gainFill.style.boxShadow = '0 0 6px var(--cyan, #00ffee), 0 0 14px rgba(0,255,238,0.25)';
       setTimeout(() => {
         gainFill.remove();
+        S.energyAnimating = false;
         updateEnergyHud();
-      }, 750);
+      }, 500);
     }
   }, stepMs);
 }
@@ -5551,9 +6055,54 @@ const KEYMAP = {
 
 const PREVENT_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter']);
 
+window.useByteForEnergy = function () {
+  if (gameMode !== 'adventure' || S.dead) return;
+  const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+  if (S.energy >= effectiveMax) {
+    if (typeof spawnDmgNumber === 'function') {
+      const hero = S.units.find(u => u.team === 0 && u.alive);
+      if (hero) spawnDmgNumber(hero.x, hero.y, 'MAX ENERGY', '#cccccc', 12, 'normal');
+    }
+    return;
+  }
+  if ((S.bytes || 0) <= 0) {
+    if (typeof spawnDmgNumber === 'function') {
+      const hero = S.units.find(u => u.team === 0 && u.alive);
+      if (hero) spawnDmgNumber(hero.x, hero.y, 'NO BYTES', '#ff5555', 12, 'normal');
+    }
+    return;
+  }
+  // Deduct 1 Byte
+  S.bytes--;
+  // Sync with global inventory
+  const byteSlotIndex = S.inventory.findIndex(s => s && s.type === 'byte');
+  if (byteSlotIndex !== -1) {
+    S.inventory[byteSlotIndex].qty--;
+    if (S.inventory[byteSlotIndex].qty <= 0) {
+      S.inventory[byteSlotIndex] = null;
+    }
+    saveProfile();
+    if (document.getElementById('inv-overlay')?.classList.contains('active')) {
+      updateInventoryUI();
+    }
+  }
+
+  // Add +5 Energy
+  S.energy = Math.min(effectiveMax, S.energy + 5);
+  updateEnergyHud();
+
+  // Visual/Audio Feedback
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (hero && typeof spawnDmgNumber === 'function') {
+    spawnDmgNumber(hero.x, hero.y, '+5\u26A1', '#00ff88', 16, 'crit');
+  }
+  if (typeof SFX !== 'undefined' && SFX.nanoHeal) SFX.nanoHeal();
+};
+
 document.addEventListener('keydown', e => {
   if (PREVENT_KEYS.has(e.code)) e.preventDefault();
   if (S.pendingSlotPrize) return; // slot machine open - block all input
+  if (document.getElementById('card-picker-overlay')) return; // card picker open - block all input
 
   if (S.pendingTeleportSector) {
     if (e.code === 'Escape') window.cancelTeleportUse();
@@ -5598,15 +6147,45 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  // Flare aim mode direction intercept
+  if (S.flareMode && gameMode === 'adventure') {
+    const fDirMap = {
+      ArrowUp: { dx: 0, dy: -1 }, ArrowDown: { dx: 0, dy: 1 },
+      ArrowLeft: { dx: -1, dy: 0 }, ArrowRight: { dx: 1, dy: 0 },
+      KeyW: { dx: 0, dy: -1 }, KeyS: { dx: 0, dy: 1 },
+      KeyA: { dx: -1, dy: 0 }, KeyD: { dx: 1, dy: 0 },
+    };
+    const fDir = fDirMap[e.code];
+    if (fDir) { e.preventDefault(); fireFlareStraight(fDir.dx, fDir.dy); return; }
+    if (e.code === 'Escape' || e.code === 'KeyF') { S.flareMode = false; updateFlareSlot(); return; }
+  }
+
+  // Flare skill toggle
+  if (e.code === 'KeyF' && gameMode === 'adventure') {
+    if (S.flareUsed) {
+      const hero = S.units.find(u => u.team === 0 && u.alive);
+      if (hero) spawnDmgNumber(hero.x, hero.y, 'USED!', '#ff4444', 12, 'normal');
+      return;
+    }
+    const hero = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+    if (hero && S.clockSide === 0) { S.flareMode = !S.flareMode; updateFlareSlot(); }
+    return;
+  }
+
   if (e.code === 'KeyQ' || (e.code === 'KeyP' && gameMode === 'pvp')) {
     const team = e.code === 'KeyQ' ? 0 : 1;
     if (S.clockSide !== team) return;
     const unit = S.units.find(u => u.id === S.selectedId[team] && u.alive);
-    if (unit && !isAdjacentToEnemy(unit)) {
-      const cycle = ['bullet', 'laser', 'heavy', 'shotgun'];
+    if (unit) {
+      const cycle = ['bullet', 'laser', 'heavy', 'shotgun', 'hack', 'ronke'];
       unit.weapon = cycle[(cycle.indexOf(unit.weapon || 'bullet') + 1) % cycle.length];
       updateSkillBar(team);
     }
+    return;
+  }
+
+  if (e.code === 'KeyH' && gameMode === 'adventure') {
+    window.useByteForEnergy();
     return;
   }
 
@@ -5653,12 +6232,13 @@ document.addEventListener('keydown', e => {
     if (gameMode === 'adventure' && k.team === 0) {
       if (S.jumpMode) return; // jump mode active – block shooting
       const _roomCleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
-      if (_roomCleared && wep !== 'melee') return; // block all shooting when cleared
+      if (_roomCleared) return; // block all shooting when cleared
       let nrgReq = 0;
       if (wep === 'bullet') nrgReq = 2;
       if (wep === 'laser') nrgReq = 7;
       if (wep === 'heavy' || wep === 'shotgun') nrgReq = 4;
-      if (wep !== 'melee' && S.energy < nrgReq) return;
+      if (wep !== 'hack' && S.energy < nrgReq) return;
+      if (wep === 'hack' && (S.hackAmmo || 0) <= 0 && S.energy < 10) return;
     } else {
       if (wep === 'bullet' && unit.ammo <= 0) return;
       if (wep === 'laser' && unit.laserAmmo <= 0) return;
@@ -5706,40 +6286,6 @@ function resolveTick() {
   setActionBadge(0, null); setActionBadge(1, null);
 
 
-  if (gameMode === 'adventure') {
-    const hero = S.units.find(u => u.team === 0 && u.alive);
-    if (hero) {
-      S.units.forEach(enemy => {
-        if (!enemy.alive || enemy.team !== 1) return;
-        if ((enemy.frozenTurns || 0) > 0) return; // frozen – skip attack
-        // Shield bot: skip melee if hero is on shield side
-        if (enemy.utype === 'shield' && enemy.shieldDir) {
-          const dot = (hero.x - enemy.x) * enemy.shieldDir.dx + (hero.y - enemy.y) * enemy.shieldDir.dy;
-          if (dot > 0) return;
-        }
-        const dx = Math.abs(enemy.x - hero.x);
-        const dy = Math.abs(enemy.y - hero.y);
-
-        let canHit = (dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0));
-
-        // --- DATA WORM RULE: NO DIAGONAL MELEE ATTACKS ---
-        if (enemy.utype === 'worm' && dx === 1 && dy === 1) {
-          canHit = false;
-        }
-
-        if (canHit) {
-          const isCrit = Math.random() < 0.15;
-          const dmg = heroDmg((isCrit ? 2 : 1) + (enemy.dmgBonus || 0));
-          S.energy = Math.max(0, S.energy - dmg);
-          hero.hitFlash = 1; hero.hitTimer = 1000;
-          SFX.heroHit();
-          S.shake = Math.max(S.shake, isCrit ? 25 : 15); // INCREASED SHAKE (AAA FEEL)
-          spawnDmgNumber(hero.x, hero.y, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : '#ff2222', isCrit ? 22 : 16, isCrit ? 'crit' : 'normal');
-          spawnMeleeEffect(enemy.x, enemy.y, hero.x - enemy.x, hero.y - enemy.y, enemy.color);
-        }
-      });
-    }
-  }
 
   // Adventure: energy, fog reveal, chests
   if (gameMode === 'adventure') {
@@ -5886,6 +6432,22 @@ function resolveTick() {
             logEvent(`+${l.val} XP TOKEN`, 'xp');
             spawnPickupFX(l.x, l.y, '#00ffcc');
             spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
+          } else if (l.type === 'ronke') {
+            addToInventory('ronke', null, 1);
+            if (S.inventoryOpen) updateInventoryUI();
+            logEvent('RONKE collected', 'loot');
+            spawnPickupFX(l.x, l.y, '#44aaff');
+            spawnDmgNumber(l.x, l.y, 'RONKE!', '#44aaff', 16, 'crit');
+          } else if (l.type === 'gem') {
+            const gemGain = 15;
+            const _oldE = S.energy || 0;
+            S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + gemGain);
+            animateEnergyGain(_oldE, S.energy);
+            addToInventory('gem', null, 1);
+            if (S.inventoryOpen) updateInventoryUI();
+            logEvent(`+${gemGain}⚡ PIXEL collected`, 'loot');
+            spawnPickupFX(l.x, l.y, '#44ff66');
+            spawnDmgNumber(l.x, l.y, `+${gemGain}⚡`, '#44ff88', 16, 'crit');
           } else {
             S.bytes = (S.bytes || 0) + l.val;
             syncByteSlot();
@@ -5916,7 +6478,12 @@ function resolveTick() {
   BGM.updateState();
 
   // Decrement freeze after contact damage has already been checked
-  S.units.forEach(u => { if (u.team === 1 && (u.frozenTurns || 0) > 0) u.frozenTurns--; });
+  S.units.forEach(u => {
+    if (u.team === 1 && (u.frozenTurns || 0) > 0) {
+      u.frozenTurns--;
+      if (u.frozenTurns === 0) u.hacked = false;
+    }
+  });
 
   tickStart = performance.now();
   S.animT = 0;
@@ -5989,7 +6556,7 @@ function applyActions() {
 
 
       let nrgObj = null;
-      if (gameMode === 'adventure' && team === 0 && wep !== 'melee') {
+      if (gameMode === 'adventure' && team === 0 && wep !== 'hack' && wep !== 'ronke') {
         let nrgCost = 2;
         if (wep === 'laser') nrgCost = 7;
         if (wep === 'heavy' || wep === 'shotgun') nrgCost = 4;
@@ -6019,60 +6586,6 @@ function applyActions() {
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
           dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: unit.color, active: true
         });
-      } else if (wep === 'melee') {
-        const mx = unit.x + sd.dx, my = unit.y + sd.dy;
-        const hit = S.units.find(u => {
-          if (!u.alive || u.team === team) return false;
-          if (u.x === mx && u.y === my) return true;
-          if (u.utype === 'worm' && u.trail) return u.trail.some(t => t.x === mx && t.y === my);
-          return false;
-        });
-        spawnMeleeEffect(unit.x, unit.y, sd.dx, sd.dy, unit.color);
-        if (hit) {
-          // Ironbox: block melee almost everywhere, vulnerable only from the front
-          if (hit.utype === 'ironbox' && hit.team !== team) {
-            // A melee attack comes from unit, going in direction sd.
-            // If the sd direction is exactly opposite to Ironbox facing, it hits the front (vulnerable)
-            // Otherwise, it gets blocked by the heavy armor.
-            if (sd.dx !== -hit.facing.dx || sd.dy !== -hit.facing.dy) {
-              spawnDmgNumber(hit.x, hit.y, 'BLOCK', '#8899aa', 14, 'normal');
-              spawnHit(hit.x, hit.y, '#8899aa', 12);
-              SFX.play(150, 0.1, 0.1, 'square'); // Low thunk for block
-              return; // Blocked!
-            }
-          }
-
-          const isCrit = Math.random() < getCritChance();
-          const bonusMelee = (Profile.upgrades?.meleeDmg || 0) + (S.floorBuffs?.melee || 0);
-          const dmg = (isCrit ? 2 : 1) + bonusMelee;
-          stats.hits[team]++;
-          const meleeHeroHit = gameMode === 'adventure' && hit.team === 0;
-          spawnDmgNumber(hit.x, hit.y, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : (meleeHeroHit ? '#ff2222' : '#ff22aa'), 22, isCrit ? 'crit' : 'normal');
-          spawnHit(hit.x, hit.y, hit.color, 24);
-          S.shake = Math.max(S.shake, 15);
-          if (meleeHeroHit) {
-            S.energy = Math.max(0, S.energy - heroDmg(dmg));
-            logEvent(`SYSTEM DAMAGE: Hero took ${heroDmg(dmg)} DMG! (Melee)`, 'dmg');
-            hit.hitFlash = 1; hit.hitTimer = 1000;
-            SFX.heroHit();
-          } else {
-            hit.hp -= dmg; hit.hitFlash = 1;
-            noteBossBurstHit(hit, team);
-            SFX.hit();
-            if (gameMode === 'adventure') {
-              logEvent(isCrit ? `CRIT [${getCombatLabel(hit)}]: -${dmg} HP` : `HIT [${getCombatLabel(hit)}]: -${dmg} HP`, isCrit ? 'crit' : 'info');
-            }
-            if (hit.hp <= 0) {
-              hit.alive = false;
-              spawnDeath(hit.x, hit.y, hit.color);
-              if (gameMode === 'adventure') {
-                logEvent(`Target <span style="color:#ffffff">X</span> destroyed.`, 'warn');
-                spawnLoot(hit.x, hit.y);
-                if (S.bloodStains) S.bloodStains.push(mkBloodStain(hit.x, hit.y));
-              }
-            }
-          }
-        }
       } else if (wep === 'heavy') {
         unit.heavyAmmo--;
         const bx = unit.x + sd.dx, by = unit.y + sd.dy;
@@ -6092,11 +6605,67 @@ function applyActions() {
           if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS) b.active = false;
           S.bullets.push(b);
         }
+      } else if (wep === 'hack') {
+        const hasHackAmmo = (S.hackAmmo || 0) > 0;
+        if (!hasHackAmmo && S.energy < 10) {
+          spawnDmgNumber(unit.x, unit.y, 'NO\u26A1 HACK', '#ff4444', 12, 'normal');
+          return;
+        }
+        SFX.hack();
+        if (hasHackAmmo) {
+          S.hackAmmo = Math.max(0, (S.hackAmmo || 0) - 1);
+        } else {
+          S.energy = Math.max(0, S.energy - 10);
+          spawnDmgNumber(unit.x, unit.y, '-10\u26A1', '#00f5ff', 14, 'normal');
+          updateEnergyHud();
+        }
+        updateHackSlot();
+        const bx = unit.x + sd.dx, by = unit.y + sd.dy;
+        const b = mkBullet(team, bx, by, unit.x, unit.y, sd.dx, sd.dy, '#00ffcc');
+        b.hackBullet = true;
+        if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || isWall(bx, by)) b.active = false;
+        S.bullets.push(b);
+      } else if (wep === 'ronke') {
+        const ronkeSlot = S.inventory?.find(s => s && s.type === 'ronke');
+        const ronkeCount = ronkeSlot?.qty || 0;
+        if (ronkeCount <= 0) {
+          if (!S.ronkeNoAmmoWarned) {
+            S.ronkeNoAmmoWarned = true;
+            spawnDmgNumber(unit.x, unit.y, 'NO RONKE', '#ff4444', 12, 'normal');
+            return;
+          }
+          // fallback: costs 1 energy, no shot
+          if ((S.energy || 0) < 1) {
+            spawnDmgNumber(unit.x, unit.y, 'NO\u26A1', '#ff4444', 12, 'normal');
+            return;
+          }
+          S.energy = Math.max(0, S.energy - 1);
+          spawnDmgNumber(unit.x, unit.y, '-1\u26A1', '#44aaff', 12, 'normal');
+          updateEnergyHud();
+          return;
+        } else {
+          S.ronkeNoAmmoWarned = false;
+          ronkeSlot.qty--;
+          if (ronkeSlot.qty <= 0) {
+            const ri = S.inventory.indexOf(ronkeSlot);
+            if (ri >= 0) S.inventory[ri] = null;
+          }
+          Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
+          if (S.inventoryOpen) updateInventoryUI();
+          updateSkillBar(team);
+        }
+        SFX.laser();
+        const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
+        S.lasers.push({
+          id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
+          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: '#44aaff', active: true
+        });
       } else {
         SFX.shoot();
         unit.ammo--;
         const bx = unit.x + sd.dx, by = unit.y + sd.dy;
         const b = mkBullet(team, bx, by, unit.x, unit.y, sd.dx, sd.dy, unit.color);
+        b.gunBullet = true;
         if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || isWall(bx, by)) b.active = false;
         S.bullets.push(b);
       }
@@ -6151,8 +6720,8 @@ function detectCollisions() {
       }
       if (hitFinal || hitMid || hitPrev || hitMidPrev || hitWormBody) {
         b.active = false;
-        // Shield bot: block bullets from shield side
-        if (u.utype === 'shield' && u.shieldDir && u.team !== b.owner) {
+        // Shield bot: block bullets from shield side (hack wave bypasses)
+        if (!b.hackBullet && u.utype === 'shield' && u.shieldDir && u.team !== b.owner) {
           const dot = b.dx * u.shieldDir.dx + b.dy * u.shieldDir.dy;
           if (dot < 0) {
             spawnDmgNumber(u.x, u.y, 'BLOCKED', '#44aaff', 13, 'normal');
@@ -6160,19 +6729,33 @@ function detectCollisions() {
             return;
           }
         }
-        // Ironbox: block bullets from anywhere except the front
-        if (u.utype === 'ironbox' && u.team !== b.owner) {
-          // b.dx, b.dy is the direction the bullet is traveling.
-          // To hit the vulnerable front, the bullet must travel exactly opposite to the Ironbox's facing direction.
+        // Ironbox: block bullets from anywhere except the front (hack wave bypasses)
+        if (!b.hackBullet && u.utype === 'ironbox' && u.team !== b.owner) {
           if (b.dx !== -u.facing.dx || b.dy !== -u.facing.dy) {
             spawnDmgNumber(u.x, u.y, 'BLOCK', '#8899aa', 14, 'normal');
             spawnHit(u.x, u.y, '#8899aa', 12);
-            SFX.play(150, 0.1, 0.1, 'square'); // Low thunk for block
+            SFX.play(150, 0.1, 0.1, 'square');
             return;
           }
         }
 
-        if (Math.random() < MISS_CHANCE) {
+        // Hack wave: no damage, just 70% freeze
+        if (b.hackBullet) {
+          b.active = false;
+          if (u.team !== 0) {
+            spawnHit(u.x, u.y, '#00ffcc', 14);
+            if (Math.random() < 0.70) {
+              const _freezeTurns = 3 + (S.floorBuffs?.hackFreezeBonus || 0);
+              u.frozenTurns = Math.max(u.frozenTurns || 0, _freezeTurns);
+              u.hacked = true;
+              SFX.hack();
+              spawnDmgNumber(u.x, u.y, 'Hack', '#00ffcc', 15, 'crit');
+            } else {
+              SFX.hackFail();
+              spawnDmgNumber(u.x, u.y, 'RESIST', '#ff4488', 12, 'normal');
+            }
+          }
+        } else if (Math.random() < MISS_CHANCE) {
           const isHero = gameMode === 'adventure' && u.team === 0;
           logEvent(isHero ? `EVADED attack!` : `Shot missed!`, isHero ? 'loot' : 'warn');
           spawnDmgNumber(u.x, u.y, 'MISS', '#88bbff', 13, 'miss');
@@ -6180,8 +6763,16 @@ function detectCollisions() {
         } else {
           const heavy = (b.power || 1) >= 2;
           const isCrit = Math.random() < getCritChance();
-          const dmg = isCrit ? 2 : 1;
           const bulletHeroHit = gameMode === 'adventure' && u.team === 0;
+          let baseDmg = 1;
+          if (b.gunBullet && !bulletHeroHit) {
+            const dist = (b.cellsTraveled || 0) + 1;
+            if (dist >= 5) baseDmg = 4;
+            else if (dist >= 4) baseDmg = 3;
+            else if (dist >= 3) baseDmg = 2;
+            else baseDmg = 1;
+          }
+          const dmg = isCrit ? baseDmg * 2 : baseDmg;
           const dColor = isCrit ? '#ffe033' : (bulletHeroHit ? '#ff2222' : (heavy ? '#ff9900' : '#ffffff'));
           const dSize = isCrit ? 22 : (heavy ? 20 : 16);
           stats.hits[b.owner]++;
@@ -6212,6 +6803,17 @@ function detectCollisions() {
                 saveProfile();
                 checkAchievements();
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
+                // BLOOD RUSH energy on kill
+                const _brLvl = Profile.upgrades?.bloodRushLevel || 0;
+                const _brBonus = S.floorBuffs?.bloodRushBonus || 0;
+                if (_brLvl > 0 || _brBonus > 0) {
+                  const _brBase = [0,1,2,3,4,5,6,8][_brLvl] || 0;
+                  const _brGain = _brBase + _brBonus;
+                  const _effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+                  S.energy = Math.min(_effectiveMax, (S.energy || 0) + _brGain);
+                  spawnDmgNumber(u.x, u.y, `+${_brGain}⚡`, '#44ff88', 13, 'normal');
+                  updateEnergyHud();
+                }
               }
             }
           }
@@ -6436,6 +7038,18 @@ function advanceLasers() {
                 if (gameMode === 'adventure') {
                   logEvent(`Target <span style="color:#ffffff">X</span> melted.`, 'warn');
                   spawnLoot(hit.x, hit.y);
+                  S.kills = (S.kills || 0) + 1;
+                  if (!Profile.stats) Profile.stats = { totalKills: 0 };
+                  Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+                  saveProfile(); checkAchievements();
+                  const _brLvlL = Profile.upgrades?.bloodRushLevel || 0;
+                  const _brBonusL = S.floorBuffs?.bloodRushBonus || 0;
+                  if (_brLvlL > 0 || _brBonusL > 0) {
+                    const _brGainL = ([0,1,2,3,4,5,6,8][_brLvlL] || 0) + _brBonusL;
+                    S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), (S.energy || 0) + _brGainL);
+                    spawnDmgNumber(hit.x, hit.y, `+${_brGainL}⚡`, '#44ff88', 13, 'normal');
+                    updateEnergyHud();
+                  }
                 }
               }
             }
@@ -6778,6 +7392,8 @@ function loop(now) {
   drawChests();
   drawTeleports();
   drawJumpIndicator();
+  drawFlareAimIndicator();
+  drawFlareProjectile();
   drawTutorialHighlight();
   drawLoot();
   drawUnits();
@@ -6961,7 +7577,7 @@ function drawShootPreview() {
     if (wep === 'bullet') nrgReq = 2;
     if (wep === 'laser') nrgReq = 7;
     if (wep === 'heavy' || wep === 'shotgun') nrgReq = 4;
-    if (wep !== 'melee' && S.energy < nrgReq) return;
+    if (S.energy < nrgReq) return;
   } else {
     if (wep === 'bullet' && unit.ammo <= 0) return;
     if (wep === 'laser' && unit.laserAmmo <= 0) return;
@@ -7114,7 +7730,69 @@ function drawBullets() {
     const baseAlpha = (b.active ? 1 : Math.max(0, 1 - S.animT * 3)) * rangeAlpha;
     if (baseAlpha <= 0) return;
 
-    if (heavy) {
+    if (b.hackBullet) {
+      // --- HACK WAVE BULLET ---
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.rotate(Math.atan2(b.dy, b.dx));
+      ctx.globalAlpha = baseAlpha;
+
+      const tipX = 7;
+      const tailX = -22;
+      const amp = 5.5;
+      const freq = 0.22; // wave frequency
+      const phase = now * 0.024 + b.id * 4.2;
+      const steps = 28;
+
+      const buildWave = () => {
+        ctx.beginPath();
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const x = tailX + (tipX - tailX) * t;
+          const y = Math.sin(x * freq * Math.PI * 2 + phase) * amp;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      };
+
+      // Outer glow
+      ctx.save();
+      ctx.globalAlpha = baseAlpha * 0.35;
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 6;
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 22;
+      ctx.lineCap = 'round';
+      buildWave(); ctx.stroke();
+      ctx.restore();
+
+      // Inner bright wave with fade gradient
+      const wGrad = ctx.createLinearGradient(tailX, 0, tipX, 0);
+      wGrad.addColorStop(0, 'rgba(0,255,204,0)');
+      wGrad.addColorStop(0.35, 'rgba(0,255,204,0.6)');
+      wGrad.addColorStop(1, '#00ffcc');
+      ctx.strokeStyle = wGrad;
+      ctx.lineWidth = 2.2;
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 10;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = baseAlpha;
+      buildWave(); ctx.stroke();
+
+      // Bright glowing tip dot (follows wave)
+      const tipY = Math.sin(tipX * freq * Math.PI * 2 + phase) * amp;
+      ctx.shadowBlur = 24;
+      ctx.shadowColor = '#00ffcc';
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#00ffcc';
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    } else if (heavy) {
       // --- ORIGINAL CANNON BULLET (Heavy) ---
       ctx.save();
       const trailSteps = damaged ? 3 : 5;
@@ -8462,7 +9140,7 @@ function drawUnits() {
       const isTileRevealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
       const isHugeEnemy = u.utype === 'ironbox' || u.utype === 'boss01';
 
-      if (!isDirectlyVisible && !(isHugeEnemy && isTileRevealed)) {
+      if (!isDirectlyVisible && !isTileRevealed && !(S.fullMapRevealed)) {
         return;
       }
     }
@@ -8498,23 +9176,34 @@ function drawUnits() {
       } else {
         drawEnemyPixelArt(cx, cy, u, alpha);
       }
-      // Frozen overlay
+      // Frozen/Hacked overlay
       if ((u.frozenTurns || 0) > 0) {
         const t = performance.now();
         const flicker = 0.55 + 0.25 * Math.sin(t * 0.012);
+        const isHacked = !!u.hacked;
+        const overlayColor = isHacked ? '#00ffcc' : '#aaddff';
+        const glowColor = isHacked ? '#00ddaa' : '#88ccff';
         ctx.save();
         ctx.globalAlpha = alpha * flicker * 0.55;
-        ctx.fillStyle = '#aaddff';
-        ctx.shadowColor = '#88ccff'; ctx.shadowBlur = 14;
+        ctx.fillStyle = overlayColor;
+        ctx.shadowColor = glowColor; ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(cx, cy, CELL * 0.38, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold ${Math.round(CELL * 0.32)}px monospace`;
+        ctx.fillStyle = isHacked ? '#00ffcc' : '#ffffff';
+        ctx.font = `bold ${Math.round(CELL * 0.28)}px monospace`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.shadowBlur = 8; ctx.shadowColor = '#aaddff';
-        ctx.fillText('\u2744', cx, cy - CELL * 0.02);
+        ctx.shadowBlur = 8; ctx.shadowColor = glowColor;
+        ctx.fillText(isHacked ? '[HCK]' : '\u2744', cx, cy - CELL * 0.02);
+        if (isHacked) {
+          // Glitch scanlines effect
+          ctx.globalAlpha = alpha * 0.18 * flicker;
+          ctx.fillStyle = '#000000';
+          for (let gi = -2; gi <= 2; gi++) {
+            ctx.fillRect(cx - CELL * 0.35, cy + gi * CELL * 0.12, CELL * 0.7, 1.5);
+          }
+        }
         ctx.restore();
       }
       ctx.restore();
@@ -9303,6 +9992,7 @@ function updateHUD() {
   updateSkillBar(0);
   updateSkillBar(1);
   updateJumpSlot();
+  updateFlareSlot();
 }
 
 function showScreen(id) {
@@ -9343,7 +10033,8 @@ function updateSkillBar(team) {
     { w: 'laser', getAmmo: u => u.laserAmmo, max: () => MAX_LASER, regen: LASER_REGEN, getTick: u => u.laserTick },
     { w: 'heavy', getAmmo: u => u.heavyAmmo, max: () => MAX_HEAVY, regen: HEAVY_REGEN, getTick: u => u.heavyTick },
     { w: 'shotgun', getAmmo: u => u.shotgunAmmo, max: () => MAX_SHOTGUN, regen: SHOTGUN_REGEN, getTick: u => u.shotgunTick },
-    { w: 'melee', getAmmo: u => 1, max: () => 1, regen: 0, getTick: u => 0 },
+    { w: 'hack', getAmmo: () => S.hackAmmo || 0, max: () => S.hackAmmoMax || 2, regen: 0, getTick: u => 0 },
+    { w: 'ronke', getAmmo: () => S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0, max: () => null, regen: 0, getTick: u => 0 },
   ];
 
   const adj = isAdjacentToEnemy(unit);
@@ -9373,17 +10064,20 @@ function updateSkillBar(team) {
 
     let empty = false;
     if (gameMode === 'adventure') {
-      empty = (w !== 'melee') && (S.energy < nrgReq);
+      if (w === 'hack') empty = (S.hackAmmo || 0) <= 0;
+      else if (w === 'ronke') empty = (S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0) <= 0;
+      else empty = S.energy < nrgReq;
     } else {
       empty = ammo <= 0;
     }
 
-    const disabled = adj && w !== 'melee';
+    const disabled = false;
     slot.classList.toggle('sk-empty', empty);
     slot.classList.toggle('sk-disabled', disabled);
 
     if (gameMode === 'adventure') {
-      if (w === 'melee') cd.textContent = '';
+      if (w === 'hack') cd.textContent = (S.hackAmmo || 0) > 0 ? `${S.hackAmmo} LEFT` : '-10\u26A1';
+      else if (w === 'ronke') { const rc = S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0; cd.textContent = rc > 0 ? `${rc} LEFT` : 'EMPTY'; }
       else cd.textContent = empty ? 'NO\u26A1' : `-${nrgReq}\u26A1`;
     } else {
       if (empty) {
@@ -9640,6 +10334,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const canvasInputEl = canvas.parentElement || canvas;
 
   const overlayBlocksCanvasInput = () => {
+    if (document.getElementById('card-picker-overlay')) return true;
     const blockedIds = ['inv-overlay', 'forge-overlay', 'slot-overlay', 'hub-overlay', 'teleport-confirm-overlay'];
     return blockedIds.some(id => {
       const el = document.getElementById(id);
@@ -9684,7 +10379,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wepC === 'bullet') nrgReq = 1;
       if (wepC === 'laser') nrgReq = 2;
       if (wepC === 'heavy' || wepC === 'shotgun') nrgReq = 3;
-      if (wepC !== 'melee' && S.energy < nrgReq) return;
+      if (S.energy < nrgReq) return;
     } else {
       if (wepC === 'bullet' && sel.ammo <= 0) return;
       if (wepC === 'laser' && sel.laserAmmo <= 0) return;
@@ -9735,7 +10430,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wepC === 'bullet') nrgReq = 1;
       if (wepC === 'laser') nrgReq = 2;
       if (wepC === 'heavy' || wepC === 'shotgun') nrgReq = 3;
-      if (wepC !== 'melee' && S.energy < nrgReq) return;
+      if (S.energy < nrgReq) return;
     } else {
       if (wepC === 'bullet' && sel.ammo <= 0) return;
       if (wepC === 'laser' && sel.laserAmmo <= 0) return;
@@ -9794,7 +10489,7 @@ document.addEventListener('DOMContentLoaded', () => {
       SFX.init();
       SFX.select();
       const unit = S.units.find(u => u.id === S.selectedId[0] && u.alive);
-      if (unit && !isAdjacentToEnemy(unit)) {
+      if (unit) {
         unit.weapon = wep;
         updateSkillBar(0);
       }
