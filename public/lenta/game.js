@@ -3859,6 +3859,14 @@ function playCurrentLevelBGM() {
 const INV_SLOTS = 30;
 
 // item: { type:'chip'|'fragment', rarity:'common'|...|null, qty:N }
+function _flashInventoryBtn() {
+  const btn = document.getElementById('btn-inventory');
+  if (!btn) return;
+  btn.classList.remove('inv-ping');
+  void btn.offsetWidth; // reflow to restart animation
+  btn.classList.add('inv-ping');
+}
+
 function addToInventory(type, rarity, qty) {
   if (!S.inventory) S.inventory = new Array(INV_SLOTS).fill(null);
   const idx = S.inventory.findIndex(s => s && s.type === type && s.rarity === rarity);
@@ -3871,6 +3879,7 @@ function addToInventory(type, rarity, qty) {
   if (gameMode === 'adventure') {
     Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
     saveProfile();
+    _flashInventoryBtn();
   }
   // Note: callers (sync functions / chest code) handle UI refresh themselves
 }

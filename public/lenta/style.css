@@ -1455,6 +1455,15 @@ kbd {
   transition: color 0.1s, text-shadow 0.1s;
 }
 
+@keyframes invBtnPing {
+  0%   { border-color: #cc44ff; box-shadow: 0 0 0 0 rgba(204,68,255,0.7), 2px 2px 0 #000; color: #ffffff; }
+  40%  { border-color: #ff88ff; box-shadow: 0 0 0 6px rgba(204,68,255,0); color: #ff88ff; }
+  100% { border-color: #441166; box-shadow: 2px 2px 0 #000, inset 0 0 0 1px rgba(255,255,255,0.03); color: #cc44ff; }
+}
+#btn-inventory.inv-ping {
+  animation: invBtnPing 0.6s ease-out forwards;
+}
+
 #kills-badge {
   font-size: 7px;
   letter-spacing: 1px;
