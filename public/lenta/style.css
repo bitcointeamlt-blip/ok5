@@ -2640,7 +2640,7 @@ kbd {
 /* status bar */
 .ops-statusbar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
   border-bottom: 1px solid #1a3328;
 }
@@ -2649,22 +2649,28 @@ kbd {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 6px;
+  justify-content: center;
+  padding: 10px 4px;
   border-right: 1px solid #1a3328;
-  gap: 3px;
+  gap: 5px;
+  min-height: 52px;
 }
 .ops-statusbar-cell:last-child { border-right: none; }
 .ops-sb-val {
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1;
   color: #00ff88;
   text-shadow: 0 0 8px rgba(0,255,136,0.5);
+  display: block;
 }
 .ops-sb-val.red { color: #ff3c55; text-shadow: 0 0 8px rgba(255,60,85,0.5); }
 .ops-sb-val.yellow { color: #ffdd00; text-shadow: 0 0 8px rgba(255,220,0,0.5); }
 .ops-sb-lbl {
   font-size: 6px;
+  line-height: 1;
   letter-spacing: 1px;
   color: #2d5c47;
+  display: block;
 }
 
 /* big stat cards */
@@ -2678,29 +2684,33 @@ kbd {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12px 10px 10px;
+  justify-content: center;
+  padding: 14px 10px 12px;
   border-right: 1px solid #1a3328;
   border-bottom: 1px solid #1a3328;
-  gap: 4px;
-  position: relative;
+  gap: 6px;
+  min-height: 80px;
 }
 .ops-card:nth-child(even) { border-right: none; }
 .ops-card:nth-last-child(-n+2) { border-bottom: none; }
-.ops-card-icon { font-size: 10px; color: #2d5c47; }
+.ops-card-icon { font-size: 9px; color: #2d5c47; line-height: 1; display: block; }
 .ops-card-val {
-  font-size: 20px;
+  font-size: 22px;
   color: #00ff88;
   text-shadow: 0 0 10px rgba(0,255,136,0.4);
   line-height: 1;
+  display: block;
 }
 .ops-card-val.yellow { color: #ffdd00; text-shadow: 0 0 10px rgba(255,220,0,0.4); }
-.ops-card-val.cyan { color: #00ffee; text-shadow: 0 0 10px rgba(0,255,238,0.4); }
-.ops-card-val.red { color: #ff3c55; text-shadow: 0 0 10px rgba(255,60,85,0.4); }
+.ops-card-val.cyan   { color: #00ffee; text-shadow: 0 0 10px rgba(0,255,238,0.4); }
+.ops-card-val.red    { color: #ff3c55; text-shadow: 0 0 10px rgba(255,60,85,0.4); }
 .ops-card-lbl {
   font-size: 6px;
-  letter-spacing: 1px;
+  letter-spacing: 0;
   color: #2d5c47;
   text-align: center;
+  line-height: 1;
+  display: block;
 }
 
 /* section header */
@@ -2724,10 +2734,11 @@ kbd {
 .ops-upg-row:last-child { border-bottom: none; }
 .ops-upg-name {
   font-size: 7px;
-  letter-spacing: 1px;
+  letter-spacing: 0;
   color: #4a8a6a;
-  width: 78px;
+  width: 88px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .ops-upg-bar {
   flex: 1;
@@ -2796,17 +2807,33 @@ kbd {
 .ops-res-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 16px;
+  gap: 10px;
+  padding: 9px 16px;
   border-right: 1px solid #0d1a14;
   border-bottom: 1px solid #0d1a14;
+  min-height: 44px;
 }
 .ops-res-cell:nth-child(even) { border-right: none; }
-.ops-res-icon { font-size: 10px; }
-.ops-res-info { display: flex; flex-direction: column; gap: 1px; }
-.ops-res-val { font-size: 11px; color: #00ff88; line-height: 1; }
+.ops-res-icon { font-size: 11px; flex-shrink: 0; line-height: 1; }
+.ops-res-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ops-res-val {
+  font-size: 11px;
+  color: #00ff88;
+  line-height: 1;
+  display: block;
+}
 .ops-res-val.zero { color: #1a3328; }
-.ops-res-lbl { font-size: 6px; letter-spacing: 1px; color: #2d5c47; }
+.ops-res-lbl {
+  font-size: 6px;
+  letter-spacing: 0;
+  color: #2d5c47;
+  line-height: 1;
+  display: block;
+}
 
 /* cards row */
 .ops-runcards {
