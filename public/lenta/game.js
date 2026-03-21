@@ -1965,6 +1965,9 @@ const ENEMY_TYPES = [
 
 
 let canvas, ctx, raf;
+
+// Offscreen dungeon cache — rebuilt every 4 frames (~15fps for slow animations)
+let _dunCanvas = null, _dunCtx = null, _dunFrame = 0, _dunDirty = true;
 let lastTime = 0;
 let tickTimer = null;
 let tickStart = null;
@@ -3020,6 +3023,7 @@ function initAdventure() {
   S.reachedMaxEnergy = false;
   generateDungeon();
   buildWallPackets();
+  invalidateDungeonCache();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   S.lightGhosts = [];
@@ -4642,7 +4646,49 @@ function isVisible(x, y) {
   return hero ? Math.hypot(x - hero.x, y - hero.y) <= FOG_RADIUS : false;
 }
 
+function invalidateDungeonCache() { _dunDirty = true; }
+
 function drawDungeon() {
+  const W = COLS * CELL, H = ROWS * CELL;
+
+  // Init or resize offscreen canvas
+  if (!_dunCanvas || _dunCanvas.width !== W || _dunCanvas.height !== H) {
+    _dunCanvas = document.createElement('canvas');
+    _dunCanvas.width = W; _dunCanvas.height = H;
+    _dunCtx = _dunCanvas.getContext('2d');
+    _dunDirty = true;
+  }
+
+  // Redraw offscreen every 4 frames (animations are slow — imperceptible at 15fps)
+  _dunFrame = (_dunFrame + 1) % 4;
+  if (_dunFrame === 0 || _dunDirty) {
+    _dunDirty = false;
+    const _mainCtx = ctx;
+    ctx = _dunCtx;
+    _dunCtx.clearRect(0, 0, W, H);
+    _drawDungeonStatic();
+    ctx = _mainCtx;
+  }
+
+  // Blit cached dungeon
+  ctx.drawImage(_dunCanvas, 0, 0);
+
+  // Platforms always drawn fresh (they animate and move)
+  if (S.platforms) {
+    S.platforms.forEach(p => {
+      const px = p.rx * CELL, py = p.ry * CELL;
+      const pulse = (Math.sin(performance.now() * 0.01) + 1) * 0.5;
+      ctx.shadowBlur = 15 + pulse * 10; ctx.shadowColor = '#00f5ff';
+      ctx.fillStyle = '#00f5ff'; ctx.globalAlpha = 0.6 + pulse * 0.3;
+      ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8);
+      ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.8;
+      ctx.fillRect(px + CELL * 0.3, py + CELL * 0.3, CELL * 0.4, CELL * 0.4);
+      ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
+    });
+  }
+}
+
+function _drawDungeonStatic() {
   const wallT = performance.now() * 0.001;
   // Pass 1: base fills
   for (let r = 0; r < ROWS; r++) {
@@ -4961,28 +5007,6 @@ function drawDungeon() {
     }
   }
 
-  // Pass 3: Draw Moving Platforms (Glowing Energy Blocks)
-  if (S.platforms) {
-    S.platforms.forEach(p => {
-      const px = p.rx * CELL, py = p.ry * CELL;
-      const pulse = (Math.sin(performance.now() * 0.01) + 1) * 0.5;
-
-      // Outer glow
-      ctx.shadowBlur = 15 + pulse * 10;
-      ctx.shadowColor = '#00f5ff';
-      ctx.fillStyle = '#00f5ff';
-      ctx.globalAlpha = 0.6 + pulse * 0.3;
-      ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8);
-
-      // Inner core
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 0.8;
-      ctx.fillRect(px + CELL * 0.3, py + CELL * 0.3, CELL * 0.4, CELL * 0.4);
-
-      ctx.globalAlpha = 1.0;
-      ctx.shadowBlur = 0;
-    });
-  }
 }
 
 // ---- Wall FX functions -----------------------------------------
