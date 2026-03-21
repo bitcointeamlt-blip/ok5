@@ -10350,7 +10350,7 @@ function updateSkillBar(team) {
 function setActionBadge(team, action) {
   const el = document.getElementById(`p${team + 1}-badge`);
   if (!el) return;
-  if (!action) { el.textContent = 'READY'; el.className = 'action-badge'; return; }
+  if (!action) { if (gameMode === 'adventure') return; el.textContent = 'READY'; el.className = 'action-badge'; return; }
   if (action.t === 'move') {
     const dirs = { '0,-1': 'N', '0,1': 'S', '-1,0': 'W', '1,0': 'E' };
     el.textContent = 'MOVE ' + (dirs[`${action.dx},${action.dy}`] || '?');
