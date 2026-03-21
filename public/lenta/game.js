@@ -7414,22 +7414,22 @@ function loop(now) {
   });
   if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 0.07);
 
-  S.particles = S.particles.filter(p => {
+  for (let _pi = S.particles.length - 1; _pi >= 0; _pi--) {
+    const p = S.particles[_pi];
     p.x += p.vx; p.y += p.vy; p.vx *= 0.91; p.vy *= 0.91; p.life -= p.decay;
-    return p.life > 0;
-  });
+    if (p.life <= 0) S.particles.splice(_pi, 1);
+  }
   if (S.footsteps) S.footsteps.forEach(f => { f.alpha = Math.max(0, f.alpha - dt * 0.004); });
   if (gameMode === 'adventure') updateWallFX(dt);
 
-  S.dmgNumbers = S.dmgNumbers.filter(n => {
-    n.x += n.vx;
-    n.y += n.vy;
-    n.vx *= 0.90; // horizontal friction
-    n.vy *= 0.88; // vertical friction
-    n.life -= n.decay; // individual decay rate
+  for (let _di = S.dmgNumbers.length - 1; _di >= 0; _di--) {
+    const n = S.dmgNumbers[_di];
+    n.x += n.vx; n.y += n.vy;
+    n.vx *= 0.90; n.vy *= 0.88;
+    n.life -= n.decay;
     n.scale = Math.max(1.0, n.scale - (n.type === 'crit' ? 0.09 : 0.13));
-    return n.life > 0;
-  });
+    if (n.life <= 0) S.dmgNumbers.splice(_di, 1);
+  }
 
   S.lasers = S.lasers.filter(l => {
     if (l.active) return true;
@@ -7629,15 +7629,23 @@ function drawBoard() {
 }
 
 
+const _shadowGradCache = new Map(); // id -> {cx,cy,g}
 function drawShadows() {
   S.units.forEach(u => {
     if (S.phase === 'frozen' && S.clockSide !== u.team) return;
     const a = u.alive ? 0.13 : u.deathT * 0.13;
     if (a < 0.01) return;
     const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, CELL * 0.8);
-    g.addColorStop(0, hexAlpha(u.color, a)); g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.8, 0, Math.PI * 2); ctx.fill();
+    let cached = _shadowGradCache.get(u.id);
+    if (!cached || cached.cx !== cx || cached.cy !== cy) {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, CELL * 0.8);
+      g.addColorStop(0, hexAlpha(u.color, 0.13)); g.addColorStop(1, 'transparent');
+      cached = { cx, cy, g };
+      _shadowGradCache.set(u.id, cached);
+    }
+    ctx.globalAlpha = a / 0.13;
+    ctx.fillStyle = cached.g; ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
   });
 }
 
@@ -9907,6 +9915,7 @@ function drawMeleeStrikes() {
   });
 }
 
+const _dmgFontCache = new Map();
 function drawDmgNumbers() {
   const PX_FONT = "'Press Start 2P', 'Courier New', 'Segoe UI Emoji', 'Apple Color Emoji', monospace";
   S.dmgNumbers.forEach(n => {
@@ -9919,7 +9928,10 @@ function drawDmgNumbers() {
     ctx.globalAlpha = alpha;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(n.size)}px ${PX_FONT}`;
+    const _fsz = Math.round(n.size);
+    let _fstr = _dmgFontCache.get(_fsz);
+    if (!_fstr) { _fstr = `${_fsz}px ${PX_FONT}`; _dmgFontCache.set(_fsz, _fstr); }
+    ctx.font = _fstr;
 
 
     if (n.type === 'crit') {
