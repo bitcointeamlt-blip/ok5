@@ -10126,14 +10126,15 @@ function buildPlayerStatsHTML() {
   const nanoLvl = u.nanoLevel || 0;
   const nanoInterval = getNanoHealInterval(nanoLvl);
 
-  // Upgrade bar helper (max 8 levels)
+  // Upgrade bar helper
   const upgRow = (name, lvl, maxLvl, valStr, barColor = '') => {
     const pct = Math.min(100, Math.round((lvl / maxLvl) * 100));
     const isOff = lvl <= 0;
+    const valCls = isOff ? 'off' : barColor;
     return `<div class="ops-upg-row">
       <span class="ops-upg-name">${name}</span>
       <div class="ops-upg-bar"><div class="ops-upg-bar-fill ${barColor}" style="width:${pct}%"></div></div>
-      <span class="ops-upg-val ${isOff ? 'off' : ''}">${isOff ? 'OFF' : valStr}</span>
+      <span class="ops-upg-val ${valCls}">${isOff ? '— OFF' : valStr}</span>
     </div>`;
   };
 
@@ -10217,13 +10218,13 @@ function buildPlayerStatsHTML() {
     </div>
 
     <div class="ops-section-hdr">UPGRADES</div>
-    ${upgRow('ENERGY',    u.maxEnergy    || 0, 10, `LVL ${u.maxEnergy}  /  +${u.maxEnergy} MAX`, 'cyan')}
-    ${upgRow('CRIT',      u.critLevel    || 0, 10, `LVL ${u.critLevel}  /  ${critPct}%`, 'yellow')}
-    ${upgRow('NANO',      nanoLvl,              8,  `LVL ${nanoLvl}  /  ${nanoInterval}T`)}
-    ${upgRow('FREE SHOT', u.freeShotLevel|| 0,  4,  `LVL ${u.freeShotLevel}`)}
-    ${upgRow('JUMP',      u.jumpLevel    || 0,  4,  `LVL ${u.jumpLevel}`)}
-    ${upgRow('BLOOD RUSH',u.bloodRushLevel||0,  4,  `LVL ${u.bloodRushLevel}`, 'red')}
-    ${upgRow('CARD SLOT', u.cardSlotLevel|| 0,  4,  `+${u.cardSlotLevel} SLOT`, 'yellow')}
+    ${upgRow('ENERGY',     u.maxEnergy     || 0, 10, `LVL ${u.maxEnergy} / MAX ${maxNrg}`, 'cyan')}
+    ${upgRow('CRIT',       u.critLevel     || 0, 10, `LVL ${u.critLevel} / ${critPct}%`, 'yellow')}
+    ${upgRow('NANO REGEN', nanoLvl,               8,  `LVL ${nanoLvl} / ${nanoInterval}T`)}
+    ${upgRow('FREE SHOT',  u.freeShotLevel || 0,  4,  `LVL ${u.freeShotLevel}`)}
+    ${upgRow('JUMP',       u.jumpLevel     || 0,  4,  `LVL ${u.jumpLevel}`)}
+    ${upgRow('BLOOD RUSH', u.bloodRushLevel|| 0,  4,  `LVL ${u.bloodRushLevel}`, 'red')}
+    ${upgRow('CARD SLOT',  u.cardSlotLevel || 0,  4,  `+${u.cardSlotLevel} SLOT`, 'yellow')}
 
     <div class="ops-section-hdr">CHIPS</div>
     <div class="ops-chips">${chipsHTML}</div>

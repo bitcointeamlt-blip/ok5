@@ -2595,8 +2595,9 @@ kbd {
   background: #080c0b;
   border: 2px solid #1f4433;
   box-shadow: 0 0 60px rgba(0,0,0,0.9), 0 0 30px rgba(0,255,136,0.08), inset 0 0 30px rgba(0,0,0,0.5);
-  width: 360px;
-  max-height: 86vh;
+  width: 480px;
+  max-width: 96vw;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2725,7 +2726,7 @@ kbd {
   font-size: 7px;
   letter-spacing: 1px;
   color: #4a8a6a;
-  width: 72px;
+  width: 78px;
   flex-shrink: 0;
 }
 .ops-upg-bar {
@@ -2745,13 +2746,17 @@ kbd {
 .ops-upg-bar-fill.red { background: #ff3c55; box-shadow: 0 0 6px rgba(255,60,85,0.6); }
 .ops-upg-bar-fill.cyan { background: #00ffee; box-shadow: 0 0 6px rgba(0,255,238,0.6); }
 .ops-upg-val {
-  font-size: 8px;
+  font-size: 7px;
   color: #00ff88;
-  width: 44px;
+  width: 110px;
   text-align: right;
   flex-shrink: 0;
+  white-space: nowrap;
 }
-.ops-upg-val.off { color: #222; }
+.ops-upg-val.off   { color: #222; }
+.ops-upg-val.yellow{ color: #ffdd00; }
+.ops-upg-val.cyan  { color: #00ffee; }
+.ops-upg-val.red   { color: #ff3c55; }
 
 /* chip badges */
 .ops-chips {
