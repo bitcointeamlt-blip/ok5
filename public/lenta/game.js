@@ -5186,13 +5186,13 @@ function drawFog() {
   // ---- Bullet warm light halo ----------------------------------
   liveBullets.forEach(b => {
     const px = (b.rx + 0.5) * CELL, py = (b.ry + 0.5) * CELL;
-    const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL * 2.5);
-    grad.addColorStop(0, 'rgba(255,230,120,0.18)');
-    grad.addColorStop(0.45, 'rgba(255,200, 80,0.08)');
+    const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL * 1.4);
+    grad.addColorStop(0, 'rgba(255,230,120,0.07)');
+    grad.addColorStop(0.5, 'rgba(255,200, 80,0.03)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(px, py, CELL * 2.5, 0, Math.PI * 2);
+    ctx.arc(px, py, CELL * 1.4, 0, Math.PI * 2);
     ctx.fill();
   });
 
