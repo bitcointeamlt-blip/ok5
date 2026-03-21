@@ -10097,6 +10097,20 @@ function showScreen(id) {
   if (el) { el.style.display = 'flex'; el.classList.add('active'); }
 }
 
+window.toggleOpsStatus = function () {
+  const btn = document.getElementById('btn-ops-status');
+  const panel = document.getElementById('go-player-stats');
+  if (!panel) return;
+  const open = panel.classList.toggle('active');
+  if (open) {
+    panel.innerHTML = buildPlayerStatsHTML();
+    if (btn) btn.classList.add('active');
+  } else {
+    panel.innerHTML = '';
+    if (btn) btn.classList.remove('active');
+  }
+};
+
 function buildPlayerStatsHTML() {
   const u = Profile.upgrades || {};
   const inv = S.inventory || Profile.inventory || [];
@@ -10179,16 +10193,12 @@ function showGameOver() {
     <div class="stat-cell"><div class="lbl">${l2} SHOTS</div><div class="val red">${stats.shots[1]}</div></div>
     <div class="stat-cell"><div class="lbl">${l1} HITS</div><div class="val cyan">${stats.hits[0]}</div></div>
     <div class="stat-cell"><div class="lbl">${l2} HITS</div><div class="val red">${stats.hits[1]}</div></div>`;
-  // Show player stats panel only when player dies in adventure mode
+  // Show/hide operator status button only on adventure death
+  const opsBtn = document.getElementById('btn-ops-status');
   const statsPanel = document.getElementById('go-player-stats');
-  if (statsPanel) {
-    if (gameMode === 'adventure' && S.winner === 1) {
-      statsPanel.innerHTML = buildPlayerStatsHTML();
-      statsPanel.classList.add('active');
-    } else {
-      statsPanel.classList.remove('active');
-    }
-  }
+  if (opsBtn) opsBtn.style.display = (gameMode === 'adventure' && S.winner === 1) ? '' : 'none';
+  if (opsBtn) opsBtn.classList.remove('active');
+  if (statsPanel) { statsPanel.classList.remove('active'); statsPanel.innerHTML = ''; }
   showScreen('screen-gameover');
 }
 
