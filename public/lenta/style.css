@@ -2125,6 +2125,83 @@ kbd {
   gap: 12px;
 }
 
+.gameover-layout {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.go-player-stats-panel {
+  display: none;
+  flex-direction: column;
+  min-width: 248px;
+  max-width: 300px;
+  max-height: 80vh;
+  overflow-y: auto;
+  border: 2px solid var(--border);
+  background: var(--bg2);
+  animation: goEntrance 0.3s steps(4) both;
+  text-align: left;
+}
+
+.go-player-stats-panel.active {
+  display: flex;
+}
+
+.gps-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--cyan);
+  letter-spacing: 2px;
+  font-size: 8px;
+  background: rgba(0, 255, 200, 0.06);
+  text-shadow: 0 0 8px var(--cyan);
+}
+
+.gps-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.gps-section-title {
+  padding: 6px 14px;
+  font-size: 6px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gps-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.gps-row:last-child {
+  border-bottom: none;
+}
+
+.gps-lbl {
+  color: var(--dim);
+  font-size: 6px;
+  letter-spacing: 1px;
+}
+
+.gps-val {
+  font-size: 8px;
+  color: var(--text);
+}
+
+.gps-val.cyan { color: var(--cyan); text-shadow: 0 0 6px var(--cyan-dim); }
+.gps-val.yellow { color: var(--yellow); text-shadow: 0 0 6px rgba(255,220,0,0.4); }
+.gps-val.red { color: var(--red); text-shadow: 0 0 6px var(--red-dim); }
+.gps-val.green { color: #44ff88; text-shadow: 0 0 6px rgba(68,255,136,0.4); }
+.gps-val.dim { color: #444; }
+
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    CHESS CLOCK
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */

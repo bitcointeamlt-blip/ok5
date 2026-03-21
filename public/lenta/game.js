@@ -10097,6 +10097,70 @@ function showScreen(id) {
   if (el) { el.style.display = 'flex'; el.classList.add('active'); }
 }
 
+function buildPlayerStatsHTML() {
+  const u = Profile.upgrades || {};
+  const inv = S.inventory || Profile.inventory || [];
+  const invCount = (type, rarity) => {
+    const slot = inv.find(s => s && s.type === type && (!rarity || s.rarity === rarity));
+    return slot?.qty || 0;
+  };
+  const accuracy = stats.shots[0] > 0 ? Math.round(stats.hits[0] / stats.shots[0] * 100) : 0;
+  const maxNrg = ENERGY_MAX + (u.maxEnergy || 0);
+  const critPct = Math.round(getCritChance() * 1000) / 10;
+  const nanoLvl = u.nanoLevel || 0;
+  const nanoInterval = getNanoHealInterval(nanoLvl);
+  const row = (lbl, val, cls = '') =>
+    `<div class="gps-row"><span class="gps-lbl">${lbl}</span><span class="gps-val ${cls}">${val}</span></div>`;
+  const section = (title, rows) =>
+    `<div class="gps-section"><div class="gps-section-title">${title}</div>${rows}</div>`;
+
+  const chipRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+  const chipColors = { common: '', uncommon: 'green', rare: 'cyan', epic: 'yellow', legendary: 'red', mythic: 'yellow' };
+  const chipLabels = { common: 'COMMON', uncommon: 'UNCOMMON', rare: 'RARE', epic: 'EPIC', legendary: 'LEGEND', mythic: 'MYTHIC' };
+
+  const activeCards = (S.runCards || []).map(id => {
+    const c = CARD_POOL.find(x => x.id === id);
+    return c ? c.name : id;
+  });
+
+  return `
+    <div class="gps-header">◈ OPERATOR STATUS</div>
+    ${section('RUN LOG', [
+      row('LAYER REACHED', S.floor || 1, 'cyan'),
+      row('TICKS SURVIVED', stats.ticks),
+      row('CAUSE OF DEATH', S.energyDepleted ? 'VOLTAGE DEPLETED' : 'KILLED BY BUG', 'red'),
+    ].join(''))}
+    ${section('COMBAT', [
+      row('SHOTS FIRED', stats.shots[0]),
+      row('HITS LANDED', stats.hits[0], 'cyan'),
+      row('ACCURACY', accuracy + '%', accuracy >= 60 ? 'green' : accuracy >= 30 ? 'yellow' : 'red'),
+    ].join(''))}
+    ${section('UPGRADES', [
+      row('MAX ENERGY', maxNrg, 'cyan'),
+      row('ENERGY LVL', u.maxEnergy || 0, (u.maxEnergy || 0) > 0 ? 'green' : 'dim'),
+      row('CRIT CHANCE', critPct + '%', critPct >= 5 ? 'yellow' : ''),
+      row('CRIT LVL', u.critLevel || 0, (u.critLevel || 0) > 0 ? 'yellow' : 'dim'),
+      row('NANO REGEN', nanoLvl > 0 ? `LVL ${nanoLvl}  /  ${nanoInterval}T` : 'OFF', nanoLvl > 0 ? 'green' : 'dim'),
+      row('FREE SHOT', (u.freeShotLevel || 0) > 0 ? `LVL ${u.freeShotLevel}` : 'OFF', (u.freeShotLevel || 0) > 0 ? 'green' : 'dim'),
+      row('JUMP', (u.jumpLevel || 0) > 0 ? `LVL ${u.jumpLevel}` : 'OFF', (u.jumpLevel || 0) > 0 ? 'green' : 'dim'),
+      row('BLOOD RUSH', (u.bloodRushLevel || 0) > 0 ? `LVL ${u.bloodRushLevel}` : 'OFF', (u.bloodRushLevel || 0) > 0 ? 'red' : 'dim'),
+      row('CARD SLOTS', (u.cardSlotLevel || 0) > 0 ? `+${u.cardSlotLevel}` : 'BASE', (u.cardSlotLevel || 0) > 0 ? 'yellow' : ''),
+    ].join(''))}
+    ${section('CHIPS', chipRarities.map(r => {
+      const cnt = invCount('chip', r);
+      return row(chipLabels[r], cnt, cnt > 0 ? chipColors[r] : 'dim');
+    }).join(''))}
+    ${section('RESOURCES', [
+      row('BYTES', invCount('byte'), invCount('byte') > 0 ? 'yellow' : 'dim'),
+      row('FRAGMENTS', invCount('fragment'), invCount('fragment') > 0 ? 'cyan' : 'dim'),
+      row('XP TOKENS', invCount('xptoken'), invCount('xptoken') > 0 ? 'green' : 'dim'),
+      row('RONKE', invCount('ronke'), invCount('ronke') > 0 ? 'cyan' : 'dim'),
+      row('PIXEL', invCount('gem'), invCount('gem') > 0 ? 'green' : 'dim'),
+    ].join(''))}
+    ${activeCards.length > 0 ? section('ACTIVE CARDS', activeCards.map(n => row(n, '▶', 'green')).join('')) : ''}
+  `;
+}
+
 function showGameOver() {
   const ann = document.getElementById('go-announce');
   const sub = document.getElementById('go-subtitle');
@@ -10115,6 +10179,16 @@ function showGameOver() {
     <div class="stat-cell"><div class="lbl">${l2} SHOTS</div><div class="val red">${stats.shots[1]}</div></div>
     <div class="stat-cell"><div class="lbl">${l1} HITS</div><div class="val cyan">${stats.hits[0]}</div></div>
     <div class="stat-cell"><div class="lbl">${l2} HITS</div><div class="val red">${stats.hits[1]}</div></div>`;
+  // Show player stats panel only when player dies in adventure mode
+  const statsPanel = document.getElementById('go-player-stats');
+  if (statsPanel) {
+    if (gameMode === 'adventure' && S.winner === 1) {
+      statsPanel.innerHTML = buildPlayerStatsHTML();
+      statsPanel.classList.add('active');
+    } else {
+      statsPanel.classList.remove('active');
+    }
+  }
   showScreen('screen-gameover');
 }
 
