@@ -3859,12 +3859,18 @@ function playCurrentLevelBGM() {
 const INV_SLOTS = 30;
 
 // item: { type:'chip'|'fragment', rarity:'common'|...|null, qty:N }
-function _flashInventoryBtn() {
-  const btn = document.getElementById('btn-inventory');
-  if (!btn) return;
-  btn.classList.remove('inv-ping');
-  void btn.offsetWidth; // reflow to restart animation
-  btn.classList.add('inv-ping');
+if (!window._newInvKeys) window._newInvKeys = new Set();
+
+function _markInventoryNew(type, rarity) {
+  window._newInvKeys.add(type + ':' + (rarity || ''));
+  const dot = document.getElementById('inv-new-dot');
+  if (dot) dot.classList.add('visible');
+}
+
+function _clearInventoryNew() {
+  window._newInvKeys.clear();
+  const dot = document.getElementById('inv-new-dot');
+  if (dot) dot.classList.remove('visible');
 }
 
 function addToInventory(type, rarity, qty) {
@@ -3879,7 +3885,7 @@ function addToInventory(type, rarity, qty) {
   if (gameMode === 'adventure') {
     Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
     saveProfile();
-    _flashInventoryBtn();
+    _markInventoryNew(type, rarity);
   }
   // Note: callers (sync functions / chest code) handle UI refresh themselves
 }
@@ -3996,9 +4002,11 @@ function updateInventoryUI() {
               : item.type === 'ronke' ? 'Ronke'
                 : `${item.rarity} Chip`;
 
-      slot.className = 'inv-slot has-item';
+      const isNew = window._newInvKeys?.has(item.type + ':' + (item.rarity || ''));
+      slot.className = 'inv-slot has-item' + (isNew ? ' inv-slot-new' : '');
+      slot.style.setProperty('--slot-col', col + '44');
       slot.style.borderColor = col + '99';
-      slot.style.boxShadow = `inset 0 0 16px ${col}22, 0 0 6px ${col}44`;
+      slot.style.boxShadow = isNew ? '' : `inset 0 0 16px ${col}22, 0 0 6px ${col}44`;
 
       if (item.type === 'chip') {
         const cv = document.createElement('canvas');
@@ -4437,6 +4445,7 @@ window.toggleInventory = function () {
   if (S.inventoryOpen) {
     window.closeInventory();
   } else {
+    _clearInventoryNew();
     updateInventoryUI();
     ov.classList.add('active');
     S.inventoryOpen = true;
