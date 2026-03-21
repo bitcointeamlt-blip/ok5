@@ -6404,7 +6404,7 @@ function resolveTick() {
                   S.kills = (S.kills || 0) + 1;
                   if (!Profile.stats) Profile.stats = { totalKills: 0 };
                   Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
-                  saveProfile();
+                  saveProfile(); _updateKillsDisplay();
                 }
               }
             }
@@ -6876,7 +6876,7 @@ function detectCollisions() {
                 S.kills = (S.kills || 0) + 1;
                 if (!Profile.stats) Profile.stats = { totalKills: 0 };
                 Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
-                saveProfile();
+                saveProfile(); _updateKillsDisplay();
                 checkAchievements();
                 if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
                 // BLOOD RUSH energy on kill
@@ -7020,6 +7020,11 @@ function autoSelectAlive() {
 }
 
 
+function _updateKillsDisplay() {
+  const el = document.getElementById('kills-val');
+  if (el) el.textContent = S.kills || 0;
+}
+
 function spawnDmgNumber(gx, gy, text, color, size, type) {
   type = type || 'normal';
   const initScale = type === 'crit' ? 2.0 : type === 'miss' ? 1.1 : 1.4;
@@ -7117,7 +7122,7 @@ function advanceLasers() {
                   S.kills = (S.kills || 0) + 1;
                   if (!Profile.stats) Profile.stats = { totalKills: 0 };
                   Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
-                  saveProfile(); checkAchievements();
+                  saveProfile(); _updateKillsDisplay(); checkAchievements();
                   const _brLvlL = Profile.upgrades?.bloodRushLevel || 0;
                   const _brBonusL = S.floorBuffs?.bloodRushBonus || 0;
                   if (_brLvlL > 0 || _brBonusL > 0) {
@@ -10413,6 +10418,8 @@ window.startGame = function startGame(mode) {
     if (hubBtn) hubBtn.style.display = 'block';
     const opsBtn2 = document.getElementById('btn-ops-status');
     if (opsBtn2) opsBtn2.style.display = 'block';
+    const killsDisplay = document.getElementById('kills-display');
+    if (killsDisplay) killsDisplay.style.display = 'flex';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'flex';
     const bottomRow = document.querySelector('.btn-bottom-row');
@@ -10441,6 +10448,8 @@ window.startGame = function startGame(mode) {
     if (hubBtn) hubBtn.style.display = 'none';
     const opsBtn2 = document.getElementById('btn-ops-status');
     if (opsBtn2) opsBtn2.style.display = 'none';
+    const killsDisplay = document.getElementById('kills-display');
+    if (killsDisplay) killsDisplay.style.display = 'none';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'none';
     const bottomRow = document.querySelector('.btn-bottom-row');

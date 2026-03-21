@@ -2125,6 +2125,26 @@ kbd {
   gap: 12px;
 }
 
+#kills-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid #1a2a22;
+  background: #080c0a;
+}
+.kills-lbl {
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: #3a6652;
+}
+.kills-val {
+  font-size: 14px;
+  color: #ff3c55;
+  text-shadow: 0 0 8px rgba(255,60,85,0.5);
+}
+
 .btn-ops-status {
   margin-top: 4px;
   background: transparent;
