@@ -5341,7 +5341,7 @@ function drawScanlines() {
 function drawShrines() {
   if (!S.shrines) return;
   S.shrines.forEach(sh => {
-    if (!isVisible(sh.x, sh.y) && !(S.fullMapRevealed && S.fog?.[sh.y]?.[sh.x])) return;
+    if (!isVisible(sh.x, sh.y) && !S.fog?.[sh.y]?.[sh.x] && !S.fullMapRevealed) return;
     const cx = (sh.x + 0.5) * CELL, cy = (sh.y + 0.5) * CELL;
     ctx.save();
     if (!sh.used) {
@@ -5413,7 +5413,7 @@ function drawBloodStains() {
 function drawChests() {
   if (!S.chests) return;
   S.chests.forEach(ch => {
-    if (gameMode === 'adventure' && !isVisible(ch.x, ch.y) && !(S.fullMapRevealed && S.fog?.[ch.y]?.[ch.x])) return;
+    if (gameMode === 'adventure' && !isVisible(ch.x, ch.y) && !S.fog?.[ch.y]?.[ch.x] && !S.fullMapRevealed) return;
     const cx = (ch.x + 0.5) * CELL, cy = (ch.y + 0.5) * CELL;
     const w = CELL * 0.54, h = CELL * 0.4;
     ctx.save();
@@ -5833,7 +5833,7 @@ function drawTeleports() {
   const t = performance.now() / 1000;
   const active = getMapRevealPercent() >= 0.51;
   S.teleports.forEach((pad, i) => {
-    if (!isVisible(pad.x, pad.y) && !S.fullMapRevealed) return;
+    if (!isVisible(pad.x, pad.y) && !S.fog?.[pad.y]?.[pad.x] && !S.fullMapRevealed) return;
     const cx = (pad.x + 0.5) * CELL, cy = (pad.y + 0.5) * CELL;
     const r = CELL * 0.28;
     ctx.save();
@@ -5914,7 +5914,8 @@ function drawLoot() {
   const now = performance.now();
   S.loot.forEach(l => {
     if (l.collected) return;
-    if (gameMode === 'adventure' && !isVisible(l.x, l.y) && !S.fullMapRevealed) return;
+    const _lootRevealed = S.fog && S.fog[l.y] && S.fog[l.y][l.x];
+    if (gameMode === 'adventure' && !isVisible(l.x, l.y) && !_lootRevealed && !S.fullMapRevealed) return;
     const cx = (l.x + 0.5) * CELL, cy = (l.y + 0.5) * CELL;
     const float = Math.sin(now * 0.005) * 4;
     ctx.save();
