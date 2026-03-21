@@ -4561,38 +4561,85 @@ function spawnExplorerChest() {
 }
 
 // Returns true if cell (x,y) is within current player vision radius or bullet illumination
-function isVisible(x, y) {
-  if (gameMode !== 'adventure') return true;
+// ---- Visibility cache (rebuilt once per render frame) --------
+let _visCache = null; // flat Uint8Array [ROWS * COLS]
+
+function rebuildVisCache() {
+  if (gameMode !== 'adventure' || !S.units) return;
+  const size = ROWS * COLS;
+  if (!_visCache || _visCache.length !== size) _visCache = new Uint8Array(size);
+  else _visCache.fill(0);
+
   const hero = S.units.find(u => u.team === 0 && u.alive);
-  if (hero && Math.hypot(x - hero.x, y - hero.y) <= FOG_RADIUS) return true;
-  if (S.flareRevealedCells && S.flareRevealedCells.has(x + ',' + y)) return true;
+  const now = performance.now();
+  const R2 = FOG_RADIUS * FOG_RADIUS;
 
-  // Also visible if within bullet light radius (animated position)
-  if (S.bullets) {
-    for (const b of S.bullets) {
-      if (Math.hypot(x - b.rx, y - b.ry) <= 1.5) return true;
-    }
-  }
-
-  // Also visible if illuminated by an active light ghost (enemy death explosion, etc.)
-  if (S.lightGhosts) {
-    const now = performance.now();
-    for (const g of S.lightGhosts) {
-      const d = Math.hypot(x - g.x, y - g.y);
-      const isHold = g.holdMs !== undefined ? (now - g.bornTime < g.holdMs) : (S.tick - g.bornTick < 3);
-      const maxR = g.r || 2.5;
-
-      if (isHold) {
-        if (d <= maxR) return true;
-      } else if (g.fadeBorn) {
-        const ft = Math.min(1, (now - g.fadeBorn) / g.fadeDur);
-        const reach = maxR * (1 - ft * 0.55); // Matavimo atstumas gali truputi trauktis kartu su blykste
-        if (d <= reach) return true;
+  // Hero vision radius
+  if (hero) {
+    const hx = hero.x, hy = hero.y;
+    const rMin = Math.max(0, hy - FOG_RADIUS), rMax = Math.min(ROWS - 1, hy + FOG_RADIUS);
+    const cMin = Math.max(0, hx - FOG_RADIUS), cMax = Math.min(COLS - 1, hx + FOG_RADIUS);
+    for (let r = rMin; r <= rMax; r++) {
+      for (let c = cMin; c <= cMax; c++) {
+        const dx = c - hx, dy = r - hy;
+        if (dx * dx + dy * dy <= R2) _visCache[r * COLS + c] = 1;
       }
     }
   }
 
-  return false;
+  // Flare revealed cells
+  if (S.flareRevealedCells) {
+    S.flareRevealedCells.forEach(key => {
+      const comma = key.indexOf(',');
+      const cx = +key.slice(0, comma), cy = +key.slice(comma + 1);
+      if (cy >= 0 && cy < ROWS && cx >= 0 && cx < COLS) _visCache[cy * COLS + cx] = 1;
+    });
+  }
+
+  // Active bullets illumination radius 1.5
+  if (S.bullets) {
+    for (const b of S.bullets) {
+      if (!b.active && b.deadTicks === undefined) continue;
+      const bx = b.rx, by = b.ry;
+      const rMin = Math.max(0, Math.floor(by - 1.5)), rMax = Math.min(ROWS - 1, Math.ceil(by + 1.5));
+      const cMin = Math.max(0, Math.floor(bx - 1.5)), cMax = Math.min(COLS - 1, Math.ceil(bx + 1.5));
+      for (let r = rMin; r <= rMax; r++) {
+        for (let c = cMin; c <= cMax; c++) {
+          const dx = c - bx, dy = r - by;
+          if (dx * dx + dy * dy <= 2.25) _visCache[r * COLS + c] = 1;
+        }
+      }
+    }
+  }
+
+  // Light ghosts illumination
+  if (S.lightGhosts) {
+    for (const g of S.lightGhosts) {
+      const maxR = g.r || 2.5;
+      const isHold = g.holdMs !== undefined ? (now - g.bornTime < g.holdMs) : (S.tick - g.bornTick < 3);
+      let reach;
+      if (isHold) { reach = maxR; }
+      else if (g.fadeBorn) { const ft = Math.min(1, (now - g.fadeBorn) / g.fadeDur); reach = maxR * (1 - ft * 0.55); }
+      else continue;
+      const r2 = reach * reach;
+      const rMin = Math.max(0, Math.floor(g.y - reach)), rMax = Math.min(ROWS - 1, Math.ceil(g.y + reach));
+      const cMin = Math.max(0, Math.floor(g.x - reach)), cMax = Math.min(COLS - 1, Math.ceil(g.x + reach));
+      for (let r = rMin; r <= rMax; r++) {
+        for (let c = cMin; c <= cMax; c++) {
+          const dx = c - g.x, dy = r - g.y;
+          if (dx * dx + dy * dy <= r2) _visCache[r * COLS + c] = 1;
+        }
+      }
+    }
+  }
+}
+
+function isVisible(x, y) {
+  if (gameMode !== 'adventure') return true;
+  if (_visCache && x >= 0 && x < COLS && y >= 0 && y < ROWS) return _visCache[y * COLS + x] === 1;
+  // Fallback before first cache build
+  const hero = S.units?.find(u => u.team === 0 && u.alive);
+  return hero ? Math.hypot(x - hero.x, y - hero.y) <= FOG_RADIUS : false;
 }
 
 function drawDungeon() {
@@ -5004,17 +5051,22 @@ function drawWallLED() {
 
 function drawFog() {
   if (gameMode !== 'adventure' || !S.fog) return;
+  if (S.fullMapRevealed) return;
   const hero = S.units.find(u => u.team === 0 && u.alive);
-  const liveBullets = S.bullets ? S.bullets.filter(b => b.active) : [];
+  // Reuse S.bullets directly (no filter allocation) — check b.active inline
+  const liveBullets = S.bullets || [];
   const now = performance.now();
   const REVEAL_DUR = 600;
-  // Clean up expired light ghosts
-  if (S.lightGhosts) S.lightGhosts = S.lightGhosts.filter(g => {
-    const isHold = g.holdMs !== undefined ? (now - g.bornTime < g.holdMs) : (S.tick - g.bornTick < 3);
-    if (isHold) return true;
-    if (!g.fadeBorn) g.fadeBorn = now;
-    return now - g.fadeBorn < g.fadeDur;
-  });
+  // Clean up expired light ghosts (in-place splice to avoid new array alloc)
+  if (S.lightGhosts) {
+    for (let _gi = S.lightGhosts.length - 1; _gi >= 0; _gi--) {
+      const _g = S.lightGhosts[_gi];
+      const isHold = _g.holdMs !== undefined ? (now - _g.bornTime < _g.holdMs) : (S.tick - _g.bornTick < 3);
+      if (isHold) continue;
+      if (!_g.fadeBorn) _g.fadeBorn = now;
+      if (now - _g.fadeBorn >= _g.fadeDur) S.lightGhosts.splice(_gi, 1);
+    }
+  }
   const liveGhosts = S.lightGhosts || [];
 
   // Ray-trace: is cell (c,r) shadowed from bullet at (bx,by) by a wall?
@@ -5032,11 +5084,12 @@ function drawFog() {
 
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const vis = hero && Math.hypot(c - hero.x, r - hero.y) <= FOG_RADIUS;
+      const vis = _visCache ? _visCache[r * COLS + c] === 1 : (hero && Math.hypot(c - hero.x, r - hero.y) <= FOG_RADIUS);
 
       // Nearest light source (active bullet or lingering ghost) with clear LoS
       let bDist = Infinity;
       for (const b of liveBullets) {
+        if (!b.active) continue;
         const d = Math.hypot(c - b.rx, r - b.ry);
         if (d < bDist && d <= 2.5 && !isShadowed(b.rx, b.ry, c, r)) bDist = d;
       }
@@ -5061,17 +5114,7 @@ function drawFog() {
       const bulletGlow = bDist <= 2.5;
 
       if (vis || bulletLit) {
-        if (!bulletLit) {
-          const adjDark =
-            (r > 0 && !(hero && Math.hypot(c - hero.x, (r - 1) - hero.y) <= FOG_RADIUS)) ||
-            (r < ROWS - 1 && !(hero && Math.hypot(c - hero.x, (r + 1) - hero.y) <= FOG_RADIUS)) ||
-            (c > 0 && !(hero && Math.hypot((c - 1) - hero.x, r - hero.y) <= FOG_RADIUS)) ||
-            (c < COLS - 1 && !(hero && Math.hypot((c + 1) - hero.x, r - hero.y) <= FOG_RADIUS));
-          if (adjDark) {
-            ctx.fillStyle = 'rgba(0,0,0,0.3)';
-            ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-          }
-        }
+        // no overlay — keep original tile color
       } else if (S.fog[r][c]) {
         // Previously revealed - stays permanently visible, no overlay
       } else {
@@ -6512,27 +6555,27 @@ function applyActions() {
           if (!_cleared) {
             S.energy = Math.max(0, S.energy - 1);
             spawnDmgNumber(unit.x, unit.y, '-1\u26A1', '#00f5ff', 12, 'normal');
-          }
-          S.nanoSteps = (S.nanoSteps || 0) + 1;
-          const _nLvl = Profile.upgrades?.nanoLevel || 0;
-          if (_nLvl >= 1 && S.nanoSteps % getNanoHealInterval(_nLvl) === 0) {
-            const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-            if (S.energy < effectiveMax) {
-              S.energy = Math.min(effectiveMax, S.energy + _nLvl);
-              spawnDmgNumber(unit.x, unit.y, `+${_nLvl}\u26A1`, '#00ff88', 14, 'normal');
-              SFX.nanoHeal();
-              if (S.energy >= effectiveMax) {
-                S.reachedMaxEnergy = true;
-                checkAchievements();
+            S.nanoSteps = (S.nanoSteps || 0) + 1;
+            const _nLvl = Profile.upgrades?.nanoLevel || 0;
+            if (_nLvl >= 1 && S.nanoSteps % getNanoHealInterval(_nLvl) === 0) {
+              const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+              if (S.energy < effectiveMax) {
+                S.energy = Math.min(effectiveMax, S.energy + _nLvl);
+                spawnDmgNumber(unit.x, unit.y, `+${_nLvl}\u26A1`, '#00ff88', 14, 'normal');
+                SFX.nanoHeal();
+                if (S.energy >= effectiveMax) {
+                  S.reachedMaxEnergy = true;
+                  checkAchievements();
+                }
               }
             }
-          }
-          // Card: NANO REGEN — +1 energy every 10 steps
-          if ((S.runCards || []).includes('nano_regen') && S.nanoSteps % 10 === 0) {
-            const _effMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-            if (S.energy < _effMax) {
-              S.energy = Math.min(_effMax, S.energy + 1);
-              spawnDmgNumber(unit.x, unit.y, '+1\u26A1', '#88ff44', 12, 'normal');
+            // Card: NANO REGEN — +1 energy every 10 steps
+            if ((S.runCards || []).includes('nano_regen') && S.nanoSteps % 10 === 0) {
+              const _effMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+              if (S.energy < _effMax) {
+                S.energy = Math.min(_effMax, S.energy + 1);
+                spawnDmgNumber(unit.x, unit.y, '+1\u26A1', '#88ff44', 12, 'normal');
+              }
             }
           }
         }
@@ -6543,6 +6586,11 @@ function applyActions() {
         }
       }
     } else {
+      // Block shooting when map is fully revealed and no enemies
+      if (gameMode === 'adventure' && team === 0) {
+        const _cleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
+        if (_cleared) return;
+      }
       const sd = (team === 0 && unit.aimDir) ? unit.aimDir : unit.facing;
       const wep = getCurrentWeapon(unit);
       stats.shots[team]++;
@@ -7073,10 +7121,10 @@ function advanceLasers() {
           S.lightGhosts.push({
             x: cell.x, y: cell.y,
             bornTime: performance.now(),
-            holdMs: 3000,
-            fadeDur: 3000,
-            r: 1.5,
-            alpha: 0.15,
+            holdMs: 150,
+            fadeDur: 400,
+            r: 1.0,
+            alpha: 0.06,
             color: laser.color
           });
         }
@@ -7368,6 +7416,9 @@ function loop(now) {
     }
     return false;
   });
+
+  // Rebuild visibility cache once per frame (replaces repeated isVisible() inner loops)
+  rebuildVisCache();
 
   // Draw
   ctx.save();
@@ -9130,6 +9181,15 @@ function drawBoss01(cx, cy, u, alpha) {
 }
 
 function drawUnits() {
+  // Pre-build unit index map once (avoids O(n²) filter inside loop)
+  const _unitIdx = new Map();
+  const _teamCount = {};
+  S.units.forEach(u => {
+    const t = u.team;
+    _teamCount[t] = (_teamCount[t] || 0) + 1;
+    _unitIdx.set(u, _teamCount[t]);
+  });
+
   S.units.forEach(u => {
     if (!u.alive && u.deathT <= 0) return;
 
@@ -9334,8 +9394,7 @@ function drawUnits() {
 
 
     if (!(gameMode === 'adventure' && u.team === 1)) {
-      const teamUnits = S.units.filter(v => v.team === u.team);
-      const unitIdx = teamUnits.indexOf(u) + 1;
+      const unitIdx = _unitIdx.get(u) || 1;
       ctx.shadowBlur = 0; ctx.globalAlpha = 0.8 * alpha; ctx.fillStyle = '#ffffff';
       ctx.font = `bold ${Math.round(CELL * 0.19)}px Courier New`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
