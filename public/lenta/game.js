@@ -6398,10 +6398,13 @@ function resolveTick() {
                   spawnDmgNumber(u.x, u.y, '-1 CRUSH!', '#ff2222', 20, 'crit');
                   spawnMeleeEffect(u.x, u.y, 0, 0, '#ffffff');
                 } else {
-
                   u.hp = 0; u.alive = false;
                   spawnDeath(u.x, u.y, u.color);
                   if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
+                  S.kills = (S.kills || 0) + 1;
+                  if (!Profile.stats) Profile.stats = { totalKills: 0 };
+                  Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+                  saveProfile();
                 }
               }
             }
@@ -10229,14 +10232,12 @@ function buildPlayerStatsHTML() {
     <div class="ops-section-hdr">CHIPS</div>
     <div class="ops-chips">${chipsHTML}</div>
 
-    <div class="ops-section-hdr">RESOURCES</div>
+    <div class="ops-section-hdr">ELIMINATIONS</div>
     <div class="ops-resources">
-      ${resCell('▣', invCount('byte'),     'BYTE')}
-      ${resCell('◈', invCount('fragment'), 'FRAGMENT')}
-      ${resCell('★', invCount('xptoken'),  'XP TOKEN')}
-      ${resCell('◉', invCount('ronke'),    'RONKE')}
-      ${resCell('◆', invCount('gem'),      'PIXEL')}
-      ${resCell('⬡', Profile.cache || 0,  'VOLTS')}
+      ${resCell('☠', S.kills || 0,                          'THIS RUN')}
+      ${resCell('◈', Profile.stats?.totalKills || 0,        'ALL TIME')}
+      ${resCell('⚡', S.floor || 1,                          'LAYER')}
+      ${resCell('▣', Profile.highestSector || 1,            'BEST LAYER')}
     </div>
 
     ${activeCards.length > 0 ? `
