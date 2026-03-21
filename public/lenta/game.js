@@ -10125,55 +10125,123 @@ function buildPlayerStatsHTML() {
   const critPct = Math.round(getCritChance() * 1000) / 10;
   const nanoLvl = u.nanoLevel || 0;
   const nanoInterval = getNanoHealInterval(nanoLvl);
-  const row = (lbl, val, cls = '') =>
-    `<div class="gps-row"><span class="gps-lbl">${lbl}</span><span class="gps-val ${cls}">${val}</span></div>`;
-  const section = (title, rows) =>
-    `<div class="gps-section"><div class="gps-section-title">${title}</div>${rows}</div>`;
 
-  const chipRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
-  const chipColors = { common: '', uncommon: 'green', rare: 'cyan', epic: 'yellow', legendary: 'red', mythic: 'yellow' };
-  const chipLabels = { common: 'COMMON', uncommon: 'UNCOMMON', rare: 'RARE', epic: 'EPIC', legendary: 'LEGEND', mythic: 'MYTHIC' };
+  // Upgrade bar helper (max 8 levels)
+  const upgRow = (name, lvl, maxLvl, valStr, barColor = '') => {
+    const pct = Math.min(100, Math.round((lvl / maxLvl) * 100));
+    const isOff = lvl <= 0;
+    return `<div class="ops-upg-row">
+      <span class="ops-upg-name">${name}</span>
+      <div class="ops-upg-bar"><div class="ops-upg-bar-fill ${barColor}" style="width:${pct}%"></div></div>
+      <span class="ops-upg-val ${isOff ? 'off' : ''}">${isOff ? 'OFF' : valStr}</span>
+    </div>`;
+  };
 
+  // Chip badges
+  const chipDefs = [
+    { r: 'common',    lbl: 'COM',    cls: 'common' },
+    { r: 'uncommon',  lbl: 'UNC',    cls: 'uncommon' },
+    { r: 'rare',      lbl: 'RARE',   cls: 'rare' },
+    { r: 'epic',      lbl: 'EPIC',   cls: 'epic' },
+    { r: 'legendary', lbl: 'LEG',    cls: 'legendary' },
+    { r: 'mythic',    lbl: 'MYTH',   cls: 'mythic' },
+  ];
+  const chipsHTML = chipDefs.map(({ r, lbl, cls }) => {
+    const cnt = invCount('chip', r);
+    return `<div class="ops-chip-badge ${cls} ${cnt > 0 ? 'has' : ''}">
+      <div class="ops-chip-dot"></div>
+      <span class="ops-chip-qty">${cnt}</span>
+      <span>${lbl}</span>
+    </div>`;
+  }).join('');
+
+  // Resource cells
+  const resCell = (icon, val, lbl) => {
+    const zero = val <= 0;
+    return `<div class="ops-res-cell">
+      <span class="ops-res-icon">${icon}</span>
+      <div class="ops-res-info">
+        <span class="ops-res-val ${zero ? 'zero' : ''}">${val}</span>
+        <span class="ops-res-lbl">${lbl}</span>
+      </div>
+    </div>`;
+  };
+
+  const accColor = accuracy >= 60 ? '' : accuracy >= 30 ? 'yellow' : 'red';
   const activeCards = (S.runCards || []).map(id => {
     const c = CARD_POOL.find(x => x.id === id);
     return c ? c.name : id;
   });
 
   return `
-    <div class="gps-header">◈ OPERATOR STATUS</div>
-    ${section('RUN LOG', [
-      row('LAYER REACHED', S.floor || 1, 'cyan'),
-      row('TICKS SURVIVED', stats.ticks),
-      row('CAUSE OF DEATH', S.energyDepleted ? 'VOLTAGE DEPLETED' : 'KILLED BY BUG', 'red'),
-    ].join(''))}
-    ${section('COMBAT', [
-      row('SHOTS FIRED', stats.shots[0]),
-      row('HITS LANDED', stats.hits[0], 'cyan'),
-      row('ACCURACY', accuracy + '%', accuracy >= 60 ? 'green' : accuracy >= 30 ? 'yellow' : 'red'),
-    ].join(''))}
-    ${section('UPGRADES', [
-      row('MAX ENERGY', maxNrg, 'cyan'),
-      row('ENERGY LVL', u.maxEnergy || 0, (u.maxEnergy || 0) > 0 ? 'green' : 'dim'),
-      row('CRIT CHANCE', critPct + '%', critPct >= 5 ? 'yellow' : ''),
-      row('CRIT LVL', u.critLevel || 0, (u.critLevel || 0) > 0 ? 'yellow' : 'dim'),
-      row('NANO REGEN', nanoLvl > 0 ? `LVL ${nanoLvl}  /  ${nanoInterval}T` : 'OFF', nanoLvl > 0 ? 'green' : 'dim'),
-      row('FREE SHOT', (u.freeShotLevel || 0) > 0 ? `LVL ${u.freeShotLevel}` : 'OFF', (u.freeShotLevel || 0) > 0 ? 'green' : 'dim'),
-      row('JUMP', (u.jumpLevel || 0) > 0 ? `LVL ${u.jumpLevel}` : 'OFF', (u.jumpLevel || 0) > 0 ? 'green' : 'dim'),
-      row('BLOOD RUSH', (u.bloodRushLevel || 0) > 0 ? `LVL ${u.bloodRushLevel}` : 'OFF', (u.bloodRushLevel || 0) > 0 ? 'red' : 'dim'),
-      row('CARD SLOTS', (u.cardSlotLevel || 0) > 0 ? `+${u.cardSlotLevel}` : 'BASE', (u.cardSlotLevel || 0) > 0 ? 'yellow' : ''),
-    ].join(''))}
-    ${section('CHIPS', chipRarities.map(r => {
-      const cnt = invCount('chip', r);
-      return row(chipLabels[r], cnt, cnt > 0 ? chipColors[r] : 'dim');
-    }).join(''))}
-    ${section('RESOURCES', [
-      row('BYTES', invCount('byte'), invCount('byte') > 0 ? 'yellow' : 'dim'),
-      row('FRAGMENTS', invCount('fragment'), invCount('fragment') > 0 ? 'cyan' : 'dim'),
-      row('XP TOKENS', invCount('xptoken'), invCount('xptoken') > 0 ? 'green' : 'dim'),
-      row('RONKE', invCount('ronke'), invCount('ronke') > 0 ? 'cyan' : 'dim'),
-      row('PIXEL', invCount('gem'), invCount('gem') > 0 ? 'green' : 'dim'),
-    ].join(''))}
-    ${activeCards.length > 0 ? section('ACTIVE CARDS', activeCards.map(n => row(n, '▶', 'green')).join('')) : ''}
+    <div class="ops-statusbar">
+      <div class="ops-statusbar-cell">
+        <span class="ops-sb-val">L${S.floor || 1}</span>
+        <span class="ops-sb-lbl">LAYER</span>
+      </div>
+      <div class="ops-statusbar-cell">
+        <span class="ops-sb-val">${stats.ticks}</span>
+        <span class="ops-sb-lbl">TICKS</span>
+      </div>
+      <div class="ops-statusbar-cell">
+        <span class="ops-sb-val ${accuracy >= 60 ? '' : accColor}">${accuracy}%</span>
+        <span class="ops-sb-lbl">ACCURACY</span>
+      </div>
+      <div class="ops-statusbar-cell">
+        <span class="ops-sb-val">${stats.shots[0]}</span>
+        <span class="ops-sb-lbl">SHOTS</span>
+      </div>
+    </div>
+
+    <div class="ops-cards">
+      <div class="ops-card">
+        <span class="ops-card-icon">▲</span>
+        <span class="ops-card-val">${maxNrg}</span>
+        <span class="ops-card-lbl">MAX ENERGY</span>
+      </div>
+      <div class="ops-card">
+        <span class="ops-card-icon">◆</span>
+        <span class="ops-card-val yellow">${critPct}%</span>
+        <span class="ops-card-lbl">CRIT CHANCE</span>
+      </div>
+      <div class="ops-card">
+        <span class="ops-card-icon">↑</span>
+        <span class="ops-card-val cyan">${stats.hits[0]}</span>
+        <span class="ops-card-lbl">HITS LANDED</span>
+      </div>
+      <div class="ops-card">
+        <span class="ops-card-icon">⟳</span>
+        <span class="ops-card-val ${nanoLvl > 0 ? '' : 'red'}">${nanoLvl > 0 ? nanoInterval + 'T' : 'OFF'}</span>
+        <span class="ops-card-lbl">NANO REGEN</span>
+      </div>
+    </div>
+
+    <div class="ops-section-hdr">UPGRADES</div>
+    ${upgRow('ENERGY',    u.maxEnergy    || 0, 10, `LVL ${u.maxEnergy}  /  +${u.maxEnergy} MAX`, 'cyan')}
+    ${upgRow('CRIT',      u.critLevel    || 0, 10, `LVL ${u.critLevel}  /  ${critPct}%`, 'yellow')}
+    ${upgRow('NANO',      nanoLvl,              8,  `LVL ${nanoLvl}  /  ${nanoInterval}T`)}
+    ${upgRow('FREE SHOT', u.freeShotLevel|| 0,  4,  `LVL ${u.freeShotLevel}`)}
+    ${upgRow('JUMP',      u.jumpLevel    || 0,  4,  `LVL ${u.jumpLevel}`)}
+    ${upgRow('BLOOD RUSH',u.bloodRushLevel||0,  4,  `LVL ${u.bloodRushLevel}`, 'red')}
+    ${upgRow('CARD SLOT', u.cardSlotLevel|| 0,  4,  `+${u.cardSlotLevel} SLOT`, 'yellow')}
+
+    <div class="ops-section-hdr">CHIPS</div>
+    <div class="ops-chips">${chipsHTML}</div>
+
+    <div class="ops-section-hdr">RESOURCES</div>
+    <div class="ops-resources">
+      ${resCell('▣', invCount('byte'),     'BYTE')}
+      ${resCell('◈', invCount('fragment'), 'FRAGMENT')}
+      ${resCell('★', invCount('xptoken'),  'XP TOKEN')}
+      ${resCell('◉', invCount('ronke'),    'RONKE')}
+      ${resCell('◆', invCount('gem'),      'PIXEL')}
+      ${resCell('⬡', Profile.cache || 0,  'VOLTS')}
+    </div>
+
+    ${activeCards.length > 0 ? `
+      <div class="ops-section-hdr">ACTIVE CARDS</div>
+      <div class="ops-runcards">${activeCards.map(n => `<span class="ops-runcard-tag">${n}</span>`).join('')}</div>
+    ` : ''}
   `;
 }
 
