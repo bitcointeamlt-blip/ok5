@@ -2576,6 +2576,30 @@ kbd {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    INVENTORY OVERLAY
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ops overlay */
+#ops-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 56;
+  background: rgba(0,0,0,0.88);
+  align-items: center;
+  justify-content: center;
+}
+#ops-overlay.active { display: flex; }
+#ops-panel {
+  font-family: var(--font-mono);
+  background: #0d0d0d;
+  border: 2px solid #1a3a2a;
+  box-shadow: 0 0 40px rgba(0,0,0,0.7), 0 0 20px rgba(0,255,136,0.06);
+  width: 320px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#ops-content { overflow-y: auto; flex: 1; }
+
 #inv-overlay {
   display: none;
   position: absolute;

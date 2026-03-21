@@ -654,6 +654,8 @@
           </button>
           <button id="btn-open-hub" class="panel-hub-btn" onclick="toggleHubOverlay()" style="display:none;"
             title="Upgrade Terminal">TERMINAL</button>
+          <button id="btn-ops-status" class="panel-hub-btn" onclick="window.toggleOpsStatus()" style="display:none;"
+            title="Operator Status">◈ OPERATOR STATUS</button>
 
           <!-- Map Scan Widget (adventure only) -->
           <div id="map-scan-widget">
@@ -698,6 +700,17 @@
           </div>
           <div class="canvas-wrap">
             <canvas id="canvas"></canvas>
+
+            <!-- Operator Status overlay -->
+            <div id="ops-overlay">
+              <div id="ops-panel">
+                <div class="inv-topbar">
+                  <span class="inv-title">◈ OPERATOR STATUS</span>
+                  <button class="inv-close-x" onclick="window.closeOpsStatus()">✕</button>
+                </div>
+                <div id="ops-content"></div>
+              </div>
+            </div>
 
             <!-- Inventory overlay -->
             <div id="inv-overlay">

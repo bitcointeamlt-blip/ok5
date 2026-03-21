@@ -10098,17 +10098,19 @@ function showScreen(id) {
 }
 
 window.toggleOpsStatus = function () {
-  const btn = document.getElementById('btn-ops-status');
-  const panel = document.getElementById('go-player-stats');
-  if (!panel) return;
-  const open = panel.classList.toggle('active');
-  if (open) {
-    panel.innerHTML = buildPlayerStatsHTML();
-    if (btn) btn.classList.add('active');
+  const ov = document.getElementById('ops-overlay');
+  if (!ov) return;
+  if (ov.classList.contains('active')) {
+    window.closeOpsStatus();
   } else {
-    panel.innerHTML = '';
-    if (btn) btn.classList.remove('active');
+    const content = document.getElementById('ops-content');
+    if (content) content.innerHTML = buildPlayerStatsHTML();
+    ov.classList.add('active');
   }
+};
+window.closeOpsStatus = function () {
+  const ov = document.getElementById('ops-overlay');
+  if (ov) ov.classList.remove('active');
 };
 
 function buildPlayerStatsHTML() {
@@ -10339,6 +10341,8 @@ window.startGame = function startGame(mode) {
     updateEnergyHud();
     const hubBtn = document.getElementById('btn-open-hub');
     if (hubBtn) hubBtn.style.display = 'block';
+    const opsBtn2 = document.getElementById('btn-ops-status');
+    if (opsBtn2) opsBtn2.style.display = 'block';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'flex';
     const bottomRow = document.querySelector('.btn-bottom-row');
@@ -10365,6 +10369,8 @@ window.startGame = function startGame(mode) {
     advCanvasW = BOARD_W;
     const hubBtn = document.getElementById('btn-open-hub');
     if (hubBtn) hubBtn.style.display = 'none';
+    const opsBtn2 = document.getElementById('btn-ops-status');
+    if (opsBtn2) opsBtn2.style.display = 'none';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'none';
     const bottomRow = document.querySelector('.btn-bottom-row');
