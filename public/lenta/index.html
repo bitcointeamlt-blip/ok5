@@ -45,7 +45,7 @@
 
             <div class="mode-select">
               <button id="btn-adv" type="button" class="mode-card mode-card-adv pulse"
-                onclick="window.SFX&&SFX.init(); window.loadProfile&&loadProfile(); if(window.S){S.floor=1;} window.startGame&&startGame('adventure');">
+                onclick="window.SFX&&SFX.init(); window.loadProfile&&loadProfile(); window.updateRunKeyUI&&updateRunKeyUI(); document.getElementById('screen-menu').classList.remove('active'); document.getElementById('screen-hub').classList.add('active'); window.BGM&&BGM.start('hub');">
                 <span class="mode-card-top">
                   <span class="mode-card-label">ROGUELITE RUN</span>
                   <span class="mode-card-badge">MAIN MODE</span>
@@ -418,6 +418,17 @@
           <!-- Mission Board -->
           <div class="hub-panel">
             <div class="panel-header">MISSION BOARD</div>
+
+            <!-- Run Key Status -->
+            <div class="runkey-block">
+              <div class="runkey-block-label">PULSE</div>
+              <div class="runkey-block-pips" id="hub-key-pips">♥♥♥♡♡</div>
+              <div class="runkey-block-timer" id="hub-key-timer">FULL</div>
+              <div class="runkey-block-hint">Pulse regenerates 1/hour. Required to deploy.</div>
+            </div>
+
+            <button class="btn-daily-hub" onclick="window.showDailyCheckin()">◈ DAILY BONUS</button>
+
             <div class="mission-list">
               <div class="mission-card mission-card-tutorial" onclick="replayTutorial()">
                 <div class="mis-info">
@@ -626,6 +637,24 @@
               <div class="sk-cd">READY</div>
             </div>
 
+            <div class="skill-slot wep-ronke-shield" id="p1-sk-ronke-shield" title="POISON [G] - Rotating shield infects enemies with poison for 16 moves (costs 5 Poison)"
+              onclick="(function(){SFX&&SFX.init&&SFX.init();typeof activateRonkeShield==='function'&&activateRonkeShield();})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- skull dome -->
+                  <path d="M7.5 10 Q7 4 11 3.5 Q15 4 14.5 10 L14 11.5 L8 11.5 Z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+                  <!-- eye sockets -->
+                  <circle cx="9.2" cy="7.5" r="1.2" fill="currentColor"/>
+                  <circle cx="12.8" cy="7.5" r="1.2" fill="currentColor"/>
+                  <!-- teeth -->
+                  <line x1="9.5" y1="11.5" x2="9.5" y2="13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                  <line x1="12.5" y1="11.5" x2="12.5" y2="13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="sk-label">POISON</div>
+              <div class="sk-cd">5&#9889;</div>
+            </div>
+
             <div class="skill-slot wep-hack" id="p1-sk-4" title="HACK [Q] - 50% freeze enemy 3 turns (2 shots/room)"
               onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='hack';updateSkillBar(0);}})()">
               <div class="sk-icon">
@@ -639,7 +668,7 @@
               <div class="sk-label">HACK</div>
               <div class="sk-cd">2 SHOTS</div>
             </div>
-            <div class="skill-slot wep-ronke" id="p1-sk-5" title="RONKE [Q] - blue laser, uses Ronke from inventory"
+            <div class="skill-slot wep-ronke" id="p1-sk-5" title="POISON [Q] - blue laser, uses Poison from inventory"
               onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='ronke';updateSkillBar(0);}})()">
               <div class="sk-icon">
                 <img src="ronke.png" style="width:22px;height:22px;object-fit:contain;display:block;margin:auto;margin-top:-4px;filter:drop-shadow(0 0 4px #44aaff);" draggable="false">
@@ -655,8 +684,15 @@
           </button>
           <button id="btn-open-hub" class="panel-hub-btn" onclick="toggleHubOverlay()" style="display:none;"
             title="Upgrade Terminal">TERMINAL</button>
-          <button id="btn-ops-status" class="panel-hub-btn" onclick="window.toggleOpsStatus()" style="display:none;"
-            title="Operator Status">◈ OPERATOR STATUS</button>
+
+          <!-- Run Keys (adventure only) -->
+          <div id="panel-runkeys">
+            <div class="prk-label">PULSE</div>
+            <div class="prk-pips" id="panel-key-pips">♥♥♥♡♡</div>
+            <div class="prk-timer" id="panel-key-timer">FULL</div>
+          </div>
+
+          <button id="btn-rewards" onclick="window.showRewards()">◈ REWARDS</button>
 
           <!-- Map Scan Widget (adventure only) -->
           <div id="map-scan-widget">
@@ -703,7 +739,7 @@
             <canvas id="canvas"></canvas>
 
             <!-- Operator Status overlay -->
-            <div id="ops-overlay">
+            <div id="ops-overlay" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.stopPropagation()">
               <div id="ops-panel">
                 <div class="ops-header">
                   <span class="ops-header-title">◈ OPERATOR STATUS</span>
@@ -713,8 +749,72 @@
               </div>
             </div>
 
+            <!-- Hash Crack overlay -->
+            <div id="crack-overlay" style="display:none">
+              <div id="crack-panel">
+                <div class="crack-scanlines"></div>
+                <div class="crack-header">
+                  <span class="crack-header-bracket">[ </span>⚙ HASH CRACKER v2.4<span class="crack-header-bracket"> ]</span>
+                </div>
+                <div class="crack-phase-row">
+                  <span class="crack-phase-dot" id="crack-phase-dot">◉</span>
+                  <span class="crack-phase-lbl" id="crack-phase">INITIALIZING</span>
+                </div>
+                <div class="crack-section-lbl">TARGET HASH</div>
+                <div class="crack-hash crack-hash-target" id="crack-target">0000000000000000000000000000000000000000000000000000000000000000</div>
+                <div class="crack-section-lbl">CURRENT ATTEMPT</div>
+                <div class="crack-hash crack-hash-current" id="crack-current">—</div>
+                <div class="crack-stream-wrap">
+                  <div class="crack-stream" id="crack-stream"></div>
+                </div>
+                <div class="crack-bar-wrap">
+                  <div class="crack-bar-fill" id="crack-bar"></div>
+                  <div class="crack-bar-pct" id="crack-bar-pct">0%</div>
+                </div>
+                <div class="crack-stats">
+                  <span>NONCE: <span id="crack-nonce" class="crack-mono">0x00000000</span></span>
+                  <span>H/s: <span id="crack-hashrate" class="crack-mono">0</span></span>
+                  <span>ATTEMPTS: <span id="crack-attempts" class="crack-mono">0</span></span>
+                </div>
+                <div class="crack-code-wrap" id="crack-code-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ ENTER ACCESS CODE</div>
+                  <div class="crack-code-digits" id="crack-code-digits"></div>
+                  <div class="crack-code-typed-row">
+                    <span class="crack-code-typed-lbl">INPUT:</span>
+                    <span class="crack-code-typed" id="crack-code-typed">▮</span>
+                  </div>
+                </div>
+                <div class="crack-hold-wrap" id="crack-hold-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ HOLD MOUSE — RELEASE IN GREEN ZONE</div>
+                  <div class="crack-hold-track">
+                    <div class="crack-hold-zone" id="crack-hold-zone"></div>
+                    <div class="crack-hold-fill" id="crack-hold-fill"></div>
+                    <div class="crack-hold-needle" id="crack-hold-needle"></div>
+                  </div>
+                  <div class="crack-hold-hint" id="crack-hold-hint">CLICK AND HOLD</div>
+                </div>
+                <div class="crack-tap-wrap" id="crack-tap-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ CLICK AS FAST AS YOU CAN</div>
+                  <div class="crack-tap-counter">
+                    <span class="crack-tap-num" id="crack-tap-num">0</span>
+                    <span class="crack-tap-sep">/</span>
+                    <span class="crack-tap-goal" id="crack-tap-goal">12</span>
+                  </div>
+                  <div class="crack-hold-track" style="margin-top:10px">
+                    <div class="crack-hold-fill" id="crack-tap-bar"></div>
+                  </div>
+                </div>
+                <div class="crack-pattern-wrap" id="crack-pattern-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ REPEAT THE SEQUENCE — WASD</div>
+                  <div class="crack-pattern-seq" id="crack-pattern-seq"></div>
+                  <div class="crack-pattern-input" id="crack-pattern-input"></div>
+                </div>
+                <div class="crack-status" id="crack-status">CRACKING...</div>
+              </div>
+            </div>
+
             <!-- Inventory overlay -->
-            <div id="inv-overlay">
+            <div id="inv-overlay" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.stopPropagation()">
               <div id="inv-panel">
 
                 <div class="inv-topbar">
@@ -1297,7 +1397,6 @@
             <button class="btn-primary" id="btn-rematch">REMATCH</button>
             <button class="btn-secondary" id="btn-menu-go">MENU</button>
           </div>
-          <button class="btn-ops-status" id="btn-ops-status" style="display:none" onclick="toggleOpsStatus()">◈ OPERATOR STATUS</button>
         </div>
         <div class="go-player-stats-panel" id="go-player-stats"></div>
       </div>
@@ -1467,6 +1566,106 @@
   <div id="mobile-orient-hint">
     <div class="orient-icon">ROTATE</div>
     <div class="orient-text">ROTATE DEVICE<br>FOR BEST EXPERIENCE</div>
+  </div>
+
+  <!-- COMBINED REWARDS MODAL -->
+  <div id="rewards-overlay" class="daily-overlay hidden" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.stopPropagation()">
+    <div class="rewards-modal">
+
+      <!-- DAILY SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-daily sec-clickable" id="daily-header" onclick="window.toggleRewardsSection('daily')">
+          <span class="sec-arrow" id="daily-arrow">▼</span>
+          <div class="rewards-sec-title">DAILY CHECK-IN</div>
+          <div class="sec-claim-tag hidden" id="daily-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge" id="daily-streak-badge">DAY 1</div>
+          <div class="rewards-kill-bonus-tag" id="daily-kill-bonus-tag">+0% TOTAL DAILY BONUS</div>
+        </div>
+        <div class="rewards-sec-body" id="daily-body">
+          <div class="daily-grid" id="daily-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- KILL SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-kill sec-clickable" id="kill-header" onclick="window.toggleRewardsSection('kill')">
+          <span class="sec-arrow sec-arrow-kill" id="kill-arrow">▼</span>
+          <div class="rewards-sec-title">KILL REWARDS</div>
+          <div class="sec-claim-tag hidden" id="kill-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge kill-sec-badge" id="kill-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="kill-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar"><div class="kill-progress-fill" id="kill-progress-fill"></div></div>
+            <div class="kill-progress-label" id="kill-progress-label">0 / 50 KILLS</div>
+          </div>
+          <div class="kill-grid" id="kill-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- LASER SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-laser sec-clickable" id="laser-header" onclick="window.toggleRewardsSection('laser')">
+          <span class="sec-arrow sec-arrow-laser" id="laser-arrow">▼</span>
+          <div class="rewards-sec-title">POISON LASER</div>
+          <div class="sec-claim-tag hidden" id="laser-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge laser-sec-badge" id="laser-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="laser-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar laser-progress-bar"><div class="kill-progress-fill laser-progress-fill" id="laser-progress-fill"></div></div>
+            <div class="kill-progress-label laser-progress-label" id="laser-progress-label">0 / 250 POISON USES</div>
+          </div>
+          <div class="kill-grid laser-grid" id="laser-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- CHEST SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-chest sec-clickable" id="chest-header" onclick="window.toggleRewardsSection('chest')">
+          <span class="sec-arrow sec-arrow-chest" id="chest-arrow">▼</span>
+          <div class="rewards-sec-title">CHESTS OPENED</div>
+          <div class="sec-claim-tag hidden" id="chest-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge chest-sec-badge" id="chest-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="chest-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar chest-progress-bar"><div class="kill-progress-fill chest-progress-fill" id="chest-progress-fill"></div></div>
+            <div class="kill-progress-label chest-progress-label" id="chest-progress-label">0 / 5 CHESTS</div>
+          </div>
+          <div class="kill-grid chest-grid" id="chest-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- ENERGY SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-energy sec-clickable" id="energy-header" onclick="window.toggleRewardsSection('energy')">
+          <span class="sec-arrow sec-arrow-energy" id="energy-arrow">▼</span>
+          <div class="rewards-sec-title">MAX ENERGY</div>
+          <div class="sec-claim-tag hidden" id="energy-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge energy-sec-badge" id="energy-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="energy-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar energy-progress-bar"><div class="kill-progress-fill energy-progress-fill" id="energy-progress-fill"></div></div>
+            <div class="kill-progress-label energy-progress-label" id="energy-progress-label">100 / 110 MAX ENERGY</div>
+          </div>
+          <div class="kill-grid energy-grid" id="energy-grid"></div>
+        </div>
+      </div>
+
+      <div class="daily-actions">
+        <button class="daily-close-btn" onclick="window.closeRewards()">CLOSE</button>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>

@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 // ----------------------------------------------------------------
 //  TIMELOCK BOARD - 3v3 edition (12x12 grid)
 // ----------------------------------------------------------------
@@ -38,7 +38,7 @@ function evaluateCombination(reels) {
   // Special: all 4 gems = PIXEL jackpot
   if (reels.every(r => r === 'gem')) return { val: 5, name: '5 PIXEL', rarity: 'gem', matchCount: 4 };
   // Special: all 4 ronke = RONKE jackpot
-  if (reels.every(r => r === 'ronke')) return { val: 5, name: '5 RONKE', rarity: 'ronke', matchCount: 4 };
+  if (reels.every(r => r === 'ronke')) return { val: 5, name: '5 POISON', rarity: 'ronke', matchCount: 4 };
   const counts = {};
   for (const r of reels) counts[r] = (counts[r] || 0) + 1;
   const order = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
@@ -141,6 +141,543 @@ const TICK_WINDOW = 90;
 const ANIM_MS = 240;
 const P1_COLOR = '#00f5ff';
 const P2_COLOR = '#ff3c55';
+// ── Daily Check-In ────────────────────────────────────────────────
+const DAILY_REWARDS = [
+  { ronke: 5,  pixel: 0 },
+  { ronke: 10, pixel: 0 },
+  { ronke: 15, pixel: 0 },
+  { ronke: 20, pixel: 0 },
+  { ronke: 25, pixel: 0 },
+  { ronke: 0,  pixel: 5 },
+  { ronke: 0,  pixel: 10 },
+];
+
+function getDailyData() {
+  try { return JSON.parse(localStorage.getItem('ufo_daily') || 'null') || { streak: 0, lastDate: null, claimed: false }; }
+  catch(e) { return { streak: 0, lastDate: null, claimed: false }; }
+}
+function saveDailyData(d) { localStorage.setItem('ufo_daily', JSON.stringify(d)); }
+
+function updateDailyStreak() {
+  const today = new Date().toDateString();
+  const d = getDailyData();
+  if (d.lastDate === today) return d;
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  const streak = d.lastDate === yesterday ? (d.streak % 7) + 1 : 1;
+  const nd = { streak, lastDate: today, claimed: false };
+  saveDailyData(nd); return nd;
+}
+
+function renderDailyGrid() {
+  const d = getDailyData();
+  const grid = document.getElementById('daily-grid');
+  const badge = document.getElementById('daily-streak-badge');
+  if (!grid) return;
+  badge.textContent = 'DAY ' + d.streak;
+  grid.innerHTML = '';
+  const mult = 1 + getTotalDailyBonus();
+  for (let i = 1; i <= 7; i++) {
+    const r = DAILY_REWARDS[i - 1];
+    const claimed = i < d.streak || (i === d.streak && d.claimed);
+    const current = i === d.streak;
+    const card = document.createElement('div');
+    card.className = 'daily-day-card ' + (claimed ? 'claimed' : current ? 'current' : 'future');
+    const dispRonke = r.ronke > 0 ? Math.floor(r.ronke * mult) : 0;
+    const dispPixel = r.pixel > 0 ? Math.floor(r.pixel * mult) : 0;
+    let rewardHTML;
+    if (dispRonke > 0 && dispPixel > 0) {
+      rewardHTML = `
+        <div class="daily-day-reward">
+          <img src="ronke.png" class="daily-icon-img">
+          <span class="daily-day-amt">+${dispRonke}</span>
+        </div>
+        <div class="daily-day-bonus">
+          <img src="pix.png" class="daily-icon-img"> <span>+${dispPixel}</span>
+        </div>`;
+    } else if (dispPixel > 0) {
+      rewardHTML = `
+        <div class="daily-day-reward">
+          <img src="pix.png" class="daily-icon-img">
+          <span class="daily-day-amt">+${dispPixel}</span>
+        </div>`;
+    } else {
+      rewardHTML = `
+        <div class="daily-day-reward">
+          <img src="ronke.png" class="daily-icon-img">
+          <span class="daily-day-amt">+${dispRonke}</span>
+        </div>`;
+    }
+    let cardFooter;
+    if (claimed) {
+      cardFooter = '<div class="card-claim-done">✓</div>';
+    } else if (current) {
+      cardFooter = '<button class="card-claim-btn" onclick="window.claimDailyReward()">CLAIM</button>';
+    } else {
+      cardFooter = '<div class="card-claim-locked"></div>';
+    }
+    card.innerHTML = `<div class="daily-day-num">DAY ${i}</div>${rewardHTML}${cardFooter}`;
+    grid.appendChild(card);
+  }
+}
+
+function openRewardsModal() {
+  updateDailyStreak();
+  renderDailyGrid();
+  renderKillGrid();
+  renderEnergyGrid();
+  renderLaserUseGrid();
+  if (typeof renderChestGrid === 'function') renderChestGrid();
+  updateClaimDots();
+  ['daily','kill','energy','laser','chest'].forEach(s => {
+    const body = document.getElementById(s + '-body');
+    const arrow = document.getElementById(s + '-arrow');
+    if (body) body.classList.add('sec-collapsed');
+    if (arrow) arrow.style.transform = 'rotate(-90deg)';
+  });
+  const el = document.getElementById('rewards-overlay');
+  if (el) el.classList.remove('hidden');
+}
+function closeRewardsModal() {
+  const el = document.getElementById('rewards-overlay');
+  if (el) el.classList.add('hidden');
+}
+window.toggleRewardsSection = function(section) {
+  const body = document.getElementById(section + '-body');
+  const arrow = document.getElementById(section + '-arrow');
+  if (!body) return;
+  const collapsed = body.classList.toggle('sec-collapsed');
+  if (arrow) arrow.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+};
+function updateClaimDots() {
+  const dd = getDailyData();
+  const today = new Date().toDateString();
+  const dailyReady = dd.lastDate === today && !dd.claimed;
+  const dailyTag = document.getElementById('daily-claim-tag');
+  const dailyHdr = document.getElementById('daily-header');
+  const dailyBadge = document.getElementById('daily-streak-badge');
+  if (dailyTag) dailyTag.classList.toggle('hidden', !dailyReady);
+  if (dailyHdr) dailyHdr.classList.toggle('has-claim', dailyReady);
+  if (dailyBadge) dailyBadge.classList.toggle('badge-dim', !dailyReady);
+
+  const kd = getKillData();
+  const killReady = kd.tier < KILL_TIERS.length &&
+    Math.max(0, getTotalKills() - (kd.spentKills || 0)) >= KILL_TIERS[kd.tier]?.kills;
+  const killTag = document.getElementById('kill-claim-tag');
+  const killHdr = document.getElementById('kill-header');
+  const killBadge = document.getElementById('kill-tier-badge');
+  if (killTag) killTag.classList.toggle('hidden', !killReady);
+  if (killHdr) killHdr.classList.toggle('has-claim', killReady);
+  if (killBadge) killBadge.classList.toggle('badge-dim', !killReady);
+
+  const ed = getEnergyData();
+  const energyReady = ed.tier < ENERGY_TIERS.length &&
+    getCurrentMaxEnergy() >= ENERGY_TIERS[ed.tier]?.energy;
+  const energyTag = document.getElementById('energy-claim-tag');
+  const energyHdr = document.getElementById('energy-header');
+  const energyBadge = document.getElementById('energy-tier-badge');
+  if (energyTag) energyTag.classList.toggle('hidden', !energyReady);
+  if (energyHdr) energyHdr.classList.toggle('has-claim', energyReady);
+  if (energyBadge) energyBadge.classList.toggle('badge-dim', !energyReady);
+
+  const ld = getLaserUseData();
+  const laserReady = ld.tier < LASER_USE_TIERS.length &&
+    Math.max(0, (ld.totalUses || 0) - (ld.spentUses || 0)) >= LASER_USE_TIERS[ld.tier]?.uses;
+  const laserTag = document.getElementById('laser-claim-tag');
+  const laserHdr = document.getElementById('laser-header');
+  const laserBadge = document.getElementById('laser-tier-badge');
+  if (laserTag) laserTag.classList.toggle('hidden', !laserReady);
+  if (laserHdr) laserHdr.classList.toggle('has-claim', laserReady);
+  if (laserBadge) laserBadge.classList.toggle('badge-dim', !laserReady);
+
+  if (typeof getChestData === 'function') {
+    const cd = getChestData();
+    const chestReady = cd.tier < (typeof CHEST_USE_TIERS !== 'undefined' ? CHEST_USE_TIERS.length : 0) &&
+      Math.max(0, (cd.totalOpened || 0) - (cd.spentOpened || 0)) >= CHEST_USE_TIERS[cd.tier]?.chests;
+    const chestTag = document.getElementById('chest-claim-tag');
+    const chestHdr = document.getElementById('chest-header');
+    const chestBadge = document.getElementById('chest-tier-badge');
+    if (chestTag) chestTag.classList.toggle('hidden', !chestReady);
+    if (chestHdr) chestHdr.classList.toggle('has-claim', chestReady);
+    if (chestBadge) chestBadge.classList.toggle('badge-dim', !chestReady);
+  }
+}
+window.showRewards      = openRewardsModal;
+window.closeRewards     = closeRewardsModal;
+window.showDailyCheckin = openRewardsModal;
+window.closeDailyCheckin= closeRewardsModal;
+window.claimDailyReward = function() {
+  const d = getDailyData();
+  if (d.claimed) return;
+  const r = DAILY_REWARDS[(d.streak - 1) % 7];
+  const mult = 1 + getTotalDailyBonus();
+  const ronkeAmt = r.ronke > 0 ? Math.floor(r.ronke * mult) : 0;
+  const pixelAmt = r.pixel > 0 ? Math.floor(r.pixel * mult) : 0;
+  if (ronkeAmt > 0) addToInventory('ronke',    null, ronkeAmt);
+  if (pixelAmt > 0) addToInventory('fragment', null, pixelAmt);
+  if (typeof updateInventoryUI === 'function') updateInventoryUI();
+  d.claimed = true; saveDailyData(d);
+  const bonusPct = Math.round(getTotalDailyBonus() * 100);
+  const bonusStr = bonusPct > 0 ? ` (+${bonusPct}% BONUS)` : '';
+  const msg = (ronkeAmt > 0 ? `+${ronkeAmt} POISON` : '') + (pixelAmt > 0 ? ` +${pixelAmt} FRAGMENT` : '') + bonusStr;
+  showGameNotification('DAILY REWARD', msg, '#00ff88');
+  renderDailyGrid();
+};
+
+// ── KILL REWARDS ──────────────────────────────────────────────────
+// fresh kills needed per each tier
+const KILL_TIERS = [
+  { kills: 50,   bonus: 0.10 },
+  { kills: 100,  bonus: 0.11 },
+  { kills: 250,  bonus: 0.12 },
+  { kills: 500,  bonus: 0.13 },
+  { kills: 750,  bonus: 0.14 },
+  { kills: 1000, bonus: 0.15 },
+  { kills: 2000, bonus: 0.16 },
+  { kills: 5000, bonus: 0.17 },
+];
+function getKillData() {
+  const def = { tier: 0, lifetimeKills: 0, spentKills: 0 };
+  let d;
+  try { d = Object.assign({}, def, JSON.parse(localStorage.getItem('killRewards') || 'null') || {}); }
+  catch { d = def; }
+  // migrate: if tiers were claimed before spentKills existed, compute it now
+  if (d.tier > 0 && !d.spentKills) {
+    d.spentKills = KILL_TIERS.slice(0, d.tier).reduce((s, t) => s + t.kills, 0);
+    saveKillData(d);
+  }
+  return d;
+}
+function saveKillData(d) { localStorage.setItem('killRewards', JSON.stringify(d)); }
+function getKillBonus() {
+  const kd = getKillData();
+  return KILL_TIERS.slice(0, kd.tier).reduce((sum, t) => sum + t.bonus, 0);
+}
+function trackKill() {
+  const kd = getKillData();
+  kd.lifetimeKills = (kd.lifetimeKills || 0) + 1;
+  saveKillData(kd);
+}
+function getTotalKills() {
+  const kd = getKillData();
+  // also pull Profile.stats.totalKills so pre-existing kills count
+  const profileKills = (typeof Profile !== 'undefined' && Profile.stats && Profile.stats.totalKills) || 0;
+  return Math.max(kd.lifetimeKills || 0, profileKills);
+}
+function renderKillGrid() {
+  const kd = getKillData();
+  const grid = document.getElementById('kill-grid');
+  const badge = document.getElementById('kill-tier-badge');
+  const progressFill = document.getElementById('kill-progress-fill');
+  const progressLabel = document.getElementById('kill-progress-label');
+  const bonusTag = document.getElementById('daily-kill-bonus-tag');
+  if (!grid) return;
+  if (bonusTag) {
+    const bonusPct = Math.round(getTotalDailyBonus() * 100);
+    bonusTag.textContent = '+' + bonusPct + '% TOTAL DAILY BONUS';
+    bonusTag.style.color = bonusPct > 0 ? 'rgba(255,102,51,0.85)' : 'rgba(255,255,255,0.15)';
+  }
+  const total = getTotalKills();
+  const available = Math.max(0, total - (kd.spentKills || 0));
+  const allDone = kd.tier >= KILL_TIERS.length;
+  badge.textContent = allDone ? 'MAX' : 'TIER ' + (kd.tier + 1);
+  if (!allDone) {
+    const needed = KILL_TIERS[kd.tier].kills;
+    const pct = Math.min(100, (available / needed) * 100);
+    progressFill.style.width = pct + '%';
+    progressLabel.textContent = Math.min(available, needed) + ' / ' + needed + ' KILLS';
+  } else {
+    progressFill.style.width = '100%';
+    progressLabel.textContent = 'ALL TIERS COMPLETE';
+  }
+  grid.innerHTML = '';
+  for (let i = 0; i < KILL_TIERS.length; i++) {
+    const t = KILL_TIERS[i];
+    const claimed = i < kd.tier;
+    const ready = !claimed && i === kd.tier && available >= t.kills;
+    const current = i === kd.tier && !allDone;
+    const card = document.createElement('div');
+    card.className = 'kill-tier-card ' + (claimed ? 'claimed' : (current || ready) ? 'current' : 'future');
+    const killLabel = t.kills >= 1000 ? (t.kills / 1000) + 'K' : t.kills;
+    const bonusPct = Math.round(t.bonus * 100);
+    let cardFooter;
+    if (claimed) {
+      cardFooter = '<div class="card-claim-done kt-done">✓</div>';
+    } else if (ready) {
+      cardFooter = `<button class="card-claim-btn kt-claim" onclick="window.claimKillReward()">CLAIM</button>`;
+    } else {
+      cardFooter = '<div class="card-claim-locked"></div>';
+    }
+    card.innerHTML = `
+      <div class="kill-tier-num">${killLabel}<span class="kill-tier-unit"> KILLS</span></div>
+      <div class="kill-tier-mid">+${bonusPct}%<div class="kill-tier-daily-label">DAILY<span class="kill-bonus-word">BONUS</span></div></div>
+      ${cardFooter}
+      ${claimed ? '<div class="kill-tier-check">✓</div>' : ''}`;
+    grid.appendChild(card);
+  }
+}
+window.showKillRewards  = openRewardsModal;
+window.closeKillRewards = closeRewardsModal;
+window.claimKillReward = function() {
+  const kd = getKillData();
+  if (kd.tier >= KILL_TIERS.length) return;
+  const available = Math.max(0, getTotalKills() - (kd.spentKills || 0));
+  if (available < KILL_TIERS[kd.tier].kills) return;
+  kd.spentKills = (kd.spentKills || 0) + KILL_TIERS[kd.tier].kills;
+  kd.tier++;
+  saveKillData(kd);
+  const bonusPct = Math.round(KILL_TIERS[kd.tier - 1].bonus * 100);
+  showGameNotification('KILL REWARD', '+' + bonusPct + '% DAILY BONUS UNLOCKED', '#ff6633');
+  renderKillGrid();
+};
+
+// ── ENERGY REWARDS ────────────────────────────────────────────────
+const ENERGY_TIERS = [
+  { energy: 110, bonus: 0.05 },
+  { energy: 125, bonus: 0.06 },
+  { energy: 135, bonus: 0.07 },
+  { energy: 145, bonus: 0.08 },
+  { energy: 160, bonus: 0.09 },
+  { energy: 175, bonus: 0.10 },
+  { energy: 200, bonus: 0.11 },
+];
+function getEnergyData() {
+  const def = { tier: 0 };
+  try { return Object.assign({}, def, JSON.parse(localStorage.getItem('energyRewards') || 'null') || {}); }
+  catch { return def; }
+}
+function saveEnergyData(d) { localStorage.setItem('energyRewards', JSON.stringify(d)); }
+function getEnergyBonus() {
+  const ed = getEnergyData();
+  return ENERGY_TIERS.slice(0, ed.tier).reduce((sum, t) => sum + t.bonus, 0);
+}
+function getCurrentMaxEnergy() {
+  return 100 + (Profile?.upgrades?.maxEnergy || 0);
+}
+function renderEnergyGrid() {
+  const ed = getEnergyData();
+  const grid = document.getElementById('energy-grid');
+  const badge = document.getElementById('energy-tier-badge');
+  const progressFill = document.getElementById('energy-progress-fill');
+  const progressLabel = document.getElementById('energy-progress-label');
+  if (!grid) return;
+  const curMax = getCurrentMaxEnergy();
+  const allDone = ed.tier >= ENERGY_TIERS.length;
+  if (badge) badge.textContent = allDone ? 'MAX' : 'TIER ' + (ed.tier + 1);
+  if (!allDone) {
+    const needed = ENERGY_TIERS[ed.tier].energy;
+    const prev = ed.tier > 0 ? ENERGY_TIERS[ed.tier - 1].energy : 100;
+    const pct = Math.min(100, Math.max(0, (curMax - prev) / (needed - prev) * 100));
+    progressFill.style.width = pct + '%';
+    progressLabel.textContent = curMax + ' / ' + needed + ' MAX ENERGY';
+  } else {
+    progressFill.style.width = '100%';
+    progressLabel.textContent = 'ALL TIERS COMPLETE';
+  }
+  grid.innerHTML = '';
+  for (let i = 0; i < ENERGY_TIERS.length; i++) {
+    const t = ENERGY_TIERS[i];
+    const claimed = i < ed.tier;
+    const ready = !claimed && i === ed.tier && curMax >= t.energy;
+    const card = document.createElement('div');
+    card.className = 'energy-tier-card ' + (claimed ? 'claimed' : ready ? 'current' : 'future');
+    const bonusPct = Math.round(t.bonus * 100);
+    let cardFooter;
+    if (claimed) {
+      cardFooter = '<div class="kt-done energy-done">✓</div>';
+    } else if (ready) {
+      cardFooter = `<button class="kt-claim energy-claim" onclick="window.claimEnergyReward()">CLAIM</button>`;
+    } else {
+      cardFooter = '<div class="card-claim-locked"></div>';
+    }
+    card.innerHTML = `
+      <div class="energy-tier-num">${t.energy}<span class="kill-tier-unit"> MAX</span></div>
+      <div class="energy-tier-mid">+${bonusPct}%<div class="kill-tier-daily-label energy-tier-label">DAILY<span class="kill-bonus-word">BONUS</span></div></div>
+      ${cardFooter}
+      ${claimed ? '<div class="kill-tier-check energy-check">✓</div>' : ''}`;
+    grid.appendChild(card);
+  }
+}
+window.claimEnergyReward = function() {
+  const ed = getEnergyData();
+  if (ed.tier >= ENERGY_TIERS.length) return;
+  if (getCurrentMaxEnergy() < ENERGY_TIERS[ed.tier].energy) return;
+  ed.tier++;
+  saveEnergyData(ed);
+  const bonusPct = Math.round(ENERGY_TIERS[ed.tier - 1].bonus * 100);
+  showGameNotification('ENERGY REWARD', '+' + bonusPct + '% DAILY BONUS UNLOCKED', '#00ccff');
+  renderEnergyGrid();
+};
+
+// ── RONKE LASER REWARDS ───────────────────────────────────────────
+const LASER_USE_TIERS = [
+  { uses: 250,  bonus: 0.01 },
+  { uses: 500,  bonus: 0.02 },
+  { uses: 1000, bonus: 0.03 },
+  { uses: 2500, bonus: 0.04 },
+  { uses: 5000, bonus: 0.05 },
+  { uses: 7500, bonus: 0.06 },
+  { uses: 10000,bonus: 0.07 },
+];
+function getLaserUseData() {
+  const def = { tier: 0, totalUses: 0, spentUses: 0 };
+  try { return Object.assign({}, def, JSON.parse(localStorage.getItem('laserUseRewards') || 'null') || {}); }
+  catch { return def; }
+}
+function saveLaserUseData(d) { localStorage.setItem('laserUseRewards', JSON.stringify(d)); }
+function getLaserUseBonus() {
+  const ld = getLaserUseData();
+  return LASER_USE_TIERS.slice(0, ld.tier).reduce((sum, t) => sum + t.bonus, 0);
+}
+function trackRonkeLaser() {
+  const ld = getLaserUseData();
+  ld.totalUses = (ld.totalUses || 0) + 1;
+  saveLaserUseData(ld);
+}
+function renderLaserUseGrid() {
+  const ld = getLaserUseData();
+  const grid = document.getElementById('laser-grid');
+  const badge = document.getElementById('laser-tier-badge');
+  const progressFill = document.getElementById('laser-progress-fill');
+  const progressLabel = document.getElementById('laser-progress-label');
+  if (!grid) return;
+  const total = ld.totalUses || 0;
+  const available = Math.max(0, total - (ld.spentUses || 0));
+  const allDone = ld.tier >= LASER_USE_TIERS.length;
+  if (badge) badge.textContent = allDone ? 'MAX' : 'TIER ' + (ld.tier + 1);
+  if (!allDone) {
+    const needed = LASER_USE_TIERS[ld.tier].uses;
+    const pct = Math.min(100, (available / needed) * 100);
+    if (progressFill) progressFill.style.width = pct + '%';
+    const useLabel = needed >= 1000 ? (needed / 1000) + 'K' : needed;
+    if (progressLabel) progressLabel.textContent = Math.min(available, needed) + ' / ' + useLabel + ' POISON USES';
+  } else {
+    if (progressFill) progressFill.style.width = '100%';
+    if (progressLabel) progressLabel.textContent = 'ALL TIERS COMPLETE';
+  }
+  grid.innerHTML = '';
+  for (let i = 0; i < LASER_USE_TIERS.length; i++) {
+    const t = LASER_USE_TIERS[i];
+    const claimed = i < ld.tier;
+    const ready = !claimed && i === ld.tier && available >= t.uses;
+    const card = document.createElement('div');
+    card.className = 'laser-tier-card ' + (claimed ? 'claimed' : ready ? 'current' : 'future');
+    const useLabel = t.uses >= 1000 ? (t.uses / 1000) + 'K' : t.uses;
+    const bonusPct = Math.round(t.bonus * 100);
+    let cardFooter;
+    if (claimed) {
+      cardFooter = '<div class="kt-done laser-done">✓</div>';
+    } else if (ready) {
+      cardFooter = '<button class="kt-claim laser-claim" onclick="window.claimLaserUseReward()">CLAIM</button>';
+    } else {
+      cardFooter = '<div class="card-claim-locked"></div>';
+    }
+    card.innerHTML =
+      '<div class="laser-tier-num">' + useLabel + '<span class="kill-tier-unit"> USES</span></div>' +
+      '<div class="laser-tier-mid">+' + bonusPct + '%<div class="kill-tier-daily-label laser-tier-label">DAILY<span class="kill-bonus-word">BONUS</span></div></div>' +
+      cardFooter +
+      (claimed ? '<div class="kill-tier-check laser-check">✓</div>' : '');
+    grid.appendChild(card);
+  }
+}
+window.claimLaserUseReward = function() {
+  const ld = getLaserUseData();
+  if (ld.tier >= LASER_USE_TIERS.length) return;
+  const available = Math.max(0, (ld.totalUses || 0) - (ld.spentUses || 0));
+  if (available < LASER_USE_TIERS[ld.tier].uses) return;
+  ld.spentUses = (ld.spentUses || 0) + LASER_USE_TIERS[ld.tier].uses;
+  ld.tier++;
+  saveLaserUseData(ld);
+  const bonusPct = Math.round(LASER_USE_TIERS[ld.tier - 1].bonus * 100);
+  showGameNotification('POISON REWARD', '+' + bonusPct + '% DAILY BONUS UNLOCKED', '#44aaff');
+  renderLaserUseGrid();
+};
+
+// ── CHEST REWARDS ───────────────────────────────────────────
+const CHEST_USE_TIERS = [
+  { chests: 5,   bonus: 0.01 },
+  { chests: 15,  bonus: 0.02 },
+  { chests: 30,  bonus: 0.03 },
+  { chests: 50,  bonus: 0.04 },
+  { chests: 70,  bonus: 0.05 },
+  { chests: 100, bonus: 0.06 },
+  { chests: 150, bonus: 0.07 },
+  { chests: 200, bonus: 0.08 }
+];
+function getChestData() {
+  const def = { tier: 0, totalOpened: 0, spentOpened: 0 };
+  try { return Object.assign({}, def, JSON.parse(localStorage.getItem('chestRewards') || 'null') || {}); }
+  catch { return def; }
+}
+function saveChestData(d) { localStorage.setItem('chestRewards', JSON.stringify(d)); }
+function getChestBonus() {
+  const cd = getChestData();
+  return CHEST_USE_TIERS.slice(0, cd.tier).reduce((sum, t) => sum + t.bonus, 0);
+}
+function trackChestOpen() {
+  const cd = getChestData();
+  cd.totalOpened = (cd.totalOpened || 0) + 1;
+  saveChestData(cd);
+}
+function renderChestGrid() {
+  const cd = getChestData();
+  const grid = document.getElementById('chest-grid');
+  const badge = document.getElementById('chest-tier-badge');
+  const progressFill = document.getElementById('chest-progress-fill');
+  const progressLabel = document.getElementById('chest-progress-label');
+  if (!grid) return;
+  const total = cd.totalOpened || 0;
+  const available = Math.max(0, total - (cd.spentOpened || 0));
+  const allDone = cd.tier >= CHEST_USE_TIERS.length;
+  if (badge) badge.textContent = allDone ? 'MAX' : 'TIER ' + (cd.tier + 1);
+  if (!allDone) {
+    const needed = CHEST_USE_TIERS[cd.tier].chests;
+    const pct = Math.min(100, (available / needed) * 100);
+    if (progressFill) progressFill.style.width = pct + '%';
+    if (progressLabel) progressLabel.textContent = Math.min(available, needed) + ' / ' + needed + ' CHESTS';
+  } else {
+    if (progressFill) progressFill.style.width = '100%';
+    if (progressLabel) progressLabel.textContent = 'ALL TIERS COMPLETE';
+  }
+  grid.innerHTML = '';
+  for (let i = 0; i < CHEST_USE_TIERS.length; i++) {
+    const t = CHEST_USE_TIERS[i];
+    const claimed = i < cd.tier;
+    const ready = !claimed && i === cd.tier && available >= t.chests;
+    const card = document.createElement('div');
+    card.className = 'chest-tier-card ' + (claimed ? 'claimed' : ready ? 'current' : 'future');
+    const bonusPct = Math.round(t.bonus * 100);
+    let cardFooter;
+    if (claimed) {
+      cardFooter = '<div class="kt-done chest-done">✓</div>';
+    } else if (ready) {
+      cardFooter = '<button class="kt-claim chest-claim" onclick="window.claimChestReward()">CLAIM</button>';
+    } else {
+      cardFooter = '<div class="card-claim-locked"></div>';
+    }
+    card.innerHTML =
+      '<div class="chest-tier-num">' + t.chests + '<span class="kill-tier-unit"> CHESTS</span></div>' +
+      '<div class="chest-tier-mid">+' + bonusPct + '%<div class="kill-tier-daily-label chest-tier-label">DAILY<span class="kill-bonus-word">BONUS</span></div></div>' +
+      cardFooter +
+      (claimed ? '<div class="kill-tier-check chest-check">✓</div>' : '');
+    grid.appendChild(card);
+  }
+}
+window.claimChestReward = function() {
+  const cd = getChestData();
+  if (cd.tier >= CHEST_USE_TIERS.length) return;
+  const available = Math.max(0, (cd.totalOpened || 0) - (cd.spentOpened || 0));
+  if (available < CHEST_USE_TIERS[cd.tier].chests) return;
+  cd.spentOpened = (cd.spentOpened || 0) + CHEST_USE_TIERS[cd.tier].chests;
+  cd.tier++;
+  saveChestData(cd);
+  const bonusPct = Math.round(CHEST_USE_TIERS[cd.tier - 1].bonus * 100);
+  showGameNotification('CHEST REWARD', '+' + bonusPct + '% DAILY BONUS UNLOCKED', '#ffaa00');
+  renderChestGrid();
+};
+
+function getTotalDailyBonus() { return getKillBonus() + getEnergyBonus() + getLaserUseBonus() + (typeof getChestBonus === 'function' ? getChestBonus() : 0); }
+// ─────────────────────────────────────────────────────────────────
+
 const MAX_LASER = 1;
 const LASER_REGEN = 3;
 const MAX_HEAVY = 2;
@@ -702,6 +1239,74 @@ function loadProfile() {
 
 function saveProfile() {
   localStorage.setItem('timelock_profile', JSON.stringify(Profile));
+}
+
+// ── RUN KEY system ────────────────────────────────────────────
+const RUN_KEY_MAX    = 3;
+const RUN_KEY_REGEN  = 60 * 60 * 1000; // 1 valanda ms
+
+function getRunKeys() {
+  if (!Profile.runKeys) Profile.runKeys = { count: RUN_KEY_MAX, lastRegen: Date.now() };
+  const rk = Profile.runKeys;
+  if (rk.count < RUN_KEY_MAX) {
+    const elapsed = Date.now() - rk.lastRegen;
+    const gained  = Math.floor(elapsed / RUN_KEY_REGEN);
+    if (gained > 0) {
+      rk.count     = Math.min(RUN_KEY_MAX, rk.count + gained);
+      rk.lastRegen += gained * RUN_KEY_REGEN;
+      saveProfile();
+    }
+  }
+  return rk.count;
+}
+
+function consumeRunKey() {
+  getRunKeys(); // regeneruok pirma
+  if (Profile.runKeys.count <= 0) return false;
+  Profile.runKeys.count--;
+  if (Profile.runKeys.count < RUN_KEY_MAX && !Profile.runKeys.lastRegen) {
+    Profile.runKeys.lastRegen = Date.now();
+  }
+  saveProfile();
+  return true;
+}
+
+function msToNextRunKey() {
+  if (!Profile.runKeys) return 0;
+  if (Profile.runKeys.count >= RUN_KEY_MAX) return 0;
+  const elapsed = Date.now() - Profile.runKeys.lastRegen;
+  return Math.max(0, RUN_KEY_REGEN - (elapsed % RUN_KEY_REGEN));
+}
+
+function updateRunKeyUI() {
+  const count = getRunKeys();
+  const filled = '♥'.repeat(count);
+  const empty  = '♡'.repeat(RUN_KEY_MAX - count);
+  const activePips = filled + empty;
+  const pipsHTML = activePips + '<span class="pips-locked">♡♡</span>';
+  const emptyClass = count === 0 ? ' empty' : '';
+
+  let timerText;
+  if (count >= RUN_KEY_MAX) {
+    timerText = 'FULL';
+  } else {
+    const ms = msToNextRunKey();
+    const m  = Math.floor(ms / 60000);
+    const s  = Math.floor((ms % 60000) / 1000);
+    timerText = `NEXT: ${m}m ${String(s).padStart(2,'0')}s`;
+  }
+
+  // Hub screen elements
+  const hubPips  = document.getElementById('hub-key-pips');
+  const hubTimer = document.getElementById('hub-key-timer');
+  if (hubPips)  { hubPips.innerHTML = pipsHTML; hubPips.className = 'runkey-block-pips' + emptyClass; }
+  if (hubTimer) hubTimer.textContent = timerText;
+
+  // In-game panel elements
+  const panelPips  = document.getElementById('panel-key-pips');
+  const panelTimer = document.getElementById('panel-key-timer');
+  if (panelPips)  { panelPips.innerHTML = pipsHTML; panelPips.className = 'prk-pips' + emptyClass; }
+  if (panelTimer) panelTimer.textContent = timerText;
 }
 
 window.toggleUpgradeCard = function (card) {
@@ -1856,8 +2461,24 @@ window.toggleHubOverlay = function () {
 
 window.deployMission = function (sector) {
   if (Profile.highestSector < sector) return;
+  if (!consumeRunKey()) {
+    const ms = msToNextRunKey();
+    const m  = Math.floor(ms / 60000);
+    const s  = Math.floor((ms % 60000) / 1000);
+    logEvent && logEvent(`NO ACCESS KEYS — next key in ${m}m ${String(s).padStart(2,'0')}s`, 'warn');
+    // Flash the key bar
+    const bar = document.querySelector('.hub-runkey-bar');
+    if (bar) {
+      bar.style.borderColor = '#ff2200';
+      bar.style.background  = 'rgba(80,0,0,0.4)';
+      setTimeout(() => { bar.style.borderColor = ''; bar.style.background = ''; }, 600);
+    }
+    updateRunKeyUI();
+    return;
+  }
   document.getElementById('hub-overlay').classList.remove('active');
   S.floor = sector;
+  updateRunKeyUI();
   startGame('adventure');
 };
 
@@ -1953,13 +2574,13 @@ const enemyImgs = {};
 
 // Adventure enemy archetypes
 const ENEMY_TYPES = [
-  { type: 'glitch', hp: 1, color: '#ff3c55', scale: 0.80, label: 'BUG' },
-  { type: 'leak', hp: 1, color: '#ff6622', scale: 1.00, label: 'LEAK' },
-  { type: 'worm', hp: 2, color: '#00ffaa', scale: 1.10, label: 'WORM' },
-  { type: 'overflow', hp: 1, color: '#dd1a40', scale: 1.18, label: 'OVR' },
+  { type: 'glitch',  hp: 1, color: '#ff3c55', scale: 0.80, label: 'BUG' },
+  { type: 'leak',    hp: 1, color: '#ff6622', scale: 1.00, label: 'LEAK' },
+  { type: 'worm',    hp: 2, color: '#00ffaa', scale: 1.10, label: 'WORM' },
+  { type: 'overflow',hp: 1, color: '#dd1a40', scale: 1.18, label: 'OVR' },
   { type: 'corrupt', hp: 1, color: '#cc30ff', scale: 1.25, label: 'CRPT' },
-  { type: 'idol', hp: 4, color: '#6fd6ff', scale: 1.65, label: 'NULL IDOL' },
-  { type: 'shield', hp: 3, color: '#44aaff', scale: 1.05, label: 'SHIELD' },
+  { type: 'idol',    hp: 4, color: '#6fd6ff', scale: 1.65, label: 'NULL IDOL' },
+  { type: 'shield',  hp: 3, color: '#44aaff', scale: 1.05, label: 'SHIELD' },
   { type: 'ironbox', hp: 5, color: '#8899aa', scale: 1.25, label: 'FORTRESS' },
 ];
 
@@ -2352,6 +2973,36 @@ const SFX = {
     // Fizzle/miss sound
     this.play(300, 0.08, 0.05, 'sawtooth', -200);
     setTimeout(() => this.play(180, 0.06, 0.05, 'square', -100), 80);
+  },
+  crackStart() {
+    // Boot-up thud + rising data hum
+    this.play(55, 0.18, 0.12, 'sawtooth', 0);
+    setTimeout(() => this.play(110, 0.25, 0.08, 'sawtooth', 220), 80);
+    setTimeout(() => this.play(220, 0.30, 0.055, 'square', 440), 200);
+  },
+  crackTick() {
+    // Single rapid keypress-like tick
+    this.play(1400 + Math.random() * 600, 0.022, 0.018, 'square', -500);
+  },
+  crackBurst() {
+    // Mid-crack data burst — glitchy electronic stutter
+    this.play(900, 0.05, 0.055, 'sawtooth', 600);
+    setTimeout(() => this.play(1300, 0.04, 0.045, 'square', -800), 25);
+    setTimeout(() => this.play(700, 0.06, 0.04, 'sawtooth', 400), 55);
+  },
+  crackCollision() {
+    // "Almost there" — rising alarm-like pulse
+    this.play(440, 0.10, 0.07, 'square', 220);
+    setTimeout(() => this.play(660, 0.10, 0.065, 'square', 220), 90);
+    setTimeout(() => this.play(880, 0.12, 0.06, 'square', 220), 180);
+  },
+  crackSuccess() {
+    // Triumphant unlock — bright arpeggio + deep confirm thud
+    this.play(55, 0.30, 0.10, 'sawtooth', 0);
+    [523, 659, 784, 1047, 1319].forEach((f, i) =>
+      setTimeout(() => this.play(f, 0.22, 0.055, 'square', 40), 60 + i * 65)
+    );
+    setTimeout(() => this.play(2000, 0.18, 0.04, 'sine', -800), 420);
   },
 
   // ---- Slot machine sounds -------------------------------------
@@ -2816,6 +3467,7 @@ function mkUnit(id, team, x, y, faceDx, etype) {
     aimDir: { dx: faceDx, dy: 0 },
     alive: true, color, scale, utype,
     hitFlash: 0, deathT: 1.0, shootFlash: 0,
+    ...(etype?.dodge !== undefined ? { dodge: etype.dodge } : {}),
   };
 }
 
@@ -2862,14 +3514,7 @@ function noteBossBurstHit(unit, attackerTeam) {
 
 function isAdjacentToEnemy(unit) {
   if (!unit || !unit.alive) return false;
-  return S.units.some(u => {
-    if (!u.alive || u.team === unit.team) return false;
-    if (Math.abs(u.x - unit.x) <= 1 && Math.abs(u.y - unit.y) <= 1) return true;
-    if (u.utype === 'worm' && u.trail) {
-      return u.trail.some(t => Math.abs(t.x - unit.x) <= 1 && Math.abs(t.y - unit.y) <= 1);
-    }
-    return false;
-  });
+  return unit._adjEnemy || false; // uses per-frame cached value
 }
 
 function getCurrentWeapon(unit) {
@@ -3047,12 +3692,16 @@ function initAdventure() {
   { const _f = S.inventory.find(s => s && s.type === 'fragment'); S.fragments = _f ? _f.qty : 0; }
   { const _x = S.inventory.find(s => s && s.type === 'xptoken'); S.xpTokens = _x ? _x.qty : 0; }
   S.kills = 0;
+  _updateKillsDisplay();
   S.explorerChestSpawned = false;
   S.fullMapRevealed = false;
   S.flareUsed = false;
   S.flareMode = false;
   S.flareProjectile = null;
   S.flareRevealedCells = new Set();
+  S.ronkeShield = { active: false, movesLeft: 0, step: 0, ticks: 0, alive: [false, false] };
+  S.ronkeInfect = null;
+  S.ronkeDeathAnim = null;
   if (S.floor <= 1) S.runCards = [];
   S.floorBuffs = { melee: 0, armor: 0, chipMul: 1, critBonus: 0 };
   S.pendingSlotPrize = null;
@@ -3076,7 +3725,7 @@ function initAdventure() {
       if (ri === 0) return [ENEMY_TYPES[1], ENEMY_TYPES[7]]; // Leaks & Fortress testing
       if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
       if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1], ENEMY_TYPES[7]];
-      return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6]]; // Mid-Late
+      return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6], ENEMY_TYPES[7]]; // Mid-Late
     }
   };
 
@@ -3124,11 +3773,21 @@ function initAdventure() {
         (isWall(ex, ey) || S.units.some(u => u.x === ex && u.y === ey))
       );
       const _etype = pick();
-      const _u = mkUnit(eid++, 1, ex, ey, -1, _etype);
-      if (_etype.type === 'shield') {
-        const _dirs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
-        _u.shieldDir = _dirs[Math.floor(Math.random() * _dirs.length)];
-        _u.moveCooldown = 0;
+      let _u;
+      if (_etype.type === 'ironbox' && Math.random() < 0.5) {
+        // 50% tanku pakeiciami lazerio priešu (NULL IDOL)
+        _u = mkUnit(eid++, 1, ex, ey, -1, ENEMY_TYPES.find(e => e.type === 'idol'));
+        _u.weapon = 'laser';
+        _u.maxLaserAmmo = 2;
+        _u.laserAmmo = 2;
+        _u.dmgBonus = 1;
+      } else {
+        _u = mkUnit(eid++, 1, ex, ey, -1, _etype);
+        if (_etype.type === 'shield') {
+          const _dirs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+          _u.shieldDir = _dirs[Math.floor(Math.random() * _dirs.length)];
+          _u.moveCooldown = 0;
+        }
       }
       S.units.push(_u);
     }
@@ -3439,7 +4098,7 @@ const CHIP_CIRCUIT = [
 
 // Per-rarity color palettes  [null, rim, body, mid, bright, glow]
 const CHIP_PALETTES = {
-  common: [null, '#1c1c1c', '#383838', '#585858', '#888888', '#cccccc'],
+  common: [null, '#1c1c1c', '#383838', '#585858', '#888888', '#080808'],
   uncommon: [null, '#002211', '#004433', '#006644', '#00aa66', '#44ff88'],
   rare: [null, '#00001f', '#000055', '#0033aa', '#2266ee', '#66aaff'],
   epic: [null, '#110011', '#330044', '#6600aa', '#aa33dd', '#ee55ff'],
@@ -3703,6 +4362,7 @@ function buildSlotPaytable() {
 }
 
 function openChestSlot(ch) {
+  if (typeof trackChestOpen === 'function') trackChestOpen();
   if (!paytableBuilt) { buildSlotPaytable(); paytableBuilt = true; }
   const roll = () => REEL_TAPE[Math.floor(Math.random() * REEL_TAPE.length)];
   const r0 = roll(), r1 = roll(), r2 = roll(), r3 = roll();
@@ -3821,9 +4481,9 @@ window.claimSlotPrize = function () {
   } else if (prize.rarity === 'ronke') {
     addToInventory('ronke', null, prize.val);
     spawnHit(ch.x, ch.y, '#44aaff', 30);
-    spawnDmgNumber(ch.x, ch.y, `+${prize.val} RONKE!`, '#44aaff', 28, 'crit');
+    spawnDmgNumber(ch.x, ch.y, `+${prize.val} POISON!`, '#44aaff', 28, 'crit');
     S.shake = Math.max(S.shake, 20);
-    logEvent(`+${prize.val} RONKE — JACKPOT!`, 'loot');
+    logEvent(`+${prize.val} POISON — JACKPOT!`, 'loot');
   } else {
     const gain = prize.val;
     addToInventory('chip', prize.rarity, gain);
@@ -3949,12 +4609,12 @@ function syncXpTokenSlot() {
 }
 
 const INV_ITEM_NAMES = {
-  byte: 'BYTE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'RONKE',
+  byte: 'BYTE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'POISON',
   chip_common: 'COMMON CHIP', chip_uncommon: 'UNCOMMON CHIP',
   chip_rare: 'RARE CHIP', chip_epic: 'EPIC CHIP', chip_legendary: 'LEGENDARY CHIP',
 };
 const INV_ITEM_ICONS = {
-  byte: '&#9711;', fragment: '&#9830;', xptoken: '&#9733;', gem: '&#9670;', ronke: '&#128049;',
+  byte: '&#9711;', fragment: '&#9830;', xptoken: '&#9733;', gem: '&#9670;', ronke: '&#9763;',
   chip_common: '&#11041;', chip_uncommon: '&#11041;', chip_rare: '&#11041;',
   chip_epic: '&#11041;', chip_legendary: '&#11041;',
 };
@@ -3993,13 +4653,13 @@ function updateInventoryUI() {
         : item.type === 'fragment' ? 'FRAGMENT'
           : item.type === 'xptoken' ? 'XP TOKEN'
             : item.type === 'gem' ? 'PIXEL'
-              : item.type === 'ronke' ? 'RONKE'
+              : item.type === 'ronke' ? 'POISON'
                 : item.rarity.toUpperCase() + ' CHIP';
       const name = item.type === 'byte' ? 'Byte'
         : item.type === 'fragment' ? 'Chip Fragment'
           : item.type === 'xptoken' ? 'XP Token'
             : item.type === 'gem' ? 'Pixel'
-              : item.type === 'ronke' ? 'Ronke'
+              : item.type === 'ronke' ? 'Poison'
                 : `${item.rarity} Chip`;
 
       const isNew = window._newInvKeys?.has(item.type + ':' + (item.rarity || ''));
@@ -4074,8 +4734,10 @@ function updateInventoryUI() {
       slot.addEventListener('mouseenter', () => {
         const info = el('inv-info-bar');
         if (info) {
-          if (item.type === 'byte') {
+          if (item.type === 'ronke') {
             info.innerHTML = `${name.toUpperCase()} x${item.qty} &nbsp;<span style="color:#aaa;font-size:7px;">(CLICK TO USE: +5⚡)</span>`;
+          } else if (item.type === 'byte') {
+            info.innerHTML = `${name.toUpperCase()} x${item.qty}`;
           } else if (item.type === 'gem') {
             info.innerHTML = `${name.toUpperCase()} x${item.qty} &nbsp;<span style="color:#aaa;font-size:7px;">(+15⚡ ON PICKUP)</span>`;
           } else {
@@ -4090,11 +4752,9 @@ function updateInventoryUI() {
       });
 
       // Click interaction
-      if (item.type === 'byte') {
+      if (item.type === 'ronke') {
         slot.addEventListener('click', () => {
-          if (typeof window.useByteForEnergy === 'function') {
-            window.useByteForEnergy();
-          }
+          if (typeof window.useRonkeForEnergy === 'function') window.useRonkeForEnergy();
         });
       }
     } else {
@@ -4588,11 +5248,18 @@ let _visCache = null; // flat Uint8Array [ROWS * COLS]
 
 function rebuildVisCache() {
   if (gameMode !== 'adventure' || !S.units) return;
+  const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
+  // Skip rebuild during frozen phase when hero hasn't moved and no active bullets/ghosts
+  const _noActiveBullets = !S.bullets || !S.bullets.some(b => b.active);
+  const _noGhosts = !S.lightGhosts || S.lightGhosts.length === 0;
+  const _heroKey = hero ? hero.x + ',' + hero.y : '';
+  if (S.phase === 'frozen' && _noActiveBullets && _noGhosts &&
+      _visCache && rebuildVisCache._lastKey === _heroKey) return;
+  rebuildVisCache._lastKey = _heroKey;
   const size = ROWS * COLS;
   if (!_visCache || _visCache.length !== size) _visCache = new Uint8Array(size);
   else _visCache.fill(0);
 
-  const hero = S.units.find(u => u.team === 0 && u.alive);
   const now = performance.now();
   const R2 = FOG_RADIUS * FOG_RADIUS;
 
@@ -5091,22 +5758,23 @@ function drawWallLED() {
   ctx.shadowBlur = 0; ctx.restore();
 }
 
+const _fogAlphaStr = Array.from({ length: 101 }, (_, i) => `rgba(0,0,0,${(i / 100).toFixed(2)})`);
 function drawFog() {
   if (gameMode !== 'adventure' || !S.fog) return;
   if (S.fullMapRevealed) return;
-  const hero = S.units.find(u => u.team === 0 && u.alive);
+  const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   // Reuse S.bullets directly (no filter allocation) — check b.active inline
   const liveBullets = S.bullets || [];
   const now = performance.now();
   const REVEAL_DUR = 600;
-  // Clean up expired light ghosts (in-place splice to avoid new array alloc)
+  // Clean up expired light ghosts
   if (S.lightGhosts) {
     for (let _gi = S.lightGhosts.length - 1; _gi >= 0; _gi--) {
       const _g = S.lightGhosts[_gi];
       const isHold = _g.holdMs !== undefined ? (now - _g.bornTime < _g.holdMs) : (S.tick - _g.bornTick < 3);
       if (isHold) continue;
       if (!_g.fadeBorn) _g.fadeBorn = now;
-      if (now - _g.fadeBorn >= _g.fadeDur) S.lightGhosts.splice(_gi, 1);
+      if (now - _g.fadeBorn >= _g.fadeDur) { S.lightGhosts[_gi] = S.lightGhosts[S.lightGhosts.length - 1]; S.lightGhosts.pop(); }
     }
   }
   const liveGhosts = S.lightGhosts || [];
@@ -5161,7 +5829,7 @@ function drawFog() {
         // Previously revealed - stays permanently visible, no overlay
       } else {
         const alpha = bulletGlow ? Math.min(1, (bDist - 1.0) / 1.5) : 1.0;
-        ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(2)})`;
+        ctx.fillStyle = _fogAlphaStr[Math.round(alpha * 100)];
         ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
       }
     }
@@ -5177,7 +5845,7 @@ function drawFog() {
         if (elapsed >= REVEAL_DUR) continue;
         const t = elapsed / REVEAL_DUR;
         const alpha = Math.pow(1 - t, 1.6);
-        ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(2)})`;
+        ctx.fillStyle = _fogAlphaStr[Math.round(alpha * 100)];
         ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
       }
     }
@@ -5185,12 +5853,18 @@ function drawFog() {
 
   // ---- Bullet warm light halo ----------------------------------
   liveBullets.forEach(b => {
+    if (!b.active) return;
     const px = (b.rx + 0.5) * CELL, py = (b.ry + 0.5) * CELL;
-    const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL * 1.4);
-    grad.addColorStop(0, 'rgba(255,230,120,0.07)');
-    grad.addColorStop(0.5, 'rgba(255,200, 80,0.03)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
+    const _gkey = Math.round(px) + ',' + Math.round(py);
+    if (!b._haloGrad || b._haloKey !== _gkey) {
+      b._haloKey = _gkey;
+      const _g = ctx.createRadialGradient(px, py, 0, px, py, CELL * 1.4);
+      _g.addColorStop(0, 'rgba(255,230,120,0.07)');
+      _g.addColorStop(0.5, 'rgba(255,200,80,0.03)');
+      _g.addColorStop(1, 'rgba(0,0,0,0)');
+      b._haloGrad = _g;
+    }
+    ctx.fillStyle = b._haloGrad;
     ctx.beginPath();
     ctx.arc(px, py, CELL * 1.4, 0, Math.PI * 2);
     ctx.fill();
@@ -5286,10 +5960,12 @@ function drawAdvHUD() {
   ctx.fillRect(x, fy + 3, barW, barH);
   // Bar fill
   const fragGlow = 0.85 + 0.15 * Math.sin(now * 0.007);
-  const barFill = ctx.createLinearGradient(x, 0, x + barW, 0);
-  barFill.addColorStop(0, '#cc5500');
-  barFill.addColorStop(1, '#ff9900');
-  ctx.fillStyle = barFill;
+  if (!drawAdvHUD._grad) {
+    const _g = ctx.createLinearGradient(x, 0, x + barW, 0);
+    _g.addColorStop(0, '#cc5500'); _g.addColorStop(1, '#ff9900');
+    drawAdvHUD._grad = _g;
+  }
+  ctx.fillStyle = drawAdvHUD._grad;
   ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6 * fragGlow;
   ctx.fillRect(x, fy + 3, barW * fragPct, barH);
   // Bar border
@@ -5309,13 +5985,13 @@ function drawAdvHUD() {
 
 // ---- Weapon HUD - current weapon + ammo (screen space, bottom left) --
 function drawWeaponHUD() {
-  const hero = S.units?.find(u => u.team === 0 && u.alive);
+  const hero = S._hero || S.units?.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const wep = getCurrentWeapon(hero);
   const pad = 14;
   const by = ADV_CANVAS_H - pad - 26;
 
-  const ICONS = { bullet: 'PISTOL', laser: 'LASER', heavy: 'HEAVY', shotgun: 'SHOTGUN', ronke: 'RONKE' };
+  const ICONS = { bullet: 'PISTOL', laser: 'LASER', heavy: 'HEAVY', shotgun: 'SHOTGUN', ronke: 'POISON' };
   const COLORS = { bullet: '#aaccff', laser: '#88ffff', heavy: '#ffaa44', shotgun: '#ffdd88', ronke: '#44aaff' };
   const GLOWS = { bullet: '#4488ff', laser: '#00ffff', heavy: '#ff8800', shotgun: '#ffcc00', ronke: '#1a8fff' };
 
@@ -5344,16 +6020,24 @@ function drawWeaponHUD() {
 }
 
 // ---- Scanlines / CRT overlay (screen space, drawn last) --------
-function drawScanlines() {
+let _scanCanvas = null, _scanCacheKey = '';
+function _buildScanCache() {
   const w = advCanvasW || BOARD_W;
-  ctx.save();
-  ctx.globalAlpha = 0.055;
-  ctx.fillStyle = '#000000';
   const scanH = gameMode === 'adventure' ? ADV_CANVAS_H : BOARD_H;
-  for (let y = 0; y < scanH; y += 3) {
-    ctx.fillRect(0, y, w, 1);
-  }
-  ctx.restore();
+  const key = `${w},${scanH}`;
+  if (_scanCanvas && _scanCacheKey === key) return;
+  _scanCacheKey = key;
+  const oc = document.createElement('canvas');
+  oc.width = w; oc.height = scanH;
+  const octx = oc.getContext('2d');
+  octx.globalAlpha = 0.055;
+  octx.fillStyle = '#000000';
+  for (let y = 0; y < scanH; y += 3) octx.fillRect(0, y, w, 1);
+  _scanCanvas = oc;
+}
+function drawScanlines() {
+  _buildScanCache();
+  ctx.drawImage(_scanCanvas, 0, 0);
 }
 
 function drawShrines() {
@@ -5691,9 +6375,439 @@ function drawFlareProjectile() {
   ctx.restore();
 }
 
+// ---- RONKE STRONKE skill -----------------------------------------------
+// 8 cells around player, each move advances 1 cell. 16 moves = 2 full rotations.
+
+// Shield rotates 1 cell every 3 actions
+const _SHIELD_CELLS = [
+  {dx:1,dy:0},{dx:1,dy:1},{dx:0,dy:1},{dx:-1,dy:1},
+  {dx:-1,dy:0},{dx:-1,dy:-1},{dx:0,dy:-1},{dx:1,dy:-1}
+];
+function _ronkeShieldCell(offset = 0) {
+  return _SHIELD_CELLS[((S.ronkeShield?.step ?? 0) + offset) % 8];
+}
+// Returns list of active shield cells [{cell, idx}]
+function _ronkeActiveShields() {
+  if (!S.ronkeShield?.active) return [];
+  const out = [];
+  const alive = S.ronkeShield.alive ?? [true, true];
+  if (alive[0]) out.push({ cell: _ronkeShieldCell(0), idx: 0 });
+  if (alive[1]) out.push({ cell: _ronkeShieldCell(4), idx: 1 });
+  return out;
+}
+
+// Destroys both shields — launches the surviving one as a flying death orb
+function _ronkeShatterPair(brokenIdx, heroUnit) {
+  S.ronkeShield.alive[brokenIdx] = false;
+  const _pairIdx = 1 - brokenIdx;
+  if (S.ronkeShield.alive[_pairIdx]) {
+    const _pairOff = _pairIdx === 0 ? 0 : 4;
+    const _pairSc = _SHIELD_CELLS[(S.ronkeShield.step + _pairOff) % 8];
+    const _newOrb = {
+      gx: heroUnit.x + _pairSc.dx, gy: heroUnit.y + _pairSc.dy,
+      px: heroUnit.x + _pairSc.dx, py: heroUnit.y + _pairSc.dy,
+      dx: _pairSc.dx, dy: _pairSc.dy, alive: true,
+    };
+    if (S.ronkeDeathAnim) {
+      S.ronkeDeathAnim.orbs.push(_newOrb);
+    } else {
+      S.ronkeDeathAnim = { phase: 'fly', orbs: [_newOrb] };
+    }
+    spawnHit(heroUnit.x + _pairSc.dx, heroUnit.y + _pairSc.dy, '#00ff66', 16);
+    SFX.play(200, 0.10, 0.12, 'square');
+    S.ronkeShield.alive[_pairIdx] = false;
+  }
+  S.ronkeShield.active = false;
+}
+
+function activateRonkeShield() {
+  if (gameMode !== 'adventure') return;
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (!hero || S.clockSide !== 0) return;
+  if (S.ronkeShield && S.ronkeShield.active) {
+    S.ronkeShield.active = false;
+    S.ronkeShield.movesLeft = 0;
+    updateRonkeShieldSlot();
+    return;
+  }
+  if (S.energy < 5) {
+    SFX.play(200, 0.1, 0.05, 'square');
+    return;
+  }
+  const adjacent = S.units.some(u => u.team !== 0 && u.alive &&
+    Math.abs(u.x - hero.x) <= 1 && Math.abs(u.y - hero.y) <= 1);
+  if (adjacent) {
+    SFX.play(200, 0.1, 0.05, 'square');
+    return;
+  }
+  S.energy -= 5;
+  S.ronkeShield = { active: true, movesLeft: 16, step: S.ronkeShield?.step ?? 0, ticks: 0, alive: [true, true], spawnAt: performance.now() };
+  updateRonkeShieldSlot();
+  SFX.play(440, 0.18, 0.4, 'sine');
+  SFX.play(660, 0.12, 0.3, 'sine');
+}
+
+function updateRonkeShieldSlot() {
+  const slot = document.getElementById('p1-sk-ronke-shield');
+  if (!slot) return;
+  const cd = slot.querySelector('.sk-cd');
+  const active = S.ronkeShield?.active || false;
+  slot.classList.toggle('sk-active', active);
+  if (cd) cd.textContent = active ? `${S.ronkeShield.movesLeft}` : '5\u26A1';
+}
+
+function _drawOneShield(rx, ry, sc, pulse, now, hero) {
+  const px = (rx + sc.dx + 0.5) * CELL;
+  const py = (ry + sc.dy + 0.5) * CELL;
+  const t = now * 0.001;
+
+  // Hero's current outline color (match weapon)
+  const wfb = hero?.wfb;
+  const WFORMS_OC = { bullet:'#2a6010', laser:'#0d4d2a', heavy:'#8a3a00', shotgun:'#2a6010', hack:'#003366', ronke:'#0d4d2a' };
+  const outlineCol = wfb ? (WFORMS_OC[wfb.to] || '#2a6010') : '#2a6010';
+  const WFORMS_EYE = { bullet:'#00f5ff', laser:'#00f5ff', heavy:'#ff6600', shotgun:'#00f5ff', hack:'#44ccff', ronke:'#00f5ff' };
+  const eyeCol = wfb ? (WFORMS_EYE[wfb.to] || '#00f5ff') : '#00f5ff';
+
+  // Size: ~55% of the hero body + 2px
+  const sz = UNIT_CELL * 0.30;
+  const bsz = sz * 0.62 + 2;
+
+  const trailAngle = Math.atan2(sc.dy, sc.dx);
+
+  // Spawn animation (first 400ms)
+  const SPAWN_DUR = 400;
+  const spawnAge = now - (S.ronkeShield?.spawnAt ?? now);
+  const spawnT = Math.min(1, spawnAge / SPAWN_DUR);
+  // ease out: fast start, smooth end
+  const spawnScale = spawnT < 1 ? 1 - Math.pow(1 - spawnT, 3) : 1;
+
+  // Expanding ring burst during spawn
+  if (spawnT < 1) {
+    const ringR = bsz * (0.5 + spawnT * 2.2);
+    const ringAlpha = (1 - spawnT) * 0.85 * pulse;
+    ctx.globalAlpha = ringAlpha;
+    ctx.strokeStyle = outlineCol;
+    ctx.shadowColor = outlineCol; ctx.shadowBlur = 14;
+    ctx.lineWidth = 2.5 * (1 - spawnT);
+    ctx.beginPath(); ctx.arc(px, py, ringR, 0, Math.PI * 2); ctx.stroke();
+    // second faster ring
+    const ring2R = bsz * (0.3 + spawnT * 1.2);
+    ctx.globalAlpha = ringAlpha * 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(px, py, ring2R, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Shadow under the mini orb
+  ctx.globalAlpha = pulse * spawnScale * 0.22;
+  ctx.fillStyle = '#000';
+  ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(px + 3, py + 4, bsz * 0.7 * spawnScale, 0, Math.PI * 2); ctx.fill();
+
+  // Black orb body — scale in from zero
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(spawnScale, spawnScale);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#000000';
+  ctx.shadowColor = outlineCol; ctx.shadowBlur = 8 * pulse;
+  ctx.beginPath(); ctx.arc(0, 0, bsz, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = outlineCol; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, 0, bsz, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+
+function drawRonkeShield() {
+  // Draw flying death orbs (tick-synced with S.animT like bullets/units)
+  if (S.ronkeDeathAnim) {
+    const _tA = easeOutCubic(Math.min(1, S.animT ?? 1));
+    const bsz3 = UNIT_CELL * 0.30 * 0.62 + 2;
+    ctx.save();
+    S.ronkeDeathAnim.orbs.forEach(o => {
+      if (!o.alive) return;
+      const ox = (o.px + (o.gx - o.px) * _tA + 0.5) * CELL;
+      const oy = (o.py + (o.gy - o.py) * _tA + 0.5) * CELL;
+      // 2×2 trail pixels behind
+      ctx.shadowBlur = 0;
+      for (let ti = 1; ti <= 4; ti++) {
+        ctx.globalAlpha = (1 - ti * 0.22);
+        ctx.fillStyle = '#00f5ff';
+        ctx.fillRect(Math.round(ox - o.dx * ti * 5) - 1, Math.round(oy - o.dy * ti * 5) - 1, 2, 2);
+      }
+      // Orb body
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = '#000000';
+      ctx.shadowColor = '#00f5ff'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(ox, oy, bsz3, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#00f5ff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(ox, oy, bsz3, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  if (!S.ronkeShield?.active) return;
+  const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+
+  const now = performance.now();
+  const pulse = 1.0;
+  const rx = (hero.rx ?? hero.x), ry = (hero.ry ?? hero.y);
+  const alive = S.ronkeShield.alive ?? [true, true];
+
+  ctx.save();
+
+  const heroCX = (rx + 0.5) * CELL;
+  const heroCY = (ry + 0.5) * CELL;
+  const t = now * 0.001;
+  const WFORMS_EC = { bullet:'#00f5ff', laser:'#00f5ff', heavy:'#ff6600', shotgun:'#00f5ff', hack:'#44ccff', ronke:'#00f5ff' };
+  const tetherCol = hero?.wfb ? (WFORMS_EC[hero.wfb.to] || '#00f5ff') : '#00f5ff';
+
+  // Smooth shield positions — interpolate prevStep → step using game animT
+  const _animT = easeOutCubic(Math.min(1, S.animT ?? 1));
+  const _lerpSc = (offset) => {
+    const curSc  = _SHIELD_CELLS[(S.ronkeShield.step + offset) % 8];
+    const prevSc = _SHIELD_CELLS[((S.ronkeShield.prevStep ?? S.ronkeShield.step) + offset) % 8];
+    return {
+      dx: prevSc.dx + (curSc.dx - prevSc.dx) * _animT,
+      dy: prevSc.dy + (curSc.dy - prevSc.dy) * _animT,
+    };
+  };
+  const sc0 = _lerpSc(0);
+  const sc1 = _lerpSc(4);
+
+  // Energy tether: hero → each alive shield (thin jagged line)
+  const _drawTether = (sc) => {
+    const sx = (rx + sc.dx + 0.5) * CELL;
+    const sy = (ry + sc.dy + 0.5) * CELL;
+    const segs = 6;
+    const dist = Math.hypot(sx - heroCX, sy - heroCY);
+    const nx = -(sy - heroCY) / dist, ny = (sx - heroCX) / dist;
+    ctx.strokeStyle = tetherCol; ctx.lineWidth = 1;
+    ctx.shadowColor = tetherCol; ctx.shadowBlur = 6 * pulse;
+    ctx.globalAlpha = 0.45 * pulse;
+    ctx.beginPath(); ctx.moveTo(heroCX, heroCY);
+    for (let i = 1; i < segs; i++) {
+      const f = i / segs;
+      const jit = (Math.sin(t * 11 + i * 2.3 + sc.dx * 5) * dist * 0.07);
+      ctx.lineTo(heroCX + (sx - heroCX) * f + nx * jit, heroCY + (sy - heroCY) * f + ny * jit);
+    }
+    ctx.lineTo(sx, sy); ctx.stroke();
+  };
+
+  // Magnetic field arc between the two shields (when both alive)
+  if (alive[0] && alive[1]) {
+    const ax = (rx + sc0.dx + 0.5) * CELL, ay = (ry + sc0.dy + 0.5) * CELL;
+    const bx = (rx + sc1.dx + 0.5) * CELL, by = (ry + sc1.dy + 0.5) * CELL;
+    const midX = (ax + bx) * 0.5, midY = (ay + by) * 0.5;
+    const perp = Math.atan2(by - ay, bx - ax) + Math.PI * 0.5;
+
+    // Spawn animation — lines grow from both poles toward center simultaneously
+    const spawnAge = now - (S.ronkeShield?.spawnAt ?? now);
+    const FIELD_DELAY = 250, FIELD_DUR = 450;
+    const fieldAge = Math.max(0, spawnAge - FIELD_DELAY);
+    const fieldRaw = Math.min(1, fieldAge / FIELD_DUR);
+    // ease-out quad
+    const fieldT = 1 - Math.pow(1 - fieldRaw, 2);
+
+    // Sample quadratic bezier B(t) = (1-t)²A + 2(1-t)t*CP + t²B
+    const qbez = (t2, cpx, cpy) => ({
+      x: (1-t2)*(1-t2)*ax + 2*(1-t2)*t2*cpx + t2*t2*bx,
+      y: (1-t2)*(1-t2)*ay + 2*(1-t2)*t2*cpy + t2*t2*by,
+    });
+
+    const STEPS = 18;
+    for (let li = 0; li < 4; li++) {
+      const side = li % 2 === 0 ? 1 : -1;
+      const bulge = side * CELL * (0.30 + Math.floor(li / 2) * 0.28);
+      const sway = Math.sin(t * 0.9 + li * 0.7) * CELL * 0.06;
+      const cpx = midX + Math.cos(perp) * (bulge + sway);
+      const cpy = midY + Math.sin(perp) * (bulge + sway);
+      const lineAlpha = (0.22 - Math.floor(li / 2) * 0.06) * pulse;
+
+      ctx.strokeStyle = tetherCol; ctx.lineWidth = 1;
+      ctx.shadowColor = tetherCol; ctx.shadowBlur = 5 * pulse;
+      ctx.globalAlpha = lineAlpha;
+
+      // Half from pole A (t=0 → t=0.5*fieldT)
+      const halfT = 0.5 * fieldT;
+      if (halfT > 0) {
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        for (let si = 1; si <= STEPS; si++) {
+          const tp = (si / STEPS) * halfT;
+          const p = qbez(tp, cpx, cpy);
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+
+      // Half from pole B (t=1 → t=1-0.5*fieldT)
+      const tStart = 1 - halfT;
+      if (halfT > 0) {
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        for (let si = 1; si <= STEPS; si++) {
+          const tp = 1 - (si / STEPS) * halfT;
+          const p = qbez(tp, cpx, cpy);
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
+  if (alive[0]) { _drawTether(sc0); _drawOneShield(rx, ry, sc0, pulse, now, hero); }
+  if (alive[1]) { _drawTether(sc1); _drawOneShield(rx, ry, sc1, pulse, now, hero); }
+
+  ctx.restore();
+}
+
+function drawRonkeInfect() {
+  if (!S.ronkeInfect) return;
+  const INF_DUR = 1860;
+  const LATCH_END = 0.22;
+  const SPREAD_END = 0.68;
+  const now = performance.now();
+  const age = now - S.ronkeInfect.bornAt;
+  if (age >= INF_DUR) {
+    if (S.ronkeInfect.dmgNum) {
+      const _dn = S.ronkeInfect.dmgNum;
+      spawnDmgNumber(_dn.gx, _dn.gy, '-1 \u2623', '#00ff66', 17, 'crit');
+      SFX.play(220, 0.18, 0.28, 'square', -120);   // damage hit tone
+      SFX.play(110, 0.12, 0.20, 'sawtooth');        // low thud
+    }
+    S.ronkeInfect = null; return;
+  }
+
+  const tf = age / INF_DUR;
+  const { spx, spy, epx: origEpx, epy: origEpy, tendrils, enemy } = S.ronkeInfect;
+  // Follow enemy's current interpolated render position
+  const _erx = enemy && enemy.alive ? ((enemy.rx ?? enemy.x) + 0.5) * CELL : origEpx;
+  const _ery = enemy && enemy.alive ? ((enemy.ry ?? enemy.y) + 0.5) * CELL : origEpy;
+  const epx = _erx, epy = _ery;
+  // Tendril offset delta (tendrils were pre-calculated at origEpx/epy)
+  const _tdx = epx - origEpx, _tdy = epy - origEpy;
+  const bsz = UNIT_CELL * 0.30 * 0.62 + 2;
+  const IC = '#00ff66';
+  const IG = '#00aa44';
+  const _inf = S.ronkeInfect;
+
+  // Phase sound triggers (once per phase)
+  if (tf >= LATCH_END && !_inf._sLatch) {
+    _inf._sLatch = true;
+    SFX.play(90,  0.18, 0.30, 'sine');                // deep thump — latch impact
+    SFX.play(1400, 0.05, 0.18, 'square', -800);        // sharp crack
+  }
+  if (tf >= LATCH_END && !_inf._sSpread) {
+    _inf._sSpread = true;
+    SFX.play(110, 1.0, 0.09, 'sawtooth', 120);         // creeping rising hum
+    SFX.play(330, 0.4, 0.06, 'square',  -180);         // glitch descend
+  }
+  if (tf >= SPREAD_END && !_inf._sExplode) {
+    _inf._sExplode = true;
+    SFX.play(55,  0.35, 0.38, 'sawtooth', -30);        // deep explosion boom
+    SFX.play(900, 0.15, 0.22, 'square',  -700);        // crashing high burst
+    SFX.play(440, 0.20, 0.12, 'sine');                  // resonant ping
+  }
+
+  ctx.save();
+
+  // Phase 1: Orb flies from shield position to enemy
+  if (tf < LATCH_END) {
+    const lt = tf / LATCH_END;
+    const le = 1 - Math.pow(1 - lt, 3);
+    const ox = spx + (epx - spx) * le;
+    const oy = spy + (epy - spy) * le;
+    const len2 = Math.hypot(epx - spx, epy - spy) || 1;
+    const tdx = (epx - spx) / len2, tdy = (epy - spy) / len2;
+    ctx.shadowBlur = 0;
+    for (let _ti = 1; _ti <= 5; _ti++) {
+      ctx.globalAlpha = 1 - _ti * 0.18;
+      ctx.fillStyle = '#00f5ff';
+      ctx.fillRect(Math.round(ox - tdx * _ti * 4) - 1, Math.round(oy - tdy * _ti * 4) - 1, 2, 2);
+    }
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = '#000000';
+    ctx.shadowColor = '#00f5ff'; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(ox, oy, bsz, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#00f5ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(ox, oy, bsz, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Phase 2: Orb latched, tendrils spread out
+  if (tf >= LATCH_END && tf < SPREAD_END) {
+    const st = (tf - LATCH_END) / (SPREAD_END - LATCH_END);
+    const se = 1 - Math.pow(1 - st, 2);
+    const op = 0.7 + 0.3 * Math.sin(tf * Math.PI * 22);
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = '#000000';
+    ctx.shadowColor = IC; ctx.shadowBlur = 20 * op;
+    ctx.beginPath(); ctx.arc(epx, epy, bsz, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = IC; ctx.lineWidth = 1.5 * op;
+    ctx.beginPath(); ctx.arc(epx, epy, bsz, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 0.65 * op;
+    ctx.fillStyle = IC; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(epx, epy, bsz * 0.38, 0, Math.PI * 2); ctx.fill();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    tendrils.forEach(pts => {
+      const vis = 1 + Math.ceil((pts.length - 1) * se);
+      if (vis < 2) return;
+      ctx.globalAlpha = (0.5 + 0.5 * se) * 0.9;
+      ctx.strokeStyle = IC; ctx.shadowColor = IG; ctx.shadowBlur = 7;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.beginPath();
+      for (let _pi = 0; _pi < vis; _pi++) { const _pp2 = pts[_pi]; _pi === 0 ? ctx.moveTo(_pp2.x + _tdx, _pp2.y + _tdy) : ctx.lineTo(_pp2.x + _tdx, _pp2.y + _tdy); }
+      ctx.stroke();
+      const tip = pts[vis - 1];
+      ctx.globalAlpha = 0.8 * se;
+      ctx.fillStyle = IC; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(tip.x + _tdx, tip.y + _tdy, 1.8, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
+  // Phase 3: Explosion burst
+  if (tf >= SPREAD_END) {
+    const et = (tf - SPREAD_END) / (1 - SPREAD_END);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    tendrils.forEach(pts => {
+      ctx.globalAlpha = (1 - et) * 0.38;
+      ctx.strokeStyle = IC; ctx.shadowColor = IG; ctx.shadowBlur = 4;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let _pi = 0; _pi < pts.length; _pi++) { const _pp2 = pts[_pi]; _pi === 0 ? ctx.moveTo(_pp2.x + _tdx, _pp2.y + _tdy) : ctx.lineTo(_pp2.x + _tdx, _pp2.y + _tdy); }
+      ctx.stroke();
+    });
+    [
+      { delay: 0,    dur: 0.65, maxR: CELL * 1.1,  col: IC,        lw: 2.5 },
+      { delay: 0.08, dur: 0.80, maxR: CELL * 1.75, col: '#00f5ff', lw: 1.5 },
+      { delay: 0.18, dur: 0.65, maxR: CELL * 0.7,  col: '#ffffff', lw: 1.0 },
+      { delay: 0.26, dur: 0.55, maxR: CELL * 1.35, col: IG,        lw: 1.2 },
+    ].forEach(rc => {
+      const rt = Math.max(0, (et - rc.delay) / rc.dur);
+      if (rt <= 0 || rt >= 1) return;
+      const eased = 1 - Math.pow(1 - rt, 2);
+      ctx.globalAlpha = (1 - rt) * 0.95;
+      ctx.strokeStyle = rc.col; ctx.shadowColor = rc.col; ctx.shadowBlur = 16;
+      ctx.lineWidth = rc.lw * (1 - rt * 0.6);
+      ctx.beginPath(); ctx.arc(epx, epy, rc.maxR * eased, 0, Math.PI * 2); ctx.stroke();
+    });
+    if (et < 0.22) {
+      const fa = (1 - et / 0.22) * 0.85;
+      ctx.globalAlpha = fa;
+      ctx.fillStyle = IC; ctx.shadowColor = IC; ctx.shadowBlur = 45;
+      ctx.beginPath(); ctx.arc(epx, epy, CELL * 0.5 * (1 - et / 0.22), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
 function drawFlareAimIndicator() {
   if (!S.flareMode || gameMode !== 'adventure') return;
-  const hero = S.units.find(u => u.team === 0 && u.alive);
+  const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const t = performance.now() / 1000;
   const pulse = Math.sin(t * 6) * 0.3 + 0.7;
@@ -5787,7 +6901,7 @@ function executeJump(dx, dy) {
 
 function drawJumpIndicator() {
   if (!S.jumpMode || gameMode !== 'adventure') return;
-  const hero = S.units.find(u => u.team === 0 && u.alive);
+  const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const jLvl = Profile.upgrades?.jumpLevel || 0;
   const range = jLvl >= 3 ? 3 : 2;
@@ -5805,7 +6919,9 @@ function drawJumpIndicator() {
     { dx: -1, dy: 1, key: 'Y' },
     { dx: 1, dy: 1, key: 'C' },
   );
-  const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !S.units.some(u => u.alive && u.id !== hero.id && u.x === x && u.y === y);
+  const _jUnitPos = new Set();
+  S.units.forEach(u => { if (u.alive && u.id !== hero.id) _jUnitPos.add(u.x + ',' + u.y); });
+  const ok = (x, y) => x >= 0 && x < COLS && y >= 0 && y < ROWS && !isWall(x, y) && !_jUnitPos.has(x + ',' + y);
   dirs.forEach(({ dx, dy, key }) => {
     let tx, ty;
     for (let r = range; r >= 1; r--) {
@@ -5901,13 +7017,37 @@ function drawTeleports() {
 }
 
 function spawnLoot(x, y) {
-  // gem 0.5% | ronke 50% (test) | byte 22% | fragment 18% | xptoken 9% | nothing ~0.5%
+  // byte 35% | fragment 35% | xptoken 20% | nothing 10%
+  // ronke and gem drop only from locked boxes
   const roll = Math.random();
-  if (roll < 0.005) S.loot.push({ x, y, type: 'gem', val: 1, collected: false, age: 0 });
-  else if (roll < 0.505) S.loot.push({ x, y, type: 'ronke', val: 1, collected: false, age: 0 });
-  else if (roll < 0.725) S.loot.push({ x, y, type: 'byte', val: 1, collected: false, age: 0 });
-  else if (roll < 0.905) S.loot.push({ x, y, type: 'fragment', val: 1, collected: false, age: 0 });
-  else if (roll < 0.995) S.loot.push({ x, y, type: 'xptoken', val: 1, collected: false, age: 0 });
+  if      (roll < 0.35) S.loot.push({ x, y, type: 'byte',    val: 1, collected: false, age: 0 });
+  else if (roll < 0.70) S.loot.push({ x, y, type: 'fragment', val: 1, collected: false, age: 0 });
+  else if (roll < 0.90) S.loot.push({ x, y, type: 'xptoken', val: 1, collected: false, age: 0 });
+  // else nothing
+}
+
+function spawnLockedBox(x, y) {
+  // gem 15% | ronke 15% | byte 25% | fragment 30% | xptoken 15%
+  const roll = Math.random();
+  let prize;
+  if      (roll < 0.15) prize = { type: 'gem',      val: 1 };
+  else if (roll < 0.30) prize = { type: 'ronke',    val: 1 };
+  else if (roll < 0.55) prize = { type: 'byte',     val: 1 };
+  else if (roll < 0.85) prize = { type: 'fragment', val: 1 };
+  else                  prize = { type: 'xptoken',  val: 1 };
+
+  if (Math.random() < 0.5) {
+    // 50% — tiesioginis dropas
+    S.loot.push({ x, y, type: prize.type, val: prize.val, collected: false, age: 0 });
+  } else {
+    // 50% — užrakinta dėžutė
+    const box = { x, y, type: 'lockedBox', prize, collected: false, age: 0 };
+    S.loot.push(box);
+    // First-time hint — show click tutorial once per profile
+    if (!Profile.seenBoxHint) {
+      S.boxHint = { x, y, start: performance.now() };
+    }
+  }
 }
 
 function checkFragmentCombine(x, y) {
@@ -6029,9 +7169,78 @@ function drawLoot() {
         drawXpPixelArt(ctx, 0, 0, 2, '#003d2e');
       }
       ctx.restore();
+    } else if (l.type === 'lockedBox') {
+      const active = !!l.activated;
+      const pulse = active ? 0.6 + 0.4 * Math.sin(now * 0.003 + l.x + l.y) : 0;
+      const g = Math.floor(80 + 60 * pulse);
+      if (active) {
+        const hp = 0.5 + 0.5 * Math.sin(now * 0.006);
+        ctx.save();
+        ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 20 * hp;
+        ctx.strokeStyle = `rgba(255,180,0,${0.6 + 0.4 * hp})`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(l.x * CELL + 2, l.y * CELL + 2, CELL - 4, CELL - 4);
+        ctx.fillStyle = `rgba(255,120,0,${0.08 + 0.07 * hp})`;
+        ctx.fillRect(l.x * CELL, l.y * CELL, CELL, CELL);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+      const idlePulse = 0.6 + 0.4 * Math.sin(now * 0.0018 + l.x + l.y);
+      ctx.save();
+      ctx.translate(cx, cy + (active ? float * 0.5 : float * 0.4));
+      ctx.shadowColor = active ? '#ff8800' : '#cc5500';
+      ctx.shadowBlur = active ? 12 * pulse : 7 * idlePulse;
+      // Box body
+      ctx.fillStyle = active ? '#1a0d00' : '#1a0800';
+      ctx.strokeStyle = active ? `rgba(255,${g},0,${0.7 + 0.3 * pulse})` : `rgba(220,100,0,${0.55 + 0.25 * idlePulse})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.rect(-9, -6, 18, 13); ctx.fill(); ctx.stroke();
+      // Padlock shackle arc
+      ctx.strokeStyle = active ? `rgba(255,${g + 40},20,${0.85 + 0.15 * pulse})` : `rgba(200,80,0,${0.6 + 0.2 * idlePulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, -6, 4.5, Math.PI, 0); ctx.stroke();
+      // Keyhole circle
+      ctx.fillStyle = active ? `rgba(255,${g + 20},0,0.9)` : `rgba(180,70,0,0.75)`;
+      ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+      // Keyhole slot
+      ctx.fillRect(-1, 1, 2, 3.5);
+      ctx.shadowBlur = 0;
+      ctx.restore();
     }
     ctx.restore();
   });
+
+  // ── Box hint arrow ──────────────────────────────────────────────
+  if (S.boxHint) {
+    const elapsed = performance.now() - S.boxHint.start;
+    if (elapsed > 6000) {
+      S.boxHint = null;
+    } else {
+      const alpha = elapsed < 400 ? elapsed / 400 : elapsed > 5200 ? 1 - (elapsed - 5200) / 800 : 1;
+      const hx = (S.boxHint.x + 0.5) * CELL;
+      const hy = (S.boxHint.y + 0.5) * CELL;
+      const bounce = Math.sin(performance.now() * 0.006) * 5;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold 11px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffdd00';
+      ctx.shadowColor = '#ffdd00';
+      ctx.shadowBlur = 10;
+      ctx.fillText('CLICK!', hx, hy - CELL * 1.1 + bounce);
+      // Arrow ↓
+      const ax = hx, ay = hy - CELL * 0.55 + bounce;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay + 10);
+      ctx.lineTo(ax - 6, ay);
+      ctx.lineTo(ax + 6, ay);
+      ctx.closePath();
+      ctx.fillStyle = '#ffdd00';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 }
 
 function animateEnergyGain(fromEnergy, toEnergy) {
@@ -6093,15 +7302,18 @@ function animateEnergyGain(fromEnergy, toEnergy) {
   }, stepMs);
 }
 
+let _lastEnergyHudVal = -1, _lastEnergyHudMax = -1;
 function updateEnergyHud() {
   const hud = document.getElementById('energy-hud');
   const fill = document.getElementById('energy-fill');
   const val = document.getElementById('energy-val');
-  const floor = document.getElementById('energy-floor-lbl');
-  const coins = document.getElementById('energy-coins');
   if (!hud) return;
 
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+  // Skip DOM update if nothing changed
+  if (S.energy === _lastEnergyHudVal && effectiveMax === _lastEnergyHudMax) return;
+  _lastEnergyHudVal = S.energy; _lastEnergyHudMax = effectiveMax;
+
   const pct = Math.min(S.energy / effectiveMax, 1);
   const isCrit = pct <= 0.15;
   const isLow = pct <= 0.30;
@@ -6141,13 +7353,39 @@ const KEYMAP = {
 
 const PREVENT_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter']);
 
+window.useRonkeForEnergy = function () {
+  if (gameMode !== 'adventure' || S.dead) return;
+  const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+  if (S.energy >= effectiveMax) {
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (hero) spawnDmgNumber(hero.x, hero.y, 'MAX ENERGY', '#080808', 12, 'normal');
+    return;
+  }
+  const ronkeSlotIndex = S.inventory.findIndex(s => s && s.type === 'ronke');
+  if (ronkeSlotIndex === -1 || (S.inventory[ronkeSlotIndex]?.qty || 0) <= 0) {
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (hero) spawnDmgNumber(hero.x, hero.y, 'NO POISON', '#ff5555', 12, 'normal');
+    return;
+  }
+  S.inventory[ronkeSlotIndex].qty--;
+  if (S.inventory[ronkeSlotIndex].qty <= 0) S.inventory[ronkeSlotIndex] = null;
+  saveProfile();
+  if (document.getElementById('inv-overlay')?.classList.contains('active')) updateInventoryUI();
+  const _oldE = S.energy || 0;
+  S.energy = Math.min(effectiveMax, _oldE + 5);
+  animateEnergyGain(_oldE, S.energy);
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (hero && typeof spawnDmgNumber === 'function') spawnDmgNumber(hero.x, hero.y, '+5⚡', '#44aaff', 16, 'crit');
+  if (typeof SFX !== 'undefined' && SFX.nanoHeal) SFX.nanoHeal();
+};
+
 window.useByteForEnergy = function () {
   if (gameMode !== 'adventure' || S.dead) return;
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
   if (S.energy >= effectiveMax) {
     if (typeof spawnDmgNumber === 'function') {
       const hero = S.units.find(u => u.team === 0 && u.alive);
-      if (hero) spawnDmgNumber(hero.x, hero.y, 'MAX ENERGY', '#cccccc', 12, 'normal');
+      if (hero) spawnDmgNumber(hero.x, hero.y, 'MAX ENERGY', '#080808', 12, 'normal');
     }
     return;
   }
@@ -6188,6 +7426,7 @@ window.useByteForEnergy = function () {
 document.addEventListener('keydown', e => {
   if (PREVENT_KEYS.has(e.code)) e.preventDefault();
   if (S.pendingSlotPrize) return; // slot machine open - block all input
+  if (S.cracking) return; // hash cracking in progress - block all input
   if (document.getElementById('card-picker-overlay')) return; // card picker open - block all input
 
   if (S.pendingTeleportSector) {
@@ -6246,6 +7485,12 @@ document.addEventListener('keydown', e => {
     if (e.code === 'Escape' || e.code === 'KeyF') { S.flareMode = false; updateFlareSlot(); return; }
   }
 
+  // Ronke Stronke skill toggle
+  if (e.code === 'KeyG' && gameMode === 'adventure') {
+    activateRonkeShield();
+    return;
+  }
+
   // Flare skill toggle
   if (e.code === 'KeyF' && gameMode === 'adventure') {
     if (S.flareUsed) {
@@ -6264,7 +7509,9 @@ document.addEventListener('keydown', e => {
     const unit = S.units.find(u => u.id === S.selectedId[team] && u.alive);
     if (unit) {
       const cycle = ['bullet', 'laser', 'heavy', 'shotgun', 'hack', 'ronke'];
-      unit.weapon = cycle[(cycle.indexOf(unit.weapon || 'bullet') + 1) % cycle.length];
+      const nextWeapon = cycle[(cycle.indexOf(unit.weapon || 'bullet') + 1) % cycle.length];
+      unit.weapon = nextWeapon;
+      if (nextWeapon === 'bullet') unit.gunSwitchAt = performance.now();
       updateSkillBar(team);
     }
     return;
@@ -6420,6 +7667,7 @@ function resolveTick() {
                   spawnDeath(u.x, u.y, u.color);
                   if (S.bloodStains) S.bloodStains.push(mkBloodStain(u.x, u.y));
                   S.kills = (S.kills || 0) + 1;
+                  trackKill();
                   if (!Profile.stats) Profile.stats = { totalKills: 0 };
                   Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
                   saveProfile(); _updateKillsDisplay();
@@ -6502,8 +7750,10 @@ function resolveTick() {
       }, 2800);
     }
 
+
     S.loot && S.loot.forEach(l => {
       if (!l.collected) {
+        if (l.type === 'lockedBox') return; // shoot to crack — no auto-collect
         const on = S.units.find(u => u.team === 0 && u.alive && u.x === l.x && u.y === l.y);
         if (on) {
           l.collected = true;
@@ -6524,9 +7774,9 @@ function resolveTick() {
           } else if (l.type === 'ronke') {
             addToInventory('ronke', null, 1);
             if (S.inventoryOpen) updateInventoryUI();
-            logEvent('RONKE collected', 'loot');
+            logEvent('POISON collected', 'loot');
             spawnPickupFX(l.x, l.y, '#44aaff');
-            spawnDmgNumber(l.x, l.y, 'RONKE!', '#44aaff', 16, 'crit');
+            spawnDmgNumber(l.x, l.y, 'POISON!', '#44aaff', 16, 'crit');
           } else if (l.type === 'gem') {
             const gemGain = 15;
             const _oldE = S.energy || 0;
@@ -6626,6 +7876,53 @@ function applyActions() {
           }
         }
         unit.x = nx; unit.y = ny;
+        // Check if enemy walked into an active Ronke shield cell
+        if (team === 1 && S.ronkeShield?.active) {
+          const _rHero = S.units.find(u => u.team === 0 && u.alive);
+          if (_rHero) {
+            _ronkeActiveShields().forEach(({ cell, idx }) => {
+              if (unit.alive && unit.x === _rHero.x + cell.dx && unit.y === _rHero.y + cell.dy) {
+                unit.hp = (unit.hp || 1) - 1;
+                unit.infected = performance.now(); unit.poisoned = { movesLeft: 5, timesLeft: 5 };
+                spawnHit(unit.x, unit.y, '#00ff66', 28);
+                spawnMeleeEffect(unit.x, unit.y, -cell.dx, -cell.dy, '#00ff66');
+                S.shake = Math.max(S.shake || 0, 4);
+                SFX.play(320, 0.12, 0.22, 'sine');
+                SFX.play(160, 0.08, 0.30, 'sawtooth');
+                const _iepx = (unit.x + 0.5) * CELL, _iepy = (unit.y + 0.5) * CELL;
+                const _ispx = (_rHero.x + cell.dx + 0.5) * CELL, _ispy = (_rHero.y + cell.dy + 0.5) * CELL;
+                S.ronkeInfect = {
+                  bornAt: performance.now(), spx: _ispx, spy: _ispy, epx: _iepx, epy: _iepy,
+                  enemy: unit,
+                  dmgNum: { gx: unit.x, gy: unit.y },
+                  tendrils: (function() {
+                    const _r = [];
+                    for (let _i = 0; _i < 10; _i++) {
+                      const _a = (_i / 10) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+                      const _l = CELL * (0.35 + Math.random() * 0.45);
+                      const _s = 3 + Math.floor(Math.random() * 3);
+                      const _pts = [{ x: _iepx, y: _iepy }];
+                      for (let _j = 1; _j <= _s; _j++) {
+                        _pts.push({ x: _iepx + Math.cos(_a)*_l*(_j/_s) + (Math.random()-0.5)*CELL*0.18, y: _iepy + Math.sin(_a)*_l*(_j/_s) + (Math.random()-0.5)*CELL*0.18 });
+                      }
+                      _r.push(_pts);
+                    }
+                    return _r;
+                  })(),
+                };
+                _ronkeShatterPair(idx, _rHero);
+                if (unit.hp <= 0) {
+                  unit.alive = false; unit.deathT = 1;
+                  spawnDeath(unit.x, unit.y, unit.color);
+                  S.kills = (S.kills || 0) + 1; trackKill();
+                  if (!Profile.stats) Profile.stats = { totalKills: 0 };
+                  Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+                  saveProfile(); _updateKillsDisplay();
+                }
+              }
+            });
+          }
+        }
         // Tutorial: move trigger
         if (tutorialActive && team === 0 && TUTORIAL_STEPS[tutorialStepIdx]?.trigger === 'move') {
           advanceTutorial();
@@ -6675,6 +7972,7 @@ function applyActions() {
       if (wep === 'laser') {
         SFX.laser();
         unit.laserAmmo--;
+        unit.laserShotAt = performance.now();
         const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
@@ -6749,6 +8047,7 @@ function applyActions() {
           updateSkillBar(team);
         }
         SFX.laser();
+        trackRonkeLaser();
         const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
@@ -6763,6 +8062,155 @@ function applyActions() {
         if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || isWall(bx, by)) b.active = false;
         S.bullets.push(b);
       }
+    }
+    // Ronke Stronke: advance 1 cell every 3 actions (both shields together)
+    if (team === 0 && S.ronkeShield?.active) {
+      // PRE-ROTATION: check current shield positions BEFORE rotating (catches enemies
+      // already standing on a shield cell when the hero shoots or moves toward them)
+      [0, 4].forEach((off, idx) => {
+        if (!S.ronkeShield.alive[idx] || !S.ronkeShield.active) return;
+        const _preSc = _SHIELD_CELLS[(S.ronkeShield.step + off) % 8];
+        const _preEx = unit.x + _preSc.dx, _preEy = unit.y + _preSc.dy;
+        if (_preEx < 0 || _preEx >= COLS || _preEy < 0 || _preEy >= ROWS) return;
+        const _preEnemy = S.units.find(u => u.team !== 0 && u.alive && u.x === _preEx && u.y === _preEy);
+        if (_preEnemy) {
+          _preEnemy.hp = (_preEnemy.hp || 1) - 1;
+          _preEnemy.infected = performance.now(); _preEnemy.poisoned = { movesLeft: 5, timesLeft: 5 };
+          spawnHit(_preEnemy.x, _preEnemy.y, '#00ff66', 28);
+          spawnMeleeEffect(_preEnemy.x, _preEnemy.y, -_preSc.dx, -_preSc.dy, '#00ff66');
+          S.shake = Math.max(S.shake || 0, 4);
+          SFX.play(320, 0.12, 0.22, 'sine');
+          SFX.play(160, 0.08, 0.30, 'sawtooth');
+          const _iepx = (_preEnemy.x + 0.5) * CELL, _iepy = (_preEnemy.y + 0.5) * CELL;
+          S.ronkeInfect = { bornAt: performance.now(), spx: (_preEx + 0.5) * CELL, spy: (_preEy + 0.5) * CELL, epx: _iepx, epy: _iepy,
+            enemy: _preEnemy,
+            dmgNum: { gx: _preEnemy.x, gy: _preEnemy.y },
+            tendrils: (function() { const _r = []; for (let _i = 0; _i < 10; _i++) { const _a = (_i/10)*Math.PI*2+(Math.random()-0.5)*0.4, _l = CELL*(0.35+Math.random()*0.45), _s = 3+Math.floor(Math.random()*3), _pts = [{x:_iepx,y:_iepy}]; for (let _j=1;_j<=_s;_j++) _pts.push({x:_iepx+Math.cos(_a)*_l*(_j/_s)+(Math.random()-0.5)*CELL*0.18,y:_iepy+Math.sin(_a)*_l*(_j/_s)+(Math.random()-0.5)*CELL*0.18}); _r.push(_pts); } return _r; })() };
+          [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}].forEach(_sd => {
+            const _sx2=_preEnemy.x+_sd.dx, _sy2=_preEnemy.y+_sd.dy;
+            if (_sx2<0||_sx2>=COLS||_sy2<0||_sy2>=ROWS) return;
+            const _sp=S.units.find(u=>u.team!==0&&u.alive&&u.x===_sx2&&u.y===_sy2); if(!_sp) return;
+            _sp.hp-=1; _sp.hitFlash=1; spawnDmgNumber(_sp.x,_sp.y,'-1','#00ff66',14,'crit');
+            if(_sp.hp<=0){_sp.alive=false;_sp.deathT=1;spawnDeath(_sp.x,_sp.y,_sp.color);S.kills=(S.kills||0)+1;trackKill();if(!Profile.stats)Profile.stats={totalKills:0};Profile.stats.totalKills=(Profile.stats.totalKills||0)+1;saveProfile();_updateKillsDisplay();}
+          });
+          if (_preEnemy.hp <= 0) { _preEnemy.alive=false; _preEnemy.deathT=1; spawnDeath(_preEnemy.x,_preEnemy.y,_preEnemy.color); S.kills=(S.kills||0)+1; trackKill(); if(!Profile.stats)Profile.stats={totalKills:0}; Profile.stats.totalKills=(Profile.stats.totalKills||0)+1; saveProfile(); _updateKillsDisplay(); }
+          _ronkeShatterPair(idx, unit);
+        }
+      });
+      if (!S.ronkeShield.active) { S.ronkeShield.movesLeft--; updateRonkeShieldSlot(); return; }
+
+      S.ronkeShield.prevStep = S.ronkeShield.step;
+      // Rotation direction based on movement: right/down → left (−1), left/up → right (+1)
+      const _rotDir = (a.dx === 1 || a.dy === 1) ? -1 : 1;
+      S.ronkeShield.step = ((S.ronkeShield.step + _rotDir) % 8 + 8) % 8;
+      S.ronkeShield.movesLeft--;
+
+      // Check each shield independently (post-rotation: new position)
+      const offsets = [0, 4];
+      offsets.forEach((off, idx) => {
+        if (!S.ronkeShield.alive[idx]) return;
+        const _sc = _ronkeShieldCell(off);
+        const _sx = unit.x + _sc.dx, _sy = unit.y + _sc.dy;
+
+        // Rule 3: wall → destroy this shield (and break the pair)
+        if (_sx < 0 || _sx >= COLS || _sy < 0 || _sy >= ROWS || isWall(_sx, _sy)) {
+          spawnHit(_sx, _sy, '#44aaff', 18);
+          SFX.play(180, 0.18, 0.15, 'square');
+          _ronkeShatterPair(idx, unit);
+        } else {
+          // Rule 1: enemy → dmg and destroy this shield
+          const _enemy = S.units.find(u => u.team !== 0 && u.alive && u.x === _sx && u.y === _sy);
+          if (_enemy) {
+            _enemy.hp = (_enemy.hp || 1) - 1;
+            _enemy.infected = performance.now(); _enemy.poisoned = { movesLeft: 5, timesLeft: 5 };
+            spawnHit(_enemy.x, _enemy.y, '#00ff66', 28);
+            spawnMeleeEffect(_enemy.x, _enemy.y, -_sc.dx, -_sc.dy, '#00ff66');
+            S.shake = Math.max(S.shake || 0, 4);
+            SFX.play(320, 0.12, 0.22, 'sine');
+            SFX.play(160, 0.08, 0.30, 'sawtooth');
+            // Virus infection animation — orb latches, tendrils spread, explosion burst
+            const _infSpx = (_sx + 0.5) * CELL, _infSpy = (_sy + 0.5) * CELL;
+            const _infEpx = (_enemy.x + 0.5) * CELL, _infEpy = (_enemy.y + 0.5) * CELL;
+            const _genTendrils = (n) => {
+              const result = [];
+              for (let _ti = 0; _ti < n; _ti++) {
+                const angle = (_ti / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+                const len = CELL * (0.35 + Math.random() * 0.45);
+                const segs = 3 + Math.floor(Math.random() * 3);
+                const pts = [{ x: _infEpx, y: _infEpy }];
+                for (let si = 1; si <= segs; si++) {
+                  const f = si / segs;
+                  pts.push({
+                    x: _infEpx + Math.cos(angle) * len * f + (Math.random() - 0.5) * CELL * 0.18,
+                    y: _infEpy + Math.sin(angle) * len * f + (Math.random() - 0.5) * CELL * 0.18,
+                  });
+                }
+                result.push(pts);
+              }
+              return result;
+            };
+            S.ronkeInfect = {
+              bornAt: performance.now(),
+              spx: _infSpx, spy: _infSpy,
+              epx: _infEpx, epy: _infEpy,
+              enemy: _enemy,
+              dmgNum: { gx: _enemy.x, gy: _enemy.y },
+              tendrils: _genTendrils(10),
+            };
+            // AoE splash to 4 adjacent enemies (explosion damage)
+            [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}].forEach(_sd => {
+              const _sx2 = _enemy.x + _sd.dx, _sy2 = _enemy.y + _sd.dy;
+              if (_sx2 < 0 || _sx2 >= COLS || _sy2 < 0 || _sy2 >= ROWS) return;
+              const _splash = S.units.find(u => u.team !== 0 && u.alive && u.x === _sx2 && u.y === _sy2);
+              if (!_splash) return;
+              _splash.hp -= 1;
+              _splash.hitFlash = 1;
+              spawnDmgNumber(_splash.x, _splash.y, '-1', '#00ff66', 14, 'crit');
+              if (_splash.hp <= 0) {
+                _splash.alive = false; _splash.deathT = 1;
+                spawnDeath(_splash.x, _splash.y, _splash.color);
+                S.kills = (S.kills || 0) + 1; trackKill();
+                if (!Profile.stats) Profile.stats = { totalKills: 0 };
+                Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+                saveProfile(); _updateKillsDisplay();
+              }
+            });
+            if (_enemy.hp <= 0) {
+              _enemy.alive = false; _enemy.deathT = 1;
+              spawnDeath(_enemy.x, _enemy.y, _enemy.color);
+              S.kills = (S.kills || 0) + 1; trackKill();
+              if (!Profile.stats) Profile.stats = { totalKills: 0 };
+              Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+              saveProfile(); _updateKillsDisplay();
+            }
+            _ronkeShatterPair(idx, unit);
+          }
+        }
+      });
+
+      // Deactivate when both shields gone or movesLeft = 0
+      if (!S.ronkeShield.alive[0] && !S.ronkeShield.alive[1]) {
+        S.ronkeShield.active = false;
+      }
+      if (S.ronkeShield.active && S.ronkeShield.movesLeft <= 0) {
+        S.ronkeShield.active = false;
+        // Launch death orbs — tick-based movement like bullets
+        const _dHero = S.units.find(u => u.team === 0 && u.alive);
+        if (_dHero) {
+          const _orbs = [0, 4].map((off, idx) => {
+            if (!S.ronkeShield.alive[idx]) return null;
+            const _sc = _SHIELD_CELLS[(S.ronkeShield.step + off) % 8];
+            return {
+              gx: _dHero.x + _sc.dx, gy: _dHero.y + _sc.dy, // current grid pos
+              px: _dHero.x + _sc.dx, py: _dHero.y + _sc.dy, // prev grid pos (for animT lerp)
+              dx: _sc.dx, dy: _sc.dy,
+              alive: true,
+            };
+          }).filter(Boolean);
+          S.ronkeDeathAnim = { phase: 'fly', orbs: _orbs };
+        }
+      }
+      updateRonkeShieldSlot();
     }
   });
 }
@@ -6790,7 +8238,28 @@ function moveBullets() {
     if (b.active && b.maxRange > 0 && b.cellsTraveled >= b.maxRange) b.active = false;
   });
   S.bullets.forEach(b => { b.newThisTick = false; });
+
+  // Death orbs move 1 cell per tick like bullets
+  if (S.ronkeDeathAnim) {
+    let anyAlive = false;
+    S.ronkeDeathAnim.orbs.forEach(o => {
+      if (!o.alive) return;
+      o.px = o.gx; o.py = o.gy;
+      const nx = o.gx + o.dx, ny = o.gy + o.dy;
+      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) {
+        o.alive = false;
+        spawnHit(nx, ny, '#00f5ff', 12);
+      } else {
+        const hit = S.units.find(u => u.alive && u.team !== 0 && u.x === nx && u.y === ny);
+        if (hit) { hit.hp -= 1; hit.hitFlash = 1; o.alive = false; spawnHit(nx, ny, '#00f5ff', 10); }
+        else { o.gx = nx; o.gy = ny; }
+      }
+      if (o.alive) anyAlive = true;
+    });
+    if (!anyAlive) S.ronkeDeathAnim = null;
+  }
 }
+
 
 function detectCollisions() {
 
@@ -6814,6 +8283,23 @@ function detectCollisions() {
       }
       if (hitFinal || hitMid || hitPrev || hitMidPrev || hitWormBody) {
         b.active = false;
+        // Ronke Stronke: bullet hits a shield → destroy that shield, block bullet
+        if (S.ronkeShield?.active && u.team === 0 && b.owner !== 0) {
+          const alive = S.ronkeShield.alive ?? [true, true];
+          const shields = _ronkeActiveShields();
+          const hit = shields.find(s => u.x + s.cell.dx === b.x && u.y + s.cell.dy === b.y);
+          // Block if bullet lands on any shield cell OR hits the hero directly
+          const blocked = hit || shields.length > 0;
+          if (blocked) {
+            const so = hit ? hit.cell : shields[0].cell;
+            const idx = hit ? hit.idx : shields[0].idx;
+            _ronkeShatterPair(idx, u);
+            updateRonkeShieldSlot();
+            spawnHit(u.x + so.dx, u.y + so.dy, '#44aaff', 20);
+            SFX.play(180, 0.18, 0.15, 'square');
+            return;
+          }
+        }
         // Shield bot: block bullets from shield side (hack wave bypasses)
         if (!b.hackBullet && u.utype === 'shield' && u.shieldDir && u.team !== b.owner) {
           const dot = b.dx * u.shieldDir.dx + b.dy * u.shieldDir.dy;
@@ -6849,7 +8335,7 @@ function detectCollisions() {
               spawnDmgNumber(u.x, u.y, 'RESIST', '#ff4488', 12, 'normal');
             }
           }
-        } else if (Math.random() < MISS_CHANCE) {
+        } else if (Math.random() < (u.dodge !== undefined ? u.dodge : MISS_CHANCE)) {
           const isHero = gameMode === 'adventure' && u.team === 0;
           logEvent(isHero ? `EVADED attack!` : `Shot missed!`, isHero ? 'loot' : 'warn');
           spawnDmgNumber(u.x, u.y, 'MISS', '#88bbff', 13, 'miss');
@@ -6890,8 +8376,9 @@ function detectCollisions() {
               spawnDeath(u.x, u.y, u.color);
               if (gameMode === 'adventure') {
                 logEvent(`Target <span style="color:#ffffff">X</span> destroyed.`, 'warn');
-                spawnLoot(u.x, u.y);
+                spawnLockedBox(u.x, u.y);
                 S.kills = (S.kills || 0) + 1;
+                trackKill();
                 if (!Profile.stats) Profile.stats = { totalKills: 0 };
                 Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
                 saveProfile(); _updateKillsDisplay();
@@ -6981,6 +8468,34 @@ function detectCollisions() {
       }
     }
   }
+
+  // Poison tick — infected enemies take 1 dmg every 5 moves, 5 times total
+  S.units.forEach(u => {
+    if (!u.alive || !u.poisoned) return;
+    u.poisoned.movesLeft--;
+    if (u.poisoned.movesLeft <= 0) {
+      u.hp -= 1;
+      u.hitFlash = 1;
+      spawnDmgNumber(u.x, u.y, '-1 \u2623', '#00ff66', 16, 'crit');
+      spawnHit(u.x, u.y, '#00ff66', 16);
+      SFX.play(160, 0.18, 0.22, 'sawtooth', -80);
+      SFX.play(320, 0.10, 0.12, 'sine');
+      u.poisoned.timesLeft--;
+      if (u.poisoned.timesLeft <= 0 || u.hp <= 0) {
+        delete u.poisoned;
+      } else {
+        u.poisoned.movesLeft = 5;
+      }
+      if (u.hp <= 0) {
+        u.alive = false; u.deathT = 1;
+        spawnDeath(u.x, u.y, u.color);
+        S.kills = (S.kills || 0) + 1; trackKill();
+        if (!Profile.stats) Profile.stats = { totalKills: 0 };
+        Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+        saveProfile(); _updateKillsDisplay();
+      }
+    }
+  });
 }
 
 function ammoRegen() {
@@ -7040,7 +8555,7 @@ function autoSelectAlive() {
 
 function _updateKillsDisplay() {
   const el = document.getElementById('kills-val');
-  if (el) el.textContent = S.kills || 0;
+  if (el) el.textContent = Profile.stats?.totalKills || 0;
 }
 
 function spawnDmgNumber(gx, gy, text, color, size, type) {
@@ -7136,8 +8651,9 @@ function advanceLasers() {
                 spawnDeath(hit.x, hit.y, hit.color);
                 if (gameMode === 'adventure') {
                   logEvent(`Target <span style="color:#ffffff">X</span> melted.`, 'warn');
-                  spawnLoot(hit.x, hit.y);
+                  spawnLockedBox(hit.x, hit.y);
                   S.kills = (S.kills || 0) + 1;
+                  trackKill();
                   if (!Profile.stats) Profile.stats = { totalKills: 0 };
                   Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
                   saveProfile(); _updateKillsDisplay(); checkAchievements();
@@ -7438,16 +8954,24 @@ function loop(now) {
     if (u.shootFlash > 0) u.shootFlash = Math.max(0, u.shootFlash - dt * 0.009);
     if (u.collectFlash > 0) u.collectFlash = Math.max(0, u.collectFlash - dt * 0.004);
     if (!u.alive && u.deathT > 0) u.deathT = Math.max(0, u.deathT - dt * 0.0035);
+    // Weapon form smooth blend
+    const _cw = u.weapon || 'bullet';
+    if (!u.wfb) u.wfb = { from: _cw, to: _cw, t: 1 };
+    if (u.wfb.to !== _cw) { u.wfb.from = u.wfb.to; u.wfb.to = _cw; u.wfb.t = 0; }
+    if (u.wfb.t < 1) u.wfb.t = Math.min(1, u.wfb.t + dt * 0.005);
   });
   if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 0.07);
 
   for (let _pi = S.particles.length - 1; _pi >= 0; _pi--) {
     const p = S.particles[_pi];
     p.x += p.vx; p.y += p.vy; p.vx *= 0.91; p.vy *= 0.91; p.life -= p.decay;
-    if (p.life <= 0) S.particles.splice(_pi, 1);
+    if (p.life <= 0) { S.particles[_pi] = S.particles[S.particles.length - 1]; S.particles.pop(); }
   }
+  // Cap particles to prevent unbounded growth
+  if (S.particles.length > 400) S.particles.length = 400;
   if (S.footsteps) S.footsteps.forEach(f => { f.alpha = Math.max(0, f.alpha - dt * 0.004); });
   if (gameMode === 'adventure') updateWallFX(dt);
+
 
   for (let _di = S.dmgNumbers.length - 1; _di >= 0; _di--) {
     const n = S.dmgNumbers[_di];
@@ -7455,7 +8979,7 @@ function loop(now) {
     n.vx *= 0.90; n.vy *= 0.88;
     n.life -= n.decay;
     n.scale = Math.max(1.0, n.scale - (n.type === 'crit' ? 0.09 : 0.13));
-    if (n.life <= 0) S.dmgNumbers.splice(_di, 1);
+    if (n.life <= 0) { S.dmgNumbers[_di] = S.dmgNumbers[S.dmgNumbers.length - 1]; S.dmgNumbers.pop(); }
   }
 
   S.lasers = S.lasers.filter(l => {
@@ -7468,8 +8992,21 @@ function loop(now) {
     return false;
   });
 
+  // Cache hero unit once per frame (used by rebuildVisCache, updateCamera, drawShootPreview)
+  S._hero = S.units ? S.units.find(u => u.team === 0 && u.alive) || null : null;
+
   // Rebuild visibility cache once per frame (replaces repeated isVisible() inner loops)
   rebuildVisCache();
+
+  // Cache per-unit checks once per frame
+  S.units.forEach(u => {
+    if (!u.alive) { u._adjEnemy = false; u._bulletDanger = false; return; }
+    u._adjEnemy = S.units.some(e => e.alive && e.team !== u.team &&
+      Math.abs(e.x - u.x) <= 1 && Math.abs(e.y - u.y) <= 1);
+    u._bulletDanger = S.bullets.some(b =>
+      b.active && b.owner !== u.team &&
+      Math.abs(b.x + b.dx - u.x) <= 1 && Math.abs(b.y + b.dy - u.y) <= 1);
+  });
 
   // Draw
   ctx.save();
@@ -7496,9 +9033,11 @@ function loop(now) {
   drawJumpIndicator();
   drawFlareAimIndicator();
   drawFlareProjectile();
+  drawRonkeShield();
   drawTutorialHighlight();
   drawLoot();
   drawUnits();
+  drawRonkeInfect();
   drawFog();
   drawDmgNumbers();
   ctx.restore();
@@ -7511,7 +9050,7 @@ function loop(now) {
 }
 
 function updateCamera() {
-  const hero = S.units.find(u => u.team === 0 && u.alive);
+  const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const vpW = advCanvasW, vpH = ADV_CANVAS_H;
   const mapW = COLS * CELL, mapH = ROWS * CELL;
@@ -7587,23 +9126,41 @@ function drawLasers() {
     ctx.shadowColor = laser.color; ctx.shadowBlur = 25;
     ctx.fillStyle = laser.color;
 
+    const segments = Math.max(5, Math.floor(dist / 14));
+    const jitterAmp = 6 + progress * 14;
+    // Refresh cached jitter at ~50ms intervals to avoid per-frame Math.random
+    if (!laser._jitter || laser._jitter.length !== segments - 1 || now - (laser._jitterAt || 0) > 50) {
+      laser._jitter = new Float32Array(segments - 1);
+      laser._jitter2 = new Float32Array(segments - 1);
+      for (let i = 0; i < segments - 1; i++) {
+        laser._jitter[i] = (Math.random() - 0.5);
+        laser._jitter2[i] = (Math.random() - 0.5);
+      }
+      laser._jitterLw = Math.random() * 2;
+      const pCount = Math.round(4 + progress * 4);
+      laser._jitterPx = new Float32Array(pCount);
+      laser._jitterPy = new Float32Array(pCount);
+      laser._jitterPr = new Float32Array(pCount);
+      for (let p = 0; p < pCount; p++) {
+        laser._jitterPx[p] = (Math.random() - 0.5) * 20;
+        laser._jitterPy[p] = (Math.random() - 0.5) * 20;
+        laser._jitterPr[p] = Math.random() * 2 + 0.5;
+      }
+      laser._jitterAt = now;
+    }
+
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    const segments = Math.max(5, Math.floor(dist / 14));
 
     // Draw top half of jitter
     for (let i = 1; i < segments; i++) {
-      const segX = (i / segments) * dist;
-      const jitterY = (Math.random() - 0.5) * (6 + progress * 14);
-      ctx.lineTo(segX, jitterY);
+      ctx.lineTo((i / segments) * dist, laser._jitter[i - 1] * jitterAmp);
     }
     ctx.lineTo(dist, 0);
 
     // Draw bottom half of jitter returning
     for (let i = segments - 1; i > 0; i--) {
-      const segX = (i / segments) * dist;
-      const jitterY = (Math.random() - 0.5) * (6 + progress * 14);
-      ctx.lineTo(segX, jitterY);
+      ctx.lineTo((i / segments) * dist, laser._jitter2[i - 1] * jitterAmp);
     }
     ctx.closePath();
     ctx.fill();
@@ -7611,19 +9168,17 @@ function drawLasers() {
     // Hot central core line
     ctx.globalAlpha = 0.7 + progress * 0.3;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1 + progress * 3 + Math.random() * 2;
+    ctx.lineWidth = 1 + progress * 3 + laser._jitterLw;
     ctx.shadowBlur = 10;
     ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
 
     // Source gathering particles (tik kraunantis)
-    if (!laser.firing) {
+    if (!laser.firing && laser._jitterPx) {
       ctx.globalAlpha = 0.8;
       ctx.fillStyle = laser.color;
-      for (let p = 0; p < (4 + progress * 4); p++) {
-        const px = (Math.random() - 0.5) * 20;
-        const py = (Math.random() - 0.5) * 20;
-        ctx.beginPath(); ctx.arc(px, py, Math.random() * 2 + 0.5, 0, Math.PI * 2); ctx.fill();
+      for (let p = 0; p < laser._jitterPx.length; p++) {
+        ctx.beginPath(); ctx.arc(laser._jitterPx[p], laser._jitterPy[p], laser._jitterPr[p], 0, Math.PI * 2); ctx.fill();
       }
     }
     ctx.restore();
@@ -7642,21 +9197,35 @@ function drawLasers() {
   });
 }
 
-function drawBoard() {
+let _boardCanvas = null, _boardCacheKey = '';
+function _buildBoardCache() {
+  const key = `${ROWS},${COLS}`;
+  if (_boardCanvas && _boardCacheKey === key) return;
+  _boardCacheKey = key;
+  const oc = document.createElement('canvas');
+  oc.width = COLS * CELL; oc.height = ROWS * CELL;
+  const octx = oc.getContext('2d');
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++) {
-      ctx.fillStyle = (r + c) % 2 === 0 ? CELL_DARK : CELL_LIGHT;
-      ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+      octx.fillStyle = (r + c) % 2 === 0 ? CELL_DARK : CELL_LIGHT;
+      octx.fillRect(c * CELL, r * CELL, CELL, CELL);
     }
-  ctx.strokeStyle = GRID_COLOR; ctx.lineWidth = 1;
-  for (let i = 0; i <= COLS; i++) { ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, BOARD_H); ctx.stroke(); }
-  for (let j = 0; j <= ROWS; j++) { ctx.beginPath(); ctx.moveTo(0, j * CELL); ctx.lineTo(BOARD_W, j * CELL); ctx.stroke(); }
-  ctx.strokeStyle = '#1e1e3e'; ctx.lineWidth = 2;
-  ctx.strokeRect(0, 0, BOARD_W, BOARD_H);
+  octx.strokeStyle = GRID_COLOR; octx.lineWidth = 1;
+  octx.beginPath();
+  for (let i = 0; i <= COLS; i++) { octx.moveTo(i * CELL, 0); octx.lineTo(i * CELL, BOARD_H); }
+  for (let j = 0; j <= ROWS; j++) { octx.moveTo(0, j * CELL); octx.lineTo(BOARD_W, j * CELL); }
+  octx.stroke();
+  octx.strokeStyle = '#1e1e3e'; octx.lineWidth = 2;
+  octx.strokeRect(0, 0, BOARD_W, BOARD_H);
+  _boardCanvas = oc;
+}
+function drawBoard() {
+  _buildBoardCache();
+  ctx.drawImage(_boardCanvas, 0, 0);
 }
 
 
-const _shadowGradCache = new Map(); // id -> {cx,cy,g}
+const _shadowGradCache = new Map(); // id -> {gx,gy,tick,g}
 function drawShadows() {
   S.units.forEach(u => {
     if (S.phase === 'frozen' && S.clockSide !== u.team) return;
@@ -7664,10 +9233,12 @@ function drawShadows() {
     if (a < 0.01) return;
     const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
     let cached = _shadowGradCache.get(u.id);
-    if (!cached || cached.cx !== cx || cached.cy !== cy) {
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, CELL * 0.8);
+    // Rebuild gradient only when grid position changes (once per tick, not per frame)
+    if (!cached || cached.gx !== u.x || cached.gy !== u.y) {
+      const gcx = (u.x + 0.5) * CELL, gcy = (u.y + 0.5) * CELL;
+      const g = ctx.createRadialGradient(gcx, gcy, 0, gcx, gcy, CELL * 0.8);
       g.addColorStop(0, hexAlpha(u.color, 0.13)); g.addColorStop(1, 'transparent');
-      cached = { cx, cy, g };
+      cached = { gx: u.x, gy: u.y, g };
       _shadowGradCache.set(u.id, cached);
     }
     ctx.globalAlpha = a / 0.13;
@@ -7679,7 +9250,8 @@ function drawShadows() {
 
 function drawShootPreview() {
   if (S.phase !== 'frozen' || S.clockSide !== 0) return;
-  const unit = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+  const selId = S.selectedId[0];
+  const unit = (S._hero && S._hero.id === selId) ? S._hero : S.units.find(u => u.id === selId && u.alive);
   if (!unit || S.pending[0] !== null) return;
   const wep = unit.weapon || 'bullet';
   if (gameMode === 'adventure') {
@@ -7711,12 +9283,14 @@ function drawShootPreview() {
 
 function traceShot(unit, dx, dy, color, maxRange, now) {
   const cells = []; let hitUnit = null;
+  const _eMap = new Map();
+  S.units.forEach(u => { if (u.alive && u.team !== unit.team) _eMap.set(u.x + ',' + u.y, u); });
   let x = unit.x + dx, y = unit.y + dy;
   const limit = maxRange > 0 ? maxRange : COLS + ROWS;
   for (let i = 0; i < limit; i++) {
     if (isWall(x, y)) break;
     cells.push({ x, y });
-    const e = S.units.find(u => u.alive && u.team !== unit.team && u.x === x && u.y === y);
+    const e = _eMap.get(x + ',' + y);
     if (e) { hitUnit = e; break; }
     x += dx; y += dy;
   }
@@ -7756,7 +9330,8 @@ function traceShot(unit, dx, dy, color, maxRange, now) {
 function traceLaserPreview(unit, cells, color, now) {
   if (!cells.length) return;
   const pulse = (Math.sin(now * 0.007) + 1) * 0.5;
-  const hitUnit = S.units.find(u => u.alive && u.team !== unit.team && cells.some(c => c.x === u.x && c.y === u.y));
+  const _cellSet = new Set(cells.map(c => c.x + ',' + c.y));
+  const hitUnit = S.units.find(u => u.alive && u.team !== unit.team && _cellSet.has(u.x + ',' + u.y));
   ctx.save();
   cells.forEach(c => {
     ctx.globalAlpha = 0.05 + pulse * 0.04;
@@ -7793,7 +9368,8 @@ function traceLaserPreview(unit, cells, color, now) {
 function drawAimIndicators() {
   if (gameMode === 'adventure') return;
   if (S.phase === 'frozen' && S.clockSide !== 0) return;
-  const p = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+  const selId = S.selectedId[0];
+  const p = (S._hero && S._hero.id === selId) ? S._hero : S.units.find(u => u.id === selId && u.alive);
   if (!p) return;
   const cx = (p.rx + 0.5) * CELL, cy = (p.ry + 0.5) * CELL;
   const aimD = p.aimDir;
@@ -7875,12 +9451,15 @@ function drawBullets() {
       buildWave(); ctx.stroke();
       ctx.restore();
 
-      // Inner bright wave with fade gradient
-      const wGrad = ctx.createLinearGradient(tailX, 0, tipX, 0);
-      wGrad.addColorStop(0, 'rgba(0,255,204,0)');
-      wGrad.addColorStop(0.35, 'rgba(0,255,204,0.6)');
-      wGrad.addColorStop(1, '#00ffcc');
-      ctx.strokeStyle = wGrad;
+      // Inner bright wave with fade gradient (cached — coords are fixed in local space)
+      if (!b._waveGrad) {
+        const _wg = ctx.createLinearGradient(tailX, 0, tipX, 0);
+        _wg.addColorStop(0, 'rgba(0,255,204,0)');
+        _wg.addColorStop(0.35, 'rgba(0,255,204,0.6)');
+        _wg.addColorStop(1, '#00ffcc');
+        b._waveGrad = _wg;
+      }
+      ctx.strokeStyle = b._waveGrad;
       ctx.lineWidth = 2.2;
       ctx.shadowColor = '#00ffcc';
       ctx.shadowBlur = 10;
@@ -7960,12 +9539,16 @@ function drawBullets() {
       ctx.shadowColor = b.color;
       ctx.shadowBlur = 15;
 
-      const grad = ctx.createLinearGradient(-tailLength * 1.5, 0, tailLength * 0.5, 0);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(0.5, b.color);
-      grad.addColorStop(1, '#ffffff');
-
-      ctx.fillStyle = grad;
+      const _tgKey = `${tailLength},${b.color}`;
+      if (!b._trailGrad || b._trailGradKey !== _tgKey) {
+        b._trailGradKey = _tgKey;
+        const _g = ctx.createLinearGradient(-tailLength * 1.5, 0, tailLength * 0.5, 0);
+        _g.addColorStop(0, 'rgba(0,0,0,0)');
+        _g.addColorStop(0.5, b.color);
+        _g.addColorStop(1, '#ffffff');
+        b._trailGrad = _g;
+      }
+      ctx.fillStyle = b._trailGrad;
 
       // Data dash shape (sharp front, fading back)
       ctx.beginPath();
@@ -7987,74 +9570,82 @@ function drawBullets() {
 }
 
 function drawParticles() {
-  S.particles.forEach(p => {
-    ctx.save();
-    ctx.shadowColor = p.color; ctx.shadowBlur = 10;
-    if (p.type === 'ring') {
-      const rad = p.r * (1 - p.life);
-      if (rad > 0) {
-        ctx.globalAlpha = p.life * 0.85;
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max(0.5, 3 * p.life);
-        ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2); ctx.stroke();
-      }
-    } else if (p.type === 'chunk') {
-      // Draw as a rotating square block for wall pieces
+  if (!S.particles.length) return;
+  ctx.save();
+  // Pass 1: no-glow particles (shadowBlur=0 set once)
+  ctx.shadowBlur = 0;
+  for (let _pi = 0; _pi < S.particles.length; _pi++) {
+    const p = S.particles[_pi];
+    if (p.type === 'chunk') {
       ctx.globalAlpha = p.life * 0.95;
       ctx.fillStyle = p.color;
+      ctx.save();
       ctx.translate(p.x, p.y);
-      // Spin depending on the x/y and life so it looks naturally rotating
       ctx.rotate((p.x + p.y) * 0.1 + p.life * 6);
       const size = p.r * 1.5 * p.life;
       ctx.fillRect(-size / 2, -size / 2, size, size);
-      // Nice 3D highlight edge
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
       ctx.fillRect(-size / 2, -size / 2, size, size / 3);
-      ctx.translate(-p.x, -p.y);
-    } else if (p.type === 'pixel') {
-      // Draw as a perfect square pixel that shrinks slightly over time, no rotation
-      ctx.globalAlpha = p.life > 0.5 ? 1 : p.life * 2;
-      ctx.fillStyle = p.color;
-      ctx.shadowBlur = p.color === '#ffffff' ? 8 : 0; // Only white pixels glow
-
-      const size = Math.max(1, Math.round(p.r * (0.3 + 0.7 * p.life)));
-      // Snap to whole pixels for crisp pixel-art look
-      const px = Math.round(p.x - size / 2);
-      const py = Math.round(p.y - size / 2);
-      ctx.fillRect(px, py, size, size);
+      ctx.restore();
     } else if (p.type === 'streak' || p.vx !== 0 || p.vy !== 0) {
-      // Dynamic motion streaks instead of circles
       const speed = Math.hypot(p.vx, p.vy) + 1;
       const len = speed * 2.5 * p.life;
       ctx.globalAlpha = p.life * 0.95;
       ctx.strokeStyle = p.color;
       ctx.lineWidth = Math.max(0.5, p.r * p.life);
       ctx.lineCap = 'round';
-      ctx.beginPath();
-      // Draw line pointing from older position using velocity
       const ang = Math.atan2(p.vy, p.vx);
+      ctx.beginPath();
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x - Math.cos(ang) * len, p.y - Math.sin(ang) * len);
       ctx.stroke();
-    } else {
+    } else if (p.type === 'pixel' && p.color !== '#ffffff') {
+      ctx.globalAlpha = p.life > 0.5 ? 1 : p.life * 2;
+      ctx.fillStyle = p.color;
+      const size = Math.max(1, Math.round(p.r * (0.3 + 0.7 * p.life)));
+      ctx.fillRect(Math.round(p.x - size / 2), Math.round(p.y - size / 2), size, size);
+    }
+  }
+  // Pass 2: glow particles (shadowBlur set per batch)
+  for (let _pi = 0; _pi < S.particles.length; _pi++) {
+    const p = S.particles[_pi];
+    if (p.type === 'ring') {
+      const rad = p.r * (1 - p.life);
+      if (rad <= 0) continue;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+      ctx.globalAlpha = p.life * 0.85;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(0.5, 3 * p.life);
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2); ctx.stroke();
+    } else if (p.type === 'pixel' && p.color === '#ffffff') {
+      ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 8;
+      ctx.globalAlpha = p.life > 0.5 ? 1 : p.life * 2;
+      ctx.fillStyle = '#ffffff';
+      const size = Math.max(1, Math.round(p.r * (0.3 + 0.7 * p.life)));
+      ctx.fillRect(Math.round(p.x - size / 2), Math.round(p.y - size / 2), size, size);
+    } else if (p.type !== 'chunk' && p.type !== 'streak' && p.vx === 0 && p.vy === 0) {
+      ctx.shadowColor = p.color; ctx.shadowBlur = 10;
       ctx.globalAlpha = p.life * 0.85;
       ctx.fillStyle = p.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.restore();
-  });
+  }
+  ctx.restore();
 }
 
 function drawThreatIndicators() {
   if (S.phase === 'gameover') return;
   const pulse = (Math.sin(performance.now() * 0.014) + 1) * 0.5;
 
+  // Pre-build unit position map once — used by both laser and bullet threat loops
+  const _enemyPosMap = new Map();
+  S.units.forEach(u => { if (u.alive) _enemyPosMap.set(u.x + ',' + u.y, u); });
 
   S.lasers.forEach(laser => {
     if (!laser.active) return;
     for (const cell of laser.cells) {
-      const u = S.units.find(u => u.alive && u.team !== laser.owner && u.x === cell.x && u.y === cell.y);
-      if (!u) continue;
+      const u = _enemyPosMap.get(cell.x + ',' + cell.y);
+      if (!u || u.team === laser.owner) continue;
       const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
       const r = CELL * 0.43 + pulse * CELL * 0.07;
       const d = r * 0.72;
@@ -8079,11 +9670,9 @@ function drawThreatIndicators() {
     const nx = b.x + b.dx * bThrSpd, ny = b.y + b.dy * bThrSpd;
     const midx = b.x + b.dx, midy = b.y + b.dy;
 
-    S.units.forEach(u => {
-      if (!u.alive || u.team === b.owner) return;
-      const atFinal = nx === u.x && ny === u.y;
-      const atMid = bThrSpd === 2 && midx === u.x && midy === u.y;
-      if (!atFinal && !atMid) return;
+    const u = _enemyPosMap.get(nx + ',' + ny) || (bThrSpd === 2 && _enemyPosMap.get(midx + ',' + midy));
+    if (!u || u.team === b.owner) return;
+    {
 
       const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
       const r = CELL * 0.44 + pulse * CELL * 0.07;
@@ -8125,7 +9714,7 @@ function drawThreatIndicators() {
       ctx.fill();
 
       ctx.restore();
-    });
+    }
   });
 }
 
@@ -8164,10 +9753,7 @@ function angleToDir(angle) {
 function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
   const t = performance.now();
   const isMoving = Math.abs(u.rx - u.x) > 0.01 || Math.abs(u.ry - u.y) > 0.01;
-  const isDanger = isAdjacentToEnemy(u) || S.bullets.some(b =>
-    b.active && b.owner !== u.team &&
-    Math.abs(b.x + b.dx - u.x) <= 1 && Math.abs(b.y + b.dy - u.y) <= 1
-  );
+  const isDanger = (u._adjEnemy || u._bulletDanger) || false;
   const isLowHp = gameMode === 'adventure' && S.energy <= 15;
   const isHighPower = gameMode === 'adventure' && S.energy > 75;
 
@@ -8182,7 +9768,31 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
   if (isLowHp) { jitterX = (Math.random() - 0.5) * 2.5; jitterY = (Math.random() - 0.5) * 2.5; }
 
   const bob = Math.sin(t * 0.003) * 2;
-  const sz = UNIT_CELL * 0.45;
+  const sz = UNIT_CELL * 0.30;
+  const WFORMS = {
+    bullet:  { bm:1.40, lm:0,    la:[80,120], ll:1.00, lc:'#1a5c2a', ltip:'#33ff88', oc:'#2a6010', gc:null       },
+    laser:   { bm:1.00, lm:1,    la:[80,120], ll:1.00, lc:'#1a5c2a', ltip:'#33ff88', oc:'#0d4d2a', gc:null       },
+    heavy:   { bm:1.60, lm:0,    la:[80,120], ll:1.00, lc:'#7a3500', ltip:'#ff6600', oc:'#8a3a00', gc:'#ff5500'  },
+    shotgun: { bm:1.40, lm:0,    la:[80,120], ll:1.00, lc:'#1a5c2a', ltip:'#33ff88', oc:'#2a6010', gc:null       },
+    hack:    { bm:1.35, lm:1,    la:[70,110], ll:0.50, lc:'#004488', ltip:'#44ccff', oc:'#003366', gc:'#0088ff'  },
+    ronke:   { bm:1.00, lm:1,    la:[80,120], ll:1.00, lc:'#1a5c2a', ltip:'#33ff88', oc:'#0d4d2a', gc:null       },
+  };
+  const wfb = u.wfb || { from:'bullet', to:'bullet', t:1 };
+  const fA = WFORMS[wfb.from] || WFORMS.bullet;
+  const fB = WFORMS[wfb.to]   || WFORMS.bullet;
+  const btt = wfb.t;
+  const wL = (a, b) => a + (b - a) * btt;
+  const bodyMult   = wL(fA.bm,     fB.bm);
+  const legMult    = wL(fA.lm,     fB.lm);
+  const legLenMult = wL(fA.ll,     fB.ll);
+  const legAng0    = wL(fA.la[0],  fB.la[0]);
+  const legAng1    = wL(fA.la[1],  fB.la[1]);
+  const legColor   = btt > 0.5 ? fB.lc   : fA.lc;
+  const tipColor   = btt > 0.5 ? fB.ltip : fA.ltip;
+  const outlineColor = btt > 0.5 ? fB.oc : fA.oc;
+  const glowColor  = btt > 0.5 ? fB.gc   : fA.gc;
+  const curWep     = wfb.to;
+  const bsz        = sz * bodyMult;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -8210,6 +9820,103 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
     }
   }
 
+  // Weapon form: legs, arcs, glow effects
+  {
+    const legPairs = [
+      { sideAng: legAng0, phase: 0       },
+      { sideAng: legAng1, phase: Math.PI },
+    ];
+    const walkT   = t * 0.010;
+    const walkAmt = isMoving ? 0.18 : 0;
+    const sideTips = [[], []];
+
+    if (legMult > 0.01) {
+      ctx.lineWidth = 1.3;
+      ctx.shadowBlur = 4; ctx.shadowColor = tipColor;
+      for (let pi = 0; pi < legPairs.length; pi++) {
+        const lp = legPairs[pi];
+        for (let side = 0; side < 2; side++) {
+          const sd   = side === 0 ? 1 : -1;
+          const step = Math.sin(walkT + lp.phase) * walkAmt;
+          const baseAng = angle + sd * (lp.sideAng * Math.PI / 180);
+          const kx = Math.cos(baseAng) * bsz * 1.05 * legMult * legLenMult;
+          const ky = Math.sin(baseAng) * bsz * 1.05 * legMult * legLenMult;
+          const fx = kx + Math.cos(baseAng) * sz * 0.95 * legMult * legLenMult
+                       + Math.cos(angle) * step * sz * 2.8 * legMult;
+          const fy = ky + Math.sin(baseAng) * sz * 0.95 * legMult * legLenMult
+                       + Math.sin(angle) * step * sz * 2.8 * legMult;
+          sideTips[side].push([fx, fy]);
+          ctx.globalAlpha = alpha * 0.9 * legMult;
+          ctx.strokeStyle = legColor;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(baseAng) * bsz * 0.88, Math.sin(baseAng) * bsz * 0.88);
+          ctx.lineTo(kx, ky);
+          ctx.lineTo(fx, fy);
+          ctx.stroke();
+          ctx.globalAlpha = alpha * 0.6 * legMult;
+          ctx.fillStyle = tipColor;
+          ctx.beginPath(); ctx.arc(fx, fy, 1.3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    // Weapon-specific glow ring
+    if (glowColor) {
+      ctx.globalAlpha = alpha * (0.22 + Math.sin(t * 0.004) * 0.08);
+      ctx.strokeStyle = glowColor; ctx.lineWidth = 2.5;
+      ctx.shadowBlur = 14; ctx.shadowColor = glowColor;
+      ctx.beginPath(); ctx.arc(0, 0, bsz * 1.18, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // Heavy: rotating spikes around body
+    if (curWep === 'heavy' && legMult < 0.5) {
+      ctx.lineWidth = 2; ctx.shadowBlur = 6; ctx.shadowColor = '#ff5500';
+      for (let i = 0; i < 6; i++) {
+        const sa = (i / 6) * Math.PI * 2 + t * 0.0008;
+        ctx.globalAlpha = alpha * (1 - legMult) * 0.65;
+        ctx.strokeStyle = '#ff5500';
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(sa) * bsz * 0.95, Math.sin(sa) * bsz * 0.95);
+        ctx.lineTo(Math.cos(sa) * bsz * 1.30, Math.sin(sa) * bsz * 1.30);
+        ctx.stroke();
+      }
+    }
+
+    // Laser arc between same-side leg tips
+    const arcReady = curWep === 'laser' && legMult > 0.9 && shootFlash < 0.05 && (t - (u.laserShotAt || 0)) > 500;
+    if (arcReady) {
+      ctx.save();
+      for (let side = 0; side < 2; side++) {
+        if (sideTips[side].length < 2) continue;
+        const [x0, y0] = sideTips[side][0];
+        const [x1, y1] = sideTips[side][1];
+        const dist = Math.hypot(x1 - x0, y1 - y0);
+        const nx = -(y1 - y0) / dist, ny = (x1 - x0) / dist;
+        const segs = 5;
+        const dA = (lineW, color, alphaM, spread) => {
+          ctx.strokeStyle = color; ctx.lineWidth = lineW;
+          ctx.globalAlpha = alpha * alphaM * (0.7 + Math.random() * 0.3);
+          ctx.beginPath(); ctx.moveTo(x0, y0);
+          for (let i = 1; i < segs; i++) {
+            const f = i / segs;
+            const off = (Math.random() - 0.5) * dist * spread;
+            ctx.lineTo(x0+(x1-x0)*f+nx*off, y0+(y1-y0)*f+ny*off);
+          }
+          ctx.lineTo(x1, y1); ctx.stroke();
+        };
+        ctx.shadowBlur = 7; ctx.shadowColor = '#00ffff';
+        dA(1.2,'#00ccff',0.28,0.45); dA(0.6,'#00ffff',0.75,0.35); dA(0.3,'#ffffff',0.55,0.20);
+        ctx.globalAlpha = alpha * 0.85; ctx.fillStyle = '#00ffff'; ctx.shadowBlur = 6;
+        ctx.beginPath(); ctx.arc(x0, y0, 1.2, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x1, y1, 1.2, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 0;
+  }
+
   // Electricity Arcs
   if (isHighPower && !inactive) {
     ctx.strokeStyle = '#00f5ff'; ctx.lineWidth = 1;
@@ -8226,33 +9933,66 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
 
   // Main Body
   ctx.fillStyle = isLowHp && t % 200 < 50 ? '#110000' : '#000000';
-  ctx.beginPath(); ctx.arc(0, 0, sz, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#0d4d2a'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, bsz, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = outlineColor; ctx.lineWidth = 1.5; ctx.stroke();
 
-  // Eye
-  const shift = sz * 0.35;
-  const ex = Math.cos(angle) * shift, ey = Math.sin(angle) * shift;
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(ex, ey, sz * 0.5, 0, Math.PI * 2); ctx.fill();
-
+  // Eye(s)
+  const shotBlend = wfb.to === 'shotgun' ? btt : (wfb.from === 'shotgun' ? 1 - btt : 0);
   const isBlinking = t % 4000 < 150;
   const coreColor = isDanger ? (isLowHp && t % 100 < 50 ? '#ffaa00' : '#ff3c55') : '#00f5ff';
   const pulseSpeed = isDanger ? 0.03 : 0.01;
   const corePulse = (Math.sin(t * pulseSpeed) + 1) * 0.5;
   const flareSize = 1.0 + shootFlash * 1.5;
-
   ctx.shadowColor = coreColor;
   ctx.shadowBlur = (8 + corePulse * 6) * (1 + shootFlash * 3);
   if (isDanger) ctx.shadowBlur += 10;
+  const showGlow = !(u.hitTimer > 0) && !(isLowHp && t % 300 < 40) && !isBlinking;
 
-  if (!(u.hitTimer > 0) && !(isLowHp && t % 300 < 40) && !isBlinking) {
+  const drawEye = (px, py, bgR, coreR) => {
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(px, py, bgR, 0, Math.PI * 2); ctx.fill();
+    if (showGlow) {
+      ctx.fillStyle = coreColor;
+      ctx.beginPath(); ctx.arc(px, py, coreR, 0, Math.PI * 2); ctx.fill();
+    }
+  };
+
+  // Eye — same position/size always; shotgun gets 3 pupils inside instead of 1
+  const shift = bsz * 0.35;
+  const ex = Math.cos(angle) * shift, ey = Math.sin(angle) * shift;
+  const eyeBgR = bsz * 0.50;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(ex, ey, eyeBgR, 0, Math.PI * 2); ctx.fill();
+
+  if (showGlow) {
     ctx.fillStyle = coreColor;
-    ctx.beginPath(); ctx.arc(ex, ey, sz * (isDanger ? 0.25 : 0.2) * flareSize, 0, Math.PI * 2); ctx.fill();
+    if (shotBlend < 0.5) {
+      // Single pupil
+      const cR = bsz * (isDanger ? 0.25 : 0.20) * flareSize;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath(); ctx.arc(ex, ey, cR, 0, Math.PI * 2); ctx.fill();
+    }
+    if (shotBlend > 0.01) {
+      // 3 pupils arranged in triangle inside the eye
+      const pR  = bsz * (isDanger ? 0.13 : 0.11) * flareSize;
+      const off = bsz * 0.17; // distance from eye center
+      const pupils = [
+        [ex + Math.cos(angle)       * off, ey + Math.sin(angle)       * off],
+        [ex + Math.cos(angle + 2.1) * off, ey + Math.sin(angle + 2.1) * off],
+        [ex + Math.cos(angle - 2.1) * off, ey + Math.sin(angle - 2.1) * off],
+      ];
+      ctx.globalAlpha = alpha * shotBlend;
+      pupils.forEach(([px, py]) => {
+        ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.fill();
+      });
+      ctx.globalAlpha = alpha;
+    }
   }
 
   // Highlights
   ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.6;
-  ctx.beginPath(); ctx.arc(ex - 1.5, ey - 1.5, sz * 0.06, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ex - 1.5, ey - 1.5, bsz * 0.06, 0, Math.PI * 2); ctx.fill();
 
   ctx.restore();
 }
@@ -8304,8 +10044,9 @@ function drawEnemyWorm(cx, cy, u, alpha) {
     // Calculate global recoil for the entire entity
     const shakeAmt = (u.hp <= u.maxHp * 0.4) ? 3 : 0;
     const recoil = u.hitFlash > 0 ? -4 : 0;
-    const vX = Math.cos(Math.atan2(u.facing.dy, u.facing.dx));
-    const vY = Math.sin(Math.atan2(u.facing.dy, u.facing.dx));
+    const _fLen = Math.hypot(u.facing.dx, u.facing.dy) || 1;
+    const vX = u.facing.dx / _fLen;
+    const vY = u.facing.dy / _fLen;
 
     const rCx = cx + vX * recoil + (Math.random() - 0.5) * shakeAmt;
     const rCy = cy + vY * recoil + (Math.random() - 0.5) * shakeAmt;
@@ -8350,6 +10091,7 @@ function drawEnemyWorm(cx, cy, u, alpha) {
     const segments = 24;
     ctx.shadowBlur = isHit ? 30 : 15;
     ctx.shadowColor = baseColor;
+    const _waveBase = t * 0.015 + u.id; // hoisted: constant per unit per frame
 
     for (let i = segments; i >= 0; i--) {
       const ratio = i / segments;
@@ -8364,7 +10106,7 @@ function drawEnemyWorm(cx, cy, u, alpha) {
       const pY = Math.sin(locAngle + Math.PI / 2);
 
       // Compute wiggle
-      const wave = Math.sin(t * 0.015 - ratio * Math.PI * 4 + u.id);
+      const wave = Math.sin(_waveBase - ratio * Math.PI * 4);
       const wiggleAmt = wave * sz * 0.35 * Math.sin(ratio * Math.PI); // middle wiggles most
       const wX = pt.x + pX * wiggleAmt;
       const wY = pt.y + pY * wiggleAmt;
@@ -8575,28 +10317,40 @@ function drawEnemyBinarySwarm(cx, cy, u, alpha) {
     const timeOffset = u.id * 3721.4;
     const enemyTime = t + timeOffset;
     const unitSpeedMult = 0.7 + ((u.id * 17) % 6) * 0.1;
+    // Hoist elite font (constant for all chars) and precompute time offsets
+    const _eliteTs = isElite ? Math.max(11, sz * 0.56) : 0;
+    if (isElite) ctx.font = `bold ${_eliteTs}px monospace`;
+    const _et1 = enemyTime * 0.001;
+    const _et2 = enemyTime * 0.0018;
+    const _et3 = enemyTime * 0.05;
+    const _et4 = enemyTime * 0.0009;
+    const _et5 = enemyTime * 0.004;
+    const _et6 = enemyTime * 0.01;
 
     for (let i = 0; i < numChars; i++) {
       const rSeed = u.id * 314.15 + i * 15.3;
       const speed = (0.001 + (i % 3) * 0.0015) * unitSpeedMult;
-      const pulseIn = Math.sin(enemyTime * 0.001 + rSeed) * (sz * 0.15);
+      const pulseIn = Math.sin(_et1 + rSeed) * (sz * 0.15);
       const r = isElite
-        ? sz * 0.9 + Math.sin(enemyTime * 0.0018 + i) * (sz * 0.08)
+        ? sz * 0.9 + Math.sin(_et2 + i) * (sz * 0.08)
         : sz * 1.5 * Math.abs(Math.sin(rSeed)) + pulseIn;
       const theta = isElite
-        ? ((Math.PI * 2) / numChars) * i + enemyTime * 0.0009
+        ? ((Math.PI * 2) / numChars) * i + _et4
         : (rSeed * 0.9) + enemyTime * speed * (i % 2 === 0 ? 1 : -1);
 
-      const jX = Math.sin(enemyTime * 0.05 + rSeed) * shake;
-      const jY = Math.cos(enemyTime * 0.05 + rSeed) * shake;
+      const _js = _et3 + rSeed;
+      const jX = Math.sin(_js) * shake;
+      const jY = Math.cos(_js) * shake;
       const px = Math.cos(theta) * r + jX;
       const py = Math.sin(theta) * r + jY;
-      const char = isElite ? (i < 3 ? '1' : '0') : (Math.floor((enemyTime * (0.01 + i * 0.001) + rSeed) % 2) === 0 ? '0' : '1');
-      const ts = isElite ? Math.max(11, sz * 0.56) : Math.max(8, sz * 0.8 * (1 - (r / (sz * 2.0))) + 8);
-      ctx.font = `bold ${ts}px monospace`;
+      const char = isElite ? (i < 3 ? '1' : '0') : (Math.floor((_et6 * (1 + i * 0.1) + rSeed) % 2) === 0 ? '0' : '1');
+      if (!isElite) {
+        const ts = Math.max(8, sz * 0.8 * (1 - (r / (sz * 2.0))) + 8);
+        ctx.font = `bold ${ts}px monospace`;
+      }
       ctx.globalAlpha = isElite
-        ? alpha * (0.82 + Math.sin(enemyTime * 0.004 + i) * 0.12)
-        : alpha * (0.4 + Math.abs(Math.sin(enemyTime * 0.01 + rSeed)) * 0.6);
+        ? alpha * (0.82 + Math.sin(_et5 + i) * 0.12)
+        : alpha * (0.4 + Math.abs(Math.sin(_et6 + rSeed)) * 0.6);
       ctx.fillStyle = (isHit && i % 2 === 0) ? (isElite ? '#bfe6ff' : '#fff') : baseColor;
       ctx.fillText(char, px, py);
     }
@@ -8636,8 +10390,12 @@ function drawEnemyFortress(cx, cy, u, alpha) {
     // 0.15 is rotation speed interpolation factor
     u.renderAngle += diff * 0.15;
 
-    const cxRecoil = cx + Math.cos(targetAngle) * recoil + (Math.random() - 0.5) * shakeAmt;
-    const cyRecoil = cy + Math.sin(targetAngle) * recoil + (Math.random() - 0.5) * shakeAmt;
+    const _ftLen = Math.hypot(u.facing.dx, u.facing.dy) || 1;
+    const _fvX = u.facing.dx / _ftLen, _fvY = u.facing.dy / _ftLen;
+    const _shX = shakeAmt ? (Math.random() - 0.5) * shakeAmt : 0;
+    const _shY = shakeAmt ? (Math.random() - 0.5) * shakeAmt : 0;
+    const cxRecoil = cx + _fvX * recoil + _shX;
+    const cyRecoil = cy + _fvY * recoil + _shY;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -8825,6 +10583,7 @@ function drawEnemyFortress(cx, cy, u, alpha) {
   } catch (e) { console.error("Fortress render error:", e); }
 }
 
+
 function drawEnemyPixelArt(cx, cy, u, alpha) {
   try {
     const t = performance.now();
@@ -8886,71 +10645,59 @@ function drawEnemyPixelArt(cx, cy, u, alpha) {
       }
     };
 
-    let stripData = [];
+    // Hoist per-frame constants out of strip loop
+    const _breatheSlow = Math.sin(t * 0.001 + u.id);
+    const _tOff2 = t * 0.002 - u.id; // wave1 offset (negated for sin)
+    const _tOff4 = t * 0.004;
+    const _tOff6 = t * 0.006;
+    const _tOff5 = t * 0.005;
+    const _nextPhase = (phase + 1) % 4;
+    const _szMin = sz * 0.1;
+    const _breatheAmp = sz * 0.05;
+
+    // Reuse flat arrays to avoid per-frame object allocation
+    const _sY = new Float32Array(strips);
+    const _sX = new Float32Array(strips);
+    const _sW = new Float32Array(strips);
+    const _sMiss = new Uint8Array(strips);
 
     for (let i = 0; i < strips; i++) {
-      let yBase = startY + i * stripH;
-      let yNorm = yBase / sz;
-      let y = yBase;
-      let currentStripH = stripH;
+      const yBase = startY + i * stripH;
+      const yNorm = yBase / sz;
 
       const width1 = getBaseShapeWidth(phase, yNorm);
-      const width2 = getBaseShapeWidth((phase + 1) % 4, yNorm);
+      const width2 = getBaseShapeWidth(_nextPhase, yNorm);
       let w = width1 * (1 - smoothLerp) + width2 * smoothLerp;
 
+      const wave1 = Math.sin(yNorm * 6 - _tOff2);
+      const wave2 = Math.cos(yNorm * 14 + _tOff4);
+      const wave3 = Math.sin(yNorm * 28 - _tOff6);
+      const distortion = wave1 * 0.35 + wave2 * 0.35 + wave3 * 0.2 + _breatheSlow * 0.2;
+      w = Math.max(_szMin, w * (distortion > 0 ? 1.0 + distortion * 0.15 : 1.0 + distortion * 0.8));
+      w += _breatheAmp * Math.sin(yNorm * 15 + _tOff5);
 
-      const breatheSlow = Math.sin(t * 0.001 + u.id);
-      const wave1 = Math.sin(yNorm * 6 - t * 0.002 + u.id);
-      const wave2 = Math.cos(yNorm * 14 + t * 0.004);
-      const wave3 = Math.sin(yNorm * 28 - t * 0.006);
-
-      const distortion = (wave1 * 0.35 + wave2 * 0.35 + wave3 * 0.2 + breatheSlow * 0.2);
-
-      let squishMultiplier = 1.0;
-      if (distortion > 0) {
-        squishMultiplier = 1.0 + (distortion * 0.15);
-      } else {
-        squishMultiplier = 1.0 + (distortion * 0.8);
-      }
-
-      w = Math.max(sz * 0.1, w * squishMultiplier);
-
-      // Ambient breathing logic
-      w += sz * 0.05 * Math.sin(yNorm * 15 + t * 0.005);
-
-      stripData.push({
-        y: y,
-        h: currentStripH,
-        x: -w, // Centered
-        w: w * 2,
-        isMissing: w <= 0
-      });
+      _sY[i] = yBase;
+      _sX[i] = -w;
+      _sW[i] = w * 2;
+      _sMiss[i] = w <= 0 ? 1 : 0;
     }
 
-
-    let groups = [];
-    let currentGroup = [];
-    for (let s of stripData) {
-      if (s.isMissing) {
-        if (currentGroup.length > 0) {
-          groups.push(currentGroup);
-          currentGroup = [];
-        }
-      } else {
-        currentGroup.push(s);
-      }
-    }
-    if (currentGroup.length > 0) groups.push(currentGroup);
-
+    // Build path directly from flat arrays — zero object allocation
     ctx.beginPath();
-    for (let group of groups) {
-      for (let i = 0; i < group.length; i++) {
-        ctx.lineTo(group[i].x, group[i].y);
-        ctx.lineTo(group[i].x, group[i].y + group[i].h);
+    let _gi = 0;
+    while (_gi < strips) {
+      while (_gi < strips && _sMiss[_gi]) _gi++;
+      if (_gi >= strips) break;
+      const _gStart = _gi;
+      while (_gi < strips && !_sMiss[_gi]) _gi++;
+      const _gEnd = _gi;
+      for (let j = _gStart; j < _gEnd; j++) {
+        ctx.lineTo(_sX[j], _sY[j]);
+        ctx.lineTo(_sX[j], _sY[j] + stripH);
       }
-      for (let i = group.length - 1; i >= 0; i--) {
-        ctx.lineTo(group[i].x + group[i].w, group[i].y + group[i].h);
-        ctx.lineTo(group[i].x + group[i].w, group[i].y);
+      for (let j = _gEnd - 1; j >= _gStart; j--) {
+        ctx.lineTo(_sX[j] + _sW[j], _sY[j] + stripH);
+        ctx.lineTo(_sX[j] + _sW[j], _sY[j]);
       }
       ctx.closePath();
     }
@@ -9294,6 +11041,18 @@ function drawUnits() {
         drawEnemyBinarySwarm(cx, cy, u, alpha);
       } else {
         drawEnemyPixelArt(cx, cy, u, alpha);
+      }
+      // Poisoned overlay — simple green outline
+      if (u.poisoned) {
+        const _pt = performance.now() * 0.001;
+        const _pp = 0.6 + 0.4 * Math.sin(_pt * 3.5);
+        ctx.save();
+        ctx.globalAlpha = alpha * _pp;
+        ctx.strokeStyle = '#00ff66';
+        ctx.shadowColor = '#00ff66'; ctx.shadowBlur = 10 * _pp;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
       }
       // Frozen/Hacked overlay
       if ((u.frozenTurns || 0) > 0) {
@@ -9827,6 +11586,7 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
   }
   // --- END OF WORM AI ---
 
+
   // --- GRUNT / SHOOTER AI ---
   // 1. Dodge (85% tikimybÄ—)
   if (!curSafe && safeMoves.length > 0 && Math.random() < 0.85) {
@@ -10038,6 +11798,7 @@ function formatClock(ms) {
   return `${m}:${s.toString().padStart(2, '0')}.${d}`;
 }
 
+const _lastClockText = ['', ''];
 function updateClockDisplay() {
   if (gameMode === 'adventure') {
     updateEnergyHud();
@@ -10048,16 +11809,22 @@ function updateClockDisplay() {
   [0, 1].forEach(team => {
     const el = document.getElementById(`p${team + 1}-clock`);
     if (!el) return;
-    el.textContent = formatClock(S.clock[team]);
+    const txt = formatClock(S.clock[team]);
     const running = S.phase === 'frozen' && S.clockSide === team;
     const low = S.clock[team] < 10000;
-    el.className = 'clock-display'
-      + (low ? ' clock-low' : (running ? ` clock-run-p${team + 1}` : ''));
+    const cls = 'clock-display' + (low ? ' clock-low' : (running ? ` clock-run-p${team + 1}` : ''));
+    // Only update DOM when text or class changes
+    if (el.textContent !== txt) el.textContent = txt;
+    if (el.className !== cls) el.className = cls;
   });
   updatePanelActivity();
 }
 
+let _lastPanelState = '';
 function updatePanelActivity() {
+  const key = S.phase + '|' + S.clockSide;
+  if (key === _lastPanelState) return;
+  _lastPanelState = key;
   [0, 1].forEach(team => {
     const panel = document.getElementById(`panel-p${team + 1}`);
     if (!panel) return;
@@ -10121,6 +11888,399 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.style.display = ''; });
   const el = document.getElementById(id);
   if (el) { el.style.display = 'flex'; el.classList.add('active'); }
+  if (id === 'screen-hub') {
+    const dd = getDailyData();
+    const today = new Date().toDateString();
+    if (dd.lastDate !== today || !dd.claimed) setTimeout(window.showDailyCheckin, 400);
+  }
+}
+
+function startBoxCrack(prize, bx, by) {
+  S.cracking = true;
+  const overlay    = document.getElementById('crack-overlay');
+  if (!overlay) { S.cracking = false; claimCrackPrize(prize, bx, by); return; }
+
+  const targetEl   = document.getElementById('crack-target');
+  const currentEl  = document.getElementById('crack-current');
+  const barEl      = document.getElementById('crack-bar');
+  const barPctEl   = document.getElementById('crack-bar-pct');
+  const nonceEl    = document.getElementById('crack-nonce');
+  const attemptsEl = document.getElementById('crack-attempts');
+  const hashrateEl = document.getElementById('crack-hashrate');
+  const statusEl   = document.getElementById('crack-status');
+  const phaseEl    = document.getElementById('crack-phase');
+  const phaseDotEl = document.getElementById('crack-phase-dot');
+  const streamEl   = document.getElementById('crack-stream');
+  const codeWrap   = document.getElementById('crack-code-wrap');
+  const codeDigits = document.getElementById('crack-code-digits');
+  const codeTyped  = document.getElementById('crack-code-typed');
+  const holdWrap   = document.getElementById('crack-hold-wrap');
+  const holdZone   = document.getElementById('crack-hold-zone');
+  const holdFillEl = document.getElementById('crack-hold-fill');
+  const holdNeedle = document.getElementById('crack-hold-needle');
+  const holdHint   = document.getElementById('crack-hold-hint');
+  const tapWrap    = document.getElementById('crack-tap-wrap');
+  const tapNumEl   = document.getElementById('crack-tap-num');
+  const tapGoalEl  = document.getElementById('crack-tap-goal');
+  const tapBarEl   = document.getElementById('crack-tap-bar');
+  const patWrap    = document.getElementById('crack-pattern-wrap');
+  const patSeqEl   = document.getElementById('crack-pattern-seq');
+  const patInpEl   = document.getElementById('crack-pattern-input');
+  const panel      = document.getElementById('crack-panel');
+
+  const hex = '0123456789abcdef';
+  const genHash = () => Array.from({length: 64}, () => hex[Math.floor(Math.random() * 16)]).join('');
+  const genLine = () => Array.from({length: 48}, () => hex[Math.floor(Math.random() * 16)]).join(' ').toUpperCase();
+  const targetHash = '0000' + genHash().slice(4);
+
+  // --- Pick random puzzle type ---
+  const puzzleTypes = ['code', 'hold', 'tap', 'pattern'];
+  const puzzleType  = puzzleTypes[Math.floor(Math.random() * puzzleTypes.length)];
+  let puzzleSuccess = false;
+  let puzzleDone    = false;
+
+  if (targetEl)  targetEl.textContent = targetHash;
+  if (currentEl) { currentEl.textContent = genHash(); currentEl.className = 'crack-hash crack-hash-current'; }
+  if (barEl)     barEl.style.width = '0%';
+  if (barPctEl)  barPctEl.textContent = '0%';
+  if (statusEl)  { statusEl.textContent = 'CRACKING...'; statusEl.className = 'crack-status'; statusEl.style.color = ''; statusEl.style.textShadow = ''; statusEl.style.animation = ''; }
+  if (phaseEl)   phaseEl.textContent = 'INITIALIZING';
+  if (phaseDotEl) phaseDotEl.className = 'crack-phase-dot';
+  if (panel)     panel.classList.remove('crack-success-flash');
+  if (codeWrap)  { codeWrap.style.display = 'none'; codeWrap.className = 'crack-code-wrap'; }
+  if (holdWrap)  { holdWrap.style.display = 'none'; holdWrap.className = 'crack-hold-wrap'; }
+  if (tapWrap)   { tapWrap.style.display  = 'none'; tapWrap.className  = 'crack-tap-wrap'; }
+  if (patWrap)   { patWrap.style.display  = 'none'; patWrap.className  = 'crack-pattern-wrap'; }
+
+  overlay.style.display = 'flex';
+  SFX.crackStart && SFX.crackStart();
+
+  // ── PUZZLE: CODE ─────────────────────────────────────────────
+  const codeLen  = 3;
+  const code     = Array.from({length: codeLen}, () => Math.floor(Math.random() * 10));
+  let   typed    = [];
+  let   codeActive = false;
+
+  const renderDigits = () => {
+    if (!codeDigits) return;
+    codeDigits.innerHTML = code.map((d, i) => {
+      const cls = i < typed.length ? 'crack-digit correct' : 'crack-digit';
+      return `<div class="${cls}">${d}</div>`;
+    }).join('');
+  };
+  const renderTyped = () => {
+    if (!codeTyped) return;
+    codeTyped.textContent = (typed.join('') || '') + (puzzleDone ? '' : '▮');
+  };
+
+  const onKey = (e) => {
+    if (!codeActive || puzzleDone) return;
+    const digit = parseInt(e.key, 10);
+    if (isNaN(digit)) return;
+    e.preventDefault();
+    if (digit === code[typed.length]) {
+      typed.push(digit);
+      SFX.crackTick && SFX.crackTick();
+      renderDigits(); renderTyped();
+      if (typed.length === codeLen) {
+        puzzleDone = true; puzzleSuccess = true;
+        if (codeWrap) codeWrap.classList.add('success');
+        if (codeTyped) codeTyped.textContent = typed.join('');
+        SFX.crackCollision && SFX.crackCollision();
+      }
+    } else {
+      typed = [];
+      SFX.upgradeFail && SFX.upgradeFail();
+      renderDigits(); renderTyped();
+      if (codeWrap) {
+        codeWrap.style.animation = 'none';
+        void codeWrap.offsetWidth;
+        codeWrap.style.animation = '';
+        codeWrap.classList.add('failed');
+        setTimeout(() => codeWrap && codeWrap.classList.remove('failed'), 400);
+      }
+    }
+  };
+
+  // ── PUZZLE: HOLD ─────────────────────────────────────────────
+  const zoneStart = 0.40 + Math.random() * 0.25;   // 40–65%
+  const zoneWidth = 0.18 + Math.random() * 0.10;   // 18–28%
+  const zoneEnd   = Math.min(zoneStart + zoneWidth, 0.92);
+  const holdDur   = 2200; // ms to fill bar completely
+  let holdStart   = null;
+  let holdFill    = 0;
+  let holdActive  = false;
+  let holdRaf     = null;
+
+  const holdAnimate = () => {
+    if (!holdStart || puzzleDone) return;
+    holdFill = Math.min((performance.now() - holdStart) / holdDur, 1);
+    const pct = holdFill * 100;
+    if (holdFillEl) holdFillEl.style.width = pct + '%';
+    if (holdNeedle) holdNeedle.style.left  = pct + '%';
+    const inZone = holdFill >= zoneStart && holdFill <= zoneEnd;
+    if (holdZone)  holdZone.classList.toggle('lit', inZone);
+    if (holdHint)  {
+      holdHint.textContent = inZone ? 'RELEASE NOW!' : 'HOLDING...';
+      holdHint.classList.toggle('in-zone', inZone);
+    }
+    if (holdFill >= 1) { endHold(false); return; } // overshot
+    holdRaf = requestAnimationFrame(holdAnimate);
+  };
+
+  const endHold = (released) => {
+    if (puzzleDone) return;
+    puzzleDone = true;
+    cancelAnimationFrame(holdRaf);
+    document.removeEventListener('mousedown', onHoldDown);
+    document.removeEventListener('mouseup',   onHoldUp);
+    if (!released) {
+      // Overshot / timeout
+      puzzleSuccess = false;
+      if (holdHint) { holdHint.textContent = 'OVERLOADED!'; holdHint.classList.remove('in-zone'); holdHint.classList.add('done'); }
+      if (holdWrap) holdWrap.classList.add('failed');
+    } else {
+      const inZone = holdFill >= zoneStart && holdFill <= zoneEnd;
+      puzzleSuccess = inZone;
+      if (holdHint) { holdHint.textContent = inZone ? 'LOCKED IN!' : 'MISSED ZONE'; holdHint.classList.add('done'); }
+      if (holdWrap) holdWrap.classList.add(inZone ? 'success' : 'failed');
+      if (inZone) SFX.crackCollision && SFX.crackCollision();
+      else SFX.upgradeFail && SFX.upgradeFail();
+    }
+  };
+
+  const onHoldDown = (e) => {
+    if (!holdActive || puzzleDone || e.button !== 0) return;
+    e.preventDefault();
+    holdStart = performance.now();
+    holdFill  = 0;
+    holdRaf = requestAnimationFrame(holdAnimate);
+  };
+  const onHoldUp = (e) => {
+    if (!holdActive || puzzleDone || e.button !== 0 || !holdStart) return;
+    e.preventDefault();
+    cancelAnimationFrame(holdRaf);
+    endHold(true);
+  };
+
+  // ── PUZZLE: TAP ───────────────────────────────────────────────
+  const tapGoal  = 8 + Math.floor(Math.random() * 6); // 8–13 taps
+  let   tapCount = 0;
+  let   tapActive = false;
+
+  const onTapClick = (e) => {
+    if (!tapActive || puzzleDone || e.button !== 0) return;
+    e.preventDefault();
+    tapCount++;
+    SFX.crackTick && SFX.crackTick();
+    if (tapNumEl)  tapNumEl.textContent  = tapCount;
+    if (tapBarEl)  tapBarEl.style.width  = Math.min(tapCount / tapGoal * 100, 100) + '%';
+    if (tapCount >= tapGoal) {
+      puzzleDone = true; puzzleSuccess = true;
+      if (tapNumEl)  tapNumEl.classList.add('done');
+      if (tapWrap)   tapWrap.classList.add('success');
+      SFX.crackCollision && SFX.crackCollision();
+      document.removeEventListener('mousedown', onTapClick);
+    }
+  };
+
+  // ── PUZZLE: PATTERN ───────────────────────────────────────────
+  const ARROWS = [
+    { sym: '↑', key: 'w', label: 'W' },
+    { sym: '↓', key: 's', label: 'S' },
+    { sym: '←', key: 'a', label: 'A' },
+    { sym: '→', key: 'd', label: 'D' },
+  ];
+  const patLen  = 4 + Math.floor(Math.random() * 2); // 4–5 steps
+  const pattern = Array.from({length: patLen}, () => ARROWS[Math.floor(Math.random() * 4)]);
+  let   patIdx  = 0;
+  let   patActive = false;
+
+  const renderPattern = () => {
+    if (!patSeqEl) return;
+    patSeqEl.innerHTML = pattern.map((a, i) => {
+      const cls = i < patIdx ? 'crack-pattern-arrow correct'
+                : 'crack-pattern-arrow';
+      return `<div class="${cls}">${a.sym}</div>`;
+    }).join('');
+    if (patInpEl) patInpEl.textContent = `PRESS: ${pattern[patIdx] ? pattern[patIdx].label : ''}`;
+  };
+
+  const onPatKey = (e) => {
+    if (!patActive || puzzleDone) return;
+    const k = e.key.toLowerCase();
+    if (!['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) return;
+    e.preventDefault();
+    const mapped = k === 'arrowup' ? 'w' : k === 'arrowdown' ? 's' : k === 'arrowleft' ? 'a' : k === 'arrowright' ? 'd' : k;
+    if (mapped === pattern[patIdx].key) {
+      patIdx++;
+      SFX.crackTick && SFX.crackTick();
+      if (patIdx >= patLen) {
+        puzzleDone = true; puzzleSuccess = true;
+        renderPattern();
+        if (patInpEl) patInpEl.textContent = 'SEQUENCE ACCEPTED';
+        if (patWrap)  patWrap.classList.add('success');
+        SFX.crackCollision && SFX.crackCollision();
+        document.removeEventListener('keydown', onPatKey);
+      } else {
+        renderPattern();
+      }
+    } else {
+      // wrong — reset
+      patIdx = 0;
+      SFX.upgradeFail && SFX.upgradeFail();
+      if (patSeqEl) {
+        // flash all wrong briefly
+        patSeqEl.querySelectorAll('.crack-pattern-arrow').forEach(el => {
+          el.classList.add('wrong');
+        });
+        setTimeout(() => renderPattern(), 300);
+      } else {
+        renderPattern();
+      }
+      if (patWrap) {
+        patWrap.classList.add('failed');
+        setTimeout(() => patWrap && patWrap.classList.remove('failed'), 400);
+      }
+    }
+  };
+
+  // ── SHOW PUZZLE after 700ms ───────────────────────────────────
+  const puzzleShowTimer = setTimeout(() => {
+    if (puzzleType === 'code') {
+      if (!codeWrap) return;
+      codeActive = true;
+      renderDigits(); renderTyped();
+      codeWrap.style.display = 'block';
+      document.addEventListener('keydown', onKey);
+    } else if (puzzleType === 'hold') {
+      if (!holdWrap || !holdZone) return;
+      holdActive = true;
+      holdZone.style.left  = (zoneStart * 100) + '%';
+      holdZone.style.width = ((zoneEnd - zoneStart) * 100) + '%';
+      if (holdFillEl) holdFillEl.style.width = '0%';
+      if (holdNeedle) holdNeedle.style.left  = '0%';
+      if (holdHint)   holdHint.textContent   = 'CLICK AND HOLD';
+      holdWrap.style.display = 'block';
+      document.addEventListener('mousedown', onHoldDown);
+      document.addEventListener('mouseup',   onHoldUp);
+    } else if (puzzleType === 'tap') {
+      if (!tapWrap) return;
+      tapActive = true;
+      if (tapNumEl)  tapNumEl.textContent = '0';
+      if (tapNumEl)  tapNumEl.classList.remove('done');
+      if (tapGoalEl) tapGoalEl.textContent = tapGoal;
+      if (tapBarEl)  tapBarEl.style.width  = '0%';
+      tapWrap.style.display = 'block';
+      document.addEventListener('mousedown', onTapClick);
+    } else {
+      // pattern
+      if (!patWrap) return;
+      patActive = true;
+      renderPattern();
+      patWrap.style.display = 'block';
+      document.addEventListener('keydown', onPatKey);
+    }
+  }, 700);
+
+  const phases = [
+    { at: 0.00, label: 'INITIALIZING' },
+    { at: 0.12, label: 'BRUTE FORCING' },
+    { at: 0.42, label: 'DICTIONARY ATTACK' },
+    { at: 0.72, label: 'COLLISION FOUND...' },
+    { at: 0.90, label: 'CRACKING HASH' },
+  ];
+  let lastPhase = -1;
+  const totalDur = 3500;
+  const startTime = performance.now();
+  let nonce = 0;
+  let tickAccum = 0;
+
+  const burstTimes = [600, 1100, 1600, 2050, 2400, 2750, 3050, 3250];
+  burstTimes.forEach(t => setTimeout(() => SFX.crackBurst && SFX.crackBurst(), t));
+  setTimeout(() => { if (!puzzleSuccess) SFX.crackCollision && SFX.crackCollision(); }, 2800);
+
+  let streamLines = [];
+  const pushStream = () => {
+    if (!streamEl) return;
+    streamLines.push(genLine());
+    if (streamLines.length > 2) streamLines.shift();
+    streamEl.innerHTML = streamLines.map(l => `<div>${l}</div>`).join('');
+  };
+
+  const finishCrack = (success) => {
+    clearInterval(interval);
+    clearTimeout(puzzleShowTimer);
+    document.removeEventListener('keydown',   onKey);
+    document.removeEventListener('keydown',   onPatKey);
+    document.removeEventListener('mousedown', onHoldDown);
+    document.removeEventListener('mousedown', onTapClick);
+    document.removeEventListener('mouseup',   onHoldUp);
+    cancelAnimationFrame(holdRaf);
+    puzzleDone = true;
+
+    if (success) {
+      if (currentEl) { currentEl.textContent = targetHash; currentEl.classList.add('matched'); }
+      if (statusEl)  { statusEl.textContent = '[ CRACKED ]'; statusEl.className = 'crack-status cracked'; }
+      if (phaseEl)   phaseEl.textContent = 'ACCESS GRANTED';
+      if (phaseDotEl) phaseDotEl.className = 'crack-phase-dot success';
+      if (panel)     panel.classList.add('crack-success-flash');
+      SFX.crackSuccess && SFX.crackSuccess();
+      setTimeout(() => { overlay.style.display = 'none'; S.cracking = false; claimCrackPrize(prize, bx, by); }, 1900);
+    } else {
+      const activeWrap = { code: codeWrap, hold: holdWrap, tap: tapWrap, pattern: patWrap }[puzzleType];
+      if (activeWrap && !activeWrap.classList.contains('failed')) activeWrap.classList.add('failed');
+      if (puzzleType === 'code' && codeTyped) codeTyped.textContent = 'TIMEOUT';
+      if (statusEl)  { statusEl.textContent = '[ FAILED ]'; statusEl.style.color = '#ff2200'; statusEl.style.textShadow = '0 0 12px rgba(255,34,0,0.8)'; statusEl.style.animation = 'none'; }
+      if (phaseEl)   phaseEl.textContent = 'ACCESS DENIED';
+      if (barEl)     barEl.style.background = '#ff2200';
+      SFX.upgradeFail && SFX.upgradeFail();
+      setTimeout(() => SFX.upgradeFail && SFX.upgradeFail(), 300);
+      setTimeout(() => { overlay.style.display = 'none'; S.cracking = false; logEvent('ACCESS DENIED — breach failed.', 'warn'); }, 1900);
+    }
+  };
+
+  const interval = setInterval(() => {
+    const elapsed = performance.now() - startTime;
+    const pct = Math.min(elapsed / totalDur, 1);
+
+    for (let i = phases.length - 1; i >= 0; i--) {
+      if (pct >= phases[i].at && i !== lastPhase) {
+        lastPhase = i;
+        if (phaseEl) phaseEl.textContent = phases[i].label;
+        break;
+      }
+    }
+
+    nonce = Math.floor(Math.random() * 0xFFFFFF * pct + nonce * 0.1);
+    if (nonceEl)    nonceEl.textContent    = '0x' + nonce.toString(16).toUpperCase().padStart(8, '0');
+    if (attemptsEl) attemptsEl.textContent = Math.floor(pct * 8400 + Math.random() * 120).toLocaleString();
+    if (hashrateEl) hashrateEl.textContent = Math.floor(2200 + pct * 6800 + Math.random() * 400).toLocaleString();
+    if (currentEl)  currentEl.textContent  = pct > 0.9 ? ('0000' + genHash().slice(4)) : genHash();
+    if (barEl)      barEl.style.width      = (pct * 100) + '%';
+    if (barPctEl)   barPctEl.textContent   = Math.floor(pct * 100) + '%';
+
+    if (!puzzleSuccess) {
+      tickAccum += 60;
+      if (tickAccum >= Math.max(40, 180 - pct * 140)) { tickAccum = 0; SFX.crackTick && SFX.crackTick(); }
+    }
+    if (Math.random() < 0.4) pushStream();
+
+    if (pct >= 1) finishCrack(puzzleSuccess);
+  }, 60);
+}
+
+function claimCrackPrize(prize, bx, by) {
+  S.loot.push({ x: bx, y: by, type: prize.type, val: prize.val, collected: false, age: 0 });
+  spawnHit && spawnHit(bx, by, '#ff8800', 14);
+  logEvent(`BOX CRACKED — drop incoming! +5 energy bonus.`, 'loot');
+  setTimeout(() => {
+    const eMax = (typeof ENERGY_MAX !== 'undefined' ? ENERGY_MAX : 10) + (Profile?.upgrades?.maxEnergy || 0);
+    S.energy = Math.min(eMax, (S.energy || 0) + 5);
+    updateEnergyHud && updateEnergyHud();
+    spawnDmgNumber(bx, by, '+5\u26A1', '#00ff88', 16, 'crit');
+    SFX.nanoHeal && SFX.nanoHeal();
+  }, 1000);
 }
 
 window.toggleOpsStatus = function () {
@@ -10436,12 +12596,15 @@ window.startGame = function startGame(mode) {
     if (hubBtn) hubBtn.style.display = 'block';
     const opsBtn2 = document.getElementById('btn-ops-status');
     if (opsBtn2) opsBtn2.style.display = 'block';
+    updateRunKeyUI();
     const killsDisplay = document.getElementById('kills-badge');
     if (killsDisplay) killsDisplay.style.display = 'block';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'flex';
     const bottomRow = document.querySelector('.btn-bottom-row');
     if (bottomRow) bottomRow.style.display = 'flex';
+    const rewardsBtn = document.getElementById('btn-rewards');
+    if (rewardsBtn) rewardsBtn.style.display = 'block';
     document.getElementById('hub-overlay').classList.remove('active');
     const mc = document.getElementById('mobile-controls');
     if (mc && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) mc.classList.add('visible');
@@ -10472,6 +12635,8 @@ window.startGame = function startGame(mode) {
     if (invBtn) invBtn.style.display = 'none';
     const bottomRow = document.querySelector('.btn-bottom-row');
     if (bottomRow) bottomRow.style.display = 'none';
+    const rewardsBtn2 = document.getElementById('btn-rewards');
+    if (rewardsBtn2) rewardsBtn2.style.display = 'none';
     const mc = document.getElementById('mobile-controls');
     if (mc) mc.classList.remove('visible');
   }
@@ -10558,6 +12723,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('screen-gameover').classList.remove('active');
       document.getElementById('screen-hub').classList.add('active');
       BGM.start('hub');
+      updateRunKeyUI();
     } else {
       startGame();
     }
@@ -10566,6 +12732,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-menu-go').addEventListener('click', () => { SFX.init(); backToMenu(); });
   document.getElementById('btn-esc').addEventListener('click', () => { SFX.init(); backToMenu(); });
   document.getElementById('btn-hub-back').addEventListener('click', () => { SFX.init(); BGM.start('menu'); showScreen('screen-menu'); });
+
+  // Update run key timer every second (always, regardless of screen)
+  setInterval(updateRunKeyUI, 1000);
 
   // Hook for quick restart from Game Over screen
   document.addEventListener('keydown', e => {
@@ -10578,6 +12747,7 @@ document.addEventListener('DOMContentLoaded', () => {
           document.getElementById('screen-gameover').classList.remove('active');
           document.getElementById('screen-hub').classList.add('active');
           BGM.start('hub');
+          updateRunKeyUI();
         } else {
           startGame();
         }
@@ -10619,6 +12789,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const overlayBlocksCanvasInput = () => {
     if (document.getElementById('card-picker-overlay')) return true;
     const blockedIds = ['inv-overlay', 'forge-overlay', 'slot-overlay', 'hub-overlay', 'teleport-confirm-overlay'];
+    if (!document.getElementById('rewards-overlay')?.classList.contains('hidden')) return true;
     return blockedIds.some(id => {
       const el = document.getElementById(id);
       return !!el && (el.classList.contains('active') || el.style.display === 'flex' || el.style.display === 'block');
@@ -10626,6 +12797,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   let lastCanvasPointerDownAt = 0;
+  let hoverGx = -1, hoverGy = -1;
   const pointInsideCanvas = e => {
     if (!e || typeof e.clientX !== 'number' || typeof e.clientY !== 'number') return false;
     const r = canvas.getBoundingClientRect();
@@ -10633,8 +12805,10 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   document.addEventListener('mousemove', e => {
-    if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) return;
+    if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) { hoverGx = -1; hoverGy = -1; return; }
     const { x, y } = canvasCoords(e);
+    hoverGx = Math.floor(x / CELL);
+    hoverGy = Math.floor(y / CELL);
     updateP1Aim(x, y);
   }, true);
 
@@ -10651,6 +12825,22 @@ document.addEventListener('DOMContentLoaded', () => {
       S.selectedId[0] = clicked.id;
       updateP1Aim(x, y);
       return;
+    }
+    if (gameMode === 'adventure' && !S.cracking && S.loot) {
+      const box = S.loot.find(l => !l.collected && l.type === 'lockedBox' && l.x === gx && l.y === gy);
+      if (box) {
+        if (!box.activated) {
+          box.activated = true;
+          // Clear first-time hint
+          if (S.boxHint) { S.boxHint = null; }
+          if (!Profile.seenBoxHint) { Profile.seenBoxHint = true; saveProfile(); }
+        } else {
+          box.collected = true;
+          spawnDeath(box.x, box.y, '#ff8800');
+          startBoxCrack(box.prize, box.x, box.y);
+        }
+        return;
+      }
     }
     if (S.phase !== 'frozen') return;
     if (S.clockSide !== 0) return;
@@ -10774,6 +12964,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const unit = S.units.find(u => u.id === S.selectedId[0] && u.alive);
       if (unit) {
         unit.weapon = wep;
+        if (wep === 'bullet') unit.gunSwitchAt = performance.now();
         updateSkillBar(0);
       }
     });
