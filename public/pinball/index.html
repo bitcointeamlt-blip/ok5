@@ -493,8 +493,8 @@ function draw() {
     
     g.fillStyle=rageMode ? '#ff0033' : '#ffaa00'; 
     if(rageMode) { g.shadowBlur = 10; g.shadowColor = '#ff0033'; }
-    g.fillText(rageMode ? '> RAGE ACTIVE <' : 'COMBO: '+combo+'/5', offsetX/2, 220);
-    g.fillRect(offsetX/2 - 60, 240, (combo/5)*120, 8);
+    g.fillText(rageMode ? '> RAGE ACTIVE <' : 'COMBO: '+Math.min(combo,5)+'/5', offsetX/2, 220);
+    g.fillRect(offsetX/2 - 60, 240, Math.min((combo/5)*120, 120), 8);
     g.shadowBlur = 0;
     g.fillStyle='rgba(255,170,0,0.2)'; g.fillRect(offsetX/2 - 60, 240, 120, 8);
     
@@ -557,7 +557,7 @@ function draw() {
     g.fillStyle='rgba(255,170,0,0.3)'; g.fillRect(65, uiY + 12, 110, 4);
     g.fillStyle=rageMode ? '#ff0033' : '#ffaa00'; 
     if(rageMode) { g.shadowBlur = 10; g.shadowColor = '#ff0033'; }
-    g.fillRect(65, uiY + 12, (combo/5)*110, 4);
+    g.fillRect(65, uiY + 12, Math.min((combo/5)*110, 110), 4);
     g.shadowBlur = 0;
     
     g.textAlign='right'; 
