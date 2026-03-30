@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Value-First Dynamic Pinball</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #020202;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; overflow: hidden; font-family: monospace;
+      touch-action: none; -webkit-touch-callout: none; user-select: none;
+    }
+    #c { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 1. DESIGN LANGUAGE SYSTEM: Octagons, geometric lines, minimalistic shapes.
+// 2. VALUE-FIRST COMPOSITION: 70% Dark, 25% Mid, 5% Peak White.
+// 3. RESPONSIVE DESIGN: Dynamically scales layout between PC and Mobile.
+
+const c = document.getElementById('c');
+const g = c.getContext('2d', { alpha: false });
+const dpr = window.devicePixelRatio || 1;
+
+let logicalW = 480, logicalH = 720, logicalScale = 1;
+const W = 480, H = 720; // Fixed physical game layout dimensions
+
+function resize() {
+  const aspectWin = window.innerWidth / window.innerHeight;
+  const aspectGame = W / H;
+  
+  // Decide layout scale based on orientation
+  if (aspectWin > aspectGame) {
+    // Standard Desktop Wide - fit height
+    logicalH = H;
+    logicalW = H * aspectWin;
+    logicalScale = window.innerHeight / H;
+  } else {
+    // Mobile Portrait - fit width
+    logicalW = W;
+    logicalH = W / aspectWin;
+    logicalScale = window.innerWidth / W;
+  }
+  
+  c.width = window.innerWidth * dpr;
+  c.height = window.innerHeight * dpr;
+  c.style.width = window.innerWidth + 'px';
+  c.style.height = window.innerHeight + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Pre-render the playfield background for performance (480x720)
+const bgC = document.createElement('canvas');
+bgC.width = W * dpr; bgC.height = H * dpr;
+const bgG = bgC.getContext('2d', { alpha: false });
+bgG.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+bgG.fillStyle = '#08080a'; bgG.fillRect(0, 0, W, H);
+for (let gy = 20; gy < H; gy += 40) {
+  for (let gx = 20; gx < W; gx += 40) {
+    bgG.fillStyle = '#18181A';
+    bgG.fillRect(gx-1, gy-1, 2, 2);
+  }
+}
+bgG.strokeStyle = '#222225'; bgG.lineWidth = 2; bgG.strokeRect(10, 10, W-20, H-20);
+bgG.strokeStyle = '#111115'; bgG.lineWidth = 1; bgG.strokeRect(4, 4, W-8, H-8);
+
+// Physics Engine settings
+const GRAVITY = 0.38, RESTITUTION = 0.55, BR = 11, BUMPER_BOOST = 1.15, MAX_SPEED = 22, SUBSTEPS = 6;
+const FLIP_LEN = 131, FLIP_PY = H - 92, FLIP_PXL = 95, FLIP_PXR = W - 95;
+const FLIP_REST_L = 0.45, FLIP_ACT_L = -0.50, FLIP_REST_R = Math.PI - 0.45, FLIP_ACT_R = Math.PI + 0.50;
+
+let phase = 'start', score = 0, lives = 3, pulseT = 0;
+let ball = { x: W/2, y: 70, vx: 0, vy: 1, trail: [] };
+let parts = [], pops = [];
+
+function mkBall() { ball = { x: 300 + Math.random()*50, y: 60, vx: (Math.random()-0.5)*2, vy: 1, trail: [] }; }
+function burst(px, py, amt) { for(let i=0; i<amt; i++) parts.push({ x:px, y:py, vx:(Math.random()-0.5)*8, vy:(Math.random()-0.5)*8, life:1 }); }
+function popup(x,y,txt) { pops.push({x,y,txt,life:1}); }
+
+const flippers = [
+  { px: FLIP_PXL, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_L, activeAngle: FLIP_ACT_L, angle: FLIP_REST_L, angVel: 0, active: 0, hit: 0 },
+  { px: FLIP_PXR, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_R, activeAngle: FLIP_ACT_R, angle: FLIP_REST_R, angVel: 0, active: 0, hit: 0 }
+];
+
+const bumpers = [
+  { x: 340, y: 160, r: 28, pts: 100, f: 0 }, { x: 410, y: 240, r: 28, pts: 100, f: 0 },
+  { x: 260, y: 280, r: 35, pts: 200, f: 0 }, { x: 120, y: 320, r: 22, pts: 150, f: 0 }, 
+  { x: 360, y: 440, r: 22, pts: 150, f: 0 }, { x: 110, y: 460, r: 28, pts: 100, f: 0 }
+];
+const guides = [ [0, H-220, FLIP_PXL, FLIP_PY], [W, H-190, FLIP_PXR, FLIP_PY], [0, 120, 100, 240] ];
+
+// Procedural Audio
+let actx = null;
+function playSound(type, freq, dr, vol, endFreq) {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state === 'suspended') actx.resume();
+  const t = actx.currentTime;
+  const osc = actx.createOscillator();
+  const gain = actx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, t + dr);
+  gain.gain.setValueAtTime(vol * 0.4, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dr);
+  osc.connect(gain); gain.connect(actx.destination);
+  osc.start(t); osc.stop(t + dr);
+}
+
+// Touch AND Mouse Unified Controls
+function pressSide() {
+  initAudio();
+  if (phase !== 'play') { score=0; lives=3; mkBall(); phase='play'; return; }
+  // Trigger BOTH flippers on single click/tap for absolute mobile convenience
+  if(!flippers[0].active || !flippers[1].active) playSound('square', 150, 0.1, 0.05);
+  flippers[0].active = 1;
+  flippers[1].active = 1;
+}
+function releaseSide() {
+  flippers[0].active = 0;
+  flippers[1].active = 0;
+}
+function initAudio() { if(!actx) playSound('sine',0,0,0); }
+
+window.addEventListener('mousedown', e => { pressSide(); });
+window.addEventListener('mouseup', e => { releaseSide(); });
+window.addEventListener('touchstart', e => { 
+  e.preventDefault(); 
+  pressSide();
+}, {passive: false});
+window.addEventListener('touchend', e => { 
+  e.preventDefault(); 
+  // Only release if NO fingers are touching
+  if (e.touches.length === 0) releaseSide();
+}, {passive: false});
+
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if(k==='z'||e.key==='Shift') { if(!flippers[0].active) playSound('square',140,0.1,0.05); flippers[0].active=1; }
+  if(k==='m'||e.key==='Shift') { if(!flippers[1].active) playSound('square',160,0.1,0.05); flippers[1].active=1; }
+  if(phase !== 'play' && (k===' '||k==='enter')) { score=0; lives=3; mkBall(); phase='play'; playSound('sine', 440, 0.2, 0.1); }
+});
+window.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if(k==='z'||e.key==='Shift') flippers[0].active=0;
+  if(k==='m'||e.key==='Shift') flippers[1].active=0;
+});
+
+// Physics Logic
+const clamp = (v, l, h) => Math.max(l, Math.min(v, h));
+function closestSeg(cx,cy, ax,ay, bx,by) {
+  const dx = bx-ax, dy = by-ay;
+  const t = clamp(((cx-ax)*dx+(cy-ay)*dy)/(dx*dx+dy*dy), 0, 1);
+  const ex = (ax+t*dx)-cx, ey = (ay+t*dy)-cy;
+  const dist = Math.hypot(ex, ey);
+  return { dist, t, nx: dist>0?-ex/dist:0, ny: dist>0?-ey/dist:0 };
+}
+function reflect(vx, vy, nx, ny, e=RESTITUTION) {
+  const dot = vx*nx+vy*ny; return { vx: (vx-2*dot*nx)*e, vy: (vy-2*dot*ny)*e };
+}
+
+function update() {
+  if (phase !== 'play') return;
+  for (const f of flippers) f.angVel = ((f.active?f.activeAngle:f.restAngle) - f.angle) * (f.active?0.4:0.25);
+  ball.trail.unshift({x:ball.x, y:ball.y});
+  if(ball.trail.length > 4) ball.trail.pop();
+
+  for(let s=0; s<SUBSTEPS; s++) {
+    for (const f of flippers) f.angle = clamp(f.angle + f.angVel/SUBSTEPS, Math.min(f.restAngle, f.activeAngle), Math.max(f.restAngle, f.activeAngle));
+    ball.vy += GRAVITY/SUBSTEPS; ball.x += ball.vx/SUBSTEPS; ball.y += ball.vy/SUBSTEPS;
+
+    if(ball.x - BR < 0) { ball.x=BR; ball.vx=Math.abs(ball.vx)*RESTITUTION; burst(BR,ball.y,3); playSound('triangle', 300, 0.05, 0.1); }
+    if(ball.x + BR > W) { ball.x=W-BR; ball.vx=-Math.abs(ball.vx)*RESTITUTION; burst(W-BR,ball.y,3); playSound('triangle', 300, 0.05, 0.1); }
+    if(ball.y - BR < 0) { ball.y=BR; ball.vy=Math.abs(ball.vy)*RESTITUTION; playSound('triangle', 300, 0.05, 0.1); }
+
+    for(const f of flippers) {
+      const tx = f.px+f.len*Math.cos(f.angle), ty = f.py+f.len*Math.sin(f.angle);
+      const d = closestSeg(ball.x, ball.y, f.px, f.py, tx, ty);
+      if(d.dist>=BR||d.dist<=0.01) continue;
+      let nx = Math.sin(f.angle), ny = -Math.cos(f.angle);
+      if(ny>0){nx=-nx;ny=-ny;}
+      if(d.nx*nx+d.ny*ny < 0) continue;
+      ball.x += nx*(BR-d.dist+1); ball.y += ny*(BR-d.dist+1);
+      const wVx = -Math.sin(f.angle)*f.angVel*(d.t*f.len), wVy = Math.cos(f.angle)*f.angVel*(d.t*f.len);
+      const relN = (ball.vx-wVx)*nx + (ball.vy-wVy)*ny;
+      if(relN >= 0) continue;
+      ball.vx -= (1+RESTITUTION)*relN*nx; ball.vy -= (1+RESTITUTION)*relN*ny;
+      const spd = Math.hypot(ball.vx, ball.vy);
+      if(spd > MAX_SPEED) { ball.vx=ball.vx/spd*MAX_SPEED; ball.vy=ball.vy/spd*MAX_SPEED; }
+      if(Math.abs(relN)>2) { f.hit = 1; burst(ball.x,ball.y,8); playSound('square', 200, 0.08, 0.15); }
+    }
+
+    for(const [ax,ay,bx,by] of guides) {
+      const d = closestSeg(ball.x, ball.y, ax,ay, bx,by);
+      if(d.dist<BR&&d.dist>0) {
+        const r = reflect(ball.vx, ball.vy, d.nx, d.ny);
+        ball.vx=r.vx; ball.vy=r.vy;
+        ball.x += d.nx*(BR-d.dist+1); ball.y += d.ny*(BR-d.dist+1);
+        playSound('triangle', 250, 0.05, 0.1);
+      }
+    }
+
+    for(const b of bumpers) {
+      const dx=ball.x-b.x, dy=ball.y-b.y, dist=Math.hypot(dx,dy), minD = BR+b.r;
+      if(dist<minD && dist>0) {
+        const nx=dx/dist, ny=dy/dist, dot=ball.vx*nx+ball.vy*ny;
+        ball.vx=(ball.vx-2*dot*nx)*BUMPER_BOOST; ball.vy=(ball.vy-2*dot*ny)*BUMPER_BOOST;
+        ball.x = b.x+nx*(minD+1); ball.y = b.y+ny*(minD+1);
+        const spd = Math.hypot(ball.vx, ball.vy);
+        if(spd > MAX_SPEED) { ball.vx=ball.vx/spd*MAX_SPEED; ball.vy=ball.vy/spd*MAX_SPEED; }
+        if(b.f===0) { score+=b.pts; b.f=12; burst(b.x,b.y,10); popup(b.x,b.y-b.r-10,'+'+b.pts); playSound('sine', 800 + Math.random()*400, 0.15, 0.3); }
+      }
+    }
+  }
+
+  for(const b of bumpers) if(b.f>0) b.f--;
+  for(const f of flippers) if(f.hit>0) f.hit-=0.1;
+
+  if(ball.y > H+50) { lives--; phase = lives>0?'dead':'over'; burst(ball.x, H-10, 20); playSound('sine', 120, 0.25, 0.6, 60); }
+  parts = parts.filter(p=>p.life>0); for(const p of parts) { p.x+=p.vx; p.y+=p.vy; p.vy+=0.1; p.life-=0.04; }
+  pops = pops.filter(p=>p.life>0); for(const p of pops) { p.y-=1; p.life-=0.03; }
+}
+
+function drawOctagon(x,y,r) {
+  g.beginPath();
+  for(let i=0; i<8; i++) {
+    const a = (i/8)*Math.PI*2 + Math.PI/8;
+    g[i?'lineTo':'moveTo'](x + Math.cos(a)*r, y + Math.sin(a)*r);
+  }
+  g.closePath();
+}
+
+function draw() {
+  g.setTransform(logicalScale * dpr, 0, 0, logicalScale * dpr, 0, 0);
+  
+  // Clear full logical canvas
+  g.fillStyle = '#020202'; 
+  g.fillRect(0, 0, logicalW, logicalH);
+
+  // Center the 480x720 playfield inside logical screen
+  const offsetX = Math.max(0, (logicalW - W) / 2);
+  const offsetY = Math.max(0, (logicalH - H) / 2);
+
+  g.save();
+  g.translate(offsetX, offsetY);
+  
+  // 1. PLAYFIELD
+  g.drawImage(bgC, 0, 0, W, H);
+
+  g.lineWidth = 4; g.lineCap = 'round';
+  for(const [ax,ay,bx,by] of guides) {
+    g.strokeStyle = '#555555'; g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by); g.stroke();
+    g.strokeStyle = '#222'; g.lineWidth = 1; g.stroke(); g.lineWidth = 4;
+  }
+
+  for(const b of bumpers) {
+    const lit = b.f>0;
+    drawOctagon(b.x, b.y, b.r);
+    g.fillStyle = lit ? '#ffffff' : '#2a2a2e'; g.fill();
+    g.lineWidth = 2; g.strokeStyle = lit ? '#ffffff' : '#666666'; g.stroke();
+    drawOctagon(b.x, b.y, b.r*0.5); g.strokeStyle = lit ? '#000000' : '#444444'; g.stroke();
+    g.fillStyle = lit ? '#000' : '#888'; g.font = `bold ${b.r>28?12:10}px monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(b.pts, b.x, b.y);
+  }
+
+  for(const p of pops) {
+    g.fillStyle = `rgba(255,255,255,${p.life})`;
+    g.font = 'bold 16px monospace'; g.fillText(p.txt, p.x, p.y);
+  }
+
+  if(phase !== 'start') {
+    for(let i=ball.trail.length-1; i>=0; i--) {
+      const t = (ball.trail.length-i)/ball.trail.length;
+      g.beginPath(); g.arc(ball.trail[i].x, ball.trail[i].y, BR*(1-t)*0.8, 0, 7);
+      g.fillStyle = `rgba(180,180,180,${(1-t)*0.4})`; g.fill();
+    }
+  }
+
+  if(phase !== 'over' && phase !== 'start') {
+    g.beginPath(); g.arc(ball.x, ball.y, BR, 0, 7);
+    g.fillStyle = '#ffffff'; g.fill();
+    const spd = Math.hypot(ball.vx, ball.vy);
+    const eyeDist = Math.min(BR - 4, spd * 1.5);
+    const eyeAng = Math.atan2(ball.vy, ball.vx);
+    const ex = ball.x + Math.cos(eyeAng) * eyeDist;
+    const ey = ball.y + Math.sin(eyeAng) * eyeDist;
+    g.beginPath(); g.arc(ex, ey, 2.5, 0, 7);
+    g.fillStyle = '#111'; g.fill();
+  }
+
+  for(const f of flippers) {
+    g.save(); g.translate(f.px, f.py); g.rotate(f.angle);
+    g.beginPath(); g.moveTo(-4,0); g.lineTo(0,-8); g.lineTo(f.len,-4); g.lineTo(f.len+4,0); g.lineTo(f.len,4); g.lineTo(0,8); g.closePath();
+    const flash = f.hit > 0 || f.active;
+    g.fillStyle = flash ? '#cccccc' : '#444444'; g.fill();
+    g.strokeStyle = flash ? '#ffffff' : '#777777'; g.lineWidth = 2; g.stroke();
+    g.restore();
+  }
+
+  g.fillStyle = '#ffffff';
+  for(const p of parts) { g.fillRect(p.x-(p.life*2), p.y-(p.life*2), p.life*4, p.life*4); }
+  g.restore(); // END PLAYFIELD
+
+  // 2. DYNAMIC RESPONSIVE UI
+  if (logicalW > W + 200) {
+    // DESKTOP LAYOUT (Wide): HUD on the Left and Right panels
+    g.fillStyle = '#060608'; g.fillRect(0, 0, offsetX, logicalH);
+    g.strokeStyle = '#333'; g.strokeRect(10, 10, offsetX-20, logicalH-20);
+    
+    g.textAlign='center'; g.textBaseline='top';
+    g.fillStyle='#666'; g.font='14px monospace'; g.fillText('SCORE', offsetX/2, 60);
+    g.fillStyle='#fff'; g.font='bold 28px monospace'; g.fillText(score.toString().padStart(7,'0'), offsetX/2, 85);
+    
+    const rightX = offsetX + W;
+    g.fillStyle = '#060608'; g.fillRect(rightX, 0, offsetX, logicalH);
+    g.strokeStyle = '#333'; g.strokeRect(rightX+10, 10, offsetX-20, logicalH-20);
+    g.fillStyle='#666'; g.font='14px monospace'; g.fillText('SYSTEM LIVES', rightX + offsetX/2, 60);
+    
+    // Draw life boxes horizontally centered in right panel
+    const boxW = 12, spacing = 8, tBoxesW = (3 * boxW) + (2 * spacing);
+    let lStartX = rightX + (offsetX - tBoxesW)/2;
+    for(let i=0; i<3; i++) {
+      g.fillStyle = i < lives ? '#fff' : '#222';
+      g.fillRect(lStartX + i*(boxW+spacing), 90, boxW, boxW);
+    }
+  } else {
+    // MOBILE LAYOUT (Portrait/Square): HUD perfectly overlaid at the very top of the play area
+    // Semi-transparent box to ensure HUD readability on phone
+    g.fillStyle = 'rgba(0,0,0,0.8)';
+    g.fillRect(0, Math.max(0, offsetY - 40), logicalW, 45);
+    g.fillStyle = '#444'; g.fillRect(0, Math.max(0, offsetY - 40) + 45, logicalW, 1);
+    
+    g.textAlign='left'; g.textBaseline='middle';
+    const uiY = Math.max(20, offsetY - 18);
+    g.fillStyle='#fff'; g.font='bold 20px monospace'; g.fillText(score.toString().padStart(7,'0'), 15, uiY);
+    
+    for(let i=0; i<3; i++) {
+        g.fillStyle = i < lives ? '#fff' : '#333';
+        g.fillRect(logicalW - 25 - i*15, uiY - 5, 10, 10);
+    }
+  }
+
+  // 3. GAME OVERLAYS
+  const cx = logicalW / 2;
+  const cy = logicalH / 2;
+  
+  if(phase === 'start') {
+    g.fillStyle = 'rgba(0,0,0,0.85)'; g.fillRect(0,0,logicalW,logicalH);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    
+    const tSize1 = logicalW < 400 ? 32 : 42;
+    const tSize2 = logicalW < 400 ? 24 : 32;
+    const tSize3 = logicalW < 400 ? 12 : 16;
+    
+    g.font = `bold ${tSize1}px monospace`; g.fillText('VALUE FIRST', cx, cy-40);
+    g.font = `${tSize2}px monospace`; g.fillText('PINBALL', cx, cy+5);
+    
+    const pulse = 0.5 + 0.5 * Math.sin(pulseT);
+    g.fillStyle = `rgba(255,255,255,${pulse})`; 
+    g.font = `bold ${tSize3}px monospace`; g.fillText('TAP SIDES TO DEPLOY', cx, cy+60);
+  } else if(phase === 'dead') {
+    g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0,0,logicalW,logicalH);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 16px monospace'; g.fillText('UNIT LOST - TAP TO DEPLOY', cx, cy);
+  } else if(phase === 'over') {
+    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(0,0,logicalW,logicalH);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const tSize1 = logicalW < 400 ? 32 : 44;
+    g.font = `bold ${tSize1}px monospace`; g.fillText('TERMINATED', cx, cy-20);
+    g.fillStyle = '#888'; g.font = '16px monospace'; g.fillText('FINAL SCORE: '+score, cx, cy+30);
+    g.fillStyle = '#fff'; g.fillText('TAP TO RETURN', cx, cy+80);
+  }
+}
+
+function loop() { pulseT+=0.06; update(); draw(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
