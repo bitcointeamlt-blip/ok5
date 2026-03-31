@@ -65,8 +65,8 @@ imgGadas.src = 'gadas.png';
 const imgGadas2 = new Image();
 imgGadas2.src = 'gadas2.png';
 
-let ball = { x: W/2, y: 70, vx: 0, vy: 1, dmg: 10 };
-let parts = [], pops = [];
+let ball = { x: W/2, y: 70, vx: 0, vy: 1, dmg: 10, trail: [] };
+let parts = [], pops = [], ripples = [];
 let screenShake = 0, combo = 0, rageMode = false;
 
 // VOXEL STRUCTURES
@@ -78,23 +78,14 @@ const flippers = [
   { px: FLIP_PXL, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_L, activeAngle: FLIP_ACT_L, angle: FLIP_REST_L, angVel: 0, active: 0, hit: 0 },
   { px: FLIP_PXR, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_R, activeAngle: FLIP_ACT_R, angle: FLIP_REST_R, angVel: 0, active: 0, hit: 0 }
 ];
-const guides = [ [0, H-220, FLIP_PXL, FLIP_PY], [W, H-190, FLIP_PXR, FLIP_PY] ];
 
 function mkBall() { 
   ball.x = 240 + (Math.random()-0.5)*50; ball.y = 80; 
   ball.vx = (Math.random()-0.5)*2; ball.vy = 1; 
+  ball.trail = [];
   combo = 0; rageMode = false;
 }
 
-function burst(px, py, amt, color='#ffffff') { 
-  for(let i=0; i<amt; i++) {
-    parts.push({ 
-      x:px, y:py, 
-      vx:(Math.random()-0.5)*8, vy:(Math.random()-0.5)*8, 
-      life:1, color: color, size: VOXEL_SIZE*(0.5+Math.random()*0.5) 
-    });
-  } 
-}
 function popup(x,y,txt) { pops.push({x,y,txt,life:1}); }
 
 function initFloor() {
@@ -162,7 +153,10 @@ function playSound(type, freq, dr, vol, endFreq) {
 
 function pressSide() {
   initAudio();
-  if (phase !== 'play') { 
+  if (phase === 'dead') {
+    mkBall(); phase = 'play'; return;
+  }
+  if (phase === 'start' || phase === 'over') { 
     score=0; lives=3; level=1; ball.dmg=15; 
     initFloor(); mkBall(); phase='play'; return; 
   }
@@ -180,7 +174,8 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if(k==='z'||e.key==='Shift') { if(!flippers[0].active) playSound('square',140,0.1,0.05); flippers[0].active=1; }
   if(k==='m'||e.key==='Shift') { if(!flippers[1].active) playSound('square',160,0.1,0.05); flippers[1].active=1; }
-  if(phase !== 'play' && (k===' '||k==='enter')) { score=0; lives=3; level=1; ball.dmg=15; initFloor(); mkBall(); phase='play'; playSound('sine', 440, 0.2, 0.1); }
+  if(phase === 'dead' && (k===' '||k==='enter')) { mkBall(); phase='play'; playSound('sine', 440, 0.2, 0.1); }
+  else if((phase === 'start' || phase === 'over') && (k===' '||k==='enter')) { score=0; lives=3; level=1; ball.dmg=15; initFloor(); mkBall(); phase='play'; playSound('sine', 440, 0.2, 0.1); }
 });
 window.addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
@@ -242,22 +237,50 @@ function update() {
   if (phase !== 'play') return;
   for (const f of flippers) f.angVel = ((f.active?f.activeAngle:f.restAngle) - f.angle) * (f.active?0.4:0.25);
 
-  if (ball.y < -50) { nextFloor(); return; }
+  if (combo > 0) {
+      ball.trail.unshift({x:ball.x, y:ball.y});
+      if(ball.trail.length > 3) {
+          let tip = ball.trail.pop();
+          if (Math.random() > 0.6) {
+              for(let i=0; i<2; i++) {
+                  parts.push({
+                      x: tip.x + (Math.random()-0.5)*BR, y: tip.y + (Math.random()-0.5)*BR,
+                      vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2,
+                      life: 0.3 + Math.random()*0.3,
+                      color: rageMode ? '#ffffff' : '#666666',
+                      size: VOXEL_SIZE*(1+Math.random()), burn: true
+                  });
+              }
+          }
+      }
+  } else if (ball.trail.length > 0) {
+      ball.trail.pop();
+  }
+
+  if (ball.y < -BR - 2) { nextFloor(); return; }
 
   for(let s=0; s<SUBSTEPS; s++) {
     for (const f of flippers) f.angle = clamp(f.angle + f.angVel/SUBSTEPS, Math.min(f.restAngle, f.activeAngle), Math.max(f.restAngle, f.activeAngle));
     ball.vy += GRAVITY/SUBSTEPS; ball.x += ball.vx/SUBSTEPS; ball.y += ball.vy/SUBSTEPS;
 
     // Walls
-    if(ball.x - BR < 0) { ball.x=BR; ball.vx=Math.abs(ball.vx)*RESTITUTION; burst(BR,ball.y,3); playSound('triangle', 300, 0.05, 0.1); }
-    if(ball.x + BR > W) { ball.x=W-BR; ball.vx=-Math.abs(ball.vx)*RESTITUTION; burst(W-BR,ball.y,3); playSound('triangle', 300, 0.05, 0.1); }
+    if(ball.x - BR < 0) { 
+        ball.x=BR; ball.vx=Math.abs(ball.vx)*RESTITUTION; 
+        ripples.push({x: BR, y: ball.y, r: BR, color: '#888888', life: 0.4}); 
+        playSound('triangle', 300, 0.05, 0.1); 
+    }
+    if(ball.x + BR > W) { 
+        ball.x=W-BR; ball.vx=-Math.abs(ball.vx)*RESTITUTION; 
+        ripples.push({x: W-BR, y: ball.y, r: BR, color: '#888888', life: 0.4}); 
+        playSound('triangle', 300, 0.05, 0.1); 
+    }
     
     // Breakable Ceiling!
     let voxelsNearCeiling = ceilingVoxels.filter(p => Math.abs(p.rx - ball.x) < BR*2 && Math.abs(p.ry - ball.y) < BR*2);
     if(ball.y - BR < 24 && voxelsNearCeiling.length > 0) { 
         ball.y=BR + 24; ball.vy=Math.abs(ball.vy)*RESTITUTION;
         let activeDmg = rageMode ? ball.dmg * 2 : ball.dmg;
-        let ripped = ripVoxels(ceilingVoxels, 0, 0, ball.x, ball.y, Math.floor(activeDmg * 3), ball.vx, Math.abs(ball.vy), '#ff0044');
+        let ripped = ripVoxels(ceilingVoxels, 0, 0, ball.x, ball.y, Math.floor(activeDmg * 3), ball.vx, Math.abs(ball.vy), '#ffffff');
         
         if (ripped > 0) {
             screenShake = Math.max(screenShake, rageMode ? 10 : 5);
@@ -285,21 +308,11 @@ function update() {
       if(spd > MAX_SPEED) { ball.vx=ball.vx/spd*MAX_SPEED; ball.vy=ball.vy/spd*MAX_SPEED; }
       if(Math.abs(relN)>2) { 
           f.hit = 1; playSound('square', 200, 0.08, 0.15); 
-          if(combo > 1) { popup(ball.x, ball.y, "COMBO DROPPED"); }
           combo = 0; rageMode = false;
       }
     }
 
-    // Guides
-    for(const [ax,ay,bx,by] of guides) {
-      const d = closestSeg(ball.x, ball.y, ax,ay, bx,by);
-      if(d.dist<BR&&d.dist>0) {
-        const r = reflect(ball.vx, ball.vy, d.nx, d.ny);
-        ball.vx=r.vx; ball.vy=r.vy;
-        ball.x += d.nx*(BR-d.dist+1); ball.y += d.ny*(BR-d.dist+1);
-        playSound('triangle', 250, 0.05, 0.1);
-      }
-    }
+    // Slingshots
 
     // Indestructible Bumpers
     for(let i = bumpers.length - 1; i >= 0; i--) {
@@ -332,7 +345,7 @@ function update() {
         score += b.pts * mult;
         
         popup(b.x, b.y-b.r-10, '+'+(b.pts*mult) + (combo>1 ? ' x'+combo : '')); 
-        burst(b.x, b.y, 5);
+        ripples.push({x: b.x, y: b.y, r: b.r, color: rageMode ? '#ffffff' : '#aaaaaa', life: 0.6});
         screenShake = Math.max(screenShake, rageMode ? 4 : 2);
         
         const spd = Math.hypot(ball.vx, ball.vy);
@@ -344,13 +357,31 @@ function update() {
   for(const b of bumpers) if(b.f>0) b.f -= 1;
   for(const f of flippers) if(f.hit>0) f.hit-=0.1;
 
-  if(ball.y > H+50) { lives--; phase = lives>0?'dead':'over'; burst(ball.x, H-10, 20); playSound('sine', 120, 0.25, 0.6, 60); }
+  if(ball.y > H+50) { 
+      lives--; phase = lives>0?'dead':'over'; 
+      ripples.push({x: ball.x, y: H-10, r: BR*2, color: '#ffffff', life: 0.8}); 
+      playSound('sine', 120, 0.25, 0.6, 60); 
+  }
   
+  // Ripples physics
+  for (let i = ripples.length - 1; i >= 0; i--) {
+      let r = ripples[i];
+      r.r += 2.5;
+      r.life -= 0.06;
+      if (r.life <= 0) ripples.splice(i, 1);
+  }
+
   // Particles physics
   parts = parts.filter(p=>p.life>0); 
   for(const p of parts) { 
       p.x+=p.vx; p.y+=p.vy; 
-      p.vy+=0.15; // Gravity on particles!
+      if (p.spark) {
+          p.vx *= 0.85; p.vy *= 0.85; // Friction for sparks
+      } else if (p.burn) {
+          p.vx *= 0.95; p.vy *= 0.95; // Drift like loose fire embers/smoke
+      } else {
+          p.vy+=0.15; // Gravity on voxel debris!
+      }
       p.life-=0.02; 
   }
   pops = pops.filter(p=>p.life>0); for(const p of pops) { p.y-=1; p.life-=0.03; }
@@ -374,17 +405,29 @@ function draw() {
   g.translate(offsetX, offsetY);
   
   g.drawImage(bgC, 0, 0, W, H);
+  
+  // 📐 Blueprint Architecture Static Grid 📐
+  // Pure minimalist classic aesthetic
+  g.lineWidth = 1;
+  g.strokeStyle = '#0a0a0d'; // Extremely dark grey
+  g.beginPath();
+  for(let x=0; x<=W; x+=40) { g.moveTo(x, 0); g.lineTo(x, H); }
+  for(let y=0; y<=H; y+=40) { g.moveTo(0, y); g.lineTo(W, y); }
+  g.stroke();
+  
+  // Center playfield Crosshairs
+  g.strokeStyle = '#111115';
+  g.beginPath();
+  g.moveTo(W/2 - 40, H/2); g.lineTo(W/2 + 40, H/2);
+  g.moveTo(W/2, H/2 - 40); g.lineTo(W/2, H/2 + 40);
+  g.arc(W/2, H/2, 20, 0, 7);
+  g.stroke();
+
 
   // Draw Ceiling Voxels
-  g.fillStyle = '#aa2244';
+  g.fillStyle = '#888888';
   for(const p of ceilingVoxels) {
       g.fillRect(p.rx - VOXEL_SIZE/2, p.ry - VOXEL_SIZE/2, VOXEL_SIZE-1, VOXEL_SIZE-1);
-  }
-
-  g.lineWidth = 4; g.lineCap = 'round';
-  for(const [ax,ay,bx,by] of guides) {
-    g.strokeStyle = '#555555'; g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by); g.stroke();
-    g.strokeStyle = '#222'; g.lineWidth = 1; g.stroke(); g.lineWidth = 4;
   }
 
   function drawOctagon(x,y,r) {
@@ -426,15 +469,32 @@ function draw() {
     g.shadowBlur = 0;
   }
 
+  g.lineWidth = 1;
+  for(const r of ripples) {
+      g.beginPath(); g.arc(r.x, r.y, r.r, 0, 7);
+      g.globalAlpha = Math.max(0, r.life);
+      g.strokeStyle = r.color; g.stroke();
+      g.globalAlpha = 1.0;
+  }
+
   for(const p of pops) {
     g.fillStyle = `rgba(255,255,255,${p.life})`;
     g.font = 'bold 16px monospace'; g.fillText(p.txt, p.x, p.y);
   }
 
   if(phase !== 'over' && phase !== 'start') {
+    if(ball.trail && ball.trail.length > 0) {
+      for(let i=0; i<ball.trail.length; i++) {
+        const alpha = (ball.trail.length - i) / (ball.trail.length + 1) * (rageMode ? 0.6 : 0.3);
+        g.beginPath(); g.arc(ball.trail[i].x, ball.trail[i].y, BR, 0, 7);
+        g.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        g.fill();
+      }
+    }
+
     g.beginPath(); g.arc(ball.x, ball.y, BR, 0, 7);
-    g.fillStyle = rageMode ? '#ff0033' : `rgb(255, ${255 - Math.min(200, (ball.dmg-10)*8)}, 255)`; 
-    if(rageMode) { g.shadowBlur = 15; g.shadowColor = '#ff0033'; }
+    g.fillStyle = rageMode ? '#ffffff' : '#888888'; 
+    if(rageMode) { g.shadowBlur = 15; g.shadowColor = '#ffffff'; }
     g.fill();
     g.shadowBlur = 0;
     
@@ -467,8 +527,8 @@ function draw() {
   if (logicalW > W + 200) {
     // Left Panel
     g.fillStyle = '#020304'; g.fillRect(0, 0, offsetX, logicalH);
-    g.shadowBlur = 10; g.shadowColor = 'rgba(0,255,136,0.5)';
-    g.strokeStyle = 'rgba(0,255,136,0.3)'; g.lineWidth = 1; 
+    g.shadowBlur = 10; g.shadowColor = '#555555';
+    g.strokeStyle = '#555555'; g.lineWidth = 1; 
     
     // Tech brackets
     g.beginPath(); 
@@ -480,29 +540,29 @@ function draw() {
     g.shadowBlur = 0; g.lineWidth = 4;
 
     g.textAlign='center'; g.textBaseline='top';
-    g.fillStyle='#00aa55'; g.font='12px monospace'; g.fillText('[ SYS.SCORE ]', offsetX/2, 60);
-    g.fillStyle='#fff'; g.font='bold 34px monospace'; 
-    g.shadowBlur = 15; g.shadowColor = '#00ff88';
+    g.fillStyle='#aaaaaa'; g.font='12px monospace'; g.fillText('[ SYS.SCORE ]', offsetX/2, 60);
+    g.fillStyle='#ffffff'; g.font='bold 34px monospace'; 
+    g.shadowBlur = 10; g.shadowColor = '#ffffff';
     g.fillText(score.toString().padStart(7,'0'), offsetX/2, 85);
     g.shadowBlur = 0;
     
-    g.fillStyle='#005533'; g.font='10px monospace'; g.fillText('--- [ METRICS ] ---', offsetX/2, 150);
-    g.fillStyle='#00ff88'; g.font='12px monospace'; g.fillText('WEAPON DMG: '+ball.dmg.toFixed(0), offsetX/2, 175);
-    g.fillStyle='rgba(0,255,136,0.2)'; g.fillRect(offsetX/2 - 60, 195, 120, 4);
-    g.fillStyle='#00ff88'; g.fillRect(offsetX/2 - 60, 195, Math.min(120, ball.dmg*2), 4);
+    g.fillStyle='#555555'; g.font='10px monospace'; g.fillText('--- [ METRICS ] ---', offsetX/2, 150);
+    g.fillStyle='#aaaaaa'; g.font='12px monospace'; g.fillText('WEAPON DMG: '+ball.dmg.toFixed(0), offsetX/2, 175);
+    g.fillStyle='#333333'; g.fillRect(offsetX/2 - 60, 195, 120, 4);
+    g.fillStyle='#ffffff'; g.fillRect(offsetX/2 - 60, 195, Math.min(120, ball.dmg*2), 4);
     
-    g.fillStyle=rageMode ? '#ff0033' : '#ffaa00'; 
-    if(rageMode) { g.shadowBlur = 10; g.shadowColor = '#ff0033'; }
+    g.fillStyle='#ffffff'; 
+    if(rageMode) { g.shadowBlur = 10; g.shadowColor = '#ffffff'; }
     g.fillText(rageMode ? '> RAGE ACTIVE <' : 'COMBO: '+Math.min(combo,5)+'/5', offsetX/2, 220);
     g.fillRect(offsetX/2 - 60, 240, Math.min((combo/5)*120, 120), 8);
     g.shadowBlur = 0;
-    g.fillStyle='rgba(255,170,0,0.2)'; g.fillRect(offsetX/2 - 60, 240, 120, 8);
+    g.fillStyle='#333333'; g.fillRect(offsetX/2 - 60, 240, 120, 8);
     
     // Right Panel
     const rightX = offsetX + W;
     g.fillStyle = '#020304'; g.fillRect(rightX, 0, offsetX, logicalH);
-    g.shadowBlur = 10; g.shadowColor = 'rgba(255,170,0,0.5)';
-    g.strokeStyle = 'rgba(255,170,0,0.3)'; g.lineWidth = 1; 
+    g.shadowBlur = 10; g.shadowColor = '#555555';
+    g.strokeStyle = '#555555'; g.lineWidth = 1; 
     
     g.beginPath(); 
     g.moveTo(rightX+40, 20); g.lineTo(rightX+20, 20); g.lineTo(rightX+20, logicalH-20); g.lineTo(rightX+40, logicalH-20);
@@ -512,58 +572,58 @@ function draw() {
     g.stroke();
     g.shadowBlur = 0; g.lineWidth = 4;
 
-    g.fillStyle='#cc8800'; g.font='12px monospace'; g.fillText('[ SYS.LIVES ]', rightX + offsetX/2, 60);
+    g.fillStyle='#aaaaaa'; g.font='12px monospace'; g.fillText('[ SYS.LIVES ]', rightX + offsetX/2, 60);
     
     const boxW = 16, spacing = 12, tBoxesW = (3 * boxW) + (2 * spacing);
     let lStartX = rightX + (offsetX - tBoxesW)/2;
     for(let i=0; i<3; i++) {
-      g.fillStyle = i < lives ? '#ffaa00' : '#222';
-      if(i < lives) { g.shadowBlur = 12; g.shadowColor = '#ffaa00'; }
+      g.fillStyle = i < lives ? '#ffffff' : '#222222';
+      if(i < lives) { g.shadowBlur = 10; g.shadowColor = '#ffffff'; }
       g.fillRect(lStartX + i*(boxW+spacing), 90, boxW, boxW);
       g.shadowBlur = 0;
     }
     
-    g.fillStyle='#664400'; g.font='10px monospace'; g.fillText('--- [ STAGE ] ---', rightX + offsetX/2, 150);
-    g.fillStyle='#fff'; g.font='bold 24px monospace'; 
-    g.shadowBlur = 15; g.shadowColor = '#ffaa00';
+    g.fillStyle='#555555'; g.font='10px monospace'; g.fillText('--- [ STAGE ] ---', rightX + offsetX/2, 150);
+    g.fillStyle='#ffffff'; g.font='bold 24px monospace'; 
+    g.shadowBlur = 10; g.shadowColor = '#ffffff';
     g.fillText('FLOOR '+level, rightX + offsetX/2, 175);
     g.shadowBlur = 0;
     
     // Status text
-    g.fillStyle='#444'; g.font='10px monospace'; g.fillText('STATUS: ONLINE', rightX + offsetX/2, logicalH-40);
+    g.fillStyle='#444444'; g.font='10px monospace'; g.fillText('STATUS: ONLINE', rightX + offsetX/2, logicalH-40);
   } else {
     // Premium Mobile UI
     const uiHeight = 60;
     const uiTop = Math.max(0, offsetY - 50);
     const grad = g.createLinearGradient(0, uiTop, 0, uiTop + uiHeight);
-    grad.addColorStop(0, '#010203'); grad.addColorStop(1, 'rgba(0,15,10,0.9)');
+    grad.addColorStop(0, '#010203'); grad.addColorStop(1, 'rgba(10,10,10,0.9)');
     g.fillStyle = grad;
     g.fillRect(0, uiTop, logicalW, uiHeight);
     
-    g.shadowBlur = 15; g.shadowColor = '#00ff88';
-    g.fillStyle = 'rgba(0,255,136,0.8)'; g.fillRect(0, uiTop + uiHeight - 2, logicalW, 2);
+    g.shadowBlur = 10; g.shadowColor = '#ffffff';
+    g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(0, uiTop + uiHeight - 2, logicalW, 2);
     g.shadowBlur = 0;
     
     g.textAlign='left'; g.textBaseline='middle';
     const uiY = uiTop + 28;
-    g.fillStyle='#00aa55'; g.font='bold 12px monospace'; g.fillText('FLR', 10, uiY - 10);
-    g.fillStyle='#00ff88'; g.font='bold 18px monospace'; g.fillText(level, 10, uiY + 6);
+    g.fillStyle='#aaaaaa'; g.font='bold 12px monospace'; g.fillText('FLR', 10, uiY - 10);
+    g.fillStyle='#ffffff'; g.font='bold 18px monospace'; g.fillText(level, 10, uiY + 6);
     
-    g.fillStyle='#fff'; g.font='bold 24px monospace'; 
-    g.shadowBlur = 12; g.shadowColor = 'rgba(0,255,136,0.6)';
+    g.fillStyle='#ffffff'; g.font='bold 24px monospace'; 
+    g.shadowBlur = 10; g.shadowColor = '#ffffff';
     g.fillText(score.toString().padStart(7,'0'), 65, uiY);
     g.shadowBlur = 0;
     
-    g.fillStyle='rgba(255,170,0,0.3)'; g.fillRect(65, uiY + 12, 110, 4);
-    g.fillStyle=rageMode ? '#ff0033' : '#ffaa00'; 
-    if(rageMode) { g.shadowBlur = 10; g.shadowColor = '#ff0033'; }
+    g.fillStyle='#333333'; g.fillRect(65, uiY + 12, 110, 4);
+    g.fillStyle='#ffffff'; 
+    if(rageMode) { g.shadowBlur = 10; g.shadowColor = '#ffffff'; }
     g.fillRect(65, uiY + 12, Math.min((combo/5)*110, 110), 4);
     g.shadowBlur = 0;
     
     g.textAlign='right'; 
     for(let i=0; i<3; i++) {
-        g.fillStyle = i < lives ? '#ffaa00' : '#222';
-        if(i<lives) { g.shadowBlur=10; g.shadowColor='#ffaa00'; }
+        g.fillStyle = i < lives ? '#ffffff' : '#222222';
+        if(i<lives) { g.shadowBlur=10; g.shadowColor='#ffffff'; }
         g.fillRect(logicalW - 20 - i*16, uiY - 8, 12, 12);
         g.shadowBlur=0;
     }
@@ -594,16 +654,34 @@ function draw() {
     g.font = `bold 14px monospace`; g.fillText('TAP TO DEPLOY', cx, cy+60);
   } else if(phase === 'dead') {
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0,0,logicalW,logicalH);
-    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = 'bold 16px monospace'; g.fillText('UNIT LOST - TAP TO RE-DEPLOY', cx, cy);
+    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 18px monospace'; g.fillText('BALL LOST', cx, cy-15);
+    g.fillStyle = '#aaaaaa'; g.font = '14px monospace'; g.fillText('LIVES REMAINING: ' + lives, cx, cy+15);
+    g.fillStyle = '#ffffff'; g.font = '12px monospace';
+    if(Date.now()%1000<500) g.fillText('> TAP TO LAUNCH <', cx, cy+45);
   } else if(phase === 'over') {
-    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(0,0,logicalW,logicalH);
-    g.fillStyle = '#ff0055'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    const tSize1 = logicalW < 400 ? 32 : 44;
-    g.font = `bold ${tSize1}px monospace`; g.fillText('TERMINATED', cx, cy-30);
-    g.fillStyle = '#888'; g.font = '16px monospace'; g.fillText('FINAL FLOOR: '+level, cx, cy+20);
-    g.fillText('FINAL SCORE: '+score, cx, cy+45);
-    g.fillStyle = '#fff'; g.fillText('TAP TO RETURN', cx, cy+90);
+    g.fillStyle = 'rgba(0,0,0,0.85)'; g.fillRect(0,0,logicalW,logicalH);
+    
+    const bw = 300, bh = 210;
+    const bx = cx - bw/2, by = cy - bh/2 - 20;
+    g.strokeStyle = '#aaaaaa'; g.lineWidth = 2; g.strokeRect(bx, by, bw, bh);
+    g.fillStyle = '#111111'; g.fillRect(bx, by, bw, bh);
+    g.shadowBlur = 0;
+    
+    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const tSize1 = logicalW < 400 ? 28 : 36;
+    g.font = `bold ${tSize1}px monospace`; g.fillText('SYSTEM FAILURE', cx, by+40);
+    
+    g.fillStyle = '#888888'; g.font = '16px monospace'; g.fillText('FINAL FLOOR: '+level, cx, by+85);
+    g.fillStyle = '#aaaaaa'; g.font = '14px monospace'; g.fillText('TOTAL SCORE:', cx, by+115);
+    
+    g.fillStyle = '#ffffff'; g.font = 'bold 36px monospace'; 
+    g.shadowBlur = 10; g.shadowColor = '#ffffff';
+    g.fillText(score.toString().padStart(7,'0'), cx, by+145);
+    g.shadowBlur = 0;
+    
+    g.fillStyle = '#ffffff'; g.font = '14px monospace';
+    if(Date.now()%1000<500) g.fillText('> TAP TO REBOOT <', cx, by+190);
   }
 }
 
