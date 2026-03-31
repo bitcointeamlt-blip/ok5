@@ -78,6 +78,7 @@ const flippers = [
   { px: FLIP_PXL, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_L, activeAngle: FLIP_ACT_L, angle: FLIP_REST_L, angVel: 0, active: 0, hit: 0 },
   { px: FLIP_PXR, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_R, activeAngle: FLIP_ACT_R, angle: FLIP_REST_R, angVel: 0, active: 0, hit: 0 }
 ];
+const guides = [ [0, H-220, FLIP_PXL, FLIP_PY], [W, H-190, FLIP_PXR, FLIP_PY] ];
 
 function mkBall() { 
   ball.x = 240 + (Math.random()-0.5)*50; ball.y = 80; 
@@ -312,7 +313,16 @@ function update() {
       }
     }
 
-    // Slingshots
+    // Guides
+    for(const [ax,ay,bx,by] of guides) {
+      const d = closestSeg(ball.x, ball.y, ax,ay, bx,by);
+      if(d.dist<BR&&d.dist>0) {
+        const r = reflect(ball.vx, ball.vy, d.nx, d.ny);
+        ball.vx=r.vx; ball.vy=r.vy;
+        ball.x += d.nx*(BR-d.dist+1); ball.y += d.ny*(BR-d.dist+1);
+        playSound('triangle', 250, 0.05, 0.1);
+      }
+    }
 
     // Indestructible Bumpers
     for(let i = bumpers.length - 1; i >= 0; i--) {
@@ -428,6 +438,12 @@ function draw() {
   g.fillStyle = '#888888';
   for(const p of ceilingVoxels) {
       g.fillRect(p.rx - VOXEL_SIZE/2, p.ry - VOXEL_SIZE/2, VOXEL_SIZE-1, VOXEL_SIZE-1);
+  }
+
+  g.lineWidth = 4; g.lineCap = 'round';
+  for(const [ax,ay,bx,by] of guides) {
+    g.strokeStyle = '#555555'; g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by); g.stroke();
+    g.strokeStyle = '#222'; g.lineWidth = 1; g.stroke(); g.lineWidth = 4;
   }
 
   function drawOctagon(x,y,r) {
