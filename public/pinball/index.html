@@ -22,8 +22,8 @@ const c = document.getElementById('c');
 const g = c.getContext('2d', { alpha: false });
 const dpr = window.devicePixelRatio || 1;
 
-let logicalW = 480, logicalH = 720, logicalScale = 1;
-const W = 480, H = 720; 
+let logicalW = 640, logicalH = 960, logicalScale = 1;
+const W = 640, H = 960;
 
 function resize() {
   const aspectWin = window.innerWidth / window.innerHeight;
@@ -53,8 +53,8 @@ for (let gy = 20; gy < H; gy += 40) {
 bgG.strokeStyle = '#222225'; bgG.lineWidth = 2; bgG.strokeRect(10, 10, W-20, H-20);
 bgG.strokeStyle = '#111115'; bgG.lineWidth = 1; bgG.strokeRect(4, 4, W-8, H-8);
 
-const GRAVITY = 0.38, RESTITUTION = 0.55, BR = 11, BUMPER_BOOST = 1.15, MAX_SPEED = 22, SUBSTEPS = 6;
-const FLIP_LEN = 131, FLIP_PY = H - 92, FLIP_PXL = 95, FLIP_PXR = W - 95;
+const GRAVITY = 0.38, RESTITUTION = 0.55, BR = 7, BUMPER_BOOST = 1.15, MAX_SPEED = 22, SUBSTEPS = 6;
+const FLIP_LEN = 170, FLIP_PY = H - 120, FLIP_PXL = 125, FLIP_PXR = W - 125;
 const FLIP_REST_L = 0.45, FLIP_ACT_L = -0.50, FLIP_REST_R = Math.PI - 0.45, FLIP_ACT_R = Math.PI + 0.50;
 
 let phase = 'start', score = 0, lives = 3, pulseT = 0;
@@ -78,10 +78,10 @@ const flippers = [
   { px: FLIP_PXL, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_L, activeAngle: FLIP_ACT_L, angle: FLIP_REST_L, angVel: 0, active: 0, hit: 0 },
   { px: FLIP_PXR, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_R, activeAngle: FLIP_ACT_R, angle: FLIP_REST_R, angVel: 0, active: 0, hit: 0 }
 ];
-const guides = [ [0, H-220, FLIP_PXL, FLIP_PY], [W, H-190, FLIP_PXR, FLIP_PY] ];
+const guides = [ [0, H-290, FLIP_PXL, FLIP_PY], [W, H-255, FLIP_PXR, FLIP_PY] ];
 
-function mkBall() { 
-  ball.x = 240 + (Math.random()-0.5)*50; ball.y = 80; 
+function mkBall() {
+  ball.x = W/2 + (Math.random()-0.5)*50; ball.y = 80;
   ball.vx = (Math.random()-0.5)*2; ball.vy = 1; 
   ball.trail = [];
   combo = 0; rageMode = false;
@@ -94,7 +94,7 @@ function initFloor() {
   ceilingVoxels = [];
   
   // Build Ceiling
-  const ceilThickness = 24 + level * 6; // Ceiling gets thicker
+  const ceilThickness = 32 + level * 8;
   for(let x=10; x<W-10; x+=VOXEL_SIZE) {
     for(let y=10; y<ceilThickness; y+=VOXEL_SIZE) {
       ceilingVoxels.push({ rx: x, ry: y });
@@ -105,8 +105,8 @@ function initFloor() {
   const hpBase = 20 * level;
   
   const baseLayout = [
-    { x: 340, y: 160, r: 28 }, { x: 410, y: 240, r: 28 }, { x: 260, y: 280, r: 35 },
-    { x: 120, y: 320, r: 22 }, { x: 360, y: 440, r: 22 }, { x: 110, y: 460, r: 28 }
+    { x: 450, y: 210, r: 20 }, { x: 545, y: 320, r: 20 }, { x: 345, y: 370, r: 26 },
+    { x: 160, y: 425, r: 16 }, { x: 480, y: 585, r: 16 }, { x: 145, y: 615, r: 20 }
   ];
 
   for(let i=0; i<amt; i++) {
@@ -115,8 +115,8 @@ function initFloor() {
       bx = baseLayout[i].x; by = baseLayout[i].y; br = baseLayout[i].r;
     } else {
       bx = 80 + Math.random()*(W-160);
-      by = 120 + Math.random()*(H-300);
-      br = 20 + Math.random()*20;
+      by = 120 + Math.random()*(H-350);
+      br = 14 + Math.random()*14;
     }
     bumpers.push({
         x: bx, y: by, r: br,
@@ -131,7 +131,7 @@ function initFloor() {
       let bossBumper = bumpers[Math.floor(Math.random() * bumpers.length)];
       bossBumper.img = imgGadas;
       bossBumper.pts *= 5; // 5x Points modifier
-      bossBumper.r = Math.max(bossBumper.r, 35); // Force it to be big enough to read the face clearly
+      bossBumper.r = Math.max(bossBumper.r, 26); // Force it to be big enough to read the face clearly
   }
 }
 initFloor();
@@ -278,8 +278,8 @@ function update() {
     
     // Breakable Ceiling!
     let voxelsNearCeiling = ceilingVoxels.filter(p => Math.abs(p.rx - ball.x) < BR*2 && Math.abs(p.ry - ball.y) < BR*2);
-    if(ball.y - BR < 24 && voxelsNearCeiling.length > 0) { 
-        ball.y=BR + 24; ball.vy=Math.abs(ball.vy)*RESTITUTION;
+    if(ball.y - BR < 32 && voxelsNearCeiling.length > 0) {
+        ball.y=BR + 32; ball.vy=Math.abs(ball.vy)*RESTITUTION;
         let activeDmg = rageMode ? ball.dmg * 2 : ball.dmg;
         let ripped = ripVoxels(ceilingVoxels, 0, 0, ball.x, ball.y, Math.floor(activeDmg * 3), ball.vx, Math.abs(ball.vy), '#ffffff');
         
