@@ -225,7 +225,7 @@ function ripVoxels(voxelArray, cx, cy, impactX, impactY, dmgAmount, bvx, bvy, co
                 x: px, y: py,
                 vx: bvx*0.3 + (Math.random()-0.5)*5,
                 vy: bvy*0.3 + (Math.random()-0.5)*5,
-                life: 1 + Math.random()*0.5, color: color, size: VOXEL_SIZE
+                life: 0.3 + Math.random()*0.2, color: color, size: VOXEL_SIZE
             });
         }
         toRemove.push(sorted[k].i);
