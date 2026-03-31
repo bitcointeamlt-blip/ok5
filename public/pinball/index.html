@@ -54,7 +54,7 @@ bgG.strokeStyle = '#222225'; bgG.lineWidth = 2; bgG.strokeRect(10, 10, W-20, H-2
 bgG.strokeStyle = '#111115'; bgG.lineWidth = 1; bgG.strokeRect(4, 4, W-8, H-8);
 
 const GRAVITY = 0.38, RESTITUTION = 0.55, BR = 7, BUMPER_BOOST = 1.15, MAX_SPEED = 22, SUBSTEPS = 6;
-const FLIP_LEN = 195, FLIP_PY = H - 120, FLIP_PXL = 125, FLIP_PXR = W - 125;
+const FLIP_LEN = 145, FLIP_PY = H - 120, FLIP_PXL = 125, FLIP_PXR = W - 125;
 const FLIP_REST_L = 0.45, FLIP_ACT_L = -0.50, FLIP_REST_R = Math.PI - 0.45, FLIP_ACT_R = Math.PI + 0.50;
 
 let phase = 'start', score = 0, lives = 3, pulseT = 0;
@@ -78,7 +78,7 @@ const flippers = [
   { px: FLIP_PXL, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_L, activeAngle: FLIP_ACT_L, angle: FLIP_REST_L, angVel: 0, active: 0, hit: 0 },
   { px: FLIP_PXR, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_R, activeAngle: FLIP_ACT_R, angle: FLIP_REST_R, angVel: 0, active: 0, hit: 0 }
 ];
-const guides = [ [0, H-180, FLIP_PXL, FLIP_PY], [W, H-180, FLIP_PXR, FLIP_PY] ];
+const guides = [ [0, H-110, FLIP_PXL, FLIP_PY], [W, H-110, FLIP_PXR, FLIP_PY] ];
 
 function mkBall() {
   ball.x = W/2 + (Math.random()-0.5)*50; ball.y = 80;
