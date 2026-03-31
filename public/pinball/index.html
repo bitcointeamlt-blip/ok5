@@ -78,7 +78,7 @@ const flippers = [
   { px: FLIP_PXL, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_L, activeAngle: FLIP_ACT_L, angle: FLIP_REST_L, angVel: 0, active: 0, hit: 0 },
   { px: FLIP_PXR, py: FLIP_PY, len: FLIP_LEN, restAngle: FLIP_REST_R, activeAngle: FLIP_ACT_R, angle: FLIP_REST_R, angVel: 0, active: 0, hit: 0 }
 ];
-const guides = [ [0, H-300, FLIP_PXL, FLIP_PY], [W, H-300, FLIP_PXR, FLIP_PY] ];
+const guides = [ [0, H-180, FLIP_PXL, FLIP_PY], [W, H-180, FLIP_PXR, FLIP_PY] ];
 
 function mkBall() {
   ball.x = W/2 + (Math.random()-0.5)*50; ball.y = 80;
