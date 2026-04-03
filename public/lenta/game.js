@@ -5605,16 +5605,6 @@ function _drawDungeonStatic() {
           ctx.globalAlpha = 1.0;
         }
 
-        // Stone — on ANY wall cell adjacent to floor (all 4 sides)
-        const adjFloor =
-          (r > 0        && S.dungeon[r-1][c] >= 1) ||
-          (r < ROWS-1   && S.dungeon[r+1][c] >= 1) ||
-          (c > 0        && S.dungeon[r][c-1] >= 1) ||
-          (c < COLS-1   && S.dungeon[r][c+1] >= 1);
-        if (adjFloor && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          const wSeed = Math.abs((r * 97 + c * 211) % 4);
-          ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
-        }
       }
     }
   }
