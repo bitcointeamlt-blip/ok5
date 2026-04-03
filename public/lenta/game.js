@@ -5553,7 +5553,7 @@ function _drawDungeonStatic() {
         else if (wN && !wW && !wE)       { tileX =  64; tileY =   0; } // top edge
         else if (wW && !wN && !wS)       { tileX =   0; tileY =  64; } // left edge
         else if (wE && !wN && !wS)       { tileX = 192; tileY =  64; } // right edge
-        else if (wS && !wW && !wE)       { tileX =  64; tileY = 192; } // bottom edge
+        else if (wS && !wW && !wE)       { tileX =  64; tileY = 128; } // bottom edge
         else {
           const seed = (r * 123 + c * 456) % 3;
           tileX = (1 + seed) * 64; tileY = 64;                          // inner fill
@@ -5589,6 +5589,13 @@ function _drawDungeonStatic() {
         } else {
           ctx.fillStyle = '#4ab5c0';
           ctx.fillRect(px, py, CELL, CELL);
+        }
+
+        // Stone base — ONLY on wall cells directly below floor (platform bottom edge)
+        const floorAbove = r > 0 && S.dungeon[r-1][c] >= 1;
+        if (floorAbove && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          const wSeed = Math.abs((r * 97 + c * 211) % 4);
+          ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
         }
 
         // Animated water foam — draw as small patch, offset per column row
