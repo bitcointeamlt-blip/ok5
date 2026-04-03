@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TIMELOCK BOARD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&family=Syncopate:wght@400;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- MENU -->
+    <div id="screen-menu" class="screen active">
+      <div class="menu-wrap">
+        <div class="menu-hero">
+          <div class="menu-status-row">
+            <span class="menu-chip">NEURAL LINK ACTIVE</span>
+            <span class="menu-chip dim">LOCAL SESSION</span>
+          </div>
+
+          <div class="title-block">
+            <div class="title-main">TIMELOCK</div>
+            <div class="title-sub">MAINFRAME</div>
+          </div>
+
+          <div class="tagline">
+            <p>Time pulses only with your data.</p>
+            <p class="dim">Turn-based cyber tactics where every move advances the whole board.</p>
+          </div>
+        </div>
+
+        <div class="menu-grid">
+          <div class="menu-main-panel">
+            <div class="menu-panel-head">
+              <span class="menu-panel-kicker">DEPLOYMENT</span>
+              <span class="menu-panel-title">Choose your entry point</span>
+            </div>
+
+            <div class="mode-select">
+              <button id="btn-adv" type="button" class="mode-card mode-card-adv pulse"
+                onclick="window.SFX&&SFX.init(); window.loadProfile&&loadProfile(); window.updateRunKeyUI&&updateRunKeyUI(); document.getElementById('screen-menu').classList.remove('active'); document.getElementById('screen-hub').classList.add('active'); window.BGM&&BGM.start('hub');">
+                <span class="mode-card-top">
+                  <span class="mode-card-label">ROGUELITE RUN</span>
+                  <span class="mode-card-badge">MAIN MODE</span>
+                </span>
+                <span class="mode-card-title">MAINFRAME</span>
+                <span class="mode-card-desc">Push through sectors, collect loot, upgrade your operator and survive the
+                  deep net.</span>
+                <span class="mode-card-meta">Solo adventure - progression - unlocks</span>
+                <span class="mode-card-cta">Enter the terminal</span>
+              </button>
+
+              <button id="btn-1p" type="button" class="mode-card mode-card-pve"
+                onclick="window.SFX&&SFX.init(); window.startGame&&startGame('pve');">
+                <span class="mode-card-top">
+                  <span class="mode-card-label">TACTICAL SKIRMISH</span>
+                  <span class="mode-card-badge">PVE</span>
+                </span>
+                <span class="mode-card-title">1 PLAYER</span>
+                <span class="mode-card-desc">Command a 3-unit squad against CPU enemies on a fixed arena with
+                  frozen-time tactics.</span>
+                <span class="mode-card-meta">Solo match - versus CPU - quick start</span>
+                <span class="mode-card-cta">Start PvE match</span>
+              </button>
+
+              <button id="btn-2p" type="button" class="mode-card mode-card-pvp"
+                onclick="window.SFX&&SFX.init(); window.startGame&&startGame('pvp');">
+                <span class="mode-card-top">
+                  <span class="mode-card-label">LOCAL VERSUS</span>
+                  <span class="mode-card-badge">PVP</span>
+                </span>
+                <span class="mode-card-title">2 PLAYERS</span>
+                <span class="mode-card-desc">Two players share one keyboard and resolve turns on the same board in local
+                  head-to-head combat.</span>
+                <span class="mode-card-meta">Local multiplayer - shared keyboard - duel</span>
+                <span class="mode-card-cta">Start PvP match</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="menu-side-stack">
+            <div class="menu-panel controls-card">
+              <div class="menu-panel-head">
+                <span class="menu-panel-kicker">INPUT MAP</span>
+                <span class="menu-panel-title">Control layout</span>
+              </div>
+              <div class="controls-dual">
+                <div class="ctrl-player">
+                  <div class="ctrl-label cyan">PLAYER 1</div>
+                  <div class="ctrl-rows">
+                    <div class="ctrl-row"><kbd>CLICK</kbd><span>Select unit</span></div>
+                    <div class="ctrl-row"><kbd>W A S D</kbd><span>Move</span></div>
+                    <div class="ctrl-row"><kbd>SPACE</kbd><span>Shoot / confirm</span></div>
+                    <div class="ctrl-row"><kbd>Q</kbd><span>Switch weapon</span></div>
+                  </div>
+                </div>
+                <div class="ctrl-divider"></div>
+                <div class="ctrl-player">
+                  <div class="ctrl-label red">PLAYER 2</div>
+                  <div class="ctrl-rows">
+                    <div class="ctrl-row"><kbd>U I O</kbd><span>Select unit</span></div>
+                    <div class="ctrl-row"><kbd>ARROWS</kbd><span>Move</span></div>
+                    <div class="ctrl-row"><kbd>ENTER</kbd><span>Shoot</span></div>
+                    <div class="ctrl-row"><kbd>P</kbd><span>Switch weapon</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="menu-panel mechanics-card">
+              <div class="menu-panel-head">
+                <span class="menu-panel-kicker">SYSTEM RULES</span>
+                <span class="menu-panel-title">How the board behaves</span>
+              </div>
+              <div class="mech-grid">
+                <div class="mech-item"><span class="mech-icon">FREEZE</span><span>No input, no movement. Time freezes
+                    until you act.</span></div>
+                <div class="mech-item"><span class="mech-icon">SYNC</span><span>One action advances bullets, enemies and
+                    board state together.</span></div>
+                <div class="mech-item"><span class="mech-icon">AIM</span><span>Mouse aim matters. Positioning decides
+                    lines of fire and survival.</span></div>
+                <div class="mech-item"><span class="mech-icon">SQUAD</span><span>Manage three units in versus modes, or
+                    one persistent operator in MAINFRAME.</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+
+    <!-- HUB ROOM -->
+    <div id="screen-hub" class="screen">
+      <div class="hub-room">
+
+        <!-- Header -->
+        <div class="hub-header">
+          <div class="hub-title">TERMINAL</div>
+          <div class="hub-subtitle">OPERATOR BASE / UPGRADE / DEPLOY</div>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="hub-stats-bar">
+          <div class="hub-stat-item">
+            <span class="hub-stat-label">MAX VOLTS</span>
+            <span class="hub-stat-val cyan" id="hub-energy">100</span>
+          </div>
+          <div class="hub-stat-item">
+            <span class="hub-stat-label">TOP SECTOR</span>
+            <span class="hub-stat-val green" id="hub-sector">1</span>
+          </div>
+        </div>
+
+        <!-- Main: Upgrades + Missions -->
+        <div class="hub-main">
+
+          <!-- Upgrade Terminal -->
+          <div class="hub-panel">
+            <div class="panel-header">TERMINAL</div>
+            <div class="upgrades-list">
+              <div class="upgrade-card volt-card" id="volts-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name">VOLT CELL</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-energy">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">MAX VOLTS</span>
+                    <span class="volt-stat-val" id="hub-energy-card">100</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS RATE</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="volts-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptTerminalUpgrade()">INSTALL</button>
+                <div class="upg-status" id="volts-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="crit-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                      viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px">
+                      <rect x="0" y="0" width="2" height="2" fill="#ff3333" />
+                      <rect x="2" y="0" width="2" height="2" fill="#ff3333" />
+                      <rect x="10" y="0" width="2" height="2" fill="#ff3333" />
+                      <rect x="12" y="0" width="2" height="2" fill="#ff3333" />
+                      <rect x="0" y="2" width="2" height="2" fill="#ff3333" />
+                      <rect x="12" y="2" width="2" height="2" fill="#ff3333" />
+                      <rect x="6" y="6" width="2" height="2" fill="#ff3333" />
+                      <rect x="0" y="10" width="2" height="2" fill="#ff3333" />
+                      <rect x="12" y="10" width="2" height="2" fill="#ff3333" />
+                      <rect x="0" y="12" width="2" height="2" fill="#ff3333" />
+                      <rect x="2" y="12" width="2" height="2" fill="#ff3333" />
+                      <rect x="10" y="12" width="2" height="2" fill="#ff3333" />
+                      <rect x="12" y="12" width="2" height="2" fill="#ff3333" />
+                    </svg> CRIT MODULE</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-crit">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">CRIT CHANCE</span>
+                    <span class="volt-stat-val" id="hub-crit-pct">3.0%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">PER UPGRADE</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">+0.5%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">75%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="crit-cost-display"><span style="color:#aaaaaa">1
+                          CHIP</span></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptCritUpgrade()">INSTALL</button>
+                <div class="upg-status" id="crit-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="nano-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                      viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px">
+                      <rect x="6" y="0" width="2" height="2" fill="#00ff88" />
+                      <rect x="6" y="2" width="2" height="2" fill="#00ff88" />
+                      <rect x="6" y="4" width="2" height="2" fill="#00ff88" />
+                      <rect x="0" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="2" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="4" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="6" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="8" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="10" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="12" y="6" width="2" height="2" fill="#00ff88" />
+                      <rect x="6" y="8" width="2" height="2" fill="#00ff88" />
+                      <rect x="6" y="10" width="2" height="2" fill="#00ff88" />
+                      <rect x="6" y="12" width="2" height="2" fill="#00ff88" />
+                    </svg> NANO REPAIR</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-nano">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">HEAL RATE</span>
+                    <span class="volt-stat-val" id="nano-heal-rate">/ 20 STEPS</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">HEAL AMT</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)" id="nano-heal-amt">+1</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)" id="nano-success">90%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="nano-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptNanoRepairUpgrade()">INSTALL</button>
+                <div class="upg-status" id="nano-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="freeshot-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                      viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px">
+                      <rect x="4" y="0" width="6" height="2" fill="#ffcc00" />
+                      <rect x="2" y="2" width="10" height="2" fill="#ffcc00" />
+                      <rect x="0" y="4" width="14" height="6" fill="#ffcc00" />
+                      <rect x="2" y="10" width="10" height="2" fill="#ffcc00" />
+                      <rect x="4" y="12" width="6" height="2" fill="#ffcc00" />
+                    </svg> FREE SHOT</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-freeshot">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">FREE SHOT</span>
+                    <span class="volt-stat-val" id="freeshot-interval">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">PER UPGRADE</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">-1 SHOT</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="freeshot-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptFreeShotUpgrade()">INSTALL</button>
+                <div class="upg-status" id="freeshot-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="mythic-forge-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#ffffff;text-shadow:0 0 8px #cc00ff,0 0 16px #cc00ff44;">MYTHIC
+                    CHIP</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">HAVE&nbsp;<span id="mythic-chip-count">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">RECIPE</span>
+                    <span class="volt-stat-val"><span id="mythic-forge-cost-display"></span></span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">100%</span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptMythicForge()">FORGE</button>
+                <div class="upg-status" id="mythic-forge-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="jump-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#00ffee;text-shadow:0 0 8px #00ffee44;">JUMP</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-jump">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT</span>
+                    <span class="volt-stat-val" id="jump-benefit" style="color:#00ffee">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="jump-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptJumpUpgrade()">INSTALL</button>
+                <div class="upg-status" id="jump-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="cardslot-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#ffaa00;text-shadow:0 0 8px #ffaa0044;">CARD SLOT</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-cardslot">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT</span>
+                    <span class="volt-stat-val" id="cardslot-benefit" style="color:#ffaa00">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="cardslot-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptCardSlotUpgrade('')">INSTALL</button>
+                <div class="upg-status" id="cardslot-status"></div>
+              </div>
+
+              <div class="upgrade-card volt-card" id="bloodrush-upg-card">
+                <div class="upg-scan-bar"></div>
+                <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                  <span class="volt-name" style="color:#ff3c55;text-shadow:0 0 8px #ff3c5544;">BLOOD RUSH</span>
+                  <span class="upg-arrow">v</span>
+                  <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-bloodrush">0</span></span>
+                </div>
+                <div class="volt-stats">
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT</span>
+                    <span class="volt-stat-val" id="bloodrush-benefit" style="color:#ff3c55">--</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">SUCCESS</span>
+                    <span class="volt-stat-val" id="bloodrush-rate" style="color:var(--yellow)">70%</span>
+                  </div>
+                  <div class="volt-stat-row">
+                    <span class="volt-stat-lbl">NEXT COST</span>
+                    <span class="volt-stat-val"><span id="bloodrush-cost-display"></span></span>
+                  </div>
+                </div>
+                <button class="btn-volt-install" onclick="attemptBloodRushUpgrade('')">INSTALL</button>
+                <div class="upg-status" id="bloodrush-status"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mission Board -->
+          <div class="hub-panel">
+            <div class="panel-header">MISSION BOARD</div>
+
+            <!-- Run Key Status -->
+            <div class="runkey-block">
+              <div class="runkey-block-label">PULSE</div>
+              <div class="runkey-block-pips" id="hub-key-pips">♥♥♥♡♡</div>
+              <div class="runkey-block-timer" id="hub-key-timer">FULL</div>
+              <div class="runkey-block-hint">Pulse regenerates 1/hour. Required to deploy.</div>
+            </div>
+
+            <button class="btn-daily-hub" onclick="window.showDailyCheckin()">◈ DAILY BONUS</button>
+
+            <div class="mission-list">
+              <div class="mission-card mission-card-tutorial" onclick="replayTutorial()">
+                <div class="mis-info">
+                  <div class="mis-name" style="color:#00ff88;">TUTORIAL</div>
+                  <div class="mis-desc">Replay operator briefing / controls / basics</div>
+                </div>
+                <button class="btn-deploy btn-deploy-tutorial" onclick="replayTutorial()">REPLAY</button>
+              </div>
+              <div class="mission-card" id="mis-1">
+                <div class="mis-info">
+                  <div class="mis-name">SECTOR 01</div>
+                  <div class="mis-desc">Training grounds / standard threat</div>
+                </div>
+                <button class="btn-deploy" onclick="deployMission(1)">DEPLOY</button>
+              </div>
+              <div class="mission-card locked" id="mis-2">
+                <div class="mis-info">
+                  <div class="mis-name">SECTOR 02</div>
+                  <div class="mis-desc">Deep net / more enemies / better loot</div>
+                </div>
+                <button class="btn-deploy" onclick="deployMission(2)">LOCKED</button>
+              </div>
+              <div class="mission-card locked" id="mis-3">
+                <div class="mis-info">
+                  <div class="mis-name">SECTOR 03</div>
+                  <div class="mis-desc">Core mainframe / max threat / rare rewards</div>
+                </div>
+                <button class="btn-deploy" onclick="deployMission(3)">LOCKED</button>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /hub-main -->
+
+        <!-- Bottom: VS modes + back -->
+        <div class="hub-bottom">
+          <div class="hub-vs">
+            <span class="hub-vs-label">VS MODES</span>
+            <button class="btn-secondary" onclick="startGame('pve')">VS CPU</button>
+            <button class="btn-secondary" onclick="startGame('pvp')">2 PLAYERS</button>
+          </div>
+          <button class="btn-ach-open" onclick="openAchievementsPanel()">ACHIEVEMENTS</button>
+          <button class="btn-back" id="btn-hub-back">BACK TO MENU</button>
+        </div>
+
+      </div><!-- /hub-room -->
+    </div>
+
+
+    <!-- GAME -->
+    <div id="screen-game" class="screen">
+      <div class="game-layout">
+
+        <!-- P1 Panel -->
+        <div class="side-panel left-panel" id="panel-p1">
+          <div class="panel-name cyan" id="p1-badge">PLAYER 1</div>
+          <div class="panel-controls dim">W A S D / SPACE</div>
+
+          <div class="unit-list">
+            <div class="unit-row" id="p1-r0">
+              <span class="u-sel" id="p1-s0"></span>
+              <span class="u-num cyan">1</span>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p1-fill" id="p1-u0-hp"></div>
+                </div>
+              </div>
+              <div class="u-ammo" id="p1-u0-ammo"></div>
+            </div>
+            <div class="unit-row" id="p1-r1">
+              <span class="u-sel" id="p1-s1"></span>
+              <span class="u-num cyan">2</span>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p1-fill" id="p1-u1-hp"></div>
+                </div>
+              </div>
+              <div class="u-ammo" id="p1-u1-ammo"></div>
+            </div>
+            <div class="unit-row" id="p1-r2">
+              <span class="u-sel" id="p1-s2"></span>
+              <span class="u-num cyan">3</span>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p1-fill" id="p1-u2-hp"></div>
+                </div>
+              </div>
+              <div class="u-ammo" id="p1-u2-ammo"></div>
+            </div>
+          </div>
+
+          <div id="p1-badge" class="action-badge" style="display:none"></div>
+          <div id="kills-badge" style="display:none">KILLS <span id="kills-val">0</span></div>
+
+          <div class="clock-display" id="p1-clock">2:00.0</div>
+
+          <div class="skill-header">
+            <span class="skill-header-lbl">WEAPONS</span>
+            <kbd class="skill-key">Q</kbd>
+          </div>
+          <div class="skill-bar" id="p1-skillbar" style="position:relative;">
+            <div class="skill-slot sk-active" id="p1-sk-0" title="Bullet (default)"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='bullet';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- barrel -->
+                  <rect x="0" y="6" width="12" height="2.5" rx="0.5" />
+                  <!-- body/slide -->
+                  <rect x="8" y="3" width="10" height="8" rx="1.2" />
+                  <!-- trigger guard -->
+                  <rect x="10" y="11" width="4" height="3" rx="0.5" />
+                  <!-- muzzle lip -->
+                  <rect x="0" y="5.5" width="1.5" height="3.5" rx="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">GUN</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-1" title="Laser [Q] - fires in 2 ticks"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='laser';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- compact housing -->
+                  <rect x="4" y="3" width="9" height="8" rx="1.5" />
+                  <!-- thin emitter barrel -->
+                  <rect x="0" y="6.3" width="4" height="1.4" rx="0.4" />
+                  <!-- energy orb -->
+                  <circle cx="18" cy="7" r="3.2" />
+                  <!-- inner core highlight -->
+                  <circle cx="18" cy="7" r="1.4" fill="white" opacity="0.45" />
+                  <!-- scope/lens on top -->
+                  <rect x="7" y="1.5" width="3" height="2" rx="0.4" />
+                </svg>
+              </div>
+              <div class="sk-label">LASER</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-2" title="Cannon [Q] - 2 dmg - 1 cell/tick - pierces bullets"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='heavy';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- thick heavy barrel -->
+                  <rect x="0" y="4.5" width="13" height="5" rx="1.5" />
+                  <!-- reinforced muzzle band -->
+                  <rect x="0" y="4" width="3.5" height="6" rx="0.8" />
+                  <!-- heavy cannonball -->
+                  <circle cx="17.5" cy="7" r="3.8" />
+                  <!-- ball shine -->
+                  <circle cx="16.2" cy="5.5" r="1" fill="white" opacity="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">CANNON</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot" id="p1-sk-3" title="Shotgun [Q] - 3 pellets spread - short range"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='shotgun';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- long barrel -->
+                  <rect x="0" y="6.2" width="14" height="1.6" rx="0.4" />
+                  <!-- pump body -->
+                  <rect x="7" y="4.5" width="7" height="5" rx="1" />
+                  <!-- spread: 3 pellets fanning out -->
+                  <circle cx="17.5" cy="2.5" r="1.8" />
+                  <circle cx="19.5" cy="7" r="1.8" />
+                  <circle cx="17.5" cy="11.5" r="1.8" />
+                  <!-- spread lines -->
+                  <line x1="14" y1="7" x2="16" y2="3" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="17.5" y2="7" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="16" y2="11" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="sk-label">SHOT</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot wep-jump" id="p1-sk-jump" title="JUMP - Leap 2 tiles [J]"
+              onclick="(function(){SFX&&SFX.init&&SFX.init();if(S&&S.units){const h=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(h&&S.clockSide===0&&S.pending[0]===null){S.jumpMode=!S.jumpMode;updateJumpSlot();}}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 11 Q11 2 18 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
+                    fill="none" />
+                  <polygon points="18,11 15,9 17,13" fill="currentColor" />
+                </svg>
+              </div>
+              <div class="sk-label">JUMP</div>
+              <div class="sk-cd">FREE</div>
+            </div>
+            <div class="skill-slot wep-flare" id="p1-sk-flare" title="FLARE - Reveal entire map [F] (once per floor)"
+              onclick="(function(){SFX&&SFX.init&&SFX.init();if(S&&!S.flareUsed){const h=S.units&&S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(h&&S.clockSide===0){S.flareMode=!S.flareMode;updateFlareSlot();}}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- rocket body -->
+                  <rect x="5" y="5" width="10" height="4" rx="1.2" fill="currentColor"/>
+                  <!-- nose cone -->
+                  <polygon points="15,5 15,9 20,7" fill="currentColor"/>
+                  <!-- tail fins -->
+                  <polygon points="5,5 5,9 2,11" fill="currentColor" opacity="0.7"/>
+                  <polygon points="5,5 5,9 2,3" fill="currentColor" opacity="0.7"/>
+                  <!-- exhaust glow -->
+                  <circle cx="3.5" cy="7" r="1.5" fill="currentColor" opacity="0.5"/>
+                </svg>
+              </div>
+              <div class="sk-label">FLARE</div>
+              <div class="sk-cd">READY</div>
+            </div>
+
+            <div class="skill-slot wep-ronke-shield" id="p1-sk-ronke-shield" title="POISON [G] - Rotating shield infects enemies with poison for 16 moves (costs 5 Poison)"
+              onclick="(function(){SFX&&SFX.init&&SFX.init();typeof activateRonkeShield==='function'&&activateRonkeShield();})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- skull dome -->
+                  <path d="M7.5 10 Q7 4 11 3.5 Q15 4 14.5 10 L14 11.5 L8 11.5 Z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+                  <!-- eye sockets -->
+                  <circle cx="9.2" cy="7.5" r="1.2" fill="currentColor"/>
+                  <circle cx="12.8" cy="7.5" r="1.2" fill="currentColor"/>
+                  <!-- teeth -->
+                  <line x1="9.5" y1="11.5" x2="9.5" y2="13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                  <line x1="12.5" y1="11.5" x2="12.5" y2="13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="sk-label">POISON</div>
+              <div class="sk-cd">5&#9889;</div>
+            </div>
+
+            <div class="skill-slot wep-hack" id="p1-sk-4" title="HACK [Q] - 50% freeze enemy 3 turns (2 shots/room)"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='hack';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- signal waves -->
+                  <path d="M3 7 Q5 4 7 7 Q9 10 11 7 Q13 4 15 7 Q17 10 19 7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                  <!-- center dot -->
+                  <circle cx="11" cy="7" r="1.5" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="sk-label">HACK</div>
+              <div class="sk-cd">2 SHOTS</div>
+            </div>
+            <div class="skill-slot wep-ronke" id="p1-sk-5" title="POISON [Q] - blue laser, uses Poison from inventory"
+              onclick="(function(){if(!S||!S.units)return;const u=S.units.find(u=>u.id===S.selectedId[0]&&u.alive);if(u&&S.clockSide===0){u.weapon='ronke';updateSkillBar(0);}})()">
+              <div class="sk-icon">
+                <img src="ronke.png" style="width:22px;height:22px;object-fit:contain;display:block;margin:auto;margin-top:-4px;filter:drop-shadow(0 0 4px #44aaff);" draggable="false">
+              </div>
+              <div class="sk-label"></div>
+              <div class="sk-cd" style="margin-top:5px;">EMPTY</div>
+            </div>
+          </div>
+
+          <!-- Inventory / hub buttons (adventure only) -->
+          <button id="btn-inventory" onclick="window.toggleInventory()" title="Inventory [I]">
+            <span class="inv-btn-label">INVENTORY</span>
+          </button>
+          <button id="btn-open-hub" class="panel-hub-btn" onclick="toggleHubOverlay()" style="display:none;"
+            title="Upgrade Terminal">TERMINAL</button>
+
+          <!-- Run Keys (adventure only) -->
+          <div id="panel-runkeys">
+            <div class="prk-label">PULSE</div>
+            <div class="prk-pips" id="panel-key-pips">♥♥♥♡♡</div>
+            <div class="prk-timer" id="panel-key-timer">FULL</div>
+          </div>
+
+          <button id="btn-rewards" onclick="window.showRewards()">◈ REWARDS</button>
+
+          <!-- Map Scan Widget (adventure only) -->
+          <div id="map-scan-widget">
+            <div class="msw-top">
+              <span class="msw-title">MAP SCAN</span>
+              <span class="msw-badge" id="msw-badge">SCANNING</span>
+            </div>
+            <div class="msw-pct-row">
+              <span class="msw-pct" id="msw-pct">0</span><span class="msw-pct-sign">%</span>
+            </div>
+            <div class="msw-bar-track">
+              <div class="msw-bar-fill" id="msw-bar-fill"></div>
+            </div>
+            <div class="msw-counts">
+              <div class="msw-count-block">
+                <div class="msw-count-val" id="msw-revealed">0</div>
+                <div class="msw-count-lbl">REVEALED</div>
+              </div>
+              <div class="msw-divider"></div>
+              <div class="msw-count-block">
+                <div class="msw-count-val msw-dim" id="msw-total">0</div>
+                <div class="msw-count-lbl">TOTAL</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="btn-bottom-row">
+            <button class="btn-wipe-inline" onclick="resetSaveData()" title="Wipe save data">WIPE</button>
+            <button class="btn-tutorial-inline" onclick="replayTutorial()" title="Replay tutorial">TUTORIAL</button>
+          </div>
+        </div>
+
+
+        <!-- Canvas + Energy HUD -->
+        <div class="center-col">
+          <div class="energy-hud" id="energy-hud">
+            <span class="energy-hud-label">VOLTS</span>
+            <div class="energy-track">
+              <div class="energy-fill nrg-high" id="energy-fill"></div>
+            </div>
+            <span class="energy-hud-val" id="energy-val">100</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="canvas"></canvas>
+
+            <!-- Operator Status overlay -->
+            <div id="ops-overlay" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.stopPropagation()">
+              <div id="ops-panel">
+                <div class="ops-header">
+                  <span class="ops-header-title">◈ OPERATOR STATUS</span>
+                  <button class="ops-header-close" onclick="window.closeOpsStatus()">✕ CLOSE</button>
+                </div>
+                <div id="ops-content"></div>
+              </div>
+            </div>
+
+            <!-- Hash Crack overlay -->
+            <div id="crack-overlay" style="display:none">
+              <div id="crack-panel">
+                <div class="crack-scanlines"></div>
+                <div class="crack-header">
+                  <span class="crack-header-bracket">[ </span>⚙ HASH CRACKER v2.4<span class="crack-header-bracket"> ]</span>
+                </div>
+                <div class="crack-phase-row">
+                  <span class="crack-phase-dot" id="crack-phase-dot">◉</span>
+                  <span class="crack-phase-lbl" id="crack-phase">INITIALIZING</span>
+                </div>
+                <div class="crack-section-lbl">TARGET HASH</div>
+                <div class="crack-hash crack-hash-target" id="crack-target">0000000000000000000000000000000000000000000000000000000000000000</div>
+                <div class="crack-section-lbl">CURRENT ATTEMPT</div>
+                <div class="crack-hash crack-hash-current" id="crack-current">—</div>
+                <div class="crack-stream-wrap">
+                  <div class="crack-stream" id="crack-stream"></div>
+                </div>
+                <div class="crack-bar-wrap">
+                  <div class="crack-bar-fill" id="crack-bar"></div>
+                  <div class="crack-bar-pct" id="crack-bar-pct">0%</div>
+                </div>
+                <div class="crack-stats">
+                  <span>NONCE: <span id="crack-nonce" class="crack-mono">0x00000000</span></span>
+                  <span>H/s: <span id="crack-hashrate" class="crack-mono">0</span></span>
+                  <span>ATTEMPTS: <span id="crack-attempts" class="crack-mono">0</span></span>
+                </div>
+                <div class="crack-code-wrap" id="crack-code-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ ENTER ACCESS CODE</div>
+                  <div class="crack-code-digits" id="crack-code-digits"></div>
+                  <div class="crack-code-typed-row">
+                    <span class="crack-code-typed-lbl">INPUT:</span>
+                    <span class="crack-code-typed" id="crack-code-typed">▮</span>
+                  </div>
+                </div>
+                <div class="crack-hold-wrap" id="crack-hold-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ HOLD MOUSE — RELEASE IN GREEN ZONE</div>
+                  <div class="crack-hold-track">
+                    <div class="crack-hold-zone" id="crack-hold-zone"></div>
+                    <div class="crack-hold-fill" id="crack-hold-fill"></div>
+                    <div class="crack-hold-needle" id="crack-hold-needle"></div>
+                  </div>
+                  <div class="crack-hold-hint" id="crack-hold-hint">CLICK AND HOLD</div>
+                </div>
+                <div class="crack-tap-wrap" id="crack-tap-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ CLICK AS FAST AS YOU CAN</div>
+                  <div class="crack-tap-counter">
+                    <span class="crack-tap-num" id="crack-tap-num">0</span>
+                    <span class="crack-tap-sep">/</span>
+                    <span class="crack-tap-goal" id="crack-tap-goal">12</span>
+                  </div>
+                  <div class="crack-hold-track" style="margin-top:10px">
+                    <div class="crack-hold-fill" id="crack-tap-bar"></div>
+                  </div>
+                </div>
+                <div class="crack-pattern-wrap" id="crack-pattern-wrap" style="display:none">
+                  <div class="crack-code-label">⚠ REPEAT THE SEQUENCE — WASD</div>
+                  <div class="crack-pattern-seq" id="crack-pattern-seq"></div>
+                  <div class="crack-pattern-input" id="crack-pattern-input"></div>
+                </div>
+                <div class="crack-status" id="crack-status">CRACKING...</div>
+              </div>
+            </div>
+
+            <!-- Inventory overlay -->
+            <div id="inv-overlay" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.stopPropagation()">
+              <div id="inv-panel">
+
+                <div class="inv-topbar">
+                  <span class="inv-title">INVENTORY</span>
+                  <span class="inv-sector">SECTOR <span id="inv-floor">1</span></span>
+                </div>
+
+                <!-- 12-slot grid, filled by JS -->
+                <div class="inv-grid" id="inv-grid"></div>
+
+                <!-- Hover info bar -->
+                <div class="inv-info-bar" id="inv-info-bar">select a slot</div>
+
+                <!-- Fragment progress -->
+                <div class="inv-frag-row">
+                  <span class="inv-frag-label">FRAG <span id="inv-frags-prog">0</span>/<span
+                      id="inv-frags-max">10</span></span>
+                  <div class="inv-frag-bar-track">
+                    <div class="inv-frag-bar-fill" id="inv-frag-bar"></div>
+                  </div>
+                  <span class="inv-frag-hint">= 1 CHIP</span>
+                </div>
+
+                <button id="inv-forge-btn" onclick="window.openForge()">CHIP FORGE</button>
+                <button id="inv-close-btn" onclick="window.closeInventory()">CLOSE &nbsp;[ I ]</button>
+
+              </div>
+            </div>
+
+            <!-- Chip Forge overlay -->
+            <div id="forge-overlay">
+              <div id="forge-panel">
+
+                <!-- Forge animation overlay (shown during forging) -->
+                <div id="forge-anim-overlay">
+                  <canvas id="forge-anim-cv"
+                    style="image-rendering:pixelated;display:block;width:100%;height:100%;"></canvas>
+                </div>
+
+                <!-- RPG title bar -->
+                <div class="forge-titlebar">
+                  <span class="forge-title">
+                    <span class="forge-title-icon">M</span>CHIP FORGE
+                  </span>
+                  <button class="forge-close-x" onclick="window.closeForge()">X</button>
+                </div>
+
+                <div class="forge-body">
+
+                  <div class="forge-section-hdr">INGREDIENTS</div>
+
+                  <!-- Row 1: legendary - epic - rare -->
+                  <div class="forge-ingredients">
+                    <div class="forge-ing-slot" id="fslot-legendary" style="--rc:#ff8800;">
+                      <canvas id="fscv-legendary" class="forge-chip-cv" width="96" height="96"
+                        style="width:72px;height:72px;image-rendering:pixelated;display:block;" data-rarity="legendary"
+                        data-phase="0.0"></canvas>
+                      <span class="forge-ing-lbl" style="color:#ffaa00;">LEGENDARY</span>
+                      <span class="forge-ing-qty" id="fsqty-legendary">0/3</span>
+                    </div>
+                    <div class="forge-ing-slot" id="fslot-epic" style="--rc:#cc44ff;">
+                      <canvas id="fscv-epic" class="forge-chip-cv" width="96" height="96"
+                        style="width:72px;height:72px;image-rendering:pixelated;display:block;" data-rarity="epic"
+                        data-phase="1.3"></canvas>
+                      <span class="forge-ing-lbl" style="color:#cc44ff;">EPIC</span>
+                      <span class="forge-ing-qty" id="fsqty-epic">0/5</span>
+                    </div>
+                    <div class="forge-ing-slot" id="fslot-rare" style="--rc:#4499ff;">
+                      <canvas id="fscv-rare" class="forge-chip-cv" width="96" height="96"
+                        style="width:72px;height:72px;image-rendering:pixelated;display:block;" data-rarity="rare"
+                        data-phase="2.6"></canvas>
+                      <span class="forge-ing-lbl" style="color:#4499ff;">RARE</span>
+                      <span class="forge-ing-qty" id="fsqty-rare">0/5</span>
+                    </div>
+                  </div>
+
+                  <!-- Row 2: uncommon - common -->
+                  <div class="forge-ingredients">
+                    <div class="forge-ing-slot" id="fslot-uncommon" style="--rc:#44ff88;">
+                      <canvas id="fscv-uncommon" class="forge-chip-cv" width="96" height="96"
+                        style="width:72px;height:72px;image-rendering:pixelated;display:block;" data-rarity="uncommon"
+                        data-phase="3.9"></canvas>
+                      <span class="forge-ing-lbl" style="color:#44ff88;">UNCOMMON</span>
+                      <span class="forge-ing-qty" id="fsqty-uncommon">0/10</span>
+                    </div>
+                    <div class="forge-ing-slot" id="fslot-common" style="--rc:#999999;">
+                      <canvas id="fscv-common" class="forge-chip-cv" width="96" height="96"
+                        style="width:72px;height:72px;image-rendering:pixelated;display:block;" data-rarity="common"
+                        data-phase="5.2"></canvas>
+                      <span class="forge-ing-lbl" style="color:#aaaaaa;">COMMON</span>
+                      <span class="forge-ing-qty" id="fsqty-common">0/15</span>
+                    </div>
+                  </div>
+
+                  <div class="forge-arrow">v TRANSMUTE v</div>
+
+                  <div class="forge-section-hdr">RESULT</div>
+
+                  <div class="forge-result-wrapper">
+                    <div class="forge-result-slot" id="fslot-mythic">
+                      <canvas id="fscv-mythic" class="forge-chip-cv" width="96" height="96"
+                        style="width:80px;height:80px;image-rendering:pixelated;display:block;" data-rarity="mythic"
+                        data-phase="0.7"></canvas>
+                      <span class="forge-mythic-lbl">MYTHIC CHIP</span>
+                      <span class="forge-mythic-count" id="fsqty-mythic">HAVE: 0</span>
+                    </div>
+                  </div>
+
+                  <hr class="forge-divider">
+
+                  <div class="forge-section-hdr">RECIPE</div>
+
+                  <div class="forge-recipe-btns">
+                    <button class="forge-recipe-btn active" id="forge-rec-0" onclick="window.selectForgeRecipe(0)">
+                      <span class="recipe-pct">90%</span>
+                      <span class="recipe-cost">15C / 10U / 5R / 5E / 3L</span>
+                    </button>
+                    <button class="forge-recipe-btn" id="forge-rec-1" onclick="window.selectForgeRecipe(1)">
+                      <span class="recipe-pct">100%</span>
+                      <span class="recipe-cost">10R / 6E / 5L</span>
+                    </button>
+                  </div>
+
+                  <div id="forge-status-msg"></div>
+                  <button id="forge-action-btn" onclick="window.attemptForge()">FORGE MYTHIC</button>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- P2 Panel -->
+        <div class="side-panel right-panel" id="panel-p2">
+          <div class="panel-name red">PLAYER 2</div>
+          <div class="panel-controls dim" id="p2-controls">ARROWS / ENTER / U-I-O</div>
+
+          <div class="unit-list">
+            <div class="unit-row" id="p2-r0">
+              <div class="u-ammo" id="p2-u0-ammo"></div>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p2-fill" id="p2-u0-hp"></div>
+                </div>
+              </div>
+              <span class="u-num red">1</span>
+            </div>
+            <div class="unit-row" id="p2-r1">
+              <div class="u-ammo" id="p2-u1-ammo"></div>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p2-fill" id="p2-u1-hp"></div>
+                </div>
+              </div>
+              <span class="u-num red">2</span>
+            </div>
+            <div class="unit-row" id="p2-r2">
+              <div class="u-ammo" id="p2-u2-ammo"></div>
+              <div class="u-hp-wrap">
+                <div class="hp-bar">
+                  <div class="hp-fill p2-fill" id="p2-u2-hp"></div>
+                </div>
+              </div>
+              <span class="u-num red">3</span>
+            </div>
+          </div>
+
+          <div class="action-badge" id="p2-badge">READY</div>
+
+          <div class="clock-display" id="p2-clock">2:00.0</div>
+
+          <div class="skill-header">
+            <span class="skill-header-lbl">WEAPONS</span>
+            <kbd class="skill-key">P</kbd>
+          </div>
+          <div class="skill-bar" id="p2-skillbar">
+            <div class="skill-slot sk-active sk-p2" id="p2-sk-0">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- barrel -->
+                  <rect x="0" y="6" width="12" height="2.5" rx="0.5" />
+                  <!-- body/slide -->
+                  <rect x="8" y="3" width="10" height="8" rx="1.2" />
+                  <!-- trigger guard -->
+                  <rect x="10" y="11" width="4" height="3" rx="0.5" />
+                  <!-- muzzle lip -->
+                  <rect x="0" y="5.5" width="1.5" height="3.5" rx="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">GUN</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-1">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- compact housing -->
+                  <rect x="4" y="3" width="9" height="8" rx="1.5" />
+                  <!-- thin emitter barrel -->
+                  <rect x="0" y="6.3" width="4" height="1.4" rx="0.4" />
+                  <!-- energy orb -->
+                  <circle cx="18" cy="7" r="3.2" />
+                  <!-- inner core highlight -->
+                  <circle cx="18" cy="7" r="1.4" fill="white" opacity="0.45" />
+                  <!-- scope/lens on top -->
+                  <rect x="7" y="1.5" width="3" height="2" rx="0.4" />
+                </svg>
+              </div>
+              <div class="sk-label">LASER</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-2">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- thick heavy barrel -->
+                  <rect x="0" y="4.5" width="13" height="5" rx="1.5" />
+                  <!-- reinforced muzzle band -->
+                  <rect x="0" y="4" width="3.5" height="6" rx="0.8" />
+                  <!-- heavy cannonball -->
+                  <circle cx="17.5" cy="7" r="3.8" />
+                  <!-- ball shine -->
+                  <circle cx="16.2" cy="5.5" r="1" fill="white" opacity="0.3" />
+                </svg>
+              </div>
+              <div class="sk-label">CANNON</div>
+              <div class="sk-cd"></div>
+            </div>
+            <div class="skill-slot sk-p2" id="p2-sk-3">
+              <div class="sk-icon">
+                <svg viewBox="0 0 22 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <!-- long barrel -->
+                  <rect x="0" y="6.2" width="14" height="1.6" rx="0.4" />
+                  <!-- pump body -->
+                  <rect x="7" y="4.5" width="7" height="5" rx="1" />
+                  <!-- spread: 3 pellets fanning out -->
+                  <circle cx="17.5" cy="2.5" r="1.8" />
+                  <circle cx="19.5" cy="7" r="1.8" />
+                  <circle cx="17.5" cy="11.5" r="1.8" />
+                  <!-- spread lines -->
+                  <line x1="14" y1="7" x2="16" y2="3" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="17.5" y2="7" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                  <line x1="14" y1="7" x2="16" y2="11" stroke="currentColor" stroke-width="0.8"
+                    stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="sk-label">SHOT</div>
+              <div class="sk-cd"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Adv Combat Log Panel -->
+        <div class="side-panel right-panel" id="panel-log" style="display: none;">
+          <div class="panel-name cyan">TERMINAL</div>
+          <div class="panel-controls dim">REAL-TIME LOGS</div>
+          <div class="log-container" id="combat-log"></div>
+        </div>
+
+      </div><!-- /game-layout -->
+
+      <div class="bottom-bar">
+        <div class="time-block">
+          <div class="time-label-text">TIME</div>
+          <div class="time-status" id="time-status">FROZEN</div>
+        </div>
+        <div class="tick-display" id="tick-display">TICK 0</div>
+        <button class="btn-esc" id="btn-esc">ESC</button>
+      </div>
+
+      <!-- HUB OVERLAY (appears in-game after death) -->
+      <div id="hub-overlay">
+        <div class="hub-ov-panel">
+          <div class="hub-ov-title">TERMINAL</div>
+
+
+          <div class="hub-ov-upgrades">
+            <div class="upgrade-card volt-card" id="hov-volts-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name">VOLT CELL</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-energy">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">MAX VOLTS</span>
+                  <span class="volt-stat-val" id="hov-energy-card">100</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS RATE</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">COST</span>
+                  <span class="volt-stat-val"><span id="hov-ig-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptInGameUpgrade()">INSTALL</button>
+              <div class="upg-status" id="hov-volts-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-crit-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                    viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px">
+                    <rect x="0" y="0" width="2" height="2" fill="#ff3333" />
+                    <rect x="2" y="0" width="2" height="2" fill="#ff3333" />
+                    <rect x="10" y="0" width="2" height="2" fill="#ff3333" />
+                    <rect x="12" y="0" width="2" height="2" fill="#ff3333" />
+                    <rect x="0" y="2" width="2" height="2" fill="#ff3333" />
+                    <rect x="12" y="2" width="2" height="2" fill="#ff3333" />
+                    <rect x="6" y="6" width="2" height="2" fill="#ff3333" />
+                    <rect x="0" y="10" width="2" height="2" fill="#ff3333" />
+                    <rect x="12" y="10" width="2" height="2" fill="#ff3333" />
+                    <rect x="0" y="12" width="2" height="2" fill="#ff3333" />
+                    <rect x="2" y="12" width="2" height="2" fill="#ff3333" />
+                    <rect x="10" y="12" width="2" height="2" fill="#ff3333" />
+                    <rect x="12" y="12" width="2" height="2" fill="#ff3333" />
+                  </svg> CRIT MODULE</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-crit">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">CRIT CHANCE</span>
+                  <span class="volt-stat-val" id="hov-crit-pct">3.0%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">PER UPGRADE</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">+0.5%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">75%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-crit-cost-display"><span style="color:#aaaaaa">1
+                        CHIP</span></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptCritUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-crit-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-nano-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                    viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px">
+                    <rect x="6" y="0" width="2" height="2" fill="#00ff88" />
+                    <rect x="6" y="2" width="2" height="2" fill="#00ff88" />
+                    <rect x="6" y="4" width="2" height="2" fill="#00ff88" />
+                    <rect x="0" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="2" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="4" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="6" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="8" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="10" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="12" y="6" width="2" height="2" fill="#00ff88" />
+                    <rect x="6" y="8" width="2" height="2" fill="#00ff88" />
+                    <rect x="6" y="10" width="2" height="2" fill="#00ff88" />
+                    <rect x="6" y="12" width="2" height="2" fill="#00ff88" />
+                  </svg> NANO REPAIR</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-nano">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">HEAL RATE</span>
+                  <span class="volt-stat-val" id="hov-nano-heal-rate">/ 20 STEPS</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">HEAL AMT</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)" id="hov-nano-heal-amt">+1</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)" id="hov-nano-success">90%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-nano-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptNanoRepairUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-nano-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-freeshot-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                    viewBox="0 0 14 14" style="display:inline-block;vertical-align:middle;margin-right:3px">
+                    <rect x="4" y="0" width="6" height="2" fill="#ffcc00" />
+                    <rect x="2" y="2" width="10" height="2" fill="#ffcc00" />
+                    <rect x="0" y="4" width="14" height="6" fill="#ffcc00" />
+                    <rect x="2" y="10" width="10" height="2" fill="#ffcc00" />
+                    <rect x="4" y="12" width="6" height="2" fill="#ffcc00" />
+                  </svg> FREE SHOT</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-freeshot">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">FREE SHOT</span>
+                  <span class="volt-stat-val" id="hov-freeshot-interval">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">PER UPGRADE</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">-1 SHOT</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-freeshot-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptFreeShotUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-freeshot-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-mythic-forge-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#ffffff;text-shadow:0 0 8px #cc00ff,0 0 16px #cc00ff44;">MYTHIC
+                  CHIP</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">HAVE&nbsp;<span id="hov-mythic-chip-count">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">RECIPE</span>
+                  <span class="volt-stat-val"><span id="hov-mythic-forge-cost-display"></span></span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">100%</span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptMythicForge('hov')">FORGE</button>
+              <div class="upg-status" id="hov-mythic-forge-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-jump-upg-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#00ffee;text-shadow:0 0 8px #00ffee44;">JUMP</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-jump">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT</span>
+                  <span class="volt-stat-val" id="hov-jump-benefit" style="color:#00ffee">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-jump-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptJumpUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-jump-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-cardslot-upg-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#ffaa00;text-shadow:0 0 8px #ffaa0044;">CARD SLOT</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-cardslot">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT</span>
+                  <span class="volt-stat-val" id="hov-cardslot-benefit" style="color:#ffaa00">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-cardslot-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptCardSlotUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-cardslot-status"></div>
+            </div>
+
+            <div class="upgrade-card volt-card" id="hov-bloodrush-upg-card">
+              <div class="upg-scan-bar"></div>
+              <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
+                <span class="volt-name" style="color:#ff3c55;text-shadow:0 0 8px #ff3c5544;">BLOOD RUSH</span>
+                <span class="upg-arrow">v</span>
+                <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-bloodrush">0</span></span>
+              </div>
+              <div class="volt-stats">
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT</span>
+                  <span class="volt-stat-val" id="hov-bloodrush-benefit" style="color:#ff3c55">--</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">SUCCESS</span>
+                  <span class="volt-stat-val" id="hov-bloodrush-rate" style="color:var(--yellow)">70%</span>
+                </div>
+                <div class="volt-stat-row">
+                  <span class="volt-stat-lbl">NEXT COST</span>
+                  <span class="volt-stat-val"><span id="hov-bloodrush-cost-display"></span></span>
+                </div>
+              </div>
+              <button class="btn-volt-install" onclick="attemptBloodRushUpgrade('hov')">INSTALL</button>
+              <div class="upg-status" id="hov-bloodrush-status"></div>
+            </div>
+          </div>
+
+          <button class="btn-adventure pulse" onclick="deployMission(1)"
+            style="width:100%; margin-top:8px;">DEPLOY</button>
+          <div style="display:flex; gap:8px; width:100%;">
+            <button class="btn-secondary" onclick="toggleHubOverlay()" style="flex:1;">CLOSE</button>
+            <button class="btn-secondary" onclick="backToMenu()" style="flex:1;">MENU</button>
+          </div>
+          <button class="btn-ach-open" onclick="openAchievementsPanel()"
+            style="width:100%; margin-top:4px;">ACHIEVEMENTS</button>
+        </div>
+      </div>
+
+      <div id="teleport-confirm-overlay">
+        <div id="teleport-confirm-panel">
+          <div class="teleport-confirm-kicker" id="teleport-confirm-kicker">PHASE GATE</div>
+          <div class="teleport-confirm-title" id="teleport-confirm-title">USE TELEPORTER?</div>
+          <div class="teleport-confirm-text" id="teleport-confirm-text">Shift to the linked chamber only if you want to
+            move now.</div>
+          <div class="teleport-confirm-actions">
+            <button id="teleport-confirm-yes" class="btn-primary"
+              onclick="window.confirmTeleportUse()">TELEPORT</button>
+            <button id="teleport-confirm-no" class="btn-secondary" onclick="window.cancelTeleportUse()">STAY</button>
+          </div>
+          <div class="teleport-confirm-hint">ENTER / SPACE = YES • ESC = NO</div>
+        </div>
+      </div>
+      <!-- SLOT MACHINE -->
+      <div id="slot-overlay">
+        <div id="slot-panel">
+          <div class="slot-header">SECURE LOOT TERMINAL</div>
+          <div class="slot-subtitle">// CACHE EXTRACTION UNIT</div>
+          <div class="slot-machine">
+            <div class="slot-window"><canvas id="sc-0" width="108" height="300"></canvas></div>
+            <div class="slot-window"><canvas id="sc-1" width="108" height="300"></canvas></div>
+            <div class="slot-window"><canvas id="sc-2" width="108" height="300"></canvas></div>
+            <div class="slot-window"><canvas id="sc-3" width="108" height="300"></canvas></div>
+          </div>
+          <div id="slot-paytable"></div>
+          <div id="slot-result">
+            <div id="slot-rarity-badge"></div>
+            <div id="slot-item-name"></div>
+            <button id="slot-claim-btn" onclick="window.claimSlotPrize()">CLAIM</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- GAME OVER -->
+    <div id="screen-gameover" class="screen">
+      <div class="gameover-layout">
+        <div class="gameover-wrap">
+          <div class="go-announce" id="go-announce">TEAM 1 WINS</div>
+          <div class="go-subtitle" id="go-subtitle">TACTICAL SUPREMACY</div>
+          <div class="go-stats" id="go-stats"></div>
+          <div class="go-buttons">
+            <button class="btn-primary" id="btn-rematch">REMATCH</button>
+            <button class="btn-secondary" id="btn-menu-go">MENU</button>
+          </div>
+        </div>
+        <div class="go-player-stats-panel" id="go-player-stats"></div>
+      </div>
+    </div>
+
+  </div>
+  <!-- Game Notification Banner (top-center) -->
+  <div id="game-notif">
+    <div id="game-notif-title">TITLE</div>
+    <div id="game-notif-desc">Description text here</div>
+  </div>
+
+  <!-- Tutorial Card -->
+  <div id="tutorial-card">
+    <div class="tut-header">
+      <span class="tut-badge">OPERATOR BRIEFING</span>
+      <span class="tut-step" id="tut-step-num">01 / 05</span>
+    </div>
+    <div class="tut-body">
+      <div id="tut-keys-area"></div>
+      <div class="tut-text-area">
+        <div class="tut-title" id="tut-title">MOVEMENT</div>
+        <div class="tut-desc" id="tut-desc"></div>
+      </div>
+    </div>
+    <div class="tut-footer">
+      <span class="tut-hint" id="tut-hint"></span>
+      <div class="tut-btns">
+        <button id="tut-next-btn" onclick="advanceTutorial()" style="display:none;">NEXT</button>
+        <button id="tut-skip-btn" onclick="skipTutorial()">SKIP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Achievements Panel Overlay -->
+  <div id="ach-overlay">
+    <div id="ach-panel-main">
+      <div class="ach-panel-header">
+        <span>ACHIEVEMENTS</span>
+        <span id="ach-count-badge" class="ach-count-badge">0 / 10</span>
+      </div>
+      <div id="ach-progress-wrap">
+        <div id="ach-progress-track">
+          <div id="ach-progress-fill"></div>
+        </div>
+      </div>
+      <div id="ach-grid-main"></div>
+      <button class="btn-ach-close" onclick="closeAchievementsPanel()">CLOSE</button>
+    </div>
+  </div>
+
+  <!-- Achievement Popup -->
+  <div id="achievement-popup" class="achievement-popup">
+    <div class="ach-icon">AWARD</div>
+    <div class="ach-content">
+      <div class="ach-title">ACHIEVEMENT UNLOCKED</div>
+      <div class="ach-label" id="ach-label-text"></div>
+      <div class="ach-desc" id="ach-desc-text"></div>
+    </div>
+  </div>
+
+  <!-- Mobile D-pad controls (adventure only) -->
+  <div id="mobile-controls">
+    <div id="mobile-dpad">
+      <button class="dpad-btn" id="dpad-up">^</button>
+      <div class="dpad-mid-row">
+        <button class="dpad-btn" id="dpad-left">
+          << /button>
+            <div class="dpad-gap"></div>
+            <button class="dpad-btn" id="dpad-right">></button>
+      </div>
+    </div>
+    <!-- SLOT MACHINE -->
+    <div id="slot-overlay">
+      <div id="slot-panel">
+        <div class="slot-header">SECURE LOOT TERMINAL</div>
+        <div class="slot-subtitle">// CACHE EXTRACTION UNIT</div>
+        <div class="slot-machine">
+          <div class="slot-window"><canvas id="sc-0" width="108" height="300"></canvas></div>
+          <div class="slot-window"><canvas id="sc-1" width="108" height="300"></canvas></div>
+          <div class="slot-window"><canvas id="sc-2" width="108" height="300"></canvas></div>
+          <div class="slot-window"><canvas id="sc-3" width="108" height="300"></canvas></div>
+        </div>
+        <div id="slot-paytable"></div>
+        <div id="slot-result">
+          <div id="slot-rarity-badge"></div>
+          <div id="slot-item-name"></div>
+          <button id="slot-claim-btn" onclick="window.claimSlotPrize()">CLAIM</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  </div>
+  <!-- Game Notification Banner (top-center) -->
+  <div id="game-notif">
+    <div id="game-notif-title">TITLE</div>
+    <div id="game-notif-desc">Description text here</div>
+  </div>
+
+  <!-- Tutorial Card -->
+  <div id="tutorial-card">
+    <div class="tut-header">
+      <span class="tut-badge">OPERATOR BRIEFING</span>
+      <span class="tut-step" id="tut-step-num">01 / 05</span>
+    </div>
+    <div class="tut-body">
+      <div id="tut-keys-area"></div>
+      <div class="tut-text-area">
+        <div class="tut-title" id="tut-title">MOVEMENT</div>
+        <div class="tut-desc" id="tut-desc"></div>
+      </div>
+    </div>
+    <div class="tut-footer">
+      <span class="tut-hint" id="tut-hint"></span>
+      <div class="tut-btns">
+        <button id="tut-next-btn" onclick="advanceTutorial()" style="display:none;">NEXT</button>
+        <button id="tut-skip-btn" onclick="skipTutorial()">SKIP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Achievements Panel Overlay -->
+  <div id="ach-overlay">
+    <div id="ach-panel-main">
+      <div class="ach-panel-header">
+        <span>ACHIEVEMENTS</span>
+        <span id="ach-count-badge" class="ach-count-badge">0 / 10</span>
+      </div>
+      <div id="ach-progress-wrap">
+        <div id="ach-progress-track">
+          <div id="ach-progress-fill"></div>
+        </div>
+      </div>
+      <div id="ach-grid-main"></div>
+      <button class="btn-ach-close" onclick="closeAchievementsPanel()">CLOSE</button>
+    </div>
+  </div>
+
+  <!-- Achievement Popup -->
+  <div id="achievement-popup" class="achievement-popup">
+    <div class="ach-icon">AWARD</div>
+    <div class="ach-content">
+      <div class="ach-title">ACHIEVEMENT UNLOCKED</div>
+      <div class="ach-label" id="ach-label-text"></div>
+      <div class="ach-desc" id="ach-desc-text"></div>
+    </div>
+  </div>
+
+  <!-- Mobile D-pad controls (adventure only) -->
+  <div id="mobile-controls">
+    <div id="mobile-dpad">
+      <button class="dpad-btn" id="dpad-up">^</button>
+      <div class="dpad-mid-row">
+        <button class="dpad-btn" id="dpad-left">
+          << /button>
+            <div class="dpad-gap"></div>
+            <button class="dpad-btn" id="dpad-right">></button>
+      </div>
+      <button class="dpad-btn" id="dpad-down">v</button>
+    </div>
+    <button id="dpad-shoot">FIRE</button>
+  </div>
+
+  <!-- Portrait rotation hint -->
+  <div id="mobile-orient-hint">
+    <div class="orient-icon">ROTATE</div>
+    <div class="orient-text">ROTATE DEVICE<br>FOR BEST EXPERIENCE</div>
+  </div>
+
+  <!-- COMBINED REWARDS MODAL -->
+  <div id="rewards-overlay" class="daily-overlay hidden" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.stopPropagation()">
+    <div class="rewards-modal">
+
+      <!-- DAILY SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-daily sec-clickable" id="daily-header" onclick="window.toggleRewardsSection('daily')">
+          <span class="sec-arrow" id="daily-arrow">▼</span>
+          <div class="rewards-sec-title">DAILY CHECK-IN</div>
+          <div class="sec-claim-tag hidden" id="daily-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge" id="daily-streak-badge">DAY 1</div>
+          <div class="rewards-kill-bonus-tag" id="daily-kill-bonus-tag">+0% TOTAL DAILY BONUS</div>
+        </div>
+        <div class="rewards-sec-body" id="daily-body">
+          <div class="daily-grid" id="daily-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- KILL SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-kill sec-clickable" id="kill-header" onclick="window.toggleRewardsSection('kill')">
+          <span class="sec-arrow sec-arrow-kill" id="kill-arrow">▼</span>
+          <div class="rewards-sec-title">KILL REWARDS</div>
+          <div class="sec-claim-tag hidden" id="kill-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge kill-sec-badge" id="kill-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="kill-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar"><div class="kill-progress-fill" id="kill-progress-fill"></div></div>
+            <div class="kill-progress-label" id="kill-progress-label">0 / 50 KILLS</div>
+          </div>
+          <div class="kill-grid" id="kill-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- LASER SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-laser sec-clickable" id="laser-header" onclick="window.toggleRewardsSection('laser')">
+          <span class="sec-arrow sec-arrow-laser" id="laser-arrow">▼</span>
+          <div class="rewards-sec-title">POISON LASER</div>
+          <div class="sec-claim-tag hidden" id="laser-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge laser-sec-badge" id="laser-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="laser-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar laser-progress-bar"><div class="kill-progress-fill laser-progress-fill" id="laser-progress-fill"></div></div>
+            <div class="kill-progress-label laser-progress-label" id="laser-progress-label">0 / 250 POISON USES</div>
+          </div>
+          <div class="kill-grid laser-grid" id="laser-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- CHEST SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-chest sec-clickable" id="chest-header" onclick="window.toggleRewardsSection('chest')">
+          <span class="sec-arrow sec-arrow-chest" id="chest-arrow">▼</span>
+          <div class="rewards-sec-title">CHESTS OPENED</div>
+          <div class="sec-claim-tag hidden" id="chest-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge chest-sec-badge" id="chest-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="chest-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar chest-progress-bar"><div class="kill-progress-fill chest-progress-fill" id="chest-progress-fill"></div></div>
+            <div class="kill-progress-label chest-progress-label" id="chest-progress-label">0 / 5 CHESTS</div>
+          </div>
+          <div class="kill-grid chest-grid" id="chest-grid"></div>
+        </div>
+      </div>
+
+      <div class="rewards-divider"></div>
+
+      <!-- ENERGY SECTION -->
+      <div class="rewards-section">
+        <div class="rewards-sec-header rewards-sec-energy sec-clickable" id="energy-header" onclick="window.toggleRewardsSection('energy')">
+          <span class="sec-arrow sec-arrow-energy" id="energy-arrow">▼</span>
+          <div class="rewards-sec-title">MAX ENERGY</div>
+          <div class="sec-claim-tag hidden" id="energy-claim-tag">CLAIM!</div>
+          <div class="rewards-sec-badge energy-sec-badge" id="energy-tier-badge">TIER 1</div>
+        </div>
+        <div class="rewards-sec-body" id="energy-body">
+          <div class="kill-progress-wrap">
+            <div class="kill-progress-bar energy-progress-bar"><div class="kill-progress-fill energy-progress-fill" id="energy-progress-fill"></div></div>
+            <div class="kill-progress-label energy-progress-label" id="energy-progress-label">100 / 110 MAX ENERGY</div>
+          </div>
+          <div class="kill-grid energy-grid" id="energy-grid"></div>
+        </div>
+      </div>
+
+      <div class="daily-actions">
+        <button class="daily-close-btn" onclick="window.closeRewards()">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="game.js"></script>
+</body>
+
+</html>
