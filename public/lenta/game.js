@@ -5541,28 +5541,26 @@ function _drawDungeonStatic() {
           ctx.fillRect(px + CELL / 2 - 4, py + CELL * 0.6, 8, 2);
         }
       } else if (S.dungeon[r][c] === 1) {
-        // Pick grass tile based on water neighbours
-        const wN = r === 0          || S.dungeon[r-1][c] === 0;
-        const wS = r === ROWS - 1   || S.dungeon[r+1][c] === 0;
-        const wW = c === 0          || S.dungeon[r][c-1] === 0;
-        const wE = c === COLS - 1   || S.dungeon[r][c+1] === 0;
+        // 4-bit bitmask autotile: waterN=1, waterS=2, waterW=4, waterE=8
+        const wN = r === 0        || S.dungeon[r-1][c] === 0;
+        const wS = r === ROWS - 1 || S.dungeon[r+1][c] === 0;
+        const wW = c === 0        || S.dungeon[r][c-1] === 0;
+        const wE = c === COLS - 1 || S.dungeon[r][c+1] === 0;
+        const bitmask = (wN?1:0) | (wS?2:0) | (wW?4:0) | (wE?8:0);
 
-        let tileX, tileY;
-        if      (wN && wW && !wE && !wS) { tileX =   0; tileY =   0; } // top-left corner
-        else if (wN && wE && !wW && !wS) { tileX = 128; tileY =   0; } // top-right corner
-        else if (wS && wW && !wE && !wN) { tileX =   0; tileY = 128; } // bottom-left corner
-        else if (wS && wE && !wW && !wN) { tileX = 192; tileY = 128; } // bottom-right corner
-        else if (wN && !wW && !wE)       { tileX =  64; tileY =   0; } // top edge
-        else if (wW && !wN && !wS)       { tileX =   0; tileY =  64; } // left edge
-        else if (wE && !wN && !wS)       { tileX = 192; tileY =  64; } // right edge
-        else if (wS && !wW && !wE)       { tileX =  64; tileY = 128; } // bottom edge
-        else {
-          const seed = (r * 123 + c * 456) % 3;
-          tileX = (1 + seed) * 64; tileY = 64;                          // inner fill
-        }
+        // 16-entry lookup: [srcX, srcY] in grass_tilemap.png
+        const GTILE = [
+          [64,64],[64,0],[64,128],[64,0],   // 0=inner 1=N 2=S 3=N+S→top
+          [0,64],[0,0],[0,128],[0,0],        // 4=W 5=NW 6=SW 7=N+S+W→TL
+          [192,64],[128,0],[192,128],[128,0],// 8=E 9=NE 10=SE 11=N+S+E→TR
+          [192,64],[128,0],[192,128],[64,64] // 12=W+E 13=N+W+E 14=S+W+E 15=iso
+        ];
+        const [tileX, tileY] = GTILE[bitmask];
+        // Inner fill: vary col slightly based on position
+        const finalX = (bitmask === 0) ? (1 + (r*123+c*456)%3)*64 : tileX;
 
         if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          ctx.drawImage(grassTilemapImg, tileX, tileY, 64, 64, px, py, CELL, CELL);
+          ctx.drawImage(grassTilemapImg, finalX, tileY, 64, 64, px, py, CELL, CELL);
         } else {
           ctx.fillStyle = '#3a7a2a';
           ctx.fillRect(px, py, CELL, CELL);
