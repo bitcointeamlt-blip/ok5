@@ -2523,9 +2523,9 @@ const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 
   // New Animation Package Integration
   const animConfigs = [
-    { key: 'idle', path: 'animations/breathing-idle', frames: 4 },
-    { key: 'walk', path: 'animations/walking', frames: 6 },
-    { key: 'fight', path: 'animations/fight-stance-idle-8-frames', frames: 8 }
+    { key: 'idle',  path: 'animations/warrior-idle',   frames: 8 },
+    { key: 'walk',  path: 'animations/warrior-run',    frames: 6 },
+    { key: 'fight', path: 'animations/warrior-attack', frames: 4 },
   ];
 
   ['east', 'south', 'west', 'north'].forEach(dir => {
@@ -2572,9 +2572,53 @@ const enemyImgs = {};
   });
 })();
 
+// Shaman sprite animations
+const shamanAnimFrames = { idle: {}, run: {}, attack: {} };
+const SHAMAN_ANIM_FPS = { idle: 6, run: 10, attack: 14 };
+(function () {
+  const configs = [
+    { key: 'idle',   path: 'animations/shaman-idle',   frames: 8 },
+    { key: 'run',    path: 'animations/shaman-run',    frames: 4 },
+    { key: 'attack', path: 'animations/shaman-attack', frames: 10 },
+  ];
+  ['east', 'west', 'north', 'south'].forEach(dir => {
+    configs.forEach(conf => {
+      shamanAnimFrames[conf.key][dir] = [];
+      for (let i = 0; i < conf.frames; i++) {
+        const img = new Image();
+        img.src = `${conf.path}/${dir}/frame_${String(i).padStart(3, '0')}.png`;
+        shamanAnimFrames[conf.key][dir].push(img);
+      }
+    });
+  });
+})();
+
+function getShamanFrame(u, dir) {
+  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const swingElapsed = u.swingStart ? performance.now() - u.swingStart : Infinity;
+  const swingDur = (10 / SHAMAN_ANIM_FPS.attack) * 1000;
+  const isAttacking = swingElapsed < swingDur;
+
+  let anim = 'idle';
+  if (isAttacking) anim = 'attack';
+  else if (isMoving) anim = 'run';
+
+  const fps    = SHAMAN_ANIM_FPS[anim];
+  const frames = shamanAnimFrames[anim][dir];
+  if (!frames || frames.length === 0) return null;
+
+  let idx;
+  if (isAttacking) {
+    idx = Math.min(Math.floor(swingElapsed / (1000 / fps)), frames.length - 1);
+  } else {
+    idx = Math.floor(performance.now() / (1000 / fps)) % frames.length;
+  }
+  return frames[idx];
+}
+
 // Adventure enemy archetypes
 const ENEMY_TYPES = [
-  { type: 'glitch',  hp: 1, color: '#ff3c55', scale: 0.80, label: 'BUG' },
+  { type: 'shaman',  hp: 2, color: '#cc30ff', scale: 1.00, label: 'SHAMAN' },
   { type: 'leak',    hp: 1, color: '#ff6622', scale: 1.00, label: 'LEAK' },
   { type: 'worm',    hp: 2, color: '#00ffaa', scale: 1.10, label: 'WORM' },
   { type: 'overflow',hp: 1, color: '#dd1a40', scale: 1.18, label: 'OVR' },
@@ -3722,7 +3766,7 @@ function initAdventure() {
 
   const poolByRoom = (ri) => {
     if (gameMode === 'adventure') {
-      if (ri === 0) return [ENEMY_TYPES[1], ENEMY_TYPES[7]]; // Leaks & Fortress testing
+      if (ri === 0) return [ENEMY_TYPES[0], ENEMY_TYPES[1]]; // Shaman in first room
       if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
       if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1], ENEMY_TYPES[7]];
       return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6], ENEMY_TYPES[7]]; // Mid-Late
@@ -3744,7 +3788,7 @@ function initAdventure() {
     if (S.floor === 1 && ri === 0) {
       const bx = r.x + r.w - 2;
       const by = r.y + Math.max(1, Math.floor(r.h / 2));
-      S.units.push(mkFirstRoomBoss(eid++, bx, by));
+      S.units.push(mkUnit(eid++, 1, bx, by, -1, ENEMY_TYPES.find(e => e.type === 'shaman')));
       return;
     } else if (S.floor === 2 && ri === 0) {
       // Force spawn an Ironbox (Fortress) in the second room alone
@@ -7942,6 +7986,7 @@ function applyActions() {
         advanceTutorial();
       }
       unit.shootFlash = 1;
+      if (unit.team === 0) unit.swingStart = performance.now();
       if (unit.utype === 'boss01') unit.boss01SpinStart = performance.now();
       spawnMuzzle(unit, sd);
 
@@ -9721,21 +9766,35 @@ function drawThreatIndicators() {
 
 // heroAnimFrames = { idle: {east:[img,...], south:[...], ...}, walk: {...} }
 // Populated by loadHeroAnimSprites() after PixelLab images are downloaded.
-const HERO_ANIM_FPS = { idle: 5, walk: 10, fight: 8 };
+const HERO_ANIM_FPS = { idle: 5, walk: 10, fight: 14 };
 
 function getHeroFrame(u, dir) {
   const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
   const isFighting = isAdjacentToEnemy(u);
 
+  // One-shot sword swing on shoot — plays attack anim exactly once
+  const swingFps      = HERO_ANIM_FPS['fight'];
+  const swingFrameCount = (heroAnimFrames['fight'][dir] || []).length || 4;
+  const swingDuration = (swingFrameCount / swingFps) * 1000;
+  const swingElapsed  = u.swingStart ? performance.now() - u.swingStart : Infinity;
+  const isSwinging    = swingElapsed < swingDuration;
+
   let anim = 'idle';
-  if (isMoving) anim = 'walk';
+  if (isSwinging)     anim = 'fight';
+  else if (isMoving)  anim = 'walk';
   else if (isFighting) anim = 'fight';
 
-  const fps = HERO_ANIM_FPS[anim];
+  const fps    = HERO_ANIM_FPS[anim];
   const frames = heroAnimFrames[anim][dir];
-  // Fall back to static sprite if no animation frames loaded yet
   if (!frames || frames.length === 0) return { img: heroImgs[dir], anim };
-  const idx = Math.floor(performance.now() / (1000 / fps)) % frames.length;
+
+  let idx;
+  if (isSwinging) {
+    // Clamp to last frame when done (won't loop)
+    idx = Math.min(Math.floor(swingElapsed / (1000 / swingFps)), swingFrameCount - 1);
+  } else {
+    idx = Math.floor(performance.now() / (1000 / fps)) % frames.length;
+  }
   return { img: frames[idx], anim };
 }
 
@@ -9931,68 +9990,24 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
     }
   }
 
-  // Main Body
-  ctx.fillStyle = isLowHp && t % 200 < 50 ? '#110000' : '#000000';
-  ctx.beginPath(); ctx.arc(0, 0, bsz, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = outlineColor; ctx.lineWidth = 1.5; ctx.stroke();
-
-  // Eye(s)
-  const shotBlend = wfb.to === 'shotgun' ? btt : (wfb.from === 'shotgun' ? 1 - btt : 0);
-  const isBlinking = t % 4000 < 150;
-  const coreColor = isDanger ? (isLowHp && t % 100 < 50 ? '#ffaa00' : '#ff3c55') : '#00f5ff';
-  const pulseSpeed = isDanger ? 0.03 : 0.01;
-  const corePulse = (Math.sin(t * pulseSpeed) + 1) * 0.5;
-  const flareSize = 1.0 + shootFlash * 1.5;
-  ctx.shadowColor = coreColor;
-  ctx.shadowBlur = (8 + corePulse * 6) * (1 + shootFlash * 3);
-  if (isDanger) ctx.shadowBlur += 10;
-  const showGlow = !(u.hitTimer > 0) && !(isLowHp && t % 300 < 40) && !isBlinking;
-
-  const drawEye = (px, py, bgR, coreR) => {
-    ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.arc(px, py, bgR, 0, Math.PI * 2); ctx.fill();
-    if (showGlow) {
-      ctx.fillStyle = coreColor;
-      ctx.beginPath(); ctx.arc(px, py, coreR, 0, Math.PI * 2); ctx.fill();
+  // Warrior sprite body
+  {
+    const sprDir = dx < 0 ? 'west' : 'east';
+    const { img: wImg } = getHeroFrame(u, sprDir);
+    const sprSz = UNIT_CELL * 2.6;
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = alpha * (isLowHp && t % 200 < 50 ? 0.55 : 1);
+    if (wImg && wImg.complete && wImg.naturalWidth > 0) {
+      ctx.drawImage(wImg, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
     }
-  };
-
-  // Eye — same position/size always; shotgun gets 3 pupils inside instead of 1
-  const shift = bsz * 0.35;
-  const ex = Math.cos(angle) * shift, ey = Math.sin(angle) * shift;
-  const eyeBgR = bsz * 0.50;
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(ex, ey, eyeBgR, 0, Math.PI * 2); ctx.fill();
-
-  if (showGlow) {
-    ctx.fillStyle = coreColor;
-    if (shotBlend < 0.5) {
-      // Single pupil
-      const cR = bsz * (isDanger ? 0.25 : 0.20) * flareSize;
-      ctx.globalAlpha = alpha;
-      ctx.beginPath(); ctx.arc(ex, ey, cR, 0, Math.PI * 2); ctx.fill();
+    // Hit flash overlay
+    if (u.hitTimer > 0) {
+      ctx.globalAlpha = alpha * 0.45;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(0, 0, sprSz * 0.38, 0, Math.PI * 2); ctx.fill();
     }
-    if (shotBlend > 0.01) {
-      // 3 pupils arranged in triangle inside the eye
-      const pR  = bsz * (isDanger ? 0.13 : 0.11) * flareSize;
-      const off = bsz * 0.17; // distance from eye center
-      const pupils = [
-        [ex + Math.cos(angle)       * off, ey + Math.sin(angle)       * off],
-        [ex + Math.cos(angle + 2.1) * off, ey + Math.sin(angle + 2.1) * off],
-        [ex + Math.cos(angle - 2.1) * off, ey + Math.sin(angle - 2.1) * off],
-      ];
-      ctx.globalAlpha = alpha * shotBlend;
-      pupils.forEach(([px, py]) => {
-        ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.fill();
-      });
-      ctx.globalAlpha = alpha;
-    }
+    ctx.globalAlpha = alpha;
   }
-
-  // Highlights
-  ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.6;
-  ctx.beginPath(); ctx.arc(ex - 1.5, ey - 1.5, bsz * 0.06, 0, Math.PI * 2); ctx.fill();
 
   ctx.restore();
 }
@@ -11039,6 +11054,31 @@ function drawUnits() {
         drawEnemyFortress(cx, cy, u, alpha);
       } else if (u.utype === 'leak' || u.utype === 'corrupt') {
         drawEnemyBinarySwarm(cx, cy, u, alpha);
+      } else if (u.utype === 'shaman') {
+        const sdx = u.facing ? u.facing.dx : -1;
+        const sprDir = sdx < 0 ? 'west' : 'east';
+        const sImg = getShamanFrame(u, sprDir);
+        const sprSz = UNIT_CELL * 2.6;
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + sprSz * 0.44, sprSz * 0.28, sprSz * 0.09, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (sImg && sImg.complete && sImg.naturalWidth > 0) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          ctx.drawImage(sImg, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          ctx.globalAlpha = alpha;
+        } else {
+          // Fallback tol kol įkraunama
+          ctx.fillStyle = '#cc30ff';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.2, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.35, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
       } else {
         drawEnemyPixelArt(cx, cy, u, alpha);
       }
@@ -11151,7 +11191,6 @@ function drawUnits() {
       ctx.restore();
       return; // skip hex rendering below
     }
-
 
     const fc = u.hitFlash > 0 ? '#ffffff' : u.color;
     const fb = inactive ? 0 : (u.hitFlash > 0 ? 40 * u.hitFlash : 14);
