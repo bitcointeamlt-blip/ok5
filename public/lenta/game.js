@@ -2519,6 +2519,7 @@ const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 const grassTilemapImg = new Image(); grassTilemapImg.src = 'grass_tilemap.png';
 const waterFoamImg   = new Image(); waterFoamImg.src   = 'water_foam.png';
 const waterBgImg     = new Image(); waterBgImg.src     = 'water_bg.png';
+const waterSplashImg = new Image(); waterSplashImg.src = 'water_splash.png';
 (function () {
   Object.keys(HERO_SPRITE_DATA).forEach(dir => {
     const img = new Image(); img.src = HERO_SPRITE_DATA[dir]; heroImgs[dir] = img;
@@ -5596,6 +5597,20 @@ function _drawDungeonStatic() {
         if (floorAbove && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
           const wSeed = Math.abs((r * 97 + c * 211) % 4);
           ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
+        }
+
+        // Water ripple — on the row directly below stone (2 rows below floor)
+        const stoneAbove = r > 1 && S.dungeon[r-1][c] === 0 && S.dungeon[r-2][c] >= 1;
+        if (stoneAbove && waterSplashImg.complete && waterSplashImg.naturalWidth > 0) {
+          const splashFps = 7;
+          const totalFrames = 9;
+          const stagger = (c * 4 + r * 2) % totalFrames;
+          const splashFrame = (Math.floor(performance.now() / (1000 / splashFps)) + stagger) % totalFrames;
+          const ssz = Math.round(CELL * 1.3);
+          const soff = Math.round((CELL - ssz) / 2);
+          ctx.globalAlpha = 0.85;
+          ctx.drawImage(waterSplashImg, splashFrame * 192, 0, 192, 192, px + soff, py + soff - Math.round(CELL * 0.25), ssz, ssz);
+          ctx.globalAlpha = 1.0;
         }
 
         // Animated water foam — draw as small patch, offset per column row
