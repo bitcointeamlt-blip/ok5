@@ -2516,6 +2516,7 @@ const HERO_WALK_FRAMES = {
 const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
 const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
+const grassTilemapImg = new Image(); grassTilemapImg.src = 'grass_tilemap.png';
 (function () {
   Object.keys(HERO_SPRITE_DATA).forEach(dir => {
     const img = new Image(); img.src = HERO_SPRITE_DATA[dir]; heroImgs[dir] = img;
@@ -5424,9 +5425,16 @@ function _drawDungeonStatic() {
     for (let c = 0; c < COLS; c++) {
       const px = c * CELL, py = r * CELL;
       if (S.dungeon[r][c] === 2) {
-        // Pillar base floor
-        ctx.fillStyle = '#051d10';
-        ctx.fillRect(px, py, CELL, CELL);
+        // Grass base under decoration
+        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          const dSeed = (r * 97 + c * 173) % 3;
+          ctx.drawImage(grassTilemapImg, (1 + dSeed) * 64, 64, 64, 64, px, py, CELL, CELL);
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fillRect(px, py, CELL, CELL);
+        } else {
+          ctx.fillStyle = '#051d10';
+          ctx.fillRect(px, py, CELL, CELL);
+        }
 
         const pType = Math.abs((r * 241 + c * 599) % 100);
 
@@ -5529,34 +5537,33 @@ function _drawDungeonStatic() {
           ctx.fillRect(px + CELL / 2 - 4, py + CELL * 0.6, 8, 2);
         }
       } else if (S.dungeon[r][c] === 1) {
-        // Motherboard Substrate (Floor)
-        ctx.fillStyle = (r + c) % 2 === 0 ? '#03140a' : '#041a0d';
-        ctx.fillRect(px, py, CELL, CELL);
-
-        // Random circuit trace lines
-        const seed = (r * 123 + c * 456) % 100;
-        if (seed < 20) {
-          ctx.strokeStyle = 'rgba(0, 255, 136, 0.08)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          if (seed < 10) { ctx.moveTo(px, py + CELL / 2); ctx.lineTo(px + CELL, py + CELL / 2); }
-          else { ctx.moveTo(px + CELL / 2, py); ctx.lineTo(px + CELL / 2, py + CELL); }
-          ctx.stroke();
+        // Grass floor tile — pick from inner 3×2 region of tilemap (cols 1-3, rows 1-2)
+        const seed = (r * 123 + c * 456) % 6;
+        const tcol = 1 + (seed % 3); // cols 1,2,3
+        const trow = 1 + Math.floor(seed / 3); // rows 1,2
+        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          ctx.drawImage(grassTilemapImg, tcol * 64, trow * 64, 64, 64, px, py, CELL, CELL);
+        } else {
+          ctx.fillStyle = '#3a7a2a';
+          ctx.fillRect(px, py, CELL, CELL);
         }
 
         const rtype = S.rooms?.find(rm => c >= rm.x && c < rm.x + rm.w && r >= rm.y && r < rm.y + rm.h)?.type;
-        if (rtype === 'shrine') { ctx.fillStyle = 'rgba(0,255,136,0.1)'; ctx.fillRect(px, py, CELL, CELL); }
-        if (rtype === 'armory') { ctx.fillStyle = 'rgba(255,217,0,0.08)'; ctx.fillRect(px, py, CELL, CELL); }
-        if (rtype === 'vault') { ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(px, py, CELL, CELL); }
-
-        ctx.strokeStyle = 'rgba(13, 77, 42, 0.3)'; ctx.lineWidth = 0.5;
-        ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
+        if (rtype === 'shrine') { ctx.fillStyle = 'rgba(0,255,136,0.15)'; ctx.fillRect(px, py, CELL, CELL); }
+        if (rtype === 'armory') { ctx.fillStyle = 'rgba(255,217,0,0.12)'; ctx.fillRect(px, py, CELL, CELL); }
+        if (rtype === 'vault') { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(px, py, CELL, CELL); }
       } else if (S.dungeon[r][c] === 3) {
-        // Data Bus Corridor
-        ctx.fillStyle = '#020d06';
-        ctx.fillRect(px, py, CELL, CELL);
-        ctx.fillStyle = 'rgba(0, 255, 136, 0.04)';
-        ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
+        // Grass corridor (slightly darker)
+        const seed3 = (r * 317 + c * 211) % 3;
+        const trow3 = 2 + seed3; // rows 2,3,4
+        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          ctx.globalAlpha = 0.75;
+          ctx.drawImage(grassTilemapImg, 64, trow3 * 64, 64, 64, px, py, CELL, CELL);
+          ctx.globalAlpha = 1.0;
+        } else {
+          ctx.fillStyle = '#2a5a1e';
+          ctx.fillRect(px, py, CELL, CELL);
+        }
       } else {
         // Wall base
         ctx.fillStyle = '#111';
