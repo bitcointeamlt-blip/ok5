@@ -2517,6 +2517,8 @@ const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
 const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 const grassTilemapImg = new Image(); grassTilemapImg.src = 'grass_tilemap.png';
+const waterFoamImg   = new Image(); waterFoamImg.src   = 'water_foam.png';
+const waterBgImg     = new Image(); waterBgImg.src     = 'water_bg.png';
 (function () {
   Object.keys(HERO_SPRITE_DATA).forEach(dir => {
     const img = new Image(); img.src = HERO_SPRITE_DATA[dir]; heroImgs[dir] = img;
@@ -5565,181 +5567,54 @@ function _drawDungeonStatic() {
           ctx.fillRect(px, py, CELL, CELL);
         }
       } else {
-        // Wall base
-        ctx.fillStyle = '#111';
-        ctx.fillRect(px, py, CELL, CELL);
-
-        // Calculate a pseudo-random value based on cell coords for variety
-        const rType = Math.abs((r * 137 + c * 313) % 100);
-
-        if (rType < 40) {
-          // 40% chance: Polished Microchip
-          // Pins
-          ctx.fillStyle = '#a68200'; // dark gold
-          const pinW = 3, pinH = 4;
-          const spacing = 6;
-          for (let i = spacing; i < CELL - spacing; i += spacing) {
-            ctx.fillRect(px + i, py, pinW, pinH); ctx.fillRect(px + i, py + CELL - pinH, pinW, pinH);
-            ctx.fillRect(px, py + i, pinH, pinW); ctx.fillRect(px + CELL - pinH, py + i, pinH, pinW);
-          }
-          // Shiny pin tips
-          ctx.fillStyle = '#ffe97a';
-          for (let i = spacing; i < CELL - spacing; i += spacing) {
-            ctx.fillRect(px + i, py, pinW, 1); ctx.fillRect(px + i, py + CELL - 1, pinW, 1);
-            ctx.fillRect(px, py + i, 1, pinW); ctx.fillRect(px + CELL - 1, py + i, 1, pinW);
-          }
-          // Black body
-          ctx.fillStyle = '#1c1c1f'; ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8);
-          // Etched core
-          ctx.fillStyle = '#0a0a0c'; ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
-          // Animated silicon rainbow sheen
-          const _ph0 = r * 7.3 + c * 13.7;
-          const _sh = (Math.sin(wallT * 0.7 + _ph0) + 1) * 0.5;
-          const _sr = Math.floor(80 + _sh * 140), _sg = Math.floor(20 + _sh * 60);
-          ctx.fillStyle = `rgba(${_sr},${_sg},255,${0.05 + _sh * 0.22})`; ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
-          // Core detail
-          ctx.strokeStyle = '#3a3a40'; ctx.lineWidth = 1; ctx.strokeRect(px + 10, py + 10, CELL - 20, CELL - 20);
-
-          const _blinkType = Math.abs((r * 41 + c * 67) % 10);
-          // 0-2 = no blink (30%), 3-4 = slow, 5-6 = medium, 7-8 = fast, 9 = erratic
-          let _act = 0;
-          if (_blinkType >= 3) {
-            const _spds = [0, 0, 0, 0.55, 0.75, 2.0, 2.6, 4.3, 5.5, 0];
-            const _raw = _blinkType === 9
-              ? Math.sin(wallT * 3.1 + _ph0) * Math.sin(wallT * 1.7 + _ph0 * 0.3)
-              : Math.sin(wallT * _spds[_blinkType] + _ph0 * 0.4);
-            _act = (_raw + 1) * 0.5;
-          }
-          if (_act > 0.82) {
-            ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 5;
-            ctx.fillStyle = `rgba(0,255,136,${(_act - 0.82) * 5.5})`;
-            ctx.beginPath(); ctx.arc(px + 12, py + 12, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.shadowBlur = 0;
-          }
-        } else if (rType < 70) {
-          // 30% chance: Detailed Transistor (TO-220 style package)
-          ctx.fillStyle = '#111'; ctx.fillRect(px + 6, py + 6, CELL - 12, CELL - 12); // shadow
-
-          // 3 Metal legs (tin)
-          ctx.fillStyle = '#8a99a8';
-          ctx.fillRect(px + CELL * 0.3, py + CELL * 0.6, 4, CELL * 0.4);
-          ctx.fillRect(px + CELL * 0.5 - 2, py + CELL * 0.6, 4, CELL * 0.4);
-          ctx.fillRect(px + CELL * 0.7 - 4, py + CELL * 0.6, 4, CELL * 0.4);
-
-          // Metal heatsink tab on top
-          ctx.fillStyle = '#a0aab5';
-          ctx.fillRect(px + CELL * 0.2, py + CELL * 0.1, CELL * 0.6, CELL * 0.4);
-          // Metal mounting hole
-          ctx.fillStyle = '#051d10';
-          ctx.beginPath(); ctx.arc(px + CELL * 0.5, py + CELL * 0.25, CELL * 0.1, 0, Math.PI * 2); ctx.fill();
-
-          // Black epoxy body (bottom half)
-          ctx.fillStyle = '#222325';
-          ctx.fillRect(px + CELL * 0.2, py + CELL * 0.4, CELL * 0.6, CELL * 0.4);
-          // Body highlight
-          ctx.fillStyle = '#3a3d42';
-          ctx.fillRect(px + CELL * 0.2, py + CELL * 0.4, CELL * 0.6, 2);
-
-          // Manufacturer text
-          ctx.fillStyle = '#aaa';
-          ctx.fillRect(px + CELL * 0.25, py + CELL * 0.6, CELL * 0.5, 2);
-          // Thermal glow on heatsink tab
-          const _ph1 = r * 11.3 + c * 17.7;
-          const _heat = (Math.sin(wallT * 0.55 + _ph1) + 1) * 0.5;
-          ctx.fillStyle = `rgba(255,${Math.floor(70 + _heat * 110)},0,${_heat * 0.18})`;
-          ctx.fillRect(px + Math.floor(CELL * 0.2), py + Math.floor(CELL * 0.1), Math.floor(CELL * 0.6), Math.floor(CELL * 0.4));
-        } else if (rType < 90) {
-          // 20% chance: Detailed Axial Resistor
-          // Tin wire leads
-          ctx.fillStyle = '#8a99a8'; ctx.fillRect(px + CELL * 0.5 - 2, py, 4, CELL);
-          ctx.fillStyle = '#d1dfdf'; ctx.fillRect(px + CELL * 0.5 - 1, py, 2, CELL); // wire specular
-
-          // Beige ceramic body
-          ctx.fillStyle = '#d4bfa6';
-          ctx.fillRect(px + CELL * 0.25, py + CELL * 0.2, CELL * 0.5, CELL * 0.6);
-          ctx.fillStyle = '#e8d5c1'; // body highlight
-          ctx.fillRect(px + CELL * 0.3, py + CELL * 0.2, CELL * 0.2, CELL * 0.6);
-
-          // Curved ends
-          ctx.fillStyle = '#c0aa91';
-          ctx.fillRect(px + CELL * 0.3, py + CELL * 0.15, CELL * 0.4, CELL * 0.05);
-          ctx.fillRect(px + CELL * 0.3, py + CELL * 0.8, CELL * 0.4, CELL * 0.05);
-
-          // Current flow dot traveling along the wire
-          const _ph2 = r * 5.7 + c * 19.3;
-          const _pos = ((wallT * 0.35 + _ph2 * 0.08) % 1.0);
-          const _dotY = py + CELL * 0.08 + _pos * CELL * 0.84;
-          ctx.shadowColor = '#ffff88'; ctx.shadowBlur = 4;
-          ctx.fillStyle = 'rgba(255,255,140,0.95)';
-          ctx.fillRect(Math.floor(px + CELL * 0.49), Math.floor(_dotY), 2, 2);
-          ctx.shadowBlur = 0;
-          // 4 Color bands (Red, Violet, Orange, Gold) = 27k Ohm 5%
-          const bw = CELL * 0.5;
-          ctx.fillStyle = '#cc2222'; ctx.fillRect(px + CELL * 0.25, py + CELL * 0.25, bw, 4); // red
-          ctx.fillStyle = '#aa44cc'; ctx.fillRect(px + CELL * 0.25, py + CELL * 0.35, bw, 4); // violet
-          ctx.fillStyle = '#e56400'; ctx.fillRect(px + CELL * 0.25, py + CELL * 0.45, bw, 4); // orange
-          ctx.fillStyle = '#cca300'; ctx.fillRect(px + CELL * 0.25, py + CELL * 0.65, bw, 6); // gold
+        // Water background
+        if (waterBgImg.complete && waterBgImg.naturalWidth > 0) {
+          ctx.drawImage(waterBgImg, 0, 0, waterBgImg.naturalWidth, waterBgImg.naturalHeight, px, py, CELL, CELL);
         } else {
-          // 10% chance: Shiny Extruded Aluminum Heatsink
-          ctx.fillStyle = '#111'; ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8); // shadow base
-          ctx.fillStyle = '#3a424a'; ctx.fillRect(px + 6, py + 6, CELL - 12, CELL - 12); // main alu
+          ctx.fillStyle = '#4ab5c0';
+          ctx.fillRect(px, py, CELL, CELL);
+        }
 
-          ctx.fillStyle = '#6e7a88'; // fins
-          for (let i = 8; i < CELL - 8; i += 6) {
-            ctx.fillRect(px + 6, py + i, CELL - 12, 4);
-            // silver fin highlights (gives 3D pop)
-            ctx.fillStyle = '#aeb7bf'; ctx.fillRect(px + 6, py + i, CELL - 12, 1);
-            ctx.fillStyle = '#6e7a88';
-          }
+        // Animated water foam — staggered per cell
+        if (waterFoamImg.complete && waterFoamImg.naturalWidth > 0) {
+          const foamFps = 8;
+          const totalFoamFrames = 16;
+          const stagger = (c * 3 + r * 5) % totalFoamFrames;
+          const foamFrame = (Math.floor(performance.now() / (1000 / foamFps)) + stagger) % totalFoamFrames;
+          ctx.globalAlpha = 0.6;
+          ctx.drawImage(waterFoamImg, foamFrame * 192, 0, 192, 192, px, py, CELL, CELL);
+          ctx.globalAlpha = 1.0;
+        }
 
-          // Vertical cross-cut channels
-          ctx.fillStyle = '#2a3036';
-          ctx.fillRect(px + CELL * 0.3, py + 6, 4, CELL - 12);
-          ctx.fillRect(px + CELL * 0.6, py + 6, 4, CELL - 12);
-          // Thermal shimmer on fins
-          const _ph3 = r * 9.1 + c * 23.3;
-          const _glow = (Math.sin(wallT * 0.45 + _ph3) + 1) * 0.5;
-          ctx.fillStyle = `rgba(174,183,191,${0.2 + _glow * 0.55})`;
-          for (let _fi = 8; _fi < CELL - 8; _fi += 6) ctx.fillRect(px + 6, py + _fi, CELL - 12, 1);
+        // Stone base — only on the row directly below the floor (platform bottom edge)
+        const aboveIsFloor = r > 0 && (S.dungeon[r-1][c] === 1 || S.dungeon[r-1][c] === 2 || S.dungeon[r-1][c] === 3);
+        if (aboveIsFloor && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          const wSeed = Math.abs((r * 97 + c * 211) % 4);
+          ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
         }
       }
     }
   }
 
-  // Pass 2: bright edge lines on floor tiles that border walls
+  // Pass 2: shadow at bottom grass edge (where floor meets stone/water)
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const tile = S.dungeon[r][c];
-      if (tile !== 1 && tile !== 3) continue;
+      if (tile !== 1 && tile !== 2 && tile !== 3) continue;
       const px = c * CELL, py = r * CELL;
-      // wall = tile 0 or 2; corridors and rooms border each other and walls
-      const wN = r === 0 || (S.dungeon[r - 1][c] !== 1 && S.dungeon[r - 1][c] !== 3);
-      const wS = r === ROWS - 1 || (S.dungeon[r + 1][c] !== 1 && S.dungeon[r + 1][c] !== 3);
-      const wW = c === 0 || (S.dungeon[r][c - 1] !== 1 && S.dungeon[r][c - 1] !== 3);
-      const wE = c === COLS - 1 || (S.dungeon[r][c + 1] !== 1 && S.dungeon[r][c + 1] !== 3);
-
-      if (wN) {
-        ctx.fillStyle = '#051d10'; ctx.fillRect(px, py, CELL, 3);
-        ctx.fillStyle = '#00ff88'; ctx.fillRect(px, py, CELL, 1);
+      // Shadow only on the bottom edge (where water/stone is below)
+      const belowIsWall = r === ROWS - 1 || S.dungeon[r + 1][c] === 0;
+      if (belowIsWall) {
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(px, py + CELL - 5, CELL, 5);
       }
-      if (wS) {
-        ctx.fillStyle = '#03140a'; ctx.fillRect(px, py + CELL - 3, CELL, 3);
-        ctx.fillStyle = '#0d4d2a'; ctx.fillRect(px, py + CELL - 1, CELL, 1);
-      }
-      if (wW) {
-        ctx.fillStyle = '#051d10'; ctx.fillRect(px, py, 3, CELL);
-        ctx.fillStyle = '#00ff88'; ctx.fillRect(px, py, 1, CELL);
-      }
-      if (wE) {
-        ctx.fillStyle = '#03140a'; ctx.fillRect(px + CELL - 3, py, 3, CELL);
-        ctx.fillStyle = '#0d4d2a'; ctx.fillRect(px + CELL - 1, py, 1, CELL);
-      }
-
-      // Corner highlights where top/left wall edges meet
-      if (wN && wW) { ctx.fillStyle = '#4a6ae0'; ctx.fillRect(px, py, 3, 3); }
-      if (wN && wE) { ctx.fillStyle = '#0a1240'; ctx.fillRect(px + CELL - 3, py, 3, 3); }
-      if (wS && wW) { ctx.fillStyle = '#0a1240'; ctx.fillRect(px, py + CELL - 3, 3, 3); }
-      if (wS && wE) { ctx.fillStyle = '#080e38'; ctx.fillRect(px + CELL - 3, py + CELL - 3, 3, 3); }
+      // Subtle left/right/top shadow too
+      const wN = r === 0 || S.dungeon[r - 1][c] === 0;
+      const wW = c === 0 || S.dungeon[r][c - 1] === 0;
+      const wE = c === COLS - 1 || S.dungeon[r][c + 1] === 0;
+      if (wN) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(px, py, CELL, 3); }
+      if (wW) { ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(px, py, 3, CELL); }
+      if (wE) { ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(px + CELL - 3, py, 3, CELL); }
     }
   }
 
