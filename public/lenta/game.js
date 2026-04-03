@@ -11066,11 +11066,6 @@ function drawUnits() {
         const sprDir = sdx < 0 ? 'west' : 'east';
         const sImg = getShamanFrame(u, sprDir);
         const sprSz = UNIT_CELL * 2.6;
-        // Shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.beginPath();
-        ctx.ellipse(cx, cy + sprSz * 0.44, sprSz * 0.28, sprSz * 0.09, 0, 0, Math.PI * 2);
-        ctx.fill();
         if (sImg && sImg.complete && sImg.naturalWidth > 0) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
           ctx.drawImage(sImg, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
