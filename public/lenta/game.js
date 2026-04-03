@@ -5539,12 +5539,28 @@ function _drawDungeonStatic() {
           ctx.fillRect(px + CELL / 2 - 4, py + CELL * 0.6, 8, 2);
         }
       } else if (S.dungeon[r][c] === 1) {
-        // Grass floor tile — row 1 only (no stone edges), vary cols 1-3
-        const seed = (r * 123 + c * 456) % 3;
-        const tcol = 1 + seed; // cols 1,2,3
-        const trow = 1; // row 1 only — pure inner grass, no stone edges
+        // Pick grass tile based on water neighbours
+        const wN = r === 0          || S.dungeon[r-1][c] === 0;
+        const wS = r === ROWS - 1   || S.dungeon[r+1][c] === 0;
+        const wW = c === 0          || S.dungeon[r][c-1] === 0;
+        const wE = c === COLS - 1   || S.dungeon[r][c+1] === 0;
+
+        let tileX, tileY;
+        if      (wN && wW && !wE && !wS) { tileX =   0; tileY =   0; } // top-left corner
+        else if (wN && wE && !wW && !wS) { tileX = 128; tileY =   0; } // top-right corner
+        else if (wS && wW && !wE && !wN) { tileX =   0; tileY = 128; } // bottom-left corner
+        else if (wS && wE && !wW && !wN) { tileX = 192; tileY = 128; } // bottom-right corner
+        else if (wN && !wW && !wE)       { tileX =  64; tileY =   0; } // top edge
+        else if (wW && !wN && !wS)       { tileX =   0; tileY =  64; } // left edge
+        else if (wE && !wN && !wS)       { tileX = 192; tileY =  64; } // right edge
+        else if (wS && !wW && !wE)       { tileX =  64; tileY = 192; } // bottom edge
+        else {
+          const seed = (r * 123 + c * 456) % 3;
+          tileX = (1 + seed) * 64; tileY = 64;                          // inner fill
+        }
+
         if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          ctx.drawImage(grassTilemapImg, tcol * 64, trow * 64, 64, 64, px, py, CELL, CELL);
+          ctx.drawImage(grassTilemapImg, tileX, tileY, 64, 64, px, py, CELL, CELL);
         } else {
           ctx.fillStyle = '#3a7a2a';
           ctx.fillRect(px, py, CELL, CELL);
@@ -5589,9 +5605,13 @@ function _drawDungeonStatic() {
           ctx.globalAlpha = 1.0;
         }
 
-        // Stone base — only on the row directly below the floor (platform bottom edge)
-        const aboveIsFloor = r > 0 && (S.dungeon[r-1][c] === 1 || S.dungeon[r-1][c] === 2 || S.dungeon[r-1][c] === 3);
-        if (aboveIsFloor && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+        // Stone — on ANY wall cell adjacent to floor (all 4 sides)
+        const adjFloor =
+          (r > 0        && S.dungeon[r-1][c] >= 1) ||
+          (r < ROWS-1   && S.dungeon[r+1][c] >= 1) ||
+          (c > 0        && S.dungeon[r][c-1] >= 1) ||
+          (c < COLS-1   && S.dungeon[r][c+1] >= 1);
+        if (adjFloor && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
           const wSeed = Math.abs((r * 97 + c * 211) % 4);
           ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
         }
