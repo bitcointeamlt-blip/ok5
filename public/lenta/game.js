@@ -5539,10 +5539,10 @@ function _drawDungeonStatic() {
           ctx.fillRect(px + CELL / 2 - 4, py + CELL * 0.6, 8, 2);
         }
       } else if (S.dungeon[r][c] === 1) {
-        // Grass floor tile — pick from inner 3×2 region of tilemap (cols 1-3, rows 1-2)
-        const seed = (r * 123 + c * 456) % 6;
-        const tcol = 1 + (seed % 3); // cols 1,2,3
-        const trow = 1 + Math.floor(seed / 3); // rows 1,2
+        // Grass floor tile — row 1 only (no stone edges), vary cols 1-3
+        const seed = (r * 123 + c * 456) % 3;
+        const tcol = 1 + seed; // cols 1,2,3
+        const trow = 1; // row 1 only — pure inner grass, no stone edges
         if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
           ctx.drawImage(grassTilemapImg, tcol * 64, trow * 64, 64, 64, px, py, CELL, CELL);
         } else {
@@ -5575,14 +5575,17 @@ function _drawDungeonStatic() {
           ctx.fillRect(px, py, CELL, CELL);
         }
 
-        // Animated water foam — staggered per cell
+        // Animated water foam — draw as small patch, offset per column row
         if (waterFoamImg.complete && waterFoamImg.naturalWidth > 0) {
-          const foamFps = 8;
+          const foamFps = 6;
           const totalFoamFrames = 16;
-          const stagger = (c * 3 + r * 5) % totalFoamFrames;
+          const stagger = (c * 7 + r * 11) % totalFoamFrames;
           const foamFrame = (Math.floor(performance.now() / (1000 / foamFps)) + stagger) % totalFoamFrames;
-          ctx.globalAlpha = 0.6;
-          ctx.drawImage(waterFoamImg, foamFrame * 192, 0, 192, 192, px, py, CELL, CELL);
+          // Draw a small 24×24 foam patch centered in the cell
+          const fsz = Math.round(CELL * 0.55);
+          const foff = Math.round((CELL - fsz) / 2);
+          ctx.globalAlpha = 0.45;
+          ctx.drawImage(waterFoamImg, foamFrame * 192, 0, 192, 192, px + foff, py + foff, fsz, fsz);
           ctx.globalAlpha = 1.0;
         }
 
