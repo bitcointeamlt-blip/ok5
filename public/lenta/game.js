@@ -5650,69 +5650,10 @@ function _drawDungeonStatic() {
 
 }
 
-// ---- Wall FX functions -----------------------------------------
-function buildWallPackets() {
-  wallLedTiles = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (S.dungeon[r][c] !== 0) continue;
-      const rType = Math.abs((r * 137 + c * 313) % 100);
-      if (rType < 40 && ((r * 17 + c * 31) % 5) === 0) {
-        wallLedTiles.push({ px: c * CELL, py: r * CELL });
-      }
-    }
-  }
-  wallLedState = false; wallLedPhase = 0;
-  wallLedIdleAccum = 0; wallLedIdleMs = 10000 + Math.random() * 2000;
-}
-
-function updateWallFX(dt) {
-  // LED blink timer (every 10-12 sec, 3 quick blinks)
-  wallLedIdleAccum += dt;
-  if (wallLedPhase === 0 && wallLedIdleAccum >= wallLedIdleMs) {
-    wallLedIdleAccum = 0; wallLedIdleMs = 10000 + Math.random() * 2000;
-    wallLedPhase = 1; wallLedBlinkIdx = 0; wallLedBlinkAccum = 0;
-    wallLedBlinkSeq = [120, 90, 130, 90, 120, 200];
-    wallLedState = true;
-  }
-  if (wallLedPhase === 1) {
-    wallLedBlinkAccum += dt;
-    if (wallLedBlinkAccum >= wallLedBlinkSeq[wallLedBlinkIdx]) {
-      wallLedBlinkAccum = 0; wallLedBlinkIdx++;
-      if (wallLedBlinkIdx >= wallLedBlinkSeq.length) { wallLedPhase = 0; wallLedState = false; }
-      else wallLedState = !wallLedState;
-    }
-  }
-}
-
-function drawWallLED() {
-  if (!wallLedTiles.length || gameMode !== 'adventure') return;
-  ctx.save();
-  // Tiny chip body (drawn over existing wall microchip graphics)
-  ctx.fillStyle = '#141420';
-  for (const t of wallLedTiles) ctx.fillRect(t.px + 24, t.py + 6, 14, 10);
-  // Gold pins
-  ctx.fillStyle = '#6a5500';
-  for (const t of wallLedTiles) {
-    ctx.fillRect(t.px + 21, t.py + 8, 4, 2);
-    ctx.fillRect(t.px + 21, t.py + 12, 4, 2);
-    ctx.fillRect(t.px + 37, t.py + 8, 4, 2);
-    ctx.fillRect(t.px + 37, t.py + 12, 4, 2);
-  }
-  // LED dot
-  if (wallLedState) {
-    ctx.shadowColor = '#00ff44'; ctx.shadowBlur = 12;
-    ctx.fillStyle = '#66ff99';
-  } else {
-    ctx.fillStyle = '#001800';
-  }
-  for (const t of wallLedTiles) {
-    ctx.beginPath();
-    ctx.arc(t.px + 33, t.py + 11, 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.shadowBlur = 0; ctx.restore();
-}
+// ---- Wall FX functions (removed — no longer used) -----------------------------------------
+function buildWallPackets() {}
+function updateWallFX(dt) {}
+function drawWallLED() {}
 
 const _fogAlphaStr = Array.from({ length: 101 }, (_, i) => `rgba(0,0,0,${(i / 100).toFixed(2)})`);
 function drawFog() {
