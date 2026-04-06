@@ -9790,7 +9790,6 @@ function loop(now) {
   drawRonkeInfect();
   drawFog();
   drawDmgNumbers();
-  drawMobileHeroArrows();
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
