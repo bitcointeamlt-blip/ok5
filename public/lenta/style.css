@@ -4246,13 +4246,13 @@ kbd {
 }
 
 .dpad-btn {
-  width: 52px;
-  height: 52px;
-  background: rgba(0, 18, 10, 0.88);
-  border: 1px solid #00884a;
+  width: 62px;
+  height: 62px;
+  background: rgba(0, 18, 10, 0.82);
+  border: 1.5px solid #00884a;
   color: #00ff88;
-  font-size: 16px;
-  border-radius: 6px;
+  font-size: 22px;
+  border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -4260,6 +4260,7 @@ kbd {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   font-family: inherit;
+  box-shadow: 0 0 8px rgba(0,255,136,0.18);
 }
 
 .dpad-btn:active {

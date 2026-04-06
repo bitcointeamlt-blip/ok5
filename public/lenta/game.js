@@ -2521,6 +2521,40 @@ const waterFoamImg   = new Image(); waterFoamImg.src   = 'water_foam.png';
 const waterBgImg     = new Image(); waterBgImg.src     = 'water_bg.png';
 const waterSplashImg  = new Image(); waterSplashImg.src  = 'water_splash.png';
 const waterRippleImg  = new Image(); waterRippleImg.src  = 'water_ripple.png';
+
+// Tiny Swords Asset Pack Loading
+const tinyImgs = { deco: {}, tree: new Image(), mine: new Image() };
+for(let i=1; i<=18; i++) {
+   const no = i.toString().padStart(2, '0');
+   tinyImgs.deco[no] = new Image();
+   tinyImgs.deco[no].src = `assets_tiny/Deco/${no}.png`;
+}
+tinyImgs.tree.src = 'assets_tiny/Resources/Trees/Tree.png';
+tinyImgs.mine.src = 'assets_tiny/Resources/Gold Mine/GoldMine_Inactive.png';
+const teleportActiveImg = new Image(); teleportActiveImg.src = 'assets_tiny/Resources/Gold Mine/GoldMine_Active.png';
+tinyImgs.water = new Image(); tinyImgs.water.src = 'assets_tiny/Terrain/Water/Water.png';
+tinyImgs.foam = new Image(); tinyImgs.foam.src = 'assets_tiny/Terrain/Water/Foam/Foam.png';
+const elevationImg = new Image(); elevationImg.src = 'assets_tiny/Terrain/Ground/Tilemap_Elevation.png';
+const bridgeImg = new Image(); bridgeImg.src = 'assets_tiny/Bridge_All.png';
+const flatImg = new Image(); flatImg.src = 'assets_tiny/Terrain/Ground/Tilemap_Flat.png';
+const tilesetImg = new Image(); tilesetImg.src = 'assets_tiny/Terrain/Tileset/Tilemap_color1.png';
+const tileset3Img = new Image(); tileset3Img.src = 'assets_tiny/Terrain/Tileset/Tilemap_color3.png';
+const shadowImg = new Image(); shadowImg.src = 'assets_tiny/Terrain/Tileset/Shadow.png';
+const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Water/Foam/Water_Foam2.png';
+
+// ---- Custom Map (Floor 1) -------------------------------------------------------
+window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,6,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,1,1,1,1,1],[0,0,0,4,0,0,0,0,0,0,0,0,0]],"decorations":{"8,4":"mine_1","10,0":"rock1","1,9":"deco_15","9,10":"deco_02","1,11":"tileset1_6_1","1,12":"tileset1_7_1","2,12":"tileset1_7_1","3,12":"tileset1_7_1","4,12":"tileset1_7_1","5,12":"tileset1_7_1","6,12":"tileset1_7_1","7,12":"tileset1_7_1","8,12":"tileset1_7_1","9,12":"tileset1_7_2","3,8":"tileset1_8_3","4,8":"tileset3_8_4","2,11":"deco_10"},"collisionBoxes":["7,4","4,8","3,8"],"spawnPos":{"x":2,"y":2},"exitPos":{"x":4,"y":8},"enemies":[{"type":"shaman","x":10,"y":5}]};
+const duckImg = new Image(); duckImg.src = 'assets_tiny/Deco/rubber_duck.png';
+const deadAnimImg = new Image(); deadAnimImg.src = 'assets_tiny/Dead.png';
+const trollDeadImg = new Image(); trollDeadImg.src = 'animations/troll/Troll_Dead.png';
+const mSpawnImg = new Image(); mSpawnImg.src = 'assets_tiny/M_Spawn.png';
+const mIdleImg  = new Image(); mIdleImg.src  = 'assets_tiny/M_Idle.png';
+const _SPAWN_FRAMES = 7, _SPAWN_FRAME_W = 128, _SPAWN_FRAME_H = 128, _SPAWN_MS = 120;
+const rockImgs = [null, null, null, null, null]; // index 1-4
+for (let _ri = 1; _ri <= 4; _ri++) { rockImgs[_ri] = new Image(); rockImgs[_ri].src = `assets_tiny/Terrain/Water/Rocks/Rocks_0${_ri}.png`; }
+const bushImgs = [null, null, null, null, null]; // index 1-4
+for (let _bi = 1; _bi <= 4; _bi++) { bushImgs[_bi] = new Image(); bushImgs[_bi].src = `assets_tiny/Terrain/Bushe${_bi}.png`; }
+
 (function () {
   Object.keys(HERO_SPRITE_DATA).forEach(dir => {
     const img = new Image(); img.src = HERO_SPRITE_DATA[dir]; heroImgs[dir] = img;
@@ -2598,6 +2632,13 @@ const SHAMAN_ANIM_FPS = { idle: 6, run: 10, attack: 14 };
   });
 })();
 
+// Shaman projectile & explosion sprite sheets
+const shamanProjImg = new Image(); shamanProjImg.src = 'assets_tiny/Shaman_Projectile.png';
+const shamanExplImg = new Image(); shamanExplImg.src = 'assets_tiny/Shaman_Explosion.png';
+const _SHAM_PROJ_FRAMES = 3, _SHAM_PROJ_W = 128, _SHAM_PROJ_H = 128, _SHAM_PROJ_MS = 90;
+const _SHAM_EXPL_FRAMES = 9, _SHAM_EXPL_W = 128, _SHAM_EXPL_H = 128, _SHAM_EXPL_MS = 55;
+const _shamanExplosions = []; // module-level visual list, not turn-based
+
 function getShamanFrame(u, dir) {
   const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
   const swingElapsed = u.swingStart ? performance.now() - u.swingStart : Infinity;
@@ -2621,9 +2662,265 @@ function getShamanFrame(u, dir) {
   return frames[idx];
 }
 
+function loadHorizontalSheetFrames(path, frameCount) {
+  const sheet = new Image();
+  sheet.src = path;
+  const frames = [];
+  for (let i = 0; i < frameCount; i++) {
+    const frame = new Image();
+    frame.src = path;
+    frames.push(frame);
+  }
+  return { sheet, frames, frameCount };
+}
+
+const spiderAnimSheets = {
+  idle: loadHorizontalSheetFrames('animations/spider/Spider_Idle.png', 8),
+  run: loadHorizontalSheetFrames('animations/spider/Spider_Run.png', 5),
+  attack: loadHorizontalSheetFrames('animations/spider/Spider_Attack.png', 8),
+};
+const SPIDER_ANIM_FPS = { idle: 7, run: 11, attack: 12 };
+const sheepAnimSheets = {
+  idle: loadHorizontalSheetFrames('animations/sheep/Sheep_Idle.png', 6),
+  move: loadHorizontalSheetFrames('animations/sheep/Sheep_Move.png', 4),
+  graze: loadHorizontalSheetFrames('animations/sheep/Sheep_Grass.png', 12),
+};
+const SHEEP_ANIM_FPS = { idle: 6, move: 8, graze: 7 };
+const trollAnimSheets = {
+  idle: loadHorizontalSheetFrames('animations/troll/Troll_Idle.png', 12),
+  walk: loadHorizontalSheetFrames('animations/troll/Troll_Walk.png', 10),
+  attack: loadHorizontalSheetFrames('animations/troll/Troll_Attack.png', 6),
+  recovery: loadHorizontalSheetFrames('animations/troll/Troll_Recovery.png', 10),
+};
+const TROLL_ANIM_FPS = { idle: 6, walk: 9, attack: 10, recovery: 10 };
+
+// ---- Skull enemy sprite sheets ----
+const skullAnimSheets = {
+  idle:   loadHorizontalSheetFrames('assets_tiny/Skull_Idle.png',   8),
+  run:    loadHorizontalSheetFrames('assets_tiny/Skull_Run.png',    6),
+  attack: loadHorizontalSheetFrames('assets_tiny/Skull_Attack.png', 7),
+  guard:  loadHorizontalSheetFrames('assets_tiny/Skull_Guard.png',  7),
+};
+const SKULL_ANIM_FPS = { idle: 7, run: 10, attack: 12, guard: 10 };
+const SKULL_FRAME_W  = 192;  // square frames
+
+// ---- Blue Bird NPC sprite sheet (768x384: 8 cols x 4 rows, 96x96 per frame) ----
+// Row 0=IDLE(8f), Row 1=WALK(8f), Row 2=ATTACK(4f+4blank), Row 3=DEATH(4f+4blank)
+const _blueBirdSheet = new Image();
+_blueBirdSheet.src = 'assets_tiny/BlueBird_Sheet.png';
+const BLUEBIRD_FRAME_W = 96;
+const BLUEBIRD_FRAME_H = 96;
+const BLUEBIRD_ANIM = {
+  idle:   { row: 0, frames: 8, fps: 8  },
+  walk:   { row: 1, frames: 8, fps: 11 },
+  attack: { row: 2, frames: 4, fps: 12 },
+  death:  { row: 3, frames: 4, fps: 8  },
+};
+
+function getBlueBirdFrameState(u) {
+  if (!_blueBirdSheet.complete || _blueBirdSheet.naturalWidth <= 0) return null;
+  const now = performance.now();
+  const isMoving = Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05;
+  const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
+  const swingDur = (BLUEBIRD_ANIM.attack.frames / BLUEBIRD_ANIM.attack.fps) * 1000;
+
+  let anim;
+  if (swingElapsed < swingDur) anim = BLUEBIRD_ANIM.attack;
+  else if (isMoving)           anim = BLUEBIRD_ANIM.walk;
+  else                         anim = BLUEBIRD_ANIM.idle;
+
+  const idx = anim === BLUEBIRD_ANIM.attack
+    ? Math.min(anim.frames - 1, Math.floor(swingElapsed / (1000 / anim.fps)))
+    : Math.floor(now / (1000 / anim.fps)) % anim.frames;
+
+  return {
+    sheet: _blueBirdSheet,
+    sx: idx * BLUEBIRD_FRAME_W,
+    sy: anim.row * BLUEBIRD_FRAME_H,
+    sw: BLUEBIRD_FRAME_W,
+    sh: BLUEBIRD_FRAME_H
+  };
+}
+
+function getSkullFrameState(u) {
+  const now = performance.now();
+  const isMoving   = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const swingElapsed  = u.swingStart  ? now - u.swingStart  : Infinity;
+  const guardElapsed  = u.guardStart  ? now - u.guardStart  : Infinity;
+  const swingDur   = (skullAnimSheets.attack.frameCount / SKULL_ANIM_FPS.attack)  * 1000;
+  const guardDur   = (skullAnimSheets.guard.frameCount  / SKULL_ANIM_FPS.guard)   * 1000;
+
+  let anim = 'idle';
+  if      (swingElapsed < swingDur)  anim = 'attack';
+  else if (guardElapsed < guardDur)  anim = 'guard';
+  else if (isMoving)                 anim = 'run';
+
+  const sheet = skullAnimSheets[anim];
+  const fps   = SKULL_ANIM_FPS[anim];
+  const frameCount = sheet.frameCount;
+  let frameIdx;
+  if (anim === 'attack') frameIdx = Math.min(frameCount - 1, Math.floor(swingElapsed / (1000 / fps)));
+  else if (anim === 'guard') frameIdx = Math.min(frameCount - 1, Math.floor(guardElapsed / (1000 / fps)));
+  else frameIdx = Math.floor(now / (1000 / fps)) % frameCount;
+
+  return { sheet: sheet.sheet, sx: frameIdx * SKULL_FRAME_W, sy: 0, sw: SKULL_FRAME_W, sh: SKULL_FRAME_W };
+}
+
+function getSpiderFrameState(u) {
+  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const swingElapsed = u.swingStart ? performance.now() - u.swingStart : Infinity;
+  const swingDur = (spiderAnimSheets.attack.frameCount / SPIDER_ANIM_FPS.attack) * 1000;
+  let anim = 'idle';
+  if (swingElapsed < swingDur) anim = 'attack';
+  else if (isMoving) anim = 'run';
+
+  const sheetState = spiderAnimSheets[anim];
+  if (!sheetState?.sheet || !sheetState.sheet.complete || sheetState.sheet.naturalWidth <= 0) return null;
+  const frameW = Math.floor(sheetState.sheet.naturalWidth / sheetState.frameCount);
+  const frameH = sheetState.sheet.naturalHeight;
+  let idx;
+  if (anim === 'attack') {
+    idx = Math.min(Math.floor(swingElapsed / (1000 / SPIDER_ANIM_FPS.attack)), sheetState.frameCount - 1);
+  } else {
+    idx = Math.floor(performance.now() / (1000 / SPIDER_ANIM_FPS[anim])) % sheetState.frameCount;
+  }
+  return {
+    sheet: sheetState.sheet,
+    sx: idx * frameW,
+    sy: 0,
+    sw: frameW,
+    sh: frameH,
+  };
+}
+
+function getSheepFrameState(u) {
+  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const idleCycle = Math.floor(performance.now() / 1800) % 3;
+  const anim = isMoving ? 'move' : (idleCycle === 2 ? 'graze' : 'idle');
+  const sheetState = sheepAnimSheets[anim];
+  if (!sheetState?.sheet || !sheetState.sheet.complete || sheetState.sheet.naturalWidth <= 0) return null;
+  const frameW = Math.floor(sheetState.sheet.naturalWidth / sheetState.frameCount);
+  const frameH = sheetState.sheet.naturalHeight;
+  const idx = Math.floor(performance.now() / (1000 / SHEEP_ANIM_FPS[anim])) % sheetState.frameCount;
+  return {
+    sheet: sheetState.sheet,
+    sx: idx * frameW,
+    sy: 0,
+    sw: frameW,
+    sh: frameH,
+  };
+}
+
+function getTrollFrameState(u) {
+  const now = performance.now();
+  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
+  const swingDur = (trollAnimSheets.attack.frameCount / TROLL_ANIM_FPS.attack) * 1000;
+  const recoveryElapsed = u.recoveryStart ? now - u.recoveryStart : Infinity;
+  const recoveryDur = (trollAnimSheets.recovery.frameCount / TROLL_ANIM_FPS.recovery) * 1000;
+  let anim = 'idle';
+  if (swingElapsed < swingDur) anim = 'attack';
+  else if (recoveryElapsed < recoveryDur) anim = 'recovery';
+  else if (isMoving) anim = 'walk';
+
+  const sheetState = trollAnimSheets[anim];
+  if (!sheetState?.sheet || !sheetState.sheet.complete || sheetState.sheet.naturalWidth <= 0) return null;
+  const frameW = Math.floor(sheetState.sheet.naturalWidth / sheetState.frameCount);
+  const frameH = sheetState.sheet.naturalHeight;
+  let idx;
+  if (anim === 'attack') {
+    idx = Math.min(Math.floor(swingElapsed / (1000 / TROLL_ANIM_FPS.attack)), sheetState.frameCount - 1);
+  } else if (anim === 'recovery') {
+    idx = Math.min(Math.floor(recoveryElapsed / (1000 / TROLL_ANIM_FPS.recovery)), sheetState.frameCount - 1);
+  } else {
+    idx = Math.floor(now / (1000 / TROLL_ANIM_FPS[anim])) % sheetState.frameCount;
+  }
+  return {
+    sheet: sheetState.sheet,
+    sx: idx * frameW,
+    sy: 0,
+    sw: frameW,
+    sh: frameH,
+  };
+}
+
+// ---- Minotaur enemy sprite sheets ----
+const minotaurAnimSheets = {
+  idle:   loadHorizontalSheetFrames('assets_tiny/Minotaur_Idle.png',   16),
+  walk:   loadHorizontalSheetFrames('assets_tiny/Minotaur_Walk.png',    8),
+  attack: loadHorizontalSheetFrames('assets_tiny/Minotaur_Attack.png', 12),
+  guard:  loadHorizontalSheetFrames('assets_tiny/Minotaur_Guard.png',  11),
+};
+const MINOTAUR_ANIM_FPS = { idle: 10, walk: 9, attack: 14, guard: 11 };
+const MINOTAUR_FRAME_W  = 320;
+
+function getMinotaurFrameState(u) {
+  const now = performance.now();
+  const isMoving = Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05;
+  const swingDur = (minotaurAnimSheets.attack.frameCount / MINOTAUR_ANIM_FPS.attack) * 1000;
+  const guardDur = (minotaurAnimSheets.guard.frameCount  / MINOTAUR_ANIM_FPS.guard)  * 1000;
+  const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
+  const guardElapsed = u.guardStart ? now - u.guardStart : Infinity;
+
+  let anim = 'idle';
+  if      (swingElapsed < swingDur) anim = 'attack';
+  else if (guardElapsed < guardDur) anim = 'guard';
+  else if (isMoving)                anim = 'walk';
+
+  const sheet = minotaurAnimSheets[anim];
+  const fps   = MINOTAUR_ANIM_FPS[anim];
+  const fc    = sheet.frameCount;
+  let idx;
+  if (anim === 'attack') idx = Math.min(fc - 1, Math.floor(swingElapsed / (1000 / fps)));
+  else if (anim === 'guard') idx = Math.min(fc - 1, Math.floor(guardElapsed / (1000 / fps)));
+  else idx = Math.floor(now / (1000 / fps)) % fc;
+
+  return { sheet: sheet.sheet, sx: idx * MINOTAUR_FRAME_W, sy: 0, sw: MINOTAUR_FRAME_W, sh: MINOTAUR_FRAME_W };
+}
+
+// ---- Ronke NPC sprite sheet (22 idle frames, 128x128 each) ----
+const ronkeIdleSheet  = loadHorizontalSheetFrames('assets_tiny/Ronke_Idle.png',  22);
+const ronke2IdleSheet   = loadHorizontalSheetFrames('assets_tiny/Ronke2_Idle.png',   8);
+const ronke2WalkSheet   = loadHorizontalSheetFrames('assets_tiny/Ronke2_Walk.png',   8);
+const ronke2AttackSheet = loadHorizontalSheetFrames('assets_tiny/Ronke2_Attack.png', 8);
+const RONKE_FRAME_W   = 128;
+const RONKE2_FRAME_W  = 640;
+const RONKE_ANIM_FPS  = 10;
+
+function getRonkeFrameState(u) {
+  const s = ronkeIdleSheet;
+  if (!s?.sheet || !s.sheet.complete || s.sheet.naturalWidth <= 0) return null;
+  const idx = Math.floor(performance.now() / (1000 / RONKE_ANIM_FPS)) % s.frameCount;
+  return { sheet: s.sheet, sx: idx * RONKE_FRAME_W, sy: 0, sw: RONKE_FRAME_W, sh: RONKE_FRAME_W };
+}
+
+function getRonke2FrameState(u) {
+  const now = performance.now();
+  const isAttacking = u.swingStart && (now - u.swingStart) < (8 / 10 * 1000);
+  const isMoving = !isAttacking && (u.rx !== undefined && u.ry !== undefined)
+    ? (Math.abs(u.rx - Math.round(u.rx)) > 0.02 || Math.abs(u.ry - Math.round(u.ry)) > 0.02)
+    : false;
+  let s, fps;
+  if (isAttacking) {
+    s = ronke2AttackSheet; fps = 10;
+  } else if (isMoving) {
+    s = ronke2WalkSheet;   fps = 12;
+  } else {
+    s = ronke2IdleSheet;   fps = RONKE_ANIM_FPS;
+  }
+  if (!s?.sheet || !s.sheet.complete || s.sheet.naturalWidth <= 0) return null;
+  const idx = isAttacking
+    ? Math.min(Math.floor((now - u.swingStart) / (1000 / fps)), s.frameCount - 1)
+    : Math.floor(now / (1000 / fps)) % s.frameCount;
+  return { sheet: s.sheet, sx: idx * RONKE2_FRAME_W, sy: 0, sw: RONKE2_FRAME_W, sh: RONKE2_FRAME_W };
+}
+
 // Adventure enemy archetypes
 const ENEMY_TYPES = [
   { type: 'shaman',  hp: 2, color: '#cc30ff', scale: 1.00, label: 'SHAMAN' },
+  { type: 'spider',  hp: 2, color: '#7c1010', scale: 1.00, label: 'SPIDER' },
+  { type: 'sheep',   hp: 1, color: '#b9e8a3', scale: 0.95, label: 'SHEEP' },
+  { type: 'troll',   hp: 8, color: '#6f8f43', scale: 1.25, label: 'TROLL' },
   { type: 'leak',    hp: 1, color: '#ff6622', scale: 1.00, label: 'LEAK' },
   { type: 'worm',    hp: 2, color: '#00ffaa', scale: 1.10, label: 'WORM' },
   { type: 'overflow',hp: 1, color: '#dd1a40', scale: 1.18, label: 'OVR' },
@@ -2631,6 +2928,23 @@ const ENEMY_TYPES = [
   { type: 'idol',    hp: 4, color: '#6fd6ff', scale: 1.65, label: 'NULL IDOL' },
   { type: 'shield',  hp: 3, color: '#44aaff', scale: 1.05, label: 'SHIELD' },
   { type: 'ironbox', hp: 5, color: '#8899aa', scale: 1.25, label: 'FORTRESS' },
+  { type: 'skull',     hp: 3,  color: '#e8d8c0', scale: 1.10, label: 'SKULL' },
+  { type: 'bluebird',  hp: 2,  color: '#4488ff', scale: 1.00, label: 'BIRD' },
+  { type: 'minotaur',  hp: 6,  color: '#8b2020', scale: 1.40, label: 'MINOTAUR' },
+  { type: 'ronke',     hp: 8,  color: '#3355cc', scale: 1.50, label: 'RONKE' },
+  { type: 'ronke2',    hp: 8,  color: '#4466dd', scale: 1.50, label: 'RONKE2' },
+];
+
+const EDITOR_NPC_TYPES = [
+  { type: 'shaman',   label: 'SHAMAN',   color: '#cc30ff' },
+  { type: 'spider',   label: 'SPIDER',   color: '#7c1010' },
+  { type: 'sheep',    label: 'SHEEP',    color: '#b9e8a3' },
+  { type: 'troll',    label: 'TROLL',    color: '#6f8f43' },
+  { type: 'skull',    label: 'SKULL',    color: '#e8d8c0' },
+  { type: 'bluebird', label: 'BIRD',     color: '#4488ff' },
+  { type: 'minotaur', label: 'MINOTAUR', color: '#8b2020' },
+  { type: 'ronke',    label: 'RONKE',    color: '#3355cc' },
+  { type: 'ronke2',   label: 'RONKE2',   color: '#4466dd' },
 ];
 
 
@@ -2647,6 +2961,124 @@ let _p2PanelEl = null;   // saved reference when panel is removed from DOM
 let S = {};
 let stats = {};
 let aiThinkInterval = null;
+
+function cloneEditorEnemyPlacements(list = []) {
+  const seen = new Set();
+  const out = [];
+  list.forEach((entry) => {
+    if (!entry) return;
+    const type = String(entry.type || '').trim();
+    const x = Number(entry.x);
+    const y = Number(entry.y);
+    if (!type || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const gx = Math.floor(x);
+    const gy = Math.floor(y);
+    const key = `${type}:${gx},${gy}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ type, x: gx, y: gy });
+  });
+  return out;
+}
+
+function getEditorEnemyArchetype(type) {
+  return ENEMY_TYPES.find((enemy) => enemy.type === type) || null;
+}
+
+function getLiveEditorEnemyPlacements() {
+  if (!Array.isArray(S.units)) return [];
+  return S.units
+    .filter((u) => u && u.team === 1 && u.alive && getEditorEnemyArchetype(u.utype))
+    .map((u) => ({ type: u.utype, x: u.x, y: u.y }));
+}
+
+function persistEditorEnemyPlacements() {
+  if (!Array.isArray(S.customEnemyPlacements)) S.customEnemyPlacements = [];
+  if (window.CUSTOM_MAP && S.floor === 1) {
+    window.CUSTOM_MAP.enemies = cloneEditorEnemyPlacements(S.customEnemyPlacements);
+  }
+  S.totalEnemies = Array.isArray(S.units) ? S.units.filter((u) => isHostileAdventureEnemy(u)).length : 0;
+}
+
+function syncEditorEnemyPlacementsFromUnits() {
+  S.customEnemyPlacements = cloneEditorEnemyPlacements(getLiveEditorEnemyPlacements());
+  persistEditorEnemyPlacements();
+  return S.customEnemyPlacements;
+}
+
+function nextEditorUnitId() {
+  if (!Array.isArray(S.units) || S.units.length === 0) return 1;
+  return S.units.reduce((maxId, unit) => Math.max(maxId, unit.id || 0), 0) + 1;
+}
+
+function removeEditorEnemyAt(gx, gy) {
+  let removed = false;
+  if (Array.isArray(S.units)) {
+    S.units = S.units.filter((unit) => {
+      const match = unit && unit.team === 1 && unit.alive && unit.x === gx && unit.y === gy && getEditorEnemyArchetype(unit.utype);
+      if (match) removed = true;
+      return !match;
+    });
+  }
+  if (Array.isArray(S.customEnemyPlacements)) {
+    const before = S.customEnemyPlacements.length;
+    S.customEnemyPlacements = S.customEnemyPlacements.filter((enemy) => !(enemy.x === gx && enemy.y === gy));
+    if (S.customEnemyPlacements.length !== before) removed = true;
+  }
+  if (removed) persistEditorEnemyPlacements();
+  return removed;
+}
+
+function placeEditorEnemy(type, gx, gy) {
+  const archetype = getEditorEnemyArchetype(type);
+  if (!archetype || !Array.isArray(S.dungeon)) return false;
+  if (gx < 0 || gy < 0 || gy >= ROWS || gx >= COLS) return false;
+  if (typeof isWall === 'function' && isWall(gx, gy)) return false;
+  if (Array.isArray(S.units) && S.units.some((unit) => unit.team === 0 && unit.alive && unit.x === gx && unit.y === gy)) return false;
+  if (Array.isArray(S.teleports) && S.teleports.some((pad) => pad.x === gx && pad.y === gy)) return false;
+
+  removeEditorEnemyAt(gx, gy);
+  if (!Array.isArray(S.customEnemyPlacements)) S.customEnemyPlacements = [];
+  S.customEnemyPlacements.push({ type, x: gx, y: gy });
+  if (!Array.isArray(S.units)) S.units = [];
+  S.units.push(mkUnit(nextEditorUnitId(), 1, gx, gy, -1, archetype));
+  persistEditorEnemyPlacements();
+  return true;
+}
+
+const ENEMY_BATCH_ACT_CHANCE = 0.5;
+
+function collectAiBatchActions(aiUnits, nextBullets, safe, p1Future) {
+  const batch = [];
+  const reservedMoveTargets = new Set();
+  const rolledUnits = [...aiUnits];
+
+  for (let i = rolledUnits.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rolledUnits[i], rolledUnits[j]] = [rolledUnits[j], rolledUnits[i]];
+  }
+
+  rolledUnits.forEach(unit => {
+    if (Math.random() > ENEMY_BATCH_ACT_CHANCE) return;
+
+    const res = aiUnitDecide(unit, nextBullets, safe, p1Future);
+    if (!res) return;
+
+    const action = { ...res.action, unitId: unit.id };
+    if (action.t === 'move') {
+      const nx = unit.x + action.dx;
+      const ny = unit.y + action.dy;
+      const key = `${nx},${ny}`;
+      if (reservedMoveTargets.has(key)) return;
+      reservedMoveTargets.add(key);
+    }
+
+    if (action.fo) unit.facing = action.fo;
+    batch.push(action);
+  });
+
+  return batch;
+}
 
 
 const LOG_MAX_LINES = 16;
@@ -2867,6 +3299,9 @@ const UTYPE_ICONS = {};
 function getUtypeIcon(utype) {
   let color = '#ffffff';
   if (utype === 'worm') color = '#00ffaa';
+  else if (utype === 'spider') color = '#7c1010';
+  else if (utype === 'sheep') color = '#b9e8a3';
+  else if (utype === 'troll') color = '#6f8f43';
   else if (utype === 'leak') color = '#ff6622';
   else if (utype === 'corrupt') color = '#cc30ff';
   else if (utype === 'overflow') color = '#dd1a40';
@@ -3502,7 +3937,7 @@ function mkUnit(id, team, x, y, faceDx, etype) {
   const maxHp = etype ? etype.hp : MAX_HP;
   const scale = etype ? etype.scale : 1.0;
   const utype = etype ? etype.type : (team === 0 ? 'player' : 'grunt');
-  return {
+  const unit = {
     id, team, x, y,
     px: x, py: y,
     rx: x, ry: y,
@@ -3518,6 +3953,12 @@ function mkUnit(id, team, x, y, faceDx, etype) {
     hitFlash: 0, deathT: 1.0, shootFlash: 0,
     ...(etype?.dodge !== undefined ? { dodge: etype.dodge } : {}),
   };
+  if (utype === 'sheep' || utype === 'troll') {
+    unit.weapon = 'none';
+    unit.ammo = 0; unit.maxAmmo = 0;
+    unit.laserAmmo = 0; unit.heavyAmmo = 0; unit.shotgunAmmo = 0;
+  }
+  return unit;
 }
 
 function mkFirstRoomBoss(id, x, y) {
@@ -3611,6 +4052,8 @@ function isWall(x, y) {
   if (gameMode === 'adventure' && S.dungeon) {
     const t = S.dungeon[y][x];
     if (t === 0 || t === 2) return true; // wall or pillar
+    // Collision box decoration — treated as wall
+    if (S.collisionBoxes && S.collisionBoxes.has(y + ',' + x)) return true;
     // Check for moving platforms (solid obstacles)
     if (S.platforms && S.platforms.some(p => Math.round(p.lx) === x && Math.round(p.ly) === y)) return true;
   }
@@ -3651,7 +4094,11 @@ function initHubRoom() {
 
   S.phase = 'frozen'; S.tick = 0;
   S.pending = [null, null];
+  S.pendingEnemyBatch = [];
   S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
+  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = [];
+  _shamanExplosions.length = 0;
+  S.pendingPassiveRewards = [];
   S.shake = 0; S.animT = 1;
   S.winner = null; S.pendingGameover = false;
   S.clock = [120000, 120000]; S.timeForfeited = -1; S.clockSide = 0;
@@ -3728,6 +4175,9 @@ function initAdventure() {
   S.phase = 'frozen'; S.tick = 0;
   S.pending = [null, null];
   S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
+  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = [];
+  _shamanExplosions.length = 0;
+  S.pendingPassiveRewards = [];
   S.shake = 0; S.animT = 1;
   S.winner = null; S.pendingGameover = false;
   S.clock = [120000, 120000]; S.timeForfeited = -1; S.clockSide = 0;
@@ -3759,7 +4209,11 @@ function initAdventure() {
 
   // Player units in start room
   const sr = S.rooms[0];
-  const px = sr.x + 1, py = sr.y + 1;
+  const _sp = (window.CUSTOM_MAP && S.floor === 1 && window.CUSTOM_MAP.spawnPos) ? window.CUSTOM_MAP.spawnPos : null;
+  const px = _sp ? _sp.x : (sr ? sr.x + 1 : 2);
+  const py = _sp ? _sp.y : (sr ? sr.y + 1 : 2);
+  const useCustomEnemyPlacements = !!(window.CUSTOM_MAP && S.floor === 1 && Array.isArray(window.CUSTOM_MAP.enemies));
+  S.customEnemyPlacements = useCustomEnemyPlacements ? cloneEditorEnemyPlacements(window.CUSTOM_MAP.enemies) : [];
   S.units = [
     mkUnit(0, 0, px, py, 1),
   ];
@@ -3771,14 +4225,23 @@ function initAdventure() {
 
   const poolByRoom = (ri) => {
     if (gameMode === 'adventure') {
-      if (ri === 0) return [ENEMY_TYPES[0], ENEMY_TYPES[1]]; // Shaman in first room
-      if (ri === numRooms - 1 && numRooms > 1) return [ENEMY_TYPES[3], ENEMY_TYPES[4], ENEMY_TYPES[2]]; // Boss room
-      if (ri < numRooms / 2) return [ENEMY_TYPES[0], ENEMY_TYPES[1], ENEMY_TYPES[7]];
-      return [ENEMY_TYPES[1], ENEMY_TYPES[2], ENEMY_TYPES[4], ENEMY_TYPES[6], ENEMY_TYPES[7]]; // Mid-Late
+      if (ri === 0) return ['shaman', 'skull'].map(getEditorEnemyArchetype); // First room
+      if (ri === numRooms - 1 && numRooms > 1) return ['overflow', 'corrupt', 'worm'].map(getEditorEnemyArchetype); // Boss room
+      if (ri < numRooms / 2) return ['shaman', 'skull', 'leak', 'ironbox'].map(getEditorEnemyArchetype);
+      return ['skull', 'leak', 'worm', 'corrupt', 'shield', 'ironbox'].map(getEditorEnemyArchetype); // Mid-Late
     }
   };
 
-  S.rooms.forEach((r, ri) => {
+  if (useCustomEnemyPlacements) {
+    S.customEnemyPlacements.forEach((enemy) => {
+      const archetype = getEditorEnemyArchetype(enemy.type);
+      if (!archetype) return;
+      if (enemy.x < 0 || enemy.y < 0 || enemy.x >= COLS || enemy.y >= ROWS) return;
+      if (isWall(enemy.x, enemy.y) || S.units.some((u) => u.x === enemy.x && u.y === enemy.y)) return;
+      S.units.push(mkUnit(eid++, 1, enemy.x, enemy.y, -1, archetype));
+    });
+  } else {
+    S.rooms.forEach((r, ri) => {
     let count = 4;
 
     if (S.floor === 1 || S.floor === 3) {
@@ -3799,7 +4262,7 @@ function initAdventure() {
       // Force spawn an Ironbox (Fortress) in the second room alone
       const ix = r.x + Math.floor(r.w / 2);
       const iy = r.y + Math.floor(r.h / 2);
-      S.units.push(mkUnit(eid++, 1, ix, iy, -1, ENEMY_TYPES[7]));
+      S.units.push(mkUnit(eid++, 1, ix, iy, -1, getEditorEnemyArchetype('ironbox')));
       return;
     } else if (S.floor === 3 && ri === 0) {
       const bx = r.x + r.w - 2;
@@ -3840,8 +4303,12 @@ function initAdventure() {
       }
       S.units.push(_u);
     }
-  });
-  S.totalEnemies = S.units.filter(u => u.team === 1).length;
+    });
+  }
+  S.totalEnemies = S.units.filter(u => isHostileAdventureEnemy(u)).length;
+  if (!useCustomEnemyPlacements && window.CUSTOM_MAP && S.floor === 1) {
+    syncEditorEnemyPlacementsFromUnits();
+  }
 
   // Chests scaling
   const targetChests = S.floor <= 2 ? 0 : Math.min(8, 2 + Math.floor(S.floor / 3));
@@ -3895,10 +4362,26 @@ function initAdventure() {
   if (S.floor === 1 && !Profile.tutorialDone) {
     setTimeout(() => startTutorial(), 700);
   }
-}
-
-function generateDungeon() {
-  S.dungeon = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+}function generateDungeon() {
+  if (window.CUSTOM_MAP && S.floor === 1) {
+    S.dungeon = JSON.parse(JSON.stringify(window.CUSTOM_MAP.dungeon || window.CUSTOM_MAP));
+    S.decorations = window.CUSTOM_MAP.decorations ? JSON.parse(JSON.stringify(window.CUSTOM_MAP.decorations)) : {};
+    S.collisionBoxes = window.CUSTOM_MAP.collisionBoxes ? new Set(window.CUSTOM_MAP.collisionBoxes) : new Set();
+    // Sync ROWS/COLS to actual map dimensions
+    ROWS = S.dungeon.length;
+    COLS = S.dungeon[0].length;
+    ADV_MAP_ROWS = ROWS; ADV_MAP_COLS = COLS;
+    // Provide mock room so hero spawn code doesn't crash
+    S.rooms = [{ x: 1, y: 1, w: COLS - 2, h: ROWS - 2, type: 'start' }];
+    // Place exit teleport
+    if (window.CUSTOM_MAP.exitPos) {
+      S.teleports = [{ x: window.CUSTOM_MAP.exitPos.x, y: window.CUSTOM_MAP.exitPos.y }];
+    }
+    return;
+  }
+  
+  S.dungeon = Array.from({ length: ROWS }, () => new Array(COLS).fill(1));
+  S.decorations = {}; // Format: "r,c" -> string ID e.g. "deco_01"
   S.rooms = [];
 
   const gw = S.gridW;
@@ -5422,230 +5905,266 @@ function drawDungeon() {
   }
 }
 
+function drawForegroundDecorations() {
+  if (!S.decorations) return;
+
+  const decKeys = Object.keys(S.decorations);
+  decKeys.sort((a, b) => parseInt(a.split(',')[0], 10) - parseInt(b.split(',')[0], 10));
+
+  for (const key of decKeys) {
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10);
+    const c = parseInt(strC, 10);
+    const decId = S.decorations[key];
+    if (!decId.startsWith('bush')) continue;
+
+    const sheetIdx = parseInt(decId.replace('bush', ''), 10);
+    const bImg = bushImgs[sheetIdx];
+    if (!bImg || !bImg.complete || bImg.naturalWidth <= 0) continue;
+
+    const px = c * CELL;
+    const py = r * CELL;
+    const BUSH_FRAMES = 8;
+    const stagger = (r * 3 + c * 7) % BUSH_FRAMES;
+    const frame = (Math.floor(performance.now() / 170) + stagger) % BUSH_FRAMES;
+    const drawW = CELL * 2;
+    const drawH = CELL * 2;
+    const drawX = px + CELL * 0.5 - drawW * 0.5;
+    const drawY = py + CELL - drawH - 10;
+    ctx.drawImage(bImg, frame * 128, 0, 128, 128, drawX, drawY, drawW, drawH);
+  }
+}
+
 function _drawDungeonStatic() {
   const wallT = performance.now() * 0.001;
-  // Pass 1: base fills
+  // PASS 0: WATER
+  // PASS 0: WATER
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const px = c * CELL, py = r * CELL;
-      if (S.dungeon[r][c] === 2) {
-        // Grass base under decoration
-        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          const dSeed = (r * 97 + c * 173) % 3;
-          ctx.drawImage(grassTilemapImg, (1 + dSeed) * 64, 64, 64, 64, px, py, CELL, CELL);
-          ctx.fillStyle = 'rgba(0,0,0,0.45)';
-          ctx.fillRect(px, py, CELL, CELL);
-        } else {
-          ctx.fillStyle = '#051d10';
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-
-        const pType = Math.abs((r * 241 + c * 599) % 100);
-
-        if (pType < 30) {
-          // 30% chance: Upgraded Electrolytic Capacitor
-          ctx.fillStyle = '#081710'; ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8); // shadow
-          ctx.fillStyle = '#1c7546'; ctx.fillRect(px + 6, py + 6, CELL - 12, CELL - 12); // main body
-          ctx.fillStyle = '#2db56d'; ctx.fillRect(px + 8, py + 6, 4, CELL - 12); // highlight
-
-          ctx.fillStyle = '#111'; ctx.fillRect(px + CELL / 2 + 2, py + 6, 4, CELL - 12); // negative stripe
-          ctx.fillStyle = '#ccc'; ctx.fillRect(px + CELL / 2 + 3, py + 12, 2, 4); // minus sign
-          // Silver top
-          ctx.fillStyle = '#99aaab'; ctx.fillRect(px + 6, py + 6, CELL - 12, 5);
-          ctx.fillStyle = '#d1dfdf'; ctx.fillRect(px + 8, py + 7, CELL - 16, 2);
-
-          // Cross depression on top
-          ctx.fillStyle = '#445555'; ctx.fillRect(px + CELL / 2 - 1, py + 6, 2, 5);
-          ctx.fillRect(px + CELL / 2 - 3, py + 8, 6, 2);
-        } else if (pType < 60) {
-          // 30% chance: Polished Red LED
-          ctx.fillStyle = '#0a0a0a'; ctx.fillRect(px + 10, py + 18, CELL - 20, CELL - 18); // plastic base rim
-          ctx.fillStyle = '#e0e0e0'; ctx.fillRect(px + 12, py + 4, 2, 16); // anode pin
-          ctx.fillStyle = '#b0b0b0'; ctx.fillRect(px + CELL - 14, py + 4, 3, 16); // cathode pin (thicker)
-
-          ctx.fillStyle = '#800000'; // dark red bulb back
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2, py + CELL * 0.55, CELL * 0.28, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#ff2222'; // bright red bulb
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2, py + CELL * 0.58, CELL * 0.26, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#xff8888'; // reflection crescent
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2 - 3, py + CELL * 0.52, CELL * 0.1, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.shadowColor = '#ff2222'; ctx.shadowBlur = 12;
-          ctx.fillStyle = '#ffcccc'; // glowing core
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2, py + CELL * 0.6, CELL * 0.08, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        } else if (pType < 85) {
-          // 25% chance: Detailed Square IC Chip
-          ctx.fillStyle = '#111'; ctx.fillRect(px + 6, py + 6, CELL - 12, CELL - 12); // body shadow
-
-          // Gold Pins
-          ctx.fillStyle = '#ccaa00';
-          for (let i = 8; i <= CELL - 10; i += 6) {
-            ctx.fillRect(px + 2, py + i + 1, 6, 3); // left
-            ctx.fillRect(px + CELL - 8, py + i + 1, 6, 3); // right
-          }
-          // Bright pin tips
-          ctx.fillStyle = '#ffeaa0';
-          for (let i = 8; i <= CELL - 10; i += 6) {
-            ctx.fillRect(px + 2, py + i + 1, 2, 3);
-            ctx.fillRect(px + CELL - 4, py + i + 1, 2, 3);
-          }
-
-          ctx.fillStyle = '#222325'; // matte plastic body
-          ctx.fillRect(px + 8, py + 8, CELL - 16, CELL - 16);
-          ctx.fillStyle = '#3a3d42'; // body edge highlight
-          ctx.fillRect(px + 8, py + 8, CELL - 16, 2);
-          ctx.fillRect(px + 8, py + 8, 2, CELL - 16);
-
-          // Pin 1 indicator (dot)
-          ctx.fillStyle = '#111';
-          ctx.beginPath(); ctx.arc(px + 12, py + 12, 2, 0, Math.PI * 2); ctx.fill();
-
-          // Laser etched text lines
-          ctx.fillStyle = '#555';
-          ctx.fillRect(px + 15, py + 16, CELL - 26, 2);
-          ctx.fillRect(px + 15, py + 22, CELL - 30, 2);
-        } else {
-          // 15% chance: Detailed Ceramic Capacitor
-          ctx.fillStyle = '#8a99a8'; // tin coated copper wires
-          ctx.fillRect(px + CELL * 0.35, py, 2, CELL * 0.5); // left
-          ctx.fillRect(px + CELL * 0.65 - 2, py, 2, CELL * 0.5); // right
-
-          ctx.fillStyle = '#a64400'; // dark orange border
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2, py + CELL * 0.55, CELL * 0.32, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#e56400'; // bright orange ceramic
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2, py + CELL * 0.55, CELL * 0.3, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#ff9e3d'; // rounded highlight
-          ctx.beginPath();
-          ctx.arc(px + CELL / 2 - 4, py + CELL * 0.5, CELL * 0.12, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Capacity label print
-          ctx.fillStyle = '#4a2500';
-          ctx.fillRect(px + CELL / 2 - 4, py + CELL * 0.6, 8, 2);
-        }
-      } else if (S.dungeon[r][c] === 1) {
-        // 4-bit bitmask autotile: waterN=1, waterS=2, waterW=4, waterE=8
-        const wN = r === 0        || S.dungeon[r-1][c] === 0;
-        const wS = r === ROWS - 1 || S.dungeon[r+1][c] === 0;
-        const wW = c === 0        || S.dungeon[r][c-1] === 0;
-        const wE = c === COLS - 1 || S.dungeon[r][c+1] === 0;
-        const bitmask = (wN?1:0) | (wS?2:0) | (wW?4:0) | (wE?8:0);
-
-        // 16-entry lookup: [srcX, srcY] in grass_tilemap.png
-        const GTILE = [
-          [64,64],[64,0],[64,128],[64,0],   // 0=inner 1=N 2=S 3=N+S→top
-          [0,64],[0,0],[0,128],[0,0],        // 4=W 5=NW 6=SW 7=N+S+W→TL
-          [192,64],[128,0],[192,128],[128,0],// 8=E 9=NE 10=SE 11=N+S+E→TR
-          [192,64],[128,0],[192,128],[64,64] // 12=W+E 13=N+W+E 14=S+W+E 15=iso
-        ];
-        const [tileX, tileY] = GTILE[bitmask];
-        // Inner fill: vary col slightly based on position
-        const finalX = (bitmask === 0) ? (1 + (r*123+c*456)%3)*64 : tileX;
-
-        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          ctx.drawImage(grassTilemapImg, finalX, tileY, 64, 64, px, py, CELL, CELL);
-        } else {
-          ctx.fillStyle = '#3a7a2a';
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-
-        const rtype = S.rooms?.find(rm => c >= rm.x && c < rm.x + rm.w && r >= rm.y && r < rm.y + rm.h)?.type;
-        if (rtype === 'shrine') { ctx.fillStyle = 'rgba(0,255,136,0.15)'; ctx.fillRect(px, py, CELL, CELL); }
-        if (rtype === 'armory') { ctx.fillStyle = 'rgba(255,217,0,0.12)'; ctx.fillRect(px, py, CELL, CELL); }
-        if (rtype === 'vault') { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(px, py, CELL, CELL); }
-      } else if (S.dungeon[r][c] === 3) {
-        // Grass corridor (slightly darker)
-        const seed3 = (r * 317 + c * 211) % 3;
-        const trow3 = 2 + seed3; // rows 2,3,4
-        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          ctx.globalAlpha = 0.75;
-          ctx.drawImage(grassTilemapImg, 64, trow3 * 64, 64, 64, px, py, CELL, CELL);
-          ctx.globalAlpha = 1.0;
-        } else {
-          ctx.fillStyle = '#2a5a1e';
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-      } else {
-        // Water background
-        if (waterBgImg.complete && waterBgImg.naturalWidth > 0) {
-          ctx.drawImage(waterBgImg, 0, 0, waterBgImg.naturalWidth, waterBgImg.naturalHeight, px, py, CELL, CELL);
-        } else {
-          ctx.fillStyle = '#4ab5c0';
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-
-        // Stone base — ONLY on wall cells directly below floor (platform bottom edge)
-        const floorAbove = r > 0 && S.dungeon[r-1][c] >= 1;
-        if (floorAbove && grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          const wSeed = Math.abs((r * 97 + c * 211) % 4);
-          ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
-        }
-
-        // Water foam ripple — on the row directly below stone
-        const stoneAbove = r > 1 && S.dungeon[r-1][c] === 0 && S.dungeon[r-2][c] >= 1;
-        if (stoneAbove && waterRippleImg.complete && waterRippleImg.naturalWidth > 0) {
-          const stagger = (c * 3) % 8;
-          const frame = (Math.floor(performance.now() / 140) + stagger) % 8;
-          ctx.globalAlpha = 0.9;
-          ctx.drawImage(waterRippleImg, frame * 192, 0, 192, 192, px, py, CELL, CELL);
-          ctx.globalAlpha = 1.0;
-        }
-
-        // Animated water foam — draw as small patch, offset per column row
-        if (waterFoamImg.complete && waterFoamImg.naturalWidth > 0) {
-          const foamFps = 6;
-          const totalFoamFrames = 16;
-          const stagger = (c * 7 + r * 11) % totalFoamFrames;
-          const foamFrame = (Math.floor(performance.now() / (1000 / foamFps)) + stagger) % totalFoamFrames;
-          // Draw a small 24×24 foam patch centered in the cell
-          const fsz = Math.round(CELL * 0.55);
-          const foff = Math.round((CELL - fsz) / 2);
-          ctx.globalAlpha = 0.45;
-          ctx.drawImage(waterFoamImg, foamFrame * 192, 0, 192, 192, px + foff, py + foff, fsz, fsz);
-          ctx.globalAlpha = 1.0;
-        }
-
+      if ([0, 4, 5].includes(S.dungeon[r][c])) {
+        const px = c * CELL, py = r * CELL;
+        if (tinyImgs.water.complete && tinyImgs.water.naturalWidth > 0) {
+          ctx.drawImage(tinyImgs.water, px, py, CELL, CELL);
+        } else { ctx.fillStyle = '#4ab5c0'; ctx.fillRect(px, py, CELL, CELL); }
       }
     }
   }
 
-  // Pass 2: shadow at bottom grass edge (where floor meets stone/water)
+  // PASS 1: WATER FOAM (192x192 overlays)
+  if (tinyImgs.foam.complete && tinyImgs.foam.naturalWidth > 0) {
+    const totalFoamFrames = 8;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        // Foam is ONLY generated for type 0 (auto-foam) and type 5 (force-foam)
+        if (S.dungeon[r][c] === 0 || S.dungeon[r][c] === 5) {
+          const isL = (tr, tc) => (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS && (S.dungeon[tr][tc] === 1 || S.dungeon[tr][tc] === 2 || S.dungeon[tr][tc] === 3));
+          const isTouchingLand = (S.dungeon[r][c] === 5) ? true : (isL(r-1,c) || isL(r+1,c) || isL(r,c-1) || isL(r,c+1) || isL(r-1,c-1) || isL(r-1,c+1) || isL(r+1,c-1) || isL(r+1,c+1));
+          
+          if (isTouchingLand) {
+            const px = c * CELL, py = r * CELL;
+            const stagger = (r * 3 + c * 7) % totalFoamFrames;
+            const foamFrame = (Math.floor(performance.now() / 150) + stagger) % totalFoamFrames;
+            const fw = Math.round(CELL * 3);
+            ctx.drawImage(tinyImgs.foam, foamFrame * 192, 0, 192, 192, px - CELL, py - CELL, fw, fw);
+          }
+        }
+      }
+    }
+  }
+
+  // PASS 1b: FOAM 2.0 (type 7) — 16 frames, same 192x192 format
+  if (waterFoam2Img.complete && waterFoam2Img.naturalWidth > 0) {
+    const totalFoam2Frames = 16;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (S.dungeon[r][c] === 7) {
+          const px = c * CELL, py = r * CELL;
+          const stagger = (r * 3 + c * 7) % totalFoam2Frames;
+          const frame = (Math.floor(performance.now() / 150) + stagger) % totalFoam2Frames;
+          const fw = Math.round(CELL * 3);
+          ctx.drawImage(waterFoam2Img, frame * 192, 0, 192, 192, px - CELL, py - CELL, fw, fw);
+        }
+      }
+    }
+  }
+
+  // PASS 2: DROPS / STONE BASES
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const tile = S.dungeon[r][c];
-      if (tile !== 1 && tile !== 2 && tile !== 3) continue;
       const px = c * CELL, py = r * CELL;
-      // Shadow only on the bottom edge (where water/stone is below)
-      const belowIsWall = r === ROWS - 1 || S.dungeon[r + 1][c] === 0;
-      if (belowIsWall) {
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.fillRect(px, py + CELL - 5, CELL, 5);
+      const elevAbove = r > 0 && S.dungeon[r-1][c] === 2;
+      const floorAbove = r > 0 && (S.dungeon[r-1][c] === 1 || S.dungeon[r-1][c] === 3);
+      if (floorAbove && [0, 4, 5].includes(S.dungeon[r][c])) {
+        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          const wSeed = Math.abs((r * 97 + c * 211) % 4);
+          ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
+        }
       }
-      // Subtle left/right/top shadow too
-      const wN = r === 0 || S.dungeon[r - 1][c] === 0;
-      const wW = c === 0 || S.dungeon[r][c - 1] === 0;
-      const wE = c === COLS - 1 || S.dungeon[r][c + 1] === 0;
-      if (wN) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(px, py, CELL, 3); }
-      if (wW) { ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(px, py, 3, CELL); }
-      if (wE) { ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(px + CELL - 3, py, 3, CELL); }
+      if (elevAbove && S.dungeon[r][c] !== 2 && elevationImg.complete && elevationImg.naturalWidth > 0) {
+        const cliffY = ([0, 4, 5].includes(S.dungeon[r][c])) ? 256 : 192;
+        const isW = c > 0 && S.dungeon[r-1][c-1] !== 2;
+        const isE = c < COLS - 1 && S.dungeon[r-1][c+1] !== 2;
+        let cliffX = 64; 
+        if (isW && !isE) cliffX = 0; else if (isE && !isW) cliffX = 128; else if (isW && isE) cliffX = 192;
+        ctx.drawImage(elevationImg, cliffX, cliffY, 64, 64, px, py, CELL, CELL);
+      }
     }
+  }
+
+  // PASS 3: TOP SURFACES (Grass / Elevation base / Shadow)
+  // type 6 = shadow cell: renders as grass, then draws shadow overlay on top (like foam pattern)
+  const _normT = (tt) => tt === 6 ? 1 : tt; // shadow treated as grass for tile borders
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const px = c * CELL, py = r * CELL;
+      const t = S.dungeon[r][c];
+      const nt = _normT(t);
+
+      if (nt === 1 || nt === 3 || nt === 2) {
+        const wN = r === 0          || _normT(S.dungeon[r-1][c]) !== nt;
+        const wS = r === ROWS - 1   || _normT(S.dungeon[r+1][c]) !== nt;
+        const wW = c === 0          || _normT(S.dungeon[r][c-1]) !== nt;
+        const wE = c === COLS - 1   || _normT(S.dungeon[r][c+1]) !== nt;
+        const bitmask = (wN?1:0) | (wS?2:0) | (wW?4:0) | (wE?8:0);
+        const GTILE = [[64,64],[64,0],[64,128],[64,0],[0,64],[0,0],[0,128],[0,0],[192,64],[128,0],[192,128],[128,0],[192,64],[128,0],[192,128],[64,64]];
+        const [tileX, tileY] = GTILE[bitmask];
+        const finalX = (bitmask === 0) ? (1 + (r*123+c*456)%3)*64 : tileX;
+
+        let img = grassTilemapImg;
+        if (nt === 2) img = elevationImg;
+
+        if (img.complete && img.naturalWidth > 0) {
+          ctx.globalAlpha = (nt === 3) ? 0.75 : 1.0;
+          let fy = tileY;
+          if (nt === 3) fy = (2 + ((r * 317 + c * 211) % 3)) * 64;
+          ctx.drawImage(img, finalX, fy, 64, 64, px, py, CELL, CELL);
+          ctx.globalAlpha = 1.0;
+        } else { ctx.fillStyle = (nt===2) ? '#5a7a4a' : '#3a7a2a'; ctx.fillRect(px, py, CELL, CELL); }
+
+        if (r > 0 && S.dungeon[r-1][c] === 2 && nt !== 2) {
+          ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(px, py, CELL, CELL);
+        }
+
+        // Shadow overlay — drawn right after the grass tile, same pass as terrain
+        if (t === 6 && shadowImg.complete && shadowImg.naturalWidth > 0) {
+          ctx.drawImage(shadowImg, 0, 0, 192, 192, px - CELL, py - CELL, CELL * 3, CELL * 3);
+        }
+      }
+    }
+  }
+
+  // Pass 3b: Decorations (from S.decorations map string keys)
+  if (S.decorations) {
+    // Sort keys by Y to achieve proper 'z-indexing' (things lower on screen draw on top)
+    const decKeys = Object.keys(S.decorations);
+    decKeys.sort((a,b) => parseInt(a.split(',')[0]) - parseInt(b.split(',')[0]));
+
+    for (const key of decKeys) {
+      const [strR, strC] = key.split(',');
+      const r = parseInt(strR), c = parseInt(strC);
+      const decId = S.decorations[key];
+      const px = c * CELL, py = r * CELL;
+
+      if (decId.startsWith('elev_')) {
+        const parts = decId.split('_');
+        const tx = parseInt(parts[1], 10);
+        const ty = parseInt(parts[2], 10);
+        if (elevationImg.complete && elevationImg.naturalWidth > 0) {
+           ctx.drawImage(elevationImg, tx * 64, ty * 64, 64, 64, px, py, CELL, CELL);
+        }
+      } else if (decId.startsWith('flat_')) {
+        const parts = decId.split('_');
+        const tx = parseInt(parts[1], 10);
+        const ty = parseInt(parts[2], 10);
+        if (flatImg.complete && flatImg.naturalWidth > 0) {
+           ctx.drawImage(flatImg, tx * 64, ty * 64, 64, 64, px, py, CELL, CELL);
+        }
+      } else if (decId.startsWith('tileset1_') || decId.startsWith('tileset3_')) {
+        const parts = decId.split('_');
+        const tx = parseInt(parts[1], 10);
+        const ty = parseInt(parts[2], 10);
+        const tsImg = decId.startsWith('tileset3_') ? tileset3Img : tilesetImg;
+        if (tsImg.complete && tsImg.naturalWidth > 0) {
+           ctx.drawImage(tsImg, tx * 64, ty * 64, 64, 64, px, py, CELL, CELL);
+        }
+      } else if (decId.startsWith('bridge_')) {
+        const parts = decId.split('_');
+        const tx = parseInt(parts[1], 10);
+        const ty = parseInt(parts[2], 10);
+        if (bridgeImg.complete && bridgeImg.naturalWidth > 0) {
+          ctx.drawImage(bridgeImg, tx * 64, ty * 64, 64, 64, px, py, CELL, CELL);
+        }
+      } else if (decId.startsWith('deco_')) {
+        const no = decId.replace('deco_', '');
+        const img = tinyImgs.deco[no];
+        if (img && img.complete && img.naturalWidth > 0) {
+            // Draw deco at bottom center of the cell
+            const w = img.naturalWidth * (CELL/64); // Assume base 64x64 grid roughly scaled to CELL
+            const h = img.naturalHeight * (CELL/64);
+            ctx.drawImage(img, px + CELL/2 - w/2, py + CELL - h, w, h);
+        }
+      } else if (decId === 'tree_1') {
+        if (tinyImgs.tree.complete && tinyImgs.tree.naturalWidth > 0) {
+            // spritesheet: 192x192 cells. Frame 0,0 is full tree
+            ctx.drawImage(tinyImgs.tree, 0, 0, 192, 192, px - CELL, py - CELL*2 + 10, CELL*3, CELL*3);
+        }
+      } else if (decId === 'mine_1') {
+        if (tinyImgs.mine.complete && tinyImgs.mine.naturalWidth > 0) {
+            // spritesheet: 192x128
+            ctx.drawImage(tinyImgs.mine, 0, 0, 192, 128, px - CELL, py - CELL, CELL*3, CELL*2);
+        }
+      } else if (decId.startsWith('rock')) {
+        const sheetIdx = parseInt(decId.replace('rock', ''), 10);
+        const rImg = rockImgs[sheetIdx];
+        if (rImg && rImg.complete && rImg.naturalWidth > 0) {
+          const ROCK_FRAMES = 8;
+          const stagger = (r * 5 + c * 11) % ROCK_FRAMES;
+          const frame = (Math.floor(performance.now() / 150) + stagger) % ROCK_FRAMES;
+          ctx.drawImage(rImg, frame * 128, 0, 128, 128, px - CELL / 2, py - CELL / 2, CELL * 2, CELL * 2);
+        }
+      } else if (decId === 'duck') {
+        if (duckImg.complete && duckImg.naturalWidth > 0) {
+          const DUCK_FRAMES = 3;
+          const stagger = (r * 7 + c * 13) % DUCK_FRAMES;
+          const frame = (Math.floor(performance.now() / 300) + stagger) % DUCK_FRAMES;
+          // 32x32 source frame, draw slightly larger centered on cell
+          const dw = Math.round(CELL * 0.7), dh = Math.round(CELL * 0.7);
+          ctx.drawImage(duckImg, frame * 32, 0, 32, 32, px + CELL / 2 - dw / 2, py + CELL - dh, dw, dh);
+        }
+      }
+    }
+  }
+
+  // Pass LAST: Collision boxes — overlay on top of everything, only visible in edit mode
+  if (window.isEditMode && S.collisionBoxes && S.collisionBoxes.size > 0) {
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.18)';
+    ctx.strokeStyle = 'rgba(255, 80, 80, 0.6)';
+    ctx.lineWidth = 1;
+    for (const key of S.collisionBoxes) {
+      const [strR, strC] = key.split(',');
+      const bpx = parseInt(strC) * CELL, bpy = parseInt(strR) * CELL;
+      ctx.fillRect(bpx, bpy, CELL, CELL);
+      ctx.strokeRect(bpx + 0.5, bpy + 0.5, CELL - 1, CELL - 1);
+    }
+  }
+
+  // Pass LAST+: Small NPC markers for map editing so placed enemies are easy to spot
+  if (window.isEditMode && Array.isArray(S.customEnemyPlacements) && S.customEnemyPlacements.length > 0) {
+    ctx.save();
+    ctx.fillStyle = '#000000';
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    for (const enemy of S.customEnemyPlacements) {
+      if (!enemy) continue;
+      const cx = enemy.x * CELL + CELL * 0.5;
+      const cy = enemy.y * CELL + CELL * 0.5;
+      const radius = Math.max(3, Math.round(CELL * 0.12));
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
 }
@@ -5659,6 +6178,7 @@ const _fogAlphaStr = Array.from({ length: 101 }, (_, i) => `rgba(0,0,0,${(i / 10
 function drawFog() {
   if (gameMode !== 'adventure' || !S.fog) return;
   if (S.fullMapRevealed) return;
+  if (window.isEditMode) return;
   const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   // Reuse S.bullets directly (no filter allocation) — check b.active inline
   const liveBullets = S.bullets || [];
@@ -6866,61 +7386,79 @@ function drawTeleports() {
   S.teleports.forEach((pad, i) => {
     if (!isVisible(pad.x, pad.y) && !S.fog?.[pad.y]?.[pad.x] && !S.fullMapRevealed) return;
     const cx = (pad.x + 0.5) * CELL, cy = (pad.y + 0.5) * CELL;
+    const px = pad.x * CELL, py = pad.y * CELL;
     const r = CELL * 0.28;
     ctx.save();
     if (active) {
       const pulse = Math.sin(t * 3.2 + i * Math.PI) * 0.5 + 0.5;
-      ctx.shadowColor = '#c87941'; ctx.shadowBlur = 8 + pulse * 10;
-      ctx.globalAlpha = 0.08 + pulse * 0.10;
-      ctx.fillStyle = '#c87941';
-      ctx.beginPath(); ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = '#c87941'; ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(t * 1.8 + i * Math.PI);
-      ctx.setLineDash([3, 4]);
-      ctx.strokeStyle = '#e8a96a'; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.arc(0, 0, r * 0.70, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#c87941';
-      ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 6; ctx.fillStyle = '#e8a96a';
-      ctx.font = `bold ${Math.round(CELL * 0.18)}px Courier New`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('>>', cx, cy);
+      if (teleportActiveImg.complete && teleportActiveImg.naturalWidth > 0) {
+        ctx.shadowColor = '#e8a96a';
+        ctx.shadowBlur = 10 + pulse * 14;
+        ctx.globalAlpha = 0.90 + pulse * 0.10;
+        ctx.drawImage(teleportActiveImg, px - CELL, py - CELL, CELL * 3, CELL * 2);
+        ctx.globalAlpha = 0.18 + pulse * 0.12;
+        ctx.fillStyle = '#e8a96a';
+        ctx.beginPath(); ctx.arc(cx, cy + CELL * 0.05, CELL * 0.32, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.shadowColor = '#c87941'; ctx.shadowBlur = 8 + pulse * 10;
+        ctx.globalAlpha = 0.08 + pulse * 0.10;
+        ctx.fillStyle = '#c87941';
+        ctx.beginPath(); ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#c87941'; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(t * 1.8 + i * Math.PI);
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = '#e8a96a'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.70, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#c87941';
+        ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 6; ctx.fillStyle = '#e8a96a';
+        ctx.font = `bold ${Math.round(CELL * 0.18)}px Courier New`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('>>', cx, cy);
+      }
     } else {
-      // Broken / inactive appearance
-      const flicker = Math.random() > 0.97 ? 0.5 : 1; // rare flicker
-      ctx.globalAlpha = 0.45 * flicker;
-      ctx.shadowColor = '#441100'; ctx.shadowBlur = 4;
-      ctx.strokeStyle = '#553322'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([2, 5]);
-      ctx.strokeStyle = '#332211'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(cx, cy, r * 0.70, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#553322';
-      ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0; ctx.fillStyle = '#664433';
-      ctx.font = `bold ${Math.round(CELL * 0.18)}px Courier New`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('ERR', cx, cy);
+      if (tinyImgs.mine.complete && tinyImgs.mine.naturalWidth > 0) {
+        ctx.globalAlpha = 0.92;
+        ctx.shadowColor = '#332211';
+        ctx.shadowBlur = 4;
+        ctx.drawImage(tinyImgs.mine, 0, 0, 192, 128, px - CELL, py - CELL, CELL * 3, CELL * 2);
+      } else {
+        const flicker = Math.random() > 0.97 ? 0.5 : 1;
+        ctx.globalAlpha = 0.45 * flicker;
+        ctx.shadowColor = '#441100'; ctx.shadowBlur = 4;
+        ctx.strokeStyle = '#553322'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([2, 5]);
+        ctx.strokeStyle = '#332211'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(cx, cy, r * 0.70, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#553322';
+        ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0; ctx.fillStyle = '#664433';
+        ctx.font = `bold ${Math.round(CELL * 0.18)}px Courier New`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('ERR', cx, cy);
+      }
     }
     ctx.restore();
   });
 }
 
 function spawnLoot(x, y) {
-  // byte 35% | fragment 35% | xptoken 20% | nothing 10%
+  // Always exactly one drop: byte 40% | fragment 40% | xptoken 20%
   // ronke and gem drop only from locked boxes
   const roll = Math.random();
-  if      (roll < 0.35) S.loot.push({ x, y, type: 'byte',    val: 1, collected: false, age: 0 });
-  else if (roll < 0.70) S.loot.push({ x, y, type: 'fragment', val: 1, collected: false, age: 0 });
-  else if (roll < 0.90) S.loot.push({ x, y, type: 'xptoken', val: 1, collected: false, age: 0 });
-  // else nothing
+  let type;
+  if      (roll < 0.40) type = 'byte';
+  else if (roll < 0.80) type = 'fragment';
+  else                  type = 'xptoken';
+  S.loot.push({ x, y, type, val: 1, collected: false, age: 0 });
 }
 
 function spawnLockedBox(x, y) {
@@ -7461,7 +7999,7 @@ document.addEventListener('keydown', e => {
     const wep = getCurrentWeapon(unit);
     if (gameMode === 'adventure' && k.team === 0) {
       if (S.jumpMode) return; // jump mode active – block shooting
-      const _roomCleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
+      const _roomCleared = S.fullMapRevealed && !S.units.some(u => isHostileAdventureEnemy(u));
       if (_roomCleared) return; // block all shooting when cleared
       let nrgReq = 0;
       if (wep === 'bullet') nrgReq = 2;
@@ -7513,6 +8051,7 @@ function resolveTick() {
 
   applyActions();
   S.pending = [null, null];
+  S.pendingEnemyBatch = [];
   setActionBadge(0, null); setActionBadge(1, null);
 
 
@@ -7708,6 +8247,7 @@ function resolveTick() {
     });
   }
   advanceLasers();
+  queuePassiveNpcDeathRewards();
   ammoRegen();
   checkWin();
   autoSelectAlive();
@@ -7721,30 +8261,179 @@ function resolveTick() {
     }
   });
 
+  // Meat drop pickup
+  if (S.meatDrops && S.meatDrops.length) {
+    const _hero = S.units.find(u => u.team === 0 && u.alive);
+    if (_hero) {
+      S.meatDrops.forEach(m => {
+        if (m.collected || m.x !== _hero.x || m.y !== _hero.y) return;
+        m.collected = true;
+        const _gain = 10;
+        const _oldE = S.energy || 0;
+        S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + _gain);
+        animateEnergyGain(_oldE, S.energy);
+        logEvent(`+${_gain}⚡ MEAT`, 'loot');
+        spawnPickupFX(m.x, m.y, '#ff6633');
+        spawnDmgNumber(m.x, m.y, `+${_gain}⚡`, '#ff8844', 16, 'crit');
+        SFX.pickup();
+      });
+      S.meatDrops = S.meatDrops.filter(m => !m.collected);
+    }
+  }
+
   tickStart = performance.now();
   S.animT = 0;
   updateHUD();
   setTimeStatus('active');
 }
 
-function applyActions() {
-  [0, 1].forEach(team => {
-    const a = S.pending[team];
+function applySingleAction(team, a) {
     if (!a) return;
     const unit = S.units.find(u => u.id === a.unitId);
     if (!unit || !unit.alive) return;
 
     if (a.t === 'jump') return; // already applied in executeJump
+    if (a.t === 'skullatk') {
+      // Melee attack: play swing anim, deal instant damage to hero if still adjacent
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
+      if (_hero) {
+        const _dmg = 3;
+        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        spawnHit(_hero.x, _hero.y, '#e8d8c0', 26);
+        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#e8c880', 18, 'crit');
+        S.shake = Math.max(S.shake || 0, 10);
+        SFX.heroHit();
+        spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#e8d8c0');
+        logEvent(`SKULL STRIKE: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+      }
+      return;
+    }
+    if (a.t === 'skullguard') {
+      // Enter guard stance — will block next incoming bullet
+      unit.guardStart = performance.now();
+      return;
+    }
+    if (a.t === 'birdatk') {
+      // Blue bird melee peck — quick, light damage
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
+      if (_hero) {
+        const _dmg = 2;
+        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        spawnHit(_hero.x, _hero.y, '#4488ff', 20);
+        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#88bbff', 16, 'crit');
+        S.shake = Math.max(S.shake || 0, 6);
+        SFX.heroHit();
+        spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#4488ff');
+        logEvent(`BIRD PECK: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+      }
+      return;
+    }
+    if (a.t === 'trollsmash') {
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
+      if (_hero) {
+        const _dmg = 7;
+        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        spawnHit(_hero.x, _hero.y, '#6f8f43', 30);
+        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#9fbf5c', 20, 'crit');
+        S.shake = Math.max(S.shake || 0, 12);
+        SFX.heroHit();
+        spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#6f8f43');
+        logEvent(`TROLL SMASH: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+      }
+      return;
+    }
+    if (a.t === 'minoatk') {
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      // Trigger damage when 4 frames remain (frameCount - 4)
+      const _hitDelay = ((minotaurAnimSheets.attack.frameCount - 4) / MINOTAUR_ANIM_FPS.attack) * 1000;
+      const _unitId = unit.id;
+      const _atkDx = Math.sign(a.targetX - unit.x);
+      const _atkDy = Math.sign(a.targetY - unit.y);
+      setTimeout(() => {
+        const _u = S.units && S.units.find(u => u.id === _unitId && u.alive);
+        if (!_u) return;
+        const _hero = S.units.find(u => u.team === 0 && u.alive && (
+          (u.x === a.targetX && u.y === a.targetY) ||
+          (Math.abs(u.x - _u.x) + Math.abs(u.y - _u.y) <= 1)
+        ));
+        if (_hero) {
+          const _dmg = 5;
+          S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+          spawnHit(_hero.x, _hero.y, '#8b2020', 32);
+          spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#cc4444', 22, 'crit');
+          S.shake = Math.max(S.shake || 0, 14);
+          SFX.heroHit();
+          spawnMeleeEffect(_u.x, _u.y, _atkDx || (_u.facing?.dx ?? -1), _atkDy, '#8b2020');
+          logEvent(`MINOTAUR GORE: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+        }
+      }, _hitDelay);
+      return;
+    }
+    if (a.t === 'minoguard') {
+      unit.guardStart = performance.now();
+      return;
+    }
+    if (a.t === 'ronkeatk') {
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      const _hero = S.units.find(u => u.team === 0 && u.alive && (
+        (u.x === a.targetX && u.y === a.targetY) ||
+        (Math.abs(u.x - unit.x) + Math.abs(u.y - unit.y) <= 1)
+      ));
+      if (_hero) {
+        const _dmg = 6;
+        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        spawnHit(_hero.x, _hero.y, '#3355cc', 34);
+        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#6688ff', 22, 'crit');
+        S.shake = Math.max(S.shake || 0, 16);
+        SFX.heroHit();
+        spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#3355cc');
+        logEvent(`RONKE SMASH: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+      }
+      return;
+    }
+    if (a.t === 'ronke2cast') {
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      unit.ronke2CastCd = performance.now() + 3000; // 3s cooldown
+      const _fromX = unit.x, _fromY = unit.y;
+      const _toX = a.targetX, _toY = a.targetY;
+      const _faceDx = unit.facing.dx;
+      // Spawn orb after cast animation peaks (~600ms = frame 6 of 8 at 10fps)
+      setTimeout(() => {
+        if (S && S.units) spawnRonke2Projectile(_fromX, _fromY, _toX, _toY, _faceDx);
+      }, 600);
+      return;
+    }
+    if (a.t === 'shamancast') {
+      // Trigger attack animation on the shaman unit
+      unit.swingStart = performance.now();
+      unit.shamanAttackCd = performance.now() + 2800; // 2.8s cooldown between casts
+      const _fromX = unit.x, _fromY = unit.y;
+      const _toX = a.targetX, _toY = a.targetY;
+      // Launch projectile after wind-up (frame ~6 of 10, ~430ms at 14fps)
+      setTimeout(() => {
+        if (S && S.units) spawnShamanProjectile(_fromX, _fromY, _toX, _toY);
+      }, 430);
+      return;
+    }
     if (a.t === 'move') {
       const nx = unit.x + a.dx, ny = unit.y + a.dy;
-      if (!isWall(nx, ny)) {
+      if (!isWall(nx, ny) && !S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) {
 
         if (gameMode === 'adventure' && unit.team === 0) {
           if (S.footsteps) {
             S.footsteps.push({ x: unit.x, y: unit.y, alpha: 1.0 });
             if (S.footsteps.length > 12) S.footsteps.shift();
           }
-          const _cleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
+          const _cleared = S.fullMapRevealed && !S.units.some(u => isHostileAdventureEnemy(u));
           if (!_cleared) {
             S.energy = Math.max(0, S.energy - 1);
             spawnDmgNumber(unit.x, unit.y, '-1\u26A1', '#00f5ff', 12, 'normal');
@@ -7828,7 +8517,7 @@ function applyActions() {
     } else {
       // Block shooting when map is fully revealed and no enemies
       if (gameMode === 'adventure' && team === 0) {
-        const _cleared = S.fullMapRevealed && !S.units.some(u => u.team === 1 && u.alive);
+        const _cleared = S.fullMapRevealed && !S.units.some(u => isHostileAdventureEnemy(u));
         if (_cleared) return;
       }
       const sd = (team === 0 && unit.aimDir) ? unit.aimDir : unit.facing;
@@ -7841,6 +8530,31 @@ function applyActions() {
       unit.shootFlash = 1;
       if (unit.team === 0) unit.swingStart = performance.now();
       if (unit.utype === 'boss01') unit.boss01SpinStart = performance.now();
+
+      // Ronke2 hero: cast orb instead of bullet (hero utype is 'player', not 'ronke2')
+      if (unit.team === 0) {
+        unit.facing = { dx: sd.dx !== 0 ? Math.sign(sd.dx) : (unit.facing?.dx || 1), dy: 0 };
+        const _fireDx = unit.facing.dx;
+        // Energy cost (orb cast = 3)
+        if (gameMode === 'adventure') {
+          S.energy = Math.max(0, S.energy - 3);
+          spawnDmgNumber(unit.x, unit.y, '-3\u26A1', '#ff8800', 14, 'normal');
+        }
+        // Find first enemy in fire direction (same row), max 5 cells
+        let _targetGx = unit.x + _fireDx * 5, _targetGy = unit.y;
+        for (let _i = 1; _i <= 5; _i++) {
+          const _nx = unit.x + _fireDx * _i, _ny = unit.y;
+          if (_nx < 0 || _nx >= COLS || isWall(_nx, _ny)) { _targetGx = unit.x + _fireDx * (_i - 1); break; }
+          const _hit = S.units.find(u => u.team !== 0 && u.alive && u.x === _nx && u.y === _ny);
+          if (_hit) { _targetGx = _nx; _targetGy = _ny; break; }
+          _targetGx = _nx; _targetGy = _ny;
+        }
+        const _fx = unit.x, _fy = unit.y, _tx = _targetGx, _ty = _targetGy, _fd = _fireDx;
+        setTimeout(() => { if (S && S.units) spawnRonke2HeroProjectile(_fx, _fy, _tx, _ty, _fd); }, 600);
+        SFX.play(300, 0.08, 0.12, 'sine');
+        return;
+      }
+
       spawnMuzzle(unit, sd);
 
 
@@ -8110,7 +8824,16 @@ function applyActions() {
       }
       updateRonkeShieldSlot();
     }
-  });
+}
+
+function applyActions() {
+  applySingleAction(0, S.pending[0]);
+
+  const enemyBatch = Array.isArray(S.pendingEnemyBatch) && S.pendingEnemyBatch.length > 0
+    ? S.pendingEnemyBatch
+    : (S.pending[1] ? [S.pending[1]] : []);
+
+  enemyBatch.forEach(action => applySingleAction(1, action));
 }
 
 function moveBullets() {
@@ -8155,6 +8878,82 @@ function moveBullets() {
       if (o.alive) anyAlive = true;
     });
     if (!anyAlive) S.ronkeDeathAnim = null;
+  }
+}
+
+function isUnitHiddenInBush(unit) {
+  if (!unit || !S.decorations) return false;
+  const decId = S.decorations[`${unit.y},${unit.x}`];
+  return typeof decId === 'string' && decId.startsWith('bush');
+}
+
+function isHostileAdventureEnemy(unit) {
+  return !!(unit && unit.team === 1 && unit.alive && unit.utype !== 'sheep');
+}
+
+function isPassiveBuffNpc(unit) {
+  return !!(unit && unit.utype === 'sheep');
+}
+
+function triggerHitRecovery(unit) {
+  if (!unit) return;
+  if (unit.utype === 'troll') unit.recoveryStart = performance.now();
+  if (unit.utype === 'minotaur') unit.guardStart = performance.now();
+}
+
+function queuePassiveNpcDeathRewards() {
+  if (gameMode !== 'adventure' || !Array.isArray(S.units)) return;
+  if (!Array.isArray(S.pendingPassiveRewards)) S.pendingPassiveRewards = [];
+  S.units.forEach((unit) => {
+    if (!unit || unit.utype !== 'sheep' || unit.alive || unit.sheepRewardQueued) return;
+    unit.sheepRewardQueued = true;
+    S.pendingPassiveRewards.push({
+      kind: 'sheep_energy',
+      gx: unit.x,
+      gy: unit.y,
+      readyAt: performance.now() + (_DEAD_TOTAL * _DEAD_MS),
+    });
+  });
+}
+
+function processPendingPassiveRewards() {
+  if (gameMode !== 'adventure' || !Array.isArray(S.pendingPassiveRewards) || S.pendingPassiveRewards.length === 0) return;
+
+  const now = performance.now();
+  for (let i = S.pendingPassiveRewards.length - 1; i >= 0; i--) {
+    const reward = S.pendingPassiveRewards[i];
+    if (!reward || reward.readyAt > now) continue;
+
+    if (reward.kind === 'sheep_energy') {
+      const energyGain = 5 + Math.floor(Math.random() * 6);
+      const energyBefore = S.energy || 0;
+      const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
+      S.energy = Math.min(effectiveMax, energyBefore + energyGain);
+      animateEnergyGain(energyBefore, S.energy);
+      spawnDmgNumber(reward.gx, reward.gy, `+${energyGain}⚡`, '#b9e8a3', 18, 'crit');
+      spawnHit(reward.gx, reward.gy, '#b9e8a3', 18);
+      const wx = (reward.gx + 0.5) * CELL;
+      const wy = (reward.gy + 0.5) * CELL;
+      S.particles.push({ x: wx, y: wy, vx: 0, vy: 0, life: 1, decay: 0.04, r: CELL * 0.8, color: '#b9e8a3', type: 'ring' });
+      for (let p = 0; p < 10; p++) {
+        const a = (Math.PI * 2 * p) / 10 + Math.random() * 0.25;
+        const s = (0.8 + Math.random() * 1.6) * CELL * 0.02;
+        S.particles.push({
+          x: wx, y: wy,
+          vx: Math.cos(a) * s,
+          vy: Math.sin(a) * s,
+          life: 1,
+          decay: 0.03 + Math.random() * 0.02,
+          r: 2 + Math.random() * 2,
+          color: Math.random() < 0.25 ? '#ffffff' : '#b9e8a3',
+          type: 'streak'
+        });
+      }
+      logEvent(`SHEEP BUFF: +${energyGain} ENERGY`, 'loot');
+      SFX.nanoHeal();
+    }
+
+    S.pendingPassiveRewards.splice(i, 1);
   }
 }
 
@@ -8216,6 +9015,17 @@ function detectCollisions() {
             return;
           }
         }
+        // Skull: guard blocks the next bullet while guard animation is active
+        if (!b.hackBullet && u.utype === 'skull' && u.team !== b.owner && u.guardStart) {
+          const _guardDur = (skullAnimSheets.guard.frameCount / SKULL_ANIM_FPS.guard) * 1000;
+          if (performance.now() - u.guardStart < _guardDur) {
+            spawnDmgNumber(u.x, u.y, 'GUARDED', '#fffbe0', 14, 'normal');
+            spawnHit(u.x, u.y, '#fffbe0', 14);
+            SFX.play(200, 0.12, 0.12, 'square');
+            u.guardStart = null; // consume guard
+            return;
+          }
+        }
 
         // Hack wave: no damage, just 70% freeze
         if (b.hackBullet) {
@@ -8233,6 +9043,10 @@ function detectCollisions() {
               spawnDmgNumber(u.x, u.y, 'RESIST', '#ff4488', 12, 'normal');
             }
           }
+        } else if (gameMode === 'adventure' && u.team === 0 && b.owner !== 0 && isUnitHiddenInBush(u) && Math.random() < 0.20) {
+          logEvent('BUSH COVER blocked the shot!', 'loot');
+          spawnDmgNumber(u.x, u.y, 'COVER', '#6ccf74', 13, 'miss');
+          spawnHit(u.x, u.y, '#6ccf74', 5);
         } else if (Math.random() < (u.dodge !== undefined ? u.dodge : MISS_CHANCE)) {
           const isHero = gameMode === 'adventure' && u.team === 0;
           logEvent(isHero ? `EVADED attack!` : `Shot missed!`, isHero ? 'loot' : 'warn');
@@ -8264,6 +9078,7 @@ function detectCollisions() {
             SFX.heroHit();
           } else {
             u.hp -= dmg; u.hitFlash = 1;
+            triggerHitRecovery(u);
             noteBossBurstHit(u, b.owner);
             SFX.hit();
             if (gameMode === 'adventure') {
@@ -8274,7 +9089,10 @@ function detectCollisions() {
               spawnDeath(u.x, u.y, u.color);
               if (gameMode === 'adventure') {
                 logEvent(`Target <span style="color:#ffffff">X</span> destroyed.`, 'warn');
-                spawnLockedBox(u.x, u.y);
+                const _dx1 = u.x, _dy1 = u.y;
+                if (!isPassiveBuffNpc(u)) {
+                  setTimeout(() => { if (S && S.loot) spawnLockedBox(_dx1, _dy1); }, _DEAD_TOTAL * _DEAD_MS + 100);
+                }
                 S.kills = (S.kills || 0) + 1;
                 trackKill();
                 if (!Profile.stats) Profile.stats = { totalKills: 0 };
@@ -8391,6 +9209,8 @@ function detectCollisions() {
         if (!Profile.stats) Profile.stats = { totalKills: 0 };
         Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
         saveProfile(); _updateKillsDisplay();
+      } else {
+        triggerHitRecovery(u);
       }
     }
   });
@@ -8539,6 +9359,7 @@ function advanceLasers() {
               SFX.heroHit();
             } else {
               hit.hp -= dmg; hit.hitFlash = 1;
+              triggerHitRecovery(hit);
               noteBossBurstHit(hit, laser.owner);
               SFX.hit();
               if (gameMode === 'adventure') {
@@ -8549,7 +9370,10 @@ function advanceLasers() {
                 spawnDeath(hit.x, hit.y, hit.color);
                 if (gameMode === 'adventure') {
                   logEvent(`Target <span style="color:#ffffff">X</span> melted.`, 'warn');
-                  spawnLockedBox(hit.x, hit.y);
+                  const _dx2 = hit.x, _dy2 = hit.y;
+                  if (!isPassiveBuffNpc(hit)) {
+                    setTimeout(() => { if (S && S.loot) spawnLockedBox(_dx2, _dy2); }, _DEAD_TOTAL * _DEAD_MS + 100);
+                  }
                   S.kills = (S.kills || 0) + 1;
                   trackKill();
                   if (!Profile.stats) Profile.stats = { totalKills: 0 };
@@ -8755,6 +9579,17 @@ function spawnBulletExplosion(gx, gy, colorA, colorB) {
 
 function spawnDeath(gx, gy, color) {
   SFX.death();
+  const _born = performance.now();
+  if (!S.deathAnims) S.deathAnims = [];
+  const _deadUnit = S.units && S.units.find(u => !u.alive && u.x === gx && u.y === gy);
+  S.deathAnims.push({ gx, gy, born: _born, animType: _deadUnit?.utype || 'default' });
+  const _isSheep = S.units && S.units.some(u => !u.alive && u.utype === 'sheep' && u.x === gx && u.y === gy);
+  if (_isSheep) {
+    if (!S.spawnAnims) S.spawnAnims = [];
+    S.spawnAnims.push({ gx, gy, born: _born + _DEAD_TOTAL * _DEAD_MS });
+    const _meatAt = _DEAD_TOTAL * _DEAD_MS + _SPAWN_FRAMES * _SPAWN_MS;
+    setTimeout(() => { if (S && Array.isArray(S.meatDrops)) S.meatDrops.push({ x: gx, y: gy }); }, _meatAt);
+  }
   const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
 
   if (gameMode === 'adventure') {
@@ -8865,6 +9700,16 @@ function loop(now) {
     p.x += p.vx; p.y += p.vy; p.vx *= 0.91; p.vy *= 0.91; p.life -= p.decay;
     if (p.life <= 0) { S.particles[_pi] = S.particles[S.particles.length - 1]; S.particles.pop(); }
   }
+  // Advance death animations (14 frames, 100ms each = 1400ms total)
+  if (S.deathAnims && S.deathAnims.length) {
+    const _now = performance.now();
+    S.deathAnims = S.deathAnims.filter(a => (_now - a.born) < 1400);
+  }
+  if (S.spawnAnims && S.spawnAnims.length) {
+    const _now = performance.now();
+    S.spawnAnims = S.spawnAnims.filter(a => (_now - a.born) < _SPAWN_FRAMES * _SPAWN_MS);
+  }
+  processPendingPassiveRewards();
   // Cap particles to prevent unbounded growth
   if (S.particles.length > 400) S.particles.length = 400;
   if (S.footsteps) S.footsteps.forEach(f => { f.alpha = Math.max(0, f.alpha - dt * 0.004); });
@@ -8924,6 +9769,11 @@ function loop(now) {
   drawBloodStains();
   drawFootsteps();
   drawParticles();
+  drawDeathAnims();
+  drawSpawnAnims();
+  drawShamanProjectiles();
+  drawShamanExplosions();
+  drawRonke2Projectiles();
   drawThreatIndicators();
   drawShrines();
   drawChests();
@@ -8934,10 +9784,13 @@ function loop(now) {
   drawRonkeShield();
   drawTutorialHighlight();
   drawLoot();
+  drawMeatDrops();
   drawUnits();
+  drawForegroundDecorations();
   drawRonkeInfect();
   drawFog();
   drawDmgNumbers();
+  drawMobileHeroArrows();
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
@@ -9531,6 +10384,390 @@ function drawParticles() {
   ctx.restore();
 }
 
+// Dead.png: 896x256 = 7 cols x 2 rows of 128x128 = 14 frames, ~100ms each
+const _DEAD_FRAME_W = 128, _DEAD_FRAME_H = 128, _DEAD_COLS = 7, _DEAD_TOTAL = 14, _DEAD_MS = 100;
+
+function drawMeatDrops() {
+  if (!S.meatDrops || !S.meatDrops.length) return;
+  if (!mIdleImg.complete || !mIdleImg.naturalWidth) return;
+  const float = Math.sin(performance.now() * 0.004) * 4;
+  const sz = CELL * 2.2;
+  ctx.save();
+  S.meatDrops.forEach(m => {
+    if (m.collected) return;
+    const cx = (m.x + 0.5) * CELL, cy = (m.y + 0.5) * CELL + float;
+    ctx.shadowColor = '#ff6633'; ctx.shadowBlur = 10;
+    ctx.drawImage(mIdleImg, cx - sz / 2, cy - sz / 2, sz, sz);
+  });
+  ctx.restore();
+}
+
+function drawSpawnAnims() {
+  if (!S.spawnAnims || !S.spawnAnims.length) return;
+  if (!mSpawnImg.complete || !mSpawnImg.naturalWidth) return;
+  const _now = performance.now();
+  ctx.save();
+  for (let i = 0; i < S.spawnAnims.length; i++) {
+    const a = S.spawnAnims[i];
+    const elapsed = _now - a.born;
+    if (elapsed < 0) continue;
+    const frameIdx = Math.min(_SPAWN_FRAMES - 1, Math.floor(elapsed / _SPAWN_MS));
+    const cx = (a.gx + 0.5) * CELL, cy = (a.gy + 0.5) * CELL;
+    ctx.drawImage(mSpawnImg,
+      frameIdx * _SPAWN_FRAME_W, 0, _SPAWN_FRAME_W, _SPAWN_FRAME_H,
+      cx - CELL, cy - CELL, CELL * 2, CELL * 2);
+  }
+  ctx.restore();
+}
+
+function drawDeathAnims() {
+  if (!S.deathAnims || !S.deathAnims.length) return;
+  const _now = performance.now();
+  ctx.save();
+  for (let _di = 0; _di < S.deathAnims.length; _di++) {
+    const a = S.deathAnims[_di];
+    const elapsed = _now - a.born;
+    if (a.animType === 'troll' && trollDeadImg.complete && trollDeadImg.naturalWidth > 0) {
+      const TROLL_DEAD_TOTAL = 10;
+      const TROLL_DEAD_MS = 110;
+      const TROLL_DEAD_W = 384;
+      const TROLL_DEAD_H = 384;
+      const frameIdx = Math.min(TROLL_DEAD_TOTAL - 1, Math.floor(elapsed / TROLL_DEAD_MS));
+      const dw = CELL * 3, dh = CELL * 3;
+      const px = Math.round((a.gx + 0.5) * CELL - dw / 2);
+      const py = Math.round((a.gy + 0.5) * CELL - dh / 2);
+      const fadeFrame = TROLL_DEAD_TOTAL - 3;
+      ctx.globalAlpha = frameIdx >= fadeFrame ? 1 - (frameIdx - fadeFrame) / 3 : 1;
+      ctx.drawImage(trollDeadImg, frameIdx * TROLL_DEAD_W, 0, TROLL_DEAD_W, TROLL_DEAD_H, px, py, dw, dh);
+      continue;
+    }
+
+    if (!deadAnimImg.complete || !deadAnimImg.naturalWidth) continue;
+    const frameIdx = Math.min(_DEAD_TOTAL - 1, Math.floor(elapsed / _DEAD_MS));
+    const col = frameIdx % _DEAD_COLS;
+    const row = Math.floor(frameIdx / _DEAD_COLS);
+    const px = Math.round((a.gx + 0.5) * CELL - CELL);
+    const py = Math.round((a.gy + 0.5) * CELL - CELL);
+    const dw = CELL * 2, dh = CELL * 2;
+    const fadeFrame = _DEAD_TOTAL - 3;
+    ctx.globalAlpha = frameIdx >= fadeFrame ? 1 - (frameIdx - fadeFrame) / 3 : 1;
+    ctx.drawImage(deadAnimImg, col * _DEAD_FRAME_W, row * _DEAD_FRAME_H, _DEAD_FRAME_W, _DEAD_FRAME_H, px, py, dw, dh);
+  }
+  ctx.restore();
+}
+
+// ---- Shaman Projectile & Explosion --------------------------------
+
+function spawnShamanProjectile(fromGx, fromGy, toGx, toGy) {
+  if (!S.shamanProjectiles) S.shamanProjectiles = [];
+  const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
+  const tx = (toGx  + 0.5) * CELL, ty = (toGy  + 0.5) * CELL;
+  const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
+  const duration = Math.max(350, dist / (CELL * 0.0055)); // ~5.5 cells/sec feel
+  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false });
+}
+
+function drawShamanProjectiles() {
+  if (!S.shamanProjectiles || !S.shamanProjectiles.length) return;
+  if (!shamanProjImg.complete || !shamanProjImg.naturalWidth) return;
+  const now = performance.now();
+  const sz = CELL * 1.6;
+  ctx.save();
+  S.shamanProjectiles.forEach(p => {
+    if (p.done) return;
+    const t = Math.min((now - p.born) / p.duration, 1);
+    const cx = p.sx + (p.tx - p.sx) * t;
+    const cy = p.sy + (p.ty - p.sy) * t;
+    const frameIdx = Math.floor((now - p.born) / _SHAM_PROJ_MS) % _SHAM_PROJ_FRAMES;
+    ctx.drawImage(shamanProjImg, frameIdx * _SHAM_PROJ_W, 0, _SHAM_PROJ_W, _SHAM_PROJ_H, cx - sz / 2, cy - sz / 2, sz, sz);
+    if (t >= 1 && !p.hit) {
+      p.hit = true; p.done = true;
+      _shamanExplosions.push({ gx: p.targetGx, gy: p.targetGy, born: now });
+      SFX.play(160, 0.18, 0.30, 'sawtooth');
+      S.shake = Math.max(S.shake || 0, 5);
+      // Damage hero if standing on target tile
+      if (S.units) {
+        const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
+        if (_hero) {
+          _hero.hp = (_hero.hp || 1) - 1;
+          spawnHit(_hero.x, _hero.y, '#cc30ff', 28);
+          spawnDmgNumber(_hero.x, _hero.y, '-1', '#cc30ff', 18, 'crit');
+          if (_hero.hp <= 0 && !S.winner) {
+            _hero.alive = false; _hero.deathT = 1;
+            spawnDeath(_hero.x, _hero.y, _hero.color || '#00f5ff');
+            S.winner = 1;
+          }
+        }
+      }
+    }
+  });
+  ctx.restore();
+  if (S.shamanProjectiles) S.shamanProjectiles = S.shamanProjectiles.filter(p => !p.done);
+}
+
+function drawShamanExplosions() {
+  if (!_shamanExplosions.length) return;
+  if (!shamanExplImg.complete || !shamanExplImg.naturalWidth) return;
+  const now = performance.now();
+  const totalDur = _SHAM_EXPL_FRAMES * _SHAM_EXPL_MS;
+  const sz = CELL * 2.8;
+  ctx.save();
+  _shamanExplosions.forEach(e => {
+    const elapsed = now - e.born;
+    if (elapsed >= totalDur) return;
+    const frameIdx = Math.min(_SHAM_EXPL_FRAMES - 1, Math.floor(elapsed / _SHAM_EXPL_MS));
+    const cx = (e.gx + 0.5) * CELL, cy = (e.gy + 0.5) * CELL;
+    ctx.drawImage(shamanExplImg, frameIdx * _SHAM_EXPL_W, 0, _SHAM_EXPL_W, _SHAM_EXPL_H, cx - sz / 2, cy - sz / 2, sz, sz);
+  });
+  ctx.restore();
+  // Cleanup finished explosions
+  const _cleanNow = performance.now();
+  for (let i = _shamanExplosions.length - 1; i >= 0; i--) {
+    if (_cleanNow - _shamanExplosions[i].born >= totalDur) _shamanExplosions.splice(i, 1);
+  }
+}
+
+// ---- Ronke2 Orb Projectile ----------------------------------------
+
+function spawnRonke2HeroProjectile(fromGx, fromGy, toGx, toGy, faceDx) {
+  // Hero version: same orb but damages enemies (team !== 0)
+  _spawnRonke2Orb(fromGx, fromGy, toGx, toGy, faceDx, 0);
+}
+
+function spawnRonke2Projectile(fromGx, fromGy, toGx, toGy, faceDx) {
+  // NPC version: damages hero (team === 0)
+  _spawnRonke2Orb(fromGx, fromGy, toGx, toGy, faceDx, 1);
+}
+
+function _spawnRonke2Orb(fromGx, fromGy, toGx, toGy, faceDx, fromTeam) {
+  if (!S.ronke2Projectiles) S.ronke2Projectiles = [];
+  const dir = faceDx || Math.sign(toGx - fromGx);
+  // Orb materializes at the adjacent cell, at staff-tip height (~35% above center)
+  const spawnGx = fromGx + dir;
+  const sx = (spawnGx + 0.5) * CELL;
+  const sy = (fromGy  + 0.5) * CELL - CELL * 0.35;
+  const tx = (toGx   + 0.5) * CELL;
+  const ty = (toGy   + 0.5) * CELL - CELL * 0.35;
+  const dist = Math.abs(tx - sx);
+  const duration = Math.max(280, dist / (CELL * 0.007));
+  const born = performance.now();
+  S.ronke2Projectiles.push({
+    sx, sy, tx, ty, born, duration,
+    targetGx: toGx, targetGy: toGy,
+    fromTeam,  // 0 = hero fired (damages enemies), 1 = NPC fired (damages hero)
+    done: false, hit: false,
+    trail: []
+  });
+  // Spawn-flash at orb birth position
+  _ronke2OrbFlashes.push({ x: sx, y: sy, born });
+}
+
+const _ronke2OrbFlashes = [];
+const _ronke2ImpactRings = [];
+
+function drawRonke2Projectiles() {
+  if (!S.ronke2Projectiles?.length && !_ronke2OrbFlashes.length && !_ronke2ImpactRings.length) return;
+  const now = performance.now();
+
+  // Spawn-flash (orb materializing burst)
+  for (let i = _ronke2OrbFlashes.length - 1; i >= 0; i--) {
+    const f = _ronke2OrbFlashes[i];
+    const age = now - f.born;
+    const dur = 220;
+    if (age > dur) { _ronke2OrbFlashes.splice(i, 1); continue; }
+    const fp = age / dur;
+    ctx.save();
+    ctx.globalAlpha = (1 - fp) * 0.9;
+    ctx.strokeStyle = '#ffdd44';
+    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 18;
+    ctx.lineWidth = 2.5 * (1 - fp);
+    ctx.beginPath(); ctx.arc(f.x, f.y, CELL * 0.28 * fp * 2.2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Impact rings
+  for (let i = _ronke2ImpactRings.length - 1; i >= 0; i--) {
+    const r = _ronke2ImpactRings[i];
+    const age = now - r.born;
+    const dur = 380;
+    if (age > dur) { _ronke2ImpactRings.splice(i, 1); continue; }
+    const rp = age / dur;
+    ctx.save();
+    ctx.globalAlpha = (1 - rp) * 0.75;
+    ctx.strokeStyle = '#ff8800';
+    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 14;
+    ctx.lineWidth = 3 * (1 - rp);
+    ctx.beginPath(); ctx.arc(r.x, r.y, CELL * 0.18 + CELL * 0.7 * rp, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = (1 - rp) * 0.35;
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath(); ctx.arc(r.x, r.y, CELL * 0.18 + CELL * 0.45 * rp, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  if (!S.ronke2Projectiles?.length) return;
+
+  S.ronke2Projectiles.forEach(p => {
+    if (p.done) return;
+    const t = Math.min((now - p.born) / p.duration, 1);
+    const cx = p.sx + (p.tx - p.sx) * t;
+    const cy = p.sy + (p.ty - p.sy) * t;
+
+    // Trail: record position every frame
+    p.trail.push({ x: cx, y: cy, t: now });
+    // Keep only last 180ms of trail
+    while (p.trail.length > 1 && now - p.trail[0].t > 180) p.trail.shift();
+
+    // Grow-in scale (first 160ms)
+    const growT = Math.min((now - p.born) / 160, 1);
+    const scale = 0.15 + 0.85 * (1 - Math.pow(1 - growT, 3)); // ease-out cubic
+
+    const r = CELL * 0.2 * scale;
+    const pulse = 0.82 + 0.18 * Math.sin((now - p.born) * 0.022);
+
+    ctx.save();
+
+    // Trail segments
+    for (let i = 1; i < p.trail.length; i++) {
+      const tr = p.trail[i];
+      const age = now - tr.t;
+      const ta = 1 - age / 180;
+      const tr0 = p.trail[i - 1];
+      ctx.globalAlpha = ta * 0.45;
+      ctx.strokeStyle = '#ff6600';
+      ctx.lineWidth = r * 1.6 * ta;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(tr0.x, tr0.y); ctx.lineTo(tr.x, tr.y); ctx.stroke();
+    }
+
+    // Outer glow
+    ctx.globalAlpha = 1;
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.8 * pulse);
+    grd.addColorStop(0,   'rgba(255,200,80,0.7)');
+    grd.addColorStop(0.35,'rgba(255,90,0,0.5)');
+    grd.addColorStop(1,   'rgba(255,30,0,0)');
+    ctx.beginPath(); ctx.arc(cx, cy, r * 2.8 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = grd; ctx.fill();
+
+    // Core orb
+    const core = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+    core.addColorStop(0,   '#fffbe8');
+    core.addColorStop(0.35,'#ffcc00');
+    core.addColorStop(0.75,'#ff5500');
+    core.addColorStop(1,   '#cc2200');
+    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = core; ctx.fill();
+
+    ctx.restore();
+
+    if (t >= 1 && !p.hit) {
+      p.hit = true; p.done = true;
+      const ix = (p.targetGx + 0.5) * CELL, iy = (p.targetGy + 0.5) * CELL - CELL * 0.35;
+      _ronke2ImpactRings.push({ x: ix, y: iy, born: now });
+      spawnHit(p.targetGx, p.targetGy, '#ff8800', 28);
+      SFX.play(200, 0.14, 0.22, 'sawtooth');
+      S.shake = Math.max(S.shake || 0, 7);
+      if (S.units) {
+        if (p.fromTeam === 0) {
+          // Hero orb: damage first enemy at target
+          const _enemy = S.units.find(u => u.team !== 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
+          if (_enemy) {
+            _enemy.hp = (_enemy.hp ?? 1) - 5;
+            spawnDmgNumber(p.targetGx, p.targetGy, '-5', '#ff8800', 20, 'crit');
+            if (_enemy.hp <= 0 && !S.winner) {
+              _enemy.alive = false; _enemy.deathT = 1;
+              spawnDeath(_enemy.x, _enemy.y, _enemy.color || '#ff6600');
+              S.kills = (S.kills || 0) + 1; trackKill();
+              if (!Profile.stats) Profile.stats = { totalKills: 0 };
+              Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+              saveProfile(); _updateKillsDisplay();
+            }
+            logEvent(`RONKE ORB HIT: Enemy took 5 DMG!`, 'dmg');
+          }
+        } else {
+          // NPC orb: damage hero
+          const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
+          if (_hero) {
+            const _dmg = 5;
+            S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+            spawnDmgNumber(p.targetGx, p.targetGy, `-${heroDmg(_dmg)}`, '#ff8800', 20, 'crit');
+            SFX.heroHit();
+            logEvent(`RONKE ORB: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+          }
+        }
+      }
+    }
+  });
+  if (S.ronke2Projectiles) S.ronke2Projectiles = S.ronke2Projectiles.filter(p => !p.done);
+}
+
+// ---- Mobile hero directional arrows (drawn on canvas, camera space) ----
+const _isTouchUI = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+function drawMobileHeroArrows() {
+  if (!_isTouchUI || gameMode !== 'adventure') return;
+  if (!S || S.phase === 'gameover') return;
+  if (S.phase !== 'frozen' || S.clockSide !== 0) return; // only on player's turn
+  const hero = S._hero || S.units?.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+
+  const hx = (hero.rx + 0.5) * CELL;
+  const hy = (hero.ry + 0.5) * CELL;
+  const dist = CELL * 1.65;
+  const R    = CELL * 0.5;
+  const now  = performance.now();
+  const pulse = 0.78 + 0.22 * Math.sin(now * 0.0038);
+
+  const dirs = [
+    { dx:  0, dy: -1, angle: -Math.PI / 2 },
+    { dx:  0, dy:  1, angle:  Math.PI / 2 },
+    { dx: -1, dy:  0, angle:  Math.PI     },
+    { dx:  1, dy:  0, angle:  0           },
+  ];
+
+  ctx.save();
+  dirs.forEach(d => {
+    const nx = hero.x + d.dx, ny = hero.y + d.dy;
+    const passable = nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS
+      && !isWall(nx, ny)
+      && !S.units.some(u => u.alive && u.id !== hero.id && u.x === nx && u.y === ny);
+
+    const ax = hx + d.dx * dist;
+    const ay = hy + d.dy * dist;
+
+    ctx.save();
+    ctx.globalAlpha = passable ? 0.65 * pulse : 0.12;
+    ctx.translate(ax, ay);
+    ctx.rotate(d.angle);
+
+    // Circle bg
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fill();
+    ctx.strokeStyle = passable ? '#00ff88' : '#223322';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Triangle arrow
+    if (passable) {
+      ctx.shadowColor = '#00ff88';
+      ctx.shadowBlur = 7;
+    }
+    ctx.fillStyle = passable ? '#00ff88' : '#334433';
+    ctx.beginPath();
+    ctx.moveTo( R * 0.42,  0);
+    ctx.lineTo(-R * 0.24, -R * 0.33);
+    ctx.lineTo(-R * 0.24,  R * 0.33);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
 function drawThreatIndicators() {
   if (S.phase === 'gameover') return;
   const pulse = (Math.sin(performance.now() * 0.014) + 1) * 0.5;
@@ -9623,7 +10860,6 @@ const HERO_ANIM_FPS = { idle: 5, walk: 10, fight: 14 };
 
 function getHeroFrame(u, dir) {
   const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
-  const isFighting = isAdjacentToEnemy(u);
 
   // One-shot sword swing on shoot — plays attack anim exactly once
   const swingFps      = HERO_ANIM_FPS['fight'];
@@ -9633,9 +10869,8 @@ function getHeroFrame(u, dir) {
   const isSwinging    = swingElapsed < swingDuration;
 
   let anim = 'idle';
-  if (isSwinging)     anim = 'fight';
-  else if (isMoving)  anim = 'walk';
-  else if (isFighting) anim = 'fight';
+  if (isSwinging)    anim = 'fight';
+  else if (isMoving) anim = 'walk';
 
   const fps    = HERO_ANIM_FPS[anim];
   const frames = heroAnimFrames[anim][dir];
@@ -9660,6 +10895,43 @@ function angleToDir(angle) {
   if (a < Math.PI * 0.75) return 'south';
   if (a < Math.PI * 1.25) return 'west';
   return 'north';
+}
+
+function _drawRonke2HeroSprite(cx, cy, u, alpha) {
+  const frame = getRonke2FrameState(u);
+  const sprSz = UNIT_CELL * 3.4;
+  const yOff  = -29;
+  if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
+    ctx.save();
+    ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+    // BODY_FRAC=0.25 (body at x=160/640 of frame). Center body at cx:
+    // draw origin = cx - BODY_FRAC*sprSz = cx - sprSz/4
+    const _drawX = cx - sprSz / 4;
+    if ((u.facing?.dx ?? 1) < 0) {
+      ctx.save();
+      ctx.translate(_drawX, cy + yOff);
+      ctx.scale(-1, 1);
+      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+      ctx.restore();
+    } else {
+      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, _drawX, cy - sprSz / 2 + yOff, sprSz, sprSz);
+    }
+    ctx.restore();
+    if (u.hitFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  } else {
+    // Fallback circle
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#3355cc';
+    ctx.beginPath(); ctx.arc(cx, cy, UNIT_CELL * 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
@@ -10927,6 +12199,206 @@ function drawUnits() {
           ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.35, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = alpha;
         }
+      } else if (u.utype === 'spider') {
+        const frame = getSpiderFrameState(u);
+        const sprSz = UNIT_CELL * 2.45;
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          if ((u.facing?.dx || -1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#7c1010';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.05, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.32, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'sheep') {
+        const frame = getSheepFrameState(u);
+        const sprSz = UNIT_CELL * 2.15;
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.55 : 1);
+          if ((u.facing?.dx || 1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#b9e8a3';
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.26, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'troll') {
+        const frame = getTrollFrameState(u);
+        const sprW = UNIT_CELL * 2.9;
+        const sprH = UNIT_CELL * 2.9;
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          if ((u.facing?.dx || -1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprW / 2, -sprH / 2, sprW, sprH);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprW / 2, cy - sprH / 2, sprW, sprH);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#6f8f43';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.25, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprW * 0.18, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'skull') {
+        const frame = getSkullFrameState(u);
+        const sprSz = UNIT_CELL * 2.5;
+        if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          // Guard glow — bone-white aura
+          const _isGuarding = u.guardStart && (performance.now() - u.guardStart) < (skullAnimSheets.guard.frameCount / SKULL_ANIM_FPS.guard) * 1000;
+          if (_isGuarding) { ctx.shadowColor = '#fffbe0'; ctx.shadowBlur = 18; }
+          if ((u.facing?.dx || -1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          }
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#e8d8c0';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.33, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'bluebird') {
+        const frame = getBlueBirdFrameState(u);
+        const sprSz = UNIT_CELL * 2.2;
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          // West sprite faces LEFT; flip when moving RIGHT (dx > 0)
+          if ((u.facing?.dx || -1) > 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#4488ff';
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.3, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'minotaur') {
+        const frame = getMinotaurFrameState(u);
+        const sprSz = UNIT_CELL * 3.2;
+        if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          if ((u.facing?.dx || -1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#8b2020';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.22, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'ronke') {
+        const frame = getRonkeFrameState(u);
+        const sprSz = UNIT_CELL * 1.69;
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2 - 10, sprSz, sprSz);
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#3355cc';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.25, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'ronke2') {
+        const frame = getRonke2FrameState(u);
+        const sprSz = UNIT_CELL * 3.4;
+        const _r2yOff = -29;
+        const _r2drawX = cx - sprSz / 4; // BODY_FRAC=0.25 → cx - sprSz/4 centers body at cx
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          if ((u.facing?.dx ?? 1) < 0) {
+            ctx.save();
+            ctx.translate(_r2drawX, cy + _r2yOff);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, _r2drawX, cy - sprSz / 2 + _r2yOff, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#4466dd';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.25, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
       } else {
         drawEnemyPixelArt(cx, cy, u, alpha);
       }
@@ -11032,9 +12504,9 @@ function drawUnits() {
         const flickRate = 60 + progress * 40;
         if (progress > 0.25 && Math.sin(elapsed / flickRate) < 0) { ctx.restore(); return; }
         const dyingAlpha = alpha * (1 - progress);
-        drawHeroPixelArt(cx, cy, u, dyingAlpha, inactive);
+        _drawRonke2HeroSprite(cx, cy, u, dyingAlpha);
       } else {
-        drawHeroPixelArt(cx, cy, u, alpha, inactive);
+        _drawRonke2HeroSprite(cx, cy, u, alpha);
       }
       ctx.restore();
       return; // skip hex rendering below
@@ -11149,6 +12621,9 @@ function aiQueueAction(exec = true) {
     if (u.team !== 1 || !u.alive) return false;
     if ((u.frozenTurns || 0) > 0) { return false; } // frozen this turn (decremented after tick)
     if (gameMode === 'adventure') {
+      if (u.utype === 'spider') {
+        return true;
+      }
       const isDirectlyVisible = isVisible(u.x, u.y);
       const isTileRevealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
       const isHugeEnemy = u.utype === 'ironbox' || u.utype === 'boss01';
@@ -11176,20 +12651,17 @@ function aiQueueAction(exec = true) {
     y: (humanAct?.unitId === u.id && humanAct?.t === 'move') ? u.y + humanAct.dy : u.y,
   }));
 
-  let best = null, bestScore = -Infinity;
-  aiUnits.forEach(unit => {
-    const res = aiUnitDecide(unit, nextBullets, safe, p1Future);
-    if (!res) return;
-    if (res.score > bestScore) { bestScore = res.score; best = { ...res.action, unitId: unit.id }; }
-  });
+  const batch = collectAiBatchActions(aiUnits, nextBullets, safe, p1Future);
+  S.pendingEnemyBatch = batch;
 
-  if (best) {
-    const unit = S.units.find(u => u.id === best.unitId);
-    if (unit && best.fo) unit.facing = best.fo;
-    S.pending[1] = best;
-    setActionBadge(1, best);
-    S.selectedId[1] = best.unitId;
+  if (batch.length > 0) {
+    const lead = batch[0];
+    S.pending[1] = lead;
+    setActionBadge(1, lead);
+    S.selectedId[1] = lead.unitId;
     if (exec) resolveTick();
+  } else if (gameMode === 'adventure') {
+    S.clockSide = 0;
   }
 }
 
@@ -11227,6 +12699,121 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
 
   const curSafe = safe(unit.x, unit.y);
   const safeMoves = moves.filter(m => safe(m.nx, m.ny));
+
+  if (unit.utype === 'spider') {
+    const facingDx = (unit.facing?.dx === 1 || unit.facing?.dx === -1) ? unit.facing.dx : 1;
+    unit.facing = { dx: facingDx, dy: 0 };
+
+    let frontTarget = null;
+    for (const hu of p1Future) {
+      const dx = hu.x - unit.x;
+      if (hu.y !== unit.y || dx === 0) continue;
+      if (Math.sign(dx) !== facingDx) continue;
+      const fo = clearShotFrom(unit.x, unit.y, hu.x, hu.y);
+      if (!fo || fo.dy !== 0 || fo.dx !== facingDx) continue;
+      const dist = Math.abs(dx);
+      if (!frontTarget || dist < frontTarget.dist) {
+        frontTarget = { dist, fo };
+      }
+    }
+
+    if (unit.ammo > 0 && frontTarget) {
+      return { action: { t: 'shoot', fo: { dx: facingDx, dy: 0 } }, score: 165 - frontTarget.dist };
+    }
+
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length > 0) {
+      const targetKeys = new Set(p1Future.map((hu) => `${hu.x},${hu.y}`));
+      const visited = new Set([`${unit.x},${unit.y}`]);
+      const queue = [{ x: unit.x, y: unit.y, first: null, dist: 0 }];
+      let bestMove = null;
+
+      while (queue.length > 0) {
+        const curr = queue.shift();
+        if (curr.dist > ROWS * COLS) break;
+        if (curr.first && targetKeys.has(`${curr.x},${curr.y}`)) {
+          bestMove = curr.first;
+          break;
+        }
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const nx = curr.x + dx, ny = curr.y + dy;
+          const key = `${nx},${ny}`;
+          if (visited.has(key)) continue;
+          if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+          if (S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+          visited.add(key);
+          queue.push({
+            x: nx,
+            y: ny,
+            first: curr.first || { dx, dy, nx, ny },
+            dist: curr.dist + 1,
+          });
+        }
+      }
+
+      if (!bestMove) {
+        let bestScore = -Infinity;
+        for (const m of candidateMoves) {
+          const dist = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+          let score = 40 - dist * 3;
+          if (m.ny === nearest.y) score += 12;
+          if (m.dx !== 0 && Math.sign(nearest.x - unit.x || facingDx) === m.dx) score += 10;
+          if (safe(m.nx, m.ny)) score += 6;
+          score += Math.random();
+          if (score > bestScore) {
+            bestScore = score;
+            bestMove = m;
+          }
+        }
+      }
+
+      if (bestMove) {
+        if (bestMove.dx !== 0) {
+          unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+        } else {
+          const aimDx = Math.sign(nearest.x - unit.x);
+          if (aimDx !== 0) unit.facing = { dx: aimDx, dy: 0 };
+        }
+        return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 125 };
+      }
+    }
+
+    const aimDx = Math.sign(nearest.x - unit.x);
+    if (aimDx !== 0) unit.facing = { dx: aimDx, dy: 0 };
+    return { action: { t: 'move', dx: 0, dy: 0 }, score: 1 };
+  }
+
+  if (unit.utype === 'sheep') {
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+
+    const heroDist = nearest.dist;
+    const moveChance = heroDist <= 3 ? 0.55 : heroDist <= 5 ? 0.35 : 0.18;
+    if (Math.random() > moveChance) return null;
+
+    let bestMove = null;
+    let bestScore = -Infinity;
+    for (const m of candidateMoves) {
+      const nextDist = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+      let score = heroDist <= 5
+        ? nextDist * 5 + Math.random() * 3
+        : Math.random() * 12 + nextDist * 0.15;
+      if (safe(m.nx, m.ny)) score += 1.5;
+      if (m.dx !== 0) score += 0.5;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = m;
+      }
+    }
+
+    if (!bestMove) return null;
+    if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+    else {
+      const fleeDx = Math.sign(unit.x - nearest.x);
+      if (fleeDx !== 0) unit.facing = { dx: fleeDx, dy: 0 };
+    }
+    return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 42 + bestScore };
+  }
 
   if (unit.utype === 'idol') {
     const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
@@ -11472,6 +13059,366 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     }
   }
   // --- END OF WORM AI ---
+
+
+  // --- SKULL AI: aggressive melee chaser with guard ---
+  if (unit.utype === 'skull') {
+    const now = performance.now();
+    const heroDist = nearest.dist;
+    const aimDx = nearest.x !== unit.x ? Math.sign(nearest.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+
+    // Attack if adjacent (dist=1), swing anim + instant energy damage
+    const _swingDur = (skullAnimSheets.attack.frameCount / SKULL_ANIM_FPS.attack) * 1000;
+    const _isSwinging = unit.swingStart && (now - unit.swingStart) < _swingDur;
+    if (heroDist === 1 && !_isSwinging) {
+      return { action: { t: 'skullatk', targetX: nearest.x, targetY: nearest.y }, score: 250 };
+    }
+
+    // Guard: 25% chance if not adjacent and not already guarding/swinging
+    const _guardDur = (skullAnimSheets.guard.frameCount / SKULL_ANIM_FPS.guard) * 1000;
+    const _isGuarding = unit.guardStart && (now - unit.guardStart) < _guardDur;
+    if (!_isSwinging && !_isGuarding && heroDist > 1 && Math.random() < 0.25) {
+      return { action: { t: 'skullguard' }, score: 60 };
+    }
+
+    // Chase: BFS toward player
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+
+    let bestMove = null;
+    const targetKeys = new Set(p1Future.map(hu => `${hu.x},${hu.y}`));
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 15) break;
+      if (curr.first && targetKeys.has(`${curr.x},${curr.y}`)) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 120 };
+    }
+    return null;
+  }
+  // --- END SKULL AI ---
+
+  // --- BLUE BIRD AI: fast melee chaser, no special abilities ---
+  if (unit.utype === 'bluebird') {
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (!hero) return null;
+    const heroDist = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
+    const aimDx = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+
+    if (heroDist === 1) {
+      return { action: { t: 'birdatk', targetX: hero.x, targetY: hero.y }, score: 250 };
+    }
+
+    // BFS chase
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+    let bestMove = null;
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 15) break;
+      if (curr.first && curr.x === hero.x && curr.y === hero.y) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(hero.x - m.nx) + Math.abs(hero.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 120 };
+    }
+    return null;
+  }
+  // --- END BLUE BIRD AI ---
+
+  // --- MINOTAUR AI: heavy melee brute with guard, 2-tile charge ---
+  if (unit.utype === 'minotaur') {
+    const now = performance.now();
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (!hero) return null;
+
+    const heroDist     = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
+    const heroDistPrev = Math.abs((hero.px ?? hero.x) - unit.x) + Math.abs((hero.py ?? hero.y) - unit.y);
+
+    const aimDx = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+
+    const swingDur = (minotaurAnimSheets.attack.frameCount / MINOTAUR_ANIM_FPS.attack) * 1000;
+    const isSwinging = unit.swingStart && (now - unit.swingStart) < swingDur;
+
+    // Attack: adjacent now OR was adjacent before hero moved
+    if ((heroDist === 1 || heroDistPrev === 1) && !isSwinging) {
+      const targetX = heroDist === 1 ? hero.x : (hero.px ?? hero.x);
+      const targetY = heroDist === 1 ? hero.y : (hero.py ?? hero.y);
+      return { action: { t: 'minoatk', targetX, targetY }, score: 300 };
+    }
+
+    // Wind-up swing animation when hero is 2 tiles away (threatening)
+    if (heroDist === 2 && !isSwinging) {
+      unit.swingStart = now;
+    }
+
+    // Always chase — no guard, no hesitation
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+
+    let bestMove = null;
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 15) break;
+      if (curr.first && curr.x === hero.x && curr.y === hero.y) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(hero.x - m.nx) + Math.abs(hero.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
+    }
+    return null;
+  }
+  // --- END MINOTAUR AI ---
+
+  // --- RONKE AI: heavy brawler, always chases, powerful hit ---
+  if (unit.utype === 'ronke') {
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (!hero) return null;
+    const heroDist     = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
+    const heroDistPrev = Math.abs((hero.px ?? hero.x) - unit.x) + Math.abs((hero.py ?? hero.y) - unit.y);
+    const aimDx = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+
+    if ((heroDist === 1 || heroDistPrev === 1)) {
+      const targetX = heroDist === 1 ? hero.x : (hero.px ?? hero.x);
+      const targetY = heroDist === 1 ? hero.y : (hero.py ?? hero.y);
+      return { action: { t: 'ronkeatk', targetX, targetY }, score: 320 };
+    }
+
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+    let bestMove = null;
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 15) break;
+      if (curr.first && curr.x === hero.x && curr.y === hero.y) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(hero.x - m.nx) + Math.abs(hero.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
+    }
+    return null;
+  }
+  // --- END RONKE AI ---
+
+  if (unit.utype === 'ronke2') {
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (!hero) return null;
+    const heroDist     = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
+    const heroDistPrev = Math.abs((hero.px ?? hero.x) - unit.x) + Math.abs((hero.py ?? hero.y) - unit.y);
+    const aimDx = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+    const castCd = unit.ronke2CastCd || 0;
+    const now_r2 = performance.now();
+    // Ranged cast at distance 2-5, same row (horizontal only)
+    if (heroDist >= 2 && heroDist <= 5 && hero.y === unit.y && now_r2 > castCd) {
+      return { action: { t: 'ronke2cast', targetX: hero.x, targetY: hero.y }, score: 350 };
+    }
+    // Melee fallback at distance 1
+    if (heroDist === 1 || heroDistPrev === 1) {
+      const targetX = heroDist === 1 ? hero.x : (hero.px ?? hero.x);
+      const targetY = heroDist === 1 ? hero.y : (hero.py ?? hero.y);
+      return { action: { t: 'ronkeatk', targetX, targetY }, score: 320 };
+    }
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+    let bestMove = null;
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 15) break;
+      if (curr.first && curr.x === hero.x && curr.y === hero.y) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(hero.x - m.nx) + Math.abs(hero.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
+    }
+    return null;
+  }
+
+  // --- TROLL AI: heavy melee bruiser, no ranged attacks ---
+  if (unit.utype === 'troll') {
+    const now = performance.now();
+    const heroDist = nearest.dist;
+    const aimDx = nearest.x !== unit.x ? Math.sign(nearest.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+
+    const _swingDur = (trollAnimSheets.attack.frameCount / TROLL_ANIM_FPS.attack) * 1000;
+    const _isSwinging = unit.swingStart && (now - unit.swingStart) < _swingDur;
+    const _recoveryDur = (trollAnimSheets.recovery.frameCount / TROLL_ANIM_FPS.recovery) * 1000;
+    const _isRecovering = unit.recoveryStart && (now - unit.recoveryStart) < _recoveryDur;
+    if (heroDist === 1 && !_isSwinging) {
+      return { action: { t: 'trollsmash', targetX: nearest.x, targetY: nearest.y }, score: 260 };
+    }
+
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+    if (_isRecovering && heroDist > 1) {
+      return null;
+    }
+
+    let bestMove = null;
+    const targetKeys = new Set(p1Future.map(hu => `${hu.x},${hu.y}`));
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 14) break;
+      if (curr.first && targetKeys.has(`${curr.x},${curr.y}`)) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      const aggroScore = heroDist <= 2 ? 180 : heroDist <= 4 ? 150 : 130;
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: aggroScore };
+    }
+    return null;
+  }
+  // --- END TROLL AI ---
+
+  // --- SHAMAN AI: ranged caster, keeps distance, casts projectile ---
+  if (unit.utype === 'shaman') {
+    const now = performance.now();
+    const heroDist = nearest.dist;
+
+    // Always face player horizontally (sprites only have east/west)
+    const aimDx = nearest.x !== unit.x ? Math.sign(nearest.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+
+    // Cast if in range and cooldown expired and not already casting
+    const _swingDur = (10 / SHAMAN_ANIM_FPS.attack) * 1000;
+    const _isCasting = unit.swingStart && (now - unit.swingStart) < _swingDur;
+    const _cdReady = !unit.shamanAttackCd || now > unit.shamanAttackCd;
+    const SHAMAN_RANGE = 6;
+
+    if (!_isCasting && _cdReady && heroDist >= 2 && heroDist <= SHAMAN_RANGE) {
+      return { action: { t: 'shamancast', targetX: nearest.x, targetY: nearest.y }, score: 220 };
+    }
+
+    // Move: sweet spot 3-5 tiles away; flee if too close
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+
+    let best = null, bestScore = -Infinity;
+    for (const m of candidateMoves) {
+      const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+      let score = 0;
+      if (d >= 3 && d <= 5) score += 20;
+      else if (d < 2) score -= 30;
+      else if (d > 5) score += 8;
+      score += Math.random() * 5;
+      if (score > bestScore) { bestScore = score; best = m; }
+    }
+    if (best) {
+      if (best.dx !== 0) unit.facing = { dx: Math.sign(best.dx), dy: 0 };
+      return { action: { t: 'move', dx: best.dx, dy: best.dy }, score: 80 };
+    }
+    return null;
+  }
+  // --- END SHAMAN AI ---
 
 
   // --- GRUNT / SHOOTER AI ---
@@ -12691,21 +14638,408 @@ document.addEventListener('DOMContentLoaded', () => {
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
 
+  window.isEditMode = false;
+  window.editTileType = "1"; // string type, numbers for ground, strings for objects
+  window.toggleEditMode = () => {
+    window.isEditMode = !window.isEditMode;
+    const pal = document.getElementById('edit-palette');
+    if(pal) {
+      pal.style.display = window.isEditMode ? 'flex' : 'none';
+      if(window.isEditMode && !pal.hasBuiltExt) buildEditorPaletteExt(pal);
+      if (window.isEditMode && typeof window.setEditorSection === 'function') {
+        window.setEditorSection(window.editorSection || 'map');
+      }
+    }
+    if(window.isEditMode) showGameNotification('EDITOR', 'MAP/NPC tabs active. Click or drag on the map to paint or place enemies.', '#ff00bb');
+  };
+  window.setEditTile = (v) => { window.editTileType = v; };
+  window.exportMap = () => {
+    if(!S.dungeon) return;
+    // Preserve existing spawnPos/exitPos or use current CUSTOM_MAP values as fallback
+    const prevMap = window.CUSTOM_MAP || {};
+    const hero = S.units && S.units.find(u => u.team === 0 && u.alive);
+    const spawnPos = hero ? { x: hero.x, y: hero.y } : (prevMap.spawnPos || { x: 2, y: 2 });
+    const exitPos = (S.teleports && S.teleports[0])
+      ? { x: S.teleports[0].x, y: S.teleports[0].y }
+      : (prevMap.exitPos || { x: 2, y: 2 });
+    const mapObj = {
+      dungeon: S.dungeon,
+      decorations: S.decorations || {},
+      collisionBoxes: S.collisionBoxes ? [...S.collisionBoxes] : [],
+      enemies: Array.isArray(S.customEnemyPlacements) ? cloneEditorEnemyPlacements(S.customEnemyPlacements) : cloneEditorEnemyPlacements(getLiveEditorEnemyPlacements()),
+      spawnPos,
+      exitPos
+    };
+    const line = `window.CUSTOM_MAP = ${JSON.stringify(mapObj)};`;
+    navigator.clipboard.writeText(line).then(() => showGameNotification('EDITOR', `Map exported! spawn(${spawnPos.x},${spawnPos.y}) exit(${exitPos.x},${exitPos.y}) enemies:${mapObj.enemies.length}`, '#00ff00'));
+    console.log(line);
+  };
+
+  function buildEditorPaletteExt(pal) {
+    pal.hasBuiltExt = true;
+    pal.style.overflowY = 'auto';
+    pal.style.maxHeight = '80vh';
+    const basePaletteHtml = pal.innerHTML;
+    pal.innerHTML = `
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button id="editor-tab-map" style="flex:1; background:#ff00bb; color:white; border:1px solid #ff77dd; padding:8px 6px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:9px;" onclick="setEditorSection('map')">MAP</button>
+        <button id="editor-tab-npc" style="flex:1; background:#1f2433; color:#8fd8ff; border:1px solid #4ab5c0; padding:8px 6px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:9px;" onclick="setEditorSection('npc')">NPC</button>
+      </div>
+      <div id="editor-map-panel" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <div id="editor-npc-panel" style="display:none; flex-direction:column; gap:10px;"></div>
+    `;
+    const mapPanel = document.getElementById('editor-map-panel');
+    const npcPanel = document.getElementById('editor-npc-panel');
+    mapPanel.innerHTML = `<div style="color:#ff00bb; font-size:10px; margin-bottom:5px;">TERRAIN</div>` + basePaletteHtml;
+
+    window.setEditorSection = (section = 'map') => {
+      window.editorSection = section;
+      const mapTab = document.getElementById('editor-tab-map');
+      const npcTab = document.getElementById('editor-tab-npc');
+      const mapWrap = document.getElementById('editor-map-panel');
+      const npcWrap = document.getElementById('editor-npc-panel');
+      if (!mapTab || !npcTab || !mapWrap || !npcWrap) return;
+      const showNpc = section === 'npc';
+      mapWrap.style.display = showNpc ? 'none' : 'flex';
+      npcWrap.style.display = showNpc ? 'flex' : 'none';
+      mapTab.style.background = showNpc ? '#1f2433' : '#ff00bb';
+      mapTab.style.color = showNpc ? '#ff9be8' : '#ffffff';
+      npcTab.style.background = showNpc ? '#4ab5c0' : '#1f2433';
+      npcTab.style.color = showNpc ? '#07111a' : '#8fd8ff';
+    };
+    // CLIFFS and DEEP WATER buttons are now in index.html
+    // Add eraser
+    mapPanel.innerHTML += `<button onclick="setEditTile('erase_prop')" style="background:#550000; width:100px; height:30px; margin-top:5px; color:white; font-size:9px; cursor:pointer;">&#x2715; ERASE PROP</button>`;
+    
+    // Add Fill buttons
+    mapPanel.innerHTML += `<div style="margin-top:5px; display:flex; gap:5px;"><button onclick="fillMap(1)" style="flex:1; background:#3a7a2a; color:white; font-size:9px;">FILL GRASS</button><button onclick="fillMap(0)" style="flex:1; background:#4ab5c0; color:white; font-size:9px;">FILL WATER</button></div>`;
+    
+    window.fillMap = (type) => {
+        if (!S.dungeon) return;
+        for (let r=0; r<ROWS; r++) {
+           for (let c=0; c<COLS; c++) {
+              S.dungeon[r][c] = type;
+           }
+        }
+        showGameNotification('EDITOR', `Map filled with ${type === 1 ? 'GRASS' : 'WATER'}!`, '#00ff00');
+    };
+
+    window.openPicker = (type) => {
+      const modal = document.getElementById('picker-modal');
+      const title = document.getElementById('picker-title');
+      const canvas = document.getElementById('picker-canvas');
+      const hl = document.getElementById('picker-highlight');
+      const ctx = canvas.getContext('2d');
+      
+      const img = type === 'elev' ? elevationImg : type === 'tileset1' ? tilesetImg : type === 'tileset3' ? tileset3Img : type === 'bridge' ? bridgeImg : flatImg;
+      const prefix = type === 'elev' ? 'elev' : type === 'tileset1' ? 'tileset1' : type === 'tileset3' ? 'tileset3' : type === 'bridge' ? 'bridge' : 'flat';
+
+      title.innerText = `SELECT ${type === 'elev' ? 'ELEVATION' : type === 'tileset1' ? 'TILESET 1' : type === 'tileset3' ? 'TILESET 3' : type === 'bridge' ? 'BRIDGE' : 'FLAT'} TILE`;
+      modal.style.display = 'flex';
+      
+      if(img && img.complete && img.naturalWidth > 0) {
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+      }
+      const W = canvas.width;
+      const H = canvas.height;
+
+      ctx.clearRect(0, 0, W, H);
+      if(img && img.complete) {
+          ctx.drawImage(img, 0, 0);
+      }
+      
+      // grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
+      for(let i=0; i<=W; i+=64) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,H); ctx.stroke(); }
+      for(let i=0; i<=H; i+=64) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(W,i); ctx.stroke(); }
+
+      let isPicking = false;
+      let startTx = 0, startTy = 0, endTx = 0, endTy = 0;
+      
+      const updateHighlight = () => {
+        const minTx = Math.min(startTx, endTx);
+        const minTy = Math.min(startTy, endTy);
+        const w = Math.max(startTx, endTx) - minTx + 1;
+        const h = Math.max(startTy, endTy) - minTy + 1;
+        hl.style.display = 'block';
+        hl.style.left = (minTx * 64) + 'px';
+        hl.style.top = (minTy * 64) + 'px';
+        hl.style.width = (w * 64) + 'px';
+        hl.style.height = (h * 64) + 'px';
+      };
+
+      canvas.onmousedown = e => {
+        isPicking = true;
+        const rect = canvas.getBoundingClientRect();
+        startTx = Math.floor((e.clientX - rect.left) / (rect.width / W) / 64);
+        startTy = Math.floor((e.clientY - rect.top) / (rect.height / H) / 64);
+        endTx = startTx; endTy = startTy;
+        updateHighlight();
+      };
+
+      canvas.onmousemove = e => {
+        const rect = canvas.getBoundingClientRect();
+        const tx = Math.floor((e.clientX - rect.left) / (rect.width / W) / 64);
+        const ty = Math.floor((e.clientY - rect.top) / (rect.height / H) / 64);
+        if (isPicking) {
+            endTx = tx; endTy = ty;
+        } else {
+            startTx = tx; startTy = ty; endTx = tx; endTy = ty;
+        }
+        updateHighlight();
+      };
+
+      canvas.onmouseleave = () => { if (!isPicking) hl.style.display = 'none'; };
+
+      canvas.onmouseup = e => {
+        if (!isPicking) return;
+        isPicking = false;
+        const minTx = Math.min(startTx, endTx);
+        const minTy = Math.min(startTy, endTy);
+        const w = Math.max(startTx, endTx) - minTx + 1;
+        const h = Math.max(startTy, endTy) - minTy + 1;
+        
+        if (w === 1 && h === 1) {
+            window.setEditTile(`${prefix}_${minTx}_${minTy}`);
+            showGameNotification('EDITOR', `Selected ${prefix} [${minTx}, ${minTy}]`, '#00ff00');
+        } else {
+            window.setEditTile(`${prefix}group_${minTx}_${minTy}_${w}_${h}`);
+            showGameNotification('EDITOR', `Selected ${prefix} Grid [${w}x${h}]`, '#00ff00');
+        }
+        modal.style.display = 'none';
+      };
+    };
+
+    window.openRockPicker = () => {
+      const existing = document.getElementById('rock-picker-modal');
+      if (existing) { existing.style.display = 'flex'; return; }
+
+      // Build modal — 4 thumbnail canvases, one per variant
+      const m = document.createElement('div');
+      m.id = 'rock-picker-modal';
+      m.style.cssText = 'display:flex; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#111; border:2px solid #4ab5c0; z-index:9999; padding:14px; flex-direction:column; align-items:center; gap:12px; font-family:"Press Start 2P",monospace;';
+
+      const title = document.createElement('div');
+      title.textContent = 'SELECT ROCK';
+      title.style.cssText = 'color:#4ab5c0; font-size:11px;';
+      m.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:10px;';
+
+      for (let i = 1; i <= 4; i++) {
+        const card = document.createElement('div');
+        card.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; padding:6px; border:2px solid #333; border-radius:4px;';
+        card.onmouseover = () => card.style.borderColor = '#4ab5c0';
+        card.onmouseout = () => card.style.borderColor = '#333';
+
+        // Preview canvas — shows frame 0 of the rock (128×128, first frame)
+        const cv = document.createElement('canvas');
+        cv.width = 128; cv.height = 128;
+        cv.style.cssText = 'image-rendering:pixelated; width:96px; height:96px; background:#003344;';
+        const ctx2 = cv.getContext('2d');
+        const img = rockImgs[i];
+        const drawPreview = () => ctx2.drawImage(img, 0, 0, 128, 128, 0, 0, 128, 128);
+        if (img.complete && img.naturalWidth > 0) { drawPreview(); } else { img.onload = drawPreview; }
+
+        const lbl = document.createElement('div');
+        lbl.textContent = `ROCK 0${i}`;
+        lbl.style.cssText = 'color:#aaa; font-size:7px;';
+
+        card.appendChild(cv);
+        card.appendChild(lbl);
+        card.onclick = () => {
+          window.setEditTile(`rock${i}`);
+          showGameNotification('EDITOR', `Rock 0${i} selected — animuotas`, '#4ab5c0');
+          m.style.display = 'none';
+        };
+        grid.appendChild(card);
+      }
+
+      m.appendChild(grid);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'CLOSE';
+      closeBtn.style.cssText = 'background:#4ab5c0; color:#000; border:none; padding:5px 14px; cursor:pointer; font-family:"Press Start 2P",monospace; font-size:9px;';
+      closeBtn.onclick = () => m.style.display = 'none';
+      m.appendChild(closeBtn);
+
+      document.getElementById('screen-game').appendChild(m);
+    };
+
+    window.openBushPicker = () => {
+      const existing = document.getElementById('bush-picker-modal');
+      if (existing) { existing.style.display = 'flex'; return; }
+
+      const m = document.createElement('div');
+      m.id = 'bush-picker-modal';
+      m.style.cssText = 'display:flex; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#111; border:2px solid #6ccf74; z-index:9999; padding:14px; flex-direction:column; align-items:center; gap:12px; font-family:"Press Start 2P",monospace;';
+
+      const title = document.createElement('div');
+      title.textContent = 'SELECT BUSH';
+      title.style.cssText = 'color:#6ccf74; font-size:11px;';
+      m.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:10px;';
+
+      for (let i = 1; i <= 4; i++) {
+        const card = document.createElement('div');
+        card.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; padding:6px; border:2px solid #333; border-radius:4px;';
+        card.onmouseover = () => card.style.borderColor = '#6ccf74';
+        card.onmouseout = () => card.style.borderColor = '#333';
+
+        const cv = document.createElement('canvas');
+        cv.width = 128; cv.height = 128;
+        cv.style.cssText = 'image-rendering:pixelated; width:96px; height:96px; background:#12331b;';
+        const ctx2 = cv.getContext('2d');
+        const img = bushImgs[i];
+        const drawPreview = () => ctx2.drawImage(img, 0, 0, 128, 128, 0, 0, 128, 128);
+        if (img.complete && img.naturalWidth > 0) { drawPreview(); } else { img.onload = drawPreview; }
+
+        const lbl = document.createElement('div');
+        lbl.textContent = `BUSH 0${i}`;
+        lbl.style.cssText = 'color:#aaa; font-size:7px;';
+
+        card.appendChild(cv);
+        card.appendChild(lbl);
+        card.onclick = () => {
+          window.setEditTile(`bush${i}`);
+          showGameNotification('EDITOR', `Bush 0${i} selected - animuotas`, '#6ccf74');
+          m.style.display = 'none';
+        };
+        grid.appendChild(card);
+      }
+
+      m.appendChild(grid);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'CLOSE';
+      closeBtn.style.cssText = 'background:#6ccf74; color:#000; border:none; padding:5px 14px; cursor:pointer; font-family:"Press Start 2P",monospace; font-size:9px;';
+      closeBtn.onclick = () => m.style.display = 'none';
+      m.appendChild(closeBtn);
+
+      document.getElementById('screen-game').appendChild(m);
+    };
+
+    let html = `<div style="color:#ff00bb; font-size:10px; margin-top:15px; margin-bottom:5px;">DECORATIONS</div><div style="display:flex; flex-wrap:wrap; gap:4px; max-width:200px;">`;
+    for(let i=1; i<=18; i++) {
+        let no = i.toString().padStart(2, '0');
+        html += `<img src="assets_tiny/Deco/${no}.png" onclick="setEditTile('deco_${no}')" style="width:32px; height:32px; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px; border-radius:4px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'"/>`;
+    }
+    html += `<div style="width:100%; height:5px;"></div>`;
+    html += `<img src="assets_tiny/Resources/Trees/Tree.png" onclick="setEditTile('tree_1')" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px;" />`;
+    html += `<img src="assets_tiny/Deco/rubber_duck.png" onclick="setEditTile('duck')" title="Rubber Duck (animuotas)" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px; border-radius:4px; image-rendering:pixelated;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'" />`;
+    html += `<img src="assets_tiny/Resources/Gold Mine/GoldMine_Inactive.png" onclick="setEditTile('mine_1')" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px;" />`;
+    html += `<img src="assets_tiny/Terrain/Bushe1.png" onclick="openBushPicker()" title="Animated Bushes" style="width:32px; height:32px; object-fit:cover; object-position:left top; cursor:pointer; background:rgba(20,60,30,0.85); padding:2px; border-radius:4px; border:1px solid #6ccf74; image-rendering:pixelated;" onmouseover="this.style.background='rgba(60,110,70,0.95)'" onmouseout="this.style.background='rgba(20,60,30,0.85)'" />`;
+    html += `</div>`;
+    
+    // Append the export button to the end properly
+    const expBtn = mapPanel.querySelector('button[onclick="exportMap()"]');
+    if(expBtn) mapPanel.removeChild(expBtn);
+    mapPanel.innerHTML += html;
+    if(expBtn) mapPanel.appendChild(expBtn);
+
+    const npcButtons = EDITOR_NPC_TYPES.map((enemy) => {
+      const preview = enemy.type === 'spider'
+        ? 'animations/spider/Spider_Idle.png'
+        : enemy.type === 'sheep'
+          ? 'animations/sheep/Sheep_Idle.png'
+          : enemy.type === 'troll'
+            ? 'animations/troll/Troll_Idle.png'
+        : null;
+      const previewHtml = preview
+        ? `<img src="${preview}" style="width:36px; height:36px; image-rendering:pixelated; object-fit:contain; margin-bottom:4px;" />`
+        : '';
+      return `<button onclick="setEditTile('npc_${enemy.type}')" style="background:#1d2030; width:100%; height:40px; color:#fff; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid ${enemy.color}; display:flex; flex-direction:row; align-items:center; justify-content:flex-start; gap:8px; padding:0 8px;">${previewHtml}<span>${enemy.label}</span></button>`;
+    }).join('');
+    npcPanel.innerHTML = `
+      <div style="color:#8fd8ff; font-size:10px; margin-bottom:5px;">NPC EDITOR</div>
+      <div style="font-size:8px; line-height:1.6; color:#cfefff; max-width:210px;">Place or remove enemies separately from terrain editing.</div>
+      <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+        ${npcButtons}
+        <button onclick="setEditTile('erase_npc')" style="background:#3a1111; width:100%; height:40px; color:#ff7a7a; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #ff5555;">REMOVE</button>
+      </div>
+      <button onclick="exportMap()" style="background:#777; width:100px; height:30px; margin-top:14px; color:white; font-size:9px; cursor:pointer;">EXPORT JS</button>
+    `;
+    window.setEditorSection(window.editorSection || 'map');
+  }
+
+  let _isMouseDown = false;
+  document.addEventListener('mouseup', () => { _isMouseDown = false; });
+
   document.addEventListener('mousemove', e => {
     if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) { hoverGx = -1; hoverGy = -1; return; }
     const { x, y } = canvasCoords(e);
     hoverGx = Math.floor(x / CELL);
     hoverGy = Math.floor(y / CELL);
+    window._paintCurrentTile = (gy, gx) => {
+      if (S.dungeon && gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+        if (typeof window.editTileType === 'number') {
+            S.dungeon[gy][gx] = window.editTileType;
+        } else if (typeof window.editTileType === 'string') {
+            if (window.editTileType.startsWith('npc_')) {
+                placeEditorEnemy(window.editTileType.slice(4), gx, gy);
+                return;
+            } else if (window.editTileType === 'erase_npc') {
+                removeEditorEnemyAt(gx, gy);
+                return;
+            }
+            if (!S.decorations) S.decorations = {};
+            if (window.editTileType.startsWith('elevgroup_') || window.editTileType.startsWith('flatgroup_') || window.editTileType.startsWith('tileset1group_') || window.editTileType.startsWith('tileset3group_') || window.editTileType.startsWith('bridgegroup_')) {
+                const parts = window.editTileType.split('_');
+                const pType = parts[0].replace('group', '');
+                const pTx = parseInt(parts[1], 10), pTy = parseInt(parts[2], 10);
+                const pW = parseInt(parts[3], 10), pH = parseInt(parts[4], 10);
+                for (let dy=0; dy<pH; dy++) {
+                   for (let dx=0; dx<pW; dx++) {
+                      if (gy+dy < ROWS && gx+dx < COLS) {
+                          S.decorations[`${gy+dy},${gx+dx}`] = `${pType}_${pTx+dx}_${pTy+dy}`;
+                      }
+                   }
+                }
+            } else if (window.editTileType === 'erase_prop') {
+                delete S.decorations[`${gy},${gx}`];
+            } else if (window.editTileType === 'box') {
+                if (!S.collisionBoxes) S.collisionBoxes = new Set();
+                S.collisionBoxes.add(`${gy},${gx}`);
+            } else if (window.editTileType === 'erase_all') {
+                // Universal erase: reset dungeon tile to water (0), remove decoration AND box
+                S.dungeon[gy][gx] = 0;
+                delete S.decorations[`${gy},${gx}`];
+                if (S.collisionBoxes) S.collisionBoxes.delete(`${gy},${gx}`);
+                removeEditorEnemyAt(gx, gy);
+            } else {
+                S.decorations[`${gy},${gx}`] = window.editTileType;
+            }
+        }
+      }
+    };
+
+    if (window.isEditMode && _isMouseDown && gameMode === 'adventure') {
+      window._paintCurrentTile(hoverGy, hoverGx);
+      return;
+    }
     updateP1Aim(x, y);
   }, true);
 
   document.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
+    _isMouseDown = true;
     if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) return;
     lastCanvasPointerDownAt = performance.now();
-    SFX.init();
+    
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
+
+    if (window.isEditMode && gameMode === 'adventure') {
+      if (window._paintCurrentTile) window._paintCurrentTile(gy, gx);
+      return;
+    }
+
+    SFX.init();
     const clicked = S.units.find(u => u.team === 0 && u.alive && u.x === gx && u.y === gy);
     if (clicked) {
       SFX.select();
@@ -12825,11 +15159,58 @@ document.addEventListener('DOMContentLoaded', () => {
     updateP1Aim(x, y);
   }, { passive: false });
 
+  let _mobLastTap = 0, _mobLastTapX = 0, _mobLastTapY = 0;
   canvas.addEventListener('touchend', e => {
     if (gameMode !== 'adventure') return;
     e.preventDefault();
     const t = e.changedTouches[0];
-    canvas.dispatchEvent(new MouseEvent('click', { clientX: t.clientX, clientY: t.clientY, bubbles: true }));
+    const { x: cx, y: cy } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
+    const now = performance.now();
+
+    // Double-tap anywhere → shoot
+    const dt = now - _mobLastTap;
+    const dd = Math.hypot(cx - _mobLastTapX, cy - _mobLastTapY);
+    if (dt < 340 && dd < CELL * 3.5) {
+      _mobLastTap = 0;
+      if (S.phase === 'frozen' && S.clockSide === 0 && S.pending[0] === null) {
+        const _sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+        if (_sel) {
+          updateP1Aim(cx, cy);
+          S.pending[0] = { unitId: _sel.id, t: 'shoot' };
+          setActionBadge(0, S.pending[0]);
+          aiQueueAction(false);
+          resolveTick();
+        }
+      }
+      return;
+    }
+    _mobLastTap = now; _mobLastTapX = cx; _mobLastTapY = cy;
+
+    // Arrow zone tap → move
+    const hero = S._hero || S.units?.find(u => u.team === 0 && u.alive);
+    if (hero && S.cam) {
+      const wx = cx + S.cam.x;
+      const wy = cy + S.cam.y;
+      const hx = (hero.rx + 0.5) * CELL;
+      const hy = (hero.ry + 0.5) * CELL;
+      const hitR  = CELL * 0.88;
+      const dist  = CELL * 1.65;
+      const _dirs = [
+        { dx:  0, dy: -1, code: 'KeyW' },
+        { dx:  0, dy:  1, code: 'KeyS' },
+        { dx: -1, dy:  0, code: 'KeyA' },
+        { dx:  1, dy:  0, code: 'KeyD' },
+      ];
+      for (const d of _dirs) {
+        if (Math.hypot(wx - (hx + d.dx * dist), wy - (hy + d.dy * dist)) < hitR) {
+          document.dispatchEvent(new KeyboardEvent('keydown', { code: d.code, bubbles: true }));
+          return;
+        }
+      }
+    }
+
+    // Tap elsewhere → just update aim direction (no fire)
+    updateP1Aim(cx, cy);
   }, { passive: false });
 
   // D-pad: simulate key presses to reuse existing keydown logic
@@ -12862,19 +15243,3 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize 3D offscreen renderer
   initThreeJS();
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

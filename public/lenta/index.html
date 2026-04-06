@@ -749,6 +749,50 @@
               </div>
             </div>
 
+            <!-- In-game Map Editor Overlay -->
+            <button id="btn-edit-mode" onclick="toggleEditMode()" style="position:absolute; top:20px; right:20px; z-index:900; background:#ff00bb; color:white; border:none; padding:10px; font-family:'Press Start 2P', monospace; cursor:pointer; display:none;">EDIT MAP</button>
+            <script>if(location.hostname==='localhost'||location.hostname==='127.0.0.1')document.getElementById('btn-edit-mode').style.display='';</script>
+            <div id="edit-palette" style="display:none; position:absolute; top:70px; right:20px; z-index:900; background:rgba(0,0,0,0.8); border:1px solid #ff00bb; padding:10px; flex-direction:column; gap:10px; font-family:'Press Start 2P', monospace;">
+              <div style="display:flex; gap:6px;">
+                <button onclick="setEditTile(0)" style="background:#4ab5c0; width:100px; height:40px; color:black; font-weight:bold; cursor:pointer;">WATER (0)</button>
+                <button onclick="setEditTile(4)" style="background:#2a90b0; width:100px; height:40px; color:white; font-weight:bold; font-size:9px; cursor:pointer; border:1px solid #4ab5c0;">WATER PLAIN</button>
+                <button onclick="setEditTile('box')" style="background:#330a0a; width:100px; height:40px; color:#ff6655; font-weight:bold; font-size:9px; cursor:pointer; border:2px solid #ff5544;">&#x25A0; BOX</button>
+                <button onclick="setEditTile('erase_all')" style="background:#330000; width:100px; height:40px; color:#ff4444; font-weight:bold; font-size:11px; cursor:pointer; border:2px solid #ff4444;">&#x2715; ERASE</button>
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button onclick="openPicker('tileset1')" style="background:#4a6a3a; width:100px; height:40px; color:white; font-weight:bold; font-size:9px; cursor:pointer; border:1px solid #aadd55;">TILESET 1</button>
+                <button onclick="openPicker('tileset3')" style="background:#3a6a4a; width:100px; height:40px; color:white; font-weight:bold; font-size:9px; cursor:pointer; border:1px solid #55ddaa;">TILESET 3</button>
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button onclick="setEditTile(1)" style="background:#3a7a2a; width:100px; height:40px; color:white; font-weight:bold; cursor:pointer;">GRASS (1)</button>
+                <button onclick="setEditTile(6)" style="background:#555; width:100px; height:40px; color:white; font-weight:bold; font-size:9px; cursor:pointer; border:1px solid #aaa;">SHADOW</button>
+              </div>
+              <button onclick="setEditTile(3)" style="background:#2a5a1e; width:100px; height:40px; color:white; font-weight:bold; cursor:pointer;">DARK (3)</button>
+              <button onclick="setEditTile(2)" style="background:#5a6973; width:100px; height:40px; color:white; font-weight:bold; cursor:pointer;">CLIFFS (2)</button>
+              <div style="display:flex; gap:6px;">
+                <button onclick="setEditTile(5)" style="background:#0066aa; width:100px; height:40px; color:white; font-weight:bold; font-size:10px; cursor:pointer;">ADD FOAM (5)</button>
+                <button onclick="setEditTile(7)" style="background:#1a8a99; width:100px; height:40px; color:white; font-weight:bold; font-size:9px; cursor:pointer; border:1px solid #00ffee;">FOAM 2.0</button>
+              </div>
+              <button onclick="openPicker('elev')" style="background:#8f563b; width:100px; height:40px; color:white; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #ffcc00;">ELEV TILES</button>
+              <button onclick="openPicker('flat')" style="background:#3a7a2a; width:100px; height:40px; color:white; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #ffcc00;">FLAT TILES</button>
+              <div style="display:flex; gap:6px;">
+                <button onclick="openRockPicker()" style="background:#3a4a5a; width:100px; height:40px; color:white; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #4ab5c0;">ROCKS</button>
+                <button onclick="openPicker('bridge')" style="background:#7a5a2a; width:100px; height:40px; color:white; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #d4a055;">BRIDGE</button>
+              </div>
+              <button onclick="exportMap()" style="background:#777; width:100px; height:30px; margin-top:20px; color:white; font-size:9px; cursor:pointer;">EXPORT JS</button>
+            </div>
+
+            <!-- Tiles Picker Modal -->
+            <div id="picker-modal" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:#222; border:2px solid #ff00bb; z-index:9999; padding:10px; flex-direction:column; align-items:center;">
+               <div id="picker-title" style="color:white; font-family:'Press Start 2P', monospace; font-size:12px; margin-bottom:10px;">SELECT TILE</div>
+               <div style="position:relative;">
+                   <canvas id="picker-canvas" width="256" height="320" style="cursor:crosshair;"></canvas>
+                   <div id="picker-highlight" style="position:absolute; width:64px; height:64px; border:2px solid #00ff00; pointer-events:none; display:none;"></div>
+               </div>
+               <button onclick="document.getElementById('picker-modal').style.display='none'" style="margin-top:10px; padding:5px 10px; background:#ff00bb; color:white; border:none; cursor:pointer; font-family:'Press Start 2P', monospace;">CLOSE</button>
+            </div>
+
+
             <!-- Hash Crack overlay -->
             <div id="crack-overlay" style="display:none">
               <div id="crack-panel">
@@ -1458,19 +1502,8 @@
     </div>
   </div>
 
-  <!-- Mobile D-pad controls (adventure only) -->
-  <div id="mobile-controls">
-    <div id="mobile-dpad">
-      <button class="dpad-btn" id="dpad-up">^</button>
-      <div class="dpad-mid-row">
-        <button class="dpad-btn" id="dpad-left">
-          << /button>
-            <div class="dpad-gap"></div>
-            <button class="dpad-btn" id="dpad-right">></button>
-      </div>
-    </div>
-    <!-- SLOT MACHINE -->
-    <div id="slot-overlay">
+  <!-- SLOT MACHINE -->
+  <div id="slot-overlay">
       <div id="slot-panel">
         <div class="slot-header">SECURE LOOT TERMINAL</div>
         <div class="slot-subtitle">// CACHE EXTRACTION UNIT</div>
@@ -1488,8 +1521,6 @@
         </div>
       </div>
     </div>
-
-  </div>
 
   </div>
   <!-- Game Notification Banner (top-center) -->
@@ -1550,16 +1581,15 @@
   <!-- Mobile D-pad controls (adventure only) -->
   <div id="mobile-controls">
     <div id="mobile-dpad">
-      <button class="dpad-btn" id="dpad-up">^</button>
+      <button class="dpad-btn" id="dpad-up">&#9650;</button>
       <div class="dpad-mid-row">
-        <button class="dpad-btn" id="dpad-left">
-          << /button>
-            <div class="dpad-gap"></div>
-            <button class="dpad-btn" id="dpad-right">></button>
+        <button class="dpad-btn" id="dpad-left">&#9664;</button>
+        <div class="dpad-gap"></div>
+        <button class="dpad-btn" id="dpad-right">&#9654;</button>
       </div>
-      <button class="dpad-btn" id="dpad-down">v</button>
+      <button class="dpad-btn" id="dpad-down">&#9660;</button>
     </div>
-    <button id="dpad-shoot">FIRE</button>
+    <button id="dpad-shoot">&#9654;&#9654;</button>
   </div>
 
   <!-- Portrait rotation hint -->
