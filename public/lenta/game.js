@@ -10609,13 +10609,14 @@ const _ronke2ImpactRings = [];
 function spawnHarpoon(fromGx, fromGy, toGx, toGy, faceDx) {
   if (!S.harpoons) S.harpoons = [];
   const dir = faceDx || Math.sign(toGx - fromGx) || 1;
-  const sx = (fromGx + 0.5 + dir) * CELL;
+  // Start from Stabby's edge (half cell in facing direction), not 1 full cell ahead
+  const sx = (fromGx + 0.5 + dir * 0.5) * CELL;
   const sy = (fromGy + 0.5) * CELL;
   const tx = (toGx + 0.5) * CELL;
   const ty = (toGy + 0.5) * CELL;
   const dist = Math.abs(tx - sx);
-  const duration = Math.max(180, dist / (CELL * 0.009));
-  S.harpoons.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, dir, done: false });
+  const duration = Math.max(150, dist / (CELL * 0.012)); // faster travel
+  S.harpoons.push({ sx, sy, tx, ty, born: performance.now(), duration, dir, done: false, hit: false });
 }
 
 function drawHarpoons() {
@@ -10627,39 +10628,51 @@ function drawHarpoons() {
     const t = Math.min(1, (now - h.born) / h.duration);
     const cx = h.sx + (h.tx - h.sx) * t;
     const cy = h.sy + (h.ty - h.sy) * t;
-    // Hit detection on arrival
-    if (t >= 1 && !h.hit) {
-      h.hit = true; h.done = true;
-      if (S.units) {
-        const hero = S.units.find(u => u.team === 0 && u.alive && u.x === h.targetGx && u.y === h.targetGy);
-        if (hero) {
-          const dmg = heroDmg(4);
-          S.energy = Math.max(0, S.energy - dmg);
-          spawnDmgNumber(h.targetGx, h.targetGy, `-${dmg}`, '#ff8833', 20, 'crit');
-          SFX.heroHit();
-          spawnHit(h.targetGx, h.targetGy, '#ff8833', 14);
-          logEvent(`HARPOON HIT: Hero took ${dmg} DMG!`, 'dmg');
-        }
+
+    // Per-frame hit detection: check which cell harpoon is in
+    if (!h.hit && S.units) {
+      const hGx = Math.floor(cx / CELL);
+      const hGy = Math.floor(cy / CELL);
+      const hero = S.units.find(u => u.team === 0 && u.alive && u.x === hGx && u.y === hGy);
+      if (hero) {
+        h.hit = true; h.done = true;
+        const dmg = heroDmg(4);
+        S.energy = Math.max(0, S.energy - dmg);
+        spawnDmgNumber(hero.x, hero.y, `-${dmg}`, '#ff8833', 20, 'crit');
+        SFX.heroHit();
+        spawnHit(hero.x, hero.y, '#ff8833', 14);
+        logEvent(`HARPOON HIT: Hero took ${dmg} DMG!`, 'dmg');
+        return;
       }
-      return;
     }
-    // Draw harpoon rotated in travel direction
+
+    // Stop at wall or map edge
+    if (!h.hit && t < 1) {
+      const hGx = Math.floor(cx / CELL);
+      const hGy = Math.floor(cy / CELL);
+      if (hGx < 0 || hGx >= COLS || hGy < 0 || hGy >= ROWS || isWall(hGx, hGy)) {
+        h.done = true; return;
+      }
+    }
+
+    if (t >= 1) { h.done = true; return; }
+
+    // Draw harpoon
     ctx.save();
     ctx.translate(cx, cy);
-    // Image tip points upper-right (~-45° from horizontal) → compensate with +PI/4
+    // Image tip points upper-right (~-45°) → compensate with +PI/4 to fly horizontal
     ctx.rotate((h.dir > 0 ? 0 : Math.PI) + Math.PI / 4);
     ctx.shadowColor = '#ffaa44'; ctx.shadowBlur = 8;
     if (harpoonImg.complete && harpoonImg.naturalWidth > 0) {
       ctx.drawImage(harpoonImg, -harpSz / 2, -harpSz / 2, harpSz, harpSz);
     } else {
-      // fallback: orange line
       ctx.strokeStyle = '#ff8833'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(-harpSz / 2, 0); ctx.lineTo(harpSz / 2, 0); ctx.stroke();
     }
     ctx.shadowBlur = 0;
     ctx.restore();
   });
-  S.harpoons = S.harpoons.filter(h => !h.done || (now - h.born) < h.duration + 200);
+  S.harpoons = S.harpoons.filter(h => !h.done);
 }
 
 function drawRonke2Projectiles() {
