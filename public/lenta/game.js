@@ -12503,14 +12503,17 @@ function drawUnits() {
         const frame = getStabbyFrameState(u);
         const sprSz = UNIT_CELL * 2.2;
         const _syOff = -10;
+        // BODY_FRAC = 88/192 ≈ 0.46 → tx = cx - sprSz*(1 - 2*0.46) = cx - sprSz*0.08
+        const _stBodyFrac = 0.46;
+        const _stTx = cx - sprSz * (1 - 2 * _stBodyFrac); // compensated flip translate
         if (frame) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
           if ((u.facing?.dx ?? -1) > 0) {
-            // facing right: flip (sprite faces left by default)
+            // facing right → flip left-facing sprite, compensated translate
             ctx.save();
-            ctx.translate(cx + sprSz / 2, cy + _syOff);
+            ctx.translate(_stTx, cy + _syOff);
             ctx.scale(-1, 1);
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz, -sprSz / 2, sprSz, sprSz);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
             ctx.restore();
           } else {
             ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2 + _syOff, sprSz, sprSz);
