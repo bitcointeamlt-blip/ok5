@@ -2927,18 +2927,20 @@ function getRonke2FrameState(u) {
 
 function getStabbyFrameState(u) {
   const now = performance.now();
-  const throwDur = (stabbyThrowSheet?.frameCount || 8) / 10 * 1000;
-  const isThrowing = u.swingStart && (now - u.swingStart) < throwDur;
+  const _THROW_FPS = 14;
+  const throwDur = (stabbyThrowSheet?.frameCount || 8) / _THROW_FPS * 1000; // ~571ms
+  // Use dedicated stabbyThrowStart so melee swingStart doesn't trigger throw anim
+  const isThrowing = u.stabbyThrowStart && (now - u.stabbyThrowStart) < throwDur;
   const isMoving = !isThrowing && (u.rx !== undefined && u.ry !== undefined)
-    ? (Math.abs(u.rx - Math.round(u.rx)) > 0.02 || Math.abs(u.ry - Math.round(u.ry)) > 0.02)
+    ? (Math.abs(u.rx - Math.round(u.rx)) > 0.04 || Math.abs(u.ry - Math.round(u.ry)) > 0.04)
     : false;
   let s, fps;
-  if (isThrowing)  { s = stabbyThrowSheet; fps = 10; }
-  else if (isMoving) { s = stabbyRunSheet;   fps = 12; }
-  else               { s = stabbyIdleSheet;  fps = 8;  }
+  if (isThrowing)    { s = stabbyThrowSheet; fps = _THROW_FPS; }
+  else if (isMoving) { s = stabbyRunSheet;   fps = 9; }
+  else               { s = stabbyIdleSheet;  fps = 8; }
   if (!s?.sheet || !s.sheet.complete || s.sheet.naturalWidth <= 0) return null;
   const idx = isThrowing
-    ? Math.min(Math.floor((now - u.swingStart) / (1000 / fps)), s.frameCount - 1)
+    ? Math.min(Math.floor((now - u.stabbyThrowStart) / (1000 / fps)), s.frameCount - 1)
     : Math.floor(now / (1000 / fps)) % s.frameCount;
   return { sheet: s.sheet, sx: idx * STABBY_FRAME_W, sy: 0, sw: STABBY_FRAME_W, sh: STABBY_FRAME_W };
 }
@@ -8442,12 +8444,12 @@ function applySingleAction(team, a) {
       return;
     }
     if (a.t === 'stabbythrow') {
-      unit.swingStart = performance.now();
+      unit.stabbyThrowStart = performance.now(); // separate from swingStart — avoids melee anim clash
       unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
       unit.stabbyCd = performance.now() + 2500;
       const _fx = unit.x, _fy = unit.y, _tx = a.targetX, _ty = a.targetY, _fd = unit.facing.dx;
-      // Launch harpoon at frame 5 of throw anim (~500ms at 10fps)
-      setTimeout(() => { if (S && S.units) spawnHarpoon(_fx, _fy, _tx, _ty, _fd); }, 500);
+      // Launch harpoon at frame 3 peak (3/14 * 1000 ≈ 214ms at 14fps)
+      setTimeout(() => { if (S && S.units) spawnHarpoon(_fx, _fy, _tx, _ty, _fd); }, 214);
       return;
     }
     if (a.t === 'shamancast') {
