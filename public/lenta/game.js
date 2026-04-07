@@ -10615,7 +10615,7 @@ function spawnHarpoon(fromGx, fromGy, toGx, toGy, faceDx) {
   const tx = (toGx + 0.5) * CELL;
   const ty = (toGy + 0.5) * CELL;
   const dist = Math.abs(tx - sx);
-  const duration = Math.max(150, dist / (CELL * 0.012)); // faster travel
+  const duration = Math.max(300, dist / (CELL * 0.005)); // slower, longer range feel
   S.harpoons.push({ sx, sy, tx, ty, born: performance.now(), duration, dir, done: false, hit: false });
 }
 
@@ -13474,21 +13474,25 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     const hero = S.units.find(u => u.team === 0 && u.alive);
     if (!hero) return null;
     const heroDist = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
-    const aimDx = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
-    unit.facing = { dx: aimDx, dy: 0 };
+    const heroOnSameRow = hero.y === unit.y;
+    const heroDir = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : 0;
+    // Facing is persistent — only changes when moving or explicitly turning
+    const facing = unit.facing?.dx || -1;
     const now_st = performance.now();
     const cd = unit.stabbyCd || 0;
-    // Ranged throw — same row, distance 2-6, not on cooldown
-    if (heroDist >= 2 && heroDist <= 6 && hero.y === unit.y && now_st > cd) {
+
+    // Ranged throw — only if FACING the hero (not back-turned), same row, range 2-10
+    const facingHero = heroDir !== 0 && heroDir === facing;
+    if (facingHero && heroDist >= 2 && heroDist <= 10 && heroOnSameRow && now_st > cd) {
       return { action: { t: 'stabbythrow', targetX: hero.x, targetY: hero.y }, score: 340 };
     }
     // Melee fallback at dist 1
     if (heroDist === 1) {
-      const dmgDir = { dx: Math.sign(hero.x - unit.x), dy: Math.sign(hero.y - unit.y) };
+      unit.facing = { dx: Math.sign(hero.x - unit.x) || facing, dy: 0 };
       unit.stabbyCd = now_st + 1500;
       return { action: { t: 'ronkeatk', targetX: hero.x, targetY: hero.y }, score: 300 };
     }
-    // BFS move toward hero
+    // BFS move toward hero — facing updates when moving
     const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
     if (candidateMoves.length === 0) return null;
     let bestMove = null;
@@ -13515,6 +13519,7 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
       }
     }
     if (bestMove) {
+      // Update facing when moving
       if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
       return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
     }
