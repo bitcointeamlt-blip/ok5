@@ -10646,7 +10646,8 @@ function drawHarpoons() {
     // Draw harpoon rotated in travel direction
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(h.dir > 0 ? 0 : Math.PI);
+    // Image tip points upper-right (~-45° from horizontal) → compensate with +PI/4
+    ctx.rotate((h.dir > 0 ? 0 : Math.PI) + Math.PI / 4);
     ctx.shadowColor = '#ffaa44'; ctx.shadowBlur = 8;
     if (harpoonImg.complete && harpoonImg.naturalWidth > 0) {
       ctx.drawImage(harpoonImg, -harpSz / 2, -harpSz / 2, harpSz, harpSz);
