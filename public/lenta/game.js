@@ -2516,6 +2516,7 @@ const HERO_WALK_FRAMES = {
 const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
 const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
+const ronkeTokenImg = new Image(); ronkeTokenImg.src = 'assets_tiny/$ronke.png';
 const grassTilemapImg = new Image(); grassTilemapImg.src = 'grass_tilemap.png';
 const waterFoamImg   = new Image(); waterFoamImg.src   = 'water_foam.png';
 const waterBgImg     = new Image(); waterBgImg.src     = 'water_bg.png';
@@ -7461,6 +7462,13 @@ function spawnLoot(x, y) {
   S.loot.push({ x, y, type, val: 1, collected: false, age: 0 });
 }
 
+function spawnRonkeDrop(x, y) {
+  // 50% chance — reward drop after killing an enemy (test rate)
+  if (Math.random() < 0.5) {
+    S.loot.push({ x, y, type: 'ronke', val: 1, collected: false, age: 0 });
+  }
+}
+
 function spawnLockedBox(x, y) {
   // gem 15% | ronke 15% | byte 25% | fragment 30% | xptoken 15%
   const roll = Math.random();
@@ -7546,32 +7554,21 @@ function drawLoot() {
       drawCubeFragment(ctx, 5, t, pulse);
       ctx.restore();
     } else if (l.type === 'ronke') {
-      const spinPhase = now * 0.0022 + l.x * 0.7 + l.y * 0.5;
-      const cosA = Math.cos(spinPhase);
-      const spinX = Math.abs(cosA);
-      const coinR = 18;
-      const xR = Math.max(0.8, coinR * spinX);
-      const yR = coinR;
-      const bright = spinX > 0.4;
+      const pulse = 0.75 + 0.25 * Math.sin(now * 0.0035 + l.x * 0.9 + l.y * 0.6);
+      const spin = now * 0.0008 + l.x * 0.5 + l.y * 0.3;
+      const scaleX = 0.88 + 0.12 * Math.cos(spin * 2); // gentle breathe
       ctx.save();
       ctx.translate(cx, cy + float);
-      ctx.shadowColor = '#44aaff'; ctx.shadowBlur = bright ? 12 : 5;
-      // Coin body
-      ctx.fillStyle = bright ? '#1a8fff' : '#0d5faa';
-      ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.fill();
-      // Rim highlight
-      ctx.strokeStyle = bright ? '#88ddff' : '#3399cc';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.stroke();
-      // Ronke image in center (only when coin faces forward enough)
-      if (spinX > 0.35 && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
-        const imgW = xR * 1.6;
-        const imgH = yR * 1.6;
-        ctx.save();
-        ctx.beginPath(); ctx.ellipse(0, 0, xR - 1, yR - 1, 0, 0, Math.PI * 2); ctx.clip();
-        ctx.globalAlpha = Math.min(1, (spinX - 0.35) / 0.3);
-        ctx.drawImage(ronkeImg, -imgW / 2, -imgH / 2, imgW, imgH);
-        ctx.restore();
+      ctx.shadowColor = '#66ccff'; ctx.shadowBlur = 18 * pulse;
+      ctx.scale(scaleX, 1);
+      const rw = 52, rh = Math.round(52 * 195 / 211);
+      if (ronkeTokenImg.complete && ronkeTokenImg.naturalWidth > 0) {
+        ctx.globalAlpha = 0.97;
+        ctx.drawImage(ronkeTokenImg, -rw / 2, -rh / 2, rw, rh);
+      } else {
+        // fallback: blue circle
+        ctx.fillStyle = '#1a8fff';
+        ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
       }
       ctx.shadowBlur = 0;
       ctx.restore();
@@ -9091,7 +9088,7 @@ function detectCollisions() {
                 logEvent(`Target <span style="color:#ffffff">X</span> destroyed.`, 'warn');
                 const _dx1 = u.x, _dy1 = u.y;
                 if (!isPassiveBuffNpc(u)) {
-                  setTimeout(() => { if (S && S.loot) spawnLockedBox(_dx1, _dy1); }, _DEAD_TOTAL * _DEAD_MS + 100);
+                  setTimeout(() => { if (S && S.loot) { spawnLockedBox(_dx1, _dy1); spawnRonkeDrop(_dx1, _dy1); } }, _DEAD_TOTAL * _DEAD_MS + 100);
                 }
                 S.kills = (S.kills || 0) + 1;
                 trackKill();
@@ -9372,7 +9369,7 @@ function advanceLasers() {
                   logEvent(`Target <span style="color:#ffffff">X</span> melted.`, 'warn');
                   const _dx2 = hit.x, _dy2 = hit.y;
                   if (!isPassiveBuffNpc(hit)) {
-                    setTimeout(() => { if (S && S.loot) spawnLockedBox(_dx2, _dy2); }, _DEAD_TOTAL * _DEAD_MS + 100);
+                    setTimeout(() => { if (S && S.loot) { spawnLockedBox(_dx2, _dy2); spawnRonkeDrop(_dx2, _dy2); } }, _DEAD_TOTAL * _DEAD_MS + 100);
                   }
                   S.kills = (S.kills || 0) + 1;
                   trackKill();
@@ -10681,6 +10678,10 @@ function drawRonke2Projectiles() {
               if (!Profile.stats) Profile.stats = { totalKills: 0 };
               Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
               saveProfile(); _updateKillsDisplay();
+              if (gameMode === 'adventure') {
+                const _ox = _enemy.x, _oy = _enemy.y;
+                setTimeout(() => { if (S && S.loot) { spawnLockedBox(_ox, _oy); spawnRonkeDrop(_ox, _oy); } }, _DEAD_TOTAL * _DEAD_MS + 100);
+              }
             }
             logEvent(`RONKE ORB HIT: Enemy took 5 DMG!`, 'dmg');
           }
