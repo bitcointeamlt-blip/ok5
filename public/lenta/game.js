@@ -2890,6 +2890,13 @@ const RONKE_FRAME_W   = 128;
 const RONKE2_FRAME_W  = 640;
 const RONKE_ANIM_FPS  = 10;
 
+// ---- Stabby McSpear NPC sprite sheets (192x192 frames) ----
+const stabbyIdleSheet  = loadHorizontalSheetFrames('assets_tiny/Stabby_Idle.png',  8);
+const stabbyRunSheet   = loadHorizontalSheetFrames('assets_tiny/Stabby_Run.png',   6);
+const stabbyThrowSheet = loadHorizontalSheetFrames('assets_tiny/Stabby_Throw.png', 8);
+const harpoonImg = new Image(); harpoonImg.src = 'assets_tiny/Harpoon.png';
+const STABBY_FRAME_W = 192;
+
 function getRonkeFrameState(u) {
   const s = ronkeIdleSheet;
   if (!s?.sheet || !s.sheet.complete || s.sheet.naturalWidth <= 0) return null;
@@ -2918,6 +2925,24 @@ function getRonke2FrameState(u) {
   return { sheet: s.sheet, sx: idx * RONKE2_FRAME_W, sy: 0, sw: RONKE2_FRAME_W, sh: RONKE2_FRAME_W };
 }
 
+function getStabbyFrameState(u) {
+  const now = performance.now();
+  const throwDur = (stabbyThrowSheet?.frameCount || 8) / 10 * 1000;
+  const isThrowing = u.swingStart && (now - u.swingStart) < throwDur;
+  const isMoving = !isThrowing && (u.rx !== undefined && u.ry !== undefined)
+    ? (Math.abs(u.rx - Math.round(u.rx)) > 0.02 || Math.abs(u.ry - Math.round(u.ry)) > 0.02)
+    : false;
+  let s, fps;
+  if (isThrowing)  { s = stabbyThrowSheet; fps = 10; }
+  else if (isMoving) { s = stabbyRunSheet;   fps = 12; }
+  else               { s = stabbyIdleSheet;  fps = 8;  }
+  if (!s?.sheet || !s.sheet.complete || s.sheet.naturalWidth <= 0) return null;
+  const idx = isThrowing
+    ? Math.min(Math.floor((now - u.swingStart) / (1000 / fps)), s.frameCount - 1)
+    : Math.floor(now / (1000 / fps)) % s.frameCount;
+  return { sheet: s.sheet, sx: idx * STABBY_FRAME_W, sy: 0, sw: STABBY_FRAME_W, sh: STABBY_FRAME_W };
+}
+
 // Adventure enemy archetypes
 const ENEMY_TYPES = [
   { type: 'shaman',  hp: 2, color: '#cc30ff', scale: 1.00, label: 'SHAMAN' },
@@ -2936,6 +2961,7 @@ const ENEMY_TYPES = [
   { type: 'minotaur',  hp: 6,  color: '#8b2020', scale: 1.40, label: 'MINOTAUR' },
   { type: 'ronke',     hp: 8,  color: '#3355cc', scale: 1.50, label: 'RONKE' },
   { type: 'ronke2',    hp: 8,  color: '#4466dd', scale: 1.50, label: 'RONKE2' },
+  { type: 'stabby',   hp: 4,  color: '#cc8833', scale: 1.20, label: 'STABBY' },
 ];
 
 const EDITOR_NPC_TYPES = [
@@ -2948,6 +2974,7 @@ const EDITOR_NPC_TYPES = [
   { type: 'minotaur', label: 'MINOTAUR', color: '#8b2020' },
   { type: 'ronke',    label: 'RONKE',    color: '#3355cc' },
   { type: 'ronke2',   label: 'RONKE2',   color: '#4466dd' },
+  { type: 'stabby',  label: 'STABBY',   color: '#cc8833' },
 ];
 
 
@@ -4099,7 +4126,7 @@ function initHubRoom() {
   S.pending = [null, null];
   S.pendingEnemyBatch = [];
   S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
-  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = [];
+  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = []; S.harpoons = [];
   _shamanExplosions.length = 0;
   S.pendingPassiveRewards = [];
   S.shake = 0; S.animT = 1;
@@ -4260,6 +4287,10 @@ function initAdventure() {
       const bx = r.x + r.w - 2;
       const by = r.y + Math.max(1, Math.floor(r.h / 2));
       S.units.push(mkUnit(eid++, 1, bx, by, -1, ENEMY_TYPES.find(e => e.type === 'shaman')));
+      // Stabby McSpear — ranged harpoon attacker, left side of room
+      const sx = r.x + 2;
+      const sy = r.y + Math.max(1, Math.floor(r.h / 2));
+      if (!isWall(sx, sy)) S.units.push(mkUnit(eid++, 1, sx, sy, 1, ENEMY_TYPES.find(e => e.type === 'stabby')));
       return;
     } else if (S.floor === 2 && ri === 0) {
       // Force spawn an Ironbox (Fortress) in the second room alone
@@ -8410,6 +8441,15 @@ function applySingleAction(team, a) {
       }, 600);
       return;
     }
+    if (a.t === 'stabbythrow') {
+      unit.swingStart = performance.now();
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      unit.stabbyCd = performance.now() + 2500;
+      const _fx = unit.x, _fy = unit.y, _tx = a.targetX, _ty = a.targetY, _fd = unit.facing.dx;
+      // Launch harpoon at frame 5 of throw anim (~500ms at 10fps)
+      setTimeout(() => { if (S && S.units) spawnHarpoon(_fx, _fy, _tx, _ty, _fd); }, 500);
+      return;
+    }
     if (a.t === 'shamancast') {
       // Trigger attack animation on the shaman unit
       unit.swingStart = performance.now();
@@ -9772,6 +9812,7 @@ function loop(now) {
   drawShamanProjectiles();
   drawShamanExplosions();
   drawRonke2Projectiles();
+  drawHarpoons();
   drawThreatIndicators();
   drawShrines();
   drawChests();
@@ -10561,6 +10602,62 @@ function _spawnRonke2Orb(fromGx, fromGy, toGx, toGy, faceDx, fromTeam) {
 
 const _ronke2OrbFlashes = [];
 const _ronke2ImpactRings = [];
+
+// ---- Stabby McSpear — Harpoon Projectile System ----
+function spawnHarpoon(fromGx, fromGy, toGx, toGy, faceDx) {
+  if (!S.harpoons) S.harpoons = [];
+  const dir = faceDx || Math.sign(toGx - fromGx) || 1;
+  const sx = (fromGx + 0.5 + dir) * CELL;
+  const sy = (fromGy + 0.5) * CELL;
+  const tx = (toGx + 0.5) * CELL;
+  const ty = (toGy + 0.5) * CELL;
+  const dist = Math.abs(tx - sx);
+  const duration = Math.max(180, dist / (CELL * 0.009));
+  S.harpoons.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, dir, done: false });
+}
+
+function drawHarpoons() {
+  if (!S.harpoons?.length) return;
+  const now = performance.now();
+  const harpSz = CELL * 0.7;
+  S.harpoons.forEach(h => {
+    if (h.done) return;
+    const t = Math.min(1, (now - h.born) / h.duration);
+    const cx = h.sx + (h.tx - h.sx) * t;
+    const cy = h.sy + (h.ty - h.sy) * t;
+    // Hit detection on arrival
+    if (t >= 1 && !h.hit) {
+      h.hit = true; h.done = true;
+      if (S.units) {
+        const hero = S.units.find(u => u.team === 0 && u.alive && u.x === h.targetGx && u.y === h.targetGy);
+        if (hero) {
+          const dmg = heroDmg(4);
+          S.energy = Math.max(0, S.energy - dmg);
+          spawnDmgNumber(h.targetGx, h.targetGy, `-${dmg}`, '#ff8833', 20, 'crit');
+          SFX.heroHit();
+          spawnHit(h.targetGx, h.targetGy, '#ff8833', 14);
+          logEvent(`HARPOON HIT: Hero took ${dmg} DMG!`, 'dmg');
+        }
+      }
+      return;
+    }
+    // Draw harpoon rotated in travel direction
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(h.dir > 0 ? 0 : Math.PI);
+    ctx.shadowColor = '#ffaa44'; ctx.shadowBlur = 8;
+    if (harpoonImg.complete && harpoonImg.naturalWidth > 0) {
+      ctx.drawImage(harpoonImg, -harpSz / 2, -harpSz / 2, harpSz, harpSz);
+    } else {
+      // fallback: orange line
+      ctx.strokeStyle = '#ff8833'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-harpSz / 2, 0); ctx.lineTo(harpSz / 2, 0); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  });
+  S.harpoons = S.harpoons.filter(h => !h.done || (now - h.born) < h.duration + 200);
+}
 
 function drawRonke2Projectiles() {
   if (!S.ronke2Projectiles?.length && !_ronke2OrbFlashes.length && !_ronke2ImpactRings.length) return;
@@ -12400,6 +12497,33 @@ function drawUnits() {
           ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.25, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = alpha;
         }
+      } else if (u.utype === 'stabby') {
+        const frame = getStabbyFrameState(u);
+        const sprSz = UNIT_CELL * 2.2;
+        const _syOff = -10;
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          if ((u.facing?.dx ?? -1) > 0) {
+            // facing right: flip (sprite faces left by default)
+            ctx.save();
+            ctx.translate(cx + sprSz / 2, cy + _syOff);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2 + _syOff, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#cc8833';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.2, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.25, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
       } else {
         drawEnemyPixelArt(cx, cy, u, alpha);
       }
@@ -13294,6 +13418,58 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
       const targetY = heroDist === 1 ? hero.y : (hero.py ?? hero.y);
       return { action: { t: 'ronkeatk', targetX, targetY }, score: 320 };
     }
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+    let bestMove = null;
+    const visited = new Set([`${unit.x},${unit.y}`]);
+    const queue = [{ x: unit.x, y: unit.y, first: null, d: 0 }];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr.d > 15) break;
+      if (curr.first && curr.x === hero.x && curr.y === hero.y) { bestMove = curr.first; break; }
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = curr.x + dx, ny = curr.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key) || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) continue;
+        if (curr.d === 0 && S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, first: curr.first || { dx, dy, nx, ny, t: 'move' }, d: curr.d + 1 });
+      }
+    }
+    if (!bestMove) {
+      let bestDist = Infinity;
+      for (const m of candidateMoves) {
+        const d = Math.abs(hero.x - m.nx) + Math.abs(hero.y - m.ny);
+        if (d < bestDist) { bestDist = d; bestMove = m; }
+      }
+    }
+    if (bestMove) {
+      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
+      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
+    }
+    return null;
+  }
+
+  // --- STABBY McSpear AI: ranged harpoon thrower ---
+  if (unit.utype === 'stabby') {
+    const hero = S.units.find(u => u.team === 0 && u.alive);
+    if (!hero) return null;
+    const heroDist = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
+    const aimDx = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+    const now_st = performance.now();
+    const cd = unit.stabbyCd || 0;
+    // Ranged throw — same row, distance 2-6, not on cooldown
+    if (heroDist >= 2 && heroDist <= 6 && hero.y === unit.y && now_st > cd) {
+      return { action: { t: 'stabbythrow', targetX: hero.x, targetY: hero.y }, score: 340 };
+    }
+    // Melee fallback at dist 1
+    if (heroDist === 1) {
+      const dmgDir = { dx: Math.sign(hero.x - unit.x), dy: Math.sign(hero.y - unit.y) };
+      unit.stabbyCd = now_st + 1500;
+      return { action: { t: 'ronkeatk', targetX: hero.x, targetY: hero.y }, score: 300 };
+    }
+    // BFS move toward hero
     const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
     if (candidateMoves.length === 0) return null;
     let bestMove = null;
