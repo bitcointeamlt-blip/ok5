@@ -7559,7 +7559,7 @@ function drawLoot() {
       const pulse = 0.75 + 0.25 * Math.sin(now * 0.0035 + l.x * 0.9 + l.y * 0.6);
       // Animate: 8 frames, ~120ms each
       const frameIdx = Math.floor(now / 120) % _R2TOK_FRAMES;
-      const sz = CELL * 1.2;
+      const sz = CELL * 0.65;
       ctx.save();
       ctx.translate(cx, cy + float);
       ctx.shadowColor = '#66ccff'; ctx.shadowBlur = 18 * pulse;
