@@ -13475,24 +13475,22 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     if (!hero) return null;
     const heroDist = Math.abs(hero.x - unit.x) + Math.abs(hero.y - unit.y);
     const heroOnSameRow = hero.y === unit.y;
-    const heroDir = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : 0;
-    // Facing is persistent — only changes when moving or explicitly turning
-    const facing = unit.facing?.dx || -1;
+    const heroDir = hero.x !== unit.x ? Math.sign(hero.x - unit.x) : (unit.facing?.dx || -1);
+    // Always face toward hero so sprite never walks backwards
+    unit.facing = { dx: heroDir, dy: 0 };
     const now_st = performance.now();
     const cd = unit.stabbyCd || 0;
 
-    // Ranged throw — only if FACING the hero (not back-turned), same row, range 2-10
-    const facingHero = heroDir !== 0 && heroDir === facing;
-    if (facingHero && heroDist >= 2 && heroDist <= 10 && heroOnSameRow && now_st > cd) {
+    // Ranged throw — same row, range 2-10, not on cooldown
+    if (heroDist >= 2 && heroDist <= 10 && heroOnSameRow && now_st > cd) {
       return { action: { t: 'stabbythrow', targetX: hero.x, targetY: hero.y }, score: 340 };
     }
     // Melee fallback at dist 1
     if (heroDist === 1) {
-      unit.facing = { dx: Math.sign(hero.x - unit.x) || facing, dy: 0 };
       unit.stabbyCd = now_st + 1500;
       return { action: { t: 'ronkeatk', targetX: hero.x, targetY: hero.y }, score: 300 };
     }
-    // BFS move toward hero — facing updates when moving
+    // BFS move toward hero
     const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
     if (candidateMoves.length === 0) return null;
     let bestMove = null;
@@ -13518,11 +13516,7 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
         if (d < bestDist) { bestDist = d; bestMove = m; }
       }
     }
-    if (bestMove) {
-      // Update facing when moving
-      if (bestMove.dx !== 0) unit.facing = { dx: Math.sign(bestMove.dx), dy: 0 };
-      return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
-    }
+    if (bestMove) return { action: { t: 'move', dx: bestMove.dx, dy: bestMove.dy }, score: 130 };
     return null;
   }
 
