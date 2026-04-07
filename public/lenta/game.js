@@ -2927,17 +2927,17 @@ function getRonke2FrameState(u) {
 
 function getStabbyFrameState(u) {
   const now = performance.now();
-  const _THROW_FPS = 14;
-  const throwDur = (stabbyThrowSheet?.frameCount || 8) / _THROW_FPS * 1000; // ~571ms
-  // Use dedicated stabbyThrowStart so melee swingStart doesn't trigger throw anim
+  // All frames = 100ms = 10fps (from .aseprite source)
+  const _STABBY_FPS = 10;
+  const throwDur = (stabbyThrowSheet?.frameCount || 8) / _STABBY_FPS * 1000; // 800ms
   const isThrowing = u.stabbyThrowStart && (now - u.stabbyThrowStart) < throwDur;
   const isMoving = !isThrowing && (u.rx !== undefined && u.ry !== undefined)
     ? (Math.abs(u.rx - Math.round(u.rx)) > 0.04 || Math.abs(u.ry - Math.round(u.ry)) > 0.04)
     : false;
   let s, fps;
-  if (isThrowing)    { s = stabbyThrowSheet; fps = _THROW_FPS; }
-  else if (isMoving) { s = stabbyRunSheet;   fps = 9; }
-  else               { s = stabbyIdleSheet;  fps = 8; }
+  if (isThrowing)    { s = stabbyThrowSheet; fps = _STABBY_FPS; }
+  else if (isMoving) { s = stabbyRunSheet;   fps = _STABBY_FPS; }
+  else               { s = stabbyIdleSheet;  fps = _STABBY_FPS; }
   if (!s?.sheet || !s.sheet.complete || s.sheet.naturalWidth <= 0) return null;
   const idx = isThrowing
     ? Math.min(Math.floor((now - u.stabbyThrowStart) / (1000 / fps)), s.frameCount - 1)
@@ -8448,8 +8448,8 @@ function applySingleAction(team, a) {
       unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
       unit.stabbyCd = performance.now() + 2500;
       const _fx = unit.x, _fy = unit.y, _tx = a.targetX, _ty = a.targetY, _fd = unit.facing.dx;
-      // Launch harpoon at frame 3 peak (3/14 * 1000 ≈ 214ms at 14fps)
-      setTimeout(() => { if (S && S.units) spawnHarpoon(_fx, _fy, _tx, _ty, _fd); }, 214);
+      // Harpoon tag = frame 22 in aseprite = right after Throw ends (8f × 100ms = 800ms)
+      setTimeout(() => { if (S && S.units) spawnHarpoon(_fx, _fy, _tx, _ty, _fd); }, 800);
       return;
     }
     if (a.t === 'shamancast') {
