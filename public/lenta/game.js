@@ -8210,9 +8210,7 @@ function resolveTick() {
           } else if (l.type === 'ronke') {
             addToInventory('ronke', null, 1);
             if (S.inventoryOpen) updateInventoryUI();
-            logEvent('POISON collected', 'loot');
             spawnPickupFX(l.x, l.y, '#44aaff');
-            spawnDmgNumber(l.x, l.y, 'POISON!', '#44aaff', 16, 'crit');
           } else if (l.type === 'gem') {
             const gemGain = 15;
             const _oldE = S.energy || 0;
