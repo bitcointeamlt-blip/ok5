@@ -2517,6 +2517,8 @@ const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
 const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 const ronkeTokenImg = new Image(); ronkeTokenImg.src = 'assets_tiny/$ronke.png';
+const ronke2TokenImg = new Image(); ronke2TokenImg.src = 'assets_tiny/$ronke2.png';
+const _R2TOK_FRAMES = 8, _R2TOK_FW = 640, _R2TOK_FH = 640;
 const grassTilemapImg = new Image(); grassTilemapImg.src = 'grass_tilemap.png';
 const waterFoamImg   = new Image(); waterFoamImg.src   = 'water_foam.png';
 const waterBgImg     = new Image(); waterBgImg.src     = 'water_bg.png';
@@ -7555,18 +7557,19 @@ function drawLoot() {
       ctx.restore();
     } else if (l.type === 'ronke') {
       const pulse = 0.75 + 0.25 * Math.sin(now * 0.0035 + l.x * 0.9 + l.y * 0.6);
-      const spin = now * 0.0008 + l.x * 0.5 + l.y * 0.3;
-      const scaleX = 0.88 + 0.12 * Math.cos(spin * 2); // gentle breathe
+      // Animate: 8 frames, ~120ms each
+      const frameIdx = Math.floor(now / 120) % _R2TOK_FRAMES;
+      const sz = CELL * 1.2;
       ctx.save();
       ctx.translate(cx, cy + float);
       ctx.shadowColor = '#66ccff'; ctx.shadowBlur = 18 * pulse;
-      ctx.scale(scaleX, 1);
-      const rw = 52, rh = Math.round(52 * 195 / 211);
-      if (ronkeTokenImg.complete && ronkeTokenImg.naturalWidth > 0) {
-        ctx.globalAlpha = 0.97;
-        ctx.drawImage(ronkeTokenImg, -rw / 2, -rh / 2, rw, rh);
+      if (ronke2TokenImg.complete && ronke2TokenImg.naturalWidth > 0) {
+        ctx.drawImage(
+          ronke2TokenImg,
+          frameIdx * _R2TOK_FW, 0, _R2TOK_FW, _R2TOK_FH,
+          -sz / 2, -sz / 2, sz, sz
+        );
       } else {
-        // fallback: blue circle
         ctx.fillStyle = '#1a8fff';
         ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
       }
