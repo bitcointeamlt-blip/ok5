@@ -11243,7 +11243,7 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
   {
     const sprDir = dx < 0 ? 'west' : 'east';
     const { img: wImg } = getHeroFrame(u, sprDir);
-    const sprSz = UNIT_CELL * 2.6;
+    const sprSz = UNIT_CELL * 2.6 - 10;
     ctx.shadowBlur = 0;
     ctx.globalAlpha = alpha * (isLowHp && t % 200 < 50 ? 0.55 : 1);
     if (wImg && wImg.complete && wImg.naturalWidth > 0) {
