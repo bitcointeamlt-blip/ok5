@@ -2545,8 +2545,11 @@ const tileset3Img = new Image(); tileset3Img.src = 'assets_tiny/Terrain/Tileset/
 const shadowImg = new Image(); shadowImg.src = 'assets_tiny/Terrain/Tileset/Shadow.png';
 const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Water/Foam/Water_Foam2.png';
 
-// ---- Custom Map (Floor 1) -------------------------------------------------------
-window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,6,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,1,1,1,1,1],[0,0,0,4,0,0,0,0,0,0,0,0,0]],"decorations":{"8,4":"mine_1","10,0":"rock1","1,9":"deco_15","9,10":"deco_02","1,11":"tileset1_6_1","1,12":"tileset1_7_1","2,12":"tileset1_7_1","3,12":"tileset1_7_1","4,12":"tileset1_7_1","5,12":"tileset1_7_1","6,12":"tileset1_7_1","7,12":"tileset1_7_1","8,12":"tileset1_7_1","9,12":"tileset1_7_2","3,8":"tileset1_8_3","4,8":"tileset3_8_4","2,11":"deco_10"},"collisionBoxes":["7,4","4,8","3,8"],"spawnPos":{"x":2,"y":2},"exitPos":{"x":4,"y":8},"enemies":[{"type":"shaman","x":10,"y":5}]};
+// ---- Custom Maps -------------------------------------------------------
+// Floor 1
+window.CUSTOM_MAP ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,6,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,1,1,1,1,1],[0,0,0,4,0,0,0,0,0,0,0,0,0]],"decorations":{"8,4":"mine_1","10,0":"rock1","1,9":"deco_15","9,10":"deco_02","1,11":"tileset1_6_1","1,12":"tileset1_7_1","2,12":"tileset1_7_1","3,12":"tileset1_7_1","4,12":"tileset1_7_1","5,12":"tileset1_7_1","6,12":"tileset1_7_1","7,12":"tileset1_7_1","8,12":"tileset1_7_1","9,12":"tileset1_7_2","3,8":"tileset1_8_3","4,8":"tileset3_8_4","2,11":"deco_10"},"collisionBoxes":["7,4","4,8","3,8"],"spawnPos":{"x":2,"y":2},"exitPos":{"x":4,"y":8},"enemies":[{"type":"shaman","x":10,"y":5}]};
+// Floor 2
+window.CUSTOM_MAP2 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,0,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"3,8":"tileset3_8_3","4,8":"tileset3_8_4","7,4":"deco_13","6,6":"tileset1_1_1","6,5":"tileset1_1_1","6,7":"tileset1_1_1","5,6":"tileset1_1_1","7,6":"tileset1_1_1","1,12":"tileset1_1_1","2,12":"tileset1_1_1","3,12":"tileset1_1_1","3,11":"tileset1_1_1","4,11":"tileset1_1_1","5,11":"tileset1_1_1","5,12":"tileset1_1_1","4,12":"tileset1_1_1","6,12":"tileset1_1_1","7,12":"tileset1_1_1","8,12":"tileset1_1_1","7,10":"tileset1_1_1","7,11":"tileset1_1_1","6,11":"tileset1_1_1","8,11":"tileset1_1_1","1,4":"bush3","5,1":"deco_14","7,2":"deco_15","10,12":"rock4","10,6":"duck","3,2":"bush1"},"collisionBoxes":["7,4","4,8","3,8"],"enemies":[{"type":"minotaur","x":9,"y":0},{"type":"skull","x":8,"y":7},{"type":"spider","x":0,"y":8},{"type":"shaman","x":6,"y":3}],"spawnPos":{"x":3,"y":1},"exitPos":{"x":5,"y":5}};
 const duckImg = new Image(); duckImg.src = 'assets_tiny/Deco/rubber_duck.png';
 const deadAnimImg = new Image(); deadAnimImg.src = 'assets_tiny/Dead.png';
 const trollDeadImg = new Image(); trollDeadImg.src = 'animations/troll/Troll_Dead.png';
@@ -4241,11 +4244,12 @@ function initAdventure() {
 
   // Player units in start room
   const sr = S.rooms[0];
-  const _sp = (window.CUSTOM_MAP && S.floor === 1 && window.CUSTOM_MAP.spawnPos) ? window.CUSTOM_MAP.spawnPos : null;
+  const _fcm = getFloorCustomMap();
+  const _sp = (_fcm && _fcm.spawnPos) ? _fcm.spawnPos : null;
   const px = _sp ? _sp.x : (sr ? sr.x + 1 : 2);
   const py = _sp ? _sp.y : (sr ? sr.y + 1 : 2);
-  const useCustomEnemyPlacements = !!(window.CUSTOM_MAP && S.floor === 1 && Array.isArray(window.CUSTOM_MAP.enemies));
-  S.customEnemyPlacements = useCustomEnemyPlacements ? cloneEditorEnemyPlacements(window.CUSTOM_MAP.enemies) : [];
+  const useCustomEnemyPlacements = !!(_fcm && Array.isArray(_fcm.enemies));
+  S.customEnemyPlacements = useCustomEnemyPlacements ? cloneEditorEnemyPlacements(_fcm.enemies) : [];
   S.units = [
     mkUnit(0, 0, px, py, 1),
   ];
@@ -4342,7 +4346,7 @@ function initAdventure() {
     });
   }
   S.totalEnemies = S.units.filter(u => isHostileAdventureEnemy(u)).length;
-  if (!useCustomEnemyPlacements && window.CUSTOM_MAP && S.floor === 1) {
+  if (!useCustomEnemyPlacements && getFloorCustomMap()) {
     syncEditorEnemyPlacementsFromUnits();
   }
 
@@ -4398,11 +4402,17 @@ function initAdventure() {
   if (S.floor === 1 && !Profile.tutorialDone) {
     setTimeout(() => startTutorial(), 700);
   }
-}function generateDungeon() {
-  if (window.CUSTOM_MAP && S.floor === 1) {
-    S.dungeon = JSON.parse(JSON.stringify(window.CUSTOM_MAP.dungeon || window.CUSTOM_MAP));
-    S.decorations = window.CUSTOM_MAP.decorations ? JSON.parse(JSON.stringify(window.CUSTOM_MAP.decorations)) : {};
-    S.collisionBoxes = window.CUSTOM_MAP.collisionBoxes ? new Set(window.CUSTOM_MAP.collisionBoxes) : new Set();
+}function getFloorCustomMap() {
+  if (S.floor === 1 && window.CUSTOM_MAP) return window.CUSTOM_MAP;
+  if (S.floor === 2 && window.CUSTOM_MAP2) return window.CUSTOM_MAP2;
+  return null;
+}
+function generateDungeon() {
+  const _cm = getFloorCustomMap();
+  if (_cm) {
+    S.dungeon = JSON.parse(JSON.stringify(_cm.dungeon || _cm));
+    S.decorations = _cm.decorations ? JSON.parse(JSON.stringify(_cm.decorations)) : {};
+    S.collisionBoxes = _cm.collisionBoxes ? new Set(_cm.collisionBoxes) : new Set();
     // Sync ROWS/COLS to actual map dimensions
     ROWS = S.dungeon.length;
     COLS = S.dungeon[0].length;
@@ -4410,8 +4420,8 @@ function initAdventure() {
     // Provide mock room so hero spawn code doesn't crash
     S.rooms = [{ x: 1, y: 1, w: COLS - 2, h: ROWS - 2, type: 'start' }];
     // Place exit teleport
-    if (window.CUSTOM_MAP.exitPos) {
-      S.teleports = [{ x: window.CUSTOM_MAP.exitPos.x, y: window.CUSTOM_MAP.exitPos.y }];
+    if (_cm.exitPos) {
+      S.teleports = [{ x: _cm.exitPos.x, y: _cm.exitPos.y }];
     }
     return;
   }
@@ -10611,7 +10621,7 @@ function spawnHarpoon(fromGx, fromGy, toGx, toGy, faceDx) {
   const dir = faceDx || Math.sign(toGx - fromGx) || 1;
   // Start from Stabby's edge (half cell in facing direction), not 1 full cell ahead
   const sx = (fromGx + 0.5 + dir * 0.5) * CELL;
-  const sy = (fromGy + 0.5) * CELL;
+  const sy = (fromGy + 0.5) * CELL - CELL * 0.3;
   const tx = (toGx + 0.5) * CELL;
   const ty = (toGy + 0.5) * CELL;
   const dist = Math.abs(tx - sx);
@@ -10622,7 +10632,7 @@ function spawnHarpoon(fromGx, fromGy, toGx, toGy, faceDx) {
 function drawHarpoons() {
   if (!S.harpoons?.length) return;
   const now = performance.now();
-  const harpSz = CELL * 0.7;
+  const harpSz = CELL * 0.35;
   S.harpoons.forEach(h => {
     if (h.done) return;
     const t = Math.min(1, (now - h.born) / h.duration);
@@ -12516,7 +12526,7 @@ function drawUnits() {
       } else if (u.utype === 'stabby') {
         const frame = getStabbyFrameState(u);
         const sprSz = UNIT_CELL * 2.2;
-        const _syOff = -10;
+        const _syOff = 5;
         // Sprite faces RIGHT by default. Flip when facing LEFT (dx < 0).
         // BODY_FRAC = 88/192 ≈ 0.46 from left → from right = 1-0.46 = 0.54
         // tx = cx - sprSz*(1 - 2*0.54) = cx - sprSz*(-0.08) = cx + sprSz*0.08
