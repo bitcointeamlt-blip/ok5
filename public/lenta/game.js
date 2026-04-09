@@ -2530,6 +2530,8 @@ const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 const ronkeTokenImg = new Image(); ronkeTokenImg.src = 'assets_tiny/$ronke.png';
 const ronke2TokenImg = new Image(); ronke2TokenImg.src = 'assets_tiny/$ronke2.png';
 const _R2TOK_FRAMES = 8, _R2TOK_FW = 640, _R2TOK_FH = 640;
+const coinSpinImg = new Image(); coinSpinImg.src = 'assets/coinspin.png';
+const COINSPIN_FRAMES = 6, COINSPIN_FW = Math.round(1151 / 6), COINSPIN_FH = 171; // 191px per frame
 const grassTilemapImg = new Image(); grassTilemapImg.src = 'grass_tilemap.png';
 const waterFoamImg   = new Image(); waterFoamImg.src   = 'water_foam.png';
 const waterBgImg     = new Image(); waterBgImg.src     = 'water_bg.png';
@@ -6463,6 +6465,31 @@ function drawAdvHUD() {
   ctx.restore();
 }
 
+// ---- Ronke token HUD — top-right corner, shows spinning coin + count ----
+function drawRonkeHUD() {
+  const ronkeQty = S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0;
+  if (ronkeQty <= 0) return; // hide if none
+  const now = performance.now();
+  const frameIdx = Math.floor(now / 120) % _R2TOK_FRAMES;
+  const canvasW = advCanvasW || BOARD_W;
+  const sz = 32;
+  const px = canvasW - sz - 10;
+  const py = 8;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.shadowColor = '#44aaff'; ctx.shadowBlur = 8;
+  if (ronke2TokenImg.complete && ronke2TokenImg.naturalWidth > 0) {
+    ctx.drawImage(ronke2TokenImg, frameIdx * _R2TOK_FW, 0, _R2TOK_FW, _R2TOK_FH, px, py, sz, sz);
+  }
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#88ccff';
+  ctx.fillText(`×${ronkeQty}`, px - 2, py + sz / 2);
+  ctx.restore();
+}
+
 // ---- Weapon HUD - current weapon + ammo (screen space, bottom left) --
 function drawWeaponHUD() {
   const hero = S._hero || S.units?.find(u => u.team === 0 && u.alive);
@@ -7525,11 +7552,13 @@ function spawnLoot(x, y) {
 }
 
 function spawnRonkeDrop(x, y) {
-  // 50% chance — ronke token drop
-  if (Math.random() < 0.5) {
+  // 40% coin | 35% ronke token | 25% goldbag
+  const _r = Math.random();
+  if (_r < 0.40) {
+    S.loot.push({ x, y, type: 'coin', val: 1, collected: false, age: 0 });
+  } else if (_r < 0.75) {
     S.loot.push({ x, y, type: 'ronke', val: 1, collected: false, age: 0 });
   } else {
-    // No token — spawn gold bag (energy reward)
     S.loot.push({ x, y, type: 'goldbag', val: 3, collected: false, age: 0, spawnT: performance.now() });
   }
 }
@@ -7659,6 +7688,23 @@ function drawLoot() {
           ctx.drawImage(goldbagIdleImg, 0, 0, GOLDBAG_FW, GOLDBAG_FH,
             cx - sz / 2, cy - sz / 2, sz, sz);
         }
+      }
+      ctx.restore();
+    } else if (l.type === 'coin') {
+      // Gold coin drop — coinspin.png 6-frame sprite
+      const frameIdx = Math.floor(now / 90) % COINSPIN_FRAMES;
+      const sz = CELL * 0.68;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.shadowColor = '#ffdd44'; ctx.shadowBlur = 7;
+      ctx.translate(cx, cy + float);
+      if (coinSpinImg.complete && coinSpinImg.naturalWidth > 0) {
+        ctx.drawImage(coinSpinImg,
+          frameIdx * COINSPIN_FW, 0, COINSPIN_FW, COINSPIN_FH,
+          -sz / 2, -sz / 2, sz, sz);
+      } else {
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
     } else if (l.type === 'gem') {
@@ -8307,6 +8353,14 @@ function resolveTick() {
             logEvent(`+${l.val} XP TOKEN`, 'xp');
             spawnPickupFX(l.x, l.y, '#00ffcc');
             spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
+          } else if (l.type === 'coin') {
+            const _oldE = S.energy || 0;
+            S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + 1);
+            animateEnergyGain(_oldE, S.energy);
+            spawnPickupFX(l.x, l.y, '#ffcc44');
+            spawnDmgNumber(l.x, l.y, `+1⚡`, '#ffdd44', 13, 'normal');
+            SFX.play(660, 0.09, 0.07, 'sine', 120);
+            logEvent(`+1⚡ coin`, 'loot');
           } else if (l.type === 'goldbag') {
             const gain = l.val || 3;
             const _oldE = S.energy || 0;
@@ -9941,6 +9995,7 @@ function loop(now) {
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
     drawWeaponHUD();
+    drawRonkeHUD();
     drawHeroHitVignette();
   }
   drawScanlines();
