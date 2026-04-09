@@ -7007,12 +7007,21 @@ kbd {
 /* ============================================================
    DUNGEON THEME — Main Menu overrides
    Palette: dark stone bg · amber/gold borders · parchment text
+   CSS vars redefined inside #screen-menu so ALL var(--cyan) become amber
    ============================================================ */
 
-/* Page background: dark cave */
 #screen-menu {
+  /* --- Remap color vars to amber/gold/parchment palette --- */
+  --cyan:      #d4a843;
+  --cyan-dim:  rgba(200, 140, 20, 0.45);
+  --cyan-glow: rgba(200, 130, 15, 0.20);
+  --text:      #c4aa82;
+  --dim:       #7a6040;
+  --orange:    #d4a843; /* adventure card accent stays gold */
+
+  /* Page background: dark cave stone */
   background:
-    radial-gradient(ellipse at top, rgba(80, 40, 5, 0.18), transparent 55%),
+    radial-gradient(ellipse at top, rgba(80, 40, 5, 0.15), transparent 55%),
     linear-gradient(180deg, rgba(8, 5, 3, 1) 0%, rgba(12, 8, 4, 1) 100%);
 }
 
