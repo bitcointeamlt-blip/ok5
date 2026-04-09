@@ -2525,6 +2525,7 @@ const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
 const goldbagSpawnImg = new Image(); goldbagSpawnImg.src = 'assets/goldbag_spawn.png';
 const goldbagIdleImg  = new Image(); goldbagIdleImg.src  = 'assets/goldbag_idle.png';
+const goldbagGIdleImg = new Image(); goldbagGIdleImg.src = 'assets/goldbag_g_idle.png';
 const GOLDBAG_SPAWN_FRAMES = 7, GOLDBAG_FW = 128, GOLDBAG_FH = 128;
 const sparkleBulletImg = new Image(); sparkleBulletImg.src = 'assets/sparkle_bullet.png';
 const SPARKLE_FRAMES = 14, SPARKLE_FW = 32, SPARKLE_FH = 32;
@@ -5301,18 +5302,10 @@ function updateInventoryUI() {
         ri.style.cssText = 'width:56px;height:56px;object-fit:contain;display:block;margin:auto;margin-top:8px;filter:drop-shadow(0 0 6px #44aaff)';
         slot.appendChild(ri);
       } else if (item.type === 'goldbag') {
-        const cv = document.createElement('canvas');
-        cv.width = 96; cv.height = 96;
-        cv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pixelated;';
-        const _draw = () => {
-          const c = cv.getContext('2d');
-          c.clearRect(0, 0, 96, 96);
-          if (goldbagIdleImg.complete && goldbagIdleImg.naturalWidth > 0) {
-            c.drawImage(goldbagIdleImg, 0, 0, GOLDBAG_FW, GOLDBAG_FH, 0, 0, 96, 96);
-          }
-        };
-        if (goldbagIdleImg.complete) _draw(); else goldbagIdleImg.onload = _draw;
-        slot.appendChild(cv);
+        const gi = document.createElement('img');
+        gi.src = 'assets/goldbag_g_idle.png';
+        gi.style.cssText = 'position:absolute;top:2px;left:2px;right:2px;bottom:16px;width:calc(100% - 4px);height:calc(100% - 18px);object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 0 6px #ffcc00)';
+        slot.appendChild(gi);
       } else if (item.type === 'gem') {
         const gi = document.createElement('img');
         gi.src = 'pix.png';
@@ -7651,12 +7644,11 @@ function drawLoot() {
             cx - sz / 2, cy - sz / 2, sz, sz);
         }
       } else {
-        // idle — no float, heavy bag stays on ground
+        // idle — G_Idle.png single frame
         const _pulse = 0.7 + 0.3 * Math.sin(now * 0.004 + l.x);
         ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 10 * _pulse;
-        if (goldbagIdleImg.complete && goldbagIdleImg.naturalWidth > 0) {
-          ctx.drawImage(goldbagIdleImg, 0, 0, GOLDBAG_FW, GOLDBAG_FH,
-            cx - sz / 2, cy - sz / 2, sz, sz);
+        if (goldbagGIdleImg.complete && goldbagGIdleImg.naturalWidth > 0) {
+          ctx.drawImage(goldbagGIdleImg, cx - sz / 2, cy - sz / 2, sz, sz);
         }
       }
       ctx.restore();
