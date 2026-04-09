@@ -16026,24 +16026,43 @@ function _agentExecute(action, hero) {
 // Black overlay with expanding torch-light circle, then FLOOR X text
 // ================================================================
 
-// ---- Menu Ronke idle animation ----
+// ---- Menu Ronke idle + Heal Effect animation ----
 (function() {
   const cv = document.getElementById('menu-ronke-canvas');
   if (!cv) return;
   const ctx2 = cv.getContext('2d');
-  const img = new Image();
-  img.src = 'assets/ronkelvl3.png';
-  const FRAMES = 8, FPS = 6;
+  const ronkeImg = new Image(); ronkeImg.src = 'assets/ronkelvl3.png';
+  const healImg  = new Image(); healImg.src  = 'assets/heal_effect.png';
+  const R_FRAMES = 8, R_FPS = 6;
+  const H_FRAMES = 12, H_FPS = 14;
+  let healStart = null;
+  // trigger heal every 5 seconds
+  setInterval(() => { healStart = performance.now(); }, 5000);
+
   function tick(t) {
     requestAnimationFrame(tick);
-    if (!img.complete || !img.naturalWidth) return;
-    const fw = img.naturalWidth / FRAMES, fh = img.naturalHeight;
+    if (!ronkeImg.complete || !ronkeImg.naturalWidth) return;
+    const fw = ronkeImg.naturalWidth / R_FRAMES, fh = ronkeImg.naturalHeight;
     const scale = cv.height / fh;
     const dw = fw * scale, dh = fh * scale;
-    const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
-    const x = (cv.width - dw) / 2;
+    const rx = (cv.width - dw) / 2;
+    const rframe = Math.floor(t / (1000 / R_FPS)) % R_FRAMES;
     ctx2.clearRect(0, 0, cv.width, cv.height);
-    ctx2.drawImage(img, frame * fw, 0, fw, fh, x, 0, dw, dh);
+    ctx2.drawImage(ronkeImg, rframe * fw, 0, fw, fh, rx, 0, dw, dh);
+
+    // heal effect overlay (one-shot)
+    if (healStart !== null && healImg.complete && healImg.naturalWidth) {
+      const elapsed = t - healStart;
+      const hfw = healImg.naturalWidth / H_FRAMES, hfh = healImg.naturalHeight;
+      const hframe = Math.floor(elapsed / (1000 / H_FPS));
+      if (hframe < H_FRAMES) {
+        const hs = cv.width / hfw;
+        const hdw = hfw * hs, hdh = hfh * hs;
+        ctx2.drawImage(healImg, hframe * hfw, 0, hfw, hfh, 0, dh - hdh + 10, hdw, hdh);
+      } else {
+        healStart = null;
+      }
+    }
   }
   requestAnimationFrame(tick);
 })();
