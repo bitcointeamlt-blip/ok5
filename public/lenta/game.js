@@ -16026,38 +16026,26 @@ function _agentExecute(action, hero) {
 // Black overlay with expanding torch-light circle, then FLOOR X text
 // ================================================================
 
-// ---- Menu Ronke walking animation ----
+// ---- Menu Ronke idle animation ----
 (function() {
   const cv = document.getElementById('menu-ronke-canvas');
   if (!cv) return;
   const ctx2 = cv.getContext('2d');
   const img = new Image();
   img.src = 'assets/ronkelvl3.png';
-  const FRAMES = 8, FPS = 8;
-  const FW = () => img.naturalWidth / FRAMES;
-  const FH = () => img.naturalHeight;
-  let frame = 0, lastT = 0, x = cv.width + 20, dir = -1;
-  const SPEED = 0.6; // px per ms
+  const FRAMES = 8, FPS = 6;
   function tick(t) {
     requestAnimationFrame(tick);
     if (!img.complete || !img.naturalWidth) return;
-    const dt = t - lastT; lastT = t;
-    if (dt > 100) return; // tab unfocused
-    const fw = FW(), fh = FH();
+    const fw = img.naturalWidth / FRAMES, fh = img.naturalHeight;
     const scale = cv.height / fh;
     const dw = fw * scale, dh = fh * scale;
-    frame = Math.floor(t / (1000 / FPS)) % FRAMES;
-    x += dir * SPEED * dt;
-    if (x < -dw - 20) { x = cv.width + 20; dir = -1; }
-    if (x > cv.width + 20) { x = -dw - 20; dir = 1; }
+    const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
+    const x = (cv.width - dw) / 2;
     ctx2.clearRect(0, 0, cv.width, cv.height);
-    ctx2.save();
-    if (dir === 1) { ctx2.translate(x + dw, cv.height - dh); ctx2.scale(-1, 1); }
-    else ctx2.translate(x, cv.height - dh);
-    ctx2.drawImage(img, frame * fw, 0, fw, fh, 0, 0, dw, dh);
-    ctx2.restore();
+    ctx2.drawImage(img, frame * fw, 0, fw, fh, x, cv.height - dh, dw, dh);
   }
-  requestAnimationFrame(t => { lastT = t; requestAnimationFrame(tick); });
+  requestAnimationFrame(tick);
 })();
 
 let _floorIntro = null;
