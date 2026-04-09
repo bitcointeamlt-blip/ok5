@@ -16060,7 +16060,7 @@ function _agentExecute(action, hero) {
         const hs = (cv.width * 1.7) / hfw;
         const hdw = hfw * hs, hdh = hfh * hs;
         const hx = (cv.width - hdw) / 2;
-        const hy = cv.height - hdh;
+        const hy = cv.height - hdh * 0.5;
         ctx2.drawImage(healImg, hframe * hfw, 0, hfw, hfh, hx, hy, hdw, hdh);
       } else {
         healStart = null;
