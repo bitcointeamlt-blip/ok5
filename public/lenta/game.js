@@ -16159,7 +16159,9 @@ function _agentExecute(action, hero) {
       ctx.drawImage(bagImg, 0, 0, cv.width, cv.height);
     } else if (state === 'coin' && coinImg.complete && coinImg.naturalWidth) {
       const frame = Math.floor(t / (1000 / COIN_FPS)) % COIN_FRAMES;
-      ctx.drawImage(coinImg, frame * COIN_FW, 0, COIN_FW, COIN_FH, 0, 0, cv.width, cv.height);
+      const cs = Math.round(cv.width * 0.86);
+      const co = Math.round((cv.width - cs) / 2);
+      ctx.drawImage(coinImg, frame * COIN_FW, 0, COIN_FW, COIN_FH, co, co, cs, cs);
     }
   }
   requestAnimationFrame(tick);
