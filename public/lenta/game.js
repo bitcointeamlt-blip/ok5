@@ -16034,23 +16034,24 @@ function _agentExecute(action, hero) {
   const ronkeImg = new Image(); ronkeImg.src = 'assets/ronkelvl3.png';
   const healImg  = new Image(); healImg.src  = 'assets/heal_effect.png';
   const R_FRAMES = 8, R_FPS = 6;
-  const H_FRAMES = 12, H_FPS = 14;
+  const H_FRAMES = 11, H_FPS = 12;
   let healStart = null;
-  // trigger heal every 5 seconds
   setInterval(() => { healStart = performance.now(); }, 5000);
 
   function tick(t) {
     requestAnimationFrame(tick);
     if (!ronkeImg.complete || !ronkeImg.naturalWidth) return;
+
+    // Ronke
     const fw = ronkeImg.naturalWidth / R_FRAMES, fh = ronkeImg.naturalHeight;
     const scale = cv.height / fh;
-    const dw = fw * scale, dh = fh * scale;
+    const dw = fw * scale, dh = cv.height;
     const rx = (cv.width - dw) / 2;
     const rframe = Math.floor(t / (1000 / R_FPS)) % R_FRAMES;
     ctx2.clearRect(0, 0, cv.width, cv.height);
     ctx2.drawImage(ronkeImg, rframe * fw, 0, fw, fh, rx, 0, dw, dh);
 
-    // heal effect overlay (one-shot)
+    // Heal effect — drawn on top, centered, at feet level
     if (healStart !== null && healImg.complete && healImg.naturalWidth) {
       const elapsed = t - healStart;
       const hfw = healImg.naturalWidth / H_FRAMES, hfh = healImg.naturalHeight;
@@ -16058,7 +16059,9 @@ function _agentExecute(action, hero) {
       if (hframe < H_FRAMES) {
         const hs = cv.width / hfw;
         const hdw = hfw * hs, hdh = hfh * hs;
-        ctx2.drawImage(healImg, hframe * hfw, 0, hfw, hfh, 0, dh - hdh + 10, hdw, hdh);
+        const hx = (cv.width - hdw) / 2;
+        const hy = cv.height - hdh;
+        ctx2.drawImage(healImg, hframe * hfw, 0, hfw, hfh, hx, hy, hdw, hdh);
       } else {
         healStart = null;
       }
