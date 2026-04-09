@@ -3437,6 +3437,7 @@ const SFX = {
   heroHit() {
     this.play(80, 0.15, 0.12, 'square', -40);
     setTimeout(() => this.play(50, 0.2, 0.1, 'sawtooth', -20), 50);
+    _heroHitFlash = 1.0;
   },
   death() { this.play(300, 0.5, 0.1, 'square', -280); },
   bulletClash() { this.play(500, 0.1, 0.06, 'sawtooth', -300); },
@@ -9893,10 +9894,12 @@ function loop(now) {
   drawHeroBullets();
   drawHeroBulletDeaths();
   drawDmgNumbers();
+  if (gameMode === 'adventure') drawAmbientDust();
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
     drawWeaponHUD();
+    drawHeroHitVignette();
   }
   drawScanlines();
 }
@@ -12779,6 +12782,28 @@ function drawUnits() {
         }
         ctx.restore();
       }
+
+      // ── HP bar above sprite (adventure enemies) ──────────────
+      if (u.alive && u.maxHp > 0 && u.hp < u.maxHp) {
+        const _hpRatio = Math.max(0, u.hp / u.maxHp);
+        const _bW = CELL * 0.72, _bH = 4;
+        const _bx = cx - _bW / 2;
+        const _by = cy - CELL * 1.18;
+        ctx.globalAlpha = alpha * 0.55;
+        ctx.fillStyle = '#0a0a14';
+        ctx.fillRect(_bx - 1, _by - 1, _bW + 2, _bH + 2);
+        const _hpColor = _hpRatio > 0.5
+          ? `hsl(${Math.round(120 * _hpRatio * 2)},90%,42%)`
+          : `hsl(0,100%,${Math.round(30 + _hpRatio * 20)}%)`;
+        ctx.globalAlpha = alpha * 0.92;
+        ctx.fillStyle = _hpColor;
+        ctx.fillRect(_bx, _by, _bW * _hpRatio, _bH);
+        ctx.globalAlpha = alpha * 0.3;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(_bx, _by, _bW * _hpRatio, 1);
+        ctx.globalAlpha = alpha;
+      }
+
       ctx.restore();
       return;
     }
@@ -15650,6 +15675,74 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize 3D offscreen renderer
   initThreeJS();
 });
+
+// ================================================================
+// VISUAL POLISH
+// ================================================================
+
+// Hero hit vignette
+let _heroHitFlash = 0;
+
+function drawHeroHitVignette() {
+  if (_heroHitFlash <= 0.01) { _heroHitFlash = 0; return; }
+  _heroHitFlash *= 0.84;
+  const W = canvas.width, H = canvas.height;
+  const grad = ctx.createRadialGradient(W/2, H/2, H * 0.2, W/2, H/2, H * 0.85);
+  grad.addColorStop(0, 'rgba(180,0,0,0)');
+  grad.addColorStop(1, `rgba(200,0,0,${(_heroHitFlash * 0.72).toFixed(3)})`);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+// Ambient dungeon dust
+const _dust = [];
+const _DUST_MAX = 35;
+
+function drawAmbientDust() {
+  if (!S || !S.fog || !S.cam) return;
+  const now = performance.now();
+
+  // Spawn new dust in visible area
+  if (_dust.length < _DUST_MAX && Math.random() < 0.18) {
+    const vx = (S.cam.x / CELL) | 0, vy = (S.cam.y / CELL) | 0;
+    const vw = Math.ceil(canvas.width / CELL) + 2, vh = Math.ceil(canvas.height / CELL) + 2;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const gx = vx + (Math.random() * vw) | 0;
+      const gy = vy + (Math.random() * vh) | 0;
+      if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+      if (!S.fog[gy]?.[gx] || isWall(gx, gy)) continue;
+      _dust.push({
+        x: (gx + Math.random()) * CELL,
+        y: (gy + Math.random()) * CELL,
+        vx: (Math.random() - 0.5) * 0.12,
+        vy: -0.05 - Math.random() * 0.08,
+        life: 1,
+        decay: 0.003 + Math.random() * 0.003,
+        r: 0.8 + Math.random() * 1.2,
+      });
+      break;
+    }
+  }
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (let i = _dust.length - 1; i >= 0; i--) {
+    const d = _dust[i];
+    d.x += d.vx; d.y += d.vy;
+    d.life -= d.decay;
+    if (d.life <= 0) { _dust.splice(i, 1); continue; }
+    const alpha = d.life * 0.22;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#c8b89a';
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 
 // ================================================================
 // HERO AI AGENT — Claude Haiku autonomous hero controller
