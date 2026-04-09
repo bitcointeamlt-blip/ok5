@@ -3092,7 +3092,7 @@ function placeEditorEnemy(type, gx, gy) {
   return true;
 }
 
-const ENEMY_BATCH_ACT_CHANCE = 0.5;
+const ENEMY_BATCH_ACT_CHANCE = 0.68;
 
 function collectAiBatchActions(aiUnits, nextBullets, safe, p1Future) {
   const batch = [];
@@ -4275,10 +4275,12 @@ function initAdventure() {
 
   const poolByRoom = (ri) => {
     if (gameMode === 'adventure') {
-      if (ri === 0) return ['shaman', 'skull'].map(getEditorEnemyArchetype); // First room
-      if (ri === numRooms - 1 && numRooms > 1) return ['overflow', 'corrupt', 'worm'].map(getEditorEnemyArchetype); // Boss room
-      if (ri < numRooms / 2) return ['shaman', 'skull', 'leak', 'ironbox'].map(getEditorEnemyArchetype);
-      return ['skull', 'leak', 'worm', 'corrupt', 'shield', 'ironbox'].map(getEditorEnemyArchetype); // Mid-Late
+      const fl = S.floor || 1;
+      if (ri === 0) return ['shaman', 'skull', 'spider'].map(getEditorEnemyArchetype); // First room
+      if (ri === numRooms - 1 && numRooms > 1) return ['worm', 'shield', 'skull', 'spider'].map(getEditorEnemyArchetype); // Last room
+      if (fl <= 2) return ['shaman', 'skull', 'spider', 'leak', 'ironbox'].map(getEditorEnemyArchetype);
+      if (fl <= 4) return ['skull', 'spider', 'shaman', 'worm', 'shield', 'ironbox'].map(getEditorEnemyArchetype);
+      return ['skull', 'spider', 'troll', 'worm', 'shield', 'ironbox'].map(getEditorEnemyArchetype); // Floor 5+
     }
   };
 
@@ -4292,15 +4294,14 @@ function initAdventure() {
     });
   } else {
     S.rooms.forEach((r, ri) => {
-    let count = 4;
-
-    if (S.floor === 1 || S.floor === 3) {
-      count = 3;
-    } else if (S.floor === 2) {
-      count = 4;
+    let count;
+    const fl = S.floor || 1;
+    if (fl === 1) {
+      count = 4 + (ri > 0 ? 1 : 0);
+    } else if (fl === 2) {
+      count = 5;
     } else {
-
-      count = 4 + Math.floor(Math.random() * Math.min(S.floor - 2, 2));
+      count = 5 + Math.floor(Math.random() * Math.min(fl - 1, 3));
     }
 
     if (S.floor === 1 && ri === 0) {
@@ -9163,7 +9164,10 @@ function detectCollisions() {
           const isCrit = Math.random() < getCritChance();
           const bulletHeroHit = gameMode === 'adventure' && u.team === 0;
           let baseDmg = 1;
-          if (b.gunBullet && !bulletHeroHit) {
+          // Scale enemy bullet damage by floor in adventure mode
+          if (bulletHeroHit && gameMode === 'adventure') {
+            baseDmg = 1 + Math.floor((S.floor || 1) / 2);
+          } else if (b.gunBullet && !bulletHeroHit) {
             const dist = (b.cellsTraveled || 0) + 1;
             if (dist >= 5) baseDmg = 4;
             else if (dist >= 4) baseDmg = 3;
