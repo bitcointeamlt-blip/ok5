@@ -15813,7 +15813,7 @@ One JSON object only. No extra text.`;
 async function _agentCallClaude(stateJson) {
   const payload = JSON.stringify({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 120,
+    max_tokens: 200,
     system: _AGENT_SYSTEM,
     messages: [{ role: 'user', content: stateJson }]
   });
@@ -15825,13 +15825,12 @@ async function _agentCallClaude(stateJson) {
     body: payload
   });
 
-  // Fallback: proxy not available (404/503/any error) → use direct API with local key
+  // Fallback: proxy not available → use direct API with local key
   if (!resp.ok) {
+    const row = document.getElementById('agent-key-row');
     if (!_agent.localKey) {
-      // Show key input row so user can enter key
-      const row = document.getElementById('agent-key-row');
       if (row) row.style.display = 'flex';
-      throw new Error('Server key not set. Enter API key in panel.');
+      throw new Error('Enter API key above');
     }
     resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -15843,11 +15842,13 @@ async function _agentCallClaude(stateJson) {
       },
       body: payload
     });
-  }
-
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(resp.status + ' ' + txt.slice(0, 60));
+    if (!resp.ok) {
+      // Show key row so user can re-enter key
+      if (row) row.style.display = 'flex';
+      const errData = await resp.json().catch(() => ({}));
+      const msg = errData?.error?.message || resp.status;
+      throw new Error(msg);
+    }
   }
 
   const data = await resp.json();
