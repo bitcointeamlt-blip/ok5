@@ -16146,16 +16146,24 @@ function _agentExecute(action, hero) {
   const cv = document.getElementById('menu-goldbag');
   if (!cv) return;
   const ctx = cv.getContext('2d');
-  const bagImg  = new Image(); bagImg.src  = 'assets/goldbag_g_idle.png';
-  const coinImg = new Image(); coinImg.src = 'assets_tiny/$ronke2.png';
-  const COIN_FRAMES = 8, COIN_FW = 640, COIN_FH = 640, COIN_FPS = 8;
-  // states: 'bag' | 'coin' | 'gone'
-  let state = 'bag';
+  const bagImg   = new Image(); bagImg.src   = 'assets/goldbag_g_idle.png';
+  const spawnImg = new Image(); spawnImg.src = 'assets/goldbag_spawn.png';
+  const coinImg  = new Image(); coinImg.src  = 'assets_tiny/$ronke2.png';
+  const COIN_FRAMES  = 8, COIN_FW  = 640, COIN_FH  = 640, COIN_FPS  = 8;
+  const SPAWN_FRAMES = 7, SPAWN_FW = 128, SPAWN_FH = 128, SPAWN_FPS = 10;
+  // states: 'spawning' | 'bag' | 'coin' | 'gone'
+  let state = 'spawning', spawnStart = null;
 
   function tick(t) {
     requestAnimationFrame(tick);
     ctx.clearRect(0, 0, cv.width, cv.height);
-    if (state === 'bag' && bagImg.complete && bagImg.naturalWidth) {
+    if (state === 'spawning') {
+      if (!spawnImg.complete || !spawnImg.naturalWidth) return;
+      if (spawnStart === null) spawnStart = t;
+      const frame = Math.floor((t - spawnStart) / (1000 / SPAWN_FPS));
+      if (frame >= SPAWN_FRAMES) { state = 'bag'; spawnStart = null; return; }
+      ctx.drawImage(spawnImg, frame * SPAWN_FW, 0, SPAWN_FW, SPAWN_FH, 0, 0, cv.width, cv.height);
+    } else if (state === 'bag' && bagImg.complete && bagImg.naturalWidth) {
       ctx.drawImage(bagImg, 0, 0, cv.width, cv.height);
     } else if (state === 'coin' && coinImg.complete && coinImg.naturalWidth) {
       const frame = Math.floor(t / (1000 / COIN_FPS)) % COIN_FRAMES;
@@ -16168,7 +16176,7 @@ function _agentExecute(action, hero) {
 
   // Hover
   cv.addEventListener('mouseenter', () => {
-    if (state === 'gone') return;
+    if (state === 'gone' || state === 'spawning') return;
     cv.style.filter = state === 'bag'
       ? 'drop-shadow(0 0 22px #ffe066) drop-shadow(0 0 8px #fff)'
       : 'drop-shadow(0 0 22px #66ccff) drop-shadow(0 0 8px #fff)';
@@ -16181,11 +16189,9 @@ function _agentExecute(action, hero) {
 
   cv.addEventListener('click', function(e) {
     if (state === 'bag') {
-      // Bag clicked → show coin
       state = 'coin';
       cv.style.filter = 'drop-shadow(0 0 14px #66ccff)';
     } else if (state === 'coin') {
-      // Coin clicked → pickup, show +1 $RONKE
       state = 'gone';
       cv.style.opacity = '0';
       cv.style.transition = 'opacity 0.2s';
@@ -16200,9 +16206,10 @@ function _agentExecute(action, hero) {
       document.body.appendChild(txt);
       setTimeout(() => txt.remove(), 1300);
 
-      // Respawn bag after 5s
+      // Respawn with spawn animation after 5s
       setTimeout(() => {
-        state = 'bag';
+        state = 'spawning';
+        spawnStart = null;
         cv.style.opacity = '1';
       }, 5000);
     }
