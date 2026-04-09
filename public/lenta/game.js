@@ -8684,9 +8684,7 @@ function applySingleAction(team, a) {
         const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
-          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2,
-          fireAt: (unit.team === 0 && gameMode === 'adventure') ? performance.now() + Math.round(3 / 14 * 1000) : null,
-          color: unit.color, active: true
+          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: unit.color, active: true
         });
       } else if (wep === 'heavy') {
         unit.heavyAmmo--;
@@ -9443,7 +9441,7 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
 function laserCells(ox, oy, dx, dy) {
   const cells = [];
   let x = ox + dx, y = oy + dy, count = 0;
-  while (x >= 0 && x < COLS && y >= 0 && y < ROWS && count < 4) {
+  while (x >= 0 && x < COLS && y >= 0 && y < ROWS && count < 5) {
     if (isWall(x, y)) break;
     cells.push({ x, y }); x += dx; y += dy; count++;
   }
@@ -9453,7 +9451,6 @@ function laserCells(ox, oy, dx, dy) {
 function advanceLasers() {
   S.lasers.forEach(laser => {
     if (!laser.active) return;
-    if (laser.fireAt && performance.now() < laser.fireAt) return;
     laser.chargeLeft--;
     if (laser.chargeLeft <= 0) {
       for (const cell of laser.cells) {
