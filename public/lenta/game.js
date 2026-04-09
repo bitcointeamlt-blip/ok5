@@ -4260,8 +4260,8 @@ function initAdventure() {
   const sr = S.rooms[0];
   const _fcm = getFloorCustomMap();
   const _sp = (_fcm && _fcm.spawnPos) ? _fcm.spawnPos : null;
-  const px = _sp ? _sp.x : (sr ? sr.x + 1 : 2);
-  const py = _sp ? _sp.y : (sr ? sr.y + 1 : 2);
+  const px = _sp ? _sp.x : (sr ? sr.x + 3 : 4);  // 2 back (deeper into room)
+  const py = _sp ? _sp.y : (sr ? sr.y + 2 : 3);  // 1 up from default corner
   const useCustomEnemyPlacements = !!(_fcm && Array.isArray(_fcm.enemies));
   S.customEnemyPlacements = useCustomEnemyPlacements ? cloneEditorEnemyPlacements(_fcm.enemies) : [];
   S.units = [
