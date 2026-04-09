@@ -5304,7 +5304,7 @@ function updateInventoryUI() {
       } else if (item.type === 'goldbag') {
         const gi = document.createElement('img');
         gi.src = 'assets/goldbag_g_idle.png';
-        gi.style.cssText = 'position:absolute;top:50%;left:50%;width:120px;height:120px;transform:translate(calc(-50% - 5px),calc(-58% + 2px)) scale(0.9);image-rendering:pixelated;filter:drop-shadow(0 0 8px #ffcc00)';
+        gi.style.cssText = 'position:absolute;top:50%;left:50%;width:120px;height:120px;transform:translate(calc(-50% - 11px),calc(-58% + 4px)) scale(0.88);image-rendering:pixelated;filter:drop-shadow(0 0 8px #ffcc00)';
         slot.appendChild(gi);
       } else if (item.type === 'gem') {
         const gi = document.createElement('img');
