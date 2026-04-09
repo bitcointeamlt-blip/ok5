@@ -8685,7 +8685,7 @@ function applySingleAction(team, a) {
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
           dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2,
-          fireAt: (unit.team === 0 && gameMode === 'adventure') ? performance.now() + 800 : null,
+          fireAt: (unit.team === 0 && gameMode === 'adventure') ? performance.now() + Math.round(3 / 14 * 1000) : null,
           color: unit.color, active: true
         });
       } else if (wep === 'heavy') {
