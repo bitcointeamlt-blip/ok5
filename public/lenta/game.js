@@ -16141,24 +16141,42 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Goldbag click → spinning Ronke coin popup
+// Goldbag click → spinning Ronke coin popup (uses $ronke2.png spritesheet)
 (function() {
   const bag = document.getElementById('menu-goldbag');
   if (!bag) return;
+  const coinImg = new Image(); coinImg.src = 'assets_tiny/$ronke2.png';
+  const FRAMES = 8, FW = 640, FH = 640, FPS = 8;
+
+  function spawnCoin(x, y, delay) {
+    setTimeout(() => {
+      const cv = document.createElement('canvas');
+      cv.width = 80; cv.height = 80;
+      const spread = (Math.random() - 0.5) * 70;
+      cv.style.cssText = `position:fixed;left:${x - 40 + spread}px;top:${y - 40}px;pointer-events:none;z-index:9999;image-rendering:pixelated;filter:drop-shadow(0 0 6px #ffcc00);`;
+      document.body.appendChild(cv);
+      const ctx = cv.getContext('2d');
+      const startT = performance.now();
+      const DURATION = 1400;
+      function draw(t) {
+        const elapsed = t - startT;
+        if (elapsed > DURATION) { cv.remove(); return; }
+        requestAnimationFrame(draw);
+        const frame = Math.floor(elapsed / (1000 / FPS)) % FRAMES;
+        const progress = elapsed / DURATION;
+        cv.style.top = (y - 40 - 120 * progress) + 'px';
+        cv.style.opacity = progress > 0.6 ? String(1 - (progress - 0.6) / 0.4) : '1';
+        ctx.clearRect(0, 0, 80, 80);
+        if (coinImg.complete && coinImg.naturalWidth) {
+          ctx.drawImage(coinImg, frame * FW, 0, FW, FH, 0, 0, 80, 80);
+        }
+      }
+      requestAnimationFrame(draw);
+    }, delay);
+  }
+
   bag.addEventListener('click', function(e) {
-    for (let i = 0; i < 3; i++) {
-      setTimeout(() => {
-        const coin = document.createElement('img');
-        coin.src = 'assets_tiny/$ronke.png';
-        coin.className = 'ronke-coin-popup';
-        const spread = (Math.random() - 0.5) * 60;
-        coin.style.left = (e.clientX - 40 + spread) + 'px';
-        coin.style.top  = (e.clientY - 40) + 'px';
-        coin.style.animationDelay = (i * 0.12) + 's';
-        document.body.appendChild(coin);
-        setTimeout(() => coin.remove(), 1600);
-      }, 0);
-    }
+    for (let i = 0; i < 3; i++) spawnCoin(e.clientX, e.clientY, i * 120);
   });
 })();
 
