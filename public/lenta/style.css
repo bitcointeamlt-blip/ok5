@@ -7181,3 +7181,27 @@ kbd {
   color: #c4a060;
 }
 
+/* Coming Soon cards — locked, dimmed, not interactive */
+#screen-menu .mode-card-soon {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: grayscale(0.35);
+  position: relative;
+}
+
+#screen-menu .mode-card-soon::after {
+  content: '🔒';
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+#screen-menu .coming-soon-label {
+  color: #6a5a40 !important;
+  letter-spacing: 2px;
+  font-size: 8px;
+}
+
