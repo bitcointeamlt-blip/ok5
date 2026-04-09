@@ -15658,7 +15658,8 @@ document.addEventListener('DOMContentLoaded', () => {
 const _agent = {
   enabled: false,
   thinking: false,
-  speed: 500, // ms pause between agent ticks (UX breathing room)
+  localKey: localStorage.getItem('_agentKey') || '',
+  speed: 500,
 };
 
 window._agentToggle = function() {
@@ -15674,6 +15675,21 @@ window._agentToggle = function() {
   if (panel) panel.classList.toggle('agent-active', _agent.enabled);
   if (_agent.enabled) _agentLog('Agent online. Observing...', '#0f8');
 };
+
+window._agentSaveKey = function() {
+  const inp = document.getElementById('agent-key-input');
+  if (!inp) return;
+  _agent.localKey = inp.value.trim();
+  localStorage.setItem('_agentKey', _agent.localKey);
+  _agentLog('Key saved — using direct API', '#0f8');
+};
+
+// populate key input on load
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('agent-key-input');
+  if (inp && _agent.localKey) inp.value = _agent.localKey;
+  // show dev key row only if no proxy configured yet (check on toggle)
+});
 
 function _agentLog(msg, color) {
   const el = document.getElementById('agent-log');
@@ -15795,16 +15811,39 @@ RULES:
 One JSON object only. No extra text.`;
 
 async function _agentCallClaude(stateJson) {
-  const resp = await fetch('/.netlify/functions/agent', {
+  const payload = JSON.stringify({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 120,
+    system: _AGENT_SYSTEM,
+    messages: [{ role: 'user', content: stateJson }]
+  });
+
+  // Try server proxy first
+  let resp = await fetch('/.netlify/functions/agent', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 120,
-      system: _AGENT_SYSTEM,
-      messages: [{ role: 'user', content: stateJson }]
-    })
+    body: payload
   });
+
+  // Fallback: proxy not configured (503) → use direct API with local key
+  if (resp.status === 503) {
+    if (!_agent.localKey) {
+      // Show key input row so user can enter key
+      const row = document.getElementById('agent-key-row');
+      if (row) row.style.display = 'flex';
+      throw new Error('Server key not set. Enter API key in panel.');
+    }
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': _agent.localKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: payload
+    });
+  }
 
   if (!resp.ok) {
     const txt = await resp.text();
