@@ -16141,28 +16141,35 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Landing page spinning Ronke coin (menu-goldbag canvas)
+// Landing page: bag → coin → +1 $RONKE pickup
 (function() {
   const cv = document.getElementById('menu-goldbag');
   if (!cv) return;
   const ctx = cv.getContext('2d');
+  const bagImg  = new Image(); bagImg.src  = 'assets/goldbag_g_idle.png';
   const coinImg = new Image(); coinImg.src = 'assets_tiny/$ronke2.png';
-  const FRAMES = 8, FW = 640, FH = 640, FPS = 8;
-  let visible = true;
+  const COIN_FRAMES = 8, COIN_FW = 640, COIN_FH = 640, COIN_FPS = 8;
+  // states: 'bag' | 'coin' | 'gone'
+  let state = 'bag';
 
-  // Animate coin on canvas
   function tick(t) {
     requestAnimationFrame(tick);
     ctx.clearRect(0, 0, cv.width, cv.height);
-    if (!visible || !coinImg.complete || !coinImg.naturalWidth) return;
-    const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
-    ctx.drawImage(coinImg, frame * FW, 0, FW, FH, 0, 0, cv.width, cv.height);
+    if (state === 'bag' && bagImg.complete && bagImg.naturalWidth) {
+      ctx.drawImage(bagImg, 0, 0, cv.width, cv.height);
+    } else if (state === 'coin' && coinImg.complete && coinImg.naturalWidth) {
+      const frame = Math.floor(t / (1000 / COIN_FPS)) % COIN_FRAMES;
+      ctx.drawImage(coinImg, frame * COIN_FW, 0, COIN_FW, COIN_FH, 0, 0, cv.width, cv.height);
+    }
   }
   requestAnimationFrame(tick);
 
-  // Hover glow
+  // Hover
   cv.addEventListener('mouseenter', () => {
-    cv.style.filter = 'drop-shadow(0 0 20px #ffe066) drop-shadow(0 0 8px #fff)';
+    if (state === 'gone') return;
+    cv.style.filter = state === 'bag'
+      ? 'drop-shadow(0 0 22px #ffe066) drop-shadow(0 0 8px #fff)'
+      : 'drop-shadow(0 0 22px #66ccff) drop-shadow(0 0 8px #fff)';
     cv.style.transform = 'translateX(-50%) scale(1.1)';
   });
   cv.addEventListener('mouseleave', () => {
@@ -16170,27 +16177,33 @@ function _agentExecute(action, hero) {
     cv.style.transform = 'translateX(-50%) scale(1)';
   });
 
-  // Click: pick up coin
   cv.addEventListener('click', function(e) {
-    if (!visible) return;
-    visible = false;
-    cv.style.opacity = '0';
-    cv.style.transition = 'opacity 0.2s';
+    if (state === 'bag') {
+      // Bag clicked → show coin
+      state = 'coin';
+      cv.style.filter = 'drop-shadow(0 0 14px #66ccff)';
+    } else if (state === 'coin') {
+      // Coin clicked → pickup, show +1 $RONKE
+      state = 'gone';
+      cv.style.opacity = '0';
+      cv.style.transition = 'opacity 0.2s';
+      cv.style.filter = 'drop-shadow(0 0 10px #ffcc00)';
+      cv.style.transform = 'translateX(-50%) scale(1)';
 
-    // +1 $Ronke text popup
-    const txt = document.createElement('div');
-    txt.className = 'ronke-pickup-text';
-    txt.textContent = '+1 $RONKE';
-    txt.style.left = (e.clientX - 50) + 'px';
-    txt.style.top  = (e.clientY - 20) + 'px';
-    document.body.appendChild(txt);
-    setTimeout(() => txt.remove(), 1300);
+      const txt = document.createElement('div');
+      txt.className = 'ronke-pickup-text';
+      txt.textContent = '+1 $RONKE';
+      txt.style.left = (e.clientX - 55) + 'px';
+      txt.style.top  = (e.clientY - 20) + 'px';
+      document.body.appendChild(txt);
+      setTimeout(() => txt.remove(), 1300);
 
-    // Respawn after 4s
-    setTimeout(() => {
-      visible = true;
-      cv.style.opacity = '1';
-    }, 4000);
+      // Respawn bag after 5s
+      setTimeout(() => {
+        state = 'bag';
+        cv.style.opacity = '1';
+      }, 5000);
+    }
   });
 })();
 
