@@ -12,6 +12,21 @@
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <style>
+    @keyframes ronkePickup {
+      0%   { opacity: 1; transform: translateY(0px) scale(1); }
+      100% { opacity: 0; transform: translateY(-70px) scale(1.3); }
+    }
+    .ronke-pickup-text {
+      position: fixed;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 13px;
+      color: #44ff88;
+      text-shadow: 0 0 8px #00ff66, 1px 1px 0 #003300;
+      pointer-events: none;
+      z-index: 9999;
+      white-space: nowrap;
+      animation: ronkePickup 1.2s ease-out forwards;
+    }
     @keyframes ronkeCoinPop {
       0%   { transform: rotateY(0deg) translateY(0px) scale(1); opacity: 1; }
       40%  { transform: rotateY(540deg) translateY(-70px) scale(1.1); opacity: 1; }
@@ -54,7 +69,7 @@
         </div>
         <canvas id="menu-ronke-canvas" width="160" height="180" style="position:absolute;right:474px;top:50px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
         <canvas id="menu-skull-canvas" width="210" height="230" style="position:absolute;left:940px;top:75px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
-        <img id="menu-goldbag" src="assets/goldbag_g_idle.png" style="position:absolute;left:calc(50% + 225px);transform:translateX(-50%);top:112px;width:149px;height:149px;image-rendering:pixelated;pointer-events:auto;z-index:2;filter:drop-shadow(0 0 10px #ffcc00);cursor:pointer;transition:filter 0.15s,transform 0.15s;" onmouseenter="this.style.filter='drop-shadow(0 0 24px #ffe066) drop-shadow(0 0 8px #fff)';this.style.transform='translateX(-50%) scale(1.12)';" onmouseleave="this.style.filter='drop-shadow(0 0 10px #ffcc00)';this.style.transform='translateX(-50%) scale(1)';" />
+        <canvas id="menu-goldbag" width="149" height="149" style="position:absolute;left:calc(50% + 225px);transform:translateX(-50%);top:112px;image-rendering:pixelated;pointer-events:auto;z-index:2;cursor:pointer;transition:filter 0.15s,transform 0.15s;filter:drop-shadow(0 0 10px #ffcc00);"></canvas>
 
         <div class="menu-grid">
           <div class="menu-main-panel">

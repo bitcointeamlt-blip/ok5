@@ -16141,42 +16141,56 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Goldbag click → spinning Ronke coin popup (uses $ronke2.png spritesheet)
+// Landing page spinning Ronke coin (menu-goldbag canvas)
 (function() {
-  const bag = document.getElementById('menu-goldbag');
-  if (!bag) return;
+  const cv = document.getElementById('menu-goldbag');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
   const coinImg = new Image(); coinImg.src = 'assets_tiny/$ronke2.png';
   const FRAMES = 8, FW = 640, FH = 640, FPS = 8;
+  let visible = true;
 
-  function spawnCoin(x, y, delay) {
-    setTimeout(() => {
-      const cv = document.createElement('canvas');
-      cv.width = 80; cv.height = 80;
-      const spread = (Math.random() - 0.5) * 70;
-      cv.style.cssText = `position:fixed;left:${x - 40 + spread}px;top:${y - 40}px;pointer-events:none;z-index:9999;image-rendering:pixelated;filter:drop-shadow(0 0 6px #ffcc00);`;
-      document.body.appendChild(cv);
-      const ctx = cv.getContext('2d');
-      const startT = performance.now();
-      const DURATION = 1400;
-      function draw(t) {
-        const elapsed = t - startT;
-        if (elapsed > DURATION) { cv.remove(); return; }
-        requestAnimationFrame(draw);
-        const frame = Math.floor(elapsed / (1000 / FPS)) % FRAMES;
-        const progress = elapsed / DURATION;
-        cv.style.top = (y - 40 - 120 * progress) + 'px';
-        cv.style.opacity = progress > 0.6 ? String(1 - (progress - 0.6) / 0.4) : '1';
-        ctx.clearRect(0, 0, 80, 80);
-        if (coinImg.complete && coinImg.naturalWidth) {
-          ctx.drawImage(coinImg, frame * FW, 0, FW, FH, 0, 0, 80, 80);
-        }
-      }
-      requestAnimationFrame(draw);
-    }, delay);
+  // Animate coin on canvas
+  function tick(t) {
+    requestAnimationFrame(tick);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    if (!visible || !coinImg.complete || !coinImg.naturalWidth) return;
+    const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
+    ctx.drawImage(coinImg, frame * FW, 0, FW, FH, 0, 0, cv.width, cv.height);
   }
+  requestAnimationFrame(tick);
 
-  bag.addEventListener('click', function(e) {
-    for (let i = 0; i < 3; i++) spawnCoin(e.clientX, e.clientY, i * 120);
+  // Hover glow
+  cv.addEventListener('mouseenter', () => {
+    cv.style.filter = 'drop-shadow(0 0 20px #ffe066) drop-shadow(0 0 8px #fff)';
+    cv.style.transform = 'translateX(-50%) scale(1.1)';
+  });
+  cv.addEventListener('mouseleave', () => {
+    cv.style.filter = 'drop-shadow(0 0 10px #ffcc00)';
+    cv.style.transform = 'translateX(-50%) scale(1)';
+  });
+
+  // Click: pick up coin
+  cv.addEventListener('click', function(e) {
+    if (!visible) return;
+    visible = false;
+    cv.style.opacity = '0';
+    cv.style.transition = 'opacity 0.2s';
+
+    // +1 $Ronke text popup
+    const txt = document.createElement('div');
+    txt.className = 'ronke-pickup-text';
+    txt.textContent = '+1 $RONKE';
+    txt.style.left = (e.clientX - 50) + 'px';
+    txt.style.top  = (e.clientY - 20) + 'px';
+    document.body.appendChild(txt);
+    setTimeout(() => txt.remove(), 1300);
+
+    // Respawn after 4s
+    setTimeout(() => {
+      visible = true;
+      cv.style.opacity = '1';
+    }, 4000);
   });
 })();
 
