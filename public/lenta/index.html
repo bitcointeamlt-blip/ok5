@@ -11,6 +11,23 @@
     href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&family=Syncopate:wght@400;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <style>
+    @keyframes ronkeCoinPop {
+      0%   { transform: rotateY(0deg) translateY(0px) scale(1); opacity: 1; }
+      40%  { transform: rotateY(540deg) translateY(-70px) scale(1.1); opacity: 1; }
+      100% { transform: rotateY(1080deg) translateY(-120px) scale(0.7); opacity: 0; }
+    }
+    .ronke-coin-popup {
+      position: fixed;
+      width: 80px;
+      height: 74px;
+      image-rendering: pixelated;
+      pointer-events: none;
+      z-index: 9999;
+      animation: ronkeCoinPop 1.4s ease-out forwards;
+      filter: drop-shadow(0 0 8px #ffcc00);
+    }
+  </style>
 </head>
 
 <body>

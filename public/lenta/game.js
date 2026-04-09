@@ -16141,6 +16141,27 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
+// Goldbag click → spinning Ronke coin popup
+(function() {
+  const bag = document.getElementById('menu-goldbag');
+  if (!bag) return;
+  bag.addEventListener('click', function(e) {
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        const coin = document.createElement('img');
+        coin.src = 'assets_tiny/$ronke.png';
+        coin.className = 'ronke-coin-popup';
+        const spread = (Math.random() - 0.5) * 60;
+        coin.style.left = (e.clientX - 40 + spread) + 'px';
+        coin.style.top  = (e.clientY - 40) + 'px';
+        coin.style.animationDelay = (i * 0.12) + 's';
+        document.body.appendChild(coin);
+        setTimeout(() => coin.remove(), 1600);
+      }, 0);
+    }
+  });
+})();
+
 let _floorIntro = null;
 
 function triggerFloorIntro(floor) {
