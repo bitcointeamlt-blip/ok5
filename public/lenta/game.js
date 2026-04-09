@@ -7531,13 +7531,10 @@ function drawTeleports() {
 }
 
 function spawnLoot(x, y) {
-  // fragment 60% | xptoken 20% | goldbag 20%
+  // goldbag 70% | ronke 30%
   const roll = Math.random();
-  let type, val = 1;
-  if      (roll < 0.60) type = 'fragment';
-  else if (roll < 0.80) type = 'xptoken';
-  else                 { type = 'goldbag'; val = 1; }
-  S.loot.push({ x, y, type, val, collected: false, age: 0, ...(type === 'goldbag' ? { spawnT: performance.now() } : {}) });
+  const type = roll < 0.70 ? 'goldbag' : 'ronke';
+  S.loot.push({ x, y, type, val: 1, collected: false, age: 0, spawnT: performance.now() });
 }
 
 function spawnRonkeDrop(x, y) {
@@ -7553,11 +7550,9 @@ function spawnLockedBox(x, y) {
   // gem 15% | ronke 15% | byte 25% | fragment 30% | xptoken 15%
   const roll = Math.random();
   let prize;
-  if      (roll < 0.15) prize = { type: 'gem',      val: 1 };
-  else if (roll < 0.30) prize = { type: 'ronke',    val: 1 };
-  else if (roll < 0.55) prize = { type: 'goldbag',  val: 2 };
-  else if (roll < 0.85) prize = { type: 'fragment', val: 1 };
-  else                  prize = { type: 'xptoken',  val: 1 };
+  if      (roll < 0.25) prize = { type: 'gem',     val: 1 };
+  else if (roll < 0.55) prize = { type: 'ronke',   val: 1 };
+  else                  prize = { type: 'goldbag',  val: 2 };
 
   if (Math.random() < 0.5) {
     // 50% — tiesioginis dropas
@@ -7602,15 +7597,7 @@ function drawLoot() {
     ctx.save();
     if (l.type === 'fragment') {
       // Broken chip fragment - 3D spinning cracked shard
-      const phase = l.x * 1.3 + l.y * 0.7;
-      const t = now * 0.0016 + phase;
-      const pulse = 0.75 + 0.25 * Math.sin(now * 0.006 + phase);
-      ctx.shadowColor = 'rgba(255,136,0,0.35)'; ctx.shadowBlur = 2.2 * pulse;
-      ctx.save();
-      ctx.translate(cx, cy + float);
-      drawCubeFragment(ctx, 5, t, pulse);
-      ctx.restore();
-    } else if (l.type === 'ronke') {
+    if (l.type === 'ronke') {
       const pulse = 0.75 + 0.25 * Math.sin(now * 0.0035 + l.x * 0.9 + l.y * 0.6);
       // Animate: 8 frames, ~120ms each
       const frameIdx = Math.floor(now / 120) % _R2TOK_FRAMES;
@@ -7659,27 +7646,6 @@ function drawLoot() {
       ctx.shadowColor = '#44ff66'; ctx.shadowBlur = 12 * gemPulse;
       const gw = 42, gh = 37;
       ctx.drawImage(gemImg, -gw / 2, -gh / 2, gw, gh);
-      ctx.restore();
-    } else if (l.type === 'xptoken') {
-      // XP Token - 3D spinning pixel-art "XP" (same as inventory animation)
-      const phase = l.x * 0.9 + l.y * 0.4;
-      const angle = now * 0.0016 + phase;
-      const cosA = Math.cos(angle);
-      const isFront = cosA >= 0;
-      const pulse = 0.7 + 0.3 * Math.sin(now * 0.0022 + phase);
-      ctx.save();
-      ctx.translate(cx, cy + float);
-      ctx.scale(cosA, 1);
-      if (isFront) {
-        ctx.shadowColor = '#00ffcc';
-        ctx.shadowBlur = 5 * pulse;
-        ctx.globalAlpha = 0.85 + 0.15 * pulse;
-        drawXpPixelArt(ctx, 0, 0, 2, '#00ffcc');
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
-      } else {
-        drawXpPixelArt(ctx, 0, 0, 2, '#003d2e');
-      }
       ctx.restore();
     } else if (l.type === 'lockedBox') {
       const active = !!l.activated;
@@ -8285,20 +8251,7 @@ function resolveTick() {
         if (on) {
           l.collected = true;
           SFX.pickup();
-          if (l.type === 'fragment') {
-            S.fragments = (S.fragments || 0) + l.val;
-            syncFragmentSlot();
-            logEvent(`+${l.val} CHIP FRAGMENT${l.val > 1 ? 'S' : ''}`, 'fragment');
-            spawnPickupFX(l.x, l.y, '#ff8800');
-            spawnDmgNumber(l.x, l.y, `+${l.val} FRAG`, '#ffaa22', 14, 'normal');
-            checkFragmentCombine(l.x, l.y);
-          } else if (l.type === 'xptoken') {
-            S.xpTokens = (S.xpTokens || 0) + l.val;
-            syncXpTokenSlot();
-            logEvent(`+${l.val} XP TOKEN`, 'xp');
-            spawnPickupFX(l.x, l.y, '#00ffcc');
-            spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
-          } else if (l.type === 'goldbag') {
+          if (l.type === 'goldbag') {
             const gain = l.val || 3;
             addToInventory('goldbag', null, gain);
             updateInventoryUI();
