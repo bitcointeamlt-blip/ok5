@@ -16057,7 +16057,7 @@ function _agentExecute(action, hero) {
       const hfw = healImg.naturalWidth / H_FRAMES, hfh = healImg.naturalHeight;
       const hframe = Math.floor(elapsed / (1000 / H_FPS));
       if (hframe < H_FRAMES) {
-        const hs = cv.width / hfw;
+        const hs = (cv.width * 1.7) / hfw;
         const hdw = hfw * hs, hdh = hfh * hs;
         const hx = (cv.width - hdw) / 2;
         const hy = cv.height - hdh;
