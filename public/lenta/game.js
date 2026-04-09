@@ -16043,7 +16043,7 @@ function _agentExecute(action, hero) {
     const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
     const x = (cv.width - dw) / 2;
     ctx2.clearRect(0, 0, cv.width, cv.height);
-    ctx2.drawImage(img, frame * fw, 0, fw, fh, x, cv.height - dh, dw, dh);
+    ctx2.drawImage(img, frame * fw, 0, fw, fh, x, 0, dw, dh);
   }
   requestAnimationFrame(tick);
 })();
