@@ -134,18 +134,18 @@
 
         <!-- Header -->
         <div class="hub-header">
-          <div class="hub-title">TERMINAL</div>
-          <div class="hub-subtitle">OPERATOR BASE / UPGRADE / DEPLOY</div>
+          <div class="hub-title">THE KEEP</div>
+          <div class="hub-subtitle">REST · UPGRADE · VENTURE FORTH</div>
         </div>
 
         <!-- Stats bar -->
         <div class="hub-stats-bar">
           <div class="hub-stat-item">
-            <span class="hub-stat-label">MAX VOLTS</span>
+            <span class="hub-stat-label">MAX ENERGY</span>
             <span class="hub-stat-val cyan" id="hub-energy">100</span>
           </div>
           <div class="hub-stat-item">
-            <span class="hub-stat-label">TOP SECTOR</span>
+            <span class="hub-stat-label">DEEPEST FLOOR</span>
             <span class="hub-stat-val green" id="hub-sector">1</span>
           </div>
         </div>
@@ -155,18 +155,18 @@
 
           <!-- Upgrade Terminal -->
           <div class="hub-panel">
-            <div class="panel-header">TERMINAL</div>
+            <div class="panel-header">UPGRADE HALL</div>
             <div class="upgrades-list">
               <div class="upgrade-card volt-card" id="volts-upg-card">
                 <div class="upg-scan-bar"></div>
                 <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
-                  <span class="volt-name">VOLT CELL</span>
+                  <span class="volt-name">ENDURANCE</span>
                   <span class="upg-arrow">v</span>
                   <span class="volt-lvl-badge">LVL&nbsp;<span id="lvl-energy">0</span></span>
                 </div>
                 <div class="volt-stats">
                   <div class="volt-stat-row">
-                    <span class="volt-stat-lbl">MAX VOLTS</span>
+                    <span class="volt-stat-lbl">MAX ENERGY</span>
                     <span class="volt-stat-val" id="hub-energy-card">100</span>
                   </div>
                   <div class="volt-stat-row">
@@ -178,7 +178,7 @@
                     <span class="volt-stat-val"><span id="volts-cost-display"></span></span>
                   </div>
                 </div>
-                <button class="btn-volt-install" onclick="attemptTerminalUpgrade()">INSTALL</button>
+                <button class="btn-volt-install" onclick="attemptTerminalUpgrade()">FORGE</button>
                 <div class="upg-status" id="volts-status"></div>
               </div>
 
@@ -475,7 +475,7 @@
 
         <!-- P1 Panel -->
         <div class="side-panel left-panel" id="panel-p1">
-          <div class="panel-name cyan" id="p1-badge">PLAYER 1</div>
+          <div class="panel-name cyan" id="p1-badge">HERO</div>
           <div class="panel-controls dim">W A S D / SPACE</div>
 
           <div class="unit-list">
@@ -674,11 +674,11 @@
             <span class="inv-btn-label">INVENTORY</span>
           </button>
           <button id="btn-open-hub" class="panel-hub-btn" onclick="toggleHubOverlay()" style="display:none;"
-            title="Upgrade Terminal">TERMINAL</button>
+            title="Upgrade Terminal">THE KEEP</button>
 
           <!-- Run Keys (adventure only) -->
           <div id="panel-runkeys">
-            <div class="prk-label">PULSE</div>
+            <div class="prk-label">VITALITY</div>
             <div class="prk-pips" id="panel-key-pips">♥♥♥♡♡</div>
             <div class="prk-timer" id="panel-key-timer">FULL</div>
           </div>
@@ -688,7 +688,7 @@
           <!-- Map Scan Widget (adventure only) -->
           <div id="map-scan-widget">
             <div class="msw-top">
-              <span class="msw-title">MAP SCAN</span>
+              <span class="msw-title">DUNGEON MAP</span>
               <span class="msw-badge" id="msw-badge">SCANNING</span>
             </div>
             <div class="msw-pct-row">
@@ -720,7 +720,7 @@
         <!-- Canvas + Energy HUD -->
         <div class="center-col">
           <div class="energy-hud" id="energy-hud">
-            <span class="energy-hud-label">VOLTS</span>
+            <span class="energy-hud-label">ENERGY</span>
             <div class="energy-track">
               <div class="energy-fill nrg-high" id="energy-fill"></div>
             </div>
@@ -1119,8 +1119,8 @@
 
         <!-- Adv Combat Log Panel -->
         <div class="side-panel right-panel" id="panel-log" style="display: none;">
-          <div class="panel-name cyan">TERMINAL</div>
-          <div class="panel-controls dim">REAL-TIME LOGS</div>
+          <div class="panel-name cyan">COMBAT LOG</div>
+          <div class="panel-controls dim">DUNGEON EVENTS</div>
           <div class="log-container" id="combat-log"></div>
         </div>
 
@@ -1138,20 +1138,20 @@
       <!-- HUB OVERLAY (appears in-game after death) -->
       <div id="hub-overlay">
         <div class="hub-ov-panel">
-          <div class="hub-ov-title">TERMINAL</div>
+          <div class="hub-ov-title">THE FORGE</div>
 
 
           <div class="hub-ov-upgrades">
             <div class="upgrade-card volt-card" id="hov-volts-card">
               <div class="upg-scan-bar"></div>
               <div class="volt-header" onclick="toggleUpgradeCard(this.closest('.upgrade-card'))">
-                <span class="volt-name">VOLT CELL</span>
+                <span class="volt-name">ENDURANCE</span>
                 <span class="upg-arrow">v</span>
                 <span class="volt-lvl-badge">LVL&nbsp;<span id="hov-lvl-energy">0</span></span>
               </div>
               <div class="volt-stats">
                 <div class="volt-stat-row">
-                  <span class="volt-stat-lbl">MAX VOLTS</span>
+                  <span class="volt-stat-lbl">MAX ENERGY</span>
                   <span class="volt-stat-val" id="hov-energy-card">100</span>
                 </div>
                 <div class="volt-stat-row">
@@ -1163,7 +1163,7 @@
                   <span class="volt-stat-val"><span id="hov-ig-cost-display"></span></span>
                 </div>
               </div>
-              <button class="btn-volt-install" onclick="attemptInGameUpgrade()">INSTALL</button>
+              <button class="btn-volt-install" onclick="attemptInGameUpgrade()">FORGE</button>
               <div class="upg-status" id="hov-volts-status"></div>
             </div>
 

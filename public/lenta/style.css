@@ -1086,6 +1086,13 @@ kbd {
    GAME SCREEN
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 #screen-game {
+  /* remap --cyan → amber for game screen */
+  --cyan:      #c8973a;
+  --cyan-dim:  rgba(190, 130, 20, 0.45);
+  --cyan-glow: rgba(180, 115, 15, 0.22);
+  --text:      #c4aa82;
+  --dim:       #7a6040;
+
   flex-direction: column;
   justify-content: center;
   gap: 0;
@@ -1131,13 +1138,13 @@ kbd {
 
   0%,
   100% {
-    box-shadow: inset 0 0 10px rgba(0, 255, 238, 0.03);
-    border-color: rgba(0, 255, 238, 0.22);
+    box-shadow: inset 0 0 10px rgba(200, 140, 20, 0.04);
+    border-color: rgba(190, 120, 15, 0.30);
   }
 
   50% {
-    box-shadow: inset 0 0 22px rgba(0, 255, 238, 0.09);
-    border-color: rgba(0, 255, 238, 0.55);
+    box-shadow: inset 0 0 22px rgba(200, 140, 20, 0.12);
+    border-color: rgba(210, 150, 25, 0.65);
   }
 }
 
@@ -1173,12 +1180,12 @@ kbd {
 
 /* Adventure mode styling for side panels */
 .adv-mode .side-panel {
-  background: rgba(4, 6, 14, 0.8) !important;
+  background: rgba(14, 9, 3, 0.88) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(0, 255, 238, 0.25) !important;
+  border: 1px solid rgba(160, 90, 12, 0.35) !important;
   border-radius: 6px;
-  box-shadow: inset 0 0 25px rgba(0, 255, 238, 0.08), 0 10px 40px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 255, 238, 0.2) !important;
+  box-shadow: inset 0 0 25px rgba(160, 90, 10, 0.07), 0 10px 40px rgba(0, 0, 0, 0.95), 0 0 10px rgba(180, 110, 10, 0.18) !important;
   position: relative;
 }
 
@@ -2523,10 +2530,10 @@ kbd {
   align-items: center;
   gap: 10px;
   padding: 5px 10px;
-  background: rgba(2, 2, 8, 0.75);
+  background: rgba(12, 7, 2, 0.85);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  border: 2px solid rgba(30, 30, 68, 0.7);
+  border: 2px solid rgba(130, 72, 8, 0.60);
   border-bottom: none;
   font-family: var(--font);
   transition: border-color 0.25s;
@@ -2538,11 +2545,11 @@ kbd {
   border-color: rgba(255, 34, 68, 0.6);
 }
 
-/* "NRG" tag */
+/* "ENERGY" tag */
 .energy-hud-label {
   font-size: 9px;
   letter-spacing: 2px;
-  color: #445566;
+  color: #7a5e38;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -4819,10 +4826,17 @@ kbd {
 
 /* Hub and HUD polish */
 #screen-hub {
+  /* remap --cyan → amber for entire hub screen */
+  --cyan:      #d4a843;
+  --cyan-dim:  rgba(200, 140, 20, 0.45);
+  --cyan-glow: rgba(200, 130, 15, 0.20);
+  --text:      #c4aa82;
+  --dim:       #7a6040;
+
   padding: 28px 20px 36px;
   background:
-    radial-gradient(circle at top, rgba(0, 255, 136, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(2, 10, 6, 0.92), rgba(5, 10, 14, 0.96));
+    radial-gradient(circle at top, rgba(160, 90, 10, 0.10), transparent 38%),
+    linear-gradient(180deg, rgba(8, 5, 2, 0.97), rgba(12, 7, 3, 0.99));
 }
 
 .hub-room {
@@ -4833,11 +4847,11 @@ kbd {
 .hub-header {
   width: 100%;
   padding: 18px 20px 16px;
-  border: 1px solid rgba(31, 111, 70, 0.68);
+  border: 1px solid rgba(140, 80, 10, 0.65);
   background:
-    linear-gradient(180deg, rgba(2, 20, 10, 0.86), rgba(7, 13, 16, 0.9)),
-    radial-gradient(circle at top left, rgba(0, 255, 136, 0.1), transparent 38%);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
+    linear-gradient(180deg, rgba(20, 12, 4, 0.90), rgba(10, 6, 2, 0.94)),
+    radial-gradient(circle at top left, rgba(180, 100, 10, 0.12), transparent 42%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
 }
 
 .hub-title {
@@ -4848,16 +4862,16 @@ kbd {
 .hub-subtitle {
   font-size: 8px;
   letter-spacing: 2px;
-  color: #8eac99;
+  color: #8a6e48;
 }
 
 .hub-stats-bar {
   width: 100%;
   max-width: 860px;
   justify-content: center;
-  background: rgba(4, 14, 10, 0.9);
-  border: 1px solid rgba(31, 111, 70, 0.6);
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
+  background: rgba(14, 9, 3, 0.92);
+  border: 1px solid rgba(120, 68, 8, 0.58);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.50);
 }
 
 .hub-stat-item {
@@ -4868,7 +4882,7 @@ kbd {
 
 .hub-stat-label {
   font-size: 8px;
-  color: #73937e;
+  color: #7a5e38;
   letter-spacing: 2px;
 }
 
