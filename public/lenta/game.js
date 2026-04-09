@@ -1439,16 +1439,11 @@ function drawMiniByte(canvas) {
   }
 }
 
-function getRonkeUpgradeCount() {
-  return S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0;
-}
+function getRonkeUpgradeCount() { return S.bytes || 0; }
 function spendUpgradeRonke(n) {
   if (!n || n <= 0) return;
-  const slot = S.inventory?.find(s => s && s.type === 'ronke');
-  if (!slot) return;
-  slot.qty = Math.max(0, slot.qty - n);
-  if (slot.qty <= 0) { const idx = S.inventory.indexOf(slot); if (idx >= 0) S.inventory[idx] = null; }
-  if (S.inventoryOpen) updateInventoryUI();
+  S.bytes = Math.max(0, (S.bytes || 0) - n);
+  syncByteSlot();
 }
 
 function renderCostIcons(containerId, cost, type, haveFn) {
@@ -8314,13 +8309,12 @@ function resolveTick() {
             spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
           } else if (l.type === 'goldbag') {
             const gain = l.val || 3;
-            const _oldE = S.energy || 0;
-            S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + gain);
-            animateEnergyGain(_oldE, S.energy);
+            S.bytes = (S.bytes || 0) + gain;
+            syncByteSlot();
             spawnPickupFX(l.x, l.y, '#ffcc00');
-            spawnDmgNumber(l.x, l.y, `+${gain}⚡`, '#ffdd44', 16, 'crit');
+            spawnDmgNumber(l.x, l.y, `+${gain} RONKE`, '#ffee00', 16, 'crit');
             SFX.play(880, 0.12, 0.08, 'sine', 200);
-            logEvent(`+${gain}⚡ gold bag collected`, 'loot');
+            logEvent(`+${gain} RONKE collected`, 'loot');
           } else if (l.type === 'ronke') {
             addToInventory('ronke', null, 1);
             if (S.inventoryOpen) updateInventoryUI();
