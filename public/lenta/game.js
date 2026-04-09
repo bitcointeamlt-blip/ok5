@@ -9750,6 +9750,7 @@ function loop(now) {
           startAIThinking();
           setTimeout(aiQueueAction, 1000 + Math.random() * 4000);
         }
+        if (gameMode === 'adventure') heroAgentNotify();
       }
     }
   }
@@ -15649,3 +15650,241 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize 3D offscreen renderer
   initThreeJS();
 });
+
+// ================================================================
+// HERO AI AGENT — Claude Haiku autonomous hero controller
+// ================================================================
+
+const _agent = {
+  enabled: false,
+  thinking: false,
+  apiKey: localStorage.getItem('_agentKey') || '',
+  speed: 500, // ms pause between agent ticks (UX breathing room)
+};
+
+window._agentToggle = function() {
+  _agent.enabled = !_agent.enabled;
+  const btn = document.getElementById('agent-btn');
+  const panel = document.getElementById('agent-panel');
+  if (btn) {
+    btn.textContent = _agent.enabled ? 'AI: ON' : 'AI: OFF';
+    btn.style.background = _agent.enabled ? '#00e87a' : '#1a1a2e';
+    btn.style.color = _agent.enabled ? '#000' : '#556';
+    btn.style.borderColor = _agent.enabled ? '#00e87a' : '#334';
+  }
+  if (panel) panel.classList.toggle('agent-active', _agent.enabled);
+  if (_agent.enabled) _agentLog('Agent online. Observing...', '#0f8');
+};
+
+window._agentSaveKey = function() {
+  const inp = document.getElementById('agent-key-input');
+  if (!inp) return;
+  _agent.apiKey = inp.value.trim();
+  localStorage.setItem('_agentKey', _agent.apiKey);
+  _agentLog('API key saved.', '#0f8');
+};
+
+// Init key input from localStorage on load
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('agent-key-input');
+  if (inp && _agent.apiKey) inp.value = _agent.apiKey;
+});
+
+function _agentLog(msg, color) {
+  const el = document.getElementById('agent-log');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.style.color = color || '#4df';
+  line.textContent = msg;
+  el.insertBefore(line, el.firstChild);
+  while (el.children.length > 8) el.removeChild(el.lastChild);
+}
+
+function _agentStatus(msg, color) {
+  const el = document.getElementById('agent-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = color || '#aaa';
+}
+
+function heroAgentNotify() {
+  if (!_agent.enabled || _agent.thinking) return;
+  if (!S || S.phase !== 'frozen' || S.pendingGameover) return;
+  if (gameMode !== 'adventure') return;
+  setTimeout(heroAgentDecide, _agent.speed);
+}
+
+async function heroAgentDecide() {
+  if (!_agent.enabled || _agent.thinking) return;
+  if (!S || S.phase !== 'frozen' || S.pendingGameover || S.pending[0]) return;
+  if (gameMode !== 'adventure') return;
+
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+
+  if (!_agent.apiKey) {
+    _agentLog('No API key — enter key above', '#f66');
+    _agentStatus('no key', '#f66');
+    return;
+  }
+
+  _agent.thinking = true;
+  _agentStatus('thinking...', '#ff0');
+
+  const stateJson = _agentBuildState(hero);
+
+  try {
+    const action = await _agentCallClaude(stateJson);
+    if (action && S && S.phase === 'frozen' && !S.pending[0]) {
+      _agentExecute(action, hero);
+    }
+  } catch (e) {
+    _agentLog('ERR: ' + e.message.slice(0, 60), '#f44');
+    _agentStatus('error', '#f44');
+  }
+
+  _agent.thinking = false;
+  _agentStatus('idle', '#0f8');
+}
+
+function _agentBuildState(hero) {
+  const R = 7;
+  const mapLines = [];
+  for (let ry = -R; ry <= R; ry++) {
+    let row = '';
+    for (let rx = -R; rx <= R; rx++) {
+      const wx = hero.x + rx, wy = hero.y + ry;
+      if (rx === 0 && ry === 0) { row += 'H'; continue; }
+      if (wx < 0 || wx >= COLS || wy < 0 || wy >= ROWS) { row += '#'; continue; }
+      if (!S.fog || !S.fog[wy] || !S.fog[wy][wx]) { row += '?'; continue; }
+      if (isWall(wx, wy)) { row += '#'; continue; }
+      const en = S.units.find(u => u.alive && u.team !== 0 && u.x === wx && u.y === wy);
+      if (en) { row += (en.utype || 'e')[0]; continue; }
+      row += '.';
+    }
+    mapLines.push(row);
+  }
+
+  const enemies = S.units
+    .filter(u => u.alive && u.team !== 0 && S.fog && S.fog[u.y]?.[u.x])
+    .map(u => ({
+      t: u.utype || '?',
+      dx: u.x - hero.x,
+      dy: u.y - hero.y,
+      dist: Math.abs(u.x - hero.x) + Math.abs(u.y - hero.y),
+      hp: u.hp
+    }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 6);
+
+  const adjacentEnemy = enemies.some(e => e.dist === 1);
+  const weapon = getCurrentWeapon(hero);
+
+  // find nearest unexplored fog direction
+  let fogDir = null;
+  const dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+  for (const d of dirs) {
+    for (let s = 1; s <= 6; s++) {
+      const fx = hero.x + d.dx * s, fy = hero.y + d.dy * s;
+      if (fx < 0 || fx >= COLS || fy < 0 || fy >= ROWS || isWall(fx, fy)) break;
+      if (S.fog && !S.fog[fy][fx]) { fogDir = d; break; }
+    }
+    if (fogDir) break;
+  }
+
+  return JSON.stringify({
+    map: mapLines.join('\n'),
+    hero: { hp: hero.hp, maxHp: hero.maxHp, energy: S.energy, weapon },
+    enemies,
+    adjacentEnemy,
+    fogDir,
+  });
+}
+
+const _AGENT_SYSTEM = `You control the hero (H) in a pixel dungeon game. Each turn pick one action.
+Map: H=you, .=floor, #=wall, ?=unexplored, letter=enemy first char (s=spider, sh=shaman, t=troll, i=idol, b=bird...).
+ACTIONS (respond with ONLY JSON, no markdown):
+  {"action":"move","dx":1,"dy":0,"thought":"reason"}   — move 1 step (costs 1 energy)
+  {"action":"shoot","dx":1,"dy":0,"thought":"reason"}  — shoot that direction (costs 2 energy, range 5)
+dx/dy: 1=right/down, -1=left/up, 0=no change. Diagonal ok.
+RULES:
+- Cannot shoot if adjacentEnemy=true (enemy directly next to you).
+- Shooting at empty space is wasted energy.
+- Explore ?=fog to find more rooms and enemies.
+- Kill enemies for energy. Retreat if hp low.
+- fogDir hints toward nearest unexplored area.
+One JSON object only. No extra text.`;
+
+async function _agentCallClaude(stateJson) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': _agent.apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      system: _AGENT_SYSTEM,
+      messages: [{ role: 'user', content: stateJson }]
+    })
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(resp.status + ' ' + txt.slice(0, 60));
+  }
+
+  const data = await resp.json();
+  const text = data.content?.[0]?.text || '';
+  const match = text.match(/\{[\s\S]*?\}/);
+  if (!match) throw new Error('bad response: ' + text.slice(0, 40));
+
+  const action = JSON.parse(match[0]);
+  const thought = action.thought || '...';
+  const desc = action.action + (action.dx !== undefined ? `(${action.dx},${action.dy})` : '');
+  _agentLog(`${desc} — ${thought}`, '#4df');
+  return action;
+}
+
+function _agentExecute(action, hero) {
+  if (!S || S.phase !== 'frozen' || S.pending[0]) return;
+
+  if (action.action === 'move') {
+    let dx = Math.round(action.dx || 0);
+    let dy = Math.round(action.dy || 0);
+    // clamp to -1..1
+    dx = Math.max(-1, Math.min(1, dx));
+    dy = Math.max(-1, Math.min(1, dy));
+    if (dx === 0 && dy === 0) dx = 1; // fallback
+    S.pending[0] = { unitId: hero.id, t: 'move', dx, dy };
+    setActionBadge(0, S.pending[0]);
+    aiQueueAction(false);
+    resolveTick();
+
+  } else if (action.action === 'shoot') {
+    let dx = Math.round(action.dx || 0);
+    let dy = Math.round(action.dy || 0);
+    dx = Math.max(-1, Math.min(1, dx));
+    dy = Math.max(-1, Math.min(1, dy));
+    if (dx === 0 && dy === 0) dx = hero.facing?.dx || 1;
+    // Set aim directly on hero
+    hero.aimDir = { dx, dy };
+    hero.facing = { dx, dy };
+    S.pending[0] = { unitId: hero.id, t: 'shoot' };
+    setActionBadge(0, S.pending[0]);
+    aiQueueAction(false);
+    resolveTick();
+
+  } else {
+    // "wait" or unknown — move in facing direction (blocked = no-op, tick still advances)
+    const dx = hero.facing?.dx || 1;
+    const dy = hero.facing?.dy || 0;
+    S.pending[0] = { unitId: hero.id, t: 'move', dx, dy };
+    setActionBadge(0, S.pending[0]);
+    aiQueueAction(false);
+    resolveTick();
+  }
+}
