@@ -2515,6 +2515,9 @@ const HERO_WALK_FRAMES = {
 };
 const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
+const goldbagSpawnImg = new Image(); goldbagSpawnImg.src = 'assets/goldbag_spawn.png';
+const goldbagIdleImg  = new Image(); goldbagIdleImg.src  = 'assets/goldbag_idle.png';
+const GOLDBAG_SPAWN_FRAMES = 7, GOLDBAG_FW = 128, GOLDBAG_FH = 128;
 const sparkleBulletImg = new Image(); sparkleBulletImg.src = 'assets/sparkle_bullet.png';
 const SPARKLE_FRAMES = 14, SPARKLE_FW = 32, SPARKLE_FH = 32;
 const bulletOrbImg = new Image(); bulletOrbImg.src = 'assets/bullet_orb.png';
@@ -7521,9 +7524,12 @@ function spawnLoot(x, y) {
 }
 
 function spawnRonkeDrop(x, y) {
-  // 50% chance — reward drop after killing an enemy (test rate)
+  // 50% chance — ronke token drop
   if (Math.random() < 0.5) {
     S.loot.push({ x, y, type: 'ronke', val: 1, collected: false, age: 0 });
+  } else {
+    // No token — spawn gold bag (energy reward)
+    S.loot.push({ x, y, type: 'goldbag', val: 3, collected: false, age: 0, spawnT: performance.now() });
   }
 }
 
@@ -7630,6 +7636,30 @@ function drawLoot() {
         ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
       }
       ctx.shadowBlur = 0;
+      ctx.restore();
+    } else if (l.type === 'goldbag') {
+      const _SPAWN_DUR = 700; // ms for 7-frame spawn anim
+      const age = now - (l.spawnT || now);
+      const sz = CELL * 1.1;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      if (age < _SPAWN_DUR) {
+        // spawn animation
+        const frame = Math.min(GOLDBAG_SPAWN_FRAMES - 1, Math.floor(age / _SPAWN_DUR * GOLDBAG_SPAWN_FRAMES));
+        if (goldbagSpawnImg.complete && goldbagSpawnImg.naturalWidth > 0) {
+          ctx.drawImage(goldbagSpawnImg, frame * GOLDBAG_FW, 0, GOLDBAG_FW, GOLDBAG_FH,
+            cx - sz / 2, cy - sz / 2, sz, sz);
+        }
+      } else {
+        // idle — gentle float
+        const _idleFloat = Math.sin(now * 0.003 + l.x * 0.7) * 3;
+        const _pulse = 0.7 + 0.3 * Math.sin(now * 0.004 + l.x);
+        ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 10 * _pulse;
+        if (goldbagIdleImg.complete && goldbagIdleImg.naturalWidth > 0) {
+          ctx.drawImage(goldbagIdleImg, 0, 0, GOLDBAG_FW, GOLDBAG_FH,
+            cx - sz / 2, cy - sz / 2 + _idleFloat, sz, sz);
+        }
+      }
       ctx.restore();
     } else if (l.type === 'gem') {
       const gemPulse = 0.7 + 0.3 * Math.sin(now * 0.004 + l.x * 1.1 + l.y * 0.7);
@@ -8277,6 +8307,15 @@ function resolveTick() {
             logEvent(`+${l.val} XP TOKEN`, 'xp');
             spawnPickupFX(l.x, l.y, '#00ffcc');
             spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
+          } else if (l.type === 'goldbag') {
+            const gain = l.val || 3;
+            const _oldE = S.energy || 0;
+            S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + gain);
+            animateEnergyGain(_oldE, S.energy);
+            spawnPickupFX(l.x, l.y, '#ffcc00');
+            spawnDmgNumber(l.x, l.y, `+${gain}⚡`, '#ffdd44', 16, 'crit');
+            SFX.play(880, 0.12, 0.08, 'sine', 200);
+            logEvent(`+${gain}⚡ gold bag collected`, 'loot');
           } else if (l.type === 'ronke') {
             addToInventory('ronke', null, 1);
             if (S.inventoryOpen) updateInventoryUI();
