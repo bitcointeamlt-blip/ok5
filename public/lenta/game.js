@@ -4244,7 +4244,8 @@ function initAdventure() {
   S.inventory = (Array.isArray(Profile.inventory) && Profile.inventory.length > 0)
     ? Profile.inventory.map(x => x ? { ...x } : null)
     : new Array(INV_SLOTS).fill(null);
-  { const _b = S.inventory.find(s => s && s.type === 'byte'); S.bytes = _b ? _b.qty : 0; }
+  S.bytes = 0;
+  { const _bi = S.inventory?.findIndex(s => s && s.type === 'byte'); if (_bi >= 0) S.inventory[_bi] = null; }
   { const _f = S.inventory.find(s => s && s.type === 'fragment'); S.fragments = _f ? _f.qty : 0; }
   { const _x = S.inventory.find(s => s && s.type === 'xptoken'); S.xpTokens = _x ? _x.qty : 0; }
   S.kills = 0;
@@ -5302,7 +5303,7 @@ function updateInventoryUI() {
       } else if (item.type === 'goldbag') {
         const gi = document.createElement('img');
         gi.src = 'assets/goldbag_idle.png';
-        gi.style.cssText = 'width:64px;height:64px;object-fit:contain;display:block;margin:auto;margin-top:4px;image-rendering:pixelated;filter:drop-shadow(0 0 8px #ffcc00)';
+        gi.style.cssText = 'width:88px;height:88px;object-fit:contain;display:block;margin:auto;margin-top:0px;image-rendering:pixelated;filter:drop-shadow(0 0 8px #ffcc00)';
         slot.appendChild(gi);
       } else if (item.type === 'gem') {
         const gi = document.createElement('img');
@@ -7529,14 +7530,13 @@ function drawTeleports() {
 }
 
 function spawnLoot(x, y) {
-  // Always exactly one drop: byte 40% | fragment 40% | xptoken 20%
-  // ronke and gem drop only from locked boxes
+  // fragment 60% | xptoken 20% | goldbag 20%
   const roll = Math.random();
-  let type;
-  if      (roll < 0.40) type = 'byte';
-  else if (roll < 0.80) type = 'fragment';
-  else                  type = 'xptoken';
-  S.loot.push({ x, y, type, val: 1, collected: false, age: 0 });
+  let type, val = 1;
+  if      (roll < 0.60) type = 'fragment';
+  else if (roll < 0.80) type = 'xptoken';
+  else                 { type = 'goldbag'; val = 1; }
+  S.loot.push({ x, y, type, val, collected: false, age: 0, ...(type === 'goldbag' ? { spawnT: performance.now() } : {}) });
 }
 
 function spawnRonkeDrop(x, y) {
@@ -7554,7 +7554,7 @@ function spawnLockedBox(x, y) {
   let prize;
   if      (roll < 0.15) prize = { type: 'gem',      val: 1 };
   else if (roll < 0.30) prize = { type: 'ronke',    val: 1 };
-  else if (roll < 0.55) prize = { type: 'byte',     val: 1 };
+  else if (roll < 0.55) prize = { type: 'goldbag',  val: 2 };
   else if (roll < 0.85) prize = { type: 'fragment', val: 1 };
   else                  prize = { type: 'xptoken',  val: 1 };
 
@@ -7599,30 +7599,7 @@ function drawLoot() {
     const cx = (l.x + 0.5) * CELL, cy = (l.y + 0.5) * CELL;
     const float = Math.sin(now * 0.005) * 4;
     ctx.save();
-    if (l.type === 'byte') {
-      // BYTE drop - Mario-style spinning coin: squash X axis with cos to simulate 3D rotation
-      const spinPhase = now * 0.004;
-      const spinX = Math.abs(Math.cos(spinPhase)); // 0..1
-      const coinR = 9;
-      const xR = Math.max(0.8, coinR * spinX); // never fully flat so outline stays visible
-      const yR = coinR;
-      const bright = spinX > 0.5; // front face vs edge-on
-      ctx.shadowColor = '#ffee00'; ctx.shadowBlur = 6;
-      ctx.save();
-      ctx.translate(cx, cy + float);
-      // back-face darker shading
-      ctx.fillStyle = bright ? '#ffcc00' : '#cc8800';
-      ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.fill();
-      // shine highlight on left side when facing front
-      if (spinX > 0.3) {
-        ctx.fillStyle = 'rgba(255,255,180,0.55)';
-        ctx.beginPath(); ctx.ellipse(-xR * 0.28, -yR * 0.25, xR * 0.32, yR * 0.45, 0, 0, Math.PI * 2); ctx.fill();
-      }
-      // rim outline
-      ctx.strokeStyle = bright ? '#ffee00' : '#aa6600'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(0, 0, xR, yR, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-    } else if (l.type === 'fragment') {
+    if (l.type === 'fragment') {
       // Broken chip fragment - 3D spinning cracked shard
       const phase = l.x * 1.3 + l.y * 0.7;
       const t = now * 0.0016 + phase;
@@ -8344,11 +8321,7 @@ function resolveTick() {
             spawnPickupFX(l.x, l.y, '#44ff66');
             spawnDmgNumber(l.x, l.y, `+${gemGain}⚡`, '#44ff88', 16, 'crit');
           } else {
-            S.bytes = (S.bytes || 0) + l.val;
-            syncByteSlot();
-            logEvent(`+${l.val} BYTE`, 'byte');
-            spawnPickupFX(l.x, l.y, '#ffee00');
-            spawnDmgNumber(l.x, l.y, `+${l.val} BYTE`, '#ffee00', 16, 'normal');
+            // unknown loot type — ignore
           }
         }
       }
