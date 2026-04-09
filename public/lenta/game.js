@@ -15658,7 +15658,6 @@ document.addEventListener('DOMContentLoaded', () => {
 const _agent = {
   enabled: false,
   thinking: false,
-  apiKey: localStorage.getItem('_agentKey') || '',
   speed: 500, // ms pause between agent ticks (UX breathing room)
 };
 
@@ -15675,20 +15674,6 @@ window._agentToggle = function() {
   if (panel) panel.classList.toggle('agent-active', _agent.enabled);
   if (_agent.enabled) _agentLog('Agent online. Observing...', '#0f8');
 };
-
-window._agentSaveKey = function() {
-  const inp = document.getElementById('agent-key-input');
-  if (!inp) return;
-  _agent.apiKey = inp.value.trim();
-  localStorage.setItem('_agentKey', _agent.apiKey);
-  _agentLog('API key saved.', '#0f8');
-};
-
-// Init key input from localStorage on load
-document.addEventListener('DOMContentLoaded', () => {
-  const inp = document.getElementById('agent-key-input');
-  if (inp && _agent.apiKey) inp.value = _agent.apiKey;
-});
 
 function _agentLog(msg, color) {
   const el = document.getElementById('agent-log');
@@ -15721,12 +15706,6 @@ async function heroAgentDecide() {
 
   const hero = S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
-
-  if (!_agent.apiKey) {
-    _agentLog('No API key — enter key above', '#f66');
-    _agentStatus('no key', '#f66');
-    return;
-  }
 
   _agent.thinking = true;
   _agentStatus('thinking...', '#ff0');
@@ -15816,14 +15795,9 @@ RULES:
 One JSON object only. No extra text.`;
 
 async function _agentCallClaude(stateJson) {
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch('/.netlify/functions/agent', {
     method: 'POST',
-    headers: {
-      'x-api-key': _agent.apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 120,

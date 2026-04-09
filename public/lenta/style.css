@@ -6958,34 +6958,6 @@ kbd {
   transition: all 0.15s;
 }
 #agent-btn:hover { border-color: #00e87a; color: #0f8; }
-.agent-key-row {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-#agent-key-input {
-  flex: 1;
-  background: #0c0c18;
-  border: 1px solid #223;
-  border-radius: 3px;
-  color: #6af;
-  font-family: monospace;
-  font-size: 9px;
-  padding: 3px 5px;
-  min-width: 0;
-}
-#agent-key-input:focus { outline: none; border-color: #446; }
-.agent-save-btn {
-  background: #112;
-  color: #446;
-  border: 1px solid #223;
-  border-radius: 3px;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  padding: 3px 5px;
-  cursor: pointer;
-}
-.agent-save-btn:hover { border-color: #6af; color: #6af; }
 .agent-status-row {
   color: #334;
   font-size: 7px;
