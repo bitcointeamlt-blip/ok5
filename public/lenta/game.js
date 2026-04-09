@@ -8684,9 +8684,7 @@ function applySingleAction(team, a) {
         const cells = laserCells(unit.x, unit.y, sd.dx, sd.dy);
         S.lasers.push({
           id: Math.random(), owner: team, ox: unit.x, oy: unit.y,
-          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2,
-          fireAt: (unit.team === 0 && gameMode === 'adventure') ? performance.now() + 1000 : null,
-          color: unit.color, active: true
+          dx: sd.dx, dy: sd.dy, cells, chargeLeft: gameMode === 'adventure' ? 1 : 2, color: unit.color, active: true
         });
       } else if (wep === 'heavy') {
         unit.heavyAmmo--;
@@ -9453,7 +9451,6 @@ function laserCells(ox, oy, dx, dy) {
 function advanceLasers() {
   S.lasers.forEach(laser => {
     if (!laser.active) return;
-    if (laser.fireAt && performance.now() < laser.fireAt) return;
     laser.chargeLeft--;
     if (laser.chargeLeft <= 0) {
       for (const cell of laser.cells) {
@@ -10013,7 +10010,7 @@ function drawLasers() {
     }
 
     // (Blinking squares and crosshairs removed per user request)
-    const sx = (laser.ox + laser.dx + 0.5) * CELL, sy = (laser.oy + laser.dy + 0.5) * CELL;
+    const sx = (laser.ox + 0.5) * CELL, sy = (laser.oy + 0.5) * CELL;
     const last = laser.cells[laser.cells.length - 1];
     const ex = (last.x + 0.5) * CELL, ey = (last.y + 0.5) * CELL;
 
