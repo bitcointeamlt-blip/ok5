@@ -7640,7 +7640,7 @@ function drawLoot() {
     } else if (l.type === 'goldbag') {
       const _SPAWN_DUR = 700; // ms for 7-frame spawn anim
       const age = now - (l.spawnT || now);
-      const sz = CELL * 1.1;
+      const sz = CELL * 1.7;
       ctx.save();
       ctx.imageSmoothingEnabled = false;
       if (age < _SPAWN_DUR) {
@@ -7651,13 +7651,12 @@ function drawLoot() {
             cx - sz / 2, cy - sz / 2, sz, sz);
         }
       } else {
-        // idle — gentle float
-        const _idleFloat = Math.sin(now * 0.003 + l.x * 0.7) * 3;
+        // idle — no float, heavy bag stays on ground
         const _pulse = 0.7 + 0.3 * Math.sin(now * 0.004 + l.x);
         ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 10 * _pulse;
         if (goldbagIdleImg.complete && goldbagIdleImg.naturalWidth > 0) {
           ctx.drawImage(goldbagIdleImg, 0, 0, GOLDBAG_FW, GOLDBAG_FH,
-            cx - sz / 2, cy - sz / 2 + _idleFloat, sz, sz);
+            cx - sz / 2, cy - sz / 2, sz, sz);
         }
       }
       ctx.restore();
