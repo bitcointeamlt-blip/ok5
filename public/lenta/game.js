@@ -7601,8 +7601,6 @@ function drawLoot() {
     const float = Math.sin(now * 0.005) * 4;
     ctx.save();
     if (l.type === 'fragment') {
-      // Broken chip fragment - 3D spinning cracked shard
-    if (l.type === 'fragment') {
       const phase = l.x * 1.3 + l.y * 0.7;
       const t = now * 0.0016 + phase;
       const pulse = 0.75 + 0.25 * Math.sin(now * 0.006 + phase);
