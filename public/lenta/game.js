@@ -16070,26 +16070,35 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Menu skull animation (patrol: every 10s moves 150px right then returns)
+// Menu skull animation (patrol: every 10s moves 150px right then returns; guard: every 4s)
 (function() {
   const cv = document.getElementById('menu-skull-canvas');
   if (!cv) return;
   const ctx2 = cv.getContext('2d');
-  const idleImg = new Image(); idleImg.src = 'assets_tiny/Skull_Idle.png';
-  const runImg  = new Image(); runImg.src  = 'assets_tiny/Skull_Run.png';
-  const IDLE_FRAMES = 8, IDLE_FPS = 6;
-  const RUN_FRAMES = 6,  RUN_FPS  = 8;
+  const idleImg  = new Image(); idleImg.src  = 'assets_tiny/Skull_Idle.png';
+  const runImg   = new Image(); runImg.src   = 'assets_tiny/Skull_Run.png';
+  const guardImg = new Image(); guardImg.src = 'assets_tiny/Skull_Guard.png';
+  const IDLE_FRAMES  = 8, IDLE_FPS  = 6;
+  const RUN_FRAMES   = 6, RUN_FPS   = 8;
+  const GUARD_FRAMES = 7, GUARD_FPS = 8;
   const BASE_LEFT = 940, PATROL_DIST = 150, PATROL_SPEED = 80;
   let state = 'idle', offsetX = 0, stateStart = null, facingRight = false;
 
+  // Patrol every 10s
   setInterval(() => {
     if (state === 'idle') { state = 'going'; stateStart = null; facingRight = true; }
   }, 10000);
 
+  // Guard every 4s (only when idle)
+  setInterval(() => {
+    if (state === 'idle') { state = 'guarding'; stateStart = null; }
+  }, 4000);
+
   function drawFrame(t) {
-    const img    = state === 'idle' ? idleImg : runImg;
-    const frames = state === 'idle' ? IDLE_FRAMES : RUN_FRAMES;
-    const fps    = state === 'idle' ? IDLE_FPS    : RUN_FPS;
+    let img, frames, fps;
+    if (state === 'guarding') { img = guardImg; frames = GUARD_FRAMES; fps = GUARD_FPS; }
+    else if (state === 'going' || state === 'returning') { img = runImg; frames = RUN_FRAMES; fps = RUN_FPS; }
+    else { img = idleImg; frames = IDLE_FRAMES; fps = IDLE_FPS; }
     if (!img.complete || !img.naturalWidth) return;
     const fw = img.naturalWidth / frames, fh = img.naturalHeight;
     const scale = cv.height / fh;
@@ -16109,8 +16118,14 @@ function _agentExecute(action, hero) {
 
   function tick(t) {
     requestAnimationFrame(tick);
-    if (state !== 'idle') {
-      if (stateStart === null) stateStart = t;
+    if (stateStart === null && state !== 'idle') stateStart = t;
+
+    if (state === 'guarding') {
+      const elapsed = t - stateStart;
+      if (elapsed >= (GUARD_FRAMES / GUARD_FPS) * 1000) {
+        state = 'idle'; stateStart = null;
+      }
+    } else if (state === 'going' || state === 'returning') {
       const moved = ((t - stateStart) / 1000) * PATROL_SPEED;
       if (state === 'going') {
         offsetX = Math.min(moved, PATROL_DIST);
