@@ -21,66 +21,63 @@
       <div class="menu-wrap">
         <div class="menu-hero">
           <div class="menu-status-row">
-            <span class="menu-chip">NEURAL LINK ACTIVE</span>
-            <span class="menu-chip dim">LOCAL SESSION</span>
+            <span class="menu-chip">⚔ DUNGEON ONLINE</span>
+            <span class="menu-chip dim">ROGUELITE</span>
           </div>
 
           <div class="title-block">
             <div class="title-main">TIMELOCK</div>
-            <div class="title-sub">MAINFRAME</div>
+            <div class="title-sub">DUNGEON</div>
           </div>
 
           <div class="tagline">
-            <p>Time pulses only with your data.</p>
-            <p class="dim">Turn-based cyber tactics where every move advances the whole board.</p>
+            <p>Time freezes. Tactics decide.</p>
+            <p class="dim">Turn-based dungeon crawler — every move advances enemies, bullets and board together.</p>
           </div>
         </div>
 
         <div class="menu-grid">
           <div class="menu-main-panel">
             <div class="menu-panel-head">
-              <span class="menu-panel-kicker">DEPLOYMENT</span>
-              <span class="menu-panel-title">Choose your entry point</span>
+              <span class="menu-panel-kicker">CHOOSE YOUR PATH</span>
+              <span class="menu-panel-title">Where do you venture?</span>
             </div>
 
             <div class="mode-select">
               <button id="btn-adv" type="button" class="mode-card mode-card-adv pulse"
                 onclick="window.SFX&&SFX.init(); window.loadProfile&&loadProfile(); window.updateRunKeyUI&&updateRunKeyUI(); document.getElementById('screen-menu').classList.remove('active'); document.getElementById('screen-hub').classList.add('active'); window.BGM&&BGM.start('hub');">
                 <span class="mode-card-top">
-                  <span class="mode-card-label">ROGUELITE RUN</span>
-                  <span class="mode-card-badge">MAIN MODE</span>
+                  <span class="mode-card-label">SOLO ADVENTURE</span>
+                  <span class="mode-card-badge">MAIN</span>
                 </span>
-                <span class="mode-card-title">MAINFRAME</span>
-                <span class="mode-card-desc">Push through sectors, collect loot, upgrade your operator and survive the
-                  deep net.</span>
-                <span class="mode-card-meta">Solo adventure - progression - unlocks</span>
-                <span class="mode-card-cta">Enter the terminal</span>
+                <span class="mode-card-title">DUNGEON</span>
+                <span class="mode-card-desc">Descend through procedural floors, slay monsters, collect gold and power up your warrior. Each run is unique.</span>
+                <span class="mode-card-meta">Roguelite · progression · unlocks</span>
+                <span class="mode-card-cta">Enter the dungeon</span>
               </button>
 
               <button id="btn-1p" type="button" class="mode-card mode-card-pve"
                 onclick="window.SFX&&SFX.init(); window.startGame&&startGame('pve');">
                 <span class="mode-card-top">
-                  <span class="mode-card-label">TACTICAL SKIRMISH</span>
+                  <span class="mode-card-label">TACTICAL ARENA</span>
                   <span class="mode-card-badge">PVE</span>
                 </span>
                 <span class="mode-card-title">1 PLAYER</span>
-                <span class="mode-card-desc">Command a 3-unit squad against CPU enemies on a fixed arena with
-                  frozen-time tactics.</span>
-                <span class="mode-card-meta">Solo match - versus CPU - quick start</span>
-                <span class="mode-card-cta">Start PvE match</span>
+                <span class="mode-card-desc">Command a squad of three warriors against AI enemies on a fixed arena. Frozen-time tactics.</span>
+                <span class="mode-card-meta">Solo · versus CPU · quick match</span>
+                <span class="mode-card-cta">Start match</span>
               </button>
 
               <button id="btn-2p" type="button" class="mode-card mode-card-pvp"
                 onclick="window.SFX&&SFX.init(); window.startGame&&startGame('pvp');">
                 <span class="mode-card-top">
-                  <span class="mode-card-label">LOCAL VERSUS</span>
+                  <span class="mode-card-label">LOCAL DUEL</span>
                   <span class="mode-card-badge">PVP</span>
                 </span>
                 <span class="mode-card-title">2 PLAYERS</span>
-                <span class="mode-card-desc">Two players share one keyboard and resolve turns on the same board in local
-                  head-to-head combat.</span>
-                <span class="mode-card-meta">Local multiplayer - shared keyboard - duel</span>
-                <span class="mode-card-cta">Start PvP match</span>
+                <span class="mode-card-desc">Two players share one keyboard and battle on the same board in turn-based head-to-head combat.</span>
+                <span class="mode-card-meta">Local · shared keyboard · duel</span>
+                <span class="mode-card-cta">Start duel</span>
               </button>
             </div>
           </div>
@@ -88,16 +85,16 @@
           <div class="menu-side-stack">
             <div class="menu-panel controls-card">
               <div class="menu-panel-head">
-                <span class="menu-panel-kicker">INPUT MAP</span>
+                <span class="menu-panel-kicker">CONTROLS</span>
                 <span class="menu-panel-title">Control layout</span>
               </div>
               <div class="controls-dual">
                 <div class="ctrl-player">
                   <div class="ctrl-label cyan">PLAYER 1</div>
                   <div class="ctrl-rows">
-                    <div class="ctrl-row"><kbd>CLICK</kbd><span>Select unit</span></div>
+                    <div class="ctrl-row"><kbd>CLICK</kbd><span>Select / aim</span></div>
                     <div class="ctrl-row"><kbd>W A S D</kbd><span>Move</span></div>
-                    <div class="ctrl-row"><kbd>SPACE</kbd><span>Shoot / confirm</span></div>
+                    <div class="ctrl-row"><kbd>SPACE</kbd><span>Shoot</span></div>
                     <div class="ctrl-row"><kbd>Q</kbd><span>Switch weapon</span></div>
                   </div>
                 </div>
@@ -116,18 +113,14 @@
 
             <div class="menu-panel mechanics-card">
               <div class="menu-panel-head">
-                <span class="menu-panel-kicker">SYSTEM RULES</span>
-                <span class="menu-panel-title">How the board behaves</span>
+                <span class="menu-panel-kicker">RULES</span>
+                <span class="menu-panel-title">How combat works</span>
               </div>
               <div class="mech-grid">
-                <div class="mech-item"><span class="mech-icon">FREEZE</span><span>No input, no movement. Time freezes
-                    until you act.</span></div>
-                <div class="mech-item"><span class="mech-icon">SYNC</span><span>One action advances bullets, enemies and
-                    board state together.</span></div>
-                <div class="mech-item"><span class="mech-icon">AIM</span><span>Mouse aim matters. Positioning decides
-                    lines of fire and survival.</span></div>
-                <div class="mech-item"><span class="mech-icon">SQUAD</span><span>Manage three units in versus modes, or
-                    one persistent operator in MAINFRAME.</span></div>
+                <div class="mech-item"><span class="mech-icon">FREEZE</span><span>No action, no movement. Time stops until you decide.</span></div>
+                <div class="mech-item"><span class="mech-icon">SYNC</span><span>One move advances bullets, monsters and the entire board.</span></div>
+                <div class="mech-item"><span class="mech-icon">AIM</span><span>Click to aim. Positioning and angle decide life or death.</span></div>
+                <div class="mech-item"><span class="mech-icon">SQUAD</span><span>One hero in dungeon. Three warriors in arena modes.</span></div>
               </div>
             </div>
           </div>

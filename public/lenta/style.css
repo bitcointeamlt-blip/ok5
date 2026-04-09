@@ -7003,3 +7003,172 @@ kbd {
   color: #4df;
   word-break: break-word;
 }
+
+/* ============================================================
+   DUNGEON THEME — Main Menu overrides
+   Palette: dark stone bg · amber/gold borders · parchment text
+   ============================================================ */
+
+/* Page background: dark cave */
+#screen-menu {
+  background:
+    radial-gradient(ellipse at top, rgba(80, 40, 5, 0.18), transparent 55%),
+    linear-gradient(180deg, rgba(8, 5, 3, 1) 0%, rgba(12, 8, 4, 1) 100%);
+}
+
+/* Outer wrap: stone-wall card */
+#screen-menu .menu-wrap {
+  background:
+    linear-gradient(180deg, rgba(18, 11, 5, 0.96), rgba(10, 7, 3, 0.98)),
+    radial-gradient(circle at top right, rgba(200, 120, 20, 0.10), transparent 45%);
+  border-color: rgba(160, 90, 15, 0.70);
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(220, 160, 50, 0.07);
+}
+
+/* Hero banner: torchlit stone */
+#screen-menu .menu-hero {
+  background:
+    linear-gradient(135deg, rgba(22, 12, 4, 0.92), rgba(10, 7, 3, 0.88)),
+    radial-gradient(circle at top left, rgba(200, 110, 10, 0.18), transparent 48%);
+  border-color: rgba(140, 75, 10, 0.55);
+}
+
+/* Hero scan-line: subtle amber grid instead of green */
+#screen-menu .menu-hero::after {
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 48%, transparent 52%),
+    repeating-linear-gradient(90deg, rgba(200, 130, 20, 0.07) 0 1px, transparent 1px 54px);
+  opacity: 0.30;
+}
+
+/* Status chips: amber tone */
+#screen-menu .menu-chip {
+  border-color: rgba(210, 140, 20, 0.40);
+  background: rgba(210, 140, 20, 0.09);
+  color: #d4a843;
+}
+
+#screen-menu .menu-chip.dim {
+  color: #a08862;
+  border-color: rgba(160, 136, 98, 0.28);
+  background: rgba(160, 136, 98, 0.07);
+}
+
+/* Title: parchment white */
+#screen-menu .title-main {
+  color: #e8d5b0;
+}
+
+#screen-menu .title-sub {
+  color: #9a7a52;
+}
+
+#screen-menu .tagline p {
+  color: #b09070;
+}
+
+#screen-menu .tagline p.dim {
+  color: #7a6248;
+}
+
+/* Panels: dark stone */
+#screen-menu .menu-main-panel,
+#screen-menu .menu-panel {
+  border-color: rgba(120, 68, 10, 0.60);
+  background:
+    linear-gradient(180deg, rgba(16, 10, 4, 0.92), rgba(10, 6, 2, 0.96)),
+    radial-gradient(circle at top, rgba(180, 100, 10, 0.07), transparent 48%);
+  box-shadow:
+    inset 0 0 0 1px rgba(200, 140, 40, 0.05),
+    0 18px 44px rgba(0, 0, 0, 0.50);
+}
+
+#screen-menu .menu-panel-kicker {
+  color: #7a5e38;
+}
+
+#screen-menu .menu-panel-title {
+  color: #d8c49a;
+}
+
+/* Mode cards: stone base */
+#screen-menu .mode-card {
+  border-color: rgba(100, 58, 8, 0.75);
+  background:
+    linear-gradient(180deg, rgba(18, 11, 4, 0.97), rgba(10, 6, 2, 0.99)),
+    radial-gradient(circle at top, rgba(170, 90, 10, 0.08), transparent 42%);
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.70);
+  color: #c4aa82;
+}
+
+#screen-menu .mode-card::before {
+  background:
+    linear-gradient(135deg, rgba(255,220,120,0.04), transparent 45%),
+    repeating-linear-gradient(0deg, rgba(255,200,80,0.025) 0 1px, transparent 1px 44px);
+}
+
+#screen-menu .mode-card:hover {
+  box-shadow: 14px 14px 0 rgba(0, 0, 0, 0.55);
+}
+
+#screen-menu .mode-card-label {
+  color: #7a6040;
+}
+
+#screen-menu .mode-card-desc {
+  color: #9a8060;
+}
+
+#screen-menu .mode-card-meta {
+  color: #6a5035;
+}
+
+#screen-menu .mode-card-cta {
+  border-top-color: rgba(180, 120, 30, 0.20);
+}
+
+/* Adventure card: gold accent (unchanged — already amber) */
+#screen-menu .mode-card-adv {
+  border-color: rgba(220, 150, 20, 0.75);
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.70), inset 0 0 0 1px rgba(220,150,20,0.12);
+}
+
+#screen-menu .mode-card-adv:hover {
+  box-shadow: 16px 16px 0 rgba(0,0,0,0.55), 0 0 28px rgba(220,150,20,0.25);
+}
+
+/* PVE card: steel blue instead of neon green */
+#screen-menu .mode-card-pve .mode-card-badge,
+#screen-menu .mode-card-pve .mode-card-title,
+#screen-menu .mode-card-pve .mode-card-cta {
+  color: #7ab8d0;
+}
+
+#screen-menu .mode-card-pve:hover {
+  border-color: rgba(100, 170, 210, 0.72);
+  box-shadow: 16px 16px 0 rgba(0,0,0,0.55), 0 0 22px rgba(80,150,200,0.18);
+}
+
+/* PVP card: blood red (keep existing, just darken) */
+#screen-menu .mode-card-pvp:hover {
+  box-shadow: 16px 16px 0 rgba(0,0,0,0.55), 0 0 22px rgba(200,50,70,0.22);
+}
+
+/* Controls / Mechanics panels */
+#screen-menu .ctrl-row {
+  border-bottom-color: rgba(180, 120, 30, 0.12);
+}
+
+#screen-menu .mech-item {
+  border-bottom-color: rgba(180, 120, 30, 0.12);
+}
+
+/* kbd keys in dungeon theme */
+#screen-menu kbd {
+  background: rgba(30, 18, 6, 0.90);
+  border-color: rgba(140, 90, 20, 0.60);
+  color: #c4a060;
+}
+
