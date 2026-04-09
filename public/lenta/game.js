@@ -2515,6 +2515,14 @@ const HERO_WALK_FRAMES = {
 };
 const heroImgs = {};
 const gemImg = new Image(); gemImg.src = 'pix.png';
+const sparkleBulletImg = new Image(); sparkleBulletImg.src = 'assets/sparkle_bullet.png';
+const SPARKLE_FRAMES = 14, SPARKLE_FW = 32, SPARKLE_FH = 32;
+const bulletOrbImg = new Image(); bulletOrbImg.src = 'assets/bullet_orb.png';
+const BULLET_ORB_FRAMES = 10, BULLET_ORB_FW = 48, BULLET_ORB_FH = 48;
+const dust01Img = new Image(); dust01Img.src = 'assets/dust01.png';
+const DUST01_FRAMES = 8, DUST01_FW = 64, DUST01_FH = 64;
+const explosion01Img = new Image(); explosion01Img.src = 'assets/explosion01.png';
+const EXP01_FRAMES = 8, EXP01_FW = 192, EXP01_FH = 192;
 const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 const ronkeTokenImg = new Image(); ronkeTokenImg.src = 'assets_tiny/$ronke.png';
 const ronke2TokenImg = new Image(); ronke2TokenImg.src = 'assets_tiny/$ronke2.png';
@@ -2547,9 +2555,9 @@ const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Wate
 
 // ---- Custom Maps -------------------------------------------------------
 // Floor 1
-window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[5,5,5,5,5,5,5,5,5,5,5,5,5],[4,4,4,4,4,4,4,4,4,0,0,4,4]],"decorations":{"3,8":"tileset3_8_3","4,8":"tileset3_8_4","7,4":"deco_13","6,6":"tileset1_1_1","6,5":"tileset1_1_1","6,7":"tileset1_1_1","5,6":"tileset1_1_1","7,6":"tileset1_1_1","1,12":"tileset1_1_1","2,12":"tileset1_1_1","3,12":"tileset1_1_1","3,11":"tileset1_1_1","4,11":"tileset1_1_1","5,11":"tileset1_1_1","5,12":"tileset1_1_1","4,12":"tileset1_1_1","6,12":"tileset1_1_1","7,12":"tileset1_1_1","8,12":"tileset1_1_1","7,10":"tileset1_1_1","7,11":"tileset1_1_1","6,11":"tileset1_1_1","8,11":"tileset1_1_1","1,4":"bush3","5,1":"deco_14","7,2":"deco_15","10,12":"rock4","10,6":"duck","3,2":"bush1"},"collisionBoxes":["7,4","4,8","3,8"],"enemies":[{"type":"minotaur","x":9,"y":0},{"type":"skull","x":8,"y":7},{"type":"spider","x":0,"y":8},{"type":"shaman","x":6,"y":3}],"spawnPos":{"x":9,"y":2},"exitPos":{"x":5,"y":5}};
-// Floor 2
-window.CUSTOM_MAP2 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,0,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"3,8":"tileset3_8_3","4,8":"tileset3_8_4","7,4":"deco_13","6,6":"tileset1_1_1","6,5":"tileset1_1_1","6,7":"tileset1_1_1","5,6":"tileset1_1_1","7,6":"tileset1_1_1","1,12":"tileset1_1_1","2,12":"tileset1_1_1","3,12":"tileset1_1_1","3,11":"tileset1_1_1","4,11":"tileset1_1_1","5,11":"tileset1_1_1","5,12":"tileset1_1_1","4,12":"tileset1_1_1","6,12":"tileset1_1_1","7,12":"tileset1_1_1","8,12":"tileset1_1_1","7,10":"tileset1_1_1","7,11":"tileset1_1_1","6,11":"tileset1_1_1","8,11":"tileset1_1_1","1,4":"bush3","5,1":"deco_14","7,2":"deco_15","10,12":"rock4","10,6":"duck","3,2":"bush1"},"collisionBoxes":["7,4","4,8","3,8"],"enemies":[{"type":"minotaur","x":9,"y":0},{"type":"skull","x":8,"y":7},{"type":"spider","x":0,"y":8},{"type":"shaman","x":6,"y":3}],"spawnPos":{"x":3,"y":1},"exitPos":{"x":5,"y":5}};
+window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"1,0":"tileset3_3_3","0,1":"tileset3_3_3","1,2":"tileset3_3_3","0,3":"tileset3_3_3","1,4":"tileset3_3_3","0,5":"tileset3_3_3","2,1":"tileset3_3_3","2,3":"tileset3_3_3","2,5":"tileset3_3_3","1,6":"tileset3_3_3","0,7":"tileset3_3_3","2,7":"tileset3_3_3","3,0":"tileset3_3_3","3,2":"tileset3_3_3","3,4":"tileset3_3_3","3,6":"tileset3_3_3","3,8":"tileset3_3_3","1,8":"tileset3_3_3","0,9":"tileset3_3_3","2,9":"tileset3_3_3","3,10":"tileset3_3_3","1,10":"tileset3_3_3","0,11":"tileset3_3_3","2,11":"tileset3_3_3","3,12":"tileset3_3_3","1,12":"tileset3_3_3","0,13":"tileset3_3_3","2,13":"tileset3_3_3","4,13":"tileset3_3_3","4,11":"tileset3_3_3","4,9":"tileset3_3_3","4,7":"tileset3_3_3","4,5":"tileset3_3_3","4,3":"tileset3_3_3","4,1":"tileset3_3_3","5,0":"tileset3_3_3","5,2":"tileset3_3_3","5,4":"tileset3_3_3","5,6":"tileset3_3_3","5,8":"tileset3_3_3","5,10":"tileset3_3_3","5,12":"tileset3_3_3","6,13":"tileset3_3_3","6,11":"tileset3_3_3","6,9":"tileset3_3_3","6,7":"tileset3_3_3","6,5":"tileset3_3_3","6,3":"tileset3_3_3","6,1":"tileset3_3_3","7,0":"tileset3_3_3","7,2":"tileset3_3_3","7,4":"tileset3_3_3","7,6":"tileset3_3_3","7,8":"tileset3_3_3","7,10":"tileset3_3_3","7,12":"tileset3_3_3","8,13":"tileset3_3_3","8,11":"tileset3_3_3","8,9":"tileset3_3_3","8,7":"tileset3_3_3","8,5":"tileset3_3_3","8,3":"tileset3_3_3","8,1":"tileset3_3_3","5,5":"bush3","7,7":"bush3","3,9":"bush3","7,1":"bush1","5,1":"bush1","4,8":"deco_15","2,2":"deco_15","8,10":"deco_14","8,4":"deco_03","1,11":"deco_13","9,0":"tileset3_5_3","9,1":"tileset3_6_3","9,2":"tileset3_6_3","10,0":"tileset3_5_4","10,1":"tileset3_6_4","10,2":"tileset3_6_4","9,3":"tileset3_6_3","10,3":"tileset3_6_4","9,4":"tileset3_6_3","10,4":"tileset3_6_4","9,5":"tileset3_6_3","10,5":"tileset3_6_4","9,6":"tileset3_6_3","10,6":"tileset3_6_4","9,7":"tileset3_6_3","10,7":"tileset3_6_4","9,8":"tileset3_6_3","10,8":"tileset3_6_4","9,9":"tileset3_6_3","10,9":"tileset3_6_4","9,10":"tileset3_6_3","10,10":"tileset3_6_4","9,11":"tileset3_6_3","10,11":"tileset3_6_4","9,12":"tileset3_6_3","9,13":"tileset3_6_3","10,12":"tileset3_6_4","10,13":"tileset3_6_4","9,14":"tileset3_7_3","10,14":"tileset3_7_4","7,14":"tileset3_8_3","8,14":"tileset3_8_4","6,14":"tileset3_8_4","5,14":"tileset3_8_3","3,14":"tileset3_8_3","4,14":"tileset3_8_4","1,14":"tileset3_8_3","2,14":"tileset3_8_4","0,14":"deco_06"},"collisionBoxes":["9,0","9,1","9,2","9,3","9,4","9,5","9,6","9,7","9,8","9,9","9,10","9,11","9,12","9,13","9,14","0,14","1,14","2,14","3,14","4,14","5,14","6,14","7,14","8,14"],"enemies":[{"type":"sheep","x":9,"y":7},{"type":"spider","x":7,"y":1},{"type":"spider","x":11,"y":6},{"type":"skull","x":6,"y":7},{"type":"minotaur","x":11,"y":3}],"spawnPos":{"x":3,"y":4},"exitPos":{"x":25,"y":28}};
+// Floor 2 — 30x27 = 810 tiles, plain grass
+window.CUSTOM_MAP2 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
 const duckImg = new Image(); duckImg.src = 'assets_tiny/Deco/rubber_duck.png';
 const deadAnimImg = new Image(); deadAnimImg.src = 'assets_tiny/Dead.png';
 const trollDeadImg = new Image(); trollDeadImg.src = 'animations/troll/Troll_Dead.png';
@@ -4055,6 +4063,7 @@ function mkBullet(owner, x, y, px, py, dx, dy, color, power, maxRange) {
     active: true, newThisTick: true, age: 0,
     power, pierceLeft: power >= 2 ? 1 : 0,
     maxRange: maxRange || 0, cellsTraveled: 0,
+    bornAt: performance.now(),
   };
 }
 
@@ -4193,6 +4202,7 @@ function initAdventure() {
   S.teleportCooldown = 0;
   S.teleportUses = 0;
   S.pendingTeleportSector = false;
+  S._clearedTriggered = false;
   S.jumpFreeCount = (Profile.upgrades?.jumpLevel || 0) >= 2 ? 2 : 1;
   S.jumpMode = false;
   if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 5 ? 6 : _fl >= 4 ? 7 : _fl >= 3 ? 8 : _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
@@ -6267,6 +6277,7 @@ function drawFog() {
         if (d < bDist && d <= 2.5 && !isShadowed(b.rx, b.ry, c, r)) bDist = d;
       }
       for (const g of liveGhosts) {
+        if (g.noVisual) continue; // fog reveal only, no visual glow
         const d = Math.hypot(c - g.x, r - g.y);
         const maxR = g.r || 2.5;
         const normD = d * (2.5 / maxR);
@@ -6335,6 +6346,7 @@ function drawFog() {
 
   // ---- Lingering ghost halos -----------------------------------
   liveGhosts.forEach(g => {
+    if (g.noVisual) return; // fog reveal only, skip visual halo
     const px = (g.x + 0.5) * CELL, py = (g.y + 0.5) * CELL;
     let alpha, radius;
     const maxR = (g.r || 2.5) * CELL;
@@ -7906,6 +7918,7 @@ document.addEventListener('keydown', e => {
   if (S.pendingSlotPrize) return; // slot machine open - block all input
   if (S.cracking) return; // hash cracking in progress - block all input
   if (document.getElementById('card-picker-overlay')) return; // card picker open - block all input
+  if (S.heroShootLock && gameMode === 'adventure') return; // shoot animation in progress
 
   if (S.pendingTeleportSector) {
     if (e.code === 'Escape') window.cancelTeleportUse();
@@ -8050,6 +8063,19 @@ document.addEventListener('keydown', e => {
       if (wep === 'heavy' || wep === 'shotgun') nrgReq = 4;
       if (wep !== 'hack' && S.energy < nrgReq) return;
       if (wep === 'hack' && (S.hackAmmo || 0) <= 0 && S.energy < 10) return;
+      // Bullet: block if ANY enemy is directly adjacent (distance 1, any direction)
+      if (wep === 'bullet') {
+        const _tooClose = S.units.some(u => {
+          if (!u.alive || u.team === 0) return false;
+          return Math.abs(u.x - unit.x) + Math.abs(u.y - unit.y) === 1;
+        });
+        if (_tooClose) {
+          spawnDmgNumber(unit.x, unit.y, 'TOO CLOSE', '#ff4444', 13, 'miss');
+          SFX.play(120, 0.12, 0.08, 'square');
+          S.shake = Math.max(S.shake || 0, 3);
+          return;
+        }
+      }
     } else {
       if (wep === 'bullet' && unit.ammo <= 0) return;
       if (wep === 'laser' && unit.laserAmmo <= 0) return;
@@ -8283,7 +8309,8 @@ function resolveTick() {
     S.bullets.forEach(b => {
       if (!b.active && !b.ghosted) {
         b.ghosted = true;
-        S.lightGhosts.push({ x: b.x, y: b.y, bornTick: S.tick, fadeBorn: null, fadeDur: ANIM_MS * 2 });
+        // noVisual: hero bullet ghosts still reveal fog but don't glow visually
+        S.lightGhosts.push({ x: b.x, y: b.y, bornTick: S.tick, fadeBorn: null, fadeDur: ANIM_MS * 2, noVisual: (b.owner === 0 && b.gunBullet) });
       }
     });
   }
@@ -8578,32 +8605,9 @@ function applySingleAction(team, a) {
         advanceTutorial();
       }
       unit.shootFlash = 1;
+      if (unit.team === 0 && gameMode === 'adventure') { S.heroShootLock = true; S.heroShootLockStart = performance.now(); }
       if (unit.team === 0) unit.swingStart = performance.now();
       if (unit.utype === 'boss01') unit.boss01SpinStart = performance.now();
-
-      // Ronke2 hero: cast orb instead of bullet (hero utype is 'player', not 'ronke2')
-      if (unit.team === 0) {
-        unit.facing = { dx: sd.dx !== 0 ? Math.sign(sd.dx) : (unit.facing?.dx || 1), dy: 0 };
-        const _fireDx = unit.facing.dx;
-        // Energy cost (orb cast = 3)
-        if (gameMode === 'adventure') {
-          S.energy = Math.max(0, S.energy - 3);
-          spawnDmgNumber(unit.x, unit.y, '-3\u26A1', '#ff8800', 14, 'normal');
-        }
-        // Find first enemy in fire direction (same row), max 5 cells
-        let _targetGx = unit.x + _fireDx * 5, _targetGy = unit.y;
-        for (let _i = 1; _i <= 5; _i++) {
-          const _nx = unit.x + _fireDx * _i, _ny = unit.y;
-          if (_nx < 0 || _nx >= COLS || isWall(_nx, _ny)) { _targetGx = unit.x + _fireDx * (_i - 1); break; }
-          const _hit = S.units.find(u => u.team !== 0 && u.alive && u.x === _nx && u.y === _ny);
-          if (_hit) { _targetGx = _nx; _targetGy = _ny; break; }
-          _targetGx = _nx; _targetGy = _ny;
-        }
-        const _fx = unit.x, _fy = unit.y, _tx = _targetGx, _ty = _targetGy, _fd = _fireDx;
-        setTimeout(() => { if (S && S.units) spawnRonke2HeroProjectile(_fx, _fy, _tx, _ty, _fd); }, 600);
-        SFX.play(300, 0.08, 0.12, 'sine');
-        return;
-      }
 
       spawnMuzzle(unit, sd);
 
@@ -8717,12 +8721,17 @@ function applySingleAction(team, a) {
         });
       } else {
         SFX.shoot();
-        unit.ammo--;
-        const bx = unit.x + sd.dx, by = unit.y + sd.dy;
-        const b = mkBullet(team, bx, by, unit.x, unit.y, sd.dx, sd.dy, unit.color);
-        b.gunBullet = true;
-        if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || isWall(bx, by)) b.active = false;
-        S.bullets.push(b);
+        if (!(gameMode === 'adventure' && team === 0)) unit.ammo--;
+        if (gameMode === 'adventure' && team === 0) {
+          const _bx = unit.x, _by = unit.y, _dx = sd.dx, _dy = sd.dy;
+          setTimeout(() => { if (S) spawnHeroBullet(_bx, _by, _dx, _dy, unit); }, 800);
+        } else {
+          const bx = unit.x + sd.dx, by = unit.y + sd.dy;
+          const b = mkBullet(team, bx, by, unit.x, unit.y, sd.dx, sd.dy, unit.color, 1, 0);
+          b.gunBullet = true;
+          if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || isWall(bx, by)) b.active = false;
+          S.bullets.push(b);
+        }
       }
     }
     // Ronke Stronke: advance 1 cell every 3 actions (both shields together)
@@ -8890,23 +8899,21 @@ function moveBullets() {
   S.bullets.forEach(b => {
     if (!b.active || b.newThisTick) return;
     b.px = b.x; b.py = b.y;
-    const bSpd = 1;
 
-    for (let i = 1; i <= bSpd; i++) {
-      const nx = b.px + b.dx * i;
-      const ny = b.py + b.dy * i;
-      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) {
-        b.active = false;
-        spawnHit(nx, ny, b.color, 4);
-        if (gameMode === 'adventure') spawnWallDust(nx, ny, b.dx, b.dy);
-        break;
-      }
+    const nx = b.px + b.dx, ny = b.py + b.dy;
+    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || isWall(nx, ny)) {
+      b.active = false;
+      spawnHit(nx, ny, b.color, 4);
+      if (gameMode === 'adventure') spawnWallDust(nx, ny, b.dx, b.dy);
+    } else {
       b.x = nx; b.y = ny;
     }
 
-    b.cellsTraveled += bSpd;
+    b.cellsTraveled++;
     b.age++;
-    if (b.active && b.maxRange > 0 && b.cellsTraveled >= b.maxRange) b.active = false;
+    if (b.active && b.maxRange > 0 && b.cellsTraveled >= b.maxRange) {
+      b.active = false;
+    }
   });
   S.bullets.forEach(b => { b.newThisTick = false; });
 
@@ -9012,12 +9019,18 @@ function detectCollisions() {
 
   S.bullets.forEach(b => {
     if (!b.active) return;
-    const moved = b.x !== b.px;
+    const moved = b.x !== b.px || b.y !== b.py;
     const midX = b.px + b.dx, midY = b.py + b.dy;
+    const pathSteps = Math.max(Math.abs(b.x - b.px), Math.abs(b.y - b.py));
     S.units.forEach(u => {
       if (!u.alive || b.owner === u.team) return;
-      const hitFinal = b.x === u.x && b.y === u.y;
-      const hitMid = moved && midX === u.x && midY === u.y;
+      // Check all cells along bullet path (supports multi-cell hero bullets)
+      let hitPath = false;
+      for (let _s = 1; _s <= pathSteps; _s++) {
+        if (b.px + b.dx * _s === u.x && b.py + b.dy * _s === u.y) { hitPath = true; break; }
+      }
+      const hitFinal = hitPath || (b.x === u.x && b.y === u.y);
+      const hitMid = moved && !hitPath && midX === u.x && midY === u.y;
       const hitPrev = b.x === u.px && b.y === u.py;
       const hitMidPrev = moved && midX === u.px && midY === u.py;
       let hitWormBody = false;
@@ -9030,6 +9043,10 @@ function detectCollisions() {
       }
       if (hitFinal || hitMid || hitPrev || hitMidPrev || hitWormBody) {
         b.active = false;
+        // Hero bullet: explosion FX at hit position
+        if (b.owner === 0 && b.gunBullet) {
+          _heroBulletDeaths.push({ x: (u.x + 0.5) * CELL + 3, y: (u.y + 0.5) * CELL, born: performance.now() });
+        }
         // Ronke Stronke: bullet hits a shield → destroy that shield, block bullet
         if (S.ronkeShield?.active && u.team === 0 && b.owner !== 0) {
           const alive = S.ronkeShield.alive ?? [true, true];
@@ -9141,7 +9158,7 @@ function detectCollisions() {
                 logEvent(`Target <span style="color:#ffffff">X</span> destroyed.`, 'warn');
                 const _dx1 = u.x, _dy1 = u.y;
                 if (!isPassiveBuffNpc(u)) {
-                  setTimeout(() => { if (S && S.loot) { spawnLockedBox(_dx1, _dy1); spawnRonkeDrop(_dx1, _dy1); } }, _DEAD_TOTAL * _DEAD_MS + 100);
+                  setTimeout(() => { if (S && S.loot) { spawnRonkeDrop(_dx1, _dy1); } }, _DEAD_TOTAL * _DEAD_MS + 100);
                 }
                 S.kills = (S.kills || 0) + 1;
                 trackKill();
@@ -9324,6 +9341,30 @@ function autoSelectAlive() {
 function _updateKillsDisplay() {
   const el = document.getElementById('kills-val');
   if (el) el.textContent = Profile.stats?.totalKills || 0;
+  _checkAllEnemiesCleared();
+}
+
+function _checkAllEnemiesCleared() {
+  if (gameMode !== 'adventure') return;
+  if (!S || S.winner || S._clearedTriggered) return;
+  if (!S.totalEnemies || S.totalEnemies === 0) return;
+  if (S.units && S.units.some(u => isHostileAdventureEnemy(u))) return;
+  S._clearedTriggered = true;
+  setTimeout(() => {
+    SFX.teleport && SFX.teleport();
+    Profile.cache = (Profile.cache || 0) + (S.bytes || 0);
+    if (S.floor > (Profile.highestSector || 0)) Profile.highestSector = S.floor;
+    Profile.inventory = (S.inventory || []).map(x => x ? { ...x } : null);
+    saveProfile();
+    checkAchievements();
+    showCardPicker(() => {
+      S.floor++;
+      initAdventure();
+      playCurrentLevelBGM();
+      updateHUD();
+      updateEnergyHud();
+    });
+  }, 800);
 }
 
 function spawnDmgNumber(gx, gy, text, color, size, type) {
@@ -9422,7 +9463,7 @@ function advanceLasers() {
                   logEvent(`Target <span style="color:#ffffff">X</span> melted.`, 'warn');
                   const _dx2 = hit.x, _dy2 = hit.y;
                   if (!isPassiveBuffNpc(hit)) {
-                    setTimeout(() => { if (S && S.loot) { spawnLockedBox(_dx2, _dy2); spawnRonkeDrop(_dx2, _dy2); } }, _DEAD_TOTAL * _DEAD_MS + 100);
+                    setTimeout(() => { if (S && S.loot) { spawnRonkeDrop(_dx2, _dy2); } }, _DEAD_TOTAL * _DEAD_MS + 100);
                   }
                   S.kills = (S.kills || 0) + 1;
                   trackKill();
@@ -9694,6 +9735,8 @@ function loop(now) {
       tickStart = null;
       S.bullets = S.bullets.filter(b => {
         if (b.active) return true;
+        // Keep inactive hero bullets alive during visual flight
+        if (b._flightStart && (now - b._flightStart) < b._flightDur) return true;
         if (b.deadTicks === undefined) b.deadTicks = 0;
         else b.deadTicks++;
         return b.deadTicks < 2;
@@ -9735,6 +9778,12 @@ function loop(now) {
     if (u.hitFlash > 0) u.hitFlash = Math.max(0, u.hitFlash - dt * 0.006);
     if (u.hitTimer > 0) u.hitTimer = Math.max(0, u.hitTimer - dt);
     if (u.shootFlash > 0) u.shootFlash = Math.max(0, u.shootFlash - dt * 0.009);
+  });
+  // Unlock hero controls after full attack animation ends (800ms)
+  if (S.heroShootLock && gameMode === 'adventure') {
+    if (performance.now() - (S.heroShootLockStart || 0) >= 800) S.heroShootLock = false;
+  }
+  S.units.forEach(u => {
     if (u.collectFlash > 0) u.collectFlash = Math.max(0, u.collectFlash - dt * 0.004);
     if (!u.alive && u.deathT > 0) u.deathT = Math.max(0, u.deathT - dt * 0.0035);
     // Weapon form smooth blend
@@ -9807,7 +9856,7 @@ function loop(now) {
   clearCanvas();
   if (gameMode === 'adventure' && S.cam) {
     updateCamera();
-    ctx.translate(-S.cam.x, -S.cam.y);
+    ctx.translate(-Math.round(S.cam.x), -Math.round(S.cam.y));
   }
   if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); } else drawBoard();
   drawLasers();
@@ -9815,7 +9864,6 @@ function loop(now) {
   drawShootPreview();
   drawShadows();
   drawAimIndicators();
-  drawBullets();
   drawBloodStains();
   drawFootsteps();
   drawParticles();
@@ -9840,11 +9888,13 @@ function loop(now) {
   drawForegroundDecorations();
   drawRonkeInfect();
   drawFog();
+  drawBullets();
+  drawHeroBullets();
+  drawHeroBulletDeaths();
   drawDmgNumbers();
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
-    drawAdvHUD();
     drawWeaponHUD();
   }
   drawScanlines();
@@ -10204,13 +10254,14 @@ function drawBullets() {
   const now = performance.now();
   S.bullets.forEach(b => {
     if (!b.active && b.deadTicks !== undefined) return;
-    let rx = (b.rx + 0.5) * CELL, ry = (b.ry + 0.5) * CELL;
+    let rx = (b.rx + 0.5) * CELL;
+    let ry = (b.ry + 0.5) * CELL;
     const heavy = (b.power || 1) >= 2;
     const spread = b.spread === true;
     const damaged = heavy && b.pierceLeft === 0;
 
-    // Pellet fade-out as it approaches maxRange
-    const rangeAlpha = (b.maxRange > 0)
+    // Pellet fade-out as it approaches maxRange (not for hero orb — always full alpha)
+    const rangeAlpha = (b.maxRange > 0 && b.owner !== 0)
       ? Math.max(0.05, 1 - b.cellsTraveled / b.maxRange)
       : 1;
 
@@ -10321,6 +10372,8 @@ function drawBullets() {
       ctx.shadowBlur = 0; ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.arc(rx, ry, damaged ? 1.8 : 3.5, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
+    } else if (b.owner === 0 && b.gunBullet) {
+      // Hero bullets now use _heroBullets real-time system — skip here
     } else {
       // --- NEW DATA-SHOT (Normal / Shotgun) ---
       ctx.save();
@@ -10612,6 +10665,130 @@ function _spawnRonke2Orb(fromGx, fromGy, toGx, toGy, faceDx, fromTeam) {
   _ronke2OrbFlashes.push({ x: sx, y: sy, born });
 }
 
+// ---- Hero Bullet (real-time, shaman-style) --------------------------------
+
+const _heroBullets = [];
+
+function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
+  const _maxRange = 5;
+  // Pre-scan path: find first enemy or wall
+  let toGx = fromGx, toGy = fromGy, hitEnemy = null, hitStep = 0;
+  for (let s = 1; s <= _maxRange; s++) {
+    const cx = fromGx + dx * s, cy = fromGy + dy * s;
+    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS || isWall(cx, cy)) break;
+    toGx = cx; toGy = cy; hitStep = s;
+    const e = S.units && S.units.find(u => u.alive && u.team !== 0 && u.x === cx && u.y === cy);
+    if (e) { hitEnemy = e; break; }
+  }
+  const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
+  const tx = (toGx  + 0.5) * CELL, ty = (toGy  + 0.5) * CELL;
+  const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
+  const duration = Math.max(200, dist / (CELL * 0.009));
+  const born = performance.now();
+  _heroBullets.push({ sx, sy, tx, ty, born, duration, toGx, toGy, hitEnemy, hitStep, done: false, hit: false });
+}
+
+function drawHeroBullets() {
+  if (!_heroBullets.length) return;
+  if (!bulletOrbImg.complete || !bulletOrbImg.naturalWidth) return;
+  const now = performance.now();
+  const sz = CELL * 0.85;
+  ctx.save();
+  for (let i = _heroBullets.length - 1; i >= 0; i--) {
+    const p = _heroBullets[i];
+    if (p.done) { _heroBullets.splice(i, 1); continue; }
+    const t = Math.min(1, (now - p.born) / p.duration);
+    const cx = p.sx + (p.tx - p.sx) * t;
+    const cy = p.sy + (p.ty - p.sy) * t;
+    const frameIdx = Math.floor((now - p.born) / 60) % BULLET_ORB_FRAMES;
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bulletOrbImg, frameIdx * BULLET_ORB_FW, 0, BULLET_ORB_FW, BULLET_ORB_FH,
+      cx - sz / 2, cy - sz / 2, sz, sz);
+    if (t >= 1 && !p.hit) {
+      p.hit = true; p.done = true;
+      // Sparkle explosion at hit position
+      _heroBulletDeaths.push({ x: p.tx, y: p.ty, born: now });
+      // Reveal small fog area around hit position (radius 2)
+      if (S.fog) {
+        const _now2 = performance.now();
+        for (let _dy = -2; _dy <= 2; _dy++)
+          for (let _dx = -2; _dx <= 2; _dx++) {
+            if (Math.hypot(_dx, _dy) > 2) continue;
+            const _fx = p.toGx + _dx, _fy = p.toGy + _dy;
+            if (_fx < 0 || _fx >= COLS || _fy < 0 || _fy >= ROWS) continue;
+            if (!S.fog[_fy][_fx] && S.fogReveal) S.fogReveal[_fy][_fx] = _now2;
+            S.fog[_fy][_fx] = true;
+          }
+      }
+      // Deal damage if enemy was pre-scanned
+      const eu = p.hitEnemy;
+      if (eu && eu.alive) {
+        // Dodge check
+        if (Math.random() < (eu.dodge !== undefined ? eu.dodge : MISS_CHANCE)) {
+          spawnDmgNumber(eu.x, eu.y, 'MISS', '#88bbff', 13, 'miss');
+          spawnHit(eu.x, eu.y, '#88bbff', 5);
+        } else {
+          const isCrit = Math.random() < getCritChance();
+          const dist = p.hitStep + 1;
+          let baseDmg = dist >= 5 ? 4 : dist >= 4 ? 3 : dist >= 3 ? 2 : 1;
+          const dmg = isCrit ? baseDmg * 2 : baseDmg;
+          if (!stats.hits[0]) stats.hits[0] = 0; stats.hits[0]++;
+          spawnDmgNumber(eu.x, eu.y, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : '#ffffff', isCrit ? 22 : 16, isCrit ? 'crit' : 'normal');
+          spawnHit(eu.x, eu.y, eu.color, isCrit ? 22 : 12);
+          S.shake = Math.max(S.shake || 0, isCrit ? 14 : 9);
+          eu.hp = (eu.hp || 1) - dmg; eu.hitFlash = 1;
+          triggerHitRecovery(eu); noteBossBurstHit(eu, 0); SFX.hit();
+          if (gameMode === 'adventure') logEvent(isCrit ? `CRIT [${getCombatLabel(eu)}]: -${dmg} HP` : `HIT [${getCombatLabel(eu)}]: -${dmg} HP`, isCrit ? 'crit' : 'info');
+          if (eu.hp <= 0) {
+            eu.alive = false; spawnDeath(eu.x, eu.y, eu.color);
+            if (gameMode === 'adventure') {
+              logEvent(`Target <span style="color:#ffffff">X</span> destroyed.`, 'warn');
+              const _dx1 = eu.x, _dy1 = eu.y;
+              if (!isPassiveBuffNpc(eu)) setTimeout(() => { if (S && S.loot) spawnRonkeDrop(_dx1, _dy1); }, _DEAD_TOTAL * _DEAD_MS + 100);
+              S.kills = (S.kills || 0) + 1; trackKill();
+              if (!Profile.stats) Profile.stats = { totalKills: 0 };
+              Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+              saveProfile(); _updateKillsDisplay(); checkAchievements();
+              if (S.bloodStains) S.bloodStains.push(mkBloodStain(eu.x, eu.y));
+              const _brLvl = Profile.upgrades?.bloodRushLevel || 0, _brBonus = S.floorBuffs?.bloodRushBonus || 0;
+              if (_brLvl > 0 || _brBonus > 0) {
+                const _brGain = ([0,1,2,3,4,5,6,8][_brLvl] || 0) + _brBonus;
+                S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), (S.energy || 0) + _brGain);
+                spawnDmgNumber(eu.x, eu.y, `+${_brGain}⚡`, '#44ff88', 13, 'normal'); updateEnergyHud();
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  ctx.restore();
+}
+
+const _heroBulletDeaths = []; // { x, y, born } — sparkle burst FX on bullet hit
+const _HERO_DEATH_DUR = 700; // ms — matches 14 frames at ~20fps
+
+function drawHeroBulletDeaths() {
+  if (!_heroBulletDeaths.length) return;
+  if (!sparkleBulletImg.complete || sparkleBulletImg.naturalWidth <= 0) return;
+  const now = performance.now();
+  const _size = CELL * 1.0;
+  for (let i = _heroBulletDeaths.length - 1; i >= 0; i--) {
+    const d = _heroBulletDeaths[i];
+    const age = now - d.born;
+    if (age >= _HERO_DEATH_DUR) { _heroBulletDeaths.splice(i, 1); continue; }
+    const _t = age / _HERO_DEATH_DUR;
+    const _frame = Math.min(SPARKLE_FRAMES - 1, Math.floor(_t * SPARKLE_FRAMES));
+    const _alpha = Math.max(0, 1 - _t * 0.9);
+    ctx.save();
+    ctx.globalAlpha = _alpha;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sparkleBulletImg, _frame * SPARKLE_FW, 0, SPARKLE_FW, SPARKLE_FH,
+      d.x - _size * 0.5, d.y - _size * 0.5, _size, _size);
+    ctx.restore();
+  }
+}
 const _ronke2OrbFlashes = [];
 const _ronke2ImpactRings = [];
 
@@ -10804,7 +10981,7 @@ function drawRonke2Projectiles() {
               saveProfile(); _updateKillsDisplay();
               if (gameMode === 'adventure') {
                 const _ox = _enemy.x, _oy = _enemy.y;
-                setTimeout(() => { if (S && S.loot) { spawnLockedBox(_ox, _oy); spawnRonkeDrop(_ox, _oy); } }, _DEAD_TOTAL * _DEAD_MS + 100);
+                setTimeout(() => { if (S && S.loot) { spawnRonkeDrop(_ox, _oy); } }, _DEAD_TOTAL * _DEAD_MS + 100);
               }
             }
             logEvent(`RONKE ORB HIT: Enemy took 5 DMG!`, 'dmg');
@@ -11024,7 +11201,7 @@ function angleToDir(angle) {
 function _drawRonke2HeroSprite(cx, cy, u, alpha) {
   const frame = getRonke2FrameState(u);
   const sprSz = UNIT_CELL * 3.4;
-  const yOff  = -29;
+  const yOff  = -20;
   if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
     ctx.save();
     ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
@@ -14651,7 +14828,7 @@ window.startGame = function startGame(mode) {
     const mc = document.getElementById('mobile-controls');
     if (mc && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) mc.classList.add('visible');
   } else {
-    if (p2ctrl) p2ctrl.textContent = gameMode === 'pve' ? 'CPU ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· AUTO' : 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ENTER ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· U/I/O';
+    if (p2ctrl) p2ctrl.textContent = gameMode === 'pve' ? 'CPU · AUTO' : '↑↓←→ · ENTER · U/I/O';
     if (p2name) p2name.textContent = gameMode === 'pve' ? 'CPU' : 'PLAYER 2';
     if (p2clock) p2clock.style.display = '';
     if (p1clock) p1clock.style.display = '';
@@ -14699,17 +14876,18 @@ function backToMenu() {
   showScreen('screen-menu');
 }
 
-// ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Utilities ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
+// ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Utilities ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function easeOutBack(t) { const c = 1.3; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
 function hexAlpha(hex, a) {
   return `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
 }
 
-// ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Bootstrap ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
+// ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Bootstrap ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ'Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
 // --- Mouse Aiming ---
 function updateP1Aim(x, y) {
   if (typeof S === 'undefined' || !S || S.phase !== 'frozen' || S.clockSide !== 0) return;
+  if (S.heroShootLock && gameMode === 'adventure') return;
   const sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
   if (!sel) return;
 
@@ -15178,6 +15356,14 @@ document.addEventListener('DOMContentLoaded', () => {
   let _isMouseDown = false;
   document.addEventListener('mouseup', () => { _isMouseDown = false; });
 
+  document.addEventListener('dblclick', e => {
+    if (!window.isEditMode || gameMode !== 'adventure') return;
+    if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) return;
+    const { x, y } = canvasCoords(e);
+    const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
+    if (window._paintCurrentTile) window._paintCurrentTile(gy, gx);
+  });
+
   document.addEventListener('mousemove', e => {
     if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) { hoverGx = -1; hoverGy = -1; return; }
     const { x, y } = canvasCoords(e);
@@ -15226,10 +15412,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
 
-    if (window.isEditMode && _isMouseDown && gameMode === 'adventure') {
-      window._paintCurrentTile(hoverGy, hoverGx);
-      return;
-    }
+    // edit mode: no drag-painting, only dblclick places tiles
+    if (window.isEditMode && gameMode === 'adventure') return;
     updateP1Aim(x, y);
   }, true);
 
@@ -15243,7 +15427,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
 
     if (window.isEditMode && gameMode === 'adventure') {
-      if (window._paintCurrentTile) window._paintCurrentTile(gy, gx);
+      // single click does nothing in edit mode — use double-click
       return;
     }
 
@@ -15272,6 +15456,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     if (S.phase !== 'frozen') return;
+    if (S.heroShootLock && gameMode === 'adventure') return;
     if (S.clockSide !== 0) return;
     const sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
     if (!sel || S.pending[0] !== null) return;
@@ -15287,6 +15472,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wepC === 'laser' && sel.laserAmmo <= 0) return;
       if (wepC === 'heavy' && sel.heavyAmmo <= 0) return;
       if (wepC === 'shotgun' && sel.shotgunAmmo <= 0) return;
+    }
+    if (wepC === 'bullet' && gameMode === 'adventure') {
+      const _tooClose = S.units.some(u => {
+        if (!u.alive || u.team === 0) return false;
+        return Math.abs(u.x - sel.x) + Math.abs(u.y - sel.y) === 1;
+      });
+      if (_tooClose) {
+        spawnDmgNumber(sel.x, sel.y, 'TOO CLOSE', '#ff4444', 13, 'miss');
+        SFX.play(120, 0.12, 0.08, 'square');
+        S.shake = Math.max(S.shake || 0, 3);
+        return;
+      }
     }
     updateP1Aim(x, y);
     S.pending[0] = { unitId: sel.id, t: 'shoot' };
@@ -15313,7 +15510,7 @@ document.addEventListener('DOMContentLoaded', () => {
     SFX.init();
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
-    // Click on a P1 unit â†’ select it
+    // Click on a P1 unit â†' select it
     const clicked = S.units.find(u => u.team === 0 && u.alive && u.x === gx && u.y === gy);
     if (clicked) {
       SFX.select();
@@ -15321,8 +15518,9 @@ document.addEventListener('DOMContentLoaded', () => {
       updateP1Aim(x, y);
       return;
     }
-    // Click elsewhere â†’ shoot with selected unit
+    // Click elsewhere → shoot with selected unit
     if (S.phase !== 'frozen') return;
+    if (S.heroShootLock && gameMode === 'adventure') return;
     if (S.clockSide !== 0) return;
     const sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
     if (!sel || S.pending[0] !== null) return;
@@ -15349,7 +15547,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // â”€â”€ Touch support â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€ Touch support â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   canvas.addEventListener('touchstart', e => {
     if (gameMode !== 'adventure') return;
     e.preventDefault();

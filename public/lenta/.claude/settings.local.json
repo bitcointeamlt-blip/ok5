@@ -22,7 +22,10 @@
       "Bash(cat:*)",
       "Bash(ls C:\\\\Users\\\\p3p3l\\\\OneDrive\\\\Bilder\\\\Screenshots:*)",
       "Bash(ls:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(cd \"C:/Users/p3p3l/Downloads/pvp03-new\" && git push origin main 2>&1)",
+      "Bash(cd \"C:/Users/p3p3l/Downloads/pvp03-new\" && git add units/game.js units/style.css units/index.html && git commit -m \"$\\(cat <<'EOF'\nUpdate units/ to latest TIMELOCK MAINFRAME version\n\n- Mobile touch controls \\(D-pad + shoot button, portrait hint\\)\n- Map scan widget showing fog-of-war exploration progress\n- Teleport pads between dungeon rooms\n- Achievement system with popup notifications\n- Explorer chest tracker, collapsed hub panels on open\n- All recent UI and gameplay improvements\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\nEOF\n\\)\" && git push origin main 2>&1)",
+      "Bash(cd \"C:/Users/p3p3l/Downloads/pvp03-new\" && git push 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,
