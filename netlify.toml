@@ -2,6 +2,15 @@
 [build]
   command = "npm run build"
   publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+
+[dev]
+  command = "npm run dev"
+  targetPort = 5173
+  publish = "public"
+  autoLaunch = false
   
 # Force new build by clearing dist first (uncomment if needed)
 # [build]
