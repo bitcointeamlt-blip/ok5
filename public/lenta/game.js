@@ -1429,16 +1429,14 @@ function drawMiniByte(canvas) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  const cx = W / 2, cy = H / 2, r = W * 0.38;
-  ctx.fillStyle = '#ffcc00';
-  ctx.shadowColor = '#ffdd00'; ctx.shadowBlur = 3;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#886600'; ctx.lineWidth = 1.5; ctx.shadowBlur = 0;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = '#664400';
-  ctx.font = `bold ${Math.round(r * 1.1)}px monospace`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('R', cx, cy + 1);
+  if (ronkeImg && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
+    ctx.drawImage(ronkeImg, 0, 0, W, H);
+  } else {
+    // fallback: gold circle
+    const cx = W / 2, cy = H / 2, r = W * 0.38;
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 function renderCostIcons(containerId, cost, type, haveFn) {
@@ -5626,56 +5624,19 @@ function drawInvByteCanvas(cv) {
   const cctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   const now = performance.now();
-
-  if (cv._hovered) cv._vel = Math.min((cv._vel || 0) + 0.003, 0.05);
-  else cv._vel = Math.max((cv._vel || 0) - 0.002, 0);
-  cv._angle = (cv._angle || 0) + (cv._vel || 0);
-
   cctx.clearRect(0, 0, W, H);
-
-  const spinX = Math.abs(Math.cos(cv._angle));
-  const bright = spinX > 0.5;
   const bobY = Math.sin(now * 0.0011 + phase) * 3.5;
-  const r = 26;
-  const xR = Math.max(2, r * spinX);
-
+  const scale = cv._hovered ? 1.12 : 1.0;
+  const sz = Math.round(Math.min(W, H) * 0.88 * scale);
+  const dx = (W - sz) / 2, dy = (H - sz) / 2 + bobY;
   cctx.save();
-  cctx.translate(W / 2, H / 2 + bobY);
-  cctx.shadowColor = '#ffdd00';
-  cctx.shadowBlur = 18;
-
-  // Coin body
-  cctx.fillStyle = bright ? '#ffcc00' : '#996600';
-  cctx.beginPath();
-  cctx.ellipse(0, 0, xR, r, 0, 0, Math.PI * 2);
-  cctx.fill();
-
-  // Shine highlight
-  if (spinX > 0.3) {
-    cctx.fillStyle = 'rgba(255,255,180,0.5)';
-    cctx.beginPath();
-    cctx.ellipse(-xR * 0.28, -r * 0.28, xR * 0.3, r * 0.42, 0, 0, Math.PI * 2);
-    cctx.fill();
+  cctx.shadowColor = '#44aaff'; cctx.shadowBlur = cv._hovered ? 18 : 10;
+  if (ronkeImg && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
+    cctx.drawImage(ronkeImg, dx, dy, sz, sz);
+  } else {
+    cctx.fillStyle = '#ffcc00';
+    cctx.beginPath(); cctx.arc(W/2, H/2 + bobY, sz/2, 0, Math.PI*2); cctx.fill();
   }
-
-  // Rim
-  cctx.strokeStyle = bright ? '#ffee00' : '#774400';
-  cctx.lineWidth = 2;
-  cctx.beginPath();
-  cctx.ellipse(0, 0, xR, r, 0, 0, Math.PI * 2);
-  cctx.stroke();
-
-  // "B" label on front face
-  if (spinX > 0.35) {
-    cctx.shadowBlur = 0;
-    cctx.fillStyle = bright ? '#885500' : '#ffaa00';
-    cctx.font = `bold ${Math.max(8, Math.round(xR * 0.95))}px monospace`;
-    cctx.textAlign = 'center';
-    cctx.textBaseline = 'middle';
-    cctx.fillText('B', 0, 1);
-  }
-
-  cctx.shadowBlur = 0;
   cctx.restore();
 }
 
@@ -6422,13 +6383,13 @@ function drawAdvHUD() {
   ctx.shadowBlur = 10;
   ctx.shadowColor = '#ffee00';
   ctx.fillStyle = '#ffee00';
-  ctx.fillText(`RONKE ${bytes}`, x + 20, y);
-  // small chip icon (3-pixel art)
-  ctx.fillStyle = '#ffcc00';
-  ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6;
-  ctx.fillRect(x, y - 10, 10, 10);
-  ctx.strokeStyle = '#ffee88'; ctx.lineWidth = 1;
-  ctx.strokeRect(x, y - 10, 10, 10);
+  ctx.fillText(`RONKE ${bytes}`, x + 14, y);
+  // ronke sprite icon
+  if (ronkeImg && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
+    ctx.drawImage(ronkeImg, x - 2, y - 11, 13, 13);
+  } else {
+    ctx.fillStyle = '#ffcc00'; ctx.fillRect(x, y - 10, 10, 10);
+  }
 
   // ---- FRAGMENT bar ----
   const fy = y + 14;
