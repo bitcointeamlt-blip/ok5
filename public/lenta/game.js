@@ -15825,8 +15825,8 @@ async function _agentCallClaude(stateJson) {
     body: payload
   });
 
-  // Fallback: proxy not configured (503) → use direct API with local key
-  if (resp.status === 503) {
+  // Fallback: proxy not available (404/503/any error) → use direct API with local key
+  if (!resp.ok) {
     if (!_agent.localKey) {
       // Show key input row so user can enter key
       const row = document.getElementById('agent-key-row');
