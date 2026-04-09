@@ -16070,28 +16070,58 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Menu skull animation
+// Menu skull animation (patrol: every 10s moves 150px right then returns)
 (function() {
   const cv = document.getElementById('menu-skull-canvas');
   if (!cv) return;
   const ctx2 = cv.getContext('2d');
-  const skullImg = new Image(); skullImg.src = 'assets_tiny/Skull_Idle.png';
-  const S_FRAMES = 8, S_FPS = 6;
-  function tick(t) {
-    requestAnimationFrame(tick);
-    if (!skullImg.complete || !skullImg.naturalWidth) return;
-    const fw = skullImg.naturalWidth / S_FRAMES, fh = skullImg.naturalHeight;
+  const idleImg = new Image(); idleImg.src = 'assets_tiny/Skull_Idle.png';
+  const runImg  = new Image(); runImg.src  = 'assets_tiny/Skull_Run.png';
+  const IDLE_FRAMES = 8, IDLE_FPS = 6;
+  const RUN_FRAMES = 6,  RUN_FPS  = 8;
+  const BASE_LEFT = 940, PATROL_DIST = 150, PATROL_SPEED = 80;
+  let state = 'idle', offsetX = 0, stateStart = null, facingRight = false;
+
+  setInterval(() => {
+    if (state === 'idle') { state = 'going'; stateStart = null; facingRight = true; }
+  }, 10000);
+
+  function drawFrame(t) {
+    const img    = state === 'idle' ? idleImg : runImg;
+    const frames = state === 'idle' ? IDLE_FRAMES : RUN_FRAMES;
+    const fps    = state === 'idle' ? IDLE_FPS    : RUN_FPS;
+    if (!img.complete || !img.naturalWidth) return;
+    const fw = img.naturalWidth / frames, fh = img.naturalHeight;
     const scale = cv.height / fh;
     const dw = fw * scale, dh = cv.height;
-    const rx = (cv.width - dw) / 2;
-    const sframe = Math.floor(t / (1000 / S_FPS)) % S_FRAMES;
+    const sx = (cv.width - dw) / 2;
+    const frame = Math.floor(t / (1000 / fps)) % frames;
     ctx2.clearRect(0, 0, cv.width, cv.height);
-    // Flip horizontally so skull faces right (toward Ronke)
     ctx2.save();
-    ctx2.translate(cv.width, 0);
-    ctx2.scale(-1, 1);
-    ctx2.drawImage(skullImg, sframe * fw, 0, fw, fh, cv.width - rx - dw, 0, dw, dh);
+    if (facingRight) {
+      ctx2.drawImage(img, frame * fw, 0, fw, fh, sx, 0, dw, dh);
+    } else {
+      ctx2.translate(cv.width, 0); ctx2.scale(-1, 1);
+      ctx2.drawImage(img, frame * fw, 0, fw, fh, sx, 0, dw, dh);
+    }
     ctx2.restore();
+  }
+
+  function tick(t) {
+    requestAnimationFrame(tick);
+    if (state !== 'idle') {
+      if (stateStart === null) stateStart = t;
+      const moved = ((t - stateStart) / 1000) * PATROL_SPEED;
+      if (state === 'going') {
+        offsetX = Math.min(moved, PATROL_DIST);
+        if (offsetX >= PATROL_DIST) { state = 'returning'; stateStart = t; facingRight = false; }
+      } else {
+        offsetX = PATROL_DIST - Math.min(moved, PATROL_DIST);
+        if (offsetX <= 0) { offsetX = 0; state = 'idle'; stateStart = null; facingRight = false; }
+      }
+      cv.style.left = (BASE_LEFT + offsetX) + 'px';
+    }
+    drawFrame(t);
   }
   requestAnimationFrame(tick);
 })();
