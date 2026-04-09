@@ -1438,7 +1438,7 @@ function drawMiniByte(canvas) {
   ctx.fillStyle = '#664400';
   ctx.font = `bold ${Math.round(r * 1.1)}px monospace`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('B', cx, cy + 1);
+  ctx.fillText('R', cx, cy + 1);
 }
 
 function renderCostIcons(containerId, cost, type, haveFn) {
@@ -2391,7 +2391,7 @@ function updateHubUI() {
       if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
     } else {
       const el = o(`${p}jump-cost-display`);
-      if (el) el.innerHTML = '<span style="color:#00f5ff">1 BYTE (TEST)</span>';
+      if (el) el.innerHTML = '<span style="color:#00f5ff">1 RONKE</span>';
     }
   });
   const canAffordJump = jMaxed || (S.bytes || 0) >= 1;
@@ -5181,7 +5181,7 @@ function syncByteSlot() {
   }
   // Always update the visible byte counter button
   const btnEl = document.getElementById('inv-btn-chips');
-  if (btnEl) btnEl.textContent = `${b} BYTE`;
+  if (btnEl) btnEl.textContent = `${b} RONKE`;
   // Full grid refresh only if panel is open
   if (S.inventoryOpen) updateInventoryUI();
 }
@@ -5205,7 +5205,7 @@ function syncXpTokenSlot() {
 }
 
 const INV_ITEM_NAMES = {
-  byte: 'BYTE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'POISON',
+  byte: 'RONKE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'POISON',
   chip_common: 'COMMON CHIP', chip_uncommon: 'UNCOMMON CHIP',
   chip_rare: 'RARE CHIP', chip_epic: 'EPIC CHIP', chip_legendary: 'LEGENDARY CHIP',
 };
@@ -5227,7 +5227,7 @@ function updateInventoryUI() {
   if (el('inv-floor')) el('inv-floor').textContent = S.floor || 1;
 
   // Button chip count
-  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${S.bytes || 0} BYTE`;
+  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${S.bytes || 0} RONKE`;
 
   // Render slot grid
   const grid = el('inv-grid');
@@ -5245,13 +5245,13 @@ function updateInventoryUI() {
             : item.type === 'gem' ? '#44ff66'
               : item.type === 'ronke' ? '#44aaff'
                 : (RARITY_COLOR[item.rarity] || '#aaaaaa');
-      const label = item.type === 'byte' ? 'BYTE'
+      const label = item.type === 'byte' ? 'RONKE'
         : item.type === 'fragment' ? 'FRAGMENT'
           : item.type === 'xptoken' ? 'XP TOKEN'
             : item.type === 'gem' ? 'PIXEL'
               : item.type === 'ronke' ? 'POISON'
                 : item.rarity.toUpperCase() + ' CHIP';
-      const name = item.type === 'byte' ? 'Byte'
+      const name = item.type === 'byte' ? 'Ronke'
         : item.type === 'fragment' ? 'Chip Fragment'
           : item.type === 'xptoken' ? 'XP Token'
             : item.type === 'gem' ? 'Pixel'
@@ -6422,7 +6422,7 @@ function drawAdvHUD() {
   ctx.shadowBlur = 10;
   ctx.shadowColor = '#ffee00';
   ctx.fillStyle = '#ffee00';
-  ctx.fillText(`BYTE ${bytes}`, x + 20, y);
+  ctx.fillText(`RONKE ${bytes}`, x + 20, y);
   // small chip icon (3-pixel art)
   ctx.fillStyle = '#ffcc00';
   ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6;
@@ -7915,7 +7915,7 @@ window.useByteForEnergy = function () {
   if ((S.bytes || 0) <= 0) {
     if (typeof spawnDmgNumber === 'function') {
       const hero = S.units.find(u => u.team === 0 && u.alive);
-      if (hero) spawnDmgNumber(hero.x, hero.y, 'NO BYTES', '#ff5555', 12, 'normal');
+      if (hero) spawnDmgNumber(hero.x, hero.y, 'NO RONKE', '#ff5555', 12, 'normal');
     }
     return;
   }
