@@ -1439,6 +1439,18 @@ function drawMiniByte(canvas) {
   }
 }
 
+function getRonkeUpgradeCount() {
+  return S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0;
+}
+function spendUpgradeRonke(n) {
+  if (!n || n <= 0) return;
+  const slot = S.inventory?.find(s => s && s.type === 'ronke');
+  if (!slot) return;
+  slot.qty = Math.max(0, slot.qty - n);
+  if (slot.qty <= 0) { const idx = S.inventory.indexOf(slot); if (idx >= 0) S.inventory[idx] = null; }
+  if (S.inventoryOpen) updateInventoryUI();
+}
+
 function renderCostIcons(containerId, cost, type, haveFn) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -1478,6 +1490,7 @@ function renderCostIcons(containerId, cost, type, haveFn) {
   if (type === 'bytes') {
     addIcon(null, cost, true);
   } else if (type === 'mixed') {
+    if (cost.ronke) addIcon(null, cost.ronke, true);
     if (cost.bytes) addIcon(null, cost.bytes, true);
     if (cost.legendary) addIcon('legendary', cost.legendary);
     if (cost.epic) addIcon('epic', cost.epic);
@@ -1508,10 +1521,10 @@ function formatCritCost(cost) {
   return parts.join(' ');
 }
 function getFreeShotCost(lvl) {
-  if ((lvl || 0) === 0) return { bytes: 1, common: 1 };
-  if ((lvl || 0) === 1) return { bytes: 5, common: 2 };
-  if ((lvl || 0) === 2) return { bytes: 5, uncommon: 2 };
-  if ((lvl || 0) === 3) return { bytes: 10, rare: 2 };
+  if ((lvl || 0) === 0) return { ronke: 1, common: 1 };
+  if ((lvl || 0) === 1) return { ronke: 5, common: 2 };
+  if ((lvl || 0) === 2) return { ronke: 5, uncommon: 2 };
+  if ((lvl || 0) === 3) return { ronke: 10, rare: 2 };
   return { epic: 2, legendary: 1 };
 }
 
@@ -1616,15 +1629,14 @@ window.attemptFreeShotUpgrade = function (prefix) {
   const level = Profile.upgrades.freeShotLevel || 0;
   if (level >= 5) return;
   const cost = getFreeShotCost(level);
-  const hasBytes = (S.bytes || 0) >= cost.bytes;
+  const hasBytes = getRonkeUpgradeCount() >= (cost.ronke || 0);
   const hasChips = chipCount('common') >= (cost.common || 0) && chipCount('uncommon') >= (cost.uncommon || 0) && chipCount('rare') >= (cost.rare || 0) && chipCount('epic') >= (cost.epic || 0) && chipCount('legendary') >= (cost.legendary || 0);
   if (!hasBytes || !hasChips) {
     const el = document.getElementById(costEl);
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
     return;
   }
-  S.bytes -= cost.bytes;
-  syncByteSlot();
+  spendUpgradeRonke(cost.ronke || 0);
   spendChips('common', cost.common || 0);
   spendChips('uncommon', cost.uncommon || 0);
   spendChips('rare', cost.rare || 0);
@@ -1658,14 +1670,12 @@ window.attemptJumpUpgrade = function (prefix) {
   const costEl = prefix === 'hov' ? 'hov-jump-cost-display' : 'jump-cost-display';
   const level = Profile.upgrades.jumpLevel || 0;
   if (level >= 4) return;
-  // TEST COST: 1 byte
-  if ((S.bytes || 0) < 1) {
+  if (getRonkeUpgradeCount() < 1) {
     const el = document.getElementById(costEl);
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
     return;
   }
-  S.bytes -= 1;
-  syncByteSlot();
+  spendUpgradeRonke(1);
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
     const success = Math.random() < 0.70;
@@ -1703,10 +1713,10 @@ function getBloodRushCost(lvl) {
   return [
     { common: 2 },                              // 0→1
     { common: 3, uncommon: 1 },                 // 1→2
-    { uncommon: 2, bytes: 5 },                  // 2→3
-    { rare: 1, bytes: 10 },                     // 3→4
+    { uncommon: 2, ronke: 5 },                   // 2→3
+    { rare: 1, ronke: 10 },                     // 3→4
     { rare: 2, epic: 1 },                       // 4→5
-    { legendary: 1, bytes: 10 },                // 5→6
+    { legendary: 1, ronke: 10 },                // 5→6
     { mythic: 1, legendary: 2 },                // 6→7
   ][lvl] || {};
 }
@@ -1732,7 +1742,7 @@ window.attemptBloodRushUpgrade = function (prefix) {
     && (chipCount('epic') >= (cost.epic || 0))
     && (chipCount('legendary') >= (cost.legendary || 0))
     && (chipCount('mythic') >= (cost.mythic || 0))
-    && ((S.bytes || 0) >= (cost.bytes || 0));
+    && (getRonkeUpgradeCount() >= (cost.ronke || 0));
   if (!canAfford) {
     const el = document.getElementById(costEl);
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 500); }
@@ -1744,7 +1754,7 @@ window.attemptBloodRushUpgrade = function (prefix) {
   spendChips('epic', cost.epic || 0);
   spendChips('legendary', cost.legendary || 0);
   spendChips('mythic', cost.mythic || 0);
-  if (cost.bytes) { S.bytes = Math.max(0, (S.bytes || 0) - cost.bytes); syncByteSlot(); }
+  spendUpgradeRonke(cost.ronke || 0);
   updateInventoryUI();
   updateHubUI();
   showUpgradeAnim(cardId, statId, () => {
@@ -2236,13 +2246,12 @@ window.attemptTerminalUpgrade = function () {
 
 window.attemptInGameUpgrade = function () {
   const cost = getInGameVoltsCost();
-  if ((S.bytes || 0) < cost) {
+  if (getRonkeUpgradeCount() < cost) {
     const el = document.getElementById('hov-bytes');
     if (el) { el.style.color = '#ff3c55'; setTimeout(() => el.style.color = '', 400); }
     return;
   }
-  S.bytes -= cost;
-  syncByteSlot();
+  spendUpgradeRonke(cost);
   updateHubUI();
 
   showUpgradeAnim('hov-volts-card', 'hov-volts-status', () => {
@@ -2271,7 +2280,7 @@ function updateHubUI() {
   if (o('hov-energy')) o('hov-energy').innerText = maxNrg;
   if (o('hov-energy-card')) o('hov-energy-card').innerText = maxNrg;
   if (o('hov-lvl-energy')) o('hov-lvl-energy').innerText = lvlE;
-  if (o('hov-bytes')) o('hov-bytes').innerText = S.bytes || 0;
+  if (o('hov-bytes')) o('hov-bytes').innerText = getRonkeUpgradeCount();
   if (o('hov-ig-cost')) o('hov-ig-cost').innerText = getInGameVoltsCost();
 
   // hub screen IDs
@@ -2288,7 +2297,7 @@ function updateHubUI() {
   renderCostIcons('crit-cost-display', critCost, 'chips', (r) => chipCount(r));
   renderCostIcons('hov-crit-cost-display', critCost, 'chips', (r) => chipCount(r));
   renderCostIcons('volts-cost-display', getTerminalVoltsCost(), 'bytes', () => Profile.cache);
-  renderCostIcons('hov-ig-cost-display', getInGameVoltsCost(), 'bytes', () => S.bytes || 0);
+  renderCostIcons('hov-ig-cost-display', getInGameVoltsCost(), 'bytes', () => getRonkeUpgradeCount());
 
   const nanoLvl = Profile.upgrades.nanoLevel || 0;
   if (o('lvl-nano')) o('lvl-nano').innerText = nanoLvl;
@@ -2326,7 +2335,7 @@ function updateHubUI() {
   }
 
 
-  const canAffordVolts = (S.bytes || 0) >= getInGameVoltsCost();
+  const canAffordVolts = getRonkeUpgradeCount() >= getInGameVoltsCost();
   const hovV = o('hov-volts-card');
   if (hovV) hovV.classList.toggle('upg-locked', !canAffordVolts);
 
@@ -2360,10 +2369,10 @@ function updateHubUI() {
     if (fsMaxed) {
       const el = o(cdId); if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
     } else {
-      renderCostIcons(cdId, fsCost, 'mixed', (r) => r === null ? (S.bytes || 0) : chipCount(r));
+      renderCostIcons(cdId, fsCost, 'mixed', (r) => r === null ? getRonkeUpgradeCount() : chipCount(r));
     }
   });
-  const canAffordFs = fsMaxed || ((S.bytes || 0) >= (fsCost.bytes || 0) && chipCount('common') >= (fsCost.common || 0) && chipCount('uncommon') >= (fsCost.uncommon || 0) && chipCount('rare') >= (fsCost.rare || 0) && chipCount('epic') >= (fsCost.epic || 0) && chipCount('legendary') >= (fsCost.legendary || 0));
+  const canAffordFs = fsMaxed || (getRonkeUpgradeCount() >= (fsCost.ronke || 0) && chipCount('common') >= (fsCost.common || 0) && chipCount('uncommon') >= (fsCost.uncommon || 0) && chipCount('rare') >= (fsCost.rare || 0) && chipCount('epic') >= (fsCost.epic || 0) && chipCount('legendary') >= (fsCost.legendary || 0));
   const hovFs = o('hov-freeshot-card');
   if (hovFs) hovFs.classList.toggle('upg-locked', !canAffordFs);
 
@@ -2392,7 +2401,7 @@ function updateHubUI() {
       if (el) el.innerHTML = '<span style="color:#00f5ff">1 RONKE</span>';
     }
   });
-  const canAffordJump = jMaxed || (S.bytes || 0) >= 1;
+  const canAffordJump = jMaxed || getRonkeUpgradeCount() >= 1;
   const hovJ = o('hov-jump-upg-card');
   if (hovJ) hovJ.classList.toggle('upg-locked', !canAffordJump);
 
@@ -2428,7 +2437,7 @@ function updateHubUI() {
       if (el) el.innerHTML = '<span style="color:#00ff88">MAX</span>';
     } else {
       const mixedCost = { ...brCost };
-      renderCostIcons(`${p}bloodrush-cost-display`, mixedCost, 'mixed', (r) => r === null ? (S.bytes || 0) : chipCount(r));
+      renderCostIcons(`${p}bloodrush-cost-display`, mixedCost, 'mixed', (r) => r === null ? getRonkeUpgradeCount() : chipCount(r));
     }
   });
   const canAffordBr = brMaxed || (
@@ -2438,7 +2447,7 @@ function updateHubUI() {
     chipCount('epic') >= (brCost.epic || 0) &&
     chipCount('legendary') >= (brCost.legendary || 0) &&
     chipCount('mythic') >= (brCost.mythic || 0) &&
-    (S.bytes || 0) >= (brCost.bytes || 0)
+    getRonkeUpgradeCount() >= (brCost.ronke || 0)
   );
   const hovBr = o('hov-bloodrush-upg-card');
   if (hovBr) hovBr.classList.toggle('upg-locked', !canAffordBr);
@@ -5179,7 +5188,7 @@ function syncByteSlot() {
   }
   // Always update the visible byte counter button
   const btnEl = document.getElementById('inv-btn-chips');
-  if (btnEl) btnEl.textContent = `${b} RONKE`;
+  if (btnEl) btnEl.textContent = `${getRonkeUpgradeCount()} RONKE`;
   // Full grid refresh only if panel is open
   if (S.inventoryOpen) updateInventoryUI();
 }
@@ -5225,7 +5234,7 @@ function updateInventoryUI() {
   if (el('inv-floor')) el('inv-floor').textContent = S.floor || 1;
 
   // Button chip count
-  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${S.bytes || 0} RONKE`;
+  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${getRonkeUpgradeCount()} RONKE`;
 
   // Render slot grid
   const grid = el('inv-grid');
@@ -6367,7 +6376,7 @@ function drawFootsteps() {
 
 // ---- Adventure HUD - Chip + Fragment counter (screen space) ----
 function drawAdvHUD() {
-  const bytes = S.bytes || 0;
+  const bytes = getRonkeUpgradeCount();
   const frags = S.fragments || 0;
   const fragsInProgress = frags % FRAG_PER_CHIP;
   const assembled = Math.floor(frags / FRAG_PER_CHIP);
