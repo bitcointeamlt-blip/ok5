@@ -4417,6 +4417,10 @@ function initAdventure() {
   if (S.floor === 1 && !Profile.tutorialDone) {
     setTimeout(() => startTutorial(), 700);
   }
+
+  // Hero spawn particle animation
+  const _hero0 = S.units && S.units.find(u => u.team === 0);
+  if (_hero0) triggerHeroSpawnAnim(_hero0.x, _hero0.y);
 }function getFloorCustomMap() {
   if (S.floor === 1 && window.CUSTOM_MAP) return window.CUSTOM_MAP;
   if (S.floor === 2 && window.CUSTOM_MAP2) return window.CUSTOM_MAP2;
@@ -9928,6 +9932,7 @@ function loop(now) {
   drawLoot();
   drawMeatDrops();
   drawUnits();
+  drawHeroSpawnAnim();
   drawForegroundDecorations();
   drawRonkeInfect();
   drawFog();
@@ -16035,4 +16040,119 @@ function _agentExecute(action, hero) {
     aiQueueAction(false);
     resolveTick();
   }
+}
+
+// ================================================================
+// HERO SPAWN PARTICLE ANIMATION — pixel Ronke assembles on entry
+// ================================================================
+
+// Ronke coin face pixel pattern (10 cols × 11 rows)
+// 0=empty 1=gold(rim) 2=blue(face) 3=dark(eyes) 4=pink(muzzle) 5=white(glint)
+const _HSP_PAT = [
+  [0,0,1,1,1,1,1,1,0,0],
+  [0,1,1,1,1,1,1,1,1,0],
+  [0,1,2,2,2,2,2,2,1,0],
+  [0,1,2,3,3,2,3,3,2,1],  // extra col handled via clamp
+  [0,1,2,3,5,2,3,5,2,0],
+  [0,1,2,2,2,2,2,2,1,0],
+  [0,1,2,4,4,4,4,2,1,0],
+  [0,1,2,4,2,2,4,2,1,0],
+  [0,1,2,2,2,2,2,2,1,0],
+  [0,1,1,1,1,1,1,1,1,0],
+  [0,0,1,1,1,1,1,1,0,0],
+];
+const _HSP_COLORS = [null, '#d4a843', '#2a72cc', '#1a3060', '#d08070', '#ffffff'];
+
+let _heroSpawnParts = null;
+let _heroSpawnT = 0;
+const _HSP_DUR = 1000; // ms assembly time
+const _HSP_HOLD = 300; // ms hold after assembled
+
+function triggerHeroSpawnAnim(gx, gy) {
+  const PSZ = Math.max(3, Math.round(CELL / 10)); // particle size px
+  const cols = _HSP_PAT[0].length;
+  const rows = _HSP_PAT.length;
+  const totalW = cols * PSZ, totalH = rows * PSZ;
+  // World-space center of hero cell
+  const cx = (gx + 0.5) * CELL;
+  const cy = (gy + 0.5) * CELL;
+
+  _heroSpawnParts = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < _HSP_PAT[r].length; c++) {
+      const ci = _HSP_PAT[r][c];
+      if (!ci) continue;
+      // Target: assembled position centered on hero
+      const tx = cx - totalW / 2 + c * PSZ;
+      const ty = cy - totalH / 2 + r * PSZ;
+      // Start: random explosion outward
+      const angle = Math.random() * Math.PI * 2;
+      const dist = CELL * 1.8 + Math.random() * CELL * 2.5;
+      _heroSpawnParts.push({
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        tx, ty,
+        color: _HSP_COLORS[ci],
+        delay: Math.random() * 0.30, // stagger arrival 0–30% of duration
+        psz: PSZ,
+      });
+    }
+  }
+  _heroSpawnT = performance.now();
+  SFX.play(660, 0.07, 0.04, 'sine', 80);
+  setTimeout(() => SFX.play(880, 0.09, 0.06, 'sine', 200), 400);
+  setTimeout(() => SFX.play(1100, 0.12, 0.08, 'sine', 350), 900);
+}
+
+function drawHeroSpawnAnim() {
+  if (!_heroSpawnParts) return;
+  const now = performance.now();
+  const elapsed = now - _heroSpawnT;
+  const totalDur = _HSP_DUR + _HSP_HOLD;
+
+  if (elapsed > totalDur + 150) {
+    _heroSpawnParts = null;
+    return;
+  }
+
+  const assembled = elapsed > _HSP_DUR;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  for (let i = 0; i < _heroSpawnParts.length; i++) {
+    const p = _heroSpawnParts[i];
+    // Progress for this particle (0→1), accounting for stagger delay
+    const raw = (elapsed / _HSP_DUR - p.delay) / (1 - p.delay);
+    const t = Math.min(1, Math.max(0, raw));
+    // Ease out cubic
+    const e = 1 - Math.pow(1 - t, 3);
+
+    const x = p.x + (p.tx - p.x) * e;
+    const y = p.y + (p.ty - p.y) * e;
+    const alpha = Math.min(1, t * 4); // fade in fast at start
+
+    ctx.globalAlpha = assembled ? 0.92 : alpha;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    // Glow trail while flying, tighter when assembled
+    ctx.shadowBlur = assembled ? 4 : (1 - e) * 14 + 3;
+    ctx.fillRect(Math.round(x), Math.round(y), p.psz, p.psz);
+  }
+
+  // Flash burst at moment of assembly
+  if (elapsed > _HSP_DUR - 40 && elapsed < _HSP_DUR + 80 && _heroSpawnParts.length > 0) {
+    const p0 = _heroSpawnParts[0];
+    const burstAlpha = 0.35 * (1 - (elapsed - (_HSP_DUR - 40)) / 120);
+    ctx.globalAlpha = Math.max(0, burstAlpha);
+    ctx.fillStyle = '#d4a843';
+    ctx.shadowColor = '#ffee88'; ctx.shadowBlur = 30;
+    const bsz = _HSP_PAT[0].length * p0.psz + 12;
+    const cx = p0.tx + bsz / 2;
+    const cy = p0.ty + bsz / 2;
+    ctx.beginPath(); ctx.arc(cx, cy, bsz * 0.75, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.restore();
 }
