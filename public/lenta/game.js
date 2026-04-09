@@ -5633,19 +5633,52 @@ function drawInvByteCanvas(cv) {
   const cctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   const now = performance.now();
+
+  if (cv._hovered) cv._vel = Math.min((cv._vel || 0) + 0.003, 0.05);
+  else cv._vel = Math.max((cv._vel || 0) - 0.002, 0);
+  cv._angle = (cv._angle || 0) + (cv._vel || 0);
+
   cctx.clearRect(0, 0, W, H);
+
+  const spinX = Math.abs(Math.cos(cv._angle));
+  const bright = spinX > 0.5;
   const bobY = Math.sin(now * 0.0011 + phase) * 3.5;
-  const scale = cv._hovered ? 1.12 : 1.0;
-  const sz = Math.round(Math.min(W, H) * 0.88 * scale);
-  const dx = (W - sz) / 2, dy = (H - sz) / 2 + bobY;
+  const r = 26;
+  const xR = Math.max(2, r * spinX);
+
   cctx.save();
-  cctx.shadowColor = '#44aaff'; cctx.shadowBlur = cv._hovered ? 18 : 10;
-  if (ronkeImg && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
-    cctx.drawImage(ronkeImg, dx, dy, sz, sz);
-  } else {
-    cctx.fillStyle = '#ffcc00';
-    cctx.beginPath(); cctx.arc(W/2, H/2 + bobY, sz/2, 0, Math.PI*2); cctx.fill();
+  cctx.translate(W / 2, H / 2 + bobY);
+  cctx.shadowColor = '#ffdd00';
+  cctx.shadowBlur = 18;
+
+  cctx.fillStyle = bright ? '#ffcc00' : '#996600';
+  cctx.beginPath();
+  cctx.ellipse(0, 0, xR, r, 0, 0, Math.PI * 2);
+  cctx.fill();
+
+  if (spinX > 0.3) {
+    cctx.fillStyle = 'rgba(255,255,180,0.5)';
+    cctx.beginPath();
+    cctx.ellipse(-xR * 0.28, -r * 0.28, xR * 0.3, r * 0.42, 0, 0, Math.PI * 2);
+    cctx.fill();
   }
+
+  cctx.strokeStyle = bright ? '#ffee00' : '#774400';
+  cctx.lineWidth = 2;
+  cctx.beginPath();
+  cctx.ellipse(0, 0, xR, r, 0, 0, Math.PI * 2);
+  cctx.stroke();
+
+  if (spinX > 0.35) {
+    cctx.shadowBlur = 0;
+    cctx.fillStyle = bright ? '#885500' : '#ffaa00';
+    cctx.font = `bold ${Math.max(8, Math.round(xR * 0.95))}px monospace`;
+    cctx.textAlign = 'center';
+    cctx.textBaseline = 'middle';
+    cctx.fillText('B', 0, 1);
+  }
+
+  cctx.shadowBlur = 0;
   cctx.restore();
 }
 
