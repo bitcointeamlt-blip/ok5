@@ -1439,11 +1439,17 @@ function drawMiniByte(canvas) {
   }
 }
 
-function getRonkeUpgradeCount() { return S.bytes || 0; }
+function getRonkeUpgradeCount() {
+  return S.inventory?.find(s => s && s.type === 'goldbag')?.qty || 0;
+}
 function spendUpgradeRonke(n) {
   if (!n || n <= 0) return;
-  S.bytes = Math.max(0, (S.bytes || 0) - n);
-  syncByteSlot();
+  const slot = S.inventory?.find(s => s && s.type === 'goldbag');
+  if (!slot) return;
+  slot.qty = Math.max(0, slot.qty - n);
+  if (slot.qty <= 0) { const idx = S.inventory.indexOf(slot); if (idx >= 0) S.inventory[idx] = null; }
+  if (gameMode === 'adventure') { Profile.inventory = S.inventory.map(x => x ? { ...x } : null); saveProfile(); }
+  if (S.inventoryOpen) updateInventoryUI();
 }
 
 function renderCostIcons(containerId, cost, type, haveFn) {
@@ -5183,7 +5189,7 @@ function syncByteSlot() {
   }
   // Always update the visible byte counter button
   const btnEl = document.getElementById('inv-btn-chips');
-  if (btnEl) btnEl.textContent = `${getRonkeUpgradeCount()} RONKE`;
+  if (btnEl) btnEl.textContent = `${getRonkeUpgradeCount()} $ BAG`;
   // Full grid refresh only if panel is open
   if (S.inventoryOpen) updateInventoryUI();
 }
@@ -5207,7 +5213,7 @@ function syncXpTokenSlot() {
 }
 
 const INV_ITEM_NAMES = {
-  byte: 'RONKE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'POISON',
+  byte: 'RONKE', fragment: 'CHIP FRAGMENT', xptoken: 'XP TOKEN', gem: 'PIXEL', ronke: 'POISON', goldbag: '$ BAG',
   chip_common: 'COMMON CHIP', chip_uncommon: 'UNCOMMON CHIP',
   chip_rare: 'RARE CHIP', chip_epic: 'EPIC CHIP', chip_legendary: 'LEGENDARY CHIP',
 };
@@ -5229,7 +5235,7 @@ function updateInventoryUI() {
   if (el('inv-floor')) el('inv-floor').textContent = S.floor || 1;
 
   // Button chip count
-  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${getRonkeUpgradeCount()} RONKE`;
+  if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${getRonkeUpgradeCount()} $ BAG`;
 
   // Render slot grid
   const grid = el('inv-grid');
@@ -5246,19 +5252,22 @@ function updateInventoryUI() {
           : item.type === 'xptoken' ? '#00ffcc'
             : item.type === 'gem' ? '#44ff66'
               : item.type === 'ronke' ? '#44aaff'
-                : (RARITY_COLOR[item.rarity] || '#aaaaaa');
+                : item.type === 'goldbag' ? '#ffcc00'
+                  : (RARITY_COLOR[item.rarity] || '#aaaaaa');
       const label = item.type === 'byte' ? 'RONKE'
         : item.type === 'fragment' ? 'FRAGMENT'
           : item.type === 'xptoken' ? 'XP TOKEN'
             : item.type === 'gem' ? 'PIXEL'
               : item.type === 'ronke' ? 'POISON'
-                : item.rarity.toUpperCase() + ' CHIP';
+                : item.type === 'goldbag' ? '$ BAG'
+                  : item.rarity.toUpperCase() + ' CHIP';
       const name = item.type === 'byte' ? 'Ronke'
         : item.type === 'fragment' ? 'Chip Fragment'
           : item.type === 'xptoken' ? 'XP Token'
             : item.type === 'gem' ? 'Pixel'
               : item.type === 'ronke' ? 'Poison'
-                : `${item.rarity} Chip`;
+                : item.type === 'goldbag' ? '$ Bag'
+                  : `${item.rarity} Chip`;
 
       const isNew = window._newInvKeys?.has(item.type + ':' + (item.rarity || ''));
       slot.className = 'inv-slot has-item' + (isNew ? ' inv-slot-new' : '');
@@ -5290,6 +5299,11 @@ function updateInventoryUI() {
         ri.src = 'ronke.png';
         ri.style.cssText = 'width:56px;height:56px;object-fit:contain;display:block;margin:auto;margin-top:8px;filter:drop-shadow(0 0 6px #44aaff)';
         slot.appendChild(ri);
+      } else if (item.type === 'goldbag') {
+        const gi = document.createElement('img');
+        gi.src = 'assets/goldbag_idle.png';
+        gi.style.cssText = 'width:64px;height:64px;object-fit:contain;display:block;margin:auto;margin-top:4px;image-rendering:pixelated;filter:drop-shadow(0 0 8px #ffcc00)';
+        slot.appendChild(gi);
       } else if (item.type === 'gem') {
         const gi = document.createElement('img');
         gi.src = 'pix.png';
@@ -6420,7 +6434,7 @@ function drawAdvHUD() {
   ctx.shadowBlur = 10;
   ctx.shadowColor = '#ffee00';
   ctx.fillStyle = '#ffee00';
-  ctx.fillText(`RONKE ${bytes}`, x + 14, y);
+  ctx.fillText(`$ BAG ${bytes}`, x + 14, y);
   // ronke sprite icon
   if (ronkeImg && ronkeImg.complete && ronkeImg.naturalWidth > 0) {
     ctx.drawImage(ronkeImg, x - 2, y - 11, 13, 13);
@@ -8309,12 +8323,12 @@ function resolveTick() {
             spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
           } else if (l.type === 'goldbag') {
             const gain = l.val || 3;
-            S.bytes = (S.bytes || 0) + gain;
-            syncByteSlot();
+            addToInventory('goldbag', null, gain);
+            updateInventoryUI();
             spawnPickupFX(l.x, l.y, '#ffcc00');
-            spawnDmgNumber(l.x, l.y, `+${gain} RONKE`, '#ffee00', 16, 'crit');
+            spawnDmgNumber(l.x, l.y, `+${gain} $ BAG`, '#ffee00', 16, 'crit');
             SFX.play(880, 0.12, 0.08, 'sine', 200);
-            logEvent(`+${gain} RONKE collected`, 'loot');
+            logEvent(`+${gain} $ Bag collected`, 'loot');
           } else if (l.type === 'ronke') {
             addToInventory('ronke', null, 1);
             if (S.inventoryOpen) updateInventoryUI();
