@@ -5301,10 +5301,18 @@ function updateInventoryUI() {
         ri.style.cssText = 'width:56px;height:56px;object-fit:contain;display:block;margin:auto;margin-top:8px;filter:drop-shadow(0 0 6px #44aaff)';
         slot.appendChild(ri);
       } else if (item.type === 'goldbag') {
-        const gi = document.createElement('img');
-        gi.src = 'assets/goldbag_idle.png';
-        gi.style.cssText = 'position:absolute;top:-9px;left:-36px;right:-36px;bottom:3px;width:calc(100% + 72px);height:calc(100% + 11px);object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 0 12px #ffcc00)';
-        slot.appendChild(gi);
+        const cv = document.createElement('canvas');
+        cv.width = 96; cv.height = 96;
+        cv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pixelated;';
+        const _draw = () => {
+          const c = cv.getContext('2d');
+          c.clearRect(0, 0, 96, 96);
+          if (goldbagIdleImg.complete && goldbagIdleImg.naturalWidth > 0) {
+            c.drawImage(goldbagIdleImg, 0, 0, GOLDBAG_FW, GOLDBAG_FH, 0, 0, 96, 96);
+          }
+        };
+        if (goldbagIdleImg.complete) _draw(); else goldbagIdleImg.onload = _draw;
+        slot.appendChild(cv);
       } else if (item.type === 'gem') {
         const gi = document.createElement('img');
         gi.src = 'pix.png';
