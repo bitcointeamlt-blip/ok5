@@ -16154,7 +16154,7 @@ function _agentExecute(action, hero) {
 })();
 
 
-// Landing page PAM patrol (below dungeon button)
+// Landing page PAM patrol + gold stone (below dungeon button)
 (function() {
   const cv = document.getElementById('menu-pam-canvas');
   if (!cv) return;
@@ -16165,39 +16165,33 @@ function _agentExecute(action, hero) {
   let baseX = 0, baseY = 0, offsetX = 0;
   let state = 'going', stateStart = null, facingRight = true;
 
-  // Gold stone — same ground level as PAM, updated every frame
+  // Gold stone
   const stoneEl = document.createElement('img');
   stoneEl.src = 'assets_tiny/GoldStone6.png';
   const STONE_SZ = 72;
   stoneEl.style.cssText = `position:fixed;width:${STONE_SZ}px;height:${STONE_SZ}px;image-rendering:pixelated;pointer-events:none;z-index:2;`;
   document.body.appendChild(stoneEl);
-  // Update stone position only on resize, not scroll
-  function updateStone() {
-    const btn = document.getElementById('btn-adv');
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    stoneEl.style.left = (r.left + 20) + 'px';
-    stoneEl.style.top  = (r.bottom + cv.height - STONE_SZ + 8) + 'px';
-  }
-  window.addEventListener('resize', updateStone);
-  setTimeout(updateStone, 400);
 
-  function updateBasePos() {
+  // Recalculate positions from btn-adv viewport rect
+  // Called on init, resize AND scroll — so position:fixed always matches button
+  function sync() {
     const btn = document.getElementById('btn-adv');
     if (!btn) return;
     const r = btn.getBoundingClientRect();
     baseX = r.left + r.width / 2 - cv.width / 2;
     baseY = r.bottom + 8;
-    cv.style.top = baseY + 'px';
+    cv.style.top  = baseY + 'px';
+    stoneEl.style.left = (r.left + 20) + 'px';
+    stoneEl.style.top  = (r.bottom + cv.height - STONE_SZ + 8) + 'px';
   }
 
-  window.addEventListener('resize', updateBasePos);
-  setTimeout(updateBasePos, 400);
+  window.addEventListener('resize', sync);
+  window.addEventListener('scroll', sync, { passive: true });
+  setTimeout(sync, 400);
 
   function tick(t) {
     requestAnimationFrame(tick);
     if (!img.complete || !img.naturalWidth) return;
-    if (baseX === 0) updateBasePos();
 
     if (stateStart === null) stateStart = t;
     const moved = ((t - stateStart) / 1000) * SPEED;
@@ -16213,9 +16207,7 @@ function _agentExecute(action, hero) {
     const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
     ctx2.clearRect(0, 0, cv.width, cv.height);
     ctx2.save();
-    if (!facingRight) {
-      ctx2.translate(cv.width, 0); ctx2.scale(-1, 1);
-    }
+    if (!facingRight) { ctx2.translate(cv.width, 0); ctx2.scale(-1, 1); }
     ctx2.drawImage(img, frame * FW, 0, FW, FH, 0, 0, cv.width, cv.height);
     ctx2.restore();
   }
