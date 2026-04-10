@@ -16180,8 +16180,9 @@ function _agentExecute(action, hero) {
     baseY = r.bottom + 8;
     cv.style.top = baseY + 'px';
     // Align stone bottom with PAM bottom (cv.height = 100)
-    stoneEl.style.left = (baseX + PATROL_DIST + cv.width + 10) + 'px';
-    stoneEl.style.top  = (baseY + cv.height - STONE_SZ) + 'px';
+    const r2 = btn.getBoundingClientRect();
+    stoneEl.style.left = (r2.left + 20) + 'px';
+    stoneEl.style.top  = (r2.bottom + cv.height - STONE_SZ + 8) + 'px';
   }
 
   window.addEventListener('resize', updateBasePos);
