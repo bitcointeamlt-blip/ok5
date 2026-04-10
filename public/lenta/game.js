@@ -2989,6 +2989,7 @@ const ENEMY_TYPES = [
   { type: 'ronke',     hp: 8,  color: '#3355cc', scale: 1.50, label: 'RONKE' },
   { type: 'ronke2',    hp: 8,  color: '#4466dd', scale: 1.50, label: 'RONKE2' },
   { type: 'stabby',   hp: 4,  color: '#cc8833', scale: 1.20, label: 'STABBY' },
+  { type: 'pam',      hp: 5,  color: '#ffcc00', scale: 1.20, label: 'PAM' },
 ];
 
 const EDITOR_NPC_TYPES = [
@@ -3002,6 +3003,7 @@ const EDITOR_NPC_TYPES = [
   { type: 'ronke',    label: 'RONKE',    color: '#3355cc' },
   { type: 'ronke2',   label: 'RONKE2',   color: '#4466dd' },
   { type: 'stabby',  label: 'STABBY',   color: '#cc8833' },
+  { type: 'pam',     label: 'PAM',      color: '#ffcc00' },
 ];
 
 
@@ -9912,7 +9914,6 @@ function loop(now) {
   drawTutorialHighlight();
   drawLoot();
   drawMeatDrops();
-  drawPamNpc();
   drawUnits();
   drawForegroundDecorations();
   drawRonkeInfect();
@@ -10516,19 +10517,6 @@ function drawParticles() {
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2); ctx.fill();
     }
   }
-  ctx.restore();
-}
-
-function drawPamNpc() {
-  if (!pamNpcImg.complete || !pamNpcImg.naturalWidth) return;
-  const now = performance.now();
-  const frame = Math.floor(now / (1000 / PAM_FPS)) % PAM_FRAMES;
-  // Place NPC at tile 5,5 (adjust as needed)
-  const nx = 5, ny = 5;
-  const sz = CELL * 2.2;
-  const cx = (nx + 0.5) * CELL, cy = (ny + 0.5) * CELL;
-  ctx.save();
-  ctx.drawImage(pamNpcImg, frame * PAM_FW, 0, PAM_FW, PAM_FH, cx - sz/2, cy - sz, sz, sz);
   ctx.restore();
 }
 
@@ -12674,6 +12662,14 @@ function drawUnits() {
           ctx.globalAlpha = alpha * u.hitFlash * 0.55;
           ctx.fillStyle = '#ffffff';
           ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.3, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'pam') {
+        if (pamNpcImg.complete && pamNpcImg.naturalWidth) {
+          const sprSz = UNIT_CELL * 1.6;
+          const frame = Math.floor(performance.now() / (1000 / PAM_FPS)) % PAM_FRAMES;
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          ctx.drawImage(pamNpcImg, frame * PAM_FW, 0, PAM_FW, PAM_FH, cx - sprSz / 2, cy - sprSz, sprSz, sprSz);
           ctx.globalAlpha = alpha;
         }
       } else if (u.utype === 'minotaur') {
