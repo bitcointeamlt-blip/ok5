@@ -16165,6 +16165,13 @@ function _agentExecute(action, hero) {
   let baseX = 0, baseY = 0, offsetX = 0;
   let state = 'going', stateStart = null, facingRight = true;
 
+  // Gold stone — same ground level as PAM, updated every frame
+  const stoneEl = document.createElement('img');
+  stoneEl.src = 'assets_tiny/GoldStone6.png';
+  const STONE_SZ = 72;
+  stoneEl.style.cssText = `position:fixed;width:${STONE_SZ}px;height:${STONE_SZ}px;image-rendering:pixelated;pointer-events:none;z-index:2;`;
+  document.body.appendChild(stoneEl);
+
   function updateBasePos() {
     const btn = document.getElementById('btn-adv');
     if (!btn) return;
@@ -16172,6 +16179,8 @@ function _agentExecute(action, hero) {
     baseX = r.left + r.width / 2 - cv.width / 2;
     baseY = r.bottom + 8;
     cv.style.top = baseY + 'px';
+    stoneEl.style.left = (r.left + 20) + 'px';
+    stoneEl.style.top  = (r.bottom + cv.height - STONE_SZ + 8) + 'px';
   }
 
   window.addEventListener('resize', updateBasePos);
@@ -16180,7 +16189,7 @@ function _agentExecute(action, hero) {
   function tick(t) {
     requestAnimationFrame(tick);
     if (!img.complete || !img.naturalWidth) return;
-    if (baseX === 0) updateBasePos();
+    updateBasePos(); // update every frame so stone stays fixed on scroll
 
     if (stateStart === null) stateStart = t;
     const moved = ((t - stateStart) / 1000) * SPEED;
