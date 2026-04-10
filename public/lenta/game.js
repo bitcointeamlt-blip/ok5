@@ -16153,24 +16153,6 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Landing page gold stone (below dungeon button, same line as PAM)
-(function() {
-  const img = document.createElement('img');
-  img.src = 'assets_tiny/GoldStone6.png';
-  const SZ = 90;
-  img.style.cssText = `position:fixed;width:${SZ}px;height:${SZ}px;image-rendering:pixelated;pointer-events:none;z-index:1;`;
-  document.body.appendChild(img);
-
-  function position() {
-    const btn = document.getElementById('btn-adv');
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    img.style.left = (r.left + 60) + 'px';
-    img.style.top  = (r.bottom + 2) + 'px';
-  }
-  window.addEventListener('resize', position);
-  setTimeout(position, 300);
-})();
 
 // Landing page PAM patrol (below dungeon button)
 (function() {
