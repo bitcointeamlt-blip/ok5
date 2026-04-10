@@ -7647,6 +7647,86 @@ kbd {
   font-size: 8px;
 }
 
+/* ══════════════════════════════════════════════════════
+   LOBBY SCREEN
+   ══════════════════════════════════════════════════════ */
+#screen-lobby {
+  background:
+    radial-gradient(circle at 50% 30%, rgba(180,90,10,0.18), transparent 55%),
+    linear-gradient(180deg, rgba(8,5,2,0.98), rgba(12,7,3,0.99));
+  overflow: hidden;
+}
+
+.lobby-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 40px 24px;
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+}
+
+.lobby-kicker {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #7a5e38;
+  letter-spacing: 3px;
+}
+
+.lobby-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(22px, 6vw, 44px);
+  color: #e8d5b0;
+  line-height: 1.5;
+  letter-spacing: 3px;
+  text-shadow: 0 0 40px rgba(200,130,20,0.25);
+}
+
+.lobby-desc {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #7a6040;
+  letter-spacing: 1px;
+  line-height: 2;
+}
+
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
+  margin-top: 16px;
+}
+
+.lobby-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 16px 24px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.1s, filter 0.1s;
+}
+.lobby-btn:active { transform: scale(0.97); }
+
+.lobby-btn-play {
+  background: linear-gradient(180deg, #d4a843, #a87828);
+  color: #1a0e00;
+  box-shadow: 0 4px 24px rgba(200,130,10,0.35), 0 0 0 2px rgba(200,140,20,0.5);
+}
+.lobby-btn-play:hover { filter: brightness(1.12); }
+
+.lobby-btn-back {
+  background: transparent;
+  color: #5a4428;
+  border: 1px solid rgba(120,80,20,0.4);
+  font-size: 9px;
+}
+.lobby-btn-back:hover { color: #a08050; border-color: rgba(160,120,60,0.6); }
+
 /* ── Mobile-only Discord link ── */
 .mobile-discord-link {
   display: none;

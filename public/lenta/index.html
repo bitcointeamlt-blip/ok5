@@ -87,7 +87,7 @@
 
             <div class="mode-select">
               <button id="btn-adv" type="button" class="mode-card mode-card-adv pulse"
-                onclick="window.SFX&&SFX.init(); window.loadProfile&&loadProfile(); window.updateRunKeyUI&&updateRunKeyUI(); document.getElementById('screen-menu').classList.remove('active'); document.getElementById('screen-hub').classList.add('active'); window.BGM&&BGM.start('hub');">
+                onclick="window.SFX&&SFX.init(); document.getElementById('screen-menu').classList.remove('active'); document.getElementById('screen-lobby').classList.add('active');">
                 <span class="mode-card-top">
                   <span class="mode-card-label">SOLO ADVENTURE</span>
                   <span class="mode-card-badge">MAIN</span>
@@ -228,6 +228,28 @@
     </div>
 
 
+
+    <!-- LOBBY / PRE-GAME -->
+    <div id="screen-lobby" class="screen">
+      <div class="lobby-wrap">
+        <div class="lobby-kicker">SOLO ADVENTURE</div>
+        <div class="lobby-title">DUNGEON<br>CRAWLER</div>
+        <div class="lobby-desc">Roguelite · procedural floors · progression</div>
+        <div class="lobby-actions">
+          <button class="lobby-btn lobby-btn-play" onclick="
+            window.loadProfile&&loadProfile();
+            window.updateRunKeyUI&&updateRunKeyUI();
+            document.getElementById('screen-lobby').classList.remove('active');
+            document.getElementById('screen-hub').classList.add('active');
+            window.BGM&&BGM.start('hub');
+          ">▶ PLAY GAME</button>
+          <button class="lobby-btn lobby-btn-back" onclick="
+            document.getElementById('screen-lobby').classList.remove('active');
+            document.getElementById('screen-menu').classList.add('active');
+          ">← BACK</button>
+        </div>
+      </div>
+    </div>
 
     <!-- HUB ROOM -->
     <div id="screen-hub" class="screen">
