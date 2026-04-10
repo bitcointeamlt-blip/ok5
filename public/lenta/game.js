@@ -16154,45 +16154,19 @@ function _agentExecute(action, hero) {
 })();
 
 
-// Landing page PAM patrol + gold stone (below dungeon button)
+// Landing page PAM patrol (position:absolute in HTML, JS only moves left for patrol)
 (function() {
   const cv = document.getElementById('menu-pam-canvas');
   if (!cv) return;
   const ctx2 = cv.getContext('2d');
   const img = new Image(); img.src = 'assets_tiny/pam_npc.png';
   const FRAMES = 19, FW = 192, FH = 192, FPS = 12;
-  const PATROL_DIST = 150, SPEED = 70;
-  let baseX = 0, baseY = 0, offsetX = 0;
-  let state = 'going', stateStart = null, facingRight = true;
-
-  // Gold stone
-  const stoneEl = document.createElement('img');
-  stoneEl.src = 'assets_tiny/GoldStone6.png';
-  const STONE_SZ = 72;
-  stoneEl.style.cssText = `position:fixed;width:${STONE_SZ}px;height:${STONE_SZ}px;image-rendering:pixelated;pointer-events:none;z-index:2;`;
-  document.body.appendChild(stoneEl);
-
-  // Recalculate positions from btn-adv viewport rect
-  // Called on init, resize AND scroll — so position:fixed always matches button
-  function sync() {
-    const btn = document.getElementById('btn-adv');
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    baseX = r.left + r.width / 2 - cv.width / 2;
-    baseY = r.bottom + 8;
-    cv.style.top  = baseY + 'px';
-    stoneEl.style.left = (r.left + 20) + 'px';
-    stoneEl.style.top  = (r.bottom + cv.height - STONE_SZ + 8) + 'px';
-  }
-
-  window.addEventListener('resize', sync);
-  window.addEventListener('scroll', sync, { passive: true });
-  setTimeout(sync, 400);
+  const BASE_LEFT = 60, PATROL_DIST = 150, SPEED = 70;
+  let offsetX = 0, state = 'going', stateStart = null, facingRight = true;
 
   function tick(t) {
     requestAnimationFrame(tick);
     if (!img.complete || !img.naturalWidth) return;
-
     if (stateStart === null) stateStart = t;
     const moved = ((t - stateStart) / 1000) * SPEED;
     if (state === 'going') {
@@ -16202,8 +16176,7 @@ function _agentExecute(action, hero) {
       offsetX = PATROL_DIST - Math.min(moved, PATROL_DIST);
       if (offsetX <= 0) { offsetX = 0; state = 'going'; stateStart = t; facingRight = true; }
     }
-    cv.style.left = (baseX + offsetX) + 'px';
-
+    cv.style.left = (BASE_LEFT + offsetX) + 'px';
     const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
     ctx2.clearRect(0, 0, cv.width, cv.height);
     ctx2.save();
