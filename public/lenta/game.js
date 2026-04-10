@@ -16153,6 +16153,57 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
+// Landing page PAM patrol (below dungeon button)
+(function() {
+  const cv = document.getElementById('menu-pam-canvas');
+  if (!cv) return;
+  const ctx2 = cv.getContext('2d');
+  const img = new Image(); img.src = 'assets_tiny/pam_npc.png';
+  const FRAMES = 19, FW = 192, FH = 192, FPS = 12;
+  const PATROL_DIST = 150, SPEED = 70;
+  let baseX = 0, baseY = 0, offsetX = 0;
+  let state = 'going', stateStart = null, facingRight = true;
+
+  function updateBasePos() {
+    const btn = document.getElementById('btn-adv');
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    baseX = r.left + r.width / 2 - cv.width / 2;
+    baseY = r.bottom + 8;
+    cv.style.top = baseY + 'px';
+  }
+
+  window.addEventListener('resize', updateBasePos);
+  setTimeout(updateBasePos, 300);
+
+  function tick(t) {
+    requestAnimationFrame(tick);
+    if (!img.complete || !img.naturalWidth) return;
+    if (baseX === 0) updateBasePos();
+
+    if (stateStart === null) stateStart = t;
+    const moved = ((t - stateStart) / 1000) * SPEED;
+    if (state === 'going') {
+      offsetX = Math.min(moved, PATROL_DIST);
+      if (offsetX >= PATROL_DIST) { state = 'returning'; stateStart = t; facingRight = false; }
+    } else {
+      offsetX = PATROL_DIST - Math.min(moved, PATROL_DIST);
+      if (offsetX <= 0) { offsetX = 0; state = 'going'; stateStart = t; facingRight = true; }
+    }
+    cv.style.left = (baseX + offsetX) + 'px';
+
+    const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
+    ctx2.clearRect(0, 0, cv.width, cv.height);
+    ctx2.save();
+    if (!facingRight) {
+      ctx2.translate(cv.width, 0); ctx2.scale(-1, 1);
+    }
+    ctx2.drawImage(img, frame * FW, 0, FW, FH, 0, 0, cv.width, cv.height);
+    ctx2.restore();
+  }
+  requestAnimationFrame(tick);
+})();
+
 // Landing page: bag → coin → +1 $RONKE pickup
 (function() {
   const cv = document.getElementById('menu-goldbag');
