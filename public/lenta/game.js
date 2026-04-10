@@ -12669,7 +12669,7 @@ function drawUnits() {
           const sprSz = UNIT_CELL * 2.1;
           const frame = Math.floor(performance.now() / (1000 / PAM_FPS)) % PAM_FRAMES;
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
-          ctx.drawImage(pamNpcImg, frame * PAM_FW, 0, PAM_FW, PAM_FH, cx - sprSz / 2, cy - sprSz + 20, sprSz, sprSz);
+          ctx.drawImage(pamNpcImg, frame * PAM_FW, 0, PAM_FW, PAM_FH, cx - sprSz / 2, cy - sprSz + 30, sprSz, sprSz);
           ctx.globalAlpha = alpha;
         }
       } else if (u.utype === 'minotaur') {
