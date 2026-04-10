@@ -2575,6 +2575,8 @@ const deadAnimImg = new Image(); deadAnimImg.src = 'assets_tiny/Dead.png';
 const trollDeadImg = new Image(); trollDeadImg.src = 'animations/troll/Troll_Dead.png';
 const mSpawnImg = new Image(); mSpawnImg.src = 'assets_tiny/M_Spawn.png';
 const mIdleImg  = new Image(); mIdleImg.src  = 'assets_tiny/M_Idle.png';
+const pamNpcImg = new Image(); pamNpcImg.src = 'assets_tiny/pam_npc.png';
+const PAM_FRAMES = 19, PAM_FW = 192, PAM_FH = 192, PAM_FPS = 12;
 const _SPAWN_FRAMES = 7, _SPAWN_FRAME_W = 128, _SPAWN_FRAME_H = 128, _SPAWN_MS = 120;
 const rockImgs = [null, null, null, null, null]; // index 1-4
 for (let _ri = 1; _ri <= 4; _ri++) { rockImgs[_ri] = new Image(); rockImgs[_ri].src = `assets_tiny/Terrain/Water/Rocks/Rocks_0${_ri}.png`; }
@@ -9910,6 +9912,7 @@ function loop(now) {
   drawTutorialHighlight();
   drawLoot();
   drawMeatDrops();
+  drawPamNpc();
   drawUnits();
   drawForegroundDecorations();
   drawRonkeInfect();
@@ -10513,6 +10516,19 @@ function drawParticles() {
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2); ctx.fill();
     }
   }
+  ctx.restore();
+}
+
+function drawPamNpc() {
+  if (!pamNpcImg.complete || !pamNpcImg.naturalWidth) return;
+  const now = performance.now();
+  const frame = Math.floor(now / (1000 / PAM_FPS)) % PAM_FRAMES;
+  // Place NPC at tile 5,5 (adjust as needed)
+  const nx = 5, ny = 5;
+  const sz = CELL * 2.2;
+  const cx = (nx + 0.5) * CELL, cy = (ny + 0.5) * CELL;
+  ctx.save();
+  ctx.drawImage(pamNpcImg, frame * PAM_FW, 0, PAM_FW, PAM_FH, cx - sz/2, cy - sz, sz, sz);
   ctx.restore();
 }
 
