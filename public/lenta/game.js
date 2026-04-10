@@ -16171,6 +16171,16 @@ function _agentExecute(action, hero) {
   const STONE_SZ = 72;
   stoneEl.style.cssText = `position:fixed;width:${STONE_SZ}px;height:${STONE_SZ}px;image-rendering:pixelated;pointer-events:none;z-index:2;`;
   document.body.appendChild(stoneEl);
+  // Update stone position only on resize, not scroll
+  function updateStone() {
+    const btn = document.getElementById('btn-adv');
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    stoneEl.style.left = (r.left + 20) + 'px';
+    stoneEl.style.top  = (r.bottom + cv.height - STONE_SZ + 8) + 'px';
+  }
+  window.addEventListener('resize', updateStone);
+  setTimeout(updateStone, 400);
 
   function updateBasePos() {
     const btn = document.getElementById('btn-adv');
@@ -16179,17 +16189,15 @@ function _agentExecute(action, hero) {
     baseX = r.left + r.width / 2 - cv.width / 2;
     baseY = r.bottom + 8;
     cv.style.top = baseY + 'px';
-    stoneEl.style.left = (r.left + 20) + 'px';
-    stoneEl.style.top  = (r.bottom + cv.height - STONE_SZ + 8) + 'px';
   }
 
   window.addEventListener('resize', updateBasePos);
-  setTimeout(updateBasePos, 300);
+  setTimeout(updateBasePos, 400);
 
   function tick(t) {
     requestAnimationFrame(tick);
     if (!img.complete || !img.naturalWidth) return;
-    updateBasePos(); // update every frame so stone stays fixed on scroll
+    if (baseX === 0) updateBasePos();
 
     if (stateStart === null) stateStart = t;
     const moved = ((t - stateStart) / 1000) * SPEED;
