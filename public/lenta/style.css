@@ -7631,3 +7631,85 @@ kbd {
   font-size: 8px;
 }
 
+/* ── Mobile-only Discord link ── */
+.mobile-discord-link {
+  display: none;
+}
+
+/* ══════════════════════════════════════════════════════
+   MOBILE HOMEPAGE OPTIMISATION  (≤ 600px)
+   ══════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+
+  /* 1. Hide desktop-only absolute decoratives */
+  #menu-ronke-canvas,
+  #menu-skull-canvas,
+  #menu-goldbag,
+  #menu-goblin-house,
+  #menu-pam-canvas,
+  #menu-stone,
+  #menu-discord-btn { display: none !important; }
+
+  /* 2. Remove the 340px bottom gap left for decoratives */
+  #screen-menu .menu-wrap {
+    padding: 12px 12px 20px;
+    gap: 14px;
+  }
+
+  /* 3. Hero smaller */
+  .menu-hero {
+    padding: 14px 12px;
+    gap: 10px;
+  }
+
+  #screen-menu .title-main { font-size: clamp(26px, 9vw, 44px); letter-spacing: 2px; }
+  #screen-menu .title-sub  { font-size: clamp(10px, 3.5vw, 18px); letter-spacing: 4px; margin-top: 4px; }
+  #screen-menu .tagline p  { font-size: 7.5px; }
+
+  /* 4. Single-column grid (already done at 1100px but enforce on mobile too) */
+  .menu-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /* 5. Mode cards stack and shrink */
+  .menu-main-panel { padding: 12px; }
+  #screen-menu .mode-select { grid-template-columns: 1fr; gap: 8px; }
+  .mode-card { padding: 12px 14px; min-height: 0; }
+  .mode-card-title { font-size: clamp(14px, 4.5vw, 22px); }
+
+  /* 6. Eco panels: don't flex-grow — let content set height */
+  .menu-side-stack { gap: 10px; height: auto; }
+  .menu-side-stack .eco-card { flex: none; }
+
+  /* 7. RON chart shorter */
+  #ron-chart { height: 170px !important; }
+
+  /* 8. Shorter activity feeds */
+  .eco-activity-feed { max-height: 200px; }
+  .eco-swap-feed     { max-height: 180px; }
+
+  /* 9. NFT last-row: smaller thumbnail */
+  #nft-last-img { width: 52px !important; height: 52px !important; }
+
+  /* 10. Eco card padding tighter */
+  .eco-card { padding: 12px; }
+  .eco-card-body { gap: 8px; }
+
+  /* 11. Show mobile Discord link */
+  .mobile-discord-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(88,101,242,0.10);
+    border: 1px solid rgba(88,101,242,0.40);
+    color: #a8b0ff;
+    text-decoration: none;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    letter-spacing: 1px;
+    margin-top: 4px;
+  }
+}
+
