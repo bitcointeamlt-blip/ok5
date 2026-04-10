@@ -16154,35 +16154,192 @@ function _agentExecute(action, hero) {
 })();
 
 
-// Landing page PAM patrol (position:absolute in HTML, JS only moves left for patrol)
+// Landing page Pawn+Pickaxe: patrol → walk to stone → mine → coin pop → walk back
 (function() {
   const cv = document.getElementById('menu-pam-canvas');
   if (!cv) return;
   const ctx2 = cv.getContext('2d');
-  const img = new Image(); img.src = 'assets_tiny/pam_npc.png';
-  const FRAMES = 19, FW = 192, FH = 192, FPS = 12;
-  const BASE_LEFT = 60, PATROL_DIST = 150, SPEED = 70;
-  let offsetX = 0, state = 'going', stateStart = null, facingRight = true;
+
+  const idleImg    = new Image(); idleImg.src    = 'assets_tiny/Pawn_Idle_Pickaxe.png';
+  const runImg     = new Image(); runImg.src     = 'assets_tiny/Pawn_Run_Pickaxe.png';
+  const interactImg= new Image(); interactImg.src= 'assets_tiny/Pawn_Interact_Pickaxe.png';
+  const pamImg     = new Image(); pamImg.src     = 'assets_tiny/pam_npc.png';
+  const coinImg    = new Image(); coinImg.src    = 'assets_tiny/$ronke2.png';
+
+  const IDLE_FRAMES=8,  IDLE_FW=192,  IDLE_FPS=6;
+  const RUN_FRAMES=6,   RUN_FW=192,   RUN_FPS=8;
+  const INT_FRAMES=6,   INT_FW=192,   INT_FPS=10;
+  const PAM_FRAMES=19,  PAM_FW=192,   PAM_FPS=12;
+  const COIN_FRAMES=8,  COIN_FW=640,  COIN_FH=640, COIN_FPS=8;
+
+  const BASE_LEFT   = 200;
+  const STONE_LEFT  = 517;
+  const FAR_RIGHT   = 950;  // PAM walks to here after mining
+  const PATROL_DIST = 150;
+  const WALK_SPEED  = 90;
+  const PATROL_DUR  = 8000;
+
+  // states: 'patrol_run_r'|'patrol_run_l'|'walk_to'|'mining'|'pam_exit_left'|'pawn_enter_right'
+  let state = 'patrol_run_r';
+  let stateStart = null, patrolStart = null;
+  let currentX = BASE_LEFT, patrolOffset = 0, facingRight = true;
+  let drawScale = 1.0;
+
+  function spawnCoin() {
+    const house = document.getElementById('menu-goblin-house');
+    if (house) {
+      house.style.transformOrigin = 'bottom center';
+      house.style.transition = 'transform 0.08s ease-out';
+      house.style.transform = 'scaleX(1.18) scaleY(0.82)';
+      setTimeout(() => {
+        house.style.transition = 'transform 0.18s ease-in-out';
+        house.style.transform = '';
+      }, 100);
+    }
+    const wrap = document.querySelector('.menu-wrap');
+    if (!wrap) return;
+    const cc = document.createElement('canvas');
+    cc.width = 36; cc.height = 36;
+    const COIN_TOP = 720;
+    cc.style.cssText = `position:absolute;left:${STONE_LEFT - 300 - 10}px;top:${COIN_TOP}px;image-rendering:pixelated;pointer-events:none;z-index:3;transition:none;`;
+    wrap.appendChild(cc);
+    const cctx = cc.getContext('2d');
+    const startT = performance.now();
+    const DUR = 600;
+    function drawCoin(t) {
+      const el = t - startT;
+      if (el > DUR) { cc.remove(); return; }
+      requestAnimationFrame(drawCoin);
+      const frame = Math.floor(el / (1000 / COIN_FPS)) % COIN_FRAMES;
+      const prog = el / DUR;
+      cc.style.top = (COIN_TOP - 28 * prog) + 'px';
+      cc.style.opacity = prog > 0.5 ? String(1 - (prog - 0.5) / 0.5) : '1';
+      cctx.clearRect(0, 0, cc.width, cc.height);
+      if (coinImg.complete && coinImg.naturalWidth)
+        cctx.drawImage(coinImg, frame * COIN_FW, 0, COIN_FW, COIN_FH, 0, 0, cc.width, cc.height);
+    }
+    requestAnimationFrame(drawCoin);
+  }
 
   function tick(t) {
     requestAnimationFrame(tick);
-    if (!img.complete || !img.naturalWidth) return;
     if (stateStart === null) stateStart = t;
-    const moved = ((t - stateStart) / 1000) * SPEED;
-    if (state === 'going') {
-      offsetX = Math.min(moved, PATROL_DIST);
-      if (offsetX >= PATROL_DIST) { state = 'returning'; stateStart = t; facingRight = false; }
-    } else {
-      offsetX = PATROL_DIST - Math.min(moved, PATROL_DIST);
-      if (offsetX <= 0) { offsetX = 0; state = 'going'; stateStart = t; facingRight = true; }
+    if (patrolStart === null) patrolStart = t;
+
+    let img = idleImg, frames = IDLE_FRAMES, fw = IDLE_FW, fps = IDLE_FPS;
+
+    if (state === 'patrol_run_r' || state === 'patrol_run_l') {
+      img = runImg; frames = RUN_FRAMES; fw = RUN_FW; fps = RUN_FPS;
+      if (t - patrolStart > PATROL_DUR) {
+        // time to walk to stone
+        state = 'walk_to'; stateStart = t; facingRight = true;
+      } else {
+        const moved = ((t - stateStart) / 1000) * WALK_SPEED;
+        if (state === 'patrol_run_r') {
+          patrolOffset = Math.min(moved, PATROL_DIST); facingRight = true;
+          if (patrolOffset >= PATROL_DIST) { state = 'patrol_run_l'; stateStart = t; }
+        } else {
+          patrolOffset = PATROL_DIST - Math.min(moved, PATROL_DIST); facingRight = false;
+          if (patrolOffset <= 0) { patrolOffset = 0; state = 'patrol_run_r'; stateStart = t; }
+        }
+        currentX = BASE_LEFT + patrolOffset;
+      }
+
+    } else if (state === 'walk_to') {
+      img = runImg; frames = RUN_FRAMES; fw = RUN_FW; fps = RUN_FPS;
+      facingRight = true;
+      const moved = ((t - stateStart) / 1000) * WALK_SPEED;
+      currentX = Math.min(BASE_LEFT + patrolOffset + moved, STONE_LEFT);
+      if (currentX >= STONE_LEFT) {
+        currentX = STONE_LEFT; state = 'mining'; stateStart = t;
+      }
+
+    } else if (state === 'mining') {
+      img = interactImg; frames = INT_FRAMES; fw = INT_FW; fps = INT_FPS;
+      facingRight = true; currentX = STONE_LEFT;
+      // Stone shake: vibrate on each pickaxe hit cycle (~600ms)
+      const stone = document.getElementById('menu-stone');
+      if (stone) {
+        const hitCycle = Math.floor((t - stateStart) / 600);
+        const hitPhase = ((t - stateStart) % 600) / 600;
+        const shake = hitPhase < 0.25 ? Math.sin(hitPhase * Math.PI * 8) * 3 : 0;
+        stone.style.transform = `translateX(${shake}px)`;
+      }
+      if (t - stateStart > 4000) {
+        const stone2 = document.getElementById('menu-stone');
+        if (stone2) stone2.style.transform = '';
+        // PAM appears instantly at stone, walks LEFT off screen
+        state = 'pam_exit_left'; stateStart = t;
+        currentX = STONE_LEFT; drawScale = 0.50;
+      }
+
+    } else if (state === 'pam_exit_left') {
+      img = pamImg; frames = PAM_FRAMES; fw = PAM_FW; fps = PAM_FPS;
+      facingRight = false; drawScale = 0.50;
+      const moved = ((t - stateStart) / 1000) * WALK_SPEED;
+      currentX = STONE_LEFT - moved;
+      if (moved > 300) {
+        spawnCoin();
+        // Pawn appears at this spot, patrol loop restarts
+        currentX = STONE_LEFT - 300;
+        patrolOffset = 0; drawScale = 1.0;
+        state = 'patrol_run_r'; stateStart = t; patrolStart = t;
+      }
+
+    } else if (state === 'pawn_enter_right') {
+      img = runImg; frames = RUN_FRAMES; fw = RUN_FW; fps = RUN_FPS;
+      facingRight = false; drawScale = 1.0;
+      const moved = ((t - stateStart) / 1000) * WALK_SPEED;
+      currentX = Math.max(FAR_RIGHT - moved, BASE_LEFT);
+      if (currentX <= BASE_LEFT) {
+        currentX = BASE_LEFT; patrolOffset = 0; drawScale = 1.0;
+        state = 'patrol_run_r'; stateStart = t; patrolStart = t;
+      }
     }
-    cv.style.left = (BASE_LEFT + offsetX) + 'px';
-    const frame = Math.floor(t / (1000 / FPS)) % FRAMES;
+
+    cv.style.left = currentX + 'px';
+    if (!img.complete || !img.naturalWidth) return;
+    const frame = Math.floor(t / (1000 / fps)) % frames;
     ctx2.clearRect(0, 0, cv.width, cv.height);
     ctx2.save();
+    const dw = cv.width * drawScale, dh = cv.height * drawScale;
+    const dx = (cv.width - dw) / 2, dy = (cv.height - dh) / 2;
     if (!facingRight) { ctx2.translate(cv.width, 0); ctx2.scale(-1, 1); }
-    ctx2.drawImage(img, frame * FW, 0, FW, FH, 0, 0, cv.width, cv.height);
+    ctx2.drawImage(img, frame * fw, 0, fw, 192, dx, dy, dw, dh);
     ctx2.restore();
+  }
+  requestAnimationFrame(tick);
+})();
+
+// Landing page: animated gold stone (plays once, waits 1-2s, repeats)
+(function() {
+  const cv = document.getElementById('menu-stone');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const img = new Image();
+  img.src = 'assets_tiny/GoldStone6_Highlight.png';
+  const FRAMES = 6, FW = 128, FH = 128, FPS = 8;
+  const FRAME_DUR = 1000 / FPS;
+  let playStart = null, nextPlay = 0, playing = false;
+  function tick(t) {
+    requestAnimationFrame(tick);
+    if (!img.complete || !img.naturalWidth) return;
+    if (!playing) {
+      if (t >= nextPlay) { playing = true; playStart = t; }
+      else return; // show nothing (clear) or keep last frame — keep last frame
+    }
+    const elapsed = t - playStart;
+    const frame = Math.floor(elapsed / FRAME_DUR);
+    if (frame >= FRAMES) {
+      // animation done, draw frame 0 (static), schedule next
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, FW, FH, 0, 0, cv.width, cv.height);
+      playing = false;
+      nextPlay = t + 1000 + Math.random() * 1000;
+      return;
+    }
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(img, frame * FW, 0, FW, FH, 0, 0, cv.width, cv.height);
   }
   requestAnimationFrame(tick);
 })();

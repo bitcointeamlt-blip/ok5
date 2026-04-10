@@ -1,8 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-  <meta charset="UTF-8">
+>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TIMELOCK BOARD</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -70,8 +66,17 @@
         <canvas id="menu-ronke-canvas" width="160" height="180" style="position:absolute;right:474px;top:50px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
         <canvas id="menu-skull-canvas" width="210" height="230" style="position:absolute;left:940px;top:75px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
         <canvas id="menu-goldbag" width="149" height="149" style="position:absolute;left:calc(50% + 225px);transform:translateX(-50%);top:112px;image-rendering:pixelated;pointer-events:auto;z-index:2;cursor:pointer;transition:filter 0.15s,transform 0.15s;filter:drop-shadow(0 0 10px #ffcc00);"></canvas>
-        <canvas id="menu-pam-canvas" width="100" height="100" style="position:absolute;left:60px;top:430px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
-        <img id="menu-stone" src="assets_tiny/GoldStone6.png" style="position:absolute;left:270px;top:458px;width:72px;height:72px;image-rendering:pixelated;pointer-events:none;z-index:2;" />
+        <img id="menu-goblin-house" src="assets_tiny/Goblin_House.png" style="position:absolute;left:180px;top:740px;width:96px;height:144px;image-rendering:pixelated;pointer-events:none;z-index:1;" />
+        <canvas id="menu-pam-canvas" width="160" height="160" style="position:absolute;left:60px;top:750px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
+        <a href="https://discord.gg/XgVbrr7wfW" target="_blank" rel="noopener" id="menu-discord-btn" style="position:absolute;left:200px;top:860px;width:490px;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(88,101,242,0.10);border:2px solid rgba(88,101,242,0.45);color:#a8b0ff;text-decoration:none;font-family:inherit;font-size:12px;letter-spacing:1px;z-index:1;transition:background 0.15s,border-color 0.15s;">
+          <span style="display:flex;align-items:center;gap:10px;">
+            <img src="assets_tiny/discord_logo.svg" style="width:20px;height:20px;opacity:0.9;flex-shrink:0;" alt="Discord" />
+            <span>Discord Community</span>
+            <img src="assets_tiny/oxpewpew_logo.png" style="height:20px;width:auto;image-rendering:pixelated;margin-left:25px;" alt="Ox-PewPew" />
+          </span>
+          <span style="opacity:0.7;">↗</span>
+        </a>
+        <canvas id="menu-stone" width="72" height="72" style="position:absolute;left:620px;top:808px;image-rendering:pixelated;pointer-events:none;z-index:2;"></canvas>
 
         <div class="menu-grid">
           <div class="menu-main-panel">
@@ -118,46 +123,99 @@
           </div>
 
           <div class="menu-side-stack">
-            <div class="menu-panel controls-card">
-              <div class="menu-panel-head">
-                <span class="menu-panel-kicker">CONTROLS</span>
-                <span class="menu-panel-title">Control layout</span>
+
+            <div class="menu-panel eco-card eco-card-transparent">
+              <div class="eco-card-header">
+                <div class="eco-section-label">NETWORK</div>
+                <div class="eco-header-title-row">
+                  <img src="assets_tiny/ronin_logo.png" class="eco-ronin-logo" alt="Ronin" />
+                  <div class="eco-panel-title">Ronin Network</div>
+                </div>
               </div>
-              <div class="controls-dual">
-                <div class="ctrl-player">
-                  <div class="ctrl-label cyan">PLAYER 1</div>
-                  <div class="ctrl-rows">
-                    <div class="ctrl-row"><kbd>CLICK</kbd><span>Select / aim</span></div>
-                    <div class="ctrl-row"><kbd>W A S D</kbd><span>Move</span></div>
-                    <div class="ctrl-row"><kbd>SPACE</kbd><span>Shoot</span></div>
-                    <div class="ctrl-row"><kbd>Q</kbd><span>Switch weapon</span></div>
+              <div class="eco-card-body">
+                <a href="https://roninchain.com/" target="_blank" rel="noopener" class="eco-link-btn eco-link-full">
+                  <span class="eco-link-name">roninchain.com</span>
+                  <span class="eco-link-arrow">↗</span>
+                </a>
+                <canvas id="ron-chart" width="320" height="230" style="width:100%;height:230px;display:block;margin-top:10px;image-rendering:pixelated;cursor:default;"></canvas>
+                <div class="eco-activity-header" style="margin-top:10px;cursor:pointer;user-select:none;" id="ron-swap-header">
+                  <div class="eco-section-label">SWAP ACTIVITY</div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="eco-activity-live"><span class="eco-activity-dot"></span>LIVE</div>
+                    <span id="ron-swap-arrow" style="color:#4ecf88;font-size:9px;line-height:1;transition:transform 0.2s;">▼</span>
                   </div>
                 </div>
-                <div class="ctrl-divider"></div>
-                <div class="ctrl-player">
-                  <div class="ctrl-label red">PLAYER 2</div>
-                  <div class="ctrl-rows">
-                    <div class="ctrl-row"><kbd>U I O</kbd><span>Select unit</span></div>
-                    <div class="ctrl-row"><kbd>ARROWS</kbd><span>Move</span></div>
-                    <div class="ctrl-row"><kbd>ENTER</kbd><span>Shoot</span></div>
-                    <div class="ctrl-row"><kbd>P</kbd><span>Switch weapon</span></div>
-                  </div>
+                <div id="ron-activity-feed" class="eco-activity-feed eco-swap-feed">
+                  <div class="eco-activity-loading">LOADING...</div>
                 </div>
               </div>
             </div>
 
-            <div class="menu-panel mechanics-card">
-              <div class="menu-panel-head">
-                <span class="menu-panel-kicker">RULES</span>
-                <span class="menu-panel-title">How combat works</span>
+            <div class="menu-panel eco-card" style="padding-bottom:16px;flex:none;">
+              <div class="eco-card-header">
+                <div class="eco-section-label">TOKEN</div>
+                <div class="eco-header-title-row">
+                  <img src="assets_tiny/ronke_logo.png" style="width:36px;height:33px;image-rendering:pixelated;flex-shrink:0;" alt="RONKE" />
+                  <div class="eco-panel-title">$RONKE</div>
+                </div>
               </div>
-              <div class="mech-grid">
-                <div class="mech-item"><span class="mech-icon">FREEZE</span><span>No action, no movement. Time stops until you decide.</span></div>
-                <div class="mech-item"><span class="mech-icon">SYNC</span><span>One move advances bullets, monsters and the entire board.</span></div>
-                <div class="mech-item"><span class="mech-icon">AIM</span><span>Click to aim. Positioning and angle decide life or death.</span></div>
-                <div class="mech-item"><span class="mech-icon">SQUAD</span><span>One hero in dungeon. Three warriors in arena modes.</span></div>
+              <div class="eco-card-body">
+                <div class="eco-section-label">CONTRACT ADDRESS</div>
+                <div class="eco-ca-row">
+                  <span class="eco-ca-addr">0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb</span>
+                  <button class="eco-copy-btn" onclick="navigator.clipboard.writeText('0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb');this.textContent='✓ COPIED';this.classList.add('copied');setTimeout(()=>{this.textContent='COPY CA';this.classList.remove('copied');},1500);">COPY CA</button>
+                </div>
               </div>
             </div>
+
+            <div class="menu-panel eco-card">
+              <div class="eco-card-header">
+                <div class="eco-section-label">NFT COLLECTION</div>
+                <div class="eco-panel-title">RonkeVerse</div>
+              </div>
+              <div class="eco-card-body">
+                <div class="eco-nft-stats-row">
+                  <div class="eco-nft-stat">
+                    <div class="eco-section-label">FLOOR PRICE</div>
+                    <div class="eco-nft-stat-val" id="nft-floor">— RON</div>
+                  </div>
+                  <div class="eco-nft-stat">
+                    <div class="eco-section-label">LAST SALE</div>
+                    <div class="eco-nft-stat-val" id="nft-last">— RON</div>
+                  </div>
+                </div>
+                <div class="eco-nft-last-row" id="nft-last-row" style="display:none;">
+                  <img id="nft-last-img" src="" alt="Last sold NFT" style="width:72px;height:72px;object-fit:cover;image-rendering:pixelated;border:1px solid rgba(78,207,136,0.25);flex-shrink:0;" />
+                  <div class="eco-nft-last-info">
+                    <div class="eco-section-label">LAST SOLD</div>
+                    <div class="eco-nft-last-name" id="nft-last-name"></div>
+                    <div class="eco-nft-last-price" id="nft-last-price"></div>
+                  </div>
+                  <div class="eco-nft-last-meta">
+                    <div class="eco-nft-last-ago" id="nft-last-ago"></div>
+                    <img src="assets_tiny/opensea_logo.png" style="width:24px;height:24px;opacity:0.9;image-rendering:pixelated;" alt="OpenSea" />
+                  </div>
+                </div>
+                <div class="eco-activity-header">
+                  <div class="eco-section-label">MARKET ACTIVITY</div>
+                  <div class="eco-activity-live"><span class="eco-activity-dot"></span>LIVE</div>
+                </div>
+                <div id="nft-activity-feed" class="eco-activity-feed">
+                  <div class="eco-activity-loading">LOADING...</div>
+                </div>
+                <div class="eco-market-row" style="margin-top:10px;">
+                  <a href="https://marketplace.roninchain.com/collections/ronkeverse" target="_blank" rel="noopener" class="eco-link-btn">
+                    <span class="eco-link-name">Ronin Market</span>
+                    <span class="eco-link-arrow">↗</span>
+                  </a>
+                  <a href="https://opensea.io/collection/ronkeverse" target="_blank" rel="noopener" class="eco-link-btn">
+                    <span class="eco-link-name">OpenSea</span>
+                    <span class="eco-link-arrow">↗</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -1745,6 +1803,358 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="game.js"></script>
+  <script>
+  // ── RonkeVerse NFT stats (OpenSea API) ───────────────────────────
+  (async function() {
+    const floorEl = document.getElementById('nft-floor');
+    const lastEl  = document.getElementById('nft-last');
+    if (!floorEl || !lastEl) return;
+
+    const OS_KEY = '3fe80345523945e7873ba212c0fe3ff9';
+    const SLUG   = 'ronkeverse';
+    const HDRS   = { 'x-api-key': OS_KEY, 'Accept': 'application/json' };
+
+    async function fetchStats() {
+      try {
+        const r = await fetch(`https://api.opensea.io/api/v2/collections/${SLUG}/stats`, { headers: HDRS });
+        if (!r.ok) return;
+        const d = await r.json();
+        const fp = d?.total?.floor_price;
+        const sym = d?.total?.floor_price_symbol || 'RON';
+        if (fp != null) floorEl.textContent = parseFloat(fp).toFixed(2) + ' ' + sym;
+      } catch(e) {}
+    }
+
+    async function fetchLastSale() {
+      try {
+        const r = await fetch(`https://api.opensea.io/api/v2/events/collection/${SLUG}?event_type=sale&limit=1`, { headers: HDRS });
+        if (!r.ok) return;
+        const d = await r.json();
+        const ev = d?.asset_events?.[0];
+        if (!ev) return;
+        // Price
+        const qty = ev?.payment?.quantity;
+        const dec = ev?.payment?.decimals ?? 18;
+        const sym = ev?.payment?.symbol || 'RON';
+        if (qty) lastEl.textContent = (Number(qty) / Math.pow(10, dec)).toFixed(2) + ' ' + sym;
+        // NFT image + name
+        const nft = ev?.nft;
+        if (nft) {
+          const imgUrl = nft.display_image_url || nft.image_url;
+          const name   = nft.name || ('#' + nft.identifier);
+          const row     = document.getElementById('nft-last-row');
+          const img     = document.getElementById('nft-last-img');
+          const nameEl  = document.getElementById('nft-last-name');
+          const priceEl = document.getElementById('nft-last-price');
+          const agoEl   = document.getElementById('nft-last-ago');
+          if (imgUrl && row && img) {
+            img.src = imgUrl;
+            nameEl.textContent = name;
+            if (priceEl && qty) priceEl.textContent = (Number(qty) / Math.pow(10, dec)).toFixed(2) + ' ' + sym;
+            // Time ago
+            const ts = ev.event_timestamp;
+            if (agoEl && ts) {
+              const secs = Math.floor(Date.now()/1000) - ts;
+              const ago = secs < 60 ? 'just now'
+                : secs < 3600   ? Math.floor(secs/60) + 'm ago'
+                : secs < 86400  ? Math.floor(secs/3600) + 'h ago'
+                : secs < 604800 ? Math.floor(secs/86400) + 'd ago'
+                : Math.floor(secs/604800) + 'w ago';
+              agoEl.textContent = ago;
+            }
+            row.style.display = 'flex';
+          }
+        }
+      } catch(e) {}
+    }
+
+    async function fetchActivity() {
+      try {
+        const r = await fetch(
+          `https://api.opensea.io/api/v2/events/collection/${SLUG}?event_type=sale&limit=8`,
+          { headers: HDRS }
+        );
+        if (!r.ok) return;
+        const d = await r.json();
+        const events = d?.asset_events || [];
+        const feed = document.getElementById('nft-activity-feed');
+        if (!feed || !events.length) return;
+
+        feed.innerHTML = events.map(ev => {
+          const nft   = ev.nft || {};
+          const qty   = ev?.payment?.quantity;
+          const dec   = ev?.payment?.decimals ?? 18;
+          const sym   = ev?.payment?.symbol || 'RON';
+          const price = qty ? (Number(qty) / Math.pow(10, dec)).toFixed(2) + ' ' + sym : '—';
+          const name  = nft.name || ('#' + nft.identifier) || '?';
+          const img   = nft.display_image_url || nft.image_url || '';
+          const ts    = ev.event_timestamp;
+          const secs  = ts ? Math.floor(Date.now()/1000) - ts : 0;
+          const ago   = secs < 60 ? 'now'
+            : secs < 3600   ? Math.floor(secs/60) + 'm'
+            : secs < 86400  ? Math.floor(secs/3600) + 'h'
+            : Math.floor(secs/86400) + 'd';
+
+          return `<div class="eco-activity-row">
+            ${img ? `<img src="${img}" class="eco-activity-thumb" />` : '<div class="eco-activity-thumb eco-activity-thumb-empty"></div>'}
+            <div class="eco-activity-info">
+              <span class="eco-activity-name">${name}</span>
+              <span class="eco-activity-price">${price}</span>
+            </div>
+            <span class="eco-activity-ago">${ago} ago</span>
+          </div>`;
+        }).join('');
+      } catch(e) {}
+    }
+
+    fetchStats();
+    fetchLastSale();
+    fetchActivity();
+    setInterval(() => { fetchStats(); fetchLastSale(); fetchActivity(); }, 60000);
+  })();
+
+  // ── RON/USDC Pixel Art Chart ──────────────────────────────────────
+  (function() {
+    const cv = document.getElementById('ron-chart');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+
+    const C = {
+      bg:      '#060d14', grid:   '#0d2218', gridhi: '#122e1e',
+      green:   '#4ecf88', red:    '#d94f4f', text:   '#4ecf88',
+      axis:    '#7ae8b0', textdim:'#3a7055', scan:   'rgba(78,207,136,0.07)',
+      live:    '#ff3c3c',
+    };
+
+    const WRON = '0xe514d9deb7966c8be0ca922de8a064264ea6bcd4';
+    const GT   = 'https://api.geckoterminal.com/api/v2/networks/ronin';
+    let ronPool = '';
+    let candles = [], price = 0, chg24 = 0;
+    let scanX = 0, tickFrame = 0, blinkOn = true;
+    let dotCount = 0, dotTick = 0, loaded = false, errored = false, isDemo = false;
+
+    function makeDemo() {
+      // Fallback demo candles (realistic RON price ~$0.087)
+      const now = Date.now(); let p = 0.087;
+      candles = Array.from({length:28}, (_,i) => {
+        const t = now - (27-i)*30*60*1000;
+        const o = p, d = (Math.random()-0.48)*0.002;
+        const c = Math.max(0.07, o+d);
+        const h = Math.max(o,c)+(Math.random()*0.001);
+        const l = Math.min(o,c)-(Math.random()*0.001);
+        p = c; return [t,o,h,l,c];
+      });
+      price = p; chg24 = ((p-candles[0][1])/candles[0][1])*100;
+      loaded = true; errored = false; isDemo = true;
+    }
+
+    async function fetchOHLC() {
+      try {
+        if (!ronPool) {
+          const pj = await (await fetch(`${GT}/tokens/${WRON}/pools?page=1`)).json();
+          ronPool = pj.data[0].attributes.address;
+        }
+        const j = await (await fetch(`${GT}/pools/${ronPool}/ohlcv/minute?aggregate=30&limit=28&currency=usd`)).json();
+        candles = j.data.attributes.ohlcv_list.slice().reverse().map(c => [c[0]*1000,+c[1],+c[2],+c[3],+c[4]]);
+        loaded = true; errored = false;
+      } catch(e) { if (!loaded) makeDemo(); }
+    }
+
+    async function fetchPrice() {
+      try {
+        const j = await (await fetch(`${GT}/tokens/${WRON}`)).json();
+        price = parseFloat(j.data.attributes.price_usd) || 0;
+        if (candles.length >= 2) {
+          const first = candles[0][1];
+          chg24 = first > 0 ? ((price - first) / first) * 100 : 0;
+        }
+        if (candles.length) {
+          const last = candles[candles.length-1];
+          last[4] = price;
+          if (price > last[2]) last[2] = price;
+          if (price < last[3]) last[3] = price;
+        }
+      } catch(e) {}
+    }
+
+    const R = n => Math.round(n);
+    const F = '7px "Press Start 2P",monospace';
+
+    function draw() {
+      ctx.fillStyle = C.bg; ctx.fillRect(0,0,W,H);
+      for (let y=0; y<H; y+=4) { ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(0,y,W,1); }
+
+      const PL=4, PR=62, PT=26, PB=30, CW=W-PL-PR, CH=H-PT-PB;
+
+      if (!loaded) {
+        dotTick++; if (dotTick%18===0) dotCount=(dotCount+1)%4;
+        ctx.fillStyle=C.text; ctx.font=F;
+        const lbl='LOADING'+'.'.repeat(dotCount);
+        ctx.fillText(lbl, R(W/2-lbl.length*4.2), R(H/2));
+        return;
+      }
+      if (errored || !candles.length) {
+        ctx.fillStyle=C.red; ctx.font=F;
+        ctx.fillText('API ERROR', R(W/2-34), R(H/2)); return;
+      }
+
+      let minP=Math.min(...candles.map(c=>c[3])), maxP=Math.max(...candles.map(c=>c[2]));
+      const rng=maxP-minP||0.001; minP-=rng*0.08; maxP+=rng*0.08;
+      const toY=p=>R(PT+CH-((p-minP)/(maxP-minP))*CH);
+
+      // Y grid + labels
+      for (let i=0; i<=4; i++) {
+        const y=R(PT+(CH/4)*i);
+        ctx.fillStyle=i===0||i===4?C.gridhi:C.grid; ctx.fillRect(PL,y,CW,1);
+        const lp=maxP-((maxP-minP)/4)*i;
+        ctx.fillStyle=C.axis; ctx.font=F;
+        ctx.fillText('$'+lp.toFixed(3), W-PR+4, y+4);
+      }
+      // X grid + time labels
+      for (let i=0; i<candles.length; i+=7) {
+        const x=R(PL+(CW/candles.length)*i);
+        ctx.fillStyle=C.grid; ctx.fillRect(x,PT,1,CH);
+        if (candles[i]&&candles[i][0]) {
+          const d=new Date(candles[i][0]);
+          ctx.fillStyle=C.axis; ctx.font=F;
+          ctx.fillText(d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0'), x-6, PT+CH+16);
+        }
+      }
+
+      // Candles
+      const slotW=CW/candles.length, bodyW=Math.max(2,R(slotW)-1);
+      candles.forEach((c,i)=>{
+        const x=R(PL+slotW*i+(slotW-bodyW)/2); const bull=c[4]>=c[1];
+        ctx.fillStyle=bull?C.green:C.red;
+        ctx.fillRect(R(x+bodyW/2-0.5), toY(c[2]), 1, toY(c[3])-toY(c[2]));
+        const top=Math.min(toY(c[1]),toY(c[4]));
+        ctx.fillRect(x, top, bodyW, Math.max(1,Math.abs(toY(c[4])-toY(c[1]))));
+      });
+
+      // Current price line
+      ctx.fillStyle='rgba(78,207,136,0.25)'; ctx.fillRect(PL, toY(price), CW, 1);
+
+      // Scan line
+      scanX=(scanX+0.6)%CW; ctx.fillStyle=C.scan; ctx.fillRect(R(PL+scanX),PT,2,CH);
+
+      // Header
+      const isBull=chg24>=0;
+      ctx.fillStyle=C.text; ctx.font=F;
+      ctx.fillText('RONIN/USDC', PL, 16);
+      ctx.fillText('$'+price.toFixed(4), PL+82, 16);
+      ctx.fillStyle=isBull?C.green:C.red; ctx.font=F;
+      ctx.fillText((isBull?'+':'')+chg24.toFixed(2)+'%', PL+135, 16);
+
+      // LIVE blink
+      tickFrame++; if(tickFrame%32===0) blinkOn=!blinkOn;
+      if (blinkOn) {
+        ctx.fillStyle=C.live; ctx.fillRect(W-PR-34,10,4,4);
+        ctx.fillStyle='#ff8888'; ctx.font=F;
+        ctx.fillText('LIVE', W-PR-28, 16);
+      }
+
+      // Footer time
+      const now=new Date();
+      ctx.fillStyle=C.textdim; ctx.font=F;
+      ctx.fillText(now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0'), W-PR-24, H-6);
+    }
+
+    function loop() { draw(); requestAnimationFrame(loop); }
+    requestAnimationFrame(loop);
+    fetchOHLC().then(fetchPrice);
+    setInterval(fetchOHLC, 300000);
+    setInterval(fetchPrice, 15000);
+
+    // ── Swap activity feed (5-min buckets) ────────────────────────────
+    let ronSwapOpen = true;
+    const ronHdr = document.getElementById('ron-swap-header');
+    if (ronHdr) ronHdr.addEventListener('click', () => {
+      ronSwapOpen = !ronSwapOpen;
+      const feed = document.getElementById('ron-activity-feed');
+      const arrow = document.getElementById('ron-swap-arrow');
+      if (feed)  feed.style.display  = ronSwapOpen ? 'flex' : 'none';
+      if (arrow) arrow.style.transform = ronSwapOpen ? '' : 'rotate(-90deg)';
+    });
+
+    const DEMO_BUCKETS = [
+      { minsAgo:0,  buy:48, sell:12 },
+      { minsAgo:5,  buy:8,  sell:31 },
+      { minsAgo:10, buy:22, sell:15 },
+      { minsAgo:15, buy:5,  sell:44 },
+      { minsAgo:20, buy:67, sell:9  },
+      { minsAgo:25, buy:18, sell:26 },
+      { minsAgo:30, buy:35, sell:14 },
+      { minsAgo:35, buy:11, sell:52 },
+    ];
+
+    function renderBuckets(buckets) {
+      const feed = document.getElementById('ron-activity-feed');
+      if (!feed) return;
+      const now5 = Math.floor(Date.now() / (5*60*1000));
+      const sorted = Object.values(buckets)
+        .filter(b => b.buy > 0 || b.sell > 0)
+        .sort((a, b) => b.key - a.key)
+        .slice(0, 8);
+      if (!sorted.length) { feed.innerHTML = '<div class="eco-activity-loading">NO DATA</div>'; return; }
+      const fmt = v => v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+      feed.innerHTML = sorted.map(b => {
+        const total = b.buy + b.sell || 1;
+        const buyPct = Math.max(2, Math.round(b.buy / total * 100));
+        const sellPct = Math.max(2, 100 - buyPct);
+        const minAgo = (now5 - b.key) * 5;
+        const agoStr = minAgo <= 0 ? 'NOW' : minAgo + 'm';
+        return `<div class="eco-swap-bucket">
+          <span class="eco-swap-sell-lbl">$${fmt(b.sell)}</span>
+          <div class="eco-swap-bar">
+            <div class="eco-swap-bar-sell" style="flex:${sellPct}"></div>
+            <div class="eco-swap-bar-buy"  style="flex:${buyPct}"></div>
+          </div>
+          <span class="eco-swap-buy-lbl">$${fmt(b.buy)}</span>
+          <span class="eco-swap-ago-lbl">${agoStr}</span>
+        </div>`;
+      }).join('');
+    }
+
+    async function fetchTrades() {
+      try {
+        if (!ronPool) {
+          const pj = await (await fetch(`${GT}/tokens/${WRON}/pools?page=1`)).json();
+          ronPool = pj.data[0].attributes.address;
+        }
+        const r = await fetch(`${GT}/pools/${ronPool}/trades`);
+        if (!r.ok) throw new Error('no trades');
+        const d = await r.json();
+        const trades = d?.data || [];
+        if (!trades.length) throw new Error('empty');
+
+        const buckets = {};
+        trades.forEach(tr => {
+          const a = tr.attributes || {};
+          const ts = a.block_timestamp ? new Date(a.block_timestamp).getTime() : Date.now();
+          const key = Math.floor(ts / (5*60*1000));
+          if (!buckets[key]) buckets[key] = { key, buy:0, sell:0 };
+          const vol = parseFloat(a.volume_in_usd || 0);
+          if ((a.kind||'').toLowerCase()==='buy') buckets[key].buy += vol;
+          else buckets[key].sell += vol;
+        });
+        renderBuckets(buckets);
+      } catch(e) {
+        // Demo fallback
+        const now5 = Math.floor(Date.now() / (5*60*1000));
+        const buckets = {};
+        DEMO_BUCKETS.forEach(d => {
+          const key = now5 - Math.floor(d.minsAgo / 5);
+          buckets[key] = { key, buy: d.buy, sell: d.sell };
+        });
+        renderBuckets(buckets);
+      }
+    }
+
+    fetchTrades();
+    setInterval(fetchTrades, 60000);
+  })();
+  </script>
 </body>
 
 </html>

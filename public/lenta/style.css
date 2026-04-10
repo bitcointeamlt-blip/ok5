@@ -4436,7 +4436,7 @@ kbd {
   margin: auto;
   align-items: stretch;
   gap: 22px;
-  padding: 28px;
+  padding: 28px 28px 340px;
   background:
     linear-gradient(180deg, rgba(5, 18, 14, 0.88), rgba(6, 14, 16, 0.94)),
     radial-gradient(circle at top right, rgba(0, 255, 136, 0.12), transparent 40%);
@@ -4531,9 +4531,9 @@ kbd {
 
 .menu-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.9fr);
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .menu-main-panel,
@@ -4554,7 +4554,20 @@ kbd {
 .menu-side-stack {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 5px;
+  height: 100%;
+}
+
+.menu-side-stack .eco-card {
+  flex: 1;
+}
+
+/* Ecosystem row — two panels side by side below mode cards */
+.eco-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin-top: 8px;
 }
 
 .menu-panel {
@@ -7193,6 +7206,405 @@ kbd {
   background: rgba(30, 18, 6, 0.90);
   border-color: rgba(140, 90, 20, 0.60);
   color: #c4a060;
+}
+
+/* Ecosystem card */
+.eco-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-sizing: border-box;
+  padding-bottom: 200px;
+}
+
+.eco-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(78, 207, 136, 0.15);
+  margin-bottom: 20px;
+}
+
+.eco-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eco-panel-title {
+  color: #d8c49a;
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+
+.eco-card-transparent {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding-bottom: 0 !important;
+  flex: none !important;
+}
+
+.eco-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eco-ronin-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.eco-discord-btn {
+  border-color: rgba(88, 101, 242, 0.40) !important;
+  background: rgba(88, 101, 242, 0.07) !important;
+  padding: 14px 12px !important;
+}
+.eco-discord-btn:hover {
+  background: rgba(88, 101, 242, 0.18) !important;
+  border-color: rgba(88, 101, 242, 0.65) !important;
+}
+
+#menu-discord-btn {
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#menu-discord-btn:hover {
+  background: rgba(88, 101, 242, 0.22) !important;
+  border-color: rgba(88, 101, 242, 0.80) !important;
+  box-shadow: 0 0 12px rgba(88, 101, 242, 0.35);
+  color: #c8ccff !important;
+}
+
+.eco-discord-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eco-discord-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.eco-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 0;
+  border-bottom: 1px solid rgba(78, 207, 136, 0.12);
+  flex: 1;
+}
+.eco-section-last {
+  border-bottom: none;
+}
+
+.eco-section-label {
+  color: rgba(180, 220, 195, 0.45);
+  font-size: 8px;
+  letter-spacing: 2px;
+}
+
+.eco-panel-title {
+  color: #d8c49a;
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.eco-link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  background: rgba(78, 207, 136, 0.07);
+  border: 1px solid rgba(78, 207, 136, 0.22);
+  color: #a8f0cc;
+  text-decoration: none;
+  font-size: 11px;
+  letter-spacing: 1px;
+  transition: background 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+.eco-link-btn:hover {
+  background: rgba(78, 207, 136, 0.16);
+  border-color: rgba(78, 207, 136, 0.45);
+  color: #d4fff0;
+}
+.eco-link-full { width: 100%; box-sizing: border-box; }
+
+.eco-link-name { font-size: 11px; letter-spacing: 0.5px; }
+.eco-link-arrow { color: #4ecf88; font-size: 13px; }
+
+.eco-ca-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.30);
+  border: 1px solid rgba(78, 207, 136, 0.15);
+  padding: 8px 10px;
+}
+
+.eco-ca-addr {
+  flex: 1;
+  color: #7ecfaa;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.eco-copy-btn {
+  background: rgba(78, 207, 136, 0.10);
+  border: 1px solid rgba(78, 207, 136, 0.35);
+  color: #4ecf88;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.eco-copy-btn:hover { background: rgba(78, 207, 136, 0.22); }
+.eco-copy-btn.copied { background: rgba(78, 207, 136, 0.28); color: #c8ffdf; }
+
+.eco-market-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.eco-nft-stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.eco-nft-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(78,207,136,0.15);
+  background: rgba(78,207,136,0.04);
+}
+
+.eco-nft-stat-val {
+  color: #d8c49a;
+  letter-spacing: 1px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+}
+
+.eco-nft-last-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(78,207,136,0.15);
+  background: rgba(78,207,136,0.04);
+}
+
+.eco-nft-last-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eco-nft-last-name {
+  color: #d8c49a;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.eco-nft-last-price {
+  color: #4ecf88;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+.eco-nft-last-meta {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.eco-nft-last-ago {
+  color: #3a7055;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.eco-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.eco-activity-live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: #4ecf88;
+  font-family: 'Press Start 2P', monospace;
+}
+
+.eco-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff3c3c;
+  animation: actBlink 1.2s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes actBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.eco-activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.eco-activity-loading {
+  color: #3a7055;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  padding: 10px 0;
+}
+
+.eco-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(78,207,136,0.10);
+  background: rgba(78,207,136,0.03);
+  transition: background 0.15s;
+}
+
+.eco-activity-row:hover {
+  background: rgba(78,207,136,0.08);
+}
+
+.eco-activity-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(78,207,136,0.2);
+}
+
+.eco-activity-thumb-empty {
+  background: rgba(78,207,136,0.05);
+}
+
+.eco-activity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.eco-activity-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #d8c49a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eco-activity-price {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #4ecf88;
+}
+
+.eco-activity-ago {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #3a7055;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.eco-swap-feed {
+  gap: 3px !important;
+}
+
+.eco-swap-bucket {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(78,207,136,0.08);
+  border-radius: 2px;
+  background: rgba(6,13,20,0.6);
+}
+
+.eco-swap-sell-lbl {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #d94f4f;
+}
+
+.eco-swap-buy-lbl {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #4ecf88;
+}
+
+.eco-swap-ago-lbl {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: #3a7055;
+}
+
+.eco-swap-bar {
+  display: flex;
+  flex: 1;
+  height: 5px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: rgba(6,13,20,0.8);
+}
+
+.eco-swap-bar-sell {
+  background: rgba(217,79,79,0.75);
+}
+
+.eco-swap-bar-buy {
+  background: rgba(78,207,136,0.85);
 }
 
 /* Coming Soon cards — locked, dimmed, not interactive */
