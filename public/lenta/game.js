@@ -16153,36 +16153,23 @@ function _agentExecute(action, hero) {
   requestAnimationFrame(tick);
 })();
 
-// Landing page gold stones (below dungeon button, same line as PAM)
+// Landing page gold stone (below dungeon button, same line as PAM)
 (function() {
-  const stones = [
-    { src: 'assets_tiny/GoldStone1.png', offX: 20,  offY: 10, sz: 48 },
-    { src: 'assets_tiny/GoldStone3.png', offX: 90,  offY: 14, sz: 40 },
-    { src: 'assets_tiny/GoldStone2.png', offX: 170, offY: 8,  sz: 44 },
-  ];
-  const els = [];
+  const img = document.createElement('img');
+  img.src = 'assets_tiny/GoldStone6.png';
+  const SZ = 90;
+  img.style.cssText = `position:fixed;width:${SZ}px;height:${SZ}px;image-rendering:pixelated;pointer-events:none;z-index:1;`;
+  document.body.appendChild(img);
 
-  function positionStones() {
+  function position() {
     const btn = document.getElementById('btn-adv');
     if (!btn) return;
     const r = btn.getBoundingClientRect();
-    stones.forEach((s, i) => {
-      if (!els[i]) return;
-      els[i].style.left = (r.left + s.offX) + 'px';
-      els[i].style.top  = (r.bottom + s.offY) + 'px';
-    });
+    img.style.left = (r.left + 60) + 'px';
+    img.style.top  = (r.bottom + 2) + 'px';
   }
-
-  stones.forEach(s => {
-    const img = document.createElement('img');
-    img.src = s.src;
-    img.style.cssText = `position:fixed;width:${s.sz}px;height:${s.sz}px;image-rendering:pixelated;pointer-events:none;z-index:1;`;
-    document.body.appendChild(img);
-    els.push(img);
-  });
-
-  window.addEventListener('resize', positionStones);
-  setTimeout(positionStones, 300);
+  window.addEventListener('resize', position);
+  setTimeout(position, 300);
 })();
 
 // Landing page PAM patrol (below dungeon button)
