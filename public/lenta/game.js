@@ -16165,6 +16165,13 @@ function _agentExecute(action, hero) {
   let baseX = 0, baseY = 0, offsetX = 0;
   let state = 'going', stateStart = null, facingRight = true;
 
+  // Gold stone — same ground level as PAM
+  const stoneEl = document.createElement('img');
+  stoneEl.src = 'assets_tiny/GoldStone6.png';
+  const STONE_SZ = 72;
+  stoneEl.style.cssText = `position:fixed;width:${STONE_SZ}px;height:${STONE_SZ}px;image-rendering:pixelated;pointer-events:none;z-index:2;`;
+  document.body.appendChild(stoneEl);
+
   function updateBasePos() {
     const btn = document.getElementById('btn-adv');
     if (!btn) return;
@@ -16172,6 +16179,9 @@ function _agentExecute(action, hero) {
     baseX = r.left + r.width / 2 - cv.width / 2;
     baseY = r.bottom + 8;
     cv.style.top = baseY + 'px';
+    // Align stone bottom with PAM bottom (cv.height = 100)
+    stoneEl.style.left = (baseX + PATROL_DIST + cv.width + 10) + 'px';
+    stoneEl.style.top  = (baseY + cv.height - STONE_SZ) + 'px';
   }
 
   window.addEventListener('resize', updateBasePos);
