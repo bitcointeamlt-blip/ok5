@@ -1700,10 +1700,10 @@
     <button id="dpad-shoot"><span style="font-size:26px">&#11044;</span><span style="font-size:11px;opacity:0.85">FIRE</span></button>
   </div>
 
-  <!-- Portrait rotation hint -->
+  <!-- Portrait rotation hint (shown via JS only when game is active) -->
   <div id="mobile-orient-hint">
-    <div class="orient-icon">ROTATE</div>
-    <div class="orient-text">ROTATE DEVICE<br>FOR BEST EXPERIENCE</div>
+    <div class="orient-phone"></div>
+    <div class="orient-text">ROTATE DEVICE<br>TO PLAY</div>
   </div>
 
   <!-- COMBINED REWARDS MODAL -->
@@ -2159,6 +2159,28 @@
 
     fetchTrades();
     setInterval(fetchTrades, 60000);
+  })();
+
+  // ── Orientation guard: show rotate hint only when game is active + portrait ──
+  (function() {
+    const GAME_SCREENS = ['screen-game', 'screen-gameover'];
+    function check() {
+      const hint = document.getElementById('mobile-orient-hint');
+      if (!hint) return;
+      const portrait = window.innerHeight > window.innerWidth;
+      const mobile   = Math.min(window.innerWidth, window.innerHeight) < 700;
+      const inGame   = GAME_SCREENS.some(id =>
+        document.getElementById(id)?.classList.contains('active')
+      );
+      hint.style.display = (portrait && mobile && inGame) ? 'flex' : 'none';
+    }
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', () => setTimeout(check, 80));
+    const obs = new MutationObserver(check);
+    document.querySelectorAll('.screen').forEach(el =>
+      obs.observe(el, { attributes: true, attributeFilter: ['class'] })
+    );
+    check();
   })();
   </script>
 </body>
