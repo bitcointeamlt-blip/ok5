@@ -2577,6 +2577,24 @@ const _buildingImgs = {};
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
   _buildingImgs[n] = img;
 });
+// ── F10 Castle Room — Pawn+PAM mining animation ──────────────────────────
+const _f10PawnIdleImg = new Image(); _f10PawnIdleImg.src = 'assets_tiny/Pawn_Idle_Pickaxe.png';
+const _f10PawnRunImg  = new Image(); _f10PawnRunImg.src  = 'assets_tiny/Pawn_Run_Pickaxe.png';
+const _f10PawnMineImg = new Image(); _f10PawnMineImg.src = 'assets_tiny/Pawn_Interact_Pickaxe.png';
+const _f10PamImg      = new Image(); _f10PamImg.src      = 'assets_tiny/pam_npc.png';
+const _f10StoneImg    = new Image(); _f10StoneImg.src    = 'assets_tiny/GoldStone1.png';
+// Castle (320×256, scale 0.80) bottom ≈ y=231 in world px → +200 = 431
+const _F10_WORLD_Y     = 431;
+const _F10_BASE_X      = 60;
+const _F10_STONE_X     = 340;
+const _F10_PATROL_DIST = 120;
+const _F10_WALK_SPEED  = 80;
+const _F10_PATROL_DUR  = 8000;
+const _f10Anim = {
+  state: 'patrol_run_r', stateStart: null, patrolStart: null,
+  currentX: 60, patrolOffset: 0, facingRight: true, drawScale: 1.0,
+  stoneShake: 0, _lastFloor: null,
+};
 const _towerBarBase = new Image(); _towerBarBase.src = 'assets_tiny/BigBar_Base.png';
 const _towerBarFill = new Image(); _towerBarFill.src = 'assets_tiny/BigBar_Fill.png';
 const _npcBarBase = new Image(); _npcBarBase.src = 'assets_tiny/SmallBar_Base.png';
@@ -6166,6 +6184,92 @@ function isVisible(x, y) {
 
 function invalidateDungeonCache() { _dunDirty = true; }
 
+function drawF10PawnAnim() {
+  if (S.floor !== 10 || gameMode !== 'adventure') return;
+  const now = performance.now();
+  const an = _f10Anim;
+  // Reset state when entering floor 10
+  if (an._lastFloor !== 10) {
+    an._lastFloor = 10; an.state = 'patrol_run_r'; an.stateStart = null;
+    an.patrolStart = null; an.currentX = _F10_BASE_X; an.patrolOffset = 0;
+    an.facingRight = true; an.drawScale = 1.0; an.stoneShake = 0;
+  }
+  if (an.stateStart === null) { an.stateStart = now; an.patrolStart = now; }
+
+  const RUN_FRAMES=6, RUN_FW=192, RUN_FPS=8;
+  const INT_FRAMES=6, INT_FW=192, INT_FPS=10;
+  const PAM_FRAMES=19, PAM_FW=192, PAM_FPS=12;
+  const PAWN_SZ = 96;
+
+  let img = _f10PawnRunImg, frames = RUN_FRAMES, fw = RUN_FW, fps = RUN_FPS;
+
+  if (an.state === 'patrol_run_r' || an.state === 'patrol_run_l') {
+    if (now - an.patrolStart > _F10_PATROL_DUR) {
+      an.state = 'walk_to'; an.stateStart = now; an.facingRight = true;
+    } else {
+      const moved = ((now - an.stateStart) / 1000) * _F10_WALK_SPEED;
+      if (an.state === 'patrol_run_r') {
+        an.patrolOffset = Math.min(moved, _F10_PATROL_DIST); an.facingRight = true;
+        if (an.patrolOffset >= _F10_PATROL_DIST) { an.state = 'patrol_run_l'; an.stateStart = now; }
+      } else {
+        an.patrolOffset = _F10_PATROL_DIST - Math.min(moved, _F10_PATROL_DIST); an.facingRight = false;
+        if (an.patrolOffset <= 0) { an.patrolOffset = 0; an.state = 'patrol_run_r'; an.stateStart = now; }
+      }
+      an.currentX = _F10_BASE_X + an.patrolOffset;
+    }
+  } else if (an.state === 'walk_to') {
+    an.facingRight = true;
+    const moved = ((now - an.stateStart) / 1000) * _F10_WALK_SPEED;
+    an.currentX = Math.min(_F10_BASE_X + an.patrolOffset + moved, _F10_STONE_X);
+    if (an.currentX >= _F10_STONE_X) { an.currentX = _F10_STONE_X; an.state = 'mining'; an.stateStart = now; }
+  } else if (an.state === 'mining') {
+    img = _f10PawnMineImg; frames = INT_FRAMES; fw = INT_FW; fps = INT_FPS;
+    an.facingRight = true; an.currentX = _F10_STONE_X;
+    const hitPhase = ((now - an.stateStart) % 600) / 600;
+    an.stoneShake = hitPhase < 0.25 ? Math.sin(hitPhase * Math.PI * 8) * 3 : 0;
+    if (now - an.stateStart > 4000) {
+      an.stoneShake = 0; an.state = 'pam_exit_left'; an.stateStart = now;
+      an.currentX = _F10_STONE_X; an.drawScale = 0.50;
+    }
+  } else if (an.state === 'pam_exit_left') {
+    img = _f10PamImg; frames = PAM_FRAMES; fw = PAM_FW; fps = PAM_FPS;
+    an.facingRight = false; an.drawScale = 0.50;
+    const moved = ((now - an.stateStart) / 1000) * _F10_WALK_SPEED;
+    an.currentX = _F10_STONE_X - moved;
+    if (moved > 300) {
+      an.currentX = _F10_BASE_X; an.patrolOffset = 0; an.drawScale = 1.0;
+      an.state = 'patrol_run_r'; an.stateStart = now; an.patrolStart = now;
+    }
+  }
+
+  const sz = PAWN_SZ * an.drawScale;
+  const worldX = an.currentX;
+  const worldY = _F10_WORLD_Y;
+
+  // Stone
+  if (_f10StoneImg.complete && _f10StoneImg.naturalWidth) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(_F10_STONE_X + an.stoneShake, worldY + 16);
+    ctx.drawImage(_f10StoneImg, -24, -24, 48, 48);
+    ctx.restore();
+  }
+
+  // Pawn / PAM
+  if (!img.complete || !img.naturalWidth) return;
+  const frame = Math.floor(now / (1000 / fps)) % frames;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  if (an.facingRight) {
+    ctx.drawImage(img, frame * fw, 0, fw, 192, worldX - sz / 2, worldY - sz, sz, sz);
+  } else {
+    ctx.translate(worldX + sz / 2, worldY - sz);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, frame * fw, 0, fw, 192, -sz, 0, sz, sz);
+  }
+  ctx.restore();
+}
+
 function drawDungeon() {
   const W = COLS * CELL, H = ROWS * CELL;
 
@@ -7113,6 +7217,9 @@ function drawForegroundDecorations() {
       ctx.restore();
     }
   }
+
+  // F10 castle pawn+PAM animation
+  drawF10PawnAnim();
 
   // Archer NPCs
   _updateAndDrawArchers(decKeys);
