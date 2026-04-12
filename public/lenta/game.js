@@ -2568,8 +2568,199 @@ const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Wate
 // ---- Custom Maps -------------------------------------------------------
 // Floor 1
 window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"1,0":"tileset3_3_3","0,1":"tileset3_3_3","1,2":"tileset3_3_3","0,3":"tileset3_3_3","1,4":"tileset3_3_3","0,5":"tileset3_3_3","2,1":"tileset3_3_3","2,3":"tileset3_3_3","2,5":"tileset3_3_3","1,6":"tileset3_3_3","0,7":"tileset3_3_3","2,7":"tileset3_3_3","3,0":"tileset3_3_3","3,2":"tileset3_3_3","3,4":"tileset3_3_3","3,6":"tileset3_3_3","3,8":"tileset3_3_3","1,8":"tileset3_3_3","0,9":"tileset3_3_3","2,9":"tileset3_3_3","3,10":"tileset3_3_3","1,10":"tileset3_3_3","0,11":"tileset3_3_3","2,11":"tileset3_3_3","3,12":"tileset3_3_3","1,12":"tileset3_3_3","0,13":"tileset3_3_3","2,13":"tileset3_3_3","4,13":"tileset3_3_3","4,11":"tileset3_3_3","4,9":"tileset3_3_3","4,7":"tileset3_3_3","4,5":"tileset3_3_3","4,3":"tileset3_3_3","4,1":"tileset3_3_3","5,0":"tileset3_3_3","5,2":"tileset3_3_3","5,4":"tileset3_3_3","5,6":"tileset3_3_3","5,8":"tileset3_3_3","5,10":"tileset3_3_3","5,12":"tileset3_3_3","6,13":"tileset3_3_3","6,11":"tileset3_3_3","6,9":"tileset3_3_3","6,7":"tileset3_3_3","6,5":"tileset3_3_3","6,3":"tileset3_3_3","6,1":"tileset3_3_3","7,0":"tileset3_3_3","7,2":"tileset3_3_3","7,4":"tileset3_3_3","7,6":"tileset3_3_3","7,8":"tileset3_3_3","7,10":"tileset3_3_3","7,12":"tileset3_3_3","8,13":"tileset3_3_3","8,11":"tileset3_3_3","8,9":"tileset3_3_3","8,7":"tileset3_3_3","8,5":"tileset3_3_3","8,3":"tileset3_3_3","8,1":"tileset3_3_3","5,5":"bush3","7,7":"bush3","3,9":"bush3","7,1":"bush1","5,1":"bush1","4,8":"deco_15","2,2":"deco_15","8,10":"deco_14","8,4":"deco_03","1,11":"deco_13","9,0":"tileset3_5_3","9,1":"tileset3_6_3","9,2":"tileset3_6_3","10,0":"tileset3_5_4","10,1":"tileset3_6_4","10,2":"tileset3_6_4","9,3":"tileset3_6_3","10,3":"tileset3_6_4","9,4":"tileset3_6_3","10,4":"tileset3_6_4","9,5":"tileset3_6_3","10,5":"tileset3_6_4","9,6":"tileset3_6_3","10,6":"tileset3_6_4","9,7":"tileset3_6_3","10,7":"tileset3_6_4","9,8":"tileset3_6_3","10,8":"tileset3_6_4","9,9":"tileset3_6_3","10,9":"tileset3_6_4","9,10":"tileset3_6_3","10,10":"tileset3_6_4","9,11":"tileset3_6_3","10,11":"tileset3_6_4","9,12":"tileset3_6_3","9,13":"tileset3_6_3","10,12":"tileset3_6_4","10,13":"tileset3_6_4","9,14":"tileset3_7_3","10,14":"tileset3_7_4","7,14":"tileset3_8_3","8,14":"tileset3_8_4","6,14":"tileset3_8_4","5,14":"tileset3_8_3","3,14":"tileset3_8_3","4,14":"tileset3_8_4","1,14":"tileset3_8_3","2,14":"tileset3_8_4","0,14":"deco_06"},"collisionBoxes":["9,0","9,1","9,2","9,3","9,4","9,5","9,6","9,7","9,8","9,9","9,10","9,11","9,12","9,13","9,14","0,14","1,14","2,14","3,14","4,14","5,14","6,14","7,14","8,14"],"enemies":[{"type":"sheep","x":9,"y":7},{"type":"spider","x":7,"y":1},{"type":"spider","x":11,"y":6},{"type":"skull","x":6,"y":7},{"type":"minotaur","x":11,"y":3}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":25,"y":28}};
+// Floor 10 — 13x41 plain grass (cleaned from stones/water)
+window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":7,"y":4}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
-window.CUSTOM_MAP2 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
+window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
+const _buildingImgs = {};
+['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'].forEach(n => {
+  const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
+  _buildingImgs[n] = img;
+});
+const _towerBarBase = new Image(); _towerBarBase.src = 'assets_tiny/BigBar_Base.png';
+const _towerBarFill = new Image(); _towerBarFill.src = 'assets_tiny/BigBar_Fill.png';
+const _npcBarBase = new Image(); _npcBarBase.src = 'assets_tiny/SmallBar_Base.png';
+const _npcBarFill = new Image(); _npcBarFill.src = 'assets_tiny/SmallBar_Fill.png';
+const _towerRubbleImg = new Image(); _towerRubbleImg.src = 'assets_tiny/Tower_Destroyed.png';
+const _towerFireImg = new Image(); _towerFireImg.src = 'assets_tiny/Fire.png';
+const TOWER_FIRE_FRAMES = 7, TOWER_FIRE_FW = 128, TOWER_FIRE_FH = 128, TOWER_FIRE_MS = 90;
+const TOWER_EXPL_FRAMES = 9, TOWER_EXPL_FW = 192, TOWER_EXPL_MS = 80;
+const TOWER_MAX_HP = 20;
+const _towerStates = {}; // key="r,c" → { hp, maxHp, hitFlash }
+const _towerDestroyedAnims = []; // { wx, wy, born } — active explosion+rubble
+function _getTowerState(r, c) {
+  const k = r+','+c;
+  if (!_towerStates[k]) _towerStates[k] = { hp: TOWER_MAX_HP, maxHp: TOWER_MAX_HP, hitFlash: 0 };
+  return _towerStates[k];
+}
+
+// ===== ARCHER NPC =====
+const _archerAnims = {
+  idle:   { img: new Image(), frames: 6, ms: 125 },
+  run:    { img: new Image(), frames: 4, ms: 110 },
+  shoot:  { img: new Image(), frames: 8, ms: 100 },
+  arrow:  { img: new Image() }, // flight frame (top 64×64)
+  stuck:  { img: new Image() }, // stuck frame  (bottom 64×64) — same sheet
+  impact: { img: new Image(), frames: 9, ms: 60 }, // explosion sheet 1728×192
+};
+_archerAnims.idle.img.src   = 'assets_tiny/Archer_Idle.png';
+_archerAnims.run.img.src    = 'assets_tiny/Archer_Run.png';
+_archerAnims.shoot.img.src  = 'assets_tiny/Archer_Shoot.png';
+_archerAnims.arrow.img.src  = 'assets_tiny/Archer_Arrow_Sheet.png';
+_archerAnims.stuck.img      = _archerAnims.arrow.img; // same PNG, different crop
+_archerAnims.impact.img.src = 'assets_tiny/Arrow_Impact.png';
+
+// ===== HARPOON FISH NPC =====
+const _fishAnims = {
+  idle:    { img: new Image(), frames: 8, ms: 120 },
+  run:     { img: new Image(), frames: 6, ms: 110 },
+  throw:   { img: new Image(), frames: 8, ms: 90  },
+  harpoon: { img: new Image() },
+  impact:  { img: _archerAnims.impact.img }, // reuse explosion sheet
+};
+_fishAnims.idle.img.src    = 'assets_tiny/HarpoonFish_Idle.png';
+_fishAnims.run.img.src     = 'assets_tiny/HarpoonFish_Run.png';
+_fishAnims.throw.img.src   = 'assets_tiny/HarpoonFish_Throw.png';
+_fishAnims.harpoon.img.src = 'assets_tiny/Harpoon.png';
+_fishAnims.stuck = { img: new Image() };
+_fishAnims.stuck.img.src = 'assets_tiny/Harpoon_Stuck.png';
+const _fishStates = {};
+const _archerStates = {};
+
+// ===== RED ARCHER NPC (enemy) =====
+const _redArcherAnims = {
+  idle:   { img: new Image(), frames: 6, ms: 125 },
+  run:    { img: new Image(), frames: 4, ms: 110 },
+  shoot:  { img: new Image(), frames: 8, ms: 100 },
+  arrow:  { img: new Image() },
+  impact: { img: _archerAnims.impact.img },
+};
+_redArcherAnims.idle.img.src  = 'assets_tiny/RedArcher_Idle.png';
+_redArcherAnims.run.img.src   = 'assets_tiny/RedArcher_Run.png';
+_redArcherAnims.shoot.img.src = 'assets_tiny/RedArcher_Shoot.png';
+_redArcherAnims.arrow.img.src = 'assets_tiny/RedArcher_Arrow.png';
+const _redArcherStates = {};
+window._showHitboxes = false;
+
+function _damageRedArcherAt(lgx, lgy, dmg) {
+  for (const raK in _redArcherStates) {
+    const raSt = _redArcherStates[raK];
+    if (raSt && raSt.cx === lgx && raSt.cy === lgy && S.decorations && S.decorations[raK] === 'red_archer_npc') {
+      raSt.hp = Math.max(0, raSt.hp - dmg);
+      raSt.hitFlash = 1;
+      S.shake = Math.max(S.shake || 0, 9);
+      spawnDmgNumber(lgx, lgy, '-' + dmg, '#ff8888', 18, 'normal');
+      SFX.hit();
+      if (raSt.hp <= 0) { delete S.decorations[raK]; delete _redArcherStates[raK]; spawnDeath(lgx, lgy, '#cc4444'); }
+      return true;
+    }
+  }
+  return false;
+}
+function _damageBlueArcherAt(lgx, lgy, dmg) {
+  for (const k in _archerStates) {
+    const st = _archerStates[k];
+    if (st && st.cx === lgx && st.cy === lgy && S.decorations && (S.decorations[k] === 'archer_npc' || S.decorations[k] === 'archer_idle_npc')) {
+      if (st.hp === undefined) { st.hp = 6; st.maxHp = 6; }
+      st.hp = Math.max(0, st.hp - dmg);
+      st.hitFlash = 1;
+      S.shake = Math.max(S.shake || 0, 9);
+      spawnDmgNumber(lgx, lgy, '-' + dmg, '#88aaff', 18, 'normal');
+      SFX.hit();
+      if (st.hp <= 0) { delete S.decorations[k]; delete _archerStates[k]; spawnDeath(lgx, lgy, '#4488cc'); }
+      return true;
+    }
+  }
+  return false;
+}
+// Returns true=shoot right, false=shoot left, null=no target in range
+function _findShootDirFriendly(cx, cy, maxDist) {
+  // Blue archer / fish — enemies are red archers
+  const left = [], right = [];
+  for (const k in _redArcherStates) {
+    const st = _redArcherStates[k];
+    if (!S.decorations || S.decorations[k] !== 'red_archer_npc') continue;
+    const dx = st.cx - cx;
+    if (Math.abs(dx) <= maxDist && Math.abs(st.cy - cy) <= 2) {
+      (dx >= 0 ? right : left).push(Math.abs(dx));
+    }
+  }
+  if (!left.length && !right.length) return null;
+  if (left.length && right.length) return Math.random() > 0.5;
+  return right.length > 0;
+}
+
+function _findShootDirRed(cx, cy, maxDist) {
+  // Red archer — enemies are hero + blue archers + fish
+  const left = [], right = [];
+  const hero = S._hero || (S.units && S.units.find(u => u.team === 0 && u.alive));
+  if (hero) {
+    const dx = hero.x - cx;
+    if (Math.abs(dx) <= maxDist && Math.abs(hero.y - cy) <= 2) (dx >= 0 ? right : left).push(Math.abs(dx));
+  }
+  for (const k in _archerStates) {
+    const st = _archerStates[k];
+    if (!S.decorations || (S.decorations[k] !== 'archer_npc' && S.decorations[k] !== 'archer_idle_npc')) continue;
+    const dx = st.cx - cx;
+    if (Math.abs(dx) <= maxDist && Math.abs(st.cy - cy) <= 2) (dx >= 0 ? right : left).push(Math.abs(dx));
+  }
+  for (const k in _fishStates) {
+    const st = _fishStates[k];
+    if (!S.decorations || (S.decorations[k] !== 'harpoon_fish_npc' && S.decorations[k] !== 'harpoon_fish_idle_npc')) continue;
+    const dx = st.cx - cx;
+    if (Math.abs(dx) <= maxDist && Math.abs(st.cy - cy) <= 2) (dx >= 0 ? right : left).push(Math.abs(dx));
+  }
+  if (!left.length && !right.length) return null;
+  if (left.length && right.length) return Math.random() > 0.5;
+  return right.length > 0;
+}
+
+function _drawNpcHpBar(wx, topY, hp, maxHp, hitFlash) {
+  if (hp >= maxHp) return;
+  if (!_npcBarBase.complete || !_npcBarBase.naturalWidth) return;
+  // SmallBar_Base: same layout as BigBar_Base (320x64 canvas)
+  // Left cap:  src x=40, y=9, w=24, h=51
+  // Middle:    src x=128, y=9, w=64, h=51
+  // Right cap: src x=256, y=9, w=24, h=51
+  // SmallBar_Fill: 64x64, content y=20-43 (24px)
+  const barH = 12, barW = 48;
+  const capSrcW = 24, capSrcH = 51;
+  const capW = Math.round(barH * capSrcW / capSrcH); // ~6px
+  const midW = barW - capW * 2;
+  const barX = Math.round(wx - barW / 2);
+  const barY = Math.round(topY - barH - 3);
+  const hpFrac = Math.max(0, Math.min(1, hp / maxHp));
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  if (hitFlash > 0) ctx.globalAlpha = 0.7 + 0.3 * Math.sin(performance.now() * 0.05);
+  // Frame: left cap, middle, right cap
+  ctx.drawImage(_npcBarBase, 40, 9, capSrcW, capSrcH, barX, barY, capW, barH);
+  ctx.drawImage(_npcBarBase, 128, 9, 64, capSrcH, barX + capW, barY, midW, barH);
+  ctx.drawImage(_npcBarBase, 256, 9, capSrcW, capSrcH, barX + capW + midW, barY, capW, barH);
+  // Fill clipped to hpFrac
+  if (_npcBarFill.complete && _npcBarFill.naturalWidth > 0 && hpFrac > 0) {
+    const fillAreaW = midW * hpFrac;
+    ctx.drawImage(_npcBarFill, 0, 20, 64 * hpFrac, 24, barX + capW, barY + 1, fillAreaW, barH - 2);
+  }
+  ctx.restore();
+}
+
+function _damageFishAt(lgx, lgy, dmg) {
+  for (const k in _fishStates) {
+    const st = _fishStates[k];
+    if (st && st.cx === lgx && st.cy === lgy && S.decorations && (S.decorations[k] === 'harpoon_fish_npc' || S.decorations[k] === 'harpoon_fish_idle_npc')) {
+      if (st.hp === undefined) { st.hp = 6; st.maxHp = 6; }
+      st.hp = Math.max(0, st.hp - dmg);
+      st.hitFlash = 1;
+      S.shake = Math.max(S.shake || 0, 9);
+      spawnDmgNumber(lgx, lgy, '-' + dmg, '#00ccff', 18, 'normal');
+      SFX.hit();
+      if (st.hp <= 0) { delete S.decorations[k]; delete _fishStates[k]; spawnDeath(lgx, lgy, '#00aacc'); }
+      return true;
+    }
+  }
+  return false;
+}
 const duckImg = new Image(); duckImg.src = 'assets_tiny/Deco/rubber_duck.png';
 const deadAnimImg = new Image(); deadAnimImg.src = 'assets_tiny/Dead.png';
 const trollDeadImg = new Image(); trollDeadImg.src = 'animations/troll/Troll_Dead.png';
@@ -4177,6 +4368,31 @@ function initHubRoom() {
   S.cam.y = 0; S.cam.ty = 0;
 }
 
+// ---- Floor navigation ────────────────────────────────────────────
+window.goFloor = function(delta) {
+  const next = Math.max(1, (S.floor || 1) + delta);
+  S.floor = next;
+  startGame('adventure');
+};
+
+window.goToFloor = function(n) {
+  S.floor = n;
+  startGame('adventure');
+};
+
+function updateFloorNav() {
+  const nav = document.getElementById('floor-nav');
+  const lbl = document.getElementById('floor-nav-label');
+  const prevBtn = document.getElementById('btn-floor-prev');
+  const f10Btn = document.getElementById('btn-goto-f10');
+  const show = (gameMode === 'adventure' || gameMode === 'hub') ? 'flex' : 'none';
+  if (!nav) return;
+  nav.style.display = show;
+  if (f10Btn) f10Btn.style.display = show === 'flex' ? 'block' : 'none';
+  if (lbl) lbl.textContent = 'F' + (S.floor || 1);
+  if (prevBtn) prevBtn.disabled = (S.floor || 1) <= 1;
+}
+
 // ---- Adventure mode --------------------------------------------
 function initAdventure() {
   S.isHubRoom = false;
@@ -4255,8 +4471,8 @@ function initAdventure() {
   { const _x = S.inventory.find(s => s && s.type === 'xptoken'); S.xpTokens = _x ? _x.qty : 0; }
   S.kills = 0;
   _updateKillsDisplay();
-  S.explorerChestSpawned = false;
-  S.fullMapRevealed = false;
+  S.explorerChestSpawned = (S.floor === 10);
+  S.fullMapRevealed = (S.floor === 10);
   S.flareUsed = false;
   S.flareMode = false;
   S.flareProjectile = null;
@@ -4381,10 +4597,12 @@ function initAdventure() {
 
   // Chests scaling
   const targetChests = S.floor <= 2 ? 0 : Math.min(8, 2 + Math.floor(S.floor / 3));
-  for (let c = 0; c < targetChests; c++) {
-    const ri = Math.max(1, Math.floor(Math.random() * numRooms));
-    const r = S.rooms[ri];
-    S.chests.push({ x: r.x + 1 + Math.floor(Math.random() * (r.w - 2)), y: r.y + 1 + Math.floor(Math.random() * (r.h - 2)), opened: false });
+  if (numRooms > 1) {
+    for (let c = 0; c < targetChests; c++) {
+      const ri = Math.max(1, Math.floor(Math.random() * numRooms));
+      const r = S.rooms[ri];
+      S.chests.push({ x: r.x + 1 + Math.floor(Math.random() * (r.w - 2)), y: r.y + 1 + Math.floor(Math.random() * (r.h - 2)), opened: false });
+    }
   }
 
   // Reveal starting area
@@ -4407,7 +4625,7 @@ function initAdventure() {
 
   // Platforms
   S.platforms = [];
-  if (S.floor > 1) {
+  if (S.floor > 1 && numRooms > 1) {
     const platCount = Math.min(6, 1 + Math.floor(S.floor / 2));
     for (let i = 0; i < platCount; i++) {
       const r = S.rooms[Math.floor(Math.random() * (numRooms - 1)) + 1];
@@ -4437,6 +4655,7 @@ function initAdventure() {
 }function getFloorCustomMap() {
   if (S.floor === 1 && window.CUSTOM_MAP) return window.CUSTOM_MAP;
   if (S.floor === 2 && window.CUSTOM_MAP2) return window.CUSTOM_MAP2;
+  if (S.floor === 10 && window.CUSTOM_MAP10) return window.CUSTOM_MAP10;
   return null;
 }
 function generateDungeon() {
@@ -5987,6 +6206,820 @@ function drawDungeon() {
   }
 }
 
+function _updateAndDrawArchers(decKeys) {
+  const now = performance.now();
+  const DRAW_W = 96, DRAW_H = 96;
+  const ARROW_SPEED = 320;
+  const ARROW_LIFE  = 1500; // extended so arrow reaches ground level (a.y+30)
+  const ARROW_FIRE_FRAME = 4;
+  const WALK_DUR    = 340;  // ms to traverse one cell
+  const WANDER_CELLS = 2;   // max Manhattan distance from anchor
+
+  for (const key of decKeys) {
+    const decId = S.decorations[key];
+    if (decId !== 'archer_npc' && decId !== 'archer_idle_npc') continue;
+    const isStationary = decId === 'archer_idle_npc';
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10);
+    const c = parseInt(strC, 10);
+    const anchorX = c * CELL + CELL / 2;
+    const anchorY = r * CELL + CELL / 2;
+
+    // Init per-archer state (cell-based position)
+    if (!_archerStates[key]) {
+      _archerStates[key] = {
+        state: 'idle',
+        frame: 0,
+        lastFrameAt: now,
+        arrowFired: false,
+        arrows: [],
+        cx: c, cy: r,             // current grid cell
+        anchorCX: c, anchorCY: r,
+        wx: anchorX, wy: anchorY, // current pixel center
+        walkSrcX: anchorX, walkSrcY: anchorY,
+        walkDstX: anchorX, walkDstY: anchorY,
+        walkDstCX: c, walkDstCY: r,
+        walkStart: 0,
+        nextActionAt: now + 800 + Math.random() * 1200,
+        nextShootAt:  now + 2000 + Math.random() * 3000,
+        facingRight: true,
+        hp: 6, maxHp: 6, hitFlash: 0,
+      };
+    }
+    const st = _archerStates[key];
+
+    // ---- State machine ----
+    if (st.state === 'shoot') {
+      const anim = _archerAnims.shoot;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) {
+        const steps = Math.floor(elapsed / anim.ms);
+        const prevFrame = st.frame;
+        st.frame += steps;
+        st.lastFrameAt += steps * anim.ms;
+        if (!st.arrowFired && prevFrame < ARROW_FIRE_FRAME && st.frame >= ARROW_FIRE_FRAME) {
+          st.arrowFired = true;
+          const dir = st.facingRight ? 1 : -1;
+          const _spd = st.shootSpeed || ARROW_SPEED;
+          const _VY0 = -130, _GRAV = 230, _GND = 30, _DRAG = 0.35;
+          const _tLand = (-_VY0 + Math.sqrt(_VY0 * _VY0 + 2 * _GRAV * _GND)) / _GRAV;
+          const _startX = st.wx + dir * (DRAW_W / 2 + 6);
+          const _startY = st.wy - 8;
+          // landX with air resistance: x = (spd/drag) * (1 - e^(-drag*t))
+          const _landX = _startX + dir * (_spd / _DRAG) * (1 - Math.exp(-_DRAG * _tLand));
+          st.arrows.push({
+            startX: _startX, startDir: dir, y: _startY,
+            born: now, hit: false, speed: _spd,
+            landX: _landX,
+            landY: _startY + _GND,
+            crossHideAt: now + (_tLand - 0.2) * 1000,
+            particles: [],
+            lastParticleAt: 0,
+          });
+        }
+        if (st.frame >= anim.frames) {
+          st.state = 'idle';
+          st.frame = 0;
+          st.lastFrameAt = now;
+          st.nextShootAt  = now + 2000 + Math.random() * 4000;
+          st.nextActionAt = now + 600  + Math.random() * 1000;
+        }
+      }
+    } else if (st.state === 'walk') {
+      // Interpolate pixel position between cells
+      const t = Math.min((now - st.walkStart) / WALK_DUR, 1);
+      st.wx = st.walkSrcX + (st.walkDstX - st.walkSrcX) * t;
+      st.wy = st.walkSrcY + (st.walkDstY - st.walkSrcY) * t;
+      // Run animation
+      const anim = _archerAnims.run;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) {
+        const steps = Math.floor(elapsed / anim.ms);
+        st.frame = (st.frame + steps) % anim.frames;
+        st.lastFrameAt += steps * anim.ms;
+      }
+      // Arrived at target cell?
+      if (t >= 1) {
+        st.cx = st.walkDstCX;
+        st.cy = st.walkDstCY;
+        st.wx = st.walkDstX;
+        st.wy = st.walkDstY;
+        st.state = 'idle';
+        st.frame = 0;
+        st.lastFrameAt = now;
+        st.nextActionAt = now + 700 + Math.random() * 1300;
+      }
+    } else {
+      // Idle — advance idle frames
+      const anim = _archerAnims.idle;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) {
+        const steps = Math.floor(elapsed / anim.ms);
+        st.frame = (st.frame + steps) % anim.frames;
+        st.lastFrameAt += steps * anim.ms;
+      }
+      // Decide next action
+      if (now >= st.nextActionAt) {
+        if (now >= st.nextShootAt) {
+          const _dir = _findShootDirFriendly(st.cx, st.cy, 10);
+          if (_dir === null) {
+            st.nextShootAt  = now + 1500 + Math.random() * 1500;
+            st.nextActionAt = now + 400  + Math.random() * 600;
+          } else {
+          st.facingRight = _dir;
+          st.shootSpeed = 160 + Math.random() * 260; // 160–420 px/s → short to long range
+          st.state = 'shoot';
+          st.frame = 0;
+          st.lastFrameAt = now;
+          st.arrowFired = false;
+          }
+        } else if (!isStationary) {
+          // Try to step one cell in a random direction
+          const dirs = [{ dx:1,dy:0 },{ dx:-1,dy:0 },{ dx:0,dy:1 },{ dx:0,dy:-1 }];
+          const valid = dirs.filter(d => {
+            const nx = st.cx + d.dx, ny = st.cy + d.dy;
+            if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) return false;
+            return Math.abs(nx - st.anchorCX) + Math.abs(ny - st.anchorCY) <= WANDER_CELLS;
+          });
+          if (valid.length > 0) {
+            const d = valid[Math.floor(Math.random() * valid.length)];
+            const ncx = st.cx + d.dx, ncy = st.cy + d.dy;
+            st.walkSrcX = st.wx; st.walkSrcY = st.wy;
+            st.walkDstX = ncx * CELL + CELL / 2;
+            st.walkDstY = ncy * CELL + CELL / 2;
+            st.walkDstCX = ncx; st.walkDstCY = ncy;
+            st.walkStart = now;
+            st.facingRight = d.dx >= 0;
+            st.state = 'walk';
+            st.frame = 0;
+            st.lastFrameAt = now;
+          } else {
+            st.nextActionAt = now + 600 + Math.random() * 800;
+          }
+        } else {
+          // Stationary — just wait for next shoot
+          st.nextActionAt = now + 600 + Math.random() * 800;
+        }
+      }
+    }
+
+    // ---- Draw archer ----
+    const anim = st.state === 'shoot' ? _archerAnims.shoot
+               : st.state === 'walk'  ? _archerAnims.run
+               :                        _archerAnims.idle;
+    const aImg = anim.img;
+    const frameIdx = Math.min(st.frame, anim.frames - 1);
+    const px = st.wx - DRAW_W / 2;
+    const py = st.wy - DRAW_H / 2 + 3; // vertical offset so feet touch ground
+    if (aImg.complete && aImg.naturalWidth > 0) {
+      if (!st.facingRight) {
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(aImg, frameIdx * 192, 0, 192, 192, -px - DRAW_W, py, DRAW_W, DRAW_H);
+        ctx.restore();
+      } else {
+        ctx.drawImage(aImg, frameIdx * 192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
+      }
+    }
+    if (st.hitFlash > 0) {
+      ctx.save(); ctx.globalAlpha = st.hitFlash * 0.55; ctx.fillStyle = '#aaddff';
+      ctx.fillRect(px, py, DRAW_W, DRAW_H); ctx.restore();
+      st.hitFlash = Math.max(0, st.hitFlash - 0.07);
+    }
+    _drawNpcHpBar(st.wx, py, st.hp, st.maxHp, st.hitFlash);
+
+    // Hitbox debug overlay (blue archer)
+    if (window._showHitboxes) {
+      ctx.save();
+      // Cell hitbox (bullet detection) — green
+      ctx.strokeStyle = '#00ff44'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+      ctx.strokeRect(st.cx * CELL, st.cy * CELL, CELL, CELL);
+      ctx.fillStyle = '#00ff4422'; ctx.fillRect(st.cx * CELL, st.cy * CELL, CELL, CELL);
+      // Sprite bounds — yellow
+      ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+      ctx.strokeRect(st.wx - DRAW_W/2, st.wy - DRAW_H/2 + 3, DRAW_W, DRAW_H);
+      ctx.fillStyle = '#00ff4488';
+      ctx.font = 'bold 9px monospace'; ctx.fillText(`A(${st.cx},${st.cy})`, st.cx*CELL+2, st.cy*CELL+11);
+      ctx.restore();
+    }
+    // Update and draw arrows (parabolic arc)
+    const arSheet = _archerAnims.arrow.img;  // 64×128: top=flight, bottom=stuck
+    const impSheet = _archerAnims.impact.img; // 1728×192: 9 frames explosion
+    const AW = 28, AH = 31;
+    const VY0 = -130;
+    const GRAV = 230;
+    const DRAG = 0.35; // air resistance — horizontal deceleration coefficient
+    const IMPACT_MS = 60; // ms per explosion frame
+    const IMPACT_FRAMES = 9;
+    st.arrows = st.arrows.filter(a => {
+      if (!a.hit) return now - a.born < ARROW_LIFE;
+      if (a.hitTarget) return now - a.hitAt < IMPACT_FRAMES * IMPACT_MS;
+      return now - a.hitAt < 1000;
+    });
+    for (const a of st.arrows) {
+      const dt = (now - a.born) / 1000;
+      const dir = a.startDir || 1;
+      const spd = a.speed || ARROW_SPEED;
+      const dragFactor = Math.exp(-DRAG * dt);
+      const ax = a.stuckX !== undefined ? a.stuckX : a.startX + dir * (spd / DRAG) * (1 - dragFactor);
+      const ay = a.stuckY !== undefined ? a.stuckY : a.y + VY0 * dt + 0.5 * GRAV * dt * dt;
+      const velY = VY0 + GRAV * dt;
+      const velX = dir * spd * dragFactor; // current horizontal velocity (slowing down)
+      const angle = Math.atan2(velY, velX);
+
+      // Landing detection — wait until parabola naturally reaches a.y+30
+      const GROUND_OFFSET = 30;
+      if (!a.hit && dt > 0.2 && ay >= a.y + GROUND_OFFSET) {
+        a.hit = true;
+        a.hitAt = now;
+        a.stuckX = ax + AW / 2; // center matches fly draw point
+        a.stuckY = ay;           // exact parabola position — no snap/jump
+        a.stuckAngle = angle;    // exact landing angle — seamless transition
+        a.hitTarget = false;
+        const lgx = Math.floor(a.stuckX / CELL);
+        const lgy = Math.floor(a.stuckY / CELL);
+        const _baCrit = Math.random() < 0.10;
+        const _baDmg = _baCrit ? 4 : 2;
+        if (S.units) {
+          const target = S.units.find(u => u.alive && u.x === lgx && u.y === lgy);
+          if (target) {
+            a.hitTarget = true;
+            S.shake = Math.max(S.shake || 0, _baCrit ? 12 : 9);
+            if (target.team === 0) {
+              S.energy = Math.max(0, S.energy - heroDmg(_baDmg));
+              target.hitFlash = 1; target.hitTimer = 1000;
+              SFX.heroHit();
+              spawnDmgNumber(target.x, target.y, _baCrit ? `-${heroDmg(_baDmg)}!` : `-${heroDmg(_baDmg)}`, _baCrit ? '#ffe033' : '#ff2222', _baCrit ? 22 : 20, _baCrit ? 'crit' : 'normal');
+            } else {
+              target.hp -= _baDmg; target.hitFlash = 1;
+              triggerHitRecovery(target);
+              SFX.hit();
+              spawnDmgNumber(target.x, target.y, _baCrit ? `-${_baDmg}!` : `-${_baDmg}`, _baCrit ? '#ffe033' : '#ffdd55', _baCrit ? 22 : 20, _baCrit ? 'crit' : 'normal');
+              if (target.hp <= 0) {
+                target.hp = 0; target.alive = false;
+                spawnDeath(target.x, target.y, target.color);
+                if (S.bloodStains) S.bloodStains.push(mkBloodStain(target.x, target.y));
+                S.kills = (S.kills || 0) + 1; trackKill();
+                if (!Profile.stats) Profile.stats = { totalKills: 0 };
+                Profile.stats.totalKills = (Profile.stats.totalKills || 0) + 1;
+                saveProfile(); _updateKillsDisplay();
+              }
+            }
+          }
+        }
+        // Tower hit — hide stuck arrow
+        if (!a.hitTarget && S.decorations) {
+          for (let dr = 0; dr <= 2; dr++) {
+            const tk = (lgy-dr)+','+lgx;
+            if (S.decorations[tk] === 'building_Tower') {
+              a.hitTarget = true; break;
+            }
+          }
+        }
+        // Red archer NPC hit
+        if (!a.hitTarget) {
+          if (_damageRedArcherAt(lgx, lgy, _baDmg)) a.hitTarget = true;
+        }
+      }
+
+      // --- DRAW ---
+      if (a.hit && a.hitTarget) {
+        // Explosion impact animation
+        const frame = Math.min(Math.floor((now - a.hitAt) / IMPACT_MS), IMPACT_FRAMES - 1);
+        const IS = 48; // draw size
+        if (impSheet.complete && impSheet.naturalWidth > 0) {
+          ctx.drawImage(impSheet, frame * 192, 0, 192, 192, a.stuckX - IS / 2, a.stuckY - IS / 2, IS, IS);
+        }
+        continue;
+      }
+
+      if (a.hit && !a.hitTarget) {
+        // Stuck — sprite bottom frame (y=64) at landing angle
+        ctx.save();
+        ctx.translate(a.stuckX, a.stuckY);
+        ctx.rotate(a.stuckAngle);
+        if (arSheet.complete && arSheet.naturalWidth > 0) {
+          ctx.drawImage(arSheet, 0, 64, 64, 64, -AW / 2, -AH / 2, AW, AH);
+        } else {
+          ctx.strokeStyle = '#c8a040'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-AW / 2, 0); ctx.lineTo(AW / 2, 0); ctx.stroke();
+        }
+        ctx.restore();
+        continue;
+      }
+
+      // Dust particles — spawn during descent (velY > 0), draw + fade
+      if (!a.hit && a.particles) {
+        if (velY > 0 && now - a.lastParticleAt > 45) {
+          a.lastParticleAt = now;
+          a.particles.push({ x: ax + AW / 2, y: ay, born: now });
+        }
+        a.particles = a.particles.filter(p => now - p.born < 280);
+        for (const p of a.particles) {
+          const age = (now - p.born) / 280;
+          const alpha = (1 - age) * 0.55;
+          const r = 2.5 * (1 - age * 0.5);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = '#1a1a1a';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // Cross mark at predicted landing spot (disappears 200ms before landing)
+      if (a.landX !== undefined && now < a.crossHideAt) {
+        ctx.save();
+        ctx.strokeStyle = '#8a5a1a'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.65;
+        const _cx = a.landX + (dir > 0 ? 10 : 0);
+        ctx.beginPath(); ctx.moveTo(_cx - 5, a.landY); ctx.lineTo(_cx + 5, a.landY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(_cx, a.landY - 5); ctx.lineTo(_cx, a.landY + 5); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      // Flying arrow — sprite top frame (y=0)
+      ctx.save();
+      ctx.translate(ax + AW / 2, ay);
+      ctx.rotate(angle);
+      if (arSheet.complete && arSheet.naturalWidth > 0) {
+        ctx.drawImage(arSheet, 0, 0, 64, 64, -AW / 2, -AH / 2, AW, AH);
+      } else {
+        ctx.strokeStyle = '#c8a040'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-AW / 2, 0); ctx.lineTo(AW / 2, 0); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function _updateAndDrawRedArchers(decKeys) {
+  const now = performance.now();
+  const DRAW_W = 96, DRAW_H = 96;
+  const ARROW_SPEED = 280;
+  const ARROW_LIFE  = 1500;
+  const ARROW_FIRE_FRAME = 4;
+  const WALK_DUR    = 340;
+  const WANDER_CELLS = 2;
+
+  for (const key of decKeys) {
+    if (S.decorations[key] !== 'red_archer_npc') continue;
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10), c = parseInt(strC, 10);
+    const anchorX = c * CELL + CELL / 2, anchorY = r * CELL + CELL / 2;
+
+    if (!_redArcherStates[key]) {
+      _redArcherStates[key] = {
+        state: 'idle', frame: 0, lastFrameAt: now, arrowFired: false, arrows: [],
+        cx: c, cy: r, anchorCX: c, anchorCY: r,
+        wx: anchorX, wy: anchorY,
+        walkSrcX: anchorX, walkSrcY: anchorY,
+        walkDstX: anchorX, walkDstY: anchorY,
+        walkDstCX: c, walkDstCY: r, walkStart: 0,
+        nextActionAt: now + 800 + Math.random() * 1200,
+        nextShootAt:  now + 1500 + Math.random() * 2000,
+        facingRight: true, shootSpeed: ARROW_SPEED,
+        hp: 8, maxHp: 8, hitFlash: 0,
+      };
+    }
+    const st = _redArcherStates[key];
+
+    if (st.state === 'shoot') {
+      const anim = _redArcherAnims.shoot;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) {
+        const steps = Math.floor(elapsed / anim.ms);
+        const prevFrame = st.frame;
+        st.frame += steps; st.lastFrameAt += steps * anim.ms;
+        if (!st.arrowFired && prevFrame < ARROW_FIRE_FRAME && st.frame >= ARROW_FIRE_FRAME) {
+          st.arrowFired = true;
+          const dir = st.facingRight ? 1 : -1;
+          const _spd = st.shootSpeed;
+          const _VY0 = -130, _GRAV = 230, _GND = 30, _DRAG = 0.35;
+          const _tLand = (-_VY0 + Math.sqrt(_VY0*_VY0 + 2*_GRAV*_GND)) / _GRAV;
+          const _startX = st.wx + dir * (DRAW_W / 2 + 6);
+          const _startY = st.wy - 8;
+          const _landX = _startX + dir * (_spd/_DRAG) * (1 - Math.exp(-_DRAG*_tLand));
+          st.arrows.push({
+            startX:_startX, startDir:dir, y:_startY,
+            born:now, hit:false, speed:_spd,
+            landX:_landX, landY:_startY+_GND,
+            crossHideAt: now+(_tLand-0.2)*1000,
+          });
+        }
+        if (st.frame >= anim.frames) {
+          st.state = 'idle'; st.frame = 0; st.lastFrameAt = now;
+          st.nextShootAt  = now + 2000 + Math.random() * 3000;
+          st.nextActionAt = now + 600  + Math.random() * 800;
+        }
+      }
+    } else if (st.state === 'walk') {
+      const t = Math.min((now - st.walkStart) / WALK_DUR, 1);
+      st.wx = st.walkSrcX + (st.walkDstX - st.walkSrcX) * t;
+      st.wy = st.walkSrcY + (st.walkDstY - st.walkSrcY) * t;
+      const anim = _redArcherAnims.run;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) { const steps = Math.floor(elapsed/anim.ms); st.frame=(st.frame+steps)%anim.frames; st.lastFrameAt+=steps*anim.ms; }
+      if (t >= 1) { st.cx=st.walkDstCX; st.cy=st.walkDstCY; st.wx=st.walkDstX; st.wy=st.walkDstY; st.state='idle'; st.frame=0; st.lastFrameAt=now; st.nextActionAt=now+700+Math.random()*1300; }
+    } else {
+      const anim = _redArcherAnims.idle;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) { const steps = Math.floor(elapsed/anim.ms); st.frame=(st.frame+steps)%anim.frames; st.lastFrameAt+=steps*anim.ms; }
+      if (now >= st.nextActionAt) {
+        if (now >= st.nextShootAt) {
+          const _dir = _findShootDirRed(st.cx, st.cy, 10);
+          if (_dir === null) {
+            st.nextShootAt  = now + 1500 + Math.random() * 1500;
+            st.nextActionAt = now + 400  + Math.random() * 600;
+          } else {
+          st.facingRight = _dir;
+          st.shootSpeed = 200 + Math.random() * 180;
+          st.state='shoot'; st.frame=0; st.lastFrameAt=now; st.arrowFired=false;
+          }
+        } else {
+          const dirs=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+          const valid=dirs.filter(d=>{const nx=st.cx+d.dx,ny=st.cy+d.dy; return nx>=0&&ny>=0&&nx<COLS&&ny<ROWS&&!isWall(nx,ny)&&Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY)<=WANDER_CELLS;});
+          if (valid.length>0) {
+            const d=valid[Math.floor(Math.random()*valid.length)];
+            const ncx=st.cx+d.dx,ncy=st.cy+d.dy;
+            st.walkSrcX=st.wx; st.walkSrcY=st.wy;
+            st.walkDstX=ncx*CELL+CELL/2; st.walkDstY=ncy*CELL+CELL/2;
+            st.walkDstCX=ncx; st.walkDstCY=ncy; st.walkStart=now;
+            st.facingRight=d.dx>=0; st.state='walk'; st.frame=0; st.lastFrameAt=now;
+          } else { st.nextActionAt=now+600+Math.random()*800; }
+        }
+      }
+    }
+
+    // Draw red archer
+    const anim = st.state==='shoot'?_redArcherAnims.shoot:st.state==='walk'?_redArcherAnims.run:_redArcherAnims.idle;
+    const aImg = anim.img;
+    const frameIdx = Math.min(st.frame, anim.frames-1);
+    const px = st.wx - DRAW_W/2, py = st.wy - DRAW_H/2 + 3;
+    if (aImg.complete && aImg.naturalWidth > 0) {
+      if (!st.facingRight) { ctx.save(); ctx.scale(-1,1); ctx.drawImage(aImg,frameIdx*192,0,192,192,-px-DRAW_W,py,DRAW_W,DRAW_H); ctx.restore(); }
+      else ctx.drawImage(aImg,frameIdx*192,0,192,192,px,py,DRAW_W,DRAW_H);
+    }
+    if (st.hitFlash > 0) {
+      ctx.save(); ctx.globalAlpha = st.hitFlash * 0.55; ctx.fillStyle = '#ff4444';
+      ctx.fillRect(px, py, DRAW_W, DRAW_H); ctx.restore();
+      st.hitFlash = Math.max(0, st.hitFlash - 0.07);
+    }
+    _drawNpcHpBar(st.wx, py, st.hp, st.maxHp, st.hitFlash);
+
+    // Hitbox debug overlay (red archer)
+    if (window._showHitboxes) {
+      ctx.save();
+      ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+      ctx.strokeRect(st.cx * CELL, st.cy * CELL, CELL, CELL);
+      ctx.fillStyle = '#ff333322'; ctx.fillRect(st.cx * CELL, st.cy * CELL, CELL, CELL);
+      ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+      ctx.strokeRect(st.wx - DRAW_W/2, st.wy - DRAW_H/2 + 3, DRAW_W, DRAW_H);
+      ctx.fillStyle = '#ff3333aa';
+      ctx.font = 'bold 9px monospace'; ctx.fillText(`R(${st.cx},${st.cy})`, st.cx*CELL+2, st.cy*CELL+11);
+      ctx.restore();
+    }
+    // Update and draw arrows
+    const arImg = _redArcherAnims.arrow.img;
+    const impSheet = _redArcherAnims.impact.img;
+    const AW=28,AH=28,VY0=-130,GRAV=230,DRAG=0.35,IMPACT_MS=60,IMPACT_FRAMES=9,GROUND_OFFSET=30;
+    st.arrows = st.arrows.filter(a => { if (!a.hit) return now-a.born<ARROW_LIFE; if (a.hitTarget) return now-a.hitAt<IMPACT_FRAMES*IMPACT_MS; return now-a.hitAt<1000; });
+    for (const a of st.arrows) {
+      const dt=(now-a.born)/1000, dir=a.startDir||1, spd=a.speed||ARROW_SPEED;
+      const dragFactor=Math.exp(-DRAG*dt);
+      const ax=a.stuckX!==undefined?a.stuckX:a.startX+dir*(spd/DRAG)*(1-dragFactor);
+      const ay=a.stuckY!==undefined?a.stuckY:a.y+VY0*dt+0.5*GRAV*dt*dt;
+      const velY=VY0+GRAV*dt, velX=dir*spd*dragFactor;
+      const angle=Math.atan2(velY,velX);
+
+      if (!a.hit && dt>0.2 && ay>=a.y+GROUND_OFFSET) {
+        a.hit=true; a.hitAt=now;
+        a.stuckX=ax+AW/2; a.stuckY=ay; a.stuckAngle=angle; a.hitTarget=false;
+        const lgx=Math.floor(a.stuckX/CELL), lgy=Math.floor(a.stuckY/CELL);
+        // Crit roll for red archer arrow
+        const _raCrit = Math.random() < 0.10;
+        const _raDmg = _raCrit ? 4 : 2;
+        // Hero damage
+        const hero=S.units&&S.units.find(u=>u.alive&&u.team===0&&u.x===lgx&&u.y===lgy);
+        if (hero) {
+          a.hitTarget=true; S.shake=Math.max(S.shake||0,_raCrit?12:9);
+          S.energy=Math.max(0,S.energy-heroDmg(_raDmg)); hero.hitFlash=1; hero.hitTimer=1000;
+          SFX.heroHit(); spawnDmgNumber(hero.x,hero.y,_raCrit?`-${heroDmg(_raDmg)}!`:`-${heroDmg(_raDmg)}`,_raCrit?'#ffe033':'#ff2222',_raCrit?22:20,_raCrit?'crit':'normal');
+        }
+        // Tower damage — check both lgx and lgx-1 (decoration is one cell left of collision box)
+        if (!a.hitTarget && S.decorations) {
+          let foundTk = null, foundTc = null, foundTr = null;
+          outer: for (const checkC of [lgx, lgx-1]) {
+            for (let dr=0;dr<=2;dr++) {
+              const tk=(lgy-dr)+','+checkC;
+              if (S.decorations[tk]==='building_Tower') { foundTk=tk; foundTr=lgy-dr; foundTc=checkC; break outer; }
+            }
+          }
+          if (foundTk) {
+            a.hitTarget=true;
+            const ts=_getTowerState(foundTr,foundTc);
+            ts.hp=Math.max(0,ts.hp-_raDmg); ts.hitFlash=1;
+            S.shake=Math.max(S.shake||0,_raCrit?9:6);
+            spawnDmgNumber(foundTc,foundTr,_raCrit?`-${_raDmg}!`:`-${_raDmg}`,_raCrit?'#ffe033':'#ffaaaa',_raCrit?18:16,_raCrit?'crit':'normal'); SFX.hit();
+            if (ts.hp<=0) {
+              const _tr=foundTr,_tc=foundTc;
+              delete S.decorations[foundTk]; delete _towerStates[foundTk];
+              if (S.collisionBoxes){S.collisionBoxes.delete(`${_tr},${_tc+1}`);S.collisionBoxes.delete(`${_tr+1},${_tc+1}`);S.collisionBoxes.delete(`${_tr+2},${_tc+1}`);}
+              const wx2=(_tc+0.5)*CELL,wy2=(_tr+2+0.5)*CELL;
+              _towerDestroyedAnims.push({wx:wx2,wy:wy2,born:now});
+              if (S.decorations) S.decorations[`${_tr+2},${_tc}`]='building_Tower_rubble';
+            }
+          }
+        }
+        // Blue archer / fish NPC hit
+        if (!a.hitTarget) {
+          if (_damageBlueArcherAt(lgx, lgy, _raDmg)) a.hitTarget = true;
+          else if (_damageFishAt(lgx, lgy, _raDmg)) a.hitTarget = true;
+        }
+      }
+
+      if (a.hit&&a.hitTarget) {
+        const frame=Math.min(Math.floor((now-a.hitAt)/IMPACT_MS),IMPACT_FRAMES-1);
+        const IS=48;
+        if (impSheet.complete&&impSheet.naturalWidth>0) ctx.drawImage(impSheet,frame*192,0,192,192,a.stuckX-IS/2,a.stuckY-IS/2,IS,IS);
+        continue;
+      }
+      if (a.hit&&!a.hitTarget) {
+        ctx.save(); ctx.translate(a.stuckX,a.stuckY); ctx.rotate(a.stuckAngle);
+        if (arImg.complete&&arImg.naturalWidth>0) ctx.drawImage(arImg,0,0,64,64,-AW/2,-AH/2,AW,AH);
+        ctx.restore(); continue;
+      }
+      // Cross (red)
+      if (a.landX!==undefined&&now<a.crossHideAt) {
+        ctx.save(); ctx.strokeStyle='#cc2222'; ctx.lineWidth=1.5; ctx.globalAlpha=0.65;
+        const _cx=a.landX+(dir>0?10:0);
+        ctx.beginPath(); ctx.moveTo(_cx-5,a.landY); ctx.lineTo(_cx+5,a.landY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(_cx,a.landY-5); ctx.lineTo(_cx,a.landY+5); ctx.stroke();
+        ctx.restore();
+      }
+      // Flying arrow
+      ctx.save(); ctx.translate(ax+AW/2,ay); ctx.rotate(angle);
+      if (arImg.complete&&arImg.naturalWidth>0) ctx.drawImage(arImg,0,0,64,64,-AW/2,-AH/2,AW,AH);
+      ctx.restore();
+    }
+  }
+}
+
+function _updateAndDrawFish(decKeys) {
+  const now = performance.now();
+  const DRAW_W = 96, DRAW_H = 96;
+  const HARPOON_SPEED = 380;
+  const HARPOON_LIFE  = 1500;
+  const THROW_FIRE_FRAME = 3;
+  const WALK_DUR    = 340;
+  const WANDER_CELLS = 2;
+
+  for (const key of decKeys) {
+    const decId = S.decorations[key];
+    if (decId !== 'harpoon_fish_npc' && decId !== 'harpoon_fish_idle_npc') continue;
+    const isStationary = decId === 'harpoon_fish_idle_npc';
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10);
+    const c = parseInt(strC, 10);
+    const anchorX = c * CELL + CELL / 2;
+    const anchorY = r * CELL + CELL / 2;
+
+    if (!_fishStates[key]) {
+      _fishStates[key] = {
+        state: 'idle', frame: 0, lastFrameAt: now,
+        arrowFired: false, arrows: [],
+        cx: c, cy: r, anchorCX: c, anchorCY: r,
+        wx: anchorX, wy: anchorY,
+        walkSrcX: anchorX, walkSrcY: anchorY,
+        walkDstX: anchorX, walkDstY: anchorY,
+        walkDstCX: c, walkDstCY: r, walkStart: 0,
+        nextActionAt: now + 800 + Math.random() * 1200,
+        nextShootAt:  now + 2000 + Math.random() * 3000,
+        facingRight: true, shootSpeed: HARPOON_SPEED,
+        hp: 6, maxHp: 6, hitFlash: 0,
+      };
+    }
+    const st = _fishStates[key];
+
+    // ---- State machine (same pattern as archer) ----
+    if (st.state === 'shoot') {
+      const anim = _fishAnims.throw;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) {
+        const steps = Math.floor(elapsed / anim.ms);
+        const prevFrame = st.frame;
+        st.frame += steps; st.lastFrameAt += steps * anim.ms;
+        if (!st.arrowFired && prevFrame < THROW_FIRE_FRAME && st.frame >= THROW_FIRE_FRAME) {
+          st.arrowFired = true;
+          const dir = st.facingRight ? 1 : -1;
+          const _spd = st.shootSpeed;
+          const _VY0 = -110, _GRAV = 200, _GND = 30, _DRAG = 0.3;
+          const _tLand = (-_VY0 + Math.sqrt(_VY0*_VY0 + 2*_GRAV*_GND)) / _GRAV;
+          const _startX = st.wx + dir * (DRAW_W / 2 - 14);
+          const _startY = st.wy - 6;
+          st.arrows.push({
+            startX: _startX, startDir: dir, y: _startY,
+            born: now, hit: false, speed: _spd,
+            landX: _startX + dir * (_spd/_DRAG) * (1 - Math.exp(-_DRAG*_tLand)),
+            landY: _startY + _GND,
+            crossHideAt: now + (_tLand - 0.2) * 1000,
+            particles: [], lastParticleAt: 0,
+          });
+        }
+        if (st.frame >= anim.frames) {
+          st.state = 'idle'; st.frame = 0; st.lastFrameAt = now;
+          st.nextShootAt  = now + 2500 + Math.random() * 4000;
+          st.nextActionAt = now + 600  + Math.random() * 1000;
+        }
+      }
+    } else if (st.state === 'walk') {
+      const t = Math.min((now - st.walkStart) / WALK_DUR, 1);
+      st.wx = st.walkSrcX + (st.walkDstX - st.walkSrcX) * t;
+      st.wy = st.walkSrcY + (st.walkDstY - st.walkSrcY) * t;
+      const anim = _fishAnims.run;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) { const steps = Math.floor(elapsed/anim.ms); st.frame = (st.frame+steps)%anim.frames; st.lastFrameAt += steps*anim.ms; }
+      if (t >= 1) {
+        st.cx = st.walkDstCX; st.cy = st.walkDstCY;
+        st.wx = st.walkDstX;  st.wy = st.walkDstY;
+        st.state = 'idle'; st.frame = 0; st.lastFrameAt = now;
+        st.nextActionAt = now + 700 + Math.random() * 1300;
+      }
+    } else {
+      const anim = _fishAnims.idle;
+      const elapsed = now - st.lastFrameAt;
+      if (elapsed >= anim.ms) { const steps = Math.floor(elapsed/anim.ms); st.frame = (st.frame+steps)%anim.frames; st.lastFrameAt += steps*anim.ms; }
+      if (now >= st.nextActionAt) {
+        if (now >= st.nextShootAt) {
+          const _dir = _findShootDirFriendly(st.cx, st.cy, 10);
+          if (_dir === null) {
+            st.nextShootAt  = now + 1500 + Math.random() * 1500;
+            st.nextActionAt = now + 400  + Math.random() * 600;
+          } else {
+          st.facingRight = _dir;
+          st.shootSpeed  = 250 + Math.random() * 200;
+          st.state = 'shoot'; st.frame = 0; st.lastFrameAt = now; st.arrowFired = false;
+          }
+        } else if (!isStationary) {
+          const dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+          const valid = dirs.filter(d => {
+            const nx=st.cx+d.dx, ny=st.cy+d.dy;
+            if (nx<0||ny<0||nx>=COLS||ny>=ROWS) return false;
+            if (isWall(nx, ny)) return false;
+            return Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY) <= WANDER_CELLS;
+          });
+          if (valid.length > 0) {
+            const d = valid[Math.floor(Math.random()*valid.length)];
+            const ncx=st.cx+d.dx, ncy=st.cy+d.dy;
+            st.walkSrcX=st.wx; st.walkSrcY=st.wy;
+            st.walkDstX=ncx*CELL+CELL/2; st.walkDstY=ncy*CELL+CELL/2;
+            st.walkDstCX=ncx; st.walkDstCY=ncy; st.walkStart=now;
+            st.facingRight=d.dx>=0; st.state='walk'; st.frame=0; st.lastFrameAt=now;
+          } else { st.nextActionAt = now+600+Math.random()*800; }
+        } else { st.nextActionAt = now+600+Math.random()*800; }
+      }
+    }
+
+    // ---- Draw fish ----
+    const anim = st.state==='shoot' ? _fishAnims.throw : st.state==='walk' ? _fishAnims.run : _fishAnims.idle;
+    const aImg = anim.img;
+    const frameIdx = Math.min(st.frame, anim.frames-1);
+    const px = st.wx - DRAW_W/2;
+    const py = st.wy - DRAW_H/2 + 8;
+    if (aImg.complete && aImg.naturalWidth > 0) {
+      if (!st.facingRight) {
+        ctx.save(); ctx.scale(-1,1);
+        ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, -px-DRAW_W, py, DRAW_W, DRAW_H);
+        ctx.restore();
+      } else {
+        ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
+      }
+    }
+    if (st.hitFlash > 0) {
+      ctx.save(); ctx.globalAlpha = st.hitFlash * 0.55; ctx.fillStyle = '#00eeff';
+      ctx.fillRect(px, py, DRAW_W, DRAW_H); ctx.restore();
+      st.hitFlash = Math.max(0, st.hitFlash - 0.07);
+    }
+    _drawNpcHpBar(st.wx, py, st.hp, st.maxHp, st.hitFlash);
+
+    // Hitbox debug overlay (harpoon fish)
+    if (window._showHitboxes) {
+      ctx.save();
+      ctx.strokeStyle = '#00ccff'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+      ctx.strokeRect(st.cx * CELL, st.cy * CELL, CELL, CELL);
+      ctx.fillStyle = '#00ccff22'; ctx.fillRect(st.cx * CELL, st.cy * CELL, CELL, CELL);
+      ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+      ctx.strokeRect(st.wx - DRAW_W/2, st.wy - DRAW_H/2 + 8, DRAW_W, DRAW_H);
+      ctx.fillStyle = '#00ccffaa';
+      ctx.font = 'bold 9px monospace'; ctx.fillText(`F(${st.cx},${st.cy})`, st.cx*CELL+2, st.cy*CELL+11);
+      ctx.restore();
+    }
+    // ---- Harpoons ----
+    const hImg = _fishAnims.harpoon.img;
+    const impSheet = _fishAnims.impact.img;
+    const HW = 26, HH = 26; // square — matches actual sprite aspect ratio
+    const HARPOON_ANGLE_OFFSET = Math.PI / 4; // sprite tip naturally points upper-right (-45°)
+    const VY0=-110, GRAV=200, DRAG=0.3;
+    const IMPACT_MS=60, IMPACT_FRAMES=9, GROUND_OFFSET=30;
+    st.arrows = st.arrows.filter(a => {
+      if (!a.hit) return now - a.born < HARPOON_LIFE;
+      if (a.hitTarget) return now - a.hitAt < IMPACT_FRAMES*IMPACT_MS;
+      return now - a.hitAt < 1000;
+    });
+    for (const a of st.arrows) {
+      const dt = (now-a.born)/1000;
+      const dir = a.startDir||1;
+      const spd = a.speed||HARPOON_SPEED;
+      const dragF = Math.exp(-DRAG*dt);
+      const ax = a.stuckX !== undefined ? a.stuckX : a.startX + dir*(spd/DRAG)*(1-dragF);
+      const ay = a.stuckY !== undefined ? a.stuckY : a.y + VY0*dt + 0.5*GRAV*dt*dt;
+      const velY = VY0+GRAV*dt;
+      const velX = dir*spd*dragF;
+      const angle = Math.atan2(velY, velX);
+
+      // Particle trail during descent
+      if (!a.hit && a.particles && velY > 0 && now-a.lastParticleAt > 45) {
+        a.lastParticleAt = now;
+        a.particles.push({ x: ax+HW/2, y: ay, born: now });
+      }
+      if (a.particles) {
+        a.particles = a.particles.filter(p => now-p.born < 280);
+        for (const p of a.particles) {
+          const age=(now-p.born)/280;
+          ctx.save(); ctx.globalAlpha=(1-age)*0.55; ctx.fillStyle='#1a1a1a';
+          ctx.beginPath(); ctx.arc(p.x, p.y, 2.5*(1-age*0.5), 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // Landing detection
+      if (!a.hit && dt>0.2 && ay >= a.y+GROUND_OFFSET) {
+        a.hit=true; a.hitAt=now;
+        a.stuckX=ax+HW/2; a.stuckY=ay; a.stuckAngle=angle; a.hitTarget=false;
+        const _fCrit = Math.random() < 0.20;
+        const _fDmg = _fCrit ? 8 : 4;
+        if (S.units) {
+          const lgx=Math.floor(a.stuckX/CELL), lgy=Math.floor(a.stuckY/CELL);
+          const target=S.units.find(u=>u.alive&&u.x===lgx&&u.y===lgy);
+          if (target) {
+            a.hitTarget=true; S.shake=Math.max(S.shake||0,_fCrit?14:10);
+            if (target.team===0) {
+              S.energy=Math.max(0,S.energy-heroDmg(_fDmg)); target.hitFlash=1; target.hitTimer=1000; SFX.heroHit();
+              spawnDmgNumber(target.x,target.y,_fCrit?`-${heroDmg(_fDmg)}!`:`-${heroDmg(_fDmg)}`,_fCrit?'#ffe033':'#ff2222',_fCrit?24:22,_fCrit?'crit':'normal');
+            } else {
+              target.hp-=_fDmg; target.hitFlash=1; triggerHitRecovery(target); SFX.hit();
+              spawnDmgNumber(target.x,target.y,_fCrit?`-${_fDmg}!`:`-${_fDmg}`,_fCrit?'#ffe033':'#ffdd55',_fCrit?24:22,_fCrit?'crit':'normal');
+              if (target.hp<=0) {
+                target.hp=0; target.alive=false; spawnDeath(target.x,target.y,target.color);
+                if (S.bloodStains) S.bloodStains.push(mkBloodStain(target.x,target.y));
+                S.kills=(S.kills||0)+1; trackKill();
+                if (!Profile.stats) Profile.stats={totalKills:0};
+                Profile.stats.totalKills=(Profile.stats.totalKills||0)+1; saveProfile(); _updateKillsDisplay();
+              }
+            }
+          }
+        }
+        // Red archer NPC hit
+        if (!a.hitTarget) {
+          const lgx2=Math.floor(a.stuckX/CELL), lgy2=Math.floor(a.stuckY/CELL);
+          if (_damageRedArcherAt(lgx2, lgy2, _fDmg)) a.hitTarget = true;
+        }
+      }
+
+      // Draw
+      if (a.hit && a.hitTarget) {
+        const frame=Math.min(Math.floor((now-a.hitAt)/IMPACT_MS),IMPACT_FRAMES-1);
+        const IS=52;
+        if (impSheet.complete&&impSheet.naturalWidth>0)
+          ctx.drawImage(impSheet,frame*192,0,192,192,a.stuckX-IS/2,a.stuckY-IS/2,IS,IS);
+        continue;
+      }
+      if (a.hit && !a.hitTarget) {
+        const stuckImg = _fishAnims.stuck.img;
+        ctx.save(); ctx.translate(a.stuckX, a.stuckY);
+        ctx.rotate(a.stuckAngle + HARPOON_ANGLE_OFFSET);
+        if (stuckImg.complete&&stuckImg.naturalWidth>0) ctx.drawImage(stuckImg,0,0,64,64,-HW/2,-HH/2,HW,HH);
+        ctx.restore(); continue;
+      }
+      // Cross
+      if (a.landX!==undefined && now<a.crossHideAt) {
+        ctx.save(); ctx.strokeStyle='#3a7a5a'; ctx.lineWidth=1.5; ctx.globalAlpha=0.65;
+        const _cx=a.landX+(dir>0?10:0);
+        ctx.beginPath(); ctx.moveTo(_cx-5,a.landY); ctx.lineTo(_cx+5,a.landY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(_cx,a.landY-5); ctx.lineTo(_cx,a.landY+5); ctx.stroke();
+        ctx.globalAlpha=1; ctx.restore();
+      }
+      // Flying harpoon — offset rotation to compensate sprite's natural -45° angle
+      ctx.save(); ctx.translate(ax+HW/2, ay);
+      ctx.rotate(angle + HARPOON_ANGLE_OFFSET);
+      if (hImg.complete&&hImg.naturalWidth>0) ctx.drawImage(hImg,0,0,64,64,-HW/2,-HH/2,HW,HH);
+      ctx.restore();
+    }
+  }
+}
+
 function drawForegroundDecorations() {
   if (!S.decorations) return;
 
@@ -6015,6 +7048,124 @@ function drawForegroundDecorations() {
     const drawY = py + CELL - drawH - 10;
     ctx.drawImage(bImg, frame * 128, 0, 128, 128, drawX, drawY, drawW, drawH);
   }
+
+  // Buildings — drawn top-left anchored at placed cell
+  for (const key of decKeys) {
+    const decId = S.decorations[key];
+    if (!decId.startsWith('building_')) continue;
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10);
+    const c = parseInt(strC, 10);
+    const name = decId.slice(9);
+    // Tower rubble (destroyed state)
+    if (name === 'Tower_rubble') {
+      if (_towerRubbleImg.complete && _towerRubbleImg.naturalWidth > 0) {
+        const rw = 72, rh = 54;
+        const rx = c * CELL + CELL / 2 - rw / 2 + 40;
+        const ry = r * CELL + CELL - rh + 14;
+        ctx.drawImage(_towerRubbleImg, 0, 128, 128, 128, rx, ry, rw, rh);
+      }
+      continue;
+    }
+    const img = _buildingImgs[name];
+    if (!img || !img.complete || img.naturalWidth === 0) continue;
+    const _bldgOffsetY = { Castle: -25, Tower: -60 };
+    const offsetY = _bldgOffsetY[name] || 0;
+    const _bldgScale = { Tower: 0.90 };
+    const bldgScale = _bldgScale[name] || 0.80;
+    const _bldgOffsetX = { Tower: 15 };
+    const offsetX = _bldgOffsetX[name] || 0;
+    const bw = img.naturalWidth * bldgScale, bh = img.naturalHeight * bldgScale;
+    const bx = c * CELL + (img.naturalWidth - bw) / 2 + offsetX;
+    const by = r * CELL + offsetY + (img.naturalHeight - bh);
+    ctx.drawImage(img, bx, by, bw, bh);
+    // HP bar for Tower
+    if (name === 'Tower') {
+      const ts = _getTowerState(r, c);
+      if (ts.hitFlash > 0) { ts.hitFlash = Math.max(0, ts.hitFlash - 0.06); }
+      const hpFrac = ts.hp / ts.maxHp;
+      // BigBar_Base: 3 sections in 320x64
+      // Left cap:   src x=40-63  (24px wide), y=9-59 (51px tall)
+      // Middle:     src x=128-191 (64px wide), y=9-59
+      // Right cap:  src x=256-279 (24px wide), y=9-59
+      // BigBar_Fill: 64x64, content y=20-43 (24px tall)
+      const barH = 18, barW = 72;
+      const capSrcW = 24, capSrcH = 51, midSrcX = 128, midSrcW = 64;
+      const capW = Math.round(barH * capSrcW / capSrcH); // maintain aspect ~8px
+      const midW = barW - capW * 2;
+      const barX = bx + bw / 2 - barW / 2;
+      const barY = by + 9;
+      ctx.save();
+      if (ts.hitFlash > 0) ctx.globalAlpha = 0.7 + 0.3 * Math.sin(performance.now() * 0.05);
+      if (_towerBarBase.complete && _towerBarBase.naturalWidth > 0) {
+        // Left cap
+        ctx.drawImage(_towerBarBase, 40, 9, capSrcW, capSrcH, barX, barY, capW, barH);
+        // Middle (stretched)
+        ctx.drawImage(_towerBarBase, midSrcX, 9, midSrcW, capSrcH, barX + capW, barY, midW, barH);
+        // Right cap
+        ctx.drawImage(_towerBarBase, 256, 9, capSrcW, capSrcH, barX + capW + midW, barY, capW, barH);
+      }
+      // Fill clipped to hpFrac
+      if (_towerBarFill.complete && _towerBarFill.naturalWidth > 0 && hpFrac > 0) {
+        const fillAreaW = midW * hpFrac;
+        ctx.drawImage(_towerBarFill, 0, 20, 64 * hpFrac, 24, barX + capW, barY + 1, fillAreaW, barH - 2);
+      }
+      ctx.restore();
+    }
+  }
+
+  // Archer NPCs
+  _updateAndDrawArchers(decKeys);
+  // Red Archer enemy NPCs
+  _updateAndDrawRedArchers(decKeys);
+  // Harpoon Fish NPCs
+  _updateAndDrawFish(decKeys);
+}
+
+function _drawTowerFire() {
+  if (!S.decorations || !_towerFireImg.complete || !_towerFireImg.naturalWidth) return;
+  const now = performance.now();
+  const fireFrame = Math.floor(now / TOWER_FIRE_MS) % TOWER_FIRE_FRAMES;
+  ctx.save();
+  for (const key of Object.keys(S.decorations)) {
+    if (S.decorations[key] !== 'building_Tower') continue;
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10), c = parseInt(strC, 10);
+    const ts = _towerStates[key];
+    if (!ts || ts.hp / ts.maxHp > 0.20) continue;
+    const bldgScale = 0.90, offsetX = 15, offsetY = -20;
+    const img = _buildingImgs['Tower'];
+    if (!img || !img.complete) continue;
+    const bw = img.naturalWidth * bldgScale;
+    const bx = c * CELL + (img.naturalWidth - bw) / 2 + offsetX;
+    const by = r * CELL + offsetY + (img.naturalHeight * (1 - bldgScale));
+    const fsz = bw * 1.1;
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(_towerFireImg, fireFrame * TOWER_FIRE_FW, 0, TOWER_FIRE_FW, TOWER_FIRE_FH,
+      bx + bw / 2 - fsz / 2, by - fsz * 0.45, fsz, fsz);
+  }
+  ctx.restore();
+}
+
+function _drawTowerExplosions() {
+  if (!_towerDestroyedAnims.length) return;
+  const now = performance.now();
+  // Use shaman explosion sprite (already loaded, confirmed working)
+  const exImg = shamanExplImg;
+  const FW = 128, FH = 128, FRAMES = 9, MS = 60;
+  const totalDur = FRAMES * MS;
+  const sz = CELL * 3.2;
+  ctx.save();
+  for (let i = _towerDestroyedAnims.length - 1; i >= 0; i--) {
+    const a = _towerDestroyedAnims[i];
+    const age = now - a.born;
+    if (age > totalDur) { _towerDestroyedAnims.splice(i, 1); continue; }
+    if (!exImg.complete || !exImg.naturalWidth) continue;
+    const frame = Math.min(Math.floor(age / MS), FRAMES - 1);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(exImg, frame * FW, 0, FW, FH, a.wx - sz / 2 + 45, a.wy - sz / 2 + 10, sz, sz);
+  }
+  ctx.restore();
 }
 
 function _drawDungeonStatic() {
@@ -8618,11 +9769,11 @@ function applySingleAction(team, a) {
         }
       }
     } else {
-      // Block shooting when map is fully revealed and no enemies
-      if (gameMode === 'adventure' && team === 0) {
-        const _cleared = S.fullMapRevealed && !S.units.some(u => isHostileAdventureEnemy(u));
-        if (_cleared) return;
-      }
+      // Block shooting when map is fully revealed and no enemies (disabled for tower testing)
+      // if (gameMode === 'adventure' && team === 0) {
+      //   const _cleared = S.fullMapRevealed && !S.units.some(u => isHostileAdventureEnemy(u));
+      //   if (_cleared) return;
+      // }
       const sd = (team === 0 && unit.aimDir) ? unit.aimDir : unit.facing;
       const wep = getCurrentWeapon(unit);
       stats.shots[team]++;
@@ -9888,7 +11039,7 @@ function loop(now) {
     updateCamera();
     ctx.translate(-Math.round(S.cam.x), -Math.round(S.cam.y));
   }
-  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); } else drawBoard();
+  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _drawTowerFire(); _drawTowerExplosions(); } else drawBoard();
   drawLasers();
   drawMeleeStrikes();
   drawShootPreview();
@@ -10704,12 +11855,33 @@ const _heroBullets = [];
 
 function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
   const _maxRange = 5;
-  // Pre-scan path: find first enemy or wall
-  let toGx = fromGx, toGy = fromGy, hitEnemy = null, hitStep = 0;
+  // Pre-scan path: find first enemy, tower, or wall
+  let toGx = fromGx, toGy = fromGy, hitEnemy = null, hitStep = 0, hitTowerKey = null, hitRedArcherKey = null;
   for (let s = 1; s <= _maxRange; s++) {
     const cx = fromGx + dx * s, cy = fromGy + dy * s;
-    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS || isWall(cx, cy)) break;
+    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) break;
+    // Tower building is hittable (intercepts bullet, check decoration cell + 2 cells below)
+    if (S.decorations) {
+      let foundTower = false;
+      for (let dr = 0; dr <= 2; dr++) {
+        // Boxes are at gx+1, decoration is at gx (cx-1)
+        const tKey = (cy - dr) + ',' + (cx - 1);
+        if (S.decorations[tKey] === 'building_Tower') {
+          toGx = cx; toGy = cy; hitStep = s; hitTowerKey = tKey; foundTower = true; break;
+        }
+      }
+      if (foundTower) break;
+    }
+    if (isWall(cx, cy)) break;
     toGx = cx; toGy = cy; hitStep = s;
+    // Red Archer NPC — search by current position (archer moves, decoration key stays at spawn)
+    for (const raK in _redArcherStates) {
+      const raSt = _redArcherStates[raK];
+      if (raSt && raSt.cx === cx && raSt.cy === cy && S.decorations && S.decorations[raK] === 'red_archer_npc') {
+        hitRedArcherKey = raK; break;
+      }
+    }
+    if (hitRedArcherKey) break;
     const e = S.units && S.units.find(u => u.alive && u.team !== 0 && u.x === cx && u.y === cy);
     if (e) { hitEnemy = e; break; }
   }
@@ -10718,7 +11890,7 @@ function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
   const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
   const duration = Math.max(200, dist / (CELL * 0.009));
   const born = performance.now();
-  _heroBullets.push({ sx, sy, tx, ty, born, duration, toGx, toGy, hitEnemy, hitStep, done: false, hit: false });
+  _heroBullets.push({ sx, sy, tx, ty, born, duration, toGx, toGy, hitEnemy, hitStep, hitTowerKey, hitRedArcherKey, done: false, hit: false });
 }
 
 function drawHeroBullets() {
@@ -10753,6 +11925,56 @@ function drawHeroBullets() {
             if (!S.fog[_fy][_fx] && S.fogReveal) S.fogReveal[_fy][_fx] = _now2;
             S.fog[_fy][_fx] = true;
           }
+      }
+      // Deal damage to Tower building
+      if (p.hitTowerKey && S.decorations && S.decorations[p.hitTowerKey] === 'building_Tower') {
+        const [_tr, _tc] = p.hitTowerKey.split(',').map(Number);
+        const ts = _getTowerState(_tr, _tc);
+        const isCrit = Math.random() < getCritChance();
+        const dist = p.hitStep + 1;
+        let baseDmg = dist >= 5 ? 4 : dist >= 4 ? 3 : dist >= 3 ? 2 : 1;
+        const dmg = isCrit ? baseDmg * 2 : baseDmg;
+        ts.hp = Math.max(0, ts.hp - dmg);
+        ts.hitFlash = 1;
+        S.shake = Math.max(S.shake || 0, isCrit ? 10 : 6);
+        spawnDmgNumber(_tc, _tr, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : '#ffaaaa', isCrit ? 22 : 16, isCrit ? 'crit' : 'normal');
+        SFX.hit();
+        if (ts.hp <= 0) {
+          delete S.decorations[p.hitTowerKey];
+          delete _towerStates[p.hitTowerKey];
+          // Remove all 3 collision boxes (at tc+1)
+          if (S.collisionBoxes) {
+            S.collisionBoxes.delete(`${_tr},${_tc+1}`);
+            S.collisionBoxes.delete(`${_tr+1},${_tc+1}`);
+            S.collisionBoxes.delete(`${_tr+2},${_tc+1}`);
+          }
+          // Rubble + explosion at BOTTOM cell (r+2), centered on tower sprite
+          const bottomKey = `${_tr+2},${_tc}`;
+          const wx = (_tc + 0.5) * CELL, wy = (_tr + 2 + 0.5) * CELL;
+          _towerDestroyedAnims.push({ wx, wy, born: performance.now() });
+          if (S.decorations) S.decorations[bottomKey] = 'building_Tower_rubble';
+          if (gameMode === 'adventure') logEvent('Tower <span style="color:#ff8844">destroyed</span>.', 'warn');
+        }
+      }
+      // Deal damage to Red Archer NPC
+      if (p.hitRedArcherKey) {
+        const raSt = _redArcherStates[p.hitRedArcherKey];
+        if (raSt && S.decorations && S.decorations[p.hitRedArcherKey] === 'red_archer_npc') {
+          const isCrit = Math.random() < getCritChance();
+          const dist = p.hitStep + 1;
+          let baseDmg = dist >= 5 ? 4 : dist >= 4 ? 3 : dist >= 3 ? 2 : 1;
+          const dmg = isCrit ? baseDmg * 2 : baseDmg;
+          raSt.hp = Math.max(0, raSt.hp - dmg);
+          raSt.hitFlash = 1;
+          S.shake = Math.max(S.shake || 0, isCrit ? 14 : 9);
+          spawnDmgNumber(p.toGx, p.toGy, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : '#ffffff', isCrit ? 22 : 16, isCrit ? 'crit' : 'normal');
+          SFX.hit();
+          if (raSt.hp <= 0) {
+            delete S.decorations[p.hitRedArcherKey];
+            delete _redArcherStates[p.hitRedArcherKey];
+            spawnDeath(p.toGx, p.toGy, '#cc4444');
+          }
+        }
       }
       // Deal damage if enemy was pre-scanned
       const eu = p.hitEnemy;
@@ -14870,12 +16092,13 @@ window.startGame = function startGame(mode) {
       panelP2.parentNode.removeChild(panelP2);
     }
     const logPanel = document.getElementById('panel-log');
-    if (logPanel) logPanel.style.display = gameMode === 'hub' ? 'none' : 'flex'; // hide log in hub
+    if (logPanel) logPanel.style.display = 'none';
     if (screenGame) screenGame.classList.add('adv-mode');
     advCanvasW = ADV_COLS * UNIT_CELL;
     updateEnergyHud();
     const hubBtn = document.getElementById('btn-open-hub');
-    if (hubBtn) hubBtn.style.display = 'block';
+    if (hubBtn) hubBtn.style.display = gameMode === 'adventure' ? 'block' : 'none';
+    updateFloorNav();
     const opsBtn2 = document.getElementById('btn-ops-status');
     if (opsBtn2) opsBtn2.style.display = 'block';
     updateRunKeyUI();
@@ -15130,12 +16353,17 @@ document.addEventListener('DOMContentLoaded', () => {
     pal.style.maxHeight = '80vh';
     const basePaletteHtml = pal.innerHTML;
     pal.innerHTML = `
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <button id="editor-tab-map" style="flex:1; background:#ff00bb; color:white; border:1px solid #ff77dd; padding:8px 6px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:9px;" onclick="setEditorSection('map')">MAP</button>
-        <button id="editor-tab-npc" style="flex:1; background:#1f2433; color:#8fd8ff; border:1px solid #4ab5c0; padding:8px 6px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:9px;" onclick="setEditorSection('npc')">NPC</button>
+      <div style="display:flex; gap:4px; margin-bottom:8px;">
+        <button id="editor-tab-map" style="flex:1; background:#ff00bb; color:white; border:1px solid #ff77dd; padding:7px 4px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:8px;" onclick="setEditorSection('map')">MAP</button>
+        <button id="editor-tab-npc" style="flex:1; background:#1f2433; color:#8fd8ff; border:1px solid #4ab5c0; padding:7px 4px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:8px;" onclick="setEditorSection('npc')">NPC</button>
+        <button id="editor-tab-bldg" style="flex:1; background:#1f2433; color:#ffcc44; border:1px solid #996600; padding:7px 4px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:8px;" onclick="setEditorSection('bldg')">BLDG</button>
+      </div>
+      <div style="margin-bottom:8px;">
+        <button id="editor-btn-undo" disabled onclick="window._editorUndo()" style="width:100%; background:#1a0a00; color:#ff8844; border:1px solid #ff4400; padding:7px 6px; cursor:pointer; font-family:'Press Start 2P', monospace; font-size:9px; opacity:0.5;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity=this.disabled?'0.5':'1'">← UNDO (Ctrl+Z)</button>
       </div>
       <div id="editor-map-panel" style="display:flex; flex-direction:column; gap:10px;"></div>
       <div id="editor-npc-panel" style="display:none; flex-direction:column; gap:10px;"></div>
+      <div id="editor-bldg-panel" style="display:none; flex-direction:column; gap:6px;"></div>
     `;
     const mapPanel = document.getElementById('editor-map-panel');
     const npcPanel = document.getElementById('editor-npc-panel');
@@ -15148,17 +16376,70 @@ document.addEventListener('DOMContentLoaded', () => {
       const mapWrap = document.getElementById('editor-map-panel');
       const npcWrap = document.getElementById('editor-npc-panel');
       if (!mapTab || !npcTab || !mapWrap || !npcWrap) return;
-      const showNpc = section === 'npc';
-      mapWrap.style.display = showNpc ? 'none' : 'flex';
-      npcWrap.style.display = showNpc ? 'flex' : 'none';
-      mapTab.style.background = showNpc ? '#1f2433' : '#ff00bb';
-      mapTab.style.color = showNpc ? '#ff9be8' : '#ffffff';
-      npcTab.style.background = showNpc ? '#4ab5c0' : '#1f2433';
-      npcTab.style.color = showNpc ? '#07111a' : '#8fd8ff';
+      const bldgWrap = document.getElementById('editor-bldg-panel');
+      const bldgTab  = document.getElementById('editor-tab-bldg');
+      mapWrap.style.display  = section === 'map'  ? 'flex' : 'none';
+      npcWrap.style.display  = section === 'npc'  ? 'flex' : 'none';
+      if (bldgWrap) bldgWrap.style.display = section === 'bldg' ? 'flex' : 'none';
+      mapTab.style.background = section === 'map' ? '#ff00bb' : '#1f2433';
+      mapTab.style.color      = section === 'map' ? '#ffffff' : '#ff9be8';
+      npcTab.style.background = section === 'npc' ? '#4ab5c0' : '#1f2433';
+      npcTab.style.color      = section === 'npc' ? '#07111a' : '#8fd8ff';
+      if (bldgTab) { bldgTab.style.background = section === 'bldg' ? '#cc9900' : '#1f2433'; bldgTab.style.color = section === 'bldg' ? '#000' : '#ffcc44'; }
+      // Populate buildings panel on first open
+      if (section === 'bldg' && bldgWrap && !bldgWrap._built) {
+        bldgWrap._built = true;
+        const bNames = ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'];
+        bldgWrap.innerHTML = '<div style="color:#ffcc44; font-size:9px; margin-bottom:6px; font-family:monospace;">BUILDINGS — dbl-click to place</div>';
+        bNames.forEach(name => {
+          const btn = document.createElement('button');
+          btn.style.cssText = 'display:flex; align-items:center; gap:8px; background:#12100a; border:1px solid #554400; color:#ffcc44; padding:6px 8px; cursor:pointer; font-family:monospace; font-size:11px; text-align:left; width:100%;';
+          btn.innerHTML = `<img src="assets_tiny/Buildings_${name}.png" style="width:40px; height:auto; image-rendering:pixelated; border:1px solid #333;"> ${name}`;
+          btn.onclick = () => {
+            window.setEditTile('building_' + name);
+            bldgWrap.querySelectorAll('button').forEach(b => b.style.borderColor = '#554400');
+            btn.style.borderColor = '#ffcc44';
+            btn.style.background  = '#2a1e00';
+          };
+          bldgWrap.appendChild(btn);
+        });
+        // Erase building button
+        const erBtn = document.createElement('button');
+        erBtn.style.cssText = 'background:#330000; border:1px solid #880000; color:#ff6666; padding:6px 8px; cursor:pointer; font-family:monospace; font-size:11px; width:100%; margin-top:4px;';
+        erBtn.textContent = '✕ ERASE BUILDING';
+        erBtn.onclick = () => { window.setEditTile('erase_prop'); bldgWrap.querySelectorAll('button').forEach(b => b.style.borderColor = '#554400'); erBtn.style.borderColor = '#ff6666'; };
+        bldgWrap.appendChild(erBtn);
+        // Archer NPC separator + button
+        const npcSep = document.createElement('div');
+        npcSep.style.cssText = 'color:#8fd8ff; font-size:9px; margin-top:8px; margin-bottom:4px; font-family:monospace; border-top:1px solid #334455; padding-top:6px;';
+        npcSep.textContent = 'NPCs — dbl-click to place';
+        bldgWrap.appendChild(npcSep);
+        const archerBtn = document.createElement('button');
+        archerBtn.style.cssText = 'display:flex; align-items:center; gap:8px; background:#0a1220; border:1px solid #4a88cc; color:#8fd8ff; padding:6px 8px; cursor:pointer; font-family:monospace; font-size:11px; text-align:left; width:100%;';
+        archerBtn.innerHTML = `<img src="assets_tiny/Archer_Idle.png" style="width:40px; height:40px; object-fit:none; object-position:0 0; image-rendering:pixelated; border:1px solid #333;"> Blue Archer (juda)`;
+        archerBtn.onclick = () => {
+          window.setEditTile('archer_npc');
+          bldgWrap.querySelectorAll('button').forEach(b => { b.style.borderColor = '#554400'; b.style.background = '#12100a'; });
+          archerBtn.style.borderColor = '#8fd8ff';
+          archerBtn.style.background  = '#0a1a2a';
+        };
+        bldgWrap.appendChild(archerBtn);
+        const archerIdleBtn = document.createElement('button');
+        archerIdleBtn.style.cssText = 'display:flex; align-items:center; gap:8px; background:#0a1220; border:1px solid #2255aa; color:#8fd8ff; padding:6px 8px; cursor:pointer; font-family:monospace; font-size:11px; text-align:left; width:100%;';
+        archerIdleBtn.innerHTML = `<img src="assets_tiny/Archer_Idle.png" style="width:40px; height:40px; object-fit:none; object-position:0 0; image-rendering:pixelated; border:1px solid #333;"> Blue Archer (idle)`;
+        archerIdleBtn.onclick = () => {
+          window.setEditTile('archer_idle_npc');
+          bldgWrap.querySelectorAll('button').forEach(b => { b.style.borderColor = '#554400'; b.style.background = '#12100a'; });
+          archerIdleBtn.style.borderColor = '#8fd8ff';
+          archerIdleBtn.style.background  = '#0a1a2a';
+        };
+        bldgWrap.appendChild(archerIdleBtn);
+      }
     };
     // CLIFFS and DEEP WATER buttons are now in index.html
     // Add eraser
-    mapPanel.innerHTML += `<button onclick="setEditTile('erase_prop')" style="background:#550000; width:100px; height:30px; margin-top:5px; color:white; font-size:9px; cursor:pointer;">&#x2715; ERASE PROP</button>`;
+    mapPanel.innerHTML += `<div style="display:flex; gap:5px; margin-top:5px;"><button onclick="setEditTile('erase_prop')" style="background:#550000; flex:1; height:30px; color:white; font-size:9px; cursor:pointer;">&#x2715; ERASE PROP</button><button onclick="setEditTile('erase_box')" style="background:#550022; flex:1; height:30px; color:#ff88cc; font-size:9px; cursor:pointer; border:1px solid #aa0044;">&#x2715; ERASE BOX</button></div>`;
+    mapPanel.innerHTML += `<div style="margin-top:5px;"><button id="hitboxToggleBtn" onclick="window._showHitboxes=!window._showHitboxes; this.style.background=window._showHitboxes?'#004400':'#222'; this.textContent=window._showHitboxes?'HITBOX: ON':'HITBOX: OFF';" style="background:#222; width:100%; height:28px; color:#88ff88; font-size:9px; cursor:pointer; border:1px solid #448844;">HITBOX: OFF</button></div>`;
     
     // Add Fill buttons
     mapPanel.innerHTML += `<div style="margin-top:5px; display:flex; gap:5px;"><button onclick="fillMap(1)" style="flex:1; background:#3a7a2a; color:white; font-size:9px;">FILL GRASS</button><button onclick="fillMap(0)" style="flex:1; background:#4ab5c0; color:white; font-size:9px;">FILL WATER</button></div>`;
@@ -15411,6 +16692,28 @@ document.addEventListener('DOMContentLoaded', () => {
         ${npcButtons}
         <button onclick="setEditTile('erase_npc')" style="background:#3a1111; width:100%; height:40px; color:#ff7a7a; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #ff5555;">REMOVE</button>
       </div>
+      <div style="color:#8fd8ff; font-size:9px; margin-top:10px; margin-bottom:4px; border-top:1px solid #334455; padding-top:6px; font-family:monospace;">DEKORATYVINIAI NPC</div>
+      <button onclick="setEditTile('archer_npc')" style="background:#0a1220; width:100%; height:40px; color:#8fd8ff; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #4a88cc; display:flex; align-items:center; gap:8px; padding:0 8px;">
+        <img src="assets_tiny/Archer_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
+        <span>Blue Archer (juda)</span>
+      </button>
+      <button onclick="setEditTile('archer_idle_npc')" style="background:#0a1220; width:100%; height:40px; color:#8fd8ff; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #2255aa; display:flex; align-items:center; gap:8px; padding:0 8px; margin-top:3px;">
+        <img src="assets_tiny/Archer_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
+        <span>Blue Archer (idle)</span>
+      </button>
+      <button onclick="setEditTile('harpoon_fish_npc')" style="background:#0a2018; width:100%; height:40px; color:#66ddaa; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #2a7a55; display:flex; align-items:center; gap:8px; padding:0 8px; margin-top:3px;">
+        <img src="assets_tiny/HarpoonFish_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
+        <span>Harpoon Fish (juda)</span>
+      </button>
+      <button onclick="setEditTile('harpoon_fish_idle_npc')" style="background:#0a2018; width:100%; height:40px; color:#66ddaa; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #1a5a35; display:flex; align-items:center; gap:8px; padding:0 8px; margin-top:3px;">
+        <img src="assets_tiny/HarpoonFish_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
+        <span>Harpoon Fish (idle)</span>
+      </button>
+      <button onclick="setEditTile('red_archer_npc')" style="background:#200808; width:100%; height:40px; color:#ff6666; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #cc2222; display:flex; align-items:center; gap:8px; padding:0 8px; margin-top:3px;">
+        <img src="assets_tiny/RedArcher_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
+        <span>Red Archer (priesininkas)</span>
+      </button>
+      <button onclick="setEditTile('erase_prop')" style="background:#330000; width:100%; height:32px; color:#ff8888; font-size:9px; cursor:pointer; border:1px solid #880000; margin-top:2px;">✕ TRINTI DEKO NPC</button>
       <button onclick="exportMap()" style="background:#777; width:100px; height:30px; margin-top:14px; color:white; font-size:9px; cursor:pointer;">EXPORT JS</button>
     `;
     window.setEditorSection(window.editorSection || 'map');
@@ -15419,11 +16722,46 @@ document.addEventListener('DOMContentLoaded', () => {
   let _isMouseDown = false;
   document.addEventListener('mouseup', () => { _isMouseDown = false; });
 
+  // ---- Editor undo stack ------------------------------------------------
+  window._editorUndoStack = [];
+  window._editorPushUndo = function() {
+    const snap = {
+      dungeon:   S.dungeon.map(row => row.slice()),
+      decos:     Object.assign({}, S.decorations),
+      boxes:     S.collisionBoxes ? new Set(S.collisionBoxes) : new Set(),
+      enemies:   JSON.parse(JSON.stringify(S.customEnemyPlacements || [])),
+    };
+    window._editorUndoStack.push(snap);
+    if (window._editorUndoStack.length > 40) window._editorUndoStack.shift();
+    _editorUpdateUndoBtn();
+  };
+  window._editorUndo = function() {
+    if (!window._editorUndoStack.length) return;
+    const snap = window._editorUndoStack.pop();
+    S.dungeon   = snap.dungeon;
+    S.decorations = snap.decos;
+    S.collisionBoxes = snap.boxes;
+    S.customEnemyPlacements = snap.enemies;
+    invalidateDungeonCache();
+    _editorUpdateUndoBtn();
+  };
+  function _editorUpdateUndoBtn() {
+    const btn = document.getElementById('editor-btn-undo');
+    if (btn) btn.disabled = window._editorUndoStack.length === 0;
+  }
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && window.isEditMode) {
+      e.preventDefault();
+      window._editorUndo();
+    }
+  });
+
   document.addEventListener('dblclick', e => {
     if (!window.isEditMode || gameMode !== 'adventure') return;
     if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) return;
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
+    window._editorPushUndo();
     if (window._paintCurrentTile) window._paintCurrentTile(gy, gx);
   });
 
@@ -15458,7 +16796,15 @@ document.addEventListener('DOMContentLoaded', () => {
                    }
                 }
             } else if (window.editTileType === 'erase_prop') {
+                // If erasing a Tower, also remove its 3 collision boxes
+                if (S.decorations[`${gy},${gx}`] === 'building_Tower' && S.collisionBoxes) {
+                  S.collisionBoxes.delete(`${gy},${gx+1}`);
+                  S.collisionBoxes.delete(`${gy+1},${gx+1}`);
+                  S.collisionBoxes.delete(`${gy+2},${gx+1}`);
+                }
                 delete S.decorations[`${gy},${gx}`];
+            } else if (window.editTileType === 'erase_box') {
+                if (S.collisionBoxes) S.collisionBoxes.delete(`${gy},${gx}`);
             } else if (window.editTileType === 'box') {
                 if (!S.collisionBoxes) S.collisionBoxes = new Set();
                 S.collisionBoxes.add(`${gy},${gx}`);
@@ -15470,6 +16816,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 removeEditorEnemyAt(gx, gy);
             } else {
                 S.decorations[`${gy},${gx}`] = window.editTileType;
+                // Tower: auto-add 3 collision boxes (one cell right to center on sprite)
+                if (window.editTileType === 'building_Tower') {
+                  if (!S.collisionBoxes) S.collisionBoxes = new Set();
+                  if (gx+1 < COLS) {
+                    S.collisionBoxes.add(`${gy},${gx+1}`);
+                    if (gy+1 < ROWS) S.collisionBoxes.add(`${gy+1},${gx+1}`);
+                    if (gy+2 < ROWS) S.collisionBoxes.add(`${gy+2},${gx+1}`);
+                  }
+                }
             }
         }
       }

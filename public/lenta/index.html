@@ -1,11 +1,9 @@
->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TIMELOCK BOARD</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&family=Syncopate:wght@400;700&display=swap"
-    rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <style>
     @keyframes ronkePickup {
@@ -798,7 +796,14 @@
           </button>
           <button id="btn-open-hub" class="panel-hub-btn" onclick="toggleHubOverlay()" style="display:none;"
             title="Upgrade Terminal">THE KEEP</button>
-
+          <!-- Floor navigation -->
+          <div id="floor-nav" style="display:none;">
+            <button id="btn-floor-prev" onclick="window.goFloor(-1)" title="Previous floor">◀</button>
+            <span id="floor-nav-label">F1</span>
+            <button id="btn-floor-next" onclick="window.goFloor(+1)" title="Next floor">▶</button>
+          </div>
+          <button id="btn-goto-f10" class="panel-hub-btn" onclick="window.goToFloor(10)" style="display:none;"
+            title="Go to Floor 10">→ F10</button>
           <!-- Run Keys (adventure only) -->
           <div id="panel-runkeys">
             <div class="prk-label">VITALITY</div>

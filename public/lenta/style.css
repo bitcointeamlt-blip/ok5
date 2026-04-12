@@ -1,4 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('fonts/PressStart2P.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Orbitron';
+  src: url('fonts/Orbitron.woff2') format('woff2');
+  font-weight: 400 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Syncopate';
+  src: url('fonts/Syncopate.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+}
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TIMELOCK BOARD â€” pixel art UI
@@ -5184,6 +5201,40 @@ kbd {
   color: #eafff2;
 }
 
+/* Floor navigation */
+#floor-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+  width: 100%;
+}
+#floor-nav button {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 28px;
+  background: #00140f;
+  border: 1px solid rgba(0,255,136,0.3);
+  color: #00ff88;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #000;
+  line-height: 1;
+}
+#floor-nav button:hover {
+  background: rgba(0,255,136,0.08);
+  border-color: rgba(0,255,136,0.52);
+  color: #eafff2;
+}
+#floor-nav-label {
+  color: #00ff88;
+  font-size: 13px;
+  font-family: monospace;
+  min-width: 28px;
+  text-align: center;
+  letter-spacing: 1px;
+}
 
 /* Unified gameplay button skin */
 #btn-inventory,
