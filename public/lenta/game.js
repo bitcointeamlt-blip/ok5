@@ -2569,7 +2569,7 @@ const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Wate
 // Floor 1
 window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"1,0":"tileset3_3_3","0,1":"tileset3_3_3","1,2":"tileset3_3_3","0,3":"tileset3_3_3","1,4":"tileset3_3_3","0,5":"tileset3_3_3","2,1":"tileset3_3_3","2,3":"tileset3_3_3","2,5":"tileset3_3_3","1,6":"tileset3_3_3","0,7":"tileset3_3_3","2,7":"tileset3_3_3","3,0":"tileset3_3_3","3,2":"tileset3_3_3","3,4":"tileset3_3_3","3,6":"tileset3_3_3","3,8":"tileset3_3_3","1,8":"tileset3_3_3","0,9":"tileset3_3_3","2,9":"tileset3_3_3","3,10":"tileset3_3_3","1,10":"tileset3_3_3","0,11":"tileset3_3_3","2,11":"tileset3_3_3","3,12":"tileset3_3_3","1,12":"tileset3_3_3","0,13":"tileset3_3_3","2,13":"tileset3_3_3","4,13":"tileset3_3_3","4,11":"tileset3_3_3","4,9":"tileset3_3_3","4,7":"tileset3_3_3","4,5":"tileset3_3_3","4,3":"tileset3_3_3","4,1":"tileset3_3_3","5,0":"tileset3_3_3","5,2":"tileset3_3_3","5,4":"tileset3_3_3","5,6":"tileset3_3_3","5,8":"tileset3_3_3","5,10":"tileset3_3_3","5,12":"tileset3_3_3","6,13":"tileset3_3_3","6,11":"tileset3_3_3","6,9":"tileset3_3_3","6,7":"tileset3_3_3","6,5":"tileset3_3_3","6,3":"tileset3_3_3","6,1":"tileset3_3_3","7,0":"tileset3_3_3","7,2":"tileset3_3_3","7,4":"tileset3_3_3","7,6":"tileset3_3_3","7,8":"tileset3_3_3","7,10":"tileset3_3_3","7,12":"tileset3_3_3","8,13":"tileset3_3_3","8,11":"tileset3_3_3","8,9":"tileset3_3_3","8,7":"tileset3_3_3","8,5":"tileset3_3_3","8,3":"tileset3_3_3","8,1":"tileset3_3_3","5,5":"bush3","7,7":"bush3","3,9":"bush3","7,1":"bush1","5,1":"bush1","4,8":"deco_15","2,2":"deco_15","8,10":"deco_14","8,4":"deco_03","1,11":"deco_13","9,0":"tileset3_5_3","9,1":"tileset3_6_3","9,2":"tileset3_6_3","10,0":"tileset3_5_4","10,1":"tileset3_6_4","10,2":"tileset3_6_4","9,3":"tileset3_6_3","10,3":"tileset3_6_4","9,4":"tileset3_6_3","10,4":"tileset3_6_4","9,5":"tileset3_6_3","10,5":"tileset3_6_4","9,6":"tileset3_6_3","10,6":"tileset3_6_4","9,7":"tileset3_6_3","10,7":"tileset3_6_4","9,8":"tileset3_6_3","10,8":"tileset3_6_4","9,9":"tileset3_6_3","10,9":"tileset3_6_4","9,10":"tileset3_6_3","10,10":"tileset3_6_4","9,11":"tileset3_6_3","10,11":"tileset3_6_4","9,12":"tileset3_6_3","9,13":"tileset3_6_3","10,12":"tileset3_6_4","10,13":"tileset3_6_4","9,14":"tileset3_7_3","10,14":"tileset3_7_4","7,14":"tileset3_8_3","8,14":"tileset3_8_4","6,14":"tileset3_8_4","5,14":"tileset3_8_3","3,14":"tileset3_8_3","4,14":"tileset3_8_4","1,14":"tileset3_8_3","2,14":"tileset3_8_4","0,14":"deco_06"},"collisionBoxes":["9,0","9,1","9,2","9,3","9,4","9,5","9,6","9,7","9,8","9,9","9,10","9,11","9,12","9,13","9,14","0,14","1,14","2,14","3,14","4,14","5,14","6,14","7,14","8,14"],"enemies":[{"type":"sheep","x":9,"y":7},{"type":"spider","x":7,"y":1},{"type":"spider","x":11,"y":6},{"type":"skull","x":6,"y":7},{"type":"minotaur","x":11,"y":3}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":25,"y":28}};
 // Floor 10 — 13x41 plain grass (cleaned from stones/water)
-window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":7,"y":4}};
+window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":7,"y":4},"exitPos":{"x":25,"y":28}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
 const _buildingImgs = {};
@@ -2577,24 +2577,67 @@ const _buildingImgs = {};
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
   _buildingImgs[n] = img;
 });
-// ── F10 Castle Room — Pawn+PAM mining animation ──────────────────────────
-const _f10PawnIdleImg = new Image(); _f10PawnIdleImg.src = 'assets_tiny/Pawn_Idle_Pickaxe.png';
-const _f10PawnRunImg  = new Image(); _f10PawnRunImg.src  = 'assets_tiny/Pawn_Run_Pickaxe.png';
-const _f10PawnMineImg = new Image(); _f10PawnMineImg.src = 'assets_tiny/Pawn_Interact_Pickaxe.png';
-const _f10PamImg      = new Image(); _f10PamImg.src      = 'assets_tiny/pam_npc.png';
-const _f10StoneImg    = new Image(); _f10StoneImg.src    = 'assets_tiny/GoldStone1.png';
-// Castle (320×256, scale 0.80) bottom ≈ y=231 in world px → +200 = 431
-const _F10_WORLD_Y     = 431;
-const _F10_BASE_X      = 60;
-const _F10_STONE_X     = 340;
-const _F10_PATROL_DIST = 120;
-const _F10_WALK_SPEED  = 80;
-const _F10_PATROL_DUR  = 8000;
-const _f10Anim = {
-  state: 'patrol_run_r', stateStart: null, patrolStart: null,
-  currentX: 60, patrolOffset: 0, facingRight: true, drawScale: 1.0,
-  stoneShake: 0, _lastFloor: null,
+// ── Placeable NPC sprites ─────────────────────────────────────────────────
+const _pawnIdleImg    = new Image(); _pawnIdleImg.src    = 'assets_tiny/Pawn_Idle_Pickaxe.png';
+const _pawnRunImg     = new Image(); _pawnRunImg.src     = 'assets_tiny/Pawn_Run_Pickaxe.png';
+const _pawnInteractImg= new Image(); _pawnInteractImg.src= 'assets_tiny/Pawn_Interact_Pickaxe.png';
+const _pamNpcImg      = new Image(); _pamNpcImg.src      = 'assets_tiny/pam_npc.png';
+const _stoneNpcImg    = new Image(); _stoneNpcImg.src    = 'assets_tiny/GoldStone1.png';
+// ── Gold Stone decoration sprites ─────────────────────────────────────────
+const _goldStoneImgs = {};
+['GoldStone1','GoldStone1_Highlight','GoldStone2','GoldStone2_Highlight',
+ 'GoldStone3','GoldStone3_Highlight','GoldStone4','GoldStone4_Highlight',
+ 'GoldStone5','GoldStone5_Highlight','GoldStone6','GoldStone6_Highlight',
+ 'Gold_Resource','Gold_Resource_Highlight'].forEach(n => {
+  const img = new Image(); img.src = `assets_tiny/${n}.png`; _goldStoneImgs[n] = img;
+});
+const _GOLD_STONE_DEFS = {
+  gold_stone_1:  { img: 'GoldStone1',               frames: 1, fw: 128, fps: 0 },
+  gold_stone_1h: { img: 'GoldStone1_Highlight',      frames: 6, fw: 128, fps: 8 },
+  gold_stone_2:  { img: 'GoldStone2',               frames: 1, fw: 128, fps: 0 },
+  gold_stone_2h: { img: 'GoldStone2_Highlight',      frames: 6, fw: 128, fps: 8 },
+  gold_stone_3:  { img: 'GoldStone3',               frames: 1, fw: 128, fps: 0 },
+  gold_stone_3h: { img: 'GoldStone3_Highlight',      frames: 6, fw: 128, fps: 8 },
+  gold_stone_4:  { img: 'GoldStone4',               frames: 1, fw: 128, fps: 0 },
+  gold_stone_4h: { img: 'GoldStone4_Highlight',      frames: 6, fw: 128, fps: 8 },
+  gold_stone_5:  { img: 'GoldStone5',               frames: 1, fw: 128, fps: 0 },
+  gold_stone_5h: { img: 'GoldStone5_Highlight',      frames: 6, fw: 128, fps: 8 },
+  gold_stone_6:  { img: 'GoldStone6',               frames: 1, fw: 128, fps: 0 },
+  gold_stone_6h: { img: 'GoldStone6_Highlight',      frames: 6, fw: 128, fps: 8 },
+  gold_resource:  { img: 'Gold_Resource',            frames: 1, fw: 128, fps: 0 },
+  gold_resource_h:{ img: 'Gold_Resource_Highlight',  frames: 6, fw: 128, fps: 8 },
 };
+const _npcStates      = {}; // keyed by "row,col"
+let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + gold stone present
+let _stoneShake  = { key: null, x: 0, y: 0 }; // shake offset applied to mined stone in static cache
+const _coinParticles = []; // floating coin FX when PAM delivers to house
+let _buildingSquish = { name: null, start: 0 }; // house squish on delivery
+
+function _spawnCoinParticle(wx, wy) {
+  _coinParticles.push({ wx: wx - 40, wy: wy - 95, born: performance.now() });
+}
+function _triggerBuildingSquish(name) {
+  _buildingSquish = { name, start: performance.now() };
+}
+function _drawCoinParticles(now) {
+  if (!_coinParticles.length) return;
+  const DUR = 700;
+  for (let i = _coinParticles.length - 1; i >= 0; i--) {
+    const p = _coinParticles[i];
+    const el = now - p.born;
+    if (el > DUR) { _coinParticles.splice(i, 1); continue; }
+    if (!ronke2TokenImg.complete || !ronke2TokenImg.naturalWidth) continue;
+    const prog  = el / DUR;
+    const frame = Math.floor(el / (1000 / 8)) % 8;
+    const alpha = prog > 0.5 ? 1 - (prog - 0.5) / 0.5 : 1;
+    const sz    = 38;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(ronke2TokenImg, frame * 640, 0, 640, 640, p.wx - sz / 2, p.wy - 30 * prog, sz, sz);
+    ctx.restore();
+  }
+}
 const _towerBarBase = new Image(); _towerBarBase.src = 'assets_tiny/BigBar_Base.png';
 const _towerBarFill = new Image(); _towerBarFill.src = 'assets_tiny/BigBar_Fill.png';
 const _npcBarBase = new Image(); _npcBarBase.src = 'assets_tiny/SmallBar_Base.png';
@@ -6184,90 +6227,164 @@ function isVisible(x, y) {
 
 function invalidateDungeonCache() { _dunDirty = true; }
 
-function drawF10PawnAnim() {
-  if (S.floor !== 10 || gameMode !== 'adventure') return;
-  const now = performance.now();
-  const an = _f10Anim;
-  // Reset state when entering floor 10
-  if (an._lastFloor !== 10) {
-    an._lastFloor = 10; an.state = 'patrol_run_r'; an.stateStart = null;
-    an.patrolStart = null; an.currentX = _F10_BASE_X; an.patrolOffset = 0;
-    an.facingRight = true; an.drawScale = 1.0; an.stoneShake = 0;
-  }
-  if (an.stateStart === null) { an.stateStart = now; an.patrolStart = now; }
+// ── Mining cycle runner ───────────────────────────────────────────────────
+function _runMiningCycle(now) {
+  const mc       = _miningCycle;
+  const SZ       = 90, PAM_SZ = 50;
+  const WALK_SPD = 105;  // px / s  (-30%)
+  const MINE_DUR = 4000; // ms of pickaxe anim before PAM appears
+  const elapsed  = now - mc.phaseStart;
 
-  const RUN_FRAMES=6, RUN_FW=192, RUN_FPS=8;
-  const INT_FRAMES=6, INT_FW=192, INT_FPS=10;
-  const PAM_FRAMES=19, PAM_FW=192, PAM_FPS=12;
-  const PAWN_SZ = 96;
+  const walkDist = Math.hypot(mc.stoneWx - mc.homeWx, mc.stoneWy - mc.homeWy);
+  const walkDur  = (walkDist / WALK_SPD) * 1000;
 
-  let img = _f10PawnRunImg, frames = RUN_FRAMES, fw = RUN_FW, fps = RUN_FPS;
+  function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
 
-  if (an.state === 'patrol_run_r' || an.state === 'patrol_run_l') {
-    if (now - an.patrolStart > _F10_PATROL_DUR) {
-      an.state = 'walk_to'; an.stateStart = now; an.facingRight = true;
-    } else {
-      const moved = ((now - an.stateStart) / 1000) * _F10_WALK_SPEED;
-      if (an.state === 'patrol_run_r') {
-        an.patrolOffset = Math.min(moved, _F10_PATROL_DIST); an.facingRight = true;
-        if (an.patrolOffset >= _F10_PATROL_DIST) { an.state = 'patrol_run_l'; an.stateStart = now; }
-      } else {
-        an.patrolOffset = _F10_PATROL_DIST - Math.min(moved, _F10_PATROL_DIST); an.facingRight = false;
-        if (an.patrolOffset <= 0) { an.patrolOffset = 0; an.state = 'patrol_run_r'; an.stateStart = now; }
-      }
-      an.currentX = _F10_BASE_X + an.patrolOffset;
-    }
-  } else if (an.state === 'walk_to') {
-    an.facingRight = true;
-    const moved = ((now - an.stateStart) / 1000) * _F10_WALK_SPEED;
-    an.currentX = Math.min(_F10_BASE_X + an.patrolOffset + moved, _F10_STONE_X);
-    if (an.currentX >= _F10_STONE_X) { an.currentX = _F10_STONE_X; an.state = 'mining'; an.stateStart = now; }
-  } else if (an.state === 'mining') {
-    img = _f10PawnMineImg; frames = INT_FRAMES; fw = INT_FW; fps = INT_FPS;
-    an.facingRight = true; an.currentX = _F10_STONE_X;
-    const hitPhase = ((now - an.stateStart) % 600) / 600;
-    an.stoneShake = hitPhase < 0.25 ? Math.sin(hitPhase * Math.PI * 8) * 3 : 0;
-    if (now - an.stateStart > 4000) {
-      an.stoneShake = 0; an.state = 'pam_exit_left'; an.stateStart = now;
-      an.currentX = _F10_STONE_X; an.drawScale = 0.50;
-    }
-  } else if (an.state === 'pam_exit_left') {
-    img = _f10PamImg; frames = PAM_FRAMES; fw = PAM_FW; fps = PAM_FPS;
-    an.facingRight = false; an.drawScale = 0.50;
-    const moved = ((now - an.stateStart) / 1000) * _F10_WALK_SPEED;
-    an.currentX = _F10_STONE_X - moved;
-    if (moved > 300) {
-      an.currentX = _F10_BASE_X; an.patrolOffset = 0; an.drawScale = 1.0;
-      an.state = 'patrol_run_r'; an.stateStart = now; an.patrolStart = now;
-    }
-  }
-
-  const sz = PAWN_SZ * an.drawScale;
-  const worldX = an.currentX;
-  const worldY = _F10_WORLD_Y;
-
-  // Stone
-  if (_f10StoneImg.complete && _f10StoneImg.naturalWidth) {
+  function draw(img, frames, fw, fps, wx, wy, sz, facingRight) {
+    if (!img.complete || !img.naturalWidth) return;
+    const frame = Math.floor(now / (1000 / fps)) % frames;
+    const drawY = wy - SZ + (sz < SZ ? 34 : 20); // preserve existing vertical offsets
+    const px    = wx - sz / 2;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.translate(_F10_STONE_X + an.stoneShake, worldY + 16);
-    ctx.drawImage(_f10StoneImg, -24, -24, 48, 48);
+    if (!facingRight) {
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, frame * fw, 0, fw, 192, -px - sz, drawY, sz, sz);
+    } else {
+      ctx.drawImage(img, frame * fw, 0, fw, 192, px, drawY, sz, sz);
+    }
     ctx.restore();
   }
 
-  // Pawn / PAM
-  if (!img.complete || !img.naturalWidth) return;
-  const frame = Math.floor(now / (1000 / fps)) % frames;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  if (an.facingRight) {
-    ctx.drawImage(img, frame * fw, 0, fw, 192, worldX - sz / 2, worldY - sz, sz, sz);
-  } else {
-    ctx.translate(worldX + sz / 2, worldY - sz);
-    ctx.scale(-1, 1);
-    ctx.drawImage(img, frame * fw, 0, fw, 192, -sz, 0, sz, sz);
+  const faceRight = mc.stoneWx >= mc.homeWx;
+  const mineWx = mc.stoneWx - 30; // kasimo pozicija — ta pati abiem fazėm, be šuolio
+
+  if (mc.phase === 'walk_to_stone') {
+    const t = Math.min(elapsed / walkDur, 1);
+    draw(_pawnRunImg, 6, 192, 8,
+      lerp(mc.homeWx, mineWx, t),
+      lerp(mc.homeWy, mc.stoneWy, t),
+      SZ, faceRight);
+    if (t >= 1) { mc.phase = 'mining'; mc.phaseStart = now; }
+
+  } else if (mc.phase === 'mining') {
+    draw(_pawnInteractImg, 6, 192, 10, mineWx, mc.stoneWy, SZ, faceRight);
+    // Stone shake — brief jolt at each pickaxe hit cycle (every 600 ms)
+    const hitCycle = Math.floor(elapsed / 600);
+    const hitPhase = (elapsed % 600) / 600;
+    const shakeX   = hitCycle >= 1 && hitPhase < 0.25 ? Math.sin(hitPhase * Math.PI * 8) * 3 : 0;
+    const shakeY   = 0;
+    _stoneShake.key = mc.stoneKey;
+    _stoneShake.x   = shakeX;
+    _stoneShake.y   = shakeY;
+    invalidateDungeonCache(); // force static cache redraw so shake applies this frame
+    if (elapsed > MINE_DUR) {
+      _stoneShake.key = null; _stoneShake.x = 0; _stoneShake.y = 0;
+      invalidateDungeonCache();
+      if (Math.random() < 0.5) {
+        // Sėkmė — PAM paima ir neša namo
+        mc.phase = 'pam_walk_to_house'; mc.phaseStart = now;
+      } else {
+        // Nesėkmė — pawn stovi idle 3–5 sek, tada bandoma iš naujo
+        mc.phase = 'idle_at_stone';
+        mc.phaseStart = now;
+        mc.idleDur = 3000 + Math.random() * 2000;
+        // "FAIL" užrašas virš akmens — kaip dmg skaičius
+        const [_sr, _sc] = mc.stoneKey.split(',').map(Number);
+        spawnDmgNumber(_sc, _sr, 'FAIL', '#ff3333', 11, 'miss');
+      }
+    }
+
+  } else if (mc.phase === 'idle_at_stone') {
+    // Nesėkmė: pawn stovi prie akmens, po kurio laiko vėl bando
+    draw(_pawnIdleImg, 8, 192, 6, mineWx, mc.stoneWy, SZ, faceRight);
+    if (elapsed > mc.idleDur) { mc.phase = 'mining'; mc.phaseStart = now; }
+
+  } else if (mc.phase === 'pam_walk_to_house') {
+    // PAM only — pawn disappears (same as home page: sprite swaps)
+    const t = Math.min(elapsed / walkDur, 1);
+    draw(_pamNpcImg, 19, 192, 12,
+      lerp(mineWx, mc.homeWx, t),
+      lerp(mc.stoneWy, mc.homeWy, t),
+      PAM_SZ, !faceRight);
+    if (t >= 1) {
+      // Delivery arrived — squish house + spawn coin (mirrors home page spawnCoin)
+      _spawnCoinParticle(mc.homeWx, mc.homeWy);
+      _triggerBuildingSquish('House3');
+      mc.phase = 'walk_to_stone'; mc.phaseStart = now;
+    }
   }
-  ctx.restore();
+}
+
+// ── Placeable NPC renderer (pawn_npc, pam_npc, stone_npc) ────────────────
+function _updateAndDrawPawnNpcs(decKeys) {
+  const now    = performance.now();
+  const SZ     = 90;
+  const PAM_SZ = 50;
+
+  // Find pawn_npc and any gold_stone_* in the current map
+  let pawnKey = null, stoneDecKey = null;
+  for (const key of decKeys) {
+    const id = S.decorations[key];
+    if (id === 'pawn_npc' && !pawnKey)                          pawnKey     = key;
+    if (_GOLD_STONE_DEFS[id]          && !stoneDecKey)          stoneDecKey = key;
+    if (pawnKey && stoneDecKey) break;
+  }
+
+  // ── Mining cycle: pawn_npc + gold stone both present ─────────────────────
+  if (pawnKey && stoneDecKey) {
+    if (!_miningCycle || _miningCycle.pawnKey !== pawnKey || _miningCycle.stoneKey !== stoneDecKey) {
+      const [pr, pc] = pawnKey.split(',').map(Number);
+      const [sr, sc] = stoneDecKey.split(',').map(Number);
+      _miningCycle = {
+        phase: 'walk_to_stone', phaseStart: now,
+        homeWx:  pc * CELL + CELL / 2 - 30, homeWy:  pr * CELL + CELL + 100,
+        stoneWx: sc * CELL + CELL / 2, stoneWy: sr * CELL + CELL,
+        pawnKey, stoneKey: stoneDecKey,
+      };
+    }
+    _runMiningCycle(now);
+    _drawCoinParticles(now);
+    // stone_npc renders statically regardless
+    for (const key of decKeys) {
+      if (S.decorations[key] !== 'stone_npc') continue;
+      if (!_stoneNpcImg.complete || !_stoneNpcImg.naturalWidth) continue;
+      const [r, c] = key.split(',').map(Number);
+      ctx.save(); ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(_stoneNpcImg, c * CELL + CELL / 2 - 72, r * CELL + CELL - 144, 144, 144);
+      ctx.restore();
+    }
+    return;
+  }
+
+  // ── Static fallback ───────────────────────────────────────────────────────
+  _miningCycle = null;
+  for (const key of decKeys) {
+    const decId = S.decorations[key];
+    if (decId !== 'pawn_npc' && decId !== 'pam_npc' && decId !== 'stone_npc') continue;
+    const [r, c] = key.split(',').map(Number);
+    const wx = c * CELL + CELL / 2;
+    const wy = r * CELL + CELL;
+
+    if (decId === 'stone_npc') {
+      if (!_stoneNpcImg.complete || !_stoneNpcImg.naturalWidth) continue;
+      ctx.save(); ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(_stoneNpcImg, wx - 72, wy - 144, 144, 144);
+      ctx.restore();
+      continue;
+    }
+
+    const img    = decId === 'pam_npc' ? _pamNpcImg : _pawnIdleImg;
+    const frames = decId === 'pam_npc' ? 19 : 8;
+    const fps    = decId === 'pam_npc' ? 12 : 6;
+    if (!img.complete || !img.naturalWidth) continue;
+    const frame  = Math.floor(now / (1000 / fps)) % frames;
+    const sz     = decId === 'pam_npc' ? PAM_SZ : SZ;
+    const drawY  = wy - SZ + (decId === 'pam_npc' ? 34 : 20);
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, frame * 192, 0, 192, 192, wx - sz / 2, drawY, sz, sz);
+    ctx.restore();
+  }
 }
 
 function drawDungeon() {
@@ -7182,7 +7299,23 @@ function drawForegroundDecorations() {
     const bw = img.naturalWidth * bldgScale, bh = img.naturalHeight * bldgScale;
     const bx = c * CELL + (img.naturalWidth - bw) / 2 + offsetX;
     const by = r * CELL + offsetY + (img.naturalHeight - bh);
-    ctx.drawImage(img, bx, by, bw, bh);
+    // Squish effect on delivery (mirrors home page house bounce)
+    let _bsx = 1, _bsy = 1;
+    if (_buildingSquish.name === name) {
+      const _bsel = performance.now() - _buildingSquish.start;
+      if (_bsel < 80)       { const _t = _bsel / 80;        _bsx = 1 + 0.18 * _t;       _bsy = 1 - 0.18 * _t; }
+      else if (_bsel < 260) { const _t = (_bsel - 80) / 180; _bsx = 1.18 - 0.18 * _t;   _bsy = 0.82 + 0.18 * _t; }
+      else                  { _buildingSquish.name = null; }
+    }
+    if (_bsx !== 1 || _bsy !== 1) {
+      const _cxb = bx + bw / 2, _cyb = by + bh; // scale from bottom-centre
+      ctx.save();
+      ctx.translate(_cxb, _cyb); ctx.scale(_bsx, _bsy);
+      ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, bx, by, bw, bh);
+    }
     // HP bar for Tower
     if (name === 'Tower') {
       const ts = _getTowerState(r, c);
@@ -7218,8 +7351,8 @@ function drawForegroundDecorations() {
     }
   }
 
-  // F10 castle pawn+PAM animation
-  drawF10PawnAnim();
+  // Placeable pawn/PAM/stone NPCs
+  _updateAndDrawPawnNpcs(decKeys);
 
   // Archer NPCs
   _updateAndDrawArchers(decKeys);
@@ -7467,9 +7600,17 @@ function _drawDungeonStatic() {
           const DUCK_FRAMES = 3;
           const stagger = (r * 7 + c * 13) % DUCK_FRAMES;
           const frame = (Math.floor(performance.now() / 300) + stagger) % DUCK_FRAMES;
-          // 32x32 source frame, draw slightly larger centered on cell
           const dw = Math.round(CELL * 0.7), dh = Math.round(CELL * 0.7);
           ctx.drawImage(duckImg, frame * 32, 0, 32, 32, px + CELL / 2 - dw / 2, py + CELL - dh, dw, dh);
+        }
+      } else if (_GOLD_STONE_DEFS[decId]) {
+        const def = _GOLD_STONE_DEFS[decId];
+        const gImg = _goldStoneImgs[def.img];
+        if (gImg && gImg.complete && gImg.naturalWidth > 0) {
+          const gFrame = def.frames > 1 ? Math.floor(performance.now() / (1000 / def.fps)) % def.frames : 0;
+          const gsz = CELL * 1.5;
+          const _sk = (_stoneShake && _stoneShake.key === `${r},${c}`) ? _stoneShake : { x: 0, y: 0 };
+          ctx.drawImage(gImg, gFrame * def.fw, 0, def.fw, 128, px + CELL / 2 - gsz / 2 + _sk.x, py + CELL - gsz + 20 + _sk.y, gsz, gsz);
         }
       }
     }
@@ -16541,6 +16682,29 @@ document.addEventListener('DOMContentLoaded', () => {
           archerIdleBtn.style.background  = '#0a1a2a';
         };
         bldgWrap.appendChild(archerIdleBtn);
+
+        // ── Pawn / PAM / Stone ──────────────────────────────────────
+        const pawnSep = document.createElement('div');
+        pawnSep.style.cssText = 'color:#ffdd88; font-size:9px; margin-top:8px; margin-bottom:4px; font-family:monospace; border-top:1px solid #554400; padding-top:6px;';
+        pawnSep.textContent = 'Workers';
+        bldgWrap.appendChild(pawnSep);
+
+        [
+          { id: 'pawn_npc', src: 'assets_tiny/Pawn_Idle_Pickaxe.png', label: 'Pawn (worker)' },
+          { id: 'pam_npc',  src: 'assets_tiny/pam_npc.png',           label: 'PAM' },
+          { id: 'stone_npc',src: 'assets_tiny/GoldStone1.png',        label: 'Gold Stone' },
+        ].forEach(({ id, src, label }) => {
+          const btn = document.createElement('button');
+          btn.style.cssText = 'display:flex; align-items:center; gap:8px; background:#0a1220; border:1px solid #554400; color:#ffdd88; padding:6px 8px; cursor:pointer; font-family:monospace; font-size:11px; text-align:left; width:100%;';
+          btn.innerHTML = `<img src="${src}" style="width:40px; height:40px; object-fit:none; object-position:0 0; image-rendering:pixelated; border:1px solid #333;"> ${label}`;
+          btn.onclick = () => {
+            window.setEditTile(id);
+            bldgWrap.querySelectorAll('button').forEach(b => { b.style.borderColor = '#554400'; b.style.background = '#0a1220'; });
+            btn.style.borderColor = '#ffdd88';
+            btn.style.background  = '#1a1400';
+          };
+          bldgWrap.appendChild(btn);
+        });
       }
     };
     // CLIFFS and DEEP WATER buttons are now in index.html
@@ -16703,6 +16867,76 @@ document.addEventListener('DOMContentLoaded', () => {
       closeBtn.onclick = () => m.style.display = 'none';
       m.appendChild(closeBtn);
 
+      document.getElementById('screen-game').appendChild(m);
+    };
+
+    window.openStonePicker = () => {
+      const existing = document.getElementById('stone-picker-modal');
+      if (existing) { existing.style.display = 'flex'; return; }
+
+      const m = document.createElement('div');
+      m.id = 'stone-picker-modal';
+      m.style.cssText = 'display:flex; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#111; border:2px solid #ffaa00; z-index:9999; padding:14px; flex-direction:column; align-items:center; gap:12px; font-family:"Press Start 2P",monospace;';
+
+      const title = document.createElement('div');
+      title.textContent = 'SELECT GOLD STONE';
+      title.style.cssText = 'color:#ffdd55; font-size:11px;';
+      m.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;';
+
+      const stones = [
+        { id: 'gold_stone_1',   name: 'Stone 1',    img: 'GoldStone1'              },
+        { id: 'gold_stone_1h',  name: 'Stone 1 ✦',  img: 'GoldStone1_Highlight'    },
+        { id: 'gold_stone_2',   name: 'Stone 2',    img: 'GoldStone2'              },
+        { id: 'gold_stone_2h',  name: 'Stone 2 ✦',  img: 'GoldStone2_Highlight'    },
+        { id: 'gold_stone_3',   name: 'Stone 3',    img: 'GoldStone3'              },
+        { id: 'gold_stone_3h',  name: 'Stone 3 ✦',  img: 'GoldStone3_Highlight'    },
+        { id: 'gold_stone_4',   name: 'Stone 4',    img: 'GoldStone4'              },
+        { id: 'gold_stone_4h',  name: 'Stone 4 ✦',  img: 'GoldStone4_Highlight'    },
+        { id: 'gold_stone_5',   name: 'Stone 5',    img: 'GoldStone5'              },
+        { id: 'gold_stone_5h',  name: 'Stone 5 ✦',  img: 'GoldStone5_Highlight'    },
+        { id: 'gold_stone_6',   name: 'Stone 6',    img: 'GoldStone6'              },
+        { id: 'gold_stone_6h',  name: 'Stone 6 ✦',  img: 'GoldStone6_Highlight'    },
+        { id: 'gold_resource',  name: 'Resource',   img: 'Gold_Resource'           },
+        { id: 'gold_resource_h',name: 'Resource ✦', img: 'Gold_Resource_Highlight' },
+      ];
+
+      stones.forEach(({ id, name, img: imgKey }) => {
+        const card = document.createElement('div');
+        card.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; padding:6px; border:2px solid #554400; border-radius:4px;';
+        card.onmouseover = () => card.style.borderColor = '#ffdd55';
+        card.onmouseout  = () => card.style.borderColor = '#554400';
+
+        const cv = document.createElement('canvas');
+        cv.width = 128; cv.height = 128;
+        cv.style.cssText = 'image-rendering:pixelated; width:80px; height:80px; background:#1a1000;';
+        const ctx2 = cv.getContext('2d');
+        const gImg = _goldStoneImgs[imgKey];
+        const drawPrev = () => ctx2.drawImage(gImg, 0, 0, 128, 128, 0, 0, 128, 128);
+        if (gImg.complete && gImg.naturalWidth > 0) drawPrev(); else gImg.onload = drawPrev;
+
+        const lbl = document.createElement('div');
+        lbl.textContent = name;
+        lbl.style.cssText = 'color:#ffbb44; font-size:7px;';
+
+        card.appendChild(cv);
+        card.appendChild(lbl);
+        card.onclick = () => {
+          window.setEditTile(id);
+          showGameNotification('EDITOR', `${name} selected`, '#ffaa00');
+          m.style.display = 'none';
+        };
+        grid.appendChild(card);
+      });
+
+      m.appendChild(grid);
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'CLOSE';
+      closeBtn.style.cssText = 'background:#ffaa00; color:#000; border:none; padding:5px 14px; cursor:pointer; font-family:"Press Start 2P",monospace; font-size:9px;';
+      closeBtn.onclick = () => m.style.display = 'none';
+      m.appendChild(closeBtn);
       document.getElementById('screen-game').appendChild(m);
     };
 
