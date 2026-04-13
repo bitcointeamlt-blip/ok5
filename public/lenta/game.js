@@ -2615,6 +2615,9 @@ let _buildingSquish = { name: null, start: 0 }; // house squish on delivery
 let _ronkeBalance   = 0;
 let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'ą, hover check
 let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse
+let _house3Bounds = null;      // House3 sprite ribos (click detection)
+let _housePopupOpen = false;   // ar atidarytas upgrade popup
+let _upgradeBtnBounds = null;  // upgrade mygtuko ribos popup'e
 
 function _spawnCoinParticle(wx, wy) {
   _coinParticles.push({ wx: wx - 40, wy: wy - 95, born: performance.now() });
@@ -7311,6 +7314,31 @@ function drawForegroundDecorations() {
       else if (_bsel < 260) { const _t = (_bsel - 80) / 180; _bsx = 1.18 - 0.18 * _t;   _bsy = 0.82 + 0.18 * _t; }
       else                  { _buildingSquish.name = null; }
     }
+    // Saugoti House3 ribas click detection'ui
+    if (name === 'House3') {
+      _house3Bounds = { x: bx, y: by, w: bw, h: bh };
+    }
+    // House3 hover — draw outline BEFORE sprite so only kontūras išlieka matomas
+    const _hov3 = (name === 'House3') &&
+                  _canvasMx >= bx && _canvasMx <= bx + bw &&
+                  _canvasMy >= by && _canvasMy <= by + bh;
+    if (_hov3) {
+      ctx.save();
+      ctx.filter = 'brightness(0) invert(1)'; // baltas sprite'o silueto kopijos
+      const OL = 2;
+      const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+      for (const [dx, dy] of offs) {
+        if (_bsx !== 1 || _bsy !== 1) {
+          ctx.save();
+          ctx.translate(bx + bw / 2 + dx, by + bh + dy); ctx.scale(_bsx, _bsy);
+          ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, bx + dx, by + dy, bw, bh);
+        }
+      }
+      ctx.restore();
+    }
     if (_bsx !== 1 || _bsy !== 1) {
       const _cxb = bx + bw / 2, _cyb = by + bh; // scale from bottom-centre
       ctx.save();
@@ -7408,6 +7436,157 @@ function drawForegroundDecorations() {
   _updateAndDrawRedArchers(decKeys);
   // Harpoon Fish NPCs
   _updateAndDrawFish(decKeys);
+
+  // House3 Upgrade popup — piešiama pabaigoje kad būtų viršuje
+  if (_housePopupOpen && _house3Bounds) {
+    const pw = 190, ph = 148, rad = 9;
+    let px = Math.round(_house3Bounds.x + _house3Bounds.w / 2 - pw / 2);
+    let py = Math.round(_house3Bounds.y - ph - 14);
+    // Clamp į canvas ribas, kad netiltų už ekrano
+    const PAD = 6;
+    px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
+    py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+    ctx.save();
+
+    // Pagalbinė rounded rect funkcija
+    const rr = (x, y, w, h, r) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y,     x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x,     y + h, r);
+      ctx.arcTo(x,     y + h, x,     y,     r);
+      ctx.arcTo(x,     y,     x + w, y,     r);
+      ctx.closePath();
+    };
+
+    // Drop shadow
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 6;
+    // Panel gradient fonas
+    const g = ctx.createLinearGradient(0, py, 0, py + ph);
+    g.addColorStop(0, '#2a2f3c');
+    g.addColorStop(1, '#161a22');
+    ctx.fillStyle = g;
+    rr(px, py, pw, ph, rad);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Gold accent header (clipped į rounded top)
+    ctx.save();
+    rr(px, py, pw, ph, rad);
+    ctx.clip();
+    const hg = ctx.createLinearGradient(0, py, 0, py + 34);
+    hg.addColorStop(0, '#d4a93d');
+    hg.addColorStop(1, '#8a6a1e');
+    ctx.fillStyle = hg;
+    ctx.fillRect(px, py, pw, 34);
+    ctx.restore();
+
+    // Rėmas
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ffe97a';
+    rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
+    ctx.stroke();
+
+    // Layout y koordinatės (aiškiai atskirti intervalai):
+    // 0-32  header (HOUSE 3)
+    // 40    Lv progression
+    // 58    divider
+    // 68-94 cost row (26px icon)
+    // 104-136 button (32px)
+    const HEADER_H = 32;
+
+    // Antraštė — level progresija
+    ctx.fillStyle = '#1a1506';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Lv. 1  \u2192  Lv. 2', px + pw / 2, py + HEADER_H / 2);
+
+    // Storage upgrade info
+    ctx.fillStyle = '#cfd4dc';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('Storage: 1000  \u2192  2000', px + pw / 2, py + 48);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(255,233,122,0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
+
+    // Cost row — Ronke coin icon + tekstas centre
+    const costLabel = '1500';
+    ctx.font = 'bold 14px monospace';
+    const costW = ctx.measureText(costLabel).width;
+    const iconSz = 26;
+    const gap = 8;
+    const rowW = iconSz + gap + costW;
+    const rowX = px + pw / 2 - rowW / 2;
+    const rowY = py + 72;
+    if (ronke2TokenImg.complete && ronke2TokenImg.naturalWidth) {
+      const fr = Math.floor(performance.now() / 90) % 8;
+      ctx.drawImage(ronke2TokenImg, fr * 640, 0, 640, 640, rowX, rowY, iconSz, iconSz);
+    }
+    const canAfford = _ronkeBalance >= 1500;
+    ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
+
+    // Upgrade mygtukas
+    const bw2 = 150, bh2 = 32;
+    const bxU = px + pw / 2 - bw2 / 2;
+    const byU = py + ph - bh2 - 10;
+    const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 &&
+                     _canvasMy >= byU && _canvasMy <= byU + bh2;
+    const btnGrad = ctx.createLinearGradient(0, byU, 0, byU + bh2);
+    if (!canAfford) {
+      btnGrad.addColorStop(0, '#553535'); btnGrad.addColorStop(1, '#3a2424');
+    } else if (hoverBtn) {
+      btnGrad.addColorStop(0, '#8ee08e'); btnGrad.addColorStop(1, '#4f9f4f');
+    } else {
+      btnGrad.addColorStop(0, '#6ec56e'); btnGrad.addColorStop(1, '#3a7a3a');
+    }
+    ctx.fillStyle = btnGrad;
+    rr(bxU, byU, bw2, bh2, 6);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
+    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6);
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+
+    // Close X dešiniame viršuje
+    const cxSz = 18;
+    const cxX = px + pw - cxSz - 6;
+    const cxY = py + 8;
+    const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz &&
+                 _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
+    ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
+    rr(cxX, cxY, cxSz, cxSz, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
+    ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+    ctx.stroke();
+
+    ctx.restore();
+    _upgradeBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+  } else {
+    _upgradeBtnBounds = null;
+  }
 }
 
 function _drawTowerFire() {
@@ -15688,6 +15867,11 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.style.display = ''; });
   const el = document.getElementById(id);
   if (el) { el.style.display = 'flex'; el.classList.add('active'); }
+  // Kai rodomas game screen, perskaičiuok fit (layout dabar matomas — scrollWidth teisingas)
+  if (id === 'screen-game') {
+    window.dispatchEvent(new Event('resize'));
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+  }
   if (id === 'screen-hub') {
     const dd = getDailyData();
     const today = new Date().toDateString();
@@ -16506,6 +16690,33 @@ document.addEventListener('DOMContentLoaded', () => {
   ctx = canvas.getContext('2d');
   canvas.width = BOARD_W; canvas.height = BOARD_H;
 
+  // Fit-to-window — sumažina .game-layout kai ekranas per mažas.
+  // Niekada nepadidina (s<=1), todėl didelis ekranas elgiasi identiškai.
+  // Mouse koordinatės canvas'e naudoja getBoundingClientRect, kuris gerbia transform → click'ai vis dar veikia.
+  const _fitGameLayout = () => {
+    const layout = document.querySelector('#screen-game .game-layout');
+    if (!layout) return;
+    // Reset prieš matuojant natūralų dydį
+    layout.style.transform = '';
+    const nw = layout.scrollWidth;
+    const nh = layout.scrollHeight;
+    if (!nw || !nh) return;
+    const s = Math.min(1, window.innerWidth / nw, window.innerHeight / nh);
+    if (s < 0.999) {
+      layout.style.transformOrigin = 'center center';
+      layout.style.transform = `scale(${s})`;
+    }
+  };
+  let _fitRaf = 0;
+  const _scheduleFit = () => {
+    if (_fitRaf) return;
+    _fitRaf = requestAnimationFrame(() => { _fitRaf = 0; _fitGameLayout(); });
+  };
+  window.addEventListener('resize', _scheduleFit);
+  // Pirmas fit — šiek tiek delay kad CSS/fontai būtų pakrauti
+  setTimeout(_fitGameLayout, 100);
+  setTimeout(_fitGameLayout, 800);
+
   // Track mouse position for hover tooltips (canvas coords)
   canvas.addEventListener('mousemove', e => {
     const r = canvas.getBoundingClientRect();
@@ -16515,6 +16726,31 @@ document.addEventListener('DOMContentLoaded', () => {
     _canvasMy = (e.clientY - r.top)  * scaleY;
   });
   canvas.addEventListener('mouseleave', () => { _canvasMx = -1; _canvasMy = -1; });
+
+  // House3 click → popup su Upgrade mygtuku
+  canvas.addEventListener('click', e => {
+    const r = canvas.getBoundingClientRect();
+    const scaleX = canvas.width  / r.width;
+    const scaleY = canvas.height / r.height;
+    const mx = (e.clientX - r.left) * scaleX;
+    const my = (e.clientY - r.top)  * scaleY;
+    const inside = (b) => b && mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h;
+    if (_housePopupOpen) {
+      if (inside(_upgradeBtnBounds)) {
+        if (_ronkeBalance >= 1500) {
+          _ronkeBalance -= 1500;
+          _triggerBuildingSquish('House3');
+          _housePopupOpen = false;
+        }
+        return;
+      }
+      _housePopupOpen = false;
+      return;
+    }
+    if (inside(_house3Bounds)) {
+      _housePopupOpen = true;
+    }
+  });
 
   // Screen routing
   document.getElementById('btn-adv').addEventListener('click', () => {
