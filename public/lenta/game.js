@@ -2615,9 +2615,431 @@ let _buildingSquish = { name: null, start: 0 }; // house squish on delivery
 let _ronkeBalance   = 0;
 let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'ą, hover check
 let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse
+// Cache: ronke coin miniatiūros keliais dydžiais (kad neerrintume 640x640→small kas kadrą)
+const _ronkeCoinThumbCache = new Map(); // size -> frames[]
+function _getRonkeCoinThumb(size, frameIdx) {
+  if (!ronke2TokenImg.complete || !ronke2TokenImg.naturalWidth) return null;
+  let frames = _ronkeCoinThumbCache.get(size);
+  if (!frames) {
+    frames = [];
+    for (let f = 0; f < 8; f++) {
+      const off = document.createElement('canvas');
+      off.width = size; off.height = size;
+      const octx = off.getContext('2d');
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      octx.drawImage(ronke2TokenImg, f * 640, 0, 640, 640, 0, 0, size, size);
+      frames.push(off);
+    }
+    _ronkeCoinThumbCache.set(size, frames);
+  }
+  return frames[frameIdx % 8];
+}
 let _house3Bounds = null;      // House3 sprite ribos (click detection)
 let _housePopupOpen = false;   // ar atidarytas upgrade popup
 let _upgradeBtnBounds = null;  // upgrade mygtuko ribos popup'e
+let _stoneBounds = null;       // aukso akmens sprite ribos
+let _stonePopupOpen = false;   // ar atidarytas akmens upgrade popup
+let _stoneUpgradeBtnBounds = null; // akmens upgrade mygtuko ribos
+let _miningLevel = 1;          // kasimo lygis — success chance = 0.2 + (lvl-1)*0.05
+let _houseLevel = 1;           // primary House3 lygis (storage)
+// House storage capacity pagal lygį (index = lygis, lv1=1000 ... lv9=10k)
+const _HOUSE_STORAGE = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 10000];
+// Kaina pakelti nuo lygio X į X+1 (index = dabartinis lygis)
+// TEST: pirmi 3 ubgreidai kainuoja 1 (vėliau grąžinti 500, 1500, 3000)
+const _HOUSE_COSTS   = [0, 1, 1, 1, 3500, 4000, 5000, 6000, 7000];
+// Kasimo lygio kainos (mining success chance upgrade)
+// TEST: pirmi 3 ubgreidai kainuoja 1 (vėliau grąžinti 500, 1500, 3000)
+const _MINING_COSTS = [0, 1, 1, 1, 4000, 5500, 7500, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000];
+function _nextMiningCost(lvl) { return lvl < _MINING_COSTS.length ? _MINING_COSTS[lvl] : 10000; }
+function _houseCapacity(lvl) { return _HOUSE_STORAGE[Math.min(lvl, _HOUSE_STORAGE.length - 1)]; }
+function _nextHouseCost(lvl) { return lvl < _HOUSE_COSTS.length ? _HOUSE_COSTS[lvl] : null; }
+function _totalHouseCapacity() {
+  let sum = _houseCapacity(_houseLevel);
+  for (const m of _extraMines) sum += _houseCapacity(m.houseLevel || 1);
+  return sum;
+}
+// Papildomos kasyklos — sukuriamos kai vartotojas paspaudžia Upgrade ant Castle.
+// Kiekviena turi savo cycle + level + shake + squish + coin particles + popup state.
+const _extraMines = [];
+let _castleBounds = null;
+let _castlePopupOpen = false;
+let _castleBtnBounds = null;
+let _ronkeHeroBounds = null;   // Ronke hero sprite ribos (hover outline + click block)
+let _ronkePopupOpen = false;   // ar atidarytas ronke2 idle toggle popup
+let _ronkeIdleBtnBounds = null;
+let _ronkeCloseBtnBounds = null;
+let _ronkeIdleMode = false;    // ar herojus „idle“ režime — negali judėti / šaudyti
+
+function _createExtraMine() {
+  const idx = _extraMines.length;
+  _extraMines.push({
+    idx,
+    yOffset: 100 * (idx + 1),  // kiekviena nauja kasykla 100px žemyn nuo paskutinės
+    level: 1,                  // nepriklausomas kasimo lygis
+    houseLevel: 1,             // nepriklausomas namelio (storage) lygis
+    cycle: null,               // init kai pirmą kart vykdoma
+    shake: { active: false, x: 0, y: 0 },
+    squishStart: 0,            // namelio bounce startas
+    coinParticles: [],         // per-mine coin FX
+    houseBounds: null,
+    stoneBounds: null,
+    housePopupOpen: false,
+    stonePopupOpen: false,
+    houseBtnBounds: null,
+    stoneBtnBounds: null,
+  });
+}
+
+// Vykdo kasimo ciklą konkrečiai extra kasyklai (panašus į _runMiningCycle, bet be global state)
+function _runExtraMineCycle(mine, now) {
+  const mc = mine.cycle;
+  if (!mc) return;
+  const SZ = 90, PAM_SZ = 50;
+  const WALK_SPD = 105, MINE_DUR = 4000;
+  const elapsed = now - mc.phaseStart;
+  const walkDist = Math.hypot(mc.stoneWx - mc.homeWx, mc.stoneWy - mc.homeWy);
+  // 2-ra kasykla (idx 0) +1s lėtesnis, 3-ia (idx 1) +2s, ir t.t. (tiek ėjimas, tiek nešimas)
+  const walkDur = (walkDist / WALK_SPD) * 1000 + (mine.idx + 1) * 1000;
+  const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
+  const faceRight = mc.stoneWx >= mc.homeWx;
+  const mineWx = mc.stoneWx - 30;
+
+  const draw = (img, frames, fw, fps, wx, wy, sz, facingRight) => {
+    if (!img.complete || !img.naturalWidth) return;
+    const frame = Math.floor(now / (1000 / fps)) % frames;
+    const drawY = wy - SZ + (sz < SZ ? 34 : 20);
+    const px = wx - sz / 2;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (!facingRight) {
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, frame * fw, 0, fw, 192, -px - sz, drawY, sz, sz);
+    } else {
+      ctx.drawImage(img, frame * fw, 0, fw, 192, px, drawY, sz, sz);
+    }
+    ctx.restore();
+  };
+
+  if (mc.phase === 'walk_to_stone') {
+    const t = Math.min(elapsed / walkDur, 1);
+    draw(_pawnRunImg, 6, 192, 8,
+      lerp(mc.homeWx, mineWx, t),
+      lerp(mc.homeWy, mc.stoneWy, t),
+      SZ, faceRight);
+    if (t >= 1) { mc.phase = 'mining'; mc.phaseStart = now; }
+  } else if (mc.phase === 'mining') {
+    draw(_pawnInteractImg, 6, 192, 10, mineWx, mc.stoneWy, SZ, faceRight);
+    const hitCycle = Math.floor(elapsed / 600);
+    const hitPhase = (elapsed % 600) / 600;
+    const shakeX = hitCycle >= 1 && hitPhase < 0.25 ? Math.sin(hitPhase * Math.PI * 8) * 3 : 0;
+    mine.shake.active = true; mine.shake.x = shakeX; mine.shake.y = 0;
+    if (elapsed > MINE_DUR) {
+      mine.shake.active = false; mine.shake.x = 0; mine.shake.y = 0;
+      if (Math.random() < (0.2 + (mine.level - 1) * 0.05)) {
+        mc.phase = 'pam_walk_to_house'; mc.phaseStart = now;
+      } else {
+        mc.phase = 'idle_at_stone'; mc.phaseStart = now;
+        mc.idleDur = 3000 + Math.random() * 2000;
+        // FAIL text — pozicija iš stone pixel koordinačių
+        spawnDmgNumber(mc.stoneWx / CELL, mc.stoneWy / CELL, 'FAIL', '#ff3333', 11, 'miss');
+      }
+    }
+  } else if (mc.phase === 'idle_at_stone') {
+    draw(_pawnIdleImg, 8, 192, 6, mineWx, mc.stoneWy, SZ, faceRight);
+    if (elapsed > mc.idleDur) { mc.phase = 'mining'; mc.phaseStart = now; }
+  } else if (mc.phase === 'pam_walk_to_house') {
+    const t = Math.min(elapsed / walkDur, 1);
+    draw(_pamNpcImg, 19, 192, 12,
+      lerp(mineWx, mc.homeWx, t),
+      lerp(mc.stoneWy, mc.homeWy, t),
+      PAM_SZ, !faceRight);
+    if (t >= 1) {
+      const coinCount = 2 + mine.idx;  // 2nd mine=+2, 3rd=+3, 4th=+4...
+      _ronkeBalance += coinCount;
+      for (let i = 0; i < coinCount; i++) {
+        mine.coinParticles.push({
+          wx: mc.homeWx - 40 + i * 20,
+          wy: mc.homeWy - 95,
+          born: now + i,
+        });
+      }
+      mine.squishStart = now;
+      mc.phase = 'walk_to_stone'; mc.phaseStart = now;
+    }
+  }
+}
+
+// Bendras house upgrade popup renderer — naudojamas primary ir kiekvienam extra mine.
+// Grąžina { btnBounds } (arba btnBounds=null, jei max level pasiektas).
+function _drawHouseUpgradePopup(anchor, level) {
+  const pw = 190, ph = 148, rad = 9;
+  let px = Math.round(anchor.x + anchor.w / 2 - pw / 2);
+  let py = Math.round(anchor.y - ph - 14);
+  const PAD = 6;
+  px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
+  py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
+  ctx.fillStyle = '#1f242f';
+  rr(px, py, pw, ph, rad); ctx.fill();
+  ctx.save();
+  rr(px, py, pw, ph, rad); ctx.clip();
+  ctx.fillStyle = '#b08a2e';
+  ctx.fillRect(px, py, pw, 34);
+  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffe97a';
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
+  ctx.stroke();
+  const HEADER_H = 32;
+  const nextLvl = level + 1;
+  const nextCost = _nextHouseCost(level);
+  const isMax = nextCost === null;
+  ctx.fillStyle = '#1a1506';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(isMax ? 'Lv. ' + level + ' (MAX)' : 'Lv. ' + level + '  \u2192  Lv. ' + nextLvl, px + pw / 2, py + HEADER_H / 2);
+  const curCap = _houseCapacity(level);
+  const nextCap = _houseCapacity(nextLvl);
+  ctx.fillStyle = '#cfd4dc';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText(isMax ? 'Storage: ' + curCap : 'Storage: ' + curCap + '  \u2192  ' + nextCap, px + pw / 2, py + 48);
+  ctx.strokeStyle = 'rgba(255,233,122,0.25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
+  let btnBounds = null;
+  if (!isMax) {
+    const costLabel = String(nextCost);
+    ctx.font = 'bold 14px monospace';
+    const costW = ctx.measureText(costLabel).width;
+    const iconSz = 26, gap = 8;
+    const rowW = iconSz + gap + costW;
+    const rowX = px + pw / 2 - rowW / 2;
+    const rowY = py + 72;
+    const fr = Math.floor(performance.now() / 90) % 8;
+    const thumb = _getRonkeCoinThumb(iconSz, fr);
+    if (thumb) ctx.drawImage(thumb, rowX, rowY);
+    const canAfford = _ronkeBalance >= nextCost;
+    ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
+    const bw2 = 150, bh2 = 32;
+    const bxU = px + pw / 2 - bw2 / 2;
+    const byU = py + ph - bh2 - 10;
+    const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 && _canvasMy >= byU && _canvasMy <= byU + bh2;
+    ctx.fillStyle = !canAfford ? '#452a2a' : hoverBtn ? '#6ec56e' : '#4e9e4e';
+    rr(bxU, byU, bw2, bh2, 6); ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
+    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    btnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+  }
+  const cxSz = 18;
+  const cxX = px + pw - cxSz - 6;
+  const cxY = py + 8;
+  const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz && _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
+  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
+  rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
+  ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+  ctx.stroke();
+  ctx.restore();
+  return btnBounds;
+}
+
+// Bendras stone (mining) upgrade popup renderer.
+// level — dabartinis mining lygis; costMul — kainos multiplikatorius (1.0 primary, 1.5 extras).
+function _drawStoneUpgradePopup(anchor, level, costMul) {
+  const pw = 190, ph = 148, rad = 9;
+  let px = Math.round(anchor.x + anchor.w / 2 - pw / 2);
+  let py = Math.round(anchor.y - ph - 14);
+  const PAD = 6;
+  px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
+  py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
+  ctx.fillStyle = '#1f242f';
+  rr(px, py, pw, ph, rad); ctx.fill();
+  ctx.save();
+  rr(px, py, pw, ph, rad); ctx.clip();
+  ctx.fillStyle = '#b08a2e';
+  ctx.fillRect(px, py, pw, 34);
+  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffe97a';
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
+  ctx.stroke();
+  const nextLvl = level + 1;
+  ctx.fillStyle = '#1a1506';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Lv. ' + level + '  \u2192  Lv. ' + nextLvl, px + pw / 2, py + 17);
+  const curPct  = Math.round((0.20 + (level - 1) * 0.05) * 100);
+  const nextPct = Math.round((0.20 + (nextLvl - 1) * 0.05) * 100);
+  ctx.fillStyle = '#cfd4dc';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('Success: ' + curPct + '%  \u2192  ' + nextPct + '%', px + pw / 2, py + 48);
+  ctx.strokeStyle = 'rgba(255,233,122,0.25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
+  const miningCost = Math.ceil(_nextMiningCost(level) * costMul);
+  const costLabel = String(miningCost);
+  ctx.font = 'bold 14px monospace';
+  const costW = ctx.measureText(costLabel).width;
+  const iconSz = 26, gap = 8;
+  const rowW = iconSz + gap + costW;
+  const rowX = px + pw / 2 - rowW / 2;
+  const rowY = py + 72;
+  const fr = Math.floor(performance.now() / 90) % 8;
+  const thumb = _getRonkeCoinThumb(iconSz, fr);
+  if (thumb) ctx.drawImage(thumb, rowX, rowY);
+  const canAfford = _ronkeBalance >= miningCost;
+  ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
+  const bw2 = 150, bh2 = 32;
+  const bxU = px + pw / 2 - bw2 / 2;
+  const byU = py + ph - bh2 - 10;
+  const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 && _canvasMy >= byU && _canvasMy <= byU + bh2;
+  ctx.fillStyle = !canAfford ? '#452a2a' : hoverBtn ? '#6ec56e' : '#4e9e4e';
+  rr(bxU, byU, bw2, bh2, 6); ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
+  rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+  ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+  const cxSz = 18;
+  const cxX = px + pw - cxSz - 6;
+  const cxY = py + 8;
+  const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz && _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
+  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
+  rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
+  ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+  ctx.stroke();
+  ctx.restore();
+  return { x: bxU, y: byU, w: bw2, h: bh2 };
+}
+
+// Ronke2 herojaus IDLE toggle popup — grąžina btn bounds.
+function _drawRonkeIdlePopup(anchor) {
+  const pw = 170, ph = 100, rad = 9;
+  let px = Math.round(anchor.x + anchor.w / 2 - pw / 2);
+  let py = Math.round(anchor.y - ph - 14);
+  const PAD = 6;
+  px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
+  py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
+  ctx.fillStyle = '#1f242f';
+  rr(px, py, pw, ph, rad); ctx.fill();
+  ctx.save();
+  rr(px, py, pw, ph, rad); ctx.clip();
+  ctx.fillStyle = '#b08a2e';
+  ctx.fillRect(px, py, pw, 30);
+  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffe97a';
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
+  ctx.stroke();
+  ctx.fillStyle = '#1a1506';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('RONKE', px + pw / 2, py + 15);
+  // Toggle mygtukas
+  const bw2 = 130, bh2 = 38;
+  const bxU = px + pw / 2 - bw2 / 2;
+  const byU = py + ph - bh2 - 14;
+  const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 && _canvasMy >= byU && _canvasMy <= byU + bh2;
+  const isOn = _ronkeIdleMode;
+  ctx.fillStyle = isOn ? (hoverBtn ? '#d48a4c' : '#b87a3c') : (hoverBtn ? '#6ec56e' : '#4e9e4e');
+  rr(bxU, byU, bw2, bh2, 6); ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = isOn ? '#ffd9a0' : '#a8f0a8';
+  rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  const label = 'IDLE: ' + (isOn ? 'ON' : 'OFF');
+  ctx.strokeText(label, bxU + bw2 / 2, byU + bh2 / 2 + 1);
+  ctx.fillText(label, bxU + bw2 / 2, byU + bh2 / 2 + 1);
+  // Close X
+  const cxSz = 18;
+  const cxX = px + pw - cxSz - 6;
+  const cxY = py + 6;
+  const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz && _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
+  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
+  rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
+  ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+  ctx.stroke();
+  ctx.restore();
+  return { btn: { x: bxU, y: byU, w: bw2, h: bh2 }, close: { x: cxX, y: cxY, w: cxSz, h: cxSz } };
+}
 
 function _spawnCoinParticle(wx, wy) {
   _coinParticles.push({ wx: wx - 40, wy: wy - 95, born: performance.now() });
@@ -2632,15 +3054,15 @@ function _drawCoinParticles(now) {
     const p = _coinParticles[i];
     const el = now - p.born;
     if (el > DUR) { _coinParticles.splice(i, 1); continue; }
-    if (!ronke2TokenImg.complete || !ronke2TokenImg.naturalWidth) continue;
     const prog  = el / DUR;
     const frame = Math.floor(el / (1000 / 8)) % 8;
     const alpha = prog > 0.5 ? 1 - (prog - 0.5) / 0.5 : 1;
     const sz    = 38;
+    const thumb = _getRonkeCoinThumb(sz, frame);
+    if (!thumb) continue;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(ronke2TokenImg, frame * 640, 0, 640, 640, p.wx - sz / 2, p.wy - 30 * prog, sz, sz);
+    ctx.drawImage(thumb, p.wx - sz / 2, p.wy - 30 * prog);
     ctx.restore();
   }
 }
@@ -6233,6 +6655,143 @@ function isVisible(x, y) {
 
 function invalidateDungeonCache() { _dunDirty = true; }
 
+// ── Extra mines renderer — piešia visas papildomas kasyklas pagal `_extraMines`
+function _drawExtraMines(now) {
+  if (!_extraMines.length || !S.decorations) return;
+  let pawnKey = null, stoneKey = null, houseKey = null;
+  for (const [k, v] of Object.entries(S.decorations)) {
+    if (v === 'pawn_npc' && !pawnKey) pawnKey = k;
+    else if (_GOLD_STONE_DEFS[v] && !stoneKey) stoneKey = k;
+    else if (v === 'building_House3' && !houseKey) houseKey = k;
+  }
+  if (!pawnKey || !stoneKey || !houseKey) return;
+  const [pr, pc] = pawnKey.split(',').map(Number);
+  const [sr, sc] = stoneKey.split(',').map(Number);
+  const [hr, hc] = houseKey.split(',').map(Number);
+  const houseImg = _buildingImgs['House3'];
+  // Extra kasyklos naudoja gold_stone_5h (animuotas, vertingesnis akmuo)
+  const stoneDef = _GOLD_STONE_DEFS['gold_stone_5h'];
+  const stoneImg = _goldStoneImgs[stoneDef.img];
+  if (!houseImg || !houseImg.complete || !stoneImg || !stoneImg.complete) return;
+
+  for (const mine of _extraMines) {
+    const dy = mine.yOffset;
+    // Init cycle
+    if (!mine.cycle) {
+      mine.cycle = {
+        phase: 'walk_to_stone',
+        phaseStart: now,
+        homeWx: pc * CELL + CELL / 2 - 30,
+        homeWy: pr * CELL + CELL + 100 + dy,
+        stoneWx: sc * CELL + CELL / 2,
+        stoneWy: sr * CELL + CELL + dy,
+      };
+    }
+
+    // ── House ──
+    const bldgScale = 0.80;
+    const hBw = houseImg.naturalWidth * bldgScale;
+    const hBh = houseImg.naturalHeight * bldgScale;
+    const hBx = hc * CELL + (houseImg.naturalWidth - hBw) / 2;
+    const hBy = hr * CELL + (houseImg.naturalHeight - hBh) + dy;
+    mine.houseBounds = { x: hBx, y: hBy, w: hBw, h: hBh };
+    // Squish
+    let bsx = 1, bsy = 1;
+    if (mine.squishStart) {
+      const bel = now - mine.squishStart;
+      if      (bel < 80)  { const t = bel / 80;       bsx = 1 + 0.18 * t;    bsy = 1 - 0.18 * t; }
+      else if (bel < 260) { const t = (bel - 80)/180; bsx = 1.18 - 0.18 * t; bsy = 0.82 + 0.18 * t; }
+      else                { mine.squishStart = 0; }
+    }
+    // Hover outline (jei nei vienas mine popup neatviras)
+    const anyPopup = mine.housePopupOpen || mine.stonePopupOpen;
+    const hovHouse = !anyPopup &&
+                     _canvasMx >= hBx && _canvasMx <= hBx + hBw &&
+                     _canvasMy >= hBy && _canvasMy <= hBy + hBh;
+    if (hovHouse) {
+      ctx.save();
+      ctx.filter = 'brightness(0) invert(1)';
+      const OL = 2;
+      for (const [dx, dyo] of [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]]) {
+        ctx.drawImage(houseImg, hBx + dx, hBy + dyo, hBw, hBh);
+      }
+      ctx.restore();
+    }
+    if (bsx !== 1 || bsy !== 1) {
+      ctx.save();
+      ctx.translate(hBx + hBw / 2, hBy + hBh);
+      ctx.scale(bsx, bsy);
+      ctx.drawImage(houseImg, -hBw / 2, -hBh, hBw, hBh);
+      ctx.restore();
+    } else {
+      ctx.drawImage(houseImg, hBx, hBy, hBw, hBh);
+    }
+
+    // ── Gold stone (extras — didesnis akmuo, duoda +2 ronke) ──
+    const gsz = CELL * 2.1;
+    const gFrame = stoneDef.frames > 1 ? Math.floor(now / (1000 / stoneDef.fps)) % stoneDef.frames : 0;
+    const sX = sc * CELL + CELL / 2 - gsz / 2 + 15 + (mine.shake.active ? mine.shake.x : 0);
+    const sY = sr * CELL + CELL - gsz + 20 + dy + 10 + (mine.shake.active ? mine.shake.y : 0);
+    mine.stoneBounds = { x: sX, y: sY, w: gsz, h: gsz };
+    const hovStone = !anyPopup &&
+                     _canvasMx >= sX && _canvasMx <= sX + gsz &&
+                     _canvasMy >= sY && _canvasMy <= sY + gsz;
+    if (hovStone) {
+      ctx.save();
+      ctx.filter = 'brightness(0) invert(1)';
+      const OL = 2;
+      for (const [dx, dyo] of [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]]) {
+        ctx.drawImage(stoneImg, gFrame * stoneDef.fw, 0, stoneDef.fw, 128, sX + dx, sY + dyo, gsz, gsz);
+      }
+      ctx.restore();
+    }
+    ctx.drawImage(stoneImg, gFrame * stoneDef.fw, 0, stoneDef.fw, 128, sX, sY, gsz, gsz);
+
+    // ── Dekoratyviniai mažesni akmenys (tik 3+ kasykloms, idx >= 1) ──
+    if (mine.idx >= 1) {
+      const smDef2 = _GOLD_STONE_DEFS['gold_stone_2'];
+      const smImg2 = _goldStoneImgs[smDef2.img];
+      const smDef3 = _GOLD_STONE_DEFS['gold_stone_3'];
+      const smImg3 = _goldStoneImgs[smDef3.img];
+      const smSz = CELL * 1.25;
+      // Apatinis — gold_stone_2 po pagrindiniu (priglaustas +20px arčiau centro viso)
+      // sX/sY jau įskaičiuoja shake → visi akmenys juda kartu (neišskiriami)
+      if (smImg2 && smImg2.complete) {
+        const bX = sX + gsz / 2 - smSz / 2 - 8;
+        const bY = sY + gsz - smSz / 2 - 24;
+        ctx.drawImage(smImg2, 0, 0, smDef2.fw, 128, bX, bY, smSz, smSz);
+      }
+      // Dešinėje — gold_stone_3 šalia pagrindinio (priglaustas +20px arčiau centro viso)
+      if (smImg3 && smImg3.complete) {
+        const rX = sX + gsz - smSz / 2 - 14;
+        const rY = sY + gsz / 2 - smSz / 2 + 10;
+        ctx.drawImage(smImg3, 0, 0, smDef3.fw, 128, rX, rY, smSz, smSz);
+      }
+    }
+
+    // ── Run cycle + pawn/PAM sprite (pats draw logika viduje) ──
+    _runExtraMineCycle(mine, now);
+
+    // ── Coin particles (per-mine) ──
+    const DUR = 700;
+    for (let i = mine.coinParticles.length - 1; i >= 0; i--) {
+      const p = mine.coinParticles[i];
+      const el = now - p.born;
+      if (el > DUR) { mine.coinParticles.splice(i, 1); continue; }
+      const prog = el / DUR;
+      const frame = Math.floor(el / (1000 / 8)) % 8;
+      const alpha = prog > 0.5 ? 1 - (prog - 0.5) / 0.5 : 1;
+      const sz = 38;
+      const thumb = _getRonkeCoinThumb(sz, frame);
+      if (!thumb) continue;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(thumb, p.wx - sz / 2, p.wy - 30 * prog);
+      ctx.restore();
+    }
+  }
+}
+
 // ── Mining cycle runner ───────────────────────────────────────────────────
 function _runMiningCycle(now) {
   const mc       = _miningCycle;
@@ -6287,7 +6846,7 @@ function _runMiningCycle(now) {
     if (elapsed > MINE_DUR) {
       _stoneShake.key = null; _stoneShake.x = 0; _stoneShake.y = 0;
       invalidateDungeonCache();
-      if (Math.random() < 0.5) {
+      if (Math.random() < (0.2 + (_miningLevel - 1) * 0.05)) {
         // Sėkmė — PAM paima ir neša namo
         mc.phase = 'pam_walk_to_house'; mc.phaseStart = now;
       } else {
@@ -7314,12 +7873,17 @@ function drawForegroundDecorations() {
       else if (_bsel < 260) { const _t = (_bsel - 80) / 180; _bsx = 1.18 - 0.18 * _t;   _bsy = 0.82 + 0.18 * _t; }
       else                  { _buildingSquish.name = null; }
     }
-    // Saugoti House3 ribas click detection'ui
+    // Saugoti House3 / Castle ribas click detection'ui
     if (name === 'House3') {
       _house3Bounds = { x: bx, y: by, w: bw, h: bh };
     }
-    // House3 hover — draw outline BEFORE sprite so only kontūras išlieka matomas
-    const _hov3 = (name === 'House3') &&
+    if (name === 'Castle') {
+      _castleBounds = { x: bx, y: by, w: bw, h: bh };
+    }
+    // House3/Castle hover — draw outline BEFORE sprite so only kontūras išlieka matomas.
+    // Kai popup atidarytas, outline neberodomas (ir UX aiškesnis, ir išvengiama 8× filter-drawImage cost per frame).
+    const _hoverable = (name === 'House3' || name === 'Castle') && !_housePopupOpen && !_stonePopupOpen;
+    const _hov3 = _hoverable &&
                   _canvasMx >= bx && _canvasMx <= bx + bw &&
                   _canvasMy >= by && _canvasMy <= by + bh;
     if (_hov3) {
@@ -7370,7 +7934,8 @@ function drawForegroundDecorations() {
         ctx.drawImage(_npcBarBase, 256, 9, capSrcW, capSrcH, barX + capW + midW, barY, capW, barH);
       }
       // Fill progresyviai — pilnas kai 1000 Ronke, min 2px visada rodoma
-      const fillFrac = Math.min(_ronkeBalance / 1000, 1);
+      const _totalMax = _totalHouseCapacity();
+      const fillFrac = Math.min(_ronkeBalance / _totalMax, 1);
       if (_npcBarFill.complete && _npcBarFill.naturalWidth) {
         const fillW = Math.max(2, Math.round(midW * fillFrac));
         const srcFrac = Math.max(2 / midW, fillFrac);
@@ -7386,7 +7951,7 @@ function drawForegroundDecorations() {
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = '#000';
-      const _barLabel = _hovering ? 'Max: 1000' : `Ronke: ${_ronkeBalance}`;
+      const _barLabel = _hovering ? `Max: ${_totalMax}` : `Ronke: ${_ronkeBalance}`;
       ctx.strokeText(_barLabel, cx, barY + barH / 2);
       ctx.fillStyle = '#fff';
       ctx.fillText(_barLabel, cx, barY + barH / 2);
@@ -7437,18 +8002,88 @@ function drawForegroundDecorations() {
   // Harpoon Fish NPCs
   _updateAndDrawFish(decKeys);
 
-  // House3 Upgrade popup — piešiama pabaigoje kad būtų viršuje
+  // Papildomos kasyklos (su savais sprite'ais, cikluisi, particles) — prieš primary hover outline
+  _drawExtraMines(performance.now());
+
+  // Gold stone hover outline (aukso akmuo yra static cache'e, todėl piešiam per-frame viršuje)
+  _stoneBounds = null;
+  if (S.decorations) {
+    for (const [key, decId] of Object.entries(S.decorations)) {
+      if (!_GOLD_STONE_DEFS[decId]) continue;
+      const def = _GOLD_STONE_DEFS[decId];
+      const gImg = _goldStoneImgs[def.img];
+      if (!gImg || !gImg.complete || !gImg.naturalWidth) continue;
+      const [strR, strC] = key.split(',');
+      const rr_ = parseInt(strR, 10), cc_ = parseInt(strC, 10);
+      const px_ = cc_ * CELL, py_ = rr_ * CELL;
+      const gsz = CELL * 1.5;
+      const sx = px_ + CELL / 2 - gsz / 2;
+      const sy = py_ + CELL - gsz + 20;
+      // Saugoti akmens ribas click detection'ui (pirmasis akmuo)
+      if (!_stoneBounds) _stoneBounds = { x: sx, y: sy, w: gsz, h: gsz };
+      const hov = _canvasMx >= sx && _canvasMx <= sx + gsz &&
+                  _canvasMy >= sy && _canvasMy <= sy + gsz;
+      if (!hov || _stonePopupOpen) continue;
+      const gFrame = def.frames > 1
+        ? Math.floor(performance.now() / (1000 / def.fps)) % def.frames
+        : 0;
+      // 8 baltos silueto kopijos + 1 originalus viršuje
+      ctx.save();
+      ctx.filter = 'brightness(0) invert(1)';
+      const OL = 2;
+      const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+      for (const [dx, dy] of offs) {
+        ctx.drawImage(gImg, gFrame * def.fw, 0, def.fw, 128, sx + dx, sy + dy, gsz, gsz);
+      }
+      ctx.restore();
+      ctx.drawImage(gImg, gFrame * def.fw, 0, def.fw, 128, sx, sy, gsz, gsz);
+    }
+  }
+
+  // House3 Upgrade popup (primary) — naudoja bendrą helper'į
   if (_housePopupOpen && _house3Bounds) {
-    const pw = 190, ph = 148, rad = 9;
-    let px = Math.round(_house3Bounds.x + _house3Bounds.w / 2 - pw / 2);
-    let py = Math.round(_house3Bounds.y - ph - 14);
-    // Clamp į canvas ribas, kad netiltų už ekrano
+    _upgradeBtnBounds = _drawHouseUpgradePopup(_house3Bounds, _houseLevel);
+  } else {
+    _upgradeBtnBounds = null;
+  }
+  // Ronke2 hero idle toggle popup
+  if (_ronkePopupOpen && _ronkeHeroBounds) {
+    const _rp = _drawRonkeIdlePopup(_ronkeHeroBounds);
+    _ronkeIdleBtnBounds = _rp.btn;
+    _ronkeCloseBtnBounds = _rp.close;
+  } else {
+    _ronkeIdleBtnBounds = null;
+    _ronkeCloseBtnBounds = null;
+  }
+  // Extra mines upgrade popups
+  for (const mine of _extraMines) {
+    if (mine.housePopupOpen && mine.houseBounds) {
+      mine.houseBtnBounds = _drawHouseUpgradePopup(mine.houseBounds, mine.houseLevel || 1);
+    } else {
+      mine.houseBtnBounds = null;
+    }
+    if (mine.stonePopupOpen && mine.stoneBounds) {
+      mine.stoneBtnBounds = _drawStoneUpgradePopup(mine.stoneBounds, mine.level || 1, 1.5);
+    } else {
+      mine.stoneBtnBounds = null;
+    }
+  }
+
+  // Gold stone Upgrade popup
+  if (_stonePopupOpen && _stoneBounds) {
+    _stoneUpgradeBtnBounds = _drawStoneUpgradePopup(_stoneBounds, _miningLevel, 1.0);
+  } else {
+    _stoneUpgradeBtnBounds = null;
+  }
+  // Castle upgrade popup — paspaudus Build pridedamas naujas kasimo setupas
+  if (_castlePopupOpen && _castleBounds) {
+    const pw = 210, ph = 148, rad = 9;
+    let px = Math.round(_castleBounds.x + _castleBounds.w / 2 - pw / 2);
+    let py = Math.round(_castleBounds.y - ph - 14);
     const PAD = 6;
     px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
     py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
     ctx.save();
-
-    // Pagalbinė rounded rect funkcija
     const rr = (x, y, w, h, r) => {
       ctx.beginPath();
       ctx.moveTo(x + r, y);
@@ -7458,58 +8093,34 @@ function drawForegroundDecorations() {
       ctx.arcTo(x,     y,     x + w, y,     r);
       ctx.closePath();
     };
-
-    // Drop shadow
-    ctx.shadowColor = 'rgba(0,0,0,0.55)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 6;
-    // Panel gradient fonas
-    const g = ctx.createLinearGradient(0, py, 0, py + ph);
-    g.addColorStop(0, '#2a2f3c');
-    g.addColorStop(1, '#161a22');
-    ctx.fillStyle = g;
-    rr(px, py, pw, ph, rad);
-    ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-
-    // Gold accent header (clipped į rounded top)
+    // Šešėlis + panel
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
+    ctx.fillStyle = '#1f242f';
+    rr(px, py, pw, ph, rad); ctx.fill();
+    // Header
     ctx.save();
-    rr(px, py, pw, ph, rad);
-    ctx.clip();
-    const hg = ctx.createLinearGradient(0, py, 0, py + 34);
-    hg.addColorStop(0, '#d4a93d');
-    hg.addColorStop(1, '#8a6a1e');
-    ctx.fillStyle = hg;
+    rr(px, py, pw, ph, rad); ctx.clip();
+    ctx.fillStyle = '#b08a2e';
     ctx.fillRect(px, py, pw, 34);
     ctx.restore();
-
     // Rėmas
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#ffe97a';
     rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
     ctx.stroke();
 
-    // Layout y koordinatės (aiškiai atskirti intervalai):
-    // 0-32  header (HOUSE 3)
-    // 40    Lv progression
-    // 58    divider
-    // 68-94 cost row (26px icon)
-    // 104-136 button (32px)
-    const HEADER_H = 32;
-
-    // Antraštė — level progresija
+    const mineCount = _extraMines.length;
     ctx.fillStyle = '#1a1506';
     ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Lv. 1  \u2192  Lv. 2', px + pw / 2, py + HEADER_H / 2);
+    ctx.fillText('CASTLE', px + pw / 2, py + 17);
 
-    // Storage upgrade info
+    // Info: how many mines built
     ctx.fillStyle = '#cfd4dc';
     ctx.font = 'bold 11px monospace';
-    ctx.fillText('Storage: 1000  \u2192  2000', px + pw / 2, py + 48);
+    ctx.fillText('Extra mines: ' + mineCount + '  \u2192  ' + (mineCount + 1), px + pw / 2, py + 48);
 
     // Divider
     ctx.strokeStyle = 'rgba(255,233,122,0.25)';
@@ -7517,64 +8128,56 @@ function drawForegroundDecorations() {
     ctx.beginPath();
     ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
 
-    // Cost row — Ronke coin icon + tekstas centre
-    const costLabel = '1500';
+    // Cost row
+    const CASTLE_COST = 1;
+    const costLabel = String(CASTLE_COST);
     ctx.font = 'bold 14px monospace';
     const costW = ctx.measureText(costLabel).width;
-    const iconSz = 26;
-    const gap = 8;
+    const iconSz = 26, gap = 8;
     const rowW = iconSz + gap + costW;
     const rowX = px + pw / 2 - rowW / 2;
     const rowY = py + 72;
-    if (ronke2TokenImg.complete && ronke2TokenImg.naturalWidth) {
+    {
       const fr = Math.floor(performance.now() / 90) % 8;
-      ctx.drawImage(ronke2TokenImg, fr * 640, 0, 640, 640, rowX, rowY, iconSz, iconSz);
+      const thumb = _getRonkeCoinThumb(iconSz, fr);
+      if (thumb) ctx.drawImage(thumb, rowX, rowY);
     }
-    const canAfford = _ronkeBalance >= 1500;
+    const canAfford = _ronkeBalance >= CASTLE_COST;
     ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
 
-    // Upgrade mygtukas
+    // Build mygtukas
     const bw2 = 150, bh2 = 32;
     const bxU = px + pw / 2 - bw2 / 2;
     const byU = py + ph - bh2 - 10;
     const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 &&
                      _canvasMy >= byU && _canvasMy <= byU + bh2;
-    const btnGrad = ctx.createLinearGradient(0, byU, 0, byU + bh2);
-    if (!canAfford) {
-      btnGrad.addColorStop(0, '#553535'); btnGrad.addColorStop(1, '#3a2424');
-    } else if (hoverBtn) {
-      btnGrad.addColorStop(0, '#8ee08e'); btnGrad.addColorStop(1, '#4f9f4f');
-    } else {
-      btnGrad.addColorStop(0, '#6ec56e'); btnGrad.addColorStop(1, '#3a7a3a');
-    }
-    ctx.fillStyle = btnGrad;
-    rr(bxU, byU, bw2, bh2, 6);
-    ctx.fill();
+    ctx.fillStyle = !canAfford ? '#452a2a'
+                    : hoverBtn  ? '#6ec56e'
+                                : '#4e9e4e';
+    rr(bxU, byU, bw2, bh2, 6); ctx.fill();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
-    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6);
-    ctx.stroke();
+    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-    ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    ctx.strokeText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    ctx.fillText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
 
-    // Close X dešiniame viršuje
+    // Close X
     const cxSz = 18;
     const cxX = px + pw - cxSz - 6;
     const cxY = py + 8;
     const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz &&
                  _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
     ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
-    rr(cxX, cxY, cxSz, cxSz, 4);
-    ctx.fill();
+    rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -7583,9 +8186,9 @@ function drawForegroundDecorations() {
     ctx.stroke();
 
     ctx.restore();
-    _upgradeBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+    _castleBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
   } else {
-    _upgradeBtnBounds = null;
+    _castleBtnBounds = null;
   }
 }
 
@@ -9694,6 +10297,8 @@ document.addEventListener('keydown', e => {
   }
 
   if (k.t === 'move') {
+    // IDLE režimu herojus stovi vietoje — blokuojam judėjimą team 0
+    if (_ronkeIdleMode && k.team === 0) return;
     const nx = unit.x + k.dx, ny = unit.y + k.dy;
     if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
     if (S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) return;
@@ -12933,20 +13538,58 @@ function _drawRonke2HeroSprite(cx, cy, u, alpha) {
   const sprSz = UNIT_CELL * 3.4;
   const yOff  = -20;
   if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
-    ctx.save();
-    ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
     // BODY_FRAC=0.25 (body at x=160/640 of frame). Center body at cx:
     // draw origin = cx - BODY_FRAC*sprSz = cx - sprSz/4
     const _drawX = cx - sprSz / 4;
-    if ((u.facing?.dx ?? 1) < 0) {
-      ctx.save();
-      ctx.translate(_drawX, cy + yOff);
-      ctx.scale(-1, 1);
-      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
-      ctx.restore();
-    } else {
-      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, _drawX, cy - sprSz / 2 + yOff, sprSz, sprSz);
+    const facingLeft = (u.facing?.dx ?? 1) < 0;
+    // Hover bounds — maždaug kūno plotas (ne visas sprSz, nes frame turi daug tuščio)
+    const _bodyW = sprSz * 0.5;
+    const _bodyH = sprSz * 0.75;
+    const _bodyX = cx - _bodyW / 2;
+    const _bodyY = cy - _bodyH / 2 + yOff + 10;
+    if (u.team === 0) {
+      _ronkeHeroBounds = { x: _bodyX, y: _bodyY, w: _bodyW, h: _bodyH };
     }
+    const _anyPopup = _housePopupOpen || _stonePopupOpen || _castlePopupOpen ||
+                      _extraMines.some(m => m.housePopupOpen || m.stonePopupOpen);
+    const _hov = u.team === 0 && !_anyPopup &&
+                 _canvasMx >= _bodyX && _canvasMx <= _bodyX + _bodyW &&
+                 _canvasMy >= _bodyY && _canvasMy <= _bodyY + _bodyH;
+    ctx.save();
+    ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+    const drawSprite = (filter) => {
+      if (filter) ctx.filter = filter;
+      if (facingLeft) {
+        ctx.save();
+        ctx.translate(_drawX, cy + yOff);
+        ctx.scale(-1, 1);
+        ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+        ctx.restore();
+      } else {
+        ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, _drawX, cy - sprSz / 2 + yOff, sprSz, sprSz);
+      }
+      if (filter) ctx.filter = 'none';
+    };
+    if (_hov) {
+      // 8 baltos silueto kopijos outline'ui
+      ctx.save();
+      ctx.filter = 'brightness(0) invert(1)';
+      const OL = 2;
+      const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+      for (const [odx, ody] of offs) {
+        if (facingLeft) {
+          ctx.save();
+          ctx.translate(_drawX + odx, cy + yOff + ody);
+          ctx.scale(-1, 1);
+          ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+          ctx.restore();
+        } else {
+          ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, _drawX + odx, cy - sprSz / 2 + yOff + ody, sprSz, sprSz);
+        }
+      }
+      ctx.restore();
+    }
+    drawSprite(null);
     ctx.restore();
     if (u.hitFlash > 0) {
       ctx.save();
@@ -16735,10 +17378,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const mx = (e.clientX - r.left) * scaleX;
     const my = (e.clientY - r.top)  * scaleY;
     const inside = (b) => b && mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h;
+    if (_ronkePopupOpen) {
+      if (inside(_ronkeIdleBtnBounds)) {
+        _ronkeIdleMode = !_ronkeIdleMode;
+        return;
+      }
+      if (inside(_ronkeCloseBtnBounds)) {
+        _ronkePopupOpen = false;
+        return;
+      }
+      // bet koks kitas click — nieko, popup lieka atviras kol paspausi X
+      return;
+    }
     if (_housePopupOpen) {
       if (inside(_upgradeBtnBounds)) {
-        if (_ronkeBalance >= 1500) {
-          _ronkeBalance -= 1500;
+        const cost = _nextHouseCost(_houseLevel);
+        if (cost !== null && _ronkeBalance >= cost) {
+          _ronkeBalance -= cost;
+          _houseLevel += 1;
           _triggerBuildingSquish('House3');
           _housePopupOpen = false;
         }
@@ -16747,8 +17404,85 @@ document.addEventListener('DOMContentLoaded', () => {
       _housePopupOpen = false;
       return;
     }
+    // Extra mine house popup clicks
+    for (const mine of _extraMines) {
+      if (mine.housePopupOpen) {
+        if (inside(mine.houseBtnBounds)) {
+          const lvl = mine.houseLevel || 1;
+          const cost = _nextHouseCost(lvl);
+          if (cost !== null && _ronkeBalance >= cost) {
+            _ronkeBalance -= cost;
+            mine.houseLevel = lvl + 1;
+            mine.squishStart = performance.now();
+            mine.housePopupOpen = false;
+          }
+          return;
+        }
+        mine.housePopupOpen = false;
+        return;
+      }
+      if (mine.stonePopupOpen) {
+        if (inside(mine.stoneBtnBounds)) {
+          const lvl = mine.level || 1;
+          const cost = Math.ceil(_nextMiningCost(lvl) * 1.5);
+          if (_ronkeBalance >= cost) {
+            _ronkeBalance -= cost;
+            mine.level = lvl + 1;
+            mine.stonePopupOpen = false;
+          }
+          return;
+        }
+        mine.stonePopupOpen = false;
+        return;
+      }
+    }
+    if (_stonePopupOpen) {
+      if (inside(_stoneUpgradeBtnBounds)) {
+        const cost = _nextMiningCost(_miningLevel);
+        if (_ronkeBalance >= cost) {
+          _ronkeBalance -= cost;
+          _miningLevel += 1;
+          _stonePopupOpen = false;
+        }
+        return;
+      }
+      _stonePopupOpen = false;
+      return;
+    }
+    if (_castlePopupOpen) {
+      if (inside(_castleBtnBounds)) {
+        const CASTLE_COST = 1;
+        if (_ronkeBalance >= CASTLE_COST) {
+          _ronkeBalance -= CASTLE_COST;
+          _createExtraMine();
+          _castlePopupOpen = false;
+        }
+        return;
+      }
+      _castlePopupOpen = false;
+      return;
+    }
     if (inside(_house3Bounds)) {
       _housePopupOpen = true;
+      return;
+    }
+    // Extra mine house/stone click → atidaryti tos mine popup
+    for (const mine of _extraMines) {
+      if (inside(mine.houseBounds)) {
+        mine.housePopupOpen = true;
+        return;
+      }
+      if (inside(mine.stoneBounds)) {
+        mine.stonePopupOpen = true;
+        return;
+      }
+    }
+    if (inside(_stoneBounds)) {
+      _stonePopupOpen = true;
+      return;
+    }
+    if (inside(_castleBounds)) {
+      _castlePopupOpen = true;
     }
   });
 
@@ -17475,12 +18209,32 @@ document.addEventListener('DOMContentLoaded', () => {
     _isMouseDown = true;
     if (!pointInsideCanvas(e) || overlayBlocksCanvasInput()) return;
     lastCanvasPointerDownAt = performance.now();
-    
+
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
 
     if (window.isEditMode && gameMode === 'adventure') {
       // single click does nothing in edit mode — use double-click
+      return;
+    }
+
+    // Ronke2 hero click → atidaryti IDLE toggle popup (blokuoti šaudymą)
+    const _inB = (b) => b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+    if (_ronkePopupOpen) {
+      // popup atviras — blokuojam šaudymą, toggle arba close apdoros click listener
+      return;
+    }
+    if (_inB(_ronkeHeroBounds)) {
+      _ronkePopupOpen = true;
+      return;
+    }
+    // Jei idle mode — blokuojam šaudymą
+    if (_ronkeIdleMode) {
+      return;
+    }
+    // Blokuojam šaudymą kai bet koks žaidimo popup atviras (namuko, akmens, pilies)
+    if (_housePopupOpen || _stonePopupOpen || _castlePopupOpen ||
+        _extraMines.some(m => m.housePopupOpen || m.stonePopupOpen)) {
       return;
     }
 
