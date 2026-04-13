@@ -2612,6 +2612,9 @@ let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + g
 let _stoneShake  = { key: null, x: 0, y: 0 }; // shake offset applied to mined stone in static cache
 const _coinParticles = []; // floating coin FX when PAM delivers to house
 let _buildingSquish = { name: null, start: 0 }; // house squish on delivery
+let _ronkeBalance   = 0;
+let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'ą, hover check
+let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse
 
 function _spawnCoinParticle(wx, wy) {
   _coinParticles.push({ wx: wx - 40, wy: wy - 95, born: performance.now() });
@@ -6308,7 +6311,8 @@ function _runMiningCycle(now) {
       lerp(mc.stoneWy, mc.homeWy, t),
       PAM_SZ, !faceRight);
     if (t >= 1) {
-      // Delivery arrived — squish house + spawn coin (mirrors home page spawnCoin)
+      // Delivery arrived — squish house + spawn coin + increment balance
+      _ronkeBalance++;
       _spawnCoinParticle(mc.homeWx, mc.homeWy);
       _triggerBuildingSquish('House3');
       mc.phase = 'walk_to_stone'; mc.phaseStart = now;
@@ -7315,6 +7319,61 @@ function drawForegroundDecorations() {
       ctx.restore();
     } else {
       ctx.drawImage(img, bx, by, bw, bh);
+    }
+    // Ronke balance counter above House3 — styled like HP bar
+    if (name === 'House3') {
+      const barH = 50;
+      const capSrcW = 24, capSrcH = 51;
+      const capW  = 7; // fiksuotas, nepriklausomai nuo barH
+      const label = `Ronke: ${_ronkeBalance}`;
+      ctx.font = 'bold 10px monospace';
+      const textW = ctx.measureText(label).width;
+      const barW  = Math.max(96, Math.round(textW + capW * 2 + 16)); // auto-platėja su tekstu
+      const midW  = barW - capW * 2;
+      const cx    = Math.round(bx + bw / 2);
+      const barX  = cx - Math.round(barW / 2);
+      const barY  = Math.round(by - barH - 10);
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      // Frame
+      if (_npcBarBase.complete && _npcBarBase.naturalWidth) {
+        ctx.drawImage(_npcBarBase, 40,  9, capSrcW, capSrcH, barX,             barY, capW, barH);
+        ctx.drawImage(_npcBarBase, 128, 9, 64,      capSrcH, barX + capW,      barY, midW, barH);
+        ctx.drawImage(_npcBarBase, 256, 9, capSrcW, capSrcH, barX + capW + midW, barY, capW, barH);
+      }
+      // Fill progresyviai — pilnas kai 1000 Ronke, min 2px visada rodoma
+      const fillFrac = Math.min(_ronkeBalance / 1000, 1);
+      if (_npcBarFill.complete && _npcBarFill.naturalWidth) {
+        const fillW = Math.max(2, Math.round(midW * fillFrac));
+        const srcFrac = Math.max(2 / midW, fillFrac);
+        ctx.drawImage(_npcBarFill, 0, 20, 64 * srcFrac, 24, barX + capW, barY + 1, fillW, barH - 2);
+      }
+      // Text centred on bar
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(`Ronke: ${_ronkeBalance}`, cx, barY + barH / 2);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`Ronke: ${_ronkeBalance}`, cx, barY + barH / 2);
+      ctx.restore();
+      // Saugoti bar ribas hover tooltip tikrinimui
+      _ronkeBarBounds = { x: barX, y: barY, w: barW, h: barH };
+      // Hover tooltip — rodoma ant tos pačios vietos (vietoj balanso skaičiaus)
+      if (_canvasMx >= barX && _canvasMx <= barX + barW &&
+          _canvasMy >= barY && _canvasMy <= barY + barH) {
+        ctx.save();
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#000';
+        ctx.strokeText('Max: 1k Ronke', cx, barY + barH / 2);
+        ctx.fillStyle = '#ffe97a';
+        ctx.fillText('Max: 1k Ronke', cx, barY + barH / 2);
+        ctx.restore();
+      }
     }
     // HP bar for Tower
     if (name === 'Tower') {
@@ -16457,6 +16516,16 @@ document.addEventListener('DOMContentLoaded', () => {
   canvas = document.getElementById('canvas');
   ctx = canvas.getContext('2d');
   canvas.width = BOARD_W; canvas.height = BOARD_H;
+
+  // Track mouse position for hover tooltips (canvas coords)
+  canvas.addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    const scaleX = canvas.width  / r.width;
+    const scaleY = canvas.height / r.height;
+    _canvasMx = (e.clientX - r.left) * scaleX;
+    _canvasMy = (e.clientY - r.top)  * scaleY;
+  });
+  canvas.addEventListener('mouseleave', () => { _canvasMx = -1; _canvasMy = -1; });
 
   // Screen routing
   document.getElementById('btn-adv').addEventListener('click', () => {
