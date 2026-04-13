@@ -7348,32 +7348,21 @@ function drawForegroundDecorations() {
         const srcFrac = Math.max(2 / midW, fillFrac);
         ctx.drawImage(_npcBarFill, 0, 20, 64 * srcFrac, 24, barX + capW, barY + 1, fillW, barH - 2);
       }
-      // Text centred on bar
+      // Saugoti bar ribas hover tooltip tikrinimui
+      _ronkeBarBounds = { x: barX, y: barY, w: barW, h: barH };
+      const _hovering = _canvasMx >= barX && _canvasMx <= barX + barW &&
+                        _canvasMy >= barY && _canvasMy <= barY + barH;
+      // Text centred on bar — kai hover rodomas tooltip, balance paslėptas
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = '#000';
-      ctx.strokeText(`Ronke: ${_ronkeBalance}`, cx, barY + barH / 2);
+      const _barLabel = _hovering ? 'Max: 1000' : `Ronke: ${_ronkeBalance}`;
+      ctx.strokeText(_barLabel, cx, barY + barH / 2);
       ctx.fillStyle = '#fff';
-      ctx.fillText(`Ronke: ${_ronkeBalance}`, cx, barY + barH / 2);
+      ctx.fillText(_barLabel, cx, barY + barH / 2);
       ctx.restore();
-      // Saugoti bar ribas hover tooltip tikrinimui
-      _ronkeBarBounds = { x: barX, y: barY, w: barW, h: barH };
-      // Hover tooltip — rodoma ant tos pačios vietos (vietoj balanso skaičiaus)
-      if (_canvasMx >= barX && _canvasMx <= barX + barW &&
-          _canvasMy >= barY && _canvasMy <= barY + barH) {
-        ctx.save();
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = '#000';
-        ctx.strokeText('Max: 1k Ronke', cx, barY + barH / 2);
-        ctx.fillStyle = '#ffe97a';
-        ctx.fillText('Max: 1k Ronke', cx, barY + barH / 2);
-        ctx.restore();
-      }
     }
     // HP bar for Tower
     if (name === 'Tower') {
