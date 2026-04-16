@@ -2569,7 +2569,7 @@ const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Wate
 // Floor 1
 window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"1,0":"tileset3_3_3","0,1":"tileset3_3_3","1,2":"tileset3_3_3","0,3":"tileset3_3_3","1,4":"tileset3_3_3","0,5":"tileset3_3_3","2,1":"tileset3_3_3","2,3":"tileset3_3_3","2,5":"tileset3_3_3","1,6":"tileset3_3_3","0,7":"tileset3_3_3","2,7":"tileset3_3_3","3,0":"tileset3_3_3","3,2":"tileset3_3_3","3,4":"tileset3_3_3","3,6":"tileset3_3_3","3,8":"tileset3_3_3","1,8":"tileset3_3_3","0,9":"tileset3_3_3","2,9":"tileset3_3_3","3,10":"tileset3_3_3","1,10":"tileset3_3_3","0,11":"tileset3_3_3","2,11":"tileset3_3_3","3,12":"tileset3_3_3","1,12":"tileset3_3_3","0,13":"tileset3_3_3","2,13":"tileset3_3_3","4,13":"tileset3_3_3","4,11":"tileset3_3_3","4,9":"tileset3_3_3","4,7":"tileset3_3_3","4,5":"tileset3_3_3","4,3":"tileset3_3_3","4,1":"tileset3_3_3","5,0":"tileset3_3_3","5,2":"tileset3_3_3","5,4":"tileset3_3_3","5,6":"tileset3_3_3","5,8":"tileset3_3_3","5,10":"tileset3_3_3","5,12":"tileset3_3_3","6,13":"tileset3_3_3","6,11":"tileset3_3_3","6,9":"tileset3_3_3","6,7":"tileset3_3_3","6,5":"tileset3_3_3","6,3":"tileset3_3_3","6,1":"tileset3_3_3","7,0":"tileset3_3_3","7,2":"tileset3_3_3","7,4":"tileset3_3_3","7,6":"tileset3_3_3","7,8":"tileset3_3_3","7,10":"tileset3_3_3","7,12":"tileset3_3_3","8,13":"tileset3_3_3","8,11":"tileset3_3_3","8,9":"tileset3_3_3","8,7":"tileset3_3_3","8,5":"tileset3_3_3","8,3":"tileset3_3_3","8,1":"tileset3_3_3","5,5":"bush3","7,7":"bush3","3,9":"bush3","7,1":"bush1","5,1":"bush1","4,8":"deco_15","2,2":"deco_15","8,10":"deco_14","8,4":"deco_03","1,11":"deco_13","9,0":"tileset3_5_3","9,1":"tileset3_6_3","9,2":"tileset3_6_3","10,0":"tileset3_5_4","10,1":"tileset3_6_4","10,2":"tileset3_6_4","9,3":"tileset3_6_3","10,3":"tileset3_6_4","9,4":"tileset3_6_3","10,4":"tileset3_6_4","9,5":"tileset3_6_3","10,5":"tileset3_6_4","9,6":"tileset3_6_3","10,6":"tileset3_6_4","9,7":"tileset3_6_3","10,7":"tileset3_6_4","9,8":"tileset3_6_3","10,8":"tileset3_6_4","9,9":"tileset3_6_3","10,9":"tileset3_6_4","9,10":"tileset3_6_3","10,10":"tileset3_6_4","9,11":"tileset3_6_3","10,11":"tileset3_6_4","9,12":"tileset3_6_3","9,13":"tileset3_6_3","10,12":"tileset3_6_4","10,13":"tileset3_6_4","9,14":"tileset3_7_3","10,14":"tileset3_7_4","7,14":"tileset3_8_3","8,14":"tileset3_8_4","6,14":"tileset3_8_4","5,14":"tileset3_8_3","3,14":"tileset3_8_3","4,14":"tileset3_8_4","1,14":"tileset3_8_3","2,14":"tileset3_8_4","0,14":"deco_06"},"collisionBoxes":["9,0","9,1","9,2","9,3","9,4","9,5","9,6","9,7","9,8","9,9","9,10","9,11","9,12","9,13","9,14","0,14","1,14","2,14","3,14","4,14","5,14","6,14","7,14","8,14"],"enemies":[{"type":"sheep","x":9,"y":7},{"type":"spider","x":7,"y":1},{"type":"spider","x":11,"y":6},{"type":"skull","x":6,"y":7},{"type":"minotaur","x":11,"y":3}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":25,"y":28}};
 // Floor 10 — 13x41 plain grass (cleaned from stones/water)
-window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":7,"y":4},"exitPos":{"x":25,"y":28}};
+window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":4,"y":6},"exitPos":{"x":25,"y":28}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
 const _buildingImgs = {};
@@ -2612,9 +2612,34 @@ let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + g
 let _stoneShake  = { key: null, x: 0, y: 0 }; // shake offset applied to mined stone in static cache
 const _coinParticles = []; // floating coin FX when PAM delivers to house
 let _buildingSquish = { name: null, start: 0 }; // house squish on delivery
-let _ronkeBalance   = 0;
+let _ronkeBalance   = 15;
 let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'ą, hover check
-let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse
+let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse (po CSS scale paskirstoma į canvas.width vnt.)
+// World-space pelės koord., atnaujinamos po updateCamera(). Naudoti jas visur, kur palyginama su pasaulio-coord bounds (pastatai, unit'ai, extra mines).
+let _worldMx = -1, _worldMy = -1;
+const CANVAS_ZOOM = 1.20; // turi atitikti style.css #canvas transform: scale(...)
+// Matomos dalies stačiakampis canvas-pikselių erdvėje (dėl CSS scale + overflow:hidden
+// matosi tik centrinis plotas; už jo esantys popup'ai vizualiai apkarpomi).
+function _getVisibleCanvasRect() {
+  const vpW = advCanvasW / CANVAS_ZOOM;
+  const vpH = ADV_CANVAS_H / CANVAS_ZOOM;
+  return { x: (advCanvasW - vpW) / 2, y: (ADV_CANVAS_H - vpH) / 2, w: vpW, h: vpH };
+}
+// Matomos dalies stačiakampis pasaulio koordinatėse (naudojamas popup clamp'ui kai
+// popup'as piešiamas viduje `ctx.translate(-cam.x,-cam.y)`).
+function _getVisibleWorldRect() {
+  const r = _getVisibleCanvasRect();
+  return { x: r.x + (S.cam?.x || 0), y: r.y + (S.cam?.y || 0), w: r.w, h: r.h };
+}
+// Ar anchor'o centras patenka į matomą pasaulio sritį (jei ne — popup'ą reikia uždaryti).
+function _anchorVisibleWorld(anchor) {
+  if (!anchor) return false;
+  const v = _getVisibleWorldRect();
+  const cx = anchor.x + anchor.w / 2;
+  const cy = anchor.y + anchor.h / 2;
+  return cx >= v.x && cx <= v.x + v.w && cy >= v.y && cy <= v.y + v.h;
+}
+let _hoveredUnitRef = null; // unit'as, ant kurio užvedama pelė (tooltip + outline)
 // Cache: ronke coin miniatiūros keliais dydžiais (kad neerrintume 640x640→small kas kadrą)
 const _ronkeCoinThumbCache = new Map(); // size -> frames[]
 function _getRonkeCoinThumb(size, frameIdx) {
@@ -2643,6 +2668,20 @@ let _stonePopupOpen = false;   // ar atidarytas akmens upgrade popup
 let _stoneUpgradeBtnBounds = null; // akmens upgrade mygtuko ribos
 let _miningLevel = 1;          // kasimo lygis — success chance = 0.2 + (lvl-1)*0.05
 let _houseLevel = 1;           // primary House3 lygis (storage)
+// Primary House3 statybos fazė — aktyvuojama po upgrade (scaffold + hammer + bar + speed-up)
+// Naudoja tokius pat field pavadinimus kaip _extraMines[] kad bendras helper'is veiktų abiems.
+let _primaryConstruction = {
+  idx: -1,  // popup titule: "CONSTRUCTION #1" (idx + 2)
+  constructionStart: 0,
+  speedUpAnim: null,
+  speedUpPopupOpen: false,
+  speedUpBtnBounds: null,
+  speedUpPopupBtnBounds: null,
+  speedUpPopupCloseBounds: null,
+  _lastStrikeFrame: -1,
+  shake: { active: false, start: 0 },
+  houseBounds: null,
+};
 // House storage capacity pagal lygį (index = lygis, lv1=1000 ... lv9=10k)
 const _HOUSE_STORAGE = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 10000];
 // Kaina pakelti nuo lygio X į X+1 (index = dabartinis lygis)
@@ -2664,12 +2703,204 @@ function _totalHouseCapacity() {
 const _extraMines = [];
 let _castleBounds = null;
 let _castlePopupOpen = false;
+let _barracksBounds = null;
+let _barracksPopupOpen = false;
+let _barracksSelectedIdx = null;       // 0..15 pasirinkto unit'o indeksas arba null
+let _barracksProduceBtnBounds = null;  // produce mygtuko hit box
+let _barracksAvatarRects = [];         // kiekvieno avataro hit box'ai
+let _barracksProduction = null;        // { unitIdx, startAt, queueLeft } arba null
+let _barracksSpeedUpAnim = null;       // { startMs, durMs, srcElapsed, dstElapsed }
+let _barracksSpeedUpBtnBounds = null;  // SPEED UP mygtuko hit box baraku lentutėje
+let _barracksQueueCount = 1;           // kiek vienetų treniruoti vienu paspaudimu (1..10)
+const _BARRACKS_QUEUE_MAX = 10;
+let _barracksQtyMinusBtnBounds = null; // [-] mygtuko hit box
+let _barracksQtyPlusBtnBounds = null;  // [+] mygtuko hit box
+let _barracksSpeedUpQty = 1;           // kiek speed-up'ų panaudoti (1..queue+1)
+let _barracksSpeedUpMinusBtnBounds = null;
+let _barracksSpeedUpPlusBtnBounds = null;
+// Grąžina efektyvų elapsed'ą su speed-up animacijos interpoliacija. null jei gamybos nėra.
+function _getBarracksElapsed(now) {
+  if (!_barracksProduction) return null;
+  let el = now - _barracksProduction.startAt;
+  if (_barracksSpeedUpAnim) {
+    const a = _barracksSpeedUpAnim;
+    const t = Math.min(1, (now - a.startMs) / a.durMs);
+    el = a.srcElapsed + (a.dstElapsed - a.srcElapsed) * t;
+    if (t >= 1) {
+      // Baigėme animaciją — pastumiam startAt taip, kad production natūraliai finišuotų
+      _barracksProduction.startAt = now - _BARRACKS_PRODUCE_MS - 1;
+      _barracksSpeedUpAnim = null;
+    }
+  }
+  return el;
+}
+// unitIdx → enemy archetype type (indeksai atitinka avatar grid pozicijas 0..15).
+// Integruoti: 0=skull, 1=shaman. Likusius pridėsim vėliau.
+const _BARRACKS_UNIT_TYPES = ['skull', null, null, null, 'shaman', null, null, null,
+                              null, null, null, null, null, null, null, null];
+function _findBarracksCell() {
+  if (!S.decorations) return null;
+  for (const k in S.decorations) {
+    if (S.decorations[k] === 'building_Barracks') {
+      const [r, c] = k.split(',').map(n => parseInt(n, 10));
+      return { r, c };
+    }
+  }
+  return null;
+}
+function _barracksSpawnTrained(unitIdx) {
+  const type = _BARRACKS_UNIT_TYPES[unitIdx];
+  if (!type) return; // dar nesukonfigūruota — išeidam
+  const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(type) : null;
+  if (!archetype) return;
+  // Stack'inimas: jei jau egzistuoja gyvas to paties tipo team=1 unit — spawn'inam "walker'į"
+  // kuris nueis iki to paties taško ir atvykęs merge'insis (existing.stack++, flip animacija).
+  const existing = (S.units || []).find(u => u.alive && u.team === 1 && u.utype === type);
+  const cell = _findBarracksCell();
+  if (!cell) return;
+  const occupied = (x, y) => (S.units || []).some(u => u.alive && u.x === x && u.y === y);
+  const wall = (x, y) => (typeof isWall === 'function') ? isWall(x, y) : false;
+  // Pirma ieškom pažymėtų spawn-marker tile'ų (tileset3_3_3) netoli baraku — iki 8 laukų atstumu.
+  const markerSpots = [];
+  if (S.decorations) {
+    for (const k in S.decorations) {
+      if (S.decorations[k] !== 'tileset3_3_3') continue;
+      const [r, c] = k.split(',').map(n => parseInt(n, 10));
+      const d = Math.abs(r - cell.r) + Math.abs(c - cell.c);
+      if (d <= 8) markerSpots.push({ x: c, y: r, d });
+    }
+    markerSpots.sort((a, b) => a.d - b.d || a.y - b.y || a.x - b.x);
+  }
+  let spot = null;
+  for (const p of markerSpots) {
+    if (p.x < 0 || p.y < 0 || p.x >= COLS || p.y >= ROWS) continue;
+    if (wall(p.x, p.y) || occupied(p.x, p.y)) continue;
+    spot = { x: p.x, y: p.y }; break;
+  }
+  if (!spot) {
+    // Fallback — senas candidates sąrašas (ląstelės aplink barakus)
+    const candidates = [
+      { x: cell.c,     y: cell.r + 1 },
+      { x: cell.c + 1, y: cell.r + 1 },
+      { x: cell.c - 1, y: cell.r + 1 },
+      { x: cell.c,     y: cell.r + 2 },
+      { x: cell.c + 1, y: cell.r },
+      { x: cell.c - 1, y: cell.r },
+    ];
+    for (const p of candidates) {
+      if (p.x < 0 || p.y < 0 || p.x >= COLS || p.y >= ROWS) continue;
+      if (wall(p.x, p.y) || occupied(p.x, p.y)) continue;
+      spot = p; break;
+    }
+  }
+  if (!spot) return;
+  if (!Array.isArray(S.units)) S.units = [];
+  const u = mkUnit(nextEditorUnitId(), 1, spot.x, spot.y, -1, archetype);
+  const doorX = spot.x + 1 - 35 / CELL, doorY = spot.y - 2;
+  u.rx = doorX; u.ry = doorY;
+  u.px = doorX; u.py = doorY;
+  if (existing) {
+    // Antras+ skull — walker'is eina iki existing ir merge'insis (+1× flip).
+    u.spawnWalk = {
+      fromX: doorX, fromY: doorY,
+      toX: existing.x, toY: existing.y,
+      start: performance.now(),
+      dur: 2000,
+      mergeTargetId: existing.id,
+    };
+    u.spawning = true;
+    u.invincible = true;
+  } else {
+    // Pirmas skull — eina iš durų iki spot'o ir sustoja (be flip, tiesiog taps stack=1).
+    u.spawnWalk = {
+      fromX: doorX, fromY: doorY,
+      toX: spot.x, toY: spot.y,
+      start: performance.now(),
+      dur: 2000,
+      mergeTargetId: null,
+    };
+  }
+  S.units.push(u);
+}
+const _BARRACKS_UNIT_COST = 1;
+const _BARRACKS_PRODUCE_MS = 60000;    // 1 min
+const _barracksAvatarImgs = [];
+for (let i = 1; i <= 16; i++) {
+  const img = new Image();
+  img.src = `assets_tiny/enemy_avatars/Enemy Avatars_${String(i).padStart(2, '0')}.png`;
+  _barracksAvatarImgs.push(img);
+}
 let _castleBtnBounds = null;
 let _ronkeHeroBounds = null;   // Ronke hero sprite ribos (hover outline + click block)
-let _ronkePopupOpen = false;   // ar atidarytas ronke2 idle toggle popup
-let _ronkeIdleBtnBounds = null;
-let _ronkeCloseBtnBounds = null;
+let _ronkePopupOpen = false;   // ar atidarytas ronke2 radial menu
+let _ronkeRadialMenu = null;   // { cx, cy, innerR, outerR, items }
 let _ronkeIdleMode = false;    // ar herojus „idle“ režime — negali judėti / šaudyti
+// ===== FREE MOVEMENT (eksperimentas) =====
+// Kai true — Ronke2 juda laisvai (continuous, pixel-based) per WASD, bypass'inant tick sistemą.
+// Perjungiam per `window._freeMoveMode = false` konsolėje — grįš prie seno tick-based judėjimo.
+let _freeMoveMode = false;
+const _freeMoveKeys = { w: false, a: false, s: false, d: false };
+const _freeMoveQueue = [];
+let _freeMoveLastTime = 0;
+const _FREE_MOVE_STEP_MS = 260; // trukmė vieno bloko žingsniui (kaip archer 340ms, bet greitesnis)
+let _freeMoveStep = null; // { srcX, srcY, dstX, dstY, start }
+
+function _updateFreeMove(now) {
+  if (typeof S === 'undefined' || !S || !S.units) return;
+  const hero = S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return;
+
+  // Jei vyksta žingsnis — tweeninam rx/ry link target'o
+  if (_freeMoveStep) {
+    const t = Math.min(1, (now - _freeMoveStep.start) / _FREE_MOVE_STEP_MS);
+    hero.rx = _freeMoveStep.srcX + (_freeMoveStep.dstX - _freeMoveStep.srcX) * t;
+    hero.ry = _freeMoveStep.srcY + (_freeMoveStep.dstY - _freeMoveStep.srcY) * t;
+    if (t >= 1) {
+      hero.x = _freeMoveStep.dstX;
+      hero.y = _freeMoveStep.dstY;
+      hero.rx = hero.x; hero.ry = hero.y;
+      hero.px = hero.x; hero.py = hero.y;
+      _freeMoveStep = null;
+      // Po žingsnio paleidžiam tick sistemą: priešai juda, energija krenta, fog'as atsidengia
+      if (S.phase === 'frozen' && !S.pending[0]) {
+        S.pending[0] = { unitId: hero.id, t: 'jump' }; // jump = no-op applySingleAction
+        if (gameMode === 'adventure' && typeof aiQueueAction === 'function') {
+          aiQueueAction(false);
+        }
+        if (typeof resolveTick === 'function') resolveTick();
+      }
+    } else {
+      return;
+    }
+  }
+
+  // Jei eina tick'as — nebradam naujo žingsnio kol neužsibaigė
+  if (S.phase !== 'frozen') return;
+
+  // Nevykdomas joks žingsnis — tik iš queue (vienas žingsnis per paspaudimą)
+  if (_freeMoveQueue.length === 0) return;
+  const { dx, dy } = _freeMoveQueue.shift();
+  const nx = hero.x + dx, ny = hero.y + dy;
+  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+  if (typeof isWall === 'function' && isWall(nx, ny)) return;
+  if (S.units.some(u => u.alive && u.id !== hero.id && u.x === nx && u.y === ny)) return;
+
+  _freeMoveStep = { srcX: hero.x, srcY: hero.y, dstX: nx, dstY: ny, start: now };
+  hero.facing = { dx, dy };
+}
+
+document.addEventListener('keyup', e => {
+  if (!_freeMoveMode) return;
+  if (e.code === 'KeyW') _freeMoveKeys.w = false;
+  else if (e.code === 'KeyS') _freeMoveKeys.s = false;
+  else if (e.code === 'KeyA') _freeMoveKeys.a = false;
+  else if (e.code === 'KeyD') _freeMoveKeys.d = false;
+});
+// Lango blur — atleidžiam visus klavišus (kad "užstrigęs" klavišas neliktų)
+window.addEventListener('blur', () => {
+  _freeMoveKeys.w = _freeMoveKeys.a = _freeMoveKeys.s = _freeMoveKeys.d = false;
+});
+
 
 function _createExtraMine() {
   const idx = _extraMines.length;
@@ -2688,8 +2919,20 @@ function _createExtraMine() {
     stonePopupOpen: false,
     houseBtnBounds: null,
     stoneBtnBounds: null,
+    constructionStart: performance.now(), // statybos startas — per _CONSTRUCTION_MS rodomas scaffold sprite
+    speedUpBtnBounds: null,
+    speedUpPopupOpen: false,
+    speedUpPopupBtnBounds: null,
+    speedUpPopupCloseBounds: null,
+    speedUpAnim: null, // {startMs, durMs, srcElapsed, dstElapsed} — vizuali bar'o užpildymo animacija
   });
 }
+const _CONSTRUCTION_MS = 60000; // 1 minutė statybos
+const _SPEEDUP_COST = 1;         // TEST: 1 Ronke per minutę (buvo 10)
+const _houseConstructionImg = new Image();
+_houseConstructionImg.src = 'assets_tiny/House_Construction.png';
+const _pawnHammerImg = new Image();
+_pawnHammerImg.src = 'assets_tiny/Pawn_Interact_Hammer.png';
 
 // Vykdo kasimo ciklą konkrečiai extra kasyklai (panašus į _runMiningCycle, bet be global state)
 function _runExtraMineCycle(mine, now) {
@@ -2772,13 +3015,20 @@ function _runExtraMineCycle(mine, now) {
 
 // Bendras house upgrade popup renderer — naudojamas primary ir kiekvienam extra mine.
 // Grąžina { btnBounds } (arba btnBounds=null, jei max level pasiektas).
-function _drawHouseUpgradePopup(anchor, level) {
-  const pw = 190, ph = 148, rad = 9;
+function _drawHouseUpgradePopup(anchor, level, isConstructing) {
+  const nextLvl = level + 1;
+  const nextCost = _nextHouseCost(level);
+  const isMax = nextCost === null;
+  const pw = 148;
+  const headerH = 24;
+  const ph = isConstructing ? 64 : (isMax ? 72 : 108);
+  const rad = 6;
   let px = Math.round(anchor.x + anchor.w / 2 - pw / 2);
-  let py = Math.round(anchor.y - ph - 14);
+  let py = Math.round(anchor.y - ph - 12);
   const PAD = 6;
-  px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
-  py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+  const v = _getVisibleWorldRect();
+  px = Math.max(v.x + PAD, Math.min(v.x + v.w - pw - PAD, px));
+  py = Math.max(v.y + PAD, Math.min(v.y + v.h - ph - PAD, py));
   const rr = (x, y, w, h, r) => {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -2789,84 +3039,112 @@ function _drawHouseUpgradePopup(anchor, level) {
     ctx.closePath();
   };
   ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
-  ctx.fillStyle = '#1f242f';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(px + 2, py + 4, pw, ph, rad); ctx.fill();
+  ctx.fillStyle = '#161a22';
   rr(px, py, pw, ph, rad); ctx.fill();
   ctx.save();
   rr(px, py, pw, ph, rad); ctx.clip();
   ctx.fillStyle = '#b08a2e';
-  ctx.fillRect(px, py, pw, 34);
+  ctx.fillRect(px, py, pw, headerH);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(px, py + headerH - 2, pw, 2);
   ctx.restore();
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#ffe97a';
-  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
-  ctx.stroke();
-  const HEADER_H = 32;
-  const nextLvl = level + 1;
-  const nextCost = _nextHouseCost(level);
-  const isMax = nextCost === null;
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad); ctx.stroke();
+  // Title
   ctx.fillStyle = '#1a1506';
-  ctx.font = 'bold 14px monospace';
+  ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(isMax ? 'Lv. ' + level + ' (MAX)' : 'Lv. ' + level + '  \u2192  Lv. ' + nextLvl, px + pw / 2, py + HEADER_H / 2);
+  const _title = isMax ? `HOUSE — Lv.${level} (MAX)` : `HOUSE — Lv.${level} → Lv.${nextLvl}`;
+  ctx.fillText(_title, px + pw / 2, py + headerH / 2);
+
+  let btnBounds = null;
   const curCap = _houseCapacity(level);
   const nextCap = _houseCapacity(nextLvl);
-  ctx.fillStyle = '#cfd4dc';
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText(isMax ? 'Storage: ' + curCap : 'Storage: ' + curCap + '  \u2192  ' + nextCap, px + pw / 2, py + 48);
-  ctx.strokeStyle = 'rgba(255,233,122,0.25)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
-  let btnBounds = null;
-  if (!isMax) {
-    const costLabel = String(nextCost);
-    ctx.font = 'bold 14px monospace';
-    const costW = ctx.measureText(costLabel).width;
-    const iconSz = 26, gap = 8;
-    const rowW = iconSz + gap + costW;
-    const rowX = px + pw / 2 - rowW / 2;
-    const rowY = py + 72;
-    const fr = Math.floor(performance.now() / 90) % 8;
-    const thumb = _getRonkeCoinThumb(iconSz, fr);
-    if (thumb) ctx.drawImage(thumb, rowX, rowY);
-    const canAfford = _ronkeBalance >= nextCost;
-    ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
-    const bw2 = 150, bh2 = 32;
-    const bxU = px + pw / 2 - bw2 / 2;
-    const byU = py + ph - bh2 - 10;
-    const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 && _canvasMy >= byU && _canvasMy <= byU + bh2;
-    ctx.fillStyle = !canAfford ? '#452a2a' : hoverBtn ? '#6ec56e' : '#4e9e4e';
-    rr(bxU, byU, bw2, bh2, 6); ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
-    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 13px monospace';
+
+  if (isConstructing) {
+    ctx.fillStyle = '#ffd47a';
+    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-    ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-    btnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeText('Under construction...', px + pw / 2, py + headerH + 18);
+    ctx.fillText('Under construction...', px + pw / 2, py + headerH + 18);
+  } else {
+    const sx = px + 10;
+    const valX = px + pw - 10;
+    const syStat = py + headerH + 12;
+    ctx.fillStyle = '#8a92a0';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('STORAGE', sx, syStat);
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'right';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    const _val = isMax ? `${curCap}` : `${curCap} → ${nextCap}`;
+    ctx.fillStyle = isMax ? '#c8d0e0' : '#7effa0';
+    ctx.strokeText(_val, valX, syStat);
+    ctx.fillText(_val, valX, syStat);
+
+    if (!isMax) {
+      // Cost row + button
+      const costLabel = String(nextCost);
+      ctx.font = 'bold 12px monospace';
+      const costW = ctx.measureText(costLabel).width;
+      const iconSz = 16, gapC = 5;
+      const rowW = iconSz + gapC + costW;
+      const rowX = px + pw / 2 - rowW / 2;
+      const rowY = syStat + 14;
+      const fr = Math.floor(performance.now() / 90) % 8;
+      const thumb = _getRonkeCoinThumb(iconSz, fr);
+      if (thumb) ctx.drawImage(thumb, rowX, rowY);
+      const canAfford = _ronkeBalance >= nextCost;
+      ctx.fillStyle = canAfford ? '#ffe066' : '#ff8a7a';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(costLabel, rowX + iconSz + gapC, rowY + iconSz / 2);
+      ctx.fillText(costLabel, rowX + iconSz + gapC, rowY + iconSz / 2);
+      // UPGRADE button
+      const bw2 = 112, bh2 = 22;
+      const bxU = px + pw / 2 - bw2 / 2;
+      const byU = py + ph - bh2 - 7;
+      const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 && _worldMy >= byU && _worldMy <= byU + bh2;
+      ctx.fillStyle = !canAfford ? '#2d3a2d' : (hoverBtn ? '#6ec56e' : '#4e9e4e');
+      rr(bxU, byU, bw2, bh2, 5); ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = !canAfford ? '#5a6e5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
+      rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
+      ctx.fillStyle = canAfford ? '#fff' : '#aaa';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      btnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+    }
   }
-  const cxSz = 18;
-  const cxX = px + pw - cxSz - 6;
-  const cxY = py + 8;
-  const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz && _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
-  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
-  rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+  // Close X
+  const cxSz = 12;
+  const cxX = px + pw - cxSz - 5;
+  const cxY = py + 6;
+  const hovX = _worldMx >= cxX && _worldMx <= cxX + cxSz && _worldMy >= cxY && _worldMy <= cxY + cxSz;
+  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.3)';
+  rr(cxX, cxY, cxSz, cxSz, 2); ctx.fill();
   ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
-  ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+  ctx.moveTo(cxX + 3, cxY + 3); ctx.lineTo(cxX + cxSz - 3, cxY + cxSz - 3);
+  ctx.moveTo(cxX + cxSz - 3, cxY + 3); ctx.lineTo(cxX + 3, cxY + cxSz - 3);
   ctx.stroke();
   ctx.restore();
   return btnBounds;
@@ -2875,12 +3153,20 @@ function _drawHouseUpgradePopup(anchor, level) {
 // Bendras stone (mining) upgrade popup renderer.
 // level — dabartinis mining lygis; costMul — kainos multiplikatorius (1.0 primary, 1.5 extras).
 function _drawStoneUpgradePopup(anchor, level, costMul) {
-  const pw = 190, ph = 148, rad = 9;
+  const nextLvl = level + 1;
+  const curPct  = Math.round((0.20 + (level - 1) * 0.05) * 100);
+  const nextPct = Math.round((0.20 + (nextLvl - 1) * 0.05) * 100);
+  const miningCost = Math.ceil(_nextMiningCost(level) * costMul);
+  const pw = 148;
+  const headerH = 24;
+  const ph = 108;
+  const rad = 6;
   let px = Math.round(anchor.x + anchor.w / 2 - pw / 2);
   let py = Math.round(anchor.y - ph - 14);
   const PAD = 6;
-  px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
-  py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+  const v = _getVisibleWorldRect();
+  px = Math.max(v.x + PAD, Math.min(v.x + v.w - pw - PAD, px));
+  py = Math.max(v.y + PAD, Math.min(v.y + v.h - ph - PAD, py));
   const rr = (x, y, w, h, r) => {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -2891,91 +3177,202 @@ function _drawStoneUpgradePopup(anchor, level, costMul) {
     ctx.closePath();
   };
   ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
-  ctx.fillStyle = '#1f242f';
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(px + 2, py + 4, pw, ph, rad); ctx.fill();
+  // Panel bg
+  ctx.fillStyle = '#1a1410';
   rr(px, py, pw, ph, rad); ctx.fill();
+  // Header
   ctx.save();
   rr(px, py, pw, ph, rad); ctx.clip();
   ctx.fillStyle = '#b08a2e';
-  ctx.fillRect(px, py, pw, 34);
+  ctx.fillRect(px, py, pw, headerH);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(px, py + headerH - 2, pw, 2);
   ctx.restore();
-  ctx.lineWidth = 2;
+  // Border
+  ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#ffe97a';
   rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
   ctx.stroke();
-  const nextLvl = level + 1;
+  // Title
   ctx.fillStyle = '#1a1506';
-  ctx.font = 'bold 14px monospace';
+  ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Lv. ' + level + '  \u2192  Lv. ' + nextLvl, px + pw / 2, py + 17);
-  const curPct  = Math.round((0.20 + (level - 1) * 0.05) * 100);
-  const nextPct = Math.round((0.20 + (nextLvl - 1) * 0.05) * 100);
-  ctx.fillStyle = '#cfd4dc';
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('Success: ' + curPct + '%  \u2192  ' + nextPct + '%', px + pw / 2, py + 48);
-  ctx.strokeStyle = 'rgba(255,233,122,0.25)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
-  const miningCost = Math.ceil(_nextMiningCost(level) * costMul);
-  const costLabel = String(miningCost);
-  ctx.font = 'bold 14px monospace';
-  const costW = ctx.measureText(costLabel).width;
-  const iconSz = 26, gap = 8;
-  const rowW = iconSz + gap + costW;
-  const rowX = px + pw / 2 - rowW / 2;
-  const rowY = py + 72;
-  const fr = Math.floor(performance.now() / 90) % 8;
-  const thumb = _getRonkeCoinThumb(iconSz, fr);
-  if (thumb) ctx.drawImage(thumb, rowX, rowY);
-  const canAfford = _ronkeBalance >= miningCost;
-  ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
+  ctx.fillText('MINE \u2014 Lv.' + level + ' \u2192 Lv.' + nextLvl, px + pw / 2, py + headerH / 2);
+  // SUCCESS stat row
+  const statX = px + 10;
+  const statR = px + pw - 10;
+  let rowY = py + headerH + 12;
+  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
-  const bw2 = 150, bh2 = 32;
+  ctx.fillStyle = '#8a92a0';
+  ctx.fillText('SUCCESS', statX, rowY);
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'right';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  const successStr = curPct + '% \u2192 ' + nextPct + '%';
+  ctx.fillStyle = '#7effa0';
+  ctx.strokeText(successStr, statR, rowY);
+  ctx.fillText(successStr, statR, rowY);
+  // Cost row (centered)
+  const iconSz = 16, gapC = 5;
+  const costLabel = String(miningCost);
+  ctx.font = 'bold 12px monospace';
+  const costW = ctx.measureText(costLabel).width;
+  const rowW = iconSz + gapC + costW;
+  const rowX = px + pw / 2 - rowW / 2;
+  const rowCY = rowY + 16;
+  const fr = Math.floor(performance.now() / 90) % 8;
+  const thumb = _getRonkeCoinThumb(iconSz, fr);
+  if (thumb) ctx.drawImage(thumb, rowX, rowCY);
+  const canAfford = _ronkeBalance >= miningCost;
+  ctx.fillStyle = canAfford ? '#ffe066' : '#d48a8a';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.strokeText(costLabel, rowX + iconSz + gapC, rowCY + iconSz / 2);
+  ctx.fillText(costLabel, rowX + iconSz + gapC, rowCY + iconSz / 2);
+  // UPGRADE button
+  const bw2 = 112, bh2 = 22;
   const bxU = px + pw / 2 - bw2 / 2;
-  const byU = py + ph - bh2 - 10;
-  const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 && _canvasMy >= byU && _canvasMy <= byU + bh2;
-  ctx.fillStyle = !canAfford ? '#452a2a' : hoverBtn ? '#6ec56e' : '#4e9e4e';
-  rr(bxU, byU, bw2, bh2, 6); ctx.fill();
+  const byU = py + ph - bh2 - 7;
+  const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 && _worldMy >= byU && _worldMy <= byU + bh2;
+  ctx.fillStyle = !canAfford ? '#2d3a2d' : (hoverBtn ? '#6ec56e' : '#4e9e4e');
+  rr(bxU, byU, bw2, bh2, 5); ctx.fill();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
-  rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 13px monospace';
+  ctx.strokeStyle = !canAfford ? '#5a6e5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
+  rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
+  ctx.fillStyle = canAfford ? '#fff' : '#aaa';
+  ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.strokeText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
   ctx.fillText('UPGRADE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-  const cxSz = 18;
-  const cxX = px + pw - cxSz - 6;
-  const cxY = py + 8;
-  const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz && _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
-  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
-  rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+  // Close X
+  const cxSz = 12;
+  const cxX = px + pw - cxSz - 5;
+  const cxY = py + 6;
+  const hovX = _worldMx >= cxX && _worldMx <= cxX + cxSz && _worldMy >= cxY && _worldMy <= cxY + cxSz;
+  ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.3)';
+  rr(cxX, cxY, cxSz, cxSz, 2); ctx.fill();
   ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
-  ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+  ctx.moveTo(cxX + 3, cxY + 3); ctx.lineTo(cxX + cxSz - 3, cxY + cxSz - 3);
+  ctx.moveTo(cxX + cxSz - 3, cxY + 3); ctx.lineTo(cxX + 3, cxY + cxSz - 3);
   ctx.stroke();
   ctx.restore();
   return { x: bxU, y: byU, w: bw2, h: bh2 };
 }
 
-// Ronke2 herojaus IDLE toggle popup — grąžina btn bounds.
-function _drawRonkeIdlePopup(anchor) {
-  const pw = 170, ph = 100, rad = 9;
+// Ronke2 radial menu — EVE Online stilius. Center = hero. Return: { cx, cy, innerR, outerR, items }.
+function _drawRonkeRadialMenu(anchor) {
+  const cx = anchor.x + anchor.w / 2;
+  const cy = anchor.y + anchor.h / 2;
+  const innerR = 34, outerR = 82;
+  const idleOn = _ronkeIdleMode;
+  const items = [
+    { id: 'attack',   label: 'ATTACK',   icon: '\u2694', col: '#9c3a1a', hov: '#c65a3a' },
+    { id: 'pullback', label: 'PULLBACK', icon: '\u21A9', col: '#1a4a8c', hov: '#3a6abc' },
+    { id: 'idle',     label: idleOn ? 'IDLE ON' : 'IDLE OFF', icon: idleOn ? '\u25A0' : '\u25B6',
+      col: idleOn ? '#b87a3c' : '#4e9e4e', hov: idleOn ? '#d48a4c' : '#6ec56e' },
+  ];
+  const N = items.length;
+  const step = (Math.PI * 2) / N;
+  const start = -Math.PI / 2 - step / 2; // pirma wedge ant viršaus
+
+  // Hover testas (world space, radial menu centras world coords)
+  const mdx = (_worldMx ?? -9999) - cx;
+  const mdy = (_worldMy ?? -9999) - cy;
+  const mR = Math.sqrt(mdx * mdx + mdy * mdy);
+  const hoverInRing = mR >= innerR && mR <= outerR;
+
+  ctx.save();
+  // Drop shadow
+  ctx.beginPath(); ctx.arc(cx + 3, cy + 4, outerR, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+
+  for (let i = 0; i < N; i++) {
+    const a0 = start + i * step;
+    const a1 = a0 + step;
+    items[i].a0 = a0; items[i].a1 = a1;
+    // Hover for this wedge
+    let mAng = Math.atan2(mdy, mdx);
+    while (mAng < a0) mAng += Math.PI * 2;
+    while (mAng > a1 + Math.PI * 2) mAng -= Math.PI * 2;
+    const hov = hoverInRing && mAng >= a0 && mAng <= a1;
+    items[i].hover = hov;
+    // Wedge path (donut slice)
+    const pad = 0.025;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, a0 + pad, a1 - pad);
+    ctx.arc(cx, cy, innerR, a1 - pad, a0 + pad, true);
+    ctx.closePath();
+    ctx.fillStyle = hov ? items[i].hov : items[i].col;
+    ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#1a1506'; ctx.stroke();
+    // Icon + label
+    const midA = (a0 + a1) / 2;
+    const midR = (innerR + outerR) / 2;
+    const tx = cx + Math.cos(midA) * midR;
+    const ty = cy + Math.sin(midA) * midR;
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.font = 'bold 20px monospace';
+    ctx.strokeText(items[i].icon, tx, ty - 10);
+    ctx.fillText(items[i].icon, tx, ty - 10);
+    ctx.font = 'bold 10px monospace';
+    ctx.strokeText(items[i].label, tx, ty + 12);
+    ctx.fillText(items[i].label, tx, ty + 12);
+  }
+
+  // Center — close X
+  const hovClose = mR < innerR;
+  ctx.beginPath(); ctx.arc(cx, cy, innerR - 2, 0, Math.PI * 2);
+  ctx.fillStyle = hovClose ? '#3a2020' : 'rgba(22,28,38,0.95)';
+  ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = hovClose ? '#ff8080' : '#666'; ctx.stroke();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 10, cy - 10); ctx.lineTo(cx + 10, cy + 10);
+  ctx.moveTo(cx + 10, cy - 10); ctx.lineTo(cx - 10, cy + 10);
+  ctx.stroke();
+  ctx.restore();
+  return { cx, cy, innerR, outerR, items };
+}
+function _radialMenuHit(menu, mx, my) {
+  if (!menu) return null;
+  const dx = mx - menu.cx, dy = my - menu.cy;
+  const r = Math.sqrt(dx * dx + dy * dy);
+  if (r < menu.innerR) return 'close';
+  if (r > menu.outerR) return null;
+  let ang = Math.atan2(dy, dx);
+  for (const it of menu.items) {
+    let a = ang;
+    while (a < it.a0) a += Math.PI * 2;
+    while (a > it.a1 + Math.PI * 2) a -= Math.PI * 2;
+    if (a >= it.a0 && a <= it.a1) return it.id;
+  }
+  return null;
+}
+
+function _drawConstructionInfoPopup(anchor, mine, now) {
+  const pw = 174, ph = 114, rad = 7;
   let px = Math.round(anchor.x + anchor.w / 2 - pw / 2);
   let py = Math.round(anchor.y - ph - 14);
   const PAD = 6;
-  px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
-  py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+  const v = _getVisibleWorldRect();
+  px = Math.max(v.x + PAD, Math.min(v.x + v.w - pw - PAD, px));
+  py = Math.max(v.y + PAD, Math.min(v.y + v.h - ph - PAD, py));
   const rr = (x, y, w, h, r) => {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -2987,55 +3384,74 @@ function _drawRonkeIdlePopup(anchor) {
   };
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
+  rr(px + 3, py + 4, pw, ph, rad); ctx.fill();
   ctx.fillStyle = '#1f242f';
   rr(px, py, pw, ph, rad); ctx.fill();
   ctx.save();
   rr(px, py, pw, ph, rad); ctx.clip();
   ctx.fillStyle = '#b08a2e';
-  ctx.fillRect(px, py, pw, 30);
+  ctx.fillRect(px, py, pw, 22);
   ctx.restore();
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#ffe97a';
   rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
   ctx.stroke();
   ctx.fillStyle = '#1a1506';
-  ctx.font = 'bold 13px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('RONKE', px + pw / 2, py + 15);
-  // Toggle mygtukas
-  const bw2 = 130, bh2 = 38;
-  const bxU = px + pw / 2 - bw2 / 2;
-  const byU = py + ph - bh2 - 14;
-  const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 && _canvasMy >= byU && _canvasMy <= byU + bh2;
-  const isOn = _ronkeIdleMode;
-  ctx.fillStyle = isOn ? (hoverBtn ? '#d48a4c' : '#b87a3c') : (hoverBtn ? '#6ec56e' : '#4e9e4e');
-  rr(bxU, byU, bw2, bh2, 6); ctx.fill();
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('CONSTRUCTION #' + (mine.idx + 2), px + pw / 2, py + 11);
+
+  const cElapsed = now - (mine.constructionStart || 0);
+  const secLeft  = Math.max(0, Math.ceil((_CONSTRUCTION_MS - cElapsed) / 1000));
+  const mm = Math.floor(secLeft / 60), ss = secLeft % 60;
+  const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2,'0')}` : `${ss}s`;
+  const prog = Math.min(1, cElapsed / _CONSTRUCTION_MS);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '10px monospace';
+  ctx.fillStyle = '#cfcfcf';
+  ctx.fillText('Time left:', px + 10, py + 38);
+  ctx.fillStyle = '#ffe97a';
+  ctx.textAlign = 'right';
+  ctx.fillText(timeStr, px + pw - 10, py + 38);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#cfcfcf';
+  ctx.fillText('Progress:', px + 10, py + 54);
+  ctx.fillStyle = '#ffe97a';
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.round(prog * 100) + '%', px + pw - 10, py + 54);
+
+  // Speed up mygtukas
+  const bw2 = pw - 20, bh2 = 28;
+  const bxU = px + 10;
+  const byU = py + ph - bh2 - 10;
+  const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 && _worldMy >= byU && _worldMy <= byU + bh2;
+  const canAfford = _ronkeBalance >= _SPEEDUP_COST;
+  ctx.fillStyle = !canAfford ? '#3a3a3a' : (hoverBtn ? '#6ec56e' : '#4e9e4e');
+  rr(bxU, byU, bw2, bh2, 5); ctx.fill();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = isOn ? '#ffd9a0' : '#a8f0a8';
-  rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 14px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-  const label = 'IDLE: ' + (isOn ? 'ON' : 'OFF');
+  ctx.strokeStyle = canAfford ? '#a8f0a8' : '#666';
+  rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
+  ctx.fillStyle = canAfford ? '#fff' : '#999';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  const label = 'SPEED UP 10\u00D7  \u26A1' + _SPEEDUP_COST;
   ctx.strokeText(label, bxU + bw2 / 2, byU + bh2 / 2 + 1);
   ctx.fillText(label, bxU + bw2 / 2, byU + bh2 / 2 + 1);
+
   // Close X
-  const cxSz = 18;
-  const cxX = px + pw - cxSz - 6;
-  const cxY = py + 6;
-  const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz && _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
+  const cxSz = 14;
+  const cxX = px + pw - cxSz - 5;
+  const cxY = py + 4;
+  const hovX = _worldMx >= cxX && _worldMx <= cxX + cxSz && _worldMy >= cxY && _worldMy <= cxY + cxSz;
   ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
-  rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+  rr(cxX, cxY, cxSz, cxSz, 3); ctx.fill();
   ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
-  ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+  ctx.moveTo(cxX + 4, cxY + 4); ctx.lineTo(cxX + cxSz - 4, cxY + cxSz - 4);
+  ctx.moveTo(cxX + cxSz - 4, cxY + 4); ctx.lineTo(cxX + 4, cxY + cxSz - 4);
   ctx.stroke();
   ctx.restore();
   return { btn: { x: bxU, y: byU, w: bw2, h: bh2 }, close: { x: cxX, y: cxY, w: cxSz, h: cxSz } };
@@ -3262,6 +3678,16 @@ const rockImgs = [null, null, null, null, null]; // index 1-4
 for (let _ri = 1; _ri <= 4; _ri++) { rockImgs[_ri] = new Image(); rockImgs[_ri].src = `assets_tiny/Terrain/Water/Rocks/Rocks_0${_ri}.png`; }
 const bushImgs = [null, null, null, null, null]; // index 1-4
 for (let _bi = 1; _bi <= 4; _bi++) { bushImgs[_bi] = new Image(); bushImgs[_bi].src = `assets_tiny/Terrain/Bushe${_bi}.png`; }
+// UI Banners (Tiny Swords store pack) — naudojami kaip dekoratyvūs pažymėjimai map'e
+const bannerImgs = {
+  banner:         (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Banner.png'; return i; })(),
+  banner_slots:   (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Slots.png'; return i; })(),
+  ribbon_black:   (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Ribbon_Black.png'; return i; })(),
+  ribbon_blue:    (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Ribbon_Blue.png'; return i; })(),
+  ribbon_purple:  (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Ribbon_Purple.png'; return i; })(),
+  ribbon_red:     (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Ribbon_Red.png'; return i; })(),
+  ribbon_yellow:  (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Ribbon_Yellow.png'; return i; })(),
+};
 
 (function () {
   Object.keys(HERO_SPRITE_DATA).forEach(dir => {
@@ -6655,6 +7081,141 @@ function isVisible(x, y) {
 
 function invalidateDungeonCache() { _dunDirty = true; }
 
+// Bendras construction overlay helper'is — naudoja primary (`_primaryConstruction`) ir extras (mine objektas).
+// `state` turi turėti: constructionStart, speedUpAnim, _lastStrikeFrame, shake, speedUpPopupOpen,
+// speedUpBtnBounds (write), houseBounds (write).
+// Grąžina `true` jei dar vyksta statyba (caller turi skip'inti normalų renderinimą).
+function _drawConstructionOverlay(state, hc, hr, dy, houseImg, now) {
+  if (!state.constructionStart) { state.speedUpBtnBounds = null; return false; }
+  let cElapsed = now - state.constructionStart;
+  // Speed-up animacija — vizualiai užpildyk juostą per 1s/1min likusio laiko
+  if (state.speedUpAnim) {
+    const a = state.speedUpAnim;
+    const t = Math.min(1, (now - a.startMs) / a.durMs);
+    cElapsed = a.srcElapsed + (a.dstElapsed - a.srcElapsed) * t;
+    if (t >= 1) {
+      state.constructionStart = now - _CONSTRUCTION_MS - 1;
+      state.speedUpAnim = null;
+    }
+  }
+  if (cElapsed >= _CONSTRUCTION_MS) { state.speedUpBtnBounds = null; return false; }
+
+  const bldgScaleC = 0.80;
+  const cImg = (_houseConstructionImg.complete && _houseConstructionImg.naturalWidth > 0)
+    ? _houseConstructionImg : houseImg;
+  const cBw = cImg.naturalWidth * bldgScaleC;
+  const cBh = cImg.naturalHeight * bldgScaleC;
+  const cBx = hc * CELL + (houseImg.naturalWidth - cBw) / 2;
+  const cBy = hr * CELL + (houseImg.naturalHeight - cBh) + dy;
+  state.houseBounds = { x: cBx, y: cBy, w: cBw, h: cBh };
+
+  // Plaktuko animacija (3 frames @ 8fps)
+  const HAMMER_FPS = 8, HAMMER_FRAMES = 3, HAMMER_STRIKE_FRAME = 1;
+  const hFrame = Math.floor(cElapsed / (1000 / HAMMER_FPS)) % HAMMER_FRAMES;
+  if (hFrame === HAMMER_STRIKE_FRAME && state._lastStrikeFrame !== HAMMER_STRIKE_FRAME) {
+    state.shake.active = true;
+    state.shake.start = now;
+  }
+  state._lastStrikeFrame = hFrame;
+  let bShX = 0, bShY = 0;
+  if (state.shake.active && state.shake.start) {
+    const sel = now - state.shake.start;
+    if (sel < 180) {
+      const decay = 1 - sel / 180;
+      bShX = Math.sin(sel * 0.08) * 3 * decay;
+      bShY = Math.cos(sel * 0.07) * 2 * decay;
+    } else {
+      state.shake.active = false;
+    }
+  }
+  ctx.drawImage(cImg, cBx + bShX, cBy + bShY, cBw, cBh);
+
+  // Pawn su plaktuku — dešinėje namelio pusėje, facing left
+  if (_pawnHammerImg.complete && _pawnHammerImg.naturalWidth > 0) {
+    const PSZ = 90;
+    const pawnWx = cBx + cBw + PSZ * 0.15;
+    const pawnWy = cBy + cBh;
+    const drawY = pawnWy - PSZ + 20;
+    const px = pawnWx - PSZ / 2;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(-1, 1);
+    ctx.drawImage(_pawnHammerImg, hFrame * 192, 0, 192, 192, -px - PSZ, drawY, PSZ, PSZ);
+    ctx.restore();
+  }
+
+  // Progress juosta + double-arrow mygtukas
+  const barW = cBw * 0.9, barH = 6;
+  const barX = cBx + (cBw - barW) / 2;
+  const barY = cBy - 14 + 75;
+  const prog = Math.min(1, cElapsed / _CONSTRUCTION_MS);
+  const arrW = 16, arrH = 14;
+  const arrX = barX + barW + 4;
+  const arrY = barY + barH / 2 - arrH / 2;
+  const hovZoneX = barX - 4;
+  const hovZoneY = Math.min(barY, arrY) - 4;
+  const hovZoneW = (arrX + arrW) - barX + 8;
+  const hovZoneH = Math.max(barY + barH, arrY + arrH) - hovZoneY + 4;
+  const barHover = !state.speedUpPopupOpen &&
+                   _worldMx >= hovZoneX && _worldMx <= hovZoneX + hovZoneW &&
+                   _worldMy >= hovZoneY && _worldMy <= hovZoneY + hovZoneH;
+  const _drawBarShapes = (offX, offY, strokeCol, fillCol) => {
+    ctx.fillStyle = strokeCol || 'rgba(0,0,0,0.55)';
+    ctx.fillRect(barX - 1 + offX, barY - 1 + offY, barW + 2, barH + 2);
+    ctx.fillStyle = fillCol || '#b08a2e';
+    ctx.fillRect(barX + offX, barY + offY, barW * prog, barH);
+    ctx.save();
+    ctx.strokeStyle = fillCol || '#1a1506';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(arrX + 1 + offX,         arrY + 2 + offY);
+    ctx.lineTo(arrX + arrW/2 + offX,    arrY + arrH/2 + offY);
+    ctx.lineTo(arrX + 1 + offX,         arrY + arrH - 2 + offY);
+    ctx.moveTo(arrX + arrW/2 - 1 + offX, arrY + 2 + offY);
+    ctx.lineTo(arrX + arrW - 2 + offX,   arrY + arrH/2 + offY);
+    ctx.lineTo(arrX + arrW/2 - 1 + offX, arrY + arrH - 2 + offY);
+    ctx.stroke();
+    ctx.restore();
+  };
+  if (barHover) {
+    ctx.save();
+    ctx.filter = 'brightness(0) invert(1)';
+    const OL = 2;
+    for (const [dx, dyo] of [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]]) {
+      _drawBarShapes(dx, dyo, null, null);
+    }
+    ctx.restore();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+  ctx.fillStyle = '#b08a2e';
+  ctx.fillRect(barX, barY, barW * prog, barH);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  const secLeft = Math.max(0, Math.ceil((_CONSTRUCTION_MS - cElapsed) / 1000));
+  const mm = Math.floor(secLeft / 60), ss = secLeft % 60;
+  const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2,'0')}` : `${ss}s`;
+  ctx.fillText(timeStr, cBx + cBw / 2, barY - 2);
+
+  state.speedUpBtnBounds = { x: hovZoneX, y: hovZoneY, w: hovZoneW, h: hovZoneH };
+  ctx.save();
+  ctx.fillStyle = barHover ? '#ffe97a' : '#b08a2e';
+  ctx.strokeStyle = '#1a1506';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(arrX + 1,       arrY + 2);
+  ctx.lineTo(arrX + arrW/2,  arrY + arrH / 2);
+  ctx.lineTo(arrX + 1,       arrY + arrH - 2);
+  ctx.moveTo(arrX + arrW/2 - 1, arrY + 2);
+  ctx.lineTo(arrX + arrW - 2,   arrY + arrH / 2);
+  ctx.lineTo(arrX + arrW/2 - 1, arrY + arrH - 2);
+  ctx.stroke();
+  ctx.restore();
+
+  return true;
+}
+
 // ── Extra mines renderer — piešia visas papildomas kasyklas pagal `_extraMines`
 function _drawExtraMines(now) {
   if (!_extraMines.length || !S.decorations) return;
@@ -6676,6 +7237,15 @@ function _drawExtraMines(now) {
 
   for (const mine of _extraMines) {
     const dy = mine.yOffset;
+
+    // ── CONSTRUCTION phase — scaffold sprite vietoj namuko, pawn kala plaktuku ──
+    const isConstructing = _drawConstructionOverlay(mine, hc, hr, dy, houseImg, now);
+    if (isConstructing) {
+      // Skip likusį extra-mine renderinimą (mining cycle, particles)
+      continue;
+    }
+    mine.speedUpBtnBounds = null;
+
     // Init cycle
     if (!mine.cycle) {
       mine.cycle = {
@@ -6706,8 +7276,8 @@ function _drawExtraMines(now) {
     // Hover outline (jei nei vienas mine popup neatviras)
     const anyPopup = mine.housePopupOpen || mine.stonePopupOpen;
     const hovHouse = !anyPopup &&
-                     _canvasMx >= hBx && _canvasMx <= hBx + hBw &&
-                     _canvasMy >= hBy && _canvasMy <= hBy + hBh;
+                     _worldMx >= hBx && _worldMx <= hBx + hBw &&
+                     _worldMy >= hBy && _worldMy <= hBy + hBh;
     if (hovHouse) {
       ctx.save();
       ctx.filter = 'brightness(0) invert(1)';
@@ -6734,8 +7304,8 @@ function _drawExtraMines(now) {
     const sY = sr * CELL + CELL - gsz + 20 + dy + 10 + (mine.shake.active ? mine.shake.y : 0);
     mine.stoneBounds = { x: sX, y: sY, w: gsz, h: gsz };
     const hovStone = !anyPopup &&
-                     _canvasMx >= sX && _canvasMx <= sX + gsz &&
-                     _canvasMy >= sY && _canvasMy <= sY + gsz;
+                     _worldMx >= sX && _worldMx <= sX + gsz &&
+                     _worldMy >= sY && _worldMy <= sY + gsz;
     if (hovStone) {
       ctx.save();
       ctx.filter = 'brightness(0) invert(1)';
@@ -6888,6 +7458,16 @@ function _updateAndDrawPawnNpcs(decKeys) {
   const SZ     = 90;
   const PAM_SZ = 50;
 
+  // Primary statybos metu — pawn/PAM/mining cycle pilnai sustabdomi (namuko nėra, negalima kasti).
+  // Cycle resetinamas kad baigus statybą ciklas startuotų iš naujo.
+  const _primConstructing = _primaryConstruction.constructionStart > 0 &&
+    ((now - _primaryConstruction.constructionStart) < _CONSTRUCTION_MS ||
+     _primaryConstruction.speedUpAnim);
+  if (_primConstructing) {
+    _miningCycle = null;
+    return;
+  }
+
   // Find pawn_npc and any gold_stone_* in the current map
   let pawnKey = null, stoneDecKey = null;
   for (const key of decKeys) {
@@ -6991,6 +7571,128 @@ function drawDungeon() {
       ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
     });
   }
+}
+
+// ═════ Narrative buttons — ATTACK / PULLBACK, stumteli draugiškus NPC link / tolyn nuo priešo ═════
+let _narrativeBtnBounds = null;
+let _narrativePullBtnBounds = null;
+let _narrativeBtnFlash = 0;
+let _narrativePullFlash = 0;
+function _findNearestEnemyCell(cx, cy) {
+  let best = null, bestD = 999;
+  if (S.decorations) {
+    for (const [k, v] of Object.entries(S.decorations)) {
+      if (v !== 'red_archer_npc') continue;
+      const ocx = (typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) ? _redArcherStates[k].cx : Number(k.split(',')[1]);
+      const ocy = (typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) ? _redArcherStates[k].cy : Number(k.split(',')[0]);
+      const d = Math.abs(ocx - cx) + Math.abs(ocy - cy);
+      if (d < bestD) { bestD = d; best = { cx: ocx, cy: ocy }; }
+    }
+  }
+  return best;
+}
+function _issueNarrativeMove(mode) {
+  if (mode === 'attack') _narrativeBtnFlash = 1; else _narrativePullFlash = 1;
+  if (typeof _archerStates !== 'undefined') {
+    for (const k in _archerStates) {
+      if (S.decorations && (S.decorations[k] === 'archer_npc' || S.decorations[k] === 'archer_idle_npc')) {
+        _archerStates[k].forcedSteps = 1 + Math.floor(Math.random() * 3);
+        _archerStates[k].forcedMode = mode;
+      }
+    }
+  }
+  if (typeof _fishStates !== 'undefined') {
+    for (const k in _fishStates) {
+      if (S.decorations && (S.decorations[k] === 'harpoon_fish_npc' || S.decorations[k] === 'harpoon_fish_idle_npc')) {
+        _fishStates[k].forcedSteps = 1 + Math.floor(Math.random() * 3);
+        _fishStates[k].forcedMode = mode;
+      }
+    }
+  }
+}
+function _issueNarrativeAttack()   { _issueNarrativeMove('attack'); }
+function _issueNarrativePullback() { _issueNarrativeMove('retreat'); }
+function _drawNarrativeButtons() {
+  const w = 120, h = 40, gap = 8;
+  const x1 = 16, y = canvas.height - h - 16;
+  const x2 = x1 + w + gap;
+  _narrativeBtnBounds     = { x: x1, y, w, h };
+  _narrativePullBtnBounds = { x: x2, y, w, h };
+  const drawBtn = (bx, label, flash, baseCol, hoverCol) => {
+    const hv = (typeof _canvasMx === 'number') && _canvasMx >= bx && _canvasMx <= bx + w && _canvasMy >= y && _canvasMy <= y + h;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx + 2, y + 3, w, h);
+    ctx.fillStyle = flash > 0 ? '#ffaa44' : (hv ? hoverCol : baseCol);
+    ctx.fillRect(bx, y, w, h);
+    ctx.strokeStyle = '#2a0a05'; ctx.lineWidth = 2;
+    ctx.strokeRect(bx + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeText(label, bx + w / 2, y + h / 2 + 1);
+    ctx.fillText(label, bx + w / 2, y + h / 2 + 1);
+  };
+  ctx.save();
+  drawBtn(x1, '\u2694 ATTACK',   _narrativeBtnFlash,  '#9c3a1a', '#c65a3a');
+  drawBtn(x2, '\u21A9 PULLBACK', _narrativePullFlash, '#1a4a8c', '#3a6abc');
+  ctx.restore();
+  if (_narrativeBtnFlash > 0) _narrativeBtnFlash = Math.max(0, _narrativeBtnFlash - 0.04);
+  if (_narrativePullFlash > 0) _narrativePullFlash = Math.max(0, _narrativePullFlash - 0.04);
+}
+// Generic forced-step helper — nudge NPC vieną žingsnį link / tolyn nuo priešo
+function _npcForcedStep(st, key, now) {
+  if (!st.forcedSteps || st.forcedSteps <= 0) return false;
+  if (st.state !== 'idle') return false;
+  const retreat = st.forcedMode === 'retreat';
+  const target = _findNearestEnemyCell(st.cx, st.cy);
+  if (!target) { st.forcedSteps = 0; return false; }
+  const rawDx = target.cx - st.cx, rawDy = target.cy - st.cy;
+  const adx = Math.abs(rawDx), ady = Math.abs(rawDy);
+  if (!retreat && adx + ady <= 2) { st.forcedSteps = 0; return false; } // attack: pakankamai arti
+  if (retreat && adx + ady >= 12) { st.forcedSteps = 0; return false; }  // retreat: pakankamai toli
+  const sign = retreat ? -1 : 1;
+  const dx = rawDx * sign, dy = rawDy * sign;
+  let sdx = 0, sdy = 0;
+  if (adx >= ady) sdx = Math.sign(dx); else sdy = Math.sign(dy);
+  const tries = [[sdx, sdy]];
+  if (sdx !== 0) tries.push([0, 1], [0, -1]);
+  if (sdy !== 0) tries.push([1, 0], [-1, 0]);
+  for (const [dxT, dyT] of tries) {
+    if (dxT === 0 && dyT === 0) continue;
+    const nx = st.cx + dxT, ny = st.cy + dyT;
+    if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+    if (typeof isWall === 'function' && isWall(nx, ny)) continue;
+    if (S.decorations && S.decorations[nx + ',' + ny]) continue;
+    if (_npcTooClose(nx, ny, key)) continue;
+    st.walkSrcX = st.wx; st.walkSrcY = st.wy;
+    st.walkDstX = nx * CELL + CELL / 2; st.walkDstY = ny * CELL + CELL / 2;
+    st.walkDstCX = nx; st.walkDstCY = ny; st.walkStart = now;
+    st.facingRight = rawDx >= 0; // facing link priešo net jei retreat'ina
+    st.anchorCX = nx; st.anchorCY = ny; // perkeliam „namus" — wander'insis aplink naują vietą
+    st.state = 'walk'; st.frame = 0; st.lastFrameAt = now;
+    st.forcedSteps--;
+    return true;
+  }
+  st.forcedSteps--; // užblokuotas — vis tiek sumažinti
+  return false;
+}
+
+const _NPC_MIN_DIST = 3; // Manhattan min distance tarp šaudančių NPC — kad arrows nepralekėtų per arti
+function _npcCellPos(k, decType) {
+  if (decType === 'red_archer_npc' && typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) return [_redArcherStates[k].cx, _redArcherStates[k].cy];
+  if ((decType === 'archer_npc' || decType === 'archer_idle_npc') && typeof _archerStates !== 'undefined' && _archerStates[k]) return [_archerStates[k].cx, _archerStates[k].cy];
+  if ((decType === 'harpoon_fish_npc' || decType === 'harpoon_fish_idle_npc') && typeof _fishStates !== 'undefined' && _fishStates[k]) return [_fishStates[k].cx, _fishStates[k].cy];
+  const [r, c] = k.split(',').map(Number); return [c, r];
+}
+function _npcTooClose(cx, cy, excludeKey) {
+  if (!S.decorations) return false;
+  const TYPES = ['archer_npc','archer_idle_npc','red_archer_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
+  for (const [k, v] of Object.entries(S.decorations)) {
+    if (k === excludeKey) continue;
+    if (!TYPES.includes(v)) continue;
+    const [ocx, ocy] = _npcCellPos(k, v);
+    if (Math.abs(ocx - cx) + Math.abs(ocy - cy) < _NPC_MIN_DIST) return true;
+  }
+  return false;
 }
 
 function _updateAndDrawArchers(decKeys) {
@@ -7105,8 +7807,10 @@ function _updateAndDrawArchers(decKeys) {
         st.frame = (st.frame + steps) % anim.frames;
         st.lastFrameAt += steps * anim.ms;
       }
+      // Narrative ATTACK — priverstinis žingsnis link priešo
+      if (_npcForcedStep(st, key, now)) { /* stepped */ }
       // Decide next action
-      if (now >= st.nextActionAt) {
+      else if (now >= st.nextActionAt) {
         if (now >= st.nextShootAt) {
           const _dir = _findShootDirFriendly(st.cx, st.cy, 10);
           if (_dir === null) {
@@ -7114,7 +7818,7 @@ function _updateAndDrawArchers(decKeys) {
             st.nextActionAt = now + 400  + Math.random() * 600;
           } else {
           st.facingRight = _dir;
-          st.shootSpeed = 160 + Math.random() * 260; // 160–420 px/s → short to long range
+          st.shootSpeed = 180 + Math.random() * 240; // 180–420 px/s → min ~4 cells
           st.state = 'shoot';
           st.frame = 0;
           st.lastFrameAt = now;
@@ -7126,7 +7830,9 @@ function _updateAndDrawArchers(decKeys) {
           const valid = dirs.filter(d => {
             const nx = st.cx + d.dx, ny = st.cy + d.dy;
             if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) return false;
-            return Math.abs(nx - st.anchorCX) + Math.abs(ny - st.anchorCY) <= WANDER_CELLS;
+            if (Math.abs(nx - st.anchorCX) + Math.abs(ny - st.anchorCY) > WANDER_CELLS) return false;
+            if (_npcTooClose(nx, ny, key)) return false;
+            return true;
           });
           if (valid.length > 0) {
             const d = valid[Math.floor(Math.random() * valid.length)];
@@ -7168,9 +7874,13 @@ function _updateAndDrawArchers(decKeys) {
         ctx.drawImage(aImg, frameIdx * 192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
       }
     }
-    if (st.hitFlash > 0) {
-      ctx.save(); ctx.globalAlpha = st.hitFlash * 0.55; ctx.fillStyle = '#aaddff';
-      ctx.fillRect(px, py, DRAW_W, DRAW_H); ctx.restore();
+    if (st.hitFlash > 0 && aImg.complete && aImg.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = st.hitFlash * 0.8;
+      ctx.filter = 'brightness(0) invert(1)';
+      if (!st.facingRight) { ctx.scale(-1,1); ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, -px-DRAW_W, py, DRAW_W, DRAW_H); }
+      else ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
+      ctx.restore();
       st.hitFlash = Math.max(0, st.hitFlash - 0.07);
     }
     _drawNpcHpBar(st.wx, py, st.hp, st.maxHp, st.hitFlash);
@@ -7342,8 +8052,157 @@ function _updateAndDrawArchers(decKeys) {
   }
 }
 
+// ═════ Hunter red archers — 2 pastoviai keliauja link ronke2 ═════
+const _HUNTER_COUNT = 2;
+const _HUNTER_RESPAWN_MS = 3000;
+let _hunterSpawnCheckAt = 0;
+function _spawnHunterArcher() {
+  if (!S.decorations) S.decorations = {};
+  const hero = S.units && S.units.find(u => u.team === 0 && u.alive);
+  if (!hero) return false;
+  for (let tries = 0; tries < 120; tries++) {
+    const edge = Math.floor(Math.random() * 4);
+    let r, c;
+    if (edge === 0) { r = 0; c = Math.floor(Math.random() * COLS); }
+    else if (edge === 1) { r = ROWS - 1; c = Math.floor(Math.random() * COLS); }
+    else if (edge === 2) { c = 0; r = Math.floor(Math.random() * ROWS); }
+    else { c = COLS - 1; r = Math.floor(Math.random() * ROWS); }
+    if (r < 0 || c < 0) continue;
+    const key = r + ',' + c;
+    if (S.decorations[key]) continue;
+    if (typeof isWall === 'function' && isWall(c, r)) continue;
+    if (Math.abs(hero.x - c) + Math.abs(hero.y - r) < 8) continue;
+    S.decorations[key] = 'red_archer_npc';
+    const anchorX = c * CELL + CELL / 2, anchorY = r * CELL + CELL / 2;
+    const now = performance.now();
+    _redArcherStates[key] = {
+      state: 'idle', frame: 0, lastFrameAt: now, arrowFired: false, arrows: [],
+      cx: c, cy: r, anchorCX: c, anchorCY: r,
+      wx: anchorX, wy: anchorY,
+      walkSrcX: anchorX, walkSrcY: anchorY,
+      walkDstX: anchorX, walkDstY: anchorY,
+      walkDstCX: c, walkDstCY: r, walkStart: 0,
+      nextActionAt: now + 400,
+      nextShootAt: now + 800,
+      facingRight: true, shootSpeed: 280,
+      hp: 8, maxHp: 8, hitFlash: 0,
+      hunter: true,
+    };
+    return true;
+  }
+  return false;
+}
+function _tickHunterSpawns(now) {
+  if (now < _hunterSpawnCheckAt) return;
+  _hunterSpawnCheckAt = now + 800;
+  let hunters = 0;
+  for (const k in _redArcherStates) {
+    if (S.decorations && S.decorations[k] === 'red_archer_npc' && _redArcherStates[k].hunter) hunters++;
+  }
+  while (hunters < _HUNTER_COUNT) {
+    if (!_spawnHunterArcher()) break;
+    hunters++;
+  }
+}
+function _findHunterTarget(st) {
+  const TYPES = ['archer_npc','archer_idle_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
+  let best = null, bestD = 999;
+  if (S.decorations) {
+    for (const [k, v] of Object.entries(S.decorations)) {
+      if (!TYPES.includes(v)) continue;
+      const [ocx, ocy] = _npcCellPos(k, v);
+      const d = Math.abs(ocx - st.cx) + Math.abs(ocy - st.cy);
+      if (d < bestD) { bestD = d; best = { cx: ocx, cy: ocy, type: v }; }
+    }
+  }
+  if (best && bestD <= 10) return best;
+  const hero = S.units && S.units.find(u => u.team === 0 && u.alive);
+  if (hero) return { cx: hero.x, cy: hero.y, type: 'hero' };
+  return null;
+}
+function _hunterAct(st, key, now) {
+  const target = _findHunterTarget(st);
+  if (!target) { st.nextActionAt = now + 600; return; }
+  const dx = target.cx - st.cx, dy = target.cy - st.cy;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  const SHOOT_MIN = 4, SHOOT_MAX = 8;
+
+  // Idealus kampas — tos pačios eilės, geras atstumas → šauti
+  if (dy === 0 && adx >= SHOOT_MIN && adx <= SHOOT_MAX) {
+    if (now >= st.nextShootAt) {
+      st.facingRight = dx > 0;
+      st.shootSpeed = 180 + Math.random() * 200; // originalus aklas random
+      st.state = 'shoot'; st.frame = 0; st.lastFrameAt = now; st.arrowFired = false;
+      return;
+    }
+    // Laukia cooldown'o — nebemina arčiau
+    st.nextActionAt = now + 200;
+    st.facingRight = dx > 0;
+    return;
+  }
+  // Per arti — atsitraukti
+  if (dy === 0 && adx > 0 && adx < SHOOT_MIN) {
+    const backDx = -Math.sign(dx);
+    const nx = st.cx + backDx, ny = st.cy;
+    if (nx >= 0 && nx < COLS &&
+        !(typeof isWall === 'function' && isWall(nx, ny)) &&
+        !(S.decorations && S.decorations[nx + ',' + ny]) &&
+        !_npcTooClose(nx, ny, key)) {
+      st.walkSrcX = st.wx; st.walkSrcY = st.wy;
+      st.walkDstX = nx * CELL + CELL / 2; st.walkDstY = ny * CELL + CELL / 2;
+      st.walkDstCX = nx; st.walkDstCY = ny; st.walkStart = now;
+      st.facingRight = dx > 0;
+      st.state = 'walk'; st.frame = 0; st.lastFrameAt = now;
+      return;
+    }
+  }
+
+  // Planuojam žingsnį: pirma taikinio eilutę (Y), tada atstumą X
+  let stepDx = 0, stepDy = 0;
+  if (ady > 0) stepDy = Math.sign(dy);
+  else if (adx > SHOOT_MAX) stepDx = Math.sign(dx);
+  else if (adx < SHOOT_MIN) stepDx = -Math.sign(dx);
+
+  const tries = [[stepDx, stepDy]];
+  if (stepDx !== 0) tries.push([0, 1], [0, -1]);
+  if (stepDy !== 0) tries.push([Math.sign(dx) || 1, 0], [-(Math.sign(dx) || 1), 0]);
+  for (const [dxT, dyT] of tries) {
+    if (dxT === 0 && dyT === 0) continue;
+    const nx = st.cx + dxT, ny = st.cy + dyT;
+    if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+    if (typeof isWall === 'function' && isWall(nx, ny)) continue;
+    if (S.decorations && S.decorations[nx + ',' + ny]) continue;
+    if (_npcTooClose(nx, ny, key)) continue;
+    // Nesileisti per arti herojaus
+    if (target.type === 'hero') {
+      const td = Math.abs(target.cx - nx) + Math.abs(target.cy - ny);
+      if (td < SHOOT_MIN) continue;
+    }
+    st.walkSrcX = st.wx; st.walkSrcY = st.wy;
+    st.walkDstX = nx * CELL + CELL / 2;
+    st.walkDstY = ny * CELL + CELL / 2;
+    st.walkDstCX = nx; st.walkDstCY = ny; st.walkStart = now;
+    st.facingRight = dxT !== 0 ? dxT >= 0 : (dx >= 0);
+    st.state = 'walk'; st.frame = 0; st.lastFrameAt = now;
+    return;
+  }
+  st.nextActionAt = now + 500;
+}
+
 function _updateAndDrawRedArchers(decKeys) {
   const now = performance.now();
+  // Auto hunter spawn IŠJUNGTAS — vartotojas patys dės red_archer_npc per editor
+  // _tickHunterSpawns(now);
+  // Vienkartinis cleanup: išvalom visus hunter-spawned red archers
+  if (!_updateAndDrawRedArchers._hunterCleaned) {
+    for (const k in _redArcherStates) {
+      if (_redArcherStates[k] && _redArcherStates[k].hunter) {
+        if (S.decorations) delete S.decorations[k];
+        delete _redArcherStates[k];
+      }
+    }
+    _updateAndDrawRedArchers._hunterCleaned = true;
+  }
   const DRAW_W = 96, DRAW_H = 96;
   const ARROW_SPEED = 280;
   const ARROW_LIFE  = 1500;
@@ -7415,19 +8274,21 @@ function _updateAndDrawRedArchers(decKeys) {
       const elapsed = now - st.lastFrameAt;
       if (elapsed >= anim.ms) { const steps = Math.floor(elapsed/anim.ms); st.frame=(st.frame+steps)%anim.frames; st.lastFrameAt+=steps*anim.ms; }
       if (now >= st.nextActionAt) {
-        if (now >= st.nextShootAt) {
+        if (st.hunter) {
+          _hunterAct(st, key, now);
+        } else if (now >= st.nextShootAt) {
           const _dir = _findShootDirRed(st.cx, st.cy, 10);
           if (_dir === null) {
             st.nextShootAt  = now + 1500 + Math.random() * 1500;
             st.nextActionAt = now + 400  + Math.random() * 600;
           } else {
           st.facingRight = _dir;
-          st.shootSpeed = 200 + Math.random() * 180;
+          st.shootSpeed = 180 + Math.random() * 200; // 180–380 px/s → min ~4 cells
           st.state='shoot'; st.frame=0; st.lastFrameAt=now; st.arrowFired=false;
           }
         } else {
           const dirs=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
-          const valid=dirs.filter(d=>{const nx=st.cx+d.dx,ny=st.cy+d.dy; return nx>=0&&ny>=0&&nx<COLS&&ny<ROWS&&!isWall(nx,ny)&&Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY)<=WANDER_CELLS;});
+          const valid=dirs.filter(d=>{const nx=st.cx+d.dx,ny=st.cy+d.dy; return nx>=0&&ny>=0&&nx<COLS&&ny<ROWS&&!isWall(nx,ny)&&Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY)<=WANDER_CELLS&&!_npcTooClose(nx,ny,key);});
           if (valid.length>0) {
             const d=valid[Math.floor(Math.random()*valid.length)];
             const ncx=st.cx+d.dx,ncy=st.cy+d.dy;
@@ -7449,9 +8310,13 @@ function _updateAndDrawRedArchers(decKeys) {
       if (!st.facingRight) { ctx.save(); ctx.scale(-1,1); ctx.drawImage(aImg,frameIdx*192,0,192,192,-px-DRAW_W,py,DRAW_W,DRAW_H); ctx.restore(); }
       else ctx.drawImage(aImg,frameIdx*192,0,192,192,px,py,DRAW_W,DRAW_H);
     }
-    if (st.hitFlash > 0) {
-      ctx.save(); ctx.globalAlpha = st.hitFlash * 0.55; ctx.fillStyle = '#ff4444';
-      ctx.fillRect(px, py, DRAW_W, DRAW_H); ctx.restore();
+    if (st.hitFlash > 0 && aImg.complete && aImg.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = st.hitFlash * 0.8;
+      ctx.filter = 'brightness(0) invert(1)';
+      if (!st.facingRight) { ctx.scale(-1,1); ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, -px-DRAW_W, py, DRAW_W, DRAW_H); }
+      else ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
+      ctx.restore();
       st.hitFlash = Math.max(0, st.hitFlash - 0.07);
     }
     _drawNpcHpBar(st.wx, py, st.hp, st.maxHp, st.hitFlash);
@@ -7638,7 +8503,8 @@ function _updateAndDrawFish(decKeys) {
       const anim = _fishAnims.idle;
       const elapsed = now - st.lastFrameAt;
       if (elapsed >= anim.ms) { const steps = Math.floor(elapsed/anim.ms); st.frame = (st.frame+steps)%anim.frames; st.lastFrameAt += steps*anim.ms; }
-      if (now >= st.nextActionAt) {
+      if (_npcForcedStep(st, key, now)) { /* stepped */ }
+      else if (now >= st.nextActionAt) {
         if (now >= st.nextShootAt) {
           const _dir = _findShootDirFriendly(st.cx, st.cy, 10);
           if (_dir === null) {
@@ -7646,7 +8512,7 @@ function _updateAndDrawFish(decKeys) {
             st.nextActionAt = now + 400  + Math.random() * 600;
           } else {
           st.facingRight = _dir;
-          st.shootSpeed  = 250 + Math.random() * 200;
+          st.shootSpeed  = 140 + Math.random() * 310; // 140–450 px/s → min ~3 cells
           st.state = 'shoot'; st.frame = 0; st.lastFrameAt = now; st.arrowFired = false;
           }
         } else if (!isStationary) {
@@ -7655,7 +8521,9 @@ function _updateAndDrawFish(decKeys) {
             const nx=st.cx+d.dx, ny=st.cy+d.dy;
             if (nx<0||ny<0||nx>=COLS||ny>=ROWS) return false;
             if (isWall(nx, ny)) return false;
-            return Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY) <= WANDER_CELLS;
+            if (Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY) > WANDER_CELLS) return false;
+            if (_npcTooClose(nx, ny, key)) return false;
+            return true;
           });
           if (valid.length > 0) {
             const d = valid[Math.floor(Math.random()*valid.length)];
@@ -7684,9 +8552,13 @@ function _updateAndDrawFish(decKeys) {
         ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
       }
     }
-    if (st.hitFlash > 0) {
-      ctx.save(); ctx.globalAlpha = st.hitFlash * 0.55; ctx.fillStyle = '#00eeff';
-      ctx.fillRect(px, py, DRAW_W, DRAW_H); ctx.restore();
+    if (st.hitFlash > 0 && aImg.complete && aImg.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = st.hitFlash * 0.8;
+      ctx.filter = 'brightness(0) invert(1)';
+      if (!st.facingRight) { ctx.scale(-1,1); ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, -px-DRAW_W, py, DRAW_W, DRAW_H); }
+      else ctx.drawImage(aImg, frameIdx*192, 0, 192, 192, px, py, DRAW_W, DRAW_H);
+      ctx.restore();
       st.hitFlash = Math.max(0, st.hitFlash - 0.07);
     }
     _drawNpcHpBar(st.wx, py, st.hp, st.maxHp, st.hitFlash);
@@ -7880,37 +8752,49 @@ function drawForegroundDecorations() {
     if (name === 'Castle') {
       _castleBounds = { x: bx, y: by, w: bw, h: bh };
     }
-    // House3/Castle hover — draw outline BEFORE sprite so only kontūras išlieka matomas.
-    // Kai popup atidarytas, outline neberodomas (ir UX aiškesnis, ir išvengiama 8× filter-drawImage cost per frame).
-    const _hoverable = (name === 'House3' || name === 'Castle') && !_housePopupOpen && !_stonePopupOpen;
-    const _hov3 = _hoverable &&
-                  _canvasMx >= bx && _canvasMx <= bx + bw &&
-                  _canvasMy >= by && _canvasMy <= by + bh;
-    if (_hov3) {
-      ctx.save();
-      ctx.filter = 'brightness(0) invert(1)'; // baltas sprite'o silueto kopijos
-      const OL = 2;
-      const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
-      for (const [dx, dy] of offs) {
-        if (_bsx !== 1 || _bsy !== 1) {
-          ctx.save();
-          ctx.translate(bx + bw / 2 + dx, by + bh + dy); ctx.scale(_bsx, _bsy);
-          ctx.drawImage(img, -bw / 2, -bh, bw, bh);
-          ctx.restore();
-        } else {
-          ctx.drawImage(img, bx + dx, by + dy, bw, bh);
-        }
-      }
-      ctx.restore();
+    if (name === 'Barracks') {
+      _barracksBounds = { x: bx, y: by, w: bw, h: bh };
     }
-    if (_bsx !== 1 || _bsy !== 1) {
-      const _cxb = bx + bw / 2, _cyb = by + bh; // scale from bottom-centre
-      ctx.save();
-      ctx.translate(_cxb, _cyb); ctx.scale(_bsx, _bsy);
-      ctx.drawImage(img, -bw / 2, -bh, bw, bh);
-      ctx.restore();
+    // Primary House3 statybos overlay (po ubgreido) — scaffold + plaktukas + bar + speed-up
+    const _primaryConstructing = name === 'House3' &&
+      _drawConstructionOverlay(_primaryConstruction, c, r, 0, img, performance.now());
+    if (_primaryConstructing) {
+      // Naudojam construction bounds click detection'ui (kad užvedus pelę nebutų rodomas house hover,
+      // o click atidarytų speed-up popup — tvarkoma click handler'yje)
+      _house3Bounds = _primaryConstruction.houseBounds;
     } else {
-      ctx.drawImage(img, bx, by, bw, bh);
+      // House3/Castle hover — draw outline BEFORE sprite so only kontūras išlieka matomas.
+      // Kai popup atidarytas, outline neberodomas (ir UX aiškesnis, ir išvengiama 8× filter-drawImage cost per frame).
+      const _hoverable = (name === 'House3' || name === 'Castle' || name === 'Barracks') && !_housePopupOpen && !_stonePopupOpen;
+      const _hov3 = _hoverable &&
+                    _worldMx >= bx && _worldMx <= bx + bw &&
+                    _worldMy >= by && _worldMy <= by + bh;
+      if (_hov3) {
+        ctx.save();
+        ctx.filter = 'brightness(0) invert(1)'; // baltas sprite'o silueto kopijos
+        const OL = 2;
+        const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+        for (const [dx, dy] of offs) {
+          if (_bsx !== 1 || _bsy !== 1) {
+            ctx.save();
+            ctx.translate(bx + bw / 2 + dx, by + bh + dy); ctx.scale(_bsx, _bsy);
+            ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+            ctx.restore();
+          } else {
+            ctx.drawImage(img, bx + dx, by + dy, bw, bh);
+          }
+        }
+        ctx.restore();
+      }
+      if (_bsx !== 1 || _bsy !== 1) {
+        const _cxb = bx + bw / 2, _cyb = by + bh; // scale from bottom-centre
+        ctx.save();
+        ctx.translate(_cxb, _cyb); ctx.scale(_bsx, _bsy);
+        ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+        ctx.restore();
+      } else {
+        ctx.drawImage(img, bx, by, bw, bh);
+      }
     }
     // Ronke balance counter above House3 — styled like HP bar
     if (name === 'House3') {
@@ -7943,8 +8827,8 @@ function drawForegroundDecorations() {
       }
       // Saugoti bar ribas hover tooltip tikrinimui
       _ronkeBarBounds = { x: barX, y: barY, w: barW, h: barH };
-      const _hovering = _canvasMx >= barX && _canvasMx <= barX + barW &&
-                        _canvasMy >= barY && _canvasMy <= barY + barH;
+      const _hovering = _worldMx >= barX && _worldMx <= barX + barW &&
+                        _worldMy >= barY && _worldMy <= barY + barH;
       // Text centred on bar — kai hover rodomas tooltip, balance paslėptas
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
@@ -8021,8 +8905,8 @@ function drawForegroundDecorations() {
       const sy = py_ + CELL - gsz + 20;
       // Saugoti akmens ribas click detection'ui (pirmasis akmuo)
       if (!_stoneBounds) _stoneBounds = { x: sx, y: sy, w: gsz, h: gsz };
-      const hov = _canvasMx >= sx && _canvasMx <= sx + gsz &&
-                  _canvasMy >= sy && _canvasMy <= sy + gsz;
+      const hov = _worldMx >= sx && _worldMx <= sx + gsz &&
+                  _worldMy >= sy && _worldMy <= sy + gsz;
       if (!hov || _stonePopupOpen) continue;
       const gFrame = def.frames > 1
         ? Math.floor(performance.now() / (1000 / def.fps)) % def.frames
@@ -8040,25 +8924,52 @@ function drawForegroundDecorations() {
     }
   }
 
+  // Auto-close popup'us, kurių anchor'as nebematomas (pvz. nubeganti kamera) —
+  // antraip popup prilimpa ant viewport'o krašto ir praranda ryšį su objektu.
+  if (_housePopupOpen && !_anchorVisibleWorld(_house3Bounds)) _housePopupOpen = false;
+  if (_stonePopupOpen && !_anchorVisibleWorld(_stoneBounds)) _stonePopupOpen = false;
+  if (_castlePopupOpen && !_anchorVisibleWorld(_castleBounds)) _castlePopupOpen = false;
+  if (_barracksPopupOpen && !_anchorVisibleWorld(_barracksBounds)) _barracksPopupOpen = false;
+  if (_ronkePopupOpen && !_anchorVisibleWorld(_ronkeHeroBounds)) _ronkePopupOpen = false;
+  if (_primaryConstruction.speedUpPopupOpen && !_anchorVisibleWorld(_primaryConstruction.houseBounds)) {
+    _primaryConstruction.speedUpPopupOpen = false;
+  }
+  for (const mine of _extraMines) {
+    if (mine.housePopupOpen && !_anchorVisibleWorld(mine.houseBounds)) mine.housePopupOpen = false;
+    if (mine.stonePopupOpen && !_anchorVisibleWorld(mine.stoneBounds)) mine.stonePopupOpen = false;
+    if (mine.speedUpPopupOpen && !_anchorVisibleWorld(mine.houseBounds)) mine.speedUpPopupOpen = false;
+  }
+
   // House3 Upgrade popup (primary) — naudoja bendrą helper'į
   if (_housePopupOpen && _house3Bounds) {
-    _upgradeBtnBounds = _drawHouseUpgradePopup(_house3Bounds, _houseLevel);
+    const _primConst = _primaryConstruction.constructionStart > 0 &&
+      ((performance.now() - _primaryConstruction.constructionStart) < _CONSTRUCTION_MS ||
+       _primaryConstruction.speedUpAnim);
+    _upgradeBtnBounds = _drawHouseUpgradePopup(_house3Bounds, _houseLevel, _primConst);
   } else {
     _upgradeBtnBounds = null;
   }
-  // Ronke2 hero idle toggle popup
-  if (_ronkePopupOpen && _ronkeHeroBounds) {
-    const _rp = _drawRonkeIdlePopup(_ronkeHeroBounds);
-    _ronkeIdleBtnBounds = _rp.btn;
-    _ronkeCloseBtnBounds = _rp.close;
+  // Primary House3 construction info popup (po ubgreido)
+  if (_primaryConstruction.speedUpPopupOpen && _primaryConstruction.houseBounds) {
+    const _sp = _drawConstructionInfoPopup(_primaryConstruction.houseBounds, _primaryConstruction, performance.now());
+    _primaryConstruction.speedUpPopupBtnBounds = _sp.btn;
+    _primaryConstruction.speedUpPopupCloseBounds = _sp.close;
   } else {
-    _ronkeIdleBtnBounds = null;
-    _ronkeCloseBtnBounds = null;
+    _primaryConstruction.speedUpPopupBtnBounds = null;
+    _primaryConstruction.speedUpPopupCloseBounds = null;
+  }
+  // Ronke2 hero radial menu (EVE-style)
+  if (_ronkePopupOpen && _ronkeHeroBounds) {
+    _ronkeRadialMenu = _drawRonkeRadialMenu(_ronkeHeroBounds);
+  } else {
+    _ronkeRadialMenu = null;
   }
   // Extra mines upgrade popups
   for (const mine of _extraMines) {
     if (mine.housePopupOpen && mine.houseBounds) {
-      mine.houseBtnBounds = _drawHouseUpgradePopup(mine.houseBounds, mine.houseLevel || 1);
+      const _mConst = mine.constructionStart > 0 &&
+        ((performance.now() - mine.constructionStart) < _CONSTRUCTION_MS || mine.speedUpAnim);
+      mine.houseBtnBounds = _drawHouseUpgradePopup(mine.houseBounds, mine.houseLevel || 1, _mConst);
     } else {
       mine.houseBtnBounds = null;
     }
@@ -8066,6 +8977,14 @@ function drawForegroundDecorations() {
       mine.stoneBtnBounds = _drawStoneUpgradePopup(mine.stoneBounds, mine.level || 1, 1.5);
     } else {
       mine.stoneBtnBounds = null;
+    }
+    if (mine.speedUpPopupOpen && mine.houseBounds) {
+      const _sp = _drawConstructionInfoPopup(mine.houseBounds, mine, performance.now());
+      mine.speedUpPopupBtnBounds = _sp.btn;
+      mine.speedUpPopupCloseBounds = _sp.close;
+    } else {
+      mine.speedUpPopupBtnBounds = null;
+      mine.speedUpPopupCloseBounds = null;
     }
   }
 
@@ -8077,12 +8996,143 @@ function drawForegroundDecorations() {
   }
   // Castle upgrade popup — paspaudus Build pridedamas naujas kasimo setupas
   if (_castlePopupOpen && _castleBounds) {
-    const pw = 210, ph = 148, rad = 9;
+    const mineCount = _extraMines.length;
+    const CASTLE_COST = 1;
+    const pw = 148;
+    const headerH = 24;
+    const ph = 108;
+    const rad = 6;
     let px = Math.round(_castleBounds.x + _castleBounds.w / 2 - pw / 2);
     let py = Math.round(_castleBounds.y - ph - 14);
     const PAD = 6;
-    px = Math.max(PAD, Math.min(canvas.width  - pw - PAD, px));
-    py = Math.max(PAD, Math.min(canvas.height - ph - PAD, py));
+    const v = _getVisibleWorldRect();
+    px = Math.max(v.x + PAD, Math.min(v.x + v.w - pw - PAD, px));
+    py = Math.max(v.y + PAD, Math.min(v.y + v.h - ph - PAD, py));
+    ctx.save();
+    const rr = (x, y, w, h, r) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y,     x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x,     y + h, r);
+      ctx.arcTo(x,     y + h, x,     y,     r);
+      ctx.arcTo(x,     y,     x + w, y,     r);
+      ctx.closePath();
+    };
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    rr(px + 2, py + 4, pw, ph, rad); ctx.fill();
+    // Panel bg
+    ctx.fillStyle = '#1a1410';
+    rr(px, py, pw, ph, rad); ctx.fill();
+    // Header
+    ctx.save();
+    rr(px, py, pw, ph, rad); ctx.clip();
+    ctx.fillStyle = '#b08a2e';
+    ctx.fillRect(px, py, pw, headerH);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(px, py + headerH - 2, pw, 2);
+    ctx.restore();
+    // Border
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffe97a';
+    rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
+    ctx.stroke();
+    // Title
+    ctx.fillStyle = '#1a1506';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('CASTLE \u2014 BUILD MINE', px + pw / 2, py + headerH / 2);
+    // MINES stat row
+    const statX = px + 10;
+    const statR = px + pw - 10;
+    let rowY = py + headerH + 12;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#8a92a0';
+    ctx.fillText('MINES', statX, rowY);
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'right';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    const minesStr = mineCount + ' \u2192 ' + (mineCount + 1);
+    ctx.fillStyle = '#7effa0';
+    ctx.strokeText(minesStr, statR, rowY);
+    ctx.fillText(minesStr, statR, rowY);
+    // Cost row (centered)
+    const iconSz = 16, gapC = 5;
+    const costLabel = String(CASTLE_COST);
+    ctx.font = 'bold 12px monospace';
+    const costW = ctx.measureText(costLabel).width;
+    const rowW = iconSz + gapC + costW;
+    const rowX = px + pw / 2 - rowW / 2;
+    const rowCY = rowY + 16;
+    const fr = Math.floor(performance.now() / 90) % 8;
+    const thumb = _getRonkeCoinThumb(iconSz, fr);
+    if (thumb) ctx.drawImage(thumb, rowX, rowCY);
+    const canAfford = _ronkeBalance >= CASTLE_COST;
+    ctx.fillStyle = canAfford ? '#ffe066' : '#d48a8a';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeText(costLabel, rowX + iconSz + gapC, rowCY + iconSz / 2);
+    ctx.fillText(costLabel, rowX + iconSz + gapC, rowCY + iconSz / 2);
+    // Build mygtukas
+    const bw2 = 112, bh2 = 22;
+    const bxU = px + pw / 2 - bw2 / 2;
+    const byU = py + ph - bh2 - 7;
+    const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 &&
+                     _worldMy >= byU && _worldMy <= byU + bh2;
+    ctx.fillStyle = !canAfford ? '#2d3a2d' : (hoverBtn ? '#6ec56e' : '#4e9e4e');
+    rr(bxU, byU, bw2, bh2, 5); ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = !canAfford ? '#5a6e5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
+    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
+    ctx.fillStyle = canAfford ? '#fff' : '#aaa';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    ctx.fillText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    // Close X
+    const cxSz = 12;
+    const cxX = px + pw - cxSz - 5;
+    const cxY = py + 6;
+    const hovX = _worldMx >= cxX && _worldMx <= cxX + cxSz &&
+                 _worldMy >= cxY && _worldMy <= cxY + cxSz;
+    ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.3)';
+    rr(cxX, cxY, cxSz, cxSz, 2); ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cxX + 3, cxY + 3); ctx.lineTo(cxX + cxSz - 3, cxY + cxSz - 3);
+    ctx.moveTo(cxX + cxSz - 3, cxY + 3); ctx.lineTo(cxX + 3, cxY + cxSz - 3);
+    ctx.stroke();
+
+    ctx.restore();
+    _castleBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+  } else {
+    _castleBtnBounds = null;
+  }
+
+  // ─── Barracks popup: 4x4 avatarų grid + cost + PRODUCE mygtukas ──────────
+  if (_barracksPopupOpen && _barracksBounds) {
+    const COLS_ = 4, ROWS_ = 4, CELL_SZ = 42, GAP = 4, PAD_X = 10, PAD_TOP = 34, PAD_BOT = 130;
+    const gridW = COLS_ * CELL_SZ + (COLS_ - 1) * GAP;
+    const gridH = ROWS_ * CELL_SZ + (ROWS_ - 1) * GAP;
+    const pw = gridW + PAD_X * 2;
+    const ph = gridH + PAD_TOP + PAD_BOT;
+    const rad = 7;
+    let px = Math.round(_barracksBounds.x + _barracksBounds.w / 2 - pw / 2);
+    let py = Math.round(_barracksBounds.y - ph - 14);
+    const PAD_S = 6;
+    const v = _getVisibleWorldRect();
+    px = Math.max(v.x + PAD_S, Math.min(v.x + v.w - pw - PAD_S, px));
+    py = Math.max(v.y + PAD_S, Math.min(v.y + v.h - ph - PAD_S, py));
     ctx.save();
     const rr = (x, y, w, h, r) => {
       ctx.beginPath();
@@ -8095,101 +9145,546 @@ function drawForegroundDecorations() {
     };
     // Šešėlis + panel
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    rr(px + 4, py + 5, pw, ph, rad); ctx.fill();
+    rr(px + 3, py + 4, pw, ph, rad); ctx.fill();
     ctx.fillStyle = '#1f242f';
     rr(px, py, pw, ph, rad); ctx.fill();
-    // Header
+    // Header juosta
     ctx.save();
     rr(px, py, pw, ph, rad); ctx.clip();
-    ctx.fillStyle = '#b08a2e';
-    ctx.fillRect(px, py, pw, 34);
+    ctx.fillStyle = '#7a2e2e';
+    ctx.fillRect(px, py, pw, 26);
     ctx.restore();
     // Rėmas
     ctx.lineWidth = 2;
-    ctx.strokeStyle = '#ffe97a';
+    ctx.strokeStyle = '#ffb07a';
     rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
     ctx.stroke();
-
-    const mineCount = _extraMines.length;
-    ctx.fillStyle = '#1a1506';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('CASTLE', px + pw / 2, py + 17);
-
-    // Info: how many mines built
-    ctx.fillStyle = '#cfd4dc';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText('Extra mines: ' + mineCount + '  \u2192  ' + (mineCount + 1), px + pw / 2, py + 48);
-
-    // Divider
-    ctx.strokeStyle = 'rgba(255,233,122,0.25)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(px + 16, py + 62); ctx.lineTo(px + pw - 16, py + 62); ctx.stroke();
-
-    // Cost row
-    const CASTLE_COST = 1;
-    const costLabel = String(CASTLE_COST);
-    ctx.font = 'bold 14px monospace';
-    const costW = ctx.measureText(costLabel).width;
-    const iconSz = 26, gap = 8;
-    const rowW = iconSz + gap + costW;
-    const rowX = px + pw / 2 - rowW / 2;
-    const rowY = py + 72;
+    // Pavadinimas: „BARRACKS" arba „BARRACKS — SKULL" jei pasirinkta
     {
-      const fr = Math.floor(performance.now() / 90) % 8;
-      const thumb = _getRonkeCoinThumb(iconSz, fr);
-      if (thumb) ctx.drawImage(thumb, rowX, rowY);
+      const _selType = _barracksSelectedIdx !== null ? _BARRACKS_UNIT_TYPES[_barracksSelectedIdx] : null;
+      const _selInfo = _selType ? _getBarracksUnitInfo(_barracksSelectedIdx) : null;
+      const _header = _selInfo ? `BARRACKS — ${_selInfo.label.toUpperCase()}` : 'BARRACKS';
+      ctx.fillStyle = '#1a0606';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(_header, px + pw / 2, py + 13);
     }
-    const canAfford = _ronkeBalance >= CASTLE_COST;
-    ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(costLabel, rowX + iconSz + gap, rowY + iconSz / 2);
 
-    // Build mygtukas
-    const bw2 = 150, bh2 = 32;
-    const bxU = px + pw / 2 - bw2 / 2;
-    const byU = py + ph - bh2 - 10;
-    const hoverBtn = _canvasMx >= bxU && _canvasMx <= bxU + bw2 &&
-                     _canvasMy >= byU && _canvasMy <= byU + bh2;
-    ctx.fillStyle = !canAfford ? '#452a2a'
-                    : hoverBtn  ? '#6ec56e'
-                                : '#4e9e4e';
-    rr(bxU, byU, bw2, bh2, 6); ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = !canAfford ? '#8a5a5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
-    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 6); ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 13px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.strokeText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-    ctx.fillText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+    // Avatarų grid
+    _barracksAvatarRects = [];
+    const gx0 = px + PAD_X;
+    const gy0 = py + PAD_TOP;
+    for (let idx = 0; idx < 16; idx++) {
+      const r = Math.floor(idx / COLS_), c = idx % COLS_;
+      const ax = gx0 + c * (CELL_SZ + GAP);
+      const ay = gy0 + r * (CELL_SZ + GAP);
+      const locked = !_BARRACKS_UNIT_TYPES[idx];
+      const hov = !locked && _worldMx >= ax && _worldMx <= ax + CELL_SZ &&
+                  _worldMy >= ay && _worldMy <= ay + CELL_SZ;
+      const sel = _barracksSelectedIdx === idx;
+      // Fono plokštelė
+      ctx.fillStyle = sel ? '#3a5a3a' : (hov ? '#2f3848' : '#141821');
+      rr(ax, ay, CELL_SZ, CELL_SZ, 4); ctx.fill();
+      // Avatar sprite
+      const aimg = _barracksAvatarImgs[idx];
+      if (aimg && aimg.complete && aimg.naturalWidth > 0) {
+        const inset = 3;
+        if (locked) ctx.globalAlpha = 0.55;
+        ctx.drawImage(aimg, ax + inset, ay + inset, CELL_SZ - inset * 2, CELL_SZ - inset * 2);
+        if (locked) ctx.globalAlpha = 1;
+      }
+      // Užblokuotas avataras: mažas lock badge dešiniam apačios kampe (avataras lieka matomas)
+      if (locked) {
+        // Lengvas pilkas tint'as — rodo, kad neaktyvus, bet avataras lieka įskaitomas
+        ctx.fillStyle = 'rgba(20,24,33,0.25)';
+        rr(ax, ay, CELL_SZ, CELL_SZ, 4); ctx.fill();
+        // Mini lock badge apatiniam dešiniam kampe
+        const bSz = 13;
+        const bx = ax + CELL_SZ - bSz - 2;
+        const by = ay + CELL_SZ - bSz - 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        rr(bx, by, bSz, bSz, 3); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1;
+        rr(bx + 0.5, by + 0.5, bSz - 1, bSz - 1, 3); ctx.stroke();
+        // Maža spynutė badge viduje
+        const lcx = bx + bSz / 2;
+        const lcy = by + bSz / 2 + 0.5;
+        ctx.strokeStyle = '#d0b060';
+        ctx.lineWidth = 1.2;
+        // Shackle
+        ctx.beginPath();
+        ctx.arc(lcx, lcy - 2, 2.2, Math.PI, 0, false);
+        ctx.stroke();
+        // Body
+        ctx.fillStyle = '#d0b060';
+        ctx.fillRect(lcx - 3, lcy - 1, 6, 5);
+        // Keyhole
+        ctx.fillStyle = '#000';
+        ctx.fillRect(lcx - 0.5, lcy + 0.5, 1, 2);
+      }
+      // Pasirinkto rėmas + hover rėmas
+      if (sel) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#6eff6e';
+        rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
+      } else if (hov) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ffe97a';
+        rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
+      } else {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
+      }
+      _barracksAvatarRects.push({ x: ax, y: ay, w: CELL_SZ, h: CELL_SZ, idx, locked });
+    }
+
+    // Cost row + Produce mygtukas (arba progress bar jeigu gamyba vyksta)
+    const bottomY = gy0 + gridH + 10;
+    if (_barracksProduction && performance.now() - _barracksProduction.startAt >= _BARRACKS_PRODUCE_MS) {
+      const _finIdx = _barracksProduction.unitIdx;
+      const _finQueue = (_barracksProduction.queueLeft || 0);
+      const _finSuLeft = (_barracksProduction.speedUpQueueLeft || 0);
+      _barracksSpawnTrained(_finIdx);
+      _barracksProduction = null;
+      if (_finQueue > 0 && _ronkeBalance >= _BARRACKS_UNIT_COST) {
+        _ronkeBalance -= _BARRACKS_UNIT_COST;
+        _barracksProduction = { unitIdx: _finIdx, startAt: performance.now(), queueLeft: _finQueue - 1, speedUpQueueLeft: Math.max(0, _finSuLeft) };
+        // Auto-apply kitą speed-up iš queue (jei dar yra)
+        if (_finSuLeft > 0) {
+          _barracksProduction.speedUpQueueLeft = _finSuLeft - 1;
+          const _nowSu = performance.now();
+          _barracksSpeedUpAnim = {
+            startMs: _nowSu,
+            durMs: Math.max(120, _BARRACKS_PRODUCE_MS / 10),
+            srcElapsed: 0,
+            dstElapsed: _BARRACKS_PRODUCE_MS,
+          };
+        }
+      }
+    }
+    if (_barracksProduction) {
+      _barracksQtyMinusBtnBounds = null;
+      _barracksQtyPlusBtnBounds = null;
+      _barracksProduceBtnBounds = null;
+      // Progress bar + SPEED UP mygtukas vidurio lentutėje
+      const now = performance.now();
+      const elapsed = _getBarracksElapsed(now);
+      const frac = Math.max(0, Math.min(1, elapsed / _BARRACKS_PRODUCE_MS));
+      const remainS = Math.max(0, Math.ceil((_BARRACKS_PRODUCE_MS - elapsed) / 1000));
+      const mm = Math.floor(remainS / 60), ss = remainS % 60;
+      const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : `${ss}s`;
+      const barW = pw * 0.8, barH = 6;
+      const barX = px + (pw - barW) / 2;
+      const barY = bottomY + 44;
+      // Mini avataras + „TRAINING (+N)" grupė — virš laiko, su pakankamu tarpu
+      const _qLeft = _barracksProduction.queueLeft || 0;
+      const _trLbl = _qLeft > 0 ? `TRAINING  (+${_qLeft})` : 'TRAINING';
+      const _miniSz = 22;
+      ctx.font = 'bold 11px monospace';
+      const _trLblW = ctx.measureText(_trLbl).width;
+      const _grpW = _miniSz + 8 + _trLblW;
+      const _grpX = px + pw / 2 - _grpW / 2;
+      const _grpY = barY - 40;
+      const _trImg = _barracksAvatarImgs[_barracksProduction.unitIdx];
+      if (_trImg && _trImg.complete && _trImg.naturalWidth > 0) {
+        // Mažas fonas po avataru
+        ctx.fillStyle = '#141821';
+        rr(_grpX, _grpY, _miniSz, _miniSz, 3); ctx.fill();
+        ctx.drawImage(_trImg, _grpX + 1, _grpY + 1, _miniSz - 2, _miniSz - 2);
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = '#ffb07a';
+        rr(_grpX + 0.5, _grpY + 0.5, _miniSz - 1, _miniSz - 1, 3); ctx.stroke();
+      }
+      ctx.fillStyle = '#ffd47a';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(_trLbl, _grpX + _miniSz + 8, _grpY + _miniSz / 2);
+      ctx.fillText(_trLbl, _grpX + _miniSz + 8, _grpY + _miniSz / 2);
+      // Laikas — didelis, virš juostos
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(timeStr, px + pw / 2, barY - 2);
+      ctx.fillText(timeStr, px + pw / 2, barY - 2);
+      // Juosta
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+      ctx.fillStyle = '#b08a2e';
+      ctx.fillRect(barX, barY, barW * frac, barH);
+      // ─── Speed-up qty: [−] ×N [+] ──────────────────────────
+      // Max ribo — kiek unit'ų liko queue (įskaitant current)
+      const _suMax = Math.max(1, (_barracksProduction.queueLeft || 0) + 1);
+      if (_barracksSpeedUpQty > _suMax) _barracksSpeedUpQty = _suMax;
+      if (_barracksSpeedUpQty < 1) _barracksSpeedUpQty = 1;
+      const _suQty = _barracksSpeedUpQty;
+      const suRowW = 120, suRowH = 24;
+      const suRowX = px + pw / 2 - suRowW / 2;
+      const suRowY = barY + 14;
+      const suSegW = 30;
+      const suMidW = suRowW - suSegW * 2;
+      const _subxMinus = suRowX;
+      const _subxN     = suRowX + suSegW;
+      const _subxPlus  = suRowX + suSegW + suMidW;
+      // [−]
+      const _suEnMinus = _suQty > 1;
+      const _suHovMinus = _worldMx >= _subxMinus && _worldMx <= _subxMinus + suSegW &&
+                          _worldMy >= suRowY   && _worldMy <= suRowY + suRowH;
+      ctx.fillStyle = !_suEnMinus ? '#1e2d1e' : (_suHovMinus ? '#4ea04e' : '#2e5e2e');
+      rr(_subxMinus, suRowY, suSegW, suRowH, 5); ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = !_suEnMinus ? '#3a5a3a' : (_suHovMinus ? '#d4ffd4' : '#88c088');
+      rr(_subxMinus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 5); ctx.stroke();
+      ctx.fillStyle = _suEnMinus ? '#fff' : '#667';
+      ctx.font = 'bold 18px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('−', _subxMinus + suSegW / 2, suRowY + suRowH / 2 + 1);
+      _barracksSpeedUpMinusBtnBounds = { x: _subxMinus, y: suRowY, w: suSegW, h: suRowH };
+      // [ ×N ]
+      ctx.fillStyle = '#0d1016';
+      rr(_subxN, suRowY, suMidW, suRowH, 4); ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      rr(_subxN + 0.5, suRowY + 0.5, suMidW - 1, suRowH - 1, 4); ctx.stroke();
+      ctx.fillStyle = '#a8f0a8';
+      ctx.font = 'bold 16px monospace';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      const suNLbl = `×${_suQty}`;
+      ctx.strokeText(suNLbl, _subxN + suMidW / 2, suRowY + suRowH / 2 + 1);
+      ctx.fillText(suNLbl, _subxN + suMidW / 2, suRowY + suRowH / 2 + 1);
+      // [+]
+      const _suEnPlus = _suQty < _suMax;
+      const _suHovPlus = _worldMx >= _subxPlus && _worldMx <= _subxPlus + suSegW &&
+                         _worldMy >= suRowY   && _worldMy <= suRowY + suRowH;
+      ctx.fillStyle = !_suEnPlus ? '#1e2d1e' : (_suHovPlus ? '#4ea04e' : '#2e5e2e');
+      rr(_subxPlus, suRowY, suSegW, suRowH, 5); ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = !_suEnPlus ? '#3a5a3a' : (_suHovPlus ? '#d4ffd4' : '#88c088');
+      rr(_subxPlus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 5); ctx.stroke();
+      ctx.fillStyle = _suEnPlus ? '#fff' : '#667';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText('+', _subxPlus + suSegW / 2, suRowY + suRowH / 2 + 1);
+      _barracksSpeedUpPlusBtnBounds = { x: _subxPlus, y: suRowY, w: suSegW, h: suRowH };
+
+      // ─── SPEED UP mygtukas po qty row'o ────────────────────
+      const _suTotal = _SPEEDUP_COST * _suQty;
+      const sbw = 120, sbh = 26;
+      const sbx = px + pw / 2 - sbw / 2;
+      const sby = suRowY + suRowH + 6;
+      const canAff = _ronkeBalance >= _suTotal;
+      const enab = canAff && !_barracksSpeedUpAnim;
+      const hovS = _worldMx >= sbx && _worldMx <= sbx + sbw &&
+                   _worldMy >= sby && _worldMy <= sby + sbh;
+      ctx.fillStyle = !enab ? '#3a3a3a' : (hovS ? '#6ec56e' : '#4e9e4e');
+      rr(sbx, sby, sbw, sbh, 5); ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = enab ? (hovS ? '#d4ffd4' : '#a8f0a8') : '#666';
+      rr(sbx + 0.5, sby + 0.5, sbw - 1, sbh - 1, 5); ctx.stroke();
+      ctx.fillStyle = enab ? '#fff' : '#999';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      const slbl = `SPEED UP  \u26A1${_suTotal}`;
+      ctx.strokeText(slbl, sbx + sbw / 2, sby + sbh / 2 + 1);
+      ctx.fillText(slbl, sbx + sbw / 2, sby + sbh / 2 + 1);
+      _barracksSpeedUpBtnBounds = { x: sbx, y: sby, w: sbw, h: sbh };
+      _barracksProduceBtnBounds = null;
+    } else {
+      _barracksSpeedUpBtnBounds = null;
+      _barracksSpeedUpMinusBtnBounds = null;
+      _barracksSpeedUpPlusBtnBounds = null;
+      // Cost: aiški "1 × N = total" formulė kai queue > 1
+      const _qty = Math.max(1, _barracksQueueCount);
+      const _totalCost = _BARRACKS_UNIT_COST * _qty;
+      const costLabel = _qty > 1 ? `${_BARRACKS_UNIT_COST}×${_qty} = ${_totalCost}` : String(_BARRACKS_UNIT_COST);
+      ctx.font = 'bold 13px monospace';
+      const costW = ctx.measureText(costLabel).width;
+      const iconSz = 18, gapC = 6;
+      const rowW = iconSz + gapC + costW;
+      const rowX = px + pw / 2 - rowW / 2;
+      const rowY = bottomY + 4;
+      {
+        const fr = Math.floor(performance.now() / 90) % 8;
+        const thumb = _getRonkeCoinThumb(iconSz, fr);
+        if (thumb) ctx.drawImage(thumb, rowX, rowY);
+      }
+      const canAfford = _ronkeBalance >= _totalCost;
+      const hasSel = _barracksSelectedIdx !== null;
+      ctx.fillStyle = canAfford ? '#ffe97a' : '#d48a8a';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeText(costLabel, rowX + iconSz + gapC, rowY + iconSz / 2);
+      ctx.fillText(costLabel, rowX + iconSz + gapC, rowY + iconSz / 2);
+
+      // ─── Qty row: [−]  [ N ]  [+]  ───────────────────────
+      const qtyRowW = 120, qtyRowH = 24;
+      const qtyX = px + pw / 2 - qtyRowW / 2;
+      const qtyY = bottomY + 28;
+      const qSegW = 30;
+      const qMidW = qtyRowW - qSegW * 2;
+      const _bxMinus = qtyX;
+      const _bxN     = qtyX + qSegW;
+      const _bxPlus  = qtyX + qSegW + qMidW;
+      // [−]
+      const enMinus = _barracksQueueCount > 1;
+      const hovMinus = _worldMx >= _bxMinus && _worldMx <= _bxMinus + qSegW &&
+                       _worldMy >= qtyY    && _worldMy <= qtyY + qtyRowH;
+      ctx.fillStyle = !enMinus ? '#2d1e1e' : (hovMinus ? '#9a4e2e' : '#5e2e1e');
+      rr(_bxMinus, qtyY, qSegW, qtyRowH, 5); ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = !enMinus ? '#5a3a3a' : (hovMinus ? '#ffd4a8' : '#c08a60');
+      rr(_bxMinus + 0.5, qtyY + 0.5, qSegW - 1, qtyRowH - 1, 5); ctx.stroke();
+      ctx.fillStyle = enMinus ? '#fff' : '#777';
+      ctx.font = 'bold 18px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('−', _bxMinus + qSegW / 2, qtyY + qtyRowH / 2 + 1);
+      _barracksQtyMinusBtnBounds = { x: _bxMinus, y: qtyY, w: qSegW, h: qtyRowH };
+      // [ N ] counter box
+      ctx.fillStyle = '#0d1016';
+      rr(_bxN, qtyY, qMidW, qtyRowH, 4); ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      rr(_bxN + 0.5, qtyY + 0.5, qMidW - 1, qtyRowH - 1, 4); ctx.stroke();
+      ctx.fillStyle = '#ffe97a';
+      ctx.font = 'bold 16px monospace';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      const nLbl = `×${_qty}`;
+      ctx.strokeText(nLbl, _bxN + qMidW / 2, qtyY + qtyRowH / 2 + 1);
+      ctx.fillText(nLbl, _bxN + qMidW / 2, qtyY + qtyRowH / 2 + 1);
+      // [+]
+      const enPlus = _barracksQueueCount < _BARRACKS_QUEUE_MAX;
+      const hovPlus = _worldMx >= _bxPlus && _worldMx <= _bxPlus + qSegW &&
+                      _worldMy >= qtyY   && _worldMy <= qtyY + qtyRowH;
+      ctx.fillStyle = !enPlus ? '#2d1e1e' : (hovPlus ? '#9a4e2e' : '#5e2e1e');
+      rr(_bxPlus, qtyY, qSegW, qtyRowH, 5); ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = !enPlus ? '#5a3a3a' : (hovPlus ? '#ffd4a8' : '#c08a60');
+      rr(_bxPlus + 0.5, qtyY + 0.5, qSegW - 1, qtyRowH - 1, 5); ctx.stroke();
+      ctx.fillStyle = enPlus ? '#fff' : '#777';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText('+', _bxPlus + qSegW / 2, qtyY + qtyRowH / 2 + 1);
+      _barracksQtyPlusBtnBounds = { x: _bxPlus, y: qtyY, w: qSegW, h: qtyRowH };
+
+      // ─── TRAIN mygtukas — atskira eilutė ───────────────────
+      const bw2 = 120, bh2 = 26;
+      const bxU = px + pw / 2 - bw2 / 2;
+      const byU = qtyY + qtyRowH + 6;
+      const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 &&
+                       _worldMy >= byU && _worldMy <= byU + bh2;
+      const enabled = canAfford && hasSel;
+      ctx.fillStyle = !enabled ? '#452a2a' : (hoverBtn ? '#c06e3e' : '#9e4e2e');
+      rr(bxU, byU, bw2, bh2, 5); ctx.fill();
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = !enabled ? '#8a5a5a' : (hoverBtn ? '#ffd4a8' : '#f0a880');
+      rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeText('TRAIN', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      ctx.fillText('TRAIN', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      _barracksProduceBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+    }
 
     // Close X
-    const cxSz = 18;
-    const cxX = px + pw - cxSz - 6;
-    const cxY = py + 8;
-    const hovX = _canvasMx >= cxX && _canvasMx <= cxX + cxSz &&
-                 _canvasMy >= cxY && _canvasMy <= cxY + cxSz;
+    const cxSz = 14;
+    const cxX = px + pw - cxSz - 5;
+    const cxY = py + 6;
+    const hovX = _worldMx >= cxX && _worldMx <= cxX + cxSz &&
+                 _worldMy >= cxY && _worldMy <= cxY + cxSz;
     ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
-    rr(cxX, cxY, cxSz, cxSz, 4); ctx.fill();
+    rr(cxX, cxY, cxSz, cxSz, 3); ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(cxX + 5, cxY + 5); ctx.lineTo(cxX + cxSz - 5, cxY + cxSz - 5);
-    ctx.moveTo(cxX + cxSz - 5, cxY + 5); ctx.lineTo(cxX + 5, cxY + cxSz - 5);
+    ctx.moveTo(cxX + 4, cxY + 4); ctx.lineTo(cxX + cxSz - 4, cxY + cxSz - 4);
+    ctx.moveTo(cxX + cxSz - 4, cxY + 4); ctx.lineTo(cxX + 4, cxY + cxSz - 4);
     ctx.stroke();
 
+    // Info sub-popup apie pasirinktą unit'ą — paryškintas, su avataru + spalvotais stat'ais
+    if (_barracksSelectedIdx !== null) {
+      const info = _getBarracksUnitInfo(_barracksSelectedIdx);
+      if (info) {
+        const iw = 150;
+        let _lines = 3;
+        if (typeof info.dmg === 'number') _lines += 1;
+        if (typeof info.block === 'number') _lines += 1;
+        const headerH = 46;
+        const bodyTopPad = 10;
+        const rowH = 17;
+        const bodyBotPad = 10;
+        const ih = headerH + bodyTopPad + _lines * rowH + bodyBotPad;
+        let ix = px + pw + 8;
+        if (ix + iw + PAD_S > v.x + v.w) ix = px - iw - 8;
+        ix = Math.max(v.x + PAD_S, Math.min(v.x + v.w - iw - PAD_S, ix));
+        let iy = py;
+        iy = Math.max(v.y + PAD_S, Math.min(v.y + v.h - ih - PAD_S, iy));
+        // Drop shadow — didelis kontrastas
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        rr(ix + 3, iy + 5, iw, ih, 8); ctx.fill();
+        // Pagrindinis panelis
+        ctx.fillStyle = '#161a22';
+        rr(ix, iy, iw, ih, 8); ctx.fill();
+        // Header juosta su unit spalva
+        ctx.save();
+        rr(ix, iy, iw, ih, 8); ctx.clip();
+        ctx.fillStyle = info.color || '#555';
+        ctx.fillRect(ix, iy, iw, headerH);
+        // Apatinė header'io riba — ryški linija
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(ix, iy + headerH - 2, iw, 2);
+        ctx.restore();
+        // Mini avataras header'io kairėje
+        const avSz = 34;
+        const avX = ix + 6;
+        const avY = iy + (headerH - avSz) / 2;
+        const avImg = _barracksAvatarImgs[_barracksSelectedIdx];
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        rr(avX, avY, avSz, avSz, 4); ctx.fill();
+        if (avImg && avImg.complete && avImg.naturalWidth > 0) {
+          ctx.drawImage(avImg, avX + 1, avY + 1, avSz - 2, avSz - 2);
+        }
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        rr(avX + 0.5, avY + 0.5, avSz - 1, avSz - 1, 4); ctx.stroke();
+        // Unit vardas dešinėje header'io pusėje
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        const nameX = avX + avSz + 8;
+        ctx.strokeText(info.label.toUpperCase(), nameX, iy + headerH / 2);
+        ctx.fillText(info.label.toUpperCase(), nameX, iy + headerH / 2);
+        // Apvali riba
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffc97a';
+        rr(ix + 0.5, iy + 0.5, iw - 1, ih - 1, 8); ctx.stroke();
+        // Body — stat eilutės su spalvotais value'ais
+        const sx = ix + 12;
+        let sy = iy + headerH + bodyTopPad + rowH / 2;
+        const valX = ix + iw - 12;
+        const drawStat = (lbl, val, valCol) => {
+          // Label
+          ctx.fillStyle = '#8a92a0';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(lbl, sx, sy);
+          // Value — dideliais + spalvotais
+          ctx.fillStyle = valCol;
+          ctx.font = 'bold 12px monospace';
+          ctx.textAlign = 'right';
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+          ctx.strokeText(val, valX, sy);
+          ctx.fillText(val, valX, sy);
+          sy += rowH;
+        };
+        drawStat('HP',    String(info.hp),             '#7effa0');
+        if (typeof info.dmg === 'number')   drawStat('DMG',   String(info.dmg),              '#ff8a7a');
+        if (typeof info.block === 'number') drawStat('BLOCK', `${info.block}%`,              '#7acfff');
+        drawStat('COST',  String(_BARRACKS_UNIT_COST),  '#ffe066');
+        drawStat('TIME',  `${Math.round(_BARRACKS_PRODUCE_MS / 1000)}s`, '#c8d0e0');
+      }
+    }
+
     ctx.restore();
-    _castleBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
   } else {
-    _castleBtnBounds = null;
+    _barracksProduceBtnBounds = null;
+    _barracksAvatarRects = [];
+    _barracksQtyMinusBtnBounds = null;
+    _barracksQtyPlusBtnBounds = null;
+    _barracksSpeedUpMinusBtnBounds = null;
+    _barracksSpeedUpPlusBtnBounds = null;
   }
+
+}
+
+function _getBarracksUnitInfo(idx) {
+  const type = _BARRACKS_UNIT_TYPES[idx];
+  if (!type) return null;
+  const arch = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES.find(e => e.type === type) : null;
+  if (!arch) return null;
+  const info = { label: arch.label || type.toUpperCase(), hp: arch.hp, color: arch.color, type };
+  if (type === 'skull')  { info.dmg = 3; info.block = 10; }
+  if (type === 'shaman') { info.dmg = 2; }
+  return info;
+}
+
+// Baraku production tick — kviečiamas kiekvieną frame, spawn'ina net kai popup uždarytas
+function _tickBarracksProduction() {
+  if (!_barracksProduction) return;
+  if (performance.now() - _barracksProduction.startAt < _BARRACKS_PRODUCE_MS) return;
+  const _finIdx = _barracksProduction.unitIdx;
+  const _finQueue = (_barracksProduction.queueLeft || 0);
+  const _finSuLeft = (_barracksProduction.speedUpQueueLeft || 0);
+  _barracksSpawnTrained(_finIdx);
+  _barracksProduction = null;
+  if (_finQueue > 0 && _ronkeBalance >= _BARRACKS_UNIT_COST) {
+    _ronkeBalance -= _BARRACKS_UNIT_COST;
+    _barracksProduction = { unitIdx: _finIdx, startAt: performance.now(), queueLeft: _finQueue - 1, speedUpQueueLeft: Math.max(0, _finSuLeft) };
+    if (_finSuLeft > 0) {
+      _barracksProduction.speedUpQueueLeft = _finSuLeft - 1;
+      const _nowSu = performance.now();
+      _barracksSpeedUpAnim = {
+        startMs: _nowSu,
+        durMs: Math.max(120, _BARRACKS_PRODUCE_MS / 10),
+        srcElapsed: 0,
+        dstElapsed: _BARRACKS_PRODUCE_MS,
+      };
+    }
+  }
+}
+
+// Rodo training progress tiesiogei ant baraku pastato — toks pat stilius kaip namuko statybos/upgrade juosta.
+// Piešiamas kiekvieną frame nepriklausomai nuo popup būsenos, kad matytųsi ir kai popup uždarytas.
+function _drawBarracksTrainingBar() {
+  if (!_barracksProduction || !_barracksBounds) return;
+  if (_barracksPopupOpen) return; // popup atidarytas — juosta matosi ten
+  const now = performance.now();
+  const elapsed = _getBarracksElapsed(now);
+  const prog = Math.max(0, Math.min(1, elapsed / _BARRACKS_PRODUCE_MS));
+  const remainS = Math.max(0, Math.ceil((_BARRACKS_PRODUCE_MS - elapsed) / 1000));
+  const mm = Math.floor(remainS / 60), ss = remainS % 60;
+  const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : `${ss}s`;
+  const bB = _barracksBounds;
+  const barW = bB.w * 0.75, barH = 6;
+  const barX = bB.x + (bB.w - barW) / 2;
+  const barY = bB.y + bB.h - 1;
+  ctx.save();
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(timeStr, barX + barW / 2, barY - 2);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(timeStr, barX + barW / 2, barY - 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+  ctx.fillStyle = '#b08a2e';
+  ctx.fillRect(barX, barY, barW * prog, barH);
+  ctx.restore();
 }
 
 function _drawTowerFire() {
@@ -8405,6 +9900,26 @@ function _drawDungeonStatic() {
             const w = img.naturalWidth * (CELL/64); // Assume base 64x64 grid roughly scaled to CELL
             const h = img.naturalHeight * (CELL/64);
             ctx.drawImage(img, px + CELL/2 - w/2, py + CELL - h, w, h);
+        }
+      } else if (decId.startsWith('banner_') || decId.startsWith('bannerslots_') ||
+                 decId.startsWith('ribbonblack_') || decId.startsWith('ribbonblue_') ||
+                 decId.startsWith('ribbonpurple_') || decId.startsWith('ribbonred_') ||
+                 decId.startsWith('ribbonyellow_')) {
+        const parts = decId.split('_');
+        const _kind = parts[0]; // banner / bannerslots / ribbonred ...
+        const tx = parseInt(parts[parts.length - 2], 10);
+        const ty = parseInt(parts[parts.length - 1], 10);
+        const _imgKey = _kind === 'banner' ? 'banner'
+                     : _kind === 'bannerslots' ? 'banner_slots'
+                     : _kind === 'ribbonblack' ? 'ribbon_black'
+                     : _kind === 'ribbonblue' ? 'ribbon_blue'
+                     : _kind === 'ribbonpurple' ? 'ribbon_purple'
+                     : _kind === 'ribbonred' ? 'ribbon_red'
+                     : _kind === 'ribbonyellow' ? 'ribbon_yellow'
+                     : null;
+        const img = _imgKey ? bannerImgs[_imgKey] : null;
+        if (img && img.complete && img.naturalWidth > 0 && !isNaN(tx) && !isNaN(ty)) {
+          ctx.drawImage(img, tx * 64, ty * 64, 64, 64, px, py, CELL, CELL);
         }
       } else if (decId === 'tree_1') {
         if (tinyImgs.tree.complete && tinyImgs.tree.naturalWidth > 0) {
@@ -10299,6 +11814,21 @@ document.addEventListener('keydown', e => {
   if (k.t === 'move') {
     // IDLE režimu herojus stovi vietoje — blokuojam judėjimą team 0
     if (_ronkeIdleMode && k.team === 0) return;
+    // FREE MOVE režimu team 0 judėjimą valdo per-frame loop —
+    // tik vienas žingsnis per paspaudimą (jei jau laikoma, ignoruojam).
+    if (_freeMoveMode && k.team === 0) {
+      let keyName = null;
+      if (k.dx === -1) keyName = 'a';
+      else if (k.dx === 1) keyName = 'd';
+      else if (k.dy === -1) keyName = 'w';
+      else if (k.dy === 1) keyName = 's';
+      if (keyName && !_freeMoveKeys[keyName]) {
+        _freeMoveKeys[keyName] = true;
+        _freeMoveQueue.push({ dx: k.dx, dy: k.dy });
+      }
+      unit.facing = { dx: k.dx, dy: k.dy };
+      return;
+    }
     const nx = unit.x + k.dx, ny = unit.y + k.dy;
     if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
     if (S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) return;
@@ -10624,7 +12154,7 @@ function applySingleAction(team, a) {
       unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
       const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
       if (_hero) {
-        const _dmg = 3;
+        const _dmg = 3 * (unit.stack || 1);
         S.energy = Math.max(0, S.energy - heroDmg(_dmg));
         spawnHit(_hero.x, _hero.y, '#e8d8c0', 26);
         spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#e8c880', 18, 'crit');
@@ -10752,9 +12282,10 @@ function applySingleAction(team, a) {
       unit.shamanAttackCd = performance.now() + 2800; // 2.8s cooldown between casts
       const _fromX = unit.x, _fromY = unit.y;
       const _toX = a.targetX, _toY = a.targetY;
+      const _stack = unit.stack || 1;
       // Launch projectile after wind-up (frame ~6 of 10, ~430ms at 14fps)
       setTimeout(() => {
-        if (S && S.units) spawnShamanProjectile(_fromX, _fromY, _toX, _toY);
+        if (S && S.units) spawnShamanProjectile(_fromX, _fromY, _toX, _toY, _stack);
       }, 430);
       return;
     }
@@ -11349,6 +12880,13 @@ function detectCollisions() {
             u.guardStart = null; // consume guard
             return;
           }
+        }
+        // Skull: 10% pasyvi block'o tikimybė (skydas ant nugaros)
+        if (!b.hackBullet && u.utype === 'skull' && u.team !== b.owner && Math.random() < 0.10) {
+          spawnDmgNumber(u.x, u.y, 'BLOCK!', '#e8d8c0', 14, 'normal');
+          spawnHit(u.x, u.y, '#e8d8c0', 12);
+          SFX.play(220, 0.10, 0.10, 'square');
+          return;
         }
 
         // Hack wave: no damage, just 70% freeze
@@ -11982,6 +13520,11 @@ function loop(now) {
   const dt = Math.min(now - lastTime, 100);
   lastTime = now;
 
+  // ── FREE MOVE update (team 0) ────────────────────────────────
+  if (_freeMoveMode && !_ronkeIdleMode) {
+    _updateFreeMove(now);
+  }
+
   // Advance animation
   if (S.phase === 'ticking' && tickStart !== null) {
     S.animT = Math.min(1, (now - tickStart) / ANIM_MS);
@@ -12117,9 +13660,18 @@ function loop(now) {
   clearCanvas();
   if (gameMode === 'adventure' && S.cam) {
     updateCamera();
+    // World-space pelės koord., atnaujinama kiekvieną frame'ą (po to kai kamera pasikeitė)
+    if (_canvasMx >= 0) {
+      _worldMx = _canvasMx + S.cam.x;
+      _worldMy = _canvasMy + S.cam.y;
+    } else {
+      _worldMx = -1; _worldMy = -1;
+    }
     ctx.translate(-Math.round(S.cam.x), -Math.round(S.cam.y));
+  } else {
+    _worldMx = _canvasMx; _worldMy = _canvasMy;
   }
-  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _drawTowerFire(); _drawTowerExplosions(); } else drawBoard();
+  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _drawTowerFire(); _drawTowerExplosions(); _tickBarracksProduction(); _drawBarracksTrainingBar(); } else drawBoard();
   drawLasers();
   drawMeleeStrikes();
   drawShootPreview();
@@ -12146,6 +13698,7 @@ function loop(now) {
   drawLoot();
   drawMeatDrops();
   drawUnits();
+  _drawUnitHoverOutline();
   drawForegroundDecorations();
   drawRonkeInfect();
   drawFog();
@@ -12161,34 +13714,182 @@ function loop(now) {
     drawFloorIntro();
     drawHeroHitVignette();
   }
+  _drawUnitHoverTooltip();
   drawScanlines();
+}
+
+// Outline aplink užvestą unit'ą — piešiamas world-space (po drawUnits, prieš ctx.restore)
+function _drawUnitHoverOutline() {
+  _hoveredUnitRef = null;
+  if (_canvasMx < 0 || _canvasMy < 0) return;
+  if (gameMode !== 'adventure') return;
+  const worldMx = _canvasMx + (S.cam?.x || 0);
+  const worldMy = _canvasMy + (S.cam?.y || 0);
+  let best = null, bestDist = Infinity;
+  for (const u of (S.units || [])) {
+    if (!u.alive) continue;
+    if (u.team === 0) continue; // ronke hero — savo outline'as piešiamas atskirai, stats tooltip nepageidaujamas
+    if (u.team === 1) {
+      const directly = isVisible(u.x, u.y);
+      const revealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
+      if (!directly && !revealed && !S.fullMapRevealed) continue;
+    }
+    const cx = (u.rx + 0.5) * CELL;
+    const cy = (u.ry + 0.5) * CELL;
+    const thresh = UNIT_CELL * 0.8 * (u.scale || 1);
+    const dx = worldMx - cx, dy = worldMy - cy;
+    const d = Math.hypot(dx, dy);
+    if (d < thresh && d < bestDist) { best = u; bestDist = d; }
+  }
+  if (!best) return;
+  _hoveredUnitRef = best;
+  const cx = (best.rx + 0.5) * CELL;
+  const cy = (best.ry + 0.5) * CELL;
+  // Baltas sprite silhouette outline (tas pats pattern kaip pastatams: 8 offsets su brightness(0) invert(1))
+  const drew = _drawUnitSilhouetteOutline(best, cx, cy);
+  if (!drew) {
+    // Fallback — paprastas baltas ratas jei sprite frame'as nežinomas
+    const rad = UNIT_CELL * 0.75 * (best.scale || 1);
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Bandom piešti unit'o sprite'ą 8× su white filter (silhouette outline) — kaip pastatų hover.
+// Grąžina true jei pavyko.
+function _drawUnitSilhouetteOutline(u, cx, cy) {
+  if (u.utype === 'skull' && typeof getSkullFrameState === 'function') {
+    const frame = getSkullFrameState(u);
+    if (!frame || !frame.sheet || !frame.sheet.complete || !frame.sheet.naturalWidth) return false;
+    const sprSz = UNIT_CELL * 2.5;
+    const flip = (u.facing?.dx || -1) < 0;
+    const OL = 2;
+    const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+    const drawFrame = (dx, dy) => {
+      if (flip) {
+        ctx.save();
+        ctx.translate(cx + dx, cy + dy);
+        ctx.scale(-1, 1);
+        ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+        ctx.restore();
+      } else {
+        ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2 + dx, cy - sprSz / 2 + dy, sprSz, sprSz);
+      }
+    };
+    // 1) 8× baltos silueto kopijos su offset'ais
+    ctx.save();
+    ctx.filter = 'brightness(0) invert(1)';
+    for (const [dx, dy] of offs) drawFrame(dx, dy);
+    ctx.restore();
+    // 2) Normalus sprite'as ant viršaus — uždengia vidų, lieka tik baltas ~2px halo
+    drawFrame(0, 0);
+    return true;
+  }
+  return false;
+}
+
+// Tooltip su statais — toks pat stilius kaip barracks training avatar side panel (bet be COST).
+function _drawUnitHoverTooltip() {
+  const u = _hoveredUnitRef;
+  if (!u) return;
+  const name = (u.utype || 'UNIT').toUpperCase();
+  const title = u.stack && u.stack > 1 ? `${name}  \u00D7${u.stack}` : name;
+  const lines = [];
+  lines.push(`HP:    ${u.hp} / ${u.maxHp}`);
+  if (u.utype === 'skull') {
+    const _dmg = 3 * (u.stack || 1);
+    lines.push(`DMG:   ${_dmg}`);
+    lines.push(`BLOCK: 10%`);
+  }
+  if (typeof u.dodge === 'number') lines.push(`DODGE: ${Math.round(u.dodge * 100)}%`);
+
+  const arch = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES.find(e => e.type === u.utype) : null;
+  const headerFill = (arch && arch.color) || (u.team === 1 ? '#8a2a2a' : '#2e6e9e');
+
+  const iw = 108;
+  const ih = 24 + lines.length * 13 + 4;
+  const rad = 6;
+
+  const screenCx = (u.rx + 0.5) * CELL - (S.cam?.x || 0);
+  const screenCy = (u.ry + 0.5) * CELL - (S.cam?.y || 0);
+  const MARGIN = 5;
+  const vc = _getVisibleCanvasRect();
+  let ix = Math.round(screenCx + UNIT_CELL * 0.9);
+  let iy = Math.round(screenCy - ih / 2);
+  if (ix + iw > vc.x + vc.w - MARGIN) ix = Math.round(screenCx - UNIT_CELL * 0.9 - iw);
+  ix = Math.max(vc.x + MARGIN, Math.min(vc.x + vc.w - iw - MARGIN, ix));
+  iy = Math.max(vc.y + MARGIN, Math.min(vc.y + vc.h - ih - MARGIN, iy));
+
+  ctx.save();
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  rr(ix + 2, iy + 3, iw, ih, rad); ctx.fill();
+  ctx.fillStyle = '#1f242f';
+  rr(ix, iy, iw, ih, rad); ctx.fill();
+  ctx.save();
+  rr(ix, iy, iw, ih, rad); ctx.clip();
+  ctx.fillStyle = headerFill;
+  ctx.fillRect(ix, iy, iw, 20);
+  ctx.restore();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#ffe97a';
+  rr(ix + 0.5, iy + 0.5, iw - 1, ih - 1, rad); ctx.stroke();
+  ctx.fillStyle = '#0a0a0a';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, ix + iw / 2, iy + 10);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#cfd4dc';
+  ctx.font = 'bold 10px monospace';
+  let syI = iy + 28;
+  for (const ln of lines) { ctx.fillText(ln, ix + 8, syI); syI += 13; }
+  ctx.restore();
 }
 
 function updateCamera() {
   const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
-  const vpW = advCanvasW, vpH = ADV_CANVAS_H;
+  // CSS scale(CANVAS_ZOOM) + overflow:hidden wrapper → matoma tik centrinė canvas dalis.
+  // Efektyvus viewport world coords'uose = canvas / ZOOM, centruojasi aplink canvas vidurį.
+  const vpW = advCanvasW / CANVAS_ZOOM, vpH = ADV_CANVAS_H / CANVAS_ZOOM;
+  const vpOffsetX = (advCanvasW - vpW) / 2;
+  const vpOffsetY = (ADV_CANVAS_H - vpH) / 2;
   const mapW = COLS * CELL, mapH = ROWS * CELL;
   const hx = (hero.px ?? hero.x) * CELL + CELL * 0.5;
   const hy = (hero.py ?? hero.y) * CELL + CELL * 0.5;
 
   const margin = 5 * CELL;
 
-  // Dead zone: camera starts moving only when hero approaches viewport edge
+  // Dead zone matomame viewport'e (ne visame canvas'e)
   let tx = S.cam.tx ?? S.cam.x;
   let ty = S.cam.ty ?? S.cam.y;
-  const heroSX = hx - tx;
-  const heroSY = hy - ty;
-  if (heroSX < margin) tx = hx - margin;
-  if (heroSX > vpW - margin) tx = hx - (vpW - margin);
-  if (heroSY < margin) ty = hy - margin;
-  if (heroSY > vpH - margin) ty = hy - (vpH - margin);
+  const heroSX = hx - tx - vpOffsetX;
+  const heroSY = hy - ty - vpOffsetY;
+  if (heroSX < margin) tx = hx - vpOffsetX - margin;
+  if (heroSX > vpW - margin) tx = hx - vpOffsetX - (vpW - margin);
+  if (heroSY < margin) ty = hy - vpOffsetY - margin;
+  if (heroSY > vpH - margin) ty = hy - vpOffsetY - (vpH - margin);
 
-  tx = Math.max(0, Math.min(mapW - vpW, tx));
-  ty = Math.max(0, Math.min(mapH - vpH, ty));
+  // Clamp į mapo kraštus — matoma sritis yra [tx+vpOffsetX, tx+vpOffsetX+vpW].
+  tx = Math.max(-vpOffsetX, Math.min(mapW - vpW - vpOffsetX, tx));
+  ty = Math.max(-vpOffsetY, Math.min(mapH - vpH - vpOffsetY, ty));
 
-  if (mapW < vpW) tx = 0;
-  if (mapH < vpH) ty = 0;
+  if (mapW < vpW) tx = mapW / 2 - vpOffsetX - vpW / 2;
+  if (mapH < vpH) ty = mapH / 2 - vpOffsetY - vpH / 2;
 
   S.cam.tx = tx;
   S.cam.ty = ty;
@@ -12825,13 +14526,13 @@ function drawDeathAnims() {
 
 // ---- Shaman Projectile & Explosion --------------------------------
 
-function spawnShamanProjectile(fromGx, fromGy, toGx, toGy) {
+function spawnShamanProjectile(fromGx, fromGy, toGx, toGy, stack) {
   if (!S.shamanProjectiles) S.shamanProjectiles = [];
   const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
   const tx = (toGx  + 0.5) * CELL, ty = (toGy  + 0.5) * CELL;
   const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
   const duration = Math.max(350, dist / (CELL * 0.0055)); // ~5.5 cells/sec feel
-  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false });
+  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false, stack: stack || 1 });
 }
 
 function drawShamanProjectiles() {
@@ -12856,9 +14557,10 @@ function drawShamanProjectiles() {
       if (S.units) {
         const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
         if (_hero) {
-          _hero.hp = (_hero.hp || 1) - 1;
+          const _dmg = 1 * (p.stack || 1);
+          _hero.hp = (_hero.hp || 1) - _dmg;
           spawnHit(_hero.x, _hero.y, '#cc30ff', 28);
-          spawnDmgNumber(_hero.x, _hero.y, '-1', '#cc30ff', 18, 'crit');
+          spawnDmgNumber(_hero.x, _hero.y, `-${_dmg}`, '#cc30ff', 18, 'crit');
           if (_hero.hp <= 0 && !S.winner) {
             _hero.alive = false; _hero.deathT = 1;
             spawnDeath(_hero.x, _hero.y, _hero.color || '#00f5ff');
@@ -13550,11 +15252,11 @@ function _drawRonke2HeroSprite(cx, cy, u, alpha) {
     if (u.team === 0) {
       _ronkeHeroBounds = { x: _bodyX, y: _bodyY, w: _bodyW, h: _bodyH };
     }
-    const _anyPopup = _housePopupOpen || _stonePopupOpen || _castlePopupOpen ||
+    const _anyPopup = _housePopupOpen || _stonePopupOpen || _castlePopupOpen || _barracksPopupOpen ||
                       _extraMines.some(m => m.housePopupOpen || m.stonePopupOpen);
     const _hov = u.team === 0 && !_anyPopup &&
-                 _canvasMx >= _bodyX && _canvasMx <= _bodyX + _bodyW &&
-                 _canvasMy >= _bodyY && _canvasMy <= _bodyY + _bodyH;
+                 _worldMx >= _bodyX && _worldMx <= _bodyX + _bodyW &&
+                 _worldMy >= _bodyY && _worldMy <= _bodyY + _bodyH;
     ctx.save();
     ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
     const drawSprite = (filter) => {
@@ -14800,7 +16502,76 @@ function drawBoss01(cx, cy, u, alpha) {
   ctx.restore();
 }
 
+// Jei skull (ar kitas stack'uojamas vienetas) prarado pakankamai HP, sumažiname stack:
+//   stack = ceil(hp / baseHp), maxHp = baseHp * stack.
+// Pvz. 3× skull (9/9 HP) → -3 dmg → 6/6 HP, stack 2×. Nutrauktų individualių "kaukolių"
+// mirtis vizualizuojama paprasčiausiai — atnaujiname maxHp.
+function _applyStackDecay() {
+  if (!S.units) return;
+  for (const u of S.units) {
+    if (!u.alive) continue;
+    if (!u.stack || u.stack <= 1) continue;
+    const arch = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES.find(e => e.type === u.utype) : null;
+    const baseHp = (arch && arch.hp) || 1;
+    const expected = Math.max(1, Math.ceil(u.hp / baseHp));
+    if (expected < u.stack) {
+      // Stack'o sumažėjimas — pacio ×N skaičiaus flip animacija (be atskirų dmg skaičių, kad
+      // ekrane nebūtų chaoso). Išsaugom seną skaičių, kad drawUnits galėtų "flipint" į naują.
+      u.stackPopFrom = u.stack;
+      u.stack = expected;
+      u.maxHp = baseHp * u.stack;
+      u.stackPopStart = performance.now();
+    }
+  }
+}
+
 function drawUnits() {
+  _applyStackDecay();
+  // Barracks spawn walk — tween rx/ry nuo durų iki galutinės pozicijos.
+  const _now = performance.now();
+  for (const u of (S.units || [])) {
+    if (!u.alive || !u.spawnWalk) continue;
+    const sw = u.spawnWalk;
+    const t = Math.min(1, (_now - sw.start) / sw.dur);
+    const ease = 1 - Math.pow(1 - t, 2);
+    u.rx = sw.fromX + (sw.toX - sw.fromX) * ease;
+    u.ry = sw.fromY + (sw.toY - sw.fromY) * ease;
+    // Krypties facing pagal judėjimą (skull naudoja u.facing.dx flip'ui).
+    if (u.facing) u.facing.dx = (sw.toX >= sw.fromX) ? 1 : -1;
+    if (t >= 1) {
+      if (sw.mergeTargetId) {
+        if (!sw.mergeFired) {
+          // Atvykimo momentas — trigger'ina target flip + merge flash, bet walker dar lieka matomas fade-out fazėje.
+          const target = (S.units || []).find(x => x.id === sw.mergeTargetId && x.alive);
+          if (target) {
+            const arch = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES.find(e => e.type === target.utype) : null;
+            const baseHp = (arch && arch.hp) || 1;
+            target.stackPopFrom = target.stack || 1;
+            target.stack = (target.stack || 1) + 1;
+            target.maxHp = baseHp * target.stack;
+            target.hp = target.maxHp;
+            target.stackPopStart = performance.now();
+            target.mergeFlashStart = performance.now();  // target blykstelia baltai
+          }
+          sw.mergeFired = true;
+          sw.fadeStart = performance.now();
+          u.mergeFadeStart = performance.now();
+        }
+        const fadeEl = _now - sw.fadeStart;
+        const fadeDur = 260;
+        if (fadeEl >= fadeDur) {
+          u.alive = false;
+          u.spawnWalk = null;
+        }
+        // Laikom rx/ry ant merge target pozicijos, kad nerodytų kitam frame'ui sugrįžtant.
+        u.rx = sw.toX; u.ry = sw.toY;
+      } else {
+        u.rx = sw.toX; u.ry = sw.toY;
+        u.px = sw.toX; u.py = sw.toY;
+        u.spawnWalk = null;
+      }
+    }
+  }
   // Pre-build unit index map once (avoids O(n²) filter inside loop)
   const _unitIdx = new Map();
   const _teamCount = {};
@@ -14858,10 +16629,40 @@ function drawUnits() {
         const sprDir = sdx < 0 ? 'west' : 'east';
         const sImg = getShamanFrame(u, sprDir);
         const sprSz = UNIT_CELL * 2.6;
+        // Merge fade-out: walker tirpsta po atvykimo (scale down + alpha out).
+        let _mergeScale = 1, _mergeAlpha = 1;
+        if (u.mergeFadeStart) {
+          const el = performance.now() - u.mergeFadeStart;
+          const mt = Math.min(1, el / 260);
+          _mergeScale = 1 - mt * 0.55;
+          _mergeAlpha = 1 - mt;
+        }
+        // Target merge flash — blyksnis kai priima walker'į.
+        let _mergeFlash = 0;
+        if (u.mergeFlashStart) {
+          const el = performance.now() - u.mergeFlashStart;
+          const fdur = 240;
+          if (el < fdur) _mergeFlash = 1 - el / fdur;
+          else u.mergeFlashStart = 0;
+        }
         if (sImg && sImg.complete && sImg.naturalWidth > 0) {
-          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
-          ctx.drawImage(sImg, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1) * _mergeAlpha;
+          const _dw = sprSz * _mergeScale, _dh = sprSz * _mergeScale;
+          ctx.drawImage(sImg, cx - _dw / 2, cy - _dh / 2, _dw, _dh);
           ctx.globalAlpha = alpha;
+          if (_mergeFlash > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = alpha * _mergeFlash * 0.32;
+            const _rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, sprSz * 0.6);
+            _rg.addColorStop(0, '#e0a8ff');
+            _rg.addColorStop(0.6, 'rgba(180,80,220,0.4)');
+            _rg.addColorStop(1, 'rgba(180,80,220,0)');
+            ctx.fillStyle = _rg;
+            ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.6, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            ctx.globalAlpha = alpha;
+          }
         } else {
           // Fallback tol kol įkraunama
           ctx.fillStyle = '#cc30ff';
@@ -14872,6 +16673,50 @@ function drawUnits() {
           ctx.fillStyle = '#ffffff';
           ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.35, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = alpha;
+        }
+        // ×N stack indicator + pop animacija
+        if ((u.stack || 1) > 1 || u.stackPopStart) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          const _ly = cy - sprSz / 2 + 6;
+          const _drawNum = (n, scale, alph, dyOff, color) => {
+            if (!n || alph <= 0) return;
+            ctx.globalAlpha = alpha * alph;
+            ctx.font = `bold ${Math.round(16 * scale)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = color;
+            const lbl = `×${n}`;
+            ctx.strokeText(lbl, cx, _ly + dyOff);
+            ctx.fillText(lbl, cx, _ly + dyOff);
+          };
+          if (u.stackPopStart) {
+            const _dur = 360;
+            const _el = performance.now() - u.stackPopStart;
+            if (_el < _dur) {
+              const t = _el / _dur;
+              const ease = 1 - Math.pow(1 - t, 2);
+              const grew = (u.stack || 0) > (u.stackPopFrom || 0);
+              const oldCol = grew ? '#d0a8ff' : '#ff7a7a';
+              const oldDy = grew ? -ease * 10 : -ease * 14;
+              _drawNum(u.stackPopFrom, 1 - ease * 0.3, 1 - ease, oldDy, oldCol);
+              const newScale = 0.6 + ease * 0.55;
+              const newDy = grew ? (1 - ease) * -14 : (1 - ease) * 14;
+              const newCol = grew
+                ? (t < 0.5 ? '#f0d8ff' : '#c68aff')
+                : (t < 0.5 ? '#fff'    : '#ffe066');
+              if ((u.stack || 1) > 1) _drawNum(u.stack, newScale, ease, newDy, newCol);
+            } else {
+              u.stackPopStart = 0;
+              u.stackPopFrom = 0;
+              if ((u.stack || 1) > 1) _drawNum(u.stack, 1, 1, 0, '#c68aff');
+            }
+          } else {
+            _drawNum(u.stack, 1, 1, 0, '#c68aff');
+          }
+          ctx.globalAlpha = alpha;
+          ctx.restore();
         }
       } else if (u.utype === 'spider') {
         const frame = getSpiderFrameState(u);
@@ -14952,22 +16797,52 @@ function drawUnits() {
       } else if (u.utype === 'skull') {
         const frame = getSkullFrameState(u);
         const sprSz = UNIT_CELL * 2.5;
+        // Merge fade-out: walker tirpsta po atvykimo (scale down + alpha out).
+        let _mergeScale = 1, _mergeAlpha = 1;
+        if (u.mergeFadeStart) {
+          const el = performance.now() - u.mergeFadeStart;
+          const mt = Math.min(1, el / 260);
+          _mergeScale = 1 - mt * 0.55;
+          _mergeAlpha = 1 - mt;
+        }
+        // Target merge flash — baltas blyksnis kai priima walker'į.
+        let _mergeFlash = 0;
+        if (u.mergeFlashStart) {
+          const el = performance.now() - u.mergeFlashStart;
+          const fdur = 240;
+          if (el < fdur) _mergeFlash = 1 - el / fdur;
+          else u.mergeFlashStart = 0;
+        }
         if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
-          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1) * _mergeAlpha;
           // Guard glow — bone-white aura
           const _isGuarding = u.guardStart && (performance.now() - u.guardStart) < (skullAnimSheets.guard.frameCount / SKULL_ANIM_FPS.guard) * 1000;
           if (_isGuarding) { ctx.shadowColor = '#fffbe0'; ctx.shadowBlur = 18; }
+          const _dw = sprSz * _mergeScale, _dh = sprSz * _mergeScale;
           if ((u.facing?.dx || -1) < 0) {
             ctx.save();
             ctx.translate(cx, cy);
             ctx.scale(-1, 1);
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, -_dh / 2, _dw, _dh);
             ctx.restore();
           } else {
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, cy - _dh / 2, _dw, _dh);
           }
           ctx.shadowBlur = 0;
           ctx.globalAlpha = alpha;
+          if (_mergeFlash > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = alpha * _mergeFlash * 0.28;
+            const _rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, sprSz * 0.6);
+            _rg.addColorStop(0, '#a8ff9a');
+            _rg.addColorStop(0.6, 'rgba(80,200,90,0.35)');
+            _rg.addColorStop(1, 'rgba(80,200,90,0)');
+            ctx.fillStyle = _rg;
+            ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.6, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            ctx.globalAlpha = alpha;
+          }
         } else {
           ctx.fillStyle = '#e8d8c0';
           ctx.beginPath(); ctx.arc(cx, cy, r * 1.1, 0, Math.PI * 2); ctx.fill();
@@ -14977,6 +16852,52 @@ function drawUnits() {
           ctx.fillStyle = '#ffffff';
           ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.33, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = alpha;
+        }
+        if ((u.stack || 1) > 1 || u.stackPopStart) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          // Flip animacija: senas skaičius nulekia į viršų (fade+scale down), naujas ateina iš apačios.
+          const _ly = cy - sprSz / 2 + 6;
+          const _drawNum = (n, scale, alph, dyOff, color) => {
+            if (!n || alph <= 0) return;
+            ctx.globalAlpha = alpha * alph;
+            ctx.font = `bold ${Math.round(16 * scale)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = color;
+            const lbl = `×${n}`;
+            ctx.strokeText(lbl, cx, _ly + dyOff);
+            ctx.fillText(lbl, cx, _ly + dyOff);
+          };
+          if (u.stackPopStart) {
+            const _dur = 360;
+            const _el = performance.now() - u.stackPopStart;
+            if (_el < _dur) {
+              const t = _el / _dur;
+              const ease = 1 - Math.pow(1 - t, 2);
+              const grew = (u.stack || 0) > (u.stackPopFrom || 0);
+              // Senas skaičius — kyla (grow) arba krenta (decay), fade out
+              const oldCol = grew ? '#a0ffa0' : '#ff7a7a';
+              const oldDy = grew ? -ease * 10 : -ease * 14;
+              _drawNum(u.stackPopFrom, 1 - ease * 0.3, 1 - ease, oldDy, oldCol);
+              // Naujas skaičius — ateina scale up
+              const newScale = 0.6 + ease * 0.55;
+              const newDy = grew ? (1 - ease) * -14 : (1 - ease) * 14;
+              const newCol = grew
+                ? (t < 0.5 ? '#d8ffd8' : '#a0ff70')
+                : (t < 0.5 ? '#fff'    : '#ffe066');
+              if ((u.stack || 1) > 1) _drawNum(u.stack, newScale, ease, newDy, newCol);
+            } else {
+              u.stackPopStart = 0;
+              u.stackPopFrom = 0;
+              if ((u.stack || 1) > 1) _drawNum(u.stack, 1, 1, 0, '#ffe066');
+            }
+          } else {
+            _drawNum(u.stack, 1, 1, 0, '#ffe066');
+          }
+          ctx.globalAlpha = alpha;
+          ctx.restore();
         }
       } else if (u.utype === 'bluebird') {
         const frame = getBlueBirdFrameState(u);
@@ -17375,19 +19296,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const r = canvas.getBoundingClientRect();
     const scaleX = canvas.width  / r.width;
     const scaleY = canvas.height / r.height;
-    const mx = (e.clientX - r.left) * scaleX;
-    const my = (e.clientY - r.top)  * scaleY;
+    const _cmx = (e.clientX - r.left) * scaleX;
+    const _cmy = (e.clientY - r.top)  * scaleY;
+    // Popup/building bounds saugomi pasaulio koordinatėse (rašomi viduje ctx.translate(-cam.x,-cam.y)),
+    // tad click taškas irgi konvertuojamas į pasaulio erdvę.
+    const mx = _cmx + (gameMode === 'adventure' && S.cam ? S.cam.x : 0);
+    const my = _cmy + (gameMode === 'adventure' && S.cam ? S.cam.y : 0);
     const inside = (b) => b && mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h;
     if (_ronkePopupOpen) {
-      if (inside(_ronkeIdleBtnBounds)) {
-        _ronkeIdleMode = !_ronkeIdleMode;
-        return;
-      }
-      if (inside(_ronkeCloseBtnBounds)) {
-        _ronkePopupOpen = false;
-        return;
-      }
-      // bet koks kitas click — nieko, popup lieka atviras kol paspausi X
+      if (!_ronkeRadialMenu) return; // dar neotrenderinta (pirmu click'u) — laukiam
+      const hit = _radialMenuHit(_ronkeRadialMenu, mx, my);
+      if (hit === 'attack')   { _issueNarrativeAttack();   _ronkePopupOpen = false; return; }
+      if (hit === 'pullback') { _issueNarrativePullback(); _ronkePopupOpen = false; return; }
+      if (hit === 'idle')     { _ronkeIdleMode = !_ronkeIdleMode; _ronkePopupOpen = false; return; }
+      if (hit === 'close')    { _ronkePopupOpen = false; return; }
+      // Click už žiedo ribų — uždarom
+      _ronkePopupOpen = false;
       return;
     }
     if (_housePopupOpen) {
@@ -17398,11 +19322,82 @@ document.addEventListener('DOMContentLoaded', () => {
           _houseLevel += 1;
           _triggerBuildingSquish('House3');
           _housePopupOpen = false;
+          // Ubgreidas → statybos fazė (scaffold + plaktukas + bar + speed-up)
+          _primaryConstruction.constructionStart = performance.now();
+          _primaryConstruction.speedUpAnim = null;
+          _primaryConstruction.speedUpPopupOpen = false;
+          _primaryConstruction._lastStrikeFrame = -1;
+          _primaryConstruction.shake = { active: false, start: 0 };
         }
         return;
       }
       _housePopupOpen = false;
       return;
+    }
+    // Primary House3 statybos info popup
+    if (_primaryConstruction.speedUpPopupOpen) {
+      if (inside(_primaryConstruction.speedUpPopupBtnBounds)) {
+        if (_ronkeBalance >= _SPEEDUP_COST && !_primaryConstruction.speedUpAnim) {
+          _ronkeBalance -= _SPEEDUP_COST;
+          const _now = performance.now();
+          const _srcElapsed = Math.min(_CONSTRUCTION_MS, _now - (_primaryConstruction.constructionStart || _now));
+          const _remaining = Math.max(0, _CONSTRUCTION_MS - _srcElapsed);
+          const _animDur = Math.max(120, _remaining / 10); // 10× speed-up
+          _primaryConstruction.speedUpAnim = {
+            startMs: _now,
+            durMs: _animDur,
+            srcElapsed: _srcElapsed,
+            dstElapsed: _CONSTRUCTION_MS,
+          };
+          _primaryConstruction.speedUpPopupOpen = false;
+        }
+        return;
+      }
+      if (inside(_primaryConstruction.speedUpPopupCloseBounds)) {
+        _primaryConstruction.speedUpPopupOpen = false;
+        return;
+      }
+      return;
+    }
+    // Extra mine statybos info popup
+    for (const mine of _extraMines) {
+      if (mine.speedUpPopupOpen) {
+        if (inside(mine.speedUpPopupBtnBounds)) {
+          if (_ronkeBalance >= _SPEEDUP_COST && !mine.speedUpAnim) {
+            _ronkeBalance -= _SPEEDUP_COST;
+            const _now = performance.now();
+            const _srcElapsed = Math.min(_CONSTRUCTION_MS, _now - (mine.constructionStart || _now));
+            const _remaining = Math.max(0, _CONSTRUCTION_MS - _srcElapsed);
+            // 1 sec animacijos per 1 min likusio statybos laiko
+            const _animDur = Math.max(120, _remaining / 10); // 10× speed-up
+            mine.speedUpAnim = {
+              startMs: _now,
+              durMs: _animDur,
+              srcElapsed: _srcElapsed,
+              dstElapsed: _CONSTRUCTION_MS,
+            };
+            mine.speedUpPopupOpen = false;
+          }
+          return;
+        }
+        if (inside(mine.speedUpPopupCloseBounds)) {
+          mine.speedUpPopupOpen = false;
+          return;
+        }
+        return; // popup atviras — kiti klikai ignoruojami
+      }
+    }
+    // Primary >> arrow → atidaro statybos info popup
+    if (_primaryConstruction.speedUpBtnBounds && inside(_primaryConstruction.speedUpBtnBounds)) {
+      if (!_primaryConstruction.speedUpAnim) _primaryConstruction.speedUpPopupOpen = true;
+      return;
+    }
+    // >> mygtukas atidaro statybos info popup
+    for (const mine of _extraMines) {
+      if (mine.speedUpBtnBounds && inside(mine.speedUpBtnBounds)) {
+        if (!mine.speedUpAnim) mine.speedUpPopupOpen = true;
+        return;
+      }
     }
     // Extra mine house popup clicks
     for (const mine of _extraMines) {
@@ -17415,6 +19410,13 @@ document.addEventListener('DOMContentLoaded', () => {
             mine.houseLevel = lvl + 1;
             mine.squishStart = performance.now();
             mine.housePopupOpen = false;
+            // Ubgreidas → vėl einam į statybos fazę (scaffold + plaktukas + bar + speed-up)
+            mine.constructionStart = performance.now();
+            mine.speedUpAnim = null;
+            mine.speedUpPopupOpen = false;
+            // Resetinam mining cycle — baigus statybą prasidės iš naujo (be pawn/PAM tarpiniu metu)
+            mine.cycle = null;
+            mine.coinParticles = [];
           }
           return;
         }
@@ -17462,7 +19464,79 @@ document.addEventListener('DOMContentLoaded', () => {
       _castlePopupOpen = false;
       return;
     }
+    // Speed-up qty [−] / [+]
+    if (_barracksSpeedUpMinusBtnBounds && inside(_barracksSpeedUpMinusBtnBounds)) {
+      if (_barracksProduction) {
+        _barracksSpeedUpQty = Math.max(1, _barracksSpeedUpQty - 1);
+      }
+      return;
+    }
+    if (_barracksSpeedUpPlusBtnBounds && inside(_barracksSpeedUpPlusBtnBounds)) {
+      if (_barracksProduction) {
+        const _suMax = (_barracksProduction.queueLeft || 0) + 1;
+        _barracksSpeedUpQty = Math.min(_suMax, _barracksSpeedUpQty + 1);
+      }
+      return;
+    }
+    // SPEED UP mygtukas — trigger anim pirmam, queue likusiems
+    if (_barracksSpeedUpBtnBounds && inside(_barracksSpeedUpBtnBounds)) {
+      if (!_barracksSpeedUpAnim && _barracksProduction) {
+        const _suMax = (_barracksProduction.queueLeft || 0) + 1;
+        const _suQty = Math.max(1, Math.min(_suMax, _barracksSpeedUpQty));
+        const _suTotal = _SPEEDUP_COST * _suQty;
+        if (_ronkeBalance >= _suTotal) {
+          _ronkeBalance -= _suTotal;
+          const _now = performance.now();
+          const _srcElapsed = Math.min(_BARRACKS_PRODUCE_MS, _now - _barracksProduction.startAt);
+          const _remaining = Math.max(0, _BARRACKS_PRODUCE_MS - _srcElapsed);
+          const _animDur = Math.max(120, _remaining / 10); // 10× speed-up
+          _barracksSpeedUpAnim = {
+            startMs: _now,
+            durMs: _animDur,
+            srcElapsed: _srcElapsed,
+            dstElapsed: _BARRACKS_PRODUCE_MS,
+          };
+          // Likusius speed-up'us auto-apply kitam unit'ui eilėje
+          _barracksProduction.speedUpQueueLeft = _suQty - 1;
+          _barracksSpeedUpQty = 1; // reset UI counter
+        }
+      }
+      return;
+    }
+    if (_barracksPopupOpen) {
+      // Avatar click → select (užblokuoti — ignoruoti)
+      for (const rect of _barracksAvatarRects) {
+        if (mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h) {
+          if (rect.locked) return;
+          _barracksSelectedIdx = rect.idx;
+          return;
+        }
+      }
+      // Qty [-] / [+] mygtukai
+      if (!_barracksProduction && inside(_barracksQtyMinusBtnBounds)) {
+        _barracksQueueCount = Math.max(1, _barracksQueueCount - 1);
+        return;
+      }
+      if (!_barracksProduction && inside(_barracksQtyPlusBtnBounds)) {
+        _barracksQueueCount = Math.min(_BARRACKS_QUEUE_MAX, _barracksQueueCount + 1);
+        return;
+      }
+      // Produce click
+      if (!_barracksProduction && inside(_barracksProduceBtnBounds) && _barracksSelectedIdx !== null) {
+        const _qty = Math.max(1, _barracksQueueCount);
+        if (_ronkeBalance >= _BARRACKS_UNIT_COST * _qty) {
+          _ronkeBalance -= _BARRACKS_UNIT_COST;
+          _barracksProduction = { unitIdx: _barracksSelectedIdx, startAt: performance.now(), queueLeft: _qty - 1 };
+        }
+        return;
+      }
+      // Klikas už popup ribų — uždarom
+      _barracksPopupOpen = false;
+      return;
+    }
     if (inside(_house3Bounds)) {
+      // Upgrade popup atidaromas net ir statybos metu — galima queue'inti sekantį ubgreidą.
+      // Speed-up popup atidaromas tik per >> arrow.
       _housePopupOpen = true;
       return;
     }
@@ -17483,6 +19557,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (inside(_castleBounds)) {
       _castlePopupOpen = true;
+      return;
+    }
+    if (inside(_barracksBounds)) {
+      _barracksPopupOpen = true;
+      return;
     }
   });
 
@@ -17579,6 +19658,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   let lastCanvasPointerDownAt = 0;
+  // Desktop double-click-to-shoot gate
+  let _heroLastClickAt = 0, _heroLastClickX = 0, _heroLastClickY = 0;
+  const _HERO_DBLCLICK_MS = 340, _HERO_DBLCLICK_PX = CELL * 3.5;
   let hoverGx = -1, hoverGy = -1;
   const pointInsideCanvas = e => {
     if (!e || typeof e.clientX !== 'number' || typeof e.clientY !== 'number') return false;
@@ -17760,10 +19842,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const hl = document.getElementById('picker-highlight');
       const ctx = canvas.getContext('2d');
       
-      const img = type === 'elev' ? elevationImg : type === 'tileset1' ? tilesetImg : type === 'tileset3' ? tileset3Img : type === 'bridge' ? bridgeImg : flatImg;
-      const prefix = type === 'elev' ? 'elev' : type === 'tileset1' ? 'tileset1' : type === 'tileset3' ? 'tileset3' : type === 'bridge' ? 'bridge' : 'flat';
+      const _bannerImg = (typeof bannerImgs !== 'undefined' && bannerImgs) ? bannerImgs : {};
+      const img = type === 'elev' ? elevationImg
+                : type === 'tileset1' ? tilesetImg
+                : type === 'tileset3' ? tileset3Img
+                : type === 'bridge' ? bridgeImg
+                : type === 'banner' ? _bannerImg.banner
+                : type === 'bannerslots' ? _bannerImg.banner_slots
+                : type === 'ribbonblack' ? _bannerImg.ribbon_black
+                : type === 'ribbonblue' ? _bannerImg.ribbon_blue
+                : type === 'ribbonpurple' ? _bannerImg.ribbon_purple
+                : type === 'ribbonred' ? _bannerImg.ribbon_red
+                : type === 'ribbonyellow' ? _bannerImg.ribbon_yellow
+                : flatImg;
+      const prefix = type; // visada naudojam patį type kaip prefix
 
-      title.innerText = `SELECT ${type === 'elev' ? 'ELEVATION' : type === 'tileset1' ? 'TILESET 1' : type === 'tileset3' ? 'TILESET 3' : type === 'bridge' ? 'BRIDGE' : 'FLAT'} TILE`;
+      const _titles = {
+        elev: 'ELEVATION', tileset1: 'TILESET 1', tileset3: 'TILESET 3',
+        bridge: 'BRIDGE', flat: 'FLAT',
+        banner: 'BANNER', bannerslots: 'BANNER SLOTS',
+        ribbonblack: 'RIBBON BLACK', ribbonblue: 'RIBBON BLUE',
+        ribbonpurple: 'RIBBON PURPLE', ribbonred: 'RIBBON RED',
+        ribbonyellow: 'RIBBON YELLOW',
+      };
+      title.innerText = `SELECT ${_titles[type] || type.toUpperCase()} TILE`;
       modal.style.display = 'flex';
       
       if(img && img.complete && img.naturalWidth > 0) {
@@ -18034,6 +20136,40 @@ document.addEventListener('DOMContentLoaded', () => {
     html += `<img src="assets_tiny/Resources/Gold Mine/GoldMine_Inactive.png" onclick="setEditTile('mine_1')" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px;" />`;
     html += `<img src="assets_tiny/Terrain/Bushe1.png" onclick="openBushPicker()" title="Animated Bushes" style="width:32px; height:32px; object-fit:cover; object-position:left top; cursor:pointer; background:rgba(20,60,30,0.85); padding:2px; border-radius:4px; border:1px solid #6ccf74; image-rendering:pixelated;" onmouseover="this.style.background='rgba(60,110,70,0.95)'" onmouseout="this.style.background='rgba(20,60,30,0.85)'" />`;
     html += `</div>`;
+    // UI Banners (Tiny Swords) — dekoratyvūs banner'iai ir ribon'ai
+    html += `<div style="color:#ffcc55; font-size:10px; margin-top:15px; margin-bottom:5px;">BANNERS & RIBBONS</div><div style="display:flex; flex-wrap:wrap; gap:4px; max-width:200px;">`;
+    const _bannerList = [
+      { id: 'banner',        title: 'Banner' },
+      { id: 'banner_slots',  title: 'Banner Slots' },
+      { id: 'ribbon_black',  title: 'Ribbon Black' },
+      { id: 'ribbon_blue',   title: 'Ribbon Blue' },
+      { id: 'ribbon_purple', title: 'Ribbon Purple' },
+      { id: 'ribbon_red',    title: 'Ribbon Red' },
+      { id: 'ribbon_yellow', title: 'Ribbon Yellow' },
+    ];
+    const _bannerSrc = {
+      banner:        'assets_tiny/UI_Banners/Banner.png',
+      banner_slots:  'assets_tiny/UI_Banners/Slots.png',
+      ribbon_black:  'assets_tiny/UI_Banners/Ribbon_Black.png',
+      ribbon_blue:   'assets_tiny/UI_Banners/Ribbon_Blue.png',
+      ribbon_purple: 'assets_tiny/UI_Banners/Ribbon_Purple.png',
+      ribbon_red:    'assets_tiny/UI_Banners/Ribbon_Red.png',
+      ribbon_yellow: 'assets_tiny/UI_Banners/Ribbon_Yellow.png',
+    };
+    const _bannerPickerType = {
+      banner: 'banner',
+      banner_slots: 'bannerslots',
+      ribbon_black: 'ribbonblack',
+      ribbon_blue: 'ribbonblue',
+      ribbon_purple: 'ribbonpurple',
+      ribbon_red: 'ribbonred',
+      ribbon_yellow: 'ribbonyellow',
+    };
+    for (const b of _bannerList) {
+      const ptype = _bannerPickerType[b.id];
+      html += `<img src="${_bannerSrc[b.id]}" onclick="openPicker('${ptype}')" title="${b.title} — open picker" style="width:32px; height:32px; object-fit:contain; cursor:pointer; background:rgba(60,40,20,0.6); padding:2px; border-radius:4px; border:1px solid #ffcc55; image-rendering:pixelated;" onmouseover="this.style.background='rgba(100,70,30,0.85)'" onmouseout="this.style.background='rgba(60,40,20,0.6)'" />`;
+    }
+    html += `</div>`;
     
     // Append the export button to the end properly
     const expBtn = mapPanel.querySelector('button[onclick="exportMap()"]');
@@ -18152,7 +20288,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (!S.decorations) S.decorations = {};
-            if (window.editTileType.startsWith('elevgroup_') || window.editTileType.startsWith('flatgroup_') || window.editTileType.startsWith('tileset1group_') || window.editTileType.startsWith('tileset3group_') || window.editTileType.startsWith('bridgegroup_')) {
+            if (window.editTileType.startsWith('elevgroup_') || window.editTileType.startsWith('flatgroup_') || window.editTileType.startsWith('tileset1group_') || window.editTileType.startsWith('tileset3group_') || window.editTileType.startsWith('bridgegroup_') || window.editTileType.startsWith('bannergroup_') || window.editTileType.startsWith('bannerslotsgroup_') || window.editTileType.startsWith('ribbonblackgroup_') || window.editTileType.startsWith('ribbonbluegroup_') || window.editTileType.startsWith('ribbonpurplegroup_') || window.editTileType.startsWith('ribbonredgroup_') || window.editTileType.startsWith('ribbonyellowgroup_')) {
                 const parts = window.editTileType.split('_');
                 const pType = parts[0].replace('group', '');
                 const pTx = parseInt(parts[1], 10), pTy = parseInt(parts[2], 10);
@@ -18232,12 +20368,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_ronkeIdleMode) {
       return;
     }
-    // Blokuojam šaudymą kai bet koks žaidimo popup atviras (namuko, akmens, pilies)
-    if (_housePopupOpen || _stonePopupOpen || _castlePopupOpen ||
-        _extraMines.some(m => m.housePopupOpen || m.stonePopupOpen)) {
+    // Blokuojam šaudymą kai bet koks žaidimo popup atviras (namuko, akmens, pilies, statybos)
+    if (_housePopupOpen || _stonePopupOpen || _castlePopupOpen || _barracksPopupOpen ||
+        _primaryConstruction.speedUpPopupOpen ||
+        _extraMines.some(m => m.housePopupOpen || m.stonePopupOpen || m.speedUpPopupOpen)) {
       return;
     }
-
+    // Blokuojam šaudymą kai spaudžiam ant >> mygtuko (statybos metu)
+    if ((_primaryConstruction.speedUpBtnBounds && _inB(_primaryConstruction.speedUpBtnBounds)) ||
+        _extraMines.some(m => m.speedUpBtnBounds && _inB(m.speedUpBtnBounds))) {
+      return;
+    }
     SFX.init();
     const clicked = S.units.find(u => u.team === 0 && u.alive && u.x === gx && u.y === gy);
     if (clicked) {
@@ -18292,6 +20433,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
     }
+    // Adventure: reikia double-click'o šūviui
+    if (gameMode === 'adventure') {
+      const _now = performance.now();
+      const _dt = _now - _heroLastClickAt;
+      const _dd = Math.hypot(x - _heroLastClickX, y - _heroLastClickY);
+      if (_dt >= _HERO_DBLCLICK_MS || _dd >= _HERO_DBLCLICK_PX) {
+        // Pirmas click'as — tik aim, be šūvio
+        _heroLastClickAt = _now;
+        _heroLastClickX = x; _heroLastClickY = y;
+        updateP1Aim(x, y);
+        return;
+      }
+      // 2-as click'as per window → šauk ir reset
+      _heroLastClickAt = 0;
+    }
     updateP1Aim(x, y);
     S.pending[0] = { unitId: sel.id, t: 'shoot' };
     setActionBadge(0, S.pending[0]);
@@ -18314,6 +20470,8 @@ document.addEventListener('DOMContentLoaded', () => {
   canvasInputEl.addEventListener('click', e => {
     if (performance.now() - lastCanvasPointerDownAt < 250) return;
     if (overlayBlocksCanvasInput()) return;
+    // Blokuoti šaudymą kol atidarytas ronke radial menu arba idle mode
+    if (_ronkePopupOpen || _ronkeIdleMode) return;
     SFX.init();
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
