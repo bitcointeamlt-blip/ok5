@@ -2735,8 +2735,8 @@ function _getBarracksElapsed(now) {
   return el;
 }
 // unitIdx → enemy archetype type (indeksai atitinka avatar grid pozicijas 0..15).
-// Integruoti: 0=skull, 1=shaman. Likusius pridėsim vėliau.
-const _BARRACKS_UNIT_TYPES = ['skull', null, null, null, 'shaman', null, null, null,
+// Integruoti: 0=skull, 2=harpoon_fish, 4=shaman. Likusius pridėsim vėliau.
+const _BARRACKS_UNIT_TYPES = ['skull', null, 'harpoon_fish', null, 'shaman', null, null, null,
                               null, null, null, null, null, null, null, null];
 function _findBarracksCell() {
   if (!S.decorations) return null;
@@ -2796,7 +2796,18 @@ function _barracksSpawnTrained(unitIdx) {
   if (!spot) return;
   if (!Array.isArray(S.units)) S.units = [];
   const u = mkUnit(nextEditorUnitId(), 1, spot.x, spot.y, -1, archetype);
-  const doorX = spot.x + 1 - 35 / CELL, doorY = spot.y - 2;
+  // Baraku durys — FIXED ref point: pirmasis marker'is (artimiausias barakams)
+  // arba fallback candidate. Jei naudotume `spot`, durys keisis kai antras/trečias
+  // unit tipas užims tolimesnį marker'į → unit'as ateis iš už baraku / uz ekrano.
+  let doorRefX, doorRefY;
+  if (markerSpots.length > 0) {
+    doorRefX = markerSpots[0].x;
+    doorRefY = markerSpots[0].y;
+  } else {
+    doorRefX = cell.c;
+    doorRefY = cell.r + 1;
+  }
+  const doorX = doorRefX + 1 - 35 / CELL, doorY = doorRefY - 2;
   u.rx = doorX; u.ry = doorY;
   u.px = doorX; u.py = doorY;
   if (existing) {
@@ -3796,6 +3807,34 @@ function getShamanFrame(u, dir) {
   return frames[idx];
 }
 
+// ===== HARPOON FISH (barracks unit) =====
+// Naudoja jau užkrautus _fishAnims (idle=8f, run=6f, throw=8f, 192×192).
+// swingStart/throwStart nustatoma action handler'yje, animacija paleidžia harpūną ~fire frame'e.
+const _HFISH_FRAME_SZ = 192;
+const _HFISH_THROW_FRAMES = 8, _HFISH_THROW_MS = 90;
+const _HFISH_THROW_FIRE_FRAME = 5;
+const _HFISH_IDLE_FRAMES = 8, _HFISH_IDLE_MS = 120;
+const _HFISH_RUN_FRAMES = 6, _HFISH_RUN_MS = 110;
+function getHarpoonFishFrameState(u) {
+  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const throwElapsed = u.hfishThrowStart ? performance.now() - u.hfishThrowStart : Infinity;
+  const throwDur = _HFISH_THROW_FRAMES * _HFISH_THROW_MS;
+  const isThrowing = throwElapsed < throwDur;
+  let anim, frames, ms, sheet;
+  if (isThrowing) {
+    anim = 'throw'; frames = _HFISH_THROW_FRAMES; ms = _HFISH_THROW_MS; sheet = _fishAnims.throw.img;
+  } else if (isMoving) {
+    anim = 'run'; frames = _HFISH_RUN_FRAMES; ms = _HFISH_RUN_MS; sheet = _fishAnims.run.img;
+  } else {
+    anim = 'idle'; frames = _HFISH_IDLE_FRAMES; ms = _HFISH_IDLE_MS; sheet = _fishAnims.idle.img;
+  }
+  if (!sheet || !sheet.complete || !sheet.naturalWidth) return null;
+  let idx;
+  if (isThrowing) idx = Math.min(Math.floor(throwElapsed / ms), frames - 1);
+  else idx = Math.floor(performance.now() / ms) % frames;
+  return { sheet, sx: idx * _HFISH_FRAME_SZ, sy: 0, sw: _HFISH_FRAME_SZ, sh: _HFISH_FRAME_SZ };
+}
+
 function loadHorizontalSheetFrames(path, frameCount) {
   const sheet = new Image();
   sheet.src = path;
@@ -4096,6 +4135,7 @@ const ENEMY_TYPES = [
   { type: 'ronke2',    hp: 8,  color: '#4466dd', scale: 1.50, label: 'RONKE2' },
   { type: 'stabby',   hp: 4,  color: '#cc8833', scale: 1.20, label: 'STABBY' },
   { type: 'pam',      hp: 5,  color: '#ffcc00', scale: 1.20, label: 'PAM' },
+  { type: 'harpoon_fish', hp: 4, color: '#00aacc', scale: 1.00, label: 'HARPOON FISH' },
 ];
 
 const EDITOR_NPC_TYPES = [
@@ -5263,7 +5303,7 @@ function initHubRoom() {
   S.pending = [null, null];
   S.pendingEnemyBatch = [];
   S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
-  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = []; S.harpoons = [];
+  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = []; S.harpoons = []; S.barracksHarpoons = [];
   _shamanExplosions.length = 0;
   S.pendingPassiveRewards = [];
   S.shake = 0; S.animT = 1;
@@ -9628,6 +9668,7 @@ function _getBarracksUnitInfo(idx) {
   const info = { label: arch.label || type.toUpperCase(), hp: arch.hp, color: arch.color, type };
   if (type === 'skull')  { info.dmg = 3; info.block = 10; }
   if (type === 'shaman') { info.dmg = 2; }
+  if (type === 'harpoon_fish') { info.dmg = 3; }
   return info;
 }
 
@@ -12289,6 +12330,18 @@ function applySingleAction(team, a) {
       }, 430);
       return;
     }
+    if (a.t === 'hfishthrow') {
+      unit.hfishThrowStart = performance.now();
+      unit.hfishAttackCd = performance.now() + 2600;
+      unit.facing = { dx: Math.sign(a.targetX - unit.x) || unit.facing?.dx || -1, dy: 0 };
+      const _fx = unit.x, _fy = unit.y, _tx = a.targetX, _ty = a.targetY, _fd = unit.facing.dx;
+      const _stack = unit.stack || 1;
+      // Fire harpoon at throw fire frame (~5 of 8 at 90ms = ~450ms)
+      setTimeout(() => {
+        if (S && S.units) spawnBarracksHarpoon(_fx, _fy, _tx, _ty, _fd, _stack);
+      }, _HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS);
+      return;
+    }
     if (a.t === 'move') {
       const nx = unit.x + a.dx, ny = unit.y + a.dy;
       if (!isWall(nx, ny) && !S.units.some(u => u.alive && u.id !== unit.id && u.x === nx && u.y === ny)) {
@@ -13684,6 +13737,7 @@ function loop(now) {
   drawSpawnAnims();
   drawShamanProjectiles();
   drawShamanExplosions();
+  drawBarracksHarpoons();
   drawRonke2Projectiles();
   drawHarpoons();
   drawThreatIndicators();
@@ -13790,6 +13844,49 @@ function _drawUnitSilhouetteOutline(u, cx, cy) {
     drawFrame(0, 0);
     return true;
   }
+  if (u.utype === 'shaman' && typeof getShamanFrame === 'function') {
+    const sdx = u.facing ? u.facing.dx : -1;
+    const sprDir = sdx < 0 ? 'west' : 'east';
+    const sImg = getShamanFrame(u, sprDir);
+    if (!sImg || !sImg.complete || !sImg.naturalWidth) return false;
+    const sprSz = UNIT_CELL * 2.6;
+    const OL = 2;
+    const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+    const drawFrame = (dx, dy) => {
+      ctx.drawImage(sImg, cx - sprSz / 2 + dx, cy - sprSz / 2 + dy, sprSz, sprSz);
+    };
+    ctx.save();
+    ctx.filter = 'brightness(0) invert(1)';
+    for (const [dx, dy] of offs) drawFrame(dx, dy);
+    ctx.restore();
+    drawFrame(0, 0);
+    return true;
+  }
+  if (u.utype === 'harpoon_fish' && typeof getHarpoonFishFrameState === 'function') {
+    const frame = getHarpoonFishFrameState(u);
+    if (!frame || !frame.sheet || !frame.sheet.complete || !frame.sheet.naturalWidth) return false;
+    const sprSz = UNIT_CELL * 2.5;
+    const flip = (u.facing?.dx || -1) < 0;
+    const OL = 2;
+    const offs = [[-OL,0],[OL,0],[0,-OL],[0,OL],[-OL,-OL],[OL,-OL],[-OL,OL],[OL,OL]];
+    const drawFrame = (dx, dy) => {
+      if (flip) {
+        ctx.save();
+        ctx.translate(cx + dx, cy + dy);
+        ctx.scale(-1, 1);
+        ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+        ctx.restore();
+      } else {
+        ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2 + dx, cy - sprSz / 2 + dy, sprSz, sprSz);
+      }
+    };
+    ctx.save();
+    ctx.filter = 'brightness(0) invert(1)';
+    for (const [dx, dy] of offs) drawFrame(dx, dy);
+    ctx.restore();
+    drawFrame(0, 0);
+    return true;
+  }
   return false;
 }
 
@@ -13805,6 +13902,16 @@ function _drawUnitHoverTooltip() {
     const _dmg = 3 * (u.stack || 1);
     lines.push(`DMG:   ${_dmg}`);
     lines.push(`BLOCK: 10%`);
+  }
+  if (u.utype === 'shaman') {
+    const _dmg = 2 * (u.stack || 1);
+    lines.push(`DMG:   ${_dmg}`);
+    lines.push(`RANGE: 8`);
+  }
+  if (u.utype === 'harpoon_fish') {
+    const _dmg = 3 * (u.stack || 1);
+    lines.push(`DMG:   ${_dmg}`);
+    lines.push(`RANGE: 6`);
   }
   if (typeof u.dodge === 'number') lines.push(`DODGE: ${Math.round(u.dodge * 100)}%`);
 
@@ -14572,6 +14679,70 @@ function drawShamanProjectiles() {
   });
   ctx.restore();
   if (S.shamanProjectiles) S.shamanProjectiles = S.shamanProjectiles.filter(p => !p.done);
+}
+
+// ---- Barracks Harpoon Fish Projectile ----------------------------
+// Atskiras nuo stabby `spawnHarpoon` — gali kenkti ir hero (team=0), ir enemy team=1.
+// Bet šiame žaidime barracks-spawned unitai yra team=1, tad taikinys — team=0 hero.
+function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack) {
+  if (!S.barracksHarpoons) S.barracksHarpoons = [];
+  const dir = faceDx || Math.sign(toGx - fromGx) || 1;
+  const sx = (fromGx + 0.5 + dir * 0.5) * CELL;
+  const sy = (fromGy + 0.5) * CELL - CELL * 0.3;
+  const tx = (toGx + 0.5) * CELL;
+  const ty = (toGy + 0.5) * CELL;
+  const dist = Math.abs(tx - sx);
+  const duration = Math.max(300, dist / (CELL * 0.005));
+  S.barracksHarpoons.push({ sx, sy, tx, ty, born: performance.now(), duration, dir, done: false, hit: false, stack: stack || 1 });
+}
+
+function drawBarracksHarpoons() {
+  if (!S.barracksHarpoons?.length) return;
+  const now = performance.now();
+  const harpSz = CELL * 0.35;
+  const hImg = (typeof harpoonImg !== 'undefined' ? harpoonImg : _fishAnims.harpoon.img);
+  S.barracksHarpoons.forEach(h => {
+    if (h.done) return;
+    const t = Math.min(1, (now - h.born) / h.duration);
+    const cx = h.sx + (h.tx - h.sx) * t;
+    const cy = h.sy + (h.ty - h.sy) * t;
+    if (!h.hit && S.units) {
+      const hGx = Math.floor(cx / CELL);
+      const hGy = Math.floor(cy / CELL);
+      const hero = S.units.find(u => u.team === 0 && u.alive && u.x === hGx && u.y === hGy);
+      if (hero) {
+        h.hit = true; h.done = true;
+        const _base = 3;
+        const dmg = heroDmg(_base * (h.stack || 1));
+        S.energy = Math.max(0, S.energy - dmg);
+        spawnDmgNumber(hero.x, hero.y, `-${dmg}`, '#ff8833', 20, 'crit');
+        SFX.heroHit();
+        spawnHit(hero.x, hero.y, '#ff8833', 14);
+        return;
+      }
+    }
+    if (!h.hit && t < 1) {
+      const hGx = Math.floor(cx / CELL);
+      const hGy = Math.floor(cy / CELL);
+      if (hGx < 0 || hGx >= COLS || hGy < 0 || hGy >= ROWS || isWall(hGx, hGy)) {
+        h.done = true; return;
+      }
+    }
+    if (t >= 1) { h.done = true; return; }
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((h.dir > 0 ? 0 : Math.PI) + Math.PI / 4);
+    ctx.shadowColor = '#44ccff'; ctx.shadowBlur = 6;
+    if (hImg && hImg.complete && hImg.naturalWidth > 0) {
+      ctx.drawImage(hImg, 0, 0, 64, 64, -harpSz / 2, -harpSz / 2, harpSz, harpSz);
+    } else {
+      ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-harpSz / 2, 0); ctx.lineTo(harpSz / 2, 0); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  });
+  S.barracksHarpoons = S.barracksHarpoons.filter(h => !h.done);
 }
 
 function drawShamanExplosions() {
@@ -16698,22 +16869,122 @@ function drawUnits() {
               const t = _el / _dur;
               const ease = 1 - Math.pow(1 - t, 2);
               const grew = (u.stack || 0) > (u.stackPopFrom || 0);
-              const oldCol = grew ? '#d0a8ff' : '#ff7a7a';
+              const oldCol = grew ? '#a0ffa0' : '#ff7a7a';
               const oldDy = grew ? -ease * 10 : -ease * 14;
               _drawNum(u.stackPopFrom, 1 - ease * 0.3, 1 - ease, oldDy, oldCol);
               const newScale = 0.6 + ease * 0.55;
               const newDy = grew ? (1 - ease) * -14 : (1 - ease) * 14;
               const newCol = grew
-                ? (t < 0.5 ? '#f0d8ff' : '#c68aff')
+                ? (t < 0.5 ? '#d8ffd8' : '#a0ff70')
                 : (t < 0.5 ? '#fff'    : '#ffe066');
               if ((u.stack || 1) > 1) _drawNum(u.stack, newScale, ease, newDy, newCol);
             } else {
               u.stackPopStart = 0;
               u.stackPopFrom = 0;
-              if ((u.stack || 1) > 1) _drawNum(u.stack, 1, 1, 0, '#c68aff');
+              if ((u.stack || 1) > 1) _drawNum(u.stack, 1, 1, 0, '#ffe066');
             }
           } else {
-            _drawNum(u.stack, 1, 1, 0, '#c68aff');
+            _drawNum(u.stack, 1, 1, 0, '#ffe066');
+          }
+          ctx.globalAlpha = alpha;
+          ctx.restore();
+        }
+      } else if (u.utype === 'harpoon_fish') {
+        const frame = getHarpoonFishFrameState(u);
+        const sprSz = UNIT_CELL * 2.5;
+        const flip = (u.facing?.dx || -1) < 0;
+        // ── BLOKAS A: merge fade-out ──
+        let _mergeScale = 1, _mergeAlpha = 1;
+        if (u.mergeFadeStart) {
+          const el = performance.now() - u.mergeFadeStart;
+          const mt = Math.min(1, el / 260);
+          _mergeScale = 1 - mt * 0.55;
+          _mergeAlpha = 1 - mt;
+        }
+        // ── BLOKAS B: target merge flash ──
+        let _mergeFlash = 0;
+        if (u.mergeFlashStart) {
+          const el = performance.now() - u.mergeFlashStart;
+          const fdur = 240;
+          if (el < fdur) _mergeFlash = 1 - el / fdur;
+          else u.mergeFlashStart = 0;
+        }
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1) * _mergeAlpha;
+          const _dw = sprSz * _mergeScale, _dh = sprSz * _mergeScale;
+          if (flip) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, -_dh / 2, _dw, _dh);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, cy - _dh / 2, _dw, _dh);
+          }
+          ctx.globalAlpha = alpha;
+          if (_mergeFlash > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = alpha * _mergeFlash * 0.32;
+            const _rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, sprSz * 0.6);
+            _rg.addColorStop(0, '#a8ecff');
+            _rg.addColorStop(0.6, 'rgba(80,180,230,0.4)');
+            _rg.addColorStop(1, 'rgba(80,180,230,0)');
+            ctx.fillStyle = _rg;
+            ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.6, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            ctx.globalAlpha = alpha;
+          }
+        } else {
+          ctx.fillStyle = '#00aacc';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.35, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+        // ── BLOKAS C: ×N stack indicator + pop animacija ──
+        if ((u.stack || 1) > 1 || u.stackPopStart) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          const _ly = cy - sprSz / 2 + 6;
+          const _drawNum = (n, scale, alph, dyOff, color) => {
+            if (!n || alph <= 0) return;
+            ctx.globalAlpha = alpha * alph;
+            ctx.font = `bold ${Math.round(16 * scale)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = color;
+            const lbl = `×${n}`;
+            ctx.strokeText(lbl, cx, _ly + dyOff);
+            ctx.fillText(lbl, cx, _ly + dyOff);
+          };
+          if (u.stackPopStart) {
+            const _dur = 360;
+            const _el = performance.now() - u.stackPopStart;
+            if (_el < _dur) {
+              const t = _el / _dur;
+              const ease = 1 - Math.pow(1 - t, 2);
+              const grew = (u.stack || 0) > (u.stackPopFrom || 0);
+              const oldCol = grew ? '#a0ffa0' : '#ff7a7a';
+              const oldDy = grew ? -ease * 10 : -ease * 14;
+              _drawNum(u.stackPopFrom, 1 - ease * 0.3, 1 - ease, oldDy, oldCol);
+              const newScale = 0.6 + ease * 0.55;
+              const newDy = grew ? (1 - ease) * -14 : (1 - ease) * 14;
+              const newCol = grew
+                ? (t < 0.5 ? '#d8ffd8' : '#a0ff70')
+                : (t < 0.5 ? '#fff'    : '#ffe066');
+              if ((u.stack || 1) > 1) _drawNum(u.stack, newScale, ease, newDy, newCol);
+            } else {
+              u.stackPopStart = 0;
+              u.stackPopFrom = 0;
+              if ((u.stack || 1) > 1) _drawNum(u.stack, 1, 1, 0, '#ffe066');
+            }
+          } else {
+            _drawNum(u.stack, 1, 1, 0, '#ffe066');
           }
           ctx.globalAlpha = alpha;
           ctx.restore();
@@ -18101,7 +18372,7 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     const _swingDur = (10 / SHAMAN_ANIM_FPS.attack) * 1000;
     const _isCasting = unit.swingStart && (now - unit.swingStart) < _swingDur;
     const _cdReady = !unit.shamanAttackCd || now > unit.shamanAttackCd;
-    const SHAMAN_RANGE = 6;
+    const SHAMAN_RANGE = 8;
 
     if (!_isCasting && _cdReady && heroDist >= 2 && heroDist <= SHAMAN_RANGE) {
       return { action: { t: 'shamancast', targetX: nearest.x, targetY: nearest.y }, score: 220 };
@@ -18128,6 +18399,41 @@ function aiUnitDecide(unit, nextBullets, safe, p1Future) {
     return null;
   }
   // --- END SHAMAN AI ---
+
+  // --- HARPOON FISH AI: ranged thrower, keeps distance, throws harpoon ---
+  if (unit.utype === 'harpoon_fish') {
+    const now = performance.now();
+    const heroDist = nearest.dist;
+    const aimDx = nearest.x !== unit.x ? Math.sign(nearest.x - unit.x) : (unit.facing?.dx || -1);
+    unit.facing = { dx: aimDx, dy: 0 };
+    const _throwDur = _HFISH_THROW_FRAMES * _HFISH_THROW_MS;
+    const _isThrowing = unit.hfishThrowStart && (now - unit.hfishThrowStart) < _throwDur;
+    const _cdReady = !unit.hfishAttackCd || now > unit.hfishAttackCd;
+    const HFISH_RANGE = 6;
+    const sameRow = nearest.y === unit.y;
+    if (!_isThrowing && _cdReady && sameRow && heroDist >= 2 && heroDist <= HFISH_RANGE) {
+      return { action: { t: 'hfishthrow', targetX: nearest.x, targetY: nearest.y }, score: 230 };
+    }
+    const candidateMoves = safeMoves.length > 0 ? safeMoves : moves;
+    if (candidateMoves.length === 0) return null;
+    let best = null, bestScore = -Infinity;
+    for (const m of candidateMoves) {
+      const d = Math.abs(nearest.x - m.nx) + Math.abs(nearest.y - m.ny);
+      let score = 0;
+      if (d >= 3 && d <= 6) score += 20;
+      else if (d < 2) score -= 30;
+      else if (d > 6) score += 8;
+      if (m.ny === nearest.y) score += 10; // prefer same-row for line-of-sight throw
+      score += Math.random() * 5;
+      if (score > bestScore) { bestScore = score; best = m; }
+    }
+    if (best) {
+      if (best.dx !== 0) unit.facing = { dx: Math.sign(best.dx), dy: 0 };
+      return { action: { t: 'move', dx: best.dx, dy: best.dy }, score: 80 };
+    }
+    return null;
+  }
+  // --- END HARPOON FISH AI ---
 
 
   // --- GRUNT / SHOOTER AI ---
