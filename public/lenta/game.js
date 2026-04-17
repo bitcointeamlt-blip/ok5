@@ -2708,28 +2708,31 @@ let _barracksPopupOpen = false;
 let _barracksSelectedIdx = null;       // 0..15 pasirinkto unit'o indeksas arba null
 let _barracksProduceBtnBounds = null;  // produce mygtuko hit box
 let _barracksAvatarRects = [];         // kiekvieno avataro hit box'ai
-let _barracksProduction = null;        // { unitIdx, startAt, queueLeft } arba null
-let _barracksSpeedUpAnim = null;       // { startMs, durMs, srcElapsed, dstElapsed }
-let _barracksSpeedUpBtnBounds = null;  // SPEED UP mygtuko hit box baraku lentutėje
-let _barracksQueueCount = 1;           // kiek vienetų treniruoti vienu paspaudimu (1..10)
+// PER-SLOT production: leidžia treniruoti kelis unit tipus lygiagrečiai.
+// Key = unitIdx (0..15), value = { startAt, queueLeft, speedUpQueueLeft }
+let _barracksProductions = {};
+let _barracksSpeedUpAnims = {};         // key = unitIdx → { startMs, durMs, srcElapsed, dstElapsed }
+let _barracksSpeedUpBtnBounds = null;   // SPEED UP mygtuko hit box (stats window'e, per selected slot)
+let _barracksQueueCount = 1;            // kiek vienetų treniruoti vienu paspaudimu (1..10)
 const _BARRACKS_QUEUE_MAX = 10;
 let _barracksQtyMinusBtnBounds = null; // [-] mygtuko hit box
 let _barracksQtyPlusBtnBounds = null;  // [+] mygtuko hit box
-let _barracksSpeedUpQty = 1;           // kiek speed-up'ų panaudoti (1..queue+1)
+let _barracksSpeedUpQtys = {};         // per-slot speed-up qty (1..queue+1)
 let _barracksSpeedUpMinusBtnBounds = null;
 let _barracksSpeedUpPlusBtnBounds = null;
-// Grąžina efektyvų elapsed'ą su speed-up animacijos interpoliacija. null jei gamybos nėra.
-function _getBarracksElapsed(now) {
-  if (!_barracksProduction) return null;
-  let el = now - _barracksProduction.startAt;
-  if (_barracksSpeedUpAnim) {
-    const a = _barracksSpeedUpAnim;
-    const t = Math.min(1, (now - a.startMs) / a.durMs);
-    el = a.srcElapsed + (a.dstElapsed - a.srcElapsed) * t;
+// Grąžina efektyvų elapsed'ą su speed-up animacijos interpoliacija konkrečiam slot'ui.
+// null jei nėra aktyvaus production'o šiam slot'ui.
+function _getBarracksElapsed(now, unitIdx) {
+  const prod = _barracksProductions[unitIdx];
+  if (!prod) return null;
+  let el = now - prod.startAt;
+  const anim = _barracksSpeedUpAnims[unitIdx];
+  if (anim) {
+    const t = Math.min(1, (now - anim.startMs) / anim.durMs);
+    el = anim.srcElapsed + (anim.dstElapsed - anim.srcElapsed) * t;
     if (t >= 1) {
-      // Baigėme animaciją — pastumiam startAt taip, kad production natūraliai finišuotų
-      _barracksProduction.startAt = now - _BARRACKS_PRODUCE_MS - 1;
-      _barracksSpeedUpAnim = null;
+      prod.startAt = now - _BARRACKS_PRODUCE_MS - 1;
+      delete _barracksSpeedUpAnims[unitIdx];
     }
   }
   return el;
@@ -9278,173 +9281,38 @@ function drawForegroundDecorations() {
         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
       }
+      // Training indikatorius: mini progress juosta avataro apačioje + queue badge viršuje dešinėje
+      const _slotProd = _barracksProductions[idx];
+      if (_slotProd) {
+        const _el = _getBarracksElapsed(performance.now(), idx) || 0;
+        const _fr = Math.max(0, Math.min(1, _el / _BARRACKS_PRODUCE_MS));
+        const pbH = 3;
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(ax + 2, ay + CELL_SZ - pbH - 2, CELL_SZ - 4, pbH);
+        ctx.fillStyle = '#ffc97a';
+        ctx.fillRect(ax + 2, ay + CELL_SZ - pbH - 2, (CELL_SZ - 4) * _fr, pbH);
+        const _qL = _slotProd.queueLeft || 0;
+        if (_qL > 0) {
+          ctx.fillStyle = 'rgba(0,0,0,0.85)';
+          const qbx = ax + CELL_SZ - 14, qby = ay + 2;
+          rr(qbx, qby, 12, 12, 3); ctx.fill();
+          ctx.fillStyle = '#ffd47a';
+          ctx.font = 'bold 9px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`+${_qL}`, qbx + 6, qby + 6.5);
+        }
+      }
       _barracksAvatarRects.push({ x: ax, y: ay, w: CELL_SZ, h: CELL_SZ, idx, locked });
     }
 
-    // Cost row + Produce mygtukas (arba progress bar jeigu gamyba vyksta)
+    // Cost row + TRAIN mygtukas — visada matomi (nebepriklauso nuo production state).
+    // Progress + speed-up dabar rodomi stats window'e (per-slot).
     const bottomY = gy0 + gridH + 10;
-    if (_barracksProduction && performance.now() - _barracksProduction.startAt >= _BARRACKS_PRODUCE_MS) {
-      const _finIdx = _barracksProduction.unitIdx;
-      const _finQueue = (_barracksProduction.queueLeft || 0);
-      const _finSuLeft = (_barracksProduction.speedUpQueueLeft || 0);
-      _barracksSpawnTrained(_finIdx);
-      _barracksProduction = null;
-      if (_finQueue > 0 && _ronkeBalance >= _BARRACKS_UNIT_COST) {
-        _ronkeBalance -= _BARRACKS_UNIT_COST;
-        _barracksProduction = { unitIdx: _finIdx, startAt: performance.now(), queueLeft: _finQueue - 1, speedUpQueueLeft: Math.max(0, _finSuLeft) };
-        // Auto-apply kitą speed-up iš queue (jei dar yra)
-        if (_finSuLeft > 0) {
-          _barracksProduction.speedUpQueueLeft = _finSuLeft - 1;
-          const _nowSu = performance.now();
-          _barracksSpeedUpAnim = {
-            startMs: _nowSu,
-            durMs: Math.max(120, _BARRACKS_PRODUCE_MS / 10),
-            srcElapsed: 0,
-            dstElapsed: _BARRACKS_PRODUCE_MS,
-          };
-        }
-      }
-    }
-    if (_barracksProduction) {
-      _barracksQtyMinusBtnBounds = null;
-      _barracksQtyPlusBtnBounds = null;
-      _barracksProduceBtnBounds = null;
-      // Progress bar + SPEED UP mygtukas vidurio lentutėje
-      const now = performance.now();
-      const elapsed = _getBarracksElapsed(now);
-      const frac = Math.max(0, Math.min(1, elapsed / _BARRACKS_PRODUCE_MS));
-      const remainS = Math.max(0, Math.ceil((_BARRACKS_PRODUCE_MS - elapsed) / 1000));
-      const mm = Math.floor(remainS / 60), ss = remainS % 60;
-      const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : `${ss}s`;
-      const barW = pw * 0.8, barH = 6;
-      const barX = px + (pw - barW) / 2;
-      const barY = bottomY + 44;
-      // Mini avataras + „TRAINING (+N)" grupė — virš laiko, su pakankamu tarpu
-      const _qLeft = _barracksProduction.queueLeft || 0;
-      const _trLbl = _qLeft > 0 ? `TRAINING  (+${_qLeft})` : 'TRAINING';
-      const _miniSz = 22;
-      ctx.font = 'bold 11px monospace';
-      const _trLblW = ctx.measureText(_trLbl).width;
-      const _grpW = _miniSz + 8 + _trLblW;
-      const _grpX = px + pw / 2 - _grpW / 2;
-      const _grpY = barY - 40;
-      const _trImg = _barracksAvatarImgs[_barracksProduction.unitIdx];
-      if (_trImg && _trImg.complete && _trImg.naturalWidth > 0) {
-        // Mažas fonas po avataru
-        ctx.fillStyle = '#141821';
-        rr(_grpX, _grpY, _miniSz, _miniSz, 3); ctx.fill();
-        ctx.drawImage(_trImg, _grpX + 1, _grpY + 1, _miniSz - 2, _miniSz - 2);
-        ctx.lineWidth = 1.2;
-        ctx.strokeStyle = '#ffb07a';
-        rr(_grpX + 0.5, _grpY + 0.5, _miniSz - 1, _miniSz - 1, 3); ctx.stroke();
-      }
-      ctx.fillStyle = '#ffd47a';
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.strokeText(_trLbl, _grpX + _miniSz + 8, _grpY + _miniSz / 2);
-      ctx.fillText(_trLbl, _grpX + _miniSz + 8, _grpY + _miniSz / 2);
-      // Laikas — didelis, virš juostos
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 13px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.strokeText(timeStr, px + pw / 2, barY - 2);
-      ctx.fillText(timeStr, px + pw / 2, barY - 2);
-      // Juosta
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
-      ctx.fillStyle = '#b08a2e';
-      ctx.fillRect(barX, barY, barW * frac, barH);
-      // ─── Speed-up qty: [−] ×N [+] ──────────────────────────
-      // Max ribo — kiek unit'ų liko queue (įskaitant current)
-      const _suMax = Math.max(1, (_barracksProduction.queueLeft || 0) + 1);
-      if (_barracksSpeedUpQty > _suMax) _barracksSpeedUpQty = _suMax;
-      if (_barracksSpeedUpQty < 1) _barracksSpeedUpQty = 1;
-      const _suQty = _barracksSpeedUpQty;
-      const suRowW = 120, suRowH = 24;
-      const suRowX = px + pw / 2 - suRowW / 2;
-      const suRowY = barY + 14;
-      const suSegW = 30;
-      const suMidW = suRowW - suSegW * 2;
-      const _subxMinus = suRowX;
-      const _subxN     = suRowX + suSegW;
-      const _subxPlus  = suRowX + suSegW + suMidW;
-      // [−]
-      const _suEnMinus = _suQty > 1;
-      const _suHovMinus = _worldMx >= _subxMinus && _worldMx <= _subxMinus + suSegW &&
-                          _worldMy >= suRowY   && _worldMy <= suRowY + suRowH;
-      ctx.fillStyle = !_suEnMinus ? '#1e2d1e' : (_suHovMinus ? '#4ea04e' : '#2e5e2e');
-      rr(_subxMinus, suRowY, suSegW, suRowH, 5); ctx.fill();
-      ctx.lineWidth = 1.2;
-      ctx.strokeStyle = !_suEnMinus ? '#3a5a3a' : (_suHovMinus ? '#d4ffd4' : '#88c088');
-      rr(_subxMinus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 5); ctx.stroke();
-      ctx.fillStyle = _suEnMinus ? '#fff' : '#667';
-      ctx.font = 'bold 18px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('−', _subxMinus + suSegW / 2, suRowY + suRowH / 2 + 1);
-      _barracksSpeedUpMinusBtnBounds = { x: _subxMinus, y: suRowY, w: suSegW, h: suRowH };
-      // [ ×N ]
-      ctx.fillStyle = '#0d1016';
-      rr(_subxN, suRowY, suMidW, suRowH, 4); ctx.fill();
-      ctx.lineWidth = 1.2;
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      rr(_subxN + 0.5, suRowY + 0.5, suMidW - 1, suRowH - 1, 4); ctx.stroke();
-      ctx.fillStyle = '#a8f0a8';
-      ctx.font = 'bold 16px monospace';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      const suNLbl = `×${_suQty}`;
-      ctx.strokeText(suNLbl, _subxN + suMidW / 2, suRowY + suRowH / 2 + 1);
-      ctx.fillText(suNLbl, _subxN + suMidW / 2, suRowY + suRowH / 2 + 1);
-      // [+]
-      const _suEnPlus = _suQty < _suMax;
-      const _suHovPlus = _worldMx >= _subxPlus && _worldMx <= _subxPlus + suSegW &&
-                         _worldMy >= suRowY   && _worldMy <= suRowY + suRowH;
-      ctx.fillStyle = !_suEnPlus ? '#1e2d1e' : (_suHovPlus ? '#4ea04e' : '#2e5e2e');
-      rr(_subxPlus, suRowY, suSegW, suRowH, 5); ctx.fill();
-      ctx.lineWidth = 1.2;
-      ctx.strokeStyle = !_suEnPlus ? '#3a5a3a' : (_suHovPlus ? '#d4ffd4' : '#88c088');
-      rr(_subxPlus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 5); ctx.stroke();
-      ctx.fillStyle = _suEnPlus ? '#fff' : '#667';
-      ctx.font = 'bold 18px monospace';
-      ctx.fillText('+', _subxPlus + suSegW / 2, suRowY + suRowH / 2 + 1);
-      _barracksSpeedUpPlusBtnBounds = { x: _subxPlus, y: suRowY, w: suSegW, h: suRowH };
-
-      // ─── SPEED UP mygtukas po qty row'o ────────────────────
-      const _suTotal = _SPEEDUP_COST * _suQty;
-      const sbw = 120, sbh = 26;
-      const sbx = px + pw / 2 - sbw / 2;
-      const sby = suRowY + suRowH + 6;
-      const canAff = _ronkeBalance >= _suTotal;
-      const enab = canAff && !_barracksSpeedUpAnim;
-      const hovS = _worldMx >= sbx && _worldMx <= sbx + sbw &&
-                   _worldMy >= sby && _worldMy <= sby + sbh;
-      ctx.fillStyle = !enab ? '#3a3a3a' : (hovS ? '#6ec56e' : '#4e9e4e');
-      rr(sbx, sby, sbw, sbh, 5); ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = enab ? (hovS ? '#d4ffd4' : '#a8f0a8') : '#666';
-      rr(sbx + 0.5, sby + 0.5, sbw - 1, sbh - 1, 5); ctx.stroke();
-      ctx.fillStyle = enab ? '#fff' : '#999';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      const slbl = `SPEED UP  \u26A1${_suTotal}`;
-      ctx.strokeText(slbl, sbx + sbw / 2, sby + sbh / 2 + 1);
-      ctx.fillText(slbl, sbx + sbw / 2, sby + sbh / 2 + 1);
-      _barracksSpeedUpBtnBounds = { x: sbx, y: sby, w: sbw, h: sbh };
-      _barracksProduceBtnBounds = null;
-    } else {
-      _barracksSpeedUpBtnBounds = null;
-      _barracksSpeedUpMinusBtnBounds = null;
-      _barracksSpeedUpPlusBtnBounds = null;
+    _barracksSpeedUpBtnBounds = null;
+    _barracksSpeedUpMinusBtnBounds = null;
+    _barracksSpeedUpPlusBtnBounds = null;
+    {
       // Cost: aiški "1 × N = total" formulė kai queue > 1
       const _qty = Math.max(1, _barracksQueueCount);
       const _totalCost = _BARRACKS_UNIT_COST * _qty;
@@ -9522,25 +9390,28 @@ function drawForegroundDecorations() {
       _barracksQtyPlusBtnBounds = { x: _bxPlus, y: qtyY, w: qSegW, h: qtyRowH };
 
       // ─── TRAIN mygtukas — atskira eilutė ───────────────────
+      // Disabled jei pasirinktas slot'as jau treniruoja (bet kiti slot'ai tuo metu gali treniruotis)
+      const _slotBusy = hasSel && !!_barracksProductions[_barracksSelectedIdx];
       const bw2 = 120, bh2 = 26;
       const bxU = px + pw / 2 - bw2 / 2;
       const byU = qtyY + qtyRowH + 6;
       const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 &&
                        _worldMy >= byU && _worldMy <= byU + bh2;
-      const enabled = canAfford && hasSel;
+      const enabled = canAfford && hasSel && !_slotBusy;
       ctx.fillStyle = !enabled ? '#452a2a' : (hoverBtn ? '#c06e3e' : '#9e4e2e');
       rr(bxU, byU, bw2, bh2, 5); ctx.fill();
       ctx.lineWidth = 1.8;
       ctx.strokeStyle = !enabled ? '#8a5a5a' : (hoverBtn ? '#ffd4a8' : '#f0a880');
       rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = _slotBusy ? '#999' : '#fff';
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.strokeText('TRAIN', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-      ctx.fillText('TRAIN', bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      const _trainLbl = _slotBusy ? 'TRAINING…' : 'TRAIN';
+      ctx.strokeText(_trainLbl, bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      ctx.fillText(_trainLbl, bxU + bw2 / 2, byU + bh2 / 2 + 1);
       _barracksProduceBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
     }
 
@@ -9571,7 +9442,10 @@ function drawForegroundDecorations() {
         const bodyTopPad = 10;
         const rowH = 17;
         const bodyBotPad = 10;
-        const ih = headerH + bodyTopPad + _lines * rowH + bodyBotPad;
+        // Jei selected slot'as treniruoja — papildoma sekcija: progress + SPEED UP
+        const _selProd = _barracksProductions[_barracksSelectedIdx];
+        const trainFooterH = _selProd ? 112 : 0;
+        const ih = headerH + bodyTopPad + _lines * rowH + bodyBotPad + trainFooterH;
         let ix = px + pw + 8;
         if (ix + iw + PAD_S > v.x + v.w) ix = px - iw - 8;
         ix = Math.max(v.x + PAD_S, Math.min(v.x + v.w - iw - PAD_S, ix));
@@ -9645,6 +9519,122 @@ function drawForegroundDecorations() {
         if (typeof info.block === 'number') drawStat('BLOCK', `${info.block}%`,              '#7acfff');
         drawStat('COST',  String(_BARRACKS_UNIT_COST),  '#ffe066');
         drawStat('TIME',  `${Math.round(_BARRACKS_PRODUCE_MS / 1000)}s`, '#c8d0e0');
+
+        // ─── Training footer (tik jei šis slot'as treniruoja) ─────────
+        if (_selProd) {
+          const now = performance.now();
+          const elapsed = _getBarracksElapsed(now, _barracksSelectedIdx) || 0;
+          const frac = Math.max(0, Math.min(1, elapsed / _BARRACKS_PRODUCE_MS));
+          const remainS = Math.max(0, Math.ceil((_BARRACKS_PRODUCE_MS - elapsed) / 1000));
+          const mm = Math.floor(remainS / 60), ss = remainS % 60;
+          const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : `${ss}s`;
+          const _qLeft = _selProd.queueLeft || 0;
+          const _trLbl = _qLeft > 0 ? `TRAINING (+${_qLeft})` : 'TRAINING';
+          const footY = iy + ih - trainFooterH;
+          // Separator
+          ctx.fillStyle = 'rgba(255,201,122,0.25)';
+          ctx.fillRect(ix + 10, footY + 2, iw - 20, 1);
+          // Label + time row
+          ctx.fillStyle = '#ffd47a';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+          const _lblY = footY + 12;
+          ctx.strokeText(_trLbl, ix + 10, _lblY);
+          ctx.fillText(_trLbl, ix + 10, _lblY);
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'right';
+          ctx.strokeText(timeStr, ix + iw - 10, _lblY);
+          ctx.fillText(timeStr, ix + iw - 10, _lblY);
+          // Progress bar
+          const barX = ix + 10, barY = footY + 22, barW = iw - 20, barH = 5;
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+          ctx.fillStyle = '#b08a2e';
+          ctx.fillRect(barX, barY, barW * frac, barH);
+
+          // Speed-up qty [-] [×N] [+]
+          const _curSU = _barracksSpeedUpQtys[_barracksSelectedIdx] || 1;
+          const _suMax = Math.max(1, (_selProd.queueLeft || 0) + 1);
+          const _suQty = Math.max(1, Math.min(_suMax, _curSU));
+          _barracksSpeedUpQtys[_barracksSelectedIdx] = _suQty;
+          const suRowY = footY + 34;
+          const suRowH = 22;
+          const suSegW = 26;
+          const suRowW = iw - 20;
+          const suMidW = suRowW - suSegW * 2;
+          const _subxMinus = ix + 10;
+          const _subxN     = _subxMinus + suSegW;
+          const _subxPlus  = _subxN + suMidW;
+          const _suEnMinus = _suQty > 1;
+          const _suHovMinus = _worldMx >= _subxMinus && _worldMx <= _subxMinus + suSegW &&
+                              _worldMy >= suRowY && _worldMy <= suRowY + suRowH;
+          ctx.fillStyle = !_suEnMinus ? '#1e2d1e' : (_suHovMinus ? '#4ea04e' : '#2e5e2e');
+          rr(_subxMinus, suRowY, suSegW, suRowH, 4); ctx.fill();
+          ctx.lineWidth = 1.2;
+          ctx.strokeStyle = !_suEnMinus ? '#3a5a3a' : (_suHovMinus ? '#d4ffd4' : '#88c088');
+          rr(_subxMinus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 4); ctx.stroke();
+          ctx.fillStyle = _suEnMinus ? '#fff' : '#667';
+          ctx.font = 'bold 16px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('−', _subxMinus + suSegW / 2, suRowY + suRowH / 2 + 1);
+          _barracksSpeedUpMinusBtnBounds = { x: _subxMinus, y: suRowY, w: suSegW, h: suRowH };
+
+          ctx.fillStyle = '#0d1016';
+          rr(_subxN, suRowY, suMidW, suRowH, 3); ctx.fill();
+          ctx.lineWidth = 1.2;
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          rr(_subxN + 0.5, suRowY + 0.5, suMidW - 1, suRowH - 1, 3); ctx.stroke();
+          ctx.fillStyle = '#a8f0a8';
+          ctx.font = 'bold 13px monospace';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+          const suNLbl = `×${_suQty}`;
+          ctx.strokeText(suNLbl, _subxN + suMidW / 2, suRowY + suRowH / 2 + 1);
+          ctx.fillText(suNLbl, _subxN + suMidW / 2, suRowY + suRowH / 2 + 1);
+
+          const _suEnPlus = _suQty < _suMax;
+          const _suHovPlus = _worldMx >= _subxPlus && _worldMx <= _subxPlus + suSegW &&
+                             _worldMy >= suRowY && _worldMy <= suRowY + suRowH;
+          ctx.fillStyle = !_suEnPlus ? '#1e2d1e' : (_suHovPlus ? '#4ea04e' : '#2e5e2e');
+          rr(_subxPlus, suRowY, suSegW, suRowH, 4); ctx.fill();
+          ctx.lineWidth = 1.2;
+          ctx.strokeStyle = !_suEnPlus ? '#3a5a3a' : (_suHovPlus ? '#d4ffd4' : '#88c088');
+          rr(_subxPlus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 4); ctx.stroke();
+          ctx.fillStyle = _suEnPlus ? '#fff' : '#667';
+          ctx.font = 'bold 16px monospace';
+          ctx.fillText('+', _subxPlus + suSegW / 2, suRowY + suRowH / 2 + 1);
+          _barracksSpeedUpPlusBtnBounds = { x: _subxPlus, y: suRowY, w: suSegW, h: suRowH };
+
+          // SPEED UP button
+          const _suTotal = _SPEEDUP_COST * _suQty;
+          const sbw = iw - 20, sbh = 24;
+          const sbx = ix + 10;
+          const sby = suRowY + suRowH + 6;
+          const canAff = _ronkeBalance >= _suTotal;
+          const _animActive = !!_barracksSpeedUpAnims[_barracksSelectedIdx];
+          const enab = canAff && !_animActive;
+          const hovS = _worldMx >= sbx && _worldMx <= sbx + sbw &&
+                       _worldMy >= sby && _worldMy <= sby + sbh;
+          ctx.fillStyle = !enab ? '#3a3a3a' : (hovS ? '#6ec56e' : '#4e9e4e');
+          rr(sbx, sby, sbw, sbh, 4); ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = enab ? (hovS ? '#d4ffd4' : '#a8f0a8') : '#666';
+          rr(sbx + 0.5, sby + 0.5, sbw - 1, sbh - 1, 4); ctx.stroke();
+          ctx.fillStyle = enab ? '#fff' : '#999';
+          ctx.font = 'bold 11px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+          const slbl = `SPEED UP  \u26A1${_suTotal}`;
+          ctx.strokeText(slbl, sbx + sbw / 2, sby + sbh / 2 + 1);
+          ctx.fillText(slbl, sbx + sbw / 2, sby + sbh / 2 + 1);
+          _barracksSpeedUpBtnBounds = { x: sbx, y: sby, w: sbw, h: sbh };
+        }
       }
     }
 
@@ -9672,40 +9662,54 @@ function _getBarracksUnitInfo(idx) {
   return info;
 }
 
-// Baraku production tick — kviečiamas kiekvieną frame, spawn'ina net kai popup uždarytas
+// Baraku production tick — iteruojam per visus aktyvius slot'us (lygiagretus training).
 function _tickBarracksProduction() {
-  if (!_barracksProduction) return;
-  if (performance.now() - _barracksProduction.startAt < _BARRACKS_PRODUCE_MS) return;
-  const _finIdx = _barracksProduction.unitIdx;
-  const _finQueue = (_barracksProduction.queueLeft || 0);
-  const _finSuLeft = (_barracksProduction.speedUpQueueLeft || 0);
-  _barracksSpawnTrained(_finIdx);
-  _barracksProduction = null;
-  if (_finQueue > 0 && _ronkeBalance >= _BARRACKS_UNIT_COST) {
-    _ronkeBalance -= _BARRACKS_UNIT_COST;
-    _barracksProduction = { unitIdx: _finIdx, startAt: performance.now(), queueLeft: _finQueue - 1, speedUpQueueLeft: Math.max(0, _finSuLeft) };
-    if (_finSuLeft > 0) {
-      _barracksProduction.speedUpQueueLeft = _finSuLeft - 1;
-      const _nowSu = performance.now();
-      _barracksSpeedUpAnim = {
-        startMs: _nowSu,
-        durMs: Math.max(120, _BARRACKS_PRODUCE_MS / 10),
-        srcElapsed: 0,
-        dstElapsed: _BARRACKS_PRODUCE_MS,
+  const now = performance.now();
+  const keys = Object.keys(_barracksProductions);
+  for (const k of keys) {
+    const prod = _barracksProductions[k];
+    if (!prod) continue;
+    if (now - prod.startAt < _BARRACKS_PRODUCE_MS) continue;
+    const _finIdx = parseInt(k, 10);
+    const _finQueue = (prod.queueLeft || 0);
+    const _finSuLeft = (prod.speedUpQueueLeft || 0);
+    _barracksSpawnTrained(_finIdx);
+    delete _barracksProductions[_finIdx];
+    delete _barracksSpeedUpAnims[_finIdx];
+    if (_finQueue > 0 && _ronkeBalance >= _BARRACKS_UNIT_COST) {
+      _ronkeBalance -= _BARRACKS_UNIT_COST;
+      _barracksProductions[_finIdx] = {
+        startAt: performance.now(),
+        queueLeft: _finQueue - 1,
+        speedUpQueueLeft: Math.max(0, _finSuLeft),
       };
+      if (_finSuLeft > 0) {
+        _barracksProductions[_finIdx].speedUpQueueLeft = _finSuLeft - 1;
+        _barracksSpeedUpAnims[_finIdx] = {
+          startMs: performance.now(),
+          durMs: Math.max(120, _BARRACKS_PRODUCE_MS / 10),
+          srcElapsed: 0,
+          dstElapsed: _BARRACKS_PRODUCE_MS,
+        };
+      }
     }
   }
 }
 
-// Rodo training progress tiesiogei ant baraku pastato — toks pat stilius kaip namuko statybos/upgrade juosta.
-// Piešiamas kiekvieną frame nepriklausomai nuo popup būsenos, kad matytųsi ir kai popup uždarytas.
+// Rodo training progress tiesiogei ant baraku pastato — piešiam "greičiausią" aktyvų slot'ą
+// (mažiausiai likusio laiko). Jei yra keli lygiagretus training'ai — bent vienas matysis.
 function _drawBarracksTrainingBar() {
-  if (!_barracksProduction || !_barracksBounds) return;
-  if (_barracksPopupOpen) return; // popup atidarytas — juosta matosi ten
+  if (!_barracksBounds) return;
+  if (_barracksPopupOpen) return;
   const now = performance.now();
-  const elapsed = _getBarracksElapsed(now);
-  const prog = Math.max(0, Math.min(1, elapsed / _BARRACKS_PRODUCE_MS));
-  const remainS = Math.max(0, Math.ceil((_BARRACKS_PRODUCE_MS - elapsed) / 1000));
+  let bestIdx = null, bestElapsed = -Infinity;
+  for (const k in _barracksProductions) {
+    const el = _getBarracksElapsed(now, parseInt(k, 10));
+    if (el !== null && el > bestElapsed) { bestElapsed = el; bestIdx = parseInt(k, 10); }
+  }
+  if (bestIdx === null) return;
+  const prog = Math.max(0, Math.min(1, bestElapsed / _BARRACKS_PRODUCE_MS));
+  const remainS = Math.max(0, Math.ceil((_BARRACKS_PRODUCE_MS - bestElapsed) / 1000));
   const mm = Math.floor(remainS / 60), ss = remainS % 60;
   const timeStr = mm > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : `${ss}s`;
   const bB = _barracksBounds;
@@ -14682,67 +14686,153 @@ function drawShamanProjectiles() {
 }
 
 // ---- Barracks Harpoon Fish Projectile ----------------------------
-// Atskiras nuo stabby `spawnHarpoon` — gali kenkti ir hero (team=0), ir enemy team=1.
-// Bet šiame žaidime barracks-spawned unitai yra team=1, tad taikinys — team=0 hero.
+// Parabolinė metimo animacija su taikinio kryžiuku + stuck sprite (kaip NPC harpoon fish).
+// Naudoja tas pačias physics konstantas kaip _fishStates (VY0/GRAV/DRAG/GROUND_OFFSET).
 function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack) {
   if (!S.barracksHarpoons) S.barracksHarpoons = [];
+  const now = performance.now();
   const dir = faceDx || Math.sign(toGx - fromGx) || 1;
-  const sx = (fromGx + 0.5 + dir * 0.5) * CELL;
-  const sy = (fromGy + 0.5) * CELL - CELL * 0.3;
-  const tx = (toGx + 0.5) * CELL;
-  const ty = (toGy + 0.5) * CELL;
-  const dist = Math.abs(tx - sx);
-  const duration = Math.max(300, dist / (CELL * 0.005));
-  S.barracksHarpoons.push({ sx, sy, tx, ty, born: performance.now(), duration, dir, done: false, hit: false, stack: stack || 1 });
+  const _VY0 = -110, _GRAV = 200, _GND = 30, _DRAG = 0.3;
+  const _tLand = (-_VY0 + Math.sqrt(_VY0 * _VY0 + 2 * _GRAV * _GND)) / _GRAV;
+  // Spindys horizontaliai iki taikinio — reguliuoja greitį per atstumą
+  const _distCells = Math.max(1, Math.abs(toGx - fromGx));
+  const _pxPerCell = CELL;
+  const _targetPx = _distCells * _pxPerCell;
+  // invertuojam `landX = startX + dir * (spd/DRAG) * (1 - e^(-DRAG*tLand))` → spd
+  const _decay = (1 - Math.exp(-_DRAG * _tLand));
+  const _spd = Math.max(140, Math.min(560, (_targetPx / _decay) * _DRAG));
+  const _startX = (fromGx + 0.5 + dir * 0.5) * CELL;
+  const _startY = (fromGy + 0.5) * CELL - CELL * 0.3;
+  const _landX = _startX + dir * (_spd / _DRAG) * _decay;
+  const _landY = _startY + _GND;
+  S.barracksHarpoons.push({
+    startX: _startX, startDir: dir, y: _startY,
+    born: now, hit: false, hitTarget: false, speed: _spd,
+    landX: _landX, landY: _landY,
+    crossHideAt: now + (_tLand - 0.2) * 1000,
+    particles: [], lastParticleAt: 0,
+    stack: stack || 1,
+  });
 }
 
 function drawBarracksHarpoons() {
   if (!S.barracksHarpoons?.length) return;
   const now = performance.now();
-  const harpSz = CELL * 0.35;
-  const hImg = (typeof harpoonImg !== 'undefined' ? harpoonImg : _fishAnims.harpoon.img);
-  S.barracksHarpoons.forEach(h => {
-    if (h.done) return;
-    const t = Math.min(1, (now - h.born) / h.duration);
-    const cx = h.sx + (h.tx - h.sx) * t;
-    const cy = h.sy + (h.ty - h.sy) * t;
-    if (!h.hit && S.units) {
-      const hGx = Math.floor(cx / CELL);
-      const hGy = Math.floor(cy / CELL);
-      const hero = S.units.find(u => u.team === 0 && u.alive && u.x === hGx && u.y === hGy);
-      if (hero) {
-        h.hit = true; h.done = true;
-        const _base = 3;
-        const dmg = heroDmg(_base * (h.stack || 1));
-        S.energy = Math.max(0, S.energy - dmg);
-        spawnDmgNumber(hero.x, hero.y, `-${dmg}`, '#ff8833', 20, 'crit');
-        SFX.heroHit();
-        spawnHit(hero.x, hero.y, '#ff8833', 14);
-        return;
-      }
-    }
-    if (!h.hit && t < 1) {
-      const hGx = Math.floor(cx / CELL);
-      const hGy = Math.floor(cy / CELL);
-      if (hGx < 0 || hGx >= COLS || hGy < 0 || hGy >= ROWS || isWall(hGx, hGy)) {
-        h.done = true; return;
-      }
-    }
-    if (t >= 1) { h.done = true; return; }
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate((h.dir > 0 ? 0 : Math.PI) + Math.PI / 4);
-    ctx.shadowColor = '#44ccff'; ctx.shadowBlur = 6;
-    if (hImg && hImg.complete && hImg.naturalWidth > 0) {
-      ctx.drawImage(hImg, 0, 0, 64, 64, -harpSz / 2, -harpSz / 2, harpSz, harpSz);
-    } else {
-      ctx.strokeStyle = '#44ccff'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-harpSz / 2, 0); ctx.lineTo(harpSz / 2, 0); ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
-    ctx.restore();
+  const hImg = _fishAnims.harpoon.img;
+  const stuckImg = _fishAnims.stuck.img;
+  const impSheet = _fishAnims.impact.img;
+  const HW = 26, HH = 26;
+  const HARPOON_ANGLE_OFFSET = Math.PI / 4;
+  const VY0 = -110, GRAV = 200, DRAG = 0.3;
+  const IMPACT_MS = 60, IMPACT_FRAMES = 9, GROUND_OFFSET = 30;
+  const LIFE_MS = 1500;
+  S.barracksHarpoons = S.barracksHarpoons.filter(a => {
+    if (!a.hit) return now - a.born < LIFE_MS;
+    if (a.hitTarget) return now - a.hitAt < IMPACT_FRAMES * IMPACT_MS;
+    return now - a.hitAt < 1000;
   });
-  S.barracksHarpoons = S.barracksHarpoons.filter(h => !h.done);
+  for (const a of S.barracksHarpoons) {
+    const dt = (now - a.born) / 1000;
+    const dir = a.startDir || 1;
+    const spd = a.speed;
+    const dragF = Math.exp(-DRAG * dt);
+    const ax = a.stuckX !== undefined ? a.stuckX : a.startX + dir * (spd / DRAG) * (1 - dragF);
+    const ay = a.stuckY !== undefined ? a.stuckY : a.y + VY0 * dt + 0.5 * GRAV * dt * dt;
+    const velY = VY0 + GRAV * dt;
+    const velX = dir * spd * dragF;
+    const angle = Math.atan2(velY, velX);
+
+    // Particle trail (nuo žemyn nusileidimo)
+    if (!a.hit && a.particles && velY > 0 && now - a.lastParticleAt > 45) {
+      a.lastParticleAt = now;
+      a.particles.push({ x: ax + HW / 2, y: ay, born: now });
+    }
+    if (a.particles) {
+      a.particles = a.particles.filter(p => now - p.born < 280);
+      for (const p of a.particles) {
+        const age = (now - p.born) / 280;
+        ctx.save();
+        ctx.globalAlpha = (1 - age) * 0.55;
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 2.5 * (1 - age * 0.5), 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Nusileidimas — kai nusileidžia pro GROUND_OFFSET ribą
+    if (!a.hit && dt > 0.2 && ay >= a.y + GROUND_OFFSET) {
+      a.hit = true; a.hitAt = now;
+      a.stuckX = ax + HW / 2; a.stuckY = ay; a.stuckAngle = angle; a.hitTarget = false;
+      const _base = 3;
+      const _dmg = _base * (a.stack || 1);
+      if (S.units) {
+        const lgx = Math.floor(a.stuckX / CELL);
+        const lgy = Math.floor(a.stuckY / CELL);
+        const target = S.units.find(u => u.alive && u.x === lgx && u.y === lgy);
+        if (target) {
+          a.hitTarget = true;
+          S.shake = Math.max(S.shake || 0, 10);
+          if (target.team === 0) {
+            const _hd = (typeof heroDmg === 'function') ? heroDmg(_dmg) : _dmg;
+            S.energy = Math.max(0, S.energy - _hd);
+            target.hitFlash = 1; target.hitTimer = 1000;
+            if (SFX && SFX.heroHit) SFX.heroHit();
+            spawnDmgNumber(target.x, target.y, `-${_hd}`, '#ff8833', 22, 'crit');
+          } else {
+            target.hp -= _dmg; target.hitFlash = 1;
+            if (typeof triggerHitRecovery === 'function') triggerHitRecovery(target);
+            if (SFX && SFX.hit) SFX.hit();
+            spawnDmgNumber(target.x, target.y, `-${_dmg}`, '#ffdd55', 22, 'normal');
+            if (target.hp <= 0) {
+              target.hp = 0; target.alive = false;
+              if (typeof spawnDeath === 'function') spawnDeath(target.x, target.y, target.color);
+            }
+          }
+        }
+      }
+    }
+
+    // Draw — impact sprite kai kliudo
+    if (a.hit && a.hitTarget) {
+      const frame = Math.min(Math.floor((now - a.hitAt) / IMPACT_MS), IMPACT_FRAMES - 1);
+      const IS = 52;
+      if (impSheet.complete && impSheet.naturalWidth > 0) {
+        ctx.drawImage(impSheet, frame * 192, 0, 192, 192, a.stuckX - IS / 2, a.stuckY - IS / 2, IS, IS);
+      }
+      continue;
+    }
+    // Draw — stuck sprite kai pramušta
+    if (a.hit && !a.hitTarget) {
+      ctx.save();
+      ctx.translate(a.stuckX, a.stuckY);
+      ctx.rotate(a.stuckAngle + HARPOON_ANGLE_OFFSET);
+      if (stuckImg.complete && stuckImg.naturalWidth > 0) {
+        ctx.drawImage(stuckImg, 0, 0, 64, 64, -HW / 2, -HH / 2, HW, HH);
+      }
+      ctx.restore();
+      continue;
+    }
+    // Target cross marker (iki cross fade iš)
+    if (a.landX !== undefined && now < a.crossHideAt) {
+      ctx.save();
+      ctx.strokeStyle = '#3a7a5a';
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.65;
+      const _cx = a.landX + (dir > 0 ? 10 : 0);
+      ctx.beginPath(); ctx.moveTo(_cx - 5, a.landY); ctx.lineTo(_cx + 5, a.landY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_cx, a.landY - 5); ctx.lineTo(_cx, a.landY + 5); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+    // Flying harpoon
+    ctx.save();
+    ctx.translate(ax + HW / 2, ay);
+    ctx.rotate(angle + HARPOON_ANGLE_OFFSET);
+    if (hImg.complete && hImg.naturalWidth > 0) {
+      ctx.drawImage(hImg, 0, 0, 64, 64, -HW / 2, -HH / 2, HW, HH);
+    }
+    ctx.restore();
+  }
 }
 
 function drawShamanExplosions() {
@@ -19770,41 +19860,48 @@ document.addEventListener('DOMContentLoaded', () => {
       _castlePopupOpen = false;
       return;
     }
-    // Speed-up qty [−] / [+]
+    // Speed-up qty [−] / [+] — operuoja ant selected slot'o production'o
     if (_barracksSpeedUpMinusBtnBounds && inside(_barracksSpeedUpMinusBtnBounds)) {
-      if (_barracksProduction) {
-        _barracksSpeedUpQty = Math.max(1, _barracksSpeedUpQty - 1);
+      const _selIdx = _barracksSelectedIdx;
+      if (_selIdx !== null && _barracksProductions[_selIdx]) {
+        const cur = _barracksSpeedUpQtys[_selIdx] || 1;
+        _barracksSpeedUpQtys[_selIdx] = Math.max(1, cur - 1);
       }
       return;
     }
     if (_barracksSpeedUpPlusBtnBounds && inside(_barracksSpeedUpPlusBtnBounds)) {
-      if (_barracksProduction) {
-        const _suMax = (_barracksProduction.queueLeft || 0) + 1;
-        _barracksSpeedUpQty = Math.min(_suMax, _barracksSpeedUpQty + 1);
+      const _selIdx = _barracksSelectedIdx;
+      const prod = _selIdx !== null ? _barracksProductions[_selIdx] : null;
+      if (prod) {
+        const _suMax = (prod.queueLeft || 0) + 1;
+        const cur = _barracksSpeedUpQtys[_selIdx] || 1;
+        _barracksSpeedUpQtys[_selIdx] = Math.min(_suMax, cur + 1);
       }
       return;
     }
-    // SPEED UP mygtukas — trigger anim pirmam, queue likusiems
+    // SPEED UP mygtukas — trigger anim pirmam, queue likusiems (per-slot)
     if (_barracksSpeedUpBtnBounds && inside(_barracksSpeedUpBtnBounds)) {
-      if (!_barracksSpeedUpAnim && _barracksProduction) {
-        const _suMax = (_barracksProduction.queueLeft || 0) + 1;
-        const _suQty = Math.max(1, Math.min(_suMax, _barracksSpeedUpQty));
+      const _selIdx = _barracksSelectedIdx;
+      const prod = _selIdx !== null ? _barracksProductions[_selIdx] : null;
+      if (prod && !_barracksSpeedUpAnims[_selIdx]) {
+        const _suMax = (prod.queueLeft || 0) + 1;
+        const _suCur = _barracksSpeedUpQtys[_selIdx] || 1;
+        const _suQty = Math.max(1, Math.min(_suMax, _suCur));
         const _suTotal = _SPEEDUP_COST * _suQty;
         if (_ronkeBalance >= _suTotal) {
           _ronkeBalance -= _suTotal;
           const _now = performance.now();
-          const _srcElapsed = Math.min(_BARRACKS_PRODUCE_MS, _now - _barracksProduction.startAt);
+          const _srcElapsed = Math.min(_BARRACKS_PRODUCE_MS, _now - prod.startAt);
           const _remaining = Math.max(0, _BARRACKS_PRODUCE_MS - _srcElapsed);
           const _animDur = Math.max(120, _remaining / 10); // 10× speed-up
-          _barracksSpeedUpAnim = {
+          _barracksSpeedUpAnims[_selIdx] = {
             startMs: _now,
             durMs: _animDur,
             srcElapsed: _srcElapsed,
             dstElapsed: _BARRACKS_PRODUCE_MS,
           };
-          // Likusius speed-up'us auto-apply kitam unit'ui eilėje
-          _barracksProduction.speedUpQueueLeft = _suQty - 1;
-          _barracksSpeedUpQty = 1; // reset UI counter
+          prod.speedUpQueueLeft = _suQty - 1;
+          _barracksSpeedUpQtys[_selIdx] = 1; // reset UI counter
         }
       }
       return;
@@ -19818,21 +19915,26 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
       }
-      // Qty [-] / [+] mygtukai
-      if (!_barracksProduction && inside(_barracksQtyMinusBtnBounds)) {
+      // Qty [-] / [+] mygtukai — visada veikia
+      if (inside(_barracksQtyMinusBtnBounds)) {
         _barracksQueueCount = Math.max(1, _barracksQueueCount - 1);
         return;
       }
-      if (!_barracksProduction && inside(_barracksQtyPlusBtnBounds)) {
+      if (inside(_barracksQtyPlusBtnBounds)) {
         _barracksQueueCount = Math.min(_BARRACKS_QUEUE_MAX, _barracksQueueCount + 1);
         return;
       }
-      // Produce click
-      if (!_barracksProduction && inside(_barracksProduceBtnBounds) && _barracksSelectedIdx !== null) {
+      // Produce click — per-slot (galima lygiagrečiai treniruoti kelis tipus)
+      if (inside(_barracksProduceBtnBounds) && _barracksSelectedIdx !== null &&
+          !_barracksProductions[_barracksSelectedIdx]) {
         const _qty = Math.max(1, _barracksQueueCount);
         if (_ronkeBalance >= _BARRACKS_UNIT_COST * _qty) {
           _ronkeBalance -= _BARRACKS_UNIT_COST;
-          _barracksProduction = { unitIdx: _barracksSelectedIdx, startAt: performance.now(), queueLeft: _qty - 1 };
+          _barracksProductions[_barracksSelectedIdx] = {
+            startAt: performance.now(),
+            queueLeft: _qty - 1,
+            speedUpQueueLeft: 0,
+          };
         }
         return;
       }
