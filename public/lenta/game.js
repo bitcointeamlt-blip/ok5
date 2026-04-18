@@ -2572,8 +2572,8 @@ window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":4,"y":6},"exitPos":{"x":25,"y":28}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
-// Floor 11 — kovos zona: 42x15 grass (telpa į ekraną, be scroll), be deco/enemy/collisions (be warfog)
-window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":7},"exitPos":{"x":40,"y":7}};
+// Floor 11 — kovos zona: 42x19 (15 žemės + 1 vandens + 3 šlaito), tiltas kol 4, kaip F10
+window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"14,4":"bridge_0_1","15,4":"bridge_0_2","16,4":"bridge_0_2","17,4":"bridge_0_2","18,4":"bridge_0_2"},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":7},"exitPos":{"x":40,"y":7}};
 const _buildingImgs = {};
 ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'].forEach(n => {
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
@@ -2716,6 +2716,13 @@ let _f11DeployUnitRects = [];         // [{ x, y, w, h, type, idx }] screen-spac
 let _f11DeployCloseBtn = null;        // screen-space (minimize btn)
 let _f11DeployRestoreBtn = null;      // screen-space — shown when minimized
 let _f11TransferUnits = [];           // [{ utype, stack, hp }] — snapshot iš F10 before floor advance
+// Netiesioginė unit kontrolė F11 mūšio lauke — vartotojas pasirenka savo unit'ą, tada klik'u liepia
+// pajudėti į kitą ląstelę. Selection'ui rodomas žalias ring'as + range diamond. Command — anchor
+// perkeliamas į naują vietą IR unit'ui nustatomas commandMove override'as: AI pereina į pathfind
+// režimą kol pasieks taikinį, tada grįžta į normalų vision/sweet-spot elgesį.
+let _selectedAllyUnit = null;         // reference į S.units item'ą (savo pusės) arba null
+window._showHarpoonRanges = false;    // edit map mygtukas + V klavišas toggle'ina vision/move diamond'us F11'e
+let _harpoonRangeToastUntil = 0;      // toast'as apatiniame kampe kai toggle'ina
 let _barracksSelectedIdx = null;       // 0..15 pasirinkto unit'o indeksas arba null
 let _barracksProduceBtnBounds = null;  // produce mygtuko hit box
 let _barracksAvatarRects = [];         // kiekvieno avataro hit box'ai
@@ -2836,7 +2843,7 @@ function _barracksSpawnTrained(unitIdx) {
     u.spawning = true;
     u.invincible = true;
   } else {
-    // Pirmas skull — eina iš durų iki spot'o ir sustoja (be flip, tiesiog taps stack=1).
+    // Pirmas unit — eina iš durų iki spot'o ir sustoja (be flip, tiesiog taps stack=1).
     u.spawnWalk = {
       fromX: doorX, fromY: doorY,
       toX: spot.x, toY: spot.y,
@@ -3632,6 +3639,15 @@ _archerAnims.shoot.img.src  = 'assets_tiny/Archer_Shoot.png';
 _archerAnims.arrow.img.src  = 'assets_tiny/Archer_Arrow_Sheet.png';
 _archerAnims.stuck.img      = _archerAnims.arrow.img; // same PNG, different crop
 _archerAnims.impact.img.src = 'assets_tiny/Arrow_Impact.png';
+
+// ===== MOVE COMMAND CURSOR (tiny swords UI) =====
+// Naudojamas kai F11 ally unit pasirinktas ir hover'inama ant destination cell'ės
+const _moveCursorImg = new Image();
+_moveCursorImg.src = 'assets_tiny/Cursor_04.png';
+
+// Priešiško unit'o žymeklis — mažas icon virš galvos, kad atsiskirtų nuo ally
+const _enemyMarkerImg = new Image();
+_enemyMarkerImg.src = 'assets_tiny/Icon_09.png';
 
 // ===== HARPOON FISH NPC =====
 const _fishAnims = {
@@ -5747,6 +5763,7 @@ function initAdventure() {
     _f11DeployOpen = false;
     _f11DeployArmed = null;
   }
+  _selectedAllyUnit = null; // selection gyvena tik aktyviame F11 session'e
 }function getFloorCustomMap() {
   if (S.floor === 1 && window.CUSTOM_MAP) return window.CUSTOM_MAP;
   if (S.floor === 2 && window.CUSTOM_MAP2) return window.CUSTOM_MAP2;
@@ -14021,6 +14038,59 @@ function _updateBarracksAttackAI(now) {
     const _isEnemyBarracks = isEditorEnemyBarracks(u);
     if (!_isAlly && !_isEnemyBarracks) continue;
     if (u.spawnWalk) continue;
+    // ── UNIVERSAL COMMAND MOVE OVERRIDE (F11 indirect control) ──
+    // Veikia visiems ally utype'ams (skull/shaman/harpoon). Kol aktyvus — pathfind į taikinį,
+    // ignoruoja combat. Pasiekus / timeout → clearina ir grįžta į normalų AI.
+    if (_isAlly && u.commandMove) {
+      // Jei jau pažymėta arrivedAt — command tik vizualiai dar rodomas (fade), nebeveikia AI
+      if (u.commandMove.arrivedAt) {
+        if (now - u.commandMove.arrivedAt > 400) u.commandMove = null;
+        // fall through į normalų AI (nekeisti _cmReadyCd)
+      } else if (u.x === u.commandMove.tx && u.y === u.commandMove.ty && !u.chaseWalk) {
+        // Palaukti kol vizualus tween baigsis, tada startuoti fade
+        u.commandMove.arrivedAt = now;
+      } else if (now - u.commandMove.issuedAt > 15000) {
+        u.commandMove = null;
+      } else if (u.chaseWalk) {
+        continue; // tween progrese — palaukti, kad combat AI nepaleistų naujo step'o
+      } else {
+        const _cmReadyCd = (u.utype === 'harpoon_fish' ? (u.hfishActionCd || 0)
+                         : u.utype === 'shaman'       ? (u.shamanActionCd || 0)
+                         : u.utype === 'skull'        ? (u.skullMoveCd || 0) : 0);
+        if (_cmReadyCd <= now) {
+          const _cmBlocked = (nx, ny) => {
+            if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
+            if (typeof isWall === 'function' && isWall(nx, ny)) return true;
+            return _cellHasEntity(nx, ny, u);
+          };
+          const _dxCmd = u.commandMove.tx - u.x;
+          const _dyCmd = u.commandMove.ty - u.y;
+          const _sx = Math.sign(_dxCmd), _sy = Math.sign(_dyCmd);
+          const _cmCand = [];
+          if (Math.abs(_dxCmd) >= Math.abs(_dyCmd)) {
+            if (_sx !== 0) _cmCand.push({ x: _sx, y: 0 });
+            if (_sy !== 0) _cmCand.push({ x: 0, y: _sy });
+          } else {
+            if (_sy !== 0) _cmCand.push({ x: 0, y: _sy });
+            if (_sx !== 0) _cmCand.push({ x: _sx, y: 0 });
+          }
+          _cmCand.push({ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 });
+          const _cmStep = _cmCand.find(c => !_cmBlocked(u.x + c.x, u.y + c.y));
+          if (_cmStep) {
+            const _cmFx = (typeof u.rx === 'number') ? u.rx : u.x;
+            const _cmFy = (typeof u.ry === 'number') ? u.ry : u.y;
+            u.x += _cmStep.x; u.y += _cmStep.y;
+            u.chaseWalk = { fromX: _cmFx, fromY: _cmFy, toX: u.x, toY: u.y, start: now, dur: 340 };
+            if (_cmStep.x !== 0 && u.facing) u.facing.dx = _cmStep.x;
+          }
+          // Set generic action cd kad kitas tick nepaleistų combat AI
+          if (u.utype === 'harpoon_fish') u.hfishActionCd = now + 360;
+          else if (u.utype === 'shaman')  u.shamanActionCd = now + 360;
+          else if (u.utype === 'skull')   u.skullMoveCd    = now + 360;
+        }
+        continue; // skip combat AI kol command aktyvus
+      }
+    }
     // Opponents list — priklauso nuo side:
     // ally: visi hostiles (editor-enemy barracks jau patenka per allHostiles) + red archer NPC
     // enemy barracks: ally barracks + hero
@@ -14087,7 +14157,8 @@ function _updateBarracksAttackAI(now) {
       //   - best < 3 → traukiasi (step AWAY)
       //   - best > 8 → eina link priešo (step TOWARD)
       //   - 3 ≤ best ≤ 8 → šauna (jei cd ready), kitaip idle
-      // Movement zone: visi žingsniai ribojami iki 5 cell Manhattan nuo deploy anchor taško.
+      // Movement zone: visi žingsniai ribojami iki 3 cell Manhattan nuo deploy anchor taško.
+      // Command override: jei u.commandMove aktyvus — AI pereina į pathfind režimą, ignoruoja combat.
       if (u.chaseWalk) continue;
       if ((u.hfishActionCd || 0) > now) continue;
       // Decision cd — 900–1500ms + po žingsnio: chaseWalk truks 380ms → 520–1100ms pauza
@@ -14565,6 +14636,7 @@ function loop(now) {
   drawLoot();
   drawMeatDrops();
   drawUnits();
+  if (typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
   _drawUnitHoverOutline();
   drawForegroundDecorations();
   drawRonkeInfect();
@@ -14575,6 +14647,8 @@ function loop(now) {
   drawDmgNumbers();
   if (gameMode === 'adventure') drawAmbientDust();
   if (typeof _drawF11DeployPreview === 'function') _drawF11DeployPreview();
+  if (typeof _drawSelectedAllyOverlay === 'function') _drawSelectedAllyOverlay();
+  if (typeof _drawCommandMoveCursors === 'function') _drawCommandMoveCursors();
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
@@ -14582,9 +14656,134 @@ function loop(now) {
     drawFloorIntro();
     drawF11DeployPanel();
     drawHeroHitVignette();
+    _drawHarpoonRangeToast();
   }
   _drawUnitHoverTooltip();
   drawScanlines();
+  if (typeof _updateCanvasCursor === 'function') _updateCanvasCursor();
+}
+
+// Dinamiškai perjungia canvas inline cursor'į (Cursor_01 ↔ Cursor_02) priklausomai nuo to,
+// ar pelė yra ant žinomų canvas-UI hitbox'ų. Dvi mouse space'os:
+//   screen-space  — F11 deploy panel (inScr checks)
+//   world-space   — F10 barracks popup, buildings, popup'ai (reikia pridėti cam offset)
+// CSS turi !important Cursor_01, tad čia naudojam setProperty su 'important' flag'u.
+let _lastCanvasCursorState = null;
+function _updateCanvasCursor() {
+  if (typeof canvas === 'undefined' || !canvas || !canvas.style) return;
+  const sx = _canvasMx, sy = _canvasMy; // screen-space
+  const camX = (gameMode === 'adventure' && S.cam) ? S.cam.x : 0;
+  const camY = (gameMode === 'adventure' && S.cam) ? S.cam.y : 0;
+  const wx = sx + camX, wy = sy + camY; // world-space
+  const inScr   = (b) => b && sx >= b.x && sx <= b.x + b.w && sy >= b.y && sy <= b.y + b.h;
+  const inWorld = (b) => b && wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h;
+  let wantPointer = false;
+
+  // Jei atidarytas popup — pro jį neleidžiam "praeiti" hover'ui į po juo esančius pastatus.
+  // Tikrinam TIK tą popup'o mygtukus; visi kiti world-space checkai praleidžiami.
+  const _anyPopupOpen = !!(_barracksPopupOpen || _castlePopupOpen || _housePopupOpen || _stonePopupOpen || _ronkePopupOpen
+    || (_primaryConstruction && _primaryConstruction.speedUpPopupOpen)
+    || (Array.isArray(_extraMines) && _extraMines.some(m => m && (m.housePopupOpen || m.stonePopupOpen || m.speedUpPopupOpen))));
+
+  if (_barracksPopupOpen) {
+    // Tik barracks popup'o mygtukai — pastatai po juo neveikia
+    if (Array.isArray(_barracksAvatarRects) && _barracksAvatarRects.some(r => inWorld(r) && !r.locked)) wantPointer = true;
+    if (!wantPointer && (inWorld(_barracksProduceBtnBounds)
+      || inWorld(_barracksSpeedUpBtnBounds)
+      || inWorld(_barracksQtyMinusBtnBounds)
+      || inWorld(_barracksQtyPlusBtnBounds)
+      || inWorld(_barracksSpeedUpMinusBtnBounds)
+      || inWorld(_barracksSpeedUpPlusBtnBounds))) wantPointer = true;
+  } else if (_castlePopupOpen) {
+    if (inWorld(_castleBtnBounds)) wantPointer = true;
+  } else if (_housePopupOpen) {
+    if (inWorld(_upgradeBtnBounds)) wantPointer = true;
+    if (!wantPointer && _primaryConstruction) {
+      if (inWorld(_primaryConstruction.speedUpBtnBounds)) wantPointer = true;
+    }
+  } else if (_stonePopupOpen) {
+    if (inWorld(_stoneUpgradeBtnBounds)) wantPointer = true;
+  } else if (_ronkePopupOpen && _ronkeRadialMenu && typeof _radialMenuHit === 'function') {
+    const hit = _radialMenuHit(_ronkeRadialMenu, wx, wy);
+    if (hit) wantPointer = true;
+  } else if (_primaryConstruction && _primaryConstruction.speedUpPopupOpen) {
+    if (inWorld(_primaryConstruction.speedUpPopupBtnBounds)
+      || inWorld(_primaryConstruction.speedUpPopupCloseBounds)) wantPointer = true;
+  } else if (Array.isArray(_extraMines) && _extraMines.some(m => m && m.speedUpPopupOpen)) {
+    for (const m of _extraMines) {
+      if (!m || !m.speedUpPopupOpen) continue;
+      if (inWorld(m.speedUpPopupBtnBounds) || inWorld(m.speedUpPopupCloseBounds)) { wantPointer = true; break; }
+    }
+  } else if (Array.isArray(_extraMines) && _extraMines.some(m => m && (m.housePopupOpen || m.stonePopupOpen))) {
+    for (const m of _extraMines) {
+      if (!m) continue;
+      if (m.housePopupOpen && inWorld(m.houseBtnBounds)) { wantPointer = true; break; }
+      if (m.stonePopupOpen && inWorld(m.stoneBtnBounds)) { wantPointer = true; break; }
+    }
+  }
+
+  if (!_anyPopupOpen) {
+    // --- Buildings / castle / house / stone (world-space) ---
+    if (!wantPointer && (inWorld(_castleBounds)
+      || inWorld(_barracksBounds)
+      || inWorld(_house3Bounds)
+      || inWorld(_stoneBounds)
+      || inWorld(_castleBtnBounds)
+      || inWorld(_upgradeBtnBounds)
+      || inWorld(_stoneUpgradeBtnBounds))) wantPointer = true;
+    // --- Primary construction speed-up arrow (tik jei popup uždarytas) ---
+    if (!wantPointer && _primaryConstruction && inWorld(_primaryConstruction.speedUpBtnBounds)) wantPointer = true;
+    // --- Extra mines (buildings + speed-up arrow, tik popup uždarytos) ---
+    if (!wantPointer && Array.isArray(_extraMines)) {
+      for (const m of _extraMines) {
+        if (!m) continue;
+        if (inWorld(m.houseBounds) || inWorld(m.stoneBounds) || inWorld(m.speedUpBtnBounds)) {
+          wantPointer = true; break;
+        }
+      }
+    }
+    // --- Narrative buttons ---
+    if (!wantPointer && (inWorld(_narrativeBtnBounds) || inWorld(_narrativePullBtnBounds))) wantPointer = true;
+    // --- Ronke hero / bar ---
+    if (!wantPointer && (inWorld(_ronkeBarBounds) || inWorld(_ronkeHeroBounds))) wantPointer = true;
+  }
+
+  // --- F11 deploy panel (screen-space) ---
+  if (!wantPointer && _f11DeployOpen) {
+    if (inScr(_f11DeployCloseBtn)) wantPointer = true;
+    if (!wantPointer && Array.isArray(_f11DeployUnitRects) && _f11DeployUnitRects.some(inScr)) wantPointer = true;
+  }
+  if (!wantPointer && inScr(_f11DeployRestoreBtn)) wantPointer = true;
+
+  // --- F11 ally unit selection — hover ant savo unit'o (world-space per grid) ---
+  // Skip jei pelė ant deploy panelės fono arba ant bet kokio popup'o
+  const _onF11Panel = _f11DeployOpen && inScr(_f11DeployPanelBounds);
+  if (!wantPointer && !_anyPopupOpen && !_onF11Panel && gameMode === 'adventure' && S.floor === 11 && typeof CELL === 'number') {
+    const cx = Math.floor(wx / CELL), cy = Math.floor(wy / CELL);
+    if (Array.isArray(S.units)) {
+      for (const u of S.units) {
+        if (!u || !u.alive) continue;
+        if (typeof isFriendlyBarracksUnit === 'function' && !isFriendlyBarracksUnit(u)) continue;
+        if (u.x === cx && u.y === cy) { wantPointer = true; break; }
+      }
+    }
+    // Arba jei unit pasirinktas ir ant validžios move cell'ės
+    if (!wantPointer && _selectedAllyUnit && _selectedAllyUnit.alive) {
+      if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
+          !isWall(cx, cy) && !_cellHasEntity(cx, cy, _selectedAllyUnit)) {
+        const dist = Math.abs(cx - _selectedAllyUnit.x) + Math.abs(cy - _selectedAllyUnit.y);
+        if (dist > 0) wantPointer = true;
+      }
+    }
+  }
+
+  const state = wantPointer ? 'pointer' : 'default';
+  if (state === _lastCanvasCursorState) return;
+  _lastCanvasCursorState = state;
+  const url = state === 'pointer'
+    ? "url('assets_tiny/Cursor_02.png') 23 17, pointer"
+    : "url('assets_tiny/Cursor_01.png') 22 17, auto";
+  canvas.style.setProperty('cursor', url, 'important');
 }
 
 // Harpoon range preview — polished UI su cell-accurate fills, animuotais outline'ais ir legend'o kortele.
@@ -14743,7 +14942,186 @@ function _drawHarpoonRangeDiamond(anchorCellX, anchorCellY, placementCellX, plac
   ctx.restore();
 }
 
+// Nepriklausomai nuo selection'o — renderina cursor ant VISŲ ally unitų su aktyviu commandMove.
+// Leidžia deselect'inti iškart po kliko, bet click-pop + arrival fade animacijos dar rodomos.
+function _drawCommandMoveCursors() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  if (!_moveCursorImg.complete || _moveCursorImg.naturalWidth <= 0) return;
+  if (!Array.isArray(S.units)) return;
+  const now = performance.now();
+  ctx.save();
+  for (const u of S.units) {
+    if (!u || !u.alive || !u.commandMove) continue;
+    if (typeof isFriendlyBarracksUnit === 'function' && !isFriendlyBarracksUnit(u)) continue;
+    const tcx = u.commandMove.tx * CELL + CELL / 2;
+    const tcy = u.commandMove.ty * CELL + CELL / 2;
+    let _popScale = 1, _popA = 1;
+    if (u.commandMove.clickedAt) {
+      const _ce = now - u.commandMove.clickedAt;
+      const _cd = 220;
+      if (_ce < _cd) {
+        const _t = _ce / _cd;
+        const _ease = 1 - Math.pow(1 - _t, 3);
+        _popScale = 2.2 - _ease * 1.2;
+        _popA = _ease;
+      } else if (_ce < _cd + 100) {
+        const _t = (_ce - _cd) / 100;
+        _popScale = 0.88 + 0.12 * _t;
+      }
+    }
+    let _fadeA = 1, _fadeScale = 1;
+    if (u.commandMove.arrivedAt) {
+      const _e = now - u.commandMove.arrivedAt;
+      if (_e < 400) {
+        const _t = _e / 400;
+        _fadeA = 1 - _t;
+        _fadeScale = 1 + _t * 0.35;
+      } else {
+        _fadeA = 0;
+      }
+    }
+    const _finalA = _fadeA * _popA;
+    if (_finalA > 0) {
+      const _csz = CELL * 0.9 * _fadeScale * _popScale;
+      const _bob = Math.sin(now / 180) * 2.5;
+      const _prevA = ctx.globalAlpha;
+      ctx.globalAlpha = _finalA;
+      ctx.drawImage(_moveCursorImg, tcx - _csz / 2, tcy - _csz / 2 + _bob, _csz, _csz);
+      ctx.globalAlpha = _prevA;
+    }
+  }
+  ctx.restore();
+}
+
+function _drawEnemyMarkers() {
+  if (gameMode !== 'adventure') return;
+  if (!_enemyMarkerImg.complete || _enemyMarkerImg.naturalWidth <= 0) return;
+  const now = performance.now();
+  const sz = 18;
+  ctx.save();
+  // S.units — priešiški unit'ai (ne friendly barracks)
+  if (Array.isArray(S.units)) {
+    for (const u of S.units) {
+      if (!u || !u.alive) continue;
+      if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(u)) continue;
+      if (typeof isVisible === 'function' && !isVisible(u.x, u.y)) {
+        const tileRevealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
+        if (!tileRevealed && !S.fullMapRevealed) continue;
+      }
+      const rx = (typeof u.rx === 'number') ? u.rx : u.x;
+      const ry = (typeof u.ry === 'number') ? u.ry : u.y;
+      const cx = (rx + 0.5) * CELL;
+      const headY = (ry + 0.5) * CELL - UNIT_CELL * 1.15 * (u.scale || 1.0);
+      const bob = Math.sin(now / 300 + (u.id || 0) * 0.7) * 2;
+      ctx.drawImage(_enemyMarkerImg, cx - sz / 2, headY + bob, sz, sz);
+    }
+  }
+  // Red archer NPC decorations — priešiški, bet state map'e, ne S.units.
+  // Sprite'o dydis 96×96 (DRAW_W/H), tad icon dedam virš bounding box viršaus,
+  // analogiškai kaip S.units'uose (ikonos apačia truputį virš sprite'o viršaus).
+  if (S.decorations && typeof _redArcherStates !== 'undefined') {
+    for (const k in _redArcherStates) {
+      if (S.decorations[k] !== 'red_archer_npc') continue;
+      const st = _redArcherStates[k];
+      if (!st || typeof st.wx !== 'number' || typeof st.wy !== 'number') continue;
+      if (typeof isVisible === 'function' && !isVisible(st.cx, st.cy)) {
+        const tileRevealed = S.fog && S.fog[st.cy] && S.fog[st.cy][st.cx];
+        if (!tileRevealed && !S.fullMapRevealed) continue;
+      }
+      const cx = st.wx;                  // pixel center X (follows walk tween)
+      const headY = st.wy - 24 - sz;      // virš sprite'o viršaus (DRAW_H=96, top ≈ wy-45)
+      const bob = Math.sin(now / 300 + (st.cx + st.cy * 7)) * 2;
+      ctx.drawImage(_enemyMarkerImg, cx - sz / 2, headY + bob, sz, sz);
+    }
+  }
+  ctx.restore();
+}
+
+function _drawSelectedAllyOverlay() {
+  if (!_selectedAllyUnit || !_selectedAllyUnit.alive) { _selectedAllyUnit = null; return; }
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  const u = _selectedAllyUnit;
+  const now = performance.now();
+  const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+  const cx = ((typeof u.rx === 'number') ? u.rx : u.x) * CELL + CELL / 2;
+  const cy = ((typeof u.ry === 'number') ? u.ry : u.y) * CELL + CELL / 2;
+  ctx.save();
+  // 1) Range diamond (anchor pozicijos) — jei harpoon ir toggle ON, reusinam esamą fn
+  if (u.utype === 'harpoon_fish' && window._showHarpoonRanges) {
+    const anchorX = (typeof u.deployAnchorX === 'number') ? u.deployAnchorX : u.x;
+    const anchorY = (typeof u.deployAnchorY === 'number') ? u.deployAnchorY : u.y;
+    _drawHarpoonRangeDiamond(anchorX, anchorY, u.x, u.y, true);
+  }
+  // 3) Hover preview (tik jei unit'as pasirinktas IR nėra command'o) — cursor ant hover cell
+  if (!u.commandMove && _canvasMx >= 0 && _canvasMy >= 0) {
+    // Prieš command — cursor hover preview (tik jei ant validžios ląstelės)
+    const wmx = _canvasMx + (S.cam?.x || 0);
+    const wmy = _canvasMy + (S.cam?.y || 0);
+    const hcx = Math.floor(wmx / CELL), hcy = Math.floor(wmy / CELL);
+    if (hcx >= 0 && hcx < COLS && hcy >= 0 && hcy < ROWS && !isWall(hcx, hcy) && !_cellHasEntity(hcx, hcy, u)) {
+      const _hDist = Math.abs(hcx - u.x) + Math.abs(hcy - u.y);
+      const _hEnergy = (typeof S.energy === 'number') ? S.energy : 0;
+      const _affordable = _hEnergy >= _hDist && _hDist > 0;
+      const tpx = hcx * CELL + CELL / 2, tpy = hcy * CELL + CELL / 2;
+      // Cursor sprite ant hover cell (pusiau permatomas jei neįperkama)
+      if (_moveCursorImg.complete && _moveCursorImg.naturalWidth > 0) {
+        const _csz = CELL * 0.9;
+        const _bob = Math.sin(performance.now() / 180) * 2;
+        const _prevA = ctx.globalAlpha;
+        ctx.globalAlpha = _affordable ? 1 : 0.55;
+        ctx.drawImage(_moveCursorImg, tpx - _csz / 2, tpy - _csz / 2 + _bob, _csz, _csz);
+        ctx.globalAlpha = _prevA;
+      }
+      // Kainos label'as ant cursor centro (viduryje bloko)
+      if (_hDist > 0) {
+        const _lbl = `${_hDist}⚡`;
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+        ctx.strokeText(_lbl, tpx + 5, tpy);
+        ctx.fillStyle = _affordable ? '#ffdd55' : '#ff8080';
+        ctx.fillText(_lbl, tpx + 5, tpy);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function _drawHarpoonRangeToast() {
+  if (!_harpoonRangeToastUntil) return;
+  const now = performance.now();
+  const remain = _harpoonRangeToastUntil - now;
+  if (remain <= 0) { _harpoonRangeToastUntil = 0; return; }
+  const fadeDur = 1400;
+  const t = Math.min(1, remain / fadeDur);
+  const alpha = t < 0.2 ? (t / 0.2) : 1;  // fade-in first 20%, solid rest
+  const fadeOut = t < 0.3 ? (t / 0.3) : 1; // fade-out last 30%
+  const a = Math.min(alpha, fadeOut);
+  const label = window._showHarpoonRanges ? 'HARPOON RANGES: ON' : 'HARPOON RANGES: OFF';
+  const color = window._showHarpoonRanges ? '#a8ff9a' : '#ff8080';
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const w = ctx.measureText(label).width + 28;
+  const h = 32;
+  const x = (canvas.width - w) / 2;
+  const y = canvas.height - 90;
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = color;
+  ctx.fillText(label, x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
 function _drawF11DeployPreview() {
+  if (!window._showHarpoonRanges) return;
   // (a) Deploy armed preview — rodo ties hover cell prieš pastatymą
   if (gameMode === 'adventure' && S.floor === 11 && _f11DeployArmed === 'harpoon_fish' && _canvasMx >= 0 && _canvasMy >= 0) {
     const worldMx = _canvasMx + (S.cam?.x || 0);
@@ -20799,6 +21177,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   canvas.addEventListener('mouseleave', () => { _canvasMx = -1; _canvasMy = -1; });
 
+  // Right-click → deselect ally unit (F11 indirect control)
+  canvas.addEventListener('contextmenu', e => {
+    if (gameMode === 'adventure' && S.floor === 11 && _selectedAllyUnit) {
+      e.preventDefault();
+      _selectedAllyUnit = null;
+    }
+  });
+
   // House3 click → popup su Upgrade mygtuku
   canvas.addEventListener('click', e => {
     const r = canvas.getBoundingClientRect();
@@ -21018,6 +21404,57 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return;
     }
+    // F11 Indirect unit control — klik ant savo unit'o pasirenka jį, tada kitas klik ant ląstelės
+    // liepia pajudėti. Šis blokas veikia TIK kai deploy nėra armed (kad nekonfliktuotų su placement).
+    if (gameMode === 'adventure' && S.floor === 11 && !_f11DeployArmed) {
+      const _clickCellX = Math.floor(mx / CELL);
+      const _clickCellY = Math.floor(my / CELL);
+      // 1) Pirma — ar click'as ant savo unit'o? (toks tampa selected; re-click deselect)
+      let _clickedAlly = null;
+      for (const u of (S.units || [])) {
+        if (!u || !u.alive) continue;
+        if (!isFriendlyBarracksUnit(u)) continue;
+        if (u.x === _clickCellX && u.y === _clickCellY) { _clickedAlly = u; break; }
+      }
+      if (_clickedAlly) {
+        _selectedAllyUnit = (_selectedAllyUnit === _clickedAlly) ? null : _clickedAlly;
+        return;
+      }
+      // 2) Jei selected — click ant tuščios ląstelės = move command
+      // Kaina: 1 energy per Manhattan cell (atstumas nuo unit'o iki taikinio). Jei neužtenka
+      // energijos — komanda atmetama, parodomas mirksėjimo feedback'as virš unit'o.
+      if (_selectedAllyUnit && _selectedAllyUnit.alive) {
+        if (_clickCellX >= 0 && _clickCellX < COLS && _clickCellY >= 0 && _clickCellY < ROWS &&
+            !isWall(_clickCellX, _clickCellY) &&
+            !_cellHasEntity(_clickCellX, _clickCellY, _selectedAllyUnit)) {
+          const _dist = Math.abs(_clickCellX - _selectedAllyUnit.x) + Math.abs(_clickCellY - _selectedAllyUnit.y);
+          if (_dist === 0) return; // klik ant paties unit'o cell'ės — nieko nedarom
+          const _energyAvail = (typeof S.energy === 'number') ? S.energy : 0;
+          if (_energyAvail < _dist) {
+            // Nepakanka — flash feedback virš unit'o
+            if (typeof spawnDmgNumber === 'function') {
+              spawnDmgNumber(_selectedAllyUnit.x, _selectedAllyUnit.y, `NO ⚡ (${_dist})`, '#ff6060', 16, 'crit');
+            }
+            if (typeof SFX !== 'undefined' && SFX.deny) SFX.deny();
+            return;
+          }
+          S.energy = Math.max(0, _energyAvail - _dist);
+          if (typeof updateEnergyHud === 'function') updateEnergyHud();
+          if (typeof spawnDmgNumber === 'function') {
+            spawnDmgNumber(_clickCellX, _clickCellY, `-${_dist}⚡`, '#ffdd55', 16, 'crit');
+          }
+          _selectedAllyUnit.deployAnchorX = _clickCellX;
+          _selectedAllyUnit.deployAnchorY = _clickCellY;
+          _selectedAllyUnit.commandMove = { tx: _clickCellX, ty: _clickCellY, issuedAt: performance.now(), clickedAt: performance.now() };
+          const _now = performance.now();
+          _selectedAllyUnit.hfishAttackCd = _now + 500;
+          _selectedAllyUnit.shamanAttackCd = _now + 500;
+          _selectedAllyUnit.skullMoveCd = _now;
+          _selectedAllyUnit = null; // po komandos — deselect'inam; kitam judesiui reikia vėl pažymėti unit'ą
+          return;
+        }
+      }
+    }
     // F11 deploy panel — veikia screen-space; placement → world cell
     if (_f11DeployOpen && S.floor === 11) {
       const inScr = (b) => b && _cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h;
@@ -21177,6 +21614,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Hook for quick restart from Game Over screen
   document.addEventListener('keydown', e => {
+    // V — toggle harpoon vision/movement range overlays (tik F11 adventure mode'e)
+    if ((e.key === 'v' || e.key === 'V') && gameMode === 'adventure' && S.floor === 11) {
+      window._showHarpoonRanges = !window._showHarpoonRanges;
+      _harpoonRangeToastUntil = performance.now() + 1400;
+      const _btn = document.getElementById('harpoonRangeToggleBtn');
+      if (_btn) {
+        _btn.style.background = window._showHarpoonRanges ? '#004400' : '#222';
+        _btn.textContent = window._showHarpoonRanges ? 'HARPOON RANGES: ON' : 'HARPOON RANGES: OFF';
+      }
+      return;
+    }
     if (S.phase === 'gameover') {
       if (e.code === 'Space' || e.key === 'r' || e.key === 'R') {
         SFX.init();
@@ -21399,6 +21847,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add eraser
     mapPanel.innerHTML += `<div style="display:flex; gap:5px; margin-top:5px;"><button onclick="setEditTile('erase_prop')" style="background:#550000; flex:1; height:30px; color:white; font-size:9px; cursor:pointer;">&#x2715; ERASE PROP</button><button onclick="setEditTile('erase_box')" style="background:#550022; flex:1; height:30px; color:#ff88cc; font-size:9px; cursor:pointer; border:1px solid #aa0044;">&#x2715; ERASE BOX</button></div>`;
     mapPanel.innerHTML += `<div style="margin-top:5px;"><button id="hitboxToggleBtn" onclick="window._showHitboxes=!window._showHitboxes; this.style.background=window._showHitboxes?'#004400':'#222'; this.textContent=window._showHitboxes?'HITBOX: ON':'HITBOX: OFF';" style="background:#222; width:100%; height:28px; color:#88ff88; font-size:9px; cursor:pointer; border:1px solid #448844;">HITBOX: OFF</button></div>`;
+    mapPanel.innerHTML += `<div style="margin-top:5px;"><button id="harpoonRangeToggleBtn" onclick="window._showHarpoonRanges=!window._showHarpoonRanges; this.style.background=window._showHarpoonRanges?'#004400':'#222'; this.textContent=window._showHarpoonRanges?'HARPOON RANGES: ON':'HARPOON RANGES: OFF';" style="background:#222; width:100%; height:28px; color:#a8ff9a; font-size:9px; cursor:pointer; border:1px solid #448844;">HARPOON RANGES: OFF</button></div>`;
     
     // Add Fill buttons
     mapPanel.innerHTML += `<div style="margin-top:5px; display:flex; gap:5px;"><button onclick="fillMap(1)" style="flex:1; background:#3a7a2a; color:white; font-size:9px;">FILL GRASS</button><button onclick="fillMap(0)" style="flex:1; background:#4ab5c0; color:white; font-size:9px;">FILL WATER</button></div>`;
