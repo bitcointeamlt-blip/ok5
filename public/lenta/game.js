@@ -8950,6 +8950,13 @@ function _updateAndDrawFish(decKeys) {
 }
 
 function drawForegroundDecorations() {
+  // Reset building bounds kiekvieną frame — jei dekoracijos nėra šiame floor'e, bounds liks null.
+  // Kitaip F10→F11 perėjime F10 pastatų bounds lieka aktyvūs → click'ai kelia popup'us „tuščioj" vietoj,
+  // training bar'as nupieštas ant neegzistuojančio barakų. Bounds re-set'inami žemiau loope, jei decoration yra.
+  _castleBounds = null;
+  _barracksBounds = null;
+  _house3Bounds = null;
+
   if (!S.decorations) return;
 
   const decKeys = Object.keys(S.decorations);
