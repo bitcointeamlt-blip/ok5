@@ -2572,6 +2572,8 @@ window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":4,"y":6},"exitPos":{"x":25,"y":28}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
+// Floor 11 — kovos zona: 42x15 grass (telpa į ekraną, be scroll), be deco/enemy/collisions (be warfog)
+window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":7},"exitPos":{"x":40,"y":7}};
 const _buildingImgs = {};
 ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'].forEach(n => {
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
@@ -2705,6 +2707,15 @@ let _castleBounds = null;
 let _castlePopupOpen = false;
 let _barracksBounds = null;
 let _barracksPopupOpen = false;
+// ── F11 deploy panel (combat prep zone) ─────────────────────────────────
+let _f11DeployOpen = false;
+let _f11DeployMinimized = false;      // true = show only restore button
+let _f11DeployArmed = null;           // 'skull' | 'shaman' | 'harpoon_fish' | null
+let _f11DeployPanelBounds = null;     // screen-space panel rect
+let _f11DeployUnitRects = [];         // [{ x, y, w, h, type, idx }] screen-space
+let _f11DeployCloseBtn = null;        // screen-space (minimize btn)
+let _f11DeployRestoreBtn = null;      // screen-space — shown when minimized
+let _f11TransferUnits = [];           // [{ utype, stack, hp }] — snapshot iš F10 before floor advance
 let _barracksSelectedIdx = null;       // 0..15 pasirinkto unit'o indeksas arba null
 let _barracksProduceBtnBounds = null;  // produce mygtuko hit box
 let _barracksAvatarRects = [];         // kiekvieno avataro hit box'ai
@@ -2758,10 +2769,10 @@ function _barracksSpawnTrained(unitIdx) {
   if (!archetype) return;
   // Stack'inimas: jei jau egzistuoja gyvas to paties tipo team=1 unit — spawn'inam "walker'į"
   // kuris nueis iki to paties taško ir atvykęs merge'insis (existing.stack++, flip animacija).
-  const existing = (S.units || []).find(u => u.alive && u.team === 1 && u.utype === type);
+  const existing = (S.units || []).find(u => u.alive && u.team === 1 && u.utype === type && !u.isEditorEnemy);
   const cell = _findBarracksCell();
   if (!cell) return;
-  const occupied = (x, y) => (S.units || []).some(u => u.alive && u.x === x && u.y === y);
+  const occupied = (x, y) => _cellHasEntity(x, y, null);
   const wall = (x, y) => (typeof isWall === 'function') ? isWall(x, y) : false;
   // Pirma ieškom pažymėtų spawn-marker tile'ų (tileset3_3_3) netoli baraku — iki 8 laukų atstumu.
   const markerSpots = [];
@@ -2835,7 +2846,100 @@ function _barracksSpawnTrained(unitIdx) {
     };
   }
   S.units.push(u);
+  // Persist to Profile (spawn walker hasn't merged yet, but the +1 will apply when walker arrives)
+  setTimeout(() => { if (typeof _saveBarracksTrainedState === 'function') _saveBarracksTrainedState(); }, 2200);
 }
+// ── Persistence: F10 trained barracks units (survive reload) ─────────────
+function _nextTrainedSnapId() {
+  return `tsn_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+function _removeTrainedSnapById(id) {
+  if (!id) return false;
+  let removed = false;
+  // Remove from Profile
+  if (Array.isArray(Profile.barracksTrained)) {
+    const before = Profile.barracksTrained.length;
+    Profile.barracksTrained = Profile.barracksTrained.filter(s => s && s.id !== id);
+    if (Profile.barracksTrained.length !== before) removed = true;
+  }
+  // Also from F11 pool (if unit died before deployment — edge case)
+  if (Array.isArray(_f11TransferUnits)) {
+    _f11TransferUnits = _f11TransferUnits.filter(s => s && s.id !== id);
+  }
+  if (removed && typeof saveProfile === 'function') saveProfile();
+  return removed;
+}
+function _saveBarracksTrainedState() {
+  if (!Array.isArray(S.units)) return;
+  // Kolekcionuojam gyvus F10 trained unit'us (rebuild base)
+  const snaps = [];
+  const keptIds = new Set();
+  for (const u of S.units) {
+    if (!isFriendlyBarracksUnit(u)) continue;
+    if (u.spawnWalk && u.spawnWalk.mergeTargetId) continue; // mid-merge walker — skip, merges into target
+    if (!u.trainedSnapId) u.trainedSnapId = _nextTrainedSnapId();
+    keptIds.add(u.trainedSnapId);
+    snaps.push({ id: u.trainedSnapId, utype: u.utype, stack: u.stack || 1, hp: u.hp, maxHp: u.maxHp });
+  }
+  Profile.barracksTrained = snaps;
+  saveProfile();
+}
+function _restoreBarracksTrainedState() {
+  const snaps = Profile.barracksTrained;
+  if (!Array.isArray(snaps) || snaps.length === 0) return;
+  const cell = (typeof _findBarracksCell === 'function') ? _findBarracksCell() : null;
+  // Collect marker spawn spots near barracks (same logic as _barracksSpawnTrained)
+  const markerSpots = [];
+  if (S.decorations && cell) {
+    for (const k in S.decorations) {
+      if (S.decorations[k] !== 'tileset3_3_3') continue;
+      const [r, c] = k.split(',').map(n => parseInt(n, 10));
+      const d = Math.abs(r - cell.r) + Math.abs(c - cell.c);
+      if (d <= 8) markerSpots.push({ x: c, y: r, d });
+    }
+    markerSpots.sort((a, b) => a.d - b.d || a.y - b.y || a.x - b.x);
+  }
+  const occupied = (x, y) => _cellHasEntity(x, y, null);
+  const wall = (x, y) => (typeof isWall === 'function') ? isWall(x, y) : false;
+  const usedSpots = new Set();
+  for (const snap of snaps) {
+    const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(snap.utype) : null;
+    if (!archetype) continue;
+    let spot = null;
+    for (const p of markerSpots) {
+      const key = p.x + ',' + p.y;
+      if (usedSpots.has(key)) continue;
+      if (wall(p.x, p.y) || occupied(p.x, p.y)) continue;
+      usedSpots.add(key);
+      spot = { x: p.x, y: p.y }; break;
+    }
+    if (!spot && cell) {
+      const fallback = [
+        { x: cell.c, y: cell.r + 1 },
+        { x: cell.c + 1, y: cell.r + 1 },
+        { x: cell.c - 1, y: cell.r + 1 },
+      ];
+      for (const p of fallback) {
+        const key = p.x + ',' + p.y;
+        if (usedSpots.has(key)) continue;
+        if (p.x < 0 || p.y < 0 || p.x >= COLS || p.y >= ROWS) continue;
+        if (wall(p.x, p.y) || occupied(p.x, p.y)) continue;
+        usedSpots.add(key);
+        spot = p; break;
+      }
+    }
+    if (!spot) continue;
+    if (!Array.isArray(S.units)) S.units = [];
+    const u = mkUnit(nextEditorUnitId(), 1, spot.x, spot.y, -1, archetype);
+    u.stack = snap.stack || 1;
+    if (typeof snap.hp === 'number') u.hp = snap.hp;
+    if (typeof snap.maxHp === 'number') u.maxHp = snap.maxHp;
+    if (snap.id) u.trainedSnapId = snap.id;
+    else u.trainedSnapId = _nextTrainedSnapId();
+    S.units.push(u);
+  }
+}
+
 const _BARRACKS_UNIT_COST = 1;
 const _BARRACKS_PRODUCE_MS = 60000;    // 1 min
 const _barracksAvatarImgs = [];
@@ -3610,7 +3714,7 @@ function _findShootDirFriendly(cx, cy, maxDist) {
 }
 
 function _findShootDirRed(cx, cy, maxDist) {
-  // Red archer — enemies are hero + blue archers + fish
+  // Red archer — enemies are hero + blue archers + fish + trained barracks units
   const left = [], right = [];
   const hero = S._hero || (S.units && S.units.find(u => u.team === 0 && u.alive));
   if (hero) {
@@ -3628,6 +3732,13 @@ function _findShootDirRed(cx, cy, maxDist) {
     if (!S.decorations || (S.decorations[k] !== 'harpoon_fish_npc' && S.decorations[k] !== 'harpoon_fish_idle_npc')) continue;
     const dx = st.cx - cx;
     if (Math.abs(dx) <= maxDist && Math.abs(st.cy - cy) <= 2) (dx >= 0 ? right : left).push(Math.abs(dx));
+  }
+  if (Array.isArray(S.units)) {
+    for (const u of S.units) {
+      if (!isFriendlyBarracksUnit(u)) continue;
+      const dx = u.x - cx;
+      if (Math.abs(dx) <= maxDist && Math.abs(u.y - cy) <= 2) (dx >= 0 ? right : left).push(Math.abs(dx));
+    }
   }
   if (!left.length && !right.length) return null;
   if (left.length && right.length) return Math.random() > 0.5;
@@ -4249,7 +4360,10 @@ function placeEditorEnemy(type, gx, gy) {
   if (!Array.isArray(S.customEnemyPlacements)) S.customEnemyPlacements = [];
   S.customEnemyPlacements.push({ type, x: gx, y: gy });
   if (!Array.isArray(S.units)) S.units = [];
-  S.units.push(mkUnit(nextEditorUnitId(), 1, gx, gy, -1, archetype));
+  const u = mkUnit(nextEditorUnitId(), 1, gx, gy, -1, archetype);
+  // Editor-placed barracks tipo unit = enemy (priešas trained unit'ams)
+  if (_BARRACKS_UNIT_TYPES && _BARRACKS_UNIT_TYPES.includes(type)) u.isEditorEnemy = true;
+  S.units.push(u);
   persistEditorEnemyPlacements();
   return true;
 }
@@ -5430,7 +5544,7 @@ function initAdventure() {
   S.kills = 0;
   _updateKillsDisplay();
   S.explorerChestSpawned = (S.floor === 10);
-  S.fullMapRevealed = (S.floor === 10);
+  S.fullMapRevealed = (S.floor === 10 || S.floor === 11);
   S.flareUsed = false;
   S.flareMode = false;
   S.flareProjectile = null;
@@ -5478,7 +5592,9 @@ function initAdventure() {
       if (!archetype) return;
       if (enemy.x < 0 || enemy.y < 0 || enemy.x >= COLS || enemy.y >= ROWS) return;
       if (isWall(enemy.x, enemy.y) || S.units.some((u) => u.x === enemy.x && u.y === enemy.y)) return;
-      S.units.push(mkUnit(eid++, 1, enemy.x, enemy.y, -1, archetype));
+      const _eu = mkUnit(eid++, 1, enemy.x, enemy.y, -1, archetype);
+      if (_BARRACKS_UNIT_TYPES && _BARRACKS_UNIT_TYPES.includes(enemy.type)) _eu.isEditorEnemy = true;
+      S.units.push(_eu);
     });
   } else {
     S.rooms.forEach((r, ri) => {
@@ -5610,10 +5726,32 @@ function initAdventure() {
 
   // Floor intro animation
   triggerFloorIntro(S.floor || 1);
+
+  // F10 — restore trained barracks units from last session
+  if (S.floor === 10 && typeof _restoreBarracksTrainedState === 'function') {
+    _restoreBarracksTrainedState();
+  }
+
+  // F11 — kovos zona: load ally army iš Profile (treniruoti F10 units)
+  if (S.floor === 11) {
+    _f11DeployOpen = true;
+    _f11DeployMinimized = false;
+    _f11DeployArmed = null;
+    // Army pool — kiekviena įrašas = viena pasirinktina trained squad (stack preserved)
+    if (Array.isArray(Profile.barracksTrained) && Profile.barracksTrained.length > 0) {
+      _f11TransferUnits = Profile.barracksTrained.map(s => ({ ...s }));
+    } else {
+      _f11TransferUnits = [];
+    }
+  } else {
+    _f11DeployOpen = false;
+    _f11DeployArmed = null;
+  }
 }function getFloorCustomMap() {
   if (S.floor === 1 && window.CUSTOM_MAP) return window.CUSTOM_MAP;
   if (S.floor === 2 && window.CUSTOM_MAP2) return window.CUSTOM_MAP2;
   if (S.floor === 10 && window.CUSTOM_MAP10) return window.CUSTOM_MAP10;
+  if (S.floor === 11 && window.CUSTOM_MAP11) return window.CUSTOM_MAP11;
   return null;
 }
 function generateDungeon() {
@@ -6947,6 +7085,11 @@ window.confirmTeleportUse = function () {
   checkAchievements();
   setTimeout(() => {
     showCardPicker(() => {
+      // Snapshot trained barracks units before F10 → F11 transition.
+      // Save to Profile so initAdventure() F11 branch gali pasiimti live state.
+      if (S.floor === 10) {
+        if (typeof _saveBarracksTrainedState === 'function') _saveBarracksTrainedState();
+      }
       S.floor++;
       initAdventure();
       playCurrentLevelBGM();
@@ -7738,6 +7881,26 @@ function _npcTooClose(cx, cy, excludeKey) {
   return false;
 }
 
+// Unified occupancy: tikrina S.units IR visus NPC tipus, kad 2 entity nepakliutu ant vieno bloko
+function _cellHasEntity(x, y, excludeUnit) {
+  if (Array.isArray(S.units)) {
+    for (const o of S.units) {
+      if (!o.alive) continue;
+      if (o === excludeUnit) continue;
+      if (o.x === x && o.y === y) return true;
+    }
+  }
+  if (S.decorations) {
+    const NPC_TYPES = ['archer_npc','archer_idle_npc','red_archer_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
+    for (const [k, v] of Object.entries(S.decorations)) {
+      if (!NPC_TYPES.includes(v)) continue;
+      const [ocx, ocy] = _npcCellPos(k, v);
+      if (ocx === x && ocy === y) return true;
+    }
+  }
+  return false;
+}
+
 function _updateAndDrawArchers(decKeys) {
   const now = performance.now();
   const DRAW_W = 96, DRAW_H = 96;
@@ -7813,7 +7976,7 @@ function _updateAndDrawArchers(decKeys) {
           st.state = 'idle';
           st.frame = 0;
           st.lastFrameAt = now;
-          st.nextShootAt  = now + 2000 + Math.random() * 4000;
+          st.nextShootAt  = now + 1000 + Math.random() * 2000;
           st.nextActionAt = now + 600  + Math.random() * 1000;
         }
       }
@@ -7877,7 +8040,7 @@ function _updateAndDrawArchers(decKeys) {
             if (_npcTooClose(nx, ny, key)) return false;
             return true;
           });
-          if (valid.length > 0) {
+          if (valid.length > 0 && Math.random() >= 0.30) {
             const d = valid[Math.floor(Math.random() * valid.length)];
             const ncx = st.cx + d.dx, ncy = st.cy + d.dy;
             st.walkSrcX = st.wx; st.walkSrcY = st.wy;
@@ -7978,8 +8141,8 @@ function _updateAndDrawArchers(decKeys) {
         a.hitTarget = false;
         const lgx = Math.floor(a.stuckX / CELL);
         const lgy = Math.floor(a.stuckY / CELL);
-        const _baCrit = Math.random() < 0.10;
-        const _baDmg = _baCrit ? 4 : 2;
+        const _baCrit = Math.random() < 0.15;
+        const _baDmg = _baCrit ? 10 : 7;
         if (S.units) {
           const target = S.units.find(u => u.alive && u.x === lgx && u.y === lgy);
           if (target) {
@@ -8300,7 +8463,7 @@ function _updateAndDrawRedArchers(decKeys) {
         }
         if (st.frame >= anim.frames) {
           st.state = 'idle'; st.frame = 0; st.lastFrameAt = now;
-          st.nextShootAt  = now + 2000 + Math.random() * 3000;
+          st.nextShootAt  = now + 1000 + Math.random() * 1500;
           st.nextActionAt = now + 600  + Math.random() * 800;
         }
       }
@@ -8320,19 +8483,63 @@ function _updateAndDrawRedArchers(decKeys) {
         if (st.hunter) {
           _hunterAct(st, key, now);
         } else if (now >= st.nextShootAt) {
-          const _dir = _findShootDirRed(st.cx, st.cy, 10);
+          // Sweet spot detection — taikinys 3–7 cell horizontaliai IR toj pačioj eilutėj.
+          // Jei taikinys yra sweet spot'e → aim'inam: 25% pataiko, 75% pramauna (±1 cell offset).
+          // Kitaip — išlaikom dabartinį elgesį (random speed 180–460, netaikyta).
+          let _swTarget = null;
+          const _sweetCheck = (tcx, tcy) => {
+            if (tcy !== st.cy) return;
+            const dxAbs = Math.abs(tcx - st.cx);
+            if (dxAbs < 3 || dxAbs > 7) return;
+            if (!_swTarget || dxAbs < _swTarget.d) _swTarget = { cx: tcx, d: dxAbs, dir: tcx > st.cx };
+          };
+          const _hero2 = S._hero || (S.units && S.units.find(u => u.team === 0 && u.alive));
+          if (_hero2) _sweetCheck(_hero2.x, _hero2.y);
+          for (const _k in _archerStates) {
+            if (!S.decorations || (S.decorations[_k] !== 'archer_npc' && S.decorations[_k] !== 'archer_idle_npc')) continue;
+            const _a = _archerStates[_k]; if (_a) _sweetCheck(_a.cx, _a.cy);
+          }
+          for (const _k in _fishStates) {
+            if (!S.decorations || (S.decorations[_k] !== 'harpoon_fish_npc' && S.decorations[_k] !== 'harpoon_fish_idle_npc')) continue;
+            const _f = _fishStates[_k]; if (_f) _sweetCheck(_f.cx, _f.cy);
+          }
+          if (Array.isArray(S.units)) {
+            for (const _u of S.units) {
+              if (!_u || !_u.alive) continue;
+              if (!isFriendlyBarracksUnit(_u)) continue;
+              _sweetCheck(_u.x, _u.y);
+            }
+          }
+          const _dir = _swTarget ? _swTarget.dir : _findShootDirRed(st.cx, st.cy, 10);
           if (_dir === null) {
             st.nextShootAt  = now + 1500 + Math.random() * 1500;
             st.nextActionAt = now + 400  + Math.random() * 600;
           } else {
           st.facingRight = _dir;
-          st.shootSpeed = 180 + Math.random() * 200; // 180–380 px/s → min ~4 cells
+          if (_swTarget) {
+            // Aim'intas suvis — calibrate speed kad nusileistų taikinio cell centre (arba ±1 miss)
+            const _VY0 = -130, _GRAV = 230, _GND = 30, _DRAG = 0.35;
+            const _tL = (-_VY0 + Math.sqrt(_VY0 * _VY0 + 2 * _GRAV * _GND)) / _GRAV;
+            const _dec = 1 - Math.exp(-_DRAG * _tL);
+            const _dirSign = _dir ? 1 : -1;
+            let _aimCx = _swTarget.cx;
+            if (Math.random() >= 0.15) {
+              // Miss — ±1 cell pro šoną
+              _aimCx += (Math.random() < 0.5 ? -1 : 1);
+            }
+            const _startXsw = st.wx + _dirSign * (DRAW_W / 2 + 6);
+            const _aimPx = (_aimCx + 0.5) * CELL;
+            const _travel = Math.abs(_aimPx - _startXsw);
+            st.shootSpeed = Math.max(140, Math.min(560, (_travel / _dec) * _DRAG));
+          } else {
+            st.shootSpeed = 180 + Math.random() * 280; // 180–460 px/s → ~3.5–9 cells (dabartinis random elgesys)
+          }
           st.state='shoot'; st.frame=0; st.lastFrameAt=now; st.arrowFired=false;
           }
         } else {
           const dirs=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
           const valid=dirs.filter(d=>{const nx=st.cx+d.dx,ny=st.cy+d.dy; return nx>=0&&ny>=0&&nx<COLS&&ny<ROWS&&!isWall(nx,ny)&&Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY)<=WANDER_CELLS&&!_npcTooClose(nx,ny,key);});
-          if (valid.length>0) {
+          if (valid.length>0 && Math.random()>=0.30) {
             const d=valid[Math.floor(Math.random()*valid.length)];
             const ncx=st.cx+d.dx,ncy=st.cy+d.dy;
             st.walkSrcX=st.wx; st.walkSrcY=st.wy;
@@ -8394,8 +8601,8 @@ function _updateAndDrawRedArchers(decKeys) {
         a.stuckX=ax+AW/2; a.stuckY=ay; a.stuckAngle=angle; a.hitTarget=false;
         const lgx=Math.floor(a.stuckX/CELL), lgy=Math.floor(a.stuckY/CELL);
         // Crit roll for red archer arrow
-        const _raCrit = Math.random() < 0.10;
-        const _raDmg = _raCrit ? 4 : 2;
+        const _raCrit = Math.random() < 0.15;
+        const _raDmg = _raCrit ? 10 : 7;
         // Hero damage
         const hero=S.units&&S.units.find(u=>u.alive&&u.team===0&&u.x===lgx&&u.y===lgy);
         if (hero) {
@@ -8432,6 +8639,26 @@ function _updateAndDrawRedArchers(decKeys) {
         if (!a.hitTarget) {
           if (_damageBlueArcherAt(lgx, lgy, _raDmg)) a.hitTarget = true;
           else if (_damageFishAt(lgx, lgy, _raDmg)) a.hitTarget = true;
+        }
+        // Trained barracks unit hit
+        if (!a.hitTarget && Array.isArray(S.units)) {
+          const target = S.units.find(u => isFriendlyBarracksUnit(u) && u.x === lgx && u.y === lgy);
+          if (target && _skullIsBlocking(target)) {
+            a.hitTarget = true;
+            S.shake = Math.max(S.shake || 0, 5);
+            spawnDmgNumber(target.x, target.y, 'BLOCK', '#88ddff', 16, 'normal');
+          } else if (target) {
+            a.hitTarget = true;
+            target.hp = Math.max(0, (target.hp || 1) - _raDmg);
+            target.hitFlash = 1;
+            S.shake = Math.max(S.shake || 0, _raCrit ? 10 : 7);
+            spawnDmgNumber(target.x, target.y, _raCrit ? `-${_raDmg}!` : `-${_raDmg}`, _raCrit ? '#ffe033' : '#ff6666', _raCrit ? 20 : 16, _raCrit ? 'crit' : 'normal');
+            if (SFX && SFX.hit) SFX.hit();
+            if (target.hp <= 0) {
+              target.alive = false;
+              if (typeof spawnDeath === 'function') spawnDeath(target.x, target.y, target.color || '#ff6666');
+            }
+          }
         }
       }
 
@@ -8491,7 +8718,7 @@ function _updateAndDrawFish(decKeys) {
         walkDstX: anchorX, walkDstY: anchorY,
         walkDstCX: c, walkDstCY: r, walkStart: 0,
         nextActionAt: now + 800 + Math.random() * 1200,
-        nextShootAt:  now + 2000 + Math.random() * 3000,
+        nextShootAt:  now + 1500 + Math.random() * 2000,
         facingRight: true, shootSpeed: HARPOON_SPEED,
         hp: 6, maxHp: 6, hitFlash: 0,
       };
@@ -8525,8 +8752,8 @@ function _updateAndDrawFish(decKeys) {
         }
         if (st.frame >= anim.frames) {
           st.state = 'idle'; st.frame = 0; st.lastFrameAt = now;
-          st.nextShootAt  = now + 2500 + Math.random() * 4000;
-          st.nextActionAt = now + 600  + Math.random() * 1000;
+          st.nextShootAt  = now + 1000 + Math.random() * 1500;
+          st.nextActionAt = now + 600  + Math.random() * 800;
         }
       }
     } else if (st.state === 'walk') {
@@ -8555,7 +8782,7 @@ function _updateAndDrawFish(decKeys) {
             st.nextActionAt = now + 400  + Math.random() * 600;
           } else {
           st.facingRight = _dir;
-          st.shootSpeed  = 140 + Math.random() * 310; // 140–450 px/s → min ~3 cells
+          st.shootSpeed  = 180 + Math.random() * 280; // 180–460 px/s → ~3.5–9 cells (match red archer)
           st.state = 'shoot'; st.frame = 0; st.lastFrameAt = now; st.arrowFired = false;
           }
         } else if (!isStationary) {
@@ -8568,7 +8795,7 @@ function _updateAndDrawFish(decKeys) {
             if (_npcTooClose(nx, ny, key)) return false;
             return true;
           });
-          if (valid.length > 0) {
+          if (valid.length > 0 && Math.random() >= 0.30) {
             const d = valid[Math.floor(Math.random()*valid.length)];
             const ncx=st.cx+d.dx, ncy=st.cy+d.dy;
             st.walkSrcX=st.wx; st.walkSrcY=st.wy;
@@ -10306,6 +10533,171 @@ function drawWeaponHUD() {
   ctx.fillStyle = COLORS[wep] || '#ffffff';
   ctx.shadowColor = GLOWS[wep] || '#ffffff'; ctx.shadowBlur = 8;
   ctx.fillText(label, pad + 10, by + 7);
+  ctx.restore();
+}
+
+// ---- F11 deploy panel (screen space) ---------------------------
+function drawF11DeployPanel() {
+  if (!_f11DeployOpen) return;
+  if (gameMode !== 'adventure') return;
+  if (S.floor !== 11) return;
+
+  // Aggregate army pool by utype — one button per unique trained unit type
+  const _armyByType = {};
+  (Array.isArray(_f11TransferUnits) ? _f11TransferUnits : []).forEach((snap, si) => {
+    if (!snap || !snap.utype) return;
+    if (!_armyByType[snap.utype]) _armyByType[snap.utype] = { t: snap.utype, count: 0, indices: [], stackSum: 0 };
+    _armyByType[snap.utype].count++;
+    _armyByType[snap.utype].indices.push(si);
+    _armyByType[snap.utype].stackSum += (snap.stack || 1);
+  });
+  const unitTypes = [];
+  for (let i = 0; i < _BARRACKS_UNIT_TYPES.length; i++) {
+    const t = _BARRACKS_UNIT_TYPES[i];
+    if (!t) continue;
+    const agg = _armyByType[t];
+    if (!agg || agg.count <= 0) continue;
+    unitTypes.push({ t, i, count: agg.count, stackSum: agg.stackSum, indices: agg.indices });
+  }
+  if (unitTypes.length === 0) {
+    _f11DeployPanelBounds = null;
+    _f11DeployUnitRects = [];
+    _f11DeployCloseBtn = null;
+    _f11DeployRestoreBtn = null;
+    return;
+  }
+
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+
+  // Minimized state — tiny restore button (top center)
+  if (_f11DeployMinimized) {
+    _f11DeployPanelBounds = null;
+    _f11DeployUnitRects = [];
+    _f11DeployCloseBtn = null;
+    const bw = 120, bh = 22;
+    const bx = Math.round((advCanvasW - bw) / 2);
+    const by = 95;
+    _f11DeployRestoreBtn = { x: bx, y: by, w: bw, h: bh };
+    const hov = _canvasMx >= bx && _canvasMx <= bx + bw &&
+                _canvasMy >= by && _canvasMy <= by + bh;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    rr(bx + 2, by + 3, bw, bh, 5); ctx.fill();
+    ctx.fillStyle = hov ? '#2a4a5a' : '#1f242f';
+    rr(bx, by, bw, bh, 5); ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#6eaaff';
+    rr(bx + 0.5, by + 0.5, bw - 1, bh - 1, 5); ctx.stroke();
+    ctx.fillStyle = '#d8e8ff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('▲ DEPLOY UNITS', bx + bw / 2, by + bh / 2);
+    ctx.restore();
+    return;
+  }
+  _f11DeployRestoreBtn = null;
+
+  const UBTN = 52, UGAP = 10, PAD_X = 14, PAD_TOP = 30, PAD_BOT = 18;
+  const pw = PAD_X * 2 + unitTypes.length * UBTN + (unitTypes.length - 1) * UGAP;
+  const ph = PAD_TOP + UBTN + PAD_BOT;
+  const px = Math.round((advCanvasW - pw) / 2);
+  const py = 95;
+  _f11DeployPanelBounds = { x: px, y: py, w: pw, h: ph };
+  _f11DeployUnitRects = [];
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(px + 3, py + 4, pw, ph, 6); ctx.fill();
+  ctx.fillStyle = '#1f242f';
+  rr(px, py, pw, ph, 6); ctx.fill();
+  ctx.save();
+  rr(px, py, pw, ph, 6); ctx.clip();
+  ctx.fillStyle = '#2a4a5a';
+  ctx.fillRect(px, py, pw, 22);
+  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#6eaaff';
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, 6); ctx.stroke();
+  ctx.fillStyle = '#d8e8ff';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('DEPLOY UNITS', px + pw / 2, py + 11);
+
+  // Minimize button (−)
+  const closeSz = 16;
+  const cbx = px + pw - closeSz - 6;
+  const cby = py + 3;
+  _f11DeployCloseBtn = { x: cbx, y: cby, w: closeSz, h: closeSz };
+  const closeHov = _canvasMx >= cbx && _canvasMx <= cbx + closeSz &&
+                   _canvasMy >= cby && _canvasMy <= cby + closeSz;
+  ctx.fillStyle = closeHov ? '#4a6a7a' : '#2a3a48';
+  rr(cbx, cby, closeSz, closeSz, 3); ctx.fill();
+  ctx.strokeStyle = '#cfe0ff';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cbx + 4, cby + closeSz / 2);
+  ctx.lineTo(cbx + closeSz - 4, cby + closeSz / 2);
+  ctx.stroke();
+
+  // Unit buttons
+  const gx0 = px + PAD_X;
+  const gy0 = py + PAD_TOP;
+  unitTypes.forEach((entry, k) => {
+    const ax = gx0 + k * (UBTN + UGAP);
+    const ay = gy0;
+    const armed = _f11DeployArmed === entry.t;
+    const hov = _canvasMx >= ax && _canvasMx <= ax + UBTN &&
+                _canvasMy >= ay && _canvasMy <= ay + UBTN;
+    ctx.fillStyle = armed ? '#3a5a3a' : (hov ? '#2f3848' : '#141821');
+    rr(ax, ay, UBTN, UBTN, 4); ctx.fill();
+    const aimg = _barracksAvatarImgs[entry.i];
+    if (aimg && aimg.complete && aimg.naturalWidth > 0) {
+      ctx.drawImage(aimg, ax + 3, ay + 3, UBTN - 6, UBTN - 6);
+    }
+    if (armed) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#6eff6e';
+      rr(ax + 0.5, ay + 0.5, UBTN - 1, UBTN - 1, 4); ctx.stroke();
+    } else if (hov) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffb07a';
+      rr(ax + 0.5, ay + 0.5, UBTN - 1, UBTN - 1, 4); ctx.stroke();
+    }
+    // Stack/count badge — viršuje deš. kampe, rodo total stack (arba squad count jei >1)
+    const badge = entry.count > 1 ? `${entry.count}×${entry.stackSum}` : `×${entry.stackSum}`;
+    ctx.save();
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#000';
+    ctx.fillStyle = '#ffe066';
+    ctx.strokeText(badge, ax + UBTN - 3, ay + 2);
+    ctx.fillText(badge, ax + UBTN - 3, ay + 2);
+    ctx.restore();
+    _f11DeployUnitRects.push({ x: ax, y: ay, w: UBTN, h: UBTN, type: entry.t, idx: entry.i, indices: entry.indices.slice() });
+  });
+
+  // Hint
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 9px monospace';
+  if (_f11DeployArmed) {
+    ctx.fillStyle = '#9eff9e';
+    ctx.fillText(`${_f11DeployArmed.toUpperCase()} — CLICK MAP TO PLACE`, px + pw / 2, py + ph - 9);
+  } else {
+    ctx.fillStyle = '#9aafc0';
+    ctx.fillText('PICK UNIT • CLICK MAP TO PLACE', px + pw / 2, py + ph - 9);
+  }
   ctx.restore();
 }
 
@@ -12789,7 +13181,21 @@ function isUnitHiddenInBush(unit) {
   return typeof decId === 'string' && decId.startsWith('bush');
 }
 
+function isFriendlyBarracksUnit(unit) {
+  if (!unit || !unit.alive || unit.team !== 1) return false;
+  if (S.floor !== 10 && S.floor !== 11) return false;
+  if (unit.isEditorEnemy) return false;   // editor-placed = priešas, ne ally
+  return _BARRACKS_UNIT_TYPES.includes(unit.utype);
+}
+function isEditorEnemyBarracks(unit) {
+  if (!unit || !unit.alive || unit.team !== 1) return false;
+  if (S.floor !== 10 && S.floor !== 11) return false;
+  if (!unit.isEditorEnemy) return false;
+  return _BARRACKS_UNIT_TYPES.includes(unit.utype);
+}
+
 function isHostileAdventureEnemy(unit) {
+  if (isFriendlyBarracksUnit(unit)) return false;
   return !!(unit && unit.team === 1 && unit.alive && unit.utype !== 'sheep');
 }
 
@@ -12869,6 +13275,7 @@ function detectCollisions() {
     const pathSteps = Math.max(Math.abs(b.x - b.px), Math.abs(b.y - b.py));
     S.units.forEach(u => {
       if (!u.alive || b.owner === u.team) return;
+      if (b.owner === 0 && isFriendlyBarracksUnit(u)) return; // friendly ally — hero bullets praeina pro
       // Check all cells along bullet path (supports multi-cell hero bullets)
       let hitPath = false;
       for (let _s = 1; _s <= pathSteps; _s++) {
@@ -13213,6 +13620,11 @@ function _checkAllEnemiesCleared() {
     saveProfile();
     checkAchievements();
     showCardPicker(() => {
+      // Snapshot trained barracks units before F10 → F11 transition.
+      // Save to Profile so initAdventure() F11 branch gali pasiimti live state.
+      if (S.floor === 10) {
+        if (typeof _saveBarracksTrainedState === 'function') _saveBarracksTrainedState();
+      }
       S.floor++;
       initAdventure();
       playCurrentLevelBGM();
@@ -13266,6 +13678,7 @@ function advanceLasers() {
       for (const cell of laser.cells) {
         const hit = S.units.find(u => {
           if (!u.alive || u.team === laser.owner) return false;
+          if (laser.owner === 0 && isFriendlyBarracksUnit(u)) return false;
           if (u.x === cell.x && u.y === cell.y) return true;
           if (u.utype === 'worm' && u.trail) return u.trail.some(t => t.x === cell.x && t.y === cell.y);
           return false;
@@ -13572,10 +13985,399 @@ function spawnDeath(gx, gy, color) {
 }
 
 
+// Skull block check — true jei skull siuo metu gynybos stance'e (blokuoja damage)
+function _skullIsBlocking(u) {
+  return !!(u && u.utype === 'skull' && u.skullGuardUntil && u.skullGuardUntil > performance.now());
+}
+
+// ── F10/F11 barracks combatants: ally vs enemy (skull/shaman/harpoon_fish) ──
+function _updateBarracksAttackAI(now) {
+  if (gameMode !== 'adventure') return;
+  if (S.floor !== 10 && S.floor !== 11) return;
+  if (!Array.isArray(S.units)) return;
+
+  // Red archer NPCs — priešai ally barracks unitams (ne editor-enemy unitams)
+  const redArcherTargets = [];
+  if (typeof _redArcherStates !== 'undefined' && S.decorations) {
+    for (const k in _redArcherStates) {
+      const st = _redArcherStates[k];
+      if (!st || S.decorations[k] !== 'red_archer_npc') continue;
+      redArcherTargets.push({ x: st.cx, y: st.cy, _isRedArcherNpc: true, _redArcherKey: k });
+    }
+  }
+  const allHostiles = S.units.filter(isHostileAdventureEnemy);
+  const alliesBarracks = S.units.filter(isFriendlyBarracksUnit);
+  if (allHostiles.length === 0 && alliesBarracks.length === 0 && redArcherTargets.length === 0) return;
+
+  for (const u of S.units) {
+    const _isAlly = isFriendlyBarracksUnit(u);
+    const _isEnemyBarracks = isEditorEnemyBarracks(u);
+    if (!_isAlly && !_isEnemyBarracks) continue;
+    if (u.spawnWalk) continue;
+    // Opponents list — priklauso nuo side:
+    // ally: visi hostiles (editor-enemy barracks jau patenka per allHostiles) + red archer NPC
+    // enemy barracks: ally barracks + hero
+    const opponents = _isAlly
+      ? [...allHostiles, ...redArcherTargets]
+      : [...alliesBarracks, ...((S.units || []).filter(h => h.alive && h.team === 0))];
+    if ((u.swingStart && now - u.swingStart < 500) ||
+        (u.hfishThrowStart && now - u.hfishThrowStart < 500)) continue;
+    if (opponents.length === 0) continue;
+    let nearest = null, best = 999;
+    for (const h of opponents) {
+      const d = Math.abs(h.x - u.x) + Math.abs(h.y - u.y);
+      if (d < best) { best = d; nearest = h; }
+    }
+    if (!nearest) continue;
+    if (nearest.x !== u.x) u.facing = { dx: Math.sign(nearest.x - u.x), dy: 0 };
+    if (u.utype === 'shaman') {
+      if (u.chaseWalk) continue;
+      if ((u.shamanActionCd || 0) > now) continue;
+      u.shamanActionCd = now + 500;
+      const _r = Math.random();
+      if (_r < 0.15) {
+        // 15% — žingsnis linkui priešo (arba šalutinėn krypti jei tiesi blokuojama)
+        const _blocked = (nx, ny) => {
+          if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
+          if (typeof isWall === 'function' && isWall(nx, ny)) return true;
+          return _cellHasEntity(nx, ny, u);
+        };
+        const _tdx = Math.sign(nearest.x - u.x) || 1;
+        const _tdy = Math.sign(nearest.y - u.y) || 1;
+        const _cand = [
+          { x: _tdx, y: 0 }, { x: 0, y: _tdy },
+          { x: -_tdx, y: 0 }, { x: 0, y: -_tdy },
+        ].filter(c => !_blocked(u.x + c.x, u.y + c.y));
+        if (_cand.length > 0) {
+          const _step = _cand[Math.floor(Math.random() * Math.min(2, _cand.length))];
+          const _fromX = (typeof u.rx === 'number') ? u.rx : u.x;
+          const _fromY = (typeof u.ry === 'number') ? u.ry : u.y;
+          u.x += _step.x; u.y += _step.y;
+          u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: 380 };
+          if (_step.x !== 0 && u.facing) u.facing.dx = _step.x;
+        }
+        continue;
+      }
+      if (_r < 0.45) continue; // 30% — nieko nedaro
+      // 55% — suvis (gated by attack cd + range)
+      if ((u.shamanAttackCd || 0) > now) continue;
+      if (best > 4) continue;
+      u.swingStart = now;
+      u.shamanAttackCd = now + 2800;
+      const fx = u.x, fy = u.y, stk = u.stack || 1;
+      let tx = nearest.x, ty = nearest.y;
+      // 15% miss — taikinys pašalinamas ±1 ląsteles pro šalį
+      if (Math.random() < 0.15) {
+        const _off = Math.random() < 0.5 ? -1 : 1;
+        if (Math.random() < 0.5) tx += _off; else ty += _off;
+      }
+      const _shEnemy = _isEnemyBarracks;
+      setTimeout(() => { if (S && S.units) spawnShamanProjectile(fx, fy, tx, ty, stk, _shEnemy); }, 430);
+    } else if (u.utype === 'harpoon_fish') {
+      // Kiting behavior: harpuno arka turi min ~3 cell skrydį dėl DRAG fizikos,
+      // todėl jei priešas per arti — harpunas perskrenda. Laikomasi 3–8 cell atstumo:
+      //   - nepamato priešo (best > 12) → stovi vietoj, 1% tikimybė atsitiktinis žingsnis
+      //   - best < 3 → traukiasi (step AWAY)
+      //   - best > 8 → eina link priešo (step TOWARD)
+      //   - 3 ≤ best ≤ 8 → šauna (jei cd ready), kitaip idle
+      // Movement zone: visi žingsniai ribojami iki 5 cell Manhattan nuo deploy anchor taško.
+      if (u.chaseWalk) continue;
+      if ((u.hfishActionCd || 0) > now) continue;
+      // Decision cd — 900–1500ms + po žingsnio: chaseWalk truks 380ms → 520–1100ms pauza
+      u.hfishActionCd = now + 900 + Math.random() * 600;
+      // Lazy-init deploy anchor — pirmą kartą kai unit „apsistoja" (po spawnWalk)
+      if (typeof u.deployAnchorX !== 'number' || typeof u.deployAnchorY !== 'number') {
+        u.deployAnchorX = u.x;
+        u.deployAnchorY = u.y;
+      }
+      const _HF_VISION = 7;
+      const _HF_MOVE_RADIUS = 3;
+      // Judėjimo filtras — visos krypties kandidatės turi tilpti į anchor +/- MOVE_RADIUS
+      const _hfInRange = (nx, ny) => (Math.abs(nx - u.deployAnchorX) + Math.abs(ny - u.deployAnchorY)) <= _HF_MOVE_RADIUS;
+      // Vision range — už 12 ląstelių priešas laikomas „nematomu" → idle su 1% random wander
+      if (best > _HF_VISION) {
+        if (Math.random() < 0.01) {
+          const _hfBlockedIdle = (nx, ny) => {
+            if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
+            if (typeof isWall === 'function' && isWall(nx, ny)) return true;
+            if (!_hfInRange(nx, ny)) return true;
+            return _cellHasEntity(nx, ny, u);
+          };
+          const _dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}].filter(c => !_hfBlockedIdle(u.x + c.x, u.y + c.y));
+          if (_dirs.length > 0) {
+            const _step = _dirs[Math.floor(Math.random() * _dirs.length)];
+            const _fromX = (typeof u.rx === 'number') ? u.rx : u.x;
+            const _fromY = (typeof u.ry === 'number') ? u.ry : u.y;
+            u.x += _step.x; u.y += _step.y;
+            u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: 380 };
+            if (_step.x !== 0 && u.facing) u.facing.dx = _step.x;
+          }
+        }
+        continue;
+      }
+      // Horizontal atstumas reguliuoja spawnBarracksHarpoon speed — šauna tik jei hx diff ≥ 3
+      const _hxDist = Math.abs(nearest.x - u.x);
+      // Harpuno arka fiziškai leidžiasi TAME PAČIAME row'e kaip šaulys (landY = startY + GND).
+      // Jei taikinys skirtingame row'e — harpunas praskristų tuščioj ląstelėj. Todėl reikalaujam
+      // same-row alignment'o prieš šaunant. Movement logika natūraliai išsiekia šitą aligment'ą.
+      const _sameRow = nearest.y === u.y;
+      // Shoot priority — same row + sweet spot (3–7 hx, matchina vision) + attack cd ready.
+      // 80% pataiko, 20% miss — taikinys pašalinamas ±1 ląstele (kaip shaman).
+      if (_sameRow && _hxDist >= 3 && _hxDist <= 7 && (u.hfishAttackCd || 0) <= now) {
+        // Niekada nešaunam į tą patį spotą 2× iš eilės — jei taikinys toj pačioj ląstelėj
+        // kaip praeitas suvis, skip'inam ir trumpa cd (laukiam kol pajudės arba keičiam strategiją)
+        if (typeof u.hfishLastTargetX === 'number' && typeof u.hfishLastTargetY === 'number' &&
+            u.hfishLastTargetX === nearest.x && u.hfishLastTargetY === nearest.y) {
+          u.hfishAttackCd = now + 400 + Math.random() * 400; // trumpas re-check
+        } else {
+          u.hfishThrowStart = now;
+          u.hfishAttackCd = now + 1000 + Math.random() * 1500; // 1–2.5s kaip red archer
+          u.hfishLastTargetX = nearest.x;
+          u.hfishLastTargetY = nearest.y;
+          const fx = u.x, fy = u.y;
+          let tx = nearest.x, ty = nearest.y;
+          // 80% pataiko, 20% miss — taikinys pašalinamas ±1 ląstele
+          if (Math.random() < 0.20) {
+            const _off = Math.random() < 0.5 ? -1 : 1;
+            if (Math.random() < 0.5) tx += _off; else ty += _off;
+          }
+          const fd = (u.facing && u.facing.dx) || -1;
+          const stk = u.stack || 1;
+          const _shEnemy = _isEnemyBarracks;
+          setTimeout(() => { if (S && S.units) spawnBarracksHarpoon(fx, fy, tx, ty, fd, stk, _shEnemy); }, _HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS);
+          continue;
+        }
+      }
+      // Movement logika — visi kandidatai ribojami iki move radius'o
+      const _hfBlocked = (nx, ny) => {
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
+        if (typeof isWall === 'function' && isWall(nx, ny)) return true;
+        if (!_hfInRange(nx, ny)) return true;
+        return _cellHasEntity(nx, ny, u);
+      };
+      let _hfCand;
+      if (best < 3 || _hxDist < 3) {
+        // Per arti — trauktis (60% step, 40% idle kad neatrodytų hiperaktyviai)
+        if (Math.random() < 0.40) continue;
+        const _adx = Math.sign(u.x - nearest.x) || 1;
+        const _ady = Math.sign(u.y - nearest.y) || 1;
+        _hfCand = [
+          { x: _adx, y: 0 }, { x: 0, y: _ady },
+          { x: -_adx, y: 0 }, { x: 0, y: -_ady },
+        ].filter(c => !_hfBlocked(u.x + c.x, u.y + c.y));
+      } else if (best > 8) {
+        // Per toli — artintis (60% step, 40% idle)
+        if (Math.random() < 0.40) continue;
+        const _tdx = Math.sign(nearest.x - u.x) || 1;
+        const _tdy = Math.sign(nearest.y - u.y) || 1;
+        _hfCand = [
+          { x: _tdx, y: 0 }, { x: 0, y: _tdy },
+          { x: -_tdx, y: 0 }, { x: 0, y: -_tdy },
+        ].filter(c => !_hfBlocked(u.x + c.x, u.y + c.y));
+      } else {
+        // Sweet spot (3–8). Jei NE toj pačioj eilutėj — prioritetas lygiuoti Y (70% step),
+        // kitaip harpunas niekada negautų _sameRow patikros ir neiššautų.
+        // Jei jau lygiuotas — idle (85%), retai lateralinis žingsnis.
+        const _yDiff = nearest.y - u.y;
+        if (_yDiff !== 0) {
+          if (Math.random() < 0.30) continue;
+          const _tdy = Math.sign(_yDiff);
+          const _tdx = Math.sign(nearest.x - u.x) || 1;
+          _hfCand = [
+            { x: 0, y: _tdy }, { x: 0, y: _tdy },  // 2× svoris Y kryptimi
+            { x: _tdx, y: 0 },
+          ].filter(c => !_hfBlocked(u.x + c.x, u.y + c.y));
+        } else {
+          if (Math.random() < 0.85) continue;
+          _hfCand = [
+            { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+          ].filter(c => !_hfBlocked(u.x + c.x, u.y + c.y));
+        }
+      }
+      if (_hfCand.length > 0) {
+        const _hfStep = _hfCand[Math.floor(Math.random() * Math.min(2, _hfCand.length))];
+        const _hfFromX = (typeof u.rx === 'number') ? u.rx : u.x;
+        const _hfFromY = (typeof u.ry === 'number') ? u.ry : u.y;
+        u.x += _hfStep.x; u.y += _hfStep.y;
+        u.chaseWalk = { fromX: _hfFromX, fromY: _hfFromY, toX: u.x, toY: u.y, start: now, dur: 380 };
+        if (_hfStep.x !== 0 && u.facing) u.facing.dx = _hfStep.x;
+        // 10% random suvis po judesio (kaip lankininkų nekoordinuoti šūviai) — nepriklausomai nuo cd
+        if (Math.random() < 0.10 && (u.hfishAttackCd || 0) <= now) {
+          const _rdir = (u.facing && u.facing.dx) || (Math.random() < 0.5 ? -1 : 1);
+          const _rdist = 3 + Math.floor(Math.random() * 5); // 3–7 ląstelės
+          const _rtx = u.x + _rdir * _rdist;
+          const _rty = u.y; // same row kad arka tikrai nukristų
+          u.hfishThrowStart = now;
+          u.hfishAttackCd = now + 1200 + Math.random() * 1200;
+          const fx = u.x, fy = u.y;
+          const stk = u.stack || 1;
+          const _shEnemy = _isEnemyBarracks;
+          setTimeout(() => { if (S && S.units) spawnBarracksHarpoon(fx, fy, _rtx, _rty, _rdir, stk, _shEnemy); }, _HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS);
+        }
+      }
+    } else if (u.utype === 'skull') {
+      // Block stance — vienas anim cycle. Kol skullGuardUntil aktyvus, skull stovi vietoj.
+      if (u.skullGuardUntil && u.skullGuardUntil > now) {
+        if (u.chaseWalk) {
+          u.rx = u.chaseWalk.toX; u.ry = u.chaseWalk.toY;
+          u.px = u.chaseWalk.toX; u.py = u.chaseWalk.toY;
+          u.chaseWalk = null;
+        }
+        u.skullBlockAfterMove = 0;
+        continue;
+      }
+      // Vision 8 (Chebyshev), attack tik orthogonal (Manhattan=1, ne įstrižai)
+      const chebD = Math.max(Math.abs(nearest.x - u.x), Math.abs(nearest.y - u.y));
+      const manD = Math.abs(nearest.x - u.x) + Math.abs(nearest.y - u.y);
+      const _blocked = (nx, ny) => {
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
+        if (typeof isWall === 'function' && isWall(nx, ny)) return true;
+        return _cellHasEntity(nx, ny, u);
+      };
+      const _stepWalk = (stepDx, stepDy, dur, cd) => {
+        // Block aktyvus — jokio judesio, net jei AI kazkodel praleido patikrinima
+        if (u.skullGuardUntil && u.skullGuardUntil > now) return;
+        const fromX = (typeof u.rx === 'number') ? u.rx : u.x;
+        const fromY = (typeof u.ry === 'number') ? u.ry : u.y;
+        u.x += stepDx; u.y += stepDy;
+        u.chaseWalk = { fromX, fromY, toX: u.x, toY: u.y, start: now, dur };
+        if (stepDx !== 0 && u.facing) u.facing.dx = stepDx;
+        u.skullMoveCd = now + cd;
+        u.skullNeedsMoveBeforeAttack = false;  // pajudejo — galima vel atakuoti
+        // 30% tikimybe — block PO to kai zingsnis pilnai uzbaigtas (ne tween metu).
+        // Block = TIK VIENAS anim cycle (ne loop'inamas).
+        if (Math.random() < 0.30) {
+          u.skullBlockAfterMove = 1;  // flag'as — vienas anim cycle
+        }
+      };
+      const _pickStep = (primary, perp) => {
+        u.zigPhase = (u.zigPhase || 0) + 1;
+        let dir;
+        if (u.zigPhase % 2 === 0) {
+          const side = (Math.floor(u.zigPhase / 2) % 2 === 0) ? 0 : 1;
+          dir = perp[side];
+        } else {
+          dir = primary;
+        }
+        const candidates = [dir, primary, perp[0], perp[1]];
+        for (const c of candidates) {
+          if (c.x === 0 && c.y === 0) continue;
+          if (_blocked(u.x + c.x, u.y + c.y)) continue;
+          return { x: c.x, y: c.y };
+        }
+        return null;
+      };
+
+      // 1) RETREAT — po smūgio pasitraukia priešingu kryptimi
+      if (u.skullRetreatUntil && u.skullRetreatUntil > now) {
+        // Po sėkmingo dmg skull traukiasi kol pasiekia 4-6 ląstelių atstumą nuo priešo
+        if (u.skullRetreatCells) {
+          const _d = Math.max(Math.abs(u.x - nearest.x), Math.abs(u.y - nearest.y));
+          if (_d >= u.skullRetreatCells) {
+            u.skullRetreatCells = 0;
+            u.skullRetreatUntil = 0;
+            continue;
+          }
+        }
+        if (u.chaseWalk) continue;
+        if ((u.skullMoveCd || 0) > now) continue;
+        // 50% — kartais sustoja prieš kitą žingsnį (tik jei nėra distance-based retreat)
+        if (!u.skullRetreatCells && Math.random() < 0.5) { u.skullMoveCd = now + 420; continue; }
+        // Away from target
+        const toDx = u.x - nearest.x;
+        const toDy = u.y - nearest.y;
+        const adx = Math.abs(toDx), ady = Math.abs(toDy);
+        // Jei šalia (dx=dy=0) — pasirink bet kurią laisvą kryptį
+        const primary = (adx >= ady)
+          ? { x: Math.sign(toDx) || 1, y: 0 }
+          : { x: 0, y: Math.sign(toDy) || 1 };
+        const perp = (adx >= ady)
+          ? [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+          : [{ x: 1, y: 0 }, { x: -1, y: 0 }];
+        const step = _pickStep(primary, perp);
+        if (step) _stepWalk(step.x, step.y, 380, 420);
+        continue;
+      }
+
+      // 2) ATTACK — tik horizontaliai (is kaires arba desines, ne is virsaus/apacios), 30% miss
+      // Saligos: (a) skull NERA mid-tween, (b) nearest NERA mid-tween, (c) po paskutinio smugio privalomai pajudejo
+      if (Math.abs(nearest.x - u.x) === 1 && nearest.y === u.y
+          && !u.chaseWalk && !u.spawnWalk
+          && !nearest.chaseWalk && !nearest.spawnWalk
+          && !u.skullNeedsMoveBeforeAttack) {
+        if ((u.skullAttackCd || 0) > now) continue;
+        u.swingStart = now;
+        u.skullAttackCd = now + 900;
+        u.skullRetreatUntil = now + 1200;  // hit-and-run: atcitraukti 1.2s
+        u.skullNeedsMoveBeforeAttack = true;  // sekanti ataka tik po judesio
+        if (nearest.x !== u.x && u.facing) u.facing.dx = Math.sign(nearest.x - u.x);
+        const missed = Math.random() < 0.30;
+        if (missed) {
+          spawnDmgNumber(nearest.x, nearest.y, 'MISS', '#aaccff', 13, 'normal');
+        } else if (_skullIsBlocking(nearest)) {
+          spawnDmgNumber(nearest.x, nearest.y, 'BLOCK', '#88ddff', 14, 'normal');
+        } else {
+          const dmg = (u.stack || 1);
+          if (nearest._isRedArcherNpc) {
+            if (typeof _damageRedArcherAt === 'function') _damageRedArcherAt(nearest.x, nearest.y, dmg);
+          } else {
+            nearest.hp = Math.max(0, (nearest.hp || 1) - dmg);
+            nearest.hitFlash = 1;
+            spawnDmgNumber(nearest.x, nearest.y, '-' + dmg, '#ff8866', 16, 'normal');
+            if (nearest.hp <= 0) {
+              nearest.alive = false;
+              if (typeof spawnDeath === 'function') spawnDeath(nearest.x, nearest.y, nearest.color || '#ff6666');
+            }
+          }
+          // Sėkmingas dmg → ilgas retreat 4–6 ląstelių atstumu (leidzia lankininkams pataikyti)
+          u.skullRetreatCells = 4 + Math.floor(Math.random() * 3);
+          u.skullRetreatUntil = now + 5000;
+        }
+        continue;
+      }
+
+      // 3) CHASE — vision 8, zigzag link priešo
+      if (chebD <= 8) {
+        if (u.chaseWalk) continue;
+        if ((u.skullMoveCd || 0) > now) continue;
+        if ((u.skullAttackCd || 0) > now) continue;
+        // 50% — kartais prastovi vietoj kito žingsnio
+        if (Math.random() < 0.5) { u.skullMoveCd = now + 560; continue; }
+        const toDx = nearest.x - u.x;
+        const toDy = nearest.y - u.y;
+        const adx = Math.abs(toDx), ady = Math.abs(toDy);
+        const primary = (adx >= ady)
+          ? { x: Math.sign(toDx), y: 0 }
+          : { x: 0, y: Math.sign(toDy) };
+        const perp = (adx >= ady)
+          ? [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+          : [{ x: 1, y: 0 }, { x: -1, y: 0 }];
+        const step = _pickStep(primary, perp);
+        if (step) _stepWalk(step.x, step.y, 480, 560);
+      }
+    }
+  }
+}
+
+let _lastBarracksSaveAt = 0;
 function loop(now) {
   raf = requestAnimationFrame(loop);
   const dt = Math.min(now - lastTime, 100);
   lastTime = now;
+  _updateBarracksAttackAI(now);
+  if (gameMode === 'adventure' && S.floor === 10 && now - _lastBarracksSaveAt > 3000) {
+    _lastBarracksSaveAt = now;
+    _saveBarracksTrainedState();
+  }
+  // Trained unit death cleanup — mirę unitai (F10 ar F11 kovoje) pašalinami iš Profile
+  if (gameMode === 'adventure' && (S.floor === 10 || S.floor === 11) && Array.isArray(S.units)) {
+    for (const u of S.units) {
+      if (u && !u.alive && u.trainedSnapId && !u._trainedSnapRemoved) {
+        u._trainedSnapRemoved = true;
+        _removeTrainedSnapById(u.trainedSnapId);
+      }
+    }
+  }
 
   // ── FREE MOVE update (team 0) ────────────────────────────────
   if (_freeMoveMode && !_ronkeIdleMode) {
@@ -13704,7 +14506,7 @@ function loop(now) {
   // Cache per-unit checks once per frame
   S.units.forEach(u => {
     if (!u.alive) { u._adjEnemy = false; u._bulletDanger = false; return; }
-    u._adjEnemy = S.units.some(e => e.alive && e.team !== u.team &&
+    u._adjEnemy = S.units.some(e => e.alive && e.team !== u.team && !isFriendlyBarracksUnit(e) &&
       Math.abs(e.x - u.x) <= 1 && Math.abs(e.y - u.y) <= 1);
     u._bulletDanger = S.bullets.some(b =>
       b.active && b.owner !== u.team &&
@@ -13765,15 +14567,193 @@ function loop(now) {
   drawHeroBulletDeaths();
   drawDmgNumbers();
   if (gameMode === 'adventure') drawAmbientDust();
+  if (typeof _drawF11DeployPreview === 'function') _drawF11DeployPreview();
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
     drawWeaponHUD();
     drawFloorIntro();
+    drawF11DeployPanel();
     drawHeroHitVignette();
   }
   _drawUnitHoverTooltip();
   drawScanlines();
+}
+
+// Harpoon range preview — polished UI su cell-accurate fills, animuotais outline'ais ir legend'o kortele.
+// Anchor'as gali būti:
+//   (a) F11 deploy armed hover cell (prieš pastatymą — strateginiam planavimui)
+//   (b) Jau pastatyto harpoon_fish unit'o deployAnchor (kai hover'inama — debug/observacijai)
+function _drawHarpoonRangeDiamond(anchorCellX, anchorCellY, placementCellX, placementCellY, showLegend) {
+  const VISION = 7, MOVE = 3;
+  const now = performance.now();
+  const pulse = 0.5 + 0.5 * Math.sin(now / 400);           // 0..1
+  const dashOffset = (now / 30) % 16;                       // slenkanti dash animacija
+  const cx = anchorCellX * CELL + CELL / 2;
+  const cy = anchorCellY * CELL + CELL / 2;
+
+  ctx.save();
+
+  // ---- 1. Cell-accurate tile fills (kad būtų tikslu kur exactly unitas gali eiti) ----
+  // Vision cells (outer, cyan) — skip tas, kurios MOVE zonos viduje (ten uždėsim žalią)
+  const _rowStart = Math.max(0, anchorCellY - VISION);
+  const _rowEnd   = Math.min(ROWS - 1, anchorCellY + VISION);
+  const _colStart = Math.max(0, anchorCellX - VISION);
+  const _colEnd   = Math.min(COLS - 1, anchorCellX + VISION);
+  ctx.fillStyle = 'rgba(90,180,255,0.08)';
+  for (let r = _rowStart; r <= _rowEnd; r++) {
+    for (let c = _colStart; c <= _colEnd; c++) {
+      const d = Math.abs(c - anchorCellX) + Math.abs(r - anchorCellY);
+      if (d > VISION || d <= MOVE) continue;
+      ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+    }
+  }
+  // Move cells (inner, green)
+  ctx.fillStyle = 'rgba(110,255,130,0.18)';
+  for (let r = Math.max(0, anchorCellY - MOVE); r <= Math.min(ROWS - 1, anchorCellY + MOVE); r++) {
+    for (let c = Math.max(0, anchorCellX - MOVE); c <= Math.min(COLS - 1, anchorCellX + MOVE); c++) {
+      const d = Math.abs(c - anchorCellX) + Math.abs(r - anchorCellY);
+      if (d > MOVE) continue;
+      ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+    }
+  }
+
+  // ---- 2. Smooth diamond outlines su pulse/glow ----
+  const diamondPath = (R) => {
+    const rpx = R * CELL;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - rpx);
+    ctx.lineTo(cx + rpx, cy);
+    ctx.lineTo(cx, cy + rpx);
+    ctx.lineTo(cx - rpx, cy);
+    ctx.closePath();
+  };
+  // Vision outer — punktyras, dashed (lėtas sukimas)
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = `rgba(120,200,255,${0.55 + 0.25 * pulse})`;
+  ctx.setLineDash([6, 4]);
+  ctx.lineDashOffset = -dashOffset;
+  ctx.shadowColor = 'rgba(90,180,255,0.6)';
+  ctx.shadowBlur = 6;
+  diamondPath(VISION);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.setLineDash([]);
+  // Move outer — solid, ryškesnis su pulse glow
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(120,255,150,${0.75 + 0.2 * pulse})`;
+  ctx.shadowColor = `rgba(90,255,130,${0.6 * pulse + 0.25})`;
+  ctx.shadowBlur = 8 + 4 * pulse;
+  diamondPath(MOVE);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // ---- 3. Anchor cell crosshair marker ----
+  const ax = anchorCellX * CELL, ay = anchorCellY * CELL;
+  ctx.strokeStyle = `rgba(255,230,110,${0.75 + 0.25 * pulse})`;
+  ctx.lineWidth = 2;
+  const cornerLen = Math.max(6, CELL * 0.28);
+  // 4 kampų brackets (ne pilnas stačiakampis, švaresnis look'as)
+  ctx.beginPath();
+  // top-left
+  ctx.moveTo(ax + 2, ay + cornerLen); ctx.lineTo(ax + 2, ay + 2); ctx.lineTo(ax + cornerLen, ay + 2);
+  // top-right
+  ctx.moveTo(ax + CELL - cornerLen, ay + 2); ctx.lineTo(ax + CELL - 2, ay + 2); ctx.lineTo(ax + CELL - 2, ay + cornerLen);
+  // bottom-right
+  ctx.moveTo(ax + CELL - 2, ay + CELL - cornerLen); ctx.lineTo(ax + CELL - 2, ay + CELL - 2); ctx.lineTo(ax + CELL - cornerLen, ay + CELL - 2);
+  // bottom-left
+  ctx.moveTo(ax + cornerLen, ay + CELL - 2); ctx.lineTo(ax + 2, ay + CELL - 2); ctx.lineTo(ax + 2, ay + CELL - cornerLen);
+  ctx.stroke();
+  // Anchor center dot
+  ctx.fillStyle = `rgba(255,230,110,${0.85 + 0.15 * pulse})`;
+  ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+
+  // ---- 4. Current position marker (jei pajudėjo) + linija nuo anchor'o ----
+  if (placementCellX !== anchorCellX || placementCellY !== anchorCellY) {
+    const px = placementCellX * CELL + CELL / 2;
+    const py = placementCellY * CELL + CELL / 2;
+    // Tether line (punktyras)
+    ctx.strokeStyle = 'rgba(255,180,120,0.55)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 3]);
+    ctx.lineDashOffset = -dashOffset;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+    ctx.setLineDash([]);
+    // Dabartinis cell outline
+    ctx.strokeStyle = `rgba(255,150,120,${0.8 + 0.2 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(placementCellX * CELL + 1.5, placementCellY * CELL + 1.5, CELL - 3, CELL - 3);
+  }
+
+  // ---- 5. Legend card (pill virš diamond'o viršaus) ----
+  if (showLegend) {
+    const topY = cy - VISION * CELL - 26;
+    const legendW = 120, legendH = 20;
+    let _lx = cx - legendW / 2;
+    let _ly = Math.max(4, topY);
+    // Jei išeitų už vision diamond apačios (anchor arti top edge), perkeliam apačioj
+    if (_ly < 4) _ly = cy + VISION * CELL + 8;
+    // BG pill
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,16,24,0.82)';
+    ctx.strokeStyle = 'rgba(120,180,220,0.5)';
+    ctx.lineWidth = 1;
+    const r = 10;
+    ctx.beginPath();
+    ctx.moveTo(_lx + r, _ly);
+    ctx.arcTo(_lx + legendW, _ly, _lx + legendW, _ly + legendH, r);
+    ctx.arcTo(_lx + legendW, _ly + legendH, _lx, _ly + legendH, r);
+    ctx.arcTo(_lx, _ly + legendH, _lx, _ly, r);
+    ctx.arcTo(_lx, _ly, _lx + legendW, _ly, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Turinys: [zalias dot] MOVE 5 | [cyan dot] VIS 12
+    ctx.font = 'bold 10px monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const midY = _ly + legendH / 2;
+    // move dot
+    ctx.fillStyle = '#6eff8a';
+    ctx.shadowColor = '#4eff70'; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.arc(_lx + 10, midY, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#c8ffd2';
+    ctx.fillText(`MOVE ${MOVE}`, _lx + 18, midY);
+    // separator
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath(); ctx.moveTo(_lx + 62, _ly + 4); ctx.lineTo(_lx + 62, _ly + legendH - 4); ctx.stroke();
+    // vision dot
+    ctx.fillStyle = '#7ac8ff';
+    ctx.shadowColor = '#4ac0ff'; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.arc(_lx + 70, midY, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#cfe8ff';
+    ctx.fillText(`VIS ${VISION}`, _lx + 78, midY);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function _drawF11DeployPreview() {
+  // (a) Deploy armed preview — rodo ties hover cell prieš pastatymą
+  if (gameMode === 'adventure' && S.floor === 11 && _f11DeployArmed === 'harpoon_fish' && _canvasMx >= 0 && _canvasMy >= 0) {
+    const worldMx = _canvasMx + (S.cam?.x || 0);
+    const worldMy = _canvasMy + (S.cam?.y || 0);
+    const cellX = Math.floor(worldMx / CELL);
+    const cellY = Math.floor(worldMy / CELL);
+    if (cellX >= 0 && cellY >= 0 && cellX < COLS && cellY < ROWS) {
+      _drawHarpoonRangeDiamond(cellX, cellY, cellX, cellY, true);
+    }
+  }
+  // (b) Hovered harpoon unit — rodo jo anchor'ą + current poziciją, kad būtų matyti ar neišeina iš zonos
+  if (_hoveredUnitRef && _hoveredUnitRef.alive && _hoveredUnitRef.utype === 'harpoon_fish') {
+    const u = _hoveredUnitRef;
+    const anchorX = (typeof u.deployAnchorX === 'number') ? u.deployAnchorX : u.x;
+    const anchorY = (typeof u.deployAnchorY === 'number') ? u.deployAnchorY : u.y;
+    _drawHarpoonRangeDiamond(anchorX, anchorY, u.x, u.y, true);
+  }
 }
 
 // Outline aplink užvestą unit'ą — piešiamas world-space (po drawUnits, prieš ctx.restore)
@@ -13899,7 +14879,10 @@ function _drawUnitHoverTooltip() {
   const u = _hoveredUnitRef;
   if (!u) return;
   const name = (u.utype || 'UNIT').toUpperCase();
-  const title = u.stack && u.stack > 1 ? `${name}  \u00D7${u.stack}` : name;
+  const _isAlly = isFriendlyBarracksUnit(u);
+  const _isEnemyBarracks = isEditorEnemyBarracks(u);
+  const _prefix = _isAlly ? 'ALLY ' : (_isEnemyBarracks ? 'ENEMY ' : '');
+  const title = _prefix + (u.stack && u.stack > 1 ? `${name}  \u00D7${u.stack}` : name);
   const lines = [];
   lines.push(`HP:    ${u.hp} / ${u.maxHp}`);
   if (u.utype === 'skull') {
@@ -13920,7 +14903,7 @@ function _drawUnitHoverTooltip() {
   if (typeof u.dodge === 'number') lines.push(`DODGE: ${Math.round(u.dodge * 100)}%`);
 
   const arch = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES.find(e => e.type === u.utype) : null;
-  const headerFill = (arch && arch.color) || (u.team === 1 ? '#8a2a2a' : '#2e6e9e');
+  const headerFill = _isAlly ? '#2e6e9e' : (_isEnemyBarracks ? '#8a2a2a' : ((arch && arch.color) || (u.team === 1 ? '#8a2a2a' : '#2e6e9e')));
 
   const iw = 108;
   const ih = 24 + lines.length * 13 + 4;
@@ -14637,13 +15620,13 @@ function drawDeathAnims() {
 
 // ---- Shaman Projectile & Explosion --------------------------------
 
-function spawnShamanProjectile(fromGx, fromGy, toGx, toGy, stack) {
+function spawnShamanProjectile(fromGx, fromGy, toGx, toGy, stack, shooterIsEnemy) {
   if (!S.shamanProjectiles) S.shamanProjectiles = [];
   const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
   const tx = (toGx  + 0.5) * CELL, ty = (toGy  + 0.5) * CELL;
   const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
   const duration = Math.max(350, dist / (CELL * 0.0055)); // ~5.5 cells/sec feel
-  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false, stack: stack || 1 });
+  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false, stack: stack || 1, shooterIsEnemy: !!shooterIsEnemy });
 }
 
 function drawShamanProjectiles() {
@@ -14664,18 +15647,52 @@ function drawShamanProjectiles() {
       _shamanExplosions.push({ gx: p.targetGx, gy: p.targetGy, born: now });
       SFX.play(160, 0.18, 0.30, 'sawtooth');
       S.shake = Math.max(S.shake || 0, 5);
-      // Damage hero if standing on target tile
+      // Damage target — priklauso nuo shooter side
       if (S.units) {
-        const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
-        if (_hero) {
-          const _dmg = 1 * (p.stack || 1);
-          _hero.hp = (_hero.hp || 1) - _dmg;
-          spawnHit(_hero.x, _hero.y, '#cc30ff', 28);
-          spawnDmgNumber(_hero.x, _hero.y, `-${_dmg}`, '#cc30ff', 18, 'crit');
-          if (_hero.hp <= 0 && !S.winner) {
-            _hero.alive = false; _hero.deathT = 1;
-            spawnDeath(_hero.x, _hero.y, _hero.color || '#00f5ff');
-            S.winner = 1;
+        const _dmg = 1 * (p.stack || 1);
+        if (p.shooterIsEnemy) {
+          // Enemy shaman → taikinys: hero ARBA ally barracks unit
+          const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
+          if (_hero) {
+            _hero.hp = (_hero.hp || 1) - _dmg;
+            spawnHit(_hero.x, _hero.y, '#cc30ff', 28);
+            spawnDmgNumber(_hero.x, _hero.y, `-${_dmg}`, '#cc30ff', 18, 'crit');
+            if (_hero.hp <= 0 && !S.winner) {
+              _hero.alive = false; _hero.deathT = 1;
+              spawnDeath(_hero.x, _hero.y, _hero.color || '#00f5ff');
+              S.winner = 1;
+            }
+          } else {
+            const _ally = S.units.find(u => isFriendlyBarracksUnit(u) && u.x === p.targetGx && u.y === p.targetGy);
+            if (_ally && _skullIsBlocking(_ally)) {
+              spawnDmgNumber(_ally.x, _ally.y, 'BLOCK', '#88ddff', 14, 'normal');
+            } else if (_ally) {
+              _ally.hp = Math.max(0, (_ally.hp || 1) - _dmg);
+              _ally.hitFlash = 1;
+              spawnHit(_ally.x, _ally.y, '#cc30ff', 24);
+              spawnDmgNumber(_ally.x, _ally.y, `-${_dmg}`, '#cc30ff', 18, 'normal');
+              if (_ally.hp <= 0) {
+                _ally.alive = false;
+                if (typeof spawnDeath === 'function') spawnDeath(_ally.x, _ally.y, _ally.color || '#cc30ff');
+              }
+            }
+          }
+        } else {
+          // Ally shaman → hero (friendly fire niekada nedaro), hostile enemy, red archer NPC
+          const _enemy = S.units.find(u => isHostileAdventureEnemy(u) && u.x === p.targetGx && u.y === p.targetGy);
+          if (_enemy && _skullIsBlocking(_enemy)) {
+            spawnDmgNumber(_enemy.x, _enemy.y, 'BLOCK', '#88ddff', 14, 'normal');
+          } else if (_enemy) {
+            _enemy.hp = Math.max(0, (_enemy.hp || 1) - _dmg);
+            _enemy.hitFlash = 1;
+            spawnHit(_enemy.x, _enemy.y, '#cc30ff', 24);
+            spawnDmgNumber(_enemy.x, _enemy.y, `-${_dmg}`, '#cc30ff', 18, 'normal');
+            if (_enemy.hp <= 0) {
+              _enemy.alive = false;
+              if (typeof spawnDeath === 'function') spawnDeath(_enemy.x, _enemy.y, _enemy.color || '#cc30ff');
+            }
+          } else if (typeof _damageRedArcherAt === 'function') {
+            _damageRedArcherAt(p.targetGx, p.targetGy, _dmg);
           }
         }
       }
@@ -14688,16 +15705,19 @@ function drawShamanProjectiles() {
 // ---- Barracks Harpoon Fish Projectile ----------------------------
 // Parabolinė metimo animacija su taikinio kryžiuku + stuck sprite (kaip NPC harpoon fish).
 // Naudoja tas pačias physics konstantas kaip _fishStates (VY0/GRAV/DRAG/GROUND_OFFSET).
-function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack) {
+function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack, shooterIsEnemy) {
   if (!S.barracksHarpoons) S.barracksHarpoons = [];
   const now = performance.now();
   const dir = faceDx || Math.sign(toGx - fromGx) || 1;
   const _VY0 = -110, _GRAV = 200, _GND = 30, _DRAG = 0.3;
   const _tLand = (-_VY0 + Math.sqrt(_VY0 * _VY0 + 2 * _GRAV * _GND)) / _GRAV;
-  // Spindys horizontaliai iki taikinio — reguliuoja greitį per atstumą
+  // Spindys horizontaliai iki taikinio — reguliuoja greitį per atstumą.
+  // _startX jau offset'intas +0.5*CELL krypties pusėn (nuo cell centro iki krašto),
+  // todėl į cell CENTRĄ (toGx+0.5)*CELL skrendam (distCells - 0.5) cell atstumą.
+  // Be šio correction harpunas nusileisdavo +1 cell toliau nei taikinys.
   const _distCells = Math.max(1, Math.abs(toGx - fromGx));
   const _pxPerCell = CELL;
-  const _targetPx = _distCells * _pxPerCell;
+  const _targetPx = Math.max(_pxPerCell * 0.5, (_distCells - 0.5) * _pxPerCell);
   // invertuojam `landX = startX + dir * (spd/DRAG) * (1 - e^(-DRAG*tLand))` → spd
   const _decay = (1 - Math.exp(-_DRAG * _tLand));
   const _spd = Math.max(140, Math.min(560, (_targetPx / _decay) * _DRAG));
@@ -14712,6 +15732,7 @@ function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack) {
     crossHideAt: now + (_tLand - 0.2) * 1000,
     particles: [], lastParticleAt: 0,
     stack: stack || 1,
+    shooterIsEnemy: !!shooterIsEnemy,
   });
 }
 
@@ -14768,8 +15789,17 @@ function drawBarracksHarpoons() {
       if (S.units) {
         const lgx = Math.floor(a.stuckX / CELL);
         const lgy = Math.floor(a.stuckY / CELL);
-        const target = S.units.find(u => u.alive && u.x === lgx && u.y === lgy);
-        if (target) {
+        let target = null;
+        if (a.shooterIsEnemy) {
+          target = S.units.find(u => u.alive && u.x === lgx && u.y === lgy && (u.team === 0 || isFriendlyBarracksUnit(u)));
+        } else {
+          target = S.units.find(u => u.alive && !isFriendlyBarracksUnit(u) && u.x === lgx && u.y === lgy);
+        }
+        if (target && _skullIsBlocking(target)) {
+          a.hitTarget = true;
+          S.shake = Math.max(S.shake || 0, 6);
+          spawnDmgNumber(target.x, target.y, 'BLOCK', '#88ddff', 16, 'normal');
+        } else if (target) {
           a.hitTarget = true;
           S.shake = Math.max(S.shake || 0, 10);
           if (target.team === 0) {
@@ -14788,6 +15818,9 @@ function drawBarracksHarpoons() {
               if (typeof spawnDeath === 'function') spawnDeath(target.x, target.y, target.color);
             }
           }
+        } else if (!a.shooterIsEnemy && typeof _damageRedArcherAt === 'function' && _damageRedArcherAt(lgx, lgy, _dmg)) {
+          a.hitTarget = true;
+          S.shake = Math.max(S.shake || 0, 10);
         }
       }
     }
@@ -14917,15 +15950,8 @@ function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
     }
     if (isWall(cx, cy)) break;
     toGx = cx; toGy = cy; hitStep = s;
-    // Red Archer NPC — search by current position (archer moves, decoration key stays at spawn)
-    for (const raK in _redArcherStates) {
-      const raSt = _redArcherStates[raK];
-      if (raSt && raSt.cx === cx && raSt.cy === cy && S.decorations && S.decorations[raK] === 'red_archer_npc') {
-        hitRedArcherKey = raK; break;
-      }
-    }
-    if (hitRedArcherKey) break;
-    const e = S.units && S.units.find(u => u.alive && u.team !== 0 && u.x === cx && u.y === cy);
+    // Decorative NPCs (blue archer, fish, red archer) — hero bullets pass through
+    const e = S.units && S.units.find(u => u.alive && u.team !== 0 && !isFriendlyBarracksUnit(u) && u.x === cx && u.y === cy);
     if (e) { hitEnemy = e; break; }
   }
   const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
@@ -15265,8 +16291,8 @@ function drawRonke2Projectiles() {
       S.shake = Math.max(S.shake || 0, 7);
       if (S.units) {
         if (p.fromTeam === 0) {
-          // Hero orb: damage first enemy at target
-          const _enemy = S.units.find(u => u.team !== 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
+          // Hero orb: damage first enemy at target (praleidžia ally units F10/F11)
+          const _enemy = S.units.find(u => u.team !== 0 && u.alive && !isFriendlyBarracksUnit(u) && u.x === p.targetGx && u.y === p.targetGy);
           if (_enemy) {
             _enemy.hp = (_enemy.hp ?? 1) - 5;
             spawnDmgNumber(p.targetGx, p.targetGy, '-5', '#ff8800', 20, 'crit');
@@ -16790,6 +17816,36 @@ function drawUnits() {
   _applyStackDecay();
   // Barracks spawn walk — tween rx/ry nuo durų iki galutinės pozicijos.
   const _now = performance.now();
+  // Skull chase walk — smooth per-step tween tarp cell'ių (zigzag AI)
+  for (const u of (S.units || [])) {
+    if (!u.alive || !u.chaseWalk) continue;
+    // Skull: jei block jau aktyvus, nutraukiam bet kuri likusi slide ir teleportuojam i destination
+    if (u.utype === 'skull' && u.skullGuardUntil && u.skullGuardUntil > _now) {
+      u.rx = u.chaseWalk.toX; u.ry = u.chaseWalk.toY;
+      u.px = u.chaseWalk.toX; u.py = u.chaseWalk.toY;
+      u.chaseWalk = null;
+      u.skullBlockAfterMove = 0;
+      continue;
+    }
+    const cw = u.chaseWalk;
+    const t = Math.min(1, (_now - cw.start) / cw.dur);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    u.rx = cw.fromX + (cw.toX - cw.fromX) * ease;
+    u.ry = cw.fromY + (cw.toY - cw.fromY) * ease;
+    if (t >= 1) {
+      u.rx = cw.toX; u.ry = cw.toY;
+      u.px = cw.toX; u.py = cw.toY;
+      u.chaseWalk = null;
+      // Skull block stance — zingsnis uzbaigtas, block grojamas TIK VIENA KARTA
+      if (u.utype === 'skull' && u.skullBlockAfterMove) {
+        u.skullBlockAfterMove = 0;
+        const _gDur = (skullAnimSheets.guard.frameCount / SKULL_ANIM_FPS.guard) * 1000;
+        u.skullGuardUntil = _now + _gDur;
+        u.guardStart = _now;
+        u.skullMoveCd = _now + _gDur;
+      }
+    }
+  }
   for (const u of (S.units || [])) {
     if (!u.alive || !u.spawnWalk) continue;
     const sw = u.spawnWalk;
@@ -16979,6 +18035,22 @@ function drawUnits() {
           ctx.globalAlpha = alpha;
           ctx.restore();
         }
+        // Hitbox debug overlay (shaman)
+        if (window._showHitboxes) {
+          ctx.save();
+          const _isEnemy = !!u.isEditorEnemy;
+          const _cellCol = _isEnemy ? '#ff3333' : '#cc30ff';
+          const _cellFill = _isEnemy ? '#ff333322' : '#cc30ff22';
+          const _lbl = _isEnemy ? 'SH-E' : 'SH-A';
+          ctx.strokeStyle = _cellCol; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+          ctx.strokeRect(u.x * CELL, u.y * CELL, CELL, CELL);
+          ctx.fillStyle = _cellFill; ctx.fillRect(u.x * CELL, u.y * CELL, CELL, CELL);
+          ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+          ctx.strokeRect(cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          ctx.fillStyle = _cellCol;
+          ctx.font = 'bold 9px monospace'; ctx.fillText(`${_lbl}(${u.x},${u.y})`, u.x * CELL + 2, u.y * CELL + 11);
+          ctx.restore();
+        }
       } else if (u.utype === 'harpoon_fish') {
         const frame = getHarpoonFishFrameState(u);
         const sprSz = UNIT_CELL * 2.5;
@@ -17077,6 +18149,22 @@ function drawUnits() {
             _drawNum(u.stack, 1, 1, 0, '#ffe066');
           }
           ctx.globalAlpha = alpha;
+          ctx.restore();
+        }
+        // Hitbox debug overlay (harpoon_fish)
+        if (window._showHitboxes) {
+          ctx.save();
+          const _isEnemy = !!u.isEditorEnemy;
+          const _cellCol = _isEnemy ? '#ff3333' : '#00ccff';
+          const _cellFill = _isEnemy ? '#ff333322' : '#00ccff22';
+          const _lbl = _isEnemy ? 'HF-E' : 'HF-A';
+          ctx.strokeStyle = _cellCol; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+          ctx.strokeRect(u.x * CELL, u.y * CELL, CELL, CELL);
+          ctx.fillStyle = _cellFill; ctx.fillRect(u.x * CELL, u.y * CELL, CELL, CELL);
+          ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+          ctx.strokeRect(cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          ctx.fillStyle = _cellCol;
+          ctx.font = 'bold 9px monospace'; ctx.fillText(`${_lbl}(${u.x},${u.y})`, u.x * CELL + 2, u.y * CELL + 11);
           ctx.restore();
         }
       } else if (u.utype === 'spider') {
@@ -17258,6 +18346,22 @@ function drawUnits() {
             _drawNum(u.stack, 1, 1, 0, '#ffe066');
           }
           ctx.globalAlpha = alpha;
+          ctx.restore();
+        }
+        // Hitbox debug overlay (skull) — kaip red archer
+        if (window._showHitboxes) {
+          ctx.save();
+          const _isEnemy = !!u.isEditorEnemy;
+          const _cellCol = _isEnemy ? '#ff3333' : '#00ff44';
+          const _cellFill = _isEnemy ? '#ff333322' : '#00ff4422';
+          const _lbl = _isEnemy ? 'SK-E' : 'SK-A';
+          ctx.strokeStyle = _cellCol; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+          ctx.strokeRect(u.x * CELL, u.y * CELL, CELL, CELL);
+          ctx.fillStyle = _cellFill; ctx.fillRect(u.x * CELL, u.y * CELL, CELL, CELL);
+          ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+          ctx.strokeRect(cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          ctx.fillStyle = _cellCol;
+          ctx.font = 'bold 9px monospace'; ctx.fillText(`${_lbl}(${u.x},${u.y})`, u.x * CELL + 2, u.y * CELL + 11);
           ctx.restore();
         }
       } else if (u.utype === 'bluebird') {
@@ -17638,6 +18742,7 @@ function aiQueueAction(exec = true) {
   if (S.pending[1] !== null) return;
   const aiUnits = S.units.filter(u => {
     if (u.team !== 1 || !u.alive) return false;
+    if (isFriendlyBarracksUnit(u)) return false; // F10/F11 trained units — no AI
     if ((u.frozenTurns || 0) > 0) { return false; } // frozen this turn (decremented after tick)
     if (gameMode === 'adventure') {
       if (u.utype === 'spider') {
@@ -19906,6 +21011,64 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return;
     }
+    // F11 deploy panel — veikia screen-space; placement → world cell
+    if (_f11DeployOpen && S.floor === 11) {
+      const inScr = (b) => b && _cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h;
+      // Restore button (when minimized) → expand
+      if (_f11DeployMinimized) {
+        if (inScr(_f11DeployRestoreBtn)) {
+          _f11DeployMinimized = false;
+          return;
+        }
+        // Any other click on the map while minimized falls through to normal handling
+      } else {
+        if (inScr(_f11DeployCloseBtn)) {
+          _f11DeployMinimized = true;
+          _f11DeployArmed = null;
+          return;
+        }
+        for (const rect of _f11DeployUnitRects) {
+          if (inScr(rect)) {
+            _f11DeployArmed = (_f11DeployArmed === rect.type) ? null : rect.type;
+            return;
+          }
+        }
+        if (inScr(_f11DeployPanelBounds)) return;
+      }
+      if (_f11DeployArmed) {
+        const cellX = Math.floor(mx / CELL);
+        const cellY = Math.floor(my / CELL);
+        // Rasti pirmą snap atitinkantį armed type — consume after successful placement
+        const snapIdx = (_f11TransferUnits || []).findIndex(s => s && s.utype === _f11DeployArmed);
+        if (snapIdx < 0) {
+          _f11DeployArmed = null;
+          return;
+        }
+        if (cellX >= 0 && cellX < COLS && cellY >= 0 && cellY < ROWS &&
+            !isWall(cellX, cellY) &&
+            !_cellHasEntity(cellX, cellY, null)) {
+          const archetype = (typeof getEditorEnemyArchetype === 'function')
+            ? getEditorEnemyArchetype(_f11DeployArmed) : null;
+          if (archetype) {
+            const snap = _f11TransferUnits[snapIdx];
+            const u = mkUnit(nextEditorUnitId(), 1, cellX, cellY, -1, archetype);
+            if (snap.stack && snap.stack > 1) u.stack = snap.stack;
+            if (typeof snap.maxHp === 'number' && snap.maxHp > 0) u.maxHp = snap.maxHp;
+            if (typeof snap.hp === 'number' && snap.hp > 0) u.hp = snap.hp;
+            // Trained snap id — ryšys su Profile įrašu: kai unit mirs, tas snap bus pašalintas
+            if (!snap.id) snap.id = _nextTrainedSnapId();
+            u.trainedSnapId = snap.id;
+            S.units.push(u);
+            // Deploy'inti tik pašalina iš panelės pool — Profile'e lieka (tik mirtis pašalina)
+            _f11TransferUnits.splice(snapIdx, 1);
+            // Jei nebeliko to tipo — nuimam armed
+            const stillHas = _f11TransferUnits.some(s => s && s.utype === _f11DeployArmed);
+            if (!stillHas) _f11DeployArmed = null;
+          }
+        }
+        return;
+      }
+    }
     if (_barracksPopupOpen) {
       // Avatar click → select (užblokuoti — ignoruoti)
       for (const rect of _barracksAvatarRects) {
@@ -20605,7 +21768,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ${npcButtons}
         <button onclick="setEditTile('erase_npc')" style="background:#3a1111; width:100%; height:40px; color:#ff7a7a; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #ff5555;">REMOVE</button>
       </div>
-      <div style="color:#8fd8ff; font-size:9px; margin-top:10px; margin-bottom:4px; border-top:1px solid #334455; padding-top:6px; font-family:monospace;">DEKORATYVINIAI NPC</div>
+      <div style="color:#8fff9a; font-size:9px; margin-top:10px; margin-bottom:4px; border-top:1px solid #2a5a33; padding-top:6px; font-family:monospace;">◆ ALLY NPC</div>
       <button onclick="setEditTile('archer_npc')" style="background:#0a1220; width:100%; height:40px; color:#8fd8ff; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #4a88cc; display:flex; align-items:center; gap:8px; padding:0 8px;">
         <img src="assets_tiny/Archer_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
         <span>Blue Archer (juda)</span>
@@ -20622,11 +21785,12 @@ document.addEventListener('DOMContentLoaded', () => {
         <img src="assets_tiny/HarpoonFish_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
         <span>Harpoon Fish (idle)</span>
       </button>
-      <button onclick="setEditTile('red_archer_npc')" style="background:#200808; width:100%; height:40px; color:#ff6666; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #cc2222; display:flex; align-items:center; gap:8px; padding:0 8px; margin-top:3px;">
+      <div style="color:#ff8888; font-size:9px; margin-top:12px; margin-bottom:4px; border-top:1px solid #5a2a2a; padding-top:6px; font-family:monospace;">✖ ENEMY NPC</div>
+      <button onclick="setEditTile('red_archer_npc')" style="background:#200808; width:100%; height:40px; color:#ff6666; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #cc2222; display:flex; align-items:center; gap:8px; padding:0 8px;">
         <img src="assets_tiny/RedArcher_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
         <span>Red Archer (priesininkas)</span>
       </button>
-      <button onclick="setEditTile('erase_prop')" style="background:#330000; width:100%; height:32px; color:#ff8888; font-size:9px; cursor:pointer; border:1px solid #880000; margin-top:2px;">✕ TRINTI DEKO NPC</button>
+      <button onclick="setEditTile('erase_prop')" style="background:#330000; width:100%; height:32px; color:#ff8888; font-size:9px; cursor:pointer; border:1px solid #880000; margin-top:10px;">✕ TRINTI DEKO NPC</button>
       <button onclick="exportMap()" style="background:#777; width:100px; height:30px; margin-top:14px; color:white; font-size:9px; cursor:pointer;">EXPORT JS</button>
     `;
     window.setEditorSection(window.editorSection || 'map');
