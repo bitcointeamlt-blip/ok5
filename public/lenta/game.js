@@ -1211,8 +1211,58 @@ let Profile = {
   inventory: null      // persists chips/items across runs
 };
 
+// Profile persistence key — wallet-bound. Returns null if no wallet connected.
+// When null → anonymous mode, progress is NOT persisted (user explicitly opted in
+// to this behavior; wallet login is required to save).
+function _profileStorageKey() {
+  try {
+    if (window.Wallet && typeof window.Wallet.profileKey === 'function') {
+      const k = window.Wallet.profileKey();
+      if (k) return k;
+    }
+  } catch {}
+  return null;
+}
+
+// Default template used whenever we need a fresh anonymous profile.
+function _freshProfile() {
+  return {
+    cache: 0,
+    upgrades: {
+      maxEnergy: 0, voltsCostLevel: 0, critLevel: 0,
+      nanoLevel: 0, freeShotLevel: 0, jumpLevel: 0,
+      cardSlotLevel: 0, bloodRushLevel: 0,
+    },
+    highestSector: 1,
+    inventory: null,
+    achievements: {},
+    stats: { totalKills: 0 },
+  };
+}
+
 function loadProfile() {
-  const saved = localStorage.getItem('timelock_profile');
+  // Start from defaults so wallet-switch clears stale per-wallet data.
+  Profile = _freshProfile();
+  const key = _profileStorageKey();
+  // Legacy migration: if a wallet is connected but only the old anon key exists,
+  // pull that forward one time so existing anonymous players keep progress.
+  let saved = key ? localStorage.getItem(key) : null;
+  if (!saved && key) {
+    // One-time migration: inherit legacy anonymous progress on FIRST wallet connect.
+    // After migration the legacy key is removed so subsequent wallets start fresh.
+    const legacy = localStorage.getItem('timelock_profile');
+    if (legacy) {
+      saved = legacy;
+      try { localStorage.setItem(key, legacy); } catch {}
+      try { localStorage.removeItem('timelock_profile'); } catch {}
+    }
+  }
+  if (!key) {
+    // Anonymous mode — do NOT load any persisted profile. Fresh session only.
+    if (!Profile.achievements) Profile.achievements = {};
+    if (!Profile.stats) Profile.stats = { totalKills: 0 };
+    return;
+  }
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
@@ -1238,8 +1288,21 @@ function loadProfile() {
 }
 
 function saveProfile() {
-  localStorage.setItem('timelock_profile', JSON.stringify(Profile));
+  const key = _profileStorageKey();
+  if (!key) return; // anonymous → no persistence
+  try { localStorage.setItem(key, JSON.stringify(Profile)); }
+  catch (e) { console.warn('saveProfile failed:', e); }
 }
+
+// Called by wallet.js on connect/disconnect — reload profile and refresh UI.
+window.reloadProfileForWallet = function () {
+  try {
+    loadProfile();
+    if (typeof updateEnergyHud === 'function') updateEnergyHud();
+    if (typeof updateHubUI === 'function') updateHubUI();
+    if (typeof renderAchievements === 'function') try { renderAchievements(); } catch {}
+  } catch (e) { console.warn('reloadProfileForWallet error:', e); }
+};
 
 // ── RUN KEY system ────────────────────────────────────────────
 const RUN_KEY_MAX    = 3;
@@ -2468,7 +2531,7 @@ window.toggleHubOverlay = function () {
 };
 
 window.deployMission = function (sector) {
-  if (Profile.highestSector < sector) return;
+  if (sector !== 10 && Profile.highestSector < sector) return;
   if (!consumeRunKey()) {
     const ms = msToNextRunKey();
     const m  = Math.floor(ms / 60000);
@@ -2573,7 +2636,7 @@ window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
 // Floor 11 — kovos zona: 42x19 (15 žemės + 1 vandens + 3 šlaito), tiltas kol 4, kaip F10
-window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"14,4":"bridge_0_1","15,4":"bridge_0_2","16,4":"bridge_0_2","17,4":"bridge_0_2","18,4":"bridge_0_2"},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":7},"exitPos":{"x":40,"y":7}};
+window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"14,4":"bridge_0_1","15,4":"bridge_0_2","16,4":"bridge_0_2","17,4":"bridge_0_2","18,4":"bridge_0_2","5,28":"red_archer_npc","9,32":"red_archer_npc","12,30":"red_archer_npc"},"collisionBoxes":[],"enemies":[{"type":"shaman","x":34,"y":7},{"type":"shaman","x":36,"y":5},{"type":"shaman","x":36,"y":9}],"spawnPos":{"x":4,"y":7},"exitPos":{"x":40,"y":7}};
 const _buildingImgs = {};
 ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'].forEach(n => {
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
@@ -2619,7 +2682,7 @@ let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'�
 let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse (po CSS scale paskirstoma į canvas.width vnt.)
 // World-space pelės koord., atnaujinamos po updateCamera(). Naudoti jas visur, kur palyginama su pasaulio-coord bounds (pastatai, unit'ai, extra mines).
 let _worldMx = -1, _worldMy = -1;
-const CANVAS_ZOOM = 1.20; // turi atitikti style.css #canvas transform: scale(...)
+const CANVAS_ZOOM = 1.32; // turi atitikti style.css #canvas transform: scale(...)
 // Matomos dalies stačiakampis canvas-pikselių erdvėje (dėl CSS scale + overflow:hidden
 // matosi tik centrinis plotas; už jo esantys popup'ai vizualiai apkarpomi).
 function _getVisibleCanvasRect() {
@@ -5477,7 +5540,7 @@ function updateFloorNav() {
   if (!nav) return;
   nav.style.display = show;
   if (f10Btn) f10Btn.style.display = show === 'flex' ? 'block' : 'none';
-  if (lbl) lbl.textContent = 'F' + (S.floor || 1);
+  if (lbl) lbl.textContent = (S.floor === 10) ? 'HOME' : ('F' + (S.floor || 1));
   if (prevBtn) prevBtn.disabled = (S.floor || 1) <= 1;
 }
 
@@ -6570,7 +6633,7 @@ function updateInventoryUI() {
   if (el('inv-frags-prog')) el('inv-frags-prog').textContent = inProg;
   if (el('inv-frags-max')) el('inv-frags-max').textContent = FRAG_PER_CHIP;
   if (el('inv-frag-bar')) el('inv-frag-bar').style.width = (pct * 100) + '%';
-  if (el('inv-floor')) el('inv-floor').textContent = S.floor || 1;
+  if (el('inv-floor')) el('inv-floor').textContent = (S.floor === 10) ? 'HOME' : (S.floor || 1);
 
   // Button chip count
   if (el('inv-btn-chips')) el('inv-btn-chips').textContent = `${getRonkeUpgradeCount()} $ BAG`;
@@ -7960,6 +8023,20 @@ function _updateAndDrawArchers(decKeys) {
     }
     const st = _archerStates[key];
 
+    // F11 timelock — jei AI uzkonservuota, šiftuojam NPC state timestamps kad state'as nepasikeistų,
+    // bet strėlių timestamps NELIEČIAM — tegul pasiekia taikinį ir atlieka hit animaciją.
+    const _arPaused = (gameMode === 'adventure' && S.floor === 11 && !_f11AutoPlay && now > _f11AiGate.allowUntil);
+    if (_arPaused) {
+      const _dt = now - (st._lastTickAt || now);
+      st._lastTickAt = now;
+      st.lastFrameAt += _dt;
+      st.nextActionAt += _dt;
+      if (st.nextShootAt !== undefined) st.nextShootAt += _dt;
+      if (st.state === 'walk') st.walkStart += _dt;
+    } else {
+      st._lastTickAt = now;
+    }
+
     // ---- State machine ----
     if (st.state === 'shoot') {
       const anim = _archerAnims.shoot;
@@ -8455,6 +8532,20 @@ function _updateAndDrawRedArchers(decKeys) {
     }
     const st = _redArcherStates[key];
 
+    // F11 timelock — jei AI uzkonservuota, šiftuojam NPC state timestamps kad state'as nepasikeistų,
+    // bet strėlių timestamps NELIEČIAM — tegul pasiekia taikinį ir atlieka hit animaciją.
+    const _raPaused = (gameMode === 'adventure' && S.floor === 11 && !_f11AutoPlay && now > _f11AiGate.allowUntil);
+    if (_raPaused) {
+      const _dt = now - (st._lastTickAt || now);
+      st._lastTickAt = now;
+      st.lastFrameAt += _dt;
+      st.nextActionAt += _dt;
+      if (st.nextShootAt !== undefined) st.nextShootAt += _dt;
+      if (st.state === 'walk') st.walkStart += _dt;
+    } else {
+      st._lastTickAt = now;
+    }
+
     if (st.state === 'shoot') {
       const anim = _redArcherAnims.shoot;
       const elapsed = now - st.lastFrameAt;
@@ -8741,6 +8832,20 @@ function _updateAndDrawFish(decKeys) {
       };
     }
     const st = _fishStates[key];
+
+    // F11 timelock — jei AI uzkonservuota, šiftuojam NPC state timestamps kad state'as nepasikeistų,
+    // bet harpūnų timestamps NELIEČIAM — tegul pasiekia taikinį ir atlieka hit animaciją.
+    const _fhPaused = (gameMode === 'adventure' && S.floor === 11 && !_f11AutoPlay && now > _f11AiGate.allowUntil);
+    if (_fhPaused) {
+      const _dt = now - (st._lastTickAt || now);
+      st._lastTickAt = now;
+      st.lastFrameAt += _dt;
+      st.nextActionAt += _dt;
+      if (st.nextShootAt !== undefined) st.nextShootAt += _dt;
+      if (st.state === 'walk') st.walkStart += _dt;
+    } else {
+      st._lastTickAt = now;
+    }
 
     // ---- State machine (same pattern as archer) ----
     if (st.state === 'shoot') {
@@ -10566,22 +10671,31 @@ function drawF11DeployPanel() {
   if (gameMode !== 'adventure') return;
   if (S.floor !== 11) return;
 
-  // Aggregate army pool by utype — one button per unique trained unit type
+  // Aggregate army pool (to-deploy) + already-deployed (on map) by utype
   const _armyByType = {};
   (Array.isArray(_f11TransferUnits) ? _f11TransferUnits : []).forEach((snap, si) => {
     if (!snap || !snap.utype) return;
-    if (!_armyByType[snap.utype]) _armyByType[snap.utype] = { t: snap.utype, count: 0, indices: [], stackSum: 0 };
+    if (!_armyByType[snap.utype]) _armyByType[snap.utype] = { t: snap.utype, count: 0, indices: [], stackSum: 0, deployedCount: 0 };
     _armyByType[snap.utype].count++;
     _armyByType[snap.utype].indices.push(si);
     _armyByType[snap.utype].stackSum += (snap.stack || 1);
   });
+  if (Array.isArray(S.units)) {
+    for (const _u of S.units) {
+      if (!_u || !_u.alive) continue;
+      if (!isFriendlyBarracksUnit(_u)) continue;
+      if (!_armyByType[_u.utype]) _armyByType[_u.utype] = { t: _u.utype, count: 0, indices: [], stackSum: 0, deployedCount: 0 };
+      _armyByType[_u.utype].deployedCount++;
+    }
+  }
   const unitTypes = [];
   for (let i = 0; i < _BARRACKS_UNIT_TYPES.length; i++) {
     const t = _BARRACKS_UNIT_TYPES[i];
     if (!t) continue;
     const agg = _armyByType[t];
-    if (!agg || agg.count <= 0) continue;
-    unitTypes.push({ t, i, count: agg.count, stackSum: agg.stackSum, indices: agg.indices });
+    if (!agg) continue;
+    if (agg.count <= 0 && agg.deployedCount <= 0) continue;
+    unitTypes.push({ t, i, count: agg.count, stackSum: agg.stackSum, indices: agg.indices, deployedCount: agg.deployedCount });
   }
   if (unitTypes.length === 0) {
     _f11DeployPanelBounds = null;
@@ -10682,13 +10796,24 @@ function drawF11DeployPanel() {
     const armed = _f11DeployArmed === entry.t;
     const hov = _canvasMx >= ax && _canvasMx <= ax + UBTN &&
                 _canvasMy >= ay && _canvasMy <= ay + UBTN;
-    ctx.fillStyle = armed ? '#3a5a3a' : (hov ? '#2f3848' : '#141821');
+    // Check if any deployed unit of this type is currently selected (SINGLE mode highlight)
+    const _selectedIsThis = (_selectedAllyUnit && _selectedAllyUnit.alive && _selectedAllyUnit.utype === entry.t);
+    const _emptyPool = (entry.count <= 0);
+    ctx.fillStyle = _selectedIsThis ? '#2a4a3a' : (armed ? '#3a5a3a' : (hov ? '#2f3848' : '#141821'));
     rr(ax, ay, UBTN, UBTN, 4); ctx.fill();
     const aimg = _barracksAvatarImgs[entry.i];
     if (aimg && aimg.complete && aimg.naturalWidth > 0) {
+      // Jei pool'as tuščias (visi išdėlioti) — dim'inam avatar'ą
+      ctx.save();
+      if (_emptyPool) ctx.globalAlpha = 0.55;
       ctx.drawImage(aimg, ax + 3, ay + 3, UBTN - 6, UBTN - 6);
+      ctx.restore();
     }
-    if (armed) {
+    if (_selectedIsThis) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#6effaa';
+      rr(ax + 0.5, ay + 0.5, UBTN - 1, UBTN - 1, 4); ctx.stroke();
+    } else if (armed) {
       ctx.lineWidth = 2;
       ctx.strokeStyle = '#6eff6e';
       rr(ax + 0.5, ay + 0.5, UBTN - 1, UBTN - 1, 4); ctx.stroke();
@@ -10697,19 +10822,35 @@ function drawF11DeployPanel() {
       ctx.strokeStyle = '#ffb07a';
       rr(ax + 0.5, ay + 0.5, UBTN - 1, UBTN - 1, 4); ctx.stroke();
     }
-    // Stack/count badge — viršuje deš. kampe, rodo total stack (arba squad count jei >1)
-    const badge = entry.count > 1 ? `${entry.count}×${entry.stackSum}` : `×${entry.stackSum}`;
-    ctx.save();
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#000';
-    ctx.fillStyle = '#ffe066';
-    ctx.strokeText(badge, ax + UBTN - 3, ay + 2);
-    ctx.fillText(badge, ax + UBTN - 3, ay + 2);
-    ctx.restore();
-    _f11DeployUnitRects.push({ x: ax, y: ay, w: UBTN, h: UBTN, type: entry.t, idx: entry.i, indices: entry.indices.slice() });
+    // Pool badge (top-right) — kiek liko dėti
+    if (entry.count > 0) {
+      const badge = entry.count > 1 ? `${entry.count}×${entry.stackSum}` : `×${entry.stackSum}`;
+      ctx.save();
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#ffe066';
+      ctx.strokeText(badge, ax + UBTN - 3, ay + 2);
+      ctx.fillText(badge, ax + UBTN - 3, ay + 2);
+      ctx.restore();
+    }
+    // Deployed badge (bottom-right) — kiek jau ant žemėlapio gyvi
+    if (entry.deployedCount > 0) {
+      const dbadge = `▸${entry.deployedCount}`;
+      ctx.save();
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#9effaa';
+      ctx.strokeText(dbadge, ax + UBTN - 3, ay + UBTN - 2);
+      ctx.fillText(dbadge, ax + UBTN - 3, ay + UBTN - 2);
+      ctx.restore();
+    }
+    _f11DeployUnitRects.push({ x: ax, y: ay, w: UBTN, h: UBTN, type: entry.t, idx: entry.i, indices: entry.indices.slice(), deployedCount: entry.deployedCount });
   });
 
   // Hint
@@ -10723,6 +10864,427 @@ function drawF11DeployPanel() {
     ctx.fillText('PICK UNIT • CLICK MAP TO PLACE', px + pw / 2, py + ph - 9);
   }
   ctx.restore();
+}
+
+// ---- F11 Timelock — Turn-based control layer --------------------
+// Ronkė stovi vietoje. Default state: AI uzkonservuota (nieko nedaro).
+// Paspaudus MOVE — atidaromas AI gate'as trumpam langui, per kurį veikia
+// PILNA egzistuojanti `_updateBarracksAttackAI` logika (skull chase+attack+retreat,
+// shaman ranged, harpoon kiting ir t.t.). Unit'ų elgesys 100% nepakitęs —
+// tik uzkonservuojamas tarp paspaudimų.
+let _f11MoveBtn = null;   // { x, y, w, h } — backwards-compat, now first skill slot
+let _f11SkillRects = [];  // [{ x,y,w,h, key, hotkey, label, locked, action }]
+let _f11AutoBtn = null;   // PLAY/PAUSE toggle bounds
+let _f11ModeAllBtn = null;    // ALL selection button bounds
+let _f11ModeOneBtn = null;    // ONE selection button bounds
+let _f11AutoPlay = false; // true = AI veikia automatiškai (kaip sena mechanika)
+let _f11SelectionMode = 'all'; // 'all' = visi klauso komandos; 'single' = tik _selectedAllyUnit
+let _f11AiGate = { allowUntil: 0, windowMs: 800 };   // AI veikia kol now < allowUntil
+let _f11UnitPopupOpen = false;       // po click ant unit'o — rodoma veiksmų popup
+let _f11MoveTargeting = false;       // po MOVE mygtuko popup'e — laukiam click'o ant map cell'ės
+let _f11UnitPopupMoveBtn = null;     // popup MOVE mygtuko bounds
+let _f11UnitPopupCancelBtn = null;   // popup ✕ bounds
+
+function _f11ToggleAutoPlay() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  _f11AutoPlay = !_f11AutoPlay;
+  if (typeof logEvent === 'function') {
+    logEvent(_f11AutoPlay ? '▶▶ AUTO PLAY — ON' : '❚❚ AUTO PLAY — OFF', 'info');
+  }
+}
+
+function _f11SetModeAll() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  // Toggle: jei jau aktyvus — išjungiam
+  if (_f11SelectionMode === 'all') {
+    _f11SelectionMode = null;
+    _selectedAllyUnit = null;
+    _f11UnitPopupOpen = false;
+    _f11MoveTargeting = false;
+    if (typeof logEvent === 'function') logEvent('○ Selection: OFF', 'info');
+    return;
+  }
+  _f11SelectionMode = 'all';
+  _selectedAllyUnit = null;
+  if (typeof logEvent === 'function') logEvent('👥 Selection: ALL units', 'info');
+}
+
+function _f11SetModeSingle() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  // Toggle: jei jau aktyvus — išjungiam
+  if (_f11SelectionMode === 'single') {
+    _f11SelectionMode = null;
+    _selectedAllyUnit = null;
+    _f11UnitPopupOpen = false;
+    _f11MoveTargeting = false;
+    if (typeof logEvent === 'function') logEvent('○ Selection: OFF', 'info');
+    return;
+  }
+  _f11SelectionMode = 'single';
+  if (typeof logEvent === 'function') logEvent('👤 Selection: SINGLE — click unit to pick', 'info');
+}
+
+function _f11TimelockMoveStep() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  const now = performance.now();
+  // Cooldown: neleisti spam'o kol dar veikia gate
+  if (now < _f11AiGate.allowUntil) return;
+  _f11AiGate.allowUntil = now + _f11AiGate.windowMs;
+  if (typeof logEvent === 'function') {
+    logEvent('▶ MOVE — armija vykdo veiksmą', 'info');
+  }
+}
+
+// Popup virš pažymėto unit'o — rodomas po click'o ant unit'o. Turi ▶ MOVE (pereina
+// į target-pick režimą) ir ✕ CANCEL (deselect). Piešiamas screen-space po camera restore.
+function drawF11UnitPopup() {
+  if (!_f11UnitPopupOpen || !_selectedAllyUnit || !_selectedAllyUnit.alive ||
+      gameMode !== 'adventure' || S.floor !== 11) {
+    _f11UnitPopupMoveBtn = null;
+    _f11UnitPopupCancelBtn = null;
+    return;
+  }
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+  const u = _selectedAllyUnit;
+  const wx = ((typeof u.rx === 'number') ? u.rx : u.x) * CELL + CELL / 2;
+  const wy = ((typeof u.ry === 'number') ? u.ry : u.y) * CELL + CELL / 2;
+  const camX = (S.cam && S.cam.x) || 0;
+  const camY = (S.cam && S.cam.y) || 0;
+  const anchorSX = Math.round(wx - camX);
+  const anchorSY = Math.round(wy - camY);
+
+  const MBW = 76, MBH = 26, GAP = 6;
+  const pw = MBW + GAP + MBH + 16;  // MOVE + ✕ buttons + padding
+  const ph = MBH + 20;
+  const px = anchorSX - Math.round(pw / 2);
+  const py = anchorSY - Math.round(CELL * 0.85) - ph;
+
+  ctx.save();
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  rr(px + 2, py + 3, pw, ph, 5); ctx.fill();
+  // Bg
+  ctx.fillStyle = '#1f242f';
+  rr(px, py, pw, ph, 5); ctx.fill();
+  // Border
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#6eaaff';
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, 5); ctx.stroke();
+  // Unit type label
+  ctx.fillStyle = '#d8e8ff';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText((u.utype || 'UNIT').toUpperCase(), px + pw / 2, py + 3);
+
+  // Pointer tail (žemyn į unit'ą)
+  ctx.fillStyle = '#1f242f';
+  ctx.strokeStyle = '#6eaaff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(anchorSX - 6, py + ph);
+  ctx.lineTo(anchorSX + 6, py + ph);
+  ctx.lineTo(anchorSX,     py + ph + 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // MOVE button
+  const mbx = px + 8;
+  const mby = py + ph - MBH - 4;
+  const mbHov = (typeof _canvasMx === 'number') &&
+                _canvasMx >= mbx && _canvasMx <= mbx + MBW &&
+                _canvasMy >= mby && _canvasMy <= mby + MBH;
+  ctx.fillStyle = mbHov ? '#2a5a3a' : '#1a3a2a';
+  rr(mbx, mby, MBW, MBH, 4); ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#6effaa';
+  rr(mbx + 0.5, mby + 0.5, MBW - 1, MBH - 1, 4); ctx.stroke();
+  ctx.fillStyle = '#d8ffdb';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('▶ MOVE ⚡', mbx + MBW / 2, mby + MBH / 2);
+  _f11UnitPopupMoveBtn = { x: mbx, y: mby, w: MBW, h: MBH };
+
+  // Cancel button
+  const cbx = mbx + MBW + GAP;
+  const cby = mby;
+  const cbHov = (typeof _canvasMx === 'number') &&
+                _canvasMx >= cbx && _canvasMx <= cbx + MBH &&
+                _canvasMy >= cby && _canvasMy <= cby + MBH;
+  ctx.fillStyle = cbHov ? '#6a2a2a' : '#3a1a1a';
+  rr(cbx, cby, MBH, MBH, 4); ctx.fill();
+  ctx.strokeStyle = '#ff8a8a';
+  rr(cbx + 0.5, cby + 0.5, MBH - 1, MBH - 1, 4); ctx.stroke();
+  ctx.fillStyle = '#ffdada';
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText('✕', cbx + MBH / 2, cby + MBH / 2);
+  _f11UnitPopupCancelBtn = { x: cbx, y: cby, w: MBH, h: MBH };
+
+  ctx.restore();
+}
+
+function drawF11TimelockPanel() {
+  if (gameMode !== 'adventure' || S.floor !== 11) { _f11MoveBtn = null; _f11SkillRects = []; _f11ModeAllBtn = null; _f11ModeOneBtn = null; return; }
+
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  };
+
+  const now = performance.now();
+  const gateActive = now < _f11AiGate.allowUntil;
+  const gateRatio = gateActive ? (_f11AiGate.allowUntil - now) / _f11AiGate.windowMs : 0;
+
+  // Skill definitions (locked slots = placeholders for future mechanics)
+  const skills = [
+    { key: 'move',    hotkey: 'M', label: 'MOVE',    glyph: '▶', locked: false, action: _f11TimelockMoveStep },
+    { key: 'attack',  hotkey: 'Q', label: 'ATK',     glyph: '⚔', locked: true  },
+    { key: 'automove', hotkey: 'W', label: 'AUTO MOVE', glyph: '⟳', locked: true  },
+    { key: 'stop',    hotkey: 'E', label: 'STOP',    glyph: '■', locked: true  },
+    { key: 'shoot',   hotkey: 'R', label: 'SHOOT',   glyph: '➹', locked: true  },
+  ];
+
+  const SBTN = 52, SGAP = 8, PAD_X = 14, PAD_TOP = 26, PAD_BOT = 18;
+  const canvasW = (typeof advCanvasW === 'number') ? advCanvasW : BOARD_W;
+  const canvasH = (typeof ADV_CANVAS_H === 'number') ? ADV_CANVAS_H : BOARD_H;
+  const pw = PAD_X * 2 + skills.length * SBTN + (skills.length - 1) * SGAP;
+  const ph = PAD_TOP + SBTN + PAD_BOT;
+  const px = Math.round((canvasW - pw) / 2);
+  const py = canvasH - ph - 86;
+
+  ctx.save();
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(px + 3, py + 4, pw, ph, 6); ctx.fill();
+  // Panel bg
+  ctx.fillStyle = '#1f242f';
+  rr(px, py, pw, ph, 6); ctx.fill();
+  // Header strip
+  ctx.save();
+  rr(px, py, pw, ph, 6); ctx.clip();
+  ctx.fillStyle = gateActive ? '#2a5a3a' : '#2a3a48';
+  ctx.fillRect(px, py, pw, 18);
+  ctx.restore();
+  // Border
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = gateActive ? '#6effaa' : '#6eaaff';
+  rr(px + 0.5, py + 0.5, pw - 1, ph - 1, 6); ctx.stroke();
+  // Title
+  ctx.fillStyle = _f11AutoPlay ? '#ffd27a' : (gateActive ? '#d8ffdb' : '#d8e8ff');
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const _title = _f11AutoPlay ? '▶▶ AUTO PLAY' : (gateActive ? '◉ COMMAND — ACTIVE' : '◉ COMMAND SKILLS');
+  ctx.fillText(_title, px + pw / 2, py + 9);
+
+  // PLAY/PAUSE toggle pill (right of header)
+  const abW = 58, abH = 14;
+  const abx = px + pw - abW - 6;
+  const aby = py + 2;
+  _f11AutoBtn = { x: abx, y: aby, w: abW, h: abH };
+  const abHov = (typeof _canvasMx === 'number') &&
+                _canvasMx >= abx && _canvasMx <= abx + abW &&
+                _canvasMy >= aby && _canvasMy <= aby + abH;
+  ctx.fillStyle = _f11AutoPlay ? '#8a5a2a' : (abHov ? '#2f5a4a' : '#1a2a3a');
+  rr(abx, aby, abW, abH, 3); ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = _f11AutoPlay ? '#ffd27a' : '#6effaa';
+  rr(abx + 0.5, aby + 0.5, abW - 1, abH - 1, 3); ctx.stroke();
+  ctx.fillStyle = _f11AutoPlay ? '#fff3d8' : '#d8ffdb';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(_f11AutoPlay ? '❚❚ PAUSE [P]' : '▶ PLAY [P]', abx + abW / 2, aby + abH / 2);
+
+  // Skill slots
+  _f11SkillRects = [];
+  const gx0 = px + PAD_X;
+  const gy0 = py + PAD_TOP;
+  skills.forEach((sk, k) => {
+    const ax = gx0 + k * (SBTN + SGAP);
+    const ay = gy0;
+    const hov = !sk.locked &&
+                (typeof _canvasMx === 'number') &&
+                _canvasMx >= ax && _canvasMx <= ax + SBTN &&
+                _canvasMy >= ay && _canvasMy <= ay + SBTN;
+    const active = !sk.locked && sk.key === 'move' && gateActive;
+
+    // Slot bg
+    ctx.fillStyle = sk.locked ? '#0f1218' : (active ? '#2a4a3a' : (hov ? '#2f3848' : '#141821'));
+    rr(ax, ay, SBTN, SBTN, 5); ctx.fill();
+
+    // Glyph
+    ctx.save();
+    ctx.font = sk.locked ? 'bold 20px monospace' : 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = sk.locked ? '#3a4050' : (active ? '#9effb4' : '#cfe0ff');
+    ctx.fillText(sk.glyph, ax + SBTN / 2, ay + SBTN / 2 - 4);
+    // Label
+    ctx.font = 'bold 8px monospace';
+    ctx.fillStyle = sk.locked ? '#3a4050' : (active ? '#9effb4' : '#9eaec0');
+    ctx.fillText(sk.label, ax + SBTN / 2, ay + SBTN - 9);
+    ctx.restore();
+
+    // Cooldown sweep (only MOVE slot while gate active)
+    if (active && gateRatio > 0) {
+      ctx.save();
+      rr(ax, ay, SBTN, SBTN, 5); ctx.clip();
+      ctx.fillStyle = 'rgba(110,255,170,0.22)';
+      const overlayH = Math.round(SBTN * gateRatio);
+      ctx.fillRect(ax, ay + SBTN - overlayH, SBTN, overlayH);
+      ctx.restore();
+    }
+
+    // Border
+    if (active) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#6effaa';
+      rr(ax + 0.5, ay + 0.5, SBTN - 1, SBTN - 1, 5); ctx.stroke();
+    } else if (hov) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffb07a';
+      rr(ax + 0.5, ay + 0.5, SBTN - 1, SBTN - 1, 5); ctx.stroke();
+    } else {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = sk.locked ? '#252a36' : '#2a3040';
+      rr(ax + 0.5, ay + 0.5, SBTN - 1, SBTN - 1, 5); ctx.stroke();
+    }
+
+    // Hotkey badge (bottom-right)
+    if (!sk.locked) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(ax + SBTN - 13, ay + SBTN - 12, 12, 11);
+      ctx.fillStyle = '#ffe066';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sk.hotkey, ax + SBTN - 7, ay + SBTN - 6);
+      ctx.restore();
+    } else {
+      // Locked padlock glyph top-right
+      ctx.save();
+      ctx.fillStyle = '#4a5060';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText('🔒', ax + SBTN - 3, ay + 2);
+      ctx.restore();
+    }
+
+    _f11SkillRects.push({ x: ax, y: ay, w: SBTN, h: SBTN, key: sk.key, locked: sk.locked, action: sk.action });
+  });
+  ctx.restore();
+
+  // Backwards-compat — first skill = MOVE
+  _f11MoveBtn = _f11SkillRects[0] ? { x: _f11SkillRects[0].x, y: _f11SkillRects[0].y, w: _f11SkillRects[0].w, h: _f11SkillRects[0].h } : null;
+
+  // ── Selection mini-panel (ALL / ONE) — atskira dėžutė KAIRĖJ nuo skill panel'io,
+  // paties paties skill panel'io stiliumi (antraštė + rėmelis + slot'ai).
+  const MBW = 52, MBH = 52, MGAP = 8;
+  const M_PAD_X = 14, M_PAD_TOP = 26, M_PAD_BOT = 18;
+  const mpw = M_PAD_X * 2 + MBW * 2 + MGAP;
+  const mph = M_PAD_TOP + MBH + M_PAD_BOT;
+  const PANEL_GAP = 18;
+  const mpx = px - PANEL_GAP - mpw;
+  const mpy = py;
+  const modeY0 = mpy + M_PAD_TOP;
+  const modeX0 = mpx + M_PAD_X;
+
+  ctx.save();
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(mpx + 3, mpy + 4, mpw, mph, 6); ctx.fill();
+  // Bg
+  ctx.fillStyle = '#1f242f';
+  rr(mpx, mpy, mpw, mph, 6); ctx.fill();
+  // Header strip
+  ctx.save();
+  rr(mpx, mpy, mpw, mph, 6); ctx.clip();
+  ctx.fillStyle = (_f11SelectionMode === 'single') ? '#5a4a1f' : '#2a3a48';
+  ctx.fillRect(mpx, mpy, mpw, 18);
+  ctx.restore();
+  // Border
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = (_f11SelectionMode === 'single') ? '#ffd27a' : '#6eaaff';
+  rr(mpx + 0.5, mpy + 0.5, mpw - 1, mph - 1, 6); ctx.stroke();
+  // Title
+  ctx.fillStyle = (_f11SelectionMode === 'single') ? '#fff3d8' : '#d8e8ff';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const _selTitle = (_f11SelectionMode === 'single')
+    ? ((_selectedAllyUnit && _selectedAllyUnit.alive)
+        ? `◉ ${(_selectedAllyUnit.utype || 'UNIT').toUpperCase()}`
+        : '◉ PICK UNIT')
+    : '◉ SELECT';
+  ctx.fillText(_selTitle, mpx + mpw / 2, mpy + 9);
+  ctx.restore();
+
+  const drawModeBtn = (bx, by, mode, glyph, label, hotkey) => {
+    const active = (_f11SelectionMode === mode);
+    const hov = (typeof _canvasMx === 'number') &&
+                _canvasMx >= bx && _canvasMx <= bx + MBW &&
+                _canvasMy >= by && _canvasMy <= by + MBH;
+    // bg — match skill slot: active green (same green as move-active), hover blue-ish, default dark
+    ctx.fillStyle = active ? '#2a4a3a' : (hov ? '#2f3848' : '#141821');
+    rr(bx, by, MBW, MBH, 5); ctx.fill();
+    // glyph
+    ctx.save();
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = active ? '#9effb4' : '#cfe0ff';
+    ctx.fillText(glyph, bx + MBW / 2, by + MBH / 2 - 4);
+    ctx.font = 'bold 8px monospace';
+    ctx.fillStyle = active ? '#9effb4' : '#9eaec0';
+    ctx.fillText(label, bx + MBW / 2, by + MBH - 9);
+    ctx.restore();
+    // border — matching skill slots
+    if (active) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#6effaa';
+      rr(bx + 0.5, by + 0.5, MBW - 1, MBH - 1, 5); ctx.stroke();
+    } else if (hov) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffb07a';
+      rr(bx + 0.5, by + 0.5, MBW - 1, MBH - 1, 5); ctx.stroke();
+    } else {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#2a3040';
+      rr(bx + 0.5, by + 0.5, MBW - 1, MBH - 1, 5); ctx.stroke();
+    }
+    // hotkey badge (bottom-right)
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(bx + MBW - 13, by + MBH - 12, 12, 11);
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(hotkey, bx + MBW - 7, by + MBH - 6);
+    ctx.restore();
+    return { x: bx, y: by, w: MBW, h: MBH };
+  };
+
+  _f11ModeAllBtn = drawModeBtn(modeX0,                 modeY0, 'all',    '⦿', 'ALL', 'Z');
+  _f11ModeOneBtn = drawModeBtn(modeX0 + MBW + MGAP,    modeY0, 'single', '◉', 'ONE', 'X');
 }
 
 // ---- Scanlines / CRT overlay (screen space, drawn last) --------
@@ -14019,6 +14581,9 @@ function _updateBarracksAttackAI(now) {
   if (gameMode !== 'adventure') return;
   if (S.floor !== 10 && S.floor !== 11) return;
   if (!Array.isArray(S.units)) return;
+  // F11 timelock: AI uzkonservuota kol player'is neatidaro gate'o (MOVE mygtuku).
+  // AutoPlay režime — praleidžiam gate'ą, AI veikia nuolatos kaip senas game play.
+  if (S.floor === 11 && !_f11AutoPlay && (typeof _f11AiGate === 'undefined' || now > _f11AiGate.allowUntil)) return;
 
   // Red archer NPCs — priešai ally barracks unitams (ne editor-enemy unitams)
   const redArcherTargets = [];
@@ -14033,11 +14598,18 @@ function _updateBarracksAttackAI(now) {
   const alliesBarracks = S.units.filter(isFriendlyBarracksUnit);
   if (allHostiles.length === 0 && alliesBarracks.length === 0 && redArcherTargets.length === 0) return;
 
+  // F11 single-select filter: tik _selectedAllyUnit klauso komandos (enemies vistiek veikia)
+  const _f11SingleOnly = (S.floor === 11 && !_f11AutoPlay &&
+                          _f11SelectionMode === 'single' &&
+                          _selectedAllyUnit && _selectedAllyUnit.alive);
+
   for (const u of S.units) {
     const _isAlly = isFriendlyBarracksUnit(u);
     const _isEnemyBarracks = isEditorEnemyBarracks(u);
     if (!_isAlly && !_isEnemyBarracks) continue;
     if (u.spawnWalk) continue;
+    // F11 SINGLE mode — skipinam ally unit'us kurie nėra pažymėtas
+    if (_f11SingleOnly && _isAlly && u !== _selectedAllyUnit) continue;
     // ── UNIVERSAL COMMAND MOVE OVERRIDE (F11 indirect control) ──
     // Veikia visiems ally utype'ams (skull/shaman/harpoon). Kol aktyvus — pathfind į taikinį,
     // ignoruoja combat. Pasiekus / timeout → clearina ir grįžta į normalų AI.
@@ -14638,6 +15210,24 @@ function loop(now) {
   drawUnits();
   if (typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
   _drawUnitHoverOutline();
+  // Mėlynas silhouette outline pažymėtiems ally unit'ams — tokio pat stiliaus kaip
+  // balto hover outline, tik mėlyna. ALL mode → visi ally; SINGLE → tik _selectedAllyUnit.
+  if (gameMode === 'adventure' && S.floor === 11) {
+    const _blueFilter = 'brightness(0) invert(1) sepia(1) saturate(15) hue-rotate(190deg)';
+    const _drawBlue = (u) => {
+      if (!u || !u.alive) return;
+      const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+      const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+      _drawUnitSilhouetteOutline(u, _cx, _cy, _blueFilter);
+    };
+    if (_f11SelectionMode === 'all') {
+      for (const u of (S.units || [])) {
+        if (isFriendlyBarracksUnit(u)) _drawBlue(u);
+      }
+    } else if (_f11SelectionMode === 'single' && _selectedAllyUnit && _selectedAllyUnit.alive) {
+      _drawBlue(_selectedAllyUnit);
+    }
+  }
   drawForegroundDecorations();
   drawRonkeInfect();
   drawFog();
@@ -14655,6 +15245,8 @@ function loop(now) {
     drawWeaponHUD();
     drawFloorIntro();
     drawF11DeployPanel();
+    if (typeof drawF11TimelockPanel === 'function') drawF11TimelockPanel();
+    if (typeof drawF11UnitPopup === 'function') drawF11UnitPopup();
     drawHeroHitVignette();
     _drawHarpoonRangeToast();
   }
@@ -15052,8 +15644,8 @@ function _drawSelectedAllyOverlay() {
     const anchorY = (typeof u.deployAnchorY === 'number') ? u.deployAnchorY : u.y;
     _drawHarpoonRangeDiamond(anchorX, anchorY, u.x, u.y, true);
   }
-  // 3) Hover preview (tik jei unit'as pasirinktas IR nėra command'o) — cursor ant hover cell
-  if (!u.commandMove && _canvasMx >= 0 && _canvasMy >= 0) {
+  // 3) Hover preview — cursor piešiamas TIK kai aktyvus MOVE-target režimas (po popup MOVE mygtuko).
+  if (_f11MoveTargeting && !u.commandMove && _canvasMx >= 0 && _canvasMy >= 0) {
     // Prieš command — cursor hover preview (tik jei ant validžios ląstelės)
     const wmx = _canvasMx + (S.cam?.x || 0);
     const wmy = _canvasMy + (S.cam?.y || 0);
@@ -15185,7 +15777,8 @@ function _drawUnitHoverOutline() {
 
 // Bandom piešti unit'o sprite'ą 8× su white filter (silhouette outline) — kaip pastatų hover.
 // Grąžina true jei pavyko.
-function _drawUnitSilhouetteOutline(u, cx, cy) {
+function _drawUnitSilhouetteOutline(u, cx, cy, filterStr) {
+  const FILTER = filterStr || 'brightness(0) invert(1)';
   if (u.utype === 'skull' && typeof getSkullFrameState === 'function') {
     const frame = getSkullFrameState(u);
     if (!frame || !frame.sheet || !frame.sheet.complete || !frame.sheet.naturalWidth) return false;
@@ -15206,7 +15799,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy) {
     };
     // 1) 8× baltos silueto kopijos su offset'ais
     ctx.save();
-    ctx.filter = 'brightness(0) invert(1)';
+    ctx.filter = FILTER;
     for (const [dx, dy] of offs) drawFrame(dx, dy);
     ctx.restore();
     // 2) Normalus sprite'as ant viršaus — uždengia vidų, lieka tik baltas ~2px halo
@@ -15225,7 +15818,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy) {
       ctx.drawImage(sImg, cx - sprSz / 2 + dx, cy - sprSz / 2 + dy, sprSz, sprSz);
     };
     ctx.save();
-    ctx.filter = 'brightness(0) invert(1)';
+    ctx.filter = FILTER;
     for (const [dx, dy] of offs) drawFrame(dx, dy);
     ctx.restore();
     drawFrame(0, 0);
@@ -15250,7 +15843,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy) {
       }
     };
     ctx.save();
-    ctx.filter = 'brightness(0) invert(1)';
+    ctx.filter = FILTER;
     for (const [dx, dy] of offs) drawFrame(dx, dy);
     ctx.restore();
     drawFrame(0, 0);
@@ -18283,6 +18876,30 @@ function drawUnits() {
     _unitIdx.set(u, _teamCount[t]);
   });
 
+  // F11 pick-mode hint — kai SINGLE mode ir dar nepasirinktas unit'as,
+  // visi ally gauna blanki oranžinę dashed aureolę (signalas: click ant manęs).
+  if (gameMode === 'adventure' && S.floor === 11 &&
+      _f11SelectionMode === 'single' && !(_selectedAllyUnit && _selectedAllyUnit.alive)) {
+    const _pulse = 0.55 + 0.45 * Math.sin((performance.now() / 400) % (Math.PI * 2));
+    for (const u of (S.units || [])) {
+      if (!u || !u.alive) continue;
+      if (!isFriendlyBarracksUnit(u)) continue;
+      const _rx = (u.rx !== undefined ? u.rx : u.x);
+      const _ry = (u.ry !== undefined ? u.ry : u.y);
+      const _cx = (_rx + 0.5) * CELL;
+      const _cy = (_ry + 0.5) * CELL;
+      ctx.save();
+      ctx.globalAlpha = 0.35 + 0.25 * _pulse;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffd27a';
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.ellipse(_cx, _cy + CELL * 0.32, CELL * 0.42, CELL * 0.16, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   S.units.forEach(u => {
     if (!u.alive && u.deathT <= 0) return;
 
@@ -21140,19 +21757,25 @@ document.addEventListener('DOMContentLoaded', () => {
   ctx = canvas.getContext('2d');
   canvas.width = BOARD_W; canvas.height = BOARD_H;
 
-  // Fit-to-window — sumažina .game-layout kai ekranas per mažas.
-  // Niekada nepadidina (s<=1), todėl didelis ekranas elgiasi identiškai.
-  // Mouse koordinatės canvas'e naudoja getBoundingClientRect, kuris gerbia transform → click'ai vis dar veikia.
+  // Fit-to-window — dinaminis scale, tiek mažina tiek didina .game-layout kad uzpildytu ekrana.
+  // Mouse koordinatės canvas'e naudoja getBoundingClientRect, kuris gerbia transform → click'ai veikia.
   const _fitGameLayout = () => {
     const layout = document.querySelector('#screen-game .game-layout');
     if (!layout) return;
-    // Reset prieš matuojant natūralų dydį
+    // Jei screen-game ne aktyvus, scrollWidth = 0, praleidziam
+    const screen = document.getElementById('screen-game');
+    if (!screen || !screen.classList.contains('active')) return;
     layout.style.transform = '';
     const nw = layout.scrollWidth;
     const nh = layout.scrollHeight;
     if (!nw || !nh) return;
-    const s = Math.min(1, window.innerWidth / nw, window.innerHeight / nh);
-    if (s < 0.999) {
+    const margin = 8;
+    // Leidziam iki 3% vertical overflow kad upscale nebūtų per daug ribojamas
+    const sW = (window.innerWidth - margin) / nw;
+    const sH = (window.innerHeight - margin) / nh * 1.03;
+    const s = Math.min(sW, sH);
+    console.log('[fitGameLayout] nw=', nw, 'nh=', nh, 'vw=', window.innerWidth, 'vh=', window.innerHeight, 'sW=', sW.toFixed(3), 'sH=', sH.toFixed(3), 's=', s.toFixed(3));
+    if (s > 0 && Math.abs(s - 1) > 0.002) {
       layout.style.transformOrigin = 'center center';
       layout.style.transform = `scale(${s})`;
     }
@@ -21163,7 +21786,13 @@ document.addEventListener('DOMContentLoaded', () => {
     _fitRaf = requestAnimationFrame(() => { _fitRaf = 0; _fitGameLayout(); });
   };
   window.addEventListener('resize', _scheduleFit);
-  // Pirmas fit — šiek tiek delay kad CSS/fontai būtų pakrauti
+  // Expose globaliai, kad startGame() galetu iskvesti po showScreen('screen-game')
+  window.__fitGameLayout = _fitGameLayout;
+  window.__scheduleFit = _scheduleFit;
+  // Observer: kai .screen.active class keiciasi (game screen atsidaro/uzsidaro), pritaikom fit
+  const _screenObserver = new MutationObserver(() => _scheduleFit());
+  const _screenGameEl = document.getElementById('screen-game');
+  if (_screenGameEl) _screenObserver.observe(_screenGameEl, { attributes: true, attributeFilter: ['class'] });
   setTimeout(_fitGameLayout, 100);
   setTimeout(_fitGameLayout, 800);
 
@@ -21404,9 +22033,69 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return;
     }
+    // F11 Timelock skill panel — SCREEN-SPACE hit-test PRIES map-click logic,
+    // kad UI mygtukai nebūtų "eatinami" commandMove handler'io.
+    if (gameMode === 'adventure' && S.floor === 11) {
+      if (_f11AutoBtn &&
+          _cmx >= _f11AutoBtn.x && _cmx <= _f11AutoBtn.x + _f11AutoBtn.w &&
+          _cmy >= _f11AutoBtn.y && _cmy <= _f11AutoBtn.y + _f11AutoBtn.h) {
+        if (typeof _f11ToggleAutoPlay === 'function') _f11ToggleAutoPlay();
+        return;
+      }
+      if (_f11ModeAllBtn &&
+          _cmx >= _f11ModeAllBtn.x && _cmx <= _f11ModeAllBtn.x + _f11ModeAllBtn.w &&
+          _cmy >= _f11ModeAllBtn.y && _cmy <= _f11ModeAllBtn.y + _f11ModeAllBtn.h) {
+        if (typeof _f11SetModeAll === 'function') _f11SetModeAll();
+        return;
+      }
+      if (_f11ModeOneBtn &&
+          _cmx >= _f11ModeOneBtn.x && _cmx <= _f11ModeOneBtn.x + _f11ModeOneBtn.w &&
+          _cmy >= _f11ModeOneBtn.y && _cmy <= _f11ModeOneBtn.y + _f11ModeOneBtn.h) {
+        if (typeof _f11SetModeSingle === 'function') _f11SetModeSingle();
+        return;
+      }
+      if (Array.isArray(_f11SkillRects) && _f11SkillRects.length) {
+        for (const sl of _f11SkillRects) {
+          if (sl.locked) continue;
+          if (_cmx >= sl.x && _cmx <= sl.x + sl.w && _cmy >= sl.y && _cmy <= sl.y + sl.h) {
+            if (typeof sl.action === 'function') sl.action();
+            return;
+          }
+        }
+      }
+    }
+    // F11 Unit popup — SCREEN-SPACE hit-test PRIES map-click logic.
+    // MOVE mygtukas → įjungia target-pick režimą (cursorius rodo judėjimą).
+    // ✕ CANCEL → deselect, uždaro popup'ą.
+    if (gameMode === 'adventure' && S.floor === 11 && _f11UnitPopupOpen) {
+      if (_f11UnitPopupMoveBtn &&
+          _cmx >= _f11UnitPopupMoveBtn.x && _cmx <= _f11UnitPopupMoveBtn.x + _f11UnitPopupMoveBtn.w &&
+          _cmy >= _f11UnitPopupMoveBtn.y && _cmy <= _f11UnitPopupMoveBtn.y + _f11UnitPopupMoveBtn.h) {
+        _f11UnitPopupOpen = false;
+        _f11MoveTargeting = true;
+        return;
+      }
+      if (_f11UnitPopupCancelBtn &&
+          _cmx >= _f11UnitPopupCancelBtn.x && _cmx <= _f11UnitPopupCancelBtn.x + _f11UnitPopupCancelBtn.w &&
+          _cmy >= _f11UnitPopupCancelBtn.y && _cmy <= _f11UnitPopupCancelBtn.y + _f11UnitPopupCancelBtn.h) {
+        _f11UnitPopupOpen = false;
+        _f11MoveTargeting = false;
+        _selectedAllyUnit = null;
+        return;
+      }
+    }
+    // Jei click'as ant deploy panel UI — praleidžiam map-click / unit-select logic'ą
+    // kad mygtukas nepraleistu veiksmo gilyn į žemėlapio sluoksnį.
+    const _inDeployUI = (gameMode === 'adventure' && S.floor === 11 && _f11DeployOpen && (
+      (_f11DeployPanelBounds && _cmx >= _f11DeployPanelBounds.x && _cmx <= _f11DeployPanelBounds.x + _f11DeployPanelBounds.w &&
+       _cmy >= _f11DeployPanelBounds.y && _cmy <= _f11DeployPanelBounds.y + _f11DeployPanelBounds.h) ||
+      (_f11DeployRestoreBtn && _cmx >= _f11DeployRestoreBtn.x && _cmx <= _f11DeployRestoreBtn.x + _f11DeployRestoreBtn.w &&
+       _cmy >= _f11DeployRestoreBtn.y && _cmy <= _f11DeployRestoreBtn.y + _f11DeployRestoreBtn.h)
+    ));
     // F11 Indirect unit control — klik ant savo unit'o pasirenka jį, tada kitas klik ant ląstelės
-    // liepia pajudėti. Šis blokas veikia TIK kai deploy nėra armed (kad nekonfliktuotų su placement).
-    if (gameMode === 'adventure' && S.floor === 11 && !_f11DeployArmed) {
+    // liepia pajudėti. Šis blokas veikia TIK kai deploy nėra armed (kad nekonfliktuotų su placement)
+    // IR kai click'as ne ant deploy panel UI (kad nepraleistų pro panel'į).
+    if (gameMode === 'adventure' && S.floor === 11 && !_f11DeployArmed && !_inDeployUI) {
       const _clickCellX = Math.floor(mx / CELL);
       const _clickCellY = Math.floor(my / CELL);
       // 1) Pirma — ar click'as ant savo unit'o? (toks tampa selected; re-click deselect)
@@ -21417,13 +22106,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (u.x === _clickCellX && u.y === _clickCellY) { _clickedAlly = u; break; }
       }
       if (_clickedAlly) {
-        _selectedAllyUnit = (_selectedAllyUnit === _clickedAlly) ? null : _clickedAlly;
+        // Klik ant to paties pažymėto unit'o su atidarytu popup → uždarom popup'ą (toggle).
+        if (_selectedAllyUnit === _clickedAlly && _f11UnitPopupOpen) {
+          _f11UnitPopupOpen = false;
+          _f11MoveTargeting = false;
+          _selectedAllyUnit = null;
+        } else {
+          _selectedAllyUnit = _clickedAlly;
+          _f11UnitPopupOpen = true;
+          _f11MoveTargeting = false;
+        }
         return;
       }
-      // 2) Jei selected — click ant tuščios ląstelės = move command
+      // 2) Jei selected IR MOVE targeting aktyvus — click ant tuščios ląstelės = move command
       // Kaina: 1 energy per Manhattan cell (atstumas nuo unit'o iki taikinio). Jei neužtenka
       // energijos — komanda atmetama, parodomas mirksėjimo feedback'as virš unit'o.
-      if (_selectedAllyUnit && _selectedAllyUnit.alive) {
+      if (_selectedAllyUnit && _selectedAllyUnit.alive && _f11MoveTargeting) {
         if (_clickCellX >= 0 && _clickCellX < COLS && _clickCellY >= 0 && _clickCellY < ROWS &&
             !isWall(_clickCellX, _clickCellY) &&
             !_cellHasEntity(_clickCellX, _clickCellY, _selectedAllyUnit)) {
@@ -21451,10 +22149,13 @@ document.addEventListener('DOMContentLoaded', () => {
           _selectedAllyUnit.shamanAttackCd = _now + 500;
           _selectedAllyUnit.skullMoveCd = _now;
           _selectedAllyUnit = null; // po komandos — deselect'inam; kitam judesiui reikia vėl pažymėti unit'ą
+          _f11MoveTargeting = false;
+          _f11UnitPopupOpen = false;
           return;
         }
       }
     }
+    // (F11 Timelock skill panel hit-test — jau atliktas viršuj prieš map-click logic)
     // F11 deploy panel — veikia screen-space; placement → world cell
     if (_f11DeployOpen && S.floor === 11) {
       const inScr = (b) => b && _cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h;
@@ -21473,7 +22174,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for (const rect of _f11DeployUnitRects) {
           if (inScr(rect)) {
-            _f11DeployArmed = (_f11DeployArmed === rect.type) ? null : rect.type;
+            // SINGLE mode — jei yra deployed unit'ų to tipo, pažymim pirmą gyvą (cikliškai, jei paspausim daugiau kartų)
+            if (_f11SelectionMode === 'single' && rect.deployedCount > 0) {
+              const _alive = (S.units || []).filter(u => u && u.alive && isFriendlyBarracksUnit(u) && u.utype === rect.type);
+              if (_alive.length > 0) {
+                const _curIdx = _alive.indexOf(_selectedAllyUnit);
+                _selectedAllyUnit = _alive[(_curIdx + 1) % _alive.length];
+                _f11DeployArmed = null;
+                return;
+              }
+            }
+            // Normal deploy-arm flow (jei pool tuščias ir nėra deployed — toggle nothing)
+            if (rect.indices && rect.indices.length > 0) {
+              _f11DeployArmed = (_f11DeployArmed === rect.type) ? null : rect.type;
+            }
             return;
           }
         }
@@ -21584,7 +22298,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-adv').addEventListener('click', () => {
     SFX.init();
     loadProfile();
-    S.floor = 1;
+    S.floor = 10;
     startGame('adventure');
   });
 
@@ -21614,6 +22328,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Hook for quick restart from Game Over screen
   document.addEventListener('keydown', e => {
+    // M — F11 Timelock: viena žingsnio žinutė (visi ally +1 cell į rytus)
+    if ((e.key === 'm' || e.key === 'M') && gameMode === 'adventure' && S.floor === 11) {
+      if (typeof _f11TimelockMoveStep === 'function') _f11TimelockMoveStep();
+      return;
+    }
+    // P — F11 Timelock: PLAY/PAUSE auto-play toggle
+    if ((e.key === 'p' || e.key === 'P') && gameMode === 'adventure' && S.floor === 11) {
+      if (typeof _f11ToggleAutoPlay === 'function') _f11ToggleAutoPlay();
+      return;
+    }
+    // Z — F11 Timelock: Selection mode ALL
+    if ((e.key === 'z' || e.key === 'Z') && gameMode === 'adventure' && S.floor === 11) {
+      if (typeof _f11SetModeAll === 'function') _f11SetModeAll();
+      return;
+    }
+    // X — F11 Timelock: Selection mode SINGLE
+    if ((e.key === 'x' || e.key === 'X') && gameMode === 'adventure' && S.floor === 11) {
+      if (typeof _f11SetModeSingle === 'function') _f11SetModeSingle();
+      return;
+    }
     // V — toggle harpoon vision/movement range overlays (tik F11 adventure mode'e)
     if ((e.key === 'v' || e.key === 'V') && gameMode === 'adventure' && S.floor === 11) {
       window._showHarpoonRanges = !window._showHarpoonRanges;
@@ -23419,7 +24153,7 @@ function drawFloorIntro() {
 
   if (textAlpha > 0.01) {
     ctx.globalAlpha = textAlpha;
-    const lbl = `FLOOR  ${_floorIntro.floor}`;
+    const lbl = _floorIntro.floor === 10 ? 'HOME' : `FLOOR  ${_floorIntro.floor}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -23439,7 +24173,9 @@ function drawFloorIntro() {
     ctx.font = '7px "Press Start 2P", monospace';
     ctx.fillStyle = '#8a6830';
     ctx.shadowBlur = 6;
-    const sub = _floorIntro.floor === 1 ? 'ENTER THE DUNGEON' : 'DESCEND DEEPER';
+    const sub = _floorIntro.floor === 10 ? 'WELCOME HOME'
+              : _floorIntro.floor === 1  ? 'ENTER THE DUNGEON'
+              : 'DESCEND DEEPER';
     ctx.fillText(sub, cw / 2, ch / 2 + 30);
   }
 
