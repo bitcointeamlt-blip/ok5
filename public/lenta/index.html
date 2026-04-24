@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="robots" content="noindex,nofollow">
   <title>TIMELOCK BOARD</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=hp3">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -646,6 +646,22 @@
 
           <div id="p1-badge" class="action-badge" style="display:none"></div>
           <div id="kills-badge" style="display:none">KILLS <span id="kills-val">0</span></div>
+          <div id="ronke-badge" style="display:none" title="Open RONKE bank"><img class="rbk-ico" src="ronke.png" alt="" draggable="false"/>RONKE<span id="ronke-val">—</span></div>
+          <div id="ronke-bank" style="display:none">
+            <div class="rbk-title">RONKE BANK</div>
+            <div class="rbk-row"><span class="rbk-row-lbl">WALLET</span><span class="rbk-row-val" id="rbk-wallet-val">—</span></div>
+            <div class="rbk-arrow" id="rbk-arrow"><span class="rbk-arrow-ico">⇅</span></div>
+            <div class="rbk-row"><span class="rbk-row-lbl">IN-GAME</span><span class="rbk-row-val" id="rbk-ingame-val">0</span></div>
+            <div class="rbk-amount-row">
+              <input type="number" id="rbk-amount" min="1" step="1" placeholder="Amount" />
+            </div>
+            <div class="rbk-btn-row">
+              <button class="rbk-btn rbk-btn-dep" id="rbk-deposit" title="Deposit from wallet to game">▼ DEPOSIT</button>
+              <button class="rbk-btn rbk-btn-wd" id="rbk-withdraw" title="Withdraw from game to wallet">▲ WITHDRAW</button>
+            </div>
+            <div class="rbk-msg" id="rbk-msg"></div>
+            <button class="rbk-close" id="rbk-close">CLOSE</button>
+          </div>
 
           <div class="clock-display" id="p1-clock">2:00.0</div>
 
@@ -818,9 +834,29 @@
             title="Go to Home (Floor 10)">HOME</button>
           <!-- Run Keys (adventure only) -->
           <div id="panel-runkeys">
-            <div class="prk-label">VITALITY</div>
-            <div class="prk-pips" id="panel-key-pips">♥♥♥♡♡</div>
-            <div class="prk-timer" id="panel-key-timer">FULL</div>
+            <div class="prk-label">HP</div>
+            <div class="hp-hearts-row" id="hp-hearts">
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+              <span class="hp-heart" style="--fill:100%">♥</span>
+            </div>
+            <div class="prk-timer" id="hp-val">40 / 40</div>
+            <div class="prk-pips" id="panel-key-pips" style="display:none">♥♥♥♡♡</div>
+            <div class="prk-timer" id="panel-key-timer" style="display:none">FULL</div>
+          </div>
+
+          <!-- MANA stand (adventure only, lives beside LIVES) — new fresh system -->
+          <div class="mana-hud" id="mana-hud">
+            <div class="mana-hud-label">MANA</div>
+            <div class="mana-track">
+              <div class="mana-fill mn-high" id="mana-fill" style="width:100%"></div>
+            </div>
+            <div class="mana-hud-val" id="mana-val">100 / 100</div>
           </div>
 
           <button id="btn-rewards" onclick="window.showRewards()">◈ REWARDS</button>
@@ -859,13 +895,6 @@
 
         <!-- Canvas + Energy HUD -->
         <div class="center-col">
-          <div class="energy-hud" id="energy-hud">
-            <span class="energy-hud-label">ENERGY</span>
-            <div class="energy-track">
-              <div class="energy-fill nrg-high" id="energy-fill"></div>
-            </div>
-            <span class="energy-hud-val" id="energy-val">100</span>
-          </div>
           <div class="canvas-wrap">
             <canvas id="canvas"></canvas>
 
@@ -1849,7 +1878,7 @@
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="wallet.js"></script>
-  <script src="game.js"></script>
+  <script src="game.js?v=hp6"></script>
   <script src="wallet-ui.js"></script>
   <script>
   // ── RonkeVerse NFT stats (OpenSea API) ───────────────────────────

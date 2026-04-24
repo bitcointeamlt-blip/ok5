@@ -312,13 +312,13 @@ window.claimDailyReward = function() {
   const mult = 1 + getTotalDailyBonus();
   const ronkeAmt = r.ronke > 0 ? Math.floor(r.ronke * mult) : 0;
   const pixelAmt = r.pixel > 0 ? Math.floor(r.pixel * mult) : 0;
-  if (ronkeAmt > 0) addToInventory('ronke',    null, ronkeAmt);
+  if (ronkeAmt > 0) { _ronkeBalance += ronkeAmt; if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge(); }
   if (pixelAmt > 0) addToInventory('fragment', null, pixelAmt);
   if (typeof updateInventoryUI === 'function') updateInventoryUI();
   d.claimed = true; saveDailyData(d);
   const bonusPct = Math.round(getTotalDailyBonus() * 100);
   const bonusStr = bonusPct > 0 ? ` (+${bonusPct}% BONUS)` : '';
-  const msg = (ronkeAmt > 0 ? `+${ronkeAmt} POISON` : '') + (pixelAmt > 0 ? ` +${pixelAmt} FRAGMENT` : '') + bonusStr;
+  const msg = (ronkeAmt > 0 ? `+${ronkeAmt} RONKE` : '') + (pixelAmt > 0 ? ` +${pixelAmt} FRAGMENT` : '') + bonusStr;
   showGameNotification('DAILY REWARD', msg, '#00ff88');
   renderDailyGrid();
 };
@@ -686,6 +686,11 @@ const MAX_SHOTGUN = 3;
 const SHOTGUN_REGEN = 4;
 const SHOTGUN_RANGE = 6; // cells before pellets fade
 const ENERGY_MAX = 100;
+const MANA_MAX = 100;
+const HEART_COUNT = 8;
+const HP_PER_HEART = 5;
+const HP_MAX = HEART_COUNT * HP_PER_HEART;
+const HP_HEART_PATH = 'M12 20.4C7.2 16.4 3 12.6 3 8.1C3 5.3 5.1 3.2 7.8 3.2C9.4 3.2 10.9 4 12 5.4C13.1 4 14.6 3.2 16.2 3.2C18.9 3.2 21 5.3 21 8.1C21 12.6 16.8 16.4 12 20.4Z';
 const FOG_RADIUS = 3;
 const MISS_CHANCE = 0.15;   // 15% chance to miss
 const CRIT_CHANCE_BASE = 0.03; // 3% base crit chance
@@ -3049,6 +3054,18 @@ function _updateFreeMove(now) {
       hero.rx = hero.x; hero.ry = hero.y;
       hero.px = hero.x; hero.py = hero.y;
       _freeMoveStep = null;
+      if (gameMode === 'adventure') {
+        S.mana = Math.max(0, (S.mana ?? MANA_MAX) - 1);
+        if (typeof updateEnergyHud === 'function') updateEnergyHud();
+        const _cleared = S.fullMapRevealed && !S.units.some(u => typeof isHostileAdventureEnemy === 'function' && isHostileAdventureEnemy(u));
+        if (!_cleared) {
+          S.nanoSteps = (S.nanoSteps || 0) + 1;
+        }
+        if (S.footsteps) {
+          S.footsteps.push({ x: hero.x, y: hero.y, alpha: 1.0 });
+          if (S.footsteps.length > 12) S.footsteps.shift();
+        }
+      }
       // Po žingsnio paleidžiam tick sistemą: priešai juda, energija krenta, fog'as atsidengia
       if (S.phase === 'frozen' && !S.pending[0]) {
         S.pending[0] = { unitId: hero.id, t: 'jump' }; // jump = no-op applySingleAction
@@ -3747,7 +3764,7 @@ window._showHitboxes = false;
 function _damageRedArcherAt(lgx, lgy, dmg) {
   for (const raK in _redArcherStates) {
     const raSt = _redArcherStates[raK];
-    if (raSt && raSt.cx === lgx && raSt.cy === lgy && S.decorations && S.decorations[raK] === 'red_archer_npc') {
+    if (raSt && raSt.cx === lgx && raSt.cy === lgy && S.decorations && (S.decorations[raK] === 'red_archer_npc' || S.decorations[raK] === 'red_archer_idle_npc')) {
       raSt.hp = Math.max(0, raSt.hp - dmg);
       raSt.hitFlash = 1;
       S.shake = Math.max(S.shake || 0, 9);
@@ -3781,7 +3798,7 @@ function _findShootDirFriendly(cx, cy, maxDist) {
   const left = [], right = [];
   for (const k in _redArcherStates) {
     const st = _redArcherStates[k];
-    if (!S.decorations || S.decorations[k] !== 'red_archer_npc') continue;
+    if (!S.decorations || (S.decorations[k] !== 'red_archer_npc' && S.decorations[k] !== 'red_archer_idle_npc')) continue;
     const dx = st.cx - cx;
     if (Math.abs(dx) <= maxDist && Math.abs(st.cy - cy) <= 2) {
       (dx >= 0 ? right : left).push(Math.abs(dx));
@@ -3882,6 +3899,33 @@ const rockImgs = [null, null, null, null, null]; // index 1-4
 for (let _ri = 1; _ri <= 4; _ri++) { rockImgs[_ri] = new Image(); rockImgs[_ri].src = `assets_tiny/Terrain/Water/Rocks/Rocks_0${_ri}.png`; }
 const bushImgs = [null, null, null, null, null]; // index 1-4
 for (let _bi = 1; _bi <= 4; _bi++) { bushImgs[_bi] = new Image(); bushImgs[_bi].src = `assets_tiny/Terrain/Bushe${_bi}.png`; }
+
+// Extra tree + stump spritesheets (Tiny Swords) — animated trees, static stumps
+const treeImgs  = { tree1: new Image(), tree2: new Image(), tree3: new Image(), tree4: new Image() };
+const stumpImgs = { stump1: new Image(), stump2: new Image(), stump3: new Image(), stump4: new Image() };
+treeImgs.tree1.src  = 'assets_tiny/trees/Tree1.png';
+treeImgs.tree2.src  = 'assets_tiny/trees/Tree2.png';
+treeImgs.tree3.src  = 'assets_tiny/trees/Tree3.png';
+treeImgs.tree4.src  = 'assets_tiny/trees/Tree4.png';
+stumpImgs.stump1.src = 'assets_tiny/trees/Stump1.png';
+stumpImgs.stump2.src = 'assets_tiny/trees/Stump2.png';
+stumpImgs.stump3.src = 'assets_tiny/trees/Stump3.png';
+stumpImgs.stump4.src = 'assets_tiny/trees/Stump4.png';
+// cw/ch = render footprint in cells. fw/fh = source frame rectangle. fc = frame count.
+// Tree1/2: 1536x256 = 8 frames × 192w × 256h (taller tree)
+// Tree3/4: 1536x192 = 8 frames × 192w × 192h (shorter/square tree)
+// Stumps: single 192×256 (not animated)
+const _TREE_CFG = {
+  tree1:  { img: 'tree1',  fw: 192, fh: 256, fc: 8, fps: 6, cw: 3, ch: 4 },
+  tree2:  { img: 'tree2',  fw: 192, fh: 256, fc: 8, fps: 6, cw: 3, ch: 4 },
+  tree3:  { img: 'tree3',  fw: 192, fh: 192, fc: 8, fps: 6, cw: 3, ch: 3 },
+  tree4:  { img: 'tree4',  fw: 192, fh: 192, fc: 8, fps: 6, cw: 3, ch: 3 },
+  stump1: { img: 'stump1', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
+  stump2: { img: 'stump2', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
+  stump3: { img: 'stump3', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
+  stump4: { img: 'stump4', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
+};
+function _getTreeImg(id) { return treeImgs[id] || stumpImgs[id] || null; }
 // UI Banners (Tiny Swords store pack) — naudojami kaip dekoratyvūs pažymėjimai map'e
 const bannerImgs = {
   banner:         (() => { const i = new Image(); i.src = 'assets_tiny/UI_Banners/Banner.png'; return i; })(),
@@ -4641,11 +4685,11 @@ function showTutorialStep(idx) {
   const nextBtn = document.getElementById('tut-next-btn');
   if (nextBtn) nextBtn.style.display = step.trigger === 'button' ? 'inline-block' : 'none';
 
-  // Energy highlight
-  const energyHud = document.getElementById('energy-hud');
-  if (energyHud) {
-    if (step.highlight === 'energy') energyHud.classList.add('tut-highlight');
-    else energyHud.classList.remove('tut-highlight');
+  // Mana highlight (formerly energy)
+  const manaHud = document.getElementById('mana-hud');
+  if (manaHud) {
+    if (step.highlight === 'energy') manaHud.classList.add('tut-highlight');
+    else manaHud.classList.remove('tut-highlight');
   }
 }
 
@@ -4665,7 +4709,7 @@ window.skipTutorial = function () {
 function endTutorial() {
   tutorialActive = false;
   document.getElementById('tutorial-card')?.classList.remove('visible');
-  document.getElementById('energy-hud')?.classList.remove('tut-highlight');
+  document.getElementById('mana-hud')?.classList.remove('tut-highlight');
   Profile.tutorialDone = true;
   saveProfile();
 }
@@ -5387,7 +5431,12 @@ function mkBoss01(id, x, y) {
 
 
 // Applies armor floor buff to incoming hero damage (minimum 1)
-function heroDmg(raw) { return Math.max(1, raw - (S.floorBuffs?.armor || 0)); }
+function heroDmg(raw) {
+  const n = Math.max(1, raw - (S.floorBuffs?.armor || 0));
+  S.hp = Math.max(0, (Number.isFinite(S.hp) ? S.hp : HP_MAX) - n);
+  if (typeof updateHpHearts === 'function') updateHpHearts();
+  return n;
+}
 
 function noteBossBurstHit(unit, attackerTeam) {
   if (!unit || unit.utype !== 'idol' || attackerTeam !== 0) return;
@@ -5542,6 +5591,8 @@ function updateFloorNav() {
   if (f10Btn) f10Btn.style.display = show === 'flex' ? 'block' : 'none';
   if (lbl) lbl.textContent = (S.floor === 10) ? 'HOME' : ('F' + (S.floor || 1));
   if (prevBtn) prevBtn.disabled = (S.floor || 1) <= 1;
+  const screenGame = document.getElementById('screen-game');
+  if (screenGame) screenGame.classList.toggle('home-mode', S.floor === 10);
 }
 
 // ---- Adventure mode --------------------------------------------
@@ -5601,6 +5652,9 @@ function initAdventure() {
   S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
   if (S.floor === 1) S.energy = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);  // reset on fresh run, include upgrade bonus
   S.energyDepleted = false;
+  S.mana = MANA_MAX;
+  S.hp = HP_MAX;
+  if (typeof updateHpHearts === 'function') updateHpHearts();
   S.phase = 'frozen'; S.tick = 0;
   S.pending = [null, null];
   S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
@@ -7848,7 +7902,7 @@ function _findNearestEnemyCell(cx, cy) {
   let best = null, bestD = 999;
   if (S.decorations) {
     for (const [k, v] of Object.entries(S.decorations)) {
-      if (v !== 'red_archer_npc') continue;
+      if (v !== 'red_archer_npc' && v !== 'red_archer_idle_npc') continue;
       const ocx = (typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) ? _redArcherStates[k].cx : Number(k.split(',')[1]);
       const ocy = (typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) ? _redArcherStates[k].cy : Number(k.split(',')[0]);
       const d = Math.abs(ocx - cx) + Math.abs(ocy - cy);
@@ -7944,14 +7998,14 @@ function _npcForcedStep(st, key, now) {
 
 const _NPC_MIN_DIST = 3; // Manhattan min distance tarp šaudančių NPC — kad arrows nepralekėtų per arti
 function _npcCellPos(k, decType) {
-  if (decType === 'red_archer_npc' && typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) return [_redArcherStates[k].cx, _redArcherStates[k].cy];
+  if ((decType === 'red_archer_npc' || decType === 'red_archer_idle_npc') && typeof _redArcherStates !== 'undefined' && _redArcherStates[k]) return [_redArcherStates[k].cx, _redArcherStates[k].cy];
   if ((decType === 'archer_npc' || decType === 'archer_idle_npc') && typeof _archerStates !== 'undefined' && _archerStates[k]) return [_archerStates[k].cx, _archerStates[k].cy];
   if ((decType === 'harpoon_fish_npc' || decType === 'harpoon_fish_idle_npc') && typeof _fishStates !== 'undefined' && _fishStates[k]) return [_fishStates[k].cx, _fishStates[k].cy];
   const [r, c] = k.split(',').map(Number); return [c, r];
 }
 function _npcTooClose(cx, cy, excludeKey) {
   if (!S.decorations) return false;
-  const TYPES = ['archer_npc','archer_idle_npc','red_archer_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
+  const TYPES = ['archer_npc','archer_idle_npc','red_archer_npc','red_archer_idle_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
   for (const [k, v] of Object.entries(S.decorations)) {
     if (k === excludeKey) continue;
     if (!TYPES.includes(v)) continue;
@@ -7971,7 +8025,7 @@ function _cellHasEntity(x, y, excludeUnit) {
     }
   }
   if (S.decorations) {
-    const NPC_TYPES = ['archer_npc','archer_idle_npc','red_archer_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
+    const NPC_TYPES = ['archer_npc','archer_idle_npc','red_archer_npc','red_archer_idle_npc','harpoon_fish_npc','harpoon_fish_idle_npc'];
     for (const [k, v] of Object.entries(S.decorations)) {
       if (!NPC_TYPES.includes(v)) continue;
       const [ocx, ocy] = _npcCellPos(k, v);
@@ -8243,10 +8297,10 @@ function _updateAndDrawArchers(decKeys) {
             a.hitTarget = true;
             S.shake = Math.max(S.shake || 0, _baCrit ? 12 : 9);
             if (target.team === 0) {
-              S.energy = Math.max(0, S.energy - heroDmg(_baDmg));
+              const _taken = heroDmg(_baDmg);
               target.hitFlash = 1; target.hitTimer = 1000;
               SFX.heroHit();
-              spawnDmgNumber(target.x, target.y, _baCrit ? `-${heroDmg(_baDmg)}!` : `-${heroDmg(_baDmg)}`, _baCrit ? '#ffe033' : '#ff2222', _baCrit ? 22 : 20, _baCrit ? 'crit' : 'normal');
+              spawnDmgNumber(target.x, target.y, _baCrit ? `-${_taken}!` : `-${_taken}`, _baCrit ? '#ffe033' : '#ff2222', _baCrit ? 22 : 20, _baCrit ? 'crit' : 'normal');
             } else {
               target.hp -= _baDmg; target.hitFlash = 1;
               triggerHitRecovery(target);
@@ -8511,7 +8565,9 @@ function _updateAndDrawRedArchers(decKeys) {
   const WANDER_CELLS = 2;
 
   for (const key of decKeys) {
-    if (S.decorations[key] !== 'red_archer_npc') continue;
+    const _decT = S.decorations[key];
+    if (_decT !== 'red_archer_npc' && _decT !== 'red_archer_idle_npc') continue;
+    const _isIdleVariant = (_decT === 'red_archer_idle_npc');
     const [strR, strC] = key.split(',');
     const r = parseInt(strR, 10), c = parseInt(strC, 10);
     const anchorX = c * CELL + CELL / 2, anchorY = r * CELL + CELL / 2;
@@ -8644,6 +8700,9 @@ function _updateAndDrawRedArchers(decKeys) {
           }
           st.state='shoot'; st.frame=0; st.lastFrameAt=now; st.arrowFired=false;
           }
+        } else if (_isIdleVariant) {
+          // Stationary variant — nejuda, tik idle animacija ir šaudo
+          st.nextActionAt = now + 600 + Math.random() * 800;
         } else {
           const dirs=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
           const valid=dirs.filter(d=>{const nx=st.cx+d.dx,ny=st.cy+d.dy; return nx>=0&&ny>=0&&nx<COLS&&ny<ROWS&&!isWall(nx,ny)&&Math.abs(nx-st.anchorCX)+Math.abs(ny-st.anchorCY)<=WANDER_CELLS&&!_npcTooClose(nx,ny,key);});
@@ -8715,8 +8774,8 @@ function _updateAndDrawRedArchers(decKeys) {
         const hero=S.units&&S.units.find(u=>u.alive&&u.team===0&&u.x===lgx&&u.y===lgy);
         if (hero) {
           a.hitTarget=true; S.shake=Math.max(S.shake||0,_raCrit?12:9);
-          S.energy=Math.max(0,S.energy-heroDmg(_raDmg)); hero.hitFlash=1; hero.hitTimer=1000;
-          SFX.heroHit(); spawnDmgNumber(hero.x,hero.y,_raCrit?`-${heroDmg(_raDmg)}!`:`-${heroDmg(_raDmg)}`,_raCrit?'#ffe033':'#ff2222',_raCrit?22:20,_raCrit?'crit':'normal');
+          const _taken = heroDmg(_raDmg); hero.hitFlash=1; hero.hitTimer=1000;
+          SFX.heroHit(); spawnDmgNumber(hero.x,hero.y,_raCrit?`-${_taken}!`:`-${_taken}`,_raCrit?'#ffe033':'#ff2222',_raCrit?22:20,_raCrit?'crit':'normal');
         }
         // Tower damage — check both lgx and lgx-1 (decoration is one cell left of collision box)
         if (!a.hitTarget && S.decorations) {
@@ -9017,8 +9076,8 @@ function _updateAndDrawFish(decKeys) {
           if (target) {
             a.hitTarget=true; S.shake=Math.max(S.shake||0,_fCrit?14:10);
             if (target.team===0) {
-              S.energy=Math.max(0,S.energy-heroDmg(_fDmg)); target.hitFlash=1; target.hitTimer=1000; SFX.heroHit();
-              spawnDmgNumber(target.x,target.y,_fCrit?`-${heroDmg(_fDmg)}!`:`-${heroDmg(_fDmg)}`,_fCrit?'#ffe033':'#ff2222',_fCrit?24:22,_fCrit?'crit':'normal');
+              const _taken = heroDmg(_fDmg); target.hitFlash=1; target.hitTimer=1000; SFX.heroHit();
+              spawnDmgNumber(target.x,target.y,_fCrit?`-${_taken}!`:`-${_taken}`,_fCrit?'#ffe033':'#ff2222',_fCrit?24:22,_fCrit?'crit':'normal');
             } else {
               target.hp-=_fDmg; target.hitFlash=1; triggerHitRecovery(target); SFX.hit();
               spawnDmgNumber(target.x,target.y,_fCrit?`-${_fDmg}!`:`-${_fDmg}`,_fCrit?'#ffe033':'#ffdd55',_fCrit?24:22,_fCrit?'crit':'normal');
@@ -9071,6 +9130,43 @@ function _updateAndDrawFish(decKeys) {
   }
 }
 
+function _drawHomeBuildingTag(bounds, name) {
+  if (!S || S.floor !== 10 || !bounds) return;
+  const labels = { Castle: 'KEEP', Barracks: 'BARRACKS', House3: 'RONKE MINE' };
+  const label = labels[name];
+  if (!label) return;
+  const isHover = _worldMx >= bounds.x && _worldMx <= bounds.x + bounds.w &&
+                  _worldMy >= bounds.y && _worldMy <= bounds.y + bounds.h;
+  if (!isHover) return;
+  ctx.save();
+  ctx.font = 'bold 10px monospace';
+  const w = Math.max(62, Math.ceil(ctx.measureText(label).width + 16));
+  const h = 18;
+  let x = Math.round(bounds.x + bounds.w / 2 - w / 2);
+  let y = Math.round(bounds.y + bounds.h - 85 - (name === 'House3' ? 40 : 0));
+  const v = _getVisibleWorldRect();
+  x = Math.max(v.x + 5, Math.min(v.x + v.w - w - 5, x));
+  y = Math.max(v.y + 5, Math.min(v.y + v.h - h - 5, y));
+  const r = 4;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+  ctx.fillStyle = '#ffcf5c';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#3d2817';
+  ctx.stroke();
+  ctx.fillStyle = '#3d2817';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+  ctx.restore();
+}
+
 function drawForegroundDecorations() {
   // Reset building bounds kiekvieną frame — jei dekoracijos nėra šiame floor'e, bounds liks null.
   // Kitaip F10→F11 perėjime F10 pastatų bounds lieka aktyvūs → click'ai kelia popup'us „tuščioj" vietoj,
@@ -9105,6 +9201,28 @@ function drawForegroundDecorations() {
     const drawX = px + CELL * 0.5 - drawW * 0.5;
     const drawY = py + CELL - drawH - 10;
     ctx.drawImage(bImg, frame * 128, 0, 128, 128, drawX, drawY, drawW, drawH);
+  }
+
+  // Trees / stumps — over-units foreground (leidžia herojui pasislėpti kaip krūmuose)
+  for (const key of decKeys) {
+    const decId = S.decorations[key];
+    if (!_TREE_CFG[decId]) continue;
+    const cfg = _TREE_CFG[decId];
+    const img = _getTreeImg(cfg.img);
+    if (!img || !img.complete || img.naturalWidth <= 0) continue;
+    const [strR, strC] = key.split(',');
+    const r = parseInt(strR, 10);
+    const c = parseInt(strC, 10);
+    const px = c * CELL;
+    const py = r * CELL;
+    const stagger = (r * 5 + c * 11) % (cfg.fc || 1);
+    const frame = cfg.fc > 1
+      ? (Math.floor(performance.now() / (1000 / cfg.fps)) + stagger) % cfg.fc
+      : 0;
+    const dw = CELL * cfg.cw, dh = CELL * cfg.ch;
+    const dx = px + CELL / 2 - dw / 2;
+    const dy = py + CELL - dh;
+    ctx.drawImage(img, frame * cfg.fw, 0, cfg.fw, cfg.fh, dx, dy, dw, dh);
   }
 
   // Buildings — drawn top-left anchored at placed cell
@@ -9195,52 +9313,12 @@ function drawForegroundDecorations() {
         ctx.drawImage(img, bx, by, bw, bh);
       }
     }
-    // Ronke balance counter above House3 — styled like HP bar
+    // Ronke balance counter above House3 — DISABLED (badge on panel shows the value)
     if (name === 'House3') {
-      const barH = 50;
-      const capSrcW = 24, capSrcH = 51;
-      const capW  = 7; // fiksuotas, nepriklausomai nuo barH
-      const label = `Ronke: ${_ronkeBalance}`;
-      ctx.font = 'bold 10px monospace';
-      const textW = ctx.measureText(label).width;
-      const barW  = Math.max(96, Math.round(textW + capW * 2 + 16)); // auto-platėja su tekstu
-      const midW  = barW - capW * 2;
-      const cx    = Math.round(bx + bw / 2);
-      const barX  = cx - Math.round(barW / 2);
-      const barY  = Math.round(by - barH - 10);
-      ctx.save();
-      ctx.imageSmoothingEnabled = false;
-      // Frame
-      if (_npcBarBase.complete && _npcBarBase.naturalWidth) {
-        ctx.drawImage(_npcBarBase, 40,  9, capSrcW, capSrcH, barX,             barY, capW, barH);
-        ctx.drawImage(_npcBarBase, 128, 9, 64,      capSrcH, barX + capW,      barY, midW, barH);
-        ctx.drawImage(_npcBarBase, 256, 9, capSrcW, capSrcH, barX + capW + midW, barY, capW, barH);
-      }
-      // Fill progresyviai — pilnas kai 1000 Ronke, min 2px visada rodoma
-      const _totalMax = _totalHouseCapacity();
-      const fillFrac = Math.min(_ronkeBalance / _totalMax, 1);
-      if (_npcBarFill.complete && _npcBarFill.naturalWidth) {
-        const fillW = Math.max(2, Math.round(midW * fillFrac));
-        const srcFrac = Math.max(2 / midW, fillFrac);
-        ctx.drawImage(_npcBarFill, 0, 20, 64 * srcFrac, 24, barX + capW, barY + 1, fillW, barH - 2);
-      }
-      // Saugoti bar ribas hover tooltip tikrinimui
-      _ronkeBarBounds = { x: barX, y: barY, w: barW, h: barH };
-      const _hovering = _worldMx >= barX && _worldMx <= barX + barW &&
-                        _worldMy >= barY && _worldMy <= barY + barH;
-      // Text centred on bar — kai hover rodomas tooltip, balance paslėptas
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#000';
-      const _barLabel = _hovering ? `Max: ${_totalMax}` : `Ronke: ${_ronkeBalance}`;
-      ctx.strokeText(_barLabel, cx, barY + barH / 2);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(_barLabel, cx, barY + barH / 2);
-      ctx.restore();
+      _ronkeBarBounds = null;
     }
     // HP bar for Tower
+    _drawHomeBuildingTag({ x: bx, y: by, w: bw, h: bh }, name);
     if (name === 'Tower') {
       const ts = _getTowerState(r, c);
       if (ts.hitFlash > 0) { ts.hitFlash = Math.max(0, ts.hitFlash - 0.06); }
@@ -9526,10 +9604,10 @@ function drawForegroundDecorations() {
     const pw = gridW + PAD_X * 2;
     const ph = gridH + PAD_TOP + PAD_BOT;
     const rad = 7;
-    let px = Math.round(_barracksBounds.x + _barracksBounds.w / 2 - pw / 2);
-    let py = Math.round(_barracksBounds.y - ph - 14);
-    const PAD_S = 6;
     const v = _getVisibleWorldRect();
+    let px = Math.round(v.x + (v.w - pw) / 2);
+    let py = Math.round(v.y + (v.h - ph) / 2);
+    const PAD_S = 6;
     px = Math.max(v.x + PAD_S, Math.min(v.x + v.w - pw - PAD_S, px));
     py = Math.max(v.y + PAD_S, Math.min(v.y + v.h - ph - PAD_S, py));
     ctx.save();
@@ -9583,8 +9661,10 @@ function drawForegroundDecorations() {
                   _worldMy >= ay && _worldMy <= ay + CELL_SZ;
       const sel = _barracksSelectedIdx === idx;
       // Fono plokštelė
-      ctx.fillStyle = sel ? '#3a5a3a' : (hov ? '#2f3848' : '#141821');
+      ctx.fillStyle = locked ? '#8a7050' : (sel ? '#4a9da6' : (hov ? '#ffcf5c' : '#fff7db'));
       rr(ax, ay, CELL_SZ, CELL_SZ, 4); ctx.fill();
+      ctx.fillStyle = 'rgba(61,40,23,0.08)';
+      ctx.fillRect(ax + 3, ay + 3, CELL_SZ - 6, CELL_SZ - 6);
       // Avatar sprite
       const aimg = _barracksAvatarImgs[idx];
       if (aimg && aimg.complete && aimg.naturalWidth > 0) {
@@ -9596,13 +9676,13 @@ function drawForegroundDecorations() {
       // Užblokuotas avataras: mažas lock badge dešiniam apačios kampe (avataras lieka matomas)
       if (locked) {
         // Lengvas pilkas tint'as — rodo, kad neaktyvus, bet avataras lieka įskaitomas
-        ctx.fillStyle = 'rgba(20,24,33,0.25)';
+        ctx.fillStyle = 'rgba(61,40,23,0.25)';
         rr(ax, ay, CELL_SZ, CELL_SZ, 4); ctx.fill();
         // Mini lock badge apatiniam dešiniam kampe
         const bSz = 13;
         const bx = ax + CELL_SZ - bSz - 2;
         const by = ay + CELL_SZ - bSz - 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillStyle = 'rgba(61,40,23,0.88)';
         rr(bx, by, bSz, bSz, 3); ctx.fill();
         ctx.strokeStyle = 'rgba(255,255,255,0.25)';
         ctx.lineWidth = 1;
@@ -9610,14 +9690,14 @@ function drawForegroundDecorations() {
         // Maža spynutė badge viduje
         const lcx = bx + bSz / 2;
         const lcy = by + bSz / 2 + 0.5;
-        ctx.strokeStyle = '#d0b060';
+        ctx.strokeStyle = '#ffcf5c';
         ctx.lineWidth = 1.2;
         // Shackle
         ctx.beginPath();
         ctx.arc(lcx, lcy - 2, 2.2, Math.PI, 0, false);
         ctx.stroke();
         // Body
-        ctx.fillStyle = '#d0b060';
+        ctx.fillStyle = '#ffcf5c';
         ctx.fillRect(lcx - 3, lcy - 1, 6, 5);
         // Keyhole
         ctx.fillStyle = '#000';
@@ -9626,15 +9706,15 @@ function drawForegroundDecorations() {
       // Pasirinkto rėmas + hover rėmas
       if (sel) {
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#6eff6e';
+        ctx.strokeStyle = '#f5e6c3';
         rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
       } else if (hov) {
         ctx.lineWidth = 1.5;
-        ctx.strokeStyle = '#ffe97a';
+        ctx.strokeStyle = '#3d2817';
         rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
       } else {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.strokeStyle = locked ? 'rgba(61,40,23,0.55)' : 'rgba(61,40,23,0.35)';
         rr(ax + 0.5, ay + 0.5, CELL_SZ - 1, CELL_SZ - 1, 4); ctx.stroke();
       }
       // Training indikatorius: mini progress juosta avataro apačioje + queue badge viršuje dešinėje
@@ -9643,9 +9723,9 @@ function drawForegroundDecorations() {
         const _el = _getBarracksElapsed(performance.now(), idx) || 0;
         const _fr = Math.max(0, Math.min(1, _el / _BARRACKS_PRODUCE_MS));
         const pbH = 3;
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillStyle = 'rgba(61,40,23,0.65)';
         ctx.fillRect(ax + 2, ay + CELL_SZ - pbH - 2, CELL_SZ - 4, pbH);
-        ctx.fillStyle = '#ffc97a';
+        ctx.fillStyle = '#4a9da6';
         ctx.fillRect(ax + 2, ay + CELL_SZ - pbH - 2, (CELL_SZ - 4) * _fr, pbH);
         const _qL = _slotProd.queueLeft || 0;
         if (_qL > 0) {
@@ -9927,10 +10007,10 @@ function drawForegroundDecorations() {
           const _suEnMinus = _suQty > 1;
           const _suHovMinus = _worldMx >= _subxMinus && _worldMx <= _subxMinus + suSegW &&
                               _worldMy >= suRowY && _worldMy <= suRowY + suRowH;
-          ctx.fillStyle = !_suEnMinus ? '#1e2d1e' : (_suHovMinus ? '#4ea04e' : '#2e5e2e');
+          ctx.fillStyle = !_suEnMinus ? '#2a2f38' : (_suHovMinus ? '#4a5f78' : '#2f3d50');
           rr(_subxMinus, suRowY, suSegW, suRowH, 4); ctx.fill();
           ctx.lineWidth = 1.2;
-          ctx.strokeStyle = !_suEnMinus ? '#3a5a3a' : (_suHovMinus ? '#d4ffd4' : '#88c088');
+          ctx.strokeStyle = !_suEnMinus ? '#4a5268' : (_suHovMinus ? '#d8e8ff' : '#6eaaff');
           rr(_subxMinus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 4); ctx.stroke();
           ctx.fillStyle = _suEnMinus ? '#fff' : '#667';
           ctx.font = 'bold 16px monospace';
@@ -9944,7 +10024,7 @@ function drawForegroundDecorations() {
           ctx.lineWidth = 1.2;
           ctx.strokeStyle = 'rgba(255,255,255,0.18)';
           rr(_subxN + 0.5, suRowY + 0.5, suMidW - 1, suRowH - 1, 3); ctx.stroke();
-          ctx.fillStyle = '#a8f0a8';
+          ctx.fillStyle = '#d8e8ff';
           ctx.font = 'bold 13px monospace';
           ctx.lineWidth = 3;
           ctx.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -9955,10 +10035,10 @@ function drawForegroundDecorations() {
           const _suEnPlus = _suQty < _suMax;
           const _suHovPlus = _worldMx >= _subxPlus && _worldMx <= _subxPlus + suSegW &&
                              _worldMy >= suRowY && _worldMy <= suRowY + suRowH;
-          ctx.fillStyle = !_suEnPlus ? '#1e2d1e' : (_suHovPlus ? '#4ea04e' : '#2e5e2e');
+          ctx.fillStyle = !_suEnPlus ? '#2a2f38' : (_suHovPlus ? '#4a5f78' : '#2f3d50');
           rr(_subxPlus, suRowY, suSegW, suRowH, 4); ctx.fill();
           ctx.lineWidth = 1.2;
-          ctx.strokeStyle = !_suEnPlus ? '#3a5a3a' : (_suHovPlus ? '#d4ffd4' : '#88c088');
+          ctx.strokeStyle = !_suEnPlus ? '#4a5268' : (_suHovPlus ? '#d8e8ff' : '#6eaaff');
           rr(_subxPlus + 0.5, suRowY + 0.5, suSegW - 1, suRowH - 1, 4); ctx.stroke();
           ctx.fillStyle = _suEnPlus ? '#fff' : '#667';
           ctx.font = 'bold 16px monospace';
@@ -9975,10 +10055,10 @@ function drawForegroundDecorations() {
           const enab = canAff && !_animActive;
           const hovS = _worldMx >= sbx && _worldMx <= sbx + sbw &&
                        _worldMy >= sby && _worldMy <= sby + sbh;
-          ctx.fillStyle = !enab ? '#3a3a3a' : (hovS ? '#6ec56e' : '#4e9e4e');
+          ctx.fillStyle = !enab ? '#3a3a3a' : (hovS ? '#4a5f78' : '#2f3d50');
           rr(sbx, sby, sbw, sbh, 4); ctx.fill();
           ctx.lineWidth = 1.5;
-          ctx.strokeStyle = enab ? (hovS ? '#d4ffd4' : '#a8f0a8') : '#666';
+          ctx.strokeStyle = enab ? (hovS ? '#d8e8ff' : '#6eaaff') : '#666';
           rr(sbx + 0.5, sby + 0.5, sbw - 1, sbh - 1, 4); ctx.stroke();
           ctx.fillStyle = enab ? '#fff' : '#999';
           ctx.font = 'bold 11px monospace';
@@ -10032,8 +10112,10 @@ function _tickBarracksProduction() {
     _barracksSpawnTrained(_finIdx);
     delete _barracksProductions[_finIdx];
     delete _barracksSpeedUpAnims[_finIdx];
-    if (_finQueue > 0 && _ronkeBalance >= _BARRACKS_UNIT_COST) {
-      _ronkeBalance -= _BARRACKS_UNIT_COST;
+    // Funds for the whole queue were paid upfront at TRAIN click, so we just
+    // advance to the next unit here — no additional ronke deduction and no
+    // "queue stalls if balance dipped" failure mode.
+    if (_finQueue > 0) {
       _barracksProductions[_finIdx] = {
         startAt: performance.now(),
         queueLeft: _finQueue - 1,
@@ -10327,6 +10409,8 @@ function _drawDungeonStatic() {
             // spritesheet: 192x192 cells. Frame 0,0 is full tree
             ctx.drawImage(tinyImgs.tree, 0, 0, 192, 192, px - CELL, py - CELL*2 + 10, CELL*3, CELL*3);
         }
+      } else if (_TREE_CFG[decId]) {
+        // Trees/stumps drawn in drawForegroundDecorations — virš unitų (galima pasislėpti).
       } else if (decId === 'mine_1') {
         if (tinyImgs.mine.complete && tinyImgs.mine.naturalWidth > 0) {
             // spritesheet: 192x128
@@ -11065,7 +11149,7 @@ function drawF11TimelockPanel() {
   const pw = PAD_X * 2 + skills.length * SBTN + (skills.length - 1) * SGAP;
   const ph = PAD_TOP + SBTN + PAD_BOT;
   const px = Math.round((canvasW - pw) / 2);
-  const py = canvasH - ph - 86;
+  const py = canvasH - ph - 116;
 
   ctx.save();
   // Drop shadow
@@ -12522,20 +12606,25 @@ function drawLoot() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// MANA HUD — fresh rewrite. Internally reads S.energy (game logic kept
+// intact), but writes to new #mana-* DOM (not old #energy-*).
+// Function name `updateEnergyHud` preserved so all 20+ call sites
+// continue working without patching.
+// ═══════════════════════════════════════════════════════════════════
 function animateEnergyGain(fromEnergy, toEnergy) {
-  const track = document.querySelector('.energy-track');
-  const fill = document.getElementById('energy-fill');
-  const val = document.getElementById('energy-val');
-  if (!fill || !track) return;
+  const track = document.querySelector('.mana-track');
+  const fill = document.getElementById('mana-fill');
+  const val = document.getElementById('mana-val');
+  if (!fill || !track) { S.energy = toEnergy; return; }
 
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
   const gain = Math.round(toEnergy - fromEnergy);
   if (gain <= 0) { S.energy = toEnergy; updateEnergyHud(); return; }
 
   S.energyAnimating = true;
-  S.energy = fromEnergy; // hold at old value during animation
+  S.energy = fromEnergy;
 
-  // Current fill snaps to fromEnergy position
   const fromPct = Math.min(fromEnergy / effectiveMax, 1) * 100;
   const toPct = Math.min(toEnergy / effectiveMax, 1) * 100;
   const gainPct = toPct - fromPct;
@@ -12543,72 +12632,137 @@ function animateEnergyGain(fromEnergy, toEnergy) {
   fill.style.transition = 'none';
   fill.style.width = fromPct + '%';
   void fill.offsetWidth;
-  if (val) val.textContent = fromEnergy;
+  if (val) val.textContent = fromEnergy + ' / ' + effectiveMax;
 
-  // Gray "incoming" fill — sits right after the current fill
+  // Make track a positioning parent for gain ghost
+  const prevPos = track.style.position;
+  if (!prevPos) track.style.position = 'relative';
   const gainFill = document.createElement('div');
-  gainFill.style.cssText = [
-    'position:absolute;top:0;bottom:0',
-    `left:${fromPct}%`,
-    'width:0',
-    'background:#44444e',
-    'pointer-events:none;z-index:1',
-  ].join(';');
+  gainFill.style.cssText = `position:absolute;top:0;bottom:0;left:${fromPct}%;width:0;background:#44aaff;pointer-events:none;`;
   track.appendChild(gainFill);
 
   let step = 0;
-  const stepPct = gainPct / gain; // bar % per 1 energy unit
-  const stepMs = 30;
-
+  const stepPct = gainPct / gain;
   const interval = setInterval(() => {
     step++;
     S.energy = fromEnergy + step;
     gainFill.style.width = (stepPct * step) + '%';
-    if (val) val.textContent = S.energy;
-
+    if (val) val.textContent = S.energy + ' / ' + effectiveMax;
     if (step >= gain) {
       clearInterval(interval);
       S.energy = toEnergy;
-      gainFill.style.transition = 'background 0.5s ease, box-shadow 0.5s ease';
-      gainFill.style.background = 'var(--cyan, #00ffee)';
-      gainFill.style.boxShadow = '0 0 6px var(--cyan, #00ffee), 0 0 14px rgba(0,255,238,0.25)';
       setTimeout(() => {
         gainFill.remove();
+        if (!prevPos) track.style.position = '';
         S.energyAnimating = false;
+        fill.style.transition = '';
         updateEnergyHud();
-      }, 500);
+      }, 350);
     }
-  }, stepMs);
+  }, 30);
 }
 
-let _lastEnergyHudVal = -1, _lastEnergyHudMax = -1;
+let hpHudLast = null;
+let hpHudFlashes = new Map();
+let hpHudRenderKey = '';
+
+function updateHpHearts() {
+  const host = document.getElementById('hp-hearts');
+  const valEl = document.getElementById('hp-val');
+  if (!host) return;
+  if (!Number.isFinite(S.hp)) S.hp = HP_MAX;
+  const hp = Math.max(0, Math.min(HP_MAX, S.hp));
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  if (hpHudLast !== null && hp !== hpHudLast) {
+    const type = hp < hpHudLast ? 'dmg' : 'heal';
+    for (let i = 0; i < HEART_COUNT; i++) {
+      const base = i * HP_PER_HEART;
+      const prevFill = Math.max(0, Math.min(HP_PER_HEART, hpHudLast - base));
+      const nextFill = Math.max(0, Math.min(HP_PER_HEART, hp - base));
+      if (prevFill !== nextFill) {
+        hpHudFlashes.set(i, {
+          type,
+          prevPct: (prevFill / HP_PER_HEART) * 100,
+          nextPct: (nextFill / HP_PER_HEART) * 100,
+          until: now + 420,
+        });
+      }
+    }
+  }
+  hpHudLast = hp;
+
+  let html = '';
+  let flashKey = '';
+  for (let i = 0; i < HEART_COUNT; i++) {
+    const base = i * HP_PER_HEART;
+    const heartFill = Math.max(0, Math.min(HP_PER_HEART, hp - base));
+    const pct = (heartFill / HP_PER_HEART) * 100;
+    const flash = hpHudFlashes.get(i);
+    let flashClass = '';
+    if (flash && flash.until > now) {
+      flashClass = flash.type === 'heal' ? ' hp-heal' : ' hp-dmg';
+      flashKey += i + flash.type;
+    } else if (flash) {
+      hpHudFlashes.delete(i);
+    }
+    const fillWidth = (24 * pct / 100).toFixed(2);
+    const clipId = `hp-heart-clip-${i}`;
+    let effectRect = '';
+    if (flash && flash.until > now) {
+      if (flash.type === 'dmg' && flash.prevPct > pct) {
+        const lossX = (24 * pct / 100).toFixed(2);
+        const lossW = (24 * (flash.prevPct - pct) / 100).toFixed(2);
+        effectRect = `<rect class="hp-heart-loss" x="${lossX}" y="0" width="${lossW}" height="22" clip-path="url(#${clipId})"></rect>`;
+      } else if (flash.type === 'heal' && pct > flash.prevPct) {
+        const gainX = (24 * flash.prevPct / 100).toFixed(2);
+        const gainW = (24 * (pct - flash.prevPct) / 100).toFixed(2);
+        effectRect = `<rect class="hp-heart-gain" x="${gainX}" y="0" width="${gainW}" height="22" clip-path="url(#${clipId})"></rect>`;
+      }
+    }
+    html += `<span class="hp-heart${flashClass}" data-hp-fill="${Math.round(pct)}"><svg viewBox="0 0 24 22" aria-hidden="true" focusable="false"><defs><clipPath id="${clipId}"><path d="${HP_HEART_PATH}"></path></clipPath></defs><path class="hp-heart-empty" d="${HP_HEART_PATH}"></path><rect class="hp-heart-fill" x="0" y="0" width="${fillWidth}" height="22" clip-path="url(#${clipId})"></rect>${effectRect}<path class="hp-heart-gloss" d="M7.6 5.8C6.4 5.8 5.5 6.8 5.5 8.1"></path><path class="hp-heart-outline" d="${HP_HEART_PATH}"></path></svg></span>`;
+  }
+  const renderKey = hp + '|' + flashKey;
+  if (renderKey !== hpHudRenderKey) {
+    host.innerHTML = html;
+    hpHudRenderKey = renderKey;
+  }
+  if (valEl) valEl.textContent = hp + ' / ' + HP_MAX;
+}
+
+function updateHpHeartsOld() {
+  const host = document.getElementById('hp-hearts');
+  const valEl = document.getElementById('hp-val');
+  if (!host) return;
+  if (!Number.isFinite(S.hp)) S.hp = HP_MAX;
+  const hp = Math.max(0, Math.min(HP_MAX, S.hp));
+  let html = '';
+  for (let i = 0; i < HEART_COUNT; i++) {
+    const base = i * HP_PER_HEART;
+    const heartFill = Math.max(0, Math.min(HP_PER_HEART, hp - base));
+    const pct = (heartFill / HP_PER_HEART) * 100;
+    html += `<span class="hp-heart" style="--fill:${pct}%">♥</span>`;
+  }
+  host.innerHTML = html;
+  if (valEl) valEl.textContent = hp + ' / ' + HP_MAX;
+}
+
 function updateEnergyHud() {
-  const hud = document.getElementById('energy-hud');
-  const fill = document.getElementById('energy-fill');
-  const val = document.getElementById('energy-val');
-  if (!hud) return;
+  const fill = document.getElementById('mana-fill');
+  const val = document.getElementById('mana-val');
+  if (!fill || !val) return;
 
-  const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-  // Skip DOM update if nothing changed
-  if (S.energy === _lastEnergyHudVal && effectiveMax === _lastEnergyHudMax) return;
-  _lastEnergyHudVal = S.energy; _lastEnergyHudMax = effectiveMax;
+  if (!Number.isFinite(S.mana)) S.mana = MANA_MAX;
+  const cur = Math.max(0, Math.min(MANA_MAX, S.mana));
+  const pct = cur / MANA_MAX;
 
-  const pct = Math.min(S.energy / effectiveMax, 1);
-  const isCrit = pct <= 0.15;
-  const isLow = pct <= 0.30;
-  const isMid = pct <= 0.60;
+  let tier = 'mn-high';
+  if (pct <= 0.15) tier = 'mn-crit';
+  else if (pct <= 0.30) tier = 'mn-low';
+  else if (pct <= 0.60) tier = 'mn-mid';
 
-  if (fill) {
-    fill.style.width = (pct * 100) + '%';
-    fill.className = 'energy-fill ' +
-      (isCrit ? 'nrg-crit' : isLow ? 'nrg-low' : isMid ? 'nrg-mid' : 'nrg-high');
-  }
-  if (val) {
-    val.textContent = S.energy;
-    val.style.color = isCrit || isLow ? 'var(--red)' : isMid ? '#ffaa00' : 'var(--cyan)';
-    val.style.textShadow = isCrit || isLow ? '0 0 8px var(--red)' : isMid ? '0 0 8px #ffaa00' : '0 0 8px var(--cyan)';
-  }
-  hud.className = 'energy-hud' + (isLow ? ' nrg-danger' : '');
+  fill.style.setProperty('width', (pct * 100) + '%', 'important');
+  if (fill.className !== 'mana-fill ' + tier) fill.className = 'mana-fill ' + tier;
+  val.textContent = cur + ' / ' + MANA_MAX;
 }
 
 
@@ -13039,7 +13193,7 @@ function resolveTick() {
       }
     }
     if (S.teleportCooldown > 0) S.teleportCooldown--;
-    if (S.energy <= 0 && !S.winner && !S.pendingGameover) {
+    if ((Number.isFinite(S.hp) ? S.hp : HP_MAX) <= 0 && !S.winner && !S.pendingGameover) {
       S.energyDepleted = true; S.winner = 1; S.pendingGameover = true;
       S.runCards = []; // Temporary card bonuses lost on death
       // Stop BGM and play funeral jingle
@@ -13178,13 +13332,13 @@ function applySingleAction(team, a) {
       const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
       if (_hero) {
         const _dmg = 3 * (unit.stack || 1);
-        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        const _taken = heroDmg(_dmg);
         spawnHit(_hero.x, _hero.y, '#e8d8c0', 26);
-        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#e8c880', 18, 'crit');
+        spawnDmgNumber(_hero.x, _hero.y, `-${_taken}`, '#e8c880', 18, 'crit');
         S.shake = Math.max(S.shake || 0, 10);
         SFX.heroHit();
         spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#e8d8c0');
-        logEvent(`SKULL STRIKE: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+        logEvent(`SKULL STRIKE: Hero took ${_taken} DMG!`, 'dmg');
       }
       return;
     }
@@ -13200,13 +13354,13 @@ function applySingleAction(team, a) {
       const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
       if (_hero) {
         const _dmg = 2;
-        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        const _taken = heroDmg(_dmg);
         spawnHit(_hero.x, _hero.y, '#4488ff', 20);
-        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#88bbff', 16, 'crit');
+        spawnDmgNumber(_hero.x, _hero.y, `-${_taken}`, '#88bbff', 16, 'crit');
         S.shake = Math.max(S.shake || 0, 6);
         SFX.heroHit();
         spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#4488ff');
-        logEvent(`BIRD PECK: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+        logEvent(`BIRD PECK: Hero took ${_taken} DMG!`, 'dmg');
       }
       return;
     }
@@ -13216,13 +13370,13 @@ function applySingleAction(team, a) {
       const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === a.targetX && u.y === a.targetY);
       if (_hero) {
         const _dmg = 7;
-        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        const _taken = heroDmg(_dmg);
         spawnHit(_hero.x, _hero.y, '#6f8f43', 30);
-        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#9fbf5c', 20, 'crit');
+        spawnDmgNumber(_hero.x, _hero.y, `-${_taken}`, '#9fbf5c', 20, 'crit');
         S.shake = Math.max(S.shake || 0, 12);
         SFX.heroHit();
         spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#6f8f43');
-        logEvent(`TROLL SMASH: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+        logEvent(`TROLL SMASH: Hero took ${_taken} DMG!`, 'dmg');
       }
       return;
     }
@@ -13243,13 +13397,13 @@ function applySingleAction(team, a) {
         ));
         if (_hero) {
           const _dmg = 5;
-          S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+          const _taken = heroDmg(_dmg);
           spawnHit(_hero.x, _hero.y, '#8b2020', 32);
-          spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#cc4444', 22, 'crit');
+          spawnDmgNumber(_hero.x, _hero.y, `-${_taken}`, '#cc4444', 22, 'crit');
           S.shake = Math.max(S.shake || 0, 14);
           SFX.heroHit();
           spawnMeleeEffect(_u.x, _u.y, _atkDx || (_u.facing?.dx ?? -1), _atkDy, '#8b2020');
-          logEvent(`MINOTAUR GORE: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+          logEvent(`MINOTAUR GORE: Hero took ${_taken} DMG!`, 'dmg');
         }
       }, _hitDelay);
       return;
@@ -13267,13 +13421,13 @@ function applySingleAction(team, a) {
       ));
       if (_hero) {
         const _dmg = 6;
-        S.energy = Math.max(0, S.energy - heroDmg(_dmg));
+        const _taken = heroDmg(_dmg);
         spawnHit(_hero.x, _hero.y, '#3355cc', 34);
-        spawnDmgNumber(_hero.x, _hero.y, `-${heroDmg(_dmg)}⚡`, '#6688ff', 22, 'crit');
+        spawnDmgNumber(_hero.x, _hero.y, `-${_taken}`, '#6688ff', 22, 'crit');
         S.shake = Math.max(S.shake || 0, 16);
         SFX.heroHit();
         spawnMeleeEffect(unit.x, unit.y, Math.sign(a.targetX - unit.x), Math.sign(a.targetY - unit.y), '#3355cc');
-        logEvent(`RONKE SMASH: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+        logEvent(`RONKE SMASH: Hero took ${_taken} DMG!`, 'dmg');
       }
       return;
     }
@@ -13306,9 +13460,10 @@ function applySingleAction(team, a) {
       const _fromX = unit.x, _fromY = unit.y;
       const _toX = a.targetX, _toY = a.targetY;
       const _stack = unit.stack || 1;
+      const _enemyShooter = (team === 1);
       // Launch projectile after wind-up (frame ~6 of 10, ~430ms at 14fps)
       setTimeout(() => {
-        if (S && S.units) spawnShamanProjectile(_fromX, _fromY, _toX, _toY, _stack);
+        if (S && S.units) spawnShamanProjectile(_fromX, _fromY, _toX, _toY, _stack, _enemyShooter);
       }, 430);
       return;
     }
@@ -13333,10 +13488,10 @@ function applySingleAction(team, a) {
             S.footsteps.push({ x: unit.x, y: unit.y, alpha: 1.0 });
             if (S.footsteps.length > 12) S.footsteps.shift();
           }
+          S.mana = Math.max(0, (S.mana ?? MANA_MAX) - 1);
+          if (typeof updateEnergyHud === 'function') updateEnergyHud();
           const _cleared = S.fullMapRevealed && !S.units.some(u => isHostileAdventureEnemy(u));
           if (!_cleared) {
-            S.energy = Math.max(0, S.energy - 1);
-            spawnDmgNumber(unit.x, unit.y, '-1\u26A1', '#00f5ff', 12, 'normal');
             S.nanoSteps = (S.nanoSteps || 0) + 1;
             const _nLvl = Profile.upgrades?.nanoLevel || 0;
             if (_nLvl >= 1 && S.nanoSteps % getNanoHealInterval(_nLvl) === 0) {
@@ -13764,7 +13919,11 @@ function moveBullets() {
 function isUnitHiddenInBush(unit) {
   if (!unit || !S.decorations) return false;
   const decId = S.decorations[`${unit.y},${unit.x}`];
-  return typeof decId === 'string' && decId.startsWith('bush');
+  if (typeof decId !== 'string') return false;
+  // Bushes + new trees/stumps (but not static stumps — only tall covers hide)
+  if (decId.startsWith('bush')) return true;
+  if (decId.startsWith('tree')) return true;   // tree1..tree4 + stumps via startsWith? No — stumps are 'stump'
+  return false;
 }
 
 function isFriendlyBarracksUnit(unit) {
@@ -13987,8 +14146,8 @@ function detectCollisions() {
           spawnHit(u.x, u.y, u.color, isCrit ? 22 : (heavy ? 18 : 12));
           S.shake = Math.max(S.shake, isCrit ? 14 : (heavy ? 12 : 9));
           if (gameMode === 'adventure' && u.team === 0) {
-            S.energy = Math.max(0, S.energy - heroDmg(dmg));
-            logEvent(`SYSTEM DAMAGE: Hero took ${heroDmg(dmg)} DMG!`, 'dmg');
+            const taken = heroDmg(dmg);
+            logEvent(`SYSTEM DAMAGE: Hero took ${taken} DMG!`, 'dmg');
             u.hitFlash = 1; u.hitTimer = 1000;
             SFX.heroHit();
           } else {
@@ -14298,8 +14457,8 @@ function advanceLasers() {
             spawnHit(hit.x, hit.y, hit.color, isCrit ? 22 : 14);
             S.shake = Math.max(S.shake, isCrit ? 14 : 12);
             if (laserHeroHit) {
-              S.energy = Math.max(0, S.energy - heroDmg(dmg));
-              logEvent(`SYSTEM DAMAGE (LASER): Hero took ${heroDmg(dmg)} DMG!`, 'dmg');
+              const taken = heroDmg(dmg);
+              logEvent(`SYSTEM DAMAGE (LASER): Hero took ${taken} DMG!`, 'dmg');
               hit.hitFlash = 1; hit.hitTimer = 1000;
               SFX.heroHit();
             } else {
@@ -14590,7 +14749,7 @@ function _updateBarracksAttackAI(now) {
   if (typeof _redArcherStates !== 'undefined' && S.decorations) {
     for (const k in _redArcherStates) {
       const st = _redArcherStates[k];
-      if (!st || S.decorations[k] !== 'red_archer_npc') continue;
+      if (!st || (S.decorations[k] !== 'red_archer_npc' && S.decorations[k] !== 'red_archer_idle_npc')) continue;
       redArcherTargets.push({ x: st.cx, y: st.cy, _isRedArcherNpc: true, _redArcherKey: k });
     }
   }
@@ -15613,7 +15772,7 @@ function _drawEnemyMarkers() {
   // analogiškai kaip S.units'uose (ikonos apačia truputį virš sprite'o viršaus).
   if (S.decorations && typeof _redArcherStates !== 'undefined') {
     for (const k in _redArcherStates) {
-      if (S.decorations[k] !== 'red_archer_npc') continue;
+      if (S.decorations[k] !== 'red_archer_npc' && S.decorations[k] !== 'red_archer_idle_npc') continue;
       const st = _redArcherStates[k];
       if (!st || typeof st.wx !== 'number' || typeof st.wy !== 'number') continue;
       if (typeof isVisible === 'function' && !isVisible(st.cx, st.cy)) {
@@ -16632,10 +16791,14 @@ function drawShamanProjectiles() {
           // Enemy shaman → taikinys: hero ARBA ally barracks unit
           const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
           if (_hero) {
-            _hero.hp = (_hero.hp || 1) - _dmg;
+            const _hd = heroDmg(_dmg);
+            S.energy = Math.max(0, S.energy - _hd);
+            _hero.hitFlash = 1; _hero.hitTimer = 1000;
             spawnHit(_hero.x, _hero.y, '#cc30ff', 28);
-            spawnDmgNumber(_hero.x, _hero.y, `-${_dmg}`, '#cc30ff', 18, 'crit');
-            if (_hero.hp <= 0 && !S.winner) {
+            spawnDmgNumber(_hero.x, _hero.y, `-${_hd}\u26A1`, '#cc30ff', 18, 'crit');
+            S.shake = Math.max(S.shake || 0, 8);
+            if (typeof SFX !== 'undefined' && SFX.heroHit) SFX.heroHit();
+            if (S.hp <= 0 && !S.winner) {
               _hero.alive = false; _hero.deathT = 1;
               spawnDeath(_hero.x, _hero.y, _hero.color || '#00f5ff');
               S.winner = 1;
@@ -16782,7 +16945,6 @@ function drawBarracksHarpoons() {
           S.shake = Math.max(S.shake || 0, 10);
           if (target.team === 0) {
             const _hd = (typeof heroDmg === 'function') ? heroDmg(_dmg) : _dmg;
-            S.energy = Math.max(0, S.energy - _hd);
             target.hitFlash = 1; target.hitTimer = 1000;
             if (SFX && SFX.heroHit) SFX.heroHit();
             spawnDmgNumber(target.x, target.y, `-${_hd}`, '#ff8833', 22, 'crit');
@@ -17006,7 +17168,7 @@ function drawHeroBullets() {
       // Deal damage to Red Archer NPC
       if (p.hitRedArcherKey) {
         const raSt = _redArcherStates[p.hitRedArcherKey];
-        if (raSt && S.decorations && S.decorations[p.hitRedArcherKey] === 'red_archer_npc') {
+        if (raSt && S.decorations && (S.decorations[p.hitRedArcherKey] === 'red_archer_npc' || S.decorations[p.hitRedArcherKey] === 'red_archer_idle_npc')) {
           const isCrit = Math.random() < getCritChance();
           const dist = p.hitStep + 1;
           let baseDmg = dist >= 5 ? 4 : dist >= 4 ? 3 : dist >= 3 ? 2 : 1;
@@ -17126,7 +17288,6 @@ function drawHarpoons() {
       if (hero) {
         h.hit = true; h.done = true;
         const dmg = heroDmg(4);
-        S.energy = Math.max(0, S.energy - dmg);
         spawnDmgNumber(hero.x, hero.y, `-${dmg}`, '#ff8833', 20, 'crit');
         SFX.heroHit();
         spawnHit(hero.x, hero.y, '#ff8833', 14);
@@ -17293,10 +17454,10 @@ function drawRonke2Projectiles() {
           const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
           if (_hero) {
             const _dmg = 5;
-            S.energy = Math.max(0, S.energy - heroDmg(_dmg));
-            spawnDmgNumber(p.targetGx, p.targetGy, `-${heroDmg(_dmg)}`, '#ff8800', 20, 'crit');
+            const _taken = heroDmg(_dmg);
+            spawnDmgNumber(p.targetGx, p.targetGy, `-${_taken}`, '#ff8800', 20, 'crit');
             SFX.heroHit();
-            logEvent(`RONKE ORB: Hero took ${heroDmg(_dmg)} DMG!`, 'dmg');
+            logEvent(`RONKE ORB: Hero took ${_taken} DMG!`, 'dmg');
           }
         }
       }
@@ -21615,7 +21776,7 @@ window.startGame = function startGame(mode) {
   const p2name = document.querySelector('#panel-p2 .panel-name');
   const p1clock = document.getElementById('p1-clock');
   const p2clock = document.getElementById('p2-clock');
-  const energyHud = document.getElementById('energy-hud');
+  const energyHud = document.getElementById('mana-hud');
   const gameLayout = document.querySelector('.game-layout');
   // Resolve current panel reference (may be detached from DOM)
   const panelP2 = document.getElementById('panel-p2') || _p2PanelEl;
@@ -21651,6 +21812,8 @@ window.startGame = function startGame(mode) {
     updateRunKeyUI();
     const killsDisplay = document.getElementById('kills-badge');
     if (killsDisplay) killsDisplay.style.display = 'block';
+    const ronkeBadge = document.getElementById('ronke-badge');
+    if (ronkeBadge) { ronkeBadge.style.display = 'flex'; if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge(); }
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'flex';
     const bottomRow = document.querySelector('.btn-bottom-row');
@@ -21683,6 +21846,8 @@ window.startGame = function startGame(mode) {
     if (opsBtn2) opsBtn2.style.display = 'none';
     const killsDisplay = document.getElementById('kills-badge');
     if (killsDisplay) killsDisplay.style.display = 'none';
+    const ronkeBadge2 = document.getElementById('ronke-badge');
+    if (ronkeBadge2) ronkeBadge2.style.display = 'none';
     const invBtn = document.getElementById('btn-inventory');
     if (invBtn) invBtn.style.display = 'none';
     const bottomRow = document.querySelector('.btn-bottom-row');
@@ -22245,12 +22410,16 @@ document.addEventListener('DOMContentLoaded', () => {
         _barracksQueueCount = Math.min(_BARRACKS_QUEUE_MAX, _barracksQueueCount + 1);
         return;
       }
-      // Produce click — per-slot (galima lygiagrečiai treniruoti kelis tipus)
+      // Produce click — per-slot (galima lygiagrečiai treniruoti kelis tipus).
+      // Deduct full queue cost upfront (consistent with SPEED UP), so parallel
+      // training across multiple slots correctly reflects committed funds and
+      // the queue nemirs viduryje dėl balanso svyravimų nuo kitų išlaidų.
       if (inside(_barracksProduceBtnBounds) && _barracksSelectedIdx !== null &&
           !_barracksProductions[_barracksSelectedIdx]) {
         const _qty = Math.max(1, _barracksQueueCount);
-        if (_ronkeBalance >= _BARRACKS_UNIT_COST * _qty) {
-          _ronkeBalance -= _BARRACKS_UNIT_COST;
+        const _totalCost = _BARRACKS_UNIT_COST * _qty;
+        if (_ronkeBalance >= _totalCost) {
+          _ronkeBalance -= _totalCost;
           _barracksProductions[_barracksSelectedIdx] = {
             startAt: performance.now(),
             queueLeft: _qty - 1,
@@ -22831,6 +23000,87 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('screen-game').appendChild(m);
     };
 
+    window.openTreePicker = () => {
+      const existing = document.getElementById('tree-picker-modal');
+      if (existing) { existing.style.display = 'flex'; return; }
+
+      const m = document.createElement('div');
+      m.id = 'tree-picker-modal';
+      m.style.cssText = 'display:flex; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#111; border:2px solid #6ea445; z-index:9999; padding:14px; flex-direction:column; align-items:center; gap:12px; font-family:"Press Start 2P",monospace;';
+
+      const title = document.createElement('div');
+      title.textContent = 'SELECT TREE / STUMP';
+      title.style.cssText = 'color:#9bd05a; font-size:11px;';
+      m.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px;';
+
+      const items = [
+        { id: 'tree1',  label: 'TREE 1' },
+        { id: 'tree2',  label: 'TREE 2' },
+        { id: 'tree3',  label: 'TREE 3' },
+        { id: 'tree4',  label: 'TREE 4' },
+        { id: 'stump1', label: 'STUMP 1' },
+        { id: 'stump2', label: 'STUMP 2' },
+        { id: 'stump3', label: 'STUMP 3' },
+        { id: 'stump4', label: 'STUMP 4' },
+      ];
+
+      items.forEach(({ id, label }) => {
+        const cfg = _TREE_CFG[id];
+        const img = _getTreeImg(cfg.img);
+
+        const card = document.createElement('div');
+        card.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; padding:6px; border:2px solid #333; border-radius:4px;';
+        card.onmouseover = () => card.style.borderColor = '#9bd05a';
+        card.onmouseout  = () => card.style.borderColor = '#333';
+
+        const cv = document.createElement('canvas');
+        cv.width = cfg.fw; cv.height = cfg.fh;
+        cv.style.cssText = 'image-rendering:pixelated; width:84px; height:84px; background:#12331b; object-fit:contain;';
+        const ctx2 = cv.getContext('2d');
+        const drawPrev = () => {
+          ctx2.clearRect(0, 0, cv.width, cv.height);
+          ctx2.drawImage(img, 0, 0, cfg.fw, cfg.fh, 0, 0, cv.width, cv.height);
+        };
+        if (img.complete && img.naturalWidth > 0) drawPrev(); else img.onload = drawPrev;
+        // Animate preview for trees
+        if (cfg.fc > 1) {
+          let af = 0;
+          setInterval(() => {
+            if (!img.complete || !img.naturalWidth) return;
+            af = (af + 1) % cfg.fc;
+            ctx2.clearRect(0, 0, cv.width, cv.height);
+            ctx2.drawImage(img, af * cfg.fw, 0, cfg.fw, cfg.fh, 0, 0, cv.width, cv.height);
+          }, 1000 / cfg.fps);
+        }
+
+        const lbl = document.createElement('div');
+        lbl.textContent = label;
+        lbl.style.cssText = 'color:#aaa; font-size:7px;';
+
+        card.appendChild(cv);
+        card.appendChild(lbl);
+        card.onclick = () => {
+          window.setEditTile(id);
+          showGameNotification('EDITOR', `${label} selected${cfg.fc > 1 ? ' — animuotas' : ''}`, '#9bd05a');
+          m.style.display = 'none';
+        };
+        grid.appendChild(card);
+      });
+
+      m.appendChild(grid);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'CLOSE';
+      closeBtn.style.cssText = 'background:#9bd05a; color:#000; border:none; padding:5px 14px; cursor:pointer; font-family:"Press Start 2P",monospace; font-size:9px;';
+      closeBtn.onclick = () => m.style.display = 'none';
+      m.appendChild(closeBtn);
+
+      document.getElementById('screen-game').appendChild(m);
+    };
+
     window.openBushPicker = () => {
       const existing = document.getElementById('bush-picker-modal');
       if (existing) { existing.style.display = 'flex'; return; }
@@ -22893,6 +23143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     html += `<div style="width:100%; height:5px;"></div>`;
     html += `<img src="assets_tiny/Resources/Trees/Tree.png" onclick="setEditTile('tree_1')" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px;" />`;
+    html += `<img src="assets_tiny/trees/Tree1.png" onclick="openTreePicker()" title="Trees & Stumps (animated)" style="width:32px; height:32px; object-fit:cover; object-position:left top; cursor:pointer; background:rgba(30,60,25,0.85); padding:2px; border-radius:4px; border:1px solid #9bd05a; image-rendering:pixelated;" onmouseover="this.style.background='rgba(60,110,45,0.95)'" onmouseout="this.style.background='rgba(30,60,25,0.85)'" />`;
     html += `<img src="assets_tiny/Deco/rubber_duck.png" onclick="setEditTile('duck')" title="Rubber Duck (animuotas)" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px; border-radius:4px; image-rendering:pixelated;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'" />`;
     html += `<img src="assets_tiny/Resources/Gold Mine/GoldMine_Inactive.png" onclick="setEditTile('mine_1')" style="width:32px; height:32px; object-fit:cover; object-position:0 0; cursor:pointer; background:rgba(255,255,255,0.1); padding:2px;" />`;
     html += `<img src="assets_tiny/Terrain/Bushe1.png" onclick="openBushPicker()" title="Animated Bushes" style="width:32px; height:32px; object-fit:cover; object-position:left top; cursor:pointer; background:rgba(20,60,30,0.85); padding:2px; border-radius:4px; border:1px solid #6ccf74; image-rendering:pixelated;" onmouseover="this.style.background='rgba(60,110,70,0.95)'" onmouseout="this.style.background='rgba(20,60,30,0.85)'" />`;
@@ -22978,7 +23229,11 @@ document.addEventListener('DOMContentLoaded', () => {
       <div style="color:#ff8888; font-size:9px; margin-top:12px; margin-bottom:4px; border-top:1px solid #5a2a2a; padding-top:6px; font-family:monospace;">✖ ENEMY NPC</div>
       <button onclick="setEditTile('red_archer_npc')" style="background:#200808; width:100%; height:40px; color:#ff6666; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #cc2222; display:flex; align-items:center; gap:8px; padding:0 8px;">
         <img src="assets_tiny/RedArcher_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
-        <span>Red Archer (priesininkas)</span>
+        <span>Red Archer (juda)</span>
+      </button>
+      <button onclick="setEditTile('red_archer_idle_npc')" style="background:#1a0404; width:100%; height:40px; color:#ff6666; font-weight:bold; font-size:10px; cursor:pointer; border:1px solid #881818; display:flex; align-items:center; gap:8px; padding:0 8px; margin-top:3px;">
+        <img src="assets_tiny/RedArcher_Idle.png" style="width:36px; height:36px; object-fit:none; object-position:0 0; image-rendering:pixelated;">
+        <span>Red Archer (idle)</span>
       </button>
       <button onclick="setEditTile('erase_prop')" style="background:#330000; width:100%; height:32px; color:#ff8888; font-size:9px; cursor:pointer; border:1px solid #880000; margin-top:10px;">✕ TRINTI DEKO NPC</button>
       <button onclick="exportMap()" style="background:#777; width:100px; height:30px; margin-top:14px; color:white; font-size:9px; cursor:pointer;">EXPORT JS</button>
@@ -24183,3 +24438,124 @@ function drawFloorIntro() {
   ctx.shadowBlur = 0;
   ctx.restore();
 }
+
+// ─── RONKE balance badge (left panel, adv mode) — shows in-game mined RONKE ───
+(function initRonkeBadge() {
+  let last = -1;
+  function render() {
+    const valEl = document.getElementById('ronke-val');
+    if (!valEl) return;
+    const v = (typeof _ronkeBalance === 'number') ? _ronkeBalance : 0;
+    if (v === last) return;
+    last = v;
+    valEl.textContent = v.toLocaleString('en-US');
+  }
+  window.updateRonkeBadge = render;
+  setInterval(() => {
+    const b = document.getElementById('ronke-badge');
+    if (b && b.style.display !== 'none') render();
+  }, 250);
+})();
+
+// ─── RONKE BANK popover (deposit / withdraw) ───
+(function initRonkeBank() {
+  const badge = document.getElementById('ronke-badge');
+  const panel = document.getElementById('ronke-bank');
+  if (!badge || !panel) return;
+  // Detach from panel-p1 (which has transforms/blur filters that break position:fixed)
+  // and reparent to document.body so the bank truly overlays the game viewport.
+  if (panel.parentNode !== document.body) document.body.appendChild(panel);
+  const walletValEl = document.getElementById('rbk-wallet-val');
+  const ingameValEl = document.getElementById('rbk-ingame-val');
+  const amountEl    = document.getElementById('rbk-amount');
+  const depBtn      = document.getElementById('rbk-deposit');
+  const wdBtn       = document.getElementById('rbk-withdraw');
+  const closeBtn    = document.getElementById('rbk-close');
+  const msgEl       = document.getElementById('rbk-msg');
+
+  function fmtWallet() {
+    const w = window.Wallet;
+    if (!w || !w.snapshot) return '—';
+    const st = w.snapshot();
+    if (!st.connected) return 'NOT CONNECTED';
+    if (st.ronkeBalance == null) return '…';
+    return Number(st.ronkeBalance).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  }
+  function refresh() {
+    walletValEl.textContent = fmtWallet();
+    const v = (typeof _ronkeBalance === 'number') ? _ronkeBalance : 0;
+    ingameValEl.textContent = v.toLocaleString('en-US');
+  }
+  function showMsg(text, kind) {
+    msgEl.className = 'rbk-msg show' + (kind ? ' ' + kind : '');
+    msgEl.textContent = text;
+    clearTimeout(showMsg._t);
+    showMsg._t = setTimeout(() => { msgEl.classList.remove('show'); }, 2600);
+  }
+  function open() {
+    refresh();
+    panel.style.display = 'block';
+    setTimeout(() => { try { amountEl.focus(); } catch {} }, 30);
+  }
+  function close() {
+    panel.style.display = 'none';
+    msgEl.classList.remove('show');
+  }
+
+  const arrowIco = panel.querySelector('.rbk-arrow-ico');
+  function setDir(d) {
+    panel.classList.remove('dir-down', 'dir-up');
+    if (d === 'down') { panel.classList.add('dir-down'); if (arrowIco) arrowIco.textContent = '▼'; }
+    else if (d === 'up') { panel.classList.add('dir-up'); if (arrowIco) arrowIco.textContent = '▼'; }
+    else if (arrowIco) arrowIco.textContent = '⇅';
+  }
+  depBtn.addEventListener('mouseenter', () => setDir('down'));
+  depBtn.addEventListener('focus',       () => setDir('down'));
+  wdBtn .addEventListener('mouseenter', () => setDir('up'));
+  wdBtn .addEventListener('focus',       () => setDir('up'));
+  depBtn.addEventListener('mouseleave', () => setDir(null));
+  wdBtn .addEventListener('mouseleave', () => setDir(null));
+  depBtn.addEventListener('blur',        () => setDir(null));
+  wdBtn .addEventListener('blur',        () => setDir(null));
+
+  badge.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+  closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && panel.style.display === 'block') close();
+  });
+
+  function readAmount() {
+    const n = Math.floor(Number(amountEl.value));
+    if (!isFinite(n) || n <= 0) return null;
+    return n;
+  }
+
+  depBtn.addEventListener('click', () => {
+    const amt = readAmount();
+    if (amt == null) { showMsg('Enter valid amount', 'err'); return; }
+    const w = window.Wallet;
+    if (!w || !w.snapshot || !w.snapshot().connected) {
+      showMsg('Connect wallet first', 'err'); return;
+    }
+    const bal = w.snapshot().ronkeBalance;
+    if (bal == null || bal < amt) { showMsg('Insufficient wallet balance', 'err'); return; }
+    // TODO: real on-chain deposit. For now: soft-credit in-game and show pending.
+    showMsg('On-chain deposit coming soon', 'err');
+  });
+
+  wdBtn.addEventListener('click', () => {
+    const amt = readAmount();
+    if (amt == null) { showMsg('Enter valid amount', 'err'); return; }
+    if (typeof _ronkeBalance !== 'number' || _ronkeBalance < amt) {
+      showMsg('Insufficient in-game balance', 'err'); return;
+    }
+    const w = window.Wallet;
+    if (!w || !w.snapshot || !w.snapshot().connected) {
+      showMsg('Connect wallet first', 'err'); return;
+    }
+    // TODO: real on-chain withdraw.
+    showMsg('On-chain withdraw coming soon', 'err');
+  });
+
+  setInterval(() => { if (panel.style.display === 'block') refresh(); }, 500);
+})();
