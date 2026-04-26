@@ -689,6 +689,8 @@ const ENERGY_MAX = 100;
 const MANA_MAX = 100;
 const F11_MANA_MAX = 25;
 const F11_AURA_RADIUS = 3;
+const F11_ALLY_TERRITORY_COLS = 8;   // kiek kairiųjų stulpelių priklauso žaidėjui (deploy zona)
+const F11_GRAY_ZONE_WIDTH = 4;       // pilkos kontestuojamos juostos plotis (cols)
 // Feature flag: jei false → F11 veikia kaip anksčiau (LOCKED skills, 100 mana, be aura'os).
 // Toggle'ui tiesiog pakeisk į false, taip pat galima iš console: window.F11_COMMANDER_MODE = false.
 window.F11_COMMANDER_MODE = (typeof window.F11_COMMANDER_MODE === 'boolean') ? window.F11_COMMANDER_MODE : true;
@@ -1094,9 +1096,9 @@ function showCardPicker(onComplete) {
         if (finalCard.id === 'overcharge_rare') _energyGain = 20;
         else if (finalCard.id === 'overcharge_epic') _energyGain = 25;
         else if (finalCard.id === 'overcharge_legendary') _energyGain = 35;
-        const _oldEnergy = S.energy || 0;
+        const _oldEnergy = S.mana || 0;
         if (_energyGain > 0) {
-          S.energy = _oldEnergy + _energyGain;
+          S.mana = _oldEnergy + _energyGain;
           // Floating "+N⚡" popup on the card
           const popup = document.createElement('div');
           popup.textContent = `+${_energyGain}⚡`;
@@ -2334,7 +2336,7 @@ window.attemptInGameUpgrade = function () {
     if (success) {
       Profile.upgrades.maxEnergy = (Profile.upgrades.maxEnergy || 0) + 1;
       S.inGameUpgradeLevel = (S.inGameUpgradeLevel || 0) + 1;
-      S.energy = (S.energy || 0) + 1;
+      S.mana = (S.mana || 0) + 1;
       saveProfile();
       updateEnergyHud();
     }
@@ -2637,6 +2639,10 @@ const flatImg = new Image(); flatImg.src = 'assets_tiny/Terrain/Ground/Tilemap_F
 const tilesetImg = new Image(); tilesetImg.src = 'assets_tiny/Terrain/Tileset/Tilemap_color1.png';
 const tileset3Img = new Image(); tileset3Img.src = 'assets_tiny/Terrain/Tileset/Tilemap_color3.png';
 const shadowImg = new Image(); shadowImg.src = 'assets_tiny/Terrain/Tileset/Shadow.png';
+const conquestPinImg = new Image(); conquestPinImg.src = 'assets_tiny/Terrain/Tileset/conquest_pin.png';
+const conquestArrowImg = new Image(); conquestArrowImg.src = 'assets_tiny/Terrain/Tileset/conquest_arrow.png';
+const frontLineImg = new Image(); frontLineImg.src = 'assets_tiny/Terrain/Tileset/front_line.png';
+const tileset5Img = new Image(); tileset5Img.src = 'assets_tiny/Terrain/Tileset/Tilemap_color5.png';
 const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Water/Foam/Water_Foam2.png';
 
 // ---- Custom Maps -------------------------------------------------------
@@ -5751,7 +5757,7 @@ function initHubRoom() {
 
   // Apply Hub Upgrades to Hero (cosmetic, mostly for HP display)
   const bonusEnergy = Profile.upgrades?.maxEnergy || 0;
-  S.energy = ENERGY_MAX + bonusEnergy;
+  S.mana = ENERGY_MAX + bonusEnergy;
   const bonusArmor = Profile.upgrades?.armor || 0;
   const heroHp = MAX_HP + bonusArmor;
 
@@ -5865,9 +5871,10 @@ function initAdventure() {
   S.lightGhosts = [];
   updateExplorationTracker();
   S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
-  if (S.floor === 1) S.energy = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);  // reset on fresh run, include upgrade bonus
   S.energyDepleted = false;
-  S.mana = (gameMode === 'adventure' && S.floor === 11 && f11CommanderOn()) ? F11_MANA_MAX : MANA_MAX;
+  S.mana = (gameMode === 'adventure' && S.floor === 11 && f11CommanderOn())
+    ? F11_MANA_MAX
+    : (MANA_MAX + (Profile.upgrades?.maxEnergy || 0));
   S.hp = HP_MAX;
   S._f11Buffs = { rallyUntil: 0, wardUntil: 0, focusTarget: null };
   S._f11FocusPick = false;
@@ -6097,9 +6104,10 @@ function initAdventure() {
     if (f11CommanderOn()) {
       const _now = (typeof performance !== 'undefined') ? performance.now() : 0;
       S._f11StartedAt   = _now;
-      S._f11SetupUntil  = _now + 5000;     // 5s grace — enemies frozen
-      S._f11WelcomeShown = false;          // popup dar nerodytas
-      S._f11WelcomeOpen  = true;           // pop'inam iškart
+      S._f11SetupUntil  = _now + 3000;     // 3s live countdown — enemies frozen
+      S._f11CountdownEndsAt = _now + 3500; // overlay rodomas šiek tiek ilgiau (GO! flash)
+      S._f11WelcomeShown = true;           // popup pašalintas (vartotojo prašymu)
+      S._f11WelcomeOpen  = false;          // niekada neatidarom Commander welcome popup'o
       S._f11HighlightUntil = _now + 30000; // pulse hint 30s
     }
   } else {
@@ -7476,12 +7484,6 @@ function checkExplorationComplete() {
 
 function updateExplorationTracker() {
   if (gameMode !== 'adventure' || !S.fog || !S.dungeon) return;
-  let total = 0, revealed = 0;
-  for (let y = 0; y < ROWS; y++)
-    for (let x = 0; x < COLS; x++)
-      if (S.dungeon[y][x] > 0) { total++; if (S.fog[y][x]) revealed++; }
-  const pct = total > 0 ? Math.floor((revealed / total) * 100) : 0;
-  const done = pct >= 100;
 
   const elPct = document.getElementById('msw-pct');
   const elPctSign = document.querySelector('.msw-pct-sign');
@@ -7489,6 +7491,50 @@ function updateExplorationTracker() {
   const elRevealed = document.getElementById('msw-revealed');
   const elTotal = document.getElementById('msw-total');
   const elBadge = document.getElementById('msw-badge');
+
+  // F11: rodom CONQUEST progress vietoj fog reveal %
+  if (S.floor === 11) {
+    const targetCol = (typeof S._f11ConqueredCols === 'number') ? S._f11ConqueredCols : F11_ALLY_TERRITORY_COLS;
+    let validRows = 0;
+    if (targetCol < COLS) {
+      for (let r = 0; r < ROWS; r++) {
+        const t = S.dungeon[r] && S.dungeon[r][targetCol];
+        if (t === 1 || t === 3 || t === 6) validRows++;
+      }
+    }
+    const conqProg = (typeof S._f11ConquestProgress === 'number') ? S._f11ConquestProgress : 0;
+    const lossProg = (typeof S._f11LossProgress === 'number') ? S._f11LossProgress : 0;
+    const pct = validRows > 0 ? Math.floor((conqProg / validRows) * 100) : 0;
+    const done = targetCol >= COLS; // viskas užimta
+    const lossActive = lossProg > 0;
+
+    if (elPct) { elPct.textContent = done ? 100 : pct; elPct.classList.toggle('complete', done); }
+    if (elPctSign) { elPctSign.classList.toggle('complete', done); }
+    if (elFill) { elFill.style.width = (done ? 100 : pct) + '%'; elFill.classList.toggle('complete', done); }
+    if (elRevealed) { elRevealed.textContent = targetCol; }
+    if (elTotal) { elTotal.textContent = COLS; }
+    if (elBadge) {
+      if (done) { elBadge.textContent = 'CONQUERED'; elBadge.classList.add('complete'); }
+      else if (lossActive) { elBadge.textContent = 'LOSING ' + Math.floor((lossProg / Math.max(1, validRows)) * 100) + '%'; elBadge.classList.remove('complete'); }
+      else if (pct >= 75) { elBadge.textContent = 'ALMOST'; elBadge.classList.remove('complete'); }
+      else if (pct > 0) { elBadge.textContent = 'CAPTURING'; elBadge.classList.remove('complete'); }
+      else { elBadge.textContent = 'IDLE'; elBadge.classList.remove('complete'); }
+    }
+    // Update labels under the counts (REVEALED → COL, TOTAL → COLS)
+    const elRevLbl = document.querySelector('#msw-revealed + .msw-count-lbl');
+    const elTotLbl = document.querySelector('#msw-total + .msw-count-lbl');
+    if (elRevLbl) elRevLbl.textContent = 'OWNED COLS';
+    if (elTotLbl) elTotLbl.textContent = 'TOTAL COLS';
+    return;
+  }
+
+  // Default: fog reveal exploration tracking (other floors)
+  let total = 0, revealed = 0;
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (S.dungeon[y][x] > 0) { total++; if (S.fog[y][x]) revealed++; }
+  const pct = total > 0 ? Math.floor((revealed / total) * 100) : 0;
+  const done = pct >= 100;
 
   if (elPct) { elPct.textContent = pct; elPct.classList.toggle('complete', done); }
   if (elPctSign) { elPctSign.classList.toggle('complete', done); }
@@ -7502,6 +7548,11 @@ function updateExplorationTracker() {
     else if (pct >= 25) { elBadge.textContent = 'MAPPING'; elBadge.classList.remove('complete'); }
     else { elBadge.textContent = 'SCANNING'; elBadge.classList.remove('complete'); }
   }
+  // Restore default labels (in case user came back from F11)
+  const elRevLbl2 = document.querySelector('#msw-revealed + .msw-count-lbl');
+  const elTotLbl2 = document.querySelector('#msw-total + .msw-count-lbl');
+  if (elRevLbl2) elRevLbl2.textContent = 'REVEALED';
+  if (elTotLbl2) elTotLbl2.textContent = 'TOTAL';
 }
 
 function spawnExplorerChest() {
@@ -10603,6 +10654,323 @@ function _drawDungeonStatic() {
     }
   }
 
+  // F11 ally teritorija + conquest/loss mechanika.
+  // Pradinė zona: cols 0..F11_ALLY_TERRITORY_COLS-1 (=8) — tamsi žolė (tileset3 6,1).
+  // Conquest: kai bent vienas ally yra col >= S._f11ConqueredCols → progresuoja 1 row/sec.
+  // Loss: kai bent vienas hostile enemy yra col < S._f11ConqueredCols → praradimas 1 row/sec.
+  // Vizualiai naudojamas Shadow sprite + sklandus slinkimas (ne pop-in atsiradimas).
+  if (gameMode === 'adventure' && S.floor === 11 && Array.isArray(S.dungeon)
+      && tileset3Img.complete && tileset3Img.naturalWidth > 0) {
+    if (typeof S._f11ConqueredCols !== 'number') S._f11ConqueredCols = F11_ALLY_TERRITORY_COLS;
+    if (typeof S._f11ConquestProgress !== 'number') S._f11ConquestProgress = 0;
+    if (typeof S._f11LossProgress !== 'number') S._f11LossProgress = 0;
+    const _now = performance.now();
+    if (!S._f11LastFrameAt) S._f11LastFrameAt = _now;
+    const _dt = Math.min(0.1, (_now - S._f11LastFrameAt) / 1000);
+    S._f11LastFrameAt = _now;
+
+    // Helper: surinkti grass row index'us konkretaus stulpelio
+    const _grassRowsInCol = (col) => {
+      const out = [];
+      if (col < 0 || col >= COLS) return out;
+      for (let _r = 0; _r < ROWS; _r++) {
+        const _t = S.dungeon[_r] && S.dungeon[_r][col];
+        if (_t === 1 || _t === 3 || _t === 6) out.push(_r);
+      }
+      return out;
+    };
+
+    // ── Front-line mechaniką: 4-col pilka kontestuojama zona ─────────────
+    // grayStart = pirmasis col, dar nepriklausantis ally; grayEnd (exclusive) = grayStart+W.
+    // net = allyCount - enemyCount (gray zonoj). net>0 → conquest leftmost gray col.
+    // net<0 → loss rightmost ally col. net==0 → stalemate.
+    const _grayStart = S._f11ConqueredCols;
+    const _grayEnd = Math.min(_grayStart + F11_GRAY_ZONE_WIDTH, COLS);
+    let _allyInGray = 0, _enemyInGray = 0;
+    for (const u of (S.units || [])) {
+      if (!u || !u.alive) continue;
+      if (u.x < _grayStart || u.x >= _grayEnd) continue;
+      const _isAlly = (u.team === 0) || (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u));
+      const _isEnemy = (typeof isHostileAdventureEnemy === 'function' && isHostileAdventureEnemy(u));
+      if (_isAlly) _allyInGray++;
+      else if (_isEnemy) _enemyInGray++;
+    }
+    const _netForce = _allyInGray - _enemyInGray;
+
+    // ── Conquest progress (sliding, net rows/sec) ────────────────────────
+    const _targetCol = _grayStart;
+    let _conquestRows = [];
+    if (_targetCol < COLS) {
+      _conquestRows = _grassRowsInCol(_targetCol);
+      if (_netForce > 0 && _conquestRows.length > 0) {
+        S._f11ConquestProgress += _dt * _netForce;
+        if (S._f11ConquestProgress >= _conquestRows.length) {
+          S._f11ConqueredCols = _targetCol + 1;
+          S._f11ConquestProgress = 0;
+          S._f11CaptureFlash = { col: _targetCol, startedAt: _now, type: 'gain' };
+          // Naujas dešinysis gray col — paint po capture flash (delay 1s)
+          const _newGrayRight = S._f11ConqueredCols + F11_GRAY_ZONE_WIDTH - 1;
+          if (_newGrayRight < COLS) {
+            S._f11GrayPaint = { col: _newGrayRight, dir: 'ltr', startedAt: _now + 1000 };
+          }
+          if (SFX && SFX.levelUp) SFX.levelUp();
+          else if (SFX && SFX.coin) SFX.coin();
+        }
+      } else if (S._f11ConquestProgress > 0 && _conquestRows.length > 0) {
+        // Stalemate ar enemy dominuoja — kas 10sec dingsta 1 blokas
+        S._f11ConquestProgress -= _dt * 0.1;
+        if (S._f11ConquestProgress < 0) S._f11ConquestProgress = 0;
+      }
+    }
+
+    // ── Loss progress (sliding, |net| rows/sec) ──────────────────────────
+    // Mirror to player conquest: priešas okupuoja DEŠINĮJĮ gray col (artimiausią enemy territory)
+    const _lossCol = _grayEnd - 1;
+    let _lossRows = [];
+    if (_lossCol >= 0 && _lossCol < COLS) {
+      _lossRows = _grassRowsInCol(_lossCol);
+      if (_netForce < 0 && _lossRows.length > 0 && S._f11ConqueredCols > 0) {
+        S._f11LossProgress += _dt * (-_netForce);
+        if (S._f11LossProgress >= _lossRows.length) {
+          // Priešas užemė dešinįjį gray col → gray zona pasislenka į kairę
+          S._f11ConqueredCols -= 1;
+          S._f11LossProgress = 0;
+          S._f11ConquestProgress = 0;
+          // Capture flash ant užimto col (priešo pusėj, dešinysis gray)
+          S._f11CaptureFlash = { col: _lossCol, startedAt: _now, type: 'loss' };
+          // Naujas kairysis gray col (buvo žaidėjo) — paint po capture flash (delay 1s), 'rtl'
+          const _newGrayLeft = S._f11ConqueredCols;
+          if (_newGrayLeft >= 0) {
+            S._f11GrayPaint = { col: _newGrayLeft, dir: 'rtl', startedAt: _now + 1000 };
+          }
+          if (SFX && SFX.deny) SFX.deny();
+          S.shake = Math.max(S.shake || 0, 6);
+        }
+      } else if (S._f11LossProgress > 0 && _lossRows.length > 0) {
+        // Stalemate ar ally dominuoja — loss progresas atsistato 10s/blokas
+        S._f11LossProgress -= _dt * 0.1;
+        if (S._f11LossProgress < 0) S._f11LossProgress = 0;
+      }
+    }
+
+    const _sx = 6 * 64, _sy = 1 * 64;
+    const _conquered = S._f11ConqueredCols;
+    // "Lost" rows of the rightmost owned col (slinkimas iš apačios į viršų — paskutinės grass rows pirma)
+    const _lossLeading = Math.floor(S._f11LossProgress);
+    const _lossPartial = S._f11LossProgress - _lossLeading;
+    const _lostFullSet = new Set();
+    for (let _i = 0; _i < _lossLeading && _i < _lossRows.length; _i++) {
+      _lostFullSet.add(_lossRows[_lossRows.length - 1 - _i]);
+    }
+    const _lossPartialRow = (_lossLeading < _lossRows.length)
+      ? _lossRows[_lossRows.length - 1 - _lossLeading] : -1;
+    // Conquest derivations (top→down on _targetCol = leftmost gray)
+    const _conquestLeading = Math.floor(S._f11ConquestProgress);
+    const _conquestPartial = S._f11ConquestProgress - _conquestLeading;
+    const _claimedFullSet = new Set();
+    for (let _i = 0; _i < _conquestLeading && _i < _conquestRows.length; _i++) {
+      _claimedFullSet.add(_conquestRows[_i]);
+    }
+    const _conquestPartialRow = (_conquestLeading < _conquestRows.length)
+      ? _conquestRows[_conquestLeading] : -1;
+    // ── Pilkos kontestuojamos zonos render — cols [_grayStart, _grayEnd) ──
+    // Taip pat _lossCol cell'ėms, kurios prarastos (lostFullSet) ar dingsta
+    // (loss leading), kad apačioj būtų matomas pilkas underlay vietoj originalaus tile.
+    if (tileset5Img.complete && tileset5Img.naturalWidth > 0) {
+      // Tilemap_color5 (6,1) — vidurinis tile, tamsesnis tealinis atspalvis (front line)
+      const _f5sx = 6 * 64, _f5sy = 1 * 64;
+      // Sequence: capture flash (1s) → paint (1s) → lock blokas (300ms)
+      // Paint startedAt = _now + 1000 (delayed po capture flash)
+      const _paint = S._f11GrayPaint;
+      const _paintDur = 1000;
+      const _lockDur = 300;
+      const _totalDur = _paintDur + _lockDur;
+      const _paintElapsed = _paint ? (_now - _paint.startedAt) : -1;
+      const _paintStarted = _paint && _paintElapsed >= 0;
+      const _paintActive = _paintStarted && _paintElapsed < _totalDur;
+      const _paintT = _paintStarted ? Math.min(_paintElapsed / _paintDur, 1) : 0;
+      const _lockT = _paintStarted ? Math.max(0, Math.min((_paintElapsed - _paintDur) / _lockDur, 1)) : 0;
+      if (_paint && _paintStarted && !_paintActive) S._f11GrayPaint = null;
+      const _drawCol = (_c) => {
+        const _isPaintCol = _paintActive && _paint.col === _c;
+        if (_isPaintCol && _paintT < 1) {
+          const _fillW = CELL * _paintT;
+          const _clipX = (_paint.dir === 'rtl')
+            ? (_c + 1) * CELL - _fillW
+            : _c * CELL;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(_clipX, 0, _fillW, ROWS * CELL);
+          ctx.clip();
+        } else if (_paint && _paint.col === _c && !_paintStarted) {
+          // Dar nelaikas piešti — paint dar nepradėjo (capture flash vyksta)
+          return;
+        }
+        for (let _r = 0; _r < ROWS; _r++) {
+          const _t = S.dungeon[_r] && S.dungeon[_r][_c];
+          if (_t !== 1 && _t !== 3 && _t !== 6) continue;
+          // Loss erosion ant _lossCol (rightmost gray) — bottom-up, gray pranyksta atsidengiant orig tile
+          if (_c === _lossCol && _lostFullSet.has(_r)) continue;
+          if (_c === _lossCol && _r === _lossPartialRow) {
+            const _ph = CELL * (1 - _lossPartial);
+            if (_ph > 0) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(_c * CELL, _r * CELL, CELL, _ph);
+              ctx.clip();
+              ctx.drawImage(tileset5Img, _f5sx, _f5sy, 64, 64, _c * CELL, _r * CELL, CELL, CELL);
+              ctx.restore();
+            }
+            continue;
+          }
+          // Conquest erosion ant _targetCol (leftmost gray) — top-down, gray pranyksta atsidengiant orig zole
+          if (_c === _targetCol && _claimedFullSet.has(_r)) continue;
+          if (_c === _targetCol && _r === _conquestPartialRow) {
+            const _ph = CELL * (1 - _conquestPartial);
+            if (_ph > 0) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(_c * CELL, _r * CELL + (CELL - _ph), CELL, _ph);
+              ctx.clip();
+              ctx.drawImage(tileset5Img, _f5sx, _f5sy, 64, 64, _c * CELL, _r * CELL, CELL, CELL);
+              ctx.restore();
+            }
+            continue;
+          }
+          ctx.drawImage(tileset5Img, _f5sx, _f5sy, 64, 64, _c * CELL, _r * CELL, CELL, CELL);
+        }
+        if (_isPaintCol && _paintT < 1) ctx.restore();
+      };
+      for (let _c = _grayStart; _c < _grayEnd; _c++) _drawCol(_c);
+      // Paint col gali būti už gray zonos (kai naujas kairysis gray ant senos owned col srities — gali būti < _grayStart)
+      if (_paint && _paintActive && (_paint.col < _grayStart || _paint.col >= _grayEnd)) {
+        _drawCol(_paint.col);
+      }
+      // Lock "blokas" — storas border tik iš VIENOS puses (toliausiai nuo gray zonos centro)
+      if (_lockT > 0 && _lockT < 1 && _paint) {
+        const _lockAlpha = _lockT < 0.15 ? (_lockT / 0.15) : (1 - (_lockT - 0.15) / 0.85);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, _lockAlpha);
+        // Conquest (dir=ltr): blokas sustojo dešinėj → border RIGHT side
+        // Loss (dir=release): front line dabar yra kairėj nuo released col → border LEFT side
+        const _wallX = (_paint.dir === 'ltr')
+          ? (_paint.col + 1) * CELL - 5  // dešinioji col puse
+          : _paint.col * CELL;            // kairioji col puse (release ir rtl)
+        // Outer wood-tone dark vertikal juosta
+        ctx.fillStyle = '#3d2817';
+        ctx.fillRect(_wallX, 0, 5, ROWS * CELL);
+        // Inner light highlight
+        ctx.fillStyle = '#f5e6c3';
+        const _hlX = (_paint.dir === 'ltr')
+          ? (_paint.col + 1) * CELL - 4
+          : _paint.col * CELL + 2;
+        ctx.fillRect(_hlX, 0, 1.5, ROWS * CELL);
+        ctx.restore();
+      }
+    }
+    // Owned teritorija — palikta originalia žolės spalva (jokio tileset3 overlay), nes gray fronto linijos pasislinkimas jau pažymi progreso vizualą.
+
+    // Live update DUNGEON MAP widget — F11 conquest %, throttle ~150ms.
+    if (typeof updateExplorationTracker === 'function') {
+      if (!S._f11LastTrackerAt || _now - S._f11LastTrackerAt >= 150) {
+        S._f11LastTrackerAt = _now;
+        updateExplorationTracker();
+      }
+    }
+
+    // Conquest erosion ant _targetCol (leftmost gray) ir loss erosion ant _lossCol (rightmost gray)
+    // jau handled gray zone _drawCol bloke (skip claimed/lost rows + clip partial row).
+
+    // ── Direction arrow ──────────────────────────────────────────────────
+    // Viena mėlyna ▼ rodyklė, kurios pozicija TIESIOGIAI sutampa su leading edge —
+    // slenka tolygiai be šuolių, nes naudoja float progress kaip y-koordinatę.
+    const _conquestActive = (_targetCol < COLS) && (_conquestLeading < _conquestRows.length) && _netForce > 0;
+    const _lossActive = (_lossPartialRow >= 0) && _netForce < 0;
+    if (_conquestActive || _lossActive) {
+      const _pulse = 0.82 + 0.18 * Math.sin(_now * 0.008);
+      // Naudojamas conquest_pin sprite (žalias blokas + arrow žemyn).
+      // Conquest: dirSign=+1 → arrow rodo žemyn (nature). Loss: dirSign=-1 → arrow rodo aukštyn.
+      const _drawConquestPin = (cx, cy, dirSign) => {
+        if (!conquestArrowImg.complete || conquestArrowImg.naturalWidth === 0) return;
+        const SHEET_W = conquestArrowImg.naturalWidth;
+        const SHEET_H = conquestArrowImg.naturalHeight;
+        const FRAMES = 20;                     // 20 animacijos kadrai (taškai juda)
+        const FRAME_W = SHEET_W / FRAMES;
+        const FRAME_H = SHEET_H;
+        const ASPECT = FRAME_H / FRAME_W;      // ~4.64
+        const DRAW_W = CELL * 0.26;            // mažesnė rodyklė
+        const DRAW_H = DRAW_W * ASPECT;
+        const HEAD_Y_RATIO = 0.93;             // head centras sprite apačioje (po align)
+        const FRAME_DUR = 70;                  // ms per kadras → ~14fps loop
+        const _frame = Math.floor((_now / FRAME_DUR) % FRAMES);
+        ctx.save();
+        ctx.translate(cx, cy - 25); // pakelta 25px aukščiau leading edge
+        ctx.scale(1, dirSign); // -1 → loss (arrow up, trail below)
+        ctx.globalAlpha = _pulse;
+        ctx.drawImage(
+          conquestArrowImg,
+          _frame * FRAME_W, 0, FRAME_W, FRAME_H,
+          -DRAW_W / 2, -DRAW_H * HEAD_Y_RATIO, DRAW_W, DRAW_H
+        );
+        ctx.restore();
+      };
+      // Conquest — interpolate tarp current ir next row pagal _conquestPartial
+      if (_conquestActive) {
+        const _r1 = _conquestRows[_conquestLeading];
+        const _r2 = (_conquestLeading + 1 < _conquestRows.length)
+          ? _conquestRows[_conquestLeading + 1]
+          : (_r1 + 1);
+        const _cx = _targetCol * CELL + CELL / 2;
+        const _cy = (_r1 + (_r2 - _r1) * _conquestPartial) * CELL + CELL / 2;
+        _drawConquestPin(_cx, _cy, +1);
+      }
+      // Loss — interpolate tarp current ir next (mažėjančia kryptim)
+      if (_lossActive) {
+        const _r1 = _lossPartialRow;
+        const _idxNext = _lossRows.length - 1 - (_lossLeading + 1);
+        const _r2 = (_idxNext >= 0) ? _lossRows[_idxNext] : (_r1 - 1);
+        const _cx = _lossCol * CELL + CELL / 2;
+        const _cy = (_r1 + (_r2 - _r1) * _lossPartial) * CELL + CELL / 2;
+        _drawConquestPin(_cx, _cy, -1);
+      }
+    }
+
+    // Capture/loss flash — subtilus vizualinis pranesimas, kai uzimama/prarandama juosta.
+    if (S._f11CaptureFlash) {
+      const _fl = S._f11CaptureFlash;
+      const _fT = _now - _fl.startedAt;
+      const _fDur = 1000;
+      if (_fT > _fDur) {
+        S._f11CaptureFlash = null;
+      } else {
+        const _t01 = _fT / _fDur;
+        const _alpha = _t01 < 0.25 ? 1 : Math.max(0, 1 - (_t01 - 0.25) / 0.75);
+        const _isGain = _fl.type === 'gain';
+        const _bandColor = _isGain ? 'rgba(120, 255, 140, ' : 'rgba(255, 80, 80, ';
+        const _coreColor = _isGain ? 'rgba(220, 255, 220, ' : 'rgba(255, 200, 200, ';
+        const _bandX = _fl.col * CELL;
+        ctx.save();
+        ctx.fillStyle = _bandColor + (_alpha * 0.09) + ')';
+        ctx.fillRect(_bandX, 0, CELL, ROWS * CELL);
+        // labai švelni vertikali pulse linija, scrolling top→bottom
+        const _scrollY = (_t01 * ROWS * CELL) % (ROWS * CELL);
+        const _lineH = CELL * 1.0;
+        const _grad = ctx.createLinearGradient(0, _scrollY, 0, _scrollY + _lineH);
+        _grad.addColorStop(0, _coreColor + '0)');
+        _grad.addColorStop(0.5, _coreColor + (_alpha * 0.2) + ')');
+        _grad.addColorStop(1, _coreColor + '0)');
+        ctx.fillStyle = _grad;
+        ctx.fillRect(_bandX, _scrollY - _lineH, CELL, _lineH * 2);
+        // outline — labai plonas, vos matomas
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = _isGain ? 'rgba(60, 200, 80, ' + (_alpha * 0.25) + ')' : 'rgba(180, 30, 30, ' + (_alpha * 0.25) + ')';
+        ctx.strokeRect(_bandX + 0.5, 0.5, CELL - 1, ROWS * CELL - 1);
+        ctx.restore();
+      }
+    }
+
+  }
+
   // Pass 3b: Decorations (from S.decorations map string keys)
   if (S.decorations) {
     // Sort keys by Y to achieve proper 'z-indexing' (things lower on screen draw on top)
@@ -11473,7 +11841,10 @@ function _f11ApplyFocusTarget(cellX, cellY) {
 }
 
 // World-space draw: vadas aura, rally/ward flashes, focus target marker.
+// IŠJUNGTA — vartotojas pašalino geltoną aura žiedą ir su juo susijusią vizualiką.
 function _drawF11CommanderFx() {
+  return;
+  // (legacy aura render kodas paliekamas žemiau dėl back-compat refs — niekada nepasiekiamas)
   if (gameMode !== 'adventure' || S.floor !== 11 || !f11CommanderOn()) return;
   if (!S.units) return;
   const hero = S.units.find(u => u.team === 0 && u.alive);
@@ -11615,17 +11986,38 @@ function _f11WardMult() {
   if (!bf || !bf.wardUntil) return 1;
   return (bf.wardUntil > performance.now()) ? 0.5 : 1;
 }
-// Scale outgoing ally dmg (floors down to min 1).
+// F11 luck roll — MISS (15%) → 0 dmg, BLOCK (10%) → ½ dmg, HIT (75%) → full.
+// Skull obedience analogas combat'e: silpnesnis kartais gali nugalėti stipresnį.
+// Grąžina { dmg, label } — caller pats nupiešia label virš target'o jei nori.
+function _f11LuckRoll(raw) {
+  if (gameMode !== 'adventure' || S.floor !== 11 || !f11CommanderOn()) return { dmg: raw, label: null, color: null };
+  const r = Math.random();
+  if (r < 0.15) return { dmg: 0, label: 'MISS', color: '#aaaaaa' };
+  if (r < 0.25) return { dmg: Math.max(1, Math.floor(raw / 2)), label: 'BLOCK', color: '#88ddff' };
+  return { dmg: raw, label: null, color: null };
+}
+// Spawn label virš target'o po luck roll (jei MISS/BLOCK).
+function _f11SpawnLuckLabel(target, label, color) {
+  if (!label || !target || typeof spawnDmgNumber !== 'function') return;
+  const x = (typeof target.x === 'number') ? target.x : 0;
+  const y = (typeof target.y === 'number') ? target.y : 0;
+  spawnDmgNumber(x, y, label, color || '#aaaaaa', 14, 'normal');
+}
+// Scale outgoing ally dmg + luck roll. (floors down to min 1, MISS leidžia 0.)
 function _f11ScaleAllyOut(raw) {
   const m = _f11RallyMult();
-  if (m === 1) return raw;
-  return Math.max(1, Math.round(raw * m));
+  const scaled = (m === 1) ? raw : Math.max(1, Math.round(raw * m));
+  const roll = _f11LuckRoll(scaled);
+  if (roll.label) S._f11LastRoll = roll; else S._f11LastRoll = null;
+  return roll.dmg;
 }
-// Scale incoming ally dmg (min 1, never negative).
+// Scale incoming ally dmg + luck roll. (min 1 jei pataikoma, MISS leidžia 0.)
 function _f11ScaleAllyIn(raw) {
   const m = _f11WardMult();
-  if (m === 1) return raw;
-  return Math.max(1, Math.round(raw * m));
+  const scaled = (m === 1) ? raw : Math.max(1, Math.round(raw * m));
+  const roll = _f11LuckRoll(scaled);
+  if (roll.label) S._f11LastRoll = roll; else S._f11LastRoll = null;
+  return roll.dmg;
 }
 
 // Popup virš pažymėto unit'o — rodomas po click'o ant unit'o. Turi ▶ MOVE (pereina
@@ -12142,6 +12534,91 @@ function _drawF11GoodStartUI() {
   }
 }
 
+// ── F11 live countdown 3 → 2 → 1 → GO! ──────────────────────────────────
+// Rodo didelį skaičių canvas centre kol _f11CountdownEndsAt galioja.
+// Vyksta REAL TIME (animuota kiekvienu kadru), enemy AI yra frozen iki _f11SetupUntil.
+function _drawF11Countdown() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  if (!f11CommanderOn()) return;
+  if (!S._f11StartedAt || !S._f11CountdownEndsAt) return;
+  const now = performance.now();
+  if (now >= S._f11CountdownEndsAt) return;
+  const elapsed = now - S._f11StartedAt;
+  const canvasW = (typeof advCanvasW === 'number') ? advCanvasW : BOARD_W;
+  const canvasH = (typeof ADV_CANVAS_H === 'number') ? ADV_CANVAS_H : BOARD_H;
+
+  // Segmentas: 0..1s = "3", 1..2s = "2", 2..3s = "1", 3..3.5s = "GO!"
+  let label, color, segStart, segEnd;
+  if (elapsed < 1000)      { label = '3';   color = '#ff5544'; segStart = 0;    segEnd = 1000; }
+  else if (elapsed < 2000) { label = '2';   color = '#ffcf5c'; segStart = 1000; segEnd = 2000; }
+  else if (elapsed < 3000) { label = '1';   color = '#ffd75c'; segStart = 2000; segEnd = 3000; }
+  else                     { label = 'GO!'; color = '#5ebbc5'; segStart = 3000; segEnd = 3500; }
+
+  const segT = Math.max(0, Math.min(1, (elapsed - segStart) / (segEnd - segStart)));
+  // Pop-in scale: 1.6 → 1.0 in first 30% of segment, then steady
+  const pop = segT < 0.3 ? (1.6 - segT * (0.6 / 0.3)) : 1.0;
+  // Fade out in last 25% of segment
+  const alpha = segT > 0.75 ? Math.max(0, 1 - (segT - 0.75) / 0.25) : 1.0;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(canvasW / 2, canvasH / 2);
+  ctx.scale(pop, pop);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const fsize = (label === 'GO!') ? 110 : 160;
+  ctx.font = 'bold ' + fsize + 'px monospace';
+  // Drop shadow (chunky pixel offset)
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillText(label, 4, 6);
+  ctx.fillStyle = color;
+  ctx.fillText(label, 0, 0);
+  // Outline
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#3d2817';
+  ctx.strokeText(label, 0, 0);
+  ctx.restore();
+}
+
+// F11 territory capture/loss banner — screen-space, top-center.
+function _drawF11CaptureBanner() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  if (!S._f11CaptureFlash) return;
+  const _fl = S._f11CaptureFlash;
+  const now = performance.now();
+  const t = now - _fl.startedAt;
+  const dur = 1400;
+  if (t > dur) return;
+  const t01 = t / dur;
+  const isGain = _fl.type === 'gain';
+  const label = isGain ? 'TERITORIJA UŽIMTA!' : 'TERITORIJA PRARASTA!';
+  const color = isGain ? '#7fff8a' : '#ff5050';
+  const canvasW = (typeof advCanvasW === 'number') ? advCanvasW : BOARD_W;
+  // Slide-in from top + fade out
+  const slideY = t01 < 0.25 ? (-40 + (t01 / 0.25) * 40) : 0;
+  const alpha = t01 > 0.7 ? Math.max(0, 1 - (t01 - 0.7) / 0.3) : 1.0;
+  // Pop scale
+  const pop = t01 < 0.15 ? (1.4 - (t01 / 0.15) * 0.4) : 1.0;
+  const cx = canvasW / 2;
+  const cy = 60 + slideY;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  ctx.scale(pop, pop);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 22px monospace';
+  // Pixel offset shadow
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillText(label, 3, 4);
+  ctx.fillStyle = color;
+  ctx.fillText(label, 0, 0);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#3d2817';
+  ctx.strokeText(label, 0, 0);
+  ctx.restore();
+}
+
 // ---- Scanlines / CRT overlay (screen space, drawn last) --------
 let _scanCanvas = null, _scanCacheKey = '';
 function _buildScanCache() {
@@ -12553,7 +13030,7 @@ function activateRonkeShield() {
     updateRonkeShieldSlot();
     return;
   }
-  if (S.energy < 5) {
+  if (S.mana < 5) {
     SFX.play(200, 0.1, 0.05, 'square');
     return;
   }
@@ -12563,7 +13040,7 @@ function activateRonkeShield() {
     SFX.play(200, 0.1, 0.05, 'square');
     return;
   }
-  S.energy -= 5;
+  S.mana -= 5;
   S.ronkeShield = { active: true, movesLeft: 16, step: S.ronkeShield?.step ?? 0, ticks: 0, alive: [true, true], spawnAt: performance.now() };
   updateRonkeShieldSlot();
   SFX.play(440, 0.18, 0.4, 'sine');
@@ -12972,7 +13449,7 @@ function updateJumpSlot() {
   slot.classList.toggle('jump-no-free', fc <= 0);
   if (cd) {
     if (fc > 0) cd.textContent = fc > 1 ? `${fc}FREE` : 'FREE';
-    else if ((S.energy || 0) < 5) cd.textContent = 'NO\u26A1';
+    else if ((S.mana || 0) < 5) cd.textContent = 'NO\u26A1';
     else cd.textContent = '-5\u26A1';
   }
 }
@@ -12992,7 +13469,7 @@ function executeJump(dx, dy) {
     S.jumpMode = false; updateJumpSlot(); return;
   }
   const fc = S.jumpFreeCount || 0;
-  if (fc <= 0 && (S.energy || 0) < 5) {
+  if (fc <= 0 && (S.mana || 0) < 5) {
     spawnDmgNumber(hero.x, hero.y, 'NO\u26A1 JUMP', '#ff4444', 14, 'normal');
     S.jumpMode = false; updateJumpSlot(); return;
   }
@@ -13000,7 +13477,7 @@ function executeJump(dx, dy) {
   if (usedFree) {
     S.jumpFreeCount--;
   } else {
-    S.energy = Math.max(0, S.energy - 5);
+    S.mana = Math.max(0, S.mana - 5);
     spawnDmgNumber(hero.x, hero.y, '-5\u26A1', '#00f5ff', 14, 'normal');
   }
   hero.facing = { dx, dy };
@@ -13378,7 +13855,7 @@ function drawLoot() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MANA HUD — fresh rewrite. Internally reads S.energy (game logic kept
+// MANA HUD — fresh rewrite. Internally reads S.mana (game logic kept
 // intact), but writes to new #mana-* DOM (not old #energy-*).
 // Function name `updateEnergyHud` preserved so all 20+ call sites
 // continue working without patching.
@@ -13387,14 +13864,14 @@ function animateEnergyGain(fromEnergy, toEnergy) {
   const track = document.querySelector('.mana-track');
   const fill = document.getElementById('mana-fill');
   const val = document.getElementById('mana-val');
-  if (!fill || !track) { S.energy = toEnergy; return; }
+  if (!fill || !track) { S.mana = toEnergy; return; }
 
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
   const gain = Math.round(toEnergy - fromEnergy);
-  if (gain <= 0) { S.energy = toEnergy; updateEnergyHud(); return; }
+  if (gain <= 0) { S.mana = toEnergy; updateEnergyHud(); return; }
 
   S.energyAnimating = true;
-  S.energy = fromEnergy;
+  S.mana = fromEnergy;
 
   const fromPct = Math.min(fromEnergy / effectiveMax, 1) * 100;
   const toPct = Math.min(toEnergy / effectiveMax, 1) * 100;
@@ -13416,12 +13893,12 @@ function animateEnergyGain(fromEnergy, toEnergy) {
   const stepPct = gainPct / gain;
   const interval = setInterval(() => {
     step++;
-    S.energy = fromEnergy + step;
+    S.mana = fromEnergy + step;
     gainFill.style.width = (stepPct * step) + '%';
-    if (val) val.textContent = S.energy + ' / ' + effectiveMax;
+    if (val) val.textContent = S.mana + ' / ' + effectiveMax;
     if (step >= gain) {
       clearInterval(interval);
-      S.energy = toEnergy;
+      S.mana = toEnergy;
       setTimeout(() => {
         gainFill.remove();
         if (!prevPos) track.style.position = '';
@@ -13561,7 +14038,7 @@ const PREVENT_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'Arr
 window.useRonkeForEnergy = function () {
   if (gameMode !== 'adventure' || S.dead) return;
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-  if (S.energy >= effectiveMax) {
+  if (S.mana >= effectiveMax) {
     const hero = S.units.find(u => u.team === 0 && u.alive);
     if (hero) spawnDmgNumber(hero.x, hero.y, 'MAX ENERGY', '#080808', 12, 'normal');
     return;
@@ -13576,9 +14053,9 @@ window.useRonkeForEnergy = function () {
   if (S.inventory[ronkeSlotIndex].qty <= 0) S.inventory[ronkeSlotIndex] = null;
   saveProfile();
   if (document.getElementById('inv-overlay')?.classList.contains('active')) updateInventoryUI();
-  const _oldE = S.energy || 0;
-  S.energy = Math.min(effectiveMax, _oldE + 5);
-  animateEnergyGain(_oldE, S.energy);
+  const _oldE = S.mana || 0;
+  S.mana = Math.min(effectiveMax, _oldE + 5);
+  animateEnergyGain(_oldE, S.mana);
   const hero = S.units.find(u => u.team === 0 && u.alive);
   if (hero && typeof spawnDmgNumber === 'function') spawnDmgNumber(hero.x, hero.y, '+5⚡', '#44aaff', 16, 'crit');
   if (typeof SFX !== 'undefined' && SFX.nanoHeal) SFX.nanoHeal();
@@ -13587,7 +14064,7 @@ window.useRonkeForEnergy = function () {
 window.useByteForEnergy = function () {
   if (gameMode !== 'adventure' || S.dead) return;
   const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-  if (S.energy >= effectiveMax) {
+  if (S.mana >= effectiveMax) {
     if (typeof spawnDmgNumber === 'function') {
       const hero = S.units.find(u => u.team === 0 && u.alive);
       if (hero) spawnDmgNumber(hero.x, hero.y, 'MAX ENERGY', '#080808', 12, 'normal');
@@ -13617,7 +14094,7 @@ window.useByteForEnergy = function () {
   }
 
   // Add +5 Energy
-  S.energy = Math.min(effectiveMax, S.energy + 5);
+  S.mana = Math.min(effectiveMax, S.mana + 5);
   updateEnergyHud();
 
   // Visual/Audio Feedback
@@ -13744,6 +14221,21 @@ document.addEventListener('keydown', e => {
   if (gameMode === 'pve' && k.team === 1) return;
   if (S.clockSide !== k.team) return;
 
+  // Hero blokas: 0 mana → jokių veiksmų (judėjimas/šūvis/šokimas) kol neatsigaus mana.
+  // Select praleidžiamas (kad nesilaikytų UI sluoksnis).
+  if (gameMode === 'adventure' && k.team === 0 && k.t !== 'select' && (S.mana || 0) <= 0) {
+    const _now = performance.now();
+    if (!S._noManaWarnAt || _now - S._noManaWarnAt > 800) {
+      S._noManaWarnAt = _now;
+      const _hero = S.units.find(u => u.team === 0 && u.alive);
+      if (_hero && typeof spawnDmgNumber === 'function') {
+        spawnDmgNumber(_hero.x, _hero.y, 'NO\u26A1', '#ff4444', 14, 'normal');
+      }
+      if (SFX && SFX.deny) SFX.deny();
+    }
+    return;
+  }
+
   // Unit selection for P2 in PvP
   if (k.t === 'select') {
     const alive = S.units.filter(u => u.team === k.team && u.alive);
@@ -13793,12 +14285,13 @@ document.addEventListener('keydown', e => {
       if (wep === 'bullet') nrgReq = 2;
       if (wep === 'laser') nrgReq = 7;
       if (wep === 'heavy' || wep === 'shotgun') nrgReq = 4;
-      if (wep !== 'hack' && S.energy < nrgReq) return;
-      if (wep === 'hack' && (S.hackAmmo || 0) <= 0 && S.energy < 10) return;
+      if (wep !== 'hack' && S.mana < nrgReq) return;
+      if (wep === 'hack' && (S.hackAmmo || 0) <= 0 && S.mana < 10) return;
       // Bullet: block if ANY enemy is directly adjacent (distance 1, any direction)
       if (wep === 'bullet') {
         const _tooClose = S.units.some(u => {
           if (!u.alive || u.team === 0) return false;
+          if (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)) return false;
           return Math.abs(u.x - unit.x) + Math.abs(u.y - unit.y) === 1;
         });
         if (_tooClose) {
@@ -13893,7 +14386,7 @@ function resolveTick() {
               } else {
 
                 if (u.team === 0) {
-                  S.energy = Math.max(0, S.energy - 1);
+                  S.mana = Math.max(0, S.mana - 1);
                   u.hitFlash = 1; u.hitTimer = 1000;
                   SFX.heroHit();
                   S.shake = Math.max(S.shake, 20);
@@ -14022,9 +14515,9 @@ function resolveTick() {
             spawnPickupFX(l.x, l.y, '#44aaff');
           } else if (l.type === 'gem') {
             const gemGain = 15;
-            const _oldE = S.energy || 0;
-            S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + gemGain);
-            animateEnergyGain(_oldE, S.energy);
+            const _oldE = S.mana || 0;
+            S.mana = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + gemGain);
+            animateEnergyGain(_oldE, S.mana);
             addToInventory('gem', null, 1);
             if (S.inventoryOpen) updateInventoryUI();
             logEvent(`+${gemGain}⚡ PIXEL collected`, 'loot');
@@ -14073,9 +14566,9 @@ function resolveTick() {
         if (m.collected || m.x !== _hero.x || m.y !== _hero.y) return;
         m.collected = true;
         const _gain = 10;
-        const _oldE = S.energy || 0;
-        S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + _gain);
-        animateEnergyGain(_oldE, S.energy);
+        const _oldE = S.mana || 0;
+        S.mana = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + _gain);
+        animateEnergyGain(_oldE, S.mana);
         logEvent(`+${_gain}⚡ MEAT`, 'loot');
         spawnPickupFX(m.x, m.y, '#ff6633');
         spawnDmgNumber(m.x, m.y, `+${_gain}⚡`, '#ff8844', 16, 'crit');
@@ -14268,11 +14761,11 @@ function applySingleAction(team, a) {
             const _nLvl = Profile.upgrades?.nanoLevel || 0;
             if (_nLvl >= 1 && S.nanoSteps % getNanoHealInterval(_nLvl) === 0) {
               const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-              if (S.energy < effectiveMax) {
-                S.energy = Math.min(effectiveMax, S.energy + _nLvl);
+              if (S.mana < effectiveMax) {
+                S.mana = Math.min(effectiveMax, S.mana + _nLvl);
                 spawnDmgNumber(unit.x, unit.y, `+${_nLvl}\u26A1`, '#00ff88', 14, 'normal');
                 SFX.nanoHeal();
-                if (S.energy >= effectiveMax) {
+                if (S.mana >= effectiveMax) {
                   S.reachedMaxEnergy = true;
                   checkAchievements();
                 }
@@ -14281,8 +14774,8 @@ function applySingleAction(team, a) {
             // Card: NANO REGEN — +1 energy every 10 steps
             if ((S.runCards || []).includes('nano_regen') && S.nanoSteps % 10 === 0) {
               const _effMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-              if (S.energy < _effMax) {
-                S.energy = Math.min(_effMax, S.energy + 1);
+              if (S.mana < _effMax) {
+                S.mana = Math.min(_effMax, S.mana + 1);
                 spawnDmgNumber(unit.x, unit.y, '+1\u26A1', '#88ff44', 12, 'normal');
               }
             }
@@ -14380,7 +14873,7 @@ function applySingleAction(team, a) {
           spawnDmgNumber(unit.x, unit.y, 'FREE!', '#ffcc00', 16, 'crit');
           SFX.play(1200, 0.08, 0.05, 'square');
         } else {
-          S.energy = Math.max(0, S.energy - nrgCost);
+          S.mana = Math.max(0, S.mana - nrgCost);
           spawnDmgNumber(unit.x, unit.y, `-${nrgCost}\u26A1`, '#00f5ff', 14, 'normal');
         }
       }
@@ -14415,7 +14908,7 @@ function applySingleAction(team, a) {
         }
       } else if (wep === 'hack') {
         const hasHackAmmo = (S.hackAmmo || 0) > 0;
-        if (!hasHackAmmo && S.energy < 10) {
+        if (!hasHackAmmo && S.mana < 10) {
           spawnDmgNumber(unit.x, unit.y, 'NO\u26A1 HACK', '#ff4444', 12, 'normal');
           return;
         }
@@ -14423,7 +14916,7 @@ function applySingleAction(team, a) {
         if (hasHackAmmo) {
           S.hackAmmo = Math.max(0, (S.hackAmmo || 0) - 1);
         } else {
-          S.energy = Math.max(0, S.energy - 10);
+          S.mana = Math.max(0, S.mana - 10);
           spawnDmgNumber(unit.x, unit.y, '-10\u26A1', '#00f5ff', 14, 'normal');
           updateEnergyHud();
         }
@@ -14443,11 +14936,11 @@ function applySingleAction(team, a) {
             return;
           }
           // fallback: costs 1 energy, no shot
-          if ((S.energy || 0) < 1) {
+          if ((S.mana || 0) < 1) {
             spawnDmgNumber(unit.x, unit.y, 'NO\u26A1', '#ff4444', 12, 'normal');
             return;
           }
-          S.energy = Math.max(0, S.energy - 1);
+          S.mana = Math.max(0, S.mana - 1);
           spawnDmgNumber(unit.x, unit.y, '-1\u26A1', '#44aaff', 12, 'normal');
           updateEnergyHud();
           return;
@@ -14751,10 +15244,10 @@ function processPendingPassiveRewards() {
 
     if (reward.kind === 'sheep_energy') {
       const energyGain = 5 + Math.floor(Math.random() * 6);
-      const energyBefore = S.energy || 0;
+      const energyBefore = S.mana || 0;
       const effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-      S.energy = Math.min(effectiveMax, energyBefore + energyGain);
-      animateEnergyGain(energyBefore, S.energy);
+      S.mana = Math.min(effectiveMax, energyBefore + energyGain);
+      animateEnergyGain(energyBefore, S.mana);
       spawnDmgNumber(reward.gx, reward.gy, `+${energyGain}⚡`, '#b9e8a3', 18, 'crit');
       spawnHit(reward.gx, reward.gy, '#b9e8a3', 18);
       const wx = (reward.gx + 0.5) * CELL;
@@ -14953,7 +15446,7 @@ function detectCollisions() {
                   const _brBase = [0,1,2,3,4,5,6,8][_brLvl] || 0;
                   const _brGain = _brBase + _brBonus;
                   const _effectiveMax = ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0);
-                  S.energy = Math.min(_effectiveMax, (S.energy || 0) + _brGain);
+                  S.mana = Math.min(_effectiveMax, (S.mana || 0) + _brGain);
                   spawnDmgNumber(u.x, u.y, `+${_brGain}⚡`, '#44ff88', 13, 'normal');
                   updateEnergyHud();
                 }
@@ -15200,6 +15693,23 @@ function advanceLasers() {
           if (u.utype === 'worm' && u.trail) return u.trail.some(t => t.x === cell.x && t.y === cell.y);
           return false;
         });
+        // Decoration NPC hit (red archer / blue archer / fish) — kai laseris paleidžiamas hero
+        // ir nėra S.units hit toj ląstelėj. Be šito hero magija (ronke wep) negali žaloti
+        // dekoracinių NPC, kurie laikomi atskiroj state map'oj.
+        if (!hit && laser.owner === 0) {
+          const _npcDmg = 1;
+          let _npcHit = false;
+          if (typeof _damageRedArcherAt === 'function' && _damageRedArcherAt(cell.x, cell.y, _npcDmg)) _npcHit = true;
+          else if (typeof _damageBlueArcherAt === 'function' && _damageBlueArcherAt(cell.x, cell.y, _npcDmg)) _npcHit = true;
+          else if (typeof _damageFishAt === 'function' && _damageFishAt(cell.x, cell.y, _npcDmg)) _npcHit = true;
+          if (_npcHit) {
+            spawnHit(cell.x, cell.y, laser.color || '#ff4488', 14);
+            S.shake = Math.max(S.shake || 0, 8);
+            if (SFX && SFX.hit) SFX.hit();
+            laser.cells.length = laser.cells.indexOf(cell) + 1;
+            break;
+          }
+        }
         if (hit) {
           // Ironbox: block lasers from anywhere except the front
           if (hit.utype === 'ironbox' && hit.team !== laser.owner) {
@@ -15259,7 +15769,7 @@ function advanceLasers() {
                   const _brBonusL = S.floorBuffs?.bloodRushBonus || 0;
                   if (_brLvlL > 0 || _brBonusL > 0) {
                     const _brGainL = ([0,1,2,3,4,5,6,8][_brLvlL] || 0) + _brBonusL;
-                    S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), (S.energy || 0) + _brGainL);
+                    S.mana = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), (S.mana || 0) + _brGainL);
                     spawnDmgNumber(hit.x, hit.y, `+${_brGainL}⚡`, '#44ff88', 13, 'normal');
                     updateEnergyHud();
                   }
@@ -16284,9 +16794,10 @@ function loop(now) {
   drawDmgNumbers();
   if (gameMode === 'adventure') drawAmbientDust();
   if (typeof _drawF11DeployPreview === 'function') _drawF11DeployPreview();
+  if (typeof _drawF11DeployStopSign === 'function') _drawF11DeployStopSign();
   if (typeof _drawSelectedAllyOverlay === 'function') _drawSelectedAllyOverlay();
   if (typeof _drawCommandMoveCursors === 'function') _drawCommandMoveCursors();
-  if (typeof _drawF11CommanderFx === 'function') _drawF11CommanderFx();
+  // _drawF11CommanderFx — IŠJUNGTA (vartotojo prašymu pašalintas geltonas auros žiedas + rally/ward overlay'ai)
   ctx.restore();
   // Screen-space overlays (no camera transform)
   if (gameMode === 'adventure') {
@@ -16294,8 +16805,10 @@ function loop(now) {
     drawFloorIntro();
     drawF11DeployPanel();
     if (typeof drawF11TimelockPanel === 'function') drawF11TimelockPanel();
-    if (typeof drawF11UnitPopup === 'function') drawF11UnitPopup();
+    // drawF11UnitPopup — IŠJUNGTA (vartotojo prašymu pašalintas mažas popup virš units)
     if (typeof _drawF11GoodStartUI === 'function') _drawF11GoodStartUI();
+    if (typeof _drawF11Countdown === 'function') _drawF11Countdown();
+    if (typeof _drawF11CaptureBanner === 'function') _drawF11CaptureBanner();
     drawHeroHitVignette();
     _drawHarpoonRangeToast();
   }
@@ -16704,7 +17217,7 @@ function _drawSelectedAllyOverlay() {
     const hcx = Math.floor(wmx / CELL), hcy = Math.floor(wmy / CELL);
     if (hcx >= 0 && hcx < COLS && hcy >= 0 && hcy < ROWS && !isWall(hcx, hcy) && !_cellHasEntity(hcx, hcy, u)) {
       const _hDist = Math.abs(hcx - u.x) + Math.abs(hcy - u.y);
-      const _hEnergy = (typeof S.energy === 'number') ? S.energy : 0;
+      const _hEnergy = (typeof S.mana === 'number') ? S.mana : 0;
       const _affordable = _hEnergy >= _hDist && _hDist > 0;
       const tpx = hcx * CELL + CELL / 2, tpy = hcy * CELL + CELL / 2;
       // Cursor sprite ant hover cell (pusiau permatomas jei neįperkama)
@@ -16761,6 +17274,54 @@ function _drawHarpoonRangeToast() {
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   ctx.fillStyle = color;
   ctx.fillText(label, x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
+// Stop sign — rodomas world-space ant hover cell'io, kai armed deploy ir cell'is už ally teritorijos.
+function _drawF11DeployStopSign() {
+  if (gameMode !== 'adventure' || S.floor !== 11) return;
+  if (!_f11DeployArmed) return;
+  if (_canvasMx < 0 || _canvasMy < 0) return;
+  const worldMx = _canvasMx + (S.cam?.x || 0);
+  const worldMy = _canvasMy + (S.cam?.y || 0);
+  const cellX = Math.floor(worldMx / CELL);
+  const cellY = Math.floor(worldMy / CELL);
+  if (cellX < 0 || cellY < 0 || cellX >= COLS || cellY >= ROWS) return;
+  const _territoryCols = (typeof S._f11ConqueredCols === 'number') ? S._f11ConqueredCols : F11_ALLY_TERRITORY_COLS;
+  if (cellX < _territoryCols) return; // teritorijoje — be stop sign
+  const cx = (cellX + 0.5) * CELL;
+  const cy = (cellY + 0.5) * CELL;
+  const r = CELL * 0.42;
+  const t = performance.now();
+  const pulse = 0.78 + 0.22 * Math.sin(t * 0.008);
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  // body
+  ctx.fillStyle = '#cc2222';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  // outer ring
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // inner dark ring (depth)
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#3d0808';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 4, 0, Math.PI * 2);
+  ctx.stroke();
+  // diagonal slash (NO sign)
+  const off = r * 0.62;
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - off, cy - off);
+  ctx.lineTo(cx + off, cy + off);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -17199,7 +17760,7 @@ function drawShootPreview() {
     if (wep === 'bullet') nrgReq = 2;
     if (wep === 'laser') nrgReq = 7;
     if (wep === 'heavy' || wep === 'shotgun') nrgReq = 4;
-    if (S.energy < nrgReq) return;
+    if (S.mana < nrgReq) return;
   } else {
     if (wep === 'bullet' && unit.ammo <= 0) return;
     if (wep === 'laser' && unit.laserAmmo <= 0) return;
@@ -17685,7 +18246,7 @@ function drawShamanProjectiles() {
           const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
           if (_hero) {
             const _hd = heroDmg(_dmgBase);
-            S.energy = Math.max(0, S.energy - _hd);
+            S.mana = Math.max(0, S.mana - _hd);
             _hero.hitFlash = 1; _hero.hitTimer = 1000;
             spawnHit(_hero.x, _hero.y, '#cc30ff', 28);
             spawnDmgNumber(_hero.x, _hero.y, `-${_hd}\u26A1`, '#cc30ff', 18, 'crit');
@@ -17702,10 +18263,11 @@ function drawShamanProjectiles() {
               spawnDmgNumber(_ally.x, _ally.y, 'BLOCK', '#88ddff', 14, 'normal');
             } else if (_ally) {
               const _dmg = (typeof _f11ScaleAllyIn === 'function') ? _f11ScaleAllyIn(_dmgBase) : _dmgBase;
+              if (S._f11LastRoll) _f11SpawnLuckLabel(_ally, S._f11LastRoll.label, S._f11LastRoll.color);
               _ally.hp = Math.max(0, (_ally.hp || 1) - _dmg);
               _ally.hitFlash = 1;
               spawnHit(_ally.x, _ally.y, '#cc30ff', 24);
-              spawnDmgNumber(_ally.x, _ally.y, `-${_dmg}`, '#cc30ff', 18, 'normal');
+              if (_dmg > 0) spawnDmgNumber(_ally.x, _ally.y, `-${_dmg}`, '#cc30ff', 18, 'normal');
               if (_ally.hp <= 0) {
                 _ally.alive = false;
                 if (typeof spawnDeath === 'function') spawnDeath(_ally.x, _ally.y, _ally.color || '#cc30ff');
@@ -17719,10 +18281,11 @@ function drawShamanProjectiles() {
             spawnDmgNumber(_enemy.x, _enemy.y, 'BLOCK', '#88ddff', 14, 'normal');
           } else if (_enemy) {
             const _dmg = (typeof _f11ScaleAllyOut === 'function') ? _f11ScaleAllyOut(_dmgBase) : _dmgBase;
+            if (S._f11LastRoll) _f11SpawnLuckLabel(_enemy, S._f11LastRoll.label, S._f11LastRoll.color);
             _enemy.hp = Math.max(0, (_enemy.hp || 1) - _dmg);
             _enemy.hitFlash = 1;
             spawnHit(_enemy.x, _enemy.y, '#cc30ff', 24);
-            spawnDmgNumber(_enemy.x, _enemy.y, `-${_dmg}`, '#cc30ff', 18, 'normal');
+            if (_dmg > 0) spawnDmgNumber(_enemy.x, _enemy.y, `-${_dmg}`, '#cc30ff', 18, 'normal');
             if (_enemy.hp <= 0) {
               _enemy.alive = false;
               if (typeof spawnDeath === 'function') spawnDeath(_enemy.x, _enemy.y, _enemy.color || '#cc30ff');
@@ -17852,10 +18415,11 @@ function drawBarracksHarpoons() {
             } else {
               if (typeof _f11ScaleAllyOut === 'function') _dmg = _f11ScaleAllyOut(_dmgBase);
             }
+            if (S._f11LastRoll) _f11SpawnLuckLabel(target, S._f11LastRoll.label, S._f11LastRoll.color);
             target.hp -= _dmg; target.hitFlash = 1;
             if (typeof triggerHitRecovery === 'function') triggerHitRecovery(target);
             if (SFX && SFX.hit) SFX.hit();
-            spawnDmgNumber(target.x, target.y, `-${_dmg}`, '#ffdd55', 22, 'normal');
+            if (_dmg > 0) spawnDmgNumber(target.x, target.y, `-${_dmg}`, '#ffdd55', 22, 'normal');
             if (target.hp <= 0) {
               target.hp = 0; target.alive = false;
               if (typeof spawnDeath === 'function') spawnDeath(target.x, target.y, target.color);
@@ -18124,7 +18688,7 @@ function drawHeroBullets() {
               const _brLvl = Profile.upgrades?.bloodRushLevel || 0, _brBonus = S.floorBuffs?.bloodRushBonus || 0;
               if (_brLvl > 0 || _brBonus > 0) {
                 const _brGain = ([0,1,2,3,4,5,6,8][_brLvl] || 0) + _brBonus;
-                S.energy = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), (S.energy || 0) + _brGain);
+                S.mana = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), (S.mana || 0) + _brGain);
                 spawnDmgNumber(eu.x, eu.y, `+${_brGain}⚡`, '#44ff88', 13, 'normal'); updateEnergyHud();
               }
             }
@@ -18646,8 +19210,8 @@ function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
   const t = performance.now();
   const isMoving = Math.abs(u.rx - u.x) > 0.01 || Math.abs(u.ry - u.y) > 0.01;
   const isDanger = (u._adjEnemy || u._bulletDanger) || false;
-  const isLowHp = gameMode === 'adventure' && S.energy <= 15;
-  const isHighPower = gameMode === 'adventure' && S.energy > 75;
+  const isLowHp = gameMode === 'adventure' && S.mana <= 15;
+  const isHighPower = gameMode === 'adventure' && S.mana > 75;
 
   const dx = u.aimDir ? u.aimDir.dx : u.facing.dx;
   const dy = u.aimDir ? u.aimDir.dy : u.facing.dy;
@@ -22394,7 +22958,7 @@ function claimCrackPrize(prize, bx, by) {
   logEvent(`BOX CRACKED — drop incoming! +5 energy bonus.`, 'loot');
   setTimeout(() => {
     const eMax = (typeof ENERGY_MAX !== 'undefined' ? ENERGY_MAX : 10) + (Profile?.upgrades?.maxEnergy || 0);
-    S.energy = Math.min(eMax, (S.energy || 0) + 5);
+    S.mana = Math.min(eMax, (S.mana || 0) + 5);
     updateEnergyHud && updateEnergyHud();
     spawnDmgNumber(bx, by, '+5\u26A1', '#00ff88', 16, 'crit');
     SFX.nanoHeal && SFX.nanoHeal();
@@ -22619,7 +23183,7 @@ function updateSkillBar(team) {
     if (gameMode === 'adventure') {
       if (w === 'hack') empty = (S.hackAmmo || 0) <= 0;
       else if (w === 'ronke') empty = (S.inventory?.find(s => s && s.type === 'ronke')?.qty || 0) <= 0;
-      else empty = S.energy < nrgReq;
+      else empty = S.mana < nrgReq;
     } else {
       empty = ammo <= 0;
     }
@@ -23208,16 +23772,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (u.x === _clickCellX && u.y === _clickCellY) { _clickedAlly = u; break; }
       }
       if (_clickedAlly) {
-        // Klik ant to paties pažymėto unit'o su atidarytu popup → uždarom popup'ą (toggle).
-        if (_selectedAllyUnit === _clickedAlly && _f11UnitPopupOpen) {
-          _f11UnitPopupOpen = false;
-          _f11MoveTargeting = false;
+        // Popup pašalintas — klik ant ally iš karto aktyvina MOVE targeting; antras klik ant cell'ės siunčia komandą.
+        if (_selectedAllyUnit === _clickedAlly) {
           _selectedAllyUnit = null;
+          _f11MoveTargeting = false;
         } else {
           _selectedAllyUnit = _clickedAlly;
-          _f11UnitPopupOpen = true;
-          _f11MoveTargeting = false;
+          _f11MoveTargeting = true;
         }
+        _f11UnitPopupOpen = false;
         return;
       }
       // 2) Jei selected IR MOVE targeting aktyvus — click ant tuščios ląstelės = move command,
@@ -23236,7 +23799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (_canTarget) {
           const _dist = Math.abs(_clickCellX - _selectedAllyUnit.x) + Math.abs(_clickCellY - _selectedAllyUnit.y);
           if (_dist === 0) return; // klik ant paties unit'o cell'ės — nieko nedarom
-          const _energyAvail = (typeof S.energy === 'number') ? S.energy : 0;
+          const _energyAvail = (typeof S.mana === 'number') ? S.mana : 0;
           if (_energyAvail < _dist) {
             // Nepakanka — flash feedback virš unit'o
             if (typeof spawnDmgNumber === 'function') {
@@ -23245,7 +23808,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof SFX !== 'undefined' && SFX.deny) SFX.deny();
             return;
           }
-          S.energy = Math.max(0, _energyAvail - _dist);
+          S.mana = Math.max(0, _energyAvail - _dist);
           if (typeof updateEnergyHud === 'function') updateEnergyHud();
           if (typeof spawnDmgNumber === 'function') {
             spawnDmgNumber(_clickCellX, _clickCellY, `-${_dist}⚡`, '#ffdd55', 16, 'crit');
@@ -23311,7 +23874,18 @@ document.addEventListener('DOMContentLoaded', () => {
           _f11DeployArmed = null;
           return;
         }
+        // Out-of-territory click → vizualinis feedback (pulse text + deny sfx)
+        const _territoryCols = (typeof S._f11ConqueredCols === 'number') ? S._f11ConqueredCols : F11_ALLY_TERRITORY_COLS;
         if (cellX >= 0 && cellX < COLS && cellY >= 0 && cellY < ROWS &&
+            cellX >= _territoryCols) {
+          if (typeof spawnDmgNumber === 'function') {
+            spawnDmgNumber(cellX, cellY, 'NO ZONE', '#ff3333', 14, 'miss');
+          }
+          if (SFX && SFX.deny) SFX.deny();
+          return;
+        }
+        if (cellX >= 0 && cellX < COLS && cellY >= 0 && cellY < ROWS &&
+            cellX < _territoryCols &&
             !isWall(cellX, cellY) &&
             !_cellHasEntity(cellX, cellY, null)) {
           const archetype = (typeof getEditorEnemyArchetype === 'function')
@@ -24398,13 +24972,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (S.clockSide !== 0) return;
     const sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
     if (!sel || S.pending[0] !== null) return;
+    // Hero šūvio blokas kai mana 0 — analogiškai keydown handler'iui.
+    if (gameMode === 'adventure' && (S.mana || 0) <= 0) {
+      const _now = performance.now();
+      if (!S._noManaWarnAt || _now - S._noManaWarnAt > 800) {
+        S._noManaWarnAt = _now;
+        if (typeof spawnDmgNumber === 'function') spawnDmgNumber(sel.x, sel.y, 'NO\u26A1', '#ff4444', 14, 'normal');
+        if (SFX && SFX.deny) SFX.deny();
+      }
+      return;
+    }
     const wepC = getCurrentWeapon(sel);
     if (gameMode === 'adventure') {
       let nrgReq = 0;
       if (wepC === 'bullet') nrgReq = 1;
       if (wepC === 'laser') nrgReq = 2;
       if (wepC === 'heavy' || wepC === 'shotgun') nrgReq = 3;
-      if (S.energy < nrgReq) return;
+      if (S.mana < nrgReq) return;
     } else {
       if (wepC === 'bullet' && sel.ammo <= 0) return;
       if (wepC === 'laser' && sel.laserAmmo <= 0) return;
@@ -24414,6 +24998,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (wepC === 'bullet' && gameMode === 'adventure') {
       const _tooClose = S.units.some(u => {
         if (!u.alive || u.team === 0) return false;
+        if (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)) return false;
         return Math.abs(u.x - sel.x) + Math.abs(u.y - sel.y) === 1;
       });
       if (_tooClose) {
@@ -24479,13 +25064,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (S.clockSide !== 0) return;
     const sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
     if (!sel || S.pending[0] !== null) return;
+    // Hero šūvio blokas kai mana 0 — analogiškai keydown handler'iui.
+    if (gameMode === 'adventure' && (S.mana || 0) <= 0) {
+      const _now = performance.now();
+      if (!S._noManaWarnAt || _now - S._noManaWarnAt > 800) {
+        S._noManaWarnAt = _now;
+        if (typeof spawnDmgNumber === 'function') spawnDmgNumber(sel.x, sel.y, 'NO\u26A1', '#ff4444', 14, 'normal');
+        if (SFX && SFX.deny) SFX.deny();
+      }
+      return;
+    }
     const wepC = getCurrentWeapon(sel);
     if (gameMode === 'adventure') {
       let nrgReq = 0;
       if (wepC === 'bullet') nrgReq = 1;
       if (wepC === 'laser') nrgReq = 2;
       if (wepC === 'heavy' || wepC === 'shotgun') nrgReq = 3;
-      if (S.energy < nrgReq) return;
+      if (S.mana < nrgReq) return;
     } else {
       if (wepC === 'bullet' && sel.ammo <= 0) return;
       if (wepC === 'laser' && sel.laserAmmo <= 0) return;
@@ -24811,7 +25406,7 @@ function _agentBuildState(hero) {
 
   return JSON.stringify({
     map: mapLines.join('\n'),
-    hero: { hp: hero.hp, maxHp: hero.maxHp, energy: S.energy, weapon },
+    hero: { hp: hero.hp, maxHp: hero.maxHp, energy: S.mana, weapon },
     enemies,
     adjacentEnemy,
     fogDir,
