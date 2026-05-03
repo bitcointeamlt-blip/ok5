@@ -691,6 +691,9 @@ const F11_MANA_MAX = 25;
 const F11_AURA_RADIUS = 3;
 const F11_ALLY_TERRITORY_COLS = 8;   // kiek kairiųjų stulpelių priklauso žaidėjui (deploy zona)
 const F11_GRAY_ZONE_WIDTH = 4;       // pilkos kontestuojamos juostos plotis (cols)
+// Toggle: jei true — conquest/loss progression IŠJUNGTA. Kodas paliktas vietoj
+// (initial ally territory vis dar piešiamas), bet net-force tick'as praleidžiamas.
+const F11_TERRITORY_DISABLED = true;
 // Feature flag: jei false → F11 veikia kaip anksčiau (LOCKED skills, 100 mana, be aura'os).
 // Toggle'ui tiesiog pakeisk į false, taip pat galima iš console: window.F11_COMMANDER_MODE = false.
 window.F11_COMMANDER_MODE = (typeof window.F11_COMMANDER_MODE === 'boolean') ? window.F11_COMMANDER_MODE : true;
@@ -1298,10 +1301,15 @@ function loadProfile() {
       if (!Profile.achievements) Profile.achievements = {};
       if (!Profile.stats) Profile.stats = { totalKills: 0 };
       if (Profile.stats.totalKills === undefined) Profile.stats.totalKills = 0;
+      if (typeof Profile.barracksUnlockedSlots !== 'number' || Profile.barracksUnlockedSlots < 4) Profile.barracksUnlockedSlots = 4;
+      if (Profile.barracksUnlockedSlots > 16) Profile.barracksUnlockedSlots = 16;
+      _barracksUnlockedSlots = Profile.barracksUnlockedSlots;
     } catch (e) { console.error("Could not load profile", e); }
   }
   if (!Profile.achievements) Profile.achievements = {};
   if (!Profile.stats) Profile.stats = { totalKills: 0 };
+  if (typeof Profile.barracksUnlockedSlots !== 'number') Profile.barracksUnlockedSlots = 4;
+  _barracksUnlockedSlots = Profile.barracksUnlockedSlots;
 }
 
 function saveProfile() {
@@ -2659,12 +2667,19 @@ window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 // Floor 12 — start be dekoracijų. Galima atskirai redaguoti per editor + window.exportMap().
 window.CUSTOM_MAP12 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":1,"y":3},"exitPos":{"x":40,"y":7}};
 // Floor 11 — kovos zona: 42x19 (15 žemės + 1 vandens + 3 šlaito), tiltas kol 4, kaip F10
-window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"14,4":"bridge_0_1","15,4":"bridge_0_2","16,4":"bridge_0_2","17,4":"bridge_0_2","18,4":"bridge_0_2","5,28":"red_archer_npc","9,32":"red_archer_npc","12,30":"red_archer_npc","5,8":"deco_14","9,12":"deco_15","9,6":"bush3","2,11":"bush3","11,11":"bush1","3,1":"bush1","7,13":"bush1","12,1":"bush4","3,4":"tree1","13,3":"tree1","7,4":"deco_11","3,11":"deco_11","6,12":"deco_01","11,4":"deco_01","14,12":"deco_01","6,1":"deco_05","2,7":"deco_05","8,9":"stump1","9,0":"tree4","11,20":"gold_stone_1","7,21":"tileset1_5_2","7,22":"tileset1_6_2","7,23":"tileset1_7_2","8,21":"tileset1_5_4","8,22":"tileset1_6_4","8,23":"tileset1_7_4","6,21":"tileset1_5_0","6,22":"tileset1_6_0","6,23":"tileset1_7_0"},"collisionBoxes":["8,21","8,22","8,23","7,23","7,22","7,21","6,21","6,22","6,23","3,4","13,3"],"enemies":[{"type":"skull","x":15,"y":7},{"type":"skull","x":18,"y":5},{"type":"shaman","x":22,"y":9},{"type":"shaman","x":34,"y":7},{"type":"shaman","x":36,"y":5},{"type":"shaman","x":36,"y":9}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":40,"y":7}};
+window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"9,6":"bush3","2,11":"bush3","11,11":"bush1","3,1":"bush1","7,13":"bush1","12,1":"bush4","3,4":"tree1","13,3":"tree1","9,0":"tree4"},"collisionBoxes":["3,4","13,3"],"enemies":[{"type":"skull","x":15,"y":7},{"type":"skull","x":18,"y":5},{"type":"shaman","x":22,"y":9},{"type":"shaman","x":34,"y":7},{"type":"shaman","x":36,"y":5},{"type":"shaman","x":36,"y":9}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":40,"y":7}};
 const _buildingImgs = {};
-['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'].forEach(n => {
+['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower','Zip'].forEach(n => {
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
   _buildingImgs[n] = img;
 });
+// Zip — animacinis tesla tower (horizontal strip 8×1, 8 frames). Pulse loop ~10fps.
+const _ZIP_DEF = { cols: 8, rows: 1, frames: 8, fps: 10 };
+// Charging anim — 14 frames, paleidžiama paskutinėmis 1.4s prieš CD ready, baigiasi tiksliai kai CD ready
+const _ZIP_CHARGE_DEF = { cols: 14, rows: 1, frames: 14, fps: 10 };
+const _ZIP_CHARGE_DUR_MS = (_ZIP_CHARGE_DEF.frames / _ZIP_CHARGE_DEF.fps) * 1000; // 1400ms
+const _zipChargeImg = new Image();
+_zipChargeImg.src = 'assets_tiny/Buildings_Zip_Charge.png';
 // ── Placeable NPC sprites ─────────────────────────────────────────────────
 const _pawnIdleImg    = new Image(); _pawnIdleImg.src    = 'assets_tiny/Pawn_Idle_Pickaxe.png';
 const _pawnRunImg     = new Image(); _pawnRunImg.src     = 'assets_tiny/Pawn_Run_Pickaxe.png';
@@ -2839,6 +2854,10 @@ window._showHarpoonRanges = false;    // edit map mygtukas + V klavišas toggle'
 let _harpoonRangeToastUntil = 0;      // toast'as apatiniame kampe kai toggle'ina
 let _lowManaToastUntil = 0;           // toast'as kai trūksta manos commander skill'ui
 let _barracksSelectedIdx = null;       // 0..15 pasirinkto unit'o indeksas arba null
+// Atrakinti slot'ai (default 4). Castle BUILD SLOT prideda po 1, max 16.
+let _barracksUnlockedSlots = 4;
+const _BARRACKS_MAX_SLOTS = 16;
+const _SLOT_BUILD_COST = 5;
 let _barracksProduceBtnBounds = null;  // produce mygtuko hit box
 let _barracksAvatarRects = [];         // kiekvieno avataro hit box'ai
 // PER-SLOT production: leidžia treniruoti kelis unit tipus lygiagrečiai.
@@ -2871,8 +2890,8 @@ function _getBarracksElapsed(now, unitIdx) {
   return el;
 }
 // unitIdx → enemy archetype type (indeksai atitinka avatar grid pozicijas 0..15).
-// Integruoti: 0=skull, 2=harpoon_fish, 4=shaman. Likusius pridėsim vėliau.
-const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', null, 'shaman', null, null, null,
+// Pirmi 4 aktyvūs užima eilutę 0; idx 4+ rezervuoti būsimiems unit tipams (atrakinama per Castle BUILD SLOT).
+const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', null, null, null, null,
                               null, null, null, null, null, null, null, null];
 function _findBarracksCell() {
   if (!S.decorations) return null;
@@ -3005,7 +3024,7 @@ function _saveBarracksTrainedState() {
   }
   // Preserve non-unit synthetic entries (towers) — jos nėra S.units, todėl rebuild jų neapima
   const _existingSynth = Array.isArray(Profile.barracksTrained)
-    ? Profile.barracksTrained.filter(s => s && s.utype === 'tower')
+    ? Profile.barracksTrained.filter(s => s && (s.utype === 'tower' || s.utype === 'zip'))
     : [];
   Profile.barracksTrained = [...snaps, ..._existingSynth];
   saveProfile();
@@ -3069,20 +3088,32 @@ function _restoreBarracksTrainedState() {
 const _BARRACKS_UNIT_COST = 1;
 const _BARRACKS_PRODUCE_MS = 60000;    // 1 min
 const _barracksAvatarImgs = [];
-for (let i = 1; i <= 16; i++) {
+// Avatar file numeris per slot idx — kad shaman (Avatar_05) būtų idx 3, paliekame Avatar_04 idx 4 (būsimas unit).
+const _BARRACKS_AVATAR_FILES = [1, 2, 3, 5, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+for (let i = 0; i < 16; i++) {
   const img = new Image();
-  img.src = `assets_tiny/enemy_avatars/Enemy Avatars_${String(i).padStart(2, '0')}.png`;
+  img.src = `assets_tiny/enemy_avatars/Enemy Avatars_${String(_BARRACKS_AVATAR_FILES[i]).padStart(2, '0')}.png`;
   _barracksAvatarImgs.push(img);
 }
 let _castleBtnBounds = null;
 let _castleTowerBtnBounds = null;
 let _castleTowerSpeedUpBtnBounds = null;
+let _castleZipBtnBounds = null;
+let _castleZipSpeedUpBtnBounds = null;
+let _castleSlotBtnBounds = null;
+let _castleSlotSpeedUpBtnBounds = null;
+let _castleSelectedIdx = null;
+let _castleCardRects = [];
 // Tower production: vienas slot'as castle'e — startAt + optional speedUpAnim
 // { startAt, speedUpAnim: { startMs, durMs, srcElapsed, dstElapsed } | null }
 let _towerProduction = null;
 const _TOWER_PRODUCE_MS = 60000;   // 1 min, kaip barracks
 const _TOWER_BUILD_COST = 3;
 const _TOWER_SPEEDUP_COST = 1;
+let _zipProduction = null;
+const _ZIP_PRODUCE_MS = 60000;
+const _ZIP_BUILD_COST = 5;
+const _ZIP_SPEEDUP_COST = 1;
 function _getTowerProdElapsed(now) {
   if (!_towerProduction) return 0;
   const anim = _towerProduction.speedUpAnim;
@@ -3117,6 +3148,139 @@ function _tickTowerProduction() {
   _towerProduction = null;
   if (typeof logEvent === 'function') logEvent('🗼 Tower ready', 'info');
 }
+function _getZipProdElapsed(now) {
+  if (!_zipProduction) return 0;
+  const anim = _zipProduction.speedUpAnim;
+  if (anim) {
+    const t = Math.max(0, Math.min(1, (now - anim.startMs) / anim.durMs));
+    if (t >= 1) {
+      _zipProduction.startAt = now - anim.dstElapsed;
+      _zipProduction.speedUpAnim = null;
+      return anim.dstElapsed;
+    }
+    return anim.srcElapsed + (anim.dstElapsed - anim.srcElapsed) * t;
+  }
+  return Math.max(0, now - _zipProduction.startAt);
+}
+function _tickZipProduction() {
+  if (!_zipProduction) return;
+  const now = performance.now();
+  const el = _getZipProdElapsed(now);
+  if (el < _ZIP_PRODUCE_MS) return;
+  if (!Array.isArray(Profile.barracksTrained)) Profile.barracksTrained = [];
+  const _zipSnap = {
+    id: (typeof _nextTrainedSnapId === 'function') ? _nextTrainedSnapId() : `tsn_z_${Date.now()}`,
+    utype: 'zip',
+    stack: 1,
+    hp: 1,
+    maxHp: 1,
+  };
+  Profile.barracksTrained.push(_zipSnap);
+  if (typeof saveProfile === 'function') saveProfile();
+  if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._zipSnap });
+  _zipProduction = null;
+  if (typeof logEvent === 'function') logEvent('⚡ Zip Tower ready', 'info');
+}
+// Slot (barracks slot atrakinimas) production — 1 min, gali speed up'inti
+let _slotProduction = null;
+const _SLOT_PRODUCE_MS = 60000;
+const _SLOT_SPEEDUP_COST = 1;
+function _getSlotProdElapsed(now) {
+  if (!_slotProduction) return 0;
+  const anim = _slotProduction.speedUpAnim;
+  if (anim) {
+    const t = Math.max(0, Math.min(1, (now - anim.startMs) / anim.durMs));
+    if (t >= 1) {
+      _slotProduction.startAt = now - anim.dstElapsed;
+      _slotProduction.speedUpAnim = null;
+      return anim.dstElapsed;
+    }
+    return anim.srcElapsed + (anim.dstElapsed - anim.srcElapsed) * t;
+  }
+  return Math.max(0, now - _slotProduction.startAt);
+}
+function _tickSlotProduction() {
+  if (!_slotProduction) return;
+  const now = performance.now();
+  const el = _getSlotProdElapsed(now);
+  if (el < _SLOT_PRODUCE_MS) return;
+  if (_barracksUnlockedSlots < _BARRACKS_MAX_SLOTS) {
+    _barracksUnlockedSlots++;
+    if (typeof Profile !== 'undefined') {
+      Profile.barracksUnlockedSlots = _barracksUnlockedSlots;
+      if (typeof saveProfile === 'function') saveProfile();
+    }
+  }
+  const added = _addBarracksGrassSlot();
+  _slotProduction = null;
+  if (typeof logEvent === 'function') logEvent(`🏰 Barracks slot unlocked (${_barracksUnlockedSlots}/${_BARRACKS_MAX_SLOTS})${added ? ` — naujas zoles plotas ${added}` : ''}`, 'info');
+}
+// Naujas tileset3_3_3 marker pasaulio žemėlapyje — extend'inam esančią zoles juostą po barakais.
+// Ieškom egzistuojančių markerių artimiausiame spiečiuje, randam free cell tiesiai šalia (left/right
+// pirma — tęsiame eilutę, tada below/above) ir įrašom į S.decorations.
+function _addBarracksGrassSlot() {
+  if (!S.decorations) S.decorations = {};
+  const cell = _findBarracksCell();
+  if (!cell) return null;
+  const markers = [];
+  for (const k in S.decorations) {
+    if (S.decorations[k] !== 'tileset3_3_3') continue;
+    const [r, c] = k.split(',').map(n => parseInt(n, 10));
+    const d = Math.abs(r - cell.r) + Math.abs(c - cell.c);
+    if (d <= 12) markers.push({ r, c, d });
+  }
+  const isFree = (r, c) => {
+    if (r < 0 || c < 0 || r >= ROWS || c >= COLS) return false;
+    const k = `${r},${c}`;
+    if (S.decorations[k]) return false;
+    if (typeof isWall === 'function' && isWall(c, r)) return false;
+    return true;
+  };
+  const tryAdd = (r, c) => {
+    if (!isFree(r, c)) return null;
+    const k = `${r},${c}`;
+    S.decorations[k] = 'tileset3_3_3';
+    return k;
+  };
+  if (markers.length > 0) {
+    // Eilutė pilna ties 5 plotais — tada nauja linija žemiau pradedant nuo originalaus kairiojo C.
+    const MAX_PER_ROW = 5;
+    const rowBuckets = {};
+    for (const m of markers) {
+      if (!rowBuckets[m.r]) rowBuckets[m.r] = [];
+      rowBuckets[m.r].push(m);
+    }
+    const rows = Object.keys(rowBuckets).map(Number).sort((a, b) => a - b);
+    const topRow = rows[0];
+    const baseLeftC = Math.min(...rowBuckets[topRow].map(m => m.c));
+    // Tikrinam eilutes nuo viršaus žemyn — randam pirmąją, kuri dar ne pilna.
+    for (const r of rows) {
+      const cs = rowBuckets[r].map(m => m.c).sort((a, b) => a - b);
+      if (cs.length < MAX_PER_ROW) {
+        const right = tryAdd(r, cs[cs.length - 1] + 1);
+        if (right) return right;
+        const left = tryAdd(r, cs[0] - 1);
+        if (left) return left;
+      }
+    }
+    // Visos esamos eilutės pilnos → nauja eilutė žemiau, pradedant nuo originalaus kairio C.
+    const lastRow = rows[rows.length - 1];
+    for (let dr = 1; dr <= 6; dr++) {
+      for (let dc = 0; dc < MAX_PER_ROW; dc++) {
+        const k = tryAdd(lastRow + dr, baseLeftC + dc);
+        if (k) return k;
+      }
+    }
+  }
+  // Fallback: po barakais nuo (cell.r+6) eilės, ieškom laisvo lango.
+  for (let dr = 6; dr <= 10; dr++) {
+    for (let dc = -2; dc <= 3; dc++) {
+      const k = tryAdd(cell.r + dr, cell.c + dc);
+      if (k) return k;
+    }
+  }
+  return null;
+}
 let _ronkeHeroBounds = null;   // Ronke hero sprite ribos (hover outline + click block)
 let _ronkePopupOpen = false;   // ar atidarytas ronke2 radial menu
 let _ronkeRadialMenu = null;   // { cx, cy, innerR, outerR, items }
@@ -3134,6 +3298,202 @@ let _freeMoveStep = null; // { srcX, srcY, dstX, dstY, start }
 // ── HERO RTS auto-AI (F11) ─ hero veikia kaip kiti ally unitai:
 // auto-detect hostile cheb≤6, jei cardinal aligned + range≤5 → šauna,
 // kitaip step toward alignment. CommandMove (player click) override'ina
+// Loot pickup helper — naudoja resolveTick (turn-based) IR loop (F11 RTS auto-AI).
+// Anksčiau pickup logika buvo tik resolveTick'e — F11 hero automatiškai eidamas ant loot
+// nieko nesurinkdavo, nes resolveTick nebuvo triggerinamas.
+function _pollHeroLootPickup() {
+  if (!S || !Array.isArray(S.loot) || !S.units) return;
+  // PERF: hero ieškomas 1× per call vietoj per-loot find()
+  const _hero = S.units.find(u => u && u.team === 0 && u.alive);
+  if (!_hero) return;
+  const _hx = _hero.x, _hy = _hero.y;
+  S.loot.forEach(l => {
+    if (!l || l.collected) return;
+    if (l.type === 'lockedBox') return; // shoot to crack — no auto-collect
+    if (l.x !== _hx || l.y !== _hy) return;
+    l.collected = true;
+    if (typeof SFX !== 'undefined' && SFX.pickup) SFX.pickup();
+    if (l.type === 'fragment') {
+      S.fragments = (S.fragments || 0) + l.val;
+      if (typeof syncFragmentSlot === 'function') syncFragmentSlot();
+      if (typeof logEvent === 'function') logEvent(`+${l.val} CHIP FRAGMENT${l.val > 1 ? 'S' : ''}`, 'fragment');
+      if (typeof spawnPickupFX === 'function') spawnPickupFX(l.x, l.y, '#ff8800');
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(l.x, l.y, `+${l.val} FRAG`, '#ffaa22', 14, 'normal');
+      if (typeof checkFragmentCombine === 'function') checkFragmentCombine(l.x, l.y);
+    } else if (l.type === 'xptoken') {
+      S.xpTokens = (S.xpTokens || 0) + l.val;
+      if (typeof syncXpTokenSlot === 'function') syncXpTokenSlot();
+      if (typeof logEvent === 'function') logEvent(`+${l.val} XP TOKEN`, 'xp');
+      if (typeof spawnPickupFX === 'function') spawnPickupFX(l.x, l.y, '#00ffcc');
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
+    } else if (l.type === 'goldbag') {
+      const gain = l.val || 3;
+      if (typeof addToInventory === 'function') addToInventory('goldbag', null, gain);
+      if (typeof updateInventoryUI === 'function') updateInventoryUI();
+      if (typeof spawnPickupFX === 'function') spawnPickupFX(l.x, l.y, '#ffcc00');
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(l.x, l.y, `+${gain} $ BAG`, '#ffee00', 16, 'crit');
+      if (typeof SFX !== 'undefined' && SFX.play) SFX.play(880, 0.12, 0.08, 'sine', 200);
+      if (typeof logEvent === 'function') logEvent(`+${gain} $ Bag collected`, 'loot');
+    } else if (l.type === 'ronke') {
+      if (typeof addToInventory === 'function') addToInventory('ronke', null, 1);
+      if (S.inventoryOpen && typeof updateInventoryUI === 'function') updateInventoryUI();
+      if (typeof spawnPickupFX === 'function') spawnPickupFX(l.x, l.y, '#44aaff');
+    } else if (l.type === 'gem') {
+      const gemGain = 15;
+      const _oldE = S.mana || 0;
+      const _maxE = (typeof ENERGY_MAX === 'number' ? ENERGY_MAX : 100) + ((typeof Profile !== 'undefined' && Profile.upgrades) ? (Profile.upgrades.maxEnergy || 0) : 0);
+      S.mana = Math.min(_maxE, _oldE + gemGain);
+      if (typeof animateEnergyGain === 'function') animateEnergyGain(_oldE, S.mana);
+      if (typeof addToInventory === 'function') addToInventory('gem', null, 1);
+      if (S.inventoryOpen && typeof updateInventoryUI === 'function') updateInventoryUI();
+      if (typeof logEvent === 'function') logEvent(`+${gemGain}⚡ PIXEL collected`, 'loot');
+      if (typeof spawnPickupFX === 'function') spawnPickupFX(l.x, l.y, '#44ff66');
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(l.x, l.y, `+${gemGain}⚡`, '#44ff88', 16, 'crit');
+    }
+  });
+}
+
+// F11 nuolatinis priesu eismas — periodiškai spawnina enemy unit'us ant dešiniojo krašto,
+// kad neliktų "tuščios" kovos kai pradinis preplaced enemy set'as išmuštas. Walk-on AI
+// (engage allies) jau veikia normaliai per esamą enemy AI tick.
+function _tickF11EnemyTraffic(now) {
+  if (gameMode !== 'adventure' || !f11LikeFloor()) return;
+  if (S._f11Outcome) return;
+  if (S._f11SetupUntil && now < S._f11SetupUntil) return;
+  if (!Array.isArray(S.units) || !Array.isArray(S.dungeon)) return;
+  if (typeof getEditorEnemyArchetype !== 'function' || typeof mkUnit !== 'function') return;
+
+  if (typeof S._f11LastEnemySpawnAt !== 'number') S._f11LastEnemySpawnAt = now;
+  const SPAWN_INTERVAL = 3500;
+  if (now - S._f11LastEnemySpawnAt < SPAWN_INTERVAL) return;
+
+  let _aliveEnemies = 0;
+  for (const u of S.units) {
+    if (u && u.alive && u.team === 1) _aliveEnemies++;
+  }
+  if (_aliveEnemies >= 14) return;
+
+  const _spawnCol = COLS - 2;
+  const _candidates = [];
+  for (let _r = 0; _r < ROWS; _r++) {
+    const _t = S.dungeon[_r] && S.dungeon[_r][_spawnCol];
+    if (_t !== 1 && _t !== 3 && _t !== 6) continue;
+    if (S.units.some(u => u && u.alive && u.x === _spawnCol && u.y === _r)) continue;
+    _candidates.push(_r);
+  }
+  if (_candidates.length === 0) return;
+  const _ry = _candidates[Math.floor(Math.random() * _candidates.length)];
+
+  const _types = ['skull', 'skull', 'shaman'];
+  const _type = _types[Math.floor(Math.random() * _types.length)];
+  const _archetype = getEditorEnemyArchetype(_type);
+  if (!_archetype) return;
+
+  const _id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : Math.floor(Math.random() * 1e9);
+  const _u = mkUnit(_id, 1, _spawnCol, _ry, -1, _archetype);
+  if (_BARRACKS_UNIT_TYPES && _BARRACKS_UNIT_TYPES.includes(_type)) _u.isEditorEnemy = true;
+  S.units.push(_u);
+  if (typeof spawnHit === 'function') spawnHit(_spawnCol, _ry, '#ff6666', 6);
+
+  S._f11LastEnemySpawnAt = now;
+}
+
+// Zip tower lightning — kas 5s šauna į artimiausią team===1 unit'ą per ≤8 cells.
+// 25% miss šansas (bolt šauna pro šalį be damage). Damage = pusė nuo Tower'io strėlių (7 → 3).
+const _ZIP_RANGE_CELLS = 8;
+const _ZIP_COOLDOWN_MS = 5000;
+const _ZIP_DMG = 3;
+const _ZIP_MISS_CHANCE = 0.25;
+const _ZIP_BOLT_LIFE_MS = 220;
+function _tickZipTowers(now) {
+  if (!S || !S.decorations || !Array.isArray(S.units)) return;
+  if (!S._zipState) S._zipState = {};
+  if (!Array.isArray(S._zipBolts)) S._zipBolts = [];
+  for (const key in S.decorations) {
+    if (S.decorations[key] !== 'building_Zip') continue;
+    const parts = key.split(',');
+    const tr = +parts[0], tc = +parts[1];
+    if (!isFinite(tr) || !isFinite(tc)) continue;
+    let st = S._zipState[key];
+    if (!st) { st = S._zipState[key] = { nextShootAt: 0 }; }
+    if (now < st.nextShootAt) continue;
+    let best = null, bestD = Infinity;
+    for (const u of S.units) {
+      if (!u || !u.alive || u.team !== 1) continue;
+      const ux = (u.rx != null ? u.rx : u.x);
+      const uy = (u.ry != null ? u.ry : u.y);
+      const d = Math.hypot(ux - tc, uy - tr);
+      if (d > _ZIP_RANGE_CELLS) continue;
+      if (d < bestD) { best = u; bestD = d; }
+    }
+    if (!best) continue;
+    const _miss = Math.random() < _ZIP_MISS_CHANCE;
+    if (!_miss) {
+      best.hp -= _ZIP_DMG; best.hitFlash = 1;
+      if (typeof spawnHit === 'function') spawnHit(best.x, best.y, '#88ddff', 8);
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(best.x, best.y, `-${_ZIP_DMG}`, '#88ddff', 18);
+      if (best.hp <= 0) {
+        best.alive = false;
+        if (typeof spawnDeath === 'function') spawnDeath(best.x, best.y, best.color || '#88ddff');
+      }
+    } else {
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(best.x, best.y, 'MISS', '#aaccdd', 14, 'miss');
+    }
+    const sx = tc * CELL + CELL / 2;
+    const sy = tr * CELL - 50;
+    const _tgX = (best.rx != null ? best.rx : best.x);
+    const _tgY = (best.ry != null ? best.ry : best.y);
+    let ex = _tgX * CELL + CELL / 2;
+    let ey = _tgY * CELL + CELL / 2;
+    if (_miss) {
+      const _ang = Math.random() * Math.PI * 2;
+      const _off = (1.4 + Math.random() * 0.8) * CELL; // 1.4..2.2 cell offset
+      ex += Math.cos(_ang) * _off;
+      ey += Math.sin(_ang) * _off;
+    }
+    S._zipBolts.push({ sx, sy, ex, ey, born: now, life: _ZIP_BOLT_LIFE_MS, seed: Math.random() * 1000 });
+    st.nextShootAt = now + _ZIP_COOLDOWN_MS;
+  }
+  for (let i = S._zipBolts.length - 1; i >= 0; i--) {
+    if (now - S._zipBolts[i].born > S._zipBolts[i].life) S._zipBolts.splice(i, 1);
+  }
+}
+
+function _drawZipBolts(now) {
+  if (!Array.isArray(S._zipBolts) || S._zipBolts.length === 0) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const b of S._zipBolts) {
+    const t = (now - b.born) / b.life;
+    if (t >= 1) continue;
+    const alpha = 1 - t;
+    const dx = b.ex - b.sx, dy = b.ey - b.sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const segs = 14;
+    ctx.beginPath();
+    ctx.moveTo(b.sx, b.sy);
+    for (let i = 1; i < segs; i++) {
+      const f = i / segs;
+      const taper = Math.sin(f * Math.PI);
+      const j = (Math.sin(b.seed * 0.13 + i * 11.7) * 0.6 + Math.cos(b.seed * 0.07 + i * 5.3) * 0.4) * 14 * taper;
+      ctx.lineTo(b.sx + dx * f + nx * j, b.sy + dy * f + ny * j);
+    }
+    ctx.lineTo(b.ex, b.ey);
+    ctx.strokeStyle = `rgba(140,200,255,${0.35 * alpha})`;
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(180,220,255,${0.6 * alpha})`;
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${0.95 * alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 // path bet auto-engage vis tiek aktyvus kelyje.
 function _tickHeroRtsCmd(now) {
   if (typeof S === 'undefined' || !S || !S.units) return;
@@ -3160,6 +3520,19 @@ function _tickHeroRtsCmd(now) {
 
   if (S.phase !== 'frozen' || (S.pending && S.pending[0])) return;
   if (S.heroShootLock) return;
+
+  // CommandMove arrived → kursorius fade out 400ms, hero stovi vietoj.
+  // Ši patikra TURI būti virš engage logikos kitaip auto-engage'as block'ina cleanup'ą.
+  if (hero.commandMove && hero.commandMove.arrivedAt) {
+    if (now - hero.commandMove.arrivedAt > 400) hero.commandMove = null;
+    return;
+  }
+  // Path baigta + ne engage → mark arrived (paleidžia fade)
+  if (hero.commandMove && (!hero.commandMove.path || hero.commandMove.path.length === 0)
+      && !hero.commandMove.engage) {
+    hero.commandMove.arrivedAt = now;
+    return;
+  }
 
   // 1) PLAYER PATH — aukščiausias prioritetas. Jei žaidėjas davė commandMove path,
   //    eina ten net jeigu šalia priešas. Auto-engage NEPERIMA komandos. Player komandos
@@ -3198,10 +3571,24 @@ function _tickHeroRtsCmd(now) {
       hero.commandMove = null;
     }
     if (S.units) {
-      // (b) — fire-range first. Tik HORIZONTAL (same row) — ronke2 šauna tiesiai į priekį.
+      // Build candidates list — S.units hostiles + red archer NPC stubs (decorations)
+      const _candidates = [];
       for (const u of S.units) {
         if (!u || !u.alive) continue;
         if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(u)) continue;
+        _candidates.push(u);
+      }
+      if (typeof _redArcherStates !== 'undefined' && S.decorations) {
+        for (const _rk in _redArcherStates) {
+          const _rs = _redArcherStates[_rk];
+          if (!_rs) continue;
+          const _dt = S.decorations[_rk];
+          if (_dt !== 'red_archer_npc' && _dt !== 'red_archer_idle_npc') continue;
+          _candidates.push({ x: _rs.cx, y: _rs.cy, alive: true, _isRedArcherNpc: true, _redArcherKey: _rk });
+        }
+      }
+      // (b) — fire-range first. Tik HORIZONTAL (same row) — ronke2 šauna tiesiai į priekį.
+      for (const u of _candidates) {
         const adx = Math.abs(u.x - hero.x), ady = Math.abs(u.y - hero.y);
         if (ady === 0 && adx >= HERO_OPT_MIN && adx <= HERO_OPT_MAX) {
           engageTarget = u; break;
@@ -3210,9 +3597,7 @@ function _tickHeroRtsCmd(now) {
       // (c) — nearest cheb ≤ 10
       if (!engageTarget) {
         let bestD = 999;
-        for (const u of S.units) {
-          if (!u || !u.alive) continue;
-          if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(u)) continue;
+        for (const u of _candidates) {
           const cheb = Math.max(Math.abs(u.x - hero.x), Math.abs(u.y - hero.y));
           if (cheb > 10) continue;
           if (cheb < bestD) { bestD = cheb; engageTarget = u; }
@@ -3239,8 +3624,10 @@ function _tickHeroRtsCmd(now) {
       const _ddy = adx === 0 ? Math.sign(dy) : 0;
       hero.facing = { dx: _ddx, dy: _ddy };
       hero.swingStart = now;
+      // 50% accuracy — pusė ronke2 šūvių MISS
+      const _heroMiss = Math.random() < 0.5;
       if (typeof spawnHeroBullet === 'function') {
-        spawnHeroBullet(hero.x, hero.y, _ddx, _ddy, hero);
+        spawnHeroBullet(hero.x, hero.y, _ddx, _ddy, hero, _heroMiss);
       }
       // Po smūgio — atsitraukti 2 blokus + leisti perskaičiuoti naują nearest target
       hero._rtsRetreatLeft = 2;
@@ -3328,9 +3715,13 @@ function _tickHeroRtsCmd(now) {
     return;
   }
 
-  // 4) No target & no path — clearinam stale commandMove
+  // 4) No target & no path — fade-out cursor (arrivedAt) tada clearinam commandMove
   if (hero.commandMove && !hero.commandMove.engage) {
-    hero.commandMove = null;
+    if (!hero.commandMove.arrivedAt) {
+      hero.commandMove.arrivedAt = now;
+    } else if (now - hero.commandMove.arrivedAt > 400) {
+      hero.commandMove = null;
+    }
   }
 }
 
@@ -6654,7 +7045,7 @@ function revealFog(cx, cy) {
       const x = cx + dx, y = cy + dy;
       if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue;
       if (Math.hypot(dx, dy) <= FOG_RADIUS) {
-        if (!S.fog[y][x] && S.fogReveal) S.fogReveal[y][x] = now; // record first-reveal time
+        if (!S.fog[y][x] && S.fogReveal) { S.fogReveal[y][x] = now; S._fogRevealLastSetAt = now; }
         S.fog[y][x] = true;
       }
     }
@@ -10515,6 +10906,65 @@ function drawForegroundDecorations() {
     }
     const img = _buildingImgs[name];
     if (!img || !img.complete || img.naturalWidth === 0) continue;
+    // Zip (animacinis tesla tower 4×2 grid) — frame cropping + per-frame ciklas
+    if (name === 'Zip') {
+      const _nowCd = performance.now();
+      const _zKey = `${r},${c}`;
+      const _zSt = (S._zipState && S._zipState[_zKey]) ? S._zipState[_zKey] : null;
+      const _nextAt = _zSt ? (_zSt.nextShootAt || 0) : 0;
+      const _cdMs = (typeof _ZIP_COOLDOWN_MS === 'number') ? _ZIP_COOLDOWN_MS : 5000;
+      const _msUntilReady = Math.max(0, _nextAt - _nowCd);
+      // Charge anim ijungiama paskutinemis _ZIP_CHARGE_DUR_MS, baigiasi tiksliai kai CD ready.
+      // Po CD ready (_msUntilReady===0) — laikom paskutini frame'a (peak charge) iki shot'o.
+      const _chargeReady = _zipChargeImg.complete && _zipChargeImg.naturalWidth > 0;
+      const _useCharge = _chargeReady && _nextAt > 0 && _msUntilReady <= _ZIP_CHARGE_DUR_MS;
+      let _srcImg, _zDef, _zFrame;
+      if (_useCharge) {
+        _srcImg = _zipChargeImg;
+        _zDef = _ZIP_CHARGE_DEF;
+        if (_msUntilReady === 0) {
+          _zFrame = _zDef.frames - 1; // hold last frame waiting for shot
+        } else {
+          const _e = _ZIP_CHARGE_DUR_MS - _msUntilReady;
+          _zFrame = Math.min(_zDef.frames - 1, Math.floor(_e / (1000 / _zDef.fps)));
+        }
+      } else {
+        _srcImg = img;
+        _zDef = _ZIP_DEF;
+        _zFrame = Math.floor(_nowCd / (1000 / _zDef.fps)) % _zDef.frames;
+      }
+      const _zfw = _srcImg.naturalWidth / _zDef.cols;
+      const _zfh = _srcImg.naturalHeight / _zDef.rows;
+      const _zsx = (_zFrame % _zDef.cols) * _zfw;
+      const _zsy = Math.floor(_zFrame / _zDef.cols) * _zfh;
+      // Abu sheet'ai paruošti vienodame 400×498 canvas su tower base ant pixel-perfect (194.5, 487)
+      const _zScale = 0.275;
+      const _zw = _zfw * _zScale, _zh = _zfh * _zScale;
+      const _zbx = c * CELL + (CELL - _zw) / 2;
+      const _zby = r * CELL + CELL - _zh + 1;
+      ctx.drawImage(_srcImg, _zsx, _zsy, _zfw, _zfh, _zbx, _zby, _zw, _zh);
+      // CD bar — toks pat stilius kaip Tower
+      {
+        const _elapsed = _cdMs - _msUntilReady;
+        const cdFrac = Math.max(0, Math.min(1, _elapsed / _cdMs));
+        const _ready = cdFrac >= 1;
+        const barH = 6, barW = 56;
+        const barX = _zbx + _zw / 2 - barW / 2;
+        const barY = _zby + 9 - 29;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+        ctx.fillStyle = '#1a1f28';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = _ready ? '#6eff8a' : '#ffcf5c';
+        ctx.fillRect(barX, barY, Math.max(0, barW * cdFrac), barH);
+        ctx.strokeStyle = _ready ? '#9eff9e' : '#8a6a2e';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+        ctx.restore();
+      }
+      continue;
+    }
     const _bldgOffsetY = { Castle: -25, Tower: -70, House3: -30 };
     const offsetY = _bldgOffsetY[name] || 0;
     // House3 (primary RONKE MINE) — sumažintas du kartus po 10% (0.80 * 0.9 * 0.9 ≈ 0.648)
@@ -10600,7 +11050,7 @@ function drawForegroundDecorations() {
       const _ready = cdFrac >= 1;
       const barH = 6, barW = 56;
       const barX = bx + bw / 2 - barW / 2;
-      const barY = by + 9;
+      const barY = by + 9 - 4;
       ctx.save();
       // Bg
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -10617,6 +11067,9 @@ function drawForegroundDecorations() {
       ctx.restore();
     }
   }
+
+  // Zip lightning bolts (po building render kad būtų virš pastato)
+  if (typeof _drawZipBolts === 'function') _drawZipBolts(performance.now());
 
   // Placeable pawn/PAM/stone NPCs
   _updateAndDrawPawnNpcs(decKeys);
@@ -10753,14 +11206,34 @@ function drawForegroundDecorations() {
   } else {
     _stoneUpgradeBtnBounds = null;
   }
-  // Castle upgrade popup — paspaudus Build pridedamas naujas kasimo setupas
+  // Castle upgrade popup — Barracks-style card grid: Mine / Tower / Zip
   if (_castlePopupOpen && _castleBounds) {
     const mineCount = _extraMines.length;
-    const CASTLE_COST = 1;
-    const pw = 148;
-    const headerH = 24;
-    const ph = 178;
-    const rad = 6;
+    const MINE_COST = 1;
+    // Pastatų sąrašas — eilės tvarka atitinka idx (0=mine, 1=tower, 2=zip, 3=slot)
+    const _CASTLE_BUILDS = [
+      { key: 'mine',  label: 'MINE',  img: 'House3',   cost: MINE_COST,         animated: null },
+      { key: 'tower', label: 'TOWER', img: 'Tower',    cost: _TOWER_BUILD_COST, animated: null },
+      { key: 'zip',   label: 'ZIP',   img: 'Zip',      cost: _ZIP_BUILD_COST,   animated: _ZIP_DEF },
+      { key: 'slot',  label: 'SLOT',  img: 'Barracks', cost: _SLOT_BUILD_COST,  animated: null },
+    ];
+    const _slotProd = (idx) => idx === 1 ? _towerProduction : idx === 2 ? _zipProduction : idx === 3 ? _slotProduction : null;
+    const _slotElapsed = (idx, now) => idx === 1 ? _getTowerProdElapsed(now) : idx === 2 ? _getZipProdElapsed(now) : idx === 3 ? _getSlotProdElapsed(now) : 0;
+    const _slotCount = (idx) => {
+      if (idx === 0) return mineCount;
+      if (idx === 3) return _barracksUnlockedSlots;
+      const k = idx === 1 ? 'tower' : 'zip';
+      return (Profile && Array.isArray(Profile.barracksTrained))
+        ? Profile.barracksTrained.filter(s => s && s.utype === k).length : 0;
+    };
+    // Grid dimensijos — kaip Barracks (CELL_SZ=44, GAP=4)
+    const COLS_C = 4, ROWS_C = 1, CELL_SZC = 44, GAP_C = 4;
+    const PAD_X_C = 10, PAD_TOP_C = 34, PAD_BOT_C = 86;
+    const gridW = COLS_C * CELL_SZC + (COLS_C - 1) * GAP_C;
+    const pw = gridW + PAD_X_C * 2;
+    const ph = CELL_SZC + PAD_TOP_C + PAD_BOT_C;
+    const headerH = 26;
+    const rad = 7;
     let px = Math.round(_castleBounds.x + _castleBounds.w / 2 - pw / 2);
     let py = Math.round(_castleBounds.y - ph - 14);
     const PAD = 6;
@@ -10777,222 +11250,278 @@ function drawForegroundDecorations() {
       ctx.arcTo(x,     y,     x + w, y,     r);
       ctx.closePath();
     };
-    // Drop shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    rr(px + 2, py + 4, pw, ph, rad); ctx.fill();
-    // Panel bg
-    ctx.fillStyle = '#1a1410';
+    // Drop shadow + panel
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    rr(px + 3, py + 4, pw, ph, rad); ctx.fill();
+    ctx.fillStyle = '#1f242f';
     rr(px, py, pw, ph, rad); ctx.fill();
-    // Header
+    // Header juosta
     ctx.save();
     rr(px, py, pw, ph, rad); ctx.clip();
     ctx.fillStyle = '#b08a2e';
     ctx.fillRect(px, py, pw, headerH);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fillRect(px, py + headerH - 2, pw, 2);
     ctx.restore();
     // Border
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     ctx.strokeStyle = '#ffe97a';
     rr(px + 0.5, py + 0.5, pw - 1, ph - 1, rad);
     ctx.stroke();
-    // Title
-    ctx.fillStyle = '#1a1506';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('CASTLE', px + pw / 2, py + headerH / 2);
-    // ── Symmetric two-section layout ────────────────────────────────────
-    // Each section: stat row (label + count) + cost row + button. Same height.
-    const bw2 = 112, bh2 = 22;
-    const sec1Top = py + headerH + 12;     // py+36
-    const sec1StatY = sec1Top;             // py+36
-    const sec1CostY = sec1StatY + 16;      // py+52  (top of icon)
-    const sec1BtnY  = sec1CostY + 16 + 7;  // py+75
-    const sec1BtnEnd = sec1BtnY + bh2;     // py+97
-    const sec2Top = sec1BtnEnd + 4;        // py+101 — also divider Y
-    const sec2StatY = sec2Top + 11;        // py+112
-    const sec2CostY = sec2StatY + 16;      // py+128
-    const sec2BtnY  = sec2CostY + 16 + 7;  // py+151
-    // ── MINES section ───────────────────────────────────────────────────
-    const statX = px + 10;
-    const statR = px + pw - 10;
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#8a92a0';
-    ctx.fillText('MINES', statX, sec1StatY);
-    ctx.font = 'bold 12px monospace';
-    ctx.textAlign = 'right';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    const minesStr = mineCount + ' \u2192 ' + (mineCount + 1);
-    ctx.fillStyle = '#7effa0';
-    ctx.strokeText(minesStr, statR, sec1StatY);
-    ctx.fillText(minesStr, statR, sec1StatY);
-    // Cost row (centered)
-    const iconSz = 16, gapC = 5;
-    const costLabel = String(CASTLE_COST);
-    ctx.font = 'bold 12px monospace';
-    const costW = ctx.measureText(costLabel).width;
-    const rowW = iconSz + gapC + costW;
-    const rowX = px + pw / 2 - rowW / 2;
-    const fr = Math.floor(performance.now() / 90) % 8;
-    const thumb = _getRonkeCoinThumb(iconSz, fr);
-    if (thumb) ctx.drawImage(thumb, rowX, sec1CostY);
-    const canAfford = _ronkeBalance >= CASTLE_COST;
-    ctx.fillStyle = canAfford ? '#ffe066' : '#d48a8a';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.strokeText(costLabel, rowX + iconSz + gapC, sec1CostY + iconSz / 2);
-    ctx.fillText(costLabel, rowX + iconSz + gapC, sec1CostY + iconSz / 2);
-    // BUILD MINE button
-    const bxU = px + pw / 2 - bw2 / 2;
-    const byU = sec1BtnY;
-    const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 &&
-                     _worldMy >= byU && _worldMy <= byU + bh2;
-    ctx.fillStyle = !canAfford ? '#2d3a2d' : (hoverBtn ? '#6ec56e' : '#4e9e4e');
-    rr(bxU, byU, bw2, bh2, 5); ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = !canAfford ? '#5a6e5a' : (hoverBtn ? '#d4ffd4' : '#a8f0a8');
-    rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
-    ctx.fillStyle = canAfford ? '#fff' : '#aaa';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.strokeText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-    ctx.fillText('BUILD MINE', bxU + bw2 / 2, byU + bh2 / 2 + 1);
-    // ── Divider ─────────────────────────────────────────────────────────
-    ctx.fillStyle = 'rgba(255,233,122,0.25)';
-    ctx.fillRect(px + 8, sec2Top, pw - 16, 1);
-    // ── TOWERS section ──────────────────────────────────────────────────
-    const _twrCntPending = (Profile && Array.isArray(Profile.barracksTrained))
-      ? Profile.barracksTrained.filter(s => s && s.utype === 'tower').length : 0;
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#8a92a0';
-    ctx.fillText('TOWERS', statX, sec2StatY);
-    ctx.font = 'bold 12px monospace';
-    ctx.textAlign = 'right';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillStyle = '#7effa0';
-    const _twrCntStr = `${_twrCntPending} \u2192 ${_twrCntPending + 1}`;
-    ctx.strokeText(_twrCntStr, statR, sec2StatY);
-    ctx.fillText(_twrCntStr, statR, sec2StatY);
-
-    if (_towerProduction) {
-      // BUILDING — progress bar at cost row position + SPEED UP at button position
-      const _now = performance.now();
-      const _twrEl = _getTowerProdElapsed(_now);
-      const _twrProg = Math.max(0, Math.min(1, _twrEl / _TOWER_PRODUCE_MS));
-      const _twrRemS = Math.max(0, Math.ceil((_TOWER_PRODUCE_MS - _twrEl) / 1000));
-      const _twrTimeStr = _twrRemS >= 60
-        ? `${Math.floor(_twrRemS / 60)}:${String(_twrRemS % 60).padStart(2, '0')}`
-        : `${_twrRemS}s`;
-      const _barX = px + 10;
-      const _barY = sec2CostY + 3;
-      const _barW = pw - 20;
-      const _barH = 10;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(_barX - 1, _barY - 1, _barW + 2, _barH + 2);
-      ctx.fillStyle = '#1a2030';
-      ctx.fillRect(_barX, _barY, _barW, _barH);
-      ctx.fillStyle = '#b08a2e';
-      ctx.fillRect(_barX, _barY, _barW * _twrProg, _barH);
-      ctx.font = 'bold 9px monospace';
+    // Title — „CASTLE" arba „CASTLE — ZIP" pasirinkus
+    {
+      const _selBld = _castleSelectedIdx !== null ? _CASTLE_BUILDS[_castleSelectedIdx] : null;
+      const _hdr = _selBld ? `CASTLE \u2014 ${_selBld.label}` : 'CASTLE';
+      ctx.fillStyle = '#1a1506';
+      ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.strokeText(_twrTimeStr, _barX + _barW / 2, _barY + _barH / 2);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(_twrTimeStr, _barX + _barW / 2, _barY + _barH / 2);
-      // SPEED UP button — same width kaip BUILD MINE
-      const _suBx = px + pw / 2 - bw2 / 2;
-      const _suBy = sec2BtnY;
-      const _suCanAfford = _ronkeBalance >= _TOWER_SPEEDUP_COST;
-      const _suHov = _worldMx >= _suBx && _worldMx <= _suBx + bw2 &&
-                     _worldMy >= _suBy && _worldMy <= _suBy + bh2;
-      ctx.fillStyle = !_suCanAfford ? '#2d3a4a' : (_suHov ? '#5a8aa0' : '#3a5a78');
-      rr(_suBx, _suBy, bw2, bh2, 5); ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = !_suCanAfford ? '#4a5a6a' : '#9ee0ff';
-      rr(_suBx + 0.5, _suBy + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
-      ctx.fillStyle = _suCanAfford ? '#fff' : '#aaa';
+      ctx.fillText(_hdr, px + pw / 2, py + 13);
+    }
+    // ── Cards grid ──────────────────────────────────────────────────────
+    _castleCardRects = [];
+    const gx0 = px + PAD_X_C;
+    const gy0 = py + PAD_TOP_C;
+    const _nowAnim = performance.now();
+    for (let idx = 0; idx < _CASTLE_BUILDS.length; idx++) {
+      const def = _CASTLE_BUILDS[idx];
+      const ax = gx0 + idx * (CELL_SZC + GAP_C);
+      const ay = gy0;
+      const hov = _worldMx >= ax && _worldMx <= ax + CELL_SZC &&
+                  _worldMy >= ay && _worldMy <= ay + CELL_SZC;
+      const sel = _castleSelectedIdx === idx;
+      // Plokštelės fonas
+      ctx.fillStyle = sel ? '#4a9da6' : (hov ? '#ffcf5c' : '#fff7db');
+      rr(ax, ay, CELL_SZC, CELL_SZC, 4); ctx.fill();
+      ctx.fillStyle = 'rgba(61,40,23,0.08)';
+      ctx.fillRect(ax + 3, ay + 3, CELL_SZC - 6, CELL_SZC - 6);
+      // Sprite: SLOT (idx 3) → žolės marker tile (tileset3_3_3, kvadratas kur unitai stojasi).
+      // Kiti pastatai naudoja standartinį _buildingImgs sprite.
+      if (def.key === 'slot' && tileset3Img && tileset3Img.complete && tileset3Img.naturalWidth > 0) {
+        const inset = 4;
+        const dw = CELL_SZC - inset * 2;
+        const dh = CELL_SZC - inset * 2;
+        ctx.drawImage(tileset3Img, 3 * 64, 3 * 64, 64, 64,
+                      ax + inset, ay + inset, dw, dh);
+      } else {
+        const bImg = _buildingImgs[def.img];
+        if (bImg && bImg.complete && bImg.naturalWidth > 0) {
+          const inset = 4;
+          const dw = CELL_SZC - inset * 2;
+          const dh = CELL_SZC - inset * 2;
+          if (def.animated) {
+            const _fw = bImg.naturalWidth / def.animated.cols;
+            const _fh = bImg.naturalHeight / def.animated.rows;
+            const _fr = Math.floor(_nowAnim / (1000 / def.animated.fps)) % def.animated.frames;
+            const _sx = (_fr % def.animated.cols) * _fw;
+            const _sy = Math.floor(_fr / def.animated.cols) * _fh;
+            const _sc = Math.min(dw / _fw, dh / _fh);
+            const _ww = _fw * _sc, _hh = _fh * _sc;
+            ctx.drawImage(bImg, _sx, _sy, _fw, _fh,
+                          ax + inset + (dw - _ww) / 2, ay + inset + (dh - _hh) / 2, _ww, _hh);
+          } else {
+            const _iw = bImg.naturalWidth, _ih = bImg.naturalHeight;
+            const _sc = Math.min(dw / _iw, dh / _ih);
+            const _ww = _iw * _sc, _hh = _ih * _sc;
+            ctx.drawImage(bImg, ax + inset + (dw - _ww) / 2, ay + inset + (dh - _hh) / 2, _ww, _hh);
+          }
+        }
+      }
+      // Plokštelės rėmas
+      if (sel) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#f5e6c3';
+        rr(ax + 0.5, ay + 0.5, CELL_SZC - 1, CELL_SZC - 1, 4); ctx.stroke();
+      } else if (hov) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#3d2817';
+        rr(ax + 0.5, ay + 0.5, CELL_SZC - 1, CELL_SZC - 1, 4); ctx.stroke();
+      } else {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(61,40,23,0.35)';
+        rr(ax + 0.5, ay + 0.5, CELL_SZC - 1, CELL_SZC - 1, 4); ctx.stroke();
+      }
+      // Production progress bar (per-card) + count badge top-right
+      const _prod = _slotProd(idx);
+      if (_prod) {
+        const _el = _slotElapsed(idx, _nowAnim);
+        const _fr = Math.max(0, Math.min(1, _el / _TOWER_PRODUCE_MS));
+        const pbH = 3;
+        ctx.fillStyle = 'rgba(61,40,23,0.65)';
+        ctx.fillRect(ax + 2, ay + CELL_SZC - pbH - 2, CELL_SZC - 4, pbH);
+        ctx.fillStyle = '#b08a2e';
+        ctx.fillRect(ax + 2, ay + CELL_SZC - pbH - 2, (CELL_SZC - 4) * _fr, pbH);
+      }
+      // Count badge (top-right)
+      const _cnt = _slotCount(idx);
+      if (_cnt > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        const qbx = ax + CELL_SZC - 16, qby = ay + 2;
+        rr(qbx, qby, 14, 12, 3); ctx.fill();
+        ctx.fillStyle = '#7effa0';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(_cnt), qbx + 7, qby + 6.5);
+      }
+      _castleCardRects.push({ x: ax, y: ay, w: CELL_SZC, h: CELL_SZC, idx });
+    }
+    // ── Bottom: cost row + BUILD/SPEED-UP button ────────────────────────
+    const bottomY = gy0 + CELL_SZC + 10;
+    _castleBtnBounds = null;
+    _castleTowerBtnBounds = null;
+    _castleTowerSpeedUpBtnBounds = null;
+    _castleZipBtnBounds = null;
+    _castleZipSpeedUpBtnBounds = null;
+    _castleSlotBtnBounds = null;
+    _castleSlotSpeedUpBtnBounds = null;
+    const _selIdx = _castleSelectedIdx;
+    const _selDef = _selIdx !== null ? _CASTLE_BUILDS[_selIdx] : null;
+    const _selProd = _selIdx !== null ? _slotProd(_selIdx) : null;
+    const _slotMaxed = _barracksUnlockedSlots >= _BARRACKS_MAX_SLOTS;
+    // Cost row — show speed-up cost when producing, else build cost; placeholder if no selection
+    const iconSz = 18, gapC = 6;
+    const fr = Math.floor(performance.now() / 90) % 8;
+    const thumb = _getRonkeCoinThumb(iconSz, fr);
+    const _activeCost = !_selDef ? null
+      : (_selProd
+          ? (_selIdx === 1 ? _TOWER_SPEEDUP_COST : _selIdx === 2 ? _ZIP_SPEEDUP_COST : _SLOT_SPEEDUP_COST)
+          : _selDef.cost);
+    if (_selProd) {
+      // Producing — large progress bar above SPEED UP button
+      const _pms = _selIdx === 1 ? _TOWER_PRODUCE_MS : _selIdx === 2 ? _ZIP_PRODUCE_MS : _SLOT_PRODUCE_MS;
+      const _el = _slotElapsed(_selIdx, _nowAnim);
+      const _prog = Math.max(0, Math.min(1, _el / _pms));
+      const _remS = Math.max(0, Math.ceil((_pms - _el) / 1000));
+      const _tStr = _remS >= 60
+        ? `${Math.floor(_remS / 60)}:${String(_remS % 60).padStart(2, '0')}`
+        : `${_remS}s`;
+      const _bX = px + 10, _bY = bottomY + 4, _bW = pw - 20, _bH = 12;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(_bX - 1, _bY - 1, _bW + 2, _bH + 2);
+      ctx.fillStyle = '#1a2030';
+      ctx.fillRect(_bX, _bY, _bW, _bH);
+      ctx.fillStyle = _selIdx === 1 ? '#b08a2e' : _selIdx === 2 ? '#3a8aaa' : '#7effa0';
+      ctx.fillRect(_bX, _bY, _bW * _prog, _bH);
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      const _suLabel = `SPEED UP \u00D710 \u26A1${_TOWER_SPEEDUP_COST}`;
-      ctx.strokeText(_suLabel, _suBx + bw2 / 2, _suBy + bh2 / 2 + 1);
-      ctx.fillText(_suLabel, _suBx + bw2 / 2, _suBy + bh2 / 2 + 1);
-      _castleTowerBtnBounds = null;
-      _castleTowerSpeedUpBtnBounds = { x: _suBx, y: _suBy, w: bw2, h: bh2 };
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.strokeText(_tStr, _bX + _bW / 2, _bY + _bH / 2);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(_tStr, _bX + _bW / 2, _bY + _bH / 2);
     } else {
-      // IDLE — cost row + BUILD TOWER button (mirrors MINES exactly)
-      const _twrCostStr = String(_TOWER_BUILD_COST);
-      ctx.font = 'bold 12px monospace';
-      const _twrCostW = ctx.measureText(_twrCostStr).width;
-      const _twrRowW = iconSz + gapC + _twrCostW;
-      const _twrRowX = px + pw / 2 - _twrRowW / 2;
-      if (thumb) ctx.drawImage(thumb, _twrRowX, sec2CostY);
-      const _twrCanAfford = _ronkeBalance >= _TOWER_BUILD_COST;
+      // Cost row centered
+      const _costLbl = _activeCost !== null ? String(_activeCost) : '?';
+      ctx.font = 'bold 13px monospace';
+      const costW = ctx.measureText(_costLbl).width;
+      const rowW = iconSz + gapC + costW;
+      const rowX = px + pw / 2 - rowW / 2;
+      const rowY = bottomY + 4;
+      if (thumb) ctx.drawImage(thumb, rowX, rowY);
+      const _af = _activeCost !== null && _ronkeBalance >= _activeCost;
+      ctx.fillStyle = _selDef ? (_af ? '#ffe97a' : '#d48a8a') : '#666';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = _twrCanAfford ? '#ffe066' : '#d48a8a';
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.strokeText(_twrCostStr, _twrRowX + iconSz + gapC, sec2CostY + iconSz / 2);
-      ctx.fillText(_twrCostStr, _twrRowX + iconSz + gapC, sec2CostY + iconSz / 2);
-      // BUILD TOWER button
-      const _twrBx = px + pw / 2 - bw2 / 2;
-      const _twrBy = sec2BtnY;
-      const _twrHov = _worldMx >= _twrBx && _worldMx <= _twrBx + bw2 &&
-                      _worldMy >= _twrBy && _worldMy <= _twrBy + bh2;
-      ctx.fillStyle = !_twrCanAfford ? '#3a302d' : (_twrHov ? '#c08a4e' : '#8a5a2e');
-      rr(_twrBx, _twrBy, bw2, bh2, 5); ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = !_twrCanAfford ? '#5a4a3a' : '#ffd296';
-      rr(_twrBx + 0.5, _twrBy + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
-      ctx.fillStyle = _twrCanAfford ? '#fff' : '#aaa';
-      ctx.font = 'bold 11px monospace';
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeText(_costLbl, rowX + iconSz + gapC, rowY + iconSz / 2);
+      ctx.fillText(_costLbl, rowX + iconSz + gapC, rowY + iconSz / 2);
+    }
+    // Action button — BUILD / SPEED UP / SELECT (disabled placeholder)
+    {
+      const bw2 = 130, bh2 = 26;
+      const bxU = px + pw / 2 - bw2 / 2;
+      const byU = bottomY + 30;
+      const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 &&
+                       _worldMy >= byU && _worldMy <= byU + bh2;
+      let label, fillIdle, fillHov, fillDis, strokeIdle, strokeHov, strokeDis, enabled;
+      if (!_selDef) {
+        label = 'SELECT BUILDING';
+        enabled = false;
+        fillIdle = '#3a3a44'; fillHov = '#3a3a44'; fillDis = '#3a3a44';
+        strokeIdle = '#5a5a64'; strokeHov = '#5a5a64'; strokeDis = '#5a5a64';
+      } else if (_selProd) {
+        label = `SPEED UP \u00D710 \u26A1${_activeCost}`;
+        enabled = _ronkeBalance >= _activeCost && !_selProd.speedUpAnim;
+        fillIdle = '#3a5a78'; fillHov = '#5a8aa0'; fillDis = '#2d3a4a';
+        strokeIdle = '#9ee0ff'; strokeHov = '#9ee0ff'; strokeDis = '#4a5a6a';
+      } else {
+        // BUILD path — exclusive lock: visi castle slot'ai (Tower/Zip/Slot) dalinasi vienu production'u.
+        const _otherProd = !!_towerProduction || !!_zipProduction || !!_slotProduction;
+        if (_selIdx === 3 && _slotMaxed) {
+          label = 'MAX SLOTS';
+          enabled = false;
+        } else {
+          label = _otherProd ? 'BUILDING…' : `BUILD ${_selDef.label}`;
+          enabled = _ronkeBalance >= _selDef.cost && !_otherProd;
+        }
+        if (_selIdx === 0) {
+          fillIdle = '#4e9e4e'; fillHov = '#6ec56e'; fillDis = '#2d3a2d';
+          strokeIdle = '#a8f0a8'; strokeHov = '#d4ffd4'; strokeDis = '#5a6e5a';
+        } else if (_selIdx === 1) {
+          fillIdle = '#8a5a2e'; fillHov = '#c08a4e'; fillDis = '#3a302d';
+          strokeIdle = '#ffd296'; strokeHov = '#ffd296'; strokeDis = '#5a4a3a';
+        } else if (_selIdx === 2) {
+          fillIdle = '#3a5a78'; fillHov = '#5a8aa0'; fillDis = '#2a323a';
+          strokeIdle = '#9ee0ff'; strokeHov = '#9ee0ff'; strokeDis = '#4a5a6a';
+        } else {
+          // SLOT — wood/parchment palette atitinka Barracks
+          fillIdle = '#7a2e2e'; fillHov = '#a04848'; fillDis = '#3a2424';
+          strokeIdle = '#ffb07a'; strokeHov = '#ffb07a'; strokeDis = '#5a4a3a';
+        }
+      }
+      ctx.fillStyle = !enabled ? fillDis : (hoverBtn ? fillHov : fillIdle);
+      rr(bxU, byU, bw2, bh2, 5); ctx.fill();
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = !enabled ? strokeDis : (hoverBtn ? strokeHov : strokeIdle);
+      rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
+      ctx.fillStyle = enabled ? '#fff' : '#aaa';
+      ctx.font = 'bold 12px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.strokeText('BUILD TOWER', _twrBx + bw2 / 2, _twrBy + bh2 / 2 + 1);
-      ctx.fillText('BUILD TOWER', _twrBx + bw2 / 2, _twrBy + bh2 / 2 + 1);
-      _castleTowerBtnBounds = { x: _twrBx, y: _twrBy, w: bw2, h: bh2 };
-      _castleTowerSpeedUpBtnBounds = null;
+      ctx.strokeText(label, bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      ctx.fillText(label, bxU + bw2 / 2, byU + bh2 / 2 + 1);
+      // Route bounds į existing click handlers — perfectly maintains backward compat
+      if (_selDef && enabled) {
+        if (_selProd) {
+          if (_selIdx === 1) _castleTowerSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 2) _castleZipSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 3) _castleSlotSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+        } else {
+          if (_selIdx === 0) _castleBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 1) _castleTowerBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 2) _castleZipBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 3) _castleSlotBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+        }
+      }
     }
     // Close X
-    const cxSz = 12;
+    const cxSz = 14;
     const cxX = px + pw - cxSz - 5;
     const cxY = py + 6;
     const hovX = _worldMx >= cxX && _worldMx <= cxX + cxSz &&
                  _worldMy >= cxY && _worldMy <= cxY + cxSz;
-    ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.3)';
-    rr(cxX, cxY, cxSz, cxSz, 2); ctx.fill();
+    ctx.fillStyle = hovX ? '#ff6e6e' : 'rgba(0,0,0,0.25)';
+    rr(cxX, cxY, cxSz, cxSz, 3); ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(cxX + 3, cxY + 3); ctx.lineTo(cxX + cxSz - 3, cxY + cxSz - 3);
-    ctx.moveTo(cxX + cxSz - 3, cxY + 3); ctx.lineTo(cxX + 3, cxY + cxSz - 3);
+    ctx.moveTo(cxX + 4, cxY + 4); ctx.lineTo(cxX + cxSz - 4, cxY + cxSz - 4);
+    ctx.moveTo(cxX + cxSz - 4, cxY + 4); ctx.lineTo(cxX + 4, cxY + cxSz - 4);
     ctx.stroke();
 
     ctx.restore();
-    _castleBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
   } else {
+    _castleCardRects = [];
     _castleBtnBounds = null;
     _castleTowerBtnBounds = null;
     _castleTowerSpeedUpBtnBounds = null;
+    _castleZipBtnBounds = null;
+    _castleZipSpeedUpBtnBounds = null;
+    _castleSlotBtnBounds = null;
+    _castleSlotSpeedUpBtnBounds = null;
   }
 
   // ─── Barracks popup: 4x4 avatarų grid + cost + PRODUCE mygtukas ──────────
@@ -11225,26 +11754,29 @@ function drawForegroundDecorations() {
       _barracksQtyPlusBtnBounds = { x: _bxPlus, y: qtyY, w: qSegW, h: qtyRowH };
 
       // ─── TRAIN mygtukas — atskira eilutė ───────────────────
-      // Disabled jei pasirinktas slot'as jau treniruoja (bet kiti slot'ai tuo metu gali treniruotis)
+      // Exclusive lock: tik vienas slot'as gali treniruoti vienu metu.
+      // Selected busy → "TRAINING…"; kitas slot'as treniruoja → "BUSY"; kitaip → "TRAIN".
       const _slotBusy = hasSel && !!_barracksProductions[_barracksSelectedIdx];
+      const _otherBusy = Object.keys(_barracksProductions).some(k =>
+        _barracksProductions[k] && +k !== _barracksSelectedIdx);
       const bw2 = 120, bh2 = 26;
       const bxU = px + pw / 2 - bw2 / 2;
       const byU = qtyY + qtyRowH + 6;
       const hoverBtn = _worldMx >= bxU && _worldMx <= bxU + bw2 &&
                        _worldMy >= byU && _worldMy <= byU + bh2;
-      const enabled = canAfford && hasSel && !_slotBusy;
+      const enabled = canAfford && hasSel && !_slotBusy && !_otherBusy;
       ctx.fillStyle = !enabled ? '#452a2a' : (hoverBtn ? '#c06e3e' : '#9e4e2e');
       rr(bxU, byU, bw2, bh2, 5); ctx.fill();
       ctx.lineWidth = 1.8;
       ctx.strokeStyle = !enabled ? '#8a5a5a' : (hoverBtn ? '#ffd4a8' : '#f0a880');
       rr(bxU + 0.5, byU + 0.5, bw2 - 1, bh2 - 1, 5); ctx.stroke();
-      ctx.fillStyle = _slotBusy ? '#999' : '#fff';
+      ctx.fillStyle = (_slotBusy || _otherBusy) ? '#999' : '#fff';
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      const _trainLbl = _slotBusy ? 'TRAINING…' : 'TRAIN';
+      const _trainLbl = _slotBusy ? 'TRAINING…' : (_otherBusy ? 'BUSY' : 'TRAIN');
       ctx.strokeText(_trainLbl, bxU + bw2 / 2, byU + bh2 / 2 + 1);
       ctx.fillText(_trainLbl, bxU + bw2 / 2, byU + bh2 / 2 + 1);
       _barracksProduceBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
@@ -11572,7 +12104,7 @@ function _drawBarracksTrainingBar() {
 
 // Tower auto-fire — kiekvienas Tower šaudo strėles į priešus tame pačiame row'e (3–10 cell horizontal range).
 // Damage same kaip red archer NPC: 7 normal, 10 crit (20% chance).
-const _TOWER_FIRE_CD_MS = 5000;
+const _TOWER_FIRE_CD_MS = 3000;
 function _tickTowerFire(now) {
   if (gameMode !== 'adventure') return;
   if (S._f11Outcome) return;
@@ -11827,13 +12359,16 @@ function _drawDungeonStatic() {
     const _grayStart = S._f11ConqueredCols;
     const _grayEnd = Math.min(_grayStart + F11_GRAY_ZONE_WIDTH, COLS);
     let _allyInGray = 0, _enemyInGray = 0;
-    for (const u of (S.units || [])) {
-      if (!u || !u.alive) continue;
-      if (u.x < _grayStart || u.x >= _grayEnd) continue;
-      const _isAlly = (u.team === 0) || (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u));
-      const _isEnemy = (typeof isHostileAdventureEnemy === 'function' && isHostileAdventureEnemy(u));
-      if (_isAlly) _allyInGray++;
-      else if (_isEnemy) _enemyInGray++;
+    // F11_TERRITORY_DISABLED: skipinam unit count loop'ą (jis tarnauja tik net-force progression'ui)
+    if (!F11_TERRITORY_DISABLED) {
+      for (const u of (S.units || [])) {
+        if (!u || !u.alive) continue;
+        if (u.x < _grayStart || u.x >= _grayEnd) continue;
+        const _isAlly = (u.team === 0) || (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u));
+        const _isEnemy = (typeof isHostileAdventureEnemy === 'function' && isHostileAdventureEnemy(u));
+        if (_isAlly) _allyInGray++;
+        else if (_isEnemy) _enemyInGray++;
+      }
     }
     const _netForce = _allyInGray - _enemyInGray;
 
@@ -11842,7 +12377,7 @@ function _drawDungeonStatic() {
     let _conquestRows = [];
     if (_targetCol < COLS) {
       _conquestRows = _grassRowsInCol(_targetCol);
-      if (_netForce > 0 && _conquestRows.length > 0) {
+      if (!F11_TERRITORY_DISABLED && _netForce > 0 && _conquestRows.length > 0) {
         S._f11ConquestProgress += _dt * _netForce;
         if (S._f11ConquestProgress >= _conquestRows.length) {
           S._f11ConqueredCols = _targetCol + 1;
@@ -11856,7 +12391,7 @@ function _drawDungeonStatic() {
           if (SFX && SFX.levelUp) SFX.levelUp();
           else if (SFX && SFX.coin) SFX.coin();
         }
-      } else if (S._f11ConquestProgress > 0 && _conquestRows.length > 0) {
+      } else if (!F11_TERRITORY_DISABLED && S._f11ConquestProgress > 0 && _conquestRows.length > 0) {
         // Stalemate ar enemy dominuoja — kas 10sec dingsta 1 blokas
         S._f11ConquestProgress -= _dt * 0.1;
         if (S._f11ConquestProgress < 0) S._f11ConquestProgress = 0;
@@ -11869,7 +12404,7 @@ function _drawDungeonStatic() {
     let _lossRows = [];
     if (_lossCol >= 0 && _lossCol < COLS) {
       _lossRows = _grassRowsInCol(_lossCol);
-      if (_netForce < 0 && _lossRows.length > 0 && S._f11ConqueredCols > 0) {
+      if (!F11_TERRITORY_DISABLED && _netForce < 0 && _lossRows.length > 0 && S._f11ConqueredCols > 0) {
         S._f11LossProgress += _dt * (-_netForce);
         if (S._f11LossProgress >= _lossRows.length) {
           // Priešas užemė dešinįjį gray col → gray zona pasislenka į kairę
@@ -11886,7 +12421,7 @@ function _drawDungeonStatic() {
           if (SFX && SFX.deny) SFX.deny();
           S.shake = Math.max(S.shake || 0, 6);
         }
-      } else if (S._f11LossProgress > 0 && _lossRows.length > 0) {
+      } else if (!F11_TERRITORY_DISABLED && S._f11LossProgress > 0 && _lossRows.length > 0) {
         // Stalemate ar ally dominuoja — loss progresas atsistato 10s/blokas
         S._f11LossProgress -= _dt * 0.1;
         if (S._f11LossProgress < 0) S._f11LossProgress = 0;
@@ -11916,7 +12451,7 @@ function _drawDungeonStatic() {
     // ── Pilkos kontestuojamos zonos render — cols [_grayStart, _grayEnd) ──
     // Taip pat _lossCol cell'ėms, kurios prarastos (lostFullSet) ar dingsta
     // (loss leading), kad apačioj būtų matomas pilkas underlay vietoj originalaus tile.
-    if (tileset5Img.complete && tileset5Img.naturalWidth > 0) {
+    if (!F11_TERRITORY_DISABLED && tileset5Img.complete && tileset5Img.naturalWidth > 0) {
       // Tilemap_color5 (6,1) — vidurinis tile, tamsesnis tealinis atspalvis (front line)
       const _f5sx = 6 * 64, _f5sy = 1 * 64;
       // Sequence: capture flash (1s) → paint (1s) → lock blokas (300ms)
@@ -12013,7 +12548,7 @@ function _drawDungeonStatic() {
     // ── Enemy territory darken — cols >= grayEnd gauna multiply overlay ────
     // Vizualus aiškumas: ally pusė šviesi (palikta originalia), enemy pusė tamsesnė.
     // Conquest pažanga atrodo dramatiškiau — užkariautas col automatiškai pašviesėja.
-    if (_grayEnd < COLS) {
+    if (!F11_TERRITORY_DISABLED && _grayEnd < COLS) {
       ctx.save();
       ctx.globalCompositeOperation = 'multiply';
       ctx.fillStyle = 'rgb(150,170,160)'; // ~30% darkening on grass tones
@@ -12043,7 +12578,7 @@ function _drawDungeonStatic() {
     // slenka tolygiai be šuolių, nes naudoja float progress kaip y-koordinatę.
     const _conquestActive = (_targetCol < COLS) && (_conquestLeading < _conquestRows.length) && _netForce > 0;
     const _lossActive = (_lossPartialRow >= 0) && _netForce < 0;
-    if (_conquestActive || _lossActive) {
+    if (!F11_TERRITORY_DISABLED && (_conquestActive || _lossActive)) {
       const _pulse = 0.82 + 0.18 * Math.sin(_now * 0.008);
       // Naudojamas conquest_pin sprite (žalias blokas + arrow žemyn).
       // Conquest: dirSign=+1 → arrow rodo žemyn (nature). Loss: dirSign=-1 → arrow rodo aukštyn.
@@ -12093,7 +12628,7 @@ function _drawDungeonStatic() {
     }
 
     // Capture/loss flash — subtilus vizualinis pranesimas, kai uzimama/prarandama juosta.
-    if (S._f11CaptureFlash) {
+    if (!F11_TERRITORY_DISABLED && S._f11CaptureFlash) {
       const _fl = S._f11CaptureFlash;
       const _fT = _now - _fl.startedAt;
       const _fDur = 1000;
@@ -12424,7 +12959,9 @@ function drawFog() {
   }
 
   // ---- Room reveal animation: newly uncovered cells fade from black --
-  if (S.fogReveal) {
+  // PERF: skip nested ROWS×COLS scan jeigu nėra aktyvių reveal'ų. Tracking
+  // per S._fogRevealLastSetAt — set'inamas kiekvieną kartą kai reveal'as dedamas.
+  if (S.fogReveal && S._fogRevealLastSetAt && (now - S._fogRevealLastSetAt) < REVEAL_DUR) {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const rt = S.fogReveal[r][c];
@@ -12655,6 +13192,21 @@ function drawF11DeployPanel() {
       unitTypes.push({ t: 'tower', i: -1, count: _twrCount, stackSum: _twrCount, indices: _twrIndices, deployedCount: _twrOnMap });
     }
   }
+  // Zip synthetic entry — analogiškas tower'iui
+  {
+    const _zipAgg = _armyByType['zip'];
+    let _zipOnMap = 0;
+    if (S.decorations) {
+      for (const _k in S.decorations) {
+        if (S.decorations[_k] === 'building_Zip') _zipOnMap++;
+      }
+    }
+    const _zipCount = _zipAgg ? _zipAgg.count : 0;
+    const _zipIndices = _zipAgg ? _zipAgg.indices : [];
+    if (_zipCount > 0 || _zipOnMap > 0) {
+      unitTypes.push({ t: 'zip', i: -2, count: _zipCount, stackSum: _zipCount, indices: _zipIndices, deployedCount: _zipOnMap });
+    }
+  }
   if (unitTypes.length === 0) {
     _f11DeployPanelBounds = null;
     _f11DeployUnitRects = [];
@@ -12776,6 +13328,29 @@ function drawF11DeployPanel() {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('TWR', ax + UBTN / 2, ay + UBTN / 2);
+        ctx.restore();
+      }
+    } else if (entry.t === 'zip') {
+      const _zImg = _buildingImgs && _buildingImgs['Zip'];
+      if (_zImg && _zImg.complete && _zImg.naturalWidth > 0) {
+        const _zfw = _zImg.naturalWidth / _ZIP_DEF.cols;
+        const _zfh = _zImg.naturalHeight / _ZIP_DEF.rows;
+        const _zFr = Math.floor(performance.now() / (1000 / _ZIP_DEF.fps)) % _ZIP_DEF.frames;
+        ctx.save();
+        if (_emptyPool) ctx.globalAlpha = 0.55;
+        ctx.drawImage(_zImg,
+          (_zFr % _ZIP_DEF.cols) * _zfw, Math.floor(_zFr / _ZIP_DEF.cols) * _zfh, _zfw, _zfh,
+          ax + 2, ay + 2, UBTN - 4, UBTN - 4);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.fillStyle = '#3a5a78';
+        ctx.fillRect(ax + 6, ay + 6, UBTN - 12, UBTN - 12);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('ZIP', ax + UBTN / 2, ay + UBTN / 2);
         ctx.restore();
       }
     } else {
@@ -13960,21 +14535,30 @@ function mkBloodStain(x, y) {
 }
 
 function drawBloodStains() {
-  if (!S.bloodStains) return;
+  if (!S.bloodStains || !S.bloodStains.length) return;
+  // PERF: FIFO cap — F11 mūšiai spawnina daug stain'ų. 80 užtenka vizualiai.
+  const _MAX_STAINS = 80;
+  if (S.bloodStains.length > _MAX_STAINS) {
+    S.bloodStains.splice(0, S.bloodStains.length - _MAX_STAINS);
+  }
   const COLS_B = ['#2e0000', '#5c0a00', '#7a1200'];
-  S.bloodStains.forEach(b => {
-    if (!S.fog?.[b.y]?.[b.x]) return;
+  // PERF: 1× save/restore vietoj per-stain
+  const _prevA = ctx.globalAlpha;
+  for (let _i = 0; _i < S.bloodStains.length; _i++) {
+    const b = S.bloodStains[_i];
+    if (!S.fog?.[b.y]?.[b.x]) continue;
     const cx = (b.x + 0.5) * CELL, cy = (b.y + 0.5) * CELL;
-    ctx.save();
-    b.drops.forEach(d => {
+    const _drops = b.drops;
+    for (let _di = 0; _di < _drops.length; _di++) {
+      const d = _drops[_di];
       ctx.globalAlpha = d.a * 0.85;
       ctx.fillStyle = COLS_B[d.ci] || COLS_B[0];
       ctx.beginPath();
       ctx.ellipse(cx + d.dx * CELL, cy + d.dy * CELL, d.rx * CELL, d.ry * CELL, d.rot, 0, Math.PI * 2);
       ctx.fill();
-    });
-    ctx.restore();
-  });
+    }
+  }
+  ctx.globalAlpha = _prevA;
 }
 
 function drawChests() {
@@ -14182,7 +14766,7 @@ function fireFlareStraight(dx, dy) {
       for (let dx2 = -FLARE_RADIUS; dx2 <= FLARE_RADIUS; dx2++) {
         const nx = x + dx2, ny = y + dy2;
         if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
-        if (!S.fog[ny][nx]) S.fogReveal[ny][nx] = now;
+        if (!S.fog[ny][nx]) { S.fogReveal[ny][nx] = now; S._fogRevealLastSetAt = now; }
         S.fog[ny][nx] = true;
         S.flareRevealedCells.add(nx + ',' + ny);
       }
@@ -15772,54 +16356,7 @@ function resolveTick() {
     }
 
 
-    S.loot && S.loot.forEach(l => {
-      if (!l.collected) {
-        if (l.type === 'lockedBox') return; // shoot to crack — no auto-collect
-        const on = S.units.find(u => u.team === 0 && u.alive && u.x === l.x && u.y === l.y);
-        if (on) {
-          l.collected = true;
-          SFX.pickup();
-          if (l.type === 'fragment') {
-            S.fragments = (S.fragments || 0) + l.val;
-            syncFragmentSlot();
-            logEvent(`+${l.val} CHIP FRAGMENT${l.val > 1 ? 'S' : ''}`, 'fragment');
-            spawnPickupFX(l.x, l.y, '#ff8800');
-            spawnDmgNumber(l.x, l.y, `+${l.val} FRAG`, '#ffaa22', 14, 'normal');
-            checkFragmentCombine(l.x, l.y);
-          } else if (l.type === 'xptoken') {
-            S.xpTokens = (S.xpTokens || 0) + l.val;
-            syncXpTokenSlot();
-            logEvent(`+${l.val} XP TOKEN`, 'xp');
-            spawnPickupFX(l.x, l.y, '#00ffcc');
-            spawnDmgNumber(l.x, l.y, `+${l.val} XP`, '#00ffcc', 14, 'normal');
-          } else if (l.type === 'goldbag') {
-            const gain = l.val || 3;
-            addToInventory('goldbag', null, gain);
-            updateInventoryUI();
-            spawnPickupFX(l.x, l.y, '#ffcc00');
-            spawnDmgNumber(l.x, l.y, `+${gain} $ BAG`, '#ffee00', 16, 'crit');
-            SFX.play(880, 0.12, 0.08, 'sine', 200);
-            logEvent(`+${gain} $ Bag collected`, 'loot');
-          } else if (l.type === 'ronke') {
-            addToInventory('ronke', null, 1);
-            if (S.inventoryOpen) updateInventoryUI();
-            spawnPickupFX(l.x, l.y, '#44aaff');
-          } else if (l.type === 'gem') {
-            const gemGain = 15;
-            const _oldE = S.mana || 0;
-            S.mana = Math.min(ENERGY_MAX + (Profile.upgrades?.maxEnergy || 0), _oldE + gemGain);
-            animateEnergyGain(_oldE, S.mana);
-            addToInventory('gem', null, 1);
-            if (S.inventoryOpen) updateInventoryUI();
-            logEvent(`+${gemGain}⚡ PIXEL collected`, 'loot');
-            spawnPickupFX(l.x, l.y, '#44ff66');
-            spawnDmgNumber(l.x, l.y, `+${gemGain}⚡`, '#44ff88', 16, 'crit');
-          } else {
-            // unknown loot type — ignore
-          }
-        }
-      }
-    });
+    if (typeof _pollHeroLootPickup === 'function') _pollHeroLootPickup();
   }
 
   moveBullets();
@@ -17423,6 +17960,12 @@ function _updateBarracksAttackAI(now) {
     }
   }
 
+  // PERF: Pre-compute opponent lists ONCE per frame (vietoj spread'inimo
+  // per-unit loop'e). 40+ unitų × 2 array spread = 80+ alokacijos/frame.
+  const _heroList = (S.units || []).filter(h => h && h.alive && h.team === 0);
+  const _allyOpp  = allHostiles.concat(redArcherTargets);
+  const _enemyOpp = alliesBarracks.concat(_heroList);
+
   for (const u of S.units) {
     const _isAlly = isFriendlyBarracksUnit(u);
     const _isEnemyBarracks = isEditorEnemyBarracks(u);
@@ -17590,12 +18133,8 @@ function _updateBarracksAttackAI(now) {
         continue;
       }
     }
-    // Opponents list — priklauso nuo side:
-    // ally: visi hostiles (editor-enemy barracks jau patenka per allHostiles) + red archer NPC
-    // enemy barracks: ally barracks + hero
-    const opponents = _isAlly
-      ? [...allHostiles, ...redArcherTargets]
-      : [...alliesBarracks, ...((S.units || []).filter(h => h.alive && h.team === 0))];
+    // Opponents list — pre-computed virš loop'o (žr. _allyOpp / _enemyOpp)
+    const opponents = _isAlly ? _allyOpp : _enemyOpp;
     if ((u.swingStart && now - u.swingStart < 500) ||
         (u.hfishThrowStart && now - u.hfishThrowStart < 500)) continue;
     if (opponents.length === 0) continue;
@@ -18283,6 +18822,11 @@ function loop(now) {
 
   // ── HERO RTS commandMove (F11) ─ tween + auto-attack ─────────
   _tickHeroRtsCmd(now);
+  // ── F11 nuolatinis priesu eismas ─────────────────────────────
+  if (typeof _tickF11EnemyTraffic === 'function') _tickF11EnemyTraffic(now);
+  if (typeof _tickZipTowers === 'function') _tickZipTowers(now);
+  // ── HERO loot pickup poll (F11) — auto-collect kai hero ant loot tile ──
+  if (typeof _pollHeroLootPickup === 'function') _pollHeroLootPickup();
 
   // ── Čiučela construction tick — kai pasibaigia statybos laikas, lvl bumpinasi ──
   _ciucelaTickConstruction(now);
@@ -18429,13 +18973,25 @@ function loop(now) {
     if (p.life <= 0) { S.particles[_pi] = S.particles[S.particles.length - 1]; S.particles.pop(); }
   }
   // Advance death animations (14 frames, 100ms each = 1400ms total)
+  // PERF: in-place swap-and-pop vietoj filter() naujo array alokavimo
   if (S.deathAnims && S.deathAnims.length) {
     const _now = performance.now();
-    S.deathAnims = S.deathAnims.filter(a => (_now - a.born) < 1400);
+    for (let _i = S.deathAnims.length - 1; _i >= 0; _i--) {
+      if ((_now - S.deathAnims[_i].born) >= 1400) {
+        S.deathAnims[_i] = S.deathAnims[S.deathAnims.length - 1];
+        S.deathAnims.pop();
+      }
+    }
   }
   if (S.spawnAnims && S.spawnAnims.length) {
     const _now = performance.now();
-    S.spawnAnims = S.spawnAnims.filter(a => (_now - a.born) < _SPAWN_FRAMES * _SPAWN_MS);
+    const _maxAge = _SPAWN_FRAMES * _SPAWN_MS;
+    for (let _i = S.spawnAnims.length - 1; _i >= 0; _i--) {
+      if ((_now - S.spawnAnims[_i].born) >= _maxAge) {
+        S.spawnAnims[_i] = S.spawnAnims[S.spawnAnims.length - 1];
+        S.spawnAnims.pop();
+      }
+    }
   }
   processPendingPassiveRewards();
   // Cap particles to prevent unbounded growth
@@ -18453,15 +19009,22 @@ function loop(now) {
     if (n.life <= 0) { S.dmgNumbers[_di] = S.dmgNumbers[S.dmgNumbers.length - 1]; S.dmgNumbers.pop(); }
   }
 
-  S.lasers = S.lasers.filter(l => {
-    if (l.active) return true;
-    if (l.firing) {
-      l.fireTimer -= dt / 1000;
-      if (l.fireTimer <= 0) return false;
-      return true;
+  // PERF: in-place vietoj filter()
+  if (S.lasers && S.lasers.length) {
+    for (let _i = S.lasers.length - 1; _i >= 0; _i--) {
+      const _l = S.lasers[_i];
+      let _keep = false;
+      if (_l.active) _keep = true;
+      else if (_l.firing) {
+        _l.fireTimer -= dt / 1000;
+        if (_l.fireTimer > 0) _keep = true;
+      }
+      if (!_keep) {
+        S.lasers[_i] = S.lasers[S.lasers.length - 1];
+        S.lasers.pop();
+      }
     }
-    return false;
-  });
+  }
 
   // Cache hero unit once per frame (used by rebuildVisCache, updateCamera, drawShootPreview)
   S._hero = S.units ? S.units.find(u => u.team === 0 && u.alive) || null : null;
@@ -18469,14 +19032,52 @@ function loop(now) {
   // Rebuild visibility cache once per frame (replaces repeated isVisible() inner loops)
   rebuildVisCache();
 
-  // Cache per-unit checks once per frame
+  // PERF: O(N²) → ~O(N) per frame. Pre-build spatial maps, tada per-unit
+  // tikrinam tik 3×3 cell neighbors (Chebyshev ≤ 1).
+  const _adjUnitMap = new Map();
+  for (let _i = 0; _i < S.units.length; _i++) {
+    const _u = S.units[_i];
+    if (!_u || !_u.alive) continue;
+    const _k = _u.x + ',' + _u.y;
+    const _arr = _adjUnitMap.get(_k);
+    if (_arr) _arr.push(_u); else _adjUnitMap.set(_k, [_u]);
+  }
+  const _adjBulletMap = new Map();
+  for (let _i = 0; _i < S.bullets.length; _i++) {
+    const _b = S.bullets[_i];
+    if (!_b || !_b.active) continue;
+    const _bx = _b.x + _b.dx, _by = _b.y + _b.dy;
+    const _k = _bx + ',' + _by;
+    const _arr = _adjBulletMap.get(_k);
+    if (_arr) _arr.push(_b); else _adjBulletMap.set(_k, [_b]);
+  }
   S.units.forEach(u => {
     if (!u.alive) { u._adjEnemy = false; u._bulletDanger = false; return; }
-    u._adjEnemy = S.units.some(e => e.alive && e.team !== u.team && !isFriendlyBarracksUnit(e) &&
-      Math.abs(e.x - u.x) <= 1 && Math.abs(e.y - u.y) <= 1);
-    u._bulletDanger = S.bullets.some(b =>
-      b.active && b.owner !== u.team &&
-      Math.abs(b.x + b.dx - u.x) <= 1 && Math.abs(b.y + b.dy - u.y) <= 1);
+    let _adj = false, _danger = false;
+    for (let _dy = -1; _dy <= 1 && !(_adj && _danger); _dy++) {
+      for (let _dx = -1; _dx <= 1 && !(_adj && _danger); _dx++) {
+        const _ck = (u.x + _dx) + ',' + (u.y + _dy);
+        if (!_adj) {
+          const _ua = _adjUnitMap.get(_ck);
+          if (_ua) {
+            for (let _ei = 0; _ei < _ua.length; _ei++) {
+              const _e = _ua[_ei];
+              if (_e.team !== u.team && !isFriendlyBarracksUnit(_e)) { _adj = true; break; }
+            }
+          }
+        }
+        if (!_danger) {
+          const _ba = _adjBulletMap.get(_ck);
+          if (_ba) {
+            for (let _bi = 0; _bi < _ba.length; _bi++) {
+              if (_ba[_bi].owner !== u.team) { _danger = true; break; }
+            }
+          }
+        }
+      }
+    }
+    u._adjEnemy = _adj;
+    u._bulletDanger = _danger;
   });
 
   // Draw
@@ -18496,7 +19097,7 @@ function loop(now) {
   } else {
     _worldMx = _canvasMx; _worldMy = _canvasMy;
   }
-  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _tickTowerFire(performance.now()); _drawTowerFire(); _drawTowerExplosions(); _tickBarracksProduction(); _tickTowerProduction(); _drawBarracksTrainingBar(); } else drawBoard();
+  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _tickTowerFire(performance.now()); _drawTowerFire(); _drawTowerExplosions(); _tickBarracksProduction(); _tickTowerProduction(); _tickZipProduction(); _tickSlotProduction(); _drawBarracksTrainingBar(); } else drawBoard();
   drawLasers();
   drawMeleeStrikes();
   drawShootPreview();
@@ -18627,7 +19228,7 @@ function _updateCanvasCursor() {
       || inWorld(_barracksSpeedUpMinusBtnBounds)
       || inWorld(_barracksSpeedUpPlusBtnBounds))) wantPointer = true;
   } else if (_castlePopupOpen) {
-    if (inWorld(_castleBtnBounds) || inWorld(_castleTowerBtnBounds) || inWorld(_castleTowerSpeedUpBtnBounds)) wantPointer = true;
+    if (inWorld(_castleBtnBounds) || inWorld(_castleTowerBtnBounds) || inWorld(_castleTowerSpeedUpBtnBounds) || inWorld(_castleZipBtnBounds) || inWorld(_castleZipSpeedUpBtnBounds) || inWorld(_castleSlotBtnBounds) || inWorld(_castleSlotSpeedUpBtnBounds)) wantPointer = true;
   } else if (_housePopupOpen) {
     if (inWorld(_upgradeBtnBounds)) wantPointer = true;
     if (!wantPointer && _primaryConstruction) {
@@ -18665,6 +19266,8 @@ function _updateCanvasCursor() {
       || inWorld(_ciucelaBounds)
       || inWorld(_castleBtnBounds)
       || inWorld(_castleTowerBtnBounds)
+      || inWorld(_castleZipBtnBounds)
+      || inWorld(_castleSlotBtnBounds)
       || inWorld(_upgradeBtnBounds)
       || inWorld(_stoneUpgradeBtnBounds))) wantPointer = true;
     // --- Primary construction speed-up arrow (tik jei popup uždarytas) ---
@@ -18888,7 +19491,9 @@ function _drawCommandMoveCursors() {
   ctx.save();
   for (const u of S.units) {
     if (!u || !u.alive || !u.commandMove) continue;
-    if (typeof isFriendlyBarracksUnit === 'function' && !isFriendlyBarracksUnit(u)) continue;
+    const _isHero = (u.team === 0 && u.utype === 'player');
+    const _isAllyBarr = (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u));
+    if (!_isHero && !_isAllyBarr) continue;
     const tcx = u.commandMove.tx * CELL + CELL / 2;
     const tcy = u.commandMove.ty * CELL + CELL / 2;
     let _popScale = 1, _popA = 1;
@@ -20618,10 +21223,11 @@ function _spawnRonke2Orb(fromGx, fromGy, toGx, toGy, faceDx, fromTeam) {
 
 const _heroBullets = [];
 
-function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
+function spawnHeroBullet(fromGx, fromGy, dx, dy, unit, forceMiss) {
   const _maxRange = 5;
   // Pre-scan path: find first enemy, tower, or wall
   let toGx = fromGx, toGy = fromGy, hitEnemy = null, hitStep = 0, hitTowerKey = null, hitRedArcherKey = null;
+  const _forceMiss = !!forceMiss;
   for (let s = 1; s <= _maxRange; s++) {
     const cx = fromGx + dx * s, cy = fromGy + dy * s;
     if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) break;
@@ -20639,7 +21245,19 @@ function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
     }
     if (isWall(cx, cy)) break;
     toGx = cx; toGy = cy; hitStep = s;
-    // Decorative NPCs (blue archer, fish, red archer) — hero bullets pass through
+    // Red archer NPC — _redArcherStates keyed by original spawn pos, bet st.cx/cy
+    // gali pasislinkti per walk. Tad ieškom by .cx/.cy matchu.
+    if (typeof _redArcherStates !== 'undefined' && S.decorations) {
+      let _raKeyHit = null;
+      for (const _rk in _redArcherStates) {
+        const _rs = _redArcherStates[_rk];
+        if (!_rs || _rs.cx !== cx || _rs.cy !== cy) continue;
+        const _dt = S.decorations[_rk];
+        if (_dt !== 'red_archer_npc' && _dt !== 'red_archer_idle_npc') continue;
+        _raKeyHit = _rk; break;
+      }
+      if (_raKeyHit) { hitRedArcherKey = _raKeyHit; break; }
+    }
     const e = S.units && S.units.find(u => u.alive && u.team !== 0 && !isFriendlyBarracksUnit(u) && u.x === cx && u.y === cy);
     if (e) { hitEnemy = e; break; }
   }
@@ -20648,7 +21266,7 @@ function spawnHeroBullet(fromGx, fromGy, dx, dy, unit) {
   const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
   const duration = Math.max(200, dist / (CELL * 0.009));
   const born = performance.now();
-  _heroBullets.push({ sx, sy, tx, ty, born, duration, toGx, toGy, hitEnemy, hitStep, hitTowerKey, hitRedArcherKey, done: false, hit: false });
+  _heroBullets.push({ sx, sy, tx, ty, born, duration, toGx, toGy, hitEnemy, hitStep, hitTowerKey, hitRedArcherKey, _forceMiss, done: false, hit: false });
 }
 
 function drawHeroBullets() {
@@ -20680,7 +21298,7 @@ function drawHeroBullets() {
             if (Math.hypot(_dx, _dy) > 2) continue;
             const _fx = p.toGx + _dx, _fy = p.toGy + _dy;
             if (_fx < 0 || _fx >= COLS || _fy < 0 || _fy >= ROWS) continue;
-            if (!S.fog[_fy][_fx] && S.fogReveal) S.fogReveal[_fy][_fx] = _now2;
+            if (!S.fog[_fy][_fx] && S.fogReveal) { S.fogReveal[_fy][_fx] = _now2; S._fogRevealLastSetAt = _now2; }
             S.fog[_fy][_fx] = true;
           }
       }
@@ -20717,6 +21335,11 @@ function drawHeroBullets() {
       if (p.hitRedArcherKey) {
         const raSt = _redArcherStates[p.hitRedArcherKey];
         if (raSt && S.decorations && (S.decorations[p.hitRedArcherKey] === 'red_archer_npc' || S.decorations[p.hitRedArcherKey] === 'red_archer_idle_npc')) {
+          if (p._forceMiss) {
+            spawnDmgNumber(p.toGx, p.toGy, 'MISS', '#88bbff', 13, 'miss');
+            spawnHit(p.toGx, p.toGy, '#88bbff', 5);
+            continue;
+          }
           const isCrit = Math.random() < getCritChance();
           const dist = p.hitStep + 1;
           let baseDmg = dist >= 5 ? 4 : dist >= 4 ? 3 : dist >= 3 ? 2 : 1;
@@ -20736,8 +21359,8 @@ function drawHeroBullets() {
       // Deal damage if enemy was pre-scanned
       const eu = p.hitEnemy;
       if (eu && eu.alive) {
-        // Dodge check
-        if (Math.random() < (eu.dodge !== undefined ? eu.dodge : MISS_CHANCE)) {
+        // Dodge check (arba force miss iš ronke2 50% gate'o)
+        if (p._forceMiss || Math.random() < (eu.dodge !== undefined ? eu.dodge : MISS_CHANCE)) {
           spawnDmgNumber(eu.x, eu.y, 'MISS', '#88bbff', 13, 'miss');
           spawnHit(eu.x, eu.y, '#88bbff', 5);
         } else {
@@ -25779,17 +26402,28 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (_castlePopupOpen) {
+      // Card click → select building (priority above action-button hit-test)
+      if (Array.isArray(_castleCardRects) && _castleCardRects.length) {
+        for (const cr of _castleCardRects) {
+          if (inside(cr)) {
+            _castleSelectedIdx = cr.idx;
+            return;
+          }
+        }
+      }
       if (inside(_castleBtnBounds)) {
         const CASTLE_COST = 1;
-        if (_ronkeBalance >= CASTLE_COST) {
+        const _busy = !!_towerProduction || !!_zipProduction || !!_slotProduction;
+        if (!_busy && _ronkeBalance >= CASTLE_COST) {
           _ronkeBalance -= CASTLE_COST;
           _createExtraMine();
           _castlePopupOpen = false;
+          _castleSelectedIdx = null;
         }
         return;
       }
       if (inside(_castleTowerBtnBounds)) {
-        if (!_towerProduction && _ronkeBalance >= _TOWER_BUILD_COST) {
+        if (!_towerProduction && !_zipProduction && !_slotProduction && _ronkeBalance >= _TOWER_BUILD_COST) {
           _ronkeBalance -= _TOWER_BUILD_COST;
           _towerProduction = { startAt: performance.now(), speedUpAnim: null };
           if (typeof logEvent === 'function') logEvent('🗼 Tower production started', 'info');
@@ -25812,7 +26446,55 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return;
       }
+      if (inside(_castleZipBtnBounds)) {
+        if (!_zipProduction && !_towerProduction && !_slotProduction && _ronkeBalance >= _ZIP_BUILD_COST) {
+          _ronkeBalance -= _ZIP_BUILD_COST;
+          _zipProduction = { startAt: performance.now(), speedUpAnim: null };
+          if (typeof logEvent === 'function') logEvent('⚡ Zip Tower production started', 'info');
+        }
+        return;
+      }
+      if (inside(_castleZipSpeedUpBtnBounds)) {
+        if (_zipProduction && !_zipProduction.speedUpAnim && _ronkeBalance >= _ZIP_SPEEDUP_COST) {
+          _ronkeBalance -= _ZIP_SPEEDUP_COST;
+          const _now = performance.now();
+          const _srcEl = Math.min(_ZIP_PRODUCE_MS, _getZipProdElapsed(_now));
+          const _animDur = Math.max(120, Math.max(0, _ZIP_PRODUCE_MS - _srcEl) / 10);
+          _zipProduction.speedUpAnim = {
+            startMs: _now,
+            durMs: _animDur,
+            srcElapsed: _srcEl,
+            dstElapsed: _ZIP_PRODUCE_MS,
+          };
+        }
+        return;
+      }
+      if (inside(_castleSlotBtnBounds)) {
+        const _busy = !!_towerProduction || !!_zipProduction || !!_slotProduction;
+        if (!_busy && _barracksUnlockedSlots < _BARRACKS_MAX_SLOTS && _ronkeBalance >= _SLOT_BUILD_COST) {
+          _ronkeBalance -= _SLOT_BUILD_COST;
+          _slotProduction = { startAt: performance.now(), speedUpAnim: null };
+          if (typeof logEvent === 'function') logEvent('🏰 Barracks slot construction started', 'info');
+        }
+        return;
+      }
+      if (inside(_castleSlotSpeedUpBtnBounds)) {
+        if (_slotProduction && !_slotProduction.speedUpAnim && _ronkeBalance >= _SLOT_SPEEDUP_COST) {
+          _ronkeBalance -= _SLOT_SPEEDUP_COST;
+          const _now = performance.now();
+          const _srcEl = Math.min(_SLOT_PRODUCE_MS, _getSlotProdElapsed(_now));
+          const _animDur = Math.max(120, Math.max(0, _SLOT_PRODUCE_MS - _srcEl) / 10);
+          _slotProduction.speedUpAnim = {
+            startMs: _now,
+            durMs: _animDur,
+            srcElapsed: _srcEl,
+            dstElapsed: _SLOT_PRODUCE_MS,
+          };
+        }
+        return;
+      }
       _castlePopupOpen = false;
+      _castleSelectedIdx = null;
       return;
     }
     // Speed-up qty [−] / [+] — operuoja ant selected slot'o production'o
@@ -26114,6 +26796,23 @@ document.addEventListener('DOMContentLoaded', () => {
           if (SFX && SFX.deny) SFX.deny();
           return;
         }
+        // Zip placement — vienos cell decoration, be papildomų collision boxes
+        if (_f11DeployArmed === 'zip') {
+          if (cellX < 0 || cellX >= COLS || cellY < 0 || cellY >= ROWS) return;
+          if (cellX >= _territoryCols) return;
+          const _zKey = `${cellY},${cellX}`;
+          if (S.decorations && S.decorations[_zKey]) return;
+          if (typeof isWall === 'function' && isWall(cellX, cellY)) return;
+          if (!S.decorations) S.decorations = {};
+          S.decorations[_zKey] = 'building_Zip';
+          const snap = _f11TransferUnits[snapIdx];
+          if (snap && snap.id && typeof _removeTrainedSnapById === 'function') _removeTrainedSnapById(snap.id);
+          _f11TransferUnits.splice(snapIdx, 1);
+          const stillHas = _f11TransferUnits.some(s => s && s.utype === 'zip');
+          if (!stillHas) _f11DeployArmed = null;
+          if (typeof logEvent === 'function') logEvent('⚡ Zip Tower placed', 'info');
+          return;
+        }
         // Tower placement — decoration + 2 collision boxes, ne mkUnit
         if (_f11DeployArmed === 'tower') {
           if (cellX < 0 || cellX >= COLS || cellY < 0 || cellY >= ROWS) return;
@@ -26198,6 +26897,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // the queue nemirs viduryje dėl balanso svyravimų nuo kitų išlaidų.
       if (inside(_barracksProduceBtnBounds) && _barracksSelectedIdx !== null &&
           !_barracksProductions[_barracksSelectedIdx]) {
+        // Exclusive: blokuojam jei kitas slot'as jau treniruoja
+        const _otherBusy = Object.keys(_barracksProductions).some(k =>
+          _barracksProductions[k] && +k !== _barracksSelectedIdx);
+        if (_otherBusy) return;
         const _qty = Math.max(1, _barracksQueueCount);
         const _totalCost = _BARRACKS_UNIT_COST * _qty;
         if (_ronkeBalance >= _totalCost) {
@@ -26500,12 +27203,16 @@ document.addEventListener('DOMContentLoaded', () => {
       // Populate buildings panel on first open
       if (section === 'bldg' && bldgWrap && !bldgWrap._built) {
         bldgWrap._built = true;
-        const bNames = ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower'];
+        const bNames = ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower','Zip'];
         bldgWrap.innerHTML = '<div style="color:#ffcc44; font-size:9px; margin-bottom:6px; font-family:monospace;">BUILDINGS — dbl-click to place</div>';
         bNames.forEach(name => {
           const btn = document.createElement('button');
           btn.style.cssText = 'display:flex; align-items:center; gap:8px; background:#12100a; border:1px solid #554400; color:#ffcc44; padding:6px 8px; cursor:pointer; font-family:monospace; font-size:11px; text-align:left; width:100%;';
-          btn.innerHTML = `<img src="assets_tiny/Buildings_${name}.png" style="width:40px; height:auto; image-rendering:pixelated; border:1px solid #333;"> ${name}`;
+          // Zip yra sprite sheet (8×1 horizontal strip) — preview rodome tik 1 frame
+          const _previewImg = (name === 'Zip')
+            ? `<div style="width:40px; height:64px; background-image:url('assets_tiny/Buildings_${name}.png'); background-size:800% 100%; background-position:0 0; image-rendering:pixelated; border:1px solid #333;"></div>`
+            : `<img src="assets_tiny/Buildings_${name}.png" style="width:40px; height:auto; image-rendering:pixelated; border:1px solid #333;">`;
+          btn.innerHTML = `${_previewImg} ${name}`;
           btn.onclick = () => {
             window.setEditTile('building_' + name);
             bldgWrap.querySelectorAll('button').forEach(b => b.style.borderColor = '#554400');
