@@ -2853,6 +2853,77 @@ let _selectedAllyUnit = null;         // reference į S.units item'ą (savo pus�
 window._showHarpoonRanges = false;    // edit map mygtukas + V klavišas toggle'ina vision/move diamond'us F11'e
 let _harpoonRangeToastUntil = 0;      // toast'as apatiniame kampe kai toggle'ina
 let _lowManaToastUntil = 0;           // toast'as kai trūksta manos commander skill'ui
+// "<Pastato> READY" plaque-style floater — pakyla iš pilies, tekstas su mažesniu šriftu apvestas
+// medieval lentutės rėmu (parchment + dark border), kad neatrodytų kaip damage tekstas.
+const _buildingReadyFloaters = [];
+function _showBuildingReadyToast(label, icon, color) {
+  if (!_castleBounds) return;
+  const cb = _castleBounds;
+  _buildingReadyFloaters.push({
+    x: cb.x + cb.w / 2,
+    y: cb.y + cb.h * 0.25,
+    vy: -1.4,
+    text: `${icon || '🏗'} ${label}`,
+    color: color || '#7effa0',
+    bornAt: performance.now(),
+    life: 1,
+  });
+}
+function _drawBuildingReadyFloaters() {
+  if (!_buildingReadyFloaters.length) return;
+  const now = performance.now();
+  ctx.save();
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = _buildingReadyFloaters.length - 1; i >= 0; i--) {
+    const f = _buildingReadyFloaters[i];
+    f.y += f.vy;
+    f.vy *= 0.965;
+    f.life -= 0.005; // ~2x ilgesnis nei dmg number
+    if (f.life <= 0) { _buildingReadyFloaters.splice(i, 1); continue; }
+    const inT = Math.min(1, (now - f.bornAt) / 200);
+    const inEase = 1 - Math.pow(1 - inT, 3);
+    const scale = 0.7 + inEase * 0.3;
+    const alpha = Math.min(inEase, f.life < 0.35 ? f.life / 0.35 : 1);
+    const tw = ctx.measureText(f.text).width;
+    const padX = 7, padY = 4;
+    const w = tw + padX * 2;
+    const h = 10 + padY * 2;
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.scale(scale, scale);
+    ctx.globalAlpha = alpha;
+    // Šešėlis
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    _roundRect(ctx, -w / 2 + 1.5, -h / 2 + 2, w, h, 3);
+    ctx.fill();
+    // Parchment fill
+    const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    grad.addColorStop(0, '#f5e6c3');
+    grad.addColorStop(1, '#d8c08a');
+    ctx.fillStyle = grad;
+    _roundRect(ctx, -w / 2, -h / 2, w, h, 3);
+    ctx.fill();
+    // Tamsus rėmas
+    ctx.strokeStyle = '#3d2817';
+    ctx.lineWidth = 1.2;
+    _roundRect(ctx, -w / 2 + 0.5, -h / 2 + 0.5, w - 1, h - 1, 3);
+    ctx.stroke();
+    // Spalvos akcentas — ploną liniją apačioje
+    ctx.strokeStyle = f.color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 + 3, h / 2 - 2);
+    ctx.lineTo(w / 2 - 3, h / 2 - 2);
+    ctx.stroke();
+    // Tekstas
+    ctx.fillStyle = '#3d2817';
+    ctx.fillText(f.text, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
 let _barracksSelectedIdx = null;       // 0..15 pasirinkto unit'o indeksas arba null
 // Atrakinti slot'ai (default 4). Castle BUILD SLOT prideda po 1, max 16.
 let _barracksUnlockedSlots = 4;
@@ -3024,7 +3095,7 @@ function _saveBarracksTrainedState() {
   }
   // Preserve non-unit synthetic entries (towers) — jos nėra S.units, todėl rebuild jų neapima
   const _existingSynth = Array.isArray(Profile.barracksTrained)
-    ? Profile.barracksTrained.filter(s => s && (s.utype === 'tower' || s.utype === 'zip'))
+    ? Profile.barracksTrained.filter(s => s && (s.utype === 'tower' || s.utype === 'crossbow_tower' || s.utype === 'zip'))
     : [];
   Profile.barracksTrained = [...snaps, ..._existingSynth];
   saveProfile();
@@ -3098,6 +3169,8 @@ for (let i = 0; i < 16; i++) {
 let _castleBtnBounds = null;
 let _castleTowerBtnBounds = null;
 let _castleTowerSpeedUpBtnBounds = null;
+let _castleCrossbowTowerBtnBounds = null;
+let _castleCrossbowTowerSpeedUpBtnBounds = null;
 let _castleZipBtnBounds = null;
 let _castleZipSpeedUpBtnBounds = null;
 let _castleSlotBtnBounds = null;
@@ -3110,6 +3183,10 @@ let _towerProduction = null;
 const _TOWER_PRODUCE_MS = 60000;   // 1 min, kaip barracks
 const _TOWER_BUILD_COST = 3;
 const _TOWER_SPEEDUP_COST = 1;
+let _crossbowTowerProduction = null;
+const _CROSSBOW_TOWER_PRODUCE_MS = _TOWER_PRODUCE_MS;
+const _CROSSBOW_TOWER_BUILD_COST = _TOWER_BUILD_COST;
+const _CROSSBOW_TOWER_SPEEDUP_COST = _TOWER_SPEEDUP_COST;
 let _zipProduction = null;
 const _ZIP_PRODUCE_MS = 60000;
 const _ZIP_BUILD_COST = 5;
@@ -3146,7 +3223,42 @@ function _tickTowerProduction() {
   if (typeof saveProfile === 'function') saveProfile();
   if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._twrSnap });
   _towerProduction = null;
+  _showBuildingReadyToast('TOWER READY', '🗼', '#ffcf5c');
   if (typeof logEvent === 'function') logEvent('🗼 Tower ready', 'info');
+}
+function _getCrossbowTowerProdElapsed(now) {
+  if (!_crossbowTowerProduction) return 0;
+  const anim = _crossbowTowerProduction.speedUpAnim;
+  if (anim) {
+    const t = Math.max(0, Math.min(1, (now - anim.startMs) / anim.durMs));
+    if (t >= 1) {
+      _crossbowTowerProduction.startAt = now - anim.dstElapsed;
+      _crossbowTowerProduction.speedUpAnim = null;
+      return anim.dstElapsed;
+    }
+    return anim.srcElapsed + (anim.dstElapsed - anim.srcElapsed) * t;
+  }
+  return Math.max(0, now - _crossbowTowerProduction.startAt);
+}
+function _tickCrossbowTowerProduction() {
+  if (!_crossbowTowerProduction) return;
+  const now = performance.now();
+  const el = _getCrossbowTowerProdElapsed(now);
+  if (el < _CROSSBOW_TOWER_PRODUCE_MS) return;
+  if (!Array.isArray(Profile.barracksTrained)) Profile.barracksTrained = [];
+  const _twrSnap = {
+    id: (typeof _nextTrainedSnapId === 'function') ? _nextTrainedSnapId() : `tsn_xbt_${Date.now()}`,
+    utype: 'crossbow_tower',
+    stack: 1,
+    hp: 1,
+    maxHp: 1,
+  };
+  Profile.barracksTrained.push(_twrSnap);
+  if (typeof saveProfile === 'function') saveProfile();
+  if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._twrSnap });
+  _crossbowTowerProduction = null;
+  _showBuildingReadyToast('XBOW TOWER READY', 'ðŸ—¼', '#9ed6ff');
+  if (typeof logEvent === 'function') logEvent('Crossbow Tower ready', 'info');
 }
 function _getZipProdElapsed(now) {
   if (!_zipProduction) return 0;
@@ -3179,6 +3291,7 @@ function _tickZipProduction() {
   if (typeof saveProfile === 'function') saveProfile();
   if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._zipSnap });
   _zipProduction = null;
+  _showBuildingReadyToast('ZIP TOWER READY', '⚡', '#a8e0ff');
   if (typeof logEvent === 'function') logEvent('⚡ Zip Tower ready', 'info');
 }
 // Slot (barracks slot atrakinimas) production — 1 min, gali speed up'inti
@@ -3213,6 +3326,7 @@ function _tickSlotProduction() {
   }
   const added = _addBarracksGrassSlot();
   _slotProduction = null;
+  _showBuildingReadyToast('NEW SLOT READY', '🏰', '#7effa0');
   if (typeof logEvent === 'function') logEvent(`🏰 Barracks slot unlocked (${_barracksUnlockedSlots}/${_BARRACKS_MAX_SLOTS})${added ? ` — naujas zoles plotas ${added}` : ''}`, 'info');
 }
 // Naujas tileset3_3_3 marker pasaulio žemėlapyje — extend'inam esančią zoles juostą po barakais.
@@ -3419,7 +3533,9 @@ function _tickZipTowers(now) {
     if (now < st.nextShootAt) continue;
     let best = null, bestD = Infinity;
     for (const u of S.units) {
-      if (!u || !u.alive || u.team !== 1) continue;
+      if (!u || !u.alive) continue;
+      // Tik priešai — tas pats filter'is kaip Tower'io (atmeta ally team===1 unitus).
+      if (typeof isHostileAdventureEnemy !== 'function' || !isHostileAdventureEnemy(u)) continue;
       const ux = (u.rx != null ? u.rx : u.x);
       const uy = (u.ry != null ? u.ry : u.y);
       const d = Math.hypot(ux - tc, uy - tr);
@@ -4559,11 +4675,22 @@ const _towerFireImg = new Image(); _towerFireImg.src = 'assets_tiny/Fire.png';
 const TOWER_FIRE_FRAMES = 7, TOWER_FIRE_FW = 128, TOWER_FIRE_FH = 128, TOWER_FIRE_MS = 90;
 const TOWER_EXPL_FRAMES = 9, TOWER_EXPL_FW = 192, TOWER_EXPL_MS = 80;
 const TOWER_MAX_HP = 20;
+const _TOWER_TURRET_FIRE_ANIM_MS = 520;
 const _towerStates = {}; // key="r,c" → { hp, maxHp, hitFlash }
 const _towerDestroyedAnims = []; // { wx, wy, born } — active explosion+rubble
 function _getTowerState(r, c) {
   const k = r+','+c;
-  if (!_towerStates[k]) _towerStates[k] = { hp: TOWER_MAX_HP, maxHp: TOWER_MAX_HP, hitFlash: 0 };
+  if (!_towerStates[k]) {
+    _towerStates[k] = {
+      hp: TOWER_MAX_HP,
+      maxHp: TOWER_MAX_HP,
+      hitFlash: 0,
+      aimAngle: 0,
+      targetAngle: 0,
+      fireAnimAt: 0,
+      fireDir: 1,
+    };
+  }
   return _towerStates[k];
 }
 
@@ -4657,7 +4784,7 @@ function _damageBlueArcherAt(lgx, lgy, dmg) {
 }
 // Returns true=shoot right, false=shoot left, null=no target in range
 function _findShootDirFriendly(cx, cy, maxDist) {
-  // Blue archer / fish — enemies are red archers
+  // Blue archer / fish — taikiniai: red archer NPC IR visi enemy unit'ai S.units (skull, shaman ir kt.)
   const left = [], right = [];
   for (const k in _redArcherStates) {
     const st = _redArcherStates[k];
@@ -4665,6 +4792,16 @@ function _findShootDirFriendly(cx, cy, maxDist) {
     const dx = st.cx - cx;
     if (Math.abs(dx) <= maxDist && Math.abs(st.cy - cy) <= 2) {
       (dx >= 0 ? right : left).push(Math.abs(dx));
+    }
+  }
+  // S.units enemy scan — viskas, kas nėra hero (team 0) ir nėra friendly barracks unit
+  if (Array.isArray(S.units)) {
+    for (const u of S.units) {
+      if (!u.alive) continue;
+      if (u.team === 0) continue;
+      if (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)) continue;
+      const dx = u.x - cx;
+      if (Math.abs(dx) <= maxDist && Math.abs(u.y - cy) <= 2) (dx >= 0 ? right : left).push(Math.abs(dx));
     }
   }
   if (!left.length && !right.length) return null;
@@ -4883,6 +5020,23 @@ const shamanExplImg = new Image(); shamanExplImg.src = 'assets_tiny/Shaman_Explo
 const _SHAM_PROJ_FRAMES = 3, _SHAM_PROJ_W = 128, _SHAM_PROJ_H = 128, _SHAM_PROJ_MS = 90;
 const _SHAM_EXPL_FRAMES = 9, _SHAM_EXPL_W = 128, _SHAM_EXPL_H = 128, _SHAM_EXPL_MS = 55;
 const _shamanExplosions = []; // module-level visual list, not turn-based
+const _towerAoeBlasts = []; // procedural ring+spark blast for tower AoE arrows
+let _towerAoeCellSprite = null; // pre-rendered radial-fill sprite (avoids gradient rebuild per frame)
+function _getTowerAoeCellSprite() {
+  if (_towerAoeCellSprite) return _towerAoeCellSprite;
+  const r = Math.max(8, Math.ceil(CELL * 0.6));
+  const cv = document.createElement('canvas');
+  cv.width = r * 2; cv.height = r * 2;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(r, r, 0, r, r, r);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.45, 'rgba(255,244,210,0.85)');
+  g.addColorStop(1, 'rgba(220,200,160,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, r * 2, r * 2);
+  _towerAoeCellSprite = { canvas: cv, r };
+  return _towerAoeCellSprite;
+}
 
 function getShamanFrame(u, dir) {
   const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
@@ -6436,7 +6590,7 @@ function initHubRoom() {
   S.pending = [null, null];
   S.pendingEnemyBatch = [];
   S.bullets = []; S.lasers = []; S.particles = []; S.dmgNumbers = []; S.meleeStrikes = [];
-  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = []; S.harpoons = []; S.barracksHarpoons = [];
+  S.deathAnims = []; S.spawnAnims = []; S.meatDrops = []; S.shamanProjectiles = []; S.harpoons = []; S.barracksHarpoons = []; S.towerBolts = [];
   _shamanExplosions.length = 0;
   S.pendingPassiveRewards = [];
   S.shake = 0; S.animT = 1;
@@ -6806,7 +6960,7 @@ function generateDungeon() {
     S.collisionBoxes = _cm.collisionBoxes ? new Set(_cm.collisionBoxes) : new Set();
     // Migration (cmd173): Tower top collision box panaikintas — pašalinam iš seno mapo data
     for (const _k in S.decorations) {
-      if (S.decorations[_k] !== 'building_Tower') continue;
+      if (S.decorations[_k] !== 'building_Tower' && S.decorations[_k] !== 'building_CrossbowTower') continue;
       const _p = _k.split(',').map(Number);
       const _gy = _p[0], _gx = _p[1];
       S.collisionBoxes.delete(`${_gy},${_gx+1}`);
@@ -9658,7 +9812,7 @@ function _updateAndDrawArchers(decKeys) {
     // F11 timelock — jei AI uzkonservuota, šiftuojam NPC state timestamps kad state'as nepasikeistų,
     // bet strėlių timestamps NELIEČIAM — tegul pasiekia taikinį ir atlieka hit animaciją.
     const _arSetupGrace = (gameMode === 'adventure' && f11LikeFloor() && f11CommanderOn() && S._f11SetupUntil && now < S._f11SetupUntil);
-    const _arPaused = _arSetupGrace || (gameMode === 'adventure' && f11LikeFloor() && !_f11AutoPlay && now > _f11AiGate.allowUntil);
+    const _arPaused = _arSetupGrace || (gameMode === 'adventure' && f11LikeFloor() && !_f11RtsMode && !_f11AutoPlay && now > _f11AiGate.allowUntil);
     if (_arPaused) {
       const _dt = now - (st._lastTickAt || now);
       st._lastTickAt = now;
@@ -9905,7 +10059,7 @@ function _updateAndDrawArchers(decKeys) {
         if (!a.hitTarget && S.decorations) {
           for (let dr = 0; dr <= 2; dr++) {
             const tk = (lgy-dr)+','+lgx;
-            if (S.decorations[tk] === 'building_Tower') {
+            if (S.decorations[tk] === 'building_Tower' || S.decorations[tk] === 'building_CrossbowTower') {
               a.hitTarget = true; break;
             }
           }
@@ -10408,7 +10562,7 @@ function _updateAndDrawRedArchers(decKeys) {
           outer: for (const checkC of [lgx, lgx-1]) {
             for (let dr=0;dr<=2;dr++) {
               const tk=(lgy-dr)+','+checkC;
-              if (S.decorations[tk]==='building_Tower') { foundTk=tk; foundTr=lgy-dr; foundTc=checkC; break outer; }
+              if (S.decorations[tk]==='building_Tower' || S.decorations[tk]==='building_CrossbowTower') { foundTk=tk; foundTr=lgy-dr; foundTc=checkC; break outer; }
             }
           }
           if (foundTk) {
@@ -10523,7 +10677,7 @@ function _updateAndDrawFish(decKeys) {
     // F11 timelock — jei AI uzkonservuota, šiftuojam NPC state timestamps kad state'as nepasikeistų,
     // bet harpūnų timestamps NELIEČIAM — tegul pasiekia taikinį ir atlieka hit animaciją.
     const _fhSetupGrace = (gameMode === 'adventure' && f11LikeFloor() && f11CommanderOn() && S._f11SetupUntil && now < S._f11SetupUntil);
-    const _fhPaused = _fhSetupGrace || (gameMode === 'adventure' && f11LikeFloor() && !_f11AutoPlay && now > _f11AiGate.allowUntil);
+    const _fhPaused = _fhSetupGrace || (gameMode === 'adventure' && f11LikeFloor() && !_f11RtsMode && !_f11AutoPlay && now > _f11AiGate.allowUntil);
     if (_fhPaused) {
       const _dt = now - (st._lastTickAt || now);
       st._lastTickAt = now;
@@ -10904,7 +11058,8 @@ function drawForegroundDecorations() {
       }
       continue;
     }
-    const img = _buildingImgs[name];
+    const imgName = name === 'CrossbowTower' ? 'Tower' : name;
+    const img = _buildingImgs[imgName];
     if (!img || !img.complete || img.naturalWidth === 0) continue;
     // Zip (animacinis tesla tower 4×2 grid) — frame cropping + per-frame ciklas
     if (name === 'Zip') {
@@ -10965,12 +11120,12 @@ function drawForegroundDecorations() {
       }
       continue;
     }
-    const _bldgOffsetY = { Castle: -25, Tower: -70, House3: -30 };
+    const _bldgOffsetY = { Castle: -25, Tower: -70, CrossbowTower: -70, House3: -30 };
     const offsetY = _bldgOffsetY[name] || 0;
     // House3 (primary RONKE MINE) — sumažintas du kartus po 10% (0.80 * 0.9 * 0.9 ≈ 0.648)
-    const _bldgScale = { Tower: 0.72, House3: 0.648 };
+    const _bldgScale = { Tower: 0.72, CrossbowTower: 0.72, House3: 0.648 };
     const bldgScale = _bldgScale[name] || 0.80;
-    const _bldgOffsetX = { Tower: 15 };
+    const _bldgOffsetX = { Tower: 15, CrossbowTower: 15 };
     const offsetX = _bldgOffsetX[name] || 0;
     const bw = img.naturalWidth * bldgScale, bh = img.naturalHeight * bldgScale;
     const bx = c * CELL + (img.naturalWidth - bw) / 2 + offsetX;
@@ -11039,9 +11194,13 @@ function drawForegroundDecorations() {
       _ronkeBarBounds = null;
     }
     // CD bar for Tower (replaces HP bar — HP nebematomas pagal user'į)
-    _drawHomeBuildingTag({ x: bx, y: by, w: bw, h: bh }, name);
-    if (name === 'Tower') {
+    _drawHomeBuildingTag({ x: bx, y: by, w: bw, h: bh }, name === 'CrossbowTower' ? 'XBOW TOWER' : name);
+    if (name === 'Tower' || name === 'CrossbowTower') {
       const ts = _getTowerState(r, c);
+      if (name === 'CrossbowTower' && typeof _drawCrossbowTurretAt === 'function') {
+        const mount = _towerMountPointPx(r, c);
+        _drawCrossbowTurretAt(mount.x, mount.y, ts, performance.now());
+      }
       if (ts.hitFlash > 0) { ts.hitFlash = Math.max(0, ts.hitFlash - 0.06); }
       const _nowCd = performance.now();
       const _lastShot = ts.lastShotAt || 0;
@@ -11214,20 +11373,21 @@ function drawForegroundDecorations() {
     const _CASTLE_BUILDS = [
       { key: 'mine',  label: 'MINE',  img: 'House3',   cost: MINE_COST,         animated: null },
       { key: 'tower', label: 'TOWER', img: 'Tower',    cost: _TOWER_BUILD_COST, animated: null },
+      { key: 'crossbow_tower', label: 'XBOW', img: 'Tower', cost: _CROSSBOW_TOWER_BUILD_COST, animated: null },
       { key: 'zip',   label: 'ZIP',   img: 'Zip',      cost: _ZIP_BUILD_COST,   animated: _ZIP_DEF },
       { key: 'slot',  label: 'SLOT',  img: 'Barracks', cost: _SLOT_BUILD_COST,  animated: null },
     ];
-    const _slotProd = (idx) => idx === 1 ? _towerProduction : idx === 2 ? _zipProduction : idx === 3 ? _slotProduction : null;
-    const _slotElapsed = (idx, now) => idx === 1 ? _getTowerProdElapsed(now) : idx === 2 ? _getZipProdElapsed(now) : idx === 3 ? _getSlotProdElapsed(now) : 0;
+    const _slotProd = (idx) => idx === 1 ? _towerProduction : idx === 2 ? _crossbowTowerProduction : idx === 3 ? _zipProduction : idx === 4 ? _slotProduction : null;
+    const _slotElapsed = (idx, now) => idx === 1 ? _getTowerProdElapsed(now) : idx === 2 ? _getCrossbowTowerProdElapsed(now) : idx === 3 ? _getZipProdElapsed(now) : idx === 4 ? _getSlotProdElapsed(now) : 0;
     const _slotCount = (idx) => {
       if (idx === 0) return mineCount;
-      if (idx === 3) return _barracksUnlockedSlots;
-      const k = idx === 1 ? 'tower' : 'zip';
+      if (idx === 4) return _barracksUnlockedSlots;
+      const k = idx === 1 ? 'tower' : idx === 2 ? 'crossbow_tower' : 'zip';
       return (Profile && Array.isArray(Profile.barracksTrained))
         ? Profile.barracksTrained.filter(s => s && s.utype === k).length : 0;
     };
     // Grid dimensijos — kaip Barracks (CELL_SZ=44, GAP=4)
-    const COLS_C = 4, ROWS_C = 1, CELL_SZC = 44, GAP_C = 4;
+    const COLS_C = 5, ROWS_C = 1, CELL_SZC = 44, GAP_C = 4;
     const PAD_X_C = 10, PAD_TOP_C = 34, PAD_BOT_C = 86;
     const gridW = COLS_C * CELL_SZC + (COLS_C - 1) * GAP_C;
     const pw = gridW + PAD_X_C * 2;
@@ -11322,6 +11482,19 @@ function drawForegroundDecorations() {
             const _sc = Math.min(dw / _iw, dh / _ih);
             const _ww = _iw * _sc, _hh = _ih * _sc;
             ctx.drawImage(bImg, ax + inset + (dw - _ww) / 2, ay + inset + (dh - _hh) / 2, _ww, _hh);
+            if (def.key === 'crossbow_tower') {
+              ctx.save();
+              ctx.strokeStyle = '#d7e9f0';
+              ctx.lineWidth = 2.2;
+              ctx.lineCap = 'round';
+              ctx.beginPath();
+              ctx.moveTo(ax + 14, ay + 16);
+              ctx.lineTo(ax + 31, ay + 12);
+              ctx.moveTo(ax + 23, ay + 9);
+              ctx.lineTo(ax + 32, ay + 23);
+              ctx.stroke();
+              ctx.restore();
+            }
           }
         }
       }
@@ -11343,7 +11516,8 @@ function drawForegroundDecorations() {
       const _prod = _slotProd(idx);
       if (_prod) {
         const _el = _slotElapsed(idx, _nowAnim);
-        const _fr = Math.max(0, Math.min(1, _el / _TOWER_PRODUCE_MS));
+        const _pmsCard = idx === 1 ? _TOWER_PRODUCE_MS : idx === 2 ? _CROSSBOW_TOWER_PRODUCE_MS : idx === 3 ? _ZIP_PRODUCE_MS : _SLOT_PRODUCE_MS;
+        const _fr = Math.max(0, Math.min(1, _el / _pmsCard));
         const pbH = 3;
         ctx.fillStyle = 'rgba(61,40,23,0.65)';
         ctx.fillRect(ax + 2, ay + CELL_SZC - pbH - 2, CELL_SZC - 4, pbH);
@@ -11362,6 +11536,28 @@ function drawForegroundDecorations() {
         ctx.textBaseline = 'middle';
         ctx.fillText(String(_cnt), qbx + 7, qby + 6.5);
       }
+      if (def.key === 'crossbow_tower') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(12,18,24,0.72)';
+        rr(ax + 4, ay + CELL_SZC - 13, CELL_SZC - 8, 10, 3); ctx.fill();
+        ctx.fillStyle = '#d8f0ff';
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('XBOW', ax + CELL_SZC / 2, ay + CELL_SZC - 8);
+        ctx.strokeStyle = '#e4f4ff';
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ax + 11, ay + 15);
+        ctx.lineTo(ax + 33, ay + 10);
+        ctx.moveTo(ax + 23, ay + 7);
+        ctx.lineTo(ax + 35, ay + 22);
+        ctx.moveTo(ax + 15, ay + 23);
+        ctx.lineTo(ax + 33, ay + 10);
+        ctx.stroke();
+        ctx.restore();
+      }
       _castleCardRects.push({ x: ax, y: ay, w: CELL_SZC, h: CELL_SZC, idx });
     }
     // ── Bottom: cost row + BUILD/SPEED-UP button ────────────────────────
@@ -11369,6 +11565,8 @@ function drawForegroundDecorations() {
     _castleBtnBounds = null;
     _castleTowerBtnBounds = null;
     _castleTowerSpeedUpBtnBounds = null;
+    _castleCrossbowTowerBtnBounds = null;
+    _castleCrossbowTowerSpeedUpBtnBounds = null;
     _castleZipBtnBounds = null;
     _castleZipSpeedUpBtnBounds = null;
     _castleSlotBtnBounds = null;
@@ -11383,11 +11581,11 @@ function drawForegroundDecorations() {
     const thumb = _getRonkeCoinThumb(iconSz, fr);
     const _activeCost = !_selDef ? null
       : (_selProd
-          ? (_selIdx === 1 ? _TOWER_SPEEDUP_COST : _selIdx === 2 ? _ZIP_SPEEDUP_COST : _SLOT_SPEEDUP_COST)
+          ? (_selIdx === 1 ? _TOWER_SPEEDUP_COST : _selIdx === 2 ? _CROSSBOW_TOWER_SPEEDUP_COST : _selIdx === 3 ? _ZIP_SPEEDUP_COST : _SLOT_SPEEDUP_COST)
           : _selDef.cost);
     if (_selProd) {
       // Producing — large progress bar above SPEED UP button
-      const _pms = _selIdx === 1 ? _TOWER_PRODUCE_MS : _selIdx === 2 ? _ZIP_PRODUCE_MS : _SLOT_PRODUCE_MS;
+      const _pms = _selIdx === 1 ? _TOWER_PRODUCE_MS : _selIdx === 2 ? _CROSSBOW_TOWER_PRODUCE_MS : _selIdx === 3 ? _ZIP_PRODUCE_MS : _SLOT_PRODUCE_MS;
       const _el = _slotElapsed(_selIdx, _nowAnim);
       const _prog = Math.max(0, Math.min(1, _el / _pms));
       const _remS = Math.max(0, Math.ceil((_pms - _el) / 1000));
@@ -11399,7 +11597,7 @@ function drawForegroundDecorations() {
       ctx.fillRect(_bX - 1, _bY - 1, _bW + 2, _bH + 2);
       ctx.fillStyle = '#1a2030';
       ctx.fillRect(_bX, _bY, _bW, _bH);
-      ctx.fillStyle = _selIdx === 1 ? '#b08a2e' : _selIdx === 2 ? '#3a8aaa' : '#7effa0';
+      ctx.fillStyle = _selIdx === 1 ? '#b08a2e' : _selIdx === 2 ? '#8fb0c8' : _selIdx === 3 ? '#3a8aaa' : '#7effa0';
       ctx.fillRect(_bX, _bY, _bW * _prog, _bH);
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
@@ -11447,8 +11645,8 @@ function drawForegroundDecorations() {
         strokeIdle = '#9ee0ff'; strokeHov = '#9ee0ff'; strokeDis = '#4a5a6a';
       } else {
         // BUILD path — exclusive lock: visi castle slot'ai (Tower/Zip/Slot) dalinasi vienu production'u.
-        const _otherProd = !!_towerProduction || !!_zipProduction || !!_slotProduction;
-        if (_selIdx === 3 && _slotMaxed) {
+        const _otherProd = !!_towerProduction || !!_crossbowTowerProduction || !!_zipProduction || !!_slotProduction;
+        if (_selIdx === 4 && _slotMaxed) {
           label = 'MAX SLOTS';
           enabled = false;
         } else {
@@ -11462,6 +11660,9 @@ function drawForegroundDecorations() {
           fillIdle = '#8a5a2e'; fillHov = '#c08a4e'; fillDis = '#3a302d';
           strokeIdle = '#ffd296'; strokeHov = '#ffd296'; strokeDis = '#5a4a3a';
         } else if (_selIdx === 2) {
+          fillIdle = '#536b7a'; fillHov = '#7898ac'; fillDis = '#2a323a';
+          strokeIdle = '#c8e8ff'; strokeHov = '#e8f6ff'; strokeDis = '#4a5a6a';
+        } else if (_selIdx === 3) {
           fillIdle = '#3a5a78'; fillHov = '#5a8aa0'; fillDis = '#2a323a';
           strokeIdle = '#9ee0ff'; strokeHov = '#9ee0ff'; strokeDis = '#4a5a6a';
         } else {
@@ -11487,13 +11688,15 @@ function drawForegroundDecorations() {
       if (_selDef && enabled) {
         if (_selProd) {
           if (_selIdx === 1) _castleTowerSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
-          else if (_selIdx === 2) _castleZipSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
-          else if (_selIdx === 3) _castleSlotSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 2) _castleCrossbowTowerSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 3) _castleZipSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 4) _castleSlotSpeedUpBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
         } else {
           if (_selIdx === 0) _castleBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
           else if (_selIdx === 1) _castleTowerBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
-          else if (_selIdx === 2) _castleZipBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
-          else if (_selIdx === 3) _castleSlotBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 2) _castleCrossbowTowerBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 3) _castleZipBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
+          else if (_selIdx === 4) _castleSlotBtnBounds = { x: bxU, y: byU, w: bw2, h: bh2 };
         }
       }
     }
@@ -11518,6 +11721,8 @@ function drawForegroundDecorations() {
     _castleBtnBounds = null;
     _castleTowerBtnBounds = null;
     _castleTowerSpeedUpBtnBounds = null;
+    _castleCrossbowTowerBtnBounds = null;
+    _castleCrossbowTowerSpeedUpBtnBounds = null;
     _castleZipBtnBounds = null;
     _castleZipSpeedUpBtnBounds = null;
     _castleSlotBtnBounds = null;
@@ -12105,17 +12310,319 @@ function _drawBarracksTrainingBar() {
 // Tower auto-fire — kiekvienas Tower šaudo strėles į priešus tame pačiame row'e (3–10 cell horizontal range).
 // Damage same kaip red archer NPC: 7 normal, 10 crit (20% chance).
 const _TOWER_FIRE_CD_MS = 3000;
+function _angleLerp(current, target, amount) {
+  let diff = ((target - current + Math.PI) % (Math.PI * 2)) - Math.PI;
+  if (diff < -Math.PI) diff += Math.PI * 2;
+  return current + diff * Math.max(0, Math.min(1, amount));
+}
+function _towerMountPointPx(r, c) {
+  const img = _buildingImgs && _buildingImgs['Tower'];
+  if (!img || !img.complete || !img.naturalWidth) return { x: (c + 1) * CELL, y: r * CELL + CELL * 0.18 };
+  const bldgScale = 0.72, offsetX = 15, offsetY = -70;
+  const bw = img.naturalWidth * bldgScale, bh = img.naturalHeight * bldgScale;
+  const bx = c * CELL + (img.naturalWidth - bw) / 2 + offsetX;
+  const by = r * CELL + offsetY + (img.naturalHeight - bh);
+  return { x: bx + bw * 0.50, y: by + bh * 0.36 };
+}
+function _towerBoltSpawnPointPx(r, c, angle) {
+  const mount = _towerMountPointPx(r, c);
+  const size = CELL * 0.68;
+  const headCx = mount.x + Math.cos(angle) * 0 - Math.sin(angle) * (-size * 0.30);
+  const headCy = mount.y + Math.sin(angle) * 0 + Math.cos(angle) * (-size * 0.30);
+  const muzzle = size * 0.45;
+  return {
+    x: headCx + Math.cos(angle) * muzzle,
+    y: headCy + Math.sin(angle) * muzzle,
+  };
+}
+function _towerVisualAimAngle(mount, targetPx) {
+  // Old tower arrows fly in a parabolic arc, so the crossbow should look like
+  // it leads the shot upward instead of aiming flat at the target center.
+  return Math.atan2((targetPx.y - CELL * 1.15) - mount.y, targetPx.x - mount.x);
+}
+function _crossbowLoadedArrowPointPx(r, c, angle) {
+  const mount = _towerMountPointPx(r, c);
+  const size = CELL * 0.68;
+  const fireT = 0.46;
+  const drawT = Math.max(0, 1 - (fireT - 0.45) / 0.55);
+  const releaseKick = Math.sin((fireT - 0.42) / 0.26 * Math.PI);
+  const recoil = -releaseKick * CELL * 0.06;
+  const pullBack = drawT * size * 0.16;
+  const boltW = size * 0.62;
+  const boltX = -size * 0.15 - pullBack;
+  const localX = recoil + boltX + boltW * 0.5;
+  const localY = 0;
+  const headY = -size * 0.30;
+  return {
+    x: mount.x + Math.cos(angle) * localX - Math.sin(angle) * localY,
+    y: mount.y + headY + Math.sin(angle) * localX + Math.cos(angle) * localY,
+  };
+}
+function _drawCrossbowTurretAt(cx, cy, ts, now) {
+  if (!ctx || !ts) return;
+  const angle = Number.isFinite(ts.aimAngle) ? ts.aimAngle : 0;
+  const fireAge = ts.fireAnimAt ? now - ts.fireAnimAt : Infinity;
+  const fireT = Math.max(0, Math.min(1, fireAge / _TOWER_TURRET_FIRE_ANIM_MS));
+  const firing = fireAge < _TOWER_TURRET_FIRE_ANIM_MS;
+  const drawT = firing ? (fireT < 0.45 ? fireT / 0.45 : Math.max(0, 1 - (fireT - 0.45) / 0.55)) : 0;
+  const releaseKick = firing && fireT > 0.42 && fireT < 0.68 ? Math.sin((fireT - 0.42) / 0.26 * Math.PI) : 0;
+  const recoil = -releaseKick * CELL * 0.06;
+  const size = CELL * 0.68;
+  ctx.save();
+  ctx.translate(Math.round(cx), Math.round(cy));
+  // The base is fixed to the tower top. Only the crossbow head rotates.
+  ctx.shadowColor = firing ? 'rgba(180,210,225,0.38)' : 'transparent';
+  ctx.shadowBlur = firing ? 7 : 0;
+
+  // Centered stone platform standing on the tower floor.
+  ctx.fillStyle = 'rgba(8, 10, 14, 0.52)';
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.10, size * 0.50, size * 0.24, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#17202b';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.06, size * 0.44, size * 0.20, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#1b2430';
+  ctx.fillRect(-size * 0.36, -size * 0.02, size * 0.72, size * 0.23);
+  ctx.fillStyle = '#354453';
+  ctx.fillRect(-size * 0.31, size * 0.01, size * 0.62, size * 0.16);
+  ctx.fillStyle = '#718696';
+  ctx.fillRect(-size * 0.25, size * 0.035, size * 0.50, size * 0.065);
+  ctx.fillStyle = '#9fb4bf';
+  ctx.fillRect(-size * 0.18, size * 0.055, size * 0.36, size * 0.028);
+  ctx.fillStyle = '#101820';
+  for (const sx of [-0.28, 0.28]) {
+    for (const sy of [0.02, 0.15]) {
+      ctx.fillRect(size * sx - 2, size * sy - 2, 4, 4);
+    }
+  }
+
+  // Vertical support post and turntable sitting on the platform.
+  ctx.fillStyle = '#101820';
+  ctx.fillRect(-size * 0.10, -size * 0.32, size * 0.20, size * 0.36);
+  ctx.fillStyle = '#526879';
+  ctx.fillRect(-size * 0.055, -size * 0.29, size * 0.11, size * 0.30);
+  ctx.fillStyle = '#202a34';
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.30, size * 0.20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#7f95a3';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.translate(0, -size * 0.30);
+  ctx.rotate(angle);
+  ctx.translate(recoil, 0);
+
+  // Compact, chunky crossbow head. Low contrast wood, cold metal edges.
+  ctx.fillStyle = '#1b222b';
+  ctx.fillRect(-size * 0.16, -size * 0.11, size * 0.32, size * 0.22);
+  ctx.fillStyle = '#596d7a';
+  ctx.fillRect(-size * 0.10, -size * 0.065, size * 0.20, size * 0.13);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Back outline for limbs.
+  ctx.strokeStyle = '#101820';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.03, -size * 0.24);
+  ctx.lineTo(size * 0.29, -size * 0.13);
+  ctx.lineTo(size * 0.39, 0);
+  ctx.lineTo(size * 0.29, size * 0.13);
+  ctx.lineTo(size * 0.03, size * 0.24);
+  ctx.stroke();
+  ctx.strokeStyle = '#566a78';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  // Small stone caps at limb ends match the tower's blue-gray highlights.
+  ctx.fillStyle = '#8da8b6';
+  ctx.fillRect(size * 0.25, -size * 0.18, size * 0.11, size * 0.07);
+  ctx.fillRect(size * 0.25, size * 0.11, size * 0.11, size * 0.07);
+
+  ctx.fillStyle = '#121820';
+  ctx.fillRect(-size * 0.33, -size * 0.075, size * 0.66, size * 0.15);
+  ctx.fillStyle = '#4f4135';
+  ctx.fillRect(-size * 0.24, -size * 0.04, size * 0.49, size * 0.08);
+  ctx.fillStyle = '#9fb4bf';
+  ctx.fillRect(size * 0.15, -size * 0.026, size * 0.22, size * 0.052);
+
+  const stringX = size * (0.29 - drawT * 0.34);
+  ctx.strokeStyle = '#c6d2d8';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.07, -size * 0.23);
+  ctx.lineTo(stringX, 0);
+  ctx.lineTo(size * 0.07, size * 0.23);
+  ctx.stroke();
+  if (!firing || fireT < 0.58) {
+    const arrowSheet = _archerAnims && _archerAnims.arrow && _archerAnims.arrow.img;
+    const pullBack = drawT * size * 0.16;
+    const boltW = size * 0.62;
+    const boltH = size * 0.28;
+    const boltX = -size * 0.15 - pullBack;
+    if (arrowSheet && arrowSheet.complete && arrowSheet.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = firing && fireT > 0.48 ? Math.max(0, 1 - (fireT - 0.48) / 0.10) : 1;
+      ctx.drawImage(arrowSheet, 0, 0, 64, 64, boltX, -boltH / 2, boltW, boltH);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = '#c6d2d8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(boltX, 0);
+      ctx.lineTo(boltX + boltW * 0.88, 0);
+      ctx.stroke();
+      ctx.fillStyle = '#dbeaf0';
+      ctx.beginPath();
+      ctx.moveTo(boltX + boltW, 0);
+      ctx.lineTo(boltX + boltW * 0.80, -size * 0.05);
+      ctx.lineTo(boltX + boltW * 0.80, size * 0.05);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  if (releaseKick > 0.05) {
+    ctx.fillStyle = 'rgba(190,220,235,' + (0.36 * releaseKick).toFixed(2) + ')';
+    ctx.beginPath();
+    ctx.moveTo(size * 0.45, 0);
+    ctx.lineTo(size * 0.62, -size * 0.10);
+    ctx.lineTo(size * 0.62, size * 0.10);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+function _drawTowerBoltShape(angle, isStuck) {
+  const len = isStuck ? 27 : 34;
+  ctx.rotate(angle);
+  ctx.strokeStyle = '#2a1a0a';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-len * 0.45, 0);
+  ctx.lineTo(len * 0.48, 0);
+  ctx.stroke();
+  ctx.strokeStyle = '#f5e6c3';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-len * 0.45, 0);
+  ctx.lineTo(len * 0.48, 0);
+  ctx.stroke();
+  ctx.fillStyle = '#d8e8ff';
+  ctx.beginPath();
+  ctx.moveTo(len * 0.58, 0);
+  ctx.lineTo(len * 0.36, -5);
+  ctx.lineTo(len * 0.36, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#8a5a2e';
+  ctx.fillRect(-len * 0.48, -4, 6, 8);
+}
+function _spawnTowerBolt(fromX, fromY, toX, toY, angle, willHit) {
+  if (!S.towerBolts) S.towerBolts = [];
+  const dist = Math.hypot(toX - fromX, toY - fromY);
+  S.towerBolts.push({
+    fromX, fromY, toX, toY,
+    angle,
+    born: performance.now(),
+    duration: Math.max(180, Math.min(520, dist * 3.2)),
+    willHit: !!willHit,
+    hit: false,
+    hitTarget: false,
+    particles: [],
+    lastParticleAt: 0,
+  });
+}
+function _damageTowerBoltLanding(gx, gy, willHit) {
+  if (!willHit) return false;
+  let didHit = false;
+  let dmg = 7;
+  let isCrit = false;
+  if (typeof _combatCritRoll === 'function') {
+    const roll = _combatCritRoll(dmg);
+    isCrit = roll.isCrit;
+    dmg = isCrit ? 10 : roll.dmg;
+  }
+  const target = S.units && S.units.find(u => u && u.alive && u.x === gx && u.y === gy &&
+    typeof isHostileAdventureEnemy === 'function' && isHostileAdventureEnemy(u));
+  if (target && typeof _skullIsBlocking === 'function' && _skullIsBlocking(target)) {
+    spawnDmgNumber(target.x, target.y, 'BLOCK', '#88ddff', 16, 'normal');
+    return true;
+  }
+  if (target) {
+    target.hp -= dmg;
+    target.hitFlash = 1;
+    if (typeof triggerHitRecovery === 'function') triggerHitRecovery(target);
+    if (SFX && SFX.hit) SFX.hit();
+    spawnDmgNumber(target.x, target.y, isCrit ? `-${dmg}!` : `-${dmg}`, isCrit ? '#ffe033' : '#ffdd55', isCrit ? 24 : 20, isCrit ? 'crit' : 'normal');
+    let dead = false;
+    if (target.hp <= 0) {
+      target.hp = 0;
+      target.alive = false;
+      dead = true;
+      if (typeof spawnDeath === 'function') spawnDeath(target.x, target.y, target.color);
+    }
+    if (typeof _combatJuice === 'function') _combatJuice(target.x, target.y, dmg, isCrit, 1, dead);
+    didHit = true;
+  } else if (typeof _damageRedArcherAt === 'function') {
+    didHit = _damageRedArcherAt(gx, gy, dmg);
+  }
+  return didHit;
+}
+function drawTowerBolts() {
+  if (!S.towerBolts?.length) return;
+  const now = performance.now();
+  S.towerBolts = S.towerBolts.filter(b => {
+    if (!b.hit) return now - b.born < b.duration + 120;
+    return now - b.hitAt < (b.hitTarget ? 420 : 900);
+  });
+  for (const b of S.towerBolts) {
+    const t = Math.max(0, Math.min(1, (now - b.born) / b.duration));
+    const x = b.hit ? b.hitX : b.fromX + (b.toX - b.fromX) * t;
+    const y = b.hit ? b.hitY : b.fromY + (b.toY - b.fromY) * t;
+    if (!b.hit && t >= 1) {
+      b.hit = true;
+      b.hitAt = now;
+      b.hitX = b.toX;
+      b.hitY = b.toY;
+      b.hitTarget = _damageTowerBoltLanding(Math.floor(b.toX / CELL), Math.floor(b.toY / CELL), b.willHit);
+      spawnHit(Math.floor(b.toX / CELL), Math.floor(b.toY / CELL), b.hitTarget ? '#d8e8ff' : '#6f8796', b.hitTarget ? 14 : 8);
+    }
+    if (!b.hit && now - b.lastParticleAt > 35) {
+      b.lastParticleAt = now;
+      b.particles.push({ x, y, born: now });
+    }
+    b.particles = (b.particles || []).filter(p => now - p.born < 220);
+    for (const p of b.particles) {
+      const age = (now - p.born) / 220;
+      ctx.save();
+      ctx.globalAlpha = (1 - age) * 0.4;
+      ctx.fillStyle = '#202a34';
+      ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+      ctx.restore();
+    }
+    if (b.hit && b.hitTarget) continue;
+    ctx.save();
+    ctx.translate(x, y);
+    _drawTowerBoltShape(b.angle, b.hit);
+    ctx.restore();
+  }
+}
 function _tickTowerFire(now) {
   if (gameMode !== 'adventure') return;
   if (S._f11Outcome) return;
   if (!S.decorations) return;
   for (const key in S.decorations) {
-    if (S.decorations[key] !== 'building_Tower') continue;
+    const _towerDec = S.decorations[key];
+    const _isCrossbowTower = _towerDec === 'building_CrossbowTower';
+    if (_towerDec !== 'building_Tower' && !_isCrossbowTower) continue;
     const _p = key.split(',').map(Number);
     const tr = _p[0], tc = _p[1];
     const ts = _getTowerState(tr, tc);
     if (!ts.lastShotAt) ts.lastShotAt = 0;
-    if (now - ts.lastShotAt < _TOWER_FIRE_CD_MS) continue;
     // Tower fire origin = top row (rooftop), col tc+1 (collision center)
     const fx = tc + 1, fy = tr;
     let target = null, bestD = Infinity;
@@ -12127,7 +12634,7 @@ function _tickTowerFire(now) {
         if (u.y < fy || u.y > fy + 2) continue; // tower spans 3 rows (deco + 2 collision)
         const d = Math.abs(u.x - fx);
         if (d < 3 || d > 10) continue;
-        if (d < bestD) { bestD = d; target = { x: u.x, y: u.y }; }
+        if (d < bestD) { bestD = d; target = { x: u.x, y: u.y, unitId: u.id }; }
       }
     }
     // Red archer NPCs
@@ -12145,20 +12652,48 @@ function _tickTowerFire(now) {
     }
     if (!target) continue;
     const faceDx = Math.sign(target.x - fx) || 1;
-    // 50% miss: overshoot (+2..3 cells) arba undershoot (-2..3 cells) pro taikinį.
-    let _shootX = target.x;
-    const _willHit = Math.random() < 0.5;
-    if (!_willHit) {
-      const _overshoot = Math.random() < 0.5;
-      const _off = 2 + Math.floor(Math.random() * 2); // 2 arba 3
-      _shootX = target.x + (_overshoot ? faceDx * _off : -faceDx * _off);
-      // Neleidžiam undershoot grįžti atgal į tower'į
-      if (Math.sign(_shootX - fx) !== faceDx) _shootX = fx + faceDx * 2;
+    if (_isCrossbowTower) {
+      const mount = _towerMountPointPx(tr, tc);
+      const targetPx = { x: (target.x + 0.5) * CELL, y: (target.y + 0.5) * CELL };
+      ts.targetAngle = _towerVisualAimAngle(mount, targetPx);
+      ts.aimAngle = _angleLerp(Number.isFinite(ts.aimAngle) ? ts.aimAngle : ts.targetAngle, ts.targetAngle, 0.22);
+      ts.fireDir = faceDx;
     }
-    if (typeof spawnBarracksHarpoon === 'function') {
-      spawnBarracksHarpoon(fx, fy, _shootX, target.y, faceDx, 1, false, 'archer', 7, 10);
-    }
+    if (now - ts.lastShotAt < _TOWER_FIRE_CD_MS) continue;
+    // Lead target — strėlės skrydis ~1.2s, taikiniai juda → šaunam į prognozuojamą poziciją.
+    // Naudojam target.facing.dx (jo judėjimo kryptį); jei nėra — fallback į artėjimą prie tower'io.
+    // 100% pataikymas pagal aim'ą; natūralūs miss'ai atsiranda kai taikinys pasikeičia kryptį
+    // arba sustoja po šūvio paleidimo, todėl atskira random miss šansa nereikalinga.
+    const _origTU = (Array.isArray(S.units) ? S.units.find(u => u && u.x === target.x && u.y === target.y) : null);
+    const _tdx = (_origTU && _origTU.facing && typeof _origTU.facing.dx === 'number') ? _origTU.facing.dx : Math.sign(fx - target.x) || 0;
+    const _LEAD_CELLS = 2;
+    let _shootX = target.x + _tdx * _LEAD_CELLS;
+    ts.fireAnimAt = now;
     ts.lastShotAt = now;
+    const _homingId = target.unitId || null;
+    if (typeof spawnBarracksHarpoon === 'function') {
+      if (_isCrossbowTower) {
+        const _towerKey = key;
+        const _releaseDelay = Math.round(_TOWER_TURRET_FIRE_ANIM_MS * 0.46);
+        setTimeout(() => {
+          if (!S || !S.decorations || S.decorations[_towerKey] !== 'building_CrossbowTower') return;
+          const _angle = Number.isFinite(ts.aimAngle) ? ts.aimAngle : (Number.isFinite(ts.targetAngle) ? ts.targetAngle : 0);
+          const _arrowStart = _crossbowLoadedArrowPointPx(tr, tc, _angle);
+          spawnBarracksHarpoon(fx, fy, _shootX, target.y, faceDx, 1, false, 'archer', 7, 10, {
+            startX: _arrowStart.x - 14,
+            startY: _arrowStart.y,
+            topLayer: true,
+            homingUnitId: _homingId,
+            aoeRadius: 1,
+          });
+        }, _releaseDelay);
+      } else {
+        spawnBarracksHarpoon(fx, fy, _shootX, target.y, faceDx, 1, false, 'archer', 7, 10, {
+          homingUnitId: _homingId,
+          aoeRadius: 1,
+        });
+      }
+    }
   }
 }
 
@@ -12168,7 +12703,7 @@ function _drawTowerFire() {
   const fireFrame = Math.floor(now / TOWER_FIRE_MS) % TOWER_FIRE_FRAMES;
   ctx.save();
   for (const key of Object.keys(S.decorations)) {
-    if (S.decorations[key] !== 'building_Tower') continue;
+    if (S.decorations[key] !== 'building_Tower' && S.decorations[key] !== 'building_CrossbowTower') continue;
     const [strR, strC] = key.split(',');
     const r = parseInt(strR, 10), c = parseInt(strC, 10);
     const ts = _towerStates[key];
@@ -13192,6 +13727,20 @@ function drawF11DeployPanel() {
       unitTypes.push({ t: 'tower', i: -1, count: _twrCount, stackSum: _twrCount, indices: _twrIndices, deployedCount: _twrOnMap });
     }
   }
+  {
+    const _twrAgg = _armyByType['crossbow_tower'];
+    let _twrOnMap = 0;
+    if (S.decorations) {
+      for (const _k in S.decorations) {
+        if (S.decorations[_k] === 'building_CrossbowTower') _twrOnMap++;
+      }
+    }
+    const _twrCount = _twrAgg ? _twrAgg.count : 0;
+    const _twrIndices = _twrAgg ? _twrAgg.indices : [];
+    if (_twrCount > 0 || _twrOnMap > 0) {
+      unitTypes.push({ t: 'crossbow_tower', i: -3, count: _twrCount, stackSum: _twrCount, indices: _twrIndices, deployedCount: _twrOnMap });
+    }
+  }
   // Zip synthetic entry — analogiškas tower'iui
   {
     const _zipAgg = _armyByType['zip'];
@@ -13312,12 +13861,22 @@ function drawF11DeployPanel() {
     const _emptyPool = (entry.count <= 0);
     ctx.fillStyle = _selectedIsThis ? '#2a4a3a' : (armed ? '#3a5a3a' : (hov ? '#2f3848' : '#141821'));
     rr(ax, ay, UBTN, UBTN, 4); ctx.fill();
-    if (entry.t === 'tower') {
+    if (entry.t === 'tower' || entry.t === 'crossbow_tower') {
       const _tImg = _buildingImgs && _buildingImgs['Tower'];
       if (_tImg && _tImg.complete && _tImg.naturalWidth > 0) {
         ctx.save();
         if (_emptyPool) ctx.globalAlpha = 0.55;
         ctx.drawImage(_tImg, ax + 2, ay + 2, UBTN - 4, UBTN - 4);
+        if (entry.t === 'crossbow_tower') {
+          ctx.strokeStyle = '#d7e9f0';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(ax + 13, ay + 14);
+          ctx.lineTo(ax + 27, ay + 11);
+          ctx.moveTo(ax + 20, ay + 9);
+          ctx.lineTo(ax + 28, ay + 20);
+          ctx.stroke();
+        }
         ctx.restore();
       } else {
         ctx.save();
@@ -13327,7 +13886,7 @@ function drawF11DeployPanel() {
         ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('TWR', ax + UBTN / 2, ay + UBTN / 2);
+        ctx.fillText(entry.t === 'crossbow_tower' ? 'XB' : 'TWR', ax + UBTN / 2, ay + UBTN / 2);
         ctx.restore();
       }
     } else if (entry.t === 'zip') {
@@ -13405,7 +13964,7 @@ function drawF11DeployPanel() {
       ctx.restore();
     }
     _f11DeployUnitRects.push({ x: ax, y: ay, w: UBTN, h: UBTN, type: entry.t, idx: entry.i, indices: entry.indices.slice(), deployedCount: entry.deployedCount });
-    if (hov && entry.t === 'tower') _hoveredTowerBtn = { ax, ay };
+    if (hov && (entry.t === 'tower' || entry.t === 'crossbow_tower')) _hoveredTowerBtn = { ax, ay, type: entry.t };
   });
 
   // Tower hover tooltip — rodom default towerio status (ateityje galima ubgreid'inti)
@@ -13417,7 +13976,7 @@ function drawF11DeployPanel() {
       'HIT:    50%',
       'TARGET: 3-row band',
     ];
-    const ttTitle = 'TOWER';
+    const ttTitle = _hoveredTowerBtn.type === 'crossbow_tower' ? 'XBOW TOWER' : 'TOWER';
     const ttW = 138;
     const ttH = 22 + ttLines.length * 13 + 6;
     let ttX = _hoveredTowerBtn.ax + UBTN / 2 - ttW / 2;
@@ -13960,6 +14519,9 @@ function drawF11UnitPopup() {
 
 function drawF11TimelockPanel() {
   if (gameMode !== 'adventure' || !f11LikeFloor()) { _f11MoveBtn = null; _f11SkillRects = []; _f11ModeAllBtn = null; _f11ModeOneBtn = null; return; }
+  // Skill juosta + ALL/ONE pick juosta paslėpti — feature dar be panaudojimo. Išvalome rects,
+  // kad click'ai netaip nesielgtų. `window._f11ShowSkillPanel = true` įjungs atgal jei prireiks.
+  if (!window._f11ShowSkillPanel) { _f11MoveBtn = null; _f11SkillRects = []; _f11ModeAllBtn = null; _f11ModeOneBtn = null; return; }
 
   const rr = (x, y, w, h, r) => {
     ctx.beginPath();
@@ -19097,7 +19659,7 @@ function loop(now) {
   } else {
     _worldMx = _canvasMx; _worldMy = _canvasMy;
   }
-  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _tickTowerFire(performance.now()); _drawTowerFire(); _drawTowerExplosions(); _tickBarracksProduction(); _tickTowerProduction(); _tickZipProduction(); _tickSlotProduction(); _drawBarracksTrainingBar(); } else drawBoard();
+  if (gameMode === 'adventure') { drawDungeon(); drawWallLED(); _tickTowerFire(performance.now()); _drawTowerFire(); _drawTowerExplosions(); _tickBarracksProduction(); _tickTowerProduction(); _tickCrossbowTowerProduction(); _tickZipProduction(); _tickSlotProduction(); _drawBarracksTrainingBar(); } else drawBoard();
   drawLasers();
   drawMeleeStrikes();
   drawShootPreview();
@@ -19110,6 +19672,7 @@ function loop(now) {
   drawSpawnAnims();
   drawShamanProjectiles();
   drawShamanExplosions();
+  drawTowerAoeBlasts();
   drawBarracksHarpoons();
   drawRonke2Projectiles();
   drawHarpoons();
@@ -19162,12 +19725,14 @@ function loop(now) {
   }
   _drawUnitHoverOutline();
   drawForegroundDecorations();
+  drawBarracksHarpoons('top');
   drawRonkeInfect();
   drawFog();
   drawBullets();
   drawHeroBullets();
   drawHeroBulletDeaths();
   drawDmgNumbers();
+  if (typeof _drawBuildingReadyFloaters === 'function') _drawBuildingReadyFloaters();
   if (gameMode === 'adventure') drawAmbientDust();
   if (typeof _drawF11DeployPreview === 'function') _drawF11DeployPreview();
   if (typeof _drawF11DeployStopSign === 'function') _drawF11DeployStopSign();
@@ -19228,7 +19793,7 @@ function _updateCanvasCursor() {
       || inWorld(_barracksSpeedUpMinusBtnBounds)
       || inWorld(_barracksSpeedUpPlusBtnBounds))) wantPointer = true;
   } else if (_castlePopupOpen) {
-    if (inWorld(_castleBtnBounds) || inWorld(_castleTowerBtnBounds) || inWorld(_castleTowerSpeedUpBtnBounds) || inWorld(_castleZipBtnBounds) || inWorld(_castleZipSpeedUpBtnBounds) || inWorld(_castleSlotBtnBounds) || inWorld(_castleSlotSpeedUpBtnBounds)) wantPointer = true;
+    if (inWorld(_castleBtnBounds) || inWorld(_castleTowerBtnBounds) || inWorld(_castleTowerSpeedUpBtnBounds) || inWorld(_castleCrossbowTowerBtnBounds) || inWorld(_castleCrossbowTowerSpeedUpBtnBounds) || inWorld(_castleZipBtnBounds) || inWorld(_castleZipSpeedUpBtnBounds) || inWorld(_castleSlotBtnBounds) || inWorld(_castleSlotSpeedUpBtnBounds)) wantPointer = true;
   } else if (_housePopupOpen) {
     if (inWorld(_upgradeBtnBounds)) wantPointer = true;
     if (!wantPointer && _primaryConstruction) {
@@ -19266,6 +19831,7 @@ function _updateCanvasCursor() {
       || inWorld(_ciucelaBounds)
       || inWorld(_castleBtnBounds)
       || inWorld(_castleTowerBtnBounds)
+      || inWorld(_castleCrossbowTowerBtnBounds)
       || inWorld(_castleZipBtnBounds)
       || inWorld(_castleSlotBtnBounds)
       || inWorld(_upgradeBtnBounds)
@@ -20946,17 +21512,31 @@ function drawShamanProjectiles() {
     }
   });
   ctx.restore();
-  if (S.shamanProjectiles) S.shamanProjectiles = S.shamanProjectiles.filter(p => !p.done);
+  // In-place compaction (write-index) vietoj naujo masyvo per frame
+  if (S.shamanProjectiles && S.shamanProjectiles.length) {
+    let _w = 0;
+    for (let _r = 0; _r < S.shamanProjectiles.length; _r++) {
+      const _p = S.shamanProjectiles[_r];
+      if (!_p.done) {
+        if (_w !== _r) S.shamanProjectiles[_w] = _p;
+        _w++;
+      }
+    }
+    S.shamanProjectiles.length = _w;
+  }
 }
 
 // ---- Barracks Harpoon Fish Projectile ----------------------------
 // Parabolinė metimo animacija su taikinio kryžiuku + stuck sprite (kaip NPC harpoon fish).
 // Naudoja tas pačias physics konstantas kaip _fishStates (VY0/GRAV/DRAG/GROUND_OFFSET).
-function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack, shooterIsEnemy, utype, customDmgBase, customCritDmg) {
+function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack, shooterIsEnemy, utype, customDmgBase, customCritDmg, opts = null) {
   if (!S.barracksHarpoons) S.barracksHarpoons = [];
   const now = performance.now();
   const dir = faceDx || Math.sign(toGx - fromGx) || 1;
-  const _VY0 = -110, _GRAV = 200, _GND = 30, _DRAG = 0.3;
+  const _hasCustomStart = opts && typeof opts.startX === 'number' && typeof opts.startY === 'number';
+  const _startOffsetX = opts && typeof opts.startOffsetX === 'number' ? opts.startOffsetX : 0;
+  const _startOffsetY = opts && typeof opts.startOffsetY === 'number' ? opts.startOffsetY : 0;
+  const _VY0 = -130, _GRAV = 230, _GND = 30, _DRAG = 0.35;
   const _tLand = (-_VY0 + Math.sqrt(_VY0 * _VY0 + 2 * _GRAV * _GND)) / _GRAV;
   // Spindys horizontaliai iki taikinio — reguliuoja greitį per atstumą.
   // _startX jau offset'intas +0.5*CELL krypties pusėn (nuo cell centro iki krašto),
@@ -20964,12 +21544,17 @@ function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack, shooter
   // Be šio correction harpunas nusileisdavo +1 cell toliau nei taikinys.
   const _distCells = Math.max(1, Math.abs(toGx - fromGx));
   const _pxPerCell = CELL;
-  const _targetPx = Math.max(_pxPerCell * 0.5, (_distCells - 0.5) * _pxPerCell);
+  const _defaultStartX = (fromGx + 0.5 + dir * 0.5) * CELL + _startOffsetX;
+  const _defaultStartY = (fromGy + 0.5) * CELL - CELL * 0.3 + _startOffsetY;
+  const _startX = _hasCustomStart ? opts.startX : _defaultStartX;
+  const _startY = _hasCustomStart ? opts.startY : _defaultStartY;
+  const _baseTargetPx = _hasCustomStart
+    ? Math.abs((toGx + 0.5) * CELL - _startX)
+    : (_distCells - 0.5) * _pxPerCell - _startOffsetX * dir;
+  const _targetPx = Math.max(_pxPerCell * 0.5, _baseTargetPx);
   // invertuojam `landX = startX + dir * (spd/DRAG) * (1 - e^(-DRAG*tLand))` → spd
   const _decay = (1 - Math.exp(-_DRAG * _tLand));
   const _spd = Math.max(140, Math.min(560, (_targetPx / _decay) * _DRAG));
-  const _startX = (fromGx + 0.5 + dir * 0.5) * CELL;
-  const _startY = (fromGy + 0.5) * CELL - CELL * 0.3;
   const _landX = _startX + dir * (_spd / _DRAG) * _decay;
   const _landY = _startY + _GND;
   S.barracksHarpoons.push({
@@ -20981,14 +21566,20 @@ function spawnBarracksHarpoon(fromGx, fromGy, toGx, toGy, faceDx, stack, shooter
     stack: stack || 1,
     shooterIsEnemy: !!shooterIsEnemy,
     utype: utype || 'harpoon_fish',
+    topLayer: !!(opts && opts.topLayer),
     customDmgBase: (typeof customDmgBase === 'number') ? customDmgBase : null,
     customCritDmg: (typeof customCritDmg === 'number') ? customCritDmg : null,
+    // Homing — jei nustatytas, prieš landing sucheck'inam taikinį pagal id ir pataikom į jį.
+    homingUnitId: (opts && opts.homingUnitId) || null,
+    // AoE+pierce — landing'e padaro splash dmg ±N cell aplink + visi priešai zonoje gauna dmg.
+    aoeRadius: (opts && typeof opts.aoeRadius === 'number') ? opts.aoeRadius : 0,
   });
 }
 
-function drawBarracksHarpoons() {
+function drawBarracksHarpoons(layer = 'normal') {
   if (!S.barracksHarpoons?.length) return;
   const now = performance.now();
+  const wantTopLayer = layer === 'top';
   const hImg = _fishAnims.harpoon.img;
   const stuckImg = _fishAnims.stuck.img;
   const impSheet = _fishAnims.impact.img;
@@ -20996,15 +21587,28 @@ function drawBarracksHarpoons() {
   const HW = 26, HH = 26;
   const AW = 28, AH = 31;
   const HARPOON_ANGLE_OFFSET = Math.PI / 4;
-  const VY0 = -110, GRAV = 200, DRAG = 0.3;
+  const VY0 = -130, GRAV = 230, DRAG = 0.35;
   const IMPACT_MS = 60, IMPACT_FRAMES = 9, GROUND_OFFSET = 30;
   const LIFE_MS = 1500;
-  S.barracksHarpoons = S.barracksHarpoons.filter(a => {
-    if (!a.hit) return now - a.born < LIFE_MS;
-    if (a.hitTarget) return now - a.hitAt < IMPACT_FRAMES * IMPACT_MS;
-    return now - a.hitAt < 1000;
-  });
+  // In-place compaction (write-index) — vengiame naujo masyvo alokavimo kiekvieną frame'ą
+  // (funkcija šaukiama 2× per frame: 'normal' ir 'top' layer)
+  if (wantTopLayer === false) {
+    let _w = 0;
+    for (let _r = 0; _r < S.barracksHarpoons.length; _r++) {
+      const _a = S.barracksHarpoons[_r];
+      let _keep;
+      if (!_a.hit) _keep = now - _a.born < LIFE_MS;
+      else if (_a.hitTarget) _keep = now - _a.hitAt < IMPACT_FRAMES * IMPACT_MS;
+      else _keep = now - _a.hitAt < 1000;
+      if (_keep) {
+        if (_w !== _r) S.barracksHarpoons[_w] = _a;
+        _w++;
+      }
+    }
+    S.barracksHarpoons.length = _w;
+  }
   for (const a of S.barracksHarpoons) {
+    if (!!a.topLayer !== wantTopLayer) continue;
     const dt = (now - a.born) / 1000;
     const dir = a.startDir || 1;
     const spd = a.speed;
@@ -21020,26 +21624,56 @@ function drawBarracksHarpoons() {
       a.lastParticleAt = now;
       a.particles.push({ x: ax + HW / 2, y: ay, born: now });
     }
-    if (a.particles) {
-      a.particles = a.particles.filter(p => now - p.born < 280);
-      for (const p of a.particles) {
-        const age = (now - p.born) / 280;
+    if (a.particles && a.particles.length) {
+      // In-place compact (write-index) vietoj a.particles = .filter()
+      let _pw = 0;
+      for (let _pr = 0; _pr < a.particles.length; _pr++) {
+        const _p = a.particles[_pr];
+        if (now - _p.born < 280) {
+          if (_pw !== _pr) a.particles[_pw] = _p;
+          _pw++;
+        }
+      }
+      a.particles.length = _pw;
+      // Vienas save/restore aplink visus particle'us, ne per particle
+      if (_pw > 0) {
         ctx.save();
-        ctx.globalAlpha = (1 - age) * 0.55;
         ctx.fillStyle = '#1a1a1a';
-        ctx.beginPath(); ctx.arc(p.x, p.y, 2.5 * (1 - age * 0.5), 0, Math.PI * 2); ctx.fill();
+        for (let _pi = 0; _pi < _pw; _pi++) {
+          const p = a.particles[_pi];
+          const age = (now - p.born) / 280;
+          ctx.globalAlpha = (1 - age) * 0.55;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 2.5 * (1 - age * 0.5), 0, Math.PI * 2); ctx.fill();
+        }
         ctx.restore();
       }
     }
 
     // Nusileidimas — kai nusileidžia pro GROUND_OFFSET ribą
-    if (!a.hit && dt > 0.2 && ay >= a.y + GROUND_OFFSET) {
+    const _justLanded = !a.hit && dt > 0.2 && ay >= a.y + GROUND_OFFSET;
+    if (_justLanded) {
       a.hit = true; a.hitAt = now;
       a.stuckX = ax + HW / 2; a.stuckY = ay; a.stuckAngle = angle; a.hitTarget = false;
+      // AoE: paspawn explosion vizualą iškart, bet dmg atidedam ~180ms (kad animacija pradėtų rodytis)
+      if (a.aoeRadius && a.aoeRadius > 0) {
+        a.pendingDmg = true;
+        if (typeof spawnTowerAoeBlast === 'function') {
+          spawnTowerAoeBlast(a.stuckX, a.stuckY, a.aoeRadius);
+        }
+        S.shake = Math.max(S.shake || 0, 2);
+      }
+    }
+    // Damage application — instant ne-AoE, arba uždelstas AoE
+    const _aoeReady = a.aoeRadius && a.aoeRadius > 0 && a.hit && a.pendingDmg && (now - a.hitAt) >= 180;
+    if ((_justLanded && !(a.aoeRadius && a.aoeRadius > 0)) || _aoeReady) {
+      const _isAoe = !!(a.aoeRadius && a.aoeRadius > 0);
       const _base = 3;
-      const _dmgBase = (typeof a.customDmgBase === 'number') ? a.customDmgBase : (_base * (a.stack || 1));
+      const _dmgBase = _isAoe ? 1 :
+        ((typeof a.customDmgBase === 'number') ? a.customDmgBase : (_base * (a.stack || 1)));
       // Custom-crit-aware roll: if customCritDmg provided, crit dmg is fixed (not 2×).
+      // AoE (bokštas): visada 1 dmg, jokio crit, jokio F11 scale — accuracy padidėjo dėl splash.
       const _critRollFn = (baseDmg) => {
+        if (_isAoe) return { dmg: 1, isCrit: false };
         const r = _combatCritRoll(baseDmg);
         if (r.isCrit && typeof a.customCritDmg === 'number') r.dmg = a.customCritDmg;
         return r;
@@ -21053,8 +21687,10 @@ function drawBarracksHarpoons() {
         } else {
           target = S.units.find(u => u.alive && !isFriendlyBarracksUnit(u) && u.x === lgx && u.y === lgy);
         }
+        let _primaryBlocked = false;
         if (target && _skullIsBlocking(target)) {
           a.hitTarget = true;
+          _primaryBlocked = true;
           S.shake = Math.max(S.shake || 0, 6);
           spawnDmgNumber(target.x, target.y, 'BLOCK', '#88ddff', 16, 'normal');
         } else if (target) {
@@ -21071,14 +21707,16 @@ function drawBarracksHarpoons() {
           } else {
             // ally harpoon → hostile: apply RALLY; enemy harpoon → ally: apply WARD
             let _dmg = _dmgBase;
-            if (a.shooterIsEnemy) {
-              if (typeof _f11ScaleAllyIn === 'function') _dmg = _f11ScaleAllyIn(_dmgBase);
-            } else {
-              if (typeof _f11ScaleAllyOut === 'function') _dmg = _f11ScaleAllyOut(_dmgBase);
+            if (!_isAoe) {
+              if (a.shooterIsEnemy) {
+                if (typeof _f11ScaleAllyIn === 'function') _dmg = _f11ScaleAllyIn(_dmgBase);
+              } else {
+                if (typeof _f11ScaleAllyOut === 'function') _dmg = _f11ScaleAllyOut(_dmgBase);
+              }
             }
             const _crt = _critRollFn(_dmg);
             _dmg = _crt.dmg;
-            if (S._f11LastRoll) _f11SpawnLuckLabel(target, S._f11LastRoll.label, S._f11LastRoll.color);
+            if (!_isAoe && S._f11LastRoll) _f11SpawnLuckLabel(target, S._f11LastRoll.label, S._f11LastRoll.color);
             target.hp -= _dmg; target.hitFlash = 1;
             if (typeof triggerHitRecovery === 'function') triggerHitRecovery(target);
             if (SFX && SFX.hit) SFX.hit();
@@ -21101,7 +21739,61 @@ function drawBarracksHarpoons() {
             _combatJuice(lgx, lgy, _dmg, _crr.isCrit, a.stack || 1, false);
           }
         }
+        // AoE + Pierce — "+" formos splash (5 langeliai: centras + 4 kardinalūs).
+        // Jei primary BLOCK'inta — visa AoE atšaukiama (BLOCK turi reikšti "jokio dmg niekur").
+        if (a.aoeRadius && a.aoeRadius > 0 && !_primaryBlocked) {
+          const _splashDmg = 1;
+          const _isAllyShooter = !a.shooterIsEnemy;
+          for (let _dy = -a.aoeRadius; _dy <= a.aoeRadius; _dy++) {
+            for (let _dx = -a.aoeRadius; _dx <= a.aoeRadius; _dx++) {
+              if (_dx === 0 && _dy === 0) continue; // primary jau apdorotas
+              if (_dx !== 0 && _dy !== 0) continue; // praleisti įstrižaines — tik "+" forma
+              const _sx = lgx + _dx, _sy = lgy + _dy;
+              // Find unit splash zonoje (skirtinga shooter krypčiai)
+              let _stgt = null;
+              if (a.shooterIsEnemy) {
+                _stgt = S.units.find(u => u.alive && u.x === _sx && u.y === _sy && (u.team === 0 || isFriendlyBarracksUnit(u)));
+              } else {
+                _stgt = S.units.find(u => u.alive && !isFriendlyBarracksUnit(u) && u.x === _sx && u.y === _sy);
+              }
+              if (_stgt && !_skullIsBlocking(_stgt)) {
+                a.hitTarget = true;
+                if (_stgt.team === 0) {
+                  let _hd = (typeof heroDmg === 'function') ? heroDmg(_splashDmg) : _splashDmg;
+                  _stgt.hitFlash = 1; _stgt.hitTimer = 1000;
+                  spawnDmgNumber(_stgt.x, _stgt.y, `-${_hd}`, '#ff8833', 18, 'normal');
+                  _combatJuice(_stgt.x, _stgt.y, _hd, false, 1, false);
+                } else {
+                  let _sd = _splashDmg;
+                  if (a.shooterIsEnemy) {
+                    if (typeof _f11ScaleAllyIn === 'function') _sd = _f11ScaleAllyIn(_splashDmg);
+                  } else {
+                    if (typeof _f11ScaleAllyOut === 'function') _sd = _f11ScaleAllyOut(_splashDmg);
+                  }
+                  _stgt.hp -= _sd; _stgt.hitFlash = 1;
+                  if (typeof triggerHitRecovery === 'function') triggerHitRecovery(_stgt);
+                  if (_sd > 0) spawnDmgNumber(_stgt.x, _stgt.y, `-${_sd}`, '#ffdd55', 18, 'normal');
+                  let _dead = false;
+                  if (_stgt.hp <= 0) {
+                    _stgt.hp = 0; _stgt.alive = false;
+                    _dead = true;
+                    if (typeof spawnDeath === 'function') spawnDeath(_stgt.x, _stgt.y, _stgt.color);
+                  }
+                  _combatJuice(_stgt.x, _stgt.y, _sd, false, 1, _dead);
+                }
+              }
+              // Red archer NPC splash (tik allies šūviams)
+              if (_isAllyShooter && typeof _damageRedArcherAt === 'function') {
+                if (_damageRedArcherAt(_sx, _sy, _splashDmg)) {
+                  a.hitTarget = true;
+                  _combatJuice(_sx, _sy, _splashDmg, false, 1, false);
+                }
+              }
+            }
+          }
+        }
       }
+      if (_aoeReady) a.pendingDmg = false;
     }
 
     // Draw — impact sprite kai kliudo
@@ -21117,7 +21809,9 @@ function drawBarracksHarpoons() {
     if (a.hit && !a.hitTarget) {
       ctx.save();
       ctx.translate(a.stuckX, a.stuckY);
-      if (a.utype === 'archer') {
+      if (a.utype === 'tower_bolt') {
+        _drawTowerBoltShape(a.stuckAngle, true);
+      } else if (a.utype === 'archer') {
         ctx.rotate(a.stuckAngle);
         if (arrowSheet.complete && arrowSheet.naturalWidth > 0) {
           ctx.drawImage(arrowSheet, 0, 64, 64, 64, -AW / 2, -AH / 2, AW, AH);
@@ -21145,7 +21839,10 @@ function drawBarracksHarpoons() {
     }
     // Flying harpoon / arrow
     ctx.save();
-    if (a.utype === 'archer') {
+    if (a.utype === 'tower_bolt') {
+      ctx.translate(ax + AW / 2, ay);
+      _drawTowerBoltShape(angle, false);
+    } else if (a.utype === 'archer') {
       ctx.translate(ax + AW / 2, ay);
       ctx.rotate(angle);
       if (arrowSheet.complete && arrowSheet.naturalWidth > 0) {
@@ -21177,11 +21874,176 @@ function drawShamanExplosions() {
     ctx.drawImage(shamanExplImg, frameIdx * _SHAM_EXPL_W, 0, _SHAM_EXPL_W, _SHAM_EXPL_H, cx - sz / 2, cy - sz / 2, sz, sz);
   });
   ctx.restore();
-  // Cleanup finished explosions
-  const _cleanNow = performance.now();
+  // Cleanup — swap-and-pop (pigiau nei .splice O(N))
   for (let i = _shamanExplosions.length - 1; i >= 0; i--) {
-    if (_cleanNow - _shamanExplosions[i].born >= totalDur) _shamanExplosions.splice(i, 1);
+    if (now - _shamanExplosions[i].born >= totalDur) {
+      const _last = _shamanExplosions.length - 1;
+      if (i !== _last) _shamanExplosions[i] = _shamanExplosions[_last];
+      _shamanExplosions.pop();
+    }
   }
+}
+
+// Procedural AoE blast — pliuso "+" zona: 5 cell flash'ai + dulkės + splinters + cross streaks
+// Subtle: bokštas daro tik 1 dmg, todėl efektas yra "nedidelis impact pliūpsnis", ne katastrofa.
+function drawTowerAoeBlasts() {
+  if (!_towerAoeBlasts.length) return;
+  const now = performance.now();
+  const DUR = 360;
+  ctx.save();
+  for (let i = _towerAoeBlasts.length - 1; i >= 0; i--) {
+    const b = _towerAoeBlasts[i];
+    const t = (now - b.born) / DUR;
+    if (t >= 1) {
+      const _last = _towerAoeBlasts.length - 1;
+      if (i !== _last) _towerAoeBlasts[i] = _towerAoeBlasts[_last];
+      _towerAoeBlasts.pop();
+      continue;
+    }
+    const cx = b.cx, cy = b.cy;
+    const maxR = b.maxR || (CELL * 1.5);
+    // "+" cell wind-fill — soft translucent fill + wind streaks (5 slot'ai matomi, bet nešauliški)
+    if (b.cellFlashes) {
+      for (const c of b.cellFlashes) {
+        const ct = Math.min(1, (t - (c.delay || 0)) / 0.7);
+        if (ct <= 0 || ct >= 1) continue;
+        const pulse = ct < 0.25 ? (ct / 0.25) : (1 - (ct - 0.25) / 0.75);
+        // Soft cell fill — naudoja pre-rendered sprite (negeneruoja gradient'o per frame)
+        ctx.globalAlpha = pulse * (c.isCenter ? 0.85 : 0.70);
+        const _sp = _getTowerAoeCellSprite();
+        ctx.drawImage(_sp.canvas, c.x - _sp.r, c.y - _sp.r);
+        // Wind streaks — 3 lengvi pluoštai sukasi cell'e (dar paryškinti)
+        if (c.streaks) {
+          ctx.globalAlpha = pulse * 1.0;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2.2;
+          ctx.lineCap = 'round';
+          for (const s of c.streaks) {
+            const baseAng = s.ang + ct * s.spin * 0.6;
+            const len = CELL * 0.32 * (0.6 + ct * 0.4);
+            const ox = Math.cos(baseAng) * len * 0.5;
+            const oy = Math.sin(baseAng) * len * 0.5;
+            // Curve start/end (lengva arka)
+            const cpx = c.x + Math.cos(baseAng + Math.PI / 2) * len * 0.18;
+            const cpy = c.y + Math.sin(baseAng + Math.PI / 2) * len * 0.18;
+            ctx.beginPath();
+            ctx.moveTo(c.x - ox + s.offX, c.y - oy + s.offY);
+            ctx.quadraticCurveTo(cpx + s.offX, cpy + s.offY, c.x + ox + s.offX, c.y + oy + s.offY);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+    // Cross streaks — dar paryškinti (vėjo gūsio centro hint)
+    if (t < 0.45) {
+      const lt = t / 0.45;
+      const len = maxR * 0.85 * (lt < 0.5 ? lt * 2 : 1 - (lt - 0.5) * 0.7);
+      ctx.globalAlpha = (1 - lt) * 0.95;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - len, cy); ctx.lineTo(cx + len, cy);
+      ctx.moveTo(cx, cy - len); ctx.lineTo(cx, cy + len);
+      ctx.stroke();
+    }
+    // Dust puffs — santūrūs (subtle), 35% alpha
+    if (b.puffs) {
+      for (const p of b.puffs) {
+        const pe = Math.min(1, t / 0.85);
+        const r = p.size * (0.3 + 0.6 * pe);
+        const px = cx + p.ox * pe * 0.7;
+        const py = cy + p.oy * pe * 0.7 - (t * t) * 4;
+        const a = Math.max(0, (1 - t) * 0.78);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // Wind motion lines — naudoja precomputed cos/sin (saugomi w.cosA, w.sinA, w.perpX, w.perpY)
+    if (b.windLines) {
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.2;
+      for (const w of b.windLines) {
+        const wt = Math.min(1, (t - w.delay) / 0.55);
+        if (wt <= 0 || wt >= 1) continue;
+        const fade = wt < 0.3 ? wt / 0.3 : 1 - (wt - 0.3) / 0.7;
+        ctx.globalAlpha = fade;
+        const prog = Math.pow(wt, 0.7);
+        const r1 = w.start + w.len * prog;
+        const r2 = w.start + w.len * prog * 0.55;
+        const x1 = cx + w.cosA * r1 + w.perpX;
+        const y1 = cy + w.sinA * r1 + w.perpY;
+        const x2 = cx + w.cosA * r2 + w.perpX;
+        const y2 = cy + w.sinA * r2 + w.perpY;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function spawnTowerAoeBlast(cx, cy, radiusCells) {
+  // Mažesnis spindulys — 1 dmg lygio impact, ne katastrofa
+  const maxR = CELL * (radiusCells ? radiusCells * 0.95 : 1.0);
+  const _CARDINALS = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+  // Dust puffs — po 1 į kiekvieną kardinalę (4 viso), maži
+  const puffs = [];
+  const _puffColors = ['#9c8466', '#8a7158', '#b39c7a', '#6e5c46'];
+  for (let k = 0; k < _CARDINALS.length; k++) {
+    const ang = _CARDINALS[k] + (Math.random() - 0.5) * 0.35;
+    const dist = maxR * (0.25 + Math.random() * 0.35);
+    puffs.push({
+      ox: Math.cos(ang) * dist,
+      oy: Math.sin(ang) * dist,
+      size: CELL * (0.18 + Math.random() * 0.12),
+      color: _puffColors[k % _puffColors.length],
+    });
+  }
+  // Wind lines — 12 (po 3 į kiekvieną kardinalę). Pre-cache cos/sin/perp, kad render'e nebūtų trig.
+  const windLines = [];
+  for (let k = 0; k < _CARDINALS.length; k++) {
+    const ang = _CARDINALS[k];
+    const cosA = Math.cos(ang), sinA = Math.sin(ang);
+    // perp = (cos(ang+π/2), sin(ang+π/2)) = (-sinA, cosA)
+    for (let j = 0; j < 3; j++) {
+      const perpOff = (Math.random() - 0.5) * CELL * 0.45;
+      windLines.push({
+        cosA, sinA,
+        start: CELL * (0.18 + Math.random() * 0.25),
+        len: CELL * (0.55 + Math.random() * 0.4),
+        perpX: -sinA * perpOff,
+        perpY: cosA * perpOff,
+        delay: j * 0.06 + Math.random() * 0.05,
+      });
+    }
+  }
+  const splinters = [];
+  // 5 cell mini-explosions: centras + 4 kardinalūs (po vieną cellą į kiekvieną pusę)
+  // Kiekvienas turi 3 offset blob'us → nelygus, organiškas liepsnos pliūpsnis (ne debug rėmelis)
+  const _gx = Math.floor(cx / CELL), _gy = Math.floor(cy / CELL);
+  const _cellOffs = [[0, 0, true, 0], [1, 0, false, 0.06], [-1, 0, false, 0.06], [0, 1, false, 0.08], [0, -1, false, 0.08]];
+  const cellFlashes = _cellOffs.map(([dx, dy, isCenter, delay]) => {
+    // Wind streaks — 3 lengvai pakreipti pluoštai per cell'ą (suka, atrodo kaip vėjo gūsis)
+    const streaks = [];
+    const N = 3;
+    for (let si = 0; si < N; si++) {
+      streaks.push({
+        ang: (Math.PI * si / N) + Math.random() * 0.6,
+        spin: (Math.random() - 0.5) * 1.5,
+        offX: (Math.random() - 0.5) * CELL * 0.18,
+        offY: (Math.random() - 0.5) * CELL * 0.18,
+      });
+    }
+    return {
+      x: (_gx + dx + 0.5) * CELL,
+      y: (_gy + dy + 0.5) * CELL,
+      isCenter, delay, streaks,
+    };
+  });
+  _towerAoeBlasts.push({ cx, cy, born: performance.now(), maxR, puffs, splinters, cellFlashes, windLines });
 }
 
 // ---- Ronke2 Orb Projectile ----------------------------------------
@@ -21237,7 +22099,7 @@ function spawnHeroBullet(fromGx, fromGy, dx, dy, unit, forceMiss) {
       for (let dr = 0; dr <= 2; dr++) {
         // Boxes are at gx+1, decoration is at gx (cx-1)
         const tKey = (cy - dr) + ',' + (cx - 1);
-        if (S.decorations[tKey] === 'building_Tower') {
+        if (S.decorations[tKey] === 'building_Tower' || S.decorations[tKey] === 'building_CrossbowTower') {
           toGx = cx; toGy = cy; hitStep = s; hitTowerKey = tKey; foundTower = true; break;
         }
       }
@@ -21303,7 +22165,7 @@ function drawHeroBullets() {
           }
       }
       // Deal damage to Tower building
-      if (p.hitTowerKey && S.decorations && S.decorations[p.hitTowerKey] === 'building_Tower') {
+      if (p.hitTowerKey && S.decorations && (S.decorations[p.hitTowerKey] === 'building_Tower' || S.decorations[p.hitTowerKey] === 'building_CrossbowTower')) {
         const [_tr, _tc] = p.hitTowerKey.split(',').map(Number);
         const ts = _getTowerState(_tr, _tc);
         const isCrit = Math.random() < getCritChance();
@@ -26413,7 +27275,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (inside(_castleBtnBounds)) {
         const CASTLE_COST = 1;
-        const _busy = !!_towerProduction || !!_zipProduction || !!_slotProduction;
+        const _busy = !!_towerProduction || !!_crossbowTowerProduction || !!_zipProduction || !!_slotProduction;
         if (!_busy && _ronkeBalance >= CASTLE_COST) {
           _ronkeBalance -= CASTLE_COST;
           _createExtraMine();
@@ -26423,10 +27285,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (inside(_castleTowerBtnBounds)) {
-        if (!_towerProduction && !_zipProduction && !_slotProduction && _ronkeBalance >= _TOWER_BUILD_COST) {
+        if (!_towerProduction && !_crossbowTowerProduction && !_zipProduction && !_slotProduction && _ronkeBalance >= _TOWER_BUILD_COST) {
           _ronkeBalance -= _TOWER_BUILD_COST;
           _towerProduction = { startAt: performance.now(), speedUpAnim: null };
           if (typeof logEvent === 'function') logEvent('🗼 Tower production started', 'info');
+        }
+        return;
+      }
+      if (inside(_castleCrossbowTowerBtnBounds)) {
+        if (!_towerProduction && !_crossbowTowerProduction && !_zipProduction && !_slotProduction && _ronkeBalance >= _CROSSBOW_TOWER_BUILD_COST) {
+          _ronkeBalance -= _CROSSBOW_TOWER_BUILD_COST;
+          _crossbowTowerProduction = { startAt: performance.now(), speedUpAnim: null };
+          if (typeof logEvent === 'function') logEvent('Crossbow Tower production started', 'info');
+        }
+        return;
+      }
+      if (inside(_castleCrossbowTowerSpeedUpBtnBounds)) {
+        if (_crossbowTowerProduction && !_crossbowTowerProduction.speedUpAnim && _ronkeBalance >= _CROSSBOW_TOWER_SPEEDUP_COST) {
+          _ronkeBalance -= _CROSSBOW_TOWER_SPEEDUP_COST;
+          const _now = performance.now();
+          const _srcEl = Math.min(_CROSSBOW_TOWER_PRODUCE_MS, _getCrossbowTowerProdElapsed(_now));
+          const _remaining = Math.max(0, _CROSSBOW_TOWER_PRODUCE_MS - _srcEl);
+          const _animDur = Math.max(120, _remaining / 10);
+          _crossbowTowerProduction.speedUpAnim = {
+            startMs: _now,
+            durMs: _animDur,
+            srcElapsed: _srcEl,
+            dstElapsed: _CROSSBOW_TOWER_PRODUCE_MS,
+          };
         }
         return;
       }
@@ -26447,7 +27333,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (inside(_castleZipBtnBounds)) {
-        if (!_zipProduction && !_towerProduction && !_slotProduction && _ronkeBalance >= _ZIP_BUILD_COST) {
+        if (!_zipProduction && !_towerProduction && !_crossbowTowerProduction && !_slotProduction && _ronkeBalance >= _ZIP_BUILD_COST) {
           _ronkeBalance -= _ZIP_BUILD_COST;
           _zipProduction = { startAt: performance.now(), speedUpAnim: null };
           if (typeof logEvent === 'function') logEvent('⚡ Zip Tower production started', 'info');
@@ -26470,7 +27356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (inside(_castleSlotBtnBounds)) {
-        const _busy = !!_towerProduction || !!_zipProduction || !!_slotProduction;
+        const _busy = !!_towerProduction || !!_crossbowTowerProduction || !!_zipProduction || !!_slotProduction;
         if (!_busy && _barracksUnlockedSlots < _BARRACKS_MAX_SLOTS && _ronkeBalance >= _SLOT_BUILD_COST) {
           _ronkeBalance -= _SLOT_BUILD_COST;
           _slotProduction = { startAt: performance.now(), speedUpAnim: null };
@@ -26786,7 +27672,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Tower-specific: turi tilpti +1 col į dešinę (dėl collision box offset'o), todėl
         // reikalaujam cellX+1 < territoryCols.
         const _territoryCols = (typeof S._f11ConqueredCols === 'number') ? S._f11ConqueredCols : F11_ALLY_TERRITORY_COLS;
-        const _twrNeedsExtra = (_f11DeployArmed === 'tower');
+        const _twrNeedsExtra = (_f11DeployArmed === 'tower' || _f11DeployArmed === 'crossbow_tower');
         const _maxX = _twrNeedsExtra ? (_territoryCols - 1) : _territoryCols;
         if (cellX >= 0 && cellX < COLS && cellY >= 0 && cellY < ROWS &&
             cellX >= _maxX) {
@@ -26814,7 +27700,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         // Tower placement — decoration + 2 collision boxes, ne mkUnit
-        if (_f11DeployArmed === 'tower') {
+        if (_f11DeployArmed === 'tower' || _f11DeployArmed === 'crossbow_tower') {
           if (cellX < 0 || cellX >= COLS || cellY < 0 || cellY >= ROWS) return;
           if (cellX >= _maxX) return;
           if (cellY + 2 >= ROWS || cellX + 1 >= COLS) {
@@ -26834,7 +27720,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
           if (!S.decorations) S.decorations = {};
-          S.decorations[_aKey] = 'building_Tower';
+          const _isXbowTower = _f11DeployArmed === 'crossbow_tower';
+          S.decorations[_aKey] = _isXbowTower ? 'building_CrossbowTower' : 'building_Tower';
           if (!S.collisionBoxes) S.collisionBoxes = new Set();
           S.collisionBoxes.add(_box1);
           S.collisionBoxes.add(_box2);
@@ -26842,7 +27729,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const snap = _f11TransferUnits[snapIdx];
           if (snap && snap.id && typeof _removeTrainedSnapById === 'function') _removeTrainedSnapById(snap.id);
           _f11TransferUnits.splice(snapIdx, 1);
-          const stillHas = _f11TransferUnits.some(s => s && s.utype === 'tower');
+          const stillHas = _f11TransferUnits.some(s => s && s.utype === (_isXbowTower ? 'crossbow_tower' : 'tower'));
           if (!stillHas) _f11DeployArmed = null;
           if (typeof logEvent === 'function') logEvent('🗼 Tower placed', 'info');
           return;
@@ -27203,7 +28090,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Populate buildings panel on first open
       if (section === 'bldg' && bldgWrap && !bldgWrap._built) {
         bldgWrap._built = true;
-        const bNames = ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower','Zip'];
+        const bNames = ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower','CrossbowTower','Zip'];
         bldgWrap.innerHTML = '<div style="color:#ffcc44; font-size:9px; margin-bottom:6px; font-family:monospace;">BUILDINGS — dbl-click to place</div>';
         bNames.forEach(name => {
           const btn = document.createElement('button');
@@ -27211,7 +28098,9 @@ document.addEventListener('DOMContentLoaded', () => {
           // Zip yra sprite sheet (8×1 horizontal strip) — preview rodome tik 1 frame
           const _previewImg = (name === 'Zip')
             ? `<div style="width:40px; height:64px; background-image:url('assets_tiny/Buildings_${name}.png'); background-size:800% 100%; background-position:0 0; image-rendering:pixelated; border:1px solid #333;"></div>`
-            : `<img src="assets_tiny/Buildings_${name}.png" style="width:40px; height:auto; image-rendering:pixelated; border:1px solid #333;">`;
+            : (name === 'CrossbowTower')
+              ? `<div style="position:relative; width:40px; height:56px; border:1px solid #333; image-rendering:pixelated; overflow:hidden;"><img src="assets_tiny/Buildings_Tower.png" style="width:40px; height:auto; image-rendering:pixelated;"><span style="position:absolute; left:2px; bottom:2px; color:#d8f0ff; background:rgba(0,0,0,0.72); font-size:8px; line-height:10px; padding:0 2px;">XB</span></div>`
+              : `<img src="assets_tiny/Buildings_${name}.png" style="width:40px; height:auto; image-rendering:pixelated; border:1px solid #333;">`;
           btn.innerHTML = `${_previewImg} ${name}`;
           btn.onclick = () => {
             window.setEditTile('building_' + name);
@@ -27850,7 +28739,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else if (window.editTileType === 'erase_prop') {
                 // If erasing a Tower, also remove its 3 collision boxes
-                if (S.decorations[`${gy},${gx}`] === 'building_Tower' && S.collisionBoxes) {
+                if ((S.decorations[`${gy},${gx}`] === 'building_Tower' || S.decorations[`${gy},${gx}`] === 'building_CrossbowTower') && S.collisionBoxes) {
                   S.collisionBoxes.delete(`${gy+1},${gx+1}`);
                   S.collisionBoxes.delete(`${gy+2},${gx+1}`);
                 }
@@ -27869,7 +28758,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 S.decorations[`${gy},${gx}`] = window.editTileType;
                 // Tower: auto-add 3 collision boxes (one cell right to center on sprite)
-                if (window.editTileType === 'building_Tower') {
+                if (window.editTileType === 'building_Tower' || window.editTileType === 'building_CrossbowTower') {
                   if (!S.collisionBoxes) S.collisionBoxes = new Set();
                   if (gx+1 < COLS) {
                     if (gy+1 < ROWS) S.collisionBoxes.add(`${gy+1},${gx+1}`);

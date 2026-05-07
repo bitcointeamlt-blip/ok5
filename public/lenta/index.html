@@ -665,7 +665,9 @@
 
           <div class="clock-display" id="p1-clock">2:00.0</div>
 
-          <div class="skill-header">
+          <button id="p1-skill-toggle" class="skill-collapse-btn"
+            onclick="window._toggleP1Skills()" title="Collapse / expand weapons">▾</button>
+          <div class="skill-header" id="p1-skill-header">
             <span class="skill-header-lbl">WEAPONS</span>
             <kbd class="skill-key">Q</kbd>
           </div>
@@ -1878,9 +1880,29 @@
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="wallet.js"></script>
-  <script src="game.js?v=cmd254"></script>
+  <script src="game.js?v=cmd306"></script>
   <script src="wallet-ui.js"></script>
   <script>
+  // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
+  (function() {
+    const COLLAPSE_KEY = '_p1_skills_collapsed';
+    function applyState() {
+      const panel = document.getElementById('panel-p1');
+      const btn = document.getElementById('p1-skill-toggle');
+      if (!panel || !btn) return;
+      const collapsed = localStorage.getItem(COLLAPSE_KEY) === '1';
+      panel.classList.toggle('skills-collapsed', collapsed);
+      btn.textContent = collapsed ? '▴' : '▾';
+      btn.title = collapsed ? 'Show weapons' : 'Hide weapons';
+    }
+    window._toggleP1Skills = function() {
+      const cur = localStorage.getItem(COLLAPSE_KEY) === '1';
+      localStorage.setItem(COLLAPSE_KEY, cur ? '0' : '1');
+      applyState();
+    };
+    document.addEventListener('DOMContentLoaded', applyState);
+    applyState();
+  })();
   // ── RonkeVerse NFT stats (OpenSea API) ───────────────────────────
   (async function() {
     const floorEl = document.getElementById('nft-floor');
