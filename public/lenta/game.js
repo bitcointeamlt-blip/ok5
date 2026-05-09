@@ -2850,6 +2850,13 @@ let _f11TransferUnits = [];           // [{ utype, stack, hp }] — snapshot iš
 // perkeliamas į naują vietą IR unit'ui nustatomas commandMove override'as: AI pereina į pathfind
 // režimą kol pasieks taikinį, tada grįžta į normalų vision/sweet-spot elgesį.
 let _selectedAllyUnit = null;         // reference į S.units item'ą (savo pusės) arba null
+// Lankininko manual-charge skill: laikai pelę → strėlės nuotolis auga, paleidi → šauna pagal mouse poziciją
+// faceDx. Tuščia ataka leidžiama (galima paleisti ir į tuščią ląstelę). State gyvuoja tarp mousedown ir mouseup.
+let _archerCharge = null;             // { unit, startTs, fired }
+let _suppressNextClick = false;       // mouseup po charge release uždraudžia kitą click event
+const _ARCHER_CHARGE_MAX_MS = 1500; // pilnas charge (max range)
+const _ARCHER_RANGE_MIN = 3;
+const _ARCHER_RANGE_MAX = 8;
 window._showHarpoonRanges = false;    // edit map mygtukas + V klavišas toggle'ina vision/move diamond'us F11'e
 let _harpoonRangeToastUntil = 0;      // toast'as apatiniame kampe kai toggle'ina
 let _lowManaToastUntil = 0;           // toast'as kai trūksta manos commander skill'ui
@@ -3467,9 +3474,16 @@ function _pollHeroLootPickup() {
   });
 }
 
-// F11 nuolatinis priesu eismas — periodiškai spawnina enemy unit'us ant dešiniojo krašto,
-// kad neliktų "tuščios" kovos kai pradinis preplaced enemy set'as išmuštas. Walk-on AI
-// (engage allies) jau veikia normaliai per esamą enemy AI tick.
+// F11 wave/level sistema — vietoj nuolatinio spawn'o, dabar 3 lvl waves:
+// L1=2, L2=3, L3=5 priešų. Po wave clear → 1.5s "Level X cleared" popup → next level.
+// Po L3 clear → existing victory outcome. Per-level HP/dmg scaling.
+const _F11_WAVE_TARGETS = { 1: 2, 2: 3, 3: 5 };
+const _F11_WAVE_HP_MULT  = { 1: 1.0, 2: 1.4, 3: 1.8 };
+const _F11_WAVE_DMG_MULT = { 1: 1.0, 2: 1.15, 3: 1.35 };
+const _F11_WAVE_MAX_LEVEL = 3;
+const _F11_WAVE_CLEAR_DELAY = 1500;
+const _F11_WAVE_INTRO_DELAY = 1500; // anticipation prieš pirmą spawn
+const _F11_WAVE_SPAWN_STAGGER = 450;
 function _tickF11EnemyTraffic(now) {
   if (gameMode !== 'adventure' || !f11LikeFloor()) return;
   if (S._f11Outcome) return;
@@ -3477,28 +3491,72 @@ function _tickF11EnemyTraffic(now) {
   if (!Array.isArray(S.units) || !Array.isArray(S.dungeon)) return;
   if (typeof getEditorEnemyArchetype !== 'function' || typeof mkUnit !== 'function') return;
 
-  if (typeof S._f11LastEnemySpawnAt !== 'number') S._f11LastEnemySpawnAt = now;
-  const SPAWN_INTERVAL = 3500;
-  if (now - S._f11LastEnemySpawnAt < SPAWN_INTERVAL) return;
+  if (typeof S._f11Level !== 'number') S._f11Level = 1;
+  if (typeof S._f11WaveSpawned !== 'number') S._f11WaveSpawned = 0;
+  if (typeof S._f11WaveClearedAt !== 'number') S._f11WaveClearedAt = 0;
+  if (typeof S._f11WaveStartedAt !== 'number') S._f11WaveStartedAt = now;
+  const _target = _F11_WAVE_TARGETS[S._f11Level] || 0;
+  if (_target === 0) return;
+  // Intro delay — anticipation prieš pirmą spawn'ą wave'e
+  if (S._f11WaveSpawned === 0 && now - S._f11WaveStartedAt < _F11_WAVE_INTRO_DELAY) return;
 
   let _aliveEnemies = 0;
   for (const u of S.units) {
     if (u && u.alive && u.team === 1) _aliveEnemies++;
   }
-  if (_aliveEnemies >= 14) return;
 
-  const _spawnCol = COLS - 2;
-  const _candidates = [];
-  for (let _r = 0; _r < ROWS; _r++) {
-    const _t = S.dungeon[_r] && S.dungeon[_r][_spawnCol];
-    if (_t !== 1 && _t !== 3 && _t !== 6) continue;
-    if (S.units.some(u => u && u.alive && u.x === _spawnCol && u.y === _r)) continue;
-    _candidates.push(_r);
+  // Wave clear: visi spawn'inti ir nė vieno gyvo
+  if (S._f11WaveSpawned >= _target && _aliveEnemies === 0) {
+    if (!S._f11WaveClearedAt) {
+      S._f11WaveClearedAt = now;
+      if (typeof logEvent === 'function') logEvent(`Level ${S._f11Level} įveiktas!`, 'win');
+      if (typeof SFX !== 'undefined' && SFX.levelUp) try { SFX.levelUp(); } catch (e) {}
+    }
+    if (now - S._f11WaveClearedAt >= _F11_WAVE_CLEAR_DELAY) {
+      if (S._f11Level < _F11_WAVE_MAX_LEVEL) {
+        S._f11Level++;
+        S._f11WaveSpawned = 0;
+        S._f11WaveClearedAt = 0;
+        S._f11WaveStartedAt = now;
+        S._f11LastEnemySpawnAt = now;
+      } else {
+        S._f11WavesCompleted = true;
+        if (typeof _f11TriggerOutcome === 'function') _f11TriggerOutcome('victory', now);
+      }
+    }
+    return;
   }
-  if (_candidates.length === 0) return;
-  const _ry = _candidates[Math.floor(Math.random() * _candidates.length)];
 
-  const _types = ['skull', 'skull', 'shaman'];
+  // Spawn next enemy in wave (staggered)
+  if (S._f11WaveSpawned >= _target) return;
+  if (typeof S._f11LastEnemySpawnAt !== 'number') S._f11LastEnemySpawnAt = 0;
+  if (now - S._f11LastEnemySpawnAt < _F11_WAVE_SPAWN_STAGGER) return;
+
+  // Spawn col — arti ally fronto (just past gray zone) kad enemies nepradėtų toli ir
+  // greitai engage'intų, o ne marsh per visą mapą
+  const _allyT = (typeof F11_ALLY_TERRITORY_COLS === 'number') ? F11_ALLY_TERRITORY_COLS : 8;
+  const _grayW = (typeof F11_GRAY_ZONE_WIDTH === 'number') ? F11_GRAY_ZONE_WIDTH : 4;
+  const _spawnColPrimary = Math.min(COLS - 2, _allyT + _grayW + 1);
+  const _spawnCols = [_spawnColPrimary, _spawnColPrimary + 1, _spawnColPrimary + 2, _spawnColPrimary - 1, _spawnColPrimary + 3];
+  let _spawnCol = -1, _ry = -1;
+  for (const _sc of _spawnCols) {
+    if (_sc < 0 || _sc >= COLS) continue;
+    const _candidates = [];
+    for (let _r = 0; _r < ROWS; _r++) {
+      const _t = S.dungeon[_r] && S.dungeon[_r][_sc];
+      if (_t !== 1 && _t !== 3 && _t !== 6) continue;
+      if (S.units.some(u => u && u.alive && u.x === _sc && u.y === _r)) continue;
+      _candidates.push(_r);
+    }
+    if (_candidates.length > 0) {
+      _spawnCol = _sc;
+      _ry = _candidates[Math.floor(Math.random() * _candidates.length)];
+      break;
+    }
+  }
+  if (_spawnCol < 0) return;
+
+  const _types = ['skull', 'skull', 'shaman', 'archer'];
   const _type = _types[Math.floor(Math.random() * _types.length)];
   const _archetype = getEditorEnemyArchetype(_type);
   if (!_archetype) return;
@@ -3506,10 +3564,20 @@ function _tickF11EnemyTraffic(now) {
   const _id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : Math.floor(Math.random() * 1e9);
   const _u = mkUnit(_id, 1, _spawnCol, _ry, -1, _archetype);
   if (_BARRACKS_UNIT_TYPES && _BARRACKS_UNIT_TYPES.includes(_type)) _u.isEditorEnemy = true;
+  // Per-level HP/dmg scaling
+  const _hpM = _F11_WAVE_HP_MULT[S._f11Level] || 1.0;
+  const _dmM = _F11_WAVE_DMG_MULT[S._f11Level] || 1.0;
+  if (_hpM !== 1.0 && typeof _u.hp === 'number') {
+    _u.hp = Math.round(_u.hp * _hpM);
+    if (typeof _u.maxHp === 'number') _u.maxHp = Math.round(_u.maxHp * _hpM);
+  }
+  if (_dmM !== 1.0 && typeof _u.dmg === 'number') _u.dmg = Math.round(_u.dmg * _dmM);
+  _u._spawnAt = now;
   S.units.push(_u);
-  if (typeof spawnHit === 'function') spawnHit(_spawnCol, _ry, '#ff6666', 6);
+  if (typeof _spawnFlashFX === 'function') _spawnFlashFX(_spawnCol, _ry, true);
 
   S._f11LastEnemySpawnAt = now;
+  S._f11WaveSpawned++;
 }
 
 // Zip tower lightning — kas 5s šauna į artimiausią team===1 unit'ą per ≤8 cells.
@@ -3621,7 +3689,7 @@ function _tickHeroRtsCmd(now) {
   // resolveTick'o kad per dažnas step'as netriggerintų enemy AI multi-tick advance
   // (kuris atrodo kaip "teleportavimas").
   if (hero._rtsStep) {
-    const t = Math.min(1, (now - hero._rtsStep.start) / 260);
+    const t = Math.min(1, (now - hero._rtsStep.start) / 624);
     hero.rx = hero._rtsStep.srcX + (hero._rtsStep.dstX - hero._rtsStep.srcX) * t;
     hero.ry = hero._rtsStep.srcY + (hero._rtsStep.dstY - hero._rtsStep.srcY) * t;
     if (t >= 1) {
@@ -3711,12 +3779,18 @@ function _tickHeroRtsCmd(now) {
         }
       }
       // (c) — nearest cheb ≤ 10
-      if (!engageTarget) {
+      // Išjungtas automatinis judėjimas: herojus pats nesivys priešų,
+      // puldinės tik tuos, kurie jau yra šūvio linijoje (b) arba rankiniu būdu priskirtus (Target Lock / Manual Attack).
+      if (!engageTarget && hero.manualAttackTriggered) {
         let bestD = 999;
         for (const u of _candidates) {
           const cheb = Math.max(Math.abs(u.x - hero.x), Math.abs(u.y - hero.y));
           if (cheb > 10) continue;
           if (cheb < bestD) { bestD = cheb; engageTarget = u; }
+        }
+        if (!engageTarget) {
+          hero.manualAttackTriggered = false;
+          if (typeof spawnDmgNumber === 'function') spawnDmgNumber(hero.x, hero.y, 'NO TARGET', '#ff4444', 16, 'crit');
         }
       }
     }
@@ -3736,6 +3810,7 @@ function _tickHeroRtsCmd(now) {
     if (_inFireRange) {
       if ((hero._rtsNextShotAt || 0) > now) return;
       hero._rtsNextShotAt = now + 6000;
+      hero.manualAttackTriggered = false;
       const _ddx = ady === 0 ? Math.sign(dx) : 0;
       const _ddy = adx === 0 ? Math.sign(dy) : 0;
       hero.facing = { dx: _ddx, dy: _ddy };
@@ -3756,11 +3831,17 @@ function _tickHeroRtsCmd(now) {
     // ── AUTO-AI movement gate ──────────────────────────────────────
     // 1) Min 1s "stand still" tarp pozicijos pakeitimo
     // 2) 50% idle: kai gate'as atsidaro, 50% tikimybe pratęsiam standstill (kad nebūtų pastovaus judesio)
-    if ((hero._rtsActionCd || 0) > now) return;
-    if ((hero._rtsPostStepUntil || 0) > now) return;
-    if (Math.random() < 0.5) {
-      hero._rtsPostStepUntil = now + 1000; // re-roll po dar 1s
-      return;
+    const _isCommand = hero.commandMove && hero.commandMove.engage === engageTarget;
+    if (!_isCommand && !hero.manualAttackTriggered) return; // Nejudame automatiškai be komandos arba manual atakos
+
+    // Komandiniai judesiai ignoruoja delay, bet auto-retreat naudoja delay
+    if (!_isCommand && !hero.manualAttackTriggered) {
+      if ((hero._rtsActionCd || 0) > now) return;
+      if ((hero._rtsPostStepUntil || 0) > now) return;
+      if (Math.random() < 0.5) {
+        hero._rtsPostStepUntil = now + 1000; // re-roll po dar 1s
+        return;
+      }
     }
     const _markStepped = () => { hero._rtsPostStepUntil = now + 1000; };
 
@@ -4739,7 +4820,7 @@ const _archerStates = {};
 // ===== RED ARCHER NPC (enemy) =====
 const _redArcherAnims = {
   idle:   { img: new Image(), frames: 6, ms: 125 },
-  run:    { img: new Image(), frames: 4, ms: 110 },
+  run:    { img: new Image(), frames: 4, ms: 264 }, // 4*264=1056ms cycle = WALK_DUR (skull tempas)
   shoot:  { img: new Image(), frames: 8, ms: 100 },
   arrow:  { img: new Image() },
   impact: { img: _archerAnims.impact.img },
@@ -6920,6 +7001,27 @@ function initAdventure() {
     S._f11Outcome = null;
     S._f11OutcomeAt = 0;
     S._f11OutcomeReward = 0;
+    // Wave/level reset
+    S._f11Level = 1;
+    S._f11WaveSpawned = 0;
+    S._f11WaveClearedAt = 0;
+    S._f11WaveStartedAt = 0;
+    S._f11WavesCompleted = false;
+    S._f11LastEnemySpawnAt = 0;
+    // Wave mode: išvalyti preplaced enemy iš mapos — wave sistema valdo visus enemy spawn'us
+    if (Array.isArray(S.units)) {
+      S.units = S.units.filter(u => !(u && u.team === 1));
+    }
+    // Wave mode: ištrinti bush/tree/stump dekoracijas iš F11 — clear field for combat
+    if (S.decorations && typeof S.decorations === 'object') {
+      for (const _dKey in S.decorations) {
+        const _dV = S.decorations[_dKey];
+        if (typeof _dV !== 'string') continue;
+        if (/^bush\d*$/i.test(_dV) || /^tree\d*$/i.test(_dV) || /^stump\d*$/i.test(_dV)) {
+          delete S.decorations[_dKey];
+        }
+      }
+    }
     _f11DeployOpen = true;
     _f11DeployMinimized = false;
     _f11DeployArmed = null;
@@ -10298,7 +10400,7 @@ function _updateAndDrawRedArchers(decKeys) {
   const ARROW_SPEED = 280;
   const ARROW_LIFE  = 1500;
   const ARROW_FIRE_FRAME = 4;
-  const WALK_DUR    = 340;
+  const WALK_DUR    = 1056; // skull-style step length (cmd321) — vienodas tempas su unit'ais
   const WANDER_CELLS = 2;
 
   for (const key of decKeys) {
@@ -14040,9 +14142,689 @@ let _f11RtsMode = true;
 let _f11SelectionMode = 'single'; // RTS default: 'single' — click unit to select, click cell to command
 let _f11AiGate = { allowUntil: 0, windowMs: 800 };   // AI veikia kol now < allowUntil
 let _f11UnitPopupOpen = false;       // po click ant unit'o — rodoma veiksmų popup
-let _f11MoveTargeting = false;       // po MOVE mygtuko popup'e — laukiam click'o ant map cell'ės
 let _f11UnitPopupMoveBtn = null;     // popup MOVE mygtuko bounds
+let _f11MoveTargeting = false;        // po MOVE mygtuko popup'e — laukiam click'o ant target ląstelės
+let _f11AttackTargeting = false;      // po ATTACK mygtuko popup'e — laukiam click'o ant priešo
+
+// === SKILL-SHOT timing bar (skull manual attack) =========================
+// Slankojantis žymeklis pirmyn-atgal virš priešo galvos. Sweet spot per vidurį.
+// Mode flow: 'safe' (2.5s) → 'windup' (800ms, priešas užsivedęs) → enemy attacks → 'recovery' (1500ms).
+// Click sweet spot'e: 'safe' → normal dmg, 'windup' → PARRY (1.5x dmg + crit boost + interrupts attack).
+let _skullSkillShot = null;
+const _SKILL_SHOT_SPEED      = 0.0011;
+const _SKILL_SHOT_SPEED_FAST = 0.0019; // windup'e slankoja greičiau
+const _SKILL_SHOT_SWEET_MIN  = 0.42;
+const _SKILL_SHOT_SWEET_MAX  = 0.58;
+const _SKILL_SHOT_MISS_CD_MS = 1500;
+const _SKILL_SHOT_SAFE_MS    = 2500;
+const _SKILL_SHOT_WINDUP_MS  = 800;
+const _SKILL_SHOT_RECOVER_MS = 1500;
+const _SKILL_SHOT_ENEMY_DMG  = 2;
+function _randomizeSkillShotSweet(ss) {
+  if (!ss) return;
+  const _w = _SKILL_SHOT_SWEET_MAX - _SKILL_SHOT_SWEET_MIN; // 0.16
+  const _minC = 0.05 + _w / 2;
+  const _maxC = 0.95 - _w / 2;
+  // Anti-repeat: re-roll iki 6 kartų jei naujas centras per arti praeito (≥0.18 atstumas)
+  const _prev = (typeof ss.sweetCenterPrev === 'number') ? ss.sweetCenterPrev : -1;
+  let _c = 0;
+  for (let _i = 0; _i < 6; _i++) {
+    _c = _minC + Math.random() * (_maxC - _minC);
+    if (_prev < 0 || Math.abs(_c - _prev) >= 0.18) break;
+  }
+  ss.sweetCenterPrev = _c;
+  ss.sweetCenterBase = _c;          // bazinis centras (drift svyruoja apie jį)
+  ss.sweetDriftPhase = Math.random() * Math.PI * 2;
+  ss.sweetDriftFreq  = 0.0008 + Math.random() * 0.0006; // unique tempo per ciklą
+  ss.sweetDriftAmp   = 0.04 + Math.random() * 0.025;   // 0.04..0.065 amplitudė
+  ss.sweetMin = _c - _w / 2;
+  ss.sweetMax = _c + _w / 2;
+}
+// Drift sweet zone gently in 'safe' mode — kad būtų matomas/jaučiamas judesys
+function _driftSkillShotSweet(ss, now) {
+  if (!ss || typeof ss.sweetCenterBase !== 'number') return;
+  const _w = _SKILL_SHOT_SWEET_MAX - _SKILL_SHOT_SWEET_MIN;
+  const _minC = 0.05 + _w / 2;
+  const _maxC = 0.95 - _w / 2;
+  const _phase = (ss.sweetDriftPhase || 0) + now * (ss.sweetDriftFreq || 0.001);
+  const _amp = ss.sweetDriftAmp || 0.05;
+  let _c = ss.sweetCenterBase + Math.sin(_phase) * _amp;
+  if (_c < _minC) _c = _minC;
+  if (_c > _maxC) _c = _maxC;
+  ss.sweetMin = _c - _w / 2;
+  ss.sweetMax = _c + _w / 2;
+}
+function _applySkillShotGrace(enemy, owner, now) {
+  if (!enemy || !owner) return;
+  // graceUntil: vienkartinis 3s langas. Jei užbaiga walk → nextActionAt rebind nuo įvykio,
+  // tai mes kiekvieną frame'ą push'iname Math.max į graceUntil reikšmę kol langas neišnyko.
+  const tokenKey = '_skillShotGracedFor';
+  const untilKey = '_skillShotGraceUntil';
+  // Naujas engagement: kitas owner ARBA praeitas grace jau pasibaigęs
+  if (enemy[tokenKey] !== owner || (enemy[untilKey] || 0) < now) {
+    enemy[tokenKey] = owner;
+    enemy[untilKey] = now + 3000;
+  }
+  const target = enemy[untilKey];
+  if (target <= now) return; // grace expired (vienkartis langas)
+  enemy.skullAttackCd  = Math.max(enemy.skullAttackCd  || 0, target);
+  enemy.shamanAttackCd = Math.max(enemy.shamanAttackCd || 0, target);
+  enemy.hfishAttackCd  = Math.max(enemy.hfishAttackCd  || 0, target);
+  enemy.skullMoveCd    = Math.max(enemy.skullMoveCd    || 0, target);
+  enemy.shamanActionCd = Math.max(enemy.shamanActionCd || 0, target);
+  enemy.hfishActionCd  = Math.max(enemy.hfishActionCd  || 0, target);
+  enemy.nextActionAt   = Math.max(enemy.nextActionAt   || 0, target);
+  enemy.nextShootAt    = Math.max(enemy.nextShootAt    || 0, target);
+  // Force facing toward owner (skull) — kad nepasipiktintų kitur su X virš galvos
+  const _ownerX = (owner && typeof owner.x === 'number') ? owner.x : null;
+  const _ownerY = (owner && typeof owner.y === 'number') ? owner.y : null;
+  if (_ownerX !== null && _ownerY !== null && enemy.facing) {
+    enemy.facing.dx = Math.sign(_ownerX - enemy.x) || enemy.facing.dx || 1;
+  }
+  // Cancel chaseWalk: agresyvi versija — jei fromX/fromY arba toX/toY adjacent skull'ui, snap'inam
+  // į adjacent endpoint'ą (prefer from). Tai sustabdo perpendicular walk'us kai archer
+  // taikosi į kitą unit'ą (Ronke2) bet stovi šalia skull'o.
+  if (enemy.chaseWalk && _ownerX !== null && _ownerY !== null) {
+    const _cw = enemy.chaseWalk;
+    const _fromAdj = (Math.abs(_cw.fromX - _ownerX) === 1 && _cw.fromY === _ownerY);
+    const _toAdj   = (Math.abs(_cw.toX   - _ownerX) === 1 && _cw.toY   === _ownerY);
+    if (_fromAdj) {
+      // Snap back to fromX/fromY — pinam archer į adjacent cell
+      enemy.x = _cw.fromX; enemy.y = _cw.fromY;
+      enemy.rx = _cw.fromX; enemy.ry = _cw.fromY;
+      enemy.chaseWalk = null;
+    } else if (_toAdj) {
+      // Walking toward skull — leidžiam pabaigti (snap to dst)
+      enemy.x = _cw.toX; enemy.y = _cw.toY;
+      enemy.rx = _cw.toX; enemy.ry = _cw.toY;
+      enemy.chaseWalk = null;
+    }
+  }
+}
+function _applySkillShotGracePass(now) {
+  // Anksti loop'e — pushinam cd visiems adjacent priesams, kad jie negaletu auto-atakuoti
+  // prieš mano gate'ą. Veikia ir S.units, ir red archer NPC.
+  if (gameMode !== 'adventure' || !f11LikeFloor()) return;
+  const u = _selectedAllyUnit;
+  if (!u || !u.alive || u.utype !== 'skull' || u.spawnWalk) return;
+  if (S.units) {
+    for (const h of S.units) {
+      if (!h || !h.alive || h === u) continue;
+      if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(h)) continue;
+      if (h.utype === 'sheep') continue;
+      // Adjacency: dabartinė pozicija ARBA chaseWalk fromX/fromY (kad mid-walk-away enemies butu pagauti)
+      const _adjNow = (Math.abs(h.x - u.x) === 1 && (h.y - u.y) === 0);
+      let _adjFrom = false;
+      if (h.chaseWalk) {
+        const _fX = h.chaseWalk.fromX, _fY = h.chaseWalk.fromY;
+        _adjFrom = (typeof _fX === 'number' && typeof _fY === 'number' &&
+                    Math.abs(_fX - u.x) === 1 && (_fY - u.y) === 0);
+      }
+      if (_adjNow || _adjFrom) _applySkillShotGrace(h, u, now);
+    }
+  }
+  if (typeof _redArcherStates !== 'undefined' && S.decorations) {
+    for (const k in _redArcherStates) {
+      const dt = S.decorations[k];
+      if (dt !== 'red_archer_npc' && dt !== 'red_archer_idle_npc') continue;
+      const st = _redArcherStates[k];
+      if (!st || (st.hp || 0) <= 0) continue;
+      // Adjacency: dabartinė ARBA walk-destinacija (kad walk-away cancel'intų)
+      const adjNow = (Math.abs(st.cx - u.x) === 1 && (st.cy - u.y) === 0);
+      const dstCx = (st.walkDstCX !== undefined ? st.walkDstCX : st.cx);
+      const dstCy = (st.walkDstCY !== undefined ? st.walkDstCY : st.cy);
+      const adjDst = (Math.abs(dstCx - u.x) === 1 && (dstCy - u.y) === 0);
+      if (!adjNow && !adjDst) continue;
+      _applySkillShotGrace(st, u, now);
+      // Walk abort: pinam prie ENDPOINT (src ar dst), kuris adjacent skull'ui
+      if (st.state === 'walk') {
+        const srcCx = Math.round((st.walkSrcX || 0) / CELL - 0.5);
+        const srcCy = Math.round((st.walkSrcY || 0) / CELL - 0.5);
+        const _dstCx = (st.walkDstCX !== undefined ? st.walkDstCX : st.cx);
+        const _dstCy = (st.walkDstCY !== undefined ? st.walkDstCY : st.cy);
+        const srcA = (Math.abs(srcCx - u.x) === 1 && srcCy === u.y);
+        const dstA = (Math.abs(_dstCx - u.x) === 1 && _dstCy === u.y);
+        let pCx, pCy, pWx, pWy;
+        if (dstA) { pCx = _dstCx; pCy = _dstCy; pWx = _dstCx * CELL + CELL / 2; pWy = _dstCy * CELL + CELL / 2; }
+        else if (srcA) { pCx = srcCx; pCy = srcCy; pWx = st.walkSrcX; pWy = st.walkSrcY; }
+        else { pCx = st.cx; pCy = st.cy; pWx = st.cx * CELL + CELL / 2; pWy = st.cy * CELL + CELL / 2; }
+        st.state = 'idle';
+        st.cx = pCx; st.cy = pCy;
+        st.wx = pWx; st.wy = pWy;
+        st.walkDstX = pWx; st.walkDstY = pWy;
+        st.walkDstCX = pCx; st.walkDstCY = pCy;
+        st.frame = 0; st.lastFrameAt = now;
+      }
+    }
+  }
+}
+function _updateSkullSkillShot(now) {
+  // Jeigu priešas neseniai uzmustas — paliekam juostą iki killFreezeUntil (rendering tęsis)
+  if (_skullSkillShot && _skullSkillShot.killFreezeUntil && now < _skullSkillShot.killFreezeUntil) return;
+  if (gameMode !== 'adventure' || !f11LikeFloor()) { _skullSkillShot = null; return; }
+  const u = _selectedAllyUnit;
+  if (!u || !u.alive || u.utype !== 'skull' || u.spawnWalk) { _skullSkillShot = null; return; }
+  // === Grace pass: priešai šalia (logiškai, neatsižvelgiant į tween/state) gauna 3s grace ===
+  // Daroma KIEKVIENĄ frame'ą bet enemy[_skillShotGracedFor] tokenas neleidžia kartoti.
+  if (S.units) {
+    for (const h of S.units) {
+      if (!h || !h.alive || h === u) continue;
+      if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(h)) continue;
+      if (h.utype === 'sheep') continue;
+      const _adjNow2 = (Math.abs(h.x - u.x) === 1 && (h.y - u.y) === 0);
+      let _adjFrom2 = false;
+      if (h.chaseWalk) {
+        const _fX = h.chaseWalk.fromX, _fY = h.chaseWalk.fromY;
+        _adjFrom2 = (typeof _fX === 'number' && typeof _fY === 'number' &&
+                     Math.abs(_fX - u.x) === 1 && (_fY - u.y) === 0);
+      }
+      if (_adjNow2 || _adjFrom2) _applySkillShotGrace(h, u, now);
+    }
+  }
+  if (typeof _redArcherStates !== 'undefined' && S.decorations) {
+    for (const k in _redArcherStates) {
+      const dt = S.decorations[k];
+      if (dt !== 'red_archer_npc' && dt !== 'red_archer_idle_npc') continue;
+      const st = _redArcherStates[k];
+      if (!st || (st.hp || 0) <= 0) continue;
+      if (Math.abs(st.cx - u.x) === 1 && (st.cy - u.y) === 0) _applySkillShotGrace(st, u, now);
+    }
+  }
+  // Tik kai abudu jau settled į cell'es (ne tween, ne commandMove) — atspindi tikra "kovos poziciją"
+  if (u.chaseWalk || u.commandMove) { _skullSkillShot = null; return; }
+  // Render pozicija turi būti ant cell centro (per pikselio epsilon)
+  if (typeof u.rx === 'number' && Math.abs(u.rx - u.x) > 0.05) { _skullSkillShot = null; return; }
+  if (typeof u.ry === 'number' && Math.abs(u.ry - u.y) > 0.05) { _skullSkillShot = null; return; }
+  // Find adjacent hostile (skull range: |dx|=1, dy=0) — taip pat settled
+  let enemy = null;
+  for (const h of (S.units || [])) {
+    if (!h || !h.alive || h === u) continue;
+    if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(h)) continue;
+    if (h.utype === 'sheep') continue;
+    if (Math.abs(h.x - u.x) !== 1 || (h.y - u.y) !== 0) continue;
+    if (h.chaseWalk || h.commandMove) continue;
+    if (typeof h.rx === 'number' && Math.abs(h.rx - h.x) > 0.05) continue;
+    if (typeof h.ry === 'number' && Math.abs(h.ry - h.y) > 0.05) continue;
+    enemy = h; break;
+  }
+  // Red archer NPC adjacent — atskiras state map, ne S.units
+  if (!enemy && typeof _redArcherStates !== 'undefined' && S.decorations) {
+    for (const k in _redArcherStates) {
+      const dt = S.decorations[k];
+      if (dt !== 'red_archer_npc' && dt !== 'red_archer_idle_npc') continue;
+      const st = _redArcherStates[k];
+      if (!st || (st.hp || 0) <= 0) continue;
+      if (Math.abs(st.cx - u.x) !== 1 || (st.cy - u.y) !== 0) continue;
+      if (st.state !== 'idle') continue;
+      const _expWX = st.cx * CELL + CELL / 2, _expWY = st.cy * CELL + CELL / 2;
+      if (Math.abs((st.wx || _expWX) - _expWX) > 2) continue;
+      if (Math.abs((st.wy || _expWY) - _expWY) > 2) continue;
+      enemy = st;
+      break;
+    }
+  }
+  if (!enemy) { _skullSkillShot = null; return; }
+  // Jeigu red archer — atnaujinam proxy fields kad drawing/HIT kodas matytų vienodą interfeisą
+  if (enemy && enemy.cx !== undefined && enemy.cy !== undefined && enemy.wx !== undefined) {
+    enemy._isRedArcherNpc = true;
+    enemy.x = enemy.cx; enemy.y = enemy.cy;
+    enemy.rx = enemy.wx / CELL - 0.5;
+    enemy.ry = enemy.wy / CELL - 0.5;
+    enemy.alive = (enemy.hp || 0) > 0;
+    if (!enemy.color) enemy.color = '#cc4444';
+  }
+  if (!_skullSkillShot || _skullSkillShot.owner !== u || _skullSkillShot.enemy !== enemy) {
+    _skullSkillShot = {
+      owner: u, enemy, phase: 0, dir: 1, lastTime: now,
+      missUntil: 0, attempts: 0,
+      mode: 'safe', modeEnd: now + _SKILL_SHOT_SAFE_MS,
+      hitFlashUntil: 0, parryFlashUntil: 0, enemyAttackFlashUntil: 0,
+      sweetMin: 0, sweetMax: 0,
+    };
+    _randomizeSkillShotSweet(_skullSkillShot);
+    return;
+  }
+  const ss = _skullSkillShot;
+  const dt = Math.min(50, now - ss.lastTime);
+  ss.lastTime = now;
+  // Sweet zone drift — slow oscillation 'safe' mode metu, kad žalia juosta būtų gyva
+  if (ss.mode === 'safe') _driftSkillShotSweet(ss, now);
+  // Mode transitions
+  if (ss.mode === 'safe' && now >= ss.modeEnd) {
+    ss.mode = 'windup'; ss.modeEnd = now + _SKILL_SHOT_WINDUP_MS;
+  } else if (ss.mode === 'windup' && now >= ss.modeEnd) {
+    // Enemy strikes — trigger attack anim, then damage skull (swing visual už adjacent enemy)
+    const en = enemy;
+    const _faceDx = Math.sign((u.x - (en.x ?? en.cx)) || 1);
+    if (en._isRedArcherNpc) {
+      // Red archer NPC — point-blank arrow shot
+      en.facingRight = (_faceDx >= 0);
+      en.state = 'shoot'; en.frame = 0; en.lastFrameAt = now; en.arrowFired = false;
+      en.shootSpeed = 360; // greitas arti-šūvis
+    } else {
+      // S.units enemy — universalus swing/throw trigger
+      en.swingStart = now;
+      en.facing = { dx: _faceDx, dy: 0 };
+      if (en.utype === 'harpoon_fish' || en.utype === 'archer') {
+        en.hfishThrowStart = now;
+      }
+    }
+    if (typeof SFX !== 'undefined' && SFX.hit) try { SFX.hit(); } catch (e) {}
+    const _dmg = _SKILL_SHOT_ENEMY_DMG;
+    if (u && u.alive) {
+      u.hp = Math.max(0, (u.hp || 1) - _dmg);
+      u.hitFlash = 1;
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(u.x, u.y, '-' + _dmg, '#ff4444', 18, 'normal');
+      // Slash particle effect — diagonal cut sparks toward skull
+      if (Array.isArray(S.particles)) {
+        const _sx = (u.x + 0.5) * CELL, _sy = (u.y + 0.5) * CELL;
+        for (let i = 0; i < 10; i++) {
+          const ang = Math.PI + (Math.random() - 0.5) * Math.PI * 0.7;
+          const spd = (1.5 + Math.random() * 2.8) * CELL * 0.025;
+          S.particles.push({
+            x: _sx + (Math.random() - 0.5) * CELL * 0.3,
+            y: _sy + (Math.random() - 0.5) * CELL * 0.3,
+            vx: Math.cos(ang) * spd * _faceDx,
+            vy: Math.sin(ang) * spd - 0.3,
+            life: 1, decay: 0.045 + Math.random() * 0.03,
+            r: 1.4 + Math.random() * 2.0,
+            color: Math.random() < 0.6 ? '#ffeecc' : '#ffaa44',
+            type: 'chunk', gravity: 0.3,
+          });
+        }
+      }
+      S.shake = Math.max(S.shake || 0, 12);
+      // Hitpause SUMAŽINTAS iki 50ms — anksčiau 120ms freeze'indavo AI ir slėpdavo enemy attack anim
+      if (typeof _combatHitPause === 'function') _combatHitPause(50);
+      if (u.hp <= 0) {
+        u.alive = false;
+        if (typeof spawnDeath === 'function') spawnDeath(u.x, u.y, u.color || '#aaaaff');
+      }
+    }
+    ss.enemyAttackFlashUntil = now + 360;
+    ss.strikeLabelUntil = now + 600;
+    ss.mode = 'recovery'; ss.modeEnd = now + _SKILL_SHOT_RECOVER_MS;
+    ss.missUntil = ss.modeEnd;
+  } else if (ss.mode === 'recovery' && now >= ss.modeEnd) {
+    ss.mode = 'safe'; ss.modeEnd = now + _SKILL_SHOT_SAFE_MS;
+    ss.missUntil = 0;
+    _randomizeSkillShotSweet(ss);
+  }
+  if (now < ss.missUntil) return;
+  const _spd = (ss.mode === 'windup') ? _SKILL_SHOT_SPEED_FAST : _SKILL_SHOT_SPEED;
+  ss.phase += dt * _spd * ss.dir;
+  if (ss.phase >= 1) { ss.phase = 1; ss.dir = -1; }
+  if (ss.phase <= 0) { ss.phase = 0; ss.dir = 1; }
+}
+function _drawSkullSkillShot() {
+  if (!_skullSkillShot) return;
+  const ss = _skullSkillShot;
+  const _now0 = performance.now();
+  const _killFrz = ss.killFreezeUntil && _now0 < ss.killFreezeUntil;
+  if (!ss.owner || !ss.owner.alive) { _skullSkillShot = null; return; }
+  // Kai priešas miręs — paliekam juostą iki killFreezeUntil, paskui nullinam
+  if (!ss.enemy || !ss.enemy.alive) {
+    if (!_killFrz) { _skullSkillShot = null; return; }
+  }
+  const e = ss.enemy;
+  const cx = ((typeof e.rx === 'number') ? e.rx : e.x) * CELL + CELL / 2;
+  const cy = ((typeof e.ry === 'number') ? e.ry : e.y) * CELL - 13;
+  const W = 92, H = 14;
+  const x0 = cx - W / 2, y0 = cy - H / 2;
+  const now = performance.now();
+  const isMiss = (ss.mode === 'recovery') || now < ss.missUntil;
+  const isWindup = (ss.mode === 'windup') && !isMiss;
+  // Enemy red windup glow — telegraph
+  if (isWindup) {
+    const _ex = ((typeof e.rx === 'number') ? e.rx : e.x) * CELL + CELL / 2;
+    const _ey = ((typeof e.ry === 'number') ? e.ry : e.y) * CELL + CELL / 2;
+    const _wp = (now - (ss.modeEnd - _SKILL_SHOT_WINDUP_MS)) / _SKILL_SHOT_WINDUP_MS;
+    const _rPulse = 0.5 + 0.5 * Math.sin(now * 0.025);
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.4 * _rPulse + 0.2 * _wp;
+    const _rGrad = ctx.createRadialGradient(_ex, _ey, 4, _ex, _ey, CELL * 0.9);
+    _rGrad.addColorStop(0, 'rgba(255,40,40,0.9)');
+    _rGrad.addColorStop(0.5, 'rgba(255,80,40,0.45)');
+    _rGrad.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = _rGrad;
+    ctx.fillRect(_ex - CELL, _ey - CELL, CELL * 2, CELL * 2);
+    ctx.restore();
+  }
+  // Sweet-spot pulse
+  const pulse = 0.5 + 0.5 * Math.sin(now * (isWindup ? 0.022 : 0.009));
+  ctx.save();
+  // Outer wood frame
+  ctx.fillStyle = '#2a1a10';
+  _roundRect(ctx, x0 - 4, y0 - 4, W + 8, H + 8, 4); ctx.fill();
+  ctx.fillStyle = isWindup ? '#7a2818' : '#6b4a2e';
+  _roundRect(ctx, x0 - 3, y0 - 3, W + 6, H + 6, 3); ctx.fill();
+  ctx.fillStyle = isWindup ? '#a83828' : '#8b6440';
+  _roundRect(ctx, x0 - 2, y0 - 2, W + 4, 2, 1); ctx.fill();
+  // Track gradient
+  const trackGrad = ctx.createLinearGradient(x0, y0, x0, y0 + H);
+  if (isMiss)        { trackGrad.addColorStop(0, '#4a1818'); trackGrad.addColorStop(1, '#1a0808'); }
+  else if (isWindup) { trackGrad.addColorStop(0, '#3a0a0a'); trackGrad.addColorStop(1, '#100404'); }
+  else               { trackGrad.addColorStop(0, '#1f1414'); trackGrad.addColorStop(1, '#0a0606'); }
+  ctx.fillStyle = trackGrad;
+  _roundRect(ctx, x0, y0, W, H, 2); ctx.fill();
+  // Windup countdown bar — fills left→right kaip indikatorius kada priešas smogs
+  if (isWindup) {
+    const _wp = Math.min(1, (now - (ss.modeEnd - _SKILL_SHOT_WINDUP_MS)) / _SKILL_SHOT_WINDUP_MS);
+    ctx.fillStyle = 'rgba(255,40,40,0.55)';
+    ctx.fillRect(x0, y0, W * _wp, H);
+  }
+  // Sweet-spot band — dinaminis (ss.sweetMin/Max keičiasi kiekvieną ciklą)
+  const _smin = (typeof ss.sweetMin === 'number' && ss.sweetMin > 0) ? ss.sweetMin : _SKILL_SHOT_SWEET_MIN;
+  const _smax = (typeof ss.sweetMax === 'number' && ss.sweetMax > 0) ? ss.sweetMax : _SKILL_SHOT_SWEET_MAX;
+  const sx0 = x0 + W * _smin;
+  const sw  = W * (_smax - _smin);
+  if (isMiss) {
+    ctx.fillStyle = 'rgba(80,120,80,0.6)';
+    _roundRect(ctx, sx0, y0 + 1, sw, H - 2, 2); ctx.fill();
+  } else if (isWindup) {
+    // Parry zone — gold/orange su intensyviu pulse
+    ctx.shadowColor = '#ffaa44'; ctx.shadowBlur = 8 + pulse * 8;
+    const swG = ctx.createLinearGradient(sx0, y0, sx0, y0 + H);
+    swG.addColorStop(0, '#ffe28a');
+    swG.addColorStop(0.5, '#ffaa44');
+    swG.addColorStop(1, '#cc6611');
+    ctx.fillStyle = swG;
+    _roundRect(ctx, sx0, y0 + 1, sw, H - 2, 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillRect(sx0,          y0 + 2, 1, H - 4);
+    ctx.fillRect(sx0 + sw - 1, y0 + 2, 1, H - 4);
+  } else {
+    ctx.shadowColor = '#44ff88'; ctx.shadowBlur = 6 + pulse * 4;
+    const sweetGrad = ctx.createLinearGradient(sx0, y0, sx0, y0 + H);
+    sweetGrad.addColorStop(0, '#9affb0');
+    sweetGrad.addColorStop(0.5, '#44ff88');
+    sweetGrad.addColorStop(1, '#1aaa55');
+    ctx.fillStyle = sweetGrad;
+    _roundRect(ctx, sx0, y0 + 1, sw, H - 2, 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillRect(sx0,           y0 + 2, 1, H - 4);
+    ctx.fillRect(sx0 + sw - 1,  y0 + 2, 1, H - 4);
+  }
+  // Tick marks (skip if too close to sweet zone)
+  ctx.fillStyle = 'rgba(255,220,160,0.25)';
+  const _sCenter = (_smin + _smax) / 2;
+  for (let t = 0.25; t < 1; t += 0.25) {
+    if (Math.abs(t - _sCenter) < 0.05) continue;
+    ctx.fillRect(x0 + W * t, y0 + 3, 1, H - 6);
+  }
+  // (sweet center pin pašalintas — vartotojui trukdė vizualiai)
+  // Slider
+  const psx = x0 + W * ss.phase;
+  if (!isMiss) {
+    ctx.shadowColor = isWindup ? '#ffaa00' : '#ffffff'; ctx.shadowBlur = isWindup ? 12 : 8;
+    ctx.fillStyle = '#fffce8';
+    _drawSliderShape(ctx, psx, y0, H);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = isWindup ? '#ff5522' : '#e85d5d';
+    _drawSliderShape(ctx, psx, y0 + 1, H - 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffe7e7';
+    ctx.fillRect(psx - 1, y0 + 2, 1, H - 4);
+  } else {
+    ctx.fillStyle = '#666';
+    _drawSliderShape(ctx, psx, y0, H);
+    ctx.fill();
+    ctx.fillStyle = '#333';
+    _drawSliderShape(ctx, psx, y0 + 1, H - 2);
+    ctx.fill();
+  }
+  // Click result freeze — užfiksuoja vizualiai kur paspaudei vs sweet zone (be teksto)
+  if (ss.clickFlashUntil && now < ss.clickFlashUntil && typeof ss.clickPhase === 'number') {
+    const _flashDur = (ss.clickResult === 'early' || ss.clickResult === 'late') ? 1500 : 1300;
+    const _elapsed = _flashDur - (ss.clickFlashUntil - now);
+    const _t = (ss.clickFlashUntil - now) / _flashDur;       // 1→0
+    const _alpha = Math.min(1, _t * 1.6);
+    const _csmin = (typeof ss.clickSweetMin === 'number') ? ss.clickSweetMin : _smin;
+    const _csmax = (typeof ss.clickSweetMax === 'number') ? ss.clickSweetMax : _smax;
+    const _csx0 = x0 + W * _csmin;
+    const _csw  = W * (_csmax - _csmin);
+    const _cpx  = x0 + W * ss.clickPhase;
+    const _isMiss = (ss.clickResult === 'early' || ss.clickResult === 'late');
+    // 1) Ghost sweet zone — pulsuoja kad būtų aišku kur reikėjo
+    const _zonePulse = 0.5 + 0.5 * Math.sin(_elapsed * 0.018);
+    ctx.globalAlpha = _alpha * (0.55 + 0.35 * _zonePulse);
+    ctx.fillStyle = (ss.clickResult === 'parry') ? '#ffaa44' : '#44ff88';
+    ctx.fillRect(_csx0, y0 + 1, _csw, H - 2);
+    // Sweet zone outline kontur (kad išryškėtų)
+    ctx.globalAlpha = _alpha * 0.95;
+    ctx.strokeStyle = (ss.clickResult === 'parry') ? '#ffe28a' : '#aaffaa';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(_csx0 - 0.5, y0 + 0.5, _csw + 1, H - 1);
+    // 2) Frozen click marker — STORA vertikali linija
+    const _markerCol = (ss.clickResult === 'hit')   ? '#88ff88'
+                     : (ss.clickResult === 'parry') ? '#ffcc66'
+                     : '#ff3322';
+    ctx.globalAlpha = _alpha;
+    // Black outline
+    ctx.fillStyle = '#000';
+    ctx.fillRect(_cpx - 3, y0 - 7, 6, H + 14);
+    // Color core
+    ctx.fillStyle = _markerCol;
+    ctx.fillRect(_cpx - 2, y0 - 6, 4, H + 12);
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillRect(_cpx - 0.5, y0 - 5, 1, H + 10);
+    // Arrow caps virš/po marker'io
+    ctx.fillStyle = _markerCol;
+    ctx.beginPath();
+    ctx.moveTo(_cpx - 6, y0 - 7);
+    ctx.lineTo(_cpx + 6, y0 - 7);
+    ctx.lineTo(_cpx, y0 - 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(_cpx - 6, y0 + H + 7);
+    ctx.lineTo(_cpx + 6, y0 + H + 7);
+    ctx.lineTo(_cpx, y0 + H + 1);
+    ctx.closePath();
+    ctx.fill();
+    // 3) HIT/PARRY: žalias success ring pulse aplink marker'į
+    if (!_isMiss) {
+      const _ringT = Math.min(1, _elapsed / 500);
+      const _ringR = 4 + _ringT * 22;
+      ctx.globalAlpha = _alpha * (1 - _ringT) * 0.9;
+      ctx.strokeStyle = _markerCol;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(_cpx, y0 + H / 2, _ringR, 0, Math.PI * 2);
+      ctx.stroke();
+      // Antras ring (offset)
+      const _ring2T = Math.min(1, Math.max(0, (_elapsed - 180) / 500));
+      if (_ring2T > 0 && _ring2T < 1) {
+        const _r2 = 4 + _ring2T * 22;
+        ctx.globalAlpha = _alpha * (1 - _ring2T) * 0.6;
+        ctx.beginPath();
+        ctx.arc(_cpx, y0 + H / 2, _r2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    // 4) MISS: rodyklė į sweet center + raudonas X virš marker'io
+    if (_isMiss) {
+      const _centerSweet = x0 + W * (_csmin + _csmax) / 2;
+      // Animuota rodyklė: pulsuoja link sweet center
+      const _arrPulse = (Math.sin(_elapsed * 0.012) + 1) / 2; // 0..1
+      ctx.globalAlpha = _alpha * (0.6 + 0.4 * _arrPulse);
+      ctx.strokeStyle = '#ffcc44';
+      ctx.lineWidth = 2.2;
+      const _arrY = y0 + H + 11;
+      ctx.beginPath();
+      ctx.moveTo(_cpx, _arrY);
+      ctx.lineTo(_centerSweet, _arrY);
+      ctx.stroke();
+      // Arrow head (storesnis)
+      const _ah = (ss.clickResult === 'early') ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(_centerSweet, _arrY);
+      ctx.lineTo(_centerSweet - 6 * _ah, _arrY - 4);
+      ctx.lineTo(_centerSweet - 6 * _ah, _arrY + 4);
+      ctx.closePath();
+      ctx.fillStyle = '#ffcc44';
+      ctx.fill();
+      // Raudonas X virš marker'io
+      ctx.globalAlpha = _alpha;
+      ctx.strokeStyle = '#ff3322';
+      ctx.lineWidth = 2.5;
+      const _xs = 4;
+      const _xy = y0 - 14;
+      ctx.beginPath();
+      ctx.moveTo(_cpx - _xs, _xy - _xs); ctx.lineTo(_cpx + _xs, _xy + _xs);
+      ctx.moveTo(_cpx + _xs, _xy - _xs); ctx.lineTo(_cpx - _xs, _xy + _xs);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Enemy STRIKE flash — kai windup pasibaigia ir priešas smogia (atspindi enemy attack anim)
+  if (ss.enemyAttackFlashUntil && now < ss.enemyAttackFlashUntil) {
+    const _ex = ((typeof e.rx === 'number') ? e.rx : e.x) * CELL + CELL / 2;
+    const _ey = ((typeof e.ry === 'number') ? e.ry : e.y) * CELL + CELL / 2;
+    const _ft = (ss.enemyAttackFlashUntil - now) / 360;
+    const _alpha = Math.min(1, _ft);
+    // Bright red pulse ant priešo
+    ctx.globalAlpha = _alpha * 0.85;
+    const _rGrad = ctx.createRadialGradient(_ex, _ey, 4, _ex, _ey, CELL * 1.1);
+    _rGrad.addColorStop(0, 'rgba(255,80,40,0.95)');
+    _rGrad.addColorStop(0.4, 'rgba(255,40,40,0.6)');
+    _rGrad.addColorStop(1, 'rgba(255,30,30,0)');
+    ctx.fillStyle = _rGrad;
+    ctx.fillRect(_ex - CELL * 1.2, _ey - CELL * 1.2, CELL * 2.4, CELL * 2.4);
+    // Slash arc nuo priešo į skull (player)
+    if (ss.owner) {
+      const _px = (ss.owner.x + 0.5) * CELL;
+      const _py = (ss.owner.y + 0.5) * CELL;
+      const _midX = (_ex + _px) / 2, _midY = (_ey + _py) / 2 - 14;
+      ctx.globalAlpha = _alpha * 0.9;
+      ctx.strokeStyle = '#ffeecc';
+      ctx.lineWidth = 3 + 3 * _alpha;
+      ctx.shadowColor = '#ff6633'; ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(_ex + (_px > _ex ? 8 : -8), _ey - 4);
+      ctx.quadraticCurveTo(_midX, _midY, _px - (_px > _ex ? 8 : -8), _py - 4);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+  }
+  // STRIKE — tik vizualus raudonas X overlay ant juostos (be teksto)
+  if (ss.strikeLabelUntil && now < ss.strikeLabelUntil) {
+    const _t = (ss.strikeLabelUntil - now) / 600;
+    ctx.globalAlpha = Math.min(1, _t * 1.4) * 0.85;
+    ctx.strokeStyle = '#ff3322';
+    ctx.lineWidth = 3;
+    const _xs = 5;
+    const _xcx = cx, _xcy = y0 + H / 2;
+    ctx.beginPath();
+    ctx.moveTo(_xcx - _xs, _xcy - _xs - 14); ctx.lineTo(_xcx + _xs, _xcy + _xs - 14);
+    ctx.moveTo(_xcx + _xs, _xcy - _xs - 14); ctx.lineTo(_xcx - _xs, _xcy + _xs - 14);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+function _drawSliderShape(ctx, px, top, h) {
+  // Diamond/spear-tip slider
+  ctx.beginPath();
+  ctx.moveTo(px, top - 2);
+  ctx.lineTo(px + 3, top + h * 0.5);
+  ctx.lineTo(px, top + h + 2);
+  ctx.lineTo(px - 3, top + h * 0.5);
+  ctx.closePath();
+}
+function _trySkullSkillShotAttack() {
+  // Returns true if click was consumed.
+  if (!_skullSkillShot) return false;
+  const ss = _skullSkillShot;
+  const now = performance.now();
+  if (!ss.owner || !ss.owner.alive) { _skullSkillShot = null; return false; }
+  // Kill freeze metu konsumuojam click (kad nebūtų accidental hit į kitą enemy)
+  if (ss.killFreezeUntil && now < ss.killFreezeUntil) return true;
+  if (!ss.enemy || !ss.enemy.alive) { _skullSkillShot = null; return false; }
+  if (ss.mode === 'recovery' || now < ss.missUntil) return true; // consume during cooldown
+  ss.attempts = (ss.attempts || 0) + 1;
+  const isWindup = (ss.mode === 'windup');
+  const _smin = (typeof ss.sweetMin === 'number' && ss.sweetMin > 0) ? ss.sweetMin : _SKILL_SHOT_SWEET_MIN;
+  const _smax = (typeof ss.sweetMax === 'number' && ss.sweetMax > 0) ? ss.sweetMax : _SKILL_SHOT_SWEET_MAX;
+  if (ss.phase >= _smin && ss.phase <= _smax) {
+    // HIT (or PARRY if windup) — uzfiksuojam click poziciją
+    ss.clickPhase = ss.phase;
+    ss.clickSweetMin = _smin;
+    ss.clickSweetMax = _smax;
+    ss.clickResult = isWindup ? 'parry' : 'hit';
+    ss.clickFlashUntil = now + 1300;
+    const u = ss.owner, nearest = ss.enemy;
+    u.swingStart = now;
+    u.facing = { dx: Math.sign(nearest.x - u.x) || 1, dy: 0 };
+    let baseDmg = (u.stack || 1);
+    if (isWindup) baseDmg = Math.ceil(baseDmg * 1.5); // PARRY bonus
+    // QTE hit guarantees damage — taikom rally/territory mult'ą, BET ne luck-roll (kuris kartais grąžina 0).
+    if (typeof _f11RallyMult === 'function') {
+      const _m = _f11RallyMult();
+      if (_m !== 1) baseDmg = Math.max(1, Math.round(baseDmg * _m));
+    }
+    const _cr = (typeof _combatCritRoll === 'function') ? _combatCritRoll(baseDmg) : { dmg: baseDmg, isCrit: false };
+    const dmg = _cr.dmg;
+    const isCrit = _cr.isCrit || isWindup; // windup hit always feels critical
+    let dead = false;
+    if (nearest._isRedArcherNpc) {
+      const _hpBefore = nearest.hp || 0;
+      if (typeof _damageRedArcherAt === 'function') _damageRedArcherAt(nearest.x, nearest.y, dmg);
+      // Po _damageRedArcherAt — state gali būti ištrintas, tikrinam pagal hp/dmg
+      if (_hpBefore - dmg <= 0) { dead = true; nearest.alive = false; }
+    } else {
+      nearest.hp = Math.max(0, (nearest.hp || 1) - dmg);
+      nearest.hitFlash = 1;
+      if (typeof spawnDmgNumber === 'function') {
+        const _lbl = isWindup ? ('-' + dmg + '!') : (isCrit ? ('-' + dmg + '!') : ('-' + dmg));
+        const _col = isWindup ? '#ff8822' : (isCrit ? '#ffe033' : '#ff8866');
+        spawnDmgNumber(nearest.x, nearest.y, _lbl, _col, isWindup ? 24 : (isCrit ? 22 : 16), isCrit ? 'crit' : 'normal');
+      }
+      if (nearest.hp <= 0) {
+        nearest.alive = false; dead = true;
+        if (typeof spawnDeath === 'function') spawnDeath(nearest.x, nearest.y, nearest.color || '#ff6666');
+      }
+    }
+    if (dead) {
+      // Užšaldom juostą iki death anim pabaigos kad žaidėjas spėtų suvokti pergalę
+      ss.killFreezeUntil = now + 900;
+    }
+    if (typeof _combatJuice === 'function') _combatJuice(nearest.x, nearest.y, dmg, isCrit, u.stack || 1, dead);
+    if (isWindup) {
+      // Parry interrupts attack — extra hitstop + screen shake
+      S.shake = Math.max(S.shake || 0, 14);
+      if (typeof _combatHitPause === 'function') _combatHitPause(140);
+    }
+    // Reset to safe — naujas free langas + nauja sweet pozicija
+    ss.mode = 'safe'; ss.modeEnd = now + _SKILL_SHOT_SAFE_MS;
+    ss.phase = 0; ss.dir = 1;
+    _randomizeSkillShotSweet(ss);
+    return true;
+  }
+  // MISS — uzfiksuojam click poziciją PRIEŠ randomize, kad rodytume kur paspaudei vs sweet
+  ss.clickPhase = ss.phase;
+  ss.clickSweetMin = _smin;
+  ss.clickSweetMax = _smax;
+  ss.clickResult = (ss.phase < _smin) ? 'early' : 'late';
+  ss.clickFlashUntil = now + 1500;
+  ss.missUntil = now + _SKILL_SHOT_MISS_CD_MS;
+  ss.missLabelUntil = now + 600;
+  _randomizeSkillShotSweet(ss);
+  if (typeof SFX !== 'undefined' && SFX.hit) try { SFX.hit(); } catch (e) {}
+  // Skull swing visual (whiff)
+  if (ss.owner) {
+    ss.owner.swingStart = now;
+    ss.owner.facing = { dx: Math.sign((ss.enemy.x ?? ss.enemy.cx ?? 0) - ss.owner.x) || 1, dy: 0 };
+  }
+  return true;
+}
 let _f11UnitPopupCancelBtn = null;   // popup ✕ bounds
+let _f11UnitPopupAttackBtn = null;   // popup ATTACK bounds
 
 function _f11ToggleAutoPlay() {
   if (gameMode !== 'adventure' || !f11LikeFloor()) return;
@@ -14058,8 +14840,8 @@ function _f11SetModeAll() {
   if (_f11SelectionMode === 'all') {
     _f11SelectionMode = null;
     _selectedAllyUnit = null;
-    _f11UnitPopupOpen = false;
     _f11MoveTargeting = false;
+    _f11AttackTargeting = false;
     if (typeof logEvent === 'function') logEvent('○ Selection: OFF', 'info');
     return;
   }
@@ -14074,8 +14856,8 @@ function _f11SetModeSingle() {
   if (_f11SelectionMode === 'single') {
     _f11SelectionMode = null;
     _selectedAllyUnit = null;
-    _f11UnitPopupOpen = false;
     _f11MoveTargeting = false;
+    _f11AttackTargeting = false;
     if (typeof logEvent === 'function') logEvent('○ Selection: OFF', 'info');
     return;
   }
@@ -14391,8 +15173,7 @@ function _f11WardMult() {
 function _f11LuckRoll(raw) {
   if (gameMode !== 'adventure' || !f11LikeFloor() || !f11CommanderOn()) return { dmg: raw, label: null, color: null };
   const r = Math.random();
-  if (r < 0.15) return { dmg: 0, label: 'MISS', color: '#aaaaaa' };
-  if (r < 0.25) return { dmg: Math.max(1, Math.floor(raw / 2)), label: 'BLOCK', color: '#88ddff' };
+  if (r < 0.10) return { dmg: Math.max(1, Math.floor(raw / 2)), label: 'BLOCK', color: '#88ddff' };
   return { dmg: raw, label: null, color: null };
 }
 // Spawn label virš target'o po luck roll (jei MISS/BLOCK).
@@ -14446,7 +15227,8 @@ function drawF11UnitPopup() {
   const anchorSY = Math.round(wy - camY);
 
   const MBW = 76, MBH = 26, GAP = 6;
-  const pw = MBW + GAP + MBH + 16;  // MOVE + ✕ buttons + padding
+  const ABW = 76; // ATTACK button width
+  const pw = MBW + GAP + ABW + GAP + MBH + 16;  // MOVE + ATTACK + ✕ buttons + padding
   const ph = MBH + 20;
   const px = anchorSX - Math.round(pw / 2);
   const py = anchorSY - Math.round(CELL * 0.85) - ph;
@@ -14499,8 +15281,26 @@ function drawF11UnitPopup() {
   ctx.fillText('▶ MOVE ⚡', mbx + MBW / 2, mby + MBH / 2);
   _f11UnitPopupMoveBtn = { x: mbx, y: mby, w: MBW, h: MBH };
 
+  // ATTACK button
+  const abx = mbx + MBW + GAP;
+  const aby = mby;
+  const abHov = (typeof _canvasMx === 'number') &&
+                _canvasMx >= abx && _canvasMx <= abx + ABW &&
+                _canvasMy >= aby && _canvasMy <= aby + MBH;
+  ctx.fillStyle = abHov ? '#8a3a3a' : '#4a1a1a';
+  rr(abx, aby, ABW, MBH, 4); ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#ff8888';
+  rr(abx + 0.5, aby + 0.5, ABW - 1, MBH - 1, 4); ctx.stroke();
+  ctx.fillStyle = '#ffdddd';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⚔ ATTACK', abx + ABW / 2, aby + MBH / 2);
+  _f11UnitPopupAttackBtn = { x: abx, y: aby, w: ABW, h: MBH };
+
   // Cancel button
-  const cbx = mbx + MBW + GAP;
+  const cbx = abx + ABW + GAP;
   const cby = mby;
   const cbHov = (typeof _canvasMx === 'number') &&
                 _canvasMx >= cbx && _canvasMx <= cbx + MBH &&
@@ -14979,6 +15779,102 @@ function _drawF11Countdown() {
   ctx.lineWidth = 4;
   ctx.strokeStyle = '#3d2817';
   ctx.strokeText(label, 0, 0);
+  ctx.restore();
+}
+
+// F11 wave/level banner — rodo "LEVEL X CLEARED" + 3s countdown iki kito level.
+function _drawF11WaveBanner() {
+  if (gameMode !== 'adventure' || !f11LikeFloor()) return;
+  if (S._f11Outcome) return;
+  if (typeof S._f11Level !== 'number') return;
+  const now = performance.now();
+  const isClear = S._f11WaveClearedAt && now - S._f11WaveClearedAt < _F11_WAVE_CLEAR_DELAY;
+  const canvasW = (typeof advCanvasW === 'number') ? advCanvasW : BOARD_W;
+  const canvasH = (typeof ADV_CANVAS_H === 'number') ? ADV_CANVAS_H : BOARD_H;
+
+  // Always-visible mažas indikatorius viršuje (Level X · enemies remaining)
+  const _target = _F11_WAVE_TARGETS[S._f11Level] || 0;
+  const _spawned = S._f11WaveSpawned || 0;
+  let _alive = 0;
+  if (Array.isArray(S.units)) {
+    for (const u of S.units) if (u && u.alive && u.team === 1) _alive++;
+  }
+  const remaining = Math.max(0, (_target - _spawned) + _alive);
+  ctx.save();
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const lvlLabel = `LEVEL ${S._f11Level}/${_F11_WAVE_MAX_LEVEL}  ·  enemies: ${remaining}`;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  const tw = ctx.measureText(lvlLabel).width;
+  ctx.fillRect(canvasW/2 - tw/2 - 12, 8, tw + 24, 26);
+  ctx.fillStyle = '#ffd75c';
+  ctx.fillText(lvlLabel, canvasW/2, 12);
+  ctx.restore();
+
+  // Anticipation banner — kol vyksta intro delay (prieš pirmą spawn'ą wave'e)
+  const introActive = (S._f11WaveSpawned === 0) && S._f11WaveStartedAt && (now - S._f11WaveStartedAt < _F11_WAVE_INTRO_DELAY);
+  if (introActive) {
+    const tA = now - S._f11WaveStartedAt;
+    const tA01 = tA / _F11_WAVE_INTRO_DELAY;
+    const aA = tA01 < 0.2 ? (tA01 / 0.2) : (tA01 > 0.8 ? Math.max(0, 1 - (tA01 - 0.8) / 0.2) : 1);
+    const popA = tA01 < 0.2 ? (1.6 - (tA01 / 0.2) * 0.6) : 1.0;
+    ctx.save();
+    ctx.translate(canvasW/2, canvasH/2 - 60);
+    ctx.scale(popA, popA);
+    ctx.globalAlpha = aA;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 48px serif';
+    const _msg = `WAVE ${S._f11Level} INCOMING!`;
+    ctx.fillStyle = '#2a1a0a';
+    ctx.fillText(_msg, 4, 4);
+    ctx.fillStyle = '#ff6644';
+    ctx.fillText(_msg, 0, 0);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#3a1a0a';
+    ctx.strokeText(_msg, 0, 0);
+    ctx.restore();
+  }
+
+  if (!isClear) return;
+
+  // Cleared popup — full screen overlay
+  const t = now - S._f11WaveClearedAt;
+  const t01 = t / _F11_WAVE_CLEAR_DELAY;
+  const alpha = t01 < 0.15 ? (t01 / 0.15) : (t01 > 0.85 ? Math.max(0, 1 - (t01 - 0.85) / 0.15) : 1);
+  const pop = t01 < 0.15 ? (1.5 - (t01 / 0.15) * 0.5) : 1.0;
+  const secondsLeft = Math.max(0, Math.ceil((_F11_WAVE_CLEAR_DELAY - t) / 1000));
+  const isFinal = S._f11Level >= _F11_WAVE_MAX_LEVEL;
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.55;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(canvasW/2, canvasH/2);
+  ctx.scale(pop, pop);
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 56px serif';
+  ctx.fillStyle = '#2a1a0a';
+  const _label = isFinal ? 'ALL WAVES CLEARED!' : `LEVEL ${S._f11Level} CLEARED!`;
+  ctx.fillText(_label, 4, 4);
+  ctx.fillStyle = '#ffd75c';
+  ctx.fillText(_label, 0, 0);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#6b4a2e';
+  ctx.strokeText(_label, 0, 0);
+
+  if (!isFinal) {
+    ctx.font = 'bold 26px serif';
+    ctx.fillStyle = '#f5e6c3';
+    const _next = `Next wave in ${secondsLeft}s...`;
+    ctx.fillText(_next, 0, 56);
+  }
   ctx.restore();
 }
 
@@ -18273,6 +19169,69 @@ function spawnPickupFX(gx, gy, color) {
   }
 }
 
+// Pixel-art materialize spawn — pixel mišinys 0.9s konverguoja į centrą,
+// paskui 0.1s pop flash + sprite atsiranda.
+// Total: 1s. Naudoti su u._spawnAt (drawUnits skip'ina sprite kol _spawnAt < 900ms).
+function _spawnFlashFX(gx, gy, isEnemy) {
+  const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
+  // Limited pixel palette per team (no smooth gradients, just hard color blocks)
+  const palette = isEnemy
+    ? ['#ff2a3a', '#c41e2a', '#ff9a3a', '#ffce63', '#ffffff']
+    : ['#4ec8ff', '#2a82d4', '#ffd75c', '#fff0a8', '#ffffff'];
+  const N = 36;
+  const FRAMES = 54;        // ~0.9s @ 60fps
+  const DAMP_SUM = 11.0;    // Σ 0.91^i for i=0..FRAMES-1 (kompensuoti damping)
+  // Uniform pixel sizes (3 / 4 / 5 / 6 px) — chunky pixel-art look
+  const sizes = [3, 3, 4, 4, 5, 5, 6];
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const dist = (1.0 + Math.random() * 1.2) * CELL;
+    const px = wx + Math.cos(a) * dist;
+    const py = wy + Math.sin(a) * dist;
+    // Target near center (slight jitter so they form a small cluster, not a single point)
+    const tx = wx + (Math.random() - 0.5) * CELL * 0.25;
+    const ty = wy + (Math.random() - 0.5) * CELL * 0.25;
+    const vx = (tx - px) / DAMP_SUM;
+    const vy = (ty - py) / DAMP_SUM;
+    const sz = sizes[Math.floor(Math.random() * sizes.length)];
+    const color = palette[Math.floor(Math.random() * palette.length)];
+    S.particles.push({
+      x: px, y: py, vx: vx, vy: vy,
+      life: 1, decay: 1 / FRAMES,
+      r: sz, color: color, type: 'pixchunk'
+    });
+  }
+}
+
+// 0.1s pop flash — fired kai sprite atsiranda po 0.9s materialize'inimo.
+function _spawnPopFlash(gx, gy, isEnemy) {
+  const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
+  const palette = isEnemy
+    ? ['#ff2a3a', '#ff9a3a', '#ffce63', '#ffffff']
+    : ['#4ec8ff', '#ffd75c', '#fff0a8', '#ffffff'];
+  // Quick radial burst — chunky pixels flying outward
+  for (let i = 0; i < 14; i++) {
+    const a = (Math.PI * 2 * i) / 14 + (Math.random() - 0.5) * 0.2;
+    const s = (2.0 + Math.random() * 1.6) * CELL * 0.022;
+    const sz = 3 + Math.floor(Math.random() * 3); // 3-5px
+    const color = palette[Math.floor(Math.random() * palette.length)];
+    S.particles.push({
+      x: wx, y: wy, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 1, decay: 0.10 + Math.random() * 0.05,
+      r: sz, color: color, type: 'pixchunk'
+    });
+  }
+  // Center bright pop — 4 white pixel squares (6px), short life
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI * 2 * (i / 4);
+    S.particles.push({
+      x: wx, y: wy, vx: Math.cos(a) * 0.5, vy: Math.sin(a) * 0.5,
+      life: 1, decay: 0.12, r: 6, color: '#ffffff', type: 'pixchunk'
+    });
+  }
+  if (typeof SFX !== 'undefined' && SFX.levelUp) try { SFX.levelUp(); } catch (e) {}
+}
+
 function spawnHit(gx, gy, color, n) {
   SFX.hit();
   const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
@@ -18376,11 +19335,13 @@ function _combatJuice(gx, gy, dmg, isCrit, stack, dead) {
   const _stk = stack || 1;
   if (isCrit) {
     S.shake = Math.max(S.shake || 0, 8 + _stk * 1.5);
-    if (typeof _combatHitPause === 'function') _combatHitPause(80);
+    if (typeof _combatHitPause === 'function') _combatHitPause(120);
   } else {
     S.shake = Math.max(S.shake || 0, 3 + _stk * 0.5);
+    // Every hit gets a small pause — gives weight to each smūgis
+    if (dmg > 0 && typeof _combatHitPause === 'function') _combatHitPause(35);
   }
-  if (dead && typeof _combatHitPause === 'function') _combatHitPause(220);
+  if (dead && typeof _combatHitPause === 'function') _combatHitPause(260);
 }
 // Blood particles — emits short-lived red chunks in arc behind target.
 function _combatSpawnBlood(gx, gy, intensity) {
@@ -18533,10 +19494,14 @@ function _updateBarracksAttackAI(now) {
     const _isEnemyBarracks = isEditorEnemyBarracks(u);
     if (!_isAlly && !_isEnemyBarracks) continue;
     if (u.spawnWalk) continue;
+    // Spawn stun — naujai materializuotas unit nedaro veiksmų ~1s (kol pixel'ai konverguoja)
+    if (u._spawnAt && (performance.now() - u._spawnAt) < 1000) continue;
     // RTS mode: ally units neturi auto-combat. Tik commandMove vykdomas (žemiau).
     // EXCEPT auto-attack on contact: jei priešas jau utype-specific attack range — leidžiam smogti.
     // Vis tiek skipinam chase/retreat (žymim _rtsAutoEngage flag, naudojamas utype AI blokuose).
     u._rtsAutoEngage = false;
+    // Išjungtas automatinis judėjimas: kariai nesivys priešų be komandos
+    /*
     if (_f11RtsActive && _isAlly && !u.commandMove) {
       let _hasContact = false;
       const _ux = u.x, _uy = u.y;
@@ -18568,6 +19533,7 @@ function _updateBarracksAttackAI(now) {
       if (!_hasContact) continue;
       u._rtsAutoEngage = true;
     }
+    */
     // F11 SINGLE mode — skipinam ally unit'us kurie nėra pažymėtas
     if (_f11SingleOnly && _isAlly && u !== _selectedAllyUnit) continue;
     // ── UNIVERSAL COMMAND MOVE OVERRIDE (F11 indirect control) ──
@@ -18685,12 +19651,12 @@ function _updateBarracksAttackAI(now) {
             const _cmFy = (typeof u.ry === 'number') ? u.ry : u.y;
             u.x += _cmStep.x; u.y += _cmStep.y;
             if (u.commandMove.path) u.commandMove.path.shift();
-            u.chaseWalk = { fromX: _cmFx, fromY: _cmFy, toX: u.x, toY: u.y, start: now, dur: 340 };
+            u.chaseWalk = { fromX: _cmFx, fromY: _cmFy, toX: u.x, toY: u.y, start: now, dur: 1056 };
             if (_cmStep.x !== 0 && u.facing) u.facing.dx = Math.sign(_cmStep.x);
           }
-          if (u.utype === 'harpoon_fish' || u.utype === 'archer') u.hfishActionCd = now + 360;
-          else if (u.utype === 'shaman')  u.shamanActionCd = now + 360;
-          else if (u.utype === 'skull')   u.skullMoveCd    = now + 360;
+          if (u.utype === 'harpoon_fish' || u.utype === 'archer') u.hfishActionCd = now + 1056;
+          else if (u.utype === 'shaman')  u.shamanActionCd = now + 1056;
+          else if (u.utype === 'skull')   u.skullMoveCd    = now + 1056;
         }
         continue;
       }
@@ -18699,13 +19665,31 @@ function _updateBarracksAttackAI(now) {
     const opponents = _isAlly ? _allyOpp : _enemyOpp;
     if ((u.swingStart && now - u.swingStart < 500) ||
         (u.hfishThrowStart && now - u.hfishThrowStart < 500)) continue;
-    if (opponents.length === 0) continue;
+    if (opponents.length === 0) {
+      if (_isAlly && u.manualAttackTriggered) {
+        u.manualAttackTriggered = false;
+        if (typeof spawnDmgNumber === 'function') spawnDmgNumber(u.x, u.y, 'NO TARGET', '#ff4444', 16, 'crit');
+      }
+      continue;
+    }
     let nearest = null, best = 999;
     for (const h of opponents) {
       const d = Math.abs(h.x - u.x) + Math.abs(h.y - u.y);
       if (d < best) { best = d; nearest = h; }
     }
-    if (!nearest) continue;
+    if (!nearest) {
+      if (_isAlly && u.manualAttackTriggered) {
+        u.manualAttackTriggered = false;
+        if (typeof spawnDmgNumber === 'function') spawnDmgNumber(u.x, u.y, 'NO TARGET', '#ff4444', 16, 'crit');
+      }
+      continue;
+    }
+    // Jei radome taikinį ir esame manual attack režime, nebelaukiame ir judame link jo
+    if (_isAlly && u.manualAttackTriggered && best > 10) {
+      u.manualAttackTriggered = false;
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(u.x, u.y, 'TOO FAR', '#ff4444', 16, 'crit');
+      continue;
+    }
     if (nearest.x !== u.x) u.facing = { dx: Math.sign(nearest.x - u.x), dy: 0 };
     // === Enemy advance — kai taikinys už combat vision, žengia link jo (push frontline LEFT) ===
     // Be šito enemy unitai stovėtų vietoje kol allies/hero patys ateina į vision. Su šituo — marširuoja.
@@ -18722,7 +19706,7 @@ function _updateBarracksAttackAI(now) {
         _engagedRange = true;
       }
       if (!_engagedRange && (u._enemyAdvCd || 0) <= now) {
-        u._enemyAdvCd = now + 700 + Math.random() * 500;
+        u._enemyAdvCd = now + 1344 + Math.random() * 384;
         const _advBlocked = (nx, ny) => {
           if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
           if (typeof isWall === 'function' && isWall(nx, ny)) return true;
@@ -18742,7 +19726,7 @@ function _updateBarracksAttackAI(now) {
           const _fromX = (typeof u.rx === 'number') ? u.rx : u.x;
           const _fromY = (typeof u.ry === 'number') ? u.ry : u.y;
           u.x += _step.x; u.y += _step.y;
-          u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: 500 };
+          u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: 1344 };
           if (_step.x !== 0 && u.facing) u.facing.dx = _step.x;
           // Hfish/archer anchor — slenkam kartu, kitaip senas radius=3 trauktų atgal
           if ((u.utype === 'harpoon_fish' || u.utype === 'archer') && typeof u.deployAnchorX === 'number') {
@@ -18756,7 +19740,7 @@ function _updateBarracksAttackAI(now) {
     if (u.utype === 'shaman') {
       if (u.chaseWalk) continue;
       if ((u.shamanActionCd || 0) > now) continue;
-      u.shamanActionCd = now + (_isEnemyBarracks ? 800 : 500);
+      u.shamanActionCd = now + (_isEnemyBarracks ? 1536 : 1152);
       // RTS engage: jei priešas už suvio range'o (best > 4) — vejamės iki kol grįš į range
       if (u._rtsAutoEngage && best > 4) {
         const _shBlk = (nx, ny) => {
@@ -18777,7 +19761,7 @@ function _updateBarracksAttackAI(now) {
             const _fX = (typeof u.rx === 'number') ? u.rx : u.x;
             const _fY = (typeof u.ry === 'number') ? u.ry : u.y;
             u.x += _c.x; u.y += _c.y;
-            u.chaseWalk = { fromX: _fX, fromY: _fY, toX: u.x, toY: u.y, start: now, dur: 380 };
+            u.chaseWalk = { fromX: _fX, fromY: _fY, toX: u.x, toY: u.y, start: now, dur: 1056 };
             if (_c.x !== 0 && u.facing) u.facing.dx = _c.x;
             break;
           }
@@ -18786,7 +19770,7 @@ function _updateBarracksAttackAI(now) {
       }
       // RTS auto-engage: praleidžiam random/move, einam tiesiai į suvio gate
       const _r = u._rtsAutoEngage ? 0.99 : Math.random();
-      if (_r < 0.15) {
+      if (_r < 0.15 && !_isAlly) {
         // 15% — žingsnis linkui priešo (arba šalutinėn krypti jei tiesi blokuojama)
         const _blocked = (nx, ny) => {
           if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
@@ -18808,7 +19792,7 @@ function _updateBarracksAttackAI(now) {
           const _fromX = (typeof u.rx === 'number') ? u.rx : u.x;
           const _fromY = (typeof u.ry === 'number') ? u.ry : u.y;
           u.x += _step.x; u.y += _step.y;
-          u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: _isEnemyBarracks ? 600 : 380 };
+          u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: _isEnemyBarracks ? 1536 : 1056 };
           if (_step.x !== 0 && u.facing) u.facing.dx = _step.x;
         }
         continue;
@@ -18818,6 +19802,7 @@ function _updateBarracksAttackAI(now) {
       if ((u.shamanAttackCd || 0) > now) continue;
       if (best > 4) continue;
       u.swingStart = now;
+      if (u.manualAttackTriggered) u.manualAttackTriggered = false;
       // RTS auto-engage: 6s cd (rodomas CD bar). Originalus AI cd = 2.8s.
       const _shCd = u._rtsAutoEngage ? 2500 : (_isEnemyBarracks ? 3500 : 2800);
       u.shamanAttackCd = now + _shCd;
@@ -18832,6 +19817,9 @@ function _updateBarracksAttackAI(now) {
       const _shEnemy = _isEnemyBarracks;
       setTimeout(() => { if (S && S.units) spawnShamanProjectile(fx, fy, tx, ty, stk, _shEnemy); }, 430);
     } else if (u.utype === 'harpoon_fish' || u.utype === 'archer') {
+      // Ally lankininkas — visiškai manual (charge-fire). Auto-shoot/auto-retreat off.
+      // commandMove jau apdorotas aukščiau (line ~19580), tad eisim į patį continue.
+      if (_isAlly && u.utype === 'archer') continue;
       // Kiting behavior: harpuno arka turi min ~3 cell skrydį dėl DRAG fizikos,
       // todėl jei priešas per arti — harpunas perskrenda. Laikomasi 3–8 cell atstumo:
       //   - nepamato priešo (best > 12) → stovi vietoj, 1% tikimybė atsitiktinis žingsnis
@@ -18842,8 +19830,8 @@ function _updateBarracksAttackAI(now) {
       // Command override: jei u.commandMove aktyvus — AI pereina į pathfind režimą, ignoruoja combat.
       if (u.chaseWalk) continue;
       if ((u.hfishActionCd || 0) > now) continue;
-      // Decision cd — 900–1500ms + po žingsnio: chaseWalk truks 380ms → 520–1100ms pauza
-      u.hfishActionCd = now + 900 + Math.random() * 600;
+      // Decision cd — match'ina chaseWalk dur (1056ms) → no idle gap, continuous motion
+      u.hfishActionCd = now + 1152 + Math.random() * 480;
       // Lazy-init deploy anchor — pirmą kartą kai unit „apsistoja" (po spawnWalk)
       if (typeof u.deployAnchorX !== 'number' || typeof u.deployAnchorY !== 'number') {
         u.deployAnchorX = u.x;
@@ -18868,7 +19856,7 @@ function _updateBarracksAttackAI(now) {
             const _fromX = (typeof u.rx === 'number') ? u.rx : u.x;
             const _fromY = (typeof u.ry === 'number') ? u.ry : u.y;
             u.x += _step.x; u.y += _step.y;
-            u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: 380 };
+            u.chaseWalk = { fromX: _fromX, fromY: _fromY, toX: u.x, toY: u.y, start: now, dur: 1056 };
             if (_step.x !== 0 && u.facing) u.facing.dx = _step.x;
           }
         }
@@ -18890,6 +19878,7 @@ function _updateBarracksAttackAI(now) {
           u.hfishAttackCd = now + 400 + Math.random() * 400; // trumpas re-check
         } else {
           u.hfishThrowStart = now;
+          if (u.manualAttackTriggered) u.manualAttackTriggered = false;
           // RTS auto-engage: 6s cd (rodomas CD bar). Originalus AI cd = 1–2.5s random.
           const _hfCd = u._rtsAutoEngage ? 1800 : (1000 + Math.random() * 1500);
           u.hfishAttackCd = now + _hfCd;
@@ -18936,7 +19925,7 @@ function _updateBarracksAttackAI(now) {
           const _fX = (typeof u.rx === 'number') ? u.rx : u.x;
           const _fY = (typeof u.ry === 'number') ? u.ry : u.y;
           u.x += _step.x; u.y += _step.y;
-          u.chaseWalk = { fromX: _fX, fromY: _fY, toX: u.x, toY: u.y, start: now, dur: 380 };
+          u.chaseWalk = { fromX: _fX, fromY: _fY, toX: u.x, toY: u.y, start: now, dur: 1056 };
           if (_step.x !== 0 && u.facing) u.facing.dx = _step.x;
           // Atnaujinam anchor — kad senas radius=3 netrauktų atgal
           u.deployAnchorX = u.x;
@@ -18944,6 +19933,7 @@ function _updateBarracksAttackAI(now) {
         }
         continue;
       }
+      if (_isAlly) continue; // NELEIDŽIAME ALLY UNITAMS BLAŠKYTIS
       // Movement logika — visi kandidatai ribojami iki move radius'o
       const _hfBlocked = (nx, ny) => {
         if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return true;
@@ -18964,6 +19954,11 @@ function _updateBarracksAttackAI(now) {
       } else if (best > 8) {
         // Per toli — artintis (60% step, 40% idle)
         if (Math.random() < 0.40) continue;
+        return;
+      }
+      // 3) Žingsnis (chase/retreat/random)
+      // Išjungtas automatinis judėjimas ally kariams
+      if (!u._rtsAutoEngage && !_isAlly) {
         const _tdx = Math.sign(nearest.x - u.x) || 1;
         const _tdy = Math.sign(nearest.y - u.y) || 1;
         _hfCand = [
@@ -18995,7 +19990,7 @@ function _updateBarracksAttackAI(now) {
         const _hfFromX = (typeof u.rx === 'number') ? u.rx : u.x;
         const _hfFromY = (typeof u.ry === 'number') ? u.ry : u.y;
         u.x += _hfStep.x; u.y += _hfStep.y;
-        u.chaseWalk = { fromX: _hfFromX, fromY: _hfFromY, toX: u.x, toY: u.y, start: now, dur: 380 };
+        u.chaseWalk = { fromX: _hfFromX, fromY: _hfFromY, toX: u.x, toY: u.y, start: now, dur: 1056 };
         if (_hfStep.x !== 0 && u.facing) u.facing.dx = _hfStep.x;
         // 10% random suvis po judesio (kaip lankininkų nekoordinuoti šūviai) — nepriklausomai nuo cd
         if (Math.random() < 0.10 && (u.hfishAttackCd || 0) <= now) {
@@ -19013,6 +20008,9 @@ function _updateBarracksAttackAI(now) {
         }
       }
     } else if (u.utype === 'skull') {
+      // Skill-shot gate: pasirinktas player skull F11 RTS — neleidžiam AI auto-attack/chase,
+      // attack vyksta tik per slankojanti bar (žaidėjas valdo timing'ą).
+      if (_f11RtsActive && u === _selectedAllyUnit && !_isEnemyBarracks) continue;
       // Enemy aggression scalar: shrinks cooldowns up to 40% as enemy gains territory.
       const _aggr = (_isEnemyBarracks && typeof _f11EnemyAggression === 'function') ? _f11EnemyAggression() : 0;
       const _aSc = 1 - 0.4 * _aggr;
@@ -19090,7 +20088,7 @@ function _updateBarracksAttackAI(now) {
         if (u.chaseWalk) continue;
         if ((u.skullMoveCd || 0) > now) continue;
         // 50% — kartais sustoja prieš kitą žingsnį (tik jei nėra distance-based retreat)
-        if (!u.skullRetreatCells && Math.random() < 0.5) { u.skullMoveCd = now + (_isEnemyBarracks ? 700 : 420); continue; }
+        if (!u.skullRetreatCells && Math.random() < 0.5) { u.skullMoveCd = now + (_isEnemyBarracks ? 1536 : 1152); continue; }
         // Away from target
         const toDx = u.x - nearest.x;
         const toDy = u.y - nearest.y;
@@ -19103,7 +20101,7 @@ function _updateBarracksAttackAI(now) {
           ? [{ x: 0, y: 1 }, { x: 0, y: -1 }]
           : [{ x: 1, y: 0 }, { x: -1, y: 0 }];
         const step = _pickStep(primary, perp);
-        if (step) _stepWalk(step.x, step.y, _isEnemyBarracks ? Math.round(600 * _aSc) : 380, _isEnemyBarracks ? Math.round(700 * _aSc) : 420);
+        if (step) _stepWalk(step.x, step.y, _isEnemyBarracks ? Math.round(1536 * _aSc) : 1056, _isEnemyBarracks ? Math.round(1632 * _aSc) : 1152);
         continue;
       }
 
@@ -19116,10 +20114,11 @@ function _updateBarracksAttackAI(now) {
           && !u.skullNeedsMoveBeforeAttack) {
         if ((u.skullAttackCd || 0) > now) continue;
         u.swingStart = now;
+        if (u.manualAttackTriggered) u.manualAttackTriggered = false;
         const _atkCd = u._rtsAutoEngage ? 1500 : (_isEnemyBarracks ? Math.round(1400 * _aSc) : 900);
         u.skullAttackCd = now + _atkCd;
         u.skullAttackCdSpan = _atkCd;
-        if (!u._rtsAutoEngage) {
+        if (!u._rtsAutoEngage && !_isAlly) {
           u.skullRetreatUntil = now + 1200;  // hit-and-run: atcitraukti 1.2s
           u.skullNeedsMoveBeforeAttack = true;  // sekanti ataka tik po judesio
         }
@@ -19150,7 +20149,7 @@ function _updateBarracksAttackAI(now) {
           }
           _combatJuice(nearest.x, nearest.y, dmg, _isCrit, u.stack || 1, _dead);
           // Sėkmingas dmg → ilgas retreat 4–6 ląstelių atstumu (leidzia lankininkams pataikyti)
-          if (!u._rtsAutoEngage) {
+          if (!u._rtsAutoEngage && !_isAlly) {
             u.skullRetreatCells = 4 + Math.floor(Math.random() * 3);
             u.skullRetreatUntil = now + 5000;
           }
@@ -19159,13 +20158,14 @@ function _updateBarracksAttackAI(now) {
       }
 
       // 3) CHASE — vision 8, zigzag link priešo. RTS auto-engage chase'ina kol pasiekia attack range.
-      if (chebD <= 8 && (!u._rtsAutoEngage || manD > 1)) {
+      // Išjungtas automatinis judėjimas ally kariams
+      if (chebD <= 8 && (!u._rtsAutoEngage || manD > 1) && !_isAlly) {
         if (u.chaseWalk) continue;
         if ((u.skullMoveCd || 0) > now) continue;
         if ((u.skullAttackCd || 0) > now) continue;
         // 50% (60% enemy) — kartais prastovi vietoj kito žingsnio. RTS engage — be pauzės.
         const _enChsP  = _isEnemyBarracks ? Math.max(0.3, 0.6 - _aggr * 0.3) : 0.5;
-        const _enChsCd = _isEnemyBarracks ? Math.round(900 * _aSc) : 560;
+        const _enChsCd = _isEnemyBarracks ? Math.round(1728 * _aSc) : 1248;
         if (!u._rtsAutoEngage && Math.random() < _enChsP) { u.skullMoveCd = now + _enChsCd; continue; }
         const toDx = nearest.x - u.x;
         const toDy = nearest.y - u.y;
@@ -19177,7 +20177,7 @@ function _updateBarracksAttackAI(now) {
           ? [{ x: 0, y: 1 }, { x: 0, y: -1 }]
           : [{ x: 1, y: 0 }, { x: -1, y: 0 }];
         const step = _pickStep(primary, perp);
-        if (step) _stepWalk(step.x, step.y, _isEnemyBarracks ? Math.round(720 * _aSc) : 480, _isEnemyBarracks ? Math.round(900 * _aSc) : 560);
+        if (step) _stepWalk(step.x, step.y, _isEnemyBarracks ? Math.round(1632 * _aSc) : 1056, _isEnemyBarracks ? Math.round(1728 * _aSc) : 1152);
       }
     }
   }
@@ -19218,13 +20218,14 @@ function _f11CheckOutcome(now) {
   if (S._f11SetupUntil && now < S._f11SetupUntil) return;
   const _init = (typeof F11_ALLY_TERRITORY_COLS === 'number') ? F11_ALLY_TERRITORY_COLS : 8;
   const _conq = (typeof S._f11ConqueredCols === 'number') ? S._f11ConqueredCols : _init;
-  if (_conq + F11_GRAY_ZONE_WIDTH >= COLS) { _f11TriggerOutcome('victory', now); return; }
+  // Wave system perima victory triggerį — conquer-based victory blokuojamas kol visi waves nužudyti
+  if (S._f11WavesCompleted && _conq + F11_GRAY_ZONE_WIDTH >= COLS) { _f11TriggerOutcome('victory', now); return; }
   if (_conq <= 0) { _f11TriggerOutcome('defeat', now); return; }
   let _heroAlive = false;
   let _heroExists = false;
   if (Array.isArray(S.units)) {
     for (const u of S.units) {
-      if (u && u.team === 0 && u.utype === 'player') {
+      if (u && u.team === 0) {
         _heroExists = true;
         if (u.alive) _heroAlive = true;
       }
@@ -19361,6 +20362,7 @@ function loop(now) {
   lastTime = now;
   // Combat hit pause — skip AI tick to sell crit/death impact
   const _combatPaused = !!(S && S._combatPauseUntil && S._combatPauseUntil > now);
+  if (typeof _applySkillShotGracePass === 'function') _applySkillShotGracePass(now);
   if (!_combatPaused) _updateBarracksAttackAI(now);
   if (typeof _f11CheckOutcome === 'function') _f11CheckOutcome(now);
   if (gameMode === 'adventure' && S.floor === 10 && now - _lastBarracksSaveAt > 3000) {
@@ -19737,7 +20739,9 @@ function loop(now) {
   if (typeof _drawF11DeployPreview === 'function') _drawF11DeployPreview();
   if (typeof _drawF11DeployStopSign === 'function') _drawF11DeployStopSign();
   if (typeof _drawSelectedAllyOverlay === 'function') _drawSelectedAllyOverlay();
+  if (typeof _drawSkullSkillShot === 'function') _drawSkullSkillShot();
   if (typeof _drawCommandMoveCursors === 'function') _drawCommandMoveCursors();
+  if (typeof _drawArcherCharge === 'function') _drawArcherCharge();
   // _drawF11CommanderFx — IŠJUNGTA (vartotojo prašymu pašalintas geltonas auros žiedas + rally/ward overlay'ai)
   ctx.restore();
   // Screen-space overlays (no camera transform)
@@ -19751,6 +20755,7 @@ function loop(now) {
     if (typeof _drawF11Countdown === 'function') _drawF11Countdown();
     if (typeof _drawF11CaptureBanner === 'function') _drawF11CaptureBanner();
     if (typeof _drawF11TerritoryBuffHUD === 'function') _drawF11TerritoryBuffHUD();
+    if (typeof _drawF11WaveBanner === 'function') _drawF11WaveBanner();
     if (typeof _drawF11OutcomeBanner === 'function') _drawF11OutcomeBanner();
     drawHeroHitVignette();
     _drawHarpoonRangeToast();
@@ -20051,17 +21056,17 @@ function _drawHarpoonRangeDiamond(anchorCellX, anchorCellY, placementCellX, plac
 // Leidžia deselect'inti iškart po kliko, bet click-pop + arrival fade animacijos dar rodomos.
 function _drawCommandMoveCursors() {
   if (gameMode !== 'adventure' || !f11LikeFloor()) return;
-  if (!_moveCursorImg.complete || _moveCursorImg.naturalWidth <= 0) return;
   if (!Array.isArray(S.units)) return;
   const now = performance.now();
   ctx.save();
   for (const u of S.units) {
     if (!u || !u.alive || !u.commandMove) continue;
-    const _isHero = (u.team === 0 && u.utype === 'player');
+    const _isHero = (u.team === 0);
     const _isAllyBarr = (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u));
     if (!_isHero && !_isAllyBarr) continue;
-    const tcx = u.commandMove.tx * CELL + CELL / 2;
-    const tcy = u.commandMove.ty * CELL + CELL / 2;
+    const _eng = u.commandMove.engage;
+    const _isAttack = !!(_eng && _eng.alive);
+    // Pop/fade animation kommon
     let _popScale = 1, _popA = 1;
     if (u.commandMove.clickedAt) {
       const _ce = now - u.commandMove.clickedAt;
@@ -20087,8 +21092,15 @@ function _drawCommandMoveCursors() {
         _fadeA = 0;
       }
     }
+    // Attack atveju jokios kursoriaus animacijos nebrėžiam — vienintelė indikacija yra X virš galvos.
+    if (_isAttack) continue;
     const _finalA = _fadeA * _popA;
-    if (_finalA > 0) {
+    if (_finalA <= 0) continue;
+    {
+      // === MOVE-ONLY CURSOR (default — eina į poziciją) ===
+      if (!_moveCursorImg.complete || _moveCursorImg.naturalWidth <= 0) continue;
+      const tcx = u.commandMove.tx * CELL + CELL / 2;
+      const tcy = u.commandMove.ty * CELL + CELL / 2;
       const _csz = CELL * 0.9 * _fadeScale * _popScale;
       const _bob = Math.sin(now / 180) * 2.5;
       const _prevA = ctx.globalAlpha;
@@ -20101,47 +21113,199 @@ function _drawCommandMoveCursors() {
 }
 
 function _drawEnemyMarkers() {
+  // X virš galvos rodom TIK paspaustam taikiniui (commandMove.engage), ne visiems priešams.
   if (gameMode !== 'adventure') return;
   if (!_enemyMarkerImg.complete || _enemyMarkerImg.naturalWidth <= 0) return;
+  if (!Array.isArray(S.units)) return;
   const now = performance.now();
-  const sz = 18;
-  ctx.save();
-  // S.units — priešiški unit'ai (ne friendly barracks)
-  if (Array.isArray(S.units)) {
-    for (const u of S.units) {
-      if (!u || !u.alive) continue;
-      if (typeof isHostileAdventureEnemy === 'function' && !isHostileAdventureEnemy(u)) continue;
-      if (typeof isVisible === 'function' && !isVisible(u.x, u.y)) {
-        const tileRevealed = S.fog && S.fog[u.y] && S.fog[u.y][u.x];
-        if (!tileRevealed && !S.fullMapRevealed) continue;
-      }
-      const rx = (typeof u.rx === 'number') ? u.rx : u.x;
-      const ry = (typeof u.ry === 'number') ? u.ry : u.y;
-      const cx = (rx + 0.5) * CELL;
-      const headY = (ry + 0.5) * CELL - UNIT_CELL * 1.15 * (u.scale || 1.0);
-      const bob = Math.sin(now / 300 + (u.id || 0) * 0.7) * 2;
-      ctx.drawImage(_enemyMarkerImg, cx - sz / 2, headY + bob, sz, sz);
-    }
+  const sz = 22;
+  // Surenkam aktyvius target'us iš visų ally unit'ų commandMove (engage)
+  // Map<enemyRef, maxAlpha> — jei keli unit'ai taikosi į tą patį priešą, imam stipriausią alpha
+  const _targets = new Map();
+  for (const u of S.units) {
+    if (!u || !u.alive || !u.commandMove) continue;
+    const _isHero = (u.team === 0);
+    const _isAllyBarr = (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u));
+    if (!_isHero && !_isAllyBarr) continue;
+    const _eng = u.commandMove.engage;
+    if (!_eng || !_eng.alive) continue;
+    // X laikomas tol kol priešas yra paspaustas kaip taikinys (engage). Be fade.
+    const _prev = _targets.get(_eng) || 0;
+    if (1 > _prev) _targets.set(_eng, 1);
   }
-  // Red archer NPC decorations — priešiški, bet state map'e, ne S.units.
-  // Sprite'o dydis 96×96 (DRAW_W/H), tad icon dedam virš bounding box viršaus,
-  // analogiškai kaip S.units'uose (ikonos apačia truputį virš sprite'o viršaus).
-  if (S.decorations && typeof _redArcherStates !== 'undefined') {
-    for (const k in _redArcherStates) {
-      if (S.decorations[k] !== 'red_archer_npc' && S.decorations[k] !== 'red_archer_idle_npc') continue;
-      const st = _redArcherStates[k];
-      if (!st || typeof st.wx !== 'number' || typeof st.wy !== 'number') continue;
-      if (typeof isVisible === 'function' && !isVisible(st.cx, st.cy)) {
-        const tileRevealed = S.fog && S.fog[st.cy] && S.fog[st.cy][st.cx];
-        if (!tileRevealed && !S.fullMapRevealed) continue;
-      }
-      const cx = st.wx;                  // pixel center X (follows walk tween)
-      const headY = st.wy - 24 - sz;      // virš sprite'o viršaus (DRAW_H=96, top ≈ wy-45)
-      const bob = Math.sin(now / 300 + (st.cx + st.cy * 7)) * 2;
-      ctx.drawImage(_enemyMarkerImg, cx - sz / 2, headY + bob, sz, sz);
-    }
+  if (_targets.size === 0) return;
+  ctx.save();
+  for (const [_eng, _alpha] of _targets) {
+    const rx = (typeof _eng.rx === 'number') ? _eng.rx : _eng.x;
+    const ry = (typeof _eng.ry === 'number') ? _eng.ry : _eng.y;
+    const cx = (rx + 0.5) * CELL;
+    const headY = (ry + 0.5) * CELL - UNIT_CELL * 1.15 * (_eng.scale || 1.0);
+    const bob = Math.sin(now / 220) * 3;
+    const _prevA = ctx.globalAlpha;
+    ctx.globalAlpha = _alpha;
+    ctx.drawImage(_enemyMarkerImg, cx - sz / 2, headY + bob, sz, sz);
+    ctx.globalAlpha = _prevA;
   }
   ctx.restore();
+}
+
+const _ARCHER_TAP_MOVE_MS = 300; // < 0.3s = anti-misclick (be šūvio)
+
+function _drawArcherCharge() {
+  if (!_archerCharge) return;
+  if (gameMode !== 'adventure' || !f11LikeFloor()) { _archerCharge = null; return; }
+  const a = _archerCharge;
+  const u = a.unit;
+  if (!u || !u.alive) { _archerCharge = null; return; }
+  if (u !== _selectedAllyUnit) { _archerCharge = null; return; }
+  const now = performance.now();
+  const heldMs = now - a.startTs;
+  if (heldMs < 200) return; // hide bar until 0.2s held (avoid flicker on quick taps)
+  const inMoveZone = heldMs < _ARCHER_TAP_MOVE_MS;
+  const fillFrac = Math.max(0, Math.min(1, heldMs / _ARCHER_CHARGE_MAX_MS));
+  const power = inMoveZone ? 0 : Math.max(0, Math.min(1,
+    (heldMs - _ARCHER_TAP_MOVE_MS) / (_ARCHER_CHARGE_MAX_MS - _ARCHER_TAP_MOVE_MS)));
+  const threshFrac = _ARCHER_TAP_MOVE_MS / _ARCHER_CHARGE_MAX_MS;
+
+  // Bow-charge indicator: stylized chevron arrow that grows + glows with charge.
+  // Dizainas: arrow-shaped progress bar (chevron tip + segmented fill).
+  const cxw = ((typeof u.rx === 'number') ? u.rx : u.x) * CELL + CELL / 2;
+  const cyw = ((typeof u.ry === 'number') ? u.ry : u.y) * CELL - CELL * 0.78 + 25;
+  const W = 64, H = 9;
+  const x0 = cxw - W / 2, y0 = cyw - H / 2;
+  const pulse = 0.5 + 0.5 * Math.sin(now * 0.022);
+  const _col = inMoveZone ? '#9aa0a8'
+             : power < 0.5 ? '#ffd54f'
+             : power < 0.85 ? '#ff8a3d'
+             : '#ef4040';
+  const _colLite = inMoveZone ? '#c8cdd5'
+             : power < 0.5 ? '#fff2a8'
+             : power < 0.85 ? '#ffb878'
+             : '#ff8080';
+
+  // Direction: mouse side relative to archer (fallback to facing)
+  let _aimDir = (u.facing && u.facing.dx) || 1;
+  if (typeof _canvasMx === 'number' && _canvasMx >= 0) {
+    const camX = (S && S.cam && S.cam.x) || 0;
+    const mxw = _canvasMx + camX;
+    const archerCx = (u.x + 0.5) * CELL;
+    if (mxw < archerCx - 2) _aimDir = -1;
+    else if (mxw > archerCx + 2) _aimDir = 1;
+  }
+
+  ctx.save();
+  // Flip horizontally around indicator center if aiming left
+  if (_aimDir < 0) {
+    ctx.translate(cxw, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-cxw, 0);
+  }
+  // 1) Drop shadow (offset)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  _archerArrowShape(x0, y0 + 1, W, H);
+  ctx.fill();
+  // 2) Outline (dark border)
+  ctx.fillStyle = '#0d0a08';
+  _archerArrowShape(x0 - 1, y0 - 1, W + 2, H + 2);
+  ctx.fill();
+  // 3) Inset (track)
+  ctx.fillStyle = inMoveZone ? '#1a1a1f' : '#1a0808';
+  _archerArrowShape(x0, y0, W, H);
+  ctx.fill();
+
+  // 4) Fill (clipped to arrow shape)
+  ctx.save();
+  _archerArrowShape(x0, y0, W, H);
+  ctx.clip();
+  // gradient base
+  const grad = ctx.createLinearGradient(x0, y0, x0, y0 + H);
+  grad.addColorStop(0, _colLite);
+  grad.addColorStop(1, _col);
+  ctx.fillStyle = grad;
+  ctx.fillRect(x0, y0, W * fillFrac, H);
+  // diagonal animated stripes (subtle "energy" shimmer in fire zone)
+  if (!inMoveZone && fillFrac > threshFrac) {
+    const _shift = (now * 0.06) % 8;
+    ctx.globalAlpha = 0.18 + pulse * 0.18;
+    ctx.fillStyle = '#fff';
+    for (let _sx = -8 + _shift; _sx < W * fillFrac + 8; _sx += 8) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + _sx, y0);
+      ctx.lineTo(x0 + _sx + 3, y0);
+      ctx.lineTo(x0 + _sx - 1, y0 + H);
+      ctx.lineTo(x0 + _sx - 4, y0 + H);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Top highlight juostelė
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x0, y0, W * fillFrac, 1);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // 5) Threshold notch — V-shape (pixel-art chevron) ant tick pozicijos
+  const tickX = x0 + W * threshFrac;
+  ctx.fillStyle = inMoveZone ? '#ffd54f' : '#fff';
+  // Vertikali linija
+  ctx.fillRect(tickX - 0.5, y0, 1, H);
+  // Apatinė rodyklė ▾
+  ctx.beginPath();
+  ctx.moveTo(tickX - 2, y0 + H + 1);
+  ctx.lineTo(tickX + 2, y0 + H + 1);
+  ctx.lineTo(tickX, y0 + H + 4);
+  ctx.closePath();
+  ctx.fill();
+
+  // 6) Max-charge — pulsuojantis aura'os ring + intensyvus blyksnis
+  if (power >= 0.99) {
+    ctx.globalAlpha = pulse * 0.55;
+    ctx.fillStyle = '#fff';
+    _archerArrowShape(x0, y0, W, H);
+    ctx.fill();
+    ctx.globalAlpha = 0.4 + pulse * 0.4;
+    ctx.strokeStyle = '#ffd96a';
+    ctx.lineWidth = 1.5;
+    _archerArrowShape(x0 - 2, y0 - 2, W + 4, H + 4);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (!inMoveZone) {
+    // Fire-zone glow halo
+    ctx.globalAlpha = 0.25 + pulse * 0.25;
+    ctx.strokeStyle = _col;
+    ctx.lineWidth = 1;
+    _archerArrowShape(x0 - 1.5, y0 - 1.5, W + 3, H + 3);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+// Stylized arrow/chevron path — naudojama _drawArcherCharge frame'ams ir clip'ui.
+// Forma: stačiakampis su trikampiu galu dešinėje (arrow shape).
+function _archerArrowShape(x, y, w, h) {
+  // Arrow: fletching (wide tail) → thin shaft → triangular tip
+  const tip = Math.min(h * 1.5, 11);
+  const fletch = Math.min(h * 1.1, 9);
+  const shaftTop = h * 0.32;
+  const shaftBot = h * 0.68;
+  const notch = fletch * 0.45;
+  ctx.beginPath();
+  ctx.moveTo(x, y);                              // tail top-left
+  ctx.lineTo(x + fletch, y);                     // tail top-right
+  ctx.lineTo(x + fletch, y + shaftTop);          // step to shaft top
+  ctx.lineTo(x + w - tip, y + shaftTop);         // shaft top
+  ctx.lineTo(x + w - tip, y);                    // up to tip base top
+  ctx.lineTo(x + w, y + h / 2);                  // arrow point
+  ctx.lineTo(x + w - tip, y + h);                // tip base bottom
+  ctx.lineTo(x + w - tip, y + shaftBot);         // back to shaft
+  ctx.lineTo(x + fletch, y + shaftBot);          // shaft bottom
+  ctx.lineTo(x + fletch, y + h);                 // step to tail
+  ctx.lineTo(x, y + h);                          // tail bottom-left
+  ctx.lineTo(x + notch, y + h / 2);              // V-notch in tail
+  ctx.closePath();
 }
 
 function _drawSelectedAllyOverlay() {
@@ -20161,6 +21325,7 @@ function _drawSelectedAllyOverlay() {
   }
   // 3) Hover preview — cursor piešiamas kai aktyvus MOVE-target režimas (net jei jau yra commandMove,
   //    nes naujas click paskirs naują kelią ir perima senąjį).
+  // Archer'iui irgi rodom — short-tap yra MOVE, hold yra FIRE. Cursor preview = tap target.
   if (_f11MoveTargeting && _canvasMx >= 0 && _canvasMy >= 0) {
     // Prieš command — cursor hover preview (tik jei ant validžios ląstelės)
     const wmx = _canvasMx + (S.cam?.x || 0);
@@ -21284,6 +22449,22 @@ function drawParticles() {
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
       ctx.fillRect(-size / 2, -size / 2, size, size / 3);
       ctx.restore();
+    } else if (p.type === 'pixchunk') {
+      // Pixel-art style chunk: constant size, 2-tone shading (highlight + shadow)
+      ctx.globalAlpha = p.life > 0.18 ? 1 : (p.life / 0.18);
+      const size = Math.max(2, Math.round(p.r));
+      const px = Math.round(p.x - size / 2);
+      const py = Math.round(p.y - size / 2);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(px, py, size, size);
+      // Top-left highlight (1px stripe)
+      ctx.fillStyle = p.colorHi || 'rgba(255,255,255,0.55)';
+      ctx.fillRect(px, py, size, 1);
+      ctx.fillRect(px, py, 1, size);
+      // Bottom-right shadow (1px stripe)
+      ctx.fillStyle = p.colorLo || 'rgba(0,0,0,0.45)';
+      ctx.fillRect(px + size - 1, py + 1, 1, size - 1);
+      ctx.fillRect(px + 1, py + size - 1, size - 1, 1);
     } else if (p.type === 'streak' || p.vx !== 0 || p.vy !== 0) {
       const speed = Math.hypot(p.vx, p.vy) + 1;
       const len = speed * 2.5 * p.life;
@@ -24010,6 +25191,7 @@ function drawUnits() {
   _applyStackDecay();
   // Barracks spawn walk — tween rx/ry nuo durų iki galutinės pozicijos.
   const _now = performance.now();
+  if (typeof _updateSkullSkillShot === 'function') _updateSkullSkillShot(_now);
   // Skull chase walk — smooth per-step tween tarp cell'ių (zigzag AI)
   for (const u of (S.units || [])) {
     if (!u.alive || !u.chaseWalk) continue;
@@ -24023,9 +25205,9 @@ function drawUnits() {
     }
     const cw = u.chaseWalk;
     const t = Math.min(1, (_now - cw.start) / cw.dur);
-    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-    u.rx = cw.fromX + (cw.toX - cw.fromX) * ease;
-    u.ry = cw.fromY + (cw.toY - cw.fromY) * ease;
+    // Linear easing — constant speed feel (continuous walking, ne tile-jumping)
+    u.rx = cw.fromX + (cw.toX - cw.fromX) * t;
+    u.ry = cw.fromY + (cw.toY - cw.fromY) * t;
     if (t >= 1) {
       u.rx = cw.toX; u.ry = cw.toY;
       u.px = cw.toX; u.py = cw.toY;
@@ -24119,7 +25301,18 @@ function drawUnits() {
   S.units.forEach(u => {
     if (!u.alive && u.deathT <= 0) return;
 
-    // Visibility check: Hide enemies if not directly visible, 
+    // Spawn materialize — slėpti sprite kol pixel'ai konverguoja, paskui pop flash
+    if (u._spawnAt) {
+      const _spEl = _now - u._spawnAt;
+      if (_spEl < 900) return;
+      if (!u._spawnPopFired) {
+        u._spawnPopFired = true;
+        if (typeof _spawnPopFlash === 'function') _spawnPopFlash(u.x, u.y, u.team === 1);
+      }
+      if (_spEl >= 1000) { u._spawnAt = null; }
+    }
+
+    // Visibility check: Hide enemies if not directly visible,
     // EXCEPT for giant Ironbox Fortresses which can be seen if the tile they are on is revealed at all.
     if (gameMode === 'adventure' && u.team === 1) {
       const isDirectlyVisible = isVisible(u.x, u.y);
@@ -24766,8 +25959,11 @@ function drawUnits() {
 
       // ── Bar above sprite ──────────────────────────────────────
       // Ally barracks unit'ai (skull/shaman/harpoon) → CD bar (6s). Visi kiti — standartinis HP bar.
-      const _isAllyBarracks = (u.alive
-        && (u.utype === 'skull' || u.utype === 'shaman' || u.utype === 'harpoon_fish' || u.utype === 'archer')
+      // Ally archer — manual charge mode (CD bar nereikalingas, tik su HP bar kai turi dmg).
+      const _isAllyArcher = (u.alive && u.utype === 'archer'
+        && (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)));
+      const _isAllyBarracks = (!_isAllyArcher && u.alive
+        && (u.utype === 'skull' || u.utype === 'shaman' || u.utype === 'harpoon_fish')
         && (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)));
       if (_isAllyBarracks) {
         const _now = performance.now();
@@ -27067,8 +28263,104 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Archer charge-fire — laikai mygtuką → strėlės nuotolis auga, paleidi → šauna toward mouseup pos.
+  // Veikia tik kai pasirinktas ally archer F11/F12 mūšyje. Tuščia ataka leidžiama (jokio target req).
+  canvas.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (gameMode !== 'adventure' || !f11LikeFloor()) return;
+    const u = _selectedAllyUnit;
+    if (!u || !u.alive || u.utype !== 'archer') return;
+    if (!isFriendlyBarracksUnit(u)) return;
+    if (S && S._f11Outcome) return;
+    if (_f11DeployArmed) return;
+    // Welcome / popup'ai — leidžiam click handler'iui apdoroti, charge nestartuojam
+    if (S && S._f11WelcomeOpen) return;
+    if ((typeof _housePopupOpen !== 'undefined' && _housePopupOpen) ||
+        (typeof _stonePopupOpen !== 'undefined' && _stonePopupOpen) ||
+        (typeof _castlePopupOpen !== 'undefined' && _castlePopupOpen) ||
+        (typeof _ronkePopupOpen !== 'undefined' && _ronkePopupOpen) ||
+        (typeof _ciucelaPopupOpen !== 'undefined' && _ciucelaPopupOpen) ||
+        (typeof _f11UnitPopupOpen !== 'undefined' && _f11UnitPopupOpen)) return;
+    // Block kai virš deploy panel UI
+    const r0 = canvas.getBoundingClientRect();
+    const sx0 = canvas.width / r0.width, sy0 = canvas.height / r0.height;
+    const _smx = (e.clientX - r0.left) * sx0, _smy = (e.clientY - r0.top) * sy0;
+    if (_f11DeployOpen && _f11DeployPanelBounds &&
+        _smx >= _f11DeployPanelBounds.x && _smx <= _f11DeployPanelBounds.x + _f11DeployPanelBounds.w &&
+        _smy >= _f11DeployPanelBounds.y && _smy <= _f11DeployPanelBounds.y + _f11DeployPanelBounds.h) return;
+    // Click ant KITO ally unit'o = leist click handler'iui pakeisti selection. Bet click ant
+    // PASIRINKTO archer'io = leidžiam charge prasidėti (jeigu paleidžia greit — click handler
+    // atliks deselect; jei laiko ilgai — šauna).
+    const wmx = _smx + (S && S.cam ? S.cam.x : 0);
+    const wmy = _smy + (S && S.cam ? S.cam.y : 0);
+    const _ccx = Math.floor(wmx / CELL), _ccy = Math.floor(wmy / CELL);
+    if (_ccx >= 0 && _ccx < COLS && _ccy >= 0 && _ccy < ROWS && Array.isArray(S.units)) {
+      for (const au of S.units) {
+        if (!au || !au.alive) continue;
+        if (au === u) continue; // pats pasirinktas archer — leidžiam charge
+        if (au.team !== 0 && !(typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(au))) continue;
+        if (au.x === _ccx && au.y === _ccy) return;
+        const _avx = (typeof au.rx === 'number') ? Math.round(au.rx) : au.x;
+        const _avy = (typeof au.ry === 'number') ? Math.round(au.ry) : au.y;
+        if (_avx === _ccx && _avy === _ccy) return;
+      }
+    }
+    _archerCharge = { unit: u, startTs: performance.now(), fired: false };
+  });
+  canvas.addEventListener('mouseup', e => {
+    if (e.button !== 0) return;
+    if (!_archerCharge) return;
+    const a = _archerCharge;
+    _archerCharge = null;
+    const u = a.unit;
+    if (!u || !u.alive) return;
+    const now = performance.now();
+    const heldMs = now - a.startTs;
+    // Trumpas tap (< _ARCHER_TAP_MOVE_MS) — neapmokestam fire'ą; leidžiam click event'ą atlikti
+    // įprastą commandMove (BFS / mana / engage). Tai pat veikia archer'o judėjimas.
+    if (heldMs < _ARCHER_TAP_MOVE_MS) return;
+    // Direction iš mouseup pozicijos (world coords). Jei pelė ant paties archer'io cell —
+    // naudojam esamą facing (kad neflip'intų atsitiktinai pagal cell vidurį).
+    const r1 = canvas.getBoundingClientRect();
+    const sx1 = canvas.width / r1.width, sy1 = canvas.height / r1.height;
+    const mxw = (e.clientX - r1.left) * sx1 + (S && S.cam ? S.cam.x : 0);
+    const _mcellX = Math.floor(mxw / CELL);
+    let dir;
+    if (_mcellX === u.x) {
+      dir = (u.facing && u.facing.dx) || 1;
+    } else {
+      dir = (mxw >= (u.x + 0.5) * CELL) ? 1 : -1;
+    }
+    const power = Math.max(0, Math.min(1,
+      (heldMs - _ARCHER_TAP_MOVE_MS) / (_ARCHER_CHARGE_MAX_MS - _ARCHER_TAP_MOVE_MS)));
+    const range = Math.round(_ARCHER_RANGE_MIN + (_ARCHER_RANGE_MAX - _ARCHER_RANGE_MIN) * power);
+    const tx = u.x + dir * range;
+    const ty = u.y;
+    if (typeof spawnBarracksHarpoon === 'function') {
+      u.hfishThrowStart = now;
+      u.hfishAttackCd = now + 600;
+      u.hfishAttackCdSpan = 600;
+      if (!u.facing) u.facing = { dx: dir, dy: 0 };
+      u.facing.dx = dir;
+      setTimeout(() => {
+        if (S && S.units && u && u.alive) {
+          spawnBarracksHarpoon(u.x, u.y, tx, ty, dir, u.stack || 1, false, 'archer');
+        }
+      }, _HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS);
+    }
+    _suppressNextClick = true;
+  });
+  // Jei pelė paleista virš lango ribų — atsuanguoja charge
+  document.addEventListener('mouseup', e => {
+    if (e.button === 0 && _archerCharge) {
+      // Jei mouseup nukrito ne ant canvas — atšaukiam charge be šūvio
+      if (e.target !== canvas) { _archerCharge = null; }
+    }
+  });
+
   // House3 click → popup su Upgrade mygtuku
   canvas.addEventListener('click', e => {
+    if (_suppressNextClick) { _suppressNextClick = false; return; }
     const r = canvas.getBoundingClientRect();
     const scaleX = canvas.width  / r.width;
     const scaleY = canvas.height / r.height;
@@ -27471,11 +28763,19 @@ document.addEventListener('DOMContentLoaded', () => {
         _f11MoveTargeting = true;
         return;
       }
+      if (_f11UnitPopupAttackBtn &&
+          _cmx >= _f11UnitPopupAttackBtn.x && _cmx <= _f11UnitPopupAttackBtn.x + _f11UnitPopupAttackBtn.w &&
+          _cmy >= _f11UnitPopupAttackBtn.y && _cmy <= _f11UnitPopupAttackBtn.y + _f11UnitPopupAttackBtn.h) {
+        _f11UnitPopupOpen = false;
+        _f11MoveTargeting = true;
+        _f11AttackTargeting = true;
+        return;
+      }
       if (_f11UnitPopupCancelBtn &&
           _cmx >= _f11UnitPopupCancelBtn.x && _cmx <= _f11UnitPopupCancelBtn.x + _f11UnitPopupCancelBtn.w &&
           _cmy >= _f11UnitPopupCancelBtn.y && _cmy <= _f11UnitPopupCancelBtn.y + _f11UnitPopupCancelBtn.h) {
-        _f11UnitPopupOpen = false;
         _f11MoveTargeting = false;
+        _f11AttackTargeting = false;
         _selectedAllyUnit = null;
         return;
       }
@@ -27497,6 +28797,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
     }
+    // F11 Skill-shot (skull) — jei slankojantis bar'as aktyvus, click triggerina hit/miss
+    if (gameMode === 'adventure' && f11LikeFloor() && !_f11DeployArmed && !_inDeployUI) {
+      if (typeof _trySkullSkillShotAttack === 'function' && _skullSkillShot && _trySkullSkillShotAttack()) {
+        return;
+      }
+    }
     // F11 Indirect unit control — klik ant savo unit'o pasirenka jį, tada kitas klik ant ląstelės
     // liepia pajudėti. Šis blokas veikia TIK kai deploy nėra armed (kad nekonfliktuotų su placement)
     // IR kai click'as ne ant deploy panel UI (kad nepraleistų pro panel'į).
@@ -27508,7 +28814,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let _clickedAlly = null;
       for (const u of (S.units || [])) {
         if (!u || !u.alive) continue;
-        const _isHero = (u.team === 0 && u.utype === 'player');
+        const _isHero = (u.team === 0);
         if (!isFriendlyBarracksUnit(u) && !_isHero) continue;
         if (u.x === _clickCellX && u.y === _clickCellY) { _clickedAlly = u; break; }
         // Tween fallback — match ant rendered cell (hero/unit gali būti tarp x ir dst tween metu)
@@ -27521,6 +28827,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (_selectedAllyUnit === _clickedAlly) {
           _selectedAllyUnit = null;
           _f11MoveTargeting = false;
+          _f11AttackTargeting = false;
         } else {
           _selectedAllyUnit = _clickedAlly;
           _f11MoveTargeting = true;
@@ -27552,6 +28859,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           }
         }
+        // ATTACK targeting: reikalaujam click'o TIK ant priešo
+        if (_f11AttackTargeting && !_engageEnemy) {
+          if (typeof spawnDmgNumber === 'function') {
+            spawnDmgNumber(_selectedAllyUnit.x, _selectedAllyUnit.y, 'NO TARGET', '#ff4444', 16, 'crit');
+          }
+          if (typeof SFX !== 'undefined' && SFX.deny) SFX.deny();
+          return;
+        }
         const _canTarget = _clickCellX >= 0 && _clickCellX < COLS && _clickCellY >= 0 && _clickCellY < ROWS &&
             !isWall(_clickCellX, _clickCellY) &&
             (_engageEnemy || !_cellHasEntity(_clickCellX, _clickCellY, _selectedAllyUnit));
@@ -27579,7 +28894,7 @@ document.addEventListener('DOMContentLoaded', () => {
             _predicate = (x, y) => (x === _clickCellX && y === _clickCellY);
           }
           const _path = _bfsPathFind(_u.x, _u.y, _predicate, _isBlocked, 600);
-          if (!_path || _path.length === 0) {
+          if (!_path || (_path.length === 0 && !_engageEnemy)) {
             if (typeof spawnDmgNumber === 'function') {
               spawnDmgNumber(_u.x, _u.y, 'NO PATH', '#ff6060', 16, 'crit');
             }
@@ -27613,8 +28928,10 @@ document.addEventListener('DOMContentLoaded', () => {
           _u.hfishAttackCd = _now + 500;
           _u.shamanAttackCd = _now + 500;
           _u.skullMoveCd = _now;
-          _selectedAllyUnit = null;
+          // Sticky selection: paliekam _selectedAllyUnit kad skill-shot bar galetu pasirodyti
+          // kai unit pasiekia priešą. Right-click arba re-click ant unit deselectina.
           _f11MoveTargeting = false;
+          _f11AttackTargeting = false;
           _f11UnitPopupOpen = false;
           return;
         }
@@ -27691,6 +29008,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (typeof isWall === 'function' && isWall(cellX, cellY)) return;
           if (!S.decorations) S.decorations = {};
           S.decorations[_zKey] = 'building_Zip';
+          if (typeof _spawnFlashFX === 'function') _spawnFlashFX(cellX, cellY, false);
           const snap = _f11TransferUnits[snapIdx];
           if (snap && snap.id && typeof _removeTrainedSnapById === 'function') _removeTrainedSnapById(snap.id);
           _f11TransferUnits.splice(snapIdx, 1);
@@ -27725,6 +29043,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!S.collisionBoxes) S.collisionBoxes = new Set();
           S.collisionBoxes.add(_box1);
           S.collisionBoxes.add(_box2);
+          if (typeof _spawnFlashFX === 'function') _spawnFlashFX(cellX, cellY, false);
           // Consume snap iš pool + Profile (kad nepersikraustytu po reload)
           const snap = _f11TransferUnits[snapIdx];
           if (snap && snap.id && typeof _removeTrainedSnapById === 'function') _removeTrainedSnapById(snap.id);
@@ -27749,7 +29068,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Trained snap id — ryšys su Profile įrašu: kai unit mirs, tas snap bus pašalintas
             if (!snap.id) snap.id = _nextTrainedSnapId();
             u.trainedSnapId = snap.id;
+            u._spawnAt = performance.now();
             S.units.push(u);
+            if (typeof _spawnFlashFX === 'function') _spawnFlashFX(cellX, cellY, false);
             // Deploy'inti tik pašalina iš panelės pool — Profile'e lieka (tik mirtis pašalina)
             _f11TransferUnits.splice(snapIdx, 1);
             // Jei nebeliko to tipo — nuimam armed
