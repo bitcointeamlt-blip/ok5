@@ -270,7 +270,7 @@
       : (st.balLoading ? 'Loading…' : '—');
     const nftCount = Array.isArray(st.nfts) ? st.nfts.length : (st.nftsLoading ? 'Loading…' : '—');
     const addr = st.address || '';
-    const ddIcon = `<svg class="wui-dd-brand-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 L21 12 L12 22 L3 12 Z" fill="currentColor" opacity="0.2"/><path d="M12 4.5 L19 12 L12 19.5 L5 12 Z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>`;
+    const ddIcon = `<img class="wui-dd-brand-ico wui-dd-brand-ico-img" src="assets_tiny/ronin_logo.png" alt="Ronin" draggable="false"/>`;
     dropdownEl.innerHTML = `
       <div class="wui-dd-header">
         <div class="wui-dd-brand">${ddIcon}<div class="wui-dd-title">RONIN WALLET</div></div>
@@ -285,7 +285,7 @@
       </div>
       <div class="wui-dd-stats">
         <div class="wui-dd-stat wui-dd-stat-ronke">
-          <div class="wui-dd-stat-lbl"><span class="wui-dd-stat-ico">◈</span>RONKE</div>
+          <div class="wui-dd-stat-lbl"><img class="wui-dd-stat-ico wui-dd-stat-ico-img" src="assets_tiny/ronke_logo.png" alt="RONKE" draggable="false"/>RONKE</div>
           <div class="wui-dd-stat-val">${bal}</div>
           <button type="button" class="wui-dd-refresh" id="wui-dd-refresh-bal" title="Refresh balance">↻</button>
         </div>

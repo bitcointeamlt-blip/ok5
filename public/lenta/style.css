@@ -5359,8 +5359,8 @@ kbd {
   bottom: auto;
   padding: 1px 4px;
   min-width: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(4, 10, 14, 0.88);
+  border: none;
+  background: transparent;
   font-size: 9px;
   text-align: center;
   z-index: 3;
@@ -7011,8 +7011,22 @@ kbd {
   background: #2a1008; color: #4a2010; box-shadow: none;
 }
 
+/* ── Skill bar / pick juostos — paslėpti pilnai (kolkas be panaudojimo) ── */
+#p1-skill-toggle,
+#p1-skill-header,
+#p1-skillbar,
+#p2-skillbar,
+.skill-header,
+.skill-bar,
+#p1-clock,
+#p2-clock,
+#panel-p1 .unit-list,
+#panel-p2 .unit-list { display: none !important; }
+
 /* ── AI Agent Panel ─────────────────────────────────────── */
-#agent-panel {
+/* Slėpiame visiškai — feature dar be panaudojimo, atlaisvina canvas apatinį dešinįjį kampą. */
+#agent-panel { display: none !important; }
+#agent-panel.__legacy {
   position: absolute;
   bottom: 12px;
   right: 12px;
@@ -8817,6 +8831,20 @@ kbd {
 .wui-dd-stat-ico { font-size: 12px; line-height: 1; }
 .wui-dd-stat-ronke .wui-dd-stat-ico { color: #ffd54d; text-shadow: 0 0 6px rgba(255, 213, 77, 0.6); }
 .wui-dd-stat-nfts  .wui-dd-stat-ico { color: #a88fff; text-shadow: 0 0 6px rgba(168, 143, 255, 0.6); }
+.wui-dd-stat-ico-img {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 4px rgba(255, 213, 77, 0.5));
+}
+.wui-dd-brand-ico-img {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 4px rgba(110, 255, 170, 0.4));
+}
 .wui-dd-stat-val {
   font-size: 18px;
   color: #d8e8ff;
@@ -10877,9 +10905,13 @@ kbd {
   opacity: 1 !important;
 }
 #inv-overlay .inv-slot-qty {
-  color: #3d2817 !important;
+  color: #ffe066 !important;
   font-size: 12px !important;
-  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5) !important;
+  font-family: monospace !important;
+  font-weight: bold !important;
+  background: transparent !important;
+  border: none !important;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000 !important;
 }
 #inv-overlay .inv-slot.inv-slot-new {
   border-color: #ffcf5c !important;

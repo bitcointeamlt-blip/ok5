@@ -698,8 +698,8 @@ const F11_TERRITORY_DISABLED = true;
 // Toggle'ui tiesiog pakeisk į false, taip pat galima iš console: window.F11_COMMANDER_MODE = false.
 window.F11_COMMANDER_MODE = (typeof window.F11_COMMANDER_MODE === 'boolean') ? window.F11_COMMANDER_MODE : true;
 function f11CommanderOn() { return !!window.F11_COMMANDER_MODE; }
-// F12 elgsena identiška F11. Naudojama vietoj S.floor === 11.
-function f11LikeFloor() { return S.floor === 11 || S.floor === 12; }
+// F12 = atskiras Merge Forge Combat režimas (žr. floor12_merge.js). F11 lieka kaip yra.
+function f11LikeFloor() { return S.floor === 11; }
 const HEART_COUNT = 8;
 const HP_PER_HEART = 2;
 const HP_MAX = HEART_COUNT * HP_PER_HEART;
@@ -6723,6 +6723,23 @@ function initAdventure() {
   S.isHubRoom = false;
   S.terminals = [];
   S.floor = S.floor || 1;
+
+  // F12 = Merge Forge Combat (atskiras režimas, valdomas floor12_merge.js)
+  // Praleidžiam visą dungeon generavimą, paliekam minimalų state, kad pagrindinis loop'as nesubytų.
+  if (S.floor === 12) {
+    S.units = [];
+    S.decorations = {};
+    S.shrines = [];
+    S.bloodStains = [];
+    S.chests = [];
+    S.teleports = [];
+    S.fog = [[false]];
+    S.fogReveal = [[0]];
+    S.lightGhosts = [];
+    S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
+    S._mergeMode = true;
+    return;
+  }
 
   // Graduali progresavimo seka
   const floorProgression = [
@@ -20360,6 +20377,8 @@ function loop(now) {
   _frameId++;
   const dt = Math.min(now - lastTime, 100);
   lastTime = now;
+  // F12 — Merge mode owns the screen, skip engine tick entirely
+  if (S && S.floor === 12) return;
   // Combat hit pause — skip AI tick to sell crit/death impact
   const _combatPaused = !!(S && S._combatPauseUntil && S._combatPauseUntil > now);
   if (typeof _applySkillShotGracePass === 'function') _applySkillShotGracePass(now);
