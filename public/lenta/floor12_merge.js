@@ -62,6 +62,204 @@
       src.connect(lp); lp.connect(g); g.connect(dest || this.master);
       src.start(t0); src.stop(t0 + dur + 0.02);
     },
+    // ── Silpnas "fit" — spygliams iškylant / susileidžiant (labai tylus) ──
+    trapFit() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // 1) Minkštas oro pūstelėjimas — trumpas lowpass'intas noise (~35ms)
+      {
+        const sr = c.sampleRate;
+        const dur = 0.035;
+        const len = Math.floor(sr * dur);
+        const buf = c.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.5);
+        const src = c.createBufferSource(); src.buffer = buf;
+        const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+        const g = c.createGain(); g.gain.setValueAtTime(0.055, t0);
+        src.connect(lp); lp.connect(g); g.connect(this.master);
+        src.start(t0); src.stop(t0 + dur + 0.01);
+      }
+      // 2) Tylus mid blip — greitas sine, suteikia "fit" toną
+      {
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(680, t0);
+        osc.frequency.exponentialRampToValueAtTime(420, t0 + 0.04);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.045);
+        osc.connect(g); g.connect(this.master);
+        osc.start(t0); osc.stop(t0 + 0.06);
+      }
+    },
+    // ── Spąstų atsiradimas — trumpas garsiukas: žemė prasiveria + metalas iškyla ──
+    trapSpawn() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // 1) Žemas thud — žemė prasiveria (sawtooth descending)
+      {
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, t0);
+        osc.frequency.exponentialRampToValueAtTime(48, t0 + 0.14);
+        g.gain.setValueAtTime(0.32, t0);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+        const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+        osc.connect(lp); lp.connect(g); g.connect(this.master);
+        osc.start(t0); osc.stop(t0 + 0.18);
+      }
+      // 2) Dulkių/žemių crunch — lowpassed noise burst
+      this._noiseBurst(0.12, 0.14, 1200);
+      // 3) Metalinis "shink" — spygliai iškyla (square rising, trumpas)
+      {
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(320, t0 + 0.04);
+        osc.frequency.exponentialRampToValueAtTime(1100, t0 + 0.13);
+        g.gain.setValueAtTime(0.0001, t0 + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.10, t0 + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+        const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+        osc.connect(lp); lp.connect(g); g.connect(this.master);
+        osc.start(t0 + 0.04); osc.stop(t0 + 0.18);
+      }
+    },
+    // ── Frost Reverse aktyvavimas — ledinis "apsisukimo" garsas (~500ms) ──
+    frostReverse() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // 1) "Apsisukimo" sweep — sine krenta tada kyla (reversal pojūtis)
+      {
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(620, t0);
+        osc.frequency.exponentialRampToValueAtTime(150, t0 + 0.22);   // krenta
+        osc.frequency.exponentialRampToValueAtTime(880, t0 + 0.46);   // kyla atgal
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.20, t0 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+        osc.connect(g); g.connect(this.master);
+        osc.start(t0); osc.stop(t0 + 0.52);
+      }
+      // 2) Ledinis žemas whoosh — lowpassed noise
+      this._noiseBurst(0.32, 0.13, 900);
+      // 3) Šaltos varpelio harmonikos — high sine shimmer (ledo blizgesys)
+      [1320, 1760, 2200].forEach((f, i) => {
+        const t = t0 + 0.06 + i * 0.05;
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+        osc.connect(g); g.connect(this.master);
+        osc.start(t); osc.stop(t + 0.3);
+      });
+      // 4) Žemas sub thump — galios pojūtis
+      {
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(90, t0);
+        osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.25);
+        g.gain.setValueAtTime(0.28, t0);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+        osc.connect(g); g.connect(this.master);
+        osc.start(t0); osc.stop(t0 + 0.3);
+      }
+    },
+    // ── Frost Reverse pabaiga — švelnus "atšilimo" garsiukas (~300ms) ──
+    frostReverseEnd() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // Kylanti švelni arpeggio — efektas atsileidžia
+      [440, 587, 740].forEach((f, i) => {
+        const t = t0 + i * 0.06;
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(f, t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.07, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        osc.connect(g); g.connect(this.master);
+        osc.start(t); osc.stop(t + 0.2);
+      });
+      // Minkštas šnaresys — ledas tirpsta
+      this._noiseBurst(0.14, 0.05, 1400);
+    },
+    // ── Sienos atsiradimas — akmens blokai stojasi sluoksniais iš apačios į viršų ──
+    wallSpawn() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // Vienas akmens bloko "thunk" — žemas triangle thud + trumpas noise click
+      const blockThunk = (delay, freq, vol) => {
+        const t = t0 + delay;
+        // Triangle thud
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.55, t + 0.10);
+        g.gain.setValueAtTime(vol, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+        const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+        osc.connect(lp); lp.connect(g); g.connect(this.master);
+        osc.start(t); osc.stop(t + 0.15);
+        // Trumpas akmens click (noise burst)
+        const sr = c.sampleRate;
+        const cd = 0.012;
+        const len = Math.floor(sr * cd);
+        const buf = c.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+        const src = c.createBufferSource(); src.buffer = buf;
+        const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 1.2;
+        const cg = c.createGain(); cg.gain.setValueAtTime(vol * 0.5, t);
+        src.connect(bp); bp.connect(cg); cg.connect(this.master);
+        src.start(t); src.stop(t + cd + 0.01);
+      };
+      // 5 blokų sluoksniai stojasi iš apačios (žemas tonas) į viršų (aukštesnis),
+      // su greitėjančiu tempu — siena "užsistato" per ~480ms
+      const delays = [0, 0.11, 0.205, 0.285, 0.345];
+      const freqs  = [70, 95, 120, 150, 185];
+      for (let i = 0; i < 5; i++) {
+        blockThunk(delays[i], freqs[i], 0.30 - i * 0.018);
+      }
+      // Žemas foundation sub — visą laiką po blokais
+      {
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(48, t0);
+        osc.frequency.exponentialRampToValueAtTime(36, t0 + 0.5);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+        osc.connect(g); g.connect(this.master);
+        osc.start(t0); osc.stop(t0 + 0.52);
+      }
+      // Galutinis "lock-in" — siena užsifiksuoja (po paskutinio bloko)
+      {
+        const tEnd = t0 + 0.42;
+        const osc = c.createOscillator(); const g = c.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(220, tEnd);
+        osc.frequency.exponentialRampToValueAtTime(90, tEnd + 0.09);
+        g.gain.setValueAtTime(0.14, tEnd);
+        g.gain.exponentialRampToValueAtTime(0.0001, tEnd + 0.12);
+        const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+        osc.connect(lp); lp.connect(g); g.connect(this.master);
+        osc.start(tEnd); osc.stop(tEnd + 0.14);
+      }
+    },
     cannonShot(power) {
       this._init(); if (!this.ctx) return;
       const c = this.ctx;
@@ -322,6 +520,92 @@
       // High shimmer tail tik aukštesniems tier'iams
       if (tr >= 3) this._osc(2000 + tr * 100, 0.22, 0.05, 'sine', -300);
     },
+    // ── Skull death — procedural skeleto kaulų traškėjimas + subyrėjimas ──
+    _lastSkullDeath: 0,
+    skullDeath() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const tNow = performance.now();
+      if (tNow - this._lastSkullDeath < 60) return; // throttle — daug skull'ų vienu metu
+      this._lastSkullDeath = tNow;
+      // Delay ~120ms kad death garsas skambėtų PO mirtino smūgio
+      const t0 = c.currentTime + 0.12;
+
+      // Dry bone crack — trumpas bandpass'intas noise burst (kietas, sausas)
+      const crack = (delay, freq, dur, vol, q) => {
+        const t = t0 + delay;
+        const sr = c.sampleRate;
+        const len = Math.max(1, Math.floor(sr * dur));
+        const buf = c.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4);
+        }
+        const src = c.createBufferSource(); src.buffer = buf;
+        const bp = c.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q || 3.5;
+        const g = c.createGain();
+        g.gain.setValueAtTime(vol, t);
+        src.connect(bp); bp.connect(g); g.connect(this.master);
+        src.start(t); src.stop(t + dur + 0.01);
+      };
+
+      // 1) Pirmas aštrus SNAP — pagrindinis kaulo lūžis
+      crack(0, 2700, 0.026, 0.55, 4);
+      // 2) Follow-up traškesiai — kaulų fragmentai laužiasi seka
+      crack(0.045, 1850, 0.022, 0.42, 4);
+      crack(0.10, 3300, 0.018, 0.34, 5);
+      crack(0.16, 1450, 0.024, 0.36, 3.5);
+      crack(0.22, 2200, 0.020, 0.28, 4);
+
+      // 3) Subyrėjimo barškesys — daug mažų kliktelėjimų krenta netvarkingai
+      for (let i = 0; i < 12; i++) {
+        const d = 0.14 + Math.random() * 0.42;
+        crack(d, 700 + Math.random() * 1700, 0.006 + Math.random() * 0.012,
+              0.07 + Math.random() * 0.13, 2 + Math.random() * 3);
+      }
+
+      // 4) Tuščiaviduris THUNK — kaukolės ertmės sukritimas
+      {
+        const t = t0 + 0.04;
+        const osc = c.createOscillator();
+        const g = c.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(170, t);
+        osc.frequency.exponentialRampToValueAtTime(65, t + 0.20);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.24, t + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        const lp = c.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 550;
+        osc.connect(lp); lp.connect(g); g.connect(this.master);
+        osc.start(t); osc.stop(t + 0.24);
+      }
+
+      // 5) Dulkių nusėdimas — minkštas lowpass'intas noise tail
+      {
+        const t = t0 + 0.20;
+        const dur = 0.40;
+        const sr = c.sampleRate;
+        const len = Math.floor(sr * dur);
+        const buf = c.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.6);
+        }
+        const src = c.createBufferSource(); src.buffer = buf;
+        const lp = c.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1300, t);
+        lp.frequency.exponentialRampToValueAtTime(280, t + dur);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.11, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        src.connect(lp); lp.connect(g); g.connect(this.master);
+        src.start(t); src.stop(t + dur + 0.01);
+      }
+    },
     // ── Arrow shot (mp3) — paleidžiamas kai archer/tower/crossbow šauna strėlę ──
     _arrowPool: null,
     _arrowIdx: 0,
@@ -357,7 +641,7 @@
         for (let i = 0; i < 2; i++) {
           const a = new Audio('wallcalapse.mp3');
           a.preload = 'auto';
-          a.volume = 0.25;
+          a.volume = 0.125;
           this._wallCollapseAudio.push(a);
         }
         this._wallCollapseSlot = 0;
@@ -383,7 +667,7 @@
         for (let i = 0; i < 4; i++) {
           const a = new Audio('harpun.mp3');
           a.preload = 'auto';
-          a.volume = 0.12;
+          a.volume = 0.06;
           this._harpunPool.push(a);
         }
       }
@@ -464,30 +748,48 @@
   };
   window._F12Audio = _F12Audio;
 
-  // ── BGM — crystal_mine.mp3 (HTML5 Audio, looping, tylesnis nei SFX) ──
-  // Pakeičia procedural _F12Music. Tas pats public API: start() / stop() / active.
+  // ── BGM — playlistas (crystal_mine → crystal_mine02 → loop). API: start()/stop()/active.
   const _F12Music = {
     active: false,
-    audio: null,
+    tracks: ['crystal_mine.mp3', 'crystal_mine02.mp3'],
+    audios: null,
+    idx: 0,
+    vol: 0.04,                  // pritildinta — sėdi po SFX
     _ensure() {
-      if (this.audio) return;
-      this.audio = new Audio('crystal_mine.mp3');
-      this.audio.loop = true;
-      this.audio.volume = 0.04; // pritildinta — sėdi po SFX
-      this.audio.preload = 'auto';
+      if (this.audios) return;
+      this.audios = this.tracks.map((src) => {
+        const a = new Audio(src);
+        a.loop = false;          // ne loop — kad 'ended' eventas suveiktų ir pereitų į kitą
+        a.volume = this.vol;
+        a.preload = 'auto';
+        a.addEventListener('ended', () => {
+          if (!this.active) return;
+          // Pasibaigus trakui — pereinam į kitą (wrap around: paskutinis → pirmas)
+          this.idx = (this.idx + 1) % this.audios.length;
+          const next = this.audios[this.idx];
+          next.currentTime = 0;
+          next.volume = this.vol;
+          const p = next.play();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        });
+        return a;
+      });
     },
     start() {
       this._ensure();
       this.active = true;
+      const a = this.audios[this.idx];
+      a.volume = this.vol;
       // play() grąžina Promise — gali nepavykti jei AudioContext dar suspended
-      const p = this.audio.play();
+      const p = a.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
     },
     stop() {
       this.active = false;
-      if (!this.audio) return;
+      if (!this.audios) return;
+      const a = this.audios[this.idx];
+      this.idx = 0;              // reset playlistą — kitas start'as pradės nuo 1-mo trako
       // Soft fade-out per ~250ms, paskui pause
-      const a = this.audio;
       const startVol = a.volume;
       const steps = 10;
       let i = 0;
@@ -498,7 +800,7 @@
           clearInterval(id);
           a.pause();
           a.currentTime = 0;
-          a.volume = 0.04; // restore'inam volume kitam start'ui
+          a.volume = this.vol;
         }
       }, 25);
     },
@@ -506,7 +808,7 @@
   window._F12Music = _F12Music;
 
   // ── Config ─────────────────────────────────────────────────────────
-  const TYPES = ['arrow', 'shield', 'heart', 'leaf', 'star', 'crystal', 'shadow', 'pearl'];
+  const TYPES = ['arrow', 'shield', 'heart', 'leaf', 'star', 'crystal', 'shadow', 'pearl', 'frost'];
   const TYPE_COLOR = {
     arrow:   { top: [255, 200, 110], front: [220, 150, 70],  right: [180, 110, 50], left: [120, 70, 30],  back: [80, 45, 18],  bot: [40, 22, 8],  glyph: '#3a1f08' },
     shield:  { top: [180, 230, 220], front: [110, 180, 175], right: [70, 140, 140], left: [40, 95, 100],  back: [25, 60, 65],  bot: [10, 28, 32], glyph: '#06262a' },
@@ -516,6 +818,7 @@
     crystal: { top: [220, 180, 255], front: [165, 110, 220], right: [115, 70, 170], left: [75, 45, 115],  back: [35, 20, 60],  bot: [12, 6, 22],  glyph: '#1a0a30' },
     shadow:  { top: [85, 85, 95],    front: [50, 50, 60],    right: [30, 30, 40],   left: [18, 18, 26],   back: [10, 10, 16],  bot: [4, 4, 8],    glyph: '#000008' },
     pearl:   { top: [255, 255, 255], front: [220, 220, 230], right: [175, 175, 190], left: [125, 125, 145], back: [80, 80, 100], bot: [40, 40, 55], glyph: '#1a1a25' },
+    frost:   { top: [120, 180, 255], front: [40, 130, 235],  right: [30, 95, 175],  left: [20, 65, 120],  back: [14, 48, 88],  bot: [8, 28, 52],  glyph: '#08203a' },
   };
 
   // Combat — 6 lane'ai, retas spawn (maža priešų masė)
@@ -614,6 +917,7 @@
           if (h.target.hp <= 0) {
             h.target.dead = true; h.target.deathStartedAt = t;
             score += 5;
+            if (!h.target._isWall) _F12Audio.skullDeath();
           }
         }
         _f12Harpoons.splice(i, 1);
@@ -688,7 +992,7 @@
           p.target.hp -= p.dmg;
           p.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(p.laneIdx, p.target.x, p.dmg, t);
-          if (p.target.hp <= 0) { p.target.dead = true; p.target.deathStartedAt = t; score += 5; }
+          if (p.target.hp <= 0) { p.target.dead = true; p.target.deathStartedAt = t; score += 5; if (!p.target._isWall) _F12Audio.skullDeath(); }
         }
         // Spawn explosion at impact
         const impactX = p.target ? p.target.x : p.fromX;
@@ -792,7 +1096,7 @@
           ar.target.hp -= ar.dmg;
           ar.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(ar.laneIdx, ar.target.x, ar.dmg, t);
-          if (ar.target.hp <= 0) { ar.target.dead = true; ar.target.deathStartedAt = t; score += 5; }
+          if (ar.target.hp <= 0) { ar.target.dead = true; ar.target.deathStartedAt = t; score += 5; if (!ar.target._isWall) _F12Audio.skullDeath(); }
         }
         const impactX = ar.target ? ar.target.x : ar.fromX;
         _f12ArrowImpacts.push({ laneIdx: ar.laneIdx, atX: impactX, born: t, duration: 9 * 60 });
@@ -952,6 +1256,18 @@
   const _towerSpriteImg = new Image(); _towerSpriteImg.src = 'assets_tiny/Buildings_Tower.png';
   const _zipSpriteImg = new Image(); _zipSpriteImg.src = 'assets_tiny/Buildings_Zip.png';
   const _zipChargeImg2 = new Image(); _zipChargeImg2.src = 'assets_tiny/Buildings_Zip_Charge.png';
+  // Spike trap sprite sheet — 5 frames (flat→peak), kiekvienas 371×169, bottom-center anchored
+  const _spikeSheetImg = new Image(); _spikeSheetImg.src = 'spike_sheet.png';
+  const _SPIKE_FRAME_W = 371, _SPIKE_FRAME_H = 169, _SPIKE_FRAMES = 5;
+  // Wall sprite sheet — 16 frames (intact→destroyed), kiekvienas 212×384, bottom-anchored
+  const _wallSheetImg = new Image(); _wallSheetImg.src = 'wall_sheet.png';
+  const _WALL_FRAME_W = 212, _WALL_FRAME_H = 384, _WALL_FRAMES = 16;
+  // Wall destruction animation — 15 frames, kiekvienas 280×296, transparent bg
+  const _wallDestroyImg = new Image(); _wallDestroyImg.src = 'walldestroi_sheet.png';
+  const _WD_FRAME_W = 280, _WD_FRAME_H = 296, _WD_FRAMES = 15;
+  const _WD_START_FRAME = 3;   // animacija prasideda nuo 4-to kadro (idx 3)
+  // Frost (Ronin) merge effekto logo — baltas R-skydas, transparent bg (92×126)
+  const _frostLogoImg = new Image(); _frostLogoImg.src = 'frost_r.png';
   const _ZIP_FRAMES = 8, _ZIP_FPS = 10;
   const _ZIP_CHARGE_FRAMES = 14, _ZIP_CHARGE_FPS = 10;
   const _ZIP_CHARGE_DUR = (_ZIP_CHARGE_FRAMES / _ZIP_CHARGE_FPS) * 1000;  // 1400ms
@@ -977,6 +1293,7 @@
   let mouse = { x: 0, y: 0 };
   let exitBtnRect = null;
   let restartBtnRect = null;
+  let editMapBtnRect = null;
   let gameOver = false;
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -1052,6 +1369,7 @@
     _f12FireRecoil = 0;
     _f12MuzzleFlashes = [];
     _f12FireSmoke = [];
+    _f12WallChips = [];
     _f12Wind = [];
     _f12Fog = [];
     _f12NextBossAt = now() + 50000;
@@ -1064,6 +1382,8 @@
     _f12PoisonImpacts = [];
     _f12WallConvert = [];
     _f12Asteroids = [];
+    _f12Traps = [];
+    _f12FrostReverse = [];
     // Užkraunam HOME treniruotus unit'us — pridedam stack count, ne 1 per snap
     try {
       if (Array.isArray(_f11TransferUnits) && _f11TransferUnits.length > 0) {
@@ -1750,9 +2070,30 @@
     });
   }
 
+  // Ar lane'e yra gyvas boss'as?
+  function _laneHasBoss(li) {
+    const ln = lanes[li];
+    if (!ln) return false;
+    for (const e of ln.enemies) {
+      if (e.isBoss && !e.dead) return true;
+    }
+    return false;
+  }
   function spawnEnemy(t, opts) {
     opts = opts || {};
-    const laneIdx = opts.lane !== undefined ? opts.lane : rand(LANES);
+    let laneIdx;
+    if (opts.lane !== undefined) {
+      laneIdx = opts.lane;
+    } else {
+      // Random lane, BET boss'o lane'as gauna mažiau priešų (boss ir taip stiprus).
+      // Jei pataikom į boss lane — 85% šansas perrinkti į non-boss lane'ą.
+      laneIdx = rand(LANES);
+      if (!opts.boss && _laneHasBoss(laneIdx) && Math.random() < 0.85) {
+        const free = [];
+        for (let li = 0; li < LANES; li++) if (!_laneHasBoss(li)) free.push(li);
+        if (free.length) laneIdx = free[Math.floor(Math.random() * free.length)];
+      }
+    }
     const tier = Math.floor((t - _f12GameStartT) / 30000);
     const isBoss = !!opts.boss;
     lanes[laneIdx].enemies.push({
@@ -1820,6 +2161,16 @@
 
   // ── SUIKA → KOVA jungtis: kiekvienas merge daro veiksmą juostose
   // Tikslas: player'is jaučia, kad Suika žaidimas tiesiogiai veikia kovą
+  // ── Arena padalinta į 4 LYGIAS X-zonas. Kuo toliau nuo patrankos (kairėj)
+  // sumerge'inta, tuo stipresnis efektas: zona 0 = 0.5×, zona 3 = 2.0×.
+  function _f12ZoneMult(mx) {
+    const L = layoutCache;
+    if (!L || !L.arena || L.arena.w <= 0) return 1;
+    const frac = (mx - L.arena.x) / L.arena.w;          // 0..1 nuo patrankos
+    const zone = Math.max(0, Math.min(3, Math.floor(frac * 4)));
+    return 0.5 + zone * 0.5;                             // 0.5, 1.0, 1.5, 2.0
+  }
+
   function _triggerMergeAttack(type, value, mx, my, t) {
     // Surandam labiausiai grėsmingą lane (mažiausias x = arčiausia base)
     let bestLane = -1, bestX = Infinity, bestEnemy = null;
@@ -1829,7 +2180,9 @@
         if (e.x < bestX) { bestX = e.x; bestLane = li; bestEnemy = e; }
       }
     }
-    const dmg = Math.max(2, Math.floor(value / 2));
+    // Zonos multiplier — pagal merge poziciją arenoj (0.5× .. 2.0×)
+    const mult = _f12ZoneMult(mx);
+    const dmg = Math.max(1, Math.round(Math.max(2, Math.floor(value / 2)) * mult));
     // Damage types — visiems "puola" tipams
     // STAR (geltona) — gelsvas asteroidas krenta lėtai sukdamasis, +N kryžiaus damage
     if (type === 'star' && bestEnemy) {
@@ -1852,6 +2205,7 @@
         bestEnemy.dead = true;
         bestEnemy.deathStartedAt = t;
         score += 5;
+        if (!bestEnemy._isWall) _F12Audio.skullDeath();
       }
       _f12LaneStrikes.push({
         lane: bestLane, x: bestEnemy.x, type, born: t,
@@ -1865,24 +2219,46 @@
     if (type === 'shadow' && bestEnemy && !bestEnemy._isWall) {
       bestEnemy._isWall = true;
       bestEnemy._wallStart = t;
-      bestEnemy.hp = 20;
-      bestEnemy.maxHp = 20;
+      const _wallHp = Math.max(5, Math.round(20 * mult));   // zonos multiplier
+      bestEnemy.hp = _wallHp;
+      bestEnemy.maxHp = _wallHp;
       bestEnemy.origSpeed = bestEnemy.speed;
       bestEnemy.speed = 0;
       bestEnemy.swingStart = 0;
       bestEnemy.idleStart = 0;
       bestEnemy.idleUntil = 0;
+      // Nuimam nuodų efektą — siena nuodų neturi (akmuo neapsinuodija)
+      bestEnemy._poisonStart = 0;
+      bestEnemy._poisonEnd = 0;
+      bestEnemy._poisonNextTick = 0;
+      bestEnemy._poisonLane = undefined;
       // Brief stun aplink priešą
       bestEnemy.hitFlashUntil = t + 350;
       _f12WallConvert.push({
         lane: bestLane, x: bestEnemy.x, born: t, duration: 700,
       });
       _f12ScreenShake = Math.max(_f12ScreenShake, 4);
+      _F12Audio.wallSpawn();
+      return;
+    }
+    // FROST (Ronin) — taikoma juosta pamėlynuoja, VISI priešai apsisuka ir
+    // eina ATGAL (į dešinę, link spawn'o) 10 sekundžių
+    if (type === 'frost') {
+      if (bestLane >= 0) {
+        const REV_DUR = Math.round(10000 * mult);   // 10 sek × zonos multiplier (5s..20s)
+        for (const e of lanes[bestLane].enemies) {
+          if (e.dead || e._isWall) continue;
+          e.reversedUntil = t + REV_DUR;
+        }
+        _f12FrostReverse.push({ lane: bestLane, born: t, duration: REV_DUR });
+        _F12Audio.frostReverse();
+        _f12ScreenShake = Math.max(_f12ScreenShake, 4);
+      }
       return;
     }
     // Support types
     if (type === 'heart') {
-      const healAmt = value >= 8 ? 2 : 1;
+      const healAmt = Math.max(1, Math.round((value >= 8 ? 2 : 1) * mult));
       const oldHp = baseHp;
       baseHp = Math.min(BASE_HP, baseHp + healAmt);
       // Heal visual on HP bar (green pulse)
@@ -1893,15 +2269,40 @@
       return;
     }
     if (type === 'shield') {
-      if (bestLane >= 0) {
-        for (const e of lanes[bestLane].enemies) {
-          if (e.dead || e._isWall) continue;
-          e.idleUntil = Math.max(e.idleUntil || 0, t + 1500);
+      // SHIELD: deda spygliuotus spąstus į RANDOM liniją + RANDOM x.
+      // Spąstai cikliškai: 5s pauzė → 1s aktyvūs (spygliai iškyla iš požemių).
+      // Priešas užlipęs aktyviu metu gauna -5 dmg.
+      const trapLane = rand(LANES);
+      const trapX = 0.25 + Math.random() * 0.6;   // ne per arti base'o / krašto
+      _f12Traps.push({
+        lane: trapLane, x: trapX, born: t,
+        _cycle: -1, _hitEnemies: null, dmgMult: mult,   // zonos multiplier
+      });
+      _f12ScreenShake = Math.max(_f12ScreenShake, 3);
+      _F12Audio.trapSpawn();
+      // ── SPAWN FX — žemė prasiveria, dulkių/žemių sprogimas (kad žaidėjas matytų kur ir kodėl) ──
+      {
+        const _L = layoutCache;
+        if (_L) {
+          const tx = _L.lanesX + 32 + (_L.lanesW - 32 - 30) * trapX;
+          const ty = _L.lanesY + trapLane * _L.laneH + (_L.laneH - 4) / 2;
+          const dirtCols = ['#4a3a26', '#3a2e1e', '#5a4632', '#2a1f12', '#6b5238'];
+          const nd = 12 + Math.floor(Math.random() * 6);   // 12-17 dulkių
+          for (let d = 0; d < nd; d++) {
+            const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;  // fan aukštyn
+            const sp = 60 + Math.random() * 160;
+            _f12WallChips.push({
+              x: tx + (Math.random() - 0.5) * 30,
+              y: ty + 4 + (Math.random() - 0.5) * 8,
+              vx: Math.cos(ang) * sp,
+              vy: Math.sin(ang) * sp - 40,                 // pop aukštyn
+              born: t,
+              duration: 500 + Math.random() * 400,
+              size: 2 + Math.floor(Math.random() * 2),
+              col: dirtCols[Math.floor(Math.random() * dirtCols.length)],
+            });
+          }
         }
-        _f12LaneStrikes.push({
-          lane: bestLane, x: 0.5, type, born: t,
-          duration: 1500, color: TYPE_COLOR[type],
-        });
       }
       return;
     }
@@ -1909,7 +2310,7 @@
       // LEAF: nuodai ant pirmojo priešo → 1 dmg kas 10s.
       if (bestEnemy) {
         bestEnemy._poisonStart = t;
-        bestEnemy._poisonEnd = t + 120000;
+        bestEnemy._poisonEnd = t + Math.round(120000 * mult);   // zonos multiplier — ilgesni nuodai
         bestEnemy._poisonNextTick = t + 10000;
         bestEnemy._poisonLane = bestLane;
         // Brief stun apply metu (priešas trumpam stovi)
@@ -1959,6 +2360,7 @@
               bestE.dead = true;
               bestE.deathStartedAt = t;
               score += 5;
+              if (!bestE._isWall) _F12Audio.skullDeath();
             }
           }
         }
@@ -1967,6 +2369,249 @@
       if (k >= 1.4) {
         _f12Asteroids.splice(i, 1);
       }
+    }
+  }
+
+  // ── Spygliuoti spąstai — cikliškai iškyla, žaloja užlipusius priešus ──
+  function _tickTraps(t) {
+    for (const trap of _f12Traps) {
+      const elapsed = t - trap.born;
+      const cycleNum = Math.floor(elapsed / _TRAP_CYCLE_MS);
+      const phase = elapsed % _TRAP_CYCLE_MS;
+      // Aktyvus paskutinę ciklo sekundę (5s pauzė + 1s aktyvus)
+      const isActive = phase >= (_TRAP_CYCLE_MS - _TRAP_ACTIVE_MS);
+      trap.active = isActive;
+      // Naujas ciklas — išvalom hit set'ą (kiekvienas priešas gali būti pažeistas 1x per aktyvavimą)
+      if (trap._cycle !== cycleNum) {
+        trap._cycle = cycleNum;
+        trap._hitEnemies = new Set();
+        trap._retractFitPlayed = false;
+      }
+      // ── "fit fit" garsiukai — spygliams iškylant ir susileidžiant ──
+      // Iškilimas: inactive→active perėjimas
+      if (isActive && !trap._wasActive) {
+        _F12Audio.trapFit();
+      }
+      // Susileidimas: paskutinės ~130ms aktyvaus lango (retract animacija)
+      if (isActive && !trap._retractFitPlayed && phase >= _TRAP_CYCLE_MS - 130) {
+        _F12Audio.trapFit();
+        trap._retractFitPlayed = true;
+      }
+      trap._wasActive = isActive;
+      const Ln = lanes[trap.lane];
+      if (!Ln) continue;
+      // Hit zona pixel-space — atitinka matomą spyglių plotį (~±20px), ne visą sprite cell'ę
+      const _Lt = layoutCache;
+      const _laneUsable = _Lt ? (_Lt.lanesW - 32 - 30) : 1100;
+      const hitThresh = 30 / _laneUsable;   // ±30px nuo spąsto centro (+4px į kiekvieną pusę)
+      if (isActive) {
+        // AKTYVUS — žaloja priešus ant spyglių
+        for (const e of Ln.enemies) {
+          if (e.dead || e._isWall) continue;
+          if (Math.abs(e.x - trap.x) < hitThresh && !trap._hitEnemies.has(e)) {
+            trap._hitEnemies.add(e);
+            const _trapDmg = Math.max(1, Math.round(_TRAP_DMG * (trap.dmgMult || 1)));
+            e.hp -= _trapDmg;
+            e.hitFlashUntil = t + 250;
+            _spawnDmgPopup(trap.lane, e.x, _trapDmg, t);
+            _F12Audio.damageHit(_trapDmg);
+            if (e.hp <= 0) {
+              e.dead = true; e.deathStartedAt = t; score += 5;
+              if (!e._isWall) _F12Audio.skullDeath();
+            }
+          }
+        }
+      } else {
+        // NEAKTYVUS — jei priešas JUDA per sutrauktus spyglius, žymim step laiką.
+        // Tik judantis priešas (ne idle/blokuotas/sustojęs dėl animacijos) triggerina
+        // vibraciją — kai niekas nejuda ant spąsto, vibracijos nėra.
+        for (const e of Ln.enemies) {
+          if (e.dead || e._isWall) continue;
+          const moving = t >= (e.idleUntil || 0) &&
+                         Math.abs((e._prevX != null ? e._prevX : e.x) - e.x) > 0.00002;
+          if (moving && Math.abs(e.x - trap.x) < hitThresh) {
+            trap._steppedAt = t;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // ── Frost Reverse tick — išvalo pasibaigusias juostas + groja end garsą ──
+  function _tickFrostReverse(t) {
+    for (let i = _f12FrostReverse.length - 1; i >= 0; i--) {
+      const fr = _f12FrostReverse[i];
+      const age = t - fr.born;
+      if (age >= fr.duration) {
+        if (!fr._endPlayed) { _F12Audio.frostReverseEnd(); fr._endPlayed = true; }
+        _f12FrostReverse.splice(i, 1);
+      }
+    }
+  }
+
+  // ── Frost Reverse renderis — mėlyna juosta + į dešinę slenkančios rodyklės ──
+  function _drawFrostReverse(L, t) {
+    if (!_f12FrostReverse.length) return;
+    const PX = 2;
+    const snap = (v) => Math.round(v / PX) * PX;
+    const C = TYPE_COLOR.frost;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    for (const fr of _f12FrostReverse) {
+      const age = t - fr.born;
+      const k = age / fr.duration;            // 0..1
+      // Intensyvumas — fade-in pirmom 300ms, fade-out paskutinėm 600ms
+      let intensity = 1;
+      if (age < 300) intensity = age / 300;
+      else if (age > fr.duration - 600) intensity = Math.max(0, (fr.duration - age) / 600);
+      const ly = L.lanesY + fr.lane * L.laneH;
+      const lh = L.laneH - 4;
+      const lx = L.lanesX, lw = L.lanesW;
+      // 1) Mėlyna juostos danga
+      ctx.fillStyle = `rgba(${C.front[0]},${C.front[1]},${C.front[2]},${0.20 * intensity})`;
+      ctx.fillRect(lx, ly, lw, lh);
+      // Šviesesnės viršutinė/apatinė briaunos
+      ctx.fillStyle = `rgba(${C.top[0]},${C.top[1]},${C.top[2]},${0.45 * intensity})`;
+      ctx.fillRect(lx, ly, lw, PX);
+      ctx.fillRect(lx, ly + lh - PX, lw, PX);
+      // 2) Į DEŠINĘ slenkančios mėlynos rodyklės — pixel art chevron pattern
+      // FROST_CHEVRON: 7 col × 11 row, '>' formos, 2px storio įstrižos
+      const CHEV = [
+        "1100000",
+        "0110000",
+        "0011000",
+        "0001100",
+        "0000110",
+        "0000011",
+        "0000110",
+        "0001100",
+        "0011000",
+        "0110000",
+        "1100000",
+      ];
+      const chevCols = 7, chevRows = 11;
+      const chevW = chevCols * PX, chevH = chevRows * PX;
+      const arrowSpacing = chevW + PX * 8;
+      const scroll = (t * 0.05) % arrowSpacing;     // slenka į dešinę
+      const chevTopY = snap(ly + (lh - chevH) / 2);
+      const cLight = `rgba(${C.top[0]},${C.top[1]},${C.top[2]},${0.75 * intensity})`;
+      const cShade = `rgba(${C.back[0]},${C.back[1]},${C.back[2]},${0.55 * intensity})`;
+      for (let ax = lx - arrowSpacing + scroll; ax < lx + lw; ax += arrowSpacing) {
+        const bx = snap(ax);
+        for (let r = 0; r < chevRows; r++) {
+          for (let cI = 0; cI < chevCols; cI++) {
+            if (CHEV[r][cI] !== '1') continue;
+            const px = bx + cI * PX, py = chevTopY + r * PX;
+            // šešėlis (1px žemyn-dešinėn) — gylis
+            ctx.fillStyle = cShade;
+            ctx.fillRect(px + PX, py + PX, PX, PX);
+            // šviesus chevron
+            ctx.fillStyle = cLight;
+            ctx.fillRect(px, py, PX, PX);
+          }
+        }
+      }
+      // 3) Snaigės/frost partikelės — dreifuoja į dešinę
+      ctx.fillStyle = `rgba(${C.top[0]},${C.top[1]},${C.top[2]},${0.6 * intensity})`;
+      for (let p = 0; p < 10; p++) {
+        const seed = (fr.lane * 13 + p * 37);
+        const px = snap(lx + ((seed * 53 + t * 0.04) % lw));
+        const py = snap(ly + 6 + ((seed * 29) % (lh - 12)) + Math.sin(t * 0.003 + p) * PX);
+        ctx.fillRect(px, py, PX, PX);
+      }
+      // 4) Aktyvavimo banga — pirmom ~350ms nuvilnija juosta
+      if (age < 350) {
+        const wk = age / 350;
+        const wx = snap(lx + lw * wk);
+        ctx.fillStyle = `rgba(255,255,255,${(1 - wk) * 0.7})`;
+        ctx.fillRect(wx - PX, ly, PX * 3, lh);
+        ctx.fillStyle = `rgba(${C.top[0]},${C.top[1]},${C.top[2]},${(1 - wk) * 0.5})`;
+        ctx.fillRect(wx - PX * 5, ly, PX * 4, lh);
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── Spąstų renderis — spike_sheet.png sprite (5 frames flat→peak) ──
+  function _drawTraps(L, t) {
+    if (!_f12Traps.length) return;
+    const baseW = 32;
+    const TRAP_W = 76;                          // sprite plotis ekrane (px)
+    const TRAP_H = Math.round(TRAP_W * _SPIKE_FRAME_H / _SPIKE_FRAME_W);
+    const ready = _spikeSheetImg.complete && _spikeSheetImg.naturalWidth > 0;
+    for (const trap of _f12Traps) {
+      const ly = L.lanesY + trap.lane * L.laneH;
+      const lh = L.laneH - 4;
+      const cx = Math.round(L.lanesX + baseW + (L.lanesW - baseW - 30) * trap.x);
+      const floorY = ly + lh - 2;               // sprite bazė ant grindų lygio
+      const phase = (t - trap.born) % _TRAP_CYCLE_MS;
+      const activeStart = _TRAP_CYCLE_MS - _TRAP_ACTIVE_MS;
+      const isActive = phase >= activeStart;
+      // extend: VISADA bent 0.4 → aktyvus pakyla iki 1.0
+      let extend = 0.4;
+      if (isActive) {
+        const aT = phase - activeStart;
+        if (aT < 120) extend = 0.4 + 0.6 * (aT / 120);
+        else if (aT > _TRAP_ACTIVE_MS - 120) extend = 0.4 + 0.6 * Math.max(0, (_TRAP_ACTIVE_MS - aT) / 120);
+        else extend = 1.0;
+      }
+      // extend 0.4..1.0 → frame 1..4 (pauzė = maži spygliai, aktyvus peak = pilni)
+      const frameIdx = Math.max(0, Math.min(_SPIKE_FRAMES - 1,
+                                  Math.round(1 + ((extend - 0.4) / 0.6) * 3)));
+      // Step jitter — kai priešas vaikšto per sutrauktus (neaktyvius) spyglius,
+      // lenta truputį dunkst pagal žingsnius (1px spaudimas žemyn, ~320ms tempu)
+      let jx = 0, jy = 0;
+      if (!isActive && trap._steppedAt && (t - trap._steppedAt) < 220) {
+        const STEP_CYCLE = 320;                          // ~3 žingsniai/sek
+        const sp = (t % STEP_CYCLE) / STEP_CYCLE;        // 0..1 žingsnio fazė
+        if (sp < 0.28) {
+          // Greitas 1px dunkstelėjimas žemyn žingsnio pradžioj (0→1→0)
+          jy = Math.sin(sp / 0.28 * Math.PI) * 1;
+        }
+      }
+      if (ready) {
+        const sx = frameIdx * _SPIKE_FRAME_W;
+        const dx = Math.round(cx - TRAP_W / 2 + jx);
+        const dy = Math.round(floorY - TRAP_H + jy);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(_spikeSheetImg, sx, 0, _SPIKE_FRAME_W, _SPIKE_FRAME_H,
+                      dx, dy, TRAP_W, TRAP_H);
+      } else {
+        ctx.fillStyle = '#2c2418';
+        ctx.fillRect(cx - TRAP_W / 2 + jx, floorY - 6 + jy, TRAP_W, 6);
+      }
+      // ── SPAWN FX — pirmom ~650ms po atsiradimo: žaidėjas matytų KUR ir KODĖL ──
+      const spawnAge = t - trap.born;
+      if (spawnAge < 650) {
+        const sk = spawnAge / 650;                        // 0..1
+        ctx.save();
+        // 1) Besiplečiantis warning žiedas (pixel ring) — patraukia akį
+        const ringR = 6 + sk * 46;
+        const ringA = (1 - sk) * 0.9;
+        ctx.strokeStyle = `rgba(255,170,46,${ringA})`;
+        ctx.lineWidth = Math.max(1, Math.round(3 * (1 - sk)));
+        ctx.beginPath();
+        ctx.arc(cx, floorY - 4, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+        // 2) Antras vidinis žiedas (su delsa) — dvigubas pulsas
+        if (sk > 0.18) {
+          const sk2 = (sk - 0.18) / 0.82;
+          ctx.strokeStyle = `rgba(255,210,90,${(1 - sk2) * 0.7})`;
+          ctx.lineWidth = Math.max(1, Math.round(2 * (1 - sk2)));
+          ctx.beginPath();
+          ctx.arc(cx, floorY - 4, 4 + sk2 * 34, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        // 3) Pradinis blyksnis (pirmom ~120ms) — staigus šviesos pliūpsnis
+        if (spawnAge < 130) {
+          const fa = (1 - spawnAge / 130) * 0.55;
+          ctx.fillStyle = `rgba(255,235,180,${fa})`;
+          ctx.fillRect(cx - TRAP_W / 2 - 4, floorY - TRAP_H - 4, TRAP_W + 8, TRAP_H + 8);
+        }
+        ctx.restore();
+      }
+      // (jokio cikliško overlay — tik patys spygliai, be raudono fono, be mirksėjimo)
     }
   }
 
@@ -1999,6 +2644,7 @@
             e.dead = true;
             e.deathStartedAt = t;
             score += 5;
+            if (!e._isWall) _F12Audio.skullDeath();
             continue;
           }
         }
@@ -2511,9 +3157,9 @@
       setTimeout(() => {
         if (!active) return;
         for (let i = 0; i < hordeSize; i++) {
-          const lane = rand(LANES);
           setTimeout(() => {
-            if (active) spawnEnemy(now(), { lane });
+            // Be lane override — spawnEnemy pats vengs boss'o lane'o
+            if (active) spawnEnemy(now());
           }, i * 200);
         }
       }, 800);
@@ -2648,7 +3294,7 @@
             a._projTarget.hp -= a.dmg;
             a._projTarget.hitFlashUntil = t + 200;
             _spawnDmgPopup((a._projLane !== undefined) ? a._projLane : li, a._projTarget.x, a.dmg, t);
-            if (a._projTarget.hp <= 0) { a._projTarget.dead = true; a._projTarget.deathStartedAt = t; score += 5; }
+            if (a._projTarget.hp <= 0) { a._projTarget.dead = true; a._projTarget.deathStartedAt = t; score += 5; if (!a._projTarget._isWall) _F12Audio.skullDeath(); }
             // Spawn lightning bolt — sxy bus screen-space, computed render time
             _f12ZipBolts.push({
               laneIdx: li, fromX: a.x, fromLane: li,
@@ -2688,7 +3334,7 @@
               target.hp -= a.dmg;
               target.hitFlashUntil = t + 200;
               _spawnDmgPopup(targetLaneIdx, target.x, a.dmg, t);
-              if (target.hp <= 0) { target.dead = true; target.deathStartedAt = t; score += 5; }
+              if (target.hp <= 0) { target.dead = true; target.deathStartedAt = t; score += 5; if (!target._isWall) _F12Audio.skullDeath(); }
             }
           }
           // Enemy counter — tik jei MELEE range (skull range, ne ranged)
@@ -2711,6 +3357,13 @@
           if (t - e.deathStartedAt > 1400) Ln.enemies.splice(i, 1);
           continue;
         }
+        // ── FROST REVERSE — priešas eina ATGAL (į dešinę) 10s ──
+        // Ignoruoja idle/boss/wall/base logiką; clamp'inamas prie spawn krašto.
+        if (t < (e.reversedUntil || 0)) {
+          e.x += e.speed * (dt / 1000);
+          if (e.x > 0.97) e.x = 0.97;
+          continue;
+        }
         // ── State machine: walking | guarding | idling (F11-style timestamps)
         let _sheets1 = null; try { _sheets1 = skullAnimSheets; } catch (_) {}
         const _guardDur = _sheets1 && _sheets1.guard ? (_sheets1.guard.frameCount / 10) * 1000 : 700;
@@ -2718,11 +3371,36 @@
         const isGuarding = _guardElapsed < _guardDur;
         const isIdling = !isGuarding && t < e.idleUntil;
         const isPaused = isGuarding || isIdling;
+        // ── Atstumas iki boss'o priekyje (toj pačioj lane) — naudojamas idle + hard-stop ──
+        // _bossDist pixel-space; jei boss'o priekyje nėra — Infinity
+        let _bossDist = Infinity;
+        if (!e.isBoss) {
+          const _Lb = layoutCache;
+          const _laneUsableB = _Lb ? (_Lb.lanesW - 32 - 30) : 1100;
+          for (const other of Ln.enemies) {
+            if (other === e || other.dead || other._isWall || !other.isBoss) continue;
+            if (other.x >= e.x) continue;                  // boss turi būti priekyje
+            const dpx = (e.x - other.x) * _laneUsableB;
+            if (dpx < _bossDist) _bossDist = dpx;
+          }
+        }
+        // "Slowing" zona — kai priešas ARTĖJA prie boss'o (< 90px), daro dažnesnes/ilgesnes pauzes.
+        // Toliau už 90px — normalus elgesys (boss'ui pajudėjus pirmyn, judesys grįžta į normą).
+        const _nearBoss = _bossDist < 90;
         if (!isPaused && t >= (e.nextThinkAt || 0)) {
-          e.nextThinkAt = t + 1500 + Math.random() * 2500;
-          const r = Math.random();
-          if (r < 0.18) e.guardStart = t;
-          else if (r < 0.40) { e.idleStart = t; e.idleUntil = t + 1500 + Math.random() * 1800; }
+          if (_nearBoss) {
+            // Artėja prie boss'o — DAŽNESNI ir ILGESNI idle stabtelėjimai (kad nepasivytų)
+            e.nextThinkAt = t + 600 + Math.random() * 900;
+            const r = Math.random();
+            if (r < 0.10) e.guardStart = t;
+            else if (r < 0.78) { e.idleStart = t; e.idleUntil = t + 2200 + Math.random() * 2800; }
+          } else {
+            // Normalus elgesys — boss toli arba jo nėra
+            e.nextThinkAt = t + 1500 + Math.random() * 2500;
+            const r = Math.random();
+            if (r < 0.18) e.guardStart = t;
+            else if (r < 0.40) { e.idleStart = t; e.idleUntil = t + 1500 + Math.random() * 1800; }
+          }
         }
         // Sustok kai sutinki ally — scan'inam savo lane + gretima viršuj (towers iš li-1 dengia ir li)
         let nearestAllyDist = Infinity, nearestAllyRange = ENEMY_MELEE_RANGE;
@@ -2760,7 +3438,7 @@
         // Threshold pixel-space: 0.06 lane-frac MINUS 20 px (skull priartėja arčiau)
         const _Llay = layoutCache;
         const _laneUsablePx = _Llay ? (_Llay.lanesW - 32 - 30) : 1100;
-        const wallStopThresh = Math.max(0.005, 0.06 - 20 / _laneUsablePx);
+        const wallStopThresh = Math.max(0.005, 0.06 - 35 / _laneUsablePx);
         const blockedByWall = wallBlocker && wallDist < wallStopThresh;
         if (blockedByWall) {
           // Puola sieną
@@ -2768,9 +3446,33 @@
             e.lastAttackAt = t;
             e.swingStart = t;
             wallBlocker.hp -= 1;
-            wallBlocker.hitFlashUntil = t + 200;
             _F12Audio.wallHit();
             _spawnDmgPopup(li, wallBlocker.x, 1, t);
+            // ── Pixel skeveldros nuo sienos (vietoj mirksėjimo) ──
+            {
+              const _L = layoutCache;
+              if (_L) {
+                const wbx = _L.lanesX + 32 + (_L.lanesW - 32 - 30) * wallBlocker.x;
+                const wby = _L.lanesY + li * _L.laneH + (_L.laneH - 4) / 2;
+                const stoneCols = ['#5a4a3a', '#624c3a', '#54422e', '#7a6a58', '#3a2a1a'];
+                const n = 6 + Math.floor(Math.random() * 4);   // 6-9 skeveldrų
+                for (let ch = 0; ch < n; ch++) {
+                  // Sprogimas į dešinę-aukštyn (skull dauzo iš dešinės) + random
+                  const ang = -Math.PI / 2 + (Math.random() - 0.35) * 2.0;
+                  const sp = 70 + Math.random() * 130;
+                  _f12WallChips.push({
+                    x: wbx + (Math.random() - 0.5) * 14,
+                    y: wby + (Math.random() - 0.5) * 24,
+                    vx: Math.cos(ang) * sp + 40,            // bias į dešinę (impacto pusė)
+                    vy: Math.sin(ang) * sp - 30,            // pop aukštyn
+                    born: t,
+                    duration: 550 + Math.random() * 350,
+                    size: 2 + Math.floor(Math.random() * 2), // 2-3 px
+                    col: stoneCols[Math.floor(Math.random() * stoneCols.length)],
+                  });
+                }
+              }
+            }
             if (wallBlocker.hp <= 0) {
               wallBlocker.dead = true;
               wallBlocker.deathStartedAt = t;
@@ -2778,6 +3480,12 @@
             }
           }
           continue;
+        }
+        // ── BOSS SEPARATION — hard-stop kai lieka 45px iki boss'o ──
+        // _bossDist (pixel-space) apskaičiuotas anksčiau. Boss'ui pajudėjus pirmyn ir
+        // tarpui atsivėrus — priešas vėl juda; vėl priartėjus iki 45px — vėl sustoja.
+        if (!e.isBoss && _bossDist < 45) {
+          continue;   // per arti boss'o — stovim (idle animacija automatiškai)
         }
         if (!isPaused && !inAllyMelee) {
           e.x -= e.speed * (dt / 1000);
@@ -2902,11 +3610,13 @@
     _drawAmbientFog(L, t);
     _drawAmbientWind(L, t);
     drawLanes(L, t);
+    _drawTraps(L, t);
     _drawLaneHarpoons(L, t);
     _drawLaneShamanProj(L, t);
     _drawLaneArrows(L, t);
     _drawZipBolts(L, t);
-    drawArena(L);
+    drawArena(L);             // 4 zonų markeriai įkepti į arenos sprite'ą
+    _drawDecorations(L, t);   // dekoracijos — po abiem fonais, prieš kamuoliukus
     drawBlocks(L, t);
     drawLauncher(L, t);
     // drawPowerMeter pakeistas į pixel art ring drawLauncher viduje
@@ -2916,6 +3626,7 @@
     _drawSpirits(L, t);
     // Juice — fire feedback (po launcher, kad būtų ant viršaus)
     _drawFireSmoke(L, t);
+    _drawWallChips(L, t);
     _drawMuzzleFlashes(L, t);
     // Juice — merge feedback (ringai, popups) prieš HUD
     _drawMergeRings(L, t);
@@ -3119,6 +3830,41 @@
           ctx.fillRect(sx + PX, sy, PX, PX);
           ctx.fillRect(sx, sy + PX, PX, PX);
         }
+      } else if (type === 'frost') {
+        // RONIN LOGO merge effektas — mėlynas pliūpsnis + baltas R-skydas
+        // 1) Burst ring — mėlyni pixel chunkai sklinda į išorę
+        ctx.fillStyle = cTop;
+        for (let v = 0; v < 12; v++) {
+          const ang = v * (Math.PI * 2 / 12) + seed;
+          const sx = snap(cx + Math.cos(ang) * radius);
+          const sy = snap(cy + Math.sin(ang) * radius);
+          ctx.fillRect(sx - PX, sy - PX, PX * 2, PX * 2);
+        }
+        // 2) Mėlynas diskas — logo fonas (kaip screenshot'e)
+        // SVARBU: ctx.arc su neigiamu radius meta exception → clamp'inam
+        const discR = Math.max(0, (12 + tier * 7) * eased);
+        if (discR > 0.5) {
+          ctx.fillStyle = `rgba(${c.front[0]},${c.front[1]},${c.front[2]},${alpha})`;
+          ctx.beginPath();
+          ctx.arc(cx, cy, discR, 0, Math.PI * 2);
+          ctx.fill();
+          // Šviesesnis vidinis žiedas (tik jei pakankamai didelis)
+          if (discR > PX + 0.5) {
+            ctx.strokeStyle = `rgba(${c.top[0]},${c.top[1]},${c.top[2]},${alpha})`;
+            ctx.lineWidth = PX;
+            ctx.beginPath();
+            ctx.arc(cx, cy, discR - PX, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        // 3) Baltas R-skydas (Ronin logo) ant viršaus — scale + fade su merge animacija
+        if (discR > 0.5 && _frostLogoImg.complete && _frostLogoImg.naturalWidth > 0) {
+          const logoH = snap(discR * 1.9);
+          const logoW = snap(logoH * _frostLogoImg.naturalWidth / _frostLogoImg.naturalHeight);
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(_frostLogoImg, snap(cx - logoW / 2), snap(cy - logoH / 2), logoW, logoH);
+          ctx.globalAlpha = 1;
+        }
       } else {
         ctx.fillStyle = cTop;
         ctx.fillRect(cx - radius, cy - PX, radius * 2, PX * 2);
@@ -3230,6 +3976,40 @@
       ctx.fillStyle = `rgba(${gray-30},${gray-30},${gray-30},${alpha})`;
       ctx.fillRect(sx - PX, sy - PX, PX*2, PX*2);
     }
+    ctx.restore();
+  }
+
+  // ── Wall chips — pixel akmens skeveldros nuo sienos kai daromas dmg ──
+  function _drawWallChips(L, t) {
+    if (!_f12WallChips.length) return;
+    const PX = 2;
+    const dts = 0.016;
+    const G = 620;                  // gravitacija
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    for (let i = _f12WallChips.length - 1; i >= 0; i--) {
+      const c = _f12WallChips[i];
+      const k = (t - c.born) / c.duration;
+      if (k >= 1) { _f12WallChips.splice(i, 1); continue; }
+      // Simuliacija
+      c.x += c.vx * dts;
+      c.y += c.vy * dts;
+      c.vy += G * dts;              // krenta žemyn
+      c.vx *= 0.985;                // oro pasipriešinimas
+      const alpha = 1 - k * k;      // fade-out (greitėja pabaigoj)
+      const sz = c.size * PX;
+      const sx = Math.round(c.x / PX) * PX;
+      const sy = Math.round(c.y / PX) * PX;
+      // Akmens skeveldra — kūnas + tamsi briauna
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = c.col;
+      ctx.fillRect(sx, sy, sz, sz);
+      ctx.fillStyle = '#1a0e06';
+      ctx.fillRect(sx, sy + sz - PX, sz, PX);   // apatinė tamsi briauna
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillRect(sx, sy, PX, PX);             // viršutinis highlight
+    }
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
@@ -3376,6 +4156,9 @@
     }
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(_laneBgCache.canvas, L.lanesX, L.lanesY);
+
+    // Frost reverse — ant GRINDŲ sluoksnio (po visais objektais: priešais, sienom, ally)
+    _drawFrostReverse(L, t);
 
     // PASS 1 — dynamic overlay (shield aura + animated direction chevrons)
     const PX = PIXEL_SIZE;
@@ -3578,86 +4361,36 @@
 
   // Sienos sugriuvimas — chunky pixel bricks krenta su gravitacija + stone dust cloud
   function _drawWallCollapse(cx, cy, sz, e, elapsed) {
-    const PX = 2;
-    const snap = (v) => Math.round(v / PX) * PX;
-    const DUR = 1200;
-    const k = Math.min(1, elapsed / DUR);
-    const wallW = snap(sz * 1.7);
-    const wallH = snap(sz * 2.5);
-    const wx = snap(cx - wallW / 2);
-    const wy = snap(cy - wallH / 2);
-    // Lazy-init brick fragments
-    if (!e._collapseFragments) {
-      e._collapseFragments = [];
-      const brickH = PX * 5;
-      const brickW = PX * 8;
-      const rows = Math.floor(wallH / brickH);
-      const wallSeed = Math.floor((e._wallStart || 0) * 0.001) % 100;
-      for (let r = 0; r < rows; r++) {
-        const rowOff = (r % 2) * (brickW / 2);
-        for (let c = -1; c <= Math.ceil(wallW / brickW); c++) {
-          const bxStart = wx + c * brickW + rowOff;
-          const bx = Math.max(bxStart, wx);
-          const bxEnd = Math.min(bxStart + brickW, wx + wallW);
-          const bw = bxEnd - bx;
-          if (bw <= 0) continue;
-          const by = wy + r * brickH;
-          const brickHash = (r * 17 + c * 31 + wallSeed) % 4;
-          const stoneCols = ['#5a4a3a', '#624c3a', '#54422e', '#5a463a'];
-          // Random velocity outward + upward initial pop
-          const cxBrick = bx + bw / 2;
-          const cyBrick = by + brickH / 2;
-          const ang = Math.atan2(cyBrick - cy, cxBrick - cx);
-          const sp = 80 + Math.random() * 120;
-          e._collapseFragments.push({
-            x: bx, y: by, w: bw, h: brickH,
-            vx: Math.cos(ang) * sp + (Math.random() - 0.5) * 40,
-            vy: Math.sin(ang) * sp - 180 - Math.random() * 80,
-            rot: 0, rotV: (Math.random() - 0.5) * 8,
-            col: stoneCols[brickHash],
-          });
-        }
+    // walldestroi_sheet.png — destrukcijos animacija, prasideda nuo 4-to kadro (idx 3)
+    const ready = _wallDestroyImg.complete && _wallDestroyImg.naturalWidth > 0;
+    const PLAY_DUR = 1100;                                  // 12 kadrų per ~1.1s
+    const playFrames = _WD_FRAMES - _WD_START_FRAME;        // 15 - 3 = 12
+    const prog = Math.min(1, elapsed / PLAY_DUR);
+    const frameIdx = Math.min(_WD_FRAMES - 1,
+                              _WD_START_FRAME + Math.floor(prog * playFrames));
+    // Dydis — aukštis kaip gyvos sienos, plotis seka destrukcijos sheet aspektą
+    const wallH = sz * 2.5;
+    const destrH = wallH;
+    const destrW = destrH * _WD_FRAME_W / _WD_FRAME_H;      // ~0.946 * wallH (platesnis — debris sklaida)
+    const groundY = cy + wallH / 2;                         // sienos pagrindo lygis
+    const dx = Math.round(cx - destrW / 2);
+    const dy = Math.round(groundY - destrH);
+    if (ready) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      // Paskutinė fazė (po PLAY_DUR) — fade-out, debris išsisklaido
+      if (elapsed > PLAY_DUR) {
+        ctx.globalAlpha = Math.max(0, 1 - (elapsed - PLAY_DUR) / 300);
       }
+      ctx.drawImage(_wallDestroyImg, frameIdx * _WD_FRAME_W, 0, _WD_FRAME_W, _WD_FRAME_H,
+                    dx, dy, destrW, destrH);
+      ctx.restore();
+    } else {
+      // Fallback kol sprite kraunasi
+      const k = Math.min(1, elapsed / 1200);
+      ctx.fillStyle = `rgba(90,74,58,${1 - k})`;
+      ctx.fillRect(cx - destrW / 2, dy, destrW, destrH);
     }
-    // Simulate gravity + draw
-    const dts = 0.016;
-    const G = 800;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    for (const f of e._collapseFragments) {
-      f.x += f.vx * dts;
-      f.y += f.vy * dts;
-      f.vy += G * dts;
-      f.rot += f.rotV * dts;
-      const alpha = 1 - k;
-      ctx.globalAlpha = alpha;
-      // Body
-      ctx.fillStyle = f.col;
-      ctx.fillRect(snap(f.x), snap(f.y), f.w, f.h);
-      // Top highlight
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.fillRect(snap(f.x), snap(f.y), f.w, PX);
-      // Dark bottom edge
-      ctx.fillStyle = '#1a0e06';
-      ctx.fillRect(snap(f.x), snap(f.y) + f.h - PX, f.w, PX);
-    }
-    // Dust cloud (chunky pixel particles aplink kritimo vietą)
-    ctx.globalAlpha = 1 - k;
-    const dustSeed = Math.floor((e._wallStart || 0) * 0.0007) % 100;
-    for (let p = 0; p < 12; p++) {
-      const ang = ((dustSeed + p * 7) * 137 % 100) / 100 * Math.PI * 2;
-      const rFrac = ((dustSeed * 3 + p * 11) % 100) / 100;
-      const dist = (15 + k * 35) * (0.4 + rFrac * 0.6);
-      const dx = snap(cx + Math.cos(ang) * dist);
-      const dy = snap(cy + wallH * 0.3 + Math.sin(ang) * dist * 0.5 + k * 10);
-      const psize = PX * (1 + Math.floor(rFrac * 2));
-      ctx.fillStyle = `rgba(140,120,100,${(1 - k) * 0.7})`;
-      ctx.fillRect(dx, dy, psize, psize);
-      ctx.fillStyle = `rgba(180,160,130,${(1 - k) * 0.5})`;
-      ctx.fillRect(dx, dy, psize / 2, psize / 2);
-    }
-    ctx.globalAlpha = 1;
-    ctx.restore();
   }
 
   function drawEnemy(cx, cy, sz, e, t) {
@@ -3671,116 +4404,56 @@
       return;
     }
     const flash = t < e.hitFlashUntil;
-    // WALL — gražus pixel art castle siena su crenelations, brick variation, ir rise-up spawn
+    // WALL — wall_sheet.png sprite (16 damage frames, intact→destroyed)
     if (e._isWall) {
       const PX = 2;
       const snap = (v) => Math.round(v / PX) * PX;
-      const wallW = snap(sz * 1.7);
+      // Sprite aspect 212×384 (0.552) — wallH valdo dydį, wallW seka aspektą
       const wallH = snap(sz * 2.5);
+      const wallW = snap(wallH * _WALL_FRAME_W / _WALL_FRAME_H);
       const wx = snap(cx - wallW / 2);
       const wyFinal = snap(cy - wallH / 2);
       const dmgFrac = 1 - (e.hp / e.maxHp);
-      // Spawn rise-up animation (pirmiems 600ms — siena kyla iš žemės)
+      // Damage kadras: dmgFrac 0..1 → frame 0 (sveika) .. 15 (sugriuvusi)
+      const frameIdx = Math.max(0, Math.min(_WALL_FRAMES - 1, Math.floor(dmgFrac * _WALL_FRAMES)));
+      // Spawn statymo animacija — siena statoma EILĖ PO EILĖS iš apačios į viršų
+      // (tarsi namas statomas gabaliukais, ne slystamas iš žemės)
       const sinceSpawn = t - (e._wallStart || t);
       const SPAWN_DUR = 600;
+      const BUILD_ROWS = 5;                              // 5 mūro eilės
       const spawnK = Math.min(1, sinceSpawn / SPAWN_DUR);
-      const spawnEased = 1 - Math.pow(1 - spawnK, 3);
-      const wy = snap(wyFinal + wallH * (1 - spawnEased));   // pradžioj žemiau, kyla aukštyn
-      // Clipping window — sienos viršus nematomas spawn'inant (iškyla iš žemės)
+      // Kiek eilių jau pastatyta (diskretūs žingsniai — ne sklandus slydimas)
+      const builtRows = Math.min(BUILD_ROWS, Math.floor(spawnK * BUILD_ROWS) + (spawnK > 0 ? 1 : 0));
+      const buildFrac = builtRows / BUILD_ROWS;
+      const wy = wyFinal;                                // siena visada finalinėj pozicijoj
+      // Naujausia eilė "krenta" — mažas settle judesys (pirmus ~80ms po jos atsiradimo)
+      const rowProgress = spawnK * BUILD_ROWS;
+      const newestRowAge = (rowProgress - (builtRows - 1)) / 1;   // 0..1 naujausios eilės amžius
+      const rowH = wallH / BUILD_ROWS;
+      // Matoma sienos dalis nuo APAČIOS (jau pastatytos eilės)
+      let visibleH = Math.round(rowH * builtRows);
+      // Naujausios eilės "drop-in" — pradžioj ji truputį žemiau ir užslysta
+      let topRowDrop = 0;
+      if (spawnK < 1 && newestRowAge < 0.45) {
+        topRowDrop = Math.round(rowH * 0.5 * (1 - newestRowAge / 0.45));
+        visibleH -= topRowDrop;
+      }
+      // Clip — rodom tik pastatytas eiles (nuo apačios)
       ctx.save();
       ctx.beginPath();
-      ctx.rect(wx - PX*4, wyFinal, wallW + PX*8, wallH + 4);
+      ctx.rect(wx - PX*4, wyFinal + wallH - visibleH, wallW + PX*8, visibleH + 4);
       ctx.clip();
-      // ── Outer black outline (full silhouette)
-      ctx.fillStyle = '#000';
-      ctx.fillRect(wx - PX, wy - PX, wallW + PX*2, wallH + PX*2);
-      // ── Crenelations (battlements) — 3-4 kvadratiniai zubrai viršuje
-      const merlonsN = 4;
-      const merlonW = Math.floor(wallW / merlonsN / PX) * PX;
-      const merlonH = PX * 4;
-      for (let m = 0; m < merlonsN; m++) {
-        if (m % 2 === 1) continue;   // tik kas antras = nišės
-        const mx = wx + m * merlonW;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(mx - PX, wy - merlonH, merlonW + PX*2, merlonH + PX);
+      // ── Wall sprite (damage frame pagal HP) ──
+      const wallReady = _wallSheetImg.complete && _wallSheetImg.naturalWidth > 0;
+      if (wallReady) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(_wallSheetImg, frameIdx * _WALL_FRAME_W, 0, _WALL_FRAME_W, _WALL_FRAME_H,
+                      wx, wy, wallW, wallH);
+      } else {
         ctx.fillStyle = '#5a4a3a';
-        ctx.fillRect(mx, wy - merlonH + PX, merlonW, merlonH - PX);
-        ctx.fillStyle = '#8a7a6a';
-        ctx.fillRect(mx, wy - merlonH + PX, merlonW, PX);
+        ctx.fillRect(wx, wy, wallW, wallH);
       }
-      // ── Stone bricks su variation pagal seed
-      const brickH = PX * 5;
-      const brickW = PX * 8;
-      const rows = Math.floor(wallH / brickH);
-      const wallSeed = Math.floor((e._wallStart || 0) * 0.001) % 100;
-      for (let r = 0; r < rows; r++) {
-        const rowOff = (r % 2) * (brickW / 2);
-        for (let c = -1; c <= Math.ceil(wallW / brickW); c++) {
-          const bxStart = wx + c * brickW + rowOff;
-          const bx = Math.max(bxStart, wx);
-          const bxEnd = Math.min(bxStart + brickW, wx + wallW);
-          const bw = bxEnd - bx;
-          if (bw <= 0) continue;
-          const by = wy + r * brickH;
-          // Per-brick color variation
-          const brickHash = (r * 17 + c * 31 + wallSeed) % 4;
-          const stoneCols = ['#5a4a3a', '#624c3a', '#54422e', '#5a463a'];
-          ctx.fillStyle = stoneCols[brickHash];
-          ctx.fillRect(bx, by, bw, brickH);
-          // Top edge highlight (per-brick variation)
-          ctx.fillStyle = brickHash < 2 ? '#9a8a78' : '#8a7868';
-          ctx.fillRect(bx, by, bw, PX);
-          // Brick texture — random 1-pixel dot
-          if (brickHash === 0) {
-            ctx.fillStyle = '#7a6a58';
-            ctx.fillRect(bx + Math.floor(bw / 2 / PX) * PX, by + PX*2, PX, PX);
-          } else if (brickHash === 2) {
-            ctx.fillStyle = '#3a2a1a';
-            ctx.fillRect(bx + Math.floor(bw / 3 / PX) * PX, by + PX*3, PX, PX);
-          }
-          // Bottom shadow
-          ctx.fillStyle = '#2a1a0e';
-          ctx.fillRect(bx, by + brickH - PX, bw, PX);
-          // Mortar (vertical gap)
-          ctx.fillStyle = '#1a0e06';
-          if (bxEnd < wx + wallW) {
-            ctx.fillRect(bxEnd - PX, by, PX, brickH);
-          }
-        }
-        // Horizontal mortar
-        ctx.fillStyle = '#1a0e06';
-        ctx.fillRect(wx, wy + r * brickH + brickH - PX, wallW, PX);
-      }
-      // ── Iron rivets — dekoraciniai kniedės kampuose
-      const rivCols = ['#1a0e06', '#7a6a58', '#ffe7a8'];
-      const drawRivet = (rx, ry) => {
-        ctx.fillStyle = rivCols[0];
-        ctx.fillRect(rx - PX, ry - PX, PX*3, PX*3);
-        ctx.fillStyle = rivCols[1];
-        ctx.fillRect(rx, ry, PX, PX);
-        ctx.fillStyle = rivCols[2];
-        ctx.fillRect(rx, ry, PX/2, PX/2);
-      };
-      drawRivet(snap(wx + PX*3), snap(wy + PX*5));
-      drawRivet(snap(wx + wallW - PX*4), snap(wy + PX*5));
-      drawRivet(snap(wx + PX*3), snap(wy + wallH - PX*6));
-      drawRivet(snap(wx + wallW - PX*4), snap(wy + wallH - PX*6));
-      // ── Cracks su damage progression
-      if (dmgFrac > 0.25) {
-        ctx.fillStyle = '#1a0e06';
-        const numCracks = Math.min(6, Math.floor(dmgFrac * 8));
-        for (let cr = 0; cr < numCracks; cr++) {
-          const cseed = ((cr * 31 + wallSeed * 11) % 100) / 100;
-          const cseed2 = ((cr * 17 + wallSeed * 7 + 3) % 100) / 100;
-          const cxn = snap(wx + PX*3 + cseed * (wallW - PX*6));
-          const cyn = snap(wy + PX*3 + cseed2 * (wallH - PX*6));
-          // Zigzag crack pattern
-          ctx.fillRect(cxn, cyn, PX, PX*5);
-          ctx.fillRect(cxn - PX, cyn + PX*2, PX, PX);
-          ctx.fillRect(cxn + PX, cyn + PX*3, PX, PX);
-        }
-      }
-      // Dust at base (continuous while alive)
+      // Dust prie pagrindo (kol gyva, pirmom 1.5s)
       if (sinceSpawn < 1500) {
         const dustK = Math.min(1, sinceSpawn / 1500);
         ctx.fillStyle = `rgba(120,100,80,${(1 - dustK) * 0.6})`;
@@ -3790,27 +4463,9 @@
           ctx.fillRect(dx, dy, PX*2, PX);
         }
       }
-      // Hit flash
-      if (flash) {
-        ctx.fillStyle = 'rgba(255,255,200,0.55)';
-        ctx.fillRect(wx, wy, wallW, wallH);
-      }
+      // (hit flash pašalintas — vietoj jo pixel skeveldros, žr. _drawWallChips)
       ctx.restore();
-      // ── HP bar virš sienos
-      const bw2 = wallW * 0.85, bh2 = 5;
-      const barY2 = wyFinal - bh2 - PX*2;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(snap(cx - bw2 / 2), snap(barY2), snap(bw2), bh2);
-      ctx.fillStyle = '#2a1a0e';
-      ctx.fillRect(snap(cx - bw2 / 2 + 1), snap(barY2 + 1), Math.round(bw2 - 2), bh2 - 2);
-      // Pilka (stone) bar
-      const hpPct = e.hp / e.maxHp;
-      const fillW = Math.round((bw2 - 2) * hpPct);
-      ctx.fillStyle = hpPct > 0.5 ? '#c0c0c0' : (hpPct > 0.25 ? '#c0a070' : '#a04040');
-      ctx.fillRect(snap(cx - bw2 / 2 + 1), snap(barY2 + 1), fillW, bh2 - 2);
-      // Highlight ant bar
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.fillRect(snap(cx - bw2 / 2 + 1), snap(barY2 + 1), fillW, PX/2);
+      // (HP bar pašalintas — sienos būklė matosi vizualiai pagal damage kadrus)
       return;
     }
     const fade = 1;
@@ -3827,9 +4482,10 @@
       ctx.imageSmoothingEnabled = false;
       if (flash) ctx.filter = 'brightness(1.5) sepia(1) saturate(2.5) hue-rotate(-30deg)';
       else if (e.isBoss) ctx.filter = 'brightness(0.85) sepia(0.5) saturate(2) hue-rotate(-25deg)';
-      // Priešai juda į kairę → flip horizontally
+      // Priešai juda į kairę → flip horizontally. FROST REVERSE → žiūri į dešinę (be flip).
+      const _revFacing = t < (e.reversedUntil || 0);
       ctx.translate(cx, cy);
-      ctx.scale(-1, 1);
+      ctx.scale(_revFacing ? 1 : -1, 1);
       ctx.drawImage(frameE.sheet, frameE.sx, frameE.sy, frameE.sw, frameE.sh, -dw / 2, -dh / 2, dw, dh);
       ctx.restore();
       // (Boss karūna panaikinta — boss'as ir taip aiškiai matosi pagal dydį/atspalvį)
@@ -3935,6 +4591,11 @@
   let _f12FireRecoilAng = 0;            // kryptis (priesinga ang)
   let _f12MuzzleFlashes = [];           // [{x, y, ang, born, power, duration}]
   let _f12FireSmoke = [];               // [{x, y, vx, vy, born, size, duration}]
+  let _f12WallChips = [];               // [{x, y, vx, vy, born, size, duration, col}] — akmens skeveldros nuo sienos
+  // Edit map dekoracijos — persistuoja tarp restart'ų (ne game state)
+  let _f12Decorations = (typeof _F12_DEFAULT_DECORATIONS !== 'undefined')
+    ? _F12_DEFAULT_DECORATIONS.map(d => ({ ...d }))
+    : [];
   // Ambient atmosphere
   let _f12Wind = [];                    // dust/leaves [{x,y,vx,vy,size,life,maxLife,col}]
   let _f12Fog = [];                     // [{x,y,vx,r,alpha,phase}]
@@ -3949,6 +4610,11 @@
   let _f12PoisonImpacts = [];           // [{lane, x, born, duration, isApply, isSpread}]
   let _f12WallConvert = [];             // [{lane, x, born, duration}] — shadow conversion burst
   let _f12Asteroids = [];               // [{lane, x, born, duration, dmg, value, impacted?}]
+  let _f12Traps = [];                   // [{lane, x, born, _cycle, _hitEnemies}] — spygliuoti spąstai
+  const _TRAP_CYCLE_MS = 6000;          // 5s pauzė + 1s aktyvus
+  const _TRAP_ACTIVE_MS = 1000;         // aktyvaus lango trukmė
+  const _TRAP_DMG = 5;                  // -5 dmg priešui užlipus aktyviu metu
+  let _f12FrostReverse = [];            // [{lane, born, duration, _endPlayed}] — frost reverse juostos
   const _SPIRIT_DURATION = 850;
   const _CARD_CONSUME_DUR = 520;
   const _CARD_W = 68, _CARD_H = 96, _CARD_GAP = 8;
@@ -4327,6 +4993,7 @@
         crystal: ["00000010000","00000111000","00001111100","00011111110","00111111111","00011111110","00001111100","00000111000","00000010000"],
         shadow:  ["00111111100","01111111110","11111111111","11111111111","11111111111","11111111111","11111111111","01111111110","00111111100"],
         pearl:   ["00011111000","00111111100","01111111110","11111111111","11111111111","11111111111","01111111110","00111111100","00011111000"],
+        frost:   ["00000100000","01000100010","00100100100","00010101000","11111111111","00010101000","00100100100","01000100010","00000100000"],
       };
       const g = GLYPHS[type] || GLYPHS.arrow;
       const rows = g.length;
@@ -4638,9 +5305,16 @@
       pebble: '#7a583a',
     };
 
-    // Base fill
-    oc.fillStyle = DIRT.base;
-    oc.fillRect(INNER_X, INNER_Y, INNER_W, INNER_H);
+    // Base fill — 4 ZONOS, kiekviena truputį kitokio dirvožemio atspalvio.
+    // Tai daro zonas tikra LENTOS DALIMI (ne overlay). Tamsesnė → šiltesnė link 2× zonos.
+    const ZONE_DIRT = ['#33220f', '#3a2614', '#43321b', '#4d3a22'];
+    const zwInner = INNER_W / 4;
+    for (let z = 0; z < 4; z++) {
+      const zx = INNER_X + Math.round(z * zwInner);
+      const zx2 = INNER_X + Math.round((z + 1) * zwInner);
+      oc.fillStyle = ZONE_DIRT[z];
+      oc.fillRect(zx, INNER_Y, zx2 - zx, INNER_H);
+    }
 
     // Pixel art texture — chunk variations su deterministiniu hash'u
     for (let y = 0; y < INNER_H; y += PX) {
@@ -4674,6 +5348,71 @@
       oc.fillStyle = DIRT.dark;
       oc.fillRect(INNER_X + px + PX * 2, INNER_Y + py + PX, PX, PX);
       oc.fillRect(INNER_X + px + PX, INNER_Y + py + PX * 2, PX, PX);
+    }
+
+    // ════ ZONŲ ŽYMĖJIMAI — ĮKEPTI Į GRINDIS (lentos dalis, ne overlay) ════
+    {
+      const zw4 = INNER_W / 4;
+      // Muted, "aged painted" akcentinės spalvos (ne neon — kad atrodytų kaip dažytas akmuo)
+      const ZACC = ['#5a6478', '#4a6a9a', '#4a8a8a', '#b89048'];
+      const ZMULT = ['0.5x', '1x', '1.5x', '2x'];
+
+      // ── 3 IŠKARTOS GRIOVELIAI tarp zonų — kaip fiziniai grindų siūlai ──
+      for (let z = 1; z < 4; z++) {
+        const sx = INNER_X + Math.round(z * zw4);
+        // Recesas — 2px tamsus griovelis
+        oc.fillStyle = DIRT.dark;
+        oc.fillRect(sx - 1, INNER_Y, 2, INNER_H);
+        // Pakelta kairė briauna (gaudo šviesą iš viršaus-kairės)
+        oc.fillStyle = DIRT.light;
+        oc.fillRect(sx - 2, INNER_Y, 1, INNER_H);
+        // Tamsi dešinė briauna (recesso šešėlis)
+        oc.fillStyle = '#0f0703';
+        oc.fillRect(sx + 1, INNER_Y, 1, INNER_H);
+        // Griovelio netvarkingumas — keli praleisti pixeliai (natūralumas)
+        oc.fillStyle = ZONE_DIRT[z];
+        for (let gy = INNER_Y; gy < INNER_Y + INNER_H; gy += PX) {
+          if (_pxHash(sx, gy) < 0.12) oc.fillRect(sx - 1, gy, 2, PX);
+        }
+      }
+
+      // ── 4 ĮKALTOS PLOKŠTĖS — engraved multiplier markeriai zonos viršuje ──
+      for (let z = 0; z < 4; z++) {
+        const acc = ZACC[z];
+        const zcx = INNER_X + Math.round(z * zw4 + zw4 / 2);
+        const pw = 36, ph = 16;
+        const pxL = Math.round(zcx - pw / 2);
+        const pyT = INNER_Y + 6;
+        // Recesso šešėlis (plokštė įspausta į grindis: tamsu viršuj-kairėj)
+        oc.fillStyle = '#0f0703';
+        oc.fillRect(pxL - 1, pyT - 1, pw + 2, ph + 2);
+        // Plokštės korpusas — tamsesnis nei aplinkinis dirvožemis
+        oc.fillStyle = '#1c1208';
+        oc.fillRect(pxL, pyT, pw, ph);
+        // Apatinė-dešinė šviesi briauna (recesso vidinė lit pusė)
+        oc.fillStyle = ZONE_DIRT[z];
+        oc.fillRect(pxL, pyT + ph - 1, pw, 1);
+        oc.fillRect(pxL + pw - 1, pyT, 1, ph);
+        // Akcentinis rėmas — dažyto akmens spalva, viršuj+kairėj
+        oc.fillStyle = acc;
+        oc.fillRect(pxL, pyT, pw, 1);
+        oc.fillRect(pxL, pyT, 1, ph);
+        // Kampų nukirtimai (pixel art)
+        oc.fillStyle = '#1c1208';
+        oc.fillRect(pxL, pyT, 1, 1);
+        oc.fillRect(pxL + pw - 1, pyT, 1, 1);
+        // Engraved tekstas — tamsus su 1px šviesesniu highlight'u apačioj (carved look)
+        oc.font = '8px "Press Start 2P", monospace';
+        oc.textAlign = 'center';
+        oc.textBaseline = 'middle';
+        const tcx = zcx, tcy = pyT + ph / 2 + 1;
+        oc.fillStyle = '#000';                       // carved gylis
+        oc.fillText(ZMULT[z], tcx, tcy + 1);
+        oc.fillStyle = acc;                          // akcentinis tekstas
+        oc.fillText(ZMULT[z], tcx, tcy);
+        oc.textAlign = 'left';
+        oc.textBaseline = 'alphabetic';
+      }
     }
 
     return { canvas: off, frame: FRAME, w: W, h: H };
@@ -4745,6 +5484,7 @@
     // Marks overlay — accumuliuoja per žaidimą
     if (_marksCanvas) ctx.drawImage(_marksCanvas, A.x, A.y);
   }
+
 
   function drawAimLine(L) {
     if (gameOver) return;
@@ -5418,6 +6158,21 @@
     ctx.fillText('RESTART (R)', rbx + bw / 2, by + bh / 2);
     ctx.textBaseline = 'alphabetic';
     restartBtnRect = { x: rbx, y: by, w: bw, h: bh };
+
+    // ── EDIT MAP mygtukas — kairiau už RESTART, teal spalva ──
+    const ebx = rbx - bw - 12;
+    ctx.fillStyle = _f12EditMode ? '#0a4a36' : '#0a3022';
+    ctx.fillRect(ebx, by, bw, bh);
+    ctx.strokeStyle = _f12EditMode ? '#00ffb4' : '#0a8a66';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ebx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = _f12EditMode ? '#00ffb4' : '#7adcc0';
+    ctx.font = '9px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(_f12EditMode ? 'EDIT: ON' : 'EDIT MAP', ebx + bw / 2, by + bh / 2);
+    ctx.textBaseline = 'alphabetic';
+    editMapBtnRect = { x: ebx, y: by, w: bw, h: bh };
   }
 
   function drawGameOver(L) {
@@ -5435,6 +6190,408 @@
   }
 
   // ── Input ──────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════
+  // ── F12 EDIT MAP — pilnas editorius (tabs / multi-tile picker / undo) ──
+  // ════════════════════════════════════════════════════════════════
+  // Dekoracijos: {zone:'arena'|'lanes', nx, ny, kind, scale}
+  //   nx,ny = normalizuotos 0..1 koordinatės zonoje
+  //   kind  = 'img:PATH'  arba  'tile:PATH:sx:sy:sw:sh'
+  let _f12EditMode = false;
+  let _f12EditBrush = null;
+  let _f12EditScale = 1.0;
+  let _f12EditorPanel = null;
+  let _f12EditTab = 'TERRAIN';
+  let _f12EditNote = null;
+  let _f12EditUndo = [];               // undo stack — _f12Decorations snapshot'ai
+  const _f12DecoImgs = {};
+  const _F12_EDIT_GRID = 28;           // grid celių per zonos plotį
+  // ── Asset katalogas ──
+  const _F12_TAB_TERRAIN = [
+    { path: 'assets_tiny/Terrain/Ground/Tilemap_Flat.png', tile: 64 },
+    { path: 'assets_tiny/Terrain/Ground/Tilemap_Elevation.png', tile: 64 },
+    { path: 'assets_tiny/Terrain/Tileset/Tilemap_color1.png', tile: 64 },
+    { path: 'assets_tiny/Terrain/Tileset/Tilemap_color3.png', tile: 64 },
+    { path: 'assets_tiny/Terrain/Tileset/Tilemap_color5.png', tile: 64 },
+    { path: 'assets_tiny/Terrain/Water/Water.png', tile: 64 },
+    { path: 'assets_tiny/Terrain/Bridge/Bridge_All.png', tile: 64 },
+  ];
+  const _F12_TAB_DECO = (() => {
+    const a = [];
+    for (let i = 1; i <= 18; i++) a.push('assets_tiny/Deco/' + String(i).padStart(2, '0') + '.png');
+    a.push('assets_tiny/Deco/rubber_duck.png');
+    for (let i = 1; i <= 4; i++) a.push('assets_tiny/trees/Stump' + i + '.png');  // stump = statinis (1 frame)
+    for (let i = 1; i <= 6; i++) a.push('assets_tiny/GoldStone' + i + '.png');
+    return a;
+  })();
+  // ANIM — animuotos dekoracijos (8-frame sprite sheet'ai). Formatas: anim:PATH:fw:fh:fc:fps
+  const _F12_TAB_ANIM = [
+    // Krūmai (Bushe1-4 — 1024×128 = 8×128px)
+    'anim:assets_tiny/Terrain/Bushe1.png:128:128:8:6',
+    'anim:assets_tiny/Terrain/Bushe2.png:128:128:8:6',
+    'anim:assets_tiny/Terrain/Bushe3.png:128:128:8:6',
+    'anim:assets_tiny/Terrain/Bushe4.png:128:128:8:6',
+    // Medžiai (Tree1-2 — 1536×256 = 8×192×256; Tree3-4 — 1536×192 = 8×192×192)
+    'anim:assets_tiny/trees/Tree1.png:192:256:8:6',
+    'anim:assets_tiny/trees/Tree2.png:192:256:8:6',
+    'anim:assets_tiny/trees/Tree3.png:192:192:8:6',
+    'anim:assets_tiny/trees/Tree4.png:192:192:8:6',
+    // Akmenys vandenyje (Rocks_01-04 — 1024×128 = 8×128px)
+    'anim:assets_tiny/Terrain/Water/Rocks/Rocks_01.png:128:128:8:6',
+    'anim:assets_tiny/Terrain/Water/Rocks/Rocks_02.png:128:128:8:6',
+    'anim:assets_tiny/Terrain/Water/Rocks/Rocks_03.png:128:128:8:6',
+    'anim:assets_tiny/Terrain/Water/Rocks/Rocks_04.png:128:128:8:6',
+    // Vandens putos / animuotas vanduo (Foam — 1536×192 = 8×192px)
+    'anim:assets_tiny/Terrain/Water/Foam/Foam.png:192:192:8:6',
+  ];
+  const _F12_TAB_BUILD = [
+    'assets_tiny/Buildings_Archery.png', 'assets_tiny/Buildings_Barracks.png',
+    'assets_tiny/Buildings_Castle.png', 'assets_tiny/Buildings_House1.png',
+    'assets_tiny/Buildings_House2.png', 'assets_tiny/Buildings_House3.png',
+    'assets_tiny/Buildings_Monastery.png', 'assets_tiny/Buildings_Tower.png',
+    'assets_tiny/Buildings_Zip.png', 'assets_tiny/Goblin_House.png',
+    'assets_tiny/House_Construction.png', 'assets_tiny/Tower_Destroyed.png',
+    'assets_tiny/Resources/Gold Mine/GoldMine_Inactive.png',
+    'assets_tiny/Resources/Gold Mine/GoldMine_Active.png',
+  ];
+  const _F12_TAB_PROPS = [
+    'assets_tiny/Resources/Sheep/HappySheep_Idle.png',
+    'assets_tiny/Resources/Resources/G_Idle.png',
+    'assets_tiny/Resources/Resources/M_Idle.png',
+    'assets_tiny/Resources/Resources/W_Idle.png',
+    'assets_tiny/UI_Banners/Banner.png',
+    'assets_tiny/UI_Banners/Ribbon_Black.png', 'assets_tiny/UI_Banners/Ribbon_Blue.png',
+    'assets_tiny/UI_Banners/Ribbon_Purple.png', 'assets_tiny/UI_Banners/Ribbon_Red.png',
+    'assets_tiny/UI_Banners/Ribbon_Yellow.png',
+  ];
+  function _f12GetImg(path) {
+    if (!_f12DecoImgs[path]) { const im = new Image(); im.src = path; _f12DecoImgs[path] = im; }
+    return _f12DecoImgs[path];
+  }
+  function _f12ZoneRect(L, zone) {
+    if (zone === 'lanes') return { x: L.lanesX, y: L.lanesY, w: L.lanesW, h: L.lanesH };
+    return { x: L.arena.x, y: L.arena.y, w: L.arena.w, h: L.arena.h };
+  }
+  function _f12PointZone(L, px, py) {
+    const a = _f12ZoneRect(L, 'arena');
+    if (px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h) return 'arena';
+    const ln = _f12ZoneRect(L, 'lanes');
+    if (px >= ln.x && px <= ln.x + ln.w && py >= ln.y && py <= ln.y + ln.h) return 'lanes';
+    return null;
+  }
+  function _f12DrawDeco(L, d) {
+    const z = _f12ZoneRect(L, d.zone);
+    const cx = z.x + d.nx * z.w, cy = z.y + d.ny * z.h;
+    let img, sx = 0, sy = 0, sw, sh;
+    let isTile = false, tilesW = 1, tilesH = 1;
+    if (d.kind.startsWith('tile:')) {
+      // tile:PATH:sx:sy:sw:sh:tilePx — terrain tile (gali būti multi-tile grupė)
+      const p = d.kind.split(':');
+      img = _f12GetImg(p[1]); sx = +p[2]; sy = +p[3]; sw = +p[4]; sh = +p[5];
+      const tilePx = +p[6] || 64;
+      tilesW = Math.max(1, Math.round(sw / tilePx));
+      tilesH = Math.max(1, Math.round(sh / tilePx));
+      isTile = true;
+    } else if (d.kind.startsWith('anim:')) {
+      // anim:PATH:fw:fh:fc:fps — animuotas sprite sheet'as (krūmai, medžiai, vanduo)
+      const p = d.kind.split(':');
+      img = _f12GetImg(p[1]);
+      const fw = +p[2], fh = +p[3], fc = +p[4], fps = +p[5];
+      if (!img.complete || !img.naturalWidth) return;
+      const frame = Math.floor(performance.now() / (1000 / fps)) % fc;
+      sx = frame * fw; sy = 0; sw = fw; sh = fh;
+    } else {
+      img = _f12GetImg(d.kind.slice(4));
+      if (!img.complete || !img.naturalWidth) return;
+      sw = img.naturalWidth; sh = img.naturalHeight;
+    }
+    if (!img || !img.complete || !img.naturalWidth) return;
+    ctx.imageSmoothingEnabled = false;
+    if (isTile) {
+      // Terrain tile — dydis pagal tile'ų kiekį × grid celės dydį (multi-tile = platesnis)
+      const cellW = z.w / _F12_EDIT_GRID;
+      const dw = tilesW * cellW * (d.scale || 1);
+      const dh = tilesH * cellW * (d.scale || 1);
+      // Terrain — center anchor (gulasi ant grindų)
+      ctx.drawImage(img, sx, sy, sw, sh, Math.round(cx - dw / 2), Math.round(cy - dh / 2), dw, dh);
+    } else {
+      // Sprite (img/anim) — height-based, bottom anchor (stovi ant grindų)
+      const baseH = (d.zone === 'lanes' ? L.laneH : L.laneH * 0.9) * (d.scale || 1);
+      const dh = baseH, dw = dh * (sw / sh);
+      ctx.drawImage(img, sx, sy, sw, sh, Math.round(cx - dw / 2), Math.round(cy - dh), dw, dh);
+    }
+  }
+  function _drawDecorations(L, t) {
+    if (_f12Decorations.length) {
+      const sorted = _f12Decorations.slice().sort((a, b) => {
+        const az = a.zone === 'lanes' ? 0 : 1, bz = b.zone === 'lanes' ? 0 : 1;
+        return az !== bz ? az - bz : a.ny - b.ny;
+      });
+      for (const d of sorted) _f12DrawDeco(L, d);
+    }
+    if (_f12EditNote && now() - _f12EditNote.born < 2200) {
+      const age = now() - _f12EditNote.born;
+      const a = age > 1800 ? 1 - (age - 1800) / 400 : 1;
+      ctx.save();
+      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      const tw = ctx.measureText(_f12EditNote.msg).width;
+      ctx.fillStyle = 'rgba(10,30,22,' + (a * 0.9) + ')';
+      ctx.fillRect(L.W / 2 - tw / 2 - 10, 8, tw + 20, 22);
+      ctx.strokeStyle = 'rgba(0,255,180,' + a + ')';
+      ctx.strokeRect(L.W / 2 - tw / 2 - 10, 8, tw + 20, 22);
+      ctx.fillStyle = 'rgba(0,255,180,' + a + ')';
+      ctx.fillText(_f12EditNote.msg, L.W / 2, 23);
+      ctx.restore();
+    }
+    if (!_f12EditMode) return;
+    for (const zone of ['lanes', 'arena']) {
+      const z = _f12ZoneRect(L, zone);
+      const cell = z.w / _F12_EDIT_GRID;
+      const rows = Math.max(1, Math.round(z.h / cell));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,255,180,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let c = 0; c <= _F12_EDIT_GRID; c++) {
+        const gx = Math.round(z.x + c * cell) + 0.5;
+        ctx.moveTo(gx, z.y); ctx.lineTo(gx, z.y + z.h);
+      }
+      for (let r = 0; r <= rows; r++) {
+        const gy = Math.round(z.y + r * (z.h / rows)) + 0.5;
+        ctx.moveTo(z.x, gy); ctx.lineTo(z.x + z.w, gy);
+      }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(0,255,180,0.5)';
+      ctx.font = '9px "Press Start 2P", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(zone.toUpperCase(), z.x + 4, z.y + 12);
+      ctx.restore();
+    }
+    const hz = _f12PointZone(L, mouse.x, mouse.y);
+    if (hz) {
+      const z = _f12ZoneRect(L, hz);
+      const cell = z.w / _F12_EDIT_GRID;
+      const rows = Math.max(1, Math.round(z.h / cell));
+      const gcx = Math.floor((mouse.x - z.x) / cell);
+      const gcy = Math.floor((mouse.y - z.y) / (z.h / rows));
+      const hx = z.x + gcx * cell, hy = z.y + gcy * (z.h / rows);
+      ctx.save();
+      ctx.fillStyle = _f12EditBrush === 'erase' ? 'rgba(255,60,60,0.25)' : 'rgba(0,255,180,0.22)';
+      ctx.fillRect(hx, hy, cell, z.h / rows);
+      if (_f12EditBrush && _f12EditBrush !== 'erase') {
+        ctx.globalAlpha = 0.55;
+        _f12DrawDeco(L, {
+          zone: hz, nx: (gcx + 0.5) * cell / z.w,
+          ny: (gcy + 1) * (z.h / rows) / z.h, kind: _f12EditBrush, scale: _f12EditScale,
+        });
+      }
+      ctx.restore();
+    }
+  }
+  function _f12PushUndo() {
+    _f12EditUndo.push(_f12Decorations.map(d => ({ ...d })));
+    if (_f12EditUndo.length > 40) _f12EditUndo.shift();
+  }
+  function _f12Undo() {
+    if (!_f12EditUndo.length) { _f12EditNote = { msg: 'Nieko atsaukti', born: now() }; return; }
+    _f12Decorations = _f12EditUndo.pop();
+    _f12EditNote = { msg: 'Atsaukta (' + _f12Decorations.length + ' dekoraciju)', born: now() };
+  }
+  function _f12EditClick(px, py) {
+    const L = layoutCache; if (!L) return;
+    const zone = _f12PointZone(L, px, py);
+    if (!zone || !_f12EditBrush) return;
+    const z = _f12ZoneRect(L, zone);
+    const cell = z.w / _F12_EDIT_GRID;
+    const rows = Math.max(1, Math.round(z.h / cell));
+    const gcx = Math.floor((px - z.x) / cell);
+    const gcy = Math.floor((py - z.y) / (z.h / rows));
+    const nx = (gcx + 0.5) * cell / z.w;
+    const ny = (gcy + 1) * (z.h / rows) / z.h;
+    if (_f12EditBrush === 'erase') {
+      let bi = -1, bd = 0.05;
+      for (let i = 0; i < _f12Decorations.length; i++) {
+        const d = _f12Decorations[i];
+        if (d.zone !== zone) continue;
+        const dd = Math.hypot(d.nx - nx, d.ny - ny);
+        if (dd < bd) { bd = dd; bi = i; }
+      }
+      if (bi >= 0) { _f12PushUndo(); _f12Decorations.splice(bi, 1); }
+      return;
+    }
+    _f12PushUndo();
+    _f12Decorations.push({ zone, nx, ny, kind: _f12EditBrush, scale: _f12EditScale });
+  }
+  function _f12ExportDecorations() {
+    const compact = _f12Decorations.map(d => ({
+      zone: d.zone, nx: +d.nx.toFixed(4), ny: +d.ny.toFixed(4),
+      kind: d.kind, scale: +(d.scale || 1).toFixed(2),
+    }));
+    const txt = 'const _F12_DEFAULT_DECORATIONS = ' + JSON.stringify(compact) + ';';
+    try { navigator.clipboard.writeText(txt); } catch (_) { console.log(txt); }
+    try {
+      const a = document.createElement('a');
+      a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txt);
+      a.download = 'f12_decorations.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (_) {}
+    _f12EditNote = { msg: 'Eksportuota ' + compact.length + ' dekoraciju', born: now() };
+  }
+  function _f12SetTab(tab) {
+    _f12EditTab = tab;
+    if (!_f12EditorPanel) return;
+    for (const tn of ['TERRAIN', 'ANIM', 'DECO', 'BUILD', 'PROPS']) {
+      const tb = _f12EditorPanel.querySelector('#f12-tab-' + tn);
+      const pn = _f12EditorPanel.querySelector('#f12-panel-' + tn);
+      if (tb) { tb.style.background = tn === tab ? '#00ffb4' : '#1a2a22'; tb.style.color = tn === tab ? '#06120c' : '#7adcc0'; }
+      if (pn) pn.style.display = tn === tab ? 'block' : 'none';
+    }
+  }
+  function _f12BuildEditorPanel() {
+    if (_f12EditorPanel) return;
+    const p = document.createElement('div');
+    p.id = 'f12-editor-panel';
+    p.style.cssText = 'position:fixed; right:8px; top:8px; width:248px; max-height:94vh;' +
+      'overflow-y:auto; background:rgba(16,14,9,0.97); border:2px solid #00ffb4;' +
+      'border-radius:6px; padding:8px; z-index:10000; display:none;' +
+      "font-family:'Press Start 2P',monospace; color:#cde;";
+    let html = '<div style="font-size:10px; color:#00ffb4; margin-bottom:4px;">F12 EDIT MAP</div>';
+    html += '<div style="font-size:7px; color:#888; margin-bottom:6px; line-height:1.6;">' +
+      'Klik ARENA/LANES deti. [ ] mastelis. Ctrl+Z atsaukti. E isjungti.</div>';
+    html += '<div style="display:flex; gap:3px; margin-bottom:6px;">';
+    for (const tn of ['TERRAIN', 'ANIM', 'DECO', 'BUILD', 'PROPS']) {
+      html += '<button id="f12-tab-' + tn + '" data-tab="' + tn + '" class="f12-tab-btn" ' +
+        'style="flex:1; background:#1a2a22; color:#7adcc0; border:1px solid #0a8a66; ' +
+        'font-size:7px; padding:6px 1px; cursor:pointer;">' + tn + '</button>';
+    }
+    html += '</div>';
+    html += '<div id="f12-panel-TERRAIN" class="f12-tab-panel">' +
+      '<div style="font-size:7px; color:#888; margin-bottom:4px;">Klik+drag tile pasirinkti</div>';
+    for (const ts of _F12_TAB_TERRAIN) {
+      html += '<div class="f12-terr-wrap" data-path="' + ts.path + '" data-tile="' + ts.tile + '" ' +
+        'style="position:relative; margin-bottom:4px; cursor:crosshair; line-height:0;">' +
+        '<img src="' + ts.path + '" class="f12-terr-img" draggable="false" ' +
+        'style="width:100%; image-rendering:pixelated; background:rgba(0,0,0,0.35); display:block;"/>' +
+        '<div class="f12-terr-hl" style="position:absolute; border:2px solid #00ffb4; ' +
+        'background:rgba(0,255,180,0.25); pointer-events:none; display:none;"></div></div>';
+    }
+    html += '</div>';
+    const thumbGrid = (id, list, disp) => {
+      let h = '<div id="f12-panel-' + id + '" class="f12-tab-panel" style="display:' + disp + ';">' +
+        '<div style="display:flex; flex-wrap:wrap; gap:3px;">';
+      for (const item of list) {
+        if (item.startsWith('anim:')) {
+          // Animuotas — thumbnail rodo frame 0 (background-size = fc×100%)
+          const ap = item.split(':');
+          const fc = +ap[4];
+          h += '<div data-kind="' + item + '" class="f12-deco-btn" ' +
+            'style="width:36px; height:36px; cursor:pointer; image-rendering:pixelated; ' +
+            'background-image:url(\'' + ap[1] + '\'); background-size:' + (fc * 100) + '% 100%; ' +
+            'background-position:0 0; background-repeat:no-repeat; ' +
+            'background-color:rgba(255,255,255,0.07); border:2px solid transparent;"></div>';
+        } else {
+          // Statinis img:PATH
+          h += '<img src="' + item + '" data-kind="img:' + item + '" class="f12-deco-btn" draggable="false" ' +
+            'style="width:36px; height:36px; object-fit:contain; background:rgba(255,255,255,0.07); ' +
+            'padding:2px; cursor:pointer; image-rendering:pixelated; border:2px solid transparent;"/>';
+        }
+      }
+      h += '</div></div>';
+      return h;
+    };
+    html += thumbGrid('ANIM', _F12_TAB_ANIM, 'none');
+    html += thumbGrid('DECO', _F12_TAB_DECO, 'none');
+    html += thumbGrid('BUILD', _F12_TAB_BUILD, 'none');
+    html += thumbGrid('PROPS', _F12_TAB_PROPS, 'none');
+    html += '<div id="f12-edit-tools" style="margin-top:8px; border-top:1px solid #0a8a66; padding-top:6px;">' +
+      '<div style="display:flex; gap:4px;">' +
+      '<button id="f12-undo-btn" style="flex:1; background:#1a1408; color:#ffcf5c; border:1px solid #886611; ' +
+      'font-size:7px; padding:6px 0; cursor:pointer;">UNDO</button>' +
+      '<button id="f12-erase-btn" style="flex:1; background:#551111; color:#ff8888; border:1px solid #aa3333; ' +
+      'font-size:7px; padding:6px 0; cursor:pointer;">ERASE</button>' +
+      '<button id="f12-clear-btn" style="flex:1; background:#3a2a10; color:#ffcf5c; border:1px solid #886611; ' +
+      'font-size:7px; padding:6px 0; cursor:pointer;">CLEAR</button></div>' +
+      '<div style="font-size:7px; color:#7adcc0; margin:5px 0 3px;">Mastelis: ' +
+      '<span id="f12-scale-val">1.00</span> ([ ])</div>' +
+      '<button id="f12-export-btn" style="width:100%; margin-top:2px; background:#0a3a22; color:#00ffb4; ' +
+      'border:1px solid #00aa77; font-size:8px; padding:8px 0; cursor:pointer;">EXPORT to CLIPBOARD + TXT</button></div>';
+    p.innerHTML = html;
+    document.body.appendChild(p);
+    _f12EditorPanel = p;
+    const clearSel = () => p.querySelectorAll('.f12-deco-btn').forEach(b => b.style.borderColor = 'transparent');
+    p.querySelectorAll('.f12-tab-btn').forEach(tb => tb.addEventListener('click', () => _f12SetTab(tb.dataset.tab)));
+    p.querySelectorAll('.f12-deco-btn').forEach(btn => btn.addEventListener('click', () => {
+      clearSel(); btn.style.borderColor = '#00ffb4'; _f12EditBrush = btn.dataset.kind;
+      _f12EditNote = { msg: 'Teptukas: ' + btn.dataset.kind.split('/').pop(), born: now() };
+    }));
+    p.querySelectorAll('.f12-terr-wrap').forEach(wrap => {
+      const img = wrap.querySelector('.f12-terr-img');
+      const hl = wrap.querySelector('.f12-terr-hl');
+      const tile = +wrap.dataset.tile;
+      let dragging = false, startTx = 0, startTy = 0;
+      const tileAt = (ev) => {
+        const r = img.getBoundingClientRect();
+        const cols = Math.max(1, Math.round((img.naturalWidth || tile) / tile));
+        const rows = Math.max(1, Math.round((img.naturalHeight || tile) / tile));
+        const tx = Math.floor((ev.clientX - r.left) / r.width * cols);
+        const ty = Math.floor((ev.clientY - r.top) / r.height * rows);
+        return { tx: Math.max(0, Math.min(cols - 1, tx)), ty: Math.max(0, Math.min(rows - 1, ty)), cols, rows };
+      };
+      const showHl = (minTx, minTy, w, h) => {
+        const r = img.getBoundingClientRect();
+        const cols = Math.max(1, Math.round((img.naturalWidth || tile) / tile));
+        const rows = Math.max(1, Math.round((img.naturalHeight || tile) / tile));
+        const cw = r.width / cols, ch = r.height / rows;
+        hl.style.display = 'block';
+        hl.style.left = (minTx * cw) + 'px'; hl.style.top = (minTy * ch) + 'px';
+        hl.style.width = Math.max(2, w * cw - 4) + 'px'; hl.style.height = Math.max(2, h * ch - 4) + 'px';
+      };
+      wrap.addEventListener('mousedown', (ev) => {
+        const a = tileAt(ev); dragging = true; startTx = a.tx; startTy = a.ty;
+        showHl(a.tx, a.ty, 1, 1); ev.preventDefault();
+      });
+      wrap.addEventListener('mousemove', (ev) => {
+        if (!dragging) return;
+        const a = tileAt(ev);
+        showHl(Math.min(startTx, a.tx), Math.min(startTy, a.ty),
+          Math.abs(a.tx - startTx) + 1, Math.abs(a.ty - startTy) + 1);
+      });
+      const finish = (ev) => {
+        if (!dragging) return; dragging = false;
+        const a = tileAt(ev);
+        const minTx = Math.min(startTx, a.tx), minTy = Math.min(startTy, a.ty);
+        const w = Math.abs(a.tx - startTx) + 1, h = Math.abs(a.ty - startTy) + 1;
+        _f12EditBrush = 'tile:' + wrap.dataset.path + ':' + (minTx * tile) + ':' + (minTy * tile) +
+          ':' + (w * tile) + ':' + (h * tile) + ':' + tile;
+        _f12EditNote = { msg: 'Tile ' + w + 'x' + h + ' pasirinkta', born: now() };
+      };
+      wrap.addEventListener('mouseup', finish);
+      wrap.addEventListener('mouseleave', () => { if (dragging) dragging = false; });
+    });
+    p.querySelector('#f12-undo-btn').addEventListener('click', _f12Undo);
+    p.querySelector('#f12-erase-btn').addEventListener('click', () => {
+      clearSel(); _f12EditBrush = 'erase';
+      _f12EditNote = { msg: 'ERASE rezimas', born: now() };
+    });
+    p.querySelector('#f12-clear-btn').addEventListener('click', () => {
+      if (confirm('Isvalyti VISAS dekoracijas?')) { _f12PushUndo(); _f12Decorations = []; }
+    });
+    p.querySelector('#f12-export-btn').addEventListener('click', _f12ExportDecorations);
+    _f12SetTab('TERRAIN');
+  }
+  function _f12UpdateScaleLabel() {
+    if (_f12EditorPanel) {
+      const el = _f12EditorPanel.querySelector('#f12-scale-val');
+      if (el) el.textContent = _f12EditScale.toFixed(2);
+    }
+  }
+  function _f12ToggleEditMode() {
+    _f12EditMode = !_f12EditMode;
+    if (_f12EditMode) { _f12BuildEditorPanel(); _f12UpdateScaleLabel(); }
+    if (_f12EditorPanel) _f12EditorPanel.style.display = _f12EditMode ? 'block' : 'none';
+    _f12EditNote = { msg: _f12EditMode ? 'EDIT MODE ON' : 'EDIT MODE OFF', born: now() };
+  }
+
   function onKey(e) {
     if (!active) return;
     const k = e.key;
@@ -5442,6 +6599,20 @@
       try { S.floor = 11; } catch (_) {}
       e.preventDefault(); return;
     }
+    if (k === 'e' || k === 'E') { _f12ToggleEditMode(); e.preventDefault(); return; }
+    // Edit mode — Ctrl+Z undo
+    if (_f12EditMode && (e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) {
+      _f12Undo(); e.preventDefault(); return;
+    }
+    // Edit mode — mastelio reguliavimas
+    if (_f12EditMode && (k === '[' || k === ']')) {
+      _f12EditScale = Math.max(0.3, Math.min(3, _f12EditScale + (k === ']' ? 0.15 : -0.15)));
+      _f12UpdateScaleLabel();
+      _f12EditNote = { msg: `Mastelis: ${_f12EditScale.toFixed(2)}`, born: now() };
+      e.preventDefault(); return;
+    }
+    // Edit mode — R neturi restart'inti (kad netrukdytų), tik ne-edit
+    if ((k === 'r' || k === 'R') && _f12EditMode) { e.preventDefault(); return; }
     if (k === 'r' || k === 'R') { initState(); e.preventDefault(); return; }
     if (k === ' ' && !e.repeat) {
       // Spacebar pirma keydown — pradeda charge
@@ -5484,6 +6655,17 @@
     } catch (_) {}
     const p = clientToCanvas(e.clientX, e.clientY);
     mouse.x = p.x; mouse.y = p.y;
+    // ── EDIT MAP mygtukas — tikrinam PIRMA (kad visada galima išjungti) ──
+    if (editMapBtnRect && p.x >= editMapBtnRect.x && p.x <= editMapBtnRect.x + editMapBtnRect.w
+        && p.y >= editMapBtnRect.y && p.y <= editMapBtnRect.y + editMapBtnRect.h) {
+      _f12ToggleEditMode();
+      return;
+    }
+    // ── EDIT MODE — click ant arena/lanes deda/trina dekoraciją (perima visą click'ą) ──
+    if (_f12EditMode) {
+      _f12EditClick(p.x, p.y);
+      return;
+    }
     // Kortos — tik vizualas, click'ai ignoruojami (panaikinta drag logika)
     if (exitBtnRect && p.x >= exitBtnRect.x && p.x <= exitBtnRect.x + exitBtnRect.w
         && p.y >= exitBtnRect.y && p.y <= exitBtnRect.y + exitBtnRect.h) {
@@ -5606,6 +6788,9 @@
     document.removeEventListener('keydown', onKey, true);
     document.removeEventListener('keyup', onKeyUp, true);
     charging = false;
+    // Edit mode — išjungiam ir paslepiam panelę išeinant iš F12
+    _f12EditMode = false;
+    if (_f12EditorPanel) _f12EditorPanel.style.display = 'none';
     try { _F12Music.stop(); } catch (_) {}
     // Atstatom garsą grįžtant į F11
     try {
@@ -5629,6 +6814,8 @@
     _tickOhShitEvents(tnow);
     _tickPoison(tnow);
     _tickAsteroids(tnow);
+    _tickTraps(tnow);
+    _tickFrostReverse(tnow);
     // Pending merge attacks — fire'ina po delay (susijungimo animacijos pabaiga)
     for (let i = _f12PendingAttacks.length - 1; i >= 0; i--) {
       const pa = _f12PendingAttacks[i];
