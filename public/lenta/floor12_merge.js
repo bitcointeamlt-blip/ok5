@@ -260,6 +260,66 @@
         osc.start(tEnd); osc.stop(tEnd + 0.14);
       }
     },
+    // ── Reveal — krištolinis „TING" su arpeggio (kai po reload atsidengia READY) ──
+    colorReveal() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // 1) Trumpas „pluck" pradžioj — minkštas attack click (give it body)
+      {
+        const sr = c.sampleRate;
+        const dur = 0.012;
+        const len = Math.floor(sr * dur);
+        const buf = c.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/len, 2);
+        const src = c.createBufferSource(); src.buffer = buf;
+        const bp = c.createBiquadFilter(); bp.type = 'bandpass';
+        bp.frequency.value = 3500; bp.Q.value = 2;
+        const g = c.createGain(); g.gain.setValueAtTime(0.10, t0);
+        src.connect(bp); bp.connect(g); g.connect(this.master);
+        src.start(t0); src.stop(t0 + dur + 0.005);
+      }
+      // 2) Krištolinis bell — sine 1200Hz su lengva vibracija
+      {
+        const o = c.createOscillator(); const g = c.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(1200, t0);
+        o.frequency.exponentialRampToValueAtTime(1180, t0 + 0.30);   // tiny pitch droop = realistic bell
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.40);
+        o.connect(g); g.connect(this.master);
+        o.start(t0); o.stop(t0 + 0.42);
+      }
+      // 3) Oktavos overtone (sine 2400Hz) — tylesnis, suteikia „glass" charakterį
+      {
+        const o = c.createOscillator(); const g = c.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(2400, t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.06, t0 + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+        o.connect(g); g.connect(this.master);
+        o.start(t0); o.stop(t0 + 0.24);
+      }
+      // 4) Arpeggio tail — 3 greitos triangle natos kylant (G5 → B5 → D6)
+      const arpFreqs = [1568, 1976, 2349];
+      const arpStarts = [0.06, 0.10, 0.14];
+      const arpDurs = [0.10, 0.10, 0.16];
+      for (let i = 0; i < 3; i++) {
+        const ts = t0 + arpStarts[i];
+        const o = c.createOscillator(); const g = c.createGain();
+        o.type = 'triangle';
+        o.frequency.value = arpFreqs[i];
+        g.gain.setValueAtTime(0.0001, ts);
+        g.gain.exponentialRampToValueAtTime(0.05, ts + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, ts + arpDurs[i]);
+        o.connect(g); g.connect(this.master);
+        o.start(ts); o.stop(ts + arpDurs[i] + 0.02);
+      }
+    },
     cannonShot(power) {
       this._init(); if (!this.ctx) return;
       const c = this.ctx;
@@ -851,7 +911,8 @@
   const FIRE_SPEED_MIN = 380;     // tap → silpnas šūvis
   const FIRE_SPEED_MAX = 1500;    // hold full charge → galingas
   const CHARGE_FULL_MS = 1100;    // kiek laiko reikia pilnam charge
-  const FIRE_COOLDOWN_MS = 1100;     // reload — neleidžia spam'inti, kortos farm'inamos lėčiau
+  const FIRE_COOLDOWN_MIN = 1000;    // reload min (1s)
+  const FIRE_COOLDOWN_MAX = 3000;    // reload max (3s) — kiekvienam šūviui random tarp min..max
   const BASE_R = 17;             // mažesnis — atitinka preview ant patrankos
   const MAX_BLOCKS = 80;
   const TOP_TILT = 0.58;          // tilt — top + front matomi balansuotai (kaip referenciniam screenshot)
@@ -1268,6 +1329,22 @@
   const _WD_START_FRAME = 3;   // animacija prasideda nuo 4-to kadro (idx 3)
   // Frost (Ronin) merge effekto logo — baltas R-skydas, transparent bg (92×126)
   const _frostLogoImg = new Image(); _frostLogoImg.src = 'frost_r.png';
+  // RONKE su kepure (lvl3) — personažo idle sprite šalia patrankos (8 frames @ 632×640)
+  const _ronke2Img = new Image(); _ronke2Img.src = 'assets/ronkelvl3.png';
+  const _RONKE2_FW = 632, _RONKE2_FH = 640, _RONKE2_FRAMES = 8;
+  // Lazdos orbo pozicija per-frame. X užfiksuota (0.302 — vidurkis), kad burbulas
+  // neslidinėtų horizontaliai (detekcijos triukšmas dėl magiškų blizgesių f3-f5).
+  // Y juda natūraliai: f4 = peak UP, f0/f7 = žemiausia. Amplitudė ~5 display px.
+  const _RONKE2_ORB_OFFSETS = [
+    [+0.302, -0.2309],   // f0 — mid
+    [+0.302, -0.2340],   // f1 — kyla
+    [+0.302, -0.2494],   // f2 — kyla
+    [+0.302, -0.2758],   // f3 — toliau kyla
+    [+0.302, -0.2836],   // f4 — peak UP
+    [+0.302, -0.2695],   // f5 — leidziasi
+    [+0.302, -0.2321],   // f6 — beveik mid
+    [+0.302, -0.2310],   // f7 — mid
+  ];
   const _ZIP_FRAMES = 8, _ZIP_FPS = 10;
   const _ZIP_CHARGE_FRAMES = 14, _ZIP_CHARGE_FPS = 10;
   const _ZIP_CHARGE_DUR = (_ZIP_CHARGE_FRAMES / _ZIP_CHARGE_FPS) * 1000;  // 1400ms
@@ -1282,7 +1359,11 @@
   let nextId = 1;
   let launcher = { x: 0, y: 0, angle: 0 };
   let nextBlock = null;
+  let nextNextBlock = null;             // antras eilėje — rodomas ant RONKE lazdos burbulo
   let lastFireAt = 0;
+  let _currentReloadMs = FIRE_COOLDOWN_MIN;  // dabartinio reload trukmė (random per šūvį)
+  let _f12ReloadEndPlayed = true;       // ar jau sugrojom reveal garsiuką po reload
+  let _f12ReadyFlashAt = 0;             // timestamp kai paskutinis reload baigėsi (ready-burst)
   let charging = false;
   let chargeStartedAt = 0;
 
@@ -1341,6 +1422,8 @@
     score = 0;
     merges = 0;
     nextBlock = makeNextBlock();
+    nextNextBlock = makeNextBlock();
+    _f12ReadyFlashAt = now();              // pirmas shine sweep'as iškart pradžioj
     lanes = [];
     for (let i = 0; i < LANES; i++) lanes.push({ enemies: [], allies: [] });
     baseHp = BASE_HP;
@@ -1384,6 +1467,7 @@
     _f12Asteroids = [];
     _f12Traps = [];
     _f12FrostReverse = [];
+    _f12ZoneFlash = [0, 0, 0, 0];
     // Užkraunam HOME treniruotus unit'us — pridedam stack count, ne 1 per snap
     try {
       if (Array.isArray(_f11TransferUnits) && _f11TransferUnits.length > 0) {
@@ -1421,7 +1505,7 @@
       lanesX: padX, lanesY, lanesW: aw, lanesH,
       laneH: Math.floor((lanesH - 6) / LANES),
       arena: { x: padX, y: arenaY, w: aw, h: arenaH },
-      launcher: { x: padX + 60, y: arenaY + arenaH / 2 },
+      launcher: { x: padX + 110, y: arenaY + arenaH / 2 },  // +50px į dešinę — vietos RONKE kairėje
     };
   }
 
@@ -1975,6 +2059,15 @@
         });
         // 3) Per-type burst FX (kiekvienas tipas turi savo unikalią animaciją)
         _f12MergeRings.push({ x: mx, y: my, born: tNow, value: newVal, color: colJ, type: a.type });
+        // Zonos plokštės flash — kurioj zonoj įvyko merge, ta plokštė trumpai pažsta
+        {
+          const _Lz = layoutCache;
+          if (_Lz && _Lz.arena && _Lz.arena.w > 0) {
+            const zFrac = (mx - _Lz.arena.x) / _Lz.arena.w;
+            const zIdx = Math.max(0, Math.min(3, Math.floor(zFrac * 4)));
+            _f12ZoneFlash[zIdx] = tNow;
+          }
+        }
         // 4) Combo counter — jei merge įvyko per 1.5s nuo paskutinio
         if (tNow - _f12LastMergeAt < 1500) {
           _f12ComboCount++;
@@ -3351,6 +3444,14 @@
           if (a.x >= 1.0) { Ln.allies.splice(i, 1); continue; }
         }
       }
+      // ── Boss pozicijos šioj lane — precompute VIENĄ kartą (vengiam O(n²) skenavimo per enemy) ──
+      const _Lb = layoutCache;
+      const _laneUsableB = _Lb ? (_Lb.lanesW - 32 - 30) : 1100;
+      let _laneBossXs = null;
+      for (const other of Ln.enemies) {
+        if (other.dead || other._isWall || !other.isBoss) continue;
+        (_laneBossXs || (_laneBossXs = [])).push(other.x);
+      }
       for (let i = Ln.enemies.length - 1; i >= 0; i--) {
         const e = Ln.enemies[i];
         if (e.dead) {
@@ -3374,13 +3475,11 @@
         // ── Atstumas iki boss'o priekyje (toj pačioj lane) — naudojamas idle + hard-stop ──
         // _bossDist pixel-space; jei boss'o priekyje nėra — Infinity
         let _bossDist = Infinity;
-        if (!e.isBoss) {
-          const _Lb = layoutCache;
-          const _laneUsableB = _Lb ? (_Lb.lanesW - 32 - 30) : 1100;
-          for (const other of Ln.enemies) {
-            if (other === e || other.dead || other._isWall || !other.isBoss) continue;
-            if (other.x >= e.x) continue;                  // boss turi būti priekyje
-            const dpx = (e.x - other.x) * _laneUsableB;
+        if (!e.isBoss && _laneBossXs) {
+          for (let bi = 0; bi < _laneBossXs.length; bi++) {
+            const bx = _laneBossXs[bi];
+            if (bx >= e.x) continue;                       // boss turi būti priekyje
+            const dpx = (e.x - bx) * _laneUsableB;
             if (dpx < _bossDist) _bossDist = dpx;
           }
         }
@@ -3510,10 +3609,17 @@
   // power: 0..1
   function fire(power) {
     const t = now();
-    if (t - lastFireAt < FIRE_COOLDOWN_MS) return;
+    if (t - lastFireAt < _currentReloadMs) return;
     if (blocks.length >= MAX_BLOCKS) return;
     if (gameOver) return;
     lastFireAt = t;
+    // Sekančio reload trukmė — lygi distribucija: 1s / 2s / 3s, kiekvienas po ~33%
+    {
+      const r = Math.random();
+      if (r < 1/3) _currentReloadMs = 1000;
+      else if (r < 2/3) _currentReloadMs = 2000;
+      else _currentReloadMs = 3000;
+    }
     const lx = launcher.x, ly = launcher.y;
     const ang = launcher.angle;
     const r = radiusForValue(nextBlock.value);
@@ -3567,7 +3673,9 @@
         duration: 600 + Math.random() * 300,
       });
     }
-    nextBlock = makeNextBlock();
+    nextBlock = nextNextBlock || makeNextBlock();
+    nextNextBlock = makeNextBlock();
+    _f12ReloadEndPlayed = false;          // po reload pabaigos paleisim reveal garsiuką
   }
 
   function updateLauncherAim() {
@@ -3616,6 +3724,7 @@
     _drawLaneArrows(L, t);
     _drawZipBolts(L, t);
     drawArena(L);             // 4 zonų markeriai įkepti į arenos sprite'ą
+    _drawZoneFlashes(L, t);   // zonos plokštės blyksnis kai sumerge'inta
     _drawDecorations(L, t);   // dekoracijos — po abiem fonais, prieš kamuoliukus
     drawBlocks(L, t);
     drawLauncher(L, t);
@@ -4615,6 +4724,9 @@
   const _TRAP_ACTIVE_MS = 1000;         // aktyvaus lango trukmė
   const _TRAP_DMG = 5;                  // -5 dmg priešui užlipus aktyviu metu
   let _f12FrostReverse = [];            // [{lane, born, duration, _endPlayed}] — frost reverse juostos
+  // Arenos zonų plokštės — bendri matmenys (įkepta į sprite + flash overlay)
+  const _F12_PLAQUE_W = 48, _F12_PLAQUE_H = 20, _F12_PLAQUE_TOP = 6;
+  let _f12ZoneFlash = [0, 0, 0, 0];     // [ts] — paskutinio merge laikas kiekvienoj zonoj
   const _SPIRIT_DURATION = 850;
   const _CARD_CONSUME_DUR = 520;
   const _CARD_W = 68, _CARD_H = 96, _CARD_GAP = 8;
@@ -5376,33 +5488,46 @@
         }
       }
 
-      // ── 4 ĮKALTOS PLOKŠTĖS — engraved multiplier markeriai zonos viršuje ──
+      // ── 4 ĮKALTOS PLOKŠTĖS — engraved multiplier markeriai (didesnės +2px, geresnis UI) ──
       for (let z = 0; z < 4; z++) {
         const acc = ZACC[z];
         const zcx = INNER_X + Math.round(z * zw4 + zw4 / 2);
-        const pw = 36, ph = 16;
+        const pw = _F12_PLAQUE_W, ph = _F12_PLAQUE_H;
         const pxL = Math.round(zcx - pw / 2);
-        const pyT = INNER_Y + 6;
-        // Recesso šešėlis (plokštė įspausta į grindis: tamsu viršuj-kairėj)
-        oc.fillStyle = '#0f0703';
-        oc.fillRect(pxL - 1, pyT - 1, pw + 2, ph + 2);
-        // Plokštės korpusas — tamsesnis nei aplinkinis dirvožemis
+        const pyT = INNER_Y + _F12_PLAQUE_TOP;
+        // Recesso šešėlis aplink — plokštė įspausta į grindis (2px storis)
+        oc.fillStyle = '#0d0602';
+        oc.fillRect(pxL - 2, pyT - 2, pw + 4, ph + 4);
+        // Plokštės korpusas — tamsus
         oc.fillStyle = '#1c1208';
         oc.fillRect(pxL, pyT, pw, ph);
-        // Apatinė-dešinė šviesi briauna (recesso vidinė lit pusė)
+        // Inset bevel — viršuj-kairėj tamsu (recesso šešėlis), apačioj-dešinėj šviesu
+        oc.fillStyle = '#0f0703';
+        oc.fillRect(pxL, pyT, pw, 2);
+        oc.fillRect(pxL, pyT, 2, ph);
         oc.fillStyle = ZONE_DIRT[z];
-        oc.fillRect(pxL, pyT + ph - 1, pw, 1);
-        oc.fillRect(pxL + pw - 1, pyT, 1, ph);
-        // Akcentinis rėmas — dažyto akmens spalva, viršuj+kairėj
+        oc.fillRect(pxL, pyT + ph - 2, pw, 2);
+        oc.fillRect(pxL + pw - 2, pyT, 2, ph);
+        // Akcentinis rėmas — 2px dažyto akmens spalva
         oc.fillStyle = acc;
-        oc.fillRect(pxL, pyT, pw, 1);
-        oc.fillRect(pxL, pyT, 1, ph);
-        // Kampų nukirtimai (pixel art)
-        oc.fillStyle = '#1c1208';
-        oc.fillRect(pxL, pyT, 1, 1);
-        oc.fillRect(pxL + pw - 1, pyT, 1, 1);
-        // Engraved tekstas — tamsus su 1px šviesesniu highlight'u apačioj (carved look)
-        oc.font = '8px "Press Start 2P", monospace';
+        oc.fillRect(pxL + 2, pyT + 2, pw - 4, 2);          // viršus
+        oc.fillRect(pxL + 2, pyT + ph - 4, pw - 4, 2);     // apačia
+        oc.fillRect(pxL + 2, pyT + 2, 2, ph - 4);          // kairė
+        oc.fillRect(pxL + pw - 4, pyT + 2, 2, ph - 4);     // dešinė
+        // Vidinis tamsus laukas (kontrastas tekstui)
+        oc.fillStyle = '#100a04';
+        oc.fillRect(pxL + 4, pyT + 4, pw - 8, ph - 8);
+        // Kampų rivets/bolts — maži akcentiniai taškai 4 kampuose
+        oc.fillStyle = acc;
+        oc.fillRect(pxL + 3, pyT + 3, 2, 2);
+        oc.fillRect(pxL + pw - 5, pyT + 3, 2, 2);
+        oc.fillRect(pxL + 3, pyT + ph - 5, 2, 2);
+        oc.fillRect(pxL + pw - 5, pyT + ph - 5, 2, 2);
+        oc.fillStyle = '#fff';                             // rivet shine
+        oc.fillRect(pxL + 3, pyT + 3, 1, 1);
+        oc.fillRect(pxL + pw - 5, pyT + 3, 1, 1);
+        // Engraved tekstas — 10px (+2px), carved look (gylis + accent)
+        oc.font = '10px "Press Start 2P", monospace';
         oc.textAlign = 'center';
         oc.textBaseline = 'middle';
         const tcx = zcx, tcy = pyT + ph / 2 + 1;
@@ -5483,6 +5608,49 @@
     ctx.drawImage(sprite.canvas, A.x - sprite.frame, A.y - sprite.frame);
     // Marks overlay — accumuliuoja per žaidimą
     if (_marksCanvas) ctx.drawImage(_marksCanvas, A.x, A.y);
+  }
+
+  // ── Zonos plokštės flash — kai zonoj sumerge'inta, plokštė trumpai pažsta ──
+  function _drawZoneFlashes(L, t) {
+    const A = L.arena;
+    const zw4 = A.w / 4;
+    const pw = _F12_PLAQUE_W, ph = _F12_PLAQUE_H;
+    const FLASH_DUR = 340;
+    // Ryškios akcentinės spalvos (flash'ui) + multiplier tekstas
+    const ZF = ['#aab4ce', '#8ab4f0', '#8ad8e6', '#ffe49a'];
+    const ZMULT = ['0.5x', '1x', '1.5x', '2x'];
+    let any = false;
+    for (let z = 0; z < 4; z++) {
+      const fa = t - (_f12ZoneFlash[z] || -99999);
+      if (fa < 0 || fa >= FLASH_DUR) continue;
+      if (!any) { ctx.save(); ctx.imageSmoothingEnabled = false; any = true; }
+      const k = fa / FLASH_DUR;
+      const inten = 1 - k;                      // 1 → 0
+      const zcx = Math.round(A.x + z * zw4 + zw4 / 2);
+      const pxL = Math.round(zcx - pw / 2);
+      const pyT = A.y + _F12_PLAQUE_TOP;
+      // Plokštė pažsta — baltas glow virš jos
+      ctx.fillStyle = `rgba(255,255,255,${0.45 * inten})`;
+      ctx.fillRect(pxL - 2, pyT - 2, pw + 4, ph + 4);
+      // Akcentinis rėmo blyksnis
+      ctx.fillStyle = `rgba(255,255,255,${0.8 * inten})`;
+      ctx.fillRect(pxL - 2, pyT - 2, pw + 4, 2);
+      ctx.fillRect(pxL - 2, pyT + ph, pw + 4, 2);
+      // Skaičiukas — ryškiai baltas, trumpas blyksnis
+      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tcy = pyT + ph / 2 + 1;
+      ctx.fillStyle = `rgba(255,255,255,${inten})`;
+      ctx.fillText(ZMULT[z], zcx, tcy);
+      ctx.fillStyle = `rgba(${ZF[z] === '#ffe49a' ? '255,228,154' : '200,220,255'},${inten * 0.6})`;
+      ctx.fillText(ZMULT[z], zcx, tcy);
+    }
+    if (any) {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.restore();
+    }
   }
 
 
@@ -5602,6 +5770,216 @@
     ctx.restore();
   }
 
+  // ── Launcher pedestalo sprite cache — statinė bazė renderinama VIENĄ kartą ──
+  // (anksčiau ~1100 fillRect kas frame'ą — dabar 1 drawImage)
+  let _launcherBaseCache = null;
+  function _getLauncherBaseSprite() {
+    if (_launcherBaseCache) return _launcherBaseCache;
+    const PX = 2, baseR = 32, pad = 6;
+    const sz = (baseR + pad) * 2, cc = baseR + pad;
+    const off = document.createElement('canvas');
+    off.width = sz; off.height = sz;
+    const oc = off.getContext('2d');
+    oc.imageSmoothingEnabled = false;
+    for (let dy = -baseR; dy <= baseR; dy += PX) {
+      for (let dx = -baseR; dx <= baseR; dx += PX) {
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d > baseR) continue;
+        const hsh = ((dx * 73 + dy * 137) >>> 0) % 100;
+        let c;
+        if (d > baseR - PX*2) c = '#1a0e06';
+        else if (d > baseR - PX*4) c = '#2a1810';
+        else if (hsh < 10) c = '#5a3820';
+        else if (hsh < 25) c = '#3a2410';
+        else if (hsh < 50) c = '#4a2e18';
+        else c = '#42281a';
+        oc.fillStyle = c;
+        oc.fillRect(cc + dx, cc + dy, PX, PX);
+      }
+    }
+    // Top highlight crescent
+    for (let dy = -baseR + PX*2; dy <= -baseR + PX*8; dy += PX) {
+      const halfW = Math.sqrt(Math.max(0, (baseR - PX*2) * (baseR - PX*2) - dy * dy));
+      for (let dx = -halfW; dx <= halfW; dx += PX) {
+        if (dx > 0 && dx > halfW * 0.4) continue;
+        oc.fillStyle = 'rgba(255,200,140,0.18)';
+        oc.fillRect(cc + Math.round(dx / PX) * PX, cc + dy, PX, PX);
+      }
+    }
+    // 4 cardinal iron studs (rivets)
+    const rivetD = baseR - PX*4;
+    for (const [rdx, rdy] of [[0, -rivetD], [rivetD, 0], [0, rivetD], [-rivetD, 0]]) {
+      const rx = cc + rdx, ry = cc + rdy;
+      oc.fillStyle = '#1a0e06'; oc.fillRect(rx - PX*2, ry - PX*2, PX*4, PX*4);
+      oc.fillStyle = '#7a5a3a'; oc.fillRect(rx - PX, ry - PX, PX*2, PX*2);
+      oc.fillStyle = '#ffe7a8'; oc.fillRect(rx - PX, ry - PX, PX, PX);
+    }
+    _launcherBaseCache = { canvas: off, cc };
+    return _launcherBaseCache;
+  }
+
+  // Reload overlay — tamsus apskritimas, cache'inamas vieną kartą
+  let _reloadOverlayCache = null;
+  function _getReloadOverlaySprite() {
+    if (_reloadOverlayCache) return _reloadOverlayCache;
+    const PX = 2, ovR = 24;
+    const sz = ovR * 2 + PX*2, cc = ovR + PX;
+    const off = document.createElement('canvas');
+    off.width = sz; off.height = sz;
+    const oc = off.getContext('2d');
+    oc.imageSmoothingEnabled = false;
+    oc.fillStyle = 'rgba(0,0,0,0.55)';
+    for (let dy = -ovR; dy <= ovR; dy += PX) {
+      for (let dx = -ovR; dx <= ovR; dx += PX) {
+        if (dx*dx + dy*dy > ovR*ovR) continue;
+        oc.fillRect(cc + dx, cc + dy, PX, PX);
+      }
+    }
+    _reloadOverlayCache = { canvas: off, cc };
+    return _reloadOverlayCache;
+  }
+
+  // ── Patrankos vamzdis — detalus chunky pixel art sprite, cache'intas vieną kartą ──
+  // Ankstesnė versija buvo daug fillRect'ų kas frame; dabar 1 drawImage. Plus pridėtas
+  // wood stock, magic gem ant kameros, ornate brass band engravings, castellated muzzle crown.
+  let _barrelCache = null;
+  function _getBarrelSprite() {
+    if (_barrelCache) return _barrelCache;
+    // Barrel-local pixel range: x [-12, 46], y [-18, 18]
+    const xMin = -12, xMax = 46, yMin = -18, yMax = 18, PAD = 2;
+    const w = (xMax - xMin) + PAD * 2;
+    const h = (yMax - yMin) + PAD * 2;
+    const off = document.createElement('canvas');
+    off.width = w; off.height = h;
+    const oc = off.getContext('2d');
+    oc.imageSmoothingEnabled = false;
+    const offX = -xMin + PAD, offY = -yMin + PAD;
+    oc.translate(offX, offY);
+    // Palette
+    const ironDark = '#0a0608', ironMid = '#3a2c2c', ironLight = '#6a5a5a', ironHi = '#a8a0a0';
+    const brass = '#a87830', brassLight = '#e8b85a', brassDark = '#6a4818', brassHi = '#fff5c0';
+    const wood = '#6b4a2e', woodDark = '#3e2914', woodLight = '#8b6242';
+    const gemDark = '#3a7090', gemMid = '#5db4d8', gemHi = '#bef0ff';
+    // ── 1) WOOD STOCK (rear, x: -12..-2) — medinis kotas užpakaly ──
+    oc.fillStyle = woodDark; oc.fillRect(-12, -10, 10, 20);
+    oc.fillStyle = wood;     oc.fillRect(-11, -9, 9, 18);
+    oc.fillStyle = woodLight; oc.fillRect(-11, -9, 9, 2);              // top highlight
+    oc.fillStyle = '#2a1a08'; oc.fillRect(-11, 7, 9, 2);                // bottom shadow
+    // Wood grain (kelios horizontalios linijos)
+    oc.fillStyle = woodDark;
+    oc.fillRect(-10, -5, 7, 1);
+    oc.fillRect(-10, -1, 7, 1);
+    oc.fillRect(-10, 3, 7, 1);
+    // Iron rivet on stock end
+    oc.fillStyle = ironDark; oc.fillRect(-12, -3, 2, 6);
+    oc.fillStyle = ironHi;   oc.fillRect(-11, -2, 1, 1);
+    // ── 2) BRASS REINFORCEMENT BAND (jungia stock+chamber, x: -2..2) ──
+    oc.fillStyle = brass;     oc.fillRect(-2, -13, 4, 26);
+    oc.fillStyle = brassLight; oc.fillRect(-2, -13, 4, 3);
+    oc.fillStyle = brassDark;  oc.fillRect(-2, 10, 4, 3);
+    oc.fillStyle = brassHi;    oc.fillRect(-1, -12, 1, 1);
+    // 4 mažos kniedės ant juostos
+    oc.fillStyle = ironDark;
+    oc.fillRect(0, -10, 1, 1);
+    oc.fillRect(0, -3, 1, 1);
+    oc.fillRect(0, 4, 1, 1);
+    oc.fillRect(0, 9, 1, 1);
+    // ── 3) REAR CHAMBER (storesnė pradžia, x: 2..14) ──
+    oc.fillStyle = ironDark; oc.fillRect(2, -14, 12, 28);
+    oc.fillStyle = ironMid;  oc.fillRect(3, -12, 10, 24);
+    oc.fillStyle = ironLight; oc.fillRect(3, -12, 10, 3);
+    oc.fillStyle = ironHi;    oc.fillRect(3, -12, 10, 1);
+    oc.fillStyle = '#1a0e0e'; oc.fillRect(3, 9, 10, 3);
+    // Touch hole at chamber rear
+    oc.fillStyle = '#000';     oc.fillRect(4, -3, 3, 6);
+    oc.fillStyle = ironLight;  oc.fillRect(4, -4, 3, 1);
+    // ── 4) MAGIC GEM (mažas krištolas ant kameros viršaus, x: 8..12) ──
+    oc.fillStyle = ironDark;
+    oc.fillRect(8, -15, 4, 1);                  // gem socket frame
+    oc.fillRect(8, -14, 1, 2); oc.fillRect(11, -14, 1, 2);
+    oc.fillStyle = gemDark;   oc.fillRect(9, -14, 2, 2);
+    oc.fillStyle = gemMid;    oc.fillRect(9, -14, 2, 1);
+    oc.fillStyle = gemHi;     oc.fillRect(9, -14, 1, 1);
+    // ── 5) BRASS BAND 1 (chamber→barrel jungtis, x: 14..18) ──
+    oc.fillStyle = brass;      oc.fillRect(14, -14, 4, 28);
+    oc.fillStyle = brassLight; oc.fillRect(14, -14, 4, 3);
+    oc.fillStyle = brassDark;  oc.fillRect(14, 11, 4, 3);
+    oc.fillStyle = brassHi;    oc.fillRect(15, -13, 1, 1);
+    // Engraved zigzag pattern
+    oc.fillStyle = brassDark;
+    oc.fillRect(15, -7, 1, 1); oc.fillRect(16, -5, 1, 1);
+    oc.fillRect(15, -3, 1, 1); oc.fillRect(16, -1, 1, 1);
+    oc.fillRect(15, 1, 1, 1);  oc.fillRect(16, 3, 1, 1);
+    oc.fillRect(15, 5, 1, 1);  oc.fillRect(16, 7, 1, 1);
+    // ── 6) MAIN BARREL (mid section, x: 18..34) ──
+    oc.fillStyle = ironDark; oc.fillRect(18, -10, 16, 20);
+    oc.fillStyle = ironMid;  oc.fillRect(18, -8, 16, 16);
+    oc.fillStyle = ironLight; oc.fillRect(18, -8, 16, 3);
+    oc.fillStyle = ironHi;    oc.fillRect(18, -7, 16, 1);
+    oc.fillStyle = '#1a0e0e'; oc.fillRect(18, 6, 16, 2);
+    // Subtle engraved rune dots ant viršaus (4 brass dots)
+    oc.fillStyle = brass;
+    oc.fillRect(20, -9, 1, 1); oc.fillRect(23, -9, 1, 1);
+    oc.fillRect(28, -9, 1, 1); oc.fillRect(31, -9, 1, 1);
+    // ── 7) BRASS BAND 2 (mid barrel, x: 24..28) ──
+    oc.fillStyle = brass;      oc.fillRect(24, -11, 4, 22);
+    oc.fillStyle = brassLight; oc.fillRect(24, -11, 4, 3);
+    oc.fillStyle = brassDark;  oc.fillRect(24, 8, 4, 3);
+    oc.fillStyle = brassHi;    oc.fillRect(25, -10, 1, 1);
+    // ── 8) MUZZLE (flared brass + castellated crown, x: 34..44) ──
+    oc.fillStyle = brass;      oc.fillRect(34, -14, 8, 28);
+    oc.fillStyle = brassLight; oc.fillRect(34, -14, 8, 3);
+    oc.fillStyle = brassDark;  oc.fillRect(34, 11, 8, 3);
+    // Outer flare rim
+    oc.fillStyle = brass;      oc.fillRect(42, -12, 2, 24);
+    oc.fillStyle = brassLight; oc.fillRect(42, -12, 2, 3);
+    oc.fillStyle = brassDark;  oc.fillRect(42, 9, 2, 3);
+    // Castellated crown VIRŠUJ muzzle (4 maži dantukai)
+    oc.fillStyle = brass;
+    oc.fillRect(35, -16, 1, 2); oc.fillRect(37, -16, 1, 2);
+    oc.fillRect(39, -16, 1, 2); oc.fillRect(41, -16, 1, 2);
+    oc.fillStyle = brassLight;
+    oc.fillRect(35, -16, 1, 1); oc.fillRect(37, -16, 1, 1);
+    oc.fillRect(39, -16, 1, 1); oc.fillRect(41, -16, 1, 1);
+    // APAČIOJ — simetriški dantukai (atrodo kaip dragon teeth)
+    oc.fillStyle = brass;
+    oc.fillRect(35, 14, 1, 2); oc.fillRect(37, 14, 1, 2);
+    oc.fillRect(39, 14, 1, 2); oc.fillRect(41, 14, 1, 2);
+    oc.fillStyle = brassDark;
+    oc.fillRect(35, 15, 1, 1); oc.fillRect(37, 15, 1, 1);
+    oc.fillRect(39, 15, 1, 1); oc.fillRect(41, 15, 1, 1);
+    // Outer rim highlight pikseliai
+    oc.fillStyle = brassHi;
+    oc.fillRect(34, -14, 2, 1); oc.fillRect(40, -14, 2, 1);
+    oc.fillRect(43, -12, 1, 1);
+    // ── 9) DARK MUZZLE HOLE (kamuoliuko išėjimo skylė, x: 38..44) ──
+    oc.fillStyle = '#000';     oc.fillRect(38, -8, 6, 16);
+    oc.fillStyle = '#1a0e0e';  oc.fillRect(38, -8, 1, 16);
+    // Inner edge highlights (suggesting depth)
+    oc.fillStyle = '#3a2c2c';
+    oc.fillRect(38, -8, 6, 1); oc.fillRect(38, 7, 6, 1);
+    _barrelCache = { canvas: off, offX, offY };
+    return _barrelCache;
+  }
+
+  // RONKE2 frame'ai — pre-scale'inami į display dydį (92px) vieną kartą,
+  // kad nereiktų kas frame'ą downscale'inti 632px source'o.
+  let _ronke2FramesCache = null;
+  function _getRonke2Frames() {
+    if (_ronke2FramesCache) return _ronke2FramesCache;
+    if (!_ronke2Img.complete || !_ronke2Img.naturalWidth) return null;
+    const dw = 92, dh = Math.round(dw * _RONKE2_FH / _RONKE2_FW);
+    const off = document.createElement('canvas');
+    off.width = dw * _RONKE2_FRAMES; off.height = dh;
+    const oc = off.getContext('2d');
+    oc.imageSmoothingEnabled = false;
+    for (let f = 0; f < _RONKE2_FRAMES; f++) {
+      oc.drawImage(_ronke2Img, f * _RONKE2_FW, 0, _RONKE2_FW, _RONKE2_FH, f * dw, 0, dw, dh);
+    }
+    _ronke2FramesCache = { canvas: off, dw, dh };
+    return _ronke2FramesCache;
+  }
+
   function drawLauncher(L, t) {
     const lx = L.launcher.x, ly = L.launcher.y;
     const ang = launcher.angle;
@@ -5612,49 +5990,109 @@
     // ── PEDESTALO BAZĖ — chunky pixel art akmens base'as ────────────
     // Outer akmens žiedas
     const baseR = 32;
-    for (let dy = -baseR; dy <= baseR; dy += PX) {
-      for (let dx = -baseR; dx <= baseR; dx += PX) {
-        const d = Math.sqrt(dx*dx + dy*dy);
-        if (d > baseR) continue;
-        // Spinguliuojantis pixel hash — akmens tekstūra
-        const hsh = ((dx * 73 + dy * 137) >>> 0) % 100;
-        let c;
-        if (d > baseR - PX*2) {
-          c = '#1a0e06';   // outer black ring
-        } else if (d > baseR - PX*4) {
-          c = '#2a1810';   // dark stone edge
-        } else {
-          // Stone fill — variations
-          if (hsh < 10) c = '#5a3820';        // light stone
-          else if (hsh < 25) c = '#3a2410';   // mid stone
-          else if (hsh < 50) c = '#4a2e18';   // base stone
-          else c = '#42281a';                 // alt stone
+    // ── RONKE su kepure — personažas kairėj nuo patrankos (tarsi jis ją valdo) ──
+    const _ronkeSpr = _getRonke2Frames();
+    if (_ronkeSpr) {
+      const frame = Math.floor(t / 130) % _RONKE2_FRAMES;   // ~7.7fps idle
+      const dw = _ronkeSpr.dw, dh = _ronkeSpr.dh;
+      const rcx = lx - baseR - 46;          // kairėj nuo pedestalo — atstumas, nesiliečia su patranka
+      const rcy = ly - 1;                   // ~launcher centro lygis (-7px aukščiau)
+      // Šešėlis po RONKE
+      ctx.fillStyle = 'rgba(0,0,0,0.32)';
+      ctx.fillRect(snap(rcx - dw * 0.20), snap(rcy + dh * 0.30), snap(dw * 0.40), PX * 2);
+      ctx.drawImage(_ronkeSpr.canvas, frame * dw, 0, dw, dh,
+                    snap(rcx - dw / 2), snap(rcy - dh / 2), dw, dh);
+      // ── Lazdos burbulas — perdažom į SEKANČIO kamuoliuko spalvą (1 žingsnis į priekį) ──
+      // Overlay tiesiai ant balto orbo sprite'e — uždedam spalvotą diską jo vietoj.
+      // Per reload metu — burbulas mirksi atsitiktinėmis spalvomis, kol pasibaigia cooldown,
+      // tada atsidengia tikra nextNextBlock spalva + magiškas reveal garsiukas.
+      if (nextNextBlock) {
+        const _isReload = lastFireAt > 0 && (t - lastFireAt) < _currentReloadMs;
+        // Reveal — paleidžiam garsiuką, kai ką tik pasibaigė reload + ready-flash burst
+        if (!_isReload && !_f12ReloadEndPlayed) {
+          _F12Audio.colorReveal();
+          _f12ReloadEndPlayed = true;
+          _f12ReadyFlashAt = t;
         }
-        ctx.fillStyle = c;
-        ctx.fillRect(snap(lx + dx), snap(ly + dy), PX, PX);
+        // Per-frame orbo offset — orbas juda kartu su lazda animacijos metu
+        const _orbOff = _RONKE2_ORB_OFFSETS[frame] || _RONKE2_ORB_OFFSETS[0];
+        const bx = snap(rcx + dw * _orbOff[0]) - 1;   // -1px į kairę (centruotas ant lazdos)
+        const by = snap(rcy + dh * _orbOff[1]) + 2;   // +2px žemyn (orbas sprite'e truputį žemiau bbox centro)
+        const br = 12;                             // orbo dydis (display ~24 px, +6px nuo orig)
+        // Spalva — visada tikra nextNextBlock (be flicker)
+        const col = TYPE_COLOR[nextNextBlock.type] || TYPE_COLOR.arrow;
+        // Pulse'inanti spalva (magiškas šnypštimas)
+        const pulse = 0.85 + 0.15 * Math.sin(t * 0.008);
+        // Užpildom orbo plotą spalva (perdažo baltą burbulą)
+        for (let dy2 = -br; dy2 <= br; dy2 += PX) {
+          for (let dx2 = -br; dx2 <= br; dx2 += PX) {
+            const d = Math.sqrt(dx2*dx2 + dy2*dy2);
+            if (d > br) continue;
+            // Edge → tamsesnė; centras → šviesesnis (sferinis shading)
+            const edgeK = d / br;            // 0 centre, 1 edge
+            let band;
+            if (edgeK < 0.30) band = col.top;
+            else if (edgeK < 0.60) band = col.front;
+            else if (edgeK < 0.85) band = col.left;
+            else band = col.back;
+            ctx.fillStyle = `rgba(${band[0]},${band[1]},${band[2]},${pulse})`;
+            ctx.fillRect(bx + dx2, by + dy2, PX, PX);
+          }
+        }
+        // Mažas baltas highlight viršuje-kairėj (specular)
+        ctx.fillStyle = `rgba(255,255,255,${pulse})`;
+        ctx.fillRect(bx - PX*2, by - PX*2, PX, PX);
+        ctx.fillRect(bx - PX, by - PX*2, PX, PX);
+        ctx.fillRect(bx - PX*2, by - PX, PX, PX);
+        // ── Magiškas ryšys orbas → patranka ───────────────────────────
+        // Atrodo kad RONKE kanalizuoja sekančią spalvą į patranką (žaidėjas valdo RONKE,
+        // RONKE valdo patranką). Pikselinė arka su pulsuojančiomis srauto dotomis.
+        {
+          const cnx = lx - 6, cny = ly - 4;          // patrankos „intake" taškas
+          // Bezier kontrolinis taškas — virš tiesės, kad arka linktų aukštyn (magiška)
+          const cpx = (bx + cnx) / 2;
+          const cpy = (by + cny) / 2 - 22;
+          const numDots = 14;
+          // Bendras alpha — labai subtilus, kad neužgožtų UI
+          const baseAlpha = 0.55;
+          for (let i = 0; i < numDots; i++) {
+            const tt = (i + 0.5) / numDots;
+            const omt = 1 - tt;
+            const px = omt*omt*bx + 2*omt*tt*cpx + tt*tt*cnx;
+            const py = omt*omt*by + 2*omt*tt*cpy + tt*tt*cny;
+            // Srauto pulsas — banga keliauja nuo orbo į patranką
+            const wave = ((t * 0.0012) - tt + 1) % 1;
+            const pulseF = 0.30 + 0.70 * Math.max(0, 1 - Math.abs(wave - 0.5) * 3);
+            const intensity = baseAlpha * pulseF;
+            // Centras — šviesi spalvos top, krašt'ai — tamsesni
+            ctx.fillStyle = `rgba(${col.top[0]},${col.top[1]},${col.top[2]},${intensity})`;
+            ctx.fillRect(snap(px) - PX/2, snap(py) - PX/2, PX, PX);
+            // Vidurinėj kelio dalyje — papildomas blizgesys (magic spark)
+            if (pulseF > 0.85) {
+              ctx.fillStyle = `rgba(255,255,255,${intensity * 0.6})`;
+              ctx.fillRect(snap(px), snap(py), 1, 1);
+            }
+          }
+          // ── ŠŪVIO FEEDBACK'AS — orb flash (energija išleista iš orbo) ──
+          // Pašalinti keliaujantis white disc + trail (kurį maišė su Phase 2 white ball'u).
+          // Palieku tik orbo blyksnį, kad žaidėjas matytų „orbas atidavė energiją".
+          const fireAge = t - lastFireAt;
+          if (fireAge < 200 && lastFireAt > 0) {
+            const ofK = fireAge / 200;
+            ctx.fillStyle = `rgba(255,255,255,${0.75 * (1 - ofK)})`;
+            for (let dy3 = -br - 2; dy3 <= br + 2; dy3 += PX) {
+              for (let dx3 = -br - 2; dx3 <= br + 2; dx3 += PX) {
+                if (dx3*dx3 + dy3*dy3 > (br + 2)*(br + 2)) continue;
+                ctx.fillRect(bx + dx3, by + dy3, PX, PX);
+              }
+            }
+          }
+        }
       }
     }
-    // Top highlight crescent (light-source top-left)
-    for (let dy = -baseR + PX*2; dy <= -baseR + PX*8; dy += PX) {
-      const halfW = Math.sqrt(Math.max(0, (baseR - PX*2) * (baseR - PX*2) - dy * dy));
-      for (let dx = -halfW; dx <= halfW; dx += PX) {
-        if (dx > 0 && dx > halfW * 0.4) continue;  // only top-left
-        ctx.fillStyle = 'rgba(255,200,140,0.18)';
-        ctx.fillRect(snap(lx + dx), snap(ly + dy), PX, PX);
-      }
-    }
-    // 4 cardinal iron studs (rivets) ant pedestalo
-    const rivetD = baseR - PX*4;
-    const rivets = [[0, -rivetD], [rivetD, 0], [0, rivetD], [-rivetD, 0]];
-    for (const [rdx, rdy] of rivets) {
-      const rx = snap(lx + rdx), ry = snap(ly + rdy);
-      ctx.fillStyle = '#1a0e06';
-      ctx.fillRect(rx - PX*2, ry - PX*2, PX*4, PX*4);
-      ctx.fillStyle = '#7a5a3a';
-      ctx.fillRect(rx - PX, ry - PX, PX*2, PX*2);
-      ctx.fillStyle = '#ffe7a8';
-      ctx.fillRect(rx - PX, ry - PX, PX, PX);
-    }
+    // Pedestalo bazė — cache'intas sprite (statinis, renderinamas vieną kartą)
+    const _baseSpr = _getLauncherBaseSprite();
+    ctx.drawImage(_baseSpr.canvas, snap(lx) - _baseSpr.cc, snap(ly) - _baseSpr.cc);
     // ── PATRANKA — chunky pixel art barrel ──────────────────────────
     if (_f12FireRecoil > 0.1) _f12FireRecoil *= 0.78;
     const recX = -Math.cos(_f12FireRecoilAng) * _f12FireRecoil;
@@ -5662,91 +6100,173 @@
     ctx.save();
     ctx.translate(lx + recX, ly + recY);
     ctx.rotate(ang);
-    // Iron palette
-    const ironDark = '#0a0608';
-    const ironMid = '#3a2c2c';
-    const ironLight = '#6a5a5a';
-    const ironHighlight = '#a8a0a0';
-    const brass = '#a87830';
-    const brassLight = '#e8b85a';
-    // Barrel ribbed sections (3 zonos): rear chamber, mid, muzzle
-    // Rear chamber (storesnė pradžia)
-    ctx.fillStyle = ironDark;
-    ctx.fillRect(-4, -14, 16, 28);
-    ctx.fillStyle = ironMid;
-    ctx.fillRect(-2, -12, 14, 24);
-    ctx.fillStyle = ironLight;
-    ctx.fillRect(-2, -12, 14, 4);    // top highlight strip
-    ctx.fillStyle = '#1a0e0e';
-    ctx.fillRect(-2, 8, 14, 4);      // bottom shadow
-    // Main barrel (mid section) — ilgesnis, plonesnis
-    ctx.fillStyle = ironDark;
-    ctx.fillRect(12, -10, 22, 20);
-    ctx.fillStyle = ironMid;
-    ctx.fillRect(12, -8, 22, 16);
-    ctx.fillStyle = ironLight;
-    ctx.fillRect(12, -8, 22, 3);
-    ctx.fillStyle = ironHighlight;
-    ctx.fillRect(12, -7, 22, 1);
-    ctx.fillStyle = '#1a0e0e';
-    ctx.fillRect(12, 6, 22, 2);
-    // Brass bands (iron rings) — 3 bands per barrel
-    const bandPositions = [10, 20, 30];
-    for (const bx of bandPositions) {
-      ctx.fillStyle = brass;
-      ctx.fillRect(bx, -13, 4, 26);
-      ctx.fillStyle = brassLight;
-      ctx.fillRect(bx, -13, 4, 3);
-      ctx.fillStyle = '#6a4818';
-      ctx.fillRect(bx, 10, 4, 3);
-      // Pixel highlight on band
-      ctx.fillStyle = '#fff5c0';
-      ctx.fillRect(bx + 1, -12, 1, 1);
-    }
-    // Muzzle (snapo galas) — flared brass ring + dark hole
-    ctx.fillStyle = brass;
-    ctx.fillRect(34, -14, 6, 28);
-    ctx.fillStyle = brassLight;
-    ctx.fillRect(34, -14, 6, 3);
-    ctx.fillStyle = '#6a4818';
-    ctx.fillRect(34, 11, 6, 3);
-    // Outer rim highlight pixels
-    ctx.fillStyle = '#fff5c0';
-    ctx.fillRect(34, -14, 2, 1);
-    ctx.fillRect(38, -14, 2, 1);
-    // Dark muzzle hole (kamuoliuko išėjimo skylė)
-    ctx.fillStyle = '#000';
-    ctx.fillRect(38, -8, 4, 16);
-    ctx.fillStyle = '#1a0e0e';
-    ctx.fillRect(38, -8, 1, 16);
-    // Touch hole at rear (užtaiso anga)
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, -3, 3, 6);
+    // Cache'intas patrankos sprite — vienas drawImage vietoj dešimčių fillRect'ų
+    const _barrelSpr = _getBarrelSprite();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_barrelSpr.canvas, -_barrelSpr.offX, -_barrelSpr.offY);
     ctx.restore();
     // Kitas blokas matomas patrankoj — tas pats dydis kaip arenoje
     const r = radiusForValue(nextBlock.value);
     // Cooldown — kai reload'inasi, ball preview blanks + chunky pixel ring rodo progresą
     const cdElapsed = t - lastFireAt;
-    const reloading = cdElapsed < FIRE_COOLDOWN_MS;
+    const reloading = cdElapsed < _currentReloadMs;
     if (reloading) {
-      // Tamsus pedestalo overlay (chunky pixel — be smooth arc)
-      const ovR = 24;
-      for (let dy = -ovR; dy <= ovR; dy += PX) {
-        for (let dx = -ovR; dx <= ovR; dx += PX) {
-          if (dx*dx + dy*dy > ovR*ovR) continue;
-          ctx.fillStyle = 'rgba(0,0,0,0.55)';
-          ctx.fillRect(snap(lx + dx), snap(ly + dy), PX, PX);
+      // Reload sekvenza turi 3 distinct fazes (sequential, kad žaidėjas matytų aiškų skirtumą):
+      //   1) SHOT (0..350ms) — fire burst iš orbo per beam į patranką (energija delivers'ina senąjį)
+      //   2) LOAD (350..550ms) — patranka tuščia, RONKE „surenka" naują magiją (sparkle gather)
+      //   3) FILL (550ms..reload pabaiga) — baltas rutuliukas „pop'inasi" + spalva pildosi
+      const LOAD_DELAY_MS = 550;
+      const SUMMON_START_MS = 350;     // po fire burst pabaigos
+      const POP_DUR_MS = 80;
+      // Phase 2 — BALTAS RUTULIUKAS keliauja iš RONKE lazdos orbo į patranką palei beam'ą
+      if (cdElapsed >= SUMMON_START_MS && cdElapsed < LOAD_DELAY_MS) {
+        const _ronkeSprC = _getRonke2Frames();
+        if (_ronkeSprC) {
+          const frameC = Math.floor(t / 130) % _RONKE2_FRAMES;
+          const dwC = _ronkeSprC.dw, dhC = _ronkeSprC.dh;
+          const rcxC = lx - baseR - 46;
+          const rcyC = ly - 1;
+          const _orbOffC = _RONKE2_ORB_OFFSETS[frameC] || _RONKE2_ORB_OFFSETS[0];
+          // Orbo pozicija (start)
+          const bxC = snap(rcxC + dwC * _orbOffC[0]) - 1;
+          const byC = snap(rcyC + dhC * _orbOffC[1]) + 2;
+          // Patrankos „intake" (end)
+          const cnxC = lx - 6, cnyC = ly - 4;
+          // Bezier kontrolinis taškas — virš tiesės (arka aukštyn)
+          const cpxC = (bxC + cnxC) / 2;
+          const cpyC = (byC + cnyC) / 2 - 22;
+          // Kelionės progresas 0..1
+          const tt = (cdElapsed - SUMMON_START_MS) / (LOAD_DELAY_MS - SUMMON_START_MS);
+          const omt = 1 - tt;
+          const px = omt*omt*bxC + 2*omt*tt*cpxC + tt*tt*cnxC;
+          const py = omt*omt*byC + 2*omt*tt*cpyC + tt*tt*cnyC;
+          // Trail — kelios mažos baltos pixel'ės už rutuliuko (motion blur feel)
+          for (let tr = 1; tr <= 4; tr++) {
+            const tT = tt - tr * 0.06;
+            if (tT < 0) break;
+            const omT = 1 - tT;
+            const tpx = omT*omT*bxC + 2*omT*tT*cpxC + tT*tT*cnxC;
+            const tpy = omT*omT*byC + 2*omT*tT*cpyC + tT*tT*cnyC;
+            const tA = (1 - tr / 5) * 0.55;
+            ctx.fillStyle = `rgba(255,255,255,${tA})`;
+            ctx.fillRect(snap(tpx) - PX, snap(tpy) - PX, PX*2, PX*2);
+          }
+          // Pats baltas rutuliukas — pradžioj mažas (4px), keliaudamas auga iki 7px
+          const ballR = 4 + tt * 3;
+          ctx.fillStyle = '#fff';
+          for (let dy = -ballR; dy <= ballR; dy += PX) {
+            for (let dx = -ballR; dx <= ballR; dx += PX) {
+              if (dx*dx + dy*dy > ballR*ballR) continue;
+              ctx.fillRect(snap(px + dx), snap(py + dy), PX, PX);
+            }
+          }
+          // Mažas spalvotas glow aplink baltą rutuliuką (būsima spalva ant briaunos)
+          const ccolC = TYPE_COLOR[nextBlock.type] || TYPE_COLOR.arrow;
+          const glowR = ballR + 2;
+          ctx.fillStyle = `rgba(${ccolC.top[0]},${ccolC.top[1]},${ccolC.top[2]},0.45)`;
+          for (let dy = -glowR; dy <= glowR; dy += PX) {
+            for (let dx = -glowR; dx <= glowR; dx += PX) {
+              const dd = dx*dx + dy*dy;
+              if (dd > glowR*glowR || dd <= ballR*ballR) continue;
+              ctx.fillRect(snap(px + dx), snap(py + dy), PX, PX);
+            }
+          }
         }
       }
-      // "RELOAD" pixel art tekstas centre — pulse'inantis
-      ctx.fillStyle = `rgba(0,0,0,0.85)`;
-      ctx.font = 'bold 7px "Press Start 2P", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('RELOAD', lx + 1, ly + 3);
-      ctx.fillStyle = `rgba(255,210,120,${0.75 + 0.25 * Math.sin(t * 0.012)})`;
-      ctx.fillText('RELOAD', lx, ly + 2);
+      if (cdElapsed < LOAD_DELAY_MS) {
+        // Phase 1+2 — patranka be sferos (fire burst + sparkle gather rodomi atskirai)
+      } else {
+      const fillElapsed = cdElapsed - LOAD_DELAY_MS;
+      const fillTotal = Math.max(100, _currentReloadMs - LOAD_DELAY_MS);
+      const rp = clamp(fillElapsed / fillTotal, 0, 1);
+      const ccol = TYPE_COLOR[nextBlock.type] || TYPE_COLOR.arrow;
+      // Pop scale-in pirmais 80ms — baltas rutuliukas „atsiranda" su elastic bounce
+      const popK = clamp(fillElapsed / POP_DUR_MS, 0, 1);
+      const popScale = popK < 1
+        ? 0.30 + 0.70 * (1 - Math.pow(1 - popK, 3))   // ease-out cubic 0.30→1.0
+        : 1;
+      const effR = Math.max(2, Math.round(r * popScale));
+      // Bazė: tikra spalvota sfera (always full opacity), pop scale per pirmus 80ms
+      drawSphere(ctx, lx, ly, effR, 0, 0, nextBlock.type, nextBlock.value, 0);
+      // Fill line Y — kyla iš apačios (ly + effR) į viršų (ly - effR) per reload
+      const fillBaseY = (ly + effR) - 2 * effR * rp;
+      // Liquid wobble per X — sinusoidinė banga
+      const wobAmp = 1.6;
+      const wobFreq = 0.18;
+      const wobSpeed = 0.006;
+      // Baltas overlay — viskas VIRŠUJ wavy fill line lieka balta („dar netaškas")
+      for (let dy = -effR; dy <= effR; dy += PX) {
+        for (let dx = -effR; dx <= effR; dx += PX) {
+          if (dx*dx + dy*dy > effR*effR) continue;
+          const py = ly + dy;
+          const localFillY = fillBaseY + Math.sin(t * wobSpeed + (lx + dx) * wobFreq) * wobAmp;
+          if (py < localFillY) {
+            const chPulse = 0.92 + 0.08 * Math.sin(t * 0.010 + dy * 0.12);
+            ctx.fillStyle = `rgba(255,255,255,${chPulse})`;
+            ctx.fillRect(snap(lx + dx), snap(ly + dy), PX, PX);
+          }
+        }
+      }
+      // Šviesi linija ties fill paviršium — „skysčio" briaunos highlight
+      ctx.fillStyle = `rgba(255,255,255,0.85)`;
+      for (let dx = -effR; dx <= effR; dx += PX) {
+        const ldy = Math.sqrt(effR*effR - dx*dx);
+        const py = fillBaseY + Math.sin(t * wobSpeed + (lx + dx) * wobFreq) * wobAmp;
+        if (Math.abs(py - ly) > ldy) continue;
+        ctx.fillRect(snap(lx + dx), snap(py), PX, PX);
+      }
+      // Spalvotos burbuliukų žiežirbos — kyla iš fill paviršiaus aukštyn
+      const NUM_BUB = 4;
+      for (let b = 0; b < NUM_BUB; b++) {
+        const life = ((t * 0.0017) + b * 0.27) % 1;
+        const seedX = ((b * 41 + Math.floor(((t * 0.0017) + b * 0.27))) * 73) % 1000 / 1000;
+        const bx0 = lx + (seedX - 0.5) * effR * 1.5;
+        const ldy = Math.sqrt(Math.max(0, effR*effR - (bx0 - lx)*(bx0 - lx)));
+        if (ldy < 1) continue;
+        const surfaceY = fillBaseY + Math.sin(t * wobSpeed + bx0 * wobFreq) * wobAmp;
+        const by0 = surfaceY - life * 10;
+        if (by0 < ly - ldy) continue;
+        if ((bx0 - lx)*(bx0 - lx) + (by0 - ly)*(by0 - ly) > effR*effR) continue;
+        const fade = 1 - life;
+        const sz = life < 0.3 ? PX : (life < 0.7 ? PX*2 : PX);
+        ctx.fillStyle = `rgba(${ccol.top[0]},${ccol.top[1]},${ccol.top[2]},${fade})`;
+        ctx.fillRect(snap(bx0) - sz/2, snap(by0) - sz/2, sz, sz);
+      }
+      }   // end else (Phase 2 — fill)
     } else {
-      drawSphere(ctx, lx, ly, r, 0, 0, nextBlock.type, nextBlock.value, 0.2 + 0.2 * Math.sin(t * 0.005));
+      // READY — sphere be glow ringo (panaikintas geltonas mirksintis žiedas)
+      drawSphere(ctx, lx, ly, r, 0, 0, nextBlock.type, nextBlock.value, 0);
+      // ── POLISHED GEM SHINE — diagonali šviesos juosta periodiškai sweep'ina sferą ──
+      // PIRMAS sweep'as paleidžiamas IŠKART kartu su colorReveal() garsu (sync prie reload pabaigos).
+      // Po to kartojasi kas 2100ms — „va aš jau pasiruošęs, blizgu, naujas".
+      const SWEEP_CYCLE = 2100;          // pilnas ciklas ms
+      const SWEEP_DUR = 380;             // sweep'o trukmė
+      const sweepBase = _f12ReadyFlashAt || 0;
+      const sweepElapsed = t - sweepBase;
+      const cycleT = sweepElapsed >= 0 ? sweepElapsed % SWEEP_CYCLE : -1;
+      if (cycleT >= 0 && cycleT < SWEEP_DUR) {
+        const localK = cycleT / SWEEP_DUR;          // 0..1
+        // Pozicija — iš viršaus-kairės (-r*√2) į apačią-dešinę (+r*√2)
+        const sweepRange = r * Math.SQRT2 * 2;
+        const sweepPos = -r * Math.SQRT2 + sweepRange * localK;
+        const sweepWidth = r * 0.40;                // juostos plotis
+        // Diagonalus axis (1,1)/√2 — projektuojam pikselio (dx,dy) ant jo
+        for (let dy = -r; dy <= r; dy += PX) {
+          for (let dx = -r; dx <= r; dx += PX) {
+            if (dx*dx + dy*dy > r*r) continue;
+            const proj = (dx + dy) * 0.7071;
+            const distFromSweep = Math.abs(proj - sweepPos);
+            if (distFromSweep > sweepWidth) continue;
+            // Bell envelope — ryškiausia juostos vidury, fade kraštuose
+            const bandK = 1 - distFromSweep / sweepWidth;
+            // Plus papildomas overall fade pradžioje/pabaigoje, kad sweep'as „atskrenda" ir „dingsta"
+            const lifeFade = Math.sin(localK * Math.PI);   // 0→1→0
+            const intensity = bandK * lifeFade * 0.90;
+            ctx.fillStyle = `rgba(255,255,255,${intensity})`;
+            ctx.fillRect(snap(lx + dx), snap(ly + dy), PX, PX);
+          }
+        }
+      }
     }
     // Charging power meter — chunky pixel ring (kai user'is hold'ina)
     if (charging && !gameOver) {
@@ -6698,7 +7218,7 @@
     }
     updateLauncherAim();
     // Reload check — neleidžia pradėti naujo charge kol patranka nepasikrovus
-    if (now() - lastFireAt < FIRE_COOLDOWN_MS) return;
+    if (now() - lastFireAt < _currentReloadMs) return;
     charging = true;
     chargeStartedAt = now();
   }
