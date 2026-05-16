@@ -294,25 +294,36 @@
       <a href="./lenta/" class="game-card">
         <div class="game-card-play" style="background: #ffcf5c; color: #1a0e06; border-color: #1a0e06;">PLAY</div>
         <div class="game-card-image"
-          style="background: linear-gradient(135deg, #060402 0%, #110a06 50%, #1a0f08 100%); display:flex;align-items:center;justify-content:center;gap:0;">
-          <canvas id="card-ronke-canvas" width="260" height="260"
-            style="height: 92%; width: auto; image-rendering: pixelated;"></canvas>
-          <span style="
-            font-family: 'Press Start 2P', monospace;
-            font-size: 36px;
-            color: #ff2424;
-            text-shadow:
-              3px 0 0 #000, -3px 0 0 #000, 0 3px 0 #000, 0 -3px 0 #000,
-              3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000,
-              0 0 18px #ff2424, 0 0 30px rgba(255,0,0,0.55);
-            letter-spacing: 2px;
-            font-weight: bold;
-            z-index: 2;
-            margin: 0 -18px;
-            transform: rotate(-6deg);
-            ">VS</span>
-          <canvas id="card-darkronke-canvas" width="260" height="260"
-            style="height: 92%; width: auto; image-rendering: pixelated; transform: scaleX(-1);"></canvas>
+          style="display:flex;align-items:stretch;justify-content:space-between;position:relative;overflow:hidden;">
+          <!-- LIGHT RONKE — tamsus wood fonas (current) -->
+          <div style="flex:1;background:linear-gradient(135deg,#060402 0%,#110a06 50%,#1a0f08 100%);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;">
+            <canvas id="card-ronke-canvas" width="320" height="320"
+              style="height:115%;width:auto;image-rendering:pixelated;"></canvas>
+          </div>
+          <!-- DARK RONKE — baltas/šviesus fonas -->
+          <div style="flex:1;background:linear-gradient(135deg,#f4ecd8 0%,#e8d8b8 50%,#d8c498 100%);display:flex;align-items:center;justify-content:flex-start;padding-left:8px;">
+            <canvas id="card-darkronke-canvas" width="320" height="320"
+              style="height:115%;width:auto;image-rendering:pixelated;transform:scaleX(-1);"></canvas>
+          </div>
+          <!-- VS overlay — absoliutus, kad nesumažintų Ronkes -->
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-6deg);z-index:3;pointer-events:none;text-align:center;">
+            <span style="
+              display:inline-block;
+              font-family:'Press Start 2P',monospace;
+              font-size:44px;
+              color:#ff2424;
+              padding:8px 14px;
+              background:rgba(0,0,0,0.55);
+              border:3px solid #ff2424;
+              box-shadow:0 0 24px rgba(255,36,36,0.9), inset 0 0 12px rgba(255,150,150,0.4);
+              text-shadow:
+                3px 0 0 #000, -3px 0 0 #000, 0 3px 0 #000, 0 -3px 0 #000,
+                3px 3px 0 #000, -3px -3px 0 #000,
+                0 0 20px #ff2424, 0 0 36px rgba(255,40,40,0.8);
+              letter-spacing:3px;
+              font-weight:bold;
+              ">VS</span>
+          </div>
         </div>
         <div class="game-card-info">
           <h2 class="game-card-title" style="color: #ffcf5c;">PEWPEW SAGA</h2>
