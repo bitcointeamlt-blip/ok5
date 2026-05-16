@@ -295,10 +295,24 @@
         <div class="game-card-play" style="background: #ffcf5c; color: #1a0e06; border-color: #1a0e06;">PLAY</div>
         <div class="game-card-image"
           style="background: linear-gradient(135deg, #060402 0%, #110a06 50%, #1a0f08 100%); display:flex;align-items:center;justify-content:center;gap:0;">
-          <canvas id="card-ronke-canvas" width="280" height="280"
-            style="height: 110%; width: auto; image-rendering: pixelated;"></canvas>
-          <canvas id="card-darkronke-canvas" width="280" height="280"
-            style="height: 110%; width: auto; image-rendering: pixelated; transform: scaleX(-1);"></canvas>
+          <canvas id="card-ronke-canvas" width="260" height="260"
+            style="height: 92%; width: auto; image-rendering: pixelated;"></canvas>
+          <span style="
+            font-family: 'Press Start 2P', monospace;
+            font-size: 36px;
+            color: #ff2424;
+            text-shadow:
+              3px 0 0 #000, -3px 0 0 #000, 0 3px 0 #000, 0 -3px 0 #000,
+              3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000,
+              0 0 18px #ff2424, 0 0 30px rgba(255,0,0,0.55);
+            letter-spacing: 2px;
+            font-weight: bold;
+            z-index: 2;
+            margin: 0 -18px;
+            transform: rotate(-6deg);
+            ">VS</span>
+          <canvas id="card-darkronke-canvas" width="260" height="260"
+            style="height: 92%; width: auto; image-rendering: pixelated; transform: scaleX(-1);"></canvas>
         </div>
         <div class="game-card-info">
           <h2 class="game-card-title" style="color: #ffcf5c;">PEWPEW SAGA</h2>
