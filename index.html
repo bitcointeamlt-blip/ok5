@@ -295,8 +295,8 @@
         <div class="game-card-play" style="background: #ffcf5c; color: #1a0e06; border-color: #1a0e06;">PLAY</div>
         <div class="game-card-image"
           style="background: linear-gradient(135deg, #1a0e06 0%, #3a2410 50%, #6b4a2e 100%); display:flex;align-items:center;justify-content:center;">
-          <canvas id="card-ronke-canvas" width="160" height="180"
-            style="height: 85%; width: auto; image-rendering: pixelated; filter: drop-shadow(0 0 14px rgba(255,207,92,0.55));"></canvas>
+          <canvas id="card-ronke-canvas" width="220" height="220"
+            style="height: 90%; width: auto; image-rendering: pixelated; filter: drop-shadow(0 0 14px rgba(255,207,92,0.55));"></canvas>
         </div>
         <div class="game-card-info">
           <h2 class="game-card-title" style="color: #ffcf5c;">PEWPEW SAGA</h2>
@@ -442,13 +442,15 @@
         requestAnimationFrame(tick);
         if (!ronkeImg.complete || !ronkeImg.naturalWidth) return;
         const fw = ronkeImg.naturalWidth / R_FRAMES, fh = ronkeImg.naturalHeight;
-        const scale = cv.height / fh;
-        const dw = fw * scale, dh = cv.height;
+        // min-scale — užtikrina, kad visas sprite telpa canvas viduje (be charakterio kraštų kerpimo)
+        const scale = Math.min(cv.width / fw, cv.height / fh);
+        const dw = fw * scale, dh = fh * scale;
         const rx = (cv.width - dw) / 2;
+        const ry = (cv.height - dh) / 2;
         const rframe = Math.floor(t / (1000 / R_FPS)) % R_FRAMES;
         ctx2.imageSmoothingEnabled = false;
         ctx2.clearRect(0, 0, cv.width, cv.height);
-        ctx2.drawImage(ronkeImg, rframe * fw, 0, fw, fh, rx, 0, dw, dh);
+        ctx2.drawImage(ronkeImg, rframe * fw, 0, fw, fh, rx, ry, dw, dh);
         if (healStart !== null && healImg.complete && healImg.naturalWidth) {
           const elapsed = t - healStart;
           const hfw = healImg.naturalWidth / H_FRAMES, hfh = healImg.naturalHeight;
