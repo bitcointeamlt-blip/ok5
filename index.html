@@ -294,9 +294,11 @@
       <a href="./lenta/" class="game-card">
         <div class="game-card-play" style="background: #ffcf5c; color: #1a0e06; border-color: #1a0e06;">PLAY</div>
         <div class="game-card-image"
-          style="background: linear-gradient(135deg, #060402 0%, #110a06 50%, #1a0f08 100%); display:flex;align-items:center;justify-content:center;">
-          <canvas id="card-ronke-canvas" width="360" height="360"
-            style="height: 118%; width: auto; image-rendering: pixelated;"></canvas>
+          style="background: linear-gradient(135deg, #060402 0%, #110a06 50%, #1a0f08 100%); display:flex;align-items:center;justify-content:center;gap:0;">
+          <canvas id="card-ronke-canvas" width="280" height="280"
+            style="height: 110%; width: auto; image-rendering: pixelated;"></canvas>
+          <canvas id="card-darkronke-canvas" width="280" height="280"
+            style="height: 110%; width: auto; image-rendering: pixelated; transform: scaleX(-1);"></canvas>
         </div>
         <div class="game-card-info">
           <h2 class="game-card-title" style="color: #ffcf5c;">PEWPEW SAGA</h2>
@@ -427,14 +429,14 @@
       starsContainer.appendChild(star);
     }
 
-    // ── PEWPEW SAGA card: animuotas RONKE (pre-scale'inami frame'ai performance'ui) ──
-    (function() {
-      const cv = document.getElementById('card-ronke-canvas');
+    // ── PEWPEW SAGA card: 2 animuoti RONKE (light + dark) face each other ──
+    function _setupRonkeAnim(canvasId, spriteSrc, fpsOffset) {
+      const cv = document.getElementById(canvasId);
       if (!cv) return;
       const ctx2 = cv.getContext('2d');
-      const ronkeImg = new Image(); ronkeImg.src = './lenta/assets/maxlvlronke.png';
+      const ronkeImg = new Image(); ronkeImg.src = spriteSrc;
       const R_FRAMES = 8, R_FPS = 6;
-      let frameCache = null;   // pre-scaled frames, build'inami po image load
+      let frameCache = null;
       let dxC = 0, dyC = 0, dwC = 0, dhC = 0;
       function buildCache() {
         if (frameCache || !ronkeImg.complete || !ronkeImg.naturalWidth) return false;
@@ -444,7 +446,6 @@
         dhC = Math.round(fh * scale);
         dxC = Math.round((cv.width - dwC) / 2);
         dyC = Math.round((cv.height - dhC) / 2);
-        // Vienkartinis 640×640 → ~220×220 downscale, cache'inami visi 8 frame'ai
         frameCache = [];
         for (let f = 0; f < R_FRAMES; f++) {
           const off = document.createElement('canvas');
@@ -459,14 +460,18 @@
       function tick(t) {
         requestAnimationFrame(tick);
         if (!frameCache && !buildCache()) return;
-        const rframe = Math.floor(t / (1000 / R_FPS)) % R_FRAMES;
+        const rframe = Math.floor((t + fpsOffset) / (1000 / R_FPS)) % R_FRAMES;
         ctx2.imageSmoothingEnabled = false;
         ctx2.clearRect(0, 0, cv.width, cv.height);
-        // 1 drawImage per frame iš cache'into mažesnio canvas (greitas blit)
         ctx2.drawImage(frameCache[rframe], dxC, dyC);
       }
       requestAnimationFrame(tick);
-    })();
+    }
+    // Light Ronke — kairėj, default orientacija
+    _setupRonkeAnim('card-ronke-canvas', './lenta/assets/maxlvlronke.png', 0);
+    // Dark Ronke — dešinėj, su scaleX(-1) CSS mirror'u (face left toward light)
+    // fpsOffset 500ms — kad animacija nesumaišytų abudu lygiai
+    _setupRonkeAnim('card-darkronke-canvas', './lenta/assets/darkronkemaxlvl.png', 500);
   </script>
 </body>
 
