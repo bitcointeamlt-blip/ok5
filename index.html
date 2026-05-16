@@ -294,18 +294,11 @@
       <a href="./lenta/" class="game-card">
         <div class="game-card-play" style="background: #ffcf5c; color: #1a0e06; border-color: #1a0e06;">PLAY</div>
         <div class="game-card-image"
-          style="display:flex;align-items:stretch;justify-content:space-between;position:relative;overflow:hidden;">
-          <!-- LIGHT RONKE — tamsus wood fonas (current) -->
-          <div style="flex:1;background:linear-gradient(135deg,#060402 0%,#110a06 50%,#1a0f08 100%);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;">
-            <canvas id="card-ronke-canvas" width="320" height="320"
-              style="height:115%;width:auto;image-rendering:pixelated;"></canvas>
-          </div>
-          <!-- DARK RONKE — pilkas fonas -->
-          <div style="flex:1;background:linear-gradient(135deg,#7a7a7a 0%,#5a5a5a 50%,#404040 100%);display:flex;align-items:center;justify-content:flex-start;padding-left:8px;">
-            <canvas id="card-darkronke-canvas" width="320" height="320"
-              style="height:115%;width:auto;image-rendering:pixelated;transform:scaleX(-1);"></canvas>
-          </div>
-          <!-- VS overlay — be ireminimo, mažesnis -->
+          style="background:linear-gradient(135deg,#060402 0%,#110a06 50%,#1a0f08 100%);display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;padding:0 8px;">
+          <canvas id="card-ronke-canvas" width="320" height="320"
+            style="height:115%;width:auto;image-rendering:pixelated;"></canvas>
+          <canvas id="card-darkronke-canvas" width="320" height="320"
+            style="height:115%;width:auto;image-rendering:pixelated;transform:scaleX(-1);"></canvas>
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-6deg);z-index:3;pointer-events:none;">
             <span style="
               font-family:'Press Start 2P',monospace;
@@ -450,48 +443,70 @@
     }
 
     // ── PEWPEW SAGA card: 2 animuoti RONKE (light + dark) face each other ──
-    function _setupRonkeAnim(canvasId, spriteSrc, fpsOffset) {
-      const cv = document.getElementById(canvasId);
-      if (!cv) return;
-      const ctx2 = cv.getContext('2d');
-      const ronkeImg = new Image(); ronkeImg.src = spriteSrc;
-      const R_FRAMES = 8, R_FPS = 6;
-      let frameCache = null;
-      let dxC = 0, dyC = 0, dwC = 0, dhC = 0;
-      function buildCache() {
-        if (frameCache || !ronkeImg.complete || !ronkeImg.naturalWidth) return false;
-        const fw = ronkeImg.naturalWidth / R_FRAMES, fh = ronkeImg.naturalHeight;
-        const scale = Math.min(cv.width / fw, cv.height / fh);
-        dwC = Math.round(fw * scale);
-        dhC = Math.round(fh * scale);
-        dxC = Math.round((cv.width - dwC) / 2);
-        dyC = Math.round((cv.height - dhC) / 2);
-        frameCache = [];
+    // PERF: vienas rAF loop'as abiems sprite'ams (vietoj 2 separate'ų)
+    // + pause kai tab hidden (saves CPU)
+    // + skip render jei frame'as nesikeitė (kas 167ms @ 6fps, ne kas 16ms @ 60fps)
+    (function() {
+      const FPS = 6;
+      const FRAME_MS = 1000 / FPS;
+      const R_FRAMES = 8;
+      function makeAnim(canvasId, spriteSrc, fpsOffset) {
+        const cv = document.getElementById(canvasId);
+        if (!cv) return null;
+        return {
+          cv, ctx: cv.getContext('2d'),
+          img: Object.assign(new Image(), { src: spriteSrc }),
+          fpsOffset, cache: null, lastFrame: -1,
+          dx: 0, dy: 0, dw: 0, dh: 0,
+        };
+      }
+      const anims = [
+        makeAnim('card-ronke-canvas', './lenta/assets/maxlvlronke.png', 0),
+        makeAnim('card-darkronke-canvas', './lenta/assets/darkronkemaxlvl.png', 500),
+      ].filter(Boolean);
+      if (!anims.length) return;
+      function buildCache(a) {
+        if (a.cache || !a.img.complete || !a.img.naturalWidth) return false;
+        const fw = a.img.naturalWidth / R_FRAMES, fh = a.img.naturalHeight;
+        const scale = Math.min(a.cv.width / fw, a.cv.height / fh);
+        a.dw = Math.round(fw * scale); a.dh = Math.round(fh * scale);
+        a.dx = Math.round((a.cv.width - a.dw) / 2);
+        a.dy = Math.round((a.cv.height - a.dh) / 2);
+        a.cache = [];
         for (let f = 0; f < R_FRAMES; f++) {
           const off = document.createElement('canvas');
-          off.width = dwC; off.height = dhC;
+          off.width = a.dw; off.height = a.dh;
           const oc = off.getContext('2d');
           oc.imageSmoothingEnabled = false;
-          oc.drawImage(ronkeImg, f * fw, 0, fw, fh, 0, 0, dwC, dhC);
-          frameCache.push(off);
+          oc.drawImage(a.img, f * fw, 0, fw, fh, 0, 0, a.dw, a.dh);
+          a.cache.push(off);
         }
         return true;
       }
+      let rafId = 0;
       function tick(t) {
-        requestAnimationFrame(tick);
-        if (!frameCache && !buildCache()) return;
-        const rframe = Math.floor((t + fpsOffset) / (1000 / R_FPS)) % R_FRAMES;
-        ctx2.imageSmoothingEnabled = false;
-        ctx2.clearRect(0, 0, cv.width, cv.height);
-        ctx2.drawImage(frameCache[rframe], dxC, dyC);
+        rafId = requestAnimationFrame(tick);
+        for (const a of anims) {
+          if (!a.cache && !buildCache(a)) continue;
+          const rframe = Math.floor((t + a.fpsOffset) / FRAME_MS) % R_FRAMES;
+          if (rframe === a.lastFrame) continue;     // skip redraw jei tas pats frame'as
+          a.lastFrame = rframe;
+          a.ctx.imageSmoothingEnabled = false;
+          a.ctx.clearRect(0, 0, a.cv.width, a.cv.height);
+          a.ctx.drawImage(a.cache[rframe], a.dx, a.dy);
+        }
       }
-      requestAnimationFrame(tick);
-    }
-    // Light Ronke — kairėj, default orientacija
-    _setupRonkeAnim('card-ronke-canvas', './lenta/assets/maxlvlronke.png', 0);
-    // Dark Ronke — dešinėj, su scaleX(-1) CSS mirror'u (face left toward light)
-    // fpsOffset 500ms — kad animacija nesumaišytų abudu lygiai
-    _setupRonkeAnim('card-darkronke-canvas', './lenta/assets/darkronkemaxlvl.png', 500);
+      rafId = requestAnimationFrame(tick);
+      // Pause kai tab paslėpta (saves CPU)
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          cancelAnimationFrame(rafId);
+        } else {
+          for (const a of anims) a.lastFrame = -1;     // force redraw on resume
+          rafId = requestAnimationFrame(tick);
+        }
+      });
+    })();
   </script>
 </body>
 
