@@ -22,6 +22,7 @@
         <button type="button" class="wui-castle-btn wui-inv-btn" id="wui-inv-btn" title="Inventory" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
+        <button type="button" class="wui-castle-btn wui-pewpew-btn" id="wui-pewpew-btn" title="PewPew Room (F12)" style="display:none">PEWPEW</button>
         <button type="button" class="wui-castle-btn wui-home-btn" id="wui-home-btn" title="Home (Floor 10)" style="display:none"></button>
       </div>
       <div class="wui-dropdown" id="wui-dropdown" style="display:none"></div>
@@ -53,6 +54,12 @@
     homeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof window.goToFloor === 'function') window.goToFloor(10);
+    });
+
+    const pewpewBtn = pillEl.querySelector('#wui-pewpew-btn');
+    pewpewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof window.gotoF12 === 'function') window.gotoF12();
     });
 
     dropdownEl = pillEl.querySelector('#wui-dropdown');
@@ -94,6 +101,213 @@
     return pillEl;
   }
 
+  // ── PEWPEW button — TIKRAS game sphere sprite + hover liquid fill animacija ──
+  // Naudoja tą patį 5-band Lambertian shading kaip žaidime + cache'ina sprite'us.
+  const _PEWPEW_R = 14;            // sphere radius (sprite size = 30×30, chunky px)
+  const _PEWPEW_PX = 2;            // chunky pixel size (kaip žaidime)
+  let _pewpewBtnInit = false;
+  let _pewpewAnimRaf = 0;
+  let _pewpewAnimStart = 0;
+  let _pewpewAnimType = null;
+  let _pewpewHovering = false;
+  let _whiteSphereSpr = null;
+  // Baltas sferos sprite — tas pats 5-band Lambertian shading kaip žaidime, bet su balta palete
+  function _getWhiteSphereSprite(r) {
+    if (_whiteSphereSpr && _whiteSphereSpr.r === r) return _whiteSphereSpr;
+    const ri = Math.max(4, Math.round(r));
+    const PX = _PEWPEW_PX;
+    // 5 baltos paletės juostos (atitinka game shading kaip _getPixelSphereSprite)
+    const bands = [
+      [110, 110, 110],   // 0: edge dark
+      [165, 165, 165],   // 1: shadow side
+      [215, 215, 215],   // 2: front
+      [240, 240, 240],   // 3: top
+      [255, 255, 255],   // 4: highlight
+    ];
+    const lx = -0.45, ly = -0.55, lz = 0.70;
+    const ll = Math.sqrt(lx*lx + ly*ly + lz*lz);
+    const Lx = lx/ll, Ly = ly/ll, Lz = lz/ll;
+    const sz = (ri + 1) * 2;
+    const off = document.createElement('canvas');
+    off.width = sz; off.height = sz;
+    const oc = off.getContext('2d');
+    const cc = sz / 2;
+    for (let dy = -ri; dy <= ri; dy += PX) {
+      for (let dx = -ri; dx <= ri; dx += PX) {
+        const distSq = dx*dx + dy*dy;
+        if (distSq > ri*ri) continue;
+        const nx = dx / ri, ny = dy / ri;
+        const nz2 = 1 - nx*nx - ny*ny;
+        const nz = nz2 > 0 ? Math.sqrt(nz2) : 0;
+        const intensity = Math.max(0, nx*Lx + ny*Ly + nz*Lz);
+        const edgeFactor = 1 - distSq / (ri*ri);
+        const adjI = intensity * (0.5 + 0.5 * edgeFactor);
+        let band;
+        if (adjI > 0.85) band = 4;
+        else if (adjI > 0.55) band = 3;
+        else if (adjI > 0.04) band = 2;
+        else if (adjI > 0.10) band = 1;
+        else band = 0;
+        const [bR, bG, bB] = bands[band];
+        oc.fillStyle = `rgb(${bR},${bG},${bB})`;
+        oc.fillRect(cc + dx, cc + dy, PX, PX);
+      }
+    }
+    // Specular highlight (viršuj-kairėj — tas pats kaip game sphere)
+    const hxC = cc + Math.round(-ri * 0.42 / PX) * PX;
+    const hyC = cc + Math.round(-ri * 0.45 / PX) * PX;
+    oc.fillStyle = '#fff';
+    oc.fillRect(hxC, hyC, PX, PX);
+    oc.fillRect(hxC + PX, hyC, PX, PX);
+    oc.fillRect(hxC, hyC + PX, PX, PX);
+    _whiteSphereSpr = { canvas: off, size: sz, r: r };
+    return _whiteSphereSpr;
+  }
+  function _drawPewpewIdle(canvas) {
+    const cctx = canvas.getContext('2d');
+    cctx.clearRect(0, 0, canvas.width, canvas.height);
+    cctx.imageSmoothingEnabled = false;
+    const spr = _getWhiteSphereSprite(_PEWPEW_R);
+    const dx = Math.round((canvas.width - spr.size) / 2);
+    const dy = Math.round((canvas.height - spr.size) / 2);
+    cctx.drawImage(spr.canvas, dx, dy);
+  }
+  let _pewpewLastCycle = -1;
+  function _drawPewpewAnim(canvas, t) {
+    const cctx = canvas.getContext('2d');
+    cctx.clearRect(0, 0, canvas.width, canvas.height);
+    cctx.imageSmoothingEnabled = false;
+    if (!window._F12 || !window._F12.getPixelSphereSprite) {
+      _drawPewpewIdle(canvas); return;
+    }
+    const r = _PEWPEW_R, ri = r, PX = _PEWPEW_PX;
+    // ── Ciklas: FILL (1000ms) → SHINE SWEEP (380ms) → PAUSE (300ms) → restart su nauja spalva ──
+    const FILL_MS = 1000;
+    const SHINE_MS = 380;
+    const PAUSE_MS = 300;
+    const cycleMs = FILL_MS + SHINE_MS + PAUSE_MS;       // 1680ms
+    const elapsed = t - _pewpewAnimStart;
+    const cycleIdx = Math.floor(elapsed / cycleMs);
+    const cycleT = elapsed - cycleIdx * cycleMs;
+    // Naujas ciklas → nauja spalva
+    if (cycleIdx !== _pewpewLastCycle) {
+      _pewpewLastCycle = cycleIdx;
+      _pewpewAnimType = window._F12.pickRandomType();
+    }
+    // Fazės
+    let rp, shineK = -1;
+    if (cycleT < FILL_MS) {
+      rp = cycleT / FILL_MS;            // 0..1 — užsipildo
+    } else if (cycleT < FILL_MS + SHINE_MS) {
+      rp = 1;                            // pilnai užpildyta
+      shineK = (cycleT - FILL_MS) / SHINE_MS;  // 0..1 — shine sweep progress
+    } else {
+      rp = 1;                            // pilnai užpildyta, pauzė
+    }
+    // TIKRAS žaidimo sphere sprite (5-band Lambertian shading)
+    const colorSpr = window._F12.getPixelSphereSprite(_pewpewAnimType, r);
+    const cx = Math.round(canvas.width / 2);
+    const cy = Math.round(canvas.height / 2);
+    const sprDx = cx - Math.round(colorSpr.size / 2);
+    const sprDy = cy - Math.round(colorSpr.size / 2);
+    // Bazė: spalvotas sphere
+    cctx.drawImage(colorSpr.canvas, sprDx, sprDy);
+    // Overlay: balti pikseliai virš wavy fill line (kol fill phase)
+    const lx = -0.45, ly = -0.55, lz = 0.70;
+    const ll = Math.sqrt(lx*lx + ly*ly + lz*lz);
+    const Lx = lx/ll, Ly = ly/ll, Lz = lz/ll;
+    const wbands = [
+      [110,110,110], [165,165,165], [215,215,215], [240,240,240], [255,255,255]
+    ];
+    if (rp < 1) {
+      const fillBaseY = (cy + ri) - 2 * ri * rp;
+      for (let dy = -ri; dy <= ri; dy += PX) {
+        for (let dx = -ri; dx <= ri; dx += PX) {
+          const distSq = dx*dx + dy*dy;
+          if (distSq > ri*ri) continue;
+          const py = cy + dy;
+          const localFillY = fillBaseY + Math.sin(t * 0.008 + (cx + dx) * 0.4) * 1;
+          if (py >= localFillY) continue;
+          const nx = dx / ri, ny = dy / ri;
+          const nz2 = 1 - nx*nx - ny*ny;
+          const nz = nz2 > 0 ? Math.sqrt(nz2) : 0;
+          const intensity = Math.max(0, nx*Lx + ny*Ly + nz*Lz);
+          const edgeFactor = 1 - distSq / (ri*ri);
+          const adjI = intensity * (0.5 + 0.5 * edgeFactor);
+          let band;
+          if (adjI > 0.85) band = 4;
+          else if (adjI > 0.55) band = 3;
+          else if (adjI > 0.04) band = 2;
+          else if (adjI > 0.10) band = 1;
+          else band = 0;
+          const [bR, bG, bB] = wbands[band];
+          cctx.fillStyle = `rgb(${bR},${bG},${bB})`;
+          cctx.fillRect(cx + dx, cy + dy, PX, PX);
+        }
+      }
+      // Specular highlight (matomas kol balta dalis dar uždengia)
+      if (rp < 0.85) {
+        const hxC = cx + Math.round(-ri * 0.42 / PX) * PX;
+        const hyC = cy + Math.round(-ri * 0.45 / PX) * PX;
+        cctx.fillStyle = '#fff';
+        cctx.fillRect(hxC, hyC, PX, PX);
+        cctx.fillRect(hxC + PX, hyC, PX, PX);
+        cctx.fillRect(hxC, hyC + PX, PX, PX);
+      }
+    }
+    // ── POLISHED GEM SHINE — diagonali šviesos juosta sweep'ina sferą po pripildymo ──
+    if (shineK >= 0) {
+      const sweepRange = ri * Math.SQRT2 * 2;
+      const sweepPos = -ri * Math.SQRT2 + sweepRange * shineK;
+      const sweepWidth = ri * 0.40;
+      const lifeFade = Math.sin(shineK * Math.PI);   // 0→1→0 envelope
+      for (let dy = -ri; dy <= ri; dy += PX) {
+        for (let dx = -ri; dx <= ri; dx += PX) {
+          if (dx*dx + dy*dy > ri*ri) continue;
+          const proj = (dx + dy) * 0.7071;
+          const distFromSweep = Math.abs(proj - sweepPos);
+          if (distFromSweep > sweepWidth) continue;
+          const bandK = 1 - distFromSweep / sweepWidth;
+          const intensity = bandK * lifeFade * 0.95;
+          cctx.fillStyle = `rgba(255,255,255,${intensity})`;
+          cctx.fillRect(cx + dx, cy + dy, PX, PX);
+        }
+      }
+    }
+  }
+  function _animatePewpewLoop() {
+    if (!_pewpewHovering) return;
+    const btn = document.getElementById('wui-pewpew-btn');
+    if (!btn) return;
+    const canvas = btn.querySelector('canvas');
+    if (canvas) _drawPewpewAnim(canvas, performance.now());
+    _pewpewAnimRaf = requestAnimationFrame(_animatePewpewLoop);
+  }
+  function _setupPewpewBtn(btn) {
+    if (!_pewpewBtnInit) {
+      _pewpewBtnInit = true;
+      btn.innerHTML = `<canvas width="44" height="44" style="image-rendering:pixelated;width:44px;height:44px;display:block;"></canvas><span class="wui-home-hint">PEWPEW</span>`;
+      btn.addEventListener('mouseenter', () => {
+        _pewpewHovering = true;
+        _pewpewAnimStart = performance.now();
+        _pewpewLastCycle = -1;       // reset cycle counter, kad iškart pirmas frame'as parinktų spalvą
+        _pewpewAnimType = window._F12 && window._F12.pickRandomType ? window._F12.pickRandomType() : 'arrow';
+        cancelAnimationFrame(_pewpewAnimRaf);
+        _animatePewpewLoop();
+      });
+      btn.addEventListener('mouseleave', () => {
+        _pewpewHovering = false;
+        cancelAnimationFrame(_pewpewAnimRaf);
+        const c = btn.querySelector('canvas');
+        if (c) _drawPewpewIdle(c);
+      });
+    }
+    if (!_pewpewHovering) {
+      const c = btn.querySelector('canvas');
+      if (c) _drawPewpewIdle(c);
+    }
+  }
+
   function render() {
     ensurePill();
     const st = Wallet.snapshot();
@@ -101,6 +315,7 @@
     const invBtn = pillEl.querySelector('#wui-inv-btn');
     const rewardsBtnEl = pillEl.querySelector('#wui-rewards-btn');
     const upgradeBtnEl = pillEl.querySelector('#wui-upgrade-btn');
+    const pewpewBtnEl = pillEl.querySelector('#wui-pewpew-btn');
     const homeBtnEl = pillEl.querySelector('#wui-home-btn');
 
     // Chest SVG (pixel-art medieval treasure chest for inventory)
@@ -195,10 +410,22 @@
       upgradeBtnEl.style.background = upgradeBg;
       upgradeBtnEl.innerHTML = `${anvilSvg}<span class="wui-upgrade-hint">UPGRADE</span>`;
     }
+    // Dabartinis floor — skaitom iš UI label'o (S yra module-scope, neprieinamas iš čia).
+    // floor-nav-label rodo "HOME" jei F10, "F12" jei F12, ir t.t.
+    const _floorLbl = document.getElementById('floor-nav-label');
+    const _floorTxt = _floorLbl ? _floorLbl.textContent.trim() : '';
+    const isHome = (_floorTxt === 'HOME');
+    const isF12 = (_floorTxt === 'F12');
     if (homeBtnEl) {
-      homeBtnEl.style.display = inAdv ? 'flex' : 'none';
+      homeBtnEl.style.display = (inAdv && !isHome) ? 'flex' : 'none';
       homeBtnEl.style.background = '#6b4a2e';
       homeBtnEl.innerHTML = `<img class="wui-castle-img" src="assets_tiny/Buildings_Castle.png" alt="" draggable="false"/><span class="wui-home-hint">HOME</span>`;
+    }
+    if (pewpewBtnEl) {
+      // PewPew Room — F12 cannon merge floor (tikras barrel sprite + hover liquid fill anim)
+      pewpewBtnEl.style.display = (inAdv && !isF12) ? 'flex' : 'none';
+      pewpewBtnEl.style.background = '#6b4a2e';
+      _setupPewpewBtn(pewpewBtnEl);
     }
 
     // Wallet — user-provided pixel-art Ronin wallet PNG (idle = closed, active = with coins)
@@ -396,6 +623,13 @@
     ensurePill();
     render();
     Wallet.onChange(() => { render(); if (galleryEl && galleryEl.style.display === 'flex') renderGallery(); });
+    // Floor change watcher — kai floor-nav-label pasikeičia, perpiešiam Home/PewPew mygtukų matomumą
+    let _lastFloorTxt = null;
+    setInterval(() => {
+      const lbl = document.getElementById('floor-nav-label');
+      const txt = lbl ? lbl.textContent.trim() : '';
+      if (txt !== _lastFloorTxt) { _lastFloorTxt = txt; render(); }
+    }, 300);
   }
 
   if (document.readyState === 'loading') {

@@ -747,6 +747,11 @@ function applyRunCardBuffs() {
 }
 
 function showCardPicker(onComplete) {
+  // KORTŲ MEHANIKA PANAIKINTA — visa logika praleidžiama, tik kviečiam callback'ą.
+  // (Sena F11 progression sistema, nebereikalinga naujam dizainui.)
+  if (typeof onComplete === 'function') onComplete();
+  return;
+  // ──────────────────────────────────────────────────────────────────
   // Build pool: base cards + blood rush bonus cards (if upgrade >= 1, each rolls independently)
   const pool = [...CARD_POOL];
   if ((Profile.upgrades?.bloodRushLevel || 0) >= 1) {
@@ -8404,7 +8409,7 @@ window.confirmTeleportUse = function () {
   saveProfile();
   checkAchievements();
   setTimeout(() => {
-    showCardPicker(() => {
+    const proceed = () => {
       // Snapshot trained barracks units before F10 → F11 transition.
       // Save to Profile so initAdventure() F11 branch gali pasiimti live state.
       if (S.floor === 10) {
@@ -8415,7 +8420,10 @@ window.confirmTeleportUse = function () {
       playCurrentLevelBGM();
       updateHUD();
       updateEnergyHud();
-    });
+    };
+    // F12 (PewPew Room) neturi card progression sistemos — praleidžiam kortų pasirinkimą
+    if (S.floor + 1 === 12) proceed();
+    else showCardPicker(proceed);
   }, 600);
 };
 
@@ -18371,6 +18379,9 @@ function _updateKillsDisplay() {
 function _checkAllEnemiesCleared() {
   if (gameMode !== 'adventure') return;
   if (!S || S.winner || S._clearedTriggered) return;
+  // F10 (HOME) ir F12 (PewPew Room) neturi „enemy clearing" mehanikos —
+  // praleidžiam, kad neauto-advance'intų į F11 dėl leftover S.totalEnemies iš ankstesnio floor'o.
+  if (S.floor === 10 || S.floor === 12) return;
   if (!S.totalEnemies || S.totalEnemies === 0) return;
   if (S.units && S.units.some(u => isHostileAdventureEnemy(u))) return;
   S._clearedTriggered = true;
@@ -18381,7 +18392,7 @@ function _checkAllEnemiesCleared() {
     Profile.inventory = (S.inventory || []).map(x => x ? { ...x } : null);
     saveProfile();
     checkAchievements();
-    showCardPicker(() => {
+    const proceed = () => {
       // Snapshot trained barracks units before F10 → F11 transition.
       // Save to Profile so initAdventure() F11 branch gali pasiimti live state.
       if (S.floor === 10) {
@@ -18392,7 +18403,10 @@ function _checkAllEnemiesCleared() {
       playCurrentLevelBGM();
       updateHUD();
       updateEnergyHud();
-    });
+    };
+    // F12 (PewPew Room) neturi card progression — praleidžiam kortų pasirinkimą
+    if (S.floor + 1 === 12) proceed();
+    else showCardPicker(proceed);
   }, 800);
 }
 

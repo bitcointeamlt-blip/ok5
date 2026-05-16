@@ -260,6 +260,54 @@
         osc.start(tEnd); osc.stop(tEnd + 0.14);
       }
     },
+    // ── Prison bars closing — paprastas, aiškus „grotos užsiveria" garsas ──
+    // 3 sluoksniai: trumpas whoosh + heavy thunk + metal ring. Total ~220ms.
+    barsClose() {
+      this._init(); if (!this.ctx) return;
+      const c = this.ctx;
+      if (c.state === 'suspended') c.resume();
+      const t0 = c.currentTime;
+      // 1) Trumpas whoosh (krintančių grotų oras) — 120ms
+      {
+        const sr = c.sampleRate;
+        const dur = 0.12;
+        const len = Math.floor(sr * dur);
+        const buf = c.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len * 0.6);
+        const src = c.createBufferSource(); src.buffer = buf;
+        const lp = c.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1500, t0);
+        lp.frequency.exponentialRampToValueAtTime(350, t0 + dur);
+        const g = c.createGain(); g.gain.value = 0.18;
+        src.connect(lp); lp.connect(g); g.connect(this.master);
+        src.start(t0); src.stop(t0 + dur + 0.01);
+      }
+      // 2) Heavy THUNK — grotos pasieka apačią (sine 110→35Hz, 100ms)
+      const tImpact = t0 + 0.12;
+      {
+        const o = c.createOscillator(); const g = c.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(110, tImpact);
+        o.frequency.exponentialRampToValueAtTime(35, tImpact + 0.10);
+        g.gain.setValueAtTime(0.38, tImpact);
+        g.gain.exponentialRampToValueAtTime(0.0001, tImpact + 0.14);
+        o.connect(g); g.connect(this.master);
+        o.start(tImpact); o.stop(tImpact + 0.16);
+      }
+      // 3) Trumpas metalo ring (triangle 800Hz, fast decay) — kad jaustusi metalas
+      {
+        const o = c.createOscillator(); const g = c.createGain();
+        o.type = 'triangle';
+        o.frequency.value = 800;
+        g.gain.setValueAtTime(0.0001, tImpact);
+        g.gain.exponentialRampToValueAtTime(0.10, tImpact + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, tImpact + 0.12);
+        o.connect(g); g.connect(this.master);
+        o.start(tImpact); o.stop(tImpact + 0.14);
+      }
+    },
     // ── Reveal — krištolinis „TING" su arpeggio (kai po reload atsidengia READY) ──
     colorReveal() {
       this._init(); if (!this.ctx) return;
@@ -884,7 +932,8 @@
   // Combat — 6 lane'ai, retas spawn (maža priešų masė)
   const LANES = 6;
   const BASE_HP = 30;
-  const ENEMY_SPAWN_MS = 9500;    // ~10 sekundžių tarp spawn'ų
+  const ENEMY_SPAWN_MS = 18000;        // ~18 sekundžių tarp spawn'ų
+  const MAX_ENEMIES_TOTAL = 6;         // visose juostose iš viso — jei daugiau, spawn praleidžiamas
 
   // Top-down physics — bilijardo style: žemai sliding, aukšto greitis ridenasi ilgiau
   const FRICTION_HIGH = 0.985;    // mažai trinties kai juda greitai (rutuliukas ridenasi)
@@ -914,7 +963,7 @@
   const FIRE_COOLDOWN_MIN = 1000;    // reload min (1s)
   const FIRE_COOLDOWN_MAX = 3000;    // reload max (3s) — kiekvienam šūviui random tarp min..max
   const BASE_R = 17;             // mažesnis — atitinka preview ant patrankos
-  const MAX_BLOCKS = 80;
+  const MAX_BLOCKS = 30;     // bazinis arena pajėgumas (ateity bus upgrade'inami didesnės talpos lygiai)
   const TOP_TILT = 0.58;          // tilt — top + front matomi balansuotai (kaip referenciniam screenshot)
   // Settling — kai cube sulėtėja, traukia į face-forward + per-dice unikalų ofsetą
   // Tai užtikrina: 1) visada stabili poza (ne ant kampo), 2) varied rotation (ne identiški)
@@ -1304,9 +1353,9 @@
   // Range = fraction of lane width. F11 skull = 1 cell (~3% lane), ranged units = 3-7 cells.
   const ALLY_STATS = {
     skull:          { hp: 8,  dmg: 2, speed: 0.012, attackCooldown: 900,  range: 0.04 },
-    archer:         { hp: 5,  dmg: 3, speed: 0.014, attackCooldown: 1100, range: 0.22 },
-    shaman:         { hp: 4,  dmg: 4, speed: 0.010, attackCooldown: 1300, range: 0.14 },
-    harpoon_fish:   { hp: 7,  dmg: 3, speed: 0.011, attackCooldown: 1000, range: 0.20 },
+    archer:         { hp: 5,  dmg: 3, speed: 0.014, attackCooldown: 1500, range: 0.12 },   // CD 1.5s, range ~puse
+    shaman:         { hp: 4,  dmg: 4, speed: 0.010, attackCooldown: 3000, range: 0.14 },   // CD 3s (anksčiau 1.3s, buvo OP)
+    harpoon_fish:   { hp: 7,  dmg: 3, speed: 0.011, attackCooldown: 1800, range: 0.10 },   // CD 1.8s, range ~puse
     // STATIC towers — neina, stovi prie base ir šaudo
     tower:          { hp: 30, dmg: 4, speed: 0,     attackCooldown: 1400, range: 0.55, static: true },
     crossbow_tower: { hp: 35, dmg: 6, speed: 0,     attackCooldown: 1900, range: 0.75, static: true },
@@ -1329,6 +1378,43 @@
   const _WD_START_FRAME = 3;   // animacija prasideda nuo 4-to kadro (idx 3)
   // Frost (Ronin) merge effekto logo — baltas R-skydas, transparent bg (92×126)
   const _frostLogoImg = new Image(); _frostLogoImg.src = 'frost_r.png';
+  // Launcher platforma — animuotas sprite sheet (8 frames @ 640×392)
+  // Animacija paleisžiama TIK kai šūvis išleistas (fire reaction), ne idle
+  const _platformSheetImg = new Image(); _platformSheetImg.src = 'platform_sheet.png';
+  const _PLATFORM_FW = 640, _PLATFORM_FH = 392, _PLATFORM_FRAMES = 8, _PLATFORM_FPS = 10;
+  let _f12PlatformAnimStart = 0;     // timestamp kai paskutinis šūvis (animacija triggerina)
+  // ── F12 ENEMY KINDS — skull / spider / minotaur ──
+  // gap = min separation tarp 2 priešų toj pačioj lane (anti-overlap)
+  const _F12_ENEMY_KINDS = {
+    skull:    { frameW: 192, sizeMul: 1.0, hpMul: 1.0, spdMul: 1.0, gap: 0.045, sheets: null },
+    spider:   { frameW: 192, sizeMul: 0.9, hpMul: 1.0, spdMul: 1.6, gap: 0.040, sheets: null }, // hp force'inta į 1 spawn'e
+    minotaur: { frameW: 320, sizeMul: 1.4, hpMul: 1.8, spdMul: 0.7, gap: 0.065, sheets: null },
+  };
+  let _f12EnemyKindsInit = false;
+  function _initF12EnemySheets() {
+    if (_f12EnemyKindsInit) return;
+    if (typeof loadHorizontalSheetFrames !== 'function') return;
+    _f12EnemyKindsInit = true;
+    _F12_ENEMY_KINDS.skull.sheets = {
+      idle:   loadHorizontalSheetFrames('assets_tiny/Skull_Idle.png',   8),
+      run:    loadHorizontalSheetFrames('assets_tiny/Skull_Run.png',    6),
+      attack: loadHorizontalSheetFrames('assets_tiny/Skull_Attack.png', 7),
+      guard:  loadHorizontalSheetFrames('assets_tiny/Skull_Guard.png',  7),
+    };
+    _F12_ENEMY_KINDS.spider.sheets = {
+      idle:   loadHorizontalSheetFrames('assets_tiny/Spider_Idle.png',   8),
+      run:    loadHorizontalSheetFrames('assets_tiny/Spider_Run.png',    5),
+      attack: loadHorizontalSheetFrames('assets_tiny/Spider_Attack.png', 8),
+      guard:  loadHorizontalSheetFrames('assets_tiny/Spider_Idle.png',   8),  // spider neturi guard — fallback į idle
+    };
+    _F12_ENEMY_KINDS.minotaur.sheets = {
+      idle:   loadHorizontalSheetFrames('assets_tiny/Minotaur_Idle.png',   16),
+      run:    loadHorizontalSheetFrames('assets_tiny/Minotaur_Walk.png',    8),
+      attack: loadHorizontalSheetFrames('assets_tiny/Minotaur_Attack.png', 12),
+      guard:  loadHorizontalSheetFrames('assets_tiny/Minotaur_Guard.png',  11),
+    };
+  }
+  const _F12_ENEMY_KIND_LIST = ['skull', 'spider', 'minotaur'];
   // RONKE su kepure (lvl3) — personažo idle sprite šalia patrankos (8 frames @ 632×640)
   const _ronke2Img = new Image(); _ronke2Img.src = 'assets/ronkelvl3.png';
   const _RONKE2_FW = 632, _RONKE2_FH = 640, _RONKE2_FRAMES = 8;
@@ -1352,6 +1438,162 @@
   let _f12ZipBolts = [];           // {laneIdx, sx, sy, ex, ey, born, life, seed}
   let deployPool = {};
   let selectedDeployType = null;
+  // Unit deploy cooldown — kiekvienam tipui paskutinio deploy laikas
+  let _f12UnitDeployCD = {};                       // {utype: timestamp_of_last_deploy}
+  const _UNIT_LIFETIME_MS = 30000;                 // 30s lane'oj — tada recall į pool
+  const _UNIT_DEPLOY_CD_MS = 60000;                // 60s cooldown tarp deploy'ų (per type)
+  const _UNIT_SPAWN_ANIM_MS = 400;                 // spawn animacijos trukmė
+  let _f12RecallEffects = [];                      // [{cx, cy, utype, born}] — recall anim particles
+  let _f12CardBarsAnimAt = {};                     // {ballType: timestamp} — prison bars descend animation start
+  let _f12CardBarsSoundDone = {};                  // {ballType: boolean} — ar garsiukas jau sugrojo šiai kortai
+  let _f12CardBonusMs = {};                        // {ballType: pre-deploy ms bonusas (kaupiamas)}
+  let _f12BonusPopups = [];                        // [{x, y, text, born, color}] — vizualus „+5s" floating popup
+  let _f12BallsMinusPopups = [];                   // [{born}] — „-1" indikatorius ant BALLS stulpelio per merge
+  // Bonus laikas auga su merge'inamų kamuoliukų dydžiu:
+  //   value=4 (mažiausias merge: 2+2) → 5s, value=8 → 10s, value=16 → 15s, ...
+  function _mergeBonusMs(value) {
+    const tier = Math.max(1, Math.floor(Math.log2(value || 4)) - 1);
+    return tier * 5000;
+  }
+  // Ball type → ally unit type mapping (semantinis: arrow→archer, shield→tower, etc.)
+  // Pearl ir frost lieka „pure support" su specialiais efektais (charge / lane reverse).
+  const _UNIT_FOR_BALL_TYPE = {
+    arrow:   'archer',
+    shield:  'tower',
+    heart:   'shaman',
+    leaf:    'harpoon_fish',
+    star:    'crossbow_tower',
+    crystal: 'zip',
+    shadow:  'skull',
+    // pearl, frost — be unit (palieka jiems jų specialius merge attacks)
+  };
+  // ── HOME barracks trained units count — F12 deploys reikalauja real trained unit'ų ──
+  function _getTrainedCount(utype) {
+    try {
+      const arr = (typeof Profile === 'object' && Profile && Array.isArray(Profile.barracksTrained))
+        ? Profile.barracksTrained : null;
+      if (!arr) return 0;
+      let n = 0;
+      for (const s of arr) {
+        if (s && s.utype === utype) n += (s.stack || 1);
+      }
+      return n;
+    } catch (_) { return 0; }
+  }
+  // Mirties metu — atimam 1 trained unit iš HOME barakų (mirė kovoj, prarastas)
+  function _consumeTrainedUnit(utype) {
+    try {
+      if (typeof Profile !== 'object' || !Profile || !Array.isArray(Profile.barracksTrained)) return;
+      for (let i = 0; i < Profile.barracksTrained.length; i++) {
+        const s = Profile.barracksTrained[i];
+        if (s && s.utype === utype) {
+          if ((s.stack || 1) > 1) s.stack--;
+          else Profile.barracksTrained.splice(i, 1);
+          if (typeof saveProfile === 'function') saveProfile();
+          return;
+        }
+      }
+    } catch (_) {}
+  }
+  // Deploy metu — paimam 1 trained unit (kartu su jo HP) iš HOME, grąžinam snap
+  function _takeTrainedUnit(utype) {
+    try {
+      if (typeof Profile !== 'object' || !Profile || !Array.isArray(Profile.barracksTrained)) return null;
+      for (let i = 0; i < Profile.barracksTrained.length; i++) {
+        const s = Profile.barracksTrained[i];
+        if (s && s.utype === utype) {
+          const taken = { id: s.id, utype: s.utype, hp: s.hp, maxHp: s.maxHp };
+          if ((s.stack || 1) > 1) s.stack--;
+          else Profile.barracksTrained.splice(i, 1);
+          if (typeof saveProfile === 'function') saveProfile();
+          return taken;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+  // Recall metu — grąžinam unit'ą atgal į HOME su pažeisto HP išsaugotu
+  function _returnTrainedUnit(snap) {
+    try {
+      if (!snap) return;
+      if (typeof Profile !== 'object' || !Profile) return;
+      if (!Array.isArray(Profile.barracksTrained)) Profile.barracksTrained = [];
+      Profile.barracksTrained.push({ id: snap.id, utype: snap.utype, stack: 1, hp: snap.hp, maxHp: snap.maxHp });
+      if (typeof saveProfile === 'function') saveProfile();
+    } catch (_) {}
+  }
+  // Unit icon image registry — naudojamas ant deploy kortelių
+  const _UNIT_ICON_IMGS = {};
+  function _loadUnitIcon(name) {
+    if (_UNIT_ICON_IMGS[name]) return _UNIT_ICON_IMGS[name];
+    const im = new Image(); im.src = 'assets_tiny/' + name + '.png';
+    _UNIT_ICON_IMGS[name] = im;
+    return im;
+  }
+  // Pre-load all unit icons
+  _loadUnitIcon('Archer_Idle');
+  _loadUnitIcon('HarpoonFish_Idle');
+  _loadUnitIcon('Skull_Idle');
+  _loadUnitIcon('Stabby_Idle');           // shaman fallback
+  _loadUnitIcon('Buildings_Tower');
+  _loadUnitIcon('Buildings_Zip');
+  // Unit type → {imgKey, isAnimated, frameW, frameH, frames, fps}
+  const _UNIT_ICON_META = {
+    archer:         { img: 'Archer_Idle',      animated: true,  fw: 192, fh: 192, frames: 6, fps: 8 },
+    harpoon_fish:   { img: 'HarpoonFish_Idle', animated: true,  fw: 192, fh: 192, frames: 8, fps: 8 },
+    skull:          { img: 'Skull_Idle',       animated: true,  fw: 192, fh: 192, frames: 8, fps: 8 },
+    shaman:         { img: 'Stabby_Idle',      animated: true,  fw: 192, fh: 192, frames: 8, fps: 8 },
+    tower:          { img: 'Buildings_Tower',  animated: false, fw: 128, fh: 256 },
+    crossbow_tower: { img: 'Buildings_Tower',  animated: false, fw: 128, fh: 256, badge: 'XB' },
+    zip:            { img: 'Buildings_Zip',    animated: true,  fw: 400, fh: 498, frames: 8, fps: 6 },
+  };
+  // Centruoja ir piešia unit ikoną į (cx, cy) area su max size
+  function _drawUnitIcon(utype, cx, cy, maxW, maxH, t) {
+    // SPECIAL: shaman naudoja shamanAnimFrames iš game.js (frame per failas)
+    if (utype === 'shaman') {
+      let frames = null;
+      try { frames = shamanAnimFrames; } catch (_) {}
+      const dirFrames = frames && frames.idle && frames.idle.east;
+      if (dirFrames && dirFrames.length) {
+        const fcount = dirFrames.length;
+        const idx = Math.floor(t / (1000 / 6)) % fcount;     // 6fps idle
+        const img = dirFrames[idx];
+        if (img && img.complete && img.naturalWidth) {
+          const sw = img.naturalWidth, sh = img.naturalHeight;
+          const scale = Math.min(maxW / sw, maxH / sh);
+          const dw = Math.round(sw * scale), dh = Math.round(sh * scale);
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(img, Math.round(cx - dw / 2), Math.round(cy - dh / 2), dw, dh);
+          return;
+        }
+      }
+      return;
+    }
+    const meta = _UNIT_ICON_META[utype];
+    if (!meta) return;
+    const img = _UNIT_ICON_IMGS[meta.img];
+    if (!img || !img.complete || !img.naturalWidth) return;
+    let sx = 0, sy = 0, sw = meta.fw, sh = meta.fh;
+    if (meta.animated) {
+      const idx = Math.floor(t / (1000 / meta.fps)) % meta.frames;
+      sx = idx * meta.fw;
+    }
+    // Scale to fit, preserve aspect
+    const scale = Math.min(maxW / sw, maxH / sh);
+    const dw = Math.round(sw * scale), dh = Math.round(sh * scale);
+    const dx = Math.round(cx - dw / 2), dy = Math.round(cy - dh / 2);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    // XB badge ant crossbow_tower
+    if (meta.badge) {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillRect(dx + dw / 2 - 9, dy + dh - 16, 18, 11);
+      ctx.fillStyle = '#d8f0ff';
+      ctx.font = 'bold 7px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(meta.badge, dx + dw / 2, dy + dh - 8);
+    }
+  }
   let deployBtnRects = [];
 
   // Physics
@@ -1431,6 +1673,7 @@
     gameOver = false;
     selectedDeployType = null;
     deployPool = {};
+    _f12UnitDeployCD = {};
     _f12Harpoons = [];
     _f12ShamanProj = [];
     _f12ShamanExpl = [];
@@ -1455,7 +1698,7 @@
     _f12WallChips = [];
     _f12Wind = [];
     _f12Fog = [];
-    _f12NextBossAt = now() + 50000;
+    _f12NextBossAt = now() + 90000;     // pirmas boss ~90s (buvo 50s)
     _f12NextHordeAt = now() + 30000;
     _f12Warnings = [];
     _f12GameStartT = now();
@@ -1505,7 +1748,7 @@
       lanesX: padX, lanesY, lanesW: aw, lanesH,
       laneH: Math.floor((lanesH - 6) / LANES),
       arena: { x: padX, y: arenaY, w: aw, h: arenaH },
-      launcher: { x: padX + 110, y: arenaY + arenaH / 2 },  // +50px į dešinę — vietos RONKE kairėje
+      launcher: { x: padX + 125, y: arenaY + arenaH / 2 },  // +65px į dešinę, vertikaliai centruota
     };
   }
 
@@ -1981,6 +2224,9 @@
 
     resolveMerges();
 
+    // Dvigubas game over pavojus — anti-spam mechanika:
+    //   1) baseHp <= 0 (priešai prasiveržia į bazę)
+    //   2) blocks.length >= MAX_BLOCKS (arena prisipildo nuo nereikalingo spam'inimo)
     if (blocks.length >= MAX_BLOCKS) gameOver = true;
   }
 
@@ -2057,6 +2303,8 @@
           text: '+' + newVal, x: mx, y: my, born: tNow,
           color: `rgb(${colJ.top[0]},${colJ.top[1]},${colJ.top[2]})`,
         });
+        // 2b) "-1" indikatorius ant platformos BALLS stulpelio (ne ant merge vietos)
+        _f12BallsMinusPopups.push({ born: tNow });
         // 3) Per-type burst FX (kiekvienas tipas turi savo unikalią animaciją)
         _f12MergeRings.push({ x: mx, y: my, born: tNow, value: newVal, color: colJ, type: a.type });
         // Zonos plokštės flash — kurioj zonoj įvyko merge, ta plokštė trumpai pažsta
@@ -2147,20 +2395,35 @@
     const s = ALLY_STATS[utype] || ALLY_STATS.skull;
     // Static (towers) pradeda kairėj base zonoj, nejuda
     const startX = s.static ? 0.05 : 0.0;
+    // Reverse mapping utype → ballType, kad pasirinktume kaupimo bonus iš _f12CardBonusMs
+    let _ballTypeForBonus = null;
+    for (const bt in _UNIT_FOR_BALL_TYPE) {
+      if (_UNIT_FOR_BALL_TYPE[bt] === utype) { _ballTypeForBonus = bt; break; }
+    }
+    const storedBonus = (_ballTypeForBonus && _f12CardBonusMs[_ballTypeForBonus]) || 0;
+    // Paimam trained unit'ą iš HOME — gauname jo IŠLIKUSI HP (žala persistuoja per redeploy)
+    const trainedSnap = _takeTrainedUnit(utype);
+    const useHp    = trainedSnap ? trainedSnap.hp    : s.hp;
+    const useMaxHp = trainedSnap ? trainedSnap.maxHp : s.hp;
     lanes[laneIdx].allies.push({
       utype, x: startX, _prevX: startX,
       static: !!s.static,
-      hp: s.hp, maxHp: s.hp, dmg: s.dmg, speed: s.speed,
+      hp: useHp, maxHp: useMaxHp, dmg: s.dmg, speed: s.speed,
       attackCooldown: s.attackCooldown,
       range: s.range || 0.04,
       lastAttackAt: 0, hitFlashUntil: 0,
       dead: false, deathStartedAt: 0,
+      bornAt: t,
+      lifetimeMs: _UNIT_LIFETIME_MS + storedBonus,
       bobPhase: Math.random() * Math.PI * 2,
       swingStart: 0,
       guardStart: 0,
       idleStart: 0, idleUntil: 0,
       nextThinkAt: t + 2000 + Math.random() * 2000,
+      trainedSnap: trainedSnap,        // saugom referencę — grąžinsim su atnaujintu HP po recall
     });
+    // Saugomas bonus suvartotas → reset
+    if (_ballTypeForBonus) delete _f12CardBonusMs[_ballTypeForBonus];
   }
 
   // Ar lane'e yra gyvas boss'as?
@@ -2189,11 +2452,37 @@
     }
     const tier = Math.floor((t - _f12GameStartT) / 30000);
     const isBoss = !!opts.boss;
+    // Enemy kind — boss visada minotauras; regular spawn — weighted (skull 55%, spider 35%, minotaur 10%)
+    let kind = opts.kind;
+    if (!kind) {
+      if (isBoss) {
+        kind = 'minotaur';
+      } else {
+        const r = Math.random();
+        if (r < 0.55) kind = 'skull';
+        else if (r < 0.90) kind = 'spider';
+        else kind = 'minotaur';      // tik 10% chance — minotauras retas net ne-boss
+      }
+    }
+    // SPIDER lane viability — spider greitas, todėl jam reikia švarios lane'os spawn'ant.
+    // Jei lane'oj jau yra LĖTESNIS non-spider priešas spawn area (x > 0.6), spider'is
+    // jį pasivys ir įvyks susidūrimas → vietoj spider'io spawn'inam skull/minotaur.
+    if (!isBoss && kind === 'spider') {
+      const hasSlowAhead = lanes[laneIdx].enemies.some(other =>
+        !other.dead && !other._isWall && other.kind !== 'spider' && other.x > 0.6);
+      if (hasSlowAhead) kind = Math.random() < 0.5 ? 'skull' : 'minotaur';
+    }
+    const def = _F12_ENEMY_KINDS[kind] || _F12_ENEMY_KINDS.skull;
+    const baseHp  = isBoss ? (25 + tier * 4) : (6 + tier);
+    const baseSpd = isBoss ? 0.005 + Math.random() * 0.002 : 0.008 + Math.random() * 0.004;
+    // Spider — VISADA 1 hp (mirsta nuo vieno smūgio)
+    const finalHp = (kind === 'spider' && !isBoss) ? 1 : Math.max(1, Math.round(baseHp * def.hpMul));
     lanes[laneIdx].enemies.push({
       x: 1.0,
-      hp: isBoss ? (25 + tier * 4) : (6 + tier),
-      maxHp: isBoss ? (25 + tier * 4) : (6 + tier),
-      speed: isBoss ? 0.005 + Math.random() * 0.002 : 0.008 + Math.random() * 0.004,
+      hp: finalHp,
+      maxHp: finalHp,
+      speed: baseSpd * def.spdMul,
+      kind: kind,
       hitFlashUntil: 0,
       dead: false, deathStartedAt: 0,
       bobPhase: Math.random() * Math.PI * 2,
@@ -3241,22 +3530,24 @@
       setTimeout(() => {
         if (active) spawnEnemy(now(), { lane: bossLane, boss: true });
       }, 1200);
-      _f12NextBossAt = t + 45000 + Math.random() * 15000;
+      _f12NextBossAt = t + 90000 + Math.random() * 30000;  // 90-120s tarp boss'ų (buvo 45-60s)
     }
-    // HORDE — 3-5 priešai vienu metu per kelias juostas (warning užrašas pašalintas)
+    // HORDE — 2-3 priešai vienu metu per kelias juostas (sumažintas)
     if (t >= _f12NextHordeAt) {
-      const hordeSize = 3 + Math.floor(Math.random() * 3);
-      // Spawnina po 800ms
+      const hordeSize = 2 + Math.floor(Math.random() * 2);  // 2-3
       setTimeout(() => {
         if (!active) return;
         for (let i = 0; i < hordeSize; i++) {
           setTimeout(() => {
-            // Be lane override — spawnEnemy pats vengs boss'o lane'o
-            if (active) spawnEnemy(now());
-          }, i * 200);
+            if (!active) return;
+            // Tikrinam bendrą enemy count — viršijus MAX, neviršijam horde
+            let total = 0;
+            for (const lane of lanes) for (const en of lane.enemies) if (!en.dead && !en._isWall) total++;
+            if (total < MAX_ENEMIES_TOTAL) spawnEnemy(now());
+          }, i * 250);
         }
       }, 800);
-      _f12NextHordeAt = t + 30000 + Math.random() * 20000;
+      _f12NextHordeAt = t + 50000 + Math.random() * 25000;   // 50-75s tarp horde'ų
     }
   }
 
@@ -3329,8 +3620,17 @@
   function tickEnemies(dt, t) {
     if (gameOver) return;
     if (t >= nextEnemyAt) {
-      spawnEnemy(t);
-      nextEnemyAt = t + ENEMY_SPAWN_MS - Math.min(1500, t / 120);
+      // Skaičiuojam bendrą priešų kiekį — viršijus MAX, spawn praleidžiamas (mažas delay'us bandymui vėl)
+      let totalEnemies = 0;
+      for (const lane of lanes) {
+        for (const en of lane.enemies) if (!en.dead && !en._isWall) totalEnemies++;
+      }
+      if (totalEnemies < MAX_ENEMIES_TOTAL) {
+        spawnEnemy(t);
+        nextEnemyAt = t + ENEMY_SPAWN_MS - Math.min(800, t / 200);
+      } else {
+        nextEnemyAt = t + 2000;          // bandyti vėl po 2s, kai bus laisvos vietos
+      }
     }
     for (let li = 0; li < lanes.length; li++) {
       const Ln = lanes[li];
@@ -3341,6 +3641,29 @@
           // Pastatai (towers) — splice'inami iškart, be 1400ms death anim laiko
           const removeDelay = a.static ? 0 : 1400;
           if (t - a.deathStartedAt > removeDelay) Ln.allies.splice(i, 1);
+          continue;
+        }
+        // ── AUTO-RECALL — unit'as gyvuoja a.lifetimeMs (default 30s + merge bonus); jei nemirsta, grįžta į pool ──
+        if (a.bornAt && (t - a.bornAt) >= (a.lifetimeMs || _UNIT_LIFETIME_MS)) {
+          deployPool[a.utype] = (deployPool[a.utype] || 0) + 1;
+          // Atnaujinam snap HP ir grąžinam į HOME barakus (žala persistuoja)
+          if (a.trainedSnap) {
+            a.trainedSnap.hp = Math.max(1, a.hp);   // mažiausiai 1 HP (negali grįžti 0)
+            _returnTrainedUnit(a.trainedSnap);
+          }
+          // CD START — sequential timer: lifetime baigėsi → dabar prasideda 60s CD
+          _f12UnitDeployCD[a.utype] = t;
+          // Recall vizualinis efektas — fade-up sparkles toj pačioj vietoj
+          const _L = layoutCache;
+          if (_L) {
+            const baseW = 32;
+            const ly_ = _L.lanesY + li * _L.laneH;
+            const lh_ = _L.laneH - 4;
+            const ax_ = _L.lanesX + baseW + (_L.lanesW - baseW - 30) * a.x;
+            const ay_ = ly_ + lh_ / 2;
+            _f12RecallEffects.push({ cx: ax_, cy: ay_, utype: a.utype, born: t });
+          }
+          Ln.allies.splice(i, 1);
           continue;
         }
         let target = null, bestDist = Infinity, targetLaneIdx = li;
@@ -3436,7 +3759,12 @@
             a.hitFlashUntil = t + 200;
             target.lastAttackAt = t;
             target.swingStart = t;
-            if (a.hp <= 0) { a.dead = true; a.deathStartedAt = t; }
+            if (a.hp <= 0) {
+              a.dead = true; a.deathStartedAt = t;
+              _f12UnitDeployCD[a.utype] = t;
+              // NEBEgrąžinam į HOME (trained snap jau paimtas deploy metu, mirties metu prarastas)
+              // a.trainedSnap nebebus _returnTrainedUnit'intas
+            }
           }
         } else if (!isPaused && !a.static) {
           // Tik judantys unit'ai eina pirmyn (towers stovi)
@@ -3451,6 +3779,14 @@
       for (const other of Ln.enemies) {
         if (other.dead || other._isWall || !other.isBoss) continue;
         (_laneBossXs || (_laneBossXs = [])).push(other.x);
+      }
+      // ── Anti-overlap: precompute „enemy in front" (immediate left neighbor) per kiekvieną gyvą enemy ──
+      // Surūšiuojam by x ascending — tada kiekvienam enemy front = ankstesnis sortavime (mažesnis x).
+      const _liveEnemiesSorted = Ln.enemies
+        .filter(en => !en.dead && !en._isWall)
+        .sort((a, b) => a.x - b.x);
+      for (let si = 0; si < _liveEnemiesSorted.length; si++) {
+        _liveEnemiesSorted[si]._frontEnemy = si > 0 ? _liveEnemiesSorted[si - 1] : null;
       }
       for (let i = Ln.enemies.length - 1; i >= 0; i--) {
         const e = Ln.enemies[i];
@@ -3587,7 +3923,16 @@
           continue;   // per arti boss'o — stovim (idle animacija automatiškai)
         }
         if (!isPaused && !inAllyMelee) {
-          e.x -= e.speed * (dt / 1000);
+          let newX = e.x - e.speed * (dt / 1000);
+          // Anti-overlap — neperžengiam į „in front" enemy gap zoną
+          if (e._frontEnemy && !e._frontEnemy.dead && !e._frontEnemy._isWall) {
+            const _eDef = _F12_ENEMY_KINDS[e.kind || 'skull'] || _F12_ENEMY_KINDS.skull;
+            const _fDef = _F12_ENEMY_KINDS[e._frontEnemy.kind || 'skull'] || _F12_ENEMY_KINDS.skull;
+            const minGap = (_eDef.gap + _fDef.gap) / 2;
+            const minAllowedX = e._frontEnemy.x + minGap;
+            if (newX < minAllowedX) newX = minAllowedX;
+          }
+          e.x = newX;
         }
         if (e.x <= 0) {
           baseHp -= 3;
@@ -3613,6 +3958,7 @@
     if (blocks.length >= MAX_BLOCKS) return;
     if (gameOver) return;
     lastFireAt = t;
+    _f12PlatformAnimStart = t;            // platforma animuojasi vieną kartą po šūvio
     // Sekančio reload trukmė — lygi distribucija: 1s / 2s / 3s, kiekvienas po ~33%
     {
       const r = Math.random();
@@ -3724,6 +4070,7 @@
     _drawLaneArrows(L, t);
     _drawZipBolts(L, t);
     drawArena(L);             // 4 zonų markeriai įkepti į arenos sprite'ą
+    // _drawArenaCapacity pašalinta — info dabar rodoma ant platformos po RONKE/cannon
     _drawZoneFlashes(L, t);   // zonos plokštės blyksnis kai sumerge'inta
     _drawDecorations(L, t);   // dekoracijos — po abiem fonais, prieš kamuoliukus
     drawBlocks(L, t);
@@ -3745,8 +4092,10 @@
     _drawWallConvert(L, t);    // shadow → wall transformation burst
     _drawAsteroids(L, t);      // geltonas asteroidas kris ir cross damage
     _drawDmgPopups(L, t);      // dmg "-N" popups (visi šaltiniai)
+    _drawRecallEffects(L, t);  // unit recall sparkles (po 30s gyvavimo grįžta į deck)
+    _drawBonusPopups(L, t);    // „+5s" / „-5s CD" merge bonus popups
     drawHud(L, t);
-    drawDeployPanel(L, t);    // PASKUTINĖ — overlay layeryje virš visko
+    // drawDeployPanel pašalinta — vietoj jo egzistuojančios kortos veikia kaip deploy mygtukai
     _drawCriticalAlarm(L, t);
     _drawWarnings(L, t);
     // Combo flash — virš visko
@@ -3754,6 +4103,114 @@
     if (gameOver) drawGameOver(L);
     // Atstatyti shake translate
     if (_shakeX !== 0 || _shakeY !== 0) ctx.restore();
+  }
+
+  // ── Arena capacity indikatorius — kiek kamuoliukų iš MAX_BLOCKS ──
+  // Pixel art ball icon + skaitliukas + chunky frame, lygiuotas su 0.5x zonos plokšte.
+  function _drawArenaCapacity(L, t) {
+    const used = blocks.length;
+    const max = MAX_BLOCKS;
+    const frac = used / max;
+    const danger = frac > 0.80;
+    const critical = frac > 0.92;
+    // Pozicija — toj pačioj linijoj kaip 0.5x zonos plokštė
+    const barW = 130, barH = _F12_PLAQUE_H;
+    const bx = L.arena.x + 10;
+    const by = L.arena.y + _F12_PLAQUE_TOP;
+    const PX = 2;
+    // ── OUTER PIXEL FRAME — chunky pixel art rėmas (juodas outer + rudas mid + auksinis highlight) ──
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(bx + 2, by + 2, barW, barH);
+    // Outer black outline
+    ctx.fillStyle = '#000';
+    ctx.fillRect(bx, by, barW, barH);
+    // Pixel rounded corners (2px cut)
+    ctx.clearRect(bx, by, PX, PX);
+    ctx.clearRect(bx + barW - PX, by, PX, PX);
+    ctx.clearRect(bx, by + barH - PX, PX, PX);
+    ctx.clearRect(bx + barW - PX, by + barH - PX, PX, PX);
+    // Wood inner frame
+    ctx.fillStyle = '#3a2410';
+    ctx.fillRect(bx + PX, by + PX, barW - PX*2, barH - PX*2);
+    // Top brass highlight stripe
+    ctx.fillStyle = '#d4a050';
+    ctx.fillRect(bx + PX, by + PX, barW - PX*2, 1);
+    ctx.fillStyle = '#7a5a3a';
+    ctx.fillRect(bx + PX, by + PX + 1, barW - PX*2, 1);
+    // Bottom shadow stripe
+    ctx.fillStyle = '#1a0e06';
+    ctx.fillRect(bx + PX, by + barH - PX - 1, barW - PX*2, 1);
+    // Brass corner rivets
+    ctx.fillStyle = '#a87830';
+    ctx.fillRect(bx + PX*2, by + PX*2, PX, PX);
+    ctx.fillRect(bx + barW - PX*3, by + PX*2, PX, PX);
+    ctx.fillRect(bx + PX*2, by + barH - PX*3, PX, PX);
+    ctx.fillRect(bx + barW - PX*3, by + barH - PX*3, PX, PX);
+    ctx.fillStyle = '#ffe7a8';
+    ctx.fillRect(bx + PX*2, by + PX*2, 1, 1);             // highlight
+    ctx.fillRect(bx + barW - PX*3, by + PX*2, 1, 1);
+    // ── BALL ICON (kairėj — pixel art mažas burbulas) ──
+    const iconCx = bx + 11, iconCy = by + barH / 2;
+    const iconR = 5;
+    // Sphere shading (3 bands)
+    for (let dy = -iconR; dy <= iconR; dy++) {
+      for (let dx = -iconR; dx <= iconR; dx++) {
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d > iconR) continue;
+        const edgeK = d / iconR;
+        let cs;
+        if (edgeK < 0.30) cs = '#ffeb99';        // top highlight
+        else if (edgeK < 0.65) cs = '#e89c2e';   // mid orange (matching arrow ball)
+        else cs = '#8a5018';                      // dark edge
+        ctx.fillStyle = cs;
+        ctx.fillRect(Math.round(iconCx + dx), Math.round(iconCy + dy), 1, 1);
+      }
+    }
+    // Specular highlight
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(iconCx - 2, iconCy - 2, 1, 1);
+    ctx.fillRect(iconCx - 1, iconCy - 2, 1, 1);
+    ctx.fillRect(iconCx - 2, iconCy - 1, 1, 1);
+    // ── PROGRESS BAR (dešiniau nuo ikonos) ──
+    const barInnerX = bx + 22;
+    const barInnerY = by + 5;
+    const barInnerW = barW - 28;
+    const barInnerH = barH - 10;
+    // Dark fill area
+    ctx.fillStyle = '#0a0604';
+    ctx.fillRect(barInnerX, barInnerY, barInnerW, barInnerH);
+    // Color picking
+    let r, g, b;
+    if (frac < 0.5)       { r = 90;  g = 200; b = 90; }
+    else if (frac < 0.80) { r = 255; g = 200; b = 60; }
+    else                  { r = 255; g = 80;  b = 60; }
+    const fillW = Math.round(barInnerW * frac);
+    if (fillW > 0) {
+      const darkR = Math.max(0, r - 60), darkG = Math.max(0, g - 60), darkB = Math.max(0, b - 60);
+      const lightR = Math.min(255, r + 50), lightG = Math.min(255, g + 50), lightB = Math.min(255, b + 50);
+      ctx.fillStyle = `rgb(${darkR},${darkG},${darkB})`;
+      ctx.fillRect(barInnerX, barInnerY + Math.floor(barInnerH * 2 / 3), fillW, Math.ceil(barInnerH / 3));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(barInnerX, barInnerY + Math.floor(barInnerH / 3), fillW, Math.floor(barInnerH / 3));
+      ctx.fillStyle = `rgb(${lightR},${lightG},${lightB})`;
+      ctx.fillRect(barInnerX, barInnerY, fillW, Math.floor(barInnerH / 3));
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillRect(barInnerX, barInnerY, fillW, 1);
+    }
+    // ── SKAITLIUKAS centruotas ant bar (be pulse — pakanka raudonos spalvos) ──
+    ctx.font = 'bold 9px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    const txt = used + ' / ' + max;
+    const tx = barInnerX + barInnerW / 2, ty = barInnerY + barInnerH / 2 + 3;
+    ctx.fillStyle = '#000';
+    ctx.fillText(txt, tx - 1, ty);
+    ctx.fillText(txt, tx + 1, ty);
+    ctx.fillText(txt, tx, ty - 1);
+    ctx.fillText(txt, tx, ty + 1);
+    ctx.fillStyle = critical ? '#fff' : (danger ? '#fff8a0' : '#e8e8d8');
+    ctx.fillText(txt, tx, ty);
+    ctx.textAlign = 'left';
   }
 
   // ── Juice render funkcijos ──────────────────────────────────────────
@@ -4352,8 +4809,15 @@
 
   // Helper — F11 stilius state pick'as su isMoving signalu
   function _pickSkullAnim(u, t, isMoving) {
-    let sheets = null;
-    try { sheets = skullAnimSheets; } catch (_) {}
+    _initF12EnemySheets();
+    // Pasirenkam sheet'us pagal enemy kind (default skull — allies neturi kind)
+    const kind = u.kind || 'skull';
+    const def = _F12_ENEMY_KINDS[kind] || _F12_ENEMY_KINDS.skull;
+    let sheets = def.sheets;
+    if (!sheets) {
+      // Fallback į global skullAnimSheets (allies, init dar nesuvyko)
+      try { sheets = skullAnimSheets; } catch (_) {}
+    }
     if (!sheets) return null;
     const fpsMap = { idle: 7, run: 10, attack: 12, guard: 10 };
     const swingDur = (sheets.attack.frameCount / fpsMap.attack) * 1000;
@@ -4372,7 +4836,8 @@
     if (anim === 'attack') frameIdx = Math.min(frameCount - 1, Math.floor(swingElapsed / (1000 / fps)));
     else if (anim === 'guard') frameIdx = Math.min(frameCount - 1, Math.floor(guardElapsed / (1000 / fps)));
     else frameIdx = Math.floor((t + (u.bobPhase || 0) * 100) / (1000 / fps)) % frameCount;
-    return { sheet: sheet.sheet, sx: frameIdx * 192, sy: 0, sw: 192, sh: 192, anim };
+    const fw = def.frameW || 192;
+    return { sheet: sheet.sheet, sx: frameIdx * fw, sy: 0, sw: fw, sh: fw, anim, sizeMul: def.sizeMul || 1 };
   }
 
   function drawAlly(cx, cy, sz, a, t) {
@@ -4466,6 +4931,125 @@
       ctx.fillStyle = '#5cd06b';
       ctx.fillRect(Math.round(cx - bw / 2 + 1), Math.round(barY + 1), Math.round((bw - 2) * (a.hp / a.maxHp)), bh - 2);
     }
+    // ── LIFETIME BAR — rodo kiek laiko liko iki recall ──
+    if (!a.dead && a.bornAt) {
+      const age = t - a.bornAt;
+      const lifeFrac = Math.max(0, 1 - age / (a.lifetimeMs || _UNIT_LIFETIME_MS));
+      const lbw = sz * 1.2, lbh = 2;
+      const lifeY = cy - sz * 1.0 - 3 - 2 - lbh;
+      // Color: green → yellow → red
+      let lcol;
+      if (lifeFrac > 0.5) lcol = '#7fc6ff';        // melyna (saugu)
+      else if (lifeFrac > 0.2) lcol = '#ffd866';   // geltona (vidury)
+      else lcol = '#ff7a7a';                        // raudona (artyja recall)
+      ctx.fillStyle = '#000';
+      ctx.fillRect(Math.round(cx - lbw / 2), Math.round(lifeY), Math.round(lbw), lbh);
+      ctx.fillStyle = lcol;
+      ctx.fillRect(Math.round(cx - lbw / 2 + 1), Math.round(lifeY + 1), Math.round((lbw - 2) * lifeFrac), lbh - 2);
+    }
+    // ── SPAWN ANIMACIJA — magiškas blyksis pirmus 400ms ──
+    if (!a.dead && a.bornAt && (t - a.bornAt) < _UNIT_SPAWN_ANIM_MS) {
+      const sk = (t - a.bornAt) / _UNIT_SPAWN_ANIM_MS;     // 0..1
+      const PX = 2;
+      const snap = (v) => Math.round(v / PX) * PX;
+      // Sphere magic burst — plečiasi + fade
+      const ringR = sz * 0.6 + sk * sz * 1.2;
+      const alpha = (1 - sk) * 0.85;
+      ctx.fillStyle = `rgba(180,220,255,${alpha})`;
+      for (let dy = -ringR; dy <= ringR; dy += PX) {
+        for (let dx = -ringR; dx <= ringR; dx += PX) {
+          const d = Math.sqrt(dx*dx + dy*dy);
+          if (d > ringR || d < ringR - PX*1.5) continue;
+          ctx.fillRect(snap(cx + dx), snap(cy + dy), PX, PX);
+        }
+      }
+      // 6 spalvotos žiežirbos sklinda iš centro
+      for (let s = 0; s < 6; s++) {
+        const ang = (s / 6) * Math.PI * 2 + sk * 3;
+        const r2 = sz * 0.4 + sk * sz * 0.8;
+        const sx2 = snap(cx + Math.cos(ang) * r2);
+        const sy2 = snap(cy + Math.sin(ang) * r2);
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fillRect(sx2 - PX, sy2, PX*2, PX);
+        ctx.fillRect(sx2, sy2 - PX, PX, PX*2);
+      }
+    }
+  }
+
+  // ── BONUS POPUPS — „+5s" arba „-5s CD" floating text kai merge bonus pritaikytas ──
+  function _drawBonusPopups(L, t) {
+    if (!_f12BonusPopups.length) return;
+    const DUR = 1100;
+    ctx.save();
+    for (let i = _f12BonusPopups.length - 1; i >= 0; i--) {
+      const p = _f12BonusPopups[i];
+      const k = (t - p.born) / DUR;
+      if (k >= 1) { _f12BonusPopups.splice(i, 1); continue; }
+      const alpha = 1 - k;
+      const eased = 1 - Math.pow(1 - k, 2);
+      const yOff = -eased * 36;
+      const scale = k < 0.10 ? 1 + (1 - k / 0.10) * 0.5 : 1;
+      const fontSize = Math.round(13 * scale);
+      ctx.font = `bold ${fontSize}px "Press Start 2P", monospace`;
+      ctx.textAlign = 'center';
+      // Juodas pixel outline
+      ctx.fillStyle = `rgba(0,0,0,${alpha * 0.95})`;
+      ctx.fillText(p.text, p.x - 2, p.y + yOff);
+      ctx.fillText(p.text, p.x + 2, p.y + yOff);
+      ctx.fillText(p.text, p.x, p.y + yOff - 2);
+      ctx.fillText(p.text, p.x, p.y + yOff + 2);
+      // Spalva
+      const col = p.color;
+      const rgb = col.startsWith('#') ?
+        [parseInt(col.slice(1,3),16), parseInt(col.slice(3,5),16), parseInt(col.slice(5,7),16)]
+        : [255,255,255];
+      ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+      ctx.fillText(p.text, p.x, p.y + yOff);
+    }
+    ctx.restore();
+  }
+
+  // ── RECALL EFFECTS — fade-up sparkles kai unit'as grįžta į deck ──
+  function _drawRecallEffects(L, t) {
+    if (!_f12RecallEffects.length) return;
+    const DUR = 600;
+    const PX = 2;
+    const snap = (v) => Math.round(v / PX) * PX;
+    ctx.save();
+    for (let i = _f12RecallEffects.length - 1; i >= 0; i--) {
+      const r = _f12RecallEffects[i];
+      const age = t - r.born;
+      if (age >= DUR) { _f12RecallEffects.splice(i, 1); continue; }
+      const k = age / DUR;
+      const alpha = (1 - k) * 0.9;
+      // Šviesus žiedas plečiasi
+      const ringR = 8 + k * 20;
+      ctx.fillStyle = `rgba(180,220,255,${alpha})`;
+      for (let dy = -ringR; dy <= ringR; dy += PX) {
+        for (let dx = -ringR; dx <= ringR; dx += PX) {
+          const d = Math.sqrt(dx*dx + dy*dy);
+          if (d > ringR || d < ringR - PX*1.5) continue;
+          ctx.fillRect(snap(r.cx + dx), snap(r.cy + dy), PX, PX);
+        }
+      }
+      // 8 žiežirbos kyla aukštyn (recall = teleport up)
+      for (let s = 0; s < 8; s++) {
+        const ang = (s / 8) * Math.PI * 2;
+        const dist = 6 + k * 18;
+        const sx2 = snap(r.cx + Math.cos(ang) * dist);
+        const sy2 = snap(r.cy + Math.sin(ang) * dist - k * 22);    // bias aukštyn
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fillRect(sx2 - PX, sy2, PX*2, PX);
+        ctx.fillRect(sx2, sy2 - PX, PX, PX*2);
+      }
+      // Centras — silpnejantis baltas spindulys (vertical beam)
+      if (k < 0.6) {
+        const beamA = (1 - k / 0.6) * 0.5;
+        ctx.fillStyle = `rgba(220,240,255,${beamA})`;
+        ctx.fillRect(snap(r.cx) - PX, snap(r.cy) - 30, PX * 2, 30);
+      }
+    }
+    ctx.restore();
   }
 
   // Sienos sugriuvimas — chunky pixel bricks krenta su gravitacija + stone dust cloud
@@ -4583,8 +5167,8 @@
     const frameE = _pickSkullAnim(e, t, isMovingE);
     e._prevX = e.x;
     if (frameE) {
-      // Boss enemy — didesnis sprite + raudonas tint
-      const sizeMult = e.isBoss ? 1.6 : 1.0;
+      // Boss enemy — didesnis sprite + raudonas tint; per-kind sizeMul iš _F12_ENEMY_KINDS
+      const sizeMult = (e.isBoss ? 1.6 : 1.0) * (frameE.sizeMul || 1);
       const dw = sz * 4.5 * sizeMult, dh = sz * 4.5 * sizeMult;
       ctx.save();
       ctx.globalAlpha = fade;
@@ -4666,8 +5250,8 @@
         ctx.fillRect(px, py, PX, PX);
       }
     }
-    // HP bar (fixed virš skull) — boss'as be bar (jis ir taip aiškiai matosi)
-    if (!e.dead && !e.isBoss) {
+    // HP bar (fixed virš skull) — boss'as be bar; spider be bar (mirsta nuo 1 hit)
+    if (!e.dead && !e.isBoss && e.kind !== 'spider') {
       const bw = sz * 1.2, bh = 3;
       const barY = cy - sz * 1.0 - bh;
       ctx.fillStyle = '#000';
@@ -4736,11 +5320,8 @@
   }
 
   function _getCardLayout(L) {
-    // Sort types by global TYPES order — consistent layout
-    const presentTypes = Object.keys(_f12CardDeck).filter(k => _f12CardDeck[k].count > 0);
-    const incomingTypes = _f12Spirits.map(s => s.type);
-    const allTypes = Array.from(new Set([...presentTypes, ...incomingTypes]))
-      .sort((a, b) => TYPES.indexOf(a) - TYPES.indexOf(b));
+    // VISADA rodom VISUS 9 ball tipus (pearl/frost — placeholder, unit ateis vėliau)
+    const allTypes = TYPES.slice();
     if (allTypes.length === 0) return null;
     const totalW = allTypes.length * (_CARD_W + _CARD_GAP) - _CARD_GAP;
     const startX = Math.max(20, (L.W - totalW) / 2);
@@ -4752,7 +5333,69 @@
     for (let i = _f12Spirits.length - 1; i >= 0; i--) {
       const s = _f12Spirits[i];
       if (t - s.born >= s.duration) {
-        // Increment card deck
+        const utype = _UNIT_FOR_BALL_TYPE[s.type];
+        // Bonus aktivuojamas TIK kai šios kortos merge yra PAKARTOTINIS (count >= 1 prieš increment)
+        const wasMergedBefore = !!(_f12CardDeck[s.type] && _f12CardDeck[s.type].count >= 1);
+        // deployPool inc — visada per merge (nesvarbu pirmas ar pakartotinis)
+        if (utype) deployPool[utype] = (deployPool[utype] || 0) + 1;
+        if (utype && wasMergedBefore) {
+          // ── 3-etapų merge bonus logika — bonus laikas SKALĖJA su merge tier'u ──
+          // value=4 (mažiausias merge) = 5s, value=8 = 10s, value=16 = 15s, ...
+          const bonusMs = _mergeBonusMs(s.value);
+          const bonusSec = Math.round(bonusMs / 1000);
+          let bonusApplied = null;     // 'lifetime' | 'cd' | 'stored'
+          let bonusX = 0, bonusY = 0;
+          // (1) Active deploy check
+          for (let li = 0; li < lanes.length && !bonusApplied; li++) {
+            for (const a of lanes[li].allies) {
+              if (!a.dead && a.utype === utype) {
+                a.lifetimeMs = (a.lifetimeMs || _UNIT_LIFETIME_MS) + bonusMs;
+                bonusApplied = 'lifetime';
+                const _L = layoutCache;
+                if (_L) {
+                  const baseW = 32;
+                  bonusX = _L.lanesX + baseW + (_L.lanesW - baseW - 30) * a.x;
+                  bonusY = _L.lanesY + li * _L.laneH + _L.laneH / 2 - 30;
+                }
+                break;
+              }
+            }
+          }
+          // (2) CD active check
+          if (!bonusApplied && _f12UnitDeployCD[utype]) {
+            const cdRem = _UNIT_DEPLOY_CD_MS - (t - _f12UnitDeployCD[utype]);
+            if (cdRem > 0) {
+              _f12UnitDeployCD[utype] -= bonusMs;
+              bonusApplied = 'cd';
+              const _L = layoutCache;
+              if (_L && cardHoverRects.length) {
+                for (const r of cardHoverRects) {
+                  if (r.type === s.type) { bonusX = r.x + _CARD_W / 2; bonusY = r.y - 10; break; }
+                }
+              }
+            }
+          }
+          // (3) Idle card → kaupiam pre-deploy bonus
+          if (!bonusApplied) {
+            _f12CardBonusMs[s.type] = (_f12CardBonusMs[s.type] || 0) + bonusMs;
+            bonusApplied = 'stored';
+            const _L = layoutCache;
+            if (_L && cardHoverRects.length) {
+              for (const r of cardHoverRects) {
+                if (r.type === s.type) { bonusX = r.x + _CARD_W / 2; bonusY = r.y - 10; break; }
+              }
+            }
+          }
+          // Popup feedback — su tikra bonus reikšme
+          if (bonusApplied && bonusX > 0) {
+            const popupText = bonusApplied === 'cd' ? ('-' + bonusSec + 's CD') : ('+' + bonusSec + 's');
+            const popupCol = bonusApplied === 'lifetime' ? '#7fff9a'
+                            : bonusApplied === 'cd'      ? '#7fc6ff'
+                            : '#ffd866';
+            _f12BonusPopups.push({ x: bonusX, y: bonusY, text: popupText, born: t, color: popupCol });
+          }
+        }
+        // Sena card deck (vizualas — kortos count nepasikeitė)
         if (!_f12CardDeck[s.type]) _f12CardDeck[s.type] = { count: 0, lastIncAt: t };
         _f12CardDeck[s.type].count++;
         _f12CardDeck[s.type].lastIncAt = t;
@@ -4979,15 +5622,11 @@
   function _drawCards(L, t) {
     const layout = _getCardLayout(L);
     if (!layout) return;
-    const presentTypes = layout.allTypes.filter(tp => _f12CardDeck[tp] && _f12CardDeck[tp].count > 0);
-    if (presentTypes.length === 0) return;
-    // Hover detection — kuri korta po pele
+    // Hover detection — VISOM kortom (taip pat ir locked)
     let hoverIdx = -1;
     cardHoverRects = [];
     for (let i = 0; i < layout.allTypes.length; i++) {
       const tp = layout.allTypes[i];
-      const card = _f12CardDeck[tp];
-      if (!card || card.count === 0) continue;
       const cx = layout.startX + i * (_CARD_W + _CARD_GAP);
       const cy = layout.cardY;
       cardHoverRects.push({ x: cx, y: cy, w: _CARD_W, h: _CARD_H, type: tp, idx: i });
@@ -5060,12 +5699,8 @@
       dither(bandH*2 - PX, PX, top);
       dither(bandH*3 - PX, PX, front);
       dither(bandH*4 - PX, PX, left);
-      // ── L4: pixel art glyph centre — type ikonine forma
-      if (isFrontCard) {
-        const gx = cx2 + cw / 2;
-        const gy = cy2 + chh / 2;
-        _drawCardGlyph(gx, gy, type, dark, '#000');
-      }
+      // ── L4: seni glyph'ai (širdis/strėle/etc.) pašalinti — vietoj jų piešiama unit ikona ──
+      // (kviečiama iš _drawCards išorinio loop'o po _drawCardLayer)
       // ── L5: chunky pixel highlights — top-left stairs (2px chunky)
       ctx.fillStyle = `rgba(255,255,255,${isFrontCard ? 0.45 : 0.22})`;
       ctx.fillRect(cx2, cy2, cw - PX, PX);
@@ -5141,39 +5776,44 @@
     for (let i = 0; i < layout.allTypes.length; i++) {
       const tp = layout.allTypes[i];
       const card = _f12CardDeck[tp];
-      if (!card || card.count === 0) continue;
+      const isLocked = !card;          // niekada nesumerge'inta → locked
       const baseCx = layout.startX + i * (_CARD_W + _CARD_GAP);
       const baseCy = layout.cardY;
       const isHovered = hoverIdx === i;
       const hoverLift = isHovered ? -10 : 0;
       const col = TYPE_COLOR[tp] || TYPE_COLOR.arrow;
 
-      // ── STACK BACKGROUND CARDS — max 2 behind (3 total su pagrindine korta).
-      // Nuo 4-tos kortos rodom ×N badge vietoj papildomo stack'o.
-      const stackBehind = Math.min(2, card.count - 1);
-      for (let s = stackBehind; s >= 1; s--) {
-        const offX = s * 3;
-        const offY = -s * 4;
-        _drawCardLayer(baseCx + offX, baseCy + hoverLift + offY, col, -22 * s, false, tp);
+      // ── STACK BACKGROUND CARDS — tik unlocked kortom (max 2 behind)
+      if (!isLocked) {
+        const stackBehind = Math.min(2, card.count - 1);
+        for (let s = stackBehind; s >= 1; s--) {
+          const offX = s * 3;
+          const offY = -s * 4;
+          _drawCardLayer(baseCx + offX, baseCy + hoverLift + offY, col, -22 * s, false, tp);
+        }
       }
 
-      // ── MAIN (front) card — su bounce-in animacija kai naujai spawn'inta
-      const elapsedSpawn = t - (card.lastIncAt || 0);
+      // ── MAIN (front) card — bounce-in tik unlocked (kai naujai spawn'inta)
+      const elapsedSpawn = card ? (t - (card.lastIncAt || 0)) : Infinity;
       let bounceY = 0, bounceScale = 1;
-      if (elapsedSpawn < 600) {
+      if (!isLocked && elapsedSpawn < 600) {
         const bk = elapsedSpawn / 600;
-        // Bounce-in: peak overshoot at 0.3, settle by 1.0
         if (bk < 0.3) {
           const sk = bk / 0.3;
-          bounceScale = 0.6 + sk * 0.55;     // 0.6 → 1.15
+          bounceScale = 0.6 + sk * 0.55;
           bounceY = -20 * (1 - sk);
         } else {
           const sk = (bk - 0.3) / 0.7;
-          bounceScale = 1.15 - sk * 0.04;    // 1.15 → 1.0
+          bounceScale = 1.15 - sk * 0.04;
         }
       }
       const cx = baseCx;
       const cy = baseCy + hoverLift + bounceY;
+      // Locked kortos — sumažintas alpha (be ctx.filter — labai brangus)
+      if (isLocked) {
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+      }
       if (bounceScale !== 1) {
         ctx.save();
         ctx.translate(cx + _CARD_W / 2, cy + _CARD_H / 2);
@@ -5184,6 +5824,7 @@
       } else {
         _drawCardLayer(cx, cy, col, 0, true, tp);
       }
+      if (isLocked) ctx.restore();
 
       // Hover glow — gold outer outline
       if (isHovered) {
@@ -5192,17 +5833,387 @@
         ctx.strokeRect(cx - 1, cy - 1, _CARD_W + 2, _CARD_H + 2);
       }
 
-      // Count ×N — rodom virš kortos kai kartojasi (count >= 2), be rėmelių
-      if (card.count >= 2) {
-        ctx.fillStyle = '#ffe7a8';
-        ctx.font = 'bold 10px "Press Start 2P", monospace';
+      // ── UNIT IKONA — virš banding'o, kad žaidėjas matytų kokį unit'ą deploy'ins ──
+      const _mappedUtypeForIcon = _UNIT_FOR_BALL_TYPE[tp];
+      if (_mappedUtypeForIcon) {
+        const iconCx = cx + _CARD_W / 2;
+        const iconCy = cy + _CARD_H / 2 - 2;
+        if (isLocked) {
+          ctx.save();
+          ctx.globalAlpha = 0.35;     // tiesiog blanksiau (be ctx.filter, kuris brangus)
+        }
+        // Character unit'ai (animuoti) — DAR DIDESNI; buildings (tower/zip) — SUMAŽINTI
+        const isCharacter = (_mappedUtypeForIcon === 'archer' || _mappedUtypeForIcon === 'harpoon_fish'
+                          || _mappedUtypeForIcon === 'shaman' || _mappedUtypeForIcon === 'skull');
+        const maxW = isCharacter ? _CARD_W + 28 : _CARD_W - 24;   // chars: 96, buildings: 44
+        const maxH = isCharacter ? _CARD_H + 14 : _CARD_H - 32;   // chars: 110, buildings: 64
+        _drawUnitIcon(_mappedUtypeForIcon, iconCx, iconCy, maxW, maxH, t);
+        if (isLocked) ctx.restore();
+      }
+      // ── „COMING SOON" overlay — kortos be unit mapping (pearl, frost) ──
+      const _utypeForCheck = _UNIT_FOR_BALL_TYPE[tp];
+      if (!_utypeForCheck) {
+        // Tamsus overlay
+        ctx.fillStyle = 'rgba(20,40,80,0.55)';
+        ctx.fillRect(cx, cy, _CARD_W, _CARD_H);
+        // „COMING / SOON" tekstas centre
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 8px "Press Start 2P", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('×' + card.count, cx + _CARD_W / 2, cy - 6);
+        ctx.fillText('COMING', cx + _CARD_W / 2 + 1, cy + _CARD_H / 2 - 2);
+        ctx.fillStyle = '#a8c8ff';
+        ctx.fillText('COMING', cx + _CARD_W / 2, cy + _CARD_H / 2 - 3);
+        ctx.fillStyle = '#000';
+        ctx.fillText('SOON', cx + _CARD_W / 2 + 1, cy + _CARD_H / 2 + 11);
+        ctx.fillStyle = '#a8c8ff';
+        ctx.fillText('SOON', cx + _CARD_W / 2, cy + _CARD_H / 2 + 10);
+      }
+      // ── „NO TRAINED" indikatorius — kalėjimo grotos + KAUKOLĖS LOGO centre ──
+      // Skull = aiškiai signalizuoja „unit'as prarastas / netreniruotas → reikia retreniruoti HOME"
+      const _trainedNow = _utypeForCheck ? _getTrainedCount(_utypeForCheck) : 0;
+      if (!isLocked && _utypeForCheck && _trainedNow === 0) {
+        // Animacijos timer start (kortelės pirmas matomas „locked" frame'as)
+        if (!_f12CardBarsAnimAt[tp]) _f12CardBarsAnimAt[tp] = t;
+        const animEl = t - _f12CardBarsAnimAt[tp];
+        const OPEN_MS = 500, DROP_MS = 400;
+        // Garsiukas — paleidžiamas kai grotos PRADEDA kristi (po OPEN_MS pauzės)
+        if (animEl >= OPEN_MS && !_f12CardBarsSoundDone[tp]) {
+          _f12CardBarsSoundDone[tp] = true;
+          _F12Audio.barsClose();
+        }
+        // Y offset — pradžioj virš kortos (-_CARD_H), slenkasi į vietą po OPEN_MS
+        let yOffset = 0;
+        if (animEl < OPEN_MS) {
+          // Atidengta — grotos užmaskuotos virš ekrano
+          yOffset = -_CARD_H - 10;
+        } else if (animEl < OPEN_MS + DROP_MS) {
+          // Nusileidimo animacija (ease-out cubic — staiga sustoja apačioj)
+          const k = (animEl - OPEN_MS) / DROP_MS;
+          const eased = 1 - Math.pow(1 - k, 3);
+          yOffset = (1 - eased) * -(_CARD_H + 10);
+        }
+        // Po drop pabaigos — fiksuotos grotos (yOffset = 0)
+        // Tamsus overlay tik kai grotos atvykę (>OPEN_MS)
+        if (animEl >= OPEN_MS) {
+          const overlayK = Math.min(1, (animEl - OPEN_MS) / DROP_MS);
+          ctx.fillStyle = `rgba(0,0,0,${0.30 * overlayK})`;
+          ctx.fillRect(cx, cy, _CARD_W, _CARD_H);
+        }
+        // Clip — grotos negali išeiti iš kortos rėmo
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cx, cy, _CARD_W, _CARD_H);
+        ctx.clip();
+        // ── PRISON BARS — 4 vertikalūs metalo stulpeliai + viršutinis ir apatinis horizontalūs ──
+        const ironDark = '#1a1a1e';
+        const ironMid = '#4a4a52';
+        const ironLight = '#7a7a82';
+        const ironHi = '#b8b8c0';
+        // Horizontalus viršutinis beam (frame top)
+        ctx.fillStyle = ironDark;
+        ctx.fillRect(cx, cy + yOffset, _CARD_W, 5);
+        ctx.fillStyle = ironMid;
+        ctx.fillRect(cx, cy + yOffset + 1, _CARD_W, 3);
+        ctx.fillStyle = ironLight;
+        ctx.fillRect(cx, cy + yOffset + 1, _CARD_W, 1);
+        // 4 vertical bars
+        const barW = 4;
+        const numBars = 4;
+        const totalBars = numBars * barW;
+        const totalGap = _CARD_W - totalBars;
+        const gapW = totalGap / (numBars + 1);
+        for (let bi = 0; bi < numBars; bi++) {
+          const bx = cx + gapW + bi * (barW + gapW);
+          // Bar body (visa kortelės aukšy + offset)
+          ctx.fillStyle = ironDark;
+          ctx.fillRect(Math.round(bx), cy + yOffset, barW, _CARD_H);
+          ctx.fillStyle = ironMid;
+          ctx.fillRect(Math.round(bx) + 1, cy + yOffset, barW - 2, _CARD_H);
+          ctx.fillStyle = ironHi;
+          ctx.fillRect(Math.round(bx) + 1, cy + yOffset, 1, _CARD_H);     // left highlight
+        }
+        // Horizontalus apatinis beam (frame bottom) — TIK kai grotos pilnai nusileido (yOffset=0)
+        if (yOffset === 0) {
+          ctx.fillStyle = ironDark;
+          ctx.fillRect(cx, cy + _CARD_H - 5, _CARD_W, 5);
+          ctx.fillStyle = ironMid;
+          ctx.fillRect(cx, cy + _CARD_H - 4, _CARD_W, 3);
+          ctx.fillStyle = '#2a2a30';
+          ctx.fillRect(cx, cy + _CARD_H - 1, _CARD_W, 1);     // bottom shadow
+        }
+        // Rivets ant viršutinio beam (4 — kampe ir vidury)
+        ctx.fillStyle = ironLight;
+        const rivetY = cy + yOffset + 2;
+        ctx.fillRect(cx + 3, rivetY, 2, 2);
+        ctx.fillRect(cx + _CARD_W - 5, rivetY, 2, 2);
+        ctx.fillRect(cx + _CARD_W / 3, rivetY, 2, 2);
+        ctx.fillRect(cx + _CARD_W * 2 / 3, rivetY, 2, 2);
+        ctx.restore();
+        // ── KAUKOLĖS LOGO — atsiranda tik kai grotos pilnai nusileido (after drop anim) ──
+        if (yOffset === 0) {
+          const PX = 2;
+          const skullCx = cx + _CARD_W / 2;
+          const skullCy = cy + _CARD_H / 2;
+          // SKULL_PATTERN simplified — 11×11 pixel art kaukolė
+          const sk = [
+            "00011111000",
+            "00111111100",
+            "01111111110",
+            "01100110110",
+            "01100110110",
+            "01111111110",
+            "01011111010",
+            "00111111100",
+            "00010101000",
+            "00010001000",
+          ];
+          const SP = PX;
+          const W = sk[0].length, H = sk.length;
+          const startX = Math.round(skullCx - W * SP / 2);
+          const startY = Math.round(skullCy - H * SP / 2);
+          // Outline shadow (juodas)
+          ctx.fillStyle = '#000';
+          for (let r = 0; r < H; r++) {
+            for (let cI = 0; cI < W; cI++) {
+              if (sk[r][cI] === '1') {
+                ctx.fillRect(startX + cI * SP - 1, startY + r * SP, SP + 2, SP);
+                ctx.fillRect(startX + cI * SP, startY + r * SP - 1, SP, SP + 2);
+              }
+            }
+          }
+          // Bone fill — šviesi (raudonu tint'u — death)
+          ctx.fillStyle = '#f0e8d8';
+          for (let r = 0; r < H; r++) {
+            for (let cI = 0; cI < W; cI++) {
+              if (sk[r][cI] === '1') ctx.fillRect(startX + cI * SP, startY + r * SP, SP, SP);
+            }
+          }
+          // Akys + nosis tamsios (kaukolės skylės)
+          ctx.fillStyle = '#3a0606';
+          const eyeRows = [3, 4]; const eyeCols = [2, 3, 6, 7];
+          for (const r of eyeRows) for (const cI of eyeCols) ctx.fillRect(startX + cI * SP, startY + r * SP, SP, SP);
+          ctx.fillRect(startX + 5 * SP, startY + 6 * SP, SP, SP);
+        }
+      } else if (_f12CardBarsAnimAt[tp]) {
+        // Reset animacijos — kortelės state pasikeitė (treniruota arba taps locked vėliau)
+        delete _f12CardBarsAnimAt[tp];
+        delete _f12CardBarsSoundDone[tp];          // garsiukas vėl grodins kitą kartą
+      }
+      // ── Trained count badge — VISADA rodom unlocked kortom (1x, 2x, 0x), su spalvos kodu ──
+      if (!isLocked && _utypeForCheck) {
+        ctx.font = 'bold 8px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#000';
+        ctx.fillText(_trainedNow + 'x', cx + 14 - 1, cy + 11);
+        ctx.fillText(_trainedNow + 'x', cx + 14 + 1, cy + 11);
+        ctx.fillText(_trainedNow + 'x', cx + 14, cy + 11 - 1);
+        ctx.fillText(_trainedNow + 'x', cx + 14, cy + 11 + 1);
+        ctx.fillStyle = _trainedNow > 0 ? '#7fff9a' : '#ff6b6b';
+        ctx.fillText(_trainedNow + 'x', cx + 14, cy + 11);
+      }
+      // ── ACTIVE DEPLOY LIFETIME BAR — kai unit kovoja lane'oj, rodo kiek liko jo gyvavimo ──
+      let _activeAlly = null;
+      if (!isLocked && _utypeForCheck) {
+        for (let li = 0; li < lanes.length && !_activeAlly; li++) {
+          for (const a of lanes[li].allies) {
+            if (!a.dead && a.utype === _utypeForCheck) { _activeAlly = a; break; }
+          }
+        }
+      }
+      if (_activeAlly) {
+        const age = t - _activeAlly.bornAt;
+        const lifeMs = _activeAlly.lifetimeMs || _UNIT_LIFETIME_MS;
+        const remainMs = Math.max(0, lifeMs - age);
+        const lifeFrac = Math.max(0, 1 - age / lifeMs);
+        const remainSec = Math.max(0, Math.ceil(remainMs / 1000));
+        // Bar dimensions — apatinis horizontalus
+        const barH = 13;
+        const barY = cy + _CARD_H - barH - 1;
+        const barX = cx + 2;
+        const barW = _CARD_W - 4;
+        // 1) Outer dark border + frame
+        ctx.fillStyle = '#000';
+        ctx.fillRect(cx + 1, barY - 1, _CARD_W - 2, barH + 2);
+        // 2) Inner dark bar background (subtle red gradient hint)
+        ctx.fillStyle = '#1a0a06';
+        ctx.fillRect(barX, barY, barW, barH);
+        // 3) Smooth color lerp: žalia (100%) → geltona (50%) → raudona (0%)
+        let r, g, b;
+        if (lifeFrac > 0.5) {
+          const k = (lifeFrac - 0.5) * 2;             // 0..1 (yellow→green)
+          r = Math.round(255 * (1 - k) + 127 * k);
+          g = Math.round(220 * (1 - k) + 255 * k);
+          b = Math.round(100 * (1 - k) + 154 * k);
+        } else {
+          const k = lifeFrac * 2;                      // 0..1 (red→yellow)
+          r = 255;
+          g = Math.round(80 * (1 - k) + 220 * k);
+          b = Math.round(80 * (1 - k) + 100 * k);
+        }
+        const fillW = Math.round(barW * lifeFrac);
+        if (fillW > 0) {
+          // 4) Vertikalus 3-band gradient (tamsus apačioj → vidury bazinis → šviesus viršuj — liquid feel)
+          const darkR = Math.max(0, r - 50), darkG = Math.max(0, g - 50), darkB = Math.max(0, b - 50);
+          const lightR = Math.min(255, r + 50), lightG = Math.min(255, g + 50), lightB = Math.min(255, b + 50);
+          ctx.fillStyle = `rgb(${darkR},${darkG},${darkB})`;
+          ctx.fillRect(barX, barY + Math.floor(barH * 2 / 3), fillW, Math.ceil(barH / 3));
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillRect(barX, barY + Math.floor(barH / 3), fillW, Math.floor(barH / 3));
+          ctx.fillStyle = `rgb(${lightR},${lightG},${lightB})`;
+          ctx.fillRect(barX, barY, fillW, Math.floor(barH / 3));
+          // 5) Bright highlight stripe ant top edge (1px white)
+          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          ctx.fillRect(barX, barY, fillW, 1);
+          // 6) Leading edge spark — šviesus pixel ant dešinio krašto + sparks virš jo
+          if (fillW < barW) {
+            const edgeX = barX + fillW - 1;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(edgeX, barY, 1, barH);
+            ctx.fillStyle = `rgba(${lightR},${lightG},${lightB},0.85)`;
+            ctx.fillRect(edgeX - 1, barY, 1, barH);
+            // Sparkle virš leading edge (pulse'inasi)
+            const sparkA = 0.5 + 0.5 * Math.sin(t * 0.015);
+            ctx.fillStyle = `rgba(255,255,180,${sparkA})`;
+            ctx.fillRect(edgeX, barY - 2, 2, 1);
+          }
+        }
+        // 7) Pulse'inantis timer text — heartbeat kas sekundę + color shift
+        const subSec = (remainMs % 1000) / 1000;
+        const pulseScale = subSec < 0.12 ? 1 + (1 - subSec / 0.12) * 0.18 : 1;
+        const fontSize = Math.round(9 * pulseScale);
+        ctx.font = `bold ${fontSize}px "Press Start 2P", monospace`;
+        ctx.textAlign = 'center';
+        const tx = cx + _CARD_W / 2, ty = barY + barH / 2 + 3;
+        // Outline
+        ctx.fillStyle = '#000';
+        ctx.fillText(remainSec + 's', tx - 1, ty);
+        ctx.fillText(remainSec + 's', tx + 1, ty);
+        ctx.fillText(remainSec + 's', tx, ty - 1);
+        ctx.fillText(remainSec + 's', tx, ty + 1);
+        // Main text — baltas, su geltonu tint kai <3s
+        ctx.fillStyle = remainMs < 3000 ? '#ffee60' : '#ffffff';
+        ctx.fillText(remainSec + 's', tx, ty);
+        // 8) Urgency overlay — kai liko <3s, raudonas pulse ant viso bar
+        if (remainMs < 3000) {
+          const flashA = 0.30 * (1 - remainMs / 3000) * (0.5 + 0.5 * Math.sin(t * 0.020));
+          ctx.fillStyle = `rgba(255,80,60,${flashA})`;
+          ctx.fillRect(barX, barY, barW, barH);
+        }
+      }
+      // ── Stored merge bonus badge — dešinėj viršuj („+5s" arba „+10s" ir t.t.) ──
+      const _storedBonus = _f12CardBonusMs[tp] || 0;
+      if (!isLocked && _storedBonus > 0) {
+        const bonusTxt = '+' + Math.round(_storedBonus / 1000) + 's';
+        ctx.font = 'bold 8px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+        const bx = cx + _CARD_W - 14;
+        ctx.fillStyle = '#000';
+        ctx.fillText(bonusTxt, bx - 1, cy + 11);
+        ctx.fillText(bonusTxt, bx + 1, cy + 11);
+        ctx.fillText(bonusTxt, bx, cy + 11 - 1);
+        ctx.fillText(bonusTxt, bx, cy + 11 + 1);
+        ctx.fillStyle = '#ffd866';     // gold (matches popup color)
+        ctx.fillText(bonusTxt, bx, cy + 11);
+      }
+      // ── LOCKED overlay — tik tamsus tint (spyna pašalinta) ──
+      if (isLocked) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(cx, cy, _CARD_W, _CARD_H);
       }
 
-      // Spawn flash — pixel art chunky burst
-      const elapsed = t - (card.lastIncAt || 0);
-      if (elapsed < 500) {
+      // ── Unit deploy integration — kortos mapped to ally units ──
+      const _mappedUtype = _UNIT_FOR_BALL_TYPE[tp];
+      // SELECTED — žalia outline
+      if (_mappedUtype && selectedDeployType === _mappedUtype) {
+        ctx.strokeStyle = `rgba(120,255,150,${0.85 + 0.15 * Math.sin(t * 0.012)})`;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(cx - 2, cy - 2, _CARD_W + 4, _CARD_H + 4);
+      }
+      // ── CD overlay — patobulintas „mana liquid" UI: gradient + bubbles + wavy + pulse ──
+      const _cdRem = (_mappedUtype && _f12UnitDeployCD[_mappedUtype])
+        ? Math.max(0, _UNIT_DEPLOY_CD_MS - (t - _f12UnitDeployCD[_mappedUtype])) : 0;
+      if (_cdRem > 0) {
+        const cdK = _cdRem / _UNIT_DEPLOY_CD_MS;       // 1 → 0
+        const remainSec = Math.ceil(_cdRem / 1000);
+        const fillH = Math.round(_CARD_H * cdK);
+        const fillY = cy + (_CARD_H - fillH);
+        // 1) Tamsus base overlay
+        ctx.fillStyle = 'rgba(0,0,0,0.76)';
+        ctx.fillRect(cx, cy, _CARD_W, _CARD_H);
+        // 2) Mana fill — multi-tone gradient (5 sluoksniai, tamsiau apačioj → šviesiau viršuj)
+        if (fillH > 0) {
+          for (let sl = 0; sl < 5; sl++) {
+            const sliceH = Math.ceil(fillH / 5);
+            const sliceY = fillY + sl * sliceH;
+            if (sliceY >= cy + _CARD_H) break;
+            const t01 = 1 - sl / 4;        // 1 = top, 0 = bottom
+            const blueG = Math.floor(100 + t01 * 80);
+            const blueB = Math.floor(170 + t01 * 50);
+            ctx.fillStyle = `rgba(60,${blueG},${blueB},${0.40 + t01 * 0.18})`;
+            ctx.fillRect(cx, sliceY, _CARD_W, Math.min(sliceH, cy + _CARD_H - sliceY));
+          }
+        }
+        // 3) Rising bubbles (pseudorandom — kyla iš apačios per mana)
+        if (fillH > 6) {
+          for (let b = 0; b < 4; b++) {
+            const phase = ((t * 0.0009) + b * 0.27) % 1;
+            const seedX = ((b * 173 + Math.floor(((t * 0.0009) + b * 0.27))) * 53) % 1000 / 1000;
+            const bx = cx + 4 + seedX * (_CARD_W - 8);
+            // Iš apačios kortos į fill viršų (riboje)
+            const startY = cy + _CARD_H - 2;
+            const endY = fillY + 2;
+            const by = startY + (endY - startY) * phase;
+            if (by < fillY || by > cy + _CARD_H) continue;
+            const sz = phase < 0.25 ? 2 : (phase < 0.75 ? 3 : 2);
+            const alpha = 0.7 * (1 - phase * 0.5);
+            ctx.fillStyle = `rgba(200,230,255,${alpha})`;
+            ctx.fillRect(Math.round(bx), Math.round(by), sz, sz);
+          }
+        }
+        // 4) Wavy paviršius — banguojanti vandens linija ties fill viršum
+        if (fillH > 2 && fillH < _CARD_H) {
+          for (let dx = 0; dx < _CARD_W; dx += 2) {
+            const wobble = Math.sin(t * 0.005 + dx * 0.32) * 1.4;
+            const py = Math.round(fillY + wobble);
+            ctx.fillStyle = 'rgba(200,235,255,0.95)';
+            ctx.fillRect(cx + dx, py, 2, 2);
+            // Aukštesnis highlight pixel virš bangos (foam)
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.fillRect(cx + dx, py - 1, 2, 1);
+          }
+        }
+        // 5) Timer text — pulse'inasi kas sekundę (heartbeat) + spalva keičiasi artinant 0
+        const subSec = (_cdRem % 1000) / 1000;          // 0..1 sekundėje
+        const pulseScale = subSec < 0.12 ? 1 + (1 - subSec / 0.12) * 0.18 : 1;
+        const fontSize = Math.round(18 * pulseScale);
+        ctx.font = `bold ${fontSize}px "Press Start 2P", monospace`;
+        ctx.textAlign = 'center';
+        // Spalva — auksinė → oranžinė < 10s → raudona < 5s (urgency)
+        let textCol = '#ffe7a8';
+        if (_cdRem < 5000) textCol = '#ff8a7a';
+        else if (_cdRem < 10000) textCol = '#ffb058';
+        // Pixel art outline (4 puses)
+        ctx.fillStyle = '#000';
+        const tx = cx + _CARD_W / 2, ty = cy + _CARD_H / 2 + 5;
+        ctx.fillText(remainSec + 's', tx - 1, ty);
+        ctx.fillText(remainSec + 's', tx + 1, ty);
+        ctx.fillText(remainSec + 's', tx, ty - 1);
+        ctx.fillText(remainSec + 's', tx, ty + 1);
+        ctx.fillStyle = textCol;
+        ctx.fillText(remainSec + 's', tx, ty);
+        // 6) Final-second pulse — kai liko < 1s, mažas baltas blyksis aplink tekstą
+        if (_cdRem < 1000) {
+          const flashA = 0.5 * (1 - _cdRem / 1000);
+          ctx.fillStyle = `rgba(255,255,255,${flashA})`;
+          ctx.fillRect(cx + 2, cy + 2, _CARD_W - 4, _CARD_H - 4);
+        }
+      }
+
+      // Count ×N badge pašalinta — vėliau bus pridėta kita merge logika
+
+      // Spawn flash — tik unlocked
+      const elapsed = card ? (t - (card.lastIncAt || 0)) : Infinity;
+      if (!isLocked && elapsed < 500) {
         const fk = elapsed / 500;
         const fa = (1 - fk);
         const PX = 2;
@@ -5223,6 +6234,106 @@
         }
       }
     }
+    // ── HOVER TOOLTIP — pop-up virš kortos su instrukcija kas reikia daryti ──
+    if (hoverIdx >= 0) {
+      const tp = layout.allTypes[hoverIdx];
+      const utype = _UNIT_FOR_BALL_TYPE[tp];
+      const isLockedH = !_f12CardDeck[tp];
+      const trainedH = utype ? _getTrainedCount(utype) : 0;
+      let msg = null, accent = '#ffe7a8';
+      const unitName = (utype === 'harpoon_fish' ? 'HARPOON' :
+                       utype === 'crossbow_tower' ? 'CROSSBOW' :
+                       utype ? utype.toUpperCase() : '');
+      // Ball type → color name (vietoj abstrakt'aus "HEART/ARROW" — žaidėjas mato spalvą)
+      const BALL_COLOR_NAME = {
+        arrow:   'ORANGE',
+        shield:  'TEAL',
+        heart:   'RED',
+        leaf:    'GREEN',
+        star:    'YELLOW',
+        crystal: 'PURPLE',
+        shadow:  'BLACK',
+        pearl:   'WHITE',
+        frost:   'BLUE',
+      };
+      const colorName = BALL_COLOR_NAME[tp] || tp.toUpperCase();
+      if (!utype) {
+        msg = ['COMING SOON', 'New unit will arrive'];
+        accent = '#a8c8ff';
+      } else if (isLockedH) {
+        msg = ['UNLOCK CARD', 'Merge two ' + colorName + ' balls'];
+        accent = '#ffae5c';
+      } else if (trainedH === 0) {
+        const isBuilding = (utype === 'tower' || utype === 'crossbow_tower' || utype === 'zip');
+        msg = isBuilding
+          ? ['BUILD REQUIRED', 'Construct ' + unitName + ' at HOME']
+          : ['TRAIN REQUIRED', 'Train ' + unitName + ' at HOME barracks'];
+        accent = '#ff7a7a';
+      }
+      if (msg) {
+        const cardRect = cardHoverRects[hoverIdx];
+        _drawCardTooltip(L, cardRect, msg, accent);
+      }
+    }
+  }
+
+  // ── Tooltip helper — medieval-style wood frame + parchment fill, pixel art ──
+  function _drawCardTooltip(L, cardRect, lines, accent) {
+    ctx.font = 'bold 9px "Press Start 2P", monospace';
+    // Compute width based on longest line
+    let maxW = 0;
+    for (const line of lines) {
+      const w = ctx.measureText(line).width;
+      if (w > maxW) maxW = w;
+    }
+    const padX = 10, padY = 8, lineH = 14;
+    const ttW = Math.max(140, Math.round(maxW) + padX * 2);
+    const ttH = lines.length * lineH + padY * 2;
+    // Position above the card if there's room, else below
+    let ttX = Math.round(cardRect.x + cardRect.w / 2 - ttW / 2);
+    let ttY = cardRect.y - ttH - 10;
+    if (ttY < 8) ttY = cardRect.y + cardRect.h + 10;
+    // Clamp horizontally
+    if (ttX < 8) ttX = 8;
+    if (ttX + ttW > L.W - 8) ttX = L.W - 8 - ttW;
+    // ── Drop shadow ──
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(ttX + 3, ttY + 3, ttW, ttH);
+    // ── Wood frame (dark outer + medium border + light inner highlight) ──
+    ctx.fillStyle = '#1a0e06';
+    ctx.fillRect(ttX, ttY, ttW, ttH);
+    ctx.fillStyle = '#5a3820';
+    ctx.fillRect(ttX + 2, ttY + 2, ttW - 4, ttH - 4);
+    ctx.fillStyle = '#8b6242';
+    ctx.fillRect(ttX + 2, ttY + 2, ttW - 4, 2);              // top edge
+    ctx.fillStyle = '#3a2410';
+    ctx.fillRect(ttX + 2, ttY + ttH - 4, ttW - 4, 2);        // bottom shadow
+    // ── Parchment fill ──
+    ctx.fillStyle = '#1a1208';
+    ctx.fillRect(ttX + 4, ttY + 4, ttW - 8, ttH - 8);
+    // ── Brass corner rivets ──
+    ctx.fillStyle = '#a87830';
+    ctx.fillRect(ttX + 3, ttY + 3, 2, 2);
+    ctx.fillRect(ttX + ttW - 5, ttY + 3, 2, 2);
+    ctx.fillRect(ttX + 3, ttY + ttH - 5, 2, 2);
+    ctx.fillRect(ttX + ttW - 5, ttY + ttH - 5, 2, 2);
+    ctx.fillStyle = '#ffe7a8';
+    ctx.fillRect(ttX + 3, ttY + 3, 1, 1);                    // top-left brass highlight
+    ctx.fillRect(ttX + ttW - 5, ttY + 3, 1, 1);
+    // ── Text (first line = title with accent color, rest = body in cream) ──
+    ctx.textAlign = 'center';
+    for (let li = 0; li < lines.length; li++) {
+      const y = ttY + padY + (li + 1) * lineH - 4;
+      const isTitle = li === 0;
+      const col = isTitle ? accent : '#e8d8a8';
+      ctx.font = isTitle ? 'bold 9px "Press Start 2P", monospace' : '7px "Press Start 2P", monospace';
+      // Pixel-art outline
+      ctx.fillStyle = '#000';
+      ctx.fillText(lines[li], ttX + ttW / 2 + 1, y + 1);
+      ctx.fillStyle = col;
+      ctx.fillText(lines[li], ttX + ttW / 2, y);
+    }
+    ctx.textAlign = 'left';
   }
 
   // ── Lane background cache — pixel art dirt + castle wall base
@@ -5980,6 +7091,155 @@
     return _ronke2FramesCache;
   }
 
+  // ── WAGON WHEEL — cache'intas pixel art sprite (medinis ratas su geležies rim + brass hub + 6 spokes) ──
+  let _wagonWheelCache = null;
+  function _getWagonWheelSprite() {
+    if (_wagonWheelCache) return _wagonWheelCache;
+    const r = 18, sz = r * 2 + 4;
+    const off = document.createElement('canvas');
+    off.width = sz; off.height = sz;
+    const oc = off.getContext('2d');
+    oc.imageSmoothingEnabled = false;
+    const cc = sz / 2;
+    // Outer iron rim (dark) + wood interior
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d > r) continue;
+        let c;
+        if (d > r - 1)       c = '#1a1a1e';     // black rim edge
+        else if (d > r - 2)  c = '#3a3a42';     // dark iron
+        else if (d > r - 4)  c = '#6a6a72';     // mid iron (rim thickness)
+        else if (d > r - 6)  c = '#3a2410';     // wood inner rim
+        else                 c = '#5a3820';     // wood interior
+        oc.fillStyle = c;
+        oc.fillRect(cc + dx, cc + dy, 1, 1);
+      }
+    }
+    // 6 spokes (medinis su highlight)
+    for (let s = 0; s < 6; s++) {
+      const ang = s * Math.PI / 3;
+      for (let p = 4; p < r - 5; p++) {
+        const sx = Math.round(cc + Math.cos(ang) * p);
+        const sy = Math.round(cc + Math.sin(ang) * p);
+        oc.fillStyle = '#3a2410';
+        oc.fillRect(sx, sy, 2, 2);
+        oc.fillStyle = '#7a5a3a';                // highlight ant viršaus
+        oc.fillRect(sx, sy, 1, 1);
+      }
+    }
+    // Central brass hub (su white highlight)
+    for (let dy = -4; dy <= 4; dy++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        const dd = dx*dx + dy*dy;
+        if (dd > 16) continue;
+        oc.fillStyle = dd < 4 ? '#ffe7a8' : (dd < 10 ? '#d4a050' : '#a87830');
+        oc.fillRect(cc + dx, cc + dy, 1, 1);
+      }
+    }
+    // Outer black outline pixel (1px aplink rim, kad atskirtų nuo bg)
+    oc.fillStyle = '#000';
+    for (let s = 0; s < 64; s++) {
+      const ang = s * Math.PI * 2 / 64;
+      const sx = Math.round(cc + Math.cos(ang) * (r + 1));
+      const sy = Math.round(cc + Math.sin(ang) * (r + 1));
+      oc.fillRect(sx, sy, 1, 1);
+    }
+    _wagonWheelCache = { canvas: off, r, sz };
+    return _wagonWheelCache;
+  }
+
+  // ── LAUNCHER PLATFORMA — animuotas sprite sheet su 8 frames (lengvas sway) + info ──
+  function _drawLauncherPlatform(L, t, lx, ly) {
+    if (!_platformSheetImg.complete || !_platformSheetImg.naturalWidth) return;
+    // Display dydis — sumažintas, kad telpa arena viduje (max arenos plotis - margin)
+    const maxAllowedW = L.arena.w - 20;
+    const dW = Math.min(218, maxAllowedW);    // +6px tik į kairę (212 → 218, su -3 center shift)
+    const dH = Math.round(dW * _PLATFORM_FH / _PLATFORM_FW);
+    // Pozicija — center shift -3px į kairę, kad augimas eitų tik į kairę pusę
+    let dX = Math.round(lx - 42 - dW / 2);
+    // Clamp į arenos ribas (su 4px margin)
+    const minX = L.arena.x + 4;
+    const maxX = L.arena.x + L.arena.w - dW - 4;
+    if (dX < minX) dX = minX;
+    if (dX > maxX) dX = maxX;
+    // Y — sprite content top dalis (~22% nuo viršaus) sutampa su pedestalo apačia (ly+32)
+    const dY = Math.round(ly + 32 - dH * (85 / _PLATFORM_FH));
+    // Frame indeksas — animuojam TIK kai šūvis ką tik įvyko (one-shot per fire)
+    let frame = 0;     // default idle (frame 0)
+    if (_f12PlatformAnimStart > 0) {
+      const animEl = t - _f12PlatformAnimStart;
+      const animDur = (_PLATFORM_FRAMES / _PLATFORM_FPS) * 1000;   // ~800ms
+      if (animEl < animDur) {
+        frame = Math.min(_PLATFORM_FRAMES - 1, Math.floor(animEl / (1000 / _PLATFORM_FPS)));
+      }
+    }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_platformSheetImg,
+      frame * _PLATFORM_FW, 0, _PLATFORM_FW, _PLATFORM_FH,
+      dX, dY, dW, dH);
+    // ── INFO TEXT — gyvas game progress ant viršutinio platform decko ──
+    // Top deck zona sprite'e ~ y 85..180, mapping į display: dY + dH*0.22 to dY + dH*0.46
+    const infoY = dY + Math.round(dH * 0.30) + 8;      // centruotas ant top deck (+8px žemiau)
+    const colW = (dW - 30) / 3;
+    // Visi skaičiukai — vienos spalvos (auksinė, dera su brass theme)
+    const _NUM_COL = '#ffe7a8';
+    const infoData = [
+      { label: 'SCORE',  value: '' + (score || 0),                col: _NUM_COL },
+      { label: 'MERGES', value: '' + (merges || 0),               col: _NUM_COL },
+      { label: 'BALLS',  value: blocks.length + '/' + MAX_BLOCKS, col: _NUM_COL },
+    ];
+    // Cleanup expired -1 popups
+    const POP_DUR = 1200;
+    for (let i = _f12BallsMinusPopups.length - 1; i >= 0; i--) {
+      if (t - _f12BallsMinusPopups[i].born >= POP_DUR) _f12BallsMinusPopups.splice(i, 1);
+    }
+    for (let ci = 0; ci < 3; ci++) {
+      const cx = dX + 15 + colW * ci + colW / 2;
+      const info = infoData[ci];
+      // Label (mažas — +1px)
+      ctx.font = 'bold 7px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000';
+      ctx.fillText(info.label, cx + 1, infoY);
+      ctx.fillText(info.label, cx - 1, infoY);
+      ctx.fillText(info.label, cx, infoY + 1);
+      ctx.fillText(info.label, cx, infoY - 1);
+      ctx.fillStyle = '#c8b078';
+      ctx.fillText(info.label, cx, infoY);
+      // Value (didesnis, su outline — +1px)
+      ctx.font = 'bold 10px "Press Start 2P", monospace';
+      ctx.fillStyle = '#000';
+      ctx.fillText(info.value, cx + 1, infoY + 13);
+      ctx.fillText(info.value, cx - 1, infoY + 13);
+      ctx.fillText(info.value, cx, infoY + 14);
+      ctx.fillText(info.value, cx, infoY + 12);
+      ctx.fillStyle = info.col;
+      ctx.fillText(info.value, cx, infoY + 13);
+      // „-1" floating indikatorius — TIK ant BALLS stulpelio (ci === 2) per merge
+      if (ci === 2 && _f12BallsMinusPopups.length) {
+        for (const popup of _f12BallsMinusPopups) {
+          const age = t - popup.born;
+          if (age < 0 || age >= POP_DUR) continue;
+          const k = age / POP_DUR;
+          const alpha = 1 - k;
+          const eased = 1 - Math.pow(1 - k, 2);
+          const yOff = -eased * 18;
+          const xOff = colW / 2 - 4;       // dešinėj nuo skaičiuko
+          ctx.font = 'bold 9px "Press Start 2P", monospace';
+          ctx.fillStyle = `rgba(0,0,0,${alpha * 0.9})`;
+          ctx.fillText('-1', cx + xOff + 1, infoY + 13 + yOff);
+          ctx.fillText('-1', cx + xOff - 1, infoY + 13 + yOff);
+          ctx.fillText('-1', cx + xOff, infoY + 12 + yOff);
+          ctx.fillText('-1', cx + xOff, infoY + 14 + yOff);
+          ctx.fillStyle = `rgba(255,120,120,${alpha})`;
+          ctx.fillText('-1', cx + xOff, infoY + 13 + yOff);
+        }
+      }
+    }
+    ctx.textAlign = 'left';
+  }
+
   function drawLauncher(L, t) {
     const lx = L.launcher.x, ly = L.launcher.y;
     const ang = launcher.angle;
@@ -5987,6 +7247,8 @@
     const snap = (v) => Math.round(v / PX) * PX;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
+    // ── PLATFORMA — medinė platforma po RONKE + patranka, su gyvu game progress info ──
+    _drawLauncherPlatform(L, t, lx, ly);
     // ── PEDESTALO BAZĖ — chunky pixel art akmens base'as ────────────
     // Outer akmens žiedas
     const baseR = 32;
@@ -5996,7 +7258,7 @@
       const frame = Math.floor(t / 130) % _RONKE2_FRAMES;   // ~7.7fps idle
       const dw = _ronkeSpr.dw, dh = _ronkeSpr.dh;
       const rcx = lx - baseR - 46;          // kairėj nuo pedestalo — atstumas, nesiliečia su patranka
-      const rcy = ly - 1;                   // ~launcher centro lygis (-7px aukščiau)
+      const rcy = ly - 7;                   // ~launcher centro lygis (-13px aukščiau)
       // Šešėlis po RONKE
       ctx.fillStyle = 'rgba(0,0,0,0.32)';
       ctx.fillRect(snap(rcx - dw * 0.20), snap(rcy + dh * 0.30), snap(dw * 0.40), PX * 2);
@@ -6480,83 +7742,127 @@
 
   function drawDeployPanel(L, t) {
     deployBtnRects = [];
-    const types = Object.keys(deployPool).filter(k => deployPool[k] > 0);
+    // Visi 7 unit tipai (rodom net jei count=0, kad žaidėjas matytų visą deck'ą)
+    const allUnitTypes = ['archer', 'tower', 'shaman', 'harpoon_fish', 'crossbow_tower', 'zip', 'skull'];
+    const types = allUnitTypes.filter(k => deployPool[k] > 0 || _f12UnitDeployCD[k]);  // arba turi count, arba CD aktyvus
     if (types.length === 0) return;
-    const panelH = 56;
-    const panelW = Math.min(L.W - 240, types.length * 70 + 20);
+    // Reverse mapping — unit type → ball type (kad žinotume kokia spalva ant kortos)
+    const BALL_FOR_UNIT = {};
+    for (const bt in _UNIT_FOR_BALL_TYPE) BALL_FOR_UNIT[_UNIT_FOR_BALL_TYPE[bt]] = bt;
+    const cardW = 64, cardH = 80;     // didesnė kortelė — telpa ball + count + CD
+    const panelH = cardH + 14;
+    const panelW = Math.min(L.W - 240, types.length * (cardW + 8) + 20);
     const panelX = 16;
     const panelY = L.H - panelH - 50;
-
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
     ctx.fillRect(panelX, panelY, panelW, panelH);
     ctx.strokeStyle = '#7a5a3a';
     ctx.lineWidth = 2;
     ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
-
-    const cardW = 64, cardH = 46;
     let cx = panelX + 10;
     for (const utype of types) {
-      const cnt = deployPool[utype];
+      const cnt = deployPool[utype] || 0;
       const isSelected = utype === selectedDeployType;
-      ctx.fillStyle = isSelected ? '#3a5a2e' : '#2a1808';
-      ctx.fillRect(cx, panelY + 5, cardW, cardH);
+      const ballType = BALL_FOR_UNIT[utype];
+      const col = ballType && TYPE_COLOR[ballType] ? TYPE_COLOR[ballType] : { top:[160,160,160], front:[120,120,120], left:[80,80,80] };
+      // Kortelės fonas — su unit ball spalvos atspalviu
+      ctx.fillStyle = isSelected ? '#3a5a2e' : '#1a0e08';
+      ctx.fillRect(cx, panelY + 7, cardW, cardH);
       ctx.strokeStyle = isSelected ? '#7aff8a' : '#5a3a20';
       ctx.lineWidth = isSelected ? 2 : 1;
-      ctx.strokeRect(cx + 0.5, panelY + 5.5, cardW - 1, cardH - 1);
-      let sheets = null;
-      try { sheets = skullAnimSheets; } catch (_) {}
-      const sheetObj = sheets && sheets.idle;
-      if (sheetObj && sheetObj.sheet && sheetObj.sheet.complete && sheetObj.sheet.naturalWidth > 0) {
-        ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        ctx.filter = 'sepia(1) saturate(3) hue-rotate(160deg) brightness(0.9)';
-        const idx = Math.floor(t / 140) % sheetObj.frameCount;
-        ctx.drawImage(sheetObj.sheet, idx * 192, 0, 192, 192, cx + 4, panelY + 8, 32, 32);
-        ctx.restore();
+      ctx.strokeRect(cx + 0.5, panelY + 7.5, cardW - 1, cardH - 1);
+      // Ball spalvos sferinis simbolis (centre kortos viršuj)
+      if (ballType) {
+        drawSphere(ctx, cx + cardW / 2, panelY + 7 + 22, 14, 0, 0, ballType, 2, 0);
       }
+      // Unit pavadinimas (centre po sfera)
       ctx.fillStyle = '#ffe7a8';
-      ctx.font = '7px "Press Start 2P", monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText(utype.substr(0, 5).toUpperCase(), cx + 38, panelY + 22);
+      ctx.font = '6px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      const dispName = utype === 'harpoon_fish' ? 'HARPOON' : utype === 'crossbow_tower' ? 'XBOW' : utype.toUpperCase();
+      ctx.fillText(dispName.substr(0, 8), cx + cardW / 2, panelY + 7 + 44);
+      // Count
       ctx.fillStyle = '#fff';
-      ctx.font = '11px "Press Start 2P", monospace';
-      ctx.fillText('×' + cnt, cx + 38, panelY + 42);
-      deployBtnRects.push({ x: cx, y: panelY + 5, w: cardW, h: cardH, utype, cnt });
-      cx += cardW + 6;
+      ctx.font = 'bold 13px "Press Start 2P", monospace';
+      ctx.fillText('×' + cnt, cx + cardW / 2, panelY + 7 + 64);
+      // CD indikatorius — DIDELIS vertikalus fill ant visos kortos
+      const cdRem = _f12UnitDeployCD[utype]
+        ? Math.max(0, _UNIT_DEPLOY_CD_MS - (t - _f12UnitDeployCD[utype])) : 0;
+      if (cdRem > 0) {
+        const cdK = cdRem / _UNIT_DEPLOY_CD_MS;     // 1 → 0
+        // Tamsus overlay — galimybės nematomas
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.fillRect(cx, panelY + 7, cardW, cardH);
+        // Vertikalus „kraunamas" stulpelis iš apačios — pildosi kai CD baigiasi
+        const fillH = Math.round(cardH * cdK);
+        ctx.fillStyle = 'rgba(80,140,200,0.40)';        // mėlyna „mana kraunasi"
+        ctx.fillRect(cx, panelY + 7 + (cardH - fillH), cardW, fillH);
+        // Stiklo blizgesys ties wavefront (chunky line)
+        if (fillH > 2 && fillH < cardH) {
+          ctx.fillStyle = 'rgba(180,220,255,0.85)';
+          ctx.fillRect(cx, panelY + 7 + (cardH - fillH), cardW, 2);
+        }
+        // Likęs laikas — DIDELIS tekstas centre
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 18px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.ceil(cdRem / 1000) + 's', cx + cardW / 2 + 1, panelY + 7 + cardH / 2 + 5);
+        ctx.fillStyle = '#ffe7a8';
+        ctx.fillText(Math.ceil(cdRem / 1000) + 's', cx + cardW / 2, panelY + 7 + cardH / 2 + 4);
+      }
+      ctx.textAlign = 'left';
+      deployBtnRects.push({ x: cx, y: panelY + 7, w: cardW, h: cardH, utype, cnt });
+      cx += cardW + 8;
     }
   }
 
   function drawHud(L, t) {
-    // ── BASE HP — vertikalus castle banner kairėj, prie priešų išėjimo vietos ──
+    // ── BASE HP — vertikalus castle banner kairėj, pagerintas UI ──
     const PX = 2;
-    const hpW = 26;                          // siauras vertikalus
-    const hpH = L.lanesH;                    // visas lane plotis
+    const hpW = 32;                          // truputį platesnis (buvo 26)
+    const hpH = L.lanesH;
     const hpX = 10;
     const hpY = L.lanesY;
     hpBarRect = { x: hpX, y: hpY, w: hpW, h: hpH };
     const hpFrac = Math.max(0, baseHp / BASE_HP);
-    const danger = hpFrac < 0.04;
-    const pulse = danger ? (0.85 + 0.04 * Math.sin(t * 0.012)) : 1;
-    // Outer black outline
+    const danger = hpFrac < 0.20;            // danger žemiau 20%
+    const critical = hpFrac < 0.08;
+    // ── DROP SHADOW (depth) ──
+    ctx.fillStyle = 'rgba(0,0,0,0.50)';
+    ctx.fillRect(hpX + 2, hpY + 2, hpW, hpH);
+    // ── OUTER BLACK FRAME ──
     ctx.fillStyle = '#000';
     ctx.fillRect(hpX, hpY, hpW, hpH);
-    // Cut corners
+    // Pixel art rounded corners
     ctx.clearRect(hpX, hpY, PX, PX);
     ctx.clearRect(hpX + hpW - PX, hpY, PX, PX);
     ctx.clearRect(hpX, hpY + hpH - PX, PX, PX);
     ctx.clearRect(hpX + hpW - PX, hpY + hpH - PX, PX, PX);
-    // Wood frame
+    // ── WOOD FRAME (multi-tone gradient) ──
     ctx.fillStyle = '#3a2410';
     ctx.fillRect(hpX + PX, hpY + PX, hpW - PX*2, hpH - PX*2);
     ctx.fillStyle = '#5a3820';
     ctx.fillRect(hpX + PX*2, hpY + PX*2, hpW - PX*4, hpH - PX*4);
-    // Highlight left edge
-    ctx.fillStyle = 'rgba(255,200,140,0.04)';
+    // Top brass highlight stripe (gold trim)
+    ctx.fillStyle = '#d4a050';
+    ctx.fillRect(hpX + PX, hpY + PX, hpW - PX*2, 1);
+    ctx.fillStyle = '#7a5a3a';
+    ctx.fillRect(hpX + PX, hpY + PX + 1, hpW - PX*2, 1);
+    // Left/right edge highlights + shadows
+    ctx.fillStyle = 'rgba(255,200,140,0.10)';
     ctx.fillRect(hpX + PX*2, hpY + PX*2, PX, hpH - PX*4);
-    // Shadow right edge
-    ctx.fillStyle = 'rgba(0,0,0,0.50)';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(hpX + hpW - PX*3, hpY + PX*2, PX, hpH - PX*4);
-    // ── Crown ikona viršuje ──────────────────────────────────────────
+    // ── BRASS CORNER RIVETS (4 corners + 2 middle sides) ──
+    ctx.fillStyle = '#a87830';
+    ctx.fillRect(hpX + PX*2, hpY + PX*2, PX, PX);
+    ctx.fillRect(hpX + hpW - PX*3, hpY + PX*2, PX, PX);
+    ctx.fillRect(hpX + PX*2, hpY + hpH - PX*3, PX, PX);
+    ctx.fillRect(hpX + hpW - PX*3, hpY + hpH - PX*3, PX, PX);
+    ctx.fillStyle = '#ffe7a8';
+    ctx.fillRect(hpX + PX*2, hpY + PX*2, 1, 1);
+    ctx.fillRect(hpX + hpW - PX*3, hpY + PX*2, 1, 1);
+    // ── CROWN ikona viršuj (su raudonu gem centre) ──
     const crown = [
       "1010101",
       "1111111",
@@ -6565,48 +7871,88 @@
     ];
     const crH = crown.length * PX;
     const crX = hpX + Math.round((hpW - crown[0].length * PX) / 2 / PX) * PX;
-    const crY = hpY + PX*3;
-    ctx.fillStyle = '#ffcf5c';
+    const crY = hpY + PX*4;
+    // Dark outline (4 sides)
+    ctx.fillStyle = '#3a2410';
     for (let row = 0; row < crown.length; row++) {
-      for (let cx = 0; cx < crown[row].length; cx++) {
-        if (crown[row][cx] === '1') {
-          ctx.fillRect(crX + cx * PX, crY + row * PX, PX, PX);
+      for (let cI = 0; cI < crown[row].length; cI++) {
+        if (crown[row][cI] === '1') {
+          const px = crX + cI * PX, py = crY + row * PX;
+          ctx.fillRect(px - 1, py, PX + 2, PX);
+          ctx.fillRect(px, py - 1, PX, PX + 2);
         }
       }
     }
-    // Crown highlight pixels
+    // Gold fill
+    ctx.fillStyle = '#ffcf5c';
+    for (let row = 0; row < crown.length; row++) {
+      for (let cI = 0; cI < crown[row].length; cI++) {
+        if (crown[row][cI] === '1') ctx.fillRect(crX + cI * PX, crY + row * PX, PX, PX);
+      }
+    }
+    // Crown tips highlight
     ctx.fillStyle = '#fff5c0';
     ctx.fillRect(crX + PX, crY, PX, PX);
+    ctx.fillRect(crX + PX*3, crY, PX, PX);
     ctx.fillRect(crX + PX*5, crY, PX, PX);
-    // ── HP bar slot (vertikalus, po karūna, virš heart) ─────────────
+    // Red gem centre (crown jewel)
+    ctx.fillStyle = '#cc2222';
+    ctx.fillRect(crX + PX*3, crY + PX*2, PX, PX);
+    ctx.fillStyle = '#ff6060';
+    ctx.fillRect(crX + PX*3, crY + PX*2, 1, 1);
+    // ── HP BAR SLOT — su inner border ──
     const barX = hpX + PX*3;
-    const barY = crY + crH + PX*2;
+    const barY = crY + crH + PX*3;
     const barW = hpW - PX*6;
-    const barH = hpH - (barY - hpY) - PX*8;   // palieka vietos heart apačioje
-    // Bar BG (dark slot)
+    const barH = hpH - (barY - hpY) - PX*12;   // vietos heart + skaičiui apačioj
+    // Dark slot bg (inner shadow)
+    ctx.fillStyle = '#0a0402';
+    ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
     ctx.fillStyle = '#1a0a04';
     ctx.fillRect(barX, barY, barW, barH);
-    // Chunky 2px segmentai — fill iš apačios į viršų (bottom-up)
+    // ── BRICK SEGMENTS (castle wall style) — 3-tone shading per brick ──
     const segH = PX*2;
     const totalSegs = Math.floor(barH / segH);
     const filledSegs = Math.round(totalSegs * hpFrac);
+    // Smooth color lerp (green → yellow → red)
     let cR, cG, cB;
-    if (hpFrac > 0.6) { cR = 80; cG = 220; cB = 90; }
-    else if (hpFrac > 0.3) { cR = 240; cG = 200; cB = 60; }
-    else { cR = 230; cG = 70; cB = 70; }
-    for (let i = 0; i < filledSegs; i++) {
-      // bottom-up
-      const sy = barY + barH - (i + 1) * segH;
-      ctx.fillStyle = `rgb(${cR},${cG},${cB})`;
-      ctx.fillRect(barX, sy, barW, segH - PX);
-      // Left highlight
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(barX, sy, PX, segH - PX);
-      // Right shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(barX + barW - PX, sy, PX, segH - PX);
+    if (hpFrac > 0.5) {
+      const k = (hpFrac - 0.5) * 2;
+      cR = Math.round(255 * (1 - k) + 80 * k);
+      cG = Math.round(200 * (1 - k) + 220 * k);
+      cB = Math.round(60 * (1 - k) + 90 * k);
+    } else {
+      const k = hpFrac * 2;
+      cR = 255;
+      cG = Math.round(70 * (1 - k) + 200 * k);
+      cB = Math.round(70 * (1 - k) + 60 * k);
     }
-    // ── Heart ikona po HP baro ──────────────────────────────────────
+    const darkR = Math.max(0, cR - 60), darkG = Math.max(0, cG - 60), darkB = Math.max(0, cB - 60);
+    const lightR = Math.min(255, cR + 50), lightG = Math.min(255, cG + 50), lightB = Math.min(255, cB + 50);
+    for (let i = 0; i < filledSegs; i++) {
+      const sy = barY + barH - (i + 1) * segH;
+      // Base brick (dark bottom, base top)
+      ctx.fillStyle = `rgb(${darkR},${darkG},${darkB})`;
+      ctx.fillRect(barX, sy + 1, barW, segH - 1);
+      ctx.fillStyle = `rgb(${cR},${cG},${cB})`;
+      ctx.fillRect(barX, sy, barW, 1);
+      // Top highlight pixel (bright)
+      ctx.fillStyle = `rgb(${lightR},${lightG},${lightB})`;
+      ctx.fillRect(barX, sy, barW - 1, 1);
+      // Left edge highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.30)';
+      ctx.fillRect(barX, sy, 1, segH - 1);
+      // Right edge shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.40)';
+      ctx.fillRect(barX + barW - 1, sy, 1, segH - 1);
+      // Brick separator (skipped first/last for clean edge)
+      if (i % 4 === 3 && i < filledSegs - 1) {
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(barX, sy - 1, barW, 1);
+      }
+    }
+    // ── HEART ikona po HP baro (su gradient + pulse) ──
+    const heartPulse = danger ? (0.92 + 0.08 * Math.sin(t * 0.012)) : 1;
     const heart = [
       "0110011",
       "1111111",
@@ -6618,27 +7964,47 @@
     const heartW = heart[0].length * PX;
     const hi = hpX + Math.round((hpW - heartW) / 2 / PX) * PX;
     const hj = hpY + hpH - heart.length * PX - PX*2;
-    ctx.fillStyle = danger ? `rgba(255,80,90,${pulse})` : '#ff5070';
+    // Dark outline (4 sides)
+    ctx.fillStyle = '#3a0606';
     for (let row = 0; row < heart.length; row++) {
-      for (let cx = 0; cx < heart[row].length; cx++) {
-        if (heart[row][cx] === '1') {
-          ctx.fillRect(hi + cx * PX, hj + row * PX, PX, PX);
+      for (let cI = 0; cI < heart[row].length; cI++) {
+        if (heart[row][cI] === '1') {
+          const px = hi + cI * PX, py = hj + row * PX;
+          ctx.fillRect(px - 1, py, PX + 2, PX);
+          ctx.fillRect(px, py - 1, PX, PX + 2);
         }
       }
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    // Red fill — su pulse
+    const hr = danger ? Math.round(255 * heartPulse) : 255;
+    ctx.fillStyle = `rgb(${hr},80,90)`;
+    for (let row = 0; row < heart.length; row++) {
+      for (let cI = 0; cI < heart[row].length; cI++) {
+        if (heart[row][cI] === '1') ctx.fillRect(hi + cI * PX, hj + row * PX, PX, PX);
+      }
+    }
+    // Heart highlight (specular shine)
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
     ctx.fillRect(hi + 2 * PX, hj + 1 * PX, PX, PX);
-    // Danger pulse — raudonas blyksis
-    if (danger) {
-      ctx.fillStyle = `rgba(255,40,40,${0.20 * (1 - pulse)})`;
+    ctx.fillRect(hi + 1 * PX, hj + 1 * PX, PX, 1);
+    // ── Critical danger pulse ──
+    if (critical) {
+      const cp = 0.18 * (0.5 + 0.5 * Math.sin(t * 0.018));
+      ctx.fillStyle = `rgba(255,40,40,${cp})`;
       ctx.fillRect(hpX, hpY, hpW, hpH);
     }
-    // HP skaitmuo — virš heart, mini pixel font
-    ctx.fillStyle = '#fff8e0';
-    ctx.font = 'bold 8px "Press Start 2P", monospace';
+    // ── HP NUMBER — virš heart, su outline ──
+    ctx.font = 'bold 10px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${baseHp}`, hpX + hpW / 2, hj - PX*3);
+    const numY = hj - PX*4;
+    ctx.fillStyle = '#000';
+    ctx.fillText(`${baseHp}`, hpX + hpW / 2 + 1, numY);
+    ctx.fillText(`${baseHp}`, hpX + hpW / 2 - 1, numY);
+    ctx.fillText(`${baseHp}`, hpX + hpW / 2, numY + 1);
+    ctx.fillText(`${baseHp}`, hpX + hpW / 2, numY - 1);
+    ctx.fillStyle = critical ? '#ff8888' : (danger ? '#ffd866' : '#fff8e0');
+    ctx.fillText(`${baseHp}`, hpX + hpW / 2, numY);
     ctx.textBaseline = 'alphabetic';
 
     // Score (right side)
@@ -7196,22 +8562,57 @@
         && p.y >= restartBtnRect.y && p.y <= restartBtnRect.y + restartBtnRect.h) {
       initState(); return;
     }
-    // Deploy panel — pasirink unit type
-    for (const r of deployBtnRects) {
-      if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
-        if (r.cnt > 0) selectedDeployType = (selectedDeployType === r.utype) ? null : r.utype;
+    // ── KORTŲ KLIKAS — reikalauja: (1) atrakinta korta, (2) ištreniruotas unit HOME, (3) CD pasibaigęs ──
+    // Korta yra PERMANENTTIŠKA po pirmo merge — nereikia turėti „merge tokens"
+    for (const r of cardHoverRects) {
+      if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y - 14 && p.y <= r.y + r.h) {
+        const _utype = _UNIT_FOR_BALL_TYPE[r.type];
+        if (!_utype) return;                                  // mapping nėra (pearl/frost)
+        const isLocked = !_f12CardDeck[r.type];
+        if (isLocked) return;
+        const trainedCnt = _getTrainedCount(_utype);
+        if (trainedCnt <= 0) return;
+        const cdRemain = _f12UnitDeployCD[_utype]
+          ? Math.max(0, _UNIT_DEPLOY_CD_MS - (now() - _f12UnitDeployCD[_utype])) : 0;
+        if (cdRemain <= 0) {
+          selectedDeployType = (selectedDeployType === _utype) ? null : _utype;
+        } else if (selectedDeployType === _utype) selectedDeployType = null;
         return;
       }
     }
-    // Deploy → click ant lane
+    // Deploy panel — pasirink unit type (su CD check) — palikta backward compat
+    for (const r of deployBtnRects) {
+      if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+        const cdRemain = _f12UnitDeployCD[r.utype]
+          ? Math.max(0, _UNIT_DEPLOY_CD_MS - (now() - _f12UnitDeployCD[r.utype])) : 0;
+        if (r.cnt > 0 && cdRemain <= 0) selectedDeployType = (selectedDeployType === r.utype) ? null : r.utype;
+        else if (selectedDeployType === r.utype) selectedDeployType = null;
+        return;
+      }
+    }
+    // Deploy → click ant lane (su CD check)
     if (selectedDeployType && layoutCache) {
       const L = layoutCache;
       if (p.x >= L.lanesX && p.x <= L.lanesX + L.lanesW && p.y >= L.lanesY && p.y < L.lanesY + L.lanesH) {
         const laneIdx = Math.floor((p.y - L.lanesY) / L.laneH);
-        if (laneIdx >= 0 && laneIdx < LANES && deployPool[selectedDeployType] > 0) {
+        // CD check — jei krauna, deploy blokuojamas
+        const cdRem = _f12UnitDeployCD[selectedDeployType]
+          ? Math.max(0, _UNIT_DEPLOY_CD_MS - (now() - _f12UnitDeployCD[selectedDeployType])) : 0;
+        if (cdRem > 0) { selectedDeployType = null; return; }
+        // canDeploy: korta atrakinta (permanenttiškai po pirmo merge) + trained > 0
+        // Tikrinam ar atrakinta + trained — count NEBE reikalingas (kortos nepasibaigia)
+        let _ballType = null;
+        for (const bt in _UNIT_FOR_BALL_TYPE) {
+          if (_UNIT_FOR_BALL_TYPE[bt] === selectedDeployType) { _ballType = bt; break; }
+        }
+        const isUnlocked = !!(_ballType && _f12CardDeck[_ballType]);
+        const trainedCnt2 = _getTrainedCount(selectedDeployType);
+        const canDeploy = isUnlocked && trainedCnt2 > 0;
+        if (laneIdx >= 0 && laneIdx < LANES && canDeploy) {
           spawnAlly(selectedDeployType, laneIdx, now());
-          deployPool[selectedDeployType]--;
-          if (deployPool[selectedDeployType] <= 0) selectedDeployType = null;
+          // NEdekrementuojam kortų count — kortos permanenttiškos, count tik bonus track'inimui
+          // CD startuos kai unit'as bus recall'intas / miršta (sequential)
+          selectedDeployType = null;       // deselect po deploy (žaidėjas mato unit lane'oj, CD prasidės)
           return;
         }
       }
@@ -7362,6 +8763,13 @@
   setInterval(poll, 200);
 
   window.MergeFloor = { activate, deactivate, isActive: () => active };
+  // Eksportas wallet-ui.js PEWPEW mygtuko ikonai/animacijai — tas pats sprite kaip žaidime
+  window._F12 = window._F12 || {};
+  window._F12.getBarrelSprite = _getBarrelSprite;
+  window._F12.getPixelSphereSprite = _getPixelSphereSprite;     // tikras game ball sprite (5-band shaded)
+  window._F12.TYPES = TYPES;
+  window._F12.TYPE_COLOR = TYPE_COLOR;
+  window._F12.pickRandomType = () => TYPES[Math.floor(Math.random() * TYPES.length)];
 
   function _safeS() { try { return S; } catch (_) { return null; } }
 
@@ -7370,6 +8778,7 @@
     if (!cur) return console.warn('S nera dar inicializuotas (paspausk Adventure pirma)');
     cur.floor = 12;
     if (typeof initAdventure === 'function') initAdventure();
+    if (typeof updateFloorNav === 'function') updateFloorNav();   // atnaujinam HUD label'ą (F12)
     return 'F12 Merge mode';
   };
   window.gotoF11 = function () {
@@ -7377,7 +8786,17 @@
     if (!cur) return;
     cur.floor = 11;
     if (typeof initAdventure === 'function') initAdventure();
+    if (typeof updateFloorNav === 'function') updateFloorNav();   // atnaujinam HUD label'ą (F11)
     return 'F11';
+  };
+  // gotoHome — naudojama kai HOME mygtukas paspaustas iš F12 (PewPew Room)
+  window.gotoF10 = window.gotoHome = function () {
+    const cur = _safeS();
+    if (!cur) return;
+    cur.floor = 10;
+    if (typeof initAdventure === 'function') initAdventure();
+    if (typeof updateFloorNav === 'function') updateFloorNav();
+    return 'HOME';
   };
 
   document.addEventListener('keydown', function (e) {
