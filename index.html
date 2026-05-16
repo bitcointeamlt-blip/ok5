@@ -427,44 +427,43 @@
       starsContainer.appendChild(star);
     }
 
-    // ── PEWPEW SAGA card: animuotas RONKE su žalia magija (kaip lenta home page) ──
+    // ── PEWPEW SAGA card: animuotas RONKE (pre-scale'inami frame'ai performance'ui) ──
     (function() {
       const cv = document.getElementById('card-ronke-canvas');
       if (!cv) return;
       const ctx2 = cv.getContext('2d');
       const ronkeImg = new Image(); ronkeImg.src = './lenta/assets/maxlvlronke.png';
-      const healImg  = new Image(); healImg.src  = './lenta/assets/heal_effect.png';
       const R_FRAMES = 8, R_FPS = 6;
-      const H_FRAMES = 11, H_FPS = 12;
-      let healStart = null;
-      setInterval(() => { healStart = performance.now(); }, 5000);
+      let frameCache = null;   // pre-scaled frames, build'inami po image load
+      let dxC = 0, dyC = 0, dwC = 0, dhC = 0;
+      function buildCache() {
+        if (frameCache || !ronkeImg.complete || !ronkeImg.naturalWidth) return false;
+        const fw = ronkeImg.naturalWidth / R_FRAMES, fh = ronkeImg.naturalHeight;
+        const scale = Math.min(cv.width / fw, cv.height / fh);
+        dwC = Math.round(fw * scale);
+        dhC = Math.round(fh * scale);
+        dxC = Math.round((cv.width - dwC) / 2);
+        dyC = Math.round((cv.height - dhC) / 2);
+        // Vienkartinis 640×640 → ~220×220 downscale, cache'inami visi 8 frame'ai
+        frameCache = [];
+        for (let f = 0; f < R_FRAMES; f++) {
+          const off = document.createElement('canvas');
+          off.width = dwC; off.height = dhC;
+          const oc = off.getContext('2d');
+          oc.imageSmoothingEnabled = false;
+          oc.drawImage(ronkeImg, f * fw, 0, fw, fh, 0, 0, dwC, dhC);
+          frameCache.push(off);
+        }
+        return true;
+      }
       function tick(t) {
         requestAnimationFrame(tick);
-        if (!ronkeImg.complete || !ronkeImg.naturalWidth) return;
-        const fw = ronkeImg.naturalWidth / R_FRAMES, fh = ronkeImg.naturalHeight;
-        // min-scale — užtikrina, kad visas sprite telpa canvas viduje (be charakterio kraštų kerpimo)
-        const scale = Math.min(cv.width / fw, cv.height / fh);
-        const dw = fw * scale, dh = fh * scale;
-        const rx = (cv.width - dw) / 2;
-        const ry = (cv.height - dh) / 2;
+        if (!frameCache && !buildCache()) return;
         const rframe = Math.floor(t / (1000 / R_FPS)) % R_FRAMES;
         ctx2.imageSmoothingEnabled = false;
         ctx2.clearRect(0, 0, cv.width, cv.height);
-        ctx2.drawImage(ronkeImg, rframe * fw, 0, fw, fh, rx, ry, dw, dh);
-        if (healStart !== null && healImg.complete && healImg.naturalWidth) {
-          const elapsed = t - healStart;
-          const hfw = healImg.naturalWidth / H_FRAMES, hfh = healImg.naturalHeight;
-          const hframe = Math.floor(elapsed / (1000 / H_FPS));
-          if (hframe < H_FRAMES) {
-            const hs = (cv.width * 1.7) / hfw;
-            const hdw = hfw * hs, hdh = hfh * hs;
-            const hx = (cv.width - hdw) / 2;
-            const hy = cv.height - hdh * 0.5 - 45;
-            ctx2.drawImage(healImg, hframe * hfw, 0, hfw, hfh, hx, hy, hdw, hdh);
-          } else {
-            healStart = null;
-          }
-        }
+        // 1 drawImage per frame iš cache'into mažesnio canvas (greitas blit)
+        ctx2.drawImage(frameCache[rframe], dxC, dyC);
       }
       requestAnimationFrame(tick);
     })();
