@@ -95,6 +95,22 @@ canvas {
   #wui-mobile-toggle {
     display: flex !important;
   }
+  /* F10/F11 mobile balance — pašalinam non-essential side panels kad game canvas turėtų daugiau vietos */
+  #screen-game #panel-p2,
+  #screen-game #panel-log {
+    display: none !important;
+  }
+  /* Panel-p1 (skills) — siauresnis ir kompaktiškesnis */
+  #screen-game #panel-p1.side-panel {
+    min-width: 0 !important;
+    max-width: 180px !important;
+    padding: 6px !important;
+    font-size: 9px !important;
+  }
+  #screen-game #panel-p1 .skill-bar {
+    transform: scale(0.85);
+    transform-origin: top left;
+  }
 }
 #wui-mobile-toggle {
   display: none;
