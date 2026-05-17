@@ -72,8 +72,7 @@ canvas {
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
 
-/* ── MOBILE-ONLY tweaks (TIK mobile UA + portrait-ish width). Desktop su touch screen NEVEIKIA. ── */
-/* Tikrinam abu: max-width AND pointer:coarse — kad kvalifikuotusi tik tikras mobile. */
+/* ── MOBILE-ONLY tweaks (TIK mobile UA + pointer:coarse). REVERTED panel changes — galimai lag šaltinis. ── */
 @media (max-width: 900px) and (pointer: coarse) {
   .wui-pill-root,
   #wui-pill-root {
@@ -88,16 +87,7 @@ canvas {
   #wui-mobile-toggle {
     display: flex !important;
   }
-  #screen-game #panel-p2,
-  #screen-game #panel-log {
-    display: none !important;
-  }
-  #screen-game #panel-p1.side-panel {
-    min-width: 0 !important;
-    max-width: 180px !important;
-    padding: 6px !important;
-    font-size: 9px !important;
-  }
+  /* REMOVED: #screen-game panel-p1/p2/log overrides — F11 layout grąžintas į originalą */
 }
 #wui-mobile-toggle {
   display: none;
