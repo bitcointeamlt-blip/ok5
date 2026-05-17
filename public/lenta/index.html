@@ -2343,8 +2343,8 @@
       const screenEls = document.querySelectorAll('.screen');
       const obs = new MutationObserver(applyScene);
       screenEls.forEach(el => obs.observe(el, { attributes: true, attributeFilter: ['class'] }));
-      // Polling kaip backup — floor pokyčiai (F11↔F12) nekeičia scenos, bet S.floor keičiasi
-      setInterval(applyScene, 1000);
+      // Polling backup — rečiau (3s) kad nekeltu lag ant mobile (anksciau 1s)
+      setInterval(applyScene, 3000);
 
       function unlock() {
         if (gestureUnlocked) return;
@@ -2498,8 +2498,7 @@
       });
       window.addEventListener('resize', check);
       window.addEventListener('orientationchange', check);
-      // Periodic safety check kas 500ms (kai kurie iOS Safari netriggrina event)
-      setInterval(check, 500);
+      // Rely on resize + orientationchange events tik (be polling — nuolatinis setInterval kelia lag)
       check();
     })();
   </script>
