@@ -4911,7 +4911,7 @@
     // Particle spawn intensity priklauso nuo vėjo stiprumo (kai calm = 0)
     const spawnChance = isCalm ? 0 : Math.min(0.85, wMag / 130);
     // ── DUST PARTICLES (sumažintas kiekis — pagrindinis vizualas dabar vortexai) ─
-    const _DUST_CAP = _IS_MOBILE ? 18 : 40;
+    const _DUST_CAP = _IS_MOBILE ? 8 : 40;     // mobile drastically reduced
     if (!isCalm && _f12Wind.length < _DUST_CAP && Math.random() < spawnChance) {
       let sx, sy;
       // 35% vidury (užpildo arena), 65% nuo UPWIND krašto (clear directional flow)
@@ -4951,7 +4951,7 @@
     }
     // ── WIND STREAKS (mažas kiekis — duoda direction cues) ─
     const streakSpawnChance = isCalm ? 0 : Math.min(0.5, wMag / 250);
-    const _STREAK_CAP = _IS_MOBILE ? 5 : 12;
+    const _STREAK_CAP = _IS_MOBILE ? 2 : 12;   // mobile: barely any (kiekvienas turi trail+stroke = brangu)
     if (!isCalm && _f12WindStreaks.length < _STREAK_CAP && Math.random() < streakSpawnChance) {
       // 25% vidury, 75% nuo UPWIND krašto — streak'ai aiškiai parodo kryptį
       let sx, sy;
@@ -4987,7 +4987,8 @@
     // ── WIND VORTEXES (mini suktukai — gražūs trumpi spiralės wisp'ai) ──
     // Mažesni, trumpesni — atrodo kaip greiti vėjo sūkuriukai, ne magic field
     const vortexInterval = wMag > 80 ? 500 + Math.random() * 700 : 1100 + Math.random() * 1400;
-    if (wMag > 35 && _f12WindVortexes.length < 6 && (t - _f12LastVortexAt) > vortexInterval) {
+    const _VORTEX_CAP = _IS_MOBILE ? 0 : 6;     // SKIP visu vortexes mobile (per daug ctx.stroke ops)
+    if (wMag > 35 && _f12WindVortexes.length < _VORTEX_CAP && (t - _f12LastVortexAt) > vortexInterval) {
       _f12LastVortexAt = t;
       const vcx = aX + 30 + Math.random() * (aW - 60);
       const vcy = aY + 30 + Math.random() * (aH - 60);
@@ -5007,7 +5008,9 @@
       });
     }
     // ── WIND DEBRIS (lapai/šakelės) — MATOMI nuolat per arena ──
-    if (wMag > 40 && _f12WindDebris.length < 12 && (t - _f12LastDebrisAt) > 400 + Math.random() * 900) {
+    const _DEBRIS_CAP = _IS_MOBILE ? 3 : 12;
+    const _DEBRIS_THROTTLE = _IS_MOBILE ? 1500 : 400;
+    if (wMag > 40 && _f12WindDebris.length < _DEBRIS_CAP && (t - _f12LastDebrisAt) > _DEBRIS_THROTTLE + Math.random() * 900) {
       _f12LastDebrisAt = t;
       // 50% spawn vidury arenos (iškart matomi), 50% nuo krašto (entry effect)
       let sx, sy;
@@ -5447,8 +5450,8 @@
     // ── COMPASS DISK (kairėj — apvalus, didesnis) ──
     const cdx = bx + 22, cdy = by + boxH / 2;
     const cdR = 16;
-    // Outer glow halo (pulsing kai active)
-    if (magK > 0.15) {
+    // Outer glow halo (pulsing kai active) — skip ant mobile (radial gradient brangu)
+    if (magK > 0.15 && !_IS_MOBILE) {
       const glowPulse = 0.4 + 0.25 * Math.sin(t * 0.005);
       // Tier color glow
       let glR = 90, glG = 140, glB = 170;
@@ -8365,9 +8368,11 @@
         valColB = Math.round(168 - warnK * warnPulse * 130);
         // Mažas pulsuojantis scale
         valScale = 1 + warnK * warnPulse * 0.08;
-        // Glow halo (orange/red kai cap arti)
-        valGlow = Math.max(valGlow, warnK * (0.5 + 0.3 * warnPulse));
-        valGlowR = 255; valGlowG = 180 - Math.round(warnK * 100); valGlowB = 80 - Math.round(warnK * 50);
+        // Glow halo (orange/red kai cap arti) — skip on mobile (radial gradient brangu)
+        if (!_IS_MOBILE) {
+          valGlow = Math.max(valGlow, warnK * (0.5 + 0.3 * warnPulse));
+          valGlowR = 255; valGlowG = 180 - Math.round(warnK * 100); valGlowB = 80 - Math.round(warnK * 50);
+        }
       }
       if (ci === 2 && _f12BallsDropAt > 0) {
         const dropAge = t - _f12BallsDropAt;
