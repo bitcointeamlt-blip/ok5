@@ -10057,18 +10057,19 @@
     if (!canvas) return;
     const screenW = window.innerWidth, screenH = window.innerHeight;
     if (_IS_MOBILE) {
-      // Mobile: virtual canvas (1280×720) + CSS letterbox-fit į ekraną
-      const VW = 1280, VH = 720;
+      // Mobile: canvas internal aspect = screen aspect (jokio letterbox), min 720px aukšcio
+      // Tai pripildo VISĄ ekraną — be juodų bars, layout dynamic.
+      const targetH = 720;
+      const aspect = screenW / Math.max(1, screenH);
+      const VW = Math.max(1280, Math.round(targetH * aspect));   // min 1280 kad UI tilptų
+      const VH = targetH;
       canvas.width = VW;
       canvas.height = VH;
-      const scale = Math.min(screenW / VW, screenH / VH);
-      const dispW = Math.floor(VW * scale);
-      const dispH = Math.floor(VH * scale);
       canvas.style.position = 'absolute';
-      canvas.style.left = Math.floor((screenW - dispW) / 2) + 'px';
-      canvas.style.top  = Math.floor((screenH - dispH) / 2) + 'px';
-      canvas.style.width  = dispW + 'px';
-      canvas.style.height = dispH + 'px';
+      canvas.style.left = '0';
+      canvas.style.top  = '0';
+      canvas.style.width  = screenW + 'px';
+      canvas.style.height = screenH + 'px';
     } else {
       // Desktop: fluid full-window
       canvas.width = Math.floor(screenW);
