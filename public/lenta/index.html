@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
   <link rel="stylesheet" href="style.css?v=hp3">
@@ -1881,7 +1885,7 @@
   <script src="vendor/GLTFLoader.js"></script>
   <script src="wallet.js"></script>
   <script src="game.js?v=cmd367"></script>
-  <script src="floor12_merge.js?v=cmd674"></script>
+  <script src="floor12_merge.js?v=cmd675"></script>
   <script src="wallet-ui.js?v=pewpew7"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
@@ -2381,6 +2385,52 @@
         if (document.hidden) tracks[activeTrackId].pause();
         else tracks[activeTrackId].play().catch(() => {});
       });
+    })();
+  </script>
+
+  <!-- Mobile orientation prompt — rotate to landscape -->
+  <div id="rotate-overlay" style="
+    display: none;
+    position: fixed; inset: 0;
+    background: #0a0a0a;
+    color: #ffe7a8;
+    z-index: 99999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    letter-spacing: 2px;
+  ">
+    <div style="font-size: 48px; margin-bottom: 20px; animation: rotateIcon 2s ease-in-out infinite;">📱</div>
+    <div style="color: #ffd700; font-size: 14px; margin-bottom: 16px;">ROTATE YOUR DEVICE</div>
+    <div style="font-size: 9px; color: #8a7868; max-width: 280px; line-height: 2;">PLEASE PLAY IN<br>LANDSCAPE MODE</div>
+    <style>
+      @keyframes rotateIcon {
+        0%, 100% { transform: rotate(0deg); }
+        50%      { transform: rotate(90deg); }
+      }
+    </style>
+  </div>
+  <script>
+    (function () {
+      const overlay = document.getElementById('rotate-overlay');
+      if (!overlay) return;
+      function isMobile() {
+        return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+          || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+      }
+      function check() {
+        if (!isMobile()) { overlay.style.display = 'none'; return; }
+        const isPortrait = window.innerHeight > window.innerWidth;
+        overlay.style.display = isPortrait ? 'flex' : 'none';
+      }
+      window.addEventListener('resize', check);
+      window.addEventListener('orientationchange', check);
+      check();
     })();
   </script>
 

@@ -1019,6 +1019,13 @@
   // ── State ──────────────────────────────────────────────────────────
   let canvas = null, ctx = null;
   let active = false;
+  // ── MOBILE DETECTION — sumažintos particle limits, lengvesnis fizikos workload ──
+  const _IS_MOBILE = (function () {
+    try {
+      return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+        || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    } catch (_) { return false; }
+  })();
   let raf = 0;
   let lastTime = 0;
 
@@ -4905,7 +4912,8 @@
     // Particle spawn intensity priklauso nuo vėjo stiprumo (kai calm = 0)
     const spawnChance = isCalm ? 0 : Math.min(0.85, wMag / 130);
     // ── DUST PARTICLES (sumažintas kiekis — pagrindinis vizualas dabar vortexai) ─
-    if (!isCalm && _f12Wind.length < 40 && Math.random() < spawnChance) {
+    const _DUST_CAP = _IS_MOBILE ? 18 : 40;
+    if (!isCalm && _f12Wind.length < _DUST_CAP && Math.random() < spawnChance) {
       let sx, sy;
       // 35% vidury (užpildo arena), 65% nuo UPWIND krašto (clear directional flow)
       if (Math.random() < 0.35) {
@@ -4944,7 +4952,8 @@
     }
     // ── WIND STREAKS (mažas kiekis — duoda direction cues) ─
     const streakSpawnChance = isCalm ? 0 : Math.min(0.5, wMag / 250);
-    if (!isCalm && _f12WindStreaks.length < 12 && Math.random() < streakSpawnChance) {
+    const _STREAK_CAP = _IS_MOBILE ? 5 : 12;
+    if (!isCalm && _f12WindStreaks.length < _STREAK_CAP && Math.random() < streakSpawnChance) {
       // 25% vidury, 75% nuo UPWIND krašto — streak'ai aiškiai parodo kryptį
       let sx, sy;
       const margin = 30;
