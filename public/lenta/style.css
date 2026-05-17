@@ -95,21 +95,32 @@ canvas {
   #wui-mobile-toggle {
     display: flex !important;
   }
-  /* F10/F11 mobile balance — pašalinam non-essential side panels kad game canvas turėtų daugiau vietos */
+  /* F10/F11 mobile balance — pašalinam visus side panels kad game canvas užpildytų ekraną */
+  #screen-game #panel-p1,
   #screen-game #panel-p2,
   #screen-game #panel-log {
     display: none !important;
   }
-  /* Panel-p1 (skills) — siauresnis ir kompaktiškesnis */
-  #screen-game #panel-p1.side-panel {
-    min-width: 0 !important;
-    max-width: 180px !important;
-    padding: 6px !important;
-    font-size: 9px !important;
+  /* Skill bar kaip floating overlay viršuje */
+  #screen-game #p1-skillbar {
+    position: fixed !important;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.75);
+    transform-origin: bottom center;
+    z-index: 50;
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 4px;
+    background: rgba(12,12,30,0.7);
+    padding: 4px 8px;
+    border: 1px solid rgba(255,231,168,0.3);
+    backdrop-filter: blur(4px);
   }
-  #screen-game #panel-p1 .skill-bar {
-    transform: scale(0.85);
-    transform-origin: top left;
+  /* Force game-layout flex stretch */
+  #screen-game .game-layout {
+    width: 100vw !important;
+    height: 100vh !important;
   }
 }
 #wui-mobile-toggle {
