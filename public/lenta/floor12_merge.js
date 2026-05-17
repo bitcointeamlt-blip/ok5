@@ -4276,7 +4276,7 @@
     _drawZipBolts(L, t);
     drawArena(L);             // 4 zonų markeriai įkepti į arenos sprite'ą
     // _drawArenaCapacity pašalinta — info dabar rodoma ant platformos po RONKE/cannon
-    _drawWindIndicator(L, t);  // wind compass + strength bar (arena kairys viršus)
+    if (!_IS_MOBILE) _drawWindIndicator(L, t);  // wind UI skip on mobile (wind išjungtas, indikatorius nieko neparodo)
     _drawZoneFlashes(L, t);   // zonos plokštės blyksnis kai sumerge'inta
     _drawDecorations(L, t);   // dekoracijos — po abiem fonais, prieš kamuoliukus
     drawBlocks(L, t);
