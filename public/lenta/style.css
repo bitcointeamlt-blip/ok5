@@ -72,49 +72,8 @@ canvas {
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
 
-/* ── MOBILE-ONLY tweaks (TIK mobile UA + pointer:coarse). REVERTED panel changes — galimai lag šaltinis. ── */
-@media (max-width: 900px) and (pointer: coarse) {
-  .wui-pill-root,
-  #wui-pill-root {
-    display: none !important;
-  }
-  body.wui-pill-on .wui-pill-root,
-  body.wui-pill-on #wui-pill-root {
-    display: block !important;
-    transform: scale(0.55);
-    transform-origin: top right;
-  }
-  #wui-mobile-toggle {
-    display: flex !important;
-  }
-  /* REMOVED: #screen-game panel-p1/p2/log overrides — F11 layout grąžintas į originalą */
-}
-#wui-mobile-toggle {
-  display: none;
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  z-index: 99998;
-  width: 36px; height: 36px;
-  align-items: center;
-  justify-content: center;
-  background: rgba(20, 12, 6, 0.85);
-  border: 2px solid #a87830;
-  color: #ffe7a8;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 14px;
-  cursor: pointer;
-  box-shadow: 0 2px 0 #1a0a02, 0 0 8px rgba(0, 0, 0, 0.6);
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-#wui-mobile-toggle:active { transform: translateY(2px); box-shadow: 0 0 0 #1a0a02, 0 0 6px rgba(0, 0, 0, 0.6); }
-body.wui-pill-on #wui-mobile-toggle {
-  background: rgba(74, 32, 16, 0.95);
-  border-color: #ffcf5c;
-  color: #fff;
-}
+/* Mobile toggle button — visada paslėpta (mobile fixes atsisakytos) */
+#wui-mobile-toggle { display: none !important; }
 
 #app {
   width: 100vw;

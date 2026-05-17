@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp9">
+  <link rel="stylesheet" href="style.css?v=hpA">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -2377,131 +2377,7 @@
     })();
   </script>
 
-  <!-- Mobile wallet pill toggle (tik mobile — leidzia perjungti pill matomumą) -->
-  <button id="wui-mobile-toggle" type="button" title="Toggle wallet/menu" aria-label="Toggle wallet menu">☰</button>
-  <script>
-    (function () {
-      const btn = document.getElementById('wui-mobile-toggle');
-      if (!btn) return;
-      const KEY = '_f12_wui_pill_on';
-      // Init state nuo localStorage (default OFF)
-      try { if (localStorage.getItem(KEY) === '1') document.body.classList.add('wui-pill-on'); } catch (_) {}
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.body.classList.toggle('wui-pill-on');
-        try { localStorage.setItem(KEY, document.body.classList.contains('wui-pill-on') ? '1' : '0'); } catch (_) {}
-      });
-    })();
-  </script>
-
-  <!-- Mobile orientation prompt — rotate to landscape -->
-  <div id="rotate-overlay" style="
-    display: none;
-    position: fixed; inset: 0;
-    background: #0a0a0a;
-    color: #ffe7a8;
-    z-index: 99999;
-    font-family: 'Press Start 2P', monospace;
-    text-align: center;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    padding: calc(env(safe-area-inset-top, 0) + 20px) calc(env(safe-area-inset-right, 0) + 16px) calc(env(safe-area-inset-bottom, 0) + 20px) calc(env(safe-area-inset-left, 0) + 16px);
-  ">
-    <!-- Centruotas content (scroll'inasi jei netilpsta) -->
-    <div style="min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding-bottom: 12px;">
-      <div style="font-size: 42px; animation: rotateIcon 2s ease-in-out infinite;">📱</div>
-      <div style="color: #ffd700; font-size: 13px; letter-spacing: 2px;">ROTATE YOUR DEVICE</div>
-      <div style="font-size: 8px; color: #8a7868; max-width: 260px; line-height: 1.8; letter-spacing: 1.5px;">PLEASE PLAY IN<br>LANDSCAPE MODE</div>
-      <div id="rotate-tap-hint" style="
-        margin-top: 8px;
-        font-size: 13px;
-        font-weight: bold;
-        color: #1a0a02;
-        background: linear-gradient(180deg, #ffd700 0%, #ffb84a 100%);
-        padding: 14px 24px;
-        letter-spacing: 2px;
-        border: 3px solid #1a0a02;
-        box-shadow: 0 4px 0 #1a0a02, 0 0 22px rgba(255, 215, 0, 0.55);
-        text-shadow: 1px 1px 0 #fff5b8;
-        animation: tapHintInnerPulse 1.4s ease-in-out infinite;
-      ">▶ TAP TO PLAY ◀</div>
-    </div>
-    <!-- Fixed BOTTOM tap button — visada matomas, net jei notch ar mažas ekranas -->
-    <div id="rotate-tap-fixed" style="
-      position: fixed;
-      left: 50%;
-      bottom: calc(env(safe-area-inset-bottom, 0) + 12px);
-      transform: translateX(-50%);
-      font-size: 11px;
-      font-weight: bold;
-      color: #1a0a02;
-      background: linear-gradient(180deg, #ffd700 0%, #ffb84a 100%);
-      padding: 12px 22px;
-      letter-spacing: 2px;
-      border: 3px solid #1a0a02;
-      box-shadow: 0 3px 0 #1a0a02, 0 0 18px rgba(255, 215, 0, 0.6);
-      text-shadow: 1px 1px 0 #fff5b8;
-      animation: tapHintPulse 1.4s ease-in-out infinite;
-      white-space: nowrap;
-      z-index: 1;
-    ">▶ TAP TO PLAY</div>
-    <style>
-      @keyframes tapHintPulse {
-        0%, 100% { transform: translateX(-50%) scale(1);    }
-        50%      { transform: translateX(-50%) scale(1.06); }
-      }
-      @keyframes tapHintInnerPulse {
-        0%, 100% { transform: scale(1);    }
-        50%      { transform: scale(1.06); }
-      }
-      @keyframes rotateIcon {
-        0%, 100% { transform: rotate(0deg); }
-        50%      { transform: rotate(90deg); }
-      }
-    </style>
-  </div>
-  <script>
-    (function () {
-      const overlay = document.getElementById('rotate-overlay');
-      if (!overlay) return;
-      let dismissed = false;
-      function isMobile() {
-        // UA-only — desktop su touch screen NEVEIKIA kaip mobile
-        return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      }
-      function isLandscape() {
-        // Try screen.orientation first (more reliable on modern devices)
-        try {
-          if (screen.orientation && screen.orientation.type) {
-            return /landscape/i.test(screen.orientation.type);
-          }
-        } catch (_) {}
-        // Fallback: window dimensions
-        return window.innerWidth >= window.innerHeight;
-      }
-      function check() {
-        if (dismissed) { overlay.style.display = 'none'; return; }
-        if (!isMobile()) { overlay.style.display = 'none'; return; }
-        overlay.style.display = isLandscape() ? 'none' : 'flex';
-        // Force game resize when becoming landscape (kad layout perskaiciuotu)
-        if (isLandscape()) {
-          setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-        }
-      }
-      // Tap on overlay = force dismiss (failsafe jei detekcija neveikia)
-      overlay.addEventListener('click', () => {
-        dismissed = true;
-        overlay.style.display = 'none';
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-      });
-      window.addEventListener('resize', check);
-      window.addEventListener('orientationchange', check);
-      // Rely on resize + orientationchange events tik (be polling — nuolatinis setInterval kelia lag)
-      check();
-    })();
-  </script>
+  <!-- Rotate overlay PAŠALINTA — sukėlė click blocking glitch ant mobile -->
 
   <!-- Deep-link routing: #f12 / #f11 / #f10 (jump straight to floor) -->
   <script>
