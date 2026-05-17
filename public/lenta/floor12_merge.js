@@ -10060,26 +10060,12 @@
   function resize() {
     if (!canvas) return;
     const screenW = window.innerWidth, screenH = window.innerHeight;
-    if (_IS_MOBILE) {
-      // Mobile: low-res render (540p) + CSS upscale → mažiau pikselių per frame = greitis.
-      const targetH = 540;          // sumažinta iš 720 (qHD vietoj HD)
-      const aspect = screenW / Math.max(1, screenH);
-      const VW = Math.max(960, Math.round(targetH * aspect));    // min 960 plotis
-      const VH = targetH;
-      canvas.width = VW;
-      canvas.height = VH;
-      canvas.style.position = 'absolute';
-      canvas.style.left = '0';
-      canvas.style.top  = '0';
-      canvas.style.width  = screenW + 'px';
-      canvas.style.height = screenH + 'px';
-    } else {
-      // Desktop: fluid full-window. NEKEISTI position/left/top — jau set'inti cssText'e (fixed, 0, 0).
-      canvas.width = Math.floor(screenW);
-      canvas.height = Math.floor(screenH);
-      canvas.style.width = canvas.width + 'px';
-      canvas.style.height = canvas.height + 'px';
-    }
+    // Originali logika visiems — native screen rezoliucija, jokio CSS upscale.
+    // (Anksciau mobile naudojo virtual canvas + CSS upscale = browser upsampling overhead ant silpno GPU)
+    canvas.width = Math.floor(screenW);
+    canvas.height = Math.floor(screenH);
+    canvas.style.width = canvas.width + 'px';
+    canvas.style.height = canvas.height + 'px';
   }
 
   function activate() {
