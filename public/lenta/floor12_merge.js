@@ -10055,10 +10055,30 @@
 
   function resize() {
     if (!canvas) return;
-    canvas.width = Math.floor(window.innerWidth);
-    canvas.height = Math.floor(window.innerHeight);
-    canvas.style.width = canvas.width + 'px';
-    canvas.style.height = canvas.height + 'px';
+    const screenW = window.innerWidth, screenH = window.innerHeight;
+    if (_IS_MOBILE) {
+      // Mobile: virtual canvas (1280×720) + CSS letterbox-fit į ekraną
+      const VW = 1280, VH = 720;
+      canvas.width = VW;
+      canvas.height = VH;
+      const scale = Math.min(screenW / VW, screenH / VH);
+      const dispW = Math.floor(VW * scale);
+      const dispH = Math.floor(VH * scale);
+      canvas.style.position = 'absolute';
+      canvas.style.left = Math.floor((screenW - dispW) / 2) + 'px';
+      canvas.style.top  = Math.floor((screenH - dispH) / 2) + 'px';
+      canvas.style.width  = dispW + 'px';
+      canvas.style.height = dispH + 'px';
+    } else {
+      // Desktop: fluid full-window
+      canvas.width = Math.floor(screenW);
+      canvas.height = Math.floor(screenH);
+      canvas.style.position = '';
+      canvas.style.left = '';
+      canvas.style.top  = '';
+      canvas.style.width = canvas.width + 'px';
+      canvas.style.height = canvas.height + 'px';
+    }
   }
 
   function activate() {
