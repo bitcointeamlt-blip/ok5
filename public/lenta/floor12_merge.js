@@ -10070,12 +10070,9 @@
       canvas.style.width  = screenW + 'px';
       canvas.style.height = screenH + 'px';
     } else {
-      // Desktop: fluid full-window
+      // Desktop: fluid full-window. NEKEISTI position/left/top — jau set'inti cssText'e (fixed, 0, 0).
       canvas.width = Math.floor(screenW);
       canvas.height = Math.floor(screenH);
-      canvas.style.position = '';
-      canvas.style.left = '';
-      canvas.style.top  = '';
       canvas.style.width = canvas.width + 'px';
       canvas.style.height = canvas.height + 'px';
     }
