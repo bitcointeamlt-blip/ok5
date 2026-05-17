@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a0f08">
+  <title>0xpewpew · Game Portal</title>
+  <meta name="description" content="0xpewpew game portal — play the game, join Discord, follow on social.">
+  <!-- Open Graph -->
+  <meta property="og:title" content="0xpewpew · Game Portal">
+  <meta property="og:description" content="Indie pixel-art arena game. Play, follow, join.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://0x-pewpew.com/links/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; min-height: 100vh;
+      background: linear-gradient(180deg, #060402 0%, #0e0805 50%, #16110a 100%);
+      color: #f5e6c3;
+      font-family: "Press Start 2P", system-ui, monospace;
+      -webkit-font-smoothing: none;
+      image-rendering: pixelated;
+      overflow-x: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 60px;
+      position: relative;
+    }
+    /* Subtle dirt-floor texture overlay */
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background-image:
+        radial-gradient(rgba(80, 60, 35, 0.18) 1px, transparent 1px);
+      background-size: 4px 4px;
+      pointer-events: none;
+      opacity: 0.6;
+      z-index: 0;
+    }
+    .wrap {
+      width: 100%; max-width: 480px;
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 16px;
+    }
+    /* ── HERO ── */
+    .hero {
+      text-align: center;
+      padding: 24px 12px 10px;
+    }
+    /* Match home page (0x-pewpew.com) logo style */
+    .logo {
+      font-size: 48px;
+      color: #FFD700;
+      text-shadow:
+        4px 4px 0px #000,
+        0 0 30px rgba(255, 215, 0, 0.5),
+        0 0 60px rgba(255, 165, 0, 0.3);
+      margin-bottom: 16px;
+      animation: logoGlow 3s ease-in-out infinite;
+    }
+    @keyframes logoGlow {
+      0%, 100% { text-shadow: 4px 4px 0px #000, 0 0 30px rgba(255, 215, 0, 0.5); }
+      50%      { text-shadow: 4px 4px 0px #000, 0 0 50px rgba(255, 215, 0, 0.8), 0 0 80px rgba(255, 165, 0, 0.4); }
+    }
+    .tagline {
+      font-size: 14px;
+      color: #c8b078;
+      letter-spacing: 3px;
+      line-height: 1.5;
+      text-shadow: 2px 2px 0 #0e0805;
+    }
+    @media (max-width: 768px) {
+      .logo { font-size: 28px; }
+      .tagline { font-size: 10px; }
+    }
+    .divider {
+      width: 100%; max-width: 340px;
+      height: 12px;
+      margin: 6px 0 2px;
+      background:
+        repeating-linear-gradient(90deg,
+          transparent 0 14px,
+          #5a3a18 14px 16px);
+      mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+    }
+    /* ── LINK PLAQUE (wood + brass) ── */
+    .plaque {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      background:
+        linear-gradient(180deg, #4a2e16 0%, #3a2410 60%, #2a1808 100%);
+      border: 2px solid #1a0a02;
+      box-shadow:
+        inset 0 1px 0 #d4a050,
+        inset 0 -2px 0 #1a0e06,
+        0 4px 0 #1a0a02,
+        0 6px 18px rgba(0, 0, 0, 0.6);
+      color: #ffe7a8;
+      text-decoration: none;
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+      image-rendering: pixelated;
+    }
+    .plaque::before, .plaque::after {
+      content: "";
+      position: absolute;
+      width: 5px; height: 5px;
+      background: #a87830;
+      box-shadow: inset 1px 1px 0 #ffe7a8;
+      top: 6px;
+    }
+    .plaque::before { left: 6px; }
+    .plaque::after  { right: 6px; }
+    .plaque .corner-bl, .plaque .corner-br {
+      position: absolute;
+      width: 5px; height: 5px;
+      background: #a87830;
+      box-shadow: inset 1px 1px 0 #ffe7a8;
+      bottom: 6px;
+    }
+    .plaque .corner-bl { left: 6px; }
+    .plaque .corner-br { right: 6px; }
+    .plaque:hover {
+      transform: translateY(-1px);
+      box-shadow:
+        inset 0 1px 0 #ffe7b8,
+        inset 0 -2px 0 #1a0e06,
+        0 5px 0 #1a0a02,
+        0 8px 22px rgba(0, 0, 0, 0.7),
+        0 0 18px rgba(255, 207, 92, 0.22);
+    }
+    .plaque:active {
+      transform: translateY(2px);
+      box-shadow:
+        inset 0 1px 0 #d4a050,
+        inset 0 -2px 0 #1a0e06,
+        0 2px 0 #1a0a02,
+        0 3px 10px rgba(0, 0, 0, 0.5);
+    }
+    .plaque-icon {
+      flex-shrink: 0;
+      width: 32px; height: 32px;
+      display: grid; place-items: center;
+      background: #2a1808;
+      border: 1px solid #1a0a02;
+      box-shadow: inset 0 1px 0 #5a3a18;
+    }
+    .plaque-icon svg {
+      width: 22px; height: 22px;
+      image-rendering: pixelated;
+    }
+    .plaque-body {
+      flex: 1;
+      display: flex; flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .plaque-title {
+      color: #ffe7a8;
+      font-size: 11px;
+      line-height: 1.3;
+      letter-spacing: 1.5px;
+    }
+    .plaque-sub {
+      color: #8a7868;
+      font-size: 7px;
+      letter-spacing: 1.5px;
+      line-height: 1.4;
+    }
+    /* ── FEATURED (game) plaque — taller, teal accents ── */
+    .plaque.featured {
+      background: linear-gradient(180deg, #1a3a40 0%, #112a30 60%, #0a1a20 100%);
+      border-color: #061418;
+      box-shadow:
+        inset 0 1px 0 #5acccc,
+        inset 0 -2px 0 #061418,
+        0 4px 0 #061418,
+        0 8px 24px rgba(0, 0, 0, 0.7);
+      padding: 18px;
+    }
+    .plaque.featured::before, .plaque.featured::after,
+    .plaque.featured .corner-bl, .plaque.featured .corner-br {
+      background: #4a9da6;
+      box-shadow: inset 1px 1px 0 #c0f0f0;
+    }
+    .plaque.featured:hover {
+      box-shadow:
+        inset 0 1px 0 #7adcdc,
+        inset 0 -2px 0 #061418,
+        0 5px 0 #061418,
+        0 10px 28px rgba(0, 0, 0, 0.8),
+        0 0 22px rgba(120, 220, 220, 0.3);
+    }
+    .plaque.featured .plaque-title { color: #c0f0f0; font-size: 13px; }
+    .plaque.featured .plaque-sub { color: #5acccc; }
+    .plaque.featured .plaque-icon {
+      background: #0a1a20; border-color: #061418; width: 38px; height: 38px;
+    }
+    /* ── X / TWITTER plaque — pure black brand ── */
+    .plaque.xacc {
+      background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 60%, #000 100%);
+      border-color: #000;
+      box-shadow:
+        inset 0 1px 0 #4a4a4a,
+        inset 0 -2px 0 #000,
+        0 4px 0 #000,
+        0 6px 18px rgba(0, 0, 0, 0.7);
+    }
+    .plaque.xacc::before, .plaque.xacc::after,
+    .plaque.xacc .corner-bl, .plaque.xacc .corner-br {
+      background: #2a2a2a; box-shadow: inset 1px 1px 0 #6a6a6a;
+    }
+    .plaque.xacc:hover {
+      box-shadow:
+        inset 0 1px 0 #6a6a6a,
+        inset 0 -2px 0 #000,
+        0 5px 0 #000,
+        0 8px 22px rgba(0, 0, 0, 0.85),
+        0 0 18px rgba(255, 255, 255, 0.12);
+    }
+    .plaque.xacc .plaque-title { color: #fff; }
+    .plaque.xacc .plaque-sub { color: #8a8a8a; }
+    .plaque.xacc .plaque-icon { background: #000; border-color: #2a2a2a; }
+    /* ── DISCORD plaque — purple ── */
+    .plaque.discord {
+      background: linear-gradient(180deg, #2c2e6e 0%, #1f2156 60%, #14154a 100%);
+      border-color: #0a0a30;
+      box-shadow:
+        inset 0 1px 0 #8a90ff,
+        inset 0 -2px 0 #0a0a30,
+        0 4px 0 #0a0a30,
+        0 6px 18px rgba(0, 0, 0, 0.6);
+    }
+    .plaque.discord::before, .plaque.discord::after,
+    .plaque.discord .corner-bl, .plaque.discord .corner-br {
+      background: #5865f2;
+      box-shadow: inset 1px 1px 0 #a8b0ff;
+    }
+    .plaque.discord .plaque-title { color: #d0d8ff; }
+    .plaque.discord .plaque-sub { color: #8a90ff; }
+    .plaque.discord .plaque-icon {
+      background: #14154a; border-color: #0a0a30;
+    }
+    /* ── COPY CONTRACT button ── */
+    .ca-row {
+      width: 100%;
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #1a1208;
+      border: 2px dashed #5a3a18;
+      color: #c8b078;
+      font-size: 8px;
+      letter-spacing: 1px;
+    }
+    .ca-row .ca-label { color: #8a7868; }
+    .ca-row code {
+      flex: 1;
+      font-family: "Press Start 2P", monospace;
+      font-size: 7px;
+      color: #ffe7a8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      align-self: center;
+    }
+    .ca-row button {
+      background: #3a2410;
+      color: #ffe7a8;
+      border: 1px solid #1a0a02;
+      padding: 6px 10px;
+      font-family: inherit; font-size: 7px;
+      cursor: pointer; letter-spacing: 1px;
+      box-shadow: inset 0 1px 0 #d4a050, 0 2px 0 #1a0a02;
+    }
+    .ca-row button:hover { background: #4a2e16; }
+    .ca-row button:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #d4a050; }
+    .ca-row button.copied { background: #1a4a14; color: #d6ffe0; box-shadow: inset 0 1px 0 #5aff7a, 0 2px 0 #06140a; }
+    /* ── footer ── */
+    .foot {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 6px;
+      color: #5a4a3a;
+      letter-spacing: 2px;
+      line-height: 1.8;
+    }
+    .foot .heart { color: #ff5a5a; }
+    /* Animated ember particles in background */
+    .ember {
+      position: fixed;
+      width: 3px; height: 3px;
+      background: #ff7a3c;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0;
+      animation: rise 6s linear infinite;
+    }
+    @keyframes rise {
+      0%   { transform: translateY(100vh) scale(1); opacity: 0; }
+      10%  { opacity: 0.7; }
+      90%  { opacity: 0.4; }
+      100% { transform: translateY(-20px) scale(0.4); opacity: 0; }
+    }
+    /* Responsive */
+    @media (max-width: 480px) {
+      .wrap { max-width: 100%; }
+      .logo { font-size: 22px; }
+      .plaque { padding: 12px 14px; font-size: 10px; }
+      .plaque.featured .plaque-title { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- HERO -->
+    <div class="hero">
+      <h1 class="logo">0x-PewPew</h1>
+      <p class="tagline">GAME PORTAL</p>
+    </div>
+    <div class="divider"></div>
+
+    <!-- FEATURED: PLAY GAME -->
+    <a class="plaque featured" href="https://0x-pewpew.com/lenta/#f12">
+      <span class="corner-bl"></span><span class="corner-br"></span>
+      <div class="plaque-icon">
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="3" width="12" height="10" fill="#4a9da6" stroke="#0a1a20" stroke-width="1" shape-rendering="crispEdges"/>
+          <rect x="4" y="6" width="2" height="2" fill="#c0f0f0"/>
+          <rect x="3" y="7" width="4" height="1" fill="#c0f0f0"/>
+          <rect x="11" y="7" width="1" height="1" fill="#ffcf5c"/>
+          <rect x="10" y="8" width="3" height="1" fill="#ffcf5c"/>
+        </svg>
+      </div>
+      <div class="plaque-body">
+        <div class="plaque-title">▶ PLAY THE GAME</div>
+      </div>
+    </a>
+
+    <!-- DISCORD -->
+    <a class="plaque discord" href="https://discord.gg/XgVbrr7wfW" target="_blank" rel="noopener">
+      <span class="corner-bl"></span><span class="corner-br"></span>
+      <div class="plaque-icon">
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="4" width="10" height="7" fill="#5865f2" shape-rendering="crispEdges"/>
+          <rect x="2" y="5" width="1" height="5" fill="#5865f2"/>
+          <rect x="13" y="5" width="1" height="5" fill="#5865f2"/>
+          <rect x="5" y="6" width="1" height="2" fill="#fff"/>
+          <rect x="10" y="6" width="1" height="2" fill="#fff"/>
+          <rect x="4" y="11" width="3" height="1" fill="#5865f2"/>
+          <rect x="9" y="11" width="3" height="1" fill="#5865f2"/>
+        </svg>
+      </div>
+      <div class="plaque-body">
+        <div class="plaque-title">DISCORD COMMUNITY</div>
+        <div class="plaque-sub">JOIN · CHAT · GAMEDEV</div>
+      </div>
+    </a>
+
+    <!-- TIKTOK -->
+    <a class="plaque" href="#" target="_blank" rel="noopener" data-needs-update="tiktok">
+      <span class="corner-bl"></span><span class="corner-br"></span>
+      <div class="plaque-icon">
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="6" y="3" width="3" height="7" fill="#ffe7a8" shape-rendering="crispEdges"/>
+          <rect x="9" y="3" width="2" height="2" fill="#ff3a6e"/>
+          <rect x="11" y="4" width="2" height="2" fill="#25f4ee"/>
+          <rect x="5" y="9" width="2" height="2" fill="#25f4ee"/>
+          <rect x="4" y="10" width="2" height="2" fill="#ff3a6e"/>
+        </svg>
+      </div>
+      <div class="plaque-body">
+        <div class="plaque-title">TIKTOK</div>
+        <div class="plaque-sub">GAMEPLAY · DEV CLIPS</div>
+      </div>
+    </a>
+
+    <!-- TWITTER / X -->
+    <a class="plaque xacc" href="https://x.com/j0vany1" target="_blank" rel="noopener">
+      <span class="corner-bl"></span><span class="corner-br"></span>
+      <div class="plaque-icon">
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="3" width="1" height="1" fill="#ffffff"/>
+          <rect x="11" y="3" width="2" height="1" fill="#ffffff"/>
+          <rect x="4" y="4" width="2" height="1" fill="#ffffff"/>
+          <rect x="10" y="4" width="2" height="1" fill="#ffffff"/>
+          <rect x="5" y="5" width="2" height="2" fill="#ffffff"/>
+          <rect x="9" y="5" width="2" height="2" fill="#ffffff"/>
+          <rect x="7" y="7" width="2" height="2" fill="#ffffff"/>
+          <rect x="5" y="9" width="2" height="2" fill="#ffffff"/>
+          <rect x="9" y="9" width="2" height="2" fill="#ffffff"/>
+          <rect x="4" y="11" width="2" height="1" fill="#ffffff"/>
+          <rect x="10" y="11" width="2" height="1" fill="#ffffff"/>
+          <rect x="3" y="12" width="1" height="1" fill="#ffffff"/>
+          <rect x="12" y="12" width="1" height="1" fill="#ffffff"/>
+        </svg>
+      </div>
+      <div class="plaque-body">
+        <div class="plaque-title">X / TWITTER</div>
+        <div class="plaque-sub">@J0VANY1 · DEVLOG · UPDATES</div>
+      </div>
+    </a>
+
+    <!-- FOOTER -->
+    <div class="foot">
+      © 2026 0XPEWPEW<br>
+      MADE WITH <span class="heart">♥</span> · PIXEL ART INDIE
+    </div>
+  </div>
+
+  <script>
+    // Ember particles (subtle ambient)
+    (function () {
+      function spawnEmber() {
+        const e = document.createElement('div');
+        e.className = 'ember';
+        e.style.left = Math.random() * 100 + 'vw';
+        e.style.animationDuration = (4 + Math.random() * 5) + 's';
+        e.style.background = Math.random() < 0.5 ? '#ff7a3c' : '#ffcf5c';
+        document.body.appendChild(e);
+        setTimeout(() => e.remove(), 10000);
+      }
+      // Pre-spawn a few
+      for (let i = 0; i < 4; i++) {
+        setTimeout(spawnEmber, i * 800);
+      }
+      setInterval(spawnEmber, 1400);
+    })();
+
+    // Click warning on placeholder links (TikTok dar ne'sukonfigūruotas)
+    document.querySelectorAll('a[data-needs-update]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        if (a.getAttribute('href') === '#') {
+          e.preventDefault();
+          const type = a.getAttribute('data-needs-update');
+          alert('Šis link\'as dar ne sukonfigūruotas (' + type + ').');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

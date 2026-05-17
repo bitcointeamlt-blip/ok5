@@ -1881,7 +1881,7 @@
   <script src="vendor/GLTFLoader.js"></script>
   <script src="wallet.js"></script>
   <script src="game.js?v=cmd367"></script>
-  <script src="floor12_merge.js?v=cmd614"></script>
+  <script src="floor12_merge.js?v=cmd674"></script>
   <script src="wallet-ui.js?v=pewpew7"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
@@ -2276,6 +2276,140 @@
     );
     check();
   })();
+  </script>
+
+  <!-- BGM — scene-aware audio: kiekviena scena turi savo track -->
+  <audio id="bgm-pocket" src="pocket_savepoint.mp3?v=3" loop preload="auto" style="display:none;"></audio>
+  <audio id="bgm-hearth" src="hearthkeep_courtyard.mp3?v=3" loop preload="auto" style="display:none;"></audio>
+  <script>
+    (function () {
+      const VOL = 0.035;
+      ['bgm-pocket', 'bgm-hearth'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('error', e => console.error('[BGM]', id, 'load failed:', el.error));
+          el.addEventListener('canplay', () => console.log('[BGM]', id, 'ready'));
+        }
+      });
+      // Scene → audio element ID mapping
+      const SCENE_TRACKS = {
+        'screen-menu':     'bgm-pocket',     // Main menu (Discord) → Pocket Savepoint
+        'screen-lobby':    'bgm-pocket',     // Lobby → ambient Pocket
+        'screen-hub':      'bgm-hearth',     // Hub (village/barracks training) → Hearthkeep
+        'screen-game':     'bgm-hearth',     // Game (F11 barracks / F12 cannon) → Hearthkeep
+        'screen-gameover': null,             // tyla po game over
+      };
+      const tracks = {};
+      for (const id of new Set(Object.values(SCENE_TRACKS))) {
+        if (!id) continue;
+        const el = document.getElementById(id);
+        if (el) { el.volume = VOL; tracks[id] = el; }
+      }
+      let activeTrackId = null;
+      let gestureUnlocked = false;
+
+      function getActiveScene() {
+        const el = document.querySelector('.screen.active');
+        return el ? el.id : null;
+      }
+      function getCurrentFloor() {
+        // Detektuojam floor per HUD label tekstą („F12", „F11", „HOME"=10)
+        const lbl = document.getElementById('floor-nav-label');
+        if (!lbl) return null;
+        const txt = (lbl.textContent || '').trim().toUpperCase();
+        if (txt === 'HOME') return 10;
+        const m = txt.match(/^F(\d+)$/);
+        return m ? parseInt(m[1], 10) : null;
+      }
+      function applyScene() {
+        const scene = getActiveScene();
+        const floor = getCurrentFloor();
+        let wantedId = scene ? (SCENE_TRACKS[scene] || null) : null;
+        // F12 turi savo _F12Music (procedural BGM) — nepaleidžiam track kad nesidvigubintų
+        if (scene === 'screen-game' && floor === 12) {
+          wantedId = null;
+        }
+        console.log('[BGM] applyScene scene=', scene, 'floor=', floor, '→ track=', wantedId, '(was', activeTrackId, ')');
+        // Defensive: pause ALL non-wanted tracks (apsidraudžiam nuo browser play()-promise race)
+        for (const id in tracks) {
+          if (id !== wantedId && !tracks[id].paused) tracks[id].pause();
+        }
+        if (wantedId === activeTrackId) {
+          if (gestureUnlocked && activeTrackId && tracks[activeTrackId] && tracks[activeTrackId].paused) {
+            tracks[activeTrackId].play().catch(() => {});
+          }
+          return;
+        }
+        activeTrackId = wantedId;
+        if (activeTrackId && tracks[activeTrackId] && gestureUnlocked) {
+          tracks[activeTrackId].currentTime = 0;
+          tracks[activeTrackId].play().catch(() => {});
+        }
+      }
+
+      const screenEls = document.querySelectorAll('.screen');
+      const obs = new MutationObserver(applyScene);
+      screenEls.forEach(el => obs.observe(el, { attributes: true, attributeFilter: ['class'] }));
+      // Polling kaip backup — floor pokyčiai (F11↔F12) nekeičia scenos, bet S.floor keičiasi
+      setInterval(applyScene, 1000);
+
+      function unlock() {
+        if (gestureUnlocked) return;
+        gestureUnlocked = true;
+        console.log('[BGM] gesture unlocked, activeTrackId=', activeTrackId);
+        if (activeTrackId && tracks[activeTrackId]) {
+          tracks[activeTrackId].play().then(
+            () => console.log('[BGM] playing', activeTrackId),
+            err => console.error('[BGM] play failed', activeTrackId, err)
+          );
+        }
+        ['click', 'pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+          document.removeEventListener(ev, unlock, true));
+      }
+      ['click', 'pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+        document.addEventListener(ev, unlock, { capture: true, once: false }));
+
+      // Init — paskaičiuojam activeTrackId pagal current scene
+      applyScene();
+      // Bandom paleisti iškart (kai kurie browser'iai leidžia jei tab aktyvus)
+      if (activeTrackId && tracks[activeTrackId]) {
+        tracks[activeTrackId].play().then(() => { gestureUnlocked = true; }).catch(() => {});
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (!gestureUnlocked || !activeTrackId) return;
+        if (document.hidden) tracks[activeTrackId].pause();
+        else tracks[activeTrackId].play().catch(() => {});
+      });
+    })();
+  </script>
+
+  <!-- Deep-link routing: #f12 / #f11 / #f10 (jump straight to floor) -->
+  <script>
+    (function () {
+      function tryDeepLink() {
+        const hash = (location.hash || '').toLowerCase();
+        const m = hash.match(/^#f(\d+)$/);
+        if (!m) return;
+        const floor = parseInt(m[1], 10);
+        const gotoFn = window['gotoF' + floor];
+        if (typeof window.startGame !== 'function' || typeof gotoFn !== 'function') {
+          // Scripts not ready — retry shortly
+          setTimeout(tryDeepLink, 100);
+          return;
+        }
+        try {
+          window.startGame('adventure');
+          // Po startGame initu — iškart switch'inam į prašomą floor
+          setTimeout(() => { try { gotoFn(); } catch (_) {} }, 80);
+        } catch (e) { console.warn('[DeepLink] failed:', e); }
+      }
+      if (document.readyState === 'complete') {
+        setTimeout(tryDeepLink, 200);
+      } else {
+        window.addEventListener('load', () => setTimeout(tryDeepLink, 200));
+      }
+    })();
   </script>
 </body>
 
