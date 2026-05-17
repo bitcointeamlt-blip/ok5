@@ -2412,41 +2412,61 @@
     background: #0a0a0a;
     color: #ffe7a8;
     z-index: 99999;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 20px;
     font-family: 'Press Start 2P', monospace;
-    font-size: 12px;
-    line-height: 1.8;
-    letter-spacing: 2px;
+    text-align: center;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    padding: calc(env(safe-area-inset-top, 0) + 20px) calc(env(safe-area-inset-right, 0) + 16px) calc(env(safe-area-inset-bottom, 0) + 20px) calc(env(safe-area-inset-left, 0) + 16px);
   ">
-    <div style="font-size: 48px; margin-bottom: 20px; animation: rotateIcon 2s ease-in-out infinite;">📱</div>
-    <div style="color: #ffd700; font-size: 14px; margin-bottom: 16px;">ROTATE YOUR DEVICE</div>
-    <div style="font-size: 9px; color: #8a7868; max-width: 280px; line-height: 2;">PLEASE PLAY IN<br>LANDSCAPE MODE</div>
-    <div id="rotate-tap-hint" style="
-      margin-top: 36px;
-      font-size: 13px;
+    <!-- Centruotas content (scroll'inasi jei netilpsta) -->
+    <div style="min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding-bottom: 12px;">
+      <div style="font-size: 42px; animation: rotateIcon 2s ease-in-out infinite;">📱</div>
+      <div style="color: #ffd700; font-size: 13px; letter-spacing: 2px;">ROTATE YOUR DEVICE</div>
+      <div style="font-size: 8px; color: #8a7868; max-width: 260px; line-height: 1.8; letter-spacing: 1.5px;">PLEASE PLAY IN<br>LANDSCAPE MODE</div>
+      <div id="rotate-tap-hint" style="
+        margin-top: 8px;
+        font-size: 13px;
+        font-weight: bold;
+        color: #1a0a02;
+        background: linear-gradient(180deg, #ffd700 0%, #ffb84a 100%);
+        padding: 14px 24px;
+        letter-spacing: 2px;
+        border: 3px solid #1a0a02;
+        box-shadow: 0 4px 0 #1a0a02, 0 0 22px rgba(255, 215, 0, 0.55);
+        text-shadow: 1px 1px 0 #fff5b8;
+        animation: tapHintInnerPulse 1.4s ease-in-out infinite;
+      ">▶ TAP TO PLAY ◀</div>
+    </div>
+    <!-- Fixed BOTTOM tap button — visada matomas, net jei notch ar mažas ekranas -->
+    <div id="rotate-tap-fixed" style="
+      position: fixed;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0) + 12px);
+      transform: translateX(-50%);
+      font-size: 11px;
       font-weight: bold;
       color: #1a0a02;
       background: linear-gradient(180deg, #ffd700 0%, #ffb84a 100%);
-      padding: 16px 28px;
+      padding: 12px 22px;
       letter-spacing: 2px;
       border: 3px solid #1a0a02;
-      box-shadow: 0 4px 0 #1a0a02, 0 0 22px rgba(255, 215, 0, 0.55);
+      box-shadow: 0 3px 0 #1a0a02, 0 0 18px rgba(255, 215, 0, 0.6);
       text-shadow: 1px 1px 0 #fff5b8;
       animation: tapHintPulse 1.4s ease-in-out infinite;
-    ">▶ TAP TO PLAY ◀</div>
+      white-space: nowrap;
+      z-index: 1;
+    ">▶ TAP TO PLAY</div>
     <style>
       @keyframes tapHintPulse {
-        0%, 100% { transform: scale(1);    box-shadow: 0 4px 0 #1a0a02, 0 0 22px rgba(255, 215, 0, 0.55); }
-        50%      { transform: scale(1.06); box-shadow: 0 4px 0 #1a0a02, 0 0 36px rgba(255, 215, 0, 0.85); }
+        0%, 100% { transform: translateX(-50%) scale(1);    }
+        50%      { transform: translateX(-50%) scale(1.06); }
       }
-    </style>
-    <style>
+      @keyframes tapHintInnerPulse {
+        0%, 100% { transform: scale(1);    }
+        50%      { transform: scale(1.06); }
+      }
       @keyframes rotateIcon {
         0%, 100% { transform: rotate(0deg); }
         50%      { transform: rotate(90deg); }
