@@ -4267,7 +4267,7 @@
     }
 
     drawDirtBackground(L);
-    _drawAmbientFog(L, t);
+    if (!_IS_MOBILE) _drawAmbientFog(L, t);  // fog skip on mobile (radial gradients per cloud = brangu)
     drawLanes(L, t);
     _drawTraps(L, t);
     _drawLaneHarpoons(L, t);
@@ -4280,7 +4280,7 @@
     _drawZoneFlashes(L, t);   // zonos plokštės blyksnis kai sumerge'inta
     _drawDecorations(L, t);   // dekoracijos — po abiem fonais, prieš kamuoliukus
     drawBlocks(L, t);
-    _drawAmbientWind(L, t);   // vėjas — VIRŠ blocks, tik arenos plote (matomi streaks per arena)
+    if (!_IS_MOBILE) _drawAmbientWind(L, t);  // wind skip on mobile (particles/streaks/vortex/debris brangu)
     drawLauncher(L, t);
     // drawPowerMeter pakeistas į pixel art ring drawLauncher viduje
     drawNextPreview(L, t);
@@ -10061,11 +10061,10 @@
     if (!canvas) return;
     const screenW = window.innerWidth, screenH = window.innerHeight;
     if (_IS_MOBILE) {
-      // Mobile: canvas internal aspect = screen aspect (jokio letterbox), min 720px aukšcio
-      // Tai pripildo VISĄ ekraną — be juodų bars, layout dynamic.
-      const targetH = 720;
+      // Mobile: low-res render (540p) + CSS upscale → mažiau pikselių per frame = greitis.
+      const targetH = 540;          // sumažinta iš 720 (qHD vietoj HD)
       const aspect = screenW / Math.max(1, screenH);
-      const VW = Math.max(1280, Math.round(targetH * aspect));   // min 1280 kad UI tilptų
+      const VW = Math.max(960, Math.round(targetH * aspect));    // min 960 plotis
       const VH = targetH;
       canvas.width = VW;
       canvas.height = VH;
