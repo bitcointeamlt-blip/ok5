@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp7">
+  <link rel="stylesheet" href="style.css?v=hp8">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1885,7 +1885,7 @@
   <script src="vendor/GLTFLoader.js"></script>
   <script src="wallet.js"></script>
   <script src="game.js?v=cmd367"></script>
-  <script src="floor12_merge.js?v=cmd677"></script>
+  <script src="floor12_merge.js?v=cmd678"></script>
   <script src="wallet-ui.js?v=pewpew7"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
@@ -2479,8 +2479,8 @@
       if (!overlay) return;
       let dismissed = false;
       function isMobile() {
-        return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-          || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        // UA-only — desktop su touch screen NEVEIKIA kaip mobile
+        return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       }
       function isLandscape() {
         // Try screen.orientation first (more reliable on modern devices)

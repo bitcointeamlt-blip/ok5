@@ -1019,11 +1019,10 @@
   // ── State ──────────────────────────────────────────────────────────
   let canvas = null, ctx = null;
   let active = false;
-  // ── MOBILE DETECTION — sumažintos particle limits, lengvesnis fizikos workload ──
+  // ── MOBILE DETECTION — UA-only (NE pointer:coarse, kad desktop touch screen nebūtų klaidingai detect'inamas) ──
   const _IS_MOBILE = (function () {
     try {
-      return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-        || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+      return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     } catch (_) { return false; }
   })();
   let raf = 0;
