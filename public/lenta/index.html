@@ -2421,10 +2421,31 @@
     font-size: 12px;
     line-height: 1.8;
     letter-spacing: 2px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   ">
     <div style="font-size: 48px; margin-bottom: 20px; animation: rotateIcon 2s ease-in-out infinite;">📱</div>
     <div style="color: #ffd700; font-size: 14px; margin-bottom: 16px;">ROTATE YOUR DEVICE</div>
     <div style="font-size: 9px; color: #8a7868; max-width: 280px; line-height: 2;">PLEASE PLAY IN<br>LANDSCAPE MODE</div>
+    <div id="rotate-tap-hint" style="
+      margin-top: 36px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #1a0a02;
+      background: linear-gradient(180deg, #ffd700 0%, #ffb84a 100%);
+      padding: 16px 28px;
+      letter-spacing: 2px;
+      border: 3px solid #1a0a02;
+      box-shadow: 0 4px 0 #1a0a02, 0 0 22px rgba(255, 215, 0, 0.55);
+      text-shadow: 1px 1px 0 #fff5b8;
+      animation: tapHintPulse 1.4s ease-in-out infinite;
+    ">▶ TAP TO PLAY ◀</div>
+    <style>
+      @keyframes tapHintPulse {
+        0%, 100% { transform: scale(1);    box-shadow: 0 4px 0 #1a0a02, 0 0 22px rgba(255, 215, 0, 0.55); }
+        50%      { transform: scale(1.06); box-shadow: 0 4px 0 #1a0a02, 0 0 36px rgba(255, 215, 0, 0.85); }
+      }
+    </style>
     <style>
       @keyframes rotateIcon {
         0%, 100% { transform: rotate(0deg); }
@@ -2436,17 +2457,40 @@
     (function () {
       const overlay = document.getElementById('rotate-overlay');
       if (!overlay) return;
+      let dismissed = false;
       function isMobile() {
         return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
           || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
       }
-      function check() {
-        if (!isMobile()) { overlay.style.display = 'none'; return; }
-        const isPortrait = window.innerHeight > window.innerWidth;
-        overlay.style.display = isPortrait ? 'flex' : 'none';
+      function isLandscape() {
+        // Try screen.orientation first (more reliable on modern devices)
+        try {
+          if (screen.orientation && screen.orientation.type) {
+            return /landscape/i.test(screen.orientation.type);
+          }
+        } catch (_) {}
+        // Fallback: window dimensions
+        return window.innerWidth >= window.innerHeight;
       }
+      function check() {
+        if (dismissed) { overlay.style.display = 'none'; return; }
+        if (!isMobile()) { overlay.style.display = 'none'; return; }
+        overlay.style.display = isLandscape() ? 'none' : 'flex';
+        // Force game resize when becoming landscape (kad layout perskaiciuotu)
+        if (isLandscape()) {
+          setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+        }
+      }
+      // Tap on overlay = force dismiss (failsafe jei detekcija neveikia)
+      overlay.addEventListener('click', () => {
+        dismissed = true;
+        overlay.style.display = 'none';
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+      });
       window.addEventListener('resize', check);
       window.addEventListener('orientationchange', check);
+      // Periodic safety check kas 500ms (kai kurie iOS Safari netriggrina event)
+      setInterval(check, 500);
       check();
     })();
   </script>
