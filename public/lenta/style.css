@@ -72,8 +72,16 @@ canvas {
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
 
-/* Mobile toggle button — visada paslėpta (mobile fixes atsisakytos) */
+/* Mobile toggle button — visada paslėpta (HTML nebenaudojamas) */
 #wui-mobile-toggle { display: none !important; }
+
+/* Mobile: paslepiam wallet pill (connect / inventory / rewards / upgrade / pewpew / home) — nereikalingi mobile */
+@media (max-width: 900px) and (pointer: coarse) {
+  .wui-pill-root,
+  #wui-pill-root {
+    display: none !important;
+  }
+}
 
 #app {
   width: 100vw;
