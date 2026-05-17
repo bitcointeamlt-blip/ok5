@@ -10060,12 +10060,26 @@
   function resize() {
     if (!canvas) return;
     const screenW = window.innerWidth, screenH = window.innerHeight;
-    // Originali logika visiems — native screen rezoliucija, jokio CSS upscale.
-    // (Anksciau mobile naudojo virtual canvas + CSS upscale = browser upsampling overhead ant silpno GPU)
-    canvas.width = Math.floor(screenW);
-    canvas.height = Math.floor(screenH);
-    canvas.style.width = canvas.width + 'px';
-    canvas.style.height = canvas.height + 'px';
+    if (_IS_MOBILE) {
+      // Mobile: virtual canvas pripildo VISĄ ekraną (screen aspect, jokio letterbox), 720p kokybė
+      const targetH = 720;
+      const aspect = screenW / Math.max(1, screenH);
+      const VW = Math.max(1280, Math.round(targetH * aspect));
+      const VH = targetH;
+      canvas.width = VW;
+      canvas.height = VH;
+      canvas.style.position = 'absolute';
+      canvas.style.left = '0';
+      canvas.style.top  = '0';
+      canvas.style.width  = screenW + 'px';
+      canvas.style.height = screenH + 'px';
+    } else {
+      // Desktop: native screen resolution
+      canvas.width = Math.floor(screenW);
+      canvas.height = Math.floor(screenH);
+      canvas.style.width = canvas.width + 'px';
+      canvas.style.height = canvas.height + 'px';
+    }
   }
 
   function activate() {
