@@ -9930,12 +9930,14 @@
       _f12EditClick(p.x, p.y);
       return;
     }
-    // ── GAME OVER: GO HOME mygtukas → navigate į village ──
+    // ── GAME OVER: GO HOME mygtukas → grįžta į F10 HOME (ne village!) ──
     if (gameOver && gameOverHomeBtnRect &&
         p.x >= gameOverHomeBtnRect.x && p.x <= gameOverHomeBtnRect.x + gameOverHomeBtnRect.w &&
         p.y >= gameOverHomeBtnRect.y && p.y <= gameOverHomeBtnRect.y + gameOverHomeBtnRect.h) {
       try { _F12Music.stop(); } catch (_) {}
-      window.location.href = 'village/';
+      // Deactivate F12 overlay + nukreipiam į F10 home
+      try { if (window.MergeFloor && window.MergeFloor.deactivate) window.MergeFloor.deactivate(); } catch (_) {}
+      try { if (typeof window.gotoF10 === 'function') window.gotoF10(); } catch (_) {}
       return;
     }
     // Kortos — tik vizualas, click'ai ignoruojami (panaikinta drag logika)
