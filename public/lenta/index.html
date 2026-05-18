@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpI">
+  <link rel="stylesheet" href="style.css?v=hpJ">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -2407,7 +2407,8 @@
   <div id="mobile-menu-modal" role="dialog" aria-label="Mobile menu">
     <div class="mm-panel">
       <div class="mm-title">MENU</div>
-      <button class="mm-btn" data-action="pill"><span class="mm-ic">🏦</span><span>RONKE BANK</span></button>
+      <button class="mm-btn" data-action="bank"><span class="mm-ic">🏦</span><span>RONKE BANK</span></button>
+      <button class="mm-btn" data-action="pill"><span class="mm-ic">💰</span><span>WALLET</span></button>
       <button class="mm-btn" data-action="inventory"><span class="mm-ic">📦</span><span>INVENTORY</span></button>
       <button class="mm-btn" data-action="rewards"><span class="mm-ic">🎁</span><span>REWARDS</span></button>
       <button class="mm-btn" data-action="upgrade"><span class="mm-ic">⚒️</span><span>UPGRADE</span></button>
@@ -2434,6 +2435,7 @@
         setTimeout(() => {
           let id = null;
           switch (action) {
+            case 'bank':      id = 'ronke-badge';      break;
             case 'pill':      id = 'wui-pill-btn';     break;
             case 'inventory': id = 'wui-inv-btn';      break;
             case 'rewards':   id = 'wui-rewards-btn';  break;
