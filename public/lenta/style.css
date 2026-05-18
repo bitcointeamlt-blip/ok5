@@ -12622,3 +12622,18 @@ kbd {
   position: relative !important;
   z-index: 1 !important;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOBILE OVERRIDES (TIK end-of-file kad nugalėtų visus ankstesnius taisykles)
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) and (pointer: coarse) {
+  #ronke-bank {
+    transform: translate(-50%, -50%) scale(1) !important;
+    width: min(360px, calc(100vw - 24px)) !important;
+    max-height: calc(100vh - 24px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    padding: 12px !important;
+  }
+}
