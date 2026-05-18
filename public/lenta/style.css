@@ -93,11 +93,11 @@ canvas {
     height: 100vh !important;
     transform: none !important;
   }
-  /* Canvas fits screen (object-fit contain — išlaiko aspect, no distortion) */
+  /* Canvas užpildo VISĄ ekraną (cover — užpildo, gali šiek tiek apkirpti vertikalūs kraštai) */
   #screen-game #canvas {
     width: 100vw !important;
     height: 100vh !important;
-    object-fit: contain;
+    object-fit: cover;
     max-width: none !important;
     max-height: none !important;
   }
