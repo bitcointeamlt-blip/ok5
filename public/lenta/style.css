@@ -87,6 +87,20 @@ canvas {
   #screen-game #panel-log {
     display: none !important;
   }
+  /* Force layout fill screen, disable fitGameLayout's transform scale */
+  #screen-game .game-layout {
+    width: 100vw !important;
+    height: 100vh !important;
+    transform: none !important;
+  }
+  /* Canvas fits screen (object-fit contain — išlaiko aspect, no distortion) */
+  #screen-game #canvas {
+    width: 100vw !important;
+    height: 100vh !important;
+    object-fit: contain;
+    max-width: none !important;
+    max-height: none !important;
+  }
 }
 
 #app {
