@@ -5759,6 +5759,12 @@ function renderAchievementsPanel() {
 
 function startTutorial() {
   if (Profile.tutorialDone) return;
+  // Mobile — skip tutorial entirely (nervina, nereikalingas mobile UI)
+  if (/iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+    Profile.tutorialDone = true;
+    try { saveProfile && saveProfile(); } catch (_) {}
+    return;
+  }
   tutorialActive = true;
   tutorialStepIdx = 0;
   showTutorialStep(0);
