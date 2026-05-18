@@ -6,19 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>0x-PewPew | Game Portal</title>
   <link rel="icon" type="image/png" href="./target.png">
-  <!-- Mobile auto-redirect į F10 — bypass'inam portal'ą (mažiau klikų) -->
+  <!-- Auto-redirect į F10 (VISIEMS — PC + mobile). Bypass'inam portal'ą = nuo 0 click iki žaidimo. -->
+  <!-- Pridėk ?nodirect prie URL jei nori pasiekti šitą portal'ą -->
   <script>
     (function () {
       try {
-        if (/iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-          // Anti-loop: jei jau hash'as turi „direct" markerį, neredirect'inam
-          if (!/[#?]nodirect/.test(location.href)) {
-            location.replace('lenta/#f10');
-          }
+        if (!/[#?]nodirect/.test(location.href)) {
+          location.replace('lenta/#f10');
         }
       } catch (_) {}
     })();
   </script>
+  <!-- Meta refresh fallback (jei JS uždraustas) -->
+  <meta http-equiv="refresh" content="0; url=lenta/#f10">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
