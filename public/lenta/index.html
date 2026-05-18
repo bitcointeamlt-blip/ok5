@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpF">
+  <link rel="stylesheet" href="style.css?v=hpG">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -2377,7 +2377,53 @@
     })();
   </script>
 
-  <!-- Rotate overlay PAŠALINTA — sukėlė click blocking glitch ant mobile -->
+  <!-- Mobile menu button (toggle modal su wallet pill veiksmais) -->
+  <button id="mobile-menu-btn" type="button" title="Menu" aria-label="Open menu">☰</button>
+  <div id="mobile-menu-modal" role="dialog" aria-label="Mobile menu">
+    <div class="mm-panel">
+      <div class="mm-title">MENU</div>
+      <button class="mm-btn" data-action="pill"><span class="mm-ic">💰</span><span>WALLET</span></button>
+      <button class="mm-btn" data-action="inventory"><span class="mm-ic">📦</span><span>INVENTORY</span></button>
+      <button class="mm-btn" data-action="rewards"><span class="mm-ic">🎁</span><span>REWARDS</span></button>
+      <button class="mm-btn" data-action="upgrade"><span class="mm-ic">⚒️</span><span>UPGRADE</span></button>
+      <button class="mm-btn" data-action="pewpew"><span class="mm-ic">🎯</span><span>PEWPEW</span></button>
+      <button class="mm-btn" data-action="home"><span class="mm-ic">🏠</span><span>HOME</span></button>
+      <button class="mm-close" data-action="close">✕ CLOSE</button>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const btn = document.getElementById('mobile-menu-btn');
+      const modal = document.getElementById('mobile-menu-modal');
+      if (!btn || !modal) return;
+      function open() { modal.style.display = 'flex'; }
+      function close() { modal.style.display = 'none'; }
+      btn.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) { close(); return; }   // tap on backdrop
+        const tgt = e.target.closest('[data-action]');
+        if (!tgt) return;
+        const action = tgt.getAttribute('data-action');
+        close();   // close modal pirma
+        // Dispatch click ant atitinkamo wallet pill mygtuko (kuris paslepiamas mobile)
+        setTimeout(() => {
+          let id = null;
+          switch (action) {
+            case 'pill':      id = 'wui-pill-btn';     break;
+            case 'inventory': id = 'wui-inv-btn';      break;
+            case 'rewards':   id = 'wui-rewards-btn';  break;
+            case 'upgrade':   id = 'wui-upgrade-btn';  break;
+            case 'pewpew':    id = 'wui-pewpew-btn';   break;
+            case 'home':      id = 'wui-home-btn';     break;
+          }
+          if (id) {
+            const el = document.getElementById(id);
+            if (el) el.click();
+          }
+        }, 0);
+      });
+    })();
+  </script>
 
   <!-- Deep-link routing: #f12 / #f11 / #f10 (jump straight to floor) -->
   <script>
