@@ -93,11 +93,11 @@ canvas {
     height: 100vh !important;
     transform: none !important;
   }
-  /* Canvas užpildo VISĄ ekraną (cover — užpildo, gali šiek tiek apkirpti vertikalūs kraštai) */
+  /* Canvas užpildo VISĄ ekraną (fill — stretch, nieks neapkirpiama, visi mygtukai pasiekiami) */
   #screen-game #canvas {
     width: 100vw !important;
     height: 100vh !important;
-    object-fit: cover;
+    object-fit: fill;
     max-width: none !important;
     max-height: none !important;
   }
