@@ -179,6 +179,19 @@ canvas {
     grid-template-columns: repeat(4, 1fr) !important;
     gap: 4px !important;
   }
+  /* Ronke bank (wui-dropdown) mobile — visada scroll'inasi, max-height ribota */
+  .wui-dropdown {
+    width: min(360px, calc(100vw - 24px)) !important;
+    max-height: calc(100vh - 24px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    transform: translate(-50%, -50%) scale(1) !important;
+    touch-action: pan-y !important;
+  }
+  /* Inventory: užtikrinam touch scroll */
+  #inv-overlay #inv-panel {
+    touch-action: pan-y !important;
+  }
 }
 
 /* Mobile: paslepiam wallet pill (connect / inventory / rewards / upgrade / pewpew / home) — nereikalingi mobile */

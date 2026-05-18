@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpH">
+  <link rel="stylesheet" href="style.css?v=hpI">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -2374,6 +2374,31 @@
         if (document.hidden) tracks[activeTrackId].pause();
         else tracks[activeTrackId].play().catch(() => {});
       });
+    })();
+  </script>
+
+  <!-- Mobile: tap on backdrop closes inventory / wallet dropdown -->
+  <script>
+    (function () {
+      function isMobile() {
+        return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      }
+      if (!isMobile()) return;
+      document.addEventListener('click', (e) => {
+        // Inventory backdrop
+        const inv = document.getElementById('inv-overlay');
+        if (inv && inv.classList.contains('active') && e.target === inv) {
+          if (typeof window.closeInventory === 'function') window.closeInventory();
+        }
+        // Wallet dropdown backdrop (wui-dropdown is centered, click outside closes)
+        const dd = document.getElementById('wui-dropdown');
+        if (dd && dd.style.display !== 'none' && dd.style.display !== '') {
+          if (!dd.contains(e.target) && e.target.id !== 'wui-pill-btn') {
+            const pillBtn = document.getElementById('wui-pill-btn');
+            if (pillBtn) pillBtn.click();   // toggle closes
+          }
+        }
+      }, true);
     })();
   </script>
 
