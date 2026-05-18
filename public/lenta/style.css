@@ -81,6 +81,12 @@ canvas {
   #wui-pill-root {
     display: none !important;
   }
+  /* F10/F11 fullscreen: paslepiam side panels — canvas užima visą plotį */
+  #screen-game #panel-p1,
+  #screen-game #panel-p2,
+  #screen-game #panel-log {
+    display: none !important;
+  }
 }
 
 #app {
