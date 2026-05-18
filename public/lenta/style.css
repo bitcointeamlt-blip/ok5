@@ -156,6 +156,29 @@ canvas {
 /* Mobile only: show toggle + modal */
 @media (max-width: 900px) and (pointer: coarse) {
   #mobile-menu-btn { display: flex; }
+  /* Inventory mobile optimization — sumažintas panel, scrollable */
+  #inv-overlay {
+    position: fixed !important;
+    background: rgba(0,0,0,0.75) !important;
+    z-index: 99992 !important;
+    pointer-events: all !important;
+    padding: 10px !important;
+  }
+  #inv-overlay #inv-panel {
+    width: 100% !important;
+    max-width: 360px !important;
+    max-height: calc(100vh - 20px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px !important;
+    gap: 8px !important;
+  }
+  #inv-overlay .inv-title { font-size: 10px !important; letter-spacing: 2px !important; }
+  #inv-overlay .inv-sector { font-size: 8px !important; }
+  #inv-overlay .inv-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 4px !important;
+  }
 }
 
 /* Mobile: paslepiam wallet pill (connect / inventory / rewards / upgrade / pewpew / home) — nereikalingi mobile */
