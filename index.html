@@ -6,6 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>0x-PewPew | Game Portal</title>
   <link rel="icon" type="image/png" href="./target.png">
+  <!-- Mobile auto-redirect į F10 — bypass'inam portal'ą (mažiau klikų) -->
+  <script>
+    (function () {
+      try {
+        if (/iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+          // Anti-loop: jei jau hash'as turi „direct" markerį, neredirect'inam
+          if (!/[#?]nodirect/.test(location.href)) {
+            location.replace('lenta/#f10');
+          }
+        }
+      } catch (_) {}
+    })();
+  </script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
@@ -505,6 +518,40 @@
           for (const a of anims) a.lastFrame = -1;     // force redraw on resume
           rafId = requestAnimationFrame(tick);
         }
+      });
+    })();
+  </script>
+
+  <!-- BGM — Pocket Savepoint (autoplay on first user gesture, persistent loop) -->
+  <audio id="bgm-track" src="pocket_savepoint.mp3?v=1" loop preload="auto" style="display:none;"></audio>
+  <script>
+    (function () {
+      const bgm = document.getElementById('bgm-track');
+      if (!bgm) return;
+      bgm.volume = 0.35;
+      let started = false;
+      function tryStart() {
+        if (started) return;
+        const p = bgm.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => { started = true; cleanup(); }).catch(() => { /* still blocked, wait */ });
+        } else {
+          started = true; cleanup();
+        }
+      }
+      function cleanup() {
+        ['click', 'pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+          document.removeEventListener(ev, tryStart, true));
+      }
+      ['click', 'pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+        document.addEventListener(ev, tryStart, { capture: true, once: false }));
+      // Bandom iškart (kai kurie browser'iai leidžia jei tab aktyvus)
+      bgm.play().then(() => { started = true; cleanup(); }).catch(() => {});
+      // Pause kai tab paslėpta (saves resources)
+      document.addEventListener('visibilitychange', () => {
+        if (!started) return;
+        if (document.hidden) bgm.pause();
+        else bgm.play().catch(() => {});
       });
     })();
   </script>
