@@ -29780,77 +29780,101 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // â"€â"€ Touch support â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // Mobile Ronke selection state — pirma reikia paspausti ant Ronke, kad arrow zones aktyvuotsi.
+  // Default OFF → tap'ai eina į building/map click'us.
+  window._mobRonkeSelected = false;
+
   canvas.addEventListener('touchstart', e => {
     if (gameMode !== 'adventure') return;
-    e.preventDefault();
     SFX.init();
     const t = e.touches[0];
     const { x, y } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
     updateP1Aim(x, y);
+    // preventDefault TIK jeigu Ronke pasirinkta (kad arrow zones veiktų be browser scroll)
+    if (window._mobRonkeSelected) e.preventDefault();
   }, { passive: false });
 
   canvas.addEventListener('touchmove', e => {
     if (gameMode !== 'adventure') return;
-    e.preventDefault();
     const t = e.touches[0];
     const { x, y } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
     updateP1Aim(x, y);
+    if (window._mobRonkeSelected) e.preventDefault();
   }, { passive: false });
 
   let _mobLastTap = 0, _mobLastTapX = 0, _mobLastTapY = 0;
   canvas.addEventListener('touchend', e => {
     if (gameMode !== 'adventure') return;
-    e.preventDefault();
     const t = e.changedTouches[0];
     const { x: cx, y: cy } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
     const now = performance.now();
-
-    // Double-tap anywhere → shoot
-    const dt = now - _mobLastTap;
-    const dd = Math.hypot(cx - _mobLastTapX, cy - _mobLastTapY);
-    if (dt < 340 && dd < CELL * 3.5) {
-      _mobLastTap = 0;
-      // F11 commander mode — legacy shoot path teleportuotų enemy unitus
-      if (typeof f11LikeFloor === 'function' && f11LikeFloor()) return;
-      if (S.phase === 'frozen' && S.clockSide === 0 && S.pending[0] === null) {
-        const _sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
-        if (_sel) {
-          updateP1Aim(cx, cy);
-          S.pending[0] = { unitId: _sel.id, t: 'shoot' };
-          setActionBadge(0, S.pending[0]);
-          aiQueueAction(false);
-          resolveTick();
-        }
-      }
-      return;
-    }
-    _mobLastTap = now; _mobLastTapX = cx; _mobLastTapY = cy;
-
-    // Arrow zone tap → move
     const hero = S._hero || S.units?.find(u => u.team === 0 && u.alive);
-    if (hero && S.cam) {
+
+    // Patikrinam ar tap ant Ronke hero — toggle selected state
+    if (hero && S.cam && _ronkeHeroBounds) {
       const wx = cx + S.cam.x;
       const wy = cy + S.cam.y;
-      const hx = (hero.rx + 0.5) * CELL;
-      const hy = (hero.ry + 0.5) * CELL;
-      const hitR  = CELL * 0.88;
-      const dist  = CELL * 1.65;
-      const _dirs = [
-        { dx:  0, dy: -1, code: 'KeyW' },
-        { dx:  0, dy:  1, code: 'KeyS' },
-        { dx: -1, dy:  0, code: 'KeyA' },
-        { dx:  1, dy:  0, code: 'KeyD' },
-      ];
-      for (const d of _dirs) {
-        if (Math.hypot(wx - (hx + d.dx * dist), wy - (hy + d.dy * dist)) < hitR) {
-          document.dispatchEvent(new KeyboardEvent('keydown', { code: d.code, bubbles: true }));
-          return;
-        }
+      const b = _ronkeHeroBounds;
+      if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
+        window._mobRonkeSelected = !window._mobRonkeSelected;
+        e.preventDefault();
+        return;
       }
     }
 
-    // Tap elsewhere → just update aim direction (no fire)
-    updateP1Aim(cx, cy);
+    // Double-tap shoot (kai pasirinkta Ronke)
+    if (window._mobRonkeSelected) {
+      const dt = now - _mobLastTap;
+      const dd = Math.hypot(cx - _mobLastTapX, cy - _mobLastTapY);
+      if (dt < 340 && dd < CELL * 3.5) {
+        _mobLastTap = 0;
+        if (typeof f11LikeFloor === 'function' && f11LikeFloor()) { e.preventDefault(); return; }
+        if (S.phase === 'frozen' && S.clockSide === 0 && S.pending[0] === null) {
+          const _sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
+          if (_sel) {
+            updateP1Aim(cx, cy);
+            S.pending[0] = { unitId: _sel.id, t: 'shoot' };
+            setActionBadge(0, S.pending[0]);
+            aiQueueAction(false);
+            resolveTick();
+          }
+        }
+        e.preventDefault();
+        return;
+      }
+      _mobLastTap = now; _mobLastTapX = cx; _mobLastTapY = cy;
+
+      // Arrow zone tap → move (TIK kai Ronke pasirinkta)
+      if (hero && S.cam) {
+        const wx = cx + S.cam.x;
+        const wy = cy + S.cam.y;
+        const hx = (hero.rx + 0.5) * CELL;
+        const hy = (hero.ry + 0.5) * CELL;
+        const hitR  = CELL * 0.88;
+        const dist  = CELL * 1.65;
+        const _dirs = [
+          { dx:  0, dy: -1, code: 'KeyW' },
+          { dx:  0, dy:  1, code: 'KeyS' },
+          { dx: -1, dy:  0, code: 'KeyA' },
+          { dx:  1, dy:  0, code: 'KeyD' },
+        ];
+        for (const d of _dirs) {
+          if (Math.hypot(wx - (hx + d.dx * dist), wy - (hy + d.dy * dist)) < hitR) {
+            document.dispatchEvent(new KeyboardEvent('keydown', { code: d.code, bubbles: true }));
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+
+      // Tap elsewhere (Ronke pasirinkta) → update aim
+      updateP1Aim(cx, cy);
+      e.preventDefault();
+      return;
+    }
+
+    // Ronke NEPASIRINKTA — leidžiam tap'ą propaguoti į click handler (building/map click'ai)
+    // Be preventDefault → synthetic click event įvyks ant canvas → building popup logic suveiks
   }, { passive: false });
 
   // D-pad: simulate key presses to reuse existing keydown logic
