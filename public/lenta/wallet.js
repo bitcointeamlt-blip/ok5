@@ -15,6 +15,12 @@
   const RONKEVERSE_NFT = '0x810b6d1374ac7ba0e83612e7d49f49a13f1de019';
   const LOGIN_MSG = 'Login to Dungeon Crawler (Lenta)';
 
+  // Waypoint = embedded wallet fallback (mobile / no extension). EIP-1193 compatible.
+  const WAYPOINT_CLIENT_ID = '8c00d3f9-df95-4a65-b533-90b96ade346e';
+  const WAYPOINT_CDN = 'https://esm.sh/@sky-mavis/waypoint@4.2.2';
+  let _waypointProvider = null;
+  let _waypointPromise = null;
+
   const LS = {
     ADDR: 'lenta_wallet_address',
     SIG:  'lenta_wallet_signature',
@@ -49,7 +55,33 @@
     return null;
   }
 
-  function isInstalled() { return !!getRoninProvider(); }
+  // Lazy-loads Ronin Waypoint SDK (embedded wallet for mobile / no extension).
+  async function getWaypointProvider() {
+    if (_waypointProvider) return _waypointProvider;
+    if (!_waypointPromise) {
+      _waypointPromise = (async () => {
+        const mod = await import(/* @vite-ignore */ WAYPOINT_CDN);
+        const Wp = mod.WaypointProvider || (mod.default && mod.default.WaypointProvider);
+        if (!Wp || typeof Wp.create !== 'function') throw new Error('Waypoint SDK not available');
+        _waypointProvider = Wp.create({
+          clientId: WAYPOINT_CLIENT_ID,
+          chainId: RONIN_CHAIN_ID_DEC,
+        });
+        return _waypointProvider;
+      })().catch((e) => { _waypointPromise = null; throw e; });
+    }
+    return _waypointPromise;
+  }
+
+  // Returns any usable EIP-1193 provider: native Ronin extension first, then Waypoint.
+  async function getAnyProvider() {
+    const native = getRoninProvider();
+    if (native) return native;
+    return await getWaypointProvider();
+  }
+
+  // True if either Ronin extension OR Waypoint (always available via CDN).
+  function isInstalled() { return true; }
 
   function shortAddress(a) {
     const addr = a || state.address;
@@ -244,11 +276,13 @@
 
   // ── Connect / disconnect / restore ────────────────────────────────
   async function connect() {
-    const prov = getRoninProvider();
-    if (!prov) {
-      const msg = 'Ronin Wallet not installed.\nDownload: https://wallet.roninchain.com';
-      throw new Error(msg);
+    let prov;
+    try {
+      prov = await getAnyProvider();
+    } catch (e) {
+      throw new Error('Wallet provider unavailable: ' + (e && e.message ? e.message : e));
     }
+    if (!prov) throw new Error('No wallet provider found');
     state.provider = prov;
     const accounts = await prov.request({ method: 'eth_requestAccounts' });
     if (!accounts || !accounts.length) throw new Error('No accounts returned');
@@ -268,6 +302,9 @@
       localStorage.setItem(LS.SIG, signature);
       localStorage.setItem(LS.MSG, LOGIN_MSG);
     } catch {}
+
+    // Attach event listeners to the provider that just connected (Waypoint or native).
+    attachListeners(prov);
 
     notify();
     // Notify game to reload profile for this wallet
@@ -332,9 +369,9 @@
     return false;
   }
 
-  function setupAccountListener() {
-    const prov = getRoninProvider();
+  function attachListeners(prov) {
     if (!prov || typeof prov.on !== 'function') return;
+    if (prov.__lentaListenersAttached) return;
     try {
       prov.on('accountsChanged', (accounts) => {
         if (!accounts || accounts.length === 0) { disconnect(); return; }
@@ -345,7 +382,14 @@
       });
       prov.on('chainChanged', () => { chainIdCheck(); });
       prov.on('disconnect', () => { disconnect(); });
+      prov.__lentaListenersAttached = true;
     } catch (e) { console.warn('[wallet] listener setup failed:', e); }
+  }
+
+  function setupAccountListener() {
+    // Attach to whatever native provider is available at init time.
+    // Waypoint provider listeners get attached lazily after connect() succeeds.
+    attachListeners(getRoninProvider());
   }
 
   function init() {
