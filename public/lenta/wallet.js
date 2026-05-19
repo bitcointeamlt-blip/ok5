@@ -63,14 +63,11 @@
         const mod = await import(/* @vite-ignore */ WAYPOINT_CDN);
         const Wp = mod.WaypointProvider || (mod.default && mod.default.WaypointProvider);
         if (!Wp || typeof Wp.create !== 'function') throw new Error('Waypoint SDK not available');
-        const _redirect = window.location.origin + '/lenta/';
-        const _origin = window.location.origin;
-        // DEBUG: rodom mobile user'iui ką siunčiam — kad galėtų palyginti su Console
-        try { alert('[Waypoint debug]\nredirect=' + _redirect + '\norigin=' + _origin + '\nclientId=' + WAYPOINT_CLIENT_ID); } catch (_) {}
+        // Match Sky Mavis Console exact URI (no trailing slash).
         _waypointProvider = Wp.create({
           clientId: WAYPOINT_CLIENT_ID,
           chainId: RONIN_CHAIN_ID_DEC,
-          redirectUrl: _redirect,
+          redirectUrl: window.location.origin + '/lenta',
         });
         return _waypointProvider;
       })().catch((e) => { _waypointPromise = null; throw e; });
