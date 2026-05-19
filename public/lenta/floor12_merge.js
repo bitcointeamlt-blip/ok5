@@ -1025,6 +1025,13 @@
       return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     } catch (_) { return false; }
   })();
+  // ── LOCALHOST DETECTION — dev tools (EDIT MAP, F10/F11/F12 nav) tik lokalei ──
+  const _isLocalhost = (function () {
+    try {
+      const h = window.location.hostname;
+      return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '' || h.startsWith('192.168.');
+    } catch (_) { return false; }
+  })();
   let raf = 0;
   let lastTime = 0;
 
@@ -9381,20 +9388,24 @@
     ctx.textBaseline = 'alphabetic';
     restartBtnRect = { x: rbx, y: by, w: bw, h: bh };
 
-    // ── EDIT MAP mygtukas — kairiau už RESTART, teal spalva ──
-    const ebx = rbx - bw - 12;
-    ctx.fillStyle = _f12EditMode ? '#0a4a36' : '#0a3022';
-    ctx.fillRect(ebx, by, bw, bh);
-    ctx.strokeStyle = _f12EditMode ? '#00ffb4' : '#0a8a66';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(ebx + 0.5, by + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = _f12EditMode ? '#00ffb4' : '#7adcc0';
-    ctx.font = '9px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(_f12EditMode ? 'EDIT: ON' : 'EDIT MAP', ebx + bw / 2, by + bh / 2);
-    ctx.textBaseline = 'alphabetic';
-    editMapBtnRect = { x: ebx, y: by, w: bw, h: bh };
+    // ── EDIT MAP mygtukas — TIK lokalei (production'e paslepta) ──
+    if (_isLocalhost) {
+      const ebx = rbx - bw - 12;
+      ctx.fillStyle = _f12EditMode ? '#0a4a36' : '#0a3022';
+      ctx.fillRect(ebx, by, bw, bh);
+      ctx.strokeStyle = _f12EditMode ? '#00ffb4' : '#0a8a66';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ebx + 0.5, by + 0.5, bw - 1, bh - 1);
+      ctx.fillStyle = _f12EditMode ? '#00ffb4' : '#7adcc0';
+      ctx.font = '9px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(_f12EditMode ? 'EDIT: ON' : 'EDIT MAP', ebx + bw / 2, by + bh / 2);
+      ctx.textBaseline = 'alphabetic';
+      editMapBtnRect = { x: ebx, y: by, w: bw, h: bh };
+    } else {
+      editMapBtnRect = null;   // disable click handler on production
+    }
   }
 
   function drawGameOver(L) {

@@ -3,6 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- Localhost detection — dev tools (HOME nav + EDIT MAP) tik lokalei -->
+  <script>
+    (function () {
+      try {
+        const h = window.location.hostname;
+        const isLocal = h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '' || h.startsWith('192.168.');
+        if (!isLocal) document.documentElement.classList.add('is-production');
+      } catch (_) {}
+    })();
+  </script>
+  <style>
+    /* HOME mygtukas + floor arrow nav (◀ F1 ▶ / HOME) — paslepta production'e */
+    html.is-production #floor-nav,
+    html.is-production #btn-goto-f10 { display: none !important; }
+  </style>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1874,7 +1889,7 @@
   <script src="vendor/GLTFLoader.js"></script>
   <script src="wallet.js"></script>
   <script src="game.js?v=cmd370"></script>
-  <script src="floor12_merge.js?v=cmd687"></script>
+  <script src="floor12_merge.js?v=cmd688"></script>
   <script src="wallet-ui.js?v=pewpew7"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
