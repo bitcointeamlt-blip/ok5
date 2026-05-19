@@ -1233,6 +1233,14 @@ let Profile = {
   highestSector: 1,
   inventory: null      // persists chips/items across runs
 };
+// Expose Profile į window via live getter/setter — cross-script access (Supabase sync, etc.)
+try {
+  Object.defineProperty(window, 'Profile', {
+    get() { return Profile; },
+    set(v) { Profile = v; },
+    configurable: true,
+  });
+} catch (_) { window.Profile = Profile; }
 
 // Profile persistence key — wallet-bound. Returns null if no wallet connected.
 // When null → anonymous mode, progress is NOT persisted (user explicitly opted in
