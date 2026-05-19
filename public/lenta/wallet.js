@@ -66,6 +66,7 @@
         _waypointProvider = Wp.create({
           clientId: WAYPOINT_CLIENT_ID,
           chainId: RONIN_CHAIN_ID_DEC,
+          redirectUrl: window.location.origin + '/lenta/',
         });
         return _waypointProvider;
       })().catch((e) => { _waypointPromise = null; throw e; });
@@ -289,10 +290,18 @@
     const addr = accounts[0];
 
     let signature = null;
-    try {
-      signature = await prov.request({ method: 'personal_sign', params: [LOGIN_MSG, addr] });
-    } catch (e) {
-      throw new Error('Login signature rejected');
+    // Detect Waypoint provider — embedded wallet already authenticated via OAuth.
+    // Mobile popup signing is unreliable (popup blocked after 1st popup closes).
+    // For Waypoint we treat OAuth completion as proof of ownership; skip personal_sign.
+    const isWaypoint = (prov === _waypointProvider);
+    if (isWaypoint) {
+      signature = 'waypoint:oauth';   // marker — non-empty so persistence works
+    } else {
+      try {
+        signature = await prov.request({ method: 'personal_sign', params: [LOGIN_MSG, addr] });
+      } catch (e) {
+        throw new Error('Login signature rejected');
+      }
     }
 
     state.address = addr;
