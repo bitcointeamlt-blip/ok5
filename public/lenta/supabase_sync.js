@@ -153,6 +153,40 @@
     window._saveProfileWrapped = true;
   }
 
+  // ── Edge Functions invoke helper ────────────────────────────────────
+  // Phase 2 — kviečia /functions/v1/<name> endpoint'ą su POST body.
+  // Naudoja anon key auth header'iui (Edge Function pati turi
+  // service_role key per Deno.env, niekas frontend'e jo nemato).
+  async function invokeFunction(name, payload) {
+    if (!sb) initClient();
+    if (!sb) throw new Error('Supabase not initialized');
+    const url = `${SUPABASE_URL}/functions/v1/${name}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    const data = await resp.json().catch(() => null);
+    return { ok: resp.ok, status: resp.status, data };
+  }
+
+  // ── Trophy validation shortcut ─────────────────────────────────────
+  // Calls "rapid-endpoint" Edge Function (Phase 2 anti-cheat).
+  // Function name = "rapid-endpoint" because Supabase Dashboard placeholder
+  // defaulted to that during initial deploy; internal identifier only.
+  async function validateAchievement(achievementId) {
+    const addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+    if (!addr) return { ok: false, error: 'Wallet not connected' };
+    return await invokeFunction('rapid-endpoint', {
+      wallet: addr.toLowerCase(),
+      achievementId,
+    });
+  }
+
   // ── Public API ──────────────────────────────────────────────────────
   window.SupabaseSync = {
     init: initClient,
@@ -160,6 +194,8 @@
     pushProfileToCloud,
     loadProfileFromCloud,
     isEnabled: () => syncEnabled,
+    invoke: invokeFunction,
+    validateAchievement,
   };
 
   // ── Auto-init + wallet event hooks ──────────────────────────────────
