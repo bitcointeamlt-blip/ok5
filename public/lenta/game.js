@@ -1209,6 +1209,10 @@ let tutorialActive = false;
 let tutorialStepIdx = 0;
 
 // ---- Achievement Definitions -----------------------------------
+// Achievement entries support optional `claimable: true` flag — those become
+// NFT trophy mint candidates (Phase 3+). Base achievements stay in-game only.
+// For claimable entries, `check(p, s, tier)` receives the current RONKE holder
+// multiplier (1.0 default, 3 / 3.5 / 4.5 for holders) so thresholds can scale.
 const ACHIEVEMENTS = [
   { id: 'first_kill', label: 'FIRST BLOOD', desc: 'Destroy first enemy', check: (p, s) => (s.totalKills || 0) >= 1 },
   { id: 'kills_10', label: 'PEST CONTROL', desc: 'Destroy 10 enemies', check: (p, s) => (s.totalKills || 0) >= 10 },
@@ -1220,6 +1224,20 @@ const ACHIEVEMENTS = [
   { id: 'crit_10', label: 'SHARP MIND', desc: 'Upgrade Crit Module 10x', check: (p, s) => (p.upgrades?.critLevel || 0) >= 10 },
   { id: 'teleport_use', label: 'PHASE SHIFT', desc: 'Use a teleport pad', check: (p, s) => (s.teleportUses || 0) >= 1 },
   { id: 'full_energy', label: 'FULLY CHARGED', desc: 'Reach max energy', check: (p, s) => (s.reachedMaxEnergy || false) },
+];
+
+// TROPHY_ACHIEVEMENTS — claimable for NFT mint. Threshold scales with RONKE holder tier.
+// User reguliuoja šitą sąrašą betkada (off-chain rules). Edge Function will re-validate.
+// Base = non-holder requirement. With holder tier N, effective = Math.ceil(base / N).
+const TROPHY_ACHIEVEMENTS = [
+  // Pavyzdžiai — užpildysi/redaguosi pats. Komentaras rodo holder threshold'us:
+  // 0 RONKE = 1x | 1+ RONKE = 3x | 5+ = 3.5x | 10+ = 4.5x
+  // { id: 'T_kills_grinder', label: 'GRINDER', desc: 'Destroy enemies',
+  //   baseThreshold: 50_000, statKey: 'totalKills' },
+  // { id: 'T_perfect_master', label: 'PERFECT MASTER', desc: 'PERFECT merges',
+  //   baseThreshold: 500, statKey: 'perfectMerges' },
+  // { id: 'T_unbelievable', label: 'UNBELIEVABLE', desc: 'UNBELIEVABLE merges',
+  //   baseThreshold: 50, statKey: 'unbelievableMerges' },
 ];
 
 // ---- Persistent Profile System ---------------------------------
@@ -1323,6 +1341,20 @@ function loadProfile() {
   if (!Profile.stats) Profile.stats = { totalKills: 0 };
   if (typeof Profile.barracksUnlockedSlots !== 'number') Profile.barracksUnlockedSlots = 4;
   _barracksUnlockedSlots = Profile.barracksUnlockedSlots;
+  _ensureTrophyStats();
+}
+
+// Phase 1 — trophy-relevant F12 stats. Backfills missing fields on every load
+// (safe for older saves). Edge Function will validate these server-side later.
+function _ensureTrophyStats() {
+  if (!Profile.stats) Profile.stats = {};
+  if (typeof Profile.stats.niceMerges !== 'number') Profile.stats.niceMerges = 0;
+  if (typeof Profile.stats.perfectMerges !== 'number') Profile.stats.perfectMerges = 0;
+  if (typeof Profile.stats.unbelievableMerges !== 'number') Profile.stats.unbelievableMerges = 0;
+  if (typeof Profile.stats.f12HighScore !== 'number') Profile.stats.f12HighScore = 0;
+  if (typeof Profile.stats.f12TotalRuns !== 'number') Profile.stats.f12TotalRuns = 0;
+  if (typeof Profile.stats.f12TotalMinutes !== 'number') Profile.stats.f12TotalMinutes = 0;
+  if (!Profile.trophyClaims) Profile.trophyClaims = {};
 }
 
 function saveProfile() {
@@ -5684,6 +5716,34 @@ function checkAchievements() {
     }
   });
 }
+
+// Phase 1 — trophy eligibility tracker. Read-only check, no mint flow yet.
+// Returns { id, label, progress, target, tier, eligible } per claimable achievement.
+// UI/Edge Function naudos šitą informaciją Phase 2-3 metu.
+window.getTrophyProgress = function getTrophyProgress() {
+  _ensureTrophyStats();
+  const tier = (window.Wallet && window.Wallet.getRonkeHolderTier)
+    ? window.Wallet.getRonkeHolderTier().tier
+    : 1;
+  return TROPHY_ACHIEVEMENTS.map(t => {
+    const base = t.baseThreshold || 0;
+    const target = Math.max(1, Math.ceil(base / tier));
+    const progress = (Profile.stats && Profile.stats[t.statKey]) || 0;
+    const claimed = !!(Profile.trophyClaims && Profile.trophyClaims[t.id]);
+    return {
+      id: t.id,
+      label: t.label,
+      desc: t.desc,
+      statKey: t.statKey,
+      progress,
+      target,
+      baseTarget: base,
+      tier,
+      eligible: progress >= target,
+      claimed,
+    };
+  });
+};
 
 function showAchievementPopup(a) {
   const popup = document.getElementById('achievement-popup');

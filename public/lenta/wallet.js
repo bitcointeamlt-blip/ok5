@@ -407,6 +407,22 @@
     restore().catch(() => {});
   }
 
+  // Phase 1 — RONKE NFT holder helper for trophy bonus tier (frontend display only).
+  // Edge Function MUST re-verify on-chain at claim time (this is spoofable client-side).
+  // Returns 0 if not connected or NFTs not yet loaded; otherwise the count.
+  function getRonkeNFTCount() {
+    if (!state.connected) return 0;
+    if (!Array.isArray(state.nfts)) return 0;
+    return state.nfts.length;
+  }
+  function getRonkeHolderTier() {
+    const n = getRonkeNFTCount();
+    if (n >= 10) return { count: n, tier: 4.5, label: '10+ RONKE' };
+    if (n >= 5)  return { count: n, tier: 3.5, label: '5+ RONKE' };
+    if (n >= 1)  return { count: n, tier: 3,   label: '1+ RONKE' };
+    return { count: 0, tier: 1, label: 'No RONKE' };
+  }
+
   // Public API
   window.Wallet = {
     // identity
@@ -419,6 +435,7 @@
     onChange,
     // data
     refreshBalance, refreshNfts,
+    getRonkeNFTCount, getRonkeHolderTier,
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC,
   };

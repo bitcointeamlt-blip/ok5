@@ -2353,7 +2353,21 @@
       }
       if (_allSettled) {
         if (!_f12OverflowSettleAt) _f12OverflowSettleAt = now();
-        if (now() - _f12OverflowSettleAt >= 1000) gameOver = true;
+        if (now() - _f12OverflowSettleAt >= 1000) {
+          if (!gameOver) {
+            // Phase 1 — trophy stat tracking. Persist F12 run results before game over flag flips.
+            try {
+              if (window.Profile) {
+                const P = window.Profile;
+                if (!P.stats) P.stats = {};
+                P.stats.f12TotalRuns = (P.stats.f12TotalRuns || 0) + 1;
+                if ((score || 0) > (P.stats.f12HighScore || 0)) P.stats.f12HighScore = score || 0;
+                if (typeof window.saveProfile === 'function') window.saveProfile();
+              }
+            } catch (_) {}
+          }
+          gameOver = true;
+        }
       } else {
         _f12OverflowSettleAt = 0;       // dar yra motion → galima merge → reset timer
       }
@@ -2454,6 +2468,19 @@
         const scoreGain = newVal * scoreMult;
         score += scoreGain;
         merges++;
+        // Phase 1 — trophy stat tracking. Increment counters on each merge tier.
+        // Profile.stats is persisted via saveProfile (cloud-synced through Supabase).
+        try {
+          if (window.Profile) {
+            const P = window.Profile;
+            if (!P.stats) P.stats = {};
+            if (_zoneTier === 'nice')              P.stats.niceMerges         = (P.stats.niceMerges         || 0) + 1;
+            else if (_zoneTier === 'perfect')      P.stats.perfectMerges      = (P.stats.perfectMerges      || 0) + 1;
+            else if (_zoneTier === 'ronke_stronke') P.stats.unbelievableMerges = (P.stats.unbelievableMerges || 0) + 1;
+            // throttled save — game.js already debounces, but be safe
+            if (typeof window.saveProfile === 'function') window.saveProfile();
+          }
+        } catch (_) {}
         const tier = Math.log2(newVal);  // 1=value2→2, 2=value4→4, 3=value8...
         // ── MERGE SOUND ────────────────────────────────────────────────
         _F12Audio.merge(tier);
@@ -4141,7 +4168,22 @@
         if (e.x <= 0) {
           baseHp -= 3;
           Ln.enemies.splice(i, 1);
-          if (baseHp <= 0) { baseHp = 0; gameOver = true; }
+          if (baseHp <= 0) {
+            baseHp = 0;
+            if (!gameOver) {
+              // Phase 1 — trophy stat tracking. Also persist on base-destroyed game over.
+              try {
+                if (window.Profile) {
+                  const P = window.Profile;
+                  if (!P.stats) P.stats = {};
+                  P.stats.f12TotalRuns = (P.stats.f12TotalRuns || 0) + 1;
+                  if ((score || 0) > (P.stats.f12HighScore || 0)) P.stats.f12HighScore = score || 0;
+                  if (typeof window.saveProfile === 'function') window.saveProfile();
+                }
+              } catch (_) {}
+            }
+            gameOver = true;
+          }
         }
       }
     }
