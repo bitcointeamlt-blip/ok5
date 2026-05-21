@@ -5736,7 +5736,7 @@ function checkAchievements() {
 // rarity implication (all 4 earn the same PewPew NFT).
 const TROPHY_TIERS = [
   {
-    id: 'T_bronze', label: 'CHALLENGE I',
+    id: 'T_bronze', label: 'MISSION PROGRESS',
     desc: 'Onboarding milestones — moderate skill required.',
     requirements: [
       { id: 'r_perfect_10', label: '10 PERFECT merges', statKey: 'perfectMerges', threshold: 10 },
@@ -5746,7 +5746,7 @@ const TROPHY_TIERS = [
     ],
   },
   {
-    id: 'T_silver', label: 'CHALLENGE II',
+    id: 'T_silver', label: 'MISSION PROGRESS',
     desc: 'Advanced milestones — peak chains and boss kills.',
     requirements: [
       { id: 's_unb_5',      label: '5 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 5 },
@@ -5756,7 +5756,7 @@ const TROPHY_TIERS = [
     ],
   },
   {
-    id: 'T_gold', label: 'CHALLENGE III',
+    id: 'T_gold', label: 'MISSION PROGRESS',
     desc: 'Elite milestones — sustained skill and grinding.',
     requirements: [
       { id: 'g_kills_200',  label: '200 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 200 },
@@ -5766,7 +5766,7 @@ const TROPHY_TIERS = [
     ],
   },
   {
-    id: 'T_legendary', label: 'CHALLENGE IV',
+    id: 'T_legendary', label: 'MISSION PROGRESS',
     desc: 'Extreme milestones — only the most dedicated players reach this.',
     requirements: [
       { id: 'l_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
@@ -5952,7 +5952,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Phase 15 — Trophy Progress Panel (full tier overview UI).
-const _TIER_ICONS = { T_bronze: 'I', T_silver: 'II', T_gold: 'III', T_legendary: 'IV' };
+const _TIER_ICONS = { T_bronze: '●', T_silver: '◆', T_gold: '★', T_legendary: '♛' };
 const _TIER_CLASS = { T_bronze: 'tier-bronze', T_silver: 'tier-silver', T_gold: 'tier-gold', T_legendary: 'tier-legendary' };
 
 window.openTrophyPanel = function openTrophyPanel() {
@@ -6095,8 +6095,11 @@ function renderTrophyPanel() {
         </div>`;
     } else {
       actionHtml = `
-        <div class="tier-actions">
-          <button class="tier-claim-btn disabled">LOCKED — ${metCount}/${tier.requirements.length} reqs</button>
+        <div class="tier-actions tier-actions-locked">
+          <button class="tier-claim-btn disabled">
+            <span class="tcb-lock">🔒 1 PEWPEW TROPHY LOCKED</span>
+            <span class="tcb-hint">Complete ${metCount}/${tier.requirements.length} mission tasks to unlock mint</span>
+          </button>
         </div>`;
     }
 
