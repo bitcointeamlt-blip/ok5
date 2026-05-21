@@ -13514,8 +13514,8 @@ kbd {
 
 /* ── Coming Soon teaser card ──────────────────────────────── */
 .tier-coming-soon {
-  background: linear-gradient(180deg, rgba(40,90,160,0.08) 0%, rgba(50,40,90,0.04) 100%);
-  border: 2px dashed rgba(120,190,255,0.4) !important;
+  background: linear-gradient(180deg, rgba(13,79,210,0.08) 0%, rgba(50,40,90,0.04) 100%);
+  border: 2px dashed rgba(31,124,252,0.4) !important;
   position: relative;
   overflow: hidden;
 }
@@ -13527,14 +13527,14 @@ kbd {
     -45deg,
     transparent 0,
     transparent 12px,
-    rgba(120,190,255,0.04) 12px,
-    rgba(120,190,255,0.04) 24px
+    rgba(31,124,252,0.04) 12px,
+    rgba(31,124,252,0.04) 24px
   );
   pointer-events: none;
 }
 .tier-coming-soon .tier-card-icon {
-  color: #78beff !important;
-  text-shadow: 0 0 12px rgba(120,190,255,0.6);
+  color: #1273ea !important;
+  text-shadow: 0 0 12px rgba(31,124,252,0.6);
   animation: cs-pulse 3s ease-in-out infinite;
 }
 @keyframes cs-pulse {
@@ -13542,13 +13542,13 @@ kbd {
   50% { opacity: 1; transform: scale(1.15); }
 }
 .tier-coming-soon .tier-card-title {
-  color: #a8d4ff !important;
+  color: #5fa8f5 !important;
   letter-spacing: 1.5px;
 }
 .tcs-badge {
-  background: rgba(120,190,255,0.15) !important;
-  color: #78beff !important;
-  border: 1px dashed rgba(120,190,255,0.4);
+  background: rgba(31,124,252,0.15) !important;
+  color: #1273ea !important;
+  border: 1px dashed rgba(31,124,252,0.4);
 }
 .tcs-body {
   display: flex;
@@ -13556,7 +13556,7 @@ kbd {
   gap: 6px;
   margin: 8px 0 12px;
   padding: 10px 12px;
-  background: rgba(120,190,255,0.04);
+  background: rgba(31,124,252,0.04);
   border-radius: 4px;
 }
 .tcs-line {
@@ -13570,17 +13570,27 @@ kbd {
 }
 .tcs-line::before {
   content: '◆';
-  color: #78beff;
+  color: #1273ea;
   font-size: 7px;
   flex-shrink: 0;
 }
 .tcs-btn {
-  background: linear-gradient(180deg, rgba(120,190,255,0.2) 0%, rgba(40,90,160,0.15) 100%) !important;
-  border-color: rgba(120,190,255,0.5) !important;
-  color: #a8d4ff !important;
-  cursor: default !important;
+  background: linear-gradient(180deg, rgba(31,124,252,0.25) 0%, rgba(13,79,210,0.18) 100%) !important;
+  border-color: rgba(31,124,252,0.6) !important;
+  color: #fff !important;
+  cursor: pointer !important;
   letter-spacing: 1px;
   position: relative;
+  text-decoration: none;
+  text-align: center;
+  display: block;
+  transition: all 0.2s ease;
+}
+.tcs-btn:hover {
+  background: linear-gradient(180deg, rgba(31,124,252,0.4) 0%, rgba(13,79,210,0.3) 100%) !important;
+  border-color: #1273ea !important;
+  box-shadow: 0 0 18px rgba(31,124,252,0.6);
+  transform: translateY(-1px);
 }
 .tcs-btn::after {
   content: '';
