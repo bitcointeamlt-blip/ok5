@@ -23,6 +23,7 @@
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-pewpew-btn" id="wui-pewpew-btn" title="PewPew Room (F12)" style="display:none">PEWPEW</button>
+        <button type="button" class="wui-castle-btn wui-trophy-btn" id="wui-trophy-btn" title="Trophies" style="display:none">TROPHIES</button>
         <button type="button" class="wui-castle-btn wui-home-btn" id="wui-home-btn" title="Home (Floor 10)" style="display:none"></button>
       </div>
       <div class="wui-dropdown" id="wui-dropdown" style="display:none"></div>
@@ -60,6 +61,12 @@
     pewpewBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof window.gotoF12 === 'function') window.gotoF12();
+    });
+
+    const trophyBtn = pillEl.querySelector('#wui-trophy-btn');
+    trophyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof window.openTrophyPanel === 'function') window.openTrophyPanel();
     });
 
     dropdownEl = pillEl.querySelector('#wui-dropdown');
@@ -426,6 +433,16 @@
       pewpewBtnEl.style.display = (inAdv && !isF12) ? 'flex' : 'none';
       pewpewBtnEl.style.background = '#6b4a2e';
       _setupPewpewBtn(pewpewBtnEl);
+    }
+
+    // Trophies button — visible same conditions as PewPew (adventure floors)
+    const trophyBtnEl = pillEl.querySelector('#wui-trophy-btn');
+    if (trophyBtnEl) {
+      trophyBtnEl.style.display = inAdv ? 'flex' : 'none';
+      trophyBtnEl.style.background = '#ffcf5c';
+      trophyBtnEl.style.color = '#1a1208';
+      trophyBtnEl.style.fontWeight = '700';
+      trophyBtnEl.style.border = '2px solid #8a5a18';
     }
 
     // Wallet — user-provided pixel-art Ronin wallet PNG (idle = closed, active = with coins)
