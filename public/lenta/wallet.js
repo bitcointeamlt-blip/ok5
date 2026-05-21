@@ -21,6 +21,12 @@
   let _waypointProvider = null;
   let _waypointPromise = null;
 
+  // DungeonTrophies kontraktas — Phase 15 UI integration.
+  // Saigon testnet (chainId 202601). Mainnet flip po Phase 14.
+  const TROPHY_CONTRACT = '0xce0917a94cb3c270144ce5402e85b600fa94a619';
+  const VIEM_CDN = 'https://esm.sh/viem@2.21.55';
+  let _viemModule = null;
+
   const LS = {
     ADDR: 'lenta_wallet_address',
     SIG:  'lenta_wallet_signature',
@@ -407,6 +413,63 @@
     restore().catch(() => {});
   }
 
+  // Phase 15 — Submit a signed trophy claim to the DungeonTrophies contract.
+  // claim = { wallet, achievementIdHash, nonce, deadline, signature }
+  // Returns { txHash } on success or throws.
+  async function claimTrophy(claim) {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData } = _viemModule;
+
+    const data = encodeFunctionData({
+      abi: [{
+        type: 'function',
+        name: 'claimTrophy',
+        stateMutability: 'payable',
+        inputs: [
+          { name: 'recipient', type: 'address' },
+          { name: 'achievementIdHash', type: 'bytes32' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+          { name: 'signature', type: 'bytes' },
+        ],
+        outputs: [],
+      }],
+      functionName: 'claimTrophy',
+      args: [
+        claim.wallet,
+        claim.achievementIdHash,
+        BigInt(claim.nonce),
+        BigInt(claim.deadline),
+        claim.signature,
+      ],
+    });
+
+    // Read current mint price via RPC (off-thread, doesn't require wallet)
+    const priceHex = await fetch('https://saigon-testnet.roninchain.com/rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', method: 'eth_call', id: 1,
+        params: [{ to: TROPHY_CONTRACT, data: '0xe82ded21' }, 'latest'],  // getCurrentMintPrice()
+      }),
+    }).then(r => r.json()).then(r => r.result).catch(() => '0x0');
+    const valueHex = '0x' + BigInt(priceHex || '0x0').toString(16);
+
+    const txHash = await prov.request({
+      method: 'eth_sendTransaction',
+      params: [{
+        from: state.address,
+        to: TROPHY_CONTRACT,
+        data,
+        value: valueHex,
+      }],
+    });
+    return { txHash, price: priceHex };
+  }
+
   // Phase 1 — RONKE NFT holder helper for trophy bonus tier (frontend display only).
   // Edge Function MUST re-verify on-chain at claim time (this is spoofable client-side).
   // Returns 0 if not connected or NFTs not yet loaded; otherwise the count.
@@ -436,8 +499,9 @@
     // data
     refreshBalance, refreshNfts,
     getRonkeNFTCount, getRonkeHolderTier,
+    claimTrophy,
     // constants (for debugging)
-    RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC,
+    RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT,
   };
 
   if (document.readyState === 'loading') {

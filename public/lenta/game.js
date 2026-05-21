@@ -5715,7 +5715,105 @@ function checkAchievements() {
       showAchievementPopup(a);
     }
   });
+  // Phase 15 — trophy mint trigger (separate from in-game achievement popup).
+  try { if (window.checkTrophyClaimable) window.checkTrophyClaimable(); } catch (_) {}
 }
+
+// Phase 15 — Trophy claim flow UI (modal popup + claim button + status display).
+// Hooks: checkTrophyClaimable() runs after each game event. If user just hit
+// a claimable threshold AND hasn't claimed yet → opens modal.
+const _TROPHY_CLAIMABLES = [
+  // id MUST match Edge Function TROPHY_ACHIEVEMENTS entry.
+  { id: 'T_test_first_kill', label: 'FIRST BLOOD',
+    desc: 'Destroy your first enemy.',
+    statKey: 'totalKills', baseThreshold: 1 },
+];
+
+let _trophyModalShowing = null;   // currently displayed achievement id (anti-spam)
+function showTrophyModal(claimable) {
+  if (_trophyModalShowing === claimable.id) return;
+  _trophyModalShowing = claimable.id;
+  const modal = document.getElementById('trophy-claim-modal');
+  if (!modal) return;
+  document.getElementById('trophy-modal-label').textContent = claimable.label;
+  document.getElementById('trophy-modal-desc').textContent  = claimable.desc;
+  document.getElementById('trophy-modal-status').textContent = '';
+  document.getElementById('trophy-modal-status').className = 'trophy-modal-status';
+  const claimBtn = document.getElementById('trophy-claim-btn');
+  claimBtn.disabled = false;
+  claimBtn.textContent = 'CLAIM NFT';
+  claimBtn.onclick = () => _handleTrophyClaim(claimable);
+  document.getElementById('trophy-skip-btn').onclick = () => closeTrophyModal();
+  modal.classList.add('visible');
+}
+function closeTrophyModal() {
+  const modal = document.getElementById('trophy-claim-modal');
+  if (modal) modal.classList.remove('visible');
+  _trophyModalShowing = null;
+}
+async function _handleTrophyClaim(claimable) {
+  const statusEl = document.getElementById('trophy-modal-status');
+  const btn = document.getElementById('trophy-claim-btn');
+  statusEl.className = 'trophy-modal-status';
+  if (!window.Wallet || !window.Wallet.isConnected()) {
+    statusEl.textContent = 'Connect wallet first';
+    statusEl.classList.add('error');
+    return;
+  }
+  if (!window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    statusEl.textContent = 'Backend unavailable';
+    statusEl.classList.add('error');
+    return;
+  }
+  btn.disabled = true;
+  try {
+    statusEl.textContent = 'Validating achievement...';
+    const res = await window.SupabaseSync.validateAchievement(claimable.id);
+    if (!res.ok || !res.data) {
+      statusEl.textContent = `Validation failed: ${res.data?.error || res.status}`;
+      statusEl.classList.add('error');
+      btn.disabled = false; return;
+    }
+    if (!res.data.eligible) {
+      statusEl.textContent = `Not eligible yet (${res.data.currentValue}/${res.data.effectiveThreshold})`;
+      statusEl.classList.add('error');
+      btn.disabled = false; return;
+    }
+    if (!res.data.claim) {
+      statusEl.textContent = 'No claim signature returned';
+      statusEl.classList.add('error');
+      btn.disabled = false; return;
+    }
+    statusEl.textContent = 'Sign mint transaction in wallet...';
+    const { txHash } = await window.Wallet.claimTrophy(res.data.claim);
+    statusEl.classList.add('success');
+    statusEl.innerHTML = `Minted! <a href="https://saigon-explorer.roninchain.com/tx/${txHash}" target="_blank" style="color:#6fcf5c;text-decoration:underline">${txHash.slice(0,10)}...</a>`;
+    // Mark locally so we don't re-prompt this session
+    if (!Profile.trophyClaims) Profile.trophyClaims = {};
+    Profile.trophyClaims[claimable.id] = { claimedAt: Date.now(), txHash };
+    try { saveProfile(); } catch (_) {}
+    btn.textContent = 'CLAIMED';
+  } catch (e) {
+    console.warn('[trophy claim]', e);
+    statusEl.textContent = 'Error: ' + (e?.shortMessage || e?.message || String(e)).slice(0, 80);
+    statusEl.classList.add('error');
+    btn.disabled = false;
+  }
+}
+// Public hook called by game flow + checkAchievements
+window.checkTrophyClaimable = function checkTrophyClaimable() {
+  if (!Profile.stats) return;
+  if (!Profile.trophyClaims) Profile.trophyClaims = {};
+  for (const t of _TROPHY_CLAIMABLES) {
+    if (Profile.trophyClaims[t.id]) continue;             // already claimed
+    const value = Profile.stats[t.statKey] || 0;
+    if (value >= t.baseThreshold) {
+      showTrophyModal(t);
+      break;                                              // one at a time
+    }
+  }
+};
+window.closeTrophyModal = closeTrophyModal;
 
 // Phase 1 — trophy eligibility tracker. Read-only check, no mint flow yet.
 // Returns { id, label, progress, target, tier, eligible } per claimable achievement.
