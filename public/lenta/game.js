@@ -1344,16 +1344,24 @@ function loadProfile() {
   _ensureTrophyStats();
 }
 
-// Phase 1 — trophy-relevant F12 stats. Backfills missing fields on every load
+// Phase 1+15 — trophy-relevant F12 stats. Backfills missing fields on every load
 // (safe for older saves). Edge Function will validate these server-side later.
 function _ensureTrophyStats() {
   if (!Profile.stats) Profile.stats = {};
+  // Merge counts (cumulative, F12-only — tracked in floor12_merge.js)
   if (typeof Profile.stats.niceMerges !== 'number') Profile.stats.niceMerges = 0;
   if (typeof Profile.stats.perfectMerges !== 'number') Profile.stats.perfectMerges = 0;
   if (typeof Profile.stats.unbelievableMerges !== 'number') Profile.stats.unbelievableMerges = 0;
+  // Run-based aggregates
   if (typeof Profile.stats.f12HighScore !== 'number') Profile.stats.f12HighScore = 0;
   if (typeof Profile.stats.f12TotalRuns !== 'number') Profile.stats.f12TotalRuns = 0;
   if (typeof Profile.stats.f12TotalMinutes !== 'number') Profile.stats.f12TotalMinutes = 0;
+  // Phase 15 — F12-specific kill counters (separate from F11 totalKills)
+  if (typeof Profile.stats.f12EnemyKills !== 'number') Profile.stats.f12EnemyKills = 0;
+  if (typeof Profile.stats.f12BossKills !== 'number') Profile.stats.f12BossKills = 0;
+  // Phase 15 — peak values ever achieved (per-run records, cumulative-best)
+  if (typeof Profile.stats.f12MaxBallValue !== 'number') Profile.stats.f12MaxBallValue = 0;
+  if (typeof Profile.stats.f12MaxComboEver !== 'number') Profile.stats.f12MaxComboEver = 0;
   if (!Profile.trophyClaims) Profile.trophyClaims = {};
 }
 
@@ -5719,15 +5727,60 @@ function checkAchievements() {
   try { if (window.checkTrophyClaimable) window.checkTrophyClaimable(); } catch (_) {}
 }
 
-// Phase 15 — Trophy claim flow UI (modal popup + claim button + status display).
-// Hooks: checkTrophyClaimable() runs after each game event. If user just hit
-// a claimable threshold AND hasn't claimed yet → opens modal.
-const _TROPHY_CLAIMABLES = [
-  // id MUST match Edge Function TROPHY_ACHIEVEMENTS entry.
-  { id: 'T_test_first_kill', label: 'FIRST BLOOD',
-    desc: 'Destroy your first enemy.',
-    statKey: 'totalKills', baseThreshold: 1 },
+// Phase 15 — Tier-based trophy progression. 4 tiers (Bronze/Silver/Gold/Legendary).
+// Each tier has 4 requirements — ALL must be met before claim is enabled.
+// IDs MUST match Edge Function TROPHY_ACHIEVEMENTS entries (server validates same logic).
+// Off-chain rules: edit thresholds here + Edge Function to tune balance over time.
+const TROPHY_TIERS = [
+  {
+    id: 'T_bronze', label: 'BRONZE TROPHY',
+    desc: 'Onboarding mastery — moderate skill required.',
+    requirements: [
+      { id: 'r_perfect_10', label: '10 PERFECT merges', statKey: 'perfectMerges', threshold: 10 },
+      { id: 'r_kills_50',   label: '50 enemy kills (F12)', statKey: 'f12EnemyKills', threshold: 50 },
+      { id: 'r_score_200',  label: 'F12 score 200 (single run)', statKey: 'f12HighScore', threshold: 200 },
+      { id: 'r_tier_5',     label: 'Create tier-5 ball (value 32)', statKey: 'f12MaxBallValue', threshold: 32 },
+    ],
+  },
+  {
+    id: 'T_silver', label: 'SILVER TROPHY',
+    desc: 'Advanced mastery — peak chains and boss kills.',
+    requirements: [
+      { id: 's_unb_5',      label: '5 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 5 },
+      { id: 's_boss_1',     label: 'Defeat first minotaur boss', statKey: 'f12BossKills', threshold: 1 },
+      { id: 's_score_1k',   label: 'F12 score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
+      { id: 's_combo_5',    label: 'Chain ×5 in a single run', statKey: 'f12MaxComboEver', threshold: 5 },
+    ],
+  },
+  {
+    id: 'T_gold', label: 'GOLD TROPHY',
+    desc: 'Elite mastery — sustained skill and grinding.',
+    requirements: [
+      { id: 'g_score_5k',   label: 'F12 score 5,000 (single run)', statKey: 'f12HighScore', threshold: 5000 },
+      { id: 'g_unb_50',     label: '50 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 50 },
+      { id: 'g_tier_8',     label: 'Create tier-8 ball (value 256)', statKey: 'f12MaxBallValue', threshold: 256 },
+      { id: 'g_runs_100',   label: '100 F12 runs completed', statKey: 'f12TotalRuns', threshold: 100 },
+    ],
+  },
+  {
+    id: 'T_legendary', label: 'LEGENDARY TROPHY',
+    desc: 'Extreme top — only the most dedicated players reach this.',
+    requirements: [
+      { id: 'l_score_25k',  label: 'F12 score 25,000 (single run)', statKey: 'f12HighScore', threshold: 25000 },
+      { id: 'l_unb_250',    label: '250 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 250 },
+      { id: 'l_tier_10',    label: 'Create tier-10 ball (value 1024 — max)', statKey: 'f12MaxBallValue', threshold: 1024 },
+      { id: 'l_runs_500',   label: '500 F12 runs completed', statKey: 'f12TotalRuns', threshold: 500 },
+    ],
+  },
 ];
+
+// Backwards-compat shim — old code references _TROPHY_CLAIMABLES.
+// Build flat list of all requirements (still tracked, but claim is per-tier).
+const _TROPHY_CLAIMABLES = TROPHY_TIERS.flatMap(t => t.requirements.map(r => ({
+  id: t.id + '__' + r.id,
+  label: t.label + ': ' + r.label,
+  statKey: r.statKey, baseThreshold: r.threshold,
+})));
 
 let _trophyModalShowing = null;   // currently displayed achievement id (anti-spam)
 function showTrophyModal(claimable) {
@@ -5800,16 +5853,35 @@ async function _handleTrophyClaim(claimable) {
     btn.disabled = false;
   }
 }
-// Public hook called by game flow + checkAchievements
+// Phase 15 — tier eligibility checker. Returns array of tier progress summaries.
+window.getTrophyTierStatus = function getTrophyTierStatus() {
+  _ensureTrophyStats();
+  return TROPHY_TIERS.map(tier => {
+    const reqs = tier.requirements.map(r => {
+      const value = Profile.stats[r.statKey] || 0;
+      return { ...r, current: value, met: value >= r.threshold };
+    });
+    const allMet = reqs.every(r => r.met);
+    const claimed = !!(Profile.trophyClaims && Profile.trophyClaims[tier.id]);
+    return {
+      id: tier.id, label: tier.label, desc: tier.desc,
+      requirements: reqs,
+      progress: reqs.filter(r => r.met).length + '/' + reqs.length,
+      eligible: allMet && !claimed,
+      claimed,
+    };
+  });
+};
+
+// Public hook — auto-opens claim modal when a tier becomes fully eligible.
 window.checkTrophyClaimable = function checkTrophyClaimable() {
   if (!Profile.stats) return;
   if (!Profile.trophyClaims) Profile.trophyClaims = {};
-  for (const t of _TROPHY_CLAIMABLES) {
-    if (Profile.trophyClaims[t.id]) continue;             // already claimed
-    const value = Profile.stats[t.statKey] || 0;
-    if (value >= t.baseThreshold) {
-      showTrophyModal(t);
-      break;                                              // one at a time
+  const statuses = window.getTrophyTierStatus();
+  for (const t of statuses) {
+    if (t.eligible && !t.claimed) {
+      showTrophyModal({ id: t.id, label: t.label, desc: t.desc });
+      break;     // one at a time
     }
   }
 };
