@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpX">
+  <link rel="stylesheet" href="style.css?v=hpY">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -71,6 +71,8 @@
 </head>
 
 <body>
+  <!-- Global sound toggle (floating, always visible) -->
+  <button id="sound-toggle-btn" class="sound-toggle-btn" onclick="toggleSound()" title="Toggle sound">SOUND ON</button>
   <div id="app">
 
     <!-- MENU -->
@@ -1465,7 +1467,7 @@
         </div>
         <div class="trophy-hero-info">
           <div class="trophy-hero-title">PEWPEW TROPHIES</div>
-          <div class="trophy-hero-subtitle">Collectible NFT trophy on Ronin chain</div>
+          <div class="trophy-hero-subtitle">4 challenges · 4 mints · same iconic PewPew NFT</div>
           <ul class="trophy-hero-features">
             <li><span class="thf-mark">●</span> <strong>10,000</strong> max supply ever</li>
             <li><span class="thf-mark thf-free">★</span> First <strong>1,000</strong> mints are <strong>FREE</strong></li>
@@ -1673,7 +1675,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp5tro"></script>
-  <script src="game.js?v=cmd384close"></script>
+  <script src="game.js?v=cmd385chal"></script>
   <script src="floor12_merge.js?v=cmd690tier"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>

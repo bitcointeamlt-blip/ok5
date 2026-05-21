@@ -13442,3 +13442,47 @@ kbd {
   color: #fff;
   box-shadow: 0 0 12px rgba(232, 93, 93, 0.5);
 }
+
+/* ── Global Sound Toggle Button ──────────────────────────────── */
+.sound-toggle-btn {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  z-index: 9998;
+  background: rgba(10, 20, 36, 0.85);
+  color: #4a9da6;
+  border: 2px solid #4a9da6;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 8px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 0 8px rgba(74,157,166,0.3);
+  backdrop-filter: blur(4px);
+}
+.sound-toggle-btn:hover {
+  background: rgba(74,157,166,0.2);
+  color: #fff;
+  border-color: #6fc4ce;
+  box-shadow: 0 0 14px rgba(74,157,166,0.6);
+}
+.sound-toggle-btn.muted {
+  color: #e85d5d;
+  border-color: #e85d5d;
+  box-shadow: 0 0 8px rgba(232,93,93,0.3);
+}
+.sound-toggle-btn.muted:hover {
+  background: rgba(232,93,93,0.15);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(232,93,93,0.5);
+}
+@media (max-width: 600px) {
+  .sound-toggle-btn {
+    bottom: 8px;
+    left: 8px;
+    padding: 6px 10px;
+    font-size: 7px;
+  }
+}

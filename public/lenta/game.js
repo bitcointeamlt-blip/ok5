@@ -5731,10 +5731,13 @@ function checkAchievements() {
 // Each tier has 4 requirements — ALL must be met before claim is enabled.
 // IDs MUST match Edge Function TROPHY_ACHIEVEMENTS entries (server validates same logic).
 // Off-chain rules: edit thresholds here + Edge Function to tune balance over time.
+// Tier IDs (T_bronze etc.) kept for backwards-compat with contract/Edge Function.
+// User-facing labels are challenge-based to remove the bronze/silver/gold/legendary
+// rarity implication (all 4 earn the same PewPew NFT).
 const TROPHY_TIERS = [
   {
-    id: 'T_bronze', label: 'BRONZE TROPHY',
-    desc: 'Onboarding mastery — moderate skill required.',
+    id: 'T_bronze', label: 'CHALLENGE I',
+    desc: 'Onboarding milestones — moderate skill required.',
     requirements: [
       { id: 'r_perfect_10', label: '10 PERFECT merges', statKey: 'perfectMerges', threshold: 10 },
       { id: 'r_kills_50',   label: '50 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 50 },
@@ -5743,8 +5746,8 @@ const TROPHY_TIERS = [
     ],
   },
   {
-    id: 'T_silver', label: 'SILVER TROPHY',
-    desc: 'Advanced mastery — peak chains and boss kills.',
+    id: 'T_silver', label: 'CHALLENGE II',
+    desc: 'Advanced milestones — peak chains and boss kills.',
     requirements: [
       { id: 's_unb_5',      label: '5 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 5 },
       { id: 's_boss_1',     label: 'Defeat first minotaur boss', statKey: 'f12BossKills', threshold: 1 },
@@ -5753,8 +5756,8 @@ const TROPHY_TIERS = [
     ],
   },
   {
-    id: 'T_gold', label: 'GOLD TROPHY',
-    desc: 'Elite mastery — sustained skill and grinding.',
+    id: 'T_gold', label: 'CHALLENGE III',
+    desc: 'Elite milestones — sustained skill and grinding.',
     requirements: [
       { id: 'g_kills_200',  label: '200 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 200 },
       { id: 'g_unb_50',     label: '50 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 50 },
@@ -5763,8 +5766,8 @@ const TROPHY_TIERS = [
     ],
   },
   {
-    id: 'T_legendary', label: 'LEGENDARY TROPHY',
-    desc: 'Extreme top — only the most dedicated players reach this.',
+    id: 'T_legendary', label: 'CHALLENGE IV',
+    desc: 'Extreme milestones — only the most dedicated players reach this.',
     requirements: [
       { id: 'l_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
       { id: 'l_unb_250',    label: '250 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 250 },
@@ -5903,8 +5906,53 @@ window.checkTrophyClaimable = function checkTrophyClaimable() {
 };
 window.closeTrophyModal = closeTrophyModal;
 
+// Global sound toggle — mutes ALL audio sources (HTML <audio> + Web Audio API + game-specific).
+// Persists via localStorage key `lenta_muted`.
+window.toggleSound = function() {
+  const muted = localStorage.getItem('lenta_muted') === '1';
+  const newState = !muted;
+  try { localStorage.setItem('lenta_muted', newState ? '1' : '0'); } catch (_) {}
+  _applyGlobalMute(newState);
+};
+
+function _applyGlobalMute(muted) {
+  // 1. All HTML <audio> elements
+  try { document.querySelectorAll('audio').forEach(a => { a.muted = muted; }); } catch (_) {}
+  // 2. F12 BGM player (if active)
+  try { if (window._F12Music && typeof window._F12Music.setMuted === 'function') window._F12Music.setMuted(muted);
+        else if (window._F12Music) window._F12Music.muted = muted; } catch (_) {}
+  // 3. F12 SFX
+  try { if (window._F12Audio) window._F12Audio.muted = muted; } catch (_) {}
+  // 4. Generic BGM systems (hub-scene-bgm etc.)
+  try { if (window._BGM) window._BGM.muted = muted; } catch (_) {}
+  try { if (window._SceneBGM && typeof window._SceneBGM.setMuted === 'function') window._SceneBGM.setMuted(muted); } catch (_) {}
+  // 5. Web Audio API master gain (if exposed)
+  try { if (window._audioCtx && window._masterGain) { window._masterGain.gain.value = muted ? 0 : 1; } } catch (_) {}
+  // 6. Update button visual
+  const btn = document.getElementById('sound-toggle-btn');
+  if (btn) {
+    btn.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+    btn.classList.toggle('muted', muted);
+  }
+}
+window._applyGlobalMute = _applyGlobalMute;
+
+// Apply saved mute state on load + watch for new <audio> elements
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('lenta_muted') === '1';
+  _applyGlobalMute(saved);
+  // Re-apply periodically for dynamically-added audio (lazy approach)
+  setInterval(() => {
+    if (localStorage.getItem('lenta_muted') === '1') {
+      document.querySelectorAll('audio:not([data-mute-applied])').forEach(a => {
+        a.muted = true; a.setAttribute('data-mute-applied', '1');
+      });
+    }
+  }, 2000);
+});
+
 // Phase 15 — Trophy Progress Panel (full tier overview UI).
-const _TIER_ICONS = { T_bronze: '●', T_silver: '◆', T_gold: '★', T_legendary: '♛' };
+const _TIER_ICONS = { T_bronze: 'I', T_silver: 'II', T_gold: 'III', T_legendary: 'IV' };
 const _TIER_CLASS = { T_bronze: 'tier-bronze', T_silver: 'tier-silver', T_gold: 'tier-gold', T_legendary: 'tier-legendary' };
 
 window.openTrophyPanel = function openTrophyPanel() {
