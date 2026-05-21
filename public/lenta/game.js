@@ -5887,6 +5887,96 @@ window.checkTrophyClaimable = function checkTrophyClaimable() {
 };
 window.closeTrophyModal = closeTrophyModal;
 
+// Phase 15 — Trophy Progress Panel (full tier overview UI).
+const _TIER_ICONS = { T_bronze: '●', T_silver: '◆', T_gold: '★', T_legendary: '♛' };
+const _TIER_CLASS = { T_bronze: 'tier-bronze', T_silver: 'tier-silver', T_gold: 'tier-gold', T_legendary: 'tier-legendary' };
+
+window.openTrophyPanel = function openTrophyPanel() {
+  renderTrophyPanel();
+  document.getElementById('trophy-overlay').classList.add('active');
+};
+window.closeTrophyPanel = function closeTrophyPanel() {
+  document.getElementById('trophy-overlay').classList.remove('active');
+};
+
+function renderTrophyPanel() {
+  const grid = document.getElementById('trophy-tier-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const statuses = window.getTrophyTierStatus ? window.getTrophyTierStatus() : [];
+  const claimedCount = statuses.filter(s => s.claimed).length;
+  const counter = document.getElementById('trophy-panel-counter');
+  if (counter) counter.textContent = `${claimedCount} / ${statuses.length}`;
+
+  for (const tier of statuses) {
+    const card = document.createElement('div');
+    card.className = `tier-card ${_TIER_CLASS[tier.id] || ''} ${tier.eligible ? 'tier-eligible' : ''} ${tier.claimed ? 'tier-claimed' : ''}`;
+
+    const metCount = tier.requirements.filter(r => r.met).length;
+    const reqHtml = tier.requirements.map(r => `
+      <div class="tier-req ${r.met ? 'met' : ''}">
+        <span class="tier-req-check">${r.met ? '✓' : '○'}</span>
+        <span class="tier-req-text">${r.label}</span>
+        <span class="tier-req-progress">${_formatProgress(r.currentValue, r.threshold)}</span>
+      </div>
+    `).join('');
+
+    let actionHtml;
+    if (tier.claimed) {
+      const txHash = (Profile.trophyClaims && Profile.trophyClaims[tier.id] && Profile.trophyClaims[tier.id].txHash) || '';
+      const link = txHash ? `<a href="https://saigon-explorer.roninchain.com/tx/${txHash}" target="_blank" class="tier-claimed-link">view tx</a>` : '';
+      actionHtml = `
+        <div class="tier-actions">
+          <button class="tier-claim-btn claimed">✓ CLAIMED</button>
+          ${link}
+        </div>`;
+    } else if (tier.eligible) {
+      actionHtml = `
+        <div class="tier-actions">
+          <button class="tier-claim-btn enabled" data-tier="${tier.id}">CLAIM NFT</button>
+        </div>`;
+    } else {
+      actionHtml = `
+        <div class="tier-actions">
+          <button class="tier-claim-btn disabled">LOCKED — ${metCount}/${tier.requirements.length} reqs</button>
+        </div>`;
+    }
+
+    card.innerHTML = `
+      <div class="tier-card-header">
+        <span class="tier-card-icon">${_TIER_ICONS[tier.id] || '●'}</span>
+        <span class="tier-card-title">${tier.label}</span>
+        <span class="tier-card-progress ${metCount === tier.requirements.length ? 'complete' : ''}">${metCount}/${tier.requirements.length}</span>
+      </div>
+      <div class="tier-card-desc">${tier.desc}</div>
+      <div class="tier-reqs">${reqHtml}</div>
+      ${actionHtml}
+    `;
+
+    grid.appendChild(card);
+  }
+
+  // Wire claim buttons (single delegation)
+  grid.querySelectorAll('.tier-claim-btn.enabled').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tierId = e.target.getAttribute('data-tier');
+      const tier = TROPHY_TIERS.find(t => t.id === tierId);
+      if (tier) {
+        closeTrophyPanel();
+        // Show claim modal — reuse existing flow
+        setTimeout(() => showTrophyModal({ id: tier.id, label: tier.label, desc: tier.desc }), 200);
+      }
+    });
+  });
+}
+
+function _formatProgress(current, threshold) {
+  // Cap display at 999k for readability
+  const fmt = (n) => n >= 1000 ? (n >= 1000000 ? (n/1000000).toFixed(1)+'m' : (n/1000).toFixed(1)+'k') : n;
+  return `${fmt(current)}/${fmt(threshold)}`;
+}
+
 // Phase 1 — trophy eligibility tracker. Read-only check, no mint flow yet.
 // Returns { id, label, progress, target, tier, eligible } per claimable achievement.
 // UI/Edge Function naudos šitą informaciją Phase 2-3 metu.

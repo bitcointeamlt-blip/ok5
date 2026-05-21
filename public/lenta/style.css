@@ -12735,3 +12735,221 @@ kbd {
   color: #fff;
   border-color: #aab;
 }
+
+/* ── Trophy Progress Panel (Phase 15) ───────────────────────────── */
+.btn-trophy-open {
+  background: linear-gradient(180deg, #ffcf5c 0%, #d49a2a 100%);
+  color: #1a1208;
+  border: 2px solid #8a5a18;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 10px;
+  padding: 8px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+.btn-trophy-open:hover {
+  background: linear-gradient(180deg, #fff 0%, #ffcf5c 100%);
+  box-shadow: 0 0 12px rgba(255,207,92,0.6);
+}
+
+#trophy-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(8,12,22,0.92);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(6px);
+}
+#trophy-overlay.active { display: flex; }
+#trophy-panel {
+  background: linear-gradient(180deg, #1f2940 0%, #0c1020 100%);
+  border: 3px solid #ffcf5c;
+  box-shadow: 0 0 48px rgba(255,207,92,0.35), inset 0 0 24px rgba(255,207,92,0.08);
+  border-radius: 8px;
+  padding: 22px 26px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+}
+.trophy-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #4a3a18;
+}
+.trophy-panel-icon { font-size: 24px; color: #ffcf5c; text-shadow: 0 0 14px #ffcf5c; }
+.trophy-panel-title { flex: 1; font-size: 14px; color: #ffcf5c; letter-spacing: 1.5px; }
+.trophy-panel-counter {
+  font-size: 10px;
+  color: #d49a2a;
+  padding: 4px 10px;
+  background: rgba(255,207,92,0.1);
+  border: 1px solid #6a4a18;
+  border-radius: 4px;
+}
+.trophy-panel-subtitle {
+  font-size: 9px;
+  color: #8a9aaa;
+  margin-bottom: 18px;
+  letter-spacing: 0.5px;
+}
+
+#trophy-tier-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.tier-card {
+  background: linear-gradient(180deg, #14182a 0%, #0a0c18 100%);
+  border: 2px solid #3a3a55;
+  border-radius: 6px;
+  padding: 14px 16px;
+  transition: all 0.2s ease;
+}
+.tier-card.tier-eligible {
+  border-color: #ffcf5c;
+  box-shadow: 0 0 20px rgba(255,207,92,0.4);
+  animation: tier-pulse 2s ease-in-out infinite;
+}
+.tier-card.tier-claimed {
+  border-color: #6fcf5c;
+  background: linear-gradient(180deg, #14281a 0%, #0a180c 100%);
+}
+@keyframes tier-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(255,207,92,0.4); }
+  50% { box-shadow: 0 0 32px rgba(255,207,92,0.7); }
+}
+
+.tier-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.tier-card-icon {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+}
+.tier-card-title { flex: 1; font-size: 12px; letter-spacing: 1px; }
+.tier-card-progress {
+  font-size: 9px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+}
+.tier-card-progress.complete { background: rgba(111,207,92,0.25); color: #6fcf5c; }
+
+/* Tier-specific colors */
+.tier-bronze .tier-card-icon { color: #cd7f32; text-shadow: 0 0 8px #cd7f32; }
+.tier-bronze .tier-card-title { color: #d4a373; }
+.tier-silver .tier-card-icon { color: #c0c0c0; text-shadow: 0 0 8px #c0c0c0; }
+.tier-silver .tier-card-title { color: #d4d4d4; }
+.tier-gold .tier-card-icon { color: #ffd700; text-shadow: 0 0 8px #ffd700; }
+.tier-gold .tier-card-title { color: #ffe168; }
+.tier-legendary .tier-card-icon { color: #b04dff; text-shadow: 0 0 12px #b04dff; }
+.tier-legendary .tier-card-title { color: #d4a4ff; }
+
+.tier-card-desc {
+  font-size: 8px;
+  color: #6a7a8a;
+  margin-bottom: 12px;
+  letter-spacing: 0.3px;
+}
+
+.tier-reqs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tier-req {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  color: #8a9aaa;
+}
+.tier-req.met { color: #6fcf5c; }
+.tier-req-check {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  font-size: 11px;
+}
+.tier-req-text { flex: 1; }
+.tier-req-progress {
+  font-size: 8px;
+  color: #6a7a8a;
+  padding: 1px 6px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 3px;
+}
+.tier-req.met .tier-req-progress { background: rgba(111,207,92,0.15); color: #6fcf5c; }
+
+.tier-actions { display: flex; gap: 8px; margin-top: 4px; }
+.tier-claim-btn {
+  flex: 1;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 2px solid;
+  transition: all 0.15s ease;
+}
+.tier-claim-btn.enabled {
+  background: #ffcf5c;
+  color: #1a1208;
+  border-color: #ffcf5c;
+}
+.tier-claim-btn.enabled:hover {
+  background: #fff;
+  box-shadow: 0 0 16px #ffcf5c;
+}
+.tier-claim-btn.disabled {
+  background: #333;
+  color: #777;
+  border-color: #555;
+  cursor: not-allowed;
+}
+.tier-claim-btn.claimed {
+  background: #1a3a1a;
+  color: #6fcf5c;
+  border-color: #6fcf5c;
+  cursor: default;
+}
+.tier-claimed-link {
+  font-size: 8px;
+  color: #6fcf5c;
+  text-decoration: underline;
+  align-self: center;
+}
+
+.btn-trophy-close {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  color: #8a9aaa;
+  border: 2px solid #444;
+  border-radius: 4px;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-trophy-close:hover { color: #fff; border-color: #aab; }

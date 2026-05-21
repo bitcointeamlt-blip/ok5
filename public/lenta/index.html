@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpL">
+  <link rel="stylesheet" href="style.css?v=hpM">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1344,6 +1344,8 @@
           </div>
           <button class="btn-ach-open" onclick="openAchievementsPanel()"
             style="width:100%; margin-top:4px;">ACHIEVEMENTS</button>
+          <button class="btn-trophy-open" onclick="openTrophyPanel()"
+            style="width:100%; margin-top:4px;">TROPHIES</button>
         </div>
       </div>
 
@@ -1442,6 +1444,20 @@
       </div>
       <div id="ach-grid-main"></div>
       <button class="btn-ach-close" onclick="closeAchievementsPanel()">CLOSE</button>
+    </div>
+  </div>
+
+  <!-- Trophy Progress Panel (Phase 15 — tier progression overview) -->
+  <div id="trophy-overlay">
+    <div id="trophy-panel">
+      <div class="trophy-panel-header">
+        <span class="trophy-panel-icon">★</span>
+        <span class="trophy-panel-title">PEWPEW TROPHIES</span>
+        <span id="trophy-panel-counter" class="trophy-panel-counter">0 / 4</span>
+      </div>
+      <div class="trophy-panel-subtitle">Mint NFT trophies on Ronin by mastering F12</div>
+      <div id="trophy-tier-grid"></div>
+      <button class="btn-trophy-close" onclick="closeTrophyPanel()">CLOSE</button>
     </div>
   </div>
 
@@ -1605,7 +1621,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp5tro"></script>
-  <script src="game.js?v=cmd374tier"></script>
+  <script src="game.js?v=cmd375panel"></script>
   <script src="floor12_merge.js?v=cmd690tier"></script>
   <script src="wallet-ui.js?v=pewpew7"></script>
   <script>
