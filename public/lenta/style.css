@@ -12953,3 +12953,71 @@ kbd {
   transition: all 0.15s ease;
 }
 .btn-trophy-close:hover { color: #fff; border-color: #aab; }
+
+/* ── Trophy NFT Prize Preview ──────────────────────────────────── */
+.trophy-prize-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(255,207,92,0.08) 0%, rgba(255,207,92,0.02) 100%);
+  border: 1px solid rgba(255,207,92,0.3);
+  border-radius: 6px;
+  padding: 14px;
+  margin-bottom: 18px;
+}
+.trophy-prize-img {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 12px rgba(255,207,92,0.5));
+  flex-shrink: 0;
+}
+.trophy-prize-caption {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trophy-prize-name {
+  font-size: 12px;
+  color: #ffcf5c;
+  letter-spacing: 1.2px;
+  text-shadow: 0 0 8px rgba(255,207,92,0.6);
+}
+.trophy-prize-meta {
+  font-size: 8px;
+  color: #8a9aaa;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+}
+
+/* Trophy claim modal — NFT image */
+.trophy-modal-img {
+  display: block;
+  width: 140px;
+  height: 140px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  margin: 8px auto 14px;
+  filter: drop-shadow(0 0 16px rgba(255,207,92,0.7));
+}
+
+/* TROPHIES button — use arcade icon instead of text */
+.wui-trophy-btn {
+  background-image: url('PewPewTrophies.png') !important;
+  background-size: 72% auto !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-color: #ffcf5c !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  border: 2px solid #8a5a18 !important;
+  box-shadow: 0 0 8px rgba(255,207,92,0.4);
+  transition: all 0.2s ease;
+}
+.wui-trophy-btn:hover {
+  background-color: #fff !important;
+  box-shadow: 0 0 16px rgba(255,207,92,0.8);
+  transform: scale(1.08);
+}
