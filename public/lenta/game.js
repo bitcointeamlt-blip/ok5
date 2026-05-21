@@ -6017,9 +6017,6 @@ function renderTrophyPanel() {
   grid.innerHTML = '';
 
   const statuses = window.getTrophyTierStatus ? window.getTrophyTierStatus() : [];
-  const claimedCount = statuses.filter(s => s.claimed).length;
-  const counter = document.getElementById('trophy-panel-counter');
-  if (counter) counter.textContent = `${claimedCount} / ${statuses.length}`;
 
   for (const tier of statuses) {
     const card = document.createElement('div');

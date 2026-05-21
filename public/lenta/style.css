@@ -13416,3 +13416,29 @@ kbd {
 @media (max-width: 600px) {
   .trophy-pricing-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Trophy panel close X button ──────────────────────────────── */
+.trophy-panel-close-x {
+  background: transparent;
+  border: 2px solid #6a4a18;
+  color: #ffcf5c;
+  font-size: 16px;
+  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s ease;
+  font-weight: 700;
+}
+.trophy-panel-close-x:hover {
+  background: rgba(232, 93, 93, 0.2);
+  border-color: #e85d5d;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(232, 93, 93, 0.5);
+}
