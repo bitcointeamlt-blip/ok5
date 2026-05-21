@@ -5737,8 +5737,8 @@ const TROPHY_TIERS = [
     desc: 'Onboarding mastery — moderate skill required.',
     requirements: [
       { id: 'r_perfect_10', label: '10 PERFECT merges', statKey: 'perfectMerges', threshold: 10 },
-      { id: 'r_kills_50',   label: '50 enemy kills (F12)', statKey: 'f12EnemyKills', threshold: 50 },
-      { id: 'r_score_200',  label: 'F12 score 200 (single run)', statKey: 'f12HighScore', threshold: 200 },
+      { id: 'r_kills_50',   label: '50 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 50 },
+      { id: 'r_score_200',  label: 'PewPew Saga score 200 (single run)', statKey: 'f12HighScore', threshold: 200 },
       { id: 'r_tier_5',     label: 'Create tier-5 ball (value 32)', statKey: 'f12MaxBallValue', threshold: 32 },
     ],
   },
@@ -5748,7 +5748,7 @@ const TROPHY_TIERS = [
     requirements: [
       { id: 's_unb_5',      label: '5 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 5 },
       { id: 's_boss_1',     label: 'Defeat first minotaur boss', statKey: 'f12BossKills', threshold: 1 },
-      { id: 's_score_1k',   label: 'F12 score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
+      { id: 's_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
       { id: 's_combo_5',    label: 'Chain ×5 in a single run', statKey: 'f12MaxComboEver', threshold: 5 },
     ],
   },
@@ -5756,20 +5756,20 @@ const TROPHY_TIERS = [
     id: 'T_gold', label: 'GOLD TROPHY',
     desc: 'Elite mastery — sustained skill and grinding.',
     requirements: [
-      { id: 'g_score_5k',   label: 'F12 score 5,000 (single run)', statKey: 'f12HighScore', threshold: 5000 },
+      { id: 'g_kills_200',  label: '200 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 200 },
       { id: 'g_unb_50',     label: '50 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 50 },
       { id: 'g_tier_8',     label: 'Create tier-8 ball (value 256)', statKey: 'f12MaxBallValue', threshold: 256 },
-      { id: 'g_runs_100',   label: '100 F12 runs completed', statKey: 'f12TotalRuns', threshold: 100 },
+      { id: 'g_runs_30',    label: '30 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 30 },
     ],
   },
   {
     id: 'T_legendary', label: 'LEGENDARY TROPHY',
     desc: 'Extreme top — only the most dedicated players reach this.',
     requirements: [
-      { id: 'l_score_25k',  label: 'F12 score 25,000 (single run)', statKey: 'f12HighScore', threshold: 25000 },
+      { id: 'l_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
       { id: 'l_unb_250',    label: '250 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 250 },
       { id: 'l_tier_10',    label: 'Create tier-10 ball (value 1024 — max)', statKey: 'f12MaxBallValue', threshold: 1024 },
-      { id: 'l_runs_500',   label: '500 F12 runs completed', statKey: 'f12TotalRuns', threshold: 500 },
+      { id: 'l_runs_50',    label: '50 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 50 },
     ],
   },
 ];
