@@ -5976,7 +5976,7 @@ async function _refreshTrophyPricing() {
     const rem = Number(remaining);
     // Header price (round to readable)
     const nowEl = document.getElementById('trophy-pricing-now');
-    if (nowEl) nowEl.textContent = priceRon === 0 ? 'FREE' : (priceRon + ' RON');
+    if (nowEl) nowEl.innerHTML = priceRon === 0 ? 'FREE' : (priceRon + ' <em style="font-size:9px;color:#d49a2a;font-style:normal;">RON</em>');
     const infoEl = document.getElementById('trophy-pricing-info');
     if (infoEl) infoEl.textContent = `Batch ${batchNum + 1} / 10 · ${rem.toLocaleString()} tokens left in this batch`;
     // Highlight current batch + mark passed ones
