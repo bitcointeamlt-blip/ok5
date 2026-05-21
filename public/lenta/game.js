@@ -5999,12 +5999,6 @@ async function _refreshTrophyPricing() {
         nextSubEl.textContent = `After ${rem.toLocaleString()} more mints`;
       }
     }
-    // Highlight current batch + mark passed ones
-    document.querySelectorAll('.trophy-price-cell').forEach((el, idx) => {
-      el.classList.remove('current', 'passed');
-      if (idx < batchNum) el.classList.add('passed');
-      else if (idx === batchNum) el.classList.add('current');
-    });
     // Stash for claim modal too
     window._trophyCurrentPriceRon = priceRon;
     window._trophyCurrentBatch = batchNum;
