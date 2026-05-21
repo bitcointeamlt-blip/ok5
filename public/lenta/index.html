@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpO">
+  <link rel="stylesheet" href="style.css?v=hpP">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1457,11 +1457,22 @@
         <span id="trophy-panel-counter" class="trophy-panel-counter">0 / 4</span>
       </div>
       <div class="trophy-panel-subtitle">Mint NFT trophies on Ronin by mastering PewPew Saga</div>
-      <div class="trophy-prize-preview">
-        <img src="PewPewTrophies.png" alt="PewPew Trophy NFT" class="trophy-prize-img"/>
-        <div class="trophy-prize-caption">
-          <div class="trophy-prize-name">PEWPEW ARCADE</div>
-          <div class="trophy-prize-meta">ERC-721 · Ronin chain · 10,000 max supply · 5% royalty</div>
+      <!-- Hero card — NFT showcase with CTA -->
+      <div class="trophy-hero">
+        <div class="trophy-hero-imgwrap">
+          <img src="PewPewTrophies.png" alt="PewPew Arcade NFT" class="trophy-hero-img"/>
+          <div class="trophy-hero-glow"></div>
+        </div>
+        <div class="trophy-hero-info">
+          <div class="trophy-hero-title">PEWPEW ARCADE</div>
+          <div class="trophy-hero-subtitle">Collectible NFT trophy on Ronin chain</div>
+          <ul class="trophy-hero-features">
+            <li><span class="thf-mark">●</span> <strong>10,000</strong> max supply ever</li>
+            <li><span class="thf-mark thf-free">★</span> First <strong>1,000</strong> mints are <strong>FREE</strong></li>
+            <li><span class="thf-mark">●</span> Earn by mastering PewPew Saga</li>
+            <li><span class="thf-mark">●</span> Trade on Ronin marketplaces · 5% royalty</li>
+          </ul>
+          <button id="trophy-hero-cta" class="trophy-hero-cta">VIEW MY PROGRESS ↓</button>
         </div>
       </div>
 
@@ -1657,7 +1668,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp5tro"></script>
-  <script src="game.js?v=cmd377price"></script>
+  <script src="game.js?v=cmd378hero"></script>
   <script src="floor12_merge.js?v=cmd690tier"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>

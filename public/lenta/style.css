@@ -13123,3 +13123,145 @@ kbd {
   display: inline-block;
   letter-spacing: 0.8px;
 }
+
+/* ── Trophy Hero Card (Phase 15 NFT showcase) ───────────────────── */
+.trophy-hero {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  background: linear-gradient(135deg, #1a1f3a 0%, #0a0c1a 50%, #1a1208 100%);
+  border: 2px solid #ffcf5c;
+  border-radius: 8px;
+  padding: 18px;
+  margin-bottom: 18px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 32px rgba(255,207,92,0.25), inset 0 0 24px rgba(255,207,92,0.06);
+}
+.trophy-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(255,255,255,0.02) 3px, rgba(255,255,255,0.02) 4px);
+  pointer-events: none;
+}
+
+.trophy-hero-imgwrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trophy-hero-img {
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
+}
+.trophy-hero-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255,207,92,0.4) 0%, rgba(255,207,92,0) 65%);
+  z-index: 1;
+  animation: hero-glow-pulse 3s ease-in-out infinite;
+}
+@keyframes hero-glow-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.trophy-hero-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+}
+.trophy-hero-title {
+  font-size: 16px;
+  color: #ffcf5c;
+  letter-spacing: 2px;
+  text-shadow: 0 0 12px #ffcf5c, 0 2px 0 #000;
+  margin-bottom: 2px;
+}
+.trophy-hero-subtitle {
+  font-size: 8px;
+  color: #8a9aaa;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+}
+.trophy-hero-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trophy-hero-features li {
+  font-size: 9px;
+  color: #c5d0d8;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+.trophy-hero-features strong { color: #ffcf5c; }
+.thf-mark {
+  display: inline-block;
+  width: 12px;
+  color: #4a9da6;
+  font-size: 8px;
+  text-align: center;
+}
+.thf-mark.thf-free {
+  color: #6fcf5c;
+  text-shadow: 0 0 6px #6fcf5c;
+}
+
+.trophy-hero-cta {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 10px 18px;
+  background: linear-gradient(180deg, #ffcf5c 0%, #d49a2a 100%);
+  color: #1a1208;
+  border: 2px solid #8a5a18;
+  border-radius: 5px;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 9px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+  box-shadow: 0 2px 0 #6a4214, 0 0 10px rgba(255,207,92,0.5);
+  transition: all 0.15s ease;
+}
+.trophy-hero-cta:hover {
+  background: linear-gradient(180deg, #fff 0%, #ffcf5c 100%);
+  box-shadow: 0 2px 0 #6a4214, 0 0 20px rgba(255,207,92,0.9);
+  transform: translateY(-1px);
+}
+.trophy-hero-cta:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 #6a4214, 0 0 8px rgba(255,207,92,0.7);
+}
+
+/* Mobile: hero stacks vertically */
+@media (max-width: 600px) {
+  .trophy-hero {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .trophy-hero-imgwrap { width: 140px; }
+  .trophy-hero-img { width: 130px; height: 130px; }
+  .trophy-hero-features li { justify-content: flex-start; }
+  .trophy-hero-cta { align-self: center; }
+}

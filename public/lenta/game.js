@@ -5912,6 +5912,34 @@ window.openTrophyPanel = function openTrophyPanel() {
   document.getElementById('trophy-overlay').classList.add('active');
   // Fire-and-forget live pricing fetch (doesn't block UI)
   _refreshTrophyPricing().catch(() => {});
+  // Wire hero CTA → label + action depend on state (eligible vs locked vs all claimed)
+  const cta = document.getElementById('trophy-hero-cta');
+  if (cta) {
+    const statuses = window.getTrophyTierStatus ? window.getTrophyTierStatus() : [];
+    const eligible = statuses.find(s => s.eligible && !s.claimed);
+    const allClaimed = statuses.length > 0 && statuses.every(s => s.claimed);
+    if (eligible) {
+      cta.textContent = `CLAIM ${eligible.label.split(' ')[0]} NOW ★`;
+      cta.style.animation = 'hero-glow-pulse 1.5s ease-in-out infinite';
+    } else if (allClaimed) {
+      cta.textContent = 'ALL TROPHIES CLAIMED ✓';
+      cta.style.animation = '';
+      cta.style.background = 'linear-gradient(180deg, #6fcf5c 0%, #4a9a3c 100%)';
+      cta.disabled = true;
+    } else {
+      cta.textContent = 'VIEW MY PROGRESS ↓';
+      cta.style.animation = '';
+    }
+    cta.onclick = () => {
+      if (eligible) {
+        const tier = TROPHY_TIERS.find(t => t.id === eligible.id);
+        if (tier) showTrophyModal({ id: tier.id, label: tier.label, desc: tier.desc });
+      } else {
+        const grid = document.getElementById('trophy-tier-grid');
+        if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+  }
 };
 
 // Phase 15 — fetch live mint cost from contract (RPC), update pricing strip + curve.
