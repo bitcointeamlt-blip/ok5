@@ -5951,6 +5951,7 @@ async function _refreshTrophyPricing() {
     getCurrentMintPrice: '0xe82ded21',  // getCurrentMintPrice() -> uint256
     currentBatch:        '0x76cd940e',  // currentBatch() -> uint256
     remainingInBatch:    '0xcbecc4ab',  // remainingInBatch() -> uint256
+    totalSupply:         '0x18160ddd',  // totalSupply() -> uint256
   };
   async function rpcCall(selector) {
     const resp = await fetch(SAIGON_RPC, {
@@ -5966,22 +5967,27 @@ async function _refreshTrophyPricing() {
     return BigInt(j.result);
   }
   try {
-    const [priceWei, batch, remaining] = await Promise.all([
+    const [priceWei, batch, remaining, supply] = await Promise.all([
       rpcCall(SELECTORS.getCurrentMintPrice),
       rpcCall(SELECTORS.currentBatch),
       rpcCall(SELECTORS.remainingInBatch),
+      rpcCall(SELECTORS.totalSupply),
     ]);
     const priceRon = Number(priceWei) / 1e18;
     const batchNum = Number(batch);
     const rem = Number(remaining);
+    const totalSupply = Number(supply);
     // Card 1: current cost
     const nowEl = document.getElementById('trophy-pricing-now');
     if (nowEl) nowEl.innerHTML = priceRon === 0 ? 'FREE' : (priceRon + ' <em style="font-size:10px;color:#d49a2a;font-style:normal;">RON</em>');
-    // Card 2: batch
+    // Card 2: minted so far
     const batchEl = document.getElementById('trophy-pricing-batch');
-    if (batchEl) batchEl.textContent = (batchNum + 1) + ' / 10';
+    if (batchEl) batchEl.innerHTML = totalSupply.toLocaleString() + ' <em style="font-size:10px;color:#7a9aa6;font-style:normal;">/ 10,000</em>';
     const batchSubEl = document.getElementById('trophy-pricing-batchsub');
-    if (batchSubEl) batchSubEl.textContent = priceRon === 0 ? 'Free batch active' : `${(priceRon).toFixed(0)} RON tier`;
+    if (batchSubEl) {
+      const pct = (totalSupply / 100).toFixed(1);
+      batchSubEl.textContent = `${pct}% sold · batch ${batchNum + 1}/10`;
+    }
     // Card 3: next jump
     const NEXT_PRICES = [1, 2, 3, 4, 6, 8, 10, 12, 15, null];
     const nextPrice = NEXT_PRICES[batchNum];
