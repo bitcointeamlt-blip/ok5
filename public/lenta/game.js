@@ -6126,9 +6126,9 @@ function renderTrophyPanel() {
       <span class="tier-card-progress tcs-badge">?/?</span>
     </div>
     <div class="tcs-body">
-      <div class="tcs-line"><strong>AGE OF RONKE</strong> — opening soon</div>
+      <div class="tcs-line"><strong>AGE OF RONKE</strong> opening soon</div>
       <div class="tcs-line">More games joining the lineup over time</div>
-      <div class="tcs-line">All games connected — one shared universe</div>
+      <div class="tcs-line">All games connected into one shared <strong>0x-pewpew</strong> universe</div>
     </div>
     <div class="tier-actions">
       <a class="tier-claim-btn tcs-btn" href="https://discord.com/invite/XgVbrr7wfW" target="_blank" rel="noopener noreferrer">GOT QUESTIONS? JOIN DISCORD</a>
