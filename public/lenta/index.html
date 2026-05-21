@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpV">
+  <link rel="stylesheet" href="style.css?v=hpW">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1476,13 +1476,29 @@
         </div>
       </div>
 
-      <!-- Live mint cost (reads contract getCurrentMintPrice + currentBatch) -->
-      <div class="trophy-pricing">
-        <div class="trophy-pricing-header">
-          <span class="trophy-pricing-label">MINT COST RIGHT NOW</span>
-          <span id="trophy-pricing-now" class="trophy-pricing-now">— RON</span>
+      <!-- Live pricing dashboard (3 stat cards + ladder card) -->
+      <div class="trophy-pricing-grid">
+        <div class="trophy-stat-card trophy-stat-now">
+          <div class="trophy-stat-icon">●</div>
+          <div class="trophy-stat-label">MINT COST NOW</div>
+          <div class="trophy-stat-value" id="trophy-pricing-now">—</div>
+          <div class="trophy-stat-sub">Current batch price</div>
         </div>
-        <div class="trophy-pricing-info" id="trophy-pricing-info">Batch — / 10 · — tokens left in this batch</div>
+        <div class="trophy-stat-card trophy-stat-batch">
+          <div class="trophy-stat-icon">◆</div>
+          <div class="trophy-stat-label">YOUR BATCH</div>
+          <div class="trophy-stat-value" id="trophy-pricing-batch">— / 10</div>
+          <div class="trophy-stat-sub" id="trophy-pricing-batchsub">Loading...</div>
+        </div>
+        <div class="trophy-stat-card trophy-stat-next">
+          <div class="trophy-stat-icon">▲</div>
+          <div class="trophy-stat-label">NEXT JUMP</div>
+          <div class="trophy-stat-value" id="trophy-pricing-next">—</div>
+          <div class="trophy-stat-sub" id="trophy-pricing-nextsub">After — more mints</div>
+        </div>
+      </div>
+
+      <div class="trophy-pricing">
         <div class="trophy-pricing-curve">
           <div class="trophy-pricing-curve-title">PRICE LADDER · each batch = 1,000 mints</div>
           <div class="trophy-pricing-cells">
@@ -1528,6 +1544,15 @@
             </div>
           </div>
           <div class="trophy-pricing-foot">First 1,000 mints are <strong>FREE</strong> · Peak <strong>15 RON</strong> per mint at final batch</div>
+        </div>
+      </div>
+
+      <!-- Mechanics explainer card -->
+      <div class="trophy-info-card">
+        <div class="trophy-info-icon">★</div>
+        <div class="trophy-info-text">
+          <div class="trophy-info-title">HOW PRICING WORKS</div>
+          <div class="trophy-info-body">Price increases every <strong>1,000 mints</strong>. First batch is <strong>FREE</strong>, then ramps up. Once the next batch starts, the price stays at the new level forever — no going back to FREE.</div>
         </div>
       </div>
 
@@ -1698,7 +1723,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp5tro"></script>
-  <script src="game.js?v=cmd379price"></script>
+  <script src="game.js?v=cmd380cards"></script>
   <script src="floor12_merge.js?v=cmd690tier"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>

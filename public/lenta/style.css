@@ -13310,3 +13310,109 @@ kbd {
   .trophy-hero-features li { justify-content: flex-start; }
   .trophy-hero-cta { align-self: center; }
 }
+
+/* ── Trophy Pricing Dashboard Cards (Phase 15 v2) ──────────────── */
+.trophy-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.trophy-stat-card {
+  background: linear-gradient(180deg, rgba(74,157,166,0.08) 0%, rgba(74,157,166,0.02) 100%);
+  border: 1px solid rgba(74,157,166,0.3);
+  border-radius: 6px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.trophy-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  opacity: 0.5;
+}
+.trophy-stat-card:hover {
+  background: linear-gradient(180deg, rgba(74,157,166,0.14) 0%, rgba(74,157,166,0.04) 100%);
+  transform: translateY(-2px);
+}
+.trophy-stat-now { color: #ffcf5c; border-color: rgba(255,207,92,0.4); }
+.trophy-stat-now { background: linear-gradient(180deg, rgba(255,207,92,0.08) 0%, rgba(255,207,92,0.02) 100%); }
+.trophy-stat-batch { color: #4a9da6; }
+.trophy-stat-next { color: #ff8c5c; border-color: rgba(255,140,92,0.4); }
+.trophy-stat-next { background: linear-gradient(180deg, rgba(255,140,92,0.06) 0%, rgba(255,140,92,0.02) 100%); }
+
+.trophy-stat-icon {
+  font-size: 14px;
+  line-height: 1;
+  text-shadow: 0 0 8px currentColor;
+}
+.trophy-stat-label {
+  font-size: 7px;
+  color: #7a8a96;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+.trophy-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin: 4px 0 2px;
+  text-shadow: 0 0 10px currentColor;
+  color: inherit;
+}
+.trophy-stat-sub {
+  font-size: 7px;
+  color: #6a7a86;
+  letter-spacing: 0.4px;
+  line-height: 1.3;
+  min-height: 18px;
+}
+
+/* Info / explainer card */
+.trophy-info-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: linear-gradient(135deg, rgba(74,157,166,0.06) 0%, rgba(255,207,92,0.04) 100%);
+  border: 1px solid rgba(255,207,92,0.2);
+  border-left: 3px solid #ffcf5c;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+}
+.trophy-info-icon {
+  font-size: 18px;
+  color: #ffcf5c;
+  text-shadow: 0 0 6px rgba(255,207,92,0.6);
+  flex-shrink: 0;
+}
+.trophy-info-text {
+  flex: 1;
+}
+.trophy-info-title {
+  font-size: 9px;
+  color: #ffcf5c;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.trophy-info-body {
+  font-size: 8px;
+  color: #a5b5c2;
+  line-height: 1.5;
+  letter-spacing: 0.3px;
+}
+.trophy-info-body strong { color: #ffcf5c; }
+
+/* Mobile: stack stat cards */
+@media (max-width: 600px) {
+  .trophy-pricing-grid { grid-template-columns: 1fr; }
+}

@@ -5974,11 +5974,28 @@ async function _refreshTrophyPricing() {
     const priceRon = Number(priceWei) / 1e18;
     const batchNum = Number(batch);
     const rem = Number(remaining);
-    // Header price (round to readable)
+    // Card 1: current cost
     const nowEl = document.getElementById('trophy-pricing-now');
-    if (nowEl) nowEl.innerHTML = priceRon === 0 ? 'FREE' : (priceRon + ' <em style="font-size:9px;color:#d49a2a;font-style:normal;">RON</em>');
-    const infoEl = document.getElementById('trophy-pricing-info');
-    if (infoEl) infoEl.textContent = `Batch ${batchNum + 1} / 10 · ${rem.toLocaleString()} tokens left in this batch`;
+    if (nowEl) nowEl.innerHTML = priceRon === 0 ? 'FREE' : (priceRon + ' <em style="font-size:10px;color:#d49a2a;font-style:normal;">RON</em>');
+    // Card 2: batch
+    const batchEl = document.getElementById('trophy-pricing-batch');
+    if (batchEl) batchEl.textContent = (batchNum + 1) + ' / 10';
+    const batchSubEl = document.getElementById('trophy-pricing-batchsub');
+    if (batchSubEl) batchSubEl.textContent = priceRon === 0 ? 'Free batch active' : `${(priceRon).toFixed(0)} RON tier`;
+    // Card 3: next jump
+    const NEXT_PRICES = [1, 2, 3, 4, 6, 8, 10, 12, 15, null];
+    const nextPrice = NEXT_PRICES[batchNum];
+    const nextEl = document.getElementById('trophy-pricing-next');
+    const nextSubEl = document.getElementById('trophy-pricing-nextsub');
+    if (nextEl && nextSubEl) {
+      if (nextPrice === null) {
+        nextEl.textContent = '—';
+        nextSubEl.textContent = 'Final batch (sold out next)';
+      } else {
+        nextEl.innerHTML = nextPrice + ' <em style="font-size:10px;color:#d49a2a;font-style:normal;">RON</em>';
+        nextSubEl.textContent = `After ${rem.toLocaleString()} more mints`;
+      }
+    }
     // Highlight current batch + mark passed ones
     document.querySelectorAll('.trophy-price-cell').forEach((el, idx) => {
       el.classList.remove('current', 'passed');
