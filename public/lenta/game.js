@@ -1342,6 +1342,11 @@ function loadProfile() {
   if (typeof Profile.barracksUnlockedSlots !== 'number') Profile.barracksUnlockedSlots = 4;
   _barracksUnlockedSlots = Profile.barracksUnlockedSlots;
   _ensureTrophyStats();
+  // Restore in-game RONKE balance from cloud-synced profile.
+  if (typeof _ronkeBalance !== 'undefined' && typeof Profile.ronkeBalance === 'number') {
+    _ronkeBalance = Profile.ronkeBalance;
+    try { if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge(); } catch (_) {}
+  }
 }
 
 // Phase 1+15 — trophy-relevant F12 stats. Backfills missing fields on every load
@@ -1363,6 +1368,9 @@ function _ensureTrophyStats() {
   if (typeof Profile.stats.f12MaxBallValue !== 'number') Profile.stats.f12MaxBallValue = 0;
   if (typeof Profile.stats.f12MaxComboEver !== 'number') Profile.stats.f12MaxComboEver = 0;
   if (!Profile.trophyClaims) Profile.trophyClaims = {};
+  // In-game RONKE balance — persisted across sessions (cloud-synced via Supabase).
+  // Server-side anti-cheat enforces sanity limit (10M max) in Edge Function.
+  if (typeof Profile.ronkeBalance !== 'number') Profile.ronkeBalance = 0;
 }
 
 function saveProfile() {
@@ -2768,7 +2776,9 @@ let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + g
 let _stoneShake  = { key: null, x: 0, y: 0 }; // shake offset applied to mined stone in static cache
 const _coinParticles = []; // floating coin FX when PAM delivers to house
 let _buildingSquish = { name: null, start: 0 }; // house squish on delivery
-let _ronkeBalance   = 15;
+let _ronkeBalance   = (typeof Profile !== 'undefined' && typeof Profile.ronkeBalance === 'number')
+  ? Profile.ronkeBalance
+  : 15;   // 15 = starter grant for first-time players (no saved profile yet)
 let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'ą, hover check
 let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse (po CSS scale paskirstoma į canvas.width vnt.)
 // World-space pelės koord., atnaujinamos po updateCamera(). Naudoti jas visur, kur palyginama su pasaulio-coord bounds (pastatai, unit'ai, extra mines).
@@ -5905,6 +5915,21 @@ window.checkTrophyClaimable = function checkTrophyClaimable() {
   }
 };
 window.closeTrophyModal = closeTrophyModal;
+
+// Phase 15 — RONKE balance auto-sync. _ronkeBalance is mutated in many places
+// (kills, mining, spending) — instead of wrapping every mutation, we periodically
+// snapshot to Profile.ronkeBalance which Supabase auto-syncs.
+// Sanity-cap at 10M client-side too (matches server-side limit for cosmetic display).
+setInterval(() => {
+  try {
+    if (typeof _ronkeBalance !== 'number' || !Profile) return;
+    const capped = Math.max(0, Math.min(_ronkeBalance, 10_000_000));
+    if (Profile.ronkeBalance !== capped) {
+      Profile.ronkeBalance = capped;
+      if (typeof window.saveProfile === 'function') window.saveProfile();
+    }
+  } catch (_) {}
+}, 5000);
 
 // Global sound toggle — mutes ALL audio sources (HTML <audio> + Web Audio API + game-specific).
 // Persists via localStorage key `lenta_muted`.
