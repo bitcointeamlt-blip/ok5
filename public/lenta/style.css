@@ -12773,7 +12773,7 @@ kbd {
   box-shadow: 0 0 48px rgba(255,207,92,0.35), inset 0 0 24px rgba(255,207,92,0.08);
   border-radius: 8px;
   padding: 22px 26px;
-  max-width: 640px;
+  max-width: 720px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
@@ -13150,19 +13150,19 @@ kbd {
 .trophy-hero-imgwrap {
   position: relative;
   flex-shrink: 0;
-  width: 190px;
+  width: 240px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .trophy-hero-img {
-  width: 180px;
-  height: 180px;
+  width: 230px;
+  height: 230px;
   object-fit: contain;
   image-rendering: pixelated;
   position: relative;
   z-index: 2;
-  filter: drop-shadow(0 6px 14px rgba(0,0,0,0.7)) drop-shadow(0 0 16px rgba(255,207,92,0.4));
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.75)) drop-shadow(0 0 22px rgba(255,207,92,0.5));
 }
 .trophy-hero-glow {
   position: absolute;
@@ -13260,8 +13260,8 @@ kbd {
     align-items: center;
     text-align: center;
   }
-  .trophy-hero-imgwrap { width: 220px; }
-  .trophy-hero-img { width: 210px; height: 210px; }
+  .trophy-hero-imgwrap { width: 260px; }
+  .trophy-hero-img { width: 250px; height: 250px; }
   .trophy-hero-features li { justify-content: flex-start; }
   .trophy-hero-cta { align-self: center; }
 }
