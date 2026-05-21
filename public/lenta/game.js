@@ -6126,8 +6126,7 @@ function renderTrophyPanel() {
       <span class="tier-card-progress tcs-badge">?/?</span>
     </div>
     <div class="tcs-body">
-      <div class="tcs-line">More missions are on the way</div>
-      <div class="tcs-line">New games will join the PewPew universe</div>
+      <div class="tcs-line"><strong>Ronke of Ages</strong> game will unlock here — more games coming in the future</div>
       <div class="tcs-line">This is just the beginning — the project grows with every player</div>
     </div>
     <div class="tier-actions">

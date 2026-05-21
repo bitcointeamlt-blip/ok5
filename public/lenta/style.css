@@ -13514,8 +13514,8 @@ kbd {
 
 /* ── Coming Soon teaser card ──────────────────────────────── */
 .tier-coming-soon {
-  background: linear-gradient(180deg, rgba(100,80,180,0.08) 0%, rgba(50,40,90,0.04) 100%);
-  border: 2px dashed rgba(180,140,255,0.4) !important;
+  background: linear-gradient(180deg, rgba(40,90,160,0.08) 0%, rgba(50,40,90,0.04) 100%);
+  border: 2px dashed rgba(120,190,255,0.4) !important;
   position: relative;
   overflow: hidden;
 }
@@ -13527,14 +13527,14 @@ kbd {
     -45deg,
     transparent 0,
     transparent 12px,
-    rgba(180,140,255,0.04) 12px,
-    rgba(180,140,255,0.04) 24px
+    rgba(120,190,255,0.04) 12px,
+    rgba(120,190,255,0.04) 24px
   );
   pointer-events: none;
 }
 .tier-coming-soon .tier-card-icon {
-  color: #b48cff !important;
-  text-shadow: 0 0 12px rgba(180,140,255,0.6);
+  color: #78beff !important;
+  text-shadow: 0 0 12px rgba(120,190,255,0.6);
   animation: cs-pulse 3s ease-in-out infinite;
 }
 @keyframes cs-pulse {
@@ -13542,13 +13542,13 @@ kbd {
   50% { opacity: 1; transform: scale(1.15); }
 }
 .tier-coming-soon .tier-card-title {
-  color: #d4b4ff !important;
+  color: #a8d4ff !important;
   letter-spacing: 1.5px;
 }
 .tcs-badge {
-  background: rgba(180,140,255,0.15) !important;
-  color: #b48cff !important;
-  border: 1px dashed rgba(180,140,255,0.4);
+  background: rgba(120,190,255,0.15) !important;
+  color: #78beff !important;
+  border: 1px dashed rgba(120,190,255,0.4);
 }
 .tcs-body {
   display: flex;
@@ -13556,7 +13556,7 @@ kbd {
   gap: 6px;
   margin: 8px 0 12px;
   padding: 10px 12px;
-  background: rgba(180,140,255,0.04);
+  background: rgba(120,190,255,0.04);
   border-radius: 4px;
 }
 .tcs-line {
@@ -13570,14 +13570,14 @@ kbd {
 }
 .tcs-line::before {
   content: '◆';
-  color: #b48cff;
+  color: #78beff;
   font-size: 7px;
   flex-shrink: 0;
 }
 .tcs-btn {
-  background: linear-gradient(180deg, rgba(180,140,255,0.2) 0%, rgba(100,80,180,0.15) 100%) !important;
-  border-color: rgba(180,140,255,0.5) !important;
-  color: #d4b4ff !important;
+  background: linear-gradient(180deg, rgba(120,190,255,0.2) 0%, rgba(40,90,160,0.15) 100%) !important;
+  border-color: rgba(120,190,255,0.5) !important;
+  color: #a8d4ff !important;
   cursor: default !important;
   letter-spacing: 1px;
   position: relative;
@@ -13588,7 +13588,7 @@ kbd {
   inset: 0;
   background: linear-gradient(90deg,
     transparent 30%,
-    rgba(212,180,255,0.15) 50%,
+    rgba(168,212,255,0.15) 50%,
     transparent 70%
   );
   background-size: 200% 100%;
@@ -13599,4 +13599,52 @@ kbd {
 @keyframes cs-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ── Discord community link button ──────────────────────────── */
+.discord-link-btn {
+  position: fixed;
+  bottom: 14px;
+  left: 130px;
+  z-index: 9998;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(88, 101, 242, 0.85);
+  color: #fff;
+  border: 2px solid #5865f2;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 8px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 0 8px rgba(88,101,242,0.4);
+  backdrop-filter: blur(4px);
+}
+.discord-link-btn:hover {
+  background: rgba(88, 101, 242, 1);
+  border-color: #7983f5;
+  box-shadow: 0 0 16px rgba(88,101,242,0.7);
+  transform: translateY(-1px);
+}
+.dlb-icon {
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 6px rgba(255,255,255,0.5);
+}
+.dlb-text {
+  letter-spacing: 1.2px;
+}
+@media (max-width: 600px) {
+  .discord-link-btn {
+    bottom: 8px;
+    left: 110px;
+    padding: 6px 10px;
+    font-size: 7px;
+  }
+  .dlb-icon { font-size: 10px; }
 }
