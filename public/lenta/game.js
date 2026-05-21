@@ -6116,6 +6116,26 @@ function renderTrophyPanel() {
     grid.appendChild(card);
   }
 
+  // Phase 15 — append "COMING SOON" teaser card to signal project growth
+  const teaser = document.createElement('div');
+  teaser.className = 'tier-card tier-coming-soon';
+  teaser.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">◇</span>
+      <span class="tier-card-title">COMING SOON</span>
+      <span class="tier-card-progress tcs-badge">?/?</span>
+    </div>
+    <div class="tcs-body">
+      <div class="tcs-line">More missions are on the way</div>
+      <div class="tcs-line">New games will join the PewPew universe</div>
+      <div class="tcs-line">This is just the beginning — the project grows with every player</div>
+    </div>
+    <div class="tier-actions">
+      <button class="tier-claim-btn tcs-btn" disabled>STAY TUNED ◆ FUTURE EXPANSION</button>
+    </div>
+  `;
+  grid.appendChild(teaser);
+
   // Wire claim buttons (single delegation)
   grid.querySelectorAll('.tier-claim-btn.enabled').forEach(btn => {
     btn.addEventListener('click', (e) => {

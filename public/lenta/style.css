@@ -13511,3 +13511,92 @@ kbd {
 
 /* Also unify all 4 tier card titles to look similar (no number distinction) */
 .tier-card-title { font-size: 11px !important; }
+
+/* ── Coming Soon teaser card ──────────────────────────────── */
+.tier-coming-soon {
+  background: linear-gradient(180deg, rgba(100,80,180,0.08) 0%, rgba(50,40,90,0.04) 100%);
+  border: 2px dashed rgba(180,140,255,0.4) !important;
+  position: relative;
+  overflow: hidden;
+}
+.tier-coming-soon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 12px,
+    rgba(180,140,255,0.04) 12px,
+    rgba(180,140,255,0.04) 24px
+  );
+  pointer-events: none;
+}
+.tier-coming-soon .tier-card-icon {
+  color: #b48cff !important;
+  text-shadow: 0 0 12px rgba(180,140,255,0.6);
+  animation: cs-pulse 3s ease-in-out infinite;
+}
+@keyframes cs-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.tier-coming-soon .tier-card-title {
+  color: #d4b4ff !important;
+  letter-spacing: 1.5px;
+}
+.tcs-badge {
+  background: rgba(180,140,255,0.15) !important;
+  color: #b48cff !important;
+  border: 1px dashed rgba(180,140,255,0.4);
+}
+.tcs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  background: rgba(180,140,255,0.04);
+  border-radius: 4px;
+}
+.tcs-line {
+  font-size: 9px;
+  color: #b4c4d4;
+  line-height: 1.5;
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tcs-line::before {
+  content: '◆';
+  color: #b48cff;
+  font-size: 7px;
+  flex-shrink: 0;
+}
+.tcs-btn {
+  background: linear-gradient(180deg, rgba(180,140,255,0.2) 0%, rgba(100,80,180,0.15) 100%) !important;
+  border-color: rgba(180,140,255,0.5) !important;
+  color: #d4b4ff !important;
+  cursor: default !important;
+  letter-spacing: 1px;
+  position: relative;
+}
+.tcs-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 30%,
+    rgba(212,180,255,0.15) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: cs-shimmer 3s linear infinite;
+  border-radius: inherit;
+  pointer-events: none;
+}
+@keyframes cs-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
