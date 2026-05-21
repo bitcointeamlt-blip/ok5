@@ -5984,10 +5984,7 @@ async function _refreshTrophyPricing() {
     const batchEl = document.getElementById('trophy-pricing-batch');
     if (batchEl) batchEl.innerHTML = totalSupply.toLocaleString() + ' <em style="font-size:10px;color:#7a9aa6;font-style:normal;">/ 10,000</em>';
     const batchSubEl = document.getElementById('trophy-pricing-batchsub');
-    if (batchSubEl) {
-      const pct = (totalSupply / 100).toFixed(1);
-      batchSubEl.textContent = `${pct}% sold · batch ${batchNum + 1}/10`;
-    }
+    if (batchSubEl) batchSubEl.textContent = `batch ${batchNum + 1}/10`;
     // Card 3: next jump
     const NEXT_PRICES = [1, 2, 3, 4, 6, 8, 10, 12, 15, null];
     const nextPrice = NEXT_PRICES[batchNum];
