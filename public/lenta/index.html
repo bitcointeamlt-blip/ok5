@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hpN">
+  <link rel="stylesheet" href="style.css?v=hpO">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1461,9 +1461,35 @@
         <img src="PewPewTrophies.png" alt="PewPew Trophy NFT" class="trophy-prize-img"/>
         <div class="trophy-prize-caption">
           <div class="trophy-prize-name">PEWPEW ARCADE</div>
-          <div class="trophy-prize-meta">The NFT you'll mint · ERC-721 · Ronin chain</div>
+          <div class="trophy-prize-meta">ERC-721 · Ronin chain · 10,000 max supply · 5% royalty</div>
         </div>
       </div>
+
+      <!-- Live mint cost (reads contract getCurrentMintPrice + currentBatch) -->
+      <div class="trophy-pricing">
+        <div class="trophy-pricing-header">
+          <span class="trophy-pricing-label">MINT COST RIGHT NOW</span>
+          <span id="trophy-pricing-now" class="trophy-pricing-now">— RON</span>
+        </div>
+        <div class="trophy-pricing-info" id="trophy-pricing-info">Batch — / 10 · — tokens left in this batch</div>
+        <div class="trophy-pricing-curve">
+          <div class="trophy-pricing-curve-title">Full price ladder (per mint)</div>
+          <div class="trophy-pricing-cells">
+            <div class="trophy-price-cell" data-batch="0"><span class="pc-bn">1k</span><span class="pc-bp">FREE</span></div>
+            <div class="trophy-price-cell" data-batch="1"><span class="pc-bn">2k</span><span class="pc-bp">1</span></div>
+            <div class="trophy-price-cell" data-batch="2"><span class="pc-bn">3k</span><span class="pc-bp">2</span></div>
+            <div class="trophy-price-cell" data-batch="3"><span class="pc-bn">4k</span><span class="pc-bp">3</span></div>
+            <div class="trophy-price-cell" data-batch="4"><span class="pc-bn">5k</span><span class="pc-bp">4</span></div>
+            <div class="trophy-price-cell" data-batch="5"><span class="pc-bn">6k</span><span class="pc-bp">6</span></div>
+            <div class="trophy-price-cell" data-batch="6"><span class="pc-bn">7k</span><span class="pc-bp">8</span></div>
+            <div class="trophy-price-cell" data-batch="7"><span class="pc-bn">8k</span><span class="pc-bp">10</span></div>
+            <div class="trophy-price-cell" data-batch="8"><span class="pc-bn">9k</span><span class="pc-bp">12</span></div>
+            <div class="trophy-price-cell" data-batch="9"><span class="pc-bn">10k</span><span class="pc-bp">15</span></div>
+          </div>
+          <div class="trophy-pricing-foot">Price increases per 1,000 minted · First 1k mints are FREE · Peak 15 RON</div>
+        </div>
+      </div>
+
       <div id="trophy-tier-grid"></div>
       <button class="btn-trophy-close" onclick="closeTrophyPanel()">CLOSE</button>
     </div>
@@ -1476,7 +1502,8 @@
       <img src="PewPewTrophies.png" alt="PewPew NFT" class="trophy-modal-img"/>
       <div class="trophy-modal-label" id="trophy-modal-label">—</div>
       <div class="trophy-modal-desc" id="trophy-modal-desc">—</div>
-      <div class="trophy-modal-meta" id="trophy-modal-meta">PewPew NFT · Ronin · Free mint</div>
+      <div class="trophy-modal-meta" id="trophy-modal-meta">PewPew NFT · Ronin chain</div>
+      <div class="trophy-modal-cost" id="trophy-modal-cost">Mint cost: — RON</div>
       <div class="trophy-modal-status" id="trophy-modal-status"></div>
       <div class="trophy-modal-actions">
         <button id="trophy-claim-btn" class="trophy-btn-primary">CLAIM NFT</button>
@@ -1630,7 +1657,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp5tro"></script>
-  <script src="game.js?v=cmd376adj"></script>
+  <script src="game.js?v=cmd377price"></script>
   <script src="floor12_merge.js?v=cmd690tier"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>

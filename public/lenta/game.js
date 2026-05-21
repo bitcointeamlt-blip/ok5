@@ -5792,6 +5792,22 @@ function showTrophyModal(claimable) {
   document.getElementById('trophy-modal-desc').textContent  = claimable.desc;
   document.getElementById('trophy-modal-status').textContent = '';
   document.getElementById('trophy-modal-status').className = 'trophy-modal-status';
+  // Show live mint cost (cached from panel; fetch fresh if missing)
+  const costEl = document.getElementById('trophy-modal-cost');
+  if (costEl) {
+    const cached = window._trophyCurrentPriceRon;
+    if (typeof cached === 'number') {
+      costEl.textContent = cached === 0 ? 'Mint cost: FREE (Batch 1/10)' : `Mint cost: ${cached} RON`;
+    } else {
+      costEl.textContent = 'Loading mint cost...';
+      if (typeof window._refreshTrophyPricing === 'function') {
+        window._refreshTrophyPricing().then(() => {
+          const p = window._trophyCurrentPriceRon;
+          if (typeof p === 'number') costEl.textContent = p === 0 ? 'Mint cost: FREE (Batch 1/10)' : `Mint cost: ${p} RON`;
+        }).catch(() => {});
+      }
+    }
+  }
   const claimBtn = document.getElementById('trophy-claim-btn');
   claimBtn.disabled = false;
   claimBtn.textContent = 'CLAIM NFT';
@@ -5894,7 +5910,61 @@ const _TIER_CLASS = { T_bronze: 'tier-bronze', T_silver: 'tier-silver', T_gold: 
 window.openTrophyPanel = function openTrophyPanel() {
   renderTrophyPanel();
   document.getElementById('trophy-overlay').classList.add('active');
+  // Fire-and-forget live pricing fetch (doesn't block UI)
+  _refreshTrophyPricing().catch(() => {});
 };
+
+// Phase 15 — fetch live mint cost from contract (RPC), update pricing strip + curve.
+async function _refreshTrophyPricing() {
+  const SAIGON_RPC = 'https://saigon-testnet.roninchain.com/rpc';
+  const CONTRACT = (window.Wallet && window.Wallet.TROPHY_CONTRACT) || '0xce0917a94cb3c270144ce5402e85b600fa94a619';
+  // Function selectors:
+  const SELECTORS = {
+    getCurrentMintPrice: '0xe82ded21',  // getCurrentMintPrice() -> uint256
+    currentBatch:        '0x76cd940e',  // currentBatch() -> uint256
+    remainingInBatch:    '0xcbecc4ab',  // remainingInBatch() -> uint256
+  };
+  async function rpcCall(selector) {
+    const resp = await fetch(SAIGON_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', method: 'eth_call', id: 1,
+        params: [{ to: CONTRACT, data: selector }, 'latest'],
+      }),
+    });
+    const j = await resp.json();
+    if (j.error || !j.result) return 0n;
+    return BigInt(j.result);
+  }
+  try {
+    const [priceWei, batch, remaining] = await Promise.all([
+      rpcCall(SELECTORS.getCurrentMintPrice),
+      rpcCall(SELECTORS.currentBatch),
+      rpcCall(SELECTORS.remainingInBatch),
+    ]);
+    const priceRon = Number(priceWei) / 1e18;
+    const batchNum = Number(batch);
+    const rem = Number(remaining);
+    // Header price (round to readable)
+    const nowEl = document.getElementById('trophy-pricing-now');
+    if (nowEl) nowEl.textContent = priceRon === 0 ? 'FREE' : (priceRon + ' RON');
+    const infoEl = document.getElementById('trophy-pricing-info');
+    if (infoEl) infoEl.textContent = `Batch ${batchNum + 1} / 10 · ${rem.toLocaleString()} tokens left in this batch`;
+    // Highlight current batch + mark passed ones
+    document.querySelectorAll('.trophy-price-cell').forEach((el, idx) => {
+      el.classList.remove('current', 'passed');
+      if (idx < batchNum) el.classList.add('passed');
+      else if (idx === batchNum) el.classList.add('current');
+    });
+    // Stash for claim modal too
+    window._trophyCurrentPriceRon = priceRon;
+    window._trophyCurrentBatch = batchNum;
+  } catch (e) {
+    console.warn('[trophy pricing fetch]', e);
+  }
+}
+window._refreshTrophyPricing = _refreshTrophyPricing;
 window.closeTrophyPanel = function closeTrophyPanel() {
   document.getElementById('trophy-overlay').classList.remove('active');
 };

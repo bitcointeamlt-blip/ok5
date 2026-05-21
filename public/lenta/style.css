@@ -13021,3 +13021,105 @@ kbd {
   box-shadow: 0 0 16px rgba(255,207,92,0.8);
   transform: scale(1.08);
 }
+
+/* ── Trophy Mint Pricing Display ───────────────────────────────── */
+.trophy-pricing {
+  background: linear-gradient(180deg, rgba(74,157,166,0.1) 0%, rgba(74,157,166,0.03) 100%);
+  border: 1px solid rgba(74,157,166,0.35);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.trophy-pricing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.trophy-pricing-label {
+  font-size: 9px;
+  color: #6fa4ab;
+  letter-spacing: 1px;
+}
+.trophy-pricing-now {
+  font-size: 14px;
+  color: #ffcf5c;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(255,207,92,0.6);
+}
+.trophy-pricing-info {
+  font-size: 8px;
+  color: #8a9aaa;
+  margin-bottom: 10px;
+  letter-spacing: 0.4px;
+}
+
+.trophy-pricing-curve {
+  border-top: 1px solid rgba(74,157,166,0.25);
+  padding-top: 10px;
+}
+.trophy-pricing-curve-title {
+  font-size: 8px;
+  color: #6a8a90;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+}
+.trophy-pricing-cells {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.trophy-price-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 2px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 3px;
+  transition: all 0.15s ease;
+  cursor: default;
+}
+.trophy-price-cell.current {
+  background: rgba(255,207,92,0.18);
+  border-color: #ffcf5c;
+  box-shadow: 0 0 10px rgba(255,207,92,0.5);
+  transform: scale(1.06);
+}
+.trophy-price-cell.passed {
+  background: rgba(111,207,92,0.1);
+  border-color: rgba(111,207,92,0.4);
+  opacity: 0.55;
+}
+.pc-bn {
+  font-size: 7px;
+  color: #6a8a90;
+  letter-spacing: 0.3px;
+}
+.pc-bp {
+  font-size: 9px;
+  color: #e8f0f4;
+  margin-top: 2px;
+}
+.trophy-price-cell.current .pc-bp { color: #ffcf5c; }
+.trophy-price-cell.passed .pc-bp { color: #6fcf5c; }
+.trophy-pricing-foot {
+  font-size: 7px;
+  color: #5a7080;
+  text-align: center;
+  letter-spacing: 0.4px;
+}
+
+/* Claim modal cost line */
+.trophy-modal-cost {
+  font-size: 10px;
+  color: #ffcf5c;
+  margin: 8px 0;
+  padding: 6px 12px;
+  background: rgba(255,207,92,0.1);
+  border: 1px solid rgba(255,207,92,0.3);
+  border-radius: 4px;
+  display: inline-block;
+  letter-spacing: 0.8px;
+}
