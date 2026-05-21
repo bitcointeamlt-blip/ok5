@@ -6109,7 +6109,6 @@ function renderTrophyPanel() {
         <span class="tier-card-title">${tier.label}</span>
         <span class="tier-card-progress ${metCount === tier.requirements.length ? 'complete' : ''}">${metCount}/${tier.requirements.length}</span>
       </div>
-      <div class="tier-card-desc">${tier.desc}</div>
       <div class="tier-reqs">${reqHtml}</div>
       ${actionHtml}
     `;
