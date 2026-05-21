@@ -13089,16 +13089,16 @@ kbd {
   border-color: rgba(255,255,255,0.2);
 }
 .trophy-price-cell.current {
-  background: rgba(255,207,92,0.2);
+  background: rgba(255,207,92,0.12);
   border-color: #ffcf5c;
-  border-width: 2px;
-  box-shadow: 0 0 14px rgba(255,207,92,0.6);
-  transform: scale(1.08);
-  animation: cell-pulse 2s ease-in-out infinite;
+  border-width: 1px;
+  box-shadow: 0 0 6px rgba(255,207,92,0.35);
+  transform: scale(1.04);
+  animation: cell-pulse 2.5s ease-in-out infinite;
 }
 @keyframes cell-pulse {
-  0%, 100% { box-shadow: 0 0 14px rgba(255,207,92,0.6); }
-  50% { box-shadow: 0 0 22px rgba(255,207,92,0.9); }
+  0%, 100% { box-shadow: 0 0 6px rgba(255,207,92,0.3); }
+  50% { box-shadow: 0 0 10px rgba(255,207,92,0.5); }
 }
 .trophy-price-cell.passed {
   background: rgba(111,207,92,0.08);
