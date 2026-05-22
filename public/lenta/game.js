@@ -5925,7 +5925,7 @@ window.closeTrophyModal = closeTrophyModal;
 //   3. beforeunload save — captures last-second earnings before refresh/close
 let _ronkeLastSavedAt = Date.now();
 let _ronkeLastSavedValue = 0;
-const RONKE_MAX_GROWTH_PER_30S = 50_000;   // realistic upper bound for fastest legit grind
+const RONKE_PER_MINE_PER_30S = 100;   // per-mine max earn rate (anti-cheat ceiling)
 
 function _syncRonkeBalance() {
   try {
@@ -5933,7 +5933,12 @@ function _syncRonkeBalance() {
     const now = Date.now();
     const elapsedMs = now - _ronkeLastSavedAt;
     const reportedDelta = _ronkeBalance - _ronkeLastSavedValue;
-    const allowedDelta = (elapsedMs / 30000) * RONKE_MAX_GROWTH_PER_30S;
+    // Mine count = 1 primary + N extra mines built. Each mine earns up to 100 RONKE / 30s.
+    // Scales with player progression (more mines = higher capacity).
+    let mineCount = 1;
+    try { if (Array.isArray(_extraMines)) mineCount = 1 + _extraMines.length; } catch (_) {}
+    const maxRatePer30s = mineCount * RONKE_PER_MINE_PER_30S;
+    const allowedDelta = (elapsedMs / 30000) * maxRatePer30s;
 
     // If growth exceeds rate limit → clamp to allowed delta (anti-cheat)
     let nextValue = _ronkeBalance;
