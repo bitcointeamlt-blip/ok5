@@ -13718,3 +13718,52 @@ kbd {
   .tcs-line { font-size: 8px; }
   .trophy-panel-close-x { width: 28px; height: 28px; font-size: 14px; }
 }
+
+/* ── Trophy requirement progress bar (Phase 15 — visible progress) ───── */
+.tier-req {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+}
+.tier-req-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+.tier-req.met .tier-req-row { color: #6fcf5c; }
+.tier-req-row .tier-req-progress {
+  font-size: 10px !important;
+  padding: 2px 8px !important;
+  background: rgba(255,207,92,0.15) !important;
+  color: #ffcf5c !important;
+  border-radius: 4px !important;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  min-width: 50px;
+  text-align: center;
+}
+.tier-req.met .tier-req-row .tier-req-progress {
+  background: rgba(111,207,92,0.25) !important;
+  color: #6fcf5c !important;
+}
+.tier-req-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-left: 24px;   /* indent under checkmark */
+}
+.tier-req-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffcf5c, #ffe168);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  box-shadow: 0 0 6px rgba(255,207,92,0.4);
+}
+.tier-req.met .tier-req-bar-fill {
+  background: linear-gradient(90deg, #6fcf5c, #8aff7a);
+  box-shadow: 0 0 6px rgba(111,207,92,0.5);
+}

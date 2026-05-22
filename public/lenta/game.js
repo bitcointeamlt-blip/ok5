@@ -6160,13 +6160,18 @@ function renderTrophyPanel() {
     card.className = `tier-card ${_TIER_CLASS[tier.id] || ''} ${tier.eligible ? 'tier-eligible' : ''} ${tier.claimed ? 'tier-claimed' : ''}`;
 
     const metCount = tier.requirements.filter(r => r.met).length;
-    const reqHtml = tier.requirements.map(r => `
+    const reqHtml = tier.requirements.map(r => {
+      const pct = Math.min(100, Math.round((r.currentValue / r.threshold) * 100));
+      return `
       <div class="tier-req ${r.met ? 'met' : ''}">
-        <span class="tier-req-check">${r.met ? '✓' : '○'}</span>
-        <span class="tier-req-text">${r.label}</span>
-        <span class="tier-req-progress">${_formatProgress(r.currentValue, r.threshold)}</span>
+        <div class="tier-req-row">
+          <span class="tier-req-check">${r.met ? '✓' : '○'}</span>
+          <span class="tier-req-text">${r.label}</span>
+          <span class="tier-req-progress">${_formatProgress(r.currentValue, r.threshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
       </div>
-    `).join('');
+    `;}).join('');
 
     let actionHtml;
     if (tier.claimed) {
