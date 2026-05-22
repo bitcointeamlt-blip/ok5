@@ -5895,7 +5895,7 @@ window.getTrophyTierStatus = function getTrophyTierStatus() {
   return TROPHY_TIERS.map(tier => {
     const reqs = tier.requirements.map(r => {
       const value = Profile.stats[r.statKey] || 0;
-      return { ...r, current: value, met: value >= r.threshold };
+      return { ...r, current: value, currentValue: value, met: value >= r.threshold };
     });
     const allMet = reqs.every(r => r.met);
     const claimed = !!(Profile.trophyClaims && Profile.trophyClaims[tier.id]);
