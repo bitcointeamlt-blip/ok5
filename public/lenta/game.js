@@ -6254,6 +6254,133 @@ function _f12TierLabel(divisor) {
   if (divisor >= 3.0) return 'TIER 1 · 1+ NFT';
   return 'NO TIER';
 }
+
+// Render YOUR NFT BONUSES card — computes & shows each bonus with real values.
+function _renderF12BonusesCard(d) {
+  const card = document.getElementById('f12e-bonuses');
+  const iconEl = document.getElementById('f12e-bonus-icon');
+  const titleEl = document.getElementById('f12e-bonus-title');
+  const metaEl = document.getElementById('f12e-bonus-meta');
+  const listEl = document.getElementById('f12e-bonus-list');
+  if (!card || !listEl) return;
+
+  card.classList.remove('is-active', 'is-no-nft', 'is-pending');
+  listEl.innerHTML = '';
+
+  const W = window.Wallet;
+  const connected = !!(W && W.isConnected && W.isConnected());
+  if (!connected) {
+    card.classList.add('is-no-nft');
+    if (iconEl) iconEl.textContent = '🔌';
+    if (titleEl) titleEl.textContent = 'WALLET NOT CONNECTED';
+    if (metaEl) metaEl.textContent = '';
+    listEl.innerHTML = '<div class="f12e-bonus-empty">Connect your Ronin wallet to see NFT bonuses</div>';
+    return;
+  }
+
+  const totalNft = (W.getRonkeNFTCount && W.getRonkeNFTCount()) || 0;
+  const eligNft = (W.getEligibleNftCountCached && W.getEligibleNftCountCached()) || 0;
+
+  // ── State: NO NFT AT ALL ──
+  if (totalNft === 0) {
+    card.classList.add('is-no-nft');
+    if (iconEl) iconEl.textContent = '◇';
+    if (titleEl) titleEl.textContent = 'NO ACTIVE BONUSES';
+    if (metaEl) metaEl.textContent = '0 NFT';
+    listEl.innerHTML = `
+      <div class="f12e-bonus-empty">
+        Get RONKE NFT to unlock all bonuses below.<br>
+        <a href="https://marketplace.skymavis.com/collections/ronkeverse" target="_blank">Marketplace →</a>
+      </div>`;
+    _renderF12BonusList(listEl, 0, 0, /*previewMode=*/true);
+    return;
+  }
+
+  // ── State: HAS NFT BUT NOT ELIGIBLE YET (24h hold pending) ──
+  if (eligNft === 0) {
+    card.classList.add('is-pending');
+    if (iconEl) iconEl.textContent = '⏰';
+    if (titleEl) titleEl.textContent = 'BONUSES PENDING';
+    if (metaEl) metaEl.textContent = totalNft + ' NFT · 0 eligible';
+    listEl.innerHTML = `
+      <div class="f12e-bonus-empty">
+        24h hold rule active. Bonuses unlock automatically once any NFT in your wallet completes 24h hold.
+      </div>`;
+    _renderF12BonusList(listEl, totalNft, 0, /*previewMode=*/true);
+    return;
+  }
+
+  // ── State: ACTIVE BONUSES ──
+  card.classList.add('is-active');
+  if (iconEl) iconEl.textContent = '★';
+  if (titleEl) titleEl.textContent = 'YOUR ACTIVE BONUSES';
+  if (metaEl) metaEl.textContent = totalNft + ' NFT · ' + eligNft + ' eligible';
+  _renderF12BonusList(listEl, totalNft, eligNft, /*previewMode=*/false);
+}
+function _renderF12BonusList(listEl, totalNft, eligNft, previewMode) {
+  const isActive = !previewMode && eligNft >= 1;
+  // Mining: +2% per eligible NFT, cap +10%
+  const miningBoost = Math.min(eligNft * 0.02, 0.10);
+  const miningPct = Math.round((0.5 + miningBoost) * 100);
+  // Play discount divisor
+  let playDiv = 1;
+  if (eligNft >= 10) playDiv = 4.5;
+  else if (eligNft >= 5) playDiv = 3.5;
+  else if (eligNft >= 1) playDiv = 3.0;
+
+  const rows = [
+    {
+      icon: '🏰',
+      name: 'Build / train speed',
+      detail: isActive
+        ? '60s &rarr; <strong>30s</strong> (2&times; faster)'
+        : '1&times; (60s per build / train)',
+      previewDetail: '2&times; faster (60s &rarr; 30s)',
+      active: isActive,
+    },
+    {
+      icon: '⛏',
+      name: 'RONKE drop chance',
+      detail: isActive
+        ? `50% &rarr; <strong>${miningPct}%</strong> (+${Math.round(miningBoost*100)}%)`
+        : 'Base 50% drop rate',
+      previewDetail: '+2% per NFT, cap +10% (5+ NFT)',
+      active: isActive,
+    },
+    {
+      icon: '🎯',
+      name: 'F12 score multiplier',
+      detail: isActive
+        ? '&times;1.0 &rarr; <strong>&times;1.5</strong> (+50%)'
+        : '&times;1.0 (base scoring)',
+      previewDetail: '&times;1.5 score multiplier',
+      active: isActive,
+    },
+    {
+      icon: '🪙',
+      name: 'Pay-per-play discount',
+      detail: isActive
+        ? `Cost &divide; <strong>${playDiv}</strong> cheaper`
+        : 'Full pay-per-play price',
+      previewDetail: '&divide;3 (1+), &divide;3.5 (5+), &divide;4.5 (10+)',
+      active: isActive,
+    },
+  ];
+
+  for (const r of rows) {
+    const div = document.createElement('div');
+    div.className = 'f12e-bonus-row ' + (r.active ? 'is-active' : 'is-inactive');
+    div.innerHTML = `
+      <div class="f12e-bonus-icon">${r.icon}</div>
+      <div class="f12e-bonus-text">
+        <div class="f12e-bonus-name">${r.name}</div>
+        <div class="f12e-bonus-detail">${previewMode ? r.previewDetail : r.detail}</div>
+      </div>
+      <span class="f12e-bonus-tag">${r.active ? 'ACTIVE' : (previewMode ? 'LOCKED' : 'OFF')}</span>
+    `;
+    listEl.appendChild(div);
+  }
+}
 function _showF12EntryPopup(onConfirm) {
   _f12_pendingProceed = onConfirm || null;
   const d = window._f12CurrentCost();
@@ -6269,6 +6396,9 @@ function _showF12EntryPopup(onConfirm) {
     if (d.playsToday === 0) subEl.textContent = 'First play of 24h cycle';
     else subEl.textContent = `Play #${d.nextPlayN} in current 24h cycle`;
   }
+
+  // ── NFT BONUSES card ──
+  _renderF12BonusesCard(d);
 
   // ── DISCOUNT card ──
   const discEl = document.getElementById('f12e-discount');

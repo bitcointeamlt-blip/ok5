@@ -13913,6 +13913,78 @@ kbd {
   background: linear-gradient(135deg, rgba(255,207,92,0.10), rgba(255,207,92,0.02));
   border-color: #ffcf5c;
 }
+.f12e-card-bonus {
+  background: linear-gradient(135deg, rgba(74,157,166,0.10), rgba(74,157,166,0.02));
+  border-color: #4a9da6;
+}
+.f12e-card-bonus.is-no-nft {
+  background: rgba(255,255,255,0.03);
+  border-color: #4a5a6a;
+}
+.f12e-card-bonus.is-pending {
+  background: linear-gradient(135deg, rgba(255,176,80,0.08), rgba(255,176,80,0.02));
+  border-color: #ffb050;
+}
+.f12e-card-bonus.is-active .f12e-card-icon { color: #8aff7a; }
+.f12e-card-bonus.is-no-nft .f12e-card-icon { color: #6a8a9a; }
+.f12e-card-bonus.is-pending .f12e-card-icon { color: #ffb050; }
+
+/* Bonus list rows */
+.f12e-bonus-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.f12e-bonus-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.20);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 4px;
+  font-size: 8px;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
+}
+.f12e-bonus-row.is-active {
+  border-color: rgba(138,255,122,0.4);
+  background: rgba(138,255,122,0.06);
+}
+.f12e-bonus-row.is-inactive {
+  opacity: 0.55;
+}
+.f12e-bonus-icon { font-size: 14px; line-height: 1; text-align: center; }
+.f12e-bonus-text {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.f12e-bonus-name { color: #d8e0f0; font-size: 8px; }
+.f12e-bonus-detail {
+  color: #8a9aaa;
+  font-size: 7px;
+  letter-spacing: 0.3px;
+  font-family: 'Courier New', monospace;
+}
+.f12e-bonus-row.is-active .f12e-bonus-detail { color: #8aff7a; }
+.f12e-bonus-row.is-active .f12e-bonus-detail strong { color: #b8ffaa; }
+.f12e-bonus-row.is-inactive .f12e-bonus-detail { color: #6a7a8a; }
+.f12e-bonus-tag {
+  font-size: 6px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+.f12e-bonus-row.is-active .f12e-bonus-tag { background: #2a6a30; color: #b8ffaa; }
+.f12e-bonus-row.is-inactive .f12e-bonus-tag { background: #3a4a5a; color: #8a9aaa; }
+.f12e-bonus-empty {
+  text-align: center;
+  padding: 14px 10px;
+  font-size: 8px;
+  color: #8a9aaa;
+  letter-spacing: 0.4px;
+  line-height: 1.6;
+  font-family: 'Press Start 2P', monospace;
+}
+.f12e-bonus-empty a { color: #4a9da6; }
 .f12e-card-head {
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 10px;
