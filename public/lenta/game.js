@@ -5953,8 +5953,11 @@ function _syncRonkeBalance() {
       _ronkeBalance = nextValue;
       try { if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge(); } catch (_) {}
     }
-    // Hard cap (sanity)
-    nextValue = Math.max(0, Math.min(nextValue, 10_000_000));
+    // Hard cap = warehouse capacity (respects house upgrade levels).
+    // Even if rate limit is bypassed, balance can't exceed what player has storage for.
+    let capacity = 30_000;   // safe fallback (max possible: 3 mines × house lvl 9 × 10k)
+    try { if (typeof _totalHouseCapacity === 'function') capacity = _totalHouseCapacity(); } catch (_) {}
+    nextValue = Math.max(0, Math.min(nextValue, capacity));
 
     if (Profile.ronkeBalance !== nextValue) {
       Profile.ronkeBalance = nextValue;
@@ -9600,10 +9603,16 @@ function _runMiningCycle(now) {
       lerp(mc.stoneWy, mc.homeWy, t),
       PAM_SZ, !faceRight);
     if (t >= 1) {
-      // Delivery arrived — squish house + spawn coin + increment balance
-      _ronkeBalance++;
-      _spawnCoinParticle(mc.homeWx, mc.homeWy);
-      _triggerBuildingSquish('House3');
+      // Delivery arrived — respect warehouse capacity (house storage cap)
+      const cap = (typeof _totalHouseCapacity === 'function') ? _totalHouseCapacity() : 30000;
+      if (_ronkeBalance < cap) {
+        _ronkeBalance++;
+        _spawnCoinParticle(mc.homeWx, mc.homeWy);
+        _triggerBuildingSquish('House3');
+      } else {
+        // Warehouse full — skip delivery, show feedback popup
+        try { if (typeof showGameNotification === 'function') showGameNotification('WAREHOUSE FULL', 'Upgrade house to store more', '#e85d5d'); } catch (_) {}
+      }
       mc.phase = 'walk_to_stone'; mc.phaseStart = now;
     }
   }
