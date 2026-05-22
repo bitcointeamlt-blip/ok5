@@ -6186,6 +6186,137 @@ window.closeTrophyPanel = function closeTrophyPanel() {
   }
 };
 
+// ── F12 Pay-per-play pricing (MVP — localStorage, display only) ─────
+// Base cost 10 RONKE × 2 augimas kiekvienam žaidimui per 24h.
+// NFT holder discount: ÷N kur N = 1 (no NFT) / 3 (1+) / 3.5 (5+) / 4.5 (10+).
+// First play per 24h = NEMOKAMAS. Reset = 24h po seniausio play log entry.
+const _F12_PLAY_LOG_KEY = '_f12_plays_24h_log';
+const _F12_BASE_COST = 10;
+const _F12_GROWTH = 2;
+const _F12_FIRST_FREE = true;
+
+function _f12NftDiscountDivisor() {
+  const W = window.Wallet;
+  if (!W || !W.getEligibleNftCountCached) return 1;
+  const elig = W.getEligibleNftCountCached();
+  if (elig >= 10) return 4.5;
+  if (elig >= 5) return 3.5;
+  if (elig >= 1) return 3.0;
+  return 1.0;
+}
+function _f12GetPlaysIn24h() {
+  let raw = [];
+  try { raw = JSON.parse(localStorage.getItem(_F12_PLAY_LOG_KEY) || '[]'); } catch (_) {}
+  if (!Array.isArray(raw)) raw = [];
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return raw.filter(t => typeof t === 'number' && t > cutoff);
+}
+function _f12CostForPlayN(playN /* 1-indexed */, divisor) {
+  if (_F12_FIRST_FREE && playN === 1) return 0;
+  const raw = _F12_BASE_COST * Math.pow(_F12_GROWTH, _F12_FIRST_FREE ? (playN - 2) : (playN - 1));
+  return Math.ceil(raw / (divisor || 1));
+}
+function _f12LogPlay() {
+  const plays = _f12GetPlaysIn24h();
+  plays.push(Date.now());
+  try { localStorage.setItem(_F12_PLAY_LOG_KEY, JSON.stringify(plays)); } catch (_) {}
+}
+function _f12HoursUntilReset(plays) {
+  if (!plays.length) return 0;
+  const oldest = Math.min.apply(null, plays);
+  const expiresAt = oldest + 24 * 60 * 60 * 1000;
+  return Math.max(0, (expiresAt - Date.now()) / (60 * 60 * 1000));
+}
+window._f12CurrentCost = function() {
+  const plays = _f12GetPlaysIn24h();
+  const divisor = _f12NftDiscountDivisor();
+  const nextPlayN = plays.length + 1;
+  const cost = _f12CostForPlayN(nextPlayN, divisor);
+  const costNoNft = _f12CostForPlayN(nextPlayN, 1);
+  const afterCost = _f12CostForPlayN(nextPlayN + 1, divisor);
+  return {
+    playsToday: plays.length,
+    nextPlayN,
+    cost, costNoNft, afterCost,
+    divisor,
+    isHolder: divisor > 1,
+    eligibleNftCount: (window.Wallet && window.Wallet.getEligibleNftCountCached) ? window.Wallet.getEligibleNftCountCached() : 0,
+    resetInHours: _f12HoursUntilReset(plays),
+  };
+};
+
+// ── F12 Entry Popup wrap ────────────────────────────────────────────
+let _f12_realGotoF12 = null;
+let _f12_pendingProceed = null;
+function _showF12EntryPopup(onConfirm) {
+  _f12_pendingProceed = onConfirm || null;
+  const d = window._f12CurrentCost();
+  const valEl = document.getElementById('f12e-cost-value');
+  const subEl = document.getElementById('f12e-cost-sub');
+  const discEl = document.getElementById('f12e-discount');
+  const nextEl = document.getElementById('f12e-next-cost');
+  const resetEl = document.getElementById('f12e-reset');
+  const resetH = document.getElementById('f12e-reset-h');
+  if (valEl) valEl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
+  if (subEl) {
+    if (d.cost === 0) subEl.textContent = d.playsToday === 0 ? 'First play of the day' : 'Free entry';
+    else subEl.textContent = `Play #${d.nextPlayN} in last 24h`;
+  }
+  if (discEl) {
+    if (d.isHolder && d.cost !== d.costNoNft) {
+      discEl.style.display = 'block';
+      const noNftLbl = document.getElementById('f12e-cost-noNft');
+      const withNftLbl = document.getElementById('f12e-cost-withNft');
+      const nftCnt = document.getElementById('f12e-nft-count');
+      if (noNftLbl) noNftLbl.textContent = d.costNoNft + ' RONKE';
+      if (withNftLbl) withNftLbl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE (÷' + d.divisor + ')');
+      if (nftCnt) nftCnt.textContent = d.eligibleNftCount;
+    } else {
+      discEl.style.display = 'none';
+    }
+  }
+  if (nextEl) nextEl.textContent = d.afterCost === 0 ? 'FREE' : (d.afterCost + ' RONKE');
+  if (resetEl) {
+    if (d.playsToday > 0) {
+      resetEl.style.display = 'block';
+      if (resetH) resetH.textContent = '~' + Math.ceil(d.resetInHours) + 'h';
+    } else {
+      resetEl.style.display = 'none';
+    }
+  }
+  const ov = document.getElementById('f12-entry-overlay');
+  if (ov) ov.classList.add('active');
+  SFX.play(700, 0.08, 0.05, 'square', 300);
+}
+window._f12ConfirmPlay = function() {
+  const ov = document.getElementById('f12-entry-overlay');
+  if (ov) ov.classList.remove('active');
+  _f12LogPlay();
+  const proceed = _f12_pendingProceed;
+  _f12_pendingProceed = null;
+  SFX.play(900, 0.10, 0.06, 'square', 500);
+  if (typeof proceed === 'function') {
+    setTimeout(proceed, 80);
+  } else if (typeof _f12_realGotoF12 === 'function') {
+    setTimeout(_f12_realGotoF12, 80);
+  }
+};
+window._f12CancelPlay = function() {
+  const ov = document.getElementById('f12-entry-overlay');
+  if (ov) ov.classList.remove('active');
+  _f12_pendingProceed = null;
+  SFX.play(400, 0.06, 0.04, 'square', -200);
+};
+// Wrap window.gotoF12 (set by floor12_merge.js) — runs after DOMContentLoaded.
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (typeof window.gotoF12 === 'function' && !_f12_realGotoF12) {
+      _f12_realGotoF12 = window.gotoF12;
+      window.gotoF12 = function() { _showF12EntryPopup(_f12_realGotoF12); };
+    }
+  }, 500);
+});
+
 // ── NFT Perks Panel (NFT-G) ─────────────────────────────────────────
 window.openNftPerksPanel = function openNftPerksPanel() {
   const ov = document.getElementById('nft-perks-overlay');
@@ -9092,7 +9223,11 @@ window.confirmTeleportUse = function () {
       updateEnergyHud();
     };
     // F12 (PewPew Room) neturi card progression sistemos — praleidžiam kortų pasirinkimą
-    if (S.floor + 1 === 12) proceed();
+    // Pay-per-play popup #22 — rodom kainą prieš įžengiant į F12.
+    if (S.floor + 1 === 12) {
+      if (typeof _showF12EntryPopup === 'function') _showF12EntryPopup(proceed);
+      else proceed();
+    }
     else showCardPicker(proceed);
   }, 600);
 };

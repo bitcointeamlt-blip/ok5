@@ -13786,6 +13786,151 @@ kbd {
   box-shadow: 0 0 10px rgba(111,207,92,0.8), inset 0 1px 0 rgba(255,255,255,0.4);
 }
 
+/* ── F12 Entry Pricing Popup (pay-per-play #22) ─────────────────────── */
+#f12-entry-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(8,12,22,0.94);
+  z-index: 10001;
+  align-items: center; justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(6px);
+}
+#f12-entry-overlay.active { display: flex; }
+#f12-entry-panel {
+  background: linear-gradient(180deg, #1a2540 0%, #0a0f1e 100%);
+  border: 3px solid #4a9da6;
+  border-radius: 10px;
+  padding: 22px 26px;
+  max-width: 460px;
+  width: 100%;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  color: #d8e0f0;
+  box-shadow: 0 0 48px rgba(74,157,166,0.5), 0 8px 32px rgba(0,0,0,0.7);
+}
+.f12e-header {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 12px; margin-bottom: 14px;
+  border-bottom: 1px solid #2a4a5a;
+}
+.f12e-icon { font-size: 20px; color: #4a9da6; text-shadow: 0 0 12px rgba(74,157,166,0.7); }
+.f12e-title { flex: 1; font-size: 12px; color: #f5e6c3; letter-spacing: 1.5px; }
+.f12e-close-x {
+  background: rgba(232,93,93,0.15); border: 2px solid #c44a4a; color: #ffaaaa;
+  width: 28px; height: 28px; border-radius: 4px; cursor: pointer;
+  font-family: inherit; font-size: 14px;
+}
+.f12e-close-x:hover { background: #c44a4a; color: #fff; }
+
+.f12e-cost-section {
+  text-align: center;
+  padding: 14px;
+  background: rgba(74,157,166,0.10);
+  border: 2px solid #4a9da6;
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+.f12e-cost-label {
+  font-size: 9px;
+  color: #8a9aaa;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.f12e-cost-value {
+  font-size: 26px;
+  color: #ffcf5c;
+  text-shadow: 0 0 16px rgba(255,207,92,0.6);
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+}
+.f12e-cost-sub {
+  font-size: 8px;
+  color: #4a9da6;
+  letter-spacing: 0.3px;
+}
+
+.f12e-discount {
+  background: rgba(255,207,92,0.08);
+  border: 1px dashed #ffcf5c;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.f12e-disc-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  padding: 3px 0;
+}
+.f12e-disc-row-active { color: #ffcf5c; font-weight: bold; }
+.f12e-disc-row-active .f12e-disc-val { color: #ffcf5c; }
+.f12e-disc-lbl { color: #8a9aaa; }
+.f12e-disc-val { color: #d8e0f0; }
+
+.f12e-next {
+  background: rgba(255,255,255,0.04);
+  border-left: 3px solid #c44a4a;
+  padding: 8px 12px;
+  font-size: 9px;
+  color: #8a9aaa;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+.f12e-next strong { color: #e85d5d; font-size: 11px; }
+
+.f12e-reset {
+  background: rgba(255,255,255,0.04);
+  padding: 6px 12px;
+  font-size: 8px;
+  color: #8a9aaa;
+  letter-spacing: 0.3px;
+  margin-bottom: 12px;
+}
+.f12e-reset strong { color: #4a9da6; }
+
+.f12e-notice {
+  background: rgba(232,93,93,0.10);
+  border: 1px solid #c44a4a;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 7px;
+  color: #ffaaaa;
+  letter-spacing: 0.4px;
+  margin-bottom: 14px;
+  text-align: center;
+  line-height: 1.5;
+}
+.f12e-notice strong { color: #e85d5d; }
+
+.f12e-actions { display: flex; gap: 10px; }
+.f12e-btn-play, .f12e-btn-cancel {
+  flex: 1; padding: 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  cursor: pointer;
+  border: 2px solid;
+  transition: transform 0.1s;
+}
+.f12e-btn-play {
+  background: linear-gradient(180deg, #4a9da6 0%, #2a5a64 100%);
+  color: #fff; border-color: #4a9da6;
+  box-shadow: 0 4px 0 #1a3a44, 0 0 16px rgba(74,157,166,0.5);
+}
+.f12e-btn-play:hover { transform: translateY(-1px); }
+.f12e-btn-play:active { transform: translateY(2px); box-shadow: 0 2px 0 #1a3a44; }
+.f12e-btn-cancel {
+  background: rgba(255,255,255,0.04); color: #8a9aaa; border-color: #4a5a6a;
+}
+.f12e-btn-cancel:hover { background: rgba(255,255,255,0.1); color: #d8e0f0; }
+
+@media (max-width: 480px) {
+  #f12-entry-panel { padding: 18px 16px; }
+  .f12e-title { font-size: 10px; }
+  .f12e-cost-value { font-size: 20px; }
+}
+
 /* ── NFT Perks Panel (NFT-G) — parchment/gold medieval theme ───────── */
 #nft-perks-overlay {
   display: none;

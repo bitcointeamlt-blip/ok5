@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp19nftperks">
+  <link rel="stylesheet" href="style.css?v=hp20payplay">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1515,6 +1515,52 @@
     </div>
   </div>
 
+  <!-- F12 Entry Pricing Popup (#22 pay-per-play MVP — display only) -->
+  <div id="f12-entry-overlay">
+    <div id="f12-entry-panel">
+      <div class="f12e-header">
+        <span class="f12e-icon">🎯</span>
+        <span class="f12e-title">PEWPEW SAGA — PLAY?</span>
+        <button class="f12e-close-x" onclick="_f12CancelPlay()" title="Close">×</button>
+      </div>
+
+      <div class="f12e-cost-section">
+        <div class="f12e-cost-label">This game costs</div>
+        <div class="f12e-cost-value" id="f12e-cost-value">FREE</div>
+        <div class="f12e-cost-sub" id="f12e-cost-sub">—</div>
+      </div>
+
+      <div class="f12e-discount" id="f12e-discount" style="display:none">
+        <div class="f12e-disc-row">
+          <span class="f12e-disc-lbl">Without NFT:</span>
+          <span class="f12e-disc-val" id="f12e-cost-noNft">—</span>
+        </div>
+        <div class="f12e-disc-row f12e-disc-row-active">
+          <span class="f12e-disc-lbl">Your discount (<span id="f12e-nft-count">0</span> NFT):</span>
+          <span class="f12e-disc-val" id="f12e-cost-withNft">—</span>
+        </div>
+      </div>
+
+      <div class="f12e-next">
+        <div>Next game will cost:</div>
+        <strong id="f12e-next-cost">10 RONKE</strong>
+      </div>
+
+      <div class="f12e-reset" id="f12e-reset" style="display:none">
+        Resets in <strong id="f12e-reset-h">24h</strong> after last play
+      </div>
+
+      <div class="f12e-notice">
+        <strong>MVP:</strong> tracking only — no actual RONKE charge yet
+      </div>
+
+      <div class="f12e-actions">
+        <button class="f12e-btn-play" onclick="_f12ConfirmPlay()">▶ PLAY</button>
+        <button class="f12e-btn-cancel" onclick="_f12CancelPlay()">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
   <!-- NFT Perks Panel (NFT-G) — RONKE NFT holder bonuses comparison -->
   <div id="nft-perks-overlay">
     <div id="nft-perks-panel">
@@ -1729,7 +1775,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp7nftbonus"></script>
-  <script src="game.js?v=cmd408nftbonus"></script>
+  <script src="game.js?v=cmd409payplay"></script>
   <script src="floor12_merge.js?v=cmd691nftbonus"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>
