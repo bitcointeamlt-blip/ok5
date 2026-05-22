@@ -2897,6 +2897,7 @@ function _totalHouseCapacity() {
 // Papildomos kasyklos — sukuriamos kai vartotojas paspaudžia Upgrade ant Castle.
 // Kiekviena turi savo cycle + level + shake + squish + coin particles + popup state.
 const _extraMines = [];
+const MAX_EXTRA_MINES = 2;   // 1 primary + 2 extra = 3 total mines max (HOME / F10 cap)
 let _castleBounds = null;
 let _castlePopupOpen = false;
 let _barracksBounds = null;
@@ -4057,6 +4058,9 @@ window.addEventListener('blur', () => {
 
 
 function _createExtraMine() {
+  // Hard cap: max 3 mines total (1 primary + 2 extra). Defensive guard against
+  // race conditions / direct calls bypassing UI check.
+  if (_extraMines.length >= MAX_EXTRA_MINES) return false;
   const idx = _extraMines.length;
   _extraMines.push({
     idx,
@@ -4080,6 +4084,7 @@ function _createExtraMine() {
     speedUpPopupCloseBounds: null,
     speedUpAnim: null, // {startMs, durMs, srcElapsed, dstElapsed} — vizuali bar'o užpildymo animacija
   });
+  return true;
 }
 const _CONSTRUCTION_MS = 60000; // 1 minutė statybos
 const _SPEEDUP_COST = 1;         // TEST: 1 Ronke per minutę (buvo 10)
@@ -11792,8 +11797,12 @@ function drawForegroundDecorations() {
       } else {
         // BUILD path — exclusive lock: visi castle slot'ai (Tower/Zip/Slot) dalinasi vienu production'u.
         const _otherProd = !!_towerProduction || !!_crossbowTowerProduction || !!_zipProduction || !!_slotProduction;
+        const _atMaxMines = _selIdx === 0 && _extraMines.length >= MAX_EXTRA_MINES;
         if (_selIdx === 4 && _slotMaxed) {
           label = 'MAX SLOTS';
+          enabled = false;
+        } else if (_atMaxMines) {
+          label = 'MAX MINES (3)';
           enabled = false;
         } else {
           label = _otherProd ? 'BUILDING…' : `BUILD ${_selDef.label}`;
@@ -28620,9 +28629,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (inside(_castleBtnBounds)) {
         const CASTLE_COST = 1;
         const _busy = !!_towerProduction || !!_crossbowTowerProduction || !!_zipProduction || !!_slotProduction;
-        if (!_busy && _ronkeBalance >= CASTLE_COST) {
-          _ronkeBalance -= CASTLE_COST;
-          _createExtraMine();
+        const _atMaxMines = _extraMines.length >= MAX_EXTRA_MINES;
+        if (!_busy && !_atMaxMines && _ronkeBalance >= CASTLE_COST) {
+          if (_createExtraMine()) {
+            _ronkeBalance -= CASTLE_COST;
+          }
           _castlePopupOpen = false;
           _castleSelectedIdx = null;
         }
