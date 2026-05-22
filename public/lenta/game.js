@@ -6027,11 +6027,24 @@ document.addEventListener('DOMContentLoaded', () => {
 const _TIER_ICONS = { T_bronze: '●', T_silver: '◆', T_gold: '★', T_legendary: '♛' };
 const _TIER_CLASS = { T_bronze: 'tier-bronze', T_silver: 'tier-silver', T_gold: 'tier-gold', T_legendary: 'tier-legendary' };
 
+let _trophyPanelRefreshTimer = null;
 window.openTrophyPanel = function openTrophyPanel() {
   renderTrophyPanel();
   document.getElementById('trophy-overlay').classList.add('active');
   // Fire-and-forget live pricing fetch (doesn't block UI)
   _refreshTrophyPricing().catch(() => {});
+  // Auto-refresh every 1.5s while panel is open — captures live progress
+  // as player keeps playing without closing the panel.
+  if (_trophyPanelRefreshTimer) clearInterval(_trophyPanelRefreshTimer);
+  _trophyPanelRefreshTimer = setInterval(() => {
+    const overlay = document.getElementById('trophy-overlay');
+    if (!overlay || !overlay.classList.contains('active')) {
+      clearInterval(_trophyPanelRefreshTimer);
+      _trophyPanelRefreshTimer = null;
+      return;
+    }
+    renderTrophyPanel();
+  }, 1500);
   // Wire hero CTA → label + action depend on state (eligible vs locked vs all claimed)
   const cta = document.getElementById('trophy-hero-cta');
   if (cta) {
@@ -6129,6 +6142,10 @@ async function _refreshTrophyPricing() {
 window._refreshTrophyPricing = _refreshTrophyPricing;
 window.closeTrophyPanel = function closeTrophyPanel() {
   document.getElementById('trophy-overlay').classList.remove('active');
+  if (_trophyPanelRefreshTimer) {
+    clearInterval(_trophyPanelRefreshTimer);
+    _trophyPanelRefreshTimer = null;
+  }
 };
 
 function renderTrophyPanel() {
