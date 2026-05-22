@@ -1345,6 +1345,8 @@ function loadProfile() {
   // Restore in-game RONKE balance from cloud-synced profile.
   if (typeof _ronkeBalance !== 'undefined' && typeof Profile.ronkeBalance === 'number') {
     _ronkeBalance = Profile.ronkeBalance;
+    // Anti-cheat baseline — rate limiter compares against last-saved snapshot.
+    try { _ronkeLastSavedValue = Profile.ronkeBalance; _ronkeLastSavedAt = Date.now(); } catch (_) {}
     try { if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge(); } catch (_) {}
   }
 }
@@ -5916,20 +5918,52 @@ window.checkTrophyClaimable = function checkTrophyClaimable() {
 };
 window.closeTrophyModal = closeTrophyModal;
 
-// Phase 15 — RONKE balance auto-sync. _ronkeBalance is mutated in many places
-// (kills, mining, spending) — instead of wrapping every mutation, we periodically
-// snapshot to Profile.ronkeBalance which Supabase auto-syncs.
-// Sanity-cap at 10M client-side too (matches server-side limit for cosmetic display).
-setInterval(() => {
+// Phase 15 — RONKE balance auto-sync with anti-cheat rate limiting.
+// 3 protection layers:
+//   1. Client-side cap (10M) — cosmetic mirror of server limit
+//   2. Max growth rate (50k RONKE per 30s) — blocks DevTools "_ronkeBalance = 999999" hacks
+//   3. beforeunload save — captures last-second earnings before refresh/close
+let _ronkeLastSavedAt = Date.now();
+let _ronkeLastSavedValue = 0;
+const RONKE_MAX_GROWTH_PER_30S = 50_000;   // realistic upper bound for fastest legit grind
+
+function _syncRonkeBalance() {
   try {
     if (typeof _ronkeBalance !== 'number' || !Profile) return;
-    const capped = Math.max(0, Math.min(_ronkeBalance, 10_000_000));
-    if (Profile.ronkeBalance !== capped) {
-      Profile.ronkeBalance = capped;
+    const now = Date.now();
+    const elapsedMs = now - _ronkeLastSavedAt;
+    const reportedDelta = _ronkeBalance - _ronkeLastSavedValue;
+    const allowedDelta = (elapsedMs / 30000) * RONKE_MAX_GROWTH_PER_30S;
+
+    // If growth exceeds rate limit → clamp to allowed delta (anti-cheat)
+    let nextValue = _ronkeBalance;
+    if (reportedDelta > allowedDelta) {
+      nextValue = Math.floor(_ronkeLastSavedValue + allowedDelta);
+      console.warn('[RONKE anti-cheat] Growth clamped:', reportedDelta, '->', allowedDelta);
+      _ronkeBalance = nextValue;
+      try { if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge(); } catch (_) {}
+    }
+    // Hard cap (sanity)
+    nextValue = Math.max(0, Math.min(nextValue, 10_000_000));
+
+    if (Profile.ronkeBalance !== nextValue) {
+      Profile.ronkeBalance = nextValue;
+      _ronkeLastSavedValue = nextValue;
+      _ronkeLastSavedAt = now;
       if (typeof window.saveProfile === 'function') window.saveProfile();
     }
   } catch (_) {}
-}, 5000);
+}
+
+// Periodic sync every 2s (was 5s — tighter window means refresh-loss is smaller)
+setInterval(_syncRonkeBalance, 2000);
+
+// Capture last-second earnings on tab close / refresh / navigation
+window.addEventListener('beforeunload', _syncRonkeBalance);
+window.addEventListener('pagehide', _syncRonkeBalance);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') _syncRonkeBalance();
+});
 
 // Global sound toggle — mutes ALL audio sources (HTML <audio> + Web Audio API + game-specific).
 // Persists via localStorage key `lenta_muted`.
