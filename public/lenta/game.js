@@ -5776,7 +5776,7 @@ const TROPHY_TIERS = [
     id: 'T_gold', label: 'MISSION PROGRESS',
     desc: 'Elite milestones — sustained skill and grinding.',
     requirements: [
-      { id: 'g_kills_200',  label: '200 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 200 },
+      { id: 'g_kills_100',  label: '100 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 100 },
       { id: 'g_unb_50',     label: '50 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 50 },
       { id: 'g_tier_4',     label: 'Create tier-4 ball (value 16)', statKey: 'f12MaxBallValue', threshold: 16 },
       { id: 'g_runs_30',    label: '30 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 30 },
