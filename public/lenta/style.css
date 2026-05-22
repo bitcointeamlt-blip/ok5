@@ -13785,3 +13785,207 @@ kbd {
   background: linear-gradient(180deg, #8aff7a 0%, #6fcf5c 50%, #4a9a3c 100%);
   box-shadow: 0 0 10px rgba(111,207,92,0.8), inset 0 1px 0 rgba(255,255,255,0.4);
 }
+
+/* ── NFT Perks Panel (NFT-G) — parchment/gold medieval theme ───────── */
+#nft-perks-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(8,12,22,0.92);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(6px);
+}
+#nft-perks-overlay.active { display: flex; }
+#nft-perks-panel {
+  background: linear-gradient(135deg, #f5e6c3 0%, #e8d4a3 100%);
+  border: 4px solid #6b4a2e;
+  border-radius: 10px;
+  padding: 24px 26px;
+  max-width: 620px;
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 0 48px rgba(255,207,92,0.45), 0 8px 32px rgba(0,0,0,0.6), inset 0 0 24px rgba(107,74,46,0.12);
+  color: #3a2818;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+}
+.npp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #6b4a2e;
+}
+.npp-icon {
+  font-size: 22px;
+  color: #b8860b;
+  text-shadow: 0 0 8px rgba(255,207,92,0.6);
+}
+.npp-title {
+  flex: 1;
+  font-size: 13px;
+  color: #3a2818;
+  letter-spacing: 1.4px;
+}
+.npp-close-x {
+  background: rgba(107,74,46,0.15);
+  border: 2px solid #6b4a2e;
+  color: #3a2818;
+  font-size: 16px;
+  font-weight: bold;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.npp-close-x:hover { background: #e85d5d; color: #fff; }
+.npp-subtitle {
+  font-size: 9px;
+  color: #6b4a2e;
+  margin: 8px 0 14px;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+}
+.npp-status {
+  background: rgba(107,74,46,0.10);
+  border: 2px dashed #6b4a2e;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-align: center;
+}
+.npp-status a { color: #4a9da6; text-decoration: underline; }
+.npp-status-disconnected { color: #8a6a4a; }
+.npp-status-none {
+  background: rgba(232,93,93,0.12);
+  border-color: #c44a4a;
+  color: #8a3030;
+}
+.npp-status-pending {
+  background: rgba(74,157,166,0.15);
+  border-color: #4a9da6;
+  color: #2a5a64;
+}
+.npp-status-active {
+  background: linear-gradient(180deg, rgba(255,207,92,0.25), rgba(184,134,11,0.18));
+  border: 2px solid #b8860b;
+  color: #3a2818;
+  box-shadow: 0 0 16px rgba(255,207,92,0.5), inset 0 0 12px rgba(255,207,92,0.2);
+  border-style: solid;
+}
+.npp-status-error {
+  background: rgba(232,93,93,0.12);
+  border-color: #c44a4a;
+  color: #8a3030;
+}
+.npp-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  font-size: 9px;
+  background: rgba(255,255,255,0.35);
+  border: 2px solid #6b4a2e;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.npp-table th {
+  background: linear-gradient(180deg, #b8860b 0%, #8a6308 100%);
+  color: #f5e6c3;
+  padding: 8px 6px;
+  text-align: left;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+  font-size: 9px;
+}
+.npp-table th:nth-child(2), .npp-table th:nth-child(3) { text-align: center; width: 30%; }
+.npp-table td {
+  padding: 10px 8px;
+  border-top: 1px solid rgba(107,74,46,0.25);
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.npp-table tr:nth-child(even) td { background: rgba(107,74,46,0.05); }
+.npp-table td:nth-child(2), .npp-table td:nth-child(3) { text-align: center; }
+.npp-bicon { margin-right: 4px; font-size: 11px; }
+.npp-base { color: #8a6a4a; }
+.npp-boost { color: #2a6a30; }
+.npp-boost strong { color: #1a4a20; font-size: 10px; }
+.npp-boost small { color: #6a5a3a; display: block; margin-top: 2px; font-size: 7px; letter-spacing: 0.3px; }
+.npp-soon {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #4a9da6;
+  color: #fff;
+  border-radius: 3px;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+}
+.npp-soon-row td { opacity: 0.7; }
+.npp-rule {
+  background: rgba(74,157,166,0.12);
+  border: 1px solid #4a9da6;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 8px;
+  line-height: 1.5;
+  letter-spacing: 0.3px;
+}
+.npp-rule-icon { font-size: 14px; flex-shrink: 0; }
+.npp-rule strong { color: #2a5a64; }
+.npp-footer {
+  text-align: center;
+  padding: 12px;
+  background: rgba(255,207,92,0.15);
+  border: 1px dashed #b8860b;
+  border-radius: 4px;
+  font-size: 9px;
+  color: #6b4a2e;
+  letter-spacing: 0.5px;
+  line-height: 1.7;
+}
+.npp-footer strong { color: #b8860b; font-size: 10px; }
+.npp-footer small { font-size: 7px; color: #8a6a4a; letter-spacing: 0.3px; }
+
+/* Hub button + mobile menu styling */
+.btn-nftperks-open {
+  background: linear-gradient(180deg, #4a9da6 0%, #2a5a64 100%);
+  color: #fff;
+  border: 2px solid #2a5a64;
+  border-radius: 4px;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  margin-top: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2);
+  transition: transform 0.1s;
+}
+.btn-nftperks-open:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(74,157,166,0.5), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+.mm-btn-nftperks {
+  background: linear-gradient(180deg, #4a9da6 0%, #2a5a64 100%) !important;
+  color: #fff !important;
+  border-color: #b8860b !important;
+}
+
+@media (max-width: 720px) {
+  #nft-perks-panel { padding: 18px 14px; }
+  .npp-title { font-size: 11px; }
+  .npp-table { font-size: 8px; }
+  .npp-table td { padding: 8px 4px; }
+  .npp-boost strong { font-size: 9px; }
+}

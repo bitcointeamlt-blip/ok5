@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp18">
+  <link rel="stylesheet" href="style.css?v=hp19nftperks">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -617,6 +617,7 @@
           </div>
           <button class="btn-ach-open" onclick="openAchievementsPanel()">ACHIEVEMENTS</button>
           <button class="btn-trophy-open" onclick="openTrophyPanel()">TROPHIES</button>
+          <button class="btn-nftperks-open" onclick="openNftPerksPanel()">NFT PERKS</button>
           <button class="btn-back" id="btn-hub-back">BACK TO MENU</button>
         </div>
 
@@ -1349,6 +1350,8 @@
             style="width:100%; margin-top:4px;">ACHIEVEMENTS</button>
           <button class="btn-trophy-open" onclick="openTrophyPanel()"
             style="width:100%; margin-top:4px;">TROPHIES</button>
+          <button class="btn-nftperks-open" onclick="openNftPerksPanel()"
+            style="width:100%; margin-top:4px;">NFT PERKS</button>
         </div>
       </div>
 
@@ -1509,6 +1512,58 @@
       </div>
 
       <div id="trophy-tier-grid"></div>
+    </div>
+  </div>
+
+  <!-- NFT Perks Panel (NFT-G) — RONKE NFT holder bonuses comparison -->
+  <div id="nft-perks-overlay">
+    <div id="nft-perks-panel">
+      <div class="npp-header">
+        <span class="npp-icon">◆</span>
+        <span class="npp-title">RONKE NFT HOLDER PERKS</span>
+        <button class="npp-close-x" onclick="closeNftPerksPanel()" title="Close">×</button>
+      </div>
+      <div class="npp-subtitle">Hold ≥1 RONKE NFT for ≥24h to unlock all bonuses</div>
+
+      <div class="npp-status" id="npp-status">Connect your wallet to see your status</div>
+
+      <table class="npp-table">
+        <thead>
+          <tr><th>Bonus</th><th>No NFT</th><th>NFT Holder</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="npp-bicon">🏰</span> F10 Build / Train speed</td>
+            <td class="npp-base">1×</td>
+            <td class="npp-boost"><strong>2× faster</strong></td>
+          </tr>
+          <tr>
+            <td><span class="npp-bicon">⛏</span> RONKE drop chance</td>
+            <td class="npp-base">50%</td>
+            <td class="npp-boost"><strong>52–60%</strong><br><small>+2% / NFT, cap at 5+</small></td>
+          </tr>
+          <tr>
+            <td><span class="npp-bicon">🎯</span> F12 score multiplier</td>
+            <td class="npp-base">1×</td>
+            <td class="npp-boost"><strong>1.5×</strong></td>
+          </tr>
+          <tr class="npp-soon-row">
+            <td><span class="npp-bicon">🪙</span> Pay-per-play discount</td>
+            <td class="npp-base">full price</td>
+            <td class="npp-boost"><span class="npp-soon">coming soon</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="npp-rule">
+        <span class="npp-rule-icon">⏰</span>
+        <span><strong>24h hold rule:</strong> NFT must be in your wallet for ≥24 hours before bonuses activate. Anti-flash farming.</span>
+      </div>
+
+      <div class="npp-footer">
+        <strong>MORE BONUSES COMING</strong><br>
+        <small>As new missions, quests and games launch, holder perks expand.</small>
+      </div>
     </div>
   </div>
 
@@ -1673,9 +1728,9 @@
   <!-- Supabase JS client (CDN, v2) — cloud profile sync -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
-  <script src="wallet.js?v=wp6nfta"></script>
-  <script src="game.js?v=cmd407nfta"></script>
-  <script src="floor12_merge.js?v=cmd690tier"></script>
+  <script src="wallet.js?v=wp7nftbonus"></script>
+  <script src="game.js?v=cmd408nftbonus"></script>
+  <script src="floor12_merge.js?v=cmd691nftbonus"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
@@ -2215,6 +2270,7 @@
       <button class="mm-btn" data-action="upgrade"><span class="mm-ic">⚒️</span><span>UPGRADE</span></button>
       <button class="mm-btn" data-action="pewpew"><span class="mm-ic">🎯</span><span>PEWPEW</span></button>
       <button class="mm-btn mm-btn-trophy" data-action="trophy"><span class="mm-ic">🏆</span><span>TROPHIES</span></button>
+      <button class="mm-btn mm-btn-nftperks" data-action="nftperks"><span class="mm-ic">◆</span><span>NFT PERKS</span></button>
       <button class="mm-btn" data-action="home"><span class="mm-ic">🏠</span><span>HOME</span></button>
       <button class="mm-close" data-action="close">✕ CLOSE</button>
     </div>
@@ -2247,6 +2303,9 @@
             case 'trophy':
               // Trophy panel doesn't have a hidden wallet pill button — call API directly
               if (typeof window.openTrophyPanel === 'function') window.openTrophyPanel();
+              return;
+            case 'nftperks':
+              if (typeof window.openNftPerksPanel === 'function') window.openNftPerksPanel();
               return;
           }
           if (id) {

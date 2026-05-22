@@ -3230,7 +3230,11 @@ function _restoreBarracksTrainedState() {
 }
 
 const _BARRACKS_UNIT_COST = 1;
-const _BARRACKS_PRODUCE_MS = 60000;    // 1 min
+// NFT holder bonus: build/train laikas dalinamas iš 2 jei isHolderEligibleCached().
+// `_BASE_*` = nuolatinis 1min šaltinis; gyvieji `_*_PRODUCE_MS` perskaičiuojami
+// per `_applyHolderBuildBonus()` kai pasikeičia hold status (hooked žemiau).
+const _BASE_BARRACKS_PRODUCE_MS = 60000;
+let _BARRACKS_PRODUCE_MS = _BASE_BARRACKS_PRODUCE_MS;
 const _barracksAvatarImgs = [];
 // Avatar file numeris per slot idx — kad shaman (Avatar_05) būtų idx 3, paliekame Avatar_04 idx 4 (būsimas unit).
 const _BARRACKS_AVATAR_FILES = [1, 2, 3, 5, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
@@ -3253,15 +3257,18 @@ let _castleCardRects = [];
 // Tower production: vienas slot'as castle'e — startAt + optional speedUpAnim
 // { startAt, speedUpAnim: { startMs, durMs, srcElapsed, dstElapsed } | null }
 let _towerProduction = null;
-const _TOWER_PRODUCE_MS = 60000;   // 1 min, kaip barracks
+const _BASE_TOWER_PRODUCE_MS = 60000;
+let _TOWER_PRODUCE_MS = _BASE_TOWER_PRODUCE_MS;
 const _TOWER_BUILD_COST = 3;
 const _TOWER_SPEEDUP_COST = 1;
 let _crossbowTowerProduction = null;
-const _CROSSBOW_TOWER_PRODUCE_MS = _TOWER_PRODUCE_MS;
+const _BASE_CROSSBOW_TOWER_PRODUCE_MS = 60000;
+let _CROSSBOW_TOWER_PRODUCE_MS = _BASE_CROSSBOW_TOWER_PRODUCE_MS;
 const _CROSSBOW_TOWER_BUILD_COST = _TOWER_BUILD_COST;
 const _CROSSBOW_TOWER_SPEEDUP_COST = _TOWER_SPEEDUP_COST;
 let _zipProduction = null;
-const _ZIP_PRODUCE_MS = 60000;
+const _BASE_ZIP_PRODUCE_MS = 60000;
+let _ZIP_PRODUCE_MS = _BASE_ZIP_PRODUCE_MS;
 const _ZIP_BUILD_COST = 5;
 const _ZIP_SPEEDUP_COST = 1;
 function _getTowerProdElapsed(now) {
@@ -3369,7 +3376,8 @@ function _tickZipProduction() {
 }
 // Slot (barracks slot atrakinimas) production — 1 min, gali speed up'inti
 let _slotProduction = null;
-const _SLOT_PRODUCE_MS = 60000;
+const _BASE_SLOT_PRODUCE_MS = 60000;
+let _SLOT_PRODUCE_MS = _BASE_SLOT_PRODUCE_MS;
 const _SLOT_SPEEDUP_COST = 1;
 function _getSlotProdElapsed(now) {
   if (!_slotProduction) return 0;
@@ -4086,8 +4094,38 @@ function _createExtraMine() {
   });
   return true;
 }
-const _CONSTRUCTION_MS = 60000; // 1 minutė statybos
+const _BASE_CONSTRUCTION_MS = 60000;
+let _CONSTRUCTION_MS = _BASE_CONSTRUCTION_MS;
 const _SPEEDUP_COST = 1;         // TEST: 1 Ronke per minutę (buvo 10)
+
+// ── NFT holder bonus: F10 statybos/treniravimo greitis 2× ─────────────
+// Tik jei isHolderEligibleCached() (≥1 NFT laikoma ≥24h server-verified).
+// Aktyvinama per `_applyHolderBuildBonus()` kviečiama Wallet onChange + poll.
+let _NFT_BUILD_SPEED_MULT = 1.0;
+function _applyHolderBuildBonus() {
+  const eligible = (window.Wallet && window.Wallet.isHolderEligibleCached)
+    ? window.Wallet.isHolderEligibleCached() : false;
+  const newMult = eligible ? 0.5 : 1.0;
+  if (newMult === _NFT_BUILD_SPEED_MULT) return;
+  _NFT_BUILD_SPEED_MULT = newMult;
+  _BARRACKS_PRODUCE_MS = Math.round(_BASE_BARRACKS_PRODUCE_MS * newMult);
+  _TOWER_PRODUCE_MS = Math.round(_BASE_TOWER_PRODUCE_MS * newMult);
+  _CROSSBOW_TOWER_PRODUCE_MS = Math.round(_BASE_CROSSBOW_TOWER_PRODUCE_MS * newMult);
+  _ZIP_PRODUCE_MS = Math.round(_BASE_ZIP_PRODUCE_MS * newMult);
+  _SLOT_PRODUCE_MS = Math.round(_BASE_SLOT_PRODUCE_MS * newMult);
+  _CONSTRUCTION_MS = Math.round(_BASE_CONSTRUCTION_MS * newMult);
+  if (typeof logEvent === 'function') {
+    logEvent(eligible ? '🏰 NFT holder 2× build speed AKTYVUOTA' : '🏰 NFT holder build bonus išjungtas', 'info');
+  }
+}
+// Hook onto Wallet (load order safe — Wallet declares onChange in wallet.js init).
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.Wallet && window.Wallet.onChange) {
+    window.Wallet.onChange(() => _applyHolderBuildBonus());
+  }
+  // Poll every 30s in case async getNftHoldStatus completes after onChange fired.
+  setInterval(_applyHolderBuildBonus, 30000);
+});
 const _houseConstructionImg = new Image();
 _houseConstructionImg.src = 'assets_tiny/House_Construction.png';
 const _pawnHammerImg = new Image();
@@ -6147,6 +6185,63 @@ window.closeTrophyPanel = function closeTrophyPanel() {
     _trophyPanelRefreshTimer = null;
   }
 };
+
+// ── NFT Perks Panel (NFT-G) ─────────────────────────────────────────
+window.openNftPerksPanel = function openNftPerksPanel() {
+  const ov = document.getElementById('nft-perks-overlay');
+  if (!ov) return;
+  ov.classList.add('active');
+  _renderNftPerksStatus();
+  SFX.play(600, 0.08, 0.04, 'square', 200);
+};
+window.closeNftPerksPanel = function closeNftPerksPanel() {
+  const ov = document.getElementById('nft-perks-overlay');
+  if (ov) ov.classList.remove('active');
+  SFX.play(400, 0.06, 0.04, 'square', -200);
+};
+function _renderNftPerksStatus() {
+  const el = document.getElementById('npp-status');
+  if (!el) return;
+  const W = window.Wallet;
+  if (!W || !W.isConnected || !W.isConnected()) {
+    el.innerHTML = 'Connect your wallet to see your status';
+    el.className = 'npp-status npp-status-disconnected';
+    return;
+  }
+  el.innerHTML = '⏳ Checking NFT status...';
+  el.className = 'npp-status';
+  if (!W.getNftHoldStatus) {
+    el.innerHTML = '⚠ NFT status helper not available';
+    el.className = 'npp-status npp-status-error';
+    return;
+  }
+  W.getNftHoldStatus().then(d => {
+    // Re-check panel is still open before mutating DOM.
+    const ov = document.getElementById('nft-perks-overlay');
+    if (!ov || !ov.classList.contains('active')) return;
+    if (!d || !d.ok) {
+      el.innerHTML = '⚠ Could not verify NFT status — try again later';
+      el.className = 'npp-status npp-status-error';
+      return;
+    }
+    const total = d.totalCount, elig = d.eligibleCount;
+    if (total === 0) {
+      el.innerHTML = '✗ No RONKE NFTs in this wallet · <a href="https://marketplace.skymavis.com/collections/ronkeverse" target="_blank">Get one →</a>';
+      el.className = 'npp-status npp-status-none';
+    } else if (elig === 0) {
+      const ageH = Math.floor(d.oldestHoldSeconds / 3600);
+      const hLeft = Math.max(0, 24 - ageH);
+      el.innerHTML = `⏰ <strong>${total}</strong> NFT held — bonuses unlock in <strong>~${hLeft}h</strong> (24h hold required)`;
+      el.className = 'npp-status npp-status-pending';
+    } else {
+      el.innerHTML = `✓ <strong>${elig} / ${total}</strong> NFT${elig > 1 ? 's' : ''} eligible — all bonuses ACTIVE`;
+      el.className = 'npp-status npp-status-active';
+    }
+  }).catch(() => {
+    el.innerHTML = '⚠ Network error verifying NFT status';
+    el.className = 'npp-status npp-status-error';
+  });
+}
 
 function renderTrophyPanel() {
   const grid = document.getElementById('trophy-tier-grid');
@@ -17007,8 +17102,15 @@ function spawnLoot(x, y) {
 }
 
 function spawnRonkeDrop(x, y) {
-  // 50% ronke token | 50% goldbag
-  if (Math.random() < 0.5) {
+  // Bazinė tikimybė 50% ronke | 50% goldbag.
+  // NFT holder bonusas: +2% už kiekvieną eligible NFT, cap +10% (max 5+ NFT).
+  // Visi NFT turi būti laikomi ≥24h (24h hold rule per server validation).
+  let ronkeChance = 0.5;
+  if (window.Wallet && window.Wallet.getEligibleNftCountCached) {
+    const elig = window.Wallet.getEligibleNftCountCached();
+    if (elig > 0) ronkeChance += Math.min(elig * 0.02, 0.10);
+  }
+  if (Math.random() < ronkeChance) {
     S.loot.push({ x, y, type: 'ronke', val: 1, collected: false, age: 0 });
   } else {
     S.loot.push({ x, y, type: 'goldbag', val: 3, collected: false, age: 0, spawnT: performance.now() });

@@ -1077,7 +1077,7 @@
           _spawnDmgPopup(h.laneIdx, h.target.x, h.dmg, t);
           if (h.target.hp <= 0) {
             h.target.dead = true; h.target.deathStartedAt = t;
-            score += 5;
+            score += _nftScoreBoost(5);
             _trackF12Kill(h.target);
             if (!h.target._isWall) _F12Audio.skullDeath();
           }
@@ -1154,7 +1154,7 @@
           p.target.hp -= p.dmg;
           p.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(p.laneIdx, p.target.x, p.dmg, t);
-          if (p.target.hp <= 0) { p.target.dead = true; p.target.deathStartedAt = t; score += 5; _trackF12Kill(p.target); if (!p.target._isWall) _F12Audio.skullDeath(); }
+          if (p.target.hp <= 0) { p.target.dead = true; p.target.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(p.target); if (!p.target._isWall) _F12Audio.skullDeath(); }
         }
         // Spawn explosion at impact
         const impactX = p.target ? p.target.x : p.fromX;
@@ -1258,7 +1258,7 @@
           ar.target.hp -= ar.dmg;
           ar.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(ar.laneIdx, ar.target.x, ar.dmg, t);
-          if (ar.target.hp <= 0) { ar.target.dead = true; ar.target.deathStartedAt = t; score += 5; _trackF12Kill(ar.target); if (!ar.target._isWall) _F12Audio.skullDeath(); }
+          if (ar.target.hp <= 0) { ar.target.dead = true; ar.target.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(ar.target); if (!ar.target._isWall) _F12Audio.skullDeath(); }
         }
         const impactX = ar.target ? ar.target.x : ar.fromX;
         _f12ArrowImpacts.push({ laneIdx: ar.laneIdx, atX: impactX, born: t, duration: 9 * 60 });
@@ -1700,6 +1700,13 @@
   function now() { return performance.now(); }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
+  // NFT holder bonus: F12 score 1.5× (eligibleCount ≥ 1, server-verified 24h hold).
+  function _nftScoreBoost(n) {
+    if (window.Wallet && window.Wallet.isHolderEligibleCached && window.Wallet.isHolderEligibleCached()) {
+      return Math.round(n * 1.5);
+    }
+    return n;
+  }
 
   // Phase 15 — trophy stat hook for F12 kills (separates F12 from F11 totalKills).
   // Walls don't count. Boss kills tracked separately for "Boss Slayer" tier req.
@@ -2509,7 +2516,7 @@
         merged._perfect = isPerfect;
         merged._zoneTier = _zoneTier;
         merged._slotBonus = slotBonus;
-        const scoreGain = newVal * scoreMult;
+        const scoreGain = _nftScoreBoost(newVal * scoreMult);
         score += scoreGain;
         merges++;
         // Phase 1 — trophy stat tracking. Increment counters on each merge tier.
@@ -2865,7 +2872,7 @@
       if (bestEnemy.hp <= 0) {
         bestEnemy.dead = true;
         bestEnemy.deathStartedAt = t;
-        score += 5;
+        score += _nftScoreBoost(5);
         _trackF12Kill(bestEnemy);
         if (!bestEnemy._isWall) _F12Audio.skullDeath();
       }
@@ -3021,7 +3028,7 @@
             if (bestE.hp <= 0) {
               bestE.dead = true;
               bestE.deathStartedAt = t;
-              score += 5;
+              score += _nftScoreBoost(5);
               _trackF12Kill(bestE);
               if (!bestE._isWall) _F12Audio.skullDeath();
             }
@@ -3079,7 +3086,7 @@
             _spawnDmgPopup(trap.lane, e.x, _trapDmg, t);
             _F12Audio.damageHit(_trapDmg);
             if (e.hp <= 0) {
-              e.dead = true; e.deathStartedAt = t; score += 5; _trackF12Kill(e);
+              e.dead = true; e.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(e);
               if (!e._isWall) _F12Audio.skullDeath();
             }
           }
@@ -3306,7 +3313,7 @@
           if (e.hp <= 0) {
             e.dead = true;
             e.deathStartedAt = t;
-            score += 5;
+            score += _nftScoreBoost(5);
             _trackF12Kill(e);
             if (!e._isWall) _F12Audio.skullDeath();
             continue;
@@ -3992,7 +3999,7 @@
             a._projTarget.hp -= a.dmg;
             a._projTarget.hitFlashUntil = t + 200;
             _spawnDmgPopup((a._projLane !== undefined) ? a._projLane : li, a._projTarget.x, a.dmg, t);
-            if (a._projTarget.hp <= 0) { a._projTarget.dead = true; a._projTarget.deathStartedAt = t; score += 5; _trackF12Kill(a._projTarget); if (!a._projTarget._isWall) _F12Audio.skullDeath(); }
+            if (a._projTarget.hp <= 0) { a._projTarget.dead = true; a._projTarget.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(a._projTarget); if (!a._projTarget._isWall) _F12Audio.skullDeath(); }
             // Spawn lightning bolt — sxy bus screen-space, computed render time
             _f12ZipBolts.push({
               laneIdx: li, fromX: a.x, fromLane: li,
@@ -4032,7 +4039,7 @@
               target.hp -= a.dmg;
               target.hitFlashUntil = t + 200;
               _spawnDmgPopup(targetLaneIdx, target.x, a.dmg, t);
-              if (target.hp <= 0) { target.dead = true; target.deathStartedAt = t; score += 5; _trackF12Kill(target); if (!target._isWall) _F12Audio.skullDeath(); }
+              if (target.hp <= 0) { target.dead = true; target.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(target); if (!target._isWall) _F12Audio.skullDeath(); }
             }
           }
           // Enemy counter — tik jei MELEE range (skull range, ne ranged)

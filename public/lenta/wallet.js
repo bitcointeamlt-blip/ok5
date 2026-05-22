@@ -470,13 +470,75 @@
     return { txHash, price: priceHex };
   }
 
-  // RONKE NFT count helper (display / wallet badge only).
-  // Returns 0 if not connected or NFTs not yet loaded; otherwise the count.
+  // RONKE NFT count helper (display / wallet badge only — spoofable client-side).
+  // For bonus gating use getNftHoldStatus() which queries server-side.
   function getRonkeNFTCount() {
     if (!state.connected) return 0;
     if (!Array.isArray(state.nfts)) return 0;
     return state.nfts.length;
   }
+
+  // ── Server-verified NFT hold status (for bonus gating) ──────────────
+  // Calls Supabase edge function nft-hold-status which queries Ronin RPC
+  // directly. Returns { totalCount, eligibleCount, oldestHoldSeconds, asOf }.
+  // Frontend cache: 5 min, on top of edge function's 10 min cache.
+  let _nftHoldCache = null;   // { data, fetchedAt }
+  let _nftHoldFetching = null;
+  const _NFT_HOLD_FRONTEND_TTL_MS = 5 * 60 * 1000;
+
+  async function getNftHoldStatus(opts) {
+    const force = !!(opts && opts.force);
+    const addr = state.address;
+    if (!state.connected || !addr) {
+      return { totalCount: 0, eligibleCount: 0, oldestHoldSeconds: 0, asOf: 0, ok: false };
+    }
+    const nowMs = Date.now();
+    if (!force && _nftHoldCache && (nowMs - _nftHoldCache.fetchedAt) < _NFT_HOLD_FRONTEND_TTL_MS) {
+      return _nftHoldCache.data;
+    }
+    if (_nftHoldFetching) return _nftHoldFetching;
+
+    _nftHoldFetching = (async () => {
+      try {
+        if (!window.SupabaseSync || !window.SupabaseSync.invoke) {
+          return { totalCount: 0, eligibleCount: 0, oldestHoldSeconds: 0, asOf: 0, ok: false, error: 'SupabaseSync not ready' };
+        }
+        const resp = await window.SupabaseSync.invoke('nft-hold-status', { wallet: addr.toLowerCase() });
+        if (!resp || resp.ok === false) {
+          return { totalCount: 0, eligibleCount: 0, oldestHoldSeconds: 0, asOf: 0, ok: false, error: (resp && resp.error) || 'invoke failed' };
+        }
+        const data = {
+          ok: true,
+          totalCount: Number(resp.totalCount) || 0,
+          eligibleCount: Number(resp.eligibleCount) || 0,
+          oldestHoldSeconds: Number(resp.oldestHoldSeconds) || 0,
+          asOf: Number(resp.asOf) || 0,
+          fromCache: !!resp.fromCache,
+        };
+        _nftHoldCache = { data, fetchedAt: nowMs };
+        return data;
+      } catch (e) {
+        console.warn('[wallet] getNftHoldStatus failed', e);
+        return { totalCount: 0, eligibleCount: 0, oldestHoldSeconds: 0, asOf: 0, ok: false, error: String(e) };
+      } finally {
+        _nftHoldFetching = null;
+      }
+    })();
+    return _nftHoldFetching;
+  }
+
+  // Synchronous helper — returns cached eligible count or 0 if not yet fetched.
+  // Use this in render/game-loop hot paths. Kick off getNftHoldStatus() once on
+  // wallet connect to populate.
+  function getEligibleNftCountCached() {
+    return _nftHoldCache && _nftHoldCache.data ? _nftHoldCache.data.eligibleCount : 0;
+  }
+  function isHolderEligibleCached() {
+    return getEligibleNftCountCached() >= 1;
+  }
+
+  // Clear cache on disconnect/address change (caller hooks via onChange).
+  function _clearNftHoldCache() { _nftHoldCache = null; _nftHoldFetching = null; }
 
   // Public API
   window.Wallet = {
@@ -491,10 +553,24 @@
     // data
     refreshBalance, refreshNfts,
     getRonkeNFTCount,
+    // NFT hold (server-verified, 24h gate)
+    getNftHoldStatus, getEligibleNftCountCached, isHolderEligibleCached,
     claimTrophy,
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT,
   };
+
+  // Clear NFT hold cache when wallet address changes / disconnects.
+  onChange((s) => {
+    if (!s.connected || !s.address) _clearNftHoldCache();
+  });
+
+  // Auto-prefetch hold status shortly after connect (non-blocking).
+  onChange((s) => {
+    if (s.connected && s.address && s.nfts !== null && !_nftHoldCache) {
+      setTimeout(() => { getNftHoldStatus().catch(() => {}); }, 500);
+    }
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
