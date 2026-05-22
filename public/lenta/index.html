@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp13">
+  <link rel="stylesheet" href="style.css?v=hp14">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -2214,6 +2214,7 @@
       <button class="mm-btn" data-action="rewards"><span class="mm-ic">🎁</span><span>REWARDS</span></button>
       <button class="mm-btn" data-action="upgrade"><span class="mm-ic">⚒️</span><span>UPGRADE</span></button>
       <button class="mm-btn" data-action="pewpew"><span class="mm-ic">🎯</span><span>PEWPEW</span></button>
+      <button class="mm-btn mm-btn-trophy" data-action="trophy"><span class="mm-ic">🏆</span><span>TROPHIES</span></button>
       <button class="mm-btn" data-action="home"><span class="mm-ic">🏠</span><span>HOME</span></button>
       <button class="mm-close" data-action="close">✕ CLOSE</button>
     </div>
@@ -2243,6 +2244,10 @@
             case 'upgrade':   id = 'wui-upgrade-btn';  break;
             case 'pewpew':    id = 'wui-pewpew-btn';   break;
             case 'home':      id = 'wui-home-btn';     break;
+            case 'trophy':
+              // Trophy panel doesn't have a hidden wallet pill button — call API directly
+              if (typeof window.openTrophyPanel === 'function') window.openTrophyPanel();
+              return;
           }
           if (id) {
             const el = document.getElementById(id);

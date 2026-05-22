@@ -13658,3 +13658,63 @@ kbd {
   }
   .dlb-icon { font-size: 10px; }
 }
+
+/* ── Mobile menu — TROPHIES button gold accent (highlight new NFT mint CTA) ─ */
+.mm-btn-trophy {
+  background: linear-gradient(180deg, rgba(255,207,92,0.25) 0%, rgba(212,154,42,0.18) 100%) !important;
+  border: 2px solid #ffcf5c !important;
+  color: #ffcf5c !important;
+  box-shadow: 0 0 12px rgba(255,207,92,0.4) !important;
+  position: relative;
+}
+.mm-btn-trophy::after {
+  content: 'MINT NFT';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 7px;
+  background: #1273ea;
+  color: #fff;
+  padding: 2px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 6px rgba(31,124,252,0.5);
+}
+.mm-btn-trophy .mm-ic {
+  filter: drop-shadow(0 0 6px rgba(255,207,92,0.7));
+}
+.mm-btn-trophy:active {
+  transform: scale(0.97);
+  background: linear-gradient(180deg, rgba(255,207,92,0.4) 0%, rgba(212,154,42,0.3) 100%) !important;
+}
+
+/* ── Mobile responsive — trophy panel ──────────────────────── */
+@media (max-width: 600px) {
+  #trophy-overlay { padding: 10px; }
+  #trophy-panel {
+    padding: 14px 16px;
+    max-height: 95vh;
+  }
+  .trophy-panel-title { font-size: 12px; }
+  .trophy-panel-subtitle { font-size: 8px; }
+  .trophy-hero {
+    padding: 14px;
+  }
+  .trophy-hero-title { font-size: 14px; }
+  .trophy-hero-cta { padding: 8px 14px; font-size: 8px; }
+  .tier-card { padding: 12px 12px; }
+  .tier-card-title { font-size: 10px !important; }
+  .tier-card-progress { font-size: 8px; }
+  .tier-req { font-size: 8px; }
+  .tier-claim-btn { font-size: 9px; padding: 10px 12px; }
+  .tcb-lock { font-size: 9px; }
+  .tcb-hint { font-size: 6px; }
+  .trophy-stat-value { font-size: 13px; }
+  .trophy-stat-label { font-size: 6px; }
+  .trophy-stat-sub { font-size: 6px; }
+  .trophy-stat-icon { font-size: 12px; }
+  .trophy-info-body { font-size: 7px; }
+  .trophy-info-title { font-size: 8px; }
+  .tcs-line { font-size: 8px; }
+  .trophy-panel-close-x { width: 28px; height: 28px; font-size: 14px; }
+}
