@@ -6251,34 +6251,6 @@ function _formatProgress(current, threshold) {
   return `${fmt(current)}/${fmt(threshold)}`;
 }
 
-// Phase 1 — trophy eligibility tracker. Read-only check, no mint flow yet.
-// Returns { id, label, progress, target, tier, eligible } per claimable achievement.
-// UI/Edge Function naudos šitą informaciją Phase 2-3 metu.
-window.getTrophyProgress = function getTrophyProgress() {
-  _ensureTrophyStats();
-  const tier = (window.Wallet && window.Wallet.getRonkeHolderTier)
-    ? window.Wallet.getRonkeHolderTier().tier
-    : 1;
-  return TROPHY_ACHIEVEMENTS.map(t => {
-    const base = t.baseThreshold || 0;
-    const target = Math.max(1, Math.ceil(base / tier));
-    const progress = (Profile.stats && Profile.stats[t.statKey]) || 0;
-    const claimed = !!(Profile.trophyClaims && Profile.trophyClaims[t.id]);
-    return {
-      id: t.id,
-      label: t.label,
-      desc: t.desc,
-      statKey: t.statKey,
-      progress,
-      target,
-      baseTarget: base,
-      tier,
-      eligible: progress >= target,
-      claimed,
-    };
-  });
-};
-
 function showAchievementPopup(a) {
   const popup = document.getElementById('achievement-popup');
   if (!popup) return;
