@@ -5768,7 +5768,7 @@ const TROPHY_TIERS = [
     requirements: [
       { id: 's_unb_5',      label: '5 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 5 },
       { id: 's_boss_1',     label: 'Defeat first minotaur boss', statKey: 'f12BossKills', threshold: 1 },
-      { id: 's_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
+      { id: 's_score_500',  label: 'PewPew Saga score 500 (single run)', statKey: 'f12HighScore', threshold: 500 },
       { id: 's_combo_5',    label: 'Chain ×5 in a single run', statKey: 'f12MaxComboEver', threshold: 5 },
     ],
   },
@@ -5786,8 +5786,8 @@ const TROPHY_TIERS = [
     id: 'T_legendary', label: 'MISSION PROGRESS',
     desc: 'Extreme milestones — only the most dedicated players reach this.',
     requirements: [
-      { id: 'l_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
-      { id: 'l_unb_250',    label: '250 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 250 },
+      { id: 'l_score_690',  label: 'PewPew Saga score 690 (single run)', statKey: 'f12HighScore', threshold: 690 },
+      { id: 'l_unb_69',     label: '69 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 69 },
       { id: 'l_tier_5',    label: 'Create tier-5 ball (value 32)', statKey: 'f12MaxBallValue', threshold: 32 },
       { id: 'l_runs_50',    label: '50 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 50 },
     ],
