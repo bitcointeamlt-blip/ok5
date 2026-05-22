@@ -13750,11 +13750,12 @@ kbd {
   color: #6fcf5c !important;
 }
 .tier-req-bar {
-  height: 4px;
+  height: 3px;
   background: rgba(255,255,255,0.06);
   border-radius: 2px;
   overflow: hidden;
   margin-left: 24px;   /* indent under checkmark */
+  max-width: 180px;    /* shorter — don't stretch full width */
 }
 .tier-req-bar-fill {
   height: 100%;
