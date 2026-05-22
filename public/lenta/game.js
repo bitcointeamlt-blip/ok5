@@ -5759,7 +5759,7 @@ const TROPHY_TIERS = [
       { id: 'r_perfect_10', label: '10 PERFECT merges', statKey: 'perfectMerges', threshold: 10 },
       { id: 'r_kills_50',   label: '50 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 50 },
       { id: 'r_score_200',  label: 'PewPew Saga score 200 (single run)', statKey: 'f12HighScore', threshold: 200 },
-      { id: 'r_tier_5',     label: 'Create tier-5 ball (value 32)', statKey: 'f12MaxBallValue', threshold: 32 },
+      { id: 'r_tier_3',     label: 'Create tier-3 ball (value 8)', statKey: 'f12MaxBallValue', threshold: 8 },
     ],
   },
   {
@@ -5778,7 +5778,7 @@ const TROPHY_TIERS = [
     requirements: [
       { id: 'g_kills_200',  label: '200 enemy kills (PewPew Saga)', statKey: 'f12EnemyKills', threshold: 200 },
       { id: 'g_unb_50',     label: '50 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 50 },
-      { id: 'g_tier_8',     label: 'Create tier-8 ball (value 256)', statKey: 'f12MaxBallValue', threshold: 256 },
+      { id: 'g_tier_4',     label: 'Create tier-4 ball (value 16)', statKey: 'f12MaxBallValue', threshold: 16 },
       { id: 'g_runs_30',    label: '30 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 30 },
     ],
   },
@@ -5788,7 +5788,7 @@ const TROPHY_TIERS = [
     requirements: [
       { id: 'l_score_1k',   label: 'PewPew Saga score 1,000 (single run)', statKey: 'f12HighScore', threshold: 1000 },
       { id: 'l_unb_250',    label: '250 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 250 },
-      { id: 'l_tier_10',    label: 'Create tier-10 ball (value 1024 — max)', statKey: 'f12MaxBallValue', threshold: 1024 },
+      { id: 'l_tier_5',    label: 'Create tier-5 ball (value 32)', statKey: 'f12MaxBallValue', threshold: 32 },
       { id: 'l_runs_50',    label: '50 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 50 },
     ],
   },

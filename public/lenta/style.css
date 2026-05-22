@@ -13750,21 +13750,38 @@ kbd {
   color: #6fcf5c !important;
 }
 .tier-req-bar {
-  height: 3px;
-  background: rgba(255,255,255,0.06);
-  border-radius: 2px;
+  height: 6px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 3px;
   overflow: hidden;
-  margin-left: 24px;   /* indent under checkmark */
-  max-width: 180px;    /* shorter — don't stretch full width */
+  margin-left: 24px;
+  max-width: 120px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+  position: relative;
 }
 .tier-req-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #ffcf5c, #ffe168);
+  background: linear-gradient(180deg, #ffe168 0%, #ffcf5c 50%, #d49a2a 100%);
   border-radius: 2px;
-  transition: width 0.4s ease;
-  box-shadow: 0 0 6px rgba(255,207,92,0.4);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 8px rgba(255,207,92,0.7), inset 0 1px 0 rgba(255,255,255,0.4);
+  position: relative;
+}
+.tier-req-bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: bar-shimmer 2.5s linear infinite;
+  border-radius: inherit;
+}
+@keyframes bar-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 .tier-req.met .tier-req-bar-fill {
-  background: linear-gradient(90deg, #6fcf5c, #8aff7a);
-  box-shadow: 0 0 6px rgba(111,207,92,0.5);
+  background: linear-gradient(180deg, #8aff7a 0%, #6fcf5c 50%, #4a9a3c 100%);
+  box-shadow: 0 0 10px rgba(111,207,92,0.8), inset 0 1px 0 rgba(255,255,255,0.4);
 }
