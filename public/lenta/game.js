@@ -5925,7 +5925,7 @@ window.closeTrophyModal = closeTrophyModal;
 //   3. beforeunload save — captures last-second earnings before refresh/close
 let _ronkeLastSavedAt = Date.now();
 let _ronkeLastSavedValue = 0;
-const RONKE_PER_MINE_PER_30S = 100;   // per-mine max earn rate (anti-cheat ceiling)
+const RONKE_PER_MINE_PER_30S = 5;   // per-mine max earn rate (10 RONKE/min per mine)
 
 function _syncRonkeBalance() {
   try {
