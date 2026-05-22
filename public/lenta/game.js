@@ -6248,34 +6248,69 @@ window._f12CurrentCost = function() {
 // ── F12 Entry Popup wrap ────────────────────────────────────────────
 let _f12_realGotoF12 = null;
 let _f12_pendingProceed = null;
+function _f12TierLabel(divisor) {
+  if (divisor >= 4.5) return 'TIER 3 · 10+ NFT';
+  if (divisor >= 3.5) return 'TIER 2 · 5+ NFT';
+  if (divisor >= 3.0) return 'TIER 1 · 1+ NFT';
+  return 'NO TIER';
+}
 function _showF12EntryPopup(onConfirm) {
   _f12_pendingProceed = onConfirm || null;
   const d = window._f12CurrentCost();
+
+  // ── HERO ──
   const valEl = document.getElementById('f12e-cost-value');
   const subEl = document.getElementById('f12e-cost-sub');
-  const discEl = document.getElementById('f12e-discount');
-  const nextEl = document.getElementById('f12e-next-cost');
-  const resetEl = document.getElementById('f12e-reset');
-  const resetH = document.getElementById('f12e-reset-h');
-  if (valEl) valEl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
-  if (subEl) {
-    if (d.cost === 0) subEl.textContent = d.playsToday === 0 ? 'First play of the day' : 'Free entry';
-    else subEl.textContent = `Play #${d.nextPlayN} in last 24h`;
+  if (valEl) {
+    valEl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
+    valEl.classList.toggle('is-free', d.cost === 0);
   }
+  if (subEl) {
+    if (d.playsToday === 0) subEl.textContent = 'First play of 24h cycle';
+    else subEl.textContent = `Play #${d.nextPlayN} in current 24h cycle`;
+  }
+
+  // ── DISCOUNT card ──
+  const discEl = document.getElementById('f12e-discount');
   if (discEl) {
     if (d.isHolder && d.cost !== d.costNoNft) {
       discEl.style.display = 'block';
       const noNftLbl = document.getElementById('f12e-cost-noNft');
       const withNftLbl = document.getElementById('f12e-cost-withNft');
       const nftCnt = document.getElementById('f12e-nft-count');
-      if (noNftLbl) noNftLbl.textContent = d.costNoNft + ' RONKE';
-      if (withNftLbl) withNftLbl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE (÷' + d.divisor + ')');
+      const tierBadge = document.getElementById('f12e-tier-badge');
+      const saveLbl = document.getElementById('f12e-disc-save');
+      if (noNftLbl) noNftLbl.textContent = d.costNoNft === 0 ? 'FREE' : (d.costNoNft + ' RONKE');
+      if (withNftLbl) withNftLbl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
       if (nftCnt) nftCnt.textContent = d.eligibleNftCount;
+      if (tierBadge) tierBadge.textContent = _f12TierLabel(d.divisor);
+      if (saveLbl) saveLbl.textContent = '÷' + d.divisor + ' cheaper for holders';
     } else {
       discEl.style.display = 'none';
     }
   }
-  if (nextEl) nextEl.textContent = d.afterCost === 0 ? 'FREE' : (d.afterCost + ' RONKE');
+
+  // ── SCHEDULE grid ──
+  const schedEl = document.getElementById('f12e-schedule');
+  if (schedEl) {
+    schedEl.innerHTML = '';
+    const totalToShow = 6;
+    for (let i = 1; i <= totalToShow; i++) {
+      const cost = _f12CostForPlayN(i, d.divisor);
+      const item = document.createElement('div');
+      item.className = 'f12e-sched-item';
+      if (i < d.nextPlayN) item.classList.add('is-past');
+      if (i === d.nextPlayN) item.classList.add('is-current');
+      const costStr = cost === 0 ? 'FREE' : (cost + ' RONKE');
+      const costClass = cost === 0 ? 'is-free' : '';
+      item.innerHTML = `<span class="f12e-sched-num">Play #${i}</span><span class="f12e-sched-cost ${costClass}">${costStr}</span>`;
+      schedEl.appendChild(item);
+    }
+  }
+
+  // ── RESET timer ──
+  const resetEl = document.getElementById('f12e-reset');
+  const resetH = document.getElementById('f12e-reset-h');
   if (resetEl) {
     if (d.playsToday > 0) {
       resetEl.style.display = 'block';
@@ -6284,6 +6319,14 @@ function _showF12EntryPopup(onConfirm) {
       resetEl.style.display = 'none';
     }
   }
+
+  // ── PLAY button cost embed ──
+  const btnCost = document.getElementById('f12e-btn-play-cost');
+  if (btnCost) {
+    btnCost.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
+    btnCost.classList.toggle('is-free', d.cost === 0);
+  }
+
   const ov = document.getElementById('f12-entry-overlay');
   if (ov) ov.classList.add('active');
   SFX.play(700, 0.08, 0.05, 'square', 300);
