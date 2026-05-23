@@ -420,6 +420,51 @@
     if (!state.connected) throw new Error('Wallet not connected');
     const prov = state.provider || (await getAnyProvider());
     if (!prov) throw new Error('No wallet provider');
+
+    // ── NETWORK GUARD ────────────────────────────────────────────────
+    // Trophy contract lives on Ronin Mainnet. If the user's wallet is
+    // pointed at Ethereum / BNB / Saigon / anything else, the claim tx
+    // will broadcast to the wrong chain and silently fail. Prompt the
+    // wallet to switch to Ronin before signing.
+    try {
+      const curChainHex = await prov.request({ method: 'eth_chainId' });
+      const curChain = Number(BigInt(curChainHex));
+      if (curChain !== RONIN_CHAIN_ID_DEC) {
+        try {
+          await prov.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: RONIN_CHAIN_ID_HEX }],
+          });
+        } catch (switchErr) {
+          // If the wallet doesn't have Ronin configured, try to add it.
+          if (switchErr && (switchErr.code === 4902 || /not added|unrecognized/i.test(String(switchErr.message || '')))) {
+            await prov.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: RONIN_CHAIN_ID_HEX,
+                chainName: 'Ronin Mainnet',
+                nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 },
+                rpcUrls: [RONIN_RPC],
+                blockExplorerUrls: ['https://app.roninchain.com'],
+              }],
+            });
+          } else {
+            throw new Error('Wrong network — switch to Ronin Mainnet (chainId 2020) and retry. Current: ' + curChain);
+          }
+        }
+        // Re-check after switch attempt.
+        const newChainHex = await prov.request({ method: 'eth_chainId' });
+        const newChain = Number(BigInt(newChainHex));
+        if (newChain !== RONIN_CHAIN_ID_DEC) {
+          throw new Error('Network switch declined. Please select Ronin Mainnet in your wallet and try again.');
+        }
+      }
+    } catch (e) {
+      if (e && e.message && e.message.indexOf('Wrong network') === 0) throw e;
+      if (e && e.message && e.message.indexOf('Network switch') === 0) throw e;
+      console.warn('[claimTrophy] chainId check failed, attempting tx anyway:', e);
+    }
+
     if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
     const { encodeFunctionData } = _viemModule;
 
