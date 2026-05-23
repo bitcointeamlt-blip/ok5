@@ -6500,13 +6500,6 @@ function _showF12EntryPopup(onConfirm) {
     }
   }
 
-  // ── PLAY button cost embed ──
-  const btnCost = document.getElementById('f12e-btn-play-cost');
-  if (btnCost) {
-    btnCost.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
-    btnCost.classList.toggle('is-free', d.cost === 0);
-  }
-
   const ov = document.getElementById('f12-entry-overlay');
   if (ov) ov.classList.add('active');
   SFX.play(700, 0.08, 0.05, 'square', 300);

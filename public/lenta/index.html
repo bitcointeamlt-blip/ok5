@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp24preview">
+  <link rel="stylesheet" href="style.css?v=hp25herobtn">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1527,12 +1527,12 @@
         <button class="f12e-close-x" onclick="_f12CancelPlay()" title="Close">✕</button>
       </div>
 
-      <!-- HERO COST -->
-      <div class="f12e-hero">
-        <div class="f12e-hero-label">ENTRY COST</div>
+      <!-- HERO COST — clickable to play -->
+      <button class="f12e-hero" type="button" onclick="_f12ConfirmPlay()" id="f12e-hero-btn">
+        <div class="f12e-hero-label">ENTRY COST · ▶ TAP TO PLAY</div>
         <div class="f12e-hero-cost" id="f12e-cost-value">FREE</div>
         <div class="f12e-hero-sub" id="f12e-cost-sub">First play of 24h cycle</div>
-      </div>
+      </button>
 
       <!-- DISCOUNT CARD — always visible: holder discount OR non-holder preview -->
       <div class="f12e-card f12e-card-disc" id="f12e-discount" style="display:none">
@@ -1571,15 +1571,6 @@
       <div class="f12e-notice">
         <span class="f12e-notice-tag">MVP</span>
         Tracking only — RONKE balance is not charged yet
-      </div>
-
-      <div class="f12e-actions">
-        <button class="f12e-btn-play" onclick="_f12ConfirmPlay()">
-          <span class="f12e-btn-play-arrow">▶</span>
-          <span class="f12e-btn-play-text">PLAY</span>
-          <span class="f12e-btn-play-cost" id="f12e-btn-play-cost">FREE</span>
-        </button>
-        <button class="f12e-btn-cancel" onclick="_f12CancelPlay()">CANCEL</button>
       </div>
     </div>
   </div>
@@ -1798,7 +1789,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=5"></script>
   <script src="wallet.js?v=wp7nftbonus"></script>
-  <script src="game.js?v=cmd413preview"></script>
+  <script src="game.js?v=cmd414herobtn"></script>
   <script src="floor12_merge.js?v=cmd691nftbonus"></script>
   <script src="wallet-ui.js?v=pewpew8tro"></script>
   <script>

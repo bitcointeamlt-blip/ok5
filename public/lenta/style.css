@@ -13858,14 +13858,35 @@ kbd {
 
 /* ── HERO COST ── */
 .f12e-hero {
+  display: block;
+  width: 100%;
   text-align: center;
-  padding: 18px 14px;
-  background: radial-gradient(ellipse at center, rgba(74,157,166,0.18) 0%, rgba(74,157,166,0.04) 70%);
-  border: 2px solid #4a9da6;
+  padding: 22px 14px;
+  background: radial-gradient(ellipse at center, rgba(74,157,166,0.22) 0%, rgba(74,157,166,0.06) 70%);
+  border: 3px solid #4a9da6;
   border-radius: 8px;
   margin-bottom: 14px;
   position: relative;
   overflow: hidden;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  box-shadow: 0 5px 0 #1a3a44, 0 0 24px rgba(74,157,166,0.4);
+  transition: transform 0.1s, box-shadow 0.15s, background 0.15s;
+}
+.f12e-hero:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 0 #1a3a44, 0 0 32px rgba(74,157,166,0.7);
+  background: radial-gradient(ellipse at center, rgba(74,157,166,0.30) 0%, rgba(74,157,166,0.10) 70%);
+}
+.f12e-hero:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #1a3a44, 0 0 16px rgba(74,157,166,0.5);
+}
+.f12e-hero:focus { outline: none; }
+.f12e-hero:focus-visible {
+  outline: 2px solid #ffcf5c;
+  outline-offset: 2px;
 }
 .f12e-hero::before {
   content: '';
@@ -13881,9 +13902,11 @@ kbd {
   position: relative;
   font-size: 8px;
   color: #4a9da6;
-  letter-spacing: 2px;
+  letter-spacing: 1.6px;
   margin-bottom: 10px;
+  text-shadow: 0 0 8px rgba(74,157,166,0.5);
 }
+.f12e-hero:hover .f12e-hero-label { color: #6bc7d0; }
 .f12e-hero-cost {
   position: relative;
   font-size: 32px;
