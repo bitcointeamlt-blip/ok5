@@ -6397,8 +6397,20 @@ function _showF12EntryPopup(onConfirm) {
     else subEl.textContent = `Play #${d.nextPlayN} in current 24h cycle`;
   }
 
-  // ── NFT BONUSES card ──
-  _renderF12BonusesCard(d);
+  // ── HEADER subtitle (NFT count status) ──
+  const subtEl = document.getElementById('f12e-subtitle');
+  if (subtEl) {
+    const W = window.Wallet;
+    if (!W || !W.isConnected || !W.isConnected()) {
+      subtEl.textContent = 'Pay-per-play entry · wallet not connected';
+    } else {
+      const total = (W.getRonkeNFTCount && W.getRonkeNFTCount()) || 0;
+      const elig = (W.getEligibleNftCountCached && W.getEligibleNftCountCached()) || 0;
+      if (total === 0) subtEl.textContent = 'Pay-per-play entry · 0 NFT';
+      else if (elig === 0) subtEl.textContent = `Pay-per-play entry · ${total} NFT (24h hold pending)`;
+      else subtEl.textContent = `Pay-per-play entry · ${total} NFT · ${elig} eligible`;
+    }
+  }
 
   // ── DISCOUNT card ──
   const discEl = document.getElementById('f12e-discount');
