@@ -1386,6 +1386,25 @@ function saveProfile() {
 window.reloadProfileForWallet = function () {
   try {
     loadProfile();
+    // ── Re-spawn trained barracks units after wallet swap ──────────────
+    // Without this, disconnecting+reconnecting while in F10 leaves the
+    // friendly units stuck at their pre-disconnect state (live S.units
+    // from previous session don't match the freshly re-loaded Profile).
+    // We wipe any existing friendly barracks units and let
+    // _restoreBarracksTrainedState() spawn fresh from Profile.
+    try {
+      if (typeof S !== 'undefined' && S && S.floor === 10 && Array.isArray(S.units)) {
+        S.units = S.units.filter(u => {
+          if (!u) return false;
+          if (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)) return false;
+          return true;
+        });
+        if (typeof _restoreBarracksTrainedState === 'function') {
+          _restoreBarracksTrainedState();
+          try { _lastBarracksSaveAt = performance.now() + 2000; } catch (_) {}
+        }
+      }
+    } catch (_) {}
     if (typeof updateEnergyHud === 'function') updateEnergyHud();
     if (typeof updateHubUI === 'function') updateHubUI();
     if (typeof renderAchievements === 'function') try { renderAchievements(); } catch {}
