@@ -6250,56 +6250,58 @@ window.closeTrophyPanel = function closeTrophyPanel() {
   }
 };
 
-// ── SEC-6: Server-gated training (unit + building) ─────────────────────
-// Async charge via register-training edge fn. Wallet connected →
-// server-authoritative deduct. Anonymous / server unavailable → local
-// fallback. Concurrent-call guard prevents double-spend on rapid clicks.
-let _serverTrainingInFlight = false;
-async function _f10TryStartTraining(utype, qty, localCost, onSuccess, onInsufficient) {
-  if (_serverTrainingInFlight) return;
-  const W = window.Wallet;
-  const connected = !!(W && W.isConnected && W.isConnected());
-  if (connected && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
-    const addr = W.getAddress && W.getAddress();
-    if (addr) {
-      _serverTrainingInFlight = true;
-      try {
-        const resp = await window.SupabaseSync.invoke('register-training', {
-          wallet: addr.toLowerCase(), utype, qty: qty || 1,
-        });
-        if (resp && resp.status === 404) {
-          // Edge fn not deployed → fall through to local
-          if (typeof logEvent === 'function') logEvent('⚠ register-training edge fn missing — local fallback', 'warn');
-        } else if (!resp || !resp.ok || !resp.data || resp.data.ok !== true) {
-          const err = (resp && resp.data && resp.data.error) || 'unknown';
-          if (typeof logEvent === 'function') logEvent(`✗ Training rejected: ${err}`, 'warn');
-          if (onInsufficient) onInsufficient();
-          return;
-        } else {
-          // Server confirmed: sync balance, run callback (no local deduct)
-          _ronkeBalance = Math.max(0, Number(resp.data.balance) || 0);
-          if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
-          if (typeof saveProfile === 'function') saveProfile();
-          if (typeof logEvent === 'function') logEvent(`✓ Training charged server-side (-${resp.data.cost} RONKE)`, 'info');
-          onSuccess();
-          return;
-        }
-      } catch (e) {
-        console.warn('[register-training] exception, fallback to local:', e);
-      } finally {
-        _serverTrainingInFlight = false;
-      }
-    }
-  }
-  // ── LOCAL FALLBACK ──
+// ── SEC-6: Optimistic UI training gate ─────────────────────────────────
+// Start production IMMEDIATELY (zero perceived lag). Server validates in
+// background via register-training. If server rejects (insufficient or
+// rate-limit), rollback: cancel production via onRollback + refund.
+// Wallet-connected → server is source of truth on balance.
+// Anonymous / server unavailable → pure local path.
+function _f10TryStartTraining(utype, qty, localCost, onSuccess, onInsufficient, onRollback) {
+  // 1. Local balance sanity check (fast)
   if (typeof _ronkeBalance !== 'number' || _ronkeBalance < localCost) {
     if (onInsufficient) onInsufficient();
     return;
   }
+  // 2. Deduct + start IMMEDIATELY (optimistic)
   _ronkeBalance -= localCost;
   if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
   if (typeof saveProfile === 'function') saveProfile();
   onSuccess();
+
+  // 3. Background server validation (if wallet connected)
+  const W = window.Wallet;
+  const connected = !!(W && W.isConnected && W.isConnected());
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') return;
+  const addr = W.getAddress && W.getAddress();
+  if (!addr) return;
+
+  (async () => {
+    try {
+      const resp = await window.SupabaseSync.invoke('register-training', {
+        wallet: addr.toLowerCase(), utype, qty: qty || 1,
+      });
+      if (resp && resp.status === 404) return;   // edge fn missing → local-only
+      if (!resp || !resp.ok || !resp.data || resp.data.ok !== true) {
+        // ── SERVER REJECTED → ROLLBACK ──
+        const err = (resp && resp.data && resp.data.error) || 'unknown';
+        if (typeof logEvent === 'function') logEvent(`✗ Training rolled back: ${err}`, 'warn');
+        _ronkeBalance += localCost;
+        if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
+        if (typeof saveProfile === 'function') saveProfile();
+        if (typeof onRollback === 'function') onRollback();
+        return;
+      }
+      // Server confirmed → sync to server-authoritative balance.
+      const serverBal = Number(resp.data.balance);
+      if (Number.isFinite(serverBal)) {
+        _ronkeBalance = serverBal;
+        if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
+        if (typeof saveProfile === 'function') saveProfile();
+      }
+    } catch (e) {
+      console.warn('[register-training] exception:', e);
+    }
+  })();
 }
 
 // ── F12 Pay-per-play pricing (MVP — localStorage, display only) ─────
@@ -29552,19 +29554,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (inside(_castleTowerBtnBounds)) {
         if (!_towerProduction && !_crossbowTowerProduction && !_zipProduction && !_slotProduction && _ronkeBalance >= _TOWER_BUILD_COST) {
-          _f10TryStartTraining('tower', 1, _TOWER_BUILD_COST, () => {
-            _towerProduction = { startAt: performance.now(), speedUpAnim: null };
-            if (typeof logEvent === 'function') logEvent('🗼 Tower production started', 'info');
-          });
+          _f10TryStartTraining('tower', 1, _TOWER_BUILD_COST,
+            () => {
+              _towerProduction = { startAt: performance.now(), speedUpAnim: null };
+              if (typeof logEvent === 'function') logEvent('🗼 Tower production started', 'info');
+            },
+            null,
+            () => { _towerProduction = null; }  // rollback if server rejects
+          );
         }
         return;
       }
       if (inside(_castleCrossbowTowerBtnBounds)) {
         if (!_towerProduction && !_crossbowTowerProduction && !_zipProduction && !_slotProduction && _ronkeBalance >= _CROSSBOW_TOWER_BUILD_COST) {
-          _f10TryStartTraining('crossbow_tower', 1, _CROSSBOW_TOWER_BUILD_COST, () => {
-            _crossbowTowerProduction = { startAt: performance.now(), speedUpAnim: null };
-            if (typeof logEvent === 'function') logEvent('Crossbow Tower production started', 'info');
-          });
+          _f10TryStartTraining('crossbow_tower', 1, _CROSSBOW_TOWER_BUILD_COST,
+            () => {
+              _crossbowTowerProduction = { startAt: performance.now(), speedUpAnim: null };
+              if (typeof logEvent === 'function') logEvent('Crossbow Tower production started', 'info');
+            },
+            null,
+            () => { _crossbowTowerProduction = null; }
+          );
         }
         return;
       }
@@ -29602,10 +29612,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (inside(_castleZipBtnBounds)) {
         if (!_zipProduction && !_towerProduction && !_crossbowTowerProduction && !_slotProduction && _ronkeBalance >= _ZIP_BUILD_COST) {
-          _f10TryStartTraining('zip', 1, _ZIP_BUILD_COST, () => {
-            _zipProduction = { startAt: performance.now(), speedUpAnim: null };
-            if (typeof logEvent === 'function') logEvent('⚡ Zip Tower production started', 'info');
-          });
+          _f10TryStartTraining('zip', 1, _ZIP_BUILD_COST,
+            () => {
+              _zipProduction = { startAt: performance.now(), speedUpAnim: null };
+              if (typeof logEvent === 'function') logEvent('⚡ Zip Tower production started', 'info');
+            },
+            null,
+            () => { _zipProduction = null; }
+          );
         }
         return;
       }
@@ -29627,10 +29641,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (inside(_castleSlotBtnBounds)) {
         const _busy = !!_towerProduction || !!_crossbowTowerProduction || !!_zipProduction || !!_slotProduction;
         if (!_busy && _barracksUnlockedSlots < _BARRACKS_MAX_SLOTS && _ronkeBalance >= _SLOT_BUILD_COST) {
-          _f10TryStartTraining('slot', 1, _SLOT_BUILD_COST, () => {
-            _slotProduction = { startAt: performance.now(), speedUpAnim: null };
-            if (typeof logEvent === 'function') logEvent('🏰 Barracks slot construction started', 'info');
-          });
+          _f10TryStartTraining('slot', 1, _SLOT_BUILD_COST,
+            () => {
+              _slotProduction = { startAt: performance.now(), speedUpAnim: null };
+              if (typeof logEvent === 'function') logEvent('🏰 Barracks slot construction started', 'info');
+            },
+            null,
+            () => { _slotProduction = null; }
+          );
         }
         return;
       }
@@ -30090,16 +30108,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const _qty = Math.max(1, _barracksQueueCount);
         const _totalCost = _BARRACKS_UNIT_COST * _qty;
         if (_ronkeBalance >= _totalCost) {
-          // Resolve canonical utype for the selected slot (SEC-6 server expects 'skull', 'warrior', etc.)
+          // Resolve canonical utype for the selected slot (SEC-6 server expects 'skull', 'archer', 'harpoon_fish', 'shaman').
           const _selUtype = (typeof _BARRACKS_UNIT_TYPES !== 'undefined' && _BARRACKS_UNIT_TYPES[_barracksSelectedIdx]) || 'skull';
           const _capturedSlot = _barracksSelectedIdx;
-          _f10TryStartTraining(_selUtype, _qty, _totalCost, () => {
-            _barracksProductions[_capturedSlot] = {
-              startAt: performance.now(),
-              queueLeft: _qty - 1,
-              speedUpQueueLeft: 0,
-            };
-          });
+          _f10TryStartTraining(_selUtype, _qty, _totalCost,
+            () => {
+              _barracksProductions[_capturedSlot] = {
+                startAt: performance.now(),
+                queueLeft: _qty - 1,
+                speedUpQueueLeft: 0,
+              };
+            },
+            null,
+            () => { delete _barracksProductions[_capturedSlot]; }
+          );
         }
         return;
       }
