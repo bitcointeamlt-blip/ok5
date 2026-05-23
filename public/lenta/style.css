@@ -13888,6 +13888,7 @@ kbd {
   outline: 2px solid #ffcf5c;
   outline-offset: 2px;
 }
+.f12e-hero { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .f12e-hero::before {
   content: '';
   position: absolute; inset: 0;
@@ -14217,13 +14218,79 @@ kbd {
 }
 .f12e-btn-cancel:hover { background: rgba(232,93,93,0.15); color: #ffaaaa; border-color: #c44a4a; }
 
-@media (max-width: 480px) {
-  #f12-entry-panel { padding: 16px 14px; }
-  .f12e-title { font-size: 11px; }
-  .f12e-hero-cost { font-size: 26px; }
-  .f12e-disc-col-val { font-size: 11px; }
-  .f12e-schedule { grid-template-columns: 1fr; }
-  .f12e-btn-play-text { font-size: 10px; }
+/* ── Mobile: ≤ 560px (most phones portrait) ── */
+@media (max-width: 560px) {
+  #f12-entry-overlay { padding: 10px; align-items: flex-start; padding-top: max(12px, env(safe-area-inset-top)); }
+  #f12-entry-panel {
+    padding: 16px 14px;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    border-width: 2px;
+    border-radius: 10px;
+  }
+  .f12e-header { gap: 10px; padding-bottom: 10px; margin-bottom: 12px; }
+  .f12e-icon { font-size: 18px; }
+  .f12e-title { font-size: 11px; letter-spacing: 1.4px; }
+  .f12e-subtitle { font-size: 7px; }
+  .f12e-close-x { width: 36px; height: 36px; font-size: 16px; }   /* bigger touch target */
+
+  /* Hero — big tappable surface */
+  .f12e-hero { padding: 20px 12px; min-height: 110px; }
+  .f12e-hero-label { font-size: 8px; letter-spacing: 1.2px; margin-bottom: 8px; }
+  .f12e-hero-cost { font-size: 28px; letter-spacing: 1.4px; }
+  .f12e-hero-sub { font-size: 7px; }
+
+  /* Cards — tighter padding */
+  .f12e-card { padding: 10px 12px; margin-bottom: 10px; }
+  .f12e-card-head { gap: 6px; margin-bottom: 8px; padding-bottom: 6px; }
+  .f12e-card-icon { font-size: 11px; }
+  .f12e-card-title { font-size: 8px; letter-spacing: 1px; }
+  .f12e-card-meta, .f12e-tier-badge { font-size: 6px; padding: 2px 6px; }
+
+  /* Discount comparison — stays horizontal but tighter */
+  .f12e-disc-cmp { gap: 6px; }
+  .f12e-disc-col { padding: 8px 4px; }
+  .f12e-disc-col-lbl { font-size: 6px; letter-spacing: 0.3px; margin-bottom: 3px; line-height: 1.3; }
+  .f12e-disc-col-val { font-size: 11px; letter-spacing: 0.6px; }
+  .f12e-disc-arrow { font-size: 13px; }
+  .f12e-disc-save { font-size: 7px; padding-top: 4px; }
+
+  /* Schedule — single column for clarity on narrow screens */
+  .f12e-schedule { grid-template-columns: 1fr; gap: 4px; }
+  .f12e-sched-item { padding: 7px 10px; font-size: 8px; }
+
+  .f12e-reset { font-size: 7px; padding: 4px 8px; }
+  .f12e-notice { font-size: 7px; padding: 7px 9px; gap: 6px; margin-bottom: 0; }
+  .f12e-notice-tag { font-size: 6px; padding: 2px 5px; }
+}
+
+/* ── Tiny screens: ≤ 360px (small phones, foldables) ── */
+@media (max-width: 360px) {
+  #f12-entry-panel { padding: 14px 12px; }
+  .f12e-title { font-size: 10px; }
+  .f12e-icon { font-size: 16px; }
+  .f12e-hero { padding: 18px 10px; min-height: 100px; }
+  .f12e-hero-cost { font-size: 24px; }
+  .f12e-card { padding: 9px 10px; }
+  .f12e-disc-cmp { flex-direction: column; gap: 4px; }
+  .f12e-disc-arrow { font-size: 11px; transform: rotate(90deg); }
+  .f12e-disc-col-val { font-size: 12px; }
+}
+
+/* ── Landscape phones (short viewports) ── */
+@media (max-height: 480px) and (orientation: landscape) {
+  #f12-entry-overlay { padding: 8px; align-items: flex-start; }
+  #f12-entry-panel {
+    padding: 12px 16px;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .f12e-header { margin-bottom: 8px; padding-bottom: 8px; }
+  .f12e-hero { padding: 12px; min-height: 80px; margin-bottom: 10px; }
+  .f12e-hero-cost { font-size: 20px; margin-bottom: 4px; }
+  .f12e-card { padding: 8px 12px; margin-bottom: 8px; }
+  .f12e-schedule { grid-template-columns: repeat(3, 1fr); }   /* 3-col on landscape to save vertical */
+  .f12e-notice { font-size: 6px; padding: 5px 8px; }
 }
 
 /* ── NFT Perks Panel (NFT-G) — parchment/gold medieval theme ───────── */
@@ -14422,10 +14489,39 @@ kbd {
   border-color: #b8860b !important;
 }
 
+/* NFT PERKS — mobile ≤ 720px */
 @media (max-width: 720px) {
-  #nft-perks-panel { padding: 18px 14px; }
-  .npp-title { font-size: 11px; }
+  #nft-perks-overlay { padding: 10px; align-items: flex-start; padding-top: max(12px, env(safe-area-inset-top)); }
+  #nft-perks-panel {
+    padding: 16px 14px;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    border-width: 3px;
+  }
+  .npp-header { gap: 8px; padding-bottom: 10px; }
+  .npp-icon { font-size: 18px; }
+  .npp-title { font-size: 11px; letter-spacing: 1.2px; }
+  .npp-close-x { width: 36px; height: 36px; font-size: 17px; }
+  .npp-subtitle { font-size: 8px; margin: 6px 0 12px; }
+  .npp-status { font-size: 9px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.4; }
   .npp-table { font-size: 8px; }
-  .npp-table td { padding: 8px 4px; }
+  .npp-table th { font-size: 7px; padding: 7px 4px; }
+  .npp-table td { padding: 8px 4px; line-height: 1.3; }
+  .npp-bicon { font-size: 10px; }
   .npp-boost strong { font-size: 9px; }
+  .npp-boost small { font-size: 6px; }
+  .npp-rule { font-size: 7px; padding: 9px 10px; gap: 8px; line-height: 1.4; }
+  .npp-rule-icon { font-size: 12px; }
+  .npp-footer { font-size: 8px; padding: 10px; line-height: 1.6; }
+  .npp-footer strong { font-size: 9px; }
+  .npp-footer small { font-size: 6px; }
+}
+
+/* NFT PERKS — tiny ≤ 360px */
+@media (max-width: 360px) {
+  #nft-perks-panel { padding: 12px 10px; }
+  .npp-title { font-size: 10px; }
+  .npp-table { font-size: 7px; }
+  .npp-table th { font-size: 6px; }
+  .npp-bicon { display: none; }   /* save horizontal space */
 }
