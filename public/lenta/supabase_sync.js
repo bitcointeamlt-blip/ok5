@@ -134,8 +134,9 @@
       const addr = getWalletAddress();
       const profile = getCurrentProfile();
       if (!addr || !profile) return;
-      // Žymime savedAt prieš push (kad cloud žinotų timestamp'ą)
-      profile._savedAt = Date.now();
+      // saveProfile() already set _savedAt — reuse it so cloud + local match.
+      // Only stamp here if missing (defensive fallback).
+      if (typeof profile._savedAt !== 'number') profile._savedAt = Date.now();
       await pushProfileToCloud(addr, profile);
     }, 2000);
   }
@@ -147,6 +148,11 @@
     const orig = window.saveProfile;
     if (typeof orig !== 'function') return;
     window.saveProfile = function () {
+      // Update timestamp BEFORE write so localStorage has fresh _savedAt.
+      // Without this, refresh within the 2s cloud-push throttle would let
+      // syncOnWalletConnect prefer the stale cloud snapshot and clobber
+      // recent local changes (e.g. just-trained barracks units).
+      try { if (window.Profile) window.Profile._savedAt = Date.now(); } catch (_) {}
       try { orig.apply(this, arguments); } catch (e) { console.warn('saveProfile orig failed:', e); }
       schedulePush();
     };
