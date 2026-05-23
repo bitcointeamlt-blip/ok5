@@ -6397,6 +6397,18 @@ function _showF12EntryPopup(onConfirm) {
     else subEl.textContent = `Play #${d.nextPlayN} in current 24h cycle`;
   }
 
+  // ── Affordability check + hero button state ──
+  const balance = (typeof _ronkeBalance === 'number') ? _ronkeBalance : 0;
+  const insufficient = d.cost > 0 && balance < d.cost;
+  const heroBtn = document.getElementById('f12e-hero-btn');
+  if (heroBtn) {
+    heroBtn.classList.toggle('is-insufficient-state', insufficient);
+  }
+  const subEl2 = document.getElementById('f12e-cost-sub');
+  if (subEl2 && insufficient) {
+    subEl2.innerHTML = `⚠ Insufficient — you have ${Math.floor(balance)} RONKE`;
+  }
+
   // ── HEADER subtitle (NFT count status) ──
   const subtEl = document.getElementById('f12e-subtitle');
   if (subtEl) {
@@ -6500,11 +6512,51 @@ function _showF12EntryPopup(onConfirm) {
     }
   }
 
+  // ── BALANCE line ──
+  const balEl = document.getElementById('f12e-balance-val');
+  const balLine = document.getElementById('f12e-balance-line');
+  if (balEl) {
+    const balRound = Math.floor(balance);
+    if (insufficient) {
+      balEl.innerHTML = `${balRound} RONKE · need ${d.cost - balRound} more`;
+      if (balLine) { balLine.classList.add('is-bad'); balLine.classList.remove('is-good'); }
+    } else if (d.cost === 0) {
+      balEl.innerHTML = `${balRound} RONKE · free play`;
+      if (balLine) { balLine.classList.add('is-good'); balLine.classList.remove('is-bad'); }
+    } else {
+      balEl.innerHTML = `${balRound} RONKE → ${balRound - d.cost} after play`;
+      if (balLine) { balLine.classList.add('is-good'); balLine.classList.remove('is-bad'); }
+    }
+  }
+
   const ov = document.getElementById('f12-entry-overlay');
   if (ov) ov.classList.add('active');
   SFX.play(700, 0.08, 0.05, 'square', 300);
 }
 window._f12ConfirmPlay = function() {
+  const d = window._f12CurrentCost();
+  const cost = d.cost;
+  // Block if insufficient balance.
+  if (cost > 0 && (typeof _ronkeBalance !== 'number' || _ronkeBalance < cost)) {
+    if (typeof logEvent === 'function') logEvent(`✗ Need ${cost} RONKE to play (have ${Math.floor(_ronkeBalance || 0)})`, 'warn');
+    SFX.play(200, 0.15, 0.06, 'square', -300);
+    // Flash the hero button red briefly
+    const heroBtn = document.getElementById('f12e-hero-btn');
+    if (heroBtn) {
+      heroBtn.classList.add('is-insufficient');
+      setTimeout(() => heroBtn.classList.remove('is-insufficient'), 600);
+    }
+    return;
+  }
+  // Deduct from balance.
+  if (cost > 0 && typeof _ronkeBalance === 'number') {
+    _ronkeBalance = Math.max(0, _ronkeBalance - cost);
+    if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
+    if (typeof saveProfile === 'function') saveProfile();
+    if (typeof logEvent === 'function') logEvent(`▶ PewPew Saga entry (-${cost} RONKE)`, 'info');
+  } else if (cost === 0 && typeof logEvent === 'function') {
+    logEvent('▶ PewPew Saga entry (FREE play)', 'info');
+  }
   const ov = document.getElementById('f12-entry-overlay');
   if (ov) ov.classList.remove('active');
   _f12LogPlay();

@@ -14192,29 +14192,61 @@ kbd {
 }
 .f12e-reset strong { color: #4a9da6; }
 
-/* ── MVP notice ── */
+/* ── Balance line (was: MVP notice) ── */
 .f12e-notice {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(232,93,93,0.08);
-  border: 1px solid rgba(196,74,74,0.5);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
   border-radius: 4px;
   padding: 8px 10px;
-  font-size: 7px;
-  color: #c8a0a0;
+  font-size: 8px;
+  color: #d8e0f0;
   letter-spacing: 0.4px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
   line-height: 1.5;
 }
+.f12e-notice-balance.is-good {
+  background: rgba(138,255,122,0.06);
+  border-color: rgba(138,255,122,0.4);
+  color: #b8ffaa;
+}
+.f12e-notice-balance.is-bad {
+  background: rgba(232,93,93,0.10);
+  border-color: rgba(196,74,74,0.6);
+  color: #ffaaaa;
+}
 .f12e-notice-tag {
-  background: #c44a4a;
+  background: #4a5a6a;
   color: #fff;
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 7px;
   letter-spacing: 0.6px;
   flex-shrink: 0;
+}
+.f12e-notice-balance.is-good .f12e-tag-balance { background: #2a6a30; color: #b8ffaa; }
+.f12e-notice-balance.is-bad .f12e-tag-balance { background: #c44a4a; color: #fff; }
+
+/* ── Hero insufficient state ── */
+.f12e-hero.is-insufficient-state {
+  border-color: #c44a4a;
+  background: radial-gradient(ellipse at center, rgba(232,93,93,0.20) 0%, rgba(232,93,93,0.04) 70%);
+  box-shadow: 0 5px 0 #4a1a1a, 0 0 24px rgba(232,93,93,0.4);
+}
+.f12e-hero.is-insufficient-state .f12e-hero-cost { color: #ffaaaa; text-shadow: 0 0 16px rgba(232,93,93,0.7); }
+.f12e-hero.is-insufficient-state .f12e-hero-label { color: #ffaaaa; }
+.f12e-hero.is-insufficient-state .f12e-hero-sub { color: #ffaaaa; }
+@keyframes f12HeroShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.f12e-hero.is-insufficient {
+  animation: f12HeroShake 0.4s ease-in-out;
 }
 
 /* ── Action buttons ── */
