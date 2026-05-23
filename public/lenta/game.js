@@ -6594,6 +6594,61 @@ function _showF12EntryPopup(onConfirm) {
   const ov = document.getElementById('f12-entry-overlay');
   if (ov) ov.classList.add('active');
   SFX.play(700, 0.08, 0.05, 'square', 300);
+
+  // ── SEC-5: refresh cost from server (authoritative source) ──
+  // Local estimate renders immediately; server reply updates within ~500ms.
+  // If user plays on multiple devices, server has the true counter.
+  _f12FetchServerCostAndUpdate();
+}
+
+// Fetch server-side cost via get-play-cost edge fn. Updates DOM if popup
+// is still open. Silently no-ops on failure / no wallet.
+async function _f12FetchServerCostAndUpdate() {
+  try {
+    const W = window.Wallet;
+    if (!W || !W.isConnected || !W.isConnected()) return;
+    if (!window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') return;
+    const addr = W.getAddress && W.getAddress();
+    if (!addr) return;
+    const resp = await window.SupabaseSync.invoke('get-play-cost', { wallet: addr.toLowerCase() });
+    const data = resp && resp.data;
+    if (!resp || !resp.ok || !data || data.ok !== true) return;
+    // Bail if popup closed during fetch
+    const ov = document.getElementById('f12-entry-overlay');
+    if (!ov || !ov.classList.contains('active')) return;
+
+    const cost = Number(data.cost) || 0;
+    const costNoNft = Number(data.costNoNft) || 0;
+    const balance = Number(data.balance) || 0;
+    const insufficient = cost > 0 && balance < cost;
+
+    // Update hero cost
+    const valEl = document.getElementById('f12e-cost-value');
+    if (valEl) {
+      valEl.textContent = cost === 0 ? 'FREE' : (cost + ' RONKE');
+      valEl.classList.toggle('is-free', cost === 0);
+    }
+    const subEl = document.getElementById('f12e-cost-sub');
+    if (subEl) {
+      if (insufficient) subEl.innerHTML = `⚠ Insufficient — you have ${balance} RONKE`;
+      else if (data.playsToday === 0) subEl.textContent = 'First play of 24h cycle (server-verified)';
+      else subEl.textContent = `Play #${data.nextPlayN} in current 24h cycle (server-verified)`;
+    }
+    // Update balance bar
+    const nowEl = document.getElementById('f12e-bal-now');
+    const afterEl = document.getElementById('f12e-bal-after');
+    const afterLbl = document.getElementById('f12e-bal-after-lbl');
+    const bar = document.getElementById('f12e-balance-bar');
+    if (nowEl) nowEl.textContent = balance;
+    if (afterEl) afterEl.textContent = insufficient ? balance : (balance - cost);
+    if (afterLbl) afterLbl.textContent = cost === 0 ? 'NO CHARGE' : (insufficient ? 'NEED ' + (cost - balance) : 'AFTER PLAY');
+    if (bar) bar.classList.toggle('is-bad', insufficient);
+    // Update hero state
+    const heroBtn = document.getElementById('f12e-hero-btn');
+    if (heroBtn) heroBtn.classList.toggle('is-insufficient-state', insufficient);
+  } catch (e) {
+    console.warn('[f12] get-play-cost failed', e);
+  }
 }
 // Tween a number element from `from` to `to` over `dur` ms with tick sound.
 function _f12AnimBalanceTo(el, from, to, dur, onDone) {
@@ -6623,74 +6678,104 @@ function _f12AnimBalanceTo(el, from, to, dur, onDone) {
   requestAnimationFrame(step);
 }
 
-window._f12ConfirmPlay = function() {
-  const d = window._f12CurrentCost();
-  const cost = d.cost;
+// Insufficient feedback (shake + DENIED stamp + sound)
+function _f12DenyFeedback() {
+  SFX.play(180, 0.12, 0.08, 'square', -400);
+  setTimeout(() => SFX.play(140, 0.18, 0.08, 'square', -400), 100);
+  const heroBtn = document.getElementById('f12e-hero-btn');
+  if (heroBtn) {
+    heroBtn.classList.add('is-insufficient');
+    setTimeout(() => heroBtn.classList.remove('is-insufficient'), 600);
+  }
+  const bar = document.getElementById('f12e-balance-bar');
+  if (bar) {
+    bar.classList.add('is-denying');
+    setTimeout(() => bar.classList.remove('is-denying'), 500);
+  }
+  const stamp = document.getElementById('f12e-denied-stamp');
+  if (stamp) {
+    stamp.classList.remove('is-show');
+    void stamp.offsetWidth;
+    stamp.classList.add('is-show');
+    setTimeout(() => stamp.classList.remove('is-show'), 1000);
+  }
+}
 
-  // ── BLOCK: insufficient balance ──
-  if (cost > 0 && (typeof _ronkeBalance !== 'number' || _ronkeBalance < cost)) {
-    if (typeof logEvent === 'function') logEvent(`✗ Need ${cost} RONKE to play (have ${Math.floor(_ronkeBalance || 0)})`, 'warn');
-    // Denial sound (low buzz)
-    SFX.play(180, 0.12, 0.08, 'square', -400);
-    setTimeout(() => SFX.play(140, 0.18, 0.08, 'square', -400), 100);
-    // Hero shake
-    const heroBtn = document.getElementById('f12e-hero-btn');
-    if (heroBtn) {
-      heroBtn.classList.add('is-insufficient');
-      setTimeout(() => heroBtn.classList.remove('is-insufficient'), 600);
+window._f12ConfirmPlay = async function() {
+  const W = window.Wallet;
+  const connected = !!(W && W.isConnected && W.isConnected());
+
+  // ── WALLET CONNECTED: server-authoritative path (register-play) ─────
+  if (connected && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
+    const addr = W.getAddress && W.getAddress();
+    if (!addr) {
+      if (typeof logEvent === 'function') logEvent('✗ No wallet address', 'warn');
+      _f12DenyFeedback();
+      return;
     }
-    // Balance bar shake + DENIED stamp
-    const bar = document.getElementById('f12e-balance-bar');
-    if (bar) {
-      bar.classList.add('is-denying');
-      setTimeout(() => bar.classList.remove('is-denying'), 500);
-    }
-    const stamp = document.getElementById('f12e-denied-stamp');
-    if (stamp) {
-      stamp.classList.remove('is-show');
-      void stamp.offsetWidth;
-      stamp.classList.add('is-show');
-      setTimeout(() => stamp.classList.remove('is-show'), 1000);
+    // Block double-click while server call in flight
+    if (window._f12PlayInFlight) return;
+    window._f12PlayInFlight = true;
+    try {
+      const resp = await window.SupabaseSync.invoke('register-play', { wallet: addr.toLowerCase() });
+      const data = resp && resp.data;
+      if (!resp || !resp.ok || !data || data.ok !== true) {
+        // Insufficient balance from server
+        if (data && data.error === 'Insufficient balance') {
+          if (typeof logEvent === 'function') logEvent(`✗ Need ${data.cost} RONKE (have ${data.balance})`, 'warn');
+          _f12DenyFeedback();
+        } else {
+          if (typeof logEvent === 'function') logEvent(`✗ Play registration failed: ${(data && data.error) || 'unknown'}`, 'warn');
+          _f12DenyFeedback();
+        }
+        return;
+      }
+      const cost = Number(data.cost) || 0;
+      const fromBal = (typeof _ronkeBalance === 'number') ? Math.floor(_ronkeBalance) : 0;
+      const toBal = Number(data.balance);
+      // Sync local balance with server-authoritative value
+      _ronkeBalance = toBal;
+      if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
+      if (typeof logEvent === 'function') {
+        logEvent(cost === 0 ? '▶ PewPew Saga entry (FREE play)' : `▶ PewPew Saga entry (-${cost} RONKE) server-charged`, 'info');
+      }
+      const proceed = _f12_pendingProceed;
+      _f12_pendingProceed = null;
+      SFX.play(660, 0.08, 0.06, 'square', 300);
+      const nowEl = document.getElementById('f12e-bal-now');
+      const dur = cost > 0 ? Math.min(900, 200 + cost * 30) : 0;
+      function finish() {
+        const ov = document.getElementById('f12-entry-overlay');
+        if (ov) ov.classList.remove('active');
+        SFX.play(900, 0.10, 0.06, 'square', 500);
+        if (typeof proceed === 'function') setTimeout(proceed, 80);
+        else if (typeof _f12_realGotoF12 === 'function') setTimeout(_f12_realGotoF12, 80);
+      }
+      if (dur > 0 && nowEl) {
+        _f12AnimBalanceTo(nowEl, fromBal, toBal, dur, () => setTimeout(finish, 250));
+      } else {
+        finish();
+      }
+    } finally {
+      window._f12PlayInFlight = false;
     }
     return;
   }
 
-  // ── PROCEED: deduct + animate countdown ──
-  const fromBal = (typeof _ronkeBalance === 'number') ? Math.floor(_ronkeBalance) : 0;
-  const toBal = Math.max(0, fromBal - cost);
-
-  if (cost > 0 && typeof _ronkeBalance === 'number') {
-    _ronkeBalance = Math.max(0, _ronkeBalance - cost);
-    if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
-    if (typeof saveProfile === 'function') saveProfile();
-    if (typeof logEvent === 'function') logEvent(`▶ PewPew Saga entry (-${cost} RONKE)`, 'info');
-  } else if (cost === 0 && typeof logEvent === 'function') {
-    logEvent('▶ PewPew Saga entry (FREE play)', 'info');
-  }
+  // ── FALLBACK: anonymous (no wallet) — local log only, no real charge ──
+  const d = window._f12CurrentCost();
+  const cost = 0;  // anonymous = always free
   _f12LogPlay();
-
   const proceed = _f12_pendingProceed;
   _f12_pendingProceed = null;
-
-  // Confirm chime
   SFX.play(660, 0.08, 0.06, 'square', 300);
-
-  const nowEl = document.getElementById('f12e-bal-now');
-  const dur = cost > 0 ? Math.min(900, 200 + cost * 30) : 0;
-
-  function finish() {
-    const ov = document.getElementById('f12-entry-overlay');
-    if (ov) ov.classList.remove('active');
-    SFX.play(900, 0.10, 0.06, 'square', 500);
-    if (typeof proceed === 'function') setTimeout(proceed, 80);
-    else if (typeof _f12_realGotoF12 === 'function') setTimeout(_f12_realGotoF12, 80);
-  }
-
-  if (dur > 0 && nowEl) {
-    _f12AnimBalanceTo(nowEl, fromBal, toBal, dur, () => setTimeout(finish, 250));
-  } else {
-    finish();
-  }
+  const ov = document.getElementById('f12-entry-overlay');
+  if (ov) ov.classList.remove('active');
+  if (typeof logEvent === 'function') logEvent('▶ PewPew Saga entry (anonymous, no charge)', 'info');
+  setTimeout(() => {
+    if (typeof proceed === 'function') proceed();
+    else if (typeof _f12_realGotoF12 === 'function') _f12_realGotoF12();
+  }, 80);
 };
 window._f12CancelPlay = function() {
   const ov = document.getElementById('f12-entry-overlay');
