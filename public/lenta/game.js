@@ -6704,6 +6704,56 @@ async function _f12FetchServerCostAndUpdate() {
     const heroBtn = document.getElementById('f12e-hero-btn');
     if (heroBtn) heroBtn.classList.toggle('is-insufficient-state', insufficient);
 
+    // Update DISCOUNT card with server's nextPlayN — preview was rendered
+    // with local nextPlayN=1 (FREE first play), making "If you had 1 NFT"
+    // wrongly show FREE→FREE when server is actually on play #2+.
+    const discEl = document.getElementById('f12e-discount');
+    if (discEl) {
+      const isHolder = divisor > 1;
+      const previewDivisor = 3.0;
+      const previewCost = _f12CostForPlayN(nextPlayN, previewDivisor);
+      const tierBadge = document.getElementById('f12e-tier-badge');
+      const iconEl = document.getElementById('f12e-disc-icon');
+      const titleEl = document.getElementById('f12e-disc-title');
+      const lblLeft = document.getElementById('f12e-disc-lbl-left');
+      const lblRight = document.getElementById('f12e-disc-lbl-right');
+      const noNftLbl = document.getElementById('f12e-cost-noNft');
+      const withNftLbl = document.getElementById('f12e-cost-withNft');
+      const saveLbl = document.getElementById('f12e-disc-save');
+
+      if (isHolder && cost !== costNoNft) {
+        discEl.classList.remove('is-preview');
+        discEl.classList.add('is-active');
+        if (iconEl) iconEl.textContent = '★';
+        if (titleEl) titleEl.textContent = 'NFT HOLDER DISCOUNT';
+        if (tierBadge) tierBadge.textContent = (divisor >= 4.5 ? 'TIER 3 · 10+ NFT' : divisor >= 3.5 ? 'TIER 2 · 5+ NFT' : 'TIER 1 · 1+ NFT');
+        if (lblLeft) lblLeft.textContent = 'Without NFT';
+        if (lblRight) lblRight.innerHTML = `Your cost (<span>${eligibleNftCount}</span> NFT)`;
+        if (noNftLbl) noNftLbl.textContent = costNoNft === 0 ? 'FREE' : (costNoNft + ' RONKE');
+        if (withNftLbl) withNftLbl.textContent = cost === 0 ? 'FREE' : (cost + ' RONKE');
+        if (saveLbl) saveLbl.innerHTML = '&divide;' + divisor + ' cheaper for holders';
+      } else {
+        // Non-holder preview: "If you had 1 NFT"
+        const savings = costNoNft - previewCost;
+        discEl.classList.remove('is-active');
+        discEl.classList.add('is-preview');
+        if (iconEl) iconEl.textContent = '👀';
+        if (titleEl) titleEl.textContent = 'IF YOU HAD 1 NFT';
+        if (tierBadge) tierBadge.textContent = 'PREVIEW';
+        if (lblLeft) lblLeft.textContent = 'You pay';
+        if (lblRight) lblRight.innerHTML = 'With 1 NFT';
+        if (noNftLbl) noNftLbl.textContent = costNoNft === 0 ? 'FREE' : (costNoNft + ' RONKE');
+        if (withNftLbl) withNftLbl.textContent = previewCost === 0 ? 'FREE' : (previewCost + ' RONKE');
+        if (saveLbl) {
+          if (savings > 0) {
+            saveLbl.innerHTML = `Save ${savings} RONKE &middot; <a href="https://marketplace.skymavis.com/collections/ronkeverse" target="_blank">Get NFT &rarr;</a>`;
+          } else {
+            saveLbl.innerHTML = '<a href="https://marketplace.skymavis.com/collections/ronkeverse" target="_blank">Get RONKE NFT &rarr;</a> to unlock bonuses';
+          }
+        }
+      }
+    }
+
     // Update pricing schedule grid to match server's nextPlayN (fixes
     // inconsistency where localStorage has plays the server doesn't yet,
     // e.g. legacy plays from before SEC-5 deploy).
