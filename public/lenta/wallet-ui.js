@@ -293,7 +293,7 @@
   function _setupPewpewBtn(btn) {
     if (!_pewpewBtnInit) {
       _pewpewBtnInit = true;
-      btn.innerHTML = `<canvas width="44" height="44" style="image-rendering:pixelated;width:44px;height:44px;display:block;"></canvas><span class="wui-home-hint">PEWPEW</span>`;
+      btn.innerHTML = `<canvas width="44" height="44" style="image-rendering:pixelated;width:44px;height:44px;display:block;"></canvas><div class="wui-pewpew-play-badge" aria-hidden="true">▶</div><span class="wui-home-hint">▶ PLAY</span>`;
       btn.addEventListener('mouseenter', () => {
         _pewpewHovering = true;
         _pewpewAnimStart = performance.now();

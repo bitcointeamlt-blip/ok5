@@ -8516,6 +8516,38 @@ kbd {
     inset 0 2px 0 rgba(255, 255, 255, 0.22),
     inset 0 -2px 0 rgba(0, 0, 0, 0.28) !important;
 }
+/* PEWPEW play badge — corner overlay on logo button to signal "start game" */
+.wui-pewpew-play-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(180deg, #4cd964 0%, #2a9a3a 100%);
+  color: #fff;
+  border: 2px solid #1a4a20;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: bold;
+  padding-left: 2px;   /* visually center the right-pointing triangle */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5), 0 0 10px rgba(76,217,100,0.6);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  pointer-events: none;
+  animation: pewpewPlayPulse 1.6s ease-in-out infinite;
+  z-index: 2;
+}
+@keyframes pewpewPlayPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 2px 4px rgba(0,0,0,0.5), 0 0 10px rgba(76,217,100,0.6); }
+  50%      { transform: scale(1.18); box-shadow: 0 2px 6px rgba(0,0,0,0.6), 0 0 18px rgba(76,217,100,0.95); }
+}
+.wui-castle-btn:hover .wui-pewpew-play-badge {
+  background: linear-gradient(180deg, #6cf080 0%, #3aaa4a 100%);
+  animation-duration: 0.9s;
+}
+
 .wui-home-hint {
   position: absolute;
   bottom: -12px;
