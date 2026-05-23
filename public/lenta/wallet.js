@@ -21,9 +21,9 @@
   let _waypointProvider = null;
   let _waypointPromise = null;
 
-  // DungeonTrophies kontraktas — Phase 15 UI integration.
-  // Saigon testnet (chainId 202601). Mainnet flip po Phase 14.
-  const TROPHY_CONTRACT = '0xce0917a94cb3c270144ce5402e85b600fa94a619';
+  // DungeonTrophies kontraktas — Ronin Mainnet (chainId 2020).
+  // Deployed 2026-05-23 from 0x32782D97...624A.
+  const TROPHY_CONTRACT = '0xb7873833e7AC43c921AF736F2E3988Ba26a39512';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.55';
   let _viemModule = null;
 
