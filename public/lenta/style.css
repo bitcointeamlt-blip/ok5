@@ -14489,6 +14489,11 @@ kbd {
   border-color: #b8860b !important;
 }
 
+/* NFT PERKS — hide all entry buttons on mobile (player discovers bonuses via gameplay) */
+@media (max-width: 720px) {
+  .btn-nftperks-open, .mm-btn-nftperks { display: none !important; }
+}
+
 /* NFT PERKS — mobile ≤ 720px */
 @media (max-width: 720px) {
   #nft-perks-overlay { padding: 10px; align-items: flex-start; padding-top: max(12px, env(safe-area-inset-top)); }
