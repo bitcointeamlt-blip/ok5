@@ -6672,6 +6672,11 @@ async function _f12FetchServerCostAndUpdate() {
     const cost = Number(data.cost) || 0;
     const costNoNft = Number(data.costNoNft) || 0;
     const balance = Number(data.balance) || 0;
+    const nextPlayN = Number(data.nextPlayN) || 1;
+    const playsToday = Number(data.playsToday) || 0;
+    const divisor = Number(data.divisor) || 1;
+    const eligibleNftCount = Number(data.eligibleNftCount) || 0;
+    const afterCost = Number(data.afterCost) || 0;
     const insufficient = cost > 0 && balance < cost;
 
     // Update hero cost
@@ -6683,8 +6688,8 @@ async function _f12FetchServerCostAndUpdate() {
     const subEl = document.getElementById('f12e-cost-sub');
     if (subEl) {
       if (insufficient) subEl.innerHTML = `⚠ Insufficient — you have ${balance} RONKE`;
-      else if (data.playsToday === 0) subEl.textContent = 'First play of 24h cycle (server-verified)';
-      else subEl.textContent = `Play #${data.nextPlayN} in current 24h cycle (server-verified)`;
+      else if (playsToday === 0) subEl.textContent = 'First play of 24h cycle (server-verified)';
+      else subEl.textContent = `Play #${nextPlayN} in current 24h cycle (server-verified)`;
     }
     // Update balance bar
     const nowEl = document.getElementById('f12e-bal-now');
@@ -6698,6 +6703,45 @@ async function _f12FetchServerCostAndUpdate() {
     // Update hero state
     const heroBtn = document.getElementById('f12e-hero-btn');
     if (heroBtn) heroBtn.classList.toggle('is-insufficient-state', insufficient);
+
+    // Update pricing schedule grid to match server's nextPlayN (fixes
+    // inconsistency where localStorage has plays the server doesn't yet,
+    // e.g. legacy plays from before SEC-5 deploy).
+    const schedEl = document.getElementById('f12e-schedule');
+    if (schedEl) {
+      schedEl.innerHTML = '';
+      const totalToShow = 6;
+      for (let i = 1; i <= totalToShow; i++) {
+        const c = _f12CostForPlayN(i, divisor);
+        const item = document.createElement('div');
+        item.className = 'f12e-sched-item';
+        if (i < nextPlayN) item.classList.add('is-past');
+        if (i === nextPlayN) item.classList.add('is-current');
+        const costStr = c === 0 ? 'FREE' : (c + ' RONKE');
+        const costClass = c === 0 ? 'is-free' : '';
+        item.innerHTML = `<span class="f12e-sched-num">Play #${i}</span><span class="f12e-sched-cost ${costClass}">${costStr}</span>`;
+        schedEl.appendChild(item);
+      }
+    }
+
+    // Update next-cost preview
+    const nextEl = document.getElementById('f12e-next-cost');
+    if (nextEl) nextEl.textContent = afterCost === 0 ? 'FREE' : (afterCost + ' RONKE');
+
+    // Sync localStorage play log with server count (so local fallback uses
+    // realistic baseline when offline).
+    try {
+      const existing = _f12GetPlaysIn24h();
+      if (existing.length !== playsToday) {
+        // Rebuild log: keep server-authoritative count, timestamp them in past
+        const now = Date.now();
+        const rebuilt = [];
+        for (let i = 0; i < playsToday; i++) {
+          rebuilt.push(now - (playsToday - i) * 60000);   // stagger 1min apart, retroactively
+        }
+        localStorage.setItem(_F12_PLAY_LOG_KEY, JSON.stringify(rebuilt));
+      }
+    } catch (_) {}
   } catch (e) {
     console.warn('[f12] get-play-cost failed', e);
   }
