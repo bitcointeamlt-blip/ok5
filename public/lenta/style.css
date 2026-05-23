@@ -13913,6 +13913,27 @@ kbd {
   background: linear-gradient(135deg, rgba(255,207,92,0.10), rgba(255,207,92,0.02));
   border-color: #ffcf5c;
 }
+.f12e-card-disc.is-preview {
+  background: linear-gradient(135deg, rgba(74,157,166,0.10), rgba(74,157,166,0.02));
+  border-color: #4a9da6;
+  border-style: dashed;
+}
+.f12e-card-disc.is-preview .f12e-card-title { color: #4a9da6; }
+.f12e-card-disc.is-preview .f12e-card-icon { color: #4a9da6; }
+.f12e-card-disc.is-preview .f12e-tier-badge {
+  background: linear-gradient(180deg, #4a9da6, #2a5a64);
+  color: #f5e6c3;
+}
+.f12e-card-disc.is-preview .f12e-disc-yours {
+  background: rgba(74,157,166,0.15);
+  border-color: #4a9da6;
+  box-shadow: 0 0 12px rgba(74,157,166,0.3);
+}
+.f12e-card-disc.is-preview .f12e-disc-yours .f12e-disc-col-lbl { color: #4a9da6; }
+.f12e-card-disc.is-preview .f12e-disc-yours .f12e-disc-col-val { color: #6bc7d0; }
+.f12e-card-disc.is-preview .f12e-disc-save { color: #6bc7d0; }
+.f12e-card-disc.is-preview .f12e-disc-save a { color: #ffcf5c; text-decoration: underline; }
+.f12e-card-disc.is-preview .f12e-disc-save a:hover { color: #ffe680; }
 .f12e-card-bonus {
   background: linear-gradient(135deg, rgba(74,157,166,0.10), rgba(74,157,166,0.02));
   border-color: #4a9da6;

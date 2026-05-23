@@ -6412,23 +6412,61 @@ function _showF12EntryPopup(onConfirm) {
     }
   }
 
-  // ── DISCOUNT card ──
+  // ── DISCOUNT card (always visible) ──
+  // - Holder: shows actual discount vs no-NFT baseline.
+  // - Non-holder: shows "If you had 1 NFT" preview with marketplace CTA.
   const discEl = document.getElementById('f12e-discount');
   if (discEl) {
+    discEl.style.display = 'block';
+    const noNftLbl = document.getElementById('f12e-cost-noNft');
+    const withNftLbl = document.getElementById('f12e-cost-withNft');
+    const nftCnt = document.getElementById('f12e-nft-count');
+    const tierBadge = document.getElementById('f12e-tier-badge');
+    const saveLbl = document.getElementById('f12e-disc-save');
+    const iconEl = document.getElementById('f12e-disc-icon');
+    const titleEl = document.getElementById('f12e-disc-title');
+    const lblLeft = document.getElementById('f12e-disc-lbl-left');
+    const lblRight = document.getElementById('f12e-disc-lbl-right');
+
     if (d.isHolder && d.cost !== d.costNoNft) {
-      discEl.style.display = 'block';
-      const noNftLbl = document.getElementById('f12e-cost-noNft');
-      const withNftLbl = document.getElementById('f12e-cost-withNft');
-      const nftCnt = document.getElementById('f12e-nft-count');
-      const tierBadge = document.getElementById('f12e-tier-badge');
-      const saveLbl = document.getElementById('f12e-disc-save');
+      // ── Holder mode ──
+      discEl.classList.remove('is-preview');
+      discEl.classList.add('is-active');
+      if (iconEl) iconEl.textContent = '★';
+      if (titleEl) titleEl.textContent = 'NFT HOLDER DISCOUNT';
+      if (tierBadge) {
+        tierBadge.textContent = _f12TierLabel(d.divisor);
+        tierBadge.style.display = '';
+      }
+      if (lblLeft) lblLeft.textContent = 'Without NFT';
+      if (lblRight) lblRight.innerHTML = `Your cost (<span id="f12e-nft-count">${d.eligibleNftCount}</span> NFT)`;
       if (noNftLbl) noNftLbl.textContent = d.costNoNft === 0 ? 'FREE' : (d.costNoNft + ' RONKE');
       if (withNftLbl) withNftLbl.textContent = d.cost === 0 ? 'FREE' : (d.cost + ' RONKE');
-      if (nftCnt) nftCnt.textContent = d.eligibleNftCount;
-      if (tierBadge) tierBadge.textContent = _f12TierLabel(d.divisor);
-      if (saveLbl) saveLbl.textContent = '÷' + d.divisor + ' cheaper for holders';
+      if (saveLbl) saveLbl.innerHTML = '&divide;' + d.divisor + ' cheaper for holders';
     } else {
-      discEl.style.display = 'none';
+      // ── Non-holder / pending mode: "If you had 1 NFT" preview ──
+      discEl.classList.remove('is-active');
+      discEl.classList.add('is-preview');
+      const previewDivisor = 3.0;  // 1+ NFT tier
+      const previewCost = _f12CostForPlayN(d.nextPlayN, previewDivisor);
+      const savings = d.costNoNft - previewCost;
+      if (iconEl) iconEl.textContent = '👀';
+      if (titleEl) titleEl.textContent = 'IF YOU HAD 1 NFT';
+      if (tierBadge) {
+        tierBadge.textContent = 'PREVIEW';
+        tierBadge.style.display = '';
+      }
+      if (lblLeft) lblLeft.textContent = 'You pay';
+      if (lblRight) lblRight.innerHTML = 'With 1 NFT';
+      if (noNftLbl) noNftLbl.textContent = d.costNoNft === 0 ? 'FREE' : (d.costNoNft + ' RONKE');
+      if (withNftLbl) withNftLbl.textContent = previewCost === 0 ? 'FREE' : (previewCost + ' RONKE');
+      if (saveLbl) {
+        if (savings > 0) {
+          saveLbl.innerHTML = `Save ${savings} RONKE &middot; <a href="https://marketplace.skymavis.com/collections/ronkeverse" target="_blank">Get NFT &rarr;</a>`;
+        } else {
+          saveLbl.innerHTML = '<a href="https://marketplace.skymavis.com/collections/ronkeverse" target="_blank">Get RONKE NFT &rarr;</a> to unlock bonuses';
+        }
+      }
     }
   }
 
