@@ -6719,6 +6719,14 @@ window._f12ConfirmPlay = async function() {
     try {
       const resp = await window.SupabaseSync.invoke('register-play', { wallet: addr.toLowerCase() });
       const data = resp && resp.data;
+      // ── FALLBACK: edge fn not yet deployed (404) → local charge ──
+      // Allows existing local pricing/charge flow to continue working
+      // until SEC-5 edge functions are deployed in Supabase Dashboard.
+      if (resp && resp.status === 404) {
+        if (typeof logEvent === 'function') logEvent('⚠ register-play edge fn missing — using local fallback', 'warn');
+        _f12LocalFallbackPlay();
+        return;
+      }
       if (!resp || !resp.ok || !data || data.ok !== true) {
         // Insufficient balance from server
         if (data && data.error === 'Insufficient balance') {
@@ -6777,6 +6785,43 @@ window._f12ConfirmPlay = async function() {
     else if (typeof _f12_realGotoF12 === 'function') _f12_realGotoF12();
   }, 80);
 };
+
+// Local-charge fallback when server fn unavailable (404 from register-play).
+// Mirrors the legacy pre-SEC-5 logic: deduct from _ronkeBalance, log locally.
+function _f12LocalFallbackPlay() {
+  const d = window._f12CurrentCost();
+  const cost = d.cost;
+  if (cost > 0 && (typeof _ronkeBalance !== 'number' || _ronkeBalance < cost)) {
+    _f12DenyFeedback();
+    return;
+  }
+  const fromBal = (typeof _ronkeBalance === 'number') ? Math.floor(_ronkeBalance) : 0;
+  const toBal = Math.max(0, fromBal - cost);
+  if (cost > 0 && typeof _ronkeBalance === 'number') {
+    _ronkeBalance = Math.max(0, _ronkeBalance - cost);
+    if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
+    if (typeof saveProfile === 'function') saveProfile();
+    if (typeof logEvent === 'function') logEvent(`▶ PewPew Saga entry (-${cost} RONKE) local fallback`, 'info');
+  }
+  _f12LogPlay();
+  const proceed = _f12_pendingProceed;
+  _f12_pendingProceed = null;
+  SFX.play(660, 0.08, 0.06, 'square', 300);
+  const nowEl = document.getElementById('f12e-bal-now');
+  const dur = cost > 0 ? Math.min(900, 200 + cost * 30) : 0;
+  function finish() {
+    const ov = document.getElementById('f12-entry-overlay');
+    if (ov) ov.classList.remove('active');
+    SFX.play(900, 0.10, 0.06, 'square', 500);
+    if (typeof proceed === 'function') setTimeout(proceed, 80);
+    else if (typeof _f12_realGotoF12 === 'function') setTimeout(_f12_realGotoF12, 80);
+  }
+  if (dur > 0 && nowEl) {
+    _f12AnimBalanceTo(nowEl, fromBal, toBal, dur, () => setTimeout(finish, 250));
+  } else {
+    finish();
+  }
+}
 window._f12CancelPlay = function() {
   const ov = document.getElementById('f12-entry-overlay');
   if (ov) ov.classList.remove('active');
