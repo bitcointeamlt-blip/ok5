@@ -447,8 +447,9 @@
       ],
     });
 
-    // Read current mint price via RPC (off-thread, doesn't require wallet)
-    const priceHex = await fetch('https://saigon-testnet.roninchain.com/rpc', {
+    // Read current mint price via Ronin Mainnet RPC (off-thread, doesn't require wallet).
+    // Was hardcoded saigon-testnet — fixed 2026-05-23 post-mainnet flip.
+    const priceHex = await fetch(RONIN_RPC, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -456,7 +457,9 @@
         params: [{ to: TROPHY_CONTRACT, data: '0xe82ded21' }, 'latest'],  // getCurrentMintPrice()
       }),
     }).then(r => r.json()).then(r => r.result).catch(() => '0x0');
-    const valueHex = '0x' + BigInt(priceHex || '0x0').toString(16);
+    // Guard against null/undefined/NaN from RPC failure
+    const priceStr = (typeof priceHex === 'string' && priceHex.startsWith('0x') && priceHex.length > 2) ? priceHex : '0x0';
+    const valueHex = '0x' + BigInt(priceStr).toString(16);
 
     const txHash = await prov.request({
       method: 'eth_sendTransaction',

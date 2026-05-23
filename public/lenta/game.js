@@ -6178,9 +6178,10 @@ window.openTrophyPanel = function openTrophyPanel() {
 };
 
 // Phase 15 — fetch live mint cost from contract (RPC), update pricing strip + curve.
+// Post-mainnet-flip (2026-05-23): RPC + contract now point to Ronin Mainnet.
 async function _refreshTrophyPricing() {
-  const SAIGON_RPC = 'https://saigon-testnet.roninchain.com/rpc';
-  const CONTRACT = (window.Wallet && window.Wallet.TROPHY_CONTRACT) || '0xce0917a94cb3c270144ce5402e85b600fa94a619';
+  const RONIN_RPC = 'https://api.roninchain.com/rpc';
+  const CONTRACT = (window.Wallet && window.Wallet.TROPHY_CONTRACT) || '0xb7873833e7AC43c921AF736F2E3988Ba26a39512';
   // Function selectors:
   const SELECTORS = {
     getCurrentMintPrice: '0xe82ded21',  // getCurrentMintPrice() -> uint256
@@ -6189,7 +6190,7 @@ async function _refreshTrophyPricing() {
     totalSupply:         '0x18160ddd',  // totalSupply() -> uint256
   };
   async function rpcCall(selector) {
-    const resp = await fetch(SAIGON_RPC, {
+    const resp = await fetch(RONIN_RPC, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -6198,8 +6199,8 @@ async function _refreshTrophyPricing() {
       }),
     });
     const j = await resp.json();
-    if (j.error || !j.result) return 0n;
-    return BigInt(j.result);
+    if (j.error || !j.result || j.result === '0x') return 0n;
+    try { return BigInt(j.result); } catch (_) { return 0n; }
   }
   try {
     const [priceWei, batch, remaining, supply] = await Promise.all([
