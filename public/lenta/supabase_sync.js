@@ -141,6 +141,19 @@
     }, 2000);
   }
 
+  // Force an immediate cloud push (bypasses the 2s throttle).
+  // Use for critical state changes (e.g. trained unit added) where a refresh
+  // within 2s would otherwise lose the change.
+  async function forcePushNow() {
+    if (!syncEnabled) return false;
+    if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
+    const addr = getWalletAddress();
+    const profile = getCurrentProfile();
+    if (!addr || !profile) return false;
+    if (typeof profile._savedAt !== 'number') profile._savedAt = Date.now();
+    return await pushProfileToCloud(addr, profile);
+  }
+
   // ── Wrap saveProfile to also push to cloud ──────────────────────────
   // Laukiame kol game.js apibrėš window.saveProfile, tada wrap'inam.
   function wrapSaveProfile() {
@@ -199,6 +212,7 @@
     syncOnWalletConnect,
     pushProfileToCloud,
     loadProfileFromCloud,
+    forcePush: forcePushNow,
     isEnabled: () => syncEnabled,
     invoke: invokeFunction,
     validateAchievement,

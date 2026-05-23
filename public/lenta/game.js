@@ -3156,7 +3156,10 @@ function _removeTrainedSnapById(id) {
 }
 function _saveBarracksTrainedState() {
   if (!Array.isArray(S.units)) return;
-  // Kolekcionuojam gyvus F10 trained unit'us (rebuild base)
+  // Kolekcionuojam gyvus F10 trained unit'us (rebuild base).
+  // HEAL on save: kai jau esam F10 (mūšis pasibaigė), išgyvenusių unit'ų hp
+  // grąžinam į maxHp. Be šito du to paties tipo unitai su skirtingu hp neturi
+  // sustackinti — ir žaidėjas matytų atskirus slot'us po kiekvieno F11/F12 mūšio.
   const snaps = [];
   const keptIds = new Set();
   for (const u of S.units) {
@@ -3164,7 +3167,9 @@ function _saveBarracksTrainedState() {
     if (u.spawnWalk && u.spawnWalk.mergeTargetId) continue; // mid-merge walker — skip, merges into target
     if (!u.trainedSnapId) u.trainedSnapId = _nextTrainedSnapId();
     keptIds.add(u.trainedSnapId);
-    snaps.push({ id: u.trainedSnapId, utype: u.utype, stack: u.stack || 1, hp: u.hp, maxHp: u.maxHp });
+    // Heal live unit + snap to full HP so post-battle survivors are identical
+    if (typeof u.maxHp === 'number' && u.maxHp > 0) u.hp = u.maxHp;
+    snaps.push({ id: u.trainedSnapId, utype: u.utype, stack: u.stack || 1, hp: u.maxHp, maxHp: u.maxHp });
   }
   // Preserve non-unit synthetic entries (towers) — jos nėra S.units, todėl rebuild jų neapima
   const _existingSynth = Array.isArray(Profile.barracksTrained)
@@ -3172,6 +3177,10 @@ function _saveBarracksTrainedState() {
     : [];
   Profile.barracksTrained = [...snaps, ..._existingSynth];
   saveProfile();
+  // Force immediate cloud push (skip 2s throttle) — critical for unit persistence
+  if (window.SupabaseSync && typeof window.SupabaseSync.forcePush === 'function') {
+    try { window.SupabaseSync.forcePush(); } catch (_) {}
+  }
 }
 function _restoreBarracksTrainedState() {
   const snaps = Profile.barracksTrained;
@@ -3301,6 +3310,9 @@ function _tickTowerProduction() {
   };
   Profile.barracksTrained.push(_twrSnap);
   if (typeof saveProfile === 'function') saveProfile();
+  if (window.SupabaseSync && typeof window.SupabaseSync.forcePush === 'function') {
+    try { window.SupabaseSync.forcePush(); } catch (_) {}
+  }
   if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._twrSnap });
   _towerProduction = null;
   _showBuildingReadyToast('TOWER READY', '🗼', '#ffcf5c');
@@ -3335,6 +3347,9 @@ function _tickCrossbowTowerProduction() {
   };
   Profile.barracksTrained.push(_twrSnap);
   if (typeof saveProfile === 'function') saveProfile();
+  if (window.SupabaseSync && typeof window.SupabaseSync.forcePush === 'function') {
+    try { window.SupabaseSync.forcePush(); } catch (_) {}
+  }
   if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._twrSnap });
   _crossbowTowerProduction = null;
   _showBuildingReadyToast('XBOW TOWER READY', 'ðŸ—¼', '#9ed6ff');
@@ -3369,6 +3384,9 @@ function _tickZipProduction() {
   };
   Profile.barracksTrained.push(_zipSnap);
   if (typeof saveProfile === 'function') saveProfile();
+  if (window.SupabaseSync && typeof window.SupabaseSync.forcePush === 'function') {
+    try { window.SupabaseSync.forcePush(); } catch (_) {}
+  }
   if (Array.isArray(_f11TransferUnits)) _f11TransferUnits.push({ ..._zipSnap });
   _zipProduction = null;
   _showBuildingReadyToast('ZIP TOWER READY', '⚡', '#a8e0ff');
