@@ -3171,11 +3171,38 @@ function _saveBarracksTrainedState() {
     if (typeof u.maxHp === 'number' && u.maxHp > 0) u.hp = u.maxHp;
     snaps.push({ id: u.trainedSnapId, utype: u.utype, stack: u.stack || 1, hp: u.maxHp, maxHp: u.maxHp });
   }
+  // ── Auto-merge identical-type stacks ─────────────────────────────────
+  // After F11/F12 battles, restored units may exist as separate entities
+  // with same stats. Group them into one stacked snap per utype so they
+  // re-spawn as a single slot next time.
+  const mergedByType = {};
+  for (const s of snaps) {
+    const key = s.utype + '|' + s.maxHp;
+    if (!mergedByType[key]) {
+      mergedByType[key] = { ...s, stack: 0 };
+    }
+    mergedByType[key].stack += s.stack || 1;
+  }
+  const mergedSnaps = Object.values(mergedByType);
+
   // Preserve non-unit synthetic entries (towers) — jos nėra S.units, todėl rebuild jų neapima
   const _existingSynth = Array.isArray(Profile.barracksTrained)
     ? Profile.barracksTrained.filter(s => s && (s.utype === 'tower' || s.utype === 'crossbow_tower' || s.utype === 'zip'))
     : [];
-  Profile.barracksTrained = [...snaps, ..._existingSynth];
+
+  // ── Defensive guard against race with _restoreBarracksTrainedState ──
+  // If we'd write an empty unit list but Profile previously had units,
+  // skip this save — restore is likely in progress (just entered F10).
+  // Without this guard, the very first 3s tick after F10 init could wipe
+  // Profile.barracksTrained between gotoF10() and the restore spawn loop.
+  const prevSnaps = Array.isArray(Profile.barracksTrained)
+    ? Profile.barracksTrained.filter(s => s && s.utype !== 'tower' && s.utype !== 'crossbow_tower' && s.utype !== 'zip')
+    : [];
+  if (mergedSnaps.length === 0 && prevSnaps.length > 0) {
+    return; // skip — likely race during restore
+  }
+
+  Profile.barracksTrained = [...mergedSnaps, ..._existingSynth];
   saveProfile();
   // Force immediate cloud push (skip 2s throttle) — critical for unit persistence
   if (window.SupabaseSync && typeof window.SupabaseSync.forcePush === 'function') {
@@ -7601,9 +7628,13 @@ function initAdventure() {
   // Floor intro animation
   triggerFloorIntro(S.floor || 1);
 
-  // F10 — restore trained barracks units from last session
+  // F10 — restore trained barracks units from last session.
+  // Push _lastBarracksSaveAt forward so the 3s auto-save doesn't fire
+  // before restore finishes spawning (would otherwise see S.units empty
+  // and wipe Profile.barracksTrained — race condition).
   if (S.floor === 10 && typeof _restoreBarracksTrainedState === 'function') {
     _restoreBarracksTrainedState();
+    try { _lastBarracksSaveAt = performance.now() + 2000; } catch (_) {}
   }
 
   // F11/F12 — kovos zona: load ally army iš Profile (treniruoti F10 units)
