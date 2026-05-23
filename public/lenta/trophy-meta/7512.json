@@ -1,0 +1,24 @@
+{
+  "name": "PewPew Trophy #7512",
+  "description": "Achievement trophy NFT earned by mastering PewPew Saga arcade. Each trophy proves on-chain skill mastery in the PewPew universe on Ronin.",
+  "image": "https://0x-pewpew.com/lenta/PewPewTrophies_square_lossless.png",
+  "external_url": "https://0x-pewpew.com/lenta/",
+  "attributes": [
+    {
+      "trait_type": "Collection",
+      "value": "PewPew Trophies"
+    },
+    {
+      "trait_type": "Series",
+      "value": "Genesis"
+    },
+    {
+      "trait_type": "Batch",
+      "value": 8
+    },
+    {
+      "trait_type": "Token ID",
+      "value": 7512
+    }
+  ]
+}
