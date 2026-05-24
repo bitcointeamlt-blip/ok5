@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp31balbar">
+  <link rel="stylesheet" href="style.css?v=hp42nobtn">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1656,6 +1656,128 @@
     </div>
   </div>
 
+  <!-- NFT Barracks F10 unit plot overlays (4 latest NFTs displayed near ciucela) -->
+  <div id="nft-plots-overlay" style="position:fixed;pointer-events:none;z-index:50;display:none;">
+    <div class="nft-plot" id="nft-plot-0" style="position:absolute;width:80px;height:80px;display:none;"></div>
+    <div class="nft-plot" id="nft-plot-1" style="position:absolute;width:80px;height:80px;display:none;"></div>
+    <div class="nft-plot" id="nft-plot-2" style="position:absolute;width:80px;height:80px;display:none;"></div>
+    <div class="nft-plot" id="nft-plot-3" style="position:absolute;width:80px;height:80px;display:none;"></div>
+  </div>
+
+  <!-- PewPewBarracks NFT Training Modal (mainnet 0xccf604...0862) -->
+  <div id="nft-barracks-modal" class="nft-modal">
+    <div class="nft-modal-content">
+      <div class="nft-modal-header">
+        <span>⚔️ NFT BARRACKS</span>
+        <button class="nft-modal-close" id="nft-modal-close">×</button>
+      </div>
+
+      <div class="nft-modal-tabs">
+        <button class="nft-tab active" data-tab="train">TRAIN</button>
+        <button class="nft-tab" data-tab="inventory">INVENTORY <span id="nft-inv-badge">0</span></button>
+        <button class="nft-tab" data-tab="info">INFO</button>
+      </div>
+
+      <!-- TRAIN TAB -->
+      <div class="nft-tab-panel active" id="nft-tab-train">
+        <div class="nft-stats">
+          <div class="nft-stat"><span>RONKE balance:</span><strong id="nft-ronke-bal">—</strong></div>
+          <div class="nft-stat"><span>Ronkeverse NFTs:</span><strong id="nft-rv-bal">—</strong></div>
+          <div class="nft-stat"><span>Daily cap (12h reset):</span><strong id="nft-cap">— / —</strong></div>
+          <div class="nft-stat"><span>Network supply:</span><strong id="nft-supply">—</strong></div>
+        </div>
+
+        <div class="nft-unit-grid">
+          <div class="nft-unit-option" data-utype="1">
+            <img src="unit-images/skull-idle.gif" alt="Skull">
+            <div class="nft-unit-name">Skull</div>
+            <div class="nft-unit-tag">Common</div>
+          </div>
+          <div class="nft-unit-option" data-utype="2">
+            <img src="unit-images/archer-idle.gif" alt="Archer">
+            <div class="nft-unit-name">Archer</div>
+            <div class="nft-unit-tag">Common</div>
+          </div>
+          <div class="nft-unit-option" data-utype="3">
+            <img src="unit-images/harpoon-idle.gif" alt="Harpoon">
+            <div class="nft-unit-name">Harpoon</div>
+            <div class="nft-unit-tag">Common</div>
+          </div>
+          <div class="nft-unit-option" data-utype="4">
+            <img src="unit-images/shaman-idle.gif" alt="Shaman">
+            <div class="nft-unit-name">Shaman</div>
+            <div class="nft-unit-tag rare">Rare</div>
+          </div>
+        </div>
+
+        <div class="nft-qty-row">
+          <label>Quantity:</label>
+          <button class="nft-qty-btn" id="nft-qty-minus">−</button>
+          <input type="number" id="nft-qty" value="10" min="1" max="100">
+          <button class="nft-qty-btn" id="nft-qty-plus">+</button>
+          <span class="nft-qty-hint">Sweet spot: 10 (no penalty)</span>
+        </div>
+
+        <div class="nft-cost-preview" id="nft-cost-preview">
+          <div class="nft-cost-row">
+            <span>Total cost:</span><strong id="nft-total-cost">— RONKE</strong>
+          </div>
+          <div class="nft-cost-row">
+            <span>Per unit:</span><span id="nft-per-unit-cost">—</span>
+          </div>
+          <div class="nft-cost-row">
+            <span>Batch multiplier:</span><span id="nft-batch-mult">—</span>
+          </div>
+          <div class="nft-cost-row">
+            <span>Training time:</span><span id="nft-wait-time">—</span>
+          </div>
+        </div>
+
+        <div class="nft-pending" id="nft-pending" style="display:none">
+          <div class="nft-pending-label">⏳ PENDING TRAINING</div>
+          <div class="nft-pending-info" id="nft-pending-info">—</div>
+          <div class="nft-pending-countdown" id="nft-pending-countdown">—</div>
+          <button class="nft-btn primary" id="nft-claim-btn" style="display:none">CLAIM NFTs</button>
+          <button class="nft-btn secondary" id="nft-cancel-btn">CANCEL (90% refund)</button>
+        </div>
+
+        <div class="nft-actions" id="nft-actions">
+          <button class="nft-btn secondary" id="nft-approve-btn">1. Approve RONKE</button>
+          <button class="nft-btn primary" id="nft-train-btn">2. Start Training</button>
+        </div>
+
+        <div class="nft-status" id="nft-status"></div>
+      </div>
+
+      <!-- INVENTORY TAB -->
+      <div class="nft-tab-panel" id="nft-tab-inventory">
+        <div class="nft-inv-header">
+          <span>Owned NFT units: <strong id="nft-inv-count">0</strong></span>
+          <button class="nft-btn-small" id="nft-inv-refresh">Refresh</button>
+        </div>
+        <div class="nft-inv-grid" id="nft-inv-grid">
+          <div class="nft-empty">Connect wallet + train your first NFT unit</div>
+        </div>
+      </div>
+
+      <!-- INFO TAB -->
+      <div class="nft-tab-panel" id="nft-tab-info">
+        <h3>Welcome to NFT Barracks</h3>
+        <p>Train real NFT units paid with RONKE token. Each unit becomes an ERC721 NFT in your wallet with on-chain XP, battles, and kills history.</p>
+        <h4>Pricing curve</h4>
+        <p>Cost scales with global supply (Bitcoin-style). 10 RONKE base, grows to 1000+ as more units mint. Burn (death in battle) reduces supply, lowers cost for everyone.</p>
+        <h4>Daily cap</h4>
+        <p>Base 10 units per 12-hour period. +5 per held Ronkeverse NFT. Hard ceiling 100. Resets at 00:00 UTC and 12:00 UTC.</p>
+        <h4>Batch multiplier</h4>
+        <p>Up to 10 in 1 TX = no penalty. 11+ doubles cost per unit. Stay at 10 per batch for optimal cost.</p>
+        <h4>Permadeath</h4>
+        <p>NFT units MORTAL — if they die in battle, the NFT is permanently burned. Even high-XP veterans can die. Real stakes.</p>
+        <h4>Contract</h4>
+        <p style="font-family:monospace;font-size:9px;word-break:break-all">0xccf604511c5d2b5c3fd61adfba3950d0d2890862</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Achievement Popup -->
   <div id="achievement-popup" class="achievement-popup">
     <div class="ach-icon">AWARD</div>
@@ -1801,7 +1923,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=7forcepush"></script>
   <script src="wallet.js?v=wp10chainguard"></script>
-  <script src="game.js?v=cmd426rpcfix"></script>
+  <script src="barracks_nft.js?v=nft4"></script>
+  <script src="barracks_nft_modal.js?v=nft4"></script>
+  <script src="barracks_nft_plots.js?v=nft4"></script>
+  <script src="game.js?v=cmd432nftplots"></script>
   <script src="floor12_merge.js?v=cmd691nftbonus"></script>
   <script src="wallet-ui.js?v=pewpew10breath"></script>
   <script>

@@ -5691,6 +5691,10 @@ let gameMode = 'pvp';
 let advCanvasW = BOARD_W; // wider canvas in adventure mode (replaces hidden P2 panel)
 let _p2PanelEl = null;   // saved reference when panel is removed from DOM
 let S = {};
+// Bridge: expose key state to window for external modules (NFT plots overlay)
+window.S = S;
+window.getCiucelaBounds = () => _ciucelaBounds;
+window.getCam = () => S.cam;
 let stats = {};
 let aiThinkInterval = null;
 
@@ -5978,12 +5982,13 @@ async function _handleTrophyClaim(claimable) {
     statusEl.textContent = 'Sign mint transaction in wallet...';
     const { txHash } = await window.Wallet.claimTrophy(res.data.claim);
     statusEl.classList.add('success');
-    statusEl.innerHTML = `Minted! <a href="https://saigon-explorer.roninchain.com/tx/${txHash}" target="_blank" style="color:#6fcf5c;text-decoration:underline">${txHash.slice(0,10)}...</a>`;
+    statusEl.innerHTML = `Minted! <a href="https://app.roninchain.com/tx/${txHash}" target="_blank" style="color:#6fcf5c;text-decoration:underline">${txHash.slice(0,10)}...</a>`;
     // Mark locally so we don't re-prompt this session
     if (!Profile.trophyClaims) Profile.trophyClaims = {};
     Profile.trophyClaims[claimable.id] = { claimedAt: Date.now(), txHash };
     try { saveProfile(); } catch (_) {}
     btn.textContent = 'CLAIMED';
+    _playTrophyMintAnimation();
   } catch (e) {
     console.warn('[trophy claim]', e);
     statusEl.textContent = 'Error: ' + (e?.shortMessage || e?.message || String(e)).slice(0, 80);
@@ -5991,6 +5996,65 @@ async function _handleTrophyClaim(claimable) {
     btn.disabled = false;
   }
 }
+// ── TROPHY MINT SUCCESS ANIMATION ──────────────────────────────
+// Triggered when claim TX confirmed. Modal flashes gold, trophy image
+// pulses + rotates, "MINTED!" overlay drops in, 24 confetti particles
+// burst from center, victory arpeggio plays.
+function _playTrophyMintAnimation() {
+  const modal = document.getElementById('trophy-claim-modal');
+  const content = modal && modal.querySelector('.trophy-modal-content');
+  const img = modal && modal.querySelector('.trophy-modal-img');
+  if (!content) return;
+  content.classList.add('is-minted');
+  if (img) img.classList.add('is-minted');
+
+  // "MINTED!" overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'trophy-mint-overlay';
+  overlay.textContent = 'MINTED!';
+  content.appendChild(overlay);
+
+  // Confetti burst
+  const burst = document.createElement('div');
+  burst.className = 'trophy-mint-burst';
+  const colors = ['#ffcf5c','#fff1b8','#6fcf5c','#4a9da6','#e85d5d','#ffffff'];
+  const N = 28;
+  for (let i = 0; i < N; i++) {
+    const p = document.createElement('span');
+    const ang = (Math.PI * 2 * i) / N + (Math.random() - 0.5) * 0.4;
+    const dist = 110 + Math.random() * 80;
+    const dx = Math.cos(ang) * dist;
+    const dy = Math.sin(ang) * dist;
+    const rot = (Math.random() * 720 - 360);
+    const dur = 900 + Math.random() * 700;
+    p.style.background = colors[i % colors.length];
+    p.style.setProperty('--dx', dx + 'px');
+    p.style.setProperty('--dy', dy + 'px');
+    p.style.setProperty('--rot', rot + 'deg');
+    p.style.animationDuration = dur + 'ms';
+    burst.appendChild(p);
+  }
+  content.appendChild(burst);
+
+  // SFX victory arpeggio
+  if (typeof SFX !== 'undefined' && SFX.play) {
+    try {
+      SFX.play(523, 0.10, 0.06, 'square', 80);          // C5
+      setTimeout(() => SFX.play(659, 0.10, 0.06, 'square', 80), 90);   // E5
+      setTimeout(() => SFX.play(784, 0.10, 0.06, 'square', 80), 180);  // G5
+      setTimeout(() => SFX.play(1047, 0.18, 0.10, 'square', 250), 280); // C6
+      setTimeout(() => SFX.play(1568, 0.08, 0.05, 'triangle', 600), 500); // G6 sparkle
+    } catch (_) {}
+  }
+
+  // Cleanup after animation
+  setTimeout(() => {
+    try { burst.remove(); overlay.remove(); } catch (_) {}
+    if (img) img.classList.remove('is-minted');
+    content.classList.remove('is-minted');
+  }, 2400);
+}
+
 // Phase 15 — tier eligibility checker. Returns array of tier progress summaries.
 window.getTrophyTierStatus = function getTrophyTierStatus() {
   _ensureTrophyStats();
@@ -7072,7 +7136,7 @@ function renderTrophyPanel() {
     let actionHtml;
     if (tier.claimed) {
       const txHash = (Profile.trophyClaims && Profile.trophyClaims[tier.id] && Profile.trophyClaims[tier.id].txHash) || '';
-      const link = txHash ? `<a href="https://saigon-explorer.roninchain.com/tx/${txHash}" target="_blank" class="tier-claimed-link">view tx</a>` : '';
+      const link = txHash ? `<a href="https://app.roninchain.com/tx/${txHash}" target="_blank" class="tier-claimed-link">view tx</a>` : '';
       actionHtml = `
         <div class="tier-actions">
           <button class="tier-claim-btn claimed">✓ CLAIMED</button>
@@ -14356,6 +14420,35 @@ function _drawDungeonStatic() {
             }
             if (_isTotem) {
               _ciucelaBounds = { x: _dx, y: _dy, w, h };
+              // NFT BARRACKS label virš sprite'o (Phase 2 integration marker)
+              if (S.floor === 10) {
+                ctx.save();
+                const _lblX = _dx + w / 2;
+                const _lblY = _dy - 14;
+                ctx.font = 'bold 10px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const _lblText = '⚔ NFT BARRACKS';
+                const _tw = ctx.measureText(_lblText).width + 14;
+                // Background pill
+                ctx.fillStyle = 'rgba(74, 157, 166, 0.92)';
+                ctx.beginPath();
+                const _rx = _lblX - _tw / 2, _ry = _lblY - 9, _rw = _tw, _rh = 18, _rr = 4;
+                ctx.moveTo(_rx + _rr, _ry);
+                ctx.arcTo(_rx + _rw, _ry, _rx + _rw, _ry + _rh, _rr);
+                ctx.arcTo(_rx + _rw, _ry + _rh, _rx, _ry + _rh, _rr);
+                ctx.arcTo(_rx, _ry + _rh, _rx, _ry, _rr);
+                ctx.arcTo(_rx, _ry, _rx + _rw, _ry, _rr);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#1a4d56';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                // Label text
+                ctx.fillStyle = '#fff';
+                ctx.fillText(_lblText, _lblX, _lblY);
+                ctx.restore();
+              }
               // Statybos progress bar virš sprite'o (kai vyksta upgrade'as)
               if (_ciucelaIsConstructing()) {
                 const _cnow = performance.now();
@@ -30137,7 +30230,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (S.floor === 10 && inside(_ciucelaBounds)) {
-      _ciucelaPopupOpen = true;
+      // F10 ciucela slot repurposed as NFT Barracks entry (Phase 1 integration)
+      if (window.NFTBarracksModal && window.NFTBarracksModal.open) {
+        window.NFTBarracksModal.open();
+      } else {
+        _ciucelaPopupOpen = true;  // fallback: open old upgrade popup
+      }
       return;
     }
     // Extra mine house/stone click → atidaryti tos mine popup
