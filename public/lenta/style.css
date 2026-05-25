@@ -15328,3 +15328,29 @@ kbd {
   transform: translate(-50%, -50%);
   letter-spacing: 1px;
 }
+
+/* NFT inventory card action buttons */
+.nft-card-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+}
+.nft-card-link {
+  display: inline-block;
+  background: #1a2238;
+  border: 1px solid #4a9da6;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 14px;
+  text-decoration: none;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.nft-card-link:hover {
+  background: #4a9da6;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(74, 157, 166, 0.5);
+}
+.nft-card-link.market:hover { background: #ffcf5c; border-color: #ffcf5c; }

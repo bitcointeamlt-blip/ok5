@@ -194,10 +194,13 @@
         grid.innerHTML = '<div class="nft-empty">No NFT units yet — train your first!</div>';
         return;
       }
+      const BARRACKS_ADDR = (window.BarracksNFT && window.BarracksNFT.ADDR && window.BarracksNFT.ADDR.barracks) || '';
       grid.innerHTML = units.map(u => {
         const rarityCls = u.rarity === 'rare' ? 'rare' : '';
         const veteranCls = u.level >= 10 ? 'veteran' : '';
         const winRate = u.battles > 0 ? Math.round((u.wins / u.battles) * 100) : 0;
+        const marketUrl = `https://marketplace.roninchain.com/token/${BARRACKS_ADDR}/${u.tokenId}`;
+        const explorerUrl = `https://explorer.roninchain.com/token/${BARRACKS_ADDR}/${u.tokenId}`;
         return `<div class="nft-inv-card ${rarityCls} ${veteranCls}">
           <img src="${u.image}" alt="${u.name}">
           <div class="nft-card-name">${u.name}</div>
@@ -207,6 +210,10 @@
             XP: ${u.xp}<br>
             ${u.battles}🛡 ${u.wins}🏆 ${u.kills}⚔<br>
             ${winRate}% win
+          </div>
+          <div class="nft-card-actions">
+            <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">🛒</a>
+            <a href="${explorerUrl}" target="_blank" class="nft-card-link explorer" title="View on Explorer">🔗</a>
           </div>
         </div>`;
       }).join('');
@@ -243,12 +250,27 @@
       try {
         setStatus('Claiming NFT units...');
         const hash = await window.BarracksNFT.claimTraining();
-        setStatus(`Claimed ✓ ${txLink(hash)} — check Inventory tab`, 'success');
+        setStatus(`🎉 Claimed ✓ ${txLink(hash)} — check Inventory tab + F10 plots!`, 'success');
+        // Try several refreshes — RPC needs a few seconds to update inventory after mint
         refreshAll();
         refreshInventory();
-        // Refresh F10 NFT plots to show new units
-        if (window.NFTBarracksPlots && window.NFTBarracksPlots.refresh) {
-          window.NFTBarracksPlots.refresh();
+        for (let i = 1; i <= 5; i++) {
+          setTimeout(() => {
+            refreshAll();
+            refreshInventory();
+            if (window.NFTBarracksPlots && window.NFTBarracksPlots.refresh) {
+              window.NFTBarracksPlots.refresh();
+            }
+          }, i * 3000);  // every 3s for 15s
+        }
+        // SFX victory chord
+        if (typeof SFX !== 'undefined' && SFX.play) {
+          try {
+            SFX.play(523, 0.10, 0.06, 'square', 80);
+            setTimeout(() => SFX.play(659, 0.10, 0.06, 'square', 80), 90);
+            setTimeout(() => SFX.play(784, 0.10, 0.06, 'square', 80), 180);
+            setTimeout(() => SFX.play(1047, 0.18, 0.10, 'square', 250), 280);
+          } catch (_) {}
         }
       } catch (e) {
         setStatus(`Claim failed: ${e.shortMessage || e.message}`, 'error');
