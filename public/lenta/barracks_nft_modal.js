@@ -307,7 +307,7 @@
     }
     if (pool.length === 0) return;
 
-    // ─── EIP-712 BurnAuth signing prieš F12 startą ───────────
+    // ─── start-battle backend → wallet sign → save BurnAuth ───────────
     const startBtn = document.getElementById('nft-battle-start');
     const origText = startBtn ? startBtn.textContent : '';
     try {
@@ -316,42 +316,56 @@
         alert('Connect your wallet first to play with NFT units.');
         return;
       }
+      if (!window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') {
+        alert('Backend not available — cannot start NFT battle.');
+        return;
+      }
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = '⏳ STARTING BATTLE...';
+      }
+      const tokenIds = pool.map(p => Number(p.tokenId));
+      // 1) Backend creates battle_sessions row + generates battleId/nonce/deadline
+      const startResp = await window.SupabaseSync.invoke('start-battle', {
+        wallet: W.getAddress(),
+        gameMode: 'F12',
+        deployedTokenIds: tokenIds,
+      });
+      if (!startResp || startResp.ok === false) {
+        const msg = (startResp && startResp.error) || 'Backend rejected battle start';
+        // Special: existing pending battle — auto-recover by asking user
+        if (startResp && startResp.existingBattleId) {
+          alert('You have an unfinished battle. Wait ~30min for it to expire, or use a different wallet.');
+        } else {
+          alert('Cannot start NFT battle: ' + msg);
+        }
+        if (startBtn) { startBtn.disabled = false; startBtn.textContent = origText || '⚔ START WITH NFT'; }
+        return;
+      }
+      // 2) Sign the typedData backend returned (battleId/nonce/deadline come from backend)
+      if (startBtn) startBtn.textContent = '⏳ CONFIRM IN WALLET...';
       if (!W.signBattleAuth) {
         console.warn('[NFT battle] signBattleAuth not available, skipping sign');
       } else {
-        if (startBtn) {
-          startBtn.disabled = true;
-          startBtn.textContent = '⏳ CONFIRM IN WALLET...';
-        }
-        // Generate local battleId + deadline + nonce (Phase 2.3: gauti iš start-battle edge fn)
-        const battleId = BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000));
-        const deadline = Math.floor(Date.now() / 1000) + 1800;  // 30 min
-        // Pseudo-random nonce (uint256)
-        const nonceBytes = new Uint8Array(32);
-        crypto.getRandomValues(nonceBytes);
-        let nonce = 0n;
-        for (const b of nonceBytes) nonce = (nonce << 8n) | BigInt(b);
-        const tokenIds = pool.map(p => p.tokenId);
-        const result = await W.signBattleAuth({
-          tokenIds,
-          battleId: battleId.toString(),
-          deadline,
-          nonce: nonce.toString(),
+        const signRes = await W.signBattleAuth({
+          tokenIds: tokenIds,
+          battleId: startResp.battleId,
+          deadline: startResp.deadline,
+          nonce: startResp.nonce,
         });
-        // Saugom į window — burn flow (Phase 2.3) panaudos po game pabaigos
         window._f12NftBurnAuth = {
-          signature: result.signature,
-          owner: result.owner,
+          signature: signRes.signature,
+          owner: signRes.owner,
           tokenIds: tokenIds.map(String),
-          battleId: battleId.toString(),
-          deadline: String(deadline),
-          nonce: nonce.toString(),
+          battleId: startResp.battleId,
+          deadline: String(startResp.deadline),
+          nonce: startResp.nonce,
         };
         console.log('[F12] NFT BurnAuth signed:', window._f12NftBurnAuth);
       }
     } catch (e) {
-      console.warn('[F12] BurnAuth sign rejected/failed:', e);
-      alert('Battle signing was cancelled. Try again or pick FREE mode to play without signing.');
+      console.warn('[F12] start-battle/sign failed:', e);
+      alert('Battle setup failed: ' + (e.message || e));
       if (startBtn) {
         startBtn.disabled = false;
         startBtn.textContent = origText || '⚔ START WITH NFT';
