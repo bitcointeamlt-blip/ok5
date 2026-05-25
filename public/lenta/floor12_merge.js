@@ -10498,35 +10498,19 @@
       return;
     }
 
-    // ─── 2) Submit dead NFT burn (if any) ───
-    let burnedHash = null;
-    if (resp.burnPayload && resp.burnPayload.tokenIdsToburn && resp.burnPayload.tokenIdsToburn.length > 0) {
-      try {
-        burnedHash = await window.BarracksNFT.submitBurnDead(resp.burnPayload);
-        console.log('[F12 settle] burn tx:', burnedHash);
-      } catch (e) {
-        console.error('[F12 settle] burn failed:', e);
-      }
-    }
-
-    // ─── 3) Claim XP awards per survivor ───
-    const claimedHashes = [];
-    if (Array.isArray(resp.xpAwards)) {
-      for (const award of resp.xpAwards) {
-        try {
-          const h = await window.BarracksNFT.claimXpAward(award);
-          claimedHashes.push({ tokenId: award.tokenId, hash: h, xp: award.xpGain });
-          console.log('[F12 settle] XP claimed for #' + award.tokenId + ' (+' + award.xpGain + ' XP):', h);
-        } catch (e) {
-          console.error('[F12 settle] XP claim failed for #' + award.tokenId, e);
-        }
-      }
-    }
-
+    // Backend jau atliko visus on-chain TX'us (sponsored gas).
+    // Frontend tik parodo rezultatus.
+    console.log('[F12 settle] backend relay results:', {
+      burnTx: resp.burnTxHash,
+      burnedTokens: resp.burnedTokenIds,
+      xpTxs: resp.xpTxHashes,
+    });
     _showSettleResult({
-      dead: deadIds,
-      claimed: claimedHashes,
-      burnHash: burnedHash,
+      dead: resp.burnedTokenIds || [],
+      claimed: (resp.xpTxHashes || []).map(x => ({
+        tokenId: x.tokenId, hash: x.hash, xp: x.xpGain,
+      })),
+      burnHash: resp.burnTxHash,
     });
     // Consume burnAuth
     window._f12NftBurnAuth = null;
