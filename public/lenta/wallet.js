@@ -617,6 +617,9 @@
     }
     if (!addr) throw new Error('No wallet address');
     // payload: { tokenIds: number[], battleId: string, deadline: number, nonce: string }
+    // CRITICAL: owner adresas SVYRAVA tarp lowercase ir checksummed → mismatch hash'e.
+    // Backend stored lowercase → frontend signs su lowercase kad sutaptų.
+    const ownerLc = addr.toLowerCase();
     const domain = {
       name: 'PewPewBarracks',
       version: '1',
@@ -639,7 +642,7 @@
       ],
     };
     const message = {
-      owner: addr,
+      owner: ownerLc,
       tokenIds: payload.tokenIds.map(String),
       battleId: String(payload.battleId),
       deadline: String(payload.deadline),
@@ -648,11 +651,16 @@
     const typedData = JSON.stringify({
       domain, types, primaryType: 'BurnAuth', message,
     });
+    console.log('[signBattleAuth] signing typedData:', typedData);
+    console.log('[signBattleAuth] tokenIds passed to wallet:', message.tokenIds);
+    console.log('[signBattleAuth] owner (lowercase):', ownerLc);
+    console.log('[signBattleAuth] payload.tokenIds raw:', payload.tokenIds);
     const signature = await prov.request({
       method: 'eth_signTypedData_v4',
-      params: [addr, typedData],
+      params: [ownerLc, typedData],
     });
-    return { signature, message, owner: addr };
+    console.log('[signBattleAuth] signature:', signature, 'signer addr (lowercase):', ownerLc);
+    return { signature, message, owner: ownerLc };
   }
 
   // Re-check active wallet account NEPASIKLIAUJANT accountsChanged event'u
