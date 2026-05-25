@@ -14420,7 +14420,7 @@ function _drawDungeonStatic() {
             }
             if (_isTotem) {
               _ciucelaBounds = { x: _dx, y: _dy, w, h };
-              // NFT BARRACKS label virš sprite'o (Phase 2 integration marker)
+              // NFT UNITS TRAINER label virš sprite'o (Phase 2 integration marker)
               if (S.floor === 10) {
                 ctx.save();
                 const _lblX = _dx + w / 2;
@@ -14428,7 +14428,7 @@ function _drawDungeonStatic() {
                 ctx.font = 'bold 10px monospace';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                const _lblText = '⚔ NFT BARRACKS';
+                const _lblText = '⚔ NFT UNITS TRAINER';
                 const _tw = ctx.measureText(_lblText).width + 14;
                 // Background pill
                 ctx.fillStyle = 'rgba(74, 157, 166, 0.92)';
