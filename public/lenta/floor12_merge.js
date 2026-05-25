@@ -10320,27 +10320,41 @@
     }
   }
 
+  let _pickerOpen = false;
   function activate() {
     if (active) return;
+    if (_pickerOpen) return;   // picker jau atviras — nepakartoti openModal'o
     ensureOverlay();
-    // PRE-DECK modal — pirmas F12 entry per session'as → leid pasirinkti kortas
-    // window._f12PreDeckChoice == null => modal dar nebuvo parodytas
-    // window._f12PreDeckChoice == {...} => jau pasirinko, einam i game
+    // PRE-BATTLE PICKER — vieningas NFT Barracks BATTLE tab'as.
+    // Jei window._f12PreDeckChoice == null → DEPLOY dar nepaspaustas, atidarom picker'į.
+    // Jei window._f12PreDeckChoice != null → DEPLOY consumed, einam į žaidimą.
     try {
-      if (window._f12PreDeckChoice == null && window._F12PreDeck && typeof window._F12PreDeck.show === 'function') {
+      if (window._f12PreDeckChoice == null) {
         canvas.style.display = 'block';
-        window._F12PreDeck.show(function(choice) {
-          window._f12PreDeckChoice = choice || {};
-          _activateNow();
-        });
-        return;
+        // Open NFT Barracks BATTLE tab as the unified pre-battle picker
+        if (typeof window._openNftBarracksModal === 'function') {
+          _pickerOpen = true;
+          window._openNftBarracksModal();
+          return;
+        }
+        // Fallback į senesnį predeck modal'ą jei NFT Barracks nepasiekiamas
+        if (window._F12PreDeck && typeof window._F12PreDeck.show === 'function') {
+          window._F12PreDeck.show(function(choice) {
+            window._f12PreDeckChoice = choice || {};
+            _activateNow();
+          });
+          return;
+        }
       }
-    } catch (e) { console.warn('[F12] predeck modal failed, starting plain:', e); }
+    } catch (e) { console.warn('[F12] pre-battle picker failed, starting plain:', e); }
     _activateNow();
   }
+  // Eksportas — naudojamas NFT Barracks DEPLOY metu po _f12PreDeckChoice nustaymo.
+  window._F12_activateNow = function() { _activateNow(); };
 
   function _activateNow() {
     if (active) return;
+    _pickerOpen = false;   // game pradėtas → picker tikrai uždarytas
     initState();
     canvas.style.display = 'block';
     active = true;
@@ -10363,6 +10377,7 @@
   function deactivate() {
     if (!active) return;
     active = false;
+    _pickerOpen = false;
     cancelAnimationFrame(raf);
     if (canvas) canvas.style.display = 'none';
     // Reset pre-deck choice — naujas F12 entry vėl parodys modal'ą

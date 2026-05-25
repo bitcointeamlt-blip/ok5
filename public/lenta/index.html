@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp57nftbattle">
+  <link rel="stylesheet" href="style.css?v=hp58unified">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1793,20 +1793,30 @@
         </div>
       </div>
 
-      <!-- BATTLE / DEPLOY TAB — pasirink NFT unitus į F12 PewPew Saga mūšį -->
+      <!-- BATTLE / DEPLOY TAB — pasirink unitus į F12 PewPew Saga mūšį -->
       <div class="nft-tab-panel" id="nft-tab-battle">
         <div class="nft-battle-header">
           <span>Pick units for PewPew Saga battle</span>
           <button class="nft-btn-small" id="nft-battle-refresh">Refresh</button>
         </div>
+
+        <!-- FREE UNITS sekcija — be NFT, atrakintos automatiškai -->
+        <div class="nft-battle-section-title">🆓 FREE UNITS <span class="nft-battle-section-sub">no chain, no risk</span></div>
+        <div class="nft-battle-free-grid" id="nft-battle-free-grid"></div>
+
+        <!-- NFT UNITS sekcija -->
+        <div class="nft-battle-section-title">⚔ NFT UNITS <span class="nft-battle-section-sub">on-chain XP applies</span></div>
         <div class="nft-battle-desc">
-          Select up to 12 NFT units. Their on-chain XP + level apply in battle. Dead units are <strong style="color:#e85d5d">permanently burned</strong> (disabled while in test mode).
+          NFT units have persistent XP + level. Dead NFTs are <strong style="color:#e85d5d">permanently burned</strong> (disabled in test mode).
         </div>
         <div class="nft-battle-grid" id="nft-battle-grid">
           <div class="nft-empty">Connect wallet + train your first NFT unit</div>
         </div>
+
         <div class="nft-battle-footer">
-          <div class="nft-battle-summary">Selected: <strong id="nft-battle-selected">0</strong> / 12</div>
+          <div class="nft-battle-summary">
+            FREE: <strong id="nft-battle-free-count">0</strong> · NFT: <strong id="nft-battle-selected">0</strong> · Total: <strong id="nft-battle-total">0</strong> / 12
+          </div>
           <button class="nft-btn-primary" id="nft-battle-deploy" disabled>▶ DEPLOY TO BATTLE</button>
         </div>
       </div>
@@ -1974,12 +1984,12 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=7forcepush"></script>
   <script src="wallet.js?v=wp10chainguard"></script>
-  <script src="barracks_nft.js?v=nft15battle"></script>
-  <script src="barracks_nft_modal.js?v=nft15battle"></script>
-  <script src="barracks_nft_plots.js?v=nft15battle"></script>
+  <script src="barracks_nft.js?v=nft16unified"></script>
+  <script src="barracks_nft_modal.js?v=nft16unified"></script>
+  <script src="barracks_nft_plots.js?v=nft16unified"></script>
   <script src="game.js?v=cmd449freeplay2"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
-  <script src="floor12_merge.js?v=cmd695deploypool"></script>
+  <script src="floor12_merge.js?v=cmd696unified"></script>
   <script src="wallet-ui.js?v=pewpew10breath"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────

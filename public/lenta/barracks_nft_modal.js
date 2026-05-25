@@ -26,6 +26,16 @@
     modalOpen = false;
     if (stateRefreshInterval) { clearInterval(stateRefreshInterval); stateRefreshInterval = null; }
     if (pendingTimer) { clearInterval(pendingTimer); pendingTimer = null; }
+    // Jei modal'as buvo atidarytas kaip F12 pre-battle picker IR vartotojas
+    // uždarė be DEPLOY (X arba backdrop) — atšaukiam F12 entry, grąžinam į F10/F11.
+    try {
+      const S = window.S;
+      if (S && S.floor === 12 && !_battleDeployFlow) {
+        // Nebuvo DEPLOY → reiškia user cancel'ino picker'į
+        if (typeof window.gotoF10 === 'function') window.gotoF10();
+      }
+    } catch (_) {}
+    _battleDeployFlow = false;
   }
 
   function setStatus(msg, type) {
@@ -53,12 +63,21 @@
   }
 
   // ─── BATTLE / DEPLOY tab ────────────────────────────────────
-  // Inventoriaus picker — pasirink kelis NFT, paspaudus DEPLOY → F12 startas su NFT pool.
+  // Inventoriaus picker — pasirink kelis NFT + free units, paspaudus DEPLOY → F12 startas.
   // utype (contract uint8) → F12 utype string:
   const NFT_UTYPE_TO_F12 = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman' };
   let _battleInventory = [];   // raw fetchInventory rezultatas
   let _battlePickQty = {};     // {groupKey: qty}
+  let _battleFreeQty = { shadow: 1, arrow: 1, heart: 1, leaf: 1 };  // {ballType: qty} default 1 of each
   const BATTLE_MAX_TOTAL = 12;
+  // FREE unitu sąrašas — match'ina NFT 4 tipus per ball type
+  const FREE_UNITS = [
+    { ballType: 'shadow', utype: 'skull',        name: 'Skull',   icon: 'unit-images/skull-idle.gif' },
+    { ballType: 'arrow',  utype: 'archer',       name: 'Archer',  icon: 'unit-images/archer-idle.gif' },
+    { ballType: 'heart',  utype: 'shaman',       name: 'Shaman',  icon: 'unit-images/shaman-idle.gif' },
+    { ballType: 'leaf',   utype: 'harpoon_fish', name: 'Harpoon', icon: 'unit-images/harpoon-idle.gif' },
+  ];
+  const FREE_MAX_PER_TYPE = 5;
 
   function _battleGroupKey(u) {
     return `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
@@ -84,13 +103,39 @@
     for (const k in _battlePickQty) n += (_battlePickQty[k] | 0);
     return n;
   }
+  function _battleFreeTotal() {
+    let n = 0;
+    for (const k in _battleFreeQty) n += (_battleFreeQty[k] | 0);
+    return n;
+  }
+  function _renderFreeGrid() {
+    const grid = document.getElementById('nft-battle-free-grid');
+    if (!grid) return;
+    grid.innerHTML = FREE_UNITS.map(u => {
+      const cnt = _battleFreeQty[u.ballType] | 0;
+      return `<div class="nft-battle-card ${cnt > 0 ? 'is-picked' : ''}" data-key="free-${u.ballType}">
+        <img class="nft-battle-img" src="${u.icon}" alt="${u.name}">
+        <div class="nft-battle-info">
+          <div class="nft-battle-name">${u.name.toUpperCase()}</div>
+          <div class="nft-battle-meta">FREE · no XP gain · no burn risk</div>
+        </div>
+        <div class="nft-battle-ctrls">
+          <button class="nft-battle-free-minus" data-bt="${u.ballType}" type="button">−</button>
+          <span class="nft-battle-count">${cnt}</span>
+          <button class="nft-battle-free-plus" data-bt="${u.ballType}" type="button">+</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
 
   async function refreshBattlePicker() {
+    // Free units grid — visada renderinam (be wallet)
+    _renderFreeGrid();
     const W = window.Wallet;
     const grid = document.getElementById('nft-battle-grid');
-    if (!grid) return;
+    if (!grid) { _updateBattleFooter(); return; }
     if (!W || !W.isConnected || !W.isConnected()) {
-      grid.innerHTML = '<div class="nft-empty">Connect wallet to pick NFT units</div>';
+      grid.innerHTML = '<div class="nft-empty">Connect wallet to pick NFT units (free units still work)</div>';
       _updateBattleFooter();
       return;
     }
@@ -138,35 +183,70 @@
   }
 
   function _updateBattleFooter() {
-    const total = _battleTotalPicked();
-    const totEl = document.getElementById('nft-battle-selected');
-    if (totEl) totEl.textContent = total;
+    const nftTotal = _battleTotalPicked();
+    const freeTotal = _battleFreeTotal();
+    const grandTotal = nftTotal + freeTotal;
+    const nftEl = document.getElementById('nft-battle-selected');
+    if (nftEl) nftEl.textContent = nftTotal;
+    const freeEl = document.getElementById('nft-battle-free-count');
+    if (freeEl) freeEl.textContent = freeTotal;
+    const totEl = document.getElementById('nft-battle-total');
+    if (totEl) totEl.textContent = grandTotal;
     const btn = document.getElementById('nft-battle-deploy');
-    if (btn) btn.disabled = total === 0;
+    if (btn) btn.disabled = grandTotal === 0;
   }
 
   function _onBattleGridClick(e) {
     const t = e.target;
-    if (!t || !t.dataset || !t.dataset.key) return;
-    const key = t.dataset.key;
-    const cur = _battlePickQty[key] | 0;
-    const total = _battleTotalPicked();
-    if (t.classList.contains('nft-battle-plus')) {
-      const max = parseInt(t.dataset.max, 10) || 0;
-      if (cur < max && total < BATTLE_MAX_TOTAL) {
-        _battlePickQty[key] = cur + 1;
-        _renderBattleGrid();
+    if (!t || !t.dataset) return;
+    const totalAll = _battleTotalPicked() + _battleFreeTotal();
+    // FREE units +/-
+    if (t.dataset.bt) {
+      const bt = t.dataset.bt;
+      const cur = _battleFreeQty[bt] | 0;
+      if (t.classList.contains('nft-battle-free-plus')) {
+        if (cur < FREE_MAX_PER_TYPE && totalAll < BATTLE_MAX_TOTAL) {
+          _battleFreeQty[bt] = cur + 1;
+          _renderFreeGrid();
+          _updateBattleFooter();
+        }
+      } else if (t.classList.contains('nft-battle-free-minus')) {
+        if (cur > 0) {
+          _battleFreeQty[bt] = cur - 1;
+          _renderFreeGrid();
+          _updateBattleFooter();
+        }
       }
-    } else if (t.classList.contains('nft-battle-minus')) {
-      if (cur > 0) {
-        _battlePickQty[key] = cur - 1;
-        if (_battlePickQty[key] <= 0) delete _battlePickQty[key];
-        _renderBattleGrid();
+      return;
+    }
+    // NFT units +/-
+    if (t.dataset.key) {
+      const key = t.dataset.key;
+      const cur = _battlePickQty[key] | 0;
+      if (t.classList.contains('nft-battle-plus')) {
+        const max = parseInt(t.dataset.max, 10) || 0;
+        if (cur < max && totalAll < BATTLE_MAX_TOTAL) {
+          _battlePickQty[key] = cur + 1;
+          _renderBattleGrid();
+        }
+      } else if (t.classList.contains('nft-battle-minus')) {
+        if (cur > 0) {
+          _battlePickQty[key] = cur - 1;
+          if (_battlePickQty[key] <= 0) delete _battlePickQty[key];
+          _renderBattleGrid();
+        }
       }
     }
   }
 
   function _onBattleDeploy() {
+    // Collect FREE units
+    const freeChoice = {};
+    for (const bt in _battleFreeQty) {
+      const c = _battleFreeQty[bt] | 0;
+      if (c > 0) freeChoice[bt] = c;
+    }
+    // Collect NFT units
     const groups = _battleGroups();
     const pool = [];
     for (const g of groups) {
@@ -174,7 +254,6 @@
       if (qty <= 0) continue;
       const utypeF12 = NFT_UTYPE_TO_F12[g.utype];
       if (!utypeF12) continue;
-      // Paimam pirmus qty tokenIds iš grupės
       for (let i = 0; i < qty && i < g.ids.length; i++) {
         pool.push({
           tokenId: g.ids[i],
@@ -185,16 +264,16 @@
         });
       }
     }
-    if (!pool.length) return;
-    // Globalus bridge'as F12 read'inimui
+    if (Object.keys(freeChoice).length === 0 && pool.length === 0) return;
+    // Bridges į F12
     window._f12NftPickedPool = pool;
-    // Skip F12 predeck modal'ą (NFT pasirinkta jau)
-    window._f12PreDeckChoice = {};  // truthy → skip modal
-    // Uždarom NFT modal'ą
+    window._f12PreDeckChoice = freeChoice;  // truthy → skip senasis predeck modal
+    // Uždarom NFT modal'ą + flag kad NEcancel'inti F12 entry (DEPLOY consumed)
+    _battleDeployFlow = true;
     closeModal();
-    // Pereinam į F12
     if (typeof window.gotoF12 === 'function') window.gotoF12();
   }
+  let _battleDeployFlow = false;
 
   function bindBattleTab() {
     const grid = document.getElementById('nft-battle-grid');

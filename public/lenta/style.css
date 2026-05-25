@@ -16046,3 +16046,28 @@ kbd {
 #nft-battle-deploy:disabled {
   background: #4a3320; color: #7a6a4a; cursor: not-allowed; opacity: 0.6;
 }
+
+/* ── NFT Barracks BATTLE tab — FREE units section ────────────── */
+.nft-battle-section-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: #ffcf5c;
+  letter-spacing: 1px;
+  margin-top: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px dashed #5a3e22;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nft-battle-section-sub {
+  font-size: 6.5px;
+  color: #a89878;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+}
+.nft-battle-free-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
