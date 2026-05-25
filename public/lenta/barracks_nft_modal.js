@@ -267,7 +267,16 @@
     window._f12PreDeckChoice = freeChoice;
     _battleDeployFlow = true;
     closeModal();
+    // gotoF12 sets S.floor=12; poll() per 200ms detects ir paleid'ia _activateNow
     if (typeof window.gotoF12 === 'function') window.gotoF12();
+    // Safety net — force activate after small delay (jei poll guard'as keistai elgiasi)
+    setTimeout(function() {
+      try {
+        if (window._F12_activateNow && window._f12PreDeckChoice != null) {
+          window._F12_activateNow();
+        }
+      } catch (e) { console.warn('[deploy] safety activateNow err', e); }
+    }, 250);
   }
   function _onBattleDeployFree() {
     const freeChoice = {};

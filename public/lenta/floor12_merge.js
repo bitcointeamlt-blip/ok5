@@ -10323,7 +10323,9 @@
   let _pickerOpen = false;
   function activate() {
     if (active) return;
-    if (_pickerOpen) return;   // picker jau atviras — nepakartoti openModal'o
+    // Guard: jei picker atviras IR DEPLOY dar nepaspaustas → nepakartot openModal'o.
+    // Bet jei _f12PreDeckChoice jau set'intas (DEPLOY consumed) → leid'iam activate proceed.
+    if (_pickerOpen && window._f12PreDeckChoice == null) return;
     ensureOverlay();
     // PRE-BATTLE PICKER — vieningas NFT Barracks BATTLE tab'as.
     // Jei window._f12PreDeckChoice == null → DEPLOY dar nepaspaustas, atidarom picker'į.
