@@ -15966,3 +15966,83 @@ kbd {
 .f12-predeck-btn-nft:active { transform: translateY(2px); }
 .f12-predeck-btn-nft .f12-predeck-btn-main { font-size: 10px; color: #ffcf5c; }
 .f12-predeck-btn-nft .f12-predeck-btn-sub { font-size: 6.5px; color: #e5d3a5; opacity: 0.9; }
+
+/* ── NFT Barracks — BATTLE / DEPLOY tab picker ───────────────── */
+#nft-tab-battle { display: none; }
+#nft-tab-battle.active { display: flex; flex-direction: column; gap: 10px; }
+.nft-battle-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  color: #f5e6c3; padding: 4px 2px;
+}
+.nft-battle-desc {
+  font-family: 'Press Start 2P', monospace; font-size: 7px;
+  color: #d9c08a; line-height: 1.6; padding: 6px 8px;
+  background: rgba(0,0,0,0.25); border: 1px dashed #5a3e22;
+}
+.nft-battle-grid {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 360px; overflow-y: auto;
+  padding-right: 4px;
+}
+.nft-battle-card {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(0,0,0,0.32);
+  border: 2px solid #2a1a0c; padding: 6px 8px;
+  transition: background 0.15s;
+}
+.nft-battle-card.is-picked {
+  background: rgba(74, 157, 166, 0.25);
+  border-color: #4a9da6;
+}
+.nft-battle-img {
+  width: 44px; height: 44px;
+  image-rendering: pixelated;
+  background: rgba(0,0,0,0.3); border: 1px solid #2a1a0c;
+}
+.nft-battle-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.nft-battle-name {
+  font-family: 'Press Start 2P', monospace; font-size: 8px;
+  color: #f5e6c3; letter-spacing: 0.5px;
+}
+.nft-battle-lvl {
+  color: #ffcf5c; font-size: 7px; margin-left: 4px;
+}
+.nft-battle-meta {
+  font-family: 'Press Start 2P', monospace; font-size: 6px;
+  color: #a89878; letter-spacing: 0.5px;
+}
+.nft-battle-ctrls { display: flex; align-items: center; gap: 4px; }
+.nft-battle-ctrls button {
+  width: 24px; height: 24px;
+  background: #6b4a2e; border: 2px solid #2a1a0c;
+  color: #f5e6c3; font-family: 'Press Start 2P', monospace;
+  font-size: 11px; cursor: pointer; padding: 0; line-height: 1;
+  transition: background 0.1s, transform 0.05s;
+}
+.nft-battle-ctrls button:hover { background: #8b6a3e; }
+.nft-battle-ctrls button:active { transform: scale(0.9); }
+.nft-battle-count {
+  display: inline-block; min-width: 18px; text-align: center;
+  font-family: 'Press Start 2P', monospace; font-size: 9px; color: #ffcf5c;
+}
+.nft-battle-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-top: 6px; border-top: 2px solid #2a1a0c;
+}
+.nft-battle-summary {
+  font-family: 'Press Start 2P', monospace; font-size: 8px; color: #d9c08a;
+}
+.nft-battle-summary strong { color: #ffcf5c; font-size: 10px; }
+#nft-battle-deploy {
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  padding: 10px 16px; border: 3px solid #2a1a0c;
+  background: linear-gradient(180deg, #ffcf5c 0%, #d4a23a 100%);
+  color: #2a1a0c; cursor: pointer; letter-spacing: 1px;
+  transition: transform 0.05s, background 0.15s;
+}
+#nft-battle-deploy:hover:not(:disabled) { background: linear-gradient(180deg, #ffd97a 0%, #e8b748 100%); }
+#nft-battle-deploy:active:not(:disabled) { transform: translateY(2px); }
+#nft-battle-deploy:disabled {
+  background: #4a3320; color: #7a6a4a; cursor: not-allowed; opacity: 0.6;
+}

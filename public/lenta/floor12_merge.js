@@ -1546,6 +1546,12 @@
   // Naudojamas tose pat _getTrainedCount/_takeTrainedUnit funkcijose kad senasis deploy
   // logic'as (card unlocked + trained > 0 + CD) liktų nepakitusios.
   let _f12SessionFreePool = {};
+  // ── F12 session NFT pool — picked iš NFT Barracks DEPLOY tab'o ──
+  // [{tokenId, utype, xp, level, contractUtype, hp, maxHp}] — kiekvienas elementas = 1 NFT unit
+  // _takeTrainedUnit ima pirmą tinkamo utype NFT, snap.tokenId išsaugomas ally.trainedSnap'e (burn flow).
+  let _f12SessionNftPool = [];
+  // Dead NFT tokenIds — surenkam per game'ą, panaudojam end'e burn'inimui (Phase 2.2).
+  let _f12DeadNftTokenIds = [];
   // ── HOME barracks trained units count — F12 deploys reikalauja real trained unit'ų ──
   // (Profile.barracksTrained = NFT-trained iš F10 + session free pool iš pre-deck modal.)
   function _getTrainedCount(utype) {
@@ -1560,6 +1566,10 @@
       }
     } catch (_) {}
     n += (_f12SessionFreePool[utype] | 0);
+    // NFT pool — count picked NFTs of this utype
+    for (const nft of _f12SessionNftPool) {
+      if (nft && nft.utype === utype) n++;
+    }
     return n;
   }
   // Mirties metu — atimam 1 trained unit iš HOME barakų (mirė kovoj, prarastas)
@@ -1587,6 +1597,24 @@
       // Free pool unitai — be HP snap. spawnAlly fallback'ina į default ALLY_STATS HP.
       return { id: null, utype: utype, hp: null, maxHp: null, free: true };
     }
+    // NFT pool — pop first matching utype, return snap su tokenId (burn flow tracking)
+    for (let i = 0; i < _f12SessionNftPool.length; i++) {
+      const nft = _f12SessionNftPool[i];
+      if (nft && nft.utype === utype) {
+        _f12SessionNftPool.splice(i, 1);
+        return {
+          id: null,                  // legacy id (Profile.barracksTrained) — NFT'ams nereik
+          utype: nft.utype,
+          hp: nft.hp != null ? nft.hp : null,
+          maxHp: nft.maxHp != null ? nft.maxHp : null,
+          nft: true,
+          tokenId: nft.tokenId,
+          xp: nft.xp,
+          level: nft.level,
+          contractUtype: nft.contractUtype,
+        };
+      }
+    }
     try {
       if (typeof Profile !== 'object' || !Profile || !Array.isArray(Profile.barracksTrained)) return null;
       for (let i = 0; i < Profile.barracksTrained.length; i++) {
@@ -1610,6 +1638,19 @@
       if (snap.free) {
         // Free pool unit — grąžinam atgal į session pool, kad galetum redeploy
         _f12SessionFreePool[snap.utype] = (_f12SessionFreePool[snap.utype] | 0) + 1;
+        return;
+      }
+      if (snap.nft) {
+        // NFT — grąžinam į session NFT pool su atnaujintu HP (kad redeploy išlaikytų žalą)
+        _f12SessionNftPool.push({
+          tokenId: snap.tokenId,
+          utype: snap.utype,
+          xp: snap.xp,
+          level: snap.level,
+          contractUtype: snap.contractUtype,
+          hp: snap.hp,
+          maxHp: snap.maxHp,
+        });
         return;
       }
       if (typeof Profile !== 'object' || !Profile) return;
@@ -1838,6 +1879,8 @@
     _f12Spirits = [];
     _f12CardDeck = {};
     _f12SessionFreePool = {};
+    _f12SessionNftPool = [];
+    _f12DeadNftTokenIds = [];
     // Pre-deck choice — žaidėjo pasirinkimas iš pre-game modal'o.
     // Įmanomi šaltiniai: window._f12PreDeckChoice (set'inamas iš f12_predeck_modal.js)
     // Pildom abu: _f12CardDeck (kortos atrakintos) + _f12SessionFreePool (deploy quota).
@@ -1853,6 +1896,36 @@
             if (ut) _f12SessionFreePool[ut] = (_f12SessionFreePool[ut] | 0) + c;
           }
         }
+      }
+    } catch (_) {}
+    // NFT picked pool (iš NFT Barracks DEPLOY tab'o) — populate NFT pool + atrakinam atitinkamas kortas
+    try {
+      const nftPool = window._f12NftPickedPool;
+      if (Array.isArray(nftPool) && nftPool.length > 0) {
+        const t0 = now();
+        for (const nft of nftPool) {
+          if (!nft || !nft.utype) continue;
+          _f12SessionNftPool.push({
+            tokenId: nft.tokenId,
+            utype: nft.utype,
+            xp: nft.xp || 0,
+            level: nft.level || 0,
+            contractUtype: nft.contractUtype,
+            hp: null,    // first deploy = full HP iš ALLY_STATS
+            maxHp: null,
+          });
+          // Atrakinam korelos atitinkamai ball type'ą
+          let bt = null;
+          for (const k in _UNIT_FOR_BALL_TYPE) {
+            if (_UNIT_FOR_BALL_TYPE[k] === nft.utype) { bt = k; break; }
+          }
+          if (bt) {
+            if (!_f12CardDeck[bt]) _f12CardDeck[bt] = { count: 0, lastIncAt: t0 };
+            _f12CardDeck[bt].count++;
+          }
+        }
+        // Consume — po init'o nereik daugiau read'inti
+        window._f12NftPickedPool = null;
       }
     } catch (_) {}
     _f12CardConsumes = [];
@@ -4094,6 +4167,11 @@
               _f12UnitDeployCD[a.utype] = t;
               // NEBEgrąžinam į HOME (trained snap jau paimtas deploy metu, mirties metu prarastas)
               // a.trainedSnap nebebus _returnTrainedUnit'intas
+              // NFT track — surenkam mirusio NFT tokenId burn flow'ui (Phase 2.2)
+              if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
+                _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
+                console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
+              }
             }
           }
         } else if (!isPaused && !a.static) {
