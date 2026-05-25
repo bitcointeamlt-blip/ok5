@@ -128,6 +128,19 @@
       document.getElementById('nft-cap').textContent = `${s.dailyUsed} / ${s.dailyCap}`;
       document.getElementById('nft-supply').textContent = s.totalAlive.toString();
       document.getElementById('nft-inv-badge').textContent = s.nftBalance.toString();
+      // Clamp qty input to remaining cap (avoid "Daily cap reached" reverts)
+      const remaining = Number(s.remaining);
+      const qtyInput = document.getElementById('nft-qty');
+      if (qtyInput && remaining >= 0) {
+        const cur = Number(qtyInput.value) || 1;
+        if (cur > remaining && remaining > 0) {
+          qtyInput.value = remaining;
+        } else if (remaining === 0) {
+          qtyInput.value = 0;
+        }
+        // Update max attribute too
+        qtyInput.max = Math.max(1, remaining);
+      }
       // Update button states based on allowance + RON + pending
       updateButtonStates(s, ronNum);
       // Pending state
