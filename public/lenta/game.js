@@ -6572,6 +6572,15 @@ function _renderF12BonusList(listEl, totalNft, eligNft, previewMode) {
   }
 }
 function _showF12EntryPopup(onConfirm) {
+  // FREE_PLAY_TESTING: visiškai praleidžiam entry popup'ą — testuojam be RONKE check'ų
+  if (window._F12_FREE_PLAY_TESTING) {
+    if (typeof onConfirm === 'function') {
+      try { onConfirm(); } catch (e) { console.error('[F12 free play] proceed err', e); }
+    } else if (typeof _f12_realGotoF12 === 'function') {
+      _f12_realGotoF12();
+    }
+    return;
+  }
   _f12_pendingProceed = onConfirm || null;
   const d = window._f12CurrentCost();
 
