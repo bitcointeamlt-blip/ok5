@@ -268,7 +268,7 @@
         const explorerUrl = `https://explorer.roninchain.com/token/${BARRACKS_ADDR}/${firstId}`;
         const stackBadge = isStack ? `<div class="nft-card-stack">×${g.count}</div>` : '';
         const idText = isStack
-          ? `<span title="Token IDs: ${g.ids.join(', ')}">${g.count} units</span>`
+          ? `<span title="Token IDs: ${g.ids.join(', ')}"></span>`
           : `#${firstId}`;
         // Level progress
         const curThreshold = g.level * g.level * 100;

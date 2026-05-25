@@ -15732,3 +15732,18 @@ kbd {
 /* Hide old simple stats (replaced by new grid) */
 .nft-inv-card > .nft-card-stats { display: none !important; }
 .nft-inv-card > .nft-card-lvl { display: none !important; }
+
+/* Card v3 tweaks per user feedback */
+.nft-xp-next { display: none !important; }  /* remove unreadable "XP to Lv N" line */
+
+/* Narrower (-5px horiz), taller (+5px vert) */
+.nft-inv-card {
+  padding: 11px 5px !important;
+  gap: 5px !important;
+}
+
+/* Sprite +2px */
+.nft-inv-card .nft-card-img-wrap img {
+  width: 102px !important;
+  height: 102px !important;
+}
