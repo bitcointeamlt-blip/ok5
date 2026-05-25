@@ -287,7 +287,7 @@
     if (Object.keys(freeChoice).length === 0) return;
     _deployStart(freeChoice, []);
   }
-  function _onBattleDeployNft() {
+  async function _onBattleDeployNft() {
     const groups = _battleGroups();
     const pool = [];
     for (const g of groups) {
@@ -306,6 +306,59 @@
       }
     }
     if (pool.length === 0) return;
+
+    // ─── EIP-712 BurnAuth signing prieš F12 startą ───────────
+    const startBtn = document.getElementById('nft-battle-start');
+    const origText = startBtn ? startBtn.textContent : '';
+    try {
+      const W = window.Wallet;
+      if (!W || !W.isConnected || !W.isConnected()) {
+        alert('Connect your wallet first to play with NFT units.');
+        return;
+      }
+      if (!W.signBattleAuth) {
+        console.warn('[NFT battle] signBattleAuth not available, skipping sign');
+      } else {
+        if (startBtn) {
+          startBtn.disabled = true;
+          startBtn.textContent = '⏳ CONFIRM IN WALLET...';
+        }
+        // Generate local battleId + deadline + nonce (Phase 2.3: gauti iš start-battle edge fn)
+        const battleId = BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000));
+        const deadline = Math.floor(Date.now() / 1000) + 1800;  // 30 min
+        // Pseudo-random nonce (uint256)
+        const nonceBytes = new Uint8Array(32);
+        crypto.getRandomValues(nonceBytes);
+        let nonce = 0n;
+        for (const b of nonceBytes) nonce = (nonce << 8n) | BigInt(b);
+        const tokenIds = pool.map(p => p.tokenId);
+        const result = await W.signBattleAuth({
+          tokenIds,
+          battleId: battleId.toString(),
+          deadline,
+          nonce: nonce.toString(),
+        });
+        // Saugom į window — burn flow (Phase 2.3) panaudos po game pabaigos
+        window._f12NftBurnAuth = {
+          signature: result.signature,
+          owner: result.owner,
+          tokenIds: tokenIds.map(String),
+          battleId: battleId.toString(),
+          deadline: String(deadline),
+          nonce: nonce.toString(),
+        };
+        console.log('[F12] NFT BurnAuth signed:', window._f12NftBurnAuth);
+      }
+    } catch (e) {
+      console.warn('[F12] BurnAuth sign rejected/failed:', e);
+      alert('Battle signing was cancelled. Try again or pick FREE mode to play without signing.');
+      if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.textContent = origText || '⚔ START WITH NFT';
+      }
+      return;
+    }
+    if (startBtn) startBtn.disabled = false;
     // NFT mode — empty free choice, bet truthy {} kad praleist predeck modal'ą
     _deployStart({}, pool);
   }

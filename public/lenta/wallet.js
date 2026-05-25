@@ -589,6 +589,54 @@
   function _clearNftHoldCache() { _nftHoldCache = null; _nftHoldFetching = null; }
 
   // Public API
+  // ── F12 NFT pre-battle signing — EIP-712 BurnAuth ─────────────
+  // Naudojama kai user paspaudžia "START WITH NFT" — patvirtina kad sutinka
+  // kad pasirinkti NFT'ai gali būti sudeginti jei mirs mūšyje.
+  async function signBattleAuth(payload) {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+    const addr = state.address;
+    if (!addr) throw new Error('No wallet address');
+    // payload: { tokenIds: number[], battleId: string, deadline: number, nonce: string }
+    const domain = {
+      name: 'PewPewBarracks',
+      version: '1',
+      chainId: 2020,
+      verifyingContract: '0xccf604511c5d2b5c3fd61adfba3950d0d2890862',
+    };
+    const types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
+      BurnAuth: [
+        { name: 'owner', type: 'address' },
+        { name: 'tokenIds', type: 'uint256[]' },
+        { name: 'battleId', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+      ],
+    };
+    const message = {
+      owner: addr,
+      tokenIds: payload.tokenIds.map(String),
+      battleId: String(payload.battleId),
+      deadline: String(payload.deadline),
+      nonce: String(payload.nonce),
+    };
+    const typedData = JSON.stringify({
+      domain, types, primaryType: 'BurnAuth', message,
+    });
+    const signature = await prov.request({
+      method: 'eth_signTypedData_v4',
+      params: [addr, typedData],
+    });
+    return { signature, message, owner: addr };
+  }
+
   window.Wallet = {
     // identity
     connect, disconnect, restore,
@@ -604,6 +652,8 @@
     // NFT hold (server-verified, 24h gate)
     getNftHoldStatus, getEligibleNftCountCached, isHolderEligibleCached,
     claimTrophy,
+    // F12 NFT pre-battle EIP-712 signing
+    signBattleAuth,
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT,
   };
