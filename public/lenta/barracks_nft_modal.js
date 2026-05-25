@@ -107,14 +107,29 @@
       }
       const addr = W.getAddress();
       const s = await window.BarracksNFT.fetchState(addr);
+      // RON balance + low warning
+      const ronStr = await window.BarracksNFT.formatEther(s.ron);
+      const ronNum = parseFloat(ronStr);
+      const ronEl = document.getElementById('nft-ron-bal');
+      ronEl.textContent = ronNum.toFixed(2);
+      ronEl.style.color = ronNum < 11 ? '#e85d5d' : '#6fcf5c';
+      const warnEl = document.getElementById('nft-ron-warning');
+      if (warnEl) {
+        if (ronNum < 11) {
+          warnEl.style.display = 'block';
+          document.getElementById('nft-ron-current').textContent = ronNum.toFixed(2);
+        } else {
+          warnEl.style.display = 'none';
+        }
+      }
       document.getElementById('nft-ronke-bal').textContent =
         (await window.BarracksNFT.formatEther(s.ronke)).split('.')[0];
       document.getElementById('nft-rv-bal').textContent = s.ronkeverse.toString();
       document.getElementById('nft-cap').textContent = `${s.dailyUsed} / ${s.dailyCap}`;
       document.getElementById('nft-supply').textContent = s.totalAlive.toString();
       document.getElementById('nft-inv-badge').textContent = s.nftBalance.toString();
-      // Update button states based on allowance + pending
-      updateButtonStates(s);
+      // Update button states based on allowance + RON + pending
+      updateButtonStates(s, ronNum);
       // Pending state
       if (s.pending.active) showPending(s.pending);
       else hidePending();
@@ -124,14 +139,28 @@
     }
   }
 
-  // Lock/unlock Start Training based on allowance — prevents user confusion
-  function updateButtonStates(state) {
+  // Lock/unlock Start Training based on allowance + RON balance
+  function updateButtonStates(state, ronBalance) {
     const approveBtn = document.getElementById('nft-approve-btn');
     const trainBtn = document.getElementById('nft-train-btn');
-    const MIN_ALLOWANCE = 100n * 10n ** 18n;  // 100 RONKE = enough for first mint
+    const MIN_ALLOWANCE = 100n * 10n ** 18n;  // 100 RONKE
     const hasAllowance = state.allowance >= MIN_ALLOWANCE;
+    const hasRon = typeof ronBalance === 'number' ? ronBalance >= 11 : true;
+
+    if (!hasRon) {
+      // Block both buttons — wallet doesn't have enough RON
+      approveBtn.textContent = '⚠ NEED ≥11 RON FIRST';
+      approveBtn.disabled = true;
+      approveBtn.style.opacity = '0.4';
+      approveBtn.style.boxShadow = 'none';
+      trainBtn.textContent = '⚠ NEED ≥11 RON';
+      trainBtn.disabled = true;
+      trainBtn.style.opacity = '0.4';
+      trainBtn.style.boxShadow = 'none';
+      return;
+    }
+
     if (hasAllowance) {
-      // Approve done — show as completed, focus user on Start Training
       approveBtn.textContent = '✓ RONKE APPROVED';
       approveBtn.disabled = true;
       approveBtn.style.opacity = '0.5';
@@ -140,7 +169,6 @@
       trainBtn.style.boxShadow = '0 0 16px rgba(255, 207, 92, 0.6)';
       trainBtn.textContent = '2. Start Training';
     } else {
-      // No allowance — disable Start Training, push user to Approve first
       approveBtn.textContent = '1. Approve RONKE (REQUIRED FIRST)';
       approveBtn.disabled = false;
       approveBtn.style.opacity = '1';

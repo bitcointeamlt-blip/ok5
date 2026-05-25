@@ -15354,3 +15354,17 @@ kbd {
   box-shadow: 0 2px 6px rgba(74, 157, 166, 0.5);
 }
 .nft-card-link.market:hover { background: #ffcf5c; border-color: #ffcf5c; }
+
+/* NFT modal — RON warning box */
+.nft-ron-warning {
+  background: rgba(232, 93, 93, 0.15);
+  border: 2px solid #e85d5d;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: #ff8080;
+  line-height: 1.5;
+  text-align: center;
+}
+.nft-ron-warning strong { color: #fff; font-family: monospace; }

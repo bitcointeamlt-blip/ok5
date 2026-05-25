@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp43marketlinks">
+  <link rel="stylesheet" href="style.css?v=hp44ronwarn">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1681,10 +1681,15 @@
       <!-- TRAIN TAB -->
       <div class="nft-tab-panel active" id="nft-tab-train">
         <div class="nft-stats">
-          <div class="nft-stat"><span>RONKE balance:</span><strong id="nft-ronke-bal">—</strong></div>
-          <div class="nft-stat"><span>Ronkeverse NFTs:</span><strong id="nft-rv-bal">—</strong></div>
+          <div class="nft-stat"><span>RON balance (gas + eligibility):</span><strong id="nft-ron-bal">—</strong></div>
+          <div class="nft-stat"><span>RONKE balance (training cost):</span><strong id="nft-ronke-bal">—</strong></div>
+          <div class="nft-stat"><span>Ronkeverse NFTs (+5 cap each):</span><strong id="nft-rv-bal">—</strong></div>
           <div class="nft-stat"><span>Daily cap (12h reset):</span><strong id="nft-cap">— / —</strong></div>
           <div class="nft-stat"><span>Network supply:</span><strong id="nft-supply">—</strong></div>
+        </div>
+        <div id="nft-ron-warning" class="nft-ron-warning" style="display:none">
+          ⚠️ Need ≥ 11 RON in wallet to train (anti-Sybil protection). You have <strong id="nft-ron-current">0</strong> RON.
+          Transfer some RON to this wallet before training.
         </div>
 
         <div class="nft-unit-grid">
@@ -1923,10 +1928,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=7forcepush"></script>
   <script src="wallet.js?v=wp10chainguard"></script>
-  <script src="barracks_nft.js?v=nft6"></script>
-  <script src="barracks_nft_modal.js?v=nft6"></script>
-  <script src="barracks_nft_plots.js?v=nft6"></script>
-  <script src="game.js?v=cmd434nftmarket"></script>
+  <script src="barracks_nft.js?v=nft7"></script>
+  <script src="barracks_nft_modal.js?v=nft7"></script>
+  <script src="barracks_nft_plots.js?v=nft7"></script>
+  <script src="game.js?v=cmd435ronwarn"></script>
   <script src="floor12_merge.js?v=cmd691nftbonus"></script>
   <script src="wallet-ui.js?v=pewpew10breath"></script>
   <script>
