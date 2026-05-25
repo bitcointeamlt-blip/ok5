@@ -14424,16 +14424,16 @@ function _drawDungeonStatic() {
               if (S.floor === 10) {
                 ctx.save();
                 const _lblX = _dx + w / 2;
-                const _lblY = _dy + 11;  // was _dy - 14, now lowered ~25 px
-                ctx.font = 'bold 13px "Press Start 2P", monospace, sans-serif';
+                const _lblY = _dy + 8;  // lowered ~22 px from original
+                ctx.font = 'bold 10px "Press Start 2P", monospace, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 const _lblText = '⚔ NFT UNITS TRAINER';
-                const _tw = ctx.measureText(_lblText).width + 20;
-                // Background pill — larger + brighter
+                const _tw = ctx.measureText(_lblText).width + 12;
+                // Background pill — compact + bright
                 ctx.fillStyle = 'rgba(74, 157, 166, 0.96)';
                 ctx.beginPath();
-                const _rh = 24;
+                const _rh = 18;
                 const _rx = _lblX - _tw / 2, _ry = _lblY - _rh / 2, _rw = _tw, _rr = 6;
                 ctx.moveTo(_rx + _rr, _ry);
                 ctx.arcTo(_rx + _rw, _ry, _rx + _rw, _ry + _rh, _rr);
@@ -14449,10 +14449,10 @@ function _drawDungeonStatic() {
                 ctx.lineWidth = 2;
                 ctx.stroke();
                 ctx.shadowBlur = 0;
-                // Label text with dark stroke for contrast
+                // Label text with subtle stroke for readability
                 ctx.fillStyle = '#fff';
-                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+                ctx.lineWidth = 2;
                 ctx.strokeText(_lblText, _lblX, _lblY);
                 ctx.fillText(_lblText, _lblX, _lblY);
                 ctx.restore();
