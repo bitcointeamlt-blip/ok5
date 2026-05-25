@@ -15527,3 +15527,208 @@ kbd {
   min-width: 28px;
   text-align: center;
 }
+
+/* ─── NFT card v3: keep narrow width, add full stats stacked vertically ──── */
+.nft-inv-card {
+  padding: 8px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Image with level badge overlay */
+.nft-card-img-wrap {
+  position: relative;
+  background: rgba(0,0,0,0.3);
+  border-radius: 4px;
+  padding: 2px;
+  display: flex;
+  justify-content: center;
+}
+.nft-inv-card .nft-card-img-wrap img {
+  width: 100px !important;
+  height: 100px !important;
+  image-rendering: pixelated;
+  display: block;
+}
+.nft-card-lvl-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: linear-gradient(180deg, #ffcf5c 0%, #d49a2a 100%);
+  color: #1a1208;
+  font-family: 'Courier New', monospace;
+  font-weight: 900;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1.5px solid #8a5a18;
+  letter-spacing: 0.3px;
+}
+
+/* Header — name + id */
+.nft-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 2px;
+  margin-top: 2px;
+}
+.nft-inv-card .nft-card-name {
+  font-family: 'Press Start 2P', monospace, sans-serif !important;
+  font-size: 9px !important;
+  color: #fff !important;
+  margin: 0 !important;
+}
+.nft-inv-card .nft-card-id {
+  font-family: 'Courier New', monospace !important;
+  font-size: 8px !important;
+  color: #6f7d8e !important;
+  margin: 0 !important;
+}
+
+.nft-card-title {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 7px;
+  color: #4a9da6;
+  letter-spacing: 1px;
+  text-align: center;
+  margin: 0 !important;
+  text-shadow: 0 0 4px rgba(74,157,166,0.4);
+}
+.nft-inv-card.elite .nft-card-title { color: #b08aff; }
+.nft-inv-card.veteran .nft-card-title { color: #ffcf5c; text-shadow: 0 0 6px rgba(255,207,92,0.5); }
+
+/* XP block — compact */
+.nft-card-xp-block {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,207,92,0.3);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.nft-xp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+.nft-xp-label {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 7px;
+  color: #ffcf5c;
+}
+.nft-xp-value {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+}
+.nft-xp-bar {
+  height: 5px !important;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,207,92,0.4);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.nft-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4a9da6 0%, #ffcf5c 100%);
+  transition: width 0.4s;
+  box-shadow: 0 0 4px rgba(255,207,92,0.5);
+}
+.nft-xp-next {
+  font-family: 'Courier New', monospace;
+  font-size: 7px;
+  color: #8a9aaa;
+  text-align: center;
+  margin-top: 2px;
+}
+
+/* Stats grid — 3 cells */
+.nft-card-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 3px;
+}
+.nft-stat-cell {
+  background: rgba(0,0,0,0.3);
+  border-radius: 3px;
+  padding: 4px 2px;
+  text-align: center;
+}
+.nft-stat-icon {
+  font-size: 14px;
+  color: #ffcf5c;
+  line-height: 1;
+  margin-bottom: 1px;
+}
+.nft-stat-num {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 11px;
+  color: #fff;
+  line-height: 1.1;
+}
+.nft-stat-name {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 5px;
+  color: #6f7d8e;
+  letter-spacing: 0.3px;
+  margin-top: 1px;
+}
+
+/* Win rate row */
+.nft-card-winrate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(74,157,166,0.15);
+  border: 1px solid rgba(74,157,166,0.4);
+  border-radius: 3px;
+  padding: 3px 6px;
+}
+.nft-card-winrate span {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 6px;
+  color: #4a9da6;
+  letter-spacing: 0.3px;
+}
+.nft-card-winrate strong {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #6fcf5c;
+}
+
+/* Action buttons */
+.nft-inv-card .nft-card-actions {
+  display: flex;
+  gap: 3px;
+}
+.nft-inv-card .nft-card-link {
+  flex: 1;
+  background: #1a2238;
+  border: 1px solid #4a9da6;
+  border-radius: 3px;
+  padding: 4px 2px;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 6px;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: 0.3px;
+  text-align: center;
+  transition: all 0.15s;
+}
+.nft-inv-card .nft-card-link:hover {
+  transform: translateY(-1px);
+}
+.nft-inv-card .nft-card-link.market:hover {
+  background: #ffcf5c;
+  color: #1a2238;
+}
+.nft-inv-card .nft-card-link.explorer:hover {
+  background: #4a9da6;
+}
+
+/* Hide old simple stats (replaced by new grid) */
+.nft-inv-card > .nft-card-stats { display: none !important; }
+.nft-inv-card > .nft-card-lvl { display: none !important; }

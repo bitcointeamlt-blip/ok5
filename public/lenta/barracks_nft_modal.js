@@ -270,20 +270,58 @@
         const idText = isStack
           ? `<span title="Token IDs: ${g.ids.join(', ')}">${g.count} units</span>`
           : `#${firstId}`;
+        // Level progress
+        const curThreshold = g.level * g.level * 100;
+        const nextThreshold = (g.level + 1) * (g.level + 1) * 100;
+        const xpProgress = Math.max(0, Math.min(100,
+          ((g.xp - curThreshold) / (nextThreshold - curThreshold)) * 100));
+        const xpToNext = Math.max(0, nextThreshold - g.xp);
+        const title = g.level === 0 ? 'RECRUIT' :
+                      g.level < 5  ? 'TRAINED' :
+                      g.level < 10 ? 'ELITE' :
+                      g.level < 25 ? 'CHAMPION' : 'LEGENDARY';
         return `<div class="nft-inv-card ${rarityCls} ${veteranCls}">
           ${stackBadge}
-          <img src="${g.image}" alt="${g.name}">
-          <div class="nft-card-name">${g.name}</div>
-          <div class="nft-card-id">${idText}</div>
-          <div class="nft-card-lvl">Lv. ${g.level}</div>
-          <div class="nft-card-stats">
-            XP: ${g.xp}<br>
-            ${g.battles}🛡 ${g.wins}🏆 ${g.kills}⚔<br>
-            ${winRate}% win
+          <div class="nft-card-img-wrap">
+            <img src="${g.image}" alt="${g.name}">
+            <div class="nft-card-lvl-badge">Lv ${g.level}</div>
+          </div>
+          <div class="nft-card-header">
+            <span class="nft-card-name">${g.name}</span>
+            <span class="nft-card-id">${idText}</span>
+          </div>
+          <div class="nft-card-title">${title}</div>
+          <div class="nft-card-xp-block">
+            <div class="nft-xp-header">
+              <span class="nft-xp-label">XP</span>
+              <span class="nft-xp-value">${g.xp.toLocaleString()} / ${nextThreshold.toLocaleString()}</span>
+            </div>
+            <div class="nft-xp-bar"><div class="nft-xp-fill" style="width:${xpProgress}%"></div></div>
+            <div class="nft-xp-next">${xpToNext.toLocaleString()} XP to Lv ${g.level + 1}</div>
+          </div>
+          <div class="nft-card-stats-grid">
+            <div class="nft-stat-cell">
+              <div class="nft-stat-icon">⚔</div>
+              <div class="nft-stat-num">${g.kills.toLocaleString()}</div>
+              <div class="nft-stat-name">KILLS</div>
+            </div>
+            <div class="nft-stat-cell">
+              <div class="nft-stat-icon">🏆</div>
+              <div class="nft-stat-num">${g.wins}</div>
+              <div class="nft-stat-name">WINS</div>
+            </div>
+            <div class="nft-stat-cell">
+              <div class="nft-stat-icon">⛨</div>
+              <div class="nft-stat-num">${g.battles}</div>
+              <div class="nft-stat-name">BATTLES</div>
+            </div>
+          </div>
+          <div class="nft-card-winrate">
+            <span>WIN RATE</span><strong>${winRate}%</strong>
           </div>
           <div class="nft-card-actions">
-            <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">🛒</a>
-            <a href="${explorerUrl}" target="_blank" class="nft-card-link explorer" title="View on Explorer">🔗</a>
+            <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">SELL</a>
+            <a href="${explorerUrl}" target="_blank" class="nft-card-link explorer" title="View on Explorer">INFO</a>
           </div>
         </div>`;
       }).join('');
