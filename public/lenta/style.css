@@ -16215,3 +16215,13 @@ kbd {
     justify-content: stretch !important;
   }
 }
+
+/* ── NFT Barracks BATTLE rows — užpildyti modal'o plotį, ne 720px centered ── */
+.nft-battle-grid,
+.nft-battle-free-grid {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+.nft-battle-mode-panel { width: 100% !important; }
+.nft-battle-card { width: 100% !important; }
