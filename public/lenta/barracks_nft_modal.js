@@ -326,16 +326,20 @@
       }
       const tokenIds = pool.map(p => Number(p.tokenId));
       // 1) Backend creates battle_sessions row + generates battleId/nonce/deadline
-      const startResp = await window.SupabaseSync.invoke('start-battle', {
+      const startWrap = await window.SupabaseSync.invoke('start-battle', {
         wallet: W.getAddress(),
         gameMode: 'F12',
         deployedTokenIds: tokenIds,
       });
-      if (!startResp || startResp.ok === false) {
-        const msg = (startResp && startResp.error) || 'Backend rejected battle start';
-        // Special: existing pending battle — auto-recover by asking user
+      console.log('[F12 start-battle] resp:', startWrap);
+      // SupabaseSync.invoke wrap'ina į { ok (HTTP status), status, data (edge fn body) }
+      const startResp = startWrap && startWrap.data ? startWrap.data : startWrap;
+      if (!startWrap || !startWrap.ok || !startResp || startResp.ok === false) {
+        const msg = (startResp && startResp.error)
+          || (startWrap && 'HTTP ' + startWrap.status)
+          || 'Backend rejected battle start';
         if (startResp && startResp.existingBattleId) {
-          alert('You have an unfinished battle. Wait ~30min for it to expire, or use a different wallet.');
+          alert('You have an unfinished battle (#' + startResp.existingBattleId.slice(0, 14) + '...). Wait ~30min for it to expire, or use a different wallet.');
         } else {
           alert('Cannot start NFT battle: ' + msg);
         }

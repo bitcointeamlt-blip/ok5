@@ -10468,9 +10468,9 @@
       console.warn('[F12 settle] SupabaseSync.invoke missing — skip backend');
       return;
     }
-    let resp;
+    let respWrap;
     try {
-      resp = await window.SupabaseSync.invoke('submit-battle-result', {
+      respWrap = await window.SupabaseSync.invoke('submit-battle-result', {
         battleId: auth.battleId,
         ownerSignature: auth.signature,
         deadTokenIds: deadIds,
@@ -10483,9 +10483,14 @@
       _showSettleResult({ error: 'Backend call failed: ' + (e.message || e) });
       return;
     }
-    console.log('[F12 settle] backend resp:', resp);
-    if (!resp || resp.ok === false) {
-      _showSettleResult({ error: resp && resp.error ? resp.error : 'Unknown backend error' });
+    console.log('[F12 settle] backend resp:', respWrap);
+    // SupabaseSync.invoke wrap'ina į {ok (HTTP), status, data (body)}
+    const resp = respWrap && respWrap.data ? respWrap.data : respWrap;
+    if (!respWrap || !respWrap.ok || !resp || resp.ok === false) {
+      const errMsg = (resp && resp.error)
+        || (respWrap && 'HTTP ' + respWrap.status)
+        || 'Unknown backend error';
+      _showSettleResult({ error: errMsg });
       return;
     }
 
