@@ -15840,3 +15840,35 @@ kbd {
 
 /* Hide old winrate row (no longer rendered, just in case) */
 .nft-card-winrate { display: none !important; }
+
+/* Inventory grid — graceful column count by viewport */
+.nft-inv-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+}
+
+/* Narrow viewport → 1 column (cards become full-width, comfortable) */
+@media (max-width: 600px) {
+  .nft-modal-content { max-width: 100% !important; }
+  .nft-inv-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .nft-inv-card .nft-card-img-wrap img {
+    width: 160px !important;
+    height: 160px !important;
+  }
+}
+
+/* Tablet — 2 columns clean */
+@media (min-width: 601px) and (max-width: 900px) {
+  .nft-inv-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Desktop — 3 columns if wide */
+@media (min-width: 901px) {
+  .nft-modal-content { max-width: 760px !important; }
+  .nft-inv-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
