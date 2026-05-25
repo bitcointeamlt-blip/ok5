@@ -1,1 +1,5 @@
 # Multi-page site - no SPA catch-all needed
+
+# PewPewBarracks NFT metadata — proxy to Supabase edge function
+# Marketplace fetches /lenta/unit-meta/<tokenId> → returns dynamic JSON
+/lenta/unit-meta/:tokenId  https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/unit-metadata/:tokenId  200
