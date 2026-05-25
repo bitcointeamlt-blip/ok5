@@ -42,7 +42,8 @@
     // ─── F12 battle settlement ─────────────────────────────────────────
     { name: 'burnAuthorized', type: 'function', stateMutability: 'nonpayable', inputs: [
       { name: 'owner', type: 'address' },
-      { name: 'tokenIds', type: 'uint256[]' },
+      { name: 'tokenIdsToburn', type: 'uint256[]' },
+      { name: 'authorizedTokenIds', type: 'uint256[]' },
       { name: 'battleId', type: 'uint256' },
       { name: 'deadline', type: 'uint256' },
       { name: 'nonce', type: 'uint256' },
@@ -263,6 +264,7 @@
       args: [
         burnPayload.owner,
         burnPayload.tokenIdsToburn.map(t => BigInt(t)),
+        (burnPayload.authorizedTokenIds || []).map(t => BigInt(t)),  // CRITICAL: contract reikia abu masyvų
         BigInt(burnPayload.battleId),
         BigInt(burnPayload.deadline),
         BigInt(burnPayload.nonce),
