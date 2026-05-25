@@ -15368,3 +15368,122 @@ kbd {
   text-align: center;
 }
 .nft-ron-warning strong { color: #fff; font-family: monospace; }
+
+/* ─── NFT modal text rebalance ─────────────────────────────────
+   Smaller labels, bigger numbers, uniform alignment
+   ──────────────────────────────────────────────────────────── */
+.nft-stats {
+  padding: 12px 14px !important;
+}
+.nft-stat {
+  align-items: baseline !important;
+  padding: 4px 0 !important;
+  font-size: 9px !important;
+  letter-spacing: 0.3px !important;
+  color: #8a9aaa !important;
+  font-family: 'Press Start 2P', monospace, sans-serif !important;
+  line-height: 1.4 !important;
+}
+.nft-stat span:first-child {
+  flex: 1;
+  font-size: 9px !important;
+  color: #8a9aaa !important;
+}
+.nft-stat strong {
+  font-size: 14px !important;
+  font-family: 'Courier New', monospace !important;
+  font-weight: bold !important;
+  color: #ffcf5c !important;
+  letter-spacing: 0 !important;
+  margin-left: 8px;
+  min-width: 60px;
+  text-align: right;
+}
+
+/* Cost preview rebalance */
+.nft-cost-preview {
+  padding: 12px 14px !important;
+}
+.nft-cost-row {
+  align-items: baseline !important;
+  padding: 4px 0 !important;
+  font-size: 9px !important;
+  color: #8a9aaa !important;
+  font-family: 'Press Start 2P', monospace, sans-serif !important;
+  line-height: 1.4 !important;
+}
+.nft-cost-row span:first-child {
+  flex: 1;
+  font-size: 9px !important;
+  color: #8a9aaa !important;
+}
+.nft-cost-row strong {
+  font-size: 15px !important;
+  font-family: 'Courier New', monospace !important;
+  font-weight: bold !important;
+  color: #ffcf5c !important;
+  margin-left: 8px;
+  min-width: 90px;
+  text-align: right;
+}
+.nft-cost-row span:last-child:not(:first-child) {
+  font-size: 12px !important;
+  font-family: 'Courier New', monospace !important;
+  color: #fff !important;
+  margin-left: 8px;
+  min-width: 90px;
+  text-align: right;
+}
+
+/* Warning box smaller font */
+.nft-ron-warning {
+  font-size: 10px !important;
+  line-height: 1.5 !important;
+  padding: 10px 12px !important;
+  font-family: 'Courier New', monospace !important;
+}
+.nft-ron-warning strong {
+  font-size: 12px !important;
+  font-family: 'Courier New', monospace !important;
+}
+
+/* Unit picker grid — name smaller, rarity tag tiny */
+.nft-unit-name {
+  font-size: 10px !important;
+}
+.nft-unit-tag {
+  font-size: 7px !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Qty controls — clearer */
+.nft-qty-row label {
+  font-size: 9px !important;
+}
+.nft-qty-hint {
+  font-size: 8px !important;
+}
+
+/* Buttons — slightly less aggressive */
+.nft-btn {
+  font-size: 11px !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Inventory card text rebalance */
+.nft-inv-card .nft-card-name {
+  font-size: 10px !important;
+}
+.nft-inv-card .nft-card-id {
+  font-size: 9px !important;
+  font-family: 'Courier New', monospace !important;
+  color: #6f7d8e !important;
+}
+.nft-inv-card .nft-card-lvl {
+  font-size: 14px !important;
+  font-family: 'Courier New', monospace !important;
+}
+.nft-inv-card .nft-card-stats {
+  font-size: 9px !important;
+  font-family: 'Courier New', monospace !important;
+}
