@@ -39,6 +39,25 @@
     { name: 'startTraining', type: 'function', stateMutability: 'nonpayable', inputs: [{type:'uint8'},{type:'uint8'}], outputs: [] },
     { name: 'claimTraining', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [{type:'uint256'},{type:'uint256'}] },
     { name: 'cancelPendingTraining', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+    // ─── F12 battle settlement ─────────────────────────────────────────
+    { name: 'burnAuthorized', type: 'function', stateMutability: 'nonpayable', inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'tokenIds', type: 'uint256[]' },
+      { name: 'battleId', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'signature', type: 'bytes' },
+    ], outputs: [] },
+    { name: 'awardBattleXp', type: 'function', stateMutability: 'nonpayable', inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'xpGain', type: 'uint32' },
+      { name: 'kills', type: 'uint32' },
+      { name: 'won', type: 'bool' },
+      { name: 'battleId', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'signature', type: 'bytes' },
+    ], outputs: [] },
   ];
   const ERC20_ABI = [
     { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
@@ -234,6 +253,52 @@
     return hash;
   }
 
+  // ─── BATTLE SETTLEMENT — burn dead NFTs (per BurnAuth) ─────────
+  async function submitBurnDead(burnPayload) {
+    await ensureNetwork();
+    const wc = await getWalletClient();
+    const addr = window.Wallet.getAddress();
+    const hash = await wc.writeContract({
+      address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'burnAuthorized',
+      args: [
+        burnPayload.owner,
+        burnPayload.tokenIdsToburn.map(t => BigInt(t)),
+        BigInt(burnPayload.battleId),
+        BigInt(burnPayload.deadline),
+        BigInt(burnPayload.nonce),
+        burnPayload.signature,
+      ],
+      account: addr,
+    });
+    const pc = await getPublicClient();
+    await pc.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  // ─── BATTLE SETTLEMENT — claim signed XP award per NFT ────────
+  async function claimXpAward(award) {
+    await ensureNetwork();
+    const wc = await getWalletClient();
+    const addr = window.Wallet.getAddress();
+    const hash = await wc.writeContract({
+      address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'awardBattleXp',
+      args: [
+        BigInt(award.tokenId),
+        Number(award.xpGain),
+        Number(award.kills),
+        !!award.won,
+        BigInt(award.battleId),
+        BigInt(award.deadline),
+        BigInt(award.nonce),
+        award.signature,
+      ],
+      account: addr,
+    });
+    const pc = await getPublicClient();
+    await pc.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
   // ─── HELPERS ─────────────────────────────────────────────────
   async function formatEther(wei) {
     const v = await getViem();
@@ -265,6 +330,8 @@
     startTraining,
     claimTraining,
     cancelPendingTraining,
+    submitBurnDead,
+    claimXpAward,
     formatEther, parseEther,
     utypeName, utypeImage, utypeRarity, levelTitle,
     getRonkeBalance, getRonkeverseBalance, getAllowance, getRonBalance,

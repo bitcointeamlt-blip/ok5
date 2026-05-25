@@ -1061,9 +1061,9 @@
 
   // Lane harpoons — projectile sistema F12 lane'ams
   let _f12Harpoons = [];                       // {laneIdx, fromX, toX, target, dmg, born, duration}
-  function _spawnLaneHarpoon(laneIdx, fromX, target, dmg, t) {
+  function _spawnLaneHarpoon(laneIdx, fromX, target, dmg, t, attacker) {
     _f12Harpoons.push({
-      laneIdx, fromX, target, dmg,
+      laneIdx, fromX, target, dmg, attacker,
       born: t, duration: 280,
     });
   }
@@ -1075,11 +1075,13 @@
           h.target.hp -= h.dmg;
           h.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(h.laneIdx, h.target.x, h.dmg, t);
+          _allyAddDmgDealt(h.attacker, h.dmg);
           if (h.target.hp <= 0) {
             h.target.dead = true; h.target.deathStartedAt = t;
             score += _nftScoreBoost(5);
             _trackF12Kill(h.target);
             if (!h.target._isWall) _F12Audio.skullDeath();
+            _allyAddKill(h.attacker);
           }
         }
         _f12Harpoons.splice(i, 1);
@@ -1143,8 +1145,8 @@
   // Lane shaman projectiles + explosions
   let _f12ShamanProj = [];        // {laneIdx, fromX, target, dmg, born, duration}
   let _f12ShamanExpl = [];        // {laneIdx, atX, born, duration}
-  function _spawnLaneShamanProj(laneIdx, fromX, target, dmg, t) {
-    _f12ShamanProj.push({ laneIdx, fromX, target, dmg, born: t, duration: 380 });
+  function _spawnLaneShamanProj(laneIdx, fromX, target, dmg, t, attacker) {
+    _f12ShamanProj.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 380 });
   }
   function _tickShamanProj(t) {
     for (let i = _f12ShamanProj.length - 1; i >= 0; i--) {
@@ -1154,7 +1156,14 @@
           p.target.hp -= p.dmg;
           p.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(p.laneIdx, p.target.x, p.dmg, t);
-          if (p.target.hp <= 0) { p.target.dead = true; p.target.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(p.target); if (!p.target._isWall) _F12Audio.skullDeath(); }
+          _allyAddDmgDealt(p.attacker, p.dmg);
+          if (p.target.hp <= 0) {
+            p.target.dead = true; p.target.deathStartedAt = t;
+            score += _nftScoreBoost(5);
+            _trackF12Kill(p.target);
+            if (!p.target._isWall) _F12Audio.skullDeath();
+            _allyAddKill(p.attacker);
+          }
         }
         // Spawn explosion at impact
         const impactX = p.target ? p.target.x : p.fromX;
@@ -1247,8 +1256,8 @@
   // Lane arrows (su impact animation)
   let _f12Arrows = [];     // {laneIdx, fromX, target, dmg, born, duration}
   let _f12ArrowImpacts = []; // {laneIdx, atX, born, duration}
-  function _spawnLaneArrow(laneIdx, fromX, target, dmg, t) {
-    _f12Arrows.push({ laneIdx, fromX, target, dmg, born: t, duration: 250 });
+  function _spawnLaneArrow(laneIdx, fromX, target, dmg, t, attacker) {
+    _f12Arrows.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 250 });
   }
   function _tickArrows(t) {
     for (let i = _f12Arrows.length - 1; i >= 0; i--) {
@@ -1258,7 +1267,14 @@
           ar.target.hp -= ar.dmg;
           ar.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(ar.laneIdx, ar.target.x, ar.dmg, t);
-          if (ar.target.hp <= 0) { ar.target.dead = true; ar.target.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(ar.target); if (!ar.target._isWall) _F12Audio.skullDeath(); }
+          _allyAddDmgDealt(ar.attacker, ar.dmg);
+          if (ar.target.hp <= 0) {
+            ar.target.dead = true; ar.target.deathStartedAt = t;
+            score += _nftScoreBoost(5);
+            _trackF12Kill(ar.target);
+            if (!ar.target._isWall) _F12Audio.skullDeath();
+            _allyAddKill(ar.attacker);
+          }
         }
         const impactX = ar.target ? ar.target.x : ar.fromX;
         _f12ArrowImpacts.push({ laneIdx: ar.laneIdx, atX: impactX, born: t, duration: 9 * 60 });
@@ -1552,6 +1568,28 @@
   let _f12SessionNftPool = [];
   // Dead NFT tokenIds — surenkam per game'ą, panaudojam end'e burn'inimui (Phase 2.2).
   let _f12DeadNftTokenIds = [];
+  // Per-NFT stats per session: { [tokenId]: {kills, dmgDealt, dmgTaken, deployed} }
+  let _f12NftStats = {};
+  function _statsForToken(tokenId) {
+    const k = String(tokenId);
+    if (!_f12NftStats[k]) _f12NftStats[k] = { tokenId: k, kills: 0, dmgDealt: 0, dmgTaken: 0, deployed: 0 };
+    return _f12NftStats[k];
+  }
+  // Increment kvietikliai (saugu jei ally ne NFT — tylus no-op)
+  function _allyAddDmgDealt(ally, dmg) {
+    if (!ally || !ally.trainedSnap || !ally.trainedSnap.nft) return;
+    _statsForToken(ally.trainedSnap.tokenId).dmgDealt += dmg;
+  }
+  function _allyAddKill(ally) {
+    if (!ally || !ally.trainedSnap || !ally.trainedSnap.nft) return;
+    _statsForToken(ally.trainedSnap.tokenId).kills++;
+  }
+  function _allyAddDmgTaken(ally, dmg) {
+    if (!ally || !ally.trainedSnap || !ally.trainedSnap.nft) return;
+    _statsForToken(ally.trainedSnap.tokenId).dmgTaken += dmg;
+  }
+  // Battle settled — kad du kart neišsiųstume submit-battle-result
+  let _f12BattleSettled = false;
   // ── HOME barracks trained units count — F12 deploys reikalauja real trained unit'ų ──
   // (Profile.barracksTrained = NFT-trained iš F10 + session free pool iš pre-deck modal.)
   function _getTrainedCount(utype) {
@@ -1881,6 +1919,8 @@
     _f12SessionFreePool = {};
     _f12SessionNftPool = [];
     _f12DeadNftTokenIds = [];
+    _f12NftStats = {};
+    _f12BattleSettled = false;
     // Pre-deck choice — žaidėjo pasirinkimas iš pre-game modal'o.
     // Įmanomi šaltiniai: window._f12PreDeckChoice (set'inamas iš f12_predeck_modal.js)
     // Pildom abu: _f12CardDeck (kortos atrakintos) + _f12SessionFreePool (deploy quota).
@@ -2808,7 +2848,7 @@
     const trainedSnap = _takeTrainedUnit(utype);
     const useHp    = (trainedSnap && trainedSnap.hp    != null) ? trainedSnap.hp    : s.hp;
     const useMaxHp = (trainedSnap && trainedSnap.maxHp != null) ? trainedSnap.maxHp : s.hp;
-    lanes[laneIdx].allies.push({
+    const newAlly = {
       utype, x: startX, _prevX: startX,
       static: !!s.static,
       hp: useHp, maxHp: useMaxHp, dmg: s.dmg, speed: s.speed,
@@ -2824,7 +2864,14 @@
       idleStart: 0, idleUntil: 0,
       nextThinkAt: t + 2000 + Math.random() * 2000,
       trainedSnap: trainedSnap,        // saugom referencę — grąžinsim su atnaujintu HP po recall
-    });
+      // Per-ally battle counters (used for NFT XP / kills tracking)
+      kills: 0, dmgDealt: 0, dmgTaken: 0,
+    };
+    lanes[laneIdx].allies.push(newAlly);
+    // NFT deploy counter — vienkartinis pažymėjimas, kad atskirtume dalyvavusius NFT'us
+    if (trainedSnap && trainedSnap.nft && trainedSnap.tokenId != null) {
+      _statsForToken(trainedSnap.tokenId).deployed = 1;
+    }
     // Saugomas bonus suvartotas → reset
     if (_ballTypeForBonus) delete _f12CardBonusMs[_ballTypeForBonus];
   }
@@ -4103,11 +4150,11 @@
         if (a._pendingProjAt && t >= a._pendingProjAt) {
           if (a._projTarget && !a._projTarget.dead) {
             const lIdx = (a._projLane !== undefined) ? a._projLane : li;
-            if (a.utype === 'harpoon_fish')         { _spawnLaneHarpoon(lIdx, a.x, a._projTarget, a.dmg, t); _F12Audio.harpun(); }
-            else if (a.utype === 'shaman')          _spawnLaneShamanProj(lIdx, a.x, a._projTarget, a.dmg, t);
-            else if (a.utype === 'archer')          { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t); _F12Audio.arrow(); }
-            else if (a.utype === 'tower')           { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t); _F12Audio.arrow(); }
-            else if (a.utype === 'crossbow_tower')  { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t); _F12Audio.arrow(); }
+            if (a.utype === 'harpoon_fish')         { _spawnLaneHarpoon(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.harpun(); }
+            else if (a.utype === 'shaman')          _spawnLaneShamanProj(lIdx, a.x, a._projTarget, a.dmg, t, a);
+            else if (a.utype === 'archer')          { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.arrow(); }
+            else if (a.utype === 'tower')           { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.arrow(); }
+            else if (a.utype === 'crossbow_tower')  { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.arrow(); }
           }
           a._pendingProjAt = 0; a._projTarget = null; a._projLane = undefined;
         }
@@ -4159,12 +4206,20 @@
               target.hp -= a.dmg;
               target.hitFlashUntil = t + 200;
               _spawnDmgPopup(targetLaneIdx, target.x, a.dmg, t);
-              if (target.hp <= 0) { target.dead = true; target.deathStartedAt = t; score += _nftScoreBoost(5); _trackF12Kill(target); if (!target._isWall) _F12Audio.skullDeath(); }
+              _allyAddDmgDealt(a, a.dmg);
+              if (target.hp <= 0) {
+                target.dead = true; target.deathStartedAt = t;
+                score += _nftScoreBoost(5);
+                _trackF12Kill(target);
+                if (!target._isWall) _F12Audio.skullDeath();
+                _allyAddKill(a);
+              }
             }
           }
           // Enemy counter — tik jei MELEE range (skull range, ne ranged)
           if (target && bestDist < ENEMY_MELEE_RANGE && t - (target.lastAttackAt || 0) > 1200) {
             a.hp -= 1;
+            _allyAddDmgTaken(a, 1);
             a.hitFlashUntil = t + 200;
             target.lastAttackAt = t;
             target.swingStart = t;
@@ -4482,6 +4537,8 @@
       _f12GameOverHandled = true;
       try { _F12Music.stop(); } catch (_) {}
       try { _F12Audio.gameOver(); } catch (_) {}
+      // NFT settlement — submit burn + claim XP awards (defer to avoid blocking render frame)
+      setTimeout(function() { _settleNftBattle(false); }, 800);
     }
 
     // Atnaujinam drop targetus
@@ -10377,8 +10434,142 @@
     try { _F12Music.start(); } catch (_) {}
   }
 
+  // ─── NFT BATTLE SETTLEMENT ─────────────────────────────────────
+  // Po gameOver (arba manual end) — submit'inam stats + burn auth į edge fn,
+  // gaunam signed XP awards, paskui kvieciam contract'ą on-chain.
+  async function _settleNftBattle(won) {
+    if (_f12BattleSettled) return;
+    _f12BattleSettled = true;
+    const auth = window._f12NftBurnAuth;
+    if (!auth) {
+      console.log('[F12 settle] No BurnAuth → no NFT mode, skip settlement');
+      return;
+    }
+    // Collect survivors (NFT'ai deployed, bet ne mirę)
+    const deadSet = new Set(_f12DeadNftTokenIds.map(String));
+    const survivors = [];
+    for (const k in _f12NftStats) {
+      const s = _f12NftStats[k];
+      if (deadSet.has(String(s.tokenId))) continue;
+      if (!s.deployed) continue;
+      survivors.push({
+        tokenId: Number(s.tokenId),
+        kills: s.kills | 0,
+        dmgDealt: s.dmgDealt | 0,
+        dmgTaken: s.dmgTaken | 0,
+        finalHpPercent: 100,
+      });
+    }
+    const deadIds = Array.from(deadSet).map(Number);
+    console.log('[F12 settle]', { won, dead: deadIds, survivors });
+
+    // ─── 1) Call submit-battle-result edge fn ───
+    if (!window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') {
+      console.warn('[F12 settle] SupabaseSync.invoke missing — skip backend');
+      return;
+    }
+    let resp;
+    try {
+      resp = await window.SupabaseSync.invoke('submit-battle-result', {
+        battleId: auth.battleId,
+        ownerSignature: auth.signature,
+        deadTokenIds: deadIds,
+        survivors,
+        won,
+        battleDurationSec: Math.floor((now() - _f12GameStartT) / 1000),
+      });
+    } catch (e) {
+      console.error('[F12 settle] edge fn err:', e);
+      _showSettleResult({ error: 'Backend call failed: ' + (e.message || e) });
+      return;
+    }
+    console.log('[F12 settle] backend resp:', resp);
+    if (!resp || resp.ok === false) {
+      _showSettleResult({ error: resp && resp.error ? resp.error : 'Unknown backend error' });
+      return;
+    }
+
+    // ─── 2) Submit dead NFT burn (if any) ───
+    let burnedHash = null;
+    if (resp.burnPayload && resp.burnPayload.tokenIdsToburn && resp.burnPayload.tokenIdsToburn.length > 0) {
+      try {
+        burnedHash = await window.BarracksNFT.submitBurnDead(resp.burnPayload);
+        console.log('[F12 settle] burn tx:', burnedHash);
+      } catch (e) {
+        console.error('[F12 settle] burn failed:', e);
+      }
+    }
+
+    // ─── 3) Claim XP awards per survivor ───
+    const claimedHashes = [];
+    if (Array.isArray(resp.xpAwards)) {
+      for (const award of resp.xpAwards) {
+        try {
+          const h = await window.BarracksNFT.claimXpAward(award);
+          claimedHashes.push({ tokenId: award.tokenId, hash: h, xp: award.xpGain });
+          console.log('[F12 settle] XP claimed for #' + award.tokenId + ' (+' + award.xpGain + ' XP):', h);
+        } catch (e) {
+          console.error('[F12 settle] XP claim failed for #' + award.tokenId, e);
+        }
+      }
+    }
+
+    _showSettleResult({
+      dead: deadIds,
+      claimed: claimedHashes,
+      burnHash: burnedHash,
+    });
+    // Consume burnAuth
+    window._f12NftBurnAuth = null;
+  }
+
+  function _showSettleResult(info) {
+    // Visual popup (HTML overlay)
+    let div = document.getElementById('f12-settle-result');
+    if (!div) {
+      div = document.createElement('div');
+      div.id = 'f12-settle-result';
+      div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99999;'
+        + 'background:linear-gradient(180deg,#6b4a2e 0%,#4a3320 100%);border:4px solid #2a1a0c;'
+        + 'box-shadow:0 0 0 4px #8b6a3e,0 12px 40px rgba(0,0,0,0.7);'
+        + 'padding:24px 28px;color:#f5e6c3;font-family:\'Press Start 2P\',monospace;font-size:9px;'
+        + 'line-height:1.6;max-width:520px;letter-spacing:0.5px;';
+      document.body.appendChild(div);
+    }
+    if (info.error) {
+      div.innerHTML = '<div style="color:#e85d5d;font-size:11px;margin-bottom:10px">⚠ NFT SETTLEMENT FAILED</div>'
+        + '<div>' + info.error + '</div>'
+        + '<button style="margin-top:14px;padding:8px 16px;font-family:inherit;font-size:9px;background:#6b4a2e;color:#f5e6c3;border:2px solid #2a1a0c;cursor:pointer" onclick="document.getElementById(\'f12-settle-result\').remove()">CLOSE</button>';
+      return;
+    }
+    let html = '<div style="color:#ffcf5c;font-size:11px;margin-bottom:12px">⚔ BATTLE SETTLED</div>';
+    if (info.claimed && info.claimed.length) {
+      html += '<div style="margin-bottom:8px">XP awarded:</div><ul style="list-style:none;padding-left:0;margin:0">';
+      for (const c of info.claimed) {
+        html += '<li>NFT #' + c.tokenId + ' +' + c.xp + ' XP <span style="color:#7ec77f">✓ on-chain</span></li>';
+      }
+      html += '</ul>';
+    } else {
+      html += '<div style="opacity:0.7">No XP awards processed.</div>';
+    }
+    if (info.dead && info.dead.length) {
+      html += '<div style="margin-top:10px;color:#e85d5d">Burned NFTs: ' + info.dead.map(d => '#' + d).join(', ') + '</div>';
+      if (info.burnHash) html += '<div style="font-size:7px;opacity:0.7;margin-top:4px">Burn tx: ' + info.burnHash.slice(0, 14) + '...</div>';
+    }
+    html += '<button style="margin-top:14px;padding:8px 16px;font-family:inherit;font-size:9px;background:#ffcf5c;color:#2a1a0c;border:2px solid #2a1a0c;cursor:pointer" onclick="document.getElementById(\'f12-settle-result\').remove()">CLOSE</button>';
+    div.innerHTML = html;
+  }
+  // Eksportas — gali būti pakviestas iš UI (pvz "End Battle" mygtuko)
+  window._F12SettleBattle = function(won) { return _settleNftBattle(!!won); };
+
   function deactivate() {
     if (!active) return;
+    // Saugu — jei NFT mode buvo + dar nesettle'inta + neturėjo gameOver → settle dabar
+    try {
+      if (!_f12BattleSettled && window._f12NftBurnAuth) {
+        _settleNftBattle(false);
+      }
+    } catch (e) { console.warn('[F12 deactivate settle] err', e); }
     active = false;
     _pickerOpen = false;
     cancelAnimationFrame(raf);
