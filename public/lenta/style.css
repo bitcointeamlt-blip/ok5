@@ -15872,3 +15872,52 @@ kbd {
     grid-template-columns: repeat(2, 1fr) !important;
   }
 }
+
+/* ─── REVERT TO COMPACT LAYOUT (matches 4-NFT good screenshot) ─── */
+/* Force back: modal + 2-col grid + tight cards always */
+.nft-modal-content { max-width: 760px !important; }
+.nft-inv-grid {
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 8px !important;
+}
+
+/* Card — tight padding, no empty space */
+.nft-inv-card {
+  padding: 8px !important;
+}
+.nft-card-img-wrap {
+  padding: 2px !important;
+  margin-bottom: 4px !important;
+}
+.nft-inv-card .nft-card-img-wrap img {
+  width: 130px !important;
+  height: 130px !important;
+}
+.nft-card-header { margin: 2px 0 0 !important; padding: 0 2px !important; }
+.nft-card-title { margin: 2px 0 4px !important; font-size: 7px !important; }
+.nft-card-xp-block {
+  padding: 5px 8px !important;
+  margin: 4px 0 !important;
+}
+.nft-xp-header { margin-bottom: 3px !important; }
+.nft-xp-label { font-size: 8px !important; }
+.nft-xp-value { font-size: 11px !important; }
+.nft-xp-bar { height: 6px !important; }
+.nft-xp-next { font-size: 8px !important; margin-top: 3px !important; }
+.nft-card-stats-grid {
+  gap: 4px !important;
+  margin: 4px 0 !important;
+}
+.nft-stat-cell { padding: 5px 2px !important; }
+.nft-stat-icon { font-size: 18px !important; margin-bottom: 2px !important; }
+.nft-stat-num { font-size: 13px !important; }
+.nft-stat-name { font-size: 6px !important; }
+.nft-inv-card .nft-card-actions { margin-top: 5px !important; }
+.nft-inv-card .nft-card-link { padding: 5px 4px !important; font-size: 7px !important; }
+
+/* Mobile (<600px) — 1 col but card still compact */
+@media (max-width: 600px) {
+  .nft-modal-content { max-width: 100% !important; }
+  .nft-inv-grid { grid-template-columns: 1fr !important; }
+  .nft-inv-card .nft-card-img-wrap img { width: 110px !important; height: 110px !important; }
+}
