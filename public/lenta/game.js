@@ -6410,13 +6410,20 @@ function _f12HoursUntilReset(plays) {
   const expiresAt = oldest + 24 * 60 * 60 * 1000;
   return Math.max(0, (expiresAt - Date.now()) / (60 * 60 * 1000));
 }
+// FREE_PLAY_TESTING — kol testuojam pre-deck modal'ą + NFT integration. Reset to false prieš prod release.
+window._F12_FREE_PLAY_TESTING = true;
 window._f12CurrentCost = function() {
   const plays = _f12GetPlaysIn24h();
   const divisor = _f12NftDiscountDivisor();
   const nextPlayN = plays.length + 1;
-  const cost = _f12CostForPlayN(nextPlayN, divisor);
-  const costNoNft = _f12CostForPlayN(nextPlayN, 1);
-  const afterCost = _f12CostForPlayN(nextPlayN + 1, divisor);
+  let cost = _f12CostForPlayN(nextPlayN, divisor);
+  let costNoNft = _f12CostForPlayN(nextPlayN, 1);
+  let afterCost = _f12CostForPlayN(nextPlayN + 1, divisor);
+  if (window._F12_FREE_PLAY_TESTING) {
+    cost = 0;
+    costNoNft = 0;
+    afterCost = 0;
+  }
   return {
     playsToday: plays.length,
     nextPlayN,

@@ -26,6 +26,7 @@
 
   let choice = {};
   let onConfirmCb = null;
+  let _showing = false;   // guard prieš pakartotinį show() iš poll()
 
   function totalCount() {
     let n = 0;
@@ -84,6 +85,7 @@
   function confirm() {
     const m = document.getElementById('f12-predeck-modal');
     if (m) m.style.display = 'none';
+    _showing = false;
     const cb = onConfirmCb;
     onConfirmCb = null;
     if (cb) {
@@ -95,6 +97,7 @@
   function cancel() {
     const m = document.getElementById('f12-predeck-modal');
     if (m) m.style.display = 'none';
+    _showing = false;
     onConfirmCb = null;
     try {
       // Reset choice flag kad next entry vėl rodytų modal
@@ -110,6 +113,7 @@
       // Pirma uždarom šitą modal'ą
       const m = document.getElementById('f12-predeck-modal');
       if (m) m.style.display = 'none';
+      _showing = false;
       onConfirmCb = null;
       window._f12PreDeckChoice = null;
       // Grįžtam į F11/F10 ir atidarom NFT Barracks
@@ -146,6 +150,13 @@
   }
 
   function show(cb) {
+    // Guard: jei modal'as jau atidarytas (poll() pakartotinai šauk'ia activate),
+    // tik atnaujinam callback'ą, NEReset'inam vartotojo pasirinkimo.
+    if (_showing) {
+      if (cb) onConfirmCb = cb;
+      return;
+    }
+    _showing = true;
     onConfirmCb = cb;
     choice = { shadow: 1, arrow: 1, heart: 1, leaf: 1 };
     render();
