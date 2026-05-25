@@ -14420,20 +14420,21 @@ function _drawDungeonStatic() {
             }
             if (_isTotem) {
               _ciucelaBounds = { x: _dx, y: _dy, w, h };
-              // NFT UNITS TRAINER label virš sprite'o (Phase 2 integration marker)
+              // NFT UNITS TRAINER label virš sprite'o (lowered + bigger for readability)
               if (S.floor === 10) {
                 ctx.save();
                 const _lblX = _dx + w / 2;
-                const _lblY = _dy - 14;
-                ctx.font = 'bold 10px monospace';
+                const _lblY = _dy + 11;  // was _dy - 14, now lowered ~25 px
+                ctx.font = 'bold 13px "Press Start 2P", monospace, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 const _lblText = '⚔ NFT UNITS TRAINER';
-                const _tw = ctx.measureText(_lblText).width + 14;
-                // Background pill
-                ctx.fillStyle = 'rgba(74, 157, 166, 0.92)';
+                const _tw = ctx.measureText(_lblText).width + 20;
+                // Background pill — larger + brighter
+                ctx.fillStyle = 'rgba(74, 157, 166, 0.96)';
                 ctx.beginPath();
-                const _rx = _lblX - _tw / 2, _ry = _lblY - 9, _rw = _tw, _rh = 18, _rr = 4;
+                const _rh = 24;
+                const _rx = _lblX - _tw / 2, _ry = _lblY - _rh / 2, _rw = _tw, _rr = 6;
                 ctx.moveTo(_rx + _rr, _ry);
                 ctx.arcTo(_rx + _rw, _ry, _rx + _rw, _ry + _rh, _rr);
                 ctx.arcTo(_rx + _rw, _ry + _rh, _rx, _ry + _rh, _rr);
@@ -14441,11 +14442,18 @@ function _drawDungeonStatic() {
                 ctx.arcTo(_rx, _ry, _rx + _rw, _ry, _rr);
                 ctx.closePath();
                 ctx.fill();
+                // Outer glow for readability
+                ctx.shadowColor = 'rgba(74, 157, 166, 0.6)';
+                ctx.shadowBlur = 8;
                 ctx.strokeStyle = '#1a4d56';
-                ctx.lineWidth = 1.5;
+                ctx.lineWidth = 2;
                 ctx.stroke();
-                // Label text
+                ctx.shadowBlur = 0;
+                // Label text with dark stroke for contrast
                 ctx.fillStyle = '#fff';
+                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                ctx.lineWidth = 3;
+                ctx.strokeText(_lblText, _lblX, _lblY);
                 ctx.fillText(_lblText, _lblX, _lblY);
                 ctx.restore();
               }
