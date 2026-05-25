@@ -16191,3 +16191,27 @@ kbd {
 }
 #nft-battle-acct-reconnect:hover { filter: brightness(1.1); }
 #nft-battle-acct-reconnect:active { transform: translateY(2px); }
+
+/* ── NFT Barracks — platesnis modalas, 4 kortos per eilę (kortų dydis tas pats) ── */
+.nft-modal-content {
+  max-width: 780px !important;     /* buvo 620px */
+}
+.nft-inv-grid {
+  grid-template-columns: repeat(4, minmax(0, 140px)) !important;
+  gap: 10px !important;
+  justify-content: center !important;   /* centrina → breathing room iš šonų */
+  padding: 8px 4px !important;
+}
+.nft-battle-grid,
+.nft-battle-free-grid {
+  /* BATTLE tab — vertikalūs row'ai, max width irgi tas pats kaip modal'as */
+  max-width: 720px;
+  margin: 0 auto;
+}
+@media (max-width: 800px) {
+  .nft-modal-content { max-width: 96vw !important; }
+  .nft-inv-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
+    justify-content: stretch !important;
+  }
+}
