@@ -1541,18 +1541,26 @@
     shadow:  'skull',
     // pearl, frost — be unit (palieka jiems jų specialius merge attacks)
   };
+  // ── F12 session free unit pool — pre-deck modal'o pasirinkti free unitai ──
+  // {utype: count} — atstatomas kiekvieno F12 session pradžioje, pildomas iš pre-deck choice.
+  // Naudojamas tose pat _getTrainedCount/_takeTrainedUnit funkcijose kad senasis deploy
+  // logic'as (card unlocked + trained > 0 + CD) liktų nepakitusios.
+  let _f12SessionFreePool = {};
   // ── HOME barracks trained units count — F12 deploys reikalauja real trained unit'ų ──
+  // (Profile.barracksTrained = NFT-trained iš F10 + session free pool iš pre-deck modal.)
   function _getTrainedCount(utype) {
+    let n = 0;
     try {
       const arr = (typeof Profile === 'object' && Profile && Array.isArray(Profile.barracksTrained))
         ? Profile.barracksTrained : null;
-      if (!arr) return 0;
-      let n = 0;
-      for (const s of arr) {
-        if (s && s.utype === utype) n += (s.stack || 1);
+      if (arr) {
+        for (const s of arr) {
+          if (s && s.utype === utype) n += (s.stack || 1);
+        }
       }
-      return n;
-    } catch (_) { return 0; }
+    } catch (_) {}
+    n += (_f12SessionFreePool[utype] | 0);
+    return n;
   }
   // Mirties metu — atimam 1 trained unit iš HOME barakų (mirė kovoj, prarastas)
   function _consumeTrainedUnit(utype) {
@@ -1570,7 +1578,15 @@
     } catch (_) {}
   }
   // Deploy metu — paimam 1 trained unit (kartu su jo HP) iš HOME, grąžinam snap
+  // Pirma bandom session free pool (pre-deck) — be HP persistence, kiekvienas free pool unit'as gauna default HP.
+  // Tada NFT-trained iš Profile.barracksTrained (su išsaugotu HP).
   function _takeTrainedUnit(utype) {
+    if ((_f12SessionFreePool[utype] | 0) > 0) {
+      _f12SessionFreePool[utype]--;
+      if (_f12SessionFreePool[utype] <= 0) delete _f12SessionFreePool[utype];
+      // Free pool unitai — be HP snap. spawnAlly fallback'ina į default ALLY_STATS HP.
+      return { id: null, utype: utype, hp: null, maxHp: null, free: true };
+    }
     try {
       if (typeof Profile !== 'object' || !Profile || !Array.isArray(Profile.barracksTrained)) return null;
       for (let i = 0; i < Profile.barracksTrained.length; i++) {
@@ -1587,9 +1603,15 @@
     return null;
   }
   // Recall metu — grąžinam unit'ą atgal į HOME su pažeisto HP išsaugotu
+  // Free pool unitai (snap.free=true) NEgrąžinami į Profile — jie consumable per session.
   function _returnTrainedUnit(snap) {
     try {
       if (!snap) return;
+      if (snap.free) {
+        // Free pool unit — grąžinam atgal į session pool, kad galetum redeploy
+        _f12SessionFreePool[snap.utype] = (_f12SessionFreePool[snap.utype] | 0) + 1;
+        return;
+      }
       if (typeof Profile !== 'object' || !Profile) return;
       if (!Array.isArray(Profile.barracksTrained)) Profile.barracksTrained = [];
       Profile.barracksTrained.push({ id: snap.id, utype: snap.utype, stack: 1, hp: snap.hp, maxHp: snap.maxHp });
@@ -1815,15 +1837,21 @@
     _f12ZipBolts = [];
     _f12Spirits = [];
     _f12CardDeck = {};
+    _f12SessionFreePool = {};
     // Pre-deck choice — žaidėjo pasirinkimas iš pre-game modal'o.
     // Įmanomi šaltiniai: window._f12PreDeckChoice (set'inamas iš f12_predeck_modal.js)
+    // Pildom abu: _f12CardDeck (kortos atrakintos) + _f12SessionFreePool (deploy quota).
     try {
       const choice = window._f12PreDeckChoice;
       if (choice && typeof choice === 'object') {
         const t0 = now();
         for (const bt in choice) {
           const c = (choice[bt] | 0);
-          if (c > 0) _f12CardDeck[bt] = { count: c, lastIncAt: t0 };
+          if (c > 0) {
+            _f12CardDeck[bt] = { count: c, lastIncAt: t0 };
+            const ut = _UNIT_FOR_BALL_TYPE[bt];
+            if (ut) _f12SessionFreePool[ut] = (_f12SessionFreePool[ut] | 0) + c;
+          }
         }
       }
     } catch (_) {}
@@ -2697,9 +2725,10 @@
     }
     const storedBonus = (_ballTypeForBonus && _f12CardBonusMs[_ballTypeForBonus]) || 0;
     // Paimam trained unit'ą iš HOME — gauname jo IŠLIKUSI HP (žala persistuoja per redeploy)
+    // Free pool unitai (iš pre-deck modal) grąžina hp:null — naudojam default ALLY_STATS HP.
     const trainedSnap = _takeTrainedUnit(utype);
-    const useHp    = trainedSnap ? trainedSnap.hp    : s.hp;
-    const useMaxHp = trainedSnap ? trainedSnap.maxHp : s.hp;
+    const useHp    = (trainedSnap && trainedSnap.hp    != null) ? trainedSnap.hp    : s.hp;
+    const useMaxHp = (trainedSnap && trainedSnap.maxHp != null) ? trainedSnap.maxHp : s.hp;
     lanes[laneIdx].allies.push({
       utype, x: startX, _prevX: startX,
       static: !!s.static,
