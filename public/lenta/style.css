@@ -15487,3 +15487,22 @@ kbd {
   font-size: 9px !important;
   font-family: 'Courier New', monospace !important;
 }
+
+/* Warning box — more readable */
+.nft-ron-warning {
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+  padding: 14px 16px !important;
+  font-family: 'Courier New', monospace !important;
+  font-weight: bold !important;
+  color: #ffaaaa !important;
+  border-width: 2px !important;
+  box-shadow: 0 0 12px rgba(232, 93, 93, 0.3) !important;
+}
+.nft-ron-warning strong {
+  font-size: 15px !important;
+  color: #fff !important;
+  background: rgba(232, 93, 93, 0.4);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
