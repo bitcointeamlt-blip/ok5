@@ -14424,16 +14424,16 @@ function _drawDungeonStatic() {
               if (S.floor === 10) {
                 ctx.save();
                 const _lblX = _dx + w / 2;
-                const _lblY = _dy + 8;  // lowered ~22 px from original
-                ctx.font = 'bold 10px "Press Start 2P", monospace, sans-serif';
+                const _lblY = _dy + 23;  // lowered another ~15 px
+                ctx.font = 'bold 8px "Press Start 2P", monospace, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 const _lblText = '⚔ NFT UNITS TRAINER';
-                const _tw = ctx.measureText(_lblText).width + 12;
+                const _tw = ctx.measureText(_lblText).width + 10;
                 // Background pill — compact + bright
                 ctx.fillStyle = 'rgba(74, 157, 166, 0.96)';
                 ctx.beginPath();
-                const _rh = 18;
+                const _rh = 15;
                 const _rx = _lblX - _tw / 2, _ry = _lblY - _rh / 2, _rw = _tw, _rr = 6;
                 ctx.moveTo(_rx + _rr, _ry);
                 ctx.arcTo(_rx + _rw, _ry, _rx + _rw, _ry + _rh, _rr);
