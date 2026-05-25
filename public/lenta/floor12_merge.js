@@ -10473,6 +10473,8 @@
       respWrap = await window.SupabaseSync.invoke('submit-battle-result', {
         battleId: auth.battleId,
         ownerSignature: auth.signature,
+        nonce: auth.nonce,              // CRITICAL: NUMERIC precision loss workaround
+        deadlineSec: auth.deadline,     // pass for parity (DB timestamp re-read is OK but consistent)
         deadTokenIds: deadIds,
         survivors,
         won,
