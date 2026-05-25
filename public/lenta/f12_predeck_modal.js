@@ -91,6 +91,41 @@
     }
   }
 
+  // X close — atšaukia F12 entry, grąžina į F11 (floor map).
+  function cancel() {
+    const m = document.getElementById('f12-predeck-modal');
+    if (m) m.style.display = 'none';
+    onConfirmCb = null;
+    try {
+      // Reset choice flag kad next entry vėl rodytų modal
+      window._f12PreDeckChoice = null;
+      // Grąžinam į F11 (žemėlapį)
+      if (typeof window.gotoF11 === 'function') window.gotoF11();
+    } catch (e) { console.warn('[F12PreDeck] cancel back-nav failed:', e); }
+  }
+
+  // ⚔ BATTLE WITH NFT — atidaro NFT Barracks (kol pilna integracija dar neparuosta)
+  function openNftPicker() {
+    try {
+      // Pirma uždarom šitą modal'ą
+      const m = document.getElementById('f12-predeck-modal');
+      if (m) m.style.display = 'none';
+      onConfirmCb = null;
+      window._f12PreDeckChoice = null;
+      // Grįžtam į F11/F10 ir atidarom NFT Barracks
+      if (typeof window.gotoF10 === 'function') window.gotoF10();
+      // NFT Barracks modal atidarymas — naudojam tą patį API kaip F10 ciucela
+      setTimeout(function() {
+        if (typeof window._openNftBarracksModal === 'function') {
+          window._openNftBarracksModal();
+        } else {
+          const nm = document.getElementById('nft-barracks-modal');
+          if (nm) nm.style.display = 'flex';
+        }
+      }, 100);
+    } catch (e) { console.warn('[F12PreDeck] open NFT picker failed:', e); }
+  }
+
   function bind() {
     const m = document.getElementById('f12-predeck-modal');
     if (!m) return false;
@@ -103,6 +138,10 @@
       choice = {};
       confirm();
     });
+    const closeBtn = document.getElementById('f12-predeck-close');
+    if (closeBtn) closeBtn.addEventListener('click', cancel);
+    const nftBtn = document.getElementById('f12-predeck-nft');
+    if (nftBtn) nftBtn.addEventListener('click', openNftPicker);
     return true;
   }
 

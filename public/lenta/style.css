@@ -15902,3 +15902,67 @@ kbd {
 }
 .f12-predeck-btn-secondary:hover { background: #5a3e22; }
 .f12-predeck-btn-secondary:active { transform: translateY(2px); }
+
+/* ── F12 PreDeck — X close + NFT secondary action ─────────────── */
+.f12-predeck-panel { position: relative; }
+.f12-predeck-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  background: #6b4a2e;
+  border: 2px solid #2a1a0c;
+  color: #f5e6c3;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  z-index: 2;
+  transition: background 0.1s, transform 0.05s;
+}
+.f12-predeck-close:hover { background: #e85d5d; color: #fff; }
+.f12-predeck-close:active { transform: scale(0.92); }
+
+/* Two-line button content (main + sub) */
+.f12-predeck-btn-primary,
+.f12-predeck-btn-secondary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.2;
+  padding: 10px 12px;
+}
+.f12-predeck-btn-main { font-size: 9px; letter-spacing: 1px; }
+.f12-predeck-btn-sub {
+  font-size: 6px;
+  opacity: 0.75;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.f12-predeck-btn-primary .f12-predeck-btn-sub { color: #2a1a0c; opacity: 0.65; }
+.f12-predeck-btn-secondary .f12-predeck-btn-sub { color: #d9c08a; }
+
+/* ⚔ NFT button — žalsvas/teal, atskirtas nuo dviejų pagrindinių */
+.f12-predeck-btn-nft {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 14px;
+  font-family: 'Press Start 2P', monospace;
+  background: linear-gradient(180deg, #4a9da6 0%, #2f6b73 100%);
+  color: #f5e6c3;
+  border: 3px solid #2a1a0c;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: transform 0.05s, background 0.15s;
+}
+.f12-predeck-btn-nft:hover { background: linear-gradient(180deg, #5fb8c3 0%, #3a8088 100%); }
+.f12-predeck-btn-nft:active { transform: translateY(2px); }
+.f12-predeck-btn-nft .f12-predeck-btn-main { font-size: 10px; color: #ffcf5c; }
+.f12-predeck-btn-nft .f12-predeck-btn-sub { font-size: 6.5px; color: #e5d3a5; opacity: 0.9; }
