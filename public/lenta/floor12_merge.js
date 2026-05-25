@@ -10330,7 +10330,8 @@
     // Jei window._f12PreDeckChoice != null → DEPLOY consumed, einam į žaidimą.
     try {
       if (window._f12PreDeckChoice == null) {
-        canvas.style.display = 'block';
+        // NEKĖLAM canvas — picker turi rodyt'is virš dabartinio F10/F11 fono.
+        // Canvas show'inamas tik kai _activateNow() startuoja game'ą.
         // Open NFT Barracks BATTLE tab as the unified pre-battle picker
         if (typeof window._openNftBarracksModal === 'function') {
           _pickerOpen = true;
@@ -10434,6 +10435,9 @@
       const f = cur.floor;
       if (f === 12 && !active) activate();
       else if (f !== 12 && active) deactivate();
+      // Cancel scenario — user X close'ino picker'į ir grižo į F10/F11.
+      // Reset _pickerOpen kad next entry vėl atidarytų picker.
+      else if (f !== 12 && _pickerOpen) _pickerOpen = false;
     }
   }
   setInterval(poll, 200);

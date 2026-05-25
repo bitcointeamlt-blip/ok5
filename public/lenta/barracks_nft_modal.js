@@ -185,15 +185,14 @@
   function _updateBattleFooter() {
     const nftTotal = _battleTotalPicked();
     const freeTotal = _battleFreeTotal();
-    const grandTotal = nftTotal + freeTotal;
     const nftEl = document.getElementById('nft-battle-selected');
     if (nftEl) nftEl.textContent = nftTotal;
     const freeEl = document.getElementById('nft-battle-free-count');
     if (freeEl) freeEl.textContent = freeTotal;
-    const totEl = document.getElementById('nft-battle-total');
-    if (totEl) totEl.textContent = grandTotal;
-    const btn = document.getElementById('nft-battle-deploy');
-    if (btn) btn.disabled = grandTotal === 0;
+    const btnFree = document.getElementById('nft-battle-deploy-free');
+    if (btnFree) btnFree.disabled = freeTotal === 0;
+    const btnNft = document.getElementById('nft-battle-deploy-nft');
+    if (btnNft) btnNft.disabled = nftTotal === 0;
   }
 
   function _onBattleGridClick(e) {
@@ -239,14 +238,24 @@
     }
   }
 
-  function _onBattleDeploy() {
-    // Collect FREE units
+  let _battleDeployFlow = false;
+  function _deployStart(freeChoice, pool) {
+    window._f12NftPickedPool = pool;
+    window._f12PreDeckChoice = freeChoice;
+    _battleDeployFlow = true;
+    closeModal();
+    if (typeof window.gotoF12 === 'function') window.gotoF12();
+  }
+  function _onBattleDeployFree() {
     const freeChoice = {};
     for (const bt in _battleFreeQty) {
       const c = _battleFreeQty[bt] | 0;
       if (c > 0) freeChoice[bt] = c;
     }
-    // Collect NFT units
+    if (Object.keys(freeChoice).length === 0) return;
+    _deployStart(freeChoice, []);
+  }
+  function _onBattleDeployNft() {
     const groups = _battleGroups();
     const pool = [];
     for (const g of groups) {
@@ -264,24 +273,23 @@
         });
       }
     }
-    if (Object.keys(freeChoice).length === 0 && pool.length === 0) return;
-    // Bridges į F12
-    window._f12NftPickedPool = pool;
-    window._f12PreDeckChoice = freeChoice;  // truthy → skip senasis predeck modal
-    // Uždarom NFT modal'ą + flag kad NEcancel'inti F12 entry (DEPLOY consumed)
-    _battleDeployFlow = true;
-    closeModal();
-    if (typeof window.gotoF12 === 'function') window.gotoF12();
+    if (pool.length === 0) return;
+    // NFT mode — empty free choice, bet truthy {} kad praleist predeck modal'ą
+    _deployStart({}, pool);
   }
-  let _battleDeployFlow = false;
 
   function bindBattleTab() {
     const grid = document.getElementById('nft-battle-grid');
     if (grid) grid.addEventListener('click', _onBattleGridClick);
+    // FREE units grid taip pat (atskiras element)
+    const freeGrid = document.getElementById('nft-battle-free-grid');
+    if (freeGrid) freeGrid.addEventListener('click', _onBattleGridClick);
     const refr = document.getElementById('nft-battle-refresh');
     if (refr) refr.addEventListener('click', refreshBattlePicker);
-    const dep = document.getElementById('nft-battle-deploy');
-    if (dep) dep.addEventListener('click', _onBattleDeploy);
+    const depFree = document.getElementById('nft-battle-deploy-free');
+    if (depFree) depFree.addEventListener('click', _onBattleDeployFree);
+    const depNft = document.getElementById('nft-battle-deploy-nft');
+    if (depNft) depNft.addEventListener('click', _onBattleDeployNft);
   }
 
   // ─── Unit selection ────────────────────────────────────────
