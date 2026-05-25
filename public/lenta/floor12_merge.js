@@ -1815,6 +1815,18 @@
     _f12ZipBolts = [];
     _f12Spirits = [];
     _f12CardDeck = {};
+    // Pre-deck choice — žaidėjo pasirinkimas iš pre-game modal'o.
+    // Įmanomi šaltiniai: window._f12PreDeckChoice (set'inamas iš f12_predeck_modal.js)
+    try {
+      const choice = window._f12PreDeckChoice;
+      if (choice && typeof choice === 'object') {
+        const t0 = now();
+        for (const bt in choice) {
+          const c = (choice[bt] | 0);
+          if (c > 0) _f12CardDeck[bt] = { count: c, lastIncAt: t0 };
+        }
+      }
+    } catch (_) {}
     _f12CardConsumes = [];
     _f12HpHealFx = null;
     _pendingCardDeploy = null;
@@ -10198,6 +10210,24 @@
   function activate() {
     if (active) return;
     ensureOverlay();
+    // PRE-DECK modal — pirmas F12 entry per session'as → leid pasirinkti kortas
+    // window._f12PreDeckChoice == null => modal dar nebuvo parodytas
+    // window._f12PreDeckChoice == {...} => jau pasirinko, einam i game
+    try {
+      if (window._f12PreDeckChoice == null && window._F12PreDeck && typeof window._F12PreDeck.show === 'function') {
+        canvas.style.display = 'block';
+        window._F12PreDeck.show(function(choice) {
+          window._f12PreDeckChoice = choice || {};
+          _activateNow();
+        });
+        return;
+      }
+    } catch (e) { console.warn('[F12] predeck modal failed, starting plain:', e); }
+    _activateNow();
+  }
+
+  function _activateNow() {
+    if (active) return;
     initState();
     canvas.style.display = 'block';
     active = true;
@@ -10222,6 +10252,8 @@
     active = false;
     cancelAnimationFrame(raf);
     if (canvas) canvas.style.display = 'none';
+    // Reset pre-deck choice — naujas F12 entry vėl parodys modal'ą
+    try { window._f12PreDeckChoice = null; } catch (_) {}
     document.removeEventListener('keydown', onKey, true);
     document.removeEventListener('keyup', onKeyUp, true);
     charging = false;

@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp54tweak">
+  <link rel="stylesheet" href="style.css?v=hp55predeck">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1664,6 +1664,22 @@
     <div class="nft-plot" id="nft-plot-3" style="position:absolute;width:80px;height:80px;display:none;"></div>
   </div>
 
+  <!-- F12 Pre-Game Card Deck Selector -->
+  <div id="f12-predeck-modal" class="f12-predeck-overlay">
+    <div class="f12-predeck-panel">
+      <div class="f12-predeck-header">CHOOSE YOUR STARTING DECK</div>
+      <div class="f12-predeck-desc">Pick which units start in your deck. Extra cards unlock via merge during battle.</div>
+      <div class="f12-predeck-grid" id="f12-predeck-grid"></div>
+      <div class="f12-predeck-summary" id="f12-predeck-summary">
+        Total: <strong id="f12-predeck-total">0</strong> / 12 cards
+      </div>
+      <div class="f12-predeck-actions">
+        <button id="f12-predeck-skip" class="f12-predeck-btn-secondary" type="button">CLASSIC (empty deck)</button>
+        <button id="f12-predeck-start" class="f12-predeck-btn-primary" type="button">▶ START BATTLE</button>
+      </div>
+    </div>
+  </div>
+
   <!-- PewPewBarracks NFT Training Modal (mainnet 0xccf604...0862) -->
   <div id="nft-barracks-modal" class="nft-modal">
     <div class="nft-modal-content">
@@ -1932,7 +1948,8 @@
   <script src="barracks_nft_modal.js?v=nft14"></script>
   <script src="barracks_nft_plots.js?v=nft14"></script>
   <script src="game.js?v=cmd447tweak"></script>
-  <script src="floor12_merge.js?v=cmd691nftbonus"></script>
+  <script src="f12_predeck_modal.js?v=pd1"></script>
+  <script src="floor12_merge.js?v=cmd692predeck"></script>
   <script src="wallet-ui.js?v=pewpew10breath"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────

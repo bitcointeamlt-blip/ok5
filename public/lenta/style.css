@@ -15747,3 +15747,158 @@ kbd {
   width: 102px !important;
   height: 102px !important;
 }
+
+/* ── F12 Pre-Game Deck Selector Modal ─────────────────────────── */
+.f12-predeck-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P', monospace;
+  -webkit-font-smoothing: none;
+  image-rendering: pixelated;
+}
+.f12-predeck-panel {
+  background: linear-gradient(180deg, #6b4a2e 0%, #4a3320 100%);
+  border: 4px solid #2a1a0c;
+  box-shadow: 0 0 0 4px #8b6a3e, 0 12px 40px rgba(0,0,0,0.7);
+  padding: 22px 24px 20px;
+  max-width: 540px;
+  width: 92vw;
+  max-height: 92vh;
+  overflow-y: auto;
+  color: #f5e6c3;
+}
+.f12-predeck-header {
+  font-size: 13px;
+  text-align: center;
+  color: #ffcf5c;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+  text-shadow: 2px 2px 0 #2a1a0c;
+}
+.f12-predeck-desc {
+  font-size: 8px;
+  text-align: center;
+  color: #d9c08a;
+  line-height: 1.6;
+  margin-bottom: 18px;
+  letter-spacing: 0.5px;
+}
+.f12-predeck-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.f12-predeck-row {
+  display: flex;
+  align-items: center;
+  background: rgba(0,0,0,0.32);
+  border: 2px solid #2a1a0c;
+  padding: 8px 10px;
+  gap: 10px;
+  transition: background 0.15s;
+}
+.f12-predeck-row.has-picked {
+  background: rgba(74, 157, 166, 0.25);
+  border-color: #4a9da6;
+}
+.f12-predeck-img {
+  width: 56px;
+  height: 56px;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid #2a1a0c;
+}
+.f12-predeck-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.f12-predeck-name {
+  font-size: 10px;
+  color: #f5e6c3;
+  letter-spacing: 1px;
+}
+.f12-predeck-tag {
+  font-size: 7px;
+  color: #7ec77f;
+  letter-spacing: 1px;
+}
+.f12-predeck-ctrls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.f12-predeck-ctrls button {
+  width: 28px;
+  height: 28px;
+  background: #6b4a2e;
+  border: 2px solid #2a1a0c;
+  color: #f5e6c3;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.1s, transform 0.05s;
+}
+.f12-predeck-ctrls button:hover { background: #8b6a3e; }
+.f12-predeck-ctrls button:active { transform: scale(0.9); }
+.f12-predeck-count {
+  display: inline-block;
+  min-width: 22px;
+  text-align: center;
+  font-size: 11px;
+  color: #ffcf5c;
+}
+.f12-predeck-summary {
+  text-align: center;
+  font-size: 9px;
+  color: #d9c08a;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+  padding: 8px;
+  background: rgba(0,0,0,0.25);
+  border: 1px dashed #5a3e22;
+}
+.f12-predeck-summary strong {
+  color: #ffcf5c;
+  font-size: 11px;
+}
+.f12-predeck-summary.at-max strong { color: #e85d5d; }
+.f12-predeck-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.f12-predeck-btn-primary,
+.f12-predeck-btn-secondary {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  padding: 12px 16px;
+  border: 3px solid #2a1a0c;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: transform 0.05s, background 0.15s;
+}
+.f12-predeck-btn-primary {
+  background: linear-gradient(180deg, #ffcf5c 0%, #d4a23a 100%);
+  color: #2a1a0c;
+  flex: 1;
+}
+.f12-predeck-btn-primary:hover { background: linear-gradient(180deg, #ffd97a 0%, #e8b748 100%); }
+.f12-predeck-btn-primary:active { transform: translateY(2px); }
+.f12-predeck-btn-secondary {
+  background: #4a3320;
+  color: #d9c08a;
+}
+.f12-predeck-btn-secondary:hover { background: #5a3e22; }
+.f12-predeck-btn-secondary:active { transform: translateY(2px); }
