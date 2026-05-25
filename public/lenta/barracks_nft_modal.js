@@ -78,6 +78,22 @@
     { ballType: 'leaf',   utype: 'harpoon_fish', name: 'Harpoon', icon: 'unit-images/harpoon-idle.gif' },
   ];
   const FREE_MAX_PER_TYPE = 5;
+  let _battleMode = 'free';   // 'free' arba 'nft' — exclusive
+
+  function _setBattleMode(mode) {
+    _battleMode = (mode === 'nft') ? 'nft' : 'free';
+    // Tab visuals
+    const tFree = document.getElementById('nft-mode-tab-free');
+    const tNft = document.getElementById('nft-mode-tab-nft');
+    if (tFree) tFree.classList.toggle('active', _battleMode === 'free');
+    if (tNft) tNft.classList.toggle('active', _battleMode === 'nft');
+    // Panel visibility
+    const pFree = document.getElementById('nft-mode-panel-free');
+    const pNft = document.getElementById('nft-mode-panel-nft');
+    if (pFree) pFree.classList.toggle('active', _battleMode === 'free');
+    if (pNft) pNft.classList.toggle('active', _battleMode === 'nft');
+    _updateBattleFooter();
+  }
 
   function _battleGroupKey(u) {
     return `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
@@ -185,14 +201,21 @@
   function _updateBattleFooter() {
     const nftTotal = _battleTotalPicked();
     const freeTotal = _battleFreeTotal();
+    const activeTotal = _battleMode === 'nft' ? nftTotal : freeTotal;
+    const activeMode = _battleMode === 'nft' ? 'NFT' : 'FREE';
     const nftEl = document.getElementById('nft-battle-selected');
     if (nftEl) nftEl.textContent = nftTotal;
     const freeEl = document.getElementById('nft-battle-free-count');
     if (freeEl) freeEl.textContent = freeTotal;
-    const btnFree = document.getElementById('nft-battle-deploy-free');
-    if (btnFree) btnFree.disabled = freeTotal === 0;
-    const btnNft = document.getElementById('nft-battle-deploy-nft');
-    if (btnNft) btnNft.disabled = nftTotal === 0;
+    const cntEl = document.getElementById('nft-battle-active-count');
+    if (cntEl) cntEl.textContent = activeTotal;
+    const modeEl = document.getElementById('nft-battle-active-mode');
+    if (modeEl) modeEl.textContent = activeMode;
+    const btn = document.getElementById('nft-battle-start');
+    if (btn) {
+      btn.disabled = activeTotal === 0;
+      btn.textContent = _battleMode === 'nft' ? '⚔ START WITH NFT' : '▶ START WITH FREE';
+    }
   }
 
   function _onBattleGridClick(e) {
@@ -278,18 +301,26 @@
     _deployStart({}, pool);
   }
 
+  function _onBattleStart() {
+    if (_battleMode === 'nft') _onBattleDeployNft();
+    else _onBattleDeployFree();
+  }
+
   function bindBattleTab() {
     const grid = document.getElementById('nft-battle-grid');
     if (grid) grid.addEventListener('click', _onBattleGridClick);
-    // FREE units grid taip pat (atskiras element)
     const freeGrid = document.getElementById('nft-battle-free-grid');
     if (freeGrid) freeGrid.addEventListener('click', _onBattleGridClick);
     const refr = document.getElementById('nft-battle-refresh');
     if (refr) refr.addEventListener('click', refreshBattlePicker);
-    const depFree = document.getElementById('nft-battle-deploy-free');
-    if (depFree) depFree.addEventListener('click', _onBattleDeployFree);
-    const depNft = document.getElementById('nft-battle-deploy-nft');
-    if (depNft) depNft.addEventListener('click', _onBattleDeployNft);
+    // Mode toggle (FREE / NFT)
+    const tFree = document.getElementById('nft-mode-tab-free');
+    const tNft = document.getElementById('nft-mode-tab-nft');
+    if (tFree) tFree.addEventListener('click', function() { _setBattleMode('free'); });
+    if (tNft) tNft.addEventListener('click', function() { _setBattleMode('nft'); });
+    // Single START button
+    const startBtn = document.getElementById('nft-battle-start');
+    if (startBtn) startBtn.addEventListener('click', _onBattleStart);
   }
 
   // ─── Unit selection ────────────────────────────────────────

@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp59twobtn">
+  <link rel="stylesheet" href="style.css?v=hp60exclusive">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1800,31 +1800,36 @@
           <button class="nft-btn-small" id="nft-battle-refresh">Refresh</button>
         </div>
 
-        <!-- FREE UNITS sekcija — be NFT, atrakintos automatiškai -->
-        <div class="nft-battle-section-title">🆓 FREE UNITS <span class="nft-battle-section-sub">no chain, no risk</span></div>
-        <div class="nft-battle-free-grid" id="nft-battle-free-grid"></div>
+        <!-- Mode toggle — FREE arba NFT (exclusive) -->
+        <div class="nft-battle-mode-toggle">
+          <button class="nft-mode-tab active" id="nft-mode-tab-free" data-mode="free">🆓 FREE UNITS</button>
+          <button class="nft-mode-tab" id="nft-mode-tab-nft" data-mode="nft">⚔ NFT UNITS</button>
+        </div>
+
+        <!-- FREE UNITS sekcija -->
+        <div class="nft-battle-mode-panel active" id="nft-mode-panel-free">
+          <div class="nft-battle-desc">No on-chain risk. Pick how many of each unit to start with.</div>
+          <div class="nft-battle-free-grid" id="nft-battle-free-grid"></div>
+        </div>
 
         <!-- NFT UNITS sekcija -->
-        <div class="nft-battle-section-title">⚔ NFT UNITS <span class="nft-battle-section-sub">on-chain XP applies</span></div>
-        <div class="nft-battle-desc">
-          NFT units have persistent XP + level. Dead NFTs are <strong style="color:#e85d5d">permanently burned</strong> (disabled in test mode).
-        </div>
-        <div class="nft-battle-grid" id="nft-battle-grid">
-          <div class="nft-empty">Connect wallet + train your first NFT unit</div>
+        <div class="nft-battle-mode-panel" id="nft-mode-panel-nft">
+          <div class="nft-battle-desc">
+            NFT units have persistent XP + level. Dead NFTs are <strong style="color:#e85d5d">permanently burned</strong> (disabled in test mode).
+          </div>
+          <div class="nft-battle-grid" id="nft-battle-grid">
+            <div class="nft-empty">Connect wallet + train your first NFT unit</div>
+          </div>
         </div>
 
         <div class="nft-battle-footer">
-          <div class="nft-battle-summary">Pick a mode below to start. <strong>One mode per battle.</strong></div>
-          <div class="nft-battle-mode-buttons">
-            <button class="nft-mode-btn nft-mode-free" id="nft-battle-deploy-free" disabled>
-              <span class="nft-mode-main">▶ PLAY WITH FREE</span>
-              <span class="nft-mode-sub"><strong id="nft-battle-free-count">0</strong> free units, no risk</span>
-            </button>
-            <button class="nft-mode-btn nft-mode-nft" id="nft-battle-deploy-nft" disabled>
-              <span class="nft-mode-main">⚔ PLAY WITH NFT</span>
-              <span class="nft-mode-sub"><strong id="nft-battle-selected">0</strong> NFT units, XP applies</span>
-            </button>
+          <div class="nft-battle-summary" id="nft-battle-summary-text">
+            Selected: <strong id="nft-battle-active-count">0</strong> units · Mode: <strong id="nft-battle-active-mode">FREE</strong>
           </div>
+          <button class="nft-btn-primary nft-battle-start" id="nft-battle-start" disabled>▶ START BATTLE</button>
+          <!-- hidden counts (legacy DOM refs used by JS) -->
+          <span id="nft-battle-free-count" style="display:none">0</span>
+          <span id="nft-battle-selected" style="display:none">0</span>
         </div>
       </div>
 
@@ -1991,9 +1996,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=7forcepush"></script>
   <script src="wallet.js?v=wp10chainguard"></script>
-  <script src="barracks_nft.js?v=nft17twobtn"></script>
-  <script src="barracks_nft_modal.js?v=nft17twobtn"></script>
-  <script src="barracks_nft_plots.js?v=nft17twobtn"></script>
+  <script src="barracks_nft.js?v=nft18exclusive"></script>
+  <script src="barracks_nft_modal.js?v=nft18exclusive"></script>
+  <script src="barracks_nft_plots.js?v=nft18exclusive"></script>
   <script src="game.js?v=cmd449freeplay2"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=cmd697canvasfix"></script>
