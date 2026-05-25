@@ -10499,18 +10499,27 @@
     }
 
     // Backend jau atliko visus on-chain TX'us (sponsored gas).
-    // Frontend tik parodo rezultatus.
+    // Frontend tik parodo rezultatus — TIK jei TIKRAI sukurta on-chain (burnHash exists).
     console.log('[F12 settle] backend relay results:', {
       burnTx: resp.burnTxHash,
       burnedTokens: resp.burnedTokenIds,
       xpTxs: resp.xpTxHashes,
+      relayer: resp.relayer,
     });
+    // Only show "burned" if backend actually executed burn TX (hash exists)
+    const actuallyBurned = resp.burnTxHash ? (resp.burnedTokenIds || []) : [];
+    const wantedBurn = resp.burnedTokenIds || [];
+    const claimedSuccess = (resp.xpTxHashes || []);
     _showSettleResult({
-      dead: resp.burnedTokenIds || [],
-      claimed: (resp.xpTxHashes || []).map(x => ({
+      dead: actuallyBurned,
+      claimed: claimedSuccess.map(x => ({
         tokenId: x.tokenId, hash: x.hash, xp: x.xpGain,
       })),
       burnHash: resp.burnTxHash,
+      // Diag info if something didn't happen
+      relayWarning: (wantedBurn.length > 0 && !resp.burnTxHash)
+        ? 'Burn TX skipped — relayer wallet has no RON for gas. Fund ' + (resp.relayer || 'signer') + ' to enable burns.'
+        : null,
     });
     // Consume burnAuth
     window._f12NftBurnAuth = null;
@@ -10548,8 +10557,11 @@
       html += '<div style="opacity:0.7">No XP awards processed.</div>';
     }
     if (info.dead && info.dead.length) {
-      html += '<div style="margin-top:10px;color:#e85d5d">Burned NFTs: ' + info.dead.map(d => '#' + d).join(', ') + '</div>';
+      html += '<div style="margin-top:10px;color:#e85d5d">Burned NFTs (on-chain): ' + info.dead.map(d => '#' + d).join(', ') + '</div>';
       if (info.burnHash) html += '<div style="font-size:7px;opacity:0.7;margin-top:4px">Burn tx: ' + info.burnHash.slice(0, 14) + '...</div>';
+    }
+    if (info.relayWarning) {
+      html += '<div style="margin-top:10px;padding:6px;background:rgba(232,93,93,0.2);border:1px solid #e85d5d;color:#ffcf5c;font-size:7px;line-height:1.4">⚠ ' + info.relayWarning + '</div>';
     }
     html += '<button style="margin-top:14px;padding:8px 16px;font-family:inherit;font-size:9px;background:#ffcf5c;color:#2a1a0c;border:2px solid #2a1a0c;cursor:pointer" onclick="document.getElementById(\'f12-settle-result\').remove()">CLOSE</button>';
     div.innerHTML = html;
