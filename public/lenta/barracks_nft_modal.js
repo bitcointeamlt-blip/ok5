@@ -341,7 +341,8 @@
         const detail = startResp && startResp.detail ? ('\n\nDetail: ' + startResp.detail) : '';
         const msg = baseMsg + detail;
         if (startResp && startResp.existingBattleId) {
-          alert('You have an unfinished battle (#' + startResp.existingBattleId.slice(0, 14) + '...). Wait ~30min for it to expire, or use a different wallet.');
+          const idStr = String(startResp.existingBattleId);
+          alert('You have an unfinished battle (#' + idStr.slice(0, 16) + '...). Wait ~30min for it to expire, switch wallet account, or DM admin to clear.');
         } else {
           alert('Cannot start NFT battle: ' + msg);
         }
