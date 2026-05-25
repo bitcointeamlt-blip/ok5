@@ -598,6 +598,18 @@
     if (!prov) throw new Error('No wallet provider');
     const addr = state.address;
     if (!addr) throw new Error('No wallet address');
+    // Sanity check — patikrink ar wallet dabar aktyvus tas pats account
+    // (vartotojas gali būti perjungęs į kitą account tarp connect ir sign).
+    try {
+      const currentAccts = await prov.request({ method: 'eth_accounts' });
+      const currentAddr = (currentAccts && currentAccts[0]) ? currentAccts[0] : null;
+      if (currentAddr && currentAddr.toLowerCase() !== addr.toLowerCase()) {
+        throw new Error('Wallet account switched: connected ' + addr + ' but active ' + currentAddr + '. Reconnect with the correct account.');
+      }
+    } catch (e) {
+      if (e.message && e.message.indexOf('account switched') !== -1) throw e;
+      console.warn('[signBattleAuth] account check failed (non-fatal):', e);
+    }
     // payload: { tokenIds: number[], battleId: string, deadline: number, nonce: string }
     const domain = {
       name: 'PewPewBarracks',

@@ -10487,10 +10487,12 @@
     // SupabaseSync.invoke wrap'ina į {ok (HTTP), status, data (body)}
     const resp = respWrap && respWrap.data ? respWrap.data : respWrap;
     if (!respWrap || !respWrap.ok || !resp || resp.ok === false) {
-      const errMsg = (resp && resp.error)
+      const baseMsg = (resp && resp.error)
         || (respWrap && 'HTTP ' + respWrap.status)
         || 'Unknown backend error';
-      _showSettleResult({ error: errMsg });
+      const detail = resp && resp.detail ? ('\n\nDetail: ' + resp.detail) : '';
+      const debug = resp && resp.debug ? ('\n\nDebug: ' + JSON.stringify(resp.debug, null, 2)) : '';
+      _showSettleResult({ error: baseMsg + detail + debug });
       return;
     }
 
@@ -10542,8 +10544,10 @@
       document.body.appendChild(div);
     }
     if (info.error) {
+      const errEsc = String(info.error)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       div.innerHTML = '<div style="color:#e85d5d;font-size:11px;margin-bottom:10px">⚠ NFT SETTLEMENT FAILED</div>'
-        + '<div>' + info.error + '</div>'
+        + '<pre style="font-family:inherit;font-size:7px;white-space:pre-wrap;max-height:300px;overflow:auto;margin:0;color:#f5e6c3;line-height:1.4">' + errEsc + '</pre>'
         + '<button style="margin-top:14px;padding:8px 16px;font-family:inherit;font-size:9px;background:#6b4a2e;color:#f5e6c3;border:2px solid #2a1a0c;cursor:pointer" onclick="document.getElementById(\'f12-settle-result\').remove()">CLOSE</button>';
       return;
     }
