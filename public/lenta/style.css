@@ -15764,3 +15764,79 @@ kbd {
   .nft-stat-num { font-size: 12px; }
   .nft-stat-icon { font-size: 14px; }
 }
+
+/* ─── NFT card v2 — XP block visible, 2 stats only ───────────── */
+.nft-card-xp-block {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,207,92,0.3);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+.nft-xp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+.nft-xp-label {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 9px;
+  color: #ffcf5c;
+  letter-spacing: 1px;
+}
+.nft-xp-value {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: #fff;
+}
+.nft-xp-bar {
+  height: 8px !important;
+  background: rgba(0,0,0,0.6) !important;
+  border: 1px solid rgba(255,207,92,0.4);
+  border-radius: 4px !important;
+  overflow: hidden;
+  position: relative;
+}
+.nft-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4a9da6 0%, #ffcf5c 100%);
+  transition: width 0.4s;
+  box-shadow: 0 0 8px rgba(255,207,92,0.6);
+}
+.nft-xp-next {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  color: #8a9aaa;
+  text-align: center;
+  margin-top: 5px;
+  letter-spacing: 0.3px;
+}
+
+/* Stats grid — now 2 columns (kills, battles) */
+.nft-card-stats-grid {
+  grid-template-columns: 1fr 1fr !important;
+  gap: 6px !important;
+}
+.nft-stat-cell {
+  padding: 8px 4px !important;
+}
+.nft-stat-icon {
+  font-size: 22px !important;
+  font-family: 'Press Start 2P', monospace, sans-serif !important;
+  color: #ffcf5c !important;
+  text-shadow: 0 0 8px rgba(255,207,92,0.5) !important;
+  line-height: 1 !important;
+  margin-bottom: 4px !important;
+}
+.nft-stat-num {
+  font-size: 16px !important;
+  font-family: 'Courier New', monospace !important;
+}
+.nft-stat-name {
+  font-size: 7px !important;
+}
+
+/* Hide old winrate row (no longer rendered, just in case) */
+.nft-card-winrate { display: none !important; }
