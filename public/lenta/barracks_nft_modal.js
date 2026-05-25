@@ -144,9 +144,47 @@
     }).join('');
   }
 
+  async function _checkWalletAcct() {
+    const banner = document.getElementById('nft-battle-acct-banner');
+    const msgEl = banner ? banner.querySelector('.nft-battle-acct-msg') : null;
+    if (!banner || !msgEl) return null;
+    const W = window.Wallet;
+    if (!W || !W.refreshActiveAccount) { banner.style.display = 'none'; return null; }
+    const r = await W.refreshActiveAccount();
+    if (!r.ok) { banner.style.display = 'none'; return r; }
+    if (r.mismatch) {
+      const shortReg = r.registered ? r.registered.slice(0, 6) + '…' + r.registered.slice(-4) : '?';
+      const shortCur = r.currentAddress.slice(0, 6) + '…' + r.currentAddress.slice(-4);
+      msgEl.innerHTML = '⚠️ <strong>Wallet account switched!</strong><br>'
+        + 'App is connected as <strong>' + shortReg + '</strong> but your wallet is now active as <strong>' + shortCur + '</strong>.<br>'
+        + 'Sign would fail. Click below to switch app to <strong>' + shortCur + '</strong>, or switch your wallet back to ' + shortReg + '.';
+      banner.style.display = 'flex';
+    } else {
+      banner.style.display = 'none';
+    }
+    return r;
+  }
+
+  async function _onReconnectAcct() {
+    const W = window.Wallet;
+    if (!W) return;
+    try {
+      if (W.disconnect) W.disconnect();
+      // Trigger fresh connect (parodys wallet popup'ą kad pasirinktum account)
+      if (W.connect) {
+        await W.connect();
+        await refreshBattlePicker();
+      }
+    } catch (e) {
+      alert('Reconnect failed: ' + (e.message || e));
+    }
+  }
+
   async function refreshBattlePicker() {
     // Free units grid — visada renderinam (be wallet)
     _renderFreeGrid();
+    // Wallet account mismatch check
+    await _checkWalletAcct();
     const W = window.Wallet;
     const grid = document.getElementById('nft-battle-grid');
     if (!grid) { _updateBattleFooter(); return; }
@@ -404,6 +442,8 @@
     // Single START button
     const startBtn = document.getElementById('nft-battle-start');
     if (startBtn) startBtn.addEventListener('click', _onBattleStart);
+    const reconBtn = document.getElementById('nft-battle-acct-reconnect');
+    if (reconBtn) reconBtn.addEventListener('click', _onReconnectAcct);
   }
 
   // ─── Unit selection ────────────────────────────────────────

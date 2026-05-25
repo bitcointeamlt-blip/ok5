@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp60exclusive">
+  <link rel="stylesheet" href="style.css?v=hp61acctbanner">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1795,6 +1795,11 @@
 
       <!-- BATTLE / DEPLOY TAB — pasirink unitus į F12 PewPew Saga mūšį -->
       <div class="nft-tab-panel" id="nft-tab-battle">
+        <!-- Wallet account mismatch warning — atsiranda kai app's registered != wallet's active -->
+        <div id="nft-battle-acct-banner" class="nft-battle-acct-banner" style="display:none">
+          <div class="nft-battle-acct-msg"></div>
+          <button class="nft-btn-primary" id="nft-battle-acct-reconnect">↻ RECONNECT WITH WALLET'S ACTIVE ACCOUNT</button>
+        </div>
         <div class="nft-battle-header">
           <span>Pick units for PewPew Saga battle</span>
           <button class="nft-btn-small" id="nft-battle-refresh">Refresh</button>
@@ -1995,10 +2000,10 @@
   <!-- Supabase JS client (CDN, v2) — cloud profile sync -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=7forcepush"></script>
-  <script src="wallet.js?v=wp13strictacct"></script>
-  <script src="barracks_nft.js?v=nft24bigintfix"></script>
-  <script src="barracks_nft_modal.js?v=nft24bigintfix"></script>
-  <script src="barracks_nft_plots.js?v=nft24bigintfix"></script>
+  <script src="wallet.js?v=wp14refreshacct"></script>
+  <script src="barracks_nft.js?v=nft25acctbanner"></script>
+  <script src="barracks_nft_modal.js?v=nft25acctbanner"></script>
+  <script src="barracks_nft_plots.js?v=nft25acctbanner"></script>
   <script src="game.js?v=cmd449freeplay2"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=cmd701debugpop"></script>

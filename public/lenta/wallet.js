@@ -655,11 +655,32 @@
     return { signature, message, owner: addr };
   }
 
+  // Re-check active wallet account NEPASIKLIAUJANT accountsChanged event'u
+  // (kai kurie wallet'ai jo nesiunčia kai user switch'ina UI'je).
+  // Grąžina { ok, currentAddress, registered, mismatch }.
+  async function refreshActiveAccount() {
+    try {
+      const prov = state.provider || (await getAnyProvider());
+      if (!prov) return { ok: false, error: 'No provider' };
+      const accts = await prov.request({ method: 'eth_accounts' });
+      const cur = accts && accts[0] ? accts[0] : null;
+      if (!cur) {
+        if (state.connected) disconnect();
+        return { ok: false, error: 'No active account' };
+      }
+      const mismatch = state.address && cur.toLowerCase() !== state.address.toLowerCase();
+      return { ok: true, currentAddress: cur, registered: state.address, mismatch };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  }
+
   window.Wallet = {
     // identity
     connect, disconnect, restore,
     isInstalled, isConnected: () => state.connected,
     getAddress: () => state.address,
+    refreshActiveAccount,
     shortAddress,
     profileKey,
     snapshot,

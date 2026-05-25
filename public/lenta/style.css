@@ -16158,3 +16158,36 @@ kbd {
 .nft-battle-start:hover:not(:disabled) { filter: brightness(1.1); }
 .nft-battle-start:active:not(:disabled) { transform: translateY(2px); }
 .nft-battle-start:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── NFT Barracks BATTLE — wallet account mismatch banner ─── */
+.nft-battle-acct-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(180deg, #6b3a1e 0%, #4a2a12 100%);
+  border: 3px solid #e85d5d;
+  margin-bottom: 8px;
+}
+.nft-battle-acct-msg {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7.5px;
+  line-height: 1.6;
+  color: #f5e6c3;
+  letter-spacing: 0.3px;
+}
+.nft-battle-acct-msg strong { color: #ffcf5c; }
+#nft-battle-acct-reconnect {
+  width: 100%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #e85d5d 0%, #a83d3d 100%);
+  color: #fff;
+  border: 2px solid #2a1a0c;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: transform 0.05s, filter 0.15s;
+}
+#nft-battle-acct-reconnect:hover { filter: brightness(1.1); }
+#nft-battle-acct-reconnect:active { transform: translateY(2px); }
