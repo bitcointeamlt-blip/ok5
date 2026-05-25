@@ -335,9 +335,11 @@
       // SupabaseSync.invoke wrap'ina į { ok (HTTP status), status, data (edge fn body) }
       const startResp = startWrap && startWrap.data ? startWrap.data : startWrap;
       if (!startWrap || !startWrap.ok || !startResp || startResp.ok === false) {
-        const msg = (startResp && startResp.error)
+        const baseMsg = (startResp && startResp.error)
           || (startWrap && 'HTTP ' + startWrap.status)
           || 'Backend rejected battle start';
+        const detail = startResp && startResp.detail ? ('\n\nDetail: ' + startResp.detail) : '';
+        const msg = baseMsg + detail;
         if (startResp && startResp.existingBattleId) {
           alert('You have an unfinished battle (#' + startResp.existingBattleId.slice(0, 14) + '...). Wait ~30min for it to expire, or use a different wallet.');
         } else {
