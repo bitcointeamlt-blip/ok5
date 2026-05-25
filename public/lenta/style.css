@@ -15506,3 +15506,24 @@ kbd {
   padding: 1px 6px;
   border-radius: 3px;
 }
+
+/* NFT inventory stack badge ×N */
+.nft-inv-card { position: relative !important; }
+.nft-card-stack {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: linear-gradient(180deg, #ffcf5c 0%, #d49a2a 100%);
+  color: #1a1208;
+  font-family: 'Courier New', monospace;
+  font-weight: 900;
+  font-size: 14px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 2px solid #8a5a18;
+  box-shadow: 0 0 8px rgba(255, 207, 92, 0.6);
+  letter-spacing: 0;
+  z-index: 2;
+  min-width: 28px;
+  text-align: center;
+}

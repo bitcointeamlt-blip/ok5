@@ -236,20 +236,49 @@
         return;
       }
       const BARRACKS_ADDR = (window.BarracksNFT && window.BarracksNFT.ADDR && window.BarracksNFT.ADDR.barracks) || '';
-      grid.innerHTML = units.map(u => {
-        const rarityCls = u.rarity === 'rare' ? 'rare' : '';
-        const veteranCls = u.level >= 10 ? 'veteran' : '';
-        const winRate = u.battles > 0 ? Math.round((u.wins / u.battles) * 100) : 0;
-        const marketUrl = `https://marketplace.roninchain.com/token/${BARRACKS_ADDR}/${u.tokenId}`;
-        const explorerUrl = `https://explorer.roninchain.com/token/${BARRACKS_ADDR}/${u.tokenId}`;
+
+      // Group units by stat signature — identical units stack with ×N badge.
+      // Once a unit gains XP/battles/kills, its signature differs → shown individually.
+      const groups = new Map();
+      for (const u of units) {
+        const key = `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
+        if (!groups.has(key)) {
+          groups.set(key, { ...u, ids: [u.tokenId], count: 1 });
+        } else {
+          const g = groups.get(key);
+          g.ids.push(u.tokenId);
+          g.count++;
+        }
+      }
+      const groupedArr = Array.from(groups.values());
+      // Sort: used units (battles>0) first, fresh stacks after
+      groupedArr.sort((a, b) => {
+        if (a.battles !== b.battles) return b.battles - a.battles;
+        if (a.xp !== b.xp) return b.xp - a.xp;
+        return Number(b.ids[0]) - Number(a.ids[0]);
+      });
+
+      grid.innerHTML = groupedArr.map(g => {
+        const rarityCls = g.rarity === 'rare' ? 'rare' : '';
+        const veteranCls = g.level >= 10 ? 'veteran' : '';
+        const winRate = g.battles > 0 ? Math.round((g.wins / g.battles) * 100) : 0;
+        const isStack = g.count > 1;
+        const firstId = g.ids[0];
+        const marketUrl = `https://marketplace.roninchain.com/token/${BARRACKS_ADDR}/${firstId}`;
+        const explorerUrl = `https://explorer.roninchain.com/token/${BARRACKS_ADDR}/${firstId}`;
+        const stackBadge = isStack ? `<div class="nft-card-stack">×${g.count}</div>` : '';
+        const idText = isStack
+          ? `<span title="Token IDs: ${g.ids.join(', ')}">${g.count} units</span>`
+          : `#${firstId}`;
         return `<div class="nft-inv-card ${rarityCls} ${veteranCls}">
-          <img src="${u.image}" alt="${u.name}">
-          <div class="nft-card-name">${u.name}</div>
-          <div class="nft-card-id">#${u.tokenId}</div>
-          <div class="nft-card-lvl">Lv. ${u.level}</div>
+          ${stackBadge}
+          <img src="${g.image}" alt="${g.name}">
+          <div class="nft-card-name">${g.name}</div>
+          <div class="nft-card-id">${idText}</div>
+          <div class="nft-card-lvl">Lv. ${g.level}</div>
           <div class="nft-card-stats">
-            XP: ${u.xp}<br>
-            ${u.battles}🛡 ${u.wins}🏆 ${u.kills}⚔<br>
+            XP: ${g.xp}<br>
+            ${g.battles}🛡 ${g.wins}🏆 ${g.kills}⚔<br>
             ${winRate}% win
           </div>
           <div class="nft-card-actions">
