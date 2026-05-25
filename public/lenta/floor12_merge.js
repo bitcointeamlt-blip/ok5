@@ -1893,7 +1893,11 @@
           if (c > 0) {
             _f12CardDeck[bt] = { count: c, lastIncAt: t0 };
             const ut = _UNIT_FOR_BALL_TYPE[bt];
-            if (ut) _f12SessionFreePool[ut] = (_f12SessionFreePool[ut] | 0) + c;
+            if (ut) {
+              _f12SessionFreePool[ut] = (_f12SessionFreePool[ut] | 0) + c;
+              // Matomas deploy panel count
+              deployPool[ut] = (deployPool[ut] || 0) + c;
+            }
           }
         }
       }
@@ -1923,6 +1927,8 @@
             if (!_f12CardDeck[bt]) _f12CardDeck[bt] = { count: 0, lastIncAt: t0 };
             _f12CardDeck[bt].count++;
           }
+          // Matomas deploy panel count — kiekvienas NFT = +1
+          deployPool[nft.utype] = (deployPool[nft.utype] || 0) + 1;
         }
         // Consume — po init'o nereik daugiau read'inti
         window._f12NftPickedPool = null;
