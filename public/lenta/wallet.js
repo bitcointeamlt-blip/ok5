@@ -596,20 +596,26 @@
     if (!state.connected) throw new Error('Wallet not connected');
     const prov = state.provider || (await getAnyProvider());
     if (!prov) throw new Error('No wallet provider');
-    const addr = state.address;
-    if (!addr) throw new Error('No wallet address');
-    // Sanity check — patikrink ar wallet dabar aktyvus tas pats account
-    // (vartotojas gali būti perjungęs į kitą account tarp connect ir sign).
+    // CRITICAL: re-fetch active account directly from wallet (NE state.address)
+    // — wallet'as gali turėti kelias paskyras, sign'ina su aktyvia (ignoruoja addr param).
+    // Jei state.address skiriasi nuo aktyvaus → throw, kad start-battle/sign nesumaišytų adresų.
+    let addr = state.address;
     try {
       const currentAccts = await prov.request({ method: 'eth_accounts' });
       const currentAddr = (currentAccts && currentAccts[0]) ? currentAccts[0] : null;
-      if (currentAddr && currentAddr.toLowerCase() !== addr.toLowerCase()) {
-        throw new Error('Wallet account switched: connected ' + addr + ' but active ' + currentAddr + '. Reconnect with the correct account.');
+      if (!currentAddr) throw new Error('No active wallet account — reconnect wallet.');
+      if (state.address && currentAddr.toLowerCase() !== state.address.toLowerCase()) {
+        throw new Error(
+          'Wallet has multiple accounts active. Currently signing as ' + currentAddr +
+          ' but app registered ' + state.address + '. Switch wallet to ' + state.address +
+          ' OR reconnect the app to use ' + currentAddr + '.'
+        );
       }
+      addr = currentAddr;
     } catch (e) {
-      if (e.message && e.message.indexOf('account switched') !== -1) throw e;
-      console.warn('[signBattleAuth] account check failed (non-fatal):', e);
+      throw e;
     }
+    if (!addr) throw new Error('No wallet address');
     // payload: { tokenIds: number[], battleId: string, deadline: number, nonce: string }
     const domain = {
       name: 'PewPewBarracks',
