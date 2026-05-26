@@ -520,7 +520,10 @@
       document.getElementById('nft-ronke-bal').textContent =
         (await window.BarracksNFT.formatEther(s.ronke)).split('.')[0];
       document.getElementById('nft-rv-bal').textContent = s.ronkeverse.toString();
-      document.getElementById('nft-cap').textContent = `${s.dailyUsed} / ${s.dailyCap}`;
+      // Used = cap - remaining (kontrakto getRemainingDailyMint čekina ar window pasikeitė).
+      // dailyMintedCount yra raw storage, neresetinasi iki kito mint'o — todėl klaidina.
+      const usedNow = Math.max(0, Number(s.dailyCap) - Number(s.remaining));
+      document.getElementById('nft-cap').textContent = `${usedNow} / ${s.dailyCap}`;
       document.getElementById('nft-supply').textContent = s.totalAlive.toString();
       document.getElementById('nft-inv-badge').textContent = s.nftBalance.toString();
       // Clamp qty input to remaining cap (avoid "Daily cap reached" reverts)
