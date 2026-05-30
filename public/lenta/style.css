@@ -16401,7 +16401,7 @@ kbd {
   height: 80px;
   margin: -40px 0 0 -40px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,240,240,0.95) 0%, rgba(255,80,80,0.7) 35%, rgba(220,40,40,0.3) 55%, transparent 72%);
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.5) 40%, transparent 70%);
   pointer-events: none;
   opacity: 0;
   z-index: 3;

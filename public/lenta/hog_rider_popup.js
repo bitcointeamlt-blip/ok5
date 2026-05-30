@@ -491,7 +491,6 @@
       void pig.offsetWidth;
       // Tikras dmg-take sprite (dmgtake01.png — dabar preloaded, nebedingsta).
       pig.setAttribute('data-anim', 'hit');
-      pig.classList.add('dmg-hit');   // raudonas tint pulse — pabrėžia damage
       // Recoil via inline transform
       pig.style.transition = 'transform 0.12s ease-out';
       pig.style.transform = 'translateX(-14px)';
