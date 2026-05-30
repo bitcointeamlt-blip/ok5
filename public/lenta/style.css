@@ -16339,7 +16339,7 @@ kbd {
 /* Damage-take animation — Hog Rider reacts to spider's bite */
 .hog-event-sprite[data-anim="hit"] {
   background-image: url('dmgtake01.png');
-  animation: hogSpriteHitAnim 0.4s steps(8) 1 forwards;
+  animation: hogSpriteHitAnim 0.4s steps(8) 1;  /* NE forwards — kitaip sustotų ties tuščiu kadru */
 }
 /* Idle pose — Hog Rider rests between battles */
 .hog-event-sprite[data-anim="idle"] {

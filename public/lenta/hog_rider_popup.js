@@ -429,6 +429,18 @@
     _DemoFx.spawn(targetEl);
   }
 
+  // Preload VISŲ Hog Rider sprite sheet'ų — kitaip attack/dmg-take (~800KB) yra
+  // lazy-loaded ir nespėja užsikrauti per trumpą animacijos langą → sprite dingsta.
+  let _spritesPreloaded = false;
+  function _preloadSprites() {
+    if (_spritesPreloaded) return;
+    _spritesPreloaded = true;
+    ['pigronke.png', 'pigronkewalk.png', 'ronkepigattack.png', 'dmgtake01.png'].forEach(src => {
+      const img = new Image();
+      img.src = src;
+    });
+  }
+
   // Battle demo: Hog Rider stovi vietoj su walk anim, spider ateina iš dešinės,
   // beveik prie pat — AOE attack (kaip F9 pigronke ietis), spider miršta. Loop.
   function _runBattleDemo() {
@@ -477,11 +489,9 @@
       // Force animation restart trick: clear data-anim + reflow, then set "hit"
       pig.removeAttribute('data-anim');
       void pig.offsetWidth;
-      // PATIKIMA: liekam ant idle sprite (pigronke.png — visada matomas),
-      // damage rodome flash'u + recoil + raudonu tint'u (dmgtake01.png turėjo
-      // forwards->tuščio kadro / 404 problemą, dėl ko Hog Rider dingdavo).
-      pig.setAttribute('data-anim', 'idle');
-      pig.classList.add('dmg-hit');   // raudonas tint pulse
+      // Tikras dmg-take sprite (dmgtake01.png — dabar preloaded, nebedingsta).
+      pig.setAttribute('data-anim', 'hit');
+      pig.classList.add('dmg-hit');   // raudonas tint pulse — pabrėžia damage
       // Recoil via inline transform
       pig.style.transition = 'transform 0.12s ease-out';
       pig.style.transform = 'translateX(-14px)';
@@ -722,6 +732,7 @@
   }
 
   function _startF10Watch() {
+    _preloadSprites();   // cache'inam sprite'us iškart, kad attack/dmg-take nedingtų
     // Pirmas tikrinimas po DOMContentLoaded
     setTimeout(_maybeShowOnF10, 200);
     setTimeout(_syncHogTile, 250);
