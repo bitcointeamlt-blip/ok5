@@ -456,7 +456,10 @@
   }
   function bindUnitOptions() {
     document.querySelectorAll('.nft-unit-option').forEach(el => {
-      el.onclick = () => selectUnit(Number(el.dataset.utype));
+      el.onclick = () => {
+        if (el.classList.contains('hog-locked')) return;  // COMING SOON — dar negalima pasirinkti/mintinti
+        selectUnit(Number(el.dataset.utype));
+      };
     });
   }
 
@@ -663,7 +666,6 @@
         const isStack = g.count > 1;
         const firstId = g.ids[0];
         const marketUrl = `https://marketplace.roninchain.com/collections/pewpew-battle-units`;
-        const explorerUrl = `https://explorer.roninchain.com/token/${BARRACKS_ADDR}/${firstId}`;
         const stackBadge = isStack ? `<div class="nft-card-stack">×${g.count}</div>` : '';
         const idText = isStack
           ? `<span title="Token IDs: ${g.ids.join(', ')}"></span>`
@@ -719,7 +721,6 @@
           </div>
           <div class="nft-card-actions">
             <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">SELL</a>
-            <a href="${explorerUrl}" target="_blank" class="nft-card-link explorer" title="View on Explorer">INFO</a>
           </div>
         </div>`;
       }).join('');

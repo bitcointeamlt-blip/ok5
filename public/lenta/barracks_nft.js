@@ -74,7 +74,16 @@
     2: { name: 'Archer',  image: 'unit-images/archer-idle.gif',  rarity: 'common' },
     3: { name: 'Harpoon', image: 'unit-images/harpoon-idle.gif', rarity: 'common' },
     4: { name: 'Shaman',  image: 'unit-images/shaman-idle.gif',  rarity: 'rare' },
+    5: { name: 'Hog Rider', image: 'unit-images/hog-idle.gif', rarity: 'epic' },
   };
+
+  // Planuojami costMultiplierBps tipams, kurių dar NĖRA kontrakte (pre-addUnitType).
+  // Naudojama kainos peržiūrai pagal TĄ PAČIĄ kontrakto formulę:
+  //   perUnit = getCurrentPricing.cost × bps / 10000
+  // Hog Rider planas: addUnitType(5, "Hog Rider", 30000, ...) → 30000 bps = 3.0×.
+  // Kai utype įjungiamas grandinėje, getBatchPricing naudoja tikrą kontraktą (fallback netaikomas).
+  const PLANNED_COST_MULT_BPS = { 5: 30000 };
+  const BATCH_TIER_SIZE = 10;  // kontrakto getBatchMultiplier = ceil(qty / 10)
 
   let _viem = null;
   async function getViem() {
@@ -156,9 +165,28 @@
   }
 
   async function getBatchPricing(utype, qty) {
-    const [cost, wait] = await read('getBatchPricing', [utype, qty]);
-    const mult = await read('getBatchMultiplier', [qty]);
-    return { cost, wait: Number(wait), batchMult: Number(mult) };
+    try {
+      const [cost, wait] = await read('getBatchPricing', [utype, qty]);
+      const mult = await read('getBatchMultiplier', [qty]);
+      return { cost, wait: Number(wait), batchMult: Number(mult), planned: false };
+    } catch (e) {
+      // Fallback tipams, kurių dar nėra grandinėje (pvz. Hog Rider utype 5 prieš addUnitType).
+      // Skaičiuojam LYGIAI pagal kontrakto formulę su planuotu costMultiplierBps.
+      const bps = PLANNED_COST_MULT_BPS[utype];
+      if (!bps) throw e;  // tikra klaida (ne „type disabled") — nerodom suklastotos kainos
+      const [baseCost, baseWait] = await read('getCurrentPricing');
+      const perUnit = (baseCost * BigInt(bps)) / 10000n;          // getPricingForType formulė
+      const batchMult = Math.ceil(qty / BATCH_TIER_SIZE);          // getBatchMultiplier = ceil(qty/10)
+      const cost = perUnit * BigInt(qty) * BigInt(batchMult);      // getBatchPricing formulė
+      return { cost, wait: Number(baseWait), batchMult, planned: true };
+    }
+  }
+
+  // Live supply-based base per-unit price (no wallet needed — public RPC).
+  // This is the "current units" price (Skull/Archer/etc. are all 1.0x).
+  async function getCurrentPricing() {
+    const [cost, wait] = await read('getCurrentPricing');
+    return { cost, wait: Number(wait) };
   }
 
   // ─── INVENTORY ───────────────────────────────────────────────
@@ -328,6 +356,7 @@
     fetchState,
     fetchInventory,
     getBatchPricing,
+    getCurrentPricing,
     approveRonke,
     startTraining,
     claimTraining,

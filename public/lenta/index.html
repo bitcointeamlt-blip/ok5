@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hp63fullrow">
+  <link rel="stylesheet" href="style.css?v=hog40preview">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1731,6 +1731,11 @@
             <div class="nft-unit-name">Archer</div>
             <div class="nft-unit-tag">Common</div>
           </div>
+          <div class="nft-unit-option nft-unit-option-hog" data-utype="5">
+            <div class="nft-unit-hog-sprite"></div>
+            <div class="nft-unit-name">Hog Rider</div>
+            <div class="nft-unit-tag epic">Epic</div>
+          </div>
           <div class="nft-unit-option" data-utype="3">
             <img src="unit-images/harpoon-idle.gif" alt="Harpoon">
             <div class="nft-unit-name">Harpoon</div>
@@ -1853,6 +1858,90 @@
         <h4>Contract</h4>
         <p style="font-family:monospace;font-size:9px;word-break:break-all">0xccf604511c5d2b5c3fd61adfba3950d0d2890862</p>
       </div>
+    </div>
+  </div>
+
+  <!-- 🐗 HOG RIDER EVENT POPUP — rodomas iškart po game launch -->
+  <div id="hog-event-modal" class="hog-event-modal" style="display:none">
+    <div class="hog-event-backdrop"></div>
+    <div class="hog-event-card">
+      <button class="hog-event-close" id="hog-event-close" title="Close">×</button>
+
+      <div class="hog-event-banner">⚡ LIMITED EVENT — NEW UNIT MINT ⚡</div>
+
+      <div class="hog-event-sprite-wrap">
+        <div class="hog-event-sprite" id="hog-demo-pig"></div>
+        <div class="hog-demo-pig-flash" id="hog-demo-pig-flash"></div>
+        <div class="hog-demo-spider" id="hog-demo-spider"></div>
+        <div class="hog-demo-aoe" id="hog-demo-aoe"></div>
+        <canvas id="hog-demo-canvas" class="hog-demo-canvas"></canvas>
+      </div>
+
+      <div class="hog-event-rarity">EPIC</div>
+
+      <h2 class="hog-event-title">🐗 HOG RIDER</h2>
+
+      <div class="hog-event-stats">
+        <div class="hog-event-stat">
+          <div class="hog-event-stat-label">PRICE</div>
+          <div class="hog-event-stat-value" id="hog-event-price">— RONKE</div>
+        </div>
+        <div class="hog-event-stat">
+          <div class="hog-event-stat-label">TIME LEFT</div>
+          <div class="hog-event-stat-value" id="hog-event-countdown">3d 0h 0m</div>
+        </div>
+        <div class="hog-event-stat">
+          <div class="hog-event-stat-label">DAILY CAP</div>
+          <div class="hog-event-stat-value">10 / 12h</div>
+        </div>
+        <div class="hog-event-stat">
+          <div class="hog-event-stat-label">MINTED</div>
+          <div class="hog-event-stat-value" id="hog-event-minted">0</div>
+        </div>
+      </div>
+
+      <div class="hog-event-actions">
+        <button class="hog-event-btn hog-event-btn-info" id="hog-event-info">ℹ INFO</button>
+        <button class="hog-event-btn hog-event-btn-secondary" id="hog-event-dismiss">Maybe later</button>
+        <button class="hog-event-btn hog-event-btn-primary" id="hog-event-mint">⚔ MINT NOW</button>
+      </div>
+
+      <label class="hog-event-dontshow">
+        <input type="checkbox" id="hog-event-dontshow-cb">
+        <span>Don't show again today</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 🐗 HOG RIDER INFO SUB-MODAL — Full event rules & mechanics -->
+  <div id="hog-info-modal" class="hog-info-modal" style="display:none">
+    <div class="hog-info-backdrop"></div>
+    <div class="hog-info-card">
+      <button class="hog-info-close" id="hog-info-close" title="Close">×</button>
+      <h2 class="hog-info-title">🐗 HOG RIDER — How it works</h2>
+      <div class="hog-info-body">
+        <h4>⏳ 3-Day Limited Event</h4>
+        <p>Mint window runs <strong>3 days only</strong>. Open to everyone. After the event ends, <strong>Hog Rider can NEVER be minted again</strong> — this is a one-time launch.</p>
+
+        <h4>🎁 Ronkeverse Holder Bonus</h4>
+        <p>The <strong>final day</strong> is reserved for Ronkeverse NFT holders — they get additional mint slots after the public window closes.</p>
+
+        <h4>💰 Dynamic Pricing</h4>
+        <p>Price scales with <strong>current global supply</strong> via the Barracks formula. Hog Rider costs <strong>3× the current Skull price</strong>. As more units mint across the network, price goes up. Burns reduce supply → cheaper again.</p>
+
+        <h4>⚔ Combat & Leveling</h4>
+        <p>Each Hog Rider is an ERC721 NFT with <strong>on-chain XP</strong> that grows per battle. They gain levels over time, making them stronger.</p>
+
+        <h4>💀 Permadeath</h4>
+        <p>If your Hog Rider <strong>dies in battle</strong> (F12 or future modes), the NFT is <strong>permanently burned</strong>. Real stakes — even max-level veterans can die.</p>
+
+        <h4>🏷 Same Collection</h4>
+        <p>Hog Riders join the existing <strong>pewpew-battle-units</strong> Ronin marketplace collection alongside Skull/Archer/Harpoon/Shaman.</p>
+
+        <h4>📜 Contract</h4>
+        <p style="font-family:monospace;font-size:9px;word-break:break-all">0xccf604511c5d2b5c3fd61adfba3950d0d2890862</p>
+      </div>
+      <button class="hog-event-btn hog-event-btn-primary" id="hog-info-ok">Got it</button>
     </div>
   </div>
 
@@ -2001,13 +2090,14 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="supabase_sync.js?v=7forcepush"></script>
   <script src="wallet.js?v=wp15hashdiag"></script>
-  <script src="barracks_nft.js?v=nft27capfix"></script>
-  <script src="barracks_nft_modal.js?v=nft29sellslug"></script>
-  <script src="barracks_nft_plots.js?v=nft27capfix"></script>
+  <script src="barracks_nft.js?v=nft32hogimg"></script>
+  <script src="barracks_nft_modal.js?v=nft33locktile"></script>
+  <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=cmd449freeplay2"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=cmd704warn"></script>
   <script src="wallet-ui.js?v=pewpew10breath"></script>
+  <script src="hog_rider_popup.js?v=hog40preview"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
   (function() {
