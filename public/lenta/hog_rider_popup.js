@@ -491,13 +491,9 @@
       void pig.offsetWidth;
       // Tikras dmg-take sprite (dmgtake01.png — dabar preloaded, nebedingsta).
       pig.setAttribute('data-anim', 'hit');
-      // Recoil via inline transform
+      // Recoil via inline transform (be flash — tik sprite animacija + atšokimas)
       pig.style.transition = 'transform 0.12s ease-out';
       pig.style.transform = 'translateX(-14px)';
-      // Damage flash — kad hit momentas būtų aiškiai matomas (restart trick)
-      pigFlash.classList.remove('fire');
-      void pigFlash.offsetWidth;
-      pigFlash.classList.add('fire');
     }, 2500));
 
     // Phase 3b (2700ms): Recoil eases back to original pose
