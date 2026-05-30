@@ -22,7 +22,7 @@
 
   const EVENT_KEY        = 'hogEventDismissedAt';   // ms timestamp of last "don't show today"
   const SUPPRESS_24H     = 24 * 60 * 60 * 1000;
-  const LAUNCH_DELAY     = 1000;                    // ms after F10 fully loaded
+  const LAUNCH_DELAY     = 3000;                    // ms after F10 fully loaded
   const DEFAULT_PRICE    = '… RONKE';               // loading placeholder until live price resolves
   const HOG_UTYPE        = 5;                       // Hog Rider planned utype on Barracks contract
 

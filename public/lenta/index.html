@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hog40preview">
+  <link rel="stylesheet" href="style.css?v=hog41note">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1900,6 +1900,12 @@
         </div>
       </div>
 
+      <div class="hog-event-note">
+        📈 The more units minted across the whole network, the higher the price.
+        Every <strong>+100 global units</strong> bumps the training cost up one tier —
+        Hog Rider always costs <strong>3× the base price</strong>.
+      </div>
+
       <div class="hog-event-actions">
         <button class="hog-event-btn hog-event-btn-info" id="hog-event-info">ℹ INFO</button>
         <button class="hog-event-btn hog-event-btn-secondary" id="hog-event-dismiss">Maybe later</button>
@@ -1920,14 +1926,12 @@
       <button class="hog-info-close" id="hog-info-close" title="Close">×</button>
       <h2 class="hog-info-title">🐗 HOG RIDER — How it works</h2>
       <div class="hog-info-body">
-        <h4>⏳ 3-Day Limited Event</h4>
-        <p>Mint window runs <strong>3 days only</strong>. Open to everyone. After the event ends, <strong>Hog Rider can NEVER be minted again</strong> — this is a one-time launch.</p>
+        <h4>⏳ 6-Day Limited Event</h4>
+        <p>Mint window runs <strong>6 days only</strong>, open to everyone. When the timer ends the price jumps to <strong>6.5×</strong> — effectively closing the mint. A true one-time launch.</p>
 
-        <h4>🎁 Ronkeverse Holder Bonus</h4>
-        <p>The <strong>final day</strong> is reserved for Ronkeverse NFT holders — they get additional mint slots after the public window closes.</p>
-
-        <h4>💰 Dynamic Pricing</h4>
-        <p>Price scales with <strong>current global supply</strong> via the Barracks formula. Hog Rider costs <strong>3× the current Skull price</strong>. As more units mint across the network, price goes up. Burns reduce supply → cheaper again.</p>
+        <h4>💰 Dynamic Pricing — grows with supply</h4>
+        <p>The price scales with the <strong>global unit supply</strong> across the whole network. Every <strong>+100 units minted</strong> bumps the training cost up one tier. Hog Rider always costs <strong>3× the base unit price</strong>. When units die (burn), supply drops → price gets cheaper again.</p>
+        <p style="font-size:8px;color:#9a8aaa">Example: at ~900 supply, base = 75 → Hog Rider ≈ 225 RONKE. At ~1000 supply, base = 105 → Hog Rider ≈ 315 RONKE.</p>
 
         <h4>⚔ Combat & Leveling</h4>
         <p>Each Hog Rider is an ERC721 NFT with <strong>on-chain XP</strong> that grows per battle. They gain levels over time, making them stronger.</p>
@@ -2097,7 +2101,7 @@
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=cmd704warn"></script>
   <script src="wallet-ui.js?v=pewpew10breath"></script>
-  <script src="hog_rider_popup.js?v=hog40preview"></script>
+  <script src="hog_rider_popup.js?v=hog41note"></script>
   <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
   (function() {
