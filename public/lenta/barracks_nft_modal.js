@@ -662,7 +662,7 @@
         const winRate = g.battles > 0 ? Math.round((g.wins / g.battles) * 100) : 0;
         const isStack = g.count > 1;
         const firstId = g.ids[0];
-        const marketUrl = `https://marketplace.roninchain.com/token/${BARRACKS_ADDR}/${firstId}`;
+        const marketUrl = `https://marketplace.roninchain.com/collections/pewpew-battle-units`;
         const explorerUrl = `https://explorer.roninchain.com/token/${BARRACKS_ADDR}/${firstId}`;
         const stackBadge = isStack ? `<div class="nft-card-stack">×${g.count}</div>` : '';
         const idText = isStack
