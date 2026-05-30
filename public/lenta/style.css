@@ -16346,6 +16346,10 @@ kbd {
   background-image: url('pigronke.png');
   animation: hogSpriteIdleAnim 1.2s steps(8) infinite;
 }
+/* Damage tint — raudonas blyksnis kai Hog Rider gauna smūgį (sprite lieka matomas) */
+.hog-event-sprite.dmg-hit {
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.45)) brightness(1.5) sepia(1) saturate(10) hue-rotate(-35deg);
+}
 @keyframes hogSpriteIdleAnim {
   from { background-position: 0 0; }
   to   { background-position: -2560px 0; }
@@ -16397,7 +16401,7 @@ kbd {
   height: 80px;
   margin: -40px 0 0 -40px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.5) 40%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,240,240,0.95) 0%, rgba(255,80,80,0.7) 35%, rgba(220,40,40,0.3) 55%, transparent 72%);
   pointer-events: none;
   opacity: 0;
   z-index: 3;

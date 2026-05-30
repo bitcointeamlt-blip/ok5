@@ -443,6 +443,7 @@
 
     // Reset — instant teleport spider off-screen right + clear pig inline transform
     pig.removeAttribute('data-anim');
+    pig.classList.remove('dmg-hit');
     pig.style.transition = 'none';
     pig.style.transform = '';
     spider.removeAttribute('data-anim');
@@ -476,10 +477,18 @@
       // Force animation restart trick: clear data-anim + reflow, then set "hit"
       pig.removeAttribute('data-anim');
       void pig.offsetWidth;
-      pig.setAttribute('data-anim', 'hit');  // dmgtake01.png, 0.4s steps(8) once
+      // PATIKIMA: liekam ant idle sprite (pigronke.png — visada matomas),
+      // damage rodome flash'u + recoil + raudonu tint'u (dmgtake01.png turėjo
+      // forwards->tuščio kadro / 404 problemą, dėl ko Hog Rider dingdavo).
+      pig.setAttribute('data-anim', 'idle');
+      pig.classList.add('dmg-hit');   // raudonas tint pulse
       // Recoil via inline transform
       pig.style.transition = 'transform 0.12s ease-out';
       pig.style.transform = 'translateX(-14px)';
+      // Damage flash — kad hit momentas būtų aiškiai matomas (restart trick)
+      pigFlash.classList.remove('fire');
+      void pigFlash.offsetWidth;
+      pigFlash.classList.add('fire');
     }, 2500));
 
     // Phase 3b (2700ms): Recoil eases back to original pose
@@ -492,6 +501,7 @@
     _demoTimers.push(setTimeout(() => {
       pig.style.transition = 'none';
       pig.style.transform = '';
+      pig.classList.remove('dmg-hit');
       pig.setAttribute('data-anim', 'attack');
       void aoe.offsetWidth;
       aoe.classList.add('fire');
@@ -688,13 +698,17 @@
 
   let _shownThisSession = false;
 
+  // F10 PILNAI užsikrovęs — ne tik floor flag'as, bet ir kambarys paruoštas:
+  // kamera inicializuota + units masyvas yra + visi puslapio resursai užkrauti.
   function _isOnF10() {
     try {
-      if (typeof window.S === 'object' && window.S && window.S.floor === 10) return true;
-    } catch (_) {}
-    // Fallback — hash routing
-    const h = (location.hash || '').toLowerCase();
-    return h === '#f10';
+      const S = window.S;
+      if (typeof S !== 'object' || !S || S.floor !== 10) return false;
+      if (!S.cam) return false;                       // kamera inicializuota = kambarys renderinasi
+      if (!Array.isArray(S.units)) return false;      // units sistema paruošta
+      if (document.readyState !== 'complete') return false;  // visi resursai (img/css/js) užkrauti
+      return true;
+    } catch (_) { return false; }
   }
 
   function _maybeShowOnF10() {
