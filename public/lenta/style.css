@@ -4556,33 +4556,6 @@ kbd {
   text-shadow: 0 0 12px rgba(78,207,136,0.5);
 }
 
-/* „PLAY ANYWAY" — escape hatch, kad žaidėjas neužstrigtų portrait režime */
-#orient-play-anyway {
-  margin-top: 10px;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  color: #04130a;
-  background: linear-gradient(180deg, #6fe0a0, #3aa86a);
-  border: 2px solid #2e7a4e;
-  border-radius: 8px;
-  padding: 13px 22px;
-  cursor: pointer;
-  letter-spacing: 1px;
-  box-shadow: 0 3px 0 #1f5436, 0 0 16px rgba(78,207,136,0.35);
-  -webkit-tap-highlight-color: transparent;
-}
-#orient-play-anyway:active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 #1f5436, 0 0 16px rgba(78,207,136,0.35);
-}
-.orient-sub {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  color: rgba(120,200,150,0.55);
-  letter-spacing: 1px;
-  text-align: center;
-}
-
 /* â”€â”€ Mobile layout (screens â‰¤ 900px) â”€â”€â”€ */
 @media (max-width: 900px) {
 

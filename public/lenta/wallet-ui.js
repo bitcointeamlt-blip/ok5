@@ -480,62 +480,10 @@
     if (dropdownOpen) closeDropdown(); else openDropdown();
   }
 
-  function _isMobileUA() {
-    try { return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); }
-    catch (_) { return false; }
-  }
-  function _hasInjectedRonin() {
-    try { const r = window.ronin; return !!(r && (r.provider || typeof r.request === 'function')); }
-    catch (_) { return false; }
-  }
-
-  // Mobile wallet picker — Ronin Wallet (deep-link į app browser) ARBA Waypoint (email/Google).
-  // Reikalinga, nes mobile Chrome neturi injected window.ronin → anksčiau visada ėjo tik į Waypoint.
-  function showWalletPicker() {
-    let ov = document.getElementById('wui-wallet-picker');
-    if (ov) ov.remove();
-    ov = document.createElement('div');
-    ov.id = 'wui-wallet-picker';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(4,8,12,0.88);display:flex;align-items:center;justify-content:center;padding:22px;';
-    // Ronin Wallet universal link — atidaro žaidimą Ronin Wallet app naršyklėj (ten window.ronin injected)
-    const deepUrl = 'https://wallet.roninchain.com/in_app_browser?url=' + encodeURIComponent(window.location.href);
-    ov.innerHTML =
-      '<div style="width:100%;max-width:360px;background:#16202b;border:2px solid #2e4456;border-radius:16px;padding:22px 18px;box-shadow:0 8px 40px rgba(0,0,0,0.6);font-family:system-ui,-apple-system,sans-serif;color:#e7eef5;text-align:center;">' +
-        '<div style="font-size:17px;font-weight:800;margin-bottom:4px;">Connect Wallet</div>' +
-        '<div style="font-size:12px;color:#8aa0b4;margin-bottom:18px;">Choose how to connect</div>' +
-        '<a id="wui-pick-ronin" href="' + deepUrl + '" style="display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none;width:100%;padding:15px;border-radius:12px;background:linear-gradient(180deg,#3a86d8,#1f5fa8);color:#fff;font-weight:700;font-size:15px;margin-bottom:10px;-webkit-tap-highlight-color:transparent;">' +
-          '<img src="assets_tiny/ronin_logo.png" alt="" style="width:22px;height:22px;" draggable="false"/> Ronin Wallet' +
-        '</a>' +
-        '<button id="wui-pick-waypoint" type="button" style="width:100%;padding:15px;border:none;border-radius:12px;background:linear-gradient(180deg,#4a9da6,#2e6a72);color:#fff;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:6px;-webkit-tap-highlight-color:transparent;">✉ Email / Google</button>' +
-        '<div style="font-size:10px;color:#6a8094;margin:10px 0 14px;line-height:1.5;">Ronin Wallet opens the game inside its app browser.<br>Email / Google uses Ronin Waypoint.</div>' +
-        '<button id="wui-pick-cancel" type="button" style="background:none;border:none;color:#8aa0b4;font-size:13px;cursor:pointer;text-decoration:underline;">Cancel</button>' +
-      '</div>';
-    document.body.appendChild(ov);
-    ov.querySelector('#wui-pick-ronin').addEventListener('click', () => {
-      // <a> pats naviguoja į deep link (patikimiau nei window.open); uždarom overlay vėliau.
-      setTimeout(() => { try { ov.remove(); } catch (_) {} }, 500);
-    });
-    ov.querySelector('#wui-pick-waypoint').addEventListener('click', async () => {
-      ov.remove();
-      try {
-        showToast('Connecting via Waypoint…', 'ok', 30000);
-        await Wallet.connect();
-        showToast('Connected: ' + Wallet.shortAddress(), 'ok');
-      } catch (e) { showToast(e && e.message ? e.message : 'Connect failed', 'error'); }
-    });
-    ov.querySelector('#wui-pick-cancel').addEventListener('click', () => ov.remove());
-    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
-  }
-
   async function handleConnect() {
     if (!Wallet.isInstalled()) {
       showToast('Ronin Wallet not installed. Install from wallet.roninchain.com', 'error', 5000);
       setTimeout(() => { window.open('https://wallet.roninchain.com/', '_blank'); }, 300);
-      return;
-    }
-    // Mobile be injected Ronin → leidžiam pasirinkti (Ronin Wallet app vs Waypoint email/Google)
-    if (_isMobileUA() && !_hasInjectedRonin()) {
-      showWalletPicker();
       return;
     }
     try {
