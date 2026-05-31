@@ -154,6 +154,36 @@
     return await pushProfileToCloud(addr, profile);
   }
 
+  // ── Device info capture (PC vs telefonas vs tablet) ─────────────────
+  // Įrašoma į Profile.device prie kiekvieno save → matosi profiles lentelėj.
+  function _captureDevice() {
+    try {
+      const ua = (navigator.userAgent || '');
+      const uaMobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile|BlackBerry/i.test(ua);
+      const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      const w = (window.screen && window.screen.width) || 0;
+      const h = (window.screen && window.screen.height) || 0;
+      const minDim = Math.min(w, h) || 0;
+      let type = 'desktop';
+      if (uaMobile || (touch && minDim && minDim <= 480)) type = 'mobile';
+      else if (touch && minDim && minDim <= 1024) type = 'tablet';
+      let platform = '';
+      try { platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || ''; } catch (_) {}
+      return {
+        type: type,                      // 'desktop' | 'mobile' | 'tablet'
+        mobile: uaMobile,
+        touch: !!touch,
+        platform: platform,              // pvz. "Windows", "Android", "iOS"
+        ua: ua.slice(0, 300),
+        screen: w + 'x' + h,
+        viewport: ((window.innerWidth || 0) + 'x' + (window.innerHeight || 0)),
+        dpr: window.devicePixelRatio || 1,
+        lang: navigator.language || '',
+        at: Date.now(),
+      };
+    } catch (_) { return null; }
+  }
+
   // ── Wrap saveProfile to also push to cloud ──────────────────────────
   // Laukiame kol game.js apibrėš window.saveProfile, tada wrap'inam.
   function wrapSaveProfile() {
@@ -166,6 +196,7 @@
       // syncOnWalletConnect prefer the stale cloud snapshot and clobber
       // recent local changes (e.g. just-trained barracks units).
       try { if (window.Profile) window.Profile._savedAt = Date.now(); } catch (_) {}
+      try { if (window.Profile) { const d = _captureDevice(); if (d) window.Profile.device = d; } } catch (_) {}
       try { orig.apply(this, arguments); } catch (e) { console.warn('saveProfile orig failed:', e); }
       schedulePush();
     };

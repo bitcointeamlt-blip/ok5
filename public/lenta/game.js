@@ -3054,8 +3054,10 @@ function _getBarracksElapsed(now, unitIdx) {
 }
 // unitIdx → enemy archetype type (indeksai atitinka avatar grid pozicijas 0..15).
 // Pirmi 4 aktyvūs užima eilutę 0; idx 4+ rezervuoti būsimiems unit tipams (atrakinama per Castle BUILD SLOT).
-const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', null, null, null, null,
+const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', null, null, null,
                               null, null, null, null, null, null, null, null];
+// PERF: Set O(1) lookup. Naudoja isFriendlyBarracksUnit (callinama ~39× per frame).
+const _BARRACKS_UNIT_TYPES_SET = new Set(['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke']);
 function _findBarracksCell() {
   if (!S.decorations) return null;
   for (const k in S.decorations) {
@@ -4058,6 +4060,1639 @@ function _tickHeroRtsCmd(now) {
       hero.commandMove = null;
     }
   }
+}
+
+// ── F9 RTS smooth click-to-move ─────────────────────────────────
+// F9 hero juda continuously toward click point (cells/sec), be grid hopping.
+// hero._f9Target = { tx, ty } — world cell coords (floats).
+let _f9LastMoveTime = 0;
+const _F9_MOVE_SPEED = 1.25;   // base cells per second (sumažinta nuo 1.8 — natūralesnis tempas)
+// Per-utype speed multipliers — daro group judėjimą gyvesnį (lively flocking feel)
+const _F9_UTYPE_SPEED = {
+  skull:        0.88,   // tankesnis melee — letesnis
+  shaman:       1.05,   // pajegus magas — vidutiniskai
+  archer:       1.12,   // lankininkas — greitas
+  harpoon_fish: 0.95,   // harpunas — vidutiniskai
+  pigronke:     1.10,   // raitelis ant kiaules — greitas bet ne outrun'ina group (2026-05-28: 1.20 → 1.10)
+  ronke:        1.00,   // hero default
+};
+// Per-unit speed variance — kiekvienas unit'as turi savo deterministini multiplier (±10%)
+function _f9UnitSpeedMul(u) {
+  // Hash iš unit.id → stable variance per unit
+  const id = (u.id !== undefined) ? u.id : 0;
+  const seed = ((id * 9301 + 49297) % 233280) / 233280;   // 0..1
+  const variance = 0.90 + seed * 0.20;                    // 0.90..1.10
+  const utypeBase = _F9_UTYPE_SPEED[u.utype] || 1.00;
+  return _F9_MOVE_SPEED * utypeBase * variance;
+}
+// F9 drag-select handlers — mousedown/mousemove/mouseup ant canvas
+function _f9InstallDragHandlers() {
+  if (window._f9DragInstalled) return;
+  if (typeof canvas === 'undefined' || !canvas) return;
+  window._f9DragInstalled = true;
+  const _DRAG_THRESHOLD = 5;
+  function _f9CanvasXY(e) {
+    const r = canvas.getBoundingClientRect();
+    return {
+      sx: (e.clientX - r.left) * (canvas.width / r.width),
+      sy: (e.clientY - r.top)  * (canvas.height / r.height),
+    };
+  }
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
+    const p = _f9CanvasXY(e);
+    window._f9DragStart = { sx: p.sx, sy: p.sy, clientX: e.clientX, clientY: e.clientY };
+    window._f9DragActive = false;
+  }, true);
+  canvas.addEventListener('mousemove', (e) => {
+    if (!window._f9DragStart) return;
+    if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
+    const p = _f9CanvasXY(e);
+    const dx = Math.abs(e.clientX - window._f9DragStart.clientX);
+    const dy = Math.abs(e.clientY - window._f9DragStart.clientY);
+    if (!window._f9DragActive && (dx > _DRAG_THRESHOLD || dy > _DRAG_THRESHOLD)) {
+      window._f9DragActive = true;
+    }
+    if (window._f9DragActive) {
+      window._f9DragRect = {
+        sx1: window._f9DragStart.sx, sy1: window._f9DragStart.sy,
+        sx2: p.sx, sy2: p.sy,
+      };
+    }
+  });
+  canvas.addEventListener('mouseup', (e) => {
+    if (!window._f9DragStart) {
+      window._f9DragActive = false;
+      window._f9DragRect = null;
+      return;
+    }
+    if (!(gameMode === 'adventure' && S && S.floor === 9)) {
+      window._f9DragStart = null;
+      window._f9DragActive = false;
+      window._f9DragRect = null;
+      return;
+    }
+    if (window._f9DragActive && window._f9DragRect) {
+      const camX = S.cam ? S.cam.x : 0;
+      const camY = S.cam ? S.cam.y : 0;
+      const r = window._f9DragRect;
+      const wx1 = Math.min(r.sx1, r.sx2) + camX;
+      const wy1 = Math.min(r.sy1, r.sy2) + camY;
+      const wx2 = Math.max(r.sx1, r.sx2) + camX;
+      const wy2 = Math.max(r.sy1, r.sy2) + camY;
+      const sel = [];
+      for (const u of S.units) {
+        if (!u || !u.alive) continue;
+        if (!(u.team === 0 || (u.team === 1 && u.isEditorEnemy))) continue;
+        const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+        const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+        if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
+      }
+      if (sel.length > 0) {
+        if (e.shiftKey && Array.isArray(window._f9SelectedSet)) {
+          for (const u of sel) if (window._f9SelectedSet.indexOf(u) < 0) window._f9SelectedSet.push(u);
+        } else {
+          window._f9SelectedSet = sel;
+        }
+        window._f9Selected = window._f9SelectedSet[0] || null;
+      }
+      window._f9DragJustEnded = true;
+    }
+    window._f9DragStart = null;
+    window._f9DragActive = false;
+    window._f9DragRect = null;
+  });
+}
+if (typeof setInterval !== 'undefined') {
+  const _f9InstallInt = setInterval(() => {
+    if (typeof canvas !== 'undefined' && canvas) {
+      _f9InstallDragHandlers();
+      clearInterval(_f9InstallInt);
+    }
+  }, 250);
+}
+
+// F9 click destination marker — kompaktinis sleek RTS feedback (Warcraft 3 / SC2 stilius)
+// Greitas: outer ring contracts (~250ms) + inner dot pulses + soft glow halo
+function _drawF9ClickMarkers() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const arr = window._f9ClickMarkers;
+  if (!arr || !arr.length) return;
+  const now = performance.now();
+  const ARRIVED_LIFE = 520;   // burst animation duration after arrival
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const m = arr[i];
+
+    // Check if any assigned unit is still heading to this marker
+    let stillHeading = false;
+    if (Array.isArray(m.units)) {
+      for (const u of m.units) {
+        if (!u || !u.alive) continue;
+        const t = u._f9Target;
+        if (!t) continue;
+        const dx = t.tx - m.tx, dy = t.ty - m.ty;
+        if (dx * dx + dy * dy < 0.04) { stillHeading = true; break; }
+      }
+    }
+
+    if (!stillHeading && !m.arrivedAt) m.arrivedAt = now;
+    if (m.arrivedAt && (now - m.arrivedAt) >= ARRIVED_LIFE) { arr.splice(i, 1); continue; }
+
+    const cx = (m.tx + 0.5) * CELL;
+    const cy = (m.ty + 0.5) * CELL;
+    ctx.save();
+
+    if (!m.arrivedAt) {
+      // ── ALIVE STATE — minimalistinis ground decal + vertikalus beam ──
+      // Įkvėpta SC2 / AoE4 ping marker'io: plokščia ellipse ant žemės + thin glow stub
+      const age = now - m.born;
+      const breathe = (Math.sin(now * 0.005) + 1) * 0.5;  // 0..1
+      const introK = Math.min(1, age / 220);
+
+      // 1) Ground disc (plokščia ellipse, perspektyva) — pagrindinis žymeklis
+      const discRx = CELL * 0.14;
+      const discRy = CELL * 0.05;
+      // Soft halo po disc'u
+      const haloR = CELL * (0.18 + breathe * 0.02);
+      const haloA = (0.16 + breathe * 0.06) * introK;
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);
+      grd.addColorStop(0, `rgba(140, 255, 180, ${haloA.toFixed(3)})`);
+      grd.addColorStop(1, 'rgba(140, 255, 180, 0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, haloR, haloR * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2) Pulse ring (loop ~1100ms) — vienintelis "alive" signalas
+      const RING_LOOP = 1100;
+      const t = ((now) % RING_LOOP) / RING_LOOP;
+      const ringRx = discRx + (CELL * 0.10) * t;
+      const ringRy = discRy + (CELL * 0.04) * t;
+      const ringA = (1 - t) * 0.6 * introK;
+      if (ringA > 0.02) {
+        ctx.strokeStyle = `rgba(180, 255, 200, ${ringA.toFixed(3)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 3) Disc outline (solid, lengvai pulsuoja)
+      ctx.strokeStyle = `rgba(180, 255, 200, ${(0.85 * introK).toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, discRx, discRy, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 4) Disc inner fill (semi-transparent)
+      ctx.fillStyle = `rgba(140, 255, 180, ${(0.18 * introK).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, discRx - 1, discRy - 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 5) Vertikalus beam virš disc'o (kaip beacon) — "čia eik"
+      const beamH = CELL * 0.20 * introK;
+      const beamTop = cy - beamH;
+      const beamGrd = ctx.createLinearGradient(cx, cy, cx, beamTop);
+      beamGrd.addColorStop(0, `rgba(180, 255, 200, ${(0.55 + breathe * 0.20).toFixed(3)})`);
+      beamGrd.addColorStop(1, 'rgba(180, 255, 200, 0)');
+      ctx.strokeStyle = beamGrd;
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, beamTop);
+      ctx.stroke();
+
+      // 6) Center bright dot
+      const dotR = (1.4 + breathe * 0.6) * introK;
+      ctx.fillStyle = `rgba(230, 255, 240, ${(0.95).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // ── ARRIVED STATE — burst + fade (kompaktiškas) ──
+      const k = (now - m.arrivedAt) / ARRIVED_LIFE; // 0..1
+      const ease = 1 - Math.pow(1 - k, 3);
+
+      // 1) Expanding burst ring
+      const burstR = CELL * (0.04 + ease * 0.32);
+      const burstA = (1 - k) * 0.9;
+      if (burstA > 0.02) {
+        ctx.strokeStyle = `rgba(180, 255, 200, ${burstA.toFixed(3)})`;
+        ctx.lineWidth = 1.5 * (1 - k) + 0.6;
+        ctx.beginPath();
+        ctx.arc(cx, cy, burstR, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 2) Antras layered ring (delay)
+      if (k > 0.14) {
+        const k2 = (k - 0.14) / 0.86;
+        const e2 = 1 - Math.pow(1 - k2, 3);
+        const r2 = CELL * (0.03 + e2 * 0.20);
+        const a2 = (1 - k2) * 0.5;
+        if (a2 > 0.02) {
+          ctx.strokeStyle = `rgba(140, 255, 180, ${a2.toFixed(3)})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // 3) Centro flash (greitai blanksta)
+      const flashA = Math.max(0, 1 - k * 2.4);
+      if (flashA > 0.02) {
+        const flashR = 1.8 + (1 - flashA) * 2;
+        ctx.fillStyle = `rgba(255, 255, 255, ${(flashA * 0.9).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, flashR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 4) Sparkles — 6 mini taškai
+      const SPK = 6;
+      for (let s = 0; s < SPK; s++) {
+        const ang = (s / SPK) * Math.PI * 2;
+        const sR = CELL * (0.02 + ease * 0.22);
+        const sx = cx + Math.cos(ang) * sR;
+        const sy = cy + Math.sin(ang) * sR;
+        const sA = (1 - k) * 0.85;
+        if (sA < 0.02) continue;
+        ctx.fillStyle = `rgba(220, 255, 230, ${sA.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1 + (1 - k) * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+}
+
+// F9 DEBUG OVERLAY — vizualizuoja pozicijas, anchor'us, hitbox'us, attack zonas.
+// Toggle: window._f9DebugOn = true / false (default OFF — įjungiamas konsole'je jei reikia).
+window._f9DebugOn = (window._f9DebugOn === undefined) ? false : window._f9DebugOn;
+function _drawF9DebugOverlay() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  if (!window._f9DebugOn) return;
+  if (!Array.isArray(S.units)) return;
+
+  ctx.save();
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    if (!_f9IsAlly(u) && !_f9IsEnemy(u)) continue;
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    const cellCx = (ux + 0.5) * CELL;
+    const cellCy = (uy + 0.5) * CELL;
+
+    // 1) CELL CENTER (logical position) — raudonas kryžius
+    ctx.strokeStyle = '#ff3030';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cellCx - 6, cellCy); ctx.lineTo(cellCx + 6, cellCy);
+    ctx.moveTo(cellCx, cellCy - 6); ctx.lineTo(cellCx, cellCy + 6);
+    ctx.stroke();
+    ctx.fillStyle = '#ff3030';
+    ctx.beginPath(); ctx.arc(cellCx, cellCy, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    // 2) CELL BOUNDS — žalias kvadratas (cell rectangle)
+    ctx.strokeStyle = 'rgba(0, 255, 100, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.strokeRect(ux * CELL, uy * CELL, CELL, CELL);
+    ctx.setLineDash([]);
+
+    // 3) ANCHOR (kur sprite "pied" yra) — mėlynas trikampėlis ant cell ground line
+    const anchorY = (uy + 1) * CELL;  // cell bottom line (where feet should touch)
+    ctx.fillStyle = '#3080ff';
+    ctx.beginPath();
+    ctx.moveTo(cellCx, anchorY - 4);
+    ctx.lineTo(cellCx - 4, anchorY);
+    ctx.lineTo(cellCx + 4, anchorY);
+    ctx.closePath();
+    ctx.fill();
+
+    // 4) ATTACK RANGE CIRCLE (ally tik) — geltonas dashed circle
+    if (_f9IsAlly(u) && u.team !== 0) {
+      const cfg = _F9_ALLY_ATTACK[u.utype];
+      if (cfg) {
+        ctx.strokeStyle = 'rgba(255, 220, 100, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.arc(cellCx, cellCy, cfg.range * CELL, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // 5) ENGAGE TARGET LINE — purpurinė linija nuo ally iki jo engagement target
+    if (_f9IsAlly(u) && u._f9EngageTarget && u._f9EngageTarget.alive) {
+      const tgt = u._f9EngageTarget;
+      const tx = ((tgt.rx !== undefined) ? tgt.rx : tgt.x + 0.5);
+      const ty = ((tgt.ry !== undefined) ? tgt.ry : tgt.y + 0.5);
+      const tCx = (tx + 0.5) * CELL;
+      const tCy = (ty + 0.5) * CELL;
+      ctx.strokeStyle = 'rgba(200, 100, 255, 0.6)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(cellCx, cellCy);
+      ctx.lineTo(tCx, tCy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // 6) MOVE TARGET MARKER — turkio kryžius kur unit'as eina
+    if (u._f9Target) {
+      const tCx = (u._f9Target.tx + 0.5) * CELL;
+      const tCy = (u._f9Target.ty + 0.5) * CELL;
+      ctx.strokeStyle = 'rgba(80, 220, 220, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tCx - 4, tCy - 4); ctx.lineTo(tCx + 4, tCy + 4);
+      ctx.moveTo(tCx + 4, tCy - 4); ctx.lineTo(tCx - 4, tCy + 4);
+      ctx.stroke();
+    }
+
+    // 7) UNIT LABEL — utype + (x,y) virš galvos
+    const labelY = uy * CELL - 4;
+    const labelTxt = `${u.utype || '?'} (${ux.toFixed(1)},${uy.toFixed(1)})`;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+    ctx.fillText(labelTxt, cellCx, labelY);
+    ctx.shadowBlur = 0;
+
+    // 8) HP — mažas badge po vardo
+    if (typeof u.hp === 'number' && typeof u.maxHp === 'number') {
+      ctx.font = '8px monospace';
+      ctx.fillStyle = u.hp > u.maxHp * 0.5 ? '#7eff7e' : (u.hp > u.maxHp * 0.25 ? '#ffcf5c' : '#ff5555');
+      ctx.fillText(`HP ${u.hp}/${u.maxHp}`, cellCx, labelY - 11);
+      ctx.font = 'bold 9px monospace';
+    }
+  }
+
+  ctx.restore();
+}
+
+// F9 selection — mažas elegant footprint ring po KIEKVIENU pasirinkti unit'u (~shadow dydžio)
+function _drawF9SelectionRing() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const sels = (Array.isArray(window._f9SelectedSet) && window._f9SelectedSet.length)
+    ? window._f9SelectedSet
+    : (window._f9Selected ? [window._f9Selected] : []);
+  if (!sels.length) return;
+  const t = performance.now();
+  const pulse = (Math.sin(t * 0.004) + 1) * 0.5;
+  const primary = window._f9Selected;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const sel of sels) {
+    if (!sel || !sel.alive) continue;
+    // Defensive: niekada neatvaizduot ring'o ant enemies (pvz. jei jie pateko prieš fix'ą)
+    if (typeof _f9IsEnemy === 'function' && _f9IsEnemy(sel)) continue;
+    const ux = ((sel.rx !== undefined ? sel.rx : sel.x) + 0.5) * CELL;
+    // Per-utype scale + Y offset — pigronke turi feet anchor (pig kojos ant cell bottom)
+    const _ringScale = (sel.utype === 'pigronke') ? 1.20 : 1.0;
+    const _ringFeetFrac = (sel.utype === 'pigronke') ? 0.50 : 0.78;  // pigronke pėdos ant cell bottom
+    const uyFeet = ((sel.ry !== undefined ? sel.ry : sel.y) + _ringFeetFrac) * CELL;
+    const isPrimary = (sel === primary);
+    // Small footprint ellipse
+    const _rx = Math.max(3, (CELL * (0.34 + pulse * 0.02) - 5) * _ringScale);
+    const _ry = Math.max(2, (CELL * (0.11 + pulse * 0.01) - 1.5) * _ringScale);
+
+    // Color scheme: primary = green, secondary = gold
+    const baseColor = isPrimary ? '160, 240, 200' : '255, 207, 92';
+    const glowColor = isPrimary ? '120, 255, 160' : '255, 207, 92';
+
+    // 1) Soft drop shadow under unit (depth feel)
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.20)';
+    ctx.beginPath();
+    ctx.ellipse(ux, uyFeet + 1, _rx + 1, _ry + 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2) Main ring with glow — STRONGER kad aiškiai matytum, kad unit'as pažymėtas
+    ctx.shadowColor = `rgba(${glowColor}, 0.85)`;
+    ctx.shadowBlur = 14 + pulse * 5;
+    ctx.strokeStyle = `rgba(${baseColor}, ${(1.0).toFixed(3)})`;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.ellipse(ux, uyFeet, _rx, _ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 3) Inner accent (thinner, brighter)
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${(0.55 + pulse * 0.15).toFixed(3)})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(ux, uyFeet, _rx - 1.2, _ry - 0.6, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 4) Side brackets — 4 elegant arcs (top/bottom/left/right)
+    // Sukasi lengvai → animuotas feel
+    const armA = Math.PI * 0.16;
+    const spin = (t * 0.0005) % (Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${(0.95).toFixed(3)})`;
+    ctx.lineWidth = 2;
+    for (let q = 0; q < 4; q++) {
+      const baseAng = spin + q * (Math.PI / 2);
+      ctx.beginPath();
+      ctx.ellipse(ux, uyFeet, _rx, _ry, 0, baseAng - armA / 2, baseAng + armA / 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Pigronke spotted-enemy sprite — offscreen canvas su sukryžiuotais kardais (pixel-art).
+// Sukuriamas vieną kartą; piešiamas kaip „sprite" virš priešo, kai jį pamato pigronke.
+const _pigronkeMarkerCanvas = (() => {
+  const SZ = 48;
+  const cv = document.createElement('canvas');
+  cv.width = SZ; cv.height = SZ;
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = false;
+  // Du kardai kryžmai: vienas \, kitas /. Piešiam blade + crossguard + grip + pommel.
+  // Naudojam pixel-art liniją (linijos 2-3 px storio).
+  const cx = SZ / 2, cy = SZ / 2;
+  const drawSword = (angleDeg) => {
+    c.save();
+    c.translate(cx, cy);
+    c.rotate(angleDeg * Math.PI / 180);
+    // Pommel (apatinis rutuliukas)
+    c.fillStyle = '#7a5230';
+    c.fillRect(-2, 17, 4, 4);
+    c.fillStyle = '#5a3a20';
+    c.fillRect(-2, 21, 4, 1);
+    // Grip (rankena — dark brown)
+    c.fillStyle = '#4a2e18';
+    c.fillRect(-1, 11, 2, 6);
+    c.fillStyle = '#3a1f10';
+    c.fillRect(1, 11, 1, 6);
+    // Crossguard (skersinė apsauga — aukso geltona)
+    c.fillStyle = '#ffcf5c';
+    c.fillRect(-7, 9, 14, 2);
+    c.fillStyle = '#c89a30';
+    c.fillRect(-7, 11, 14, 1);
+    c.fillStyle = '#ffe089';
+    c.fillRect(-7, 9, 14, 1);
+    // Blade (ašmenys — sidabras su highlight)
+    c.fillStyle = '#d8dde6';
+    c.fillRect(-2, -18, 4, 27);
+    c.fillStyle = '#ffffff';
+    c.fillRect(-1, -17, 1, 25); // highlight kairėje
+    c.fillStyle = '#9aa0aa';
+    c.fillRect(1, -17, 1, 26); // shadow dešinėje
+    // Smaigalys (tip)
+    c.fillStyle = '#d8dde6';
+    c.fillRect(-1, -20, 2, 2);
+    c.fillStyle = '#ffffff';
+    c.fillRect(-1, -20, 1, 1);
+    c.restore();
+  };
+  // Outline pass — juodas kontūras, 1 px aplink visus pixelius
+  // Paprasčiau: nupiešiam dukart su offset'u (dirty outline)
+  c.save();
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = '#1a0d05';
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+    if (dx === 0 && dy === 0) continue;
+    c.save();
+    c.translate(dx, dy);
+    drawSword(-45);
+    drawSword(45);
+    c.restore();
+  }
+  c.restore();
+  // Tikrieji kardai virš outline
+  drawSword(-45);
+  drawSword(45);
+  // Centro nitas (auksinis taškas kur kardai kryžiuojasi)
+  c.fillStyle = '#ffcf5c';
+  c.fillRect(cx - 2, cy - 2, 4, 4);
+  c.fillStyle = '#ffe089';
+  c.fillRect(cx - 1, cy - 2, 2, 1);
+  c.fillStyle = '#c89a30';
+  c.fillRect(cx - 1, cy + 1, 2, 1);
+  return cv;
+})();
+
+// F9 enemy targeting reticle — rodo ant priešų kuriuos atakuoja ally (engagement)
+function _drawF9EnemyTargetReticle() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  const t = performance.now();
+  // Surenkam visus enemy taikinius, kuriuos turi ally engagement.
+  // Pažymim, ar bent vienas iš engaging ally — pigronke (tada rodom crossed-swords sprite vietoj X).
+  const targets = new Map(); // enemy → { pigronke: bool }
+  for (const u of S.units) {
+    if (!u || !u.alive || !_f9IsAlly(u) || u.team === 0) continue;
+    if (u._f9EngageTarget && u._f9EngageTarget.alive && _f9IsEnemy(u._f9EngageTarget)) {
+      const en = u._f9EngageTarget;
+      const cur = targets.get(en) || { pigronke: false };
+      if (u.utype === 'pigronke') cur.pigronke = true;
+      targets.set(en, cur);
+    }
+  }
+  if (targets.size === 0) return;
+  ctx.save();
+  for (const [en, meta] of targets) {
+    const ux = ((en.rx !== undefined ? en.rx : en.x) + 0.5) * CELL;
+    const uyTop = ((en.ry !== undefined ? en.ry : en.y) + 0.05) * CELL;
+    const uyFeet = ((en.ry !== undefined ? en.ry : en.y) + 0.78) * CELL;
+    const pulse = (Math.sin(t * 0.006) + 1) * 0.5;
+    // 1) Red footprint ellipse — kaip selection ring, bet RED (taikinio)
+    const _rx = Math.max(3, CELL * (0.36 + pulse * 0.03) - 5);
+    const _ry = Math.max(2, CELL * (0.12 + pulse * 0.01) - 1.5);
+    ctx.shadowColor = 'rgba(255, 80, 80, 0.7)';
+    ctx.shadowBlur = 10 + pulse * 4;
+    ctx.strokeStyle = `rgba(255, 100, 100, ${(0.95).toFixed(3)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(ux, uyFeet, _rx, _ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // 2) Bracket arcs (4 quadrants) sukasi pulse'iškai — RED
+    ctx.shadowBlur = 0;
+    const armA = Math.PI * 0.18;
+    const spin = (t * 0.001) % (Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${(0.9).toFixed(3)})`;
+    ctx.lineWidth = 2;
+    for (let q = 0; q < 4; q++) {
+      const ang = spin + q * (Math.PI / 2);
+      ctx.beginPath();
+      ctx.ellipse(ux, uyFeet, _rx, _ry, 0, ang - armA / 2, ang + armA / 2);
+      ctx.stroke();
+    }
+    // 3) Marker virš galvos — vienodas X visiems ally tipams (pigronke turėjo unique
+    //    crossed-swords sprite, bet jis išmušė pigronke iš bendro vaizdo — pašalintas 2026-05-28).
+    {
+      const crossSz = 8 + pulse * 2;
+      const crossY = uyTop - 12;
+      ctx.shadowColor = 'rgba(255, 80, 80, 0.95)';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = `rgba(255, 80, 80, ${(0.95).toFixed(3)})`;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ux - crossSz, crossY - crossSz);
+      ctx.lineTo(ux + crossSz, crossY + crossSz);
+      ctx.moveTo(ux + crossSz, crossY - crossSz);
+      ctx.lineTo(ux - crossSz, crossY + crossSz);
+      ctx.stroke();
+      // White inner highlight
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.9).toFixed(3)})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ux - crossSz, crossY - crossSz);
+      ctx.lineTo(ux + crossSz, crossY + crossSz);
+      ctx.moveTo(ux + crossSz, crossY - crossSz);
+      ctx.lineTo(ux - crossSz, crossY + crossSz);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// F9 drag-select rectangle render (screen-space green dashed)
+function _drawF9DragRect() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const dr = window._f9DragRect;
+  if (!dr) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);  // screen space
+  const x1 = Math.min(dr.sx1, dr.sx2), y1 = Math.min(dr.sy1, dr.sy2);
+  const w = Math.abs(dr.sx2 - dr.sx1), h = Math.abs(dr.sy2 - dr.sy1);
+  const t = performance.now();
+
+  // Inner fill — subtle green tint
+  ctx.fillStyle = 'rgba(120, 255, 150, 0.10)';
+  ctx.fillRect(x1, y1, w, h);
+
+  // Animated marching ants (StarCraft-style)
+  const dashOffset = -(t * 0.04) % 9;
+  ctx.strokeStyle = 'rgba(180, 255, 200, 0.95)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.lineDashOffset = dashOffset;
+  ctx.strokeRect(x1 + 0.5, y1 + 0.5, w - 1, h - 1);
+  ctx.setLineDash([]);
+  ctx.lineDashOffset = 0;
+
+  // Corner brackets (L-shapes) — RTS hallmark
+  const ck = Math.min(10, w * 0.25, h * 0.25);
+  if (ck > 4) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    const corners = [
+      [x1, y1, 1, 1],          // top-left
+      [x1 + w, y1, -1, 1],     // top-right
+      [x1, y1 + h, 1, -1],     // bottom-left
+      [x1 + w, y1 + h, -1, -1] // bottom-right
+    ];
+    for (const [cx2, cy2, sx, sy] of corners) {
+      ctx.beginPath();
+      ctx.moveTo(cx2, cy2 + sy * ck);
+      ctx.lineTo(cx2, cy2);
+      ctx.lineTo(cx2 + sx * ck, cy2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// F9 selection bar — apačioj ekrane juosta su visais team 0 unitais (kortelės)
+// Click ant kortelės → pasirenka tą unit'ą
+let _f9SelBarRects = [];   // screen-space click rects (per loop refreshed)
+const _F9_SEL_ICONS = {
+  skull:        'unit-images/skull-idle.gif',
+  archer:       'unit-images/archer-idle.gif',
+  shaman:       'unit-images/shaman-idle.gif',
+  harpoon_fish: 'unit-images/harpoon-idle.gif',
+  pigronke:     'pigronke.png',  // sprite sheet — selection bar parodys pirma frame
+};
+const _f9SelImgCache = {};
+function _f9GetIcon(utype) {
+  if (!_F9_SEL_ICONS[utype]) return null;
+  if (!_f9SelImgCache[utype]) {
+    const im = new Image();
+    im.src = _F9_SEL_ICONS[utype];
+    _f9SelImgCache[utype] = im;
+  }
+  return _f9SelImgCache[utype];
+}
+// Helper: rounded rect path
+function _f9RoundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x,     y + h, r);
+  ctx.arcTo(x,     y + h, x,     y,     r);
+  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.closePath();
+}
+
+function _drawF9SelectionBar() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  _f9SelBarRects = [];
+  if (!canvas || !ctx) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const allies = S.units.filter(u => u && u.alive && (u.team === 0 || (u.team === 1 && u.isEditorEnemy)));
+  if (!allies.length) { ctx.restore(); return; }
+
+  const selSet = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : []);
+  const selPrimary = window._f9Selected;
+  const t = performance.now();
+
+  const W = canvas.width, H = canvas.height;
+  const cardW = 54, cardH = 54, gap = 5;
+  const totalW = allies.length * cardW + (allies.length - 1) * gap;
+  const padX = 14, padY = 10;
+  const barW = totalW + padX * 2;
+  const barH = cardH + padY * 2;
+  const barX = Math.max(8, (W - barW) / 2);
+  const barY = H - barH - 14;
+
+  // ── Backdrop: parchment/wood medieval theme ──
+  // Soft drop shadow
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 4;
+  // Wood frame (dark)
+  ctx.fillStyle = '#3a2614';
+  _f9RoundRect(barX - 3, barY - 3, barW + 6, barH + 6, 10);
+  ctx.fill();
+  ctx.restore();
+  // Inner parchment fill with vertical gradient
+  const bgGrd = ctx.createLinearGradient(0, barY, 0, barY + barH);
+  bgGrd.addColorStop(0, 'rgba(40, 30, 22, 0.92)');
+  bgGrd.addColorStop(1, 'rgba(24, 18, 14, 0.92)');
+  ctx.fillStyle = bgGrd;
+  _f9RoundRect(barX, barY, barW, barH, 8);
+  ctx.fill();
+  // Gold inner border (medieval accent)
+  ctx.strokeStyle = '#8a6a2e';
+  ctx.lineWidth = 1.5;
+  _f9RoundRect(barX + 0.75, barY + 0.75, barW - 1.5, barH - 1.5, 7);
+  ctx.stroke();
+  // Highlight juostelė viršuj (subtle gold sheen)
+  ctx.fillStyle = 'rgba(255, 207, 92, 0.12)';
+  ctx.fillRect(barX + 4, barY + 2, barW - 8, 1);
+
+  // ── Cards ──
+  const startX = barX + padX;
+  const y = barY + padY;
+  for (let i = 0; i < allies.length; i++) {
+    const u = allies[i];
+    const x = startX + i * (cardW + gap);
+    const isSel = selSet.includes(u);
+    const isPrimary = (selPrimary === u);
+
+    // Selection breathing (only selected cards animate)
+    const breathe = isSel ? (Math.sin(t * 0.005) + 1) * 0.5 : 0;
+    const glowA = 0.35 + breathe * 0.30;
+
+    // Selected glow halo
+    if (isSel) {
+      ctx.save();
+      ctx.shadowColor = isPrimary ? `rgba(126, 255, 126, ${glowA.toFixed(3)})` : `rgba(255, 207, 92, ${(glowA * 0.85).toFixed(3)})`;
+      ctx.shadowBlur = 12 + breathe * 4;
+      ctx.fillStyle = isPrimary ? 'rgba(46, 110, 60, 0.65)' : 'rgba(110, 80, 30, 0.65)';
+      _f9RoundRect(x, y, cardW, cardH, 6);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Card bg (dark stone)
+    const cardGrd = ctx.createLinearGradient(0, y, 0, y + cardH);
+    if (isSel) {
+      if (isPrimary) {
+        cardGrd.addColorStop(0, '#2f5a3d');
+        cardGrd.addColorStop(1, '#1f3d29');
+      } else {
+        cardGrd.addColorStop(0, '#4a3a20');
+        cardGrd.addColorStop(1, '#2e2316');
+      }
+    } else {
+      cardGrd.addColorStop(0, '#231a14');
+      cardGrd.addColorStop(1, '#15100c');
+    }
+    ctx.fillStyle = cardGrd;
+    _f9RoundRect(x, y, cardW, cardH, 6);
+    ctx.fill();
+
+    // Border
+    if (isSel) {
+      ctx.strokeStyle = isPrimary ? '#7eff7e' : '#ffcf5c';
+      ctx.lineWidth = 1.8;
+    } else {
+      ctx.strokeStyle = '#6b4a2e';
+      ctx.lineWidth = 1;
+    }
+    _f9RoundRect(x + 0.5, y + 0.5, cardW - 1, cardH - 1, 5);
+    ctx.stroke();
+
+    // Inner top sheen (parchment highlight)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.fillRect(x + 3, y + 2, cardW - 6, 1);
+
+    // Icon area
+    const iconPad = 5;
+    const im = _f9GetIcon(u.utype);
+    if (im && im.complete && im.naturalWidth) {
+      // Clip icon į rounded zone, kad neišlįstų už card kraštų
+      ctx.save();
+      _f9RoundRect(x + iconPad, y + iconPad, cardW - iconPad * 2, cardH - iconPad * 2 - 6, 4);
+      ctx.clip();
+      ctx.drawImage(im, x + iconPad, y + iconPad, cardW - iconPad * 2, cardH - iconPad * 2);
+      ctx.restore();
+    } else {
+      const def = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES.find(e => e.type === u.utype) : null;
+      ctx.fillStyle = def?.color || (u.utype === 'ronke2' ? '#4466dd' : '#888');
+      ctx.fillRect(x + 10, y + 8, cardW - 20, cardH - 22);
+      ctx.fillStyle = '#fff';
+      ctx.font = '7px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      const lbl = (u.utype || '?').slice(0, 6).toUpperCase();
+      ctx.fillText(lbl, x + cardW / 2, y + cardH - 12);
+      ctx.textAlign = 'left';
+    }
+
+    // Stack badge (×N) — jei daugiau nei 1
+    if (u.stack && u.stack > 1) {
+      const bw = 18, bh = 11;
+      const bx = x + cardW - bw - 2, by = y + 2;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.70)';
+      _f9RoundRect(bx, by, bw, bh, 3);
+      ctx.fill();
+      ctx.strokeStyle = '#ffcf5c';
+      ctx.lineWidth = 0.8;
+      _f9RoundRect(bx + 0.5, by + 0.5, bw - 1, bh - 1, 3);
+      ctx.stroke();
+      ctx.fillStyle = '#ffe97a';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('×' + u.stack, bx + bw / 2, by + bh / 2 + 0.5);
+    }
+
+    // HP bar (apačioj, švari)
+    const hp = (u.hp ?? u.maxHp ?? 1) / (u.maxHp ?? 1);
+    const hpY = y + cardH - 7;
+    const hpX = x + 4, hpW = cardW - 8, hpH = 4;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(hpX - 0.5, hpY - 0.5, hpW + 1, hpH + 1);
+    ctx.fillStyle = '#0c0a08';
+    ctx.fillRect(hpX, hpY, hpW, hpH);
+    const hpColor = hp > 0.5 ? '#7ec77f' : hp > 0.25 ? '#ffcf5c' : '#e85d5d';
+    ctx.fillStyle = hpColor;
+    ctx.fillRect(hpX, hpY, hpW * Math.max(0, hp), hpH);
+    // HP sheen
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.fillRect(hpX, hpY, hpW * Math.max(0, hp), 1);
+
+    _f9SelBarRects.push({ x, y, w: cardW, h: cardH, u });
+  }
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+// Separation steering — unit'ai švelniai stumiasi vienas nuo kito kad nesusilietų.
+// RTS standard (Reynolds 1987 "Boids"). O(n²) per friendly count (n maža ~10-20).
+const _F9_SEP_RADIUS = 0.45;   // min desired distance — leis combat unit'ams būti arti (0.65 surround)
+const _F9_SEP_FORCE  = 6.5;    // push strength — švelnesnis, ne išmuš iš melee
+const _F9_SEP_MIN_STEP = 0.010;
+// "Gentleman step aside" — idle unit'as jaučia approach'o ir aktyviai pasitraukia
+const _F9_GENTLEMAN_DETECT = 0.85;   // detect radius (cells) — kai moving unit per arti
+const _F9_GENTLEMAN_SIDESTEP = 0.35; // sidestep distance (cells) — pakanka pasitraukti
+// F9 unit pool — visi gyvieji unit'ai (allies + enemies). Naudojama separation/movement
+function _f9AllUnits() {
+  const out = [];
+  if (!Array.isArray(S.units)) return out;
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    // F9 dalyviai: hero (team=0) + trained barracks (team=1+isEditorEnemy) + enemies (_f9Enemy)
+    if (u.team === 0 || (u.team === 1 && u.isEditorEnemy) || u._f9Enemy) out.push(u);
+  }
+  return out;
+}
+function _f9IsAlly(u) {
+  return !!u && (u.team === 0 || (u.team === 1 && u.isEditorEnemy));
+}
+function _f9IsEnemy(u) {
+  return !!u && u._f9Enemy === true;
+}
+function _applyF9Separation(dtSec) {
+  const allies = _f9AllUnits();   // dabar įtraukia ir enemies kad collide su allies
+  if (allies.length < 2) return;
+  // Compute pushes (no in-place mutation during loop, to keep symmetric)
+  const pushes = allies.map(() => ({ x: 0, y: 0 }));
+  for (let i = 0; i < allies.length; i++) {
+    const a = allies[i];
+    const ax = (a.rx !== undefined) ? a.rx : a.x;
+    const ay = (a.ry !== undefined) ? a.ry : a.y;
+    for (let j = i + 1; j < allies.length; j++) {
+      const b = allies[j];
+      const bx = (b.rx !== undefined) ? b.rx : b.x;
+      const by = (b.ry !== undefined) ? b.ry : b.y;
+      let dx = ax - bx, dy = ay - by;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist >= _F9_SEP_RADIUS) continue;
+      if (dist < 0.001) {
+        // Same cell — random angle to break symmetry
+        const ang = Math.random() * Math.PI * 2;
+        dx = Math.cos(ang); dy = Math.sin(ang); dist = 1;
+      }
+      const overlap = (_F9_SEP_RADIUS - dist) / _F9_SEP_RADIUS;  // 0..1
+      const nx = dx / dist, ny = dy / dist;
+      pushes[i].x += nx * overlap;
+      pushes[i].y += ny * overlap;
+      pushes[j].x -= nx * overlap;
+      pushes[j].y -= ny * overlap;
+    }
+  }
+  // Apply (skip dying / locked units / units engaged in combat — kad nestutter'intu)
+  for (let i = 0; i < allies.length; i++) {
+    const p = pushes[i];
+    if (p.x === 0 && p.y === 0) continue;
+    const a = allies[i];
+    // SKIP separation jei ally laukia kovos (in attack range of engage target).
+    // Tai užkerta kelia stutter'iam kai pigronke laukia ateinaciam priesui.
+    if (_f9IsAlly(a) && a._f9EngageTarget && a._f9EngageTarget.alive && !a._f9Target) {
+      const tgt = a._f9EngageTarget;
+      const ax = (a.rx !== undefined) ? a.rx : a.x;
+      const ay = (a.ry !== undefined) ? a.ry : a.y;
+      const tx = (tgt.rx !== undefined) ? tgt.rx : tgt.x;
+      const ty = (tgt.ry !== undefined) ? tgt.ry : tgt.y;
+      const cfg = _F9_ALLY_ATTACK[a.utype];
+      const range = cfg ? cfg.range + 0.3 : 1.5;  // small buffer
+      if (Math.hypot(ax - tx, ay - ty) <= range) continue;  // SKIP — settled in combat
+    }
+    let stepX = p.x * _F9_SEP_FORCE * dtSec;
+    let stepY = p.y * _F9_SEP_FORCE * dtSec;
+    // Užtikrinam min step — jei mažutė push'a, vis tiek paslenkam reikšmingai
+    const stepMag = Math.sqrt(stepX * stepX + stepY * stepY);
+    if (stepMag < _F9_SEP_MIN_STEP && stepMag > 0.0001) {
+      const k = _F9_SEP_MIN_STEP / stepMag;
+      stepX *= k; stepY *= k;
+    }
+    a.rx = (a.rx !== undefined ? a.rx : a.x) + stepX;
+    a.ry = (a.ry !== undefined ? a.ry : a.y) + stepY;
+    // Clamp į mapos vidų
+    a.rx = Math.max(0.2, Math.min(COLS - 1.2, a.rx));
+    a.ry = Math.max(0.2, Math.min(ROWS - 1.2, a.ry));
+    a.x = Math.floor(a.rx + 0.5);
+    a.y = Math.floor(a.ry + 0.5);
+  }
+
+  // ─── Gentleman step-aside: idle unit'as duoda kelią ateinaciam moving unit'ui ──
+  for (let i = 0; i < allies.length; i++) {
+    const a = allies[i];
+    if (a._f9Target) continue;                  // jau juda — nelieskim
+    const ax = (a.rx !== undefined) ? a.rx : a.x;
+    const ay = (a.ry !== undefined) ? a.ry : a.y;
+    let bestThreat = null;
+    let bestThreatDist = _F9_GENTLEMAN_DETECT;
+    for (let j = 0; j < allies.length; j++) {
+      if (i === j) continue;
+      const b = allies[j];
+      if (!b._f9Target || !b._f9Moving) continue;  // tik moving units kelia threat
+      const bx = (b.rx !== undefined) ? b.rx : b.x;
+      const by = (b.ry !== undefined) ? b.ry : b.y;
+      const dx = ax - bx, dy = ay - by;          // from b to a
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist >= bestThreatDist) continue;
+      // b judėjimo kryptis (iš b į b._f9Target)
+      const tx = b._f9Target.tx - bx;
+      const ty = b._f9Target.ty - by;
+      const tLen = Math.sqrt(tx * tx + ty * ty);
+      if (tLen < 0.01) continue;
+      const bdirX = tx / tLen, bdirY = ty / tLen;
+      // Ar b juda link a? Dot (b dir) · (b→a dir)
+      const toA_X = -dx / Math.max(0.01, dist), toA_Y = -dy / Math.max(0.01, dist);
+      const dot = bdirX * toA_X + bdirY * toA_Y;
+      if (dot < 0.5) continue;
+      bestThreat = { bdirX, bdirY };
+      bestThreatDist = dist;
+    }
+    if (!bestThreat) continue;
+    // Sidestep — perpendicular to pusher krypties; pasirenkam pusę kuri toliau nuo mapos krašto
+    const perpX1 = -bestThreat.bdirY, perpY1 = bestThreat.bdirX;
+    const perpX2 = bestThreat.bdirY,  perpY2 = -bestThreat.bdirX;
+    const opt1X = ax + perpX1 * _F9_GENTLEMAN_SIDESTEP;
+    const opt1Y = ay + perpY1 * _F9_GENTLEMAN_SIDESTEP;
+    const opt2X = ax + perpX2 * _F9_GENTLEMAN_SIDESTEP;
+    const opt2Y = ay + perpY2 * _F9_GENTLEMAN_SIDESTEP;
+    const _borderClear = (x, y) => Math.min(x - 0.5, y - 0.5, COLS - 1.5 - x, ROWS - 1.5 - y);
+    const useOpt = (_borderClear(opt1X, opt1Y) >= _borderClear(opt2X, opt2Y))
+      ? { x: opt1X, y: opt1Y } : { x: opt2X, y: opt2Y };
+    a._f9Target = {
+      tx: Math.max(0.5, Math.min(COLS - 1.5, useOpt.x)),
+      ty: Math.max(0.5, Math.min(ROWS - 1.5, useOpt.y)),
+    };
+  }
+}
+
+function _updateF9SmoothMove(now) {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) { _f9LastMoveTime = 0; return; }
+  // Visi unit'ai turintys ._f9Target — judinami smooth (ne tik hero)
+  let anyMoving = false;
+  const dt = _f9LastMoveTime ? Math.min(100, now - _f9LastMoveTime) : 16;
+  _f9LastMoveTime = now;
+  const dtSec = dt / 1000;
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    if (!u._f9Target) {
+      // Always force boolean false (kad animacijos fallback nesijungtu walk po separation push)
+      u._f9Moving = false;
+      continue;
+    }
+    const t = u._f9Target;
+    const curX = (u.rx !== undefined) ? u.rx : u.x;
+    const curY = (u.ry !== undefined) ? u.ry : u.y;
+    const dx = t.tx - curX, dy = t.ty - curY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist <= 0.05) {
+      u.rx = t.tx;
+      u.ry = t.ty;
+      u.x = Math.floor(t.tx + 0.5);
+      u.y = Math.floor(t.ty + 0.5);
+      u._f9Target = null;
+      u._f9Moving = false;
+      continue;
+    }
+    u._f9Moving = true;
+    anyMoving = true;
+    // Per-unit speed (utype + variance) → lively group judėjimas
+    const move = _f9UnitSpeedMul(u) * dtSec;
+    const stepLen = Math.min(move, dist);
+    u.rx = curX + (dx / dist) * stepLen;
+    u.ry = curY + (dy / dist) * stepLen;
+    u.x = Math.floor(u.rx + 0.5);
+    u.y = Math.floor(u.ry + 0.5);
+    // Sprite'ai turi tik kairę/dešinę pozas (ne aukštyn/žemyn).
+    // Jei yra bet koks horizontalus komponentas — naudoti horizontaliai (kad unit'as ne'eitų "atbulom").
+    if (Math.abs(dx) > 0.01) u.facing = { dx: dx > 0 ? 1 : -1, dy: 0 };
+    else u.facing = { dx: 0, dy: dy > 0 ? 1 : -1 };
+  }
+  // Apply separation steering po move pass'o — unit'ai švelniai stumiasi vienas nuo kito
+  _applyF9Separation(dt / 1000);
+
+  // Curve approach pašalintas — vietoj jo naudojam Shared Midpoint Y system'ą
+  // engage positioning'e (žr. _updateF9AllyEngagement + _updateF9EnemyAI).
+
+  if (!anyMoving) _f9LastMoveTime = 0;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// F9 ENEMY SYSTEM (PvE)
+// ════════════════════════════════════════════════════════════════════════
+// Spawn ~6 aggressive enemies that chase + melee attack player allies.
+// Naudoja tą pačią _f9Target smooth movement sistema kaip ally unit'ai.
+// Future: PvP mode (žaidėjo prieš žaidėją online) — TODO save'inta atminty.
+
+const _F9_ENEMY_SPAWN_COUNT = 6;
+const _F9_ENEMY_ARCHETYPES = ['skull', 'spider', 'stabby', 'minotaur'];  // troll pašalintas — per didelis, blogai derinasi
+const _F9_ENEMY_AI_TICK_MS = 250;   // AI decision interval (ne per frame)
+// Respawn — kad testas būtų nuolatinis, periodiškai pridedam naujus enemies
+const _F9_ENEMY_RESPAWN_MS = 4500;  // kas 4.5s tikrinam reikia respawn'inti
+const _F9_ENEMY_MAX_ALIVE  = 10;    // max gyvi vienu metu
+const _F9_ENEMY_RESPAWN_BATCH = 2;  // kiek pridedam per respawn'ą
+const _F9_ENEMY_REPATH_MS = 600;    // kaip dažnai re-target'inam (sumažint flicker)
+const _F9_ENEMY_MELEE_RANGE = 0.95; // cells — attack range (tightened: turi PASIEKTI taikinį)
+const _F9_ENEMY_MELEE_VERT  = 0.55; // max |dy| skirtumas — face-to-face reikalavimas
+
+// Per-target footprint — kai priešas puola DIDELĮ unit'ą (pvz. pigronke), turi sustoti šiek tiek toliau
+// kad sprite'ai vizualiai nesilietų. Bet maxDy paliekam standartinį — paprasta RTS logika.
+function _f9TargetMeleeRange(target) {
+  if (target && target.utype === 'pigronke') return 1.05;  // mažas extra spacing big sprite'ui
+  return _F9_ENEMY_MELEE_RANGE;
+}
+function _f9TargetMeleeVert(target) {
+  return _F9_ENEMY_MELEE_VERT;  // visi vienodai (0.55) — standartinė face-to-face tolerancija
+}
+// Visual Y offset — pagal industry standard, ANCHOR AT FEET (ne center).
+// Visi F9 unit'ai naudoja feet-aligned rendering, todėl combat positioning
+// gali būti paprastas logical Y (cell-based), be jokios kompensacijos.
+// (Anksčiau buvo -0.55 pigronke; perdaryta į feet anchor → return 0 visiems.)
+function _f9VisualYOffsetFor(u) {
+  return 0;
+}
+const _F9_ENEMY_ATTACK_CD = 1100;   // ms tarp atakų
+const _F9_ENEMY_DMG = 1;            // damage per swing
+const _F9_SETTLE_DELAY  = 350;      // ms — pauzė po pozicijos užėmimo prieš pirmąjį swing'ą
+                                    // ("pirma susirask poziciją, tada pradėk kovą" feel)
+const _F9_ENEMY_VISION = 14;        // detect ally up to N cells
+
+let _f9LastEnemyAI = 0;
+let _f9LastEnemyRespawn = 0;
+let _f9GameOverShown = false;
+
+function _spawnF9Enemies(hero) {
+  if (!hero || typeof getEditorEnemyArchetype !== 'function' || typeof mkUnit !== 'function') return;
+  const _occ = new Set();
+  for (const u of S.units || []) {
+    if (!u || !u.alive) continue;
+    _occ.add(u.x + ',' + u.y);
+  }
+  for (let i = 0; i < _F9_ENEMY_SPAWN_COUNT; i++) {
+    // Pasirenkam random utype iš sąrašo
+    const utype = _F9_ENEMY_ARCHETYPES[Math.floor(Math.random() * _F9_ENEMY_ARCHETYPES.length)];
+    const archetype = getEditorEnemyArchetype(utype);
+    if (!archetype) continue;
+    // Spawn'inam toli nuo hero (bent 8 cells), random pozicija ant mapos krašto
+    let placed = false;
+    for (let attempt = 0; attempt < 60 && !placed; attempt++) {
+      const edge = Math.floor(Math.random() * 4); // 0=top, 1=right, 2=bottom, 3=left
+      let sx, sy;
+      if (edge === 0)      { sx = 2 + Math.floor(Math.random() * (COLS - 4)); sy = 2; }
+      else if (edge === 1) { sx = COLS - 3; sy = 2 + Math.floor(Math.random() * (ROWS - 4)); }
+      else if (edge === 2) { sx = 2 + Math.floor(Math.random() * (COLS - 4)); sy = ROWS - 3; }
+      else                 { sx = 2; sy = 2 + Math.floor(Math.random() * (ROWS - 4)); }
+      const k = sx + ',' + sy;
+      if (_occ.has(k)) continue;
+      const distHero = Math.hypot(sx - hero.x, sy - hero.y);
+      if (distHero < 8) continue; // ne per arti hero
+      _occ.add(k);
+      const id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (200000 + i);
+      const u = mkUnit(id, 1, sx, sy, 1, archetype);
+      u._f9Enemy = true;       // F9 enemy flag
+      u.isEditorEnemy = false; // NEvalstas friendly
+      u.stack = 1;
+      u.rx = sx; u.ry = sy;
+      u._f9LastEnemyAttack = 0;
+      u._f9LastRepath = 0;
+      S.units.push(u);
+      placed = true;
+    }
+  }
+  _f9GameOverShown = false;
+}
+
+function _f9FindClosestAlly(enemy) {
+  // PATCH B: Threat-based targeting (Mindustry/Spring pattern).
+  // Vietoj "closest ally", priešas pasirenka pagal threat score:
+  //   score = (ally.dmg / dist) × (maxHp / max(hp, 1))
+  // → prioritetiniai: aukšta dmg (shaman/archer ranged), žemas HP (susižeidęs), arti.
+  let best = null, bestScore = -Infinity;
+  const ex = (enemy.rx !== undefined) ? enemy.rx : enemy.x;
+  const ey = (enemy.ry !== undefined) ? enemy.ry : enemy.y;
+  for (const u of S.units || []) {
+    if (!u || !u.alive) continue;
+    if (!_f9IsAlly(u)) continue;
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    const d = Math.hypot(ex - ux, ey - uy);
+    if (d > _F9_ENEMY_VISION) continue;
+    // Ally threat = pagal `_F9_ALLY_ATTACK[utype].dmg` arba default 2 (ranged null'as → ~3)
+    const cfgA = _F9_ALLY_ATTACK[u.utype];
+    const allyDmg = cfgA ? (cfgA.dmg || 3) : 2;
+    const hpRatio = (u.maxHp || u.hp || 1) / Math.max(1, u.hp || 1);  // injured = higher
+    const distFactor = 1 / (d + 0.5);  // closer = higher
+    const score = allyDmg * distFactor * hpRatio;
+    if (score > bestScore) { bestScore = score; best = u; }
+  }
+  return best;
+}
+
+function _f9DealDmg(target, dmg, attacker) {
+  if (!target || !target.alive) return;
+  target.hp = Math.max(0, (target.hp || 0) - dmg);
+  target.hitFlash = 1;
+  if (typeof spawnDmgNumber === 'function') {
+    try { spawnDmgNumber(target.x, target.y, '-' + dmg, '#ff5555', 16, 'normal'); } catch (_) {}
+  }
+  if (typeof SFX !== 'undefined' && SFX.hit) { try { SFX.hit(); } catch (_) {} }
+  // PATCH A: Last attacker retaliation (OpenRA pattern) — kai ally gauna dmg iš enemy,
+  // ir neturi current engagement (arba dabartinis target toliau nei attacker'is) — switch'inti į attacker'į.
+  // Cavalry/melee ally'ai tampa reaktyviau atsakingi į distant aggro.
+  if (target.alive && attacker && attacker.alive && _f9IsAlly(target) && target.team !== 0 && _f9IsEnemy(attacker)) {
+    const curTgt = target._f9EngageTarget;
+    if (!curTgt || !curTgt.alive) {
+      target._f9EngageTarget = attacker;
+      target._f9LastRepath = 0;
+    } else if (curTgt !== attacker) {
+      // Switch'inti jei attacker'is artaiau nei dabartinis target
+      const tx = (target.rx !== undefined) ? target.rx : target.x;
+      const ty = (target.ry !== undefined) ? target.ry : target.y;
+      const ax = (attacker.rx !== undefined) ? attacker.rx : attacker.x;
+      const ay = (attacker.ry !== undefined) ? attacker.ry : attacker.y;
+      const cx = (curTgt.rx !== undefined) ? curTgt.rx : curTgt.x;
+      const cy = (curTgt.ry !== undefined) ? curTgt.ry : curTgt.y;
+      const dAttacker = Math.hypot(tx - ax, ty - ay);
+      const dCurrent = Math.hypot(tx - cx, ty - cy);
+      if (dAttacker < dCurrent * 0.8) {  // 20% closer — switch
+        target._f9EngageTarget = attacker;
+        target._f9LastRepath = 0;
+      }
+    }
+  }
+  if (target.hp <= 0) {
+    target.alive = false;
+    if (typeof spawnDeath === 'function') {
+      try { spawnDeath(target.x, target.y, _f9IsEnemy(target) ? '#ff3333' : '#ffffff'); } catch (_) {}
+    }
+  }
+}
+
+// Per-utype attack range/cooldown (cells / ms) ally auto-attack'ui
+// STANDARD RTS: tik distance check, be strict face-to-face requirement.
+// Unit'as atsisuka į target ir atakuoja — kaip SC2/AoE/Total War.
+const _F9_ALLY_ATTACK = {
+  skull:        { range: 0.95, cd: 1100, dmg: 3 },    // melee — adjacent
+  shaman:       { range: 7.0,  cd: 2200, dmg: null },
+  archer:       { range: 6.5,  cd: 1600, dmg: null },
+  harpoon_fish: { range: 5.5,  cd: 1700, dmg: null },
+  pigronke:     { range: 1.05, cd: 1300, dmg: 4 },    // spear melee — biski platesnis
+};
+
+// Pigronke SPEAR AOE — bendras execution path auto-attack ir RTS click'ui.
+// (Buvo duplikuota 2 vietose, refactor'inta į vieną funkciją 2026-05-28.)
+// `unit` = pigronke ally. Naudoja unit.facing/rx/ry/stack/alive. Spawn'ina visual sweep
+// iškart su swing'u, dmg taikomas po +250ms (anim peak sync).
+function _pigronkeSpearAttack(unit, now) {
+  const cfg = _F9_ALLY_ATTACK.pigronke || { range: 1.05, dmg: 4 };
+  unit.swingStart = now;
+  const fdx = unit.facing && unit.facing.dx ? unit.facing.dx : 1;
+  // 2026-05-28: AOE area sumažinta — buvo per platus (per daug enemies vienu metu).
+  const aoeRange = cfg.range + 0.15;   // 1.45 → 1.20 (was +0.4)
+  const aoeWidthY = 0.65;               // 0.85 → 0.65
+  const sx0 = (unit.rx !== undefined) ? unit.rx : unit.x;
+  const sy0 = (unit.ry !== undefined) ? unit.ry : unit.y;
+  spawnSpearSweep(sx0, sy0, fdx, aoeRange, aoeWidthY);
+  setTimeout(() => {
+    if (!unit.alive) return;
+    const sx = (unit.rx !== undefined) ? unit.rx : unit.x;
+    const sy = (unit.ry !== undefined) ? unit.ry : unit.y;
+    const dmg = (cfg.dmg || 4) * (unit.stack || 1);
+    // Damage zone — sumažinta nuo plataus zone iki tighter cone.
+    const zoneCx = sx + fdx * aoeRange * 0.5;
+    const zoneRX = aoeRange * 0.65;       // 0.85 → 0.65 (forward ellipse RX)
+    const zoneRY = aoeWidthY * 0.95;      // 1.20 → 0.95 (forward ellipse RY)
+    const fallbackR = aoeRange * 0.65;    // 0.9 → 0.65 (circle fallback)
+    for (const en of S.units || []) {
+      if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+      const ex = (en.rx !== undefined) ? en.rx : en.x;
+      const ey = (en.ry !== undefined) ? en.ry : en.y;
+      const ndx = (ex - zoneCx) / zoneRX;
+      const ndy = (ey - sy) / zoneRY;
+      const inEllipse = (ndx * ndx + ndy * ndy <= 1.0);
+      const inCircle = (Math.hypot(ex - sx, ey - sy) <= fallbackR);
+      if (!inEllipse && !inCircle) continue;
+      _f9DealDmg(en, dmg, unit);
+    }
+  }, 250);
+}
+
+function _f9TryAllyAutoAttack(ally, now) {
+  if (!ally || !ally.alive) return false;
+  const cfg = _F9_ALLY_ATTACK[ally.utype];
+  if (!cfg) return false;
+  // Mid-move — nepertraukiam player'io komandos
+  if (ally._f9Target || ally._f9Moving) return false;
+  // CD (standard RTS — be settle delay'aus)
+  if (ally._f9LastAttack && (now - ally._f9LastAttack) < cfg.cd) return false;
+  // Surasti artimiausią priešą range'e (be maxDy check'o — SC2-style)
+  const ax = (ally.rx !== undefined) ? ally.rx : ally.x;
+  const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
+  let target = null, bestD = cfg.range;
+  for (const e of S.units) {
+    if (!e || !e.alive || !_f9IsEnemy(e)) continue;
+    const ex = (e.rx !== undefined) ? e.rx : e.x;
+    const ey = (e.ry !== undefined) ? e.ry : e.y;
+    const d = Math.hypot(ax - ex, ay - ey);
+    if (d < bestD) { bestD = d; target = e; }
+  }
+  if (!target) return false;
+  // Face TIESIOG į taikinį pagal x ženklą — ne atbulom
+  const tgx = (target.rx !== undefined) ? Math.floor(target.rx + 0.5) : target.x;
+  const tgy = (target.ry !== undefined) ? Math.floor(target.ry + 0.5) : target.y;
+  const dxRaw = ((target.rx !== undefined) ? target.rx : target.x) - ax;
+  const fdx = dxRaw > 0 ? 1 : -1;
+  ally.facing = { dx: fdx, dy: 0 };
+  ally._f9LastAttack = now;
+
+  if (ally.utype === 'skull') {
+    // Skull — single-target melee
+    ally.swingStart = now;
+    setTimeout(() => {
+      if (!ally.alive || !target.alive) return;
+      const sx = (ally.rx !== undefined) ? ally.rx : ally.x;
+      const sy = (ally.ry !== undefined) ? ally.ry : ally.y;
+      const ex = (target.rx !== undefined) ? target.rx : target.x;
+      const ey = (target.ry !== undefined) ? target.ry : target.y;
+      if (Math.hypot(sx - ex, sy - ey) > cfg.range + 0.2) return;
+      _f9DealDmg(target, cfg.dmg * (ally.stack || 1), ally);
+    }, 250);
+  } else if (ally.utype === 'pigronke') {
+    _pigronkeSpearAttack(ally, now);
+  } else if (ally.utype === 'shaman') {
+    ally.swingStart = now;
+    if (typeof spawnShamanProjectile === 'function') {
+      setTimeout(() => {
+        if (ally.alive) spawnShamanProjectile(ally.x, ally.y, tgx, tgy, ally.stack || 1, false);
+      }, 430);
+    }
+  } else if (ally.utype === 'archer' || ally.utype === 'harpoon_fish') {
+    ally.hfishThrowStart = now;
+    if (typeof spawnBarracksHarpoon === 'function') {
+      const fireMs = (typeof _HFISH_THROW_FIRE_FRAME !== 'undefined' && typeof _HFISH_THROW_MS !== 'undefined')
+        ? (_HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS) : 450;
+      const srcX = (ally.rx !== undefined ? ally.rx : ally.x);
+      const srcY = (ally.ry !== undefined ? ally.ry : ally.y);
+      const _sprH = UNIT_CELL * 2.5;
+      const startPx = (srcX + 0.5) * CELL + fdx * (_sprH * 0.10);
+      const startPy = (srcY + 0.5) * CELL - _sprH * 0.18;
+      setTimeout(() => {
+        if (ally.alive) spawnBarracksHarpoon(ally.x, ally.y, tgx, tgy, fdx, ally.stack || 1, false, ally.utype, null, null, {
+          startX: startPx, startY: startPy,
+        });
+      }, fireMs);
+    }
+  }
+  return true;
+}
+
+// Per-utype auto-detection radius (cells) — kai unit'as juda ar stovi, jis "mato" priešus iki šio nuotolio
+// ir automatiškai engage'ina artimiausią. Tai SC2 "auto-acquire target" patternas.
+const _F9_ALLY_DETECT = {
+  skull:        3.5,   // melee — pajunta priešą šalia kelio
+  shaman:       7.5,   // ranged — saugiai šaudo iš toli
+  archer:       7.0,
+  harpoon_fish: 6.0,
+  pigronke:     4.0,   // spear melee — kiek toliau pajunta nei skull
+};
+
+// Auto-engage on encounter: nuskenuoja artimiausią priešą detection range'e ir nustato engage lock.
+// Veikia ir judantiems unit'ams — jei priešas pasirodo pakelyje, unit'as nutraukia judėjimą ir įsijungia į kovą.
+function _updateF9AllyAutoAcquire(now) {
+  if (!Array.isArray(S.units)) return;
+  for (const ally of S.units) {
+    if (!ally || !ally.alive) continue;
+    if (!_f9IsAlly(ally) || ally.team === 0) continue;
+    if (!_F9_ALLY_ATTACK[ally.utype]) continue;
+    // Jau engaging — netrukdyk
+    if (ally._f9EngageTarget && ally._f9EngageTarget.alive) continue;
+    if (ally._f9EngageTarget && !ally._f9EngageTarget.alive) ally._f9EngageTarget = null;
+    // Player'io komanda eigoje — respektuojam, nepertraukiam su auto-engage.
+    // Ally juda į player'io nustatytą tašką → palauk kol pasieks (ar pats pasitiks priešą).
+    if (ally._f9Target) continue;
+    const detectR = _F9_ALLY_DETECT[ally.utype] || 4;
+    const ax = (ally.rx !== undefined) ? ally.rx : ally.x;
+    const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
+    let nearest = null, nearestD = detectR;
+    for (const e of S.units) {
+      if (!e || !e.alive || !_f9IsEnemy(e)) continue;
+      const ex = (e.rx !== undefined) ? e.rx : e.x;
+      const ey = (e.ry !== undefined) ? e.ry : e.y;
+      const d = Math.hypot(ax - ex, ay - ey);
+      if (d < nearestD) { nearestD = d; nearest = e; }
+    }
+    if (nearest) {
+      // Auto-engage — _updateF9AllyEngagement nukreips judėjimą į attack pozicija
+      ally._f9EngageTarget = nearest;
+      ally._f9LastRepath = 0; // force immediate repath
+    }
+  }
+}
+
+// ── Ally engagement chase tick: jei unit'as turi _f9EngageTarget, judink iki attack range + sustok ──
+function _updateF9AllyEngagement(now) {
+  if (!Array.isArray(S.units)) return;
+  // Grupuojam attackers pagal target — ring formation positions
+  const targetGroups = new Map();
+  for (const ally of S.units) {
+    if (!ally || !ally.alive) continue;
+    if (!_f9IsAlly(ally) || ally.team === 0) continue;
+    const tgt = ally._f9EngageTarget;
+    if (!tgt || !tgt.alive) { ally._f9EngageTarget = null; continue; }
+    if (!targetGroups.has(tgt)) targetGroups.set(tgt, []);
+    targetGroups.get(tgt).push(ally);
+  }
+
+  // Ally engagement surround — biski mažesnis nei attack range (~75%) kad užtikrintai patektų į range
+  const SURROUND_RX = 0.70;  // horizontal slot radius — atitinka enemy surround
+  const SURROUND_RY = 0.30;
+  for (const [target, attackers] of targetGroups) {
+    const tx0 = (target.rx !== undefined) ? target.rx : target.x;
+    const ty0 = (target.ry !== undefined) ? target.ry : target.y;
+    attackers.sort((a, b) => (a.id || 0) - (b.id || 0));
+    const n = attackers.length;
+    for (let i = 0; i < n; i++) {
+      const ally = attackers[i];
+      const cfg = _F9_ALLY_ATTACK[ally.utype];
+      if (!cfg) continue;
+      const ax = (ally.rx !== undefined) ? ally.rx : ally.x;
+      const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
+      const distToT = Math.hypot(ax - tx0, ay - ty0);
+      const inRange = distToT <= cfg.range;  // STANDARD RTS — tik distance check
+
+      // In range → sustok, atsisuka, leisk auto-attack tikt (be settle delay'aus)
+      if (inRange) {
+        ally._f9Target = null;
+        const dxRaw = tx0 - ax;
+        ally.facing = { dx: dxRaw > 0 ? 1 : -1, dy: 0 };
+        if (target && target.alive && !target._f9Moving) {
+          target.facing = { dx: dxRaw > 0 ? -1 : 1, dy: 0 };
+        }
+        continue;
+      }
+
+      if (now - (ally._f9LastRepath || 0) < 350 && ally._f9Target) continue;
+      ally._f9LastRepath = now;
+
+      // SIDE-LOCKED engagement: ally lock'ina pradžios side (kair/deš nuo enemy),
+      // eina į enemy.x ± SURROUND_RX, ay (own Y). Enemy AI tas pats principas.
+      // → abu susitinka SAME Y line, priešais vienas kitą, be cross'inimo.
+      let goalX, goalY;
+      if (cfg.range <= 1.6) {
+        if (ally._f9EngageSide == null || ally._f9EngageSideTgt !== target) {
+          ally._f9EngageSide = (ax < tx0) ? -1 : 1;
+          ally._f9EngageSideTgt = target;
+        }
+        const side = ally._f9EngageSide;
+        // Multi-attacker spacing: kiti slot'ai pridedami toliau nuo enemy
+        const tier = Math.floor(i / 2);  // 0=arti, 1=toliau
+        goalX = tx0 + side * (SURROUND_RX + tier * 0.5);
+        goalY = ay;  // STAY at own Y — enemy adaptosi
+      } else {
+        // Ranged — sustok prie attack range - 0.5 (saugumo buffer), linijoje į priešą
+        const norm = Math.max(0.001, distToT);
+        const desiredDist = Math.max(0.5, cfg.range - 0.5);
+        if (distToT > desiredDist) {
+          goalX = ax + ((tx0 - ax) / norm) * (distToT - desiredDist);
+          goalY = ay + ((ty0 - ay) / norm) * (distToT - desiredDist);
+        } else {
+          // Jau pakankamai arti, bet ne in face range — nudge'inam į face-to-face
+          goalX = tx0; // sucentruok pagal x
+          goalY = ty0 + (ay > ty0 ? 0.1 : -0.1); // šiek tiek į šoną y
+        }
+        // Slight offset pagal slot index — kad nedygtų vienas ant kito
+        const slotOff = (i - (n - 1) / 2) * 0.4;
+        goalX += slotOff;
+      }
+      ally._f9Target = {
+        tx: Math.max(0.5, Math.min(COLS - 1.5, goalX)),
+        ty: Math.max(0.5, Math.min(ROWS - 1.5, goalY)),
+      };
+    }
+  }
+}
+
+function _updateF9EnemyAI(now) {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  if (now - _f9LastEnemyAI < _F9_ENEMY_AI_TICK_MS) return;
+  _f9LastEnemyAI = now;
+
+  // ── 0a) Ally auto-acquire — judantis ally pajunta priešą pakelyje ir įsijungia į kovą ──
+  _updateF9AllyAutoAcquire(now);
+
+  // ── 0b) Ally engagement chase (target lock from right-click ARBA auto-acquire) ──
+  _updateF9AllyEngagement(now);
+
+  // ── 0c) Ally auto-attack — friendly unit'ai automatiškai puola priešą range'e ──
+  for (const ally of S.units) {
+    if (!ally || !ally.alive) continue;
+    if (!_f9IsAlly(ally)) continue;
+    if (ally.team === 0) continue; // hero turi savo logika (shoot)
+    if (!_F9_ALLY_ATTACK[ally.utype]) continue;
+    _f9TryAllyAutoAttack(ally, now);
+  }
+
+  // ── 1) Pirma surenkam aktyvius enemies + jų target'us ──
+  const enemies = [];
+  for (const e of S.units) {
+    if (!e || !e.alive || !_f9IsEnemy(e)) continue;
+    enemies.push(e);
+  }
+  if (!enemies.length) {
+    _f9CheckOutcome();
+    return;
+  }
+
+  // ── 2) Pasirenkam target'us per enemy ir grupuojam pagal target'ą ──
+  // Surround formation: kiekvienas attack'eris paima unikalų kampą aplink target'ą
+  const targetGroups = new Map();  // target → [enemy, enemy, ...]
+  for (const e of enemies) {
+    const target = _f9FindClosestAlly(e);
+    e._f9TargetUnit = target || null;
+    if (!target) continue;
+    if (!targetGroups.has(target)) targetGroups.set(target, []);
+    targetGroups.get(target).push(e);
+  }
+
+  // ── 3) SIDE-LOCKED enemy positioning ──
+  // Enemy lock'ina pradžios side (kair/deš nuo ally), eina į ally.x ± SURROUND_RX, ally.y.
+  // → visi enemies atsistoja ally Y linijoj, iš jų pradžios pusės. Be cross'inimo.
+  for (const [target, attackers] of targetGroups) {
+    const tx0 = (target.rx !== undefined) ? target.rx : target.x;
+    const ty0 = (target.ry !== undefined) ? target.ry : target.y;
+    const isBigTgt = (target.utype === 'pigronke');
+    const SURROUND_RX = isBigTgt ? 0.85 : 0.65;
+    attackers.sort((a, b) => (a.id || 0) - (b.id || 0));
+    // Count'inam slot'us per side (kad multi-attacker kair-deš pasidalintų)
+    const sideCount = { '-1': 0, '1': 0 };
+    for (let i = 0; i < attackers.length; i++) {
+      const e = attackers[i];
+      const ex = (e.rx !== undefined) ? e.rx : e.x;
+      if (e._f9EngageSide == null || e._f9EngageSideTgt !== target) {
+        // Auto-balance: jei viena pusė jau pilna, eikime į kitą
+        const naturalSide = (ex > tx0) ? 1 : -1;
+        const oppositeSide = -naturalSide;
+        if (sideCount[String(naturalSide)] > sideCount[String(oppositeSide)] + 1) {
+          e._f9EngageSide = oppositeSide;
+        } else {
+          e._f9EngageSide = naturalSide;
+        }
+        e._f9EngageSideTgt = target;
+      }
+      sideCount[String(e._f9EngageSide)]++;
+      const tier = sideCount[String(e._f9EngageSide)] - 1;  // 0 = pirmas tos pusės, 1 = antras...
+      e._f9SurroundX = tx0 + e._f9EngageSide * (SURROUND_RX + tier * 0.5);
+      e._f9SurroundY = ty0;  // EXACTLY ally's Y line
+    }
+  }
+
+  // ── 4) Per-enemy AI: chase to surround spot, attack if in range ──
+  for (const e of enemies) {
+    const target = e._f9TargetUnit;
+    if (!target) {
+      e._f9Target = null;
+      continue;
+    }
+    const ex = (e.rx !== undefined) ? e.rx : e.x;
+    const ey = (e.ry !== undefined) ? e.ry : e.y;
+    const tx0 = (target.rx !== undefined) ? target.rx : target.x;
+    const ty0 = (target.ry !== undefined) ? target.ry : target.y;
+    const dxRaw = tx0 - ex;
+    const dyRaw = ty0 - ey;
+    const distToTarget = Math.hypot(dxRaw, dyRaw);
+    const targetRange = _f9TargetMeleeRange(target);
+    // STRICT FACE-TO-FACE: enemy puola tik kai pasiekė ally Y liniją (no diagonal 45°).
+    // Naudojam horizontal distance + strict |dy| — kad enemy turi pirma "wheel in" į horizontalią.
+    const STRICT_MAX_DY = 0.30;
+    const horizontalDist = Math.abs(dxRaw);
+    const isFaceToFace = Math.abs(dyRaw) <= STRICT_MAX_DY;
+    const inHorizontalRange = horizontalDist <= targetRange;
+
+    if (inHorizontalRange && isFaceToFace) {
+      e._f9Target = null;
+      e.facing = { dx: dxRaw > 0 ? 1 : -1, dy: 0 };
+      if (target && target.alive && _f9IsAlly(target) && !target._f9Moving) {
+        target.facing = { dx: dxRaw > 0 ? -1 : 1, dy: 0 };
+      }
+      if (now - (e._f9LastEnemyAttack || 0) >= _F9_ENEMY_ATTACK_CD) {
+        e._f9LastEnemyAttack = now;
+        e.swingStart = now;
+        _f9DealDmg(target, _F9_ENEMY_DMG, e);
+      }
+      continue;
+    }
+
+    // Repath CD
+    if (now - (e._f9LastRepath || 0) < _F9_ENEMY_REPATH_MS && e._f9Target) continue;
+    e._f9LastRepath = now;
+
+    // Naudoja surround spot'ą (ne tiesų liniją), kad enemies nestovetu vienoj vietoj
+    let goalX = e._f9SurroundX, goalY = e._f9SurroundY;
+    if (typeof goalX !== 'number' || typeof goalY !== 'number') {
+      // Fallback (jei kažkur nepriskirta)
+      const norm = Math.max(0.001, distToTarget);
+      goalX = ex + ((tx0 - ex) / norm) * (distToTarget - _F9_ENEMY_MELEE_RANGE * 0.85);
+      goalY = ey + ((ty0 - ey) / norm) * (distToTarget - _F9_ENEMY_MELEE_RANGE * 0.85);
+    }
+    e._f9Target = {
+      tx: Math.max(0.5, Math.min(COLS - 1.5, goalX)),
+      ty: Math.max(0.5, Math.min(ROWS - 1.5, goalY)),
+    };
+  }
+
+  _f9CheckOutcome();
+}
+
+function _f9CheckOutcome() {
+  if (_f9GameOverShown) return;
+  const hero = S.units.find(u => u && u.alive && u.team === 0);
+  // Defeat: hero miręs
+  if (!hero) {
+    _f9GameOverShown = true;
+    _f9ShowOutcome(false);
+  }
+  // Win conditional išjungtas — su respawn'u nėra "visi mirę" momento
+}
+
+// Respawn — kas _F9_ENEMY_RESPAWN_MS pridedam naujus enemies, jei mažiau nei MAX_ALIVE.
+// Tai užtikrina kovų tęstinumą testavimui (kad pigronke kovotų nuolatos, ne pirmas 6 enemies).
+function _updateF9EnemyRespawn(now) {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  if (_f9GameOverShown) return;
+  if (now - _f9LastEnemyRespawn < _F9_ENEMY_RESPAWN_MS) return;
+  _f9LastEnemyRespawn = now;
+  const aliveEnemies = S.units.filter(u => u && u.alive && _f9IsEnemy(u)).length;
+  if (aliveEnemies >= _F9_ENEMY_MAX_ALIVE) return;
+  const hero = S.units.find(u => u && u.alive && u.team === 0);
+  if (!hero) return;
+  // Spawn'inam N naujus
+  const _occ = new Set();
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    _occ.add(u.x + ',' + u.y);
+  }
+  let spawned = 0;
+  for (let i = 0; i < _F9_ENEMY_RESPAWN_BATCH && (aliveEnemies + spawned) < _F9_ENEMY_MAX_ALIVE; i++) {
+    const utype = _F9_ENEMY_ARCHETYPES[Math.floor(Math.random() * _F9_ENEMY_ARCHETYPES.length)];
+    const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(utype) : null;
+    if (!archetype) continue;
+    let placed = false;
+    for (let attempt = 0; attempt < 30 && !placed; attempt++) {
+      const edge = Math.floor(Math.random() * 4);
+      let sx, sy;
+      if (edge === 0)      { sx = 2 + Math.floor(Math.random() * (COLS - 4)); sy = 2; }
+      else if (edge === 1) { sx = COLS - 3; sy = 2 + Math.floor(Math.random() * (ROWS - 4)); }
+      else if (edge === 2) { sx = 2 + Math.floor(Math.random() * (COLS - 4)); sy = ROWS - 3; }
+      else                 { sx = 2; sy = 2 + Math.floor(Math.random() * (ROWS - 4)); }
+      const k = sx + ',' + sy;
+      if (_occ.has(k)) continue;
+      const distHero = Math.hypot(sx - hero.x, sy - hero.y);
+      if (distHero < 8) continue;
+      _occ.add(k);
+      const id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (300000 + Math.floor(Math.random() * 100000));
+      const u = mkUnit(id, 1, sx, sy, 1, archetype);
+      u._f9Enemy = true;
+      u.isEditorEnemy = false;
+      u.stack = 1;
+      u.rx = sx; u.ry = sy;
+      u._f9LastEnemyAttack = 0;
+      u._f9LastRepath = 0;
+      S.units.push(u);
+      placed = true;
+      spawned++;
+    }
+  }
+}
+
+function _f9ShowOutcome(won) {
+  // Lengvas alert pirmam iteracijai — vėliau pakeisim į modal'ą
+  setTimeout(() => {
+    if (won) {
+      alert('🏆 VICTORY!\nVisi priešai sunaikinti.');
+    } else {
+      alert('💀 DEFEAT!\nTavo herojus žuvo.');
+    }
+  }, 600);
 }
 
 function _updateFreeMove(now) {
@@ -5292,7 +6927,9 @@ function _getTowerAoeCellSprite() {
 }
 
 function getShamanFrame(u, dir) {
-  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean')
+    ? u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05);
   const swingElapsed = u.swingStart ? performance.now() - u.swingStart : Infinity;
   const swingDur = (10 / SHAMAN_ANIM_FPS.attack) * 1000;
   const isAttacking = swingElapsed < swingDur;
@@ -5323,7 +6960,9 @@ const _HFISH_THROW_FIRE_FRAME = 5;
 const _HFISH_IDLE_FRAMES = 8, _HFISH_IDLE_MS = 120;
 const _HFISH_RUN_FRAMES = 6, _HFISH_RUN_MS = 110;
 function getHarpoonFishFrameState(u) {
-  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean')
+    ? u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05);
   const throwElapsed = u.hfishThrowStart ? performance.now() - u.hfishThrowStart : Infinity;
   const throwDur = _HFISH_THROW_FRAMES * _HFISH_THROW_MS;
   const isThrowing = throwElapsed < throwDur;
@@ -5345,7 +6984,9 @@ function getHarpoonFishFrameState(u) {
 // Archer unit frame state — naudoja _archerAnims (idle/run/shoot, 192px frame).
 function getArcherUnitFrameState(u) {
   const FW = 192;
-  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean')
+    ? u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05);
   const throwElapsed = u.hfishThrowStart ? performance.now() - u.hfishThrowStart : Infinity;
   const shootDur = _archerAnims.shoot.frames * _archerAnims.shoot.ms;
   const isShooting = throwElapsed < shootDur;
@@ -5403,6 +7044,370 @@ const skullAnimSheets = {
 const SKULL_ANIM_FPS = { idle: 7, run: 10, attack: 12, guard: 10 };
 const SKULL_FRAME_W  = 192;  // square frames
 
+// ---- Pigronke ally sprite (5120x640: 8 cols x 1 row, 640x640 per frame) ----
+const pigronkeAnimSheets = {
+  idle:   loadHorizontalSheetFrames('pigronke.png',         8),
+  walk:   loadHorizontalSheetFrames('pigronkewalk.png',     8),
+  attack: loadHorizontalSheetFrames('ronkepigattack.png',   8),  // nauja attack anim
+};
+const PIGRONKE_ANIM_FPS = { idle: 8, walk: 11, attack: 12 };
+const PIGRONKE_FRAME_W = 640;
+
+function getPigronkeFrameState(u) {
+  const now = performance.now();
+  const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
+  const swingDur = (pigronkeAnimSheets.attack.frameCount / PIGRONKE_ANIM_FPS.attack) * 1000;
+  const isMoving = (typeof u._f9Moving === 'boolean')
+    ? u._f9Moving
+    : (Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05);
+
+  let animKey;
+  if (swingElapsed < swingDur) animKey = 'attack';
+  else if (isMoving)           animKey = 'walk';
+  else                         animKey = 'idle';
+
+  const sheetState = pigronkeAnimSheets[animKey];
+  const sh = sheetState && sheetState.sheet;
+  if (!sh || !sh.complete || sh.naturalWidth <= 0) {
+    // Fallback į idle jei sheet'as dar neįkrautas
+    const fb = pigronkeAnimSheets.idle && pigronkeAnimSheets.idle.sheet;
+    if (!fb || !fb.complete || fb.naturalWidth <= 0) return null;
+    const fc = pigronkeAnimSheets.idle.frameCount;
+    const frameW = Math.floor(fb.naturalWidth / fc);
+    const idx = Math.floor(now / (1000 / PIGRONKE_ANIM_FPS.idle)) % fc;
+    return { sheet: fb, sx: idx * frameW, sy: 0, sw: frameW, sh: fb.naturalHeight };
+  }
+  const frameW = Math.floor(sh.naturalWidth / sheetState.frameCount);
+  const frameH = sh.naturalHeight;
+  const fps = PIGRONKE_ANIM_FPS[animKey];
+  let idx;
+  if (animKey === 'attack') {
+    // Attack — play once, neloop'inam (sync su swing)
+    idx = Math.min(sheetState.frameCount - 1, Math.floor(swingElapsed / (1000 / fps)));
+  } else {
+    idx = Math.floor(now / (1000 / fps)) % sheetState.frameCount;
+  }
+  return { sheet: sh, sx: idx * frameW, sy: 0, sw: frameW, sh: frameH };
+}
+
+// ---- Spear Sweep AOE visual (pigronke ietis) ----
+// Animuotas arc effect rodantis spear sweep'o zoną. Vyksta vienu metu su damage'u.
+const _SPEAR_SWEEP_DUR = 600; // ms — pilnas swing'as (sutrumpintas nuo 1000ms 2026-05-28, kad atitiktų bendrą kovų tempą)
+
+function spawnSpearSweep(sx, sy, fdx, range, widthY) {
+  if (!S.spearSweeps) S.spearSweeps = [];
+  // 2026-05-28: sumažinta particle splatter density + decal density (per platus VFX)
+  const _NUM_DROPLETS = 8;      // particle splatter (14 → 8)
+  const _NUM_STAINS = 3;        // decal stains (5 → 3)
+  const _zoneCxRel = fdx * range * 0.5;
+  const _zoneRX = range * 0.42;  // particle spawn zone RX (0.55 → 0.42)
+  const _zoneRY = widthY * 0.50; // particle spawn zone RY (0.65 → 0.50)
+  // Impact moment = 0.30 — trumpa telegraph fazė, ilgas aftermath (1s total)
+  const _IMPACT_T = 0.30;
+  // Blood droplets — išsiplečia iš centro radialiai, parabolinė trajektorija
+  const droplets = [];
+  for (let i = 0; i < _NUM_DROPLETS; i++) {
+    const baseAng = (i / _NUM_DROPLETS) * Math.PI * 2;
+    const ang = baseAng + (Math.random() - 0.5) * 0.6;       // šiek tiek random
+    const speed = 0.7 + Math.random() * 0.9;                  // varied speeds
+    droplets.push({
+      ang,
+      vx: Math.cos(ang) * speed * 26,                         // px/s (38 → 26, sutrumpinta splatter reach)
+      vy: Math.sin(ang) * speed * 16 - 1.0 - Math.random() * 0.8,  // mažas up bias (22 → 16)
+      size: 1.8 + Math.random() * 2.2,
+      hue: 350 + Math.floor(Math.random() * 14) - 7,          // crimson varied
+      lightness: 22 + Math.floor(Math.random() * 14),
+      delay: _IMPACT_T,
+      dur: 0.50 + Math.random() * 0.18,                       // 50-68% (apie 500-680ms — pasiekia grindis)
+      gravity: 280,                                            // px/s² (biski stipresnis kad nukrist)
+    });
+  }
+  // Ground stains — patamsėjusios elipsės kurios atsiranda impact'e ir lieka iki end
+  const stains = [];
+  for (let i = 0; i < _NUM_STAINS; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random());
+    stains.push({
+      ox: _zoneCxRel + Math.cos(ang) * _zoneRX * r * 0.75,
+      oy: Math.sin(ang) * _zoneRY * r * 0.75,
+      rx: 3 + Math.random() * 4,
+      ry: 1.6 + Math.random() * 2.2,
+      delay: _IMPACT_T,
+      growT: 0.10 + Math.random() * 0.05,                     // greitai atsiranda
+    });
+  }
+  S.spearSweeps.push({
+    sx, sy, fdx, range, widthY,
+    born: performance.now(),
+    duration: _SPEAR_SWEEP_DUR,
+    droplets, stains,
+    impactT: _IMPACT_T,
+  });
+}
+
+function drawSpearSweeps() {
+  if (!S.spearSweeps || !S.spearSweeps.length) return;
+  const now = performance.now();
+  ctx.save();
+  for (let i = 0; i < S.spearSweeps.length; i++) {
+    const s = S.spearSweeps[i];
+    const t = (now - s.born) / s.duration;
+    if (t >= 1) { s.done = true; continue; }
+    const cx = (s.sx + 0.5) * CELL;
+    const cy = (s.sy + 0.5) * CELL;
+    const rangePx = s.range * CELL;
+    const widthPx = s.widthY * CELL;
+    const fdx = s.fdx;
+
+    const zoneCx = cx + fdx * rangePx * 0.5;
+    // 2026-05-28: impact zone VFX sumažinta (0.62 → 0.48, 0.75 → 0.60) — telegraph + shockwave footprint
+    const zoneRX = rangePx * 0.48;
+    const zoneRY = widthPx * 0.60;
+
+    const impactT = s.impactT || 0.55;
+
+    // ── PHASE 1: BUILD-UP (0 → impactT) — tamsus warning ring ──
+    // Pulsuojantis crimson outline (be fill — minimal, just to telegraph zone)
+    if (t < impactT) {
+      const bT = t / impactT;
+      const pulse = 0.4 + 0.6 * Math.sin(bT * Math.PI * 4);
+      const scale = 0.35 + bT * 0.65;
+      ctx.strokeStyle = `rgba(140, 20, 30, ${(bT * 0.55 * pulse + 0.2).toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.ellipse(zoneCx, cy, zoneRX * scale, zoneRY * scale, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // ── PHASE 2: IMPACT BURST — staigus raudonas flash ──
+    if (t >= impactT - 0.04 && t < impactT + 0.18) {
+      const flashT = (t - (impactT - 0.04)) / 0.22;
+      const peak = 1 - Math.abs(flashT - 0.20) * 1.6;
+      const peakClamped = Math.max(0, Math.min(1, peak));
+      // Inner red splash fill
+      ctx.shadowColor = 'rgba(180, 30, 40, 0.9)';
+      ctx.shadowBlur = 22 * peakClamped;
+      ctx.fillStyle = `rgba(160, 24, 36, ${(peakClamped * 0.55).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(zoneCx, cy, zoneRX, zoneRY, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Dark crimson outline
+      ctx.strokeStyle = `rgba(80, 8, 14, ${peakClamped.toFixed(3)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(zoneCx, cy, zoneRX, zoneRY, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // ── PHASE 3: DARK SHOCKWAVE — sklendžiantis tamsus žiedas + vignette pulse ──
+    if (t >= impactT) {
+      const iT = (t - impactT) / (1 - impactT);
+
+      // PERF: vietoj `createRadialGradient` per frame (brangu — string format + gradient obj alloc),
+      // 3 stacked elipsės su mažėjančia alpha — vizualiai identiška, kelis kartus pigiau.
+      const vignetteR = zoneRX * (0.9 + iT * 0.4);
+      const vignetteRY = vignetteR * (zoneRY / zoneRX);
+      const vignetteA = (1 - iT) * 0.45;
+      if (vignetteA > 0.02) {
+        // Outer (faint) → mid → inner (darkest). Tas pats radial gradient look.
+        ctx.fillStyle = `rgba(40, 6, 10, ${(vignetteA * 0.25).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(zoneCx, cy, vignetteR, vignetteRY, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(50, 7, 12, ${(vignetteA * 0.45).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(zoneCx, cy, vignetteR * 0.65, vignetteRY * 0.65, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(60, 8, 14, ${vignetteA.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(zoneCx, cy, vignetteR * 0.30, vignetteRY * 0.30, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Outer dark shockwave ring (du sluoksniai — tamsus + raudonas inner)
+      const ringR = zoneRX * (1.0 + iT * 0.9);
+      const ringRY = ringR * (zoneRY / zoneRX);
+      const ringA = (1 - iT) * 0.85;
+      ctx.strokeStyle = `rgba(40, 6, 10, ${ringA.toFixed(3)})`;
+      ctx.lineWidth = (1 - iT) * 2.6 + 0.8;
+      ctx.beginPath();
+      ctx.ellipse(zoneCx, cy, ringR, ringRY, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // Inner crimson echo
+      const innerR = ringR * 0.88;
+      const innerRY = innerR * (zoneRY / zoneRX);
+      ctx.strokeStyle = `rgba(170, 28, 40, ${(ringA * 0.65).toFixed(3)})`;
+      ctx.lineWidth = (1 - iT) * 1.6 + 0.4;
+      ctx.beginPath();
+      ctx.ellipse(zoneCx, cy, innerR, innerRY, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // SECONDARY ECHO RING — atsiranda po pauzės (delayed 0.30), kitas ritmas
+      if (iT > 0.30) {
+        const eT = (iT - 0.30) / 0.70;
+        const eR = zoneRX * (0.4 + eT * 1.1);
+        const eRY = eR * (zoneRY / zoneRX);
+        const eA = (1 - eT) * 0.55;
+        ctx.strokeStyle = `rgba(60, 10, 16, ${eA.toFixed(3)})`;
+        ctx.lineWidth = (1 - eT) * 1.8 + 0.5;
+        ctx.beginPath();
+        ctx.ellipse(zoneCx, cy, eR, eRY, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // ── GROUND BLOOD STAINS — pasilieka kaip pėdsakas (greitai grow → lėtai fade) ──
+    if (s.stains) {
+      for (const st of s.stains) {
+        const localT = t - st.delay;
+        if (localT < 0) continue;
+        const growT = Math.min(1, localT / st.growT);
+        const fadeT = Math.min(1, Math.max(0, (t - impactT) / (1 - impactT)));
+        const sizeMul = 0.4 + growT * 0.6;
+        // Lėtas fade — stains pasilieka beveik iki pat efekto pabaigos
+        const alpha = (1 - fadeT * 0.35) * 0.75;
+        if (alpha < 0.03) continue;
+        ctx.fillStyle = `rgba(70, 8, 14, ${alpha.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(cx + st.ox, cy + st.oy, st.rx * sizeMul, st.ry * sizeMul, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Tamsesnis core
+        ctx.fillStyle = `rgba(30, 4, 8, ${(alpha * 0.8).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(cx + st.ox, cy + st.oy, st.rx * sizeMul * 0.55, st.ry * sizeMul * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // ── BLOOD DROPLETS — radialiai išsklindantys lašai (parabolinė + fade) ──
+    if (s.droplets) {
+      const FRAME_DT = 1 / 60;  // sec/frame approx
+      for (const dp of s.droplets) {
+        const localT = (t - dp.delay) / dp.dur;
+        if (localT < 0 || localT > 1) continue;
+        const tSec = localT * (dp.dur * s.duration / 1000);
+        const dx = dp.vx * tSec;
+        const dy = dp.vy * tSec + 0.5 * dp.gravity * tSec * tSec;
+        const px = zoneCx + dx;
+        const py = cy + dy;
+        const alpha = (1 - localT * localT) * 0.95;
+        const sz = dp.size * (1 - localT * 0.3);
+        // Trail (mažas motion blur — 2 mažesni "ghost" droplets už vandeniu)
+        for (let k = 1; k <= 2; k++) {
+          const trailT = Math.max(0, tSec - FRAME_DT * k * 2);
+          const tdx = dp.vx * trailT;
+          const tdy = dp.vy * trailT + 0.5 * dp.gravity * trailT * trailT;
+          ctx.fillStyle = `hsla(${dp.hue}, 78%, ${dp.lightness}%, ${(alpha * (0.35 - k * 0.12)).toFixed(3)})`;
+          ctx.beginPath();
+          ctx.arc(zoneCx + tdx, cy + tdy, sz * (1 - k * 0.18), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Main droplet
+        ctx.fillStyle = `hsla(${dp.hue}, 82%, ${dp.lightness}%, ${alpha.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(px, py, sz, 0, Math.PI * 2);
+        ctx.fill();
+        // Specular highlight (small darker dot — wet look)
+        ctx.fillStyle = `hsla(${dp.hue}, 90%, ${Math.max(8, dp.lightness - 12)}%, ${(alpha * 0.85).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(px + sz * 0.25, py + sz * 0.25, sz * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+  // Compact
+  let _w = 0;
+  for (let _r = 0; _r < S.spearSweeps.length; _r++) {
+    const _p = S.spearSweeps[_r];
+    if (!_p.done) { if (_w !== _r) S.spearSweeps[_w] = _p; _w++; }
+  }
+  S.spearSweeps.length = _w;
+}
+
+// ---- Sonic Attack projectile sprite (5120x640: 8 cols x 1 row, 640x640 per frame) ----
+// Spear su flame trail — flames build up progresuojant 0→7 (sync su skrydžiu).
+const _sonicAttackImg = new Image();
+_sonicAttackImg.src = 'sonicattack.png';
+const SONIC_FRAME_COUNT = 8;
+const SONIC_FRAME_W = 640;
+const SONIC_FRAME_H = 640;
+const SONIC_PROJ_DMG = 3;
+const SONIC_PROJ_SPEED_CPS = 10;  // cells per second (greitas spear)
+
+function spawnSonicAttack(fromGx, fromGy, toGx, toGy, stack, shooterIsEnemy) {
+  if (!S.sonicProjectiles) S.sonicProjectiles = [];
+  const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
+  const tx = (toGx + 0.5) * CELL,   ty = (toGy + 0.5) * CELL;
+  const dist = Math.hypot(tx - sx, ty - sy);
+  const duration = Math.max(280, dist / (CELL * SONIC_PROJ_SPEED_CPS / 1000));
+  S.sonicProjectiles.push({
+    sx, sy, tx, ty, born: performance.now(), duration,
+    targetGx: toGx, targetGy: toGy, done: false, hit: false,
+    stack: stack || 1, shooterIsEnemy: !!shooterIsEnemy,
+  });
+}
+
+function drawSonicProjectiles() {
+  if (!S.sonicProjectiles || !S.sonicProjectiles.length) return;
+  if (!_sonicAttackImg.complete || !_sonicAttackImg.naturalWidth) return;
+  const now = performance.now();
+  const sz = CELL * 2.2;
+  ctx.save();
+  for (let i = 0; i < S.sonicProjectiles.length; i++) {
+    const p = S.sonicProjectiles[i];
+    if (p.done) continue;
+    const t = Math.min((now - p.born) / p.duration, 1);
+    const cx = p.sx + (p.tx - p.sx) * t;
+    const cy = p.sy + (p.ty - p.sy) * t;
+    // Frame index — progresuoja kartu su skrydžiu (flames build up)
+    const idx = Math.min(SONIC_FRAME_COUNT - 1, Math.floor(t * SONIC_FRAME_COUNT));
+    const angle = Math.atan2(p.ty - p.sy, p.tx - p.sx);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.drawImage(_sonicAttackImg, idx * SONIC_FRAME_W, 0, SONIC_FRAME_W, SONIC_FRAME_H, -sz / 2, -sz / 2, sz, sz);
+    ctx.restore();
+    if (t >= 1 && !p.hit) {
+      p.hit = true; p.done = true;
+      const dmg = SONIC_PROJ_DMG * (p.stack || 1);
+      if (typeof SFX !== 'undefined' && SFX.hit) { try { SFX.hit(); } catch (_) {} }
+      if (S.units) {
+        if (p.shooterIsEnemy) {
+          // Enemy shoots at hero/ally
+          const tgt = S.units.find(u => u && u.alive && u.x === p.targetGx && u.y === p.targetGy && _f9IsAlly(u));
+          if (tgt) _f9DealDmg(tgt, dmg, null);
+        } else {
+          // Ally shoots at enemy at target cell
+          const tgt = S.units.find(u => u && u.alive && u.x === p.targetGx && u.y === p.targetGy && _f9IsEnemy(u));
+          if (tgt) _f9DealDmg(tgt, dmg, null);
+          else {
+            // Splash radius — paimt artimiausią enemy ~0.7 cells nuo impact taško
+            let best = null, bestD = 0.7;
+            for (const en of S.units) {
+              if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+              const d = Math.hypot(en.x - p.targetGx, en.y - p.targetGy);
+              if (d < bestD) { bestD = d; best = en; }
+            }
+            if (best) _f9DealDmg(best, dmg, null);
+          }
+        }
+      }
+    }
+  }
+  ctx.restore();
+  // Compact
+  let _w = 0;
+  for (let _r = 0; _r < S.sonicProjectiles.length; _r++) {
+    const _p = S.sonicProjectiles[_r];
+    if (!_p.done) { if (_w !== _r) S.sonicProjectiles[_w] = _p; _w++; }
+  }
+  S.sonicProjectiles.length = _w;
+}
+
 // ---- Blue Bird NPC sprite sheet (768x384: 8 cols x 4 rows, 96x96 per frame) ----
 // Row 0=IDLE(8f), Row 1=WALK(8f), Row 2=ATTACK(4f+4blank), Row 3=DEATH(4f+4blank)
 const _blueBirdSheet = new Image();
@@ -5443,7 +7448,9 @@ function getBlueBirdFrameState(u) {
 
 function getSkullFrameState(u) {
   const now = performance.now();
-  const isMoving   = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean')
+    ? u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05);
   const swingElapsed  = u.swingStart  ? now - u.swingStart  : Infinity;
   const guardElapsed  = u.guardStart  ? now - u.guardStart  : Infinity;
   const swingDur   = (skullAnimSheets.attack.frameCount / SKULL_ANIM_FPS.attack)  * 1000;
@@ -5603,9 +7610,15 @@ function getRonkeFrameState(u) {
 function getRonke2FrameState(u) {
   const now = performance.now();
   const isAttacking = u.swingStart && (now - u.swingStart) < (8 / 10 * 1000);
-  const isMoving = !isAttacking && (u.rx !== undefined && u.ry !== undefined)
-    ? (Math.abs(u.rx - Math.round(u.rx)) > 0.02 || Math.abs(u.ry - Math.round(u.ry)) > 0.02)
-    : false;
+  // F9 — naudoja explicit flag (po smooth move snap'o rx gali likti float, nesutampa su round'inta)
+  let isMoving;
+  if (typeof u._f9Moving === 'boolean') {
+    isMoving = !isAttacking && u._f9Moving;
+  } else {
+    isMoving = !isAttacking && (u.rx !== undefined && u.ry !== undefined)
+      ? (Math.abs(u.rx - Math.round(u.rx)) > 0.02 || Math.abs(u.ry - Math.round(u.ry)) > 0.02)
+      : false;
+  }
   let s, fps;
   if (isAttacking) {
     s = ronke2AttackSheet; fps = 10;
@@ -5663,6 +7676,7 @@ const ENEMY_TYPES = [
   { type: 'pam',      hp: 5,  color: '#ffcc00', scale: 1.20, label: 'PAM' },
   { type: 'harpoon_fish', hp: 4, color: '#00aacc', scale: 1.00, label: 'HARPOON FISH' },
   { type: 'archer',       hp: 3, color: '#4a88cc', scale: 1.00, label: 'ARCHER' },
+  { type: 'pigronke',     hp: 5, color: '#cc6688', scale: 1.10, label: 'PIGRONKE' },
 ];
 
 const EDITOR_NPC_TYPES = [
@@ -7757,7 +9771,9 @@ function initAdventure() {
   ];
 
   // At random string of 1-5 rooms (indices 0-4) forever
-  const configIdx = Math.floor(Math.random() * 5);
+  let configIdx = Math.floor(Math.random() * 5);
+  // F9 — force largest grid (2x2 = 4 rooms) for clean platform-friendly space
+  if (S.floor === 9) configIdx = 4;
   S.gridW = floorProgression[configIdx].w;
   S.gridH = floorProgression[configIdx].h;
 
@@ -7765,7 +9781,8 @@ function initAdventure() {
   ADV_MAP_ROWS = 11 * S.gridH + 2;
 
   // Apply a random shrink so maps variation keeps happening (from 0 to 4 shrunk)
-  const mapShrink = Math.floor(Math.random() * 3) * 2;
+  // F9 — no shrink, full size
+  const mapShrink = (S.floor === 9) ? 0 : Math.floor(Math.random() * 3) * 2;
   ADV_MAP_COLS -= mapShrink;
   ADV_MAP_ROWS -= mapShrink;
   COLS = ADV_MAP_COLS;
@@ -7785,6 +9802,24 @@ function initAdventure() {
   if (S.floor === 1) { const _fl = Profile.upgrades?.freeShotLevel || 0; S.shotsUntilFree = _fl >= 5 ? 6 : _fl >= 4 ? 7 : _fl >= 3 ? 8 : _fl >= 2 ? 9 : 10; } // reset free shot counter on new run
   S.reachedMaxEnergy = false;
   generateDungeon();
+  // F9 — clean canvas: pure grass, no decorations/chests/holes (preserves edit map)
+  if (S.floor === 9) {
+    if (Array.isArray(S.dungeon)) {
+      for (let _y = 0; _y < ROWS; _y++) {
+        for (let _x = 0; _x < COLS; _x++) {
+          const _isBorder = (_y === 0 || _y === ROWS - 1 || _x === 0 || _x === COLS - 1);
+          S.dungeon[_y][_x] = _isBorder ? 0 : 1;
+        }
+      }
+    }
+    S.decorations = {};
+    S.chests = [];
+    if (S.collisionBoxes && typeof S.collisionBoxes.clear === 'function') S.collisionBoxes.clear();
+    S.shrines = [];
+    S.bloodStains = [];
+    S.teleports = [];
+    S.rooms = [{ x: 1, y: 1, w: COLS - 2, h: ROWS - 2, type: 'start' }];
+  }
   buildWallPackets();
   invalidateDungeonCache();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
@@ -7822,7 +9857,8 @@ function initAdventure() {
   S.kills = 0;
   _updateKillsDisplay();
   S.explorerChestSpawned = (S.floor === 10);
-  S.fullMapRevealed = (S.floor === 10 || f11LikeFloor());
+  // F9 — clean canvas (no fog, no enemies, no decorations)
+  S.fullMapRevealed = (S.floor === 10 || S.floor === 9 || f11LikeFloor());
   S.flareUsed = false;
   S.flareMode = false;
   S.flareProjectile = null;
@@ -7874,6 +9910,8 @@ function initAdventure() {
       if (_BARRACKS_UNIT_TYPES && _BARRACKS_UNIT_TYPES.includes(enemy.type)) _eu.isEditorEnemy = true;
       S.units.push(_eu);
     });
+  } else if (S.floor === 9) {
+    // F9 — clean canvas, no enemies
   } else {
     S.rooms.forEach((r, ri) => {
     let count;
@@ -7945,6 +9983,63 @@ function initAdventure() {
   S.totalEnemies = S.units.filter(u => isHostileAdventureEnemy(u)).length;
   if (!useCustomEnemyPlacements && getFloorCustomMap()) {
     syncEditorEnemyPlacementsFromUnits();
+  }
+
+  // F9 — deploy fake barracks-trained units (Profile.barracksTrained) around hero
+  // Naudoja egzistuojantį pattern: team=1 + isEditorEnemy=true → friendly (ne priešas)
+  // Su utype sprite render'inimu (skull/archer/shaman/harpoon_fish).
+  if (S.floor === 9) {
+    try {
+      const hero = S.units[0];
+      // F9 TEST MODE — 3 skull + 1 shaman + 1 pigronke (visual fit tweaks check). 2026-05-28.
+      const _F9_TEST_TEAM = true;
+      const trained = _F9_TEST_TEAM
+        ? [
+            { utype: 'skull',    stack: 1, hp: 8,  maxHp: 8 },
+            { utype: 'skull',    stack: 1, hp: 8,  maxHp: 8 },
+            { utype: 'skull',    stack: 1, hp: 8,  maxHp: 8 },
+            { utype: 'shaman',   stack: 1, hp: 6,  maxHp: 6 },
+            { utype: 'pigronke', stack: 1, hp: 25, maxHp: 25 },
+          ]
+        : ((Profile && Array.isArray(Profile.barracksTrained)) ? Profile.barracksTrained : []);
+      console.log('[F9 deploy] mode:', _F9_TEST_TEAM ? 'TEST (3 skull + 1 shaman + 1 pigronke)' : 'PROFILE', 'snaps:', trained);
+      let _did = (typeof _nextTrainedSnapId === 'function') ? 100000 : 1000;
+      let _ringIdx = 0;
+      const occupied = new Set();
+      occupied.add(hero.x + ',' + hero.y);
+      for (const snap of trained) {
+        if (!snap || !snap.utype) continue;
+        const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(snap.utype) : null;
+        if (!archetype) { console.warn('[F9 deploy] no archetype for utype:', snap.utype); continue; }
+        const stack = snap.stack || 1;
+        for (let s = 0; s < stack; s++) {
+          // Spiral pattern aplink hero
+          let placed = false;
+          for (let attempt = 0; attempt < 40 && !placed; attempt++) {
+            const r = 2 + Math.floor((_ringIdx + attempt) / 8);
+            const ang = ((_ringIdx + attempt) % 8) * (Math.PI / 4);
+            const sx = Math.max(1, Math.min(COLS - 2, hero.x + Math.round(Math.cos(ang) * r)));
+            const sy = Math.max(1, Math.min(ROWS - 2, hero.y + Math.round(Math.sin(ang) * r)));
+            const k = sx + ',' + sy;
+            if (occupied.has(k)) continue;
+            occupied.add(k);
+            const u = mkUnit(typeof nextEditorUnitId === 'function' ? nextEditorUnitId() : _did++, 1, sx, sy, 1, archetype);
+            u.isEditorEnemy = true;
+            u.stack = 1;
+            if (typeof snap.hp === 'number') u.hp = snap.hp;
+            if (typeof snap.maxHp === 'number') u.maxHp = snap.maxHp;
+            u.trainedSnapId = snap.id || (typeof _nextTrainedSnapId === 'function' ? _nextTrainedSnapId() : ++_did);
+            S.units.push(u);
+            placed = true;
+          }
+          _ringIdx++;
+        }
+      }
+      // F9 — spawn'inam keletą agresyvių priešų (PvE mode)
+      if (typeof _spawnF9Enemies === 'function' && hero) {
+        try { _spawnF9Enemies(hero); } catch (eSpw) { console.warn('[F9 spawn enemies] err:', eSpw); }
+      }
+    } catch (e) { console.warn('[F9 deploy trained] err:', e); }
   }
 
   // Chests scaling
@@ -19563,15 +21658,17 @@ function isUnitHiddenInBush(unit) {
 
 function isFriendlyBarracksUnit(unit) {
   if (!unit || !unit.alive || unit.team !== 1) return false;
+  // PERF: Set.has O(1) vs Array.includes O(N)
+  if (S.floor === 9 && unit.isEditorEnemy && _BARRACKS_UNIT_TYPES_SET.has(unit.utype)) return true;
   if (S.floor !== 10 && !f11LikeFloor()) return false;
-  if (unit.isEditorEnemy) return false;   // editor-placed = priešas, ne ally
-  return _BARRACKS_UNIT_TYPES.includes(unit.utype);
+  if (unit.isEditorEnemy) return false;
+  return _BARRACKS_UNIT_TYPES_SET.has(unit.utype);
 }
 function isEditorEnemyBarracks(unit) {
   if (!unit || !unit.alive || unit.team !== 1) return false;
   if (S.floor !== 10 && !f11LikeFloor()) return false;
   if (!unit.isEditorEnemy) return false;
-  return _BARRACKS_UNIT_TYPES.includes(unit.utype);
+  return _BARRACKS_UNIT_TYPES_SET.has(unit.utype);
 }
 
 function isHostileAdventureEnemy(unit) {
@@ -20025,7 +22122,8 @@ function _checkAllEnemiesCleared() {
 
 function spawnDmgNumber(gx, gy, text, color, size, type) {
   type = type || 'normal';
-  const initScale = type === 'crit' ? 2.0 : type === 'miss' ? 1.1 : 1.4;
+  // Sumažinta 2026-05-28: kad skaičiukai nebūtų tokie riebūs/didžiūs (style — tas pats: outline+glow+crit sparks).
+  const initScale = type === 'crit' ? 1.45 : type === 'miss' ? 0.85 : 1.0;
 
 
   if (type !== 'crit' && typeof text === 'string' && text.startsWith('-')) {
@@ -20038,7 +22136,7 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
   const obj = {
     x: (gx + 0.5) * CELL + (Math.random() - 0.5) * CELL * 0.5,
     y: (gy + 0.5) * CELL - CELL * 0.15 + (Math.random() - 0.5) * CELL * 0.4,
-    vx: (Math.random() - 0.5) * 4.0, // Random horizontal drift
+    vx: (Math.random() - 0.5) * 4.0,
     vy: type === 'miss' ? -0.8 - Math.random() * 0.6 : -1.5 - Math.random() * 1.5,
     decay: type === 'fast' ? 0.05 + Math.random() * 0.015 : (type === 'miss' ? 0.02 + Math.random() * 0.015 : 0.01 + Math.random() * 0.012),
     text, color, size: size || 20,
@@ -20046,6 +22144,19 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
     scale: initScale, type,
   };
   S.dmgNumbers.push(obj);
+  // PERF: cap'inam max 30 dmg numbers — kai AOE iškerta daug priešų vienu metu,
+  // strokeText+fillText+shadowBlur per number gali lagint. Drop oldest non-crit.
+  if (S.dmgNumbers.length > 30) {
+    // Pirma bandom išmesti seniausią ne-crit (kad crit'ai liktų matomi)
+    for (let _i = 0; _i < S.dmgNumbers.length; _i++) {
+      if (S.dmgNumbers[_i].type !== 'crit') {
+        S.dmgNumbers.splice(_i, 1);
+        break;
+      }
+    }
+    // Jei viskas crit'ai — drop'inam patį seniausią
+    if (S.dmgNumbers.length > 30) S.dmgNumbers.shift();
+  }
   return obj;
 }
 
@@ -20584,6 +22695,9 @@ function _updateBarracksAttackAI(now) {
     const _isEnemyBarracks = isEditorEnemyBarracks(u);
     if (!_isAlly && !_isEnemyBarracks) continue;
     if (u.spawnWalk) continue;
+    // F9 — trained units valdomi tik per F9 smooth move (RTS-style click).
+    // Praleidziam visa AI tick'a, kad nesikirsta su mano _f9Target judejimu.
+    if (S.floor === 9) continue;
     // Spawn stun — naujai materializuotas unit nedaro veiksmų ~1s (kol pixel'ai konverguoja)
     if (u._spawnAt && (performance.now() - u._spawnAt) < 1000) continue;
     // RTS mode: ally units neturi auto-combat. Tik commandMove vykdomas (žemiau).
@@ -21476,6 +23590,13 @@ function loop(now) {
     _updateFreeMove(now);
   }
 
+  // ── F9 RTS smooth click-to-move (continuous, no grid hopping) ──
+  _updateF9SmoothMove(now);
+  // ── F9 enemy AI (PvE) — chase + melee ──
+  if (typeof _updateF9EnemyAI === 'function') _updateF9EnemyAI(now);
+  // ── F9 enemy respawn — periodiškai pridedam naujus, kad testas tęstųsi ──
+  if (typeof _updateF9EnemyRespawn === 'function') _updateF9EnemyRespawn(now);
+
   // ── HERO RTS commandMove (F11) ─ tween + auto-attack ─────────
   _tickHeroRtsCmd(now);
   // ── F11 nuolatinis priesu eismas ─────────────────────────────
@@ -21759,12 +23880,20 @@ function loop(now) {
   drawShootPreview();
   drawShadows();
   drawAimIndicators();
+  _drawF9ClickMarkers();
+  if (typeof _drawF9DebugOverlay === 'function') _drawF9DebugOverlay();
+  if (typeof _drawF9EnemyTargetReticle === 'function') _drawF9EnemyTargetReticle();
+  _drawF9SelectionRing();
+  _drawF9SelectionBar();
+  _drawF9DragRect();
   drawBloodStains();
   drawFootsteps();
   drawParticles();
   drawDeathAnims();
   drawSpawnAnims();
   drawShamanProjectiles();
+  drawSonicProjectiles();
+  if (typeof drawSpearSweeps === 'function') drawSpearSweeps();
   drawShamanExplosions();
   drawTowerAoeBlasts();
   drawBarracksHarpoons();
@@ -22685,6 +24814,8 @@ function _drawUnitHoverOutline() {
   _hoveredUnitRef = null;
   if (_canvasMx < 0 || _canvasMy < 0) return;
   if (gameMode !== 'adventure') return;
+  // F9: RTS valdyme nereik hover outline (užvedimo apskritimas atrodė blogai virš priešų)
+  if (S && S.floor === 9) return;
   const worldMx = _canvasMx + (S.cam?.x || 0);
   const worldMy = _canvasMy + (S.cam?.y || 0);
   let best = null, bestDist = Infinity;
@@ -23201,6 +25332,8 @@ function drawShadows() {
 function drawShootPreview() {
   if (S.phase !== 'frozen' || S.clockSide !== 0) return;
   if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) return;
+  // F9 — niekada nerodom shoot preview line'os (Ronke šauna per right-click be vizualinio aim'o)
+  if (gameMode === 'adventure' && S && S.floor === 9) return;
   const selId = S.selectedId[0];
   const unit = (S._hero && S._hero.id === selId) ? S._hero : S.units.find(u => u.id === selId && u.alive);
   if (!unit || S.pending[0] !== null) return;
@@ -23642,11 +25775,14 @@ function drawSpawnAnims() {
 function drawDeathAnims() {
   if (!S.deathAnims || !S.deathAnims.length) return;
   const _now = performance.now();
+  // F9: praleidžiam visas standartines death animacijas (skull + troll) — tik particles lieka.
+  const _skipF9DeathAnim = (S && S.floor === 9);
   ctx.save();
   for (let _di = 0; _di < S.deathAnims.length; _di++) {
     const a = S.deathAnims[_di];
     const elapsed = _now - a.born;
     if (a.animType === 'troll' && trollDeadImg.complete && trollDeadImg.naturalWidth > 0) {
+      if (_skipF9DeathAnim) continue;
       const TROLL_DEAD_TOTAL = 10;
       const TROLL_DEAD_MS = 110;
       const TROLL_DEAD_W = 384;
@@ -23662,6 +25798,8 @@ function drawDeathAnims() {
     }
 
     if (!deadAnimImg.complete || !deadAnimImg.naturalWidth) continue;
+    // F9: praleidžiam standartinę skull death animaciją (particles vis tiek lieka).
+    if (_skipF9DeathAnim) continue;
     const frameIdx = Math.min(_DEAD_TOTAL - 1, Math.floor(elapsed / _DEAD_MS));
     const col = frameIdx % _DEAD_COLS;
     const row = Math.floor(frameIdx / _DEAD_COLS);
@@ -25066,7 +27204,10 @@ function _drawRonke2HeroSprite(cx, cy, u, alpha) {
 
 function drawHeroPixelArt(cx, cy, u, alpha, inactive) {
   const t = performance.now();
-  const isMoving = Math.abs(u.rx - u.x) > 0.01 || Math.abs(u.ry - u.y) > 0.01;
+  // F9: explicit flag (rx gali skirtis nuo x po smooth move snap) — kitur fallback į rx/x check.
+  const isMoving = (typeof u._f9Moving === 'boolean')
+    ? u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.01 || Math.abs(u.ry - u.y) > 0.01);
   const isDanger = (u._adjEnemy || u._bulletDanger) || false;
   const isLowHp = gameMode === 'adventure' && S.mana <= 15;
   const isHighPower = gameMode === 'adventure' && S.mana > 75;
@@ -26695,6 +28836,33 @@ function drawUnits() {
           ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.32, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = alpha;
         }
+      } else if (u.utype === 'pigronke') {
+        const frame = getPigronkeFrameState(u);
+        // FIT TWEAK 2026-05-28: 3.7 → 3.0 (-19%), kad neišmuštų iš bendro vaizdo su kitais ally (~2.5)
+        const sprSz = UNIT_CELL * 3.0;
+        const yOff = 0.5 * CELL - 0.38 * sprSz;  // feet anchor: pig kojos ant cell bottom
+        if (frame) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.55 : 1);
+          if ((u.facing?.dx || 1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy + yOff);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2 + yOff, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#cc6688';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.24, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
       } else if (u.utype === 'sheep') {
         const frame = getSheepFrameState(u);
         const sprSz = UNIT_CELL * 2.15;
@@ -27052,12 +29220,15 @@ function drawUnits() {
       // ── Bar above sprite ──────────────────────────────────────
       // Ally barracks unit'ai (skull/shaman/harpoon) → CD bar (6s). Visi kiti — standartinis HP bar.
       // Ally archer — manual charge mode (CD bar nereikalingas, tik su HP bar kai turi dmg).
+      // F9: be jokio bar virš galvos (user request) — RTS valdyme nereik.
       const _isAllyArcher = (u.alive && u.utype === 'archer'
         && (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)));
       const _isAllyBarracks = (!_isAllyArcher && u.alive
         && (u.utype === 'skull' || u.utype === 'shaman' || u.utype === 'harpoon_fish')
         && (typeof isFriendlyBarracksUnit === 'function' && isFriendlyBarracksUnit(u)));
-      if (_isAllyBarracks) {
+      if (S.floor === 9) {
+        // skip — no bar on F9
+      } else if (_isAllyBarracks) {
         const _now = performance.now();
         const _cdField = (u.utype === 'skull') ? (u.skullAttackCd || 0)
                        : (u.utype === 'shaman') ? (u.shamanAttackCd || 0)
@@ -28286,6 +30457,8 @@ function drawMeleeStrikes() {
 const _dmgFontCache = new Map();
 function drawDmgNumbers() {
   const PX_FONT = "'Press Start 2P', 'Courier New', 'Segoe UI Emoji', 'Apple Color Emoji', monospace";
+  // PERF: adaptive quality — kai daug dmg numbers vienu metu, sumažinam shadowBlur (brangus Canvas API).
+  const _highLoad = S.dmgNumbers.length > 12;
   S.dmgNumbers.forEach(n => {
     if (n.life <= 0) return;
     const alpha = n.life < 0.38 ? n.life / 0.38 : 1;
@@ -28335,9 +30508,10 @@ function drawDmgNumbers() {
     }
 
 
-    const outW = n.type === 'crit' ? Math.max(4, n.size * 0.28)
-      : n.type === 'miss' ? Math.max(2, n.size * 0.22)
-        : Math.max(3, n.size * 0.25);
+    // Sumažintas outline storumas — kad nebūtų riebus. Style tas pats (juodas stroke + round join).
+    const outW = n.type === 'crit' ? Math.max(2, n.size * 0.16)
+      : n.type === 'miss' ? Math.max(1, n.size * 0.12)
+        : Math.max(1.5, n.size * 0.14);
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = outW;
     ctx.lineJoin = 'round';
@@ -28345,7 +30519,10 @@ function drawDmgNumbers() {
 
 
     ctx.shadowColor = n.color;
-    ctx.shadowBlur = n.type === 'crit' ? 22 : n.type === 'miss' ? 5 : 10;
+    // PERF: high-load → tik crit'ai gauna shadowBlur (kiti 0). Low-load — pilnas glow.
+    ctx.shadowBlur = _highLoad
+      ? (n.type === 'crit' ? 8 : 0)
+      : (n.type === 'crit' ? 14 : n.type === 'miss' ? 4 : 7);
     ctx.fillStyle = n.color;
     ctx.fillText(n.text, 0, 0);
 
@@ -29353,6 +31530,140 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       _selectedAllyUnit = null;
     }
+    // F9 right-click → engage target (RTS pattern: SC2 style)
+    if (gameMode === 'adventure' && S && S.floor === 9) {
+      e.preventDefault();
+      const sel = window._f9Selected;
+      if (!sel || !sel.alive) return;
+      const r = canvas.getBoundingClientRect();
+      const scaleX = canvas.width  / r.width;
+      const scaleY = canvas.height / r.height;
+      const _cmx = (e.clientX - r.left) * scaleX;
+      const _cmy = (e.clientY - r.top)  * scaleY;
+      const mx = _cmx + (S.cam ? S.cam.x : 0);
+      const my = _cmy + (S.cam ? S.cam.y : 0);
+      const txWorld = mx / CELL - 0.5;
+      const tyWorld = my / CELL - 0.5;
+      // Hit detect: ar click'as ant priešo?
+      let hitEnemy = null;
+      {
+        let bestD = 0.6;
+        for (const en of S.units || []) {
+          if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+          const ex = (en.rx !== undefined) ? en.rx : en.x;
+          const ey = (en.ry !== undefined) ? en.ry : en.y;
+          const d = Math.hypot(txWorld - ex, tyWorld - ey);
+          if (d < bestD) { bestD = d; hitEnemy = en; }
+        }
+      }
+      const now = performance.now();
+      // ── Engage target: visi pasirinkti unit'ai puola tą patį priešą ──
+      if (hitEnemy && sel.team !== 0) {
+        const selSet = Array.isArray(window._f9SelectedSet) && window._f9SelectedSet.length
+          ? window._f9SelectedSet.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0)
+          : [sel];
+        // Filter'inam: tik tie, kurie turi attack cfg
+        const attackers = selSet.filter(u => _F9_ALLY_ATTACK[u.utype]);
+        if (!attackers.length) return;
+        // Stable ring assignment — sort by id
+        attackers.sort((a, b) => (a.id || 0) - (b.id || 0));
+        const n = attackers.length;
+        for (let i = 0; i < n; i++) {
+          const u = attackers[i];
+          u._f9EngageTarget = hitEnemy;
+          u._f9EngageSlotIdx = i;
+          u._f9EngageSlotCount = n;
+          u._f9LastRepath = 0; // force immediate repath
+        }
+        // Spawn click marker ant priešo pozicijos (vizualinis feedback)
+        if (!window._f9ClickMarkers) window._f9ClickMarkers = [];
+        const ex = (hitEnemy.rx !== undefined) ? hitEnemy.rx : hitEnemy.x;
+        const ey = (hitEnemy.ry !== undefined) ? hitEnemy.ry : hitEnemy.y;
+        window._f9ClickMarkers.push({
+          tx: ex, ty: ey,
+          born: now,
+          units: attackers.slice(),
+          arrivedAt: null,
+          isAttackMarker: true,
+        });
+        while (window._f9ClickMarkers.length > 8) window._f9ClickMarkers.shift();
+        return;
+      }
+      // ── Fallback: nėra priešo po click'u — original behavior (in-place swing/projectile) ──
+      if (sel._f9Moving) return;
+      const targetGx = Math.floor(mx / CELL);
+      const targetGy = Math.floor(my / CELL);
+      const dx = targetGx - sel.x, dy = targetGy - sel.y;
+      if (Math.abs(dx) > Math.abs(dy)) sel.facing = { dx: dx > 0 ? 1 : -1, dy: 0 };
+      else sel.facing = { dx: 0, dy: dy > 0 ? 1 : -1 };
+      // Ronke hero — standartinis šūvis
+      if (sel.team === 0) {
+        if (typeof updateP1Aim === 'function') updateP1Aim(mx, my);
+        if (S.pending && S.pending[0] === null) {
+          S.pending[0] = { unitId: sel.id, t: 'shoot' };
+          if (typeof setActionBadge === 'function') setActionBadge(0, S.pending[0]);
+          if (typeof aiQueueAction === 'function') aiQueueAction(false);
+          if (typeof resolveTick === 'function') resolveTick();
+        }
+        return;
+      }
+      // Trained barracks units — kiekvienas savo ataka
+      const _ATTACK_CD = 1200;   // 1.2s between manual attacks
+      if (sel._f9LastAttack && now - sel._f9LastAttack < _ATTACK_CD) return;
+      sel._f9LastAttack = now;
+      if (sel.utype === 'skull') {
+        // Skull — single-target melee
+        const cfgM = _F9_ALLY_ATTACK.skull || { range: 0.95, dmg: 3 };
+        sel.swingStart = now;
+        setTimeout(() => {
+          if (!sel.alive) return;
+          const sx = (sel.rx !== undefined) ? sel.rx : sel.x;
+          const sy = (sel.ry !== undefined) ? sel.ry : sel.y;
+          const dmg = (cfgM.dmg || 3) * (sel.stack || 1);
+          let best = null, bestD = cfgM.range;
+          for (const en of S.units || []) {
+            if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+            const ex = (en.rx !== undefined) ? en.rx : en.x;
+            const ey = (en.ry !== undefined) ? en.ry : en.y;
+            const d = Math.hypot(sx - ex, sy - ey);
+            if (d < bestD) { bestD = d; best = en; }
+          }
+          if (best) _f9DealDmg(best, dmg, sel);
+        }, 250);
+      } else if (sel.utype === 'pigronke') {
+        _pigronkeSpearAttack(sel, now);
+      } else if (sel.utype === 'shaman') {
+        // Shaman magic projectile
+        sel.swingStart = now;
+        const faceDx = sel.facing.dx || 1;
+        if (typeof spawnShamanProjectile === 'function') {
+          setTimeout(() => {
+            if (sel.alive) spawnShamanProjectile(sel.x, sel.y, targetGx, targetGy, sel.stack || 1, false);
+          }, 430);
+        }
+      } else if (sel.utype === 'archer' || sel.utype === 'harpoon_fish') {
+        // Archer arrow / Harpoon throw
+        sel.hfishThrowStart = now;
+        const faceDx = sel.facing.dx || 1;
+        if (typeof spawnBarracksHarpoon === 'function') {
+          const fireMs = (typeof _HFISH_THROW_FIRE_FRAME !== 'undefined' && typeof _HFISH_THROW_MS !== 'undefined')
+            ? (_HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS) : 450;
+          // Override startX/startY į TIKSLIĄ archer/harpoon sprite "lanko/rankos" poziciją.
+          // Sprite size = UNIT_CELL * 2.5 = ~85px. Body rankos zona ~35% nuo centro krypti.
+          // Plus shoulder level ~15-18% aukščiau cell centro.
+          const srcX = (sel.rx !== undefined ? sel.rx : sel.x);
+          const srcY = (sel.ry !== undefined ? sel.ry : sel.y);
+          const _sprH = UNIT_CELL * 2.5;
+          const startPx = (srcX + 0.5) * CELL + faceDx * (_sprH * 0.10);  // ~8.5px krypti — arciau body
+          const startPy = (srcY + 0.5) * CELL - _sprH * 0.18;             // ~15px aukstyn (peciu lygis)
+          setTimeout(() => {
+            if (sel.alive) spawnBarracksHarpoon(sel.x, sel.y, targetGx, targetGy, faceDx, sel.stack || 1, false, sel.utype, null, null, {
+              startX: startPx, startY: startPy,
+            });
+          }, fireMs);
+        }
+      }
+    }
   });
 
   // Archer charge-fire — laikai mygtuką → strėlės nuotolis auga, paleidi → šauna toward mouseup pos.
@@ -29462,6 +31773,97 @@ document.addEventListener('DOMContentLoaded', () => {
     // tad click taškas irgi konvertuojamas į pasaulio erdvę.
     const mx = _cmx + (gameMode === 'adventure' && S.cam ? S.cam.x : 0);
     const my = _cmy + (gameMode === 'adventure' && S.cam ? S.cam.y : 0);
+    // ── F9 SMOOTH CLICK-TO-MOVE + DRAG MULTI-SELECT ──
+    if (gameMode === 'adventure' && S && S.floor === 9 && S.units) {
+      // Po drag selection — click ignoruojam (drag jau pasirinko unit'us)
+      if (window._f9DragJustEnded) {
+        window._f9DragJustEnded = false;
+        return;
+      }
+      // 1. Selection bar (screen-space click) — pakeičia pasirinkimą į TIK 1 unit'ą
+      if (typeof _f9SelBarRects !== 'undefined' && _f9SelBarRects.length) {
+        for (const r of _f9SelBarRects) {
+          if (_cmx >= r.x && _cmx <= r.x + r.w && _cmy >= r.y && _cmy <= r.y + r.h) {
+            window._f9SelectedSet = [r.u];
+            window._f9Selected = r.u;
+            return;
+          }
+        }
+      }
+      const hero = S.units.find(u => u.team === 0 && u.alive);
+      // Default selection = hero, jei dar nieko nepasirinkta
+      if (!Array.isArray(window._f9SelectedSet)) window._f9SelectedSet = [];
+      window._f9SelectedSet = window._f9SelectedSet.filter(u => u && u.alive);
+      if (window._f9SelectedSet.length === 0 && hero) window._f9SelectedSet = [hero];
+      window._f9Selected = window._f9SelectedSet[0] || null;
+
+      const tx = mx / CELL - 0.5;
+      const ty = my / CELL - 0.5;
+      if (tx < 0 || tx >= COLS - 1 || ty < 0 || ty >= ROWS - 1) return;
+      // 2. Hit detect ant unit (selektuojam jį, sumetam į set)
+      // Tik FRIENDLY unit'us (hero + trained barracks) — enemies ignore'inami,
+      // kad jiems neatsirastu žalia selection ring'as ar accident'inis valdymas.
+      const selSet = window._f9SelectedSet;
+      let hitUnit = null;
+      {
+        let bestDist = 0.32;
+        for (const u of S.units) {
+          if (!u || !u.alive) continue;
+          if (typeof _f9IsAlly === 'function' && !_f9IsAlly(u)) continue; // skip enemies
+          const ux = (u.rx !== undefined) ? u.rx : u.x;
+          const uy = (u.ry !== undefined) ? u.ry : u.y;
+          const dx = tx - ux, dy = ty - uy;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < bestDist) { bestDist = d; hitUnit = u; }
+        }
+      }
+      if (hitUnit) {
+        // Shift+click → toggle in/out of set; plain → replace with single
+        if (e.shiftKey) {
+          const idx = selSet.indexOf(hitUnit);
+          if (idx >= 0) selSet.splice(idx, 1);
+          else selSet.push(hitUnit);
+        } else {
+          window._f9SelectedSet = [hitUnit];
+        }
+        window._f9Selected = window._f9SelectedSet[0] || null;
+        return;
+      }
+      // 3. Click empty space → judink visus pasirinktus formation offset stiliumi
+      //    Tai PANAIKINA engagement lock — naujas move komandas perima prioritetą.
+      for (const u of selSet) {
+        if (u) u._f9EngageTarget = null;
+      }
+      if (!selSet.length) return;
+      // Compute centroid of selected units
+      let cX = 0, cY = 0;
+      for (const u of selSet) {
+        cX += (u.rx !== undefined) ? u.rx : u.x;
+        cY += (u.ry !== undefined) ? u.ry : u.y;
+      }
+      cX /= selSet.length; cY /= selSet.length;
+      // Each unit: target = clickPos + (unitPos - centroid)
+      for (const u of selSet) {
+        const ux = (u.rx !== undefined) ? u.rx : u.x;
+        const uy = (u.ry !== undefined) ? u.ry : u.y;
+        let utx = tx + (ux - cX);
+        let uty = ty + (uy - cY);
+        // Clamp į mapos vidų
+        utx = Math.max(0.2, Math.min(COLS - 1.2, utx));
+        uty = Math.max(0.2, Math.min(ROWS - 1.2, uty));
+        u._f9Target = { tx: utx, ty: uty };
+      }
+      if (!window._f9ClickMarkers) window._f9ClickMarkers = [];
+      // Marker laikomas alive kol bent vienas iš šių unit'ų turi target prie šios pozicijos.
+      window._f9ClickMarkers.push({
+        tx, ty,
+        born: performance.now(),
+        units: selSet.slice(),
+        arrivedAt: null,
+      });
+      while (window._f9ClickMarkers.length > 8) window._f9ClickMarkers.shift();
+      return;
+    }
     const inside = (b) => b && mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h;
     const insideScr = (b) => b && _cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h;
     // F11/F12 outcome banner click — RETURN button or X close
@@ -31248,6 +33650,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) {
         return;
       }
+      // F9 — radial menu išjungtas, click ant hero traktuojamas kaip move target
+      if (gameMode === 'adventure' && S && S.floor === 9) {
+        return;
+      }
       _ronkePopupOpen = true;
       return;
     }
@@ -31270,6 +33676,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // nes F11 turi savo click handler (canvas.click @25576). Kitaip turn-based applySingleAction
     // teleportuotų editor-enemy unitus (unit.x=nx be chaseWalk).
     if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) return;
+    // F9 — turi savo F9 click handler (smooth move + per-unit right-click attack). Legacy shoot skip.
+    if (gameMode === 'adventure' && S && S.floor === 9) return;
     SFX.init();
     const clicked = S.units.find(u => u.team === 0 && u.alive && u.x === gx && u.y === gy);
     if (clicked) {
@@ -31377,6 +33785,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // F11 commander mode — F11 turi savo click handler (canvas.click @25576). Legacy shoot
     // path (S.pending[0]='shoot' → aiQueueAction/resolveTick) teleportuotų enemy unitus.
     if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) return;
+    // F9 — turi savo F9 click handler (smooth move + per-unit attack). Legacy shoot praleidžiamas.
+    if (gameMode === 'adventure' && S && S.floor === 9) return;
     SFX.init();
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
