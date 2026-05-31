@@ -17,8 +17,16 @@
     modalOpen = true;
     selectUnit(selectedUtype);
     refreshAll();
-    if (!stateRefreshInterval) stateRefreshInterval = setInterval(refreshAll, 15000);
+    if (!stateRefreshInterval) stateRefreshInterval = setInterval(refreshAll, 12000);
+    // Grįžus į tab'ą (mobiliam po wallet pasirašymo) — iškart atnaujinam būseną
+    if (!_visBound) {
+      _visBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && modalOpen) { refreshAll(); setTimeout(refreshAll, 2000); }
+      });
+    }
   }
+  let _visBound = false;
   function closeModal() {
     const modal = document.getElementById('nft-barracks-modal');
     if (!modal) return;
@@ -595,7 +603,9 @@
   }
 
   function showPending(p) {
-    document.getElementById('nft-pending').style.display = 'block';
+    const pendEl = document.getElementById('nft-pending');
+    const wasHidden = pendEl.style.display === 'none';
+    pendEl.style.display = 'block';
     document.getElementById('nft-actions').style.display = 'none';
     const utypeName = window.BarracksNFT.utypeName(p.utype);
     document.getElementById('nft-pending-info').textContent =
@@ -603,18 +613,27 @@
     const readyAt = Number(p.readyAt);
     const tick = () => {
       const remain = readyAt - Math.floor(Date.now() / 1000);
+      const claimBtn = document.getElementById('nft-claim-btn');
       if (remain > 0) {
         document.getElementById('nft-pending-countdown').textContent = `${remain}s`;
-        document.getElementById('nft-claim-btn').style.display = 'none';
+        claimBtn.style.display = 'none';
       } else {
         document.getElementById('nft-pending-countdown').textContent = 'READY ✓';
-        document.getElementById('nft-claim-btn').style.display = 'inline-block';
+        const justReady = claimBtn.style.display === 'none';
+        claimBtn.style.display = 'inline-block';
+        if (justReady) {  // pirmą kartą paruošta → scroll į claim mygtuką (mobile: gali būti žemiau ekrano)
+          try { claimBtn.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+        }
         if (pendingTimer) { clearInterval(pendingTimer); pendingTimer = null; }
       }
     };
     tick();
     if (pendingTimer) clearInterval(pendingTimer);
     pendingTimer = setInterval(tick, 1000);
+    // Pending pirmą kartą pasirodė → scroll į jį (kad žaidėjas pamatytų countdown/claim)
+    if (wasHidden) {
+      try { setTimeout(() => pendEl.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120); } catch (_) {}
+    }
   }
   function hidePending() {
     document.getElementById('nft-pending').style.display = 'none';
@@ -747,8 +766,10 @@
         const qty = Math.max(1, Math.min(100, Number(document.getElementById('nft-qty').value) || 1));
         setStatus(`Starting training: ${qty}× ${window.BarracksNFT.utypeName(selectedUtype)}...`);
         const hash = await window.BarracksNFT.startTraining(selectedUtype, qty);
-        setStatus(`Training started ✓ ${txLink(hash)}`, 'success');
+        setStatus(`Training started ✓ ${txLink(hash)} — wait for countdown, then CLAIM below`, 'success');
+        // Keli refresh'ai — RPC vėluoja atspindėti pending (ypač mobiliam po wallet sign).
         refreshAll();
+        for (let i = 1; i <= 6; i++) setTimeout(refreshAll, i * 2500);  // kas 2.5s iki ~15s
       } catch (e) {
         setStatus(`Training failed: ${e.shortMessage || e.message}`, 'error');
       }
