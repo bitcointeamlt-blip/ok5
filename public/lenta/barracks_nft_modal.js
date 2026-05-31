@@ -607,6 +607,11 @@
     const wasHidden = pendEl.style.display === 'none';
     pendEl.style.display = 'block';
     document.getElementById('nft-actions').style.display = 'none';
+    // Pending metu paslepiam train formą (negali treniruoti su MAX_PENDING=1) →
+    // claim matomas IŠKART, modalas trumpas (mobiliam tilpsta, claim nenueina už ekrano).
+    ['.nft-unit-grid', '.nft-qty-row', '#nft-cost-preview'].forEach(function(sel) {
+      var el = document.querySelector(sel); if (el) el.style.display = 'none';
+    });
     const utypeName = window.BarracksNFT.utypeName(p.utype);
     document.getElementById('nft-pending-info').textContent =
       `${p.qty}× ${utypeName}`;
@@ -638,6 +643,10 @@
   function hidePending() {
     document.getElementById('nft-pending').style.display = 'none';
     document.getElementById('nft-actions').style.display = 'flex';
+    // Grąžinam train formą (po claim/cancel)
+    ['.nft-unit-grid', '.nft-qty-row', '#nft-cost-preview'].forEach(function(sel) {
+      var el = document.querySelector(sel); if (el) el.style.display = '';
+    });
     if (pendingTimer) { clearInterval(pendingTimer); pendingTimer = null; }
   }
 
