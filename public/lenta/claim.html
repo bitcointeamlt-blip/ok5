@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>🐗 Claim Your Units — PewPew</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      background: linear-gradient(160deg, #16202b 0%, #1a1226 100%);
+      color: #f5e6c3; font-family: system-ui, -apple-system, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .card {
+      width: 100%; max-width: 440px; background: #1b1426;
+      border: 2px solid #4a2a68; border-radius: 16px; padding: 28px 22px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5); text-align: center;
+    }
+    h1 { font-size: 22px; margin: 0 0 6px; color: #c084fc; }
+    .sub { font-size: 13px; color: #9a8aaa; margin: 0 0 22px; }
+    button {
+      width: 100%; padding: 18px; font-size: 17px; font-weight: 700;
+      border: none; border-radius: 12px; cursor: pointer; margin-top: 12px;
+      transition: transform .1s, box-shadow .2s;
+    }
+    button:active { transform: scale(0.98); }
+    #connect { background: linear-gradient(180deg,#4a9da6,#2e6a72); color: #fff; }
+    #claim   { background: linear-gradient(180deg,#ffcf5c,#e0a52e); color: #2a1a00; display: none; }
+    #claim:disabled { opacity: .5; cursor: not-allowed; }
+    .status {
+      margin-top: 20px; padding: 14px; border-radius: 10px; font-size: 14px;
+      line-height: 1.5; background: rgba(122,90,152,0.15); border: 1px solid rgba(140,100,170,0.3);
+      min-height: 24px; word-break: break-word;
+    }
+    .status.ok    { color: #6fcf5c; border-color: rgba(111,207,92,0.4); }
+    .status.err   { color: #e85d5d; border-color: rgba(232,93,93,0.4); }
+    .big { font-size: 19px; font-weight: 700; color: #ffcf5c; }
+    a { color: #4a9da6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🐗 Claim Your Units</h1>
+    <p class="sub">Paspaudei „Train", sumokėjai, bet nematai NFT?<br>Čia pasiimk juos — prisijunk ir spausk CLAIM.</p>
+    <button id="connect">🔗 Connect Wallet</button>
+    <button id="claim">⚔ CLAIM NFTs</button>
+    <div class="status" id="status">Connect your wallet to check for claimable units.</div>
+    <p class="sub" style="margin-top:18px"><a href="./">← Back to game</a></p>
+  </div>
+
+  <script src="wallet.js?v=wp16timeout"></script>
+  <script src="barracks_nft.js?v=nft37getpending"></script>
+  <script>
+    var $ = function(id){ return document.getElementById(id); };
+    function setStatus(msg, cls){ var s=$('status'); s.textContent=msg; s.className='status'+(cls?' '+cls:''); }
+    var pollTimer = null;
+
+    async function checkPending() {
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      var addr;
+      try { addr = window.Wallet.getAddress(); } catch(e){ return; }
+      if (!addr) return;
+      setStatus('Checking your training…');
+      try {
+        var p = await window.BarracksNFT.getPending(addr);
+        if (!p.active) {
+          setStatus('No pending training on this wallet — nothing to claim. (If you minted, units are already in your inventory.)');
+          $('claim').style.display = 'none';
+          return;
+        }
+        var name = (window.BarracksNFT.utypeName ? window.BarracksNFT.utypeName(p.utype) : 'units');
+        var now = Math.floor(Date.now()/1000);
+        var remain = Number(p.readyAt) - now;
+        if (remain <= 0) {
+          setStatus('✓ ' + p.qty + '× ' + name + ' READY! Press CLAIM below.', 'ok');
+          $('status').classList.add('big');
+          $('claim').style.display = 'block';
+          $('claim').disabled = false;
+        } else {
+          setStatus('⏳ ' + p.qty + '× ' + name + ' — ready in ' + remain + 's. Keep this page open…');
+          $('claim').style.display = 'none';
+          pollTimer = setTimeout(checkPending, 4000);
+        }
+      } catch(e) {
+        setStatus('Could not read state (network?). Retrying…', 'err');
+        pollTimer = setTimeout(checkPending, 4000);
+      }
+    }
+
+    $('connect').onclick = async function() {
+      try {
+        setStatus('Connecting wallet…');
+        await window.Wallet.connect();
+        $('connect').textContent = '✓ ' + window.Wallet.shortAddress();
+        await checkPending();
+      } catch(e) {
+        setStatus('Connect failed: ' + (e && e.message ? e.message : e), 'err');
+      }
+    };
+
+    $('claim').onclick = async function() {
+      try {
+        $('claim').disabled = true;
+        setStatus('Claiming… confirm in your wallet.');
+        var hash = await window.BarracksNFT.claimTraining();
+        setStatus('🎉 CLAIMED! Your NFTs are minted. TX: ' + hash.slice(0,14) + '…', 'ok');
+        $('claim').style.display = 'none';
+      } catch(e) {
+        $('claim').disabled = false;
+        setStatus('Claim failed: ' + (e && (e.shortMessage||e.message) || e), 'err');
+      }
+    };
+
+    // Auto-check if wallet already connected (session restored)
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        try { if (window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected()) {
+          $('connect').textContent = '✓ ' + window.Wallet.shortAddress();
+          checkPending();
+        } } catch(e){}
+      }, 800);
+    });
+  </script>
+</body>
+</html>
