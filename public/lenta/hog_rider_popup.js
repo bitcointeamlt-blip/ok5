@@ -7,7 +7,7 @@
   // Nustatyk TIKRĄ launch momentą čia (UTC). Pabaiga = start + EVENT_DURATION_DAYS.
   // Visi žaidėjai mato tą patį countdown'ą — nepriklauso nuo to, kada pirmą kartą įėjo.
   // ⚠️ PRIEŠ MAINNET LAUNCH: pakeisk į realią datą (turi sutapti su addUnitType(5) TX laiku).
-  const EVENT_START_UTC    = '2026-05-31T09:00:00Z';   // ← LAUNCH 2026-05-31 (addUnitType TX 0x4cebfc...). 6d langas iki 06-06
+  const EVENT_START_UTC    = '2026-05-31T07:00:00Z';   // ← LAUNCH 2026-05-31 (addUnitType TX 0x4cebfc...). UTC! 6d langas iki 06-06
   const EVENT_DURATION_DAYS = 6;                        // ← event trukmė dienomis (atviras visiems, be fazių)
   const EVENT_START_MS     = Date.parse(EVENT_START_UTC);
   const EVENT_DURATION     = EVENT_DURATION_DAYS * 24 * 60 * 60 * 1000;
