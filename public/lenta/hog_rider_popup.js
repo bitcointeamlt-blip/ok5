@@ -7,7 +7,7 @@
   // Nustatyk TIKRĄ launch momentą čia (UTC). Pabaiga = start + EVENT_DURATION_DAYS.
   // Visi žaidėjai mato tą patį countdown'ą — nepriklauso nuo to, kada pirmą kartą įėjo.
   // ⚠️ PRIEŠ MAINNET LAUNCH: pakeisk į realią datą (turi sutapti su addUnitType(5) TX laiku).
-  const EVENT_START_UTC    = '2026-05-30T00:00:00Z';   // ← globali pradžia (UTC) — TESTAVIMUI aktyvi dabar; prieš launch keisk į realią datą
+  const EVENT_START_UTC    = '2026-05-31T09:00:00Z';   // ← LAUNCH 2026-05-31 (addUnitType TX 0x4cebfc...). 6d langas iki 06-06
   const EVENT_DURATION_DAYS = 6;                        // ← event trukmė dienomis (atviras visiems, be fazių)
   const EVENT_START_MS     = Date.parse(EVENT_START_UTC);
   const EVENT_DURATION     = EVENT_DURATION_DAYS * 24 * 60 * 60 * 1000;
@@ -18,7 +18,7 @@
   // true  = mintas veikia (mygtukas atidaro Barracks, tile matomas, countdown tiksi).
   // 🚀 LAUNCH metu: (1) addUnitType(5) mainnet, (2) EVENT_START_UTC=launch data,
   //                 (3) HOG_LAUNCHED=true, (4) deploy. Viskas pradeda veikti.
-  const HOG_LAUNCHED = false;
+  const HOG_LAUNCHED = true;
 
   const EVENT_KEY        = 'hogEventDismissedAt';   // ms timestamp of last "don't show today"
   const SUPPRESS_24H     = 24 * 60 * 60 * 1000;
