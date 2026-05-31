@@ -2099,16 +2099,16 @@
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=cmd704warn"></script>
   <script src="wallet-ui.js?v=pewpew11connecting"></script>
-  <script src="hog_rider_popup.js?v=hog48timefix"></script>
+  <script src="hog_rider_popup.js?v=hog49reload"></script>
   <script>
   // ── AUTO-RELOAD kai deployinama nauja versija ───────────────────
   // Kad žaidėjams (ypač mobiliems/Chromebook) NEREIKĖTŲ hard-refresh.
   // Lygina įkrautą hog_rider_popup.js ?v= su gyvo index.html versija;
   // jei skiriasi -> nauja versija deployinta -> automatiškai perkrauna.
   (function() {
-    var s = document.querySelector('script[src*="hog_rider_popup.js"]');
-    var m0 = s && s.src.match(/[?&]v=([^&]+)/);
-    var current = m0 ? m0[1] : null;
+    // Fingerprint = VISŲ .js/.css ?v= versijų rinkinys → bet kurio failo deploy'as triggerina reload.
+    function fp(text) { return ((text || '').match(/\.(?:js|css)\?v=[a-zA-Z0-9_]+/g) || []).sort().join('|'); }
+    var current = fp(document.documentElement.innerHTML);
     if (!current) return;
     var reloading = false;
     function check() {
@@ -2116,14 +2116,14 @@
       fetch(location.pathname + '?_cb=' + Date.now(), { cache: 'no-store' })
         .then(function(r) { return r.text(); })
         .then(function(html) {
-          var m = html.match(/hog_rider_popup\.js\?v=([^&"']+)/);
-          if (m && m[1] && m[1] !== current) { reloading = true; location.reload(); }
+          var live = fp(html);
+          if (live && live !== current) { reloading = true; location.reload(); }
         })
         .catch(function() {});
     }
     document.addEventListener('visibilitychange', function() { if (!document.hidden) check(); });
-    setInterval(check, 4 * 60 * 1000);  // tikrina kas 4 min
-    setTimeout(check, 15000);           // ir greitai po įkrovimo
+    setInterval(check, 3 * 60 * 1000);  // tikrina kas 3 min
+    setTimeout(check, 12000);           // ir greitai po įkrovimo
   })();
   </script>
   <script>
