@@ -1417,13 +1417,14 @@
   }
 
   // ── Deploy sistema (HOME → F12 trained unit'ai)
-  const PLAYABLE_TYPES = ['skull', 'archer', 'shaman', 'harpoon_fish', 'tower', 'crossbow_tower', 'zip'];
+  const PLAYABLE_TYPES = ['skull', 'archer', 'shaman', 'harpoon_fish', 'tower', 'crossbow_tower', 'zip', 'hog_rider'];
   // Range = fraction of lane width. F11 skull = 1 cell (~3% lane), ranged units = 3-7 cells.
   const ALLY_STATS = {
     skull:          { hp: 8,  dmg: 2, speed: 0.012, attackCooldown: 900,  range: 0.04 },
     archer:         { hp: 5,  dmg: 3, speed: 0.014, attackCooldown: 1500, range: 0.12 },   // CD 1.5s, range ~puse
     shaman:         { hp: 4,  dmg: 4, speed: 0.010, attackCooldown: 3000, range: 0.14 },   // CD 3s (anksčiau 1.3s, buvo OP)
     harpoon_fish:   { hp: 7,  dmg: 3, speed: 0.011, attackCooldown: 1800, range: 0.10 },   // CD 1.8s, range ~puse
+    hog_rider:      { hp: 14, dmg: 8, speed: 0.013, attackCooldown: 2800, range: 0.05 },   // EPIC cavalry melee — tankiausias, spear smūgis 8 dmg, lėtas attack CD 2.8s (utype 5 / frost ball)
     // STATIC towers — neina, stovi prie base ir šaudo
     tower:          { hp: 30, dmg: 4, speed: 0,     attackCooldown: 1400, range: 0.55, static: true },
     crossbow_tower: { hp: 35, dmg: 6, speed: 0,     attackCooldown: 1900, range: 0.75, static: true },
@@ -1555,7 +1556,8 @@
     star:    'crossbow_tower',
     crystal: 'zip',
     shadow:  'skull',
-    // pearl, frost — be unit (palieka jiems jų specialius merge attacks)
+    frost:   'hog_rider',   // mėlyna (Ronin) — Hog Rider (NFT utype 5). Frost IŠLAIKO lane-reverse merge efektą (kaip shadow turi ir wall ir skull)
+    // pearl — be unit (palieka jam specialų merge attack)
   };
   // ── F12 session free unit pool — pre-deck modal'o pasirinkti free unitai ──
   // {utype: count} — atstatomas kiekvieno F12 session pradžioje, pildomas iš pre-deck choice.
@@ -1724,6 +1726,22 @@
   };
   // Centruoja ir piešia unit ikoną į (cx, cy) area su max size
   function _drawUnitIcon(utype, cx, cy, maxW, maxH, t) {
+    // SPECIAL: hog_rider naudoja pigronke idle sheet'ą (640px frames root'e, ne assets_tiny)
+    if (utype === 'hog_rider') {
+      const sheets = _initHogRiderSheets();
+      const st = sheets && sheets.idle;
+      if (st && st.sheet && st.sheet.complete && st.sheet.naturalWidth) {
+        const fc = st.frameCount;
+        const fw = Math.floor(st.sheet.naturalWidth / fc);
+        const fh = st.sheet.naturalHeight;
+        const idx = Math.floor(t / (1000 / _HOG_FPS.idle)) % fc;
+        const scale = Math.min(maxW / fw, maxH / fh);
+        const dw = Math.round(fw * scale), dh = Math.round(fh * scale);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(st.sheet, idx * fw, 0, fw, fh, Math.round(cx - dw / 2), Math.round(cy - dh / 2), dw, dh);
+      }
+      return;
+    }
     // SPECIAL: shaman naudoja shamanAnimFrames iš game.js (frame per failas)
     if (utype === 'shaman') {
       let frames = null;
@@ -2014,6 +2032,7 @@
     _f12Warnings = [];
     _f12GameStartT = now();
     _f12LaneStrikes = [];
+    _f12HogStrikes = [];
     _f12PendingAttacks = [];
     _f12DmgPopups = [];
     _f12PoisonImpacts = [];
@@ -3977,6 +3996,105 @@
     ctx.restore();
   }
 
+  // ── Hog Rider spear smūgis — particle burst (kaip mint popup'o spawnDeath: ──
+  //    white flash + shockwave ring + crimson ring + 44 raudonos/baltos pixel particles su friction)
+  const _HOG_REDS = ['#ff3333', '#ff5544', '#cc1818', '#aa0e0e'];
+  function _drawHogStrikes(L, t) {
+    if (!_f12HogStrikes.length) return;
+    const baseW = 32;
+    ctx.save();
+    for (let i = _f12HogStrikes.length - 1; i >= 0; i--) {
+      const s = _f12HogStrikes[i];
+      // Lazy init — particles screen-space koordinatėse (pirmo draw metu, kai turim layout L)
+      if (!s._init) {
+        s._init = true;
+        s._lastT = t;
+        const ly = L.lanesY + s.lane * L.laneH;
+        const lh = L.laneH - 4;
+        const cx = L.lanesX + baseW + (L.lanesW - baseW - 30) * s.x;
+        const cy = ly + lh / 2;
+        s.particles = []; s.rings = []; s.flashes = [];
+        // Balto šviesos blyksnio burst
+        s.flashes.push({ x: cx, y: cy, r0: 8, r1: 58, life: 1, decay: 0.13 });
+        // Shockwave baltas ring + vidinis crimson
+        s.rings.push({ x: cx, y: cy, r0: 6, r1: 50, life: 1, decay: 0.05,  color: 'rgba(255,255,255,0.9)' });
+        s.rings.push({ x: cx, y: cy, r0: 3, r1: 36, life: 1, decay: 0.065, color: 'rgba(255,80,80,0.7)' });
+        // 44 pixel particles (raudona paletė 78% + balta-glow 22%)
+        const NUM = 44;
+        for (let p = 0; p < NUM; p++) {
+          const ang = Math.PI * 2 * Math.random();
+          const sp = (0.4 + Math.random() * 3.0) * 1.3;
+          const isWhite = Math.random() < 0.22;
+          s.particles.push({
+            x: cx + (Math.random() - 0.5) * 12,
+            y: cy + (Math.random() - 0.5) * 12,
+            vx: Math.cos(ang) * sp * 1.4,
+            vy: Math.sin(ang) * sp * 1.4 - 0.6,
+            life: 1, decay: 0.018 + Math.random() * 0.028,
+            r: 2.5 + Math.random() * 4,
+            isWhite, color: isWhite ? '#ffffff' : _HOG_REDS[(Math.random() * _HOG_REDS.length) | 0],
+          });
+        }
+      }
+      // Step fizika (dt-based, kaip popup'e — friction 0.91, life decay)
+      const dt = Math.min(48, t - (s._lastT || t));
+      s._lastT = t;
+      const scale = dt / 16.67;
+      const friction = Math.pow(0.91, scale);
+      for (let p = s.particles.length - 1; p >= 0; p--) {
+        const pt = s.particles[p];
+        pt.x += pt.vx * scale; pt.y += pt.vy * scale;
+        pt.vx *= friction; pt.vy *= friction;
+        pt.life -= pt.decay * scale;
+        if (pt.life <= 0) s.particles.splice(p, 1);
+      }
+      for (let r = s.rings.length - 1; r >= 0; r--)  { s.rings[r].life   -= s.rings[r].decay * scale;   if (s.rings[r].life   <= 0) s.rings.splice(r, 1); }
+      for (let f = s.flashes.length - 1; f >= 0; f--) { s.flashes[f].life -= s.flashes[f].decay * scale; if (s.flashes[f].life <= 0) s.flashes.splice(f, 1); }
+      if (s.particles.length === 0 && s.rings.length === 0 && s.flashes.length === 0) { _f12HogStrikes.splice(i, 1); continue; }
+      // ── Render — flash (apačioj)
+      for (const f of s.flashes) {
+        const tt = 1 - f.life;
+        const rad = f.r0 + (f.r1 - f.r0) * tt;
+        const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, rad);
+        grad.addColorStop(0,   `rgba(255,255,255,${(f.life * 0.95).toFixed(3)})`);
+        grad.addColorStop(0.3, `rgba(255,220,160,${(f.life * 0.6).toFixed(3)})`);
+        grad.addColorStop(0.7, `rgba(255,80,40,${(f.life * 0.3).toFixed(3)})`);
+        grad.addColorStop(1,   'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(f.x, f.y, rad, 0, Math.PI * 2); ctx.fill();
+      }
+      // Rings
+      for (const r of s.rings) {
+        const tt = 1 - r.life;
+        const rad = r.r0 + (r.r1 - r.r0) * tt;
+        ctx.globalAlpha = r.life * 0.9;
+        ctx.strokeStyle = r.color;
+        ctx.lineWidth = Math.max(0.5, 3 * r.life);
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI * 2); ctx.stroke();
+      }
+      // Particles — solid (raudoni)
+      ctx.shadowBlur = 0;
+      for (const pt of s.particles) {
+        if (pt.isWhite) continue;
+        ctx.globalAlpha = pt.life > 0.5 ? 1 : pt.life * 2;
+        ctx.fillStyle = pt.color;
+        const size = Math.max(1, Math.round(pt.r * (0.3 + 0.7 * pt.life)));
+        ctx.fillRect(Math.round(pt.x - size / 2), Math.round(pt.y - size / 2), size, size);
+      }
+      // Particles — balti su glow
+      ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 8; ctx.fillStyle = '#ffffff';
+      for (const pt of s.particles) {
+        if (!pt.isWhite) continue;
+        ctx.globalAlpha = pt.life > 0.5 ? 1 : pt.life * 2;
+        const size = Math.max(1, Math.round(pt.r * (0.3 + 0.7 * pt.life)));
+        ctx.fillRect(Math.round(pt.x - size / 2), Math.round(pt.y - size / 2), size, size);
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
   // ── OH SHIT eventai — boss, horde, critical alarm
   function _tickOhShitEvents(t) {
     // BOSS — vienkartinis didelis priešas kas 45-60s (warning užrašas pašalintas)
@@ -4158,6 +4276,28 @@
           }
           a._pendingProjAt = 0; a._projTarget = null; a._projLane = undefined;
         }
+        // Pending MELEE hit (Hog Rider) — damage + VFX nukrenta prie spear apex, ne swing start
+        if (a._pendingMeleeAt && t >= a._pendingMeleeAt) {
+          const mt = a._meleeTarget;
+          const ml = (a._meleeLane !== undefined) ? a._meleeLane : li;
+          if (mt && !mt.dead) {
+            mt.hp -= a.dmg;
+            mt.hitFlashUntil = t + 200;
+            _spawnDmgPopup(ml, mt.x, a.dmg, t);
+            _allyAddDmgDealt(a, a.dmg);
+            _f12HogStrikes.push({ lane: ml, x: mt.x, born: t });
+            _f12ScreenShake = Math.max(_f12ScreenShake, 2.5);
+            try { if (_F12Audio && _F12Audio.damageHit) _F12Audio.damageHit(a.dmg); } catch (_) {}
+            if (mt.hp <= 0) {
+              mt.dead = true; mt.deathStartedAt = t;
+              score += _nftScoreBoost(5);
+              _trackF12Kill(mt);
+              if (!mt._isWall) _F12Audio.skullDeath();
+              _allyAddKill(a);
+            }
+          }
+          a._pendingMeleeAt = 0; a._meleeTarget = null; a._meleeLane = undefined;
+        }
         // Zip charge fire — atskira logika (lightning, ne projectile)
         if (a._zipPendingFire && t >= a._zipPendingFire) {
           if (a._projTarget && !a._projTarget.dead) {
@@ -4202,6 +4342,12 @@
               a._zipChargeStart = t;
               a._zipPendingFire = t + _ZIP_CHARGE_DUR;
               a._projTarget = target; a._projLane = targetLaneIdx;
+            } else if (a.utype === 'hog_rider') {
+              // Hog Rider — DELAYED melee: damage + VFX nukrenta prie spear thrust apex
+              // (_HOG_HIT_DELAY), NE swing start. Kitaip priešas mirdavo/dmg rodėsi
+              // dar nepusėjus atakos animacijai.
+              a._pendingMeleeAt = t + _HOG_HIT_DELAY;
+              a._meleeTarget = target; a._meleeLane = targetLaneIdx;
             } else {
               target.hp -= a.dmg;
               target.hitFlashUntil = t + 200;
@@ -4585,6 +4731,7 @@
     _drawMergePopups(L, t);
     _drawPerfectPopups(L, t);
     _drawLaneStrikes(L, t);    // merge attack effects ant juostų
+    _drawHogStrikes(L, t);     // Hog Rider spear smūgio slash arc + sparks
     _drawPoisonImpacts(L, t);  // nuodų uždėjimo / tick burst'ai
     _drawWallConvert(L, t);    // shadow → wall transformation burst
     _drawAsteroids(L, t);      // geltonas asteroidas kris ir cross damage
@@ -6163,6 +6310,51 @@
     return { sheet: sheet.sheet, sx: frameIdx * fw, sy: 0, sw: fw, sh: fw, anim, sizeMul: def.sizeMul || 1 };
   }
 
+  // ── Hog Rider animation (pigronke sprite sheets — idle/walk/attack, 8 frames each)
+  // Lazy-load (kaip skull enemy sheets) — naudoja global loadHorizontalSheetFrames iš game.js.
+  let _hogRiderSheets = null;
+  function _initHogRiderSheets() {
+    if (_hogRiderSheets) return _hogRiderSheets;
+    if (typeof loadHorizontalSheetFrames !== 'function') return null;
+    _hogRiderSheets = {
+      idle:   loadHorizontalSheetFrames('pigronke.png',       8),
+      walk:   loadHorizontalSheetFrames('pigronkewalk.png',   8),
+      attack: loadHorizontalSheetFrames('ronkepigattack.png', 8),
+      hurt:   loadHorizontalSheetFrames('dmgtake01.png',      8),  // dmg-take recoil (kaip mint popup)
+    };
+    return _hogRiderSheets;
+  }
+  const _HOG_FPS = { idle: 8, walk: 11, attack: 12, hurt: 20 };
+  // Spear thrust apex ~ attack animacijos viduryje (8 frames @ 12fps = 667ms → ~360ms = apex).
+  // Damage + VFX nukrenta čia, ne swing start, kad sutaptų su vizualiniu smūgiu.
+  const _HOG_HIT_DELAY = 360;
+  function _pickHogRiderFrame(u, t, isMoving) {
+    const sheets = _initHogRiderSheets();
+    if (!sheets) return null;
+    const swingDur = (sheets.attack.frameCount / _HOG_FPS.attack) * 1000;
+    const swingElapsed = u.swingStart ? t - u.swingStart : Infinity;
+    // HURT detection — hitFlashUntil set'inamas kai gauna damage (enemy counter). dmgtake01 recoil grojam vieną kartą.
+    const hurtSheet = sheets.hurt;
+    const hurtTakenAt = u.hitFlashUntil ? (u.hitFlashUntil - 200) : 0;
+    const hurtDur = hurtSheet ? (hurtSheet.frameCount / _HOG_FPS.hurt) * 1000 : 0;
+    const hurtElapsed = (hurtSheet && hurtTakenAt > 0) ? (t - hurtTakenAt) : Infinity;
+    let anim = 'idle';
+    if (swingElapsed < swingDur)                       anim = 'attack';  // sava ataka turi prioritetą
+    else if (hurtSheet && hurtElapsed < hurtDur)       anim = 'hurt';    // dmg-take recoil
+    else if (isMoving)                                 anim = 'walk';
+    const st = sheets[anim];
+    if (!st || !st.sheet || !st.sheet.complete || !st.sheet.naturalWidth) return null;
+    const fps = _HOG_FPS[anim];
+    const fc = st.frameCount;
+    const fw = Math.floor(st.sheet.naturalWidth / fc);
+    const fh = st.sheet.naturalHeight;
+    let idx;
+    if (anim === 'attack')    idx = Math.min(fc - 1, Math.floor(swingElapsed / (1000 / fps)));
+    else if (anim === 'hurt') idx = Math.min(fc - 1, Math.floor(hurtElapsed / (1000 / fps)));
+    else idx = Math.floor((t + (u.bobPhase || 0) * 100) / (1000 / fps)) % fc;
+    return { sheet: st.sheet, sx: idx * fw, sy: 0, sw: fw, sh: fh };
+  }
+
   function drawAlly(cx, cy, sz, a, t) {
     if (a.dead) {
       // Pastatai (towers) — be death animacijos, tiesiog dingsta
@@ -6232,6 +6424,18 @@
       if (flash) ctx.filter = 'brightness(1.5) sepia(1) saturate(2.5) hue-rotate(-30deg)';
       ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
       ctx.restore();
+    } else if (a.utype === 'hog_rider') {
+      const frame = _pickHogRiderFrame(a, t, isMoving);
+      if (!frame) return;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      if (flash) ctx.filter = 'brightness(1.5) sepia(1) saturate(2.5) hue-rotate(-30deg)';
+      // Mounted unit — aspect-ratio išlaikytas, feet anchor (kiaulės kojos ant lane), +10px aukščiau
+      const hh = sz * 5.6;
+      const hw = hh * (frame.sw / frame.sh);
+      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh,
+        cx - hw / 2, cy - hh / 2 - sz * 0.35 - 10, hw, hh);
+      ctx.restore();
     } else {
       let frame;
       if (a.utype === 'harpoon_fish') frame = _pickHarpoonFishAnim(a, t, isMoving);
@@ -6247,8 +6451,10 @@
     a._prevX = a.x;
     // HP bar — judantiems unit'ams + ZIP bokstui visada, kitiems towers tik kai damaged
     const showHpBar = !a.dead && (!a.static || a.utype === 'zip' || a.hp < a.maxHp);
+    // Hog Rider sprite aukštesnis (mounted) → bar'us keliam aukščiau virš galvos
+    const _barBaseY = (a.utype === 'hog_rider') ? (cy - sz * 1.5 - 10) : (cy - sz * 1.0);
     if (showHpBar) {
-      const bw = sz * 1.2, bh = 3, barY = cy - sz * 1.0 - bh;
+      const bw = sz * 1.2, bh = 3, barY = _barBaseY - bh;
       ctx.fillStyle = '#000';
       ctx.fillRect(Math.round(cx - bw / 2), Math.round(barY), Math.round(bw), bh);
       ctx.fillStyle = '#5cd06b';
@@ -6259,7 +6465,7 @@
       const age = t - a.bornAt;
       const lifeFrac = Math.max(0, 1 - age / (a.lifetimeMs || _UNIT_LIFETIME_MS));
       const lbw = sz * 1.2, lbh = 2;
-      const lifeY = cy - sz * 1.0 - 3 - 2 - lbh;
+      const lifeY = _barBaseY - 3 - 2 - lbh;
       // Color: green → yellow → red
       let lcol;
       if (lifeFrac > 0.5) lcol = '#7fc6ff';        // melyna (saugu)
@@ -6712,6 +6918,7 @@
   let _f12Warnings = [];                // [{text, color, born, duration}]
   let _f12GameStartT = 0;               // pirmas tick'as kai t pradedamas matuoti
   let _f12LaneStrikes = [];             // [{lane, x, type, born, duration, dmg/healAmt, color}]
+  let _f12HogStrikes = [];              // [{lane, x, born, duration, seed}] — Hog Rider spear smūgio VFX
   let _f12PendingAttacks = [];          // [{type, value, mx, my, runAt}] — delayed merge attacks
   let _f12DmgPopups = [];               // [{lane, x, dmg, born}] — bendri damage popups
   let _f12PoisonImpacts = [];           // [{lane, x, born, duration, isApply, isSpread}]
@@ -7258,7 +7465,8 @@
         }
         // Character unit'ai (animuoti) — DAR DIDESNI; buildings (tower/zip) — SUMAŽINTI
         const isCharacter = (_mappedUtypeForIcon === 'archer' || _mappedUtypeForIcon === 'harpoon_fish'
-                          || _mappedUtypeForIcon === 'shaman' || _mappedUtypeForIcon === 'skull');
+                          || _mappedUtypeForIcon === 'shaman' || _mappedUtypeForIcon === 'skull'
+                          || _mappedUtypeForIcon === 'hog_rider');
         const maxW = isCharacter ? _CARD_W + 28 : _CARD_W - 24;   // chars: 96, buildings: 44
         const maxH = isCharacter ? _CARD_H + 14 : _CARD_H - 32;   // chars: 110, buildings: 64
         _drawUnitIcon(_mappedUtypeForIcon, iconCx, iconCy, maxW, maxH, t);
@@ -7657,6 +7865,7 @@
       let msg = null, accent = '#ffe7a8';
       const unitName = (utype === 'harpoon_fish' ? 'HARPOON' :
                        utype === 'crossbow_tower' ? 'CROSSBOW' :
+                       utype === 'hog_rider' ? 'HOG RIDER' :
                        utype ? utype.toUpperCase() : '');
       // Ball type → color name (vietoj abstrakt'aus "HEART/ARROW" — žaidėjas mato spalvą)
       const BALL_COLOR_NAME = {

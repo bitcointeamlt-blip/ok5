@@ -232,27 +232,42 @@
   }
 
   // ─── INVENTORY ───────────────────────────────────────────────
-  async function fetchInventory(addr) {
+  // Progresyvus inventoriaus krovimas. Whale'ams (35+ NFT) senas variantas
+  // laukdavo VISO krovimo (sekvenciškai tokenOfOwnerByIndex → labai lėta).
+  // Dabar: (1) tokenId'us imam LYGIAGREČIAI, (2) getUnitFullData paketais po CHUNK,
+  // ir po kiekvieno paketo iškviečiam onProgress(sortedSoFar, loaded, total) —
+  // aukščiausio XP/lvl unitai surūšiuojami į viršų, kad žaidėjas iškart galėtų rinktis.
+  const _INV_CHUNK = 15;
+  function _mapUnit(id, d) {
+    return {
+      tokenId: id,
+      utype: d[0], xp: Number(d[1]), level: Number(d[2]),
+      battles: Number(d[3]), wins: Number(d[4]), kills: Number(d[5]),
+      mintedAt: Number(d[6]), lastBattleAt: Number(d[7]),
+      name: UTYPE[d[0]]?.name || 'Unknown',
+      image: UTYPE[d[0]]?.image || UTYPE[1].image,
+      rarity: UTYPE[d[0]]?.rarity || 'common',
+    };
+  }
+  async function fetchInventory(addr, onProgress) {
     const balance = await read('balanceOf', [addr]);
     const n = Number(balance);
-    if (n === 0) return [];
-    const tokenIds = [];
-    for (let i = 0; i < n; i++) {
-      tokenIds.push(await read('tokenOfOwnerByIndex', [addr, BigInt(i)]));
+    if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
+    // 1) tokenId'ai LYGIAGREČIAI (buvo sekvenciškai — pagrindinis lėtumas)
+    const idxs = Array.from({ length: n }, (_, i) => i);
+    const tokenIds = await Promise.all(idxs.map((i) => read('tokenOfOwnerByIndex', [addr, BigInt(i)])));
+    // 2) getUnitFullData paketais; streaminam progresą surūšiuotą pagal XP desc
+    const acc = [];
+    for (let start = 0; start < tokenIds.length; start += _INV_CHUNK) {
+      const slice = tokenIds.slice(start, start + _INV_CHUNK);
+      const part = await Promise.all(slice.map(async (id) => _mapUnit(id, await read('getUnitFullData', [id]))));
+      for (const u of part) acc.push(u);
+      if (typeof onProgress === 'function') {
+        const sorted = acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
+        try { onProgress(sorted, acc.length, n); } catch (_) {}
+      }
     }
-    const units = await Promise.all(tokenIds.map(async (id) => {
-      const d = await read('getUnitFullData', [id]);
-      return {
-        tokenId: id,
-        utype: d[0], xp: Number(d[1]), level: Number(d[2]),
-        battles: Number(d[3]), wins: Number(d[4]), kills: Number(d[5]),
-        mintedAt: Number(d[6]), lastBattleAt: Number(d[7]),
-        name: UTYPE[d[0]]?.name || 'Unknown',
-        image: UTYPE[d[0]]?.image || UTYPE[1].image,
-        rarity: UTYPE[d[0]]?.rarity || 'common',
-      };
-    }));
-    return units;
+    return acc;
   }
 
   // ─── WRITE FUNCTIONS ─────────────────────────────────────────

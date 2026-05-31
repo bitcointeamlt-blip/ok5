@@ -73,7 +73,7 @@
   // ─── BATTLE / DEPLOY tab ────────────────────────────────────
   // Inventoriaus picker — pasirink kelis NFT + free units, paspaudus DEPLOY → F12 startas.
   // utype (contract uint8) → F12 utype string:
-  const NFT_UTYPE_TO_F12 = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman' };
+  const NFT_UTYPE_TO_F12 = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'hog_rider' };
   let _battleInventory = [];   // raw fetchInventory rezultatas
   let _battlePickQty = {};     // {groupKey: qty}
   let _battleFreeQty = { shadow: 1, arrow: 1, heart: 1, leaf: 1 };  // {ballType: qty} default 1 of each
@@ -189,6 +189,7 @@
   }
 
   async function refreshBattlePicker() {
+    _battleShowAll = false;   // kaskart atidarius — pradedam nuo cap'o (high-lvl first)
     // Free units grid — visada renderinam (be wallet)
     _renderFreeGrid();
     // Wallet account mismatch check
@@ -201,9 +202,14 @@
       _updateBattleFooter();
       return;
     }
-    grid.innerHTML = '<div class="nft-empty">Loading...</div>';
+    grid.innerHTML = '<div class="nft-empty">Loading your units…</div>';
     try {
-      _battleInventory = await window.BarracksNFT.fetchInventory(W.getAddress());
+      // Progresyvus krovimas — aukščiausio lvl unitai pasirodo PIRMI ir žaidėjas
+      // gali rinktis nelaukdamas kol visa kolekcija užsikraus (whale-friendly).
+      _battleInventory = await window.BarracksNFT.fetchInventory(W.getAddress(), function (sorted, loaded, total) {
+        _battleInventory = sorted;
+        _renderBattleGrid(loaded < total ? { loaded: loaded, total: total } : null);
+      });
       if (!_battleInventory.length) {
         grid.innerHTML = '<div class="nft-empty">No NFT units yet — train one in TRAIN tab first</div>';
         _battlePickQty = {};
@@ -216,11 +222,16 @@
     }
   }
 
-  function _renderBattleGrid() {
+  const _BATTLE_GRID_CAP = 30;   // max kortelių pirmam render'iui (high-lvl first); likę – „show all"
+  let _battleShowAll = false;
+  function _renderBattleGrid(progress) {
     const grid = document.getElementById('nft-battle-grid');
     if (!grid) return;
-    const groups = _battleGroups();
-    grid.innerHTML = groups.map(g => {
+    const allGroups = _battleGroups();
+    const capped = (!_battleShowAll && allGroups.length > _BATTLE_GRID_CAP);
+    const groups = capped ? allGroups.slice(0, _BATTLE_GRID_CAP) : allGroups;
+    const hidden = allGroups.length - groups.length;
+    let html = groups.map(g => {
       const picked = _battlePickQty[g.key] | 0;
       const title = g.level === 0 ? 'RECRUIT' :
                     g.level < 5  ? 'TRAINED' :
@@ -241,6 +252,17 @@
         </div>
       </div>`;
     }).join('');
+    // Krovimo / „show all" juosta apačioje
+    if (progress && progress.loaded < progress.total) {
+      html += `<div class="nft-empty" style="opacity:.7">⏳ Loading more units… ${progress.loaded}/${progress.total} (highest level first — you can pick & play now)</div>`;
+    } else if (capped) {
+      html += `<button id="nft-battle-showall" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600">Show all (+${hidden} more)</button>`;
+    }
+    grid.innerHTML = html;
+    if (capped) {
+      const sa = document.getElementById('nft-battle-showall');
+      if (sa) sa.onclick = function () { _battleShowAll = true; _renderBattleGrid(); };
+    }
     _updateBattleFooter();
   }
 
@@ -662,9 +684,13 @@
     if (!W || !W.isConnected || !W.isConnected()) return;
     const addr = W.getAddress();
     const grid = document.getElementById('nft-inv-grid');
-    grid.innerHTML = '<div class="nft-empty">Loading...</div>';
+    grid.innerHTML = '<div class="nft-empty">Loading your units…</div>';
     try {
-      const units = await window.BarracksNFT.fetchInventory(addr);
+      const units = await window.BarracksNFT.fetchInventory(addr, function (sorted, loaded, total) {
+        const cEl = document.getElementById('nft-inv-count');
+        if (cEl) cEl.textContent = loaded + (loaded < total ? '/' + total : '');
+        if (loaded < total) grid.innerHTML = '<div class="nft-empty">⏳ Loading units… ' + loaded + '/' + total + '</div>';
+      });
       document.getElementById('nft-inv-count').textContent = units.length;
       if (units.length === 0) {
         grid.innerHTML = '<div class="nft-empty">No NFT units yet — train your first!</div>';
