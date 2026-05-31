@@ -271,17 +271,37 @@
     }
   }
 
+  // MOBILE-ATSPARUS TX patvirtinimas. Ronin in-app naršyklėje
+  // `waitForTransactionReceipt` dažnai pakimba po wallet sign (kontekstas pertrūksta).
+  // Vietoj to: best-effort laukiam receipt'o, BET tuo pačiu pollinam grandinės būseną
+  // per eth_call (veikia patikimai mobiliam). Grąžinam kai tik būsena patvirtina.
+  async function _confirmTx(hash, verifyFn, timeoutMs) {
+    const pc = await getPublicClient();
+    let receiptDone = false;
+    pc.waitForTransactionReceipt({ hash }).then(() => { receiptDone = true; }).catch(() => {});
+    const deadline = Date.now() + (timeoutMs || 90000);
+    while (Date.now() < deadline) {
+      try { if (await verifyFn()) return hash; } catch (_) {}
+      if (receiptDone) return hash;
+      await new Promise(function (r) { setTimeout(r, 2500); });
+    }
+    return hash;  // timeout — grąžinam (TX gali būti landed; UI refresh patikrins)
+  }
+
   async function approveRonke(amount) {
     await ensureNetwork();
     const wc = await getWalletClient();
-    const v = await getViem();
     const addr = window.Wallet.getAddress();
     const hash = await wc.writeContract({
       address: ADDR.ronke, abi: ERC20_ABI, functionName: 'approve',
       args: [ADDR.barracks, amount], account: addr,
     });
     const pc = await getPublicClient();
-    await pc.waitForTransactionReceipt({ hash });
+    const target = amount / 2n;  // pakanka kai allowance pasiekia ~pusę (apsauga nuo equality)
+    await _confirmTx(hash, async function () {
+      const a = await pc.readContract({ address: ADDR.ronke, abi: ERC20_ABI, functionName: 'allowance', args: [addr, ADDR.barracks] });
+      return a >= target;
+    });
     return hash;
   }
 
@@ -291,18 +311,18 @@
                  JSON.stringify(err && err.cause || '') + ' ' +
                  (err && err.details || '') + ' ' +
                  (err && err.metaMessages ? err.metaMessages.join(' ') : '')).toLowerCase();
-    if (raw.includes('already training'))        return 'Jau turi aktyvų training. Pirma paspausk CLAIM (jei paruošta) arba CANCEL.';
+    if (raw.includes('already training'))        return 'You already have an active training. Tap CLAIM (if ready) or CANCEL first, then you can train again.';
     if (raw.includes('need >=11 ron') || raw.includes('need >= 11 ron') || raw.includes('11 ron'))
-                                                  return 'Reikia bent 11 RON tavo wallet\'e (anti-bot apsauga). Papildyk RON ir bandyk vėl.';
-    if (raw.includes('daily cap'))                return 'Pasiektas dienos mint limitas. Bandyk po reset arba turėk daugiau Ronkeverse NFT.';
-    if (raw.includes('type disabled'))            return 'Šis unito tipas dar neprieinamas mint\'inimui.';
-    if (raw.includes('training paused'))          return 'Mint\'inimas laikinai sustabdytas.';
-    if (raw.includes('bad qty'))                  return 'Netinkamas kiekis (turi būti 1–100).';
+                                                  return 'You need at least 11 RON in your wallet (anti-bot protection). Top up RON and try again.';
+    if (raw.includes('daily cap'))                return 'Daily mint limit reached. Try after the reset, or hold more Ronkeverse NFTs for a higher cap.';
+    if (raw.includes('type disabled'))            return 'This unit type is not available to mint yet.';
+    if (raw.includes('training paused'))          return 'Minting is temporarily paused.';
+    if (raw.includes('bad qty'))                  return 'Invalid quantity (must be 1–100).';
     if (raw.includes('exceeds balance') || raw.includes('insufficient balance') ||
         raw.includes('transfer amount') || raw.includes('ronke transfer failed') || raw.includes('insufficient allowance'))
-                                                  return 'Nepakanka RONKE pačiai kainai sumokėti. Patikrink RONKE balansą (Hog Rider ~315 RONKE).';
-    // Nepavyko atpažinti — grąžinam originalą
-    return 'Training nepavyko: ' + (err && (err.shortMessage || err.message) || 'nežinoma klaida');
+                                                  return 'Not enough RONKE to cover the cost. Check your RONKE balance (Hog Rider ≈ 315 RONKE).';
+    // Unrecognised — return original
+    return 'Training failed: ' + (err && (err.shortMessage || err.message) || 'unknown error');
   }
 
   async function startTraining(utype, qty) {
@@ -323,7 +343,11 @@
       address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'startTraining',
       args: [utype, qty], account: addr,
     });
-    await pc.waitForTransactionReceipt({ hash });
+    // Mobile-atspariai: laukiam kol pending taps aktyvus (vietoj kabančio receipt'o).
+    await _confirmTx(hash, async function () {
+      const p = await read('pending', [addr]);
+      return p[4] === true;
+    });
     return hash;
   }
 
@@ -335,8 +359,11 @@
       address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'claimTraining',
       args: [], account: addr,
     });
-    const pc = await getPublicClient();
-    await pc.waitForTransactionReceipt({ hash });
+    // Mobile-atspariai: laukiam kol pending išsivalys (claim mint'ino NFT'us).
+    await _confirmTx(hash, async function () {
+      const p = await read('pending', [addr]);
+      return p[4] === false;
+    });
     return hash;
   }
 
@@ -348,8 +375,11 @@
       address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'cancelPendingTraining',
       args: [], account: addr,
     });
-    const pc = await getPublicClient();
-    await pc.waitForTransactionReceipt({ hash });
+    // Mobile-atspariai: laukiam kol pending išsivalys.
+    await _confirmTx(hash, async function () {
+      const p = await read('pending', [addr]);
+      return p[4] === false;
+    });
     return hash;
   }
 
