@@ -189,6 +189,13 @@
     return { cost, wait: Number(wait) };
   }
 
+  // Nepriklausomas pending skaitymas (1 call) — kad CLAIM rodytųsi net jei pilnas
+  // fetchState (11 reads Promise.all) krenta dėl vieno RPC glitch'o.
+  async function getPending(addr) {
+    const p = await read('pending', [addr]);
+    return { utype: p[0], qty: p[1], lockedCost: p[2], readyAt: p[3], active: p[4] };
+  }
+
   // ─── PER-TYPE MINT COUNT ─────────────────────────────────────
   // Skaičiuoja kiek konkretaus tipo unitų išmintinta IŠ VISO (per UnitMinted event'us).
   // utype event'e NEindeksuotas → imam visus UnitMinted ir filtruojam.
@@ -421,6 +428,7 @@
     fetchInventory,
     getBatchPricing,
     getCurrentPricing,
+    getPending,
     totalMintedByType,
     approveRonke,
     startTraining,

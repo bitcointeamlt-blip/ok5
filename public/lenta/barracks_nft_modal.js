@@ -512,6 +512,12 @@
         return;
       }
       const addr = W.getAddress();
+      // NEPRIKLAUSOMAS pending/claim patikrinimas (1 read) — kad CLAIM rodytųsi
+      // VISADA, net jei pilnas fetchState (11 reads) krenta dėl RPC glitch'o.
+      try {
+        const pend = await window.BarracksNFT.getPending(addr);
+        if (pend.active) showPending(pend); else hidePending();
+      } catch (_) {}
       const s = await window.BarracksNFT.fetchState(addr);
       // RON balance + low warning
       const ronStr = await window.BarracksNFT.formatEther(s.ron);
