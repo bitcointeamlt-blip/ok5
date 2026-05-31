@@ -189,6 +189,41 @@
     return { cost, wait: Number(wait) };
   }
 
+  // ─── PER-TYPE MINT COUNT ─────────────────────────────────────
+  // Skaičiuoja kiek konkretaus tipo unitų išmintinta IŠ VISO (per UnitMinted event'us).
+  // utype event'e NEindeksuotas → imam visus UnitMinted ir filtruojam.
+  // Hog Rider (utype 5) mint'inamas tik PO addUnitType bloko 56371937 → range mažas, greita.
+  const TYPE_LAUNCH_BLOCK = { 5: 56371937n };  // utype -> blokas nuo kurio mint'inamas
+  const UNIT_MINTED_EVENT = {
+    type: 'event', name: 'UnitMinted',
+    inputs: [
+      { indexed: true,  name: 'tokenId', type: 'uint256' },
+      { indexed: true,  name: 'owner',   type: 'address' },
+      { indexed: false, name: 'utype',   type: 'uint8'   },
+    ],
+  };
+  let _mintCountCache = {};
+  async function totalMintedByType(utype) {
+    const cacheKey = String(utype);
+    try {
+      const pc = await getPublicClient();
+      const fromBlock = TYPE_LAUNCH_BLOCK[utype] || 0n;
+      const logs = await pc.getLogs({
+        address: ADDR.barracks,
+        event: UNIT_MINTED_EVENT,
+        fromBlock,
+        toBlock: 'latest',
+      });
+      const count = logs.reduce((n, l) => n + (Number(l.args.utype) === Number(utype) ? 1 : 0), 0);
+      _mintCountCache[cacheKey] = count;
+      return count;
+    } catch (e) {
+      console.warn('[BarracksNFT] totalMintedByType failed:', e.shortMessage || e.message);
+      if (_mintCountCache[cacheKey] != null) return _mintCountCache[cacheKey];
+      throw e;
+    }
+  }
+
   // ─── INVENTORY ───────────────────────────────────────────────
   async function fetchInventory(addr) {
     const balance = await read('balanceOf', [addr]);
@@ -357,6 +392,7 @@
     fetchInventory,
     getBatchPricing,
     getCurrentPricing,
+    totalMintedByType,
     approveRonke,
     startTraining,
     claimTraining,
