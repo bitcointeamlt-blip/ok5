@@ -2106,24 +2106,25 @@
   // Lygina įkrautą hog_rider_popup.js ?v= su gyvo index.html versija;
   // jei skiriasi -> nauja versija deployinta -> automatiškai perkrauna.
   (function() {
-    // Fingerprint = VISŲ .js/.css ?v= versijų rinkinys → bet kurio failo deploy'as triggerina reload.
-    function fp(text) { return ((text || '').match(/\.(?:js|css)\?v=[a-zA-Z0-9_]+/g) || []).sort().join('|'); }
-    var current = fp(document.documentElement.innerHTML);
-    if (!current) return;
-    var reloading = false;
+    // SAUGUS metodas (jokio reload loop): baseline imamas iš FETCH'intos index.html
+    // (TAS PATS metodas kaip vėlesni patikrinimai → niekada netampa false-mismatch).
+    function vers(html) { return ((html || '').match(/\.(?:js|css)\?v=[a-zA-Z0-9_]+/g) || []).sort().join('|'); }
+    var baseline = null, reloading = false;
+    function fetchVers() {
+      return fetch(location.pathname + '?_cb=' + Date.now(), { cache: 'no-store' })
+        .then(function(r) { return r.text(); }).then(vers);
+    }
+    // Baseline iš šviežio fetch (ne iš DOM!) — kad palyginimas būtų identiškas
+    fetchVers().then(function(v) { baseline = v; }).catch(function() {});
     function check() {
-      if (reloading || document.hidden) return;
-      fetch(location.pathname + '?_cb=' + Date.now(), { cache: 'no-store' })
-        .then(function(r) { return r.text(); })
-        .then(function(html) {
-          var live = fp(html);
-          if (live && live !== current) { reloading = true; location.reload(); }
-        })
-        .catch(function() {});
+      if (reloading || document.hidden || !baseline) return;
+      fetchVers().then(function(live) {
+        if (live && live !== baseline) { reloading = true; location.reload(); }
+      }).catch(function() {});
     }
     document.addEventListener('visibilitychange', function() { if (!document.hidden) check(); });
-    setInterval(check, 3 * 60 * 1000);  // tikrina kas 3 min
-    setTimeout(check, 12000);           // ir greitai po įkrovimo
+    setInterval(check, 3 * 60 * 1000);
+    setTimeout(check, 25000);
   })();
   </script>
   <script>
