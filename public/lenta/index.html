@@ -2101,6 +2101,32 @@
   <script src="wallet-ui.js?v=pewpew10breath"></script>
   <script src="hog_rider_popup.js?v=hog48timefix"></script>
   <script>
+  // ── AUTO-RELOAD kai deployinama nauja versija ───────────────────
+  // Kad žaidėjams (ypač mobiliems/Chromebook) NEREIKĖTŲ hard-refresh.
+  // Lygina įkrautą hog_rider_popup.js ?v= su gyvo index.html versija;
+  // jei skiriasi -> nauja versija deployinta -> automatiškai perkrauna.
+  (function() {
+    var s = document.querySelector('script[src*="hog_rider_popup.js"]');
+    var m0 = s && s.src.match(/[?&]v=([^&]+)/);
+    var current = m0 ? m0[1] : null;
+    if (!current) return;
+    var reloading = false;
+    function check() {
+      if (reloading || document.hidden) return;
+      fetch(location.pathname + '?_cb=' + Date.now(), { cache: 'no-store' })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          var m = html.match(/hog_rider_popup\.js\?v=([^&"']+)/);
+          if (m && m[1] && m[1] !== current) { reloading = true; location.reload(); }
+        })
+        .catch(function() {});
+    }
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) check(); });
+    setInterval(check, 4 * 60 * 1000);  // tikrina kas 4 min
+    setTimeout(check, 15000);           // ir greitai po įkrovimo
+  })();
+  </script>
+  <script>
   // ── Skill bar collapse toggle (P1 WEAPONS) ───────────────────────
   (function() {
     const COLLAPSE_KEY = '_p1_skills_collapsed';
