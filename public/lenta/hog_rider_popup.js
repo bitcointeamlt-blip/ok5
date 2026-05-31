@@ -703,17 +703,16 @@
 
   let _shownThisSession = false;
 
-  // F10 PILNAI užsikrovęs — ne tik floor flag'as, bet ir kambarys paruoštas:
-  // kamera inicializuota + units masyvas yra + visi puslapio resursai užkrauti.
+  // F10 + puslapis užkrautas. (Anksčiau buvo per griežta — reikalavo S.cam/S.units,
+  // dėl ko popup'as nesirodydavo. document.readyState='complete' pakanka "fully loaded".)
   function _isOnF10() {
     try {
       const S = window.S;
-      if (typeof S !== 'object' || !S || S.floor !== 10) return false;
-      if (!S.cam) return false;                       // kamera inicializuota = kambarys renderinasi
-      if (!Array.isArray(S.units)) return false;      // units sistema paruošta
-      if (document.readyState !== 'complete') return false;  // visi resursai (img/css/js) užkrauti
-      return true;
-    } catch (_) { return false; }
+      if (typeof S === 'object' && S && S.floor === 10 && document.readyState === 'complete') return true;
+    } catch (_) {}
+    // Fallback — hash routing
+    const h = (location.hash || '').toLowerCase();
+    return h === '#f10' && document.readyState === 'complete';
   }
 
   function _maybeShowOnF10() {
