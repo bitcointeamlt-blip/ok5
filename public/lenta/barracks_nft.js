@@ -278,15 +278,44 @@
     return hash;
   }
 
+  // Verčia žalią revert priežastį į aiškią žmogui suprantamą žinutę.
+  function _explainTrainingRevert(err) {
+    const raw = ((err && (err.shortMessage || err.message || '')) + ' ' +
+                 JSON.stringify(err && err.cause || '') + ' ' +
+                 (err && err.details || '') + ' ' +
+                 (err && err.metaMessages ? err.metaMessages.join(' ') : '')).toLowerCase();
+    if (raw.includes('already training'))        return 'Jau turi aktyvų training. Pirma paspausk CLAIM (jei paruošta) arba CANCEL.';
+    if (raw.includes('need >=11 ron') || raw.includes('need >= 11 ron') || raw.includes('11 ron'))
+                                                  return 'Reikia bent 11 RON tavo wallet\'e (anti-bot apsauga). Papildyk RON ir bandyk vėl.';
+    if (raw.includes('daily cap'))                return 'Pasiektas dienos mint limitas. Bandyk po reset arba turėk daugiau Ronkeverse NFT.';
+    if (raw.includes('type disabled'))            return 'Šis unito tipas dar neprieinamas mint\'inimui.';
+    if (raw.includes('training paused'))          return 'Mint\'inimas laikinai sustabdytas.';
+    if (raw.includes('bad qty'))                  return 'Netinkamas kiekis (turi būti 1–100).';
+    if (raw.includes('exceeds balance') || raw.includes('insufficient balance') ||
+        raw.includes('transfer amount') || raw.includes('ronke transfer failed') || raw.includes('insufficient allowance'))
+                                                  return 'Nepakanka RONKE pačiai kainai sumokėti. Patikrink RONKE balansą (Hog Rider ~315 RONKE).';
+    // Nepavyko atpažinti — grąžinam originalą
+    return 'Training nepavyko: ' + (err && (err.shortMessage || err.message) || 'nežinoma klaida');
+  }
+
   async function startTraining(utype, qty) {
     await ensureNetwork();
     const wc = await getWalletClient();
     const addr = window.Wallet.getAddress();
+    const pc = await getPublicClient();
+    // PRE-FLIGHT: eth_call simulacija grąžina TIKRĄ revert priežastį (ne "Internal JSON-RPC error").
+    try {
+      await pc.simulateContract({
+        address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'startTraining',
+        args: [utype, qty], account: addr,
+      });
+    } catch (simErr) {
+      throw new Error(_explainTrainingRevert(simErr));
+    }
     const hash = await wc.writeContract({
       address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'startTraining',
       args: [utype, qty], account: addr,
     });
-    const pc = await getPublicClient();
     await pc.waitForTransactionReceipt({ hash });
     return hash;
   }

@@ -487,6 +487,7 @@
       return;
     }
     try {
+      showToast('Connecting wallet…', 'ok', 30000);  // feedback (telefonui — kad matytų, jog vyksta)
       await Wallet.connect();
       showToast('Connected: ' + Wallet.shortAddress(), 'ok');
     } catch (e) {

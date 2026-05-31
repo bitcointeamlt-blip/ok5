@@ -66,7 +66,12 @@
     if (_waypointProvider) return _waypointProvider;
     if (!_waypointPromise) {
       _waypointPromise = (async () => {
-        const mod = await import(/* @vite-ignore */ WAYPOINT_CDN);
+        // Timeout — kad mobiliam (lėtas/blokuotas esm.sh CDN) nekabintų amžinai "Loading..."
+        const mod = await Promise.race([
+          import(/* @vite-ignore */ WAYPOINT_CDN),
+          new Promise((_, rej) => setTimeout(
+            () => rej(new Error('Wallet SDK load timed out — check connection & try again')), 25000)),
+        ]);
         const Wp = mod.WaypointProvider || (mod.default && mod.default.WaypointProvider);
         if (!Wp || typeof Wp.create !== 'function') throw new Error('Waypoint SDK not available');
         // Match Sky Mavis Console exact URI (no trailing slash).
