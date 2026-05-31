@@ -98,6 +98,22 @@
     Pragma = "no-cache"
     Expires = "0"
 
+# Lenta game HTML - NEVER cache (always fresh, points to new ?v= JS/CSS).
+# Only the HTML entry points — assets keep their cache (sprite sheets are big).
+[[headers]]
+  for = "/lenta/"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
+[[headers]]
+  for = "/lenta/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
 [[headers]]
   for = "/assets/*"
   [headers.values]
