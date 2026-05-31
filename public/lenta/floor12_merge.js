@@ -2069,7 +2069,9 @@
     const lanesY = 14;
     const lanesH = Math.floor(H * 0.40);
     const arenaY = lanesY + lanesH + 12;
-    const arenaH = H - arenaY - 56;
+    // Bottom reserve — vietos deploy kortom apačioj. Mobiliam kortos didesnės (120 vs 96),
+    // tad daugiau reserve, kad neuždengtų kamuoliukų zonos.
+    const arenaH = H - arenaY - (_IS_MOBILE ? 80 : 56);
     const padX = 48;     // praplata — vietos vertikaliam HP bar'ui kairėj
     const padR = 24;
     const aw = W - padX - padR;
@@ -4287,6 +4289,7 @@
             _allyAddDmgDealt(a, a.dmg);
             _f12HogStrikes.push({ lane: ml, x: mt.x, born: t });
             _f12ScreenShake = Math.max(_f12ScreenShake, 2.5);
+            _f12Haptic(15);
             try { if (_F12Audio && _F12Audio.damageHit) _F12Audio.damageHit(a.dmg); } catch (_) {}
             if (mt.hp <= 0) {
               mt.dead = true; mt.deathStartedAt = t;
@@ -6934,7 +6937,15 @@
   let _f12ZoneFlash = [0, 0, 0, 0];     // [ts] — paskutinio merge laikas kiekvienoj zonoj
   const _SPIRIT_DURATION = 850;
   const _CARD_CONSUME_DUR = 520;
-  const _CARD_W = 68, _CARD_H = 96, _CARD_GAP = 8;
+  // Mobiliam — didesnės kortos (geresnis tap target, ~48px CSS po virtual→screen scale)
+  const _CARD_W = _IS_MOBILE ? 88 : 68, _CARD_H = _IS_MOBILE ? 120 : 96, _CARD_GAP = _IS_MOBILE ? 7 : 8;
+  // Touch-down press feedback — {ballType: timestamp}
+  let _f12CardPressAt = {};
+  // Haptic feedback (tik mobiliam) — trumpa vibracija ant svarbių veiksmų
+  function _f12Haptic(ms) {
+    if (!_IS_MOBILE) return;
+    try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {}
+  }
 
   function _spawnMergeSpirit(srcX, srcY, type, value, t) {
     _f12Spirits.push({ sx: srcX, sy: srcY, type, value, born: t, duration: _SPIRIT_DURATION });
@@ -7430,15 +7441,21 @@
       }
       const cx = baseCx;
       const cy = baseCy + hoverLift + bounceY;
+      // Touch-down press feedback — greitas pop scale (1.18→1.0 per ~160ms), kad žaidėjas
+      // matytų jog paspaudimas užregistruotas (mobiliam nejauti tap'o)
+      let pressScale = 1;
+      const pressEl = _f12CardPressAt[tp] ? (t - _f12CardPressAt[tp]) : Infinity;
+      if (pressEl < 160) pressScale = 1.18 - (pressEl / 160) * 0.18;
+      const totalScale = bounceScale * pressScale;
       // Locked kortos — sumažintas alpha (be ctx.filter — labai brangus)
       if (isLocked) {
         ctx.save();
         ctx.globalAlpha = 0.6;
       }
-      if (bounceScale !== 1) {
+      if (totalScale !== 1) {
         ctx.save();
         ctx.translate(cx + _CARD_W / 2, cy + _CARD_H / 2);
-        ctx.scale(bounceScale, bounceScale);
+        ctx.scale(totalScale, totalScale);
         ctx.translate(-(cx + _CARD_W / 2), -(cy + _CARD_H / 2));
         _drawCardLayer(cx, cy, col, 0, true, tp);
         ctx.restore();
@@ -10466,6 +10483,8 @@
           ? Math.max(0, _UNIT_DEPLOY_CD_MS - (now() - _f12UnitDeployCD[_utype])) : 0;
         if (cdRemain <= 0) {
           selectedDeployType = (selectedDeployType === _utype) ? null : _utype;
+          _f12CardPressAt[r.type] = now();   // touch-down press feedback (scale-pop)
+          _f12Haptic(8);
         } else if (selectedDeployType === _utype) selectedDeployType = null;
         return;
       }
@@ -10500,6 +10519,7 @@
         const canDeploy = isUnlocked && trainedCnt2 > 0;
         if (laneIdx >= 0 && laneIdx < LANES && canDeploy) {
           spawnAlly(selectedDeployType, laneIdx, now());
+          _f12Haptic(12);                  // deploy haptic — patvirtina veiksmą (nejauti tap)
           // NEdekrementuojam kortų count — kortos permanenttiškos, count tik bonus track'inimui
           // CD startuos kai unit'as bus recall'intas / miršta (sequential)
           selectedDeployType = null;       // deselect po deploy (žaidėjas mato unit lane'oj, CD prasidės)
@@ -10539,6 +10559,9 @@
     ctx = canvas.getContext('2d');
     resize();
     window.addEventListener('resize', resize);
+    // Mobile: kai kurios naršyklės po pasukimo NEpaleidžia 'resize' patikimai → canvas
+    // neperdėliojamas (ekranas „neapsiverčia"). Atskirai klausom orientationchange + delay.
+    window.addEventListener('orientationchange', () => { setTimeout(resize, 120); setTimeout(resize, 400); });
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mouseup', onMouseUp);

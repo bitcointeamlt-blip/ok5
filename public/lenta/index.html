@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=hog44noredtint">
+  <link rel="stylesheet" href="style.css?v=mob45orient">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -2039,7 +2039,9 @@
   <!-- Portrait rotation hint (shown via JS only when game is active) -->
   <div id="mobile-orient-hint">
     <div class="orient-phone"></div>
-    <div class="orient-text">ROTATE DEVICE<br>TO PLAY</div>
+    <div class="orient-text">ROTATE DEVICE<br>FOR FULL VIEW</div>
+    <button id="orient-play-anyway" type="button">▶ PLAY ANYWAY</button>
+    <div class="orient-sub">you can rotate anytime</div>
   </div>
 
   <!-- COMBINED REWARDS MODAL -->
@@ -2097,8 +2099,8 @@
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=cmd449freeplay2"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
-  <script src="floor12_merge.js?v=cmd705hog"></script>
-  <script src="wallet-ui.js?v=pewpew11connecting"></script>
+  <script src="floor12_merge.js?v=cmd706mobile"></script>
+  <script src="wallet-ui.js?v=pewpew12walletpick"></script>
   <script src="hog_rider_popup.js?v=hog49reload"></script>
   <script>
   // ── AUTO-RELOAD kai deployinama nauja versija ───────────────────
@@ -2500,8 +2502,11 @@
   })();
 
   // ── Orientation guard: show rotate hint only when game is active + portrait ──
+  // Žaidėjas gali atmesti per „PLAY ANYWAY" — pasirinkimas įsimenamas (nebenervina).
   (function() {
     const GAME_SCREENS = ['screen-game', 'screen-gameover'];
+    let allowPortrait = false;
+    try { allowPortrait = localStorage.getItem('f12PortraitOK') === '1'; } catch (e) {}
     function check() {
       const hint = document.getElementById('mobile-orient-hint');
       if (!hint) return;
@@ -2510,8 +2515,15 @@
       const inGame   = GAME_SCREENS.some(id =>
         document.getElementById(id)?.classList.contains('active')
       );
-      hint.style.display = (portrait && mobile && inGame) ? 'flex' : 'none';
+      hint.style.display = (portrait && mobile && inGame && !allowPortrait) ? 'flex' : 'none';
     }
+    const btn = document.getElementById('orient-play-anyway');
+    if (btn) btn.addEventListener('click', function() {
+      allowPortrait = true;
+      try { localStorage.setItem('f12PortraitOK', '1'); } catch (e) {}
+      const hint = document.getElementById('mobile-orient-hint');
+      if (hint) hint.style.display = 'none';
+    });
     window.addEventListener('resize', check);
     window.addEventListener('orientationchange', () => setTimeout(check, 80));
     const obs = new MutationObserver(check);
