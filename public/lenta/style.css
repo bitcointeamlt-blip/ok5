@@ -16927,6 +16927,12 @@ kbd {
     from { background-position: 0 0; }
     to   { background-position: -1024px 0; }
   }
+  /* VORAS: mobile mastelis (200→80, 0.4× kaip pig) — kitaip 200px voras nukirstas
+     128px wrap'e (overflow:hidden) → nesimatė, hog atrodė mušasi su nematomu priešu. */
+  .hog-demo-spider { width: 80px; height: 80px; background-size: 400px 80px; bottom: 2px; right: 12px; }
+  .hog-demo-spider[data-anim="attack"] { background-size: 640px 80px; }
+  @keyframes hogSpiderFrames-5 { from { background-position: 0 0; } to { background-position: -400px 0; } }
+  @keyframes hogSpiderFrames-8 { from { background-position: 0 0; } to { background-position: -640px 0; } }
   .hog-event-title { font-size: 14px; }
   .hog-event-stat-value { font-size: 9px; }
   .hog-event-btn { font-size: 8px; padding: 10px 6px; }
