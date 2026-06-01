@@ -25189,11 +25189,15 @@ function updateCamera() {
   }
 
   // Clamp į mapo kraštus — matoma sritis yra [tx+vpOffsetX, tx+vpOffsetX+vpW].
-  tx = Math.max(-vpOffsetX, Math.min(mapW - vpW - vpOffsetX, tx));
-  ty = Math.max(-vpOffsetY, Math.min(mapH - vpH - vpOffsetY, ty));
+  // F10 MOBILE: object-fit:cover apkerpa kraštus → leidžiam OVER-PAN (padding) kad slankiojant
+  // pasiektum pakraščio pastatus (pvz. kasyklą). Tik F10 + mobile (window._f10PanInstalled).
+  var _padX = 0, _padY = 0;
+  if (S.floor === 10 && window._f10PanInstalled) { _padX = vpW * 0.35; _padY = vpH * 0.35; }
+  tx = Math.max(-vpOffsetX - _padX, Math.min(mapW - vpW - vpOffsetX + _padX, tx));
+  ty = Math.max(-vpOffsetY - _padY, Math.min(mapH - vpH - vpOffsetY + _padY, ty));
 
-  if (mapW < vpW) tx = mapW / 2 - vpOffsetX - vpW / 2;
-  if (mapH < vpH) ty = mapH / 2 - vpOffsetY - vpH / 2;
+  if (mapW < vpW && !_padX) tx = mapW / 2 - vpOffsetX - vpW / 2;
+  if (mapH < vpH && !_padY) ty = mapH / 2 - vpOffsetY - vpH / 2;
 
   S.cam.tx = tx;
   S.cam.ty = ty;
