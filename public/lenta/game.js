@@ -33708,15 +33708,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (_inB(_ronkeHeroBounds)) {
-      // F11 RTS mode'e — neatidaryti radial menu, leist click handler'iui pasirinkt hero kaip ally
-      if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) {
-        return;
-      }
-      // F9 — radial menu išjungtas, click ant hero traktuojamas kaip move target
-      if (gameMode === 'adventure' && S && S.floor === 9) {
-        return;
-      }
-      _ronkePopupOpen = true;
+      // Radial menu (ATTACK/PULLBACK/IDLE ratas) PAŠALINTAS — negražus + be funkcijos
+      // taikiame F10 namų žemėlapy (vienintelė vieta kur jis dar atsidarydavo;
+      // F9/F11 jau buvo išjungtas). Click ant hero nieko nedaro.
       return;
     }
     // Jei idle mode — blokuojam šaudymą
