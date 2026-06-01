@@ -2099,7 +2099,7 @@
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=cmd451f10pan"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
-  <script src="floor12_merge.js?v=cmd707loopfix"></script>
+  <script src="floor12_merge.js?v=cmd708guard"></script>
   <script src="wallet-ui.js?v=pewpew12menu"></script>
   <script src="hog_rider_popup.js?v=hog50mobwalk"></script>
   <script>
@@ -2111,21 +2111,33 @@
     // SAUGUS metodas (jokio reload loop): baseline imamas iš FETCH'intos index.html
     // (TAS PATS metodas kaip vėlesni patikrinimai → niekada netampa false-mismatch).
     function vers(html) { return ((html || '').match(/\.(?:js|css)\?v=[a-zA-Z0-9_]+/g) || []).sort().join('|'); }
-    var baseline = null, reloading = false;
+    var baseline = null, reloading = false, updateReady = false;
     function fetchVers() {
       return fetch(location.pathname + '?_cb=' + Date.now(), { cache: 'no-store' })
         .then(function(r) { return r.text(); }).then(vers);
     }
     // Baseline iš šviežio fetch (ne iš DOM!) — kad palyginimas būtų identiškas
     fetchVers().then(function(v) { baseline = v; }).catch(function() {});
+    // AKTYVUS ŽAIDIMAS — NEreload'inam (kitaip išmeta vidury, prarandi progresą).
+    // F12 merge (12), F11/F9 kova (11/9). Reload atidedamas kol grįžta į saugų ekraną.
+    function inActiveGame() {
+      try { var S = window.S; return !!(S && (S.floor === 12 || S.floor === 11 || S.floor === 9)); }
+      catch (e) { return false; }
+    }
+    function doReloadIfSafe() {
+      if (reloading || !updateReady) return;
+      if (inActiveGame()) return;          // dar žaidžia — laukiam kol išeis
+      reloading = true; location.reload();
+    }
     function check() {
       if (reloading || document.hidden || !baseline) return;
       fetchVers().then(function(live) {
-        if (live && live !== baseline) { reloading = true; location.reload(); }
+        if (live && live !== baseline) { updateReady = true; doReloadIfSafe(); }
       }).catch(function() {});
     }
     document.addEventListener('visibilitychange', function() { if (!document.hidden) check(); });
     setInterval(check, 3 * 60 * 1000);
+    setInterval(doReloadIfSafe, 5000);     // kai žaidėjas išeina iš žaidimo → perkrauna saugiai
     setTimeout(check, 25000);
   })();
   </script>
