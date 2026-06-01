@@ -229,7 +229,7 @@ canvas {
   #screen-game #canvas {
     width: 100vw !important;
     height: 100vh !important;
-    object-fit: fill;
+    object-fit: cover;   /* cover = natūralus aspect (ne suspaustas), užpildo, kraštai apkerpami (F10 pan pasiekia) */
     max-width: none !important;
     max-height: none !important;
   }
