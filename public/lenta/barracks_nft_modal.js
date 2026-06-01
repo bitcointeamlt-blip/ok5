@@ -190,6 +190,11 @@
 
   async function refreshBattlePicker() {
     _battleShowAll = false;   // kaskart atidarius — pradedam nuo cap'o (high-lvl first)
+    // SVARBU: resetinam NFT pasirinkimą kiekvieną kartą atidarius. _battlePickQty raktai
+    // priklauso nuo unito statų (xp/level/...); kai unitai pakyla lygiu ar inventorius
+    // perkraunamas, seni raktai nebeatitinka grupių → footer rodytų „Selected: 12" nors
+    // visos kortelės rodo 0 (stale state) → žaidėjas negali normaliai deploy'inti. Švarus startas.
+    _battlePickQty = {};
     // Free units grid — visada renderinam (be wallet)
     _renderFreeGrid();
     // Wallet account mismatch check
