@@ -36,6 +36,13 @@
     transform-origin: center center;\
     overflow: hidden;\
   }\
+  /* Game canvas mobile fill rule yra 100vw×100vh (portrait). Force-landscape metu wrapper\
+     pasuktas į landscape → SUKEIČIAM canvas dims (100vh×100vw) kad užpildytų, ne pusė juoda. */\
+  html.fl-on #screen-game .game-layout,\
+  html.fl-on #screen-game #canvas {\
+    width: 100vh !important;\
+    height: 100vw !important;\
+  }\
 }';
   try { var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } catch (_) {}
 
