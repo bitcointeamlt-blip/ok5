@@ -4092,6 +4092,14 @@ function _f9InstallDragHandlers() {
   window._f9DragInstalled = true;
   const _DRAG_THRESHOLD = 5;
   function _f9CanvasXY(e) {
+    // Force-landscape (CSS rotate) — loginė erdvė vietoj bbox.
+    if (window.__forceLandscape && window.__forceLandscape()) {
+      const L = window.__clientToLogical(e.clientX, e.clientY);
+      return {
+        sx: L.x * (canvas.width / window.__logicalW()),
+        sy: L.y * (canvas.height / window.__logicalH()),
+      };
+    }
     const r = canvas.getBoundingClientRect();
     return {
       sx: (e.clientX - r.left) * (canvas.width / r.width),
@@ -31488,9 +31496,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const nh = layout.scrollHeight;
     if (!nw || !nh) return;
     const margin = 8;
+    // Force-landscape: naudojam logines dimensijas (innerHeight×innerWidth pasuktam body).
+    const _vw = (window.__logicalW ? window.__logicalW() : window.innerWidth);
+    const _vh = (window.__logicalH ? window.__logicalH() : window.innerHeight);
     // Leidziam iki 3% vertical overflow kad upscale nebūtų per daug ribojamas
-    const sW = (window.innerWidth - margin) / nw;
-    const sH = (window.innerHeight - margin) / nh * 1.03;
+    const sW = (_vw - margin) / nw;
+    const sH = (_vh - margin) / nh * 1.03;
     const s = Math.min(sW, sH);
     console.log('[fitGameLayout] nw=', nw, 'nh=', nh, 'vw=', window.innerWidth, 'vh=', window.innerHeight, 'sW=', sW.toFixed(3), 'sH=', sH.toFixed(3), 's=', s.toFixed(3));
     if (s > 0 && Math.abs(s - 1) > 0.002) {

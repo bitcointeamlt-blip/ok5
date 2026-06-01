@@ -10397,6 +10397,15 @@
   }
 
   function clientToCanvas(clientX, clientY) {
+    // Force-landscape (CSS rotate) — naudojam loginę erdvę vietoj getBoundingClientRect
+    // (kuris pasuktam elementui grąžina axis-aligned bbox → koordinatės būtų klaidingos).
+    if (window.__forceLandscape && window.__forceLandscape()) {
+      const L = window.__clientToLogical(clientX, clientY);
+      return {
+        x: L.x * (canvas.width / window.__logicalW()),
+        y: L.y * (canvas.height / window.__logicalH()),
+      };
+    }
     const r = canvas.getBoundingClientRect();
     return {
       x: (clientX - r.left) * (canvas.width / r.width),
@@ -10565,9 +10574,13 @@
     if (!canvas) return;
     const screenW = window.innerWidth, screenH = window.innerHeight;
     if (_IS_MOBILE) {
-      // Mobile: virtual canvas (720p × screen aspect) + CSS stretch — pripildo VISĄ ekraną
+      // Mobile: virtual canvas (720p × screen aspect) + CSS stretch — pripildo VISĄ ekraną.
+      // Force-landscape metu loginė erdvė = (innerHeight × innerWidth), tad naudojam __logicalW/H,
+      // kad canvas teisingai užpildytų CSS'u pasuktą body (kitaip būtų squished/portrait).
+      const lw = (window.__logicalW ? window.__logicalW() : screenW);
+      const lh = (window.__logicalH ? window.__logicalH() : screenH);
       const targetH = 720;
-      const aspect = screenW / Math.max(1, screenH);
+      const aspect = lw / Math.max(1, lh);
       const VW = Math.max(1280, Math.round(targetH * aspect));
       const VH = targetH;
       canvas.width = VW;
@@ -10575,8 +10588,8 @@
       canvas.style.position = 'absolute';
       canvas.style.left = '0';
       canvas.style.top  = '0';
-      canvas.style.width  = screenW + 'px';
-      canvas.style.height = screenH + 'px';
+      canvas.style.width  = lw + 'px';
+      canvas.style.height = lh + 'px';
     } else {
       // Desktop: native screen resolution
       canvas.width = Math.floor(screenW);
