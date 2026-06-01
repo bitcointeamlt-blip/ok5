@@ -22,4 +22,16 @@
     } catch (_) {}
   }
   window.enterLandscape = enterLandscape;
+
+  // Pirmas user gesture → fullscreen + landscape (kad žaidimas iškart būtų full screen,
+  // ne tik nuėjus į F12). Vienkartinis. Android: pasisuka+fullscreen. iOS: tyliai nepavyks.
+  var _firstDone = false;
+  function _firstGesture() {
+    if (_firstDone) return; _firstDone = true;
+    document.removeEventListener('click', _firstGesture, true);
+    document.removeEventListener('touchend', _firstGesture, true);
+    enterLandscape();
+  }
+  document.addEventListener('click', _firstGesture, true);
+  document.addEventListener('touchend', _firstGesture, true);
 })();
