@@ -18,6 +18,7 @@
     pillEl.className = 'wui-pill-root';
     pillEl.innerHTML = `
       <div class="wui-pill-row">
+        <button type="button" class="wui-menu-toggle" id="wui-menu-toggle" title="Menu" aria-label="Toggle menu">☰</button>
         <button type="button" class="wui-pill" id="wui-pill-btn"></button>
         <button type="button" class="wui-castle-btn wui-inv-btn" id="wui-inv-btn" title="Inventory" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
@@ -68,6 +69,26 @@
       e.stopPropagation();
       if (typeof window.openTrophyPanel === 'function') window.openTrophyPanel();
     });
+
+    // ── Collapsible menu toggle (mobiliam mygtukai užstodavo žaidimo vaizdą) ──
+    const menuToggle = pillEl.querySelector('#wui-menu-toggle');
+    function _applyCollapsed(collapsed) {
+      pillEl.classList.toggle('is-collapsed', collapsed);
+      menuToggle.textContent = collapsed ? '☰' : '✕';
+    }
+    if (menuToggle) {
+      menuToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const collapsed = !pillEl.classList.contains('is-collapsed');
+        _applyCollapsed(collapsed);
+        try { localStorage.setItem('wuiMenuCollapsed', collapsed ? '1' : '0'); } catch (_) {}
+      });
+      // Default: IŠSKLEISTA (mygtukai matosi kaip anksčiau). Mobiliam ☰ leidžia
+      // susilankstyti kai užstoja vaizdą. Pasirinkimas įsimenamas.
+      let startCollapsed = false;
+      try { const saved = localStorage.getItem('wuiMenuCollapsed'); if (saved !== null) startCollapsed = (saved === '1'); } catch (_) {}
+      _applyCollapsed(startCollapsed);
+    }
 
     dropdownEl = pillEl.querySelector('#wui-dropdown');
 

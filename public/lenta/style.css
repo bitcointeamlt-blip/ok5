@@ -8605,6 +8605,64 @@ kbd {
    CASTLE TOGGLE — compact Tiny Swords castle button
    Replaces the wide pill. Clicking opens the dropdown.
    ─────────────────────────────────────────────────────────────────── */
+/* ── Collapsible menu toggle — HORIZONTALUS „gulintis" baras su animaciniais efektais ── */
+.wui-menu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  width: 72px;             /* gulintis — platus, žemas */
+  height: 30px;
+  padding: 0;
+  font-size: 17px;
+  letter-spacing: 4px;     /* ☰ / ✕ erdvesnis horizontaliam barui */
+  line-height: 1;
+  color: #ffe7c2;
+  text-shadow: 0 1px 0 #2a1a0a;
+  background: linear-gradient(180deg, #7d5638 0%, #5c3f28 100%);
+  border: 2px solid #c8a578;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 2px #3d2817,
+    2px 3px 0 #2a1a0a,
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s, border-color 0.15s;
+  animation: wuiToggleBreath 2.6s ease-in-out infinite;   /* kvėpuojantis švytėjimas */
+  -webkit-tap-highlight-color: transparent;
+}
+/* Shimmer — šviesos blyksnis praslysta per medį */
+.wui-menu-toggle::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -60%;
+  width: 45%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 232, 175, 0.5), transparent);
+  transform: skewX(-18deg);
+  animation: wuiToggleShine 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes wuiToggleShine {
+  0%, 55% { left: -60%; }
+  100%    { left: 135%; }
+}
+@keyframes wuiToggleBreath {
+  0%, 100% { box-shadow: 0 0 0 2px #3d2817, 2px 3px 0 #2a1a0a, 0 0 5px rgba(255,207,92,0.12), inset 0 1px 0 rgba(255,255,255,0.20), inset 0 -2px 0 rgba(0,0,0,0.35); }
+  50%      { box-shadow: 0 0 0 2px #3d2817, 2px 3px 0 #2a1a0a, 0 0 16px rgba(255,207,92,0.55), inset 0 1px 0 rgba(255,255,255,0.20), inset 0 -2px 0 rgba(0,0,0,0.35); }
+}
+.wui-menu-toggle:hover {
+  border-color: #ffcf5c;
+  transform: translateY(-1px) scale(1.04);
+}
+.wui-menu-toggle:active {
+  transform: translate(1px, 2px) scale(0.97);
+  animation: none;
+}
+/* Collapsed būsenoj — castle mygtukai paslepiami (visur, ne tik mobiliam) */
+.wui-pill-root.is-collapsed .wui-castle-btn { display: none !important; }
+
 .wui-castle-btn {
   position: relative;
   width: 72px;
