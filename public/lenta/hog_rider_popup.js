@@ -450,6 +450,20 @@
     const aoe       = document.getElementById('hog-demo-aoe');
     if (!pig || !spider || !aoe || !pigFlash) return;
 
+    // MOBILE (≤600px): jokio voro mūšio — tik Hog Rider ėjimo animacija (CSS hogSpriteAnim loop).
+    // Voro battle demo mažam ekrane lūždavo/nesimatė, tad mobile rodom švarų walking hog.
+    if (window.matchMedia && window.matchMedia('(max-width: 600px)').matches) {
+      _clearDemo();
+      _DemoFx.clear();
+      pig.removeAttribute('data-anim');   // default = walk
+      pig.style.transition = 'none';
+      pig.style.transform = '';
+      pig.classList.remove('dmg-hit');
+      spider.setAttribute('data-state', 'gone');  // paslepia vorą
+      aoe.classList.remove('fire');
+      return;   // be battle sekvencijos, be loop'o
+    }
+
     _clearDemo();
     _DemoFx.clear();
 
