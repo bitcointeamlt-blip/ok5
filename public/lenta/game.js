@@ -25203,10 +25203,16 @@ function updateCamera() {
   S.cam.ty = ty;
 
   // Smooth lerp toward target
-  S.cam.x += (tx - S.cam.x) * 0.14;
-  S.cam.y += (ty - S.cam.y) * 0.14;
-  if (Math.abs(S.cam.x - tx) < 0.5) S.cam.x = tx;
-  if (Math.abs(S.cam.y - ty) < 0.5) S.cam.y = ty;
+  // F10 mobile MANUAL pan → SNAP (be lerp lag) kad vaizdas sektų pirštą 1:1 (responsyvu, ne „senas telefonas").
+  // Auto-follow (ne pan) lieka smooth lerp 0.14.
+  if (S.floor === 10 && window._f10PanInstalled && S._camManualLock) {
+    S.cam.x = tx; S.cam.y = ty;
+  } else {
+    S.cam.x += (tx - S.cam.x) * 0.14;
+    S.cam.y += (ty - S.cam.y) * 0.14;
+    if (Math.abs(S.cam.x - tx) < 0.5) S.cam.x = tx;
+    if (Math.abs(S.cam.y - ty) < 0.5) S.cam.y = ty;
+  }
 }
 
 function clearCanvas() {
