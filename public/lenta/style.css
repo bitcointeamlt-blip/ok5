@@ -14620,6 +14620,28 @@ kbd {
   .f12e-notice { font-size: 6px; padding: 5px 8px; }
 }
 
+/* ── NFT BARRACKS modal — LANDSCAPE-SHORT (telefonas pasuktas, ~390px aukštis) ──
+   Landscape'e width>600 → mobile-portrait rules netaikomi → desktop dydžiai per dideli žemam ekranui.
+   Šis blokas subalansuoja: kompaktiški sprite'ai/font'ai/padding'ai kad tilptų daugiau info. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .nft-modal-content { max-height: 94vh !important; max-height: 94dvh !important; max-width: 96vw !important; }
+  .nft-modal-header { font-size: 12px !important; padding: 8px 14px !important; }
+  .nft-tab { font-size: 9px !important; padding: 7px 6px !important; }
+  .nft-tab-panel { padding: 8px 14px 12px !important; }
+  .nft-unit-grid { gap: 4px !important; max-width: 100% !important; margin: 0 auto 8px !important; }
+  .nft-unit-option { padding: 2px 1px !important; }
+  .nft-unit-option img { width: 52px !important; height: 52px !important; margin-top: 5px !important; }
+  .nft-unit-hog-sprite { width: 58px !important; height: 58px !important; background-size: 464px 58px !important; margin: 0 auto !important; }
+  @keyframes nftHogTileIdle { from { background-position: 0 0; } to { background-position: -464px 0; } }
+  .nft-unit-name { font-size: 7px !important; }
+  .nft-unit-tag  { font-size: 6px !important; }
+  .nft-btn { font-size: 9px !important; padding: 9px !important; }
+  .nft-qty-row { margin: 6px 0 !important; }
+  #nft-cost-preview { font-size: 9px !important; }
+  .nft-inv-card .nft-card-img-wrap img { width: 80px !important; height: 80px !important; }
+  .nft-inv-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)) !important; }
+}
+
 /* ── NFT Perks Panel (NFT-G) — parchment/gold medieval theme ───────── */
 #nft-perks-overlay {
   display: none;
