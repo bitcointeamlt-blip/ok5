@@ -2802,6 +2802,24 @@ let _ronkeBalance   = (typeof Profile !== 'undefined' && typeof Profile.ronkeBal
   : 15;   // 15 = starter grant for first-time players (no saved profile yet)
 let _ronkeBarBounds = null; // { x, y, w, h } — atnaujinama kiekvieną frame'ą, hover check
 let _canvasMx = -1, _canvasMy = -1; // paskutinė pelės pozicija canvas koordinatėse (po CSS scale paskirstoma į canvas.width vnt.)
+// Cover-aware client→canvas koordinatės. Mobile naudoja `object-fit: cover` → bitmap apkirptas+centruotas,
+// tad paprastas (clientX-r.left)*(canvas.width/r.width) (tinka object-fit:fill) duotų KLAIDINGĄ tašką
+// → tap'as nepataiko (pvz. ant ciucelos). Su cover skaičiuojam tikrą bitmap'o renderio dydį+offsetą.
+let _coverMQ = null;
+function _isGameCanvasCover() {
+  if (_coverMQ === null) { try { _coverMQ = window.matchMedia('(max-width: 900px) and (pointer: coarse)'); } catch (_) { _coverMQ = false; } }
+  return _coverMQ && _coverMQ.matches;
+}
+function _clientToCanvasXY(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  if (_isGameCanvasCover() && r.width && r.height) {
+    const cs = Math.max(r.width / canvas.width, r.height / canvas.height);  // cover scale
+    const bw = canvas.width * cs, bh = canvas.height * cs;                    // rendered bitmap dydis
+    const bx = r.left + (r.width - bw) / 2, by = r.top + (r.height - bh) / 2; // centruota offset
+    return { x: (clientX - bx) / cs, y: (clientY - by) / cs };
+  }
+  return { x: (clientX - r.left) * (canvas.width / r.width), y: (clientY - r.top) * (canvas.height / r.height) };
+}
 // World-space pelės koord., atnaujinamos po updateCamera(). Naudoti jas visur, kur palyginama su pasaulio-coord bounds (pastatai, unit'ai, extra mines).
 let _worldMx = -1, _worldMy = -1;
 const CANVAS_ZOOM = 1.32; // turi atitikti style.css #canvas transform: scale(...)
@@ -31568,11 +31586,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Track mouse position for hover tooltips (canvas coords)
   canvas.addEventListener('mousemove', e => {
-    const r = canvas.getBoundingClientRect();
-    const scaleX = canvas.width  / r.width;
-    const scaleY = canvas.height / r.height;
-    _canvasMx = (e.clientX - r.left) * scaleX;
-    _canvasMy = (e.clientY - r.top)  * scaleY;
+    const _p = _clientToCanvasXY(e.clientX, e.clientY);   // cover-aware (mobile object-fit:cover)
+    _canvasMx = _p.x;
+    _canvasMy = _p.y;
   });
   canvas.addEventListener('mouseleave', () => { _canvasMx = -1; _canvasMy = -1; });
 
@@ -31587,11 +31603,8 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const sel = window._f9Selected;
       if (!sel || !sel.alive) return;
-      const r = canvas.getBoundingClientRect();
-      const scaleX = canvas.width  / r.width;
-      const scaleY = canvas.height / r.height;
-      const _cmx = (e.clientX - r.left) * scaleX;
-      const _cmy = (e.clientY - r.top)  * scaleY;
+      const _p = _clientToCanvasXY(e.clientX, e.clientY);   // cover-aware
+      const _cmx = _p.x, _cmy = _p.y;
       const mx = _cmx + (S.cam ? S.cam.x : 0);
       const my = _cmy + (S.cam ? S.cam.y : 0);
       const txWorld = mx / CELL - 0.5;
@@ -31816,11 +31829,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // House3 click → popup su Upgrade mygtuku
   canvas.addEventListener('click', e => {
     if (_suppressNextClick) { _suppressNextClick = false; return; }
-    const r = canvas.getBoundingClientRect();
-    const scaleX = canvas.width  / r.width;
-    const scaleY = canvas.height / r.height;
-    const _cmx = (e.clientX - r.left) * scaleX;
-    const _cmy = (e.clientY - r.top)  * scaleY;
+    const _p = _clientToCanvasXY(e.clientX, e.clientY);   // cover-aware (mobile object-fit:cover) → tap pataiko
+    const _cmx = _p.x, _cmy = _p.y;
     // Popup/building bounds saugomi pasaulio koordinatėse (rašomi viduje ctx.translate(-cam.x,-cam.y)),
     // tad click taškas irgi konvertuojamas į pasaulio erdvę.
     const mx = _cmx + (gameMode === 'adventure' && S.cam ? S.cam.x : 0);
