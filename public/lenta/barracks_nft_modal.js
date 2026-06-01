@@ -339,6 +339,9 @@
     window._f12NftPickedPool = pool;
     window._f12PreDeckChoice = freeChoice;
     _battleDeployFlow = true;
+    // F12 balls žaidimas → auto-rotate į landscape (Android: fullscreen + orientation.lock).
+    // Kviečiama iš start mygtuko (user gesture), tad fullscreen leidžiamas. iOS: tyliai nepavyks (lieka portrait).
+    try { if (window.enterLandscape) window.enterLandscape(); } catch (_) {}
     closeModal();
     // gotoF12 sets S.floor=12; poll() per 200ms detects ir paleid'ia _activateNow
     if (typeof window.gotoF12 === 'function') window.gotoF12();
