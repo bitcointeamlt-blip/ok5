@@ -10824,30 +10824,38 @@
 
   function loop(tnow) {
     if (!active) return;
-    const dt = Math.min(tnow - lastTime, 100);
-    lastTime = tnow;
-    tickEnemies(dt, tnow);
-    _tickHarpoons(tnow);
-    _tickShamanProj(tnow);
-    _tickArrows(tnow);
-    _tickSpirits(dt, tnow);
-    _tickOhShitEvents(tnow);
-    _tickPoison(tnow);
-    _tickAsteroids(tnow);
-    _tickTraps(tnow);
-    _tickFrostReverse(tnow);
-    // Pending merge attacks — fire'ina po delay (susijungimo animacijos pabaiga)
-    for (let i = _f12PendingAttacks.length - 1; i >= 0; i--) {
-      const pa = _f12PendingAttacks[i];
-      if (tnow >= pa.runAt) {
-        _triggerMergeAttack(pa.type, pa.value, pa.mx, pa.my, tnow);
-        _f12PendingAttacks.splice(i, 1);
-      }
-    }
-    tickPhysics(dt);
-    _fadeMarks(dt);
-    render(tnow);
+    // rAF planuojamas PIRMA — kad viena frame klaida NEUŽMUŠTŲ loop'o visam laikui
+    // (anksčiau rAF buvo apačioj po render() → render klaida = amžinai juodas ekranas).
     raf = requestAnimationFrame(loop);
+    try {
+      const dt = Math.min(tnow - lastTime, 100);
+      lastTime = tnow;
+      tickEnemies(dt, tnow);
+      _tickHarpoons(tnow);
+      _tickShamanProj(tnow);
+      _tickArrows(tnow);
+      _tickSpirits(dt, tnow);
+      _tickOhShitEvents(tnow);
+      _tickPoison(tnow);
+      _tickAsteroids(tnow);
+      _tickTraps(tnow);
+      _tickFrostReverse(tnow);
+      // Pending merge attacks — fire'ina po delay (susijungimo animacijos pabaiga)
+      for (let i = _f12PendingAttacks.length - 1; i >= 0; i--) {
+        const pa = _f12PendingAttacks[i];
+        if (tnow >= pa.runAt) {
+          _triggerMergeAttack(pa.type, pa.value, pa.mx, pa.my, tnow);
+          _f12PendingAttacks.splice(i, 1);
+        }
+      }
+      tickPhysics(dt);
+      _fadeMarks(dt);
+      render(tnow);
+    } catch (e) {
+      // Frame klaida — praleidžiam šitą frame, loop'as tęsiasi (ekranas neužstringa juodas)
+      if (!loop._errCount) loop._errCount = 0;
+      if (loop._errCount < 5) { loop._errCount++; console.error('[F12 loop] frame error (recovering):', e); }
+    }
   }
 
   function poll() {
