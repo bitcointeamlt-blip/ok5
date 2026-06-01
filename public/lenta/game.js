@@ -1378,6 +1378,7 @@ function _ensureTrophyStats() {
 function saveProfile() {
   const key = _profileStorageKey();
   if (!key) return; // anonymous → no persistence
+  try { if (typeof _syncBuildingsToProfile === 'function') _syncBuildingsToProfile(); } catch (_) {}  // kasyklos/lygiai → Profile
   try { localStorage.setItem(key, JSON.stringify(Profile)); }
   catch (e) { console.warn('saveProfile failed:', e); }
 }
@@ -5826,29 +5827,78 @@ function _createExtraMine() {
   // race conditions / direct calls bypassing UI check.
   if (_extraMines.length >= MAX_EXTRA_MINES) return false;
   const idx = _extraMines.length;
-  _extraMines.push({
-    idx,
-    yOffset: 100 * (idx + 1),  // kiekviena nauja kasykla 100px žemyn nuo paskutinės
-    level: 1,                  // nepriklausomas kasimo lygis
-    houseLevel: 1,             // nepriklausomas namelio (storage) lygis
-    cycle: null,               // init kai pirmą kart vykdoma
+  _buildingsRestored = true;   // pastatėm → leidžiam sync (apsauga prieš tuščią overwrite)
+  _extraMines.push(_makeMineObj(idx, 1, 1, 100 * (idx + 1), true));
+  try { _saveBuildingsState(); } catch (_) {}   // PERSISTENCE — nauja kasykla išsaugoma į Profile
+  return true;
+}
+
+// Mine objekto fabrikas — naudoja IR build (_createExtraMine) IR restore (_restoreBuildingsState).
+// constructing=true → scaffold (nauja statyba); false → jau pastatyta (restore, be scaffold).
+function _makeMineObj(idx, level, houseLevel, yOffset, constructing) {
+  return {
+    idx: idx,
+    yOffset: (yOffset != null) ? yOffset : 100 * (idx + 1),
+    level: level || 1,
+    houseLevel: houseLevel || 1,
+    cycle: null,
     shake: { active: false, x: 0, y: 0 },
-    squishStart: 0,            // namelio bounce startas
-    coinParticles: [],         // per-mine coin FX
+    squishStart: 0,
+    coinParticles: [],
     houseBounds: null,
     stoneBounds: null,
     housePopupOpen: false,
     stonePopupOpen: false,
     houseBtnBounds: null,
     stoneBtnBounds: null,
-    constructionStart: performance.now(), // statybos startas — per _CONSTRUCTION_MS rodomas scaffold sprite
+    constructionStart: constructing ? performance.now() : (performance.now() - 9e8), // 9e8ms praeity = jau pastatyta
     speedUpBtnBounds: null,
     speedUpPopupOpen: false,
     speedUpPopupBtnBounds: null,
     speedUpPopupCloseBounds: null,
-    speedUpAnim: null, // {startMs, durMs, srcElapsed, dstElapsed} — vizuali bar'o užpildymo animacija
-  });
-  return true;
+    speedUpAnim: null,
+  };
+}
+
+// ── PASTATŲ (kasyklų) PERSISTENCE ─────────────────────────────────────
+// Tampa true tik įėjus į F10 (restore) arba pastačius mine — apsaugo nuo tuščio overwrite.
+let _buildingsRestored = false;
+// Sync pastatų state į Profile (kviečiama saveProfile metu — visada current).
+function _syncBuildingsToProfile() {
+  if (typeof Profile === 'undefined' || !Profile) return;
+  // RACE GUARD: kol neįėjom į F10 ir _restoreBuildingsState nesuveikė, _extraMines
+  // tuščias — NEklobberinam išsaugotų kasyklų (kaip barracksTrained race fix).
+  if (!_buildingsRestored) return;
+  Profile.buildings = {
+    ciucelaLevel: _ciucelaLevel,
+    houseLevel: _houseLevel,
+    miningLevel: _miningLevel,   // primary mine kasimo lygis (parity su extra mine .level)
+    mines: _extraMines.map(function (m) {
+      return { idx: m.idx, yOffset: m.yOffset, level: m.level || 1, houseLevel: m.houseLevel || 1 };
+    }),
+  };
+}
+function _saveBuildingsState() {
+  try { _syncBuildingsToProfile(); } catch (_) {}
+  try { if (typeof saveProfile === 'function') saveProfile(); } catch (_) {}
+}
+// Restore iš Profile — kviečiama įėjus į F10.
+function _restoreBuildingsState() {
+  try {
+    _buildingsRestored = true;   // įėjom į F10 — nuo dabar leidžiam sync net jei buildings tuščias
+    var b = (typeof Profile !== 'undefined' && Profile) ? Profile.buildings : null;
+    if (!b) return;
+    if (typeof b.ciucelaLevel === 'number' && b.ciucelaLevel >= 1) _ciucelaLevel = b.ciucelaLevel;
+    if (typeof b.houseLevel === 'number' && b.houseLevel >= 1) _houseLevel = b.houseLevel;
+    if (typeof b.miningLevel === 'number' && b.miningLevel >= 1) _miningLevel = b.miningLevel;
+    if (Array.isArray(b.mines)) {
+      _extraMines.length = 0;
+      b.mines.forEach(function (sm, i) {
+        if (_extraMines.length >= MAX_EXTRA_MINES) return;
+        _extraMines.push(_makeMineObj((sm.idx != null ? sm.idx : i), sm.level, sm.houseLevel, sm.yOffset, false));
+      });
+    }
+  } catch (e) { console.warn('restoreBuildings failed', e); }
 }
 const _BASE_CONSTRUCTION_MS = 60000;
 let _CONSTRUCTION_MS = _BASE_CONSTRUCTION_MS;
@@ -10165,6 +10215,11 @@ function initAdventure() {
   if (S.floor === 10 && typeof _restoreBarracksTrainedState === 'function') {
     _restoreBarracksTrainedState();
     try { _lastBarracksSaveAt = performance.now() + 2000; } catch (_) {}
+  }
+
+  // F10 — restore pastatytas mines (RONKE/gold kasyklos) iš Profile.buildings.
+  if (S.floor === 10) {
+    try { if (typeof _restoreBuildingsState === 'function') _restoreBuildingsState(); } catch (_) {}
   }
 
   // F11/F12 — kovos zona: load ally army iš Profile (treniruoti F10 units)
