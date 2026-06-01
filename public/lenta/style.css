@@ -16891,9 +16891,11 @@ kbd {
      Desktop'e img 140 + margin-top 15 ≈ hog 156 (lygiuota). Mobiliam media keitė tik
      dydžius (img 72) bet margin-top 15 likdavo + hog 90 ≠ img 72 → sprite'ai iš rikiuotės.
      Sprendimas: vienodas 56px visiems + margin-top 0 → pėdos vienoj linijoj, telpa net 320px. */
-  .nft-unit-grid { gap: 4px !important; max-width: 100% !important; }
-  .nft-unit-option { padding: 3px 2px !important; }
-  .nft-unit-option img { width: 56px !important; height: 56px !important; margin-top: 0 !important; }
+  .nft-unit-grid { gap: 3px !important; max-width: 100% !important; }
+  .nft-unit-option { padding: 2px 1px !important; }
+  /* Atkartojam DESKTOP proporciją mobiliu masteliu (GIF 140/hog 156 ≈ GIF 50/hog 56):
+     GIF mažesni + margin-top, hog didesnis → pėdos sutampa kaip desktop/landscape (user OK). */
+  .nft-unit-option img { width: 50px !important; height: 50px !important; margin-top: 6px !important; }
   .nft-unit-hog-sprite { width: 56px !important; height: 56px !important; background-size: 448px 56px !important; margin: 0 auto !important; }
   @keyframes nftHogTileIdle {
     from { background-position: 0 0; }
