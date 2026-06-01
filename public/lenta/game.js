@@ -20822,6 +20822,8 @@ document.addEventListener('keydown', e => {
   }
 
   if (k.t === 'move') {
+    // F10 — ronke hero KOSMETINIS: visiškai statiškas, jokio judėjimo (WASD + mobile d-pad)
+    if (gameMode === 'adventure' && S && S.floor === 10 && k.team === 0) return;
     // IDLE režimu herojus stovi vietoje — blokuojam judėjimą team 0
     if (_ronkeIdleMode && k.team === 0) return;
     // FREE MOVE režimu team 0 judėjimą valdo per-frame loop —
@@ -31504,6 +31506,8 @@ function hexAlpha(hex, a) {
 function updateP1Aim(x, y) {
   if (typeof S === 'undefined' || !S || S.phase !== 'frozen' || S.clockSide !== 0) return;
   if (S.heroShootLock && gameMode === 'adventure') return;
+  // F10 — ronke hero KOSMETINIS: nesisukioja/nesitaiko (vienu kartu uždengia visus aim call'us)
+  if (gameMode === 'adventure' && S.floor === 10) return;
   // F11 commander mode — hero nesekioja pelytės; facing valdomas tik per AI / commandMove
   if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) return;
   const sel = S.units.find(u => u.id === S.selectedId[0] && u.alive);
@@ -33684,7 +33688,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // edit mode: no drag-painting, only dblclick places tiles
     if (window.isEditMode && gameMode === 'adventure') return;
-    updateP1Aim(x, y);
+    // F10 — ronke hero KOSMETINIS: nesisukioja paskui kursorių
+    if (!(gameMode === 'adventure' && S && S.floor === 10)) updateP1Aim(x, y);
   }, true);
 
   document.addEventListener('mousedown', e => {
@@ -33735,8 +33740,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // F9 — turi savo F9 click handler (smooth move + per-unit right-click attack). Legacy shoot skip.
     if (gameMode === 'adventure' && S && S.floor === 9) return;
     SFX.init();
+    // F10 — ronke hero grynai KOSMETINIS: jokio select/aim/šaudymo/valdymo.
+    // (Pastatai/barakai atidaromi atskirai aukščiau; loot dėžės žemiau vis tiek veikia.)
+    const _f10Cosmetic = (gameMode === 'adventure' && S && S.floor === 10);
     const clicked = S.units.find(u => u.team === 0 && u.alive && u.x === gx && u.y === gy);
-    if (clicked) {
+    if (clicked && !_f10Cosmetic) {
       SFX.select();
       S.selectedId[0] = clicked.id;
       updateP1Aim(x, y);
@@ -33758,6 +33766,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
     }
+    if (_f10Cosmetic) return;   // F10 — hero kosmetinis, neleidžiam šaudyti/valdyti
     if (S.phase !== 'frozen') return;
     if (S.heroShootLock && gameMode === 'adventure') return;
     if (S.clockSide !== 0) return;
@@ -33843,6 +33852,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (gameMode === 'adventure' && typeof f11LikeFloor === 'function' && f11LikeFloor()) return;
     // F9 — turi savo F9 click handler (smooth move + per-unit attack). Legacy shoot praleidžiamas.
     if (gameMode === 'adventure' && S && S.floor === 9) return;
+    // F10 — ronke hero kosmetinis: jokio select/šaudymo (pastatai/barakai tvarkomi atskirai)
+    if (gameMode === 'adventure' && S && S.floor === 10) return;
     SFX.init();
     const { x, y } = canvasCoords(e);
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
@@ -33919,6 +33930,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let _mobLastTap = 0, _mobLastTapX = 0, _mobLastTapY = 0;
   canvas.addEventListener('touchend', e => {
     if (gameMode !== 'adventure') return;
+    // F10 — ronke hero KOSMETINIS: jokio mobile select/shoot/move. Tap propaguoja į pastatus.
+    if (S && S.floor === 10) { window._mobRonkeSelected = false; return; }
     const t = e.changedTouches[0];
     const { x: cx, y: cy } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
     const now = performance.now();
