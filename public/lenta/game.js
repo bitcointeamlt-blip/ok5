@@ -4193,7 +4193,7 @@ function _f9InstallDragHandlers() {
       var t = e.touches[0]; if (!t) return;
       if (!moved && (Math.abs(t.clientX - startX) > 6 || Math.abs(t.clientY - startY) > 6)) moved = true;
       if (!moved) return;
-      var sc = _scale();
+      var sc = _scale() * 0.5;   // jautrumo faktorius — 0.5 (buvo per jautru). Mažesnis = lėtesnis pan.
       S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (t.clientX - lastX) * sc;
       S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (t.clientY - lastY) * sc;
       S._camManualLock = true;   // išjungia auto-follow kol tyrinėja
