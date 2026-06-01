@@ -4171,6 +4171,37 @@ function _f9InstallDragHandlers() {
     window._f9DragActive = false;
     window._f9DragRect = null;
   });
+
+  // ── F10 (home) MOBILE touch-pan: tempi pirštu → kamera juda, gali laisvai tyrinėti home ──
+  // Izoliuota: tik mobile + tik floor 10. Naudoja esamą S.cam.tx/ty + _camManualLock (kaip edge-pan).
+  // Tap (be judesio) NEpaniima → ciucela/mygtukų paspaudimai veikia kaip anksčiau.
+  (function _installF10Pan() {
+    if (window._f10PanInstalled) return;
+    var IS_MOBILE = /iPhone|iPod|Android|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || '');
+    if (!IS_MOBILE) return;
+    window._f10PanInstalled = true;
+    var panning = false, moved = false, lastX = 0, lastY = 0, startX = 0, startY = 0;
+    function _scale() { var r = canvas.getBoundingClientRect(); return r.width ? (canvas.width / r.width) : 1; }
+    canvas.addEventListener('touchstart', function (e) {
+      if (!(typeof S !== 'undefined' && S && S.floor === 10) || !e.touches || e.touches.length !== 1) return;
+      panning = true; moved = false;
+      lastX = startX = e.touches[0].clientX;
+      lastY = startY = e.touches[0].clientY;
+    }, { passive: true });
+    canvas.addEventListener('touchmove', function (e) {
+      if (!panning || !(S && S.floor === 10) || !S.cam) return;
+      var t = e.touches[0]; if (!t) return;
+      if (!moved && (Math.abs(t.clientX - startX) > 6 || Math.abs(t.clientY - startY) > 6)) moved = true;
+      if (!moved) return;
+      var sc = _scale();
+      S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (t.clientX - lastX) * sc;
+      S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (t.clientY - lastY) * sc;
+      S._camManualLock = true;   // išjungia auto-follow kol tyrinėja
+      lastX = t.clientX; lastY = t.clientY;
+      e.preventDefault();        // stabdo scroll/synthetic-click kad tap'as ant ciucela nesuveiktų panint
+    }, { passive: false });
+    canvas.addEventListener('touchend', function () { panning = false; }, { passive: true });
+  })();
 }
 if (typeof setInterval !== 'undefined') {
   const _f9InstallInt = setInterval(() => {
