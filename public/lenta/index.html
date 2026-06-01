@@ -268,6 +268,7 @@
         <div class="lobby-desc">Arcade · MMO progression · Ronke's magic</div>
         <div class="lobby-actions">
           <button class="lobby-btn lobby-btn-play" onclick="
+            window.enterLandscape&&enterLandscape();
             window.loadProfile&&loadProfile();
             window.updateRunKeyUI&&updateRunKeyUI();
             document.getElementById('screen-lobby').classList.remove('active');
@@ -2090,6 +2091,7 @@
   <script src="vendor/GLTFLoader.js"></script>
   <!-- Supabase JS client (CDN, v2) — cloud profile sync -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="orientation.js?v=1"></script>
   <script src="supabase_sync.js?v=8device"></script>
   <script src="wallet.js?v=wp16timeout"></script>
   <script src="barracks_nft.js?v=nft40hog"></script>
