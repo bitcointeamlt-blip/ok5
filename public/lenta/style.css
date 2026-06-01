@@ -232,6 +232,7 @@ canvas {
     object-fit: cover;   /* cover = natūralus aspect (ne suspaustas), užpildo, kraštai apkerpami (F10 pan pasiekia) */
     max-width: none !important;
     max-height: none !important;
+    transform: scale(1.1) !important;   /* mažesnis zoom nei desktop 1.32 → matosi daugiau kraštų (mažiau apkerpa) */
   }
 }
 
