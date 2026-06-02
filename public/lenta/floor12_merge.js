@@ -2688,9 +2688,10 @@
         }
         const isPerfect = !!_zoneTier;
         let scoreMult = 1, slotBonus = 0;
+        // slotBonus = -1 bonus kamuoliukas (counteryje). NICE → 0, PERFECT/UNBELIEVABLE → 1 (max -1, jokio -3).
         if (_zoneTier === 'nice')           { scoreMult = 2; slotBonus = 0; }
         else if (_zoneTier === 'perfect')   { scoreMult = 3; slotBonus = 1; }
-        else if (_zoneTier === 'ronke_stronke') { scoreMult = 3; slotBonus = 2; }
+        else if (_zoneTier === 'ronke_stronke') { scoreMult = 3; slotBonus = 1; }
         merged._perfect = isPerfect;
         merged._zoneTier = _zoneTier;
         merged._slotBonus = slotBonus;
@@ -2744,8 +2745,11 @@
             chainLevel: 1,
           });
         }
-        // 2b) "-N" indikatorius ant BALLS stulpelio — zone-aware
-        _f12BallsMinusPopups.push({ born: tNow, perfect: isPerfect, slotBonus, zoneTier: _zoneTier });
+        // 2b) "-1" indikatorius ant BALLS stulpelio — TIK perfect/unbelievable (jie vieninteliai
+        // mažina rodomą count -1; nice/paprasti merge'ai counterio nekeičia → jokio popup)
+        if (_zoneTier === 'perfect' || _zoneTier === 'ronke_stronke') {
+          _f12BallsMinusPopups.push({ born: tNow });
+        }
         // 3) Per-type burst FX — zone-aware ring color
         _f12MergeRings.push({
           x: mx, y: my, born: tNow, value: newVal,
@@ -2793,11 +2797,14 @@
     }
     if (toRemove.size === 0) return;
     blocks = blocks.filter((_, idx) => !toRemove.has(idx)).concat(toAdd);
-    // Slot bonus pagal zoną: NICE +0 (-1 display), PERFECT +1 (-2), RONKE STRONKE +2 (-3)
+    // (B — pasunkinta, kad nebūtų begalinio self-clear loop'o):
+    //   TIK PERFECT / UNBELIEVABLE merge duoda relief → rodomas count −1.
+    //   VISI kiti merge'ai (nice + paprasti) → 0 relief: kompensuojam natūralų blocks.length −1
+    //   (_f12FireBonusSlots -= 1), kad displayed nenukristų. Rezultatas: displayed = šūviai −
+    //   skilled_merge'ai → board'as pildosi, game over (30/30) pasiekiamas.
     for (const m of toAdd) {
-      if (m._perfect) {
-        _f12FireBonusSlots += m._slotBonus || 0;
-      }
+      const _goodMerge = (m._zoneTier === 'perfect' || m._zoneTier === 'ronke_stronke');
+      if (!_goodMerge) _f12FireBonusSlots -= 1;
     }
     for (const b of blocks) b._mergedThisStep = false;
   }
@@ -9043,8 +9050,8 @@
           }
 
           // ── CHUNKY TEXT — 1px outline + 2px deep shadow + bright fill ──
-          // Pagal zoną: NICE -1 (=normal), PERFECT -2, RONKE STRONKE -3
-          const mText = popup.perfect ? ('-' + (1 + (popup.slotBonus || 0))) : '-1';
+          // Tik perfect/unbelievable spawnina šį popup → visada -1 (atitinka tikrą counterio pokytį)
+          const mText = '-1';
           ctx.font = 'bold 11px "Press Start 2P", monospace';
           ctx.textAlign = 'center';
           ctx.fillStyle = `rgba(0,0,0,${alpha * 0.7})`;
