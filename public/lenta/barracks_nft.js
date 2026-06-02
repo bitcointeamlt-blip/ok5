@@ -121,6 +121,15 @@
     const pc = await getPublicClient();
     return await pc.readContract({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: fn, args });
   }
+  // Retry wrapper — RPC kartais meta transient klaidą (rate-limit/glitch). 3 bandymai su backoff.
+  async function _readRetry(fn, args = [], tries = 3) {
+    let last;
+    for (let i = 0; i < tries; i++) {
+      try { return await read(fn, args); }
+      catch (e) { last = e; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
+    }
+    throw last;
+  }
 
   async function getRonkeBalance(addr) {
     const pc = await getPublicClient();
@@ -249,24 +258,51 @@
       rarity: UTYPE[d[0]]?.rarity || 'common',
     };
   }
+  // Whale-safe progresyvus krovimas (user gairė: ~20 greitai, likusius LĖTAI, NENULŪŽTI):
+  //  • Fazė 1 (greita): pirmi _INV_FAST unitų paketais po _INV_FAST_CHUNK → matosi per ~1-2s.
+  //  • Fazė 2 (lėta): likę mažais paketais (_INV_SLOW_CHUNK) su pauze (_INV_SLOW_DELAY) tarp jų
+  //    → švelni RPC apkrova (jokio rate-limit'o / crash'o net su 500+ unitų).
+  //  • render'is throttle'inamas (≥500ms) → main thread neblokuojamas.
+  //  • per-unit / per-chunk klaidos PRALEIDŽIAMOS (skip) → niekada nemeta → kas užsikrovė lieka.
+  const _INV_FAST = 24, _INV_FAST_CHUNK = 12, _INV_SLOW_CHUNK = 6, _INV_SLOW_DELAY = 350;
   async function fetchInventory(addr, onProgress) {
     const balance = await read('balanceOf', [addr]);
     const n = Number(balance);
     if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
-    // 1) tokenId'ai LYGIAGREČIAI (buvo sekvenciškai — pagrindinis lėtumas)
     const idxs = Array.from({ length: n }, (_, i) => i);
-    const tokenIds = await Promise.all(idxs.map((i) => read('tokenOfOwnerByIndex', [addr, BigInt(i)])));
-    // 2) getUnitFullData paketais; streaminam progresą surūšiuotą pagal XP desc
     const acc = [];
-    for (let start = 0; start < tokenIds.length; start += _INV_CHUNK) {
-      const slice = tokenIds.slice(start, start + _INV_CHUNK);
-      const part = await Promise.all(slice.map(async (id) => _mapUnit(id, await read('getUnitFullData', [id]))));
-      for (const u of part) acc.push(u);
-      if (typeof onProgress === 'function') {
-        const sorted = acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
-        try { onProgress(sorted, acc.length, n); } catch (_) {}
-      }
+    let _lastEmit = 0;
+    function emit(force) {
+      if (typeof onProgress !== 'function') return;
+      const now = Date.now();
+      if (!force && (now - _lastEmit) < 500) return;   // throttle render
+      _lastEmit = now;
+      const sorted = acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
+      try { onProgress(sorted, acc.length, n); } catch (_) {}
     }
+    async function loadChunk(slice) {
+      let ids;
+      try { ids = await Promise.all(slice.map((i) => _readRetry('tokenOfOwnerByIndex', [addr, BigInt(i)]))); }
+      catch (_) { return; }   // paketo tokenId fetch krito — praleidžiam, nenutraukiam
+      const part = await Promise.all(ids.map(async (id) => {
+        try { return _mapUnit(id, await _readRetry('getUnitFullData', [id])); }
+        catch (_) { return null; }   // vienas unit krito — praleidžiam
+      }));
+      for (const u of part) if (u) acc.push(u);
+    }
+    // Fazė 1 — greitai pirmi _INV_FAST
+    const fast = idxs.slice(0, _INV_FAST);
+    for (let s = 0; s < fast.length; s += _INV_FAST_CHUNK) {
+      await loadChunk(fast.slice(s, s + _INV_FAST_CHUNK));
+      emit(true);
+    }
+    // Fazė 2 — likę LĖTAI su pauzėmis
+    for (let s = _INV_FAST; s < idxs.length; s += _INV_SLOW_CHUNK) {
+      await loadChunk(idxs.slice(s, s + _INV_SLOW_CHUNK));
+      emit(false);
+      if (s + _INV_SLOW_CHUNK < idxs.length) await new Promise((r) => setTimeout(r, _INV_SLOW_DELAY));
+    }
+    emit(true);
     return acc;
   }
 
