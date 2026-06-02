@@ -1379,6 +1379,8 @@ function saveProfile() {
   const key = _profileStorageKey();
   if (!key) return; // anonymous → no persistence
   try { if (typeof _syncBuildingsToProfile === 'function') _syncBuildingsToProfile(); } catch (_) {}  // kasyklos/lygiai → Profile
+  try { if (typeof _syncBarracksProdToProfile === 'function') _syncBarracksProdToProfile(); } catch (_) {}  // aktyvus treniravimas → Profile (offline)
+  try { if (typeof _syncCiucelaConstructionToProfile === 'function') _syncCiucelaConstructionToProfile(); } catch (_) {}  // ciucela statyba → Profile (offline)
   try { localStorage.setItem(key, JSON.stringify(Profile)); }
   catch (e) { console.warn('saveProfile failed:', e); }
 }
@@ -2744,7 +2746,7 @@ const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Wate
 // Floor 1
 window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"1,0":"tileset3_3_3","0,1":"tileset3_3_3","1,2":"tileset3_3_3","0,3":"tileset3_3_3","1,4":"tileset3_3_3","0,5":"tileset3_3_3","2,1":"tileset3_3_3","2,3":"tileset3_3_3","2,5":"tileset3_3_3","1,6":"tileset3_3_3","0,7":"tileset3_3_3","2,7":"tileset3_3_3","3,0":"tileset3_3_3","3,2":"tileset3_3_3","3,4":"tileset3_3_3","3,6":"tileset3_3_3","3,8":"tileset3_3_3","1,8":"tileset3_3_3","0,9":"tileset3_3_3","2,9":"tileset3_3_3","3,10":"tileset3_3_3","1,10":"tileset3_3_3","0,11":"tileset3_3_3","2,11":"tileset3_3_3","3,12":"tileset3_3_3","1,12":"tileset3_3_3","0,13":"tileset3_3_3","2,13":"tileset3_3_3","4,13":"tileset3_3_3","4,11":"tileset3_3_3","4,9":"tileset3_3_3","4,7":"tileset3_3_3","4,5":"tileset3_3_3","4,3":"tileset3_3_3","4,1":"tileset3_3_3","5,0":"tileset3_3_3","5,2":"tileset3_3_3","5,4":"tileset3_3_3","5,6":"tileset3_3_3","5,8":"tileset3_3_3","5,10":"tileset3_3_3","5,12":"tileset3_3_3","6,13":"tileset3_3_3","6,11":"tileset3_3_3","6,9":"tileset3_3_3","6,7":"tileset3_3_3","6,5":"tileset3_3_3","6,3":"tileset3_3_3","6,1":"tileset3_3_3","7,0":"tileset3_3_3","7,2":"tileset3_3_3","7,4":"tileset3_3_3","7,6":"tileset3_3_3","7,8":"tileset3_3_3","7,10":"tileset3_3_3","7,12":"tileset3_3_3","8,13":"tileset3_3_3","8,11":"tileset3_3_3","8,9":"tileset3_3_3","8,7":"tileset3_3_3","8,5":"tileset3_3_3","8,3":"tileset3_3_3","8,1":"tileset3_3_3","5,5":"bush3","7,7":"bush3","3,9":"bush3","7,1":"bush1","5,1":"bush1","4,8":"deco_15","2,2":"deco_15","8,10":"deco_14","8,4":"deco_03","1,11":"deco_13","9,0":"tileset3_5_3","9,1":"tileset3_6_3","9,2":"tileset3_6_3","10,0":"tileset3_5_4","10,1":"tileset3_6_4","10,2":"tileset3_6_4","9,3":"tileset3_6_3","10,3":"tileset3_6_4","9,4":"tileset3_6_3","10,4":"tileset3_6_4","9,5":"tileset3_6_3","10,5":"tileset3_6_4","9,6":"tileset3_6_3","10,6":"tileset3_6_4","9,7":"tileset3_6_3","10,7":"tileset3_6_4","9,8":"tileset3_6_3","10,8":"tileset3_6_4","9,9":"tileset3_6_3","10,9":"tileset3_6_4","9,10":"tileset3_6_3","10,10":"tileset3_6_4","9,11":"tileset3_6_3","10,11":"tileset3_6_4","9,12":"tileset3_6_3","9,13":"tileset3_6_3","10,12":"tileset3_6_4","10,13":"tileset3_6_4","9,14":"tileset3_7_3","10,14":"tileset3_7_4","7,14":"tileset3_8_3","8,14":"tileset3_8_4","6,14":"tileset3_8_4","5,14":"tileset3_8_3","3,14":"tileset3_8_3","4,14":"tileset3_8_4","1,14":"tileset3_8_3","2,14":"tileset3_8_4","0,14":"deco_06"},"collisionBoxes":["9,0","9,1","9,2","9,3","9,4","9,5","9,6","9,7","9,8","9,9","9,10","9,11","9,12","9,13","9,14","0,14","1,14","2,14","3,14","4,14","5,14","6,14","7,14","8,14"],"enemies":[{"type":"sheep","x":9,"y":7},{"type":"spider","x":7,"y":1},{"type":"spider","x":11,"y":6},{"type":"skull","x":6,"y":7},{"type":"minotaur","x":11,"y":3}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":25,"y":28}};
 // Floor 10 — 13x41 plain grass (cleaned from stones/water)
-window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3","2,7":"tree4","3,6":"tree3","4,14":"deco_18"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":3,"y":6},"exitPos":{"x":25,"y":28}};
+window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3","2,7":"tree4","3,6":"tree3","4,14":"deco_18","5,16":"deco_16"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":3,"y":6},"exitPos":{"x":25,"y":28}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
 // Floor 12 — start be dekoracijų. Galima atskirai redaguoti per editor + window.exportMap().
@@ -2868,6 +2870,7 @@ function _getRonkeCoinThumb(size, frameIdx) {
 }
 // Čiučela (deco_18) — mana regen ubgreidimo objektas
 let _ciucelaBounds = null;       // ribos click detection'ui (atnaujinama deco render'e)
+let _leaderboardBounds = null;   // deco_16 (raudonas kryžius+kaukolė) — click → global stats panelė
 let _ciucelaPopupOpen = false;
 let _ciucelaLevel = 1;
 let _ciucelaUpgradeBtnBounds = null;
@@ -5900,6 +5903,157 @@ function _restoreBuildingsState() {
     }
   } catch (e) { console.warn('restoreBuildings failed', e); }
 }
+
+// ══ OFFLINE PROGRESS ═══════════════════════════════════════════════════
+// Idle-game produkcija realiu (wall-clock) laiku: kasimas kaupia RONKE net
+// išėjus iš F10 / po reload; treniravimas baigiamas while-away. Statybos
+// upgrade'ai jau taikomi iškart (click metu) → persistuoja per buildings.
+const _OFFLINE_MAX_MS = 8 * 3600 * 1000;   // max 8h kaupimo (anti-abuse; storage cap dar riboja)
+
+// ── Kasimas (offline RONKE) ───────────────────────────────────────────
+// RONKE/sek vienai kasyklai. Tuned ~ atitikti stebimą greitį (cap'as saugo nuo abuse).
+function _mineRonkePerSec(level, idx) {
+  const base = 0.05;                                    // ~3 RONKE/min lvl1
+  const lvlMult = 1 + (Math.max(1, level || 1) - 1) * 0.25;
+  const sizeMult = (idx == null) ? 1 : (2 + idx);       // extra kasyklos duoda daugiau (kaip coinCount)
+  return base * lvlMult * sizeMult;
+}
+function _totalMineRonkePerSec() {
+  let r = _mineRonkePerSec(_miningLevel, null);         // primary
+  try { for (const m of _extraMines) r += _mineRonkePerSec(m.level || 1, m.idx); } catch (_) {}
+  return r;
+}
+// Atsiskaito už praėjusį laiką nuo paskutinio settle. Kviečiama įėjus į F10 + load.
+// Kol esam F10 — _bumpIdleMineClock() laiko Profile.idleMineAt = now, tad live ciklas
+// ir offline accrual nesidubliuoja (offline skaičiuoja tik away laiką).
+function _settleOfflineMining(silent) {
+  try {
+    if (typeof Profile === 'undefined' || !Profile) return;
+    const nowW = Date.now();
+    let last = Number(Profile.idleMineAt);
+    if (!Number.isFinite(last) || last <= 0) { Profile.idleMineAt = nowW; return; }
+    let dt = nowW - last;
+    if (dt <= 0) { Profile.idleMineAt = nowW; return; }
+    if (dt > _OFFLINE_MAX_MS) dt = _OFFLINE_MAX_MS;
+    const rate = _totalMineRonkePerSec();
+    let gained = Math.floor(rate * dt / 1000);
+    const cap = (typeof _totalHouseCapacity === 'function') ? _totalHouseCapacity() : 30000;
+    const space = Math.max(0, cap - _ronkeBalance);
+    if (gained > space) gained = space;
+    if (gained > 0) {
+      _ronkeBalance += gained;
+      if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
+      if (!silent && typeof showGameNotification === 'function') {
+        showGameNotification('WHILE AWAY', '+' + gained + ' RONKE mined', '#ffcf5c');
+      }
+    }
+    Profile.idleMineAt = nowW;
+    if (typeof saveProfile === 'function') saveProfile();
+  } catch (e) { console.warn('settleOfflineMining failed', e); }
+}
+function _bumpIdleMineClock() {
+  try { if (S.floor === 10 && typeof Profile !== 'undefined' && Profile) Profile.idleMineAt = Date.now(); } catch (_) {}
+}
+
+// ── Treniravimas (offline unit completion) ────────────────────────────
+// Training EXCLUSIVE (vienu metu tik vienas slot'as) → persistuojam vieną prod.
+function _syncBarracksProdToProfile() {
+  try {
+    if (typeof Profile === 'undefined' || !Profile) return;
+    const keys = Object.keys(_barracksProductions);
+    if (!keys.length) { Profile.barracksProd = null; return; }
+    const slot = parseInt(keys[0], 10);
+    const prod = _barracksProductions[slot];
+    if (!prod) { Profile.barracksProd = null; return; }
+    const elapsedPerf = Math.max(0, performance.now() - prod.startAt);
+    Profile.barracksProd = {
+      slot: slot,
+      queueLeft: prod.queueLeft || 0,
+      startWall: Date.now() - elapsedPerf,   // kada prasidėjo DABARTINIS unit (wall-clock)
+      produceMs: _BARRACKS_PRODUCE_MS,
+    };
+  } catch (_) {}
+}
+let _barracksProdRestored = false;
+// Catch-up: užbaigia per away laiką pagamintus unit'us, likusiam queue palieka progresą.
+function _restoreBarracksProductions() {
+  try {
+    if (_barracksProdRestored) return;        // tik kartą per session (reload)
+    // Jei jau yra gyva produkcija atmintyje (F10 re-entry mid-session) — neperrašom.
+    if (Object.keys(_barracksProductions).length > 0) { _barracksProdRestored = true; return; }
+    _barracksProdRestored = true;
+    const p = (typeof Profile !== 'undefined' && Profile) ? Profile.barracksProd : null;
+    if (!p) return;
+    const slot = p.slot | 0;
+    if (!_BARRACKS_UNIT_TYPES[slot]) { Profile.barracksProd = null; return; }
+    const produceMs = (p.produceMs > 0) ? p.produceMs : _BARRACKS_PRODUCE_MS;
+    let elapsed = Date.now() - Number(p.startWall || Date.now());
+    if (!(elapsed >= 0)) elapsed = 0;
+    if (elapsed > _OFFLINE_MAX_MS) elapsed = _OFFLINE_MAX_MS;
+    const totalUnits = (p.queueLeft || 0) + 1;          // dabartinis + likę queue
+    let completed = Math.floor(elapsed / produceMs);
+    if (completed > totalUnits) completed = totalUnits;
+    for (let i = 0; i < completed; i++) { try { _barracksSpawnTrained(slot); } catch (_) {} }
+    const remaining = totalUnits - completed;
+    if (remaining > 0) {
+      let partial = elapsed - completed * produceMs;    // dabartinio unit progresas
+      if (partial < 0) partial = 0;
+      if (partial > produceMs) partial = produceMs;
+      _barracksProductions[slot] = {
+        startAt: performance.now() - partial,
+        queueLeft: remaining - 1,
+        speedUpQueueLeft: 0,
+      };
+    } else {
+      delete _barracksProductions[slot];
+      if (Profile) Profile.barracksProd = null;
+    }
+    _syncBarracksProdToProfile();
+    if (typeof saveProfile === 'function') saveProfile();
+    if (completed > 0 && typeof showGameNotification === 'function') {
+      showGameNotification('WHILE AWAY', '+' + completed + ' unit' + (completed > 1 ? 's' : '') + ' trained', '#7ed957');
+    }
+  } catch (e) { console.warn('restoreBarracksProductions failed', e); }
+}
+
+// ── Ciucela (scarecrow) — vienintelė statyba kuri ATIDEDA level iki pabaigos.
+// Persistuojam target+wall-start; restore užbaigia arba tęsia.
+function _syncCiucelaConstructionToProfile() {
+  try {
+    if (typeof Profile === 'undefined' || !Profile) return;
+    if (_ciucelaConstructionStart > 0) {
+      const elapsedPerf = Math.max(0, performance.now() - _ciucelaConstructionStart);
+      Profile.ciucelaConstruction = {
+        target: _ciucelaConstructionTargetLevel,
+        durMs: _ciucelaConstructionDurMs,
+        startWall: Date.now() - elapsedPerf,
+      };
+    } else {
+      Profile.ciucelaConstruction = null;
+    }
+  } catch (_) {}
+}
+function _restoreCiucelaConstruction() {
+  try {
+    const c = (typeof Profile !== 'undefined' && Profile) ? Profile.ciucelaConstruction : null;
+    if (!c || !(c.target > 0)) return;
+    let elapsed = Date.now() - Number(c.startWall || Date.now());
+    if (!(elapsed >= 0)) elapsed = 0;
+    const dur = c.durMs > 0 ? c.durMs : 1;
+    if (elapsed >= dur) {
+      _ciucelaLevel = c.target;                          // baigta while-away
+      _ciucelaConstructionStart = 0;
+      _ciucelaConstructionTargetLevel = 0;
+      _ciucelaConstructionDurMs = 0;
+      if (Profile) Profile.ciucelaConstruction = null;
+    } else {
+      _ciucelaConstructionTargetLevel = c.target;        // tęsiam likusį laiką
+      _ciucelaConstructionDurMs = dur;
+      _ciucelaConstructionStart = performance.now() - elapsed;
+    }
+  } catch (e) { console.warn('restoreCiucelaConstruction failed', e); }
+}
+
 const _BASE_CONSTRUCTION_MS = 60000;
 let _CONSTRUCTION_MS = _BASE_CONSTRUCTION_MS;
 const _SPEEDUP_COST = 1;         // TEST: 1 Ronke per minutę (buvo 10)
@@ -8453,6 +8607,9 @@ function _f10TryStartTraining(utype, qty, localCost, onSuccess, onInsufficient, 
   if (typeof window.updateRonkeBadge === 'function') window.updateRonkeBadge();
   if (typeof saveProfile === 'function') saveProfile();
   onSuccess();
+  // OFFLINE: onSuccess gali nustatyti _barracksProductions (treniravimas) — dar kartą
+  // persistuojam, kad startWall išliktų jei žaidėjas iškart perkrauna.
+  if (typeof saveProfile === 'function') saveProfile();
 
   // 3. Background server validation (if wallet connected)
   const W = window.Wallet;
@@ -10220,6 +10377,11 @@ function initAdventure() {
   // F10 — restore pastatytas mines (RONKE/gold kasyklos) iš Profile.buildings.
   if (S.floor === 10) {
     try { if (typeof _restoreBuildingsState === 'function') _restoreBuildingsState(); } catch (_) {}
+    // OFFLINE PROGRESS: užbaigti ciucela statybą, atsiskaityti už away-kasimą,
+    // catch-up treniravimą. Eilė svarbi: ciucela+mines restored prieš tai.
+    try { if (typeof _restoreCiucelaConstruction === 'function') _restoreCiucelaConstruction(); } catch (_) {}
+    try { if (typeof _settleOfflineMining === 'function') _settleOfflineMining(false); } catch (_) {}
+    try { if (typeof _restoreBarracksProductions === 'function') _restoreBarracksProductions(); } catch (_) {}
   }
 
   // F11/F12 — kovos zona: load ally army iš Profile (treniruoti F10 units)
@@ -12808,6 +12970,9 @@ function _updateAndDrawPawnNpcs(decKeys) {
   const now    = performance.now();
   const SZ     = 90;
   const PAM_SZ = 50;
+  // OFFLINE: kol esam F10, laikom idle-clock = now → away accrual skaičiuoja tik
+  // laiką PO išėjimo (live mining cycle tuo metu pats prideda RONKE).
+  if (typeof _bumpIdleMineClock === 'function') _bumpIdleMineClock();
 
   // Primary statybos metu — pawn/PAM/mining cycle pilnai sustabdomi (namuko nėra, negalima kasti).
   // Cycle resetinamas kad baigus statybą ciklas startuotų iš naujo.
@@ -15588,13 +15753,18 @@ function _getBarracksUnitInfo(idx) {
 function _tickBarracksProduction() {
   const now = performance.now();
   const keys = Object.keys(_barracksProductions);
+  let _completedAny = false;
   for (const k of keys) {
     const prod = _barracksProductions[k];
     if (!prod) continue;
     if (now - prod.startAt < _BARRACKS_PRODUCE_MS) continue;
+    _completedAny = true;
     const _finIdx = parseInt(k, 10);
     const _finQueue = (prod.queueLeft || 0);
     const _finSuLeft = (prod.speedUpQueueLeft || 0);
+    // Carry-over: perteklinis laikas (>1 produce langas) → kitas unit prasideda
+    // atgaline data, kad backlog (pvz. grįžus iš mūšio) išsivalytų per kelis frame'us.
+    const _over = Math.max(0, (now - prod.startAt) - _BARRACKS_PRODUCE_MS);
     _barracksSpawnTrained(_finIdx);
     delete _barracksProductions[_finIdx];
     delete _barracksSpeedUpAnims[_finIdx];
@@ -15603,7 +15773,7 @@ function _tickBarracksProduction() {
     // "queue stalls if balance dipped" failure mode.
     if (_finQueue > 0) {
       _barracksProductions[_finIdx] = {
-        startAt: performance.now(),
+        startAt: (_finSuLeft > 0) ? performance.now() : (performance.now() - _over),
         queueLeft: _finQueue - 1,
         speedUpQueueLeft: Math.max(0, _finSuLeft),
       };
@@ -15617,6 +15787,11 @@ function _tickBarracksProduction() {
         };
       }
     }
+  }
+  // OFFLINE: po completion persistuojam naują startWall/queue (kad reload nedubliuotų).
+  if (_completedAny) {
+    try { if (typeof _syncBarracksProdToProfile === 'function') _syncBarracksProdToProfile(); } catch (_) {}
+    try { if (typeof saveProfile === 'function') saveProfile(); } catch (_) {}
   }
 }
 
@@ -16620,7 +16795,9 @@ function _drawDungeonStatic() {
             const _dy = py + CELL - h;
             // Hover outline PRIEŠ sprite — kad baltas siluetas liktų matomas tik aplink kraštus,
             // o ne uždengtų patį sprite'ą (toks pat patternas kaip Castle/Barracks/House3 hover'e).
-            if (_isTotem && !_ciucelaPopupOpen &&
+            // deco_18 = totem, deco_16 = naujas objektas (žaidėjo pridėtas) — abu gauna baltą hover kontūrą.
+            const _getsHoverOutline = _isTotem || decId === 'deco_16';
+            if (_getsHoverOutline && !(_isTotem && _ciucelaPopupOpen) &&
                 _worldMx >= _dx && _worldMx <= _dx + w &&
                 _worldMy >= _dy && _worldMy <= _dy + h) {
               ctx.save();
@@ -16695,6 +16872,34 @@ function _drawDungeonStatic() {
                 ctx.fillRect(_cBarX, _cBarY, _cBarW, _cBarH);
                 ctx.fillStyle = '#ffd766';
                 ctx.fillRect(_cBarX, _cBarY, _cBarW * _cprog, _cBarH);
+                ctx.restore();
+              }
+            }
+            // deco_16 — global stats objektas: užfiksuojam click ribas + label
+            if (decId === 'deco_16') {
+              _leaderboardBounds = { x: _dx, y: _dy, w, h };
+              if (S.floor === 10) {
+                ctx.save();
+                const _lblX = _dx + w / 2;
+                const _lblY = _dy - 6;
+                ctx.font = 'bold 8px "Press Start 2P", monospace, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const _lblText = '📊 STATS';
+                const _tw = ctx.measureText(_lblText).width + 10;
+                const _rh = 15, _rr = 6;
+                const _rx = _lblX - _tw / 2, _ry = _lblY - _rh / 2, _rw = _tw;
+                ctx.fillStyle = 'rgba(255, 207, 92, 0.96)';   // gold pill
+                ctx.beginPath();
+                ctx.moveTo(_rx + _rr, _ry);
+                ctx.arcTo(_rx + _rw, _ry, _rx + _rw, _ry + _rh, _rr);
+                ctx.arcTo(_rx + _rw, _ry + _rh, _rx, _ry + _rh, _rr);
+                ctx.arcTo(_rx, _ry + _rh, _rx, _ry, _rr);
+                ctx.arcTo(_rx, _ry, _rx + _rw, _ry, _rr);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#3a2a18';
+                ctx.fillText(_lblText, _lblX, _lblY);
                 ctx.restore();
               }
             }
@@ -32783,6 +32988,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         _ciucelaPopupOpen = true;  // fallback: open old upgrade popup
       }
+      return;
+    }
+    // deco_16 (raudonas kryžius+kaukolė) → global stats leaderboard panelė
+    if (S.floor === 10 && inside(_leaderboardBounds)) {
+      try { if (typeof window.openLeaderboard === 'function') window.openLeaderboard(); } catch (_) {}
       return;
     }
     // Extra mine house/stone click → atidaryti tos mine popup

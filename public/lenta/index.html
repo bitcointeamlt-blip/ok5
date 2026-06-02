@@ -2097,11 +2097,12 @@
   <script src="barracks_nft.js?v=nft40hog"></script>
   <script src="barracks_nft_modal.js?v=nft41f12land"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
-  <script src="game.js?v=cmd459offline"></script>
+  <script src="game.js?v=cmd460stats"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=cmd709balls"></script>
   <script src="wallet-ui.js?v=pewpew12menu"></script>
   <script src="hog_rider_popup.js?v=hog50mobwalk"></script>
+  <script src="leaderboard.js?v=lb18"></script>
   <script>
   // ── AUTO-RELOAD kai deployinama nauja versija ───────────────────
   // Kad žaidėjams (ypač mobiliems/Chromebook) NEREIKĖTŲ hard-refresh.
@@ -2677,6 +2678,55 @@
       function open() { modal.style.display = 'flex'; }
       function close() { modal.style.display = 'none'; }
       btn.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+
+      // ── ☰ mygtukas TAMPOMAS (drag) — pozicija išsaugoma localStorage ──────
+      // Tap = atidaro meniu; drag (>6px) = perkelia mygtuką, NEatidaro.
+      (function makeDraggable() {
+        const KEY = 'mmBtnPos', SZ = 44, THRESH = 6;
+        btn.style.touchAction = 'none';
+        const clamp = (v, mx) => Math.max(0, Math.min(mx, v));
+        function applyPos(x, y) {
+          btn.style.left = clamp(x, window.innerWidth - SZ) + 'px';
+          btn.style.top  = clamp(y, window.innerHeight - SZ) + 'px';
+          btn.style.right = 'auto'; btn.style.bottom = 'auto';
+        }
+        try {
+          const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+          if (s && typeof s.x === 'number') applyPos(s.x, s.y);
+        } catch (_) {}
+        let dragging = false, moved = false, sx = 0, sy = 0, bx = 0, by = 0;
+        btn.addEventListener('pointerdown', (e) => {
+          dragging = true; moved = false;
+          sx = e.clientX; sy = e.clientY;
+          const r = btn.getBoundingClientRect(); bx = r.left; by = r.top;
+          try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+        });
+        btn.addEventListener('pointermove', (e) => {
+          if (!dragging) return;
+          const dx = e.clientX - sx, dy = e.clientY - sy;
+          if (!moved && Math.hypot(dx, dy) > THRESH) moved = true;
+          if (moved) { applyPos(bx + dx, by + dy); e.preventDefault(); }
+        });
+        function endDrag(e) {
+          if (!dragging) return; dragging = false;
+          try { btn.releasePointerCapture(e.pointerId); } catch (_) {}
+          if (moved) {
+            const r = btn.getBoundingClientRect();
+            try { localStorage.setItem(KEY, JSON.stringify({ x: r.left, y: r.top })); } catch (_) {}
+          }
+        }
+        btn.addEventListener('pointerup', endDrag);
+        btn.addEventListener('pointercancel', endDrag);
+        // Jei tai buvo drag — užblokuojam click (kad neatsidarytų meniu). Capture phase.
+        btn.addEventListener('click', (e) => {
+          if (moved) { e.stopImmediatePropagation(); e.preventDefault(); moved = false; }
+        }, true);
+        // Po rotacijos/resize — laikom mygtuką ekrane.
+        window.addEventListener('resize', () => {
+          const r = btn.getBoundingClientRect();
+          if (btn.style.left) applyPos(r.left, r.top);
+        });
+      })();
       modal.addEventListener('click', (e) => {
         if (e.target === modal) { close(); return; }   // tap on backdrop
         const tgt = e.target.closest('[data-action]');
