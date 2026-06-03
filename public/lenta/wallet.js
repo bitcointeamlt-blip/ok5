@@ -55,6 +55,32 @@
             icons: [window.location.origin + '/lenta/assets_tiny/Buildings_Castle.png'],
           },
         });
+        // MOBILE UX (RAMIRO feedback): WalletConnect savaime NEatidaro wallet app sekantiems
+        // request'ams (sign/TX) → user'is turi rankom persijungti. Wrapinam request: ant
+        // user-action metodų deep-link'inam Ronin app į priekį (iš session redirect metadata).
+        try {
+          const _orig = _wcProvider.request.bind(_wcProvider);
+          const _UI = ['personal_sign', 'eth_sign', 'eth_sendTransaction', 'eth_signTransaction',
+                       'eth_signTypedData', 'eth_signTypedData_v3', 'eth_signTypedData_v4',
+                       'wallet_switchEthereumChain', 'wallet_addEthereumChain'];
+          const _isMob = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+          _wcProvider.request = function (args) {
+            try {
+              if (_isMob && args && _UI.indexOf(args.method) !== -1) {
+                const md = _wcProvider.session && _wcProvider.session.peer && _wcProvider.session.peer.metadata;
+                const r = md && md.redirect;
+                if (r && r.native) {
+                  // Custom scheme (pvz. roninwallet://) → OS atidaro app, puslapis LIEKA.
+                  try { window.location.href = r.native; } catch (_) {}
+                } else if (r && r.universal) {
+                  // Universal (https) → window.open kad neišmestų iš žaidimo.
+                  try { window.open(r.universal, '_blank'); } catch (_) {}
+                }
+              }
+            } catch (_) {}
+            return _orig(args);
+          };
+        } catch (_) {}
         return _wcProvider;
       })().catch((e) => { _wcPromise = null; throw e; });
     }
