@@ -21,6 +21,46 @@
   let _waypointProvider = null;
   let _waypointPromise = null;
 
+  // WalletConnect = prijungti Ronin Wallet MOBILE APP iš įprastos naršyklės (Chrome) per
+  // deep-link/QR. Leidžia žaisti Chrome'e (kur ekranas pasiverčia) IR naudoti tikrą Ronin wallet'ą.
+  // ⚠️ REIKIA project ID — nemokamai iš https://cloud.reown.com (WalletConnect). Be jo neveiks.
+  const WC_PROJECT_ID = '8d292c332cdae8a9cbd563b6cb7e491c';   // Reown/WalletConnect project ID
+  const WC_CDN = 'https://esm.sh/@walletconnect/ethereum-provider@2.17.2';
+  let _wcProvider = null;
+  let _wcPromise = null;
+
+  // Lazy-loads WalletConnect EthereumProvider (Ronin chain). showQrModal → modalas su
+  // wallet pasirinkimu; mobiliam deep-link'ina į Ronin app.
+  async function getWalletConnectProvider() {
+    if (_wcProvider) return _wcProvider;
+    if (!WC_PROJECT_ID) throw new Error('Ronin Wallet connect not configured yet (missing WalletConnect project ID)');
+    if (!_wcPromise) {
+      _wcPromise = (async () => {
+        const mod = await Promise.race([
+          import(/* @vite-ignore */ WC_CDN),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('WalletConnect SDK load timed out — check connection')), 25000)),
+        ]);
+        const EP = mod.EthereumProvider || (mod.default && mod.default.EthereumProvider) || mod.default;
+        if (!EP || typeof EP.init !== 'function') throw new Error('WalletConnect SDK not available');
+        _wcProvider = await EP.init({
+          projectId: WC_PROJECT_ID,
+          chains: [RONIN_CHAIN_ID_DEC],          // 2020 Ronin mainnet
+          optionalChains: [RONIN_CHAIN_ID_DEC],
+          showQrModal: true,
+          rpcMap: { [RONIN_CHAIN_ID_DEC]: RONIN_RPC },
+          metadata: {
+            name: 'PewPew',
+            description: 'PewPew — Ronin',
+            url: window.location.origin,
+            icons: [window.location.origin + '/lenta/assets_tiny/Buildings_Castle.png'],
+          },
+        });
+        return _wcProvider;
+      })().catch((e) => { _wcPromise = null; throw e; });
+    }
+    return _wcPromise;
+  }
+
   // DungeonTrophies kontraktas — Ronin Mainnet (chainId 2020).
   // Deployed 2026-05-23 from 0x32782D97...624A.
   const TROPHY_CONTRACT = '0xb7873833e7AC43c921AF736F2E3988Ba26a39512';
@@ -288,16 +328,33 @@
   }
 
   // ── Connect / disconnect / restore ────────────────────────────────
-  async function connect() {
+  // method: undefined/'auto' (native→Waypoint, kaip anksčiau) | 'waypoint' (email/social)
+  //         | 'roninwc' (Ronin Wallet mobile per WalletConnect) | 'ronin' (native arba WC).
+  async function connect(method) {
     let prov;
     try {
-      prov = await getAnyProvider();
+      if (method === 'waypoint')      prov = await getWaypointProvider();
+      else if (method === 'roninwc')  prov = await getWalletConnectProvider();
+      else if (method === 'ronin')    prov = getRoninProvider() || await getWalletConnectProvider();
+      else                            prov = await getAnyProvider();   // auto (default, nepakeista)
     } catch (e) {
       throw new Error('Wallet provider unavailable: ' + (e && e.message ? e.message : e));
     }
     if (!prov) throw new Error('No wallet provider found');
     state.provider = prov;
-    const accounts = await prov.request({ method: 'eth_requestAccounts' });
+    // WalletConnect — atidaryti QR/deep-link modalą (enable/connect) prieš prašant accounts.
+    let accounts;
+    if (prov === _wcProvider) {
+      try {
+        if (typeof prov.enable === 'function') accounts = await prov.enable();
+        else if (typeof prov.connect === 'function') { await prov.connect(); accounts = prov.accounts; }
+      } catch (e) {
+        throw new Error('Ronin Wallet connection cancelled or failed');
+      }
+      if (!accounts || !accounts.length) accounts = prov.accounts || [];
+    } else {
+      accounts = await prov.request({ method: 'eth_requestAccounts' });
+    }
     if (!accounts || !accounts.length) throw new Error('No accounts returned');
     const addr = accounts[0];
 

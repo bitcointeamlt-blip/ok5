@@ -501,15 +501,55 @@
     if (dropdownOpen) closeDropdown(); else openDropdown();
   }
 
+  // Ar yra native injected Ronin (extension PC / Ronin in-app naršyklė)?
+  function _hasInjectedRonin() {
+    try { return !!(window.ronin && (window.ronin.provider || typeof window.ronin.request === 'function')); }
+    catch (_) { return false; }
+  }
+
+  // Connect chooser modal — rodomas tik kai NĖRA injected Ronin (pvz. Chrome mobile).
+  // Pasirinkimai: Ronin Wallet (mobile app per WalletConnect) / Email arba Social (Waypoint).
+  function _showConnectChooser() {
+    return new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(10,14,24,0.82);display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,sans-serif;';
+      ov.innerHTML =
+        '<div style="background:linear-gradient(180deg,#1a2238,#0f1424);border:2px solid #4a9da6;border-radius:14px;padding:18px 18px 16px;width:min(340px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.55);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+        '<span style="color:#ffcf5c;font-weight:800;font-size:16px;">Connect Wallet</span>' +
+        '<button data-x style="background:#e85d5d;color:#fff;border:none;border-radius:8px;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button></div>' +
+        '<button data-m="roninwc" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;border-radius:10px;border:2px solid #4a9da6;background:#15324a;color:#e8f4f6;font-weight:700;font-size:14px;cursor:pointer;">' +
+        '<span style="font-size:20px;">🔷</span><div style="text-align:left;"><div>Ronin Wallet</div><div style="font-size:11px;opacity:.7;font-weight:400;">Mobile app or extension</div></div></button>' +
+        '<button data-m="waypoint" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:2px solid #6b4a2e;background:#2a1f12;color:#f5e6c3;font-weight:700;font-size:14px;cursor:pointer;">' +
+        '<span style="font-size:20px;">✉️</span><div style="text-align:left;"><div>Email or Social</div><div style="font-size:11px;opacity:.7;font-weight:400;">Sign in with Waypoint</div></div></button>' +
+        '</div>';
+      document.body.appendChild(ov);
+      function done(v) { try { ov.remove(); } catch (_) {} resolve(v); }
+      ov.addEventListener('click', (e) => {
+        if (e.target === ov || e.target.closest('[data-x]')) return done(null);
+        const b = e.target.closest('[data-m]');
+        if (b) done(b.getAttribute('data-m'));
+      });
+    });
+  }
+
   async function handleConnect() {
     if (!Wallet.isInstalled()) {
       showToast('Ronin Wallet not installed. Install from wallet.roninchain.com', 'error', 5000);
       setTimeout(() => { window.open('https://wallet.roninchain.com/', '_blank'); }, 300);
       return;
     }
+    // Injected (Ronin in-app / extension) → jungiam tiesiai. Kitur (Chrome) → chooser.
+    let method;
+    if (_hasInjectedRonin()) {
+      method = 'ronin';
+    } else {
+      method = await _showConnectChooser();
+      if (!method) return;   // user uždarė chooser'į
+    }
     try {
       showToast('Connecting wallet…', 'ok', 30000);  // feedback (telefonui — kad matytų, jog vyksta)
-      await Wallet.connect();
+      await Wallet.connect(method);
       showToast('Connected: ' + Wallet.shortAddress(), 'ok');
     } catch (e) {
       showToast(e && e.message ? e.message : 'Connect failed', 'error');
