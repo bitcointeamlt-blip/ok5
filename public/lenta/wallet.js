@@ -511,16 +511,37 @@
     const priceStr = (typeof priceHex === 'string' && priceHex.startsWith('0x') && priceHex.length > 2) ? priceHex : '0x0';
     const valueHex = '0x' + BigInt(priceStr).toString(16);
 
-    const txHash = await prov.request({
+    // MOBILE-ROBUST mint. Ronin in-app naršyklėj `eth_sendTransaction` kartais pakimba
+    // arba grąžina hash net jei TX vėliau revert'ina (deadline) → UI klaidingai rodydavo
+    // „Minted!". Sprendimas: pollinam DungeonTrophies balanceOf padidėjimą per eth_call
+    // (veikia patikimai mobiliam) ir grąžinam sėkmę TIK kai mint'as realiai užfiksuotas.
+    async function _trophyBalance() {
+      const h = await fetch(RONIN_RPC, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_call', id: 1,
+          params: [{ to: TROPHY_CONTRACT, data: '0x70a08231' + state.address.slice(2).toLowerCase().padStart(64, '0') }, 'latest'] }),
+      }).then(r => r.json()).then(r => r.result).catch(() => null);
+      return (typeof h === 'string' && h.startsWith('0x') && h.length > 2) ? BigInt(h) : null;
+    }
+    const balBefore = (await _trophyBalance()) || 0n;
+
+    let txHash = null, sendErr = null;
+    prov.request({
       method: 'eth_sendTransaction',
-      params: [{
-        from: state.address,
-        to: TROPHY_CONTRACT,
-        data,
-        value: valueHex,
-      }],
-    });
-    return { txHash, price: priceHex };
+      params: [{ from: state.address, to: TROPHY_CONTRACT, data, value: valueHex }],
+    }).then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
+
+    const _deadline = Date.now() + 120000;   // 2 min patvirtinimui
+    while (Date.now() < _deadline) {
+      await new Promise(function (r) { setTimeout(r, 3000); });
+      const b = await _trophyBalance();
+      if (b !== null && b > balBefore) return { txHash: txHash || 'confirmed', price: priceHex };
+      // User atmetė TX piniginėj (ne hang/timeout) → nutraukiam iškart su tikra klaida.
+      if (sendErr && (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || ''))) {
+        throw sendErr;
+      }
+    }
+    throw new Error('Mint not confirmed — the transaction may have failed or is still pending. Please try CLAIM again.');
   }
 
   // RONKE NFT count helper (display / wallet badge only — spoofable client-side).
