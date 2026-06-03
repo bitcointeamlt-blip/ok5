@@ -1456,9 +1456,10 @@
   // gap = min separation tarp 2 priešų toj pačioj lane (anti-overlap)
   const _F12_ENEMY_KINDS = {
     skull:     { frameW: 192, sizeMul: 1.0, hpMul: 1.0, spdMul: 1.0, gap: 0.045, sheets: null },
-    spider:    { frameW: 192, sizeMul: 0.9, hpMul: 1.0, spdMul: 1.6, gap: 0.040, sheets: null }, // hp force'inta į 1 spawn'e
+    spider:    { frameW: 192, sizeMul: 0.9, hpMul: 1.0, spdMul: 2.4, gap: 0.040, sheets: null }, // hp force'inta į 1 spawn'e — greičiausias
     minotaur:  { frameW: 320, sizeMul: 1.4, hpMul: 1.8, spdMul: 0.7, gap: 0.065, sheets: null },
-    axieronke: { frameW: 640, sizeMul: 0.66, hpMul: 1.2, spdMul: 1.8, gap: 0.060, sheets: null }, // naujas testavimui — 2x greitis, ~5px mažesnis
+    axieronke: { frameW: 640, sizeMul: 0.66, hpMul: 1.2, spdMul: 1.9, gap: 0.060, sheets: null }, // naujas — ~5px mažesnis
+    bear:      { frameW: 256, sizeMul: 1.3, hpMul: 1.5, hpFlat: 6, spdMul: 1.5, gap: 0.070, sheets: null, allyDmg: 5 }, // tankas (+6 flat HP), kerta stipriai (-5); greitis derintas prie run animacijos
   };
   let _f12EnemyKindsInit = false;
   function _initF12EnemySheets() {
@@ -1497,8 +1498,15 @@
         hurt:   dmgtakeS,
       };
     }
+    // Bear (Tiny Swords Enemy Pack) — 256px kadrai: idle 8 / run 5 / attack 9; guard fallback į idle
+    _F12_ENEMY_KINDS.bear.sheets = {
+      idle:   loadHorizontalSheetFrames('assets_tiny/Bear_Idle.png',   8),
+      run:    loadHorizontalSheetFrames('assets_tiny/Bear_Run.png',    5),
+      attack: loadHorizontalSheetFrames('assets_tiny/Bear_Attack.png', 9),
+      guard:  loadHorizontalSheetFrames('assets_tiny/Bear_Idle.png',   8),
+    };
   }
-  const _F12_ENEMY_KIND_LIST = ['skull', 'spider', 'minotaur', 'axieronke'];
+  const _F12_ENEMY_KIND_LIST = ['skull', 'spider', 'minotaur', 'axieronke', 'bear'];
   // RONKE su kepure (lvl3) — personažo idle sprite šalia patrankos (8 frames @ 632×640)
   const _ronke2Img = new Image(); _ronke2Img.src = 'assets/ronkelvl3.png';
   const _RONKE2_FW = 632, _RONKE2_FH = 640, _RONKE2_FRAMES = 8;
@@ -1795,6 +1803,9 @@
   let launcher = { x: 0, y: 0, angle: 0 };
   let nextBlock = null;
   let nextNextBlock = null;             // antras eilėje — rodomas ant RONKE lazdos burbulo
+  let _f12HoldBall = null;              // HOLD slotas — {type,value} arba null (swap mechanika: stash dabar / panaudok vėliau)
+  let _f12HoldRect = null;             // tappable hitbox (nustatomas render metu)
+  let _f12HoldFlashAt = 0;             // swap blyksnio animacijos timestamp
   let lastFireAt = 0;
   let _currentReloadMs = FIRE_COOLDOWN_MIN;  // dabartinio reload trukmė (random per šūvį)
   let _f12ReloadEndPlayed = true;       // ar jau sugrojom reveal garsiuką po reload
@@ -1917,6 +1928,8 @@
     _f12ScorePopups = [];
     nextBlock = makeNextBlock();
     nextNextBlock = makeNextBlock();
+    _f12HoldBall = null;                   // HOLD slotas — tuščias starte
+    _f12HoldFlashAt = 0;
     _f12ReadyFlashAt = now();              // pirmas shine sweep'as iškart pradžioj
     lanes = [];
     for (let i = 0; i < LANES; i++) lanes.push({ enemies: [], allies: [] });
@@ -2080,6 +2093,17 @@
       arena: { x: padX, y: arenaY, w: aw, h: arenaH },
       launcher: { x: padX + 125, y: arenaY + arenaH / 2 },  // +65px į dešinę, vertikaliai centruota
     };
+  }
+
+  // Arenos ribos duotam W,H (atspindi computeLayout aritmetiką). Naudojama resize() metu,
+  // kad perskaičiuotume kamuoliukų pozicijas iš senos arenos į naują (zoom/resize fix).
+  function _arenaBoundsFor(W, H) {
+    const lanesY = 14;
+    const lanesH = Math.floor(H * 0.40);
+    const arenaY = lanesY + lanesH + 12;
+    const arenaH = H - arenaY - 56;
+    const padX = 48, padR = 24;
+    return { x: padX, y: arenaY, w: W - padX - padR, h: arenaH };
   }
 
   // ── Pixel art sphere render — diskretūs shading bands, hard edges
@@ -2934,13 +2958,13 @@
       if (isBoss) {
         kind = 'minotaur';
       } else {
-        // TESTAVIMUI: tik axieronke spawn'ina (kiti regular kinds išjungti)
-        kind = 'axieronke';
-        // ── ORIGINALI logika (užkomentuota kol testuojam):
-        // const r = Math.random();
-        // if (r < 0.55) kind = 'skull';
-        // else if (r < 0.90) kind = 'spider';
-        // else kind = 'minotaur';
+        // Mišinys: voras 40% + axieronke 34% + minotauras 13% + meška 13%.
+        // Voras/minotauras prasiveržę daro -10 bazei, meška lėta+tankas, kerta -5.
+        const _r = Math.random();
+        if (_r < 0.40) kind = 'spider';
+        else if (_r < 0.74) kind = 'axieronke';
+        else if (_r < 0.87) kind = 'minotaur';
+        else kind = 'bear';
       }
     }
     // SPIDER lane viability — spider greitas, todėl jam reikia švarios lane'os spawn'ant.
@@ -2949,13 +2973,13 @@
     if (!isBoss && kind === 'spider') {
       const hasSlowAhead = lanes[laneIdx].enemies.some(other =>
         !other.dead && !other._isWall && other.kind !== 'spider' && other.x > 0.6);
-      if (hasSlowAhead) kind = Math.random() < 0.5 ? 'skull' : 'minotaur';
+      if (hasSlowAhead) kind = 'axieronke';
     }
     const def = _F12_ENEMY_KINDS[kind] || _F12_ENEMY_KINDS.skull;
     const baseHp  = isBoss ? (25 + tier * 4) : (6 + tier);
     const baseSpd = isBoss ? 0.005 + Math.random() * 0.002 : 0.008 + Math.random() * 0.004;
     // Spider — VISADA 1 hp (mirsta nuo vieno smūgio)
-    const finalHp = (kind === 'spider' && !isBoss) ? 1 : Math.max(1, Math.round(baseHp * def.hpMul));
+    const finalHp = (kind === 'spider' && !isBoss) ? 1 : (Math.max(1, Math.round(baseHp * def.hpMul)) + (def.hpFlat || 0));
     lanes[laneIdx].enemies.push({
       x: 1.0,
       hp: finalHp,
@@ -3012,6 +3036,7 @@
       // Spalva: poison = žalia, big dmg = raudonas, normalus = geltonas
       let col;
       if (p.color === 'poison') col = `rgba(140,255,100,${alpha})`;
+      else if (p.color === 'ally') col = `rgba(255,90,70,${alpha})`;   // sąjungininkas gavo žalos — raudonas
       else if (p.dmg >= 6) col = `rgba(255,80,60,${alpha})`;
       else col = `rgba(255,235,140,${alpha})`;
       ctx.fillStyle = col;
@@ -4371,9 +4396,13 @@
           }
           // Enemy counter — tik jei MELEE range (skull range, ne ranged)
           if (target && bestDist < ENEMY_MELEE_RANGE && t - (target.lastAttackAt || 0) > 1200) {
-            a.hp -= 1;
-            _allyAddDmgTaken(a, 1);
+            // Priešo kontrsmūgio žala — pagal kind (meška -5, kiti -1)
+            const _eAllyDmg = (_F12_ENEMY_KINDS[target.kind] && _F12_ENEMY_KINDS[target.kind].allyDmg) || 1;
+            a.hp -= _eAllyDmg;
+            _allyAddDmgTaken(a, _eAllyDmg);
             a.hitFlashUntil = t + 200;
+            // Dmg skaičiukas virš sąjungininko — tik stipriems smūgiams (meška -5), kad paprasti -1 netriukšmautų
+            if (_eAllyDmg > 1) _spawnDmgPopup(li, a.x, _eAllyDmg, t, { color: 'ally' });
             target.lastAttackAt = t;
             target.swingStart = t;
             if (a.hp <= 0) {
@@ -4557,7 +4586,8 @@
           e.x = newX;
         }
         if (e.x <= 0) {
-          baseHp -= 3;
+          const _breachDmg = (e.kind === 'spider' || e.kind === 'minotaur' || e.kind === 'bear') ? 10 : 3;   // voras + minotauras + meška prasiveržę daro daugiau žalos bazei
+          baseHp -= _breachDmg;
           Ln.enemies.splice(i, 1);
           if (baseHp <= 0) {
             baseHp = 0;
@@ -4663,6 +4693,24 @@
     _f12ReloadEndPlayed = false;          // po reload pabaigos paleisim reveal garsiuką
   }
 
+  // HOLD slotas — swap mechanika (kaip Tetris hold). Tap ant sloto:
+  //  • tuščias  → įsisaugo dabar užkrautas kamuoliukas, užkraunamas sekantis (eilė pasislenka)
+  //  • pilnas   → swap: išsaugotas tampa užkrautu, o užkrautas — į slotą (gali naudoti daug kartų)
+  function _f12HoldSwap() {
+    if (gameOver || !nextBlock) return;
+    if (!_f12HoldBall) {
+      _f12HoldBall = { type: nextBlock.type, value: nextBlock.value };
+      nextBlock = nextNextBlock || makeNextBlock();
+      nextNextBlock = makeNextBlock();
+    } else {
+      const tmp = { type: nextBlock.type, value: nextBlock.value };
+      nextBlock = { type: _f12HoldBall.type, value: _f12HoldBall.value };
+      _f12HoldBall = tmp;
+    }
+    _f12HoldFlashAt = now();
+    try { if (_F12Audio && _F12Audio.colorReveal) _F12Audio.colorReveal(); } catch (_) {}
+  }
+
   function updateLauncherAim() {
     const L = layoutCache;
     if (!L) return;
@@ -4727,6 +4775,7 @@
     // drawPowerMeter pakeistas į pixel art ring drawLauncher viduje
     drawNextPreview(L, t);
     _drawCards(L, t);
+    _drawHoldSlot(L, t);
     _drawCardConsumes(L, t);
     _drawSpirits(L, t);
     // Juice — fire feedback (po launcher, kad būtų ant viršaus)
@@ -9495,6 +9544,96 @@
     drawSphere(ctx, px + pw / 2, py + ph / 2 + 6, pw * 0.04, 0, 0, nextBlock.type, nextBlock.value, 0);
   }
 
+  // HOLD slotas — apačioj, kairėj nuo kortų eilės. Korta-stiliaus rėmas, „HOLD" antraštė,
+  // įdubęs lizdas su išsaugota spalva (arba tuščias) + spalvotas glow kai laiko. Tap = save/swap.
+  function _drawHoldSlot(L, t) {
+    if (gameOver) { _f12HoldRect = null; return; }
+    const layout = _getCardLayout(L);
+    if (!layout) { _f12HoldRect = null; return; }
+    const PX = 2;
+    const bw = _CARD_W, bh = _CARD_H;             // toks pat dydis kaip kortos (sėdi eilėj)
+    let bx = layout.startX - _CARD_GAP - bw;       // kairėj nuo pirmos kortos
+    if (bx < 6) bx = 6;
+    const by = layout.cardY;
+    _f12HoldRect = { x: bx, y: by, w: bw, h: bh };
+    const has = !!_f12HoldBall;
+    const hc = has ? (TYPE_COLOR[_f12HoldBall.type] || TYPE_COLOR.arrow) : null;
+    const flash = _f12HoldFlashAt > 0 ? Math.max(0, 1 - (t - _f12HoldFlashAt) / 320) : 0;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 0.005);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.textAlign = 'center';
+
+    // ── L1: juodas outline + 2px nukirsti kampai (kaip kortos)
+    ctx.fillStyle = '#000';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.clearRect(bx, by, PX, PX); ctx.clearRect(bx + bw - PX, by, PX, PX);
+    ctx.clearRect(bx, by + bh - PX, PX, PX); ctx.clearRect(bx + bw - PX, by + bh - PX, PX, PX);
+    // ── L2: medienos frame su highlight (top/left) + shadow (bottom/right)
+    ctx.fillStyle = has ? '#6a4626' : '#4a3018';
+    ctx.fillRect(bx + PX, by + PX, bw - PX * 2, bh - PX * 2);
+    ctx.fillStyle = has ? '#b08458' : '#624028';
+    ctx.fillRect(bx + PX, by + PX, bw - PX * 2, PX);          // top highlight
+    ctx.fillRect(bx + PX, by + PX, PX, bh - PX * 2);          // left highlight
+    ctx.fillStyle = '#1a0e06';
+    ctx.fillRect(bx + PX, by + bh - PX * 2, bw - PX * 2, PX); // bottom shadow
+    ctx.fillRect(bx + bw - PX * 2, by + PX, PX, bh - PX * 2); // right shadow
+    // ── L3: vidinis tamsus turinio plotas
+    const ix = bx + PX * 3, iy = by + PX * 3, iw = bw - PX * 6, ih = bh - PX * 6;
+    ctx.fillStyle = '#0a0604';
+    ctx.fillRect(ix, iy, iw, ih);
+    ctx.fillStyle = '#1c1208';
+    ctx.fillRect(ix + PX, iy + PX, iw - PX * 2, ih - PX * 2);
+
+    // ── HEADER juostelė „HOLD" (auksinė kai laiko, kuklesnė kai tuščia)
+    const hdrH = 14;
+    ctx.fillStyle = has ? 'rgba(255,207,92,0.96)' : 'rgba(74,57,36,0.95)';
+    ctx.fillRect(ix + PX, iy + PX, iw - PX * 2, hdrH);
+    ctx.fillStyle = has ? '#3a2a18' : '#cdb88c';
+    ctx.font = '7px "Press Start 2P", monospace';
+    ctx.fillText('STASH', bx + bw / 2, iy + PX + 10);
+
+    // ── SOCKET — apvalus įdubęs lizdas
+    const ccx = bx + bw / 2, ccy = iy + PX + hdrH + 26;
+    const sr = 16;
+    ctx.fillStyle = '#05030a';                                // įdubimo dugnas
+    ctx.beginPath(); ctx.arc(ccx, ccy, sr + 1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#120a16';
+    ctx.beginPath(); ctx.arc(ccx, ccy, sr - 1, 0, Math.PI * 2); ctx.fill();
+    if (has) {
+      // spalvotas glow žiedas (pulsuojantis) — magiškas „laikoma" jausmas
+      for (let g = 0; g < 3; g++) {
+        ctx.strokeStyle = `rgba(${hc.top[0]},${hc.top[1]},${hc.top[2]},${(0.34 - g * 0.1) * (0.7 + 0.3 * pulse) + flash * 0.2})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(ccx, ccy, 13 + g * 2 + flash * 3, 0, Math.PI * 2); ctx.stroke();
+      }
+      drawSphere(ctx, ccx, ccy, 12, 0, 0, _f12HoldBall.type, _f12HoldBall.value, 0);
+    } else {
+      // tuščias — punktyrinis žiedas + „+" centre
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = `rgba(255,231,168,${0.28 + 0.14 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(ccx, ccy, sr - 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = `rgba(255,231,168,${0.4 + 0.15 * pulse})`;
+      ctx.fillRect(ccx - 5, ccy - PX / 2, 10, PX);            // „+" horizontalus
+      ctx.fillRect(ccx - PX / 2, ccy - 5, PX, 10);            // „+" vertikalus
+    }
+
+    // ── BOTTOM hint
+    ctx.fillStyle = has ? 'rgba(255,231,168,0.9)' : 'rgba(205,184,140,0.55)';
+    ctx.font = '7px "Press Start 2P", monospace';
+    ctx.fillText(has ? 'USE' : 'SAVE', bx + bw / 2, by + bh - 8);
+
+    // ── swap blyksnis — auksinis kontūras aplink visą slotą
+    if (flash > 0) {
+      ctx.strokeStyle = `rgba(255,225,150,${flash * 0.9})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx - 1, by - 1, bw + 2, bh + 2);
+    }
+    ctx.restore();
+  }
+
   function drawBlocks(L, t) {
     // Pirma — visi sesieliai (pieshiami zemiausiame layeryje)
     for (const b of blocks) drawBlockShadow(b, t);
@@ -10424,6 +10563,10 @@
     if (!active) return;
     const p = clientToCanvas(e.clientX, e.clientY);
     mouse.x = p.x; mouse.y = p.y;
+    if (selectedDeployType) return;   // deploy mode — patranka NEseka piršto (kad nesusimaišytų su unito dėjimu)
+    // virš HOLD mygtuko — patranka NEseka (kaip su kortom, kad netaikytų bandant paspausti HOLD)
+    if (_f12HoldRect && p.x >= _f12HoldRect.x && p.x <= _f12HoldRect.x + _f12HoldRect.w &&
+        p.y >= _f12HoldRect.y && p.y <= _f12HoldRect.y + _f12HoldRect.h) return;
     updateLauncherAim();
   }
 
@@ -10456,6 +10599,13 @@
       // Deactivate F12 overlay + nukreipiam į F10 home
       try { if (window.MergeFloor && window.MergeFloor.deactivate) window.MergeFloor.deactivate(); } catch (_) {}
       try { if (typeof window.gotoF10 === 'function') window.gotoF10(); } catch (_) {}
+      return;
+    }
+    // ── HOLD slotas — tap = įsisaugok / swap kamuoliuką (prieš aim/charge, kad netriggerintų šūvio) ──
+    if (!gameOver && _f12HoldRect &&
+        p.x >= _f12HoldRect.x && p.x <= _f12HoldRect.x + _f12HoldRect.w &&
+        p.y >= _f12HoldRect.y && p.y <= _f12HoldRect.y + _f12HoldRect.h) {
+      _f12HoldSwap();
       return;
     }
     // Kortos — tik vizualas, click'ai ignoruojami (panaikinta drag logika)
@@ -10496,17 +10646,19 @@
         return;
       }
     }
-    // Deploy → click ant lane (su CD check)
+    // Deploy → click ant lane (su CD check).
+    // SVARBU: kai korta pasirinkta, tap'as VISADA suvartojamas (deploy arba deselect) —
+    // niekada neprakrenta į patrankos aim/charge/fire (kitaip patranka iššaudavo dedant unitą).
     if (selectedDeployType && layoutCache) {
       const L = layoutCache;
-      if (p.x >= L.lanesX && p.x <= L.lanesX + L.lanesW && p.y >= L.lanesY && p.y < L.lanesY + L.lanesH) {
+      const _inLanes = (p.x >= L.lanesX && p.x <= L.lanesX + L.lanesW && p.y >= L.lanesY && p.y < L.lanesY + L.lanesH);
+      if (_inLanes) {
         const laneIdx = Math.floor((p.y - L.lanesY) / L.laneH);
         // CD check — jei krauna, deploy blokuojamas
         const cdRem = _f12UnitDeployCD[selectedDeployType]
           ? Math.max(0, _UNIT_DEPLOY_CD_MS - (now() - _f12UnitDeployCD[selectedDeployType])) : 0;
         if (cdRem > 0) { selectedDeployType = null; return; }
         // canDeploy: korta atrakinta (permanenttiškai po pirmo merge) + trained > 0
-        // Tikrinam ar atrakinta + trained — count NEBE reikalingas (kortos nepasibaigia)
         let _ballType = null;
         for (const bt in _UNIT_FOR_BALL_TYPE) {
           if (_UNIT_FOR_BALL_TYPE[bt] === selectedDeployType) { _ballType = bt; break; }
@@ -10519,9 +10671,12 @@
           // NEdekrementuojam kortų count — kortos permanenttiškos, count tik bonus track'inimui
           // CD startuos kai unit'as bus recall'intas / miršta (sequential)
           selectedDeployType = null;       // deselect po deploy (žaidėjas mato unit lane'oj, CD prasidės)
-          return;
         }
+        // lane'e bet negali deploy → tiesiog deselect (žemiau), bet tap'o nešaudom
       }
+      // bet koks tap'as su pasirinkta korta (lane ar ne) → deselect + suvartok (jokio šūvio)
+      selectedDeployType = null;
+      return;
     }
     updateLauncherAim();
     // Reload check — neleidžia pradėti naujo charge kol patranka nepasikrovus
@@ -10579,6 +10734,15 @@
 
   function resize() {
     if (!canvas) return;
+    // ── ANTI-CHEAT / ZOOM FREEZE — aktyvaus mūšio metu (desktop) NEKEIČIAM vidinės rezoliucijos.
+    // Zoom keistų canvas.width → arena → kamuoliukai pajudėtų (ir žaidėjas galėtų tuo sukčiauti).
+    // Vietoj to canvas tik ištempiamas per CSS (100vw/100vh) — koordinatės identiškos, jokio judesio.
+    if (active && !_IS_MOBILE) {
+      canvas.style.width = '100vw';
+      canvas.style.height = '100vh';
+      return;
+    }
+    const _oldW = canvas.width, _oldH = canvas.height;   // prieš keičiant — pozicijų remap'ui (mobile/neaktyvus)
     const screenW = window.innerWidth, screenH = window.innerHeight;
     if (_IS_MOBILE) {
       // Mobile: virtual canvas (720p × screen aspect) + CSS stretch — pripildo VISĄ ekraną.
@@ -10603,6 +10767,21 @@
       canvas.height = Math.floor(screenH);
       canvas.style.width = canvas.width + 'px';
       canvas.style.height = canvas.height + 'px';
+    }
+    // ── ZOOM/RESIZE FIX — perskaičiuojam kamuoliukų pozicijas iš senos arenos į naują.
+    // Kitaip po zoom in/out kamuoliukai atsiduria už naujų sienų → fizika juos „pastumia"
+    // (atrodo lyg patys judėtų; žaidėjas galėtų tuo pasinaudoti pozicionavimui). Remap = jokio judesio.
+    const _newW = canvas.width, _newH = canvas.height;
+    if (active && blocks && blocks.length && _oldW > 0 && _oldH > 0 &&
+        (_oldW !== _newW || _oldH !== _newH)) {
+      const oa = _arenaBoundsFor(_oldW, _oldH);
+      const na = _arenaBoundsFor(_newW, _newH);
+      for (const b of blocks) {
+        const fx = (b.x - oa.x) / Math.max(1, oa.w);
+        const fy = (b.y - oa.y) / Math.max(1, oa.h);
+        b.x = na.x + fx * na.w;
+        b.y = na.y + fy * na.h;
+      }
     }
   }
 
