@@ -22464,6 +22464,7 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
   // ── VIENINGAS STANDARTAS — spalva pagal type/tekstą. Unitų žala=balta, priešų žala (type 'taken')=raudona ──
   const _dt = typeof text === 'string' ? text : '';
   if (type === 'crit' || _dt.indexOf('!') >= 0) color = '#ffb030';   // crit — auksinis
+  else if (_dt === 'FAIL') color = '#ff3b3b';                        // kasimo FAIL — RAUDONA (nors type 'miss')
   else if (_dt === 'MISS' || type === 'miss') color = '#c8d2e0';     // miss — pilkas
   else if (_dt === 'BLOCK') color = '#78d2ff';                       // block — žydras
   else if (_dt.charAt(0) === '+') color = '#7cff6e';                 // heal — žalias

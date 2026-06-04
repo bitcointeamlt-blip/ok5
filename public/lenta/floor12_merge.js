@@ -1604,6 +1604,9 @@
   // [{tokenId, utype, xp, level, contractUtype, hp, maxHp}] — kiekvienas elementas = 1 NFT unit
   // _takeTrainedUnit ima pirmą tinkamo utype NFT, snap.tokenId išsaugomas ally.trainedSnap'e (burn flow).
   let _f12SessionNftPool = [];
+  // NFT mūšio vėliava — kai true, žaidžiama TIK su pasirinktais NFT (+ free unitai uždirbti
+  // merge'inant), JOKIO maišymo su F10 home-trained roster'iu. (Žaidėjo noras: NFT ir free atskirai.)
+  let _f12IsNftBattle = false;
   // Dead NFT tokenIds — surenkam per game'ą, panaudojam end'e burn'inimui (Phase 2.2).
   let _f12DeadNftTokenIds = [];
   // Per-NFT stats per session: { [tokenId]: {kills, dmgDealt, dmgTaken, deployed} }
@@ -1792,6 +1795,15 @@
   // ── HOME barracks trained units count — F12 deploys reikalauja real trained unit'ų ──
   // (Profile.barracksTrained = NFT-trained iš F10 + session free pool iš pre-deck modal.)
   function _getTrainedCount(utype) {
+    // GRIEŽTAS ATSKYRIMAS (turi sutapti su _takeTrainedUnit, kitaip canDeploy nesutampa su take):
+    // NFT mūšis → TIK NFT pool; Free mūšis → free pool + F10 home-trained.
+    if (_f12IsNftBattle) {
+      let n = 0;
+      for (const nft of _f12SessionNftPool) {
+        if (nft && nft.utype === utype) n++;
+      }
+      return n;
+    }
     let n = 0;
     try {
       const arr = (typeof Profile === 'object' && Profile && Array.isArray(Profile.barracksTrained))
@@ -1803,10 +1815,6 @@
       }
     } catch (_) {}
     n += (_f12SessionFreePool[utype] | 0);
-    // NFT pool — count picked NFTs of this utype
-    for (const nft of _f12SessionNftPool) {
-      if (nft && nft.utype === utype) n++;
-    }
     return n;
   }
   // Mirties metu — atimam 1 trained unit iš HOME barakų (mirė kovoj, prarastas)
@@ -1824,33 +1832,36 @@
       }
     } catch (_) {}
   }
-  // Deploy metu — paimam 1 trained unit (kartu su jo HP) iš HOME, grąžinam snap
-  // Pirma bandom session free pool (pre-deck) — be HP persistence, kiekvienas free pool unit'as gauna default HP.
-  // Tada NFT-trained iš Profile.barracksTrained (su išsaugotu HP).
+  // Deploy metu — paimam 1 unit (su jo HP) ir grąžinam snap.
+  // GRIEŽTAS ATSKYRIMAS: NFT mūšis → TIK NFT pool; Free mūšis → TIK free pool + F10 home-trained.
+  // Jokio maišymo nei viename kelyje.
   function _takeTrainedUnit(utype) {
+    // ── NFT MŪŠIS — tik pasirinkti NFT (su tokenId, burn flow). Išsekus → null (nebegali deploy). ──
+    if (_f12IsNftBattle) {
+      for (let i = 0; i < _f12SessionNftPool.length; i++) {
+        const nft = _f12SessionNftPool[i];
+        if (nft && nft.utype === utype) {
+          _f12SessionNftPool.splice(i, 1);
+          return {
+            id: null,
+            utype: nft.utype,
+            hp: nft.hp != null ? nft.hp : null,
+            maxHp: nft.maxHp != null ? nft.maxHp : null,
+            nft: true,
+            tokenId: nft.tokenId,
+            xp: nft.xp,
+            level: nft.level,
+            contractUtype: nft.contractUtype,
+          };
+        }
+      }
+      return null;
+    }
+    // ── FREE MŪŠIS — session free pool (pre-deck), tada F10 home-trained. Jokių NFT. ──
     if ((_f12SessionFreePool[utype] | 0) > 0) {
       _f12SessionFreePool[utype]--;
       if (_f12SessionFreePool[utype] <= 0) delete _f12SessionFreePool[utype];
-      // Free pool unitai — be HP snap. spawnAlly fallback'ina į default ALLY_STATS HP.
       return { id: null, utype: utype, hp: null, maxHp: null, free: true };
-    }
-    // NFT pool — pop first matching utype, return snap su tokenId (burn flow tracking)
-    for (let i = 0; i < _f12SessionNftPool.length; i++) {
-      const nft = _f12SessionNftPool[i];
-      if (nft && nft.utype === utype) {
-        _f12SessionNftPool.splice(i, 1);
-        return {
-          id: null,                  // legacy id (Profile.barracksTrained) — NFT'ams nereik
-          utype: nft.utype,
-          hp: nft.hp != null ? nft.hp : null,
-          maxHp: nft.maxHp != null ? nft.maxHp : null,
-          nft: true,
-          tokenId: nft.tokenId,
-          xp: nft.xp,
-          level: nft.level,
-          contractUtype: nft.contractUtype,
-        };
-      }
     }
     try {
       if (typeof Profile !== 'object' || !Profile || !Array.isArray(Profile.barracksTrained)) return null;
@@ -2138,15 +2149,17 @@
     _f12CardDeck = {};
     _f12SessionFreePool = {};
     _f12SessionNftPool = [];
+    // NFT mūšį atpažįstam ANKSTI (prieš pre-deck bloką), kad neįsimaišytų free kortos.
+    _f12IsNftBattle = Array.isArray(window._f12NftPickedPool) && window._f12NftPickedPool.length > 0;
     _f12DeadNftTokenIds = [];
     _f12NftStats = {};
     _f12BattleSettled = false;
-    // Pre-deck choice — žaidėjo pasirinkimas iš pre-game modal'o.
+    // Pre-deck choice — žaidėjo pasirinkimas iš pre-game modal'o (TIK free mūšyje).
     // Įmanomi šaltiniai: window._f12PreDeckChoice (set'inamas iš f12_predeck_modal.js)
     // Pildom abu: _f12CardDeck (kortos atrakintos) + _f12SessionFreePool (deploy quota).
     try {
       const choice = window._f12PreDeckChoice;
-      if (choice && typeof choice === 'object') {
+      if (!_f12IsNftBattle && choice && typeof choice === 'object') {
         const t0 = now();
         for (const bt in choice) {
           const c = (choice[bt] | 0);
@@ -2166,6 +2179,7 @@
     try {
       const nftPool = window._f12NftPickedPool;
       if (Array.isArray(nftPool) && nftPool.length > 0) {
+        _f12IsNftBattle = true;   // NFT mūšis — jokio F10 home-trained maišymo
         const t0 = now();
         for (const nft of nftPool) {
           if (!nft || !nft.utype) continue;
@@ -2243,18 +2257,22 @@
     _f12Traps = [];
     _f12FrostReverse = [];
     _f12ZoneFlash = [0, 0, 0, 0];
-    // Užkraunam HOME treniruotus unit'us — pridedam stack count, ne 1 per snap
+    // Užkraunam HOME treniruotus unit'us — pridedam stack count, ne 1 per snap.
+    // SVARBU: TIK free (ne-NFT) mūšyje. NFT mūšyje žaidžiama TIK su pasirinktais NFT —
+    // jokio maišymo su nemokamais F10 unitais (žaidėjo noras: 8 NFT = 8 unitai žaidime).
     try {
-      if (Array.isArray(_f11TransferUnits) && _f11TransferUnits.length > 0) {
-        for (const s of _f11TransferUnits) {
-          if (s && PLAYABLE_TYPES.indexOf(s.utype) !== -1) {
-            deployPool[s.utype] = (deployPool[s.utype] || 0) + (s.stack || 1);
+      if (!_f12IsNftBattle) {
+        if (Array.isArray(_f11TransferUnits) && _f11TransferUnits.length > 0) {
+          for (const s of _f11TransferUnits) {
+            if (s && PLAYABLE_TYPES.indexOf(s.utype) !== -1) {
+              deployPool[s.utype] = (deployPool[s.utype] || 0) + (s.stack || 1);
+            }
           }
-        }
-      } else if (Profile && Array.isArray(Profile.barracksTrained)) {
-        for (const s of Profile.barracksTrained) {
-          if (s && PLAYABLE_TYPES.indexOf(s.utype) !== -1) {
-            deployPool[s.utype] = (deployPool[s.utype] || 0) + (s.stack || 1);
+        } else if (Profile && Array.isArray(Profile.barracksTrained)) {
+          for (const s of Profile.barracksTrained) {
+            if (s && PLAYABLE_TYPES.indexOf(s.utype) !== -1) {
+              deployPool[s.utype] = (deployPool[s.utype] || 0) + (s.stack || 1);
+            }
           }
         }
       }
@@ -2277,6 +2295,7 @@
     const _keep = {
       deck: _f12CardDeck, nftPool: _f12SessionNftPool, freePool: _f12SessionFreePool,
       deploy: deployPool, nftStats: _f12NftStats, deadNft: _f12DeadNftTokenIds,
+      isNft: _f12IsNftBattle,
     };
     initState();
     _f12CardDeck = _keep.deck;
@@ -2285,6 +2304,7 @@
     deployPool = _keep.deploy;
     _f12NftStats = _keep.nftStats;
     _f12DeadNftTokenIds = _keep.deadNft;
+    _f12IsNftBattle = _keep.isNft;   // NFT vėliava išlieka per restart (kad nesimaišytų free)
     _f12BattleSettled = false;   // mid-game restart — sesija tęsiasi, settlinsis per tikrą game over
   }
 
@@ -6715,9 +6735,10 @@
   function _spawnBloodBurst(x, y, sz, t) {
     const scale = Math.max(0.8, sz / 13);
     const gy = y + sz * 0.85;   // „žemės" lygis (prie kojų) — kur lašiukai nusėda
-    // Mažas raudonas „splat" blyksnis (trumpas)
-    _f12Blood.push({ flash: true, x0: x, y0: y, born: t, duration: 200, size: Math.round(9 * scale) });
-    const n = 20 + Math.floor(Math.random() * 12);         // 20-31 purslų
+    // Raudonas „splat" blyksnis (didesnis — stipresnis mirties efektas)
+    _f12Blood.push({ flash: true, x0: x, y0: y, born: t, duration: 230, size: Math.round(12 * scale) });
+    // Maži purslai — DABARTINIS dydis (2-3px)
+    const n = 22 + Math.floor(Math.random() * 12);         // 22-33 purslų
     for (let i = 0; i < n; i++) {
       const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;  // daugiausia į viršų/šonus
       const sp = (60 + Math.random() * 200) * scale;
@@ -6726,22 +6747,26 @@
         y0: y + (Math.random() - 0.5) * 9 * scale,
         vx: Math.cos(ang) * sp, vy0: Math.sin(ang) * sp - 80,
         born: t, groundY: gy,
-        size: 2 + Math.floor(Math.random() * 2), shade: Math.random(), big: false,  // 2-3px (mažesni)
+        size: 2 + Math.floor(Math.random() * 2), shade: Math.random(), big: false,  // 2-3px (dabartinis)
         landed: false, groundLife: 700 + Math.random() * 700,   // ~1s ± (skirtingi greičiai)
       });
     }
-    for (let i = 0; i < 7; i++) {                           // stambesni lašai
-      const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.2;
-      const sp = (45 + Math.random() * 110) * scale;
+    // Stambūs lašai — DIDESNI (5-8px) ir jų DAUGIAU; krenta ant žemės kaip didelės kraujo dėmės
+    const nb = 13 + Math.floor(Math.random() * 5);         // 13-17 didelių
+    for (let i = 0; i < nb; i++) {
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.3;
+      const sp = (45 + Math.random() * 130) * scale;
       _f12Blood.push({
-        x0: x, y0: y, vx: Math.cos(ang) * sp, vy0: Math.sin(ang) * sp - 110,
+        x0: x + (Math.random() - 0.5) * 6 * scale,
+        y0: y + (Math.random() - 0.5) * 6 * scale,
+        vx: Math.cos(ang) * sp, vy0: Math.sin(ang) * sp - 120,
         born: t, groundY: gy,
-        size: 3 + Math.floor(Math.random() * 2), shade: Math.random(), big: true,  // 3-4px
-        landed: false, groundLife: 850 + Math.random() * 750,
+        size: 5 + Math.floor(Math.random() * 4), shade: Math.random(), big: true,  // 5-8px (didesni)
+        landed: false, groundLife: 900 + Math.random() * 800,
       });
     }
-    // Cap — mass deaths (AOE) gali sukurti 300+ partiklelių; ribojam, kad mobile nelaggintų
-    if (_f12Blood.length > 240) _f12Blood.splice(0, _f12Blood.length - 240);
+    // Cap — mass deaths (AOE) gali sukurti daug partiklelių; ribojam, kad mobile nelaggintų
+    if (_f12Blood.length > 280) _f12Blood.splice(0, _f12Blood.length - 280);
   }
   function _drawBlood(t) {
     if (!_f12Blood.length) return;

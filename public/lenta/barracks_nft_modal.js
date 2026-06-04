@@ -294,13 +294,16 @@
   function _onBattleGridClick(e) {
     const t = e.target;
     if (!t || !t.dataset) return;
-    const totalAll = _battleTotalPicked() + _battleFreeTotal();
+    // GRIEŽTAS ATSKYRIMAS: free ir NFT turi ATSKIRUS 12-cap'us (NE bendrą). Free pasirinkimas
+    // nebemažina NFT limito ir atvirkščiai — kiekvienas režimas savarankiškas.
+    const nftTotal = _battleTotalPicked();
+    const freeTotal = _battleFreeTotal();
     // FREE units +/-
     if (t.dataset.bt) {
       const bt = t.dataset.bt;
       const cur = _battleFreeQty[bt] | 0;
       if (t.classList.contains('nft-battle-free-plus')) {
-        if (cur < FREE_MAX_PER_TYPE && totalAll < BATTLE_MAX_TOTAL) {
+        if (cur < FREE_MAX_PER_TYPE && freeTotal < BATTLE_MAX_TOTAL) {
           _battleFreeQty[bt] = cur + 1;
           _renderFreeGrid();
           _updateBattleFooter();
@@ -320,7 +323,7 @@
       const cur = _battlePickQty[key] | 0;
       if (t.classList.contains('nft-battle-plus')) {
         const max = parseInt(t.dataset.max, 10) || 0;
-        if (cur < max && totalAll < BATTLE_MAX_TOTAL) {
+        if (cur < max && nftTotal < BATTLE_MAX_TOTAL) {
           _battlePickQty[key] = cur + 1;
           _renderBattleGrid();
         }
