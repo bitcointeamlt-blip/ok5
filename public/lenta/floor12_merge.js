@@ -1666,44 +1666,67 @@
     } catch (e) { console.warn('[F12 death] keepalive checkpoint threw', e); }
   }
 
-  // ── KANONINIS reload-proof mirties commit: localStorage + flush ───────────────────────
-  // Mirties momentu IŠKART (sinchroniškai) įrašom į localStorage — tai NEGALI žlugti, išgyvena
-  // reload/tab-close/wallet-disconnect/trumpą žaidimą. Po perkrovimo (kai viskas stabilu) —
-  // išsiunčiam į serverį ir tik tada išvalom. Apeina visas tinklo-unload problemas.
-  const _PENDING_DEATHS_LS = 'f12_pending_deaths_v1';
+  // ── KANONINIS reload-proof mirties settlement: localStorage + flush per submit-battle-result ──
+  // PROBLEMA: burn'ą gali atlikti TIK submit-battle-result su EIP-712 ownerSignature, kurio
+  // serveris NESaugo (yra tik kliento window._f12NftBurnAuth, dingstančiame per reload). Tad
+  // mirties momentu išsaugom į localStorage VISĄ burn-auth (parašą) + mirusių tokenų sąrašą.
+  // Po perkrovimo (arba įėjus į F12) — „suvaidinam game-over" (settlement kaip loss) su išsaugotu
+  // parašu → relayer sudegina mirusius NFT, lygiai kaip per tikrą game over. „Paskutinis įrašas
+  // = game over", net jei nutraukei žaidimą.
+  const _PENDING_SETTLE_LS = 'f12_pending_settle_v1';
+  function _loadPendingSettle() { try { return JSON.parse(localStorage.getItem(_PENDING_SETTLE_LS) || '{}') || {}; } catch (_) { return {}; } }
+  function _savePendingSettle(o) { try { localStorage.setItem(_PENDING_SETTLE_LS, JSON.stringify(o)); } catch (_) {} }
   function _persistDeathLocal(tokenId) {
     try {
       const _auth = window._f12NftBurnAuth;
-      const _w = (_auth && _auth.owner) || (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
-      if (!_auth || !_auth.battleId || !_w) return;
-      let arr; try { arr = JSON.parse(localStorage.getItem(_PENDING_DEATHS_LS) || '[]'); } catch (_) { arr = []; }
-      arr.push({ battleId: String(_auth.battleId), tokenId: Number(tokenId), wallet: String(_w).toLowerCase(), at: Date.now() });
-      localStorage.setItem(_PENDING_DEATHS_LS, JSON.stringify(arr));
-      console.log('[F12 death] persisted local #' + tokenId, _auth.battleId);
-    } catch (e) { console.warn('[F12 death] persist local err', e); }
+      if (!_auth || !_auth.battleId || !_auth.signature) return;
+      const all = _loadPendingSettle();
+      const bid = String(_auth.battleId);
+      const e = all[bid] || {
+        auth: {
+          battleId: String(_auth.battleId), signature: _auth.signature,
+          nonce: String(_auth.nonce), deadline: String(_auth.deadline), owner: _auth.owner,
+        }, dead: [], at: Date.now(),
+      };
+      if (e.dead.indexOf(Number(tokenId)) < 0) e.dead.push(Number(tokenId));
+      e.at = Date.now();
+      all[bid] = e;
+      _savePendingSettle(all);
+      console.log('[F12 death] persisted settle #' + tokenId, bid);
+    } catch (e) { console.warn('[F12 death] persist settle err', e); }
   }
+  // Pašalinam battleId iš pending (kai jau settlinta — normalaus game-over arba flush metu).
+  function _clearPendingSettle(battleId) {
+    try { const all = _loadPendingSettle(); if (all[String(battleId)]) { delete all[String(battleId)]; _savePendingSettle(all); } } catch (_) {}
+  }
+  // Po perkrovimo — settlinam užstrigusias abandoned sesijas (su išsaugotu parašu) kaip loss.
   function _flushPendingDeaths() {
-    let arr; try { arr = JSON.parse(localStorage.getItem(_PENDING_DEATHS_LS) || '[]'); } catch (_) { return; }
-    if (!Array.isArray(arr) || !arr.length) return;
-    // Tik švieži (<1h) — senesnių sesijos jau expired/nebeatkuriamos.
-    arr = arr.filter(function (d) { return d && d.battleId && (Date.now() - (d.at || 0) < 3600000); });
-    if (!arr.length) { try { localStorage.removeItem(_PENDING_DEATHS_LS); } catch (_) {} return; }
-    const keep = []; let remaining = arr.length;
-    function finish() { remaining--; if (remaining <= 0) { try { localStorage.setItem(_PENDING_DEATHS_LS, JSON.stringify(keep)); } catch (_) {} } }
-    arr.forEach(function (d) {
-      fetch(_CHECKPOINT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': _SB_KEY, 'Authorization': 'Bearer ' + _SB_KEY },
-        body: JSON.stringify({ wallet: d.wallet, battleId: d.battleId, stats: {}, deadTokenIds: [d.tokenId] }),
-      }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
-        .then(function (res) {
-          const ok = res.j && res.j.ok;
-          const permanent = res.j && res.j.error && /not active|not found|mismatch|authorized/i.test(res.j.error);
-          console.log('[F12 death] flush #' + d.tokenId + ' status ' + res.status, res.j);
-          if (!ok && !permanent) keep.push(d);   // laikina (network/5xx) → bandysim vėliau; ok arba permanent → metam
-          finish();
-        })
-        .catch(function () { keep.push(d); finish(); });   // network fail → laikom retry
+    const all = _loadPendingSettle();
+    const bids = Object.keys(all);
+    if (!bids.length) return;
+    if (!window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') return;
+    bids.forEach(function (bid) {
+      const e = all[bid];
+      if (!e || !e.auth || !e.auth.signature || !e.dead || !e.dead.length) { _clearPendingSettle(bid); return; }
+      if (Date.now() - (e.at || 0) > 3600000) { _clearPendingSettle(bid); return; }   // per sena — sesija expired
+      console.log('[F12 settle-abandoned] flushing #' + bid, e.dead);
+      window.SupabaseSync.invoke('submit-battle-result', {
+        battleId: e.auth.battleId,
+        ownerSignature: e.auth.signature,
+        nonce: e.auth.nonce,
+        deadlineSec: e.auth.deadline,
+        deadTokenIds: e.dead,
+        survivors: [],
+        won: false,
+        battleDurationSec: 0,
+      }).then(function (wrap) {
+        const resp = wrap && wrap.data ? wrap.data : wrap;
+        const ok = wrap && wrap.ok && resp && resp.ok !== false;
+        const errStr = (resp && resp.error) || '';
+        const unrecoverable = /already resolved|expired|not found/i.test(errStr);   // baigta arba nebeatkuriama → metam
+        console.log('[F12 settle-abandoned] #' + bid, ok ? 'BURNED' : errStr, resp && resp.burnedTokenIds);
+        if (ok || unrecoverable) _clearPendingSettle(bid);
+      }).catch(function (err) { console.warn('[F12 settle-abandoned] net err #' + bid, err); });   // network → liks retry
     });
   }
   // Matomas (ne blokuojantis) pranešimas, kad NFT žuvo — auto-dingsta po ~3.5s.
@@ -11355,6 +11378,8 @@
         ? 'Burn TX skipped — relayer wallet has no RON for gas. Fund ' + (resp.relayer || 'signer') + ' to enable burns.'
         : null,
     });
+    // Settlinta normaliai → išvalom localStorage pending (kad flush nebandytų pakartot).
+    try { if (auth && auth.battleId) _clearPendingSettle(auth.battleId); } catch (_) {}
     // Consume burnAuth
     window._f12NftBurnAuth = null;
   }
