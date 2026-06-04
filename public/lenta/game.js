@@ -8530,55 +8530,69 @@ async function _refreshTrophyPricing() {
     remainingInBatch:    '0xcbecc4ab',  // remainingInBatch() -> uint256
     totalSupply:         '0x18160ddd',  // totalSupply() -> uint256
   };
-  async function rpcCall(selector) {
-    const resp = await fetch(RONIN_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', method: 'eth_call', id: 1,
-        params: [{ to: CONTRACT, data: selector }, 'latest'],
-      }),
-    });
-    const j = await resp.json();
-    if (j.error || !j.result || j.result === '0x') return 0n;
-    try { return BigInt(j.result); } catch (_) { return 0n; }
+  // Retry — public Ronin RPC rate-limit'ina (ypač burst'ą). 3 bandymai su backoff;
+  // grąžinam null tik jei tikrai nepavyko (NE 0 — kad neperrašytų į „0 / 10,000").
+  async function rpcCall(selector, tries) {
+    tries = tries || 3;
+    for (let i = 0; i < tries; i++) {
+      try {
+        const resp = await fetch(RONIN_RPC, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0', method: 'eth_call', id: 1,
+            params: [{ to: CONTRACT, data: selector }, 'latest'],
+          }),
+        });
+        if (resp.ok) {
+          const j = await resp.json();
+          if (j && typeof j.result === 'string') {
+            if (j.result === '0x') return 0n;
+            try { return BigInt(j.result); } catch (_) { return 0n; }
+          }
+        }
+      } catch (_) {}
+      // rate-limit / klaida → palaukiam ir bandom dar
+      await new Promise((r) => setTimeout(r, 450 * (i + 1)));
+    }
+    return null;   // visi bandymai krito
   }
   try {
-    const [priceWei, batch, remaining, supply] = await Promise.all([
-      rpcCall(SELECTORS.getCurrentMintPrice),
-      rpcCall(SELECTORS.currentBatch),
-      rpcCall(SELECTORS.remainingInBatch),
-      rpcCall(SELECTORS.totalSupply),
-    ]);
-    const priceRon = Number(priceWei) / 1e18;
-    const batchNum = Number(batch);
-    const rem = Number(remaining);
-    const totalSupply = Number(supply);
+    // Sekvenciškai (NE 4 iškart) — kad nesukeltų burst rate-limit'o.
+    const priceWei  = await rpcCall(SELECTORS.getCurrentMintPrice);
+    const batch     = await rpcCall(SELECTORS.currentBatch);
+    const remaining = await rpcCall(SELECTORS.remainingInBatch);
+    const supply    = await rpcCall(SELECTORS.totalSupply);
+    // null = RPC nepavyko → NEperrašom (paliekam esamą / „…"), kad nerodytų klaidingo 0.
+    const priceRon = (priceWei == null) ? null : Number(priceWei) / 1e18;
+    const batchNum = (batch == null) ? null : Number(batch);
+    const rem = (remaining == null) ? null : Number(remaining);
+    const totalSupply = (supply == null) ? null : Number(supply);
     // Card 1: current cost
     const nowEl = document.getElementById('trophy-pricing-now');
-    if (nowEl) nowEl.innerHTML = priceRon === 0 ? 'FREE' : (priceRon + ' <em style="font-size:10px;color:#d49a2a;font-style:normal;">RON</em>');
+    if (nowEl && priceRon !== null) nowEl.innerHTML = priceRon === 0 ? 'FREE' : (priceRon + ' <em style="font-size:10px;color:#d49a2a;font-style:normal;">RON</em>');
     // Card 2: minted so far
     const batchEl = document.getElementById('trophy-pricing-batch');
-    if (batchEl) batchEl.innerHTML = totalSupply.toLocaleString() + ' <em style="font-size:10px;color:#7a9aa6;font-style:normal;">/ 10,000</em>';
+    if (batchEl && totalSupply !== null) batchEl.innerHTML = totalSupply.toLocaleString() + ' <em style="font-size:10px;color:#7a9aa6;font-style:normal;">/ 10,000</em>';
     const batchSubEl = document.getElementById('trophy-pricing-batchsub');
-    if (batchSubEl) batchSubEl.textContent = `batch ${batchNum + 1}/10`;
-    // Card 3: next jump
+    if (batchSubEl && batchNum !== null) batchSubEl.textContent = `batch ${batchNum + 1}/10`;
+    // Card 3: next jump (tik jei batch+remaining užsikrovė)
     const NEXT_PRICES = [1, 2, 3, 4, 6, 8, 10, 12, 15, null];
-    const nextPrice = NEXT_PRICES[batchNum];
     const nextEl = document.getElementById('trophy-pricing-next');
     const nextSubEl = document.getElementById('trophy-pricing-nextsub');
-    if (nextEl && nextSubEl) {
+    if (nextEl && nextSubEl && batchNum !== null) {
+      const nextPrice = NEXT_PRICES[batchNum];
       if (nextPrice === null) {
         nextEl.textContent = '—';
         nextSubEl.textContent = 'Final batch (sold out next)';
       } else {
         nextEl.innerHTML = nextPrice + ' <em style="font-size:10px;color:#d49a2a;font-style:normal;">RON</em>';
-        nextSubEl.textContent = `After ${rem.toLocaleString()} more mints`;
+        if (rem !== null) nextSubEl.textContent = `After ${rem.toLocaleString()} more mints`;
       }
     }
-    // Stash for claim modal too
-    window._trophyCurrentPriceRon = priceRon;
-    window._trophyCurrentBatch = batchNum;
+    // Stash for claim modal too (tik jei užsikrovė)
+    if (priceRon !== null) window._trophyCurrentPriceRon = priceRon;
+    if (batchNum !== null) window._trophyCurrentBatch = batchNum;
   } catch (e) {
     console.warn('[trophy pricing fetch]', e);
   }
