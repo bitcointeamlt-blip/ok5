@@ -1459,7 +1459,7 @@
     spider:    { frameW: 192, sizeMul: 0.9, hpMul: 1.0, spdMul: 2.4, gap: 0.040, sheets: null }, // hp force'inta į 1 spawn'e — greičiausias
     minotaur:  { frameW: 320, sizeMul: 1.4, hpMul: 1.8, spdMul: 0.7, gap: 0.065, sheets: null },
     axieronke: { frameW: 640, sizeMul: 0.66, hpMul: 1.2, spdMul: 1.9, gap: 0.060, sheets: null }, // naujas — ~5px mažesnis
-    bear:      { frameW: 256, sizeMul: 1.3, hpMul: 1.5, hpFlat: 6, spdMul: 1.5, gap: 0.070, sheets: null, allyDmg: 5 }, // tankas (+6 flat HP), kerta stipriai (-5); greitis derintas prie run animacijos
+    bear:      { frameW: 256, sizeMul: 1.3, hpMul: 1.5, hpFlat: 6, spdMul: 1.5, gap: 0.070, sheets: null, allyDmg: 2 }, // tankas (+6 flat HP), kerta -2; greitis derintas prie run animacijos
   };
   let _f12EnemyKindsInit = false;
   function _initF12EnemySheets() {
