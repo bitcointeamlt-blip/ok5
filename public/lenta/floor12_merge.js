@@ -1667,25 +1667,21 @@
       if (!_auth || !_auth.battleId || !_w) { console.warn('[F12 death] SKIP — no auth/wallet', { auth: !!_auth, battleId: _auth && _auth.battleId, wallet: !!_w }); return; }
       const obj = { wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), tokenId: tokenId };
       const payload = JSON.stringify(obj);
-      // PIRMINIS kelias — SupabaseSync.invoke (TAS PATS transportas kaip checkpoint, kuris
-      // patikimai rašo kas 5s su apikey+Authorization header'iais). Mirtis kyla AKTYVAUS
-      // žaidimo metu (mirties animacija, restart mygtukas — sekundės vėliau), tad normalus
-      // fetch spėja pilnai įvykdyti PRIEŠ bet kokį restartą/reload. Tai dengia ~99% atvejų.
-      if (window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
-        window.SupabaseSync.invoke('register-death', obj)
-          .then(function (r) { console.log('[F12 death] invoke ok #' + tokenId, r && (r.data || r)); })
-          .catch(function (e) { console.warn('[F12 death] invoke err', e); });
-      }
-      // BACKUP — sendBeacon (su apikey query param, nes negali nustatyti header'ių). Dengia
-      // kraštinį atvejį: žaidėjas perkrauna naršyklės tab'ą TIKSLIAI mirties momentu, kol
-      // invoke fetch dar nespėjo. text/plain = CORS-safe (jokio preflight).
-      let beacon = false;
+      // PIRMINIS kelias — fetch su keepalive:true. SKIRTUMAS nuo sendBeacon: keepalive fetch
+      // (a) IŠGYVENA puslapio unload/perkrovimą (tam ir sukurtas), (b) leidžia siųst pilnus
+      // header'ius (apikey+Authorization) → praeina gateway lygiai kaip veikiantis checkpoint,
+      // (c) NĖRA „beacon" → naršyklės Tracking Prevention jo NEblokuoja (sendBeacon blokavo).
       try {
-        if (navigator.sendBeacon) {
-          beacon = navigator.sendBeacon(_REGISTER_DEATH_URL + '?apikey=' + _SB_KEY, new Blob([payload], { type: 'text/plain' }));
-        }
-      } catch (e) { console.warn('[F12 death] beacon err', e); }
-      console.log('[F12 death] REGISTER #' + tokenId + ' beacon=' + beacon, obj);
+        fetch(_REGISTER_DEATH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': _SB_KEY, 'Authorization': 'Bearer ' + _SB_KEY },
+          body: payload,
+          keepalive: true,
+          mode: 'cors',
+        }).then(function (r) { console.log('[F12 death] keepalive status ' + r.status + ' #' + tokenId); })
+          .catch(function (e) { console.warn('[F12 death] keepalive err', e); });
+      } catch (e) { console.warn('[F12 death] keepalive threw', e); }
+      console.log('[F12 death] REGISTER #' + tokenId, obj);
     } catch (e) { console.warn('[F12 death] outer err', e); }
   }
   // Increment kvietikliai (saugu jei ally ne NFT — tylus no-op)
