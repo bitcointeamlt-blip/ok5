@@ -1633,8 +1633,11 @@
       // Mirtys važiuoja TUO PAČIU patikimu transportu kaip checkpoint (kuris įrodytai veikia).
       const dead = (_f12DeadNftTokenIds && _f12DeadNftTokenIds.length) ? _f12DeadNftTokenIds.slice() : [];
       if (!any && !dead.length) return;
+      // Parašas + tikslus nonce → serveris saugo (settle_auth), kad cron sweep galėtų sudegint
+      // abandoned mirusius BE kliento (anti reload-to-escape-death enforcement).
       window.SupabaseSync.invoke('checkpoint-battle', {
         wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), stats: stats, deadTokenIds: dead,
+        ownerSignature: _auth.signature, nonce: String(_auth.nonce),
       }).then(function (r) { if (dead.length) console.log('[F12 death] checkpoint dead=', r && (r.data ? r.data.dead : r.dead)); })
         .catch(function () {});   // fire-and-forget
     } catch (_) {}
