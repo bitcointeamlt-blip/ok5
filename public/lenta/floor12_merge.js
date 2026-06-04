@@ -1641,7 +1641,28 @@
   // žaidėjas iškart perkrauna/uždaro puslapį (paprastas fetch tuo atveju NUTRAUKIAMAS →
   // mirtis nepasiekdavo serverio = exploit). Fallback į invoke jei sendBeacon nepalaikomas.
   const _REGISTER_DEATH_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/register-death';
-  const _SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';   // anon/publishable — sendBeacon negali siųst header'ių, tad apikey eina per query param
+  const _CHECKPOINT_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/checkpoint-battle';
+  const _SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';   // anon/publishable
+  // RELOAD-PROOF mirties commit per checkpoint-battle (ENDPOINT'AS, kuris ĮRODYTAI pasiekiamas
+  // iš naršyklės — register-death dėl nežinomos priežasties blokuojamas). keepalive:true →
+  // išgyvena puslapio unload/perkrovimą. Pilni header'iai → gateway+CORS OK.
+  function _commitDeathKeepalive(tokenId) {
+    try {
+      const _auth = window._f12NftBurnAuth;
+      const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      if (!_auth || !_auth.battleId || !_w) return;
+      const body = JSON.stringify({
+        wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId),
+        stats: {}, deadTokenIds: [tokenId],
+      });
+      fetch(_CHECKPOINT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': _SB_KEY, 'Authorization': 'Bearer ' + _SB_KEY },
+        body: body, keepalive: true, mode: 'cors',
+      }).then(function (r) { console.log('[F12 death] keepalive checkpoint status ' + r.status + ' #' + tokenId); })
+        .catch(function (e) { console.warn('[F12 death] keepalive checkpoint err', e); });
+    } catch (e) { console.warn('[F12 death] keepalive checkpoint threw', e); }
+  }
   // Matomas (ne blokuojantis) pranešimas, kad NFT žuvo — auto-dingsta po ~3.5s.
   function _showDeathToast(tokenId) {
     try {
@@ -3161,8 +3182,9 @@
         _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
         console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
         _showDeathToast(a.trainedSnap.tokenId);            // matomas pranešimas žaidėjui
-        _registerDeathReliable(a.trainedSnap.tokenId);     // standalone commit (sendBeacon — reload-proof)
-        _f12SendCheckpoint();                              // IŠKART per ĮRODYTĄ transportą (checkpoint) — neperžiūri 5s
+        _commitDeathKeepalive(a.trainedSnap.tokenId);      // RELOAD-PROOF per checkpoint-battle (keepalive) — ESMINIS kelias
+        _registerDeathReliable(a.trainedSnap.tokenId);     // atsarginis (register-death)
+        _f12SendCheckpoint();                              // periodinis stilius (invoke) — stats + dead per 5s
       }
     }
   }
