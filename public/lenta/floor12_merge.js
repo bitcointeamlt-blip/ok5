@@ -1665,6 +1665,47 @@
         .catch(function (e) { console.warn('[F12 death] keepalive checkpoint err', e); });
     } catch (e) { console.warn('[F12 death] keepalive checkpoint threw', e); }
   }
+
+  // ── KANONINIS reload-proof mirties commit: localStorage + flush ───────────────────────
+  // Mirties momentu IŠKART (sinchroniškai) įrašom į localStorage — tai NEGALI žlugti, išgyvena
+  // reload/tab-close/wallet-disconnect/trumpą žaidimą. Po perkrovimo (kai viskas stabilu) —
+  // išsiunčiam į serverį ir tik tada išvalom. Apeina visas tinklo-unload problemas.
+  const _PENDING_DEATHS_LS = 'f12_pending_deaths_v1';
+  function _persistDeathLocal(tokenId) {
+    try {
+      const _auth = window._f12NftBurnAuth;
+      const _w = (_auth && _auth.owner) || (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      if (!_auth || !_auth.battleId || !_w) return;
+      let arr; try { arr = JSON.parse(localStorage.getItem(_PENDING_DEATHS_LS) || '[]'); } catch (_) { arr = []; }
+      arr.push({ battleId: String(_auth.battleId), tokenId: Number(tokenId), wallet: String(_w).toLowerCase(), at: Date.now() });
+      localStorage.setItem(_PENDING_DEATHS_LS, JSON.stringify(arr));
+      console.log('[F12 death] persisted local #' + tokenId, _auth.battleId);
+    } catch (e) { console.warn('[F12 death] persist local err', e); }
+  }
+  function _flushPendingDeaths() {
+    let arr; try { arr = JSON.parse(localStorage.getItem(_PENDING_DEATHS_LS) || '[]'); } catch (_) { return; }
+    if (!Array.isArray(arr) || !arr.length) return;
+    // Tik švieži (<1h) — senesnių sesijos jau expired/nebeatkuriamos.
+    arr = arr.filter(function (d) { return d && d.battleId && (Date.now() - (d.at || 0) < 3600000); });
+    if (!arr.length) { try { localStorage.removeItem(_PENDING_DEATHS_LS); } catch (_) {} return; }
+    const keep = []; let remaining = arr.length;
+    function finish() { remaining--; if (remaining <= 0) { try { localStorage.setItem(_PENDING_DEATHS_LS, JSON.stringify(keep)); } catch (_) {} } }
+    arr.forEach(function (d) {
+      fetch(_CHECKPOINT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': _SB_KEY, 'Authorization': 'Bearer ' + _SB_KEY },
+        body: JSON.stringify({ wallet: d.wallet, battleId: d.battleId, stats: {}, deadTokenIds: [d.tokenId] }),
+      }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
+        .then(function (res) {
+          const ok = res.j && res.j.ok;
+          const permanent = res.j && res.j.error && /not active|not found|mismatch|authorized/i.test(res.j.error);
+          console.log('[F12 death] flush #' + d.tokenId + ' status ' + res.status, res.j);
+          if (!ok && !permanent) keep.push(d);   // laikina (network/5xx) → bandysim vėliau; ok arba permanent → metam
+          finish();
+        })
+        .catch(function () { keep.push(d); finish(); });   // network fail → laikom retry
+    });
+  }
   // Matomas (ne blokuojantis) pranešimas, kad NFT žuvo — auto-dingsta po ~3.5s.
   function _showDeathToast(tokenId) {
     try {
@@ -3183,10 +3224,10 @@
       if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
         _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
         console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
+        _persistDeathLocal(a.trainedSnap.tokenId);         // 1) SINCHRONIŠKAI į localStorage — NEGALI žlugti, išgyvena viską
         _showDeathToast(a.trainedSnap.tokenId);            // matomas pranešimas žaidėjui
-        _commitDeathKeepalive(a.trainedSnap.tokenId);      // RELOAD-PROOF per checkpoint-battle (keepalive) — ESMINIS kelias
-        _registerDeathReliable(a.trainedSnap.tokenId);     // atsarginis (register-death)
-        _f12SendCheckpoint();                              // periodinis stilius (invoke) — stats + dead per 5s
+        _commitDeathKeepalive(a.trainedSnap.tokenId);      // 2) bandom iškart per tinklą (jei spės)
+        _f12SendCheckpoint();                              // 3) periodinis stilius (invoke) — stats + dead
       }
     }
   }
@@ -11206,6 +11247,9 @@
         } catch (_) {}
       });
     }
+    // Po perkrovimo užstrigusios mirtys (iš localStorage) — išsiunčiam serveriui dabar, kai
+    // wallet/SupabaseSync vėl stabilūs ir sesija dar pending. Tai galutinis reload-proof kelias.
+    try { _flushPendingDeaths(); } catch (_) {}
     // Checkpoint loop — kas 5s saugo progresą serveryje (reload-safe XP).
     try { if (_f12CheckpointTimer) clearInterval(_f12CheckpointTimer); } catch (_) {}
     _f12CheckpointTimer = setInterval(_f12SendCheckpoint, 5000);
@@ -11488,4 +11532,12 @@
       else window.gotoF12();
     }
   }, true);
+
+  // Po puslapio užkrovimo — pabandom išsiųsti bet kokias užstrigusias mirtis iš localStorage
+  // (jei žaidėjas perkrovė po mirties ir nukrito į home page, NEįėjęs atgal į F12).
+  // Keli bandymai su atidėjimu, kad spėtų užsikraut SupabaseSync/wallet.
+  try {
+    setTimeout(function () { try { _flushPendingDeaths(); } catch (_) {} }, 2500);
+    setTimeout(function () { try { _flushPendingDeaths(); } catch (_) {} }, 8000);
+  } catch (_) {}
 })();
