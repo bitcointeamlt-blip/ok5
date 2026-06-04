@@ -3089,6 +3089,19 @@
       if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
         _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
         console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
+        // ANTI reload-to-escape-death: užfiksuojam mirtį serveryje IŠKART (fire-and-forget),
+        // kad reset/reload nebegalėtų jos atšaukti. Settlement vis tiek išsiųs visą sąrašą.
+        try {
+          const _auth = window._f12NftBurnAuth;
+          const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+          if (_auth && _auth.battleId && _w && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
+            window.SupabaseSync.invoke('register-death', {
+              wallet: String(_w).toLowerCase(),
+              battleId: String(_auth.battleId),
+              tokenId: a.trainedSnap.tokenId,
+            }).catch(function () {});   // fire-and-forget — neblokuojam žaidimo
+          }
+        } catch (_) {}
       }
     }
   }
