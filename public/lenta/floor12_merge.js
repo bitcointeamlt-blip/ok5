@@ -1647,7 +1647,10 @@
       let sent = false;
       try {
         if (navigator.sendBeacon) {
-          sent = navigator.sendBeacon(_REGISTER_DEATH_URL, new Blob([payload], { type: 'application/json' }));
+          // SVARBU: type 'text/plain' — CORS-safelisted → jokio preflight (sendBeacon negali
+          // preflight'inti; su 'application/json' beacon'as blokuojamas). Edge fn req.json()
+          // vis tiek parsina body nepriklausomai nuo Content-Type.
+          sent = navigator.sendBeacon(_REGISTER_DEATH_URL, new Blob([payload], { type: 'text/plain' }));
         }
       } catch (_) {}
       if (!sent && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
