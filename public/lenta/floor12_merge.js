@@ -62,6 +62,20 @@
       src.connect(lp); lp.connect(g); g.connect(dest || this.master);
       src.start(t0); src.stop(t0 + dur + 0.02);
     },
+    // ── Kardo kirtis — skull melee ataka (metalinis „swish + clang") ──
+    swordHit() {
+      this._init(); if (!this.ctx) return;
+      this._noiseBurst(0.05, 0.09, 4200);          // greitas „swish" (ašmenų pjūvis)
+      this._osc(840, 0.10, 0.06, 'square', -520);  // metalinis „clang" (kontaktas)
+      this._osc(1300, 0.07, 0.04, 'triangle', -760);
+    },
+    // ── Mažas „plip" — kraujo lašelis nukrenta ant žemės (labai tylus, wet tick) ──
+    bloodDrip() {
+      this._init(); if (!this.ctx) return;
+      const f = 175 + Math.random() * 150;
+      this._osc(f, 0.05, 0.045, 'sine', -90);     // trumpas žemyn slystantis blip (lašelis)
+      this._noiseBurst(0.028, 0.02, 1100);        // mažas drėgnas „splat" tekstūra
+    },
     // ── Silpnas "fit" — spygliams iškylant / susileidžiant (labai tylus) ──
     trapFit() {
       this._init(); if (!this.ctx) return;
@@ -1060,18 +1074,27 @@
   }
 
   // Lane harpoons — projectile sistema F12 lane'ams
+  // Per-utype ranged miss tikimybė. Roll'inama spawn'inant projektilą; jei miss — jokios žalos, „MISS".
+  const _UNIT_MISS_CHANCE = { archer: 0.15, harpoon_fish: 0.05, shaman: 0.05, skull: 0.10 };
+  function _rollMiss(attacker) {
+    const c = attacker && _UNIT_MISS_CHANCE[attacker.utype];
+    return !!(c && Math.random() < c);
+  }
+
   let _f12Harpoons = [];                       // {laneIdx, fromX, toX, target, dmg, born, duration}
   function _spawnLaneHarpoon(laneIdx, fromX, target, dmg, t, attacker) {
     _f12Harpoons.push({
       laneIdx, fromX, target, dmg, attacker,
-      born: t, duration: 280,
+      born: t, duration: 280, miss: _rollMiss(attacker),
     });
   }
   function _tickHarpoons(t) {
     for (let i = _f12Harpoons.length - 1; i >= 0; i--) {
       const h = _f12Harpoons[i];
       if (t - h.born >= h.duration) {
-        if (h.target && !h.target.dead) {
+        if (h.miss) {
+          _spawnDmgPopup(h.laneIdx, (h.target ? h.target.x : h.fromX), 0, t, { miss: true });
+        } else if (h.target && !h.target.dead) {
           h.target.hp -= h.dmg;
           h.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(h.laneIdx, h.target.x, h.dmg, t);
@@ -1146,13 +1169,15 @@
   let _f12ShamanProj = [];        // {laneIdx, fromX, target, dmg, born, duration}
   let _f12ShamanExpl = [];        // {laneIdx, atX, born, duration}
   function _spawnLaneShamanProj(laneIdx, fromX, target, dmg, t, attacker) {
-    _f12ShamanProj.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 380 });
+    _f12ShamanProj.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 380, miss: _rollMiss(attacker) });
   }
   function _tickShamanProj(t) {
     for (let i = _f12ShamanProj.length - 1; i >= 0; i--) {
       const p = _f12ShamanProj[i];
       if (t - p.born >= p.duration) {
-        if (p.target && !p.target.dead) {
+        if (p.miss) {
+          _spawnDmgPopup(p.laneIdx, (p.target ? p.target.x : p.fromX), 0, t, { miss: true });
+        } else if (p.target && !p.target.dead) {
           p.target.hp -= p.dmg;
           p.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(p.laneIdx, p.target.x, p.dmg, t);
@@ -1257,13 +1282,16 @@
   let _f12Arrows = [];     // {laneIdx, fromX, target, dmg, born, duration}
   let _f12ArrowImpacts = []; // {laneIdx, atX, born, duration}
   function _spawnLaneArrow(laneIdx, fromX, target, dmg, t, attacker) {
-    _f12Arrows.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 250 });
+    // Archer 10% miss (bokštai map'e nėra → visada pataiko)
+    _f12Arrows.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 250, miss: _rollMiss(attacker) });
   }
   function _tickArrows(t) {
     for (let i = _f12Arrows.length - 1; i >= 0; i--) {
       const ar = _f12Arrows[i];
       if (t - ar.born >= ar.duration) {
-        if (ar.target && !ar.target.dead) {
+        if (ar.miss) {
+          _spawnDmgPopup(ar.laneIdx, (ar.target ? ar.target.x : ar.fromX), 0, t, { miss: true });
+        } else if (ar.target && !ar.target.dead) {
           ar.target.hp -= ar.dmg;
           ar.target.hitFlashUntil = t + 200;
           _spawnDmgPopup(ar.laneIdx, ar.target.x, ar.dmg, t);
@@ -1420,7 +1448,7 @@
   const PLAYABLE_TYPES = ['skull', 'archer', 'shaman', 'harpoon_fish', 'tower', 'crossbow_tower', 'zip', 'hog_rider'];
   // Range = fraction of lane width. F11 skull = 1 cell (~3% lane), ranged units = 3-7 cells.
   const ALLY_STATS = {
-    skull:          { hp: 8,  dmg: 2, speed: 0.012, attackCooldown: 900,  range: 0.04 },
+    skull:          { hp: 8,  dmg: 2, speed: 0.012, attackCooldown: 1500, range: 0.04 },
     archer:         { hp: 5,  dmg: 3, speed: 0.014, attackCooldown: 1500, range: 0.12 },   // CD 1.5s, range ~puse
     shaman:         { hp: 4,  dmg: 4, speed: 0.010, attackCooldown: 3000, range: 0.14 },   // CD 3s (anksčiau 1.3s, buvo OP)
     harpoon_fish:   { hp: 7,  dmg: 3, speed: 0.011, attackCooldown: 1800, range: 0.10 },   // CD 1.8s, range ~puse
@@ -1459,7 +1487,7 @@
     spider:    { frameW: 192, sizeMul: 0.9, hpMul: 1.0, spdMul: 2.4, gap: 0.040, sheets: null }, // hp force'inta į 1 spawn'e — greičiausias
     minotaur:  { frameW: 320, sizeMul: 1.4, hpMul: 1.8, spdMul: 0.7, gap: 0.065, sheets: null },
     axieronke: { frameW: 640, sizeMul: 0.66, hpMul: 1.2, spdMul: 1.9, gap: 0.060, sheets: null }, // naujas — ~5px mažesnis
-    bear:      { frameW: 256, sizeMul: 1.3, hpMul: 1.5, hpFlat: 6, spdMul: 1.5, gap: 0.070, sheets: null, allyDmg: 2 }, // tankas (+6 flat HP), kerta -2; greitis derintas prie run animacijos
+    bear:      { frameW: 256, sizeMul: 1.3, hpMul: 1.5, hpFlat: 6, spdMul: 1.5, gap: 0.070, sheets: null, allyDmg: 2, hitDelay: 470, atkCd: 4000, critChance: 0.20, critDmg: 4 }, // tankas (+6 HP), kerta -2 (20% crit -4), ataka kas 4s, smūgis atidėtas iki slam
   };
   let _f12EnemyKindsInit = false;
   function _initF12EnemySheets() {
@@ -3000,11 +3028,45 @@
 
   // Bendrinis damage popup spawner — vienoda animacija visiems damage šaltiniams
   function _spawnDmgPopup(laneIdx, enemyX, dmg, t, opts) {
-    if (dmg <= 0) return;
+    const miss = !!(opts && opts.miss);
+    const block = !!(opts && opts.block);
+    if (dmg <= 0 && !miss && !block) return;
     _f12DmgPopups.push({
       lane: laneIdx, x: enemyX, dmg, born: t,
       color: (opts && opts.color) || null,    // 'poison' tinted, etc
+      crit: !!(opts && opts.crit),             // crit hit → „CRIT!" + oranžinis, didesnis
+      miss: miss,                              // nepataikė → „MISS" pilkas
+      block: block,                            // skull užblokavo → „BLOCK" žydras
     });
+  }
+
+  // Priešo smūgis sąjungininkui — bendras (immediate arba deferred per hitDelay).
+  // Dmg popup tik stipriems smūgiams (>1), kad paprasti -1 netriukšmautų.
+  function _enemyHitAlly(a, dmg, laneIdx, t, crit) {
+    if (!a || a.dead) return;
+    // Skull — 25% blokas: guard animacija + „BLOCK", smūgis sugeriamas (jokios žalos)
+    if (a.utype === 'skull' && Math.random() < 0.25) {
+      a.guardStart = t;                 // paleidžia guard (skydo) animaciją
+      a.swingStart = 0;                 // nutraukiam ataką, kad guard animacija nebūtų uždengta
+      a._pendingMeleeAt = 0; a._meleeTarget = null; a._meleeLane = undefined;  // blokas nutraukia ir SAVO ataką (kad nesimaišytų dmg per guard)
+      a.lastAttackAt = t;               // atidedam kitą ataką, kad guard animacija spėtų pilnai atsigroti
+      a.hitFlashUntil = t + 100;
+      _spawnDmgPopup(laneIdx, a.x, 0, t, { block: true });
+      try { if (_F12Audio && _F12Audio.wallHit) _F12Audio.wallHit(); } catch (_) {}
+      return;
+    }
+    a.hp -= dmg;
+    _allyAddDmgTaken(a, dmg);
+    a.hitFlashUntil = t + 200;
+    _spawnDmgPopup(laneIdx, a.x, dmg, t, { color: 'ally', crit: !!crit });   // rodom visą gautą žalą (ir „-1")
+    if (a.hp <= 0) {
+      a.dead = true; a.deathStartedAt = t;
+      _f12UnitDeployCD[a.utype] = t;
+      if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
+        _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
+        console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
+      }
+    }
   }
 
   function _drawDmgPopups(L, t) {
@@ -3022,25 +3084,39 @@
       const lh = L.laneH - 4;
       const sx = L.lanesX + baseW + (L.lanesW - baseW - 30) * p.x;
       const sy = ly + lh / 2 - eased * 36;
-      // Bounce-in scale (pirma 15%) — didesnė overshoot
+      // Bounce-in scale (pirma 15%) — didesnė overshoot. Crit — didesnis šriftas.
       const scale = k < 0.04 ? 1 + (1 - k / 0.04) * 0.7 : 1;
-      const fontSize = Math.round(18 * scale);
+      const label = p.block ? 'BLOCK' : p.miss ? 'MISS' : ('-' + p.dmg);
+      const fontSize = Math.round((p.crit ? 23 : (p.miss || p.block) ? 15 : 18) * scale);
       ctx.font = `bold ${fontSize}px "Press Start 2P", monospace`;
       ctx.textAlign = 'center';
       // Storus juodas outline (4 directions)
       ctx.fillStyle = `rgba(0,0,0,${alpha * 0.95})`;
-      ctx.fillText('-' + p.dmg, sx - 2, sy);
-      ctx.fillText('-' + p.dmg, sx + 2, sy);
-      ctx.fillText('-' + p.dmg, sx, sy - 2);
-      ctx.fillText('-' + p.dmg, sx, sy + 2);
-      // Spalva: poison = žalia, big dmg = raudonas, normalus = geltonas
+      ctx.fillText(label, sx - 2, sy);
+      ctx.fillText(label, sx + 2, sy);
+      ctx.fillText(label, sx, sy - 2);
+      ctx.fillText(label, sx, sy + 2);
+      // ── VIENINGAS STANDARTAS: unitų žala=balta, priešų žala=raudona, crit=auksinis, miss=pilkas, block=žydras, poison=žalias ──
       let col;
-      if (p.color === 'poison') col = `rgba(140,255,100,${alpha})`;
-      else if (p.color === 'ally') col = `rgba(255,90,70,${alpha})`;   // sąjungininkas gavo žalos — raudonas
-      else if (p.dmg >= 6) col = `rgba(255,80,60,${alpha})`;
-      else col = `rgba(255,235,140,${alpha})`;
+      if (p.block) col = `rgba(120,210,255,${alpha})`;                 // BLOCK — žydras
+      else if (p.miss) col = `rgba(205,210,220,${alpha})`;             // MISS — pilkas
+      else if (p.crit) col = `rgba(255,176,48,${alpha})`;              // CRIT — auksinis/oranžinis
+      else if (p.color === 'poison') col = `rgba(140,255,100,${alpha})`; // POISON — žalias
+      else if (p.color === 'ally') col = `rgba(255,90,70,${alpha})`;   // priešas kerta unitą — RAUDONA
+      else col = `rgba(255,255,255,${alpha})`;                         // unitas kerta priešą — BALTA
       ctx.fillStyle = col;
-      ctx.fillText('-' + p.dmg, sx, sy);
+      ctx.fillText(label, sx, sy);
+      // ── CRIT! užrašas virš skaičiaus ──
+      if (p.crit) {
+        const _cf = Math.round(10 * scale);
+        ctx.font = `bold ${_cf}px "Press Start 2P", monospace`;
+        const _cy = sy - fontSize * 0.95;
+        ctx.fillStyle = `rgba(0,0,0,${alpha * 0.95})`;
+        ctx.fillText('CRIT!', sx - 1, _cy); ctx.fillText('CRIT!', sx + 1, _cy);
+        ctx.fillText('CRIT!', sx, _cy - 1); ctx.fillText('CRIT!', sx, _cy + 1);
+        ctx.fillStyle = `rgba(255,210,60,${alpha})`;
+        ctx.fillText('CRIT!', sx, _cy);
+      }
     }
     ctx.restore();
   }
@@ -4015,15 +4091,19 @@
         ctx.fillRect(snap(exScreenX) - diag - PX, snap(eyScreenY) + diag - PX, PX*2, PX*2);
         ctx.fillRect(snap(exScreenX) + diag - PX, snap(eyScreenY) + diag - PX, PX*2, PX*2);
       }
-      // Damage popup "-N" kyla aukštyn — didesnis su tier
+      // Damage popup "-N" kyla aukštyn — VIENINGAS standartas (4-krypčių outline + raudona)
       const dmgFloatY = eyScreenY - k * 40;
-      const popupSize = Math.round(16 + tier * 3);
-      ctx.fillStyle = `rgba(0,0,0,${alpha * 0.9})`;
+      const popupSize = Math.round(18 + tier * 2);
       ctx.font = `bold ${popupSize}px "Press Start 2P", monospace`;
       ctx.textAlign = 'center';
-      ctx.fillText('-' + s.dmg, exScreenX + 2, dmgFloatY + 2);
-      ctx.fillStyle = `rgba(255,80,60,${alpha})`;
-      ctx.fillText('-' + s.dmg, exScreenX, dmgFloatY);
+      const _lsLbl = '-' + s.dmg;
+      ctx.fillStyle = `rgba(0,0,0,${alpha * 0.95})`;
+      ctx.fillText(_lsLbl, exScreenX - 2, dmgFloatY);
+      ctx.fillText(_lsLbl, exScreenX + 2, dmgFloatY);
+      ctx.fillText(_lsLbl, exScreenX, dmgFloatY - 2);
+      ctx.fillText(_lsLbl, exScreenX, dmgFloatY + 2);
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;   // unitų/merge žala priešams — BALTA
+      ctx.fillText(_lsLbl, exScreenX, dmgFloatY);
     }
     ctx.restore();
   }
@@ -4267,7 +4347,16 @@
             const lh_ = _L.laneH - 4;
             const ax_ = _L.lanesX + baseW + (_L.lanesW - baseW - 30) * a.x;
             const ay_ = ly_ + lh_ / 2;
-            _f12RecallEffects.push({ cx: ax_, cy: ay_, utype: a.utype, born: t });
+            // Tikslas — unit'o korta apačioj (kad matytųsi, jog GRĮŽTA į kortą, ne miršta)
+            let _bt = null;
+            for (const _k in _UNIT_FOR_BALL_TYPE) { if (_UNIT_FOR_BALL_TYPE[_k] === a.utype) { _bt = _k; break; } }
+            let _tx = ax_, _ty = _L.H - 10;
+            const _cl = _getCardLayout(_L);
+            if (_cl && _bt) {
+              const _ci = _cl.allTypes.indexOf(_bt);
+              if (_ci >= 0) { _tx = _cl.startX + _ci * (_CARD_W + _CARD_GAP) + _CARD_W / 2; _ty = _cl.cardY + _CARD_H / 2; }
+            }
+            _f12RecallEffects.push({ cx: ax_, cy: ay_, tx: _tx, ty: _ty, utype: a.utype, ballType: _bt, born: t });
           }
           Ln.allies.splice(i, 1);
           continue;
@@ -4313,19 +4402,39 @@
           const mt = a._meleeTarget;
           const ml = (a._meleeLane !== undefined) ? a._meleeLane : li;
           if (mt && !mt.dead) {
-            mt.hp -= a.dmg;
-            mt.hitFlashUntil = t + 200;
-            _spawnDmgPopup(ml, mt.x, a.dmg, t);
-            _allyAddDmgDealt(a, a.dmg);
-            _f12HogStrikes.push({ lane: ml, x: mt.x, born: t });
-            _f12ScreenShake = Math.max(_f12ScreenShake, 2.5);
-            try { if (_F12Audio && _F12Audio.damageHit) _F12Audio.damageHit(a.dmg); } catch (_) {}
-            if (mt.hp <= 0) {
-              mt.dead = true; mt.deathStartedAt = t;
-              score += _nftScoreBoost(5);
-              _trackF12Kill(mt);
-              if (!mt._isWall) _F12Audio.skullDeath();
-              _allyAddKill(a);
+            if (a.utype === 'hog_rider') {
+              // Hog Rider — 10% crit (2× dmg) su „CRIT!" popup'u
+              const _hogCrit = Math.random() < 0.10;
+              const _hogDmg = _hogCrit ? a.dmg * 2 : a.dmg;
+              mt.hp -= _hogDmg;
+              mt.hitFlashUntil = t + 200;
+              _spawnDmgPopup(ml, mt.x, _hogDmg, t, _hogCrit ? { crit: true } : undefined);
+              _allyAddDmgDealt(a, _hogDmg);
+              _f12HogStrikes.push({ lane: ml, x: mt.x, born: t });
+              _f12ScreenShake = Math.max(_f12ScreenShake, _hogCrit ? 4.0 : 2.5);
+              try { if (_F12Audio && _F12Audio.damageHit) _F12Audio.damageHit(_hogDmg); } catch (_) {}
+              if (mt.hp <= 0) {
+                mt.dead = true; mt.deathStartedAt = t;
+                score += _nftScoreBoost(5); _trackF12Kill(mt);
+                if (!mt._isWall) _F12Audio.skullDeath();
+                _allyAddKill(a);
+              }
+            } else if (_rollMiss(a)) {
+              // Skull 10% miss — kirtis prošovė (jokios žalos)
+              _spawnDmgPopup(ml, mt.x, 0, t, { miss: true });
+            } else {
+              // Skull — kirtis pataikė: dmg + kardo garsas
+              mt.hp -= a.dmg;
+              mt.hitFlashUntil = t + 200;
+              _spawnDmgPopup(ml, mt.x, a.dmg, t);
+              _allyAddDmgDealt(a, a.dmg);
+              try { if (_F12Audio && _F12Audio.swordHit) _F12Audio.swordHit(); } catch (_) {}
+              if (mt.hp <= 0) {
+                mt.dead = true; mt.deathStartedAt = t;
+                score += _nftScoreBoost(5); _trackF12Kill(mt);
+                if (!mt._isWall) _F12Audio.skullDeath();
+                _allyAddKill(a);
+              }
             }
           }
           a._pendingMeleeAt = 0; a._meleeTarget = null; a._meleeLane = undefined;
@@ -4381,46 +4490,36 @@
               a._pendingMeleeAt = t + _HOG_HIT_DELAY;
               a._meleeTarget = target; a._meleeLane = targetLaneIdx;
             } else {
-              target.hp -= a.dmg;
-              target.hitFlashUntil = t + 200;
-              _spawnDmgPopup(targetLaneIdx, target.x, a.dmg, t);
-              _allyAddDmgDealt(a, a.dmg);
-              if (target.hp <= 0) {
-                target.dead = true; target.deathStartedAt = t;
-                score += _nftScoreBoost(5);
-                _trackF12Kill(target);
-                if (!target._isWall) _F12Audio.skullDeath();
-                _allyAddKill(a);
-              }
+              // Skull (basic melee) — DELAYED: sustoja, swing'as, ir TIK apex'e dmg (ne einant)
+              a._pendingMeleeAt = t + _SKULL_HIT_DELAY;
+              a._meleeTarget = target; a._meleeLane = targetLaneIdx;
             }
           }
           // Enemy counter — tik jei MELEE range (skull range, ne ranged)
-          if (target && bestDist < ENEMY_MELEE_RANGE && t - (target.lastAttackAt || 0) > 1200) {
-            // Priešo kontrsmūgio žala — pagal kind (meška -5, kiti -1)
-            const _eAllyDmg = (_F12_ENEMY_KINDS[target.kind] && _F12_ENEMY_KINDS[target.kind].allyDmg) || 1;
-            a.hp -= _eAllyDmg;
-            _allyAddDmgTaken(a, _eAllyDmg);
-            a.hitFlashUntil = t + 200;
-            // Dmg skaičiukas virš sąjungininko — tik stipriems smūgiams (meška -5), kad paprasti -1 netriukšmautų
-            if (_eAllyDmg > 1) _spawnDmgPopup(li, a.x, _eAllyDmg, t, { color: 'ally' });
-            target.lastAttackAt = t;
-            target.swingStart = t;
-            if (a.hp <= 0) {
-              a.dead = true; a.deathStartedAt = t;
-              _f12UnitDeployCD[a.utype] = t;
-              // NEBEgrąžinam į HOME (trained snap jau paimtas deploy metu, mirties metu prarastas)
-              // a.trainedSnap nebebus _returnTrainedUnit'intas
-              // NFT track — surenkam mirusio NFT tokenId burn flow'ui (Phase 2.2)
-              if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
-                _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
-                console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
+          // Priešo kontrsmūgis — per-kind atakos cooldown (meška lėtesnė: 2s, kiti 1.2s)
+          if (target && bestDist < ENEMY_MELEE_RANGE) {
+            const _eDef = _F12_ENEMY_KINDS[target.kind] || _F12_ENEMY_KINDS.skull;
+            if (t - (target.lastAttackAt || 0) > (_eDef.atkCd || 1200)) {
+              const _crit = !!(_eDef.critChance && Math.random() < _eDef.critChance);
+              const _eAllyDmg = _crit ? (_eDef.critDmg || (_eDef.allyDmg || 1)) : (_eDef.allyDmg || 1);
+              target.lastAttackAt = t;
+              target.swingStart = t;
+              if (_eDef.hitDelay > 0) {
+                // Atidėtas smūgis — kad „-N" + žala sutaptų su animacijos slam kadru (meška)
+                target._pendingAllyHit = { at: t + _eDef.hitDelay, allyRef: a, lane: li, dmg: _eAllyDmg, crit: _crit };
+              } else {
+                _enemyHitAlly(a, _eAllyDmg, li, t, _crit);
               }
             }
           }
         } else if (!isPaused && !a.static) {
-          // Tik judantys unit'ai eina pirmyn (towers stovi)
-          a.x += a.speed * (dt / 1000);
-          if (a.x >= 1.0) { Ln.allies.splice(i, 1); continue; }
+          // Nejudam kol vyksta atakos swing — kad kirtis ATSIGROTŲ PILNAI (ne „dmg be animacijos"
+          // ir ne „kirtis ore" einant). Po ~swing trukmės — judam pirmyn.
+          const _swEl = a.swingStart ? (t - a.swingStart) : Infinity;
+          if (_swEl >= 880) {
+            a.x += a.speed * (dt / 1000);
+            if (a.x >= 1.0) { Ln.allies.splice(i, 1); continue; }
+          }
         }
       }
       // ── Boss pozicijos šioj lane — precompute VIENĄ kartą (vengiam O(n²) skenavimo per enemy) ──
@@ -4444,6 +4543,12 @@
         if (e.dead) {
           if (t - e.deathStartedAt > 1400) Ln.enemies.splice(i, 1);
           continue;
+        }
+        // Atidėtas smūgis sąjungininkui (meška) — taikom kai ateina slam kadras
+        if (e._pendingAllyHit && t >= e._pendingAllyHit.at) {
+          const _ph = e._pendingAllyHit;
+          e._pendingAllyHit = null;
+          _enemyHitAlly(_ph.allyRef, _ph.dmg, _ph.lane, t, _ph.crit);
         }
         // ── FROST REVERSE — priešas eina ATGAL (į dešinę) 10s ──
         // Ignoruoja idle/boss/wall/base logiką; clamp'inamas prie spawn krašto.
@@ -4792,6 +4897,7 @@
     _drawPoisonImpacts(L, t);  // nuodų uždėjimo / tick burst'ai
     _drawWallConvert(L, t);    // shadow → wall transformation burst
     _drawAsteroids(L, t);      // geltonas asteroidas kris ir cross damage
+    _drawBlood(t);             // unitų mirties kraujo partikleliai
     _drawDmgPopups(L, t);      // dmg "-N" popups (visi šaltiniai)
     _drawRecallEffects(L, t);  // unit recall sparkles (po 30s gyvavimo grįžta į deck)
     _drawBonusPopups(L, t);    // „+5s" / „-5s CD" merge bonus popups
@@ -6255,10 +6361,10 @@
       const lh = L.laneH - 4;
       const lane = lanes[i];
       for (const a of lane.allies) {
-        if (a.dead) continue;
         const ax = L.lanesX + baseW + (L.lanesW - baseW - 30) * a.x;
         const ay = ly + lh / 2;
         const sz = lh * 0.50;
+        if (a.dead) { drawAlly(ax, ay, sz, a, t); continue; }   // death anim + kraujo burst (anksčiau buvo praleidžiama → nesimatė)
         drawAlly(ax, ay, sz, a, t);
         // Drop target rect — tower'iams didesnis (sprite sz*4.5), unit'ams normalus
         const isTowerA = a.static;
@@ -6340,7 +6446,9 @@
     }
     if (!sheets) return null;
     const fpsMap = { idle: 7, run: 10, attack: 12, guard: 10, hurt: 22 };
-    const swingDur = (sheets.attack.frameCount / fpsMap.attack) * 1000;
+    // Ally skull — lėtesnis, deliberatesnis swing (kad ataka nesusilietų su guard/bloko animacija)
+    const _atkFps = (u.utype === 'skull') ? 8 : fpsMap.attack;
+    const swingDur = (sheets.attack.frameCount / _atkFps) * 1000;
     const guardDur = (sheets.guard.frameCount / fpsMap.guard) * 1000;
     const swingElapsed = u.swingStart ? t - u.swingStart : Infinity;
     const guardElapsed = u.guardStart ? t - u.guardStart : Infinity;
@@ -6356,7 +6464,7 @@
     else if (isMoving) anim = 'run';
     const sheet = sheets[anim];
     if (!sheet || !sheet.sheet || !sheet.sheet.complete || !sheet.sheet.naturalWidth) return null;
-    const fps = fpsMap[anim];
+    const fps = (anim === 'attack') ? _atkFps : fpsMap[anim];
     const frameCount = sheet.frameCount;
     let frameIdx;
     if (anim === 'attack') frameIdx = Math.min(frameCount - 1, Math.floor(swingElapsed / (1000 / fps)));
@@ -6385,6 +6493,7 @@
   // Spear thrust apex ~ attack animacijos viduryje (8 frames @ 12fps = 667ms → ~360ms = apex).
   // Damage + VFX nukrenta čia, ne swing start, kad sutaptų su vizualiniu smūgiu.
   const _HOG_HIT_DELAY = 360;
+  const _SKULL_HIT_DELAY = 420;   // skull melee — dmg apex'e (sustojęs), prie lėtesnio swing (8fps)
   function _pickHogRiderFrame(u, t, isMoving) {
     const sheets = _initHogRiderSheets();
     if (!sheets) return null;
@@ -6412,10 +6521,99 @@
     return { sheet: st.sheet, sx: idx * fw, sy: 0, sw: fw, sh: fh };
   }
 
+  // ── Kraujo partikleliai — unito mirties efektas (screen coords, analitinė fizika) ──
+  const _BLOOD_GRAV = 520;
+  function _spawnBloodBurst(x, y, sz, t) {
+    const scale = Math.max(0.8, sz / 13);
+    const gy = y + sz * 0.85;   // „žemės" lygis (prie kojų) — kur lašiukai nusėda
+    // Mažas raudonas „splat" blyksnis (trumpas)
+    _f12Blood.push({ flash: true, x0: x, y0: y, born: t, duration: 200, size: Math.round(9 * scale) });
+    const n = 20 + Math.floor(Math.random() * 12);         // 20-31 purslų
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;  // daugiausia į viršų/šonus
+      const sp = (60 + Math.random() * 200) * scale;
+      _f12Blood.push({
+        x0: x + (Math.random() - 0.5) * 9 * scale,
+        y0: y + (Math.random() - 0.5) * 9 * scale,
+        vx: Math.cos(ang) * sp, vy0: Math.sin(ang) * sp - 80,
+        born: t, groundY: gy,
+        size: 2 + Math.floor(Math.random() * 2), shade: Math.random(), big: false,  // 2-3px (mažesni)
+        landed: false, groundLife: 700 + Math.random() * 700,   // ~1s ± (skirtingi greičiai)
+      });
+    }
+    for (let i = 0; i < 7; i++) {                           // stambesni lašai
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.2;
+      const sp = (45 + Math.random() * 110) * scale;
+      _f12Blood.push({
+        x0: x, y0: y, vx: Math.cos(ang) * sp, vy0: Math.sin(ang) * sp - 110,
+        born: t, groundY: gy,
+        size: 3 + Math.floor(Math.random() * 2), shade: Math.random(), big: true,  // 3-4px
+        landed: false, groundLife: 850 + Math.random() * 750,
+      });
+    }
+  }
+  function _drawBlood(t) {
+    if (!_f12Blood.length) return;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    for (let i = _f12Blood.length - 1; i >= 0; i--) {
+      const p = _f12Blood[i];
+      // ── Raudono „splat" blyksnio žiedas ──
+      if (p.flash) {
+        const k = (t - p.born) / p.duration;
+        if (k >= 1) { _f12Blood.splice(i, 1); continue; }
+        const fa = (1 - k) * 0.7;
+        const fr = p.size * (0.45 + k * 1.25);
+        ctx.fillStyle = `rgba(180,16,16,${fa.toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(p.x0, p.y0, fr, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,72,56,${(fa * 0.8).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(p.x0, p.y0, fr * 0.45, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
+      const r = 175 + Math.floor(p.shade * 70);
+      const g = 12 + Math.floor(p.shade * 26);
+      const b = 14 + Math.floor(p.shade * 14);
+      if (!p.landed) {
+        // ── Skrydis (analitinė fizika) ──
+        const age = (t - p.born) / 1000;
+        const px = p.x0 + p.vx * age;
+        const py = p.y0 + p.vy0 * age + 0.5 * _BLOOD_GRAV * age * age;
+        if (py >= p.groundY) {
+          // Nukrito ant žemės — užfiksuojam dėmę šioj vietoj
+          p.landed = true; p.landX = px; p.landY = p.groundY; p.landAt = t;
+          // Garsiukas — lašelis ant žemės (random + throttle, kad nesusilietų į triukšmą)
+          if (Math.random() < 0.35 && (t - _lastBloodDripAt) > 45) {
+            _lastBloodDripAt = t;
+            try { if (_F12Audio && _F12Audio.bloodDrip) _F12Audio.bloodDrip(); } catch (_) {}
+          }
+        } else {
+          if ((t - p.born) > 4000) { _f12Blood.splice(i, 1); continue; }  // safety
+          ctx.fillStyle = `rgba(${r},${g},${b},1)`;
+          ctx.fillRect(Math.round(px), Math.round(py), p.size, p.size);
+          continue;
+        }
+      }
+      // ── Ant žemės — kraujo dėmė, lieka ~1s, fade pabaigoj (skirtingi groundLife) ──
+      const lage = t - p.landAt;
+      if (lage >= p.groundLife) { _f12Blood.splice(i, 1); continue; }
+      const lk = lage / p.groundLife;
+      const la = lk < 0.55 ? 1 : (1 - (lk - 0.55) / 0.45);   // pilnas iki 55%, tada gęsta
+      const w = p.size + (p.big ? 3 : 1);                    // suplota dėmė (platesnė nei aukšta)
+      const h = Math.max(1, Math.round(p.size * 0.6));
+      ctx.fillStyle = `rgba(${Math.floor(r * 0.82)},${g},${b},${la.toFixed(3)})`;
+      ctx.fillRect(Math.round(p.landX - w / 2), Math.round(p.landY), w, h);
+      ctx.fillStyle = `rgba(80,6,8,${(la * 0.65).toFixed(3)})`;   // tamsesnė šerdis
+      ctx.fillRect(Math.round(p.landX - w / 4), Math.round(p.landY), Math.max(1, Math.round(w / 2)), h);
+    }
+    ctx.restore();
+  }
+
   function drawAlly(cx, cy, sz, a, t) {
     if (a.dead) {
       // Pastatai (towers) — be death animacijos, tiesiog dingsta
       if (a.static) return;
+      // Kraujo burst vieną kartą mirties pradžioj
+      if (!a._bloodSpawned) { a._bloodSpawned = true; _spawnBloodBurst(cx, cy, sz, t); }
       _drawDeathAnim(cx, cy, sz, t - a.deathStartedAt);
       return;
     }
@@ -6595,44 +6793,81 @@
     ctx.restore();
   }
 
-  // ── RECALL EFFECTS — fade-up sparkles kai unit'as grįžta į deck ──
+  // ── RECALL EFFECTS — unit'o orbas skrenda lanku atgal į savo kortą (su geru UI) ──
   function _drawRecallEffects(L, t) {
     if (!_f12RecallEffects.length) return;
-    const DUR = 600;
-    const PX = 2;
-    const snap = (v) => Math.round(v / PX) * PX;
+    const DUR = 820;
     ctx.save();
+    ctx.imageSmoothingEnabled = false;
     for (let i = _f12RecallEffects.length - 1; i >= 0; i--) {
       const r = _f12RecallEffects[i];
       const age = t - r.born;
       if (age >= DUR) { _f12RecallEffects.splice(i, 1); continue; }
       const k = age / DUR;
-      const alpha = (1 - k) * 0.9;
-      // Šviesus žiedas plečiasi
-      const ringR = 8 + k * 20;
-      ctx.fillStyle = `rgba(180,220,255,${alpha})`;
-      for (let dy = -ringR; dy <= ringR; dy += PX) {
-        for (let dx = -ringR; dx <= ringR; dx += PX) {
-          const d = Math.sqrt(dx*dx + dy*dy);
-          if (d > ringR || d < ringR - PX*1.5) continue;
-          ctx.fillRect(snap(r.cx + dx), snap(r.cy + dy), PX, PX);
+      const ke = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // easeInOut
+      const tx = (r.tx != null) ? r.tx : r.cx;
+      const ty = (r.ty != null) ? r.ty : r.cy + 60;
+      const col = (r.ballType && TYPE_COLOR[r.ballType]) || { top: [205, 232, 255], front: [150, 195, 240] };
+      const ARC = 32;
+      const pathAt = (kk) => [r.cx + (tx - r.cx) * kk, r.cy + (ty - r.cy) * kk - Math.sin(kk * Math.PI) * ARC];
+      const [px, py] = pathAt(ke);
+      const fa = ke < 0.9 ? 1 : (1 - (ke - 0.9) / 0.1);                  // flight alpha (fade pabaigoj)
+      const rad = Math.max(3, 12 * (1 - ke * 0.6));
+
+      // ── KOMETOS UODEGA — ball spalvos pėdsakas (smooth fade) ──
+      for (let s = 9; s >= 1; s--) {
+        const kt = ke - s * 0.032;
+        if (kt < 0) continue;
+        const tp = pathAt(kt);
+        const ta = fa * (1 - s / 10) * 0.5;
+        const tr = Math.max(1, rad * (1 - s / 12));
+        ctx.fillStyle = `rgba(${col.front[0]},${col.front[1]},${col.front[2]},${ta.toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(tp[0], tp[1], tr, 0, Math.PI * 2); ctx.fill();
+      }
+      // ── GLOW HALO (layered circles, pigu) ──
+      if (ke < 0.95) {
+        for (let g = 3; g >= 1; g--) {
+          ctx.fillStyle = `rgba(${col.top[0]},${col.top[1]},${col.top[2]},${(fa * 0.16 / g).toFixed(3)})`;
+          ctx.beginPath(); ctx.arc(px, py, rad + g * 4, 0, Math.PI * 2); ctx.fill();
         }
       }
-      // 8 žiežirbos kyla aukštyn (recall = teleport up)
-      for (let s = 0; s < 8; s++) {
-        const ang = (s / 8) * Math.PI * 2;
-        const dist = 6 + k * 18;
-        const sx2 = snap(r.cx + Math.cos(ang) * dist);
-        const sy2 = snap(r.cy + Math.sin(ang) * dist - k * 22);    // bias aukštyn
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.fillRect(sx2 - PX, sy2, PX*2, PX);
-        ctx.fillRect(sx2, sy2 - PX, PX, PX*2);
-      }
-      // Centras — silpnejantis baltas spindulys (vertical beam)
-      if (k < 0.6) {
-        const beamA = (1 - k / 0.6) * 0.5;
-        ctx.fillStyle = `rgba(220,240,255,${beamA})`;
-        ctx.fillRect(snap(r.cx) - PX, snap(r.cy) - 30, PX * 2, 30);
+      // ── ORBAS ──
+      ctx.globalAlpha = fa;
+      if (r.ballType && typeof drawSphere === 'function') drawSphere(ctx, px, py, rad, 0, 0, r.ballType, 2, 0);
+      else { ctx.fillStyle = `rgba(205,232,255,${fa})`; ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalAlpha = 1;
+      // baltas „leading" blizgesys
+      ctx.fillStyle = `rgba(255,255,255,${(fa * 0.9).toFixed(3)})`;
+      ctx.fillRect(Math.round(px - 1), Math.round(py - rad - 2), 2, 2);
+
+      // ── ATVYKIMAS Į KORTĄ — rėmo švytėjimas + žiedas + sparkle burst ──
+      if (ke > 0.70) {
+        const pk = Math.min(1, (ke - 0.70) / 0.30);
+        const ease2 = 1 - Math.pow(1 - pk, 2);
+        const cw = _CARD_W, ch = _CARD_H;
+        const cx0 = tx - cw / 2, cy0 = ty - ch / 2;
+        // Kortos rėmas švyti (dvigubas: auksinis + ball spalva), gęsta
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = `rgba(${col.top[0]},${col.top[1]},${col.top[2]},${((1 - pk) * 0.8).toFixed(3)})`;
+        ctx.strokeRect(cx0 - 3, cy0 - 3, cw + 6, ch + 6);
+        ctx.strokeStyle = `rgba(255,232,150,${((1 - pk) * 0.95).toFixed(3)})`;
+        ctx.strokeRect(cx0 - 1, cy0 - 1, cw + 2, ch + 2);
+        // Besiplečiantis žiedas centre
+        ctx.strokeStyle = `rgba(255,240,180,${((1 - pk) * 0.9).toFixed(3)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(tx, ty, 4 + ease2 * 22, 0, Math.PI * 2); ctx.stroke();
+        // Sparkle burst (6 žiežirbos)
+        for (let s = 0; s < 6; s++) {
+          const ang = (s / 6) * Math.PI * 2 + pk * 1.5;
+          const d = ease2 * 20;
+          ctx.fillStyle = `rgba(255,236,155,${((1 - pk) * 0.9).toFixed(3)})`;
+          ctx.fillRect(Math.round(tx + Math.cos(ang) * d - 1), Math.round(ty + Math.sin(ang) * d - 1), 2, 2);
+        }
+        // Trumpas baltas flash pačioj pradžioj
+        if (pk < 0.35) {
+          ctx.fillStyle = `rgba(255,255,255,${((1 - pk / 0.35) * 0.55).toFixed(3)})`;
+          ctx.beginPath(); ctx.arc(tx, ty, 11, 0, Math.PI * 2); ctx.fill();
+        }
       }
     }
     ctx.restore();
@@ -6679,6 +6914,8 @@
         _drawWallCollapse(cx, cy, sz, e, t - e.deathStartedAt);
         return;
       }
+      // Kraujo burst vieną kartą mirties pradžioj (toks pat kaip unitams)
+      if (!e._bloodSpawned) { e._bloodSpawned = true; _spawnBloodBurst(cx, cy, sz * 1.15, t); }
       _drawDeathAnim(cx, cy, sz, t - e.deathStartedAt);
       return;
     }
@@ -6883,6 +7120,8 @@
   let _f12MuzzleFlashes = [];           // [{x, y, ang, born, power, duration}]
   let _f12FireSmoke = [];               // [{x, y, vx, vy, born, size, duration}]
   let _f12WallChips = [];               // [{x, y, vx, vy, born, size, duration, col}] — akmens skeveldros nuo sienos
+  let _f12Blood = [];                    // [{x0,y0,vx,vy0,born,duration,size,shade,big}] — unitų mirties kraujas (screen coords)
+  let _lastBloodDripAt = 0;              // throttle kraujo lašelių garsui (kad nebūtų kakofonijos)
   // Edit map dekoracijos — persistuoja tarp restart'ų (ne game state)
   let _f12Decorations = (typeof _F12_DEFAULT_DECORATIONS !== 'undefined')
     ? _F12_DEFAULT_DECORATIONS.map(d => ({ ...d }))

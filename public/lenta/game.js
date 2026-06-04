@@ -5274,7 +5274,9 @@ function _f9DealDmg(target, dmg, attacker) {
   target.hp = Math.max(0, (target.hp || 0) - dmg);
   target.hitFlash = 1;
   if (typeof spawnDmgNumber === 'function') {
-    try { spawnDmgNumber(target.x, target.y, '-' + dmg, '#ff5555', 16, 'normal'); } catch (_) {}
+    // taken = žala player unitui (team 0) → raudona; kitaip priešas gauna → balta
+    const _tk = target.team === 0 ? 'taken' : 'normal';
+    try { spawnDmgNumber(target.x, target.y, '-' + dmg, '#fff', 16, _tk); } catch (_) {}
   }
   if (typeof SFX !== 'undefined' && SFX.hit) { try { SFX.hit(); } catch (_) {} }
   // PATCH A: Last attacker retaliation (OpenRA pattern) — kai ally gauna dmg iš enemy,
@@ -17903,7 +17905,7 @@ function _updateSkullSkillShot(now) {
     if (u && u.alive) {
       u.hp = Math.max(0, (u.hp || 1) - _dmg);
       u.hitFlash = 1;
-      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(u.x, u.y, '-' + _dmg, '#ff4444', 18, 'normal');
+      if (typeof spawnDmgNumber === 'function') spawnDmgNumber(u.x, u.y, '-' + _dmg, '#fff', 18, u.team === 0 ? 'taken' : 'normal');
       // Slash particle effect — diagonal cut sparks toward skull
       if (Array.isArray(S.particles)) {
         const _sx = (u.x + 0.5) * CELL, _sy = (u.y + 0.5) * CELL;
@@ -22445,12 +22447,14 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
   const initScale = type === 'crit' ? 1.45 : type === 'miss' ? 0.85 : 1.0;
 
 
-  if (type !== 'crit' && typeof text === 'string' && text.startsWith('-')) {
-
-    if (color !== '#ff2222') {
-      color = '#ffffff';
-    }
-  }
+  // ── VIENINGAS STANDARTAS — spalva pagal type/tekstą. Unitų žala=balta, priešų žala (type 'taken')=raudona ──
+  const _dt = typeof text === 'string' ? text : '';
+  if (type === 'crit' || _dt.indexOf('!') >= 0) color = '#ffb030';   // crit — auksinis
+  else if (_dt === 'MISS' || type === 'miss') color = '#c8d2e0';     // miss — pilkas
+  else if (_dt === 'BLOCK') color = '#78d2ff';                       // block — žydras
+  else if (_dt.charAt(0) === '+') color = '#7cff6e';                 // heal — žalias
+  else if (type === 'taken') color = '#ff5a46';                      // priešas kerta unitą — RAUDONA
+  else color = '#ffffff';                                            // unitas kerta priešą — BALTA
 
   const obj = {
     x: (gx + 0.5) * CELL + (Math.random() - 0.5) * CELL * 0.5,
