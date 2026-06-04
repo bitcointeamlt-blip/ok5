@@ -1628,10 +1628,13 @@
         stats[k] = { kills: s.kills || 0, dmgDealt: s.dmgDealt || 0, dmgTaken: s.dmgTaken || 0 };
         any = true;
       }
-      if (!any) return;
+      // Mirtys važiuoja TUO PAČIU patikimu transportu kaip checkpoint (kuris įrodytai veikia).
+      const dead = (_f12DeadNftTokenIds && _f12DeadNftTokenIds.length) ? _f12DeadNftTokenIds.slice() : [];
+      if (!any && !dead.length) return;
       window.SupabaseSync.invoke('checkpoint-battle', {
-        wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), stats: stats,
-      }).catch(function () {});   // fire-and-forget
+        wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), stats: stats, deadTokenIds: dead,
+      }).then(function (r) { if (dead.length) console.log('[F12 death] checkpoint dead=', r && (r.data ? r.data.dead : r.dead)); })
+        .catch(function () {});   // fire-and-forget
     } catch (_) {}
   }
   // Užfiksuoja NFT mirtį serveryje PATIKIMAI. sendBeacon — naršyklė ją išsiunčia NET jei
@@ -1639,6 +1642,24 @@
   // mirtis nepasiekdavo serverio = exploit). Fallback į invoke jei sendBeacon nepalaikomas.
   const _REGISTER_DEATH_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/register-death';
   const _SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';   // anon/publishable — sendBeacon negali siųst header'ių, tad apikey eina per query param
+  // Matomas (ne blokuojantis) pranešimas, kad NFT žuvo — auto-dingsta po ~3.5s.
+  function _showDeathToast(tokenId) {
+    try {
+      let host = document.getElementById('f12-death-toasts');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'f12-death-toasts';
+        host.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none;font-family:inherit;';
+        document.body.appendChild(host);
+      }
+      const t = document.createElement('div');
+      t.style.cssText = 'background:#3a0d0d;border:2px solid #e85d5d;color:#ffd9d9;padding:9px 16px;border-radius:8px;font-weight:bold;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5);opacity:0;transition:opacity .25s;text-shadow:0 1px 2px #000;';
+      t.textContent = '💀 NFT #' + tokenId + ' died — registering on-chain death';
+      host.appendChild(t);
+      requestAnimationFrame(function () { t.style.opacity = '1'; });
+      setTimeout(function () { t.style.opacity = '0'; setTimeout(function () { try { host.removeChild(t); } catch (_) {} }, 300); }, 3500);
+    } catch (_) {}
+  }
   function _registerDeathReliable(tokenId) {
     try {
       const _auth = window._f12NftBurnAuth;
@@ -3143,7 +3164,9 @@
       if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
         _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
         console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
-        _registerDeathReliable(a.trainedSnap.tokenId);   // commit IŠKART (sendBeacon — atsparu reload'ui)
+        _showDeathToast(a.trainedSnap.tokenId);            // matomas pranešimas žaidėjui
+        _registerDeathReliable(a.trainedSnap.tokenId);     // standalone commit (sendBeacon — reload-proof)
+        _f12SendCheckpoint();                              // IŠKART per ĮRODYTĄ transportą (checkpoint) — neperžiūri 5s
       }
     }
   }
