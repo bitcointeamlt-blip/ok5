@@ -3300,7 +3300,7 @@
     ctx.fillStyle = `rgba(${cR},${cG},${cB},${pulse})`;
     ctx.font = 'bold 10px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('PASIRINK LANE (ESC NUTRAUKIA)', L.W / 2, L.H - 110);
+    ctx.fillText('CHOOSE A LANE (ESC TO CANCEL)', L.W / 2, L.H - 110);
   }
 
   // NFT lygio → statų multiplikatorius. +5% už lygį (level 20 ≈ 2×, level 51 ≈ 3.55×).

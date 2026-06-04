@@ -5751,9 +5751,9 @@ function _f9ShowOutcome(won) {
   // Lengvas alert pirmam iteracijai — vėliau pakeisim į modal'ą
   setTimeout(() => {
     if (won) {
-      alert('🏆 VICTORY!\nVisi priešai sunaikinti.');
+      alert('🏆 VICTORY!\nAll enemies destroyed.');
     } else {
-      alert('💀 DEFEAT!\nTavo herojus žuvo.');
+      alert('💀 DEFEAT!\nYour hero has fallen.');
     }
   }, 600);
 }
