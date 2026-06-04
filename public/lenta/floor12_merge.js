@@ -1634,6 +1634,27 @@
       }).catch(function () {});   // fire-and-forget
     } catch (_) {}
   }
+  // Užfiksuoja NFT mirtį serveryje PATIKIMAI. sendBeacon — naršyklė ją išsiunčia NET jei
+  // žaidėjas iškart perkrauna/uždaro puslapį (paprastas fetch tuo atveju NUTRAUKIAMAS →
+  // mirtis nepasiekdavo serverio = exploit). Fallback į invoke jei sendBeacon nepalaikomas.
+  const _REGISTER_DEATH_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/register-death';
+  function _registerDeathReliable(tokenId) {
+    try {
+      const _auth = window._f12NftBurnAuth;
+      const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      if (!_auth || !_auth.battleId || !_w) return;
+      const payload = JSON.stringify({ wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), tokenId: tokenId });
+      let sent = false;
+      try {
+        if (navigator.sendBeacon) {
+          sent = navigator.sendBeacon(_REGISTER_DEATH_URL, new Blob([payload], { type: 'application/json' }));
+        }
+      } catch (_) {}
+      if (!sent && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
+        window.SupabaseSync.invoke('register-death', JSON.parse(payload)).catch(function () {});
+      }
+    } catch (_) {}
+  }
   // Increment kvietikliai (saugu jei ally ne NFT — tylus no-op)
   function _allyAddDmgDealt(ally, dmg) {
     if (!ally || !ally.trainedSnap || !ally.trainedSnap.nft) return;
@@ -3110,19 +3131,7 @@
       if (a.trainedSnap && a.trainedSnap.nft && a.trainedSnap.tokenId != null) {
         _f12DeadNftTokenIds.push(a.trainedSnap.tokenId);
         console.log('[F12] NFT #' + a.trainedSnap.tokenId + ' DIED in battle (pending burn)');
-        // ANTI reload-to-escape-death: užfiksuojam mirtį serveryje IŠKART (fire-and-forget),
-        // kad reset/reload nebegalėtų jos atšaukti. Settlement vis tiek išsiųs visą sąrašą.
-        try {
-          const _auth = window._f12NftBurnAuth;
-          const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
-          if (_auth && _auth.battleId && _w && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
-            window.SupabaseSync.invoke('register-death', {
-              wallet: String(_w).toLowerCase(),
-              battleId: String(_auth.battleId),
-              tokenId: a.trainedSnap.tokenId,
-            }).catch(function () {});   // fire-and-forget — neblokuojam žaidimo
-          }
-        } catch (_) {}
+        _registerDeathReliable(a.trainedSnap.tokenId);   // commit IŠKART (sendBeacon — atsparu reload'ui)
       }
     }
   }
