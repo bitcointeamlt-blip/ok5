@@ -4693,19 +4693,20 @@
     _f12ReloadEndPlayed = false;          // po reload pabaigos paleisim reveal garsiuką
   }
 
-  // HOLD slotas — swap mechanika (kaip Tetris hold). Tap ant sloto:
-  //  • tuščias  → įsisaugo dabar užkrautas kamuoliukas, užkraunamas sekantis (eilė pasislenka)
-  //  • pilnas   → swap: išsaugotas tampa užkrautu, o užkrautas — į slotą (gali naudoti daug kartų)
+  // STASH slotas — VIENKARTINĖ mechanika (ne swap). Tap ant sloto:
+  //  • tuščias (SAVE) → užrakinam dabar užkrautą spalvą, užkraunam sekantį (eilė pasislenka)
+  //  • pilnas  (USE)  → išsaugota spalva užkraunama į patranką, slotas IŠTUŠTĖJA → gali įdėti naują
   function _f12HoldSwap() {
     if (gameOver || !nextBlock) return;
     if (!_f12HoldBall) {
+      // SAVE — užrakinam spalvą
       _f12HoldBall = { type: nextBlock.type, value: nextBlock.value };
       nextBlock = nextNextBlock || makeNextBlock();
       nextNextBlock = makeNextBlock();
     } else {
-      const tmp = { type: nextBlock.type, value: nextBlock.value };
+      // USE — panaudojam išsaugotą spalvą, slotas tampa tuščias (vienkartinis)
       nextBlock = { type: _f12HoldBall.type, value: _f12HoldBall.value };
-      _f12HoldBall = tmp;
+      _f12HoldBall = null;
     }
     _f12HoldFlashAt = now();
     try { if (_F12Audio && _F12Audio.colorReveal) _F12Audio.colorReveal(); } catch (_) {}
