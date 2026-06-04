@@ -1613,6 +1613,27 @@
     if (!_f12NftStats[k]) _f12NftStats[k] = { tokenId: k, kills: 0, dmgDealt: 0, dmgTaken: 0, deployed: 0 };
     return _f12NftStats[k];
   }
+  // CHECKPOINT (kas 5s): siunčia NFT mūšio progresą serveriui (server-validated XP), kad
+  // reset/reload neprarastų uždirbto XP. Cheat'as nukerpamas serveryje (delta clamp).
+  let _f12CheckpointTimer = null;
+  function _f12SendCheckpoint() {
+    try {
+      if (!(active && window._f12NftBurnAuth && !_f12BattleSettled)) return;
+      const _auth = window._f12NftBurnAuth;
+      const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      if (!_auth.battleId || !_w || !window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') return;
+      const stats = {}; let any = false;
+      for (const k in _f12NftStats) {
+        const s = _f12NftStats[k]; if (!s) continue;
+        stats[k] = { kills: s.kills || 0, dmgDealt: s.dmgDealt || 0, dmgTaken: s.dmgTaken || 0 };
+        any = true;
+      }
+      if (!any) return;
+      window.SupabaseSync.invoke('checkpoint-battle', {
+        wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), stats: stats,
+      }).catch(function () {});   // fire-and-forget
+    } catch (_) {}
+  }
   // Increment kvietikliai (saugu jei ally ne NFT — tylus no-op)
   function _allyAddDmgDealt(ally, dmg) {
     if (!ally || !ally.trainedSnap || !ally.trainedSnap.nft) return;
@@ -11121,6 +11142,9 @@
         } catch (_) {}
       });
     }
+    // Checkpoint loop — kas 5s saugo progresą serveryje (reload-safe XP).
+    try { if (_f12CheckpointTimer) clearInterval(_f12CheckpointTimer); } catch (_) {}
+    _f12CheckpointTimer = setInterval(_f12SendCheckpoint, 5000);
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('keyup', onKeyUp, true);
     // Tyla — F12 sukurs savo garsus vėliau. Sustabdom BGM ir bandom išsuti master gain.
@@ -11273,6 +11297,8 @@
 
   function deactivate() {
     if (!active) return;
+    // Sustabdom checkpoint loop.
+    try { if (_f12CheckpointTimer) { clearInterval(_f12CheckpointTimer); _f12CheckpointTimer = null; } } catch (_) {}
     // Saugu — jei NFT mode buvo + dar nesettle'inta + neturėjo gameOver → settle dabar
     try {
       if (!_f12BattleSettled && window._f12NftBurnAuth) {
