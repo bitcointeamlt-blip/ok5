@@ -1642,21 +1642,21 @@
     try {
       const _auth = window._f12NftBurnAuth;
       const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
-      if (!_auth || !_auth.battleId || !_w) return;
-      const payload = JSON.stringify({ wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), tokenId: tokenId });
-      let sent = false;
+      if (!_auth || !_auth.battleId || !_w) { console.warn('[F12 death] SKIP — no auth/wallet', { auth: !!_auth, battleId: _auth && _auth.battleId, wallet: !!_w }); return; }
+      const obj = { wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), tokenId: tokenId };
+      const payload = JSON.stringify(obj);
+      // DVIGUBAS siuntimas — abu su text/plain (CORS-safe, jokio preflight, reload-proof):
+      // (1) sendBeacon, (2) keepalive fetch. Bent vienas pristatys net iškart perkraunant.
+      let beacon = false;
+      try { if (navigator.sendBeacon) beacon = navigator.sendBeacon(_REGISTER_DEATH_URL, new Blob([payload], { type: 'text/plain' })); }
+      catch (e) { console.warn('[F12 death] beacon err', e); }
       try {
-        if (navigator.sendBeacon) {
-          // SVARBU: type 'text/plain' — CORS-safelisted → jokio preflight (sendBeacon negali
-          // preflight'inti; su 'application/json' beacon'as blokuojamas). Edge fn req.json()
-          // vis tiek parsina body nepriklausomai nuo Content-Type.
-          sent = navigator.sendBeacon(_REGISTER_DEATH_URL, new Blob([payload], { type: 'text/plain' }));
-        }
-      } catch (_) {}
-      if (!sent && window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
-        window.SupabaseSync.invoke('register-death', JSON.parse(payload)).catch(function () {});
-      }
-    } catch (_) {}
+        fetch(_REGISTER_DEATH_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: payload, keepalive: true })
+          .then(function (r) { console.log('[F12 death] fetch status', r.status); })
+          .catch(function (e) { console.warn('[F12 death] fetch err', e); });
+      } catch (e) { console.warn('[F12 death] fetch threw', e); }
+      console.log('[F12 death] REGISTER #' + tokenId + ' beacon=' + beacon, obj);
+    } catch (e) { console.warn('[F12 death] outer err', e); }
   }
   // Increment kvietikliai (saugu jei ally ne NFT — tylus no-op)
   function _allyAddDmgDealt(ally, dmg) {
