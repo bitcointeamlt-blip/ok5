@@ -1620,7 +1620,9 @@
     try {
       if (!(active && window._f12NftBurnAuth && !_f12BattleSettled)) return;
       const _auth = window._f12NftBurnAuth;
-      const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      // Wallet'as iš burn-auth parašo (VISADA yra) — NEpriklausom nuo gyvo Wallet ryšio,
+      // kuris gali atsijungti mirties/reload momentu ir sustabdyti commit'ą.
+      const _w = (_auth && _auth.owner) || (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
       if (!_auth.battleId || !_w || !window.SupabaseSync || typeof window.SupabaseSync.invoke !== 'function') return;
       const stats = {}; let any = false;
       for (const k in _f12NftStats) {
@@ -1649,7 +1651,7 @@
   function _commitDeathKeepalive(tokenId) {
     try {
       const _auth = window._f12NftBurnAuth;
-      const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      const _w = (_auth && _auth.owner) || (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
       if (!_auth || !_auth.battleId || !_w) return;
       const body = JSON.stringify({
         wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId),
@@ -1684,7 +1686,7 @@
   function _registerDeathReliable(tokenId) {
     try {
       const _auth = window._f12NftBurnAuth;
-      const _w = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      const _w = (_auth && _auth.owner) || (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
       if (!_auth || !_auth.battleId || !_w) { console.warn('[F12 death] SKIP — no auth/wallet', { auth: !!_auth, battleId: _auth && _auth.battleId, wallet: !!_w }); return; }
       const obj = { wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), tokenId: tokenId };
       const payload = JSON.stringify(obj);
