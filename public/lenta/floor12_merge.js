@@ -2104,6 +2104,29 @@
     }
   }
 
+  // RESTART — resetina TIK lentą (balls/enemies/score), o NFT battle sesiją PALIEKAM:
+  //  • deck + NFT/free pool → NEREIKIA vėl merge'inti hog (NFT pool sunaudojamas per initState)
+  //  • stats + dead + settled flag → XP NEDINGSTA (settlinasi per tikrą game over)
+  // (Sprendžia 2 senus restart bug'us: re-merge ir XP loss.)
+  // initState reassign'ina šiuos kintamuosius į naujus objektus — užfiksuojam SENAS nuorodas ir atstatom.
+  function _f12RestartGame() {
+    // Jei battle JAU settlinta (game-over restart) — NFT sesija baigta (auth consumed),
+    // pradedam ŠVARIĄ (pilnas reset). Kitaip mid-game restart → sesija TĘSIASI.
+    if (_f12BattleSettled) { initState(); return; }
+    const _keep = {
+      deck: _f12CardDeck, nftPool: _f12SessionNftPool, freePool: _f12SessionFreePool,
+      deploy: deployPool, nftStats: _f12NftStats, deadNft: _f12DeadNftTokenIds,
+    };
+    initState();
+    _f12CardDeck = _keep.deck;
+    _f12SessionNftPool = _keep.nftPool;
+    _f12SessionFreePool = _keep.freePool;
+    deployPool = _keep.deploy;
+    _f12NftStats = _keep.nftStats;
+    _f12DeadNftTokenIds = _keep.deadNft;
+    _f12BattleSettled = false;   // mid-game restart — sesija tęsiasi, settlinsis per tikrą game over
+  }
+
   // ── Layout ─────────────────────────────────────────────────────────
   function computeLayout() {
     const W = canvas.width, H = canvas.height;
@@ -3038,6 +3061,7 @@
       miss: miss,                              // nepataikė → „MISS" pilkas
       block: block,                            // skull užblokavo → „BLOCK" žydras
     });
+    if (_f12DmgPopups.length > 60) _f12DmgPopups.splice(0, _f12DmgPopups.length - 60);  // cap (heavy combat)
   }
 
   // Priešo smūgis sąjungininkui — bendras (immediate arba deferred per hitDelay).
@@ -6551,6 +6575,8 @@
         landed: false, groundLife: 850 + Math.random() * 750,
       });
     }
+    // Cap — mass deaths (AOE) gali sukurti 300+ partiklelių; ribojam, kad mobile nelaggintų
+    if (_f12Blood.length > 240) _f12Blood.splice(0, _f12Blood.length - 240);
   }
   function _drawBlood(t) {
     if (!_f12Blood.length) return;
@@ -10765,7 +10791,7 @@
     }
     // Edit mode — R neturi restart'inti (kad netrukdytų), tik ne-edit
     if ((k === 'r' || k === 'R') && _f12EditMode) { e.preventDefault(); return; }
-    if (k === 'r' || k === 'R') { initState(); e.preventDefault(); return; }
+    if (k === 'r' || k === 'R') { _f12RestartGame(); e.preventDefault(); return; }
     if (k === ' ' && !e.repeat) {
       // Spacebar pirma keydown — pradeda charge
       if (!charging) { charging = true; chargeStartedAt = now(); }
@@ -10856,7 +10882,7 @@
     }
     if (restartBtnRect && p.x >= restartBtnRect.x && p.x <= restartBtnRect.x + restartBtnRect.w
         && p.y >= restartBtnRect.y && p.y <= restartBtnRect.y + restartBtnRect.h) {
-      initState(); return;
+      _f12RestartGame(); return;
     }
     // ── KORTŲ KLIKAS — reikalauja: (1) atrakinta korta, (2) ištreniruotas unit HOME, (3) CD pasibaigęs ──
     // Korta yra PERMANENTTIŠKA po pirmo merge — nereikia turėti „merge tokens"
@@ -11067,6 +11093,21 @@
     canvas.style.display = 'block';
     active = true;
     lastTime = now();
+    // ANTI-ACCIDENTAL-RELOAD: įspėjam prieš page reload/uždarymą kai vyksta NESETTLE'INTAS
+    // NFT mūšis (kad atsitiktinai neperkrautų → neprarastų runo + neliktų orphaned sesijos).
+    // Mechanikos NEkeičia (abandon vis tiek = no XP / no escape) → JOKIO exploit'o.
+    if (!window.__f12UnloadGuard) {
+      window.__f12UnloadGuard = true;
+      window.addEventListener('beforeunload', function (e) {
+        try {
+          if (active && window._f12NftBurnAuth && !_f12BattleSettled) {
+            e.preventDefault();
+            e.returnValue = '';   // trigerina naršyklės „Leave site?" patvirtinimą
+            return '';
+          }
+        } catch (_) {}
+      });
+    }
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('keyup', onKeyUp, true);
     // Tyla — F12 sukurs savo garsus vėliau. Sustabdom BGM ir bandom išsuti master gain.
