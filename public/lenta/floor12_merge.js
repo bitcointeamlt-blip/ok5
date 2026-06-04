@@ -1638,6 +1638,7 @@
   // žaidėjas iškart perkrauna/uždaro puslapį (paprastas fetch tuo atveju NUTRAUKIAMAS →
   // mirtis nepasiekdavo serverio = exploit). Fallback į invoke jei sendBeacon nepalaikomas.
   const _REGISTER_DEATH_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/register-death';
+  const _SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';   // anon/publishable — sendBeacon negali siųst header'ių, tad apikey eina per query param
   function _registerDeathReliable(tokenId) {
     try {
       const _auth = window._f12NftBurnAuth;
@@ -1645,16 +1646,24 @@
       if (!_auth || !_auth.battleId || !_w) { console.warn('[F12 death] SKIP — no auth/wallet', { auth: !!_auth, battleId: _auth && _auth.battleId, wallet: !!_w }); return; }
       const obj = { wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), tokenId: tokenId };
       const payload = JSON.stringify(obj);
-      // DVIGUBAS siuntimas — abu su text/plain (CORS-safe, jokio preflight, reload-proof):
-      // (1) sendBeacon, (2) keepalive fetch. Bent vienas pristatys net iškart perkraunant.
+      // PIRMINIS kelias — SupabaseSync.invoke (TAS PATS transportas kaip checkpoint, kuris
+      // patikimai rašo kas 5s su apikey+Authorization header'iais). Mirtis kyla AKTYVAUS
+      // žaidimo metu (mirties animacija, restart mygtukas — sekundės vėliau), tad normalus
+      // fetch spėja pilnai įvykdyti PRIEŠ bet kokį restartą/reload. Tai dengia ~99% atvejų.
+      if (window.SupabaseSync && typeof window.SupabaseSync.invoke === 'function') {
+        window.SupabaseSync.invoke('register-death', obj)
+          .then(function (r) { console.log('[F12 death] invoke ok #' + tokenId, r && (r.data || r)); })
+          .catch(function (e) { console.warn('[F12 death] invoke err', e); });
+      }
+      // BACKUP — sendBeacon (su apikey query param, nes negali nustatyti header'ių). Dengia
+      // kraštinį atvejį: žaidėjas perkrauna naršyklės tab'ą TIKSLIAI mirties momentu, kol
+      // invoke fetch dar nespėjo. text/plain = CORS-safe (jokio preflight).
       let beacon = false;
-      try { if (navigator.sendBeacon) beacon = navigator.sendBeacon(_REGISTER_DEATH_URL, new Blob([payload], { type: 'text/plain' })); }
-      catch (e) { console.warn('[F12 death] beacon err', e); }
       try {
-        fetch(_REGISTER_DEATH_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: payload, keepalive: true })
-          .then(function (r) { console.log('[F12 death] fetch status', r.status); })
-          .catch(function (e) { console.warn('[F12 death] fetch err', e); });
-      } catch (e) { console.warn('[F12 death] fetch threw', e); }
+        if (navigator.sendBeacon) {
+          beacon = navigator.sendBeacon(_REGISTER_DEATH_URL + '?apikey=' + _SB_KEY, new Blob([payload], { type: 'text/plain' }));
+        }
+      } catch (e) { console.warn('[F12 death] beacon err', e); }
       console.log('[F12 death] REGISTER #' + tokenId + ' beacon=' + beacon, obj);
     } catch (e) { console.warn('[F12 death] outer err', e); }
   }
