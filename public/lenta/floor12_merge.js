@@ -1558,6 +1558,7 @@
   let _f12ZipBolts = [];           // {laneIdx, sx, sy, ex, ey, born, life, seed}
   let deployPool = {};
   let selectedDeployType = null;
+  let selectedDeployTokenId = null;   // picker'io pasirinktas KONKRETUS NFT (jei null — pirmas tinkamas)
   // Unit deploy cooldown — kiekvienam tipui paskutinio deploy laikas
   let _f12UnitDeployCD = {};                       // {utype: timestamp_of_last_deploy}
   const _UNIT_LIFETIME_MS = 30000;                 // 30s lane'oj — tada recall į pool
@@ -1753,6 +1754,138 @@
       setTimeout(function () { t.style.opacity = '0'; setTimeout(function () { try { host.removeChild(t); } catch (_) {} }, 300); }, 3500);
     } catch (_) {}
   }
+
+  // ── NFT UNIT PICKER (HTML overlay) ─────────────────────────────────────────────────
+  // Paspaudus tipo kortą su keliais NFT — išskleidžia langelį, kur matai KIEKVIENO NFT status
+  // (Lv / HP / dmg pagal level skalę) ir pasirenki KONKRETŲ deploy'ui. Sprendžia „nežinau ką dedu".
+  function _closeUnitPicker() {
+    try { if (_pickerAnimId) { cancelAnimationFrame(_pickerAnimId); _pickerAnimId = 0; } } catch (_) {}
+    try { ['f12-unit-picker', 'f12-unit-picker-bg'].forEach(function (id) { const el = document.getElementById(id); if (el) el.remove(); }); } catch (_) {}
+  }
+  function _ensurePickerStyle() {
+    if (document.getElementById('f12-picker-style')) return;
+    const st = document.createElement('style');
+    st.id = 'f12-picker-style';
+    st.textContent = [
+      '@keyframes f12pkIn{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}',
+      '@keyframes f12pkPick{0%{transform:scale(1)}45%{transform:scale(1.09)}100%{transform:scale(1)}}',
+      '#f12-unit-picker-bg{position:fixed;inset:0;z-index:99997;background:rgba(8,4,2,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);}',
+      '#f12-unit-picker{position:fixed;left:0;right:0;bottom:118px;z-index:99998;display:flex;flex-direction:column;align-items:center;gap:9px;pointer-events:none;font-family:inherit;animation:f12pkIn .18s ease-out;}',
+      '.f12pk-title{pointer-events:none;color:#ffe6a8;font-weight:800;font-size:15px;letter-spacing:2px;text-shadow:0 2px 4px #000;}',
+      '.f12pk-portrait{image-rendering:pixelated;image-rendering:crisp-edges;width:172px;height:156px;pointer-events:none;filter:drop-shadow(0 6px 8px rgba(0,0,0,.65));margin-bottom:-8px;}',
+      '.f12pk-panel{pointer-events:auto;display:flex;gap:11px;max-width:94vw;overflow-x:auto;padding:13px;border-radius:16px;background:linear-gradient(180deg,#6b4a2e,#3d2b18);border:3px solid #1f130a;box-shadow:0 0 0 3px #a87a44,0 14px 38px rgba(0,0,0,.65);}',
+      '.f12pk-card{flex:0 0 auto;width:126px;cursor:pointer;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#f7ead0,#e2c997);border:2px solid #2a1a0c;color:#3a2410;transition:transform .12s,box-shadow .12s;box-shadow:0 3px 8px rgba(0,0,0,.4);padding-bottom:9px;}',
+      '.f12pk-card:hover{transform:translateY(-6px);box-shadow:0 10px 22px rgba(0,0,0,.5),0 0 18px rgba(255,207,92,.6);}',
+      '.f12pk-card.picked{animation:f12pkPick .25s ease-out;}',
+      '.f12pk-lvbar{background:linear-gradient(180deg,#ffd862,#e0a32e);color:#3a2410;text-align:center;font-weight:800;font-size:16px;letter-spacing:.5px;padding:6px 0;border-bottom:2px solid #2a1a0c;text-shadow:0 1px 0 rgba(255,255,255,.45);}',
+      '.f12pk-card.dmg .f12pk-lvbar{background:linear-gradient(180deg,#f08a6a,#d2543b);}',
+      '.f12pk-id{text-align:center;font-size:9px;opacity:.6;letter-spacing:.5px;margin:5px 0 7px;text-transform:uppercase;}',
+      '.f12pk-body{padding:0 10px;}',
+      '.f12pk-row{display:flex;align-items:center;gap:6px;font-size:13px;margin:6px 0;}',
+      '.f12pk-ic{width:15px;text-align:center;}',
+      '.f12pk-bar{flex:1;height:9px;border-radius:5px;background:rgba(0,0,0,.16);overflow:hidden;border:1px solid rgba(0,0,0,.35);}',
+      '.f12pk-bf{height:100%;border-radius:4px;}',
+      '.f12pk-val{font-size:11px;font-weight:700;min-width:36px;text-align:right;}',
+      '.f12pk-xpwrap{margin:9px 10px 0;padding-top:8px;border-top:1px solid rgba(58,36,16,.25);}',
+      '.f12pk-xplabel{display:flex;justify-content:space-between;font-size:8px;opacity:.7;margin-bottom:3px;font-weight:700;}',
+      '.f12pk-xpbar{height:6px;border-radius:4px;background:rgba(0,0,0,.2);overflow:hidden;border:1px solid rgba(0,0,0,.3);}',
+      '.f12pk-xpfill{height:100%;background:linear-gradient(90deg,#3a8d96,#5fd0b8);}',
+      '.f12pk-hint{pointer-events:none;font-size:10px;color:#e8d4a8;opacity:.85;text-shadow:0 1px 2px #000;}',
+      // ── MOBILE / žemas ekranas (landscape telefonas) — sumažinam, kad tilptų ir nebūtų cut-off ──
+      '@media (max-height:560px){'
+      + '#f12-unit-picker{bottom:54px;gap:3px;}'
+      + '.f12pk-portrait{width:104px;height:94px;margin-bottom:-4px;}'
+      + '.f12pk-title{font-size:11px;letter-spacing:1px;}'
+      + '.f12pk-panel{padding:8px;gap:7px;border-radius:12px;}'
+      + '.f12pk-card{width:104px;padding-bottom:7px;}'
+      + '.f12pk-lvbar{font-size:13px;padding:4px 0;}'
+      + '.f12pk-id{margin:3px 0 5px;}'
+      + '.f12pk-row{margin:4px 0;font-size:12px;}'
+      + '.f12pk-xpwrap{margin-top:6px;padding-top:5px;}'
+      + '.f12pk-hint{font-size:9px;}'
+      + '}',
+      // ── Siauras ekranas — kortelės kiek siauresnės, kad daugiau tilptų be scroll ──
+      '@media (max-width:480px){.f12pk-card{width:96px;}.f12pk-panel{gap:6px;padding:8px;}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  function _showUnitPicker(utype, ballType) {
+    try {
+      const units = _f12SessionNftPool.filter(function (n) { return n && n.utype === utype; });
+      if (!units.length) return false;
+      const base = ALLY_STATS[utype] || ALLY_STATS.skull;
+      _ensurePickerStyle();
+      _closeUnitPicker();
+      units.sort(function (a, b) { return (b.level | 0) - (a.level | 0); });   // stipriausi pirmi
+      // ATK juostos skalei — didžiausias dmg tarp rodomų
+      const maxDmgShown = Math.max.apply(null, units.map(function (u) { return Math.round(base.dmg * _nftStatMul(u.level)); }));
+      const backdrop = document.createElement('div');
+      backdrop.id = 'f12-unit-picker-bg';
+      backdrop.onclick = function () { _closeUnitPicker(); };
+      const host = document.createElement('div');
+      host.id = 'f12-unit-picker';
+      const title = document.createElement('div');
+      title.className = 'f12pk-title';
+      title.textContent = '⚔ CHOOSE YOUR ' + String(utype).toUpperCase();
+      const panel = document.createElement('div');
+      panel.className = 'f12pk-panel';
+      units.forEach(function (u) {
+        const lvl = u.level | 0;
+        const mul = _nftStatMul(lvl);
+        const maxHp = u.maxHp != null ? u.maxHp : Math.round(base.hp * mul);
+        const curHp = u.hp != null ? u.hp : maxHp;
+        const dmg = Math.max(1, Math.round(base.dmg * mul));
+        const damaged = curHp < maxHp;
+        const hpPct = maxHp > 0 ? Math.max(4, (curHp / maxHp) * 100) : 0;
+        const atkPct = maxDmgShown > 0 ? Math.max(8, (dmg / maxDmgShown) * 100) : 100;
+        // XP iki kito lygio (formulė kaip barracks: lvl²×100)
+        const curT = lvl * lvl * 100, nextT = (lvl + 1) * (lvl + 1) * 100, xp = u.xp | 0;
+        const xpPct = Math.max(0, Math.min(100, ((xp - curT) / (nextT - curT)) * 100));
+        const xpToNext = Math.max(0, nextT - xp);
+        const card = document.createElement('div');
+        card.className = 'f12pk-card' + (damaged ? ' dmg' : '');
+        card.innerHTML =
+          '<div class="f12pk-lvbar">Lv ' + lvl + '</div>'
+          + '<div class="f12pk-id">#' + u.tokenId + ' · ' + String(utype) + '</div>'
+          + '<div class="f12pk-body">'
+          + '<div class="f12pk-row"><span class="f12pk-ic">❤</span><div class="f12pk-bar"><div class="f12pk-bf" style="width:' + hpPct + '%;background:' + (damaged ? 'linear-gradient(90deg,#e85d5d,#ff9a8a)' : 'linear-gradient(90deg,#3fa84f,#7cd97a)') + '"></div></div><span class="f12pk-val">' + curHp + '/' + maxHp + '</span></div>'
+          + '<div class="f12pk-row"><span class="f12pk-ic">⚔</span><div class="f12pk-bar"><div class="f12pk-bf" style="width:' + atkPct + '%;background:linear-gradient(90deg,#c8602e,#ff9a6e)"></div></div><span class="f12pk-val">' + dmg + '</span></div>'
+          + '</div>'
+          + '<div class="f12pk-xpwrap"><div class="f12pk-xplabel"><span>XP</span><span>' + (xpToNext > 0 ? xpToNext.toLocaleString() + ' → Lv ' + (lvl + 1) : 'MAX') + '</span></div><div class="f12pk-xpbar"><div class="f12pk-xpfill" style="width:' + xpPct + '%"></div></div></div>';
+        card.onclick = function (ev) {
+          ev.stopPropagation();
+          card.classList.add('picked');
+          selectedDeployType = utype;
+          selectedDeployTokenId = u.tokenId;
+          setTimeout(_closeUnitPicker, 160);   // trumpa pick animacija
+        };
+        panel.appendChild(card);
+      });
+      const hint = document.createElement('div');
+      hint.className = 'f12pk-hint';
+      hint.textContent = 'Tap a unit, then tap a lane to deploy';
+      // VIENAS didelis idle preview VIRŠ kortų (ne kortelėse) — visos kortos = tas pats tipas.
+      const portrait = document.createElement('canvas');
+      portrait.width = 172; portrait.height = 156;
+      portrait.className = 'f12pk-portrait';
+      const pctx = portrait.getContext('2d');
+      host.appendChild(portrait);
+      host.appendChild(title);
+      host.appendChild(panel);
+      host.appendChild(hint);
+      document.body.appendChild(backdrop);
+      document.body.appendChild(host);
+      // Idle animacijos loop (kol picker atidarytas)
+      try { if (_pickerAnimId) cancelAnimationFrame(_pickerAnimId); } catch (_) {}
+      (function _loop() {
+        if (!document.getElementById('f12-unit-picker')) { _pickerAnimId = 0; return; }
+        try { pctx.clearRect(0, 0, portrait.width, portrait.height); _drawPickerUnit(pctx, utype, portrait.width, portrait.height, performance.now()); } catch (_) {}
+        _pickerAnimId = requestAnimationFrame(_loop);
+      })();
+      return true;
+    } catch (e) { console.warn('[F12 picker] err', e); return false; }
+  }
+
   function _registerDeathReliable(tokenId) {
     try {
       const _auth = window._f12NftBurnAuth;
@@ -1835,27 +1968,36 @@
   // Deploy metu — paimam 1 unit (su jo HP) ir grąžinam snap.
   // GRIEŽTAS ATSKYRIMAS: NFT mūšis → TIK NFT pool; Free mūšis → TIK free pool + F10 home-trained.
   // Jokio maišymo nei viename kelyje.
-  function _takeTrainedUnit(utype) {
+  function _takeTrainedUnit(utype, preferredTokenId) {
     // ── NFT MŪŠIS — tik pasirinkti NFT (su tokenId, burn flow). Išsekus → null (nebegali deploy). ──
     if (_f12IsNftBattle) {
-      for (let i = 0; i < _f12SessionNftPool.length; i++) {
-        const nft = _f12SessionNftPool[i];
-        if (nft && nft.utype === utype) {
-          _f12SessionNftPool.splice(i, 1);
-          return {
-            id: null,
-            utype: nft.utype,
-            hp: nft.hp != null ? nft.hp : null,
-            maxHp: nft.maxHp != null ? nft.maxHp : null,
-            nft: true,
-            tokenId: nft.tokenId,
-            xp: nft.xp,
-            level: nft.level,
-            contractUtype: nft.contractUtype,
-          };
+      // Picker'is gali nurodyti KONKRETŲ tokenId; kitaip imam pirmą tinkamą.
+      let idx = -1;
+      if (preferredTokenId != null) {
+        for (let i = 0; i < _f12SessionNftPool.length; i++) {
+          const nft = _f12SessionNftPool[i];
+          if (nft && nft.utype === utype && String(nft.tokenId) === String(preferredTokenId)) { idx = i; break; }
         }
       }
-      return null;
+      if (idx < 0) {
+        for (let i = 0; i < _f12SessionNftPool.length; i++) {
+          const nft = _f12SessionNftPool[i];
+          if (nft && nft.utype === utype) { idx = i; break; }
+        }
+      }
+      if (idx < 0) return null;
+      const nft = _f12SessionNftPool.splice(idx, 1)[0];
+      return {
+        id: null,
+        utype: nft.utype,
+        hp: nft.hp != null ? nft.hp : null,
+        maxHp: nft.maxHp != null ? nft.maxHp : null,
+        nft: true,
+        tokenId: nft.tokenId,
+        xp: nft.xp,
+        level: nft.level,
+        contractUtype: nft.contractUtype,
+      };
     }
     // ── FREE MŪŠIS — session free pool (pre-deck), tada F10 home-trained. Jokių NFT. ──
     if ((_f12SessionFreePool[utype] | 0) > 0) {
@@ -1995,6 +2137,47 @@
       ctx.fillText(meta.badge, dx + dw / 2, dy + dh - 8);
     }
   }
+  // Picker'iui — renderina unito idle animaciją į NURODYTĄ canvas context (ne game ctx).
+  // Centruoja sprite'ą (w×h). Palaiko sheet-based (archer/skull/harpoon), shaman (frame-per-file), hog.
+  function _drawPickerUnit(C, utype, w, h, t) {
+    try {
+      C.imageSmoothingEnabled = false;
+      // Scale boost — sprite'ai šiek tiek didesni. hog_rider frame didelis su ietimi krašte →
+      // boost 1.0 (pilnai telpa, kad ieties galiukas neišeitų už kadro); dydis gaunamas iš didesnio lauko.
+      const boost = (utype === 'hog_rider') ? 1.0 : 1.25;
+      if (utype === 'shaman') {
+        let frames = null; try { frames = shamanAnimFrames; } catch (_) {}
+        const df = frames && frames.idle && frames.idle.east;
+        if (df && df.length) {
+          const img = df[Math.floor(t / (1000 / 6)) % df.length];
+          if (img && img.complete && img.naturalWidth) {
+            const sc = Math.min(w / img.naturalWidth, h / img.naturalHeight) * boost;
+            const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
+            C.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+          }
+        }
+        return;
+      }
+      if (utype === 'hog_rider') {
+        const sheets = _initHogRiderSheets(); const st = sheets && sheets.idle;
+        if (st && st.sheet && st.sheet.complete && st.sheet.naturalWidth) {
+          const fc = st.frameCount, fw = Math.floor(st.sheet.naturalWidth / fc), fh = st.sheet.naturalHeight;
+          const idx = Math.floor(t / (1000 / _HOG_FPS.idle)) % fc;
+          const sc = Math.min(w / fw, h / fh) * boost;
+          const dw = fw * sc + 5, dh = fh * sc + 5;   // +5px didesnis
+          C.drawImage(st.sheet, idx * fw, 0, fw, fh, (w - dw) / 2, (h - dh) / 2 + 15, dw, dh);   // +15px žemyn
+        }
+        return;
+      }
+      const meta = _UNIT_ICON_META[utype]; if (!meta) return;
+      const img = _UNIT_ICON_IMGS[meta.img]; if (!img || !img.complete || !img.naturalWidth) return;
+      let sx = 0; const sw = meta.fw, sh = meta.fh;
+      if (meta.animated) sx = (Math.floor(t / (1000 / meta.fps)) % meta.frames) * meta.fw;
+      const sc = Math.min(w / sw, h / sh) * boost; const dw = sw * sc, dh = sh * sc;
+      C.drawImage(img, sx, 0, sw, sh, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    } catch (_) {}
+  }
+  let _pickerAnimId = 0;
   let deployBtnRects = [];
 
   // Physics
@@ -2181,8 +2364,14 @@
       if (Array.isArray(nftPool) && nftPool.length > 0) {
         _f12IsNftBattle = true;   // NFT mūšis — jokio F10 home-trained maišymo
         const t0 = now();
-        for (const nft of nftPool) {
+        // 4× MAX per tipą: jei atsineši daugiau, į mūšį patenka 4 AUKŠČIAUSIO lygio (stipriausi).
+        const _NFT_MAX_PER_TYPE = 4;
+        const _typeCount = {};
+        const _sortedPool = nftPool.slice().sort(function (a, b) { return ((b && b.level) | 0) - ((a && a.level) | 0); });
+        for (const nft of _sortedPool) {
           if (!nft || !nft.utype) continue;
+          if ((_typeCount[nft.utype] || 0) >= _NFT_MAX_PER_TYPE) continue;   // virš 4 to tipo — praleidžiam
+          _typeCount[nft.utype] = (_typeCount[nft.utype] || 0) + 1;
           _f12SessionNftPool.push({
             tokenId: nft.tokenId,
             utype: nft.utype,
@@ -3114,8 +3303,16 @@
     ctx.fillText('PASIRINK LANE (ESC NUTRAUKIA)', L.W / 2, L.H - 110);
   }
 
+  // NFT lygio → statų multiplikatorius. +5% už lygį (level 20 ≈ 2×, level 51 ≈ 3.55×).
+  // Lengva derinti per _NFT_LEVEL_STAT_PCT. Naudojama HP ir dmg skalei spawnAlly metu.
+  const _NFT_LEVEL_STAT_PCT = 0.05;
+  function _nftStatMul(level) {
+    const lv = Math.max(0, level | 0);
+    return 1 + lv * _NFT_LEVEL_STAT_PCT;
+  }
+
   // ── Enemies ────────────────────────────────────────────────────────
-  function spawnAlly(utype, laneIdx, t) {
+  function spawnAlly(utype, laneIdx, t, preferredTokenId) {
     const s = ALLY_STATS[utype] || ALLY_STATS.skull;
     // Static (towers) pradeda kairėj base zonoj, nejuda
     const startX = s.static ? 0.05 : 0.0;
@@ -3127,13 +3324,17 @@
     const storedBonus = (_ballTypeForBonus && _f12CardBonusMs[_ballTypeForBonus]) || 0;
     // Paimam trained unit'ą iš HOME — gauname jo IŠLIKUSI HP (žala persistuoja per redeploy)
     // Free pool unitai (iš pre-deck modal) grąžina hp:null — naudojam default ALLY_STATS HP.
-    const trainedSnap = _takeTrainedUnit(utype);
-    const useHp    = (trainedSnap && trainedSnap.hp    != null) ? trainedSnap.hp    : s.hp;
-    const useMaxHp = (trainedSnap && trainedSnap.maxHp != null) ? trainedSnap.maxHp : s.hp;
+    const trainedSnap = _takeTrainedUnit(utype, preferredTokenId);
+    // NFT level→stat skalė: aukštesnio lygio NFT stipresnis (HP + dmg). Free unitai → mul=1.
+    const _lvMul = (trainedSnap && trainedSnap.nft && trainedSnap.level) ? _nftStatMul(trainedSnap.level) : 1;
+    const _scaledMaxHp = Math.max(1, Math.round(s.hp * _lvMul));
+    const useMaxHp = (trainedSnap && trainedSnap.maxHp != null) ? trainedSnap.maxHp : _scaledMaxHp;
+    const useHp    = (trainedSnap && trainedSnap.hp    != null) ? trainedSnap.hp    : useMaxHp;
+    const useDmg   = Math.max(1, Math.round(s.dmg * _lvMul));
     const newAlly = {
       utype, x: startX, _prevX: startX,
       static: !!s.static,
-      hp: useHp, maxHp: useMaxHp, dmg: s.dmg, speed: s.speed,
+      hp: useHp, maxHp: useMaxHp, dmg: useDmg, speed: s.speed,
       attackCooldown: s.attackCooldown,
       range: s.range || 0.04,
       lastAttackAt: 0, hitFlashUntil: 0,
@@ -11087,8 +11288,20 @@
         const cdRemain = _f12UnitDeployCD[_utype]
           ? Math.max(0, _UNIT_DEPLOY_CD_MS - (now() - _f12UnitDeployCD[_utype])) : 0;
         if (cdRemain <= 0) {
+          // NFT mūšis su KELIAIS to tipo NFT → picker (pasirink konkretų pagal status).
+          if (_f12IsNftBattle) {
+            const _units = _f12SessionNftPool.filter(function (n) { return n && n.utype === _utype; });
+            if (_units.length > 1 && selectedDeployType !== _utype) {
+              _showUnitPicker(_utype, r.type);
+              return;
+            }
+            // vienas NFT (arba jau pasirinktas → toggle off): tiesiogiai
+            selectedDeployTokenId = (selectedDeployType === _utype) ? null : (_units.length ? _units[0].tokenId : null);
+          } else {
+            selectedDeployTokenId = null;
+          }
           selectedDeployType = (selectedDeployType === _utype) ? null : _utype;
-        } else if (selectedDeployType === _utype) selectedDeployType = null;
+        } else if (selectedDeployType === _utype) { selectedDeployType = null; selectedDeployTokenId = null; }
         return;
       }
     }
@@ -11123,15 +11336,17 @@
         const trainedCnt2 = _getTrainedCount(selectedDeployType);
         const canDeploy = isUnlocked && trainedCnt2 > 0;
         if (laneIdx >= 0 && laneIdx < LANES && canDeploy) {
-          spawnAlly(selectedDeployType, laneIdx, now());
+          spawnAlly(selectedDeployType, laneIdx, now(), selectedDeployTokenId);   // picker'io NFT (jei yra)
           // NEdekrementuojam kortų count — kortos permanenttiškos, count tik bonus track'inimui
           // CD startuos kai unit'as bus recall'intas / miršta (sequential)
           selectedDeployType = null;       // deselect po deploy (žaidėjas mato unit lane'oj, CD prasidės)
+          selectedDeployTokenId = null;
         }
         // lane'e bet negali deploy → tiesiog deselect (žemiau), bet tap'o nešaudom
       }
       // bet koks tap'as su pasirinkta korta (lane ar ne) → deselect + suvartok (jokio šūvio)
       selectedDeployType = null;
+      selectedDeployTokenId = null;
       return;
     }
     updateLauncherAim();
