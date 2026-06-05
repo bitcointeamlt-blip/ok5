@@ -275,13 +275,17 @@
   //    → švelni RPC apkrova (jokio rate-limit'o / crash'o net su 500+ unitų).
   //  • render'is throttle'inamas (≥500ms) → main thread neblokuojamas.
   //  • per-unit / per-chunk klaidos PRALEIDŽIAMOS (skip) → niekada nemeta → kas užsikrovė lieka.
-  const _INV_FAST = 24, _INV_FAST_CHUNK = 24, _INV_SLOW_CHUNK = 40, _INV_SLOW_DELAY = 150;
-  const _INV_MAX = 35;   // picker rodo MAX 35 aukščiausio stato unitus (mažiau render/atminties; daugiau nereikia)
+  const _INV_FAST = 24, _INV_FAST_CHUNK = 24, _INV_SLOW_CHUNK = 24, _INV_SLOW_DELAY = 150;
+  const _INV_MAX = 35;     // picker rodo MAX 35 aukščiausio stato unitus (mažiau render/atminties; daugiau nereikia)
+  const _INV_LOAD = 96;    // KIEK token'ų iš viso skaitom (whale-safe: net 500+ wallet'as skaito tik 96, ne visus)
+                           // getUnitFullData struktūra didelė — 40+ per multicall viršija RPC response → tylus skip.
   async function fetchInventory(addr, onProgress) {
     const balance = await read('balanceOf', [addr]);
     const n = Number(balance);
     if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
-    const idxs = Array.from({ length: n }, (_, i) => i);
+    // Load cap: dideliems wallet'ams skaitom tik pirmus _INV_LOAD token'us (ne visus n) — kitaip RPC krenta.
+    const loadN = Math.min(n, _INV_LOAD);
+    const idxs = Array.from({ length: loadN }, (_, i) => i);
     const acc = [];
     let _lastEmit = 0;
     function emit(force) {
