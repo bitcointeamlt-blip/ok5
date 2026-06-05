@@ -10688,66 +10688,43 @@
     ctx.font = '9px "Press Start 2P", monospace';
     ctx.fillText('MERGES ' + merges + '   BLOCKS ' + blocks.length, L.W - 16, 50);
 
-    const bw = 92, bh = 26;
-    const bx = L.W - bw - 16, by = L.H - bh - 32;
-    ctx.fillStyle = '#3a1212';
-    ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = '#ff7a7a';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = '#ffd6d6';
-    ctx.font = '9px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('EXIT (ESC)', bx + bw / 2, by + bh / 2);
-    ctx.textBaseline = 'alphabetic';
-    exitBtnRect = { x: bx, y: by, w: bw, h: bh };
+    // ── RESTART + EXIT mygtukai NUIMTI (user). Lieka tik ×2. (ESC=exit, R=restart klavišos veikia.) ──
+    exitBtnRect = null;
+    restartBtnRect = null;
 
-    const rbx = bx - bw - 12;
-    ctx.fillStyle = '#1a3a14';
-    ctx.fillRect(rbx, by, bw, bh);
-    ctx.strokeStyle = '#7aff8a';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(rbx + 0.5, by + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = '#d6ffe0';
-    ctx.font = '9px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('RESTART (R)', rbx + bw / 2, by + bh / 2);
-    ctx.textBaseline = 'alphabetic';
-    restartBtnRect = { x: rbx, y: by, w: bw, h: bh };
-
-    // ── SPEED ×1/×2 mygtukas — pagreitina visą mūšį (mob'ai+cooldown'ai). Optional QoL. ──
+    // ── SPEED ×1/×2 mygtukas — DIDELIS, vienintelis. Pagreitina visą mūšį. ──
     const x2 = (_f12TimeScale >= 2);
-    const sbx = rbx - bw - 12;
+    const sbw = 152, sbh = 50;
+    const sbx = L.W - sbw - 18, sby = L.H - sbh - 28;
     ctx.fillStyle = x2 ? '#4a3a0a' : '#23201a';
-    ctx.fillRect(sbx, by, bw, bh);
+    ctx.fillRect(sbx, sby, sbw, sbh);
     ctx.strokeStyle = x2 ? '#ffcf5c' : '#a89060';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sbx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(sbx + 1.5, sby + 1.5, sbw - 3, sbh - 3);
     ctx.fillStyle = x2 ? '#ffe6a8' : '#d8cbb0';
-    ctx.font = '9px "Press Start 2P", monospace';
+    ctx.font = '18px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(x2 ? '⏩ 2x' : '⏩ 1x', sbx + bw / 2, by + bh / 2);
+    ctx.fillText(x2 ? '⏩ 2x' : '⏩ 1x', sbx + sbw / 2, sby + sbh / 2);
     ctx.textBaseline = 'alphabetic';
-    speedBtnRect = { x: sbx, y: by, w: bw, h: bh };
+    speedBtnRect = { x: sbx, y: sby, w: sbw, h: sbh };
 
     // ── EDIT MAP mygtukas — TIK lokalei (production'e paslepta) ──
     if (_isLocalhost) {
-      const ebx = sbx - bw - 12;
+      const ebw = 92, ebh = 26;
+      const ebx = sbx - ebw - 12, eby = sby + (sbh - ebh) / 2;
       ctx.fillStyle = _f12EditMode ? '#0a4a36' : '#0a3022';
-      ctx.fillRect(ebx, by, bw, bh);
+      ctx.fillRect(ebx, eby, ebw, ebh);
       ctx.strokeStyle = _f12EditMode ? '#00ffb4' : '#0a8a66';
       ctx.lineWidth = 2;
-      ctx.strokeRect(ebx + 0.5, by + 0.5, bw - 1, bh - 1);
+      ctx.strokeRect(ebx + 0.5, eby + 0.5, ebw - 1, ebh - 1);
       ctx.fillStyle = _f12EditMode ? '#00ffb4' : '#7adcc0';
       ctx.font = '9px "Press Start 2P", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(_f12EditMode ? 'EDIT: ON' : 'EDIT MAP', ebx + bw / 2, by + bh / 2);
+      ctx.fillText(_f12EditMode ? 'EDIT: ON' : 'EDIT MAP', ebx + ebw / 2, eby + ebh / 2);
       ctx.textBaseline = 'alphabetic';
-      editMapBtnRect = { x: ebx, y: by, w: bw, h: bh };
+      editMapBtnRect = { x: ebx, y: eby, w: ebw, h: ebh };
     } else {
       editMapBtnRect = null;   // disable click handler on production
     }
