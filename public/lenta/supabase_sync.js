@@ -18,6 +18,24 @@
   let sb = null;            // Supabase client instance
   let syncEnabled = false;  // ar cloud sync aktyvi (wallet prisijungęs)
   let lastPushAt = 0;       // throttle push'ams
+  let _initialSyncReady = false;   // ANTI-DATA-LOSS: push'ai BLOKUOJAMI kol pirma sync (cloud load) baigta
+
+  // Ar profilis turi REALŲ progresą (ne fresh/tuščias). Naudojama kad TUŠČIAS mobile profilis
+  // (po localStorage evict) neperrašytų gero cloud namo/balanso. Match _freshProfile() (game.js).
+  function _hasProgress(p) {
+    if (!p || typeof p !== 'object') return false;
+    try {
+      if (p.buildings && typeof p.buildings === 'object' && Object.keys(p.buildings).length) return true;
+      if (Number(p.ronkeBalance) > 0) return true;
+      if (Number(p.cache) > 0) return true;
+      if (Array.isArray(p.barracksTrained) && p.barracksTrained.length) return true;
+      if (Number(p.highestSector) > 1) return true;
+      if (p.stats && Number(p.stats.totalKills) > 0) return true;
+      if (p.upgrades && Object.keys(p.upgrades).some(function (k) { return Number(p.upgrades[k]) > 0; })) return true;
+      if (p.achievements && Object.keys(p.achievements).length) return true;
+    } catch (_) {}
+    return false;
+  }
 
   // ── Init ────────────────────────────────────────────────────────────
   function initClient() {
@@ -102,24 +120,36 @@
   async function syncOnWalletConnect(address) {
     if (!address) return;
     syncEnabled = true;
-    const cloud = await loadProfileFromCloud(address);
-    const localProfile = getCurrentProfile();
-    const localTs = getLocalSavedAt();
-    if (!cloud) {
-      if (localProfile) {
-        await pushProfileToCloud(address, localProfile);
-      }
-      return;
-    }
+    try {
+      const cloud = await loadProfileFromCloud(address);
+      const localProfile = getCurrentProfile();
+      const localTs = getLocalSavedAt();
+      const cloudData = cloud && cloud.profile_data;
+      const cloudHas = _hasProgress(cloudData);
+      const localHas = _hasProgress(localProfile);
 
-    const cloudTs = (cloud.profile_data && cloud.profile_data._savedAt) || 0;
-    if (cloudTs > localTs) {
-      // Override Profile + perrašom localStorage
-      Object.assign(window.Profile, cloud.profile_data);
-      try { if (typeof window.saveProfile === 'function') window.saveProfile(); } catch (_) {}
-      try { if (typeof window.updateHUD === 'function') window.updateHUD(); } catch (_) {}
-    } else if (localTs > cloudTs) {
-      await pushProfileToCloud(address, localProfile);
+      function adoptCloud() {
+        Object.assign(window.Profile, cloudData);
+        try { if (typeof window.saveProfile === 'function') window.saveProfile(); } catch (_) {}
+        try { if (typeof window.updateHUD === 'function') window.updateHUD(); } catch (_) {}
+      }
+
+      if (!cloudData) {
+        // Cloud tuščias — push local TIK jei jis turi progresą (kad netuštinrašytume).
+        if (localProfile && localHas) await pushProfileToCloud(address, localProfile);
+        return;
+      }
+      // ── ANTI-DATA-LOSS: cloud turi progresą, local šviežias/tuščias (pvz. mobile po evict)
+      //    → VISADA imam cloud, NEpaisom timestamp (tuščias local NEperrašo namo/balanso). ──
+      if (cloudHas && !localHas) { adoptCloud(); return; }
+      // Local turi progresą, cloud tuščias → push local.
+      if (localHas && !cloudHas) { await pushProfileToCloud(address, localProfile); return; }
+      // Abu turi (arba abu tušti) → naujesnis _savedAt laimi.
+      const cloudTs = (cloudData && cloudData._savedAt) || 0;
+      if (cloudTs > localTs) adoptCloud();
+      else if (localTs > cloudTs) await pushProfileToCloud(address, localProfile);
+    } finally {
+      _initialSyncReady = true;   // nuo dabar push'ai leidžiami (sync baigta)
     }
   }
 
@@ -128,6 +158,7 @@
   let pushTimer = null;
   function schedulePush() {
     if (!syncEnabled) return;
+    if (!_initialSyncReady) return;   // anti empty-overwrite: nepushinam kol cloud dar neužkrautas
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(async () => {
       pushTimer = null;
@@ -146,6 +177,7 @@
   // within 2s would otherwise lose the change.
   async function forcePushNow() {
     if (!syncEnabled) return false;
+    if (!_initialSyncReady) return false;   // anti empty-overwrite: nepushinam kol cloud dar neužkrautas
     if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
     const addr = getWalletAddress();
     const profile = getCurrentProfile();
