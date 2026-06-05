@@ -257,16 +257,37 @@
         </div>
       </div>`;
     }).join('');
-    // Krovimo / „show all" juosta apačioje
+    // Krovimo / „show all" / „load more" juosta apačioje
+    const BNFT = window.BarracksNFT;
+    const hasMore = !!(BNFT && BNFT.invHasMore && BNFT.invHasMore());
     if (progress && progress.loaded < progress.total) {
       html += `<div class="nft-empty" style="opacity:.7">⏳ Loading more units… ${progress.loaded}/${progress.total} (highest level first — you can pick & play now)</div>`;
-    } else if (capped) {
-      html += `<button id="nft-battle-showall" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600">Show all (+${hidden} more)</button>`;
+    } else {
+      if (capped) {
+        html += `<button id="nft-battle-showall" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600">Show all (+${hidden} more)</button>`;
+      }
+      // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės
+      if (hasMore) {
+        const c = (BNFT.invCounts && BNFT.invCounts()) || { read: 0, total: 0 };
+        html += `<button id="nft-battle-loadmore" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600">⬇ Load 24 more from chain (${c.read}/${c.total} read)</button>`;
+      }
     }
     grid.innerHTML = html;
     if (capped) {
       const sa = document.getElementById('nft-battle-showall');
       if (sa) sa.onclick = function () { _battleShowAll = true; _renderBattleGrid(); };
+    }
+    if (hasMore) {
+      const lm = document.getElementById('nft-battle-loadmore');
+      if (lm) lm.onclick = async function () {
+        lm.disabled = true; lm.textContent = '⏳ Loading…';
+        _battleShowAll = true;   // naujai užkrautus iškart parodom
+        try {
+          const updated = await BNFT.loadMoreInventory(function (sorted) { _battleInventory = sorted; _renderBattleGrid(); });
+          _battleInventory = updated;
+        } catch (_) {}
+        _renderBattleGrid();
+      };
     }
     _updateBattleFooter();
   }
@@ -702,6 +723,8 @@
         if (cEl) cEl.textContent = loaded + (loaded < total ? '/' + total : '');
         if (loaded < total) grid.innerHTML = '<div class="nft-empty">⏳ Loading units… ' + loaded + '/' + total + '</div>';
       });
+      // Render'is iškeltas į vidinę funkciją kad „Load more" galėtų perrenderinti su naujais unitais.
+      function renderInv(units) {
       document.getElementById('nft-inv-count').textContent = units.length;
       if (units.length === 0) {
         grid.innerHTML = '<div class="nft-empty">No NFT units yet — train your first!</div>';
@@ -795,6 +818,28 @@
           </div>
         </div>`;
       }).join('');
+      // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės
+      const BNFT = window.BarracksNFT;
+      if (BNFT && BNFT.invHasMore && BNFT.invHasMore()) {
+        const c = (BNFT.invCounts && BNFT.invCounts()) || { read: 0, total: 0 };
+        const btn = document.createElement('button');
+        btn.id = 'nft-inv-loadmore';
+        btn.type = 'button';
+        btn.textContent = `⬇ Load 24 more from chain (${c.read}/${c.total} read)`;
+        btn.style.cssText = 'grid-column:1/-1;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600';
+        btn.onclick = async function () {
+          btn.disabled = true; btn.textContent = '⏳ Loading…';
+          try {
+            const updated = await BNFT.loadMoreInventory(function (sorted) {
+              const cEl = document.getElementById('nft-inv-count'); if (cEl) cEl.textContent = sorted.length;
+            });
+            renderInv(updated);
+          } catch (_) { btn.disabled = false; btn.textContent = 'Retry load more'; }
+        };
+        grid.appendChild(btn);
+      }
+      }  // renderInv
+      renderInv(units);
     } catch (e) {
       grid.innerHTML = '<div class="nft-empty">Failed to load: ' + (e.shortMessage || e.message || '') + '</div>';
     }

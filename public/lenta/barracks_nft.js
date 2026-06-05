@@ -276,34 +276,34 @@
   //  • render'is throttle'inamas (≥500ms) → main thread neblokuojamas.
   //  • per-unit / per-chunk klaidos PRALEIDŽIAMOS (skip) → niekada nemeta → kas užsikrovė lieka.
   const _INV_FAST = 24, _INV_FAST_CHUNK = 24, _INV_SLOW_CHUNK = 24, _INV_SLOW_DELAY = 150;
-  const _INV_MAX = 35;     // picker rodo MAX 35 aukščiausio stato unitus (mažiau render/atminties; daugiau nereikia)
-  const _INV_LOAD = 96;    // KIEK token'ų iš viso skaitom (whale-safe: net 500+ wallet'as skaito tik 96, ne visus)
+  const _INV_MAX = 35;     // pradinis rodymo cap (top _INV_MAX aukščiausio XP)
+  const _INV_LOAD = 96;    // pradinis read cap (whale-safe: net 500+ wallet'as skaito tik 96, ne visus)
                            // getUnitFullData struktūra didelė — 40+ per multicall viršija RPC response → tylus skip.
-  async function fetchInventory(addr, onProgress) {
-    const balance = await read('balanceOf', [addr]);
-    const n = Number(balance);
-    if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
-    // Load cap: dideliems wallet'ams skaitom tik pirmus _INV_LOAD token'us (ne visus n) — kitaip RPC krenta.
-    const loadN = Math.min(n, _INV_LOAD);
-    const idxs = Array.from({ length: loadN }, (_, i) => i);
-    const acc = [];
+  const _INV_MORE = 24;    // "Load more" — kiek papildomai SKAITOM ir RODOM per paspaudimą
+  // Stateful inventory: kursorius leidžia "Load more" tęsti nuo kur baigėm (ne perkrauti viską).
+  let _invAddr = null, _invTotal = 0, _invCursor = 0, _invAcc = [], _invSeen = null, _invShowN = _INV_MAX;
+  function _invSorted() {
+    return _invAcc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
+  }
+  // Skaito token indeksus [start,end) į _invAcc paketais po _INV_SLOW_CHUNK; dedupe pagal tokenId.
+  async function _loadRange(start, end, onProgress) {
     let _lastEmit = 0;
     function emit(force) {
       if (typeof onProgress !== 'function') return;
       const now = Date.now();
       if (!force && (now - _lastEmit) < 500) return;   // throttle render
       _lastEmit = now;
-      const sorted = acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId))).slice(0, _INV_MAX);
-      try { onProgress(sorted, sorted.length, Math.min(n, _INV_MAX)); } catch (_) {}
+      const sorted = _invSorted().slice(0, _invShowN);
+      try { onProgress(sorted, sorted.length, Math.min(_invTotal, _invShowN)); } catch (_) {}
     }
     async function loadChunk(slice) {
       const pc = await getPublicClient();
-      // 1) tokenId'ai VIENU Multicall3 eth_call (vietoj slice.length atskirų kvietimų)
+      // 1) tokenId'ai VIENU Multicall3 eth_call
       let idRes;
       try {
         idRes = await pc.multicall({
           allowFailure: true,
-          contracts: slice.map((i) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'tokenOfOwnerByIndex', args: [addr, BigInt(i)] })),
+          contracts: slice.map((i) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'tokenOfOwnerByIndex', args: [_invAddr, BigInt(i)] })),
         });
       } catch (_) { return; }   // paketas krito — praleidžiam, nenutraukiam
       const ids = idRes.filter((r) => r && r.status === 'success').map((r) => r.result);
@@ -319,25 +319,49 @@
       for (let k = 0; k < ids.length; k++) {
         const r = dataRes[k];
         if (r && r.status === 'success' && r.result) {
-          try { acc.push(_mapUnit(ids[k], r.result)); } catch (_) {}
+          const key = String(ids[k]);
+          if (_invSeen.has(key)) continue;   // dedupe — kad "Load more" nedubliuotų
+          _invSeen.add(key);
+          try { _invAcc.push(_mapUnit(ids[k], r.result)); } catch (_) {}
         }
       }
     }
-    // Fazė 1 — greitai pirmi _INV_FAST
-    const fast = idxs.slice(0, _INV_FAST);
-    for (let s = 0; s < fast.length; s += _INV_FAST_CHUNK) {
-      await loadChunk(fast.slice(s, s + _INV_FAST_CHUNK));
+    // Fazė 1 — greitai pirmi _INV_FAST (tik pradiniam krovimui, kai start===0)
+    const fastEnd = Math.min(end, start + (start === 0 ? _INV_FAST : 0));
+    for (let s = start; s < fastEnd; s += _INV_FAST_CHUNK) {
+      await loadChunk(Array.from({ length: Math.min(_INV_FAST_CHUNK, fastEnd - s) }, (_, i) => s + i));
       emit(true);
     }
     // Fazė 2 — likę LĖTAI su pauzėmis
-    for (let s = _INV_FAST; s < idxs.length; s += _INV_SLOW_CHUNK) {
-      await loadChunk(idxs.slice(s, s + _INV_SLOW_CHUNK));
+    for (let s = fastEnd; s < end; s += _INV_SLOW_CHUNK) {
+      const cnt = Math.min(_INV_SLOW_CHUNK, end - s);
+      await loadChunk(Array.from({ length: cnt }, (_, i) => s + i));
       emit(false);
-      if (s + _INV_SLOW_CHUNK < idxs.length) await new Promise((r) => setTimeout(r, _INV_SLOW_DELAY));
+      if (s + _INV_SLOW_CHUNK < end) await new Promise((r) => setTimeout(r, _INV_SLOW_DELAY));
     }
+    _invCursor = Math.max(_invCursor, end);
     emit(true);
-    return acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId))).slice(0, _INV_MAX);
   }
+  async function fetchInventory(addr, onProgress) {
+    const balance = await read('balanceOf', [addr]);
+    const n = Number(balance);
+    // reset state naujam krovimui
+    _invAddr = addr; _invTotal = n; _invCursor = 0; _invAcc = []; _invSeen = new Set(); _invShowN = _INV_MAX;
+    if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
+    // Pradinis read cap: dideliems wallet'ams skaitom tik pirmus _INV_LOAD token'us (ne visus n).
+    await _loadRange(0, Math.min(n, _INV_LOAD), onProgress);
+    return _invSorted().slice(0, _invShowN);
+  }
+  // "Load more": perskaito KITUS _INV_MORE token'us nuo kursoriaus + pakelia rodymo ribą.
+  async function loadMoreInventory(onProgress) {
+    if (!_invAddr || _invCursor >= _invTotal) return _invSorted().slice(0, _invShowN);
+    _invShowN += _INV_MORE;
+    const end = Math.min(_invTotal, _invCursor + _INV_MORE);
+    await _loadRange(_invCursor, end, onProgress);
+    return _invSorted().slice(0, _invShowN);
+  }
+  function invHasMore() { return !!_invAddr && _invCursor < _invTotal; }
+  function invCounts() { return { read: _invCursor, total: _invTotal, shown: Math.min(_invAcc.length, _invShowN) }; }
 
   // ─── WRITE FUNCTIONS ─────────────────────────────────────────
   async function ensureNetwork() {
@@ -540,6 +564,9 @@
     UTYPE,
     fetchState,
     fetchInventory,
+    loadMoreInventory,
+    invHasMore,
+    invCounts,
     getBatchPricing,
     getCurrentPricing,
     getPending,
