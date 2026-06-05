@@ -28,6 +28,7 @@
     { name: 'totalAlive', type: 'function', stateMutability: 'view', inputs: [], outputs: [{type:'uint256'}] },
     { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
     { name: 'tokenOfOwnerByIndex', type: 'function', stateMutability: 'view', inputs: [{type:'address'},{type:'uint256'}], outputs: [{type:'uint256'}] },
+    { name: 'ownerOf', type: 'function', stateMutability: 'view', inputs: [{type:'uint256'}], outputs: [{type:'address'}] },
     { name: 'getUnitFullData', type: 'function', stateMutability: 'view', inputs: [{type:'uint256'}], outputs: [
       {type:'uint8',name:'utype'},{type:'uint32',name:'xp'},{type:'uint16',name:'level'},
       {type:'uint16',name:'battles'},{type:'uint16',name:'wins'},{type:'uint32',name:'kills'},
@@ -375,6 +376,55 @@
   function invHasMore() { return !!_invAddr && _invShowN < _invTotal; }
   function invCounts() { return { read: _invCursor, total: _invTotal, shown: Math.min(_invAcc.length, _invShowN) }; }
 
+  // ─── DECK (loadout) ───────────────────────────────────────────
+  // Žaidėjas susideda ≤_DECK_MAX token ID į "deck'ą" (localStorage, per-wallet). Žaidimo kelias
+  // kraunamas TIK iš deck'o → 1 multicall, jokio tokenOfOwnerByIndex skeno → nulis RPC problemų
+  // net 500+ wallet'ui ir mobiliam. Iš deck'o žaidime renkamasi iki BATTLE_MAX (12).
+  const _DECK_MAX = 24;
+  function _deckKey(addr) { return 'f12_deck_' + String(addr || '').toLowerCase(); }
+  function getDeck(addr) {
+    try { const r = JSON.parse(localStorage.getItem(_deckKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    catch (_) { return []; }
+  }
+  function setDeck(addr, ids) {
+    const uniq = Array.from(new Set((ids || []).map(String))).slice(0, _DECK_MAX);
+    try { localStorage.setItem(_deckKey(addr), JSON.stringify(uniq)); } catch (_) {}
+    return uniq;
+  }
+  function deckHas(addr, id) { return getDeck(addr).indexOf(String(id)) !== -1; }
+  function deckCount(addr) { return getDeck(addr).length; }
+  function addToDeck(addr, id) {
+    const d = getDeck(addr), s = String(id);
+    if (d.indexOf(s) === -1 && d.length < _DECK_MAX) d.push(s);
+    return setDeck(addr, d);
+  }
+  function removeFromDeck(addr, id) {
+    return setDeck(addr, getDeck(addr).filter((x) => x !== String(id)));
+  }
+  // Krauna TIK nurodytus token ID (getUnitFullData + ownerOf patikra). Parduoti/sudeginti iškrenta.
+  async function loadDeckUnits(addr, tokenIds) {
+    const ids = (tokenIds || []).map((x) => { try { return BigInt(x); } catch (_) { return null; } }).filter((x) => x !== null);
+    if (!ids.length) return [];
+    const pc = await getPublicClient();
+    let dataRes, ownRes;
+    try {
+      [dataRes, ownRes] = await Promise.all([
+        pc.multicall({ allowFailure: true, contracts: ids.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })) }),
+        pc.multicall({ allowFailure: true, contracts: ids.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [id] })) }),
+      ]);
+    } catch (_) { return []; }
+    const out = [], lc = String(addr || '').toLowerCase();
+    for (let i = 0; i < ids.length; i++) {
+      const o = ownRes[i];
+      if (!o || o.status !== 'success' || String(o.result).toLowerCase() !== lc) continue;  // nebeturimas → praleisti
+      const d = dataRes[i];
+      if (d && d.status === 'success' && d.result) {
+        try { out.push(_mapUnit(ids[i], d.result)); } catch (_) {}
+      }
+    }
+    return out;
+  }
+
   // ─── WRITE FUNCTIONS ─────────────────────────────────────────
   async function ensureNetwork() {
     const W = window.Wallet;
@@ -579,6 +629,14 @@
     loadMoreInventory,
     invHasMore,
     invCounts,
+    DECK_MAX: _DECK_MAX,
+    getDeck,
+    setDeck,
+    deckHas,
+    deckCount,
+    addToDeck,
+    removeFromDeck,
+    loadDeckUnits,
     getBatchPricing,
     getCurrentPricing,
     getPending,

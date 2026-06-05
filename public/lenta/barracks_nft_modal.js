@@ -74,6 +74,70 @@
   // Inventoriaus picker — pasirink kelis NFT + free units, paspaudus DEPLOY → F12 startas.
   // utype (contract uint8) → F12 utype string:
   const NFT_UTYPE_TO_F12 = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'hog_rider' };
+  // F12 ALLY base statai — TURI sutapti su floor12_merge.js ALLY_STATS. Rodom kortelėj DMG/HP.
+  const _F12_BASE_STATS = {
+    skull:        { hp: 8,  dmg: 2 },
+    archer:       { hp: 5,  dmg: 3 },
+    shaman:       { hp: 4,  dmg: 4 },
+    harpoon_fish: { hp: 7,  dmg: 3 },
+    hog_rider:    { hp: 14, dmg: 8 },
+  };
+  // Lygio skalė: stat = round(base × (1 + level×0.05)) — match _nftStatMul() žaidime.
+  function _unitCombatStats(contractUtype, level) {
+    const base = _F12_BASE_STATS[NFT_UTYPE_TO_F12[contractUtype]] || _F12_BASE_STATS.skull;
+    const mul = 1 + Math.max(0, level | 0) * 0.05;
+    return { hp: Math.max(1, Math.round(base.hp * mul)), dmg: Math.max(1, Math.round(base.dmg * mul)) };
+  }
+  // Ability statai — TURI sutapti su floor12_merge.js (block/crit/miss/CD/range). Rodom kortos „nugaroj".
+  const _F12_ABILITY = {
+    skull:        { role: 'Melee Bruiser',  atk: 'Melee',     range: 'Short',  cd: 1500, move: 12, crit: 0,    block: 0.25, miss: 0.10, aoe: false },
+    archer:       { role: 'Ranged DPS',     atk: 'Ranged',    range: 'Long',   cd: 1500, move: 14, crit: 0,    block: 0,    miss: 0.15, aoe: false },
+    harpoon_fish: { role: 'Ranged Piercer', atk: 'Ranged',    range: 'Medium', cd: 1800, move: 11, crit: 0,    block: 0,    miss: 0.05, aoe: false },
+    shaman:       { role: 'Ranged Caster',  atk: 'Ranged',    range: 'Long',   cd: 3000, move: 10, crit: 0,    block: 0,    miss: 0.05, aoe: true  },
+    hog_rider:    { role: 'Cavalry Tank',   atk: 'Melee AOE', range: 'Short',  cd: 2800, move: 13, crit: 0.10, block: 0,    miss: 0,    aoe: true  },
+  };
+  // Kortos NUGAROS statai — VISI bar-linijų stiliumi (neaktyvūs pilki + „—"). cStats = {dmg,hp} pagal lygį.
+  function _backStatBars(ab, cStats) {
+    function bar(icon, label, val, pct, active, color) {
+      const w = active ? Math.max(6, Math.min(100, pct)) : 0;
+      return `<div class="nft-bb ${active ? 'on' : 'off'}"><span class="nft-bb-l">${icon} ${label}</span><div class="nft-bb-bar"><div class="nft-bb-f" style="width:${w}%;background:${color}"></div></div><span class="nft-bb-v">${val}</span></div>`;
+    }
+    const rangePct = ab.range === 'Long' ? 100 : ab.range === 'Medium' ? 62 : 34;
+    const atkSpdPct = (3500 - ab.cd) / (3500 - 1000) * 100;
+    return ''
+      + bar('⚔', 'DMG', cStats.dmg, cStats.dmg / 16 * 100, true, 'linear-gradient(90deg,#c8602e,#ff9a6e)')
+      + bar('❤', 'HP', cStats.hp, cStats.hp / 30 * 100, true, 'linear-gradient(90deg,#3fa84f,#7cd97a)')
+      + bar('👟', 'MOVE', ab.move, ab.move / 16 * 100, true, 'linear-gradient(90deg,#3a7bd5,#6fb1ff)')
+      + bar('⏱', 'ATK SP', (ab.cd / 1000).toFixed(1) + 's', atkSpdPct, true, 'linear-gradient(90deg,#8a5fd0,#b89aff)')
+      + bar('🎯', 'RANGE', ab.range, rangePct, true, 'linear-gradient(90deg,#c89a2e,#ffd66e)')
+      + bar('⚡', 'CRIT', ab.crit > 0 ? Math.round(ab.crit * 100) + '%' : '—', ab.crit / 0.25 * 100, ab.crit > 0, 'linear-gradient(90deg,#d4a017,#ffd54a)')
+      + bar('🛡', 'BLOCK', ab.block > 0 ? Math.round(ab.block * 100) + '%' : '—', ab.block / 0.30 * 100, ab.block > 0, 'linear-gradient(90deg,#3a8d96,#6fd0d8)')
+      + bar('💨', 'MISS', ab.miss > 0 ? Math.round(ab.miss * 100) + '%' : '—', ab.miss / 0.20 * 100, ab.miss > 0, 'linear-gradient(90deg,#8a8a8a,#c4c4c4)')
+      + bar('💥', 'AOE', ab.aoe ? 'YES' : '—', ab.aoe ? 100 : 0, ab.aoe, 'linear-gradient(90deg,#d23b3b,#ff8a6a)');
+  }
+  // „Korta nuskrenda į deką" animacija — ghost sprite'as (nepriklausomas nuo grid re-render).
+  function _flyCardToDeck(card) {
+    try {
+      const img = (card.querySelector('.nft-card-img-wrap img') || card.querySelector('img'));
+      if (!img) return;
+      const r = img.getBoundingClientRect();
+      const deckEl = document.getElementById('nft-deck-status');
+      const dr = deckEl ? deckEl.getBoundingClientRect() : null;
+      const tx = dr && dr.width ? (dr.left + dr.width / 2) : (window.innerWidth / 2);
+      const ty = dr && dr.width ? (dr.top + dr.height / 2) : (r.top - 140);
+      const ghost = img.cloneNode(true);
+      ghost.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;z-index:100000;pointer-events:none;image-rendering:pixelated;transition:transform .55s cubic-bezier(.5,-0.25,.3,1),opacity .5s ease-in;will-change:transform,opacity;filter:drop-shadow(0 4px 8px rgba(0,0,0,.5));';
+      document.body.appendChild(ghost);
+      requestAnimationFrame(function () {
+        const dx = tx - (r.left + r.width / 2);
+        const dy = ty - (r.top + r.height / 2);
+        ghost.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(.14) rotate(18deg)';
+        ghost.style.opacity = '0.12';
+      });
+      setTimeout(function () { try { ghost.remove(); } catch (_) {} }, 620);
+      if (deckEl) { deckEl.style.transition = 'transform .2s'; deckEl.style.transform = 'scale(1.35)'; setTimeout(function () { deckEl.style.transform = ''; }, 220); }
+    } catch (_) {}
+  }
   let _battleInventory = [];   // raw fetchInventory rezultatas
   let _battlePickQty = {};     // {groupKey: qty}
   let _battleFreeQty = { shadow: 1, arrow: 1, heart: 1, leaf: 1 };  // {ballType: qty} default 1 of each
@@ -87,6 +151,7 @@
   ];
   const FREE_MAX_PER_TYPE = 5;
   let _battleMode = 'free';   // 'free' arba 'nft' — exclusive
+  let _battleUseDeck = true;   // jei deck'as netuščias — kraunam TIK jį (instant, jokio RPC skeno)
 
   function _setBattleMode(mode) {
     _battleMode = (mode === 'nft') ? 'nft' : 'free';
@@ -208,20 +273,35 @@
       return;
     }
     grid.innerHTML = '<div class="nft-empty">Loading your units…</div>';
+    const BNFT = window.BarracksNFT;
+    const deck = (BNFT.getDeck && BNFT.getDeck(W.getAddress())) || [];
+    const useDeck = _battleUseDeck && deck.length > 0;
     try {
-      // Progresyvus krovimas — aukščiausio lvl unitai pasirodo PIRMI ir žaidėjas
-      // gali rinktis nelaukdamas kol visa kolekcija užsikraus (whale-friendly).
-      _battleInventory = await window.BarracksNFT.fetchInventory(W.getAddress(), function (sorted, loaded, total) {
-        _battleInventory = sorted;
-        _renderBattleGrid(loaded < total ? { loaded: loaded, total: total } : null);
-      });
-      if (!_battleInventory.length) {
-        grid.innerHTML = '<div class="nft-empty">No NFT units yet — train one in TRAIN tab first</div>';
-        _battlePickQty = {};
-        _updateBattleFooter();
-        return;
+      if (useDeck) {
+        // DECK režimas — kraunam TIK deck'o korteles (1 multicall, jokio tokenOfOwnerByIndex
+        // skeno → instant net 500+ wallet'ui ir mobiliam).
+        _battleInventory = await BNFT.loadDeckUnits(W.getAddress(), deck);
+        if (!_battleInventory.length) {
+          // deck'o kortos parduotos/sudegintos arba RPC krito → fallback į pilną sąrašą
+          _battleUseDeck = false;
+          return refreshBattlePicker();
+        }
+        _renderBattleGrid();
+      } else {
+        // Progresyvus krovimas — aukščiausio lvl unitai pasirodo PIRMI ir žaidėjas
+        // gali rinktis nelaukdamas kol visa kolekcija užsikraus (whale-friendly).
+        _battleInventory = await BNFT.fetchInventory(W.getAddress(), function (sorted, loaded, total) {
+          _battleInventory = sorted;
+          _renderBattleGrid(loaded < total ? { loaded: loaded, total: total } : null);
+        });
+        if (!_battleInventory.length) {
+          grid.innerHTML = '<div class="nft-empty">No NFT units yet — train one in TRAIN tab first</div>';
+          _battlePickQty = {};
+          _updateBattleFooter();
+          return;
+        }
+        _renderBattleGrid();
       }
-      _renderBattleGrid();
     } catch (e) {
       grid.innerHTML = '<div class="nft-empty">Failed to load: ' + (e.shortMessage || e.message || '') + '</div>';
     }
@@ -257,12 +337,29 @@
         </div>
       </div>`;
     }).join('');
-    // Krovimo / „show all" / „load more" juosta apačioje
+    // Deck režimo juosta VIRŠUJ + krovimo / „show all" / „load more" juosta apačioje
     const BNFT = window.BarracksNFT;
-    const hasMore = !!(BNFT && BNFT.invHasMore && BNFT.invHasMore());
+    const _W = window.Wallet;
+    const _addr = (_W && _W.getAddress && _W.getAddress()) || '';
+    const deckLen = (BNFT && BNFT.deckCount && _addr) ? BNFT.deckCount(_addr) : 0;
+    const inDeckMode = _battleUseDeck && deckLen > 0;
+    let topBar = '';
+    if (inDeckMode) {
+      topBar = `<div class="nft-empty" style="opacity:.9;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:rgba(90,140,90,.12);border:1px solid rgba(120,160,120,.35);border-radius:10px;margin-bottom:8px">
+        <span>Playing from your <strong>Deck</strong> (${deckLen}/${BNFT.DECK_MAX || 24}) — pick up to ${BATTLE_MAX_TOTAL}</span>
+        <button id="nft-battle-deck-toggle" type="button" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600;white-space:nowrap">Browse all</button>
+      </div>`;
+    } else if (deckLen > 0) {
+      topBar = `<div class="nft-empty" style="opacity:.9;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:rgba(122,90,152,.10);border:1px solid rgba(140,100,170,.30);border-radius:10px;margin-bottom:8px">
+        <span>Browsing all units</span>
+        <button id="nft-battle-deck-toggle" type="button" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.18);color:#bde0bd;cursor:pointer;font-weight:600;white-space:nowrap">Use my Deck (${deckLen})</button>
+      </div>`;
+    }
+    html = topBar + html;
+    const hasMore = !inDeckMode && !!(BNFT && BNFT.invHasMore && BNFT.invHasMore());
     if (progress && progress.loaded < progress.total) {
       html += `<div class="nft-empty" style="opacity:.7">⏳ Loading more units… ${progress.loaded}/${progress.total} (highest level first — you can pick & play now)</div>`;
-    } else {
+    } else if (!inDeckMode) {
       if (capped) {
         html += `<button id="nft-battle-showall" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600">Show all (+${hidden} more)</button>`;
       }
@@ -273,6 +370,10 @@
       }
     }
     grid.innerHTML = html;
+    {
+      const dt = document.getElementById('nft-battle-deck-toggle');
+      if (dt) dt.onclick = function () { _battleUseDeck = !_battleUseDeck; _battlePickQty = {}; refreshBattlePicker(); };
+    }
     if (capped) {
       const sa = document.getElementById('nft-battle-showall');
       if (sa) sa.onclick = function () { _battleShowAll = true; _renderBattleGrid(); };
@@ -717,6 +818,7 @@
     const addr = W.getAddress();
     const grid = document.getElementById('nft-inv-grid');
     grid.innerHTML = '<div class="nft-empty">Loading your units…</div>';
+    const _tb = document.getElementById('nft-inv-loadmore-top'); if (_tb) _tb.style.display = 'none';  // reset stale
     try {
       const units = await window.BarracksNFT.fetchInventory(addr, function (sorted, loaded, total) {
         const cEl = document.getElementById('nft-inv-count');
@@ -724,10 +826,32 @@
         if (loaded < total) grid.innerHTML = '<div class="nft-empty">⏳ Loading units… ' + loaded + '/' + total + '</div>';
       });
       // Render'is iškeltas į vidinę funkciją kad „Load more" galėtų perrenderinti su naujais unitais.
+      const BNFT = window.BarracksNFT;
+      const _addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+      let _lastInvUnits = null;
+      function _syncDeckHeader() {
+        const cnt = (BNFT && BNFT.deckCount && _addr) ? BNFT.deckCount(_addr) : 0;
+        const st = document.getElementById('nft-deck-status');
+        if (st) st.textContent = cnt > 0 ? `· Deck: ${cnt}/${(BNFT && BNFT.DECK_MAX) || 24}` : '';
+        const cl = document.getElementById('nft-deck-clear');
+        if (cl) {
+          cl.style.display = cnt > 0 ? '' : 'none';
+          cl.onclick = function () {
+            if (!_addr || !BNFT) return;
+            if (!confirm('Clear your whole deck (' + cnt + ' units)?')) return;
+            BNFT.setDeck(_addr, []);
+            try { renderInv(_lastInvUnits || []); } catch (_) { _syncDeckHeader(); }
+          };
+        }
+        const hint = document.getElementById('nft-deck-hint');
+        if (hint) hint.style.display = cnt > 0 ? 'none' : '';
+      }
       function renderInv(units) {
+      _lastInvUnits = units;
       document.getElementById('nft-inv-count').textContent = units.length;
       if (units.length === 0) {
         grid.innerHTML = '<div class="nft-empty">No NFT units yet — train your first!</div>';
+        _syncDeckHeader();
         return;
       }
       const BARRACKS_ADDR = (window.BarracksNFT && window.BarracksNFT.ADDR && window.BarracksNFT.ADDR.barracks) || '';
@@ -752,11 +876,22 @@
         if (a.xp !== b.xp) return b.xp - a.xp;
         return Number(b.ids[0]) - Number(a.ids[0]);
       });
+      // HP/DMG juostų skalė — didžiausias tarp rodomų (kaip žaidimo picker'io ATK juosta)
+      let _maxHpShown = 1, _maxDmgShown = 1;
+      for (const gg of groupedArr) {
+        const cs = _unitCombatStats(gg.utype, gg.level);
+        if (cs.hp > _maxHpShown) _maxHpShown = cs.hp;
+        if (cs.dmg > _maxDmgShown) _maxDmgShown = cs.dmg;
+      }
 
       grid.innerHTML = groupedArr.map(g => {
         const rarityCls = g.rarity === 'rare' ? 'rare' : '';
         const veteranCls = g.level >= 10 ? 'veteran' : '';
-        const winRate = g.battles > 0 ? Math.round((g.wins / g.battles) * 100) : 0;
+        const cStats = _unitCombatStats(g.utype, g.level);   // DMG/HP pagal tipą + lygį
+        const dmgPct = Math.max(8, Math.round(cStats.dmg / _maxDmgShown * 100));
+        const hpPct  = Math.max(8, Math.round(cStats.hp  / _maxHpShown  * 100));
+        const ab = _F12_ABILITY[NFT_UTYPE_TO_F12[g.utype]] || _F12_ABILITY.skull;   // ability info (kortos nugara)
+        const cdSec = (ab.cd / 1000).toFixed(1);
         const isStack = g.count > 1;
         const firstId = g.ids[0];
         const marketUrl = `https://marketplace.roninchain.com/collections/pewpew-battle-units`;
@@ -774,68 +909,126 @@
                       g.level < 5  ? 'TRAINED' :
                       g.level < 10 ? 'ELITE' :
                       g.level < 25 ? 'CHAMPION' : 'LEGENDARY';
-        return `<div class="nft-inv-card ${rarityCls} ${veteranCls}">
+        const inDeck = (BNFT && BNFT.deckHas && _addr) ? g.ids.filter((id) => BNFT.deckHas(_addr, id)).length : 0;
+        const _dBtnCss = 'min-width:26px;padding:4px 8px;border-radius:8px;border:1px solid rgba(120,160,120,.45);background:rgba(90,140,90,.16);color:#bde0bd;cursor:pointer;font-weight:700;font-size:.9em';
+        const _dInCss = 'flex:1;padding:6px 12px;border-radius:8px;border:1px solid rgba(120,160,120,.6);background:rgba(90,140,90,.32);color:#d6f0d6;cursor:pointer;font-weight:700;font-size:.85em;white-space:nowrap;text-align:center';
+        const _dToggleCss = 'flex:1;padding:6px 14px;border-radius:8px;border:1px solid rgba(120,160,120,.55);background:linear-gradient(180deg,rgba(110,160,110,.28),rgba(74,120,74,.22));color:#dafada;cursor:pointer;font-weight:700;font-size:.85em;white-space:nowrap;text-align:center';
+        const deckBtn = isStack
+          ? `<button class="nft-deck-minus" data-ids="${g.ids.join(',')}" type="button" title="Remove from deck" style="${_dBtnCss}">−</button>
+             <span class="nft-deck-count" style="${inDeck > 0 ? 'color:#bde0bd;font-weight:700' : 'opacity:.6'};font-size:.85em">🎴 ${inDeck}/${g.count}</span>
+             <button class="nft-deck-plus" data-ids="${g.ids.join(',')}" type="button" title="Add to deck" style="${_dBtnCss}">＋</button>`
+          : `<button class="nft-deck-toggle ${inDeck > 0 ? 'in' : ''}" data-ids="${g.ids.join(',')}" type="button" title="Add this card to your battle deck" style="${inDeck > 0 ? _dInCss : _dToggleCss}">${inDeck > 0 ? '✓ In Your Deck' : 'Add to Deck'}</button>`;
+        return `<div class="nft-inv-card ${rarityCls} ${veteranCls}${inDeck > 0 ? ' in-deck' : ''}">
           ${stackBadge}
-          <div class="nft-card-img-wrap">
-            <img src="${g.image}" alt="${g.name}">
-            <div class="nft-card-lvl-badge">Lv ${g.level}</div>
-          </div>
-          <div class="nft-card-header">
-            <span class="nft-card-name">${g.name}</span>
-            <span class="nft-card-id">${idText}</span>
-          </div>
-          <div class="nft-card-title">${title}</div>
-          <div class="nft-card-xp-block">
-            <div class="nft-xp-header">
-              <span class="nft-xp-label">XP</span>
-              <span class="nft-xp-value">${g.xp.toLocaleString()} / ${nextThreshold.toLocaleString()}</span>
+          <div class="nft-card-inner">
+            <div class="nft-card-front">
+              <div class="nft-flip-hint" title="Tap for abilities">ℹ</div>
+              <div class="nft-card-img-wrap">
+                <img src="${g.image}" alt="${g.name}">
+                <div class="nft-card-lvl-badge">Lv ${g.level}</div>
+              </div>
+              <div class="nft-card-header">
+                <span class="nft-card-name">${g.name}</span>
+                <span class="nft-card-id">${idText}</span>
+              </div>
+              <div class="nft-card-xp-block">
+                <div class="nft-xp-header">
+                  <span class="nft-xp-label">XP</span>
+                  <span class="nft-xp-value">${g.xp.toLocaleString()} / ${nextThreshold.toLocaleString()}</span>
+                </div>
+                <div class="nft-xp-bar"><div class="nft-xp-fill" style="width:${xpProgress}%"></div></div>
+                <div class="nft-xp-next">${xpToNext.toLocaleString()} XP to Lv ${g.level + 1}</div>
+              </div>
+              <div class="nft-stat-bars">
+                <div class="nft-stat-bar-row">
+                  <span class="nft-stat-ic">⚔</span>
+                  <div class="nft-stat-bar"><div class="nft-stat-bf dmg" style="width:${dmgPct}%"></div></div>
+                  <span class="nft-stat-val">${cStats.dmg}</span>
+                </div>
+                <div class="nft-stat-bar-row">
+                  <span class="nft-stat-ic">❤</span>
+                  <div class="nft-stat-bar"><div class="nft-stat-bf hp" style="width:${hpPct}%"></div></div>
+                  <span class="nft-stat-val">${cStats.hp}</span>
+                </div>
+              </div>
+              <div class="nft-card-actions">
+                <div class="nft-card-deck" style="display:flex;align-items:center;gap:6px">${deckBtn}</div>
+                <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">SELL</a>
+              </div>
             </div>
-            <div class="nft-xp-bar"><div class="nft-xp-fill" style="width:${xpProgress}%"></div></div>
-            <div class="nft-xp-next">${xpToNext.toLocaleString()} XP to Lv ${g.level + 1}</div>
-          </div>
-          <div class="nft-card-stats-grid">
-            <div class="nft-stat-cell">
-              <div class="nft-stat-icon">⚔</div>
-              <div class="nft-stat-num">${g.kills.toLocaleString()}</div>
-              <div class="nft-stat-name">KILLS</div>
+            <div class="nft-card-back">
+              <div class="nft-back-title">${g.name}</div>
+              <div class="nft-back-role">${ab.role} · ${ab.atk}</div>
+              <div class="nft-back-bars">${_backStatBars(ab, cStats)}</div>
+              <div class="nft-back-hint">↻ tap to flip back</div>
             </div>
-            <div class="nft-stat-cell">
-              <div class="nft-stat-icon">🏆</div>
-              <div class="nft-stat-num">${g.wins}</div>
-              <div class="nft-stat-name">WINS</div>
-            </div>
-            <div class="nft-stat-cell">
-              <div class="nft-stat-icon">⛨</div>
-              <div class="nft-stat-num">${g.battles}</div>
-              <div class="nft-stat-name">BATTLES</div>
-            </div>
-          </div>
-          <div class="nft-card-winrate">
-            <span>WIN RATE</span><strong>${winRate}%</strong>
-          </div>
-          <div class="nft-card-actions">
-            <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">SELL</a>
           </div>
         </div>`;
       }).join('');
-      // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės
-      const BNFT = window.BarracksNFT;
-      if (BNFT && BNFT.invHasMore && BNFT.invHasMore()) {
-        const c = (BNFT.invCounts && BNFT.invCounts()) || { shown: 0, total: 0 };
+      // Click handler (delegated): deck +/− mygtukai ARBA kortos apsisukimas (flip į ability'es).
+      grid.onclick = function (e) {
+        const t = e.target;
+        if (!t) return;
+        // 1) Deck mygtukai (turi data-ids) — pridedam/šalinam token ID, NEapsukam
+        if (t.dataset && t.dataset.ids) {
+        if (!_addr || !BNFT) return;
+        const ids = String(t.dataset.ids).split(',');
+        const isAdd = t.classList.contains('nft-deck-plus') ||
+                      (t.classList.contains('nft-deck-toggle') && !t.classList.contains('in'));
+        const isRem = t.classList.contains('nft-deck-minus') ||
+                      (t.classList.contains('nft-deck-toggle') && t.classList.contains('in'));
+        if (isAdd) {
+          if (BNFT.deckCount(_addr) >= (BNFT.DECK_MAX || 24)) { alert('Deck full (max ' + (BNFT.DECK_MAX || 24) + '). Remove a unit first.'); return; }
+          const add = ids.find((id) => !BNFT.deckHas(_addr, id));
+          if (add) {
+            BNFT.addToDeck(_addr, add);
+            const _card = t.closest && t.closest('.nft-inv-card');
+            if (_card) _flyCardToDeck(_card);   // „korta nuskrenda į deką" animacija PRIEŠ re-render
+          }
+        } else if (isRem) {
+          const rem = ids.slice().reverse().find((id) => BNFT.deckHas(_addr, id));
+          if (rem) BNFT.removeFromDeck(_addr, rem);
+        } else { return; }
+        renderInv(units);   // perrender — atnaujina ženkliukus + header
+        return;
+        }
+        // 2) SELL nuoroda (ar bet kokia <a>) — paliekam default, NEapsukam
+        if (t.closest && t.closest('a')) return;
+        // 3) Bet kur kitur ant kortos — apsukam (front ⇄ ability nugara)
+        const card = t.closest && t.closest('.nft-inv-card');
+        if (card) card.classList.toggle('flipped');
+      };
+      _syncDeckHeader();
+      // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės.
+      // Du mygtukai: VIRŠUJ (greta skaitiklio) ir grid'o GALE — abu kviečia tą patį handler'į.
+      const hasMore = !!(BNFT && BNFT.invHasMore && BNFT.invHasMore());
+      const c = (BNFT && BNFT.invCounts && BNFT.invCounts()) || { shown: 0, total: 0 };
+      async function doLoadMore(triggerBtn, restoreTxt) {
+        if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '⏳ Loading…'; }
+        try {
+          const updated = await BNFT.loadMoreInventory(function (sorted) {
+            const cEl = document.getElementById('nft-inv-count'); if (cEl) cEl.textContent = sorted.length;
+          });
+          renderInv(updated);
+        } catch (_) { if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = restoreTxt || 'Retry'; } }
+      }
+      // Viršutinis mygtukas (HTML'e, greta „Owned NFT units") — tik perjungiam matomumą/tekstą/onclick
+      const topBtn = document.getElementById('nft-inv-loadmore-top');
+      if (topBtn) {
+        if (hasMore) {
+          topBtn.style.display = '';
+          topBtn.textContent = `⬇ Show 24 more (${c.shown}/${c.total})`;
+          topBtn.onclick = function () { doLoadMore(topBtn, `⬇ Show 24 more (${c.shown}/${c.total})`); };
+        } else { topBtn.style.display = 'none'; }
+      }
+      // Apatinis mygtukas (grid'o gale)
+      if (hasMore) {
         const btn = document.createElement('button');
         btn.id = 'nft-inv-loadmore';
         btn.type = 'button';
         btn.textContent = `⬇ Show 24 more units (${c.shown}/${c.total})`;
         btn.style.cssText = 'grid-column:1/-1;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600';
-        btn.onclick = async function () {
-          btn.disabled = true; btn.textContent = '⏳ Loading…';
-          try {
-            const updated = await BNFT.loadMoreInventory(function (sorted) {
-              const cEl = document.getElementById('nft-inv-count'); if (cEl) cEl.textContent = sorted.length;
-            });
-            renderInv(updated);
-          } catch (_) { btn.disabled = false; btn.textContent = 'Retry load more'; }
-        };
+        btn.onclick = function () { doLoadMore(btn, `⬇ Show 24 more units (${c.shown}/${c.total})`); };
         grid.appendChild(btn);
       }
       }  // renderInv

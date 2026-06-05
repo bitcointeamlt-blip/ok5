@@ -1459,6 +1459,15 @@
     zip:            { hp: 25, dmg: 8, speed: 0,     attackCooldown: 2800, range: 0.45, static: true },
   };
   const ENEMY_MELEE_RANGE = 0.04;
+  // F12 per-unit speciali mechanika (kortos nugaros statams). Bazė (hp/dmg/speed/cd/range) iš
+  // ALLY_STATS; čia tik specialūs statai. Neaktyvūs (0/false) kortoj rodomi pilki, bet ĮVARDINTI.
+  const _F12_UNIT_STATS = {
+    skull:        { rangeKind: 'MELEE', crit: 0,    block: 0.25, aoe: false },
+    archer:       { rangeKind: 'LONG',  crit: 0,    block: 0,    aoe: false },
+    shaman:       { rangeKind: 'LONG',  crit: 0,    block: 0,    aoe: true  },
+    harpoon_fish: { rangeKind: 'MID',   crit: 0,    block: 0,    aoe: false },
+    hog_rider:    { rangeKind: 'MELEE', crit: 0.10, block: 0,    aoe: false },
+  };
   // Tower sprite cache
   const _towerSpriteImg = new Image(); _towerSpriteImg.src = 'assets_tiny/Buildings_Tower.png';
   const _zipSpriteImg = new Image(); _zipSpriteImg.src = 'assets_tiny/Buildings_Zip.png';
@@ -1642,6 +1651,7 @@
       window.SupabaseSync.invoke('checkpoint-battle', {
         wallet: String(_w).toLowerCase(), battleId: String(_auth.battleId), stats: stats, deadTokenIds: dead,
         ownerSignature: _auth.signature, nonce: String(_auth.nonce),
+        timeScale: _f12TimeScale,   // ×2 mode → serveris padaugina anti-cheat rate lubas
       }).then(function (r) { if (dead.length) console.log('[F12 death] checkpoint dead=', r && (r.data ? r.data.dead : r.dead)); })
         .catch(function () {});   // fire-and-forget
     } catch (_) {}
@@ -1775,7 +1785,7 @@
       '.f12pk-portrait{image-rendering:pixelated;image-rendering:crisp-edges;width:172px;height:156px;pointer-events:none;filter:drop-shadow(0 6px 8px rgba(0,0,0,.65));margin-bottom:-8px;}',
       '.f12pk-panel{pointer-events:auto;display:flex;gap:11px;max-width:94vw;overflow-x:auto;padding:13px;border-radius:16px;background:linear-gradient(180deg,#6b4a2e,#3d2b18);border:3px solid #1f130a;box-shadow:0 0 0 3px #a87a44,0 14px 38px rgba(0,0,0,.65);}',
       '.f12pk-card{flex:0 0 auto;width:126px;cursor:pointer;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#f7ead0,#e2c997);border:2px solid #2a1a0c;color:#3a2410;transition:transform .12s,box-shadow .12s;box-shadow:0 3px 8px rgba(0,0,0,.4);padding-bottom:9px;}',
-      '.f12pk-card:hover{transform:translateY(-6px);box-shadow:0 10px 22px rgba(0,0,0,.5),0 0 18px rgba(255,207,92,.6);}',
+      '.f12pk-card:hover{transform:translateY(-6px) scale(1.03);box-shadow:0 0 0 3px #ffcf5c,0 12px 24px rgba(0,0,0,.55),0 0 22px rgba(255,207,92,.7);}',
       '.f12pk-card.picked{animation:f12pkPick .25s ease-out;}',
       '.f12pk-lvbar{background:linear-gradient(180deg,#ffd862,#e0a32e);color:#3a2410;text-align:center;font-weight:800;font-size:16px;letter-spacing:.5px;padding:6px 0;border-bottom:2px solid #2a1a0c;text-shadow:0 1px 0 rgba(255,255,255,.45);}',
       '.f12pk-card.dmg .f12pk-lvbar{background:linear-gradient(180deg,#f08a6a,#d2543b);}',
@@ -1791,6 +1801,22 @@
       '.f12pk-xpbar{height:6px;border-radius:4px;background:rgba(0,0,0,.2);overflow:hidden;border:1px solid rgba(0,0,0,.3);}',
       '.f12pk-xpfill{height:100%;background:linear-gradient(90deg,#3a8d96,#5fd0b8);}',
       '.f12pk-hint{pointer-events:none;font-size:10px;color:#e8d4a8;opacity:.85;text-shadow:0 1px 2px #000;}',
+      '.f12pk-flipnote{text-align:center;font-size:8px;opacity:.5;margin:5px 0 1px;font-style:italic;}',
+      // ── Kortos NUGARA (flip — pilni F12 statai; neaktyvūs pilki bet įvardinti) ──
+      '.f12pk-flipping{transform:scaleX(.04)!important;}',
+      '.f12pk-bktitle{text-align:center;font-size:9px;font-weight:800;letter-spacing:1px;opacity:.6;margin:5px 0 4px;}',
+      '.f12pk-statwrap{padding:0 9px;}',
+      '.f12pk-stat{display:flex;align-items:center;gap:5px;font-size:9px;padding:2px 0;}',
+      '.f12pk-stat .sl{flex:0 0 48px;display:flex;align-items:center;gap:3px;font-weight:700;white-space:nowrap;}',
+      '.f12pk-sbar{flex:1;height:7px;border-radius:4px;background:rgba(0,0,0,.14);overflow:hidden;border:1px solid rgba(0,0,0,.28);}',
+      '.f12pk-sbf{height:100%;border-radius:3px;}',
+      '.f12pk-stat .sv{flex:0 0 28px;text-align:right;font-weight:800;font-size:9px;}',
+      '.f12pk-stat.on .sv{color:#1d6b2c;}',
+      '.f12pk-stat.off{opacity:.32;}',
+      '.f12pk-btns{display:flex;gap:5px;padding:8px 9px 0;}',
+      '.f12pk-dep{flex:1;background:linear-gradient(180deg,#46b257,#2c7d3a);color:#fff;border:2px solid #1d5226;border-radius:7px;padding:6px 0;font-weight:800;font-size:10px;text-align:center;cursor:pointer;letter-spacing:.5px;}',
+      '.f12pk-dep:hover{filter:brightness(1.1);}',
+      '.f12pk-bk{width:30px;flex:0 0 auto;background:#cbb288;border:2px solid #2a1a0c;border-radius:7px;text-align:center;cursor:pointer;font-size:13px;color:#3a2410;display:flex;align-items:center;justify-content:center;}',
       // ── MOBILE / žemas ekranas (landscape telefonas) — sumažinam, kad tilptų ir nebūtų cut-off ──
       '@media (max-height:560px){'
       + '#f12-unit-picker{bottom:54px;gap:3px;}'
@@ -1844,6 +1870,8 @@
         const xpToNext = Math.max(0, nextT - xp);
         const card = document.createElement('div');
         card.className = 'f12pk-card' + (damaged ? ' dmg' : '');
+        // Korta — Lv / HP / ATK / XP. Tap = pasirink šitą NFT → tada tap lane = deploy.
+        // JOKIO flip (per daug klikų). Pilni statai rodomi INVENTORIUJE (deck-building), ne čia.
         card.innerHTML =
           '<div class="f12pk-lvbar">Lv ' + lvl + '</div>'
           + '<div class="f12pk-id">#' + u.tokenId + ' · ' + String(utype) + '</div>'
@@ -1857,7 +1885,7 @@
           card.classList.add('picked');
           selectedDeployType = utype;
           selectedDeployTokenId = u.tokenId;
-          setTimeout(_closeUnitPicker, 160);   // trumpa pick animacija
+          setTimeout(_closeUnitPicker, 160);   // pasirinkta → tada tap lane deploy'ina
         };
         panel.appendChild(card);
       });
@@ -2203,6 +2231,7 @@
   let mouse = { x: 0, y: 0 };
   let exitBtnRect = null;
   let restartBtnRect = null;
+  let speedBtnRect = null;
   let gameOverHomeBtnRect = null;       // „GO HOME" mygtukas ant game over screen
   let editMapBtnRect = null;
   let gameOver = false;
@@ -2210,7 +2239,13 @@
   // ── Helpers ────────────────────────────────────────────────────────
   function rand(n) { return Math.floor(Math.random() * n); }
   function pick(arr) { return arr[rand(arr.length)]; }
-  function now() { return performance.now(); }
+  // ── GAME CLOCK — visi F12 game-logic timestamp'ai eina per čia. Bėga _f12TimeScale greičiu
+  // (×1 arba ×2), kad „×2 speed" mygtukas pagreitintų mob'us/cooldown'us/spawn'us/animacijas.
+  // Loop'as advance'ina _f12Clock kiekvienam frame. UI/picker naudoja performance.now() tiesiai.
+  let _f12Clock = 0;
+  let _f12TimeScale = 1;          // 1 arba 2
+  function now() { return _f12Clock; }
+  function _realNow() { return performance.now(); }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
   // NFT holder bonus: F12 score 1.5× (eligibleCount ≥ 1, server-verified 24h hold).
@@ -10682,9 +10717,25 @@
     ctx.textBaseline = 'alphabetic';
     restartBtnRect = { x: rbx, y: by, w: bw, h: bh };
 
+    // ── SPEED ×1/×2 mygtukas — pagreitina visą mūšį (mob'ai+cooldown'ai). Optional QoL. ──
+    const x2 = (_f12TimeScale >= 2);
+    const sbx = rbx - bw - 12;
+    ctx.fillStyle = x2 ? '#4a3a0a' : '#23201a';
+    ctx.fillRect(sbx, by, bw, bh);
+    ctx.strokeStyle = x2 ? '#ffcf5c' : '#a89060';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sbx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = x2 ? '#ffe6a8' : '#d8cbb0';
+    ctx.font = '9px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(x2 ? '⏩ 2x' : '⏩ 1x', sbx + bw / 2, by + bh / 2);
+    ctx.textBaseline = 'alphabetic';
+    speedBtnRect = { x: sbx, y: by, w: bw, h: bh };
+
     // ── EDIT MAP mygtukas — TIK lokalei (production'e paslepta) ──
     if (_isLocalhost) {
-      const ebx = rbx - bw - 12;
+      const ebx = sbx - bw - 12;
       ctx.fillStyle = _f12EditMode ? '#0a4a36' : '#0a3022';
       ctx.fillRect(ebx, by, bw, bh);
       ctx.strokeStyle = _f12EditMode ? '#00ffb4' : '#0a8a66';
@@ -11275,6 +11326,11 @@
         && p.y >= restartBtnRect.y && p.y <= restartBtnRect.y + restartBtnRect.h) {
       _f12RestartGame(); return;
     }
+    if (speedBtnRect && p.x >= speedBtnRect.x && p.x <= speedBtnRect.x + speedBtnRect.w
+        && p.y >= speedBtnRect.y && p.y <= speedBtnRect.y + speedBtnRect.h) {
+      _f12TimeScale = (_f12TimeScale >= 2) ? 1 : 2;   // toggle ×1 / ×2
+      return;
+    }
     // ── KORTŲ KLIKAS — reikalauja: (1) atrakinta korta, (2) ištreniruotas unit HOME, (3) CD pasibaigęs ──
     // Korta yra PERMANENTTIŠKA po pirmo merge — nereikia turėti „merge tokens"
     for (const r of cardHoverRects) {
@@ -11494,10 +11550,11 @@
   function _activateNow() {
     if (active) return;
     _pickerOpen = false;   // game pradėtas → picker tikrai uždarytas
+    _f12Clock = performance.now();   // game clock startas (PRIEŠ initState — kad now() duotų bazę)
     initState();
     canvas.style.display = 'block';
     active = true;
-    lastTime = now();
+    lastTime = performance.now();    // realaus laiko tracker loop'ui (ne game clock)
     // ANTI-ACCIDENTAL-RELOAD: įspėjam prieš page reload/uždarymą kai vyksta NESETTLE'INTAS
     // NFT mūšis (kad atsitiktinai neperkrautų → neprarastų runo + neliktų orphaned sesijos).
     // Mechanikos NEkeičia (abandon vis tiek = no XP / no escape) → JOKIO exploit'o.
@@ -11710,29 +11767,32 @@
     // (anksčiau rAF buvo apačioj po render() → render klaida = amžinai juodas ekranas).
     raf = requestAnimationFrame(loop);
     try {
-      const dt = Math.min(tnow - lastTime, 100);
+      const realDt = Math.min(tnow - lastTime, 100);
       lastTime = tnow;
-      tickEnemies(dt, tnow);
-      _tickHarpoons(tnow);
-      _tickShamanProj(tnow);
-      _tickArrows(tnow);
-      _tickSpirits(dt, tnow);
-      _tickOhShitEvents(tnow);
-      _tickPoison(tnow);
-      _tickAsteroids(tnow);
-      _tickTraps(tnow);
-      _tickFrostReverse(tnow);
+      const dt = realDt * _f12TimeScale;   // scaled — visa simuliacija greitėja ×timeScale (×2 mygtukas)
+      _f12Clock += dt;                       // game clock advance (now() grąžina _f12Clock)
+      const t = _f12Clock;
+      tickEnemies(dt, t);
+      _tickHarpoons(t);
+      _tickShamanProj(t);
+      _tickArrows(t);
+      _tickSpirits(dt, t);
+      _tickOhShitEvents(t);
+      _tickPoison(t);
+      _tickAsteroids(t);
+      _tickTraps(t);
+      _tickFrostReverse(t);
       // Pending merge attacks — fire'ina po delay (susijungimo animacijos pabaiga)
       for (let i = _f12PendingAttacks.length - 1; i >= 0; i--) {
         const pa = _f12PendingAttacks[i];
-        if (tnow >= pa.runAt) {
-          _triggerMergeAttack(pa.type, pa.value, pa.mx, pa.my, tnow);
+        if (t >= pa.runAt) {
+          _triggerMergeAttack(pa.type, pa.value, pa.mx, pa.my, t);
           _f12PendingAttacks.splice(i, 1);
         }
       }
       tickPhysics(dt);
       _fadeMarks(dt);
-      render(tnow);
+      render(t);
     } catch (e) {
       // Frame klaida — praleidžiam šitą frame, loop'as tęsiasi (ekranas neužstringa juodas)
       if (!loop._errCount) loop._errCount = 0;

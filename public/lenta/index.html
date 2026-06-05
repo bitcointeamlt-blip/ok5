@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=menu54revert">
+  <link rel="stylesheet" href="style.css?v=invtinyswords4">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1792,8 +1792,11 @@
       <div class="nft-tab-panel" id="nft-tab-inventory">
         <div class="nft-inv-header">
           <span>Owned NFT units: <strong id="nft-inv-count">0</strong></span>
+          <span id="nft-deck-status" title="Deck = units loaded instantly into battle picker" style="color:#bde0bd;font-weight:700"></span>
+          <button class="nft-btn-small" id="nft-deck-clear" style="display:none;border-color:rgba(220,120,120,.5);background:rgba(160,70,70,.18);color:#e8b3b3">Clear deck</button>
           <button class="nft-btn-small" id="nft-inv-refresh">Refresh</button>
         </div>
+        <div class="nft-empty" id="nft-deck-hint" style="display:none;opacity:.85;padding:6px 10px;margin-bottom:6px;font-size:.85em">🎴 Tap <strong>＋Deck</strong> on units to build your battle Deck (max 24). The battle picker loads your Deck instantly — no slow wallet scan.</div>
         <div class="nft-inv-grid" id="nft-inv-grid">
           <div class="nft-empty">Connect wallet + train your first NFT unit</div>
         </div>
@@ -2094,12 +2097,12 @@
   <script src="orientation.js?v=7firsttap"></script>
   <script src="supabase_sync.js?v=8device"></script>
   <script src="wallet.js?v=wp21wcpersist"></script>
-  <script src="barracks_nft.js?v=nft47bothends"></script>
-  <script src="barracks_nft_modal.js?v=nft47bothends"></script>
+  <script src="barracks_nft.js?v=nft49deck"></script>
+  <script src="barracks_nft_modal.js?v=nft58nologo"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=cmd463english"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
-  <script src="floor12_merge.js?v=cmd779englishfix"></script>
+  <script src="floor12_merge.js?v=cmd781noflip"></script>
   <script src="wallet-ui.js?v=pewpew13roninwc"></script>
   <script src="hog_rider_popup.js?v=hog50mobwalk"></script>
   <script src="leaderboard.js?v=lb18"></script>
