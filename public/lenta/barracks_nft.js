@@ -100,6 +100,9 @@
       id: RONIN_CHAIN_ID, name: 'Ronin Mainnet',
       nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 },
       rpcUrls: { default: { http: [RONIN_RPC] } },
+      // Multicall3 (standartinis adresas, deployed ant Ronin) — leidžia viem `multicall`
+      // sujungti N skaitymų į VIENĄ eth_call → drastiškai mažiau RPC kvietimų (jokio 429).
+      contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
     });
     _publicClient = v.createPublicClient({ chain, transport: v.http() });
     _publicClient._chain = chain;
@@ -151,19 +154,27 @@
   // ─── COMPOSITE STATE FETCH ───────────────────────────────────
   async function fetchState(addr) {
     const pc = await getPublicClient();
-    const [ron, ronke, ronkeverse, allowance, dailyCap, dailyUsed, remaining, totalAlive, nftBalance, pending, pricing] = await Promise.all([
+    const B = ADDR.barracks, R = ADDR.ronke, RV = ADDR.ronkeverse;
+    // VIENAS Multicall3 eth_call vietoj 11 atskirų kvietimų (+ 1 native getBalance) → jokio rate-limit'o.
+    const [ron, mc] = await Promise.all([
       pc.getBalance({ address: addr }),
-      pc.readContract({ address: ADDR.ronke, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr] }),
-      pc.readContract({ address: ADDR.ronkeverse, abi: ERC721_ABI, functionName: 'balanceOf', args: [addr] }),
-      pc.readContract({ address: ADDR.ronke, abi: ERC20_ABI, functionName: 'allowance', args: [addr, ADDR.barracks] }),
-      read('getPersonalDailyCap', [addr]),
-      read('dailyMintedCount', [addr]),
-      read('getRemainingDailyMint', [addr]),
-      read('totalAlive'),
-      read('balanceOf', [addr]),
-      read('pending', [addr]),
-      read('getCurrentPricing'),
+      pc.multicall({
+        allowFailure: false,
+        contracts: [
+          { address: R,  abi: ERC20_ABI,    functionName: 'balanceOf',            args: [addr] },
+          { address: RV, abi: ERC721_ABI,   functionName: 'balanceOf',            args: [addr] },
+          { address: R,  abi: ERC20_ABI,    functionName: 'allowance',            args: [addr, B] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'getPersonalDailyCap',  args: [addr] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'dailyMintedCount',     args: [addr] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'getRemainingDailyMint',args: [addr] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'totalAlive',           args: [] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'balanceOf',            args: [addr] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'pending',              args: [addr] },
+          { address: B,  abi: BARRACKS_ABI, functionName: 'getCurrentPricing',    args: [] },
+        ],
+      }),
     ]);
+    const [ronke, ronkeverse, allowance, dailyCap, dailyUsed, remaining, totalAlive, nftBalance, pending, pricing] = mc;
     return {
       ron, ronke, ronkeverse, allowance,
       dailyCap, dailyUsed, remaining,
@@ -264,7 +275,8 @@
   //    → švelni RPC apkrova (jokio rate-limit'o / crash'o net su 500+ unitų).
   //  • render'is throttle'inamas (≥500ms) → main thread neblokuojamas.
   //  • per-unit / per-chunk klaidos PRALEIDŽIAMOS (skip) → niekada nemeta → kas užsikrovė lieka.
-  const _INV_FAST = 24, _INV_FAST_CHUNK = 12, _INV_SLOW_CHUNK = 6, _INV_SLOW_DELAY = 350;
+  const _INV_FAST = 24, _INV_FAST_CHUNK = 24, _INV_SLOW_CHUNK = 40, _INV_SLOW_DELAY = 150;
+  const _INV_MAX = 35;   // picker rodo MAX 35 aukščiausio stato unitus (mažiau render/atminties; daugiau nereikia)
   async function fetchInventory(addr, onProgress) {
     const balance = await read('balanceOf', [addr]);
     const n = Number(balance);
@@ -277,18 +289,35 @@
       const now = Date.now();
       if (!force && (now - _lastEmit) < 500) return;   // throttle render
       _lastEmit = now;
-      const sorted = acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
-      try { onProgress(sorted, acc.length, n); } catch (_) {}
+      const sorted = acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId))).slice(0, _INV_MAX);
+      try { onProgress(sorted, sorted.length, Math.min(n, _INV_MAX)); } catch (_) {}
     }
     async function loadChunk(slice) {
-      let ids;
-      try { ids = await Promise.all(slice.map((i) => _readRetry('tokenOfOwnerByIndex', [addr, BigInt(i)]))); }
-      catch (_) { return; }   // paketo tokenId fetch krito — praleidžiam, nenutraukiam
-      const part = await Promise.all(ids.map(async (id) => {
-        try { return _mapUnit(id, await _readRetry('getUnitFullData', [id])); }
-        catch (_) { return null; }   // vienas unit krito — praleidžiam
-      }));
-      for (const u of part) if (u) acc.push(u);
+      const pc = await getPublicClient();
+      // 1) tokenId'ai VIENU Multicall3 eth_call (vietoj slice.length atskirų kvietimų)
+      let idRes;
+      try {
+        idRes = await pc.multicall({
+          allowFailure: true,
+          contracts: slice.map((i) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'tokenOfOwnerByIndex', args: [addr, BigInt(i)] })),
+        });
+      } catch (_) { return; }   // paketas krito — praleidžiam, nenutraukiam
+      const ids = idRes.filter((r) => r && r.status === 'success').map((r) => r.result);
+      if (!ids.length) return;
+      // 2) getUnitFullData VIENU Multicall3 eth_call
+      let dataRes;
+      try {
+        dataRes = await pc.multicall({
+          allowFailure: true,
+          contracts: ids.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })),
+        });
+      } catch (_) { return; }
+      for (let k = 0; k < ids.length; k++) {
+        const r = dataRes[k];
+        if (r && r.status === 'success' && r.result) {
+          try { acc.push(_mapUnit(ids[k], r.result)); } catch (_) {}
+        }
+      }
     }
     // Fazė 1 — greitai pirmi _INV_FAST
     const fast = idxs.slice(0, _INV_FAST);
@@ -303,7 +332,7 @@
       if (s + _INV_SLOW_CHUNK < idxs.length) await new Promise((r) => setTimeout(r, _INV_SLOW_DELAY));
     }
     emit(true);
-    return acc;
+    return acc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId))).slice(0, _INV_MAX);
   }
 
   // ─── WRITE FUNCTIONS ─────────────────────────────────────────
