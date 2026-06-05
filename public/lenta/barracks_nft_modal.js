@@ -268,8 +268,8 @@
       }
       // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės
       if (hasMore) {
-        const c = (BNFT.invCounts && BNFT.invCounts()) || { read: 0, total: 0 };
-        html += `<button id="nft-battle-loadmore" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600">⬇ Load 24 more from chain (${c.read}/${c.total} read)</button>`;
+        const c = (BNFT.invCounts && BNFT.invCounts()) || { shown: 0, total: 0 };
+        html += `<button id="nft-battle-loadmore" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600">⬇ Show 24 more units (${c.shown}/${c.total})</button>`;
       }
     }
     grid.innerHTML = html;
@@ -821,11 +821,11 @@
       // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės
       const BNFT = window.BarracksNFT;
       if (BNFT && BNFT.invHasMore && BNFT.invHasMore()) {
-        const c = (BNFT.invCounts && BNFT.invCounts()) || { read: 0, total: 0 };
+        const c = (BNFT.invCounts && BNFT.invCounts()) || { shown: 0, total: 0 };
         const btn = document.createElement('button');
         btn.id = 'nft-inv-loadmore';
         btn.type = 'button';
-        btn.textContent = `⬇ Load 24 more from chain (${c.read}/${c.total} read)`;
+        btn.textContent = `⬇ Show 24 more units (${c.shown}/${c.total})`;
         btn.style.cssText = 'grid-column:1/-1;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600';
         btn.onclick = async function () {
           btn.disabled = true; btn.textContent = '⏳ Loading…';

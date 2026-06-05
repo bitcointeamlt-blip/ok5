@@ -281,7 +281,16 @@
                            // getUnitFullData struktūra didelė — 40+ per multicall viršija RPC response → tylus skip.
   const _INV_MORE = 24;    // "Load more" — kiek papildomai SKAITOM ir RODOM per paspaudimą
   // Stateful inventory: kursorius leidžia "Load more" tęsti nuo kur baigėm (ne perkrauti viską).
-  let _invAddr = null, _invTotal = 0, _invCursor = 0, _invAcc = [], _invSeen = null, _invShowN = _INV_MAX;
+  let _invAddr = null, _invTotal = 0, _invCursor = 0, _invAcc = [], _invSeen = null, _invShowN = _INV_MAX, _invOrder = [];
+  // Skaitymo eiliškumas iš ABIEJŲ galų pakaitomis: [naujausias, seniausias, 2-as naujausias, ...].
+  // tokenOfOwnerByIndex grąžina token'us gavimo tvarka (0=seniausias, n-1=naujausias), tad ši tvarka
+  // užtikrina kad pradinis paketas padengtų IR senus veteranus IR naujus pirkinius (naujus tipus) —
+  // ne tik vieno tipo bloką iš pradžios. → visi tipai matosi iškart, nereikia "kapstyti".
+  function _bothEndsOrder(n) {
+    const order = []; let lo = 0, hi = n - 1;
+    while (lo <= hi) { order.push(hi--); if (lo <= hi) order.push(lo++); }
+    return order;
+  }
   function _invSorted() {
     return _invAcc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
   }
@@ -327,15 +336,15 @@
       }
     }
     // Fazė 1 — greitai pirmi _INV_FAST (tik pradiniam krovimui, kai start===0)
+    // slice'ai imami iš _invOrder (abiejų galų tvarka), ne tiesiai 0..n.
     const fastEnd = Math.min(end, start + (start === 0 ? _INV_FAST : 0));
     for (let s = start; s < fastEnd; s += _INV_FAST_CHUNK) {
-      await loadChunk(Array.from({ length: Math.min(_INV_FAST_CHUNK, fastEnd - s) }, (_, i) => s + i));
+      await loadChunk(_invOrder.slice(s, Math.min(fastEnd, s + _INV_FAST_CHUNK)));
       emit(true);
     }
     // Fazė 2 — likę LĖTAI su pauzėmis
     for (let s = fastEnd; s < end; s += _INV_SLOW_CHUNK) {
-      const cnt = Math.min(_INV_SLOW_CHUNK, end - s);
-      await loadChunk(Array.from({ length: cnt }, (_, i) => s + i));
+      await loadChunk(_invOrder.slice(s, Math.min(end, s + _INV_SLOW_CHUNK)));
       emit(false);
       if (s + _INV_SLOW_CHUNK < end) await new Promise((r) => setTimeout(r, _INV_SLOW_DELAY));
     }
@@ -347,20 +356,23 @@
     const n = Number(balance);
     // reset state naujam krovimui
     _invAddr = addr; _invTotal = n; _invCursor = 0; _invAcc = []; _invSeen = new Set(); _invShowN = _INV_MAX;
+    _invOrder = _bothEndsOrder(n);   // abiejų galų tvarka — seni veteranai + nauji pirkiniai iškart
     if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
     // Pradinis read cap: dideliems wallet'ams skaitom tik pirmus _INV_LOAD token'us (ne visus n).
     await _loadRange(0, Math.min(n, _INV_LOAD), onProgress);
     return _invSorted().slice(0, _invShowN);
   }
-  // "Load more": perskaito KITUS _INV_MORE token'us nuo kursoriaus + pakelia rodymo ribą.
+  // "Load more": pakelia RODYMO ribą +_INV_MORE ir, jei reikia, perskaito tiek token'ų,
+  // kad padengtų naują ribą (read-cursor seka paskui showN, ne atvirkščiai).
   async function loadMoreInventory(onProgress) {
-    if (!_invAddr || _invCursor >= _invTotal) return _invSorted().slice(0, _invShowN);
+    if (!_invAddr) return _invSorted().slice(0, _invShowN);
     _invShowN += _INV_MORE;
-    const end = Math.min(_invTotal, _invCursor + _INV_MORE);
-    await _loadRange(_invCursor, end, onProgress);
+    const target = Math.min(_invTotal, _invShowN);   // kiek token'ų reikia perskaityti rodymui padengti
+    if (_invCursor < target) await _loadRange(_invCursor, target, onProgress);
     return _invSorted().slice(0, _invShowN);
   }
-  function invHasMore() { return !!_invAddr && _invCursor < _invTotal; }
+  // Yra dar ką rodyti, jei rodymo riba nepasiekė viso wallet'o turinio.
+  function invHasMore() { return !!_invAddr && _invShowN < _invTotal; }
   function invCounts() { return { read: _invCursor, total: _invTotal, shown: Math.min(_invAcc.length, _invShowN) }; }
 
   // ─── WRITE FUNCTIONS ─────────────────────────────────────────
