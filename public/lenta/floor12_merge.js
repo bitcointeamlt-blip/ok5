@@ -2216,6 +2216,7 @@
   let nextNextBlock = null;             // antras eilėje — rodomas ant RONKE lazdos burbulo
   let _f12HoldBall = null;              // HOLD slotas — {type,value} arba null (swap mechanika: stash dabar / panaudok vėliau)
   let _f12HoldRect = null;             // tappable hitbox (nustatomas render metu)
+  let _f12HoldSwapAt = 0;              // paskutinio STASH swap timestamp — anti-spam (kad greitas tap'inimas neperdegintų eilės / nemaišytų)
   let _f12HoldFlashAt = 0;             // swap blyksnio animacijos timestamp
   let lastFireAt = 0;
   let _currentReloadMs = FIRE_COOLDOWN_MIN;  // dabartinio reload trukmė (random per šūvį)
@@ -5248,6 +5249,12 @@
   //  • pilnas  (USE)  → išsaugota spalva užkraunama į patranką, slotas IŠTUŠTĖJA → gali įdėti naują
   function _f12HoldSwap() {
     if (gameOver || !nextBlock) return;
+    // Anti-spam: deliberatūs paspaudimai. Greitas tap'inimas perdegindavo ateinančių
+    // kamuoliukų eilę (USE grąžina spalvą → kitas SAVE vėl ją išsaugo, o eilė slenka) →
+    // atrodydavo lyg „korta ta pati, patranka keičiasi". 300ms cooldown sustabdo.
+    const _t = now();
+    if (_t - _f12HoldSwapAt < 300) return;
+    _f12HoldSwapAt = _t;
     if (!_f12HoldBall) {
       // SAVE — užrakinam spalvą
       _f12HoldBall = { type: nextBlock.type, value: nextBlock.value };
@@ -10247,7 +10254,15 @@
     let bx = layout.startX - _CARD_GAP - bw;       // kairėj nuo pirmos kortos
     if (bx < 6) bx = 6;
     const by = layout.cardY;
-    _f12HoldRect = { x: bx, y: by, w: bw, h: bh };
+    // TAPPABLE HITBOX > vizualas: STASH mažas → mobile pirštas prašaudavo ir prakrisdavo
+    // į patrankos charge → netyčia šūvis. Plečiam paspaudimo plotą (kairėn iki krašto, aukštyn/
+    // žemyn margin'u), DEŠINĖN tik iki pirmos kortos (kad neperimtų jos paspaudimo). Vizualas (bx/by/bw/bh) nesikeičia.
+    const _hm = _IS_MOBILE ? Math.round(bh * 0.55) : Math.round(bh * 0.18);
+    const _hx = Math.max(0, bx - _hm);
+    const _hy = Math.max(0, by - _hm);
+    const _hr = Math.min(bx + bw + _hm, layout.startX - 2);   // neperžengia pirmos kortos
+    const _hb = by + bh + _hm;
+    _f12HoldRect = { x: _hx, y: _hy, w: _hr - _hx, h: _hb - _hy };
     const has = !!_f12HoldBall;
     const hc = has ? (TYPE_COLOR[_f12HoldBall.type] || TYPE_COLOR.arrow) : null;
     const flash = _f12HoldFlashAt > 0 ? Math.max(0, 1 - (t - _f12HoldFlashAt) / 320) : 0;
