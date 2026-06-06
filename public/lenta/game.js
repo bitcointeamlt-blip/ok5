@@ -8171,7 +8171,7 @@ const TROPHY_TIERS = [
     requirements: [
       { id: 'l_score_690',  label: 'PewPew Saga score 690 (single run)', statKey: 'f12HighScore', threshold: 690 },
       { id: 'l_unb_69',     label: '69 UNBELIEVABLE merges', statKey: 'unbelievableMerges', threshold: 69 },
-      { id: 'l_tier_5',    label: 'Create tier-5 ball (value 32)', statKey: 'f12MaxBallValue', threshold: 32 },
+      { id: 'l_tier_5',    label: 'Create tier-4 ball (value 16)', statKey: 'f12MaxBallValue', threshold: 16 },
       { id: 'l_runs_50',    label: '50 PewPew Saga runs completed', statKey: 'f12TotalRuns', threshold: 50 },
     ],
   },
