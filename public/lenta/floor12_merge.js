@@ -2216,7 +2216,7 @@
   let nextNextBlock = null;             // antras eilėje — rodomas ant RONKE lazdos burbulo
   let _f12HoldBall = null;              // HOLD slotas — {type,value} arba null (swap mechanika: stash dabar / panaudok vėliau)
   let _f12HoldRect = null;             // tappable hitbox (nustatomas render metu)
-  let _f12HoldSwapAt = 0;              // paskutinio STASH swap timestamp — anti-spam (kad greitas tap'inimas neperdegintų eilės / nemaišytų)
+  let _f12HoldLockedUntilFire = false; // po STASH veiksmo užrakinta — reikia IŠŠAUTI prieš darant kitą STASH veiksmą (vienkryptė mechanika)
   let _f12HoldFlashAt = 0;             // swap blyksnio animacijos timestamp
   let lastFireAt = 0;
   let _currentReloadMs = FIRE_COOLDOWN_MIN;  // dabartinio reload trukmė (random per šūvį)
@@ -5177,6 +5177,7 @@
     if (blocks.length >= MAX_BLOCKS + _f12FireBonusSlots) return;
     if (gameOver) return;
     lastFireAt = t;
+    _f12HoldLockedUntilFire = false;      // iššovėm → STASH vėl galima naudoti (vienkryptė mechanika)
     _f12PlatformAnimStart = t;            // platforma animuojasi vieną kartą po šūvio
     // Sekančio reload trukmė — lygi distribucija: 1s / 2s / 3s, kiekvienas po ~33%
     {
@@ -5249,22 +5250,21 @@
   //  • pilnas  (USE)  → išsaugota spalva užkraunama į patranką, slotas IŠTUŠTĖJA → gali įdėti naują
   function _f12HoldSwap() {
     if (gameOver || !nextBlock) return;
-    // Anti-spam: deliberatūs paspaudimai. Greitas tap'inimas perdegindavo ateinančių
-    // kamuoliukų eilę (USE grąžina spalvą → kitas SAVE vėl ją išsaugo, o eilė slenka) →
-    // atrodydavo lyg „korta ta pati, patranka keičiasi". 300ms cooldown sustabdo.
-    const _t = now();
-    if (_t - _f12HoldSwapAt < 300) return;
-    _f12HoldSwapAt = _t;
+    // VIENKRYPTĖ mechanika: padarius STASH veiksmą, patrankoj atsiranda spalva kurią
+    // PRIVALAI iššauti — atgal įdėti / vėl keisti / saugoti naują negali kol neiššausi.
+    // Tai natūraliai sustabdo spam'ą ir „korta ta pati, patranka keičiasi" painiavą.
+    if (_f12HoldLockedUntilFire) return;
     if (!_f12HoldBall) {
-      // SAVE — užrakinam spalvą
+      // SAVE — užrakinam spalvą; patrankon ateina nauja spalva (ją reikės iššauti)
       _f12HoldBall = { type: nextBlock.type, value: nextBlock.value };
       nextBlock = nextNextBlock || makeNextBlock();
       nextNextBlock = makeNextBlock();
     } else {
-      // USE — panaudojam išsaugotą spalvą, slotas tampa tuščias (vienkartinis)
+      // USE — išsaugota spalva eina į patranką (ją reikės iššauti), slotas tuščias
       nextBlock = { type: _f12HoldBall.type, value: _f12HoldBall.value };
       _f12HoldBall = null;
     }
+    _f12HoldLockedUntilFire = true;        // užrakinta iki šūvio
     _f12HoldFlashAt = now();
     try { if (_F12Audio && _F12Audio.colorReveal) _F12Audio.colorReveal(); } catch (_) {}
   }
@@ -10327,10 +10327,21 @@
       ctx.fillRect(ccx - PX / 2, ccy - 5, PX, 10);            // „+" vertikalus
     }
 
+    // ── LOCKED overlay — užrakinta iki šūvio (vienkryptė mechanika): pritemdom turinį
+    if (_f12HoldLockedUntilFire) {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(bx + PX, by + PX, bw - PX * 2, bh - PX * 2);
+    }
     // ── BOTTOM hint
-    ctx.fillStyle = has ? 'rgba(255,231,168,0.9)' : 'rgba(205,184,140,0.55)';
-    ctx.font = '7px "Press Start 2P", monospace';
-    ctx.fillText(has ? 'USE' : 'SAVE', bx + bw / 2, by + bh - 8);
+    if (_f12HoldLockedUntilFire) {
+      ctx.fillStyle = 'rgba(255,150,120,0.95)';                 // FIRE! — reikia iššauti
+      ctx.font = '7px "Press Start 2P", monospace';
+      ctx.fillText('FIRE!', bx + bw / 2, by + bh - 8);
+    } else {
+      ctx.fillStyle = has ? 'rgba(255,231,168,0.9)' : 'rgba(205,184,140,0.55)';
+      ctx.font = '7px "Press Start 2P", monospace';
+      ctx.fillText(has ? 'USE' : 'SAVE', bx + bw / 2, by + bh - 8);
+    }
 
     // ── swap blyksnis — auksinis kontūras aplink visą slotą
     if (flash > 0) {
