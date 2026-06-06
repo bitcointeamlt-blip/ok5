@@ -20,6 +20,13 @@
   //                 (3) HOG_LAUNCHED=true, (4) deploy. Viskas pradeda veikti.
   const HOG_LAUNCHED = true;
 
+  // ─── EVENT FORCE-OVER — užbaigia eventą IŠKART (nepriklauso nuo laiko) ─
+  // true  = event'as baigtas DABAR: popup'o nėra, Barakuose „?" kortelė, UI mint išjungtas.
+  //         (Naudota 2026-06-06 — užbaigta ~3h prieš laiko galą, kad deploy būtų verifikuotas
+  //          iškart, o ne pasikliauti 07:00 auto-trigger'iu.)
+  // false = grįžta prie laiko lango (EVENT_END_MS) auto-shutdown.
+  const HOG_EVENT_FORCE_OVER = true;
+
   const EVENT_KEY        = 'hogEventDismissedAt';   // ms timestamp of last "don't show today"
   const SUPPRESS_24H     = 24 * 60 * 60 * 1000;
   const LAUNCH_DELAY     = 3000;                    // ms after F10 fully loaded
@@ -33,6 +40,60 @@
   function _isEventActive() {
     const now = Date.now();
     return now >= EVENT_START_MS && now < EVENT_END_MS;   // globalus langas [start, end)
+  }
+
+  // ─── POST-EVENT PERMANENT KILL (sklandus auto-išjungimas, be surprizų) ─
+  // Vienkryptis latch: vos pasiekus EVENT_END_MS → įrašom localStorage flag'ą.
+  // Nuo tada popup'as NIEKADA nebepasirodo + TRAIN tile paslepiamas per injected
+  // CSS (bulletproof — nepriklauso nei nuo _syncHogTile, nei nuo laikrodžio grįžimo,
+  // nei nuo kokio nors bug'o, kuris bandytų iškviesti _show()).
+  function _eventPermanentlyOver() {
+    if (HOG_EVENT_FORCE_OVER) return true;   // master: užbaigta DABAR (verifikuojama iškart, nepriklauso nuo laiko)
+    try { if (localStorage.getItem('hogEventOver') === '1') return true; } catch (_) {}
+    if (Date.now() >= EVENT_END_MS) {
+      try { localStorage.setItem('hogEventOver', '1'); } catch (_) {}   // užsklendžiam
+      return true;
+    }
+    return false;
+  }
+  function _applyPermanentKill() {
+    // 1) CSS injektas (vieną kartą) — Hog tile virsta tuščia „?" mystery kortele
+    //    (NE display:none, kad neliktų tuščio tarpo grid'e). Negalima mintinti.
+    if (!document.getElementById('hog-event-over-style')) {
+      try {
+        const st = document.createElement('style');
+        st.id = 'hog-event-over-style';
+        st.textContent =
+          // Derinasi su .nft-unit-option: tas pats fonas #1a2238, rėmelis #2a3a5a, teal hover #4a9da6
+          '.nft-unit-option-hog.hog-mystery{background:#1a2238 !important;border:2px solid #2a3a5a !important;box-shadow:none !important;cursor:default !important;display:flex !important;align-items:center;justify-content:center;position:relative;overflow:hidden;transition:all .15s;}'
+          + '.nft-unit-option-hog.hog-mystery:hover{border-color:#4a9da6 !important;box-shadow:0 0 12px rgba(74,157,166,.35) !important;}'
+          + '.nft-unit-option-hog.hog-mystery:hover .hog-mystery-q{color:#62bcc6;animation:hogQShiver .32s ease-in-out;}'
+          + '.nft-unit-option-hog.hog-mystery::before{content:"" !important;display:block !important;position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,rgba(74,157,166,.13),transparent 62%);pointer-events:none;}'
+          + '.nft-unit-option-hog.hog-mystery .nft-unit-hog-sprite,.nft-unit-option-hog.hog-mystery .nft-unit-tag,.nft-unit-option-hog.hog-mystery .nft-unit-name{display:none !important;}'
+          + '.hog-mystery-inner{position:relative;display:flex;flex-direction:column;align-items:center;gap:13px;pointer-events:none;}'
+          // pixel-art „?" (Press Start 2P) su pixel drop-shadow + idle bob animacija
+          + '.hog-mystery-q{font-size:40px;line-height:1;color:#4a9da6;font-family:\'Press Start 2P\',monospace,sans-serif;text-shadow:3px 3px 0 rgba(0,0,0,.5),0 0 14px rgba(74,157,166,.4);image-rendering:pixelated;animation:hogQIdle 2.4s ease-in-out infinite;}'
+          + '.hog-mystery-label{font-size:8px;font-weight:700;letter-spacing:2px;color:#9fc7cd;background:rgba(74,157,166,.1);border:1px solid rgba(74,157,166,.35);padding:5px 11px;border-radius:20px;font-family:\'Press Start 2P\',monospace,sans-serif;}'
+          // idle: švelnus bobinimas aukštyn-žemyn; hover: greitas pixel „suvirpėjimas"
+          + '@keyframes hogQIdle{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}'
+          + '@keyframes hogQShiver{0%{transform:translate(0,0) rotate(0);}25%{transform:translate(-2px,0) rotate(-3deg);}50%{transform:translate(2px,0) rotate(3deg);}75%{transform:translate(-1px,0) rotate(-1.5deg);}100%{transform:translate(0,0) rotate(0);}}';
+        document.head.appendChild(st);
+      } catch (_) {}
+    }
+    // 2) Pakeičiam tile turinį į „?" mystery kortelę (vieną kartą; idempotent per klasę)
+    try {
+      const tile = document.querySelector('.nft-unit-option-hog');
+      if (tile && !tile.classList.contains('hog-mystery')) {
+        tile.classList.remove('selected');
+        // hog-locked = click guard (handler grąžina early → negalima mintinti);
+        // hog-mystery = naujas vaizdas (mūsų injected CSS perrašo hog-locked dim/SOON).
+        tile.classList.add('hog-locked', 'hog-mystery');
+        tile.removeAttribute('data-utype');   // papildoma apsauga: NaN utype neįmanomas
+        tile.innerHTML = '<div class="hog-mystery-inner"><div class="hog-mystery-q">?</div></div>';
+      }
+    } catch (_) {}
+    // 3) jei popup atidarytas — uždarom
+    try { _hide(false); } catch (_) {}
   }
 
   // Rodo/slepia Hog Rider TRAIN tile pagal globalų langą.
@@ -582,6 +643,7 @@
   }
 
   function _show() {
+    if (_eventPermanentlyOver()) { _applyPermanentKill(); return; }   // event baigėsi — niekada nerodom
     const modal = document.getElementById('hog-event-modal');
     if (!modal) return;
 
@@ -730,6 +792,7 @@
   }
 
   function _maybeShowOnF10() {
+    if (_eventPermanentlyOver()) { _applyPermanentKill(); return; }   // event baigėsi — permanentinis kill
     if (_shownThisSession) return;
     // Užrakintas → rodom teaser (su "COMING SOON"). Atrakintas → tik event lange.
     if (HOG_LAUNCHED && !_isEventActive()) return;
@@ -741,6 +804,8 @@
 
   function _startF10Watch() {
     _preloadSprites();   // cache'inam sprite'us iškart, kad attack/dmg-take nedingtų
+    // Jei jau po event'o — iškart pritaikom permanentinį kill (CSS tile hide)
+    if (_eventPermanentlyOver()) _applyPermanentKill();
     // Pirmas tikrinimas po DOMContentLoaded
     setTimeout(_maybeShowOnF10, 200);
     setTimeout(_syncHogTile, 250);
@@ -749,7 +814,10 @@
       setTimeout(_maybeShowOnF10, 100);
     });
     // Polling — atvejui jei žaidėjas vaikšto per floor nav mygtukus (be hash change)
-    setInterval(() => { _maybeShowOnF10(); _syncHogTile(); }, 600);
+    setInterval(() => {
+      if (_eventPermanentlyOver()) { _applyPermanentKill(); return; }   // po event'o — tik kill, nieko daugiau
+      _maybeShowOnF10(); _syncHogTile();
+    }, 600);
   }
 
   // Public API — kad galima rankiniu rodyti per konsolę debug'ui
@@ -769,6 +837,22 @@
       console.log('  start :', new Date(EVENT_START_MS).toISOString());
       console.log('  end   :', new Date(EVENT_END_MS).toISOString());
       console.log('  active:', _isEventActive(), '| remaining:', _formatCountdown(EVENT_END_MS - now));
+      console.log('  permanentlyOver:', (localStorage.getItem('hogEventOver') === '1'));
+    },
+    // ── TESTAVIMUI: simuliuoja event pabaigą BE laukimo 3h ──
+    // Konsolėj: HogRiderPopup.testEndNow()  → latch + tile hide + popup close iškart.
+    testEndNow: function () {
+      try { localStorage.setItem('hogEventOver', '1'); } catch (_) {}
+      _applyPermanentKill();
+      console.log('[HogRiderPopup] TEST: event forced OVER. Popup killed + tile hidden. (HogRiderPopup.testClear() grąžinti)');
+    },
+    // Grąžina į prieš-pabaigos būseną (test reset): pašalina latch + CSS hide.
+    testClear: function () {
+      try { localStorage.removeItem('hogEventOver'); } catch (_) {}
+      const st = document.getElementById('hog-event-over-style');
+      if (st) st.remove();
+      _shownThisSession = false;
+      console.log('[HogRiderPopup] TEST: cleared. Event active again:', _isEventActive());
     }
   };
 
