@@ -13,6 +13,19 @@
     ronkeverse: '0x810B6d1374ac7BA0E83612E7d49F49A13f1de019',  // production Ronkeverse
   };
 
+  // ─── RONKE Power (deko registracija on-chain) ───────────────────────────
+  // PASTABA: `address` TUŠČIAS → register mygtukas lieka „coming soon" (saugus preview).
+  // Po MAINNET deploy užpildyk `address` (+ jei reikia chainId) → mygtukas pradeda tikrą flow.
+  // Saigon test instancija (ref, NE produkcijai): 0xb52e5d2efb5c3ad490cc3bc00a6cadaf4bbf1de1
+  const RONKE_POWER = {
+    address:  '0x15717035F34DE9541883fc30E7A0483230927eb0',  // RonkePower MAINNET (LIVE 2026-06-06)
+    chainId:  2020,                // tinklas (mainnet 2020; Saigon 202601). HARDCODE — RONIN_CHAIN_ID apibrėžtas žemiau (TDZ).
+    ronke:    ADDR.ronke,          // RONKE approval'ui (fee mokamas šiuo tokenu)
+    feeRonke: 10n,                 // 10 RONKE / registraciją (display + approval bazė)
+    endpoint: 'https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/set-deck',
+  };
+  function isRonkePowerEnabled() { return /^0x[0-9a-fA-F]{40}$/.test(RONKE_POWER.address || ''); }
+
   const RONIN_CHAIN_ID = 2020;
   const RONIN_RPC = 'https://api.roninchain.com/rpc';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.0';
@@ -377,17 +390,40 @@
   function invCounts() { return { read: _invCursor, total: _invTotal, shown: Math.min(_invAcc.length, _invShowN) }; }
 
   // ─── DECK (loadout) ───────────────────────────────────────────
-  // Žaidėjas susideda ≤_DECK_MAX token ID į "deck'ą" (localStorage, per-wallet). Žaidimo kelias
+  // Žaidėjas susideda token ID į "deck'ą" (localStorage, per-wallet). Žaidimo kelias
   // kraunamas TIK iš deck'o → 1 multicall, jokio tokenOfOwnerByIndex skeno → nulis RPC problemų
   // net 500+ wallet'ui ir mobiliam. Iš deck'o žaidime renkamasi iki BATTLE_MAX (12).
-  const _DECK_MAX = 24;
+  //
+  // Slot cap DINAMINIS — atitinka RonkePower.sol maxSlots: deckBase(12) + min(Ronkeverse×1, 18),
+  // cap hardMax(30). RV balansas fetch'inamas async + cache'inamas per-wallet; setDeck slice'ina
+  // tik iki HARD max (30) kad NIEKADA netrumpintų teisėto deko kol RV dar neužsikrovęs.
+  const _DECK_BASE = 12;
+  const _SLOT_PER_RV = 1;
+  const _RV_CAP = 18;
+  const _DECK_HARD_MAX = 30;
+  const _deckSlotsCache = {};   // addr.lower → leistinas slotų skaičius (po RV fetch)
+  function getDeckMax(addr) {
+    const k = String(addr || '').toLowerCase();
+    return _deckSlotsCache[k] || _DECK_BASE;   // kol RV neužkrautas — saugi apatinė riba (bazė 12)
+  }
+  // Fetch'ina Ronkeverse balansą → apskaičiuoja + cache'ina deko slotus. Kviesti prieš render.
+  async function refreshDeckSlots(addr) {
+    try {
+      const rv = Number(await getRonkeverseBalance(addr)) || 0;
+      const slots = Math.min(_DECK_HARD_MAX, _DECK_BASE + Math.min(rv * _SLOT_PER_RV, _RV_CAP));
+      _deckSlotsCache[String(addr || '').toLowerCase()] = slots;
+      return slots;
+    } catch (_) { return getDeckMax(addr); }
+  }
   function _deckKey(addr) { return 'f12_deck_' + String(addr || '').toLowerCase(); }
   function getDeck(addr) {
     try { const r = JSON.parse(localStorage.getItem(_deckKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
     catch (_) { return []; }
   }
   function setDeck(addr, ids) {
-    const uniq = Array.from(new Set((ids || []).map(String))).slice(0, _DECK_MAX);
+    // Slice tik iki HARD max — dinaminis cap enforce'inamas addToDeck'e (UI), kad async RV
+    // dar neužsikrovus jau išsaugotas didesnis dekas nebūtų nukirptas.
+    const uniq = Array.from(new Set((ids || []).map(String))).slice(0, _DECK_HARD_MAX);
     try { localStorage.setItem(_deckKey(addr), JSON.stringify(uniq)); } catch (_) {}
     return uniq;
   }
@@ -395,31 +431,161 @@
   function deckCount(addr) { return getDeck(addr).length; }
   function addToDeck(addr, id) {
     const d = getDeck(addr), s = String(id);
-    if (d.indexOf(s) === -1 && d.length < _DECK_MAX) d.push(s);
+    if (d.indexOf(s) === -1 && d.length < getDeckMax(addr)) d.push(s);
     return setDeck(addr, d);
   }
   function removeFromDeck(addr, id) {
+    // Iš deko šalinant — išmetam ir iš battle squad (squad ⊆ deck).
+    setBattleSquad(addr, getBattleSquad(addr).filter((x) => x !== String(id)));
     return setDeck(addr, getDeck(addr).filter((x) => x !== String(id)));
+  }
+
+  // ─── BATTLE SQUAD (kovos pogrupis, max 12 ⊆ deck) ───────────────────────
+  // Deka (iki 24/maxSlots) = POWER (registruojama on-chain). Squad (12) = kas REALIAI eina į kovą.
+  // BATTLE mygtukas pildo squad; kai 12 pilnas → likusios kortos eina į deką tik dėl POWER.
+  const _BATTLE_SQUAD_MAX = 12;
+  function _squadKey(addr) { return 'f12_squad_' + String(addr || '').toLowerCase(); }
+  function getBattleSquad(addr) {
+    try { const r = JSON.parse(localStorage.getItem(_squadKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    catch (_) { return []; }
+  }
+  function setBattleSquad(addr, ids) {
+    const uniq = Array.from(new Set((ids || []).map(String))).slice(0, _BATTLE_SQUAD_MAX);
+    try { localStorage.setItem(_squadKey(addr), JSON.stringify(uniq)); } catch (_) {}
+    return uniq;
+  }
+  function squadHas(addr, id) { return getBattleSquad(addr).indexOf(String(id)) !== -1; }
+  function squadCount(addr) { return getBattleSquad(addr).length; }
+  function addToSquad(addr, id) {
+    const s = getBattleSquad(addr), v = String(id);
+    if (s.indexOf(v) === -1 && s.length < _BATTLE_SQUAD_MAX) s.push(v);
+    setBattleSquad(addr, s);
+    addToDeck(addr, id);   // squad ⊆ deck (kovai → irgi power)
+    return s;
+  }
+  function removeFromSquad(addr, id) {
+    // Tik iš squad — korta lieka deke (tampa power-only). Atlaisvina kovos slotą.
+    return setBattleSquad(addr, getBattleSquad(addr).filter((x) => x !== String(id)));
+  }
+
+  // ─── Registruoto deko snapshot (ar lokalus dekas atitinka on-chain) ──────
+  // Po registracijos / syncDeckFromChain įsimenam užregistruotą deką. UI lentutė pagal tai
+  // rodo „REGISTER" (pakeista) arba „START BATTLE" (užregistruota). Squad keitimas NEįtakoja
+  // (squad lokalus), tik deko narystės keitimas → reikia perregistruoti.
+  function _regKey(addr) { return 'f12_deckreg_' + String(addr || '').toLowerCase(); }
+  function getRegisteredDeck(addr) {
+    try { const r = JSON.parse(localStorage.getItem(_regKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    catch (_) { return []; }
+  }
+  function setRegisteredDeck(addr, ids) {
+    try { localStorage.setItem(_regKey(addr), JSON.stringify((ids || []).map(String))); } catch (_) {}
+  }
+  // TIKSLUS (exact) palyginimas — valdo juostos būseną (DECK REGISTERED vs UPDATE DECK).
+  // Lock (🔒 mygtukai) naudoja ATSKIRĄ sąlygą (snapshot egzistuoja) — žr. _deckLocked modal'e.
+  function isDeckRegistered(addr) {
+    const cur = getDeck(addr).map(String).sort();
+    const reg = getRegisteredDeck(addr).map(String).sort();
+    if (cur.length === 0 || cur.length !== reg.length) return false;
+    for (let i = 0; i < cur.length; i++) if (cur[i] !== reg[i]) return false;
+    return true;   // lokalus dekas == on-chain → tiksliai užregistruota
+  }
+  // Ar APSKRITAI buvo registruotas (snapshot egzistuoja) — net jei dabar pakeistas/mirę pašalinti.
+  // Naudojama lock'ui: registruotas dekas → 🔒 mygtukai visada (kol ne edit režimas).
+  function hasRegisteredDeck(addr) {
+    return getRegisteredDeck(addr).length > 0 && getDeck(addr).length > 0;
+  }
+  // Squad snapshot (UNDO'ui) — registruotos būsenos battle squad.
+  function _regSqKey(addr) { return 'f12_squadreg_' + String(addr || '').toLowerCase(); }
+  function getRegisteredSquad(addr) {
+    try { const r = JSON.parse(localStorage.getItem(_regSqKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    catch (_) { return []; }
+  }
+  function setRegisteredSquad(addr, ids) {
+    try { localStorage.setItem(_regSqKey(addr), JSON.stringify((ids || []).map(String))); } catch (_) {}
+  }
+  // UNDO — grąžina DEKĄ į paskutinę užregistruotą būseną (squad = atskiras battle pasirinkimas, neliečiam).
+  function undoDeckChanges(addr) {
+    setDeck(addr, getRegisteredDeck(addr));
+    return getDeck(addr);
+  }
+  // Pašalina iš deko MIRUSIUS/parduotus unitus (ownerOf revert ar svetimas owner) → atlaisvina slotus.
+  // Patikima: multicall pavyko (kitaip throw) → individualus 'failure' = burned. Grąžina pašalintus ID'us.
+  async function pruneDeadDeckUnits(addr) {
+    const deck = getDeck(addr);
+    if (!deck.length) return [];
+    const pc = await getPublicClient();
+    let ownRes;
+    try {
+      ownRes = await pc.multicall({ allowFailure: true, contracts: deck.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [BigInt(id)] })) });
+    } catch (_) { return []; }   // tinklo klaida → nieko nešalinam (saugu)
+    const lc = String(addr || '').toLowerCase();
+    const alive = [], dead = [];
+    for (let i = 0; i < deck.length; i++) {
+      const o = ownRes[i];
+      if (o && o.status === 'success' && String(o.result).toLowerCase() === lc) alive.push(String(deck[i]));
+      else dead.push(String(deck[i]));   // revert (burned) arba kitas owner (parduota)
+    }
+    if (dead.length) {
+      setDeck(addr, alive);
+      setBattleSquad(addr, getBattleSquad(addr).filter((id) => alive.indexOf(String(id)) !== -1));
+    }
+    return dead;
+  }
+
+  // ─── Deck-load-from-chain (cross-device, „no full scan") ────────────────
+  // On-chain dekas (RonkePower.getDeck) = tiesos šaltinis. Login/modal metu perskaitom 1 call →
+  // užpildom lokalų deką → žaidimas krauna TIK deko unitus (ne visus 500), ir dekas seka per
+  // įrenginius (mobile localStorage evict-proof). Gated: jei RonkePower neaktyvuota → no-op.
+  const RONKE_POWER_ABI = [
+    { name: 'getDeck',  type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256[]'}] },
+    { name: 'maxSlots', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
+  ];
+  let _deckSyncedFor = null;
+  async function syncDeckFromChain(addr, force) {
+    if (!isRonkePowerEnabled() || !addr) return getDeck(addr);
+    const a = String(addr).toLowerCase();
+    if (!force && _deckSyncedFor === a) return getDeck(addr);   // 1× per sesiją (nebent force)
+    try {
+      const pc = await getPublicClient();
+      // TIMEOUT — getDeck kvietimas NEGALI blokuoti inventoriaus/battle krovimo (max 6s).
+      const onchain = await Promise.race([
+        pc.readContract({ address: RONKE_POWER.address, abi: RONKE_POWER_ABI, functionName: 'getDeck', args: [addr] }),
+        new Promise(function (_, rej) { setTimeout(function () { rej(new Error('deck sync timeout')); }, 6000); }),
+      ]);
+      _deckSyncedFor = a;
+      const onIds = (Array.isArray(onchain) ? onchain : []).map(String);
+      setRegisteredDeck(addr, onIds);          // on-chain dekas = registruotas snapshot (lentutės būsenai)
+      if (onIds.length) setDeck(addr, onIds);  // on-chain laimi (cross-device tiesos šaltinis)
+      // PASTABA: battle squad = atskiras kovos pasirinkimas (BATTLE tab'e), persist'ina localStorage.
+      // NEperrašom čia — kad žaidėjo kovos pasirinkimas išliktų.
+    } catch (_) { /* RPC glitch / timeout — paliekam lokalų deką, NEblokuojam */ }
+    return getDeck(addr);
   }
   // Krauna TIK nurodytus token ID (getUnitFullData + ownerOf patikra). Parduoti/sudeginti iškrenta.
   async function loadDeckUnits(addr, tokenIds) {
     const ids = (tokenIds || []).map((x) => { try { return BigInt(x); } catch (_) { return null; } }).filter((x) => x !== null);
     if (!ids.length) return [];
     const pc = await getPublicClient();
-    let dataRes, ownRes;
-    try {
-      [dataRes, ownRes] = await Promise.all([
-        pc.multicall({ allowFailure: true, contracts: ids.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })) }),
-        pc.multicall({ allowFailure: true, contracts: ids.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [id] })) }),
-      ]);
-    } catch (_) { return []; }
     const out = [], lc = String(addr || '').toLowerCase();
-    for (let i = 0; i < ids.length; i++) {
-      const o = ownRes[i];
-      if (!o || o.status !== 'success' || String(o.result).toLowerCase() !== lc) continue;  // nebeturimas → praleisti
-      const d = dataRes[i];
-      if (d && d.status === 'success' && d.result) {
-        try { out.push(_mapUnit(ids[i], d.result)); } catch (_) {}
+    // CHUNK'inam: getUnitFullData = didelė struktūra. Per daug vienam multicall → viršija RPC atsakymą →
+    // dalis tyliai nutrūksta (pvz 24 deko unitai → tik 22 užkraunami). Paketais po 12 = saugu (kaip _INV_CHUNK).
+    const CHUNK = 12;
+    for (let s = 0; s < ids.length; s += CHUNK) {
+      const slice = ids.slice(s, s + CHUNK);
+      let dataRes, ownRes;
+      try {
+        [dataRes, ownRes] = await Promise.all([
+          pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })) }),
+          pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [id] })) }),
+        ]);
+      } catch (_) { continue; }   // šio paketo tinklo klaida → praleidžiam paketą, tęsiam likusius
+      for (let i = 0; i < slice.length; i++) {
+        const o = ownRes[i];
+        if (!o || o.status !== 'success' || String(o.result).toLowerCase() !== lc) continue;  // nebeturimas → praleisti
+        const d = dataRes[i];
+        if (d && d.status === 'success' && d.result) {
+          try { out.push(_mapUnit(slice[i], d.result)); } catch (_) {}
+        }
       }
     }
     return out;
@@ -473,6 +639,84 @@
       return a >= target;
     });
     return hash;
+  }
+
+  // ─── RONKE Power: deko registracija on-chain (relayer-sponsored) ─────────
+  // Flow: (1) RONKE approval RonkePower'iui (vienkartinis) → (2) žaidėjas pasirašo SetDeck
+  // (EIP-712, GASLESS) → (3) POST į set-deck edge fn → relayer kviečia setDeckForWithFee + moka gas.
+  // Žaidėjas moka tik 10 RONKE fee. Apsaugos (parašas/nonce/deadline) — backend'e + kontrakte.
+  async function _ronkePowerAllowance(owner) {
+    const pc = await getPublicClient();
+    return await pc.readContract({ address: RONKE_POWER.ronke, abi: ERC20_ABI, functionName: 'allowance', args: [owner, RONKE_POWER.address] });
+  }
+  async function registerDeckOnChain(tokenIds, onStatus) {
+    const status = function (m) { try { if (onStatus) onStatus(m); } catch (_) {} };
+    if (!isRonkePowerEnabled()) throw new Error('On-chain deck registration is not live yet.');
+    const W = window.Wallet;
+    if (!W || !W.isConnected || !W.isConnected()) throw new Error('Connect your wallet first.');
+    const addr = W.getAddress();
+    const ids = (tokenIds && tokenIds.length ? tokenIds : getDeck(addr)).map(String);
+    if (!ids.length) throw new Error('Your deck is empty — add units first.');
+    if (ids.length > _DECK_HARD_MAX) throw new Error('Deck too big (max ' + _DECK_HARD_MAX + ').');
+    // dedup apsauga (kontraktas + backend irgi tikrina, bet nesiunčiam šlamšto)
+    if (new Set(ids).size !== ids.length) throw new Error('Duplicate units in deck.');
+
+    await ensureNetwork();
+
+    // 1) RONKE approval (jei mažiau nei fee — approve dosniai, kad keitimai nereikalautų re-approve)
+    status('Checking RONKE approval…');
+    const fee = (RONKE_POWER.feeRonke || 10n) * 10n ** 18n;
+    let allow = 0n;
+    try { allow = await _ronkePowerAllowance(addr); } catch (_) { allow = 0n; }
+    if (allow < fee) {
+      status('Approve RONKE (one-time)…');
+      const wc = await getWalletClient();
+      const approveAmt = fee * 100n;  // ~100 keitimų be re-approve
+      const h = await wc.writeContract({ address: RONKE_POWER.ronke, abi: ERC20_ABI, functionName: 'approve', args: [RONKE_POWER.address, approveAmt], account: addr });
+      const pc = await getPublicClient();
+      await _confirmTx(h, async function () {
+        const a = await pc.readContract({ address: RONKE_POWER.ronke, abi: ERC20_ABI, functionName: 'allowance', args: [addr, RONKE_POWER.address] });
+        return a >= fee;
+      });
+    }
+
+    // 2) Pasirašom SetDeck (EIP-712, GASLESS) — autorizuoja, kad TIK savininkas keičia savo deką
+    status('Sign deck registration…');
+    const deadline = Math.floor(Date.now() / 1000) + 600;
+    const nonce = Date.now().toString() + Math.floor(Math.random() * 1e6).toString();
+    const domain = { name: 'RonkePower', version: '1', chainId: RONKE_POWER.chainId, verifyingContract: RONKE_POWER.address };
+    const types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' }, { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' },
+      ],
+      SetDeck: [
+        { name: 'player', type: 'address' }, { name: 'tokenIds', type: 'uint256[]' },
+        { name: 'deadline', type: 'uint256' }, { name: 'nonce', type: 'uint256' },
+      ],
+    };
+    const message = { player: addr, tokenIds: ids, deadline: String(deadline), nonce: nonce };
+    const provider = W._getProvider ? W._getProvider() : (window.ronin && window.ronin.provider || window.ethereum);
+    if (!provider) throw new Error('No wallet provider.');
+    const typedData = JSON.stringify({ domain, types, primaryType: 'SetDeck', message });
+    const signature = await provider.request({ method: 'eth_signTypedData_v4', params: [addr.toLowerCase(), typedData] });
+
+    // 3) POST į set-deck → relayer relay'ina setDeckForWithFee + moka gas
+    status('Registering on-chain…');
+    let resp;
+    try {
+      resp = await fetch(RONKE_POWER.endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: addr, tokenIds: ids, deadline: deadline, nonce: nonce, signature: signature }),
+      }).then(function (r) { return r.json(); });
+    } catch (e) { throw new Error('Network error: ' + (e && e.message || e)); }
+    if (!resp || !resp.ok) throw new Error((resp && resp.error) || 'Registration failed.');
+
+    // Sinchronizuojam lokalų deką su tuo, ką užregistravom + įsimenam registruotą snapshot
+    setDeck(addr, ids);
+    setRegisteredDeck(addr, ids);   // dabar lokalus == on-chain → lentutė rodys „START BATTLE"
+    setRegisteredSquad(addr, getBattleSquad(addr));   // squad snapshot UNDO'ui
+    return resp;  // { ok, txHash, deck, status }
   }
 
   // Verčia žalią revert priežastį į aiškią žmogui suprantamą žinutę.
@@ -629,14 +873,34 @@
     loadMoreInventory,
     invHasMore,
     invCounts,
-    DECK_MAX: _DECK_MAX,
+    DECK_MAX: _DECK_HARD_MAX,
+    getDeckMax,
+    refreshDeckSlots,
     getDeck,
     setDeck,
     deckHas,
     deckCount,
     addToDeck,
     removeFromDeck,
+    BATTLE_SQUAD_MAX: _BATTLE_SQUAD_MAX,
+    getBattleSquad,
+    setBattleSquad,
+    squadHas,
+    squadCount,
+    addToSquad,
+    removeFromSquad,
+    getRegisteredDeck,
+    setRegisteredDeck,
+    isDeckRegistered,
+    getRegisteredSquad,
+    setRegisteredSquad,
+    undoDeckChanges,
+    hasRegisteredDeck,
+    pruneDeadDeckUnits,
     loadDeckUnits,
+    syncDeckFromChain,
+    registerDeckOnChain,
+    isRonkePowerEnabled,
     getBatchPricing,
     getCurrentPricing,
     getPending,

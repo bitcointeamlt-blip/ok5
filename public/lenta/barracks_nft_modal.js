@@ -15,6 +15,7 @@
     if (!modal) return;
     modal.classList.add('active');
     modalOpen = true;
+    _invShowAll = false;   // atidarius modalą — visada deck-only (registruotas dekas → užrakinta). Edit režimas laikinas.
     selectUnit(selectedUtype);
     refreshAll();
     if (!stateRefreshInterval) stateRefreshInterval = setInterval(refreshAll, 12000);
@@ -64,10 +65,33 @@
         document.querySelectorAll('.nft-tab-panel').forEach(x => x.classList.remove('active'));
         t.classList.add('active');
         document.getElementById('nft-tab-' + t.dataset.tab).classList.add('active');
-        if (t.dataset.tab === 'inventory') refreshInventory();
+        if (t.dataset.tab === 'inventory') { _invShowAll = false; refreshInventory(); _maybeShowRonkeIntro(); }   // grįžus į inventorių — visada deck-only (užrakinta jei registruota)
         else if (t.dataset.tab === 'battle') refreshBattlePicker();
       };
     });
+  }
+
+  // ─── RONKE Power intro popup ───────────────────────────────────
+  // Rodom atidarius Inventory, NEBENT žaidėjas pažymėjo „Don't show again" (localStorage).
+  var _RPWR_INTRO_KEY = 'rpwr_intro_dismissed';
+  function _maybeShowRonkeIntro() {
+    try { if (localStorage.getItem(_RPWR_INTRO_KEY) === '1') return; } catch (_) {}
+    var el = document.getElementById('rpwr-intro');
+    if (!el) return;
+    el.style.display = 'flex';
+    if (!el._wired) {
+      el._wired = true;
+      var close = function () {
+        try {
+          var cb = document.getElementById('rpwr-intro-dontshow');
+          if (cb && cb.checked) localStorage.setItem(_RPWR_INTRO_KEY, '1');
+        } catch (_) {}
+        el.style.display = 'none';
+      };
+      var okB = document.getElementById('rpwr-intro-ok'); if (okB) okB.onclick = close;
+      var xB = document.getElementById('rpwr-intro-x'); if (xB) xB.onclick = close;
+      el.onclick = function (e) { if (e.target === el) close(); };   // klik už kortelės ribų
+    }
   }
 
   // ─── BATTLE / DEPLOY tab ────────────────────────────────────
@@ -78,7 +102,7 @@
   const _F12_BASE_STATS = {
     skull:        { hp: 8,  dmg: 2 },
     archer:       { hp: 5,  dmg: 3 },
-    shaman:       { hp: 4,  dmg: 4 },
+    shaman:       { hp: 5,  dmg: 4 },
     harpoon_fish: { hp: 7,  dmg: 3 },
     hog_rider:    { hp: 14, dmg: 8 },
   };
@@ -88,10 +112,13 @@
     const mul = 1 + Math.max(0, level | 0) * 0.05;
     return { hp: Math.max(1, Math.round(base.hp * mul)), dmg: Math.max(1, Math.round(base.dmg * mul)) };
   }
+  // Module-level power helper'iai (naudoja ir inventory, ir battle grid).
+  function _powerRateOf(utype) { return Number(utype) === 5 ? 15 : 10; }
+  function _unitPowerOf(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRateOf(utype); }
   // Ability statai — TURI sutapti su floor12_merge.js (block/crit/miss/CD/range). Rodom kortos „nugaroj".
   const _F12_ABILITY = {
     skull:        { role: 'Melee Bruiser',  atk: 'Melee',     range: 'Short',  cd: 1500, move: 12, crit: 0,    block: 0.25, miss: 0.10, aoe: false },
-    archer:       { role: 'Ranged DPS',     atk: 'Ranged',    range: 'Long',   cd: 1500, move: 14, crit: 0,    block: 0,    miss: 0.15, aoe: false },
+    archer:       { role: 'Ranged DPS',     atk: 'Ranged',    range: 'Long',   cd: 2500, move: 14, crit: 0,    block: 0,    miss: 0.15, aoe: false },
     harpoon_fish: { role: 'Ranged Piercer', atk: 'Ranged',    range: 'Medium', cd: 1800, move: 11, crit: 0,    block: 0,    miss: 0.05, aoe: false },
     shaman:       { role: 'Ranged Caster',  atk: 'Ranged',    range: 'Long',   cd: 3000, move: 10, crit: 0,    block: 0,    miss: 0.05, aoe: true  },
     hog_rider:    { role: 'Cavalry Tank',   atk: 'Melee AOE', range: 'Short',  cd: 2800, move: 13, crit: 0.10, block: 0,    miss: 0,    aoe: true  },
@@ -121,7 +148,7 @@
       const img = (card.querySelector('.nft-card-img-wrap img') || card.querySelector('img'));
       if (!img) return;
       const r = img.getBoundingClientRect();
-      const deckEl = document.getElementById('nft-deck-status');
+      const deckEl = document.getElementById('nft-deck-register');
       const dr = deckEl ? deckEl.getBoundingClientRect() : null;
       const tx = dr && dr.width ? (dr.left + dr.width / 2) : (window.innerWidth / 2);
       const ty = dr && dr.width ? (dr.top + dr.height / 2) : (r.top - 140);
@@ -135,7 +162,8 @@
         ghost.style.opacity = '0.12';
       });
       setTimeout(function () { try { ghost.remove(); } catch (_) {} }, 620);
-      if (deckEl) { deckEl.style.transition = 'transform .2s'; deckEl.style.transform = 'scale(1.35)'; setTimeout(function () { deckEl.style.transform = ''; }, 220); }
+      // Subtilus „bump" (NE 1.35 — didelei lentutei būtų per stipru). Lengvas pulsas.
+      if (deckEl) { deckEl.style.transition = 'transform .18s ease'; deckEl.style.transform = 'scale(1.03)'; setTimeout(function () { deckEl.style.transform = ''; }, 200); }
     } catch (_) {}
   }
   let _battleInventory = [];   // raw fetchInventory rezultatas
@@ -150,8 +178,11 @@
     { ballType: 'leaf',   utype: 'harpoon_fish', name: 'Harpoon', icon: 'unit-images/harpoon-idle.gif' },
   ];
   const FREE_MAX_PER_TYPE = 5;
+  const NFT_MAX_PER_TYPE = 4;   // 4× max per unit tipą (sutampa su floor12 _NFT_MAX_PER_TYPE)
   let _battleMode = 'free';   // 'free' arba 'nft' — exclusive
   let _battleUseDeck = true;   // jei deck'as netuščias — kraunam TIK jį (instant, jokio RPC skeno)
+  let _invShowAll = false;     // INVENTORY: false = TIK dekas (greitai, registracijos esmė); true = pilnas skenas (PASIRINKIMAS, naujų unitų pridėjimui)
+  let _invLoadCdUntil = 0;     // load mygtuko cooldown (anti-spam, 3s) — timestamp iki kada užšaldyta
 
   function _setBattleMode(mode) {
     _battleMode = (mode === 'nft') ? 'nft' : 'free';
@@ -169,6 +200,8 @@
   }
 
   function _battleGroupKey(u) {
+    // Deck mode → kiekvienas unitas atskira korta (be stacking); kitaip stack'inam identiškus.
+    if (_battleUseDeck) return String(u.tokenId);
     return `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
   }
 
@@ -191,6 +224,54 @@
     let n = 0;
     for (const k in _battlePickQty) n += (_battlePickQty[k] | 0);
     return n;
+  }
+  // Kiek pasirinkta to paties utype unitų (per-tipą cap 4× tikrinimui).
+  function _battleTypeCount(utype) {
+    let n = 0;
+    for (const g of _battleGroups()) if (Number(g.utype) === Number(utype)) n += (_battlePickQty[g.key] | 0);
+    return n;
+  }
+  // Trumpas įspėjimo „toast" (pvz. viršijus cap).
+  let _battleToastTimer = null;
+  function _battleToast(msg) {
+    let el = document.getElementById('nft-battle-toast');
+    if (!el) { el = document.createElement('div'); el.id = 'nft-battle-toast'; el.className = 'nft-battle-toast'; document.body.appendChild(el); }
+    el.textContent = '⚠ ' + msg;
+    el.classList.add('show');
+    if (_battleToastTimer) clearTimeout(_battleToastTimer);
+    _battleToastTimer = setTimeout(function () { el.classList.remove('show'); }, 1900);
+  }
+  // Battle pasirinkimas (_battlePickQty) → IŠSAUGOM į squad (localStorage), kad persist'intų tarp sesijų.
+  function _persistBattleSquad() {
+    try {
+      const W = window.Wallet, BNFT = window.BarracksNFT;
+      if (!W || !BNFT || !BNFT.setBattleSquad) return;
+      const ids = [];
+      for (const g of _battleGroups()) {
+        const q = _battlePickQty[g.key] | 0;
+        for (let i = 0; i < q && i < g.ids.length; i++) ids.push(String(g.ids[i]));
+      }
+      BNFT.setBattleSquad(W.getAddress(), ids);
+    } catch (_) {}
+  }
+  // Battle squad (anksčiau pasirinkti kovos unitai) → AUTO-pasirenka battle picker'yje atidarius.
+  function _preselectSquad() {
+    try {
+      const W = window.Wallet, BNFT = window.BarracksNFT;
+      if (!W || !BNFT || !BNFT.getBattleSquad) return;
+      const squad = BNFT.getBattleSquad(W.getAddress()).map(String);
+      if (!squad.length) return;
+      _battlePickQty = {};
+      let total = 0;
+      for (const g of _battleGroups()) {
+        let cnt = 0;
+        for (const id of g.ids) {
+          if (total >= BATTLE_MAX_TOTAL) break;
+          if (squad.indexOf(String(id)) !== -1) { cnt++; total++; }
+        }
+        if (cnt > 0) _battlePickQty[g.key] = cnt;
+      }
+    } catch (_) {}
   }
   function _battleFreeTotal() {
     let n = 0;
@@ -274,6 +355,8 @@
     }
     grid.innerHTML = '<div class="nft-empty">Loading your units…</div>';
     const BNFT = window.BarracksNFT;
+    // On-chain deko sinchronizacija (cross-device) prieš krovimą — gated (no-op kol neaktyvuota).
+    try { if (BNFT.syncDeckFromChain) await BNFT.syncDeckFromChain(W.getAddress()); } catch (_) {}
     const deck = (BNFT.getDeck && BNFT.getDeck(W.getAddress())) || [];
     const useDeck = _battleUseDeck && deck.length > 0;
     try {
@@ -286,6 +369,7 @@
           _battleUseDeck = false;
           return refreshBattlePicker();
         }
+        _preselectSquad();        // ← AUTO-pasirenka battle squad (12 READY) — nereikia iš naujo rinkti
         _renderBattleGrid();
       } else {
         // Progresyvus krovimas — aukščiausio lvl unitai pasirodo PIRMI ir žaidėjas
@@ -316,25 +400,35 @@
     const capped = (!_battleShowAll && allGroups.length > _BATTLE_GRID_CAP);
     const groups = capped ? allGroups.slice(0, _BATTLE_GRID_CAP) : allGroups;
     const hidden = allGroups.length - groups.length;
+    // Barų skalė (kaip inventoriuje) + bendras battle progresas (N/12 → fill ant „send" tag'o)
+    let _bMaxHp = 1, _bMaxDmg = 1;
+    for (const gg of groups) { const cs = _unitCombatStats(gg.utype, gg.level); if (cs.hp > _bMaxHp) _bMaxHp = cs.hp; if (cs.dmg > _bMaxDmg) _bMaxDmg = cs.dmg; }
+    const _battleTotal = _battleTotalPicked();
+    const _battleFill = Math.round(_battleTotal / BATTLE_MAX_TOTAL * 100);
+    const _battleFull = _battleTotal >= BATTLE_MAX_TOTAL;   // squad pilnas 12/12 → nepasirinktos kortos „užrakintos"
     let html = groups.map(g => {
       const picked = _battlePickQty[g.key] | 0;
-      const title = g.level === 0 ? 'RECRUIT' :
-                    g.level < 5  ? 'TRAINED' :
-                    g.level < 10 ? 'ELITE' :
-                    g.level < 25 ? 'CHAMPION' : 'LEGENDARY';
+      const _disabled = _battleFull && picked === 0;   // pilna IR ši korta nepasirinkta → negali pridėti
       const isStack = g.count > 1;
-      const idText = isStack ? `×${g.count} available` : `#${g.ids[0]}`;
-      return `<div class="nft-battle-card ${picked > 0 ? 'is-picked' : ''}" data-key="${g.key}">
-        <img class="nft-battle-img" src="${g.image}" alt="${g.name}">
-        <div class="nft-battle-info">
-          <div class="nft-battle-name">${g.name} <span class="nft-battle-lvl">Lv ${g.level}</span></div>
-          <div class="nft-battle-meta">${title} · ${g.xp.toLocaleString()} XP · ${idText}</div>
+      const cStats = _unitCombatStats(g.utype, g.level);
+      const pwr = _unitPowerOf(g.level, g.utype);
+      const dmgPct = Math.max(8, Math.round(cStats.dmg / _bMaxDmg * 100));
+      const hpPct = Math.max(8, Math.round(cStats.hp / _bMaxHp * 100));
+      const idText = isStack ? `×${g.count}` : `#${g.ids[0]}`;
+      // Inventoriaus-stiliaus korta; visa korta clickable → toggle/cycle siuntimą į kovą.
+      return `<div class="nft-inv-card nft-battle-pick ${picked > 0 ? 'picked' : ''} ${_disabled ? 'battle-disabled' : ''}" data-key="${g.key}" data-max="${g.count}" data-utype="${g.utype}" title="${_disabled ? 'Battle squad full (12/12) — remove a unit first' : 'Tap to send this unit to battle'}">
+        <div class="nft-card-img-wrap">
+          <img src="${g.image}" alt="${g.name}">
+          <div class="nft-card-lvl-badge">Lv ${g.level}</div>
+          ${pwr > 0 ? `<div class="nft-card-power-badge">⚡${pwr}</div>` : ''}
+          ${picked > 0 ? `<div class="nft-battle-pick-chk">✓${isStack ? ' ×' + picked : ''}</div>` : ''}
         </div>
-        <div class="nft-battle-ctrls">
-          <button class="nft-battle-minus" data-key="${g.key}" type="button">−</button>
-          <span class="nft-battle-count">${picked}</span>
-          <button class="nft-battle-plus" data-key="${g.key}" data-max="${g.count}" type="button">+</button>
+        <div class="nft-card-header"><span class="nft-card-name">${g.name}</span><span class="nft-card-id">${idText}</span></div>
+        <div class="nft-stat-bars">
+          <div class="nft-stat-bar-row"><span class="nft-stat-ic">⚔</span><div class="nft-stat-bar"><div class="nft-stat-bf dmg" style="width:${dmgPct}%"></div></div><span class="nft-stat-val">${cStats.dmg}</span></div>
+          <div class="nft-stat-bar-row"><span class="nft-stat-ic">❤</span><div class="nft-stat-bar"><div class="nft-stat-bf hp" style="width:${hpPct}%"></div></div><span class="nft-stat-val">${cStats.hp}</span></div>
         </div>
+        <div class="nft-battle-pick-tag ${picked > 0 ? 'on' : ''} ${_disabled ? 'full' : ''}" style="--fill:${_battleFill}%"><span class="bpt-txt">${picked > 0 ? '⚔ IN BATTLE' : (_disabled ? '🔒 SQUAD FULL' : 'TAP TO SEND')}</span><span class="bpt-cnt">${_battleTotal}/${BATTLE_MAX_TOTAL}</span></div>
       </div>`;
     }).join('');
     // Deck režimo juosta VIRŠUJ + krovimo / „show all" / „load more" juosta apačioje
@@ -439,23 +533,28 @@
       }
       return;
     }
-    // NFT units +/-
-    if (t.dataset.key) {
-      const key = t.dataset.key;
+    // NFT korta — paspaudus toggle/cycle siuntimą į kovą (visa korta clickable).
+    const card = t.closest && t.closest('.nft-battle-pick');
+    if (card && card.dataset && card.dataset.key) {
+      const key = card.dataset.key;
+      const max = parseInt(card.dataset.max, 10) || 1;
+      const utype = parseInt(card.dataset.utype, 10) || 0;
       const cur = _battlePickQty[key] | 0;
-      if (t.classList.contains('nft-battle-plus')) {
-        const max = parseInt(t.dataset.max, 10) || 0;
-        if (cur < max && nftTotal < BATTLE_MAX_TOTAL) {
-          _battlePickQty[key] = cur + 1;
-          _renderBattleGrid();
-        }
-      } else if (t.classList.contains('nft-battle-minus')) {
-        if (cur > 0) {
-          _battlePickQty[key] = cur - 1;
-          if (_battlePickQty[key] <= 0) delete _battlePickQty[key];
-          _renderBattleGrid();
+      const otherTotal = nftTotal - cur;   // pasirinkta kitose kortose
+      let next = cur + 1;
+      if (next > max) next = 0;            // cycle: pro stack max → išvalom
+      if (next > cur) {
+        if (otherTotal + next > BATTLE_MAX_TOTAL) {
+          next = cur; _battleToast('Max ' + BATTLE_MAX_TOTAL + ' units per battle');   // viršytų 12
+        } else if ((_battleTypeCount(utype) - cur) + next > NFT_MAX_PER_TYPE) {
+          next = cur; _battleToast('Max ' + NFT_MAX_PER_TYPE + '× per unit type');     // viršytų 4× to tipo
         }
       }
+      if (next <= 0) delete _battlePickQty[key]; else _battlePickQty[key] = next;
+      _battleMode = 'nft';                 // pasirenkant NFT → NFT režimas
+      _persistBattleSquad();               // išsaugom kovos pasirinkimą (persist tarp sesijų)
+      _renderBattleGrid();
+      _updateBattleFooter();
     }
   }
 
@@ -819,29 +918,178 @@
     const grid = document.getElementById('nft-inv-grid');
     grid.innerHTML = '<div class="nft-empty">Loading your units…</div>';
     const _tb = document.getElementById('nft-inv-loadmore-top'); if (_tb) _tb.style.display = 'none';  // reset stale
+    // Dinaminis deko slot cap iš Ronkeverse balanso (12 + min(RV,18), cap 30) — fetch'inam lygiagrečiai
+    // su inventoriumi (nestabdo, jei nepavyksta), palaukiam prieš pirmą render kad header /N būtų teisingas.
+    const _slotsP = (window.BarracksNFT.refreshDeckSlots ? window.BarracksNFT.refreshDeckSlots(addr).catch(function(){}) : Promise.resolve());
+    // Deko sinchronizacija iš grandinės (cross-device, „no full scan") — gated (no-op kol RonkePower neaktyvuota).
+    // Sync dekas iš grandinės PIRMA (await, 6s timeout) — kad žinotume registruotą deką prieš krovimą.
+    try { if (window.BarracksNFT.syncDeckFromChain) await window.BarracksNFT.syncDeckFromChain(addr); } catch (_) {}
+    const _deck0 = (window.BarracksNFT.getDeck && window.BarracksNFT.getDeck(addr)) || [];
+    // DECK-FIRST: numatytai kraunam TIK deką (greitai, registracijos esmė). Pilnas skenas = PASIRINKIMAS.
+    const _deckOnly = !_invShowAll && _deck0.length > 0;
+    // PATIKIMAS deko gyvų unitų sąrašas (chunked loadDeckUnits) — header skaičiui + Power.
+    // NEpriklauso nuo display režimo: edit mode pilnas skenas kraunamas DALIMIS (phased) → liveCnt mirgėdavo 22/24
+    // nors registruota 24. Šis sąrašas visada pilnas (kaip battle picker), tad header rodys teisingą 24/24.
+    const _deckAlive = _deck0.length ? await window.BarracksNFT.loadDeckUnits(addr, _deck0).catch(function(){return [];}) : [];
     try {
-      const units = await window.BarracksNFT.fetchInventory(addr, function (sorted, loaded, total) {
-        const cEl = document.getElementById('nft-inv-count');
-        if (cEl) cEl.textContent = loaded + (loaded < total ? '/' + total : '');
-        if (loaded < total) grid.innerHTML = '<div class="nft-empty">⏳ Loading units… ' + loaded + '/' + total + '</div>';
-      });
+      let units;
+      if (_deckOnly) {
+        grid.innerHTML = '<div class="nft-empty">Loading your deck…</div>';
+        units = _deckAlive;   // jau užkrautas (chunked) — nedubliuojam
+      } else {
+        units = await window.BarracksNFT.fetchInventory(addr, function (sorted, loaded, total) {
+          const cEl = document.getElementById('nft-inv-count');
+          if (cEl) cEl.textContent = loaded + (loaded < total ? '/' + total : '');
+          if (loaded < total) grid.innerHTML = '<div class="nft-empty">⏳ Loading all units… ' + loaded + '/' + total + '</div>';
+        });
+        // Garantuojam, kad VISI deko unitai matomi edit režime — pilnas skenas kraunamas DALIMIS (phased),
+        // tad 2 deko unitai galėjo likti „Load more" partijoje → rodydavo 22 kortas nors deke 24. Įterpiam trūkstamus.
+        if (Array.isArray(_deckAlive) && _deckAlive.length) {
+          const _have = new Set((units || []).map(function (u) { return String(u.tokenId); }));
+          for (const u of _deckAlive) if (!_have.has(String(u.tokenId))) units.push(u);
+        }
+      }
       // Render'is iškeltas į vidinę funkciją kad „Load more" galėtų perrenderinti su naujais unitais.
       const BNFT = window.BarracksNFT;
       const _addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
       let _lastInvUnits = null;
+      // RONKE Power (client display) — TA PATI formulė kaip ronke-power edge fn:
+      // unitPower = max(0, level-1) × rate; rate=15 hog_rider(utype 5), 10 default. Σ deko unitų.
+      // Serveris lieka autoritetas rewards'ams; čia tik momentinis vizualus feedback.
+      function _powerRate(utype) { return Number(utype) === 5 ? 15 : 10; }
+      function _unitPower(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRate(utype); }
+      function _computeDeckPower(units) {
+        if (!BNFT || !_addr || !Array.isArray(units)) return 0;
+        const byId = new Map();
+        for (const u of units) byId.set(String(u.tokenId), u);
+        let total = 0;
+        // Dedup įgimtas (getDeck unikalūs ID); čia einam per deką, sumuojam levelius.
+        for (const id of (BNFT.getDeck ? BNFT.getDeck(_addr) : [])) {
+          const u = byId.get(String(id));
+          if (u) total += _unitPower(u.level, u.utype);
+        }
+        return total;
+      }
       function _syncDeckHeader() {
         const cnt = (BNFT && BNFT.deckCount && _addr) ? BNFT.deckCount(_addr) : 0;
-        const st = document.getElementById('nft-deck-status');
-        if (st) st.textContent = cnt > 0 ? `· Deck: ${cnt}/${(BNFT && BNFT.DECK_MAX) || 24}` : '';
-        const cl = document.getElementById('nft-deck-clear');
-        if (cl) {
-          cl.style.display = cnt > 0 ? '' : 'none';
-          cl.onclick = function () {
-            if (!_addr || !BNFT) return;
-            if (!confirm('Clear your whole deck (' + cnt + ' units)?')) return;
-            BNFT.setDeck(_addr, []);
-            try { renderInv(_lastInvUnits || []); } catch (_) { _syncDeckHeader(); }
-          };
+        // GYVAS deko skaičius + Power skaičiuojam iš UNION(_deckAlive ∪ _lastInvUnits):
+        //  • _deckAlive (chunked, patikimas) → visi registruoto deko gyvi unitai (edit mode phased load NEpameta 24→22);
+        //  • _lastInvUnits → dinaminiai edit pakeitimai (ką tik pridėtas/pašalintas unitas).
+        const _aliveUnits = [], _seen = new Set();
+        for (const arr of [_deckAlive, _lastInvUnits]) {
+          if (!Array.isArray(arr)) continue;
+          for (const u of arr) { const k = String(u.tokenId); if (!_seen.has(k)) { _seen.add(k); _aliveUnits.push(u); } }
+        }
+        let liveCnt = cnt;
+        if (BNFT && BNFT.getDeck && _addr) {
+          liveCnt = 0;
+          for (const id of BNFT.getDeck(_addr)) if (_seen.has(String(id))) liveCnt++;
+        }
+        const power = _computeDeckPower(_aliveUnits);
+        // „Register Deck On-Chain" CTA — rodom kai dekas turi unitų; atnaujinam units + power.
+        const reg = document.getElementById('nft-deck-register');
+        if (reg) {
+          reg.style.display = cnt > 0 ? 'flex' : 'none';
+          const dMax = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
+          const ru = document.getElementById('ndr-units'); if (ru) ru.textContent = liveCnt + '/' + dMax;
+          const rp = document.getElementById('ndr-power'); if (rp) rp.textContent = String(power);
+          // ── Deko formavimo lentutė — 3 būsenos ──
+          const registered = (BNFT && BNFT.isDeckRegistered && _addr) ? BNFT.isDeckRegistered(_addr) : false;
+          const wasReg = (BNFT && BNFT.getRegisteredDeck && _addr) ? BNFT.getRegisteredDeck(_addr).length > 0 : false;
+          const editing = _invShowAll && wasReg;   // ✏️ EDIT paspausta — redaguoji registruotą deką (rodom UPDATE UI)
+          const changed = wasReg && !registered;   // dekas REALIAI pakeistas (skiriasi nuo snapshot)
+          const _t = reg.querySelector('.ndr-title');
+          const _fee = reg.querySelector('.ndr-fee');
+          const _uic = document.getElementById('ndr-undo-ic');
+          const _eic = document.getElementById('ndr-edit-ic');
+          reg.classList.remove('mode-battle');
+          if (registered && !editing) {
+            // Registruota, nepakeista, NE edit → ✓ DECK REGISTERED, BE kainos, su ✏️ EDIT (žalia, užrakinta)
+            reg._mode = 'registered';
+            reg.classList.add('mode-registered');
+            if (_t) _t.textContent = '✓ DECK REGISTERED';
+            if (_fee) _fee.style.display = 'none';
+            if (_uic) _uic.style.display = 'none';
+            if (_eic) _eic.style.display = '';
+          } else if (changed || editing) {
+            // Pakeista ARBA redaguojama → UPDATE DECK + kaina + ↩ undo (geltona redagavimo juosta).
+            // editing nepakeitus → kaina rodoma, bet reg.onclick guard'as NEapmokestina kol nėra realių pakeitimų.
+            reg._mode = 'register';
+            reg.classList.remove('mode-registered');
+            if (_t) _t.textContent = 'UPDATE DECK';
+            if (_fee) _fee.style.display = '';
+            if (_uic) _uic.style.display = '';
+            if (_eic) _eic.style.display = 'none';   // edit režime ✏️ slepiam (jau redaguoji)
+          } else {
+            // Niekada neregistruota → REGISTER DECK + kaina
+            reg._mode = 'register';
+            reg.classList.remove('mode-registered');
+            if (_t) _t.textContent = 'REGISTER DECK';
+            if (_fee) _fee.style.display = '';
+            if (_uic) _uic.style.display = 'none';
+            if (_eic) _eic.style.display = 'none';
+          }
+          // ✏️ EDIT simbolis (registruota būsena) — TIK įkrauna kolekciją redagavimui.
+          // SVARBU: NEšaliname mirusių čia (anksčiau prune'inom → dekas keisdavosi 24→22 net „nieko nedarius"
+          // → juosta tapdavo geltona, dingdavo žalia 22/24). Mirusio slotas atlaisvinamas LAZILY tik pridedant naują (žemiau).
+          if (_eic && !_eic._wired) {
+            _eic._wired = true;
+            _eic.onclick = function (ev) {
+              if (ev && ev.stopPropagation) ev.stopPropagation();
+              if (!_addr || !BNFT) return;
+              _invShowAll = true;          // įkraunam visą kolekciją (pridėti/keisti unitus)
+              refreshInventory();
+            };
+          }
+          // ↩ undo simbolis (šalia UPDATE DECK) — grąžina deką į registruotą būseną. stopPropagation kad nepaleistų register.
+          if (_uic && !_uic._wired) {
+            _uic._wired = true;
+            _uic.onclick = function (ev) {
+              if (ev && ev.stopPropagation) ev.stopPropagation();
+              if (!_addr || !BNFT || !BNFT.undoDeckChanges) return;
+              BNFT.undoDeckChanges(_addr);   // grąžinam deką į registruotą snapshot
+              _invShowAll = false;           // ↩ = atšaukiam redagavimą → grįžtam į žalią užrakintą būseną
+              refreshInventory();
+            };
+          }
+          if (!reg._wired) {
+            reg._wired = true;
+            reg.onclick = async function () {
+              if (reg._busy) return;
+              // Jau registruota (nepakeista) → nieko nedaryti (nemokam dar kartą).
+              if (reg._mode === 'registered') return;
+              // Edit režimas, bet REALIŲ pakeitimų nėra (dekas == snapshot) → NEapmokestinam, tik išeinam iš edit.
+              if (BNFT && BNFT.isDeckRegistered && _addr && BNFT.isDeckRegistered(_addr)) {
+                _battleToast('No deck changes to register'); _invShowAll = false; refreshInventory(); return;
+              }
+              // Jei dar neaktyvuota (nėra mainnet adreso) — preview žinutė.
+              if (!(BNFT && BNFT.isRonkePowerEnabled && BNFT.isRonkePowerEnabled())) {
+                alert('On-chain deck registration is coming soon.\n\nThis will register your deck units + total RONKE Power in one transaction (relayer pays gas, you pay a 10 RONKE fee: 5 burned, 5 to treasury).');
+                return;
+              }
+              if (reg._busy) return;
+              reg._busy = true;
+              const titleEl = reg.querySelector('.ndr-title');
+              const origTitle = titleEl ? titleEl.textContent : '';
+              const setT = function (m) { if (titleEl) titleEl.textContent = m; };
+              reg.style.pointerEvents = 'none'; reg.style.opacity = '0.75';
+              try {
+                const res = await BNFT.registerDeckOnChain(null, setT);
+                setT('✓ DECK REGISTERED');
+                const tx = res && res.txHash ? ('\n\nTX: ' + res.txHash) : '';
+                setTimeout(function () {
+                  alert('✅ Your deck is registered on-chain!\n\nIt now loads instantly every session (no full-collection scan) and follows you across devices. Your RONKE Power is locked in — faucet rewards coming soon.' + tx);
+                }, 60);
+              } catch (e) {
+                setT(origTitle);
+                alert('⚠ ' + (e && e.message ? e.message : 'Registration failed.'));
+              } finally {
+                reg._busy = false;
+                reg.style.pointerEvents = ''; reg.style.opacity = '';
+                try { renderInv(_lastInvUnits || []); } catch (_) {}
+              }
+            };
+          }
         }
         const hint = document.getElementById('nft-deck-hint');
         if (hint) hint.style.display = cnt > 0 ? 'none' : '';
@@ -856,11 +1104,11 @@
       }
       const BARRACKS_ADDR = (window.BarracksNFT && window.BarracksNFT.ADDR && window.BarracksNFT.ADDR.barracks) || '';
 
-      // Group units by stat signature — identical units stack with ×N badge.
-      // Once a unit gains XP/battles/kills, its signature differs → shown individually.
+      // DECK-ONLY → KIEKVIENAS unitas atskira korta (be stacking) → matosi VISAS dekas (23/24 kortos).
+      // SHOW-ALL → stack'inam identiškus (×N), kad šimtai unitų netaptų šimtais kortų.
       const groups = new Map();
       for (const u of units) {
-        const key = `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
+        const key = _deckOnly ? String(u.tokenId) : `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
         if (!groups.has(key)) {
           groups.set(key, { ...u, ids: [u.tokenId], count: 1 });
         } else {
@@ -871,7 +1119,12 @@
       }
       const groupedArr = Array.from(groups.values());
       // Sort: used units (battles>0) first, fresh stacks after
+      // BATTLE SQUAD PIRMI — registruoti kovos unitai (12 READY) visada rodomi viršuje.
+      const _sqSet = new Set(((BNFT && BNFT.getBattleSquad && _addr) ? BNFT.getBattleSquad(_addr) : []).map(String));
+      const _inSq = (g) => g.ids.some((id) => _sqSet.has(String(id)));
       groupedArr.sort((a, b) => {
+        const sa = _inSq(a) ? 1 : 0, sb = _inSq(b) ? 1 : 0;
+        if (sa !== sb) return sb - sa;   // squad (kovai paruošti) → viršuje
         if (a.battles !== b.battles) return b.battles - a.battles;
         if (a.xp !== b.xp) return b.xp - a.xp;
         return Number(b.ids[0]) - Number(a.ids[0]);
@@ -884,6 +1137,16 @@
         if (cs.dmg > _maxDmgShown) _maxDmgShown = cs.dmg;
       }
 
+      // Ar visas dekas užregistruotas on-chain (TIKSLIAI) → deko kortų power badge'ai ŽALI (užfiksuota).
+      const _deckRegistered = (BNFT && BNFT.isDeckRegistered && _addr) ? BNFT.isDeckRegistered(_addr) : false;
+      // UŽRAKINTAS dekas: snapshot egzistuoja (kažkada registruota) + NE edit režime. Lieka 🔒 net jei pakeistas/mirę pašalinti.
+      const _hasReg = (BNFT && BNFT.hasRegisteredDeck && _addr) ? BNFT.hasRegisteredDeck(_addr) : _deckRegistered;
+      const _deckLocked = _hasReg && !_invShowAll;
+      // GYVAS deko skaičius — deko ID'ai, kurie realiai užkrauti (mirę/parduoti praleidžiami) → rodom 22/24, ne 24/24.
+      const _loadedIds = new Set(units.map((u) => String(u.tokenId)));
+      const _deckLiveCnt = (BNFT && BNFT.getDeck && _addr)
+        ? BNFT.getDeck(_addr).filter((id) => _loadedIds.has(String(id))).length
+        : ((BNFT && BNFT.deckCount && _addr) ? BNFT.deckCount(_addr) : 0);
       grid.innerHTML = groupedArr.map(g => {
         const rarityCls = g.rarity === 'rare' ? 'rare' : '';
         const veteranCls = g.level >= 10 ? 'veteran' : '';
@@ -910,22 +1173,49 @@
                       g.level < 10 ? 'ELITE' :
                       g.level < 25 ? 'CHAMPION' : 'LEGENDARY';
         const inDeck = (BNFT && BNFT.deckHas && _addr) ? g.ids.filter((id) => BNFT.deckHas(_addr, id)).length : 0;
+        // INVENTORY = TIK deko formavimas (Power Deck). Battle pasirinkimas — BATTLE tab'e.
+        const _deckCnt  = (BNFT && BNFT.deckCount && _addr) ? BNFT.deckCount(_addr) : 0;
+        const _deckMax  = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
+        function _smartBtn() {
+          const idsAttr = g.ids.join(',');
+          // Užrakintame deke rodom GYVĄ skaičių (22/24), kitur — visą deck array (pildymui).
+          const _shownCnt = _deckLocked ? _deckLiveCnt : _deckCnt;
+          const cnt   = _shownCnt + '/' + _deckMax;
+          const fill  = Math.round(_shownCnt / Math.max(1, _deckMax) * 100);
+          // UŽRAKINTA (registruota, ne edit) → tik 🔒, jokio veiksmo. Spustelėjus — užuomina paspausti ✏️.
+          if (_deckLocked) {
+            const lockLabel = inDeck > 0 ? '🔒 IN DECK' : '🔒 LOCKED';
+            return `<button class="nft-smart-btn sb-locked" data-locked="1" type="button" title="Deck registered — click ✏️ EDIT to change your deck" style="--fill:${fill}%"><span class="nsb-txt">${lockLabel}</span><span class="nsb-cnt">${cnt}</span></button>`;
+          }
+          const cls   = inDeck > 0 ? 'sb-indeck' : 'sb-adddeck';
+          const label = inDeck > 0 ? '✓ IN DECK' : '⚡ ADD TO DECK';
+          const title = inDeck > 0 ? 'In your Power Deck (counts toward RONKE Power). Click to remove.' : 'Add to your Power Deck — counts toward RONKE Power. Pick battle units in the BATTLE tab.';
+          return `<button class="nft-smart-btn ${cls}" data-ids="${idsAttr}" type="button" title="${title}" style="--fill:${fill}%"><span class="nsb-txt">${label}</span><span class="nsb-cnt">${cnt}</span></button>`;
+        }
+        // ── RONKE Power (per kortą) — formulė max(0,lvl-1)×rate. Rodom tik skaičiuką dešinio
+        // viršaus kampe (badge); deke → pulsuoja. Lvl<2 → 0, badge nerodom. ──
+        const _cardPwr = _unitPower(g.level, g.utype);
+        const _pwrTitle = `Lv ${g.level} → ⚡${_cardPwr} RONKE Power (rate ${_powerRate(g.utype)}/lvl). ${inDeck > 0 ? 'In your deck — counts toward total power.' : 'Add to your deck so it counts.'}`;
         const _dBtnCss = 'min-width:26px;padding:4px 8px;border-radius:8px;border:1px solid rgba(120,160,120,.45);background:rgba(90,140,90,.16);color:#bde0bd;cursor:pointer;font-weight:700;font-size:.9em';
         const _dInCss = 'flex:1;padding:6px 12px;border-radius:8px;border:1px solid rgba(120,160,120,.6);background:rgba(90,140,90,.32);color:#d6f0d6;cursor:pointer;font-weight:700;font-size:.85em;white-space:nowrap;text-align:center';
         const _dToggleCss = 'flex:1;padding:6px 14px;border-radius:8px;border:1px solid rgba(120,160,120,.55);background:linear-gradient(180deg,rgba(110,160,110,.28),rgba(74,120,74,.22));color:#dafada;cursor:pointer;font-weight:700;font-size:.85em;white-space:nowrap;text-align:center';
+        const _dLockCss = 'min-width:26px;padding:4px 8px;border-radius:8px;border:1px solid rgba(150,150,160,.35);background:rgba(90,90,100,.16);color:#9aa;cursor:not-allowed;font-weight:700;font-size:.9em;opacity:.5';
         const deckBtn = isStack
-          ? `<button class="nft-deck-minus" data-ids="${g.ids.join(',')}" type="button" title="Remove from deck" style="${_dBtnCss}">−</button>
-             <span class="nft-deck-count" style="${inDeck > 0 ? 'color:#bde0bd;font-weight:700' : 'opacity:.6'};font-size:.85em">🎴 ${inDeck}/${g.count}</span>
-             <button class="nft-deck-plus" data-ids="${g.ids.join(',')}" type="button" title="Add to deck" style="${_dBtnCss}">＋</button>`
-          : `<button class="nft-deck-toggle ${inDeck > 0 ? 'in' : ''}" data-ids="${g.ids.join(',')}" type="button" title="Add this card to your battle deck" style="${inDeck > 0 ? _dInCss : _dToggleCss}">${inDeck > 0 ? '✓ In Your Deck' : 'Add to Deck'}</button>`;
+          ? (_deckLocked
+              ? `<button class="nft-deck-locked" data-locked="1" type="button" title="Deck registered — click ✏️ EDIT to change your deck" style="${_dLockCss}">🔒</button>
+                 <span class="nft-deck-count" style="${inDeck > 0 ? 'color:#bde0bd;font-weight:700' : 'opacity:.6'};font-size:.85em">🎴 ${inDeck}/${g.count}</span>`
+              : `<button class="nft-deck-minus" data-ids="${g.ids.join(',')}" type="button" title="Remove from deck" style="${_dBtnCss}">−</button>
+                 <span class="nft-deck-count" style="${inDeck > 0 ? 'color:#bde0bd;font-weight:700' : 'opacity:.6'};font-size:.85em">🎴 ${inDeck}/${g.count}</span>
+                 <button class="nft-deck-plus" data-ids="${g.ids.join(',')}" type="button" title="Add to deck" style="${_dBtnCss}">＋</button>`)
+          : '';   // vienetinei kortai deck'o nėra — ją valdo ⚔ BATTLE mygtukas (žemiau)
         return `<div class="nft-inv-card ${rarityCls} ${veteranCls}${inDeck > 0 ? ' in-deck' : ''}">
           ${stackBadge}
           <div class="nft-card-inner">
             <div class="nft-card-front">
-              <div class="nft-flip-hint" title="Tap for abilities">ℹ</div>
               <div class="nft-card-img-wrap">
                 <img src="${g.image}" alt="${g.name}">
                 <div class="nft-card-lvl-badge">Lv ${g.level}</div>
+                ${_cardPwr > 0 ? `<div class="nft-card-power-badge ${inDeck > 0 ? (_deckRegistered ? 'registered' : 'counting') : ''}" title="${(inDeck > 0 && _deckRegistered) ? 'Registered on-chain ✓ — ' : ''}${_pwrTitle}">${(inDeck > 0 && _deckRegistered) ? '✓' : '⚡'}${_cardPwr}</div>` : ''}
               </div>
               <div class="nft-card-header">
                 <span class="nft-card-name">${g.name}</span>
@@ -952,15 +1242,15 @@
                 </div>
               </div>
               <div class="nft-card-actions">
-                <div class="nft-card-deck" style="display:flex;align-items:center;gap:6px">${deckBtn}</div>
-                <a href="${marketUrl}" target="_blank" class="nft-card-link market" title="Sell on Ronin Market">SELL</a>
+                ${isStack
+                  ? `<div class="nft-card-deck" style="display:flex;align-items:center;gap:6px">${deckBtn}</div>`
+                  : _smartBtn()}
               </div>
             </div>
             <div class="nft-card-back">
               <div class="nft-back-title">${g.name}</div>
               <div class="nft-back-role">${ab.role} · ${ab.atk}</div>
               <div class="nft-back-bars">${_backStatBars(ab, cStats)}</div>
-              <div class="nft-back-hint">↻ tap to flip back</div>
             </div>
           </div>
         </div>`;
@@ -969,27 +1259,45 @@
       grid.onclick = function (e) {
         const t = e.target;
         if (!t) return;
+        // 0) UŽRAKINTAS dekas (registruotas, ne edit) → spustelėjus 🔒 mygtuką: užuomina + blokas.
+        const _lockBtn = t.closest && t.closest('button[data-locked]');
+        if (_lockBtn) { _battleToast('Deck registered — tap ✏️ EDIT to change it'); return; }
         // 1) Deck mygtukai (turi data-ids) — pridedam/šalinam token ID, NEapsukam
-        if (t.dataset && t.dataset.ids) {
+        const _btn = t.closest && t.closest('button[data-ids]');
+        if (_btn && _btn.dataset && _btn.dataset.ids) {
         if (!_addr || !BNFT) return;
-        const ids = String(t.dataset.ids).split(',');
-        const isAdd = t.classList.contains('nft-deck-plus') ||
-                      (t.classList.contains('nft-deck-toggle') && !t.classList.contains('in'));
-        const isRem = t.classList.contains('nft-deck-minus') ||
-                      (t.classList.contains('nft-deck-toggle') && t.classList.contains('in'));
-        if (isAdd) {
-          if (BNFT.deckCount(_addr) >= (BNFT.DECK_MAX || 24)) { alert('Deck full (max ' + (BNFT.DECK_MAX || 24) + '). Remove a unit first.'); return; }
+        const ids = String(_btn.dataset.ids).split(',');
+        const cl = _btn.classList;
+        const deckMax = BNFT.getDeckMax ? BNFT.getDeckMax(_addr) : 12;
+        const fly = function () { const c = _btn.closest && _btn.closest('.nft-inv-card'); if (c) _flyCardToDeck(c); };
+        let acted = false;
+        // LAZY mirusio slot atlaisvinimas: kai dekas pilnas IR pridedi naują → pašalinam VIENĄ mirusį
+        // (deko ID nėra tarp užkrautų gyvų unitų) kad atsilaisvintų vieta. Tik PRIDEDANT (ne „nieko nedarius").
+        const _loadedSet = new Set((units || []).map((u) => String(u.tokenId)));
+        function _freeDeadSlot() {
+          const deadId = (BNFT.getDeck(_addr) || []).map(String).find((id) => !_loadedSet.has(id));
+          if (deadId) { BNFT.removeFromDeck(_addr, deadId); return true; }
+          return false;
+        }
+        // ── DECK toggle (vienetinės kortos) — TIK Power Deck (battle pasirinkimas BATTLE tab'e) ──
+        if (cl.contains('sb-adddeck')) {                      // → į Power Deck
+          if (BNFT.deckCount(_addr) >= deckMax && !_freeDeadSlot()) { alert('Power Deck full (max ' + deckMax + ' = 12 + 1 per Ronkeverse NFT).'); return; }
           const add = ids.find((id) => !BNFT.deckHas(_addr, id));
-          if (add) {
-            BNFT.addToDeck(_addr, add);
-            const _card = t.closest && t.closest('.nft-inv-card');
-            if (_card) _flyCardToDeck(_card);   // „korta nuskrenda į deką" animacija PRIEŠ re-render
-          }
-        } else if (isRem) {
+          if (add) { BNFT.addToDeck(_addr, add); fly(); acted = true; }
+        } else if (cl.contains('sb-indeck')) {                // ← išima iš deko
+          const rem = ids.find((id) => BNFT.deckHas(_addr, id));
+          if (rem) { BNFT.removeFromDeck(_addr, rem); acted = true; }
+        }
+        // ── STEKO +/− → Power Deck ──
+        else if (cl.contains('nft-deck-plus')) {
+          if (BNFT.deckCount(_addr) >= deckMax && !_freeDeadSlot()) { alert('Power Deck full (max ' + deckMax + ').'); return; }
+          const add = ids.find((id) => !BNFT.deckHas(_addr, id));
+          if (add) { BNFT.addToDeck(_addr, add); fly(); acted = true; }
+        } else if (cl.contains('nft-deck-minus')) {
           const rem = ids.slice().reverse().find((id) => BNFT.deckHas(_addr, id));
-          if (rem) BNFT.removeFromDeck(_addr, rem);
+          if (rem) { BNFT.removeFromDeck(_addr, rem); acted = true; }
         } else { return; }
-        renderInv(units);   // perrender — atnaujina ženkliukus + header
+        if (acted) renderInv(units);   // perrender — atnaujina mygtukus + barus + header
         return;
         }
         // 2) SELL nuoroda (ar bet kokia <a>) — paliekam default, NEapsukam
@@ -1001,7 +1309,7 @@
       _syncDeckHeader();
       // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės.
       // Du mygtukai: VIRŠUJ (greta skaitiklio) ir grid'o GALE — abu kviečia tą patį handler'į.
-      const hasMore = !!(BNFT && BNFT.invHasMore && BNFT.invHasMore());
+      const hasMore = !_deckOnly && !!(BNFT && BNFT.invHasMore && BNFT.invHasMore());   // deck-only → jokio „load more"
       const c = (BNFT && BNFT.invCounts && BNFT.invCounts()) || { shown: 0, total: 0 };
       async function doLoadMore(triggerBtn, restoreTxt) {
         if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '⏳ Loading…'; }
@@ -1021,17 +1329,54 @@
           topBtn.onclick = function () { doLoadMore(topBtn, `⬇ Show 24 more (${c.shown}/${c.total})`); };
         } else { topBtn.style.display = 'none'; }
       }
-      // Apatinis mygtukas (grid'o gale)
-      if (hasMore) {
-        const btn = document.createElement('button');
-        btn.id = 'nft-inv-loadmore';
-        btn.type = 'button';
-        btn.textContent = `⬇ Show 24 more units (${c.shown}/${c.total})`;
-        btn.style.cssText = 'grid-column:1/-1;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600';
-        btn.onclick = function () { doLoadMore(btn, `⬇ Show 24 more units (${c.shown}/${c.total})`); };
-        grid.appendChild(btn);
+      // Apatinis mygtukas — VISADA rodomas. Load veiksmai turi 3s cooldown + uzsikrovimo juostą (anti-spam).
+      {
+        const _now = Date.now();
+        const _cdRem = _invLoadCdUntil - _now;
+        const _onCd = _cdRem > 0;
+        const bbtn = document.createElement('button');
+        bbtn.type = 'button';
+        bbtn.className = 'nft-inv-loadbtn';
+        bbtn.style.cssText = 'grid-column:1/-1;position:relative;overflow:hidden;padding:12px;margin-top:8px;border-radius:10px;cursor:pointer;font-weight:600;border:1px solid rgba(74,157,166,.4);background:rgba(40,70,75,.28);color:#9fd0d6';
+        let label, action, isLoad;
+        if (_deckOnly) {
+          label = '⬇ Load more units from your collection';
+          action = function () { _invShowAll = true; refreshInventory(); };
+          isLoad = true;
+        } else if (hasMore) {
+          label = `⬇ Show 24 more units (${c.shown}/${c.total})`;
+          bbtn.style.borderColor = 'rgba(120,160,120,.4)'; bbtn.style.background = 'rgba(90,140,90,.15)'; bbtn.style.color = '#bde0bd';
+          action = function () { doLoadMore(null, ''); };   // null → doLoadMore neliečia mygtuko (cd juosta tvarko mus)
+          isLoad = true;
+        } else {
+          label = '🎴 Show my deck only';
+          action = function () { _invShowAll = false; refreshInventory(); };
+          isLoad = false;
+        }
+        const fill = document.createElement('span'); fill.className = 'inv-cd-fill';
+        const txt = document.createElement('span'); txt.className = 'inv-cd-txt';
+        bbtn.appendChild(fill); bbtn.appendChild(txt);
+        if (isLoad && _onCd) {
+          // Cooldown — disabled + juosta pildosi link 100% per likusį laiką, tada perrender → vėl galima.
+          bbtn.disabled = true; bbtn.style.cursor = 'wait'; bbtn.style.opacity = '0.85';
+          txt.textContent = '⏳ Loading…';
+          fill.style.width = Math.max(0, 100 - _cdRem / 3000 * 100) + '%';
+          requestAnimationFrame(function () { fill.style.transition = 'width ' + _cdRem + 'ms linear'; fill.style.width = '100%'; });
+          setTimeout(function () { try { renderInv(_lastInvUnits || []); } catch (_) {} }, _cdRem + 70);
+        } else {
+          txt.textContent = label;
+          bbtn.onclick = function () {
+            if (isLoad) {
+              if (Date.now() < _invLoadCdUntil) return;
+              _invLoadCdUntil = Date.now() + 3000;   // 3s cooldown
+            }
+            action();
+          };
+        }
+        grid.appendChild(bbtn);
       }
       }  // renderInv
+      try { await _slotsP; } catch (_) {}     // deko slot cap paruoštas → header rodys teisingą /N
       renderInv(units);
     } catch (e) {
       grid.innerHTML = '<div class="nft-empty">Failed to load: ' + (e.shortMessage || e.message || '') + '</div>';

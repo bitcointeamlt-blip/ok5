@@ -24,7 +24,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=invtinyswords4">
+  <link rel="stylesheet" href="style.css?v=ronkepower57battlefull">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1697,6 +1697,7 @@
     <div class="nft-modal-content">
       <div class="nft-modal-header">
         <span>⚔️ NFT BARRACKS</span>
+        <span class="nft-owned-count">Owned NFT units: <strong id="nft-inv-count">0</strong><button class="nft-btn-icon" id="nft-inv-refresh" title="Refresh inventory" aria-label="Refresh">↻</button></span>
         <button class="nft-modal-close" id="nft-modal-close">×</button>
       </div>
 
@@ -1790,13 +1791,24 @@
 
       <!-- INVENTORY TAB -->
       <div class="nft-tab-panel" id="nft-tab-inventory">
-        <div class="nft-inv-header">
-          <span>Owned NFT units: <strong id="nft-inv-count">0</strong></span>
-          <span id="nft-deck-status" title="Deck = units loaded instantly into battle picker" style="color:#bde0bd;font-weight:700"></span>
-          <button class="nft-btn-small" id="nft-deck-clear" style="display:none;border-color:rgba(220,120,120,.5);background:rgba(160,70,70,.18);color:#e8b3b3">Clear deck</button>
-          <button class="nft-btn-small" id="nft-inv-refresh">Refresh</button>
-        </div>
         <div class="nft-empty" id="nft-deck-hint" style="display:none;opacity:.85;padding:6px 10px;margin-bottom:6px;font-size:.85em">🎴 Tap <strong>＋Deck</strong> on units to build your battle Deck (max 24). The battle picker loads your Deck instantly — no slow wallet scan.</div>
+        <button id="nft-deck-register" class="nft-deck-register" style="display:none" title="Register your deck on-chain → loads instantly every time (no full-collection scan), works across devices, and builds your RONKE Power. Relayer pays gas; you pay a 10 RONKE fee (5 burned · 5 treasury).">
+          <span class="ndr-glow"></span>
+          <img src="ronke.png" class="ndr-logo" alt="" draggable="false"/>
+          <span class="ndr-title">REGISTER DECK</span>
+          <span id="ndr-edit-ic" class="ndr-edit-ic" style="display:none">✏️</span>
+          <span id="ndr-undo-ic" class="ndr-undo-ic" style="display:none" title="Undo your changes — restore your registered deck">↩</span>
+          <span class="ndr-info">
+            <span class="ndr-stat">⚡ Deck <b id="ndr-units">0</b></span>
+            <span class="ndr-dot">·</span>
+            <span class="ndr-stat">RONKE Power <b id="ndr-power">0</b></span>
+          </span>
+          <span class="ndr-fee">
+            <img src="ronke.png" class="ndr-fee-logo" alt="" draggable="false"/>
+            <span class="ndr-fee-amt">10</span>
+            <span class="ndr-fee-cur">RONKE</span>
+          </span>
+        </button>
         <div class="nft-inv-grid" id="nft-inv-grid">
           <div class="nft-empty">Connect wallet + train your first NFT unit</div>
         </div>
@@ -1861,6 +1873,23 @@
         <p>NFT units MORTAL — if they die in battle, the NFT is permanently burned. Even high-XP veterans can die. Real stakes.</p>
         <h4>Contract</h4>
         <p style="font-family:monospace;font-size:9px;word-break:break-all">0xccf604511c5d2b5c3fd61adfba3950d0d2890862</p>
+      </div>
+
+      <!-- RONKE Power intro popup (overlay) — rodomas atidarius Inventory, kol „Don't show again" -->
+      <div id="rpwr-intro" class="rpwr-intro" style="display:none">
+        <div class="rpwr-intro-card">
+          <button class="rpwr-intro-x" id="rpwr-intro-x" title="Close">×</button>
+          <div class="rpwr-intro-icon"><img src="ronke.png" alt="" draggable="false"/></div>
+          <h2 class="rpwr-intro-title"><span class="rpwr-blue">RONKE</span> POWER</h2>
+          <div class="rpwr-intro-body">
+            <div class="rpwr-step"><span class="rpwr-num">1</span><span><b>Build your Deck</b> — pick your favourite units (12 + 1 per Ronkeverse NFT, up to 30).</span></div>
+            <div class="rpwr-step"><span class="rpwr-num">2</span><span><b>Register on-chain</b> (10 RONKE) → your deck loads <b>instantly</b>. No more waiting for your whole collection — and it follows you <b>across devices</b>.</span></div>
+            <div class="rpwr-step"><span class="rpwr-num">3</span><span><b>Battle-ready</b> — your deck is your loadout. No scrolling through hundreds of units every time you fight.</span></div>
+            <div class="rpwr-step"><span class="rpwr-num">⚡</span><span><b>Earn RONKE Power</b> — leveled units build Power. <b>Coming soon:</b> claim faucet rewards scaled by your Power.</span></div>
+          </div>
+          <label class="rpwr-intro-dismiss"><input type="checkbox" id="rpwr-intro-dontshow"/> Don't show this again</label>
+          <button class="rpwr-intro-ok" id="rpwr-intro-ok">Got it</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2097,12 +2126,12 @@
   <script src="orientation.js?v=7firsttap"></script>
   <script src="supabase_sync.js?v=9syncguard"></script>
   <script src="wallet.js?v=wp21wcpersist"></script>
-  <script src="barracks_nft.js?v=nft49deck"></script>
-  <script src="barracks_nft_modal.js?v=nft58nologo"></script>
+  <script src="barracks_nft.js?v=ronkepower57battlefull"></script>
+  <script src="barracks_nft_modal.js?v=ronkepower57battlefull"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=cmd464balltier"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
-  <script src="floor12_merge.js?v=cmd784stashlock"></script>
+  <script src="floor12_merge.js?v=cmd785balance"></script>
   <script src="wallet-ui.js?v=pewpew13roninwc"></script>
   <script src="hog_rider_popup.js?v=hog53forceover"></script>
   <script src="leaderboard.js?v=lb18"></script>
