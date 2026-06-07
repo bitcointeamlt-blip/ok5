@@ -567,6 +567,7 @@
     if (!ids.length) return [];
     const pc = await getPublicClient();
     const out = [], lc = String(addr || '').toLowerCase();
+    const prune = new Set();   // ID'ai patvirtintai mirę (burned) / parduoti → pašalinsim iš deko
     // CHUNK'inam: getUnitFullData = didelė struktūra. Per daug vienam multicall → viršija RPC atsakymą →
     // dalis tyliai nutrūksta (pvz 24 deko unitai → tik 22 užkraunami). Paketais po 12 = saugu (kaip _INV_CHUNK).
     const CHUNK = 12;
@@ -581,12 +582,29 @@
       } catch (_) { continue; }   // šio paketo tinklo klaida → praleidžiam paketą, tęsiam likusius
       for (let i = 0; i < slice.length; i++) {
         const o = ownRes[i];
-        if (!o || o.status !== 'success' || String(o.result).toLowerCase() !== lc) continue;  // nebeturimas → praleisti
+        // ownerOf revert (status 'failure') = SUDEGINTAS; success bet kitas owner = PARDUOTAS → prune.
+        if (o && o.status === 'failure') { prune.add(String(slice[i])); continue; }
+        if (!o || o.status !== 'success') continue;                       // neaiškus (transient) → nei keep, nei prune
+        if (String(o.result).toLowerCase() !== lc) { prune.add(String(slice[i])); continue; }  // parduotas → prune
         const d = dataRes[i];
         if (d && d.status === 'success' && d.result) {
           try { out.push(_mapUnit(slice[i], d.result)); } catch (_) {}
         }
       }
+    }
+    // AUTO-PRUNE: pašalinam patvirtintai mirusius/parduotus iš saugoto deko + squad'o, kad
+    // deckCount (registruota) ir liveCnt (gyvi) VISADA sutaptų (Donce bug: „viršuj 4, apačioj 6").
+    // Saugiklis: prune'inam TIK jei radom bent vieną gyvą (out.length>0) → transient RPC glitch
+    // (kai visi krenta) NEišvalo viso deko.
+    if (prune.size && out.length > 0) {
+      try {
+        const cur = getDeck(addr);
+        const filtered = cur.filter((id) => !prune.has(String(id)));
+        if (filtered.length !== cur.length) {
+          setDeck(addr, filtered);
+          setBattleSquad(addr, getBattleSquad(addr).filter((id) => !prune.has(String(id))));
+        }
+      } catch (_) {}
     }
     return out;
   }
