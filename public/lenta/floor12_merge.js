@@ -1075,7 +1075,7 @@
 
   // Lane harpoons — projectile sistema F12 lane'ams
   // Per-utype ranged miss tikimybė. Roll'inama spawn'inant projektilą; jei miss — jokios žalos, „MISS".
-  const _UNIT_MISS_CHANCE = { archer: 0.15, harpoon_fish: 0.05, shaman: 0.05, skull: 0.10 };
+  const _UNIT_MISS_CHANCE = { archer: 0.15, harpoon_fish: 0.05, shaman: 0.05, skull: 0.10, hog_rider: 0.05 };
   function _rollMiss(attacker) {
     const c = attacker && _UNIT_MISS_CHANCE[attacker.utype];
     return !!(c && Math.random() < c);
@@ -1449,8 +1449,8 @@
   // Range = fraction of lane width. F11 skull = 1 cell (~3% lane), ranged units = 3-7 cells.
   const ALLY_STATS = {
     skull:          { hp: 8,  dmg: 2, speed: 0.012, attackCooldown: 1500, range: 0.04 },
-    archer:         { hp: 5,  dmg: 3, speed: 0.014, attackCooldown: 1500, range: 0.12 },   // CD 1.5s, range ~puse
-    shaman:         { hp: 4,  dmg: 4, speed: 0.010, attackCooldown: 3000, range: 0.14 },   // CD 3s (anksčiau 1.3s, buvo OP)
+    archer:         { hp: 5,  dmg: 3, speed: 0.014, attackCooldown: 2500, range: 0.12 },   // CD 2.5s (sumažintas attack speed), range ~puse
+    shaman:         { hp: 5,  dmg: 4, speed: 0.010, attackCooldown: 3000, range: 0.14 },   // CD 3s; HP 5 (+1)
     harpoon_fish:   { hp: 7,  dmg: 3, speed: 0.011, attackCooldown: 1800, range: 0.10 },   // CD 1.8s, range ~puse
     hog_rider:      { hp: 14, dmg: 8, speed: 0.013, attackCooldown: 2800, range: 0.05 },   // EPIC cavalry melee — tankiausias, spear smūgis 8 dmg, lėtas attack CD 2.8s (utype 5 / frost ball)
     // STATIC towers — neina, stovi prie base ir šaudo
@@ -3339,12 +3339,14 @@
     ctx.fillText('CHOOSE A LANE (ESC TO CANCEL)', L.W / 2, L.H - 110);
   }
 
-  // NFT lygio → statų multiplikatorius. +5% už lygį (level 20 ≈ 2×, level 51 ≈ 3.55×).
+  // NFT lygio → statų multiplikatorius. PIRMI 2 LYGIAI NIEKO, tada +5% KAS 2 LYGIUS.
+  // floor(max(0,lv-2)/2): lvl 1-3 → 1.00×, lvl 4 → 1.05×, lvl 6 → 1.10×, lvl 20 → 1.45×, lvl 42 → 2×.
+  // (RONKE Power irgi pirmi 2 lygiai nieko, bet auga kas lvl — atskirai.)
   // Lengva derinti per _NFT_LEVEL_STAT_PCT. Naudojama HP ir dmg skalei spawnAlly metu.
   const _NFT_LEVEL_STAT_PCT = 0.05;
   function _nftStatMul(level) {
     const lv = Math.max(0, level | 0);
-    return 1 + lv * _NFT_LEVEL_STAT_PCT;
+    return 1 + Math.floor(Math.max(0, lv - 2) / 2) * _NFT_LEVEL_STAT_PCT;
   }
 
   // ── Enemies ────────────────────────────────────────────────────────
@@ -4849,6 +4851,10 @@
           const ml = (a._meleeLane !== undefined) ? a._meleeLane : li;
           if (mt && !mt.dead) {
             if (a.utype === 'hog_rider') {
+              if (_rollMiss(a)) {
+                // Hog Rider 5% miss — kirtis prošovė (jokios žalos)
+                _spawnDmgPopup(ml, mt.x, 0, t, { miss: true });
+              } else {
               // Hog Rider — 10% crit (2× dmg) su „CRIT!" popup'u
               const _hogCrit = Math.random() < 0.10;
               const _hogDmg = _hogCrit ? a.dmg * 2 : a.dmg;
@@ -4864,6 +4870,7 @@
                 score += _nftScoreBoost(5); _trackF12Kill(mt);
                 if (!mt._isWall) _F12Audio.skullDeath();
                 _allyAddKill(a);
+              }
               }
             } else if (_rollMiss(a)) {
               // Skull 10% miss — kirtis prošovė (jokios žalos)

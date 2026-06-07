@@ -106,22 +106,23 @@
     harpoon_fish: { hp: 7,  dmg: 3 },
     hog_rider:    { hp: 14, dmg: 8 },
   };
-  // Lygio skalė: stat = round(base × (1 + level×0.05)) — match _nftStatMul() žaidime.
+  // Lygio skalė: PIRMI 2 LYGIAI NIEKO, tada stat = round(base × (1 + floor((level-2)/2)×0.05)) — kas 2 lvl.
+  // TURI sutapti su _nftStatMul() žaidime (floor12_merge.js). RONKE Power irgi pirmi 2 lvl nieko, bet kas lvl.
   function _unitCombatStats(contractUtype, level) {
     const base = _F12_BASE_STATS[NFT_UTYPE_TO_F12[contractUtype]] || _F12_BASE_STATS.skull;
-    const mul = 1 + Math.max(0, level | 0) * 0.05;
+    const mul = 1 + Math.floor(Math.max(0, (level | 0) - 2) / 2) * 0.05;
     return { hp: Math.max(1, Math.round(base.hp * mul)), dmg: Math.max(1, Math.round(base.dmg * mul)) };
   }
   // Module-level power helper'iai (naudoja ir inventory, ir battle grid).
   function _powerRateOf(utype) { return Number(utype) === 5 ? 15 : 10; }
-  function _unitPowerOf(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRateOf(utype); }
+  function _unitPowerOf(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRateOf(utype); }  // power nuo lvl 2
   // Ability statai — TURI sutapti su floor12_merge.js (block/crit/miss/CD/range). Rodom kortos „nugaroj".
   const _F12_ABILITY = {
     skull:        { role: 'Melee Bruiser',  atk: 'Melee',     range: 'Short',  cd: 1500, move: 12, crit: 0,    block: 0.25, miss: 0.10, aoe: false },
     archer:       { role: 'Ranged DPS',     atk: 'Ranged',    range: 'Long',   cd: 2500, move: 14, crit: 0,    block: 0,    miss: 0.15, aoe: false },
     harpoon_fish: { role: 'Ranged Piercer', atk: 'Ranged',    range: 'Medium', cd: 1800, move: 11, crit: 0,    block: 0,    miss: 0.05, aoe: false },
     shaman:       { role: 'Ranged Caster',  atk: 'Ranged',    range: 'Long',   cd: 3000, move: 10, crit: 0,    block: 0,    miss: 0.05, aoe: true  },
-    hog_rider:    { role: 'Cavalry Tank',   atk: 'Melee AOE', range: 'Short',  cd: 2800, move: 13, crit: 0.10, block: 0,    miss: 0,    aoe: true  },
+    hog_rider:    { role: 'Cavalry Tank',   atk: 'Melee AOE', range: 'Short',  cd: 2800, move: 13, crit: 0.10, block: 0,    miss: 0.05, aoe: true  },
   };
   // Kortos NUGAROS statai — VISI bar-linijų stiliumi (neaktyvūs pilki + „—"). cStats = {dmg,hp} pagal lygį.
   function _backStatBars(ab, cStats) {
@@ -440,7 +441,7 @@
     let topBar = '';
     if (inDeckMode) {
       topBar = `<div class="nft-empty" style="opacity:.9;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:rgba(90,140,90,.12);border:1px solid rgba(120,160,120,.35);border-radius:10px;margin-bottom:8px">
-        <span>Playing from your <strong>Deck</strong> (${deckLen}/${BNFT.DECK_MAX || 24}) — pick up to ${BATTLE_MAX_TOTAL}</span>
+        <span>Playing from your <strong>Deck</strong> (${deckLen}/${(BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : (BNFT.DECK_MAX || 12)}) — pick up to ${BATTLE_MAX_TOTAL}</span>
         <button id="nft-battle-deck-toggle" type="button" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600;white-space:nowrap">Browse all</button>
       </div>`;
     } else if (deckLen > 0) {
@@ -954,7 +955,7 @@
       const _addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
       let _lastInvUnits = null;
       // RONKE Power (client display) — TA PATI formulė kaip ronke-power edge fn:
-      // unitPower = max(0, level-1) × rate; rate=15 hog_rider(utype 5), 10 default. Σ deko unitų.
+      // unitPower = max(0, level-1) × rate (power nuo lvl 2); rate=15 hog_rider(utype 5), 10 default. Σ deko unitų.
       // Serveris lieka autoritetas rewards'ams; čia tik momentinis vizualus feedback.
       function _powerRate(utype) { return Number(utype) === 5 ? 15 : 10; }
       function _unitPower(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRate(utype); }
@@ -1092,7 +1093,12 @@
           }
         }
         const hint = document.getElementById('nft-deck-hint');
-        if (hint) hint.style.display = cnt > 0 ? 'none' : '';
+        if (hint) {
+          hint.style.display = cnt > 0 ? 'none' : '';
+          // DINAMINIS deko cap (12 + Ronkeverse, ne hardcoded 24) — kad 0-RV žaidėjas matytų teisingą 12.
+          const _hMax = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
+          hint.innerHTML = '🎴 Tap <strong>＋Deck</strong> on units to build your battle Deck (max ' + _hMax + '). The battle picker loads your Deck instantly — no slow wallet scan.';
+        }
       }
       function renderInv(units) {
       _lastInvUnits = units;
