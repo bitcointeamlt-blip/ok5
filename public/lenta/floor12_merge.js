@@ -11769,12 +11769,17 @@
     // rAF planuojamas PIRMA — kad viena frame klaida NEUŽMUŠTŲ loop'o visam laikui
     // (anksčiau rAF buvo apačioj po render() → render klaida = amžinai juodas ekranas).
     raf = requestAnimationFrame(loop);
+    const realDt = Math.min(tnow - lastTime, 100);
+    lastTime = tnow;
+    // B FIX: žingsnis apribotas iki 50ms — 2× režimas nebedvigubina dt iki nestabilumo.
+    // (anksčiau dt galėjo siekti 200ms (2×100) → fizikos tunneling/NaN → tick error →
+    //  visas frame nutrūkdavo prieš render() → „balls not loading" užšalimas 2× metu.)
+    const dt = Math.min(realDt * _f12TimeScale, 50);
+    _f12Clock += dt;                       // game clock advance (now() grąžina _f12Clock)
+    const t = _f12Clock;
+    // C FIX: TICK'ai atskirame try nuo render — net jei kuris tick'as meta klaidą,
+    // render() VIS TIEK įvyksta → ekranas nebeužšąla (tik trumpas hiccup, ne freeze).
     try {
-      const realDt = Math.min(tnow - lastTime, 100);
-      lastTime = tnow;
-      const dt = realDt * _f12TimeScale;   // scaled — visa simuliacija greitėja ×timeScale (×2 mygtukas)
-      _f12Clock += dt;                       // game clock advance (now() grąžina _f12Clock)
-      const t = _f12Clock;
       tickEnemies(dt, t);
       _tickHarpoons(t);
       _tickShamanProj(t);
@@ -11795,11 +11800,16 @@
       }
       tickPhysics(dt);
       _fadeMarks(dt);
-      render(t);
     } catch (e) {
-      // Frame klaida — praleidžiam šitą frame, loop'as tęsiasi (ekranas neužstringa juodas)
       if (!loop._errCount) loop._errCount = 0;
-      if (loop._errCount < 5) { loop._errCount++; console.error('[F12 loop] frame error (recovering):', e); }
+      if (loop._errCount < 5) { loop._errCount++; console.error('[F12 loop] TICK error (recovering):', e); }
+    }
+    // render VISADA — atskirai nuo tick'ų, kad tick klaida nebepaslėptų ekrano
+    try {
+      render(t);
+    } catch (e2) {
+      if (!loop._rerrCount) loop._rerrCount = 0;
+      if (loop._rerrCount < 5) { loop._rerrCount++; console.error('[F12 loop] RENDER error (recovering):', e2); }
     }
   }
 
