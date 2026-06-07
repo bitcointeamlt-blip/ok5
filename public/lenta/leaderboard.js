@@ -20,6 +20,7 @@
   // Stulpeliai: key → {label, emoji}. Tvarka = rodymo tvarka.
   var COLS = [
     { key: 'units_held', label: 'Units',   emoji: '⚔️' },
+    { key: 'rp',         label: 'RP',      emoji: '⚡', img: 'ronke.png' },   // RONKE Power (deko galia)
     { key: 'burned',     label: 'NFT Deaths', emoji: '🔥' },
     { key: 'trophies',   label: 'Trophy',  emoji: '🏆', img: 'PewPewTrophies.png' },
     { key: 'maxlvl',     label: 'Max Lv', emoji: '📈' },
@@ -70,7 +71,8 @@
 
     var totalsHtml =
       '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:6px 0 14px;">' +
-      [['👥 Players', t.total_players],
+      [['<img src="ronke.png" draggable="false" style="height:12px;width:auto;vertical-align:-2px;"> Total RP', t.total_rp],
+       ['👥 Players', t.total_players],
        ['🔥 NFT Deaths', t.total_burned],
        ['🏆 Trophies', t.total_trophies]
       ].map(function (p) {
@@ -125,7 +127,7 @@
       '<div id="lb-scroll" style="max-height:50vh;overflow:auto;border-radius:12px;border:2px solid ' + C.wood + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);">' +
       '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
       '<thead style="position:sticky;top:0;background:' + C.wood + ';box-shadow:0 2px 0 ' + C.woodDark + ';"><tr>' + headHtml + '</tr></thead>' +
-      '<tbody>' + (rowsHtml || '<tr><td colspan="8" style="padding:20px;text-align:center;color:' + C.ink + ';">No data</td></tr>') + '</tbody>' +
+      '<tbody>' + (rowsHtml || '<tr><td colspan="' + (COLS.length + 2) + '" style="padding:20px;text-align:center;color:' + C.ink + ';">No data</td></tr>') + '</tbody>' +
       '</table></div>';
 
     // Stulpelio antraštės click → sortuoja pagal tą stulpelį (desc)
