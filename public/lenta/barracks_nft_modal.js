@@ -504,7 +504,10 @@
     const btn = document.getElementById('nft-battle-start');
     if (btn) {
       btn.disabled = activeTotal === 0;
-      btn.textContent = _battleMode === 'nft' ? '⚔ START WITH NFT' : '▶ START WITH FREE';
+      const _base = _battleMode === 'nft' ? '⚔ START WITH NFT' : '▶ START WITH FREE';
+      // Play fee priedas — TIK NFT režime, kol mokestis dar nesumokėtas. FREE — be mokesčio.
+      const _showFee = _battleMode === 'nft' && window._F12_PAYTOPLAY && !window._f12FeePaidForEntry;
+      btn.textContent = _base + (_showFee ? ' · 5 RONKE' : '');
     }
   }
 
@@ -586,7 +589,7 @@
       if (c > 0) freeChoice[bt] = c;
     }
     if (Object.keys(freeChoice).length === 0) return;
-    _deployStart(freeChoice, []);
+    _deployStart(freeChoice, []);   // FREE mūšis — BE play fee (mokestis tik NFT unitams)
   }
   async function _onBattleDeployNft() {
     const groups = _battleGroups();
@@ -607,6 +610,22 @@
       }
     }
     if (pool.length === 0) return;
+
+    // ─── PLAY FEE PIRMA — 5 RONKE → treasury PRIEŠ deck/BurnAuth parašą (jei dar nesumokėta) ───
+    if (typeof window._f12PayPlayFee === 'function') {
+      const _sbtn = document.getElementById('nft-battle-start');
+      const _sorig = _sbtn ? _sbtn.textContent : '';
+      if (_sbtn) { _sbtn.disabled = true; _sbtn.textContent = '⏳ CONFIRM 5 RONKE...'; }
+      try {
+        await window._f12PayPlayFee();
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        alert(/reject|denied|cancel/i.test(msg) ? 'Play fee cancelled — battle not started.' : (/wallet/i.test(msg) ? 'Connect wallet to pay the play fee.' : ('Play fee failed: ' + msg)));
+        if (_sbtn) { _sbtn.disabled = false; _sbtn.textContent = _sorig || '⚔ START WITH NFT'; }
+        if (typeof _updateBattleFooter === 'function') _updateBattleFooter();
+        return;
+      }
+    }
 
     // ─── start-battle backend → wallet sign → save BurnAuth ───────────
     const startBtn = document.getElementById('nft-battle-start');

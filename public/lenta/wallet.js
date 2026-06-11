@@ -97,6 +97,7 @@
     ADDR: 'lenta_wallet_address',
     SIG:  'lenta_wallet_signature',
     MSG:  'lenta_wallet_message',
+    METHOD: 'lenta_wallet_method',   // 'roninwc' | 'waypoint' | 'ronin' — kad restore žinotų
   };
 
   const state = {
@@ -401,10 +402,13 @@
 
     state.address = addr;
     state.connected = true;
+    const usedMethod = (prov === _wcProvider) ? 'roninwc'
+                     : (prov === _waypointProvider) ? 'waypoint' : 'ronin';
     try {
       localStorage.setItem(LS.ADDR, addr);
       localStorage.setItem(LS.SIG, signature);
       localStorage.setItem(LS.MSG, LOGIN_MSG);
+      localStorage.setItem(LS.METHOD, usedMethod);
     } catch {}
 
     // Attach event listeners to the provider that just connected (Waypoint or native).
@@ -423,6 +427,8 @@
   }
 
   async function disconnect() {
+    // WC — uždarom sesiją švariai (explicit logout / session_delete).
+    try { if (_wcProvider && typeof _wcProvider.disconnect === 'function') _wcProvider.disconnect(); } catch (_) {}
     state.address = null;
     state.connected = false;
     state.chainId = null;
@@ -432,6 +438,7 @@
       localStorage.removeItem(LS.ADDR);
       localStorage.removeItem(LS.SIG);
       localStorage.removeItem(LS.MSG);
+      localStorage.removeItem(LS.METHOD);
     } catch {}
     notify();
     try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch {}
@@ -450,24 +457,43 @@
   }
 
   async function restore() {
+    const saved = (function () { try { return localStorage.getItem(LS.ADDR); } catch { return null; } })();
+    if (!saved) return false;
+    const savedMethod = (function () { try { return localStorage.getItem(LS.METHOD); } catch { return null; } })();
+
+    function _markRestored(prov) {
+      state.provider = prov;
+      state.address = saved;
+      state.connected = true;
+      attachListeners(prov);
+      notify();
+      try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch {}
+      chainIdCheck().catch(() => {});
+      refreshBalance().catch(() => {});
+      refreshNfts().catch(() => {});
+    }
+
+    // WalletConnect — atstatom persistuotą WC sesiją (be re-sign). NEtrinam jei nepavyksta
+    // (gali būti tik lėtas relay) — kad neatsijungtų po reload kaip „disconnect after game".
+    if (savedMethod === 'roninwc') {
+      try {
+        const prov = await getWalletConnectProvider();   // EP.init atstato persistuotą sesiją silent
+        let accounts = (prov.accounts && prov.accounts.length) ? prov.accounts : null;
+        if (!accounts) { try { accounts = await prov.request({ method: 'eth_accounts' }); } catch (_) {} }
+        const ok = accounts && accounts.map(a => a.toLowerCase()).includes(saved.toLowerCase());
+        if (ok) { _markRestored(prov); return true; }
+      } catch (_) {}
+      return false;   // NEtrinam sesijos
+    }
+
+    // Injected (native) — kaip anksčiau.
     const prov = getRoninProvider();
     if (!prov) return false;
     state.provider = prov;
-    const saved = (function () { try { return localStorage.getItem(LS.ADDR); } catch { return null; } })();
-    if (!saved) return false;
     try {
       const accounts = await prov.request({ method: 'eth_accounts' });
       const ok = accounts && accounts.map(a => a.toLowerCase()).includes(saved.toLowerCase());
-      if (ok) {
-        state.address = saved;
-        state.connected = true;
-        notify();
-        try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch {}
-        chainIdCheck().catch(() => {});
-        refreshBalance().catch(() => {});
-        refreshNfts().catch(() => {});
-        return true;
-      }
+      if (ok) { _markRestored(prov); return true; }
     } catch {}
     await disconnect();
     return false;
@@ -476,16 +502,30 @@
   function attachListeners(prov) {
     if (!prov || typeof prov.on !== 'function') return;
     if (prov.__lentaListenersAttached) return;
+    const isWC = (prov === _wcProvider);
     try {
       prov.on('accountsChanged', (accounts) => {
-        if (!accounts || accounts.length === 0) { disconnect(); return; }
+        if (!accounts || accounts.length === 0) {
+          // WC: tuščias accountsChanged dažnai TRANSIENT (app backgrounding per TX deep-link,
+          // relay re-init) → NEtrinam sesijos (RAMIRO: „disconnects after each game").
+          if (isWC) return;
+          disconnect(); return;
+        }
         if (state.address && accounts[0].toLowerCase() !== state.address.toLowerCase()) {
           // Different account — treat as re-login (clear old, require new signature)
           disconnect();
         }
       });
       prov.on('chainChanged', () => { chainIdCheck(); });
-      prov.on('disconnect', () => { disconnect(); });
+      if (isWC) {
+        // WC: 'disconnect' event = dažniausiai transient relay drop (pvz. kai per TX
+        // deep-link'inama į Ronin app → puslapis backgrounded → WebSocket dropina).
+        // SDK pati persistina sesiją + reconnect'ina relay → NETRINAM. Tikras logout =
+        // 'session_delete' (user atjungė wallet app'e).
+        try { prov.on('session_delete', () => { disconnect(); }); } catch (_) {}
+      } else {
+        prov.on('disconnect', () => { disconnect(); });
+      }
       prov.__lentaListenersAttached = true;
     } catch (e) { console.warn('[wallet] listener setup failed:', e); }
   }
@@ -625,6 +665,147 @@
       }
     }
     throw new Error('Mint not confirmed — the transaction may have failed or is still pending. Please try CLAIM again.');
+  }
+
+  // ── RONKE Faucet on-chain claim — ŽAIDĖJAS PATS pateikia TX + moka gas (PoD: unikalus adresas + gas) ──
+  // claim = { player, amount(wei str), deadline(str), nonce(str), signature, contract, chainId }.
+  // Serveris jau pasirašė ClaimReward (anti-cheat); čia tik on-chain submit per žaidėjo piniginę.
+  async function submitFaucetClaim(claim) {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+    if (!claim || !claim.contract || !claim.signature) throw new Error('Bad claim payload');
+
+    // ── NETWORK GUARD → Ronin Mainnet ──
+    try {
+      const curChainHex = await prov.request({ method: 'eth_chainId' });
+      const curChain = Number(BigInt(curChainHex));
+      if (curChain !== RONIN_CHAIN_ID_DEC) {
+        try {
+          await prov.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: RONIN_CHAIN_ID_HEX }] });
+        } catch (switchErr) {
+          if (switchErr && (switchErr.code === 4902 || /not added|unrecognized/i.test(String(switchErr.message || '')))) {
+            await prov.request({ method: 'wallet_addEthereumChain', params: [{ chainId: RONIN_CHAIN_ID_HEX, chainName: 'Ronin Mainnet', nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 }, rpcUrls: [RONIN_RPC], blockExplorerUrls: ['https://app.roninchain.com'] }] });
+          } else {
+            throw new Error('Wrong network — switch to Ronin Mainnet (chainId 2020) and retry. Current: ' + curChain);
+          }
+        }
+        const newChainHex = await prov.request({ method: 'eth_chainId' });
+        if (Number(BigInt(newChainHex)) !== RONIN_CHAIN_ID_DEC) throw new Error('Network switch declined. Select Ronin Mainnet and retry.');
+      }
+    } catch (e) {
+      if (e && e.message && /Wrong network|Network switch/.test(e.message)) throw e;
+      console.warn('[submitFaucetClaim] chainId check failed, attempting tx anyway:', e);
+    }
+
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData } = _viemModule;
+    const data = encodeFunctionData({
+      abi: [{
+        type: 'function', name: 'claimReward', stateMutability: 'nonpayable',
+        inputs: [
+          { name: 'player', type: 'address' }, { name: 'amount', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'sig', type: 'bytes' },
+        ],
+        outputs: [],
+      }],
+      functionName: 'claimReward',
+      args: [claim.player, BigInt(claim.amount), BigInt(claim.deadline), BigInt(claim.nonce), claim.signature],
+    });
+
+    // RONKE balanceOf(player) prieš → patvirtinimui (mobile-robust polling, kaip trophy mint).
+    async function _ronkeBal() {
+      const h = await fetch(RONIN_RPC, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_call', id: 1,
+          params: [{ to: RONKE_TOKEN, data: '0x70a08231' + state.address.slice(2).toLowerCase().padStart(64, '0') }, 'latest'] }),
+      }).then(r => r.json()).then(r => r.result).catch(() => null);
+      return (typeof h === 'string' && h.startsWith('0x') && h.length > 2) ? BigInt(h) : null;
+    }
+    void _ronkeBal;   // (paliktas dėl suderinamumo; patvirtinimas dabar per receipt)
+
+    let txHash = null, sendErr = null;
+    prov.request({ method: 'eth_sendTransaction', params: [{ from: state.address, to: claim.contract, data }] })
+      .then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
+
+    const _deadline = Date.now() + 120000;   // 2 min patvirtinimui
+    while (Date.now() < _deadline) {
+      await new Promise(function (r) { setTimeout(r, 2500); });
+      // Surface ALL send errors (ne tik cancel) — kad matytume tikrą priežastį
+      if (sendErr) {
+        if (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || '')) throw sendErr;
+        throw new Error('Wallet could not send TX: ' + (sendErr.message || sendErr.code || 'unknown'));
+      }
+      if (txHash) {
+        const rc = await fetch(RONIN_RPC, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [txHash] }),
+        }).then(r => r.json()).then(r => r.result).catch(() => null);
+        if (rc) {
+          if (rc.status === '0x1') return { txHash };
+          throw new Error('Claim TX reverted on-chain');
+        }
+      }
+    }
+    throw new Error('Claim not confirmed — TX may be pending. Try CLAIM again.');
+  }
+
+  // ── F12 PLAY FEE — žaidėjas pasirašo 5 RONKE transfer į treasury PRIEŠ žaidimą ──
+  // Be naujo kontrakto: paprastas ERC20 transfer ant esamo RONKE token'o. Žaidėjas moka gas → PoD.
+  const PLAY_FEE_RONKE = 5;
+  const PLAY_TREASURY = '0xfF0a2d76E6156Bc1C0c689fe4029f6F1a566E92e';   // treasury — surenka play fee (5 RONKE)
+  async function payToPlay() {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+
+    // ── NETWORK GUARD → Ronin Mainnet ──
+    try {
+      const curChainHex = await prov.request({ method: 'eth_chainId' });
+      if (Number(BigInt(curChainHex)) !== RONIN_CHAIN_ID_DEC) {
+        try {
+          await prov.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: RONIN_CHAIN_ID_HEX }] });
+        } catch (switchErr) {
+          if (switchErr && (switchErr.code === 4902 || /not added|unrecognized/i.test(String(switchErr.message || '')))) {
+            await prov.request({ method: 'wallet_addEthereumChain', params: [{ chainId: RONIN_CHAIN_ID_HEX, chainName: 'Ronin Mainnet', nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 }, rpcUrls: [RONIN_RPC], blockExplorerUrls: ['https://app.roninchain.com'] }] });
+          } else { throw new Error('Wrong network — switch to Ronin Mainnet (2020) and retry.'); }
+        }
+        const newChainHex = await prov.request({ method: 'eth_chainId' });
+        if (Number(BigInt(newChainHex)) !== RONIN_CHAIN_ID_DEC) throw new Error('Network switch declined.');
+      }
+    } catch (e) {
+      if (e && e.message && /Wrong network|Network switch/.test(e.message)) throw e;
+      console.warn('[payToPlay] chainId check failed, attempting tx anyway:', e);
+    }
+
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData } = _viemModule;
+    const data = encodeFunctionData({
+      abi: [{ type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] }],
+      functionName: 'transfer',
+      args: [PLAY_TREASURY, BigInt(PLAY_FEE_RONKE) * (10n ** 18n)],
+    });
+
+    let txHash = null, sendErr = null;
+    prov.request({ method: 'eth_sendTransaction', params: [{ from: state.address, to: RONKE_TOKEN, data }] })
+      .then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
+
+    const _deadline = Date.now() + 120000;
+    while (Date.now() < _deadline) {
+      await new Promise(function (r) { setTimeout(r, 2500); });
+      if (sendErr && (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || ''))) throw sendErr;
+      if (txHash) {
+        const rc = await fetch(RONIN_RPC, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [txHash] }),
+        }).then(r => r.json()).then(r => r.result).catch(() => null);
+        if (rc) {
+          if (rc.status === '0x1') return { txHash };
+          throw new Error('Play fee TX reverted');
+        }
+      }
+    }
+    throw new Error('Play fee not confirmed — try again');
   }
 
   // RONKE NFT count helper (display / wallet badge only — spoofable client-side).
@@ -772,6 +953,41 @@
     return { signature, message, owner: ownerLc };
   }
 
+  // ── RONKE Faucet claim — EIP-712 RonkeClaimRequest (gasless auth, anti-griefing) ──
+  // Įrodo kad piniginės savininkas inicijavo claim. Off-chain (server verifyTypedData),
+  // tad domeno chainId = 2020 (kur yra žaidėjas) — kad wallet'as nepatrumtų pasirašyti.
+  // Grąžina { signature, player, deadline, nonce }.
+  async function signFaucetClaim() {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+    const accts = await prov.request({ method: 'eth_accounts' });
+    const cur = (accts && accts[0]) ? accts[0] : null;
+    if (!cur) throw new Error('No active wallet account — reconnect wallet.');
+    if (state.address && cur.toLowerCase() !== state.address.toLowerCase()) {
+      throw new Error('Wallet account mismatch — switch to ' + state.address + ' or reconnect.');
+    }
+    const ownerLc = cur.toLowerCase();
+    const deadline = Math.floor(Date.now() / 1000) + 600;       // 10 min
+    const nonce = String(Date.now()) + String(Math.floor(Math.random() * 1e6));
+    const domain = { name: 'RonkeFaucet', version: '1', chainId: 2020, verifyingContract: '0xc59e860e2115ccdab499f619a67bedf71ee26007' };
+    const types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' }, { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' },
+      ],
+      RonkeClaimRequest: [
+        { name: 'player', type: 'address' },
+        { name: 'deadline', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+      ],
+    };
+    const message = { player: ownerLc, deadline: String(deadline), nonce: String(nonce) };
+    const typedData = JSON.stringify({ domain, types, primaryType: 'RonkeClaimRequest', message });
+    const signature = await prov.request({ method: 'eth_signTypedData_v4', params: [ownerLc, typedData] });
+    return { signature, player: ownerLc, deadline, nonce };
+  }
+
   // Re-check active wallet account NEPASIKLIAUJANT accountsChanged event'u
   // (kai kurie wallet'ai jo nesiunčia kai user switch'ina UI'je).
   // Grąžina { ok, currentAddress, registered, mismatch }.
@@ -810,6 +1026,12 @@
     claimTrophy,
     // F12 NFT pre-battle EIP-712 signing
     signBattleAuth,
+    // RONKE Faucet claim EIP-712 signing
+    signFaucetClaim,
+    // RONKE Faucet on-chain claim (player pays gas → PoD)
+    submitFaucetClaim,
+    // F12 play fee — 5 RONKE → treasury (player pays gas → PoD)
+    payToPlay,
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT,
   };
