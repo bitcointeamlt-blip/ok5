@@ -251,7 +251,7 @@
     var ZONE_SPEED = 34;   // skystis lėtai keliauja per VISĄ skalę pirmyn-atgal (°/s)
     var R = 73, A_MIN = -52, A_MAX = 52;   // rodyklė juda TIK žiedo gold band (skalės) ribose; R = gold band radius
     // ── SERVER-AUTHORITATIVE: serveris išduoda raundų trajektorijas; klientas rendina closed-form + įrašo tap-laikus ──
-    var _rounds = null, _sessionId = null, _serverMode = false, _roundT0 = 0, _tapLedger = false, _tapSyncs = [], _tapSyncFailed = false;
+    var _rounds = null, _sessionId = null, _serverMode = false, _roundT0 = 0, _tapLedger = false, _tapSyncs = [], _tapSyncFailed = false, _tapChain = Promise.resolve();
     function _tri(s, lo, hi) { var Rr = hi - lo; var m = ((s - lo) % (2 * Rr) + 2 * Rr) % (2 * Rr); return lo + (m <= Rr ? m : 2 * Rr - m); }
     function _posAt(rd, t) { var zw = rd.zw; return { ang: _tri(rd.ang0 + rd.dir * rd.speed * t, A_MIN, A_MAX), zc: _tri(rd.zc0 + rd.zcDir * rd.zoneSpeed * t, A_MIN + zw, A_MAX - zw), zw: zw }; }
     function _genLocalRounds() { var rs = []; for (var i = 0; i < ROUNDS; i++) { var zw = cfg[i].zw, zMin = A_MIN + zw, zMax = A_MAX - zw; rs.push({ zw: zw, speed: cfg[i].speed, zoneSpeed: ZONE_SPEED, zc0: zMin + Math.random() * (zMax - zMin), zcDir: Math.random() < 0.5 ? 1 : -1, ang0: A_MIN + Math.random() * (A_MAX - A_MIN), dir: Math.random() < 0.5 ? 1 : -1 }); } return rs; }
@@ -271,15 +271,18 @@
     }
     function _syncTap(roundIndex, tapMs) {
       if (!_serverMode || !_sessionId || !_tapLedger) return;
-      var p = fetch(CLAIM_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'tap', wallet: a, sessionId: _sessionId, roundIndex: roundIndex, tapMs: tapMs })
-      }).then(function (r) { return r.json(); }).then(function (j) {
-        if (!j || !j.ok) throw new Error((j && j.error) || 'Tap sync failed');
-        return j;
-      }).catch(function (e) { _tapSyncFailed = true; throw e; });
-      _tapSyncs.push(p);
+      // NUOSEKLIAI (chain) — tap'ai pasiekia serverį eilės tvarka (be race → be tap_order_mismatch).
+      _tapChain = _tapChain.then(function () {
+        return fetch(CLAIM_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'tap', wallet: a, sessionId: _sessionId, roundIndex: roundIndex, tapMs: tapMs })
+        }).then(function (r) { return r.json(); }).then(function (j) {
+          if (!j || !j.ok) throw new Error((j && j.error) || 'Tap sync failed');
+          return j;
+        });
+      }).catch(function (e) { _tapSyncFailed = true; /* NEbemetam — claim turi clientTaps fallback */ });
+      _tapSyncs.push(_tapChain);
     }
     function polar(deg, rr) { rr = rr || R; var r = (deg - 90) * Math.PI / 180; return { x: 100 + rr * Math.cos(r), y: 100 + rr * Math.sin(r) }; }
     function arcPath(a1, a2, rr) { rr = rr || R; var s = polar(a1, rr), e = polar(a2, rr); var large = ((((a2 - a1) % 360) + 360) % 360) > 180 ? 1 : 0; return 'M ' + s.x.toFixed(2) + ' ' + s.y.toFixed(2) + ' A ' + rr + ' ' + rr + ' 0 ' + large + ' 1 ' + e.x.toFixed(2) + ' ' + e.y.toFixed(2); }
@@ -881,8 +884,9 @@
       }
       // ── SERVER mode: autorizacija jau pasirašyta PRIEŠ žaidimą (sign-first) → tik sync + claim ──
       _setLabel('SYNC…', '#c8902e');
-      Promise.all(_tapSyncs).then(function () {
-        if (_tapSyncFailed) throw new Error('Tap sync failed');
+      // NElaukiam kad VISI tap-syncai pavyktų — claim siunčia `taps` (clientTaps) kaip fallback.
+      // Jei serverio tap-ledger nepilnas, serveris priima clientTaps (anti-cheat scoring vis tiek skaičiuoja).
+      Promise.all(_tapSyncs.map(function (p) { return p.catch(function () {}); })).then(function () {
         _setLabel('CLAIMING…', '#c8902e');
         return fetch(CLAIM_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'claim', wallet: a, sessionId: _sessionId, taps: taps }) }).then(function (r) { return r.json(); });
       }).then(function (j) {
