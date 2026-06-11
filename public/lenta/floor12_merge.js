@@ -1794,6 +1794,13 @@
 
     vol: 0.04,                  // pritildinta — sėdi po SFX
 
+    muted: false,               // global mute (toggleSound iškviečia setMuted)
+
+    setMuted(m) {
+      this.muted = !!m;
+      if (this.audios) { for (var i = 0; i < this.audios.length; i++) { try { this.audios[i].muted = this.muted; } catch (_) {} } }
+    },
+
     _ensure() {
 
       if (this.audios) return;
@@ -1807,6 +1814,8 @@
         a.volume = this.vol;
 
         a.preload = 'auto';
+
+        a.muted = this.muted;
 
         a.addEventListener('ended', () => {
 
@@ -2934,7 +2943,7 @@
 
     bear:      { frameW: 256, sizeMul: 1.3, hpMul: 1.5, hpFlat: 6, spdMul: 1.5, gap: 0.070, sheets: null, allyDmg: 2, hitDelay: 470, atkCd: 4000, critChance: 0.20, critDmg: 3 }, // tankas (+6 HP), kerta -2 (20% crit -4), ataka kas 4s, smūgis atidėtas iki slam
 
-    thief:     { frameW: 192, sizeMul: 1.08, hpMul: 1.0, hpFlat: 10, spdMul: 3.92, gap: 0.045, sheets: null, allyDmg: 1, hitDelay: 300, atkCd: 1650, critChance: 0.15, critDmg: 3, missChance: 0.20 }, // greitas (spdMul 3.92), hp=10, allyDmg=1, 15% crit -> 4 dmg; miss 20% (susilpnintas)
+    thief:     { frameW: 192, sizeMul: 1.08, hpMul: 1.0, hpFlat: 10, spdMul: 2.4, gap: 0.045, sheets: null, allyDmg: 1, hitDelay: 300, atkCd: 1650, critChance: 0.15, critDmg: 3, missChance: 0.20 }, // greitis = voras (spdMul 2.4), hp=10, allyDmg=1, 15% crit -> 4 dmg; miss 20% (susilpnintas)
 
   };
 
