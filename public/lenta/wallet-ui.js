@@ -602,6 +602,7 @@
         </div>
       </div>
       <div class="wui-dd-actions">
+        <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-swap">⇄ SWAP RON ↔ RONKE</button>
         <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-gallery">▣ VIEW NFTS</button>
         <button type="button" class="wui-dd-btn wui-dd-btn-danger" id="wui-dd-disconnect">⎋ DISCONNECT</button>
       </div>
@@ -614,6 +615,7 @@
     dropdownEl.querySelector('#wui-dd-refresh-bal').onclick = () => Wallet.refreshBalance();
     dropdownEl.querySelector('#wui-dd-refresh-nfts').onclick = () => Wallet.refreshNfts();
     dropdownEl.querySelector('#wui-dd-gallery').onclick = () => { closeDropdown(); openGallery(); };
+    dropdownEl.querySelector('#wui-dd-swap').onclick = () => { closeDropdown(); if (window.openRonkeSwap) window.openRonkeSwap(); };
     dropdownEl.querySelector('#wui-dd-disconnect').onclick = async () => {
       await Wallet.disconnect();
       showToast('Disconnected', 'ok', 1500);

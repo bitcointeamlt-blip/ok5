@@ -808,6 +808,133 @@
     throw new Error('Play fee not confirmed — try again');
   }
 
+  // ── KATANA DEX: RON ↔ RONKE swap (onboarding + DEX activity → PoD) ──────
+  // Tiesiai per Katana V2 router (gilus WRON/RONKE pool). Žaidėjas pats moka gas.
+  const KATANA_ROUTER = '0x7D0556D55ca1a92708681e2E231733EBd922597D';
+  const WRON_TOKEN    = '0xe514d9deb7966c8be0ca922de8a064264ea6bcd4';
+  const _MAX_UINT256  = (2n ** 256n) - 1n;
+  const _ROUTER_ABI = [
+    { type:'function', name:'getAmountsOut', stateMutability:'view', inputs:[{name:'amountIn',type:'uint256'},{name:'path',type:'address[]'}], outputs:[{name:'amounts',type:'uint256[]'}] },
+    { type:'function', name:'swapExactRONForTokens', stateMutability:'payable', inputs:[{name:'amountOutMin',type:'uint256'},{name:'path',type:'address[]'},{name:'to',type:'address'},{name:'deadline',type:'uint256'}], outputs:[{name:'amounts',type:'uint256[]'}] },
+    { type:'function', name:'swapExactTokensForRON', stateMutability:'nonpayable', inputs:[{name:'amountIn',type:'uint256'},{name:'amountOutMin',type:'uint256'},{name:'path',type:'address[]'},{name:'to',type:'address'},{name:'deadline',type:'uint256'}], outputs:[{name:'amounts',type:'uint256[]'}] },
+  ];
+  const _ERC20_APPROVE_ABI = [{ type:'function', name:'approve', stateMutability:'nonpayable', inputs:[{name:'spender',type:'address'},{name:'amount',type:'uint256'}], outputs:[{type:'bool'}] }];
+
+  async function _ensureRoninNet(prov) {
+    try {
+      const cur = await prov.request({ method:'eth_chainId' });
+      if (Number(BigInt(cur)) !== RONIN_CHAIN_ID_DEC) {
+        try { await prov.request({ method:'wallet_switchEthereumChain', params:[{ chainId: RONIN_CHAIN_ID_HEX }] }); }
+        catch (se) {
+          if (se && (se.code===4902 || /not added|unrecognized/i.test(String(se.message||'')))) {
+            await prov.request({ method:'wallet_addEthereumChain', params:[{ chainId: RONIN_CHAIN_ID_HEX, chainName:'Ronin Mainnet', nativeCurrency:{name:'RON',symbol:'RON',decimals:18}, rpcUrls:[RONIN_RPC], blockExplorerUrls:['https://app.roninchain.com'] }] });
+          } else throw new Error('Wrong network — switch to Ronin Mainnet (2020) and retry.');
+        }
+        const nc = await prov.request({ method:'eth_chainId' });
+        if (Number(BigInt(nc)) !== RONIN_CHAIN_ID_DEC) throw new Error('Network switch declined.');
+      }
+    } catch (e) {
+      if (e && e.message && /Wrong network|Network switch/.test(e.message)) throw e;
+      console.warn('[swap] chainId check failed, continuing:', e);
+    }
+  }
+
+  async function _sendAndConfirm(prov, txParams, label) {
+    let txHash = null, sendErr = null;
+    prov.request({ method:'eth_sendTransaction', params:[txParams] })
+      .then(function(h){ txHash = h; }).catch(function(e){ sendErr = e; });
+    const deadline = Date.now() + 120000;
+    while (Date.now() < deadline) {
+      await new Promise(function(r){ setTimeout(r, 2500); });
+      if (sendErr) {
+        if (sendErr.code===4001 || /reject|denied|cancel/i.test(sendErr.message||'')) throw sendErr;
+        throw new Error((label||'TX')+' failed: '+String(sendErr.message||sendErr).slice(0,80));
+      }
+      if (txHash) {
+        const rc = await fetch(RONIN_RPC, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getTransactionReceipt', params:[txHash] }) }).then(r=>r.json()).then(r=>r.result).catch(()=>null);
+        if (rc) { if (rc.status==='0x1') return { txHash }; throw new Error((label||'TX')+' reverted'); }
+      }
+    }
+    throw new Error((label||'TX')+' not confirmed — try again');
+  }
+
+  async function _swapQuoteWei(direction, amountInWei) {
+    if (!amountInWei || amountInWei <= 0n) return 0n;
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData, decodeFunctionResult } = _viemModule;
+    const path = direction === 'ronke2ron' ? [RONKE_TOKEN, WRON_TOKEN] : [WRON_TOKEN, RONKE_TOKEN];
+    const data = encodeFunctionData({ abi:_ROUTER_ABI, functionName:'getAmountsOut', args:[amountInWei, path] });
+    const res = await rpcCall(KATANA_ROUTER, data);
+    const amounts = decodeFunctionResult({ abi:_ROUTER_ABI, functionName:'getAmountsOut', data: res });
+    return amounts[amounts.length-1];
+  }
+
+  // Public quote (human decimals). direction: 'ron2ronke' | 'ronke2ron'
+  async function swapQuote(direction, amountInDec) {
+    const n = Number(amountInDec);
+    if (!isFinite(n) || n <= 0) return 0;
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { parseEther, formatEther } = _viemModule;
+    const outWei = await _swapQuoteWei(direction, parseEther(String(amountInDec)));
+    return Number(formatEther(outWei));
+  }
+
+  function _slipBps(pct) { return BigInt(Math.round(Math.max(0.1, Math.min(50, Number(pct)||2)) * 100)); }
+
+  async function swapRonToRonke(ronDec, slippagePct) {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+    await _ensureRoninNet(prov);
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData, parseEther } = _viemModule;
+    const amountIn = parseEther(String(ronDec));
+    const outWei = await _swapQuoteWei('ron2ronke', amountIn);
+    if (outWei <= 0n) throw new Error('No liquidity / bad amount');
+    const minOut = outWei * (10000n - _slipBps(slippagePct)) / 10000n;
+    const deadline = BigInt(Math.floor(Date.now()/1000) + 1200);
+    const data = encodeFunctionData({ abi:_ROUTER_ABI, functionName:'swapExactRONForTokens', args:[minOut, [WRON_TOKEN, RONKE_TOKEN], state.address, deadline] });
+    const r = await _sendAndConfirm(prov, { from: state.address, to: KATANA_ROUTER, data, value: '0x'+amountIn.toString(16) }, 'Swap');
+    try { refreshBalance(); } catch(_){}
+    return r;
+  }
+
+  async function _erc20Allowance(owner, spender) {
+    // allowance(owner,spender) = 0xdd62ed3e
+    const data = '0xdd62ed3e' + pad32(strip0x(owner)) + pad32(strip0x(spender));
+    return hexToBigInt(await rpcCall(RONKE_TOKEN, data));
+  }
+
+  async function swapRonkeToRon(ronkeDec, slippagePct) {
+    if (!state.connected) throw new Error('Wallet not connected');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('No wallet provider');
+    await _ensureRoninNet(prov);
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData, parseEther } = _viemModule;
+    const amountIn = parseEther(String(ronkeDec));
+    const allowance = await _erc20Allowance(state.address, KATANA_ROUTER);
+    if (allowance < amountIn) {
+      const approveData = encodeFunctionData({ abi:_ERC20_APPROVE_ABI, functionName:'approve', args:[KATANA_ROUTER, _MAX_UINT256] });
+      await _sendAndConfirm(prov, { from: state.address, to: RONKE_TOKEN, data: approveData }, 'Approve');
+    }
+    const outWei = await _swapQuoteWei('ronke2ron', amountIn);
+    if (outWei <= 0n) throw new Error('No liquidity / bad amount');
+    const minOut = outWei * (10000n - _slipBps(slippagePct)) / 10000n;
+    const deadline = BigInt(Math.floor(Date.now()/1000) + 1200);
+    const data = encodeFunctionData({ abi:_ROUTER_ABI, functionName:'swapExactTokensForRON', args:[amountIn, minOut, [RONKE_TOKEN, WRON_TOKEN], state.address, deadline] });
+    const r = await _sendAndConfirm(prov, { from: state.address, to: KATANA_ROUTER, data }, 'Swap');
+    try { refreshBalance(); } catch(_){}
+    return r;
+  }
+
+  async function getRonBalance(addr) {
+    const a = addr || state.address;
+    if (!a) return 0;
+    const res = await fetch(RONIN_RPC, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getBalance', params:[a, 'latest'] }) }).then(r=>r.json()).then(r=>r.result).catch(()=>null);
+    return res ? Number(hexToBigInt(res)) / 1e18 : 0;
+  }
+
   // RONKE NFT count helper (display / wallet badge only — spoofable client-side).
   // For bonus gating use getNftHoldStatus() which queries server-side.
   function getRonkeNFTCount() {
@@ -1032,8 +1159,10 @@
     submitFaucetClaim,
     // F12 play fee — 5 RONKE → treasury (player pays gas → PoD)
     payToPlay,
+    // Katana DEX swap RON ↔ RONKE (onboarding + DEX activity, player pays gas)
+    swapQuote, swapRonToRonke, swapRonkeToRon, getRonBalance,
     // constants (for debugging)
-    RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT,
+    RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT, KATANA_ROUTER, WRON_TOKEN,
   };
 
   // Clear NFT hold cache when wallet address changes / disconnects.
