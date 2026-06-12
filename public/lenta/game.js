@@ -2882,6 +2882,10 @@ function _f9SyncCanvasSize() {
 }
 if (typeof window !== 'undefined') {
   window.addEventListener('resize', () => { try { _f9SyncCanvasSize(); } catch (_) {} });
+  // Mobile: URL juostos rodymas/slėpimas keičia matomą viewport be window resize
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => { try { _f9SyncCanvasSize(); } catch (_) {} });
+  }
 }
 // Matomos dalies stačiakampis pasaulio koordinatėse (naudojamas popup clamp'ui kai
 // popup'as piešiamas viduje `ctx.translate(-cam.x,-cam.y)`).
@@ -4373,12 +4377,21 @@ function _f9InstallDragHandlers() {
       }
       if (tMode === 'maybe' && tStart) {
         if (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH) {
-          tMode = 'select';
+          // 1 piršto drag = KAMEROS PAN (mobile standartas). Box-select mobile
+          // nereikalingas — selection per tap / ALL mygtuką (2026-06-12 fix).
+          tMode = 'pan1';
+          tStart.lastX = t.clientX;
+          tStart.lastY = t.clientY;
         }
       }
-      if (tMode === 'select' && tStart) {
-        const p = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
-        window._f9DragRect = { sx1: tStart.sx, sy1: tStart.sy, sx2: p.sx, sy2: p.sy };
+      if (tMode === 'pan1' && tStart && S.cam) {
+        const r1 = canvas.getBoundingClientRect();
+        const sc1 = r1.width ? (canvas.width / r1.width) : 1;
+        S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (t.clientX - tStart.lastX) * sc1;
+        S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (t.clientY - tStart.lastY) * sc1;
+        S._camManualLock = true;
+        tStart.lastX = t.clientX;
+        tStart.lastY = t.clientY;
         e.preventDefault();   // stabdo puslapio scroll
       }
     }, { passive: false });
@@ -4392,28 +4405,11 @@ function _f9InstallDragHandlers() {
         e.preventDefault();
         return;
       }
-      if (tMode === 'select' && window._f9DragRect) {
-        // Finalizuojam selection (kaip desktop mouseup)
-        const camX = S.cam ? S.cam.x : 0, camY = S.cam ? S.cam.y : 0;
-        const r = window._f9DragRect;
-        const wx1 = Math.min(r.sx1, r.sx2) + camX, wy1 = Math.min(r.sy1, r.sy2) + camY;
-        const wx2 = Math.max(r.sx1, r.sx2) + camX, wy2 = Math.max(r.sy1, r.sy2) + camY;
-        const sel = [];
-        for (const u of S.units) {
-          if (!u || !u.alive) continue;
-          if (!(u.team === 1 && u.isEditorEnemy)) continue;
-          const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
-          const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-          if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
-        }
-        if (sel.length) {
-          window._f9SelectedSet = sel;
-          window._f9Selected = sel[0];
-        }
-        window._f9DragRect = null;
+      if (tMode === 'pan1') {
+        // Pan baigtas — sekantis synthetic click ignoruojamas
         window._f9DragJustEnded = true;
         tMode = null;
-        e.preventDefault();   // be synthetic click po select
+        e.preventDefault();
         return;
       }
       tMode = null;   // paprastas tap — leidžiam synthetic click (komandos per click handler)
@@ -4904,12 +4900,14 @@ function _drawF9HotkeyHint() {
     ctx.fillStyle = `rgba(245, 230, 195, ${fadeA.toFixed(3)})`;
     ctx.fillText(t.text, vcx, ty);
   }
-  // 3) Pastovus hotkey hint — apačioj dešinėj, neįkyrus
-  ctx.font = '10px system-ui, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
-  ctx.fillText('A attack-move · S stop · ⇧+RMB queue · CTRL+1-5 groups · 2×click type', v.x + v.w - 12, v.y + v.h - 8);
+  // 3) Pastovus hotkey hint — apačioj dešinėj (tik desktop; mobile turi mygtukus)
+  if (!window._f9TouchInstalled) {
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
+    ctx.fillText('A attack-move · S stop · ⇧+RMB queue · CTRL+1-5 groups · 2×click type', v.x + v.w - 12, v.y + v.h - 8);
+  }
   ctx.restore();
 }
 
@@ -5344,12 +5342,18 @@ function _drawF9SelectionBar() {
   const v = (typeof _getVisibleCanvasRect === 'function')
     ? _getVisibleCanvasRect()
     : { x: 0, y: 0, w: canvas.width, h: canvas.height };
-  const cardW = 54, cardH = 54, gap = 5;
-  const totalW = allies.length * cardW + (allies.length - 1) * gap;
+  const gap = 5;
   const padX = 14, padY = 10;
+  // Responsive kortelės: siauram (mobile) ekranui mažinam, kad bar'as tilptų į matomą plotą
+  let cardW = 54;
+  if (allies.length * cardW + (allies.length - 1) * gap + padX * 2 > v.w - 12) {
+    cardW = Math.max(32, Math.floor((v.w - 12 - padX * 2 - (allies.length - 1) * gap) / allies.length));
+  }
+  const cardH = cardW;
+  const totalW = allies.length * cardW + (allies.length - 1) * gap;
   const barW = totalW + padX * 2;
   const barH = cardH + padY * 2;
-  const barX = Math.max(v.x + 8, v.x + (v.w - barW) / 2);
+  const barX = Math.max(v.x + 6, v.x + (v.w - barW) / 2);
   const barY = v.y + v.h - barH - 12;
 
   // ── Backdrop: parchment/wood medieval theme ──
@@ -33839,6 +33843,18 @@ document.addEventListener('DOMContentLoaded', () => {
               if (squad.length) {
                 window._f9SelectedSet = squad;
                 window._f9Selected = squad[0];
+                // „Kur mano armija" — kamera šoka prie squad centro ir vėl seka
+                let cgx = 0, cgy = 0;
+                for (const u of squad) {
+                  cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+                  cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+                }
+                cgx /= squad.length; cgy /= squad.length;
+                if (S.cam) {
+                  S.cam.tx = cgx - canvas.width / 2;
+                  S.cam.ty = cgy - canvas.height / 2;
+                  S._camManualLock = false;   // follow vėl įjungtas
+                }
                 if (typeof _f9SetToast === 'function') _f9SetToast('ALL (' + squad.length + ')');
               }
             } else if (b.id === 'amove') {

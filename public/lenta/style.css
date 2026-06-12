@@ -17858,3 +17858,18 @@ kbd {
 #screen-game.f9-rts .canvas-wrap {
   margin: 0 !important;
 }
+
+/* F9 fullscreen MOBILE: canvas attr = lango dydis (JS sync), rodom 1:1 pagal MATOMĄ
+   viewport (dvh). Be šito 100vh apimdavo URL juostą → apatinis HUD nukirstas. */
+@media (max-width: 900px) and (pointer: coarse) {
+  #screen-game.f9-rts #canvas {
+    width: 100vw !important;
+    height: 100vh !important;   /* fallback senoms naršyklėms */
+    height: 100dvh !important;  /* dinaminis matomas aukštis — URL juosta nebekerpa */
+    object-fit: fill !important; /* attr aspect == viewport aspect (JS) → 1:1, be crop */
+    transform: none !important;
+  }
+  #screen-game.f9-rts .game-layout {
+    height: 100dvh !important;
+  }
+}
