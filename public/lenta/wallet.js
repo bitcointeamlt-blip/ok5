@@ -819,6 +819,13 @@
     { type:'function', name:'swapExactTokensForRON', stateMutability:'nonpayable', inputs:[{name:'amountIn',type:'uint256'},{name:'amountOutMin',type:'uint256'},{name:'path',type:'address[]'},{name:'to',type:'address'},{name:'deadline',type:'uint256'}], outputs:[{name:'amounts',type:'uint256[]'}] },
   ];
   const _ERC20_APPROVE_ABI = [{ type:'function', name:'approve', stateMutability:'nonpayable', inputs:[{name:'spender',type:'address'},{name:'amount',type:'uint256'}], outputs:[{type:'bool'}] }];
+  // PewPewSwap wrapper (PoD #68) — swap TX'ai eina per MŪSŲ kontraktą (ne tiesiai į Katana router),
+  // kad: (1) Ronin Wallet neperimtų jų kaip native swap (dropped TX), (2) gas/users skaičiuotųsi PewPew.
+  const PEWPEW_SWAP = '0x85591888aACEEB63dfadD7Ffa6d1aB562480B847';
+  const _PEWPEW_SWAP_ABI = [
+    { type:'function', name:'swapRonForRonke', stateMutability:'payable', inputs:[{name:'amountOutMin',type:'uint256'},{name:'deadline',type:'uint256'}], outputs:[{type:'uint256'}] },
+    { type:'function', name:'swapRonkeForRon', stateMutability:'nonpayable', inputs:[{name:'amountIn',type:'uint256'},{name:'amountOutMin',type:'uint256'},{name:'deadline',type:'uint256'}], outputs:[{type:'uint256'}] },
+  ];
 
   async function _ensureRoninNet(prov) {
     try {
@@ -913,8 +920,8 @@
     if (outWei <= 0n) throw new Error('No liquidity / bad amount');
     const minOut = outWei * (10000n - _slipBps(slippagePct)) / 10000n;
     const deadline = BigInt(Math.floor(Date.now()/1000) + 1200);
-    const data = encodeFunctionData({ abi:_ROUTER_ABI, functionName:'swapExactRONForTokens', args:[minOut, [WRON_TOKEN, RONKE_TOKEN], state.address, deadline] });
-    const r = await _sendAndConfirm(prov, { from: state.address, to: KATANA_ROUTER, data, value: '0x'+amountIn.toString(16) }, 'Swap');
+    const data = encodeFunctionData({ abi:_PEWPEW_SWAP_ABI, functionName:'swapRonForRonke', args:[minOut, deadline] });
+    const r = await _sendAndConfirm(prov, { from: state.address, to: PEWPEW_SWAP, data, value: '0x'+amountIn.toString(16) }, 'Swap');
     try { refreshBalance(); } catch(_){}
     return r;
   }
@@ -933,17 +940,17 @@
     if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
     const { encodeFunctionData, parseEther } = _viemModule;
     const amountIn = parseEther(String(ronkeDec));
-    const allowance = await _erc20Allowance(state.address, KATANA_ROUTER);
+    const allowance = await _erc20Allowance(state.address, PEWPEW_SWAP);
     if (allowance < amountIn) {
-      const approveData = encodeFunctionData({ abi:_ERC20_APPROVE_ABI, functionName:'approve', args:[KATANA_ROUTER, _MAX_UINT256] });
+      const approveData = encodeFunctionData({ abi:_ERC20_APPROVE_ABI, functionName:'approve', args:[PEWPEW_SWAP, _MAX_UINT256] });
       await _sendAndConfirm(prov, { from: state.address, to: RONKE_TOKEN, data: approveData }, 'Approve');
     }
     const outWei = await _swapQuoteWei('ronke2ron', amountIn);
     if (outWei <= 0n) throw new Error('No liquidity / bad amount');
     const minOut = outWei * (10000n - _slipBps(slippagePct)) / 10000n;
     const deadline = BigInt(Math.floor(Date.now()/1000) + 1200);
-    const data = encodeFunctionData({ abi:_ROUTER_ABI, functionName:'swapExactTokensForRON', args:[amountIn, minOut, [RONKE_TOKEN, WRON_TOKEN], state.address, deadline] });
-    const r = await _sendAndConfirm(prov, { from: state.address, to: KATANA_ROUTER, data }, 'Swap');
+    const data = encodeFunctionData({ abi:_PEWPEW_SWAP_ABI, functionName:'swapRonkeForRon', args:[amountIn, minOut, deadline] });
+    const r = await _sendAndConfirm(prov, { from: state.address, to: PEWPEW_SWAP, data }, 'Swap');
     try { refreshBalance(); } catch(_){}
     return r;
   }
