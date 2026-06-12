@@ -839,7 +839,27 @@
     }
   }
 
+  async function _rpcRaw(method, params) {
+    return await fetch(RONIN_RPC, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ jsonrpc:'2.0', id:1, method, params }) }).then(function(x){ return x.json(); });
+  }
+
   async function _sendAndConfirm(prov, txParams, label) {
+    // ── PRE-FLIGHT (public RPC): tikras revert reason + explicit gas. Apeina Ronin Wallet'o
+    //    "Internal JSON-RPC error" (jo vidinis gas-estimate / native-swap handleris lūžta). ──
+    const callObj = { from: txParams.from, to: txParams.to, data: txParams.data };
+    if (txParams.value) callObj.value = txParams.value;
+    try {
+      const cr = await _rpcRaw('eth_call', [callObj, 'latest']);
+      if (cr && cr.error) {
+        const m = String((cr.error && (cr.error.message || (cr.error.data && cr.error.data.message) || cr.error.data)) || 'reverted');
+        throw new Error((label||'TX')+' would fail: ' + m.slice(0, 90));
+      }
+    } catch (e) { if (e && /would fail/.test(e.message||'')) throw e; /* tinklo glitch → tęsiam */ }
+    try {
+      const gr = await _rpcRaw('eth_estimateGas', [callObj]);
+      if (gr && gr.result) txParams.gas = '0x' + (BigInt(gr.result) * 13n / 10n).toString(16);   // +30% buferis
+    } catch (_) { /* jei nepavyko — wallet'as estimate'ins pats */ }
+
     let txHash = null, sendErr = null;
     prov.request({ method:'eth_sendTransaction', params:[txParams] })
       .then(function(h){ txHash = h; }).catch(function(e){ sendErr = e; });
