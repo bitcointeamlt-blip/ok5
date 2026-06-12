@@ -27132,7 +27132,10 @@ function updateCamera() {
     _canvasMy >= _f11DeployPanelBounds.y && _canvasMy <= _f11DeployPanelBounds.y + _f11DeployPanelBounds.h);
   const _vpLeft = vpOffsetX, _vpRight = vpOffsetX + vpW;
   const _vpTop  = vpOffsetY, _vpBot   = vpOffsetY + vpH;
-  if (typeof _canvasMx === 'number' && _canvasMx >= _vpLeft - 4 && _canvasMx <= _vpRight + 4
+  // MOBILE F9: edge-pan IŠJUNGTAS — synthetic click po tap'o palieka _canvasMx užstrigusį
+  // prie krašto → kamera amžinai dreifuoja ir kovoja su piršto pan'u (2026-06-12).
+  const _edgePanOk = !(window._f9TouchInstalled && S.floor === 9);
+  if (_edgePanOk && typeof _canvasMx === 'number' && _canvasMx >= _vpLeft - 4 && _canvasMx <= _vpRight + 4
       && _canvasMy >= _vpTop - 4 && _canvasMy <= _vpBot + 4 && !_overDeployPanel) {
     const _dl = _canvasMx - _vpLeft;
     const _dr = _vpRight - _canvasMx;
