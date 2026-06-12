@@ -180,11 +180,13 @@
     _busy = true;
     var go = _el('rsw-go'); go.disabled = true; go.style.opacity = '.6';
     _msg('Confirm in your wallet…', C.ink);
-    var p = _dir === 'ron2ronke' ? w.swapRonToRonke(amt, SLIPPAGE) : w.swapRonkeToRon(amt, SLIPPAGE);
-    p.then(function () {
-      _msg('✅ Swapped! Balance updating…', '#2e7d32');
+    var _onSent = function () { _msg('⏳ Submitted — confirming on-chain…', C.ink); };
+    var p = _dir === 'ron2ronke' ? w.swapRonToRonke(amt, SLIPPAGE, _onSent) : w.swapRonkeToRon(amt, SLIPPAGE, _onSent);
+    p.then(function (res) {
+      if (res && res.pending) _msg('✅ Submitted! Confirming on-chain (check wallet)…', '#2e7d32');
+      else _msg('✅ Swapped! Balance updated.', '#2e7d32');
       _loadBalances();
-      setTimeout(function () { if (_el('rsw-amt')) { _el('rsw-amt').value = ''; _el('rsw-out').textContent = '—'; _el('rsw-min').textContent = '—'; } }, 200);
+      setTimeout(function () { if (_el('rsw-amt')) { _el('rsw-amt').value = ''; _el('rsw-out').textContent = '—'; _el('rsw-min').textContent = '—'; } }, 300);
     }).catch(function (e) {
       var m = String((e && (e.shortMessage || e.message)) || e);
       var s = /reject|denied|cancel|4001/i.test(m) ? 'Cancelled'

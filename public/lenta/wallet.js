@@ -850,7 +850,7 @@
     return await fetch(RONIN_RPC, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ jsonrpc:'2.0', id:1, method, params }) }).then(function(x){ return x.json(); });
   }
 
-  async function _sendAndConfirm(prov, txParams, label) {
+  async function _sendAndConfirm(prov, txParams, label, onSent) {
     // ── PRE-FLIGHT (public RPC): tikras revert reason + explicit gas. Apeina Ronin Wallet'o
     //    "Internal JSON-RPC error" (jo vidinis gas-estimate / native-swap handleris lūžta). ──
     const callObj = { from: txParams.from, to: txParams.to, data: txParams.data };
@@ -867,12 +867,13 @@
       if (gr && gr.result) txParams.gas = '0x' + (BigInt(gr.result) * 13n / 10n).toString(16);   // +30% buferis
     } catch (_) { /* jei nepavyko — wallet'as estimate'ins pats */ }
 
-    let txHash = null, sendErr = null;
+    let txHash = null, sendErr = null, _notified = false;
     prov.request({ method:'eth_sendTransaction', params:[txParams] })
       .then(function(h){ txHash = h; }).catch(function(e){ sendErr = e; });
-    const deadline = Date.now() + 120000;
+    const deadline = Date.now() + 180000;   // Ronin gali lėtai patvirtinti — 3 min
     while (Date.now() < deadline) {
       await new Promise(function(r){ setTimeout(r, 2500); });
+      if (txHash && !_notified) { _notified = true; try { if (onSent) onSent(txHash); } catch (_) {} }
       if (sendErr) {
         if (sendErr.code===4001 || /reject|denied|cancel/i.test(sendErr.message||'')) throw sendErr;
         throw new Error((label||'TX')+' failed: '+String(sendErr.message||sendErr).slice(0,80));
@@ -882,6 +883,7 @@
         if (rc) { if (rc.status==='0x1') return { txHash }; throw new Error((label||'TX')+' reverted'); }
       }
     }
+    if (txHash) return { txHash, pending: true };   // pateikta, bet receipt'as dar nespėjo — NE klaida
     throw new Error((label||'TX')+' not confirmed — try again');
   }
 
@@ -908,7 +910,7 @@
 
   function _slipBps(pct) { return BigInt(Math.round(Math.max(0.1, Math.min(50, Number(pct)||2)) * 100)); }
 
-  async function swapRonToRonke(ronDec, slippagePct) {
+  async function swapRonToRonke(ronDec, slippagePct, onSent) {
     if (!state.connected) throw new Error('Wallet not connected');
     const prov = state.provider || (await getAnyProvider());
     if (!prov) throw new Error('No wallet provider');
@@ -921,7 +923,7 @@
     const minOut = outWei * (10000n - _slipBps(slippagePct)) / 10000n;
     const deadline = BigInt(Math.floor(Date.now()/1000) + 1200);
     const data = encodeFunctionData({ abi:_PEWPEW_SWAP_ABI, functionName:'swapRonForRonke', args:[minOut, deadline] });
-    const r = await _sendAndConfirm(prov, { from: state.address, to: PEWPEW_SWAP, data, value: '0x'+amountIn.toString(16) }, 'Swap');
+    const r = await _sendAndConfirm(prov, { from: state.address, to: PEWPEW_SWAP, data, value: '0x'+amountIn.toString(16) }, 'Swap', onSent);
     try { refreshBalance(); } catch(_){}
     return r;
   }
@@ -932,7 +934,7 @@
     return hexToBigInt(await rpcCall(RONKE_TOKEN, data));
   }
 
-  async function swapRonkeToRon(ronkeDec, slippagePct) {
+  async function swapRonkeToRon(ronkeDec, slippagePct, onSent) {
     if (!state.connected) throw new Error('Wallet not connected');
     const prov = state.provider || (await getAnyProvider());
     if (!prov) throw new Error('No wallet provider');
@@ -950,7 +952,7 @@
     const minOut = outWei * (10000n - _slipBps(slippagePct)) / 10000n;
     const deadline = BigInt(Math.floor(Date.now()/1000) + 1200);
     const data = encodeFunctionData({ abi:_PEWPEW_SWAP_ABI, functionName:'swapRonkeForRon', args:[amountIn, minOut, deadline] });
-    const r = await _sendAndConfirm(prov, { from: state.address, to: PEWPEW_SWAP, data }, 'Swap');
+    const r = await _sendAndConfirm(prov, { from: state.address, to: PEWPEW_SWAP, data }, 'Swap', onSent);
     try { refreshBalance(); } catch(_){}
     return r;
   }
