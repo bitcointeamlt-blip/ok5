@@ -180,13 +180,12 @@
     _busy = true;
     var go = _el('rsw-go'); go.disabled = true; go.style.opacity = '.6';
     _msg('Confirm in your wallet…', C.ink);
+    var fromSym = _fromTok().sym, toSym = _toTok().sym, outEst = _lastOut;   // užfiksuojam popup'ui
     var _onSent = function () { _msg('⏳ Submitted — confirming on-chain…', C.ink); };
     var p = _dir === 'ron2ronke' ? w.swapRonToRonke(amt, SLIPPAGE, _onSent) : w.swapRonkeToRon(amt, SLIPPAGE, _onSent);
     p.then(function (res) {
-      if (res && res.pending) _msg('✅ Submitted! Confirming on-chain (check wallet)…', '#2e7d32');
-      else _msg('✅ Swapped! Balance updated.', '#2e7d32');
       _loadBalances();
-      setTimeout(function () { if (_el('rsw-amt')) { _el('rsw-amt').value = ''; _el('rsw-out').textContent = '—'; _el('rsw-min').textContent = '—'; } }, 300);
+      _showSuccessPopup(amt, fromSym, outEst, toSym, res && res.txHash, !!(res && res.pending));
     }).catch(function (e) {
       var m = String((e && (e.shortMessage || e.message)) || e);
       var s = /reject|denied|cancel|4001/i.test(m) ? 'Cancelled'
@@ -197,6 +196,47 @@
     }).then(function () {
       _busy = false; var g = _el('rsw-go'); if (g) { g.disabled = false; g.style.opacity = '1'; }
     });
+  }
+
+  // ─── Gražus success popup po swap'o ───
+  function _showSuccessPopup(fromAmt, fromSym, toAmt, toSym, txHash, pending) {
+    var fIco = (TOK[fromSym] && TOK[fromSym].ico) || '';
+    var tIco = (TOK[toSym] && TOK[toSym].ico) || '';
+    var ov = document.createElement('div');
+    ov.id = 'rsw-success';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(18,11,5,0.86);' +
+      'display:flex;align-items:center;justify-content:center;font-family:\'Press Start 2P\',monospace,sans-serif;padding:14px;';
+    var card = document.createElement('div');
+    card.style.cssText = 'position:relative;width:min(94vw,400px);background:' + C.parch + ';border:5px solid ' + C.woodDark + ';' +
+      'border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.6);color:' + C.ink + ';overflow:hidden;animation:rswPop .25s ease-out;';
+    var coin = function (ico, sym) { return ico ? '<img src="' + ico + '" style="width:30px;height:30px;image-rendering:pixelated;border-radius:50%;vertical-align:middle;" onerror="this.style.display=\'none\'"/>' : '<span>' + sym + '</span>'; };
+    card.innerHTML =
+      '<div style="background:linear-gradient(180deg,#5fae6a,#3f8a4e);padding:18px 16px;text-align:center;border-bottom:4px solid ' + C.woodDark + ';">' +
+        '<div style="font-size:30px;line-height:1;margin-bottom:8px;">✅</div>' +
+        '<div style="color:#fff;font-size:14px;letter-spacing:.5px;">' + (pending ? 'SWAP SUBMITTED' : 'SWAP SUCCESSFUL') + '</div>' +
+      '</div>' +
+      '<div style="padding:20px 18px 22px;text-align:center;">' +
+        '<div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;">' +
+          '<span style="white-space:nowrap;">' + coin(fIco, fromSym) + ' ' + _fmt(fromAmt, fromSym === 'RON' ? 4 : 2) + ' ' + fromSym + '</span>' +
+          '<span style="color:' + C.teal + ';font-size:18px;">→</span>' +
+          '<span style="white-space:nowrap;color:#2e7d32;">' + coin(tIco, toSym) + ' ' + (toAmt > 0 ? '≈ ' + _fmt(toAmt, toSym === 'RON' ? 5 : 2) : '') + ' ' + toSym + '</span>' +
+        '</div>' +
+        '<div style="font-size:9px;color:' + C.sub + ';line-height:1.8;margin:10px 0 4px;">' +
+          (pending ? 'Submitted on-chain — confirming. Your ' + toSym + ' will arrive shortly.' : toSym + ' is now in your wallet — check your balance! 🎉') +
+        '</div>' +
+        (txHash ? '<a href="https://app.roninchain.com/tx/' + txHash + '" target="_blank" rel="noopener" style="display:inline-block;font-size:8px;color:' + C.teal + ';text-decoration:underline;margin:6px 0 14px;">View transaction ↗</a>' : '<div style="height:14px;"></div>') +
+        '<button id="rsw-suc-ok" style="width:100%;padding:13px;font:inherit;font-size:12px;border:3px solid ' + C.woodDark + ';border-radius:10px;cursor:pointer;background:' + C.teal + ';color:#fff;box-shadow:0 4px 0 ' + C.tealD + ';">DONE</button>' +
+      '</div>';
+    ov.appendChild(card);
+    if (!document.getElementById('rsw-anim-style')) {
+      var st = document.createElement('style'); st.id = 'rsw-anim-style';
+      st.textContent = '@keyframes rswPop{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}';
+      document.head.appendChild(st);
+    }
+    document.body.appendChild(ov);
+    var done = function () { ov.remove(); _close(); };
+    document.getElementById('rsw-suc-ok').onclick = done;
+    ov.addEventListener('pointerdown', function (e) { if (e.target === ov) done(); });
   }
 
   window.openRonkeSwap = open;
