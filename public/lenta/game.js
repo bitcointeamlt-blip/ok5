@@ -2858,17 +2858,30 @@ function _f9SyncCanvasSize() {
   const wantFs = (typeof gameMode !== 'undefined' && gameMode === 'adventure' &&
                   typeof S !== 'undefined' && S && S.floor === 9);
   if (wantFs) {
-    const w = Math.max(800, Math.floor(window.innerWidth));
-    const h = Math.max(560, Math.floor(window.innerHeight));
+    // visualViewport = TIKRAS matomas plotas (mobile URL juosta / in-app webview saugu);
+    // fallback innerWidth/Height. Mobile minimumus nedidinam (telefonas gali būti 360px).
+    const vv = window.visualViewport;
+    const _isTouchDev = !!window._f9TouchInstalled;
+    const rawW = Math.floor((vv && vv.width) || window.innerWidth);
+    const rawH = Math.floor((vv && vv.height) || window.innerHeight);
+    const w = _isTouchDev ? Math.max(320, rawW) : Math.max(800, rawW);
+    const h = _isTouchDev ? Math.max(320, rawH) : Math.max(560, rawH);
     if (canvas.width !== w || canvas.height !== h) {
       advCanvasW = w;
       canvas.width = w;
       canvas.height = h;
     }
+    // CSS dydis pikseliais INLINE su !important — nugali media query taisykles
+    // (100vh/100dvh webview'uose nesutampa su realiu viewport → HUD nuskęsdavo po apačia).
+    const wPx = w + 'px', hPx = h + 'px';
+    if (canvas.style.width !== wPx) canvas.style.setProperty('width', wPx, 'important');
+    if (canvas.style.height !== hPx) canvas.style.setProperty('height', hPx, 'important');
     _f9FullscreenOn = true;
   } else if (_f9FullscreenOn) {
-    // Išeinam iš F9 — grąžinam standartinį adventure/PvP dydį
+    // Išeinam iš F9 — grąžinam standartinį adventure/PvP dydį + nuimam inline CSS
     _f9FullscreenOn = false;
+    canvas.style.removeProperty('width');
+    canvas.style.removeProperty('height');
     if (typeof gameMode !== 'undefined' && gameMode === 'adventure') {
       if (typeof ADV_COLS === 'number' && typeof UNIT_CELL === 'number') advCanvasW = ADV_COLS * UNIT_CELL;
       canvas.width = advCanvasW;
