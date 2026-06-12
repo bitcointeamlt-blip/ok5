@@ -12437,6 +12437,23 @@ kbd {
 #ronke-bank .rbk-btn-dep:hover { background: #5ebbc5 !important; }
 #ronke-bank .rbk-btn-wd  { background: #ffcf5c !important; color: #3d2817 !important; text-shadow: 1px 1px 0 rgba(255,255,255,0.4) !important; }
 #ronke-bank .rbk-btn-wd:hover { background: #ffd97a !important; }
+/* Banko „— or —" skirtukas + pagrindinis SWAP CTA (vienintelis tikrai veikiantis veiksmas) */
+#ronke-bank .rbk-swap-sep {
+  text-align: center;
+  font-size: 8px;
+  color: #9a7a4a;
+  margin: 9px 0 7px;
+  letter-spacing: 1px;
+}
+#ronke-bank .rbk-swap-cta {
+  display: block;
+  width: 100%;
+  background: linear-gradient(180deg, #5cc0cb, #357a82) !important;
+  color: #fff !important;
+  border-color: #2f6e75 !important;
+  text-shadow: 1px 1px 0 #0e2426;
+}
+#ronke-bank .rbk-swap-cta:hover { background: linear-gradient(180deg, #6cd0db, #3a8a93) !important; }
 #ronke-bank .rbk-btn:active {
   transform: translate(1px, 2px) !important;
   box-shadow: 1px 2px 0 #2a1a0a, inset 0 -2px 0 rgba(0, 0, 0, 0.2) !important;

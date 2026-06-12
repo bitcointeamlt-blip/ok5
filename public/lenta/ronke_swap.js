@@ -240,4 +240,21 @@
   }
 
   window.openRonkeSwap = open;
+
+  // ─── Integracija į RONKE BANK: banko „⇄ SWAP" mygtukas atidaro šį popupą ───
+  // (RONKE badge visada matomas HUD'e → swap pasiekiamas ir telefone, ir desktop'e.)
+  function _wireBankSwap() {
+    var b = document.getElementById('rbk-swap');
+    if (!b || b._swapWired) return;
+    b._swapWired = true;
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var bank = document.getElementById('ronke-bank');
+      if (bank) bank.style.display = 'none';   // uždarom banko langą
+      open();
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wireBankSwap);
+  else _wireBankSwap();
+  setTimeout(_wireBankSwap, 1500);   // saugiklis jei elementas atsiranda vėliau
 })();
