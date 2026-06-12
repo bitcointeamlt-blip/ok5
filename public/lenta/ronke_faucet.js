@@ -1132,10 +1132,29 @@
     var rect = canvas.getBoundingClientRect();
     return { rect: rect, sx: rect.width / canvas.width, sy: rect.height / canvas.height };
   }
+  // Cover mode (mobile) detekcija — PRIVALO atitikti game.js _isGameCanvasCover()
+  var _coverMQ = null;
+  function _isCanvasCover() {
+    if (_coverMQ === null) { try { _coverMQ = window.matchMedia('(max-width: 900px) and (pointer: coarse)'); } catch (_) { _coverMQ = false; } }
+    return _coverMQ && _coverMQ.matches;
+  }
   function _worldToPage(wx, wy) {
-    var m = _canvasMapper(); if (!m) return null;
+    var canvas = document.getElementById('canvas') || document.getElementById('game');
+    if (!canvas || !canvas.width || !canvas.height) return null;
     var cam = window.getCam ? window.getCam() : null; if (!cam) return null;
-    return { x: m.rect.left + (wx - cam.x) * m.sx, y: m.rect.top + (wy - cam.y) * m.sy, sx: m.sx };
+    var r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    var cxv = wx - cam.x, cyv = wy - cam.y;   // world → canvas-pixel (1:1, kaip render translate(-cam))
+    // MOBILE cover mode: bitmap scaled by cover-scale ir CENTRUOTAS (overflow) — atitinka game.js _clientToCanvasXY
+    if (_isCanvasCover()) {
+      var cs = Math.max(r.width / canvas.width, r.height / canvas.height);
+      var bx = r.left + (r.width - canvas.width * cs) / 2;
+      var by = r.top + (r.height - canvas.height * cs) / 2;
+      return { x: bx + cxv * cs, y: by + cyv * cs, sx: cs };
+    }
+    // Desktop: tiesinis mapping nuo rect (CSS scale jau įskaičiuotas getBoundingClientRect'e)
+    var sx = r.width / canvas.width, sy = r.height / canvas.height;
+    return { x: r.left + cxv * sx, y: r.top + cyv * sy, sx: sx };
   }
   function _ensurePill() {
     if (_pillEl) return _pillEl;
