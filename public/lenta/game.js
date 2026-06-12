@@ -8608,6 +8608,16 @@ function getArcherUnitFrameState(u) {
 
 function loadHorizontalSheetFrames(path, frameCount) {
   const sheet = new Image();
+  // Mobile tinkle dalis image užklausų nutrūksta, o Image NIEKADA nebanto iš naujo →
+  // unitai likdavo „raudonais taškais" amžinai. Retry iki 3× su backoff (2026-06-12).
+  let _tries = 0;
+  sheet.onerror = () => {
+    if (_tries >= 3) return;
+    _tries++;
+    setTimeout(() => {
+      sheet.src = path + (path.indexOf('?') >= 0 ? '&' : '?') + 'retry=' + _tries;
+    }, 700 * _tries);
+  };
   sheet.src = path;
   const frames = [];
   for (let i = 0; i < frameCount; i++) {
