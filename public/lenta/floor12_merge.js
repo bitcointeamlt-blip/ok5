@@ -2855,6 +2855,8 @@
 
     hog_rider:      { hp: 14, dmg: 8, speed: 0.013, attackCooldown: 2800, range: 0.05 },   // EPIC cavalry melee — tankiausias, spear smūgis 8 dmg, lėtas attack CD 2.8s (utype 5 / frost ball)
 
+    _ninja:         { hp: 10, dmg: 1, speed: 0.024, attackCooldown: 1650, range: 0.04 },   // PEARL skilo ninja — tikri thief statai (HP10/žala1/CD1.65s), melee kaip skull. NE NFT, NE trained.
+
     // STATIC towers — neina, stovi prie base ir šaudo
 
     tower:          { hp: 30, dmg: 4, speed: 0,     attackCooldown: 1400, range: 0.55, static: true },
@@ -6721,13 +6723,14 @@
 
       } else {
 
-        // Pirmasis priešas Thief, antrasis Minotaur, toliau 3 vorai, o vėliau - pastovus metimas (50% Thief)
+        // Pirmasis priešas Axie, antrasis Minotaur, toliau 3 vorai, o vėliau - pastovus mišinys.
+        // (THIEF PAŠALINTAS iš priešų — dabar jis tik žaidėjo pearl-skill ninja. Sheets lieka užkrauti.)
 
         _f12SpawnedCount++;
 
         if (_f12SpawnedCount === 1) {
 
-          kind = 'thief';
+          kind = 'axieronke';
 
         } else if (_f12SpawnedCount === 2) {
 
@@ -6741,13 +6744,11 @@
 
           const _r = Math.random();
 
-          if (_r < 0.50) kind = 'thief';
+          if (_r < 0.35) kind = 'spider';
 
-          else if (_r < 0.70) kind = 'spider';
+          else if (_r < 0.65) kind = 'axieronke';
 
-          else if (_r < 0.85) kind = 'axieronke';
-
-          else if (_r < 0.92) kind = 'minotaur';
+          else if (_r < 0.85) kind = 'minotaur';
 
           else kind = 'bear';
 
@@ -7091,7 +7092,40 @@
 
     }
 
-    const isDamage = (type === 'arrow' || type === 'pearl' || type === 'crystal');
+    // ── PEARL (balta, „COMING SOON") → NINJA STRIKE skilas ──
+    // Iškviečia draugišką ninja į grėsmingiausią juostą (ar pagal merge poziciją, jei priešų nėra).
+    // Ninja dašuoja per priešus iki išėjimo/mirties. Statai skalė su merge dydžiu (value) + zona (mult).
+    if (type === 'pearl') {
+      let nLane = bestLane;
+      if (nLane < 0) {
+        // priešų nėra — pasirenkam juostą pagal merge Y poziciją
+        const _L = layoutCache;
+        nLane = _L ? Math.max(0, Math.min(LANES - 1, Math.floor((my - _L.lanesY) / _L.laneH))) : 0;
+      }
+      // Ninja = NORMALUS ally unitas (elgesys kaip priešo, tik kitoj barikados pusėj), thief sprite.
+      // NE NFT, NE trained — tiesiog spawninamas iš balto merge. Naudoja PILNĄ esamą ally kovos AI
+      // (eina → sustoja melee → swing → priešas kontr-atakuoja → mirtis). Begalinis lifetime (be recall
+      // į kortą): gyvuoja kol nukaunamas kovoj arba pasiekia kraštą (x≥1) ir išeina (ally AI splice).
+      const _ns = ALLY_STATS._ninja || ALLY_STATS.skull;
+      lanes[nLane].allies.push({
+        utype: '_ninja', kind: 'thief',
+        x: 0.0, _prevX: 0.0, static: false,
+        hp: _ns.hp, maxHp: _ns.hp, dmg: _ns.dmg, speed: _ns.speed,
+        attackCooldown: _ns.attackCooldown, range: _ns.range || 0.04,
+        lastAttackAt: 0, hitFlashUntil: 0,
+        dead: false, deathStartedAt: 0,
+        bornAt: t, lifetimeMs: 9e15,        // ~begalinis: tik miršta kovoj arba išeina pro kraštą
+        bobPhase: Math.random() * Math.PI * 2,
+        swingStart: 0, guardStart: 0, idleStart: 0, idleUntil: 0,
+        nextThinkAt: t + 2000 + Math.random() * 2000,
+        trainedSnap: null, kills: 0, dmgDealt: 0, dmgTaken: 0,
+      });
+      try { _F12Audio.zaibas(Math.log2(value)); } catch (_) {}
+      _f12ScreenShake = Math.max(_f12ScreenShake, 3);
+      return;
+    }
+
+    const isDamage = (type === 'arrow' || type === 'crystal');
 
     if (isDamage && bestEnemy) {
 
@@ -15135,6 +15169,9 @@
   const _TRAP_DMG = 5;                  // -5 dmg priešui užlipus aktyviu metu
 
   let _f12FrostReverse = [];            // [{lane, born, duration, _endPlayed}] — frost reverse juostos
+  // ── PEARL MERGE SKILL „NINJA" — spawninamas kaip NORMALUS ally unitas (utype '_ninja', thief sprite)
+  //    į lanes[].allies, žr. _triggerMergeAttack pearl šaką. Naudoja esamą ally kovos AI (be atskiros
+  //    sistemos). NE NFT, NE trained — begalinis lifetime, miršta kovoj arba išeina pro kraštą.
 
   // Arenos zonų plokštės — bendri matmenys (įkepta į sprite + flash overlay)
 

@@ -1162,6 +1162,9 @@
       var S = window.S;
       var pill = _pillEl;
       if (!S || S.floor !== 10) { if (pill) pill.style.display = 'none'; return; }
+      // Paslėpti pill'ą kai virš žemėlapio atidarytas pilno ekrano modalas (kitaip prasimuša ant viršaus).
+      var _bm = document.getElementById('nft-barracks-modal');
+      if (_bm && _bm.classList.contains('active')) { if (pill) pill.style.display = 'none'; return; }
       pill = _ensurePill();
       var a = _addr() || '_guest';   // rodom pill ir be wallet (be wallet → click parodys „connect")
       // TESTUI: vieną kartą įėjus į F10 užkraunam aktyvų cooldown, kad matytųsi pristatymų boostas
