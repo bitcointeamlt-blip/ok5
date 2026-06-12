@@ -2746,7 +2746,7 @@ const waterFoam2Img = new Image(); waterFoam2Img.src = 'assets_tiny/Terrain/Wate
 // Floor 1
 window.CUSTOM_MAP = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"1,0":"tileset3_3_3","0,1":"tileset3_3_3","1,2":"tileset3_3_3","0,3":"tileset3_3_3","1,4":"tileset3_3_3","0,5":"tileset3_3_3","2,1":"tileset3_3_3","2,3":"tileset3_3_3","2,5":"tileset3_3_3","1,6":"tileset3_3_3","0,7":"tileset3_3_3","2,7":"tileset3_3_3","3,0":"tileset3_3_3","3,2":"tileset3_3_3","3,4":"tileset3_3_3","3,6":"tileset3_3_3","3,8":"tileset3_3_3","1,8":"tileset3_3_3","0,9":"tileset3_3_3","2,9":"tileset3_3_3","3,10":"tileset3_3_3","1,10":"tileset3_3_3","0,11":"tileset3_3_3","2,11":"tileset3_3_3","3,12":"tileset3_3_3","1,12":"tileset3_3_3","0,13":"tileset3_3_3","2,13":"tileset3_3_3","4,13":"tileset3_3_3","4,11":"tileset3_3_3","4,9":"tileset3_3_3","4,7":"tileset3_3_3","4,5":"tileset3_3_3","4,3":"tileset3_3_3","4,1":"tileset3_3_3","5,0":"tileset3_3_3","5,2":"tileset3_3_3","5,4":"tileset3_3_3","5,6":"tileset3_3_3","5,8":"tileset3_3_3","5,10":"tileset3_3_3","5,12":"tileset3_3_3","6,13":"tileset3_3_3","6,11":"tileset3_3_3","6,9":"tileset3_3_3","6,7":"tileset3_3_3","6,5":"tileset3_3_3","6,3":"tileset3_3_3","6,1":"tileset3_3_3","7,0":"tileset3_3_3","7,2":"tileset3_3_3","7,4":"tileset3_3_3","7,6":"tileset3_3_3","7,8":"tileset3_3_3","7,10":"tileset3_3_3","7,12":"tileset3_3_3","8,13":"tileset3_3_3","8,11":"tileset3_3_3","8,9":"tileset3_3_3","8,7":"tileset3_3_3","8,5":"tileset3_3_3","8,3":"tileset3_3_3","8,1":"tileset3_3_3","5,5":"bush3","7,7":"bush3","3,9":"bush3","7,1":"bush1","5,1":"bush1","4,8":"deco_15","2,2":"deco_15","8,10":"deco_14","8,4":"deco_03","1,11":"deco_13","9,0":"tileset3_5_3","9,1":"tileset3_6_3","9,2":"tileset3_6_3","10,0":"tileset3_5_4","10,1":"tileset3_6_4","10,2":"tileset3_6_4","9,3":"tileset3_6_3","10,3":"tileset3_6_4","9,4":"tileset3_6_3","10,4":"tileset3_6_4","9,5":"tileset3_6_3","10,5":"tileset3_6_4","9,6":"tileset3_6_3","10,6":"tileset3_6_4","9,7":"tileset3_6_3","10,7":"tileset3_6_4","9,8":"tileset3_6_3","10,8":"tileset3_6_4","9,9":"tileset3_6_3","10,9":"tileset3_6_4","9,10":"tileset3_6_3","10,10":"tileset3_6_4","9,11":"tileset3_6_3","10,11":"tileset3_6_4","9,12":"tileset3_6_3","9,13":"tileset3_6_3","10,12":"tileset3_6_4","10,13":"tileset3_6_4","9,14":"tileset3_7_3","10,14":"tileset3_7_4","7,14":"tileset3_8_3","8,14":"tileset3_8_4","6,14":"tileset3_8_4","5,14":"tileset3_8_3","3,14":"tileset3_8_3","4,14":"tileset3_8_4","1,14":"tileset3_8_3","2,14":"tileset3_8_4","0,14":"deco_06"},"collisionBoxes":["9,0","9,1","9,2","9,3","9,4","9,5","9,6","9,7","9,8","9,9","9,10","9,11","9,12","9,13","9,14","0,14","1,14","2,14","3,14","4,14","5,14","6,14","7,14","8,14"],"enemies":[{"type":"sheep","x":9,"y":7},{"type":"spider","x":7,"y":1},{"type":"spider","x":11,"y":6},{"type":"skull","x":6,"y":7},{"type":"minotaur","x":11,"y":3}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":25,"y":28}};
 // Floor 10 — 13x41 plain grass (cleaned from stones/water)
-window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3","2,7":"tree4","3,6":"tree3","4,14":"deco_18","5,16":"deco_16"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":3,"y":6},"exitPos":{"x":25,"y":28}};
+window.CUSTOM_MAP10 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"12,4":"bridge_0_1","13,4":"bridge_0_2","14,4":"bridge_0_2","15,4":"bridge_0_2","16,4":"bridge_0_2","14,2":"rock4","15,2":"rock2","16,5":"duck","0,0":"building_Castle","4,5":"bush2","3,0":"bush3","5,0":"building_House3","7,6":"gold_stone_3h","5,2":"pawn_npc","2,8":"building_Barracks","8,8":"tileset3_3_3","8,9":"tileset3_3_3","8,10":"tileset3_3_3","8,11":"tileset3_3_3","2,7":"tree4","3,6":"tree3","4,14":"deco_18","5,16":"deco_16","9,16":"mine_1"},"collisionBoxes":["3,4","3,5","2,5","3,3","3,2","3,1","3,0","2,0","2,1","2,2","2,3","2,4","1,0","1,5","1,4","1,3","1,2","1,1"],"enemies":[],"spawnPos":{"x":3,"y":6},"exitPos":{"x":25,"y":28}};
 // Floor 2 — 30x27 = 810 tiles, plain grass
 window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":2,"y":2},"exitPos":{"x":25,"y":28}};
 // Floor 12 — start be dekoracijų. Galima atskirai redaguoti per editor + window.exportMap().
@@ -2838,9 +2838,50 @@ const CANVAS_ZOOM = 1.32; // turi atitikti style.css #canvas transform: scale(..
 // Matomos dalies stačiakampis canvas-pikselių erdvėje (dėl CSS scale + overflow:hidden
 // matosi tik centrinis plotas; už jo esantys popup'ai vizualiai apkarpomi).
 function _getVisibleCanvasRect() {
+  // F9 fullscreen: zoom 1.0 + canvas = lango dydis → matomas VISAS canvas
+  if (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn && canvas) {
+    return { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  }
   const vpW = advCanvasW / CANVAS_ZOOM;
   const vpH = ADV_CANVAS_H / CANVAS_ZOOM;
   return { x: (advCanvasW - vpW) / 2, y: (ADV_CANVAS_H - vpH) / 2, w: vpW, h: vpH };
+}
+
+// ── F9 FULLSCREEN CANVAS ──────────────────────────────────────────────────
+// F9 RTS naudoja VISĄ langą: canvas vidinė rezoliucija = lango dydis (1:1 px,
+// CSS zoom išjungtas per .f9-rts) → matosi DAUGIAU pasaulio, sprite'ai lieka
+// pixel-perfect (jokio stretch/deformacijos). Kiti aukštai — fiksuotas
+// advCanvasW×ADV_CANVAS_H su scale(1.32) kaip visada.
+let _f9FullscreenOn = false;
+function _f9SyncCanvasSize() {
+  if (typeof canvas === 'undefined' || !canvas) return;
+  const wantFs = (typeof gameMode !== 'undefined' && gameMode === 'adventure' &&
+                  typeof S !== 'undefined' && S && S.floor === 9);
+  if (wantFs) {
+    const w = Math.max(800, Math.floor(window.innerWidth));
+    const h = Math.max(560, Math.floor(window.innerHeight));
+    if (canvas.width !== w || canvas.height !== h) {
+      advCanvasW = w;
+      canvas.width = w;
+      canvas.height = h;
+    }
+    _f9FullscreenOn = true;
+  } else if (_f9FullscreenOn) {
+    // Išeinam iš F9 — grąžinam standartinį adventure/PvP dydį
+    _f9FullscreenOn = false;
+    if (typeof gameMode !== 'undefined' && gameMode === 'adventure') {
+      if (typeof ADV_COLS === 'number' && typeof UNIT_CELL === 'number') advCanvasW = ADV_COLS * UNIT_CELL;
+      canvas.width = advCanvasW;
+      canvas.height = ADV_CANVAS_H;
+    } else if (typeof BOARD_W === 'number' && typeof BOARD_H === 'number') {
+      advCanvasW = BOARD_W;
+      canvas.width = BOARD_W;
+      canvas.height = BOARD_H;
+    }
+  }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => { try { _f9SyncCanvasSize(); } catch (_) {} });
 }
 // Matomos dalies stačiakampis pasaulio koordinatėse (naudojamas popup clamp'ui kai
 // popup'as piešiamas viduje `ctx.translate(-cam.x,-cam.y)`).
@@ -4144,10 +4185,33 @@ function _f9InstallDragHandlers() {
     if (e.button !== 0) return;
     if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
     const p = _f9CanvasXY(e);
+    // Solo info popup: header = drag handle; panelės kūnas — swallow (ne selection drag)
+    const ipr = window._f9InfoPanelRects;
+    if (ipr) {
+      const inHdr = p.sx >= ipr.header.x && p.sx <= ipr.header.x + ipr.header.w &&
+                    p.sy >= ipr.header.y && p.sy <= ipr.header.y + ipr.header.h;
+      const inPanel = p.sx >= ipr.panel.x && p.sx <= ipr.panel.x + ipr.panel.w &&
+                      p.sy >= ipr.panel.y && p.sy <= ipr.panel.y + ipr.panel.h;
+      if (inHdr) {
+        const st = _f9InfoPanelState();
+        st.drag = { dx: p.sx - ipr.panel.x, dy: p.sy - ipr.panel.y };
+        return;   // selection drag nestartuoja
+      }
+      if (inPanel) return;   // click ant kūno — swallow (toggle apdoros click handler'is)
+    }
     window._f9DragStart = { sx: p.sx, sy: p.sy, clientX: e.clientX, clientY: e.clientY };
     window._f9DragActive = false;
   }, true);
   canvas.addEventListener('mousemove', (e) => {
+    // Solo info popup vilkimas
+    if (window._f9InfoPanel && window._f9InfoPanel.drag &&
+        gameMode === 'adventure' && S && S.floor === 9) {
+      const pp = _f9CanvasXY(e);
+      const st = window._f9InfoPanel;
+      st.x = pp.sx - st.drag.dx;
+      st.y = pp.sy - st.drag.dy;
+      return;
+    }
     if (!window._f9DragStart) return;
     if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
     const p = _f9CanvasXY(e);
@@ -4164,6 +4228,13 @@ function _f9InstallDragHandlers() {
     }
   });
   canvas.addEventListener('mouseup', (e) => {
+    // Solo info popup vilkimo pabaiga — persist + click suppress
+    if (window._f9InfoPanel && window._f9InfoPanel.drag) {
+      window._f9InfoPanel.drag = null;
+      _f9InfoPanelPersist();
+      window._f9DragJustEnded = true;   // sekantis click ignoruojamas
+      return;
+    }
     if (!window._f9DragStart) {
       window._f9DragActive = false;
       window._f9DragRect = null;
@@ -4186,7 +4257,8 @@ function _f9InstallDragHandlers() {
       const sel = [];
       for (const u of S.units) {
         if (!u || !u.alive) continue;
-        if (!(u.team === 0 || (u.team === 1 && u.isEditorEnemy))) continue;
+        // Tik squad'as — hero (team 0) F9'e nematomas, drag jo nepagauna (2026-06-12)
+        if (!(u.team === 1 && u.isEditorEnemy)) continue;
         const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
         const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
         if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
@@ -4236,6 +4308,118 @@ function _f9InstallDragHandlers() {
     }, { passive: false });
     canvas.addEventListener('touchend', function () { panning = false; }, { passive: true });
   })();
+
+  // ── F9 MOBILE TOUCH VALDYMAS ────────────────────────────────────────────
+  // 1 pirštas: tap = komanda (apdoroja click handler'is — select/move/attack),
+  //            drag (>9px) = selection box (reuse _f9DragRect pipeline).
+  // 2 pirštai: kameros pan (kaip F10).
+  // Info popup: header drag pirštu.
+  (function _installF9Touch() {
+    if (window._f9TouchInstalled) return;
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (!isTouch) return;
+    window._f9TouchInstalled = true;
+    let tMode = null;        // 'maybe' | 'select' | 'pan' | 'popup'
+    let tStart = null;
+    let tPanLast = null;
+    let tPopupOff = null;
+    const TH = 9;
+    canvas.addEventListener('touchstart', (e) => {
+      if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
+      if (e.touches.length >= 2) {
+        const t0 = e.touches[0], t1 = e.touches[1];
+        tMode = 'pan';
+        tPanLast = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+        window._f9DragRect = null;
+        e.preventDefault();
+        return;
+      }
+      const t = e.touches[0];
+      if (!t) return;
+      const p = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
+      const ipr = window._f9InfoPanelRects;
+      if (ipr && p.sx >= ipr.header.x && p.sx <= ipr.header.x + ipr.header.w &&
+          p.sy >= ipr.header.y && p.sy <= ipr.header.y + ipr.header.h) {
+        tMode = 'popup';
+        tPopupOff = { dx: p.sx - ipr.panel.x, dy: p.sy - ipr.panel.y };
+        e.preventDefault();
+        return;
+      }
+      tMode = 'maybe';
+      tStart = { sx: p.sx, sy: p.sy, clientX: t.clientX, clientY: t.clientY };
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+      if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
+      if (tMode === 'pan' && e.touches.length >= 2 && S.cam) {
+        const t0 = e.touches[0], t1 = e.touches[1];
+        const cx = (t0.clientX + t1.clientX) / 2, cy = (t0.clientY + t1.clientY) / 2;
+        const r = canvas.getBoundingClientRect();
+        const sc = r.width ? (canvas.width / r.width) : 1;
+        S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (cx - tPanLast.x) * sc;
+        S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (cy - tPanLast.y) * sc;
+        S._camManualLock = true;
+        tPanLast = { x: cx, y: cy };
+        e.preventDefault();
+        return;
+      }
+      const t = e.touches[0];
+      if (!t) return;
+      if (tMode === 'popup' && window._f9InfoPanel) {
+        const p = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
+        window._f9InfoPanel.x = p.sx - tPopupOff.dx;
+        window._f9InfoPanel.y = p.sy - tPopupOff.dy;
+        e.preventDefault();
+        return;
+      }
+      if (tMode === 'maybe' && tStart) {
+        if (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH) {
+          tMode = 'select';
+        }
+      }
+      if (tMode === 'select' && tStart) {
+        const p = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
+        window._f9DragRect = { sx1: tStart.sx, sy1: tStart.sy, sx2: p.sx, sy2: p.sy };
+        e.preventDefault();   // stabdo puslapio scroll
+      }
+    }, { passive: false });
+    canvas.addEventListener('touchend', (e) => {
+      if (!(gameMode === 'adventure' && S && S.floor === 9)) { tMode = null; return; }
+      if (tMode === 'popup') {
+        if (window._f9InfoPanel) window._f9InfoPanel.drag = null;
+        if (typeof _f9InfoPanelPersist === 'function') _f9InfoPanelPersist();
+        window._f9DragJustEnded = true;
+        tMode = null;
+        e.preventDefault();
+        return;
+      }
+      if (tMode === 'select' && window._f9DragRect) {
+        // Finalizuojam selection (kaip desktop mouseup)
+        const camX = S.cam ? S.cam.x : 0, camY = S.cam ? S.cam.y : 0;
+        const r = window._f9DragRect;
+        const wx1 = Math.min(r.sx1, r.sx2) + camX, wy1 = Math.min(r.sy1, r.sy2) + camY;
+        const wx2 = Math.max(r.sx1, r.sx2) + camX, wy2 = Math.max(r.sy1, r.sy2) + camY;
+        const sel = [];
+        for (const u of S.units) {
+          if (!u || !u.alive) continue;
+          if (!(u.team === 1 && u.isEditorEnemy)) continue;
+          const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+          const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+          if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
+        }
+        if (sel.length) {
+          window._f9SelectedSet = sel;
+          window._f9Selected = sel[0];
+        }
+        window._f9DragRect = null;
+        window._f9DragJustEnded = true;
+        tMode = null;
+        e.preventDefault();   // be synthetic click po select
+        return;
+      }
+      tMode = null;   // paprastas tap — leidžiam synthetic click (komandos per click handler)
+    }, { passive: false });
+    canvas.addEventListener('touchcancel', () => { tMode = null; window._f9DragRect = null; }, { passive: true });
+  })();
 }
 if (typeof setInterval !== 'undefined') {
   const _f9InstallInt = setInterval(() => {
@@ -4262,14 +4446,14 @@ document.addEventListener('keydown', (e) => {
   // F9'e A/S klavišai REZERVUOTI RTS komandoms (legacy WASD hero judėjimas — tik W/D).
   if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     window._f9AMoveArm = true;
-    _f9SetToast('A-MOVE: pasirink tikslo tašką (Esc atšaukia)');
+    _f9SetToast('A-MOVE: pick target point (Esc to cancel)');
     e.preventDefault();
     e.stopImmediatePropagation();   // legacy KEYMAP (KeyA = hero move) negauna evento
     return;
   }
   if (e.key === 'Escape' && window._f9AMoveArm) {
     window._f9AMoveArm = false;
-    _f9SetToast('A-MOVE atšaukta');
+    _f9SetToast('A-MOVE cancelled');
     e.stopImmediatePropagation();
     return;
   }
@@ -4295,7 +4479,7 @@ document.addEventListener('keydown', (e) => {
         .filter(u => u && u.alive && typeof _f9IsAlly === 'function' && _f9IsAlly(u));
       if (sel.length) {
         window._f9CtrlGroups[g] = sel.slice();
-        _f9SetToast('GRUPĖ ' + g + ' išsaugota (' + sel.length + ')');
+        _f9SetToast('GROUP ' + g + ' saved (' + sel.length + ')');
       }
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -4322,7 +4506,7 @@ document.addEventListener('keydown', (e) => {
         S.cam.ty = cgy - canvas.height / 2;
         S._camManualLock = true;   // edge-pan/H grąžina valdymą kaip įprasta
       } else {
-        _f9SetToast('GRUPĖ ' + g + ' (' + grp.length + ')');
+        _f9SetToast('GROUP ' + g + ' (' + grp.length + ')');
       }
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -4507,6 +4691,56 @@ function _drawF9ClickMarkers() {
   }
 }
 
+// F10 „TEST GAMEPLAY" užrašas virš aukso kasyklos (mine_1) — click'as veda į F9 demo arena.
+// (2026-06-12: perkelta iš F1 į F10 — kasykla yra namų mapoje, CUSTOM_MAP10.)
+function _drawF1TestGameplayLabel() {
+  if (typeof S === 'undefined' || !S || S.floor !== 10 || !S.decorations) return;
+  if (typeof gameMode === 'undefined' || gameMode !== 'adventure') return;
+  let mp = null;
+  for (const k in S.decorations) {
+    if (S.decorations[k] === 'mine_1') {
+      const p = k.split(',').map(Number);
+      mp = { y: p[0], x: p[1] };
+      break;
+    }
+  }
+  if (!mp) return;
+  const now = performance.now();
+  const bounce = Math.sin(now * 0.004) * 4;
+  const cx = (mp.x + 0.5) * CELL;
+  const ty = (mp.y - 1.7) * CELL + bounce;
+  ctx.save();
+  const txt = '⚔ BATTLE TEST';
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(txt).width;
+  const pulse = (Math.sin(now * 0.006) + 1) * 0.5;
+  // Backdrop lentutė (medieval tema)
+  ctx.fillStyle = 'rgba(30, 20, 10, 0.85)';
+  _f9RoundRect(cx - tw / 2 - 10, ty - 12, tw + 20, 24, 6);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(255, 207, 92, ${(0.6 + pulse * 0.4).toFixed(3)})`;
+  ctx.lineWidth = 1.5;
+  _f9RoundRect(cx - tw / 2 - 9.5, ty - 11.5, tw + 19, 23, 6);
+  ctx.stroke();
+  ctx.fillStyle = '#ffcf5c';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 4;
+  ctx.fillText(txt, cx, ty + 1);
+  ctx.shadowBlur = 0;
+  // ▼ rodyklė žemyn į kasyklą
+  const ay = ty + 16 + pulse * 3;
+  ctx.fillStyle = `rgba(255, 207, 92, ${(0.7 + pulse * 0.3).toFixed(3)})`;
+  ctx.beginPath();
+  ctx.moveTo(cx, ay + 8);
+  ctx.lineTo(cx - 6, ay);
+  ctx.lineTo(cx + 6, ay);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 // F9 spawn telegraph — raudonas pulsuojantis žiedas + "!" spawn vietoje prieš priešui
 // materializuojantis (žaidėjas mato IŠ KUR ateis banga; fairness pattern iš tower-defense/RTS).
 function _drawF9SpawnWarnings() {
@@ -4584,6 +4818,49 @@ function _drawF9UnitHpBars() {
   ctx.restore();
 }
 
+// F9 MOBILE mygtukai — ALL / A-MOVE / STOP (tik touch įrenginiuose, dešinys kraštas)
+let _f9TouchBtnRects = null;
+function _drawF9TouchButtons() {
+  _f9TouchBtnRects = null;
+  if (!window._f9TouchInstalled) return;
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  if (typeof ctx === 'undefined' || !ctx || typeof canvas === 'undefined' || !canvas) return;
+  const v = (typeof _getVisibleCanvasRect === 'function')
+    ? _getVisibleCanvasRect()
+    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  const btns = [
+    { id: 'all',   label: 'ALL',    active: false },
+    { id: 'amove', label: '⚔ A-MV', active: !!window._f9AMoveArm },
+    { id: 'stop',  label: 'STOP',   active: false },
+  ];
+  const bw = 78, bh = 40, gap = 10;
+  const bx = v.x + v.w - bw - 10;
+  let by = v.y + v.h - (bh + gap) * btns.length - 110;   // virš hint/bar zonos
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const rects = [];
+  for (const b of btns) {
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = b.active ? '#7a5a20' : '#3a2614';
+    _f9RoundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.strokeStyle = b.active ? '#ffcf5c' : '#8a6a2e';
+    ctx.lineWidth = b.active ? 2 : 1.5;
+    _f9RoundRect(bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, 7);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = b.active ? '#ffe97a' : '#f5e6c3';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(b.label, bx + bw / 2, by + bh / 2 + 1);
+    rects.push({ id: b.id, x: bx, y: by, w: bw, h: bh });
+    by += bh + gap;
+  }
+  ctx.restore();
+  _f9TouchBtnRects = rects;
+}
+
 // F9 hotkey hint + toast + armed A-move banner (screen-space)
 function _drawF9HotkeyHint() {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
@@ -4591,12 +4868,17 @@ function _drawF9HotkeyHint() {
   const now = performance.now();
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // CSS scale(1.32) + overflow:hidden kerpa canvas kraštus — pozicija pagal MATOMĄ plotą
+  const v = (typeof _getVisibleCanvasRect === 'function')
+    ? _getVisibleCanvasRect()
+    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  const vcx = v.x + v.w / 2;
   // 1) Armed A-move banner — ryškus indikatorius viršuj centre
   if (window._f9AMoveArm) {
-    const txt = '⚔ A-MOVE — spausk kairį click į tikslą (Esc atšaukia)';
+    const txt = '⚔ A-MOVE — left-click the target point (Esc to cancel)';
     ctx.font = 'bold 12px system-ui, sans-serif';
     const tw = ctx.measureText(txt).width;
-    const bx = (canvas.width - tw) / 2 - 12, by = 64, bw = tw + 24, bh = 26;
+    const bx = vcx - tw / 2 - 12, by = v.y + 46, bw = tw + 24, bh = 26;
     const pulse = (Math.sin(now * 0.008) + 1) * 0.5;
     ctx.fillStyle = 'rgba(30, 20, 10, 0.88)';
     ctx.fillRect(bx, by, bw, bh);
@@ -4606,7 +4888,7 @@ function _drawF9HotkeyHint() {
     ctx.fillStyle = '#ffb946';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(txt, canvas.width / 2, by + bh / 2 + 1);
+    ctx.fillText(txt, vcx, by + bh / 2 + 1);
   }
   // 2) Toast (komandų feedback — STOP / GRUPĖ N / A-MOVE ...)
   const t = window._f9Toast;
@@ -4615,19 +4897,19 @@ function _drawF9HotkeyHint() {
     ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const ty = canvas.height - 112;
+    const ty = v.y + v.h - 108;
     ctx.fillStyle = `rgba(0, 0, 0, ${(0.55 * fadeA).toFixed(3)})`;
     const tw2 = ctx.measureText(t.text).width;
-    ctx.fillRect(canvas.width / 2 - tw2 / 2 - 10, ty - 11, tw2 + 20, 22);
+    ctx.fillRect(vcx - tw2 / 2 - 10, ty - 11, tw2 + 20, 22);
     ctx.fillStyle = `rgba(245, 230, 195, ${fadeA.toFixed(3)})`;
-    ctx.fillText(t.text, canvas.width / 2, ty);
+    ctx.fillText(t.text, vcx, ty);
   }
   // 3) Pastovus hotkey hint — apačioj dešinėj, neįkyrus
   ctx.font = '10px system-ui, sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
-  ctx.fillText('A attack-move · S stop · ⇧+RMB eilė · Ctrl+1-5 grupės · 2×click tipas', canvas.width - 14, canvas.height - 8);
+  ctx.fillText('A attack-move · S stop · ⇧+RMB queue · CTRL+1-5 groups · 2×click type', v.x + v.w - 12, v.y + v.h - 8);
   ctx.restore();
 }
 
@@ -4759,9 +5041,11 @@ function _drawF9SelectionRing() {
     // Defensive: niekada neatvaizduot ring'o ant enemies (pvz. jei jie pateko prieš fix'ą)
     if (typeof _f9IsEnemy === 'function' && _f9IsEnemy(sel)) continue;
     const ux = ((sel.rx !== undefined ? sel.rx : sel.x) + 0.5) * CELL;
-    // Per-utype scale + Y offset — pigronke turi feet anchor (pig kojos ant cell bottom)
+    // Per-utype scale + Y offset. Pigronke: išmatuota iš sprite'o (kadro turinys baigiasi
+    // y=508/640, sprSz=3.0×UNIT_CELL, yOff=-11.76) → vizualios kojos ties ~0.84 celės
+    // (buvo 0.50 — žiedas kabėjo ant paršo kūno, ne po juo).
     const _ringScale = (sel.utype === 'pigronke') ? 1.20 : 1.0;
-    const _ringFeetFrac = (sel.utype === 'pigronke') ? 0.50 : 0.78;  // pigronke pėdos ant cell bottom
+    const _ringFeetFrac = (sel.utype === 'pigronke') ? 0.84 : 0.78;
     const uyFeet = ((sel.ry !== undefined ? sel.ry : sel.y) + _ringFeetFrac) * CELL;
     const isPrimary = (sel === primary);
     // Small footprint ellipse
@@ -5017,7 +5301,9 @@ const _F9_SEL_ICONS = {
   archer:       'unit-images/archer-idle.gif',
   shaman:       'unit-images/shaman-idle.gif',
   harpoon_fish: 'unit-images/harpoon-idle.gif',
-  pigronke:     'pigronke.png',  // sprite sheet — selection bar parodys pirma frame
+  // 2026-06-12: buvo pigronke.png (sprite SHEET — suspaustas į kortelę atrodė blogai),
+  // dabar dedikuota viena-frame ikona
+  pigronke:     'unit-images/hog-idle.png',
 };
 const _f9SelImgCache = {};
 function _f9GetIcon(utype) {
@@ -5046,21 +5332,25 @@ function _drawF9SelectionBar() {
   if (!canvas || !ctx) return;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const allies = S.units.filter(u => u && u.alive && (u.team === 0 || (u.team === 1 && u.isEditorEnemy)));
+  // Tik squad'as — hero (ronke2) F9'e nematomas, jo kortelės bar'e nerodom (2026-06-12)
+  const allies = S.units.filter(u => u && u.alive && u.team === 1 && u.isEditorEnemy);
   if (!allies.length) { ctx.restore(); return; }
 
   const selSet = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : []);
   const selPrimary = window._f9Selected;
   const t = performance.now();
 
-  const W = canvas.width, H = canvas.height;
+  // CSS scale(1.32) + overflow:hidden kerpa canvas kraštus — pozicija pagal MATOMĄ plotą
+  const v = (typeof _getVisibleCanvasRect === 'function')
+    ? _getVisibleCanvasRect()
+    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
   const cardW = 54, cardH = 54, gap = 5;
   const totalW = allies.length * cardW + (allies.length - 1) * gap;
   const padX = 14, padY = 10;
   const barW = totalW + padX * 2;
   const barH = cardH + padY * 2;
-  const barX = Math.max(8, (W - barW) / 2);
-  const barY = H - barH - 14;
+  const barX = Math.max(v.x + 8, v.x + (v.w - barW) / 2);
+  const barY = v.y + v.h - barH - 12;
 
   // ── Backdrop: parchment/wood medieval theme ──
   // Soft drop shadow
@@ -5209,6 +5499,189 @@ function _drawF9SelectionBar() {
   ctx.restore();
 }
 
+// ── F9 RTS SELECTION PANEL (kairė pusė) — kaip strateginiuose žaidimuose ────
+// 1 pasirinktas unitas → pilnas statusas (ikona, HP, DMG/RNG/ATK, kills).
+// Keli → kompaktiškas sąrašas su HP juostomis; click ant eilutės = select single.
+// Legacy #panel-p1 turinys F9'e paslėptas per CSS (.f9-rts), lieka tik floor-nav.
+let _f9SelPanelRects = [];
+const _F9_UNIT_NAMES = {
+  skull: 'SKULL', shaman: 'SHAMAN', archer: 'ARCHER',
+  harpoon_fish: 'HARPOON', pigronke: 'HOG RIDER',
+};
+// Solo unit INFO popup — rodomas kai pasirinktas VIENAS unitas. ~30% transparent,
+// velkamas už header'io, suskleidžiamas (▾/▸) su smooth scale+fade animacija.
+// Pozicija/collapsed persistinama localStorage 'f9_info_panel'.
+const _F9_INFO_FULL_W = 176, _F9_INFO_FULL_H = 148, _F9_INFO_HDR_H = 24;
+window._f9InfoPanel = window._f9InfoPanel || null;
+function _f9InfoPanelState() {
+  if (!window._f9InfoPanel) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('f9_info_panel') || 'null'); } catch (_) {}
+    window._f9InfoPanel = {
+      x: (saved && typeof saved.x === 'number') ? saved.x : null,   // null = default vieta
+      y: (saved && typeof saved.y === 'number') ? saved.y : null,
+      collapsed: !!(saved && saved.collapsed),
+      animK: (saved && saved.collapsed) ? 0 : 1,
+      drag: null,
+      closed: false,       // X mygtukas — paslepia iki kito selection veiksmo (ne-persist)
+      lastSelRef: null,
+    };
+  }
+  return window._f9InfoPanel;
+}
+function _f9InfoPanelPersist() {
+  const st = window._f9InfoPanel;
+  if (!st) return;
+  try { localStorage.setItem('f9_info_panel', JSON.stringify({ x: st.x, y: st.y, collapsed: st.collapsed })); } catch (_) {}
+}
+function _drawF9SelectionPanel() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  window._f9InfoPanelRects = null;
+  if (!canvas || !ctx) return;
+  const sel = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [])
+    .filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
+  // Rodoma TIK kai pasirinktas VIENAS unitas (multi sąrašą atstoja apatinis bar'as).
+  if (sel.length !== 1) return;
+  const u = sel[0];
+  const cfg = _F9_ALLY_ATTACK[u.utype] || null;
+  const st = _f9InfoPanelState();
+  // X uždarė popup'ą — jis grįžta su SEKANČIU selection veiksmu (naujas click/card/drag)
+  if (st.lastSelRef !== window._f9SelectedSet) {
+    st.lastSelRef = window._f9SelectedSet;
+    st.closed = false;
+  }
+  if (st.closed) return;
+  // Collapse animacija — smoothstep lerp link target (1=išskleista, 0=suskleista)
+  const _target = st.collapsed ? 0 : 1;
+  st.animK += (_target - st.animK) * 0.18;
+  if (Math.abs(st.animK - _target) < 0.005) st.animK = _target;
+  const k = st.animK;
+  const ke = k * k * (3 - 2 * k);   // smoothstep ease
+
+  const v = (typeof _getVisibleCanvasRect === 'function')
+    ? _getVisibleCanvasRect()
+    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  const pw = Math.round(120 + (_F9_INFO_FULL_W - 120) * ke);
+  const ph = Math.round(_F9_INFO_HDR_H + (_F9_INFO_FULL_H - _F9_INFO_HDR_H) * ke);
+  // Pozicija: user-dragged arba default (apačioje centre, virš selection bar'o)
+  let px = (typeof st.x === 'number') ? st.x : v.x + (v.w - pw) / 2;
+  let py = (typeof st.y === 'number') ? st.y : v.y + v.h - 74 - 12 - _F9_INFO_FULL_H - 8;
+  // Clamp į matomą plotą
+  px = Math.max(v.x + 4, Math.min(v.x + v.w - pw - 4, px));
+  py = Math.max(v.y + 4, Math.min(v.y + v.h - ph - 4, py));
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const baseA = st.drag ? 0.88 : 0.7;   // ~30% transparent; velkant ryškiau
+  // Backdrop — wood frame + parchment
+  ctx.save();
+  ctx.globalAlpha = baseA;
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 3;
+  ctx.fillStyle = '#3a2614';
+  _f9RoundRect(px - 3, py - 3, pw + 6, ph + 6, 10);
+  ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = baseA;
+  const bgGrd = ctx.createLinearGradient(0, py, 0, py + ph);
+  bgGrd.addColorStop(0, 'rgba(40, 30, 22, 0.92)');
+  bgGrd.addColorStop(1, 'rgba(24, 18, 14, 0.92)');
+  ctx.fillStyle = bgGrd;
+  _f9RoundRect(px, py, pw, ph, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#8a6a2e';
+  ctx.lineWidth = 1.5;
+  _f9RoundRect(px + 0.75, py + 0.75, pw - 1.5, ph - 1.5, 7);
+  ctx.stroke();
+
+  // Header: vardas (drag handle) + toggle mygtukas
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffcf5c';
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillText(_F9_UNIT_NAMES[u.utype] || String(u.utype || '?').toUpperCase(), px + 10, py + _F9_INFO_HDR_H / 2 + 1);
+  // X (uždaryti) + Toggle ▾/▸ mygtukai header'io dešinėje
+  const tgS = 16;
+  const clX = px + pw - tgS - 6, clY = py + (_F9_INFO_HDR_H - tgS) / 2;
+  const tgX = clX - tgS - 4, tgY = clY;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  _f9RoundRect(tgX, tgY, tgS, tgS, 3);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(120, 30, 24, 0.55)';
+  _f9RoundRect(clX, clY, tgS, tgS, 3);
+  ctx.fill();
+  ctx.fillStyle = '#f5e6c3';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(st.collapsed ? '▸' : '▾', tgX + tgS / 2, tgY + tgS / 2 + 1);
+  ctx.fillStyle = '#ffb0a0';
+  ctx.fillText('✕', clX + tgS / 2, clY + tgS / 2 + 1);
+
+  // Body — tik kai pakankamai išskleista (fade-in su ke)
+  if (ke > 0.35) {
+    const bodyA = baseA * Math.max(0, (ke - 0.35) / 0.65);
+    ctx.globalAlpha = bodyA;
+    const hpColorFor = (frac) => frac > 0.5 ? '#7ec77f' : frac > 0.25 ? '#ffcf5c' : '#e85d5d';
+    const im = _f9GetIcon(u.utype);
+    const iconS = 52;
+    const ix = px + 10, iy = py + _F9_INFO_HDR_H + 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    _f9RoundRect(ix - 2, iy - 2, iconS + 4, iconS + 4, 5);
+    ctx.fill();
+    if (im && im.complete && im.naturalWidth) {
+      ctx.drawImage(im, ix, iy, iconS, iconS);
+    }
+    const maxHp = u.maxHp || 1;
+    const frac = Math.max(0, Math.min(1, (u.hp || 0) / maxHp));
+    const hbX = ix + iconS + 10, hbW = px + pw - 12 - hbX, hbY = iy + 6, hbH = 9;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(hbX - 1, hbY - 1, hbW + 2, hbH + 2);
+    ctx.fillStyle = hpColorFor(frac);
+    ctx.fillRect(hbX, hbY, hbW * frac, hbH);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fillRect(hbX, hbY, hbW * frac, 1);
+    ctx.fillStyle = '#f5e6c3';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${Math.max(0, Math.round(u.hp || 0))} / ${maxHp}`, hbX, hbY + hbH + 12);
+    ctx.fillStyle = '#ff9a88';
+    ctx.fillText(`KILLS ${u._f9Kills || 0}`, hbX, hbY + hbH + 28);
+    // Statai apačioje
+    ctx.fillStyle = '#a99068';
+    ctx.font = '10px monospace';
+    const sy1 = py + ph - 36, sy2 = py + ph - 23, sy3 = py + ph - 10;
+    if (cfg) {
+      ctx.fillText(`DMG  ${cfg.dmgMin ?? '?'}–${cfg.dmgMax ?? '?'}`, px + 12, sy1);
+      ctx.fillText(`RNG  ${cfg.range}`, px + 12, sy2);
+      ctx.fillText(`ATK  ${(cfg.cd / 1000).toFixed(1)}s`, px + 12, sy3);
+      if (u.stack > 1) {
+        ctx.textAlign = 'right';
+        ctx.fillText('STACK x' + u.stack, px + pw - 12, sy1);
+        ctx.textAlign = 'left';
+      }
+      if (typeof u._nftLevel === 'number') {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#4ad6e0';
+        ctx.fillText('LVL ' + u._nftLevel, px + pw - 12, sy2);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#a99068';
+      }
+    }
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+
+  // Hit-rect'ai input handler'iams (canvas px)
+  window._f9InfoPanelRects = {
+    panel:  { x: px, y: py, w: pw, h: ph },
+    header: { x: px, y: py, w: pw - tgS * 2 - 16, h: _F9_INFO_HDR_H },
+    toggle: { x: tgX - 3, y: tgY - 4, w: tgS + 6, h: tgS + 8 },
+    close:  { x: clX - 3, y: clY - 4, w: tgS + 7, h: tgS + 8 },
+  };
+}
+
 // Separation steering — unit'ai švelniai stumiasi vienas nuo kito kad nesusilietų.
 // RTS standard (Reynolds 1987 "Boids"). O(n²) per friendly count (n maža ~10-20).
 const _F9_SEP_RADIUS = 0.42;   // min desired distance — leis combat unit'ams būti arti
@@ -5224,8 +5697,9 @@ function _f9AllUnits() {
   if (!Array.isArray(S.units)) return out;
   for (const u of S.units) {
     if (!u || !u.alive) continue;
-    // F9 dalyviai: hero (team=0) + trained barracks (team=1+isEditorEnemy) + enemies (_f9Enemy)
-    if (u.team === 0 || (u.team === 1 && u.isEditorEnemy) || u._f9Enemy) out.push(u);
+    // F9 dalyviai: trained barracks (team=1+isEditorEnemy) + enemies (_f9Enemy).
+    // Hero (team=0) NEįtraukiamas — nematomas, nekovoja, neturi stumdyti unitų (2026-06-12).
+    if ((u.team === 1 && u.isEditorEnemy) || u._f9Enemy) out.push(u);
   }
   return out;
 }
@@ -5243,7 +5717,8 @@ function _f9CommandableSelection(includeHero = true) {
   const out = [];
   for (const u of src) {
     if (!u || !u.alive || !_f9IsAlly(u)) continue;
-    if (!includeHero && u.team === 0) continue;
+    // Hero (ronke2) F9'e nematomas ir nekomanduojamas — kovoja tik squad'as (2026-06-12)
+    if (u.team === 0) continue;
     if (out.indexOf(u) < 0) out.push(u);
   }
   return out;
@@ -5640,6 +6115,7 @@ function _spawnF9Enemies(hero) {
   if (!hero || typeof getEditorEnemyArchetype !== 'function' || typeof mkUnit !== 'function') return;
   _f9Stats = { kills: 0, lost: 0 };
   window._f9PendingSpawns = [];   // floor re-entry — senų telegraph'ų nelieka
+  window._f9Shots = [];           // floor re-entry — skrendančių projektilų nelieka
   _f9LastEnemyRespawn = performance.now();
   const _occ = new Set();
   for (const u of S.units || []) {
@@ -5691,6 +6167,7 @@ function _f9FindClosestAlly(enemy) {
   for (const u of S.units || []) {
     if (!u || !u.alive) continue;
     if (!_f9IsAlly(u)) continue;
+    if (u.team === 0) continue;   // hero nematomas — priešai jo nemato/nepuola (2026-06-12)
     const ux = (u.rx !== undefined) ? u.rx : u.x;
     const uy = (u.ry !== undefined) ? u.ry : u.y;
     const d = Math.hypot(ex - ux, ey - uy);
@@ -5745,8 +6222,13 @@ function _f9DealDmg(target, dmg, attacker) {
     }
   }
   if (target.hp <= 0) {
-    if (_f9IsEnemy(target)) _f9Stats.kills = (_f9Stats.kills || 0) + 1;
-    else if (_f9IsAlly(target)) _f9Stats.lost = (_f9Stats.lost || 0) + 1;
+    if (_f9IsEnemy(target)) {
+      _f9Stats.kills = (_f9Stats.kills || 0) + 1;
+      // Per-unit kill skaitliukas — rodomas selection panelėje (veterano feel)
+      if (attacker && attacker.alive && _f9IsAlly(attacker)) {
+        attacker._f9Kills = (attacker._f9Kills || 0) + 1;
+      }
+    } else if (_f9IsAlly(target)) _f9Stats.lost = (_f9Stats.lost || 0) + 1;
     const deathX = (typeof target.rx === 'number') ? target.rx : target.x;
     const deathY = (typeof target.ry === 'number') ? target.ry : target.y;
     target.alive = false;
@@ -5772,14 +6254,168 @@ function _f9FindEnemyNear(cellX, cellY, radius) {
   return best;
 }
 
+// ═══ F9 2D RANGED SHOTS — archer/harpoon projektilai pilnai 2D erdvei ═══════
+// Legacy spawnBarracksHarpoon yra F12 lane palikimas: skrieja TIK horizontaliai
+// (X kryptis + gravitacija), todėl F9 2D arenoje pataikydavo tik į taikinius toje
+// pačioje Y linijoje. Šis kelias:
+//  • skrieja į bet kurį (x,y) tašką su vizualiniu lanku (arc lift)
+//  • švelnus homing — seka judantį taikinį (SC2 missile pattern): vizualas visada
+//    sutampa su pataikymu; jei taikinys miršta skrydyje — krenta į paskutinį tašką
+//    ir daro radius hit (gali kliudyti kitą priešą)
+//  • impact/stuck vizualai perpanaudoti iš legacy (_fishAnims/_archerAnims)
+const _F9_SHOT_SPEED_CPS = 10.5;   // skrydžio greitis (celės/sek)
+const _F9_SHOT_ARC_MAX = 1.1;      // max lanko aukštis (celėm) ilgame šūvyje
+
+function spawnF9RangedShot(shooter, target, utype, stack) {
+  if (!window._f9Shots) window._f9Shots = [];
+  const sgx = (shooter.rx !== undefined) ? shooter.rx : shooter.x;
+  const sgy = (shooter.ry !== undefined) ? shooter.ry : shooter.y;
+  const tgx = (target.rx !== undefined) ? target.rx : target.x;
+  const tgy = (target.ry !== undefined) ? target.ry : target.y;
+  const sx = (sgx + 0.5) * CELL;
+  const sy = (sgy + 0.5) * CELL - CELL * 0.55;   // šūvis iš krūtinės aukščio
+  const tx = (tgx + 0.5) * CELL;
+  const ty = (tgy + 0.5) * CELL - CELL * 0.30;   // taikymas į korpusą
+  const dist = Math.hypot(tx - sx, ty - sy);
+  window._f9Shots.push({
+    utype: utype || 'archer',
+    stack: stack || 1,
+    shooter, target,
+    sx, sy, tx, ty,
+    x: sx, y: sy, px: sx, py: sy,
+    born: performance.now(),
+    durMs: Math.max(150, (dist / CELL) / _F9_SHOT_SPEED_CPS * 1000),
+    arcH: Math.min(CELL * _F9_SHOT_ARC_MAX, dist * 0.16),
+    state: 'fly',            // 'fly' | 'impact' | 'stuck'
+    stateAt: 0,
+    angle: Math.atan2(ty - sy, tx - sx),
+    trail: [],
+  });
+}
+
+// Update + draw viename pass'e (kviečiama render'e PO unit'ų — strėlės virš sprite'ų)
+function _drawF9Shots() {
+  const arr = window._f9Shots;
+  if (!arr || !arr.length) return;
+  if (typeof S === 'undefined' || !S || S.floor !== 9) { arr.length = 0; return; }
+  const now = performance.now();
+  const arrowSheet = (typeof _archerAnims !== 'undefined') ? _archerAnims.arrow.img : null;
+  const hImg = (typeof _fishAnims !== 'undefined') ? _fishAnims.harpoon.img : null;
+  const stuckImg = (typeof _fishAnims !== 'undefined') ? _fishAnims.stuck.img : null;
+  const impSheet = (typeof _fishAnims !== 'undefined') ? _fishAnims.impact.img : null;
+  const AW = 28, AH = 31, HW = 26, HH = 26;
+  const HARPOON_ANGLE_OFFSET = Math.PI / 4;
+  const IMPACT_MS = 60, IMPACT_FRAMES = 9;
+  ctx.save();
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const s = arr[i];
+    if (s.state === 'fly') {
+      const t = Math.min(1, (now - s.born) / s.durMs);
+      // Homing: kol taikinys gyvas — sekam jo realią poziciją
+      if (s.target && s.target.alive) {
+        const tgx = (s.target.rx !== undefined) ? s.target.rx : s.target.x;
+        const tgy = (s.target.ry !== undefined) ? s.target.ry : s.target.y;
+        s.tx = (tgx + 0.5) * CELL;
+        s.ty = (tgy + 0.5) * CELL - CELL * 0.30;
+      }
+      s.px = s.x; s.py = s.y;
+      const bx = s.sx + (s.tx - s.sx) * t;
+      const by = s.sy + (s.ty - s.sy) * t;
+      s.x = bx;
+      s.y = by - Math.sin(t * Math.PI) * s.arcH;   // lanko trajektorija
+      const mdx = s.x - s.px, mdy = s.y - s.py;
+      if (Math.abs(mdx) + Math.abs(mdy) > 0.5) s.angle = Math.atan2(mdy, mdx);
+      // Trail
+      if (!s._lastTrailAt || now - s._lastTrailAt > 40) {
+        s._lastTrailAt = now;
+        s.trail.push({ x: s.x, y: s.y, born: now });
+        if (s.trail.length > 6) s.trail.shift();
+      }
+      if (t >= 1) {
+        // Atvykimas — pataikymas
+        const cellX = s.tx / CELL - 0.5;
+        const cellY = (s.ty + CELL * 0.30) / CELL - 0.5;
+        let tgt = (s.target && s.target.alive && _f9IsEnemy(s.target)) ? s.target
+                : (typeof _f9FindEnemyNear === 'function' ? _f9FindEnemyNear(cellX, cellY, 0.9) : null);
+        if (tgt && tgt.alive) {
+          _f9DealDmg(tgt, _f9RollDamageForUnit(s.utype, s.stack), s.shooter);
+          s.state = 'impact';
+        } else {
+          s.state = 'stuck';   // miss — strėlė/harpūnas įsminga į žemę
+        }
+        s.stateAt = now;
+        s.trail.length = 0;
+      }
+    }
+    // ── Render pagal būseną ──
+    if (s.state === 'impact') {
+      const frame = Math.floor((now - s.stateAt) / IMPACT_MS);
+      if (frame >= IMPACT_FRAMES) { arr.splice(i, 1); continue; }
+      if (impSheet && impSheet.complete && impSheet.naturalWidth > 0) {
+        const IS = 52;
+        ctx.drawImage(impSheet, frame * 192, 0, 192, 192, s.x - IS / 2, s.y - IS / 2, IS, IS);
+      }
+      continue;
+    }
+    if (s.state === 'stuck') {
+      const age = now - s.stateAt;
+      if (age > 1400) { arr.splice(i, 1); continue; }
+      ctx.globalAlpha = age > 1000 ? 1 - (age - 1000) / 400 : 1;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      if (s.utype === 'archer') {
+        ctx.rotate(s.angle);
+        if (arrowSheet && arrowSheet.complete && arrowSheet.naturalWidth > 0) {
+          ctx.drawImage(arrowSheet, 0, 64, 64, 64, -AW / 2, -AH / 2, AW, AH);
+        }
+      } else {
+        ctx.rotate(s.angle + HARPOON_ANGLE_OFFSET);
+        if (stuckImg && stuckImg.complete && stuckImg.naturalWidth > 0) {
+          ctx.drawImage(stuckImg, 0, 0, 64, 64, -HW / 2, -HH / 2, HW, HH);
+        }
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    // 'fly' — trail + sprite
+    for (let k = 0; k < s.trail.length; k++) {
+      const tp = s.trail[k];
+      const ta = 1 - (now - tp.born) / 260;
+      if (ta <= 0) continue;
+      ctx.globalAlpha = ta * 0.30;
+      ctx.fillStyle = '#2a2118';
+      ctx.beginPath(); ctx.arc(tp.x, tp.y, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    if (s.utype === 'archer') {
+      ctx.rotate(s.angle);
+      if (arrowSheet && arrowSheet.complete && arrowSheet.naturalWidth > 0) {
+        ctx.drawImage(arrowSheet, 0, 0, 64, 64, -AW / 2, -AH / 2, AW, AH);
+      }
+    } else {
+      ctx.rotate(s.angle + HARPOON_ANGLE_OFFSET);
+      if (hImg && hImg.complete && hImg.naturalWidth > 0) {
+        ctx.drawImage(hImg, 0, 0, 64, 64, -HW / 2, -HH / 2, HW, HH);
+      }
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 // Per-utype attack range/cooldown (cells / ms) ally auto-attack'ui
 // STANDARD RTS: tik distance check, be strict face-to-face requirement.
 // Unit'as atsisuka į target ir atakuoja — kaip SC2/AoE/Total War.
 const _F9_ALLY_ATTACK = {
   skull:        { range: 0.95, cd: 1500, dmg: 2.5, dmgMin: 1, dmgMax: 4 },
   shaman:       { range: 7.0,  cd: 3000, dmg: 3.5, dmgMin: 2, dmgMax: 5 },
-  archer:       { range: 6.5,  cd: 2500, dmg: 2.5, dmgMin: 1, dmgMax: 4 },
-  harpoon_fish: { range: 5.5,  cd: 1800, dmg: 3.5, dmgMin: 2, dmgMax: 5 },
+  // 2026-06-12: archer/harpoon attack speed -50% (cd 2500→5000, 1800→3600) — su 2D homing
+  // šaudymu jie nebepraleidžia šūvių, senas tempas būtų per stiprus.
+  archer:       { range: 6.5,  cd: 5000, dmg: 2.5, dmgMin: 1, dmgMax: 4 },
+  harpoon_fish: { range: 5.5,  cd: 3600, dmg: 3.5, dmgMin: 2, dmgMax: 5 },
   pigronke:     { range: 1.18, cd: 2800, dmg: 5.5, dmgMin: 3, dmgMax: 8 },
 };
 
@@ -5859,7 +6495,11 @@ function _pigronkeSpearAttack(unit, now) {
       const ndx = (ex - zoneCx) / zoneRX;
       const ndy = (ey - sy) / zoneRY;
       const inEllipse = (ndx * ndx + ndy * ndy <= 1.0);
-      const inCircle = (Math.hypot(ex - sx, ey - sy) <= fallbackR);
+      // Fallback apskritimas galioja tik PRIEKINEI pusei: be šio check'o priešas
+      // už nugaros (≤ fallbackR) gaudavo dmg nors ietis kirto į priekį (bug report 2026-06-12).
+      // Maža -0.12 tolerancija — priešui stovinčiam praktiškai ant pigronke.
+      const _fwd = (ex - sx) * fdx;
+      const inCircle = _fwd > -0.12 && (Math.hypot(ex - sx, ey - sy) <= fallbackR);
       if (!inEllipse && !inCircle) continue;
       hitCount++;
       if ((en.hp || 0) <= dmg) killCount++;
@@ -5924,18 +6564,21 @@ function _f9TryAllyAutoAttack(ally, now) {
     }
   } else if (ally.utype === 'archer' || ally.utype === 'harpoon_fish') {
     ally.hfishThrowStart = now;
-    if (typeof spawnBarracksHarpoon === 'function') {
+    // F9 2D shot — skrieja į bet kurį (x,y), homing'as į judantį taikinį.
+    // (Legacy spawnBarracksHarpoon liko F11/F12 lane'ui — ten jis tinkamas.)
+    if (typeof spawnF9RangedShot === 'function') {
       const fireMs = (typeof _HFISH_THROW_FIRE_FRAME !== 'undefined' && typeof _HFISH_THROW_MS !== 'undefined')
         ? (_HFISH_THROW_FIRE_FRAME * _HFISH_THROW_MS) : 450;
-      const srcX = (ally.rx !== undefined ? ally.rx : ally.x);
-      const srcY = (ally.ry !== undefined ? ally.ry : ally.y);
-      const _sprH = UNIT_CELL * 2.5;
-      const startPx = (srcX + 0.5) * CELL + fdx * (_sprH * 0.10);
-      const startPy = (srcY + 0.5) * CELL - _sprH * 0.18;
       setTimeout(() => {
-        if (ally.alive) spawnBarracksHarpoon(ally.x, ally.y, tgx, tgy, fdx, ally.stack || 1, false, ally.utype, null, null, {
-          startX: startPx, startY: startPy,
-        });
+        if (!ally.alive) return;
+        let shotTgt = (target && target.alive) ? target : null;
+        if (!shotTgt) {
+          // Taikinys mirė per throw animaciją — randam kitą range'e (CD nešvaistom)
+          const ax2 = (ally.rx !== undefined) ? ally.rx : ally.x;
+          const ay2 = (ally.ry !== undefined) ? ally.ry : ally.y;
+          shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range) : null;
+        }
+        if (shotTgt) spawnF9RangedShot(ally, shotTgt, ally.utype, ally.stack || 1);
       }, fireMs);
     }
   }
@@ -6286,9 +6929,11 @@ function _f9CheckOutcome() {
     return;
   }
   if (_f9GameOverShown) return;
-  const hero = S.units.find(u => u && u.alive && u.team === 0);
-  // Defeat: hero miręs
-  if (!hero) {
+  // NFT squad dar kraunasi (async RPC) — tuščias laukas ≠ pralaimėjimas
+  if (S._f9DeployPending) return;
+  // Defeat: visas squad'as žuvęs. (Hero nematomas/nepuolamas — nebe kriterijus, 2026-06-12.)
+  const anySquad = S.units.some(u => u && u.alive && u.team === 1 && u.isEditorEnemy);
+  if (!anySquad) {
     _f9GameOverShown = true;
     _f9ShowOutcome(false);
   }
@@ -10786,6 +11431,11 @@ function updateFloorNav() {
   if (prevBtn) prevBtn.disabled = (S.floor || 1) <= 1;
   const screenGame = document.getElementById('screen-game');
   if (screenGame) screenGame.classList.toggle('home-mode', S.floor === 10);
+  // F9 RTS — kairė legacy panelė (HERO/WEAPONS/mana) paslepiama, lieka tik floor-nav.
+  // Vietoj jos canvas'e piešiama RTS selection panelė (_drawF9SelectionPanel).
+  if (screenGame) screenGame.classList.toggle('f9-rts', S.floor === 9 && gameMode === 'adventure');
+  // F9 fullscreen canvas — vidinė rezoliucija = lango dydis (resize-safe)
+  if (typeof _f9SyncCanvasSize === 'function') { try { _f9SyncCanvasSize(); } catch (_) {} }
 }
 
 // ---- Adventure mode --------------------------------------------
@@ -10859,6 +11509,19 @@ function initAdventure() {
   // F9 — clean canvas: pure grass, no decorations/chests/holes (preserves edit map)
   if (S.floor === 9) {
     if (Array.isArray(S.dungeon)) {
+      // FULLSCREEN ARENA — mapa visada bent lango dydžio (+4 celių atsarga).
+      // Be šito mažas (pvz. edit-map kilmės) dungeon'as nepadengia fullscreen
+      // viewport'o ir už mapos krašto lieka juoda nenaudojama zona (2026-06-12).
+      const _minCols = Math.max(COLS, Math.ceil((window.innerWidth || 1920) / CELL) + 4);
+      const _minRows = Math.max(ROWS, Math.ceil((window.innerHeight || 1080) / CELL) + 4);
+      while (S.dungeon.length < _minRows) S.dungeon.push(new Array(COLS).fill(1));
+      for (let _y = 0; _y < S.dungeon.length; _y++) {
+        while (S.dungeon[_y].length < _minCols) S.dungeon[_y].push(1);
+      }
+      ROWS = S.dungeon.length;
+      COLS = S.dungeon[0].length;
+      ADV_MAP_ROWS = ROWS;
+      ADV_MAP_COLS = COLS;
       for (let _y = 0; _y < ROWS; _y++) {
         for (let _x = 0; _x < COLS; _x++) {
           const _isBorder = (_y === 0 || _y === ROWS - 1 || _x === 0 || _x === COLS - 1);
@@ -10878,6 +11541,24 @@ function initAdventure() {
   invalidateDungeonCache();
   S.fog = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
   S.fogReveal = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+  // F10 — aukso kasykla (TEST GAMEPLAY portalas į F9): pre-reveal fog aplink mine_1
+  // (jei F10 fog'as ir taip pilnai atidengtas — harmless no-op).
+  if (S.floor === 10 && S.decorations) {
+    for (const _mk in S.decorations) {
+      if (S.decorations[_mk] !== 'mine_1') continue;
+      const _mp = _mk.split(',').map(Number);
+      for (let _dy = -4; _dy <= 4; _dy++) {
+        for (let _dx = -4; _dx <= 4; _dx++) {
+          const _ry = _mp[0] + _dy, _rx = _mp[1] + _dx;
+          if (_ry >= 0 && _ry < ROWS && _rx >= 0 && _rx < COLS) {
+            S.fog[_ry][_rx] = true;
+            S.fogReveal[_ry][_rx] = 1;
+          }
+        }
+      }
+      break;
+    }
+  }
   S.lightGhosts = [];
   updateExplorationTracker();
   S.cam = { x: 0, y: 0, tx: 0, ty: 0 };
@@ -11045,49 +11726,90 @@ function initAdventure() {
   if (S.floor === 9) {
     try {
       const hero = S.units[0];
-      // F9 TEST MODE — 3 skull + 1 shaman + 1 pigronke (visual fit tweaks check). 2026-05-28.
-      const _F9_TEST_TEAM = true;
-      const trained = _F9_TEST_TEAM
-        ? [
-            { utype: 'skull',    stack: 1, hp: 8,  maxHp: 8 },
-            { utype: 'skull',    stack: 1, hp: 8,  maxHp: 8 },
-            { utype: 'skull',    stack: 1, hp: 8,  maxHp: 8 },
-            { utype: 'shaman',   stack: 1, hp: 5,  maxHp: 5 },
-            { utype: 'pigronke', stack: 1, hp: 14, maxHp: 14 },
-          ]
-        : ((Profile && Array.isArray(Profile.barracksTrained)) ? Profile.barracksTrained : []);
-      console.log('[F9 deploy] mode:', _F9_TEST_TEAM ? 'TEST (3 skull + 1 shaman + 1 pigronke)' : 'PROFILE', 'snaps:', trained);
+      // 2026-06-12: F9 startuoja su žaidėjo BATTLE SQUAD (užregistruoto deck'o kovine 12-uke).
+      // NFT duomenys kraunami async (RPC multicall) → unitai atsiranda po ~1s.
+      // Fallback į testinę komandą: nėra wallet / tuščias squad / RPC klaida.
+      const _F9_NFT_TYPE_MAP = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'pigronke' };
+      const _F9_BASE_HP = { skull: 8, archer: 6, harpoon_fish: 7, shaman: 5, pigronke: 14 };
+      const _testTeam = [
+        { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
+        { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
+        { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
+        { utype: 'shaman',       stack: 1, hp: 5,  maxHp: 5 },
+        { utype: 'archer',       stack: 1, hp: 6,  maxHp: 6 },
+        { utype: 'harpoon_fish', stack: 1, hp: 7,  maxHp: 7 },
+        { utype: 'pigronke',     stack: 1, hp: 14, maxHp: 14 },
+      ];
       let _did = (typeof _nextTrainedSnapId === 'function') ? 100000 : 1000;
       let _ringIdx = 0;
       const occupied = new Set();
       occupied.add(hero.x + ',' + hero.y);
-      for (const snap of trained) {
-        if (!snap || !snap.utype) continue;
-        const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(snap.utype) : null;
-        if (!archetype) { console.warn('[F9 deploy] no archetype for utype:', snap.utype); continue; }
-        const stack = snap.stack || 1;
-        for (let s = 0; s < stack; s++) {
-          // Spiral pattern aplink hero
-          let placed = false;
-          for (let attempt = 0; attempt < 40 && !placed; attempt++) {
-            const r = 2 + Math.floor((_ringIdx + attempt) / 8);
-            const ang = ((_ringIdx + attempt) % 8) * (Math.PI / 4);
-            const sx = Math.max(1, Math.min(COLS - 2, hero.x + Math.round(Math.cos(ang) * r)));
-            const sy = Math.max(1, Math.min(ROWS - 2, hero.y + Math.round(Math.sin(ang) * r)));
-            const k = sx + ',' + sy;
-            if (occupied.has(k)) continue;
-            occupied.add(k);
-            const u = mkUnit(typeof nextEditorUnitId === 'function' ? nextEditorUnitId() : _did++, 1, sx, sy, 1, archetype);
-            u.isEditorEnemy = true;
-            u.stack = 1;
-            if (typeof snap.hp === 'number') u.hp = snap.hp;
-            if (typeof snap.maxHp === 'number') u.maxHp = snap.maxHp;
-            u.trainedSnapId = snap.id || (typeof _nextTrainedSnapId === 'function' ? _nextTrainedSnapId() : ++_did);
-            S.units.push(u);
-            placed = true;
+      const _placeSnaps = (trained) => {
+        for (const snap of trained) {
+          if (!snap || !snap.utype) continue;
+          const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(snap.utype) : null;
+          if (!archetype) { console.warn('[F9 deploy] no archetype for utype:', snap.utype); continue; }
+          const stack = snap.stack || 1;
+          for (let s = 0; s < stack; s++) {
+            // Spiral pattern aplink hero
+            let placed = false;
+            for (let attempt = 0; attempt < 40 && !placed; attempt++) {
+              const r = 2 + Math.floor((_ringIdx + attempt) / 8);
+              const ang = ((_ringIdx + attempt) % 8) * (Math.PI / 4);
+              const sx = Math.max(1, Math.min(COLS - 2, hero.x + Math.round(Math.cos(ang) * r)));
+              const sy = Math.max(1, Math.min(ROWS - 2, hero.y + Math.round(Math.sin(ang) * r)));
+              const k = sx + ',' + sy;
+              if (occupied.has(k)) continue;
+              occupied.add(k);
+              const u = mkUnit(typeof nextEditorUnitId === 'function' ? nextEditorUnitId() : _did++, 1, sx, sy, 1, archetype);
+              u.isEditorEnemy = true;
+              u.stack = 1;
+              if (typeof snap.hp === 'number') u.hp = snap.hp;
+              if (typeof snap.maxHp === 'number') u.maxHp = snap.maxHp;
+              if (typeof snap.nftLevel === 'number') u._nftLevel = snap.nftLevel;
+              if (snap.tokenId !== undefined) u._nftTokenId = snap.tokenId;
+              u.trainedSnapId = snap.id || (typeof _nextTrainedSnapId === 'function' ? _nextTrainedSnapId() : ++_did);
+              S.units.push(u);
+              placed = true;
+            }
+            _ringIdx++;
           }
-          _ringIdx++;
         }
+        // Selection — visas naujai padėtas squad'as
+        const _sq = S.units.filter(u2 => u2 && u2.alive && _f9IsAlly(u2) && u2.team !== 0);
+        window._f9SelectedSet = _sq;
+        window._f9Selected = _sq[0] || null;
+      };
+      // Squad iš registruoto deck'o (async) arba test fallback
+      const _addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || null;
+      const _squadIds = (_addr && window.BarracksNFT && window.BarracksNFT.getBattleSquad)
+        ? window.BarracksNFT.getBattleSquad(_addr) : [];
+      if (_addr && _squadIds.length && window.BarracksNFT.loadDeckUnits) {
+        S._f9DeployPending = true;   // outcome check'as nelaiko tuščio lauko pralaimėjimu
+        const _floorTok = (S._f9DeployToken = (S._f9DeployToken || 0) + 1);
+        console.log('[F9 deploy] mode: BATTLE SQUAD (' + _squadIds.length + ' NFT)');
+        window.BarracksNFT.loadDeckUnits(_addr, _squadIds).then((units) => {
+          if (S.floor !== 9 || S._f9DeployToken !== _floorTok) return;   // išėjo iš F9 — stale
+          const snaps = (units || []).map((nu) => {
+            const ut = _F9_NFT_TYPE_MAP[nu.utype];
+            if (!ut) return null;
+            const base = _F9_BASE_HP[ut] || 8;
+            // NFT lygis → HP skalė (+5%/lvl, kaip F12 kortų sistema)
+            const hp = Math.max(1, Math.round(base * (1 + 0.05 * (nu.level || 0))));
+            return { utype: ut, stack: 1, hp, maxHp: hp, nftLevel: nu.level || 0, tokenId: String(nu.tokenId) };
+          }).filter(Boolean);
+          S._f9DeployPending = false;
+          if (snaps.length) _placeSnaps(snaps);
+          else _placeSnaps(_testTeam);   // squad tuščias po prune — fallback
+        }).catch((e2) => {
+          console.warn('[F9 deploy] NFT load err, fallback test team:', e2);
+          if (S.floor !== 9 || S._f9DeployToken !== _floorTok) return;
+          S._f9DeployPending = false;
+          _placeSnaps(_testTeam);
+        });
+      } else {
+        console.log('[F9 deploy] mode: TEST TEAM (wallet/squad nėra)');
+        _placeSnaps(_testTeam);
       }
       // KotH ("Karalius ant kalno") — kai aktyvus, KotH valdo spawn'ą (ne default PvE).
       const _kothOn = !!(window._KOTH && window._KOTH.active);
@@ -11100,7 +11822,7 @@ function initAdventure() {
         try { _spawnF9Enemies(hero); } catch (eSpw) { console.warn('[F9 spawn enemies] err:', eSpw); }
       }
       const squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
-      window._f9SelectedSet = squad.length ? squad : (hero ? [hero] : []);
+      window._f9SelectedSet = squad;   // hero fallback pašalintas — jis F9'e nematomas (2026-06-12)
       window._f9Selected = window._f9SelectedSet[0] || null;
     } catch (e) { console.warn('[F9 deploy trained] err:', e); }
   }
@@ -17732,9 +18454,17 @@ function _drawDungeonStatic() {
       } else if (_TREE_CFG[decId]) {
         // Trees/stumps drawn in drawForegroundDecorations — virš unitų (galima pasislėpti).
       } else if (decId === 'mine_1') {
-        if (tinyImgs.mine.complete && tinyImgs.mine.naturalWidth > 0) {
+        // F10 TEST GAMEPLAY kasykla: užvedus pelę → Active sprite (dega šviesa duryse).
+        // GoldMine_Active.png jau užkrautas kaip teleportActiveImg — perpanaudojam.
+        const _mineHover = (S.floor === 10 && typeof _worldMx === 'number' && _worldMx >= 0 &&
+          _worldMx >= px - CELL && _worldMx <= px - CELL + CELL * 3 &&
+          _worldMy >= py - CELL && _worldMy <= py - CELL + CELL * 2);
+        const _mineImg = (_mineHover && typeof teleportActiveImg !== 'undefined' &&
+          teleportActiveImg.complete && teleportActiveImg.naturalWidth > 0)
+          ? teleportActiveImg : tinyImgs.mine;
+        if (_mineImg.complete && _mineImg.naturalWidth > 0) {
             // spritesheet: 192x128
-            ctx.drawImage(tinyImgs.mine, 0, 0, 192, 128, px - CELL, py - CELL, CELL*3, CELL*2);
+            ctx.drawImage(_mineImg, 0, 0, 192, 128, px - CELL, py - CELL, CELL*3, CELL*2);
         }
       } else if (decId.startsWith('rock')) {
         const sheetIdx = parseInt(decId.replace('rock', ''), 10);
@@ -18037,6 +18767,8 @@ function drawAdvHUD() {
 
 // ---- Weapon HUD - current weapon + ammo (screen space, bottom left) --
 function drawWeaponHUD() {
+  // F9 RTS — hero nematomas/nekovoja, ginklų HUD nereikalingas
+  if (S && S.floor === 9 && gameMode === 'adventure') return;
   const hero = S._hero || S.units?.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const wep = getCurrentWeapon(hero);
@@ -23768,14 +24500,17 @@ function spawnF12BloodBurst(x, y, sz) {
     };
   };
 
-  // Splat flash
-  S.particles.push({
-    type: 'blood_flash',
-    x0: x, y0: y,
-    born: now, duration: 230,
-    size: Math.round(12 * scale),
-    life: 1
-  });
+  // Splat flash — F9 NErodom: didelis raudonas blast atrodė per stambus mirties momentu,
+  // kraujo droplet'ų animacijų užtenka (user feedback 2026-06-12). F12 lieka kaip buvo.
+  if (!isF9Blood) {
+    S.particles.push({
+      type: 'blood_flash',
+      x0: x, y0: y,
+      born: now, duration: 230,
+      size: Math.round(12 * scale),
+      life: 1
+    });
+  }
 
   // Maži purslai
   const n = (isF9Blood ? 18 : 22) + Math.floor(Math.random() * (isF9Blood ? 8 : 12));
@@ -23791,7 +24526,7 @@ function spawnF12BloodBurst(x, y, sz) {
       born: now, groundY: isF9Blood ? land.y : gy, gravity: isF9Blood ? 1040 : 520,
       radial: isF9Blood, landTargetX: land && land.x, landTargetY: land && land.y, flightMs: land && land.ms, lift: land && land.lift,
       size: (isF9Blood ? 2 : 2) + Math.floor(Math.random() * (isF9Blood ? 1.5 : 2)), shade: Math.random(), big: false,
-      landed: false, groundLife: (isF9Blood ? 650 : 700) + Math.random() * (isF9Blood ? 450 : 700),
+      landed: false, groundLife: (isF9Blood ? 4800 : 700) + Math.random() * (isF9Blood ? 700 : 700),
       life: 1
     });
   }
@@ -23810,7 +24545,7 @@ function spawnF12BloodBurst(x, y, sz) {
       born: now, groundY: isF9Blood ? land.y : gy, gravity: isF9Blood ? 1120 : 520,
       radial: isF9Blood, landTargetX: land && land.x, landTargetY: land && land.y, flightMs: land && land.ms, lift: land && land.lift,
       size: (isF9Blood ? 4 : 5) + Math.floor(Math.random() * (isF9Blood ? 2 : 4)), shade: Math.random(), big: true,
-      landed: false, groundLife: (isF9Blood ? 780 : 900) + Math.random() * (isF9Blood ? 520 : 800),
+      landed: false, groundLife: (isF9Blood ? 5000 : 900) + Math.random() * (isF9Blood ? 900 : 800),
       life: 1
     });
   }
@@ -24984,7 +25719,10 @@ function loop(now) {
       } else {
         p.x = p.landX;
         p.y = p.landY;
-        p.life = 1 - (now - p.landAt) / p.groundLife;
+        const _gk = (now - p.landAt) / p.groundLife;
+        // F9 (radial) dėmės: laikosi pilnu ryškumu ~80% laiko, fade tik paskutinius 20%
+        // (kad „kraujas ant žemės" realiai matytųsi ~5s, ne tirptų nuo pat nusileidimo).
+        p.life = p.radial ? (_gk < 0.8 ? 1 : 1 - (_gk - 0.8) / 0.2) : (1 - _gk);
       }
       if (p.life <= 0) {
         S.particles[_pi] = S.particles[S.particles.length - 1];
@@ -25144,6 +25882,9 @@ function loop(now) {
   if (typeof _drawF9EnemyTargetReticle === 'function') _drawF9EnemyTargetReticle();
   _drawF9SelectionRing();
   _drawF9SelectionBar();
+  // Solo info popup — TIK kai pasirinktas 1 unitas (velkamas, suskleidžiamas, ~30% transparent)
+  if (typeof _drawF9SelectionPanel === 'function') _drawF9SelectionPanel();
+  if (typeof _drawF9TouchButtons === 'function') _drawF9TouchButtons();
   if (typeof _drawF9HotkeyHint === 'function') _drawF9HotkeyHint();
   if (typeof window._kothRenderHud === 'function') window._kothRenderHud();
   _drawF9DragRect();
@@ -25210,10 +25951,13 @@ function loop(now) {
   }
   _drawUnitHoverOutline();
   if (typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
+  if (typeof _drawF9Shots === 'function') _drawF9Shots();
   drawForegroundDecorations();
   drawBarracksHarpoons('top');
   drawRonkeInfect();
   drawFog();
+  // VIRŠ fog'o — TEST GAMEPLAY portalo užrašas turi matytis visada (F1)
+  if (typeof _drawF1TestGameplayLabel === 'function') _drawF1TestGameplayLabel();
   drawBullets();
   drawHeroBullets();
   drawHeroBulletDeaths();
@@ -26355,14 +27099,19 @@ function _drawUnitHoverTooltip() {
 }
 
 function updateCamera() {
+  // F9 fullscreen guard kas frame'ą — startGame/kiti keliai gali perrašyti canvas dydį
+  // (pvz. canvas.height = ADV_CANVAS_H), šis sync'as atstato į lango dydį kai F9.
+  if (typeof _f9SyncCanvasSize === 'function') _f9SyncCanvasSize();
   const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const _now = performance.now();
   // CSS scale(CANVAS_ZOOM) + overflow:hidden wrapper → matoma tik centrinė canvas dalis.
   // Efektyvus viewport world coords'uose = canvas / ZOOM, centruojasi aplink canvas vidurį.
-  const vpW = advCanvasW / CANVAS_ZOOM, vpH = ADV_CANVAS_H / CANVAS_ZOOM;
+  const _camZm = (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn) ? 1 : CANVAS_ZOOM;
+  const _camH = (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn) ? canvas.height : ADV_CANVAS_H;
+  const vpW = advCanvasW / _camZm, vpH = _camH / _camZm;
   const vpOffsetX = (advCanvasW - vpW) / 2;
-  const vpOffsetY = (ADV_CANVAS_H - vpH) / 2;
+  const vpOffsetY = (_camH - vpH) / 2;
   const mapW = COLS * CELL, mapH = ROWS * CELL;
 
   let tx = S.cam.tx ?? S.cam.x;
@@ -26404,6 +27153,10 @@ function updateCamera() {
     if (gameMode === 'adventure' && f11LikeFloor() &&
         typeof _selectedAllyUnit !== 'undefined' && _selectedAllyUnit && _selectedAllyUnit.alive) {
       _focus = _selectedAllyUnit;
+    } else if (gameMode === 'adventure' && S.floor === 9 &&
+               window._f9Selected && window._f9Selected.alive && window._f9Selected.team !== 0) {
+      // F9: hero nematomas — kamera seka pirmą pasirinktą squad unit'ą (2026-06-12)
+      _focus = window._f9Selected;
     }
     const _fx = (_focus.px ?? _focus.rx ?? _focus.x);
     const _fy = (_focus.py ?? _focus.ry ?? _focus.y);
@@ -26429,6 +27182,21 @@ function updateCamera() {
   if (mapW < vpW && !_padX) tx = mapW / 2 - vpOffsetX - vpW / 2;
   if (mapH < vpH && !_padY) ty = mapH / 2 - vpOffsetY - vpH / 2;
 
+  // F9 fullscreen — KIETAS clamp [0..map-vp] + cam snap. Sena kamera galėjo likti ties
+  // -vpOffsetX (zoom eros riba) iš prieš-fullscreen būsenos arba manual-lock — be šito
+  // kairėje liktų juoda juosta už mapos krašto.
+  if (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn) {
+    const _maxTx = Math.max(0, mapW - vpW);
+    const _maxTy = Math.max(0, mapH - vpH);
+    tx = Math.max(0, Math.min(_maxTx, tx));
+    ty = Math.max(0, Math.min(_maxTy, ty));
+    if (!isFinite(tx)) tx = 0;
+    if (!isFinite(ty)) ty = 0;
+    // cam.x/y už ribų (arba NaN) — snap'inam iškart, ne per lerp
+    if (!isFinite(S.cam.x) || S.cam.x < -1 || S.cam.x > _maxTx + 1) S.cam.x = tx;
+    if (!isFinite(S.cam.y) || S.cam.y < -1 || S.cam.y > _maxTy + 1) S.cam.y = ty;
+  }
+
   S.cam.tx = tx;
   S.cam.ty = ty;
 
@@ -26447,8 +27215,8 @@ function updateCamera() {
 
 function clearCanvas() {
   ctx.fillStyle = gameMode === 'adventure' ? '#000000' : '#05050e';
-  const canvasH = gameMode === 'adventure' ? ADV_CANVAS_H : BOARD_H;
-  ctx.fillRect(0, 0, advCanvasW, canvasH);
+  // canvas.width/height — F9 fullscreen metu realus dydis (advCanvasW×848 nepadengtų viso lango)
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawLasers() {
@@ -26589,6 +27357,8 @@ const _shadowGradCache = new Map(); // id -> {gx,gy,tick,g}
 function drawShadows() {
   S.units.forEach(u => {
     if (S.phase === 'frozen' && S.clockSide !== u.team) return;
+    // F9: hero nematomas (žr. drawUnits skip) — šešėlis irgi nepiešiamas
+    if (S.floor === 9 && u.team === 0 && gameMode === 'adventure') return;
     const a = u.alive ? 0.13 : u.deathT * 0.13;
     if (a < 0.01) return;
     const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
@@ -26995,10 +27765,25 @@ function drawParticles() {
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(Math.round(p.x - p.size / 2), Math.round(p.y - p.size / 2), p.size, p.size);
       } else {
-        const w = p.size + (p.big ? 3 : 1);
-        const h = Math.max(1, Math.round(p.size * 0.6));
+        // Organiškas splat (ne kvadratas): plokščia elipsė + satelitiniai lašeliai.
+        // Forma deterministinė iš p.shade — nemirga tarp frame'ų.
+        const s = p.shade || 0;
+        const rw = (p.size + (p.big ? 3 : 1)) * (0.55 + s * 0.25);
+        const rh = Math.max(1, p.size * 0.34);
         ctx.fillStyle = `rgba(${Math.floor(r * 0.82)},${g},${b},${ctx.globalAlpha.toFixed(3)})`;
-        ctx.fillRect(Math.round(p.x - w / 2), Math.round(p.y), w, h);
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + rh, rw, rh, 0, 0, Math.PI * 2);
+        ctx.fill();
+        const a1 = s * Math.PI * 2;
+        ctx.beginPath();
+        ctx.ellipse(p.x + Math.cos(a1) * rw * 0.95, p.y + rh + Math.sin(a1) * rh * 1.3, rw * 0.4, rh * 0.62, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (p.big) {
+          const a2 = a1 + 2.4;
+          ctx.beginPath();
+          ctx.ellipse(p.x + Math.cos(a2) * rw * 1.25, p.y + rh + Math.sin(a2) * rh * 1.5, rw * 0.26, rh * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     } else if (p.type === 'blood_flash') {
       const k = 1 - p.life;
@@ -27057,10 +27842,19 @@ function drawF9BloodBurstOverlay() {
         ctx.fillStyle = 'rgba(255,96,76,0.42)';
         ctx.fillRect(Math.round(p.x - size / 2), Math.round(p.y - size / 2), Math.max(1, size - 2), 1);
       } else {
-        const w = Math.round((p.size || 3) + (p.big ? 2 : 1));
-        const h = Math.max(1, Math.round((p.size || 3) * 0.48));
+        // Organiškas splat (sinchronizuota su drawParticles landed variantu)
+        const s = p.shade || 0;
+        const sz0 = (p.size || 3);
+        const rw = (sz0 + (p.big ? 2 : 1)) * (0.55 + s * 0.25);
+        const rh = Math.max(1, sz0 * 0.3);
         ctx.fillStyle = `rgba(${Math.floor(r * 0.78)},${g},${b},${alpha.toFixed(3)})`;
-        ctx.fillRect(Math.round(p.x - w / 2), Math.round(p.y), w, h);
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + rh, rw, rh, 0, 0, Math.PI * 2);
+        ctx.fill();
+        const a1 = s * Math.PI * 2;
+        ctx.beginPath();
+        ctx.ellipse(p.x + Math.cos(a1) * rw * 0.95, p.y + rh + Math.sin(a1) * rh * 1.3, rw * 0.4, rh * 0.62, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
     } else if (p.type === 'blood_flash') {
       const life = Math.max(0, Math.min(1, p.life));
@@ -30629,6 +31423,9 @@ function drawUnits() {
 
 
     if (gameMode === 'adventure' && u.team === 0) {
+      // F9: hero (ronke2 su lazda) NErodomas — RTS arenoje kovoja tik squad'as,
+      // herojus lieka tik kaip nematomas logikos anchor'as (user request 2026-06-12).
+      if (S.floor === 9) { ctx.restore(); return; }
       if (u.isDying) {
         const elapsed = performance.now() - u.deathStart;
         const progress = Math.min(1, elapsed / 2400);
@@ -33033,6 +33830,59 @@ document.addEventListener('DOMContentLoaded', () => {
         window._f9DragJustEnded = false;
         return;
       }
+      // 0a0. MOBILE mygtukai — ALL / A-MOVE / STOP
+      if (_f9TouchBtnRects) {
+        for (const b of _f9TouchBtnRects) {
+          if (_cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h) {
+            if (b.id === 'all') {
+              const squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
+              if (squad.length) {
+                window._f9SelectedSet = squad;
+                window._f9Selected = squad[0];
+                if (typeof _f9SetToast === 'function') _f9SetToast('ALL (' + squad.length + ')');
+              }
+            } else if (b.id === 'amove') {
+              window._f9AMoveArm = !window._f9AMoveArm;
+              if (typeof _f9SetToast === 'function') {
+                _f9SetToast(window._f9AMoveArm ? 'A-MOVE: tap target point' : 'A-MOVE cancelled');
+              }
+            } else if (b.id === 'stop') {
+              const sel = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
+              for (const u of sel) {
+                if (typeof _f9ClearUnitOrder === 'function') _f9ClearUnitOrder(u);
+                u._f9Target = null;
+                u._f9Moving = false;
+              }
+              if (sel.length && typeof _f9SetToast === 'function') _f9SetToast('STOP (' + sel.length + ')');
+            }
+            return;
+          }
+        }
+      }
+      // 0a. Solo info popup — X (uždaryti) / toggle (▾/▸) / click ant panelės (swallow)
+      {
+        const ipr = window._f9InfoPanelRects;
+        if (ipr) {
+          if (ipr.close && _cmx >= ipr.close.x && _cmx <= ipr.close.x + ipr.close.w &&
+              _cmy >= ipr.close.y && _cmy <= ipr.close.y + ipr.close.h) {
+            const st = _f9InfoPanelState();
+            st.closed = true;   // grįžta su kitu selection veiksmu
+            window._f9InfoPanelRects = null;
+            return;
+          }
+          if (_cmx >= ipr.toggle.x && _cmx <= ipr.toggle.x + ipr.toggle.w &&
+              _cmy >= ipr.toggle.y && _cmy <= ipr.toggle.y + ipr.toggle.h) {
+            const st = _f9InfoPanelState();
+            st.collapsed = !st.collapsed;
+            _f9InfoPanelPersist();
+            return;
+          }
+          if (_cmx >= ipr.panel.x && _cmx <= ipr.panel.x + ipr.panel.w &&
+              _cmy >= ipr.panel.y && _cmy <= ipr.panel.y + ipr.panel.h) {
+            return;   // click ant panelės kūno — nepraleidžiam į žaidimą
+          }
+        }
+      }
       // 0. Armed A-MOVE (A klavišas) → šis click = attack-move komanda į tašką
       if (window._f9AMoveArm) {
         window._f9AMoveArm = false;
@@ -33062,13 +33912,14 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       }
+      // 1b. Selection panel click — IŠJUNGTA kartu su _drawF9SelectionPanel (2026-06-12)
       const hero = S.units.find(u => u.team === 0 && u.alive);
       // Default selection = commandable squad. Taip pirmas right-click klauso iš karto.
       if (!Array.isArray(window._f9SelectedSet)) window._f9SelectedSet = [];
       window._f9SelectedSet = window._f9SelectedSet.filter(u => u && u.alive);
       if (window._f9SelectedSet.length === 0) {
         const squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
-        window._f9SelectedSet = squad.length ? squad : (hero ? [hero] : []);
+        window._f9SelectedSet = squad;   // hero fallback pašalintas — jis nematomas (2026-06-12)
       }
       window._f9Selected = window._f9SelectedSet[0] || null;
 
@@ -33085,6 +33936,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const u of S.units) {
           if (!u || !u.alive) continue;
           if (typeof _f9IsAlly === 'function' && !_f9IsAlly(u)) continue; // skip enemies
+          if (u.team === 0) continue; // hero nematomas — neclickinamas (2026-06-12)
           const ux = (u.rx !== undefined) ? u.rx : u.x;
           const uy = (u.ry !== undefined) ? u.ry : u.y;
           const dx = tx - ux, dy = ty - uy;
@@ -33116,9 +33968,48 @@ document.addEventListener('DOMContentLoaded', () => {
         window._f9Selected = window._f9SelectedSet[0] || null;
         return;
       }
+      // 3a. MOBILE: telefone nėra right-click — tap ant priešo = ATTACK, ant žemės = MOVE
+      if (window._f9TouchInstalled) {
+        let tapEnemy = null;
+        {
+          let bestD = 0.6;
+          for (const en of S.units || []) {
+            if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+            const ex = (en.rx !== undefined) ? en.rx : en.x;
+            const ey = (en.ry !== undefined) ? en.ry : en.y;
+            const d = Math.hypot(tx - ex, ty - ey);
+            if (d < bestD) { bestD = d; tapEnemy = en; }
+          }
+        }
+        if (tapEnemy) {
+          _f9IssueAttackTargetCommand(_f9CommandableSelection(false), tapEnemy, performance.now());
+          return;
+        }
+        _f9IssueMoveCommand(_f9CommandableSelection(true), tx, ty);
+        return;
+      }
       // 3. Left-click empty ground = no-op. Movement is right-click only.
       // Tai nuima dviprasmybę: kairys pasirenka, dešinys komanduoja.
       return;
+    }
+    // ── F10 AUKSO KASYKLA (mine_1) — „TEST GAMEPLAY" portalas į F9 demo arena ──
+    if (gameMode === 'adventure' && S && S.floor === 10 && S.decorations) {
+      let _mineP = null;
+      for (const _mk in S.decorations) {
+        if (S.decorations[_mk] === 'mine_1') {
+          const _pp = _mk.split(',').map(Number);
+          _mineP = { y: _pp[0], x: _pp[1] };
+          break;
+        }
+      }
+      if (_mineP) {
+        const _cgx = Math.floor(mx / CELL), _cgy = Math.floor(my / CELL);
+        // Sprite aukštas — priimam click ant anchor celės, ±1 į šonus ir iki 2 celių virš
+        if (Math.abs(_cgx - _mineP.x) <= 1 && _cgy >= _mineP.y - 2 && _cgy <= _mineP.y + 1) {
+          if (typeof window.goToFloor === 'function') window.goToFloor(9);
+          return;
+        }
+      }
     }
     const inside = (b) => b && mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h;
     const insideScr = (b) => b && _cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h;

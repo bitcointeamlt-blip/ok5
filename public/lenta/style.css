@@ -17812,3 +17812,49 @@ kbd {
   animation: nftDeckWiggle .32s ease-in-out !important;
 }
 .nft-deck-toggle:active, .nft-deck-plus:active, .nft-deck-minus:active { transform: scale(.92) !important; }
+
+/* ── F9 RTS: kairė legacy panelė paslepiama (lieka tik floor-nav) ─────────
+   Vietoj jos canvas'e piešiama RTS selection panelė (žr. _drawF9SelectionPanel) */
+#screen-game.f9-rts #panel-p1 > *:not(#floor-nav) { display: none !important; }
+#screen-game.f9-rts #panel-p1 {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ── F9 RTS FULLSCREEN ────────────────────────────────────────────────────
+   Canvas vidinė rezoliucija JS'e nustatoma = lango dydžiui (1:1 px, be zoom)
+   → matosi daugiau pasaulio, sprite'ai pixel-perfect, jokio stretch.
+   Kairė panelė išimama iš flex flow (plūduriuoja tik floor-nav). */
+#screen-game.f9-rts #panel-p1 {
+  position: fixed !important;
+  left: 10px;
+  bottom: 10px;
+  z-index: 60;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+#screen-game.f9-rts .game-layout {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+#screen-game.f9-rts .canvas-wrap {
+  border: none !important;
+  padding: 0 !important;
+  transform: none !important;
+}
+#screen-game.f9-rts #canvas {
+  transform: none !important;
+}
+
+/* F9 fullscreen — jokių padding/margin tarpų aplink žaidimo plotą */
+#screen-game.f9-rts {
+  padding: 0 !important;
+  overflow: hidden;
+}
+#screen-game.f9-rts .canvas-wrap {
+  margin: 0 !important;
+}
