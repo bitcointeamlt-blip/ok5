@@ -10364,6 +10364,16 @@ kbd {
     width: 44px !important;
     height: 44px !important;
   }
+  /* Telefone: kolona su 7+ mygtukų per aukšta → paslepiam hint label'us (ikonos lieka) ir
+     sumažinam tarpą, kad VISI mygtukai (įsk. SWAP) tilptų ekrane. Sauga — scroll jei vis tiek ilga. */
+  .wui-pill-row {
+    gap: 12px !important;
+    max-height: calc(100dvh - 18px);
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .wui-pill-row::-webkit-scrollbar { width: 0; height: 0; }
+  .wui-castle-btn [class$="-hint"] { display: none !important; }
   .wui-dropdown {
     transform: translate(-50%, -50%) scale(1) !important;
     max-height: calc(100vh - 24px) !important;
