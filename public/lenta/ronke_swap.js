@@ -241,20 +241,30 @@
 
   window.openRonkeSwap = open;
 
-  // ─── Integracija į RONKE BANK: banko „⇄ SWAP" mygtukas atidaro šį popupą ───
-  // (RONKE badge visada matomas HUD'e → swap pasiekiamas ir telefone, ir desktop'e.)
+  // ─── RONKE BANK = SWAP ───
+  // RONKE badge (visada matomas HUD'e) atidaro SWAP TIESIAI. Banko deposit/withdraw pašalinti.
+  // game.js badge click rodo #ronke-bank (display:block) — perimam per observer'į: paslepiam ir
+  // atidarom swap. Taip vienu paspaudimu → swap, ir telefone, ir desktop'e (be mygtukų juostos).
   function _wireBankSwap() {
     var b = document.getElementById('rbk-swap');
-    if (!b || b._swapWired) return;
-    b._swapWired = true;
-    b.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var bank = document.getElementById('ronke-bank');
-      if (bank) bank.style.display = 'none';   // uždarom banko langą
-      open();
-    });
+    if (b && !b._swapWired) {
+      b._swapWired = true;
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var bk = document.getElementById('ronke-bank'); if (bk) bk.style.display = 'none';
+        open();
+      });
+    }
+    var bank = document.getElementById('ronke-bank');
+    if (bank && !bank._swapHijack && typeof MutationObserver === 'function') {
+      bank._swapHijack = true;
+      var mo = new MutationObserver(function () {
+        if (bank.style.display === 'block') { bank.style.display = 'none'; open(); }
+      });
+      mo.observe(bank, { attributes: true, attributeFilter: ['style'] });
+    }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wireBankSwap);
   else _wireBankSwap();
-  setTimeout(_wireBankSwap, 1500);   // saugiklis jei elementas atsiranda vėliau
+  setTimeout(_wireBankSwap, 1500);   // saugiklis jei elementai atsiranda vėliau
 })();

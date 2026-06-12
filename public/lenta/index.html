@@ -670,20 +670,22 @@
 
           <div id="p1-badge" class="action-badge" style="display:none"></div>
           <div id="kills-badge" style="display:none">KILLS <span id="kills-val">0</span></div>
-          <div id="ronke-badge" style="display:none" title="Open RONKE bank"><img class="rbk-ico" src="ronke.png" alt="" draggable="false"/>RONKE<span id="ronke-val">—</span></div>
+          <div id="ronke-badge" style="display:none" title="Swap RON / RONKE"><img class="rbk-ico" src="ronke.png" alt="" draggable="false"/>RONKE<span id="ronke-val">—</span></div>
           <div id="ronke-bank" style="display:none">
-            <div class="rbk-title">RONKE BANK</div>
-            <div class="rbk-row"><span class="rbk-row-lbl">WALLET</span><span class="rbk-row-val" id="rbk-wallet-val">—</span></div>
-            <div class="rbk-arrow" id="rbk-arrow"><span class="rbk-arrow-ico">⇅</span></div>
-            <div class="rbk-row"><span class="rbk-row-lbl">IN-GAME</span><span class="rbk-row-val" id="rbk-ingame-val">0</span></div>
-            <div class="rbk-amount-row">
-              <input type="number" id="rbk-amount" min="1" step="1" placeholder="Amount" />
+            <div class="rbk-title">SWAP</div>
+            <!-- DEPOSIT/WITHDRAW paslėpti (neveikė). Elementai lieka DOM'e, nes game.js juos naudoja. -->
+            <div class="rbk-legacy" style="display:none">
+              <div class="rbk-row"><span class="rbk-row-lbl">WALLET</span><span class="rbk-row-val" id="rbk-wallet-val">—</span></div>
+              <div class="rbk-arrow" id="rbk-arrow"><span class="rbk-arrow-ico">⇅</span></div>
+              <div class="rbk-row"><span class="rbk-row-lbl">IN-GAME</span><span class="rbk-row-val" id="rbk-ingame-val">0</span></div>
+              <div class="rbk-amount-row">
+                <input type="number" id="rbk-amount" min="1" step="1" placeholder="Amount" />
+              </div>
+              <div class="rbk-btn-row">
+                <button class="rbk-btn rbk-btn-dep" id="rbk-deposit" title="Deposit from wallet to game">▼ DEPOSIT</button>
+                <button class="rbk-btn rbk-btn-wd" id="rbk-withdraw" title="Withdraw from game to wallet">▲ WITHDRAW</button>
+              </div>
             </div>
-            <div class="rbk-btn-row">
-              <button class="rbk-btn rbk-btn-dep" id="rbk-deposit" title="Deposit from wallet to game">▼ DEPOSIT</button>
-              <button class="rbk-btn rbk-btn-wd" id="rbk-withdraw" title="Withdraw from game to wallet">▲ WITHDRAW</button>
-            </div>
-            <div class="rbk-swap-sep">— or —</div>
             <button class="rbk-btn rbk-swap-cta" id="rbk-swap" title="Swap RON ↔ RONKE on-chain (Katana DEX)">⇄ SWAP RON ↔ RONKE</button>
             <div class="rbk-msg" id="rbk-msg"></div>
             <button class="rbk-close" id="rbk-close">CLOSE</button>
@@ -2138,7 +2140,7 @@
   <script src="hog_rider_popup.js?v=hog53forceover"></script>
   <script src="leaderboard.js?v=lb19rp"></script>
   <script src="ronke_faucet.js?v=rf_mobilepos_20260612"></script>
-  <script src="ronke_swap.js?v=swap5bank_20260612"></script>
+  <script src="ronke_swap.js?v=swap6bankonly_20260612"></script>
   <script>
   // ── AUTO-RELOAD kai deployinama nauja versija ───────────────────
   // Kad žaidėjams (ypač mobiliems/Chromebook) NEREIKĖTŲ hard-refresh.
