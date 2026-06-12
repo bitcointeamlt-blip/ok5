@@ -25,7 +25,7 @@
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-pewpew-btn" id="wui-pewpew-btn" title="PewPew Room (F12)" style="display:none">PEWPEW</button>
         <button type="button" class="wui-castle-btn wui-trophy-btn" id="wui-trophy-btn" title="Trophies" style="display:none">TROPHIES</button>
-        <button type="button" class="wui-castle-btn wui-swap-btn" id="wui-swap-btn" title="Swap RON / RONKE" style="display:none">SWAP</button>
+        <button type="button" class="wui-castle-btn wui-swap-btn" id="wui-swap-btn" title="Swap RON / RONKE" style="display:none"><span class="wui-swap-inner"><span class="wui-swap-coins"><img src="assets_tiny/ronin_logo.png" alt="" draggable="false"/><img src="assets_tiny/ronke_logo.png" alt="" draggable="false"/></span><span class="wui-swap-label">⇄ SWAP</span></span></button>
         <button type="button" class="wui-castle-btn wui-home-btn" id="wui-home-btn" title="Home (Floor 10)" style="display:none"></button>
       </div>
       <div class="wui-dropdown" id="wui-dropdown" style="display:none"></div>
@@ -473,15 +473,10 @@
       trophyBtnEl.style.border = '2px solid #8a5a18';
     }
 
-    // Swap button — RON ↔ RONKE (PewPewSwap). Po Trophies, tos pačios sąlygos (adventure floors)
+    // Swap button — RON ↔ RONKE (PewPewSwap). Po Trophies, tos pačios sąlygos (adventure floors).
+    // Stilius CSS'e (.wui-swap-btn) — čia tik matomumas.
     const swapBtnEl = pillEl.querySelector('#wui-swap-btn');
-    if (swapBtnEl) {
-      swapBtnEl.style.display = inAdv ? 'flex' : 'none';
-      swapBtnEl.style.background = '#4a9da6';
-      swapBtnEl.style.color = '#fff';
-      swapBtnEl.style.fontWeight = '700';
-      swapBtnEl.style.border = '2px solid #2f6e75';
-    }
+    if (swapBtnEl) swapBtnEl.style.display = inAdv ? 'flex' : 'none';
 
     // Wallet — user-provided pixel-art Ronin wallet PNG (idle = closed, active = with coins)
     const walletSrc = st.connected ? 'assets_tiny/wallet_ronin_active.png' : 'assets_tiny/wallet_ronin.png';

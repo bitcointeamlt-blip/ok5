@@ -13209,6 +13209,55 @@ kbd {
   transform: scale(1.08);
 }
 
+/* ── SWAP button (RON ↔ RONKE) — coin pair + label, teal pixel style ── */
+.wui-swap-btn {
+  background: linear-gradient(180deg, #5cc0cb, #357a82) !important;
+  border: 3px solid #2f6e75 !important;
+  box-shadow:
+    0 0 0 2px #173a3d,
+    3px 4px 0 #0e2426,
+    inset 0 2px 0 rgba(255,255,255,0.25),
+    inset 0 -2px 0 rgba(0,0,0,0.30) !important;
+}
+.wui-swap-btn:hover {
+  border-color: #aef0f6 !important;
+  box-shadow:
+    0 0 0 2px #173a3d,
+    4px 5px 0 #0e2426,
+    0 0 16px rgba(120,230,240,0.55),
+    inset 0 2px 0 rgba(255,255,255,0.3) !important;
+  transform: scale(1.05);
+}
+.wui-swap-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.wui-swap-coins { display: flex; align-items: center; }
+.wui-swap-coins img {
+  width: 28px; height: 28px;
+  image-rendering: pixelated;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.18);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.45);
+}
+.wui-swap-coins img:nth-child(2) { margin-left: -9px; border: 1px solid #357a82; }
+.wui-swap-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 1px 1px 0 #0e2426;
+  letter-spacing: .5px;
+}
+@media (max-width: 640px) {
+  .wui-swap-coins img { width: 22px; height: 22px; }
+  .wui-swap-label { font-size: 6px; }
+}
+
 /* ── Trophy Mint Pricing Display ───────────────────────────────── */
 .trophy-pricing {
   background: linear-gradient(180deg, rgba(74,157,166,0.1) 0%, rgba(74,157,166,0.03) 100%);
