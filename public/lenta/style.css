@@ -10357,18 +10357,18 @@ kbd {
     right: 10px !important;
   }
   .wui-castle-btn {
-    width: 58px !important;
-    height: 58px !important;
+    width: 50px !important;
+    height: 50px !important;
   }
   .wui-castle-img {
-    width: 44px !important;
-    height: 44px !important;
+    width: 38px !important;
+    height: 38px !important;
   }
-  /* Telefone: kolona su 7+ mygtukų per aukšta → paslepiam hint label'us (ikonos lieka) ir
-     sumažinam tarpą, kad VISI mygtukai (įsk. SWAP) tilptų ekrane. Sauga — scroll jei vis tiek ilga. */
+  /* Telefone: kolona su 7+ mygtukų per aukšta → paslepiam hint label'us (ikonos lieka), mažesni
+     mygtukai + mažas tarpas, kad VISI (įsk. SWAP) tilptų ekrane be scroll. Sauga — scroll jei vis tiek. */
   .wui-pill-row {
-    gap: 12px !important;
-    max-height: calc(100dvh - 18px);
+    gap: 8px !important;
+    max-height: calc(100dvh - 16px);
     overflow-y: auto;
     scrollbar-width: none;
   }
