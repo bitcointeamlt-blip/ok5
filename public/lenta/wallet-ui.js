@@ -25,6 +25,7 @@
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-pewpew-btn" id="wui-pewpew-btn" title="PewPew Room (F12)" style="display:none">PEWPEW</button>
         <button type="button" class="wui-castle-btn wui-trophy-btn" id="wui-trophy-btn" title="Trophies" style="display:none">TROPHIES</button>
+        <button type="button" class="wui-castle-btn wui-swap-btn" id="wui-swap-btn" title="Swap RON / RONKE" style="display:none">SWAP</button>
         <button type="button" class="wui-castle-btn wui-home-btn" id="wui-home-btn" title="Home (Floor 10)" style="display:none"></button>
       </div>
       <div class="wui-dropdown" id="wui-dropdown" style="display:none"></div>
@@ -68,6 +69,12 @@
     trophyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof window.openTrophyPanel === 'function') window.openTrophyPanel();
+    });
+
+    const swapBtn = pillEl.querySelector('#wui-swap-btn');
+    swapBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof window.openRonkeSwap === 'function') window.openRonkeSwap();
     });
 
     // ── Collapsible menu toggle (mobiliam mygtukai užstodavo žaidimo vaizdą) ──
@@ -464,6 +471,16 @@
       trophyBtnEl.style.color = '#1a1208';
       trophyBtnEl.style.fontWeight = '700';
       trophyBtnEl.style.border = '2px solid #8a5a18';
+    }
+
+    // Swap button — RON ↔ RONKE (PewPewSwap). Po Trophies, tos pačios sąlygos (adventure floors)
+    const swapBtnEl = pillEl.querySelector('#wui-swap-btn');
+    if (swapBtnEl) {
+      swapBtnEl.style.display = inAdv ? 'flex' : 'none';
+      swapBtnEl.style.background = '#4a9da6';
+      swapBtnEl.style.color = '#fff';
+      swapBtnEl.style.fontWeight = '700';
+      swapBtnEl.style.border = '2px solid #2f6e75';
     }
 
     // Wallet — user-provided pixel-art Ronin wallet PNG (idle = closed, active = with coins)
