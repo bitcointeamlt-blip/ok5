@@ -4246,6 +4246,91 @@ if (typeof setInterval !== 'undefined') {
   }, 250);
 }
 
+// ── F9 RTS hotkeys: A = attack-move arm, S = stop, Ctrl+1..5 = grupės, 1..5 = recall ──
+// (2x tap ant grupės skaičiaus = kamera centruojasi į grupę; Esc = atšaukia armed A-move)
+window._f9CtrlGroups = window._f9CtrlGroups || {};
+function _f9SetToast(text) {
+  window._f9Toast = { text, until: performance.now() + 1500 };
+}
+document.addEventListener('keydown', (e) => {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  if (typeof gameMode === 'undefined' || gameMode !== 'adventure') return;
+  if (S.jumpMode) return;   // jump mode naudoja A/S kryptims — netrukdom
+  const _tag = e.target && e.target.tagName;
+  if (_tag === 'INPUT' || _tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+  // A — attack-move arm (kitas kairys click = žygio taškas).
+  // F9'e A/S klavišai REZERVUOTI RTS komandoms (legacy WASD hero judėjimas — tik W/D).
+  if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    window._f9AMoveArm = true;
+    _f9SetToast('A-MOVE: pasirink tikslo tašką (Esc atšaukia)');
+    e.preventDefault();
+    e.stopImmediatePropagation();   // legacy KEYMAP (KeyA = hero move) negauna evento
+    return;
+  }
+  if (e.key === 'Escape' && window._f9AMoveArm) {
+    window._f9AMoveArm = false;
+    _f9SetToast('A-MOVE atšaukta');
+    e.stopImmediatePropagation();
+    return;
+  }
+  // S — STOP: nutraukia visas pasirinktų unitų komandas
+  if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const sel = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
+    for (const u of sel) {
+      if (typeof _f9ClearUnitOrder === 'function') _f9ClearUnitOrder(u);
+      u._f9Target = null;
+      u._f9Moving = false;
+    }
+    if (sel.length) _f9SetToast('STOP (' + sel.length + ')');
+    e.preventDefault();
+    e.stopImmediatePropagation();   // legacy KEYMAP (KeyS = hero move) negauna evento
+    return;
+  }
+  // Ctrl+1..5 — priskirti grupę; 1..5 — pasirinkti grupę (2x tap = centruoti kamerą)
+  const _dg = e.code && /^Digit([1-5])$/.exec(e.code);
+  if (_dg) {
+    const g = _dg[1];
+    if (e.ctrlKey || e.metaKey) {
+      const sel = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [])
+        .filter(u => u && u.alive && typeof _f9IsAlly === 'function' && _f9IsAlly(u));
+      if (sel.length) {
+        window._f9CtrlGroups[g] = sel.slice();
+        _f9SetToast('GRUPĖ ' + g + ' išsaugota (' + sel.length + ')');
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    const grp = (window._f9CtrlGroups[g] || []).filter(u => u && u.alive);
+    if (grp.length) {
+      window._f9CtrlGroups[g] = grp;
+      const _nowK = performance.now();
+      const _dblTap = (window._f9LastGroupKey === g && _nowK - (window._f9LastGroupKeyAt || 0) < 420);
+      window._f9LastGroupKey = g;
+      window._f9LastGroupKeyAt = _nowK;
+      window._f9SelectedSet = grp.slice();
+      window._f9Selected = grp[0];
+      if (_dblTap && S.cam && typeof canvas !== 'undefined' && canvas) {
+        // 2x tap — kamera šoka prie grupės centro (SC2 pattern)
+        let cgx = 0, cgy = 0;
+        for (const u of grp) {
+          cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+          cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+        }
+        cgx /= grp.length; cgy /= grp.length;
+        S.cam.tx = cgx - canvas.width / 2;
+        S.cam.ty = cgy - canvas.height / 2;
+        S._camManualLock = true;   // edge-pan/H grąžina valdymą kaip įprasta
+      } else {
+        _f9SetToast('GRUPĖ ' + g + ' (' + grp.length + ')');
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+    return;
+  }
+}, true);
+
 // F9 click destination marker — kompaktinis sleek RTS feedback (Warcraft 3 / SC2 stilius)
 // Greitas: outer ring contracts (~250ms) + inner dot pulses + soft glow halo
 function _drawF9ClickMarkers() {
@@ -4256,11 +4341,12 @@ function _drawF9ClickMarkers() {
   const ARRIVED_LIFE = 520;   // burst animation duration after arrival
   for (let i = arr.length - 1; i >= 0; i--) {
     const m = arr[i];
-    const isAttack = !!m.isAttackMarker;
-    const markerRgb = isAttack ? [255, 110, 90] : [140, 255, 180];
-    const markerRgbLight = isAttack ? [255, 210, 170] : [180, 255, 200];
-    const markerRgbHot = isAttack ? [255, 245, 210] : [230, 255, 240];
-    const markerLabel = isAttack ? 'ATTACK' : 'MOVE';
+    const isAttack = m.isAttackMarker === true;
+    const isAMove = m.isAttackMarker === 'amove';
+    const markerRgb = isAttack ? [255, 110, 90] : isAMove ? [255, 185, 70] : [140, 255, 180];
+    const markerRgbLight = isAttack ? [255, 210, 170] : isAMove ? [255, 222, 140] : [180, 255, 200];
+    const markerRgbHot = isAttack ? [255, 245, 210] : isAMove ? [255, 246, 215] : [230, 255, 240];
+    const markerLabel = isAttack ? 'ATTACK' : isAMove ? 'A-MOVE' : 'MOVE';
 
     // Check if any assigned unit is still heading to this marker
     let stillHeading = false;
@@ -4419,6 +4505,130 @@ function _drawF9ClickMarkers() {
 
     ctx.restore();
   }
+}
+
+// F9 spawn telegraph — raudonas pulsuojantis žiedas + "!" spawn vietoje prieš priešui
+// materializuojantis (žaidėjas mato IŠ KUR ateis banga; fairness pattern iš tower-defense/RTS).
+function _drawF9SpawnWarnings() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const arr = window._f9PendingSpawns;
+  if (!arr || !arr.length) return;
+  const now = performance.now();
+  ctx.save();
+  for (const p of arr) {
+    // k: 0 (ką tik įspėta) → 1 (tuoj materializuosis)
+    const k = Math.max(0, Math.min(1, 1 - (p.at - now) / _F9_SPAWN_WARN_MS));
+    const cx = (p.sx + 0.5) * CELL;
+    const cy = (p.sy + 0.5) * CELL;
+    const pulse = (Math.sin(now * 0.02) + 1) * 0.5;
+    const r = CELL * (0.55 - k * 0.22);
+    ctx.strokeStyle = `rgba(255, 70, 60, ${(0.35 + k * 0.40 + pulse * 0.15).toFixed(3)})`;
+    ctx.lineWidth = 1.5 + k * 1.3;
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = -(now * 0.03) % 9;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = `rgba(255, 90, 70, ${(0.70 + pulse * 0.30).toFixed(3)})`;
+    ctx.font = 'bold ' + Math.round(CELL * 0.34) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', cx, cy - CELL * 0.38);
+  }
+  ctx.restore();
+}
+
+// F9 damaged-only HP bars — juosta virš galvos rodoma TIK kai unit'as sužeistas ir
+// neseniai gavo smūgį (fade-out po _F9_HPBAR_SHOW_MS). Pilno HP unit'ai — niekada.
+// Kompromisas tarp "be barų" (švarus vaizdas) ir combat skaitomumo (WC3/Mindustry pattern).
+// Režimai: 'off' (kaip anksčiau) | 'damaged' (default) | 'always' (visi sužeisti, be fade).
+const _F9_HPBAR_MODE = 'damaged';
+const _F9_HPBAR_SHOW_MS = 2600;
+const _F9_HPBAR_FADE_MS = 600;
+function _drawF9UnitHpBars() {
+  if (_F9_HPBAR_MODE === 'off') return;
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !Array.isArray(S.units)) return;
+  const now = performance.now();
+  ctx.save();
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    if (!_f9IsAlly(u) && !_f9IsEnemy(u)) continue;
+    const maxHp = u.maxHp || 1;
+    if ((u.hp ?? maxHp) >= maxHp) continue;   // pilnas HP — nerodom
+    let alpha = 1;
+    if (_F9_HPBAR_MODE === 'damaged') {
+      const since = now - (u._f9LastHitAt || 0);
+      if (since > _F9_HPBAR_SHOW_MS) continue;
+      if (since > _F9_HPBAR_SHOW_MS - _F9_HPBAR_FADE_MS) {
+        alpha = (_F9_HPBAR_SHOW_MS - since) / _F9_HPBAR_FADE_MS;
+      }
+    }
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    const cx = (ux + 0.5) * CELL;
+    // Feet anchor (cell bottom) − sprite aukštis ≈ virš galvos
+    const topY = (uy + 1) * CELL - CELL * 2.05;
+    const w = CELL * 0.78, h = 3.5;
+    const frac = Math.max(0, Math.min(1, (u.hp || 0) / maxHp));
+    const isEn = _f9IsEnemy(u);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(0,0,0,0.66)';
+    ctx.fillRect(cx - w / 2 - 1, topY - 1, w + 2, h + 2);
+    ctx.fillStyle = isEn ? '#e85d5d' : (frac > 0.5 ? '#7ec77f' : frac > 0.25 ? '#ffcf5c' : '#e85d5d');
+    ctx.fillRect(cx - w / 2, topY, w * frac, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.30)';
+    ctx.fillRect(cx - w / 2, topY, w * frac, 1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// F9 hotkey hint + toast + armed A-move banner (screen-space)
+function _drawF9HotkeyHint() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  if (typeof ctx === 'undefined' || !ctx || typeof canvas === 'undefined' || !canvas) return;
+  const now = performance.now();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // 1) Armed A-move banner — ryškus indikatorius viršuj centre
+  if (window._f9AMoveArm) {
+    const txt = '⚔ A-MOVE — spausk kairį click į tikslą (Esc atšaukia)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    const tw = ctx.measureText(txt).width;
+    const bx = (canvas.width - tw) / 2 - 12, by = 64, bw = tw + 24, bh = 26;
+    const pulse = (Math.sin(now * 0.008) + 1) * 0.5;
+    ctx.fillStyle = 'rgba(30, 20, 10, 0.88)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = `rgba(255, 185, 70, ${(0.65 + pulse * 0.35).toFixed(3)})`;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = '#ffb946';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, canvas.width / 2, by + bh / 2 + 1);
+  }
+  // 2) Toast (komandų feedback — STOP / GRUPĖ N / A-MOVE ...)
+  const t = window._f9Toast;
+  if (t && now < t.until) {
+    const fadeA = Math.min(1, (t.until - now) / 320);
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const ty = canvas.height - 112;
+    ctx.fillStyle = `rgba(0, 0, 0, ${(0.55 * fadeA).toFixed(3)})`;
+    const tw2 = ctx.measureText(t.text).width;
+    ctx.fillRect(canvas.width / 2 - tw2 / 2 - 10, ty - 11, tw2 + 20, 22);
+    ctx.fillStyle = `rgba(245, 230, 195, ${fadeA.toFixed(3)})`;
+    ctx.fillText(t.text, canvas.width / 2, ty);
+  }
+  // 3) Pastovus hotkey hint — apačioj dešinėj, neįkyrus
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
+  ctx.fillText('A attack-move · S stop · ⇧+RMB eilė · Ctrl+1-5 grupės · 2×click tipas', canvas.width - 14, canvas.height - 8);
+  ctx.restore();
 }
 
 // F9 DEBUG OVERLAY — vizualizuoja pozicijas, anchor'us, hitbox'us, attack zonas.
@@ -5048,6 +5258,8 @@ function _f9ClearUnitOrder(u) {
   u._f9EngageSideTgt = null;
   u._f9TargetUnit = null;
   u._f9Command = 'move';
+  u._f9AMove = null;
+  u._f9Queue = null;
   if (u.utype === 'pigronke') u._f9ActionLockUntil = 0;
 }
 
@@ -5058,7 +5270,8 @@ function _f9PushClickMarker(tx, ty, units, isAttackMarker) {
     born: performance.now(),
     units: Array.isArray(units) ? units.slice() : [],
     arrivedAt: null,
-    isAttackMarker: !!isAttackMarker,
+    // true = attack, 'amove' = attack-move, false = move (spalvų kodai BAR-style)
+    isAttackMarker: isAttackMarker === 'amove' ? 'amove' : !!isAttackMarker,
   });
   while (window._f9ClickMarkers.length > 8) window._f9ClickMarkers.shift();
 }
@@ -5091,6 +5304,71 @@ function _f9IssueMoveCommand(units, tx, ty) {
   return moved.length > 0;
 }
 
+// ── ATTACK-MOVE (SC2/BAR "Fight" komanda): judėk į tašką, bet pakeliui auto-engage
+// priešus detect range'e; nukovus — tęsk kelionę iki galutinio taško. ──
+function _f9IssueAttackMoveCommand(units, tx, ty) {
+  if (!Array.isArray(units) || !units.length) return false;
+  let cX = 0, cY = 0, n = 0;
+  for (const u of units) {
+    if (!u || !u.alive || !_f9IsAlly(u)) continue;
+    cX += (u.rx !== undefined) ? u.rx : u.x;
+    cY += (u.ry !== undefined) ? u.ry : u.y;
+    n++;
+  }
+  if (!n) return false;
+  cX /= n; cY /= n;
+  const moved = [];
+  for (const u of units) {
+    if (!u || !u.alive || !_f9IsAlly(u)) continue;
+    _f9ClearUnitOrder(u);
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    let utx = Math.max(0.2, Math.min(COLS - 1.2, tx + (ux - cX)));
+    let uty = Math.max(0.2, Math.min(ROWS - 1.2, ty + (uy - cY)));
+    u._f9Target = { tx: utx, ty: uty };
+    u._f9AMove = { tx: utx, ty: uty };   // asmeninis formacijos slot'as — resume po kovos
+    moved.push(u);
+  }
+  if (moved.length) _f9PushClickMarker(tx, ty, moved, 'amove');
+  return moved.length > 0;
+}
+
+// ── SHIFT komandų eilė: jei unit'as jau vykdo komandą — waypoint'as dedamas į eilę,
+// kitaip vykdomas iškart. amove=true → eilės taškas bus attack-move. ──
+function _f9QueueMoveCommand(units, tx, ty, amove) {
+  if (!Array.isArray(units) || !units.length) return false;
+  let cX = 0, cY = 0, n = 0;
+  for (const u of units) {
+    if (!u || !u.alive || !_f9IsAlly(u)) continue;
+    cX += (u.rx !== undefined) ? u.rx : u.x;
+    cY += (u.ry !== undefined) ? u.ry : u.y;
+    n++;
+  }
+  if (!n) return false;
+  cX /= n; cY /= n;
+  const queued = [];
+  for (const u of units) {
+    if (!u || !u.alive || !_f9IsAlly(u)) continue;
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    const utx = Math.max(0.2, Math.min(COLS - 1.2, tx + (ux - cX)));
+    const uty = Math.max(0.2, Math.min(ROWS - 1.2, ty + (uy - cY)));
+    const busy = !!(u._f9Target || (u._f9EngageTarget && u._f9EngageTarget.alive) ||
+                    (u._f9Queue && u._f9Queue.length));
+    if (busy) {
+      if (!Array.isArray(u._f9Queue)) u._f9Queue = [];
+      if (u._f9Queue.length < 12) u._f9Queue.push({ tx: utx, ty: uty, amove: !!amove });
+    } else {
+      _f9ClearUnitOrder(u);
+      u._f9Target = { tx: utx, ty: uty };
+      if (amove) u._f9AMove = { tx: utx, ty: uty };
+    }
+    queued.push(u);
+  }
+  if (queued.length) _f9PushClickMarker(tx, ty, queued, amove ? 'amove' : false);
+  return queued.length > 0;
+}
+
 function _f9IssueAttackTargetCommand(units, enemy, now) {
   if (!enemy || !enemy.alive || !_f9IsEnemy(enemy)) return false;
   const attackers = (Array.isArray(units) ? units : [])
@@ -5106,6 +5384,8 @@ function _f9IssueAttackTargetCommand(units, enemy, now) {
     u._f9EngageTarget = enemy;
     u._f9AutoEngage = false;
     u._f9ReturnTarget = null;
+    u._f9AMove = null;
+    u._f9Queue = null;
     u._f9EngageSlotIdx = i;
     u._f9EngageSlotCount = n;
     u._f9LastRepath = 0;
@@ -5258,6 +5538,16 @@ function _updateF9SmoothMove(now) {
       u.y = Math.floor(t.ty + 0.5);
       u._f9Target = null;
       u._f9Moving = false;
+      // A-move galutinis taškas pasiektas — režimas baigtas
+      if (u._f9AMove && Math.abs(t.tx - u._f9AMove.tx) < 0.02 && Math.abs(t.ty - u._f9AMove.ty) < 0.02) {
+        u._f9AMove = null;
+      }
+      // SHIFT eilė — paimam kitą waypoint'ą
+      if (Array.isArray(u._f9Queue) && u._f9Queue.length) {
+        const nxt = u._f9Queue.shift();
+        u._f9Target = { tx: nxt.tx, ty: nxt.ty };
+        if (nxt.amove) u._f9AMove = { tx: nxt.tx, ty: nxt.ty };
+      }
       continue;
     }
     u._f9Moving = true;
@@ -5349,6 +5639,7 @@ function _f9EnemyHitDelay(e) {
 function _spawnF9Enemies(hero) {
   if (!hero || typeof getEditorEnemyArchetype !== 'function' || typeof mkUnit !== 'function') return;
   _f9Stats = { kills: 0, lost: 0 };
+  window._f9PendingSpawns = [];   // floor re-entry — senų telegraph'ų nelieka
   _f9LastEnemyRespawn = performance.now();
   const _occ = new Set();
   for (const u of S.units || []) {
@@ -5421,6 +5712,7 @@ function _f9DealDmg(target, dmg, attacker) {
   const hitY = (typeof target.ry === 'number') ? target.ry : target.y;
   target.hp = Math.max(0, (target.hp || 0) - dmg);
   target.hitFlash = 1;
+  target._f9LastHitAt = performance.now();   // damaged-only HP bar fade timer
   if (typeof spawnDmgNumber === 'function') {
     // taken = žala player unitui (team 0) → raudona; kitaip priešas gauna → balta
     const _tk = target.team === 0 ? 'taken' : 'normal';
@@ -5458,10 +5750,26 @@ function _f9DealDmg(target, dmg, attacker) {
     const deathX = (typeof target.rx === 'number') ? target.rx : target.x;
     const deathY = (typeof target.ry === 'number') ? target.ry : target.y;
     target.alive = false;
+    target._f9DiedAt = performance.now();   // corpse sweep timer
     if (typeof spawnDeath === 'function') {
       try { spawnDeath(deathX, deathY, _f9IsEnemy(target) ? '#ff3333' : '#ffffff'); } catch (_) {}
     }
   }
+}
+
+// F9 ranged hit helper: randa artimiausią gyvą F9 priešą prie taško (cell coords).
+// Smooth judantys taikiniai išslysta iš tikslaus cell'o per projektilo skrydį,
+// todėl ieškom spinduliu, ne exact cell match'u (kitaip ranged "whiff'ina" be priežasties).
+function _f9FindEnemyNear(cellX, cellY, radius) {
+  let best = null, bestD = radius;
+  for (const u of S.units || []) {
+    if (!u || !u.alive || !_f9IsEnemy(u)) continue;
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    const d = Math.hypot(cellX - ux, cellY - uy);
+    if (d < bestD) { bestD = d; best = u; }
+  }
+  return best;
 }
 
 // Per-utype attack range/cooldown (cells / ms) ally auto-attack'ui
@@ -5657,8 +5965,8 @@ function _updateF9AllyAutoAcquire(now) {
     if (ally._f9EngageTarget && ally._f9EngageTarget.alive) continue;
     if (ally._f9EngageTarget && !ally._f9EngageTarget.alive) ally._f9EngageTarget = null;
     // Player'io komanda eigoje — respektuojam, nepertraukiam su auto-engage.
-    // Ally juda į player'io nustatytą tašką → palauk kol pasieks (ar pats pasitiks priešą).
-    if (ally._f9Target) continue;
+    // IŠIMTIS: A-move (attack-move) — judėdamas SKENUOJA ir engage'ina pakeliui.
+    if (ally._f9Target && !ally._f9AMove) continue;
     const detectR = _F9_ALLY_DETECT[ally.utype] || 4;
     const ax = (ally.rx !== undefined) ? ally.rx : ally.x;
     const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
@@ -5672,7 +5980,12 @@ function _updateF9AllyAutoAcquire(now) {
     }
     if (nearest) {
       // Auto-engage — _updateF9AllyEngagement nukreips judėjimą į attack pozicija
-      if (ally.utype === 'pigronke') {
+      if (ally._f9AMove) {
+        // A-move: po kovos grįžta prie SAVO formacijos slot'o ir tęsia žygį
+        ally._f9AutoEngage = true;
+        ally._f9ReturnTarget = { tx: ally._f9AMove.tx, ty: ally._f9AMove.ty };
+        ally._f9Target = null;   // engagement perima judėjimą
+      } else if (ally.utype === 'pigronke') {
         const homeX = (ally.rx !== undefined) ? ally.rx : ally.x;
         const homeY = (ally.ry !== undefined) ? ally.ry : ally.y;
         ally._f9AutoEngage = true;
@@ -5696,7 +6009,8 @@ function _updateF9AllyEngagement(now) {
     const tgt = ally._f9EngageTarget;
     if (!tgt || !tgt.alive) {
       ally._f9EngageTarget = null;
-      if (ally.utype === 'pigronke' && ally._f9AutoEngage && ally._f9ReturnTarget && !ally._f9Target) {
+      // Resume po kovos: A-move unit'ai (visi tipai) + pigronke auto-engage grįžta prie maršruto
+      if (ally._f9AutoEngage && ally._f9ReturnTarget && !ally._f9Target) {
         ally._f9Target = { tx: ally._f9ReturnTarget.tx, ty: ally._f9ReturnTarget.ty };
       }
       ally._f9AutoEngage = false;
@@ -5983,17 +6297,60 @@ function _f9CheckOutcome() {
 
 // Respawn — kas _F9_ENEMY_RESPAWN_MS pridedam naujus enemies, jei mažiau nei MAX_ALIVE.
 // Tai užtikrina kovų tęstinumą testavimui (kad pigronke kovotų nuolatos, ne pirmas 6 enemies).
+// Spawn telegraph: priešas materializuojasi po _F9_SPAWN_WARN_MS — žaidėjas mato
+// raudoną įspėjimo žiedą spawn vietoje PRIEŠ atsirandant (fairness/readability, RTS standartas).
+const _F9_SPAWN_WARN_MS = 750;
+let _f9LastCorpseSweep = 0;
+
+function _f9TickPendingSpawns(now) {
+  const arr = window._f9PendingSpawns;
+  if (!arr || !arr.length) return;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const p = arr[i];
+    if (now < p.at) continue;
+    arr.splice(i, 1);
+    if (_f9GameOverShown) continue;
+    const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(p.utype) : null;
+    if (!archetype || typeof mkUnit !== 'function') continue;
+    const id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (300000 + Math.floor(Math.random() * 100000));
+    const u = mkUnit(id, 1, p.sx, p.sy, 1, archetype);
+    u._f9Enemy = true;
+    u.isEditorEnemy = false;
+    u.stack = 1;
+    u.rx = p.sx; u.ry = p.sy;
+    u._f9LastEnemyAttack = 0;
+    u._f9LastRepath = 0;
+    S.units.push(u);
+  }
+}
+
 function _updateF9EnemyRespawn(now) {
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  // Pending telegraph'ai materializuojami kas frame (pigus tikrinimas)
+  _f9TickPendingSpawns(now);
+  // Corpse sweep — mirę F9 unit'ai (death anim seniai baigta) šalinami, kad S.units
+  // neaugtų be ribų per ilgą sesiją (respawn churn). Hero (team 0) niekada nešalinamas.
+  if (now - _f9LastCorpseSweep > 5000) {
+    _f9LastCorpseSweep = now;
+    const _cutoff = now - 9000;
+    let _hasOld = false;
+    for (const u of S.units) {
+      if (u && !u.alive && u.team !== 0 && u._f9DiedAt && u._f9DiedAt < _cutoff) { _hasOld = true; break; }
+    }
+    if (_hasOld) {
+      S.units = S.units.filter(u => !(u && !u.alive && u.team !== 0 && u._f9DiedAt && u._f9DiedAt < _cutoff));
+    }
+  }
   if (window._KOTH && window._KOTH.active) return;   // KotH valdo bangų spawn'ą pats
   if (_f9GameOverShown) return;
   if (now - _f9LastEnemyRespawn < _F9_ENEMY_RESPAWN_MS) return;
   _f9LastEnemyRespawn = now;
-  const aliveEnemies = S.units.filter(u => u && u.alive && _f9IsEnemy(u)).length;
+  const pendingCount = (window._f9PendingSpawns || []).length;
+  const aliveEnemies = S.units.filter(u => u && u.alive && _f9IsEnemy(u)).length + pendingCount;
   if (aliveEnemies >= _F9_ENEMY_MAX_ALIVE) return;
   const hero = S.units.find(u => u && u.alive && u.team === 0);
   if (!hero) return;
-  // Spawn'inam N naujus
+  // Spawn'inam N naujus — per telegraph eilę (įspėjimas prieš materializaciją)
   const _occ = new Set();
   for (const u of S.units) {
     if (!u || !u.alive) continue;
@@ -6002,8 +6359,6 @@ function _updateF9EnemyRespawn(now) {
   let spawned = 0;
   for (let i = 0; i < _F9_ENEMY_RESPAWN_BATCH && (aliveEnemies + spawned) < _F9_ENEMY_MAX_ALIVE; i++) {
     const utype = _F9_ENEMY_ARCHETYPES[Math.floor(Math.random() * _F9_ENEMY_ARCHETYPES.length)];
-    const archetype = (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype(utype) : null;
-    if (!archetype) continue;
     let placed = false;
     for (let attempt = 0; attempt < 30 && !placed; attempt++) {
       const edge = Math.floor(Math.random() * 4);
@@ -6017,15 +6372,8 @@ function _updateF9EnemyRespawn(now) {
       const distHero = Math.hypot(sx - hero.x, sy - hero.y);
       if (distHero < 8) continue;
       _occ.add(k);
-      const id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (300000 + Math.floor(Math.random() * 100000));
-      const u = mkUnit(id, 1, sx, sy, 1, archetype);
-      u._f9Enemy = true;
-      u.isEditorEnemy = false;
-      u.stack = 1;
-      u.rx = sx; u.ry = sy;
-      u._f9LastEnemyAttack = 0;
-      u._f9LastRepath = 0;
-      S.units.push(u);
+      if (!window._f9PendingSpawns) window._f9PendingSpawns = [];
+      window._f9PendingSpawns.push({ utype, sx, sy, at: now + _F9_SPAWN_WARN_MS });
       placed = true;
       spawned++;
     }
@@ -18092,8 +18440,10 @@ let _f11AttackTargeting = false;      // po ATTACK mygtuko popup'e — laukiam c
 // Mode flow: 'safe' (2.5s) → 'windup' (800ms, priešas užsivedęs) → enemy attacks → 'recovery' (1500ms).
 // Click sweet spot'e: 'safe' → normal dmg, 'windup' → PARRY (1.5x dmg + crit boost + interrupts attack).
 let _skullSkillShot = null;
-const _SKILL_SHOT_SPEED      = 0.0011;
-const _SKILL_SHOT_SPEED_FAST = 0.0019; // windup'e slankoja greičiau
+// 2026-06-12: abu greičiai -30% (buvo 0.0011 / 0.0019) — žaidėjai skundėsi,
+// kad rodyklė juda per greitai ir per sunku pataikyti (ypač windup/strike fazėj).
+const _SKILL_SHOT_SPEED      = 0.00077;
+const _SKILL_SHOT_SPEED_FAST = 0.00133; // windup'e slankoja greičiau
 const _SKILL_SHOT_SWEET_MIN  = 0.42;
 const _SKILL_SHOT_SWEET_MAX  = 0.58;
 const _SKILL_SHOT_MISS_CD_MS = 1500;
@@ -24789,10 +25139,12 @@ function loop(now) {
   drawAimIndicators();
   if (typeof window._kothRenderWorld === 'function') window._kothRenderWorld();
   _drawF9ClickMarkers();
+  if (typeof _drawF9SpawnWarnings === 'function') _drawF9SpawnWarnings();
   if (typeof _drawF9DebugOverlay === 'function') _drawF9DebugOverlay();
   if (typeof _drawF9EnemyTargetReticle === 'function') _drawF9EnemyTargetReticle();
   _drawF9SelectionRing();
   _drawF9SelectionBar();
+  if (typeof _drawF9HotkeyHint === 'function') _drawF9HotkeyHint();
   if (typeof window._kothRenderHud === 'function') window._kothRenderHud();
   _drawF9DragRect();
   drawBloodStains();
@@ -24857,6 +25209,7 @@ function loop(now) {
     }
   }
   _drawUnitHoverOutline();
+  if (typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
   drawForegroundDecorations();
   drawBarracksHarpoons('top');
   drawRonkeInfect();
@@ -26884,6 +27237,11 @@ function drawShamanProjectiles() {
               _combatJuice(_ally.x, _ally.y, _dmg, _cra.isCrit, p.stack || 1, _allyDead);
             }
           }
+        } else if (S && S.floor === 9 && typeof _f9FindEnemyNear === 'function') {
+          // F9 PvE: radius hit (judantys priešai išslysta iš cell'o) + _f9DealDmg —
+          // kills į _f9Stats, balansas pagal _F9_ALLY_ATTACK (be F11 scale/crit/block)
+          const _f9Tgt = _f9FindEnemyNear(p.targetGx, p.targetGy, 0.95);
+          if (_f9Tgt) _f9DealDmg(_f9Tgt, _dmgBase, null);
         } else {
           // Ally shaman → hero (friendly fire niekada nedaro), hostile enemy, red archer NPC
           const _enemy = S.units.find(u => isHostileAdventureEnemy(u) && u.x === p.targetGx && u.y === p.targetGy);
@@ -27093,9 +27451,17 @@ function drawBarracksHarpoons(layer = 'normal') {
           target = S.units.find(u => u.alive && u.x === lgx && u.y === lgy && (u.team === 0 || isFriendlyBarracksUnit(u)));
         } else {
           target = S.units.find(u => u.alive && !isFriendlyBarracksUnit(u) && u.x === lgx && u.y === lgy);
+          // F9: smooth judantys priešai išslysta iš landing cell'o — radius paieška
+          if (!target && S.floor === 9 && typeof _f9FindEnemyNear === 'function') {
+            target = _f9FindEnemyNear(a.stuckX / CELL - 0.5, a.stuckY / CELL - 0.5, 0.95);
+          }
         }
         let _primaryBlocked = false;
-        if (target && _skullIsBlocking(target)) {
+        if (S.floor === 9 && target && !a.shooterIsEnemy && typeof _f9IsEnemy === 'function' && _f9IsEnemy(target)) {
+          // F9 PvE: žala per _f9DealDmg — kills statistika + vienodas balansas (be F11 scale/crit)
+          a.hitTarget = true;
+          _f9DealDmg(target, _dmgBase, null);
+        } else if (target && _skullIsBlocking(target)) {
           a.hitTarget = true;
           _primaryBlocked = true;
           S.shake = Math.max(S.shake || 0, 6);
@@ -32539,13 +32905,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       const now = performance.now();
+      window._f9AMoveArm = false;   // right-click atšaukia armed A-move (RTS konvencija)
       // ── Engage target: visi pasirinkti unit'ai puola tą patį priešą ──
       if (hitEnemy) {
         _f9IssueAttackTargetCommand(_f9CommandableSelection(false), hitEnemy, now);
         return;
       }
       // RTS feel: right-click empty ground = move command. No surprise manual swing/shoot.
-      _f9IssueMoveCommand(_f9CommandableSelection(true), txWorld, tyWorld);
+      // SHIFT+RMB = waypoint eilė (komandos vykdomos paeiliui, BAR/SC2 pattern).
+      if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
+        _f9QueueMoveCommand(_f9CommandableSelection(true), txWorld, tyWorld, false);
+      } else {
+        _f9IssueMoveCommand(_f9CommandableSelection(true), txWorld, tyWorld);
+      }
       return;
     }
   });
@@ -32661,6 +33033,25 @@ document.addEventListener('DOMContentLoaded', () => {
         window._f9DragJustEnded = false;
         return;
       }
+      // 0. Armed A-MOVE (A klavišas) → šis click = attack-move komanda į tašką
+      if (window._f9AMoveArm) {
+        window._f9AMoveArm = false;
+        const txA = mx / CELL - 0.5;
+        const tyA = my / CELL - 0.5;
+        if (txA >= 0 && txA < COLS - 1 && tyA >= 0 && tyA < ROWS - 1) {
+          let selAM = _f9CommandableSelection(true);
+          if (!selAM.length) {
+            // Nieko nepasirinkta — komanduojam visą squad'ą (default kaip right-click)
+            selAM = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
+          }
+          if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
+            _f9QueueMoveCommand(selAM, txA, tyA, true);
+          } else if (typeof _f9IssueAttackMoveCommand === 'function') {
+            _f9IssueAttackMoveCommand(selAM, txA, tyA);
+          }
+        }
+        return;
+      }
       // 1. Selection bar (screen-space click) — pakeičia pasirinkimą į TIK 1 unit'ą
       if (typeof _f9SelBarRects !== 'undefined' && _f9SelBarRects.length) {
         for (const r of _f9SelBarRects) {
@@ -32702,8 +33093,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       if (hitUnit) {
-        // Shift+click → toggle in/out of set; plain → replace with single
-        if (e.shiftKey) {
+        const _nowDc = performance.now();
+        const _isDouble = (window._f9LastClickUnit === hitUnit && _nowDc - (window._f9LastClickAt || 0) < 350);
+        window._f9LastClickUnit = hitUnit;
+        window._f9LastClickAt = _nowDc;
+        if (_isDouble) {
+          // Double-click → pasirenka VISUS gyvus to paties tipo ally unit'us (SC2 pattern)
+          const same = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.utype === hitUnit.utype &&
+            (hitUnit.team === 0 ? u.team === 0 : u.team !== 0));
+          window._f9SelectedSet = same.length ? same : [hitUnit];
+          if (typeof _f9SetToast === 'function' && same.length > 1) {
+            _f9SetToast(String(hitUnit.utype || '').toUpperCase() + ' ×' + same.length);
+          }
+        } else if (e.shiftKey) {
+          // Shift+click → toggle in/out of set
           const idx = selSet.indexOf(hitUnit);
           if (idx >= 0) selSet.splice(idx, 1);
           else selSet.push(hitUnit);
