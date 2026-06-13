@@ -6047,8 +6047,22 @@ function _updateF9SmoothMove(now) {
     // Per-unit speed (utype + variance) → lively group judėjimas
     const move = _f9UnitSpeedMul(u) * dtSec;
     const stepLen = Math.min(move, dist);
-    u.rx = curX + (dx / dist) * stepLen;
-    u.ry = curY + (dy / dist) * stepLen;
+    let nrx = curX + (dx / dist) * stepLen;
+    let nry = curY + (dy / dist) * stepLen;
+    // SOLID deco avoidance — jei kita celė blokuota (medžio kamienas), paslysk ašimi aplink.
+    // 1-celės footprint'ui lokalaus „slide" užtenka (be pilno A*). Toggle: _F9_DECO_SOLID.
+    if (_F9_DECO_SOLID && _f9BlockedCells && _f9BlockedCells.size) {
+      const sx0 = Math.floor(curX + 0.5), sy0 = Math.floor(curY + 0.5);
+      if (_f9CellBlocked(Math.floor(nrx + 0.5), Math.floor(nry + 0.5), sx0, sy0)) {
+        const slideX = curX + (dx >= 0 ? 1 : -1) * stepLen;
+        const slideY = curY + (dy >= 0 ? 1 : -1) * stepLen;
+        if (!_f9CellBlocked(Math.floor(slideX + 0.5), sy0, sx0, sy0)) { nrx = slideX; nry = curY; }
+        else if (!_f9CellBlocked(sx0, Math.floor(slideY + 0.5), sx0, sy0)) { nrx = curX; nry = slideY; }
+        else { nrx = curX; nry = curY; }   // abi pusės blokuotos — stovim šį kadrą (retas atvejis)
+      }
+    }
+    u.rx = nrx;
+    u.ry = nry;
     u.x = Math.floor(u.rx + 0.5);
     u.y = Math.floor(u.ry + 0.5);
     // Sprite'ai turi tik kairę/dešinę pozas (ne aukštyn/žemyn).
@@ -6139,6 +6153,84 @@ function _f9EnemyAttackCooldown(e) {
 function _f9EnemyHitDelay(e) {
   if (e && e.utype === 'bear') return 470;          // F12 bear: atidėtas slam smūgis (470ms)
   return e && (e.utype === 'minotaur' || e.utype === 'minotaur_big') ? _F9_MINOTAUR_HIT_DELAY : 260;
+}
+
+// ── F9 DEKORACIJŲ ELGSENA (2026-06-13) ──
+// Technika (pagal RTS praktiką): collision footprint = MAŽAS (tik objekto pagrindo celė, NE didelis sprite).
+//   • SOLID (medžiai) → 1 celė blokuota; unitai apeina per lokalų „slide" avoidance smooth-move'e.
+//   • COVER (krūmai) → praeinama, BET stovintis unitas pasislepia (incoming attack miss šansas).
+//   • Gėlės/antis → grynai vizualu.
+// Toggle'ai (jei misbehaves — į false, grįžta senas elgesys):
+const _F9_DECO_SOLID = true;    // medžiai blokuoja + slide avoidance
+const _F9_DECO_COVER = true;    // krūmai = cover (miss šansas)
+const _F9_BUSH_MISS  = 0.35;    // krūme stovinčio unito incoming-miss tikimybė
+let _f9BlockedCells = null;     // Set "x,y" (col,row) — solid deco footprintai (medžių kamienai)
+function _f9CellBlocked(x, y, selfX, selfY) {
+  if (!_F9_DECO_SOLID || !_f9BlockedCells) return false;
+  if (x === selfX && y === selfY) return false;   // sava celė visada praeinama (kad galėtų išeiti)
+  return _f9BlockedCells.has(x + ',' + y);
+}
+function _f9UnitInBush(u) {
+  if (!_F9_DECO_COVER || !u || !S || !S.decorations) return false;
+  const d = S.decorations[(u.y) + ',' + (u.x)];
+  return typeof d === 'string' && d.startsWith('bush');
+}
+// Ar unitas „už" medžio/krūmo (foreground deco jį dengia) → reikia silueto VIRŠ dekoracijos.
+// Medžiai/krūmai piešiami aukštyn nuo bazės, tad dengia unitą savo celėje + iki ~2 eilučių žemiau.
+function _f9UnitOccluded(u) {
+  if (!u || !S || !S.decorations) return false;
+  const ux = u.x, uy = u.y;
+  for (let dr = -1; dr <= 2; dr++) {
+    const d = S.decorations[(uy + dr) + ',' + ux];
+    if (typeof d === 'string' && (d.startsWith('tree') || d.startsWith('bush'))) return true;
+  }
+  return false;
+}
+
+// F9 mapos dekoravimas — VIZUALINĖS dekoracijos ant žolės bazės (medžiai/krūmai/gėlės/antis).
+// Medžiai = SOLID (1 celės footprint); krūmai = COVER; kita = vizualu. Žr. _F9_DECO_* virš.
+function _f9DecorateMap() {
+  if (!S || S.floor !== 9 || !S.decorations) return;
+  const R = ROWS, C = COLS;
+  if (R < 8 || C < 8) return;
+  const cx = C / 2, cy = R / 2;
+  const rnd = (n) => Math.floor(Math.random() * n);
+  const put = (r, c, id) => {
+    r = Math.round(r); c = Math.round(c);
+    if (r < 1 || c < 1 || r >= R - 1 || c >= C - 1) return;
+    const k = r + ',' + c;
+    if (!S.decorations[k]) S.decorations[k] = id;
+  };
+  const trees  = ['tree1', 'tree2', 'tree3', 'tree4'];
+  const bushes = ['bush1', 'bush2', 'bush3', 'bush4'];
+  // 1) MEDŽIŲ rėmas apie kraštus (natūrali riba vietoj vandens)
+  for (let c = 2; c < C - 2; c += 5 + rnd(2)) { put(2 + rnd(2), c, trees[rnd(4)]); put(R - 3 - rnd(2), c, trees[rnd(4)]); }
+  for (let r = 4; r < R - 4; r += 5 + rnd(2)) { put(r, 2 + rnd(2), trees[rnd(4)]); put(r, C - 3 - rnd(2), trees[rnd(4)]); }
+  // 2) KRŪMAI pabirę interjere (~2.5%), centras laisvas
+  const bushN = Math.round(R * C * 0.025);
+  for (let i = 0; i < bushN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, bushes[rnd(4)]); }
+  // 3) GĖLĖS / smulkios dekoracijos (deco_01..13; VENGIAM 16=leaderboard, 18=čiučela)
+  const decoN = Math.round(R * C * 0.03);
+  for (let i = 0; i < decoN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); put(r, c, 'deco_' + String(1 + rnd(13)).padStart(2, '0')); }
+  // 4) KRŪMŲ tankumynai (3-4 vietos, po 2-3) — land „cluster" akcentas (vandens akmenys ant žolės netiko)
+  const clusters = 3 + rnd(2);
+  for (let cl = 0; cl < clusters; cl++) {
+    const br = 4 + rnd(R - 8), bc = 4 + rnd(C - 8);
+    if (Math.hypot(bc - cx, br - cy) < 5) continue;
+    const n = 2 + rnd(2);
+    for (let i = 0; i < n; i++) put(br + rnd(2), bc + rnd(2), bushes[rnd(4)]);
+  }
+  // 5) viena rubber duck (smagumui)
+  put(cy + 3 + rnd(3), cx + 4 + rnd(4), 'duck');
+  // SOLID footprint registras — TIK medžiai (1 celė kiekvienas; krūmai/gėlės NEblokuoja). Keys: "x,y".
+  _f9BlockedCells = new Set();
+  if (_F9_DECO_SOLID) {
+    for (const k in S.decorations) {
+      if (!String(S.decorations[k]).startsWith('tree')) continue;
+      const p = k.split(','); const r = +p[0], c = +p[1];
+      _f9BlockedCells.add(c + ',' + r);   // x=col, y=row
+    }
+  }
 }
 
 function _spawnF9Enemies(hero) {
@@ -6251,6 +6343,13 @@ function _f9FindClosestAlly(enemy) {
 
 function _f9DealDmg(target, dmg, attacker) {
   if (!target || !target.alive) return;
+  // COVER — taikinys krūme: incoming attack miss šansas (pasislėpė). Simetriška ally+enemy.
+  if (_F9_DECO_COVER && _f9UnitInBush(target) && Math.random() < _F9_BUSH_MISS) {
+    const _mx = (typeof target.rx === 'number') ? target.rx : target.x;
+    const _my = (typeof target.ry === 'number') ? target.ry : target.y;
+    if (typeof spawnDmgNumber === 'function') { try { spawnDmgNumber(_mx, _my, 'COVER', '#9be08a', 13, 'miss'); } catch (_) {} }
+    return;
+  }
   const hitX = (typeof target.rx === 'number') ? target.rx : target.x;
   const hitY = (typeof target.ry === 'number') ? target.ry : target.y;
   target.hp = Math.max(0, (target.hp || 0) - dmg);
@@ -11652,6 +11751,7 @@ function initAdventure() {
     S.bloodStains = [];
     S.teleports = [];
     S.rooms = [{ x: 1, y: 1, w: COLS - 2, h: ROWS - 2, type: 'start' }];
+    _f9DecorateMap();   // medžiai/krūmai/gėlės/akmenys ant žolės bazės (vizualu, NE-collision)
   }
   buildWallPackets();
   invalidateDungeonCache();
@@ -26069,6 +26169,17 @@ function loop(now) {
   if (typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
   if (typeof _drawF9Shots === 'function') _drawF9Shots();
   drawForegroundDecorations();
+  // F9 OCCLUSION SILHOUETTE — unitai už medžių/krūmų rodomi siluetu (kontūru) VIRŠ dekoracijų,
+  // kad NEDINGTŲ ir nesusilietų su aplinka. Tik occluded unitai (kiti renderinasi normaliai su gyliu).
+  if (S.floor === 9 && typeof _drawUnitSilhouetteOutline === 'function') {
+    for (const u of (S.units || [])) {
+      if (!u || !u.alive || !_f9UnitOccluded(u)) continue;
+      const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+      const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+      const _col = (typeof _f9IsEnemy === 'function' && _f9IsEnemy(u)) ? '#DE4D4E' : '#6cf0ff';   // priešas raudonas, ally žydras
+      _drawUnitSilhouetteOutline(u, _cx, _cy, _col);
+    }
+  }
   drawBarracksHarpoons('top');
   drawRonkeInfect();
   drawFog();
