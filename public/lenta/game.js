@@ -6235,40 +6235,44 @@ function _f9DecorateMap() {
   if (R < 8 || C < 8) return;
   const cx = C / 2, cy = R / 2;
   const rnd = (n) => Math.floor(Math.random() * n);
+  // Squad SPAWN zona (anchor = (sr.x+3, sr.y) — atitinka F9 unitų deploy) → ten JOKIŲ dekoracijų.
+  const _sr = (S.rooms && S.rooms[0]) ? S.rooms[0] : null;
+  const spawnX = _sr ? _sr.x + 3 : 4, spawnY = _sr ? _sr.y : 1, SPAWN_CLEAR = 9;
   const put = (r, c, id) => {
     r = Math.round(r); c = Math.round(c);
     if (r < 1 || c < 1 || r >= R - 1 || c >= C - 1) return;
+    if (Math.hypot(c - spawnX, r - spawnY) < SPAWN_CLEAR) return;   // spawn zona švari (be medžių/akmenų)
     const k = r + ',' + c;
     if (!S.decorations[k]) S.decorations[k] = id;
   };
-  const trees  = ['tree1', 'tree2', 'tree3', 'tree4'];
-  const bushes = ['bush1', 'bush2', 'bush3', 'bush4'];
+  const trees    = ['tree1', 'tree2', 'tree3', 'tree4'];
+  const bushes   = ['bush1', 'bush2', 'bush3', 'bush4'];
+  const boulders = ['boulder1', 'boulder2', 'boulder3', 'boulder4'];
   // 1) MEDŽIŲ rėmas apie kraštus (natūrali riba vietoj vandens)
   for (let c = 2; c < C - 2; c += 5 + rnd(2)) { put(2 + rnd(2), c, trees[rnd(4)]); put(R - 3 - rnd(2), c, trees[rnd(4)]); }
   for (let r = 4; r < R - 4; r += 5 + rnd(2)) { put(r, 2 + rnd(2), trees[rnd(4)]); put(r, C - 3 - rnd(2), trees[rnd(4)]); }
-  // 2) KRŪMAI pabirę interjere (~2.5%), centras laisvas
-  const bushN = Math.round(R * C * 0.025);
+  // 2) KRŪMAI — MAŽAI pabirę (~1%), centras laisvas
+  const bushN = Math.round(R * C * 0.010);
   for (let i = 0; i < bushN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, bushes[rnd(4)]); }
   // 3) GĖLĖS / smulkios dekoracijos (deco_01..13; VENGIAM 16=leaderboard, 18=čiučela)
-  const decoN = Math.round(R * C * 0.03);
+  const decoN = Math.round(R * C * 0.025);
   for (let i = 0; i < decoN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); put(r, c, 'deco_' + String(1 + rnd(13)).padStart(2, '0')); }
-  // 4) KRŪMŲ tankumynai (3-4 vietos, po 2-3) — land „cluster" akcentas (vandens akmenys ant žolės netiko)
-  const clusters = 3 + rnd(2);
-  for (let cl = 0; cl < clusters; cl++) {
-    const br = 4 + rnd(R - 8), bc = 4 + rnd(C - 8);
-    if (Math.hypot(bc - cx, br - cy) < 5) continue;
-    const n = 2 + rnd(2);
-    for (let i = 0; i < n; i++) put(br + rnd(2), bc + rnd(2), bushes[rnd(4)]);
-  }
+  // 4) AKMENYS (rieduliai, GoldStone) — SOLID, unitai APEINA. Pabirę interjere, ne centre.
+  const boulderN = 7 + rnd(4);
+  for (let i = 0; i < boulderN; i++) { const r = 3 + rnd(R - 6), c = 3 + rnd(C - 6); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, boulders[rnd(4)]); }
   // 5) viena rubber duck (smagumui)
   put(cy + 3 + rnd(3), cx + 4 + rnd(4), 'duck');
-  // SOLID footprint registras — TIK medžiai (1 celė kiekvienas; krūmai/gėlės NEblokuoja). Keys: "x,y".
+  // SOLID footprint registras — medžiai + akmenys (1 celė; krūmai/gėlės NEblokuoja). Keys: "x,y".
   _f9BlockedCells = new Set();
   if (_F9_DECO_SOLID) {
     for (const k in S.decorations) {
-      if (!String(S.decorations[k]).startsWith('tree')) continue;
+      const d = String(S.decorations[k]);
+      const isTree = d.startsWith('tree'), isBoulder = d.startsWith('boulder');
+      if (!isTree && !isBoulder) continue;
       const p = k.split(','); const r = +p[0], c = +p[1];
       _f9BlockedCells.add(c + ',' + r);   // x=col, y=row
+      // akmuo: sprite aukštesnis nei 1 celė (bottom-anchored) → dengia ir celę VIRŠ jo. Blokuojam abi.
+      if (isBoulder) _f9BlockedCells.add(c + ',' + (r - 1));
     }
   }
 }
@@ -26170,6 +26174,22 @@ function loop(now) {
   drawTutorialHighlight();
   drawLoot();
   drawMeatDrops();
+  // F9 BOULDERS (sausumos akmenys = GoldStone, SOLID) — background po unitais (unitai apeina, neperžengia)
+  if (S.floor === 9 && S.decorations && typeof _goldStoneImgs !== 'undefined') {
+    // blizgantys akmenys — GoldStone_Highlight (6-kadrų sparkle anim @ ~8fps, per-akmuo stagger)
+    const _bMap = { boulder1: 'GoldStone2_Highlight', boulder2: 'GoldStone3_Highlight', boulder3: 'GoldStone4_Highlight', boulder4: 'GoldStone5_Highlight' };
+    const _bTick = Math.floor(performance.now() / 125);
+    for (const _bk in S.decorations) {
+      const _gn = _bMap[S.decorations[_bk]];
+      if (!_gn) continue;
+      const _im = _goldStoneImgs[_gn];
+      if (!_im || !_im.complete || !_im.naturalWidth) continue;
+      const _bp = _bk.split(','); const _br = +_bp[0], _bc = +_bp[1];
+      const _bf = (_bTick + _br * 3 + _bc * 7) % 6;   // kadras (stagger kad nemirgėtų sinchroniškai)
+      const _bsz = CELL * 1.4;
+      ctx.drawImage(_im, _bf * 128, 0, 128, _im.naturalHeight, _bc * CELL + CELL / 2 - _bsz / 2, _br * CELL + CELL - _bsz, _bsz, _bsz);
+    }
+  }
   drawUnits();
   if (typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
   // Default raudonas silhouette outline visiems matomam enemy unit'am.
