@@ -6073,7 +6073,7 @@ function _updateF9SmoothMove(now) {
 // Future: PvP mode (žaidėjo prieš žaidėją online) — TODO save'inta atminty.
 
 const _F9_ENEMY_SPAWN_COUNT = 6;
-const _F9_ENEMY_ARCHETYPES = ['skull', 'spider', 'stabby', 'thief', 'minotaur'];  // troll pašalintas — per didelis, blogai derinasi
+const _F9_ENEMY_ARCHETYPES = ['skull', 'spider', 'stabby', 'thief', 'minotaur', 'bear'];  // troll pašalintas. bear pridėtas. minotaur_big NĖRA čia — jis fiksuotai padedamas (3 vnt mapos viduje, NE random/respawn)
 const _F9_ENEMY_AI_TICK_MS = 360;   // AI decision interval — ramesnis, mažiau twitch/repath spam
 // Respawn — kad testas būtų nuolatinis, periodiškai pridedam naujus enemies
 const _F9_ENEMY_RESPAWN_MS = 4500;  // kas 4.5s tikrinam reikia respawn'inti
@@ -6102,9 +6102,17 @@ function _f9VisualYOffsetFor(u) {
 const _F9_ENEMY_ATTACK_CD = 1100;   // ms tarp atakų
 const _F9_ENEMY_DMG = 1;            // damage per swing
 const _F9_ENEMY_DMG_MIN = 1;
-const _F9_ENEMY_DMG_MAX = 3;
+const _F9_ENEMY_DMG_MAX = 1;        // F9↔F12 paritetas: F12 regular priešas = allyDmg||1 (fiksuota 1; buvo 1-3)
 const _F9_MINOTAUR_ATTACK_CD = 1900;
 const _F9_MINOTAUR_HIT_DELAY = 420;
+// F9↔F12 priešų HP paritetas: F12 tier-0 bazinės reikšmės (FIKSUOTOS — F9 neturi laiko-tier mechanikos).
+// F12: regular baseHp=6 (skull ×1.0), spider force 1, minotaur 6×1.8≈11, thief force 10. stabby (F9-only) = regular 6.
+const _F9_ENEMY_HP = { skull: 6, spider: 1, stabby: 6, thief: 10, minotaur: 11, bear: 15, minotaur_big: 25 };   // bear=F12 6×1.5+6; minotaur_big=F12 boss tier-0 (25)
+function _f9ApplyEnemyStats(u) {
+  if (!u) return;
+  const hp = _F9_ENEMY_HP[u.utype];
+  if (hp) { u.hp = hp; u.maxHp = hp; }   // override ENEMY_TYPES hp tik F9 PvE priešams (bendras ENEMY_TYPES nepaliestas)
+}
 const _F9_THIEF_MISS = 0.20;   // thief'as praleidžia 20% atakų (greitas + stiprus → susilpnintas; kiti statai nepaliesti)
 const _F9_SETTLE_DELAY  = 350;      // ms — pauzė po pozicijos užėmimo prieš pirmąjį swing'ą
                                     // ("pirma susirask poziciją, tada pradėk kovą" feel)
@@ -6116,16 +6124,21 @@ let _f9LastEnemyRespawn = 0;
 let _f9GameOverShown = false;
 let _f9Stats = { kills: 0, lost: 0 };
 
-function _f9RollEnemyDamage() {
+function _f9RollEnemyDamage(e) {
+  // bear (F12 paritetas): allyDmg 2, 20% crit → critDmg 3. minotaur_big (boss): 2. Kiti = bazinė 1.
+  if (e && e.utype === 'bear') return (Math.random() < 0.20) ? 3 : 2;
+  if (e && e.utype === 'minotaur_big') return 2;
   return _F9_ENEMY_DMG_MIN + Math.floor(Math.random() * (_F9_ENEMY_DMG_MAX - _F9_ENEMY_DMG_MIN + 1));
 }
 
 function _f9EnemyAttackCooldown(e) {
-  return e && e.utype === 'minotaur' ? _F9_MINOTAUR_ATTACK_CD : _F9_ENEMY_ATTACK_CD;
+  if (e && e.utype === 'bear') return 4000;        // F12 bear: lėta sunki ataka kas 4s
+  return e && (e.utype === 'minotaur' || e.utype === 'minotaur_big') ? _F9_MINOTAUR_ATTACK_CD : _F9_ENEMY_ATTACK_CD;
 }
 
 function _f9EnemyHitDelay(e) {
-  return e && e.utype === 'minotaur' ? _F9_MINOTAUR_HIT_DELAY : 260;
+  if (e && e.utype === 'bear') return 470;          // F12 bear: atidėtas slam smūgis (470ms)
+  return e && (e.utype === 'minotaur' || e.utype === 'minotaur_big') ? _F9_MINOTAUR_HIT_DELAY : 260;
 }
 
 function _spawnF9Enemies(hero) {
@@ -6160,6 +6173,7 @@ function _spawnF9Enemies(hero) {
       _occ.add(k);
       const id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (200000 + i);
       const u = mkUnit(id, 1, sx, sy, 1, archetype);
+      _f9ApplyEnemyStats(u);   // F12 bazinis HP paritetas
       u._f9Enemy = true;       // F9 enemy flag
       u.isEditorEnemy = false; // NEvalstas friendly
       u.stack = 1;
@@ -6168,6 +6182,41 @@ function _spawnF9Enemies(hero) {
       u._f9LastRepath = 0;
       S.units.push(u);
       placed = true;
+    }
+  }
+  // ── 3 DIDELI MINOTAURAI — fiksuotai mapos VIDURYJE (mini-boss'ai). NE random rotacijoj, NE respawn'ina. ──
+  const _bigArch = getEditorEnemyArchetype('minotaur_big');
+  if (_bigArch) {
+    const _bigSpots = [
+      { x: Math.floor(COLS * 0.30), y: Math.floor(ROWS * 0.32) },
+      { x: Math.floor(COLS * 0.70), y: Math.floor(ROWS * 0.32) },
+      { x: Math.floor(COLS * 0.50), y: Math.floor(ROWS * 0.68) },
+    ];
+    for (const spot of _bigSpots) {
+      let bplaced = false;
+      for (let rad = 0; rad < 7 && !bplaced; rad++) {
+        for (let dy = -rad; dy <= rad && !bplaced; dy++) {
+          for (let dx = -rad; dx <= rad && !bplaced; dx++) {
+            const sx = Math.max(2, Math.min(COLS - 3, spot.x + dx));
+            const sy = Math.max(2, Math.min(ROWS - 3, spot.y + dy));
+            const k = sx + ',' + sy;
+            if (_occ.has(k)) continue;
+            if (Math.hypot(sx - hero.x, sy - hero.y) < 6) continue;   // ne ant squad deploy zonos
+            _occ.add(k);
+            const bid = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (210000 + Math.floor(Math.random() * 10000));
+            const bu = mkUnit(bid, 1, sx, sy, 1, _bigArch);
+            _f9ApplyEnemyStats(bu);   // HP 25
+            bu._f9Enemy = true;
+            bu.isEditorEnemy = false;
+            bu.stack = 1;
+            bu.rx = sx; bu.ry = sy;
+            bu._f9LastEnemyAttack = 0;
+            bu._f9LastRepath = 0;
+            S.units.push(bu);
+            bplaced = true;
+          }
+        }
+      }
     }
   }
   _f9GameOverShown = false;
@@ -6355,7 +6404,7 @@ function _drawF9Shots() {
         let tgt = (s.target && s.target.alive && _f9IsEnemy(s.target)) ? s.target
                 : (typeof _f9FindEnemyNear === 'function' ? _f9FindEnemyNear(cellX, cellY, 0.9) : null);
         if (tgt && tgt.alive) {
-          _f9DealDmg(tgt, _f9RollDamageForUnit(s.utype, s.stack), s.shooter);
+          _f9DealDmg(tgt, _f9RollDamageForUnit(s.utype, s.stack, (s.shooter && s.shooter._nftLevel) || 0), s.shooter);
           s.state = 'impact';
         } else {
           s.state = 'stuck';   // miss — strėlė/harpūnas įsminga į žemę
@@ -6426,25 +6475,38 @@ function _drawF9Shots() {
 // Per-utype attack range/cooldown (cells / ms) ally auto-attack'ui
 // STANDARD RTS: tik distance check, be strict face-to-face requirement.
 // Unit'as atsisuka į target ir atakuoja — kaip SC2/AoE/Total War.
+// F9↔F12 STIPRUMO PARITETAS: dmg = F12 floor12_merge.js ALLY_STATS bazinė žala
+// (skull2 / archer3 / shaman4 / harpoon3 / hog_rider→pigronke8) — unitai jaučiasi tokio pat
+// stiprumo abiejuose aukštuose. range/cd PALIEKAMI F9-specifiniai (kitas koordinačių mastelis
+// + 2D homing balansas, kurio F12 lane neturi). Žala dar ×_f9NftStatMul(level) (kaip F12).
 const _F9_ALLY_ATTACK = {
-  skull:        { range: 0.95, cd: 1500, dmg: 2.5, dmgMin: 1, dmgMax: 4 },
-  shaman:       { range: 7.0,  cd: 3000, dmg: 3.5, dmgMin: 2, dmgMax: 5 },
+  skull:        { range: 0.95, cd: 1500, dmg: 2, dmgMin: 2, dmgMax: 2 },
+  shaman:       { range: 7.0,  cd: 3000, dmg: 4, dmgMin: 4, dmgMax: 4 },
   // 2026-06-12: archer/harpoon attack speed -50% (cd 2500→5000, 1800→3600) — su 2D homing
   // šaudymu jie nebepraleidžia šūvių, senas tempas būtų per stiprus.
-  archer:       { range: 6.5,  cd: 5000, dmg: 2.5, dmgMin: 1, dmgMax: 4 },
-  harpoon_fish: { range: 5.5,  cd: 3600, dmg: 3.5, dmgMin: 2, dmgMax: 5 },
-  pigronke:     { range: 1.18, cd: 2800, dmg: 5.5, dmgMin: 3, dmgMax: 8 },
+  archer:       { range: 6.5,  cd: 5000, dmg: 3, dmgMin: 3, dmgMax: 3 },
+  harpoon_fish: { range: 5.5,  cd: 3600, dmg: 3, dmgMin: 3, dmgMax: 3 },
+  pigronke:     { range: 1.18, cd: 2800, dmg: 8, dmgMin: 8, dmgMax: 8 },
 };
 
-function _f9RollDamageForUnit(utype, stack = 1) {
+// NFT lygio → statų multiplikatorius. MIRROR of F12 floor12_merge.js `_nftStatMul`:
+// pirmi 2 lygiai nieko, tada +5% kas 2 lygius (lvl4→1.05×, lvl6→1.10×, lvl42→2×). F9↔F12 paritetas.
+function _f9NftStatMul(level) {
+  const lv = Math.max(0, level | 0);
+  return 1 + Math.floor(Math.max(0, lv - 2) / 2) * 0.05;
+}
+
+function _f9RollDamageForUnit(utype, stack = 1, level = 0) {
   const cfg = _F9_ALLY_ATTACK[utype];
   const count = Math.max(1, Math.floor(stack || 1));
   if (!cfg) return Math.max(1, count);
+  const mul = _f9NftStatMul(level);   // NFT lygio žalos skalė (kaip F12)
   const min = Math.max(0, Math.floor(cfg.dmgMin ?? cfg.dmg ?? 1));
   const max = Math.max(min, Math.floor(cfg.dmgMax ?? cfg.dmg ?? min));
   let total = 0;
   for (let i = 0; i < count; i++) {
-    total += min + Math.floor(Math.random() * (max - min + 1));
+    const base = min + Math.floor(Math.random() * (max - min + 1));
+    total += Math.max(1, Math.round(base * mul));
   }
   return Math.max(0, total);
 }
@@ -6496,7 +6558,7 @@ function _pigronkeSpearAttack(unit, now) {
     if (!unit.alive) return;
     const sx = (unit.rx !== undefined) ? unit.rx : unit.x;
     const sy = (unit.ry !== undefined) ? unit.ry : unit.y;
-    const dmg = _f9RollDamageForUnit('pigronke', unit.stack || 1);
+    const dmg = _f9RollDamageForUnit('pigronke', unit.stack || 1, unit._nftLevel || 0);
     spawnSpearSweep(sx, sy, fdx, aoeRange, aoeWidthY);
     // Damage zone — sumažinta nuo plataus zone iki tighter cone.
     const zoneCx = sx + fdx * aoeRange * 0.5;
@@ -6568,7 +6630,7 @@ function _f9TryAllyAutoAttack(ally, now) {
       const ex = (target.rx !== undefined) ? target.rx : target.x;
       const ey = (target.ry !== undefined) ? target.ry : target.y;
       if (Math.hypot(sx - ex, sy - ey) > cfg.range + 0.2) return;
-      _f9DealDmg(target, _f9RollDamageForUnit(ally.utype, ally.stack || 1), ally);
+      _f9DealDmg(target, _f9RollDamageForUnit(ally.utype, ally.stack || 1, ally._nftLevel || 0), ally);
     }, 250);
   } else if (ally.utype === 'pigronke') {
     _pigronkeSpearAttack(ally, now);
@@ -6576,7 +6638,7 @@ function _f9TryAllyAutoAttack(ally, now) {
     ally.swingStart = now;
     if (typeof spawnShamanProjectile === 'function') {
       setTimeout(() => {
-        if (ally.alive) spawnShamanProjectile(ally.x, ally.y, tgx, tgy, ally.stack || 1, false);
+        if (ally.alive) spawnShamanProjectile(ally.x, ally.y, tgx, tgy, ally.stack || 1, false, ally._nftLevel || 0);
       }, 430);
     }
   } else if (ally.utype === 'archer' || ally.utype === 'harpoon_fish') {
@@ -6908,7 +6970,7 @@ function _updateF9EnemyAI(now) {
             if (e.utype === 'thief' && Math.random() < _F9_THIEF_MISS) {
               if (typeof spawnDmgNumber === 'function') spawnDmgNumber(tx2, ty2, 'MISS', '#aaccff', 13, 'miss');
             } else {
-              _f9DealDmg(target, _f9RollEnemyDamage(), e);
+              _f9DealDmg(target, _f9RollEnemyDamage(e), e);
             }
           }
         }, _f9EnemyHitDelay(e));
@@ -6976,6 +7038,7 @@ function _f9TickPendingSpawns(now) {
     if (!archetype || typeof mkUnit !== 'function') continue;
     const id = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (300000 + Math.floor(Math.random() * 100000));
     const u = mkUnit(id, 1, p.sx, p.sy, 1, archetype);
+    _f9ApplyEnemyStats(u);   // F12 bazinis HP paritetas
     u._f9Enemy = true;
     u.isEditorEnemy = false;
     u.stack = 1;
@@ -9199,6 +9262,31 @@ function getMinotaurFrameState(u) {
   return { sheet: sheet.sheet, sx: idx * MINOTAUR_FRAME_W, sy: 0, sw: MINOTAUR_FRAME_W, sh: MINOTAUR_FRAME_W };
 }
 
+// ---- BEAR (F9 tankas, perpanaudoti F12 sprite'ai) — idle/run/attack, 256px kadras ----
+const bearAnimSheets = {
+  idle:   loadHorizontalSheetFrames('assets_tiny/Bear_Idle.png',   8),
+  walk:   loadHorizontalSheetFrames('assets_tiny/Bear_Run.png',    5),
+  attack: loadHorizontalSheetFrames('assets_tiny/Bear_Attack.png', 9),
+};
+const BEAR_ANIM_FPS = { idle: 9, walk: 10, attack: 12 };
+const BEAR_FRAME_W  = 256;
+function getBearFrameState(u) {
+  const now = performance.now();
+  const isMoving = Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05;
+  const swingDur = (bearAnimSheets.attack.frameCount / BEAR_ANIM_FPS.attack) * 1000;
+  const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
+  let anim = 'idle';
+  if (swingElapsed < swingDur) anim = 'attack';
+  else if (isMoving)           anim = 'walk';
+  const sheet = bearAnimSheets[anim];
+  const fps   = BEAR_ANIM_FPS[anim];
+  const fc    = sheet.frameCount;
+  let idx;
+  if (anim === 'attack') idx = Math.min(fc - 1, Math.floor(swingElapsed / (1000 / fps)));
+  else idx = Math.floor(now / (1000 / fps)) % fc;
+  return { sheet: sheet.sheet, sx: idx * BEAR_FRAME_W, sy: 0, sw: BEAR_FRAME_W, sh: BEAR_FRAME_W };
+}
+
 // ---- Ronke NPC sprite sheet (22 idle frames, 128x128 each) ----
 const ronkeIdleSheet  = loadHorizontalSheetFrames('assets_tiny/Ronke_Idle.png',  22);
 const ronke2IdleSheet   = loadHorizontalSheetFrames('assets_tiny/Ronke2_Idle.png',   8);
@@ -9308,6 +9396,8 @@ const ENEMY_TYPES = [
   { type: 'skull',     hp: 3,  color: '#e8d8c0', scale: 1.10, label: 'SKULL' },
   { type: 'bluebird',  hp: 2,  color: '#4488ff', scale: 1.00, label: 'BIRD' },
   { type: 'minotaur',  hp: 6,  color: '#8b2020', scale: 1.40, label: 'MINOTAUR' },
+  { type: 'minotaur_big', hp: 25, color: '#a01818', scale: 1.90, label: 'BIG MINOTAUR' },
+  { type: 'bear',      hp: 15, color: '#7a5230', scale: 1.35, label: 'BEAR' },
   { type: 'thief',     hp: 3,  color: '#40506f', scale: 1.08, label: 'THIEF' },
   { type: 'ronke',     hp: 8,  color: '#3355cc', scale: 1.50, label: 'RONKE' },
   { type: 'ronke2',    hp: 8,  color: '#4466dd', scale: 1.50, label: 'RONKE2' },
@@ -11551,8 +11641,7 @@ function initAdventure() {
       ADV_MAP_COLS = COLS;
       for (let _y = 0; _y < ROWS; _y++) {
         for (let _x = 0; _x < COLS; _x++) {
-          const _isBorder = (_y === 0 || _y === ROWS - 1 || _x === 0 || _x === COLS - 1);
-          S.dungeon[_y][_x] = _isBorder ? 0 : 1;
+          S.dungeon[_y][_x] = 1;   // visa arena = žolė (be vandens krašto) — tuščia bazė formuoti mapą
         }
       }
     }
@@ -11757,13 +11846,13 @@ function initAdventure() {
       // NFT duomenys kraunami async (RPC multicall) → unitai atsiranda po ~1s.
       // Fallback į testinę komandą: nėra wallet / tuščias squad / RPC klaida.
       const _F9_NFT_TYPE_MAP = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'pigronke' };
-      const _F9_BASE_HP = { skull: 8, archer: 6, harpoon_fish: 7, shaman: 5, pigronke: 14 };
+      const _F9_BASE_HP = { skull: 8, archer: 5, harpoon_fish: 7, shaman: 5, pigronke: 14 };   // = F12 ALLY_STATS hp (paritetas; archer 6→5)
       const _testTeam = [
         { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
         { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
         { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
         { utype: 'shaman',       stack: 1, hp: 5,  maxHp: 5 },
-        { utype: 'archer',       stack: 1, hp: 6,  maxHp: 6 },
+        { utype: 'archer',       stack: 1, hp: 5,  maxHp: 5 },
         { utype: 'harpoon_fish', stack: 1, hp: 7,  maxHp: 7 },
         { utype: 'pigronke',     stack: 1, hp: 14, maxHp: 14 },
       ];
@@ -11822,7 +11911,7 @@ function initAdventure() {
             if (!ut) return null;
             const base = _F9_BASE_HP[ut] || 8;
             // NFT lygis → HP skalė (+5%/lvl, kaip F12 kortų sistema)
-            const hp = Math.max(1, Math.round(base * (1 + 0.05 * (nu.level || 0))));
+            const hp = Math.max(1, Math.round(base * _f9NftStatMul(nu.level || 0)));   // F12 lygio skalė (paritetas, ne senas 1+0.05×lvl)
             return { utype: ut, stack: 1, hp, maxHp: hp, nftLevel: nu.level || 0, tokenId: String(nu.tokenId) };
           }).filter(Boolean);
           S._f9DeployPending = false;
@@ -27986,13 +28075,13 @@ function drawDeathAnims() {
 
 // ---- Shaman Projectile & Explosion --------------------------------
 
-function spawnShamanProjectile(fromGx, fromGy, toGx, toGy, stack, shooterIsEnemy) {
+function spawnShamanProjectile(fromGx, fromGy, toGx, toGy, stack, shooterIsEnemy, shooterLevel) {
   if (!S.shamanProjectiles) S.shamanProjectiles = [];
   const sx = (fromGx + 0.5) * CELL, sy = (fromGy + 0.5) * CELL;
   const tx = (toGx  + 0.5) * CELL, ty = (toGy  + 0.5) * CELL;
   const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
   const duration = Math.max(350, dist / (CELL * 0.0055)); // ~5.5 cells/sec feel
-  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false, stack: stack || 1, shooterIsEnemy: !!shooterIsEnemy });
+  S.shamanProjectiles.push({ sx, sy, tx, ty, born: performance.now(), duration, targetGx: toGx, targetGy: toGy, done: false, hit: false, stack: stack || 1, shooterIsEnemy: !!shooterIsEnemy, shooterLevel: shooterLevel || 0 });
 }
 
 function drawShamanProjectiles() {
@@ -28016,7 +28105,7 @@ function drawShamanProjectiles() {
       // Damage target — priklauso nuo shooter side
       if (S.units) {
         const cfgS = !p.shooterIsEnemy ? (_F9_ALLY_ATTACK.shaman || { dmg: 4 }) : { dmg: 1 };
-        const _dmgBase = !p.shooterIsEnemy ? _f9RollDamageForUnit('shaman', p.stack || 1) : ((cfgS.dmg || 4) * (p.stack || 1));
+        const _dmgBase = !p.shooterIsEnemy ? _f9RollDamageForUnit('shaman', p.stack || 1, p.shooterLevel || 0) : ((cfgS.dmg || 4) * (p.stack || 1));
         if (p.shooterIsEnemy) {
           // Enemy shaman → taikinys: hero ARBA ally barracks unit
           const _hero = S.units.find(u => u.team === 0 && u.alive && u.x === p.targetGx && u.y === p.targetGy);
@@ -31215,9 +31304,9 @@ function drawUnits() {
           ctx.drawImage(pamNpcImg, frame * PAM_FW, 0, PAM_FW, PAM_FH, cx - sprSz / 2, cy - sprSz + 30, sprSz, sprSz);
           ctx.globalAlpha = alpha;
         }
-      } else if (u.utype === 'minotaur') {
+      } else if (u.utype === 'minotaur' || u.utype === 'minotaur_big') {
         const frame = getMinotaurFrameState(u);
-        const sprSz = UNIT_CELL * 3.2;
+        const sprSz = UNIT_CELL * (u.utype === 'minotaur_big' ? 4.7 : 3.2);   // big = boss-tier didesnis
         if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
           if ((u.facing?.dx || -1) < 0) {
@@ -31232,6 +31321,31 @@ function drawUnits() {
           ctx.globalAlpha = alpha;
         } else {
           ctx.fillStyle = '#8b2020';
+          ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(cx, cy, sprSz * 0.22, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
+      } else if (u.utype === 'bear') {
+        const frame = getBearFrameState(u);
+        const sprSz = UNIT_CELL * 3.0;
+        if (frame && frame.sheet && frame.sheet.complete && frame.sheet.naturalWidth > 0) {
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          if ((u.facing?.dx || -1) < 0) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
+            ctx.restore();
+          } else {
+            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2, sprSz, sprSz);
+          }
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#7a5230';
           ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
         }
         if (u.hitFlash > 0) {
