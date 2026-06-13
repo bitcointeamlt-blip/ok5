@@ -246,8 +246,18 @@
       return;
     }
 
-    // ── READY — iškart į mini-žaidimą (jokios tarpinės lentutės; sign-first parašas vyksta _beginSession) ──
-    _startMinigame(rp, minR, maxR);
+    // ── READY — RANKINIS startas (mygtukas), NE auto-sign. Taip parašo atšaukimas / NEED_AUTH /
+    //    connection flicker NEBESUKELIA begalinio re-sign loop'o — failure path'ai (_refresh) grįžta
+    //    čia, į mygtuką, o ne vėl iškart prašo pasirašyti. (Buvo: auto _startMinigame → loop.) ──
+    body.innerHTML = rpCard +
+      '<div style="background:rgba(74,157,166,.1);border:2px solid ' + C.teal + ';border-radius:12px;padding:12px 10px;margin-bottom:11px;color:' + C.ink + ';font-size:12px;line-height:1.5;">' +
+        '⛏ The vein is <strong style="color:#2fa84a;">READY</strong>.<br><span style="opacity:.8;font-size:11px;">Strike the gold zone — higher accuracy, bigger RONKE.</span></div>' +
+      '<button id="rf-mine-now" style="width:100%;padding:14px;border-radius:12px;border:2px solid #fff3c4;background:linear-gradient(180deg,#ffe08a,' + C.gold + ' 45%,#e0a93a);color:' + C.ink + ';font-weight:900;font-size:15px;letter-spacing:1px;cursor:pointer;box-shadow:0 0 14px rgba(255,207,92,.7),0 3px 0 rgba(0,0,0,.3);text-shadow:0 1px 0 rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;gap:7px;">' +
+        '<img src="ronke.png" draggable="false" style="height:1.2em;image-rendering:pixelated;"> MINE NOW</button>';
+    var _mineBtn = document.getElementById('rf-mine-now');
+    if (_mineBtn) {
+      _mineBtn.onclick = function () { if (!_busy) _startMinigame(rp, minR, maxR); };
+    }
   }
 
   // ── PICKAXE STRIKE mini-žaidimas (anti-bot, skill→reward) ──
