@@ -187,6 +187,19 @@
     return 0;
   }
 
+  // Serverio cooldown (be parašo, read-only) — AUTORITETAS. Naudojam suderinti pasenusį lokalų
+  // localStorage cooldown'ą: jei serveris READY, o telefonas/PC dar laiko seną laiką (multi-device /
+  // admin reset) — nebeblokuojam žaidėjo. Klaida/nepasiekiama → grąžinam null (paliekam lokalų elgesį).
+  async function _fetchServerCooldown(a) {
+    if (_TEST_MODE) return null;
+    try {
+      var r = await fetch(CLAIM_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'status', wallet: a }) });
+      var j = await r.json();
+      if (j && j.ok && typeof j.cooldownRemaining === 'number') return j.cooldownRemaining;
+    } catch (_) {}
+    return null;
+  }
+
   function _close() {
     if (_tickTimer) { clearInterval(_tickTimer); _tickTimer = null; }
     if (_root) { _root.remove(); _root = null; }
@@ -1012,7 +1025,15 @@
       if (b) b.innerHTML = '<div style="text-align:center;padding:18px;color:' + C.ink + ';">Connect your wallet to use the mine.</div>';
       return;
     }
-    var rp = await _fetchRP(a);
+    var _res = await Promise.all([_fetchRP(a), _fetchServerCooldown(a)]);
+    var rp = _res[0], _scd = _res[1];
+    // Serveris = cooldown autoritetas. READY → išvalom pasenusį lokalų laiką (kad telefonas/PC neblokuotų);
+    // cooldown → sinchronizuojam display. (Klaida/null → paliekam lokalų elgesį.) Serveris vis tiek
+    // enforce'ina cooldown'ą per `start`, tad lokalaus išvalymas nesukelia double-claim rizikos.
+    if (_scd !== null) {
+      if (_scd <= 0) { _setLastClaim(a, 0); _serverCooldownUntil = 0; }
+      else { _serverCooldownUntil = Date.now() + _scd * 1000; }
+    }
     _renderBody(rp);
     // timer tick (jei cooldown)
     if (_tickTimer) { clearInterval(_tickTimer); _tickTimer = null; }
