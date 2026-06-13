@@ -6830,7 +6830,9 @@
 
     const block = !!(opts && opts.block);
 
-    if (dmg <= 0 && !miss && !block) return;
+    const heal = !!(opts && opts.heal);
+
+    if (dmg <= 0 && !miss && !block && !heal) return;
 
     _f12DmgPopups.push({
 
@@ -6843,6 +6845,8 @@
       miss: miss,                              // nepataikė → „MISS" pilkas
 
       block: block,                            // skull užblokavo → „BLOCK" žydras
+
+      heal: heal,                              // gydymas → „+N" žalias
 
     });
 
@@ -6956,7 +6960,7 @@
 
       const scale = k < 0.04 ? 1 + (1 - k / 0.04) * 0.7 : 1;
 
-      const label = p.block ? 'BLOCK' : p.miss ? 'MISS' : ('-' + p.dmg);
+      const label = p.heal ? ('+' + p.dmg) : p.block ? 'BLOCK' : p.miss ? 'MISS' : ('-' + p.dmg);
 
       const fontSize = Math.round((p.crit ? 23 : (p.miss || p.block) ? 15 : 18) * scale);
 
@@ -6980,7 +6984,8 @@
 
       let col;
 
-      if (p.block) col = `rgba(120,210,255,${alpha})`;                 // BLOCK — žydras
+      if (p.heal) col = `rgba(90,230,110,${alpha})`;                   // HEAL — ryškiai žalias „+N"
+      else if (p.block) col = `rgba(120,210,255,${alpha})`;                 // BLOCK — žydras
 
       else if (p.miss) col = `rgba(205,210,220,${alpha})`;             // MISS — pilkas
 
@@ -7255,21 +7260,36 @@
 
     if (type === 'heart') {
 
-      const healAmt = Math.max(1, Math.round((value >= 8 ? 2 : 1) * mult));
+      // RAUDONI (heart) merge → gydo labiausiai sužeistą ally unitą (+HP) su HP-pildymo animacija.
+      // Kiekis: bazė 2 HP (1x zonoj) × zonos mult, + papildomai pagal merge dydį (kuo tolimesnis — daugiau).
+      const healHP = Math.max(1, Math.round(2 * mult) + Math.max(0, Math.floor(Math.log2(value || 4)) - 2));
 
-      const oldHp = baseHp;
+      // labiausiai sužeistas judantis ally (didžiausias maxHp−hp tarpas)
+      let tgt = null, worstGap = 0, tgtLane = -1;
+      for (let li = 0; li < lanes.length; li++) {
+        for (const al of lanes[li].allies) {
+          if (al.dead || al.static) continue;
+          const gap = (al.maxHp || 0) - (al.hp || 0);
+          if (gap > worstGap) { worstGap = gap; tgt = al; tgtLane = li; }
+        }
+      }
 
-      baseHp = Math.min(BASE_HP, baseHp + healAmt);
-
-      // Heal visual on HP bar (green pulse)
-
-      _f12LaneStrikes.push({
-
-        lane: -1, x: 0, type: 'heart', born: t, duration: 800,
-
-        healAmt: baseHp - oldHp, color: TYPE_COLOR.heart,
-
-      });
+      if (tgt) {
+        const oldHp = tgt.hp;
+        tgt.hp = Math.min(tgt.maxHp, tgt.hp + healHP);
+        const healed = tgt.hp - oldHp;
+        if (healed > 0) {
+          tgt._healAnim = { from: oldHp / tgt.maxHp, to: tgt.hp / tgt.maxHp, born: t, amt: healed };
+          tgt._healFlashUntil = t + 700;
+          try { _spawnDmgPopup(tgtLane, tgt.x, healed, t, { heal: true }); } catch (_) {}
+          _f12ScreenShake = Math.max(_f12ScreenShake, 1.2);
+        }
+      } else {
+        // nėra sužeistų unitų → fallback: gydom bazę (kaip anksčiau), kad merge nepražūtų
+        const oldHp = baseHp;
+        baseHp = Math.min(BASE_HP, baseHp + healHP);
+        _f12LaneStrikes.push({ lane: -1, x: 0, type: 'heart', born: t, duration: 800, healAmt: baseHp - oldHp, color: TYPE_COLOR.heart });
+      }
 
       return;
 
@@ -14156,9 +14176,29 @@
 
       ctx.fillRect(Math.round(cx - bw / 2), Math.round(barY), Math.round(bw), bh);
 
-      ctx.fillStyle = '#5cd06b';
+      // HP-fill heal animacija (heart merge): juosta užsipildo nuo→iki (ease-out, 500ms) su švytėjimu.
+      let _hf = a.hp / a.maxHp;
+      if (a._healAnim) {
+        const hk = (t - a._healAnim.born) / 500;
+        if (hk >= 1) a._healAnim = null;
+        else _hf = a._healAnim.from + (a._healAnim.to - a._healAnim.from) * (1 - Math.pow(1 - hk, 3));
+      }
+      const _healing = t < (a._healFlashUntil || 0);
+      if (_healing) { ctx.save(); ctx.shadowColor = 'rgba(90,230,110,0.95)'; ctx.shadowBlur = 7; }
+      ctx.fillStyle = _healing ? '#86ff95' : '#5cd06b';
+      ctx.fillRect(Math.round(cx - bw / 2 + 1), Math.round(barY + 1), Math.round((bw - 2) * Math.max(0, Math.min(1, _hf))), bh - 2);
+      if (_healing) ctx.restore();
 
-      ctx.fillRect(Math.round(cx - bw / 2 + 1), Math.round(barY + 1), Math.round((bw - 2) * (a.hp / a.maxHp)), bh - 2);
+      // Žalias gydymo pulsas aplink unitą (expanding ring + „+" kryžius)
+      if (_healing) {
+        const hk2 = 1 - Math.max(0, (a._healFlashUntil - t) / 700);   // 0→1
+        const PX2 = 2, ringR = sz * 0.5 + hk2 * sz * 1.1, a2 = (1 - hk2) * 0.7;
+        ctx.fillStyle = `rgba(120,255,140,${a2})`;
+        for (let p = 0; p < 8; p++) {
+          const ang = (p / 8) * Math.PI * 2 + hk2 * 1.2;
+          ctx.fillRect(Math.round(cx + Math.cos(ang) * ringR - PX2), Math.round(cy + Math.sin(ang) * ringR - PX2), PX2 * 2, PX2 * 2);
+        }
+      }
 
     }
 
@@ -22701,7 +22741,52 @@
 
   window._F12_activateNow = function() { _activateNow(); };
 
+  // ── ASSET LOADING GATE ── (2026-06-13) lėtas tinklas/CPU → sprite'ai dar nesukrauti, o loop jau
+  // sukasi → žaidimas „pakimba" 1-2 min (platformos/sprite'ai nesirenderina, priešai juda, negali šaudyti).
+  // Fix: prieš startą palaukti kritinių sprite'ų (su 20s timeout fallback) + rodyti LOADING ekraną.
+  let _f12LoadPoll = 0, _f12LoadEl = null;
+  function _f12CriticalImgs() {
+    return [_platformSheetImg, _wallSheetImg, _spikeSheetImg, _wallDestroyImg, _towerSpriteImg, _zipSpriteImg, _frostLogoImg];
+  }
+  function _f12AssetsReady() {
+    try { return _f12CriticalImgs().every(function (im) { return im && im.complete && im.naturalWidth > 0; }); }
+    catch (_) { return true; }
+  }
+  function _showF12Loading() {
+    if (_f12LoadEl) return;
+    var d = document.createElement('div');
+    d.id = 'f12-loading';
+    d.style.cssText = 'position:fixed;inset:0;z-index:99990;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#10131c;color:#cfe3ff;font-family:\'Press Start 2P\',monospace,sans-serif;';
+    d.innerHTML = '<div style="font-size:13px;letter-spacing:1px;">⚙ LOADING PEWPEW ROOM…</div>' +
+      '<div style="width:180px;height:10px;border:2px solid #3a4a66;border-radius:6px;overflow:hidden;background:#0a0d14;"><div id="f12-load-bar" style="height:100%;width:10%;background:linear-gradient(90deg,#4a9da6,#6cf0ff);transition:width .25s;"></div></div>' +
+      '<div style="font-size:8px;opacity:.7;text-align:center;line-height:1.6;max-width:80vw;">first load on a slow connection<br>can take a moment</div>';
+    document.body.appendChild(d);
+    _f12LoadEl = d;
+  }
+  function _hideF12Loading() { if (_f12LoadEl) { try { _f12LoadEl.remove(); } catch (_) {} _f12LoadEl = null; } }
   function _activateNow() {
+    if (active) return;
+    if (!_f12AssetsReady()) {
+      _showF12Loading();
+      var t0 = performance.now();
+      var total = _f12CriticalImgs().length || 1;
+      if (_f12LoadPoll) clearInterval(_f12LoadPoll);
+      _f12LoadPoll = setInterval(function () {
+        try {
+          var ready = _f12CriticalImgs().filter(function (im) { return im && im.complete && im.naturalWidth > 0; }).length;
+          var bar = document.getElementById('f12-load-bar'); if (bar) bar.style.width = Math.max(10, Math.round(ready / total * 100)) + '%';
+        } catch (_) {}
+        if (_f12AssetsReady() || performance.now() - t0 > 20000) {
+          clearInterval(_f12LoadPoll); _f12LoadPoll = 0;
+          _hideF12Loading();
+          _activateNowReal();
+        }
+      }, 150);
+      return;
+    }
+    _activateNowReal();
+  }
+  function _activateNowReal() {
 
     if (active) return;
 
