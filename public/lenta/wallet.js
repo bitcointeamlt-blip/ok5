@@ -671,10 +671,16 @@
   // claim = { player, amount(wei str), deadline(str), nonce(str), signature, contract, chainId }.
   // Serveris jau pasirašė ClaimReward (anti-cheat); čia tik on-chain submit per žaidėjo piniginę.
   async function submitFaucetClaim(claim) {
-    if (!state.connected) throw new Error('Wallet not connected');
-    const prov = state.provider || (await getAnyProvider());
-    if (!prov) throw new Error('No wallet provider');
     if (!claim || !claim.contract || !claim.signature) throw new Error('Bad claim payload');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('Wallet not connected');
+    // Adresą atstatom net jei state.connected flickerino tarp sign ir submit (injected provider veikia).
+    let from = state.address;
+    if (!from) {
+      try { const a1 = await prov.request({ method: 'eth_accounts' }); if (Array.isArray(a1) && a1[0]) from = a1[0]; } catch (_) {}
+      if (!from) { try { const a2 = await prov.request({ method: 'eth_requestAccounts' }); if (Array.isArray(a2) && a2[0]) from = a2[0]; } catch (_) {} }
+    }
+    if (!from) throw new Error('Wallet not connected — reopen wallet and tap COLLECT to retry');
 
     // ── NETWORK GUARD → Ronin Mainnet ──
     try {
@@ -725,7 +731,7 @@
     void _ronkeBal;   // (paliktas dėl suderinamumo; patvirtinimas dabar per receipt)
 
     let txHash = null, sendErr = null;
-    prov.request({ method: 'eth_sendTransaction', params: [{ from: state.address, to: claim.contract, data }] })
+    prov.request({ method: 'eth_sendTransaction', params: [{ from: from, to: claim.contract, data }] })
       .then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
 
     const _deadline = Date.now() + 120000;   // 2 min patvirtinimui
