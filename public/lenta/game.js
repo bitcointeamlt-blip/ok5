@@ -6180,11 +6180,51 @@ function _f9UnitInBush(u) {
 function _f9UnitOccluded(u) {
   if (!u || !S || !S.decorations) return false;
   const ux = u.x, uy = u.y;
-  for (let dr = -1; dr <= 2; dr++) {
+  // TIK MEDŽIAI (aukšti, dengia unitą; po 1.5× scale dengia daugiau eilučių). Krūmai žemi — jiems nereikia.
+  for (let dr = -1; dr <= 3; dr++) {
     const d = S.decorations[(uy + dr) + ',' + ux];
-    if (typeof d === 'string' && (d.startsWith('tree') || d.startsWith('bush'))) return true;
+    if (typeof d === 'string' && d.startsWith('tree')) return true;
   }
   return false;
+}
+// Unifikuotas frame-getter F9 unito siluetui — { img, sx, sy, sw, sh, sprSz, flip, yOff } arba null.
+function _f9UnitFrameForOutline(u) {
+  const U = UNIT_CELL, flip = !!(u.facing && u.facing.dx < 0);
+  let f;
+  if (u.utype === 'skull' && typeof getSkullFrameState === 'function') { f = getSkullFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 2.5, flip, yOff: 0 }; }
+  else if (u.utype === 'archer' && typeof getArcherUnitFrameState === 'function') { f = getArcherUnitFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 2.5, flip, yOff: 0 }; }
+  else if (u.utype === 'harpoon_fish' && typeof getHarpoonFishFrameState === 'function') { f = getHarpoonFishFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 2.5, flip, yOff: 0 }; }
+  else if (u.utype === 'pigronke' && typeof getPigronkeFrameState === 'function') { f = getPigronkeFrameState(u); if (f) { const s = U * 3.0; return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: s, flip: (u.facing?.dx || 1) < 0, yOff: 0.5 * CELL - 0.38 * s }; } }
+  else if (u.utype === 'shaman' && typeof getShamanFrame === 'function') { const img = getShamanFrame(u, flip ? 'west' : 'east'); if (img && img.complete && img.naturalWidth) return { img, sx: 0, sy: 0, sw: img.naturalWidth, sh: img.naturalHeight, sprSz: U * 2.6, flip: false, yOff: 0 }; }
+  else if (u.utype === 'bear' && typeof getBearFrameState === 'function') { f = getBearFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 3.0, flip, yOff: 0 }; }
+  else if ((u.utype === 'minotaur' || u.utype === 'minotaur_big') && typeof getMinotaurFrameState === 'function') { f = getMinotaurFrameState(u); if (f) { const s = U * (u.utype === 'minotaur_big' ? 4.7 : 3.2); return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: s, flip, yOff: 0 }; } }
+  return null;
+}
+// Tuščiaviduris BALTAS kontūras VIRŠ medžio (per-unit offscreen + destination-out → tik kraštas, be užpildo).
+let _f9OutlineOC = null;
+function _f9DrawTreeOutline(u, cx, cy, color) {
+  const fr = _f9UnitFrameForOutline(u);
+  if (!fr || !fr.img || !fr.img.complete || !fr.img.naturalWidth) return;
+  if (typeof _silhouetteTintSheet !== 'function') return;
+  const ts = _silhouetteTintSheet(fr.img, color || '#ffffff');
+  if (!ts) return;
+  const sz = fr.sprSz, pad = 8, W = Math.ceil(sz + pad * 2), C0 = W / 2;
+  if (!_f9OutlineOC) _f9OutlineOC = document.createElement('canvas');
+  const oc = _f9OutlineOC;
+  if (oc.width !== W || oc.height !== W) { oc.width = W; oc.height = W; }
+  const g = oc.getContext('2d');
+  g.clearRect(0, 0, W, W);
+  g.imageSmoothingEnabled = false;
+  const blit = (img, dx, dy) => {
+    if (fr.flip) { g.save(); g.translate(C0 + dx, C0 + dy); g.scale(-1, 1); g.drawImage(img, fr.sx, fr.sy, fr.sw, fr.sh, -sz / 2, -sz / 2, sz, sz); g.restore(); }
+    else g.drawImage(img, fr.sx, fr.sy, fr.sw, fr.sh, C0 - sz / 2 + dx, C0 - sz / 2 + dy, sz, sz);
+  };
+  const OL = 2, offs = [[-OL, 0], [OL, 0], [0, -OL], [0, OL], [-OL, -OL], [OL, -OL], [-OL, OL], [OL, OL]];
+  for (const [dx, dy] of offs) blit(ts, dx, dy);       // baltas shape (dilated)
+  g.globalCompositeOperation = 'destination-out';
+  blit(fr.img, 0, 0);                                   // ištrinam centrą → lieka tik kontūras (hollow)
+  g.globalCompositeOperation = 'source-over';
+  ctx.drawImage(oc, cx - C0, cy - C0 + (fr.yOff || 0));
 }
 
 // F9 mapos dekoravimas — VIZUALINĖS dekoracijos ant žolės bazės (medžiai/krūmai/gėlės/antis).
@@ -16284,7 +16324,8 @@ function drawForegroundDecorations() {
     const frame = cfg.fc > 1
       ? (Math.floor(performance.now() / (1000 / cfg.fps)) + stagger) % cfg.fc
       : 0;
-    const dw = CELL * cfg.cw, dh = CELL * cfg.ch;
+    const _tf = (typeof S !== 'undefined' && S && S.floor === 9) ? 1.5 : 1.0;   // F9 — aukštesni medžiai (unitas tilptų UŽ jų)
+    const dw = CELL * cfg.cw * _tf, dh = CELL * cfg.ch * _tf;
     const dx = px + CELL / 2 - dw / 2;
     const dy = py + CELL - dh + 20;
     ctx.drawImage(img, frame * cfg.fw, 0, cfg.fw, cfg.fh, dx, dy, dw, dh);
@@ -26169,15 +26210,14 @@ function loop(now) {
   if (typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
   if (typeof _drawF9Shots === 'function') _drawF9Shots();
   drawForegroundDecorations();
-  // F9 OCCLUSION SILHOUETTE — unitai už medžių/krūmų rodomi siluetu (kontūru) VIRŠ dekoracijų,
-  // kad NEDINGTŲ ir nesusilietų su aplinka. Tik occluded unitai (kiti renderinasi normaliai su gyliu).
-  if (S.floor === 9 && typeof _drawUnitSilhouetteOutline === 'function') {
+  // F9 OCCLUSION — unitas UŽ MEDŽIO rodomas tuščiaviduriu BALTU kontūru VIRŠ medžio (kad nedingtų).
+  // Tik medžiai (ne krūmai). Tik occluded unitai — kiti renderinasi normaliai su gyliu.
+  if (S.floor === 9 && typeof _f9DrawTreeOutline === 'function') {
     for (const u of (S.units || [])) {
       if (!u || !u.alive || !_f9UnitOccluded(u)) continue;
       const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
       const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-      const _col = (typeof _f9IsEnemy === 'function' && _f9IsEnemy(u)) ? '#DE4D4E' : '#6cf0ff';   // priešas raudonas, ally žydras
-      _drawUnitSilhouetteOutline(u, _cx, _cy, _col);
+      _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // baltas kontūras (be užpildo)
     }
   }
   drawBarracksHarpoons('top');
@@ -27118,7 +27158,7 @@ function _silhouetteTintSheet(sheet, color) {
 // filterStr gali būti: (1) canvas filter chain (e.g. 'brightness(0) invert(1)'),
 //                      (2) hex spalva '#RRGGBB' — tada naudojam offscreen tinting (tikslu).
 // Grąžina true jei pavyko.
-function _drawUnitSilhouetteOutline(u, cx, cy, filterStr) {
+function _drawUnitSilhouetteOutline(u, cx, cy, filterStr, silhouetteOnly) {
   const FILTER = filterStr || 'brightness(0) invert(1)';
   const _useTint = !!(filterStr && filterStr.charAt(0) === '#');
   if (u.utype === 'skull' && typeof getSkullFrameState === 'function') {
@@ -27149,7 +27189,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy, filterStr) {
       for (const [dx, dy] of offs) drawFrame(dx, dy);
       ctx.restore();
     }
-    drawFrame(0, 0);
+    if (!silhouetteOnly) drawFrame(0, 0);   // silhouetteOnly → tik spalvotas kontūras (unitas UŽ kliūties)
     return true;
   }
   if (u.utype === 'shaman' && typeof getShamanFrame === 'function') {
@@ -27173,7 +27213,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy, filterStr) {
       for (const [dx, dy] of offs) drawFrame(dx, dy);
       ctx.restore();
     }
-    drawFrame(0, 0);
+    if (!silhouetteOnly) drawFrame(0, 0);   // silhouetteOnly → tik spalvotas kontūras (unitas UŽ kliūties)
     return true;
   }
   if (u.utype === 'harpoon_fish' && typeof getHarpoonFishFrameState === 'function') {
@@ -27204,7 +27244,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy, filterStr) {
       for (const [dx, dy] of offs) drawFrame(dx, dy);
       ctx.restore();
     }
-    drawFrame(0, 0);
+    if (!silhouetteOnly) drawFrame(0, 0);   // silhouetteOnly → tik spalvotas kontūras (unitas UŽ kliūties)
     return true;
   }
   if (u.utype === 'archer' && typeof getArcherUnitFrameState === 'function') {
@@ -27235,7 +27275,7 @@ function _drawUnitSilhouetteOutline(u, cx, cy, filterStr) {
       for (const [dx, dy] of offs) drawFrame(dx, dy);
       ctx.restore();
     }
-    drawFrame(0, 0);
+    if (!silhouetteOnly) drawFrame(0, 0);   // silhouetteOnly → tik spalvotas kontūras (unitas UŽ kliūties)
     return true;
   }
   return false;
