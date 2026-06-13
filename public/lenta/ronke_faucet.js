@@ -246,10 +246,11 @@
     var body = document.getElementById('rf-body');
     if (!body) { _busy = false; return; }
     var ROUNDS = 3, round = 0, accs = [], taps = [];
-    var cfg = [ { zw: 17, speed: 125 }, { zw: 12, speed: 170 }, { zw: 8.5, speed: 225 } ];  // zona (°) siaurėja, greitis (°/s) kyla
+    var cfg = [ { zw: 17, speed: 106.25 }, { zw: 12, speed: 144.5 }, { zw: 8.5, speed: 191.25 } ];  // zona (°) siaurėja, greitis (°/s) kyla — greičiai −15% (lėtesnė rodyklė); PRIVALO sutapti su serverio CFG
     var zc = 0, zcDir = 1, ang = 0, dir = 1, lastT = 0, raf = null, struck = false, _claimed = false, _finalReward = 0, _finalLucky = false;
     var ZONE_SPEED = 34;   // skystis lėtai keliauja per VISĄ skalę pirmyn-atgal (°/s)
     var R = 73, A_MIN = -52, A_MAX = 52;   // rodyklė juda TIK žiedo gold band (skalės) ribose; R = gold band radius
+    var ROUND_TIME_MS = 60000;   // laiko biudžetas raundui (1 min) — juosta tuštėja, pasibaigus AUTO-smūgis (kad nesitaikytų amžinai)
     // ── SERVER-AUTHORITATIVE: serveris išduoda raundų trajektorijas; klientas rendina closed-form + įrašo tap-laikus ──
     var _rounds = null, _sessionId = null, _serverMode = false, _roundT0 = 0, _tapLedger = false, _tapSyncs = [], _tapSyncFailed = false, _tapChain = Promise.resolve();
     function _tri(s, lo, hi) { var Rr = hi - lo; var m = ((s - lo) % (2 * Rr) + 2 * Rr) % (2 * Rr); return lo + (m <= Rr ? m : 2 * Rr - m); }
@@ -635,6 +636,7 @@
     function loop(t) {
       // CLOSED-FORM pozicija iš raundo elapsed — sutampa su serverio scoringu (taps prieš tas pačias trajektorijas)
       var el = (performance.now() - _roundT0) / 1000;
+      if (!struck && el * 1000 >= ROUND_TIME_MS) { doStrike(); return; }   // po 1 min — rodyklė šauna automatiškai (random rewardas pagal poziciją)
       var rd = _rounds[round]; var zw = rd.zw;
       ang = _tri(rd.ang0 + rd.dir * rd.speed * el, A_MIN, A_MAX);
       zc = _tri(rd.zc0 + rd.zcDir * rd.zoneSpeed * el, A_MIN + zw, A_MAX - zw);
