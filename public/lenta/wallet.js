@@ -1175,12 +1175,20 @@
     try {
       const prov = state.provider || (await getAnyProvider());
       if (!prov) return { ok: false, error: 'No provider' };
-      const accts = await prov.request({ method: 'eth_accounts' });
-      const cur = accts && accts[0] ? accts[0] : null;
+      let accts = await prov.request({ method: 'eth_accounts' });
+      let cur = accts && accts[0] ? accts[0] : null;
       if (!cur) {
-        if (state.connected) disconnect();
-        return { ok: false, error: 'No active account' };
+        // Transient tuščias (extension flicker / heavy F12 rAF) — retry kartą prieš nuspręsiant.
+        await new Promise((r) => setTimeout(r, 350));
+        try { accts = await prov.request({ method: 'eth_accounts' }); cur = accts && accts[0] ? accts[0] : null; } catch (_) {}
       }
+      if (!cur) {
+        // Vis dar tuščia → SOFT (NEtrinam kredencialų, kad nereiktų vėl pasirašyt; auto-reconnect po unlock).
+        if (state.connected) { state.connected = false; notify(); }
+        return { ok: false, error: 'No active account (transient?)' };
+      }
+      // Jei buvom „soft-atjungti" ir grįžo tas pats account'as → re-connect be re-sign.
+      if (!state.connected && state.address && cur.toLowerCase() === state.address.toLowerCase()) { state.connected = true; notify(); }
       const mismatch = state.address && cur.toLowerCase() !== state.address.toLowerCase();
       return { ok: true, currentAddress: cur, registered: state.address, mismatch };
     } catch (e) {
