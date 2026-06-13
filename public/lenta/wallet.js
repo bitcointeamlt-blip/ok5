@@ -456,8 +456,9 @@
     } catch { return null; }
   }
 
+  function _lsAddr() { try { return localStorage.getItem(LS.ADDR); } catch { return null; } }
   async function restore() {
-    const saved = (function () { try { return localStorage.getItem(LS.ADDR); } catch { return null; } })();
+    const saved = _lsAddr();
     if (!saved) return false;
     const savedMethod = (function () { try { return localStorage.getItem(LS.METHOD); } catch { return null; } })();
 
@@ -486,16 +487,26 @@
       return false;   // NEtrinam sesijos
     }
 
-    // Injected (native) — kaip anksčiau.
-    const prov = getRoninProvider();
-    if (!prov) return false;
+    // Injected (native) — ATSPARUS laikinam provider/eth_accounts vėlavimui.
+    // Transient tuščias eth_accounts (extension dar kraunasi / užrakinta) NEBETRINA kredencialų,
+    // kad žaidėjui NEREIKĖTŲ vėl pasirašyt. Trinam TIK kai aiškiai persijungta į kitą account'ą.
+    let prov = getRoninProvider();
+    for (let i = 0; i < 4 && !prov; i++) { await new Promise((r) => setTimeout(r, 350)); prov = getRoninProvider(); }
+    if (!prov) return false;   // provider dar neįsikrovė — kredencialai lieka, atstatysim vėliau
     state.provider = prov;
-    try {
-      const accounts = await prov.request({ method: 'eth_accounts' });
-      const ok = accounts && accounts.map(a => a.toLowerCase()).includes(saved.toLowerCase());
-      if (ok) { _markRestored(prov); return true; }
-    } catch {}
-    await disconnect();
+    let accounts = null;
+    for (let i = 0; i < 4; i++) {
+      try { accounts = await prov.request({ method: 'eth_accounts' }); } catch (_) { accounts = null; }
+      if (accounts && accounts.length) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    if (accounts && accounts.length) {
+      if (accounts.map((a) => a.toLowerCase()).includes(saved.toLowerCase())) { _markRestored(prov); return true; }
+      await disconnect();   // account'ai yra, bet saved nėra → tikras account switch → trinam
+      return false;
+    }
+    // tuščia/klaida po retry → transient (užrakinta/vėluoja) → NEBETRINAM kredencialų, tik ne-connected šįkart
+    attachListeners(prov);   // kad accountsChanged (po unlock) auto-reconnectintų
     return false;
   }
 
@@ -506,14 +517,21 @@
     try {
       prov.on('accountsChanged', (accounts) => {
         if (!accounts || accounts.length === 0) {
-          // WC: tuščias accountsChanged dažnai TRANSIENT (app backgrounding per TX deep-link,
-          // relay re-init) → NEtrinam sesijos (RAMIRO: „disconnects after each game").
+          // Tuščias accountsChanged dažnai TRANSIENT (WC: app backgrounding per TX deep-link;
+          // injected: extension užrakinta). NEtrinam kredencialų — tik soft (connected=false),
+          // kad po unlock auto-reconnectintų be re-sign.
           if (isWC) return;
-          disconnect(); return;
+          state.connected = false; notify(); return;
         }
-        if (state.address && accounts[0].toLowerCase() !== state.address.toLowerCase()) {
-          // Different account — treat as re-login (clear old, require new signature)
-          disconnect();
+        const acc0 = accounts[0].toLowerCase();
+        const savedAddr = (state.address || _lsAddr() || '').toLowerCase();
+        if (savedAddr && acc0 === savedAddr) {
+          // Tas pats account'as grįžo (po unlock) → re-connect BE re-sign.
+          if (!state.connected) { state.address = accounts[0]; state.connected = true; notify(); refreshBalance().catch(() => {}); }
+          return;
+        }
+        if (savedAddr && acc0 !== savedAddr) {
+          disconnect();   // tikras account switch — reikia naujo parašo
         }
       });
       prov.on('chainChanged', () => { chainIdCheck(); });
