@@ -23095,7 +23095,7 @@
       // Vardas + lygis vienoje kompaktiškoj linijoj prie pat sprite
       '#f12-settle-result .f12sr-meta{color:#cdb88c;font-size:8px;margin-top:1px;max-width:min(15vw,176px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;line-height:1.3}',
       '#f12-settle-result .f12sr-meta b{color:#ffcf5c;font-weight:normal}',
-      '#f12-settle-result .f12sr-id{color:#8a9aaa;font-size:6px;font-family:monospace;margin-top:1px;line-height:1.2}',
+      '#f12-settle-result .f12sr-id{color:#8a9aaa;font-size:7px;font-family:monospace;margin-top:3px;line-height:1.2}',
       // Level-up burst — paleidžiamas JS po XP animacijos (klasė .lvgo)
       '#f12-settle-result .f12sr-unit.lvgo .f12sr-spr{animation:f12srLvPop 0.7s ease-out, f12srBounce 0.7s ease-in-out 0.7s infinite}',
       '#f12-settle-result .f12sr-lvup{position:absolute;bottom:calc(100% - 16px);left:50%;transform:translateX(-50%) scale(0);background:linear-gradient(180deg,#ffe07a,#e89a2a);color:#2a1a0c;font-size:8px;font-weight:bold;padding:3px 8px;border-radius:5px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.6),0 0 12px rgba(255,207,92,0.7);z-index:4}',
