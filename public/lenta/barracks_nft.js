@@ -42,6 +42,7 @@
     { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
     { name: 'tokenOfOwnerByIndex', type: 'function', stateMutability: 'view', inputs: [{type:'address'},{type:'uint256'}], outputs: [{type:'uint256'}] },
     { name: 'ownerOf', type: 'function', stateMutability: 'view', inputs: [{type:'uint256'}], outputs: [{type:'address'}] },
+    { name: 'safeTransferFrom', type: 'function', stateMutability: 'nonpayable', inputs: [{type:'address',name:'from'},{type:'address',name:'to'},{type:'uint256',name:'tokenId'}], outputs: [] },
     { name: 'getUnitFullData', type: 'function', stateMutability: 'view', inputs: [{type:'uint256'}], outputs: [
       {type:'uint8',name:'utype'},{type:'uint32',name:'xp'},{type:'uint16',name:'level'},
       {type:'uint16',name:'battles'},{type:'uint16',name:'wins'},{type:'uint32',name:'kills'},
@@ -659,6 +660,30 @@
     return hash;
   }
 
+  // ─── Perkelti (send/dovanoti) unitą kitam Ronin adresui (ERC721 safeTransferFrom) ─────────
+  // Veikia per tą patį provider'į kaip ir treniravimas (Phantom → shim, Ronin Wallet → injected).
+  async function ownerOfUnit(tokenId) {
+    const pc = await getPublicClient();
+    return await pc.readContract({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [BigInt(tokenId)] });
+  }
+  async function transferUnit(tokenId, toAddr) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(toAddr || ''))) throw new Error('Invalid Ronin address');
+    await ensureNetwork();
+    const from = window.Wallet.getAddress();
+    if (String(toAddr).toLowerCase() === String(from).toLowerCase()) throw new Error('Cannot send to yourself');
+    const wc = await getWalletClient();
+    const hash = await wc.writeContract({
+      address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'safeTransferFrom',
+      args: [from, toAddr, BigInt(tokenId)], account: from,
+    });
+    const pc = await getPublicClient();
+    await _confirmTx(hash, async function () {
+      try { const o = await pc.readContract({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [BigInt(tokenId)] }); return String(o).toLowerCase() === String(toAddr).toLowerCase(); }
+      catch (_) { return false; }
+    });
+    return hash;
+  }
+
   // ─── RONKE Power: deko registracija on-chain (relayer-sponsored) ─────────
   // Flow: (1) RONKE approval RonkePower'iui (vienkartinis) → (2) žaidėjas pasirašo SetDeck
   // (EIP-712, GASLESS) → (3) POST į set-deck edge fn → relayer kviečia setDeckForWithFee + moka gas.
@@ -924,6 +949,7 @@
     getPending,
     totalMintedByType,
     approveRonke,
+    transferUnit, ownerOfUnit,
     startTraining,
     claimTraining,
     cancelPendingTraining,

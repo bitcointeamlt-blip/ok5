@@ -9,6 +9,7 @@
   let dropdownEl = null;
   let galleryEl = null;
   let dropdownOpen = false;
+  let _ronCache = null;   // RON balanso kešas dropdown'ui (kad neflickerintų tarp renderų)
 
   // ── Pill creation (floating, fixed top-right) ──
   function ensurePill() {
@@ -525,6 +526,11 @@
     return new Promise((resolve) => {
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(10,14,24,0.82);display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,sans-serif;';
+      // Phantom (Solana) — rodom jei Phantom įdiegtas. Po nugaros = embedded Ronin wallet.
+      const phantomBtn = (window.PhantomRonin && window.PhantomRonin.isAvailable())
+        ? '<button data-m="phantom" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;margin-top:10px;border-radius:10px;border:2px solid #9945FF;background:#2a1640;color:#f0e6ff;font-weight:700;font-size:14px;cursor:pointer;">' +
+          '<span style="font-size:20px;">◎</span><div style="text-align:left;"><div>Phantom (Solana)</div><div style="font-size:11px;opacity:.7;font-weight:400;">Play with your Solana wallet</div></div></button>'
+        : '';
       ov.innerHTML =
         '<div style="background:linear-gradient(180deg,#1a2238,#0f1424);border:2px solid #4a9da6;border-radius:14px;padding:18px 18px 16px;width:min(340px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.55);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
@@ -534,6 +540,7 @@
         '<span style="font-size:20px;">🔷</span><div style="text-align:left;"><div>Ronin Wallet</div><div style="font-size:11px;opacity:.7;font-weight:400;">Mobile app or extension</div></div></button>' +
         '<button data-m="waypoint" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:2px solid #6b4a2e;background:#2a1f12;color:#f5e6c3;font-weight:700;font-size:14px;cursor:pointer;">' +
         '<span style="font-size:20px;">✉️</span><div style="text-align:left;"><div>Email or Social</div><div style="font-size:11px;opacity:.7;font-weight:400;">Sign in with Waypoint</div></div></button>' +
+        phantomBtn +
         '</div>';
       document.body.appendChild(ov);
       function done(v) { try { ov.remove(); } catch (_) {} resolve(v); }
@@ -546,22 +553,28 @@
   }
 
   async function handleConnect() {
-    if (!Wallet.isInstalled()) {
-      showToast('Ronin Wallet not installed. Install from wallet.roninchain.com', 'error', 5000);
+    const hasPhantom = !!(window.PhantomRonin && window.PhantomRonin.isAvailable());
+    // Nieko nėra (nei Ronin, nei Phantom) → siūlom įsidiegti.
+    if (!Wallet.isInstalled() && !hasPhantom) {
+      showToast('No wallet found. Install Ronin Wallet or Phantom', 'error', 5000);
       setTimeout(() => { window.open('https://wallet.roninchain.com/', '_blank'); }, 300);
       return;
     }
-    // Injected (Ronin in-app / extension) → jungiam tiesiai. Kitur (Chrome) → chooser.
+    // Injected Ronin BE Phantom → jungiam tiesiai (greitas kelias). Jei yra Phantom (arba nėra
+    // injected Ronin) → rodom chooser, kad žmogus galėtų pasirinkti Phantom / Ronin / Email.
     let method;
-    if (_hasInjectedRonin()) {
+    if (_hasInjectedRonin() && !hasPhantom) {
       method = 'ronin';
     } else {
       method = await _showConnectChooser();
       if (!method) return;   // user uždarė chooser'į
+      // „Ronin Wallet" pasirinkimas kai yra injected extension → naudok tiesiogiai (ne WalletConnect).
+      if (method === 'roninwc' && _hasInjectedRonin()) method = 'ronin';
     }
     try {
       showToast('Connecting wallet…', 'ok', 30000);  // feedback (telefonui — kad matytų, jog vyksta)
-      await Wallet.connect(method);
+      if (method === 'phantom') await Wallet.connectPhantom();   // Solana → embedded Ronin
+      else await Wallet.connect(method);
       showToast('Connected: ' + Wallet.shortAddress(), 'ok');
     } catch (e) {
       showToast(e && e.message ? e.message : 'Connect failed', 'error');
@@ -588,6 +601,8 @@
       : (st.balLoading ? 'Loading…' : '—');
     const nftCount = Array.isArray(st.nfts) ? st.nfts.length : (st.nftsLoading ? 'Loading…' : '—');
     const addr = st.address || '';
+    // Phantom-derived piniginė → siūlom „Export" (raktą galima importuoti į Ronin Wallet → Mavis Market, full control).
+    const isPhantom = !!(window.PhantomRonin && window.PhantomRonin.isConnected && window.PhantomRonin.isConnected());
     const ddIcon = `<img class="wui-dd-brand-ico wui-dd-brand-ico-img" src="assets_tiny/ronin_logo.png" alt="Ronin" draggable="false"/>`;
     dropdownEl.innerHTML = `
       <div class="wui-dd-header">
@@ -602,6 +617,11 @@
         </div>
       </div>
       <div class="wui-dd-stats">
+        <div class="wui-dd-stat wui-dd-stat-ron">
+          <div class="wui-dd-stat-lbl"><img class="wui-dd-stat-ico wui-dd-stat-ico-img" src="assets_tiny/ronin_logo.png" alt="RON" draggable="false"/>RON</div>
+          <div class="wui-dd-stat-val" id="wui-dd-ron-val">${_ronCache != null ? _ronCache : '…'}</div>
+          <button type="button" class="wui-dd-refresh" id="wui-dd-refresh-ron" title="Refresh RON">↻</button>
+        </div>
         <div class="wui-dd-stat wui-dd-stat-ronke">
           <div class="wui-dd-stat-lbl"><img class="wui-dd-stat-ico wui-dd-stat-ico-img" src="assets_tiny/ronke_logo.png" alt="RONKE" draggable="false"/>RONKE</div>
           <div class="wui-dd-stat-val">${bal}</div>
@@ -616,14 +636,25 @@
       <div class="wui-dd-actions">
         <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-swap">⇄ SWAP RON ↔ RONKE</button>
         <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-gallery">▣ VIEW NFTS</button>
+        <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-sendnft">⤳ SEND UNIT NFT</button>
+        ${isPhantom ? '<button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-export" style="border-color:#9945FF;">◎ EXPORT WALLET KEY</button>' : ''}
         <button type="button" class="wui-dd-btn wui-dd-btn-danger" id="wui-dd-disconnect">⎋ DISCONNECT</button>
       </div>
     `;
     dropdownEl.querySelector('#wui-dd-close').onclick = closeDropdown;
+    { const snb = dropdownEl.querySelector('#wui-dd-sendnft'); if (snb) snb.onclick = () => { closeDropdown(); _showSendNftModal(addr); }; }
+    if (isPhantom) { const exb = dropdownEl.querySelector('#wui-dd-export'); if (exb) exb.onclick = () => { closeDropdown(); _showExportModal(addr); }; }
     dropdownEl.querySelector('#wui-dd-copy').onclick = async () => {
       try { await navigator.clipboard.writeText(addr); showToast('Address copied', 'ok', 1500); }
       catch { showToast('Copy failed', 'error', 1500); }
     };
+    const _fillRon = () => {
+      const el = dropdownEl.querySelector('#wui-dd-ron-val'); if (!el) return;
+      Wallet.getRonBalance().then((b) => { _ronCache = (Number(b) || 0).toLocaleString(undefined, { maximumFractionDigits: 3 }); el.textContent = _ronCache; })
+        .catch(() => { el.textContent = _ronCache != null ? _ronCache : '—'; });
+    };
+    _fillRon();
+    { const rr = dropdownEl.querySelector('#wui-dd-refresh-ron'); if (rr) rr.onclick = _fillRon; }
     dropdownEl.querySelector('#wui-dd-refresh-bal').onclick = () => Wallet.refreshBalance();
     dropdownEl.querySelector('#wui-dd-refresh-nfts').onclick = () => Wallet.refreshNfts();
     dropdownEl.querySelector('#wui-dd-gallery').onclick = () => { closeDropdown(); openGallery(); };
@@ -631,6 +662,93 @@
     dropdownEl.querySelector('#wui-dd-disconnect').onclick = async () => {
       await Wallet.disconnect();
       showToast('Disconnected', 'ok', 1500);
+    };
+  }
+
+  // ── Export Wallet Key (Phantom-derived) — saugiklis: useris pasiima savo raktą, importuoja
+  //    į Ronin Wallet (Import via Private Key) → naudoja Mavis Market, siunčia NFT, full control. ──
+  function _showExportModal(addr) {
+    let pk = '';
+    try { pk = (window.PhantomRonin && window.PhantomRonin.exportPrivateKey && window.PhantomRonin.exportPrivateKey()) || ''; } catch (_) {}
+    if (!pk) { showToast('Reconnect Phantom first, then export', 'error', 3000); return; }
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(10,8,16,0.88);display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,sans-serif;padding:14px;';
+    ov.innerHTML =
+      '<div style="background:linear-gradient(180deg,#1f1530,#140d22);border:2px solid #9945FF;border-radius:14px;padding:18px;width:min(420px,94vw);max-height:94vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.6);color:#f0e6ff;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+          '<span style="color:#c9a6ff;font-weight:800;font-size:15px;">◎ Export Wallet Key</span>' +
+          '<button data-x style="background:#e85d5d;color:#fff;border:none;border-radius:8px;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button></div>' +
+        '<div style="background:rgba(232,93,93,.14);border:1px solid #e85d5d;border-radius:9px;padding:10px;font-size:11px;line-height:1.6;margin-bottom:12px;">' +
+          '⚠ <b>This is the private key to your in-game wallet.</b> Anyone with it controls your RON, RONKE & NFTs. Never share it or paste it on any website. Store it safely.</div>' +
+        '<div style="font-size:10px;color:#b9a6d8;margin-bottom:4px;">Controls address</div>' +
+        '<div style="font-size:10px;word-break:break-all;background:#0d0918;border:1px solid #3a2f50;border-radius:8px;padding:8px;margin-bottom:12px;">' + addr + '</div>' +
+        '<div style="font-size:10px;color:#b9a6d8;margin-bottom:4px;">Private key</div>' +
+        '<div id="wui-pk" style="font-size:10px;font-family:monospace;word-break:break-all;background:#0d0918;border:1px solid #3a2f50;border-radius:8px;padding:8px;margin-bottom:8px;filter:blur(5px);cursor:pointer;user-select:all;">' + pk + '</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
+          '<button data-reveal style="flex:1;background:#2a1640;color:#e9d8ff;border:2px solid #9945FF;border-radius:8px;padding:9px;font-size:11px;font-weight:700;cursor:pointer;">👁 Reveal</button>' +
+          '<button data-copy style="flex:1;background:#9945FF;color:#fff;border:none;border-radius:8px;padding:9px;font-size:11px;font-weight:700;cursor:pointer;">⎘ Copy</button></div>' +
+        '<div style="background:rgba(74,157,166,.12);border:1px solid #4a9da6;border-radius:9px;padding:10px;font-size:11px;line-height:1.6;color:#cfeef2;">' +
+          '<b>To sell on Ronin Market / send NFTs:</b><br>1. Open <b>Ronin Wallet</b> → Add wallet → <b>Import via Private Key</b><br>2. Paste this key → your in-game wallet appears<br>3. Use <b>Mavis Market</b>, send, or manage freely.</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    const close = () => { try { ov.remove(); } catch (_) {} };
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) close(); });
+    const pkEl = ov.querySelector('#wui-pk');
+    ov.querySelector('[data-reveal]').onclick = () => { pkEl.style.filter = pkEl.style.filter ? '' : 'blur(5px)'; };
+    pkEl.onclick = () => { pkEl.style.filter = ''; };
+    ov.querySelector('[data-copy]').onclick = async () => {
+      try { await navigator.clipboard.writeText(pk); showToast('Private key copied — keep it safe!', 'ok', 2500); }
+      catch { pkEl.style.filter = ''; showToast('Copy failed — select & copy manually', 'error', 3000); }
+    };
+  }
+
+  // ── Send Unit NFT to another Ronin address (ERC721 safeTransferFrom via shim/provider) ──
+  function _showSendNftModal(fromAddr) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(10,14,24,0.86);display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,sans-serif;padding:14px;';
+    ov.innerHTML =
+      '<div style="background:linear-gradient(180deg,#1a2238,#0f1424);border:2px solid #4a9da6;border-radius:14px;padding:18px;width:min(400px,94vw);max-height:94vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.6);color:#e8f4f6;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+          '<span style="color:#ffcf5c;font-weight:800;font-size:15px;">⤳ Send Unit NFT</span>' +
+          '<button data-x style="background:#e85d5d;color:#fff;border:none;border-radius:8px;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button></div>' +
+        '<div style="font-size:11px;line-height:1.6;color:#a9c4cc;margin-bottom:12px;">Send one of your trained units to any Ronin address. The unit leaves your wallet permanently.</div>' +
+        '<div style="font-size:10px;color:#8fb0b8;margin-bottom:4px;">Unit token ID <span style="opacity:.7;">(shown on the unit card, e.g. #3717)</span></div>' +
+        '<input id="wui-snft-id" type="number" inputmode="numeric" placeholder="3717" style="width:100%;box-sizing:border-box;border:2px solid #2f5560;border-radius:9px;padding:10px;background:#0c1722;font:inherit;font-size:14px;color:#e8f4f6;margin-bottom:12px;"/>' +
+        '<div style="font-size:10px;color:#8fb0b8;margin-bottom:4px;">Recipient Ronin address</div>' +
+        '<input id="wui-snft-to" type="text" spellcheck="false" placeholder="0x…" style="width:100%;box-sizing:border-box;border:2px solid #2f5560;border-radius:9px;padding:10px;background:#0c1722;font:inherit;font-size:11px;color:#e8f4f6;margin-bottom:12px;"/>' +
+        '<button id="wui-snft-go" style="width:100%;padding:13px;font:inherit;font-size:13px;font-weight:700;border:none;border-radius:10px;cursor:pointer;background:#4a9da6;color:#fff;">SEND UNIT</button>' +
+        '<div id="wui-snft-msg" style="text-align:center;font-size:11px;margin-top:10px;min-height:14px;line-height:1.5;"></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    const close = () => { try { ov.remove(); } catch (_) {} };
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) close(); });
+    const idEl = ov.querySelector('#wui-snft-id'), toEl = ov.querySelector('#wui-snft-to'), go = ov.querySelector('#wui-snft-go');
+    const msg = (t, c) => { const m = ov.querySelector('#wui-snft-msg'); if (m) { m.textContent = t || ''; m.style.color = c || '#a9c4cc'; } };
+    let busy = false, confirming = false;
+    go.onclick = async () => {
+      if (busy) return;
+      const tid = (idEl.value || '').trim();
+      const to = (toEl.value || '').trim();
+      if (!/^\d+$/.test(tid)) { msg('Enter a valid token ID', '#e85d5d'); return; }
+      if (!/^0x[0-9a-fA-F]{40}$/.test(to)) { msg('Enter a valid Ronin address (0x…)', '#e85d5d'); return; }
+      if (to.toLowerCase() === String(fromAddr).toLowerCase()) { msg('That is your own address', '#e85d5d'); return; }
+      if (!(window.BarracksNFT && window.BarracksNFT.transferUnit)) { msg('Transfer unavailable', '#e85d5d'); return; }
+      if (!confirming) { confirming = true; go.textContent = 'CONFIRM — SEND #' + tid + ' ?'; go.style.background = '#e08a2e'; msg('Tap again to confirm — this is permanent', '#ffcf5c'); return; }
+      busy = true; go.disabled = true; go.style.opacity = '.6'; go.textContent = 'SENDING…';
+      try {
+        // Ownership pre-check (aiškesnė klaida nei revert)
+        try { const o = await window.BarracksNFT.ownerOfUnit(tid); if (String(o).toLowerCase() !== String(fromAddr).toLowerCase()) { throw new Error('You do not own unit #' + tid); } } catch (oe) { if (/do not own/.test(String(oe.message))) throw oe; /* read fail → tęsiam, kontraktas patikrins */ }
+        msg('Confirm in your wallet…', '#a9c4cc');
+        await window.BarracksNFT.transferUnit(tid, to);
+        msg('✓ Unit #' + tid + ' sent!', '#7cffa0');
+        go.textContent = 'SENT ✓'; go.style.background = '#2fa84a';
+        try { Wallet.refreshNfts && Wallet.refreshNfts(); } catch (_) {}
+        setTimeout(close, 1800);
+      } catch (e) {
+        const m = String((e && (e.shortMessage || e.message)) || e);
+        msg(/reject|denied|cancel|4001/i.test(m) ? 'Cancelled' : m.slice(0, 80), '#e85d5d');
+        go.disabled = false; go.style.opacity = '1'; go.textContent = 'SEND UNIT'; go.style.background = '#4a9da6'; confirming = false; busy = false;
+      }
     };
   }
 

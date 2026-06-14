@@ -426,6 +426,30 @@
     return { address: addr, signature };
   }
 
+  // P3: Phantom (Solana) → embedded Ronin wallet. Useris prisijungia Phantom, pasirašo 1 žinutę →
+  // deterministiškai išvestas Ronin adresas → shim provider'is → žaidimas naudoja jį VISIEMS Ronin
+  // veiksmams. Useris jaučiasi Solana, po nugaros = Ronin. (SOL→RONKE funding + gas-drip → tas adresas.)
+  async function connectPhantom() {
+    if (!window.PhantomRonin) throw new Error('Phantom module not loaded');
+    if (!window.PhantomRonin.isAvailable()) throw new Error('Phantom wallet not found — install Phantom');
+    const addr = await window.PhantomRonin.connect();        // Phantom sign → derive Ronin adresas
+    const prov = await window.PhantomRonin.getProvider();    // EIP-1193 shim
+    state.provider = prov;
+    state.address = addr;
+    state.connected = true;
+    try {
+      localStorage.setItem(LS.ADDR, addr);
+      localStorage.setItem(LS.SIG, 'phantom:derived');
+      localStorage.setItem(LS.MSG, LOGIN_MSG);
+      localStorage.setItem(LS.METHOD, 'phantom');
+    } catch {}
+    notify();
+    try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch {}
+    refreshBalance().catch(() => {});
+    refreshNfts().catch(() => {});
+    return { address: addr };
+  }
+
   async function disconnect() {
     // WC — uždarom sesiją švariai (explicit logout / session_delete).
     try { if (_wcProvider && typeof _wcProvider.disconnect === 'function') _wcProvider.disconnect(); } catch (_) {}
@@ -472,6 +496,15 @@
       chainIdCheck().catch(() => {});
       refreshBalance().catch(() => {});
       refreshNfts().catch(() => {});
+    }
+
+    // Phantom-derived (P3) — EVM raktas TIK atmintyje, dingsta po reload. Negalim silent re-sign
+    // (Phantom signMessage reikalauja user approval), tad NEbandom auto-jungtis (popup ant kiekvieno
+    // reload = blogai). Rodom „Connect" — vienas tap atkuria deterministiškai (tas pats adresas →
+    // tas pats profilis). Kredencialų NEtrinam ir NEkrentam į injected šaką (kad nesusimaišytų su
+    // Ronin extension provideriu).
+    if (savedMethod === 'phantom') {
+      return false;
     }
 
     // WalletConnect — atstatom persistuotą WC sesiją (be re-sign). NEtrinam jei nepavyksta
@@ -1198,9 +1231,14 @@
 
   window.Wallet = {
     // identity
-    connect, disconnect, restore,
+    connect, connectPhantom, disconnect, restore,
     isInstalled, isConnected: () => state.connected,
     getAddress: () => state.address,
+    // Aktyvus provideris VISIEMS on-chain veiksmams (= shim Phantom userams, real injected/WC kitiems).
+    // KRITINIS: barracks_nft.js (treniravimas/approve/deck) ima per čia — be šito jis kristų į
+    // window.ronin (NETEISINGAS adresas Phantom useriui). state.provider nustatomas connect*/restore.
+    _getProvider: () => state.provider || getRoninProvider(),
+    getProvider: () => state.provider || getRoninProvider(),
     refreshActiveAccount,
     shortAddress,
     profileKey,
