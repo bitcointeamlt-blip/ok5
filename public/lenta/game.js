@@ -2753,6 +2753,9 @@ window.CUSTOM_MAP2 ={"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 window.CUSTOM_MAP12 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":1,"y":3},"exitPos":{"x":40,"y":7}};
 // Floor 11 — kovos zona: 42x19 (15 žemės + 1 vandens + 3 šlaito), tiltas kol 4, kaip F10
 window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"9,6":"bush3","2,11":"bush3","11,11":"bush1","3,1":"bush1","7,13":"bush1","12,1":"bush4","3,4":"tree1","13,3":"tree1","9,0":"tree4"},"collisionBoxes":["3,4","13,3"],"enemies":[{"type":"skull","x":15,"y":7},{"type":"skull","x":18,"y":5},{"type":"shaman","x":22,"y":9},{"type":"shaman","x":34,"y":7},{"type":"shaman","x":36,"y":5},{"type":"shaman","x":36,"y":9}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":40,"y":7}};
+// F9 Battle Test arena — CURATED decoration layout (editorius, su zip tower @ 6,9). 2026-06-14.
+// F9 dungeon/dimensijos statomos fullscreen (NEnaudoja šito dungeon'o); _f9DecorateMap ima TIK .decorations.
+window.CUSTOM_MAP9 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"20,2":"tree3","21,8":"tree3","2,13":"tree2","21,13":"tree1","3,19":"tree3","20,19":"tree2","3,24":"tree1","20,24":"tree2","2,29":"tree4","21,29":"tree3","2,35":"tree2","20,35":"tree3","4,36":"tree1","10,3":"tree2","10,37":"tree3","16,3":"tree1","16,36":"tree3","7,28":"bush2","6,12":"bush1","19,8":"bush1","2,16":"bush2","21,14":"bush2","7,20":"bush1","6,36":"bush2","17,21":"bush4","19,31":"bush1","17,9":"deco_10","19,33":"deco_03","10,17":"deco_07","2,18":"deco_13","21,26":"deco_01","4,31":"deco_10","16,28":"deco_12","13,35":"deco_13","11,35":"deco_11","19,34":"deco_01","7,23":"deco_09","15,18":"deco_13","19,2":"deco_10","17,4":"deco_03","17,18":"deco_08","13,26":"deco_04","13,27":"deco_10","11,13":"deco_07","20,22":"boulder1","11,8":"boulder3","18,32":"boulder4","16,15":"boulder4","15,26":"boulder3","13,12":"boulder3","11,30":"boulder4","14,36":"boulder3","14,7":"boulder3","17,26":"duck","6,9":"building_Zip"},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":1},"exitPos":{"x":25,"y":28}};
 const _buildingImgs = {};
 ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower','Zip'].forEach(n => {
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
@@ -6169,16 +6172,23 @@ function _updateF9SmoothMove(now) {
     const stepLen = Math.min(move, dist);
     let nrx = curX + (dx / dist) * stepLen;
     let nry = curY + (dy / dist) * stepLen;
-    // SOLID deco avoidance — jei kita celė blokuota (medžio kamienas), paslysk ašimi aplink.
-    // 1-celės footprint'ui lokalaus „slide" užtenka (be pilno A*). Toggle: _F9_DECO_SOLID.
+    // AKMENYS + BOKŠTAS = apskritimas → pastumiam IŠ (smooth slide-around, centruota ant sprite).
+    if (_F9_DECO_SOLID && (_f9StaticObstacles || _f9TowerObstacles)) {
+      const po = _f9PushOutObstacles(nrx, nry);
+      nrx = po.x; nry = po.y;
+    }
+    // MEDŽIAI = kvadratai (cell collision, kaip seniau) → axis-slide aplink užblokuotą celę.
     if (_F9_DECO_SOLID && _f9BlockedCells && _f9BlockedCells.size) {
-      const sx0 = Math.floor(curX + 0.5), sy0 = Math.floor(curY + 0.5);
-      if (_f9CellBlocked(Math.floor(nrx + 0.5), Math.floor(nry + 0.5), sx0, sy0)) {
-        const slideX = curX + (dx >= 0 ? 1 : -1) * stepLen;
-        const slideY = curY + (dy >= 0 ? 1 : -1) * stepLen;
-        if (!_f9CellBlocked(Math.floor(slideX + 0.5), sy0, sx0, sy0)) { nrx = slideX; nry = curY; }
-        else if (!_f9CellBlocked(sx0, Math.floor(slideY + 0.5), sx0, sy0)) { nrx = curX; nry = slideY; }
-        else { nrx = curX; nry = curY; }   // abi pusės blokuotos — stovim šį kadrą (retas atvejis)
+      const sx = u.x, sy = u.y;
+      const cx = Math.floor(nrx + 0.5), cy = Math.floor(nry + 0.5);
+      if (_f9CellBlocked(cx, cy, sx, sy)) {
+        if (!_f9CellBlocked(cx, Math.floor(curY + 0.5), sx, sy)) {
+          nry = curY;                       // slysk per X (Y blokuotas)
+        } else if (!_f9CellBlocked(Math.floor(curX + 0.5), cy, sx, sy)) {
+          nrx = curX;                       // slysk per Y (X blokuotas)
+        } else {
+          nrx = curX; nry = curY;           // visiškai blokuota
+        }
       }
     }
     u.rx = nrx;
@@ -6286,29 +6296,75 @@ const _F9_DECO_COVER = true;    // krūmai = cover (miss šansas)
 const _F9_BUSH_MISS  = 0.35;    // krūme stovinčio unito incoming-miss tikimybė
 let _f9BlockedCells = null;     // Set "x,y" (col,row) — STATIC solid deco footprintai (medžiai/akmenys)
 let _f9TowerBlocked = null;     // Set "x,y" — DINAMINIS: zip tower bazės (perkeliamos → sync'inama)
+
+// ── APSKRITIMO collision (2026-06-14, user request) ──────────────────────
+// Vietoj celės — per-objektą APSKRITIMAS, centruotas ant MATOMO sprite, su per-tipą spinduliu
+// ir vertikaliu postūmiu (akmenys piešiami aukščiau nei jų celė → centruojam aukštyn).
+// Koordinatės rx-units (1.0 = 1 celė; cx=celės stulpelis, nes unito rx centruotas ant celės).
+// { rad: spindulys celėmis, dy: centro postūmis (- = aukštyn) }
+const _F9_OBSTACLE_CFG = {
+  // medžiai = CELL kvadratai (atskira _f9BlockedCells logika); čia nenaudojami
+  boulder: { rad: 0.42, dy: -0.20 },                    // APSKRITIMAS: akmuo piešiamas aukščiau celės → centras aukštyn
+  // zip = KVADRATAS (AABB): hw/hh = pusės plotis/aukštis celėmis, dx/dy = centro postūmis (- dy = aukštyn)
+  zip:     { hw: 0.45, hh: 0.45, dx: 0.00, dy: -0.10 }, // ← KOREGUOK ČIA (debug overlay rodo kvadratą)
+};
+const _F9_UNIT_RAD = 0.22;            // unito „kūno" spindulys (atitinka _F9_SEP_RADIUS/2)
+let _f9StaticObstacles = null;        // [{cx,cy,rad}] medžiai/akmenys (build kartą)
+let _f9TowerObstacles = null;         // [{cx,cy,rad}] zip tower (dinaminis)
+// Pastumia tašką (x,y rx-units) IŠ visų obstacle apskritimų. Grąžina {x,y}. Smooth „slide around".
+function _f9PushOutObstacles(x, y) {
+  for (const list of [_f9StaticObstacles, _f9TowerObstacles]) {
+    if (!list) continue;
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      if (o.hw !== undefined) {
+        // KVADRATAS (AABB) — push-out per mažiausios skvarbos ašį → slysk aplink sieną.
+        const ex = o.hw + _F9_UNIT_RAD, ey = o.hh + _F9_UNIT_RAD;
+        const ddx = x - o.cx, ddy = y - o.cy;
+        if (Math.abs(ddx) < ex && Math.abs(ddy) < ey) {
+          const penX = ex - Math.abs(ddx), penY = ey - Math.abs(ddy);
+          if (penX < penY) x = o.cx + (ddx < 0 ? -ex : ex);
+          else             y = o.cy + (ddy < 0 ? -ey : ey);
+        }
+      } else {
+        // APSKRITIMAS — push-out radialiai.
+        let ddx = x - o.cx, ddy = y - o.cy;
+        let d = Math.sqrt(ddx * ddx + ddy * ddy);
+        const minD = o.rad + _F9_UNIT_RAD;
+        if (d < minD) {
+          if (d < 0.0001) { ddx = 0; ddy = -1; d = 1; }
+          x = o.cx + (ddx / d) * minD;
+          y = o.cy + (ddy / d) * minD;
+        }
+      }
+    }
+  }
+  return { x, y };
+}
 function _f9CellBlocked(x, y, selfX, selfY) {
   if (!_F9_DECO_SOLID) return false;
   if (x === selfX && y === selfY) return false;   // sava celė visada praeinama (kad galėtų išeiti)
   const k = x + ',' + y;
-  if (_f9BlockedCells && _f9BlockedCells.has(k)) return true;
-  if (_f9TowerBlocked && _f9TowerBlocked.has(k)) return true;   // zip tower bazė = solid
+  if (_f9BlockedCells && _f9BlockedCells.has(k)) return true;   // MEDŽIAI = kvadratai (akmenys/bokštas = apskritimai)
   return false;
 }
 // Zip tower bazės = SOLID (unitai apeina). Top'as praeinamas (foreground render = walk-behind).
 // Atskiras set (ne _f9BlockedCells), kad perkėlus bokštą būtų galima cheap re-sync be tree/akmenų
 // perskaičiavimo. Kviečiama floor entry + kas AI tick'ą (dinaminiam pozicijos keitimui).
 function _f9SyncTowerBlocked() {
-  if (!S || S.floor !== 9 || !S.decorations) { _f9TowerBlocked = null; return; }
+  if (!S || S.floor !== 9 || !S.decorations) { _f9TowerBlocked = null; _f9TowerObstacles = null; return; }
   const s = new Set();
+  const obs = [];
   for (const k in S.decorations) {
     if (S.decorations[k] !== 'building_Zip') continue;
     const p = k.split(',');           // key = "row,col"
     const r = +p[0], c = +p[1];
-    s.add(c + ',' + r);               // TIK bazės celė — unitai prieina prie pat bokšto kraštų
-                                      // (be celės po ja — anksčiau atrodė kaip „nematoma siena", blogas UX).
-                                      // Galvos kišimasis į duris OK — bokštas foreground'e dengia (walk-behind).
+    s.add(c + ',' + r);               // (paliekam celę; mover'is naudoja kvadratą)
+    const cfg = _F9_OBSTACLE_CFG.zip;
+    obs.push({ cx: c + (cfg.dx || 0), cy: r + cfg.dy, hw: cfg.hw, hh: cfg.hh });
   }
   _f9TowerBlocked = s.size ? s : null;
+  _f9TowerObstacles = obs.length ? obs : null;
 }
 function _f9UnitInBush(u) {
   if (!_F9_DECO_COVER || !u || !S || !S.decorations) return false;
@@ -6320,14 +6376,15 @@ function _f9UnitInBush(u) {
 function _f9UnitOccluded(u) {
   if (!u || !S || !S.decorations) return false;
   const ux = u.x, uy = u.y;
-  // TIK MEDŽIAI (aukšti, dengia unitą; po 1.5× scale dengia daugiau eilučių). Krūmai žemi — jiems nereikia.
-  for (let dr = -1; dr <= 3; dr++) {
+  // TIK MEDŽIAI (aukšti — laja dengia unitą stovintį PRIE bazės ar AUKŠČIAU: dr 0..3). Krūmai žemi — nereikia.
+  // Žemiau medžio (dr<0) unitas yra PRIEKYJE → tvarko _f9UnitInFrontOfDeco (piešia virš). Krūmai žemi — nereikia.
+  for (let dr = 0; dr <= 3; dr++) {
     const d = S.decorations[(uy + dr) + ',' + ux];
     if (typeof d === 'string' && d.startsWith('tree')) return true;
   }
-  // Zip tower (aukštas pastatas) dengia unitą: virš bazės (dr 1..2) IR po baze (dr -1..-2,
-  // kur tankaus unito galva kišasi į permatomas duris) → occluded = baltas siluetas VIRŠ bokšto.
-  for (let dr = -2; dr <= 2; dr++) {
+  // Zip tower piešiamas AUKŠTYN nuo bazės → dengia unitą TIK kai šis prie bazės ar AUKŠČIAU
+  // (už bokšto kūno: dr 0..2). Žemiau stovintis unitas yra PRIEKYJE — neuždengtas, JOKIO silueto.
+  for (let dr = 0; dr <= 2; dr++) {
     if (S.decorations[(uy + dr) + ',' + ux] === 'building_Zip') return true;
   }
   return false;
@@ -6371,6 +6428,36 @@ function _f9DrawTreeOutline(u, cx, cy, color) {
   g.globalCompositeOperation = 'source-over';
   ctx.drawImage(oc, cx - C0, cy - C0 + (fr.yOff || 0));
 }
+// Ar unitas stovi ŽEMIAU medžio/bokšto (priekyje jų) → turi būti piešiamas VIRŠ jų (depth sort).
+// Deco piešiamas aukštyn nuo bazės; žemiau stovinčio unito galva kišasi į kūną/lają → uždengia.
+function _f9UnitInFrontOfDeco(u) {
+  if (!u || !S || !S.decorations) return false;
+  const ux = u.x, uy = u.y;
+  for (let dr = 1; dr <= 2; dr++) {   // tree/zip 1-2 eilutes VIRŠ unito → unitas apačioj = priekyje
+    const d = S.decorations[(uy - dr) + ',' + ux];
+    if (d === 'building_Zip') return true;
+    if (typeof d === 'string' && d.startsWith('tree')) return true;
+  }
+  return false;
+}
+// Perpiešia TIKRĄ unito sprite kadrą VIRŠ foreground deco (tas pats anchor kaip outline'o, tik be filtro).
+function _f9DrawUnitSpriteTop(u) {
+  const fr = _f9UnitFrameForOutline(u);
+  if (!fr || !fr.img || !fr.img.complete || !fr.img.naturalWidth) return false;
+  const cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+  const cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL + (fr.yOff || 0);
+  const sz = fr.sprSz;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  if (fr.flip) {
+    ctx.translate(cx, cy); ctx.scale(-1, 1);
+    ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, -sz / 2, -sz / 2, sz, sz);
+  } else {
+    ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, cx - sz / 2, cy - sz / 2, sz, sz);
+  }
+  ctx.restore();
+  return true;
+}
 
 // F9 mapos dekoravimas — VIZUALINĖS dekoracijos ant žolės bazės (medžiai/krūmai/gėlės/antis).
 // Medžiai = SOLID (1 celės footprint); krūmai = COVER; kita = vizualu. Žr. _F9_DECO_* virš.
@@ -6390,36 +6477,51 @@ function _f9DecorateMap() {
     const k = r + ',' + c;
     if (!S.decorations[k]) S.decorations[k] = id;
   };
-  const trees    = ['tree1', 'tree2', 'tree3', 'tree4'];
-  const bushes   = ['bush1', 'bush2', 'bush3', 'bush4'];
-  const boulders = ['boulder1', 'boulder2', 'boulder3', 'boulder4'];
-  // 1) MEDŽIŲ rėmas apie kraštus (natūrali riba vietoj vandens)
-  for (let c = 2; c < C - 2; c += 5 + rnd(2)) { put(2 + rnd(2), c, trees[rnd(4)]); put(R - 3 - rnd(2), c, trees[rnd(4)]); }
-  for (let r = 4; r < R - 4; r += 5 + rnd(2)) { put(r, 2 + rnd(2), trees[rnd(4)]); put(r, C - 3 - rnd(2), trees[rnd(4)]); }
-  // 2) KRŪMAI — MAŽAI pabirę (~1%), centras laisvas
-  const bushN = Math.round(R * C * 0.010);
-  for (let i = 0; i < bushN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, bushes[rnd(4)]); }
-  // 3) GĖLĖS / smulkios dekoracijos (deco_01..13; VENGIAM 16=leaderboard, 18=čiučela)
-  const decoN = Math.round(R * C * 0.025);
-  for (let i = 0; i < decoN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); put(r, c, 'deco_' + String(1 + rnd(13)).padStart(2, '0')); }
-  // 4) AKMENYS (rieduliai, GoldStone) — SOLID, unitai APEINA. Pabirę interjere, ne centre.
-  const boulderN = 7 + rnd(4);
-  for (let i = 0; i < boulderN; i++) { const r = 3 + rnd(R - 6), c = 3 + rnd(C - 6); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, boulders[rnd(4)]); }
-  // 5) viena rubber duck (smagumui)
-  put(cy + 3 + rnd(3), cx + 4 + rnd(4), 'duck');
+  // CURATED layout (editorius) — jei išsaugotas F9 map, naudojam JĮ vietoj random generacijos.
+  // (S.decorations čia jau išvalytas F9 setup'e → tiesiog užpildom fiksuotu layout'u su zip tower.)
+  const _curated = window.CUSTOM_MAP9 && window.CUSTOM_MAP9.decorations;
+  if (_curated) {
+    S.decorations = JSON.parse(JSON.stringify(window.CUSTOM_MAP9.decorations));
+  } else {
+    const trees    = ['tree1', 'tree2', 'tree3', 'tree4'];
+    const bushes   = ['bush1', 'bush2', 'bush3', 'bush4'];
+    const boulders = ['boulder1', 'boulder2', 'boulder3', 'boulder4'];
+    // 1) MEDŽIŲ rėmas apie kraštus (natūrali riba vietoj vandens)
+    for (let c = 2; c < C - 2; c += 5 + rnd(2)) { put(2 + rnd(2), c, trees[rnd(4)]); put(R - 3 - rnd(2), c, trees[rnd(4)]); }
+    for (let r = 4; r < R - 4; r += 5 + rnd(2)) { put(r, 2 + rnd(2), trees[rnd(4)]); put(r, C - 3 - rnd(2), trees[rnd(4)]); }
+    // 2) KRŪMAI — MAŽAI pabirę (~1%), centras laisvas
+    const bushN = Math.round(R * C * 0.010);
+    for (let i = 0; i < bushN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, bushes[rnd(4)]); }
+    // 3) GĖLĖS / smulkios dekoracijos (deco_01..13; VENGIAM 16=leaderboard, 18=čiučela)
+    const decoN = Math.round(R * C * 0.025);
+    for (let i = 0; i < decoN; i++) { const r = 2 + rnd(R - 4), c = 2 + rnd(C - 4); put(r, c, 'deco_' + String(1 + rnd(13)).padStart(2, '0')); }
+    // 4) AKMENYS (rieduliai, GoldStone) — SOLID, unitai APEINA. Pabirę interjere, ne centre.
+    const boulderN = 7 + rnd(4);
+    for (let i = 0; i < boulderN; i++) { const r = 3 + rnd(R - 6), c = 3 + rnd(C - 6); if (Math.hypot(c - cx, r - cy) < 4) continue; put(r, c, boulders[rnd(4)]); }
+    // 5) viena rubber duck (smagumui)
+    put(cy + 3 + rnd(3), cx + 4 + rnd(4), 'duck');
+  }
   // SOLID footprint registras — medžiai + akmenys (1 celė; krūmai/gėlės NEblokuoja). Keys: "x,y".
   _f9BlockedCells = new Set();
+  // MEDŽIAI = kvadratai (cell collision, kaip seniau — user patvirtino kad gerai)
   if (_F9_DECO_SOLID) {
     for (const k in S.decorations) {
       const d = String(S.decorations[k]);
-      const isTree = d.startsWith('tree'), isBoulder = d.startsWith('boulder');
-      if (!isTree && !isBoulder) continue;
+      if (!d.startsWith('tree')) continue;
       const p = k.split(','); const r = +p[0], c = +p[1];
-      _f9BlockedCells.add(c + ',' + r);   // TIK bazės celė — unitai prieina prie pat akmens/medžio.
-      // (Anksčiau riedulys blokavo ir celę VIRŠ → atrodė kaip „nematoma siena", per didelis hitbox.)
+      _f9BlockedCells.add(c + ',' + r);
     }
   }
-  _f9SyncTowerBlocked();   // zip tower bazės (dinaminės) — pradinė sinchronizacija
+  // AKMENYS = apskritimas, centruotas ant matomo sprite, per-tipą dydžio (mover'is push-out'ina)
+  _f9StaticObstacles = [];
+  for (const k in S.decorations) {
+    const d = String(S.decorations[k]);
+    if (!d.startsWith('boulder')) continue;
+    const cfg = _F9_OBSTACLE_CFG.boulder;
+    const p = k.split(','); const r = +p[0], c = +p[1];
+    _f9StaticObstacles.push({ cx: c, cy: r + cfg.dy, rad: cfg.rad });
+  }
+  _f9SyncTowerBlocked();   // zip tower (apskritimas) — pradinė sinchronizacija
 }
 
 function _spawnF9Enemies(hero) {
@@ -26317,17 +26419,36 @@ function loop(now) {
   if (typeof window._kothRenderWorld === 'function') window._kothRenderWorld();
   _drawF9ClickMarkers();
   if (typeof _drawF9SpawnWarnings === 'function') _drawF9SpawnWarnings();
-  // ── DEBUG: F9 collision celės raudonai — kad matytųsi kur unitai negali eiti
-  // (rieduliai/medžiai/zip tower). LAIKINAI įjungta pagal nutylėjimą (išjungti: _dbgHit=false). ──
-  if (window._dbgHit !== false && S.floor === 9) {
+  // ── DEBUG: F9 collision overlay — medžiai (kvadratai) + akmenys (apskr.) + zip (kvadratas).
+  // IŠJUNGTA. Įjungti konsolėje tuninguojant: _dbgHit=true ──
+  if (window._dbgHit === true && S.floor === 9) {
     ctx.save();
-    const _drawSet = (set, col) => {
-      if (!set) return;
-      ctx.fillStyle = col; ctx.strokeStyle = col.replace(/[\d.]+\)$/, '1)'); ctx.lineWidth = 1.5;
-      set.forEach(k => { const p = k.split(','); const x = +p[0], y = +p[1]; ctx.fillRect(x * CELL, y * CELL, CELL, CELL); ctx.strokeRect(x * CELL, y * CELL, CELL, CELL); });
+    ctx.lineWidth = 2;
+    const _drawObs = (list, col) => {
+      if (!list) return;
+      ctx.strokeStyle = col; ctx.fillStyle = col.replace(/[\d.]+\)$/, '0.18)');
+      for (const o of list) {
+        if (o.hw !== undefined) {
+          const x = (o.cx + 0.5 - o.hw) * CELL, y = (o.cy + 0.5 - o.hh) * CELL;
+          ctx.fillRect(x, y, o.hw * 2 * CELL, o.hh * 2 * CELL);
+          ctx.strokeRect(x, y, o.hw * 2 * CELL, o.hh * 2 * CELL);
+        } else {
+          const cx = (o.cx + 0.5) * CELL, cy = (o.cy + 0.5) * CELL, rr = o.rad * CELL;
+          ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+      }
     };
-    _drawSet(_f9BlockedCells, 'rgba(255,40,40,0.30)');     // rieduliai/medžiai
-    _drawSet(_f9TowerBlocked, 'rgba(40,160,255,0.30)');    // zip tower
+    // Medžiai = kvadratai (cell collision)
+    if (_f9BlockedCells) {
+      ctx.strokeStyle = 'rgba(255,40,40,1)'; ctx.fillStyle = 'rgba(255,40,40,0.18)';
+      for (const k of _f9BlockedCells) {
+        const pp = k.split(','); const c = +pp[0], r = +pp[1];
+        ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+        ctx.strokeRect(c * CELL, r * CELL, CELL, CELL);
+      }
+    }
+    _drawObs(_f9StaticObstacles, 'rgba(255,40,40,1)');    // akmenys (apskritimas)
+    _drawObs(_f9TowerObstacles, 'rgba(40,160,255,1)');    // zip tower (kvadratas)
     ctx.restore();
   }
   if (typeof _drawF9DebugOverlay === 'function') _drawF9DebugOverlay();
@@ -26421,37 +26542,17 @@ function loop(now) {
   if (typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
   if (typeof _drawF9Shots === 'function') _drawF9Shots();
   drawForegroundDecorations();
-  // F9 OCCLUSION — unitas UŽ MEDŽIO rodomas tuščiaviduriu BALTU kontūru VIRŠ medžio (kad nedingtų).
-  // Tik medžiai (ne krūmai). Tik occluded unitai — kiti renderinasi normaliai su gyliu.
+  // F9 DEPTH SORT + OCCLUSION:
+  //  • Unitas ŽEMIAU zip tower (priekyje) → perpiešiam TIKRĄ sprite VIRŠ bokšto (uždengia jį).
+  //  • Unitas UŽ medžio/bokšto (virš) → tuščiaviduris BALTAS kontūras VIRŠ deco (kad nedingtų).
   if (S.floor === 9 && typeof _f9DrawTreeOutline === 'function') {
     for (const u of (S.units || [])) {
-      if (!u || !u.alive || !_f9UnitOccluded(u)) continue;
+      if (!u || !u.alive) continue;
+      if (_f9UnitInFrontOfDeco(u)) { _f9DrawUnitSpriteTop(u); continue; }   // priekyje → ant viršaus
+      if (!_f9UnitOccluded(u)) continue;
       const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
       const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-      // Jei unitas APATINĖJE zip tower dalyje (bokštas tiesiai virš jo) — kontūrą nukerpam,
-      // kad nesirodytų aukščiau nei 20px nuo bokšto centro (paslepia galvos dalį duryse).
-      let _clipFromY = null;
-      if (S.decorations && Array.isArray(window._f9ZipBounds)) {
-        const _ucx = Math.round(u.rx !== undefined ? u.rx : u.x);
-        const _ucy = Math.round(u.ry !== undefined ? u.ry : u.y);
-        for (let dr = 1; dr <= 2; dr++) {   // zip 1-2 eilutes VIRŠ unito → unitas apačioj
-          if (S.decorations[(_ucy - dr) + ',' + _ucx] === 'building_Zip') {
-            const _zb = window._f9ZipBounds.find(b => b.c === _ucx && b.r === _ucy - dr);
-            if (_zb) _clipFromY = _zb.y + _zb.h / 2 + 20;   // 20px žemiau bokšto centro
-            break;
-          }
-        }
-      }
-      if (_clipFromY != null) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(-100000, _clipFromY, 200000, 100000);   // tik ŽEMIAU clip linijos
-        ctx.clip();
-        _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');
-        ctx.restore();
-      } else {
-        _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // baltas kontūras (be užpildo)
-      }
+      _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // už deco → baltas kontūras (be užpildo)
     }
   }
   drawBarracksHarpoons('top');
