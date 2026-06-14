@@ -3896,26 +3896,88 @@
     a.maxHp = nMax; a.hp = nMax;                                 // ← PILNAS HP atstatymas (user noras)
     a.dmg = Math.max(1, Math.round(base.dmg * mul));            // + stat boost pagal naują lygį
     ts.level = newLv; if (ts.maxHp != null) ts.maxHp = nMax; if (ts.hp != null) ts.hp = nMax;   // snapshot coherent (xp lieka serverio commit'ui)
-    a._lvUpAt = (t != null ? t : now());                        // ← vizualui (drawAlly loop)
+    a._lvUpAt = (t != null ? t : now());                        // ← per-unit vizualui (drawAlly loop)
+    try { _showLevelUpToast(_f12UnitName(a.utype) + ' #' + ts.tokenId, newLv); } catch (_) {}   // ← žalias top banner
     try { if (window._F12Audio && window._F12Audio.reward) window._F12Audio.reward(); } catch (_) {}
   }
+  function _f12UnitName(utype) {
+    return String(utype || 'Unit').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+  // Žalias top-center banner (analogiškas raudonam mirties toast'ui _showDeathToast).
+  function _showLevelUpToast(name, level) {
+    try {
+      let host = document.getElementById('f12-levelup-toasts');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'f12-levelup-toasts';
+        host.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none;font-family:inherit;align-items:center;';
+        document.body.appendChild(host);
+      }
+      const el = document.createElement('div');
+      el.style.cssText = 'background:linear-gradient(180deg,#10401a,#0a2a10);border:2px solid #6eff8a;color:#e6ffe6;padding:10px 20px;border-radius:10px;font-weight:bold;font-size:16px;box-shadow:0 4px 16px rgba(0,0,0,.5),0 0 20px rgba(110,255,138,.4);text-shadow:0 1px 2px #000;opacity:0;transform:translateY(-10px) scale(.9);transition:opacity .28s,transform .28s cubic-bezier(.34,1.56,.64,1);';
+      el.textContent = '⬆ ' + name + ' reached Lv ' + level + '!';
+      host.appendChild(el);
+      requestAnimationFrame(function () { el.style.opacity = '1'; el.style.transform = 'translateY(0) scale(1)'; });
+      setTimeout(function () { el.style.opacity = '0'; el.style.transform = 'translateY(-10px) scale(.96)'; setTimeout(function () { try { host.removeChild(el); } catch (_) {} }, 340); }, 3400);
+    } catch (_) {}
+  }
+  // Ilgesnė (2.4s), įsimintinesnė LEVEL-UP animacija virš unito — ŽALIA tema.
+  // Sluoksniai: (1) švytėjimas, (2) 3 plečiasi žiedai (stagger), (3) kylančios žvaigždutės,
+  // (4) bounce-in „LEVEL UP" + didelis „Lv N" su outline, lengvas plūduriavimas + fade tail.
+  const _F12_LVUP_DUR = 2400;
   function _f12DrawLevelUpFx(cx, cy, sz, a, t) {
     if (!a._lvUpAt) return;
-    const k = (t - a._lvUpAt) / 1300; if (k < 0 || k >= 1) return;
+    const k = (t - a._lvUpAt) / _F12_LVUP_DUR; if (k < 0 || k >= 1) return;
     ctx.save();
-    const ringR = sz * (1.15 + k * 1.5);
-    ctx.globalAlpha = (1 - k) * 0.8;
-    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = Math.max(2, sz * 0.2 * (1 - k));
-    ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2); ctx.stroke();
-    const ty = cy - sz * 1.7 - k * sz * 1.9;
-    ctx.globalAlpha = Math.min(1, (1 - k) * 1.5);
     ctx.textAlign = 'center';
-    ctx.font = 'bold ' + Math.round(sz * 0.85) + 'px system-ui,sans-serif';
-    ctx.fillStyle = '#1a1208'; ctx.fillText('⬆ LEVEL UP', cx + 1, ty + 1);
-    ctx.fillStyle = '#ffd24a'; ctx.fillText('⬆ LEVEL UP', cx, ty);
-    ctx.font = 'bold ' + Math.round(sz * 1.0) + 'px system-ui,sans-serif';
-    ctx.fillStyle = '#1a1208'; ctx.fillText('Lv ' + (a._liveLevel || ''), cx + 1, ty + sz * 0.95 + 1);
-    ctx.fillStyle = '#fff0b0'; ctx.fillText('Lv ' + (a._liveLevel || ''), cx, ty + sz * 0.95);
+    // (1) Žalias švytėjimas ant unito (pirmi 40%)
+    if (k < 0.4) {
+      const gk = k / 0.4;
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, sz * 2.6);
+      grd.addColorStop(0, 'rgba(150,255,138,' + (0.6 * (1 - gk)).toFixed(3) + ')');
+      grd.addColorStop(1, 'rgba(110,255,138,0)');
+      ctx.globalAlpha = 1; ctx.fillStyle = grd;
+      ctx.beginPath(); ctx.arc(cx, cy, sz * 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    // (2) 3 plečiasi žiedai (žalia + auksas akcentas), stagger
+    for (let r = 0; r < 3; r++) {
+      const rk = k - r * 0.14; if (rk <= 0 || rk >= 0.75) continue;
+      const p = rk / 0.75;
+      ctx.globalAlpha = (1 - p) * 0.85;
+      ctx.strokeStyle = (r === 1) ? '#d6ff8a' : '#6eff8a';
+      ctx.lineWidth = Math.max(2, sz * 0.22 * (1 - p));
+      ctx.beginPath(); ctx.arc(cx, cy, sz * (0.8 + p * 2.3), 0, Math.PI * 2); ctx.stroke();
+    }
+    // (3) Kylančios žvaigždutės ratu
+    const NS = 7;
+    for (let s = 0; s < NS; s++) {
+      const ang = (s / NS) * Math.PI * 2 + (a._lvUpAt % 6283) * 0.001;
+      const sk = Math.min(1, k * 1.2);
+      const dist = sz * (0.5 + sk * 2.0);
+      const sx = cx + Math.cos(ang) * dist;
+      const sy = cy + Math.sin(ang) * dist - sk * sz * 1.0;
+      ctx.globalAlpha = (1 - sk) * 0.95;
+      ctx.fillStyle = (s % 2) ? '#eaffd6' : '#6eff8a';
+      ctx.font = 'bold ' + Math.round(sz * (0.45 + (1 - sk) * 0.35)) + 'px system-ui,sans-serif';
+      ctx.fillText('✦', sx, sy);
+    }
+    // (4) Tekstas: bounce-in scale + kyla + fade tail
+    const ease = k < 0.18 ? (k / 0.18) : 1;
+    const fade = k > 0.72 ? Math.max(0, 1 - (k - 0.72) / 0.28) : 1;
+    const floatY = Math.min(k, 0.6) * sz * 2.4;
+    const ty = cy - sz * 1.8 - floatY;
+    const scale = (0.55 + ease * 0.55) * (1 + (k < 0.18 ? (0.18 - k) * 0.6 : 0));
+    ctx.globalAlpha = Math.min(1, fade * 1.4);
+    ctx.translate(cx, ty); ctx.scale(scale, scale);
+    ctx.lineJoin = 'round';
+    ctx.font = 'bold ' + Math.round(sz * 0.95) + 'px system-ui,sans-serif';
+    ctx.lineWidth = Math.max(3, sz * 0.22); ctx.strokeStyle = '#0a2208';
+    ctx.strokeText('⬆ LEVEL UP', 0, 0);
+    ctx.fillStyle = '#9cff7a'; ctx.fillText('⬆ LEVEL UP', 0, 0);
+    ctx.font = 'bold ' + Math.round(sz * 1.25) + 'px system-ui,sans-serif';
+    ctx.lineWidth = Math.max(3, sz * 0.26);
+    ctx.strokeText('Lv ' + (a._liveLevel || ''), 0, sz * 1.15);
+    ctx.fillStyle = '#eaffd6'; ctx.fillText('Lv ' + (a._liveLevel || ''), 0, sz * 1.15);
     ctx.restore();
   }
 
