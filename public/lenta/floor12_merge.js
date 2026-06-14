@@ -3848,6 +3848,8 @@
 
     _statsForToken(ally.trainedSnap.tokenId).dmgDealt += dmg;
 
+    _f12CheckLevelUp(ally, now());
+
   }
 
   function _allyAddKill(ally) {
@@ -3855,6 +3857,8 @@
     if (!ally || !ally.trainedSnap || !ally.trainedSnap.nft) return;
 
     _statsForToken(ally.trainedSnap.tokenId).kills++;
+
+    _f12CheckLevelUp(ally, now());
 
   }
 
@@ -3864,6 +3868,55 @@
 
     _statsForToken(ally.trainedSnap.tokenId).dmgTaken += dmg;
 
+    _f12CheckLevelUp(ally, now());
+
+  }
+
+  // ── LIVE level-up ant lentos: kai deployed NFT surenka pakankamai XP (kills+dmg) per mūšį →
+  //    pakeliam GYVAI: pilnas HP atstatymas + stat boost (_nftStatMul) + vizualus „LEVEL UP".
+  //    XP/level formulė ATITINKA serverį (submit-battle-result calculateXp) → live level == commit'inamas.
+  const _F12_XP = { PART: 10, KILL: 20, DMG: 1, MAXK: 500, MAXDMG: 10000, MAXXP: 20000 };
+  function _f12CalcXpGain(k, dd, dt) {
+    let xp = _F12_XP.PART + Math.min(k | 0, _F12_XP.MAXK) * _F12_XP.KILL
+      + Math.min(dd | 0, _F12_XP.MAXDMG) * _F12_XP.DMG + Math.min(dt | 0, _F12_XP.MAXDMG) * _F12_XP.DMG;
+    return Math.min(xp, _F12_XP.MAXXP);
+  }
+  function _f12CheckLevelUp(a, t) {
+    const ts = a && a.trainedSnap;
+    if (!ts || !ts.nft) return;                                  // tik NFT unitai turi XP/level
+    const st = _statsForToken(ts.tokenId);
+    const liveXp = (ts.xp | 0) + _f12CalcXpGain(st.kills, st.dmgDealt, st.dmgTaken);
+    const newLv = _f12LevelFromXp(liveXp);
+    const curLv = (a._liveLevel != null ? a._liveLevel : (ts.level | 0));
+    if (newLv <= curLv) return;
+    a._liveLevel = newLv;
+    const base = ALLY_STATS[a.utype] || ALLY_STATS.skull;
+    const mul = _nftStatMul(newLv);
+    const nMax = Math.max(1, Math.round(base.hp * mul));
+    a.maxHp = nMax; a.hp = nMax;                                 // ← PILNAS HP atstatymas (user noras)
+    a.dmg = Math.max(1, Math.round(base.dmg * mul));            // + stat boost pagal naują lygį
+    ts.level = newLv; if (ts.maxHp != null) ts.maxHp = nMax; if (ts.hp != null) ts.hp = nMax;   // snapshot coherent (xp lieka serverio commit'ui)
+    a._lvUpAt = (t != null ? t : now());                        // ← vizualui (drawAlly loop)
+    try { if (window._F12Audio && window._F12Audio.reward) window._F12Audio.reward(); } catch (_) {}
+  }
+  function _f12DrawLevelUpFx(cx, cy, sz, a, t) {
+    if (!a._lvUpAt) return;
+    const k = (t - a._lvUpAt) / 1300; if (k < 0 || k >= 1) return;
+    ctx.save();
+    const ringR = sz * (1.15 + k * 1.5);
+    ctx.globalAlpha = (1 - k) * 0.8;
+    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = Math.max(2, sz * 0.2 * (1 - k));
+    ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2); ctx.stroke();
+    const ty = cy - sz * 1.7 - k * sz * 1.9;
+    ctx.globalAlpha = Math.min(1, (1 - k) * 1.5);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold ' + Math.round(sz * 0.85) + 'px system-ui,sans-serif';
+    ctx.fillStyle = '#1a1208'; ctx.fillText('⬆ LEVEL UP', cx + 1, ty + 1);
+    ctx.fillStyle = '#ffd24a'; ctx.fillText('⬆ LEVEL UP', cx, ty);
+    ctx.font = 'bold ' + Math.round(sz * 1.0) + 'px system-ui,sans-serif';
+    ctx.fillStyle = '#1a1208'; ctx.fillText('Lv ' + (a._liveLevel || ''), cx + 1, ty + sz * 0.95 + 1);
+    ctx.fillStyle = '#fff0b0'; ctx.fillText('Lv ' + (a._liveLevel || ''), cx, ty + sz * 0.95);
+    ctx.restore();
   }
 
   // Battle settled — kad du kart neišsiųstume submit-battle-result
@@ -13493,6 +13546,8 @@
         if (a.dead) { drawAlly(ax, ay, sz, a, t); continue; }   // death anim + kraujo burst (anksčiau buvo praleidžiama → nesimatė)
 
         drawAlly(ax, ay, sz, a, t);
+
+        if (!a.dead) _f12DrawLevelUpFx(ax, ay, sz, a, t);   // live LEVEL UP vizualas virš unito
 
         // Drop target rect — tower'iams didesnis (sprite sz*4.5), unit'ams normalus
 

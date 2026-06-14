@@ -6270,11 +6270,31 @@ function _f9EnemyHitDelay(e) {
 const _F9_DECO_SOLID = true;    // medžiai blokuoja + slide avoidance
 const _F9_DECO_COVER = true;    // krūmai = cover (miss šansas)
 const _F9_BUSH_MISS  = 0.35;    // krūme stovinčio unito incoming-miss tikimybė
-let _f9BlockedCells = null;     // Set "x,y" (col,row) — solid deco footprintai (medžių kamienai)
+let _f9BlockedCells = null;     // Set "x,y" (col,row) — STATIC solid deco footprintai (medžiai/akmenys)
+let _f9TowerBlocked = null;     // Set "x,y" — DINAMINIS: zip tower bazės (perkeliamos → sync'inama)
 function _f9CellBlocked(x, y, selfX, selfY) {
-  if (!_F9_DECO_SOLID || !_f9BlockedCells) return false;
+  if (!_F9_DECO_SOLID) return false;
   if (x === selfX && y === selfY) return false;   // sava celė visada praeinama (kad galėtų išeiti)
-  return _f9BlockedCells.has(x + ',' + y);
+  const k = x + ',' + y;
+  if (_f9BlockedCells && _f9BlockedCells.has(k)) return true;
+  if (_f9TowerBlocked && _f9TowerBlocked.has(k)) return true;   // zip tower bazė = solid
+  return false;
+}
+// Zip tower bazės = SOLID (unitai apeina). Top'as praeinamas (foreground render = walk-behind).
+// Atskiras set (ne _f9BlockedCells), kad perkėlus bokštą būtų galima cheap re-sync be tree/akmenų
+// perskaičiavimo. Kviečiama floor entry + kas AI tick'ą (dinaminiam pozicijos keitimui).
+function _f9SyncTowerBlocked() {
+  if (!S || S.floor !== 9 || !S.decorations) { _f9TowerBlocked = null; return; }
+  const s = new Set();
+  for (const k in S.decorations) {
+    if (S.decorations[k] !== 'building_Zip') continue;
+    const p = k.split(',');           // key = "row,col"
+    const r = +p[0], c = +p[1];
+    s.add(c + ',' + r);               // TIK bazės celė — unitai prieina prie pat bokšto kraštų
+                                      // (be celės po ja — anksčiau atrodė kaip „nematoma siena", blogas UX).
+                                      // Galvos kišimasis į duris OK — bokštas foreground'e dengia (walk-behind).
+  }
+  _f9TowerBlocked = s.size ? s : null;
 }
 function _f9UnitInBush(u) {
   if (!_F9_DECO_COVER || !u || !S || !S.decorations) return false;
@@ -6291,6 +6311,8 @@ function _f9UnitOccluded(u) {
     const d = S.decorations[(uy + dr) + ',' + ux];
     if (typeof d === 'string' && d.startsWith('tree')) return true;
   }
+  // Zip tower'iui occlusion siluetas NEnaudojamas — vietoj jo bokštas FADE'inasi pusiau
+  // permatomas kai unitas už/po juo (industry-standard, žr. _drawZipTowerFade draw bloke).
   return false;
 }
 // Unifikuotas frame-getter F9 unito siluetui — { img, sx, sy, sw, sh, sprSz, flip, yOff } arba null.
@@ -6381,6 +6403,7 @@ function _f9DecorateMap() {
       if (isBoulder) _f9BlockedCells.add(c + ',' + (r - 1));
     }
   }
+  _f9SyncTowerBlocked();   // zip tower bazės (dinaminės) — pradinė sinchronizacija
 }
 
 function _spawnF9Enemies(hero) {
@@ -7083,6 +7106,9 @@ function _updateF9EnemyAI(now) {
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
   if (now - _f9LastEnemyAI < _F9_ENEMY_AI_TICK_MS) return;
   _f9LastEnemyAI = now;
+
+  // Zip tower bazių re-sync (pigu, mažai dekoracijų) — kad perkėlus bokštą collision atsinaujintų.
+  if (typeof _f9SyncTowerBlocked === 'function') _f9SyncTowerBlocked();
 
   // ── 0a) Ally auto-acquire — judantis ally pajunta priešą pakelyje ir įsijungia į kovą ──
   _updateF9AllyAutoAcquire(now);
@@ -16494,13 +16520,63 @@ function drawForegroundDecorations() {
       const _zsx = (_zFrame % _zDef.cols) * _zfw;
       const _zsy = Math.floor(_zFrame / _zDef.cols) * _zfh;
       // Abu sheet'ai paruošti vienodame 400×498 canvas su tower base ant pixel-perfect (194.5, 487)
-      const _zScale = 0.275;
+      // F9 RTS: mažesnis mastelis (0.275→0.20), kad bokšto gabaritai derėtų su F9 unitų dydžiu
+      // (jie ~85-102px; pilno 0.275 bokštas ~137px atrodė per didelis). 2026-06-14.
+      const _zScale = (typeof S !== 'undefined' && S && S.floor === 9) ? 0.20 : 0.275;
       const _zw = _zfw * _zScale, _zh = _zfh * _zScale;
       const _zbx = c * CELL + (CELL - _zw) / 2;
       const _zby = r * CELL + CELL - _zh + 1;
+      // ── F9 OCCLUSION FADE (industry-standard, kaip Stardew/RPG) ──
+      // Jei unitas už/po bokštu (jo column'oj, ±2 eilutės nuo bazės) — bokštas tampa pusiau
+      // permatomas, kad unitą matytum PRO jį (vietoj „įstrigusios galvos"). Smooth lerp.
+      let _zAlpha = 1;
+      if (typeof S !== 'undefined' && S && S.floor === 9) {
+        let _behind = false;
+        if (Array.isArray(S.units)) {
+          for (const _u of S.units) {
+            if (!_u || !_u.alive) continue;
+            const _ucx = Math.round((_u.rx !== undefined ? _u.rx : _u.x));
+            const _ucy = Math.round((_u.ry !== undefined ? _u.ry : _u.y));
+            if (_ucx === c && _ucy >= r - 2 && _ucy <= r + 1) { _behind = true; break; }
+          }
+        }
+        if (!window._f9ZipFade) window._f9ZipFade = {};
+        const _cur = (window._f9ZipFade[_zKey] != null) ? window._f9ZipFade[_zKey] : 1;
+        const _tgt = _behind ? 0.45 : 1;
+        const _next = _cur + (_tgt - _cur) * 0.18;   // smooth fade in/out
+        window._f9ZipFade[_zKey] = (Math.abs(_next - _tgt) < 0.01) ? _tgt : _next;
+        _zAlpha = window._f9ZipFade[_zKey];
+      }
+      const _zPrevAlpha = ctx.globalAlpha;
+      if (_zAlpha < 1) ctx.globalAlpha = _zPrevAlpha * _zAlpha;
       ctx.drawImage(_srcImg, _zsx, _zsy, _zfw, _zfh, _zbx, _zby, _zw, _zh);
-      // CD bar — toks pat stilius kaip Tower
-      {
+      ctx.globalAlpha = _zPrevAlpha;
+      // F9 — zip tower elgiasi kaip unitas: bounds selektavimui + selection ring jei pasirinktas
+      if (typeof S !== 'undefined' && S && S.floor === 9) {
+        if (!window._f9ZipBounds) window._f9ZipBounds = [];
+        window._f9ZipBounds.push({ r, c, x: _zbx, y: _zby, w: _zw, h: _zh });
+        if (window._f9SelectedTower && window._f9SelectedTower.r === r && window._f9SelectedTower.c === c) {
+          // PASTATO selekcija — BALTAS silueto kontūras hugging'ina bokšto formą
+          // (ta pati pixel-perfect technika kaip enemy/ally outline: sprite 8× su poslinkiu).
+          // + žydras glow halo (zip tesla tema). Atrodo kaip RTS „pasirinkta" be netinkamo žiedo.
+          const _pz = (Math.sin(performance.now() * 0.006) + 1) * 0.5;
+          const _OL = 2.5;
+          const _offs = [[-_OL, 0], [_OL, 0], [0, -_OL], [0, _OL], [-_OL, -_OL], [_OL, -_OL], [-_OL, _OL], [_OL, _OL]];
+          ctx.save();
+          ctx.shadowColor = `rgba(120,210,255,${(0.55 + _pz * 0.35).toFixed(3)})`;
+          ctx.shadowBlur = 9 + _pz * 7;
+          ctx.filter = 'brightness(0) invert(1)';   // → baltas siluetas
+          ctx.globalAlpha = 0.9 + _pz * 0.1;
+          for (const [dx, dy] of _offs) {
+            ctx.drawImage(_srcImg, _zsx, _zsy, _zfw, _zfh, _zbx + dx, _zby + dy, _zw, _zh);
+          }
+          ctx.restore();
+          // Sprite'as crisp ant viršaus (kad kontūras liktų tik aplink kraštus)
+          ctx.drawImage(_srcImg, _zsx, _zsy, _zfw, _zfh, _zbx, _zby, _zw, _zh);
+        }
+      }
+      // CD bar — toks pat stilius kaip Tower (F9'e NErodom — švari RTS scena, user request 2026-06-14)
+      if (!(typeof S !== 'undefined' && S && S.floor === 9)) {
         const _elapsed = _cdMs - _msUntilReady;
         const cdFrac = Math.max(0, Math.min(1, _elapsed / _cdMs));
         const _ready = cdFrac >= 1;
@@ -27617,6 +27693,8 @@ function clearCanvas() {
   ctx.fillStyle = gameMode === 'adventure' ? '#000000' : '#05050e';
   // canvas.width/height — F9 fullscreen metu realus dydis (advCanvasW×848 nepadengtų viso lango)
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // F9 zip-tower bounds — perrenkam kas frame'ą (building draw užpildo), tai čia išvalom
+  if (window._f9ZipBounds) window._f9ZipBounds.length = 0;
 }
 
 function drawLasers() {
@@ -34363,6 +34441,21 @@ document.addEventListener('DOMContentLoaded', () => {
       const tx = mx / CELL - 0.5;
       const ty = my / CELL - 0.5;
       if (tx < 0 || tx >= COLS - 1 || ty < 0 || ty >= ROWS - 1) return;
+      // 1c. Zip tower select (F9 — bokštas elgiasi kaip pasirenkamas unitas).
+      // Hitbox: pagal piešimo bounds (window._f9ZipBounds, world px). Click world px = mx,my.
+      if (Array.isArray(window._f9ZipBounds) && window._f9ZipBounds.length) {
+        for (const zb of window._f9ZipBounds) {
+          if (mx >= zb.x && mx <= zb.x + zb.w && my >= zb.y && my <= zb.y + zb.h) {
+            window._f9SelectedTower = { r: zb.r, c: zb.c };
+            window._f9SelectedSet = [];   // deselect unitus (vienu metu — arba bokštas, arba squad)
+            window._f9Selected = null;
+            if (typeof _f9SetToast === 'function') _f9SetToast('ZIP TOWER');
+            return;
+          }
+        }
+      }
+      // Click ne ant bokšto → nuimam bokšto selekciją (arba bokštas, arba unitai)
+      window._f9SelectedTower = null;
       // 2. Hit detect ant unit (selektuojam jį, sumetam į set)
       // Tik FRIENDLY unit'us (hero + trained barracks) — enemies ignore'inami,
       // kad jiems neatsirastu žalia selection ring'as ar accident'inis valdymas.

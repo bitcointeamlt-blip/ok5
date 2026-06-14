@@ -17,6 +17,59 @@
   var _sortDesc = true;   // true = didžiausias→mažiausias; toggle paspaudus tą patį stulpelį
   var _root = null;
 
+  // ── RONKE Test Rewards — kiek faucet'o (RonkeReward) RONKE claimino kiekvienas wallet'as ──
+  // On-chain Claimed event'ai (cumulative per wallet). Frontend užklausia tiesiogiai per Ronin RPC,
+  // agreguoja ir suderina su leaderboard sutrumpintais adresais (0x1234...abcd). 2026-06-14.
+  var _RONKE_FAUCET = '0xc59e860e2115ccdab499f619a67bedf71ee26007';
+  var _RONKE_CLAIMED_TOPIC = '0x9cdcf2f7714cca3508c7f0110b04a90a80a3a8dd0e35de99689db74d28c5383e';
+  var _RONKE_DEPLOY_BLOCK = 56821227;
+  var _ronkeRewards = null;        // { '0x1234...abcd': ronkeInt }
+  var _ronkeRewardsTotal = 0;
+
+  async function _rpc(method, params) {
+    var r = await fetch('https://api.roninchain.com/rpc', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: method, params: params }),
+    });
+    var j = await r.json();
+    if (j.error) throw new Error(j.error.message || 'rpc err');
+    return j.result;
+  }
+
+  async function _fetchRonkeRewards() {
+    try {
+      var latest = parseInt(await _rpc('eth_blockNumber', []), 16);
+      var byAddr = {};   // fullAddrLc -> BigInt suma (wei)
+      var CH = 5000;
+      for (var from = _RONKE_DEPLOY_BLOCK; from <= latest; from += CH) {
+        var to = Math.min(from + CH - 1, latest);
+        var logs;
+        try {
+          logs = await _rpc('eth_getLogs', [{
+            address: _RONKE_FAUCET, topics: [_RONKE_CLAIMED_TOPIC],
+            fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16),
+          }]);
+        } catch (e) { continue; }   // blogas chunk'as — praleidžiam, tęsiam
+        for (var i = 0; i < logs.length; i++) {
+          var lg = logs[i];
+          if (!lg.topics || !lg.topics[1] || !lg.data) continue;
+          var player = ('0x' + lg.topics[1].slice(-40)).toLowerCase();
+          var amt = BigInt(lg.data.slice(0, 66));   // pirmas 32-baitų word = amount (wei)
+          byAddr[player] = (byAddr[player] || 0n) + amt;
+        }
+      }
+      var map = {}; var total = 0;
+      for (var a in byAddr) {
+        var ronke = Number(byAddr[a] / 1000000000000000000n);   // /1e18 → sveikas RONKE
+        var trunc = a.slice(0, 6) + '...' + a.slice(-4);        // atitinka leaderboard sutrumpinimą
+        map[trunc] = (map[trunc] || 0) + ronke;
+        total += ronke;
+      }
+      _ronkeRewardsTotal = total;
+      return map;
+    } catch (_) { return {}; }
+  }
+
   // Stulpeliai: key → {label, emoji}. Tvarka = rodymo tvarka.
   var COLS = [
     { key: 'units_held', label: 'Units',   emoji: '⚔️' },
@@ -26,6 +79,7 @@
     { key: 'maxlvl',     label: 'Max Lv', emoji: '📈' },
     { key: 'kills',      label: 'Kills',   emoji: '💀' },
     { key: 'f12hi',      label: 'Max Score', emoji: '🎯' },
+    { key: 'ronke_claimed', label: 'RONKE Test', emoji: '🎁' },   // faucet test rewards (claimed)
   ];
 
   function _fmt(n) {
@@ -63,6 +117,9 @@
     if (!_root) return;
     var t = (_data && _data.totals) || {};
     var players = (_data && _data.players) ? _data.players.slice() : [];
+    // Įmerkiam RONKE test rewards į kiekvieną žaidėją pagal sutrumpintą adresą
+    var _rr = _ronkeRewards || {};
+    players.forEach(function (p) { p.ronke_claimed = _rr[p.addr] || 0; });
     // TOP 25 pagal aktyvų stulpelį (kvalifikacija = didžiausi), tada — jei ascending —
     // apverčiam TUOS PAČIUS 25 (mažiausias iš top 25 viršuje), o NE renkam mažiausius iš visų.
     players.sort(function (a, b) { return (Number(b[_sortKey]) || 0) - (Number(a[_sortKey]) || 0); });
@@ -74,7 +131,8 @@
       [['<img src="ronke.png" draggable="false" style="height:12px;width:auto;vertical-align:-2px;"> Total RP', t.total_rp],
        ['👥 Players', t.total_players],
        ['🔥 NFT Deaths', t.total_burned],
-       ['🏆 Trophies', t.total_trophies]
+       ['🏆 Trophies', t.total_trophies],
+       ['🎁 RONKE Test Rewards', _ronkeRewardsTotal]
       ].map(function (p) {
         return '<div class="lb-card" style="background:linear-gradient(180deg,' + C.wood + ',' + C.woodDark + ');color:' + C.gold + ';' +
           'border-radius:12px;padding:9px 15px;min-width:84px;text-align:center;border:2px solid ' + C.gold + ';' +
@@ -162,7 +220,7 @@
       '.lb-card{min-width:70px!important;padding:7px 11px!important;}' +
       '.lb-card>div:first-child{font-size:18px!important;}' +
       '}</style>' +
-      '<div id="lb-panel" style="background:' + C.parch + ';width:min(680px,94vw);max-height:90vh;overflow:auto;' +
+      '<div id="lb-panel" style="background:' + C.parch + ';width:min(760px,96vw);max-height:90vh;overflow:auto;' +
       'border-radius:16px;border:4px solid ' + C.woodDark + ';box-shadow:0 12px 40px rgba(0,0,0,.5);padding:16px 18px;">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
       '<h2 style="margin:0;color:' + C.wood + ';font-size:22px;">🏆 GLOBAL STATS</h2>' +
@@ -177,6 +235,10 @@
 
     if (!_data) _data = await _load();
     _render();
+    // RONKE test rewards — async (on-chain), perrenderinam kai gauta (nelaiko atidarymo)
+    if (_ronkeRewards === null) {
+      _fetchRonkeRewards().then(function (m) { _ronkeRewards = m || {}; _render(); });
+    }
   }
 
   window.openLeaderboard = open;
