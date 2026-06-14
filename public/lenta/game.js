@@ -26317,9 +26317,9 @@ function loop(now) {
   if (typeof window._kothRenderWorld === 'function') window._kothRenderWorld();
   _drawF9ClickMarkers();
   if (typeof _drawF9SpawnWarnings === 'function') _drawF9SpawnWarnings();
-  // ── DEBUG (window._dbgHit = true): F9 collision celės raudonai — kad matytųsi kur unitai
-  // negali eiti (rieduliai/medžiai/zip tower). Padeda kalibruoti footprint vs matomą objektą. ──
-  if (window._dbgHit && S.floor === 9) {
+  // ── DEBUG: F9 collision celės raudonai — kad matytųsi kur unitai negali eiti
+  // (rieduliai/medžiai/zip tower). LAIKINAI įjungta pagal nutylėjimą (išjungti: _dbgHit=false). ──
+  if (window._dbgHit !== false && S.floor === 9) {
     ctx.save();
     const _drawSet = (set, col) => {
       if (!set) return;
