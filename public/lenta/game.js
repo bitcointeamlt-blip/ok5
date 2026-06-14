@@ -4219,6 +4219,7 @@ const _F9_UTYPE_SPEED = {
   harpoon_fish: 0.79,   // harpunas — vidutinis
   pigronke:     0.93,   // heavy tank feel: letas, svoringas Hog Rider
   ronke:        0.92,   // hero default
+  troll:        0.62,   // BOSS — letas, svoringas milžinas (lumbering)
 };
 // Per-unit speed variance — mažas skirtumas tarp unitų, be hiperaktyvaus "spiečiaus" efekto
 function _f9UnitSpeedMul(u) {
@@ -4834,6 +4835,35 @@ function _drawF9SpawnWarnings() {
   ctx.restore();
 }
 
+// TROLL BOSS smash telegraph — augantis raudonas danger ratas ant žemės wind-up metu (žaidėjai spėja išeiti).
+// Spindulys = _F9_TROLL_AOE_RADIUS (tikslus hit plotas). Piešiama PRIEŠ unitus (ground layer).
+function _drawF9TrollTelegraph() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !Array.isArray(S.units)) return;
+  const now = performance.now();
+  ctx.save();
+  for (const e of S.units) {
+    if (!e || !e.alive || e.utype !== 'troll' || !e._f9SmashAt) continue;
+    const remain = e._f9SmashAt - now;
+    if (remain <= 0) continue;
+    const k = Math.max(0, Math.min(1, 1 - remain / _F9_TROLL_HIT_DELAY));   // 0→1 wind-up
+    const ex = (e.rx !== undefined) ? e.rx : e.x;
+    const ey = (e.ry !== undefined) ? e.ry : e.y;
+    const cx = (ex + 0.5) * CELL, cy = (ey + 0.5) * CELL;
+    const R = _F9_TROLL_AOE_RADIUS * CELL;
+    // Statiška danger zona (visa AoE) — silpnas raudonas užpildas
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(220, 50, 40, ${(0.08 + k * 0.16).toFixed(3)})`; ctx.fill();
+    // Pildymo indikatorius — vidinis ratas auga 0→R (kuo arčiau pilnas, tuo arčiau smūgis)
+    ctx.beginPath(); ctx.arc(cx, cy, R * k, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 90, 55, ${(0.16 + k * 0.26).toFixed(3)})`; ctx.fill();
+    // Kraštas
+    ctx.lineWidth = 2 + k * 2.5;
+    ctx.strokeStyle = `rgba(255, 80, 50, ${(0.55 + k * 0.40).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 // F9 damaged-only HP bars — juosta virš galvos rodoma TIK kai unit'as sužeistas ir
 // neseniai gavo smūgį (fade-out po _F9_HPBAR_SHOW_MS). Pilno HP unit'ai — niekada.
 // Kompromisas tarp "be barų" (švarus vaizdas) ir combat skaitomumo (WC3/Mindustry pattern).
@@ -4850,9 +4880,10 @@ function _drawF9UnitHpBars() {
     if (!u || !u.alive) continue;
     if (!_f9IsAlly(u) && !_f9IsEnemy(u)) continue;
     const maxHp = u.maxHp || 1;
-    if ((u.hp ?? maxHp) >= maxHp) continue;   // pilnas HP — nerodom
+    const _isBoss = !!u._f9Boss;   // BOSS bar — visada matomas, be fade, platesnis
+    if (!_isBoss && (u.hp ?? maxHp) >= maxHp) continue;   // pilnas HP — nerodom (išskyrus bosą)
     let alpha = 1;
-    if (_F9_HPBAR_MODE === 'damaged') {
+    if (_F9_HPBAR_MODE === 'damaged' && !_isBoss) {
       const since = now - (u._f9LastHitAt || 0);
       if (since > _F9_HPBAR_SHOW_MS) continue;
       if (since > _F9_HPBAR_SHOW_MS - _F9_HPBAR_FADE_MS) {
@@ -4862,9 +4893,9 @@ function _drawF9UnitHpBars() {
     const ux = (u.rx !== undefined) ? u.rx : u.x;
     const uy = (u.ry !== undefined) ? u.ry : u.y;
     const cx = (ux + 0.5) * CELL;
-    // Feet anchor (cell bottom) − sprite aukštis ≈ virš galvos
-    const topY = (uy + 1) * CELL - CELL * 2.05;
-    const w = CELL * 0.78, h = 3.5;
+    // Feet anchor (cell bottom) − sprite aukštis ≈ virš galvos (bosui aukščiau — didesnis sprite)
+    const topY = (uy + 1) * CELL - CELL * (_isBoss ? 3.4 : 2.05);
+    const w = CELL * (_isBoss ? 1.7 : 0.78), h = _isBoss ? 5.5 : 3.5;
     const frac = Math.max(0, Math.min(1, (u.hp || 0) / maxHp));
     const isEn = _f9IsEnemy(u);
     ctx.globalAlpha = alpha;
@@ -6251,7 +6282,12 @@ const _F9_MINOTAUR_ATTACK_CD = 1900;
 const _F9_MINOTAUR_HIT_DELAY = 420;
 // F9↔F12 priešų HP paritetas: F12 tier-0 bazinės reikšmės (FIKSUOTOS — F9 neturi laiko-tier mechanikos).
 // F12: regular baseHp=6 (skull ×1.0), spider force 1, minotaur 6×1.8≈11, thief force 10. stabby (F9-only) = regular 6.
-const _F9_ENEMY_HP = { skull: 6, spider: 1, stabby: 6, thief: 10, minotaur: 11, bear: 15, minotaur_big: 25 };   // bear=F12 6×1.5+6; minotaur_big=F12 boss tier-0 (25)
+const _F9_ENEMY_HP = { skull: 6, spider: 1, stabby: 6, thief: 10, minotaur: 11, bear: 15, minotaur_big: 25, troll: 80 };   // troll=ARENA BOSS (didžiausias tankas)
+// TROLL BOSS — AoE smash: 2 dmg VISIEM sąjungininkam dideliame spindulyje, su shockwave efektais.
+const _F9_TROLL_AOE_RADIUS = 3.0;   // celės — didelis poveikio plotas
+const _F9_TROLL_AOE_DMG = 2;        // žala kiekvienam pataikytam
+const _F9_TROLL_ATTACK_CD = 4600;   // ms — RETAS sunkus boss kirtis (sulėtinta — buvo per dažna)
+const _F9_TROLL_HIT_DELAY = 950;    // ms — ILGAS telegrafuotas wind-up; smūgis krenta arčiau swing pabaigos
 function _f9ApplyEnemyStats(u) {
   if (!u) return;
   const hp = _F9_ENEMY_HP[u.utype];
@@ -6272,17 +6308,82 @@ function _f9RollEnemyDamage(e) {
   // bear (F12 paritetas): allyDmg 2, 20% crit → critDmg 3. minotaur_big (boss): 2. Kiti = bazinė 1.
   if (e && e.utype === 'bear') return (Math.random() < 0.20) ? 3 : 2;
   if (e && e.utype === 'minotaur_big') return 2;
+  if (e && e.utype === 'troll') return _F9_TROLL_AOE_DMG;   // (single-target path nenaudojamas — AoE smash)
   return _F9_ENEMY_DMG_MIN + Math.floor(Math.random() * (_F9_ENEMY_DMG_MAX - _F9_ENEMY_DMG_MIN + 1));
 }
 
 function _f9EnemyAttackCooldown(e) {
   if (e && e.utype === 'bear') return 4000;        // F12 bear: lėta sunki ataka kas 4s
+  if (e && e.utype === 'troll') return _F9_TROLL_ATTACK_CD;
   return e && (e.utype === 'minotaur' || e.utype === 'minotaur_big') ? _F9_MINOTAUR_ATTACK_CD : _F9_ENEMY_ATTACK_CD;
 }
 
 function _f9EnemyHitDelay(e) {
   if (e && e.utype === 'bear') return 470;          // F12 bear: atidėtas slam smūgis (470ms)
+  if (e && e.utype === 'troll') return _F9_TROLL_HIT_DELAY;
   return e && (e.utype === 'minotaur' || e.utype === 'minotaur_big') ? _F9_MINOTAUR_HIT_DELAY : 260;
+}
+
+// TROLL BOSS AoE smash — 2 dmg VISIEM sąjungininkam _F9_TROLL_AOE_RADIUS spinduliu + shockwave žiedai.
+function _f9TrollSmash(e) {
+  if (!e || !e.alive || typeof S === 'undefined' || !S || !Array.isArray(S.units)) return;
+  const ex = (e.rx !== undefined) ? e.rx : e.x;
+  const ey = (e.ry !== undefined) ? e.ry : e.y;
+  const wx = (ex + 0.5) * CELL, wy = (ey + 0.5) * CELL;
+  // Žemės shockwave žiedai (reuse particle 'ring' tipą — jokio naujo render plumbing)
+  if (S.particles) {
+    [['#6f8f43', 0.016, _F9_TROLL_AOE_RADIUS], ['#3a4a22', 0.012, _F9_TROLL_AOE_RADIUS * 1.2], ['#cfe89a', 0.026, _F9_TROLL_AOE_RADIUS * 0.7]]
+      .forEach(([col, decay, rCells]) => {
+        S.particles.push({ x: wx, y: wy, vx: 0, vy: 0, life: 1, decay, r: rCells * CELL, color: col, type: 'ring' });
+      });
+  }
+  S.shake = Math.max(S.shake || 0, 18);
+  if (typeof SFX !== 'undefined' && SFX.hit) { try { SFX.hit(); } catch (_) {} }
+  for (const a of S.units) {
+    if (!a || !a.alive || typeof _f9IsAlly !== 'function' || !_f9IsAlly(a)) continue;
+    const ax = (a.rx !== undefined) ? a.rx : a.x;
+    const ay = (a.ry !== undefined) ? a.ry : a.y;
+    if (Math.hypot(ax - ex, ay - ey) > _F9_TROLL_AOE_RADIUS) continue;
+    _f9DealDmg(a, _F9_TROLL_AOE_DMG, e);
+    if (typeof spawnHit === 'function') spawnHit(a.x, a.y, '#6f8f43', 20);
+    if (typeof spawnDmgNumber === 'function') spawnDmgNumber(ax, ay, `-${_F9_TROLL_AOE_DMG}`, '#9fbf5c', 17, 'crit');
+  }
+}
+const _F9_TROLL_REACH = 1.9;   // celės — atstumas iki artimiausio ally, ties kuriuo boss'as sustoja ir smūgiuoja
+// TROLL BOSS AI — RADIAL (ne face-to-face): puola kai BET kuris ally siekyje (bet kuria kryptimi),
+// kitaip lumbering chase link artimiausio ally. Telegraph (_f9SmashAt) → ground danger ratas wind-up metu.
+function _f9UpdateTrollBoss(e, now) {
+  if (!e || !e.alive || !Array.isArray(S.units)) return;
+  const ex = (e.rx !== undefined) ? e.rx : e.x;
+  const ey = (e.ry !== undefined) ? e.ry : e.y;
+  let nearest = null, nd = Infinity, nx = ex, ny = ey;
+  for (const a of S.units) {
+    if (!a || !a.alive || !_f9IsAlly(a)) continue;
+    const ax = (a.rx !== undefined) ? a.rx : a.x;
+    const ay = (a.ry !== undefined) ? a.ry : a.y;
+    const d = Math.hypot(ax - ex, ay - ey);
+    if (d < nd) { nd = d; nearest = a; nx = ax; ny = ay; }
+  }
+  if (!nearest) { e._f9Target = null; return; }
+  e.facing = { dx: (nx - ex) >= 0 ? 1 : -1, dy: 0 };
+  if (nd <= _F9_TROLL_REACH) {
+    // Ally siekyje → sustok, settle, tada smūgiuok radial AoE (su telegraph)
+    e._f9Target = null;
+    if (e._f9SettledTarget !== 'reach' || !e._f9SettledAt) { e._f9SettledTarget = 'reach'; e._f9SettledAt = now; return; }
+    if (now - e._f9SettledAt < _F9_SETTLE_DELAY) return;
+    if (now - (e._f9LastEnemyAttack || 0) >= _f9EnemyAttackCooldown(e)) {
+      e._f9LastEnemyAttack = now;
+      e.swingStart = now;
+      e._f9SmashAt = now + _F9_TROLL_HIT_DELAY;   // ground telegraph deadline
+      setTimeout(() => { e._f9SmashAt = 0; _f9TrollSmash(e); }, _F9_TROLL_HIT_DELAY);
+    }
+    return;
+  }
+  // Per toli → lumbering chase link artimiausio ally
+  e._f9SettledAt = 0; e._f9SettledTarget = null;
+  if (now - (e._f9LastRepath || 0) < _F9_ENEMY_REPATH_MS && e._f9Target) return;
+  e._f9LastRepath = now;
+  e._f9Target = { tx: nx, ty: ny };
 }
 
 // ── F9 DEKORACIJŲ ELGSENA (2026-06-13) ──
@@ -6598,6 +6699,36 @@ function _spawnF9Enemies(hero) {
             S.units.push(bu);
             bplaced = true;
           }
+        }
+      }
+    }
+  }
+  // ── TROLL BOSS — fiksuotai mapos CENTRE (didžiausias, AoE smash). 1 vnt, NE random/respawn. ──
+  const _trollArch = getEditorEnemyArchetype('troll');
+  if (_trollArch) {
+    const _tcx = Math.floor(COLS * 0.5), _tcy = Math.floor(ROWS * 0.5);
+    let tplaced = false;
+    for (let rad = 0; rad < 8 && !tplaced; rad++) {
+      for (let dy = -rad; dy <= rad && !tplaced; dy++) {
+        for (let dx = -rad; dx <= rad && !tplaced; dx++) {
+          const sx = Math.max(2, Math.min(COLS - 3, _tcx + dx));
+          const sy = Math.max(2, Math.min(ROWS - 3, _tcy + dy));
+          const k = sx + ',' + sy;
+          if (_occ.has(k)) continue;
+          if (Math.hypot(sx - hero.x, sy - hero.y) < 6) continue;   // ne ant squad deploy zonos
+          _occ.add(k);
+          const tid = (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : (220000 + Math.floor(Math.random() * 10000));
+          const tu = mkUnit(tid, 1, sx, sy, 1, _trollArch);
+          _f9ApplyEnemyStats(tu);   // HP 80
+          tu._f9Enemy = true;
+          tu.isEditorEnemy = false;
+          tu._f9Boss = true;        // → didesnis sprite render'yje
+          tu.stack = 1;
+          tu.rx = sx; tu.ry = sy;
+          tu._f9LastEnemyAttack = 0;
+          tu._f9LastRepath = 0;
+          S.units.push(tu);
+          tplaced = true;
         }
       }
     }
@@ -7322,6 +7453,7 @@ function _updateF9EnemyAI(now) {
       e._f9Target = null;
       continue;
     }
+    if (e.utype === 'troll') { _f9UpdateTrollBoss(e, now); continue; }   // BOSS — izoliuota radial logika
     const ex = (e.rx !== undefined) ? e.rx : e.x;
     const ey = (e.ry !== undefined) ? e.ry : e.y;
     const tx0 = (target.rx !== undefined) ? target.rx : target.x;
@@ -9592,7 +9724,8 @@ function getTrollFrameState(u) {
   const now = performance.now();
   const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
   const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
-  const swingDur = (trollAnimSheets.attack.frameCount / TROLL_ANIM_FPS.attack) * 1000;
+  const _atkFps = u._f9Boss ? TROLL_ANIM_FPS.attack * 0.62 : TROLL_ANIM_FPS.attack;   // BOSS — lėtesnis svoringas kirtis
+  const swingDur = (trollAnimSheets.attack.frameCount / _atkFps) * 1000;
   const recoveryElapsed = u.recoveryStart ? now - u.recoveryStart : Infinity;
   const recoveryDur = (trollAnimSheets.recovery.frameCount / TROLL_ANIM_FPS.recovery) * 1000;
   let anim = 'idle';
@@ -9606,7 +9739,7 @@ function getTrollFrameState(u) {
   const frameH = sheetState.sheet.naturalHeight;
   let idx;
   if (anim === 'attack') {
-    idx = Math.min(Math.floor(swingElapsed / (1000 / TROLL_ANIM_FPS.attack)), sheetState.frameCount - 1);
+    idx = Math.min(Math.floor(swingElapsed / (1000 / _atkFps)), sheetState.frameCount - 1);
   } else if (anim === 'recovery') {
     idx = Math.min(Math.floor(recoveryElapsed / (1000 / TROLL_ANIM_FPS.recovery)), sheetState.frameCount - 1);
   } else {
@@ -26419,6 +26552,7 @@ function loop(now) {
   if (typeof window._kothRenderWorld === 'function') window._kothRenderWorld();
   _drawF9ClickMarkers();
   if (typeof _drawF9SpawnWarnings === 'function') _drawF9SpawnWarnings();
+  if (typeof _drawF9TrollTelegraph === 'function') _drawF9TrollTelegraph();
   // ── DEBUG: F9 collision overlay — medžiai (kvadratai) + akmenys (apskr.) + zip (kvadratas).
   // IŠJUNGTA. Įjungti konsolėje tuninguojant: _dbgHit=true ──
   if (window._dbgHit === true && S.floor === 9) {
@@ -31613,8 +31747,9 @@ function drawUnits() {
         }
       } else if (u.utype === 'troll') {
         const frame = getTrollFrameState(u);
-        const sprW = UNIT_CELL * 2.9;
-        const sprH = UNIT_CELL * 2.9;
+        const _trollMul = u._f9Boss ? 1.7 : 1.0;   // BOSS — didesnis nei visi kiti
+        const sprW = UNIT_CELL * 2.9 * _trollMul;
+        const sprH = UNIT_CELL * 2.9 * _trollMul;
         if (frame) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
           if ((u.facing?.dx || -1) < 0) {
