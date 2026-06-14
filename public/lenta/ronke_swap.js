@@ -544,17 +544,20 @@
     if (!prov || !prov.request) throw new Error('Wallet not connected');
     var tr = quote.transactionRequest; if (!tr || !tr.to) throw new Error('No bridge transaction');
     onStatus && onStatus('Sending on Ronin…');
-    var txHash = await prov.request({ method: 'eth_sendTransaction', params: [{ from: fromRonin, to: tr.to, data: tr.data, value: tr.value }] });
+    // `_sent` žyma: jei send NEpavyko (nėra tx) → saugu retry. Jei tx JAU išsiųstas → NEretry (kad nedublikuotų).
+    var txHash;
+    try { txHash = await prov.request({ method: 'eth_sendTransaction', params: [{ from: fromRonin, to: tr.to, data: tr.data, value: tr.value }] }); }
+    catch (e) { if (e) e._sent = false; throw e; }
     onStatus && onStatus('Bridging to Solana…');
     for (var i = 0; i < 40; i++) {
       await new Promise(function (r) { setTimeout(r, 3000); });
       try {
         var st = await (await fetch('https://li.quest/v1/status?txHash=' + txHash + '&fromChain=2020&toChain=' + _SOL_CHAIN)).json();
         if (st.status === 'DONE') return st;
-        if (st.status === 'FAILED') throw new Error('Bridge failed — try again');
-      } catch (e) { if (/failed/i.test(String(e.message))) throw e; }
+        if (st.status === 'FAILED') { var fe = new Error('Bridge failed on destination'); fe._sent = true; throw fe; }
+      } catch (e) { if (/failed/i.test(String(e.message))) { e._sent = true; throw e; } }
     }
-    return null;
+    return null;   // timeout — tx IŠSIŲSTAS, gali atkeliauti vėliau (NEretry)
   }
   function _openSolanaCashout() {
     if (_coRoot) return;
@@ -643,27 +646,51 @@
       if (rRON > R0) { _coMsg('Not enough RON', C.red); return; }
       if (kRONKE > K0) { _coMsg('Not enough RONKE', C.red); return; }
       _coBusy = true; go.disabled = true; go.style.opacity = '.6';
+      var _bal = function () { return W().getRonBalance(ronin).then(function (b) { return Number(b) || 0; }).catch(function () { return 0; }); };
       try {
-        var cur0 = (await W().getRonBalance(ronin)) || R0;
-        var keepRon = Math.max(0, cur0 - rRON);   // kiek originalaus RON paliekam
+        var cur0 = (await _bal()) || R0;
+        var keepRon = Math.max(0, cur0 - rRON);   // kiek originalaus RON paliekam (MAX RON → keepRon ≈ _CO_GAS)
+
+        // ── ŽINGSNIS 1: RONKE → RON (Katana). LAUKIAM kol balansas REALIAI susėda (polling, ne fiksuotas
+        //    timeout) — kitaip bridge skaičiuoja seną RON ir krenta (tai buvo „2 kartų" bug'as). ──
         if (kRONKE > 0) {
           _coMsg('Converting RONKE → RON…', C.sub);
-          await W().swapRonkeToRon(kRONKE, SLIPPAGE, function () { _coMsg('RONKE→RON submitted…', C.sub); });
-          await new Promise(function (r) { setTimeout(r, 2800); });
+          await W().swapRonkeToRon(kRONKE, SLIPPAGE, function () { _coMsg('RONKE → RON submitted…', C.sub); });
+          _coMsg('Waiting for RON to settle…', C.sub);
+          var target = cur0 + 0.001;                 // turi padidėti gautu RON (nepaisant swap gas)
+          for (var w1 = 0; w1 < 25; w1++) {          // iki ~50s
+            await new Promise(function (r) { setTimeout(r, 2000); });
+            if ((await _bal()) > target) break;
+          }
         }
-        var cur = (await W().getRonBalance(ronin)) || cur0;
-        var bridgeAmt = cur - Math.max(keepRon, _CO_GAS);   // visada paliekam ≥ gas
-        if (bridgeAmt <= 0) throw new Error('Not enough RON to bridge after gas');
-        _coMsg('Finding route…', C.sub);
-        var q = await _lifiRonToSol(bridgeAmt, ronin, dest);
-        _coMsg('Bridging ~' + _fmt(bridgeAmt, 3) + ' RON → SOL…', C.sub);
-        var res = await _bridgeExecEvm(q, ronin, function (s) { _coMsg(s, C.sub); });
-        if (res) _coMsg('✓ SOL sent to your Solana wallet!', '#2fa84a');
-        else _coMsg('Sent — SOL will arrive shortly.', C.wood);
+
+        // ── ŽINGSNIS 2: bridge RON → SOL iš ŠVIEŽIO balanso, AUTO-RETRY be klaidos UI (tik jei TX
+        //    dar NEišsiųstas — kad nedublikuotų). Viskas viename sraute, žmogui nieko kartoti nereikia. ──
+        var done = false, lastErr = null;
+        for (var attempt = 0; attempt < 3 && !done; attempt++) {
+          var cur = await _bal();
+          var bridgeAmt = cur - Math.max(keepRon, _CO_GAS);   // visada paliekam ≥ gas reserve
+          if (bridgeAmt <= 0) { lastErr = new Error('Not enough RON to bridge after gas'); break; }
+          try {
+            _coMsg(attempt ? 'Retrying…' : 'Finding route…', C.sub);
+            var q = await _lifiRonToSol(bridgeAmt, ronin, dest);
+            _coMsg('Bridging ~' + _fmt(bridgeAmt, 3) + ' RON → SOL…', C.sub);
+            var res = await _bridgeExecEvm(q, ronin, function (s) { _coMsg(s, C.sub); });
+            done = true;
+            _coMsg(res ? '✓ SOL sent to your Solana wallet!' : 'Sent — SOL will arrive shortly.', res ? '#2fa84a' : C.wood);
+          } catch (e) {
+            lastErr = e;
+            if (/reject|denied|cancel|4001/i.test(String(e && e.message))) throw e;   // user atšaukė → stop
+            if (e && e._sent) throw e;                                                 // TX jau išsiųstas → NEretry
+            await new Promise(function (r) { setTimeout(r, 3000); });                  // transient → retry iš šviežio balanso
+          }
+        }
+        if (!done) throw lastErr || new Error('Cash out failed');
+
         try { W().refreshBalance && W().refreshBalance(); } catch (_) {}
-        try { R0 = (await W().getRonBalance(ronin)) || 0; var s3 = W().snapshot(); K0 = (s3 && typeof s3.ronkeBalance === 'number') ? s3.ronkeBalance : K0; _setBals(); } catch (_) {}
+        try { R0 = await _bal(); var s3 = W().snapshot(); K0 = (s3 && typeof s3.ronkeBalance === 'number') ? s3.ronkeBalance : K0; _setBals(); } catch (_) {}
       } catch (e) {
-        _coMsg(/reject|cancel|denied|4001/i.test(String(e && e.message)) ? 'Cancelled' : String((e && e.message) || 'Cash out failed'), C.red);
+        _coMsg(/reject|cancel|denied|4001/i.test(String(e && e.message)) ? 'Cancelled' : String((e && (e.shortMessage || e.message)) || 'Cash out failed').slice(0, 60), C.red);
       }
       _coBusy = false; go.disabled = false; go.style.opacity = '1';
     };
