@@ -3193,6 +3193,11 @@
 
   let _f12SessionNftPool = [];
 
+  // Persistinis tokenId → {contractUtype, utype, xp, level} žemėlapis. Pildomas KARTĄ mūšio
+  // pradžioj ir NIEKADA nesplice'inamas (skirtingai nei _f12SessionNftPool, iš kurio deploy'inti
+  // unitai išimami). Settle ekranas naudoja JĮ → visada teisingas sprite/tipas. 2026-06-14.
+  let _f12NftMetaMap = {};
+
   // NFT mūšio vėliava — kai true, žaidžiama TIK su pasirinktais NFT (+ free unitai uždirbti
 
   // merge'inant), JOKIO maišymo su F10 home-trained roster'iu. (Žaidėjo noras: NFT ir free atskirai.)
@@ -4675,6 +4680,8 @@
 
     _f12SessionNftPool = [];
 
+    _f12NftMetaMap = {};   // fresh battle — meta žemėlapis iš naujo
+
     // NFT mūšį atpažįstam ANKSTI (prieš pre-deck bloką), kad neįsimaišytų free kortos.
 
     _f12IsNftBattle = Array.isArray(window._f12NftPickedPool) && window._f12NftPickedPool.length > 0;
@@ -4772,6 +4779,12 @@
             maxHp: null,
 
           });
+
+          // Persistinis meta — settle ekranui (nesplice'inamas)
+          _f12NftMetaMap[String(nft.tokenId)] = {
+            tokenId: nft.tokenId, utype: nft.utype, xp: nft.xp || 0,
+            level: nft.level || 0, contractUtype: nft.contractUtype,
+          };
 
           // Atrakinam korelos atitinkamai ball type'ą
 
@@ -23069,9 +23082,13 @@
   };
   function _f12LevelFromXp(xp) { return Math.floor(Math.sqrt(Math.max(0, xp || 0) / 100)); }
   function _f12SettleMeta(tokenId) {
+    const key = String(tokenId);
     try {
+      // Persistinis žemėlapis PIRMA — turi VISŲ pradinių unitų teisingą tipą (net deploy'intų,
+      // kurie išsplice'inti iš _f12SessionNftPool). Pool kaip atsarga.
+      if (_f12NftMetaMap && _f12NftMetaMap[key]) return _f12NftMetaMap[key];
       const pool = _f12SessionNftPool || [];
-      const e = pool.find(function (n) { return n && String(n.tokenId) === String(tokenId); });
+      const e = pool.find(function (n) { return n && String(n.tokenId) === key; });
       if (e) return e;
     } catch (_) {}
     return null;
