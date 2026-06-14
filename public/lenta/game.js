@@ -2809,9 +2809,11 @@ function _goldStoneContentBounds(imgName, gImg, fw) {
     c2.drawImage(gImg, 0, 0, fw, 128, 0, 0, fw, 128);   // frame 0
     const data = c2.getImageData(0, 0, fw, 128).data;
     let minX = fw, maxX = -1, minY = 128, maxY = -1;
+    // Alpha riba AUKŠTA (150) — ignoruojam highlight glow/švytėjimo pusiau permatomus pikselius
+    // aplink akmenį (jie tempė bounds beveik iki pilno kadro → per didelis hitbox).
     for (let y = 0; y < 128; y++) {
       for (let x = 0; x < fw; x++) {
-        if (data[(y * fw + x) * 4 + 3] > 30) {
+        if (data[(y * fw + x) * 4 + 3] >= 150) {
           if (x < minX) minX = x; if (x > maxX) maxX = x;
           if (y < minY) minY = y; if (y > maxY) maxY = y;
         }
@@ -2828,7 +2830,10 @@ function _goldStoneHitbox(def, gImg, sx, sy, gsz) {
   const cb = _goldStoneContentBounds(def.img, gImg, def.fw);
   if (!cb) return { x: sx, y: sy, w: gsz, h: gsz };   // fallback
   const s = gsz / 128;
-  return { x: sx + cb.x0 * s, y: sy + cb.y0 * s, w: (cb.x1 - cb.x0) * s, h: (cb.y1 - cb.y0) * s };
+  let x = sx + cb.x0 * s, y = sy + cb.y0 * s, w = (cb.x1 - cb.x0) * s, h = (cb.y1 - cb.y0) * s;
+  // Papildomas 15% įtraukimas į vidų — hitbox glaudžiai apgaubia akmens ŠERDĮ (ne kraštus/glow)
+  const ix = w * 0.15, iy = h * 0.15;
+  return { x: x + ix, y: y + iy, w: w - ix * 2, h: h - iy * 2 };
 }
 const _npcStates      = {}; // keyed by "row,col"
 let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + gold stone present
@@ -6311,8 +6316,11 @@ function _f9UnitOccluded(u) {
     const d = S.decorations[(uy + dr) + ',' + ux];
     if (typeof d === 'string' && d.startsWith('tree')) return true;
   }
-  // Zip tower'iui occlusion siluetas NEnaudojamas — vietoj jo bokštas FADE'inasi pusiau
-  // permatomas kai unitas už/po juo (industry-standard, žr. _drawZipTowerFade draw bloke).
+  // Zip tower (aukštas pastatas) dengia unitą: virš bazės (dr 1..2) IR po baze (dr -1..-2,
+  // kur tankaus unito galva kišasi į permatomas duris) → occluded = baltas siluetas VIRŠ bokšto.
+  for (let dr = -2; dr <= 2; dr++) {
+    if (S.decorations[(uy + dr) + ',' + ux] === 'building_Zip') return true;
+  }
   return false;
 }
 // Unifikuotas frame-getter F9 unito siluetui — { img, sx, sy, sw, sh, sprSz, flip, yOff } arba null.
@@ -16526,31 +16534,7 @@ function drawForegroundDecorations() {
       const _zw = _zfw * _zScale, _zh = _zfh * _zScale;
       const _zbx = c * CELL + (CELL - _zw) / 2;
       const _zby = r * CELL + CELL - _zh + 1;
-      // ── F9 OCCLUSION FADE (industry-standard, kaip Stardew/RPG) ──
-      // Jei unitas už/po bokštu (jo column'oj, ±2 eilutės nuo bazės) — bokštas tampa pusiau
-      // permatomas, kad unitą matytum PRO jį (vietoj „įstrigusios galvos"). Smooth lerp.
-      let _zAlpha = 1;
-      if (typeof S !== 'undefined' && S && S.floor === 9) {
-        let _behind = false;
-        if (Array.isArray(S.units)) {
-          for (const _u of S.units) {
-            if (!_u || !_u.alive) continue;
-            const _ucx = Math.round((_u.rx !== undefined ? _u.rx : _u.x));
-            const _ucy = Math.round((_u.ry !== undefined ? _u.ry : _u.y));
-            if (_ucx === c && _ucy >= r - 2 && _ucy <= r + 1) { _behind = true; break; }
-          }
-        }
-        if (!window._f9ZipFade) window._f9ZipFade = {};
-        const _cur = (window._f9ZipFade[_zKey] != null) ? window._f9ZipFade[_zKey] : 1;
-        const _tgt = _behind ? 0.45 : 1;
-        const _next = _cur + (_tgt - _cur) * 0.18;   // smooth fade in/out
-        window._f9ZipFade[_zKey] = (Math.abs(_next - _tgt) < 0.01) ? _tgt : _next;
-        _zAlpha = window._f9ZipFade[_zKey];
-      }
-      const _zPrevAlpha = ctx.globalAlpha;
-      if (_zAlpha < 1) ctx.globalAlpha = _zPrevAlpha * _zAlpha;
       ctx.drawImage(_srcImg, _zsx, _zsy, _zfw, _zfh, _zbx, _zby, _zw, _zh);
-      ctx.globalAlpha = _zPrevAlpha;
       // F9 — zip tower elgiasi kaip unitas: bounds selektavimui + selection ring jei pasirinktas
       if (typeof S !== 'undefined' && S && S.floor === 9) {
         if (!window._f9ZipBounds) window._f9ZipBounds = [];
@@ -26423,7 +26407,30 @@ function loop(now) {
       if (!u || !u.alive || !_f9UnitOccluded(u)) continue;
       const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
       const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-      _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // baltas kontūras (be užpildo)
+      // Jei unitas APATINĖJE zip tower dalyje (bokštas tiesiai virš jo) — kontūrą nukerpam,
+      // kad nesirodytų aukščiau nei 20px nuo bokšto centro (paslepia galvos dalį duryse).
+      let _clipFromY = null;
+      if (S.decorations && Array.isArray(window._f9ZipBounds)) {
+        const _ucx = Math.round(u.rx !== undefined ? u.rx : u.x);
+        const _ucy = Math.round(u.ry !== undefined ? u.ry : u.y);
+        for (let dr = 1; dr <= 2; dr++) {   // zip 1-2 eilutes VIRŠ unito → unitas apačioj
+          if (S.decorations[(_ucy - dr) + ',' + _ucx] === 'building_Zip') {
+            const _zb = window._f9ZipBounds.find(b => b.c === _ucx && b.r === _ucy - dr);
+            if (_zb) _clipFromY = _zb.y + _zb.h / 2 + 20;   // 20px žemiau bokšto centro
+            break;
+          }
+        }
+      }
+      if (_clipFromY != null) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-100000, _clipFromY, 200000, 100000);   // tik ŽEMIAU clip linijos
+        ctx.clip();
+        _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');
+        ctx.restore();
+      } else {
+        _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // baltas kontūras (be užpildo)
+      }
     }
   }
   drawBarracksHarpoons('top');
