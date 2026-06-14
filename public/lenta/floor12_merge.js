@@ -23054,6 +23054,110 @@
 
   }
 
+  // ── Settle ekrano helper'iai (sprite + XP + level-up kortelės). 2026-06-13. ──
+  const _F12_SETTLE_IMG = {
+    skull: 'unit-images/skull-idle.gif', 1: 'unit-images/skull-idle.gif',
+    archer: 'unit-images/archer-idle.gif', 2: 'unit-images/archer-idle.gif',
+    harpoon: 'unit-images/harpoon-idle.gif', harpoon_fish: 'unit-images/harpoon-idle.gif', 3: 'unit-images/harpoon-idle.gif',
+    shaman: 'unit-images/shaman-idle.gif', 4: 'unit-images/shaman-idle.gif',
+    hog_rider: 'unit-images/hog-idle.png', pigronke: 'unit-images/hog-idle.png', 5: 'unit-images/hog-idle.png',
+  };
+  const _F12_SETTLE_NAME = {
+    skull: 'Skull', archer: 'Archer', harpoon: 'Harpoon', harpoon_fish: 'Harpoon',
+    shaman: 'Shaman', hog_rider: 'Hog Rider', pigronke: 'Hog Rider',
+    1: 'Skull', 2: 'Archer', 3: 'Harpoon', 4: 'Shaman', 5: 'Hog Rider',
+  };
+  function _f12LevelFromXp(xp) { return Math.floor(Math.sqrt(Math.max(0, xp || 0) / 100)); }
+  function _f12SettleMeta(tokenId) {
+    try {
+      const pool = _f12SessionNftPool || [];
+      const e = pool.find(function (n) { return n && String(n.tokenId) === String(tokenId); });
+      if (e) return e;
+    } catch (_) {}
+    return null;
+  }
+  function _f12InjectSettleStyle() {
+    if (document.getElementById('f12sr-style')) return;
+    const st = document.createElement('style');
+    st.id = 'f12sr-style';
+    st.textContent = [
+      '#f12-settle-result .f12sr-title{color:#ffcf5c;font-size:14px;text-align:center;text-shadow:2px 2px 0 #2a1a0c;animation:f12srTitleIn 0.5s ease-out both}',
+      '#f12-settle-result .f12sr-sub{color:#ffcf5c;font-size:8px;text-align:center;line-height:1.6;opacity:0.92;animation:f12srPulse2 1.1s ease-in-out infinite}',
+      // Sprite tinklelis — 6 stulpeliai (2 eilutės po 6 = 12). Didesnis vertikalus tarpas,
+      // kad apatinės eilutės XP skaičiai nesikirstų su viršutinės eilutės vardais.
+      '#f12-settle-result .f12sr-row{display:grid;grid-template-columns:repeat(6,auto);justify-content:center;align-items:end;gap:30px 14px;padding:24px 6px 6px;max-width:97vw}',
+      '#f12-settle-result .f12sr-unit{position:relative;display:flex;flex-direction:column;align-items:center;animation:f12srIn 0.45s ease-out both}',
+      // Kylantis XP skaitliukas — pakeltas ant sprite viršaus (arčiau matomo unito, ne aukštai ore)
+      '#f12-settle-result .f12sr-xpfloat{position:absolute;bottom:calc(100% - 16px);color:#7ee08a;font-size:10px;text-shadow:1px 1px 0 #06120a,0 0 6px rgba(126,224,138,0.6);white-space:nowrap}',
+      '#f12-settle-result .f12sr-unit.popxp .f12sr-xpfloat{animation:f12srXpPop 0.18s ease-out}',
+      '#f12-settle-result .f12sr-spr{width:min(14.5vw,26vh,168px);height:min(14.5vw,26vh,168px);image-rendering:pixelated;object-fit:contain;display:block;filter:drop-shadow(0 5px 5px rgba(0,0,0,0.55))}',
+      '#f12-settle-result .f12sr-shadow{width:min(10vw,18vh,112px);height:13px;margin-top:-8px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,0,0,0.5),transparent 70%)}',
+      // Vardas + lygis vienoje kompaktiškoj linijoj prie pat sprite
+      '#f12-settle-result .f12sr-meta{color:#cdb88c;font-size:8px;margin-top:1px;max-width:min(15vw,176px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;line-height:1.3}',
+      '#f12-settle-result .f12sr-meta b{color:#ffcf5c;font-weight:normal}',
+      // Level-up burst — paleidžiamas JS po XP animacijos (klasė .lvgo)
+      '#f12-settle-result .f12sr-unit.lvgo .f12sr-spr{animation:f12srLvPop 0.7s ease-out, f12srBounce 0.7s ease-in-out 0.7s infinite}',
+      '#f12-settle-result .f12sr-lvup{position:absolute;bottom:calc(100% - 16px);left:50%;transform:translateX(-50%) scale(0);background:linear-gradient(180deg,#ffe07a,#e89a2a);color:#2a1a0c;font-size:8px;font-weight:bold;padding:3px 8px;border-radius:5px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.6),0 0 12px rgba(255,207,92,0.7);z-index:4}',
+      '#f12-settle-result .f12sr-unit.lvgo .f12sr-lvup{animation:f12srLvUp 0.6s cubic-bezier(0.2,1.4,0.4,1) forwards, f12srPulse 0.9s ease-in-out 0.6s infinite}',
+      '#f12-settle-result .f12sr-ring{position:absolute;top:42%;left:50%;width:min(14.5vw,26vh,168px);height:min(14.5vw,26vh,168px);border:3px solid #ffe07a;border-radius:50%;transform:translate(-50%,-50%) scale(0.3);opacity:0;pointer-events:none}',
+      '#f12-settle-result .f12sr-unit.lvgo .f12sr-ring{animation:f12srRing 0.7s ease-out}',
+      // Žuvę unitai
+      '#f12-settle-result .f12sr-unit.dead .f12sr-spr{filter:grayscale(1) brightness(0.5) drop-shadow(0 4px 4px rgba(0,0,0,0.55))}',
+      '#f12-settle-result .f12sr-deadlbl{position:absolute;bottom:calc(100% - 16px);color:#ff8a8a;font-size:8px;text-shadow:1px 1px 0 #200}',
+      '#f12-settle-result .f12sr-close{margin-top:6px;padding:9px 30px;font-family:inherit;font-size:10px;background:#ffcf5c;color:#2a1a0c;border:2px solid #2a1a0c;border-radius:5px;cursor:pointer;box-shadow:2px 3px 0 #2a1a0c}',
+      '@keyframes f12srTitleIn{0%{opacity:0;transform:translateY(-14px) scale(0.9)}100%{opacity:1;transform:translateY(0) scale(1)}}',
+      '@keyframes f12srPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.1)}}',
+      '@keyframes f12srPulse2{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}',
+      '@keyframes f12srIn{0%{opacity:0;transform:translateY(14px) scale(0.9)}100%{opacity:1;transform:translateY(0) scale(1)}}',
+      '@keyframes f12srBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}',
+      '@keyframes f12srXpPop{0%{transform:scale(1)}50%{transform:scale(1.28);color:#fff}100%{transform:scale(1)}}',
+      '@keyframes f12srLvPop{0%{transform:scale(1)}30%{transform:scale(1.35);filter:drop-shadow(0 0 14px #ffe07a) brightness(1.6)}100%{transform:scale(1)}}',
+      '@keyframes f12srLvUp{0%{transform:translateX(-50%) translateY(8px) scale(0)}100%{transform:translateX(-50%) translateY(0) scale(1)}}',
+      '@keyframes f12srRing{0%{opacity:0.9;transform:translate(-50%,-50%) scale(0.3)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}}',
+      '@media(max-width:560px){#f12-settle-result .f12sr-row{gap:6px 7px;padding-top:30px}#f12-settle-result .f12sr-xpfloat{font-size:8px}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  // Inline sprite (JOKIOS dėžės). opts.dead = žuvęs. Survivor'iui XP skaitliukas animuojamas JS'u
+  // (data-xp = uždirbtas; jei data-lvup="1" → po skaičiavimo paleidžiama level-up animacija).
+  function _f12SettleCard(tokenId, gain, idx, opts) {
+    opts = opts || {};
+    const dead = !!opts.dead;
+    const meta = _f12SettleMeta(tokenId);
+    const cu = meta ? meta.contractUtype : null;
+    const img = _F12_SETTLE_IMG[cu] || (meta && _F12_SETTLE_IMG[meta.utype]) || 'unit-images/skull-idle.gif';
+    const nm = _F12_SETTLE_NAME[cu] || (meta && _F12_SETTLE_NAME[meta.utype]) || 'Unit';
+    const delay = ((idx || 0) * 0.07).toFixed(2);
+
+    if (dead) {
+      let s = '<div class="f12sr-unit dead" style="animation-delay:' + delay + 's">';
+      s += '<div class="f12sr-deadlbl">💀</div>';
+      s += '<img class="f12sr-spr" src="' + img + '" alt="">';
+      s += '<div class="f12sr-shadow"></div>';
+      s += '<div class="f12sr-meta">' + nm + '</div>';
+      s += '</div>';
+      return s;
+    }
+
+    const startXp = meta ? (meta.xp || 0) : null;
+    const g = gain || 0;
+    const newXp = (startXp != null) ? startXp + g : null;
+    const oldLv = (startXp != null) ? _f12LevelFromXp(startXp) : null;
+    const newLv = (newXp != null) ? _f12LevelFromXp(newXp) : null;
+    const leveled = (oldLv != null && newLv != null && newLv > oldLv);
+
+    // XP skaitliukas startuoja nuo 0; data-xp = tikslas. Stagger pradžia per --d (s).
+    let s = '<div class="f12sr-unit" style="animation-delay:' + delay + 's">';
+    s += '<div class="f12sr-ring"></div>';
+    s += '<div class="f12sr-xpfloat" data-xp="' + g + '"' + (leveled ? ' data-lvup="1"' : '') + ' data-start="' + delay + '">+0 XP</div>';
+    if (leveled) s += '<div class="f12sr-lvup">LEVEL UP! Lv ' + newLv + '</div>';
+    s += '<img class="f12sr-spr" src="' + img + '" alt="">';
+    s += '<div class="f12sr-shadow"></div>';
+    s += '<div class="f12sr-meta">' + nm + (newLv != null ? ' <b>Lv ' + newLv + '</b>' : '') + '</div>';
+    s += '</div>';
+    return s;
+  }
+
   function _showSettleResult(info) {
 
     // Visual popup (HTML overlay)
@@ -23066,15 +23170,12 @@
 
       div.id = 'f12-settle-result';
 
-      div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99999;'
-
-        + 'background:linear-gradient(180deg,#6b4a2e 0%,#4a3320 100%);border:4px solid #2a1a0c;'
-
-        + 'box-shadow:0 0 0 4px #8b6a3e,0 12px 40px rgba(0,0,0,0.7);'
-
-        + 'padding:24px 28px;color:#f5e6c3;font-family:\'Press Start 2P\',monospace;font-size:9px;'
-
-        + 'line-height:1.6;max-width:520px;letter-spacing:0.5px;';
+      // Pilno ekrano overlay — beveik nepermatomas fonas (atskiro lango pojūtis),
+      // kad XP/level-up animacijos NESILIETŲ su žaidimo scena už nugaros.
+      div.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;'
+        + 'align-items:center;justify-content:center;gap:12px;'
+        + 'background:radial-gradient(ellipse at center,#1a120a 0%,#0a0703 70%,#050302 100%);'
+        + 'color:#f5e6c3;font-family:\'Press Start 2P\',monospace;font-size:9px;letter-spacing:0.5px;';
 
       document.body.appendChild(div);
 
@@ -23096,31 +23197,52 @@
 
     }
 
-    let html = '<div style="color:#ffcf5c;font-size:11px;margin-bottom:12px">⚔ BATTLE SETTLED</div>';
+    _f12InjectSettleStyle();
+    const _nLeveled = (info.claimed || []).filter(function (c) {
+      const m = _f12SettleMeta(c.tokenId);
+      if (!m) return false;
+      return _f12LevelFromXp((m.xp || 0) + (c.xp || 0)) > _f12LevelFromXp(m.xp || 0);
+    }).length;
+    const _claimed = info.claimed || [];
+    const _dead = info.dead || [];
+    let html = '<div class="f12sr-title">⚔ BATTLE SETTLED</div>';
+    const _totalXp = _claimed.reduce(function (a, c) { return a + (c.xp || 0); }, 0);
+    const _subBits = [];
+    if (_claimed.length) _subBits.push(_claimed.length + ' survived');
+    if (_totalXp > 0) _subBits.push('+' + _totalXp + ' XP');
+    if (_nLeveled > 0) _subBits.push('★ ' + _nLeveled + ' leveled up!');
+    if (_dead.length) _subBits.push('💀 ' + _dead.length + ' lost');
+    if (_subBits.length) html += '<div class="f12sr-sub">' + _subBits.join('  ·  ') + '</div>';
 
-    if (info.claimed && info.claimed.length) {
+    if (_claimed.length || _dead.length) {
 
-      html += '<div style="margin-bottom:8px">XP awarded:</div><ul style="list-style:none;padding-left:0;margin:0">';
+      html += '<div class="f12sr-row">';
 
-      for (const c of info.claimed) {
+      let _idx = 0;
 
-        html += '<li>NFT #' + c.tokenId + ' +' + c.xp + ' XP <span style="color:#7ec77f">✓ on-chain</span></li>';
+      for (let _ci = 0; _ci < _claimed.length; _ci++) {
+
+        html += _f12SettleCard(_claimed[_ci].tokenId, _claimed[_ci].xp, _idx++, {});
 
       }
 
-      html += '</ul>';
+      for (let _di = 0; _di < _dead.length; _di++) {
+
+        html += _f12SettleCard(_dead[_di], 0, _idx++, { dead: true });
+
+      }
+
+      html += '</div>';
 
     } else {
 
-      html += '<div style="opacity:0.7">No XP awards processed.</div>';
+      html += '<div style="opacity:0.7">No units processed.</div>';
 
     }
 
-    if (info.dead && info.dead.length) {
+    if (info.dead && info.dead.length && info.burnHash) {
 
-      html += '<div style="margin-top:10px;color:#e85d5d">Burned NFTs (on-chain): ' + info.dead.map(d => '#' + d).join(', ') + '</div>';
-
-      if (info.burnHash) html += '<div style="font-size:7px;opacity:0.7;margin-top:4px">Burn tx: ' + info.burnHash.slice(0, 14) + '...</div>';
+      html += '<div style="font-size:7px;opacity:0.6;margin-top:4px;text-align:center">Burn tx: ' + info.burnHash.slice(0, 14) + '...</div>';
 
     }
 
@@ -23130,10 +23252,67 @@
 
     }
 
-    html += '<button style="margin-top:14px;padding:8px 16px;font-family:inherit;font-size:9px;background:#ffcf5c;color:#2a1a0c;border:2px solid #2a1a0c;cursor:pointer" onclick="document.getElementById(\'f12-settle-result\').remove()">CLOSE</button>';
+    html += '<button class="f12sr-close" onclick="var e=document.getElementById(\'f12-settle-result\');if(e)e.remove()">CLOSE</button>';
 
     div.innerHTML = html;
 
+    // ── XP skaitliuko animacija: kiekvienas „+0 XP" virš sprite kyla iki uždirbto skaičiaus,
+    //    o pasibaigus — jei unitas pakilo lygiu, paleidžiama level-up burst animacija. ──
+    try {
+      const labels = div.querySelectorAll('.f12sr-xpfloat[data-xp]');
+      const COUNT_MS = 1100;
+      const easeOut = function (t) { return 1 - Math.pow(1 - t, 3); };
+      labels.forEach(function (el) {
+        const target = parseInt(el.getAttribute('data-xp'), 10) || 0;
+        const startDelay = (parseFloat(el.getAttribute('data-start')) || 0) * 1000 + 350;
+        const unit = el.parentNode;
+        const t0 = performance.now() + startDelay;
+        if (target <= 0) {
+          // 0 XP (free unit) — nieko neskaičiuojam; level-up vis tiek galimas teoriškai
+          el.textContent = '+0 XP';
+          if (el.getAttribute('data-lvup') === '1') {
+            setTimeout(function () { _f12TriggerLvUp(unit); }, startDelay + 300);
+          }
+          return;
+        }
+        let lastTick = 0;
+        function tick(now) {
+          if (now < t0) { requestAnimationFrame(tick); return; }
+          const t = Math.min(1, (now - t0) / COUNT_MS);
+          const val = Math.round(target * easeOut(t));
+          el.textContent = '+' + val + ' XP';
+          // skaitliuko „tiksėjimo" pop'as (ribotai, kad neperkrautų)
+          if (now - lastTick > 55) {
+            lastTick = now;
+            unit.classList.remove('popxp');
+            void unit.offsetWidth;
+            unit.classList.add('popxp');
+            try { if (typeof SFX !== 'undefined' && SFX.play && t < 1) SFX.play(1200 + val * 0.4, 0.02, 0.015, 'square'); } catch (_) {}
+          }
+          if (t < 1) requestAnimationFrame(tick);
+          else {
+            el.textContent = '+' + target + ' XP';
+            if (el.getAttribute('data-lvup') === '1') _f12TriggerLvUp(unit);
+          }
+        }
+        requestAnimationFrame(tick);
+      });
+    } catch (_) {}
+
+  }
+
+  // Level-up burst ant vieno sprite (po XP skaičiavimo)
+  function _f12TriggerLvUp(unit) {
+    if (!unit) return;
+    unit.classList.add('lvgo');
+    const xpf = unit.querySelector('.f12sr-xpfloat');
+    if (xpf) xpf.style.opacity = '0';   // XP skaičius užleidžia vietą „LEVEL UP!"
+    try {
+      if (typeof SFX !== 'undefined' && SFX.play) {
+        SFX.play(880, 0.12, 0.10, 'square', 300);
+        setTimeout(function () { SFX.play(1320, 0.16, 0.12, 'square', 400); }, 110);
+      }
+    } catch (_) {}
   }
 
   // Eksportas — gali būti pakviestas iš UI (pvz "End Battle" mygtuko)

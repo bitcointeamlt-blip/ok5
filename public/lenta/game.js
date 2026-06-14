@@ -2795,6 +2795,41 @@ const _GOLD_STONE_DEFS = {
   gold_resource:  { img: 'Gold_Resource',            frames: 1, fw: 128, fps: 0 },
   gold_resource_h:{ img: 'Gold_Resource_Highlight',  frames: 6, fw: 128, fps: 8 },
 };
+
+// Tikslus sprite turinio bounding box iš alpha kanalo (frame 0) → hitbox atitinka
+// MATOMĄ akmenį, ne pilną permatomą kadrą. Cache'inama per img name. 2026-06-13.
+const _goldStoneBoundsCache = {};
+function _goldStoneContentBounds(imgName, gImg, fw) {
+  if (_goldStoneBoundsCache[imgName]) return _goldStoneBoundsCache[imgName];
+  if (!gImg || !gImg.complete || !gImg.naturalWidth) return null;   // dar neįkrauta — bandysim vėliau
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = fw; cv.height = 128;
+    const c2 = cv.getContext('2d');
+    c2.drawImage(gImg, 0, 0, fw, 128, 0, 0, fw, 128);   // frame 0
+    const data = c2.getImageData(0, 0, fw, 128).data;
+    let minX = fw, maxX = -1, minY = 128, maxY = -1;
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < fw; x++) {
+        if (data[(y * fw + x) * 4 + 3] > 30) {
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null;
+    const b = { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1, fw };
+    _goldStoneBoundsCache[imgName] = b;
+    return b;
+  } catch (_) { return null; }   // CORS / tainted canvas — fallback į pilną kadrą
+}
+// Akmens hitbox pasaulio koordinatėse pagal turinio bounds (sx/sy = sprite kairys-viršus, gsz = dydis)
+function _goldStoneHitbox(def, gImg, sx, sy, gsz) {
+  const cb = _goldStoneContentBounds(def.img, gImg, def.fw);
+  if (!cb) return { x: sx, y: sy, w: gsz, h: gsz };   // fallback
+  const s = gsz / 128;
+  return { x: sx + cb.x0 * s, y: sy + cb.y0 * s, w: (cb.x1 - cb.x0) * s, h: (cb.y1 - cb.y0) * s };
+}
 const _npcStates      = {}; // keyed by "row,col"
 let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + gold stone present
 let _stoneShake  = { key: null, x: 0, y: 0 }; // shake offset applied to mined stone in static cache
@@ -5045,6 +5080,9 @@ function _drawF9SelectionRing() {
   const t = performance.now();
   const pulse = (Math.sin(t * 0.004) + 1) * 0.5;
   const primary = window._f9Selected;
+  // Solo selection — vienas pažymėtas unitas turi RYŠKIAI išsiskirti iš minios
+  // (šviesos stulpas + šokinėjanti rodyklė virš galvos + sustiprintas žiedas).
+  const isSolo = (sels.length === 1);
   ctx.save();
   ctx.lineCap = 'round';
   for (const sel of sels) {
@@ -5102,6 +5140,74 @@ function _drawF9SelectionRing() {
       ctx.beginPath();
       ctx.ellipse(ux, uyFeet, _rx, _ry, 0, baseAng - armA / 2, baseAng + armA / 2);
       ctx.stroke();
+    }
+
+    // 5) SOLO STANDOUT (RYŠKUS variantas) — tik kai pažymėtas vienas unitas
+    if (isSolo) {
+      const headY = uyFeet - CELL * (sel.utype === 'pigronke' ? 2.05 : 1.65);
+
+      // a) Šviečiantis žemės diskas po unitu — radial glow užpildas (pagrindinis „pop")
+      const discA = 0.30 + pulse * 0.14;
+      const grdD = ctx.createRadialGradient(ux, uyFeet, 0, ux, uyFeet, _rx * 2.0);
+      grdD.addColorStop(0, `rgba(${glowColor}, ${discA.toFixed(3)})`);
+      grdD.addColorStop(0.6, `rgba(${glowColor}, ${(discA * 0.45).toFixed(3)})`);
+      grdD.addColorStop(1, `rgba(${glowColor}, 0)`);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = grdD;
+      ctx.beginPath();
+      ctx.ellipse(ux, uyFeet, _rx * 2.0, _ry * 2.0, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // b) DU pulsuojantys ripple žiedai (offset faze) — energingesnis ritmas
+      for (let ri = 0; ri < 2; ri++) {
+        const rip = ((t + ri * 700) % 1400) / 1400;
+        const ripA = (1 - rip) * 0.7;
+        if (ripA > 0.02) {
+          ctx.strokeStyle = `rgba(${glowColor}, ${ripA.toFixed(3)})`;
+          ctx.lineWidth = 2.6 * (1 - rip) + 0.6;
+          ctx.beginPath();
+          ctx.ellipse(ux, uyFeet, _rx + rip * CELL * 0.7, _ry + rip * CELL * 0.3, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // c) Ryškus vertikalus šviesos stulpas (spotlight) — sodresnis, su core linija
+      const beamTop = headY - CELL * 0.65;
+      const beamW = _rx * 1.25;
+      const grdB = ctx.createLinearGradient(ux, uyFeet, ux, beamTop);
+      grdB.addColorStop(0, `rgba(${glowColor}, ${(0.34 + pulse * 0.12).toFixed(3)})`);
+      grdB.addColorStop(1, `rgba(${glowColor}, 0)`);
+      ctx.fillStyle = grdB;
+      ctx.beginPath();
+      ctx.moveTo(ux - beamW, uyFeet);
+      ctx.lineTo(ux + beamW, uyFeet);
+      ctx.lineTo(ux + beamW * 0.3, beamTop);
+      ctx.lineTo(ux - beamW * 0.3, beamTop);
+      ctx.closePath();
+      ctx.fill();
+
+      // d) DIDELĖ šokinėjanti rodyklė (▼) virš galvos su stipriu glow
+      const bob = Math.sin(t * 0.007) * 5;
+      const arrY = headY + bob;
+      const aw = 13, ah = 16;
+      ctx.shadowColor = `rgba(${glowColor}, 1)`;
+      ctx.shadowBlur = 16 + pulse * 6;
+      ctx.fillStyle = `rgba(${baseColor}, 1)`;
+      ctx.beginPath();
+      ctx.moveTo(ux - aw, arrY);
+      ctx.lineTo(ux + aw, arrY);
+      ctx.lineTo(ux, arrY + ah);
+      ctx.closePath();
+      ctx.fill();
+      // baltas vidinis highlight
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.moveTo(ux - aw * 0.5, arrY + 2);
+      ctx.lineTo(ux + aw * 0.5, arrY + 2);
+      ctx.lineTo(ux, arrY + ah * 0.55);
+      ctx.closePath();
+      ctx.fill();
     }
   }
   ctx.restore();
@@ -14590,10 +14696,12 @@ function _drawExtraMines(now) {
     const gFrame = stoneDef.frames > 1 ? Math.floor(now / (1000 / stoneDef.fps)) % stoneDef.frames : 0;
     const sX = sc * CELL + CELL / 2 - gsz / 2 + 15 + (mine.shake.active ? mine.shake.x : 0);
     const sY = sr * CELL + CELL - gsz + 20 + dy + 10 + _extraStoneDrop + (mine.shake.active ? mine.shake.y : 0);
-    mine.stoneBounds = { x: sX, y: sY, w: gsz, h: gsz };
+    // Hitbox tiksliai pagal sprite turinio bounds (alpha-scan). 2026-06-13.
+    const _stHb = _goldStoneHitbox(stoneDef, stoneImg, sX, sY, gsz);
+    mine.stoneBounds = { x: _stHb.x, y: _stHb.y, w: _stHb.w, h: _stHb.h };
     const hovStone = !anyPopup &&
-                     _worldMx >= sX && _worldMx <= sX + gsz &&
-                     _worldMy >= sY && _worldMy <= sY + gsz;
+                     _worldMx >= _stHb.x && _worldMx <= _stHb.x + _stHb.w &&
+                     _worldMy >= _stHb.y && _worldMy <= _stHb.y + _stHb.h;
     if (hovStone) {
       ctx.save();
       ctx.filter = 'brightness(0) invert(1)';
@@ -16550,10 +16658,12 @@ function drawForegroundDecorations() {
       const gsz = CELL * 1.5;
       const sx = px_ + CELL / 2 - gsz / 2;
       const sy = py_ + CELL - gsz + 18;
+      // Hitbox tiksliai pagal sprite turinio bounds (alpha-scan) — atitinka matomą akmenį
+      const hb = _goldStoneHitbox(def, gImg, sx, sy, gsz);
       // Saugoti akmens ribas click detection'ui (pirmasis akmuo)
-      if (!_stoneBounds) _stoneBounds = { x: sx, y: sy, w: gsz, h: gsz };
-      const hov = _worldMx >= sx && _worldMx <= sx + gsz &&
-                  _worldMy >= sy && _worldMy <= sy + gsz;
+      if (!_stoneBounds) _stoneBounds = { x: hb.x, y: hb.y, w: hb.w, h: hb.h };
+      const hov = _worldMx >= hb.x && _worldMx <= hb.x + hb.w &&
+                  _worldMy >= hb.y && _worldMy <= hb.y + hb.h;
       if (!hov || _stonePopupOpen) continue;
       const gFrame = def.frames > 1
         ? Math.floor(performance.now() / (1000 / def.fps)) % def.frames
