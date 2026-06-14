@@ -23095,6 +23095,7 @@
       // Vardas + lygis vienoje kompaktiškoj linijoj prie pat sprite
       '#f12-settle-result .f12sr-meta{color:#cdb88c;font-size:8px;margin-top:1px;max-width:min(15vw,176px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;line-height:1.3}',
       '#f12-settle-result .f12sr-meta b{color:#ffcf5c;font-weight:normal}',
+      '#f12-settle-result .f12sr-id{color:#8a9aaa;font-size:6px;font-family:monospace;margin-top:1px;line-height:1.2}',
       // Level-up burst — paleidžiamas JS po XP animacijos (klasė .lvgo)
       '#f12-settle-result .f12sr-unit.lvgo .f12sr-spr{animation:f12srLvPop 0.7s ease-out, f12srBounce 0.7s ease-in-out 0.7s infinite}',
       '#f12-settle-result .f12sr-lvup{position:absolute;bottom:calc(100% - 16px);left:50%;transform:translateX(-50%) scale(0);background:linear-gradient(180deg,#ffe07a,#e89a2a);color:#2a1a0c;font-size:8px;font-weight:bold;padding:3px 8px;border-radius:5px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.6),0 0 12px rgba(255,207,92,0.7);z-index:4}',
@@ -23135,6 +23136,7 @@
       s += '<img class="f12sr-spr" src="' + img + '" alt="">';
       s += '<div class="f12sr-shadow"></div>';
       s += '<div class="f12sr-meta">' + nm + '</div>';
+      s += '<div class="f12sr-id">#' + tokenId + '</div>';
       s += '</div>';
       return s;
     }
@@ -23154,6 +23156,7 @@
     s += '<img class="f12sr-spr" src="' + img + '" alt="">';
     s += '<div class="f12sr-shadow"></div>';
     s += '<div class="f12sr-meta">' + nm + (newLv != null ? ' <b>Lv ' + newLv + '</b>' : '') + '</div>';
+    s += '<div class="f12sr-id">#' + tokenId + '</div>';
     s += '</div>';
     return s;
   }
@@ -23198,6 +23201,21 @@
     }
 
     _f12InjectSettleStyle();
+    // VERIFIKACIJA — log'inam tokenId → tipas/sprite atitiktį (kad būtų lengva patikrint teisingumą)
+    try {
+      const _log = [];
+      for (const c of (info.claimed || [])) {
+        const m = _f12SettleMeta(c.tokenId);
+        const cu = m ? m.contractUtype : null;
+        _log.push('#' + c.tokenId + '=' + (_F12_SETTLE_NAME[cu] || (m && _F12_SETTLE_NAME[m.utype]) || '?') + '(cu' + cu + ',+' + (c.xp || 0) + 'xp)');
+      }
+      for (const d of (info.dead || [])) {
+        const m = _f12SettleMeta(d);
+        const cu = m ? m.contractUtype : null;
+        _log.push('#' + d + '=' + (_F12_SETTLE_NAME[cu] || (m && _F12_SETTLE_NAME[m.utype]) || '?') + '(DEAD)');
+      }
+      console.log('[F12 settle] units:', _log.join(' '));
+    } catch (_) {}
     const _nLeveled = (info.claimed || []).filter(function (c) {
       const m = _f12SettleMeta(c.tokenId);
       if (!m) return false;
