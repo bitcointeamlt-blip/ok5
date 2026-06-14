@@ -781,8 +781,37 @@
     }
     void _ronkeBal;   // (paliktas dėl suderinamumo; patvirtinimas dabar per receipt)
 
+    // ── PRE-FLIGHT (mobile-robust) ──────────────────────────────────────────
+    // Mobili Ronin piniginė BET KOKIĄ nesėkmę grąžina kaip „Internal JSON-RPC error" (užmaskuoja IR
+    // tikrą kontrakto revert, IR savo gas-estimation glitch'us). Tad: (1) eth_estimateGas per mūsų RPC
+    // → revert'ina → parodom TIKRĄ priežastį angliškai; (2) jei OK — paduodam aiškų gas limitą piniginei,
+    // kad ji NEdarytų savo trapios estimation (būtent ji lūžta mobiliam, kai claim teisingas).
+    let gasHex = null;
+    try {
+      const est = await fetch(RONIN_RPC, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_estimateGas', params: [{ from: from, to: claim.contract, data }] }),
+      }).then(r => r.json());
+      if (est && est.error) {
+        const m = ((est.error.message || '') + ' ' + (typeof est.error.data === 'string' ? est.error.data : '')).toLowerCase();
+        if (/claim limit/.test(m)) throw new Error('Daily limit reached (2/day)');
+        if (/expired/.test(m)) throw new Error('Claim expired — play again');
+        if (/budget exceeded/.test(m)) throw new Error('Faucet budget reached — try later');
+        if (/nonce used/.test(m)) throw new Error('Claim already used — play again');
+        if (/bad sig|payout fail|bad amount/.test(m)) throw new Error('Claim rejected — play again');
+        throw new Error('Claim cannot be sent now — try again');   // tikras revert, nežinoma priežastis
+      }
+      if (est && typeof est.result === 'string') { const g = BigInt(est.result); gasHex = '0x' + (g + g / 4n).toString(16); }   // +25% buferis
+    } catch (e) {
+      // mūsų aiškios revert klaidos → rodom žaidėjui; tinklo klaida estimate'inant → tęsiam be gas (wallet pats)
+      if (e && e.message && /(limit|expired|budget|used|rejected|cannot be sent)/i.test(e.message)) throw e;
+      gasHex = null;
+    }
+
+    const _txp = { from: from, to: claim.contract, data: data };
+    if (gasHex) _txp.gas = gasHex;
     let txHash = null, sendErr = null;
-    prov.request({ method: 'eth_sendTransaction', params: [{ from: from, to: claim.contract, data }] })
+    prov.request({ method: 'eth_sendTransaction', params: [_txp] })
       .then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
 
     const _deadline = Date.now() + 120000;   // 2 min patvirtinimui
