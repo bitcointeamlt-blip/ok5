@@ -1009,7 +1009,7 @@
         // „Register Deck On-Chain" CTA — rodom kai dekas turi unitų; atnaujinam units + power.
         const reg = document.getElementById('nft-deck-register');
         if (reg) {
-          reg.style.display = cnt > 0 ? 'flex' : 'none';
+          reg.style.display = 'flex';   // VISADA matomas — tuščias dekas → hint (naujokui, ypač Solana onboarding'ui)
           const dMax = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
           const ru = document.getElementById('ndr-units'); if (ru) ru.textContent = liveCnt + '/' + dMax;
           const rp = document.getElementById('ndr-power'); if (rp) rp.textContent = String(power);
@@ -1023,7 +1023,15 @@
           const _uic = document.getElementById('ndr-undo-ic');
           const _eic = document.getElementById('ndr-edit-ic');
           reg.classList.remove('mode-battle');
-          if (registered && !editing) {
+          if (cnt === 0 && !registered && !editing) {
+            // TUŠČIAS dekas → NUDGE naujokui (kad žinotų kelią į RONKE Power + faucet; nebeslēpiam juostos).
+            reg._mode = 'hint';
+            reg.classList.remove('mode-registered');
+            if (_t) _t.textContent = '➕ Add units to unlock RONKE Power + faucet';
+            if (_fee) _fee.style.display = 'none';
+            if (_uic) _uic.style.display = 'none';
+            if (_eic) _eic.style.display = 'none';
+          } else if (registered && !editing) {
             // Registruota, nepakeista, NE edit → ✓ DECK REGISTERED, BE kainos, su ✏️ EDIT (žalia, užrakinta)
             reg._mode = 'registered';
             reg.classList.add('mode-registered');
@@ -1076,6 +1084,8 @@
             reg._wired = true;
             reg.onclick = async function () {
               if (reg._busy) return;
+              // Tuščias dekas (hint) → tik nukreipiam, nieko on-chain.
+              if (reg._mode === 'hint') { _battleToast('Add units to your deck first — tap “+ ADD TO DECK” on cards'); return; }
               // Jau registruota (nepakeista) → nieko nedaryti (nemokam dar kartą).
               if (reg._mode === 'registered') return;
               // Edit režimas, bet REALIŲ pakeitimų nėra (dekas == snapshot) → NEapmokestinam, tik išeinam iš edit.
