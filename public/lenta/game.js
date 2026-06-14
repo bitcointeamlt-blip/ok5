@@ -2798,8 +2798,17 @@ const _GOLD_STONE_DEFS = {
 
 // Tikslus sprite turinio bounding box iš alpha kanalo (frame 0) → hitbox atitinka
 // MATOMĄ akmenį, ne pilną permatomą kadrą. Cache'inama per img name. 2026-06-13.
+// Iškart išmatuotos (offscreen alpha≥150) sprite turinio bounds 128px kadre — deterministiška,
+// nereikia runtime getImageData (kuris kartais nepavyksta → grįždavo į pilną kadrą = per didelis).
+const _GOLD_STONE_CONTENT = {
+  GoldStone3_Highlight: { x0: 40, y0: 36, x1: 87, y1: 84 },
+  GoldStone3:           { x0: 40, y0: 36, x1: 87, y1: 84 },
+  GoldStone5_Highlight: { x0: 31, y0: 20, x1: 100, y1: 91 },
+  GoldStone5:           { x0: 31, y0: 20, x1: 100, y1: 91 },
+};
 const _goldStoneBoundsCache = {};
 function _goldStoneContentBounds(imgName, gImg, fw) {
+  if (_GOLD_STONE_CONTENT[imgName]) return _GOLD_STONE_CONTENT[imgName];   // hardcoded — tiksli, nesugenda
   if (_goldStoneBoundsCache[imgName]) return _goldStoneBoundsCache[imgName];
   if (!gImg || !gImg.complete || !gImg.naturalWidth) return null;   // dar neįkrauta — bandysim vėliau
   try {
@@ -2825,15 +2834,15 @@ function _goldStoneContentBounds(imgName, gImg, fw) {
     return b;
   } catch (_) { return null; }   // CORS / tainted canvas — fallback į pilną kadrą
 }
-// Akmens hitbox pasaulio koordinatėse pagal turinio bounds (sx/sy = sprite kairys-viršus, gsz = dydis)
+// Akmens hitbox — STANDARTINIS būdas (Celeste/RTS pattern): maža AABB centruota ant MATOMO
+// akmens, proporcinga sprite dydžiui, mažesnė nei sprite. Be alpha-scan / nudge (tie buvo trapūs,
+// jautėsi bugintai). sx/sy/gsz = sprite draw box (kairys-viršus + dydis). Parametrai — vieni skaičiai.
+const _GS_HIT = { cy: 0.45, w: 0.42, h: 0.40 };   // centro Y (sprite box dalis), pločio/aukščio frakcijos
 function _goldStoneHitbox(def, gImg, sx, sy, gsz) {
-  const cb = _goldStoneContentBounds(def.img, gImg, def.fw);
-  if (!cb) return { x: sx, y: sy, w: gsz, h: gsz };   // fallback
-  const s = gsz / 128;
-  let x = sx + cb.x0 * s, y = sy + cb.y0 * s, w = (cb.x1 - cb.x0) * s, h = (cb.y1 - cb.y0) * s;
-  // Papildomas 15% įtraukimas į vidų — hitbox glaudžiai apgaubia akmens ŠERDĮ (ne kraštus/glow)
-  const ix = w * 0.15, iy = h * 0.15;
-  return { x: x + ix, y: y + iy, w: w - ix * 2, h: h - iy * 2 };
+  const cx = sx + gsz / 2;           // X centras = sprite (ir celės) centras
+  const cy = sy + gsz * _GS_HIT.cy;  // Y centras = kur matomas akmuo (apie vidurį sprite box)
+  const w = gsz * _GS_HIT.w, h = gsz * _GS_HIT.h;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 const _npcStates      = {}; // keyed by "row,col"
 let _miningCycle = null;   // mining cycle state — auto-init when pawn_npc + gold stone present
@@ -6406,9 +6415,8 @@ function _f9DecorateMap() {
       const isTree = d.startsWith('tree'), isBoulder = d.startsWith('boulder');
       if (!isTree && !isBoulder) continue;
       const p = k.split(','); const r = +p[0], c = +p[1];
-      _f9BlockedCells.add(c + ',' + r);   // x=col, y=row
-      // akmuo: sprite aukštesnis nei 1 celė (bottom-anchored) → dengia ir celę VIRŠ jo. Blokuojam abi.
-      if (isBoulder) _f9BlockedCells.add(c + ',' + (r - 1));
+      _f9BlockedCells.add(c + ',' + r);   // TIK bazės celė — unitai prieina prie pat akmens/medžio.
+      // (Anksčiau riedulys blokavo ir celę VIRŠ → atrodė kaip „nematoma siena", per didelis hitbox.)
     }
   }
   _f9SyncTowerBlocked();   // zip tower bazės (dinaminės) — pradinė sinchronizacija
@@ -16718,7 +16726,7 @@ function drawForegroundDecorations() {
       const gsz = CELL * 1.5;
       const sx = px_ + CELL / 2 - gsz / 2;
       const sy = py_ + CELL - gsz + 18;
-      // Hitbox tiksliai pagal sprite turinio bounds (alpha-scan) — atitinka matomą akmenį
+      // Hitbox tiksliai pagal sprite turinio bounds — atitinka matomą akmenį
       const hb = _goldStoneHitbox(def, gImg, sx, sy, gsz);
       // Saugoti akmens ribas click detection'ui (pirmasis akmuo)
       if (!_stoneBounds) _stoneBounds = { x: hb.x, y: hb.y, w: hb.w, h: hb.h };
@@ -26309,6 +26317,19 @@ function loop(now) {
   if (typeof window._kothRenderWorld === 'function') window._kothRenderWorld();
   _drawF9ClickMarkers();
   if (typeof _drawF9SpawnWarnings === 'function') _drawF9SpawnWarnings();
+  // ── DEBUG (window._dbgHit = true): F9 collision celės raudonai — kad matytųsi kur unitai
+  // negali eiti (rieduliai/medžiai/zip tower). Padeda kalibruoti footprint vs matomą objektą. ──
+  if (window._dbgHit && S.floor === 9) {
+    ctx.save();
+    const _drawSet = (set, col) => {
+      if (!set) return;
+      ctx.fillStyle = col; ctx.strokeStyle = col.replace(/[\d.]+\)$/, '1)'); ctx.lineWidth = 1.5;
+      set.forEach(k => { const p = k.split(','); const x = +p[0], y = +p[1]; ctx.fillRect(x * CELL, y * CELL, CELL, CELL); ctx.strokeRect(x * CELL, y * CELL, CELL, CELL); });
+    };
+    _drawSet(_f9BlockedCells, 'rgba(255,40,40,0.30)');     // rieduliai/medžiai
+    _drawSet(_f9TowerBlocked, 'rgba(40,160,255,0.30)');    // zip tower
+    ctx.restore();
+  }
   if (typeof _drawF9DebugOverlay === 'function') _drawF9DebugOverlay();
   if (typeof _drawF9EnemyTargetReticle === 'function') _drawF9EnemyTargetReticle();
   _drawF9SelectionRing();
