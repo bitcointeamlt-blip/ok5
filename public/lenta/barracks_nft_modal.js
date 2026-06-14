@@ -1126,7 +1126,7 @@
           hint.style.display = cnt > 0 ? 'none' : '';
           // DINAMINIS deko cap (12 + Ronkeverse, ne hardcoded 24) — kad 0-RV žaidėjas matytų teisingą 12.
           const _hMax = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
-          hint.innerHTML = '🎴 Tap <strong>＋Deck</strong> on units to build your battle Deck (max ' + _hMax + '). The battle picker loads your Deck instantly — no slow wallet scan.';
+          hint.innerHTML = '🎴 Tap a <strong>card</strong> to add/remove it from your Power Deck (max ' + _hMax + '). Tap <strong>ℹ</strong> to see abilities. Then register the deck for RONKE Power + faucet.';
         }
       }
       function renderInv(units) {
@@ -1251,6 +1251,7 @@
                 <img src="${g.image}" alt="${g.name}">
                 <div class="nft-card-lvl-badge">Lv ${g.level}</div>
                 ${_cardPwr > 0 ? `<div class="nft-card-power-badge ${inDeck > 0 ? (_deckRegistered ? 'registered' : 'counting') : ''}" title="${(inDeck > 0 && _deckRegistered) ? 'Registered on-chain ✓ — ' : ''}${_pwrTitle}">${(inDeck > 0 && _deckRegistered) ? '✓' : '⚡'}${_cardPwr}</div>` : ''}
+                <button class="nft-card-flip" type="button" title="View abilities" style="position:absolute;left:5px;bottom:5px;z-index:4;width:20px;height:20px;border-radius:50%;border:1px solid rgba(210,195,235,.55);background:rgba(35,25,50,.82);color:#e0d2f4;font-size:11px;line-height:1;cursor:pointer;padding:0">ℹ</button>
               </div>
               <div class="nft-card-header">
                 <span class="nft-card-name">${g.name}</span>
@@ -1290,15 +1291,27 @@
           </div>
         </div>`;
       }).join('');
-      // Click handler (delegated): deck +/− mygtukai ARBA kortos apsisukimas (flip į ability'es).
+      // Click handler (delegated): VISA korta = add/remove į deką (pagrindinis veiksmas).
+      // Flip į ability'es — TIK per ℹ mygtuką arba paspaudus kortos nugarą.
       grid.onclick = function (e) {
         const t = e.target;
         if (!t) return;
+        const _card = t.closest && t.closest('.nft-inv-card');
+        // A) ℹ mygtukas ARBA kortos NUGARA → flip (front ⇄ ability'es), jokio deck veiksmo.
+        if ((t.closest && t.closest('.nft-card-flip')) || (t.closest && t.closest('.nft-card-back'))) {
+          if (_card) _card.classList.toggle('flipped'); return;
+        }
         // 0) UŽRAKINTAS dekas (registruotas, ne edit) → spustelėjus 🔒 mygtuką: užuomina + blokas.
         const _lockBtn = t.closest && t.closest('button[data-locked]');
         if (_lockBtn) { _battleToast('Deck registered — tap ✏️ EDIT to change it'); return; }
-        // 1) Deck mygtukai (turi data-ids) — pridedam/šalinam token ID, NEapsukam
-        const _btn = t.closest && t.closest('button[data-ids]');
+        // SELL nuoroda (ar bet kokia <a>) — paliekam default.
+        if (t.closest && t.closest('a')) return;
+        // 1) Deck mygtukas TIESIOGIAI (data-ids), ARBA paspaudus bet kur ant kortos FRONT'o → naudojam
+        //    tos kortos pagrindinį deck mygtuką (single = ⚡ smart btn, stack = ＋). Taip „tap unit = add".
+        let _btn = t.closest && t.closest('button[data-ids]');
+        if (!_btn && _card && !_card.classList.contains('flipped')) {
+          _btn = _card.querySelector('.nft-smart-btn[data-ids], .nft-deck-plus[data-ids]');
+        }
         if (_btn && _btn.dataset && _btn.dataset.ids) {
         if (!_addr || !BNFT) return;
         const ids = String(_btn.dataset.ids).split(',');
@@ -1335,11 +1348,8 @@
         if (acted) renderInv(units);   // perrender — atnaujina mygtukus + barus + header
         return;
         }
-        // 2) SELL nuoroda (ar bet kokia <a>) — paliekam default, NEapsukam
-        if (t.closest && t.closest('a')) return;
-        // 3) Bet kur kitur ant kortos — apsukam (front ⇄ ability nugara)
-        const card = t.closest && t.closest('.nft-inv-card');
-        if (card) card.classList.toggle('flipped');
+        // Fallback: korta be deck mygtuko (pvz. užrakinta) → flip į ability'es.
+        if (_card) _card.classList.toggle('flipped');
       };
       _syncDeckHeader();
       // „Load more" — dideli wallet'ai: pradžioj kraunam tik dalį (RPC-safe), čia – dar 24 iš grandinės.
