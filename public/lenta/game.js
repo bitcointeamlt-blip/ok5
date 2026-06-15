@@ -19124,7 +19124,7 @@ function _drawDungeonStatic() {
                 const _tw = ctx.measureText(_lblText).width + 10;
                 const _rh = 15, _rr = 6;
                 const _rx = _lblX - _tw / 2, _ry = _lblY - _rh / 2, _rw = _tw;
-                ctx.fillStyle = 'rgba(255, 207, 92, 0.96)';   // gold pill
+                ctx.fillStyle = 'rgba(74, 144, 226, 0.96)';   // blue pill
                 ctx.beginPath();
                 ctx.moveTo(_rx + _rr, _ry);
                 ctx.arcTo(_rx + _rw, _ry, _rx + _rw, _ry + _rh, _rr);
@@ -19133,7 +19133,7 @@ function _drawDungeonStatic() {
                 ctx.arcTo(_rx, _ry, _rx + _rw, _ry, _rr);
                 ctx.closePath();
                 ctx.fill();
-                ctx.fillStyle = '#3a2a18';
+                ctx.fillStyle = '#ffffff';
                 ctx.fillText(_lblText, _lblX, _lblY);
                 ctx.restore();
               }
