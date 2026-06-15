@@ -10823,7 +10823,7 @@ function _f12PayToPlayThenProceed(onConfirm) {
   };
   window._f12PayPlayFee().then(go).catch(function (e) {
     const msg = String((e && e.message) || e);
-    if (typeof showGameNotification === 'function') showGameNotification('PLAY FEE', /reject|denied|cancel/i.test(msg) ? 'Cancelled' : (/wallet/i.test(msg) ? 'Connect wallet' : (/network|chain/i.test(msg) ? 'Wrong network' : 'Failed')), '#e85d5d');
+    if (typeof showGameNotification === 'function') showGameNotification('PLAY FEE', /reject|denied|cancel/i.test(msg) ? 'Cancelled' : (/session|expired|reconnect/i.test(msg) ? 'Session expired — refresh & reconnect' : (/wallet/i.test(msg) ? 'Connect wallet' : (/network|chain/i.test(msg) ? 'Wrong network' : 'Failed'))), '#e85d5d');
   });
 }
 function _f12TierLabel(divisor) {

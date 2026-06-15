@@ -620,7 +620,7 @@
         await window._f12PayPlayFee();
       } catch (e) {
         const msg = String((e && e.message) || e);
-        alert(/reject|denied|cancel/i.test(msg) ? 'Play fee cancelled — battle not started.' : (/wallet/i.test(msg) ? 'Connect wallet to pay the play fee.' : ('Play fee failed: ' + msg)));
+        alert(/reject|denied|cancel/i.test(msg) ? 'Play fee cancelled — battle not started.' : (/session|expired|reconnect/i.test(msg) ? 'Wallet session expired — refresh the page & reconnect your wallet, then try again.' : (/wallet/i.test(msg) ? 'Connect wallet to pay the play fee.' : ('Play fee failed: ' + msg))));
         if (_sbtn) { _sbtn.disabled = false; _sbtn.textContent = _sorig || '⚔ START WITH NFT'; }
         if (typeof _updateBattleFooter === 'function') _updateBattleFooter();
         return;

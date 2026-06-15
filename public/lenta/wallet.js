@@ -879,7 +879,15 @@
     const _deadline = Date.now() + 120000;
     while (Date.now() < _deadline) {
       await new Promise(function (r) { setTimeout(r, 2500); });
-      if (sendErr && (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || ''))) throw sendErr;
+      // Surface VISAS siuntimo klaidas IŠKART (ne tik cancel) — kitaip session-expiry kabėdavo 2 min
+      // ir rodydavo klaidinantį „not confirmed". (Suvienodinta su swapTx/submitFaucetClaim elgsena.)
+      if (sendErr) {
+        if (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || '')) throw sendErr;
+        const _m = String(sendErr.message || sendErr.code || '');
+        if (/unauthorized|session|expired|login|4100|not been authorized|locked|not connected/i.test(_m))
+          throw new Error('Wallet session expired — reconnect your wallet (refresh) and try again');
+        throw new Error('Play fee failed: ' + (_m || 'unknown').slice(0, 80));
+      }
       if (txHash) {
         const rc = await fetch(RONIN_RPC, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
