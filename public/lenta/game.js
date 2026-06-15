@@ -4879,11 +4879,11 @@ function _drawF9UnitHpBars() {
   for (const u of S.units) {
     if (!u || !u.alive) continue;
     if (!_f9IsAlly(u) && !_f9IsEnemy(u)) continue;
+    if (u._f9Boss) continue;   // BOSS — JOKIO HP baro (user request)
     const maxHp = u.maxHp || 1;
-    const _isBoss = !!u._f9Boss;   // BOSS bar — visada matomas, be fade, platesnis
-    if (!_isBoss && (u.hp ?? maxHp) >= maxHp) continue;   // pilnas HP — nerodom (išskyrus bosą)
+    if ((u.hp ?? maxHp) >= maxHp) continue;   // pilnas HP — nerodom
     let alpha = 1;
-    if (_F9_HPBAR_MODE === 'damaged' && !_isBoss) {
+    if (_F9_HPBAR_MODE === 'damaged') {
       const since = now - (u._f9LastHitAt || 0);
       if (since > _F9_HPBAR_SHOW_MS) continue;
       if (since > _F9_HPBAR_SHOW_MS - _F9_HPBAR_FADE_MS) {
@@ -4893,9 +4893,9 @@ function _drawF9UnitHpBars() {
     const ux = (u.rx !== undefined) ? u.rx : u.x;
     const uy = (u.ry !== undefined) ? u.ry : u.y;
     const cx = (ux + 0.5) * CELL;
-    // Feet anchor (cell bottom) − sprite aukštis ≈ virš galvos (bosui aukščiau — didesnis sprite)
-    const topY = (uy + 1) * CELL - CELL * (_isBoss ? 3.4 : 2.05);
-    const w = CELL * (_isBoss ? 1.7 : 0.78), h = _isBoss ? 5.5 : 3.5;
+    // Feet anchor (cell bottom) − sprite aukštis ≈ virš galvos
+    const topY = (uy + 1) * CELL - CELL * 2.05;
+    const w = CELL * 0.78, h = 3.5;
     const frac = Math.max(0, Math.min(1, (u.hp || 0) / maxHp));
     const isEn = _f9IsEnemy(u);
     ctx.globalAlpha = alpha;
