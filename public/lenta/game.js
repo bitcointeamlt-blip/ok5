@@ -5855,9 +5855,13 @@ function _drawF9SelectionPanel() {
 
 // Separation steering — unit'ai švelniai stumiasi vienas nuo kito kad nesusilietų.
 // RTS standard (Reynolds 1987 "Boids"). O(n²) per friendly count (n maža ~10-20).
-const _F9_SEP_RADIUS = 0.42;   // min desired distance — leis combat unit'ams būti arti
+const _F9_SEP_RADIUS = 0.42;   // default PAIR distance (= 2× bazinio personal radius)
 const _F9_SEP_FORCE  = 3.2;    // push strength — mažiau slydimo/šokinėjimo tarp unitų
 const _F9_SEP_MIN_STEP = 0.004;
+// Per-utype PERSONAL radius — min atstumas tarp 2 unitų = radA + radB. Standartinis = 0.21 (→ pair 0.42).
+// Didesni/kitokios formos sprite'ai (Hog Rider, boss) gauna didesnį, kad kiti nelįstų į jų kūną/galvą.
+const _F9_SEP_RAD = { pigronke: 0.46, troll: 0.55 };
+function _f9SepRadius(u) { return (u && _F9_SEP_RAD[u.utype]) || 0.21; }
 // "Gentleman step aside" — idle unit'as jaučia approach'o ir aktyviai pasitraukia
 const _F9_GENTLEMAN_DETECT = 0.65;   // detect radius (cells) — kai moving unit per arti
 const _F9_GENTLEMAN_SIDESTEP = 0.22; // sidestep distance (cells) — mažas, ne sprintinis pasitraukimas
@@ -6058,13 +6062,14 @@ function _applyF9Separation(dtSec) {
       const by = (b.ry !== undefined) ? b.ry : b.y;
       let dx = ax - bx, dy = ay - by;
       let dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist >= _F9_SEP_RADIUS) continue;
+      const minD = _f9SepRadius(a) + _f9SepRadius(b);   // per-pair (didesni sprite'ai → daugiau erdvės)
+      if (dist >= minD) continue;
       if (dist < 0.001) {
         // Same cell — random angle to break symmetry
         const ang = Math.random() * Math.PI * 2;
         dx = Math.cos(ang); dy = Math.sin(ang); dist = 1;
       }
-      const overlap = (_F9_SEP_RADIUS - dist) / _F9_SEP_RADIUS;  // 0..1
+      const overlap = (minD - dist) / minD;  // 0..1
       const nx = dx / dist, ny = dy / dist;
       pushes[i].x += nx * overlap;
       pushes[i].y += ny * overlap;
@@ -6077,8 +6082,11 @@ function _applyF9Separation(dtSec) {
     const p = pushes[i];
     if (p.x === 0 && p.y === 0) continue;
     const a = allies[i];
-    // SKIP separation jei ally laukia kovos (in attack range of engage target).
-    // Tai užkerta kelia stutter'iam kai pigronke laukia ateinaciam priesui.
+    if (a._f9Boss) continue;   // BOSS = sunkus inkaras: minia jo nestumdo (jo stūmis kitiems lieka)
+    // Kovos metu (ally in attack range of engage target) — NE pilnas skip, o SILPNESNĖ separation.
+    // Pilnas skip vesdavo prie „visi susilieja į krūvą" masinėse kovose (ypač aplink didelį bosą).
+    // Sumažintas force = mažas stutter, BET unitai nebesusilipa vienas ant kito.
+    let _sepScale = 1;
     if (_f9IsAlly(a) && a._f9EngageTarget && a._f9EngageTarget.alive && !a._f9Target) {
       const tgt = a._f9EngageTarget;
       const ax = (a.rx !== undefined) ? a.rx : a.x;
@@ -6087,10 +6095,10 @@ function _applyF9Separation(dtSec) {
       const ty = (tgt.ry !== undefined) ? tgt.ry : tgt.y;
       const cfg = _F9_ALLY_ATTACK[a.utype];
       const range = cfg ? cfg.range + 0.3 : 1.5;  // small buffer
-      if (Math.hypot(ax - tx, ay - ty) <= range) continue;  // SKIP — settled in combat
+      if (Math.hypot(ax - tx, ay - ty) <= range) _sepScale = 0.5;  // combate — pusė force (anksčiau buvo skip)
     }
-    let stepX = p.x * _F9_SEP_FORCE * dtSec;
-    let stepY = p.y * _F9_SEP_FORCE * dtSec;
+    let stepX = p.x * _F9_SEP_FORCE * dtSec * _sepScale;
+    let stepY = p.y * _F9_SEP_FORCE * dtSec * _sepScale;
     // Užtikrinam min step — jei mažutė push'a, vis tiek paslenkam reikšmingai
     const stepMag = Math.sqrt(stepX * stepX + stepY * stepY);
     if (stepMag < _F9_SEP_MIN_STEP && stepMag > 0.0001) {
@@ -6833,7 +6841,21 @@ function _f9DealDmg(target, dmg, attacker) {
     if (typeof spawnDeath === 'function') {
       try { spawnDeath(deathX, deathY, _f9IsEnemy(target) ? '#ff3333' : '#ffffff'); } catch (_) {}
     }
+    // BOSS mirtis — didelė kraujo bala + persistentos žymės ant žemės.
+    if (target._f9Boss) { try { _f9SpawnBossBlood(deathX, deathY); } catch (_) {} }
   }
+}
+// Boss kraujas — TAS PATS fizikos efektas kaip kiti F9 priešai (spawnF12BloodBurst: blood_droplet
+// su gravitacija + landing žymės ant žemės), tik DIDESNIS ir keliais burst'ais (boss'as ~3 celės).
+function _f9SpawnBossBlood(gx, gy) {
+  if (typeof spawnF12BloodBurst !== 'function' || typeof S === 'undefined' || !S) return;
+  const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
+  spawnF12BloodBurst(wx, wy - CELL * 0.10, CELL * 2.6);                 // pagrindinis didelis burst
+  const _offs = [[-0.65, -0.15], [0.65, -0.15], [-0.35, 0.55], [0.35, 0.55]];
+  for (const [ox, oy] of _offs) {
+    spawnF12BloodBurst(wx + ox * CELL, wy + oy * CELL, CELL * 1.7);     // papildomi aplink → platesnė bala
+  }
+  S.shake = Math.max(S.shake || 0, 16);
 }
 
 // F9 ranged hit helper: randa artimiausią gyvą F9 priešą prie taško (cell coords).
