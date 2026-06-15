@@ -3886,6 +3886,22 @@
     if (!ts || !ts.nft) return;                                  // tik NFT unitai turi XP/level
     const st = _statsForToken(ts.tokenId);
     const liveXp = (ts.xp | 0) + _f12CalcXpGain(st.kills, st.dmgDealt, st.dmgTaken);
+    // XP GAIN feedback — žali „+N" skaičiukai kai gyvas XP auga (subtilesnis nei level-up).
+    // Throttle ~420ms + akumuliacija → satisfying, bet ne spam. Tik NFT (guard'as virš).
+    {
+      const _gain = liveXp - (ts.xp | 0);                 // = _f12CalcXpGain(...) — live gain šį mūšį
+      const _delta = _gain - (a._xpShown | 0);
+      if (_delta > 0) {
+        a._xpShown = _gain;
+        a._xpPopAccum = (a._xpPopAccum | 0) + _delta;
+        const _tn = (t != null ? t : now());
+        if (_tn - (a._xpPopLastAt || 0) > 420) {
+          (a._xpPops || (a._xpPops = [])).push({ amt: a._xpPopAccum, at: _tn });
+          if (a._xpPops.length > 5) a._xpPops.shift();
+          a._xpPopAccum = 0; a._xpPopLastAt = _tn;
+        }
+      }
+    }
     const newLv = _f12LevelFromXp(liveXp);
     const curLv = (a._liveLevel != null ? a._liveLevel : (ts.level | 0));
     if (newLv <= curLv) return;
@@ -3978,6 +3994,37 @@
     ctx.lineWidth = Math.max(3, sz * 0.26);
     ctx.strokeText('Lv ' + (a._liveLevel || ''), 0, sz * 1.15);
     ctx.fillStyle = '#eaffd6'; ctx.fillText('Lv ' + (a._liveLevel || ''), 0, sz * 1.15);
+    ctx.restore();
+  }
+  // SUBTILUS XP-gain vizualas — žali „+N XP" kyla ir nublanksta (~850ms). Mažesnis/silpnesnis nei LEVEL UP.
+  const _F12_XPPOP_DUR = 850;
+  function _f12DrawXpGainFx(cx, cy, sz, a, t) {
+    const pops = a._xpPops;
+    if (!pops || !pops.length) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round';
+    for (let i = pops.length - 1; i >= 0; i--) {
+      const p = pops[i];
+      const k = (t - p.at) / _F12_XPPOP_DUR;
+      if (k < 0) continue;
+      if (k >= 1) { pops.splice(i, 1); continue; }
+      const ease = k < 0.16 ? (k / 0.16) : 1;                       // greitas pop-in
+      const fade = k > 0.5 ? Math.max(0, 1 - (k - 0.5) / 0.5) : 1;  // nublanksta antroj pusėj
+      const rise = (0.35 + k * 1.0) * sz;                           // kyla aukštyn
+      const jit = (((p.at % 9) - 4) * 0.06) * sz;                   // mažas X poslinkis (stacked nesutampa)
+      const y = cy - sz * 1.05 - rise;
+      const scale = (0.45 + ease * 0.35) * (1 + (k < 0.16 ? (0.16 - k) * 0.8 : 0));  // bounce-in, mažesnis nei lvl up
+      ctx.globalAlpha = fade;
+      ctx.font = 'bold ' + Math.round(sz * 0.62 * scale) + 'px system-ui,sans-serif';
+      ctx.lineWidth = Math.max(2, sz * 0.11);
+      ctx.strokeStyle = 'rgba(6,34,10,0.92)';
+      const txt = '+' + p.amt + ' XP';
+      ctx.strokeText(txt, cx + jit, y);
+      ctx.fillStyle = '#7dff8c';
+      ctx.fillText(txt, cx + jit, y);
+    }
     ctx.restore();
   }
 
@@ -13609,6 +13656,7 @@
 
         drawAlly(ax, ay, sz, a, t);
 
+        if (!a.dead) _f12DrawXpGainFx(ax, ay, sz, a, t);    // subtilus „+N XP" feedback (po lvl up sluoksniu)
         if (!a.dead) _f12DrawLevelUpFx(ax, ay, sz, a, t);   // live LEVEL UP vizualas virš unito
 
         // Drop target rect — tower'iams didesnis (sprite sz*4.5), unit'ams normalus
