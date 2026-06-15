@@ -91,6 +91,23 @@
     Pragma = "no-cache"
     Expires = "0"
 
+# /lenta/ DIRECTORY URL — žaidėjai įeina per 0x-pewpew.com/lenta/ (be index.html), kuris NEsutampa su
+# /*.html nei /index.html → be šitų taisyklių mobilus cache'ina seną index.html ir lieka ant senos
+# versijos. SVARBU: TIK /lenta/ ir /lenta/index.html (NE /lenta/* — tas necache'intų JS/CSS/PNG su ?v=).
+[[headers]]
+  for = "/lenta/"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
+[[headers]]
+  for = "/lenta/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
 [[headers]]
   for = "/pewpew/*"
   [headers.values]
