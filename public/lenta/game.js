@@ -6226,6 +6226,16 @@ function _updateF9SmoothMove(now) {
     u.ry = nry;
     u.x = Math.floor(u.rx + 0.5);
     u.y = Math.floor(u.ry + 0.5);
+    // BLOCKED detection — jei po collision faktinis postūmis << numatyto, unitas įstrigo prie kliūties.
+    // → NErodom walk-in-place (idle), o po persistentaus stuck'o atsisakom tikslo (kad neliptų į sieną).
+    const movedDist = Math.hypot(nrx - curX, nry - curY);
+    if (movedDist < stepLen * 0.30) {
+      u._f9Moving = false;                                   // animacija: idle, ne „eina vietoj"
+      u._f9StuckMs = (u._f9StuckMs || 0) + dt;
+      if (u._f9StuckMs > 400) { u._f9Target = null; u._f9StuckMs = 0; }   // pasiduodam — per sieną nelipam
+    } else {
+      u._f9StuckMs = 0;
+    }
     // Sprite'ai turi tik kairę/dešinę pozas (ne aukštyn/žemyn).
     // Jei yra bet koks horizontalus komponentas — naudoti horizontaliai (kad unit'as ne'eitų "atbulom").
     if (Math.abs(dx) > 0.01) u.facing = { dx: dx > 0 ? 1 : -1, dy: 0 };
@@ -9676,7 +9686,8 @@ function getSkullFrameState(u) {
 }
 
 function getSpiderFrameState(u) {
-  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean') ? u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05);
   const swingElapsed = u.swingStart ? performance.now() - u.swingStart : Infinity;
   const swingDur = (spiderAnimSheets.attack.frameCount / SPIDER_ANIM_FPS.attack) * 1000;
   let anim = 'idle';
@@ -9722,7 +9733,11 @@ function getSheepFrameState(u) {
 
 function getTrollFrameState(u) {
   const now = performance.now();
-  const isMoving = Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05;
+  // F9: naudojam autoritetingą _f9Moving flag'ą (mover'is jį nustato). rx-vs-x heuristika klysta,
+  // nes boss'as sustoja trupmeninėj pozicijoj (radial reach) → atrodo „juda" → walk vietoj idle.
+  const isMoving = (u._f9Moving !== undefined)
+    ? !!u._f9Moving
+    : (Math.abs(u.rx - u.x) > 0.05 || Math.abs(u.ry - u.y) > 0.05);
   const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
   const _atkFps = u._f9Boss ? TROLL_ANIM_FPS.attack * 0.62 : TROLL_ANIM_FPS.attack;   // BOSS — lėtesnis svoringas kirtis
   const swingDur = (trollAnimSheets.attack.frameCount / _atkFps) * 1000;
@@ -9766,7 +9781,8 @@ const MINOTAUR_FRAME_W  = 320;
 
 function getMinotaurFrameState(u) {
   const now = performance.now();
-  const isMoving = Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean') ? u._f9Moving
+    : (Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05);
   const swingDur = (minotaurAnimSheets.attack.frameCount / MINOTAUR_ANIM_FPS.attack) * 1000;
   const guardDur = (minotaurAnimSheets.guard.frameCount  / MINOTAUR_ANIM_FPS.guard)  * 1000;
   const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
@@ -9798,7 +9814,8 @@ const BEAR_ANIM_FPS = { idle: 9, walk: 10, attack: 12 };
 const BEAR_FRAME_W  = 256;
 function getBearFrameState(u) {
   const now = performance.now();
-  const isMoving = Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05;
+  const isMoving = (typeof u._f9Moving === 'boolean') ? u._f9Moving
+    : (Math.abs((u.rx ?? u.x) - u.x) > 0.05 || Math.abs((u.ry ?? u.y) - u.y) > 0.05);
   const swingDur = (bearAnimSheets.attack.frameCount / BEAR_ANIM_FPS.attack) * 1000;
   const swingElapsed = u.swingStart ? now - u.swingStart : Infinity;
   let anim = 'idle';
