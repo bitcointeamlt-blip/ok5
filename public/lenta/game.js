@@ -2755,7 +2755,7 @@ window.CUSTOM_MAP12 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 window.CUSTOM_MAP11 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,4,5,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"decorations":{"9,6":"bush3","2,11":"bush3","11,11":"bush1","3,1":"bush1","7,13":"bush1","12,1":"bush4","3,4":"tree1","13,3":"tree1","9,0":"tree4"},"collisionBoxes":["3,4","13,3"],"enemies":[{"type":"skull","x":15,"y":7},{"type":"skull","x":18,"y":5},{"type":"shaman","x":22,"y":9},{"type":"shaman","x":34,"y":7},{"type":"shaman","x":36,"y":5},{"type":"shaman","x":36,"y":9}],"spawnPos":{"x":1,"y":3},"exitPos":{"x":40,"y":7}};
 // F9 Battle Test arena — CURATED decoration layout (editorius, su zip tower @ 6,9). 2026-06-14.
 // F9 dungeon/dimensijos statomos fullscreen (NEnaudoja šito dungeon'o); _f9DecorateMap ima TIK .decorations.
-window.CUSTOM_MAP9 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"20,2":"tree3","21,8":"tree3","2,13":"tree2","21,13":"tree1","3,19":"tree3","20,19":"tree2","3,24":"tree1","20,24":"tree2","2,29":"tree4","21,29":"tree3","2,35":"tree2","20,35":"tree3","4,36":"tree1","10,3":"tree2","10,37":"tree3","16,3":"tree1","16,36":"tree3","7,28":"bush2","6,12":"bush1","19,8":"bush1","2,16":"bush2","21,14":"bush2","7,20":"bush1","6,36":"bush2","17,21":"bush4","19,31":"bush1","17,9":"deco_10","19,33":"deco_03","10,17":"deco_07","2,18":"deco_13","21,26":"deco_01","4,31":"deco_10","16,28":"deco_12","13,35":"deco_13","11,35":"deco_11","19,34":"deco_01","7,23":"deco_09","15,18":"deco_13","19,2":"deco_10","17,4":"deco_03","17,18":"deco_08","13,26":"deco_04","13,27":"deco_10","11,13":"deco_07","20,22":"boulder1","11,8":"boulder3","18,32":"boulder4","16,15":"boulder4","15,26":"boulder3","13,12":"boulder3","11,30":"boulder4","14,36":"boulder3","14,7":"boulder3","17,26":"duck","6,9":"building_Zip"},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":1},"exitPos":{"x":25,"y":28}};
+window.CUSTOM_MAP9 = {"dungeon":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"decorations":{"20,2":"tree3","21,8":"tree5","2,13":"tree3","21,13":"tree1","3,19":"tree5","20,19":"tree2","3,24":"tree1","20,24":"tree2","2,29":"tree4","21,29":"tree3","2,35":"tree2","20,35":"tree5","4,36":"tree1","10,3":"tree2","10,37":"tree3","16,3":"tree1","16,36":"tree3","7,28":"bush2","6,12":"bush1","19,8":"bush1","2,16":"bush2","21,14":"bush2","7,20":"bush1","6,36":"bush2","17,21":"bush4","19,31":"bush1","17,9":"deco_10","19,33":"deco_03","10,17":"deco_07","2,18":"deco_13","21,26":"deco_01","4,31":"deco_10","16,28":"deco_12","13,35":"deco_13","11,35":"deco_11","19,34":"deco_01","7,23":"deco_09","15,18":"deco_13","19,2":"deco_10","17,4":"deco_03","17,18":"deco_08","13,26":"deco_04","13,27":"deco_10","11,13":"deco_07","20,22":"boulder1","11,8":"boulder3","18,32":"boulder4","16,15":"boulder4","15,26":"boulder3","13,12":"boulder3","11,30":"boulder4","14,36":"boulder3","14,7":"boulder3","17,26":"duck","6,9":"building_Zip"},"collisionBoxes":[],"enemies":[],"spawnPos":{"x":4,"y":1},"exitPos":{"x":25,"y":28}};
 const _buildingImgs = {};
 ['Archery','Barracks','Castle','House1','House2','House3','Monastery','Tower','Zip'].forEach(n => {
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
@@ -4504,6 +4504,14 @@ document.addEventListener('keydown', (e) => {
   if (S.jumpMode) return;   // jump mode naudoja A/S kryptims — netrukdom
   const _tag = e.target && e.target.tagName;
   if (_tag === 'INPUT' || _tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+  // H — toggle hitbox debug overlay (medžiai/akmenys/ąžuolas/bokštas)
+  if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    window._dbgHit = !window._dbgHit;
+    _f9SetToast('Hitbox overlay: ' + (window._dbgHit ? 'ON' : 'OFF'));
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
   // A — attack-move arm (kitas kairys click = žygio taškas).
   // F9'e A/S klavišai REZERVUOTI RTS komandoms (legacy WASD hero judėjimas — tik W/D).
   if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -5010,6 +5018,10 @@ function _drawF9HotkeyHint() {
 // F9 DEBUG OVERLAY — vizualizuoja pozicijas, anchor'us, hitbox'us, attack zonas.
 // Toggle: window._f9DebugOn = true / false (default OFF — įjungiamas konsole'je jei reikia).
 window._f9DebugOn = (window._f9DebugOn === undefined) ? false : window._f9DebugOn;
+// Hitbox collision overlay (_dbgHit) — ON lokalei (dev), OFF production'e. Klavišas H perjungia.
+window._dbgHit = (window._dbgHit === undefined)
+  ? (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '' || location.hostname.startsWith('192.168.'))
+  : window._dbgHit;
 function _drawF9DebugOverlay() {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
   if (!window._f9DebugOn) return;
@@ -6423,6 +6435,9 @@ let _f9TowerBlocked = null;     // Set "x,y" — DINAMINIS: zip tower bazės (pe
 // { rad: spindulys celėmis, dy: centro postūmis (- = aukštyn) }
 const _F9_OBSTACLE_CFG = {
   // medžiai = CELL kvadratai (atskira _f9BlockedCells logika); čia nenaudojami
+  // IŠIMTIS: custom medžiai (tree3 ąžuolas, tree5 negyvas medis) = APSKRITIMAS. ← KOREGUOK rad/dy
+  tree3:   { rad: 0.40, dy: 0.39 },                     // ąžuolo hitbox (apvalus; dy>0 = nuleistas ties kamienu, +5px)
+  tree5:   { rad: 0.30, dy: 0.22 },                     // negyvo medžio hitbox (mažesnis + pakeltas aukštyn)
   boulder: { rad: 0.42, dy: -0.20 },                    // APSKRITIMAS: akmuo piešiamas aukščiau celės → centras aukštyn
   // zip = KVADRATAS (AABB): hw/hh = pusės plotis/aukštis celėmis, dx/dy = centro postūmis (- dy = aukštyn)
   zip:     { hw: 0.45, hh: 0.45, dx: 0.00, dy: -0.10 }, // ← KOREGUOK ČIA (debug overlay rodo kvadratą)
@@ -6627,6 +6642,7 @@ function _f9DecorateMap() {
     for (const k in S.decorations) {
       const d = String(S.decorations[k]);
       if (!d.startsWith('tree')) continue;
+      if (_F9_OBSTACLE_CFG[d]) continue;   // custom medžiai (tree3/tree5) → apskritimo hitbox (žemiau), ne kvadratas
       const p = k.split(','); const r = +p[0], c = +p[1];
       _f9BlockedCells.add(c + ',' + r);
     }
@@ -6637,6 +6653,15 @@ function _f9DecorateMap() {
     const d = String(S.decorations[k]);
     if (!d.startsWith('boulder')) continue;
     const cfg = _F9_OBSTACLE_CFG.boulder;
+    const p = k.split(','); const r = +p[0], c = +p[1];
+    _f9StaticObstacles.push({ cx: c, cy: r + cfg.dy, rad: cfg.rad });
+  }
+  // custom medžiai (ąžuolas tree3, negyvas medis tree5) — apskritimo hitbox vietoj kvadrato
+  for (const k in S.decorations) {
+    const d = String(S.decorations[k]);
+    if (!d.startsWith('tree')) continue;
+    const cfg = _F9_OBSTACLE_CFG[d];   // tik tree3/tree5 turi įrašą
+    if (!cfg) continue;
     const p = k.split(','); const r = +p[0], c = +p[1];
     _f9StaticObstacles.push({ cx: c, cy: r + cfg.dy, rad: cfg.rad });
   }
@@ -9013,12 +9038,13 @@ const bushImgs = [null, null, null, null, null]; // index 1-4
 for (let _bi = 1; _bi <= 4; _bi++) { bushImgs[_bi] = new Image(); bushImgs[_bi].src = `assets_tiny/Terrain/Bushe${_bi}.png`; }
 
 // Extra tree + stump spritesheets (Tiny Swords) — animated trees, static stumps
-const treeImgs  = { tree1: new Image(), tree2: new Image(), tree3: new Image(), tree4: new Image() };
+const treeImgs  = { tree1: new Image(), tree2: new Image(), tree3: new Image(), tree4: new Image(), tree5: new Image() };
 const stumpImgs = { stump1: new Image(), stump2: new Image(), stump3: new Image(), stump4: new Image() };
 treeImgs.tree1.src  = 'assets_tiny/trees/Tree1.png';
 treeImgs.tree2.src  = 'assets_tiny/trees/Tree2.png';
-treeImgs.tree3.src  = 'assets_tiny/trees/Tree3.png';
+treeImgs.tree3.src  = 'assets_tiny/trees/Azuolas.png';        // beržas pakeistas ąžuolu (custom 256x256, 8 kadrai)
 treeImgs.tree4.src  = 'assets_tiny/trees/Tree4.png';
+treeImgs.tree5.src  = 'assets_tiny/trees/NegyvasMedis.png';  // negyvas medis (custom 256x256, 8 kadrai)
 stumpImgs.stump1.src = 'assets_tiny/trees/Stump1.png';
 stumpImgs.stump2.src = 'assets_tiny/trees/Stump2.png';
 stumpImgs.stump3.src = 'assets_tiny/trees/Stump3.png';
@@ -9030,8 +9056,9 @@ stumpImgs.stump4.src = 'assets_tiny/trees/Stump4.png';
 const _TREE_CFG = {
   tree1:  { img: 'tree1',  fw: 192, fh: 256, fc: 8, fps: 6, cw: 3, ch: 4 },
   tree2:  { img: 'tree2',  fw: 192, fh: 256, fc: 8, fps: 6, cw: 3, ch: 4 },
-  tree3:  { img: 'tree3',  fw: 192, fh: 192, fc: 8, fps: 6, cw: 3, ch: 3 },
+  tree3:  { img: 'tree3',  fw: 256, fh: 256, fc: 8, fps: 6, cw: 2.4, ch: 2.4 },  // ąžuolas (256x256 frames, -20% dydis)
   tree4:  { img: 'tree4',  fw: 192, fh: 192, fc: 8, fps: 6, cw: 3, ch: 3 },
+  tree5:  { img: 'tree5',  fw: 256, fh: 256, fc: 8, fps: 6, cw: 2.4, ch: 2.4 },  // negyvas medis (256x256 frames)
   stump1: { img: 'stump1', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
   stump2: { img: 'stump2', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
   stump3: { img: 'stump3', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
@@ -36283,8 +36310,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const items = [
         { id: 'tree1',  label: 'TREE 1' },
         { id: 'tree2',  label: 'TREE 2' },
-        { id: 'tree3',  label: 'TREE 3' },
+        { id: 'tree3',  label: 'OAK' },
         { id: 'tree4',  label: 'TREE 4' },
+        { id: 'tree5',  label: 'DEAD' },
         { id: 'stump1', label: 'STUMP 1' },
         { id: 'stump2', label: 'STUMP 2' },
         { id: 'stump3', label: 'STUMP 3' },
