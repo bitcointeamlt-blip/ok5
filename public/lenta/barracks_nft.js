@@ -764,8 +764,15 @@
 
   // Verčia žalią revert priežastį į aiškią žmogui suprantamą žinutę.
   function _explainTrainingRevert(err) {
+    // BigInt-safe serializacija: viem klaidų .cause turi BigInt (uint256 args / gas / value),
+    // o paprastas JSON.stringify ant jų meta "Do not know how to serialize a BigInt" — tai
+    // UŽMASKUODAVO tikrą revert priežastį (net "need 11 RON" / "not enough RONKE"). Replacer
+    // verčia BigInt -> string; try/catch — papildoma apsauga, kad explainer'is niekada nelūžtų.
+    let causeStr = '';
+    try { causeStr = JSON.stringify(err && err.cause || '', (k, v) => typeof v === 'bigint' ? v.toString() : v); }
+    catch (_) { causeStr = ''; }
     const raw = ((err && (err.shortMessage || err.message || '')) + ' ' +
-                 JSON.stringify(err && err.cause || '') + ' ' +
+                 causeStr + ' ' +
                  (err && err.details || '') + ' ' +
                  (err && err.metaMessages ? err.metaMessages.join(' ') : '')).toLowerCase();
     if (raw.includes('already training'))        return 'You already have an active training. Tap CLAIM (if ready) or CANCEL first, then you can train again.';
@@ -777,9 +784,19 @@
     if (raw.includes('bad qty'))                  return 'Invalid quantity (must be 1–100).';
     if (raw.includes('exceeds balance') || raw.includes('insufficient balance') ||
         raw.includes('transfer amount') || raw.includes('ronke transfer failed') || raw.includes('insufficient allowance'))
-                                                  return 'Not enough RONKE to cover the cost. Check your RONKE balance (Hog Rider ≈ 315 RONKE).';
-    // Unrecognised — return original
-    return 'Training failed: ' + (err && (err.shortMessage || err.message) || 'unknown error');
+                                                  return 'Not enough RONKE to cover the cost. Lower the quantity or top up RONKE, then try again.';
+    // RONKE tokenas neužtenkamą balansą/allowance praneša kaip Solidity 0.8 aritmetinį panic
+    // („underflow or overflow"), ne kaip „insufficient balance" — todėl pagaunam ir tai.
+    if (raw.includes('underflow') || raw.includes('overflow') || raw.includes('panic') || raw.includes('0x11'))
+                                                  return 'Not enough RONKE (or RONKE not approved) to cover the cost. Check your RONKE balance and approval, then try again.';
+    // Vartotojas atmetė parašą piniginėje
+    if (raw.includes('user rejected') || raw.includes('user denied') || raw.includes('rejected the request') || raw.includes('denied transaction'))
+                                                  return 'You cancelled the request in your wallet. Tap Start Training again when you are ready.';
+    if (raw.includes('insufficient funds') || raw.includes('gas required'))
+                                                  return 'Not enough RON to pay the network gas fee. Top up RON and try again.';
+    // Neatpažinta — vis tiek pateikiam suprantamą santrauką (be žalio viem dump'o)
+    const short = (err && (err.shortMessage || err.message) || '').split('\n')[0].slice(0, 140);
+    return 'Training failed' + (short ? ': ' + short : '. Please try again, and if it keeps happening, reconnect your wallet.');
   }
 
   async function startTraining(utype, qty) {
@@ -787,6 +804,28 @@
     const wc = await getWalletClient();
     const addr = window.Wallet.getAddress();
     const pc = await getPublicClient();
+    if (!addr) throw new Error('Wallet not connected — connect your wallet and try again.');
+
+    // ── PRE-FLIGHT su KONKREČIAIS skaičiais: aiškiausios žinutės PRIEŠ siunčiant į kontraktą.
+    // (Pvz. RONKE tokenas neužtenkamą balansą revertina kaip „underflow" — čia pagaunam anksčiau ir
+    //  parodom tikslų „reikia X, turi Y". RPC klaida skaitant → praleidžiam, simuliacija pagaus.)
+    try {
+      const { cost } = await getBatchPricing(utype, qty);
+      const [bal, allow, ron] = await Promise.all([
+        getRonkeBalance(addr), getAllowance(addr), getRonBalance(addr),
+      ]);
+      const fmt = async (w) => Number(await formatEther(w)).toLocaleString('en-US', { maximumFractionDigits: 2 });
+      if (ron < 11n * 10n ** 18n)
+        throw { _pf: `You need at least 11 RON in your wallet (anti-bot protection). You have ${await fmt(ron)} RON.` };
+      if (bal < cost)
+        throw { _pf: `Not enough RONKE: this batch costs ${await fmt(cost)} RONKE, but you have ${await fmt(bal)}. Lower the quantity or top up RONKE.` };
+      if (allow < cost)
+        throw { _pf: `Approve RONKE first: tap “Approve RONKE” (needs allowance ≥ ${await fmt(cost)} RONKE), then start training.` };
+    } catch (pfErr) {
+      if (pfErr && pfErr._pf) throw new Error(pfErr._pf);   // aiški žinutė → rodom
+      // kitaip: tinklo/RPC klaida pre-flight skaitymuose → NEblokuojam, leidžiam simuliacijai
+    }
+
     // PRE-FLIGHT: eth_call simulacija grąžina TIKRĄ revert priežastį (ne "Internal JSON-RPC error").
     try {
       await pc.simulateContract({
@@ -796,10 +835,15 @@
     } catch (simErr) {
       throw new Error(_explainTrainingRevert(simErr));
     }
-    const hash = await wc.writeContract({
-      address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'startTraining',
-      args: [utype, qty], account: addr,
-    });
+    let hash;
+    try {
+      hash = await wc.writeContract({
+        address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'startTraining',
+        args: [utype, qty], account: addr,
+      });
+    } catch (txErr) {
+      throw new Error(_explainTrainingRevert(txErr));   // wallet atmetimas / gas ir kt. → žmogiška žinutė
+    }
     // Mobile-atspariai: laukiam kol pending taps aktyvus (vietoj kabančio receipt'o).
     await _confirmTx(hash, async function () {
       const p = await read('pending', [addr]);

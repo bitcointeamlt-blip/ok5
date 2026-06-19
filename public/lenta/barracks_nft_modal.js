@@ -1451,7 +1451,14 @@
         refreshAll();
         for (let i = 1; i <= 6; i++) setTimeout(refreshAll, i * 2500);  // kas 2.5s iki ~15s
       } catch (e) {
-        setStatus(`Training failed: ${e.shortMessage || e.message}`, 'error');
+        const msg = e.shortMessage || e.message || 'unknown error';
+        // Jei trūksta RONKE arba RON (ne approve) — pridedam nukreipimą į swap sekciją.
+        const needsSwap = /not enough ronke|at least 11 ron|not enough ron|top up ron/i.test(msg);
+        let html = `Training failed: ${msg}`;
+        if (needsSwap && window.openRonkeSwap) {
+          html += ` <a href="#" onclick="window.openRonkeSwap();return false;" style="display:inline-block;margin-top:6px;padding:3px 10px;background:#f2c14e;color:#2a1f08;font-weight:bold;border-radius:6px;text-decoration:none;">→ Get RONKE / RON (Swap)</a>`;
+        }
+        setStatus(html, 'error');
       }
     };
     document.getElementById('nft-claim-btn').onclick = async () => {
