@@ -17,58 +17,9 @@
   var _sortDesc = true;   // true = didžiausias→mažiausias; toggle paspaudus tą patį stulpelį
   var _root = null;
 
-  // ── RONKE Test Rewards — kiek faucet'o (RonkeReward) RONKE claimino kiekvienas wallet'as ──
-  // On-chain Claimed event'ai (cumulative per wallet). Frontend užklausia tiesiogiai per Ronin RPC,
-  // agreguoja ir suderina su leaderboard sutrumpintais adresais (0x1234...abcd). 2026-06-14.
-  var _RONKE_FAUCET = '0xc59e860e2115ccdab499f619a67bedf71ee26007';
-  var _RONKE_CLAIMED_TOPIC = '0x9cdcf2f7714cca3508c7f0110b04a90a80a3a8dd0e35de99689db74d28c5383e';
-  var _RONKE_DEPLOY_BLOCK = 56821227;
-  var _ronkeRewards = null;        // { '0x1234...abcd': ronkeInt }
-  var _ronkeRewardsTotal = 0;
-
-  async function _rpc(method, params) {
-    var r = await fetch('https://api.roninchain.com/rpc', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: method, params: params }),
-    });
-    var j = await r.json();
-    if (j.error) throw new Error(j.error.message || 'rpc err');
-    return j.result;
-  }
-
-  async function _fetchRonkeRewards() {
-    try {
-      var latest = parseInt(await _rpc('eth_blockNumber', []), 16);
-      var byAddr = {};   // fullAddrLc -> BigInt suma (wei)
-      var CH = 5000;
-      for (var from = _RONKE_DEPLOY_BLOCK; from <= latest; from += CH) {
-        var to = Math.min(from + CH - 1, latest);
-        var logs;
-        try {
-          logs = await _rpc('eth_getLogs', [{
-            address: _RONKE_FAUCET, topics: [_RONKE_CLAIMED_TOPIC],
-            fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16),
-          }]);
-        } catch (e) { continue; }   // blogas chunk'as — praleidžiam, tęsiam
-        for (var i = 0; i < logs.length; i++) {
-          var lg = logs[i];
-          if (!lg.topics || !lg.topics[1] || !lg.data) continue;
-          var player = ('0x' + lg.topics[1].slice(-40)).toLowerCase();
-          var amt = BigInt(lg.data.slice(0, 66));   // pirmas 32-baitų word = amount (wei)
-          byAddr[player] = (byAddr[player] || 0n) + amt;
-        }
-      }
-      var map = {}; var total = 0;
-      for (var a in byAddr) {
-        var ronke = Number(byAddr[a] / 1000000000000000000n);   // /1e18 → sveikas RONKE
-        var trunc = a.slice(0, 6) + '...' + a.slice(-4);        // atitinka leaderboard sutrumpinimą
-        map[trunc] = (map[trunc] || 0) + ronke;
-        total += ronke;
-      }
-      _ronkeRewardsTotal = total;
-      return map;
-    } catch (_) { return {}; }
-  }
+  // RONKE Test Rewards (faucet) dabar ateina iš serverio — leaderboard edge funkcija agreguoja
+  // ronke_faucet_claims (per-wallet ronke_claimed + totals.total_ronke_rewards) ir atiduoda per
+  // 60s cache. Anksčiau buvęs kliento eth_getLogs nustojo veikti (public RPC riboja 200 blokų).
 
   // Stulpeliai: key → {label, emoji}. Tvarka = rodymo tvarka.
   var COLS = [
@@ -117,9 +68,8 @@
     if (!_root) return;
     var t = (_data && _data.totals) || {};
     var players = (_data && _data.players) ? _data.players.slice() : [];
-    // Įmerkiam RONKE test rewards į kiekvieną žaidėją pagal sutrumpintą adresą
-    var _rr = _ronkeRewards || {};
-    players.forEach(function (p) { p.ronke_claimed = _rr[p.addr] || 0; });
+    // RONKE test rewards dabar ateina iš serverio (leaderboard edge fn agreguoja ronke_faucet_claims).
+    players.forEach(function (p) { p.ronke_claimed = Number(p.ronke_claimed) || 0; });
     // TOP 25 pagal aktyvų stulpelį (kvalifikacija = didžiausi), tada — jei ascending —
     // apverčiam TUOS PAČIUS 25 (mažiausias iš top 25 viršuje), o NE renkam mažiausius iš visų.
     players.sort(function (a, b) { return (Number(b[_sortKey]) || 0) - (Number(a[_sortKey]) || 0); });
@@ -132,7 +82,7 @@
        ['👥 Players', t.total_players],
        ['🔥 NFT Deaths', t.total_burned],
        ['🏆 Trophies', t.total_trophies],
-       ['🎁 RONKE Test Rewards', _ronkeRewardsTotal]
+       ['🎁 RONKE Test Rewards', t.total_ronke_rewards]
       ].map(function (p) {
         return '<div class="lb-card" style="background:linear-gradient(180deg,' + C.wood + ',' + C.woodDark + ');color:' + C.gold + ';' +
           'border-radius:12px;padding:9px 15px;min-width:84px;text-align:center;border:2px solid ' + C.gold + ';' +
@@ -235,10 +185,9 @@
 
     if (!_data) _data = await _load();
     _render();
-    // RONKE test rewards — async (on-chain), perrenderinam kai gauta (nelaiko atidarymo)
-    if (_ronkeRewards === null) {
-      _fetchRonkeRewards().then(function (m) { _ronkeRewards = m || {}; _render(); });
-    }
+    // RONKE test rewards dabar ateina serverio atsakyme (ronke_claimed / total_ronke_rewards) —
+    // jokio kliento eth_getLogs (public RPC ribojo 200 blokų → nesikraudavo). Vienas cache'intas
+    // serverio užklausimas aptarnauja visus.
   }
 
   window.openLeaderboard = open;
