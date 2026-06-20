@@ -38287,3 +38287,52 @@ function drawFloorIntro() {
 
   setInterval(() => { if (panel.style.display === 'block') refresh(); }, 500);
 })();
+
+/* ============================================================================
+ * F9 PvP bootstrap (ADDITIVE + OPT-IN, isolated).
+ * Loads the real-time 1v1 RTS PvP overlay ONLY when the page is opened with the
+ * `#f9pvp` URL hash (or window.F9PVP_FORCE === true). Normal players never trigger
+ * this — if the hash is absent, nothing here loads and the game is byte-for-byte
+ * unaffected. All PvP code lives in the separate, isolated files:
+ *   f9_pvp_net.js     (window.F9PVP networking)
+ *   f9_pvp_overlay.js (window.F9PvpOverlay UI/render/input)
+ * ========================================================================== */
+(function () {
+  'use strict';
+  var _f9pvpLoading = false;
+  function _f9pvpWanted() {
+    try { return window.F9PVP_FORCE === true || /(?:^|[#&/])f9pvp\b/i.test(location.hash || ''); }
+    catch (_) { return false; }
+  }
+  function _f9pvpLoadScript(src) {
+    return new Promise(function (resolve, reject) {
+      // resolve immediately if an earlier load already added it
+      var existing = document.querySelector('script[data-f9pvp="' + src + '"]');
+      if (existing && existing._f9pvpDone) return resolve();
+      var s = document.createElement('script');
+      s.src = src; s.async = false; s.setAttribute('data-f9pvp', src);
+      s.onload = function () { s._f9pvpDone = true; resolve(); };
+      s.onerror = function () { reject(new Error('failed to load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  function _f9pvpBoot() {
+    if (_f9pvpLoading) return;
+    if (window.F9PvpOverlay && window.F9PvpOverlay.isRunning && window.F9PvpOverlay.isRunning()) return;
+    _f9pvpLoading = true;
+    // game.js sits next to the PvP modules; relative paths resolve against the lenta page.
+    _f9pvpLoadScript('f9_pvp_net.js')
+      .then(function () { return _f9pvpLoadScript('f9_pvp_overlay.js'); })
+      .then(function () { if (window.F9PvpOverlay) window.F9PvpOverlay.start(); })
+      .catch(function (e) { console.error('[F9PVP boot]', e); })
+      .then(function () { _f9pvpLoading = false; });
+  }
+  // trigger on initial load (if hash already present) and whenever the hash changes
+  window.addEventListener('hashchange', function () { if (_f9pvpWanted()) _f9pvpBoot(); });
+  if (_f9pvpWanted()) {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') _f9pvpBoot();
+    else window.addEventListener('DOMContentLoaded', _f9pvpBoot);
+  }
+  // expose a manual launcher (console / future menu button) without needing the hash
+  window.F9PvpLaunch = _f9pvpBoot;
+})();

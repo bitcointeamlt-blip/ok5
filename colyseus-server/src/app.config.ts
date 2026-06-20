@@ -6,6 +6,7 @@ import { GameRoom } from "./rooms/GameRoom";
 import { PresenceRoom } from "./rooms/PresenceRoom";
 import { ChatRoom } from "./rooms/ChatRoom";
 import { UnitsRoom } from "./rooms/UnitsRoom";
+import { F9PvpRoom } from "./rooms/F9PvpRoom";
 import { getRoomMetrics } from "./metrics/RoomMetrics";
 import { replayStore } from "./replay/ReplayStore";
 
@@ -40,6 +41,8 @@ export default config({
     gameServer.define("chat_room", ChatRoom);
     // Register Units galaxy conquest room (multiplayer)
     gameServer.define("units_room", UnitsRoom);
+    // Register F9 PvP room (real-time 1v1 RTS — lenta/PewPew Saga; isolated, additive)
+    gameServer.define("f9pvp_room", F9PvpRoom);
 
     // Ensure matchmaker endpoints send CORS headers
     matchMaker.controller.getCorsHeaders = (req: any) => {
@@ -78,7 +81,7 @@ export default config({
       res.json({
         message: "Colyseus PvP Server",
         status: "running",
-        rooms: ["pvp_room", "pvp_5sec_room", "pvp_fun_room", "presence_room", "chat_room", "units_room"],
+        rooms: ["pvp_room", "pvp_5sec_room", "pvp_fun_room", "presence_room", "chat_room", "units_room", "f9pvp_room"],
         endpoints: {
           health: "/health",
           matchmake: "/matchmake"

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>F9 PvP — Test Arena (isolated)</title>
+<!--
+  ISOLATED standalone tester for the F9 PvP server + netcode. NOT linked from the game.
+  Normal players never load this page. It does NOT touch game.js / index.html / floor12_merge.js.
+  Open this page in TWO browser tabs/windows to test a real 1v1 match.
+
+  Steps:
+    1) Run the server locally:  cd ok5/colyseus-server  &&  npm run dev   (ws://localhost:2567)
+    2) Open this file twice (each tab = one player). Connect -> Join in both. Match auto-starts.
+    3) Watch units fight; select your units and click to attack-move.
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0a0e14; color: #cde; font-family: monospace; font-size: 13px; }
+  #bar { padding: 8px 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: #11161f; border-bottom: 1px solid #223; }
+  input, button, textarea { font-family: monospace; font-size: 12px; }
+  input[type=text] { background: #0a0e14; color: #cdf; border: 1px solid #345; padding: 4px 6px; }
+  button { background: #1c2a3a; color: #cdf; border: 1px solid #456; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
+  button:hover { background: #27384c; }
+  button:disabled { opacity: .4; cursor: default; }
+  #status { margin-left: auto; opacity: .85; }
+  #wrap { display: flex; gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
+  canvas { background: #0d1a12; border: 2px solid #2a3; image-rendering: pixelated; cursor: crosshair; }
+  #side { width: 280px; }
+  textarea { width: 100%; height: 90px; background: #0a0e14; color: #adf; border: 1px solid #345; }
+  .hint { opacity: .6; font-size: 11px; line-height: 1.5; margin-top: 6px; }
+  .pill { padding: 2px 7px; border-radius: 10px; font-size: 11px; }
+  .ok { background: #16351f; color: #6e8; }
+  .warn { background: #3a2a12; color: #fc8; }
+  .err { background: #3a1414; color: #f88; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span>endpoint</span>
+    <input type="text" id="ep" value="ws://localhost:2567" size="28" />
+    <span>addr</span>
+    <input type="text" id="addr" size="14" />
+    <button id="btnConnect">Connect</button>
+    <button id="btnJoin" disabled>Join</button>
+    <button id="btnReady" disabled>Ready</button>
+    <button id="btnSelAll" disabled>Select all mine</button>
+    <button id="btnStop" disabled>Stop (S)</button>
+    <span id="status" class="pill warn">offline</span>
+  </div>
+
+  <div id="wrap">
+    <canvas id="cv" width="640" height="512"></canvas>
+    <div id="side">
+      <div>Your deck (JSON array):</div>
+      <textarea id="deck">[
+  {"utype":"skull","level":3},
+  {"utype":"skull","level":2},
+  {"utype":"pigronke","level":4},
+  {"utype":"archer","level":3},
+  {"utype":"shaman","level":2}
+]</textarea>
+      <div class="hint">
+        <b>Controls:</b><br>
+        • Left-click your unit = select (drag = box select)<br>
+        • Left-click empty (with selection) = <b>attack-move</b><br>
+        • Right-click empty = move (ignore enemies)<br>
+        • S = stop · "Select all mine" picks your whole team<br><br>
+        <b>Test:</b> open this page in 2 tabs, use different addr in each, Connect + Join both.
+        Match auto-starts ~2s after both joined.
+      </div>
+      <div id="log" class="hint"></div>
+    </div>
+  </div>
+
+  <script src="f9_pvp_net.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var cv = document.getElementById('cv');
+    var ctx = cv.getContext('2d');
+    var COLS = 20, ROWS = 16, SCALE = cv.width / COLS; // 32px/cell
+    var statusEl = document.getElementById('status');
+    var logEl = document.getElementById('log');
+
+    // random default address so two tabs differ
+    document.getElementById('addr').value = '0xtest' + Math.floor(Math.random() * 1e6);
+
+    var selected = {};      // id -> true (my selected units)
+    var deaths = [];        // {x,y,t} death FX
+    var winnerTeam = -1;
+
+    function setStatus(txt, cls) { statusEl.textContent = txt; statusEl.className = 'pill ' + (cls || 'warn'); }
+    function log(m) { logEl.innerHTML = '• ' + m + '<br>' + logEl.innerHTML; }
+
+    var UCOLORS = { skull: '#cdd', archer: '#9cf', harpoon_fish: '#7df', shaman: '#c9f', pigronke: '#fb8' };
+    var UGLYPH = { skull: 'S', archer: 'A', harpoon_fish: 'H', shaman: 'M', pigronke: 'P' };
+
+    function teamColor(team, mine) { return team === F9PVP.getMyTeam() ? '#39f' : '#f44'; }
+
+    // ── wire net events ──
+    F9PVP.onMatchReady = function () { setStatus('match ready', 'ok'); log('both players joined'); };
+    F9PVP.onGameStart = function (e) { setStatus('PLAYING', 'ok'); winnerTeam = -1; log('game start seed=' + (e && e.seed)); };
+    F9PVP.onUnitDied = function (e) { deaths.push({ x: e.x, y: e.y, t: performance.now() }); };
+    F9PVP.onMatchEnd = function (e) {
+      winnerTeam = e.winnerTeam;
+      var mine = e.winnerTeam === F9PVP.getMyTeam();
+      setStatus(mine ? 'YOU WIN' : (e.winnerTeam < 0 ? 'DRAW' : 'YOU LOSE'), mine ? 'ok' : 'err');
+      log('match end winner team=' + e.winnerTeam + ' (' + e.reason + ')');
+    };
+    F9PVP.onPlayerLeft = function () { log('opponent left'); };
+    F9PVP.onError = function (err) { setStatus('error', 'err'); log('ERR: ' + (err && err.message || err)); };
+
+    // ── buttons ──
+    document.getElementById('btnConnect').onclick = function () {
+      var ep = document.getElementById('ep').value.trim();
+      setStatus('connecting…', 'warn');
+      F9PVP.connect(ep).then(function (ok) {
+        if (ok) { setStatus('connected', 'ok'); document.getElementById('btnJoin').disabled = false; log('connected ' + ep); }
+        else setStatus('connect failed', 'err');
+      });
+    };
+    document.getElementById('btnJoin').onclick = function () {
+      var addr = document.getElementById('addr').value.trim();
+      var deck = [];
+      try { deck = JSON.parse(document.getElementById('deck').value); } catch (e) { log('bad deck JSON, using default'); }
+      setStatus('joining…', 'warn');
+      F9PVP.join({ address: addr, deck: deck }).then(function (room) {
+        if (room) {
+          setStatus('joined (waiting)', 'ok');
+          ['btnReady', 'btnSelAll', 'btnStop'].forEach(function (id) { document.getElementById(id).disabled = false; });
+          log('joined room ' + room.id + ' team=' + F9PVP.getMyTeam());
+        } else setStatus('join failed', 'err');
+      });
+    };
+    document.getElementById('btnReady').onclick = function () { F9PVP.ready(); log('ready sent'); };
+    document.getElementById('btnSelAll').onclick = function () {
+      selected = {};
+      F9PVP.getUnits().forEach(function (u) { if (u.team === F9PVP.getMyTeam()) selected[u.id] = true; });
+    };
+    document.getElementById('btnStop').onclick = doStop;
+    window.addEventListener('keydown', function (e) { if (e.key === 's' || e.key === 'S') doStop(); });
+    function doStop() {
+      var ids = Object.keys(selected);
+      if (ids.length) F9PVP.stop(ids);
+    }
+
+    // ── canvas input ──
+    var dragStart = null, dragNow = null, dragging = false;
+    function toCell(ev) {
+      var r = cv.getBoundingClientRect();
+      return { x: (ev.clientX - r.left) / SCALE, y: (ev.clientY - r.top) / SCALE };
+    }
+    cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    cv.addEventListener('mousedown', function (e) {
+      var c = toCell(e);
+      if (e.button === 2) { // right = move
+        var ids = Object.keys(selected);
+        if (ids.length) F9PVP.moveTo(ids, c.x, c.y);
+        return;
+      }
+      dragStart = c; dragNow = c; dragging = false;
+    });
+    cv.addEventListener('mousemove', function (e) {
+      if (!dragStart) return;
+      dragNow = toCell(e);
+      if (Math.abs(dragNow.x - dragStart.x) > 0.25 || Math.abs(dragNow.y - dragStart.y) > 0.25) dragging = true;
+    });
+    cv.addEventListener('mouseup', function (e) {
+      if (e.button !== 0 || !dragStart) { dragStart = null; return; }
+      var c = toCell(e);
+      var myTeam = F9PVP.getMyTeam();
+      var units = F9PVP.getUnits();
+      if (dragging) { // box select my units
+        selected = {};
+        var x0 = Math.min(dragStart.x, c.x), x1 = Math.max(dragStart.x, c.x);
+        var y0 = Math.min(dragStart.y, c.y), y1 = Math.max(dragStart.y, c.y);
+        units.forEach(function (u) { if (u.team === myTeam && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1) selected[u.id] = true; });
+      } else { // click: select unit under cursor, else attack-move
+        var hit = null, best = 0.6;
+        units.forEach(function (u) { if (u.team === myTeam) { var d = Math.hypot(u.x - c.x, u.y - c.y); if (d < best) { best = d; hit = u; } } });
+        if (hit) { if (!e.shiftKey) selected = {}; selected[hit.id] = true; }
+        else { var ids = Object.keys(selected); if (ids.length) F9PVP.attackMoveTo(ids, c.x, c.y); }
+      }
+      dragStart = null; dragging = false;
+    });
+
+    // ── render loop ──
+    function draw() {
+      requestAnimationFrame(draw);
+      COLS = F9PVP.getCols(); ROWS = F9PVP.getRows(); SCALE = cv.width / COLS;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      // grid
+      ctx.strokeStyle = 'rgba(120,180,140,0.08)';
+      ctx.lineWidth = 1;
+      for (var gx = 0; gx <= COLS; gx++) { ctx.beginPath(); ctx.moveTo(gx * SCALE, 0); ctx.lineTo(gx * SCALE, ROWS * SCALE); ctx.stroke(); }
+      for (var gy = 0; gy <= ROWS; gy++) { ctx.beginPath(); ctx.moveTo(0, gy * SCALE); ctx.lineTo(COLS * SCALE, gy * SCALE); ctx.stroke(); }
+
+      var now = performance.now();
+      // death FX
+      deaths = deaths.filter(function (d) { return now - d.t < 500; });
+      deaths.forEach(function (d) {
+        var k = (now - d.t) / 500;
+        ctx.strokeStyle = 'rgba(255,120,120,' + (1 - k) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(d.x * SCALE, d.y * SCALE, 6 + k * 18, 0, Math.PI * 2); ctx.stroke();
+      });
+
+      // cores (objective/base)
+      F9PVP.getCores().forEach(function (c) {
+        var px = c.x * SCALE, py = c.y * SCALE, s = 22;
+        if (c.active) {
+          ctx.fillStyle = (c.team === F9PVP.getMyTeam()) ? '#1c4a8a' : '#8a1c1c';
+          ctx.strokeStyle = (c.team === F9PVP.getMyTeam()) ? '#39f' : '#f44';
+          ctx.lineWidth = 3;
+          ctx.fillRect(px - s / 2, py - s / 2, s, s);
+          ctx.strokeRect(px - s / 2, py - s / 2, s, s);
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('CORE', px, py);
+          var hf = Math.max(0, c.hp / (c.maxHp || 1));
+          ctx.fillStyle = '#300'; ctx.fillRect(px - s / 2, py - s / 2 - 8, s, 4);
+          ctx.fillStyle = hf > 0.4 ? '#6e6' : '#e66'; ctx.fillRect(px - s / 2, py - s / 2 - 8, s * hf, 4);
+        } else {
+          ctx.strokeStyle = '#555'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(px - s / 2, py - s / 2); ctx.lineTo(px + s / 2, py + s / 2);
+          ctx.moveTo(px + s / 2, py - s / 2); ctx.lineTo(px - s / 2, py + s / 2); ctx.stroke();
+        }
+      });
+
+      // units
+      var units = F9PVP.getUnits();
+      units.forEach(function (u) {
+        var px = u.x * SCALE, py = u.y * SCALE;
+        var rad = (u.utype === 'pigronke' ? 13 : 10);
+        // selection ring
+        if (selected[u.id]) { ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, rad + 4, 0, Math.PI * 2); ctx.stroke(); }
+        // body
+        ctx.fillStyle = teamColor(u.team);
+        ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.fill();
+        // utype glyph
+        ctx.fillStyle = '#001'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(UGLYPH[u.utype] || '?', px, py + 1);
+        // facing tick
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + u.facing * rad, py); ctx.stroke();
+        // hp bar
+        var w = rad * 2, hpFrac = Math.max(0, u.hp / (u.maxHp || 1));
+        ctx.fillStyle = '#300'; ctx.fillRect(px - rad, py - rad - 7, w, 3);
+        ctx.fillStyle = hpFrac > 0.4 ? '#6e6' : '#e66'; ctx.fillRect(px - rad, py - rad - 7, w * hpFrac, 3);
+        // attacking flash
+        if (u.action === 'attacking') { ctx.strokeStyle = 'rgba(255,255,150,0.8)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px, py, rad + 2, 0, Math.PI * 2); ctx.stroke(); }
+      });
+
+      // drag box
+      if (dragging && dragStart && dragNow) {
+        ctx.strokeStyle = '#ff0'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+        ctx.strokeRect(dragStart.x * SCALE, dragStart.y * SCALE, (dragNow.x - dragStart.x) * SCALE, (dragNow.y - dragStart.y) * SCALE);
+        ctx.setLineDash([]);
+      }
+
+      // win banner
+      if (winnerTeam >= -0.5 && F9PVP.getPhase() === 'gameover') {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, cv.height / 2 - 30, cv.width, 60);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
+        var mine = winnerTeam === F9PVP.getMyTeam();
+        ctx.fillText(mine ? 'YOU WIN' : (winnerTeam < 0 ? 'DRAW' : 'YOU LOSE'), cv.width / 2, cv.height / 2 + 8);
+      }
+    }
+    requestAnimationFrame(draw);
+  })();
+  </script>
+</body>
+</html>
