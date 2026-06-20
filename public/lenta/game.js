@@ -3198,10 +3198,10 @@ function _getBarracksElapsed(now, unitIdx) {
 }
 // unitIdx → enemy archetype type (indeksai atitinka avatar grid pozicijas 0..15).
 // Pirmi 4 aktyvūs užima eilutę 0; idx 4+ rezervuoti būsimiems unit tipams (atrakinama per Castle BUILD SLOT).
-const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', null, null, null,
+const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost', null, null,
                               null, null, null, null, null, null, null, null];
 // PERF: Set O(1) lookup. Naudoja isFriendlyBarracksUnit (callinama ~39× per frame).
-const _BARRACKS_UNIT_TYPES_SET = new Set(['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke']);
+const _BARRACKS_UNIT_TYPES_SET = new Set(['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost']);
 function _findBarracksCell() {
   if (!S.decorations) return null;
   for (const k in S.decorations) {
@@ -4218,6 +4218,7 @@ const _F9_UTYPE_SPEED = {
   archer:       1.00,   // lankininkas — greitesnis, bet ne sprintas
   harpoon_fish: 0.79,   // harpunas — vidutinis
   pigronke:     0.93,   // heavy tank feel: letas, svoringas Hog Rider
+  ghost:        1.05,   // plūduriuojantis — kiek greitesnis
   ronke:        0.92,   // hero default
   troll:        0.62,   // BOSS — letas, svoringas milžinas (lumbering)
 };
@@ -5481,6 +5482,7 @@ const _F9_SEL_ICONS = {
   // 2026-06-12: buvo pigronke.png (sprite SHEET — suspaustas į kortelę atrodė blogai),
   // dabar dedikuota viena-frame ikona
   pigronke:     'unit-images/hog-idle.png',
+  ghost:        'assets_tiny/trees/Vaiduoklis.png',   // sprite sheet (rodys 1-ą kadrą-zoną)
 };
 const _f9SelImgCache = {};
 function _f9GetIcon(utype) {
@@ -5689,7 +5691,7 @@ function _drawF9SelectionBar() {
 let _f9SelPanelRects = [];
 const _F9_UNIT_NAMES = {
   skull: 'SKULL', shaman: 'SHAMAN', archer: 'ARCHER',
-  harpoon_fish: 'HARPOON', pigronke: 'HOG RIDER',
+  harpoon_fish: 'HARPOON', pigronke: 'HOG RIDER', ghost: 'GHOST',
 };
 // Solo unit INFO popup — rodomas kai pasirinktas VIENAS unitas. ~30% transparent,
 // velkamas už header'io, suskleidžiamas (▾/▸) su smooth scale+fade animacija.
@@ -6070,6 +6072,7 @@ function _applyF9Separation(dtSec) {
     const ay = (a.ry !== undefined) ? a.ry : a.y;
     for (let j = i + 1; j < allies.length; j++) {
       const b = allies[j];
+      if (a.utype === 'ghost' || b.utype === 'ghost') continue;   // vaiduoklis = jokios unitų kolizijos (praeina kiaurai)
       const bx = (b.rx !== undefined) ? b.rx : b.x;
       const by = (b.ry !== undefined) ? b.ry : b.y;
       let dx = ax - bx, dy = ay - by;
@@ -6183,6 +6186,8 @@ function _updateF9SmoothMove(now) {
   const dtSec = dt / 1000;
   for (const u of S.units) {
     if (!u || !u.alive) continue;
+    // (Ghost fizinis knockback PAŠALINTAS — pozicija nuslysdavo per langelį ir likdavo → atrodė kaip bug'as.
+    //  Šūvio atatranka dabar tik vizuali: render-only recoil, kuris springs back. Žr. ghost render _gRecoilX.)
     if (_f9PigronkeBusy(u, now)) {
       u._f9Moving = false;
       continue;
@@ -6523,6 +6528,43 @@ function _f9UnitOccluded(u) {
   }
   return false;
 }
+// Vaiduoklio kadras + bob (rankų plasnojimo aukštis) — BENDRAS render'iui ir outline'ui, kad sutaptų.
+function _f9GhostFrameBob(u) {
+  const fc = (typeof ghostAnimSheets !== 'undefined' && ghostAnimSheets.idle && ghostAnimSheets.idle.frameCount) || 8;
+  const frameDur = 1000 / GHOST_ANIM_FPS;
+  const now = performance.now() + ((u.id || 0) % 100) / 100 * (fc * frameDur);   // per-unit fazė
+  const fpos = (now / frameDur) % fc;
+  const fi = Math.floor(fpos) % fc;
+  const ARM = [141, 139, 150, 157, 165, 178, 158, 139];   // rankų plotis / kadras (iš sprite)
+  const a1 = (fi + 1) % fc, frac = fpos - Math.floor(fpos);
+  const wid = ARM[fi] + (ARM[a1] - ARM[fi]) * frac;
+  const bob = (wid - 153) * 0.18;   // rankos kartu (siauras)→aukštyn, išskėstos→žemyn
+  return { fi, bob };
+}
+// Vaiduoklio sheet+kadras+bob pagal būseną — BENDRAS render'iui IR kontūrui (kad sutaptų).
+// Prioritetas: attack > STOVI (idle: Vaiduoklisindle, 12 kadrų, be bob) > JUDA (float: Vaiduoklis + rankų bob).
+function _f9GhostFrame(u) {
+  // (HURT dmg-take SPRITE NEBERODOMAS — vietoj jo mėlyni ektoplazmos lašiukai, žr. ghost render _hurtDrops.
+  //  Vaiduoklis per hurt užraktą rodo normalią būseną; žala komunikuojama lašiukais.)
+  // 1) Atakos langas — VaiduoklisAttack
+  const atkEl = u.ghostAttackStart ? (performance.now() - u.ghostAttackStart) : -1;
+  if (atkEl >= 0 && atkEl < GHOST_ATTACK_DUR_MS && ghostAnimSheets.attack && ghostAnimSheets.attack.sheet && ghostAnimSheets.attack.sheet.complete && ghostAnimSheets.attack.sheet.naturalWidth > 0) {
+    const af = Math.min(GHOST_ATTACK_FRAMES - 1, Math.floor(atkEl / (1000 / GHOST_ATTACK_FPS)));
+    return { sheet: ghostAnimSheets.attack.sheet, sx: af * GHOST_FRAME_W, bob: _f9GhostFrameBob(u).bob };
+  }
+  // 2) STOVI (nejuda) — atskira idle animacija, be arm-bob (savo judesys jau sprite'e)
+  const isMoving = (typeof u._f9Moving === 'boolean') ? u._f9Moving : false;
+  const still = ghostAnimSheets.still;
+  if (!isMoving && still && still.sheet && still.sheet.complete && still.sheet.naturalWidth > 0) {
+    const fc = still.frameCount || 12, frameDur = 1000 / GHOST_ANIM_FPS;
+    const now = performance.now() + ((u.id || 0) % 100) / 100 * (fc * frameDur);   // per-unit fazė (nesiūbuoja sinchroniškai)
+    const fi = Math.floor((now / frameDur) % fc) % fc;
+    return { sheet: still.sheet, sx: fi * GHOST_FRAME_W, bob: 0 };
+  }
+  // 3) JUDA (arba still sheet dar neužkrautas) — float sheet + rankų bob (aukštyn/žemyn skridimo jausmas)
+  const gb = _f9GhostFrameBob(u);
+  return { sheet: ghostAnimSheets.idle.sheet, sx: gb.fi * GHOST_FRAME_W, bob: gb.bob };
+}
 // Unifikuotas frame-getter F9 unito siluetui — { img, sx, sy, sw, sh, sprSz, flip, yOff } arba null.
 function _f9UnitFrameForOutline(u) {
   const U = UNIT_CELL, flip = !!(u.facing && u.facing.dx < 0);
@@ -6534,6 +6576,7 @@ function _f9UnitFrameForOutline(u) {
   else if (u.utype === 'shaman' && typeof getShamanFrame === 'function') { const img = getShamanFrame(u, flip ? 'west' : 'east'); if (img && img.complete && img.naturalWidth) return { img, sx: 0, sy: 0, sw: img.naturalWidth, sh: img.naturalHeight, sprSz: U * 2.6, flip: false, yOff: 0 }; }
   else if (u.utype === 'bear' && typeof getBearFrameState === 'function') { f = getBearFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 3.0, flip, yOff: 0 }; }
   else if ((u.utype === 'minotaur' || u.utype === 'minotaur_big') && typeof getMinotaurFrameState === 'function') { f = getMinotaurFrameState(u); if (f) { const s = U * (u.utype === 'minotaur_big' ? 4.7 : 3.2); return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: s, flip, yOff: 0 }; } }
+  else if (u.utype === 'ghost' && typeof ghostAnimSheets !== 'undefined' && ghostAnimSheets.idle.sheet) { const gf = _f9GhostFrame(u); return { img: gf.sheet, sx: gf.sx, sy: 0, sw: GHOST_FRAME_W, sh: GHOST_FRAME_W, sprSz: U * 2.1, flip, yOff: gf.bob }; }
   return null;
 }
 // Tuščiaviduris BALTAS kontūras VIRŠ medžio (per-unit offscreen + destination-out → tik kraštas, be užpildo).
@@ -6642,6 +6685,7 @@ function _f9DecorateMap() {
     for (const k in S.decorations) {
       const d = String(S.decorations[k]);
       if (!d.startsWith('tree')) continue;
+      if (d === 'tree6') continue;         // vaiduoklis → be kolizijos (praeina kiaurai)
       if (_F9_OBSTACLE_CFG[d]) continue;   // custom medžiai (tree3/tree5) → apskritimo hitbox (žemiau), ne kvadratas
       const p = k.split(','); const r = +p[0], c = +p[1];
       _f9BlockedCells.add(c + ',' + r);
@@ -6820,6 +6864,29 @@ function _f9DealDmg(target, dmg, attacker) {
   target.hp = Math.max(0, (target.hp || 0) - dmg);
   target.hitFlash = 1;
   target._f9LastHitAt = performance.now();   // damaged-only HP bar fade timer
+  // GHOST dmg-take: kai vaiduoklis gauna žalą (ir nemiršta) → groja hurt anim + UŽRAKINTAS (nei judėti, nei
+  // šauti) kol anim baigsis +0.1s. Nutraukia vykstančią ataką/recoil, kad hurt turėtų prioritetą.
+  if (target.alive && target.hp > 0 && target.utype === 'ghost' && typeof GHOST_HURT_DUR_MS !== 'undefined') {
+    const _hn = performance.now();
+    target.ghostHurtStart = _hn;
+    target._f9ActionLockUntil = _hn + GHOST_HURT_DUR_MS + 100;   // trumpai užrakintas (nei judėt, nei šaut)
+    target.ghostAttackStart = 0;     // nutraukiam atakos anim (fire callback pamatys pasikeitusį stamp → praleis šūvį)
+    target._ghostRecoil = 0;         // be recoil mišinio su hurt
+    target._f9Target = null;         // bet koks judėjimas atšaukiamas
+    target._f9Moving = false;
+    // MĖLYNI ektoplazmos lašiukai — splash'ina į ŠONUS, krenta su gravitacija, nusėda ant ŽEMĖS.
+    const _drops = [], _DN = 11, _G = CELL * 22, _groundY = CELL * 0.5;   // visi vienetai CELL/s, CELL/s² (robust per zoom)
+    for (let _d = 0; _d < _DN; _d++) {
+      const _side = (_d % 2) ? 1 : -1;
+      const _vx = _side * CELL * (1.4 + Math.random() * 2.2);             // į šonus
+      const _vy = -CELL * (1.0 + Math.random() * 2.0);                    // pradžioj truputį aukštyn (arc)
+      const _oy = -CELL * (0.05 + Math.random() * 0.28);
+      const _ox = (Math.random() - 0.5) * CELL * 0.28;
+      const _tL = (-_vy + Math.sqrt(_vy * _vy + 2 * _G * (_groundY - _oy))) / _G;   // nusileidimo laikas (sek)
+      _drops.push({ ox: _ox, oy: _oy, vx: _vx, vy: _vy, g: _G, sz: 1.8 + (_d % 3) * 0.9, tL: _tL, gy: _groundY });
+    }
+    target._hurtDrops = _drops;
+  }
   if (typeof spawnDmgNumber === 'function') {
     // taken = žala player unitui (team 0) → raudona; kitaip priešas gauna → balta
     const _tk = target.team === 0 ? 'taken' : 'normal';
@@ -6916,11 +6983,19 @@ function spawnF9RangedShot(shooter, target, utype, stack) {
   const sgy = (shooter.ry !== undefined) ? shooter.ry : shooter.y;
   const tgx = (target.rx !== undefined) ? target.rx : target.x;
   const tgy = (target.ry !== undefined) ? target.ry : target.y;
-  const sx = (sgx + 0.5) * CELL;
-  const sy = (sgy + 0.5) * CELL - CELL * 0.55;   // šūvis iš krūtinės aukščio
+  // Spawn origin pagal utype: ghost — iš RANKŲ (priekyje, žemiau galvos); kiti — iš krūtinės aukščio.
+  let _oxOff = 0, _oyOff = -CELL * 0.55;
+  if (utype === 'ghost') {
+    const _fdx = (shooter.facing && shooter.facing.dx) ? shooter.facing.dx : (tgx > sgx ? 1 : -1);
+    _oxOff = _fdx * CELL * 0.30;   // į priekį — rankų pusėje
+    _oyOff = CELL * 0.12;          // rankų/kamuolio aukštis (žemiau galvos)
+  }
+  const sx = (sgx + 0.5) * CELL + _oxOff;
+  const sy = (sgy + 0.5) * CELL + _oyOff;
   const tx = (tgx + 0.5) * CELL;
   const ty = (tgy + 0.5) * CELL - CELL * 0.30;   // taikymas į korpusą
   const dist = Math.hypot(tx - sx, ty - sy);
+  const _isGhostShot = (utype === 'ghost');
   window._f9Shots.push({
     utype: utype || 'archer',
     stack: stack || 1,
@@ -6928,13 +7003,42 @@ function spawnF9RangedShot(shooter, target, utype, stack) {
     sx, sy, tx, ty,
     x: sx, y: sy, px: sx, py: sy,
     born: performance.now(),
-    durMs: Math.max(150, (dist / CELL) / _F9_SHOT_SPEED_CPS * 1000),
-    arcH: Math.min(CELL * _F9_SHOT_ARC_MAX, dist * 0.16),
+    // ghost = magija: ~40% lėtesnis (floaty); kiti = įprastas greitis.
+    durMs: Math.max(150, (dist / CELL) / (_isGhostShot ? _F9_SHOT_SPEED_CPS * 0.45 : _F9_SHOT_SPEED_CPS) * 1000),
+    arcH: _isGhostShot ? 0 : Math.min(CELL * _F9_SHOT_ARC_MAX, dist * 0.16),   // ghost — be gravitacijos lanko
+    seed: Math.random() * Math.PI * 2,                                          // weave fazė (per-šūvį variacija)
+    weaveAmp: _isGhostShot ? Math.min(13, 5 + dist * 0.018) : 0,                // švelnaus plūduriavimo amplitudė (px) — mažesnė, kad neatrodytų jittery
     state: 'fly',            // 'fly' | 'impact' | 'stuck'
     stateAt: 0,
     angle: Math.atan2(ty - sy, tx - sx),
     trail: [],
   });
+}
+
+// Vaiduoklio projektilas — spektrinė „sielos" dvasia: cyan/teal ektoplazminis halo + baltas branduolys + virpantis aplis.
+function _drawGhostOrb(x, y, now, scale) {
+  const sc = scale || 1;
+  const pulse = 1 + Math.sin(now / 60) * 0.22;
+  const R = 5.5 * pulse * sc;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // išorinis spektrinis halo (cyan/teal — vaiduokliška energija, ne generinis baltas)
+  const g = ctx.createRadialGradient(x, y, 0, x, y, R * 2.6);
+  g.addColorStop(0,    'rgba(235,255,252,0.95)');
+  g.addColorStop(0.30, 'rgba(150,240,230,0.60)');
+  g.addColorStop(0.70, 'rgba(90,195,210,0.28)');
+  g.addColorStop(1,    'rgba(70,150,190,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, R * 2.6, 0, Math.PI * 2); ctx.fill();
+  // ektoplazminis virpantis žiedas (subtilus „dvasios" kontūras)
+  ctx.globalAlpha = 0.5 + Math.sin(now / 80) * 0.2;
+  ctx.strokeStyle = 'rgba(170,250,240,0.55)';
+  ctx.lineWidth = 1.1 * sc;
+  ctx.beginPath(); ctx.arc(x, y, R * 1.25, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  // baltas karštas branduolys
+  ctx.fillStyle = 'rgba(255,255,255,0.97)';
+  ctx.beginPath(); ctx.arc(x, y, R * 0.5, 0, Math.PI * 2); ctx.fill();
 }
 
 // Update + draw viename pass'e (kviečiama render'e PO unit'ų — strėlės virš sprite'ų)
@@ -6965,8 +7069,19 @@ function _drawF9Shots() {
       s.px = s.x; s.py = s.y;
       const bx = s.sx + (s.tx - s.sx) * t;
       const by = s.sy + (s.ty - s.sy) * t;
-      s.x = bx;
-      s.y = by - Math.sin(t * Math.PI) * s.arcH;   // lanko trajektorija
+      if (s.utype === 'ghost') {
+        // MAGIJA: banguojantis (weave) skrydis perpendikuliariai linijai, BE gravitacijos lanko.
+        // Amplitudė mažėja artėjant (1−t) → konverguoja į taikinį; + smulkus „float" virpesys.
+        const _dX = s.tx - s.sx, _dY = s.ty - s.sy, _len = Math.hypot(_dX, _dY) || 1;
+        const _pX = -_dY / _len, _pY = _dX / _len;                          // perpendikuliarus vienetinis
+        const _wob = Math.sin(t * Math.PI * 1.7 + (s.seed || 0)) * (1 - t) * (s.weaveAmp || 11);   // lėtas plūduriavimas (dvasios skrydis), ne jittery zigzag
+        const _fl  = Math.sin(now / 90 + (s.seed || 0)) * 1.6 * (1 - t);    // floaty virpesys
+        s.x = bx + _pX * _wob;
+        s.y = by + _pY * _wob + _fl;
+      } else {
+        s.x = bx;
+        s.y = by - Math.sin(t * Math.PI) * s.arcH;   // strėlės/harpūno lanko trajektorija
+      }
       const mdx = s.x - s.px, mdy = s.y - s.py;
       if (Math.abs(mdx) + Math.abs(mdy) > 0.5) s.angle = Math.atan2(mdy, mdx);
       // Trail
@@ -6995,6 +7110,50 @@ function _drawF9Shots() {
     if (s.state === 'impact') {
       const frame = Math.floor((now - s.stateAt) / IMPACT_MS);
       if (frame >= IMPACT_FRAMES) { arr.splice(i, 1); continue; }
+      if (s.utype === 'ghost') {
+        // PIXEL PARTICLE sprogimas — spektrinės skeveldros lekia laukan (vietoj balto radial blast).
+        const _age = now - s.stateAt, _BD = 520;
+        if (_age >= _BD) { arr.splice(i, 1); continue; }
+        // vienkartinis particle spawn (pseudo-random pagal seed → stabilus, be jitter per frame)
+        if (!s._burst) {
+          s._burst = [];
+          const _N = 18;
+          for (let _b = 0; _b < _N; _b++) {
+            const _ang = (Math.PI * 2 / _N) * _b + (s.seed || 0) + (_b % 2 ? 0.45 : 0);
+            const _spd = 34 + ((_b * 41) % 64);                                   // px/s, pseudo-variacija
+            // paletė: baltas branduolys / teal ektoplazma / žalsvai-cyan
+            const _col = _b % 3 === 0 ? '255,255,255' : (_b % 3 === 1 ? '150,240,228' : '95,205,215');
+            s._burst.push({ vx: Math.cos(_ang) * _spd, vy: Math.sin(_ang) * _spd, sz: 2 + (_b % 3), col: _col, life: 0.32 + (_b % 5) * 0.045 });
+          }
+        }
+        const _ts = _age / 1000;                                                  // sek
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        // trumpas centrinis blyksnis (pixel kvadratas) — punch pradžioj
+        const _fp = _age / 80;
+        if (_fp < 1) {
+          ctx.globalAlpha = (1 - _fp) * 0.9;
+          ctx.fillStyle = 'rgba(235,255,250,1)';
+          const _fr = Math.round(3 + _fp * 7);
+          ctx.fillRect(Math.round(s.x) - _fr, Math.round(s.y) - _fr, _fr * 2, _fr * 2);
+        }
+        // skeveldros — kvadratukai, lekia laukan, lėtėja (drag) + truputį kyla (dvasia), blėsta, mažėja
+        for (let _pI = 0; _pI < s._burst.length; _pI++) {
+          const _pp = s._burst[_pI];
+          const _pa = _ts / _pp.life;                                             // 0..1 gyvenimas
+          if (_pa >= 1) continue;
+          const _drag = 1 - _pa * 0.55;
+          const _px = s.x + _pp.vx * _ts * _drag;
+          const _py = s.y + _pp.vy * _ts * _drag - 7 * _ts;                       // dvasia → lengvai aukštyn
+          const _ps = Math.max(1, Math.round(_pp.sz * (1 - _pa * 0.45)));
+          ctx.globalAlpha = (1 - _pa) * 0.95;
+          ctx.fillStyle = 'rgba(' + _pp.col + ',1)';
+          ctx.fillRect(Math.round(_px) - (_ps >> 1), Math.round(_py) - (_ps >> 1), _ps, _ps);
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
+        continue;
+      }
       if (impSheet && impSheet.complete && impSheet.naturalWidth > 0) {
         const IS = 52;
         ctx.drawImage(impSheet, frame * 192, 0, 192, 192, s.x - IS / 2, s.y - IS / 2, IS, IS);
@@ -7004,6 +7163,12 @@ function _drawF9Shots() {
     if (s.state === 'stuck') {
       const age = now - s.stateAt;
       if (age > 1400) { arr.splice(i, 1); continue; }
+      if (s.utype === 'ghost') {
+        ctx.globalAlpha = age > 700 ? Math.max(0, 1 - (age - 700) / 700) : 1;   // miss → kamuolys blėsta
+        _drawGhostOrb(s.x, s.y, now, 0.7);
+        ctx.globalAlpha = 1;
+        continue;
+      }
       ctx.globalAlpha = age > 1000 ? 1 - (age - 1000) / 400 : 1;
       ctx.save();
       ctx.translate(s.x, s.y);
@@ -7023,15 +7188,19 @@ function _drawF9Shots() {
       continue;
     }
     // 'fly' — trail + sprite
+    const _isGhostShot = s.utype === 'ghost';
     for (let k = 0; k < s.trail.length; k++) {
       const tp = s.trail[k];
       const ta = 1 - (now - tp.born) / 260;
       if (ta <= 0) continue;
-      ctx.globalAlpha = ta * 0.30;
-      ctx.fillStyle = '#2a2118';
-      ctx.beginPath(); ctx.arc(tp.x, tp.y, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = ta * (_isGhostShot ? 0.42 : 0.30);
+      if (_isGhostShot) ctx.globalCompositeOperation = 'lighter';                 // dvasios uodega švyti (additive)
+      ctx.fillStyle = _isGhostShot ? 'rgba(150,240,228,1)' : '#2a2118';          // teal ektoplazma — į temą
+      ctx.beginPath(); ctx.arc(tp.x, tp.y, _isGhostShot ? (3.2 * ta) : 1.6, 0, Math.PI * 2); ctx.fill();   // siaurėja blėsdama → wispy uodega
+      if (_isGhostShot) ctx.globalCompositeOperation = 'source-over';
     }
     ctx.globalAlpha = 1;
+    if (_isGhostShot) { _drawGhostOrb(s.x, s.y, now); continue; }   // baltas energijos kamuolys (be rotacijos)
     ctx.save();
     ctx.translate(s.x, s.y);
     if (s.utype === 'archer') {
@@ -7065,6 +7234,7 @@ const _F9_ALLY_ATTACK = {
   archer:       { range: 6.5,  cd: 5000, dmg: 3, dmgMin: 3, dmgMax: 3 },
   harpoon_fish: { range: 5.5,  cd: 3600, dmg: 3, dmgMin: 3, dmgMax: 3 },
   pigronke:     { range: 1.18, cd: 2800, dmg: 8, dmgMin: 8, dmgMax: 8 },
+  ghost:        { range: 5.5,  cd: 3000, dmg: 4, dmgMin: 3, dmgMax: 5 },   // ranged — baltas energijos kamuolys
 };
 
 // NFT lygio → statų multiplikatorius. MIRROR of F12 floor12_merge.js `_nftStatMul`:
@@ -7094,7 +7264,7 @@ const _F9_PIGRONKE_ATTACK_LOCK_MS = 980;  // full attack anim + mini recovery pa
 const _F9_PIGRONKE_COMMIT_RANGE_PAD = 0.34; // allow hit commit when enemy slips along range edge
 
 function _f9PigronkeBusy(u, now) {
-  return !!(u && u.utype === 'pigronke' && u._f9ActionLockUntil && now < u._f9ActionLockUntil);
+  return !!(u && (u.utype === 'pigronke' || u.utype === 'ghost') && u._f9ActionLockUntil && now < u._f9ActionLockUntil);
 }
 
 function _f9FaceTarget(unit, target) {
@@ -7182,12 +7352,22 @@ function _f9TryAllyAutoAttack(ally, now) {
   const ax = (ally.rx !== undefined) ? ally.rx : ally.x;
   const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
   let target = null, bestD = cfg.range;
-  for (const e of S.units) {
-    if (!e || !e.alive || !_f9IsEnemy(e)) continue;
-    const ex = (e.rx !== undefined) ? e.rx : e.x;
-    const ey = (e.ry !== undefined) ? e.ry : e.y;
-    const d = Math.hypot(ax - ex, ay - ey);
-    if (d < bestD) { bestD = d; target = e; }
+  // PIRMENYBĖ žaidėjo pažymėtam taikiniui (_f9EngageTarget) — jei gyvas, priešas ir range'e,
+  // šaunam į JĮ, ne į artimiausią. Kitaip — fallback į artimiausią.
+  const _eng = ally._f9EngageTarget;
+  if (_eng && _eng.alive && _f9IsEnemy(_eng)) {
+    const _ex = (_eng.rx !== undefined) ? _eng.rx : _eng.x;
+    const _ey = (_eng.ry !== undefined) ? _eng.ry : _eng.y;
+    if (Math.hypot(ax - _ex, ay - _ey) <= cfg.range) target = _eng;
+  }
+  if (!target) {
+    for (const e of S.units) {
+      if (!e || !e.alive || !_f9IsEnemy(e)) continue;
+      const ex = (e.rx !== undefined) ? e.rx : e.x;
+      const ey = (e.ry !== undefined) ? e.ry : e.y;
+      const d = Math.hypot(ax - ex, ay - ey);
+      if (d < bestD) { bestD = d; target = e; }
+    }
   }
   if (!target) return false;
   // Face TIESIOG į taikinį pagal x ženklą — ne atbulom
@@ -7210,6 +7390,38 @@ function _f9TryAllyAutoAttack(ally, now) {
       if (Math.hypot(sx - ex, sy - ey) > cfg.range + 0.2) return;
       _f9DealDmg(target, _f9RollDamageForUnit(ally.utype, ally.stack || 1, ally._nftLevel || 0), ally);
     }, 250);
+  } else if (ally.utype === 'ghost') {
+    // Ghost — RANGED: groja attack anim (užkrauna kamuolį), tada paleidžia baltą energijos
+    // kamuolį-projektilą (ta pati spawnF9RangedShot logika kaip archer/harpoon — homing + impact).
+    const _atkStamp = now;
+    ally.ghostAttackStart = _atkStamp;
+    ally._f9ActionLockUntil = now + ((typeof GHOST_ATTACK_DUR_MS !== 'undefined') ? GHOST_ATTACK_DUR_MS : 857) + 100;  // negali judėti kol baigsis atakos anim + 0.1s
+    if (typeof spawnF9RangedShot === 'function') {
+      const fireMs = (typeof GHOST_ATTACK_FIRE_MS !== 'undefined') ? GHOST_ATTACK_FIRE_MS : 700;
+      setTimeout(() => {
+        // Jei per windup gavo žalą (hurt) arba pradėta nauja ataka → stamp pasikeitęs → NUTRAUKIAM šūvį.
+        if (!ally.alive || ally.ghostAttackStart !== _atkStamp) return;
+        let shotTgt = (target && target.alive) ? target : null;
+        if (!shotTgt) {
+          const ax2 = (ally.rx !== undefined) ? ally.rx : ally.x;
+          const ay2 = (ally.ry !== undefined) ? ally.ry : ally.y;
+          shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range) : null;
+        }
+        if (shotTgt) {
+          // Atsisukam į TIKRĄ taikinį šūvio momentu (jis galėjo pasikeisti/pajudėti per windup) →
+          // facing, rankų pozicija, atatranka ir kulkos kryptis sutampa.
+          const _sax = (ally.rx !== undefined) ? ally.rx : ally.x;
+          const _stx = (shotTgt.rx !== undefined) ? shotTgt.rx : shotTgt.x;
+          ally.facing = { dx: (_stx - _sax) >= 0 ? 1 : -1, dy: 0 };
+          spawnF9RangedShot(ally, shotTgt, 'ghost', ally.stack || 1);
+          const _rfdx = (ally.facing && ally.facing.dx) ? ally.facing.dx : 1;
+          ally._ghostRecoil = performance.now();        // šūvio atatranka: muzzle flash + vizualus recoil (GRĮŽTA, render-only)
+          ally._ghostRecoilDir = -_rfdx;
+          // PASTABA: fizinio knockback'o (pozicija nuslysta ir LIEKA) NEBĖRA — atrodė kaip bug'as.
+          // Atatranką dabar daro tik render-only recoil (žr. ghost render: _gRecoilX), kuris springs back į 0.
+        }
+      }, fireMs);
+    }
   } else if (ally.utype === 'pigronke') {
     _pigronkeSpearAttack(ally, now);
   } else if (ally.utype === 'shaman') {
@@ -7250,6 +7462,7 @@ const _F9_ALLY_DETECT = {
   archer:       7.0,
   harpoon_fish: 6.0,
   pigronke:     3.8,   // sunkus tankas: sureaguoja arti, ne laksto per visa arena
+  ghost:        6.5,   // ranged — mato iš toli, eina į poziciją ir šaudo
 };
 
 // Auto-engage on encounter: nuskenuoja artimiausią priešą detection range'e ir nustato engage lock.
@@ -9038,13 +9251,14 @@ const bushImgs = [null, null, null, null, null]; // index 1-4
 for (let _bi = 1; _bi <= 4; _bi++) { bushImgs[_bi] = new Image(); bushImgs[_bi].src = `assets_tiny/Terrain/Bushe${_bi}.png`; }
 
 // Extra tree + stump spritesheets (Tiny Swords) — animated trees, static stumps
-const treeImgs  = { tree1: new Image(), tree2: new Image(), tree3: new Image(), tree4: new Image(), tree5: new Image() };
+const treeImgs  = { tree1: new Image(), tree2: new Image(), tree3: new Image(), tree4: new Image(), tree5: new Image(), tree6: new Image() };
 const stumpImgs = { stump1: new Image(), stump2: new Image(), stump3: new Image(), stump4: new Image() };
 treeImgs.tree1.src  = 'assets_tiny/trees/Tree1.png';
 treeImgs.tree2.src  = 'assets_tiny/trees/Tree2.png';
 treeImgs.tree3.src  = 'assets_tiny/trees/Azuolas.png';        // beržas pakeistas ąžuolu (custom 256x256, 8 kadrai)
 treeImgs.tree4.src  = 'assets_tiny/trees/Tree4.png';
 treeImgs.tree5.src  = 'assets_tiny/trees/NegyvasMedis.png';  // negyvas medis (custom 256x256, 8 kadrai)
+treeImgs.tree6.src  = 'assets_tiny/trees/Vaiduoklis.png';    // vaiduoklis (custom 256x256, 8 kadrai, be kolizijos)
 stumpImgs.stump1.src = 'assets_tiny/trees/Stump1.png';
 stumpImgs.stump2.src = 'assets_tiny/trees/Stump2.png';
 stumpImgs.stump3.src = 'assets_tiny/trees/Stump3.png';
@@ -9059,6 +9273,7 @@ const _TREE_CFG = {
   tree3:  { img: 'tree3',  fw: 256, fh: 256, fc: 8, fps: 6, cw: 2.4, ch: 2.4 },  // ąžuolas (256x256 frames, -20% dydis)
   tree4:  { img: 'tree4',  fw: 192, fh: 192, fc: 8, fps: 6, cw: 3, ch: 3 },
   tree5:  { img: 'tree5',  fw: 256, fh: 256, fc: 8, fps: 6, cw: 2.4, ch: 2.4 },  // negyvas medis (256x256 frames)
+  tree6:  { img: 'tree6',  fw: 256, fh: 256, fc: 8, fps: 6, cw: 1.05, ch: 1.05 },  // vaiduoklis (~unito dydis: 54×1.05×1.5≈85px = UNIT_CELL×2.5)
   stump1: { img: 'stump1', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
   stump2: { img: 'stump2', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
   stump3: { img: 'stump3', fw: 192, fh: 256, fc: 1, fps: 0, cw: 2, ch: 2.7 },
@@ -9313,6 +9528,22 @@ const pigronkeAnimSheets = {
 };
 const PIGRONKE_ANIM_FPS = { idle: 8, walk: 11, attack: 12 };
 const PIGRONKE_FRAME_W = 640;
+
+// ---- Ghost ally sprite (256x256 per frame) ----
+// idle (STOVI) = Vaiduoklisindle (12 kadrų); JUDANTIS float = Vaiduoklis (8 kadrai, aukštyn/žemyn); attack = VaiduoklisAttack (12).
+const ghostAnimSheets = {
+  idle:   loadHorizontalSheetFrames('assets_tiny/trees/Vaiduoklis.png', 8),          // JUDANTIS — plūduriavimo float (aukštyn/žemyn)
+  still:  loadHorizontalSheetFrames('assets_tiny/trees/Vaiduoklisindle.png', 12),    // STOVI — idle animacija (kai nejuda)
+  attack: loadHorizontalSheetFrames('assets_tiny/trees/VaiduoklisAttack.png', 12),   // 12 kadrų: užkrauna energijos kamuolį
+  hurt:   loadHorizontalSheetFrames('assets_tiny/trees/VaiduoklisDmgTake.png', 8),   // GAUNA ŽALĄ (dmg-take) — užrakina veiksmus kol groja
+};
+const GHOST_ANIM_FPS = 6;
+const GHOST_FRAME_W = 256;
+const GHOST_ATTACK_FRAMES = 12, GHOST_ATTACK_FPS = 28;                 // attack anim greitis (14→28: snappy, ne lėtas windup)
+const GHOST_ATTACK_DUR_MS = Math.round(GHOST_ATTACK_FRAMES * 1000 / GHOST_ATTACK_FPS);   // ~429ms pilnas (buvo ~857)
+const GHOST_ATTACK_FIRE_MS = Math.round(3 * 1000 / GHOST_ATTACK_FPS);                     // ~107ms — kamuolys išlekia BEVEIK IŠKART (kadras ~3), tada anim baigia ir grįžta į idle
+const GHOST_HURT_FRAMES = 8, GHOST_HURT_FPS = 16;                      // dmg-take anim greitis
+const GHOST_HURT_DUR_MS = Math.round(GHOST_HURT_FRAMES * 1000 / GHOST_HURT_FPS);          // ~500ms — kol groja, vaiduoklis užrakintas (po to +0.1s)
 
 function getPigronkeFrameState(u) {
   const now = performance.now();
@@ -9986,6 +10217,7 @@ const ENEMY_TYPES = [
   { type: 'shield',  hp: 3, color: '#44aaff', scale: 1.05, label: 'SHIELD' },
   { type: 'ironbox', hp: 5, color: '#8899aa', scale: 1.25, label: 'FORTRESS' },
   { type: 'skull',     hp: 3,  color: '#e8d8c0', scale: 1.10, label: 'SKULL' },
+  { type: 'ghost',     hp: 12, color: '#6a7cff', scale: 1.00, label: 'GHOST' },
   { type: 'bluebird',  hp: 2,  color: '#4488ff', scale: 1.00, label: 'BIRD' },
   { type: 'minotaur',  hp: 6,  color: '#8b2020', scale: 1.40, label: 'MINOTAUR' },
   { type: 'minotaur_big', hp: 25, color: '#a01818', scale: 1.90, label: 'BIG MINOTAUR' },
@@ -12448,6 +12680,7 @@ function initAdventure() {
         { utype: 'archer',       stack: 1, hp: 5,  maxHp: 5 },
         { utype: 'harpoon_fish', stack: 1, hp: 7,  maxHp: 7 },
         { utype: 'pigronke',     stack: 1, hp: 14, maxHp: 14 },
+        { utype: 'ghost',        stack: 1, hp: 12, maxHp: 12 },
       ];
       let _did = (typeof _nextTrainedSnapId === 'function') ? 100000 : 1000;
       let _ringIdx = 0;
@@ -12508,7 +12741,7 @@ function initAdventure() {
             return { utype: ut, stack: 1, hp, maxHp: hp, nftLevel: nu.level || 0, tokenId: String(nu.tokenId) };
           }).filter(Boolean);
           S._f9DeployPending = false;
-          if (snaps.length) _placeSnaps(snaps);
+          if (snaps.length) { snaps.push({ utype: 'ghost', stack: 1, hp: 12, maxHp: 12 }); _placeSnaps(snaps); }   // LOKALUS PREVIEW: pridedam vaiduoklį į squad
           else _placeSnaps(_testTeam);   // squad tuščias po prune — fallback
         }).catch((e2) => {
           console.warn('[F9 deploy] NFT load err, fallback test team:', e2);
@@ -31838,6 +32071,141 @@ function drawUnits() {
           ctx.beginPath(); ctx.arc(cx, cy, sprW * 0.18, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = alpha;
         }
+      } else if (u.utype === 'ghost') {
+        // Ghost — 1 animacija (plūduriavimas) visom būsenom; flip pagal facing.
+        // FIZINIS plūduriavimas: sprite kyla-leisis sinuso banga (per-unit fazė → nesiūbuoja sinchroniškai).
+        const sprSz = UNIT_CELL * 2.1;
+        // Sheet+kadras+bob iš BENDRO helper'io (_f9GhostFrame) → render IR už-medžio kontūras sutampa.
+        // Būsenos: attack / STOVI-idle (Vaiduoklisindle) / JUDANTIS float (Vaiduoklis).
+        const _gf = _f9GhostFrame(u);
+        const _gcy = cy + _gf.bob;
+        // Šūvio atatranka — VIZUALI (render-only): muzzle flash + trumpas recoil kick'as, kuris GRĮŽTA į 0.
+        // Tikra unito pozicija/kolizija NEsikeičia → nebeatrodo kaip teleportas/bug'as.
+        let _gFlash = 0, _gRecoilX = 0;
+        if (u._ghostRecoil) {
+          const _el = performance.now() - u._ghostRecoil, _RD = 220;
+          if (_el < 150) _gFlash = 1 - _el / 150;
+          if (_el < _RD) {
+            const _p = _el / _RD;
+            const _kick = _p < 0.22 ? (_p / 0.22) : Math.pow(1 - (_p - 0.22) / 0.78, 2);   // snap atgal → švelnus spyruoklinis grįžimas
+            _gRecoilX = (u._ghostRecoilDir || -1) * _kick * CELL * 0.18;                    // atgal nuo šūvio, springs back į 0
+          } else { u._ghostRecoil = 0; }
+        }
+        const _gcx = cx + _gRecoilX;
+        // Sheet+kadras jau parinkti helper'yje (attack / stovi-idle / judantis float).
+        const _gsheet = _gf.sheet, _gsx = _gf.sx;
+        const _gOk = _gsheet && _gsheet.complete && _gsheet.naturalWidth > 0;
+        const _gFlipL = (u.facing?.dx || -1) < 0;
+        // Bendras sprite piešimas pozicijoje (px,py) su alpha a — naudoja ECHO ir pagrindinis kūnas.
+        const _gDrawGhost = (px, py, a) => {
+          if (!_gOk) return;
+          ctx.globalAlpha = a;
+          if (_gFlipL) { ctx.save(); ctx.translate(px, py); ctx.scale(-1, 1); ctx.drawImage(_gsheet, _gsx, 0, GHOST_FRAME_W, GHOST_FRAME_W, -sprSz / 2, -sprSz / 2, sprSz, sprSz); ctx.restore(); }
+          else { ctx.drawImage(_gsheet, _gsx, 0, GHOST_FRAME_W, GHOST_FRAME_W, px - sprSz / 2, py - sprSz / 2, sprSz, sprSz); }
+        };
+        if (_gOk) {
+          _gDrawGhost(_gcx, _gcy, alpha * (u.hitFlash > 0 ? 0.5 : 1));          // pagrindinis kūnas (viršuje)
+          ctx.globalAlpha = alpha;
+        } else {
+          ctx.fillStyle = '#6a7cff';
+          ctx.beginPath(); ctx.arc(_gcx, _gcy, r * 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+        // ── HURT (dmg-take) — MĖLYNI ektoplazmos LAŠIUKAI: splash į šonus, krenta su gravitacija, nusėda ant žemės ──
+        if (u._hurtDrops && u.ghostHurtStart) {
+          const _dEl = (performance.now() - u.ghostHurtStart) / 1000;          // sek nuo smūgio
+          const _PUDDLE = 0.55;                                                // kiek laiko balutė laikosi ant žemės
+          let _anyAlive = false;
+          ctx.save();
+          for (let _di = 0; _di < u._hurtDrops.length; _di++) {
+            const _dp = u._hurtDrops[_di];
+            const _landed = _dEl >= _dp.tL;
+            const _afterLand = _dEl - _dp.tL;
+            if (_landed && _afterLand > _PUDDLE) continue;                      // dingęs
+            _anyAlive = true;
+            const _tFly = _landed ? _dp.tL : _dEl;                             // horizontaliai juda iki nusileidimo, tada stovi
+            const _dx = _gcx + _dp.ox + _dp.vx * _tFly;
+            if (!_landed) {
+              // skrendantis lašelis — pailgas pagal greitį (lašo forma), mėlynas su šviesiu branduoliu
+              const _dyAir = _dp.oy + _dp.vy * _tFly + 0.5 * _dp.g * _tFly * _tFly;
+              const _dy = cy + _dyAir;
+              const _vyNow = _dp.vy + _dp.g * _tFly;
+              const _stretch = 1 + Math.min(1.5, Math.abs(_vyNow) / (CELL * 3));
+              ctx.globalAlpha = alpha;
+              ctx.fillStyle = 'rgba(60,140,255,0.95)';
+              ctx.beginPath(); ctx.ellipse(_dx, _dy, _dp.sz, _dp.sz * _stretch, 0, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = 'rgba(150,205,255,0.9)';
+              ctx.beginPath(); ctx.ellipse(_dx, _dy, _dp.sz * 0.5, _dp.sz * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+            } else {
+              // nusėdęs ant žemės — suplotas „splat" plečiasi ir blėsta
+              const _k = _afterLand / _PUDDLE;
+              const _rx = _dp.sz * (1.2 + _k * 1.7), _ry = _dp.sz * (0.45 + _k * 0.35);
+              ctx.globalAlpha = alpha * Math.max(0, 1 - _k);
+              ctx.fillStyle = 'rgba(55,135,250,0.85)';
+              ctx.beginPath(); ctx.ellipse(_dx, cy + _dp.gy, _rx, _ry, 0, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+          ctx.restore();
+          ctx.globalAlpha = alpha;
+          if (!_anyAlive) u._hurtDrops = null;                                 // cleanup kai visi nusėdo ir išblėso
+        }
+        // MUZZLE FLASH prie rankų (priekyje) paleidimo momentu — baltas blyksnis.
+        if (_gFlash > 0) {
+          const _fwd = -(u._ghostRecoilDir || -1);            // priekis = šūvio kryptis
+          const _mx = cx + _fwd * CELL * 0.30, _my = _gcy + CELL * 0.12;
+          const _mr = 5 + (1 - _gFlash) * 18;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = alpha * _gFlash;
+          const _mg = ctx.createRadialGradient(_mx, _my, 0, _mx, _my, _mr);
+          _mg.addColorStop(0, 'rgba(255,255,255,0.95)');
+          _mg.addColorStop(0.5, 'rgba(180,210,255,0.55)');
+          _mg.addColorStop(1, 'rgba(120,150,255,0)');
+          ctx.fillStyle = _mg;
+          ctx.beginPath(); ctx.arc(_mx, _my, _mr, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          ctx.globalAlpha = alpha;
+        }
+        // ── WINDUP CHARGE (anticipation/telegraph) — kol kraunasi šūvis (prieš paleidimą):
+        //    prie rankų renkasi spektrinė energija (auga + įtraukia kibirkštis) → žaidėjui aišku kad tuoj šaus. ──
+        if (u.ghostAttackStart) {
+          const _cEl = performance.now() - u.ghostAttackStart;
+          const _fireMs = (typeof GHOST_ATTACK_FIRE_MS !== 'undefined') ? GHOST_ATTACK_FIRE_MS : 700;
+          if (_cEl >= 0 && _cEl < _fireMs) {
+            const _cp = _cEl / _fireMs;                                   // 0..1 įkrovimo progresas
+            const _ease = _cp * _cp;                                      // lėtai pradžioj, greitėja link paleidimo
+            const _fwd = (u.facing && u.facing.dx) ? u.facing.dx : 1;
+            const _ccx = _gcx + _fwd * CELL * 0.30;                       // rankų pozicija (priekyje)
+            const _ccy = _gcy + CELL * 0.12;
+            const _cr = (2 + _ease * 9) * (1 + Math.sin(performance.now() / 45) * 0.12);   // auga + virpa
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = alpha * (0.30 + _ease * 0.55);
+            const _cg = ctx.createRadialGradient(_ccx, _ccy, 0, _ccx, _ccy, _cr * 2.4);
+            _cg.addColorStop(0,    'rgba(235,255,250,0.95)');
+            _cg.addColorStop(0.40, 'rgba(140,235,225,0.55)');            // spektrinis teal — ta pati vaiduokliška paletė
+            _cg.addColorStop(1,    'rgba(80,180,200,0)');
+            ctx.fillStyle = _cg;
+            ctx.beginPath(); ctx.arc(_ccx, _ccy, _cr * 2.4, 0, Math.PI * 2); ctx.fill();
+            // įtraukiamos kibirkštys — sukasi ir artėja link rankų (energija renkasi)
+            for (let _si = 0; _si < 3; _si++) {
+              const _a2 = performance.now() / 130 + _si * (Math.PI * 2 / 3);
+              const _rr = CELL * 0.34 * (1 - _ease);                      // spirale į centrą kraunantis
+              const _spx = _ccx + Math.cos(_a2) * _rr;
+              const _spy = _ccy + Math.sin(_a2) * _rr * 0.7;
+              ctx.globalAlpha = alpha * (0.25 + _ease * 0.5);
+              ctx.fillStyle = 'rgba(210,255,248,0.9)';
+              ctx.beginPath(); ctx.arc(_spx, _spy, 1.5 + _ease * 1.4, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.restore();
+            ctx.globalAlpha = alpha;
+          }
+        }
+        if (u.hitFlash > 0) {
+          ctx.globalAlpha = alpha * u.hitFlash * 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(_gcx, _gcy, sprSz * 0.33, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = alpha;
+        }
       } else if (u.utype === 'skull') {
         const frame = getSkullFrameState(u);
         const sprSz = UNIT_CELL * 2.5;
@@ -36313,6 +36681,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { id: 'tree3',  label: 'OAK' },
         { id: 'tree4',  label: 'TREE 4' },
         { id: 'tree5',  label: 'DEAD' },
+        { id: 'tree6',  label: 'GHOST' },
         { id: 'stump1', label: 'STUMP 1' },
         { id: 'stump2', label: 'STUMP 2' },
         { id: 'stump3', label: 'STUMP 3' },
