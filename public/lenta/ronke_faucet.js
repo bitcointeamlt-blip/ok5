@@ -81,8 +81,8 @@
     { minRP: 350,  rMin: 90,  rMax: 230  },  // III lyga
     { minRP: 650,  rMin: 180, rMax: 420  },  // IV lyga
     { minRP: 1300, rMin: 380, rMax: 750  },  // V lyga
-    { minRP: 1700, rMin: 520, rMax: 1000 },  // VI lyga
-    { minRP: 2500, rMin: 900, rMax: 1500 },  // VII lyga (aukščiausia)
+    { minRP: 1700, rMin: 650, rMax: 890  },  // VI lyga
+    { minRP: 2500, rMin: 850, rMax: 999  },  // VII lyga (aukščiausia)
   ];
   function _tierFor(rp) { var t = TIERS[0]; for (var i = 0; i < TIERS.length; i++) { if (rp >= TIERS[i].minRP) t = TIERS[i]; } return t; }
   // ── Darbininko (PAM) pristatymo boost — kiekvienas pristatymas nuima −3..−10s nuo cooldown ──
@@ -218,6 +218,34 @@
            '</div>';
   }
 
+  // RONKE Power → Rewards tier lentutė (collapsible <details>; current tier highlighted). User 2026-06-21.
+  function _rewardsTable(rp) {
+    rp = Number(rp) || 0;
+    var roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+    var rows = '';
+    for (var i = 0; i < TIERS.length; i++) {
+      var t = TIERS[i];
+      var isCur = (rp >= t.minRP) && (i === TIERS.length - 1 || rp < TIERS[i + 1].minRP);
+      rows += '<tr style="' + (isCur ? 'background:linear-gradient(90deg,rgba(255,207,92,.30),rgba(255,207,92,.08));' : '') + '">' +
+        '<td style="padding:3px 7px;font-weight:800;color:' + (isCur ? C.wood : C.ink) + ';">' + (isCur ? '▶ ' : '') + roman[i] + '</td>' +
+        '<td style="padding:3px 7px;text-align:right;color:' + C.wood + ';">' + t.minRP + '+</td>' +
+        '<td style="padding:3px 7px;text-align:right;font-weight:800;color:' + C.red + ';">' + t.rMin + '–' + t.rMax + '</td>' +
+        '</tr>';
+    }
+    return '<details style="margin:7px 0 2px;border:2px solid rgba(106,74,46,.26);border-radius:11px;background:rgba(106,74,46,.06);overflow:hidden;">' +
+      '<summary style="padding:7px 10px;cursor:pointer;font-size:11px;font-weight:800;letter-spacing:.5px;color:' + C.wood + ';display:flex;align-items:center;gap:6px;list-style:none;">' +
+        '<img src="ronke.png" draggable="false" style="height:13px;image-rendering:pixelated;"> RONKE POWER → REWARDS' +
+      '</summary>' +
+      '<div style="padding:0 8px 8px;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+          '<tr style="color:' + C.wood + ';opacity:.65;font-size:9px;letter-spacing:1px;"><td style="padding:2px 7px;">TIER</td><td style="padding:2px 7px;text-align:right;">POWER</td><td style="padding:2px 7px;text-align:right;">RONKE</td></tr>' +
+          rows +
+        '</table>' +
+        '<div style="margin-top:5px;font-size:9px;color:' + C.ink + ';opacity:.72;text-align:center;">🍀 10% lucky ×2 · 🎯 skill boost · max 3000</div>' +
+      '</div>' +
+    '</details>';
+  }
+
   // Serverio cooldown (be parašo, read-only) — AUTORITETAS. Naudojam suderinti pasenusį lokalų
   // localStorage cooldown'ą: jei serveris READY, o telefonas/PC dar laiko seną laiką (multi-device /
   // admin reset) — nebeblokuojam žaidėjo. Klaida/nepasiekiama → grąžinam null (paliekam lokalų elgesį).
@@ -258,7 +286,8 @@
           '<span style="font-size:30px;font-weight:900;color:' + C.red + ';line-height:1;text-shadow:0 1px 1px rgba(0,0,0,.18);">' + _fmt(rp) + '</span>' +
         '</div>' +
         _deathBonusBadge() +
-        '</div>';
+        '</div>' +
+        _rewardsTable(rp);
 
     if (rp < MIN_RP_TO_CLAIM) {
       body.innerHTML = rpCard +
