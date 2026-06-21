@@ -168,12 +168,17 @@
   }
 
   // RONKE Power — iš ronke-power edge fn (autoritetas). Fallback: client deko galia.
+  // _rpInfo — paskutinio fetch'o detalės (mirčių „paguodos prizo" bonusas rodymui claim popup'e).
+  var _rpInfo = { deathBonus: 0, deaths: 0, deathRank: 0 };
   async function _fetchRP(a) {
     if (_TEST_MODE) return _TEST_FAKE_RP;   // UX testas — fake RP (be edge fn)
     try {
       var r = await fetch(RP_ENDPOINT + '?wallet=' + a, { cache: 'no-store' });
       var j = await r.json();
-      if (j && typeof j.totalPower === 'number') return j.totalPower;
+      if (j && typeof j.totalPower === 'number') {
+        _rpInfo = { deathBonus: Number(j.deathBonus) || 0, deaths: Number(j.deaths) || 0, deathRank: Number(j.deathRank) || 0 };
+        return j.totalPower;
+      }
     } catch (_) {}
     // fallback — client'inis deko power (jei edge fn nepasiekiama)
     try {
@@ -185,6 +190,32 @@
       }
     } catch (_) {}
     return 0;
+  }
+
+  // ── Mirčių „paguodos prizo" badge (satisfying reward feedback claim popup'e) ──
+  function _injectDBStyle() {
+    if (document.getElementById('rf-db-style')) return;
+    var s = document.createElement('style'); s.id = 'rf-db-style';
+    s.textContent = '@keyframes rfDbGlow{0%,100%{box-shadow:0 0 0 1px rgba(0,0,0,.3),0 0 7px rgba(255,207,92,.35),inset 0 1px 7px rgba(0,0,0,.55)}50%{box-shadow:0 0 0 1px rgba(0,0,0,.3),0 0 18px rgba(255,207,92,.85),inset 0 1px 7px rgba(0,0,0,.55)}}'
+      + '@keyframes rfDbPop{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}'
+      + '.rf-db{animation:rfDbGlow 2.2s ease-in-out infinite,rfDbPop .45s cubic-bezier(.2,1.4,.4,1) both}';
+    document.head.appendChild(s);
+  }
+  function _deathBonusBadge() {
+    if (!_rpInfo || _rpInfo.deathBonus <= 0) return '';
+    _injectDBStyle();
+    var rank = _rpInfo.deathRank, mult = rank === 1 ? 3 : ((rank === 2 || rank === 3) ? 2 : 1);
+    var medal = rank === 1 ? '👑' : (rank === 2 ? '🥈' : (rank === 3 ? '🥉' : '🎗️'));
+    var rankPill = (rank >= 1 && rank <= 3)
+      ? '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:8px;background:linear-gradient(180deg,#ffe089,#e8a829);color:#4a3320;font-size:9px;font-weight:900;letter-spacing:.5px;border:1px solid #b9842a;box-shadow:0 1px 2px rgba(0,0,0,.35);vertical-align:middle;">' + medal + ' TOP ' + rank + ' &middot; ' + mult + '&times;</span>'
+      : '';
+    return '<div class="rf-db" style="margin-top:8px;padding:7px 10px 8px;border-radius:12px;background:linear-gradient(180deg,#382818,#221810);border:2px solid #5a4226;text-align:center;">' +
+             '<div style="font-size:8.5px;letter-spacing:2px;color:#d9b878;font-weight:800;">&#9904; FALLEN UNITS BONUS' + rankPill + '</div>' +
+             '<div style="margin-top:4px;display:flex;align-items:baseline;justify-content:center;gap:6px;">' +
+               '<span style="font-family:\'Press Start 2P\',monospace;font-size:15px;color:' + C.gold + ';text-shadow:1.4px 1.4px 0 #000,0 0 8px rgba(255,207,92,.75);">+' + _rpInfo.deathBonus + '</span>' +
+               '<span style="font-size:10px;color:#b89e74;font-weight:700;">' + _rpInfo.deaths + ' NFT lost</span>' +
+             '</div>' +
+           '</div>';
   }
 
   // Serverio cooldown (be parašo, read-only) — AUTORITETAS. Naudojam suderinti pasenusį lokalų
@@ -225,7 +256,9 @@
         '<div style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:4px;">' +
           '<img src="ronke.png" draggable="false" style="height:25px;image-rendering:pixelated;"> ' +
           '<span style="font-size:30px;font-weight:900;color:' + C.red + ';line-height:1;text-shadow:0 1px 1px rgba(0,0,0,.18);">' + _fmt(rp) + '</span>' +
-        '</div></div>';
+        '</div>' +
+        _deathBonusBadge() +
+        '</div>';
 
     if (rp < MIN_RP_TO_CLAIM) {
       body.innerHTML = rpCard +
@@ -618,7 +651,8 @@
       var tick = polar(zc);
       body.innerHTML =
         // turimas RONKE Power (lemia rewardo dydį) — mėlynas pixel art + ryškus skaičius
-        '<div style="margin:3px 0 8px;display:flex;align-items:center;justify-content:center;gap:7px;"><img src="ronke.png" draggable="false" style="height:18px;image-rendering:pixelated;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));">' + _pxLabel('RONKE POWER', '#5cc0ff', 10, 5) + _pxLabel(String(rp || 0), '#ffd84a', 15, 7) + '</div>' +
+        '<div style="margin:3px 0 8px;display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;"><img src="ronke.png" draggable="false" style="height:18px;image-rendering:pixelated;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));">' + _pxLabel('RONKE POWER', '#5cc0ff', 10, 5) + _pxLabel(String(rp || 0), '#ffd84a', 15, 7) +
+        (_rpInfo.deathBonus > 0 ? '<span title="RONKE Power iš žuvusių NFT (mirčių paguodos prizas' + (_rpInfo.deathRank >= 1 && _rpInfo.deathRank <= 3 ? ', TOP ' + _rpInfo.deathRank : '') + '; ' + _rpInfo.deaths + ' mirčių)" style="font-family:\'Press Start 2P\',monospace;font-size:10px;color:#ff8a5c;text-shadow:0 1px 1px rgba(0,0,0,.5);white-space:nowrap;">+' + _rpInfo.deathBonus + ' &#9904;</span>' : '') + '</div>' +
         '<div style="font-size:10px;letter-spacing:1.5px;color:' + C.wood + ';font-weight:800;margin:0 0 4px;">STRIKE <span style="color:' + C.red + ';">' + (round + 1) + '</span> / ' + ROUNDS + '</div>' +
         _pips() +
         '<div style="position:relative;width:188px;height:188px;margin:2px auto 8px;">' +
