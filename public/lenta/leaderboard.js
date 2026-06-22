@@ -149,6 +149,76 @@
     });
   }
 
+  // ── RONKE Test Rewards — KLIENTO fallback (kai serveris negrąžina ronke_claimed/total_ronke_rewards,
+  // pvz. edge fn regresavo). Per dRPC (api.roninchain getLogs nepastovus/ribojo 200 blokų). 10000-bloko
+  // chunk'ai (dRPC free max), 2h localStorage cache → mažai užklausų + atsinaujina ~kas 2h. Įsijungia TIK
+  // kai serveris tuščias → kai edge fn pataisyta, savaime nustoja.
+  var _RFAUCET = '0xc59e860e2115ccdab499f619a67bedf71ee26007';
+  var _RTOPIC = '0x9cdcf2f7714cca3508c7f0110b04a90a80a3a8dd0e35de99689db74d28c5383e';
+  var _RDEPLOY = 56821227;
+  var _RRPCS = ['https://ronin.drpc.org', 'https://api.roninchain.com/rpc'];
+  var _RCACHE = 'lb_ronke_rewards_v1';
+  var _RTTL = 2 * 60 * 60 * 1000;
+
+  async function _rRpc(method, params) {
+    var lastErr;
+    for (var i = 0; i < _RRPCS.length; i++) {
+      try {
+        var r = await fetch(_RRPCS[i], { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: method, params: params }) });
+        var j = await r.json();
+        if (j.error) throw new Error((j.error && j.error.message) || 'rpc');
+        return j.result;
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('rpc failed');
+  }
+
+  async function _fetchRonkeRewardsClient() {
+    try {
+      var c = JSON.parse(localStorage.getItem(_RCACHE) || 'null');
+      if (c && c.map && (Date.now() - c.at) < _RTTL) return c;
+    } catch (_) {}
+    var latest = parseInt(await _rRpc('eth_blockNumber', []), 16);
+    var CH = 10000, byAddr = {};
+    for (var from = _RDEPLOY; from <= latest; from += CH) {
+      var to = Math.min(from + CH - 1, latest), logs;
+      try {
+        logs = await _rRpc('eth_getLogs', [{ address: _RFAUCET, topics: [_RTOPIC],
+          fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16) }]);
+      } catch (_) { continue; }
+      for (var k = 0; k < logs.length; k++) {
+        var lg = logs[k];
+        if (!lg.topics || !lg.topics[1] || !lg.data) continue;
+        var pl = ('0x' + lg.topics[1].slice(-40)).toLowerCase();
+        var amt = BigInt(lg.data.slice(0, 66));               // amount (wei)
+        byAddr[pl] = (byAddr[pl] || 0n) + amt;
+      }
+    }
+    var map = {}, total = 0;
+    for (var a in byAddr) {
+      var ronke = Number(byAddr[a] / 1000000000000000000n);   // wei → sveikas RONKE
+      var trunc = a.slice(0, 6) + '...' + a.slice(-4);        // atitinka serverio sutrumpinimą
+      map[trunc] = (map[trunc] || 0) + ronke;
+      total += ronke;
+    }
+    var result = { at: Date.now(), map: map, total: total };
+    try { localStorage.setItem(_RCACHE, JSON.stringify(result)); } catch (_) {}
+    return result;
+  }
+
+  function _maybeClientRonkeRewards() {
+    if (!_data || !_data.players) return;
+    if (_data.totals && _data.totals.total_ronke_rewards != null) return;   // serveris jau duoda → auto-disable
+    _fetchRonkeRewardsClient().then(function (rr) {
+      if (!_data || !rr) return;
+      _data.players.forEach(function (p) { var v = rr.map[p.addr]; if (v != null) p.ronke_claimed = v; });
+      if (!_data.totals) _data.totals = {};
+      _data.totals.total_ronke_rewards = rr.total;
+      _render();
+    }).catch(function () {});
+  }
+
   async function open() {
     if (_root) return;
     _root = document.createElement('div');
@@ -185,6 +255,7 @@
 
     if (!_data) _data = await _load();
     _render();
+    _maybeClientRonkeRewards();   // KLIENTO fallback jei serveris negrąžino rewards → dRPC + 2h cache, re-render
     // RONKE test rewards dabar ateina serverio atsakyme (ronke_claimed / total_ronke_rewards) —
     // jokio kliento eth_getLogs (public RPC ribojo 200 blokų → nesikraudavo). Vienas cache'intas
     // serverio užklausimas aptarnauja visus.
