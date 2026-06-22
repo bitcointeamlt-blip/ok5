@@ -3198,7 +3198,7 @@ function _getBarracksElapsed(now, unitIdx) {
 }
 // unitIdx → enemy archetype type (indeksai atitinka avatar grid pozicijas 0..15).
 // Pirmi 4 aktyvūs užima eilutę 0; idx 4+ rezervuoti būsimiems unit tipams (atrakinama per Castle BUILD SLOT).
-const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost', null, null,
+const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost', 'ronhood', null,
                               null, null, null, null, null, null, null, null];
 // PERF: Set O(1) lookup. Naudoja isFriendlyBarracksUnit (callinama ~39× per frame).
 const _BARRACKS_UNIT_TYPES_SET = new Set(['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost', 'ronhood']);
