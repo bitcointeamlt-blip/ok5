@@ -16085,6 +16085,11 @@ kbd {
   image-rendering: pixelated;
   display: block;
 }
+/* Ghost / RonkeHood APNG turinys užpildo daugiau kadro nei seni gif'ai → sumažinam kortoj (sprite per didelis) */
+.nft-card-img-wrap img[src*="ghost-idle.png"],
+.nft-card-img-wrap img[src*="ronhood-idle.png"] {
+  transform: scale(0.72);
+}
 .nft-card-lvl-badge {
   position: absolute;
   bottom: 4px;

@@ -90,6 +90,8 @@
     3: { name: 'Harpoon', image: 'unit-images/harpoon-idle.gif', rarity: 'common' },
     4: { name: 'Shaman',  image: 'unit-images/shaman-idle.gif',  rarity: 'rare' },
     5: { name: 'Hog Rider', image: 'unit-images/hog-idle.gif', rarity: 'epic' },
+    6: { name: 'Ghost',   image: 'unit-images/ghost-idle.png',   rarity: 'rare' },   // utype 6 — naujas trenuojamas (vietoj Shaman)
+    7: { name: 'RonkeHood', image: 'unit-images/ronhood-idle.png', rarity: 'rare' },   // utype 7 — naujas trenuojamas (vietoj Archer). On-chain name="RonkeHood"
   };
 
   // Planuojami costMultiplierBps tipams, kurių dar NĖRA kontrakte (pre-addUnitType).
@@ -97,7 +99,7 @@
   //   perUnit = getCurrentPricing.cost × bps / 10000
   // Hog Rider planas: addUnitType(5, "Hog Rider", 30000, ...) → 30000 bps = 3.0×.
   // Kai utype įjungiamas grandinėje, getBatchPricing naudoja tikrą kontraktą (fallback netaikomas).
-  const PLANNED_COST_MULT_BPS = { 5: 30000 };
+  const PLANNED_COST_MULT_BPS = { 5: 30000, 6: 20000, 7: 20000 };   // 6 Ghost / 7 RonHood = rare 2.0× (tunable; turi sutapti su addUnitType bps)
   const BATCH_TIER_SIZE = 10;  // kontrakto getBatchMultiplier = ceil(qty / 10)
 
   let _viem = null;

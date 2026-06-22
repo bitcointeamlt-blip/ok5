@@ -1907,7 +1907,7 @@
 
   // ── Config ─────────────────────────────────────────────────────────
 
-  const TYPES = ['arrow', 'shield', 'heart', 'leaf', 'star', 'crystal', 'shadow', 'pearl', 'frost'];
+  const TYPES = ['arrow', 'shield', 'heart', 'leaf', 'star', 'crystal', 'shadow', 'pearl', 'frost', 'spectral', 'royal'];
 
   const TYPE_COLOR = {
 
@@ -1928,6 +1928,10 @@
     pearl:   { top: [255, 255, 255], front: [220, 220, 230], right: [175, 175, 190], left: [125, 125, 145], back: [80, 80, 100], bot: [40, 40, 55], glyph: '#1a1a25' },
 
     frost:   { top: [120, 180, 255], front: [40, 130, 235],  right: [30, 95, 175],  left: [20, 65, 120],  back: [14, 48, 88],  bot: [8, 28, 52],  glyph: '#08203a' },
+
+    spectral:{ top: [255, 250, 150], front: [255, 218, 30],  right: [210, 172, 18], left: [150, 120, 12], back: [92, 72, 8],   bot: [46, 36, 5],  glyph: '#332600' },   // GELTONA — Ghost (Vaiduoklis, utype 6)
+
+    royal:   { top: [150, 230, 140], front: [70, 180, 80],   right: [45, 135, 55],  left: [28, 92, 38],   back: [16, 58, 24],  bot: [8, 30, 12],  glyph: '#0a2a12' },   // ŽALIA — RonHood (archer-stiliaus)
 
   };
 
@@ -2115,7 +2119,7 @@
 
   // Per-utype ranged miss tikimybė. Roll'inama spawn'inant projektilą; jei miss — jokios žalos, „MISS".
 
-  const _UNIT_MISS_CHANCE = { archer: 0.15, harpoon_fish: 0.05, shaman: 0.05, skull: 0.10, hog_rider: 0.05 };
+  const _UNIT_MISS_CHANCE = { archer: 0.15, harpoon_fish: 0.05, shaman: 0.05, skull: 0.10, hog_rider: 0.05, ghost: 0.05, ronhood: 0.11 };
 
   function _rollMiss(attacker) {
 
@@ -2255,6 +2259,8 @@
 
   const _SHAM_PROJ_FIRE_T = 430;             // ms iki projektilo spawn'o (F11 frame ~6)
 
+  const _GHOST_PROJ_FIRE_T = 400;            // ghost orb išlekia atakos anim PABAIGOJ (~429ms swing, fire ties ~frame 11)
+
   const _SHAM_ATTACK_DUR = (10 / 14) * 1000; // 10 frames @ 14 fps = 714ms
 
   function _pickShamanFrame(u, t, isMoving) {
@@ -2356,6 +2362,120 @@
     for (let i = _f12ShamanExpl.length - 1; i >= 0; i--) {
 
       if (t - _f12ShamanExpl[i].born >= _f12ShamanExpl[i].duration) _f12ShamanExpl.splice(i, 1);
+
+    }
+
+  }
+
+  // ── GHOST orb projektilas (F12-natyvus, mirror shaman; be AoE, piešiamas procedūriškai) ──
+
+  let _f12GhostProj = [];        // {laneIdx, fromX, target, dmg, born, duration}
+
+  function _spawnLaneGhostProj(laneIdx, fromX, target, dmg, t, attacker) {
+
+    _f12GhostProj.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 360, miss: _rollMiss(attacker) });
+
+  }
+
+  function _tickGhostProj(t) {
+
+    for (let i = _f12GhostProj.length - 1; i >= 0; i--) {
+
+      const p = _f12GhostProj[i];
+
+      if (t - p.born >= p.duration) {
+
+        if (p.miss) {
+
+          _spawnDmgPopup(p.laneIdx, (p.target ? p.target.x : p.fromX), 0, t, { miss: true });
+
+        } else if (p.target && !p.target.dead) {
+
+          p.target.hp -= p.dmg;
+
+          p.target.hitFlashUntil = t + 200;
+
+          _spawnDmgPopup(p.laneIdx, p.target.x, p.dmg, t);
+
+          _allyAddDmgDealt(p.attacker, p.dmg);
+
+          if (p.target.hp <= 0) {
+
+            p.target.dead = true; p.target.deathStartedAt = t;
+
+            score += _nftScoreBoost(5);
+
+            _trackF12Kill(p.target);
+
+            if (!p.target._isWall) _F12Audio.skullDeath();
+
+            _allyAddKill(p.attacker);
+
+          }
+
+        }
+
+        _f12GhostProj.splice(i, 1);
+
+      }
+
+    }
+
+  }
+
+  function _drawLaneGhostProj(L, t) {
+
+    if (!_f12GhostProj.length) return;
+
+    const baseW = 32;
+
+    for (const p of _f12GhostProj) {
+
+      const lane = lanes[p.laneIdx];
+
+      if (!lane) continue;
+
+      const ly = L.lanesY + p.laneIdx * L.laneH;
+
+      const lh = L.laneH - 4;
+
+      const tt = Math.min(1, (t - p.born) / p.duration);
+
+      const fromPx = L.lanesX + baseW + (L.lanesW - baseW - 30) * p.fromX;
+
+      const toFrac = p.target ? p.target.x : p.fromX + 0.3;
+
+      const toPx = L.lanesX + baseW + (L.lanesW - baseW - 30) * toFrac;
+
+      const cx = fromPx + (toPx - fromPx) * tt;
+
+      const cy = ly + lh / 2 + Math.sin((t - p.born) / 90) * 2;   // švelnus weave float
+
+      const r = Math.max(4, lh * 0.20);
+
+      ctx.save();
+
+      ctx.imageSmoothingEnabled = false;
+
+      ctx.globalCompositeOperation = 'lighter';   // ektoplazma švyti (additive)
+
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.2);
+
+      grad.addColorStop(0, 'rgba(255,252,200,0.95)');
+
+      grad.addColorStop(0.4, 'rgba(255,220,70,0.65)');
+
+      grad.addColorStop(1, 'rgba(230,185,30,0)');
+
+      ctx.fillStyle = grad;
+
+      ctx.beginPath(); ctx.arc(cx, cy, r * 2.2, 0, Math.PI * 2); ctx.fill();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2); ctx.fill();
+
+      ctx.restore();
 
     }
 
@@ -2521,7 +2641,11 @@
 
     // Archer 10% miss (bokštai map'e nėra → visada pataiko)
 
-    _f12Arrows.push({ laneIdx, fromX, target, dmg, attacker, born: t, duration: 250, miss: _rollMiss(attacker) });
+    // RonHood — 1% crit (2× dmg) su „CRIT!" popup'u (kiti ranged be crit)
+
+    const _isCrit = !!(attacker && attacker.utype === 'ronhood' && Math.random() < 0.01);
+
+    _f12Arrows.push({ laneIdx, fromX, target, dmg: _isCrit ? dmg * 2 : dmg, crit: _isCrit, attacker, born: t, duration: 250, miss: _rollMiss(attacker) });
 
   }
 
@@ -2543,7 +2667,7 @@
 
           ar.target.hitFlashUntil = t + 200;
 
-          _spawnDmgPopup(ar.laneIdx, ar.target.x, ar.dmg, t);
+          _spawnDmgPopup(ar.laneIdx, ar.target.x, ar.dmg, t, ar.crit ? { crit: true } : undefined);
 
           _allyAddDmgDealt(ar.attacker, ar.dmg);
 
@@ -2839,7 +2963,7 @@
 
   // ── Deploy sistema (HOME → F12 trained unit'ai)
 
-  const PLAYABLE_TYPES = ['skull', 'archer', 'shaman', 'harpoon_fish', 'tower', 'crossbow_tower', 'zip', 'hog_rider'];
+  const PLAYABLE_TYPES = ['skull', 'archer', 'shaman', 'harpoon_fish', 'tower', 'crossbow_tower', 'zip', 'hog_rider', 'ghost', 'ronhood'];
 
   // Range = fraction of lane width. F11 skull = 1 cell (~3% lane), ranged units = 3-7 cells.
 
@@ -2854,6 +2978,10 @@
     harpoon_fish:   { hp: 7,  dmg: 3, speed: 0.011, attackCooldown: 1800, range: 0.10 },   // CD 1.8s, range ~puse
 
     hog_rider:      { hp: 14, dmg: 8, speed: 0.013, attackCooldown: 2800, range: 0.05 },   // EPIC cavalry melee — tankiausias, spear smūgis 8 dmg, lėtas attack CD 2.8s (utype 5 / frost ball)
+
+    ghost:          { hp: 4,  dmg: 4, speed: 0.011, attackCooldown: 3000, range: 0.16 },   // RARE ranged magas (Vaiduoklis) — mažiau HP nei shaman (4<5), tolimesnis range (0.16>0.14); RonkePower 16 nuo lvl2 (utype 6 / spectral ball)
+
+    ronhood:        { hp: 7,  dmg: 3, speed: 0.014, attackCooldown: 2250, range: 0.10 },   // RARE archer-tipas (RonHood) — kaip lankininkas bet +2 HP (7), trumpesnis range (0.10<0.12), +10% atk speed (CD2250), 11% miss, 1% crit ×2; RonkePower 12 nuo lvl2 (utype 7)
 
     _ninja:         { hp: 10, dmg: 1, speed: 0.024, attackCooldown: 1650, range: 0.04 },   // PEARL skilo ninja — tikri thief statai (HP10/žala1/CD1.65s), melee kaip skull. NE NFT, NE trained.
 
@@ -2884,6 +3012,10 @@
     harpoon_fish: { rangeKind: 'MID',   crit: 0,    block: 0,    aoe: false },
 
     hog_rider:    { rangeKind: 'MELEE', crit: 0.10, block: 0,    aoe: false },
+
+    ghost:        { rangeKind: 'LONG',  crit: 0,    block: 0,    aoe: false },
+
+    ronhood:      { rangeKind: 'MID',   crit: 0.01, block: 0,    aoe: false },
 
   };
 
@@ -3170,6 +3302,10 @@
     shadow:  'skull',
 
     frost:   'hog_rider',   // mėlyna (Ronin) — Hog Rider (NFT utype 5). Frost IŠLAIKO lane-reverse merge efektą (kaip shadow turi ir wall ir skull)
+
+    spectral: 'ghost',      // Ghost (Vaiduoklis, utype 6) — ranged magas, free unit testavimui
+
+    royal:    'ronhood',    // RonHood — archer-stiliaus ranged unitas (free unit testavimui)
 
     // pearl — be unit (palieka jam specialų merge attack)
 
@@ -4334,6 +4470,68 @@
 
   function _drawUnitIcon(utype, cx, cy, maxW, maxH, t) {
 
+    // SPECIAL: ghost (Vaiduoklis) — F12-natyvūs sheet'ai
+
+    if (utype === 'ronhood') {
+
+      const sheets = _initRonHoodSheets();
+
+      const st = sheets && sheets.idle;
+
+      if (st && st.sheet && st.sheet.complete && st.sheet.naturalWidth) {
+
+        const fc = st.frameCount;
+
+        const fw = Math.floor(st.sheet.naturalWidth / fc);
+
+        const fh = st.sheet.naturalHeight;
+
+        const idx = Math.floor(t / (1000 / _RONHOOD_FPS.idle)) % fc;
+
+        const scale = Math.min(maxW / fw, maxH / fh);
+
+        const dw = Math.round(fw * scale), dh = Math.round(fh * scale);
+
+        ctx.imageSmoothingEnabled = false;
+
+        ctx.drawImage(st.sheet, idx * fw, 0, fw, fh, Math.round(cx - dw / 2), Math.round(cy - dh / 2), dw, dh);
+
+      }
+
+      return;
+
+    }
+
+    if (utype === 'ghost') {
+
+      const sheets = _initGhostSheets();
+
+      const st = sheets && sheets.idle;
+
+      if (st && st.sheet && st.sheet.complete && st.sheet.naturalWidth) {
+
+        const fc = st.frameCount;
+
+        const fw = Math.floor(st.sheet.naturalWidth / fc);
+
+        const fh = st.sheet.naturalHeight;
+
+        const idx = Math.floor(t / (1000 / _GHOST_FPS.idle)) % fc;
+
+        const scale = Math.min(maxW / fw, maxH / fh);
+
+        const dw = Math.round(fw * scale), dh = Math.round(fh * scale);
+
+        ctx.imageSmoothingEnabled = false;
+
+        ctx.drawImage(st.sheet, idx * fw, 0, fw, fh, Math.round(cx - dw / 2), Math.round(cy - dh / 2), dw, dh);
+
+      }
+
+      return;
+
+    }
+
     // SPECIAL: hog_rider naudoja pigronke idle sheet'ą (640px frames root'e, ne assets_tiny)
 
     if (utype === 'hog_rider') {
@@ -4491,6 +4689,50 @@
             C.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 
           }
+
+        }
+
+        return;
+
+      }
+
+      if (utype === 'ronhood') {
+
+        const sheets = _initRonHoodSheets(); const st = sheets && sheets.idle;
+
+        if (st && st.sheet && st.sheet.complete && st.sheet.naturalWidth) {
+
+          const fc = st.frameCount, fw = Math.floor(st.sheet.naturalWidth / fc), fh = st.sheet.naturalHeight;
+
+          const idx = Math.floor(t / (1000 / _RONHOOD_FPS.idle)) % fc;
+
+          const sc = Math.min(w / fw, h / fh) * boost;
+
+          const dw = fw * sc, dh = fh * sc;
+
+          C.drawImage(st.sheet, idx * fw, 0, fw, fh, (w - dw) / 2, (h - dh) / 2, dw, dh);
+
+        }
+
+        return;
+
+      }
+
+      if (utype === 'ghost') {
+
+        const sheets = _initGhostSheets(); const st = sheets && sheets.idle;
+
+        if (st && st.sheet && st.sheet.complete && st.sheet.naturalWidth) {
+
+          const fc = st.frameCount, fw = Math.floor(st.sheet.naturalWidth / fc), fh = st.sheet.naturalHeight;
+
+          const idx = Math.floor(t / (1000 / _GHOST_FPS.idle)) % fc;
+
+          const sc = Math.min(w / fw, h / fh) * boost;
+
+          const dw = fw * sc, dh = fh * sc;
+
+          C.drawImage(st.sheet, idx * fw, 0, fw, fh, (w - dw) / 2, (h - dh) / 2, dw, dh);
 
         }
 
@@ -9760,7 +10002,11 @@
 
             else if (a.utype === 'shaman')          _spawnLaneShamanProj(lIdx, a.x, a._projTarget, a.dmg, t, a);
 
+            else if (a.utype === 'ghost')           _spawnLaneGhostProj(lIdx, a.x, a._projTarget, a.dmg, t, a);
+
             else if (a.utype === 'archer')          { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.arrow(); }
+
+            else if (a.utype === 'ronhood')         { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.arrow(); }
 
             else if (a.utype === 'tower')           { _spawnLaneArrow(lIdx, a.x, a._projTarget, a.dmg, t, a); _F12Audio.arrow(); }
 
@@ -9938,7 +10184,13 @@
 
               a._projTarget = target; a._projLane = targetLaneIdx;
 
-            } else if (a.utype === 'archer' || a.utype === 'tower' || a.utype === 'crossbow_tower') {
+            } else if (a.utype === 'ghost') {
+
+              a._pendingProjAt = t + _GHOST_PROJ_FIRE_T;
+
+              a._projTarget = target; a._projLane = targetLaneIdx;
+
+            } else if (a.utype === 'archer' || a.utype === 'tower' || a.utype === 'crossbow_tower' || a.utype === 'ronhood') {
 
               a._pendingProjAt = t + _ARCH_FIRE_T;
 
@@ -10022,7 +10274,19 @@
 
           const _swEl = a.swingStart ? (t - a.swingStart) : Infinity;
 
-          if (_swEl >= 880) {
+          // Ghost — kartais pakimba vietoj (sustoja → idle anim). Periodiškai trigerina trumpą pauzę.
+
+          if (a.utype === 'ghost' && t >= (a._nextGhostPauseAt || 0)) {
+
+            a._nextGhostPauseAt = t + 1600 + Math.random() * 2200;   // kita pauzė po 1.6–3.8s
+
+            if (Math.random() < 0.5) a.idleUntil = t + 650 + Math.random() * 750;   // ~50% pakimba 0.65–1.4s (idle anim)
+
+          }
+
+          const _ghostIdling = (a.utype === 'ghost' && t < a.idleUntil);
+
+          if (_swEl >= 880 && !_ghostIdling) {
 
             a.x += a.speed * (dt / 1000);
 
@@ -10660,6 +10924,116 @@
 
   // ── Render ─────────────────────────────────────────────────────────
 
+  // ── RonHood (ronkehood) — F12 archer-stiliaus unitas (idle/walk sheet'ai, F12-natyviai). ──
+
+  let _ronHoodSheets = null;
+
+  function _initRonHoodSheets() {
+
+    if (_ronHoodSheets) return _ronHoodSheets;
+
+    if (typeof loadHorizontalSheetFrames !== 'function') return null;
+
+    _ronHoodSheets = {
+
+      idle:   loadHorizontalSheetFrames('ronhood_idle.png', 8),
+
+      walk:   loadHorizontalSheetFrames('ronhood_walk.png',  8),
+
+      attack: loadHorizontalSheetFrames('ronhood_attack.png', 8),
+
+    };
+
+    return _ronHoodSheets;
+
+  }
+
+  const _RONHOOD_FPS = { idle: 8, walk: 10 };
+
+  const _RONHOOD_SHOOT_DUR = 580;   // attack (bow-shoot) anim trukmė — 8 kadrai, šauna į priešą (swingStart)
+
+  // Content-bounds (alfa-skan, frame 0, cache ant img) — idle/walk turinys skirtingam aukšty,
+
+  // todėl render'inam pagal KOJAS + turinio aukštį, kad nešokinėtų ir būtų vienodo dydžio.
+
+  function _ronHoodContentBounds(img, fw) {
+
+    if (!img || !img.complete || !img.naturalWidth) return null;
+
+    if (img._rhCB) return img._rhCB;
+
+    try {
+
+      const fh = img.naturalHeight;
+
+      const oc = document.createElement('canvas'); oc.width = fw; oc.height = fh;
+
+      const octx = oc.getContext('2d');
+
+      octx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);   // frame 0
+
+      const d = octx.getImageData(0, 0, fw, fh).data;
+
+      let top = -1, bottom = -1;
+
+      for (let y = 0; y < fh; y++) {
+
+        let has = false;
+
+        for (let x = 0; x < fw; x++) { if (d[(y * fw + x) * 4 + 3] > 16) { has = true; break; } }
+
+        if (has) { if (top < 0) top = y; bottom = y; }
+
+      }
+
+      if (top < 0) { top = 0; bottom = fh - 1; }
+
+      img._rhCB = { top, bottom };
+
+      return img._rhCB;
+
+    } catch (_) { return { top: 0, bottom: img.naturalHeight - 1 }; }
+
+  }
+
+  function _pickRonHoodFrame(u, t, isMoving) {
+
+    const sheets = _initRonHoodSheets();
+
+    if (!sheets) return null;
+
+    // SHOOT (bow-shoot) — kai šauna į priešą (swingStart, bendra su archer). Prioritetas prieš walk/idle.
+
+    const shootElapsed = u.swingStart ? (t - u.swingStart) : Infinity;
+
+    const atkOk = sheets.attack && sheets.attack.sheet && sheets.attack.sheet.complete && sheets.attack.sheet.naturalWidth;
+
+    const shooting = atkOk && shootElapsed < _RONHOOD_SHOOT_DUR;
+
+    const anim = shooting ? 'attack' : (isMoving ? 'walk' : 'idle');
+
+    const st = sheets[anim] || sheets.idle;
+
+    if (!st || !st.sheet || !st.sheet.complete || !st.sheet.naturalWidth) return null;
+
+    const fc = st.frameCount;
+
+    const fw = Math.floor(st.sheet.naturalWidth / fc);
+
+    const fh = st.sheet.naturalHeight;
+
+    let idx;
+
+    if (shooting) idx = Math.min(Math.floor(shootElapsed / (_RONHOOD_SHOOT_DUR / fc)), fc - 1);
+
+    else { const fps = _RONHOOD_FPS[anim] || 8; idx = Math.floor((t + (u.bobPhase || 0) * 100) / (1000 / fps)) % fc; }
+
+    const cb = _ronHoodContentBounds(st.sheet, fw) || { top: 0, bottom: fh - 1 };
+
+    return { sheet: st.sheet, sx: idx * fw, sy: 0, sw: fw, sh: fh, cTop: cb.top, cBottom: cb.bottom };
+
+  }
+
   function render(t) {
 
     layoutCache = computeLayout();
@@ -10719,6 +11093,8 @@
     _drawLaneHarpoons(L, t);
 
     _drawLaneShamanProj(L, t);
+
+    _drawLaneGhostProj(L, t);
 
     _drawLaneArrows(L, t);
 
@@ -13960,6 +14336,84 @@
 
   }
 
+  // ── GHOST (Vaiduoklis) — F12-natyvus ranged magas. Mirror hog_rider sprite pipeline'o, 0 F9 priklausomybių. ──
+
+  let _ghostSheets = null;
+
+  function _initGhostSheets() {
+
+    if (_ghostSheets) return _ghostSheets;
+
+    if (typeof loadHorizontalSheetFrames !== 'function') return null;
+
+    _ghostSheets = {
+
+      idle:   loadHorizontalSheetFrames('assets_tiny/trees/Vaiduoklisindle.png', 12),  // STOVI (stationary idle)
+
+      walk:   loadHorizontalSheetFrames('assets_tiny/trees/Vaiduoklis.png',       8),  // JUDA (plūduriavimas)
+
+      attack: loadHorizontalSheetFrames('assets_tiny/trees/VaiduoklisAttack.png', 12), // užkrauna energijos orbą
+
+      hurt:   loadHorizontalSheetFrames('assets_tiny/trees/VaiduoklisDmgTake.png', 8), // dmg-take recoil
+
+    };
+
+    return _ghostSheets;
+
+  }
+
+  const _GHOST_FPS = { idle: 6, walk: 6, attack: 28, hurt: 16 };
+
+  function _pickGhostFrame(u, t, isMoving) {
+
+    const sheets = _initGhostSheets();
+
+    if (!sheets) return null;
+
+    const swingDur = (sheets.attack.frameCount / _GHOST_FPS.attack) * 1000;
+
+    const swingElapsed = u.swingStart ? t - u.swingStart : Infinity;
+
+    const hurtSheet = sheets.hurt;
+
+    const hurtTakenAt = u.hitFlashUntil ? (u.hitFlashUntil - 200) : 0;
+
+    const hurtDur = hurtSheet ? (hurtSheet.frameCount / _GHOST_FPS.hurt) * 1000 : 0;
+
+    const hurtElapsed = (hurtSheet && hurtTakenAt > 0) ? (t - hurtTakenAt) : Infinity;
+
+    let anim = 'idle';
+
+    if (swingElapsed < swingDur)                 anim = 'attack';
+
+    else if (hurtSheet && hurtElapsed < hurtDur) anim = 'hurt';
+
+    else if (isMoving)                           anim = 'walk';
+
+    const st = sheets[anim];
+
+    if (!st || !st.sheet || !st.sheet.complete || !st.sheet.naturalWidth) return null;
+
+    const fps = _GHOST_FPS[anim];
+
+    const fc = st.frameCount;
+
+    const fw = Math.floor(st.sheet.naturalWidth / fc);
+
+    const fh = st.sheet.naturalHeight;
+
+    let idx;
+
+    if (anim === 'attack')    idx = Math.min(fc - 1, Math.floor(swingElapsed / (1000 / fps)));
+
+    else if (anim === 'hurt') idx = Math.min(fc - 1, Math.floor(hurtElapsed / (1000 / fps)));
+
+    else idx = Math.floor((t + (u.bobPhase || 0) * 100) / (1000 / fps)) % fc;
+
+    return { sheet: st.sheet, sx: idx * fw, sy: 0, sw: fw, sh: fh };
+
+  }
+
   // ── Kraujo partikleliai — unito mirties efektas (screen coords, analitinė fizika) ──
 
   const _BLOOD_GRAV = 520;
@@ -14288,6 +14742,70 @@
 
       ctx.restore();
 
+    } else if (a.utype === 'ghost') {
+
+      const frame = _pickGhostFrame(a, t, isMoving);
+
+      if (!frame) return;
+
+      ctx.save();
+
+      ctx.imageSmoothingEnabled = false;
+
+      if (flash) ctx.filter = 'brightness(1.5) sepia(1) saturate(2.5) hue-rotate(-30deg)';
+
+      // Plūduriuojantis magas — aspect-ratio išlaikytas, sumažintas kad HP juosta tilptų virš galvos
+
+      const gw = dw * 0.66, gh = gw * (frame.sh / frame.sw);
+
+      // F9-stiliaus plūduriavimas — VIENA tolydi sine (be fazės šuolio); amplitudė švelniai pereina idle↔walk.
+
+      const _mvTarget = isMoving ? 1 : 0;
+
+      a._ghostMoveK = (a._ghostMoveK == null) ? _mvTarget : (a._ghostMoveK + (_mvTarget - a._ghostMoveK) * 0.08);
+
+      const _bobAmp = sz * (0.05 + 0.10 * a._ghostMoveK);   // idle ~0.05, walk ~0.15 (mažesnis nei anksčiau)
+
+      const _gbob = Math.sin(t / 300 + (a.bobPhase || 0)) * _bobAmp;
+
+      a._ghostBobY = _gbob;   // kad HP juosta kilnotųsi kartu su sprite
+
+      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh,
+
+        cx - gw / 2, cy - gh / 2 - sz * 0.10 - _gbob, gw, gh);
+
+      ctx.restore();
+
+    } else if (a.utype === 'ronhood') {
+
+      const frame = _pickRonHoodFrame(a, t, isMoving);
+
+      if (!frame) return;
+
+      ctx.save();
+
+      ctx.imageSmoothingEnabled = false;
+
+      if (flash) ctx.filter = 'brightness(1.5) sepia(1) saturate(2.5) hue-rotate(-30deg)';
+
+      // Content-anchor: turinio aukštis → vienodas dydis idle/walk; KOJOS (content bottom) ant lane linijos → nešokinėja.
+
+      const _cH = Math.max(1, (frame.cBottom - frame.cTop));
+
+      const _targetContentH = sz * 2.4;                 // ~unito vizualus aukštis (tunable; 2.7→2.4 user 2026-06-21)
+
+      const _scl = _targetContentH / _cH;
+
+      const rw = frame.sw * _scl, rh = frame.sh * _scl;
+
+      const _feetY = cy + sz * 1.3;                     // lane „grindys" (tunable)
+
+      const _drawY = _feetY - frame.cBottom * _scl;     // content bottom = _feetY
+
+      ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - rw / 2, _drawY, rw, rh);
+
+      ctx.restore();
+
     } else if (a.utype === 'hog_rider') {
 
       const frame = _pickHogRiderFrame(a, t, isMoving);
@@ -14344,7 +14862,10 @@
 
     // Hog Rider sprite aukštesnis (mounted) → bar'us keliam aukščiau virš galvos
 
-    const _barBaseY = (a.utype === 'hog_rider') ? (cy - sz * 1.5 - 10) : (cy - sz * 1.0);
+    const _barBaseY = (a.utype === 'hog_rider') ? (cy - sz * 1.5 - 10)
+                    : (a.utype === 'ghost') ? (cy - sz * 1.25 - (a._ghostBobY || 0))
+                    : (a.utype === 'ronhood') ? (cy - sz * 1.9 + 7)
+                    : (cy - sz * 1.0);
 
     if (showHpBar) {
 
@@ -16233,6 +16754,8 @@
 
         frost:   ["00000100000","01000100010","00100100100","00010101000","11111111111","00010101000","00100100100","01000100010","00000100000"],
 
+        spectral:["00011111000","00111111100","01111111110","01101101110","01111111110","01111111110","01111111110","01011011010","01001001000"],
+
       };
 
       const g = GLYPHS[type] || GLYPHS.arrow;
@@ -16430,6 +16953,10 @@
         const isCharacter = (_mappedUtypeForIcon === 'archer' || _mappedUtypeForIcon === 'harpoon_fish'
 
                           || _mappedUtypeForIcon === 'shaman' || _mappedUtypeForIcon === 'skull'
+
+                          || _mappedUtypeForIcon === 'ghost'
+
+                          || _mappedUtypeForIcon === 'ronhood'
 
                           || _mappedUtypeForIcon === 'hog_rider');
 
@@ -20733,7 +21260,7 @@
 
     // Visi 7 unit tipai (rodom net jei count=0, kad žaidėjas matytų visą deck'ą)
 
-    const allUnitTypes = ['archer', 'tower', 'shaman', 'harpoon_fish', 'crossbow_tower', 'zip', 'skull'];
+    const allUnitTypes = ['archer', 'tower', 'shaman', 'harpoon_fish', 'crossbow_tower', 'zip', 'skull', 'ghost', 'ronhood'];
 
     const types = allUnitTypes.filter(k => deployPool[k] > 0 || _f12UnitDeployCD[k]);  // arba turi count, arba CD aktyvus
 
@@ -23239,11 +23766,14 @@
     harpoon: 'unit-images/harpoon-idle.gif', harpoon_fish: 'unit-images/harpoon-idle.gif', 3: 'unit-images/harpoon-idle.gif',
     shaman: 'unit-images/shaman-idle.gif', 4: 'unit-images/shaman-idle.gif',
     hog_rider: 'unit-images/hog-idle.png', pigronke: 'unit-images/hog-idle.png', 5: 'unit-images/hog-idle.png',
+    ghost: 'unit-images/ghost-idle.png', 6: 'unit-images/ghost-idle.png',
+    ronhood: 'unit-images/ronhood-idle.png', 7: 'unit-images/ronhood-idle.png',
   };
   const _F12_SETTLE_NAME = {
     skull: 'Skull', archer: 'Archer', harpoon: 'Harpoon', harpoon_fish: 'Harpoon',
     shaman: 'Shaman', hog_rider: 'Hog Rider', pigronke: 'Hog Rider',
-    1: 'Skull', 2: 'Archer', 3: 'Harpoon', 4: 'Shaman', 5: 'Hog Rider',
+    ghost: 'Ghost', ronhood: 'RonkeHood',
+    1: 'Skull', 2: 'Archer', 3: 'Harpoon', 4: 'Shaman', 5: 'Hog Rider', 6: 'Ghost', 7: 'RonkeHood',
   };
   function _f12LevelFromXp(xp) { return Math.floor(Math.sqrt(Math.max(0, xp || 0) / 100)); }
   function _f12SettleMeta(tokenId) {
@@ -23620,6 +24150,8 @@
       _tickHarpoons(t);
 
       _tickShamanProj(t);
+
+      _tickGhostProj(t);
 
       _tickArrows(t);
 

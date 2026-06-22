@@ -3201,7 +3201,7 @@ function _getBarracksElapsed(now, unitIdx) {
 const _BARRACKS_UNIT_TYPES = ['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost', null, null,
                               null, null, null, null, null, null, null, null];
 // PERF: Set O(1) lookup. Naudoja isFriendlyBarracksUnit (callinama ~39× per frame).
-const _BARRACKS_UNIT_TYPES_SET = new Set(['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost']);
+const _BARRACKS_UNIT_TYPES_SET = new Set(['skull', 'archer', 'harpoon_fish', 'shaman', 'pigronke', 'ghost', 'ronhood']);
 function _findBarracksCell() {
   if (!S.decorations) return null;
   for (const k in S.decorations) {
@@ -4216,6 +4216,7 @@ const _F9_UTYPE_SPEED = {
   skull:        0.86,   // melee — letesnis ir sunkesnis
   shaman:       0.72,   // magas — vidutinis
   archer:       1.00,   // lankininkas — greitesnis, bet ne sprintas
+  ronhood:      1.00,   // RonHood — elgesys = archer
   harpoon_fish: 0.79,   // harpunas — vidutinis
   pigronke:     0.93,   // heavy tank feel: letas, svoringas Hog Rider
   ghost:        1.05,   // plūduriuojantis — kiek greitesnis
@@ -5011,7 +5012,7 @@ function _drawF9HotkeyHint() {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
-    ctx.fillText('A attack-move · S stop · ⇧+RMB queue · CTRL+1-5 groups · 2×click type', v.x + v.w - 12, v.y + v.h - 8);
+    ctx.fillText('L-click move·attack · drag select · A attack-move · S stop · ⇧ queue · CTRL+1-5 groups', v.x + v.w - 12, v.y + v.h - 8);
   }
   ctx.restore();
 }
@@ -5483,6 +5484,7 @@ const _F9_SEL_ICONS = {
   // dabar dedikuota viena-frame ikona
   pigronke:     'unit-images/hog-idle.png',
   ghost:        'assets_tiny/trees/Vaiduoklis.png',   // sprite sheet (rodys 1-ą kadrą-zoną)
+  ronhood:      'unit-images/ronhood-idle.png',       // 640×640 viena-frame ikona (2026-06-21)
 };
 const _f9SelImgCache = {};
 function _f9GetIcon(utype) {
@@ -5691,7 +5693,7 @@ function _drawF9SelectionBar() {
 let _f9SelPanelRects = [];
 const _F9_UNIT_NAMES = {
   skull: 'SKULL', shaman: 'SHAMAN', archer: 'ARCHER',
-  harpoon_fish: 'HARPOON', pigronke: 'HOG RIDER', ghost: 'GHOST',
+  harpoon_fish: 'HARPOON', pigronke: 'HOG RIDER', ghost: 'GHOST', ronhood: 'RONKEHOOD',
 };
 // Solo unit INFO popup — rodomas kai pasirinktas VIENAS unitas. ~30% transparent,
 // velkamas už header'io, suskleidžiamas (▾/▸) su smooth scale+fade animacija.
@@ -6261,6 +6263,9 @@ function _updateF9SmoothMove(now) {
     } else {
       u._f9StuckMs = 0;
     }
+    // RonHood up-sprite detekcijai: išsaugom TIKRĄ normalizuotą judesio kryptį. `facing` (žemiau)
+    // prioritetina horizontalų komponentą → up-walk niekada nepasirodydavo. Kiti unitai šito ignoruoja.
+    if (dist > 0.0001) { u._f9LastDirX = dx / dist; u._f9LastDirY = dy / dist; }
     // Sprite'ai turi tik kairę/dešinę pozas (ne aukštyn/žemyn).
     // Jei yra bet koks horizontalus komponentas — naudoti horizontaliai (kad unit'as ne'eitų "atbulom").
     if (Math.abs(dx) > 0.01) u.facing = { dx: dx > 0 ? 1 : -1, dy: 0 };
@@ -6571,8 +6576,9 @@ function _f9UnitFrameForOutline(u) {
   let f;
   if (u.utype === 'skull' && typeof getSkullFrameState === 'function') { f = getSkullFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 2.5, flip, yOff: 0 }; }
   else if (u.utype === 'archer' && typeof getArcherUnitFrameState === 'function') { f = getArcherUnitFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 2.5, flip, yOff: 0 }; }
+  else if (u.utype === 'ronhood' && typeof _f9RonHoodUnitFrame === 'function') { f = _f9RonHoodUnitFrame(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 1.95, flip: !!f.flip, yOff: 0 }; }
   else if (u.utype === 'harpoon_fish' && typeof getHarpoonFishFrameState === 'function') { f = getHarpoonFishFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 2.5, flip, yOff: 0 }; }
-  else if (u.utype === 'pigronke' && typeof getPigronkeFrameState === 'function') { f = getPigronkeFrameState(u); if (f) { const s = U * 3.0; return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: s, flip: (u.facing?.dx || 1) < 0, yOff: 0.5 * CELL - 0.38 * s }; } }
+  else if (u.utype === 'pigronke' && typeof getPigronkeFrameState === 'function') { f = getPigronkeFrameState(u); if (f) { const s = U * 3.3; return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: s, flip: (u.facing?.dx || 1) < 0, yOff: 0.5 * CELL - 0.38 * s }; } }
   else if (u.utype === 'shaman' && typeof getShamanFrame === 'function') { const img = getShamanFrame(u, flip ? 'west' : 'east'); if (img && img.complete && img.naturalWidth) return { img, sx: 0, sy: 0, sw: img.naturalWidth, sh: img.naturalHeight, sprSz: U * 2.6, flip: false, yOff: 0 }; }
   else if (u.utype === 'bear' && typeof getBearFrameState === 'function') { f = getBearFrameState(u); if (f) return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: U * 3.0, flip, yOff: 0 }; }
   else if ((u.utype === 'minotaur' || u.utype === 'minotaur_big') && typeof getMinotaurFrameState === 'function') { f = getMinotaurFrameState(u); if (f) { const s = U * (u.utype === 'minotaur_big' ? 4.7 : 3.2); return { img: f.sheet, sx: f.sx, sy: f.sy, sw: f.sw, sh: f.sh, sprSz: s, flip, yOff: 0 }; } }
@@ -6582,6 +6588,39 @@ function _f9UnitFrameForOutline(u) {
 // Tuščiaviduris BALTAS kontūras VIRŠ medžio (per-unit offscreen + destination-out → tik kraštas, be užpildo).
 let _f9OutlineOC = null;
 function _f9DrawTreeOutline(u, cx, cy, color) {
+  // RonHood: kontūras turi atitikti content-anchored 1.5 sprite (ne fiksuotą 1.95), kitaip baltas
+  // kontūras atrodo per didelis nuo tikrojo sprite. Statom siluetą tuo pačiu dydžiu/anchor kaip main render.
+  if (u.utype === 'ronhood' && typeof _f9RonHoodUnitFrame === 'function') {
+    if (typeof _silhouetteTintSheet !== 'function') return;
+    const frame = _f9RonHoodUnitFrame(u);
+    if (!frame || !frame.sheet || !frame.sheet.complete || !frame.sheet.naturalWidth) return;
+    const ts = _silhouetteTintSheet(frame.sheet, color || '#ffffff');
+    if (!ts) return;
+    const ucx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const ucy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+    const _cH = Math.max(1, frame.cBottom - frame.cTop);
+    const _scl = (UNIT_CELL * 1.5) / _cH;
+    const _dw = frame.sw * _scl, _dh = frame.sh * _scl;
+    const _drawY = (ucy + UNIT_CELL * 0.45) - frame.cBottom * _scl;
+    const pad = 8, W = Math.ceil(_dw + pad * 2), H = Math.ceil(_dh + pad * 2);
+    if (!_f9OutlineOC) _f9OutlineOC = document.createElement('canvas');
+    const oc = _f9OutlineOC;
+    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+    const g = oc.getContext('2d');
+    g.clearRect(0, 0, W, H);
+    g.imageSmoothingEnabled = false;
+    const blit2 = (img, dx, dy) => {
+      if (frame.flip) { g.save(); g.translate(pad + _dw / 2 + dx, 0); g.scale(-1, 1); g.drawImage(img, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, pad + dy, _dw, _dh); g.restore(); }
+      else g.drawImage(img, frame.sx, frame.sy, frame.sw, frame.sh, pad + dx, pad + dy, _dw, _dh);
+    };
+    const OL2 = 2, offs2 = [[-OL2, 0], [OL2, 0], [0, -OL2], [0, OL2], [-OL2, -OL2], [OL2, -OL2], [-OL2, OL2], [OL2, OL2]];
+    for (const [dx, dy] of offs2) blit2(ts, dx, dy);
+    g.globalCompositeOperation = 'destination-out';
+    blit2(frame.sheet, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    ctx.drawImage(oc, ucx - _dw / 2 - pad, _drawY - pad);
+    return;
+  }
   const fr = _f9UnitFrameForOutline(u);
   if (!fr || !fr.img || !fr.img.complete || !fr.img.naturalWidth) return;
   if (typeof _silhouetteTintSheet !== 'function') return;
@@ -6617,8 +6656,111 @@ function _f9UnitInFrontOfDeco(u) {
   }
   return false;
 }
+// RonHood — F9 archer-stiliaus unitas (idle/walk/attack sheet'ai). Frame content-anchored (kojos ant celės).
+// Sprite'ai 2026-06-21: aukštos kokybės 640×640 ×8 (idle / walk / bow-shoot). Senieji ronkehoodindle/walk pakeisti.
+// UP (nugaros) sprite'ai 2026-06-21: kai eina aukštyn (facing.dy<0, dx=0) → idle/walk/attack iš nugaros (back_*).
+let _f9RonHoodIdle = null, _f9RonHoodWalk = null, _f9RonHoodAtk = null;
+let _f9RonHoodIdleUp = null, _f9RonHoodWalkUp = null, _f9RonHoodAtkUp = null;
+let _f9RonHoodWalkUL = null, _f9RonHoodIdleUL = null;   // diagonal up-left walk/idle (flip → up-right)
+function _f9InitRonHood() {
+  if (typeof loadHorizontalSheetFrames !== 'function') return;
+  if (!_f9RonHoodIdle) _f9RonHoodIdle = loadHorizontalSheetFrames('ronhood_idle.png', 8);
+  if (!_f9RonHoodWalk) _f9RonHoodWalk = loadHorizontalSheetFrames('ronhood_walk.png', 8);
+  if (!_f9RonHoodAtk)  _f9RonHoodAtk  = loadHorizontalSheetFrames('ronhood_attack.png', 8);
+  if (!_f9RonHoodIdleUp) _f9RonHoodIdleUp = loadHorizontalSheetFrames('ronhood_idle_up.png', 8);
+  if (!_f9RonHoodWalkUp) _f9RonHoodWalkUp = loadHorizontalSheetFrames('ronhood_walk_up.png', 8);
+  if (!_f9RonHoodAtkUp)  _f9RonHoodAtkUp  = loadHorizontalSheetFrames('ronhood_attack_up.png', 8);
+  if (!_f9RonHoodWalkUL)  _f9RonHoodWalkUL  = loadHorizontalSheetFrames('ronhood_walk_upleft.png', 8);
+  if (!_f9RonHoodIdleUL)  _f9RonHoodIdleUL  = loadHorizontalSheetFrames('ronhood_idle_upleft.png', 8);
+}
+function _f9RonHoodCB(img, fw) {
+  if (!img || !img.complete || !img.naturalWidth) return null;
+  if (img._rhCB) return img._rhCB;
+  try {
+    const fh = img.naturalHeight;
+    const oc = document.createElement('canvas'); oc.width = fw; oc.height = fh;
+    const octx = oc.getContext('2d');
+    octx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
+    const d = octx.getImageData(0, 0, fw, fh).data;
+    let top = -1, bottom = -1;
+    for (let y = 0; y < fh; y++) { let has = false; for (let x = 0; x < fw; x++) { if (d[(y * fw + x) * 4 + 3] > 16) { has = true; break; } } if (has) { if (top < 0) top = y; bottom = y; } }
+    if (top < 0) { top = 0; bottom = fh - 1; }
+    img._rhCB = { top, bottom };
+    return img._rhCB;
+  } catch (_) { return { top: 0, bottom: img.naturalHeight - 1 }; }
+}
+const _RH_ATTACK_MS = 580;   // bow-shoot anim trukmė (8 kadrai ~14fps); release ≈ kadras 6-7 ties ~450ms windup
+function _f9RonHoodUnitFrame(u) {
+  _f9InitRonHood();
+  const now = performance.now();
+  const atkEl = (u.hfishThrowStart != null) ? (now - u.hfishThrowStart) : -1;
+  const attacking = atkEl >= 0 && atkEl < _RH_ATTACK_MS;
+  const isMoving = (typeof u._f9Moving === 'boolean') ? u._f9Moving
+    : (Math.abs((u.rx != null ? u.rx : u.x) - u.x) > 0.05 || Math.abs((u.ry != null ? u.ry : u.y) - u.y) > 0.05);
+  const tgt = (u._f9EngageTarget && u._f9EngageTarget.alive) ? u._f9EngageTarget : null;
+  // Kryptis: KOVOJANT (šaudo, ARBA engaged ir stovi) → atsisukti į TAIKINĮ (kad nešautų atbulas/nugara).
+  //          Laisvai einant/stovint → pagal JUDESĮ (_f9LastDir) → up tik kai eina aukštyn.
+  const faceTarget = attacking || (tgt && !isMoving);
+  let dirX, dirY;
+  if (faceTarget && tgt) {
+    dirX = (tgt.rx != null ? tgt.rx : tgt.x) - (u.rx != null ? u.rx : u.x);
+    dirY = (tgt.ry != null ? tgt.ry : tgt.y) - (u.ry != null ? u.ry : u.y);
+  } else if (faceTarget) {
+    dirX = (u.facing && u.facing.dx) || 0; dirY = (u.facing && u.facing.dy) || 0;
+  } else {
+    dirX = u._f9LastDirX || 0; dirY = u._f9LastDirY || 0;
+  }
+  const ax = Math.abs(dirX), ay = Math.abs(dirY);
+  const up = dirY < 0 && ax <= ay * 2.0;       // back-facing (straight ARBA diagonal up)
+  const diag = up && ax >= ay * 0.5;           // diagonal up (NW/NE) — turi tik WALK sheet'ą
+  const _ready = (s) => !!(s && s.sheet && s.sheet.complete && s.sheet.naturalWidth);
+  const _mk = (s, idx, flip, upFlag) => {
+    const fc = s.frameCount, fw = Math.floor(s.sheet.naturalWidth / fc), fh = s.sheet.naturalHeight;
+    const cb = _f9RonHoodCB(s.sheet, fw) || { top: 0, bottom: fh - 1 };
+    return { sheet: s.sheet, sx: (idx % fc) * fw, sy: 0, sw: fw, sh: fh, cTop: cb.top, cBottom: cb.bottom, up: upFlag, flip };
+  };
+  // ATTACK (PRIORITETAS — kad šaudant nerodytų walk). Diagonal atakos nėra → up arba front.
+  if (attacking) {
+    const atkS = up ? _f9RonHoodAtkUp : _f9RonHoodAtk;
+    if (_ready(atkS)) return _mk(atkS, Math.min(atkS.frameCount - 1, Math.floor(atkEl / (_RH_ATTACK_MS / atkS.frameCount))), up ? false : (dirX < 0), up);
+  }
+  // WALK / IDLE
+  let s, flip, upFlag;
+  const diagSheet = isMoving ? _f9RonHoodWalkUL : _f9RonHoodIdleUL;   // įstrižai-aukštyn: walk arba idle
+  if (diag && _ready(diagSheet)) {
+    s = diagSheet; flip = dirX > 0; upFlag = true;                    // diag: kairė default, flip dešinei (up-right)
+  } else if (isMoving) {
+    s = up ? _f9RonHoodWalkUp : _f9RonHoodWalk; flip = up ? false : (dirX < 0); upFlag = up;
+  } else {
+    s = up ? _f9RonHoodIdleUp : _f9RonHoodIdle; flip = up ? false : (dirX < 0); upFlag = up;
+  }
+  if (!_ready(s)) { s = _f9RonHoodIdle; flip = dirX < 0; upFlag = false; }
+  if (!_ready(s)) return null;
+  const fps = isMoving ? 10 : 8;
+  const idx = Math.floor(now / (1000 / fps)) % s.frameCount;
+  return _mk(s, idx, flip, upFlag);
+}
 // Perpiešia TIKRĄ unito sprite kadrą VIRŠ foreground deco (tas pats anchor kaip outline'o, tik be filtro).
 function _f9DrawUnitSpriteTop(u) {
+  // RonHood: pagrindinis render yra content-anchored (1.5), o ne fiksuotas sprSz. Jei čia perpieštume
+  // per _f9UnitFrameForOutline (1.95 + centro anchor), gautųsi DIDESNIS sprite ant mažo → „dublis" prie kliūčių.
+  // Todėl ronhood'ui perpiešiam IDENTIŠKAI pagrindiniam render'iui (content-anchored 1.5, feet anchor) → persidengia.
+  if (u.utype === 'ronhood' && typeof _f9RonHoodUnitFrame === 'function') {
+    const frame = _f9RonHoodUnitFrame(u);
+    if (!frame || !frame.sheet || !frame.sheet.complete || !frame.sheet.naturalWidth) return false;
+    const cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+    const _cH = Math.max(1, frame.cBottom - frame.cTop);
+    const _scl = (UNIT_CELL * 1.5) / _cH;
+    const _dw = frame.sw * _scl, _dh = frame.sh * _scl;
+    const _drawY = (cy + UNIT_CELL * 0.45) - frame.cBottom * _scl;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (frame.flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, _drawY, _dw, _dh); }
+    else { ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, _drawY, _dw, _dh); }
+    ctx.restore();
+    return true;
+  }
   const fr = _f9UnitFrameForOutline(u);
   if (!fr || !fr.img || !fr.img.complete || !fr.img.naturalWidth) return false;
   const cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
@@ -7232,9 +7374,10 @@ const _F9_ALLY_ATTACK = {
   // 2026-06-12: archer/harpoon attack speed -50% (cd 2500→5000, 1800→3600) — su 2D homing
   // šaudymu jie nebepraleidžia šūvių, senas tempas būtų per stiprus.
   archer:       { range: 6.5,  cd: 5000, dmg: 3, dmgMin: 3, dmgMax: 3 },
+  ronhood:      { range: 5.5,  cd: 4500, dmg: 3, dmgMin: 3, dmgMax: 3 },   // RARE archer-tipas: trumpesnis range (5.5<6.5), +10% atk speed (cd 4500)
   harpoon_fish: { range: 5.5,  cd: 3600, dmg: 3, dmgMin: 3, dmgMax: 3 },
   pigronke:     { range: 1.18, cd: 2800, dmg: 8, dmgMin: 8, dmgMax: 8 },
-  ghost:        { range: 5.5,  cd: 3000, dmg: 4, dmgMin: 3, dmgMax: 5 },   // ranged — baltas energijos kamuolys
+  ghost:        { range: 7.5,  cd: 3000, dmg: 4, dmgMin: 3, dmgMax: 5 },   // RARE ranged: tolimesnis range nei shaman (7.5>7.0), baltas energijos kamuolys
 };
 
 // NFT lygio → statų multiplikatorius. MIRROR of F12 floor12_merge.js `_nftStatMul`:
@@ -7431,7 +7574,7 @@ function _f9TryAllyAutoAttack(ally, now) {
         if (ally.alive) spawnShamanProjectile(ally.x, ally.y, tgx, tgy, ally.stack || 1, false, ally._nftLevel || 0);
       }, 430);
     }
-  } else if (ally.utype === 'archer' || ally.utype === 'harpoon_fish') {
+  } else if (ally.utype === 'archer' || ally.utype === 'harpoon_fish' || ally.utype === 'ronhood') {
     ally.hfishThrowStart = now;
     // F9 2D shot — skrieja į bet kurį (x,y), homing'as į judantį taikinį.
     // (Legacy spawnBarracksHarpoon liko F11/F12 lane'ui — ten jis tinkamas.)
@@ -7447,7 +7590,7 @@ function _f9TryAllyAutoAttack(ally, now) {
           const ay2 = (ally.ry !== undefined) ? ally.ry : ally.y;
           shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range) : null;
         }
-        if (shotTgt) spawnF9RangedShot(ally, shotTgt, ally.utype, ally.stack || 1);
+        if (shotTgt) spawnF9RangedShot(ally, shotTgt, ally.utype === 'ronhood' ? 'archer' : ally.utype, ally.stack || 1);
       }, fireMs);
     }
   }
@@ -7460,9 +7603,10 @@ const _F9_ALLY_DETECT = {
   skull:        3.5,   // melee — pajunta priešą šalia kelio
   shaman:       7.5,   // ranged — saugiai šaudo iš toli
   archer:       7.0,
+  ronhood:      7.0,
   harpoon_fish: 6.0,
   pigronke:     3.8,   // sunkus tankas: sureaguoja arti, ne laksto per visa arena
-  ghost:        6.5,   // ranged — mato iš toli, eina į poziciją ir šaudo
+  ghost:        8.0,   // ranged — mato iš toli (≥ attack range 7.5), eina į poziciją ir šaudo
 };
 
 // Auto-engage on encounter: nuskenuoja artimiausią priešą detection range'e ir nustato engage lock.
@@ -9541,7 +9685,7 @@ const GHOST_ANIM_FPS = 6;
 const GHOST_FRAME_W = 256;
 const GHOST_ATTACK_FRAMES = 12, GHOST_ATTACK_FPS = 28;                 // attack anim greitis (14→28: snappy, ne lėtas windup)
 const GHOST_ATTACK_DUR_MS = Math.round(GHOST_ATTACK_FRAMES * 1000 / GHOST_ATTACK_FPS);   // ~429ms pilnas (buvo ~857)
-const GHOST_ATTACK_FIRE_MS = Math.round(3 * 1000 / GHOST_ATTACK_FPS);                     // ~107ms — kamuolys išlekia BEVEIK IŠKART (kadras ~3), tada anim baigia ir grįžta į idle
+const GHOST_ATTACK_FIRE_MS = Math.round((GHOST_ATTACK_FRAMES - 1) * 1000 / GHOST_ATTACK_FPS);  // ~393ms - suvis TIK atakos animacijos pabaigoj (paskutinis kadras)
 const GHOST_HURT_FRAMES = 8, GHOST_HURT_FPS = 16;                      // dmg-take anim greitis
 const GHOST_HURT_DUR_MS = Math.round(GHOST_HURT_FRAMES * 1000 / GHOST_HURT_FPS);          // ~500ms — kol groja, vaiduoklis užrakintas (po to +0.1s)
 
@@ -10218,6 +10362,7 @@ const ENEMY_TYPES = [
   { type: 'ironbox', hp: 5, color: '#8899aa', scale: 1.25, label: 'FORTRESS' },
   { type: 'skull',     hp: 3,  color: '#e8d8c0', scale: 1.10, label: 'SKULL' },
   { type: 'ghost',     hp: 12, color: '#6a7cff', scale: 1.00, label: 'GHOST' },
+  { type: 'ronhood',   hp: 5,  color: '#5aa86e', scale: 1.00, label: 'RONHOOD' },
   { type: 'bluebird',  hp: 2,  color: '#4488ff', scale: 1.00, label: 'BIRD' },
   { type: 'minotaur',  hp: 6,  color: '#8b2020', scale: 1.40, label: 'MINOTAUR' },
   { type: 'minotaur_big', hp: 25, color: '#a01818', scale: 1.90, label: 'BIG MINOTAUR' },
@@ -12670,8 +12815,8 @@ function initAdventure() {
       // 2026-06-12: F9 startuoja su žaidėjo BATTLE SQUAD (užregistruoto deck'o kovine 12-uke).
       // NFT duomenys kraunami async (RPC multicall) → unitai atsiranda po ~1s.
       // Fallback į testinę komandą: nėra wallet / tuščias squad / RPC klaida.
-      const _F9_NFT_TYPE_MAP = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'pigronke' };
-      const _F9_BASE_HP = { skull: 8, archer: 5, harpoon_fish: 7, shaman: 5, pigronke: 14 };   // = F12 ALLY_STATS hp (paritetas; archer 6→5)
+      const _F9_NFT_TYPE_MAP = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'pigronke', 6: 'ghost', 7: 'ronhood' };
+      const _F9_BASE_HP = { skull: 8, archer: 5, harpoon_fish: 7, shaman: 5, pigronke: 14, ghost: 4, ronhood: 7 };   // = F12 ALLY_STATS hp (paritetas; ghost 4, ronhood 7)
       const _testTeam = [
         { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
         { utype: 'skull',        stack: 1, hp: 8,  maxHp: 8 },
@@ -12681,6 +12826,7 @@ function initAdventure() {
         { utype: 'harpoon_fish', stack: 1, hp: 7,  maxHp: 7 },
         { utype: 'pigronke',     stack: 1, hp: 14, maxHp: 14 },
         { utype: 'ghost',        stack: 1, hp: 12, maxHp: 12 },
+        { utype: 'ronhood',      stack: 1, hp: 5,  maxHp: 5 },
       ];
       let _did = (typeof _nextTrainedSnapId === 'function') ? 100000 : 1000;
       let _ringIdx = 0;
@@ -12741,7 +12887,7 @@ function initAdventure() {
             return { utype: ut, stack: 1, hp, maxHp: hp, nftLevel: nu.level || 0, tokenId: String(nu.tokenId) };
           }).filter(Boolean);
           S._f9DeployPending = false;
-          if (snaps.length) { snaps.push({ utype: 'ghost', stack: 1, hp: 12, maxHp: 12 }); _placeSnaps(snaps); }   // LOKALUS PREVIEW: pridedam vaiduoklį į squad
+          if (snaps.length) { snaps.push({ utype: 'ghost', stack: 1, hp: 12, maxHp: 12 }); snaps.push({ utype: 'ronhood', stack: 1, hp: 5, maxHp: 5 }); _placeSnaps(snaps); }   // LOKALUS PREVIEW: pridedam vaiduoklį + RonHood į squad
           else _placeSnaps(_testTeam);   // squad tuščias po prune — fallback
         }).catch((e2) => {
           console.warn('[F9 deploy] NFT load err, fallback test team:', e2);
@@ -26871,17 +27017,9 @@ function loop(now) {
         }
       }
     };
-    // Medžiai = kvadratai (cell collision)
-    if (_f9BlockedCells) {
-      ctx.strokeStyle = 'rgba(255,40,40,1)'; ctx.fillStyle = 'rgba(255,40,40,0.18)';
-      for (const k of _f9BlockedCells) {
-        const pp = k.split(','); const c = +pp[0], r = +pp[1];
-        ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-        ctx.strokeRect(c * CELL, r * CELL, CELL, CELL);
-      }
-    }
-    _drawObs(_f9StaticObstacles, 'rgba(255,40,40,1)');    // akmenys (apskritimas)
-    _drawObs(_f9TowerObstacles, 'rgba(40,160,255,1)');    // zip tower (kvadratas)
+    // RAUDONI indikatoriai (medžiai + akmenys) PASLĖPTI (user 2026-06-21) — kolizija veikia, tik vizualas nerodomas.
+    // (medžių _f9BlockedCells + akmenų _f9StaticObstacles piešimas išjungtas; H toggle ir collision nepaliesta)
+    _drawObs(_f9TowerObstacles, 'rgba(40,160,255,1)');    // zip tower (kvadratas) — mėlynas, paliktas
     ctx.restore();
   }
   if (typeof _drawF9DebugOverlay === 'function') _drawF9DebugOverlay();
@@ -31851,6 +31989,24 @@ function drawUnits() {
           ctx.font = 'bold 9px monospace'; ctx.fillText(`${_lbl}(${u.x},${u.y})`, u.x * CELL + 2, u.y * CELL + 11);
           ctx.restore();
         }
+      } else if (u.utype === 'ronhood') {
+        // Content-anchored: turinio aukštis → vienodas idle/walk + ghost dydis; KOJOS ant celės.
+        const frame = _f9RonHoodUnitFrame(u);
+        if (frame) {
+          const _cH = Math.max(1, frame.cBottom - frame.cTop);
+          const _scl = (UNIT_CELL * 1.5) / _cH;            // turinio aukštis (sumažintas 2.0→1.8→1.65→1.5 — user 2026-06-21)
+          const _dw = frame.sw * _scl, _dh = frame.sh * _scl;
+          const _feetY = cy + UNIT_CELL * 0.45;
+          const _drawY = _feetY - frame.cBottom * _scl;
+          const _flip = !!frame.flip;   // kryptis nuspręsta _f9RonHoodUnitFrame (taikinys/judesys, ne facing)
+          ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
+          // SMOOTHING OFF: ON darė tamsų halo ant kraštų (juodi A=0 permatomi pikseliai susimaišydavo
+          // mažinant 640px→~70px). PNG'ai švarūs (binarinis alpha, 0 stray) — halo buvo render artefaktas.
+          ctx.imageSmoothingEnabled = false;
+          if (_flip) { ctx.save(); ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, _drawY, _dw, _dh); ctx.restore(); }
+          else { ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, _drawY, _dw, _dh); }
+          ctx.globalAlpha = 1;
+        }
       } else if (u.utype === 'harpoon_fish' || u.utype === 'archer') {
         const frame = (u.utype === 'archer') ? getArcherUnitFrameState(u) : getHarpoonFishFrameState(u);
         const sprSz = UNIT_CELL * 2.5;
@@ -31994,8 +32150,8 @@ function drawUnits() {
         }
       } else if (u.utype === 'pigronke') {
         const frame = getPigronkeFrameState(u);
-        // FIT TWEAK 2026-05-28: 3.7 → 3.0 (-19%), kad neišmuštų iš bendro vaizdo su kitais ally (~2.5)
-        const sprSz = UNIT_CELL * 3.0;
+        // FIT TWEAK 2026-05-28: 3.7 → 3.0. 2026-06-21: 3.0 → 3.3 (user: biski padidinti)
+        const sprSz = UNIT_CELL * 3.3;
         const yOff = 0.5 * CELL - 0.38 * sprSz;  // feet anchor: pig kojos ant cell bottom
         if (frame) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.55 : 1);
@@ -35196,8 +35352,10 @@ document.addEventListener('DOMContentLoaded', () => {
         window._f9Selected = window._f9SelectedSet[0] || null;
         return;
       }
-      // 3a. MOBILE: telefone nėra right-click — tap ant priešo = ATTACK, ant žemės = MOVE
-      if (window._f9TouchInstalled) {
+      // 3a. KAIRYS = PAGRINDINIS valdymas (user 2026-06-21): click ant priešo = ATTACK, ant žemės = MOVE.
+      // Veikia ir desktop, ir mobile. Dešinys click VIS TIEK komanduoja (RTS mėgėjams). Click ant savo
+      // unito (aukščiau) = pažymi; dėžės velkimas = multi-select; Shift = waypoint eilė.
+      {
         let tapEnemy = null;
         {
           let bestD = 0.6;
@@ -35213,12 +35371,13 @@ document.addEventListener('DOMContentLoaded', () => {
           _f9IssueAttackTargetCommand(_f9CommandableSelection(false), tapEnemy, performance.now());
           return;
         }
-        _f9IssueMoveCommand(_f9CommandableSelection(true), tx, ty);
+        if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
+          _f9QueueMoveCommand(_f9CommandableSelection(true), tx, ty, false);
+        } else {
+          _f9IssueMoveCommand(_f9CommandableSelection(true), tx, ty);
+        }
         return;
       }
-      // 3. Left-click empty ground = no-op. Movement is right-click only.
-      // Tai nuima dviprasmybę: kairys pasirenka, dešinys komanduoja.
-      return;
     }
     // ── F10 AUKSO KASYKLA (mine_1) — „TEST GAMEPLAY" portalas į F9 demo arena ──
     if (gameMode === 'adventure' && S && S.floor === 10 && S.decorations) {

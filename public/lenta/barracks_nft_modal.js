@@ -97,7 +97,7 @@
   // ─── BATTLE / DEPLOY tab ────────────────────────────────────
   // Inventoriaus picker — pasirink kelis NFT + free units, paspaudus DEPLOY → F12 startas.
   // utype (contract uint8) → F12 utype string:
-  const NFT_UTYPE_TO_F12 = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'hog_rider' };
+  const NFT_UTYPE_TO_F12 = { 1: 'skull', 2: 'archer', 3: 'harpoon_fish', 4: 'shaman', 5: 'hog_rider', 6: 'ghost', 7: 'ronhood' };
   // F12 ALLY base statai — TURI sutapti su floor12_merge.js ALLY_STATS. Rodom kortelėj DMG/HP.
   const _F12_BASE_STATS = {
     skull:        { hp: 8,  dmg: 2 },
@@ -105,6 +105,8 @@
     shaman:       { hp: 5,  dmg: 4 },
     harpoon_fish: { hp: 7,  dmg: 3 },
     hog_rider:    { hp: 14, dmg: 8 },
+    ghost:        { hp: 4,  dmg: 4 },   // utype 6 — RARE ranged spectral caster (mažiau HP nei shaman, tolimesnis range)
+    ronhood:      { hp: 7,  dmg: 3 },   // utype 7 — RARE archer-tipas (+2 HP, trumpesnis range, +10% atk speed, 1% crit ×2)
   };
   // Lygio skalė: PIRMI 2 LYGIAI NIEKO, tada stat = round(base × (1 + floor((level-2)/2)×0.05)) — kas 2 lvl.
   // TURI sutapti su _nftStatMul() žaidime (floor12_merge.js). RONKE Power irgi pirmi 2 lvl nieko, bet kas lvl.
@@ -114,7 +116,7 @@
     return { hp: Math.max(1, Math.round(base.hp * mul)), dmg: Math.max(1, Math.round(base.dmg * mul)) };
   }
   // Module-level power helper'iai (naudoja ir inventory, ir battle grid).
-  function _powerRateOf(utype) { return Number(utype) === 5 ? 15 : 10; }
+  function _powerRateOf(utype) { const u = Number(utype); return u === 5 ? 15 : u === 6 ? 16 : u === 7 ? 12 : 10; }
   function _unitPowerOf(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRateOf(utype); }  // power nuo lvl 2
   // Ability statai — TURI sutapti su floor12_merge.js (block/crit/miss/CD/range). Rodom kortos „nugaroj".
   const _F12_ABILITY = {
@@ -123,6 +125,8 @@
     harpoon_fish: { role: 'Ranged Piercer', atk: 'Ranged',    range: 'Medium', cd: 1800, move: 11, crit: 0,    block: 0,    miss: 0.05, aoe: false },
     shaman:       { role: 'Ranged Caster',  atk: 'Ranged',    range: 'Long',   cd: 3000, move: 10, crit: 0,    block: 0,    miss: 0.05, aoe: true  },
     hog_rider:    { role: 'Cavalry Tank',   atk: 'Melee AOE', range: 'Short',  cd: 2800, move: 13, crit: 0.10, block: 0,    miss: 0.05, aoe: true  },
+    ghost:        { role: 'Spectral Caster', atk: 'Ranged',   range: 'Long',   cd: 3000, move: 11, crit: 0,    block: 0,    miss: 0.05, aoe: false },
+    ronhood:      { role: 'Ranged DPS',     atk: 'Ranged',    range: 'Medium', cd: 2250, move: 14, crit: 0.01, block: 0,    miss: 0.11, aoe: false },
   };
   // Kortos NUGAROS statai — VISI bar-linijų stiliumi (neaktyvūs pilki + „—"). cStats = {dmg,hp} pagal lygį.
   function _backStatBars(ab, cStats) {
@@ -169,7 +173,7 @@
   }
   let _battleInventory = [];   // raw fetchInventory rezultatas
   let _battlePickQty = {};     // {groupKey: qty}
-  let _battleFreeQty = { shadow: 1, arrow: 1, heart: 1, leaf: 1 };  // {ballType: qty} default 1 of each
+  let _battleFreeQty = { shadow: 1, arrow: 1, heart: 1, leaf: 1, spectral: 1, royal: 1 };  // {ballType: qty} default 1 of each
   const BATTLE_MAX_TOTAL = 12;
   // FREE unitu sąrašas — match'ina NFT 4 tipus per ball type
   const FREE_UNITS = [
@@ -177,6 +181,8 @@
     { ballType: 'arrow',  utype: 'archer',       name: 'Archer',  icon: 'unit-images/archer-idle.gif' },
     { ballType: 'heart',  utype: 'shaman',       name: 'Shaman',  icon: 'unit-images/shaman-idle.gif' },
     { ballType: 'leaf',   utype: 'harpoon_fish', name: 'Harpoon', icon: 'unit-images/harpoon-idle.gif' },
+    { ballType: 'spectral', utype: 'ghost',      name: 'Ghost',   icon: 'unit-images/ghost-idle.png' },
+    { ballType: 'royal',  utype: 'ronhood',      name: 'RonkeHood', icon: 'unit-images/ronhood-idle.png' },
   ];
   const FREE_MAX_PER_TYPE = 5;
   const NFT_MAX_PER_TYPE = 4;   // 4× max per unit tipą (sutampa su floor12 _NFT_MAX_PER_TYPE)
@@ -974,9 +980,9 @@
       const _addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
       let _lastInvUnits = null;
       // RONKE Power (client display) — TA PATI formulė kaip ronke-power edge fn:
-      // unitPower = max(0, level-1) × rate (power nuo lvl 2); rate=15 hog_rider(utype 5), 10 default. Σ deko unitų.
+      // unitPower = max(0, level-1) × rate (power nuo lvl 2); rate=15 hog(5), 16 ghost(6), 12 ronhood(7), 10 default. Σ deko unitų.
       // Serveris lieka autoritetas rewards'ams; čia tik momentinis vizualus feedback.
-      function _powerRate(utype) { return Number(utype) === 5 ? 15 : 10; }
+      function _powerRate(utype) { const u = Number(utype); return u === 5 ? 15 : u === 6 ? 16 : u === 7 ? 12 : 10; }
       function _unitPower(level, utype) { return Math.max(0, (Number(level) || 0) - 1) * _powerRate(utype); }
       function _computeDeckPower(units) {
         if (!BNFT || !_addr || !Array.isArray(units)) return 0;
