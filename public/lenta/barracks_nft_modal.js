@@ -735,18 +735,44 @@
   }
 
   // ─── Unit selection ────────────────────────────────────────
+  // Train kortos flip — paruošia front/back struktūrą; nugara = BASE statai (lvl 1), kaip inventoriaus korta.
+  function _setupTrainCardFlip() {
+    document.querySelectorAll('.nft-unit-option').forEach(el => {
+      if (el.querySelector('.nft-card-inner')) return;            // jau paruošta (modal'as atidaromas iš naujo)
+      const key = NFT_UTYPE_TO_F12[Number(el.dataset.utype)];
+      const ab = _F12_ABILITY[key], base = _F12_BASE_STATS[key];
+      if (!ab || !base) return;
+      const nm = (el.querySelector('.nft-unit-name') || {}).textContent || '';
+      const frontHTML = el.innerHTML;
+      el.innerHTML =
+        '<div class="nft-card-inner">' +
+          '<div class="nft-train-front">' + frontHTML + '</div>' +
+          '<div class="nft-card-back nft-train-back">' +
+            '<div class="nft-back-title">' + nm + '</div>' +
+            '<div class="nft-back-role">' + ab.role + ' · ' + ab.atk + '</div>' +
+            '<div class="nft-back-bars">' + _backStatBars(ab, base) + '</div>' +
+          '</div>' +
+        '</div>';
+    });
+  }
   function selectUnit(utype) {
     selectedUtype = utype;
     document.querySelectorAll('.nft-unit-option').forEach(el => {
-      el.classList.toggle('selected', Number(el.dataset.utype) === utype);
+      const isSel = Number(el.dataset.utype) === utype;
+      el.classList.toggle('selected', isSel);
+      if (!isSel) el.classList.remove('flipped');                // kiti → atgal į sprite pusę
     });
     refreshCostPreview();
   }
   function bindUnitOptions() {
+    _setupTrainCardFlip();
     document.querySelectorAll('.nft-unit-option').forEach(el => {
       el.onclick = () => {
         if (el.classList.contains('hog-locked')) return;  // COMING SOON — dar negalima pasirinkti/mintinti
+        const wasSel = el.classList.contains('selected');
         selectUnit(Number(el.dataset.utype));
+        // Pasirinkus → apverčiam į status (kaip inventoriaus nugara). Re-click ant pasirinktos → atgal į sprite.
+        if (wasSel) el.classList.toggle('flipped'); else el.classList.add('flipped');
       };
     });
   }

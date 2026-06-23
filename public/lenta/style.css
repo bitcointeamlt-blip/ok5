@@ -17815,6 +17815,18 @@ kbd {
 .nft-bb-f { height: 100%; border-radius: 4px; transition: width .4s; }
 .nft-bb-v { flex: 0 0 34px; text-align: right; font-weight: 900; font-size: 11px; color: #1f130a; }
 .nft-bb.off { opacity: .34; }
+/* ── TRAIN kortos flip — pasirinkus apsiverčia ir rodo BASE statai+abilities (kaip inventoriaus nugara). cmd: train-card-flip ── */
+.nft-unit-option { perspective: 1000px; }
+.nft-unit-option.flipped .nft-card-inner { transform: rotateY(180deg); }
+.nft-train-front { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.nft-train-back { gap: 3px !important; padding: 7px 6px !important; overflow: hidden; }
+.nft-train-back .nft-back-title { font-size: 10px !important; margin-top: 1px !important; line-height: 1.2 !important; }
+.nft-train-back .nft-back-role  { font-size: 8px !important; margin-bottom: 2px !important; }
+.nft-train-back .nft-back-bars  { gap: 2px !important; padding: 0 !important; }
+.nft-train-back .nft-bb     { font-size: 8px !important; gap: 4px !important; }
+.nft-train-back .nft-bb-l   { flex: 0 0 42px !important; font-size: 8px !important; }
+.nft-train-back .nft-bb-bar { height: 7px !important; }
+.nft-train-back .nft-bb-v   { flex: 0 0 24px !important; font-size: 8.5px !important; }
 /* DECK mygtukai — aiškesni, hover highlight + lengvas drebėjimas (kviečia paspausti) */
 @keyframes nftDeckWiggle { 0%,100%{transform:translateX(0) rotate(0)} 25%{transform:translateX(-1.5px) rotate(-1.5deg)} 75%{transform:translateX(1.5px) rotate(1.5deg)} }
 .nft-deck-toggle, .nft-deck-plus, .nft-deck-minus {
