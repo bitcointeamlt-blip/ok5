@@ -144,7 +144,12 @@ export class F9PvpRoom extends Room<F9State> {
     if (this._relay) this.maxClients = 2;
     this.state.entryFee = Math.max(0, Math.min(65535, Math.floor(Number(options?.entryFee) || 0))); // 0 = free
     this.state.pot = 0;
-    this.setMetadata({ mode: String(options?.mode || "ffa"), entryFee: this.state.entryFee });
+    // host vardas → rodomas lobby (room browser) kambarių sąraše. Adresą sutrumpinam.
+    let _host = String(options?.name || "").trim();
+    if (/^0x[0-9a-fA-F]{6,}$/.test(_host)) _host = _host.slice(0, 6) + "…" + _host.slice(-4);
+    else if (_host.length > 16) _host = _host.slice(0, 16);
+    if (!_host) _host = "Player";
+    this.setMetadata({ mode: String(options?.mode || "ffa"), entryFee: this.state.entryFee, host: _host });
 
     // ── Komandų protokolas ──
     // Vieninga „cmd" žinutė: { action, ids:[unitId], x, y }.

@@ -1,5 +1,5 @@
 import config from "@colyseus/tools";
-import { matchMaker } from "@colyseus/core";
+import { matchMaker, LobbyRoom } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import cors, { CorsOptions } from "cors";
 import express from "express";
@@ -23,7 +23,11 @@ export default config({
   // (uždarytas tab'as) vis tiek aptinkamas per WS close frame. Sprendžia single-PC 2-langų testą.
   initializeTransport: () => new WebSocketTransport({ pingInterval: 0 }),
   initializeGameServer: (gameServer) => {
-    gameServer.define("f9_pvp_room", F9PvpRoom);
+    // Room browser lobby: žaidėjai MATO atvirus matchus (host vardas, 1/2) ir PATYS pasirenka
+    // sukurti/prisijungti — jokio priverstinio auto-suporavimo. enableRealtimeListing → f9_pvp_room
+    // atsiranda lobby sąraše kol nepilnas/neužrakintas; prasidėjus mūšiui (lock) dingsta iš sąrašo.
+    gameServer.define("lobby", LobbyRoom);
+    gameServer.define("f9_pvp_room", F9PvpRoom).enableRealtimeListing();
 
     matchMaker.controller.getCorsHeaders = (req: any) => {
       const origin = req.headers.origin;

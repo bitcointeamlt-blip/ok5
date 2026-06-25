@@ -148,6 +148,52 @@
       });
     },
 
+    // ── LOBBY (room browser) ──
+    // Join the lobby room → it pushes "rooms"/"+"/"-" with the list of OPEN f9_pvp_room matches.
+    // Player chooses: createMatch() (host a new match) or joinMatchById() (join a listed one).
+    joinLobby: function () {
+      var self = this;
+      if (!this.client) {
+        return this.connect().then(function (ok) { return ok ? self.joinLobby() : null; });
+      }
+      return this.client.joinOrCreate('lobby', {}).then(function (room) {
+        self.lobby = room;
+        return room;
+      }).catch(function (e) {
+        self.lastError = e; console.error('[F9PVP] lobby join failed', e);
+        if (self.onError) self.onError(e); return null;
+      });
+    },
+    // Host a NEW match (others see it in the lobby and can join). Wires it like join().
+    createMatch: function (opts) {
+      var self = this; opts = opts || {};
+      if (!this.client) { return this.connect().then(function (ok) { return ok ? self.createMatch(opts) : null; }); }
+      return this.client.create('f9_pvp_room', { name: String(opts.name || '') }).then(function (room) {
+        self.room = room; self.connected = true; self.myTeam = -1;
+        self._wire(room);
+        console.log('[F9PVP] created match room ' + room.id);
+        return room;
+      }).catch(function (e) {
+        self.lastError = e; console.error('[F9PVP] createMatch failed', e);
+        if (self.onError) self.onError(e); return null;
+      });
+    },
+    // Join a SPECIFIC listed match by roomId. Wires it like join().
+    joinMatchById: function (roomId, opts) {
+      var self = this; opts = opts || {};
+      if (!roomId) return Promise.resolve(null);
+      if (!this.client) { return this.connect().then(function (ok) { return ok ? self.joinMatchById(roomId, opts) : null; }); }
+      return this.client.joinById(roomId, { name: String(opts.name || '') }).then(function (room) {
+        self.room = room; self.connected = true; self.myTeam = -1;
+        self._wire(room);
+        console.log('[F9PVP] joined match room ' + roomId);
+        return room;
+      }).catch(function (e) {
+        self.lastError = e; console.error('[F9PVP] joinMatchById failed', e);
+        if (self.onError) self.onError(e); return null;
+      });
+    },
+
     _wire: function (room) {
       var self = this;
 

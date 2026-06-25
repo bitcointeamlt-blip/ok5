@@ -87,26 +87,173 @@
     try { location.href = location.pathname + location.search; } catch (_) { location.reload(); }
   }
 
-  // ── launch (server-authoritative: JOKIO relay) ──
+  // ── LOBBY (room browser) — žaidėjai mato atvirus matchus ir PATYS pasirenka create/join ──
+  var _lobbyRoom = null, _lobbyRooms = {}, _lobbyName = '';
+  function _truncName(nm) {
+    nm = String(nm || '');
+    if (/^0x[0-9a-fA-F]{6,}$/.test(nm)) return nm.slice(0, 6) + '…' + nm.slice(-4);
+    return nm.length > 16 ? nm.slice(0, 16) : nm;
+  }
+  function _lobbyEl(id) { return document.getElementById(id); }
+  function _lobbyInfo(msg, col) { var i = _lobbyEl('f9lob-info'); if (i) { i.textContent = msg; i.style.color = col || '#9fe'; } }
+
+  function _lobbyBrowserScreen() {
+    _clearScreen(); _spinKf();
+    screenEl = document.createElement('div');
+    screenEl.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;background:rgba(8,10,16,.95);color:#cde;font-family:monospace;gap:10px;padding:26px 16px;box-sizing:border-box;overflow:auto;';
+    screenEl.innerHTML =
+      '<div style="font-size:22px;font-weight:800;letter-spacing:1px;color:#fc8;">⚔️ PvP · LOBBY</div>' +
+      '<div style="font-size:13px;color:#8ab;">🟢 Lenta PvP Server</div>' +
+      '<div id="f9lob-info" style="font-size:13px;font-weight:700;color:#9fe;margin:2px 0 6px;text-align:center;">Connecting…</div>' +
+      '<div id="f9lob-list" style="display:flex;flex-direction:column;gap:7px;width:min(360px,92vw);"></div>' +
+      '<button id="f9lob-create" style="margin-top:12px;width:min(360px,92vw);font-family:monospace;font-size:15px;font-weight:800;padding:13px;border-radius:10px;background:linear-gradient(180deg,#2f6f3a,#1e4a27);color:#dfe;border:2px solid #6e8;cursor:pointer;">+ CREATE MATCH</button>' +
+      '<button id="f9lob-back" style="margin-top:4px;font-family:monospace;font-size:13px;padding:8px 18px;border-radius:8px;background:#1c2230;color:#9ab;border:1px solid #2a3240;cursor:pointer;">← Back to menu</button>';
+    document.body.appendChild(screenEl);
+    var cb = _lobbyEl('f9lob-create'); if (cb) cb.onclick = _lobbyDoCreate;
+    var bb = _lobbyEl('f9lob-back'); if (bb) bb.onclick = function () { try { if (_lobbyRoom) _lobbyRoom.leave(); } catch (_) {} _backToMenu(); };
+  }
+
+  function _lobbyRenderList() {
+    var list = _lobbyEl('f9lob-list'); if (!list) return;
+    var open = [];
+    for (var id in _lobbyRooms) {
+      var r = _lobbyRooms[id];
+      if (r && r.name === 'f9_pvp_room' && !r.locked && (r.clients || 0) < (r.maxClients || 2)) open.push(r);
+    }
+    _lobbyInfo(open.length ? (open.length + ' open match' + (open.length > 1 ? 'es' : '') + ' — join one, or create yours') : 'No open matches — create one and wait for an opponent', '#9fe');
+    list.innerHTML = '';
+    open.forEach(function (r) {
+      var host = (r.metadata && r.metadata.host) || 'Player';
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-radius:9px;background:rgba(255,255,255,.06);border:1px solid #2a3240;';
+      var label = document.createElement('span');
+      label.style.cssText = 'font-size:14px;color:#cde;';
+      label.textContent = '⚔ ' + host + '   ' + (r.clients || 1) + '/' + (r.maxClients || 2);
+      var btn = document.createElement('button');
+      btn.textContent = 'JOIN';
+      btn.style.cssText = 'font-family:monospace;font-size:13px;font-weight:800;padding:7px 16px;border-radius:7px;background:linear-gradient(180deg,#7a2230,#561621);color:#fdd;border:2px solid #e85d5d;cursor:pointer;';
+      btn.onclick = function () { _lobbyDoJoin(r.roomId); };
+      row.appendChild(label); row.appendChild(btn);
+      list.appendChild(row);
+    });
+  }
+
+  // Invite link helpers — draugas atidaręs ?match=ROOMID#f9live pakliūna TIESIAI į šį kambarį.
+  function _getMatchParam() { try { return new URLSearchParams(location.search).get('match'); } catch (_) { return null; } }
+  function _buildInviteLink(roomId) {
+    var base = location.origin + location.pathname;
+    var qs = 'match=' + encodeURIComponent(roomId);
+    try { var ep = new URLSearchParams(location.search).get('ep'); if (ep) qs += '&ep=' + encodeURIComponent(ep); } catch (_) {}
+    return base + '?' + qs + '#f9live';
+  }
+  function _copyInvite() {
+    var inp = _lobbyEl('f9inv-link'); if (!inp) return;
+    var done = function () { var m = _lobbyEl('f9inv-msg'); if (m) { m.textContent = '✅ Copied! Send it to a friend.'; } };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(inp.value).then(done, function () { inp.select(); try { document.execCommand('copy'); } catch (_) {} done(); }); }
+      else { inp.select(); try { document.execCommand('copy'); } catch (_) {} done(); }
+    } catch (_) { inp.select(); }
+  }
+  function _lobbyShowInvite(roomId) {
+    var inp = _lobbyEl('f9inv-link'); if (inp) inp.value = _buildInviteLink(roomId);
+    var m = _lobbyEl('f9inv-msg'); if (m) m.textContent = '';
+  }
+  function _lobbyWaitMine() {
+    _clearScreen(); _spinKf();
+    screenEl = document.createElement('div');
+    screenEl.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,10,16,.95);color:#cde;font-family:monospace;gap:14px;padding:20px;box-sizing:border-box;text-align:center;';
+    screenEl.innerHTML =
+      '<div style="font-size:22px;font-weight:800;letter-spacing:1px;color:#6e8;">⚔️ YOUR MATCH IS OPEN</div>' +
+      '<div style="font-size:14px;color:#9fe;">Waiting for an opponent to join…</div>' +
+      '<div style="width:min(380px,92vw);background:rgba(255,255,255,.05);border:1px solid #2a3240;border-radius:10px;padding:12px;">' +
+        '<div style="font-size:12px;color:#cbb892;margin-bottom:7px;">🔗 Invite a friend — send them this link:</div>' +
+        '<div style="display:flex;gap:6px;">' +
+          '<input id="f9inv-link" readonly value="preparing link…" style="flex:1;min-width:0;font-family:monospace;font-size:12px;padding:8px;border-radius:7px;background:#10141c;color:#bcd;border:1px solid #2a3240;" />' +
+          '<button id="f9inv-copy" style="font-family:monospace;font-size:12px;font-weight:800;padding:8px 14px;border-radius:7px;background:linear-gradient(180deg,#2f6f3a,#1e4a27);color:#dfe;border:2px solid #6e8;cursor:pointer;">Copy</button>' +
+        '</div>' +
+        '<div id="f9inv-msg" style="font-size:11px;color:#6e8;height:14px;margin-top:5px;"></div>' +
+      '</div>' +
+      '<div style="width:30px;height:30px;border:3px solid #2a3240;border-top-color:#6e8;border-radius:50%;animation:f9sp .9s linear infinite;"></div>' +
+      '<button id="f9lob-cancel" style="font-family:monospace;font-size:13px;padding:9px 22px;border-radius:8px;background:#2a1c1c;color:#fbb;border:1px solid #a44;cursor:pointer;">✕ Cancel</button>';
+    document.body.appendChild(screenEl);
+    var cp = _lobbyEl('f9inv-copy'); if (cp) cp.onclick = _copyInvite;
+    var inp = _lobbyEl('f9inv-link'); if (inp) inp.onclick = function () { inp.select(); };
+    var cc = _lobbyEl('f9lob-cancel'); if (cc) cc.onclick = function () { _backToMenu(); };
+  }
+
+  function _lobbyDoCreate() {
+    var N = window.F9PVP;
+    try { if (_lobbyRoom) _lobbyRoom.leave(); } catch (_) {}
+    _lobbyWaitMine();
+    N.createMatch({ name: _lobbyName }).then(function (room) {
+      if (!room) { _lobbyBrowserScreen(); _lobbyInfo('⚠ Could not create match — retry', '#f88'); return; }
+      mySid = room.sessionId;
+      _lobbyShowInvite(room.id);   // parodom invite linką su šio kambario id (client Room → .id)
+      _wireRoom(room);   // opponent joins → enough_joined → ready → match_start (esamas srautas)
+    });
+  }
+  function _lobbyDoJoin(roomId) {
+    var N = window.F9PVP;
+    try { if (_lobbyRoom) _lobbyRoom.leave(); } catch (_) {}
+    _connectingScreen('Joining match…');
+    N.joinMatchById(roomId, { name: _lobbyName }).then(function (room) {
+      if (!room) { _lobbyBrowserScreen(); _lobbyInfo('⚠ Match is full or gone — pick another', '#f88'); return; }
+      mySid = room.sessionId;
+      _wireRoom(room);
+    });
+  }
+
+  // ── launch (server-authoritative: LOBBY room browser → create/join → match) ──
   function launch(opts) {
     opts = opts || {};
     B = window.__F9;
     if (!B) { console.error('[F9Live] __F9 bridge missing'); return; }
     if (!window.F9PVP) { console.error('[F9Live] F9PVP missing'); return; }
     on = true; started = false; simInited = false; _ended = false; _mir = {};
-    _status('connecting…', '#fc8');
-    _connectingScreen('Connecting to server…');
+    _lobbyName = opts.address || rndAddr();
+    _lobbyRooms = {};
     var N = window.F9PVP;
+    // INVITE LINK: ?match=ROOMID → jungiamės TIESIAI į tą kambarį (apeinam lobby naršyklę).
+    var _inviteId = _getMatchParam();
+    if (_inviteId) {
+      _status('joining invite…', '#fc8');
+      _connectingScreen('Joining match via invite…');
+      var _toLobby = function (msg) {
+        if (msg) _connectingText(msg);
+        try { var u = new URL(location.href); u.searchParams.delete('match'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); } catch (_) {}
+        setTimeout(function () { launch({ address: _lobbyName, endpoint: opts.endpoint }); }, 1500);
+      };
+      N.connect(opts.endpoint).then(function (ok) {
+        if (!ok) return 'CONNFAIL';
+        return N.joinMatchById(_inviteId, { name: _lobbyName });
+      }).then(function (room) {
+        if (room === 'CONNFAIL') { _status('connect failed', '#f88'); _connectingText('⚠ Connect failed — server offline?'); return; }
+        if (!room) { _toLobby('⚠ Match not found or full — opening lobby…'); return; }
+        mySid = room.sessionId;
+        _wireRoom(room);
+        _status('joined — starting…', '#fc8');
+      });
+      return;
+    }
+    _status('connecting…', '#fc8');
+    _lobbyBrowserScreen();
     N.connect(opts.endpoint).then(function (ok) {
-      if (!ok) { _status('connect failed', '#f88'); _connectingText('⚠ Connect failed — server offline?'); return null; }
-      _connectingText('Looking for an opponent…');
-      return N.join({ address: opts.address || rndAddr(), deck: opts.deck || [] });   // NO relay → serveris simuliuoja
-    }).then(function (room) {
-      if (!room) { _status('join failed', '#f88'); _connectingText('⚠ Join failed'); return; }
-      mySid = room.sessionId;
-      _wireRoom(room);
-      _status('waiting for opponent…', '#fc8');
-      _connectingText('Waiting for an opponent to join…');
+      if (!ok) { _status('connect failed', '#f88'); _lobbyInfo('⚠ Connect failed — server offline?', '#f88'); return null; }
+      return N.joinLobby();
+    }).then(function (lobby) {
+      if (!lobby) { _status('lobby failed', '#f88'); _lobbyInfo('⚠ Could not join lobby', '#f88'); return; }
+      _lobbyRoom = lobby;
+      _status('in lobby…', '#fc8');
+      lobby.onMessage('rooms', function (rooms) {
+        _lobbyRooms = {};
+        (rooms || []).forEach(function (r) { if (r && r.roomId) _lobbyRooms[r.roomId] = r; });
+        _lobbyRenderList();
+      });
+      lobby.onMessage('+', function (payload) {
+        try { var id = payload[0], r = payload[1]; if (id) { _lobbyRooms[id] = r; _lobbyRenderList(); } } catch (_) {}
+      });
+      lobby.onMessage('-', function (roomId) { delete _lobbyRooms[roomId]; _lobbyRenderList(); });
+      _lobbyRenderList();
     });
   }
 
