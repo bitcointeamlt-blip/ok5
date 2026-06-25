@@ -15,6 +15,7 @@
     "useDefineForClassFields": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+  "_note": "src/replay/* = senas DOT Clicker leftover (importuoja ištrintą schema/GameState), niekas nenaudoja → exclude kad prod `tsc` build nekristų. Dev (ts-node-dev --transpile-only) ignoruoja tipus.",
+  "exclude": ["node_modules", "src/replay/**"]
 }
 

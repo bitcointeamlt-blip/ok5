@@ -17,11 +17,6 @@ function safeStr(s: any): string {
   return (typeof s === "string" ? s : "").trim();
 }
 
-// Prevent prototype pollution by validating object keys
-function isSafeKey(key: string): boolean {
-  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
-}
-
 function makeReplayId(roomId: string, createdAt: number): string {
   // roomId already tends to be url-safe, but keep it conservative.
   const base = safeStr(roomId).replace(/[^a-zA-Z0-9_-]/g, "_") || "room";
@@ -57,7 +52,7 @@ export class MatchRecorder {
 
   recordJoin(meta: ReplayPlayerMeta): void {
     const sid = safeStr(meta.sid);
-    if (!sid || !isSafeKey(sid)) return;
+    if (!sid) return;
     this.replay.players[sid] = {
       sid,
       address: safeStr(meta.address),
