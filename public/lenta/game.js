@@ -2916,8 +2916,11 @@ function _f9SyncCanvasSize() {
     const _isTouchDev = !!window._f9TouchInstalled;
     const rawW = Math.floor((vv && vv.width) || window.innerWidth);
     const rawH = Math.floor((vv && vv.height) || window.innerHeight);
-    const w = _isTouchDev ? Math.max(320, rawW) : Math.max(800, rawW);
-    const h = _isTouchDev ? Math.max(320, rawH) : Math.max(560, rawH);
+    // Canvas vidinė raiška = TIKRAS lango dydis (jokio 800/560 min desktop'ui — anksčiau, kai langas
+    // <800px, canvas tapdavo platesnis nei langas → overflow → pelės koordinatės lūždavo → neina pažymėti
+    // unitų po resize). Min 320 tik nuo 0-dydžio apsauga.
+    const w = Math.max(320, rawW);
+    const h = Math.max(320, rawH);
     if (canvas.width !== w || canvas.height !== h) {
       advCanvasW = w;
       canvas.width = w;
@@ -4331,6 +4334,8 @@ function _f9InstallDragHandlers() {
         if (!u || !u.alive) continue;
         // Tik squad'as — hero (team 0) F9'e nematomas, drag jo nepagauna (2026-06-12)
         if (!(u.team === 1 && u.isEditorEnemy)) continue;
+        // PvP: pažymim TIK savo komandą (opponento unitai irgi ally-tipo, bet kitas _pvpTeam) — kad nebūtų rolių painiavos
+        if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
         const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
         const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
         if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
@@ -5348,6 +5353,59 @@ const _pigronkeMarkerCanvas = (() => {
   return cv;
 })();
 
+// ── TEST BATTLE režimo pasirinkimas (PvP prieš žaidėją / solo battle test) ──
+// Rodomas paspaudus „TEST GAMEPLAY" portalą (F10 aukso kasykla). DOM overlay (medieval tema).
+function _f9CloseBattleModeChoice() {
+  var ov = document.getElementById('f9-mode-choice');
+  if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+}
+function _f9ShowBattleModeChoice() {
+  if (document.getElementById('f9-mode-choice')) return;
+  var ov = document.createElement('div');
+  ov.id = 'f9-mode-choice';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(8,10,14,.74);font-family:system-ui,sans-serif;';
+  var card = document.createElement('div');
+  card.style.cssText = 'background:linear-gradient(180deg,#3a2614,#241809);border:2px solid #8a6a2e;border-radius:16px;padding:24px 24px 18px;width:min(440px,92vw);box-shadow:0 14px 44px rgba(0,0,0,.6);text-align:center;';
+  card.innerHTML = '<div style="font-size:20px;font-weight:800;color:#ffcf5c;letter-spacing:.5px;">TEST BATTLE</div>'
+    + '<div style="font-size:13px;color:#cbb892;margin:4px 0 18px;">Pasirink režimą</div>';
+  var mkBtn = function (border, grad, titleHtml, sub, onClick) {
+    var b = document.createElement('button');
+    b.style.cssText = 'display:block;width:100%;margin:0 0 12px;padding:15px 16px;border-radius:12px;border:2px solid ' + border + ';background:' + grad + ';cursor:pointer;text-align:left;transition:filter .12s;';
+    b.innerHTML = titleHtml + '<div style="font-size:12px;opacity:.82;margin-top:3px;">' + sub + '</div>';
+    b.onmouseenter = function () { b.style.filter = 'brightness(1.15)'; };
+    b.onmouseleave = function () { b.style.filter = 'none'; };
+    b.onclick = onClick;
+    return b;
+  };
+  var pvp = mkBtn('#e85d5d', 'linear-gradient(180deg,#7a2230,#561621)',
+    '<div style="font-size:16px;font-weight:800;color:#ffd2d2;">⚔️ PvP — Live prieš žaidėją</div>',
+    'Realaus laiko 1v1 prieš kitą žaidėją internetu',
+    function () {
+      _f9CloseBattleModeChoice();
+      var already = /(?:^|[#&\/])f9live\b/i.test(location.hash || '');
+      try { location.hash = 'f9live'; } catch (_) {}
+      // jei hash jau buvo #f9live (hashchange nesuveiks) — paleidžiam tiesiogiai
+      if (already && window.F9PvpLive && typeof window.F9PvpLive.launch === 'function' && !window._f9pvpLive) {
+        try { window.F9PvpLive.launch({}); } catch (_) {}
+      }
+    });
+  var solo = mkBtn('#4a9da6', 'linear-gradient(180deg,#1f5a60,#143a3f)',
+    '<div style="font-size:16px;font-weight:800;color:#bfeef2;">🤖 Battle Test (solo)</div>',
+    'Dabartinis testas — tavo būrys arenoje',
+    function () {
+      _f9CloseBattleModeChoice();
+      if (typeof window.goToFloor === 'function') window.goToFloor(9);
+    });
+  var cancel = document.createElement('button');
+  cancel.textContent = 'Atšaukti';
+  cancel.style.cssText = 'background:none;border:none;color:#9a8a6a;font-size:13px;cursor:pointer;text-decoration:underline;margin-top:2px;';
+  cancel.onclick = _f9CloseBattleModeChoice;
+  card.appendChild(pvp); card.appendChild(solo); card.appendChild(cancel);
+  ov.appendChild(card);
+  ov.addEventListener('click', function (e) { if (e.target === ov) _f9CloseBattleModeChoice(); });
+  document.body.appendChild(ov);
+}
+
 // F9 enemy targeting reticle — rodo ant priešų kuriuos atakuoja ally (engagement)
 function _drawF9EnemyTargetReticle() {
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
@@ -5365,62 +5423,55 @@ function _drawF9EnemyTargetReticle() {
     }
   }
   if (targets.size === 0) return;
+  // AUKSINIS „target lock" — sąmoningai SKIRIASI nuo raudono enemy team žiedo (kuris žymi VISUS priešus).
+  // Auksas = „ŠITAS priešas pažymėtas atakai". Kampiniai bracket'ai už sprite + auksinė ▼ virš galvos.
+  const GOLD = '#ffcf5c', GLOW = 'rgba(255,200,90,0.75)';
   ctx.save();
-  for (const [en, meta] of targets) {
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [en] of targets) {
     const ux = ((en.rx !== undefined ? en.rx : en.x) + 0.5) * CELL;
-    const uyTop = ((en.ry !== undefined ? en.ry : en.y) + 0.05) * CELL;
-    const uyFeet = ((en.ry !== undefined ? en.ry : en.y) + 0.78) * CELL;
-    const pulse = (Math.sin(t * 0.006) + 1) * 0.5;
-    // 1) Red footprint ellipse — kaip selection ring, bet RED (taikinio)
-    const _rx = Math.max(3, CELL * (0.36 + pulse * 0.03) - 5);
-    const _ry = Math.max(2, CELL * (0.12 + pulse * 0.01) - 1.5);
-    ctx.shadowColor = 'rgba(255, 80, 80, 0.7)';
-    ctx.shadowBlur = 10 + pulse * 4;
-    ctx.strokeStyle = `rgba(255, 100, 100, ${(0.95).toFixed(3)})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(ux, uyFeet, _rx, _ry, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    // 2) Bracket arcs (4 quadrants) sukasi pulse'iškai — RED
-    ctx.shadowBlur = 0;
-    const armA = Math.PI * 0.18;
-    const spin = (t * 0.001) % (Math.PI * 2);
-    ctx.strokeStyle = `rgba(255, 255, 255, ${(0.9).toFixed(3)})`;
-    ctx.lineWidth = 2;
-    for (let q = 0; q < 4; q++) {
-      const ang = spin + q * (Math.PI / 2);
+    const cyMid = ((en.ry !== undefined ? en.ry : en.y) + 0.52) * CELL;
+    const uyTop = ((en.ry !== undefined ? en.ry : en.y) + 0.02) * CELL;
+    const pulse = (Math.sin(t * 0.005) + 1) * 0.5;                  // 0..1 „kvėpavimo" pulsas
+    // Lock-box didesnis už sprite → kampai matosi ŽOLĖJE (net jei reticle po unitais)
+    const halfW = CELL * (0.66 + pulse * 0.05);
+    const halfH = CELL * (0.74 + pulse * 0.05);
+    const armW = CELL * 0.22, armH = CELL * 0.24;                   // „L" kampo ilgis
+    const corners = [
+      [ux - halfW, cyMid - halfH, 1, 1],
+      [ux + halfW, cyMid - halfH, -1, 1],
+      [ux - halfW, cyMid + halfH, 1, -1],
+      [ux + halfW, cyMid + halfH, -1, -1],
+    ];
+    // Bobbing ▼ chevron virš galvos
+    const bob = Math.sin(t * 0.007) * 3;
+    const chY = uyTop - 15 + bob, chS = 7;
+    // 2 pass: tamsus apvadas (kontrastas ant bet kokio fono) → auksinė linija + glow
+    for (let pass = 0; pass < 2; pass++) {
+      const dark = pass === 0;
+      ctx.strokeStyle = dark ? 'rgba(0,0,0,0.5)' : GOLD;
+      ctx.fillStyle = dark ? 'rgba(0,0,0,0.5)' : GOLD;
+      ctx.lineWidth = dark ? 4.5 : 2.5;
+      ctx.shadowColor = dark ? 'transparent' : GLOW;
+      ctx.shadowBlur = dark ? 0 : (6 + pulse * 6);
+      for (const [cxc, cyc, sx, sy] of corners) {
+        ctx.beginPath();
+        ctx.moveTo(cxc, cyc + sy * armH);
+        ctx.lineTo(cxc, cyc);
+        ctx.lineTo(cxc + sx * armW, cyc);
+        ctx.stroke();
+      }
+      const o = dark ? 1.6 : 0;
       ctx.beginPath();
-      ctx.ellipse(ux, uyFeet, _rx, _ry, 0, ang - armA / 2, ang + armA / 2);
-      ctx.stroke();
-    }
-    // 3) Marker virš galvos — vienodas X visiems ally tipams (pigronke turėjo unique
-    //    crossed-swords sprite, bet jis išmušė pigronke iš bendro vaizdo — pašalintas 2026-05-28).
-    {
-      const crossSz = 8 + pulse * 2;
-      const crossY = uyTop - 12;
-      ctx.shadowColor = 'rgba(255, 80, 80, 0.95)';
-      ctx.shadowBlur = 10;
-      ctx.strokeStyle = `rgba(255, 80, 80, ${(0.95).toFixed(3)})`;
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(ux - crossSz, crossY - crossSz);
-      ctx.lineTo(ux + crossSz, crossY + crossSz);
-      ctx.moveTo(ux + crossSz, crossY - crossSz);
-      ctx.lineTo(ux - crossSz, crossY + crossSz);
-      ctx.stroke();
-      // White inner highlight
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.9).toFixed(3)})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(ux - crossSz, crossY - crossSz);
-      ctx.lineTo(ux + crossSz, crossY + crossSz);
-      ctx.moveTo(ux + crossSz, crossY - crossSz);
-      ctx.lineTo(ux - crossSz, crossY + crossSz);
-      ctx.stroke();
+      ctx.moveTo(ux - chS - o, chY - chS - o);
+      ctx.lineTo(ux + chS + o, chY - chS - o);
+      ctx.lineTo(ux, chY + chS + o);
+      ctx.closePath();
+      ctx.fill();
     }
   }
+  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -5710,7 +5761,7 @@ function _f9InfoPanelState() {
       collapsed: !!(saved && saved.collapsed),
       animK: (saved && saved.collapsed) ? 0 : 1,
       drag: null,
-      closed: false,       // X mygtukas — paslepia iki kito selection veiksmo (ne-persist)
+      disabled: !!(saved && saved.disabled),   // X mygtukas — PERSISTENT off (lieka per visus selection'us); re-enable per ℹ chip
       lastSelRef: null,
     };
   }
@@ -5719,9 +5770,14 @@ function _f9InfoPanelState() {
 function _f9InfoPanelPersist() {
   const st = window._f9InfoPanel;
   if (!st) return;
-  try { localStorage.setItem('f9_info_panel', JSON.stringify({ x: st.x, y: st.y, collapsed: st.collapsed })); } catch (_) {}
+  try { localStorage.setItem('f9_info_panel', JSON.stringify({ x: st.x, y: st.y, collapsed: st.collapsed, disabled: st.disabled })); } catch (_) {}
 }
 function _drawF9SelectionPanel() {
+  // INFO POPUP PILNAI IŠJUNGTAS (user 2026-06-25): solo unit info lentelė iššokdavo/maišėsi → nebepiešiama visai.
+  // (Selektuoto unito statai vis tiek matosi inventoriaus slot'uose; apatinis selection bar lieka.)
+  window._f9InfoPanelRects = null;
+  return;
+  /* eslint-disable no-unreachable */
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
   window._f9InfoPanelRects = null;
   if (!canvas || !ctx) return;
@@ -5732,12 +5788,29 @@ function _drawF9SelectionPanel() {
   const u = sel[0];
   const cfg = _F9_ALLY_ATTACK[u.utype] || null;
   const st = _f9InfoPanelState();
-  // X uždarė popup'ą — jis grįžta su SEKANČIU selection veiksmu (naujas click/card/drag)
-  if (st.lastSelRef !== window._f9SelectedSet) {
-    st.lastSelRef = window._f9SelectedSet;
-    st.closed = false;
+  const v = (typeof _getVisibleCanvasRect === 'function')
+    ? _getVisibleCanvasRect()
+    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  // PERSISTENT off: X mygtukas išjungė panelę — lieka išjungta per VISUS selection'us (nebe „grįžta su kitu select").
+  // Re-enable: mažas „ℹ" chip apačioje-KAIRĖJE (tik kai pasirinktas 1 unitas → kontekstinis, nemaišo centro).
+  if (st.disabled) {
+    const rs = 24, rx = v.x + 8, ry = v.y + v.h - 74 - 12 - rs;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#2a1d10';
+    _f9RoundRect(rx, ry, rs, rs, 5); ctx.fill();
+    ctx.strokeStyle = '#8a6a2e'; ctx.lineWidth = 1.2;
+    _f9RoundRect(rx + 0.5, ry + 0.5, rs - 1, rs - 1, 5); ctx.stroke();
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = '#ffcf5c';
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('ℹ', rx + rs / 2, ry + rs / 2 + 1);
+    ctx.restore();
+    window._f9InfoPanelRects = { restore: { x: rx - 2, y: ry - 2, w: rs + 4, h: rs + 4 } };
+    return;
   }
-  if (st.closed) return;
   // Collapse animacija — smoothstep lerp link target (1=išskleista, 0=suskleista)
   const _target = st.collapsed ? 0 : 1;
   st.animK += (_target - st.animK) * 0.18;
@@ -5745,9 +5818,6 @@ function _drawF9SelectionPanel() {
   const k = st.animK;
   const ke = k * k * (3 - 2 * k);   // smoothstep ease
 
-  const v = (typeof _getVisibleCanvasRect === 'function')
-    ? _getVisibleCanvasRect()
-    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
   const pw = Math.round(120 + (_F9_INFO_FULL_W - 120) * ke);
   const ph = Math.round(_F9_INFO_HDR_H + (_F9_INFO_FULL_H - _F9_INFO_HDR_H) * ke);
   // Pozicija: user-dragged arba default (apačioje centre, virš selection bar'o)
@@ -5900,6 +5970,16 @@ function _f9IsAlly(u) {
 function _f9IsEnemy(u) {
   return !!u && u._f9Enemy === true;
 }
+// PvP host-authority (window._f9pvpLive): kovos taikinys = priešingo _pvpTeam unitas
+// (abu squad'ai = ally-tipo isEditorEnemy, kad VISI naudotų ally combat AI — ranged šaudo teisingai).
+// Single-player (be flag) → įprastas _f9IsEnemy (nieko nekeičia).
+function _f9IsHostile(attacker, e) {
+  if (!e || !e.alive) return false;
+  if (window._f9pvpLive) {
+    return (e._pvpTeam != null && attacker && attacker._pvpTeam != null && e._pvpTeam !== attacker._pvpTeam);
+  }
+  return _f9IsEnemy(e);
+}
 
 function _f9CommandableSelection(includeHero = true) {
   const src = Array.isArray(window._f9SelectedSet) && window._f9SelectedSet.length
@@ -5910,6 +5990,8 @@ function _f9CommandableSelection(includeHero = true) {
     if (!u || !u.alive || !_f9IsAlly(u)) continue;
     // Hero (ronke2) F9'e nematomas ir nekomanduojamas — kovoja tik squad'as (2026-06-12)
     if (u.team === 0) continue;
+    // PvP: komanduojam TIK savo squad'ą (priešininko unitai irgi ally-tipo, bet kitas _pvpTeam).
+    if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
     if (out.indexOf(u) < 0) out.push(u);
   }
   return out;
@@ -5930,6 +6012,9 @@ function _f9ClearUnitOrder(u) {
 }
 
 function _f9PushClickMarker(tx, ty, units, isAttackMarker) {
+  // PvP: host'as pritaiko GUEST'o komandą lokaliai (issueAttackMove) → tai NETURI palikti
+  // klik-marker'io HOST ekrane (priešas matytų guest'o klikus). Guest savo marker'į piešia pats.
+  if (window._f9pvpSuppressMarker) return;
   if (!window._f9ClickMarkers) window._f9ClickMarkers = [];
   window._f9ClickMarkers.push({
     tx, ty,
@@ -5943,6 +6028,8 @@ function _f9PushClickMarker(tx, ty, units, isAttackMarker) {
 }
 
 function _f9IssueMoveCommand(units, tx, ty) {
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest())
+    return window.F9PvpLive.routeCommand('move', units, tx, ty);   // guest → serveris; host komanduoja lokaliai
   if (!Array.isArray(units) || !units.length) return false;
   let cX = 0, cY = 0, n = 0;
   for (const u of units) {
@@ -5973,6 +6060,8 @@ function _f9IssueMoveCommand(units, tx, ty) {
 // ── ATTACK-MOVE (SC2/BAR "Fight" komanda): judėk į tašką, bet pakeliui auto-engage
 // priešus detect range'e; nukovus — tęsk kelionę iki galutinio taško. ──
 function _f9IssueAttackMoveCommand(units, tx, ty) {
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest())
+    return window.F9PvpLive.routeCommand('attackmove', units, tx, ty);   // guest → serveris; host lokaliai
   if (!Array.isArray(units) || !units.length) return false;
   let cX = 0, cY = 0, n = 0;
   for (const u of units) {
@@ -6037,6 +6126,9 @@ function _f9QueueMoveCommand(units, tx, ty, amove) {
 
 function _f9IssueAttackTargetCommand(units, enemy, now) {
   if (!enemy || !enemy.alive || !_f9IsEnemy(enemy)) return false;
+  // PvP server-authoritative: focus-fire komandą siunčiam SERVERIUI (enemy._pvpId = serverio unit id)
+  if (window._f9pvpLive && window.F9PvpLive && window.F9PvpLive.sendAttack)
+    return window.F9PvpLive.sendAttack(units, enemy);
   const attackers = (Array.isArray(units) ? units : [])
     .filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0 && _F9_ALLY_ATTACK[u.utype]);
   if (!attackers.length) return false;
@@ -6992,8 +7084,79 @@ function _f9FindClosestAlly(enemy) {
   return best;
 }
 
+// Ghost dmg-take FX: mėlyni ektoplazmos lašiukai (splash į šonus, gravitacija, nusėda) + hurt anim + trumpas lock.
+// Iškelta iš _f9DealDmg, kad PvP (server-authoritative, _f9DealDmg gated) galėtų trigerinti kai ghost mirror'o
+// hp krenta — žr. f9_pvp_live.js _syncFromServer (per __F9.f9GhostHurtFx).
+function _f9GhostHurtFx(target) {
+  if (!target || !target.alive || (target.hp || 0) <= 0 || target.utype !== 'ghost' || typeof GHOST_HURT_DUR_MS === 'undefined') return;
+  const _hn = performance.now();
+  target.ghostHurtStart = _hn;
+  target._f9ActionLockUntil = _hn + GHOST_HURT_DUR_MS + 100;
+  target.ghostAttackStart = 0;
+  target._ghostRecoil = 0;
+  target._f9Target = null;
+  target._f9Moving = false;
+  const _drops = [], _DN = 11, _G = CELL * 22, _groundY = CELL * 0.5;
+  for (let _d = 0; _d < _DN; _d++) {
+    const _side = (_d % 2) ? 1 : -1;
+    const _vx = _side * CELL * (1.4 + Math.random() * 2.2);
+    const _vy = -CELL * (1.0 + Math.random() * 2.0);
+    const _oy = -CELL * (0.05 + Math.random() * 0.28);
+    const _ox = (Math.random() - 0.5) * CELL * 0.28;
+    const _tL = (-_vy + Math.sqrt(_vy * _vy + 2 * _G * (_groundY - _oy))) / _G;
+    _drops.push({ ox: _ox, oy: _oy, vx: _vx, vy: _vy, g: _G, sz: 1.8 + (_d % 3) * 0.9, tL: _tL, gy: _groundY });
+  }
+  // Lašiukai = ATSKIRAS pasaulio objektas (S.ghostHurtDrops; wx/wy = ghost poz. hurt momentu). NErenderinami
+  // ant unito → nukritę lieka ant žemės kai ghost nuplaukia savo keliu. Žr. _drawGhostHurtDrops().
+  if (!S.ghostHurtDrops) S.ghostHurtDrops = [];
+  const _wx = (target.rx !== undefined) ? target.rx : target.x;
+  const _wy = (target.ry !== undefined) ? target.ry : target.y;
+  for (let _i = 0; _i < _drops.length; _i++) {
+    const _d2 = _drops[_i];
+    S.ghostHurtDrops.push({ wx: _wx, wy: _wy, born: _hn, ox: _d2.ox, oy: _d2.oy, vx: _d2.vx, vy: _d2.vy, g: _d2.g, sz: _d2.sz, tL: _d2.tL, gy: _d2.gy });
+  }
+  if (S.ghostHurtDrops.length > 240) S.ghostHurtDrops.splice(0, S.ghostHurtDrops.length - 240);
+}
+
+// Ghost hurt lašiukai — ATSKIRAS pasaulio render'is (nepriklausomas nuo ghost unito). Splash→krenta→balutė.
+function _drawGhostHurtDrops() {
+  if (!S.ghostHurtDrops || !S.ghostHurtDrops.length || typeof ctx === 'undefined') return;
+  const now = performance.now(), _PUDDLE = 2.5;   // balutė guli ant žemės ilgiau (0.55→2.5s) — kad būtų aišku, jog ghost'ui nuplaukus lašai LIEKA vietoj
+  // PASTABA: kviečiama WORLD-translated kontekste (po ctx.translate(-cam), kaip drawDeathAnims) → JOKIO cam atimties.
+  ctx.save();
+  for (let i = S.ghostHurtDrops.length - 1; i >= 0; i--) {
+    const dp = S.ghostHurtDrops[i];
+    const _dEl = (now - dp.born) / 1000;
+    const _landed = _dEl >= dp.tL, _afterLand = _dEl - dp.tL;
+    if (_landed && _afterLand > _PUDDLE) { S.ghostHurtDrops.splice(i, 1); continue; }
+    const _tFly = _landed ? dp.tL : _dEl;
+    const baseX = (dp.wx + 0.5) * CELL, baseY = (dp.wy + 0.5) * CELL;
+    const _dx = baseX + dp.ox + dp.vx * _tFly;
+    if (!_landed) {
+      const _dyAir = dp.oy + dp.vy * _tFly + 0.5 * dp.g * _tFly * _tFly;
+      const _vyNow = dp.vy + dp.g * _tFly;
+      const _stretch = 1 + Math.min(1.5, Math.abs(_vyNow) / (CELL * 3));
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = 'rgba(60,140,255,0.95)';
+      ctx.beginPath(); ctx.ellipse(_dx, baseY + _dyAir, dp.sz, dp.sz * _stretch, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(150,205,255,0.9)';
+      ctx.beginPath(); ctx.ellipse(_dx, baseY + _dyAir, dp.sz * 0.5, dp.sz * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+      const _k = _afterLand / _PUDDLE;
+      const _rx = dp.sz * (1.2 + _k * 1.7), _ry = dp.sz * (0.45 + _k * 0.35);
+      ctx.globalAlpha = Math.max(0, 1 - _k);
+      ctx.fillStyle = 'rgba(55,135,250,0.85)';
+      ctx.beginPath(); ctx.ellipse(_dx, baseY + dp.gy, _rx, _ry, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 function _f9DealDmg(target, dmg, attacker) {
   if (!target || !target.alive) return;
+  // PvP (server-authoritative): jokios KLIENTO žalos/skaičiukų. Žalą skaičiuoja serveris, hp+dmg numerį
+  // rodo _syncFromServer (f9_pvp_live.js). Kitaip projektilo smūgis duotų ANTRĄ skaičiuką (~2s vėliau).
+  if (window._f9pvpLive) return;
   // COVER — taikinys krūme: incoming attack miss šansas (pasislėpė). Simetriška ally+enemy.
   if (_F9_DECO_COVER && _f9UnitInBush(target) && Math.random() < _F9_BUSH_MISS) {
     const _mx = (typeof target.rx === 'number') ? target.rx : target.x;
@@ -7008,27 +7171,7 @@ function _f9DealDmg(target, dmg, attacker) {
   target._f9LastHitAt = performance.now();   // damaged-only HP bar fade timer
   // GHOST dmg-take: kai vaiduoklis gauna žalą (ir nemiršta) → groja hurt anim + UŽRAKINTAS (nei judėti, nei
   // šauti) kol anim baigsis +0.1s. Nutraukia vykstančią ataką/recoil, kad hurt turėtų prioritetą.
-  if (target.alive && target.hp > 0 && target.utype === 'ghost' && typeof GHOST_HURT_DUR_MS !== 'undefined') {
-    const _hn = performance.now();
-    target.ghostHurtStart = _hn;
-    target._f9ActionLockUntil = _hn + GHOST_HURT_DUR_MS + 100;   // trumpai užrakintas (nei judėt, nei šaut)
-    target.ghostAttackStart = 0;     // nutraukiam atakos anim (fire callback pamatys pasikeitusį stamp → praleis šūvį)
-    target._ghostRecoil = 0;         // be recoil mišinio su hurt
-    target._f9Target = null;         // bet koks judėjimas atšaukiamas
-    target._f9Moving = false;
-    // MĖLYNI ektoplazmos lašiukai — splash'ina į ŠONUS, krenta su gravitacija, nusėda ant ŽEMĖS.
-    const _drops = [], _DN = 11, _G = CELL * 22, _groundY = CELL * 0.5;   // visi vienetai CELL/s, CELL/s² (robust per zoom)
-    for (let _d = 0; _d < _DN; _d++) {
-      const _side = (_d % 2) ? 1 : -1;
-      const _vx = _side * CELL * (1.4 + Math.random() * 2.2);             // į šonus
-      const _vy = -CELL * (1.0 + Math.random() * 2.0);                    // pradžioj truputį aukštyn (arc)
-      const _oy = -CELL * (0.05 + Math.random() * 0.28);
-      const _ox = (Math.random() - 0.5) * CELL * 0.28;
-      const _tL = (-_vy + Math.sqrt(_vy * _vy + 2 * _G * (_groundY - _oy))) / _G;   // nusileidimo laikas (sek)
-      _drops.push({ ox: _ox, oy: _oy, vx: _vx, vy: _vy, g: _G, sz: 1.8 + (_d % 3) * 0.9, tL: _tL, gy: _groundY });
-    }
-    target._hurtDrops = _drops;
-  }
+  _f9GhostHurtFx(target);
   if (typeof spawnDmgNumber === 'function') {
     // taken = žala player unitui (team 0) → raudona; kitaip priešas gauna → balta
     const _tk = target.team === 0 ? 'taken' : 'normal';
@@ -7095,10 +7238,11 @@ function _f9SpawnBossBlood(gx, gy) {
 // F9 ranged hit helper: randa artimiausią gyvą F9 priešą prie taško (cell coords).
 // Smooth judantys taikiniai išslysta iš tikslaus cell'o per projektilo skrydį,
 // todėl ieškom spinduliu, ne exact cell match'u (kitaip ranged "whiff'ina" be priežasties).
-function _f9FindEnemyNear(cellX, cellY, radius) {
+function _f9FindEnemyNear(cellX, cellY, radius, attacker) {
   let best = null, bestD = radius;
   for (const u of S.units || []) {
-    if (!u || !u.alive || !_f9IsEnemy(u)) continue;
+    const hostile = (window._f9pvpLive && attacker) ? _f9IsHostile(attacker, u) : _f9IsEnemy(u);
+    if (!u || !u.alive || !hostile) continue;
     const ux = (u.rx !== undefined) ? u.rx : u.x;
     const uy = (u.ry !== undefined) ? u.ry : u.y;
     const d = Math.hypot(cellX - ux, cellY - uy);
@@ -7236,8 +7380,8 @@ function _drawF9Shots() {
         // Atvykimas — pataikymas
         const cellX = s.tx / CELL - 0.5;
         const cellY = (s.ty + CELL * 0.30) / CELL - 0.5;
-        let tgt = (s.target && s.target.alive && _f9IsEnemy(s.target)) ? s.target
-                : (typeof _f9FindEnemyNear === 'function' ? _f9FindEnemyNear(cellX, cellY, 0.9) : null);
+        let tgt = (s.target && s.target.alive && _f9IsHostile(s.shooter, s.target)) ? s.target
+                : (typeof _f9FindEnemyNear === 'function' ? _f9FindEnemyNear(cellX, cellY, 0.9, s.shooter) : null);
         if (tgt && tgt.alive) {
           _f9DealDmg(tgt, _f9RollDamageForUnit(s.utype, s.stack, (s.shooter && s.shooter._nftLevel) || 0), s.shooter);
           s.state = 'impact';
@@ -7498,14 +7642,14 @@ function _f9TryAllyAutoAttack(ally, now) {
   // PIRMENYBĖ žaidėjo pažymėtam taikiniui (_f9EngageTarget) — jei gyvas, priešas ir range'e,
   // šaunam į JĮ, ne į artimiausią. Kitaip — fallback į artimiausią.
   const _eng = ally._f9EngageTarget;
-  if (_eng && _eng.alive && _f9IsEnemy(_eng)) {
+  if (_eng && _eng.alive && _f9IsHostile(ally, _eng)) {
     const _ex = (_eng.rx !== undefined) ? _eng.rx : _eng.x;
     const _ey = (_eng.ry !== undefined) ? _eng.ry : _eng.y;
     if (Math.hypot(ax - _ex, ay - _ey) <= cfg.range) target = _eng;
   }
   if (!target) {
     for (const e of S.units) {
-      if (!e || !e.alive || !_f9IsEnemy(e)) continue;
+      if (!e || !e.alive || !_f9IsHostile(ally, e)) continue;
       const ex = (e.rx !== undefined) ? e.rx : e.x;
       const ey = (e.ry !== undefined) ? e.ry : e.y;
       const d = Math.hypot(ax - ex, ay - ey);
@@ -7548,7 +7692,7 @@ function _f9TryAllyAutoAttack(ally, now) {
         if (!shotTgt) {
           const ax2 = (ally.rx !== undefined) ? ally.rx : ally.x;
           const ay2 = (ally.ry !== undefined) ? ally.ry : ally.y;
-          shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range) : null;
+          shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range, ally) : null;
         }
         if (shotTgt) {
           // Atsisukam į TIKRĄ taikinį šūvio momentu (jis galėjo pasikeisti/pajudėti per windup) →
@@ -7588,7 +7732,7 @@ function _f9TryAllyAutoAttack(ally, now) {
           // Taikinys mirė per throw animaciją — randam kitą range'e (CD nešvaistom)
           const ax2 = (ally.rx !== undefined) ? ally.rx : ally.x;
           const ay2 = (ally.ry !== undefined) ? ally.ry : ally.y;
-          shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range) : null;
+          shotTgt = (typeof _f9FindEnemyNear === 'function') ? _f9FindEnemyNear(ax2, ay2, cfg.range, ally) : null;
         }
         if (shotTgt) spawnF9RangedShot(ally, shotTgt, ally.utype === 'ronhood' ? 'archer' : ally.utype, ally.stack || 1);
       }, fireMs);
@@ -7629,7 +7773,7 @@ function _updateF9AllyAutoAcquire(now) {
     const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
     let nearest = null, nearestD = detectR;
     for (const e of S.units) {
-      if (!e || !e.alive || !_f9IsEnemy(e)) continue;
+      if (!e || !e.alive || !_f9IsHostile(ally, e)) continue;
       const ex = (e.rx !== undefined) ? e.rx : e.x;
       const ey = (e.ry !== undefined) ? e.ry : e.y;
       const d = Math.hypot(ax - ex, ay - ey);
@@ -7941,6 +8085,7 @@ function _updateF9EnemyAI(now) {
 }
 
 function _f9CheckOutcome() {
+  if (window._f9pvpLive) return;   // PvP: outcome valdo host (_hostCheckWin → match_end), ne PvE squad-wipe
   // KotH režimas turi savo outcome (defeat = visi unitai žuvę, ne tik hero).
   if (window._KOTH && window._KOTH.active) {
     if (typeof window._kothCheckOutcome === 'function') window._kothCheckOutcome();
@@ -7989,6 +8134,7 @@ function _f9TickPendingSpawns(now) {
 }
 
 function _updateF9EnemyRespawn(now) {
+  if (window._f9pvpLive) return;   // PvP: jokio PvE priešų spawn/respawn — priešai = kitas žaidėjas
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
   // Pending telegraph'ai materializuojami kas frame (pigus tikrinimas)
   _f9TickPendingSpawns(now);
@@ -12809,7 +12955,8 @@ function initAdventure() {
   // F9 — deploy fake barracks-trained units (Profile.barracksTrained) around hero
   // Naudoja egzistuojantį pattern: team=1 + isEditorEnemy=true → friendly (ne priešas)
   // Su utype sprite render'inimu (skull/archer/shaman/harpoon_fish).
-  if (S.floor === 9) {
+  // PvP (host-authority): NEdeploy'inam lokalaus squad'o — F9PvpLive spawnina abu squad'us.
+  if (S.floor === 9 && !window._f9pvpLive) {
     try {
       const hero = S.units[0];
       // 2026-06-12: F9 startuoja su žaidėjo BATTLE SQUAD (užregistruoto deck'o kovine 12-uke).
@@ -26645,14 +26792,22 @@ function loop(now) {
     _updateFreeMove(now);
   }
 
-  // ── F9 RTS smooth click-to-move (continuous, no grid hopping) ──
-  _updateF9SmoothMove(now);
-  // ── F9 enemy AI (PvE) — chase + melee ──
-  if (typeof _updateF9EnemyAI === 'function') _updateF9EnemyAI(now);
-  // ── F9 enemy respawn — periodiškai pridedam naujus, kad testas tęstųsi ──
-  if (typeof _updateF9EnemyRespawn === 'function') _updateF9EnemyRespawn(now);
-  // ── KotH ("Karalius ant kalno") — hold tracking + difficulty ramp + wave director ──
-  if (typeof window._kothUpdate === 'function') window._kothUpdate(now);
+  // ── F9 PvP-LIVE (host-authority): GUEST praleidžia lokalų simą ir renderina host snapshot'us;
+  //     HOST (ir single-player) sukasi TIKRĄ F9 simą, host papildomai siunčia snapshot+FX. ──
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
+    window.F9PvpLive.guestTick(now);   // GUEST: tik render iš host būsenos, jokio lokalaus simo
+  } else {
+    // ── F9 RTS smooth click-to-move (continuous, no grid hopping) ──
+    _updateF9SmoothMove(now);
+    // ── F9 enemy AI (PvE) — chase + melee (PvP'e nėra _f9Enemy unitų → inertiškas) ──
+    if (typeof _updateF9EnemyAI === 'function') _updateF9EnemyAI(now);
+    // ── F9 enemy respawn (PvP'e gated — jokio PvE) ──
+    if (typeof _updateF9EnemyRespawn === 'function') _updateF9EnemyRespawn(now);
+    // ── KotH PvE wave director (PvP'e neaktualu) ──
+    if (!window._f9pvpLive && typeof window._kothUpdate === 'function') window._kothUpdate(now);
+    // ── HOST: po lokalaus simo — siunčia būsenos snapshot + FX guest'ui ──
+    if (window.F9PvpLive && window.F9PvpLive.hostTick) window.F9PvpLive.hostTick(now);
+  }
 
   // ── HERO RTS commandMove (F11) ─ tween + auto-attack ─────────
   _tickHeroRtsCmd(now);
@@ -27036,6 +27191,7 @@ function loop(now) {
   drawFootsteps();
   drawParticles();
   drawDeathAnims();
+  if (typeof _drawGhostHurtDrops === 'function') _drawGhostHurtDrops();   // ghost hurt lašiukai — atskiras world objektas (nesektų ghost)
   drawF9BloodBurstOverlay();
   drawSpawnAnims();
   drawShamanProjectiles();
@@ -27073,6 +27229,9 @@ function loop(now) {
       ctx.drawImage(_im, _bf * 128, 0, 128, _im.naturalHeight, _bc * CELL + CELL / 2 - _bsz / 2, _br * CELL + CELL - _bsz, _bsz, _bsz);
     }
   }
+  // PvP komandos žiedai PO unitais (savi=mėlynas, priešas=raudonas) — universalu visiems utype'ams,
+  // kad ghost/pigronke/ronhood (neturi silhouette outline šakos) irgi būtų aiškiai paženklinti. Tik PvP.
+  if (typeof _drawF9PvpTeamRings === 'function') _drawF9PvpTeamRings();
   drawUnits();
   if (typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
   // Default raudonas silhouette outline visiems matomam enemy unit'am.
@@ -28064,6 +28223,34 @@ function _silhouetteTintSheet(sheet, color) {
 // filterStr gali būti: (1) canvas filter chain (e.g. 'brightness(0) invert(1)'),
 //                      (2) hex spalva '#RRGGBB' — tada naudojam offscreen tinting (tikslu).
 // Grąžina true jei pavyko.
+// PvP komandos identifikacija — žiedas po unito kojomis (RTS standartas). Universalus VISIEMS utype'ams
+// (sprite-nepriklausomas), todėl ghost/pigronke/ronhood — kurie neturi silhouette-outline šakos — irgi
+// aiškiai paženklinti. Savi (isEditorEnemy=true PvP'e) = mėlynas, priešas (_f9Enemy) = raudonas.
+// Tik PvP (_f9pvpLive) → single-player nepaliestas. Piešiama PRIEŠ drawUnits() → žiedai PO sprite'ais.
+function _drawF9PvpTeamRings() {
+  if (!window._f9pvpLive) return;
+  if (typeof ctx === 'undefined' || typeof S === 'undefined' || !S.units) return;
+  const OWN = '#3F8FE0', ENE = '#DE4D4E';
+  const OWN_FILL = 'rgba(63,143,224,0.20)', ENE_FILL = 'rgba(222,77,78,0.20)';
+  ctx.save();
+  for (const u of S.units) {
+    if (!u || !u.alive || u._pvpId == null) continue;     // tik serverio mirror unitai
+    if (!u._f9Enemy) continue;                             // TIK priešai (savus paliekam be žiedo — user 2026-06-25)
+    const cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+    const feetY = cy + CELL * 0.36;                        // po kojomis
+    const rx = CELL * 0.44, ry = CELL * 0.21;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = ENE_FILL;
+    ctx.beginPath(); ctx.ellipse(cx, feetY, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = ENE;
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath(); ctx.ellipse(cx, feetY, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function _drawUnitSilhouetteOutline(u, cx, cy, filterStr, silhouetteOnly) {
   const FILTER = filterStr || 'brightness(0) invert(1)';
   const _useTint = !!(filterStr && filterStr.charAt(0) === '#');
@@ -32271,6 +32458,11 @@ function drawUnits() {
           const _dEl = (performance.now() - u.ghostHurtStart) / 1000;          // sek nuo smūgio
           const _PUDDLE = 0.55;                                                // kiek laiko balutė laikosi ant žemės
           let _anyAlive = false;
+          // Anchor į pasaulio poz. HURT momentu (per delta nuo dabartinės) — kad lašiukai NEsektų judantį ghost (PvP).
+          const _hAx = (u._hurtAnchorRx != null) ? u._hurtAnchorRx : (u.rx !== undefined ? u.rx : u.x);
+          const _hAy = (u._hurtAnchorRy != null) ? u._hurtAnchorRy : (u.ry !== undefined ? u.ry : u.y);
+          const _aCx = _gcx + (_hAx - (u.rx !== undefined ? u.rx : u.x)) * CELL;
+          const _aCy = cy + (_hAy - (u.ry !== undefined ? u.ry : u.y)) * CELL;
           ctx.save();
           for (let _di = 0; _di < u._hurtDrops.length; _di++) {
             const _dp = u._hurtDrops[_di];
@@ -32279,11 +32471,11 @@ function drawUnits() {
             if (_landed && _afterLand > _PUDDLE) continue;                      // dingęs
             _anyAlive = true;
             const _tFly = _landed ? _dp.tL : _dEl;                             // horizontaliai juda iki nusileidimo, tada stovi
-            const _dx = _gcx + _dp.ox + _dp.vx * _tFly;
+            const _dx = _aCx + _dp.ox + _dp.vx * _tFly;
             if (!_landed) {
               // skrendantis lašelis — pailgas pagal greitį (lašo forma), mėlynas su šviesiu branduoliu
               const _dyAir = _dp.oy + _dp.vy * _tFly + 0.5 * _dp.g * _tFly * _tFly;
-              const _dy = cy + _dyAir;
+              const _dy = _aCy + _dyAir;
               const _vyNow = _dp.vy + _dp.g * _tFly;
               const _stretch = 1 + Math.min(1.5, Math.abs(_vyNow) / (CELL * 3));
               ctx.globalAlpha = alpha;
@@ -32297,7 +32489,7 @@ function drawUnits() {
               const _rx = _dp.sz * (1.2 + _k * 1.7), _ry = _dp.sz * (0.45 + _k * 0.35);
               ctx.globalAlpha = alpha * Math.max(0, 1 - _k);
               ctx.fillStyle = 'rgba(55,135,250,0.85)';
-              ctx.beginPath(); ctx.ellipse(_dx, cy + _dp.gy, _rx, _ry, 0, 0, Math.PI * 2); ctx.fill();
+              ctx.beginPath(); ctx.ellipse(_dx, _aCy + _dp.gy, _rx, _ry, 0, 0, Math.PI * 2); ctx.fill();
             }
           }
           ctx.restore();
@@ -35232,21 +35424,31 @@ document.addEventListener('DOMContentLoaded', () => {
       {
         const ipr = window._f9InfoPanelRects;
         if (ipr) {
-          if (ipr.close && _cmx >= ipr.close.x && _cmx <= ipr.close.x + ipr.close.w &&
-              _cmy >= ipr.close.y && _cmy <= ipr.close.y + ipr.close.h) {
+          // ℹ restore chip (kai panelė PERSISTENT išjungta) — vėl įjungia
+          if (ipr.restore && _cmx >= ipr.restore.x && _cmx <= ipr.restore.x + ipr.restore.w &&
+              _cmy >= ipr.restore.y && _cmy <= ipr.restore.y + ipr.restore.h) {
             const st = _f9InfoPanelState();
-            st.closed = true;   // grįžta su kitu selection veiksmu
+            st.disabled = false;
+            _f9InfoPanelPersist();
             window._f9InfoPanelRects = null;
             return;
           }
-          if (_cmx >= ipr.toggle.x && _cmx <= ipr.toggle.x + ipr.toggle.w &&
+          if (ipr.close && _cmx >= ipr.close.x && _cmx <= ipr.close.x + ipr.close.w &&
+              _cmy >= ipr.close.y && _cmy <= ipr.close.y + ipr.close.h) {
+            const st = _f9InfoPanelState();
+            st.disabled = true;   // PERSISTENT off — lieka išjungta kol user paspaus ℹ
+            _f9InfoPanelPersist();
+            window._f9InfoPanelRects = null;
+            return;
+          }
+          if (ipr.toggle && _cmx >= ipr.toggle.x && _cmx <= ipr.toggle.x + ipr.toggle.w &&
               _cmy >= ipr.toggle.y && _cmy <= ipr.toggle.y + ipr.toggle.h) {
             const st = _f9InfoPanelState();
             st.collapsed = !st.collapsed;
             _f9InfoPanelPersist();
             return;
           }
-          if (_cmx >= ipr.panel.x && _cmx <= ipr.panel.x + ipr.panel.w &&
+          if (ipr.panel && _cmx >= ipr.panel.x && _cmx <= ipr.panel.x + ipr.panel.w &&
               _cmy >= ipr.panel.y && _cmy <= ipr.panel.y + ipr.panel.h) {
             return;   // click ant panelės kūno — nepraleidžiam į žaidimą
           }
@@ -35393,7 +35595,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const _cgx = Math.floor(mx / CELL), _cgy = Math.floor(my / CELL);
         // Sprite aukštas — priimam click ant anchor celės, ±1 į šonus ir iki 2 celių virš
         if (Math.abs(_cgx - _mineP.x) <= 1 && _cgy >= _mineP.y - 2 && _cgy <= _mineP.y + 1) {
-          if (typeof window.goToFloor === 'function') window.goToFloor(9);
+          // Pasirinkimas: PvP prieš žaidėją ARBA solo battle test (vietoj tiesiogiai į F9).
+          if (typeof _f9ShowBattleModeChoice === 'function') _f9ShowBattleModeChoice();
+          else if (typeof window.goToFloor === 'function') window.goToFloor(9);
           return;
         }
       }
@@ -38445,6 +38649,76 @@ function drawFloorIntro() {
   });
 
   setInterval(() => { if (panel.style.display === 'block') refresh(); }, 500);
+})();
+
+/* ============================================================================
+ * F9 PvP-LIVE bridge + bootstrap (ADDITIVE + OPT-IN, isolated).
+ * Exposes game internals to the isolated f9_pvp_live.js module and launches the
+ * REAL F9 floor in multiplayer mode when opened with the `#f9live` URL hash.
+ * Single-player F9 is byte-for-byte unaffected when the hash is absent.
+ * ========================================================================== */
+window.__F9 = {
+  get S() { return S; },
+  get COLS() { return COLS; },
+  get ROWS() { return ROWS; },
+  CELL: CELL,
+  mkUnit: mkUnit,
+  spawnF9RangedShot: spawnF9RangedShot,
+  spawnShamanProjectile: (typeof spawnShamanProjectile === 'function') ? spawnShamanProjectile : null,
+  pigronkeSpearAttack: (typeof _pigronkeSpearAttack === 'function') ? _pigronkeSpearAttack : null,
+  spawnSpearSweep: (typeof spawnSpearSweep === 'function') ? spawnSpearSweep : null,   // pigronke spear AOE vizualas (be žalos)
+  f9GhostHurtFx: (typeof _f9GhostHurtFx === 'function') ? _f9GhostHurtFx : null,        // ghost dmg-take ektoplazmos lašiukai
+  spawnDmgNumber: spawnDmgNumber,
+  spawnDeath: spawnDeath,
+  _f9PushClickMarker: (typeof _f9PushClickMarker === 'function') ? _f9PushClickMarker : null,
+  goToFloor: window.goToFloor,
+  // C3 host-authority: spawn + komandų taikymas (host kliente sukasi tikras F9 su abiem squad'ais)
+  getEditorEnemyArchetype: (typeof getEditorEnemyArchetype === 'function') ? getEditorEnemyArchetype : null,
+  nextEditorUnitId: (typeof nextEditorUnitId === 'function') ? nextEditorUnitId : null,
+  issueMove: (typeof _f9IssueMoveCommand === 'function') ? _f9IssueMoveCommand : null,
+  issueAttackMove: (typeof _f9IssueAttackMoveCommand === 'function') ? _f9IssueAttackMoveCommand : null,
+  baseHpOf: function (utype) { return ({ skull: 8, archer: 5, harpoon_fish: 7, shaman: 5, pigronke: 14, ghost: 4, ronhood: 7 })[utype] || 8; },
+  // PvP: fiksuojam areną į serverio dydį (40×24), kad client+server koordinatės sutaptų.
+  setArena: function (cols, rows) {
+    COLS = cols; ROWS = rows;
+    try { ADV_MAP_COLS = cols; ADV_MAP_ROWS = rows; } catch (_) {}
+    S.dungeon = Array.from({ length: rows }, function () { return new Array(cols).fill(1); });   // visa žolė
+    S.decorations = {};
+    S.fog = Array.from({ length: rows }, function () { return new Array(cols).fill(true); });
+    S.fogReveal = Array.from({ length: rows }, function () { return new Array(cols).fill(1); });
+    S.rooms = [{ x: 1, y: 1, w: cols - 2, h: rows - 2, type: 'start' }];
+    if (typeof buildWallPackets === 'function') { try { buildWallPackets(); } catch (_) {} }
+    if (typeof invalidateDungeonCache === 'function') { try { invalidateDungeonCache(); } catch (_) {} }
+  },
+};
+(function () {
+  'use strict';
+  function wanted() { try { return /(?:^|[#&/])f9live\b/i.test(location.hash || ''); } catch (_) { return false; } }
+  var loading = false;
+  function load(src) {
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = src; s.async = false;
+      s.onload = res; s.onerror = function () { rej(new Error('failed to load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  function boot() {
+    if (loading) return; loading = true;
+    // DEV cache-bust: šie moduliai įkeliami dinamiškai BE ?v=, todėl naršyklė juos kešuoja.
+    // ?t=Date.now() → kiekvienas #f9live boot įkelia ŠVIEŽIĄ versiją (kitaip senas kešas slepia pataisymus).
+    var _cb = '?t=' + Date.now();
+    load('f9_pvp_net.js' + _cb)
+      .then(function () { return load('f9_pvp_live.js' + _cb); })
+      .then(function () { if (window.F9PvpLive) window.F9PvpLive.launch({}); })
+      .catch(function (e) { console.error('[F9Live boot]', e); })
+      .then(function () { loading = false; });
+  }
+  window.addEventListener('hashchange', function () { if (wanted()) boot(); });
+  if (wanted()) {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') boot();
+    else window.addEventListener('DOMContentLoaded', boot);
+  }
+  window.F9PvpLiveLaunch = boot;
 })();
 
 /* ============================================================================
