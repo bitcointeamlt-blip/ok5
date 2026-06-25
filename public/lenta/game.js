@@ -5367,7 +5367,7 @@ function _f9ShowBattleModeChoice() {
   var card = document.createElement('div');
   card.style.cssText = 'background:linear-gradient(180deg,#3a2614,#241809);border:2px solid #8a6a2e;border-radius:16px;padding:24px 24px 18px;width:min(440px,92vw);box-shadow:0 14px 44px rgba(0,0,0,.6);text-align:center;';
   card.innerHTML = '<div style="font-size:20px;font-weight:800;color:#ffcf5c;letter-spacing:.5px;">TEST BATTLE</div>'
-    + '<div style="font-size:13px;color:#cbb892;margin:4px 0 18px;">Pasirink režimą</div>';
+    + '<div style="font-size:13px;color:#cbb892;margin:4px 0 18px;">Choose mode</div>';
   var mkBtn = function (border, grad, titleHtml, sub, onClick) {
     var b = document.createElement('button');
     b.style.cssText = 'display:block;width:100%;margin:0 0 12px;padding:15px 16px;border-radius:12px;border:2px solid ' + border + ';background:' + grad + ';cursor:pointer;text-align:left;transition:filter .12s;';
@@ -5378,8 +5378,8 @@ function _f9ShowBattleModeChoice() {
     return b;
   };
   var pvp = mkBtn('#e85d5d', 'linear-gradient(180deg,#7a2230,#561621)',
-    '<div style="font-size:16px;font-weight:800;color:#ffd2d2;">⚔️ PvP — Live prieš žaidėją</div>',
-    'Realaus laiko 1v1 prieš kitą žaidėją internetu',
+    '<div style="font-size:16px;font-weight:800;color:#ffd2d2;">⚔️ PvP — Live vs Player</div>',
+    'Real-time 1v1 against another player online',
     function () {
       _f9CloseBattleModeChoice();
       var already = /(?:^|[#&\/])f9live\b/i.test(location.hash || '');
@@ -5390,14 +5390,14 @@ function _f9ShowBattleModeChoice() {
       }
     });
   var solo = mkBtn('#4a9da6', 'linear-gradient(180deg,#1f5a60,#143a3f)',
-    '<div style="font-size:16px;font-weight:800;color:#bfeef2;">🤖 Battle Test (solo)</div>',
-    'Dabartinis testas — tavo būrys arenoje',
+    '<div style="font-size:16px;font-weight:800;color:#bfeef2;">🤖 Battle Test (Solo)</div>',
+    'Current test — your squad vs bots in the arena',
     function () {
       _f9CloseBattleModeChoice();
       if (typeof window.goToFloor === 'function') window.goToFloor(9);
     });
   var cancel = document.createElement('button');
-  cancel.textContent = 'Atšaukti';
+  cancel.textContent = 'Cancel';
   cancel.style.cssText = 'background:none;border:none;color:#9a8a6a;font-size:13px;cursor:pointer;text-decoration:underline;margin-top:2px;';
   cancel.onclick = _f9CloseBattleModeChoice;
   card.appendChild(pvp); card.appendChild(solo); card.appendChild(cancel);
