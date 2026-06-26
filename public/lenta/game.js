@@ -10851,6 +10851,8 @@ async function _handleTrophyClaim(claimable) {
     try { saveProfile(); } catch (_) {}
     btn.textContent = 'CLAIMED';
     _playTrophyMintAnimation();
+    // 💀 death trofėjus claim'intas → invaliduojam cache, kad panelė iškart parodytų kitą pakopą (ne po 5 min)
+    try { if (/^T_deaths_/.test(claimable.id) && typeof _invalidateDeathProgCache === 'function') _invalidateDeathProgCache(); } catch (_) {}
   } catch (e) {
     console.warn('[trophy claim]', e);
     statusEl.textContent = 'Error: ' + (e?.shortMessage || e?.message || String(e)).slice(0, 80);
@@ -11097,7 +11099,7 @@ window.openTrophyPanel = function openTrophyPanel() {
       return;
     }
     renderTrophyPanel();
-  }, 1500);
+  }, 8000);   // 8s (buvo 1.5s) — kad lentutė nemirgėtų; death data ima iš 5-min cache (momentinė)
   // Wire hero CTA → label + action depend on state (eligible vs locked vs all claimed)
   const cta = document.getElementById('trophy-hero-cta');
   if (cta) {
@@ -12076,6 +12078,23 @@ function _renderNftPerksStatus() {
 //   • nextTier / claimableNow = skaitoma TIESIAI iš kontrakto (claimedAchievement)
 // Joks kliento state (Profile.trophyClaims) sprendimuose → cross-device saugu, jokio cheat.
 function _deathTrophyThreshold(n) { return 11 * n - 1; }
+// 💀 Death-progress fetch su 5-min CACHE — trofėjų panelė re-renderinasi kas 1.5s; BE cache tai kviestų backend
+// (mirčių skaičius + on-chain multicall) kas 1.5s. Su cache → backend kviečiamas daugiausiai 1× per 5 min.
+let _deathProgCache = null;   // { wallet, at, res }
+const _DEATH_PROG_TTL = 5 * 60 * 1000;   // 5 min (user prašymas: ne kas sekundę, o kas 5 min)
+function _invalidateDeathProgCache() { _deathProgCache = null; }
+function _fetchDeathProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_deathProgCache && _deathProgCache.wallet === wallet && (now - _deathProgCache.at) < _DEATH_PROG_TTL) {
+    return Promise.resolve(_deathProgCache.res);   // iš cache — JOKIO backend kvietimo
+  }
+  return window.SupabaseSync.validateAchievement('T_deaths_progress').then(res => {
+    _deathProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
 function _appendDeathTrophyCard(grid) {
   const card = document.createElement('div');
   card.className = 'tier-card tier-deaths';
@@ -12088,7 +12107,7 @@ function _appendDeathTrophyCard(grid) {
     <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
       <span class="tier-req-text">Loading death count…</span></div></div></div>
     <div class="tier-actions"></div>`;
-  grid.appendChild(card);
+  grid.insertBefore(card, grid.firstChild);   // 💀 misija PIRMA panelėj (user prašymas) — ne pabaigoj
 
   const progEl = card.querySelector('.tier-card-progress');
   const reqsEl = card.querySelector('.tier-reqs');
@@ -12101,7 +12120,7 @@ function _appendDeathTrophyCard(grid) {
     return;
   }
 
-  window.SupabaseSync.validateAchievement('T_deaths_progress').then(res => {
+  _fetchDeathProgress().then(res => {
     const d = res && res.data;
     if (!res || !res.ok || !d || typeof d.deaths !== 'number') {
       // Backend dar neturi T_deaths kelio (sena versija) → slepiam kortelę ŠVARIAI,
