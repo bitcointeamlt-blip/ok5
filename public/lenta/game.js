@@ -12069,6 +12069,109 @@ function _renderNftPerksStatus() {
   });
 }
 
+// ── NFT-DEATH repeatable trophy mission (added 2026-06-26) ───────────────
+// Trofėjus už NFT unitų mirtis. Slenksčiai: 10, 21, 32 … = 11·n − 1 (žingsnis +11).
+// VISKAS AUTHORITATIVE iš serverio — NEAPGAUNAMA:
+//   • deaths = DISTINCT žuvę NFT (battle_sessions, server-side, tik savo token'ai)
+//   • nextTier / claimableNow = skaitoma TIESIAI iš kontrakto (claimedAchievement)
+// Joks kliento state (Profile.trophyClaims) sprendimuose → cross-device saugu, jokio cheat.
+function _deathTrophyThreshold(n) { return 11 * n - 1; }
+function _appendDeathTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-deaths';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">💀</span>
+      <span class="tier-card-title">NFT DEATHS</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading death count…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.appendChild(card);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl  = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your NFT death progress.</span></div></div>`;
+    return;
+  }
+
+  window.SupabaseSync.validateAchievement('T_deaths_progress').then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || typeof d.deaths !== 'number') {
+      // Backend dar neturi T_deaths kelio (sena versija) → slepiam kortelę ŠVARIAI,
+      // kad deploy būtų saugus bet kuria tvarka (frontend gali eit prieš backend).
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        // Backend dar nepalaiko (deploy laukia) → rodom MATOMĄ „activating soon" kortelę
+        // (ne klaida, ne paslėpta). Pilnai suveiks tą sekundę, kai bus deploy'intas backend.
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Earn a trophy for every +11 NFT unit deaths (10 → 21 → 32 …).</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load deaths (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    const deaths = d.deaths;
+    const nextTier = d.nextTier || 1;
+    const nextThreshold = (typeof d.nextThreshold === 'number') ? d.nextThreshold : _deathTrophyThreshold(nextTier);
+    const onchainOk = d.onchainOk !== false;
+    const claimable = !!d.claimableNow && onchainOk;
+    const claimedCount = Math.max(0, nextTier - 1);
+    const prevThreshold = claimedCount >= 1 ? _deathTrophyThreshold(claimedCount) : 0;
+    const span = Math.max(1, nextThreshold - prevThreshold);
+    const pct = Math.max(0, Math.min(100, Math.round(((deaths - prevThreshold) / span) * 100)));
+
+    progEl.textContent = `${claimedCount} claimed`;
+    progEl.className = 'tier-card-progress' + (claimable ? ' complete' : '');
+    reqsEl.innerHTML = `
+      <div class="tier-req ${claimable ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${claimable ? '✓' : '○'}</span>
+          <span class="tier-req-text">Trophy #${nextTier}: ${nextThreshold} NFT unit deaths</span>
+          <span class="tier-req-progress">${_formatProgress(deaths, nextThreshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text">+11 deaths per trophy (10 → 21 → 32 …). Repeatable forever.</span></div></div>`;
+
+    if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled" data-death-tier="${nextTier}">CLAIM NFT (Trophy #${nextTier})</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_deaths_' + nextTier,
+          label: 'NFT DEATHS — Trophy #' + nextTier,
+          desc: `Claim your trophy for ${nextThreshold} fallen NFT units. The next one unlocks at ${_deathTrophyThreshold(nextTier + 1)} total deaths.`,
+        }), 200);
+      });
+    } else if (!onchainOk) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">⏳ On-chain check unavailable</span>
+        <span class="tcb-hint">${deaths} NFT deaths · reopen panel to retry</span></button>`;
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 ${Math.max(0, nextThreshold - deaths)} more NFT deaths</span>
+        <span class="tcb-hint">${deaths}/${nextThreshold} — next is Trophy #${nextTier}</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading deaths.</span></div></div>`;
+    console.warn('[death trophy]', err);
+  });
+}
+
 function renderTrophyPanel() {
   const grid = document.getElementById('trophy-tier-grid');
   if (!grid) return;
@@ -12130,6 +12233,9 @@ function renderTrophyPanel() {
 
     grid.appendChild(card);
   }
+
+  // NFT-DEATH repeatable mission card (server-authoritative death count).
+  _appendDeathTrophyCard(grid);
 
   // Phase 15 — append "COMING SOON" teaser card to signal project growth
   const teaser = document.createElement('div');
