@@ -4830,6 +4830,16 @@
 
   let speedBtnRect = null;
 
+  // ── ×2 mygtuko slankiojimas (mobile) — paimi ir nutempi kur patogu; pozicija įsimenama ──
+
+  let _f12SpeedBtnPos = null;     // {x,y} custom pozicija (mobile drag); null = default apačia-dešinė
+
+  let _f12SpeedDrag = null;       // aktyvus tempimas {offX,offY,startX,startY,moved} arba null
+
+  let _f12TouchInput = false;     // ar dabartinis gestas yra touch (mobile) — tik tada leidžiam tempti
+
+  try { const _sbp = localStorage.getItem('f12_speedbtn_pos'); if (_sbp) { const _o = JSON.parse(_sbp); if (_o && typeof _o.x === 'number' && typeof _o.y === 'number') _f12SpeedBtnPos = _o; } } catch (_) {}
+
   let gameOverHomeBtnRect = null;       // „GO HOME" mygtukas ant game over screen
 
   let editMapBtnRect = null;
@@ -21812,7 +21822,21 @@
 
     const sbw = 152, sbh = 50;
 
-    const sbx = L.W - sbw - 18, sby = L.H - sbh - 28;
+    // Pozicija: custom (mobile nutempta, clamp'inta į ekraną) arba default apačia-dešinė
+
+    let sbx, sby;
+
+    if (_f12SpeedBtnPos) {
+
+      sbx = clamp(_f12SpeedBtnPos.x, 4, L.W - sbw - 4);
+
+      sby = clamp(_f12SpeedBtnPos.y, 4, L.H - sbh - 4);
+
+    } else {
+
+      sbx = L.W - sbw - 18; sby = L.H - sbh - 28;
+
+    }
 
     ctx.fillStyle = x2 ? '#4a3a0a' : '#23201a';
 
@@ -21835,6 +21859,30 @@
     ctx.fillText(x2 ? '⏩ 2x' : '⏩ 1x', sbx + sbw / 2, sby + sbh / 2);
 
     ctx.textBaseline = 'alphabetic';
+
+    // Mobile: „grip" taškučiai (rodo, kad mygtuką galima nutempti) + highlight tempimo metu
+
+    if (_f12TouchInput) {
+
+      ctx.fillStyle = (_f12SpeedDrag && _f12SpeedDrag.moved) ? '#ffcf5c' : 'rgba(255,235,170,0.45)';
+
+      for (let _gi = 0; _gi < 3; _gi++) {
+
+        ctx.fillRect(sbx + 7, sby + 12 + _gi * 8, 4, 4);
+
+        ctx.fillRect(sbx + sbw - 11, sby + 12 + _gi * 8, 4, 4);
+
+      }
+
+      if (_f12SpeedDrag && _f12SpeedDrag.moved) {
+
+        ctx.strokeStyle = '#fff3c4'; ctx.lineWidth = 2;
+
+        ctx.strokeRect(sbx - 2, sby - 2, sbw + 4, sbh + 4);
+
+      }
+
+    }
 
     speedBtnRect = { x: sbx, y: sby, w: sbw, h: sbh };
 
@@ -22906,6 +22954,18 @@
 
     mouse.x = p.x; mouse.y = p.y;
 
+    // ── ×2 mygtuko tempimas (mobile) — seka pirštą, nešaudo kol tempiam ──
+
+    if (_f12SpeedDrag) {
+
+      if (!_f12SpeedDrag.moved && (Math.abs(p.x - _f12SpeedDrag.startX) > 6 || Math.abs(p.y - _f12SpeedDrag.startY) > 6)) _f12SpeedDrag.moved = true;
+
+      if (_f12SpeedDrag.moved) _f12SpeedBtnPos = { x: p.x - _f12SpeedDrag.offX, y: p.y - _f12SpeedDrag.offY };
+
+      return;
+
+    }
+
     if (selectedDeployType) return;   // deploy mode — patranka NEseka piršto (kad nesusimaišytų su unito dėjimu)
 
     // virš HOLD mygtuko — patranka NEseka (kaip su kortom, kad netaikytų bandant paspausti HOLD)
@@ -23018,7 +23078,17 @@
 
         && p.y >= speedBtnRect.y && p.y <= speedBtnRect.y + speedBtnRect.h) {
 
-      _f12TimeScale = (_f12TimeScale >= 2) ? 1 : 2;   // toggle ×1 / ×2
+      if (_f12TouchInput) {
+
+        // Mobile: arm'inam tempimą — pajudinus virš slenksčio taps drag, kitaip = tap toggle
+
+        _f12SpeedDrag = { offX: p.x - speedBtnRect.x, offY: p.y - speedBtnRect.y, startX: p.x, startY: p.y, moved: false };
+
+      } else {
+
+        _f12TimeScale = (_f12TimeScale >= 2) ? 1 : 2;   // desktop: tiesiog toggle ×1 / ×2
+
+      }
 
       return;
 
@@ -23186,6 +23256,28 @@
 
   function onMouseUp(e) {
 
+    // ── ×2 mygtuko tempimo pabaiga (mobile): jei tempta — išsaugom poziciją; jei tik tap — toggle ──
+
+    if (_f12SpeedDrag) {
+
+      const _wasDrag = _f12SpeedDrag.moved;
+
+      _f12SpeedDrag = null;
+
+      if (_wasDrag) {
+
+        if (_f12SpeedBtnPos) { try { localStorage.setItem('f12_speedbtn_pos', JSON.stringify(_f12SpeedBtnPos)); } catch (_) {} }
+
+      } else {
+
+        _f12TimeScale = (_f12TimeScale >= 2) ? 1 : 2;   // tap be judesio = toggle ×1 / ×2
+
+      }
+
+      return;
+
+    }
+
     if (!active || !charging) return;
 
     if (e) {
@@ -23232,7 +23324,7 @@
 
     window.addEventListener('resize', resize);
 
-    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('mousedown', e => { _f12TouchInput = false; onMouseDown(e); });
 
     canvas.addEventListener('mousemove', onMouseMove);
 
@@ -23241,6 +23333,8 @@
     canvas.addEventListener('mouseleave', () => { if (charging) onMouseUp(null); });
 
     canvas.addEventListener('touchstart', e => {
+
+      _f12TouchInput = true;   // touch gestas → leidžiam ×2 mygtuką tempti
 
       const t = e.touches[0];
 
