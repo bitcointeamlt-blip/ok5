@@ -1907,7 +1907,7 @@
 
   // ── Config ─────────────────────────────────────────────────────────
 
-  const TYPES = ['arrow', 'shield', 'heart', 'leaf', 'star', 'crystal', 'shadow', 'pearl', 'frost', 'spectral', 'royal'];
+  const TYPES = ['arrow', 'shield', 'heart', 'leaf', 'crystal', 'shadow', 'pearl', 'frost'];
 
   const TYPE_COLOR = {
 
@@ -3289,25 +3289,19 @@
 
     arrow:   'archer',
 
-    shield:  'tower',
+    shield:  'ronhood',     // buvo tower → dabar RonHood (TEAL korta — ryškiai skiriasi nuo leaf žalios)
 
     heart:   'shaman',
 
     leaf:    'harpoon_fish',
 
-    star:    'crossbow_tower',
-
-    crystal: 'zip',
+    crystal: 'ghost',       // buvo zip → dabar Ghost/Vaiduoklis (PURPURINĖ korta — unikali spalva)
 
     shadow:  'skull',
 
     frost:   'hog_rider',   // mėlyna (Ronin) — Hog Rider (NFT utype 5). Frost IŠLAIKO lane-reverse merge efektą (kaip shadow turi ir wall ir skull)
 
-    spectral: 'ghost',      // Ghost (Vaiduoklis, utype 6) — ranged magas, free unit testavimui
-
-    royal:    'ronhood',    // RonHood — archer-stiliaus ranged unitas (free unit testavimui)
-
-    // pearl — be unit (palieka jam specialų merge attack)
+    // star/spectral/royal PAŠALINTI: bokštų kortos (tower/crossbow_tower/zip) nuimtos; ghost/ronhood perkelti į crystal/shield (distinct spalvos vietoj dublikatų geltona≈star, žalia≈leaf). pearl — be unit.
 
   };
 
