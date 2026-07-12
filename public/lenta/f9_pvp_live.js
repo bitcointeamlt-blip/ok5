@@ -545,9 +545,13 @@
   function _onBonesVoucher(v) {
     if (!v) { _boneSwapBusy = false; return; }
     var W = window.Wallet;
-    if (!W || !W.submitBoneSwap) { _boneSwapBusy = false; _boneStatus('❌ wallet module outdated (no submitBoneSwap)', '#ff6b6b'); return; }
+    // ⚡ RONKEREWARD režimas (07-12): kaulai→RONKE per faucet pool (mainnet). Voucher su ronkeReward=true →
+    //   submit'inam per submitFaucetClaim (claimReward), NE per submitBoneSwap (Saigon BoneExchange).
+    var isRR = !!v.ronkeReward;
+    var submit = isRR ? (W && W.submitFaucetClaim) : (W && W.submitBoneSwap);
+    if (!W || !submit) { _boneSwapBusy = false; _boneStatus('❌ wallet module outdated', '#ff6b6b'); return; }
     _boneStatus('confirm TX in wallet (you pay gas)…', '#ffd24a');
-    W.submitBoneSwap(v).then(function (res) {
+    submit.call(W, v).then(function (res) {
       _boneSwapBusy = false;
       var ronke = (v.deciBones / 10) * ((_boneCfg && _boneCfg.ratePerBone) || 5);
       _boneStatus('✅ +' + ronke.toFixed(0) + ' RONKE! tx ' + String(res.txHash).slice(0, 12) + '…', '#6fcf5c');

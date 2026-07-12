@@ -1,9 +1,13 @@
 import { Wallet, JsonRpcProvider, Contract } from "ethers";
+import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed } from "./MineWithdraw";   // 🦴→RONKE per RonkeReward pool (mainnet reuse)
 
-// 🦴→RONKE swap voucher'iai (EIP-712). Serveris = vienintelis kaulų apskaitos šaltinis:
-//   nurašo kaulus iš banko IŠDUODAMAS voucher'į, žaidėjas PATS siunčia TX (pats moka gas).
-//   Kontraktas BoneExchange verifikuoja parašą + min 100 kaulų + msg.sender == player.
-//   Saigon test deploy: BoneExchange.deployed.json (lenta workspace). Mainnet — laukia „go".
+// 🦴→RONKE swap voucher'iai. DU režimai:
+//   • "ronkereward" (MAINNET, 07-12 user „reikia kad kaulai irgi veiktu"): kaulai×5 RONKE per TĄ PATĮ
+//     RonkeReward pool kaip kasyklos withdraw — JOKIO naujo kontrakto. Serveris pasirašo RonkeReward
+//     claimReward voucherį (signMineVoucher), žaidėjas PATS siunčia TX. Cap 200 kaulų/swap (=1000 RONKE,
+//     RonkeReward maxSingleClaim). Void-on-non-land (re-credit jei TX nenusėda). Įsijungia kai signer yra.
+//   • "saigon" (testnet): BoneExchange kontraktas (BONE_XCHG_ADDR nustatytas). Legacy/testams.
+//   Gate ABIEM: min 100 kaulų + Ronkeverse NFT (mainnet balansas).
 
 const SIGNER_KEY = process.env.BONE_SIGNER_KEY || "";
 const XCHG_ADDR = process.env.BONE_XCHG_ADDR || "";
@@ -12,6 +16,7 @@ const RPC_URL = process.env.BONE_RPC || "https://saigon-testnet.roninchain.com/r
 export const RONKE_PER_BONE = Number(process.env.BONE_RONKE_PER_BONE || 5);   // == kontrakto ronkePerBone
 export const MIN_BONES = Number(process.env.BONE_MIN || 100);                 // == kontrakto minDeciBones/10
 export const MAX_SWAP_BONES = Number(process.env.BONE_MAX_SWAP || 1000);      // == kontrakto maxSingleSwap/10
+export const RR_MAX_SWAP_BONES = Number(process.env.BONE_RR_MAX_SWAP || 200); // 🦴→RonkeReward: 200×5=1000 RONKE (== RonkeReward maxSingleClaim)
 const NFT_ADDR = process.env.BONE_NFT_ADDR || "";                             // 🎫 Ronkeverse gate kolekcija
 export const NFT_REQUIRED = Number(process.env.BONE_NFT_REQUIRED || 1);       // == kontrakto minNftRequired
 const VOUCHER_TTL_MS = 60 * 60 * 1000;   // 1h galiojimas
@@ -30,13 +35,32 @@ function getSigner(): Wallet | null {
   return _wallet;
 }
 
-export function boneSwapEnabled(): boolean { return !!(getSigner() && XCHG_ADDR); }
+export function boneSwapEnabled(): boolean { return !!(getSigner() && XCHG_ADDR); }   // Saigon BoneExchange režimas
+// 🦴 Aktyvus swap režimas: Saigon kontraktas (jei BONE_XCHG_ADDR) ARBA RonkeReward pool (jei signer yra).
+export function boneSwapMode(): "saigon" | "ronkereward" | "off" {
+  if (boneSwapEnabled()) return "saigon";
+  if (mineWithdrawEnabled()) return "ronkereward";   // signer prieinamas → RonkeReward pool (mainnet)
+  return "off";
+}
+// 🦴→RONKE per RonkeReward pool: pasirašo claimReward voucherį kaulai×rate RONKE (cap RR_MAX_SWAP_BONES).
+//   Grąžina voucherį SU deciBones (kad klientas/pending žinotų kiek nurašyta) + ronkeReward flag.
+export async function signBoneRonkeVoucher(player: string, bones: number) {
+  const take = Math.min(Math.floor(bones), RR_MAX_SWAP_BONES);
+  if (take < MIN_BONES) return null;
+  const ronke = take * RONKE_PER_BONE;
+  const v = await signMineVoucher(player, ronke);   // RonkeReward EIP-712 (== kasyklos withdraw)
+  if (!v) return null;
+  return { ...v, ronkeReward: true, deciBones: take * 10 };   // deciBones = nurašomi kaulai ×10
+}
+export { isMineNonceUsed as isRonkeRewardNonceUsed };
 
 // Kliento UI konfigas (rodyti kursą/min/kontraktą; klientas TX siunčia pats).
 export function boneSwapCfg() {
-  return { enabled: boneSwapEnabled(), contract: XCHG_ADDR, chainId: CHAIN_ID, rpc: RPC_URL,
-           ratePerBone: RONKE_PER_BONE, minBones: MIN_BONES, maxSwapBones: MAX_SWAP_BONES,
-           nftRequired: NFT_ADDR ? NFT_REQUIRED : 0 };   // 🎫 0 = gate išjungtas
+  const mode = boneSwapMode();
+  const maxSwapBones = mode === "ronkereward" ? RR_MAX_SWAP_BONES : MAX_SWAP_BONES;
+  return { enabled: mode !== "off", mode, contract: XCHG_ADDR, chainId: CHAIN_ID, rpc: RPC_URL,
+           ratePerBone: RONKE_PER_BONE, minBones: MIN_BONES, maxSwapBones,
+           nftRequired: NFT_REQUIRED };   // 🎫 Ronkeverse gate VISADA (user taisyklė: swap tik su RV NFT)
 }
 
 // 🎫 Ar žaidėjas turi reikiamus Ronkeverse NFT? true/false; null = RPC nepavyko (kontraktas vis tiek enforce'ins).
@@ -53,7 +77,7 @@ function getRvProv(): JsonRpcProvider {
 }
 const _nftCache = new Map<string, { has: boolean; t: number }>();
 export async function hasRequiredNft(address: string): Promise<boolean | null> {
-  if (!NFT_ADDR || NFT_REQUIRED <= 0) return true;   // gate išjungtas
+  if (NFT_REQUIRED <= 0) return true;   // gate išjungtas (tik jei aiškiai BONE_NFT_REQUIRED=0)
   const key = address.toLowerCase();
   const c = _nftCache.get(key);
   if (c && Date.now() - c.t < (c.has ? 5 * 60 * 1000 : 30 * 1000)) return c.has;

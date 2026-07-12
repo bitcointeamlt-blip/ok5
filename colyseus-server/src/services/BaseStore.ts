@@ -164,7 +164,7 @@ export async function saveBaseUnits(address: string, units: SnapshotUnit[], buil
 // DDL negalimas — mgmt token miręs, todėl ne atskira lentelė). Vieninteliai rašytojai:
 // addBones (match pabaiga/leave) ir swap deduct — abu čia, read-modify-write.
 
-export type BoneSwapPending = { deciBones: number; nonce: string; deadline: number; sig: string; createdAt: number };
+export type BoneSwapPending = { deciBones: number; nonce: string; deadline: number; sig: string; createdAt: number; rr?: boolean; voucher?: any };   // rr=RonkeReward režimas (voucher=re-send'ui)
 export type BoneBank = { bones: number; pending: BoneSwapPending | null };
 
 const _boneKey = (a: string) => _norm(a) + "#bones";
@@ -187,6 +187,7 @@ export async function loadBoneBank(address: string): Promise<BoneBank> {
     if (ps && typeof ps === "object" && Number.isFinite(+ps.deciBones) && ps.sig && ps.nonce) {
       pending = { deciBones: Math.round(+ps.deciBones), nonce: String(ps.nonce), deadline: Number.isFinite(+ps.deadline) ? +ps.deadline : 0,
                   sig: String(ps.sig), createdAt: Number.isFinite(+ps.createdAt) ? +ps.createdAt : 0 };
+      if (ps.rr) { pending.rr = true; pending.voucher = ps.voucher || null; }   // 🦴 RonkeReward režimas — išsaugom re-send voucherį
     }
     return { bones, pending };
   } catch { return empty; }

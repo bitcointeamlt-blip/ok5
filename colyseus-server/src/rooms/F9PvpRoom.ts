@@ -6,7 +6,7 @@ import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loa
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { consumeInstantHeal, instantHealStatus, refundInstantHeal } from "../services/InstantHeal";   // ⚡🔵 Ronke Bless instant heal (2026-07-05)
 import { ethers } from "ethers";
-import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED } from "../services/BoneSwap";
+import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
 import { raidFeeEnabled, verifyAndConsumeRaidFee, RAID_FEE_RONKE } from "../services/RaidFee";   // ⚔️💰 10 RONKE raid fee → treasury (moka tik puolikas)
 import { chainDeck, chainDeckCached, chainDeckFull, chainDeckInvalidate, chainUtypeStr } from "../services/DeckChain";
@@ -769,8 +769,9 @@ export class F9PvpRoom extends Room<F9State> {
       const bank = await boneBankOp(addr, async () => {
         const b = await loadBoneBank(addr);
         // Pasibaigęs pending voucher → on-chain nonce patikra: panaudotas → clear; ne → RE-CREDIT.
+        //   RonkeReward režimo pending (rr) tikrina RonkeReward usedNonces; Saigon — BoneExchange usedNonces.
         if (b.pending && Date.now() > b.pending.deadline * 1000 + 5 * 60 * 1000) {
-          const used = await isNonceUsed(b.pending.nonce);
+          const used = (b.pending as any).rr ? await isRonkeRewardNonceUsed(b.pending.nonce) : await isNonceUsed(b.pending.nonce);
           if (used === true) { b.pending = null; await saveBoneBank(addr, b); }
           else if (used === false) {
             const back = b.pending.deciBones / 10;
@@ -818,13 +819,31 @@ export class F9PvpRoom extends Room<F9State> {
           const bank = await loadBoneBank(addr);
           if (bank.pending) {   // jau turi voucher'į → pergrąžinam TĄ PATĮ (re-submit; naujo neišduodam)
             if (Date.now() <= bank.pending.deadline * 1000) {
-              try { client.send("bones_voucher", { ...bank.pending, contract: cfg.contract, chainId: cfg.chainId, rpc: cfg.rpc, resend: true }); } catch (_) {}
+              const pv: any = (bank.pending as any).rr
+                ? { ...(bank.pending as any).voucher, ronkeReward: true, deciBones: (bank.pending as any).deciBones, resend: true }
+                : { ...bank.pending, contract: cfg.contract, chainId: cfg.chainId, rpc: cfg.rpc, resend: true };
+              try { client.send("bones_voucher", pv); } catch (_) {}
             } else {
               try { client.send("bones_err", { msg: "Pending swap expired — reopen panel to reclaim bones" }); } catch (_) {}
             }
             return;
           }
           if (bank.bones < MIN_BONES) { try { client.send("bones_err", { msg: `Need ${MIN_BONES} bones in bank (have ${bank.bones})` }); } catch (_) {} return; }
+          // ⚡ RONKEREWARD režimas (mainnet, 07-12): kaulai×5 RONKE per faucet pool, cap RR_MAX_SWAP_BONES.
+          if (cfg.mode === "ronkereward") {
+            const v: any = await signBoneRonkeVoucher(addr, bank.bones);
+            if (!v) { try { client.send("bones_err", { msg: "Voucher signing failed" }); } catch (_) {} return; }
+            const bones = v.deciBones / 10;
+            bank.bones = Math.round((bank.bones - bones) * 10) / 10;
+            // pending.rr → re-credit tikrina RonkeReward nonce; voucher saugom re-send'ui
+            bank.pending = { deciBones: v.deciBones, nonce: v.nonce, deadline: v.deadline, sig: v.signature, createdAt: Date.now(), rr: true, voucher: v } as any;
+            const ok = await saveBoneBank(addr, bank);
+            if (!ok) { try { client.send("bones_err", { msg: "Persist failed — try again" }); } catch (_) {} return; }
+            console.log(`[F9PvpRoom] 🦴→RONKE(RR) voucher ${bones} bones → ${bones * cfg.ratePerBone} RONKE (${addr.slice(0, 10)}…)`);
+            try { client.send("bones_voucher", { ...v }); } catch (_) {}
+            return;
+          }
+          // Saigon BoneExchange režimas (legacy/testnet)
           const deci = Math.min(Math.floor(bank.bones * 10), MAX_SWAP_BONES * 10);
           const v = await signSwapVoucher(addr, deci);
           if (!v) { try { client.send("bones_err", { msg: "Voucher signing failed" }); } catch (_) {} return; }
