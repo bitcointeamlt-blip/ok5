@@ -8,6 +8,7 @@ import { consumeInstantHeal, instantHealStatus, refundInstantHeal } from "../ser
 import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED } from "../services/BoneSwap";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
+import { raidFeeEnabled, verifyAndConsumeRaidFee, RAID_FEE_RONKE } from "../services/RaidFee";   // ⚔️💰 10 RONKE raid fee → treasury (moka tik puolikas)
 import { chainDeck, chainDeckCached, chainDeckFull, chainDeckInvalidate, chainUtypeStr } from "../services/DeckChain";
 
 // ── F9 PvP room — real-time FFA (iki 4 žaidėjų) RTS squad battle + KotH (authoritative). ──
@@ -280,7 +281,7 @@ const PVP_OBSTACLES: { cx: number; cy: number; rad?: number; hw?: number; hh?: n
   { cx: 64.78, cy: 7.86, hw: 1.25, hh: 0.55 },
   // ⛏️🏠 AUKSO KASIMO STOVYKLA (07-07 dekoras, avies pieva žemiau tako): namukas House3 + aukso akmuo.
   //    PRIVALO sutapti su game.js _F9_GC (HX 58.9/HY 19.5, SX 63.7/SY 19.85)!
-  { cx: 58.62, cy: 19.5, hw: 1.05, hh: 0.5 },  // namukas (bazė AABB; 07-07 −15px kairėn = −0.28 cell, seka vizualą)
+  { cx: 58.34, cy: 19.5, hw: 1.05, hh: 0.5 },  // namukas (bazė AABB; 07-07 −15px + 07-12 −15px kairėn = −0.56 cell, seka vizualą)
   { cx: 63.7, cy: 19.85, rad: 0.55 },          // aukso akmuo (apvalus, kaip medis)
   // 📊 GLOBAL STATS stulpas — mažas apvalus hitbox prie įsmigimo (kaip medis). cx=_F9_STATS.x; cy pakelta 35px aukštyn (9.72→9.07).
   { cx: 59.4, cy: 9.07, rad: 0.30 },
@@ -1022,6 +1023,14 @@ export class F9PvpRoom extends Room<F9State> {
         console.log(`[F9PvpRoom] 🚫 async raid atmestas — ${this._ownerAddr} neturi kovai pajėgių NFT gynėjų`);
         throw new Error("NO_DEFENDERS");
       }
+      // ⚔️💰 RAID FEE (PASKUTINIS gate — atmestas join TX nesudegina): 10 RONKE → treasury, moka TIK puolikas.
+      if (raidFeeEnabled()) {
+        const _fee = await verifyAndConsumeRaidFee(String(p.address || ""), String(options?.feeTx || ""));
+        if (!_fee.ok) {
+          this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);
+          throw new Error("RAID_FEE:" + (_fee.reason || "required") + ":" + RAID_FEE_RONKE);
+        }
+      }
       console.log(`[F9PvpRoom] 🤖 ASYNC raid on ${this._ownerAddr}: ${this._restoreUnits ? this._restoreUnits.length + " AI defenders" : "no snapshot"}`);
       this._raidAtkAddr = String(p.address || "").trim().toLowerCase();   // 📜 puolikas (async)
       _raidCdMap.set(this._raidAtkAddr + "|" + this._ownerAddr, Date.now());   // ⏲ CD startuoja raidui prasidėjus
@@ -1052,6 +1061,14 @@ export class F9PvpRoom extends Room<F9State> {
         this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);   // 🐛 M3: išvalom ghost player (kitaip throw palieka size=2 → onLeave→_handlePlayerOut→klaidingas owner _endMatch)
         console.log(`[F9PvpRoom] 🚫 live raid atmestas — savininkas be kovai pajėgių NFT unitų`);
         throw new Error("NO_DEFENDERS");
+      }
+      // ⚔️💰 RAID FEE (PASKUTINIS gate, kaip async): 10 RONKE → treasury, moka TIK puolikas.
+      if (raidFeeEnabled()) {
+        const _fee = await verifyAndConsumeRaidFee(String(p.address || ""), String(options?.feeTx || ""));
+        if (!_fee.ok) {
+          this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);
+          throw new Error("RAID_FEE:" + (_fee.reason || "required") + ":" + RAID_FEE_RONKE);
+        }
       }
       _raidCdMap.set(String(p.address || "").trim().toLowerCase() + "|" + this._ownerAddr, Date.now());
       this._retreatMs = 0; this._attackerEngaged = false; this._lastRetreatSec = -1;   // 🏳️ švarus raidas
