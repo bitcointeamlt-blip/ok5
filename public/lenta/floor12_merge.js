@@ -24070,9 +24070,22 @@
 
     }
 
-    html += '<button class="f12sr-close" onclick="var e=document.getElementById(\'f12-settle-result\');if(e)e.remove()">CLOSE</button>';
+    // 🏰 07-04 user: po kamuoliukų mūšio grįžtam į PILIES sceną (ne liekam F12).
+    //   Fallback: jei pilies boot'as nepasiekiamas (be wallet ir pan.) — elgiasi kaip senas CLOSE.
+    html += '<button class="f12sr-close" id="f12sr-close-btn">🏰 RETURN TO CASTLE</button>';
 
     div.innerHTML = html;
+    const _srClose = div.querySelector('#f12sr-close-btn');
+    if (_srClose) _srClose.onclick = function () {
+      try { div.remove(); } catch (_) {}
+      try {
+        if (typeof window.F9PvpHomeLaunch === 'function') { window.F9PvpHomeLaunch(); return; }
+        if (window.F9PvpLive && window.F9PvpLive.launchHome) {
+          var _a = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+          window.F9PvpLive.launchHome({ address: _a });
+        }
+      } catch (_) {}
+    };
 
     // ── XP skaitliuko animacija: kiekvienas „+0 XP" virš sprite kyla iki uždirbto skaičiaus,
     //    o pasibaigus — jei unitas pakilo lygiu, paleidžiama level-up burst animacija. ──

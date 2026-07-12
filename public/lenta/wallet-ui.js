@@ -21,6 +21,7 @@
       <div class="wui-pill-row">
         <button type="button" class="wui-menu-toggle" id="wui-menu-toggle" title="Menu" aria-label="Toggle menu">☰</button>
         <button type="button" class="wui-pill" id="wui-pill-btn"></button>
+        <button type="button" class="wui-castle-btn wui-raid-btn" id="wui-raid-btn" title="Raid a Castle" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-inv-btn" id="wui-inv-btn" title="Inventory" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
@@ -431,18 +432,21 @@
     // Show inventory & rewards buttons only in adventure mode
     const screenGame = document.getElementById('screen-game');
     const inAdv = screenGame && screenGame.classList.contains('active') && screenGame.classList.contains('adv-mode');
+    // 🏰 F9 pilies PvP scena (home/raid) — dock'e SLEPIAM Inventory/Rewards/Upgrade/Home (user 07-03),
+    //    vietoj jų ⚔️ RAID (senas top-right pill'as raid_ui.js'e išjungtas — entry point čia).
+    const inF9Pvp = !!window._f9pvpLive;
     if (invBtn) {
-      invBtn.style.display = inAdv ? 'flex' : 'none';
+      invBtn.style.display = (inAdv && !inF9Pvp) ? 'flex' : 'none';
       invBtn.style.background = invBg;
       invBtn.innerHTML = `${invIcon}<span class="wui-inv-hint">INVENTORY</span>`;
     }
     if (rewardsBtnEl) {
-      rewardsBtnEl.style.display = inAdv ? 'flex' : 'none';
+      rewardsBtnEl.style.display = (inAdv && !inF9Pvp) ? 'flex' : 'none';
       rewardsBtnEl.style.background = rewardsBg;
       rewardsBtnEl.innerHTML = `${rewardsImg}<span class="wui-rewards-hint">REWARDS</span>`;
     }
     if (upgradeBtnEl) {
-      upgradeBtnEl.style.display = inAdv ? 'flex' : 'none';
+      upgradeBtnEl.style.display = (inAdv && !inF9Pvp) ? 'flex' : 'none';
       upgradeBtnEl.style.background = upgradeBg;
       upgradeBtnEl.innerHTML = `${anvilSvg}<span class="wui-upgrade-hint">UPGRADE</span>`;
     }
@@ -453,9 +457,21 @@
     const isHome = (_floorTxt === 'HOME');
     const isF12 = (_floorTxt === 'F12');
     if (homeBtnEl) {
-      homeBtnEl.style.display = (inAdv && !isHome) ? 'flex' : 'none';
+      homeBtnEl.style.display = (inAdv && !isHome && !inF9Pvp) ? 'flex' : 'none';
       homeBtnEl.style.background = '#6b4a2e';
       homeBtnEl.innerHTML = `<img class="wui-castle-img" src="assets_tiny/Buildings_Castle.png" alt="" draggable="false"/><span class="wui-home-hint">HOME</span>`;
+    }
+    // ⚔️ RAID — tik SAVO pilyje (ne raido metu); atidaro raid_ui taikinių sąrašą
+    const raidBtnEl = pillEl.querySelector('#wui-raid-btn');
+    if (raidBtnEl) {
+      const showRaid = inAdv && !!window.__f9HomeActive && !window.__f9RaidActive;
+      raidBtnEl.style.display = showRaid ? 'flex' : 'none';
+      raidBtnEl.style.background = '#4a1d17';
+      if (!raidBtnEl._init) {
+        raidBtnEl._init = true;
+        raidBtnEl.innerHTML = `<span style="font-size:27px;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))">⚔️</span><span class="wui-home-hint wui-raid-hint">RAID</span>`;
+        raidBtnEl.addEventListener('click', () => { try { if (window.F9RaidUI && window.F9RaidUI.open) window.F9RaidUI.open(); } catch (_) {} });
+      }
     }
     if (pewpewBtnEl) {
       // PewPew Room — F12 cannon merge floor (tikras barrel sprite + hover liquid fill anim)
@@ -838,7 +854,8 @@
     let _lastFloorTxt = null;
     setInterval(() => {
       const lbl = document.getElementById('floor-nav-label');
-      const txt = lbl ? lbl.textContent.trim() : '';
+      const txt = (lbl ? lbl.textContent.trim() : '') +
+        '|' + (window._f9pvpLive ? 1 : 0) + (window.__f9HomeActive ? 1 : 0) + (window.__f9RaidActive ? 1 : 0);   // 🏰 F9 PvP dock režimas
       if (txt !== _lastFloorTxt) { _lastFloorTxt = txt; render(); }
     }, 300);
   }

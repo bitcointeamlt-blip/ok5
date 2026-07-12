@@ -32,7 +32,7 @@
   // CDN dist/colyseus.js vanilla <script> krenta su „Buffer is not defined" → naudojam savo bundle.
   var COLYSEUS_CDN = 'colyseus.browser.js';
   var ROOM_NAME = 'f9_pvp_room';
-  var ARENA_COLS = 40, ARENA_ROWS = 24;   // = server ARENA_W / ARENA_H
+  var ARENA_COLS = 80, ARENA_ROWS = 24;   // = server ARENA_W / ARENA_H (2× plotis — horizontalus castle siege)
 
   function defaultEndpoint() {
     if (typeof window !== 'undefined' && window.F9PVP_ENDPOINT) return window.F9PVP_ENDPOINT;
@@ -168,7 +168,9 @@
     createMatch: function (opts) {
       var self = this; opts = opts || {};
       if (!this.client) { return this.connect().then(function (ok) { return ok ? self.createMatch(opts) : null; }); }
-      return this.client.create('f9_pvp_room', { name: String(opts.name || '') }).then(function (room) {
+      var _createOpts = { name: String(opts.name || ''), home: opts.home === true, deck: Array.isArray(opts.deck) ? opts.deck : [], address: String(opts.address || ''), owner: String(opts.owner || '') };
+      if (Number.isFinite(+opts.active)) _createOpts.active = +opts.active;   // ⚔ pageidaujamas lauko dydis (1..12)
+      return this.client.create('f9_pvp_room', _createOpts).then(function (room) {
         self.room = room; self.connected = true; self.myTeam = -1;
         self._wire(room);
         console.log('[F9PVP] created match room ' + room.id);
@@ -178,12 +180,31 @@
         if (self.onError) self.onError(e); return null;
       });
     },
+    // 🗡️🤖 RAID: joinOrCreate pagal owner (filterBy). Taikinys ONLINE → prisijungia prie jo GYVO home kambario
+    //   (live raid); OFFLINE → sukuria kambarį (serveris _asyncRaid → AI gina taikinio snapshot'ą). Mes = puolikas.
+    raidPlayer: function (targetAddr, opts) {
+      var self = this; opts = opts || {};
+      var owner = String(targetAddr || '').trim().toLowerCase();
+      if (!owner) return Promise.resolve(null);
+      if (!this.client) { return this.connect().then(function (ok) { return ok ? self.raidPlayer(targetAddr, opts) : null; }); }
+      var joinOpts = { owner: owner, raid: true, deck: Array.isArray(opts.deck) ? opts.deck : [], address: String(opts.address || '') };
+      if (Number.isFinite(+opts.active)) joinOpts.active = +opts.active;   // ⚔ puoliko pageidaujamas aktyvių dydis
+      return this.client.joinOrCreate('f9_pvp_room', joinOpts).then(function (room) {
+        self.room = room; self.connected = true; self.myTeam = -1;
+        self._wire(room);
+        console.log('[F9PVP] 🗡️ raiding ' + owner + ' → room ' + room.id);
+        return room;
+      }).catch(function (e) {
+        self.lastError = e; console.warn('[F9PVP] raidPlayer failed', e && e.message);
+        if (self.onError) self.onError(e); return null;
+      });
+    },
     // Join a SPECIFIC listed match by roomId. Wires it like join().
     joinMatchById: function (roomId, opts) {
       var self = this; opts = opts || {};
       if (!roomId) return Promise.resolve(null);
       if (!this.client) { return this.connect().then(function (ok) { return ok ? self.joinMatchById(roomId, opts) : null; }); }
-      return this.client.joinById(roomId, { name: String(opts.name || '') }).then(function (room) {
+      return this.client.joinById(roomId, { name: String(opts.name || ''), deck: Array.isArray(opts.deck) ? opts.deck : [] }).then(function (room) {
         self.room = room; self.connected = true; self.myTeam = -1;
         self._wire(room);
         console.log('[F9PVP] joined match room ' + roomId);

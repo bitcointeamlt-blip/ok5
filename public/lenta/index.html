@@ -17,6 +17,8 @@
     /* HOME mygtukas + floor arrow nav (◀ F1 ▶ / HOME) — paslepta production'e */
     html.is-production #floor-nav,
     html.is-production #btn-goto-f10 { display: none !important; }
+    /* AFK Expedition mode card — dev-only, hidden in production until shipped */
+    html.is-production .afk-dev-only { display: none !important; }
   </style>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -24,7 +26,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=trainflip_20260623">
+  <link rel="stylesheet" href="style.css?v=mobilefix_20260703">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -149,6 +151,19 @@
                 <span class="mode-card-desc">Two players share one keyboard and battle on the same board in turn-based head-to-head combat.</span>
                 <span class="mode-card-meta">Local · shared keyboard · duel</span>
                 <span class="mode-card-cta coming-soon-label">COMING SOON</span>
+              </button>
+
+              <!-- AFK EXPEDITION — dev-only (hidden in production via .afk-dev-only) -->
+              <button id="btn-afk" type="button" class="mode-card mode-card-afk afk-dev-only"
+                onclick="window.SFX&&SFX.init(); window.openAfkExpeditionPanel&&window.openAfkExpeditionPanel();">
+                <span class="mode-card-top">
+                  <span class="mode-card-label">IDLE · NFT ONLY</span>
+                  <span class="mode-card-badge">NEW</span>
+                </span>
+                <span class="mode-card-title">AFK EXPEDITION</span>
+                <span class="mode-card-desc">Send your NFT units on timed expeditions. They fight, find loot and face choices while you're away. Check in to guide them — bring home XP, RONKE &amp; items.</span>
+                <span class="mode-card-meta">Idle · risk &amp; reward · NFT units</span>
+                <span class="mode-card-cta">Open design ▸</span>
               </button>
             </div>
           </div>
@@ -1709,7 +1724,6 @@
         <button class="nft-tab active" data-tab="train">TRAIN</button>
         <button class="nft-tab" data-tab="inventory">INVENTORY <span id="nft-inv-badge">0</span></button>
         <button class="nft-tab" data-tab="battle">⚔ BATTLE</button>
-        <button class="nft-tab" data-tab="info">INFO</button>
       </div>
 
       <!-- TRAIN TAB -->
@@ -1864,20 +1878,7 @@
       </div>
 
       <!-- INFO TAB -->
-      <div class="nft-tab-panel" id="nft-tab-info">
-        <h3>Welcome to NFT Barracks</h3>
-        <p>Train real NFT units paid with RONKE token. Each unit becomes an ERC721 NFT in your wallet with on-chain XP, battles, and kills history.</p>
-        <h4>Pricing curve</h4>
-        <p>Cost scales with global supply (Bitcoin-style). 10 RONKE base, grows to 1000+ as more units mint. Burn (death in battle) reduces supply, lowers cost for everyone.</p>
-        <h4>Daily cap</h4>
-        <p>Base 10 units per 12-hour period. +5 per held Ronkeverse NFT. Hard ceiling 100. Resets at 00:00 UTC and 12:00 UTC.</p>
-        <h4>Batch multiplier</h4>
-        <p>Up to 10 in 1 TX = no penalty. 11+ doubles cost per unit. Stay at 10 per batch for optimal cost.</p>
-        <h4>Permadeath</h4>
-        <p>NFT units MORTAL — if they die in battle, the NFT is permanently burned. Even high-XP veterans can die. Real stakes.</p>
-        <h4>Contract</h4>
-        <p style="font-family:monospace;font-size:9px;word-break:break-all">0xccf604511c5d2b5c3fd61adfba3950d0d2890862</p>
-      </div>
+      <!-- (INFO tab pašalintas 2026-07-03 user prašymu) -->
 
       <!-- RONKE Power intro popup (overlay) — rodomas atidarius Inventory, kol „Don't show again" -->
       <div id="rpwr-intro" class="rpwr-intro" style="display:none">
@@ -2129,14 +2130,17 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="orientation.js?v=7firsttap"></script>
   <script src="supabase_sync.js?v=9syncguard"></script>
-  <script src="wallet.js?v=wp35payfeesession_20260615"></script>
-  <script src="barracks_nft.js?v=rh_ghost_name_20260621"></script>
-  <script src="barracks_nft_modal.js?v=trainflip_20260623"></script>
+  <script src="wallet.js?v=wp37market_20260709"></script>
+  <script src="boards.js?v=boards2_gif"></script>
+  <script src="raid_ui.js?v=raid8_minepot"></script>
+  <script src="barracks_nft.js?v=gonefix_20260712"></script>
+  <script src="barracks_nft_modal.js?v=badgebreakdown_20260712"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
-  <script src="game.js?v=f9deaths2cache_20260626"></script>
+  <script src="game.js?v=f9live325_synccounters"></script>
+  <script src="afk_expedition.js?v=afk33"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
-  <script src="floor12_merge.js?v=f12_cardcolors_20260629"></script>
-  <script src="wallet-ui.js?v=pewpew20ronstat"></script>
+  <script src="floor12_merge.js?v=f12_tocastle_20260704"></script>
+  <script src="wallet-ui.js?v=dockraid_20260703"></script>
   <script src="hog_rider_popup.js?v=hog53forceover"></script>
   <script src="leaderboard.js?v=lb23ronke_client_fallback_20260622"></script>
   <script src="ronke_faucet.js?v=rf_tiers_20260621"></script>
@@ -2699,6 +2703,7 @@
       <div class="mm-title">MENU</div>
       <button class="mm-btn" data-action="bank"><span class="mm-ic">⇄</span><span>SWAP</span></button>
       <button class="mm-btn" data-action="pill"><span class="mm-ic">💰</span><span>WALLET</span></button>
+      <button class="mm-btn mm-btn-raid" data-action="raid" style="display:none"><span class="mm-ic">⚔️</span><span>RAID</span></button>
       <button class="mm-btn" data-action="inventory"><span class="mm-ic">📦</span><span>INVENTORY</span></button>
       <button class="mm-btn" data-action="rewards"><span class="mm-ic">🎁</span><span>REWARDS</span></button>
       <button class="mm-btn" data-action="upgrade"><span class="mm-ic">⚒️</span><span>UPGRADE</span></button>
@@ -2714,7 +2719,17 @@
       const btn = document.getElementById('mobile-menu-btn');
       const modal = document.getElementById('mobile-menu-modal');
       if (!btn || !modal) return;
-      function open() { modal.style.display = 'flex'; }
+      function open() {
+        // 🏰 F9 pilies PvP scenoj: RAID matomas (tik savo namuose), Inventory/Rewards/Upgrade/Home
+        //    slepiami — sync su dock'u (wallet-ui.js inF9Pvp). Kitur — kaip buvę.
+        const f9 = !!window._f9pvpLive;
+        modal.querySelectorAll('.mm-btn').forEach((b) => {
+          const a = b.getAttribute('data-action');
+          if (a === 'raid') b.style.display = (f9 && window.__f9HomeActive && !window.__f9RaidActive) ? '' : 'none';
+          else if (a === 'inventory' || a === 'rewards' || a === 'upgrade' || a === 'home') b.style.display = f9 ? 'none' : '';
+        });
+        modal.style.display = 'flex';
+      }
       function close() { modal.style.display = 'none'; }
       btn.addEventListener('click', (e) => { e.stopPropagation(); open(); });
 
@@ -2783,6 +2798,9 @@
             case 'upgrade':   id = 'wui-upgrade-btn';  break;
             case 'pewpew':    id = 'wui-pewpew-btn';   break;
             case 'home':      id = 'wui-home-btn';     break;
+            case 'raid':
+              if (window.F9RaidUI && window.F9RaidUI.open) window.F9RaidUI.open();
+              return;
             case 'trophy':
               // Trophy panel doesn't have a hidden wallet pill button — call API directly
               if (typeof window.openTrophyPanel === 'function') window.openTrophyPanel();
@@ -2835,6 +2853,136 @@
       } else {
         window.addEventListener('load', () => setTimeout(tryDeepLink, 200));
       }
+    })();
+  </script>
+
+  <!-- ═══════════ AFK EXPEDITION (design WIP, dev-only) ═══════════ -->
+  <style>
+    .afkx-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;
+      background:rgba(6,8,14,.78);backdrop-filter:blur(3px);font-family:system-ui,sans-serif;padding:14px}
+    .afkx-overlay.active{display:flex}
+    .afkx-modal{width:min(960px,96vw);max-height:92vh;overflow:auto;background:#1a130c;border:2px solid #6b4a2e;
+      border-radius:14px;box-shadow:0 18px 60px #000a;color:#f5e6c3}
+    .afkx-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;
+      border-bottom:2px solid #6b4a2e;background:linear-gradient(180deg,#2a1d11,#1a130c);position:sticky;top:0}
+    .afkx-title{font-weight:800;font-size:18px;letter-spacing:.5px;color:#ffcf5c}
+    .afkx-tag{font-size:10px;font-weight:700;color:#1a130c;background:#4a9da6;padding:2px 7px;border-radius:6px;margin-left:8px;vertical-align:middle}
+    .afkx-close{background:#3a281a;border:1px solid #6b4a2e;color:#f5e6c3;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px}
+    .afkx-close:hover{background:#e85d5d;color:#fff}
+    .afkx-body{padding:18px}
+    .afkx-intro{opacity:.85;font-size:13px;line-height:1.5;margin-bottom:16px}
+    .afkx-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+    .afkx-card{background:#241a10;border:1px solid #5a3e26;border-radius:10px;padding:12px}
+    .afkx-card h4{margin:0 0 6px;color:#ffcf5c;font-size:13px}
+    .afkx-card p{margin:0;font-size:12px;opacity:.8;line-height:1.45}
+    .afkx-sect{margin-top:16px}
+    .afkx-sect>.afkx-lbl{font-size:11px;font-weight:700;letter-spacing:1px;color:#4a9da6;text-transform:uppercase;margin-bottom:8px}
+    .afkx-ph{border:1px dashed #5a3e26;border-radius:10px;padding:14px;background:#150f08;font-size:12px;opacity:.7;text-align:center}
+    .afkx-choice{border:1px solid #6b4a2e;border-radius:10px;padding:12px;background:#241a10;margin-top:8px}
+    .afkx-choice .q{font-size:13px;margin-bottom:8px;color:#f5e6c3}
+    .afkx-opts{display:flex;gap:8px;flex-wrap:wrap}
+    .afkx-opt{flex:1;min-width:120px;background:#2e2113;border:1px solid #6b4a2e;border-radius:8px;padding:9px;cursor:pointer;font-size:12px;color:#f5e6c3;text-align:left}
+    .afkx-opt:hover{border-color:#ffcf5c;background:#3a2a18}
+    .afkx-opt b{display:block;color:#ffcf5c;margin-bottom:2px}
+    .afkx-rules{background:#150f08;border:1px solid #5a3e26;border-radius:10px;padding:12px;font-size:12px}
+    .afkx-rules table{width:100%;border-collapse:collapse}
+    .afkx-rules td{padding:4px 6px;border-bottom:1px solid #2e2113}
+    .afkx-rules td:first-child{color:#4a9da6;white-space:nowrap}
+    .afkx-foot{margin-top:16px;padding-top:12px;border-top:1px solid #2e2113;font-size:11px;opacity:.6;text-align:center}
+    @media(max-width:680px){.afkx-steps{grid-template-columns:1fr}}
+  </style>
+  <div id="afk-overlay" class="afkx-overlay">
+    <div class="afkx-modal">
+      <div class="afkx-head">
+        <span class="afkx-title">⛺ AFK EXPEDITION <span class="afkx-tag">DESIGN WIP · NFT ONLY</span></span>
+        <button class="afkx-close" onclick="window.closeAfkExpeditionPanel()">✕</button>
+      </div>
+      <div class="afkx-body">
+        <div class="afkx-intro">
+          Send your NFT units on timed, away-from-keyboard expeditions. They auto-progress while you're gone —
+          fighting enemies, finding loot, hitting decision points. Check in to steer them and bring home rewards.
+          <em>This panel is our live design canvas — nothing here is final yet.</em>
+        </div>
+
+        <div class="afkx-steps">
+          <div class="afkx-card"><h4>1 · SEND</h4><p>Pick NFT units (up to ~20) + a biome. Pay <b>5 RONKE/unit</b> entry. Set each unit's stance (Brave / Cautious / Greedy).</p></div>
+          <div class="afkx-card"><h4>2 · EXPEDITION</h4><p>Runs on wall-clock (server-side). Minor events auto-resolve &amp; log; major events <b>wait for your choice</b>. ~50% injured (24h CD), ~10% may die.</p></div>
+          <div class="afkx-card"><h4>3 · RETURN</h4><p>Survivors bring <b>XP → levels + RonkePower</b>, sometimes <b>RONKE</b> and <b>items</b>. Deaths feed the 💀 death-trophy + bonus.</p></div>
+        </div>
+
+        <div class="afkx-sect">
+          <div class="afkx-lbl">Mission / Biome select (placeholder)</div>
+          <div class="afkx-ph">Forest · Caves · Ruins · Boss Den — each with its own risk/reward &amp; depth. (to be built)</div>
+        </div>
+
+        <div class="afkx-sect">
+          <div class="afkx-lbl">Your NFT units (placeholder)</div>
+          <div class="afkx-ph">Will list your owned NFT units with level / HP / type to select for the squad. (to be built)</div>
+        </div>
+
+        <div class="afkx-sect">
+          <div class="afkx-lbl">Active expeditions &amp; check-in (placeholder)</div>
+          <div class="afkx-ph">Progress bars + event log per running expedition; come back to resolve pending choices. (to be built)</div>
+          <div class="afkx-choice">
+            <div class="q">⚔️ Example choice — your Skull meets a goblin pack:</div>
+            <div class="afkx-opts">
+              <div class="afkx-opt"><b>Fight</b>Risk damage / death · chance of loot + XP</div>
+              <div class="afkx-opt"><b>Flee</b>Safe · no reward · skip deeper</div>
+            </div>
+            <div class="q" style="margin-top:10px">🍄 You spot a strange mushroom:</div>
+            <div class="afkx-opts">
+              <div class="afkx-opt"><b>Take it</b>Could heal… or poison</div>
+              <div class="afkx-opt"><b>Leave it</b>Walk on, no risk</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="afkx-sect">
+          <div class="afkx-lbl">Draft rules (our current thinking — editable)</div>
+          <div class="afkx-rules">
+            <table>
+              <tr><td>Entry</td><td>5 RONKE / unit (funds reward pool + part burn)</td></tr>
+              <tr><td>Squad</td><td>up to ~20 units at once</td></tr>
+              <tr><td>Injured</td><td>~50% → 24h cooldown (heal early for RONKE)</td></tr>
+              <tr><td>Death</td><td>~10% (scale by depth: easy 2–3% → hard 10–15%) · NFT burned</td></tr>
+              <tr><td>Reward</td><td>mainly XP / level / RonkePower + items; RONKE rare (net SINK = healthy economy)</td></tr>
+              <tr><td>On-chain</td><td>start + claim = player-paid TX (PoD-friendly) · sim off-chain</td></tr>
+              <tr><td>Contract</td><td>new <b>PewPewExpeditions</b> (registered to PoD #68 + relayer)</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <div class="afkx-foot">⚙️ Design in progress — we build this together. Backend, contract &amp; logic come next.</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    window.openAfkExpeditionPanel = function () {
+      var ov = document.getElementById('afk-overlay');
+      if (ov) ov.classList.add('active');
+      try { window.SFX && SFX.play && SFX.play(620, 0.08, 0.04, 'square', 200); } catch (e) {}
+    };
+    window.closeAfkExpeditionPanel = function () {
+      var ov = document.getElementById('afk-overlay');
+      if (ov) ov.classList.remove('active');
+    };
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.closeAfkExpeditionPanel(); });
+    if (location.search.indexOf('afkopen') >= 0) window.addEventListener('load', function () { setTimeout(window.openAfkExpeditionPanel, 900); });
+    if (location.search.indexOf('expedopen') >= 0) window.addEventListener('load', function () { setTimeout(function () { window.afkExpedition && window.afkExpedition.open(); }, 1600); });
+    // 🏰 PAGRINDINIS LANGAS = SOLO NAMŲ PILIS (#f9home → serverio home režimas: tavo pilis+unitai, BE oponento/lobby).
+    //    Ta pati PvP scena, tik vienas savo pilyje. Manual „PvP vs Player" lieka per #f9live lobby. ?nof9 = senas menu.
+    (function defaultToHome() {
+      if (location.search.indexOf('nof9') >= 0) return;
+      function go() {
+        try {
+          if (!/f9home/i.test(location.hash || '')) { try { location.hash = 'f9home'; } catch (_) {} }
+          if (typeof window.F9PvpHomeLaunch === 'function') { window.F9PvpHomeLaunch(); return true; }
+        } catch (e) { console.warn('[bootHome]', e); }
+        return false;
+      }
+      function attempt(n) { if (go() || n <= 0) return; setTimeout(function () { attempt(n - 1); }, 100); }
+      if (document.readyState === 'complete' || document.readyState === 'interactive') attempt(50);
+      else window.addEventListener('DOMContentLoaded', function () { attempt(50); });
     })();
   </script>
 </body>

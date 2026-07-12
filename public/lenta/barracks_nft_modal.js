@@ -75,6 +75,8 @@
   // Rodom atidarius Inventory, NEBENT žaidėjas pažymėjo „Don't show again" (localStorage).
   var _RPWR_INTRO_KEY = 'rpwr_intro_dismissed';
   function _maybeShowRonkeIntro() {
+    return;   // 🚫 RONKE POWER intro lentutė IŠJUNGTA (user 2026-07-04 — neberodyti iš viso)
+    // eslint-disable-next-line no-unreachable
     try { if (localStorage.getItem(_RPWR_INTRO_KEY) === '1') return; } catch (_) {}
     var el = document.getElementById('rpwr-intro');
     if (!el) return;
@@ -266,15 +268,22 @@
     try {
       const W = window.Wallet, BNFT = window.BarracksNFT;
       if (!W || !BNFT || !BNFT.getBattleSquad) return;
-      const squad = BNFT.getBattleSquad(W.getAddress()).map(String);
+      // 🛡 07-06: pirmenybė TIKRAM pilies laukui (window._f9OnField) — kad picker'io „🛡 ON FIELD" sutaptų su
+      //   inventoriaus žyme IR realiu garnizonu (net jei battle squad tuščias / laukas auto-užsipildė iš deko).
+      //   Fallback (ne pilyje / nėra lauko info) → išsaugotas battle squad (localStorage).
+      const squad = (window.__f9HomeActive && window._f9OnField instanceof Set && window._f9OnField.size)
+        ? Array.from(window._f9OnField).map(String)
+        : BNFT.getBattleSquad(W.getAddress()).map(String);
       if (!squad.length) return;
       _battlePickQty = {};
       let total = 0;
+      const _perType = {};   // 🐛 M2 fix: preselect'as irgi laikosi 4×/tipo cap (laukas deko-tvarka gali turėti >4 vieno tipo — F12 tiek nedeploy'ins)
       for (const g of _battleGroups()) {
         let cnt = 0;
         for (const id of g.ids) {
           if (total >= BATTLE_MAX_TOTAL) break;
-          if (squad.indexOf(String(id)) !== -1) { cnt++; total++; }
+          if ((_perType[g.utype] | 0) >= NFT_MAX_PER_TYPE) break;
+          if (squad.indexOf(String(id)) !== -1) { cnt++; total++; _perType[g.utype] = (_perType[g.utype] | 0) + 1; }
         }
         if (cnt > 0) _battlePickQty[g.key] = cnt;
       }
@@ -341,6 +350,43 @@
     }
   }
 
+  // ─── 🏥 LIGONINĖS UŽRAKTAS (07-04 user: „sužeisti užrakinti IR kamuoliukų mode — unitus labiau vertintų") ───
+  // Pilies mūšiuose sužeisti NFT negali kautis ir F12: filtruojam iš battle picker'io.
+  // Šaltinis: gyva F9 scena (window._f9Hospital — serveris prune'ina) ARBA f9_bases REST (F12 be pilies).
+  // REST kelias konservatyvus: pasveikęs, bet dar ne-prune'intas unitas liks užrakintas iki apsilankymo
+  // pilyje (staleness saugia kryptim). Cache 60s.
+  let _hospLock = { at: 0, addr: '', set: null };
+  let _battleHospN = 0;
+  let _invInjured = new Set();   // 🏥 INVENTORY tab'ui — kurie tokenId gydosi (badge ant kortelių)
+  let _invNewBought = new Set();  // 🆕 ką tik nupirkti marketplace'e (48h) — badge, kad žaidėjas rastų naują unitą
+  let _invDead = new Set();      // 💀 permadead (buildings.deadUnits) — slepiami VISUR (žaisti nebegali)
+  // 🏥💀 07-05: deleguojam į BENDRĄ šaltinį (BarracksNFT.fetchHospState) — inventorius, battle picker
+  //   ir visos kitos vietos mato TĄ PATĮ injured/dead (jokių savų fetch'ų/kešų → jokių nesutapimų).
+  function _fetchInjuredSet(addr) {
+    addr = String(addr || '').toLowerCase();
+    if (!addr) return Promise.resolve(new Set());
+    const BN = window.BarracksNFT;
+    if (BN && BN.fetchHospState) {
+      return BN.fetchHospState(addr).then(function (st) {
+        _invDead = st.dead || new Set();
+        const s = st.inj || new Set();
+        _hospLock = { at: Date.now(), addr: addr, set: s };
+        return s;
+      }).catch(function () { return _hospLock.set || new Set(); });
+    }
+    return Promise.resolve(_hospLock.set || new Set());
+  }
+  function _applyHospitalLock(inv, injSet) {
+    _battleHospN = 0;
+    if (!injSet || !injSet.size || !Array.isArray(inv)) return inv;
+    const out = [];
+    for (let i = 0; i < inv.length; i++) {
+      if (injSet.has(String(inv[i].tokenId))) _battleHospN++;
+      else out.push(inv[i]);
+    }
+    return out;
+  }
+
   async function refreshBattlePicker() {
     _battleShowAll = false;   // kaskart atidarius — pradedam nuo cap'o (high-lvl first)
     // SVARBU: resetinam NFT pasirinkimą kiekvieną kartą atidarius. _battlePickQty raktai
@@ -364,15 +410,23 @@
     const BNFT = window.BarracksNFT;
     // On-chain deko sinchronizacija (cross-device) prieš krovimą — gated (no-op kol neaktyvuota).
     try { if (BNFT.syncDeckFromChain) await BNFT.syncDeckFromChain(W.getAddress()); } catch (_) {}
+    // ♻️ 07-05: deko sulygiavimas (bendras su inventorium) — mirę/sužaloti išimti, pagiję grąžinti;
+    //   battle picker'is NEBEgali pasiūlyti permadead (pvz. #1124) net einant tiesiai į BATTLE tab.
+    try { if (BNFT.alignDeck) await BNFT.alignDeck(W.getAddress()); } catch (_) {}
     const deck = (BNFT.getDeck && BNFT.getDeck(W.getAddress())) || [];
     const useDeck = _battleUseDeck && deck.length > 0;
     try {
+      const _injSet0 = await _fetchInjuredSet(W.getAddress());   // 🏥 sužeisti — užrakinti ir F12 (07-04)
+      // 💀 07-05: pilies PERMADEAD unitai užrakinti IR F12 battle picker'yje (miręs = miręs visur;
+      //   be šito #1124 buvo siūlomas kovai). _invDead užpildo tas pats _fetchInjuredSet REST fetch'as.
+      const _injSet = new Set(_injSet0);
+      try { _invDead.forEach(function (id) { _injSet.add(String(id)); }); } catch (_) {}
       if (useDeck) {
         // DECK režimas — kraunam TIK deck'o korteles (1 multicall, jokio tokenOfOwnerByIndex
         // skeno → instant net 500+ wallet'ui ir mobiliam).
-        _battleInventory = await BNFT.loadDeckUnits(W.getAddress(), deck);
+        _battleInventory = _applyHospitalLock(await BNFT.loadDeckUnits(W.getAddress(), deck), _injSet);
         if (!_battleInventory.length) {
-          // deck'o kortos parduotos/sudegintos arba RPC krito → fallback į pilną sąrašą
+          // deck'o kortos parduotos/sudegintos/VISOS ligoninėj arba RPC krito → fallback į pilną sąrašą
           _battleUseDeck = false;
           return refreshBattlePicker();
         }
@@ -381,10 +435,10 @@
       } else {
         // Progresyvus krovimas — aukščiausio lvl unitai pasirodo PIRMI ir žaidėjas
         // gali rinktis nelaukdamas kol visa kolekcija užsikraus (whale-friendly).
-        _battleInventory = await BNFT.fetchInventory(W.getAddress(), function (sorted, loaded, total) {
-          _battleInventory = sorted;
+        _battleInventory = _applyHospitalLock(await BNFT.fetchInventory(W.getAddress(), function (sorted, loaded, total) {
+          _battleInventory = _applyHospitalLock(sorted, _injSet);
           _renderBattleGrid(loaded < total ? { loaded: loaded, total: total } : null);
-        });
+        }), _injSet);
         if (!_battleInventory.length) {
           grid.innerHTML = '<div class="nft-empty">No NFT units yet — train one in TRAIN tab first</div>';
           _battlePickQty = {};
@@ -435,7 +489,7 @@
           <div class="nft-stat-bar-row"><span class="nft-stat-ic">⚔</span><div class="nft-stat-bar"><div class="nft-stat-bf dmg" style="width:${dmgPct}%"></div></div><span class="nft-stat-val">${cStats.dmg}</span></div>
           <div class="nft-stat-bar-row"><span class="nft-stat-ic">❤</span><div class="nft-stat-bar"><div class="nft-stat-bf hp" style="width:${hpPct}%"></div></div><span class="nft-stat-val">${cStats.hp}</span></div>
         </div>
-        <div class="nft-battle-pick-tag ${picked > 0 ? 'on' : ''} ${_disabled ? 'full' : ''}" style="--fill:${_battleFill}%"><span class="bpt-txt">${picked > 0 ? '⚔ IN BATTLE' : (_disabled ? '🔒 SQUAD FULL' : 'TAP TO SEND')}</span><span class="bpt-cnt">${_battleTotal}/${BATTLE_MAX_TOTAL}</span></div>
+        <div class="nft-battle-pick-tag ${picked > 0 ? 'on' : ''} ${_disabled ? 'full' : ''}" style="--fill:${_battleFill}%" title="${picked > 0 ? 'Active — fights on your castle field AND in PewPew Saga. Tap to bench.' : (_disabled ? 'Reserve — field is full (12). Bench an active unit to swap this in.' : 'Reserve — tap to put on your castle field / into battle (swaps with the active 12).')}"><span class="bpt-txt">${picked > 0 ? '🛡 ON FIELD' : '🪖 RESERVE'}</span><span class="bpt-cnt">${_battleTotal}/${BATTLE_MAX_TOTAL}</span></div>
       </div>`;
     }).join('');
     // Deck režimo juosta VIRŠUJ + krovimo / „show all" / „load more" juosta apačioje
@@ -447,7 +501,7 @@
     let topBar = '';
     if (inDeckMode) {
       topBar = `<div class="nft-empty" style="opacity:.9;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:rgba(90,140,90,.12);border:1px solid rgba(120,160,120,.35);border-radius:10px;margin-bottom:8px">
-        <span>Playing from your <strong>Deck</strong> (${deckLen}/${(BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : (BNFT.DECK_MAX || 12)}) — pick up to ${BATTLE_MAX_TOTAL}</span>
+        <span>Your active <strong>${BATTLE_MAX_TOTAL}</strong> 🛡 — they defend your castle <strong>and</strong> fight in PewPew Saga. Tap to swap; the rest wait in 🪖 reserve. (Deck ${deckLen}/${(BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : (BNFT.DECK_MAX || 12)})</span>
         <button id="nft-battle-deck-toggle" type="button" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(140,100,170,.4);background:rgba(122,90,152,.15);color:#c9b8dd;cursor:pointer;font-weight:600;white-space:nowrap">Browse all</button>
       </div>`;
     } else if (deckLen > 0) {
@@ -469,6 +523,10 @@
         const c = (BNFT.invCounts && BNFT.invCounts()) || { shown: 0, total: 0 };
         html += `<button id="nft-battle-loadmore" type="button" class="nft-battle-showall" style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(120,160,120,.4);background:rgba(90,140,90,.15);color:#bde0bd;cursor:pointer;font-weight:600">⬇ Show 24 more units (${c.shown}/${c.total})</button>`;
       }
+    }
+    // 🏥 užrakintų (gydomų) pranešimas — kad žaidėjas žinotų, kur dingo unitai
+    if (_battleHospN > 0) {
+      html = '<div style="grid-column:1/-1;padding:7px 12px;margin-bottom:4px;border:1px solid rgba(232,165,74,0.4);border-radius:8px;background:rgba(232,165,74,0.08);color:#e8a54a;font-size:11px;">🏥 ' + _battleHospN + ' unit(s) healing in your castle hospital — locked until recovered</div>' + html;
     }
     grid.innerHTML = html;
     {
@@ -848,7 +906,18 @@
       const usedNow = Math.max(0, Number(s.dailyCap) - Number(s.remaining));
       document.getElementById('nft-cap').textContent = `${usedNow} / ${s.dailyCap}`;
       document.getElementById('nft-supply').textContent = s.totalAlive.toString();
-      document.getElementById('nft-inv-badge').textContent = s.nftBalance.toString();
+      // 🔢 L1 fix (07-12, sync auditas): badge = raw balanceOf (įsk. ligoninę+fallen) → tooltip paaiškina
+      //   suskaidymą, kad „badge 29 vs grid 17" nebūtų mįslė (badge = grid + 🏥 + 💀).
+      {
+        const _ib = document.getElementById('nft-inv-badge');
+        _ib.textContent = s.nftBalance.toString();
+        try {
+          const _injN = _invInjured.size, _deadN = _invDead.size;
+          _ib.title = (_injN || _deadN)
+            ? (Math.max(0, Number(s.nftBalance) - _injN - _deadN) + ' available · ' + _injN + ' 🏥 healing · ' + _deadN + ' 💀 fallen — total owned ' + s.nftBalance)
+            : ('Total units owned by this wallet');
+        } catch (_) {}
+      }
       // Clamp qty input to remaining cap (avoid "Daily cap reached" reverts)
       const remaining = Number(s.remaining);
       const qtyInput = document.getElementById('nft-qty');
@@ -976,6 +1045,12 @@
     // Deko sinchronizacija iš grandinės (cross-device, „no full scan") — gated (no-op kol RonkePower neaktyvuota).
     // Sync dekas iš grandinės PIRMA (await, 6s timeout) — kad žinotume registruotą deką prieš krovimą.
     try { if (window.BarracksNFT.syncDeckFromChain) await window.BarracksNFT.syncDeckFromChain(addr); } catch (_) {}
+    // 🏥 kurie unitai gydosi — badge'ams ant kortelių (kad žinotum, ką keisti deke; 07-04 user)
+    try { _invInjured = await _fetchInjuredSet(addr); } catch (_) { _invInjured = new Set(); }
+    try { _invNewBought = (typeof window._f9MktBoughtSet === 'function') ? window._f9MktBoughtSet(addr) : new Set(); } catch (_) { _invNewBought = new Set(); }   // 🆕 marketplace pirkiniai
+    // ♻️ DEKO SULYGIAVIMAS — bendra BN.alignDeck (07-05): dekas = (registruoti − sužaloti − mirę) + 🕓 pending.
+    //   Ta pati funkcija kviečiama ir battle picker'yje → visos vietos VISADA rodo tą patį.
+    try { const BN0 = window.BarracksNFT; if (BN0 && BN0.alignDeck) await BN0.alignDeck(addr); } catch (_) {}
     const _deck0 = (window.BarracksNFT.getDeck && window.BarracksNFT.getDeck(addr)) || [];
     // DECK-FIRST: numatytai kraunam TIK deką (greitai, registracijos esmė). Pilnas skenas = PASIRINKIMAS.
     const _deckOnly = !_invShowAll && _deck0.length > 0;
@@ -988,6 +1063,16 @@
       if (_deckOnly) {
         grid.innerHTML = '<div class="nft-empty">Loading your deck…</div>';
         units = _deckAlive;   // jau užkrautas (chunked) — nedubliuojam
+        // 💀 M3 fix (07-06): mirusieji NEBĖRA getDeck'e (align nuėmė) → deck-only rodinys jų neužkraudavo ir
+        //   FALLEN sekcija likdavo tuščia default ekrane. Užkraunam atskirai (feikinės mirtys → NFT on-chain
+        //   tebeegzistuoja, loadDeckUnits veikia) ir pridedam — renderInv juos atskirs į 💀 FALLEN.
+        if (_invDead && _invDead.size) {
+          try {
+            const _deadIds = Array.from(_invDead);
+            const _du = await window.BarracksNFT.loadDeckUnits(addr, _deadIds).catch(function () { return []; });
+            if (Array.isArray(_du) && _du.length) units = units.concat(_du);
+          } catch (_) {}
+        }
       } else {
         units = await window.BarracksNFT.fetchInventory(addr, function (sorted, loaded, total) {
           const cEl = document.getElementById('nft-inv-count');
@@ -1001,10 +1086,24 @@
           for (const u of _deckAlive) if (!_have.has(String(u.tokenId))) units.push(u);
         }
       }
+      // 🏥 GYDOMI unitai (07-04 user v3): DEKE esantys — RODOMI su 🏥 badge + raudonu REMOVE mygtuku
+      //   (žaidėjas pats nuima slotą atlaisvindamas ARBA palieka ir laukia kol pagis). NE deke esantys
+      //   gydomi — slepiami kaip mirę (jų pridėti negalima kol gydosi; pasveikę vėl atsiranda kaip ADD).
+      //   💀 PERMADEAD (07-05) — NEBEslepiam: renderInv juos atskiria į „💀 FALLEN" sekciją (pažymėti +
+      //   NEklikinami; iš deko/count/freeDeadSlot logikos IŠIMTI, tad `units` čia lieka dead-free). User 07-05:
+      //   „pažymėti su kaukole ir neklikinami — kad matytųsi jog permadeath veikia" (lokalus testas).
+      if (_invInjured.size && Array.isArray(units)) {
+        const _BN = window.BarracksNFT;
+        units = units.filter(u => (!_invInjured.has(String(u.tokenId)) || (_BN && _BN.deckHas && _BN.deckHas(addr, u.tokenId))));
+      }
+      // Deko vaizdas liko tuščias (visi deko unitai gydosi/mirę) → automatiškai perjungiam į PILNĄ
+      // kolekciją (edit režimas) — žaidėjas iškart mato sveikus kandidatus papildymui.
+      if (_deckOnly && !units.length) { _invShowAll = true; return refreshInventory(); }
       // Render'is iškeltas į vidinę funkciją kad „Load more" galėtų perrenderinti su naujais unitais.
       const BNFT = window.BarracksNFT;
       const _addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
       let _lastInvUnits = null;
+      const _fallenMap = new Map();   // 💀 permadead surinkti per VISUS renderInv/load-more (Map tokenId→unit, dedup) → atskira „FALLEN" sekcija
       // RONKE Power (client display) — TA PATI formulė kaip ronke-power edge fn:
       // unitPower = max(0, level-1) × rate (power nuo lvl 2); rate=15 hog(5), 16 ghost(6), 12 ronhood(7), 10 default. Σ deko unitų.
       // Serveris lieka autoritetas rewards'ams; čia tik momentinis vizualus feedback.
@@ -1037,13 +1136,26 @@
           liveCnt = 0;
           for (const id of BNFT.getDeck(_addr)) if (_seen.has(String(id))) liveCnt++;
         }
+        // 🏥 gydomi deke — rodomi ATSKIRAI (07-04 user: „rašo 22/24 bet unitų rodo 3" — nesueidavo skaičiai:
+        //   header'is skaičiavo VISUS gyvus deko, o grid'as gydomus slepia). Dabar: SVEIKI/max (🏥N).
+        let _injCnt = 0;
+        if (BNFT && BNFT.getDeck && _addr && _invInjured && _invInjured.size) {
+          for (const id of BNFT.getDeck(_addr)) if (_invInjured.has(String(id))) _injCnt++;
+        }
+        const _healthyCnt = Math.max(0, liveCnt - _injCnt);
         const power = _computeDeckPower(_aliveUnits);
         // „Register Deck On-Chain" CTA — rodom kai dekas turi unitų; atnaujinam units + power.
         const reg = document.getElementById('nft-deck-register');
         if (reg) {
           reg.style.display = 'flex';   // VISADA matomas — tuščias dekas → hint (naujokui, ypač Solana onboarding'ui)
           const dMax = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
-          const ru = document.getElementById('ndr-units'); if (ru) ru.textContent = liveCnt + '/' + dMax;
+          // 🕓 pending (lokaliai pridėti, neregistruoti) rodomi ATSKIRAI — kad deko skaičius sutaptų su lauku
+          const _regS2 = new Set(((BNFT && BNFT.getRegisteredDeck && _addr) ? BNFT.getRegisteredDeck(_addr) : []).map(String));
+          let _pendCnt = 0;
+          if (BNFT && BNFT.getDeck && _addr) for (const id of BNFT.getDeck(_addr)) if (!_regS2.has(String(id))) _pendCnt++;
+          const _readyCnt = Math.max(0, _healthyCnt - _pendCnt);
+          const ru = document.getElementById('ndr-units');
+          if (ru) ru.textContent = _readyCnt + (_pendCnt > 0 ? '+' + _pendCnt + '🕓' : '') + '/' + dMax + (_injCnt > 0 ? ' (🏥' + _injCnt + ')' : '');
           const rp = document.getElementById('ndr-power'); if (rp) rp.textContent = String(power);
           // ── Deko formavimo lentutė — 3 būsenos ──
           const registered = (BNFT && BNFT.isDeckRegistered && _addr) ? BNFT.isDeckRegistered(_addr) : false;
@@ -1161,10 +1273,16 @@
           hint.innerHTML = '🎴 Tap a <strong>card</strong> to add/remove it from your Power Deck (max ' + _hMax + '). Tap <strong>ℹ</strong> to see abilities. Then register the deck for RONKE Power + faucet.';
         }
       }
-      function renderInv(units) {
+      function renderInv(unitsAll) {
+      // 💀 PERMADEAD atskiriam (07-05 user): kaupiam į _fallenMap (rodom „FALLEN" sekcijoj, pažymėti+neklikinami);
+      //   `units` lieka dead-free → visa deko/count/freeDeadSlot logika NEPAKITUSI. `let` — click handler reassign'ina.
+      if (_invDead.size && Array.isArray(unitsAll)) for (const u of unitsAll) if (_invDead.has(String(u.tokenId))) _fallenMap.set(String(u.tokenId), u);
+      let units = _invDead.size ? unitsAll.filter(u => !_invDead.has(String(u.tokenId))) : unitsAll;
       _lastInvUnits = units;
       document.getElementById('nft-inv-count').textContent = units.length;
-      if (units.length === 0) {
+      // 🐛 LOW-fix: NEbaigiam anksti jei yra 💀 fallen (pvz. deck-only ir VISI deko unitai mirę) — kitaip
+      //   rodytų „No NFT units" ir fallen sekcija (žemiau) nepasirodytų. Su fallen leidžiam tęsti (groupedArr tuščias → tik fallen).
+      if (units.length === 0 && !_fallenMap.size) {
         grid.innerHTML = '<div class="nft-empty">No NFT units yet — train your first!</div>';
         _syncDeckHeader();
         return;
@@ -1175,7 +1293,8 @@
       // SHOW-ALL → stack'inam identiškus (×N), kad šimtai unitų netaptų šimtais kortų.
       const groups = new Map();
       for (const u of units) {
-        const key = _deckOnly ? String(u.tokenId) : `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}`;
+        const _injK = _invInjured.has(String(u.tokenId)) ? '|INJ' : '';   // 🏥 sužaloti atskirai (nesistekuoja su sveikais)
+        const key = _deckOnly ? String(u.tokenId) : `${u.utype}|${u.xp}|${u.level}|${u.battles}|${u.wins}|${u.kills}${_injK}`;
         if (!groups.has(key)) {
           groups.set(key, { ...u, ids: [u.tokenId], count: 1 });
         } else {
@@ -1212,9 +1331,9 @@
       // GYVAS deko skaičius — deko ID'ai, kurie realiai užkrauti (mirę/parduoti praleidžiami) → rodom 22/24, ne 24/24.
       const _loadedIds = new Set(units.map((u) => String(u.tokenId)));
       const _deckLiveCnt = (BNFT && BNFT.getDeck && _addr)
-        ? BNFT.getDeck(_addr).filter((id) => _loadedIds.has(String(id))).length
+        ? BNFT.getDeck(_addr).filter((id) => _loadedIds.has(String(id)) && !_invInjured.has(String(id))).length
         : ((BNFT && BNFT.deckCount && _addr) ? BNFT.deckCount(_addr) : 0);
-      grid.innerHTML = groupedArr.map(g => {
+      let _invHtml = groupedArr.map(g => {
         const rarityCls = g.rarity === 'rare' ? 'rare' : '';
         const veteranCls = g.level >= 10 ? 'veteran' : '';
         const cStats = _unitCombatStats(g.utype, g.level);   // DMG/HP pagal tipą + lygį
@@ -1245,18 +1364,31 @@
         const _deckMax  = (BNFT && BNFT.getDeckMax && _addr) ? BNFT.getDeckMax(_addr) : 12;
         function _smartBtn() {
           const idsAttr = g.ids.join(',');
-          // Užrakintame deke rodom GYVĄ skaičių (22/24), kitur — visą deck array (pildymui).
-          const _shownCnt = _deckLocked ? _deckLiveCnt : _deckCnt;
+          // Rodome SVEIKŲ skaičių abiem režimais (07-04: gydomi slepiami kaip mirę — _deckLiveCnt
+          // skaičiuoja tik užkrautus/sveikus, tad sutampa su header'iu ir matomom kortelėm).
+          const _shownCnt = _deckLiveCnt;
           const cnt   = _shownCnt + '/' + _deckMax;
           const fill  = Math.round(_shownCnt / Math.max(1, _deckMax) * 100);
+          // 🕓 PENDING (07-05): lokaliai pridėtas, bet DAR NEregistruotas on-chain — kad nesimaišytų su
+          //   tikrais deko nariais (user: „deke 7, lauke 1" — 6 buvo neišsaugoti pridėjimai).
+          const _regSnap = (BNFT && BNFT.getRegisteredDeck && _addr) ? BNFT.getRegisteredDeck(_addr).map(String) : [];
+          const _pending = inDeck > 0 && !g.ids.some((id) => _regSnap.indexOf(String(id)) !== -1);
           // UŽRAKINTA (registruota, ne edit) → tik 🔒, jokio veiksmo. Spustelėjus — užuomina paspausti ✏️.
           if (_deckLocked) {
-            const lockLabel = inDeck > 0 ? '🔒 IN DECK' : '🔒 LOCKED';
-            return `<button class="nft-smart-btn sb-locked" data-locked="1" type="button" title="Deck registered — click ✏️ EDIT to change your deck" style="--fill:${fill}%"><span class="nsb-txt">${lockLabel}</span><span class="nsb-cnt">${cnt}</span></button>`;
+            const lockLabel = _pending ? '🕓 PENDING' : (inDeck > 0 ? '🔒 IN DECK' : '🔒 LOCKED');
+            const lockTitle = _pending ? 'Added locally but NOT registered on-chain yet — press UPDATE DECK (10 RONKE) to make it real, or ↩ UNDO to discard.' : 'Deck registered — click ✏️ EDIT to change your deck';
+            return `<button class="nft-smart-btn sb-locked" data-locked="1" type="button" title="${lockTitle}" style="--fill:${fill}%${_pending ? ';border-color:rgba(255,207,92,.6);color:#ffcf5c' : ''}"><span class="nsb-txt">${lockLabel}</span><span class="nsb-cnt">${cnt}</span></button>`;
+          }
+          // 🏥 sužalotas deke → raudonas REMOVE (atlaisvina slotą naujam unitui; arba lauk kol pagis)
+          const _gInj = g.ids.length > 0 && g.ids.every((id) => _invInjured.has(String(id)));
+          if (_gInj && inDeck > 0) {
+            return `<button class="nft-smart-btn sb-indeck" data-ids="${idsAttr}" type="button" title="Injured — healing in your castle hospital. Remove to free the deck slot for a new unit (re-add after recovery), or wait until healed." style="--fill:${fill}%;border-color:rgba(232,93,93,.6);background:rgba(120,40,40,.28);color:#ffb3b0"><span class="nsb-txt">🏥 REMOVE</span><span class="nsb-cnt">${cnt}</span></button>`;
           }
           const cls   = inDeck > 0 ? 'sb-indeck' : 'sb-adddeck';
-          const label = inDeck > 0 ? '✓ IN DECK' : '⚡ ADD TO DECK';
-          const title = inDeck > 0 ? 'In your Power Deck (counts toward RONKE Power). Click to remove.' : 'Add to your Power Deck — counts toward RONKE Power. Pick battle units in the BATTLE tab.';
+          const label = inDeck > 0 ? (_pending ? '🕓 PENDING' : '✓ IN DECK') : '⚡ ADD TO DECK';
+          const title = inDeck > 0
+            ? (_pending ? 'Added locally but NOT registered on-chain — press UPDATE DECK to register, or click to remove.' : 'In your Power Deck (counts toward RONKE Power). Click to remove.')
+            : 'Add to your Power Deck — counts toward RONKE Power. Pick battle units in the BATTLE tab.';
           return `<button class="nft-smart-btn ${cls}" data-ids="${idsAttr}" type="button" title="${title}" style="--fill:${fill}%"><span class="nsb-txt">${label}</span><span class="nsb-cnt">${cnt}</span></button>`;
         }
         // ── RONKE Power (per kortą) — formulė max(0,lvl-1)×rate. Rodom tik skaičiuką dešinio
@@ -1283,6 +1415,19 @@
                 <img src="${g.image}" alt="${g.name}">
                 <div class="nft-card-lvl-badge">Lv ${g.level}</div>
                 ${_cardPwr > 0 ? `<div class="nft-card-power-badge ${inDeck > 0 ? (_deckRegistered ? 'registered' : 'counting') : ''}" title="${(inDeck > 0 && _deckRegistered) ? 'Registered on-chain ✓ — ' : ''}${_pwrTitle}">${(inDeck > 0 && _deckRegistered) ? '✓' : '⚡'}${_cardPwr}</div>` : ''}
+                ${(() => { const _iN = g.ids.filter(id => _invInjured.has(String(id))).length; return _iN > 0 ? `<div style="position:absolute;top:${_cardPwr > 0 ? 28 : 5}px;right:5px;z-index:4;padding:2px 6px;border-radius:6px;background:rgba(60,18,18,0.88);border:1px solid #e85d5d;color:#ff9a98;font-size:9px;font-weight:700;" title="Healing in your castle hospital — cannot fight until recovered">🏥 ${g.count > 1 ? _iN + '/' + g.count : 'HEALING'}</div>` : ''; })()}
+                ${(() => { const _nN = g.ids.filter(id => _invNewBought.has(String(id))).length; return _nN > 0 ? `<div style="position:absolute;top:5px;left:5px;z-index:5;padding:2px 7px;border-radius:6px;background:rgba(18,60,24,0.92);border:1px solid #6cff8a;color:#aeffc0;font-size:9px;font-weight:800;letter-spacing:.5px;box-shadow:0 0 9px rgba(108,255,138,.6);" title="Just bought on the market">🆕 ${g.count > 1 && _nN < g.count ? _nN : 'NEW'}</div>` : ''; })()}
+                ${(() => {
+                  // 🛡 07-06 user: rodom AR unitas DABAR stovi pilies lauke (kaunasi) ar rezerve. TIK deko unitams
+                  //   ir kai lauko info šviežia (window._f9OnField Set užpildytas kai esi savo pilyje).
+                  const _of = window._f9OnField, _rv = window._f9Reserve;
+                  if (!window.__f9HomeActive || !(_of instanceof Set) || inDeck <= 0) return '';   // 🐛 M4: tik SAVO pilyje (raid'e onField = tavo unitai PRIEŠO lauke — klaidintų)
+                  const _onF = g.ids.filter(id => _of.has(String(id))).length;
+                  const _res = g.ids.filter(id => (_rv instanceof Set) && _rv.has(String(id))).length;
+                  if (_onF > 0) return `<div style="position:absolute;top:5px;left:5px;z-index:5;padding:2px 6px;border-radius:6px;background:rgba(18,54,28,0.92);border:1px solid #6fcf5c;color:#8dffa0;font-size:9px;font-weight:700;" title="Standing on your castle field right now — ready to defend / attack">🛡 ${g.count > 1 ? _onF + '/' + g.count : 'ON FIELD'}</div>`;
+                  if (_res > 0) return `<div style="position:absolute;top:5px;left:5px;z-index:5;padding:2px 6px;border-radius:6px;background:rgba(26,38,58,0.92);border:1px solid #6a8cc0;color:#a8c8ff;font-size:9px;font-weight:700;" title="In your deck but benched (over the 12-unit field cap) — enters as reinforcement when a field unit falls">🪖 ${g.count > 1 ? _res + '/' + g.count : 'RESERVE'}</div>`;
+                  return '';
+                })()}
                 <button class="nft-card-flip" type="button" title="View abilities" style="position:absolute;left:5px;bottom:5px;z-index:4;width:20px;height:20px;border-radius:50%;border:1px solid rgba(210,195,235,.55);background:rgba(35,25,50,.82);color:#e0d2f4;font-size:11px;line-height:1;cursor:pointer;padding:0">ℹ</button>
               </div>
               <div class="nft-card-header">
@@ -1323,19 +1468,51 @@
           </div>
         </div>`;
       }).join('');
+      // 🏥 BANNER (info): sužalotų slotai atlaisvinti AUTOMATIŠKAI (user v4). Rodomas IŠ KART užkrovus deką.
+      // 🛡 07-06 user: pilies lauko/rezervo suvestinė — kad būtų aišku kurie unitai realiai kaunasi (max 12
+      //   lauke), o kurie laukia rezerve (dekas > 12). Rodoma tik kai lauko info šviežia (esi savo pilyje).
+      if (window.__f9HomeActive && window._f9OnField instanceof Set && window._f9OnField.size) {
+        const _fN = window._f9OnField.size, _rN = (window._f9Reserve instanceof Set) ? window._f9Reserve.size : 0;
+        _invHtml = `<div style="grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:8px 12px;margin-bottom:4px;border:1px solid rgba(111,207,92,0.4);border-radius:8px;background:rgba(18,54,28,0.14);color:#bfe8c0;font-size:11px;"><span style="color:#8dffa0;font-weight:700;">🛡 ${_fN} on field</span> defending now (max 12)` + (_rN > 0 ? ` · <span style="color:#a8c8ff;font-weight:700;">🪖 ${_rN} in reserve</span> — reinforce when a field unit falls` : '') + `</div>` + _invHtml;
+      }
+      if (_invInjured.size) {
+        _invHtml = `<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border:1px solid rgba(232,93,93,0.45);border-radius:8px;background:rgba(120,40,40,0.12);color:#ff9a98;font-size:11px;">🏥 ${_invInjured.size} injured unit(s) healing in your castle hospital — they return to your deck automatically when healed. No re-registration needed; your deck stays valid.</div>` + _invHtml;
+      }
+      // 💀 FALLEN sekcija (07-05 user) — permadead unitai: pažymėti 💀 + NEklikinami (jokių deko mygtukų).
+      //   Rodo faktą, kad permadeath veikia. Mirtys dabar feikinės → NFT vis dar on-chain (todėl balanse skaičiuojas).
+      if (_fallenMap.size) {
+        const _fallen = Array.from(_fallenMap.values());
+        const _fh = _fallen.map(u => {
+          const nm = u.name || ((u.utype || 'unit') + ' #' + u.tokenId);
+          return '<div class="nft-inv-card nft-card-fallen" data-fallen="1" title="💀 Permadead — killed in castle PvP, cannot be deployed (fake death: NFT is still yours on-chain)" style="filter:grayscale(1) brightness(.55);opacity:.85;cursor:default;position:relative">'
+            + '<div class="nft-card-inner"><div class="nft-card-front"><div class="nft-card-img-wrap">'
+            + '<img src="' + (u.image || '') + '" alt="' + nm + '" style="filter:grayscale(1)">'
+            + '<div class="nft-card-lvl-badge">Lv ' + (u.level || 0) + '</div>'
+            + '<div style="position:absolute;top:5px;right:5px;z-index:4;padding:2px 7px;border-radius:6px;background:rgba(20,20,26,.92);border:1px solid #6a6a78;color:#c8c8d4;font-size:9px;font-weight:800;letter-spacing:.5px">💀 DEAD</div>'
+            + '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:38px;z-index:3;pointer-events:none;text-shadow:0 2px 8px #000">💀</div>'
+            + '</div><div class="nft-card-header"><span class="nft-card-name">' + nm + '</span><span class="nft-card-id">#' + u.tokenId + '</span></div>'
+            + '<div style="padding:6px 10px;text-align:center;color:#9a9aa8;font-size:10px;font-weight:700;letter-spacing:.5px">PERMADEAD · cannot deploy</div>'
+            + '</div></div></div>';
+        }).join('');
+        _invHtml += '<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;margin:8px 0 4px;border:1px solid rgba(120,120,135,.4);border-radius:8px;background:rgba(30,30,40,.35);color:#b0b0c0;font-size:11px;">💀 ' + _fallen.length + ' fallen unit(s) — permadeath (killed in castle PvP). Shown for reference; not deployable.</div>' + _fh;
+      }
+      grid.innerHTML = _invHtml;
       // Click handler (delegated): VISA korta = add/remove į deką (pagrindinis veiksmas).
       // Flip į ability'es — TIK per ℹ mygtuką arba paspaudus kortos nugarą.
       grid.onclick = function (e) {
         const t = e.target;
         if (!t) return;
         const _card = t.closest && t.closest('.nft-inv-card');
+        if (_card && _card.classList.contains('nft-card-fallen')) return;   // 💀 permadead — NEklikinama (jokio deko/flip veiksmo)
         // A) ℹ mygtukas ARBA kortos NUGARA → flip (front ⇄ ability'es), jokio deck veiksmo.
         if ((t.closest && t.closest('.nft-card-flip')) || (t.closest && t.closest('.nft-card-back'))) {
           if (_card) _card.classList.toggle('flipped'); return;
         }
         // 0) UŽRAKINTAS dekas (registruotas, ne edit) → spustelėjus 🔒 mygtuką: užuomina + blokas.
         const _lockBtn = t.closest && t.closest('button[data-locked]');
-        if (_lockBtn) { _battleToast('Deck registered — tap ✏️ EDIT to change it'); return; }
+        // 🔓 07-04: klik ant užrakinto → IŠKART edit režimas (✏️ pieštukas būna paslėptas kai dekas „changed" —
+        //   žaidėjas likdavo aklavietėj „negaliu nieko daryti"). Vienas tap = atrakinta.
+        if (_lockBtn) { _invShowAll = true; _battleToast('✏️ Deck unlocked for editing'); refreshInventory(); return; }
         // SELL nuoroda (ar bet kokia <a>) — paliekam default.
         if (t.closest && t.closest('a')) return;
         // 1) Deck mygtukas TIESIOGIAI (data-ids), ARBA paspaudus bet kur ant kortos FRONT'o → naudojam
@@ -1355,8 +1532,10 @@
         // (deko ID nėra tarp užkrautų gyvų unitų) kad atsilaisvintų vieta. Tik PRIDEDANT (ne „nieko nedarius").
         const _loadedSet = new Set((units || []).map((u) => String(u.tokenId)));
         function _freeDeadSlot() {
-          const deadId = (BNFT.getDeck(_addr) || []).map(String).find((id) => !_loadedSet.has(id));
-          if (deadId) { BNFT.removeFromDeck(_addr, deadId); return true; }
+          const deckIds = (BNFT.getDeck(_addr) || []).map(String);
+          // pirmenybė mirusiems/parduotiems (nėra tarp užkrautų), tada 🏥 sužalotiems (neaktyvūs = kaip mirę)
+          const freeId = deckIds.find((id) => !_loadedSet.has(id)) || deckIds.find((id) => _invInjured.has(id));
+          if (freeId) { BNFT.removeFromDeck(_addr, freeId); return true; }
           return false;
         }
         // ── DECK toggle (vienetinės kortos) — TIK Power Deck (battle pasirinkimas BATTLE tab'e) ──
@@ -1377,7 +1556,11 @@
           const rem = ids.slice().reverse().find((id) => BNFT.deckHas(_addr, id));
           if (rem) { BNFT.removeFromDeck(_addr, rem); acted = true; }
         } else { return; }
-        if (acted) renderInv(units);   // perrender — atnaujina mygtukus + barus + header
+        if (acted) {
+          // 🏥 iš deko nuimti sužaloti DINGSTA iš sąrašo (rodomi tik kol deke) — negalima jų atgal pridėti
+          if (_invInjured.size) units = units.filter((u) => !_invInjured.has(String(u.tokenId)) || BNFT.deckHas(_addr, u.tokenId));
+          renderInv(units);   // perrender — atnaujina mygtukus + barus + header
+        }
         return;
         }
         // Fallback: korta be deck mygtuko (pvz. užrakinta) → flip į ability'es.
@@ -1394,7 +1577,9 @@
           const updated = await BNFT.loadMoreInventory(function (sorted) {
             const cEl = document.getElementById('nft-inv-count'); if (cEl) cEl.textContent = sorted.length;
           });
-          renderInv(updated);
+          // 🏥 ta pati matomumo taisyklė kaip refreshInventory (kitaip „load more" grąžintų paslėptus sužalotus)
+          const _vis = _invInjured.size ? updated.filter((u) => !_invInjured.has(String(u.tokenId)) || (BNFT.deckHas && BNFT.deckHas(_addr, u.tokenId))) : updated;
+          renderInv(_vis);
         } catch (_) { if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = restoreTxt || 'Retry'; } }
       }
       // Viršutinis mygtukas (HTML'e, greta „Owned NFT units") — tik perjungiam matomumą/tekstą/onclick

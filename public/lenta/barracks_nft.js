@@ -27,7 +27,9 @@
   function isRonkePowerEnabled() { return /^0x[0-9a-fA-F]{40}$/.test(RONKE_POWER.address || ''); }
 
   const RONIN_CHAIN_ID = 2020;
-  const RONIN_RPC = 'https://api.roninchain.com/rpc';
+  // 07-04: api.roninchain.com FLAKY (dalis node'ų timeout'ina getLogs/read'us — įrodyta 06-22) →
+  // drpc (10/10 stabilus). Tai buvo „sunkiai krauna" + deko sync fail (stale 22/24) priežastis.
+  const RONIN_RPC = 'https://ronin.drpc.org';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.0';
 
   // Minimal ABIs
@@ -443,6 +445,72 @@
     return setDeck(addr, getDeck(addr).filter((x) => x !== String(id)));
   }
 
+  // ─── 🏥💀 ARMIJOS BŪSENA — VIENAS šaltinis VISOMS UI vietoms (07-05 user: „visos vietos visada
+  //     sinchronizuotos"). Inventorius, battle picker ir kt. kviečia TĄ PATĮ fetch/align — skaičiai sutampa.
+  let _hospSt = { at: 0, addr: '', inj: new Set(), dead: new Set() };
+  async function fetchHospState(addr) {
+    const a = String(addr || '').toLowerCase();
+    if (!a) return { inj: new Set(), dead: new Set() };
+    // Pilyje — injured iš GYVOS serverio eilės (tiksliausia); dead — iš REST (live kanalo nėra).
+    let liveInj = null;
+    try { if (window._f9pvpLive && Array.isArray(window._f9Hospital)) liveInj = new Set(window._f9Hospital.map((i) => String(i.tokenId))); } catch (_) {}
+    if (!(_hospSt.addr === a && Date.now() - _hospSt.at < 45000)) {
+      try {
+        const r = await fetch('https://rbkivemouxwcgrpzazxb.supabase.co/rest/v1/f9_bases?select=buildings&ronin_address=eq.' + a,
+          { headers: { apikey: 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p', Authorization: 'Bearer sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p' } });
+        const rows = r.ok ? await r.json() : [];
+        const b = (rows && rows[0] && rows[0].buildings) || {};
+        _hospSt = { at: Date.now(), addr: a, inj: new Set((b.injured || []).map((i) => String(i.tokenId))), dead: new Set((b.deadUnits || []).map(String)) };
+      } catch (_) { if (_hospSt.addr !== a) _hospSt = { at: 0, addr: a, inj: new Set(), dead: new Set() }; }
+    }
+    return { inj: liveInj || _hospSt.inj, dead: _hospSt.dead };
+  }
+  // 🩹 SINCHRONINIS injured/dead vaizdas K1 vartotojams (isDeckRegistered/registerDeckOnChain) — TAS PATS
+  //   šaltinių prioritetas kaip fetchHospState (live ∪ REST kešas), kad align (kuris ima LIVE) ir K1 logika
+  //   niekada nesiskirtų (kitaip ≤45s langas: align nuėmė sužalotą pagal live, o K1 jo dar nemato per REST).
+  function _unavailNowSync(a) {
+    a = String(a || '').toLowerCase();
+    const inj = new Set(), dead = new Set();
+    try { if (window._f9pvpLive && Array.isArray(window._f9Hospital)) window._f9Hospital.forEach((i) => inj.add(String(i.tokenId))); } catch (_) {}
+    if (_hospSt && _hospSt.addr === a) {
+      _hospSt.inj.forEach((id) => inj.add(id));     // UNION (ne pakeitimas): live šviežias, REST pilnesnis (offline sužaloti)
+      _hospSt.dead.forEach((id) => dead.add(id));
+    }
+    return { inj, dead, known: (_hospSt && _hospSt.addr === a) || (window._f9pvpLive && Array.isArray(window._f9Hospital)) };
+  }
+  // 🚮 M1/M8 (07-12, sync auditas): registruoti (R), bet NEBEnuosavi tokenai (parduoti/F12-sudeginti —
+  //   ownerOf revert ar svetimas owner). Persistuojama aibė, kad align jų nebe-grąžintų į lokalų deką
+  //   (re-add→prune churn kas refresh) ir isDeckRegistered nelaikytų „žaidėjo pakeitimu" (amžina geltona
+  //   UPDATE DECK juosta). Savaime išsivalo: vėl nuosavas (atpirktas) → loadDeckUnits pamato → nuimam.
+  function _goneKey(addr) { return 'f12_gone_' + String(addr || '').toLowerCase(); }
+  function getGoneSet(addr) {
+    try { const r = JSON.parse(localStorage.getItem(_goneKey(addr)) || '[]'); return new Set((Array.isArray(r) ? r : []).map(String)); }
+    catch (_) { return new Set(); }
+  }
+  function _updateGone(addr, addIds, ownedIds) {
+    if ((!addIds || !addIds.length) && (!ownedIds || !ownedIds.length)) return;
+    const s = getGoneSet(addr);
+    (addIds || []).forEach((id) => s.add(String(id)));
+    (ownedIds || []).forEach((id) => s.delete(String(id)));
+    try { localStorage.setItem(_goneKey(addr), JSON.stringify(Array.from(s))); } catch (_) {}
+  }
+  // ♻️ Lokalaus deko SULYGIAVIMAS su tikrove: dekas = (REGISTRUOTI − sužaloti − mirę − perleisti) + 🕓 pending
+  //   pridėjimai. Kviečiama prieš KIEKVIENĄ deko vartojimą → visos vietos rodo tą patį.
+  async function alignDeck(addr) {
+    const a = String(addr || '').toLowerCase();
+    if (!a) return null;
+    const st = await fetchHospState(a);
+    const reg = getRegisteredDeck(a).map(String);
+    const loc = getDeck(a).map(String);
+    const regSet = new Set(reg);
+    const gone = getGoneSet(a);   // 🚮 M1/M8: perleisti/sudeginti negrąžinami (kitaip re-add→prune churn)
+    const healthy = reg.filter((id) => !st.inj.has(id) && !st.dead.has(id) && !gone.has(id));
+    const pending = loc.filter((id) => !regSet.has(id) && !st.inj.has(id) && !st.dead.has(id) && !gone.has(id));
+    const next = healthy.concat(pending);
+    if (next.slice().sort().join(',') !== loc.slice().sort().join(',')) setDeck(a, next);
+    return { healthy, pending, inj: st.inj, dead: st.dead };
+  }
+
   // ─── BATTLE SQUAD (kovos pogrupis, max 12 ⊆ deck) ───────────────────────
   // Deka (iki 24/maxSlots) = POWER (registruojama on-chain). Squad (12) = kas REALIAI eina į kovą.
   // BATTLE mygtukas pildo squad; kai 12 pilnas → likusios kortos eina į deką tik dėl POWER.
@@ -455,6 +523,14 @@
   function setBattleSquad(addr, ids) {
     const uniq = Array.from(new Set((ids || []).map(String))).slice(0, _BATTLE_SQUAD_MAX);
     try { localStorage.setItem(_squadKey(addr), JSON.stringify(uniq)); } catch (_) {}
+    // 🏰 HOME: jei esi savo pilyje → SKLANDUS unitų atnaujinimas (be reload — seni dingsta, nauji
+    //    atsiranda spawn spotuose per server re-spawn). Debounced (keli pakeitimai = 1 update).
+    try {
+      if (window.__f9HomeActive && window.F9PvpLive && typeof window.F9PvpLive.updateHomeSquad === 'function') {
+        clearTimeout(window._f9SquadRelaunchT);
+        window._f9SquadRelaunchT = setTimeout(function () { try { window.F9PvpLive.updateHomeSquad(); } catch (_) {} }, 350);
+      }
+    } catch (_) {}
     return uniq;
   }
   function squadHas(addr, id) { return getBattleSquad(addr).indexOf(String(id)) !== -1; }
@@ -486,11 +562,28 @@
   // TIKSLUS (exact) palyginimas — valdo juostos būseną (DECK REGISTERED vs UPDATE DECK).
   // Lock (🔒 mygtukai) naudoja ATSKIRĄ sąlygą (snapshot egzistuoja) — žr. _deckLocked modal'e.
   function isDeckRegistered(addr) {
-    const cur = getDeck(addr).map(String).sort();
-    const reg = getRegisteredDeck(addr).map(String).sort();
-    if (cur.length === 0 || cur.length !== reg.length) return false;
-    for (let i = 0; i < cur.length; i++) if (cur[i] !== reg[i]) return false;
-    return true;   // lokalus dekas == on-chain → tiksliai užregistruota
+    const cur = getDeck(addr).map(String);
+    const reg = getRegisteredDeck(addr).map(String);
+    if (reg.length === 0) return false;
+    // 🏥 K1 FIX (07-06, v2 po review): dekas laikomas UŽREGISTRUOTU (žalia, be fee) kai vienintelis skirtumas
+    //   nuo snapshot = SUŽALOTI/MIRĘ unitai, kuriuos align automatiškai nuėmė (grįš savaime). „Changed" (geltona
+    //   UPDATE+fee) TIK kai žaidėjas PATS pridėjo (pending) arba pašalino SVEIKĄ registruotą unitą.
+    //   v2: (C2) unavail = LIVE ligoninė ∪ REST kešas — TAS PATS šaltinis kaip alignDeck (kitaip ≤45s langas
+    //   grąžindavo spąstą); (M1) tuščias cur leidžiamas, jei VISI registruoti unavail (pilis krito — visi ligoninėj).
+    const a = String(addr || '').toLowerCase();
+    const un = _unavailNowSync(a);
+    const gone = getGoneSet(a);   // 🚮 M1/M8: perleisti/sudeginti — align nuėmė, NE žaidėjo pakeitimas
+    const unavail = un.known ? new Set([].concat(Array.from(un.inj), Array.from(un.dead))) : null;
+    const offDeck = (id) => (unavail && unavail.has(id)) || gone.has(id);
+    if (cur.length === 0 && !reg.every(offDeck)) return false;   // tuščias dekas ne dėl sužalojimų/perleidimų → ne registruotas
+    const regSet = new Set(reg), curSet = new Set(cur);
+    for (const id of cur) if (!regSet.has(id)) return false;   // deke yra ne-registruotas (pending) → žaidėjo pakeitimas
+    for (const id of reg) {
+      if (curSet.has(id)) continue;
+      if (offDeck(id)) continue;   // sužalotas/miręs/perleistas → align nuėmė, NElaikom pakeitimu
+      return false;   // sveikas registruotas unitas pašalintas žaidėjo → tikras pakeitimas (geltona)
+    }
+    return true;   // dekas == registruoti MINUS sužaloti/mirę/perleisti → ŠVARU (žalia, be fee)
   }
   // Ar APSKRITAI buvo registruotas (snapshot egzistuoja) — net jei dabar pakeistas/mirę pašalinti.
   // Naudojama lock'ui: registruotas dekas → 🔒 mygtukai visada (kol ne edit režimas).
@@ -532,6 +625,7 @@
       setDeck(addr, alive);
       setBattleSquad(addr, getBattleSquad(addr).filter((id) => alive.indexOf(String(id)) !== -1));
     }
+    _updateGone(addr, dead, alive);   // 🚮 M1/M8: perleisti → gone (align nebe-grąžins); gyvi → išvalom
     return dead;
   }
 
@@ -557,8 +651,20 @@
       ]);
       _deckSyncedFor = a;
       const onIds = (Array.isArray(onchain) ? onchain : []).map(String);
+      const prevReg = getRegisteredDeck(addr).map(String);   // snapshot PRIEŠ atnaujinant (edit'ų detekcijai)
+      const cur = getDeck(addr).map(String);
       setRegisteredDeck(addr, onIds);          // on-chain dekas = registruotas snapshot (lentutės būsenai)
-      if (onIds.length) setDeck(addr, onIds);  // on-chain laimi (cross-device tiesos šaltinis)
+      // 🛡 SYNC GUARD (07-04 BUG FIX): chain adopt'inam TIK kai lokalus dekas ŠVARUS (== senas registruotas
+      //   snapshot) arba TUŠČIAS (evict'intas). Anksčiau „on-chain laimi" BESĄLYGIŠKAI perrašydavo
+      //   neišsaugotus edit'us (auto-free'intus sužalotus, ką tik pridėtus unitus) kiekvieno pilies
+      //   force-sync metu → „darai ką nori — visada tas pats rezultatas". + 3 min grace po registracijos
+      //   (TX dar mainina — chain grąžintų SENĄ deką ir revert'intų ką tik apmokėtą update).
+      const _same = function (x, y) { return x.length === y.length && x.slice().sort().join(',') === y.slice().sort().join(','); };
+      let _regAt = 0; try { _regAt = Number(localStorage.getItem('f12_deckregat_' + a)) || 0; } catch (_) {}
+      const _txGrace = (Date.now() - _regAt) < 180000;
+      if (onIds.length && !cur.length) setDeck(addr, onIds);                            // evict'intas → adopt
+      else if (onIds.length && _same(cur, prevReg) && !_txGrace) setDeck(addr, onIds);  // švarus → cross-device adopt
+      else if (onIds.length && !_same(cur, prevReg)) { try { console.log('[BNFT] sync guard: local deck has unsaved edits (' + cur.length + ' vs chain ' + onIds.length + ') — keeping local'); } catch (_) {} }
       // PASTABA: battle squad = atskiras kovos pasirinkimas (BATTLE tab'e), persist'ina localStorage.
       // NEperrašom čia — kad žaidėjo kovos pasirinkimas išliktų.
     } catch (_) { /* RPC glitch / timeout — paliekam lokalų deką, NEblokuojam */ }
@@ -574,15 +680,18 @@
     // CHUNK'inam: getUnitFullData = didelė struktūra. Per daug vienam multicall → viršija RPC atsakymą →
     // dalis tyliai nutrūksta (pvz 24 deko unitai → tik 22 užkraunami). Paketais po 12 = saugu (kaip _INV_CHUNK).
     const CHUNK = 12;
+    // ⚡ Paketai LYGIAGREČIAI (07-04): 24 deko unitai = 2 paketai — nuosekliai buvo ~2× lėčiau.
+    const jobs = [];
     for (let s = 0; s < ids.length; s += CHUNK) {
       const slice = ids.slice(s, s + CHUNK);
-      let dataRes, ownRes;
-      try {
-        [dataRes, ownRes] = await Promise.all([
-          pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })) }),
-          pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [id] })) }),
-        ]);
-      } catch (_) { continue; }   // šio paketo tinklo klaida → praleidžiam paketą, tęsiam likusius
+      jobs.push(Promise.all([
+        pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })) }),
+        pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'ownerOf', args: [id] })) }),
+      ]).then(([dataRes, ownRes]) => ({ slice, dataRes, ownRes })).catch(() => null));   // paketo klaida → praleidžiam, tęsiam likusius
+    }
+    for (const pack of await Promise.all(jobs)) {
+      if (!pack) continue;
+      const { slice, dataRes, ownRes } = pack;
       for (let i = 0; i < slice.length; i++) {
         const o = ownRes[i];
         // ownerOf revert (status 'failure') = SUDEGINTAS; success bet kitas owner = PARDUOTAS → prune.
@@ -609,7 +718,39 @@
         }
       } catch (_) {}
     }
+    // 🚮 M1/M8: prune'inti → gone aibė (align nebe-grąžins iš R); sėkmingai užkrauti (nuosavi) → išvalom
+    //   iš gone (atpirkimo self-heal). Saugiklis kaip aukščiau: tik kai bent vienas gyvas (ne RPC glitch).
+    if (out.length > 0) { try { _updateGone(addr, Array.from(prune), out.map((u) => String(u.tokenId))); } catch (_) {} }
     return out;
+  }
+  // Krauna utype/level/name/image BET KOKIEM token ID — BE owner-check (kitaip nei loadDeckUnits).
+  //   Reikalinga market listingams: listintas unitas yra ESCROW (savininkas = market kontraktas, ne seller),
+  //   tad ownerOf patikra jį nupruninytų. getUnitFullData = pure view (savininkas nesvarbu).
+  //   Grąžina Map: tokenId(string) → {tokenId, utype, level, xp, name, image, rarity}. Klaidos → tas ID praleidžiamas.
+  async function loadUnitTypes(tokenIds) {
+    const ids = (tokenIds || []).map((x) => { try { return BigInt(x); } catch (_) { return null; } }).filter((x) => x !== null);
+    const map = new Map();
+    if (!ids.length) return map;
+    let pc; try { pc = await getPublicClient(); } catch (_) { return map; }
+    const CHUNK = 12, jobs = [];   // getUnitFullData didelė struktūra → paketai po 12 (kaip loadDeckUnits)
+    for (let s = 0; s < ids.length; s += CHUNK) {
+      const slice = ids.slice(s, s + CHUNK);
+      jobs.push(
+        pc.multicall({ allowFailure: true, contracts: slice.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })) })
+          .then((res) => ({ slice, res })).catch(() => null),
+      );
+    }
+    for (const pack of await Promise.all(jobs)) {
+      if (!pack) continue;
+      const { slice, res } = pack;
+      for (let i = 0; i < slice.length; i++) {
+        const d = res[i];
+        if (d && d.status === 'success' && d.result) {
+          try { map.set(String(slice[i]), _mapUnit(slice[i], d.result)); } catch (_) {}
+        }
+      }
+    }
+    return map;
   }
 
   // ─── WRITE FUNCTIONS ─────────────────────────────────────────
@@ -701,6 +842,33 @@
     if (!W || !W.isConnected || !W.isConnected()) throw new Error('Connect your wallet first.');
     const addr = W.getAddress();
     const ids = (tokenIds && tokenIds.length ? tokenIds : getDeck(addr)).map(String);
+    // 🏥 K1 FIX (07-06, v2 po review): registruojant IŠSAUGOM sužalotus registruotus unitus (pagis→grįš) —
+    //   align juos nuėmė iš getDeck, registracija be jų = NEGRĮŽTAMAS 10 RONKE spąstas. MIRUSIŲ NEregistruojam.
+    //   v2 (C1): riba = TIKRAS getDeckMax (ne hard 30 — kitaip kontraktas revert'intų arba 30-slot'e sužalotas
+    //   tyliai iškristų); jei netelpa — IŠMETAM PENDING (žaidėjo naujus pridėjimus, atstatoma) vietoj sužaloto
+    //   (neatstatoma). v2 (C2): injured šaltinis = live ∪ REST (kaip align). Tik kai tokenIds=null (esamas dekas).
+    if (!(tokenIds && tokenIds.length)) {
+      const a = String(addr || '').toLowerCase();
+      const un = _unavailNowSync(a);
+      if (un.inj.size) {
+        const maxSlots = Math.min(_DECK_HARD_MAX, (getDeckMax ? getDeckMax(a) : _DECK_HARD_MAX) || _DECK_HARD_MAX);
+        const regSnap = new Set(getRegisteredDeck(addr).map(String));
+        const _gone = getGoneSet(a);   // 🚮 M1/M8: perleisto/sudeginto NEgrąžinam į registraciją
+        const cur = new Set(ids);
+        for (const rid of Array.from(regSnap)) {
+          if (!un.inj.has(rid) || un.dead.has(rid) || _gone.has(rid) || cur.has(rid)) continue;
+          if (ids.length >= maxSlots) {
+            // pilna → atlaisvinam vietą išmesdami PASKUTINĮ pending (ne-registruotą) — žaidėjas jį matys 🕓 ir galės pridėti vėliau
+            let dropped = false;
+            for (let k = ids.length - 1; k >= 0; k--) {
+              if (!regSnap.has(String(ids[k]))) { cur.delete(String(ids[k])); ids.splice(k, 1); dropped = true; break; }
+            }
+            if (!dropped) break;   // visi registruoti → nebėra ką išmesti (neturėtų nutikti: injured nebuvo ids'uose)
+          }
+          ids.push(rid); cur.add(rid);
+        }
+      }
+    }
     if (!ids.length) throw new Error('Your deck is empty — add units first.');
     if (ids.length > _DECK_HARD_MAX) throw new Error('Deck too big (max ' + _DECK_HARD_MAX + ').');
     // dedup apsauga (kontraktas + backend irgi tikrina, bet nesiunčiam šlamšto)
@@ -760,7 +928,29 @@
     // Sinchronizuojam lokalų deką su tuo, ką užregistravom + įsimenam registruotą snapshot
     setDeck(addr, ids);
     setRegisteredDeck(addr, ids);   // dabar lokalus == on-chain → lentutė rodys „START BATTLE"
+    try { localStorage.setItem('f12_deckregat_' + String(addr).toLowerCase(), String(Date.now())); } catch (_) {}   // 🛡 sync-guard grace (TX mainina)
     setRegisteredSquad(addr, getBattleSquad(addr));   // squad snapshot UNDO'ui
+    // 🏰 07-04 v2: pilis naudoja TIK on-chain registruotą deką. Anksčiau updateHomeSquad šaudavo po
+    //   350ms — TX dar NEmainintas → serveris atmesdavo naujus unitus pagal seną chain deką („atsiranda
+    //   tik po restarto"). Dabar: fone POLL'inam chain getDeck kol jame atsiras naujas dekas (iki ~36s),
+    //   tada updateHomeSquad (jis siunčia set_squad {fresh} → serveris išsivalo savo 120s kešą).
+    try {
+      if (window.__f9HomeActive && window.F9PvpLive && typeof window.F9PvpLive.updateHomeSquad === 'function') {
+        clearTimeout(window._f9SquadRelaunchT);
+        (async function () {
+          const want = ids.map(String).slice().sort().join(',');
+          for (let i = 0; i < 12; i++) {
+            await new Promise(function (r) { setTimeout(r, 3000); });
+            try {
+              const pc2 = await getPublicClient();
+              const cur = await pc2.readContract({ address: RONKE_POWER.address, abi: RONKE_POWER_ABI, functionName: 'getDeck', args: [addr] });
+              if ((Array.isArray(cur) ? cur : []).map(String).sort().join(',') === want) break;   // TX mainintas ✓
+            } catch (_) {}
+          }
+          try { window.F9PvpLive.updateHomeSquad(); } catch (_) {}
+        })();
+      }
+    } catch (_) {}
     return resp;  // { ok, txHash, deck, status }
   }
 
@@ -867,6 +1057,9 @@
       const p = await read('pending', [addr]);
       return p[4] === false;
     });
+    // 🦴🎫 Ronkeverse holder mint-bonus: praneškim serveriui šio mint TX hash'ą — jis on-chain
+    //   verifikuos UnitMinted logus + Ronkeverse gate ir apdovanos kaulų banką (+animacija kliente).
+    try { if (window.F9MintReward && window.F9MintReward.report) window.F9MintReward.report(hash); } catch (_) {}
     return hash;
   }
 
@@ -971,6 +1164,7 @@
     deckCount,
     addToDeck,
     removeFromDeck,
+    fetchHospState, alignDeck,   // 🏥💀 vienas armijos būsenos šaltinis (visos UI vietos sinchronizuotos)
     BATTLE_SQUAD_MAX: _BATTLE_SQUAD_MAX,
     getBattleSquad,
     setBattleSquad,
@@ -987,6 +1181,7 @@
     hasRegisteredDeck,
     pruneDeadDeckUnits,
     loadDeckUnits,
+    loadUnitTypes,
     syncDeckFromChain,
     registerDeckOnChain,
     isRonkePowerEnabled,

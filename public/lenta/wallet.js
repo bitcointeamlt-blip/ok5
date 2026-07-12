@@ -836,6 +836,83 @@
     throw new Error('Claim not confirmed — TX may be pending. Try CLAIM again.');
   }
 
+  // ── 🦴 BONE SWAP — BoneExchange.swapBones(deciBones,deadline,nonce,sig). Žaidėjas PATS moka gas. ──
+  // Voucher'į pasirašo PvP serveris (kaulai jau nurašyti banke). voucher.chainId gali būti Saigon
+  // (test) ARBA mainnet → network guard + preflight + receipt polling eina per voucher.rpc (NE RONIN_RPC).
+  async function submitBoneSwap(voucher) {
+    if (!voucher || !voucher.contract || !voucher.sig) throw new Error('Bad voucher payload');
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('Wallet not connected');
+    let from = state.address;
+    if (!from) { try { const a = await prov.request({ method: 'eth_accounts' }); if (Array.isArray(a) && a[0]) from = a[0]; } catch (_) {} }
+    if (!from) throw new Error('Wallet not connected');
+    const chainDec = Number(voucher.chainId || RONIN_CHAIN_ID_DEC);
+    const chainHex = '0x' + chainDec.toString(16);
+    const rpc = voucher.rpc || RONIN_RPC;
+    // ── NETWORK GUARD → voucher'io tinklas ──
+    try {
+      const cur = await prov.request({ method: 'eth_chainId' });
+      if (Number(BigInt(cur)) !== chainDec) {
+        try { await prov.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chainHex }] }); }
+        catch (se) {
+          if (se && (se.code === 4902 || /not added|unrecognized/i.test(String(se.message || '')))) {
+            await prov.request({ method: 'wallet_addEthereumChain', params: [{ chainId: chainHex, chainName: chainDec === 2020 ? 'Ronin Mainnet' : 'Ronin Saigon Testnet', nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 }, rpcUrls: [rpc] }] });
+          } else throw new Error('Wrong network — switch wallet to chain ' + chainDec + ' and retry.');
+        }
+        const nc = await prov.request({ method: 'eth_chainId' });
+        if (Number(BigInt(nc)) !== chainDec) throw new Error('Network switch declined.');
+      }
+    } catch (e) { if (e && e.message && /Wrong network|switch declined/i.test(e.message)) throw e; console.warn('[boneSwap] chainId check failed, attempting tx anyway:', e); }
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const { encodeFunctionData } = _viemModule;
+    const data = encodeFunctionData({
+      abi: [{ type: 'function', name: 'swapBones', stateMutability: 'nonpayable',
+        inputs: [{ name: 'deciBones', type: 'uint256' }, { name: 'deadline', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'sig', type: 'bytes' }], outputs: [] }],
+      functionName: 'swapBones',
+      args: [BigInt(voucher.deciBones), BigInt(voucher.deadline), BigInt(voucher.nonce), voucher.sig],
+    });
+    const _vrpc = (method, params) => fetch(rpc, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }).then(function (r) { return r.json(); });
+    // ── PRE-FLIGHT: tikra revert priežastis + explicit gas (mobile-robust, kaip faucet claim) ──
+    let gasHex = null;
+    try {
+      const est = await _vrpc('eth_estimateGas', [{ from: from, to: voucher.contract, data: data }]);
+      if (est && est.error) {
+        const m = ((est.error.message || '') + ' ' + (typeof est.error.data === 'string' ? est.error.data : '')).toLowerCase();
+        if (/below min/.test(m)) throw new Error('Below 100 bones minimum');
+        if (/need ronkeverse/.test(m)) throw new Error('Need a Ronkeverse NFT to swap bones');
+        if (/nonce used/.test(m)) throw new Error('Voucher already redeemed');
+        if (/expired/.test(m)) throw new Error('Voucher expired — reopen bones panel');
+        if (/budget exceeded/.test(m)) throw new Error('Daily swap budget reached — try tomorrow');
+        if (/swap limit/.test(m)) throw new Error('Daily swap limit reached — try tomorrow');
+        if (/payout fail/.test(m)) throw new Error('Swap pool empty — ping dev');
+        if (/bad sig|over max/.test(m)) throw new Error('Voucher rejected');
+        throw new Error('Swap cannot be sent now — try again');
+      }
+      if (est && typeof est.result === 'string') { const g = BigInt(est.result); gasHex = '0x' + (g + g / 4n).toString(16); }   // +25% buferis
+    } catch (e) {
+      if (e && e.message && /(minimum|ronkeverse|redeemed|expired|budget|limit|pool empty|rejected|cannot be sent)/i.test(e.message)) throw e;
+      gasHex = null;
+    }
+    const txp = { from: from, to: voucher.contract, data: data };
+    if (gasHex) txp.gas = gasHex;
+    let txHash = null, sendErr = null;
+    prov.request({ method: 'eth_sendTransaction', params: [txp] })
+      .then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
+    const _deadline = Date.now() + 180000;   // 3 min patvirtinimui
+    while (Date.now() < _deadline) {
+      await new Promise(function (r) { setTimeout(r, 2500); });
+      if (sendErr) {
+        if (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || '')) throw sendErr;
+        throw new Error('Wallet could not send TX: ' + (sendErr.message || sendErr.code || 'unknown'));
+      }
+      if (txHash) {
+        const rc = await _vrpc('eth_getTransactionReceipt', [txHash]).then(function (r) { return r.result; }).catch(function () { return null; });
+        if (rc) { if (rc.status === '0x1') return { txHash: txHash }; throw new Error('Swap TX reverted on-chain'); }
+      }
+    }
+    throw new Error('Swap not confirmed — TX may be pending. Retry SWAP (same voucher).');
+  }
+
   // ── F12 PLAY FEE — žaidėjas pasirašo 5 RONKE transfer į treasury PRIEŠ žaidimą ──
   // Be naujo kontrakto: paprastas ERC20 transfer ant esamo RONKE token'o. Žaidėjas moka gas → PoD.
   const PLAY_FEE_RONKE = 5;
@@ -1266,6 +1343,117 @@
     }
   }
 
+  // ════════════════ 🛒 UNIT MARKETPLACE (PewPewMarket) — žaidėjas PATS moka gas → PoD aktyvumas ═══════
+  const MARKET_NFT_DEFAULT = '0xccf604511c5d2b5c3fd61adfba3950d0d2890862';   // PewPewBarracks mainnet
+  const _MKT_1E18 = 1000000000000000000n;
+  function _marketCfg() {
+    const c = (typeof window !== 'undefined' && window._F9_MARKET) || {};
+    return { market: (c.address || '').toLowerCase(), nft: (c.nft || MARKET_NFT_DEFAULT).toLowerCase(), ronke: (c.ronke || RONKE_TOKEN).toLowerCase() };
+  }
+  const _ERC721_MKT_ABI = [
+    { type: 'function', name: 'isApprovedForAll', stateMutability: 'view', inputs: [{ name: 'o', type: 'address' }, { name: 'op', type: 'address' }], outputs: [{ type: 'bool' }] },
+    { type: 'function', name: 'setApprovalForAll', stateMutability: 'nonpayable', inputs: [{ name: 'op', type: 'address' }, { name: 'ok', type: 'bool' }], outputs: [] },
+  ];
+  const _ERC20_MKT_ABI = [
+    { type: 'function', name: 'allowance', stateMutability: 'view', inputs: [{ name: 'o', type: 'address' }, { name: 's', type: 'address' }], outputs: [{ type: 'uint256' }] },
+    { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 's', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  ];
+  const _MARKET_ABI = [
+    { type: 'function', name: 'list', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'price', type: 'uint256' }], outputs: [] },
+    { type: 'function', name: 'buy', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'maxPrice', type: 'uint256' }], outputs: [] },
+    { type: 'function', name: 'cancel', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [] },
+    { type: 'function', name: 'getActiveListings', stateMutability: 'view', inputs: [{ name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }], outputs: [{ type: 'uint256[]' }, { type: 'address[]' }, { type: 'uint256[]' }] },
+    { type: 'function', name: 'getListing', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ name: 'seller', type: 'address' }, { name: 'price', type: 'uint256' }] },
+  ];
+  async function _mEnc(fn, abi, args) { if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN); return _viemModule.encodeFunctionData({ abi, functionName: fn, args }); }
+  async function _mRead(to, data) {
+    const r = await fetch(RONIN_RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }) }).then(r => r.json());
+    if (r && r.error) throw new Error(r.error.message || 'eth_call failed');
+    return r.result;
+  }
+  // player-pays TX: network guard + preflight estimate (→ human error) + explicit gas + send + receipt poll.
+  async function _marketSend(to, data, humanMap) {
+    const prov = state.provider || (await getAnyProvider());
+    if (!prov) throw new Error('Wallet not connected');
+    let from = state.address;
+    if (!from) { try { const a = await prov.request({ method: 'eth_accounts' }); if (a && a[0]) from = a[0]; } catch (_) {} }
+    if (!from) throw new Error('Wallet not connected');
+    try {
+      const cur = Number(BigInt(await prov.request({ method: 'eth_chainId' })));
+      if (cur !== RONIN_CHAIN_ID_DEC) {
+        try { await prov.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: RONIN_CHAIN_ID_HEX }] }); }
+        catch (e) { throw new Error('Switch to Ronin Mainnet (2020) and retry'); }
+      }
+    } catch (e) { if (e && /Ronin Mainnet/.test(e.message || '')) throw e; }
+    let gasHex = null;
+    try {
+      const est = await fetch(RONIN_RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_estimateGas', params: [{ from, to, data }] }) }).then(r => r.json());
+      if (est && est.error) {
+        const m = ((est.error.message || '') + ' ' + (typeof est.error.data === 'string' ? est.error.data : '')).toLowerCase();
+        if (humanMap) { for (const k in humanMap) if (m.indexOf(k) !== -1) throw new Error(humanMap[k]); }
+        throw new Error('Transaction would fail — check approval & balance');
+      }
+      if (est && typeof est.result === 'string') { const g = BigInt(est.result); gasHex = '0x' + (g + g / 4n).toString(16); }
+    } catch (e) {
+      if (e && e.message && !/estimategas|network|fetch|failed to fetch/i.test(e.message)) throw e;
+      gasHex = null;
+    }
+    const txp = { from, to, data }; if (gasHex) txp.gas = gasHex;
+    let txHash = null, sendErr = null;
+    prov.request({ method: 'eth_sendTransaction', params: [txp] }).then(function (h) { txHash = h; }).catch(function (e) { sendErr = e; });
+    const dl = Date.now() + 120000;
+    while (Date.now() < dl) {
+      await new Promise(function (r) { setTimeout(r, 2500); });
+      if (sendErr) { if (sendErr.code === 4001 || /reject|denied|cancel/i.test(sendErr.message || '')) throw sendErr; throw new Error('Wallet could not send TX: ' + (sendErr.message || 'unknown')); }
+      if (txHash) {
+        const rc = await fetch(RONIN_RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [txHash] }) }).then(r => r.json()).then(r => r.result).catch(() => null);
+        if (rc) { if (rc.status === '0x1') return { txHash: txHash }; throw new Error('TX reverted on-chain'); }
+      }
+    }
+    throw new Error('TX not confirmed — may be pending');
+  }
+  // LIST: (approve NFT jei reikia) → list(tokenId, price). 2 TX jei dar neaprūvinta.
+  async function marketList(tokenId, priceRonke) {
+    const cfg = _marketCfg();
+    if (!cfg.market) throw new Error('Marketplace not deployed yet');
+    const from = state.address; if (!from) throw new Error('Connect wallet');
+    const price = BigInt(Math.floor(Number(priceRonke))) * _MKT_1E18;
+    if (price <= 0n) throw new Error('Enter a price');
+    const appRes = await _mRead(cfg.nft, await _mEnc('isApprovedForAll', _ERC721_MKT_ABI, [from, cfg.market]));
+    if (!(appRes && BigInt(appRes) === 1n)) await _marketSend(cfg.nft, await _mEnc('setApprovalForAll', _ERC721_MKT_ABI, [cfg.market, true]));
+    return _marketSend(cfg.market, await _mEnc('list', _MARKET_ABI, [BigInt(tokenId), price]), { 'already listed': 'Already listed', 'not auth': 'Approve the unit first' });
+  }
+  // BUY: (approve RONKE jei reikia) → buy(tokenId, maxPrice=priceWei).
+  async function marketBuy(tokenId, priceWei) {
+    const cfg = _marketCfg();
+    if (!cfg.market) throw new Error('Marketplace not deployed yet');
+    const from = state.address; if (!from) throw new Error('Connect wallet');
+    const price = BigInt(priceWei);
+    const alwRes = await _mRead(cfg.ronke, await _mEnc('allowance', _ERC20_MKT_ABI, [from, cfg.market]));
+    if ((alwRes ? BigInt(alwRes) : 0n) < price) await _marketSend(cfg.ronke, await _mEnc('approve', _ERC20_MKT_ABI, [cfg.market, price]));
+    return _marketSend(cfg.market, await _mEnc('buy', _MARKET_ABI, [BigInt(tokenId), price]), { 'not listed': 'Already sold', 'exceeds max': 'Price changed — refresh', 'balance': 'Not enough RONKE' });
+  }
+  async function marketCancel(tokenId) {
+    const cfg = _marketCfg();
+    if (!cfg.market) throw new Error('Marketplace not deployed yet');
+    return _marketSend(cfg.market, await _mEnc('cancel', _MARKET_ABI, [BigInt(tokenId)]), { 'not seller': 'Not your listing' });
+  }
+  // READ aktyvūs listingai → [{tokenId, seller, priceWei, priceRonke}]
+  async function marketGetActiveListings(offset, limit) {
+    const cfg = _marketCfg();
+    if (!cfg.market) return [];
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const res = await _mRead(cfg.market, await _mEnc('getActiveListings', _MARKET_ABI, [BigInt(offset || 0), BigInt(limit || 100)]));
+    const dec = _viemModule.decodeFunctionResult({ abi: _MARKET_ABI, functionName: 'getActiveListings', data: res });
+    const ids = dec[0], sellers = dec[1], prices = dec[2], out = [];
+    for (let i = 0; i < ids.length; i++) out.push({ tokenId: ids[i].toString(), seller: sellers[i], priceWei: prices[i].toString(), priceRonke: Number(prices[i] / _MKT_1E18) });
+    return out;
+  }
+  function marketReady() { return !!_marketCfg().market; }
+
   window.Wallet = {
     // identity
     connect, connectPhantom, disconnect, restore,
@@ -1293,10 +1481,14 @@
     signFaucetClaim,
     // RONKE Faucet on-chain claim (player pays gas → PoD)
     submitFaucetClaim,
+    // 🦴 Bones → RONKE swap on-chain (player pays gas → PoD)
+    submitBoneSwap,
     // F12 play fee — 5 RONKE → treasury (player pays gas → PoD)
     payToPlay,
     // Katana DEX swap RON ↔ RONKE (onboarding + DEX activity, player pays gas)
     swapQuote, swapRonToRonke, swapRonkeToRon, getRonBalance,
+    // 🛒 Unit marketplace — player pays gas → PoD (list/buy/cancel + read)
+    marketList, marketBuy, marketCancel, marketGetActiveListings, marketReady,
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT, KATANA_ROUTER, WRON_TOKEN,
   };

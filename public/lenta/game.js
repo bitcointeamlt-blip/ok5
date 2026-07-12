@@ -1408,6 +1408,34 @@ window.reloadProfileForWallet = function () {
         }
       }
     } catch (_) {}
+    // ── F9 (pilis) — wallet connect/swap → re-init F9, kad atsirastų žaidėjo REGISTRUOTI
+    //    deck NFT unitai (battle squad) vietoj test komandos. Boot į F9 vyksta dar prieš wallet
+    //    reconnect, tad be šito prisijungus unitai nepasirodytų be rankinio reload. Debounce flag.
+    try {
+      // ⚠️ Šis SOLO F9 re-init NIEKADA neturi vykti kai esame PILYJE (#f9home) arba jos relaunch metu —
+      //   kitaip prisijungus piniginę (relaunchHome→stop() momentaliai išvalo __f9HomeActive) wallet event'as
+      //   pataikydavo čia ir renderindavo SOLO CUSTOM_MAP9 (zip bokštas+aukso gabalai) vietoj pilies (07-04 bug).
+      var _inHome = /(?:^|[#&\/])f9home\b/i.test(location.hash || '') || window.__f9RaidActive || window._f9HomeRelaunchPending;
+      if (typeof S !== 'undefined' && S && S.floor === 9 && typeof gameMode !== 'undefined' && gameMode === 'adventure'
+          && !window._f9pvpLive && !window.__f9HomeActive && !_inHome && typeof window.goToFloor === 'function' && !window._f9WalletReinitPending) {
+        window._f9WalletReinitPending = true;
+        setTimeout(function () {
+          window._f9WalletReinitPending = false;
+          var _inHome2 = /(?:^|[#&\/])f9home\b/i.test(location.hash || '') || window.__f9RaidActive || window._f9HomeRelaunchPending;
+          try { if (S && S.floor === 9 && gameMode === 'adventure' && !window._f9pvpLive && !window.__f9HomeActive && !_inHome2) window.goToFloor(9); } catch (_) {}
+        }, 120);
+      }
+    } catch (_) {}
+    // 🏰 HOME PvP (#f9home) — prisijungus/pakeitus piniginę pilyje → perkrauk home su TAVO NFT deck'u
+    //    (tik jei adresas pasikeitė nuo to, kuriam home jau užkrautas → vengiam reload-loop'o).
+    try {
+      if (window.__f9HomeActive && window._f9HomeLoaded && window.F9PvpLive && typeof window.F9PvpLive.relaunchHome === 'function') {
+        var _ha = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+        if (_ha && _ha.toLowerCase() !== String(window._f9HomeAddr || '').toLowerCase()) {
+          window.F9PvpLive.relaunchHome();
+        }
+      }
+    } catch (_) {}
     if (typeof updateEnergyHud === 'function') updateEnergyHud();
     if (typeof updateHubUI === 'function') updateHubUI();
     if (typeof renderAchievements === 'function') try { renderAchievements(); } catch {}
@@ -2708,6 +2736,12 @@ const dust01Img = new Image(); dust01Img.src = 'assets/dust01.png';
 const DUST01_FRAMES = 8, DUST01_FW = 64, DUST01_FH = 64;
 const explosion01Img = new Image(); explosion01Img.src = 'assets/explosion01.png';
 const EXP01_FRAMES = 8, EXP01_FW = 192, EXP01_FH = 192;
+const magicBallImg = new Image(); magicBallImg.src = 'assets/magic_ball.png';
+const MBALL_FRAMES = 20, MBALL_FW = 192, MBALL_FH = 192, MBALL_MS = 50;
+const magicBallBurstImg = new Image(); magicBallBurstImg.src = 'assets/magic_ball_burst.png';
+const MBURST_FRAMES = 10, MBURST_FW = 192, MBURST_FH = 192, MBURST_MS = 50;
+const magicBallFizzImg = new Image(); magicBallFizzImg.src = 'assets/magic_ball_fizzle.png';
+const MFIZZ_FRAMES = 8, MFIZZ_FW = 192, MFIZZ_FH = 192, MFIZZ_MS = 50;
 const ronkeImg = new Image(); ronkeImg.src = 'ronke.png';
 const ronkeTokenImg = new Image(); ronkeTokenImg.src = 'assets_tiny/$ronke.png';
 const ronke2TokenImg = new Image(); ronke2TokenImg.src = 'assets_tiny/$ronke2.png';
@@ -2761,6 +2795,81 @@ const _buildingImgs = {};
   const img = new Image(); img.src = `assets_tiny/Buildings_${n}.png`;
   _buildingImgs[n] = img;
 });
+// 🏰 RONKE animuota pilis (capture zonai) — 8 kadrai @640px horizontaliai (švytinti animacija)
+const _ronkeCastleImg = new Image(); _ronkeCastleImg.src = 'assets_tiny/ronkecastle_animation_sheet.png';
+const _RONKE_CASTLE = { frames: 8, fps: 6 };
+// 🏚️ RONKE barakai — statinis sprite (1448×1086), šalia pilies. Elgiasi kaip pilis (AABB + occlusion).
+const _ronkeBarracksImg = new Image(); _ronkeBarracksImg.src = 'assets_tiny/ronkebarracks.png';
+// 📊 Global stats ženklas (signpost) — šalia pilies, click → openLeaderboard(). Tall+thin (rescan be fono).
+const _globalStatsImg = new Image(); _globalStatsImg.src = 'assets_tiny/globalstats.png';
+const _F9_STATS = { x: 59.4, y: 8.72, wCells: 0.64, botFrac: 0.947, topFrac: 0.049, wFrac: 0.294, baseY: 1.0 };
+// botFrac/topFrac/wFrac = sprite rescan (be fono). hitCY/hitHW/hitHH = collision AABB (cell) — SUTAMPA su serverio.
+// pozicija pajudinta: +150px dešinėn (2.78 cell) → x 64.78; −250px aukštyn (4.63 cell) → y 8.37, hitCY 7.86 (CELL=54).
+const _F9_BARRACKS = { x: 64.78, y: 8.37, wCells: 3.25, botFrac: 0.761, topFrac: 0.262, wFrac: 0.47, baseY: 1.0, hitCY: 7.86, hitHW: 1.25, hitHH: 0.55 };
+// 📋 ADS stendas — medinis rėmas (permatomas fonas), F9'e iškart PO barakais, 10px tarpas. Vidus tuščias (būsimas žaidėjo turinys).
+const _adsImg = new Image(); _adsImg.src = 'assets_tiny/ads.png';
+const _F9_ADS = { wCells: 5.0, gapPx: 10, xOff: -1399, yOff: -330 };   // wCells=plotis; gapPx=tarpas po barakais; xOff=horiz poslinkis(px,−=kairėn); yOff=vert poslinkis(px,−=aukštyn)
+// Vidinės skylės ribos (frakcijos) — IŠMATUOTOS iš ads.png (rėmo permatomas vidus): žaidėjo turinys dedamas čia.
+const _ADS_HOLE = { x0: 0.171, y0: 0.305, x1: 0.822, y1: 0.670 };   // IŠMATUOTA flood-fill iš ads.png vidinio lango (y1 buvo 0.817 → nuotrauka lindo po rėmu)
+// Matomo (opaque) rėmo ribos — IŠMATUOTOS iš ads.png (alpha>8). Sprite turi ~9–12% permatomus kraštus,
+//   tad KLIKO/HOVER hit-box naudoja ŠITAS, NE viso sprite 0..1 (kitaip stendas „pasispaudžia" pro šalį).
+const _ADS_FRAME = { x0: 0.089, y0: 0.124, x1: 0.921, y1: 0.883 };
+let _adsContentImg = null, _adsContentTried = false;   // žaidėjo įkelta nuotrauka/GIF (localStorage: f9_ads_image)
+// 🎞️ GIF stende: WebCodecs ImageDecoder → kadrai (ImageBitmap)+trukmės, kabinami prie Image kaip img._gif.
+//    _f9DrawAds/editorius kas kadrą ima _f9GifFrameNow() — canvas drawImage kitaip rodytų tik 1-ą kadrą.
+//    Chrome-only API; nepavykus (senas browseris/ne-gif) → statinis pirmas kadras (fallback).
+function _f9DecodeAdsGif(url, cb) {
+  if (typeof ImageDecoder === 'undefined') { cb(null); return; }
+  fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+    const dec = new ImageDecoder({ data: buf, type: 'image/gif' });
+    return dec.tracks.ready.then(function () {
+      const n = Math.min(150, (dec.tracks.selectedTrack && dec.tracks.selectedTrack.frameCount) || 0);   // cap — atmintis
+      if (n < 2) { cb(null); return; }
+      const frames = [];
+      let chain = Promise.resolve();
+      for (let i = 0; i < n; i++) {
+        (function (idx) {
+          chain = chain.then(function () {
+            return dec.decode({ frameIndex: idx }).then(function (res) {
+              const dur = Math.max(20, (res.image.duration || 100000) / 1000);   // µs → ms (null → 100ms)
+              return createImageBitmap(res.image).then(function (bmp) { frames.push({ bmp: bmp, dur: dur }); try { res.image.close(); } catch (_) {} });
+            });
+          });
+        })(i);
+      }
+      return chain.then(function () {
+        let total = 0; for (const f of frames) total += f.dur;
+        cb(frames.length > 1 ? { frames: frames, total: total } : null);
+      });
+    });
+  }).catch(function () { cb(null); });
+}
+window._f9DecodeAdsGif = _f9DecodeAdsGif;   // boards.js (svečių stendai) naudoja tą patį dekoderį
+function _f9GifFrameNow(gif) {
+  if (!gif || !gif.frames || !gif.frames.length) return null;
+  let t = performance.now() % gif.total;
+  for (const f of gif.frames) { if (t < f.dur) return f.bmp; t -= f.dur; }
+  return gif.frames[0].bmp;
+}
+// zoom+pan transformacija: scale=mastelis (1=cover-fit/užpildo skylę; <1=mažiau, matosi visa nuotrauka su rėmeliais; >1=priartinta),
+// ox/oy=poslinkis skylės pločio/aukščio frakcija (rezoliucijai nepriklausoma → tas pats žaidime ir popup'e). localStorage: f9_ads_xform
+let _adsXform = { scale: 1, ox: 0, oy: 0 };
+function _f9SaveAdsXform() { try { localStorage.setItem('f9_ads_xform', JSON.stringify(_adsXform)); } catch (_) {} }
+function _f9LoadAdsContent() {
+  _adsContentTried = true;
+  try {
+    const d = localStorage.getItem('f9_ads_image');
+    if (d) {
+      const im = new Image();
+      im.onload = function () {
+        _adsContentImg = im;
+        if (/^data:image\/gif/i.test(d)) _f9DecodeAdsGif(d, function (g) { if (g) im._gif = g; });   // 🎞️
+      };
+      im.src = d;
+    }
+  } catch (_) {}
+  try { const x = JSON.parse(localStorage.getItem('f9_ads_xform') || 'null'); if (x && typeof x.scale === 'number') _adsXform = { scale: x.scale, ox: +x.ox || 0, oy: +x.oy || 0 }; } catch (_) {}
+}
 // Zip — animacinis tesla tower (horizontal strip 8×1, 8 frames). Pulse loop ~10fps.
 const _ZIP_DEF = { cols: 8, rows: 1, frames: 8, fps: 10 };
 // Charging anim — 14 frames, paleidžiama paskutinėmis 1.4s prieš CD ready, baigiasi tiksliai kai CD ready
@@ -2905,6 +3014,12 @@ function _getVisibleCanvasRect() {
 // pixel-perfect (jokio stretch/deformacijos). Kiti aukštai — fiksuotas
 // advCanvasW×ADV_CANVAS_H su scale(1.32) kaip visada.
 let _f9FullscreenOn = false;
+// 🔍 F9 PASAULIO zoom (pinch pritraukimas/atitolinimas): 1=100%, <1=atitolinta. TIK F9 world pass'ui —
+//   UI (kortelės/mygtukai/juostos) piešiasi setTransform(1,..) screen-space ir NEskaluojasi.
+//   Keičia pinch gestas (_installF9Touch) ribose [0.45..1.4]. Default telefone 0.7 (matosi daugiau arenos).
+function _f9WorldZoom() {
+  return (typeof S !== 'undefined' && S && S.floor === 9 && window._f9Zoom) ? window._f9Zoom : 1;
+}
 function _f9SyncCanvasSize() {
   if (typeof canvas === 'undefined' || !canvas) return;
   const wantFs = (typeof gameMode !== 'undefined' && gameMode === 'adventure' &&
@@ -2916,11 +3031,13 @@ function _f9SyncCanvasSize() {
     const _isTouchDev = !!window._f9TouchInstalled;
     const rawW = Math.floor((vv && vv.width) || window.innerWidth);
     const rawH = Math.floor((vv && vv.height) || window.innerHeight);
+    // (×1.45 backing hack'as ATŠAUKTAS 07-03 — mažino ir UI; zoom dabar per _f9WorldZoom/pinch)
+    const _f9Z = 1;
     // Canvas vidinė raiška = TIKRAS lango dydis (jokio 800/560 min desktop'ui — anksčiau, kai langas
     // <800px, canvas tapdavo platesnis nei langas → overflow → pelės koordinatės lūždavo → neina pažymėti
     // unitų po resize). Min 320 tik nuo 0-dydžio apsauga.
-    const w = Math.max(320, rawW);
-    const h = Math.max(320, rawH);
+    const w = Math.max(320, Math.floor(rawW * _f9Z));
+    const h = Math.max(320, Math.floor(rawH * _f9Z));
     if (canvas.width !== w || canvas.height !== h) {
       advCanvasW = w;
       canvas.width = w;
@@ -2928,7 +3045,7 @@ function _f9SyncCanvasSize() {
     }
     // CSS dydis pikseliais INLINE su !important — nugali media query taisykles
     // (100vh/100dvh webview'uose nesutampa su realiu viewport → HUD nuskęsdavo po apačia).
-    const wPx = w + 'px', hPx = h + 'px';
+    const wPx = rawW + 'px', hPx = rawH + 'px';   // CSS = TIKRAS viewport (backing gali būti ×1.45)
     if (canvas.style.width !== wPx) canvas.style.setProperty('width', wPx, 'important');
     if (canvas.style.height !== hPx) canvas.style.setProperty('height', hPx, 'important');
     _f9FullscreenOn = true;
@@ -2959,7 +3076,8 @@ if (typeof window !== 'undefined') {
 // popup'as piešiamas viduje `ctx.translate(-cam.x,-cam.y)`).
 function _getVisibleWorldRect() {
   const r = _getVisibleCanvasRect();
-  return { x: r.x + (S.cam?.x || 0), y: r.y + (S.cam?.y || 0), w: r.w, h: r.h };
+  const z = _f9WorldZoom();   // 🔍 zoom'e matomas pasaulio plotas didesnis (canvas/z)
+  return { x: r.x + (S.cam?.x || 0), y: r.y + (S.cam?.y || 0), w: r.w / z, h: r.h / z };
 }
 // Ar anchor'o centras patenka į matomą pasaulio sritį (jei ne — popup'ą reikia uždaryti).
 function _anchorVisibleWorld(anchor) {
@@ -4274,10 +4392,88 @@ function _f9InstallDragHandlers() {
       }
       if (inPanel) return;   // click ant kūno — swallow (toggle apdoros click handler'is)
     }
+    // 🏗️ click ant SAVO SIENOS pilyje → upgrade siena (tik home owner, ne raido metu). Resursai = vėliau.
+    if (window.__f9HomeActive && !window.__f9RaidActive && typeof _f9WallAt === 'function') {
+      const _wmx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wmy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+      // 🗼 TIK bokšto statymo režime siena reaguoja į kliką (statom bokštą toj eilėj). Upgrade — TIK per
+      //    castle panelę (paspaudus pilį), NE per sieną. Ne placement → siena neinteraktyvi (krenta toliau).
+      if (window._f9TowerPlaceMode) {
+        const _useg = _f9WallAt(_wmx / CELL - 0.5, _wmy / CELL - 0.5);
+        if (_useg) { if (window.F9PvpLive && typeof window.F9PvpLive.buildTower === 'function') window.F9PvpLive.buildTower(_useg.y); }
+        else { _f9ExitTowerPlaceMode(); }   // klikas šalia sienos → atšaukiam
+        return;
+      }
+    }
+    // 🏰 click ant pilies → pasižymėjimas (toggle), swallow (be unit komandos). Kitur — nuimam pasižymėjimą.
+    if (window._f9CastleRect) {
+      const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+      const _cr = window._f9CastleRect;
+      if (_wx >= _cr.x0 && _wx <= _cr.x1 && _wy >= _cr.y0 && _wy <= _cr.y1) {
+        window._f9CastleSelected = !window._f9CastleSelected;
+        if (window._f9CastleSelected) { if (typeof _f9ShowCastlePanel === 'function') _f9ShowCastlePanel(); }
+        else if (typeof _f9HideCastlePanel === 'function') _f9HideCastlePanel();
+        return;
+      }
+    }
+    // 🏚️ click ant barakų → pasižymėjimas (toggle); pasižymėjus barakus — nuimam pilies pasižymėjimą+panelę
+    if (window._f9BarracksRect) {
+      const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+      const _br = window._f9BarracksRect;
+      if (_wx >= _br.x0 && _wx <= _br.x1 && _wy >= _br.y0 && _wy <= _br.y1) {
+        window._f9BarracksSelected = true;
+        window._f9CastleSelected = false;
+        if (typeof _f9HideCastlePanel === 'function') _f9HideCastlePanel();
+        // 🏚️ atidaryti NFT Barracks modalą — TAS PATS kaip F10 ciucela (visa treniravimo logika/anim/UI/UX viduje, reuse).
+        if (window.NFTBarracksModal && window.NFTBarracksModal.open) { try { window.NFTBarracksModal.open(); } catch (_) {} }
+        return;
+      }
+    }
+    // 📊 click ant global stats ženklo → openLeaderboard (tas pats kaip F10)
+    if (window._f9StatsRect) {
+      const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+      const _sr = window._f9StatsRect;
+      if (_wx >= _sr.x0 && _wx <= _sr.x1 && _wy >= _sr.y0 && _wy <= _sr.y1) {
+        window._f9StatsSelected = true;
+        window._f9CastleSelected = false; window._f9BarracksSelected = false;
+        if (typeof _f9HideCastlePanel === 'function') _f9HideCastlePanel();
+        if (typeof window.openLeaderboard === 'function') { try { window.openLeaderboard(); } catch (_) {} }
+        return;
+      }
+    }
+    // 📋 click ant ADS stendo → atidaryti turinio (nuotraukos upload) popup
+    if (window._f9AdsRect) {
+      const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+      const _ar = window._f9AdsRect;
+      if (_wx >= _ar.x0 && _wx <= _ar.x1 && _wy >= _ar.y0 && _wy <= _ar.y1) {
+        if (typeof _f9ShowAdsPanel === 'function') _f9ShowAdsPanel();
+        return;
+      }
+    }
+    if (window._f9CastleSelected && typeof _f9HideCastlePanel === 'function') _f9HideCastlePanel();
+    window._f9CastleSelected = false;   // click kitur — deselect
+    window._f9BarracksSelected = false;
+    window._f9StatsSelected = false;
     window._f9DragStart = { sx: p.sx, sy: p.sy, clientX: e.clientX, clientY: e.clientY };
     window._f9DragActive = false;
   }, true);
   canvas.addEventListener('mousemove', (e) => {
+    // 🏰 HOVER WALL — pelė virš castle sienos → „taikinukas" (highlight + ⚔). Veikia solo IR PvP.
+    if (gameMode === 'adventure' && S && S.floor === 9 && typeof _f9WallAt === 'function') {
+      try {
+        const _hp = _clientToCanvasXY(e.clientX, e.clientY);
+        const _hmx = _hp.x / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _hmy = _hp.y / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+        window._f9HoverWall = _f9WallAt(_hmx / CELL - 0.5, _hmy / CELL - 0.5);
+        // 🏰 castle + 🏚️ barakų hover (pelė virš jų world-rect)
+        const _cr = window._f9CastleRect;
+        window._f9CastleHover = !!(_cr && _hmx >= _cr.x0 && _hmx <= _cr.x1 && _hmy >= _cr.y0 && _hmy <= _cr.y1);
+        const _br = window._f9BarracksRect;
+        window._f9BarracksHover = !!(_br && _hmx >= _br.x0 && _hmx <= _br.x1 && _hmy >= _br.y0 && _hmy <= _br.y1);
+        const _sr = window._f9StatsRect;
+        window._f9StatsHover = !!(_sr && _hmx >= _sr.x0 && _hmx <= _sr.x1 && _hmy >= _sr.y0 && _hmy <= _sr.y1);
+        const _adr = window._f9AdsRect;   // 📋 stendo hover (tightintas rect → matomas rėmas)
+        window._f9AdsHover = !!(_adr && _hmx >= _adr.x0 && _hmx <= _adr.x1 && _hmy >= _adr.y0 && _hmy <= _adr.y1);
+      } catch (_) { window._f9HoverWall = null; }
+    } else if (window._f9HoverWall) { window._f9HoverWall = null; }
     // Solo info popup vilkimas
     if (window._f9InfoPanel && window._f9InfoPanel.drag &&
         gameMode === 'adventure' && S && S.floor === 9) {
@@ -4329,6 +4525,7 @@ function _f9InstallDragHandlers() {
       const wy1 = Math.min(r.sy1, r.sy2) + camY;
       const wx2 = Math.max(r.sx1, r.sx2) + camX;
       const wy2 = Math.max(r.sy1, r.sy2) + camY;
+      const _locks = (typeof _f9SquadLocks === 'function') ? _f9SquadLocks() : [];
       const sel = [];
       for (const u of S.units) {
         if (!u || !u.alive) continue;
@@ -4336,17 +4533,21 @@ function _f9InstallDragHandlers() {
         if (!(u.team === 1 && u.isEditorEnemy)) continue;
         // PvP: pažymim TIK savo komandą (opponento unitai irgi ally-tipo, bet kitas _pvpTeam) — kad nebūtų rolių painiavos
         if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
+        // 🔒 UŽRAKINTO pako narius box-select PAGAUNA → galima pasiimti DALĮ (pvz. 5 iš 6) komandai, o kitus palikti.
+        //    Pako NARYSTĖ NEsikeičia (re-form/prijungimas blokuojamas lock'o _f9SquadButtonPress'e) → tik laikinas pažymėjimas.
         const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
         const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
         if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
       }
       if (sel.length > 0) {
         if (e.shiftKey && Array.isArray(window._f9SelectedSet)) {
-          for (const u of sel) if (window._f9SelectedSet.indexOf(u) < 0) window._f9SelectedSet.push(u);
+          for (const u of sel) if (window._f9SelectedSet.indexOf(u) < 0 && window._f9SelectedSet.length < _F9_PACK_SIZE) window._f9SelectedSet.push(u);
         } else {
-          window._f9SelectedSet = sel;
+          window._f9SelectedSet = sel.slice(0, _F9_PACK_SIZE);   // 🪖 box-select = pakas (max 6); visai armijai → ⛶ ALL
         }
         window._f9Selected = window._f9SelectedSet[0] || null;
+        window._f9ActiveSquad = null;   // rankinis pažymėjimas → nebe konkretus būrys
+        if (sel.length > _F9_PACK_SIZE && typeof _f9SetToast === 'function') _f9SetToast('Pako max ' + _F9_PACK_SIZE + ' (1 pakas)');
       }
       window._f9DragJustEnded = true;
     }
@@ -4396,17 +4597,25 @@ function _f9InstallDragHandlers() {
     const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     if (!isTouch) return;
     window._f9TouchInstalled = true;
-    let tMode = null;        // 'maybe' | 'select' | 'pan' | 'popup'
+    if (!window._f9Zoom) window._f9Zoom = 0.7;   // 🔍 telefone startuojam atitolinta (daugiau arenos)
+    let tMode = null;        // 'maybe' | 'select' | 'pan' | 'popup' | 'longfired'
     let tStart = null;
     let tPanLast = null;
     let tPopupOff = null;
+    let tLongT = null;       // 📱 long-press timeris (450ms) → sintetinis contextmenu (right-click atitikmuo)
     const TH = 9;
     canvas.addEventListener('touchstart', (e) => {
       if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
       if (e.touches.length >= 2) {
         const t0 = e.touches[0], t1 = e.touches[1];
+        clearTimeout(tLongT);
         tMode = 'pan';
-        tPanLast = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+        tPanLast = {
+          x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2,
+          // 🔍 PINCH: startinė pirštų distancija + zoom (keisis proporcingai)
+          d0: Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY),
+          z0: window._f9Zoom || 1,
+        };
         window._f9DragRect = null;
         e.preventDefault();
         return;
@@ -4424,6 +4633,19 @@ function _f9InstallDragHandlers() {
       }
       tMode = 'maybe';
       tStart = { sx: p.sx, sy: p.sy, clientX: t.clientX, clientY: t.clientY };
+      // 📱 LONG-PRESS (450ms be judesio) = DEŠINYS KLIKAS: atrakina siege/tpmove/attack komandas
+      //    telefone (contextmenu handler'is naudoja e.clientX/Y → sintetinis MouseEvent veikia 1:1).
+      clearTimeout(tLongT);
+      tLongT = setTimeout(() => {
+        if (tMode !== 'maybe' || !tStart) return;
+        tMode = 'longfired';                        // touchend praleis synthetic click (komanda jau išduota)
+        try { if (navigator.vibrate) navigator.vibrate(25); } catch (_) {}
+        try {
+          canvas.dispatchEvent(new MouseEvent('contextmenu', {
+            clientX: tStart.clientX, clientY: tStart.clientY, bubbles: true, cancelable: true,
+          }));
+        } catch (_) {}
+      }, 450);
     }, { passive: false });
     canvas.addEventListener('touchmove', (e) => {
       if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
@@ -4432,10 +4654,25 @@ function _f9InstallDragHandlers() {
         const cx = (t0.clientX + t1.clientX) / 2, cy = (t0.clientY + t1.clientY) / 2;
         const r = canvas.getBoundingClientRect();
         const sc = r.width ? (canvas.width / r.width) : 1;
-        S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (cx - tPanLast.x) * sc;
-        S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (cy - tPanLast.y) * sc;
+        // 🔍 PINCH ZOOM: zoom ∝ pirštų distancijai; pasaulio taškas po pirštų viduriu lieka vietoje
+        //   (standartinis pan&zoom pattern: world = screen/z + cam → cam = world − screen/zNew)
+        const d1 = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+        if (tPanLast.d0 > 0 && d1 > 0) {
+          const zNew = Math.max(0.45, Math.min(1.4, tPanLast.z0 * (d1 / tPanLast.d0)));
+          const zOld = window._f9Zoom || 1;
+          if (Math.abs(zNew - zOld) > 0.002) {
+            const mxc = (cx - r.left) * sc, myc = (cy - r.top) * sc;   // vidurio taškas canvas px
+            const wx = mxc / zOld + S.cam.x, wy = myc / zOld + S.cam.y;
+            window._f9Zoom = zNew;
+            S.cam.x = wx - mxc / zNew; S.cam.y = wy - myc / zNew;      // snap (be lerp lago)
+            S.cam.tx = S.cam.x; S.cam.ty = S.cam.y;
+          }
+        }
+        const zPan = window._f9Zoom || 1;
+        S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (cx - tPanLast.x) * sc / zPan;
+        S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (cy - tPanLast.y) * sc / zPan;
         S._camManualLock = true;
-        tPanLast = { x: cx, y: cy };
+        tPanLast.x = cx; tPanLast.y = cy;
         e.preventDefault();
         return;
       }
@@ -4452,6 +4689,7 @@ function _f9InstallDragHandlers() {
         if (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH) {
           // 1 piršto drag = KAMEROS PAN (mobile standartas). Box-select mobile
           // nereikalingas — selection per tap / ALL mygtuką (2026-06-12 fix).
+          clearTimeout(tLongT);   // pajudėjo → nebe long-press
           tMode = 'pan1';
           tStart.lastX = t.clientX;
           tStart.lastY = t.clientY;
@@ -4460,8 +4698,8 @@ function _f9InstallDragHandlers() {
       if (tMode === 'pan1' && tStart && S.cam) {
         const r1 = canvas.getBoundingClientRect();
         const sc1 = r1.width ? (canvas.width / r1.width) : 1;
-        S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (t.clientX - tStart.lastX) * sc1;
-        S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (t.clientY - tStart.lastY) * sc1;
+        S.cam.tx = (S.cam.tx != null ? S.cam.tx : S.cam.x) - (t.clientX - tStart.lastX) * sc1 / _f9WorldZoom();
+        S.cam.ty = (S.cam.ty != null ? S.cam.ty : S.cam.y) - (t.clientY - tStart.lastY) * sc1 / _f9WorldZoom();
         S._camManualLock = true;
         tStart.lastX = t.clientX;
         tStart.lastY = t.clientY;
@@ -4469,7 +4707,15 @@ function _f9InstallDragHandlers() {
       }
     }, { passive: false });
     canvas.addEventListener('touchend', (e) => {
+      clearTimeout(tLongT);
       if (!(gameMode === 'adventure' && S && S.floor === 9)) { tMode = null; return; }
+      if (tMode === 'longfired') {
+        // long-press komanda jau išduota per contextmenu — synthetic click NEturi dar ir move'int
+        window._f9DragJustEnded = true;
+        tMode = null;
+        e.preventDefault();
+        return;
+      }
       if (tMode === 'popup') {
         if (window._f9InfoPanel) window._f9InfoPanel.drag = null;
         if (typeof _f9InfoPanelPersist === 'function') _f9InfoPanelPersist();
@@ -4487,7 +4733,7 @@ function _f9InstallDragHandlers() {
       }
       tMode = null;   // paprastas tap — leidžiam synthetic click (komandos per click handler)
     }, { passive: false });
-    canvas.addEventListener('touchcancel', () => { tMode = null; window._f9DragRect = null; }, { passive: true });
+    canvas.addEventListener('touchcancel', () => { clearTimeout(tLongT); tMode = null; window._f9DragRect = null; }, { passive: true });
   })();
 }
 if (typeof setInterval !== 'undefined') {
@@ -4523,14 +4769,18 @@ document.addEventListener('keydown', (e) => {
   // F9'e A/S klavišai REZERVUOTI RTS komandoms (legacy WASD hero judėjimas — tik W/D).
   if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     window._f9AMoveArm = true;
+    window._f9RegroupArm = false;   // abu negali būti aktyvūs vienu metu
+    window._f9PatrolArm = false;
     _f9SetToast('A-MOVE: pick target point (Esc to cancel)');
     e.preventDefault();
     e.stopImmediatePropagation();   // legacy KEYMAP (KeyA = hero move) negauna evento
     return;
   }
-  if (e.key === 'Escape' && window._f9AMoveArm) {
+  if (e.key === 'Escape' && (window._f9AMoveArm || window._f9RegroupArm || window._f9PatrolArm)) {
     window._f9AMoveArm = false;
-    _f9SetToast('A-MOVE cancelled');
+    window._f9RegroupArm = false;
+    window._f9PatrolArm = false; window._f9PatrolPts = []; window._f9PatrolUnits = null;
+    _f9SetToast('Cancelled');
     e.stopImmediatePropagation();
     return;
   }
@@ -4547,47 +4797,38 @@ document.addEventListener('keydown', (e) => {
     e.stopImmediatePropagation();   // legacy KEYMAP (KeyS = hero move) negauna evento
     return;
   }
-  // Ctrl+1..5 — priskirti grupę; 1..5 — pasirinkti grupę (2x tap = centruoti kamerą)
-  const _dg = e.code && /^Digit([1-5])$/.exec(e.code);
+  // 🪖 1..6 — pasirink/formuok BŪRĮ (control-group'ą); Ctrl+1..6 — rankinė grupė
+  const _dg = e.code && /^Digit([1-6])$/.exec(e.code);
   if (_dg) {
-    const g = _dg[1];
+    const g = _dg[1], gi = parseInt(g, 10);
     if (e.ctrlKey || e.metaKey) {
       const sel = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [])
-        .filter(u => u && u.alive && typeof _f9IsAlly === 'function' && _f9IsAlly(u));
-      if (sel.length) {
-        window._f9CtrlGroups[g] = sel.slice();
-        _f9SetToast('GROUP ' + g + ' saved (' + sel.length + ')');
-      }
-      e.preventDefault();
-      e.stopImmediatePropagation();
+        .filter(u => u && u.alive && typeof _f9IsAlly === 'function' && _f9IsAlly(u)).slice(0, _F9_SQUAD_CAP);
+      if (sel.length) { window._f9CtrlGroups[g] = sel.slice(); _f9SetToast('GROUP ' + g + ' saved (' + sel.length + ')'); }
+      e.preventDefault(); e.stopImmediatePropagation();
       return;
     }
-    const grp = (window._f9CtrlGroups[g] || []).filter(u => u && u.alive);
-    if (grp.length) {
+    const _nowK = performance.now();
+    const _dblTap = (window._f9LastGroupKey === g && _nowK - (window._f9LastGroupKeyAt || 0) < 420);
+    window._f9LastGroupKey = g; window._f9LastGroupKeyAt = _nowK;
+    // plain 1-4 → būrys (formuoja jei pažymėta, kitaip pažymi); 5 → rankinė grupė
+    if (gi >= 1 && gi <= _F9_SQUAD_COUNT && typeof _f9SquadButtonPress === 'function') {
+      _f9SquadButtonPress(gi - 1);
+    } else {
+      const grp = (window._f9CtrlGroups[g] || []).filter(u => u && u.alive).slice(0, _F9_SQUAD_CAP);
+      if (!grp.length) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       window._f9CtrlGroups[g] = grp;
-      const _nowK = performance.now();
-      const _dblTap = (window._f9LastGroupKey === g && _nowK - (window._f9LastGroupKeyAt || 0) < 420);
-      window._f9LastGroupKey = g;
-      window._f9LastGroupKeyAt = _nowK;
-      window._f9SelectedSet = grp.slice();
-      window._f9Selected = grp[0];
-      if (_dblTap && S.cam && typeof canvas !== 'undefined' && canvas) {
-        // 2x tap — kamera šoka prie grupės centro (SC2 pattern)
-        let cgx = 0, cgy = 0;
-        for (const u of grp) {
-          cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
-          cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-        }
-        cgx /= grp.length; cgy /= grp.length;
-        S.cam.tx = cgx - canvas.width / 2;
-        S.cam.ty = cgy - canvas.height / 2;
-        S._camManualLock = true;   // edge-pan/H grąžina valdymą kaip įprasta
-      } else {
-        _f9SetToast('GROUP ' + g + ' (' + grp.length + ')');
-      }
-      e.preventDefault();
-      e.stopImmediatePropagation();
+      window._f9SelectedSet = grp.slice(); window._f9Selected = grp[0]; window._f9ActiveSquad = null;
+      _f9SetToast('GROUP ' + g + ' (' + grp.length + ')');
     }
+    const _selNow = Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [];
+    if (_dblTap && _selNow.length && S.cam && typeof canvas !== 'undefined' && canvas) {
+      let cgx = 0, cgy = 0;
+      for (const u of _selNow) { cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL; cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL; }
+      cgx /= _selNow.length; cgy /= _selNow.length;
+      S.cam.tx = cgx - canvas.width / 2; S.cam.ty = cgy - canvas.height / 2; S._camManualLock = true;
+    }
+    e.preventDefault(); e.stopImmediatePropagation();
     return;
   }
 }, true);
@@ -4936,9 +5177,10 @@ function _drawF9TouchButtons() {
     ? _getVisibleCanvasRect()
     : { x: 0, y: 0, w: canvas.width, h: canvas.height };
   const btns = [
-    { id: 'all',   label: 'ALL',    active: false },
-    { id: 'amove', label: '⚔ A-MV', active: !!window._f9AMoveArm },
-    { id: 'stop',  label: 'STOP',   active: false },
+    { id: 'amove',  label: '⚔ A-MV',  active: !!window._f9AMoveArm },
+    { id: 'hold',   label: '🛡 HOLD',  active: false },
+    { id: 'patrol', label: '🚩 PTRL',  active: !!window._f9PatrolArm },
+    { id: 'stop',   label: 'STOP',    active: false },
   ];
   const bw = 78, bh = 40, gap = 10;
   const bx = v.x + v.w - bw - 10;
@@ -5017,7 +5259,7 @@ function _drawF9HotkeyHint() {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
-    ctx.fillText('L-click move·attack · drag select · A attack-move · S stop · ⇧ queue · CTRL+1-5 groups', v.x + v.w - 12, v.y + v.h - 8);
+    ctx.fillText('L-click move·attack · drag = pack ≤6 · tap card = toggle unit · [1-6] save/lock pack · A atk-move · S stop', v.x + v.w - 12, v.y + v.h - 8);
   }
   ctx.restore();
 }
@@ -5025,19 +5267,74 @@ function _drawF9HotkeyHint() {
 // F9 DEBUG OVERLAY — vizualizuoja pozicijas, anchor'us, hitbox'us, attack zonas.
 // Toggle: window._f9DebugOn = true / false (default OFF — įjungiamas konsole'je jei reikia).
 window._f9DebugOn = (window._f9DebugOn === undefined) ? false : window._f9DebugOn;
-// Hitbox collision overlay (_dbgHit) — ON lokalei (dev), OFF production'e. Klavišas H perjungia.
-window._dbgHit = (window._dbgHit === undefined)
-  ? (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '' || location.hostname.startsWith('192.168.'))
-  : window._dbgHit;
+// Hitbox collision overlay (_dbgHit) — default OFF (švarus vaizdas). Klavišas H perjungia ON debug'ui.
+window._dbgHit = (window._dbgHit === undefined) ? false : window._dbgHit;
+// 🧹 Švaraus vaizdo režimas — paslepia visus VIZUALINIUS INDIKATORIUS (HP barai, komandos žiedai,
+//    enemy markeriai, cap brūkšninis žiedas). Default ON (švaru). Įjungti atgal: window._f9Clean=false.
+window._f9Clean = (window._f9Clean === undefined) ? true : window._f9Clean;
 function _drawF9DebugOverlay() {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
-  if (!window._f9DebugOn) return;
+  if (!window._f9DebugOn && !window._dbgHit) return;   // _dbgHit = H-klavišas (hitbox overlay)
   if (!Array.isArray(S.units)) return;
 
   ctx.save();
   ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
+  // ── 0) 🏰 WALL HITBOX / SIDE-LOCK vizualizacija (PvP: sync iš serverio; solo: lokalus modelis) ──
+  if (Array.isArray(S._f9Walls) && S._f9Walls.length) {
+    const MARGIN = 0.72;   // ATITINKA _f9PushUnitsOutOfWalls / serverio _sideLockWalls
+    // Orientacija: ar siena VERTIKALI (segmentai dalinas X) ar horizontali? (PvP=vertikali kolona).
+    let _vMinX = 1e9, _vMaxX = -1e9, _vMinY = 1e9, _vMaxY = -1e9;
+    for (const s of S._f9Walls) { if (!s) continue; _vMinX = Math.min(_vMinX, s.x); _vMaxX = Math.max(_vMaxX, s.x); _vMinY = Math.min(_vMinY, s.y); _vMaxY = Math.max(_vMaxY, s.y); }
+    const _wallVertical = (_vMaxY - _vMinY) >= (_vMaxX - _vMinX);   // labiau ištįsęs Y → vertikali siena
+    for (const seg of S._f9Walls) {
+      if (!seg) continue;
+      const wallY = seg.y + 0.5, wallX = seg.x + 0.5;
+      const sx = seg.x * CELL, sw = CELL;
+      if (seg.alive) {
+        // collision cell box (oranžinis full) — kur siena blokuoja
+        ctx.fillStyle = 'rgba(255, 140, 30, 0.16)';
+        ctx.fillRect(sx, seg.y * CELL, sw, CELL);
+        ctx.strokeStyle = 'rgba(255, 160, 40, 0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sx, seg.y * CELL, sw, CELL);
+        ctx.fillStyle = 'rgba(255, 40, 40, 0.10)';
+        ctx.strokeStyle = 'rgba(255, 30, 30, 0.85)';
+        ctx.lineWidth = 2.5;
+        if (_wallVertical) {
+          // VERTIKALI siena: ±MARGIN juosta horizontaliai (vakarai/rytai) + vertikali side-lock linija
+          ctx.fillRect((wallX - MARGIN) * CELL, seg.y * CELL - CELL * 0.32, MARGIN * 2 * CELL, CELL + CELL * 0.64);
+          ctx.beginPath();
+          ctx.moveTo(wallX * CELL, seg.y * CELL - CELL * 0.32);
+          ctx.lineTo(wallX * CELL, (seg.y + 1) * CELL + CELL * 0.32);
+          ctx.stroke();
+        } else {
+          // HORIZONTALI siena (solo): ±MARGIN juosta vertikaliai + horizontali side-lock linija
+          ctx.fillRect(sx - CELL * 0.32, (wallY - MARGIN) * CELL, sw + CELL * 0.64, MARGIN * 2 * CELL);
+          ctx.beginPath();
+          ctx.moveTo(sx - CELL * 0.32, wallY * CELL);
+          ctx.lineTo(sx + sw + CELL * 0.32, wallY * CELL);
+          ctx.stroke();
+        }
+        // HP label
+        if (typeof seg.hp === 'number') {
+          ctx.font = 'bold 9px monospace';
+          ctx.fillStyle = seg.hp > seg.maxHp * 0.5 ? '#ffcf5c' : (seg.hp > seg.maxHp * 0.25 ? '#ff9c40' : '#ff5555');
+          ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+          ctx.fillText(`🧱 ${seg.hp}/${seg.maxHp}`, sx + sw / 2, seg.y * CELL + CELL / 2);
+          ctx.shadowBlur = 0;
+        }
+      } else {
+        // sugriuvęs segmentas — žalias praeinamas (gate-like)
+        ctx.strokeStyle = 'rgba(80, 220, 120, 0.45)';
+        ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+        ctx.strokeRect(sx, seg.y * CELL, sw, CELL);
+        ctx.setLineDash([]);
+      }
+    }
+  }
 
   for (const u of S.units) {
     if (!u || !u.alive) continue;
@@ -5179,10 +5476,13 @@ function _drawF9SelectionRing() {
     ctx.ellipse(ux, uyFeet + 1, _rx + 1, _ry + 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2) Main ring with glow — STRONGER kad aiškiai matytum, kad unit'as pažymėtas
-    ctx.shadowColor = `rgba(${glowColor}, 0.85)`;
-    ctx.shadowBlur = 14 + pulse * 5;
-    ctx.strokeStyle = `rgba(${baseColor}, ${(1.0).toFixed(3)})`;
+    // 2) Main ring — PERF: jokio shadowBlur (per pažymėtą unitą). Glow = platus pusiau permatomas žiedas + ryškus.
+    ctx.strokeStyle = `rgba(${glowColor}, ${(0.30 + pulse * 0.12).toFixed(3)})`;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(ux, uyFeet, _rx, _ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(${baseColor}, 1)`;
     ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.ellipse(ux, uyFeet, _rx, _ry, 0, 0, Math.PI * 2);
@@ -5377,6 +5677,23 @@ function _f9ShowBattleModeChoice() {
     b.onclick = onClick;
     return b;
   };
+  // 🏰 ASMENINĖ PILIS — prisijungus pinigine, nukelia į TAVO pilį (home: tavo NFT unitai, persistencija).
+  var castle = mkBtn('#c9a227', 'linear-gradient(180deg,#5a4416,#3a2c0e)',
+    '<div style="font-size:16px;font-weight:800;color:#ffe9a8;">🏰 My Castle</div>',
+    'Enter your personal castle — your registered units (connect wallet)',
+    function () {
+      _f9CloseBattleModeChoice();
+      var already = /(?:^|[#&\/])f9home\b/i.test(location.hash || '');
+      try { location.hash = 'f9home'; } catch (_) {}
+      // jei hash jau buvo #f9home (hashchange nesuveiks) — paleidžiam tiesiogiai
+      if (already) {
+        if (typeof window.F9PvpHomeLaunch === 'function') { try { window.F9PvpHomeLaunch(); } catch (_) {} }
+        else if (window.F9PvpLive && window.F9PvpLive.launchHome) {
+          var _a = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+          try { window.F9PvpLive.launchHome({ address: _a }); } catch (_) {}
+        }
+      }
+    });
   var pvp = mkBtn('#e85d5d', 'linear-gradient(180deg,#7a2230,#561621)',
     '<div style="font-size:16px;font-weight:800;color:#ffd2d2;">⚔️ PvP — Live vs Player</div>',
     'Real-time 1v1 against another player online',
@@ -5394,16 +5711,141 @@ function _f9ShowBattleModeChoice() {
     'Current test — your squad vs bots in the arena',
     function () {
       _f9CloseBattleModeChoice();
+      window.__f9Home = false;   // solo battle test = SU botais (NE ramus home)
       if (typeof window.goToFloor === 'function') window.goToFloor(9);
+    });
+  var afk = mkBtn('#8a6a2e', 'linear-gradient(180deg,#3a2614,#241809)',
+    '<div style="font-size:16px;font-weight:800;color:#ffcf5c;">⛺ AFK Expedition</div>',
+    'Send your NFT units on an idle expedition (prototype)',
+    function () {
+      _f9CloseBattleModeChoice();
+      if (window.afkExpedition && typeof window.afkExpedition.open === 'function') window.afkExpedition.open();
     });
   var cancel = document.createElement('button');
   cancel.textContent = 'Cancel';
   cancel.style.cssText = 'background:none;border:none;color:#9a8a6a;font-size:13px;cursor:pointer;text-decoration:underline;margin-top:2px;';
   cancel.onclick = _f9CloseBattleModeChoice;
-  card.appendChild(pvp); card.appendChild(solo); card.appendChild(cancel);
+  card.appendChild(castle); card.appendChild(pvp); card.appendChild(solo); card.appendChild(afk); card.appendChild(cancel);
   ov.appendChild(card);
   ov.addEventListener('click', function (e) { if (e.target === ov) _f9CloseBattleModeChoice(); });
   document.body.appendChild(ov);
+}
+
+// 📊 DIAG FPS counter — toggle `window._f9FPS = true` konsolėj. Rodo FPS + unitų skaičių (lago diagnozei).
+let _f9FpsFrames = 0, _f9FpsLast = 0, _f9FpsVal = 0;
+let _f9FpsPrev = 0, _f9FrameMsMax = 0, _f9FrameMsMaxShown = 0;   // frame-time (ms) + worst-frame spike (lag diagnostika)
+function _f9DrawFPS() {
+  if (!window._f9FPS) return;
+  if (typeof ctx === 'undefined' || !ctx || typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const now = performance.now();
+  _f9FpsFrames++;
+  if (_f9FpsPrev) { const dt = now - _f9FpsPrev; if (dt > _f9FrameMsMax) _f9FrameMsMax = dt; }   // worst-frame spike
+  _f9FpsPrev = now;
+  if (now - _f9FpsLast >= 500) {
+    _f9FpsVal = Math.round(_f9FpsFrames * 1000 / (now - _f9FpsLast));
+    _f9FrameMsMaxShown = _f9FrameMsMax; _f9FrameMsMax = 0;
+    _f9FpsFrames = 0; _f9FpsLast = now;
+  }
+  const nU = Array.isArray(S.units) ? S.units.length : 0;
+  const nAlive = Array.isArray(S.units) ? S.units.filter(u => u && u.alive).length : 0;
+  const avgMs = _f9FpsVal > 0 ? (1000 / _f9FpsVal).toFixed(1) : '--';
+  const cacheTag = window._f9NoSprCache ? 'cache OFF' : 'cache';
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(4, 4, 250, 22);
+  ctx.fillStyle = _f9FpsVal >= 50 ? '#7ec77f' : (_f9FpsVal >= 30 ? '#ffcf5c' : '#e85d5d');
+  ctx.font = 'bold 13px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('FPS ' + _f9FpsVal + ' (' + avgMs + 'ms, spike ' + Math.round(_f9FrameMsMaxShown) + ') u' + nAlive + '/' + nU + ' ' + cacheTag, 10, 16);
+  ctx.restore();
+}
+
+// 🧪 STRESS TEST — PILIES APGULTIS: _f9Stress(30) → 30 gynėjų (rytuose, prie pilies) + 30 puolikų (vakaruose).
+//   _f9Stress(0) = išvalo. Naudoti SOLO Battle Test scenoj (ten sukasi pilna kliento simuliacija + kova).
+window._f9Stress = function (n) {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !Array.isArray(S.units)) { console.warn('[stress] atidaryk F9 sceną (Battle Test) pirma'); return; }
+  S.units = S.units.filter(u => !u || !u._stress);   // pašalinam ankstesnius stress unitus
+  if (!n) { console.log('[stress] cleared, units=' + S.units.length); return; }
+  if (typeof getEditorEnemyArchetype !== 'function' || typeof mkUnit !== 'function') { console.warn('[stress] no spawn helpers'); return; }
+  if (typeof window._f9SetupHomeCastle === 'function') { try { window._f9SetupHomeCastle(); } catch (_) {} }   // 🏰 pilis (siena+griovys)
+  const types = ['skull', 'archer', 'harpoon_fish', 'pigronke', 'shaman', 'ghost', 'ronhood'];
+  let _sid = 900000;
+  const newId = () => (typeof nextEditorUnitId === 'function') ? nextEditorUnitId() : _sid++;
+  let na = 0, ne = 0;
+  const _perType = Math.max(1, Math.ceil(n / types.length));   // 🗂️ gynėjus GRUPUOJAM pagal tipą (ne cikliškai) → surūšiuota
+  for (let i = 0; i < n; i++) {
+    // 🛡 GYNĖJAS (ally) — rytuose prie pilies (x 40..56), surūšiuoti pagal tipą (blokais)
+    const aar = getEditorEnemyArchetype(types[Math.min(types.length - 1, Math.floor(i / _perType))]);
+    if (aar) {
+      const ax = 40 + (i % 8) * 2, ay = 2 + Math.floor(i / 8) * 2;   // row-major → surūšiuoti tipai greta
+      const ua = mkUnit(newId(), 1, ax, ay, -1, aar);
+      ua.isEditorEnemy = true; ua._f9Enemy = false; ua.stack = 1; ua.rx = ax; ua.ry = ay; ua._stress = true;
+      S.units.push(ua); na++;
+    }
+    // ⚔️ PUOLIKAS (enemy) — vakaruose, žygiuoja į pilį
+    const ear = getEditorEnemyArchetype(types[(i + 3) % types.length]);
+    if (ear) {
+      const ex = 4 + (i % 8) * 2, ey = 2 + ((i * 2 + 1) % (ROWS - 4));
+      const ue = mkUnit(newId(), 1, ex, ey, 1, ear);
+      if (typeof _f9ApplyEnemyStats === 'function') _f9ApplyEnemyStats(ue);
+      ue._f9Enemy = true; ue.isEditorEnemy = false; ue.stack = 1; ue.rx = ex; ue.ry = ey; ue._stress = true;
+      S.units.push(ue); ne++;
+    }
+  }
+  window._f9FPS = true;   // auto-įjungiam FPS skaitiklį
+  console.log('[stress] 🏰 SIEGE: ' + na + ' gynėjai vs ' + ne + ' puolikai → total S.units=' + S.units.length + '. FPS ON.');
+};
+
+// 🧪 STRESS CASTLE (TIKRAS server-side) — pilyje (#f9home BE wallet=30 dev gynėjų), liepia serveriui spawnint N AI puolikų.
+//   Naudoti: _f9StressCastle(30) → tikras 30v30 server-authoritative siege.
+window._f9StressCastle = function (n) {
+  n = n || 30;
+  if (window.F9PVP && window.F9PVP.room && typeof window.F9PVP.room.send === 'function') {
+    try { window.F9PVP.room.send('stress_spawn', { n: n }); window._f9FPS = true;
+      console.log('[stress] 🏰 stress_spawn n=' + n + ' išsiųsta serveriui (spawnins AI puolikus). FPS ON.'); }
+    catch (e) { console.warn('[stress] send failed', e); }
+  } else { console.warn('[stress] ne pilyje — atidaryk #f9home (be wallet → 30 dev gynėjų) pirma'); }
+};
+
+// 🎯 SIENOS target FX — kokybiškas žymeklis (ta pati kalba kaip auksinis unit target-lock):
+//    kampiniai „L" bracket'ai aplink segmentą (kvėpuojantis pulsas) + bobbing ▼ chevron virš jo.
+//    mode: 'attack' (auksinis — daužoma/siege) | 'hover' (teal — galima pulti).
+//    2-pass (tamsus apvadas → spalva) = kontrastas ant bet kokio fono BE shadowBlur (perf — segmentų daug).
+function _f9DrawWallTargetFx(x0, y0, w, h, mode, tNow) {
+  const t = tNow || performance.now();
+  const pulse = (Math.sin(t * 0.005) + 1) * 0.5;
+  const col = mode === 'attack' ? '#ffcf5c' : '#78e6eb';
+  const mcx = x0 + w / 2;
+  const pad = 2 + pulse * 2;                       // bracket'ai lengvai „kvėpuoja"
+  const bx0 = x0 - pad, by0 = y0 - pad, bw = w + pad * 2, bh = h + pad * 2;
+  const arm = Math.min(w, h) * 0.32;               // „L" kampo ilgis
+  const corners = [
+    [bx0, by0, 1, 1], [bx0 + bw, by0, -1, 1],
+    [bx0, by0 + bh, 1, -1], [bx0 + bw, by0 + bh, -1, -1],
+  ];
+  const bob = Math.sin(t * 0.007) * 3;
+  const chY = by0 - 16 + bob, chS = 6.5;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (let pass = 0; pass < 2; pass++) {
+    const dark = pass === 0;
+    ctx.strokeStyle = dark ? 'rgba(0,0,0,0.55)' : col;
+    ctx.fillStyle = dark ? 'rgba(0,0,0,0.55)' : col;
+    ctx.lineWidth = dark ? 4.5 : 2.4;
+    for (const [cxc, cyc, sx, sy] of corners) {
+      ctx.beginPath();
+      ctx.moveTo(cxc, cyc + sy * arm);
+      ctx.lineTo(cxc, cyc);
+      ctx.lineTo(cxc + sx * arm, cyc);
+      ctx.stroke();
+    }
+    const o = dark ? 1.6 : 0;
+    ctx.beginPath();
+    ctx.moveTo(mcx - chS - o, chY - chS - o);
+    ctx.lineTo(mcx + chS + o, chY - chS - o);
+    ctx.lineTo(mcx, chY + chS + o);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // F9 enemy targeting reticle — rodo ant priešų kuriuos atakuoja ally (engagement)
@@ -5453,8 +5895,7 @@ function _drawF9EnemyTargetReticle() {
       ctx.strokeStyle = dark ? 'rgba(0,0,0,0.5)' : GOLD;
       ctx.fillStyle = dark ? 'rgba(0,0,0,0.5)' : GOLD;
       ctx.lineWidth = dark ? 4.5 : 2.5;
-      ctx.shadowColor = dark ? 'transparent' : GLOW;
-      ctx.shadowBlur = dark ? 0 : (6 + pulse * 6);
+      // PERF: jokio shadowBlur (per taikinį × 2 pass × kovoje daug) — kontrastas iš tamsaus pass'o pakanka.
       for (const [cxc, cyc, sx, sy] of corners) {
         ctx.beginPath();
         ctx.moveTo(cxc, cyc + sy * armH);
@@ -5472,6 +5913,286 @@ function _drawF9EnemyTargetReticle() {
     }
   }
   ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// 🎯⚔️⚒️ BŪSENOS EMOJI virš SAVO unito galvos (07-05 user): matai KAS KĄ DARO be spėliojimo.
+//    🎯 = gavo puolimo komandą / artėja prie taikinio (dar nepasiekė atakos nuotolio)
+//    ⚔️ = JAU ATAKUOJA (taikinys atakos nuotolyje — daro dmg)
+//    ⚒️ = daužo SIENĄ (siege)
+//    Be emoji = pasyvus (stovi be taikinio). Veikia solo IR PvP (mirror _f9EngageTarget/_lastCmd).
+//    PERF: emoji kešuojami į offscreen canvas (fillText 1× per emoji, ne per kadrą/unitą).
+// PvP atakos range/cd — PRIVALO sutapti su serverio F9PvpRoom STATS (range/cd; solo lentelė ILGESNĖ!)
+const _F9_PVP_STATS = {
+  skull: { r: 0.95, cd: 1500 }, archer: { r: 4.0, cd: 7000 }, harpoon_fish: { r: 4.0, cd: 5000 },
+  shaman: { r: 5.0, cd: 4500 }, ronhood: { r: 4.0, cd: 4500 }, ghost: { r: 4.0, cd: 3000 }, pigronke: { r: 1.18, cd: 2800 },
+};
+// ── 🎨 VEKTORINĖS būsenos ikonėlės su mini-animacijom (07-05 user: „emoji prastai atrodo") ──
+//    Ta pati kokybės kalba kaip _f9DrawShieldGlyph (gradientas + tamsus apvadas + highlight).
+//    s = bazinis spindulys px. Visos pieš centre (0,0) — kviečiančioji transformuoja.
+// 🎯 TAIKINYS: auksinis žiedas su 4 atžymom LĖTAI sukasi + centrinis taškas pulsuoja.
+function _f9DrawIcTarget(mx, my, s, t) {
+  const rot = t * 0.0012, pu = (Math.sin(t * 0.006) + 1) * 0.5;
+  ctx.save(); ctx.translate(mx, my); ctx.rotate(rot); ctx.lineCap = 'round';
+  for (let pass = 0; pass < 2; pass++) {
+    const dark = pass === 0;
+    ctx.strokeStyle = dark ? 'rgba(0,0,0,0.6)' : '#ffcf5c';
+    ctx.lineWidth = dark ? 3.6 : 1.8;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.72, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2;
+      ctx.moveTo(Math.cos(a) * s * 0.48, Math.sin(a) * s * 0.48);
+      ctx.lineTo(Math.cos(a) * s * 1.02, Math.sin(a) * s * 1.02);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#ffe9a8';
+  ctx.beginPath(); ctx.arc(0, 0, s * (0.16 + pu * 0.10), 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// vienas kardas centre (ašmenys aukštyn) — kviečiama 2× pasuktai; l=ilgio spindulys.
+function _f9DrawIcSwordOne(l) {
+  for (let pass = 0; pass < 2; pass++) {
+    const dark = pass === 0;
+    ctx.lineCap = 'round';
+    // ašmenys (plieno gradientas 2-am pass'e)
+    if (dark) { ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4.4; }
+    else {
+      const g = ctx.createLinearGradient(0, -l, 0, l * 0.4);
+      g.addColorStop(0, '#f2f7fc'); g.addColorStop(1, '#aebdcc');
+      ctx.strokeStyle = g; ctx.lineWidth = 2.2;
+    }
+    ctx.beginPath(); ctx.moveTo(0, -l); ctx.lineTo(0, l * 0.38); ctx.stroke();
+    // skersinis + rankena (auksas)
+    ctx.strokeStyle = dark ? 'rgba(0,0,0,0.6)' : '#ffcf5c';
+    ctx.lineWidth = dark ? 4.0 : 2.0;
+    ctx.beginPath(); ctx.moveTo(-l * 0.34, l * 0.38); ctx.lineTo(l * 0.34, l * 0.38); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, l * 0.38); ctx.lineTo(0, l * 0.78); ctx.stroke();
+  }
+}
+// ⚔️ KARDAI: sukryžiuoti; periodiškai „SUSIKERTA" — švelnus swing vienas į kitą + blykstelė kirtyje.
+function _f9DrawIcSwords(mx, my, s, t) {
+  const ph = (t % 900) / 900;                                   // kirtos ciklas ~0.9s
+  const clash = ph < 0.18 ? Math.sin(ph / 0.18 * Math.PI) : 0;  // trumpas snappy susikirtimas
+  const swing = clash * 0.28;                                    // rad — vienas kito link
+  ctx.save(); ctx.translate(mx, my);
+  ctx.save(); ctx.rotate(-Math.PI / 4 + swing); _f9DrawIcSwordOne(s * 0.95); ctx.restore();
+  ctx.save(); ctx.rotate(Math.PI / 4 - swing); _f9DrawIcSwordOne(s * 0.95); ctx.restore();
+  if (clash > 0.55) {   // ✦ blykstelė susikirtimo momentu
+    ctx.fillStyle = 'rgba(255,240,170,' + (clash * 0.9) + ')';
+    const fs = s * 0.30 * clash;
+    ctx.beginPath();
+    ctx.moveTo(0, -fs); ctx.lineTo(fs * 0.35, -fs * 0.35); ctx.lineTo(fs, 0); ctx.lineTo(fs * 0.35, fs * 0.35);
+    ctx.lineTo(0, fs); ctx.lineTo(-fs * 0.35, fs * 0.35); ctx.lineTo(-fs, 0); ctx.lineTo(-fs * 0.35, -fs * 0.35);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// ⚒️ KŪJIS: kala taktu — lėtas užsimojimas, GREITAS smūgis + kibirkštis smūgio momentu.
+function _f9DrawIcHammer(mx, my, s, t) {
+  const ph = (t % 800) / 800;
+  // windup (0..0.55 lėtai atgal) → strike (0.55..0.72 greitai pirmyn) → laikymas
+  let ang;
+  if (ph < 0.55) ang = -0.15 - (ph / 0.55) * 0.55;                    // -0.15 → -0.70
+  else if (ph < 0.72) ang = -0.70 + ((ph - 0.55) / 0.17) * 1.05;      // -0.70 → +0.35 (smūgis)
+  else ang = 0.35 - ((ph - 0.72) / 0.28) * 0.50;                       // grįžta į -0.15
+  const strike = ph >= 0.68 && ph < 0.80;
+  ctx.save(); ctx.translate(mx, my + s * 0.35); ctx.rotate(ang);      // pivot — rankenos apačia
+  for (let pass = 0; pass < 2; pass++) {
+    const dark = pass === 0;
+    ctx.lineCap = 'round';
+    // rankena (medis)
+    ctx.strokeStyle = dark ? 'rgba(0,0,0,0.6)' : '#a06a34';
+    ctx.lineWidth = dark ? 4.2 : 2.2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -s * 1.05); ctx.stroke();
+    // galva (plienas su highlight)
+    if (dark) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-s * 0.52 - 1, -s * 1.28 - 1, s * 1.04 + 2, s * 0.5 + 2); }
+    else {
+      const g = ctx.createLinearGradient(0, -s * 1.28, 0, -s * 0.78);
+      g.addColorStop(0, '#e8eef4'); g.addColorStop(1, '#93a3b3');
+      ctx.fillStyle = g; ctx.fillRect(-s * 0.52, -s * 1.28, s * 1.04, s * 0.5);
+    }
+  }
+  ctx.restore();
+  if (strike) {   // ✨ kibirkštis smūgio taške (dešinėj, kur kūjis nusileidžia)
+    const k = 1 - Math.abs(ph - 0.74) / 0.06;
+    ctx.fillStyle = 'rgba(255,220,120,' + Math.max(0, k * 0.95) + ')';
+    const fx = mx + s * 0.85, fy = my + s * 0.15, fs = s * 0.26;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy - fs); ctx.lineTo(fx + fs * 0.3, fy - fs * 0.3); ctx.lineTo(fx + fs, fy);
+    ctx.lineTo(fx + fs * 0.3, fy + fs * 0.3); ctx.lineTo(fx, fy + fs); ctx.lineTo(fx - fs * 0.3, fy + fs * 0.3);
+    ctx.lineTo(fx - fs, fy); ctx.lineTo(fx - fs * 0.3, fy - fs * 0.3);
+    ctx.closePath(); ctx.fill();
+  }
+}
+function _f9DrawEngagedMarkers() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  const t = performance.now();
+  ctx.save();
+  for (const u of S.units) {
+    if (!u || !u.alive || !_f9IsAlly(u) || u.team === 0) continue;
+    const en = u._f9EngageTarget;
+    const sieging = (u._f9SiegeWall && u._f9SiegeWall.alive) || u._lastCmd === 'siege';
+    let em = null;
+    if (sieging) em = '⚒️';
+    else if (en && en.alive) {
+      // ⚔️ tiesa pagal režimą (07-05 fix: šamanas/harpūnas rodė ⚔️ per anksti — PvP serverio nuotoliai
+      //   TRUMPESNI nei solo lentelės). PvP: (1) TIKRAS serverio atakos įvykis (shot/melee → _f9LastAtkAt,
+      //   galioja iki utype CD+0.9s — tarp šūvių irgi „atakuoja") ARBA (2) atstumas pagal SERVERIO range.
+      const _isPvp = (u._pvpId !== undefined || u._lastCmd !== undefined);
+      const rng = _isPvp
+        ? (_F9_PVP_STATS[u.utype] ? _F9_PVP_STATS[u.utype].r : 1.2)
+        : ((typeof _F9_ALLY_ATTACK !== 'undefined' && _F9_ALLY_ATTACK[u.utype] && _F9_ALLY_ATTACK[u.utype].range) || 1.2);
+      const atkWin = (_F9_PVP_STATS[u.utype] ? _F9_PVP_STATS[u.utype].cd : 3000) + 900;
+      const atkRecent = !!(u._f9LastAtkAt && (t - u._f9LastAtkAt) < atkWin);
+      const exc = (en.rx !== undefined ? en.rx : en.x), eyc = (en.ry !== undefined ? en.ry : en.y);
+      const uxc = (u.rx !== undefined ? u.rx : u.x), uyc = (u.ry !== undefined ? u.ry : u.y);
+      const inRange = Math.hypot(exc - uxc, eyc - uyc) <= rng + 0.35;
+      em = (atkRecent || inRange) ? '⚔️' : '🎯';
+    }
+    if (!em) continue;
+    const ux = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const uyTop = ((u.ry !== undefined ? u.ry : u.y) + 0.02) * CELL;
+    const bob = Math.sin(t * 0.005 + ux * 0.05) * 2;
+    const ox = u._f9Hold ? CELL * 0.30 : 0;   // 🛡 hold skydas jau kabo → ikonėlė dešiniau (abu telpa)
+    const pulse = (Math.sin(t * 0.006 + ux * 0.03) + 1) * 0.5;
+    const mx = ux + ox, my = uyTop - 20 + bob;
+    // tamsus apvalus badge po ikonėle — įskaitomumas ant bet kokio fono; žiedo spalva = būsenos kalba
+    const br = CELL * 0.185 + pulse * 0.8;
+    ctx.fillStyle = 'rgba(10,12,24,0.72)';
+    ctx.strokeStyle = em === '⚔️' ? 'rgba(255,207,92,0.95)' : (em === '⚒️' ? 'rgba(232,165,74,0.95)' : 'rgba(120,230,235,0.9)');
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(mx, my, br, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // 🎨 vektorinė animuota ikonėlė (07-05: emoji → custom; kiekvienam unitui savo fazė per ux offset)
+    const is = CELL * 0.145;
+    if (em === '⚔️') _f9DrawIcSwords(mx, my, is, t + ux * 7);
+    else if (em === '⚒️') _f9DrawIcHammer(mx, my, is, t + ux * 7);
+    else _f9DrawIcTarget(mx, my, is, t + ux * 7);
+  }
+  ctx.restore();
+}
+
+// 🛡 HOLD POSITION skydas virš galvos — žymi UŽRAKINTUS (hold) savo unitus. World-space (kaip reticle).
+function _f9DrawHoldShields() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  const t = performance.now();
+  for (const u of S.units) {
+    if (!u || !u.alive || !u._f9Hold || !_f9IsAlly(u) || u.team === 0) continue;
+    const ux = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const uyTop = ((u.ry !== undefined ? u.ry : u.y) + 0.02) * CELL;
+    const bob = Math.sin(t * 0.005 + ux * 0.05) * 2;
+    _f9DrawShieldGlyph(ux, uyTop - 20 + bob, CELL * 0.34, CELL * 0.42);
+  }
+}
+// Vektorinis skydas su kryžiumi (mėlynas, švytintis) — pieš ux,cy centre.
+function _f9DrawShieldGlyph(cx, cy, w, h) {
+  const top = cy - h / 2, bot = cy + h / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx, top);
+  ctx.lineTo(cx + w / 2, top + h * 0.18);
+  ctx.lineTo(cx + w / 2, cy + h * 0.06);
+  ctx.quadraticCurveTo(cx + w / 2, bot - h * 0.10, cx, bot);
+  ctx.quadraticCurveTo(cx - w / 2, bot - h * 0.10, cx - w / 2, cy + h * 0.06);
+  ctx.lineTo(cx - w / 2, top + h * 0.18);
+  ctx.closePath();
+  // PERF: jokio shadowBlur (brangu, kartojama per unitą). Glow imituojam šviesiu išoriniu kontūru.
+  const g = ctx.createLinearGradient(0, top, 0, bot);
+  g.addColorStop(0, '#bfe2ff'); g.addColorStop(1, '#4a8fd6');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(150,210,255,0.55)'; ctx.stroke();   // „glow" kontūras (pigus)
+  ctx.lineWidth = 1.2; ctx.strokeStyle = '#0d2a44'; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(cx, top + h * 0.22); ctx.lineTo(cx, bot - h * 0.20);
+  ctx.moveTo(cx - w * 0.26, cy - h * 0.04); ctx.lineTo(cx + w * 0.26, cy - h * 0.04);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 🚩 PATROL maršruto render (world-space): dėliojimo preview (A,B,C + 150px zonos) + pažymėtų unitų aktyvūs maršrutai.
+function _f9DrawPatrolRoute() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const routes = [];
+  if (window._f9PatrolArm && Array.isArray(window._f9PatrolPts) && window._f9PatrolPts.length)
+    routes.push({ pts: window._f9PatrolPts, active: false });
+  const sel = Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [];
+  const seen = new Set();
+  for (const u of sel) {
+    if (u && u.alive && u._f9Patrol && Array.isArray(u._f9Patrol.pts) && u._f9Patrol.pts.length) {
+      const key = u._f9Patrol.pts.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(';');
+      if (seen.has(key)) continue; seen.add(key);
+      routes.push({ pts: u._f9Patrol.pts, active: true });
+    }
+  }
+  if (!routes.length) return;
+  const t = performance.now();
+  const R = _F9_PATROL_ARRIVE_PX;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const r of routes) {
+    const pts = r.pts;
+    // jungiamosios linijos (loop, animuotas dash)
+    ctx.strokeStyle = r.active ? 'rgba(120,230,140,0.55)' : 'rgba(255,220,120,0.75)';
+    ctx.lineWidth = 2.2; ctx.setLineDash([9, 7]); ctx.lineDashOffset = -((t * 0.02) % 16);
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const X = (pts[i].x + 0.5) * CELL, Y = (pts[i].y + 0.5) * CELL;
+      if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+    }
+    if (pts.length > 2) { ctx.lineTo((pts[0].x + 0.5) * CELL, (pts[0].y + 0.5) * CELL); }   // užbaigia kilpą
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // taškai A,B,C + zonos spindulys
+    for (let i = 0; i < pts.length; i++) {
+      const X = (pts[i].x + 0.5) * CELL, Y = (pts[i].y + 0.5) * CELL;
+      if (!r.active) {
+        ctx.strokeStyle = 'rgba(255,220,120,0.22)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(X, Y, R, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = r.active ? '#3fae5a' : '#e0b040';
+      ctx.strokeStyle = '#1a1208'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X, Y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#1a1208'; ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String.fromCharCode(65 + (i % 26)), X, Y + 0.5);
+    }
+  }
+  ctx.restore();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+// 🚩 PATROL vėliava virš galvos — žymi UŽRAKINTUS patruliuojančius unitus (kaip skydas Hold'ui). World-space.
+function _f9DrawPatrolFlags() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
+  const t = performance.now();
+  for (const u of S.units) {
+    if (!u || !u.alive || !u._f9Patrol || !_f9IsAlly(u) || u.team === 0) continue;
+    const ux = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const uyTop = ((u.ry !== undefined ? u.ry : u.y) + 0.02) * CELL;
+    const bob = Math.sin(t * 0.005 + ux * 0.05) * 2;
+    _f9DrawFlagGlyph(ux, uyTop - 16 + bob);
+  }
+}
+function _f9DrawFlagGlyph(cx, baseY) {
+  const poleH = 18, poleTop = baseY - poleH;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#2a1d08'; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(cx, baseY); ctx.lineTo(cx, poleTop); ctx.stroke();
+  ctx.fillStyle = '#e0b040'; ctx.beginPath(); ctx.arc(cx, poleTop, 2.2, 0, Math.PI * 2); ctx.fill();
+  const fw = 14, fh = 10;
+  ctx.beginPath();
+  ctx.moveTo(cx, poleTop + 1);
+  ctx.lineTo(cx + fw, poleTop + fh * 0.45);
+  ctx.lineTo(cx, poleTop + fh);
+  ctx.closePath();
+  // PERF: jokio shadowBlur (per-unit). Glow = pigus šviesus kontūras.
+  const g = ctx.createLinearGradient(cx, poleTop, cx + fw, poleTop);
+  g.addColorStop(0, '#9ce07a'); g.addColorStop(1, '#3fae5a');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = '#0c2a08'; ctx.lineWidth = 1.2; ctx.stroke();
   ctx.restore();
 }
 
@@ -5534,7 +6255,9 @@ const _F9_SEL_ICONS = {
   // 2026-06-12: buvo pigronke.png (sprite SHEET — suspaustas į kortelę atrodė blogai),
   // dabar dedikuota viena-frame ikona
   pigronke:     'unit-images/hog-idle.png',
-  ghost:        'assets_tiny/trees/Vaiduoklis.png',   // sprite sheet (rodys 1-ą kadrą-zoną)
+  // 2026-07-01: buvo Vaiduoklis.png (sprite SHEET — visi kadrai suspausti į kortelę = mėlyni brūkšniai),
+  // dabar dedikuota viena-frame ikona (kaip pigronke→hog-idle fix)
+  ghost:        'unit-images/ghost-idle.png',          // viena-frame ikona (švarus vaiduoklis)
   ronhood:      'unit-images/ronhood-idle.png',       // 640×640 viena-frame ikona (2026-06-21)
 };
 const _f9SelImgCache = {};
@@ -5558,15 +6281,49 @@ function _f9RoundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
+// 🔣 Mažas formacijos taškų pattern'as (≈18px) — formacijos popup'ui. Centras cx,cy (screen-space).
+function _f9DrawFormationIcon(id, cx, cy) {
+  const s = 3.0;   // taško skersmuo
+  let pts;
+  if (id === 'line')        pts = [[-1, 0], [0, 0], [1, 0]];
+  else if (id === 'column') pts = [[0, -1], [0, 0], [0, 1]];
+  else if (id === 'wedge')  pts = [[0, -1], [-1, 0.6], [1, 0.6]];
+  else if (id === 'circle') pts = [[0, -1], [0.95, -0.3], [0.6, 0.9], [-0.6, 0.9], [-0.95, -0.3]];
+  else if (id === 'spread') pts = [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]];
+  else                      pts = [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]];   // grid
+  const sc = 4.2;
+  ctx.save();
+  ctx.fillStyle = '#2a1d08';
+  for (const p of pts) {
+    ctx.beginPath();
+    ctx.arc(cx + p[0] * sc, cy + p[1] * sc, s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function _drawF9SelectionBar() {
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
   _f9SelBarRects = [];
   if (!canvas || !ctx) return;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  // Tik squad'as — hero (ronke2) F9'e nematomas, jo kortelės bar'e nerodom (2026-06-12)
-  const allies = S.units.filter(u => u && u.alive && u.team === 1 && u.isEditorEnemy);
-  if (!allies.length) { ctx.restore(); return; }
+  // PERF: rodom PAKĄ (max _F9_CARDBAR_MAX=6); likusius „+N" (30 kortelių/kadrą = lagas).
+  // Kortelės = STABILUS pakas (_f9CardPack), o ŽALIAS highlight = aktyvi komandų selekcija (_f9SelectedSet).
+  // → tap kortelę = toggle unitą į/iš subset'o, kortelės NEDINGSTA (gali laisvai rinktis kelis).
+  const _isAllyCard = (u) => u && u.alive && u.team === 1 && u.isEditorEnemy;
+  const _selNow = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : []).filter(_isAllyCard);
+  let _pack = (Array.isArray(window._f9CardPack) ? window._f9CardPack : []).filter(_isAllyCard);
+  if (!_selNow.length) {
+    _pack = [];                                   // nieko nepažymėta (CLEAR/deselect) → juosta tuščia
+  } else if (!_pack.length || _selNow.some(u => !_pack.includes(u))) {
+    _pack = _selNow.slice();                       // nauja/išaugusi selekcija → resync paką į ją
+  }
+  window._f9CardPack = _pack;
+  const _allSel = _pack;
+  const allies = _allSel.slice(0, _F9_CARDBAR_MAX);
+  const _selMore = _allSel.length - allies.length;   // kiek NETELPA į juostą → „+N" badge
+  _f9SelBarRects = [];   // NEbe early-return — mygtukai (būriai) PRIVALO renderintis visada
 
   const selSet = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : []);
   const selPrimary = window._f9Selected;
@@ -5578,44 +6335,25 @@ function _drawF9SelectionBar() {
     : { x: 0, y: 0, w: canvas.width, h: canvas.height };
   const gap = 5;
   const padX = 14, padY = 10;
-  // Responsive kortelės: siauram (mobile) ekranui mažinam, kad bar'as tilptų į matomą plotą
-  let cardW = 54;
-  if (allies.length * cardW + (allies.length - 1) * gap + padX * 2 > v.w - 12) {
-    cardW = Math.max(32, Math.floor((v.w - 12 - padX * 2 - (allies.length - 1) * gap) / allies.length));
-  }
-  const cardH = cardW;
-  const totalW = allies.length * cardW + (allies.length - 1) * gap;
-  const barW = totalW + padX * 2;
+  const cardW = 54, cardH = 54;   // ≤4 kortelės — nereikia responsive shrink
   const barH = cardH + padY * 2;
-  const barX = Math.max(v.x + 6, v.x + (v.w - barW) / 2);
-  const barY = v.y + v.h - barH - 12;
-
-  // ── Backdrop: parchment/wood medieval theme ──
-  // Soft drop shadow
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = 16;
-  ctx.shadowOffsetY = 4;
-  // Wood frame (dark)
-  ctx.fillStyle = '#3a2614';
-  _f9RoundRect(barX - 3, barY - 3, barW + 6, barH + 6, 10);
-  ctx.fill();
-  ctx.restore();
-  // Inner parchment fill with vertical gradient
-  const bgGrd = ctx.createLinearGradient(0, barY, 0, barY + barH);
-  bgGrd.addColorStop(0, 'rgba(40, 30, 22, 0.92)');
-  bgGrd.addColorStop(1, 'rgba(24, 18, 14, 0.92)');
-  ctx.fillStyle = bgGrd;
-  _f9RoundRect(barX, barY, barW, barH, 8);
-  ctx.fill();
-  // Gold inner border (medieval accent)
-  ctx.strokeStyle = '#8a6a2e';
-  ctx.lineWidth = 1.5;
-  _f9RoundRect(barX + 0.75, barY + 0.75, barW - 1.5, barH - 1.5, 7);
-  ctx.stroke();
-  // Highlight juostelė viršuj (subtle gold sheen)
-  ctx.fillStyle = 'rgba(255, 207, 92, 0.12)';
-  ctx.fillRect(barX + 4, barY + 2, barW - 8, 1);
+  const barY = v.y + v.h - barH - 12;   // VISADA bottom-anchored (rezervuojam vietą → mygtukai nešokinėja)
+  let barW = 0, barX = v.x + v.w / 2;   // be kortelių → centras ekrane (mygtukų centravimui)
+  if (allies.length) {
+    const totalW = allies.length * cardW + (allies.length - 1) * gap;
+    barW = totalW + padX * 2;
+    barX = Math.max(v.x + 6, v.x + (v.w - barW) / 2);
+    // ── Backdrop (tik kai yra kortelės) — 🏆 TROPHY stilius: navy gradientas + auksinis rėmas su glow ──
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'; _f9RoundRect(barX - 3, barY - 3 + 5, barW + 6, barH + 6, 10); ctx.fill();
+    ctx.fillStyle = '#0a0e1a'; _f9RoundRect(barX - 3, barY - 3, barW + 6, barH + 6, 10); ctx.fill();
+    const bgGrd = ctx.createLinearGradient(0, barY, 0, barY + barH);
+    bgGrd.addColorStop(0, 'rgba(18, 24, 44, 0.94)'); bgGrd.addColorStop(1, 'rgba(10, 14, 26, 0.94)');
+    ctx.fillStyle = bgGrd; _f9RoundRect(barX, barY, barW, barH, 8); ctx.fill();
+    // auksinis glow — pigus dvigubas kontūras (jokio shadowBlur)
+    ctx.strokeStyle = '#ffcf5c'; ctx.globalAlpha = 0.28; ctx.lineWidth = 4; _f9RoundRect(barX - 0.5, barY - 0.5, barW + 1, barH + 1, 8); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 1.5; _f9RoundRect(barX + 0.75, barY + 0.75, barW - 1.5, barH - 1.5, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 207, 92, 0.12)'; ctx.fillRect(barX + 4, barY + 2, barW - 8, 1);
+  }
 
   // ── Cards ──
   const startX = barX + padX;
@@ -5630,15 +6368,12 @@ function _drawF9SelectionBar() {
     const breathe = isSel ? (Math.sin(t * 0.005) + 1) * 0.5 : 0;
     const glowA = 0.35 + breathe * 0.30;
 
-    // Selected glow halo
+    // Selected halo — PERF: vietoj shadowBlur (per kortelę) pigus švytintis kontūras (breathing alpha).
     if (isSel) {
-      ctx.save();
-      ctx.shadowColor = isPrimary ? `rgba(126, 255, 126, ${glowA.toFixed(3)})` : `rgba(255, 207, 92, ${(glowA * 0.85).toFixed(3)})`;
-      ctx.shadowBlur = 12 + breathe * 4;
-      ctx.fillStyle = isPrimary ? 'rgba(46, 110, 60, 0.65)' : 'rgba(110, 80, 30, 0.65)';
-      _f9RoundRect(x, y, cardW, cardH, 6);
-      ctx.fill();
-      ctx.restore();
+      ctx.strokeStyle = isPrimary ? `rgba(126, 255, 126, ${(0.5 + breathe * 0.4).toFixed(3)})` : `rgba(255, 207, 92, ${(0.45 + breathe * 0.35).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      _f9RoundRect(x - 1.5, y - 1.5, cardW + 3, cardH + 3, 7);
+      ctx.stroke();
     }
 
     // Card bg (dark stone)
@@ -5652,8 +6387,8 @@ function _drawF9SelectionBar() {
         cardGrd.addColorStop(1, '#2e2316');
       }
     } else {
-      cardGrd.addColorStop(0, '#231a14');
-      cardGrd.addColorStop(1, '#15100c');
+      cardGrd.addColorStop(0, '#1a2233');   // 🏆 trophy navy (buvo ruda)
+      cardGrd.addColorStop(1, '#0e1220');
     }
     ctx.fillStyle = cardGrd;
     _f9RoundRect(x, y, cardW, cardH, 6);
@@ -5664,7 +6399,7 @@ function _drawF9SelectionBar() {
       ctx.strokeStyle = isPrimary ? '#7eff7e' : '#ffcf5c';
       ctx.lineWidth = 1.8;
     } else {
-      ctx.strokeStyle = '#6b4a2e';
+      ctx.strokeStyle = '#3a3a55';   // 🏆 trophy kortelės rėmelis (buvo rudas)
       ctx.lineWidth = 1;
     }
     _f9RoundRect(x + 0.5, y + 0.5, cardW - 1, cardH - 1, 5);
@@ -5714,13 +6449,37 @@ function _drawF9SelectionBar() {
       ctx.fillText('×' + u.stack, bx + bw / 2, by + bh / 2 + 0.5);
     }
 
+    // 🛡 HOLD badge (viršus-kairė) — unitas laiko poziciją
+    if (u._f9Hold) {
+      const hbw = 15, hbh = 13, hbx = x + 2, hby = y + 2;
+      ctx.fillStyle = 'rgba(20, 40, 64, 0.85)';
+      _f9RoundRect(hbx, hby, hbw, hbh, 3); ctx.fill();
+      ctx.strokeStyle = '#9ccbf0'; ctx.lineWidth = 0.8;
+      _f9RoundRect(hbx + 0.5, hby + 0.5, hbw - 1, hbh - 1, 3); ctx.stroke();
+      ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🛡', hbx + hbw / 2, hby + hbh / 2 + 0.5);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    }
+
+    // 🪖 BŪRIO ženkliukas (viršus-dešinė) — rodo kuriam būriui priklauso (spalva + numeris, derinasi su mygtukais)
+    if (u._f9Squad != null && u._f9Squad >= 0 && u._f9Squad < _F9_SQUAD_COUNT) {
+      const _sqCol = _F9_SQUAD_COLORS[u._f9Squad] || '#ffcf5c';
+      const _bs = Math.min(16, cardW * 0.32), _bx = x + cardW - _bs - 2, _by = y + 2;
+      ctx.fillStyle = 'rgba(8,12,22,0.85)'; _f9RoundRect(_bx - 1, _by - 1, _bs + 2, _bs + 2, 4); ctx.fill();   // 🏆 navy
+      ctx.fillStyle = _sqCol; _f9RoundRect(_bx, _by, _bs, _bs, 3); ctx.fill();
+      ctx.fillStyle = '#1a1208'; ctx.font = 'bold ' + Math.round(_bs * 0.72) + 'px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(u._f9Squad + 1), _bx + _bs / 2, _by + _bs / 2 + 0.5);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    }
+
     // HP bar (apačioj, švari)
     const hp = (u.hp ?? u.maxHp ?? 1) / (u.maxHp ?? 1);
     const hpY = y + cardH - 7;
     const hpX = x + 4, hpW = cardW - 8, hpH = 4;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
     ctx.fillRect(hpX - 0.5, hpY - 0.5, hpW + 1, hpH + 1);
-    ctx.fillStyle = '#0c0a08';
+    ctx.fillStyle = '#0c101c';   // 🏆 navy
     ctx.fillRect(hpX, hpY, hpW, hpH);
     const hpColor = hp > 0.5 ? '#7ec77f' : hp > 0.25 ? '#ffcf5c' : '#e85d5d';
     ctx.fillStyle = hpColor;
@@ -5730,6 +6489,204 @@ function _drawF9SelectionBar() {
     ctx.fillRect(hpX, hpY, hpW * Math.max(0, hp), 1);
 
     _f9SelBarRects.push({ x, y, w: cardW, h: cardH, u });
+  }
+  // „+N" badge — kai pažymėta daugiau nei telpa kortelių (pvz. SELECT ALL → 30).
+  if (_selMore > 0 && allies.length) {
+    const lastX = startX + (allies.length - 1) * (cardW + gap);
+    const bx = lastX + cardW - 20, by = y - 6;
+    ctx.fillStyle = 'rgba(12,16,32,0.94)'; _f9RoundRect(bx, by, 30, 16, 5); ctx.fill();   // 🏆 navy
+    ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 1; _f9RoundRect(bx + 0.5, by + 0.5, 29, 15, 5); ctx.stroke();
+    ctx.fillStyle = '#ffcf5c'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('+' + _selMore, bx + 15, by + 8);
+  }
+
+  // ── 🪖 SELECT ALL ⛶ + control-group'ai [1-4] (visada) + komandos 🛡⊞🚩✕ (kai pažymėta) ──
+  {
+    const hasSel = !!(Array.isArray(window._f9SelectedSet) && window._f9SelectedSet.length);
+    const saH = 22;
+    const _typeH = 32;                       // 🏹 TYPE PICKER / composer eilės aukštis
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // ── PAKŲ BŪSENA (reikia IŠ ANKSTO: eilių Y-stack'ui + panelės aukščiui + kontekstiniam matomumui) ──
+    const _packActive = window._f9ActiveSquad;
+    const _packSel = Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [];
+    const _packFormMode = (_packActive == null && _packSel.length >= 2);   // ≥2 unitai = YRA ką formuoti į paką
+    const _packCtrl = _f9MyControllable();
+    if (!window._f9SquadsRestored && _packCtrl.some(u => u.tokenId)) { _f9RestoreSquads(); window._f9SquadsRestored = true; }
+    const _sqCnt = new Array(_F9_SQUAD_COUNT).fill(0);
+    for (const u of _packCtrl) if (u._f9Squad != null && u._f9Squad >= 0 && u._f9Squad < _F9_SQUAD_COUNT) _sqCnt[u._f9Squad]++;
+    const _packLocks = (typeof _f9SquadLocks === 'function') ? _f9SquadLocks() : new Array(_F9_SQUAD_COUNT).fill(false);
+    // Matomi pako mygtukai: ESAMI pakai VISADA; + form mode → TIK VIENAS „⊕ SAVE" (pirmas laisvas slotas, NE visi 6).
+    const _visSquads = [];
+    let _firstFree = -1;
+    for (let s = 0; s < _F9_SQUAD_COUNT; s++) { if (_sqCnt[s] > 0) _visSquads.push(s); else if (_firstFree < 0) _firstFree = s; }
+    if (_packFormMode && _firstFree >= 0) _visSquads.push(_firstFree);   // vienas „⊕ SAVE" mygtukas
+    const _packRowShown = _visSquads.length > 0;
+    // 🎯 AKTYVUS pakas iš SELEKCIJOS: jei VISI pažymėti ally priklauso tam pačiam būriui n → tą paką „valdau"
+    //    (net jei nespaudžiau [n] mygtuko — box-select / kortelių subset irgi pažymi mygtuką „aaa, valdau šitą").
+    let _activePackSel = null;
+    {
+      const _selA = _packSel.filter(u => u && u.alive && (typeof _f9IsAlly !== 'function' || _f9IsAlly(u)) && u.team !== 0);
+      if (_selA.length) { const _n0 = _selA[0]._f9Squad; if (_n0 != null && _selA.every(u => u._f9Squad === _n0)) _activePackSel = _n0; }
+    }
+    // 🔓 Ar yra LAISVŲ (nepriskirtų) unitų naujam pakui formuoti? Jei NE → ⊕SAVE slotas tampa 🔓UNLOCK (atrakinti+perdaryti).
+    const _freeFormable = _packCtrl.some(u => u._f9Squad == null);
+    let _unlockTarget = -1;   // kurį paką atrakinti (pažymėto pako, arba pirmo užrakinto)
+    if (_activePackSel != null && _packLocks[_activePackSel] && _sqCnt[_activePackSel] > 0) _unlockTarget = _activePackSel;
+    else { for (let s = 0; s < _F9_SQUAD_COUNT; s++) if (_sqCnt[s] > 0 && _packLocks[s]) { _unlockTarget = s; break; } }
+    // ── DINAMINIS eilių Y-stack'as (iš APAČIOS aukštyn, BE tuščių tarpų → taupom vietą) ──
+    const typeY = barY - _typeH - 5;                              // VIENA eilė: COMPOSER + PAKAI (sujungta, virš kortelių)
+    const cmdY = typeY - saH - 6;                                 // KOMANDOS (fallback eilė viršuj — kai nėra vietos šonuose)
+    // 🎯 Komandų ikonos FLANKUOJA kortelių juostą (kairė+dešinė tuščia vieta, nes pakas ≤6) kai telpa;
+    //    kitaip (siauras ekranas) — grįžtam į eilę viršuj. → sutaupom visą komandų eilės aukštį.
+    const _sideRoom = hasSel && (barX - v.x) >= 46 && ((v.x + v.w) - (barX + barW)) >= 46;
+    const _cmdTopRow = hasSel && !_sideRoom;
+    // 🎨 Vieninga valdymo PANELĖ — viršus = aukščiausia MATOMA eilė (kad be pažymėjimo nebūtų tuščio ploto).
+    const _pW = Math.min(v.w - 12, 740), _pX = v.x + v.w / 2 - _pW / 2;   // (naudoja komandų ikonų fallback pozicija)
+    // 🚫 Tamsus panelės fonas/rėmas PAŠALINTAS (user: „juodo įrėminimo nereikia") — mygtukai turi savo rėmelius.
+    const _mkBtn = function (bx, by, bw, c0, c1, bord, txtc, label, glow, disabled, bh) {
+      const H = bh || saH;
+      ctx.fillStyle = '#0c101c'; _f9RoundRect(bx - 2, by - 2, bw + 4, H + 4, 7); ctx.fill();   // 🏆 navy postamentas
+      if (disabled) {
+        // ⛔ DISABLED — plokščia pilka, blankus tekstas → AIŠKIAI „negalima naudoti dabar".
+        ctx.fillStyle = '#232838'; _f9RoundRect(bx, by, bw, H, 6); ctx.fill();
+        ctx.strokeStyle = '#3a4055'; ctx.lineWidth = 1; _f9RoundRect(bx + 0.5, by + 0.5, bw - 1, H - 1, 5); ctx.stroke();
+        ctx.fillStyle = '#6a7285'; ctx.fillText(label, bx + bw / 2, by + H / 2 + 0.5);
+        return;
+      }
+      const g = ctx.createLinearGradient(0, by, 0, by + H); g.addColorStop(0, c0); g.addColorStop(1, c1);
+      ctx.fillStyle = g; _f9RoundRect(bx, by, bw, H, 6); ctx.fill();
+      // ⬆️ „raised" viršaus highlight → aiškus KLIKINAMAS jausmas
+      ctx.fillStyle = 'rgba(255,255,255,0.15)'; _f9RoundRect(bx + 2, by + 1.5, bw - 4, Math.max(3, H * 0.36), 4); ctx.fill();
+      // PERF: jokio shadowBlur — glow imituojam dvigubu kontūru (pigu).
+      if (glow) { ctx.strokeStyle = bord; ctx.globalAlpha = 0.4; ctx.lineWidth = 4; _f9RoundRect(bx - 0.5, by - 0.5, bw + 1, H + 1, 6); ctx.stroke(); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = bord; ctx.lineWidth = glow ? 2 : 1.2; _f9RoundRect(bx + 0.5, by + 0.5, bw - 1, H - 1, 5); ctx.stroke();
+      ctx.fillStyle = txtc; ctx.fillText(label, bx + bw / 2, by + H / 2 + 0.5);
+      // ✨ PRESS flash — jei šitas mygtukas ką tik paspaustas (feedback, kad suveikė)
+      const fl = window._f9BtnFlash;
+      if (fl && Math.abs(fl.x - bx) < 2.5 && Math.abs(fl.y - by) < 2.5) {
+        const el = performance.now() - fl.at;
+        if (el < 220) { ctx.globalAlpha = (1 - el / 220) * 0.6; ctx.fillStyle = '#ffffff'; _f9RoundRect(bx, by, bw, H, 6); ctx.fill(); ctx.globalAlpha = 1; }
+      }
+    };
+    // ═══ VALDYMO EILĖ (typeY): TIK PAKAI (esami 🔒/pažymėt + vienas ⊕SAVE). COMPOSER (tipų chip'ai) PAŠALINTAS (user).
+    //   Unitus rinkiesi box-select lauke arba kortelių tap (multi-select). Pakų nėra → eilės nėra.
+    {
+      window._f9TypeRects = []; window._f9SelectAllRect = null;   // composer nebėra → hit-test tuščias
+      window._f9SquadRects = [];
+      const nPack = _visSquads.length, gap = 6, pbw = 66;
+      if (nPack) {
+        const grpW = pbw * nPack + gap * (nPack - 1);
+        let xp = v.x + v.w / 2 - grpW / 2;   // pakai CENTRUOTI
+        ctx.font = 'bold 12px monospace';
+        for (let vi = 0; vi < nPack; vi++) {
+          const s = _visSquads[vi];
+          const cnt = _sqCnt[s], locked = _packLocks[s] && cnt > 0;
+          const isAct = ((_packActive === s) || (_activePackSel === s)) && cnt > 0;
+          const formableNow = _packFormMode && (cnt === 0 || !locked);
+          const base = _F9_SQUAD_COLORS[s] || '#ffcf5c', baseD = _F9_SQUAD_COLORS_D[s] || '#8c6e22';
+          let c0, c1, bord, label, glow2, _unlockN = -1, _txtc;
+          if (formableNow && cnt === 0) {
+            if (_freeFormable) { c0 = '#7ec77f'; c1 = '#3a6e3f'; bord = '#bdf0a0'; label = '⊕ SAVE'; glow2 = true; _txtc = '#0c2a10'; }        // yra laisvų → formuoti NAUJĄ paką
+            else if (_unlockTarget >= 0) { c0 = '#c9a227'; c1 = '#7a6418'; bord = '#ffe07a'; label = '🔓 UNLOCK'; glow2 = true; _unlockN = _unlockTarget; _txtc = '#2a1d08'; }   // nebėra laisvų → ATRAKINTI paką (perdaryti)
+            else { c0 = '#3a3320'; c1 = '#241f12'; bord = '#5a4e30'; label = '—'; glow2 = false; _txtc = '#6a6353'; }
+          }
+          else if (formableNow) { c0 = '#7ec77f'; c1 = '#3a6e3f'; bord = '#bdf0a0'; label = '⊕' + (s + 1); glow2 = true; _txtc = '#0c2a10'; }        // overwrite atrakintą
+          else if (locked) { c0 = base; c1 = baseD; bord = isAct ? '#ffffff' : base; label = '🔒' + (s + 1) + '·' + cnt; glow2 = isAct; _txtc = '#1a1208'; }
+          else { c0 = base; c1 = baseD; bord = isAct ? '#ffffff' : base; label = (s + 1) + '·' + cnt; glow2 = isAct; _txtc = '#1a1208'; }
+          _mkBtn(xp, typeY, pbw, c0, c1, bord, _txtc, label, glow2, false, _typeH);
+          if (isAct) {   // aktyvaus pako ryškus baltas žiedas
+            ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.9; ctx.lineWidth = 2;
+            _f9RoundRect(xp - 3, typeY - 3, pbw + 6, _typeH + 6, 8); ctx.stroke(); ctx.globalAlpha = 1; ctx.restore();
+          }
+          window._f9SquadRects.push({ x: xp, y: typeY, w: pbw, h: _typeH, n: s, unlock: _unlockN, disabled: false });
+          xp += pbw + gap;
+        }
+      }
+    }
+    // ROW 1: KOMANDOS — IKONOS TIK (be užrašų). FLANKUOJA kortelių juostą: 🛡🚩 KAIRĖJ, ✕🔓 DEŠINĖJ.
+    //   ⊞ REGROUP PAŠALINTAS — unitai regrupuojasi/susirikiuoja automatiškai (move=individualūs slotai + gather).
+    if (hasSel) {
+      const _aq = window._f9ActiveSquad;
+      const _locks = (typeof _f9SquadLocks === 'function') ? _f9SquadLocks() : [];
+      const showUnlock = (_aq != null && _locks[_aq]);
+      const _selArr = Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [];
+      const patrolling = _selArr.some(u => u && u._f9Patrol);
+      const ptArm = !!window._f9PatrolArm || patrolling;
+      window._f9RegroupRect = null; window._f9RegroupPopupOpen = false;   // REGROUP nebeprieinamas
+      ctx.font = '16px system-ui, sans-serif';       // emoji dydis (be teksto)
+      // ⚔️ KAIRĖ = kovos komandos; 🧹 DEŠINĖ = pažymėjimo tvarkymas
+      const _leftItems = [
+        { rect: '_f9HoldRect', label: '🛡', c0: '#5a9bd4', c1: '#2f5e88', bord: '#9ccbf0', txt: '#06182a', glow: false },
+        { rect: '_f9PatrolRect', label: patrolling ? '🛑' : '🚩', c0: ptArm ? '#9ce07a' : '#5fa83f', c1: ptArm ? '#5e9c30' : '#3a6e22', bord: '#bdf09a', txt: '#0c2a08', glow: ptArm },
+      ];
+      const _rightItems = [
+        { rect: '_f9DeselectRect', label: '✕', c0: '#b5524f', c1: '#7a3331', bord: '#e89a98', txt: '#2a0c0c', glow: false },
+      ];
+      if (showUnlock) _rightItems.push({ rect: '_f9UnlockRect', label: '🔓', c0: '#c9a227', c1: '#7a6418', bord: '#ffe07a', txt: '#2a1d08', glow: true, extra: { n: _aq } });
+      else window._f9UnlockRect = null;
+      const _iw = 34, _ih = 30, _ig = 6;
+      const _renderCol = (colX, items) => {
+        const totalH = items.length * _ih + Math.max(0, items.length - 1) * _ig;
+        const topY = barY + (barH - totalH) / 2;   // vertikaliai centruota kortelių juostoj
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i], iy = topY + i * (_ih + _ig);
+          _mkBtn(colX, iy, _iw, it.c0, it.c1, it.bord, it.txt, it.label, it.glow, false, _ih);
+          window[it.rect] = Object.assign({ x: colX, y: iy, w: _iw, h: _ih }, it.extra || {});
+        }
+      };
+      if (_sideRoom) {
+        _renderCol(Math.max(v.x + 4, barX - 10 - _iw), _leftItems);                       // KAIRĖ nuo kortelių
+        _renderCol(Math.min(v.x + v.w - 4 - _iw, barX + barW + 10), _rightItems);          // DEŠINĖ nuo kortelių
+      } else {
+        // fallback (siauras ekranas): horizontali eilė viršuj kairėj
+        const all = _leftItems.concat(_rightItems), bw = 32, gap = 5, x0 = _pX + 10;
+        for (let i = 0; i < all.length; i++) {
+          const it = all[i], bx = x0 + i * (bw + gap);
+          _mkBtn(bx, cmdY, bw, it.c0, it.c1, it.bord, it.txt, it.label, it.glow, false);
+          window[it.rect] = Object.assign({ x: bx, y: cmdY, w: bw, h: saH }, it.extra || {});
+        }
+      }
+    } else {
+      window._f9HoldRect = null; window._f9RegroupRect = null; window._f9PatrolRect = null; window._f9DeselectRect = null; window._f9UnlockRect = null;
+    }
+  }
+
+  // ── ⊞ REGROUP FORMACIJŲ POPUP — vertikalus sąrašas virš REGROUP mygtuko ──
+  if (window._f9RegroupPopupOpen && window._f9RegroupRect) {
+    const rg = window._f9RegroupRect;
+    const forms = _F9_REGROUP_FORMATIONS;
+    const pw = 118, ph = 22, pgap = 4, hH = 16;
+    const cw = (typeof canvas !== 'undefined' && canvas) ? canvas.width : 9999;
+    const px = Math.max(6, Math.min(cw - pw - 6, rg.x + rg.w / 2 - pw / 2));
+    const baseY = rg.y - 8;
+    const stackH = forms.length * ph + (forms.length - 1) * pgap;
+    const topY = baseY - stackH;
+    const cur = window._f9RegroupFormation || 'grid';
+    window._f9RegroupFormRects = [];
+    ctx.fillStyle = 'rgba(18,13,8,0.94)';
+    _f9RoundRect(px - 5, topY - hH - 5, pw + 10, stackH + hH + 9, 8); ctx.fill();
+    ctx.strokeStyle = '#8a6a2e'; ctx.lineWidth = 1.3;
+    _f9RoundRect(px - 4.5, topY - hH - 4.5, pw + 9, stackH + hH + 8, 7); ctx.stroke();
+    ctx.fillStyle = '#ffcf5c'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⊞ FORMATION', px + pw / 2, topY - hH / 2 - 1);
+    ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+    for (let i = 0; i < forms.length; i++) {
+      const fy = baseY - (i + 1) * ph - i * pgap;
+      const sel = (cur === forms[i].id);
+      ctx.save(); if (sel) { ctx.shadowColor = '#ffd97a'; ctx.shadowBlur = 7; }
+      const g = ctx.createLinearGradient(0, fy, 0, fy + ph);
+      if (sel) { g.addColorStop(0, '#ffe07a'); g.addColorStop(1, '#e0a830'); }
+      else { g.addColorStop(0, 'rgba(74,56,32,0.95)'); g.addColorStop(1, 'rgba(42,32,18,0.95)'); }
+      ctx.fillStyle = g; _f9RoundRect(px, fy, pw, ph, 5); ctx.fill(); ctx.restore();
+      ctx.strokeStyle = sel ? '#ffd97a' : '#8a6a2e'; ctx.lineWidth = sel ? 1.8 : 1;
+      _f9RoundRect(px + 0.5, fy + 0.5, pw - 1, ph - 1, 4); ctx.stroke();
+      _f9DrawFormationIcon(forms[i].id, px + 13, fy + ph / 2);
+      ctx.fillStyle = sel ? '#2a1d08' : '#f5e6c3'; ctx.textBaseline = 'middle';
+      ctx.fillText(forms[i].label, px + 28, fy + ph / 2 + 0.5);
+      window._f9RegroupFormRects.push({ x: px, y: fy, w: pw, h: ph, id: forms[i].id });
+    }
+  } else {
+    window._f9RegroupFormRects = null;
   }
 
   ctx.textAlign = 'left';
@@ -5944,10 +6901,14 @@ function _drawF9SelectionPanel() {
 const _F9_SEP_RADIUS = 0.42;   // default PAIR distance (= 2× bazinio personal radius)
 const _F9_SEP_FORCE  = 3.2;    // push strength — mažiau slydimo/šokinėjimo tarp unitų
 const _F9_SEP_MIN_STEP = 0.004;
-// Per-utype PERSONAL radius — min atstumas tarp 2 unitų = radA + radB. Standartinis = 0.21 (→ pair 0.42).
-// Didesni/kitokios formos sprite'ai (Hog Rider, boss) gauna didesnį, kad kiti nelįstų į jų kūną/galvą.
-const _F9_SEP_RAD = { pigronke: 0.46, troll: 0.55 };
-function _f9SepRadius(u) { return (u && _F9_SEP_RAD[u.utype]) || 0.21; }
+// Per-utype PERSONAL radius — min atstumas tarp 2 unitų = radA + radB.
+// PADIDINTA (2026-06-30) 0.21→0.55 (pora 1.10) kad unitai laikytųsi TVARKINGIAU išsiskleidę (mažiau sprite susigrūdimo).
+// Benchmark patvirtino: O(n²) sqrt dominuoja (radius-independent), unitai nusistovi → JOKIO papildomo lago.
+// Kovoje force sumažinamas (_sepScale=0.5) → melee vis tiek prieina; SERVERIS turi atitikti (SEP_DEFAULT).
+const _F9_SEP_RAD = { pigronke: 0.46, troll: 0.55 };   // dar tankiau (buvo 0.55/0.65)
+// 🎚️ window._f9SepScale (default 1) = GYVAS density tuner (mažiau = tankiau, pvz. 0.85). TIK SOLO (PvP=serveris).
+//    Radęs sweet spot → sinchronizuok serveryje (SEP_DEFAULT). Base default 0.45→0.38 (pora 0.90→0.76).
+function _f9SepRadius(u) { return (((u && _F9_SEP_RAD[u.utype]) || 0.38)) * (window._f9SepScale || 1); }
 // "Gentleman step aside" — idle unit'as jaučia approach'o ir aktyviai pasitraukia
 const _F9_GENTLEMAN_DETECT = 0.65;   // detect radius (cells) — kai moving unit per arti
 const _F9_GENTLEMAN_SIDESTEP = 0.22; // sidestep distance (cells) — mažas, ne sprintinis pasitraukimas
@@ -5990,11 +6951,148 @@ function _f9CommandableSelection(includeHero = true) {
     if (!u || !u.alive || !_f9IsAlly(u)) continue;
     // Hero (ronke2) F9'e nematomas ir nekomanduojamas — kovoja tik squad'as (2026-06-12)
     if (u.team === 0) continue;
+    // 🛡🚩 Užrakinti unitai (HOLD skydas ARBA PATROL maršrutas) IGNORUOJA visas komandas — kol nuimsi (toggle).
+    if (u._f9Hold || u._f9Patrol) continue;
     // PvP: komanduojam TIK savo squad'ą (priešininko unitai irgi ally-tipo, bet kitas _pvpTeam).
     if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
     if (out.indexOf(u) < 0) out.push(u);
   }
+  return _f9CapSel(out);   // 🪖 KIETAS max 6 valdomi vienu metu (backstop, = _F9_PACK_SIZE)
+}
+
+// 🛡 RAW pažymėti savi unitai (ĮSKAITANT užrakintus) — HOLD toggle'ui (kad galėtų atrakinti).
+function _f9RawSelectedAllies() {
+  const src = Array.isArray(window._f9SelectedSet) && window._f9SelectedSet.length
+    ? window._f9SelectedSet
+    : (window._f9Selected ? [window._f9Selected] : []);
+  const out = [];
+  for (const u of src) {
+    if (!u || !u.alive || !_f9IsAlly(u) || u.team === 0) continue;
+    if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
+    if (out.indexOf(u) < 0) out.push(u);
+  }
   return out;
+}
+
+// ── 🪖 BŪRIŲ SISTEMA: 2026-07-01 KIETAS 6-CAP (user: „max 6 unitų pakus judinti vienu metu, panaikink visų
+//   pažymėjimą"). _F9_SQUAD_CAP == _F9_PACK_SIZE (6) → VISI komandų/selekcijos keliai (A-move fallback,
+//   scene-enter default, control-grupės, _f9CapSel backstop) capinami ties 6. Nebėra „SELECT ALL" spragos. ──
+const _F9_SQUAD_CAP = 6;       // KIETAS komandų/selekcijos ceiling (= _F9_PACK_SIZE) — max 6 valdomi vienu metu
+const _F9_PACK_SIZE = 6;       // 🪖 PAKO dydis: box-select + pako formavimas MAX 6 unitų (2026-06-30 user „pakai po 6"). ⛶ ALL apeina.
+const _F9_CARDBAR_MAX = 6;     // kiek kortelių MAX rodyti apatinėj juostoj (perf: 30 kortelių/kadrą = lagas) → +N badge
+const _F9_SQUAD_COUNT = 6;     // control-group'ų skaičius (1..6) — 2026-06-30 4→6 (user: pakai po 6)
+const _F9_SQUAD_COLORS = ['#ffcf5c', '#5ad0e0', '#7ec77f', '#e0905a', '#b07ce0', '#e05a7c'];   // 6 būrių spalvos (auksas/cyan/žalia/oranž/violet/rožinė)
+const _F9_SQUAD_COLORS_D = ['#9c7421', '#2f7e8c', '#3a6e3f', '#8c5530', '#6e4a96', '#8c3550'];   // tamsesni variantai (gradientui)
+function _f9MyControllable() {
+  if (!Array.isArray(S.units)) return [];
+  const pvp = !!(window._f9pvpLive && window._f9pvpMyTeam != null);
+  return S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0 &&
+    (!pvp || u._pvpTeam === window._f9pvpMyTeam));
+}
+// RANKINIS forming — JOKIO auto-assign (user pats formuoja būrius). Paliktas dėl suderinamumo (grąžina valdomus).
+function _f9EnsureSquads() { return _f9MyControllable(); }
+function _f9SquadCount(n) { return _f9MyControllable().filter(u => u._f9Squad === n).length; }
+// Pažymi būrį n (0-based) — tik to būrio gyvus unitus (≤4).
+function _f9SelectSquad(n) {
+  const sq = _f9MyControllable().filter(u => u._f9Squad === n).slice(0, _F9_PACK_SIZE);
+  window._f9SelectedSet = sq;
+  window._f9Selected = sq[0] || null;
+  window._f9ActiveSquad = n;
+  if (typeof _f9SetToast === 'function') _f9SetToast(sq.length ? ('Squad ' + (n + 1) + ' (' + sq.length + ')') : ('Squad ' + (n + 1) + ' empty — select units + tap to form'));
+  return sq.length > 0;
+}
+// ⛶ SELECT ALL — pažymi VISUS valdomus unitus (Halo Wars „select all army"). Atrakina būrio režimą (laisvas pažymėjimas).
+function _f9SelectAllControllable() {
+  const all = _f9MyControllable();
+  window._f9SelectedSet = all.slice();
+  window._f9Selected = all[0] || null;
+  window._f9ActiveSquad = null;
+  if (typeof _f9SetToast === 'function') _f9SetToast(all.length ? ('⛶ All selected (' + all.length + ')') : 'No units');
+  return all.length;
+}
+// 🏹 COMPOSER — prideda ARTIMIAUSIĄ laisvą to tipo unitą į pažymėjimą (max _F9_PACK_SIZE). Miksuoti pakai (4🏹+2💀).
+function _f9AddTypeToSelection(utype) {
+  const sel = Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet.slice() : [];
+  if (sel.length >= _F9_PACK_SIZE) { if (typeof _f9SetToast === 'function') _f9SetToast('Pack full (' + _F9_PACK_SIZE + ') — save to [1-6]'); return; }
+  const cand = _f9MyControllable().filter(u => u.utype === utype && sel.indexOf(u) < 0);
+  if (!cand.length) { if (typeof _f9SetToast === 'function') _f9SetToast('No free ' + utype + ' left'); return; }
+  const anchor = sel.length ? sel[sel.length - 1] : cand[0];
+  const ax = (anchor.rx !== undefined) ? anchor.rx : anchor.x, ay = (anchor.ry !== undefined) ? anchor.ry : anchor.y;
+  cand.sort((a, b) => (Math.hypot((a.rx ?? a.x) - ax, (a.ry ?? a.y) - ay)) - (Math.hypot((b.rx ?? b.x) - ax, (b.ry ?? b.y) - ay)));
+  sel.push(cand[0]);
+  window._f9SelectedSet = sel;
+  window._f9Selected = sel[0] || null;
+  window._f9ActiveSquad = null;   // rankinis → form mode ([1-6] formuos šitą kompoziciją)
+  if (typeof _f9SetToast === 'function') _f9SetToast('+' + utype + '  (' + sel.length + '/' + _F9_PACK_SIZE + ')');
+}
+// ✨ Mygtuko PRESS flash — vizualus feedback, kad paspaudimas suveikė. Kviečiam hit-test'uose su rect'u.
+function _f9FlashBtn(r) { if (r) window._f9BtnFlash = { x: r.x, y: r.y, at: performance.now() }; }
+// 🎯 GATHER — pažymėti/suformuoti unitai SUEINA į vieną krūvą (regroup ant centroido).
+function _f9GatherSelected(units) {
+  if (!Array.isArray(units) || units.length < 2) return;
+  let cx = 0, cy = 0;
+  for (const u of units) { cx += (u.rx !== undefined ? u.rx : u.x); cy += (u.ry !== undefined ? u.ry : u.y); }
+  cx /= units.length; cy /= units.length;
+  if (typeof _f9IssueMoveCommand === 'function') _f9IssueMoveCommand(units, cx, cy);
+}
+function _f9SquadLocks() { return window._f9SquadLocked || (window._f9SquadLocked = new Array(_F9_SQUAD_COUNT).fill(false)); }
+// 🪖 Squad mygtuko paspaudimas:
+//   • UŽRAKINTAS būrys → tik PAŽYMI (atsitiktinis box-select jo nesugriauna — stabilu).
+//   • LAISVAS/tuščias būrys + rankinis pažymėjimas → FORMUOJA + UŽRAKINA (kitų užrakintų narių NEpaliečia).
+function _f9SquadButtonPress(n) {
+  const locks = _f9SquadLocks();
+  const ctrl = _f9MyControllable();
+  const cnt = ctrl.filter(u => u._f9Squad === n).length;
+  const sel = (typeof _f9RawSelectedAllies === 'function') ? _f9RawSelectedAllies() : [];
+  const manualSel = (window._f9ActiveSquad == null && sel.length > 0);
+  const formable = (cnt === 0 || !locks[n]);   // tuščias arba atrakintas → galima formuoti
+  if (manualSel && formable) {
+    // protect kitus UŽRAKINTUS būrius — jų narių NEperkeliam
+    const pick = sel.filter(u => u._f9Squad == null || u._f9Squad === n || !locks[u._f9Squad]).slice(0, _F9_PACK_SIZE);
+    if (!pick.length) { if (typeof _f9SetToast === 'function') _f9SetToast('Those units are locked in other squads'); _f9SelectSquad(n); return; }
+    for (const u of ctrl) if (u._f9Squad === n && pick.indexOf(u) < 0) u._f9Squad = null;   // seni nariai → laisvi
+    for (const u of pick) u._f9Squad = n;
+    locks[n] = true;   // 🔒 suformuotas → užrakintas (stabilu)
+    window._f9SelectedSet = pick; window._f9Selected = pick[0] || null; window._f9ActiveSquad = n;
+    _f9SaveSquads();   // 💾 persistencija po refresh
+    if (typeof _f9GatherSelected === 'function') _f9GatherSelected(pick);   // 🎯 pakas SUEINA į vieną krūvą
+    if (typeof _f9SetToast === 'function') _f9SetToast('Pack ' + (n + 1) + ' set 🔒 (' + pick.length + ')');
+  } else {
+    _f9SelectSquad(n);
+  }
+}
+// 🔓 Atrakina būrį n — nariai tampa laisvi (unassigned), galima performuoti.
+function _f9UnlockSquad(n) {
+  const locks = _f9SquadLocks();
+  for (const u of _f9MyControllable()) if (u._f9Squad === n) u._f9Squad = null;
+  locks[n] = false;
+  window._f9ActiveSquad = null;   // dabar rankinis pažymėjimas → galima formuoti iš naujo
+  if (typeof _f9SetToast === 'function') _f9SetToast('Squad ' + (n + 1) + ' unlocked 🔓 — units free, re-form anytime');
+  _f9SaveSquads();
+}
+// 💾 Išsaugo būrių setupą (tokenId → squad + locks) — persistencija po refresh. Raktas=tokenId (stabilus NFT/dev).
+function _f9SaveSquads() {
+  try {
+    const map = {};
+    for (const u of _f9MyControllable()) { const tid = u.tokenId; if (tid && u._f9Squad != null) map[tid] = u._f9Squad; }
+    localStorage.setItem('f9_squads_v1', JSON.stringify({ map: map, locks: window._f9SquadLocked || new Array(_F9_SQUAD_COUNT).fill(false) }));
+  } catch (_) {}
+}
+// 💾 Atstato būrių setupą iš localStorage (pagal tokenId). Grąžina kiek pritaikyta.
+function _f9RestoreSquads() {
+  try {
+    const raw = localStorage.getItem('f9_squads_v1'); if (!raw) return 0;
+    const data = JSON.parse(raw); if (!data || !data.map) return 0;
+    let applied = 0;
+    for (const u of _f9MyControllable()) { const tid = u.tokenId; if (tid && data.map[tid] != null) { u._f9Squad = data.map[tid]; applied++; } }
+    if (Array.isArray(data.locks)) window._f9SquadLocked = data.locks.slice(0, _F9_SQUAD_COUNT);
+    return applied;
+  } catch (_) { return 0; }
+}
+// Apriboja pažymėjimą iki cap (4) — backstop visiems selekcijos keliams.
+function _f9CapSel(arr) {
+  if (!Array.isArray(arr)) return arr;
+  return arr.length > _F9_SQUAD_CAP ? arr.slice(0, _F9_SQUAD_CAP) : arr;
 }
 
 function _f9ClearUnitOrder(u) {
@@ -6002,12 +7100,17 @@ function _f9ClearUnitOrder(u) {
   u._f9EngageTarget = null;
   u._f9AutoEngage = false;
   u._f9ReturnTarget = null;
+  u._f9LeashX = undefined; u._f9LeashY = undefined;   // 🎯 nauja komanda → resetinam leash postą
   u._f9EngageSide = null;
   u._f9EngageSideTgt = null;
   u._f9TargetUnit = null;
   u._f9Command = 'move';
   u._f9AMove = null;
   u._f9Queue = null;
+  u._f9Hold = false;        // 🛡 bet kuri nauja komanda atšaukia HOLD POSITION
+  u._f9HoldAt = null;
+  u._f9Patrol = null;       // 🚩 bet kuri nauja komanda atšaukia PATROL
+  u._f9ArrivedAt = null;    // synchronized arrival — nauja komanda nuvalo sustojimo žymę
   if (u.utype === 'pigronke') u._f9ActionLockUntil = 0;
 }
 
@@ -6027,34 +7130,407 @@ function _f9PushClickMarker(tx, ty, units, isAttackMarker) {
   while (window._f9ClickMarkers.length > 8) window._f9ClickMarkers.shift();
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 🧭 F9 PATHFINDING (Fazė 1, SOLO/klientas) — chokepoint'ai (vartai). Be šito unitai eina TIESIA
+//   linija → atsiremia į sieną/griovį ir kemšasi (gives-up po 400ms). BFS flow-field nuo TIKSLO per
+//   praeinamas celes → kiekvienas unitas seka gradientą per vartus → gražiai suteka, pasiskirsto per
+//   kelis vartus. Waypoint'ai → esamas `_f9Queue` (mover'is nekeičiamas). Kill: window._f9NoPathfind=true.
+// ════════════════════════════════════════════════════════════════════════════
+let _f9MoatCacheSrc = null, _f9MoatCache = null;
+function _f9MoatSet() {
+  if (!window._f9Moat) { _f9MoatCacheSrc = null; _f9MoatCache = null; return null; }
+  if (window._f9Moat !== _f9MoatCacheSrc) { _f9MoatCacheSrc = window._f9Moat; _f9MoatCache = new Set(window._f9Moat.map(c => c[0] + ',' + c[1])); }
+  return _f9MoatCache;
+}
+function _f9Walkable(x, y) {
+  if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return false;
+  if (_f9CellBlocked(x, y, -999, -999)) return false;                                       // sienos + medžiai
+  const ms = _f9MoatSet(); if (ms && ms.has(x + ',' + y)) return false;                     // griovys (vanduo)
+  if (typeof _f9TowerBlocked !== 'undefined' && _f9TowerBlocked && _f9TowerBlocked.has(x + ',' + y)) return false;   // bokštai
+  return true;
+}
+function _f9NearestWalkable(x, y) {
+  x = Math.round(x); y = Math.round(y);
+  if (_f9Walkable(x, y)) return { x, y };
+  for (let r = 1; r <= 8; r++) for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) {
+    if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+    if (_f9Walkable(x + ox, y + oy)) return { x: x + ox, y: y + oy };
+  }
+  return null;
+}
+const _F9_N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+function _f9BfsField(tx, ty) {
+  const goal = _f9NearestWalkable(tx, ty); if (!goal) return null;
+  const dist = new Map(), K = (x, y) => x + ',' + y;
+  dist.set(K(goal.x, goal.y), 0);
+  const q = [goal]; let head = 0;
+  while (head < q.length) {
+    const c = q[head++], d = dist.get(K(c.x, c.y));
+    for (const [ox, oy] of _F9_N8) {
+      const nx = c.x + ox, ny = c.y + oy;
+      if (ox && oy && (!_f9Walkable(c.x + ox, c.y) || !_f9Walkable(c.x, c.y + oy))) continue;   // jokio corner-cut pro kampą
+      if (!_f9Walkable(nx, ny)) continue;
+      const k = K(nx, ny); if (dist.has(k)) continue;
+      dist.set(k, d + 1); q.push({ x: nx, y: ny });
+    }
+  }
+  return { dist, goal };
+}
+function _f9LineWalkable(x0, y0, x1, y1) {
+  let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy, x = x0, y = y0, guard = 0;
+  while (guard++ < 600) {
+    if (!_f9Walkable(x, y)) return false;
+    if (x === x1 && y === y1) return true;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+  return false;
+}
+function _f9TracePath(field, sx, sy) {
+  if (!field) return null;
+  const dist = field.dist, K = (x, y) => x + ',' + y;
+  let cx = Math.round(sx), cy = Math.round(sy);
+  if (!dist.has(K(cx, cy))) { const w = _f9NearestWalkable(cx, cy); if (!w || !dist.has(K(w.x, w.y))) return null; cx = w.x; cy = w.y; }
+  const path = [{ x: cx, y: cy }]; let guard = 0;
+  while (dist.get(K(cx, cy)) > 0 && guard++ < 3000) {
+    let best = null, bd = dist.get(K(cx, cy));
+    for (const [ox, oy] of _F9_N8) {
+      const nx = cx + ox, ny = cy + oy, k = K(nx, ny);
+      if (!dist.has(k)) continue;
+      if (ox && oy && (!_f9Walkable(cx + ox, cy) || !_f9Walkable(cx, cy + oy))) continue;
+      const nd = dist.get(k);
+      if (nd < bd) { bd = nd; best = { x: nx, y: ny }; }
+    }
+    if (!best) break;
+    cx = best.x; cy = best.y; path.push({ x: cx, y: cy });
+  }
+  return path;
+}
+function _f9SimplifyPath(path) {
+  if (!path || path.length <= 2) return path;
+  const out = [path[0]]; let i = 0;
+  while (i < path.length - 1) {
+    let j = path.length - 1;
+    while (j > i + 1 && !_f9LineWalkable(path[i].x, path[i].y, path[j].x, path[j].y)) j--;
+    out.push(path[j]); i = j;
+  }
+  return out;
+}
+// Waypoint'ai {tx,ty} (celės centrai) nuo unito iki tikslo per vartus; null jei jau ant tikslo / nėra kelio.
+function _f9PathWaypoints(field, ux, uy) {
+  const raw = _f9TracePath(field, ux, uy);
+  if (!raw || raw.length < 2) return null;
+  return _f9SimplifyPath(raw).slice(1).map(c => ({ tx: c.x, ty: c.y }));   // be pirmos (dabartinė celė)
+}
 function _f9IssueMoveCommand(units, tx, ty) {
-  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest())
-    return window.F9PvpLive.routeCommand('move', units, tx, ty);   // guest → serveris; host komanduoja lokaliai
   if (!Array.isArray(units) || !units.length) return false;
-  let cX = 0, cY = 0, n = 0;
+  const guest = !!(window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest());   // PvP ARBA home pilis = serveris
+  const pvp = !!(window._f9pvpLive && window._f9pvpMyTeam != null);
+  const alive = units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0 && !u._f9Hold && !u._f9Patrol &&
+    (!pvp || u._pvpTeam === window._f9pvpMyTeam));
+  const n = alive.length; if (!n) return false;
+  // ── TVARKINGI INDIVIDUALŪS taškai: kiekvienam unitui ATSKIRAS tinklelio slot'as ant tikslo (ne vienas taškas) ──
+  const offs = _f9FormationOffsets('grid', n, 1, 0);
+  const slotPos = offs.map(o => ({
+    x: Math.max(0.2, Math.min(COLS - 1.2, tx + o.ox)),
+    y: Math.max(0.2, Math.min(ROWS - 1.2, ty + o.oy)),
+  }));
+  // ARTUMO priskyrimas: kiekvienas unitas → ARTIMIAUSIAS laisvas slotas → NEsibrauna per kitus į tolimą slotą
+  const assign = _f9AssignSlots(alive, slotPos);
+  const slots = alive.map((u, i) => slotPos[assign[i]]);
+  if (typeof _f9SetMovePreview === 'function') _f9SetMovePreview(slots);   // 👻 N taškų peržiūra (= unitų skaičius)
+  if (guest) {
+    // PvP / home pilis (serveris autoritetas): siunčiam per-unit pozicijas (regroup-pts kelias → order move)
+    const ids = [], pts = [];
+    alive.forEach((u, i) => { if (u._pvpId) { ids.push(u._pvpId); pts.push(slots[i]); } });
+    if (ids.length && window.F9PvpLive.routeRegroupFormation) window.F9PvpLive.routeRegroupFormation(ids, pts);
+    return true;
+  }
+  // solo — 🧭 pathfinding: BFS flow-field nuo tikslo (1×), kiekvienam unitui kelias per vartus → waypoint queue.
+  const _pf = (!window._f9NoPathfind && typeof _f9BfsField === 'function') ? _f9BfsField(Math.round(tx), Math.round(ty)) : null;
+  alive.forEach((u, i) => {
+    _f9ClearUnitOrder(u);
+    const slot = slots[i];
+    const wps = _pf ? _f9PathWaypoints(_pf, (u.rx !== undefined ? u.rx : u.x), (u.ry !== undefined ? u.ry : u.y)) : null;
+    if (wps && wps.length) {
+      const full = wps.concat([{ tx: slot.x, ty: slot.y }]);   // paskutinis = tikslus slotas
+      u._f9Target = full[0];
+      u._f9Queue = full.slice(1);
+      u._f9OnPath = true;
+    } else {
+      u._f9Target = { tx: slot.x, ty: slot.y };                // tiesioginis (linija laisva / nepasiekiama)
+      u._f9Queue = null;
+      u._f9OnPath = false;
+    }
+  });
+  return n > 0;
+}
+// 👻 Move preview — busimų individualių pozicijų vaiduokliai (rodomi trumpai po move komandos).
+function _f9SetMovePreview(slots) {
+  if (!Array.isArray(slots) || !slots.length) { window._f9MovePreview = null; return; }
+  window._f9MovePreview = { slots: slots.map(s => ({ x: s.x, y: s.y })), born: performance.now() };
+}
+function _f9DrawMovePreview() {
+  const mp = window._f9MovePreview;
+  if (!mp || typeof S === 'undefined' || !S || S.floor !== 9) return;
+  const age = performance.now() - mp.born;
+  const LIFE = 1500;
+  if (age > LIFE) { window._f9MovePreview = null; return; }
+  const a = 1 - age / LIFE;
+  ctx.save();
+  for (const s of mp.slots) {
+    const X = (s.x + 0.5) * CELL, Y = (s.y + 0.5) * CELL;
+    ctx.strokeStyle = `rgba(120,230,140,${(0.75 * a).toFixed(3)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(X, Y, 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = `rgba(120,230,140,${(0.45 * a).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(X, Y, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── ⊞ REGROUP: pasirenkamos FORMACIJOS (Grid/Line/Column/Wedge/Circle/Spread). Popup virš mygtuko. ──
+const _F9_REGROUP_FORMATIONS = [
+  { id: 'grid',   label: 'Grid' },     // klasikinis regrup (√n tinklelis)
+  { id: 'line',   label: 'Line' },
+  { id: 'column', label: 'Column' },
+];
+// Grąžina n offsetų {ox,oy} (cell erdvė, centruota ant 0) pagal formaciją. (dirx,diry)=žygio kryptis (wedge'ui).
+function _f9FormationOffsets(formation, n, dirx, diry) {
+  const offs = [];
+  const f = formation || 'grid';
+  if (f === 'line' || f === 'column') {
+    const GAP = 0.82, horiz = (f === 'line');   // > pair-separation 0.76 (tankesnė linija/kolona)
+    for (let i = 0; i < n; i++) {
+      const t = (i - (n - 1) / 2) * GAP;
+      offs.push(horiz ? { ox: t, oy: 0 } : { ox: 0, oy: t });
+    }
+  } else if (f === 'circle') {
+    const R = Math.max(1.1, n * 0.28);
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n - Math.PI / 2;
+      offs.push({ ox: Math.cos(a) * R, oy: Math.sin(a) * R });
+    }
+  } else if (f === 'wedge') {
+    const GAP = 0.9;
+    const fx = dirx || 1, fy = diry || 0, px = -fy, py = fx;   // forward + perpendikuliaras
+    for (let i = 0; i < n; i++) {
+      const depth = Math.ceil(i / 2), side = (i % 2 === 1) ? -1 : 1;
+      const back = -depth * GAP, lat = (i === 0 ? 0 : side * depth * GAP * 0.85);
+      offs.push({ ox: fx * back + px * lat, oy: fy * back + py * lat });   // smaigalys priekyje (link click)
+    }
+  } else {
+    const GAP = (f === 'spread') ? 1.7 : 0.82;   // grid dar tankesnis (> pair 0.76); spread lieka platus
+    const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+    const rows = Math.ceil(n / cols);
+    for (let i = 0; i < n; i++) {
+      const r = Math.floor(i / cols), c = i % cols;
+      offs.push({ ox: (c - (cols - 1) / 2) * GAP, oy: (r - (rows - 1) / 2) * GAP });
+    }
+  }
+  return offs;
+}
+// ── Slotų priskyrimas pagal ARTUMĄ (minimizuoja bendrą atstumą → unitai NEsibrauna per kitus į tolimą slotą).
+//    n≤6: brute-force optimalus (min Σ dist²); didesniam — greedy artimiausios poros. Grąžina: unit i → slot index. ──
+function _f9AssignSlots(units, slots) {
+  const n = units.length;
+  const up = units.map(u => ({ x: (u.rx !== undefined ? u.rx : u.x), y: (u.ry !== undefined ? u.ry : u.y) }));
+  const cost = (i, j) => { const dx = up[i].x - slots[j].x, dy = up[i].y - slots[j].y; return dx * dx + dy * dy; };
+  if (n <= 6) {
+    const arr = Array.from({ length: n }, (_, i) => i);
+    let best = arr.slice(), bestC = Infinity;
+    const perm = (k) => {
+      if (k === n) { let c = 0; for (let i = 0; i < n; i++) c += cost(i, arr[i]); if (c < bestC) { bestC = c; best = arr.slice(); } return; }
+      for (let i = k; i < n; i++) { [arr[k], arr[i]] = [arr[i], arr[k]]; perm(k + 1); [arr[k], arr[i]] = [arr[i], arr[k]]; }
+    };
+    perm(0);
+    return best;
+  }
+  const pairs = [];
+  for (let i = 0; i < n; i++) for (let j = 0; j < slots.length; j++) pairs.push({ i, j, d: cost(i, j) });
+  pairs.sort((a, b) => a.d - b.d);
+  const ua = new Array(n).fill(-1), su = new Array(slots.length).fill(false);
+  let cnt = 0;
+  for (const p of pairs) { if (ua[p.i] >= 0 || su[p.j]) continue; ua[p.i] = p.j; su[p.j] = true; if (++cnt >= n) break; }
+  for (let i = 0; i < n; i++) if (ua[i] < 0) for (let j = 0; j < slots.length; j++) if (!su[j]) { ua[i] = j; su[j] = true; break; }
+  return ua;
+}
+function _f9IssueRegroupCommand(units, tx, ty) {
+  const pvp = !!(window._f9pvpLive && window._f9pvpMyTeam != null);
+  const alive = (Array.isArray(units) ? units : []).filter(u =>
+    u && u.alive && _f9IsAlly(u) && u.team !== 0 && !u._f9Hold && !u._f9Patrol &&
+    (!pvp || u._pvpTeam === window._f9pvpMyTeam));
+  const n = alive.length; if (!n) return false;
+  // wedge kryptis: centroidas → click
+  let cx = 0, cy = 0;
+  for (const u of alive) { cx += (u.rx !== undefined ? u.rx : u.x); cy += (u.ry !== undefined ? u.ry : u.y); }
+  cx /= n; cy /= n;
+  let dx = tx - cx, dy = ty - cy; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+  const offs = _f9FormationOffsets(window._f9RegroupFormation || 'grid', n, dx, dy);
+  const slotPos = offs.map(o => ({
+    x: Math.max(0.2, Math.min(COLS - 1.2, tx + o.ox)),
+    y: Math.max(0.2, Math.min(ROWS - 1.2, ty + o.oy)),
+  }));
+  // ARTUMO priskyrimas: kiekvienas unitas → artimiausias slotas (NEsibrauna per kitus į tolimą slotą)
+  const assign = _f9AssignSlots(alive, slotPos);
+  const positions = alive.map((u, i) => slotPos[assign[i]]);
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
+    const ids = [], pts = [];
+    alive.forEach((u, i) => { if (u._pvpId) { ids.push(u._pvpId); pts.push(positions[i]); } });
+    if (window.F9PvpLive.routeRegroupFormation) window.F9PvpLive.routeRegroupFormation(ids, pts);
+    _f9PushClickMarker(tx, ty, alive, false);
+    return true;
+  }
+  alive.forEach((u, i) => { _f9ClearUnitOrder(u); u._f9Target = { tx: positions[i].x, ty: positions[i].y }; });
+  _f9PushClickMarker(tx, ty, alive, false);
+  return true;
+}
+
+// ── 🛡 HOLD POSITION (SC2/BAR "Hold"): unitas lieka INKARE, atakuoja TIK tai kas pateko į ATAKOS spindulį,
+//    NIEKADA nesivaiko ir negriauna sienos. Priešui pasitraukus — grįžta į inkarą. ──
+function _f9IssueHoldCommand(units) {
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest())
+    return window.F9PvpLive.routeCommand('hold', units, 0, 0);   // PvP → serveris (holdpos order)
+  if (!Array.isArray(units) || !units.length) return false;
+  let n = 0;
   for (const u of units) {
     if (!u || !u.alive || !_f9IsAlly(u)) continue;
-    cX += (u.rx !== undefined) ? u.rx : u.x;
-    cY += (u.ry !== undefined) ? u.ry : u.y;
+    if (u._f9Patrol) continue;   // 🚩 patruliuojantis užrakintas — HOLD jo neperima (pirma STOP patrolį)
+    _f9ClearUnitOrder(u);   // nuvalo bet kokį judėjimą/engage (ir _f9Hold=false)
+    u._f9Target = null;
+    u._f9Moving = false;
+    u._f9Hold = true;
+    u._f9HoldAt = { x: (u.rx !== undefined ? u.rx : u.x), y: (u.ry !== undefined ? u.ry : u.y) };
     n++;
   }
-  if (!n) return false;
-  cX /= n; cY /= n;
-  const moved = [];
+  if (n && typeof _f9SetToast === 'function') _f9SetToast('🛡 HOLD (' + n + ')');
+  return n > 0;
+}
+
+// 🛡 Atrakina HOLD (atšaukia skydą) — unitai vėl klauso komandų.
+function _f9ReleaseHoldCommand(units) {
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest())
+    return window.F9PvpLive.routeCommand('unhold', units, 0, 0);   // PvP → serveris
+  if (!Array.isArray(units) || !units.length) return false;
+  let n = 0;
   for (const u of units) {
-    if (!u || !u.alive || !_f9IsAlly(u)) continue;
-    _f9ClearUnitOrder(u);
-    const ux = (u.rx !== undefined) ? u.rx : u.x;
-    const uy = (u.ry !== undefined) ? u.ry : u.y;
-    let utx = tx + (ux - cX);
-    let uty = ty + (uy - cY);
-    utx = Math.max(0.2, Math.min(COLS - 1.2, utx));
-    uty = Math.max(0.2, Math.min(ROWS - 1.2, uty));
-    u._f9Target = { tx: utx, ty: uty };
-    moved.push(u);
+    if (!u || !u._f9Hold) continue;
+    u._f9Hold = false; u._f9HoldAt = null;
+    u._f9Target = null; u._f9Moving = false;
+    n++;
   }
-  if (moved.length) _f9PushClickMarker(tx, ty, moved, false);
-  return moved.length > 0;
+  if (n && typeof _f9SetToast === 'function') _f9SetToast('🛡 HOLD released (' + n + ')');
+  return n > 0;
+}
+
+// 🛡 HOLD toggle (mygtukas): yra užrakintų pažymėjime → atrakinam; nėra → užrakinam laisvus (NE patruliuojančius).
+function _f9ToggleHoldCommand() {
+  const raw = (typeof _f9RawSelectedAllies === 'function') ? _f9RawSelectedAllies() : [];
+  if (!raw.length) { if (typeof _f9SetToast === 'function') _f9SetToast('Select units first'); return false; }
+  const held = raw.filter(u => u._f9Hold);
+  if (held.length) return _f9ReleaseHoldCommand(held);
+  const free = raw.filter(u => !u._f9Patrol);   // patruliuojantys užrakinti — pirma STOP patrolį
+  if (!free.length) { if (typeof _f9SetToast === 'function') _f9SetToast('Stop patrol first'); return false; }
+  return _f9IssueHoldCommand(free);
+}
+
+// ── 🚩 PATROL: pažymėti unitai vaikšto maršrutu A→B→C→A (loop), auto-engage priešus pakeliui ir grįžta į maršrutą. ──
+const _F9_PATROL_ARRIVE_PX = 40;    // 🚩 taško pasiekimo spindulys (px) — TUNABLE. Mažas = tiksliai eina į A/B/C
+                                    //    (150 buvo per didelis → kirpdavo kampus / „nesektų pozicijų")
+const _F9_PATROL_MAX_PTS = 6;       // max maršruto taškų (A..F)
+const _F9_PATROL_MAX_UNITS = 4;     // 🚩 IŠ VISO max patruliuojančių unitų (daugiau = stumdosi ant to paties taško = lag)
+const _F9_PATROL_SOLO_OFF = [[0, 0], [0.85, 0], [0, 0.85], [0.85, 0.85]];   // per-unit „solo" maršruto poslinkis (kad nesistumdytų)
+function _f9IssuePatrolCommand(units, pts) {
+  if (!Array.isArray(pts) || !pts.length) return false;
+  const pvp = !!(window._f9pvpLive && window._f9pvpMyTeam != null);
+  // tinkami NAUJI unitai (jau patruliuojantys užrakinti → čia jų nėra)
+  let alive = (Array.isArray(units) ? units : []).filter(u =>
+    u && u.alive && _f9IsAlly(u) && u.team !== 0 && !u._f9Hold && !u._f9Patrol &&
+    (!pvp || u._pvpTeam === window._f9pvpMyTeam));
+  // GLOBALUS cap: iš viso max 4 patruliuojantys (po vieną — kiekvienas patrulis = 1 unitas)
+  const already = (Array.isArray(S.units) ? S.units : []).filter(u =>
+    u && u.alive && _f9IsAlly(u) && u._f9Patrol && alive.indexOf(u) < 0).length;
+  if (already >= _F9_PATROL_MAX_UNITS) {
+    if (typeof _f9SetToast === 'function') _f9SetToast('Patrol full — max ' + _F9_PATROL_MAX_UNITS + ' (' + already + '/' + _F9_PATROL_MAX_UNITS + ')');
+    return false;
+  }
+  // PO VIENĄ: imam TIK 1 unitą (pirmą pažymėtą). Norint daugiau — kartoji su kitu unitu (iki 4 atskirų patrulių).
+  const u = alive[0];
+  if (!u) return false;
+  // PvP → serveris (1 unitas)
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
+    if (window.F9PvpLive.routeCommandPts) window.F9PvpLive.routeCommandPts('patrol', [u], pts);
+    if (typeof _f9SetToast === 'function') _f9SetToast('🚩 PATROL (' + (already + 1) + '/' + _F9_PATROL_MAX_UNITS + ')');
+    return true;
+  }
+  // SOLO — vienas unitas, savas maršrutas
+  _f9ClearUnitOrder(u);
+  let route = pts.map(p => ({ x: Math.max(0.2, Math.min(COLS - 1.2, p.x)), y: Math.max(0.2, Math.min(ROWS - 1.2, p.y)) }));
+  if (route.length < 2) route = [{ x: (u.rx !== undefined ? u.rx : u.x), y: (u.ry !== undefined ? u.ry : u.y) }, route[0]];
+  u._f9Patrol = { pts: route, idx: 0 };
+  u._f9Target = { tx: route[0].x, ty: route[0].y };
+  if (typeof _f9SetToast === 'function') _f9SetToast('🚩 PATROL (' + (already + 1) + '/' + _F9_PATROL_MAX_UNITS + ' · ' + pts.length + ' pts)');
+  return true;
+}
+// Baigia patrulio maršruto dėliojimą → priskiria pažymėtiems unitams.
+function _f9FinalizePatrol() {
+  const pts = Array.isArray(window._f9PatrolPts) ? window._f9PatrolPts : [];
+  const units = Array.isArray(window._f9PatrolUnits) ? window._f9PatrolUnits : [];
+  window._f9PatrolArm = false;
+  if (pts.length >= 1 && units.length) _f9IssuePatrolCommand(units, pts);
+  else if (typeof _f9SetToast === 'function') _f9SetToast('Patrol cancelled');
+  window._f9PatrolPts = []; window._f9PatrolUnits = null;
+}
+// Patrulio maršruto tikslo perdavimas (loop). Iškviečiama AI loope.
+function _updateF9AllyPatrol(now) {
+  if (!Array.isArray(S.units)) return;
+  const arriveCells = _F9_PATROL_ARRIVE_PX / CELL;
+  for (const u of S.units) {
+    if (!u || !u.alive || !_f9IsAlly(u) || u.team === 0) continue;
+    const p = u._f9Patrol;
+    if (!p || !Array.isArray(p.pts) || !p.pts.length) continue;
+    if (u._f9Hold) continue;
+    if (u._f9EngageTarget && u._f9EngageTarget.alive) continue;   // kovoja → patrol palauks, vėliau grįš
+    const ax = (u.rx !== undefined) ? u.rx : u.x;
+    const ay = (u.ry !== undefined) ? u.ry : u.y;
+    let i = p.idx | 0; if (i < 0 || i >= p.pts.length) i = 0;
+    if (Math.hypot(ax - p.pts[i].x, ay - p.pts[i].y) <= arriveCells) { i = (i + 1) % p.pts.length; p.idx = i; }
+    const wp = p.pts[i];
+    u._f9Target = { tx: wp.x, ty: wp.y };   // visada vairuojam į dabartinį tašką (po kovos auto-grįžta į maršrutą)
+  }
+}
+// 🚩 Nuima PATROL užraktą (atšaukia maršrutą) — unitai vėl klauso komandų.
+function _f9StopPatrolCommand(units) {
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest())
+    return window.F9PvpLive.routeCommand('unpatrol', units, 0, 0);   // PvP → serveris
+  if (!Array.isArray(units) || !units.length) return false;
+  let n = 0;
+  for (const u of units) {
+    if (!u || !u._f9Patrol) continue;
+    u._f9Patrol = null;
+    u._f9Target = null; u._f9Moving = false;
+    n++;
+  }
+  if (n && typeof _f9SetToast === 'function') _f9SetToast('🚩 PATROL stopped (' + n + ')');
+  return n > 0;
+}
+// 🚩 PATROL mygtuko paspaudimas: arm→START / patruliuoja→STOP / kitaip→arm (dėliojimas).
+function _f9PatrolButtonPress() {
+  if (window._f9PatrolArm) { if (typeof _f9FinalizePatrol === 'function') _f9FinalizePatrol(); return; }
+  const raw = (typeof _f9RawSelectedAllies === 'function') ? _f9RawSelectedAllies() : [];
+  const patrolling = raw.filter(u => u._f9Patrol);
+  if (patrolling.length) { _f9StopPatrolCommand(patrolling); return; }   // jau patruliuoja → nuimam užraktą
+  const sel = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
+  if (!sel.length) {
+    if (typeof _f9SetToast === 'function') _f9SetToast(raw.some(u => u._f9Hold) ? 'Release hold first' : 'Select units first');
+    return;
+  }
+  window._f9PatrolArm = true; window._f9PatrolPts = []; window._f9PatrolUnits = sel.slice();
+  window._f9RegroupArm = false; window._f9AMoveArm = false;
+  if (typeof _f9SetToast === 'function') _f9SetToast('PATROL: tap waypoints A,B,C… then 🚩 to START (Esc=cancel)');
 }
 
 // ── ATTACK-MOVE (SC2/BAR "Fight" komanda): judėk į tašką, bet pakeliui auto-engage
@@ -6155,11 +7631,24 @@ function _f9IssueAttackTargetCommand(units, enemy, now) {
   return true;
 }
 
+// ⚡ perf 07-06: separation scratch buferiai module-scope — PERNAUDOJAMI (buvo pushes N objektų + prog .map()
+//   masyvas KAS KADRĄ → GC churn) + _f9SepRadius hoist (buvo kviečiama kiekvienai PORAI ~N²; pure pagal utype).
+const _f9SepPX = [], _f9SepPY = [], _f9SepProg = [], _f9SepRadArr = [];
 function _applyF9Separation(dtSec) {
   const allies = _f9AllUnits();   // dabar įtraukia ir enemies kad collide su allies
   if (allies.length < 2) return;
-  // Compute pushes (no in-place mutation during loop, to keep symmetric)
-  const pushes = allies.map(() => ({ x: 0, y: 0 }));
+  // 🚦 RIGHT-OF-WAY: judantis unitas TOLIAU nuo tikslo pasitraukia LABIAU → minia formuoja EILĘ pro siaurą
+  //   vietą (vartus), o ne grūstį. Ne-judantys (idle/kova) = simetriška (prog=-1). Serveryje = tas pats.
+  const _n = allies.length;
+  for (let i = 0; i < _n; i++) {
+    _f9SepPX[i] = 0; _f9SepPY[i] = 0;
+    const a = allies[i];
+    _f9SepRadArr[i] = _f9SepRadius(a);
+    if (!a._f9Target) { _f9SepProg[i] = -1; continue; }
+    const ax = (a.rx !== undefined) ? a.rx : a.x, ay = (a.ry !== undefined) ? a.ry : a.y;
+    const dg = Math.hypot(ax - a._f9Target.tx, ay - a._f9Target.ty);
+    _f9SepProg[i] = dg > 0.8 ? dg : -1;   // arti tikslo (≤0.8) → SETTLE (laiko poziciją + deadzone) → nustoja grūstis atvykus
+  }
   for (let i = 0; i < allies.length; i++) {
     const a = allies[i];
     const ax = (a.rx !== undefined) ? a.rx : a.x;
@@ -6171,7 +7660,7 @@ function _applyF9Separation(dtSec) {
       const by = (b.ry !== undefined) ? b.ry : b.y;
       let dx = ax - bx, dy = ay - by;
       let dist = Math.sqrt(dx * dx + dy * dy);
-      const minD = _f9SepRadius(a) + _f9SepRadius(b);   // per-pair (didesni sprite'ai → daugiau erdvės)
+      const minD = _f9SepRadArr[i] + _f9SepRadArr[j];   // per-pair (didesni sprite'ai → daugiau erdvės)
       if (dist >= minD) continue;
       if (dist < 0.001) {
         // Same cell — random angle to break symmetry
@@ -6180,16 +7669,24 @@ function _applyF9Separation(dtSec) {
       }
       const overlap = (minD - dist) / minD;  // 0..1
       const nx = dx / dist, ny = dy / dist;
-      pushes[i].x += nx * overlap;
-      pushes[i].y += ny * overlap;
-      pushes[j].x -= nx * overlap;
-      pushes[j].y -= ny * overlap;
+      const mi = _f9SepProg[i] >= 0, mj = _f9SepProg[j] >= 0;   // ar juda?
+      // 🧍 ATVYKĘ = NEJUDINAMAS INKARAS: du atvykę + mažas persidengimas → LAIKO POZICIJĄ (0 anthill/makalavimo).
+      if (!mi && !mj && overlap < 0.24) continue;
+      let wI = 1, wJ = 1;
+      if (mi && mj) {                                             // abu juda → eilė pagal artumą tikslui (right-of-way)
+        const s = _f9SepProg[i] + _f9SepProg[j];
+        if (s > 0.001) { wI = 2 * _f9SepProg[i] / s; wJ = 2 * _f9SepProg[j] / s; }   // toliau=didesnis w=pasitraukia
+      } else if (mi && !mj) { wI = 2; wJ = 0; }                   // judantis APEINA atvykusį; atvykęs=inkaras (NEjudinamas)
+      else if (!mi && mj) { wI = 0; wJ = 2; }
+      _f9SepPX[i] += nx * overlap * wI;
+      _f9SepPY[i] += ny * overlap * wI;
+      _f9SepPX[j] -= nx * overlap * wJ;
+      _f9SepPY[j] -= ny * overlap * wJ;
     }
   }
   // Apply (skip dying / locked units / units engaged in combat — kad nestutter'intu)
   for (let i = 0; i < allies.length; i++) {
-    const p = pushes[i];
-    if (p.x === 0 && p.y === 0) continue;
+    if (_f9SepPX[i] === 0 && _f9SepPY[i] === 0) continue;
     const a = allies[i];
     if (a._f9Boss) continue;   // BOSS = sunkus inkaras: minia jo nestumdo (jo stūmis kitiems lieka)
     // Kovos metu (ally in attack range of engage target) — NE pilnas skip, o SILPNESNĖ separation.
@@ -6206,8 +7703,8 @@ function _applyF9Separation(dtSec) {
       const range = cfg ? cfg.range + 0.3 : 1.5;  // small buffer
       if (Math.hypot(ax - tx, ay - ty) <= range) _sepScale = 0.5;  // combate — pusė force (anksčiau buvo skip)
     }
-    let stepX = p.x * _F9_SEP_FORCE * dtSec * _sepScale;
-    let stepY = p.y * _F9_SEP_FORCE * dtSec * _sepScale;
+    let stepX = _f9SepPX[i] * _F9_SEP_FORCE * dtSec * _sepScale;
+    let stepY = _f9SepPY[i] * _F9_SEP_FORCE * dtSec * _sepScale;
     // Užtikrinam min step — jei mažutė push'a, vis tiek paslenkam reikšmingai
     const stepMag = Math.sqrt(stepX * stepX + stepY * stepY);
     if (stepMag < _F9_SEP_MIN_STEP && stepMag > 0.0001) {
@@ -6271,6 +7768,41 @@ function _applyF9Separation(dtSec) {
   }
 }
 
+// ── SYNCHRONIZED ARRIVAL (jdxdev RTS boids triukas): kai unitas atvyksta, jo BESILIEČIANTYS kaimynai,
+//    einantys į TĄ PAČIĄ vietą, irgi „atvyksta" → grupė sustoja tvarkingai kartu, be jostling'o prie taško.
+//    SAME_DEST guard = nesutabdo praeinančių unitų (kurių tikslas toli nuo klasterio). ──
+const _F9_SYNC_CONTACT = 1.35;   // „liečiasi" atstumas (~pair-sep 1.10 × 1.2)
+const _F9_SYNC_SAME_DEST = 0.6;  // taikiniai = „ta pati vieta" TIK jei beveik identiški (NE formacijos slotai 1.15 atstumu)
+function _f9SyncArrival() {
+  if (!Array.isArray(S.units)) return;
+  const allies = [];
+  for (const u of S.units) {
+    if (u && u.alive && _f9IsAlly(u) && u.team !== 0 && !u._f9Hold && !u._f9Patrol &&
+        !(u._f9EngageTarget && u._f9EngageTarget.alive)) allies.push(u);   // kovojantys — atskira pozicionavimo logika
+  }
+  if (allies.length < 2) return;
+  for (let iter = 0; iter < 3; iter++) {   // kelios iteracijos — atvykimas plinta per klasterį
+    let changed = false;
+    for (const u of allies) {
+      if (!u._f9Target) continue;                         // jau sustojęs
+      const ux = (u.rx !== undefined) ? u.rx : u.x, uy = (u.ry !== undefined) ? u.ry : u.y;
+      for (const a of allies) {
+        if (a === u || a._f9Target || !a._f9ArrivedAt) continue;   // a = SUSTOJĘS + turi atvykimo vietą
+        const ax = (a.rx !== undefined) ? a.rx : a.x, ay = (a.ry !== undefined) ? a.ry : a.y;
+        if (Math.hypot(ux - ax, uy - ay) > _F9_SYNC_CONTACT) continue;        // turi liestis
+        if (Math.hypot(u._f9Target.tx - a._f9ArrivedAt.tx, u._f9Target.ty - a._f9ArrivedAt.ty) > _F9_SYNC_SAME_DEST) continue; // ta pati vieta
+        u._f9ArrivedAt = { tx: u._f9Target.tx, ty: u._f9Target.ty };
+        u._f9Target = null; u._f9Moving = false;
+        if (u._f9AMove) u._f9AMove = null;
+        if (Array.isArray(u._f9Queue)) u._f9Queue = null;
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) break;
+  }
+}
+
 function _updateF9SmoothMove(now) {
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) { _f9LastMoveTime = 0; return; }
   // Visi unit'ai turintys ._f9Target — judinami smooth (ne tik hero)
@@ -6301,6 +7833,7 @@ function _updateF9SmoothMove(now) {
       u.ry = t.ty;
       u.x = Math.floor(t.tx + 0.5);
       u.y = Math.floor(t.ty + 0.5);
+      u._f9ArrivedAt = { tx: t.tx, ty: t.ty };   // synchronized arrival: paskutinė sustojimo vieta
       u._f9Target = null;
       u._f9Moving = false;
       // A-move galutinis taškas pasiektas — režimas baigtas
@@ -6312,6 +7845,8 @@ function _updateF9SmoothMove(now) {
         const nxt = u._f9Queue.shift();
         u._f9Target = { tx: nxt.tx, ty: nxt.ty };
         if (nxt.amove) u._f9AMove = { tx: nxt.tx, ty: nxt.ty };
+      } else {
+        u._f9OnPath = false;   // 🧭 kelias baigtas → grąžinam greitą give-up (final settle prie sloto)
       }
       continue;
     }
@@ -6327,8 +7862,8 @@ function _updateF9SmoothMove(now) {
       const po = _f9PushOutObstacles(nrx, nry);
       nrx = po.x; nry = po.y;
     }
-    // MEDŽIAI = kvadratai (cell collision, kaip seniau) → axis-slide aplink užblokuotą celę.
-    if (_F9_DECO_SOLID && _f9BlockedCells && _f9BlockedCells.size) {
+    // MEDŽIAI + SIENOS = kvadratai (cell collision) → axis-slide aplink užblokuotą celę.
+    if ((_F9_DECO_SOLID && _f9BlockedCells && _f9BlockedCells.size) || (_f9WallCells && _f9WallCells.size)) {
       const sx = u.x, sy = u.y;
       const cx = Math.floor(nrx + 0.5), cy = Math.floor(nry + 0.5);
       if (_f9CellBlocked(cx, cy, sx, sy)) {
@@ -6351,7 +7886,8 @@ function _updateF9SmoothMove(now) {
     if (movedDist < stepLen * 0.30) {
       u._f9Moving = false;                                   // animacija: idle, ne „eina vietoj"
       u._f9StuckMs = (u._f9StuckMs || 0) + dt;
-      if (u._f9StuckMs > 400) { u._f9Target = null; u._f9StuckMs = 0; }   // pasiduodam — per sieną nelipam
+      const _giveUp = u._f9OnPath ? 3000 : 400;   // 🧭 on-path: ilgiau (vartų congestion praeina), kitaip greitai (per sieną nelipam)
+      if (u._f9StuckMs > _giveUp) { u._f9Target = null; u._f9Queue = null; u._f9OnPath = false; u._f9StuckMs = 0; }
     } else {
       u._f9StuckMs = 0;
     }
@@ -6365,6 +7901,10 @@ function _updateF9SmoothMove(now) {
   }
   // Apply separation steering po move pass'o — unit'ai švelniai stumiasi vienas nuo kito
   _applyF9Separation(dt / 1000);
+  // Synchronized arrival — grupė sustoja tvarkingai kartu. PERF: ~12Hz (ne kas kadrą — settling nereikalauja 60Hz).
+  if (typeof _f9SyncArrival === 'function' && now - (window._f9LastSyncArr || 0) > 80) { window._f9LastSyncArr = now; _f9SyncArrival(); }
+  // 🏰 Sienos push-out PO separacijos — separacija gali įstumti unitus į sieną; čia juos išstumiam atgal.
+  if (typeof _f9PushUnitsOutOfWalls === 'function') _f9PushUnitsOutOfWalls();
 
   // Curve approach pašalintas — vietoj jo naudojam Shared Midpoint Y system'ą
   // engage positioning'e (žr. _updateF9AllyEngagement + _updateF9EnemyAI).
@@ -6578,8 +8118,9 @@ function _f9PushOutObstacles(x, y) {
   return { x, y };
 }
 function _f9CellBlocked(x, y, selfX, selfY) {
-  if (!_F9_DECO_SOLID) return false;
   if (x === selfX && y === selfY) return false;   // sava celė visada praeinama (kad galėtų išeiti)
+  if (_f9WallCells && _f9WallCells.size) { const _w = _f9WallCells.get(x + ',' + y); if (_w && _w.alive) return true; }   // 🏰 castle siena VISADA blokuoja (hitbox, nepriklauso nuo deco-solid)
+  if (!_F9_DECO_SOLID) return false;
   const k = x + ',' + y;
   if (_f9BlockedCells && _f9BlockedCells.has(k)) return true;   // MEDŽIAI = kvadratai (akmenys/bokštas = apskritimai)
   return false;
@@ -6616,7 +8157,7 @@ function _f9UnitOccluded(u) {
   // Žemiau medžio (dr<0) unitas yra PRIEKYJE → tvarko _f9UnitInFrontOfDeco (piešia virš). Krūmai žemi — nereikia.
   for (let dr = 0; dr <= 3; dr++) {
     const d = S.decorations[(uy + dr) + ',' + ux];
-    if (typeof d === 'string' && d.startsWith('tree')) return true;
+    if (typeof d === 'string' && d.startsWith('tree') && d !== 'tree5') return true;   // tree5 (negyvas, plonas) — be kontūro (matosi pro jį)
   }
   // Zip tower piešiamas AUKŠTYN nuo bazės → dengia unitą TIK kai šis prie bazės ar AUKŠČIAU
   // (už bokšto kūno: dr 0..2). Žemiau stovintis unitas yra PRIEKYJE — neuždengtas, JOKIO silueto.
@@ -6679,7 +8220,57 @@ function _f9UnitFrameForOutline(u) {
 }
 // Tuščiaviduris BALTAS kontūras VIRŠ medžio (per-unit offscreen + destination-out → tik kraštas, be užpildo).
 let _f9OutlineOC = null;
+// 🚀 PERF — occlusion kontūro cache. „Už deco" unitas KAS KADRĄ statydavo hollow siluetą (9 scaled
+//   blit'ai + clear) — brangu kai unitai susitelkę prie bokštų/pilies. Iškepam GATAVĄ kontūro canvas
+//   per (sheet+frame+dydis+flip+color), po to tik blit'inam. Kill-switch: window._f9NoOutlineCache=true.
+const _f9OutlineCache = new Map();
+function _f9OutlineCanvas(img, sx, sy, sw, sh, dw, dh, lx, ly, cw, ch, flip, color, OL) {
+  if (typeof _silhouetteTintSheet !== 'function') return null;
+  let sid = img._f9cid; if (!sid) sid = img._f9cid = (img.src || ('c' + (++_f9SprCacheTag)));
+  const key = sid + '|ol|' + sx + '|' + sy + '|' + sw + '|' + sh + '|' + Math.round(dw) + '|' + Math.round(dh) + '|' + lx + '|' + ly + '|' + cw + '|' + ch + '|' + (flip ? 1 : 0) + '|' + color + '|' + OL;
+  let oc = _f9OutlineCache.get(key);
+  if (oc !== undefined) return oc;
+  const ts = _silhouetteTintSheet(img, color);
+  if (!ts) return null;   // sheet dar neįkrautas → nekešuojam (bandysim kitą kadrą)
+  oc = document.createElement('canvas'); oc.width = cw; oc.height = ch;
+  const g = oc.getContext('2d'); g.imageSmoothingEnabled = false;
+  const blit = (im, dx, dy) => {
+    if (flip) { g.save(); g.translate(lx + dw / 2 + dx, 0); g.scale(-1, 1); g.drawImage(im, sx, sy, sw, sh, -dw / 2, ly + dy, dw, dh); g.restore(); }
+    else g.drawImage(im, sx, sy, sw, sh, lx + dx, ly + dy, dw, dh);
+  };
+  const offs = [[-OL, 0], [OL, 0], [0, -OL], [0, OL], [-OL, -OL], [OL, -OL], [-OL, OL], [OL, OL]];
+  for (const [dx, dy] of offs) blit(ts, dx, dy);          // baltas dilated shape
+  g.globalCompositeOperation = 'destination-out';
+  blit(img, 0, 0);                                        // ištrinam centrą → hollow kontūras
+  g.globalCompositeOperation = 'source-over';
+  _f9OutlineCache.set(key, oc);
+  if (_f9OutlineCache.size > 400) { const fk = _f9OutlineCache.keys().next().value; _f9OutlineCache.delete(fk); }
+  return oc;
+}
 function _f9DrawTreeOutline(u, cx, cy, color) {
+  color = color || '#ffffff';
+  if (window._f9NoOutlineCache) return _f9DrawTreeOutlineRaw(u, cx, cy, color);
+  if (u.utype === 'ronhood' && typeof _f9RonHoodUnitFrame === 'function') {
+    const frame = _f9RonHoodUnitFrame(u);
+    if (!frame || !frame.sheet || !frame.sheet.complete || !frame.sheet.naturalWidth) return;
+    const ucx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const ucy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+    const _cH = Math.max(1, frame.cBottom - frame.cTop);
+    const _scl = (UNIT_CELL * 1.5) / _cH;
+    const _dw = frame.sw * _scl, _dh = frame.sh * _scl;
+    const _drawY = (ucy + UNIT_CELL * 0.45) - frame.cBottom * _scl;
+    const pad = 8, W = Math.ceil(_dw + pad * 2), H = Math.ceil(_dh + pad * 2);
+    const oc = _f9OutlineCanvas(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, _dw, _dh, pad, pad, W, H, !!frame.flip, color, 2);
+    if (oc) ctx.drawImage(oc, Math.round(ucx - _dw / 2 - pad), Math.round(_drawY - pad));
+    return;
+  }
+  const fr = _f9UnitFrameForOutline(u);
+  if (!fr || !fr.img || !fr.img.complete || !fr.img.naturalWidth) return;
+  const sz = fr.sprSz, pad = 8, W = Math.ceil(sz + pad * 2), C0 = W / 2, lx = C0 - sz / 2;
+  const oc = _f9OutlineCanvas(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, sz, sz, lx, lx, W, W, !!fr.flip, color, 2);
+  if (oc) ctx.drawImage(oc, Math.round(cx - C0), Math.round(cy - C0 + (fr.yOff || 0)));
+}
+function _f9DrawTreeOutlineRaw(u, cx, cy, color) {
   // RonHood: kontūras turi atitikti content-anchored 1.5 sprite (ne fiksuotą 1.95), kitaip baltas
   // kontūras atrodo per didelis nuo tikrojo sprite. Statom siluetą tuo pačiu dydžiu/anchor kaip main render.
   if (u.utype === 'ronhood' && typeof _f9RonHoodUnitFrame === 'function') {
@@ -6832,6 +8423,37 @@ function _f9RonHoodUnitFrame(u) {
   const idx = Math.floor(now / (1000 / fps)) % s.frameCount;
   return _mk(s, idx, flip, upFlag);
 }
+// ════════════════════════════════════════════════════════════════════════════
+// 🚀 PERF — F9 PRE-SCALED SPRITE CACHE ([[project_f9_rts_control_commands]])
+//   Problema: kiekvienas unitas KAS KADRĄ re-skaliuoja didelį sheet'ą (~640px) į ~70px
+//   (scaled drawImage = brangiausias canvas op, profilis: drawImage ~34% + restore ~10%).
+//   Sprendimas: iškepam (scale + flip) į MAŽĄ offscreen canvas VIENĄ kartą, paskui blit'inam
+//   1:1 sveikose koordinatėse → greitas kelias, JOKIO scaling per kadrą, JOKIO save/restore flip'ui.
+//   Raktas = sheet tapatybė + src rect + suapvalintas dest dydis + flip. 30v30 → tik ~7 tipų ×
+//   ~kelis kadrus × 2 kryptys = saujelė cache canvas'ų. Kill-switch: window._f9NoSprCache=true.
+const _f9SprCache = new Map();
+let _f9SprCacheTag = 0;
+function _f9Blit(sheet, sx, sy, sw, sh, dx, dy, dw, dh, flip) {
+  if (!sheet) return;
+  if (window._f9NoSprCache) {   // A/B fallback: tiesioginis scaled draw (flip per transform)
+    if (flip) { ctx.save(); ctx.translate(dx + dw, dy); ctx.scale(-1, 1); ctx.drawImage(sheet, sx, sy, sw, sh, 0, 0, dw, dh); ctx.restore(); }
+    else ctx.drawImage(sheet, sx, sy, sw, sh, dx, dy, dw, dh);
+    return;
+  }
+  const rdw = Math.max(1, Math.round(dw)), rdh = Math.max(1, Math.round(dh));
+  let sid = sheet._f9cid; if (!sid) { sid = sheet._f9cid = (sheet.src || ('c' + (++_f9SprCacheTag))); }
+  const key = sid + '|' + sx + '|' + sy + '|' + sw + '|' + sh + '|' + rdw + '|' + rdh + '|' + (flip ? 1 : 0);
+  let c = _f9SprCache.get(key);
+  if (c === undefined) {
+    c = document.createElement('canvas'); c.width = rdw; c.height = rdh;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    if (flip) { g.translate(rdw, 0); g.scale(-1, 1); }
+    g.drawImage(sheet, sx, sy, sw, sh, 0, 0, rdw, rdh);
+    _f9SprCache.set(key, c);
+    if (_f9SprCache.size > 600) { const fk = _f9SprCache.keys().next().value; _f9SprCache.delete(fk); }   // LRU-ish evict
+  }
+  ctx.drawImage(c, Math.round(dx), Math.round(dy));   // 1:1 blit, integer coords → fast path, gerbia ctx.globalAlpha
+}
 // Perpiešia TIKRĄ unito sprite kadrą VIRŠ foreground deco (tas pats anchor kaip outline'o, tik be filtro).
 function _f9DrawUnitSpriteTop(u) {
   // RonHood: pagrindinis render yra content-anchored (1.5), o ne fiksuotas sprSz. Jei čia perpieštume
@@ -6846,11 +8468,7 @@ function _f9DrawUnitSpriteTop(u) {
     const _scl = (UNIT_CELL * 1.5) / _cH;
     const _dw = frame.sw * _scl, _dh = frame.sh * _scl;
     const _drawY = (cy + UNIT_CELL * 0.45) - frame.cBottom * _scl;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    if (frame.flip) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, _drawY, _dw, _dh); }
-    else { ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, _drawY, _dw, _dh); }
-    ctx.restore();
+    _f9Blit(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, _drawY, _dw, _dh, !!frame.flip);   // cached blit (occlusion top-draw)
     return true;
   }
   const fr = _f9UnitFrameForOutline(u);
@@ -6858,20 +8476,3525 @@ function _f9DrawUnitSpriteTop(u) {
   const cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
   const cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL + (fr.yOff || 0);
   const sz = fr.sprSz;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  if (fr.flip) {
-    ctx.translate(cx, cy); ctx.scale(-1, 1);
-    ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, -sz / 2, -sz / 2, sz, sz);
-  } else {
-    ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, cx - sz / 2, cy - sz / 2, sz, sz);
-  }
-  ctx.restore();
+  _f9Blit(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, cx - sz / 2, cy - sz / 2, sz, sz, !!fr.flip);   // cached blit (occlusion top-draw)
   return true;
 }
 
 // F9 mapos dekoravimas — VIZUALINĖS dekoracijos ant žolės bazės (medžiai/krūmai/gėlės/antis).
 // Medžiai = SOLID (1 celės footprint); krūmai = COVER; kita = vizualu. Žr. _F9_DECO_* virš.
+// ════════════════════════════════════════════════════════════════════════════
+// 🏰 F9 CASTLE WALL (destructible) — Castle Siege vizija ([[project_castle_siege]])
+//   wall_sheet.png = 16 damage frames (212×384) intact→rubble pagal HP.
+//   walldestroi_sheet.png = collapse anim (15 frames 280×296, start kadras 3).
+//   IZOLIUOTA: neliečia unit-vs-unit combat. Siege = atskira _updateF9WallSiege.
+// ════════════════════════════════════════════════════════════════════════════
+const _F9_WALL = { fw: 212, fh: 384, frames: 16, hp: 40, hScale: 1.6 };
+const _F9_WD = { fw: 280, fh: 296, frames: 15, start: 3, ms: 55 };
+const _f9WallSheet = new Image(); _f9WallSheet.src = 'wall_sheet.png';
+const _f9WallDestroy = new Image(); _f9WallDestroy.src = 'walldestroi_sheet.png';
+let _f9WallCells = null;                 // Map "x,y" -> wall seg (collision + click)
+let _f9WallHitAudio = null, _f9WallHitIdx = 0, _f9WallCollapseAudio = null;
+
+function _f9WallSound(kind) {
+  try {
+    if (kind === 'collapse') {
+      if (!_f9WallCollapseAudio) { _f9WallCollapseAudio = new Audio('wallcalapse.mp3'); _f9WallCollapseAudio.volume = 0.5; }
+      _f9WallCollapseAudio.currentTime = 0; _f9WallCollapseAudio.play().catch(function () {});
+    } else {
+      if (!_f9WallHitAudio) { _f9WallHitAudio = [new Audio('wall01.mp3'), new Audio('wall02.mp3')]; _f9WallHitAudio.forEach(function (a) { a.volume = 0.3; }); }
+      const a = _f9WallHitAudio[_f9WallHitIdx % 2]; _f9WallHitIdx++;
+      try { a.currentTime = 0; a.play().catch(function () {}); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+// Suformuoja castle sieną — horizontali segmentų eilė su GATE tarpu centre (būsimi vartai).
+function _f9InitCastleWall() {
+  // PvP/home: sienas teikia SERVERIS (_syncWalls → S._f9Walls). NEliečiam (NEvalom!) — kitaip per
+  //   wallet-connect re-init (reloadProfileForWallet→goToFloor 9) išvalytume jas, o _syncWalls kešas
+  //   (_wallMir) jų nebepridėtų → siena tampa NEMATOMA (kolizija/zip lieka, nes serverinė).
+  if (window._f9pvpLive) return;
+  S._f9Walls = [];
+  _f9WallCells = new Map();
+  if (!S || S.floor !== 9) return;
+  const C = (typeof COLS === 'number') ? COLS : 28;
+  const R = (typeof ROWS === 'number') ? ROWS : 24;
+  const wy = Math.max(3, Math.round(R * 0.30));      // siena viršutiniam trečdaly (castle = viršuje)
+  const cx = Math.round(C / 2);
+  const half = 5;
+  for (let dx = -half; dx <= half; dx++) {
+    if (dx === 0 || dx === 1) continue;              // 2-celių GATE tarpas centre
+    const x = cx + dx;
+    if (x < 1 || x >= C - 1) continue;
+    const seg = { x: x, y: wy, hp: _F9_WALL.hp, maxHp: _F9_WALL.hp, alive: true, hit: 0, deathAt: 0 };
+    S._f9Walls.push(seg);
+    _f9WallCells.set(x + ',' + wy, seg);
+  }
+}
+// 🏰 HOME pilis — atkuria lenta-pvp-server castle layout CLIENT-SIDE (be serverio/lobby/priešų):
+//   arena 80×24, VERTIKALI siena x=33 (zip bokštai rows 3,9,15,21), griovys x=34,35 (išskyrus
+//   rows 11,12 = praėjimas), hero/unitai gynėjo pusėj (rytuose). Async modelis = tavo pilis = namai.
+function _f9SetupHomeCastle() {
+  try {
+    const B = (typeof window !== 'undefined') ? window.__F9 : null;
+    if (!B || typeof B.setArena !== 'function' || typeof S === 'undefined' || !S || S.floor !== 9) return;
+    const W = 80, H = 24, WALL_COL = 33;
+    try { B.setArena(W, H); } catch (_) {}                  // 80×24 (perstato dungeon → griovį dedam PO to)
+    // siena + zip bokštai (PVP_WALL_CELLS port)
+    try {
+      S._f9Walls = [];
+      _f9WallCells = new Map();
+      const whp = (typeof _F9_WALL !== 'undefined' && _F9_WALL && _F9_WALL.hp) ? _F9_WALL.hp : 40;
+      for (let y = 0; y < H; y++) {
+        if (y >= 10 && y <= 13) continue;   // 🚪 GATE anga (rows 10-13, 4 celės — praplatinta +2 blokai) → praėjimas pro sieną
+        const seg = { x: WALL_COL, y: y, tower: (y % 6 === 3), hp: whp, maxHp: whp, alive: true, hit: 0, deathAt: 0 };
+        S._f9Walls.push(seg);
+        _f9WallCells.set(WALL_COL + ',' + y, seg);
+      }
+    } catch (e1) { console.warn('[home castle wall]', e1); }
+    // griovys x=34,35 visur išskyrus vidurio praėjimą (rows 10-13, praplatinta +2 blokai)
+    try {
+      const moat = [];
+      for (let y = 0; y < H; y++) { if (y >= 10 && y <= 13) continue; moat.push([34, y]); moat.push([35, y]); }
+      window._f9Moat = moat;
+      if (typeof B.setMoat === 'function') B.setMoat(moat);
+    } catch (e2) { console.warn('[home castle moat]', e2); }
+    // VISI gynėjo unitai (team 0 + ally) → rytinė pilies pusė, išdėstom tvarkingai
+    try {
+      const allies = S.units.filter(u => u && u.alive && (u.team === 0 || (typeof _f9IsAlly === 'function' && _f9IsAlly(u))));
+      // 🗂️ SURŪŠIUOTA pagal TIPĄ (+ level) → to paties tipo unitai greta → lengva formuoti pakus (box/type-pick).
+      allies.sort((a, b) => (a.utype < b.utype ? -1 : a.utype > b.utype ? 1 : ((b.level || 0) - (a.level || 0))));
+      let i = 0;
+      for (const u of allies) {
+        const ux = 42 + (i % 4) * 2, uy = 4 + Math.floor(i / 4) * 2;
+        u.x = Math.min(W - 2, ux); u.y = Math.min(H - 2, uy);
+        u.tx = u.x; u.ty = u.y;
+        if (u.px !== undefined) { u.px = u.x; u.py = u.y; }
+        i++;
+      }
+    } catch (e3) { console.warn('[home castle units]', e3); }
+    // kamera → centruojam ant pilies (x≈44)
+    try {
+      const CELLp = (typeof CELL === 'number') ? CELL : 32;
+      const viewCols = (typeof ADV_COLS === 'number' && ADV_COLS > 0) ? ADV_COLS : 22;
+      const cx = 44 * CELLp + CELLp * 0.5;
+      let snapX = Math.max(0, Math.min(W * CELLp - viewCols * CELLp, cx - viewCols * CELLp * 0.5));
+      if (S.cam) { S.cam.x = Math.round(snapX); S.cam.tx = S.cam.x; }
+      S._camManualLock = false;
+    } catch (e4) { console.warn('[home castle cam]', e4); }
+  } catch (e) { console.warn('[home castle]', e); }
+}
+window._f9SetupHomeCastle = _f9SetupHomeCastle;
+function _f9WallAt(x, y) {
+  // x,y = rx-space (mx/CELL - 0.5). Celė seg.x centruota ties u-space seg.x (kaip unitas/obstacle), apima
+  // [seg.x-0.5, seg.x+0.5] → celė = Math.ROUND(x) (NE floor — kitaip hit-box pusės celės nuo matomo bloko).
+  // SCAN S._f9Walls — veikia IR solo IR PvP. 1-celės blokas → round(y) === seg.y tiksliai (be fy+1).
+  if (!Array.isArray(S._f9Walls) || !S._f9Walls.length) return null;
+  const fx = Math.round(x), fy = Math.round(y);
+  for (const seg of S._f9Walls) {
+    if (!seg || !seg.alive) continue;
+    if (seg.x === fx && seg.y === fy) return seg;
+  }
+  return null;
+}
+
+// SIDE-LOCK: siena horizontali → unitas lieka SAVO pusėj (šiaurė/pietūs), pereiti gali TIK pro vartų tarpą.
+// Tvirta apsauga: net jei separacija/minia bando įstumti pro ploną 1-celės barjerą — clamp'inam atgal į pusę.
+// Kviečiama PO separacijos. Pusė įsimenama (_f9WallSide) kai unitas aiškiai vienoj pusėj.
+function _f9PushUnitsOutOfWalls() {
+  if (!Array.isArray(S._f9Walls) || !S._f9Walls.length || !Array.isArray(S.units)) return;
+  const MARGIN = 0.72;   // kiek arti sienos linijos leidžiam (sienos pusė + unito rad)
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    const ux = (u.rx !== undefined) ? u.rx : u.x;
+    const uy = (u.ry !== undefined) ? u.ry : u.y;
+    // ar unitas SIENOS kolonoj (ne vartų tarpe)? randam segmentą šioj kolonoj
+    let seg = null;
+    for (const s of S._f9Walls) { if (s.alive && Math.abs(ux - (s.x + 0.5)) < 0.82) { seg = s; break; } }
+    if (!seg) { u._f9WallSide = 0; continue; }     // vartai / ne prie sienos → laisva
+    const wallY = seg.y + 0.5;
+    if (uy < wallY - 0.9) u._f9WallSide = -1;       // aiškiai šiaurėj
+    else if (uy > wallY + 0.9) u._f9WallSide = 1;   // aiškiai pietuose
+    else if (!u._f9WallSide) u._f9WallSide = (uy < wallY) ? -1 : 1;   // init iš dabartinės pusės
+    if (u._f9WallSide === -1 && uy > wallY - MARGIN) { u.ry = wallY - MARGIN; u.y = Math.round(u.ry); }
+    else if (u._f9WallSide === 1 && uy < wallY + MARGIN) { u.ry = wallY + MARGIN; u.y = Math.round(u.ry); }
+  }
+}
+
+function _f9DamageWall(seg, dmg, now) {
+  if (!seg || !seg.alive) return;
+  seg.hp -= dmg; seg.hit = now;
+  _f9WallSound('hit');
+  if (seg.hp <= 0) {
+    seg.hp = 0; seg.alive = false; seg.deathAt = now;
+    if (_f9WallCells) _f9WallCells.delete(seg.x + ',' + seg.y);   // celė atsiblokuoja → praeinama
+    _f9WallSound('collapse');
+    if (Array.isArray(S.units)) for (const u of S.units) if (u && u._f9SiegeWall === seg) u._f9SiegeWall = null;
+  }
+}
+
+// Siege komanda: pasirinkti unitai daužo sieną (izoliuota nuo unit-vs-unit combat).
+function _f9IssueSiegeCommand(units, seg, now) {
+  if (!seg || !seg.alive || !Array.isArray(units)) return;
+  for (const u of units) {
+    if (!u || !u.alive) continue;
+    u._f9SiegeWall = seg; u._f9EngageTarget = null; u._f9Target = null; u._f9WallLastHit = 0; u._f9LastRepath = 0;
+  }
+  if (typeof _f9SetToast === 'function') { try { _f9SetToast('SIEGE WALL (' + units.length + ')'); } catch (_) {} }
+}
+
+function _updateF9WallSiege(now) {
+  if (!S || S.floor !== 9 || !Array.isArray(S.units) || !_f9WallCells || !_f9WallCells.size) return;
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    // 🏰 Grynas MOVE (atsitraukimas, NE attack-move) IGNORUOJA sieną → paleidžiam siege, paklūstam komandai.
+    // (attack-move = _f9AMove set → toliau gali siege'inti; arrived = _f9Target null → guard išsijungia → re-siege.)
+    if (u._f9Target && !u._f9AMove) { u._f9SiegeWall = null; continue; }
+    // AUTO-SIEGE: ally unitas BE priešo taikinio ir BE aktyvaus move, jei siena ARTI → automatiškai puola ją.
+    // („nuvaryk armiją prie pilies → daužo sieną" veikia be specialaus right-click.)
+    if (!u._f9SiegeWall && typeof _f9IsAlly === 'function' && _f9IsAlly(u) && u.team !== 0
+        && !u._f9EngageTarget && _F9_ALLY_ATTACK[u.utype]) {
+      const _ax = (u.rx !== undefined) ? u.rx : u.x, _ay = (u.ry !== undefined) ? u.ry : u.y;
+      let _best = null, _bestD = 1.5;   // tik kai PRIEINA arti sienos (iš toli praeinant — nepuola)
+      for (const _seg of S._f9Walls) {
+        if (!_seg.alive) continue;
+        const _d = Math.hypot(_ax - (_seg.x + 0.5), _ay - (_seg.y + 0.5));
+        if (_d < _bestD) { _bestD = _d; _best = _seg; }
+      }
+      if (_best) { u._f9SiegeWall = _best; u._f9Target = null; }   // priėjo prie sienos → siege (nutraukiam move)
+    }
+    const seg = u._f9SiegeWall;
+    if (!seg) continue;
+    if (!seg.alive) { u._f9SiegeWall = null; continue; }
+    const cfg = _F9_ALLY_ATTACK[u.utype]; if (!cfg) { u._f9SiegeWall = null; continue; }
+    const ax = (u.rx !== undefined) ? u.rx : u.x, ay = (u.ry !== undefined) ? u.ry : u.y;
+    const wx = seg.x + 0.5, wy = seg.y + 0.9;        // sienos bazė
+    const d = Math.hypot(ax - wx, ay - wy);
+    const range = Math.max(1.15, cfg.range);
+    if (d > range) {
+      const _side = (ay < seg.y + 0.5) ? -1 : 1;   // unitas į ŠIAURĘ → prieina iš šiaurės; kitaip iš pietų (nepereina kiaurai)
+      if (now - (u._f9LastRepath || 0) > 420) { u._f9LastRepath = now; u._f9Target = { tx: seg.x, ty: seg.y + _side }; }
+      continue;
+    }
+    u._f9Target = null;
+    u.facing = { dx: (wx - ax) >= 0 ? 1 : -1, dy: 0 };
+    if (now - (u._f9WallLastHit || 0) >= (cfg.cd || 1200)) {
+      u._f9WallLastHit = now;
+      const dmg = Math.max(1, Math.round(((cfg.dmgMin || 2) + (cfg.dmgMax || cfg.dmgMin || 2)) / 2) * (u.stack || 1));
+      if (typeof _f9TriggerAttackAnim === 'function') { try { _f9TriggerAttackAnim(u, now); } catch (_) {} }
+      _f9DamageWall(seg, dmg, now);
+    }
+  }
+}
+
+// 🧱→💥 Sienos naikinimo „juice": skeveldros per smūgį, dulkės+debris per griūtį. Į S.particles (world coords).
+function _f9SpawnWallFx(cellX, cellY, kind, dirDx) {
+  if (typeof S === 'undefined' || !S || !Array.isArray(S.particles)) return;
+  const C = CELL, cx = (cellX + 0.5) * C, cy = (cellY + 0.5) * C;
+  const stone = ['#8a7f6d', '#6c6253', '#a3987f', '#9a8f78'];
+  const pick = () => stone[(Math.random() * stone.length) | 0];
+  const dx = (dirDx >= 0) ? 1 : -1;   // skeveldros lekia link attacker (nuo sienos veido)
+  if (kind === 'collapse') {
+    for (let i = 0; i < 3; i++) S.particles.push({ x: cx + (Math.random() - 0.5) * C * 0.4, y: cy + (Math.random() - 0.5) * C * 0.4, vx: 0, vy: 0, life: 1, decay: 0.020 + Math.random() * 0.01, r: C * (0.7 + i * 0.45), color: 'rgba(158,146,122,0.85)', type: 'ring' });
+    for (let i = 0; i < 16; i++) { const a = Math.random() * Math.PI * 2, sp = 1.0 + Math.random() * 3.0; S.particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.6, life: 1, decay: 0.018 + Math.random() * 0.014, r: 2 + Math.random() * 4, color: pick(), type: 'pixchunk', gravity: 0.22, colorHi: 'rgba(235,225,200,0.6)', colorLo: 'rgba(40,32,22,0.5)' }); }
+    for (let i = 0; i < 8; i++) { const a = Math.random() * Math.PI * 2, sp = 0.4 + Math.random() * 1.4; S.particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.4 - 0.5, life: 1, decay: 0.022, r: 1.5, color: 'rgba(175,162,138,0.8)', type: 'pixel', gravity: 0.04 }); }
+  } else {
+    // skeveldros nuskyla link attacker (su gravitacija → krenta)
+    for (let i = 0; i < 9; i++) { const sp = 1.3 + Math.random() * 2.4; S.particles.push({ x: cx + dx * C * 0.32, y: cy + (Math.random() - 0.5) * C * 0.5, vx: dx * sp + (Math.random() - 0.5), vy: (Math.random() - 0.5) * 1.7 - 1.2, life: 1, decay: 0.028 + Math.random() * 0.02, r: 1.5 + Math.random() * 2.6, color: pick(), type: 'pixchunk', gravity: 0.24, colorHi: 'rgba(235,225,200,0.6)', colorLo: 'rgba(40,32,22,0.5)' }); }
+    // smulkūs akmenukai BYRA nuo sienos žemyn (crumbling po smūgio)
+    for (let i = 0; i < 4; i++) { S.particles.push({ x: cx + (Math.random() - 0.5) * C * 0.55, y: cy + (Math.random() - 0.3) * C * 0.4, vx: (Math.random() - 0.5) * 0.6, vy: 0.3 + Math.random() * 0.9, life: 1, decay: 0.034, r: 1 + Math.random() * 1.8, color: pick(), type: 'pixchunk', gravity: 0.28, colorHi: 'rgba(220,210,186,0.5)', colorLo: 'rgba(40,32,22,0.5)' }); }
+    S.particles.push({ x: cx + dx * C * 0.3, y: cy, vx: dx * 0.5, vy: -0.4, life: 1, decay: 0.05, r: C * 0.30, color: 'rgba(168,155,130,0.7)', type: 'ring' });
+  }
+}
+
+// 🏰 Sugriuvusios sienos rubble + BREACH žymeklis (pralaužta celė = praeinama; abi pusės mato kur).
+function _f9DrawWallRubble(cx, top, seg, now) {
+  const C = CELL;
+  ctx.save();
+  const level = seg.level || 1;
+  if (level >= 2) {
+    // 🪨 AKMENINĖ griūtis (lvl ≥2) — gulintys rieduliai (originalas).
+    const rocks = [[-0.22, 0.58, 0.20], [0.12, 0.64, 0.16], [-0.04, 0.42, 0.15], [0.26, 0.52, 0.12], [0.02, 0.78, 0.13]];
+    for (const r of rocks) { ctx.fillStyle = 'rgba(40,34,26,0.40)'; ctx.beginPath(); ctx.ellipse(cx + r[0] * C, top + r[1] * C + r[2] * C * 0.4, r[2] * C, r[2] * C * 0.34, 0, 0, Math.PI * 2); ctx.fill(); }
+    for (const r of rocks) { ctx.fillStyle = '#7a7264'; ctx.beginPath(); ctx.ellipse(cx + r[0] * C, top + r[1] * C, r[2] * C, r[2] * C * 0.7, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(220,210,186,0.35)'; ctx.beginPath(); ctx.ellipse(cx + r[0] * C - r[2] * C * 0.25, top + r[1] * C - r[2] * C * 0.18, r[2] * C * 0.4, r[2] * C * 0.28, 0, 0, Math.PI * 2); ctx.fill(); }
+  } else {
+    // 🪵 MEDINĖ griūtis (lvl 1) — gulinčios sulaužytos LENTOS (su grūdu + skeveldrotais galais).
+    // [px, py, kampas, ilgis(cell), plotis(cell), tonas]
+    const planks = [
+      [-0.10, 0.62, 0.22, 0.58, 0.14, '#6b4a2e'],
+      [0.15, 0.50, -0.5, 0.46, 0.12, '#75512f'],
+      [-0.17, 0.40, 1.35, 0.40, 0.11, '#5e4126'],
+      [0.05, 0.76, -0.16, 0.54, 0.14, '#6e4a2c'],
+      [0.24, 0.66, 0.85, 0.34, 0.10, '#5a3d24'],
+    ];
+    for (const p of planks) {
+      const len = p[3] * C, w = p[4] * C;
+      ctx.save();
+      ctx.translate(cx + p[0] * C, top + p[1] * C); ctx.rotate(p[2]);
+      ctx.fillStyle = 'rgba(28,18,9,0.34)'; ctx.fillRect(-len / 2, w * 0.30, len, w * 0.75);            // šešėlis po lenta
+      ctx.fillStyle = p[5]; ctx.fillRect(-len / 2, -w / 2, len, w);                                      // lenta
+      ctx.fillStyle = 'rgba(245,225,190,0.15)'; ctx.fillRect(-len / 2, -w / 2, len, w * 0.30);           // top highlight
+      ctx.fillStyle = 'rgba(18,11,5,0.32)'; ctx.fillRect(-len / 2, w / 2 - w * 0.28, len, w * 0.28);     // apačios šešėlis
+      ctx.strokeStyle = 'rgba(40,26,13,0.32)'; ctx.lineWidth = Math.max(1, C * 0.01);                    // grūdas
+      ctx.beginPath(); ctx.moveTo(-len / 2 + w * 0.3, 0); ctx.lineTo(len / 2 - w * 0.3, 0); ctx.stroke();
+      ctx.fillStyle = p[5];                                                                              // skeveldrotas galas
+      ctx.beginPath(); ctx.moveTo(len / 2, -w / 2); ctx.lineTo(len / 2 + w * 0.55, -w * 0.05); ctx.lineTo(len / 2, w * 0.25); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+  // persistent breach chevron (raudonas ▼) — rodo atvirą tarpą; šviežias breach (≤2.5s) pulsuoja stipriau
+  const fresh = seg.deathAt && (now - seg.deathAt) < 2500;
+  const a = fresh ? (0.55 + 0.4 * (Math.sin(now * 0.012) + 1) * 0.5) : 0.42;
+  ctx.globalAlpha = a; ctx.fillStyle = '#e8554d';
+  const ax = cx, ay = top + C * 0.16, s = C * 0.16;
+  ctx.beginPath(); ctx.moveTo(ax - s, ay); ctx.lineTo(ax + s, ay); ctx.lineTo(ax, ay + s * 1.2); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// 🏰 VIENAS sienos segmentas — top-down akmens mūras: 3 zonų parapetas (vakarų briauna su merlonais → attacker,
+//    walkway, rytų šešėlis) + besiūlės plytų eilės + 3 damage būsenos (intact→crack→hole) + hit flash.
+// 🪨 AKMENINĖ siena (lvl ≥2) — NEISTRINTA, originalas perkeltas čia. Aukštesnio lygio medžiaga.
+function _f9WallBodyStone(seg, top, bot, bandW, bx, hpFrac, courseH, C) {
+  ctx.save();
+  // 1) 3 zonos (gylis): vakarų parapetas (šviesus, į attacker), walkway (vidurinis), rytų parapetas (šešėlis)
+  ctx.fillStyle = '#938872'; ctx.fillRect(bx, top, bandW * 0.30, C);                              // vakarų parapetas
+  ctx.fillStyle = '#b3a888'; ctx.fillRect(bx + bandW * 0.30, top, bandW * 0.42, C);               // walkway (rampart top)
+  ctx.fillStyle = '#6c6253'; ctx.fillRect(bx + bandW * 0.72, top, bandW * 0.28, C);               // rytų parapetas (šešėlis)
+  ctx.fillStyle = 'rgba(255,248,230,0.22)'; ctx.fillRect(bx + bandW * 0.30, top, bandW * 0.05, C); // walkway briaunos highlight
+  ctx.fillStyle = 'rgba(20,16,10,0.30)'; ctx.fillRect(bx + bandW * 0.67, top, bandW * 0.05, C);    // walkway briaunos šešėlis
+  // 2) plytų eilės (world-aligned → besiūlis tarp celių) + vertikalios siūlės
+  ctx.strokeStyle = 'rgba(64,56,44,0.5)'; ctx.lineWidth = Math.max(1, C * 0.028);
+  for (let yy = Math.ceil(top / courseH) * courseH; yy < bot - 0.5; yy += courseH) { ctx.beginPath(); ctx.moveTo(bx, yy); ctx.lineTo(bx + bandW, yy); ctx.stroke(); }
+  const ci = Math.floor(top / courseH);
+  for (let k = 0; k < 2; k++) { const yy = top + k * courseH; const off = ((ci + k) % 2) ? bandW * 0.5 : bandW * 0.26; ctx.beginPath(); ctx.moveTo(bx + off, yy); ctx.lineTo(bx + off, Math.min(bot, yy + courseH)); ctx.stroke(); }
+  // 3) merlonai vakarinėj briaunoj (į attacker) — lyginės eilės dantis, nelyginės tarpas → švari crenelacija
+  if (seg.y % 2 === 0) {
+    const mx = bx - C * 0.12, mw = C * 0.18, my = top + C * 0.12, mh = C * 0.76;
+    ctx.fillStyle = '#a3987f'; ctx.fillRect(mx, my, mw, mh);
+    ctx.fillStyle = 'rgba(232,220,192,0.6)'; ctx.fillRect(mx, my, mw, C * 0.10);
+    ctx.fillStyle = 'rgba(40,32,22,0.35)'; ctx.fillRect(mx, my + mh - C * 0.08, mw, C * 0.08);
+    ctx.strokeStyle = 'rgba(56,48,36,0.55)'; ctx.lineWidth = 1; ctx.strokeRect(mx, my, mw, mh);
+  }
+  // 4) damage: crack (≤66%), hole (≤33%)
+  if (hpFrac <= 0.66) {
+    ctx.strokeStyle = 'rgba(26,20,14,0.72)'; ctx.lineWidth = Math.max(1, C * 0.035);
+    ctx.beginPath(); ctx.moveTo(bx + bandW * 0.34, top + C * 0.08); ctx.lineTo(bx + bandW * 0.52, top + C * 0.44); ctx.lineTo(bx + bandW * 0.38, top + C * 0.70); ctx.lineTo(bx + bandW * 0.56, top + C * 0.96); ctx.stroke();
+  }
+  if (hpFrac <= 0.33) {
+    ctx.fillStyle = 'rgba(16,12,8,0.58)'; ctx.fillRect(bx + bandW * 0.42, top + C * 0.28, bandW * 0.30, C * 0.30);
+    ctx.fillStyle = 'rgba(16,12,8,0.46)'; ctx.fillRect(bx + bandW * 0.16, top + C * 0.62, bandW * 0.24, C * 0.22);
+  }
+  ctx.restore();
+}
+
+// 🪵 MEDINĖ siena (lvl 1) v2 — SUKRAUTI RĄSTAI (log barricade): 3 horizontalūs chunky rąstai per celę,
+//    matomi APVALŪS PJŪVIO GALAI su metinėmis rievėmis (pakaitom kairėj/dešinėj — organiškas siluetas),
+//    pixel-art cilindro šešėliavimas juostomis (be gradientų), grūdas+kacai, deterministinis per seg.x/y.
+//    Tiles'inasi vertikaliai be siūlių (kiekviena celė = užbaigti rąstai). Žala išlaikyta (cache bucket'ai).
+function _f9WallBodyWood(seg, top, bot, bandW, bx, hpFrac, C) {
+  ctx.save();
+  const logs = 3, lh = C / logs;
+  const tones = ['#7a5433', '#6b4a2e', '#5f4128'];
+  // deterministinis pseudo-random (stabilus per cache re-render)
+  const rnd = (s) => { const v = Math.sin((seg.x * 7 + seg.y * 13 + s) * 12.9898) * 43758.5453; return v - Math.floor(v); };
+  for (let i = 0; i < logs; i++) {
+    const y0 = top + i * lh;
+    const capLeft = ((seg.y * logs + i) % 2 === 0);            // pjūvio galas pakaitom kairėj/dešinėj
+    const stag = (rnd(i * 3 + 1) - 0.5) * C * 0.05;            // lengvas stagger — ne per lygu
+    const x0 = bx - C * 0.03 + stag, w0 = bandW + C * 0.06;    // rąstas kyšo už band'o → chunky siluetas
+    const tone = tones[(seg.y + i) % tones.length];
+    const seam = Math.max(1, lh * 0.10);
+    // ── kūnas + pixel-art cilindro juostos (šviesa viršuj → šešėlis apačioj) ──
+    ctx.fillStyle = tone; ctx.fillRect(x0, y0, w0, lh - seam * 0.5);
+    ctx.fillStyle = 'rgba(255,238,200,0.20)'; ctx.fillRect(x0, y0 + lh * 0.10, w0, lh * 0.20);   // šviesos juosta
+    ctx.fillStyle = 'rgba(255,244,210,0.10)'; ctx.fillRect(x0, y0 + lh * 0.30, w0, lh * 0.16);
+    ctx.fillStyle = 'rgba(24,14,6,0.28)'; ctx.fillRect(x0, y0 + lh * 0.66, w0, lh * 0.34 - seam * 0.5);   // apačios šešėlis
+    ctx.fillStyle = 'rgba(255,240,205,0.14)'; ctx.fillRect(x0, y0, w0, Math.max(1, lh * 0.07));  // viršaus rim-light
+    ctx.fillStyle = 'rgba(10,6,3,0.55)'; ctx.fillRect(x0, y0 + lh - seam * 0.5, w0, seam * 0.5); // siūlė tarp rąstų
+    // ── grūdas: 1-2 plonos tamsios linijos išilgai ──
+    ctx.strokeStyle = 'rgba(40,26,13,0.30)'; ctx.lineWidth = Math.max(1, C * 0.012);
+    const gy = y0 + lh * (0.42 + rnd(i * 5 + 2) * 0.2);
+    ctx.beginPath(); ctx.moveTo(x0 + w0 * 0.08, gy); ctx.lineTo(x0 + w0 * 0.92, gy + (rnd(i * 7 + 3) - 0.5) * lh * 0.14); ctx.stroke();
+    // kacas (knot) — kartais
+    if (rnd(i * 11 + 4) < 0.34) {
+      const kx = x0 + w0 * (0.28 + rnd(i * 13 + 5) * 0.44), ky = y0 + lh * 0.5;
+      ctx.fillStyle = 'rgba(34,22,11,0.55)'; ctx.beginPath(); ctx.ellipse(kx, ky, lh * 0.13, lh * 0.09, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(20,12,6,0.5)'; ctx.beginPath(); ctx.ellipse(kx, ky, lh * 0.19, lh * 0.13, 0, 0, 7); ctx.stroke();
+    }
+    // ── APVALUS PJŪVIO GALAS su rievėmis — parduoda „rąstą" ──
+    const capR = lh * 0.46;
+    const ccx = capLeft ? x0 + capR * 0.55 : x0 + w0 - capR * 0.55, ccy = y0 + (lh - seam * 0.5) / 2;
+    ctx.fillStyle = '#9a7040'; ctx.beginPath(); ctx.arc(ccx, ccy, capR, 0, 7); ctx.fill();                 // šviesi mediena pjūvyje
+    ctx.fillStyle = 'rgba(255,238,200,0.25)'; ctx.beginPath(); ctx.arc(ccx - capR * 0.18, ccy - capR * 0.18, capR * 0.72, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(58,36,18,0.9)'; ctx.lineWidth = Math.max(1, C * 0.022);
+    ctx.beginPath(); ctx.arc(ccx, ccy, capR, 0, 7); ctx.stroke();                                          // kraštas
+    ctx.strokeStyle = 'rgba(110,72,38,0.6)'; ctx.lineWidth = Math.max(1, C * 0.014);
+    ctx.beginPath(); ctx.arc(ccx, ccy, capR * 0.58, 0, 7); ctx.stroke();                                   // metinė rievė
+    ctx.beginPath(); ctx.arc(ccx, ccy, capR * 0.30, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(58,36,18,0.85)'; ctx.beginPath(); ctx.arc(ccx, ccy, capR * 0.10, 0, 7); ctx.fill(); // šerdis
+  }
+  // gylio: viršaus highlight + apačios šešėlis (celės rėmuose — vertikalus tiling išlieka švarus)
+  ctx.fillStyle = 'rgba(245,228,195,0.10)'; ctx.fillRect(bx, top, bandW, C * 0.04);
+  ctx.fillStyle = 'rgba(16,10,4,0.20)'; ctx.fillRect(bx, bot - C * 0.05, bandW, C * 0.05);
+  // vakarų briauna — smaili gynybinė kuoka (į attacker), lyginėse eilėse (išlaikyta, paryškinta)
+  if (seg.y % 2 === 0) {
+    const px = bx - C * 0.13;
+    ctx.fillStyle = '#7a5230';
+    ctx.beginPath(); ctx.moveTo(px - C * 0.07, top + C * 0.5); ctx.lineTo(px + C * 0.15, top + C * 0.14); ctx.lineTo(px + C * 0.15, top + C * 0.86); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(245,228,195,0.22)';
+    ctx.beginPath(); ctx.moveTo(px - C * 0.07, top + C * 0.5); ctx.lineTo(px + C * 0.15, top + C * 0.14); ctx.lineTo(px + C * 0.15, top + C * 0.34); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(24,15,7,0.5)';
+    ctx.beginPath(); ctx.moveTo(px - C * 0.07, top + C * 0.5); ctx.lineTo(px + C * 0.15, top + C * 0.86); ctx.lineTo(px + C * 0.15, top + C * 0.64); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(30,18,8,0.7)'; ctx.lineWidth = Math.max(1, C * 0.016);
+    ctx.beginPath(); ctx.moveTo(px - C * 0.07, top + C * 0.5); ctx.lineTo(px + C * 0.15, top + C * 0.14); ctx.stroke();
+  }
+  // damage: ≤66% įskilimas per rąstus, ≤33% pralaužta skylė + skeveldros (kaip buvo)
+  if (hpFrac <= 0.66) {
+    ctx.strokeStyle = 'rgba(18,10,4,0.72)'; ctx.lineWidth = Math.max(1, C * 0.03);
+    ctx.beginPath(); ctx.moveTo(bx + bandW * 0.5, top + C * 0.06); ctx.lineTo(bx + bandW * 0.42, top + C * 0.5); ctx.lineTo(bx + bandW * 0.55, top + C * 0.94); ctx.stroke();
+  }
+  if (hpFrac <= 0.33) {
+    ctx.fillStyle = 'rgba(8,5,2,0.62)'; ctx.fillRect(bx + bandW * 0.34, top + C * 0.30, bandW * 0.30, C * 0.34);
+    ctx.strokeStyle = '#7a5230'; ctx.lineWidth = Math.max(1, C * 0.028); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(bx + bandW * 0.34, top + C * 0.30); ctx.lineTo(bx + bandW * 0.46, top + C * 0.42); ctx.moveTo(bx + bandW * 0.64, top + C * 0.64); ctx.lineTo(bx + bandW * 0.52, top + C * 0.52); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// 🚀 PERF — pilies sienos BODY cache. Sienos kūnas (~40 fillRect/path op per segm) perpiešiamas
+//   KAS KADRĄ, nors keičiasi TIK per damage (hpFrac). Body pilnai apibrėžtas (seg.x,y, level, hpFrac);
+//   jolt (smūgio krūpčiojimas) = tik blit POSLINKIS, NE re-render. Iškepam į mažą offscreen canvas
+//   per (poz+lygis+hpBucket), blit'inam jolted pozicijoj. Kill-switch: window._f9NoWallCache=true.
+const _f9WallBodyCache = new Map();
+function _f9WallBodyCached(seg, top, bot, bandW, bx, hpFrac, courseH, C, level) {
+  if (window._f9NoWallCache) {
+    if (level >= 2) _f9WallBodyStone(seg, top, bot, bandW, bx, hpFrac, courseH, C);
+    else _f9WallBodyWood(seg, top, bot, bandW, bx, hpFrac, C);
+    return;
+  }
+  const pad = Math.ceil(C * 0.26);
+  const cw = Math.ceil(bandW + pad * 2), ch = Math.ceil(C + pad * 2);
+  const hpBucket = Math.round(hpFrac * 12);   // re-render tik kai damage perkerta bucket'ą
+  const key = seg.x + ',' + seg.y + ':' + level + ':' + hpBucket + ':' + cw + 'x' + ch;
+  let cv = _f9WallBodyCache.get(key);
+  if (cv === undefined) {
+    cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+    const g = cv.getContext('2d'); g.imageSmoothingEnabled = false;
+    const _saved = ctx; ctx = g;   // swap global ctx → render body local-origin (sinchroniška, try/finally apsauga)
+    try {
+      if (level >= 2) _f9WallBodyStone(seg, pad, pad + C, bandW, pad, hpFrac, courseH, C);
+      else _f9WallBodyWood(seg, pad, pad + C, bandW, pad, hpFrac, C);
+    } finally { ctx = _saved; }
+    _f9WallBodyCache.set(key, cv);
+    if (_f9WallBodyCache.size > 96) { const fk = _f9WallBodyCache.keys().next().value; _f9WallBodyCache.delete(fk); }
+    cv._pad = pad;
+  }
+  ctx.drawImage(cv, Math.round(bx - cv._pad), Math.round(top - cv._pad));   // jolt = blit poslinkis
+}
+function _f9DrawWallSegment(seg, now) {
+  const C = CELL, courseH = C * 0.5;
+  // 🥊 jolt — blokas trumpai krūpteli per smūgį (impulsas, decay ~150ms) → svoris/atsakas
+  let jx = 0, jy = 0;
+  if (seg.hit && now - seg.hit < 150) { const k = 1 - (now - seg.hit) / 150; const ph = (now - seg.hit) * 0.085; jx = Math.sin(ph) * 2.6 * k; jy = -Math.abs(Math.cos(ph)) * 1.8 * k; }
+  const cx = (seg.x + 0.5) * C + jx, top = seg.y * C + jy, bot = top + C;
+  const bandW = C * 0.94, bx = cx - bandW / 2;
+  const hpFrac = Math.max(0, Math.min(1, seg.hp / seg.maxHp));
+  // 🏰 medžiaga pagal LYGĮ: lvl 1 = medinė (palisade), lvl ≥2 = akmeninė (originalas išlaikytas).
+  const level = seg.level || 1;
+  _f9WallBodyCached(seg, top, bot, bandW, bx, hpFrac, courseH, C, level);
+
+  // ── targeting overlay: TIK puolikui (siege hover/kirsta). SAVININKO pilyje siena NE interaktyvi
+  //    (upgrade'ai TIK per castle panelę) → jokio hover highlight/badge. ──
+  const hovered = (window._f9HoverWall === seg), recentHit = seg.hit && (now - seg.hit) < 1400;
+  // 🎯 PERSISTENTINIS pažymėjimas (07-05 user): po siege komandos žymeklis LIEKA kol siena sunaikinta
+  //    arba taikinys pakeistas. Kol unitai daužo — seg.hit atsinaujina ir slankusis 6s langas nesibaigia;
+  //    unitams žuvus/nuvedus kitur — užgęsta pats. Lyginam KOORDINATĖM (ne ref — _syncWalls perstato seg).
+  const _sm = window._f9SiegeMark;
+  const marked = !!(_sm && _sm.x === seg.x && _sm.y === seg.y && seg.alive &&
+    (now - Math.max(_sm.at || 0, seg.hit || 0)) < 6000);
+  const _homeOwner = !!(window.__f9HomeActive && !window.__f9RaidActive);
+  if (((hovered || marked) && !_homeOwner) || recentHit) {
+    const frac = seg.hp / seg.maxHp, bw = C * 0.74, bxh = cx - bw / 2, by = top - 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(bxh - 1, by - 1, bw + 2, 4);
+    ctx.fillStyle = frac > 0.5 ? '#7ec77f' : frac > 0.25 ? '#ffcf5c' : '#e85d5d'; ctx.fillRect(bxh, by, bw * frac, 2);
+  }
+  // 🎯 kokybiškas žymeklis (07-05, vietoj primityvaus strokeRect+X): bracket'ai + ▼ chevron.
+  //    Auksinis kai KIRSTA/PAŽYMĖTA siege, teal kai tik hover. Ta pati kalba kaip unit target-lock.
+  if ((recentHit || hovered || marked) && !_homeOwner) {
+    _f9DrawWallTargetFx(bx - C * 0.14, top, bandW + C * 0.14, C, (recentHit || marked) ? 'attack' : 'hover', now);
+  }
+}
+
+// 🏗️ SIENOS UPGRADE panelė (Clash-stiliaus): lygis + statų peržiūra (HP X→Y) + kaina + „Upgrade" mygtukas.
+//    Atidaroma paspaudus savo sieną pilyje. Lygis skaitomas LIVE iš S._f9Walls (atsinaujina po upgrade per state sync).
+const _F9_WALL_BASE_HP = 40, _F9_WALL_MAX_LVL = 4;
+const _F9_TOWER_BASE_HP = 70, _F9_TOWER_BASE_DMG = 3, _F9_TOWER_MAX_LVL = 4;
+function _f9CurrentWallLevel() {
+  if (typeof S === 'undefined' || !S || !Array.isArray(S._f9Walls)) return 1;
+  for (const w of S._f9Walls) { if (w && !w.tower) return w.level || 1; }
+  return 1;
+}
+function _f9CurrentTowerLevel() {
+  if (typeof S === 'undefined' || !S || !Array.isArray(S._f9Walls)) return 1;
+  for (const w of S._f9Walls) { if (w && w.tower) return Math.max(1, Math.round((w.maxHp || _F9_TOWER_BASE_HP) / _F9_TOWER_BASE_HP)); }
+  return 1;
+}
+const _F9_MAX_TOWERS = 5, _F9_TOWER_MIN_GAP = 6;
+function _f9TowerCount() {
+  if (typeof S === 'undefined' || !S || !Array.isArray(S._f9Walls)) return 0;
+  let n = 0; for (const w of S._f9Walls) { if (w && w.tower) n++; } return n;
+}
+// ar galima statyti bokštą eilėj y? (klientinė peržiūra; serveris re-validuoja). y = wall row.
+function _f9CanBuildTowerAt(y) {
+  if (typeof S === 'undefined' || !S || !Array.isArray(S._f9Walls)) return false;
+  if (_f9TowerCount() >= _F9_MAX_TOWERS) return false;
+  if (Array.isArray(window._f9Passages) && window._f9Passages.indexOf(y) >= 0) return false;   // 🚪 ant praėjimo NEgalima
+  let segOk = false;
+  for (const w of S._f9Walls) {
+    if (!w) continue;
+    if (w.tower && Math.abs(w.y - y) < _F9_TOWER_MIN_GAP) return false;   // per arti kito bokšto
+    if (w.y === y && !w.tower) { if (!w.alive) return false; segOk = true; }   // gyvas paprastas sienos segmentas
+    if (w.y === y && w.tower) return false;                                    // jau bokštas
+  }
+  return segOk;
+}
+let _f9WallPanelTimer = null;
+function _f9CloseWallUpgradePanel() {
+  var p = document.getElementById('f9-wall-panel');
+  if (p && p.parentNode) p.parentNode.removeChild(p);
+  if (_f9WallPanelTimer) { clearInterval(_f9WallPanelTimer); _f9WallPanelTimer = null; }
+}
+function _f9ShowWallUpgradePanel() {
+  _f9CloseWallUpgradePanel();
+  if (!document.getElementById('f9-wall-css')) {
+    var st = document.createElement('style'); st.id = 'f9-wall-css';
+    st.textContent =
+      '#f9-wall-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:330px;max-width:92vw;z-index:100001;' +
+      'background:linear-gradient(180deg,#3a2614,#241809);border:3px solid #8a6a2e;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.6);' +
+      'font-family:Verdana,Segoe UI,sans-serif;color:#f5e6c3;overflow:hidden}' +
+      '#f9-wall-panel .hd{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:2px solid #5a4422;font-weight:800;color:#ffcf5c;font-size:17px}' +
+      '#f9-wall-panel .hd button{margin-left:auto;background:none;border:none;color:#caa;font-size:20px;cursor:pointer;line-height:1}' +
+      '#f9-wall-panel .bd{padding:16px}' +
+      '#f9-wall-panel .lvl{display:flex;gap:6px;align-items:center;justify-content:center;margin:2px 0 14px}' +
+      '#f9-wall-panel .pip{width:26px;height:10px;border-radius:3px;background:#4a3a22;border:1px solid #6b4a2e}' +
+      '#f9-wall-panel .pip.on{background:linear-gradient(180deg,#ffd86a,#e0a830);border-color:#ffcf5c}' +
+      '#f9-wall-panel .stat{display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.22);border:1px solid #4a3a22;border-radius:9px;padding:10px 12px;margin-bottom:10px;font-size:13px}' +
+      '#f9-wall-panel .stat b{color:#9fdca0;font-size:15px}' +
+      '#f9-wall-panel .stat .arw{color:#ffcf5c;font-weight:800}' +
+      '#f9-wall-panel .cost{font-size:11px;color:#bba98a;text-align:center;margin:2px 0 14px}' +
+      '#f9-wall-panel .up{display:block;width:100%;padding:13px;border-radius:11px;border:2px solid #c9a227;cursor:pointer;font-weight:800;font-size:15px;' +
+      'background:linear-gradient(180deg,#5a4416,#3a2c0e);color:#ffe9a8;transition:filter .12s}' +
+      '#f9-wall-panel .up:hover{filter:brightness(1.18)}' +
+      '#f9-wall-panel .up.max{border-color:#6b5a3a;color:#9a8a6a;background:#2a2014;cursor:default}';
+    document.head.appendChild(st);
+  }
+  var ov = document.createElement('div'); ov.id = 'f9-wall-panel';
+  document.body.appendChild(ov);
+  function render() {
+    var lvl = _f9CurrentWallLevel();
+    var isMax = lvl >= _F9_WALL_MAX_LVL;
+    var curHp = _F9_WALL_BASE_HP * lvl, nextHp = _F9_WALL_BASE_HP * (lvl + 1);
+    var mat = lvl >= 2 ? 'Stone' : 'Wood';
+    var pips = '';
+    for (var i = 1; i <= _F9_WALL_MAX_LVL; i++) pips += '<div class="pip' + (i <= lvl ? ' on' : '') + '"></div>';
+    ov.innerHTML =
+      '<div class="hd">🏰 Castle Wall<button id="f9wall-x">✕</button></div>' +
+      '<div class="bd">' +
+      '<div class="lvl">' + pips + '</div>' +
+      '<div class="stat"><span>Level</span><span><b>' + lvl + '</b> / ' + _F9_WALL_MAX_LVL + ' &nbsp;·&nbsp; ' + mat + '</span></div>' +
+      '<div class="stat"><span>Defense (HP)</span><span>' + (isMax ? ('<b>' + curHp + '</b>') : (curHp + ' <span class="arw">→</span> <b>' + nextHp + '</b>')) + '</span></div>' +
+      '<div class="cost">' + (isMax ? 'Wall fully upgraded' : 'Cost: free — resource gathering coming soon') + '</div>' +
+      (isMax ? '<button class="up max">🏰 MAX LEVEL</button>' : '<button class="up" id="f9wall-up">⬆️ Upgrade Wall → Lv' + (lvl + 1) + '</button>') +
+      '</div>';
+    var xb = ov.querySelector('#f9wall-x'); if (xb) xb.onclick = _f9CloseWallUpgradePanel;
+    var ub = ov.querySelector('#f9wall-up');
+    if (ub) ub.onclick = function () {
+      if (window.F9PvpLive && typeof window.F9PvpLive.upgradeWall === 'function') window.F9PvpLive.upgradeWall();
+    };
+  }
+  render();
+  _f9WallPanelTimer = setInterval(render, 350);   // LIVE refresh — lygis atsinaujina po upgrade (state sync)
+}
+
+// 🗼 ZIP bokšto segmentas — vienoj celėj (data-driven: bet kuris seg.tower). Sprite + damage tint + flash +
+//    HP juosta/hover/reticle (tik hover/kirsta). Centruota ant celės (seg.x+0.5, seg.y).
+function _f9DrawZipTowerSeg(seg, now) {
+  const C = CELL, cx = (seg.x + 0.5) * C, ty = seg.y;
+  const zimg = (typeof _buildingImgs !== 'undefined') ? _buildingImgs['Zip'] : null;
+  const zready = zimg && zimg.complete && zimg.naturalWidth > 0;
+  const hpFrac = Math.max(0, Math.min(1, seg.hp / seg.maxHp));
+  let zbx, zby, zw, zh;
+  if (zready) {
+    const fw = zimg.naturalWidth / _ZIP_DEF.cols, fh = zimg.naturalHeight / _ZIP_DEF.rows;
+    const frame = Math.floor(now / (1000 / _ZIP_DEF.fps)) % _ZIP_DEF.frames;
+    zw = C * 1.35; zh = zw * (fh / fw); zbx = cx - zw / 2; zby = (ty + 1) * C - zh + C * 0.08;
+    ctx.save(); ctx.fillStyle = 'rgba(16,12,8,0.30)'; ctx.beginPath(); ctx.ellipse(cx, (ty + 1) * C - C * 0.04, zw * 0.30, C * 0.15, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(zimg, frame * fw, 0, fw, fh, zbx, zby, zw, zh);
+    if (hpFrac < 0.98) { ctx.save(); ctx.globalAlpha = (1 - hpFrac) * 0.5; ctx.fillStyle = '#2a1c10'; ctx.fillRect(zbx, zby + zh * 0.18, zw, zh * 0.82); ctx.restore(); }
+    // (be balto flash — smūgio feedback = akmenų skeveldros)
+  } else {
+    zw = C * 1.2; zh = C * 1.2; zbx = cx - zw / 2; zby = (ty + 0.5) * C - zh / 2;
+    const tcx = cx, tcy = (ty + 0.5) * C, tr = C * 0.6;
+    ctx.save();
+    ctx.fillStyle = '#7d7260'; ctx.beginPath(); ctx.arc(tcx, tcy, tr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a3987f'; for (let a = 0; a < 8; a++) { const an = a / 8 * Math.PI * 2; ctx.fillRect(tcx + Math.cos(an) * tr * 0.78 - C * 0.06, tcy + Math.sin(an) * tr * 0.78 - C * 0.06, C * 0.12, C * 0.12); }
+    ctx.restore();
+  }
+  const hov = (window._f9HoverWall === seg), rh = seg.hit && (now - seg.hit) < 1400;
+  if (hov || rh) {
+    const frac = seg.hp / seg.maxHp, bw = C * 0.92, bxh = cx - bw / 2, byb = zby - C * 0.16;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bxh - 1, byb - 1, bw + 2, 5);
+    ctx.fillStyle = frac > 0.5 ? '#7ec77f' : frac > 0.25 ? '#ffcf5c' : '#e85d5d'; ctx.fillRect(bxh, byb, bw * frac, 3);
+  }
+  if (hov) { ctx.save(); ctx.strokeStyle = 'rgba(120,230,235,0.95)'; ctx.lineWidth = 2.2; ctx.shadowColor = 'rgba(120,230,235,0.7)'; ctx.shadowBlur = 7; ctx.strokeRect(zbx - 2, zby - 2, zw + 4, zh + 4); ctx.restore(); }
+  if (hov || rh) {
+    const _pl = (Math.sin(now * 0.006) + 1) * 0.5, _mx = cx, _my = zby - C * 0.44, _s = 6 + _pl * 2, _col = rh ? '#ffcf5c' : '#78e6eb';
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(_mx - _s, _my - _s); ctx.lineTo(_mx + _s, _my + _s); ctx.moveTo(_mx + _s, _my - _s); ctx.lineTo(_mx - _s, _my + _s); ctx.stroke();
+    ctx.strokeStyle = _col; ctx.lineWidth = 2.6; ctx.shadowColor = 'rgba(255,200,90,0.8)'; ctx.shadowBlur = 6 + _pl * 5;
+    ctx.beginPath(); ctx.moveTo(_mx - _s, _my - _s); ctx.lineTo(_mx + _s, _my + _s); ctx.moveTo(_mx + _s, _my - _s); ctx.lineTo(_mx - _s, _my + _s); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// 🏰 GATE anga (tamsus praėjimas + medinis rėmas + portcullis + „GATE" etiketė). TIK kai yra gate tarpas.
+//    Bokštai NEbe čia — piešiami per-segment (_f9DrawZipTowerSeg) iš seg.tower flag'o.
+function _f9DrawCastleGate(wallX, gateMin, gateMax, now) {
+  if (gateMin < 0) return;
+  const C = CELL, cx = (wallX + 0.5) * C;
+  const gTop = gateMin * C, gH = (gateMax - gateMin + 1) * C;
+  ctx.save();
+  ctx.fillStyle = 'rgba(28,22,16,0.55)'; ctx.fillRect(cx - C * 0.34, gTop, C * 0.68, gH);
+  ctx.fillStyle = '#6b4a2e';
+  ctx.fillRect(cx - C * 0.42, gTop - C * 0.04, C * 0.84, C * 0.16);
+  ctx.fillRect(cx - C * 0.42, gTop + gH - C * 0.12, C * 0.84, C * 0.16);
+  ctx.strokeStyle = 'rgba(80,60,38,0.7)'; ctx.lineWidth = Math.max(1, C * 0.04);
+  for (let i = -1; i <= 1; i++) { const gx = cx + i * C * 0.18; ctx.beginPath(); ctx.moveTo(gx, gTop + C * 0.1); ctx.lineTo(gx, gTop + gH * 0.40); ctx.stroke(); }
+  ctx.restore();
+  const ly = (gateMin + gateMax + 1) / 2 * C;
+  ctx.save();
+  ctx.font = 'bold ' + Math.round(C * 0.28) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; _roundRectPath(cx - C * 0.56, ly - C * 0.22, C * 1.12, C * 0.44, C * 0.10); ctx.fill();
+  ctx.fillStyle = '#ffcf5c'; ctx.fillText('GATE', cx, ly);
+  ctx.restore();
+}
+
+// 🏰 Aukščiausio lygio: vertikali siena — segmentai + gate + integrity juosta. Geometriją randam iš S._f9Walls.
+function _f9DrawCastleWallVertical(now) {
+  const C = CELL, segs = S._f9Walls;
+  const wallX = segs[0].x;
+  let minY = 1e9, maxY = -1e9, sumHp = 0, sumMax = 0, breaches = 0;
+  const present = new Set();
+  for (const s of segs) { if (!s) continue; minY = Math.min(minY, s.y); maxY = Math.max(maxY, s.y); present.add(s.y); sumMax += s.maxHp; if (s.alive) sumHp += s.hp; else breaches++; }
+  let gateMin = -1, gateMax = -1;
+  for (let y = minY; y <= maxY; y++) { if (!present.has(y)) { if (gateMin < 0) gateMin = y; gateMax = y; } }
+  const list = segs.slice().sort((a, b) => a.y - b.y);
+  // PASS 1: sienos segmentai + rubble (apačioj)
+  for (const seg of list) {
+    if (seg.tower) continue;
+    if (!seg.alive) { _f9DrawWallRubble((seg.x + 0.5) * C, seg.y * C, seg, now); continue; }
+    _f9DrawWallSegment(seg, now);
+  }
+  // gate anga (jei yra tarpas) — prieš bokštus
+  _f9DrawCastleGate(wallX, gateMin, gateMax, now);
+  // PASS 2: 🗼 zip bokštai ANT VIRŠAUS (kad galuose sėdėtų švariai ant sienos, neapkarpytų)
+  for (const seg of list) {
+    if (!seg.tower) continue;
+    if (!seg.alive) { _f9DrawWallRubble((seg.x + 0.5) * C, seg.y * C, seg, now); continue; }
+    _f9DrawZipTowerSeg(seg, now);
+  }
+  // 🚫 integrity juosta IŠJUNGTA (user: užstoja sienos vaizdą). HP matom iš damage state'ų (crack/hole/rubble)
+  //    + per-segment/bokšto HP juosta tik hover metu.
+}
+
+// 🏰 „CASTLE WALL" integrity juosta — bendras sienos vientisumas (Σhp) + breach skaitiklis. World-space virš vartų.
+function _f9DrawWallIntegrity(wallX, midY, sumHp, sumMax, breaches, now) {
+  const C = CELL, frac = sumMax > 0 ? sumHp / sumMax : 0;
+  const w = C * 3.6, h = C * 0.28, cx = (wallX + 0.5) * C, x = cx - w / 2, y = midY * C - C * 2.9;
+  ctx.save();
+  ctx.font = 'bold ' + Math.round(C * 0.22) + 'px monospace'; ctx.textBaseline = 'middle';
+  // panel (kompaktiškas)
+  ctx.fillStyle = 'rgba(24,18,12,0.75)'; ctx.strokeStyle = 'rgba(255,207,92,0.5)'; ctx.lineWidth = 1.2;
+  _roundRectPath(x - C * 0.12, y - C * 0.30, w + C * 0.24, h + C * 0.56, C * 0.10);
+  ctx.fill(); ctx.stroke();
+  // label + pct vienoj eilėj
+  ctx.textAlign = 'left'; ctx.fillStyle = '#ffcf5c'; ctx.fillText('🏰 WALL', x, y - C * 0.10);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#f5e6c3'; ctx.fillText(Math.round(frac * 100) + '%', x + w, y - C * 0.10);
+  // bar (plona)
+  const by = y + C * 0.14, bh = h;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x - 1, by - 1, w + 2, bh + 2);
+  ctx.fillStyle = frac > 0.5 ? '#7ec77f' : frac > 0.25 ? '#ffcf5c' : '#e85d5d'; ctx.fillRect(x, by, w * frac, bh);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(x, by, w * frac, bh * 0.4);
+  if (breaches > 0) {
+    const pulse = 0.6 + 0.4 * (Math.sin(now * 0.008) + 1) * 0.5;
+    ctx.textAlign = 'center'; ctx.globalAlpha = pulse; ctx.fillStyle = '#ff6b5d';
+    ctx.fillText('⚠ ' + breaches + ' BREACH', cx, by + bh + C * 0.24); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+function _roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// 🏰 Capture zona (KotH už sienos) — žemės žiedas, spalva pagal valdytoją (mano=mėlyna, priešas=raudona,
+//    neutralus=pilka), pulsuoja jei ginčijama, + capture progreso arka (challenger). Pieš world-space (po unitais).
+function _f9DrawCapZone() {
+  const cap = window._f9Cap; if (!cap || typeof ctx === 'undefined') return;
+  const st = window._f9CapState || {};
+  const myTeam = (window._f9pvpMyTeam != null) ? window._f9pvpMyTeam : 0;
+  const C = CELL, cx = (cap.x + 0.5) * C, cy = (cap.y + 0.5) * C, R = (cap.r || 3.5) * C;
+  const owner = (st.owner != null) ? st.owner : -1;
+  const contested = !!st.contested;
+  const team = (st.team != null) ? st.team : -1;
+  const pct = st.pct || 0;
+  const count = st.count || 0;
+  const now = performance.now();
+  const ownCol = owner < 0 ? '160,170,180' : (owner === myTeam ? '90,200,255' : '240,90,90');
+  const capCol = contested ? '255,210,74' : (team === myTeam ? '90,200,255' : (team < 0 ? '160,170,180' : '240,90,90'));
+  const capturing = pct > 0 && team >= 0;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  // 1) bazinis užpildas (ownerio spalva). 🧹 paslepiam švariam vaizdui.
+  if (!window._f9Clean) {
+    ctx.fillStyle = 'rgba(' + ownCol + ',' + (owner < 0 ? 0.06 : 0.13) + ')';
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // 2) capturing — pie-fill progreso pleištas + švytinti arka + galvutė
+  if (capturing) {
+    const a0 = -Math.PI / 2, a1 = a0 + (pct / 100) * Math.PI * 2;
+    // pleišto užpildas (progresas)
+    ctx.fillStyle = 'rgba(' + capCol + ',0.20)';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, a0, a1); ctx.closePath(); ctx.fill();
+    // švytinti progreso arka
+    const pul = 0.5 + 0.5 * Math.sin(now / 170);
+    ctx.shadowColor = 'rgba(' + capCol + ',0.95)'; ctx.shadowBlur = 8 + 12 * pul;
+    ctx.strokeStyle = 'rgba(' + capCol + ',0.97)';
+    ctx.lineWidth = Math.max(3, C * 0.20); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.stroke();
+    ctx.lineCap = 'butt'; ctx.shadowBlur = 0;
+    // galvutė (baltas taškas progreso priekyje)
+    const hx = cx + Math.cos(a1) * R, hy = cy + Math.sin(a1) * R;
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath(); ctx.arc(hx, hy, Math.max(2.5, C * 0.13), 0, Math.PI * 2); ctx.fill();
+  }
+
+  // 3) bazinis brūkšninis žiedas (sukasi kai capturing; pulsuoja kai ginčas). 🧹 paslepiam švariam vaizdui.
+  if (!window._f9Clean) {
+    const spin = capturing ? ((now / 700) % (C * 0.84)) : 0;
+    const ringA = contested ? (0.5 + 0.35 * Math.sin(now / 120)) : 0.42;
+    ctx.strokeStyle = 'rgba(' + (contested ? '255,210,74' : ownCol) + ',' + ringA + ')';
+    ctx.lineWidth = Math.max(2, C * 0.10);
+    ctx.setLineDash([C * 0.5, C * 0.34]); ctx.lineDashOffset = -spin;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  }
+
+  // 🏰 Pilis + progreso tekstas — ATSKIRAI `_f9DrawCapCastle()` (kaip zip bokštas: PRIEŠ unitus, unitai praeina virš).
+  ctx.restore();
+}
+
+// 🏰 Castle occlusion (KAIP MEDŽIAI): grąžina 1=unitas PRIEKYJE (į pietus nuo bazės → sprite virš pilies),
+//    -1=UŽ pilies (į šiaurę, pilies kūne → baltas kontūras), 0=nesusijęs. Naudoja window._f9CastleRect (world px).
+// Vieno pastato rect occlusion: 1=priekyje (į pietus nuo KOLIZIJOS briaunos) / -1=už (kūne) / 0.
+//   Dalintuvas = kolizijos pietinė briauna (hitBaseY), NE matoma bazė — kitaip iš apačios atėjęs unitas (sustojęs
+//   šiauriau matomos bazės) klaidingai laikomas „už". (žr. skill_f9_object_depth_occlusion gotcha)
+function _f9RectOcclusion(u, r) {
+  if (!r || typeof CELL === 'undefined' || !u) return 0;
+  const fx = ((u.rx != null ? u.rx : u.x) + 0.5) * CELL, fy = ((u.ry != null ? u.ry : u.y) + 0.5) * CELL;
+  if (fx < r.x0 || fx > r.x1) return 0;
+  const base = (r.hitBaseY != null) ? r.hitBaseY : r.y1;
+  if (fy > base) return (fy < base + CELL * 2.6) ? 1 : 0;     // PRIEKYJE → sprite VIRŠ
+  if (fy > r.y0 - CELL * 0.7) return r.noOutline ? 0 : -1;    // UŽ → baltas kontūras (nebent noOutline: plonas obj.)
+  return 0;
+}
+
+// 🌀 Teleporto pad'ai (per vidurį sienos) — švytintis violetinis sūkurys. GAMEPLAY elementas → rodom VISADA
+//    (net clean view'e). Pozicijos iš serverio (window._f9TpPads = [[x,y],...]).
+// 🌀 Ar taškas (grid coords, kaip txWorld/tyWorld) ant teleporto pad'o vizualo? Atsižvelgia į -25px
+//    pakėlimą. Grąžina pad [x,y] arba null. Naudoja klikų hit-test'as (dešinys-klikas → tpmove).
+function _f9TpPadAt(tx, ty) {
+  if (typeof S === 'undefined' || !S || S.floor !== 9) return null;
+  if (!Array.isArray(window._f9TpPads) || !window._f9TpPads.length) return null;
+  const offCells = 25 / CELL;   // vizualinis pakėlimas (turi sutapti su _f9DrawTpPads cy)
+  for (const p of window._f9TpPads) {
+    const cgx = p[0], cgy = p[1] - offCells;
+    if (Math.hypot(tx - cgx, ty - cgy) <= 1.2) return p;
+  }
+  return null;
+}
+// 🏳️ RETREAT zona — 8×8 ant puoliko spawn. USER SPRITE dviem sluoksniais (šaltinis pretryt.png,
+//    fonas nuimtas flood-fill; radialiai perskelta ties žiedu ρ≈0.75 + aukso spalvos svoris):
+//    retreat_zone_base.png = žolė+akmenys BE žiedo (visada, susilieja su aplinka);
+//    retreat_zone_glow.png = auksinis žiedas — UŽSIDEGA kai unitai zonoj (fade in/out + pulsas).
+//    PLOKŠČIA ant žemės (jokių vertikalių elementų — unitai vaikšto virš be klipinimo).
+let _f9RetreatImgBase = null, _f9RetreatImgGlow = null, _f9RetreatImgGlowBlue = null, _f9RetreatGlowA = 0;
+function _f9DrawRetreatZone() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window.__f9RaidActive || !window._f9RetreatZone) return;
+  const C = CELL, z = window._f9RetreatZone, now = performance.now();
+  const x0 = z.x0 * C, y0 = z.y0 * C, w = (z.x1 - z.x0) * C, h = (z.y1 - z.y0) * C;
+  const cx = x0 + w / 2, cy = y0 + h / 2, R = Math.max(w, h) * 0.6;
+  const pulse = (Math.sin(now / 900) + 1) * 0.5;
+  if (!_f9RetreatImgBase) {
+    _f9RetreatImgBase = new Image(); _f9RetreatImgBase.src = 'retreat_zone_base.png?v=2';   // v2: tik akmenų ratas (be tamsios žolės dėmės)
+    _f9RetreatImgGlow = new Image(); _f9RetreatImgGlow.src = 'retreat_zone_glow.png?v=2';
+    _f9RetreatImgGlowBlue = new Image(); _f9RetreatImgGlowBlue.src = 'retreat_zone_glow_blue.png';   // ⏳ countdown spalvinimui
+  }
+  // 1) unitai zonoj — skaičiuojam PIRMA (nuo to priklauso žiedo užsidegimas)
+  const inz = [];
+  for (const u of (S.units || [])) {
+    if (!u || !u.alive || u._f9Enemy) continue;   // tik MANO (puoliko) unitai
+    const ux = (u.rx != null ? u.rx : u.x), uy = (u.ry != null ? u.ry : u.y);
+    if (ux < z.x0 || ux >= z.x1 || uy < z.y0 || uy >= z.y1) continue;
+    inz.push([ux, uy]);
+  }
+  // žiedo įsižiebimas (greitas ~0.5s) / gesimas (lėtesnis) — sklandu, be mirksėjimo unitui ant ribos
+  const _gTgt = inz.length > 0 ? 1 : 0;
+  _f9RetreatGlowA += (_gTgt - _f9RetreatGlowA) * (_gTgt > _f9RetreatGlowA ? 0.10 : 0.05);
+  if (_f9RetreatGlowA < 0.005) _f9RetreatGlowA = 0;
+  ctx.save();
+  if (_f9RetreatImgBase.complete && _f9RetreatImgBase.naturalWidth > 0) {
+    const dw = w * 1.12, dh = dw * (_f9RetreatImgBase.naturalHeight / _f9RetreatImgBase.naturalWidth);
+    // 2) BAZĖ (be žiedo) — visada, rami ir susiliejusi su aplinka
+    ctx.drawImage(_f9RetreatImgBase, cx - dw / 2, cy - dh / 2, dw, dh);
+    // 3) AUKSINIS ŽIEDAS — užsidega kai unitai zonoj
+    if (_f9RetreatGlowA > 0.01 && _f9RetreatImgGlow.complete && _f9RetreatImgGlow.naturalWidth > 0) {
+      ctx.globalAlpha = _f9RetreatGlowA * (0.80 + pulse * 0.20);
+      ctx.drawImage(_f9RetreatImgGlow, cx - dw / 2, cy - dh / 2, dw, dh);
+      ctx.globalAlpha = 1;
+    }
+    // 3.5) ⏳ RETREAT COUNTDOWN — PATS auksinis žiedas progresyviai NUSISPALVINA MĖLYNAI (pie-sektoriaus
+    //      clip'as + mėlyna to paties žiedo versija). Pilnai mėlynas = teleportas (retreat_done → poof).
+    const _ctd = window._f9RetreatCtd;
+    if (_ctd && _ctd.total > 0 && _f9RetreatImgGlowBlue.complete && _f9RetreatImgGlowBlue.naturalWidth > 0) {
+      const _prog = Math.min(1, ((_ctd.total - _ctd.sec) + Math.min(1, (now - _ctd.at) / 1000)) / _ctd.total);
+      const _a0 = -Math.PI / 2, _a1 = _a0 + _prog * Math.PI * 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.ellipse(cx, cy, dw, dh, 0, _a0, _a1);   // sektorius nuo 12val — spindulys > žiedo (pilnai dengia)
+      ctx.closePath();
+      ctx.clip();
+      ctx.globalAlpha = 0.9 + pulse * 0.1;
+      ctx.drawImage(_f9RetreatImgGlowBlue, cx - dw / 2, cy - dh / 2, dw, dh);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+  // 4) SUBTILŪS efektai kai unitai zonoj: minkštas žalsvas švytėjimas po kojom + kylantys motai
+  for (const [ux, uy] of inz) {
+    const fx = (ux + 0.5) * C, fy = (uy + 0.5) * C + C * 0.3;
+    const gr = ctx.createRadialGradient(fx, fy, 0, fx, fy, C * 0.52);
+    gr.addColorStop(0, 'rgba(130,225,165,' + (0.20 + pulse * 0.12).toFixed(3) + ')');
+    gr.addColorStop(1, 'rgba(130,225,165,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.ellipse(fx, fy, C * 0.52, C * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  if (inz.length > 0) {   // lengvi kylantys motai (tik kai bent vienas unitas viduj)
+    for (let i = 0; i < 9; i++) {
+      const t = ((now / 2300) + i / 9) % 1;
+      const mx = cx + Math.sin(i * 1.7 + now / 1700) * R * 0.6;
+      const my = cy + R * 0.45 - t * R * 1.0;
+      const al = Math.sin(t * Math.PI) * 0.32;
+      ctx.fillStyle = 'rgba(185,238,190,' + al.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(mx, my, Math.max(1, C * 0.045), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+// ════════════════════════════════════════════════════════════════════════════
+// ⚰️ KAPINĖS — dekoratyvinis ground sprite (rip.png → cemetery.png; žolės fonas nuimtas flood-fill +
+//   didžiausio komponento CC-clean 2026-07-03). Prie barakų DEŠINĖJE, kiek AUKŠČIAU (user).
+//   Kolizija serveryje PVP_OBSTACLES AABB (68.6, 6.4) — PRIVALO sutapti su piešimo centru!
+// ════════════════════════════════════════════════════════════════════════════
+let _f9CemeteryImg = null, _f9CemeteryOutlineC = null;
+// Baltas kontūro canvas'as (kešuojamas 1×) — tas pats stilius kaip unit/tree outline (_silhouetteTintSheet).
+function _f9CemeteryBuildOutline(olNat) {
+  if (_f9CemeteryOutlineC || typeof _silhouetteTintSheet !== 'function') return _f9CemeteryOutlineC;
+  const img = _f9CemeteryImg;
+  const ts = _silhouetteTintSheet(img, '#ffffff');
+  if (!ts) return null;
+  const OL = Math.max(2, Math.round(olNat || 4));   // 🤍 storis natural-px — paduodamas call-site (ekrane = 0.045C, hospital standartas)
+  const W = img.naturalWidth + OL * 2, H = img.naturalHeight + OL * 2;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const offs = [[-OL, 0], [OL, 0], [0, -OL], [0, OL], [-OL, -OL], [OL, -OL], [-OL, OL], [OL, OL]];
+  for (const [dx, dy] of offs) g.drawImage(ts, OL + dx, OL + dy);
+  g.globalCompositeOperation = 'destination-out';   // paliekam tik kontūro žiedą
+  g.drawImage(img, OL, OL);
+  _f9CemeteryOutlineC = { c, OL };
+  return _f9CemeteryOutlineC;
+}
+// ⛏️🏠 AUKSO KASIMO STOVYKLA (07-07 user): F10 kasimo ciklas perkeltas į pilies pievą (kur ganosi avys,
+//   žemiau tako tarp kapinių ir ligoninės). Pawn bėga namukas→aukso akmuo→kasa (akmuo dreba)→Pam neša
+//   auksą atgal→monetos virš namuko→ciklas. GRYNAS DEKORAS (jokių resursų) — visi sprite'ai jau užkrauti
+//   F10 (Pawn_*_Pickaxe, pam_npc, Buildings_House3, GoldStone1). Kolizijos AABB serveryje PVP_OBSTACLES!
+const _F9_GC = { HX: 58.9, HY: 19.5, SX: 63.7, SY: 19.85 };   // namuko/akmens obstacle centrai (unit-space, avies pieva ~61.4/19.3) — PRIVALO sutapti su serveriu
+let _f9GC = null;   // ciklo būsena {phase, t0, idleDur}
+function _f9DrawGoldCamp() {
+  // 🧱 07-12: occlusion rect'ai valomi kiekvieną kadrą — kad išėjus iš PvP scenos neliktų stale depth-loop įrašų
+  window._f9GoldCampRect = null; window._f9GoldStoneRect = null;
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) return;   // PvP pilies scena (home + raid) — bazės dekoras (kaip kapinės)
+  const houseImg = (typeof _buildingImgs !== 'undefined') ? _buildingImgs['House3'] : null;
+  if (!houseImg || !houseImg.complete || !houseImg.naturalWidth) return;
+  // 1:1 kaip F10: animuotas gold_stone_3h (CUSTOM_MAP10 "7,6" tas pats) — 6 kadrų blizgesys @8fps
+  const stoneDef = (typeof _GOLD_STONE_DEFS !== 'undefined') ? _GOLD_STONE_DEFS['gold_stone_3h'] : null;
+  const stoneImg = (stoneDef && typeof _goldStoneImgs !== 'undefined') ? _goldStoneImgs[stoneDef.img] : null;
+  const C = CELL;
+  const now = performance.now();
+  if (!_f9GC) _f9GC = { phase: 'walk_to_stone', t0: now, idleDur: 0 };
+  const gc = _f9GC;
+  const el = now - gc.t0;
+  // ── geometrija (world px; ctx jau world-transformintas kaip hospital/cemetery) ──
+  const hbw = houseImg.naturalWidth * 0.80, hbh = houseImg.naturalHeight * 0.80;   // F10: natural×0.8
+  const hcx = (_F9_GC.HX + 0.5) * C - 15, hby = (_F9_GC.HY + 0.5 + 0.55) * C; // namuko centras/apačia (07-07 user: namukas −15px kairėn; serverio AABB cx 58.62 atitinka)
+  const scx = (_F9_GC.SX + 0.5) * C, scy = (_F9_GC.SY + 0.5) * C;             // akmens centras
+  const gsz = C * 2.1;                                                         // F10: gold stone CELL*2.1 kvadratas
+  const footY = (_F9_GC.SY + 0.5 + 0.35) * C - 25;                             // pawn'o kojų linija (07-07 user: žmogeliukas +15px, dar +10px aukštyn)
+  const startX = hcx + 15 + hbw * 0.32;                                        // prie namuko durų — +15 kompensuoja namuko poslinkį (žmogeliuko pozicija NEPAKITUSI)
+  const mineX = scx - gsz * 0.40;                                              // kairiau akmens (kasa į jį, kaip F10 stoneWx-30)
+  const WALK_MS = (Math.abs(mineX - startX) / 105) * 1000;                     // F10: WALK_SPD=105 px/s
+  const MINE_MS = 4000, UNLOAD_MS = 2200;                                      // F10: MINE_DUR=4000
+  const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
+  // ── pawn/pam piešėjas (F10 _runExtraMineCycle klonas — SZ=90/PAM=50 px, drawY formulė ta pati) ──
+  const SZ = 90, PAM_SZ = 50;
+  const dchar = (img, frames, fps, wx, faceRight, small) => {
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const fr = Math.floor(now / (1000 / fps)) % frames;
+    const sz = small ? PAM_SZ : SZ;
+    const dy = footY - SZ + (sz < SZ ? 34 : 20);                               // F10: wy - SZ + (sz<SZ?34:20)
+    const px = wx - sz / 2;
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    if (!faceRight) { ctx.scale(-1, 1); ctx.drawImage(img, fr * 192, 0, 192, 192, -px - sz, dy, sz, sz); }
+    else ctx.drawImage(img, fr * 192, 0, 192, 192, px, dy, sz, sz);
+    ctx.restore();
+  };
+  // ── akmens drebėjimas kasant (kaip F10 shake) ──
+  let shakeX = 0;
+  if (gc.phase === 'mining') {
+    const hitPhase = (el % 600) / 600;
+    if (Math.floor(el / 600) >= 1 && hitPhase < 0.25) shakeX = Math.sin(hitPhase * Math.PI * 8) * 3;   // F10: ±3px
+  }
+  // ── statiniai: namukas + ANIMUOTAS aukso akmuo (F10 stiliius: kadras iš 128px juostos, gsz kvadratas) ──
+  // ⛏️ 07-11 (user): gold-camp = RONKE KASYKLA. Klik → mine panelė (pasyvus RONKE uždarbis). Hover → auksinis švytėjimas.
+  const gcHx = hcx - hbw / 2, gcHy = hby - hbh;
+  let gcHover = false;
+  if (typeof _canvasMx === 'number' && _canvasMx >= 0 && S.cam && typeof _f9WorldZoom === 'function') {
+    const wmx = _canvasMx / _f9WorldZoom() + S.cam.x, wmy = _canvasMy / _f9WorldZoom() + S.cam.y;
+    gcHover = wmx >= gcHx && wmx <= gcHx + hbw && wmy >= gcHy && wmy <= gcHy + hbh;
+  }
+  window._f9GoldCampBounds = { x: gcHx, y: gcHy, w: hbw, h: hbh };   // klik → _f9ToggleMinePanel
+  // 🧱 07-12 (user): namukas = kietas hitbox — FOREGROUND + depth loop (kaip pilis/barakai, _f9RectOcclusion).
+  //    hitBaseY = serverio kolizijos AABB PIETINĖ briauna (cy 19.5 + hh 0.5 → unit-y 20.0) — front/behind
+  //    dalintuvas PRIVALO būti kolizijos briauna, NE matoma bazė (žr. castle gotcha).
+  //    Rect = sprite CONTENT bounds (alpha-scan House3 128×192: x 0.023–0.977, y 0.193–0.896), ne frame'as —
+  //    kitaip permatomas top padding'as duotų klaidingus baltus kontūrus virš stogo.
+  window._f9GoldCampRect = { x0: gcHx + hbw * 0.023, y0: gcHy + hbh * 0.193, x1: gcHx + hbw * 0.977, y1: gcHy + hbh * 0.896, hitBaseY: (20.0 + 0.5) * C };
+  // 🐛 DEBUG (kaip pilis): serverio kolizijos AABB + akmens circle
+  if (window._dbgHit || window._f9DebugOn) {
+    ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)';
+    ctx.fillRect((58.62 + 0.5 - 1.05) * C, (19.5 + 0.5 - 0.5) * C, 2.1 * C, 1.0 * C);
+    ctx.beginPath(); ctx.arc((_F9_GC.SX + 0.5) * C, (_F9_GC.SY + 0.5) * C, 0.55 * C, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  if (gcHover || window._f9MinePanelOpen) { ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 16; }
+  ctx.drawImage(houseImg, gcHx, gcHy, hbw, hbh);
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';   // akmuo/pawn be švytėjimo
+  if (stoneImg && stoneImg.complete && stoneImg.naturalWidth && stoneDef) {
+    const gFrame = stoneDef.frames > 1 ? Math.floor(now / (1000 / stoneDef.fps)) % stoneDef.frames : 0;
+    const sX = scx - gsz / 2 + shakeX;
+    const sY = scy + C * 0.55 - gsz;                                           // akmens apačia ~obstacle centro +0.55
+    ctx.drawImage(stoneImg, gFrame * stoneDef.fw, 0, stoneDef.fw, 128, sX, sY, gsz, gsz);
+    // 🧱 07-12: akmens occlusion rect (stabilios koordinatės BE shake). hitBaseY = serverio CIRCLE pietinė
+    //    briauna (cy 19.85 + rad 0.55). Rect = CONTENT bounds (alpha-scan GoldStone3_Highlight fr0:
+    //    x 0.266–0.719, y 0.281–0.688 — akmuo užima <½ frame'o!), kitaip kontūrai rodytųsi ore šalia akmens.
+    const sX0 = scx - gsz / 2;
+    window._f9GoldStoneRect = { x0: sX0 + gsz * 0.266, y0: sY + gsz * 0.281, x1: sX0 + gsz * 0.719, y1: sY + gsz * 0.688, hitBaseY: (_F9_GC.SY + 0.5 + 0.55) * C };
+  }
+  ctx.restore();
+  // (07-11 user: „RONKE MINE" užrašas pašalintas — pastatas lieka paspaudžiamas su hover švytėjimu)
+  // ── ciklo fazės ──
+  if (gc.phase === 'walk_to_stone') {
+    const t = Math.min(el / WALK_MS, 1);
+    dchar(_pawnRunImg, 6, 8, lerp(startX, mineX, t), true, false);
+    if (t >= 1) { gc.phase = 'mining'; gc.t0 = now; }
+  } else if (gc.phase === 'mining') {
+    dchar(_pawnInteractImg, 6, 10, mineX, true, false);
+    if (el > MINE_MS) {
+      const r = (typeof _f9MineAttempt === 'function') ? _f9MineAttempt() : { success: true, add: 0 };   // ⛏️ 50% sėkmė/fail
+      gc._lastAdd = r.add;
+      if (r.success) { gc.phase = 'carry_home'; gc.t0 = now; }   // sėkmė → neša namo + pristato
+      else { gc.phase = 'fail'; gc.t0 = now; }                    // fail → „FAIL", be pristatymo
+    }
+  } else if (gc.phase === 'carry_home') {
+    const t = Math.min(el / WALK_MS, 1);
+    dchar(_pamNpcImg, 19, 12, lerp(mineX, startX, t), false, true);   // Pam neša auksą namo (į kairę)
+    if (t >= 1) { gc.phase = 'unload'; gc.t0 = now; }   // accrual jau įvyko mining bandyme; gc._lastAdd = pristatytas kiekis
+  } else if (gc.phase === 'unload') {
+    dchar(_pawnIdleImg, 8, 6, startX, false, false);
+    // 💰 monetos kyla virš namuko (pirmi 900ms) — dekoratyvus „auksas pristatytas"
+    if (el < 900) {
+      const a = 1 - el / 900;
+      ctx.save(); ctx.globalAlpha = a;
+      for (let i = 0; i < 3; i++) {
+        const ox = (i - 1) * C * 0.30, oy = -(el / 900) * C * 0.8 - i * C * 0.12;
+        ctx.fillStyle = '#ffd24a'; ctx.strokeStyle = '#8a6a1a'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(hcx + ox, hby - hbh * 0.72 + oy, C * 0.09, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // ⛏️ „+X RONKE" floateris — kiek RONKE priaugo šis pristatymas (matomas feedback)
+    if (el < 1100 && (gc._lastAdd || 0) > 0.0001) {
+      const a = Math.max(0, 1 - el / 1100);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.font = 'bold ' + Math.round(C * 0.30) + 'px Verdana, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3;
+      ctx.fillStyle = '#8dffa0';
+      const ty = hby - hbh * 0.95 - (el / 1100) * C * 0.7;
+      const txt = '+' + (gc._lastAdd >= 10 ? gc._lastAdd.toFixed(0) : gc._lastAdd.toFixed(2)) + ' RONKE';
+      ctx.strokeText(txt, hcx, ty); ctx.fillText(txt, hcx, ty);
+      ctx.restore();
+    }
+    if (el > UNLOAD_MS) { gc.phase = 'walk_to_stone'; gc.t0 = now; }
+  } else if (gc.phase === 'fail') {
+    // ❌ 50% NESĖKMĖ — raudonas „FAIL" virš akmens; žmogeliukas STOVI VIETOJ (idle) ir po pauzės VĖL bando kasti (be ėjimo namo)
+    dchar(_pawnIdleImg, 8, 6, mineX, true, false);   // idle prie akmens (stovi vietoj)
+    if (el < 1200) {
+      const a = Math.max(0, 1 - el / 1200);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.font = 'bold ' + Math.round(C * 0.38) + 'px Verdana, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 3.5;
+      ctx.fillStyle = '#ff3333';
+      const ty = scy - gsz * 0.42 - (el / 1200) * C * 0.5;
+      ctx.strokeText('FAIL', scx, ty); ctx.fillText('FAIL', scx, ty);
+      ctx.restore();
+    }
+    if (el > 2200) { gc.phase = 'mining'; gc.t0 = now; }   // po pauzės → VĖL kasa tiesiai (ne walk_to_stone)
+  }
+}
+// 🛒 UNIT MARKETPLACE pastatas (07-08) — paprastas namukas dešiniau ligoninės. Klik → market modalas.
+//    Vieta unit-space (ligoninė 69.5/17.6) → PRIVALO sutapti su serverio PVP_OBSTACLES.
+const _F9_MKT = { HX: 73.6, HY: 18.7 };
+// ── Marketplace modalas (SELL picker rodo tavo unitus; LIST on-chain wiring po kontrakto deploy) ──
+let _f9MktOverlayEl = null, _f9MktTab = 'browse';
+let _f9MktInv = null, _f9MktInvLoading = false, _f9MktInvErr = '', _f9MktSelId = null, _f9MktStatusMsg = '';
+let _f9MktListings = null, _f9MktListLoading = false, _f9MktListErr = '', _f9MktBusy = false;
+window._f9MktPanelOpen = false;
+// 🛒 Market kontrakto config — adresą įrašom PO mainnet deploy (tada LIST/BUY suveikia, player pays gas).
+//   Saigon test: address 0xd658047c0b5fecb7475fa360a75231d25dff6af2 (bet unitai mainnet → naudok mainnet).
+window._F9_MARKET = window._F9_MARKET || { address: '0xb89372c710623d96576a9577968c3cb75e130627', nft: '0xccf604511c5d2b5c3fd61adfba3950d0d2890862', ronke: '0xf988f63bf26C3Ed3fBf39922149E3E7b1e5c27cB' };
+// ── LOKALUS TEST režimas: kol market adreso NĖRA → visas srautas simuliuojamas localStorage (be TX).
+//   Leidžia išbandyti list→browse→buy→cancel žaidime prieš mainnet deploy. Įrašius adresą → tikras on-chain.
+function _f9MktIsLocal() { const W = window.Wallet; return !(W && W.marketReady && W.marketReady()); }
+function _f9MktLocalGet() { try { return JSON.parse(localStorage.getItem('_f9mkt_local_v1') || '[]'); } catch (_) { return []; } }
+function _f9MktLocalSet(a) { try { localStorage.setItem('_f9mkt_local_v1', JSON.stringify(a)); } catch (_) {} }
+function _f9MktLocalListedIds() { const s = new Set(); for (const x of _f9MktLocalGet()) if (!x.demo) s.add(String(x.tokenId)); return s; }
+function _f9MktLocalListings() {
+  // TIK realiai listinti (tavo) unitai — jokių demo/fake. Legacy demo įrašai išfiltruojami.
+  return _f9MktLocalGet().filter(function (x) { return !x.demo; }).map(function (x) {
+    return { tokenId: String(x.tokenId), seller: 'you', priceRonke: x.priceRonke, priceWei: String(x.priceRonke) + '000000000000000000', utype: x.utype, level: x.level, local: true };
+  });
+}
+function _f9CloseMktPanel() {
+  if (_f9MktOverlayEl && _f9MktOverlayEl.parentNode) _f9MktOverlayEl.parentNode.removeChild(_f9MktOverlayEl);
+  _f9MktOverlayEl = null; window._f9MktPanelOpen = false;
+  _f9MktSoldNotice = '';   // 💰 vienkartinis pardavimo banneris — nauja sesija švari
+  _f9MktFilterType = 0; _f9MktSortDir = 'desc';   // 🔎 filtrai atsistato (ALL + Lv aukšč.→žem.)
+  _f9MktResetPaging(); _f9MktLoadingMore = false; _f9MktLoadingTab = '';   // ⬇ vėl 30 iš pradžių
+  _f9MktInv = null;   // reopeninus — švarus fetchInventory (BarracksNFT phased state sinchron.)
+}
+function _f9MktUnitIcon(utype) { return ({ 1: '💀', 2: '🏹', 3: '🔱', 4: '🔮', 5: '🐗', 6: '👻', 7: '🎯' })[Number(utype)] || '🪖'; }
+function _f9MktUnitName(utype) { return ({ 1: 'Skull', 2: 'Archer', 3: 'Harpoon', 4: 'Shaman', 5: 'Hog', 6: 'Ghost', 7: 'RonkeHood' })[Number(utype)] || 'Unit'; }
+function _f9MktUnitSprite(utype) { return 'unit-images/' + ({ 1: 'skull-idle.gif', 2: 'archer-idle.gif', 3: 'harpoon-idle.gif', 4: 'shaman-idle.gif', 5: 'hog-idle.gif', 6: 'ghost-idle.png', 7: 'ronhood-idle.png' })[Number(utype)] || 'unit-images/skull-idle.gif'; }
+// Užkrauna žaidėjo unitus (BarracksNFT.fetchInventory) SELL picker'iui; kešuoja _f9MktInv.
+function _f9MktLoadInv(force) {
+  const W = window.Wallet, BNFT = window.BarracksNFT;
+  if (!W || !W.getAddress || !W.getAddress() || !BNFT || !BNFT.fetchInventory) return;
+  if (_f9MktInvLoading) return;
+  if (_f9MktInv && !force) return;
+  _f9MktInvLoading = true; _f9MktInvErr = '';
+  if (_f9MktTab === 'sell') _f9MktRenderBody();
+  BNFT.fetchInventory(W.getAddress()).then(function (inv) {
+    _f9MktInv = Array.isArray(inv) ? inv : [];
+    _f9MktInvLoading = false;
+    if (_f9MktOverlayEl && _f9MktTab === 'sell') _f9MktRenderBody();
+  }).catch(function (e) {
+    _f9MktInvLoading = false; _f9MktInvErr = String((e && e.message) || e).slice(0, 60);
+    if (_f9MktOverlayEl && _f9MktTab === 'sell') _f9MktRenderBody();
+  });
+}
+// Aktyvūs listingai (BROWSE) — lokalus režimas (localStorage) ARBA Wallet.marketGetActiveListings (on-chain).
+function _f9MktLoadListings(force) {
+  if (_f9MktIsLocal()) {
+    const _cur = _f9MktLocalGet();
+    if (_cur.some(function (x) { return x.demo; })) _f9MktLocalSet(_cur.filter(function (x) { return !x.demo; }));   // išvalom senus demo seed'us
+    _f9MktListings = _f9MktLocalListings();
+    if (_f9MktOverlayEl && _f9MktTab === 'browse') _f9MktRenderBody(); return;
+  }
+  const W = window.Wallet;
+  if (!W || !W.marketGetActiveListings) return;
+  if (_f9MktListLoading) return;
+  if (_f9MktListings && !force) return;
+  _f9MktListLoading = true; _f9MktListErr = '';
+  if (_f9MktTab === 'browse') _f9MktRenderBody();
+  W.marketGetActiveListings(0, 100).then(function (list) {
+    _f9MktListings = Array.isArray(list) ? list : [];
+    _f9MktListLoading = false;
+    if (_f9MktOverlayEl && _f9MktTab === 'browse') _f9MktRenderBody();
+    _f9MktEnrichListings();   // 🖼 utype/level iš NFT → sprite BROWSE kortelėse (kaip SELL)
+    _f9MktDetectSales();      // 💰 aptik ar kažkas nupirko mano listingą (dingo iš aktyvių) → toast
+  }).catch(function (e) {
+    _f9MktListLoading = false; _f9MktListErr = String((e && e.message) || e).slice(0, 60);
+    if (_f9MktOverlayEl && _f9MktTab === 'browse') _f9MktRenderBody();
+  });
+}
+// On-chain listingai neturi utype (kontraktas saugo tik tokenId/kainą/seller) → praturtinam iš NFT,
+// kad BROWSE kortelėse matytųsi unit sprite (kaip SELL picker'yje). Lokalūs listingai jau turi utype → skip.
+function _f9MktEnrichListings() {
+  try {
+    const BNFT = window.BarracksNFT;
+    if (!BNFT || !BNFT.loadUnitTypes || !_f9MktListings || !_f9MktListings.length) return;
+    const need = _f9MktListings.filter(function (L) { return L && L.utype == null; }).map(function (L) { return L.tokenId; });
+    if (!need.length) return;
+    BNFT.loadUnitTypes(need).then(function (map) {
+      if (!map || !map.size || !_f9MktListings) return;
+      let changed = false;
+      for (const L of _f9MktListings) {
+        const u = map.get(String(L.tokenId));
+        if (u && L.utype == null) { L.utype = u.utype; L.level = u.level; changed = true; }
+      }
+      if (changed && _f9MktOverlayEl && _f9MktTab === 'browse') _f9MktRenderBody();
+    }).catch(function () {});
+  } catch (_) {}
+}
+// ── 🛒 PREKYBOS AWARENESS (2026-07-09, user): žaidėjas iškart pastebi ką nupirko / pardavė ──
+//   • Nupirkti tokenId'ai gauna 🆕 badge inventoriuje (48h) → nereikia ieškoti kurį unitą gavai.
+//   • Parduoti (kažkas nupirko tavo listingą) → 💰 toast atidarius market. Viskas localStorage per wallet.
+const _F9MKT_BOUGHT_KEY = '_f9mkt_bought_';   // <addr> → [{tokenId,name,utype,level,at}]  (🆕 badge)
+const _F9MKT_MYLIST_KEY = '_f9mkt_mylist_';   // <addr> → [{tokenId,name,utype,level,priceRonke,at}] (sale-detect)
+const _F9MKT_SOLD_KEY   = '_f9mkt_sold_';     // <addr> → [{tokenId,name,priceRonke,at}] (istorija)
+const _F9MKT_NEW_MS = 48 * 3600 * 1000;       // 🆕 badge galioja 48h nuo pirkimo
+let _f9MktSoldNotice = '';                     // 💰 in-modal „parduota" banneris (toast lieka po modalu z:99999 → surfacinam modale)
+function _f9MktAddrLc() { try { const W = window.Wallet; return (W && W.getAddress && W.getAddress()) ? String(W.getAddress()).toLowerCase() : ''; } catch (_) { return ''; } }
+function _f9MktJGet(k, a) { try { return JSON.parse(localStorage.getItem(k + String(a || '').toLowerCase()) || '[]') || []; } catch (_) { return []; } }
+function _f9MktJSet(k, a, arr) { try { localStorage.setItem(k + String(a || '').toLowerCase(), JSON.stringify(arr || [])); } catch (_) {} }
+function _f9MktNameOf(o) { return (o && o.utype != null) ? (_f9MktUnitName(o.utype) + ' Lv' + (o.level ?? 1)) : ('Unit #' + (o && o.tokenId)); }
+// Nupirkta → įrašom (🆕 badge inventoriuje) + toast pranešimas.
+function _f9MktMarkBought(listing) {
+  const a = _f9MktAddrLc(); if (!a || !listing) return;
+  const now = Date.now();
+  const arr = _f9MktJGet(_F9MKT_BOUGHT_KEY, a).filter(function (x) { return x && (now - (x.at || 0)) < _F9MKT_NEW_MS && String(x.tokenId) !== String(listing.tokenId); });
+  arr.unshift({ tokenId: String(listing.tokenId), name: _f9MktNameOf(listing), utype: (listing.utype != null ? listing.utype : null), level: listing.level ?? 1, at: now });
+  _f9MktJSet(_F9MKT_BOUGHT_KEY, a, arr.slice(0, 40));
+  try { if (typeof showGameNotification === 'function') showGameNotification('🆕 UNIT BOUGHT', _f9MktNameOf(listing) + ' — now in your inventory', '#7cff6e'); } catch (_) {}
+}
+// Set of tokenId (string) „ką tik nupirkta" (48h) — inventoriaus/SELL badge'ui. GLOBALUS (barracks_nft_modal.js kviečia).
+window._f9MktBoughtSet = function (addr) {
+  const a = String(addr || _f9MktAddrLc() || '').toLowerCase(); const s = new Set(); if (!a) return s;
+  const now = Date.now();
+  for (const x of _f9MktJGet(_F9MKT_BOUGHT_KEY, a)) if (x && (now - (x.at || 0)) < _F9MKT_NEW_MS) s.add(String(x.tokenId));
+  return s;
+};
+// LISTINTA → įrašom (sale-detection tracking). CANCEL/SOLD → išimam.
+function _f9MktMarkListed(unit, price) {
+  const a = _f9MktAddrLc(); if (!a || !unit) return;
+  const arr = _f9MktJGet(_F9MKT_MYLIST_KEY, a).filter(function (x) { return String(x.tokenId) !== String(unit.tokenId); });
+  arr.unshift({ tokenId: String(unit.tokenId), name: _f9MktNameOf(unit), utype: unit.utype, level: unit.level ?? 1, priceRonke: price, at: Date.now() });
+  _f9MktJSet(_F9MKT_MYLIST_KEY, a, arr.slice(0, 60));
+}
+function _f9MktUnmarkListed(tokenId) {
+  const a = _f9MktAddrLc(); if (!a) return;
+  _f9MktJSet(_F9MKT_MYLIST_KEY, a, _f9MktJGet(_F9MKT_MYLIST_KEY, a).filter(function (x) { return String(x.tokenId) !== String(tokenId); }));
+}
+// PARDAVIMO aptikimas: mano įrašyti listingai, kurių NEBĖRA aktyviuose + owner NE aš → PARDUOTA → 💰 toast.
+//   Tik on-chain (lokaliai pasyvaus pardavimo nėra). Kviečiama po _f9MktLoadListings success.
+function _f9MktDetectSales() {
+  try {
+    if (_f9MktIsLocal()) return;
+    const a = _f9MktAddrLc(); if (!a) return;
+    const mine = _f9MktJGet(_F9MKT_MYLIST_KEY, a);
+    if (!mine.length) return;
+    const active = new Set((_f9MktListings || []).map(function (L) { return String(L.tokenId); }));
+    const gone = mine.filter(function (x) { return !active.has(String(x.tokenId)); });
+    if (!gone.length) return;
+    const BNFT = window.BarracksNFT;
+    const mkt = (window._F9_MARKET && window._F9_MARKET.address) ? String(window._F9_MARKET.address).toLowerCase() : '';   // escrow owner = market kontraktas
+    Promise.all(gone.map(function (x) {
+      if (!BNFT || !BNFT.ownerOfUnit) return Promise.resolve({ x: x, sold: true, keep: false });   // be owner-check → laikom parduota (nebėra listinge)
+      return BNFT.ownerOfUnit(x.tokenId).then(function (o) {
+        const owner = o ? String(o).toLowerCase() : '';
+        if (!owner) return { x: x, sold: false, keep: true };          // neaiškus (transient) → paliekam tracking'e kitam kartui
+        if (mkt && owner === mkt) return { x: x, sold: false, keep: true };   // vis dar ESCROW (pvz. >100 listingų puslapiavimas) → NE parduota
+        if (owner === a) return { x: x, sold: false, keep: false };    // grįžo pas mane (cancel/rescue) → unmark, be toast
+        return { x: x, sold: true, keep: false };                      // kitas owner → PARDUOTA
+      }).catch(function () { return { x: x, sold: false, keep: true }; });   // RPC glitch → NEskelbiam klaidingo „parduota"
+    })).then(function (res) {
+      const soldNow = [];
+      for (const r of res) {
+        if (r.keep) continue;
+        _f9MktUnmarkListed(r.x.tokenId);
+        if (r.sold) {
+          soldNow.push(r.x);
+          const sarr = _f9MktJGet(_F9MKT_SOLD_KEY, a); sarr.unshift({ tokenId: r.x.tokenId, name: r.x.name, priceRonke: r.x.priceRonke, at: Date.now() }); _f9MktJSet(_F9MKT_SOLD_KEY, a, sarr.slice(0, 40));
+          try { if (typeof showGameNotification === 'function') showGameNotification('💰 UNIT SOLD', (r.x.name || ('Unit #' + r.x.tokenId)) + ' → +' + r.x.priceRonke + ' RONKE', '#ffcf5c'); } catch (_) {}
+        }
+      }
+      if (soldNow.length) {   // in-modal banneris (matomas net kai modalas dengia toast'ą)
+        const tot = soldNow.reduce(function (s, u) { return s + (Number(u.priceRonke) || 0); }, 0);
+        _f9MktSoldNotice = '💰 ' + (soldNow.length === 1 ? (soldNow[0].name + ' SOLD') : (soldNow.length + ' units SOLD')) + ' → +' + tot + ' RONKE';
+        if (_f9MktOverlayEl) _f9MktRenderBody();
+      }
+    }).catch(function () {});
+  } catch (_) {}
+}
+// LIST — žaidėjas PATS pasirašo + moka gas (marketList: approve NFT jei reikia → list → escrow).
+function _f9MktDoList(unit) {
+  const pe = _f9MktOverlayEl && _f9MktOverlayEl.querySelector('#f9mkt-price');
+  const price = pe ? parseFloat(pe.value) : 0;
+  if (!(price > 0)) { _f9MktStatusMsg = '⚠ Enter a price in RONKE first'; _f9MktRenderBody(); return; }
+  // LOKALUS test režimas — simuliuojam listinimą (be TX)
+  if (_f9MktIsLocal()) {
+    const a = _f9MktLocalGet();
+    a.unshift({ tokenId: String(unit.tokenId), utype: unit.utype, level: unit.level ?? 1, priceRonke: price, seller: 'you', demo: false });
+    _f9MktLocalSet(a);
+    _f9MktSelId = null; _f9MktListings = _f9MktLocalListings();
+    _f9MktStatusMsg = '✅ Listed (LOCAL TEST) — see it in BROWSE. Real TX after you set the mainnet address.';
+    _f9MktRenderBody(); return;
+  }
+  const W = window.Wallet;
+  if (_f9MktBusy) return;
+  _f9MktBusy = true; _f9MktStatusMsg = '🔷 Confirm in your wallet (may be 2 TX: approve + list)…'; _f9MktRenderBody();
+  W.marketList(unit.tokenId, price).then(function () {
+    _f9MktBusy = false; _f9MktSelId = null; _f9MktStatusMsg = '✅ Listed! Unit moved to escrow.';
+    _f9MktMarkListed(unit, price);   // 💰 sale-detection tracking (kad pastebėtum kai kažkas nupirks)
+    _f9MktLoadInv(true); _f9MktListings = null; _f9MktRenderBody();
+  }).catch(function (e) {
+    _f9MktBusy = false; _f9MktStatusMsg = '⚠ ' + String((e && e.message) || e).slice(0, 64); _f9MktRenderBody();
+  });
+}
+// BUY — žaidėjas PATS pasirašo + moka gas (marketBuy: approve RONKE jei reikia → buy).
+function _f9MktDoBuy(listing) {
+  // LOKALUS test — simuliuojam pirkimą (pašalinam listingą)
+  if (_f9MktIsLocal()) {
+    _f9MktLocalSet(_f9MktLocalGet().filter(function (x) { return String(x.tokenId) !== String(listing.tokenId); }));
+    _f9MktListings = _f9MktLocalListings();
+    _f9MktMarkBought(listing);   // 🆕 badge inventoriuje + toast
+    _f9MktStatusMsg = '✅ Bought (LOCAL TEST) unit #' + listing.tokenId + ' for ' + listing.priceRonke + ' RONKE. Real TX after mainnet address is set.';
+    _f9MktRenderBody(); return;
+  }
+  const W = window.Wallet;
+  if (!W || !W.marketBuy) return;
+  if (_f9MktBusy) return;
+  _f9MktBusy = true; _f9MktStatusMsg = '🔷 Confirm in your wallet (may be 2 TX: approve + buy)…'; _f9MktRenderBody();
+  W.marketBuy(listing.tokenId, listing.priceWei).then(function () {
+    _f9MktBusy = false; _f9MktStatusMsg = '✅ Bought unit #' + listing.tokenId + '!';
+    _f9MktMarkBought(listing);   // 🆕 badge inventoriuje + toast
+    _f9MktListings = null; _f9MktInv = null; _f9MktLoadListings(true); _f9MktRenderBody();
+  }).catch(function (e) {
+    _f9MktBusy = false; _f9MktStatusMsg = '⚠ ' + String((e && e.message) || e).slice(0, 64); _f9MktRenderBody();
+  });
+}
+// CANCEL savo listing (grąžina unitą į piniginę).
+function _f9MktDoCancel(listing) {
+  // LOKALUS test — grąžinam unitą (dings iš listingų, vėl matysis SELL picker'yje)
+  if (_f9MktIsLocal()) {
+    _f9MktLocalSet(_f9MktLocalGet().filter(function (x) { return String(x.tokenId) !== String(listing.tokenId); }));
+    _f9MktListings = _f9MktLocalListings();
+    _f9MktStatusMsg = '✅ Cancelled (LOCAL TEST) — unit #' + listing.tokenId + ' back in your SELL list.';
+    _f9MktRenderBody(); return;
+  }
+  const W = window.Wallet;
+  if (!W || !W.marketCancel) return;
+  if (_f9MktBusy) return;
+  _f9MktBusy = true; _f9MktStatusMsg = '🔷 Confirm cancel in your wallet…'; _f9MktRenderBody();
+  W.marketCancel(listing.tokenId).then(function () {
+    _f9MktBusy = false; _f9MktStatusMsg = '✅ Listing cancelled — unit returned.';
+    _f9MktUnmarkListed(listing.tokenId);   // nebe parduodama → iš sale-detection (kad neskelbtų „parduota")
+    _f9MktListings = null; _f9MktInv = null; _f9MktLoadListings(true); _f9MktRenderBody();
+  }).catch(function (e) {
+    _f9MktBusy = false; _f9MktStatusMsg = '⚠ ' + String((e && e.message) || e).slice(0, 64); _f9MktRenderBody();
+  });
+}
+function _f9MktTabBtnCss(active) {
+  return 'flex:1;padding:12px 10px;font-family:inherit;font-size:12px;letter-spacing:1px;cursor:pointer;border-radius:6px;border:1px solid ' +
+    (active ? '#ffcf5c;background:rgba(255,207,92,0.16);color:#ffcf5c;' : '#4a3a18;background:transparent;color:#8a9aaa;');
+}
+// ── 🔎 MARKET FILTRAI (2026-07-09, user): unito tipo pasirinkimas + rūšiavimas pagal lygį (aukšč.→žem.) ──
+//   Taikoma IR BROWSE (svetimi listingai) IR SELL (savi unitai). ALL + 7 tipai (Skull..RonkeHood).
+let _f9MktFilterType = 0;      // 0 = ALL, arba utype 1..7
+let _f9MktSortDir = 'desc';    // pagal LEVEL: desc = aukščiausias viršuj (user default)
+const _F9MKT_TYPES = [1, 2, 3, 4, 5, 6, 7];   // visi egzistuojantys unitų tipai
+// ── ⬇ PUSLAPIAVIMAS (2026-07-09, user): rodyti 30 iš pradžių, „LOAD MORE" → 5s krovimo animacija → +30 ──
+const _F9MKT_PAGE = 30;        // kiek unitų rodoma iš pradžių / kiek priduoda kiekvienas LOAD MORE
+let _f9MktShown = { browse: 30, sell: 30 };   // display cap per tab (po filtro/sort)
+let _f9MktLoadingMore = false, _f9MktLoadingTab = '';   // 5s krovimo animacijos būsena
+function _f9MktChipCss(active) {
+  return 'padding:6px 9px;font-family:inherit;font-size:13px;line-height:1;cursor:pointer;border-radius:6px;border:1px solid ' +
+    (active ? '#ffcf5c;background:rgba(255,207,92,0.18);color:#ffcf5c;' : '#4a3a18;background:rgba(0,0,0,0.25);color:#c9b895;') + ';';
+}
+function _f9MktFilterBar() {
+  let chips = '<button data-mktf="0" style="' + _f9MktChipCss(_f9MktFilterType === 0) + 'font-size:10px;font-weight:700;padding:7px 10px;">ALL</button>';
+  for (const t of _F9MKT_TYPES) chips += '<button data-mktf="' + t + '" title="' + _f9MktUnitName(t) + '" style="' + _f9MktChipCss(_f9MktFilterType === t) + '">' + _f9MktUnitIcon(t) + '</button>';
+  const sortLbl = 'Lv ' + (_f9MktSortDir === 'desc' ? '▼' : '▲');
+  return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid rgba(74,58,24,0.55);">' +
+    '<span style="font-size:9px;color:#8a9aaa;letter-spacing:1px;margin-right:2px;">TYPE</span>' + chips +
+    '<button data-mktsort="1" title="Sort by level (high↔low)" style="margin-left:auto;' + _f9MktChipCss(false) + 'font-size:10px;font-weight:700;padding:7px 11px;color:#ffcf5c;">' + sortLbl + '</button>' +
+    '</div>';
+}
+// filtruoja pagal tipą (jei pasirinktas) + rūšiuoja pagal lygį (getU/getL = tokenId→utype/level ištraukėjai).
+function _f9MktFilterSort(arr, getU, getL) {
+  let out = (arr || []).slice();
+  if (_f9MktFilterType) out = out.filter(function (x) { return Number(getU(x)) === Number(_f9MktFilterType); });
+  out.sort(function (p, q) { const d = (Number(getL(q)) || 0) - (Number(getL(p)) || 0); return _f9MktSortDir === 'desc' ? d : -d; });
+  return out;
+}
+function _f9MktResetPaging() { _f9MktShown.browse = _F9MKT_PAGE; _f9MktShown.sell = _F9MKT_PAGE; }
+function _f9MktWireFilterBar(container) {
+  if (!container) return;
+  container.querySelectorAll('[data-mktf]').forEach(function (b) {
+    b.onclick = function () { _f9MktFilterType = parseInt(b.getAttribute('data-mktf'), 10) || 0; _f9MktResetPaging(); _f9MktRenderBody(); };
+  });
+  const sb = container.querySelector('[data-mktsort]');
+  if (sb) sb.onclick = function () { _f9MktSortDir = (_f9MktSortDir === 'desc' ? 'asc' : 'desc'); _f9MktResetPaging(); _f9MktRenderBody(); };
+  const mb = container.querySelector('[data-mktmore]');
+  if (mb) mb.onclick = function () { _f9MktLoadMore(mb.getAttribute('data-mktmore')); };
+}
+// 5s krovimo CSS (kartą) — juosta prisipildo per 5s + spinneris.
+function _f9MktEnsureLoadCss() {
+  if (document.getElementById('f9mkt-load-css')) return;
+  const s = document.createElement('style'); s.id = 'f9mkt-load-css';
+  s.textContent = '@keyframes f9mktLoadFill{from{width:0%}to{width:100%}}@keyframes f9mktSpin{to{transform:rotate(360deg)}}' +
+    '.f9mkt-loadbar{width:0%;animation:f9mktLoadFill 5s linear forwards}.f9mkt-spin{animation:f9mktSpin .8s linear infinite}';
+  document.head.appendChild(s);
+}
+// „LOAD MORE" mygtukas ARBA 5s krovimo animacija. hasMore=ar rodyti mygtuką; remainText=„N more" (nebūtina). Dedamas PO grid'o.
+function _f9MktPageFooter(tab, hasMore, remainText) {
+  if (_f9MktLoadingMore && _f9MktLoadingTab === tab) {
+    _f9MktEnsureLoadCss();
+    return '<div style="margin-top:16px;display:flex;flex-direction:column;align-items:center;gap:11px;padding:14px;">' +
+      '<div style="display:flex;align-items:center;gap:10px;color:#ffcf5c;font-size:12px;letter-spacing:1px;">' +
+        '<span class="f9mkt-spin" style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,207,92,0.3);border-top-color:#ffcf5c;border-radius:50%;"></span>⏳ LOADING UNITS…</div>' +
+      '<div style="width:min(320px,80%);height:11px;background:rgba(0,0,0,0.35);border:2px solid #4a3a18;border-radius:6px;overflow:hidden;">' +
+        '<div class="f9mkt-loadbar" style="height:100%;background:linear-gradient(90deg,#c89a2e,#ffd66e);box-shadow:0 0 10px rgba(255,207,92,0.6);"></div></div>' +
+      '</div>';
+  }
+  if (!hasMore) return '';
+  return '<div style="margin-top:16px;display:flex;justify-content:center;">' +
+    '<button data-mktmore="' + tab + '" style="padding:13px 26px;font-family:inherit;font-size:12px;letter-spacing:1px;cursor:pointer;border-radius:8px;border:2px solid #ffcf5c;background:linear-gradient(180deg,rgba(255,207,92,0.22),rgba(255,207,92,0.08));color:#ffcf5c;box-shadow:0 0 14px rgba(255,207,92,0.3);">' +
+      '⬇ LOAD MORE' + (remainText ? ' <span style="opacity:.7;font-size:10px;">(' + remainText + ')</span>' : '') + '</button>' +
+    '</div>';
+}
+// Paspaudus „LOAD MORE" → 5s animacija (anti-spam pacing). BROWSE = +30 rodymo (viskas jau gauta ≤100).
+//   SELL = dokrauna KITĄ partiją iš grandinės (loadMoreInventory) — kad prieitum prie VISŲ 700 unitų palaipsniui.
+function _f9MktLoadMore(tab) {
+  if (_f9MktLoadingMore) return;
+  if (tab !== 'browse' && tab !== 'sell') return;
+  _f9MktLoadingMore = true; _f9MktLoadingTab = tab;
+  _f9MktRenderBody();   // parodo 5s krovimo juostą
+  const done = function () { _f9MktLoadingMore = false; _f9MktLoadingTab = ''; _f9MktRenderBody(); };
+  if (tab === 'browse') {
+    setTimeout(function () { _f9MktShown.browse += _F9MKT_PAGE; done(); }, 5000);
+  } else {
+    const BNFT = window.BarracksNFT;
+    const fetchMore = (BNFT && BNFT.loadMoreInventory && BNFT.invHasMore && BNFT.invHasMore())
+      ? BNFT.loadMoreInventory().then(function (inv) { if (Array.isArray(inv)) _f9MktInv = inv; }).catch(function () {})
+      : Promise.resolve();
+    Promise.all([fetchMore, new Promise(function (r) { setTimeout(r, 5000); })]).then(done);   // min 5s pacing + fetch
+  }
+}
+function _f9MktRenderBody() {
+  if (!_f9MktOverlayEl) return;
+  const tabs = _f9MktOverlayEl.querySelector('#f9mkt-tabs');
+  const body = _f9MktOverlayEl.querySelector('#f9mkt-body');
+  if (tabs) {
+    tabs.querySelector('#f9mkt-tab-browse').style.cssText = _f9MktTabBtnCss(_f9MktTab === 'browse');
+    tabs.querySelector('#f9mkt-tab-sell').style.cssText = _f9MktTabBtnCss(_f9MktTab === 'sell');
+  }
+  if (!body) return;
+  body.onclick = null;   // reset delegacijos (filtrai dažnai re-render'ina → venk listener'ių kaupimosi)
+  const _local = _f9MktIsLocal();
+  const _localBanner = _local ? '<div style="margin-bottom:14px;padding:9px 14px;background:rgba(108,207,92,0.1);border:1px solid #3d6a2e;border-radius:8px;font-size:9px;line-height:1.6;color:#8fd47c;letter-spacing:0.4px;">🧪 LOCAL TEST MODE — no real TX / no gas. Try list → browse → buy/cancel. Set the mainnet address to go live (player-pays → PoD).</div>' : '';
+  // 💰 „parduota" banneris (kažkas nupirko tavo listintą unitą kol nebuvai) — modalo viršuje, aiškiai matomas.
+  const _soldBanner = _f9MktSoldNotice ? '<div style="margin-bottom:14px;padding:11px 14px;background:rgba(108,207,92,0.16);border:1px solid #6cff8a;border-radius:8px;font-size:12px;line-height:1.5;color:#aeffc0;letter-spacing:0.4px;box-shadow:0 0 14px rgba(108,255,138,0.28);display:flex;align-items:center;gap:10px;"><span style="flex:1;font-weight:700;">' + _f9MktSoldNotice + '</span><span style="opacity:.65;font-size:9px;">RONKE already in your balance</span></div>' : '';
+  const soon = _local ? '' : ('<div style="margin-top:18px;padding:13px 16px;background:rgba(255,207,92,0.08);border:1px solid #6a4a18;border-radius:8px;font-size:10px;line-height:1.7;color:#d49a2a;letter-spacing:0.5px;">' +
+    '⏳ Trading goes live once the market contract is deployed on-chain. The building &amp; UI are ready — buy/sell will light up after launch.</div>');
+  if (_f9MktTab === 'browse') {
+    const W = window.Wallet;
+    const myAddr = (W && W.getAddress && W.getAddress()) ? String(W.getAddress()).toLowerCase() : '';
+    const ready = _local || !!(W && W.marketReady && W.marketReady());
+    const emptyBoxB = function (icon, txt) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;">' +
+        '<span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
+    };
+    let html = _localBanner + _soldBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Browse units other players listed. Price in <b style="color:#ffcf5c;">RONKE</b>. Unit level &amp; XP travel with the NFT. You pay gas (→ PoD).</div>';
+    if (!ready) {
+      html += emptyBoxB('📭', 'No active listings yet') + soon;
+    } else if (_f9MktListLoading) {
+      html += emptyBoxB('⏳', 'Loading listings…');
+    } else if (_f9MktListErr) {
+      html += emptyBoxB('⚠', _f9MktListErr);
+    } else if (!_f9MktListings || !_f9MktListings.length) {
+      html += emptyBoxB('📭', 'No active listings yet');
+    } else {
+      html += _f9MktFilterBar();
+      const _shown = _f9MktFilterSort(_f9MktListings, function (L) { return L.utype; }, function (L) { return L.level; });
+      if (!_shown.length) {
+        html += emptyBoxB('🔍', 'No ' + _f9MktUnitName(_f9MktFilterType) + ' listings — try another type');
+      } else {
+      const _cap = _f9MktShown.browse;
+      const _page = _shown.slice(0, _cap);
+      html += '<div id="f9mkt-listings" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">';
+      for (const L of _page) {
+        const mine = (L.seller === 'you') || (myAddr && String(L.seller).toLowerCase() === myAddr);
+        const hasSpr = (L.utype != null);
+        const spr = hasSpr ? ('<img src="' + _f9MktUnitSprite(L.utype) + '" style="width:96px;height:96px;object-fit:contain;image-rendering:pixelated;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(L.utype) + '\'))">') : '';
+        const title = hasSpr ? (_f9MktUnitName(L.utype) + ' Lv' + (L.level ?? 1)) : ('Unit #' + L.tokenId);
+        html += '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:9px;background:rgba(0,0,0,0.3);border:1px solid ' + (mine ? '#6a4a18' : '#4a3a18') + ';">' +
+          (hasSpr ? '<div style="display:flex;justify-content:center;padding:4px 0;">' + spr + '</div>' : '') +
+          '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:12px;color:#e8dcc0;flex:1;">' + title + '</span>' + (mine ? '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;">YOURS</span>' : '') + '</div>' +
+          '<div style="font-size:15px;color:#ffcf5c;">' + L.priceRonke + ' <span style="font-size:9px;">RONKE</span></div>' +
+          '<div style="font-size:7px;color:#5a6a7a;">' + (hasSpr ? '#' + L.tokenId + ' · ' : '') + 'seller ' + String(L.seller).slice(0, 6) + '…' + String(L.seller).slice(-4) + '</div>' +
+          (mine
+            ? '<button data-cancel="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #a55;background:rgba(180,80,80,0.15);color:#e88;cursor:pointer;">CANCEL</button>'
+            : '<button data-buy="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #ffcf5c;background:rgba(255,207,92,0.16);color:#ffcf5c;cursor:pointer;">🛒 BUY</button>') +
+          '</div>';
+      }
+      html += '</div>';
+      html += _f9MktPageFooter('browse', _shown.length > _cap, (_shown.length - _cap) + ' more');
+      }
+    }
+    if (_f9MktStatusMsg && _f9MktTab === 'browse') html += '<div style="margin-top:12px;font-size:10px;line-height:1.6;color:#7cff6e;letter-spacing:0.4px;">' + _f9MktStatusMsg + '</div>';
+    body.innerHTML = html;
+    _f9MktWireFilterBar(body);
+    body.onclick = function (ev) {
+      const t = ev.target && ev.target.closest ? ev.target.closest('button[data-buy],button[data-cancel]') : null;
+      if (!t) return;
+      const buyId = t.getAttribute('data-buy'), canId = t.getAttribute('data-cancel');
+      const L = (_f9MktListings || []).find(function (x) { return String(x.tokenId) === String(buyId || canId); });
+      if (!L) return;
+      if (buyId) _f9MktDoBuy(L); else _f9MktDoCancel(L);
+    };
+  } else {
+    const W = window.Wallet;
+    const connected = !!(W && W.getAddress && W.getAddress());
+    const emptyBox = function (icon, txt) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;">' +
+        '<span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
+    };
+    let html = _localBanner + _soldBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">List one of your units for sale. It moves to <b style="color:#ffcf5c;">escrow</b> (locked, can\'t fight) until sold or cancelled. Fee <b style="color:#ffcf5c;">5%</b> → treasury.</div>';
+    let selUnit = null;
+    // lokaliai listinti unitai išimami iš picker'io (kaip realiam escrow — dingsta iš deko)
+    const _listed = _local ? _f9MktLocalListedIds() : new Set();
+    const _avail = _f9MktInv ? _f9MktInv.filter(function (u) { return !_listed.has(String(u.tokenId)); }) : null;
+    if (!connected) {
+      html += emptyBox('🔌', 'Connect your wallet to see your units');
+    } else if (_f9MktInvLoading) {
+      html += emptyBox('⏳', 'Loading your units…');
+    } else if (_f9MktInvErr) {
+      html += emptyBox('⚠', _f9MktInvErr);
+    } else if (!_f9MktInv) {
+      html += emptyBox('📦', 'Tap to load your units');   // dar nefetch'inta
+    } else if (!_avail.length) {
+      html += emptyBox('📭', _f9MktInv.length ? 'All your units are listed' : 'You have no units to sell');
+    } else {
+      selUnit = _avail.find(function (u) { return String(u.tokenId) === String(_f9MktSelId); }) || null;
+      html += _f9MktFilterBar();
+      const _shownAvail = _f9MktFilterSort(_avail, function (u) { return u.utype; }, function (u) { return u.level; });
+      let _totTxt = '';
+      try { const _ic = window.BarracksNFT && window.BarracksNFT.invCounts && window.BarracksNFT.invCounts(); if (_ic && _ic.total) _totTxt = ' · ' + _ic.total + ' total'; } catch (_) {}
+      html += '<div style="font-size:10px;color:#8a9aaa;margin-bottom:10px;letter-spacing:0.5px;">SELECT A UNIT (' + _shownAvail.length + (_f9MktFilterType ? ' ' + _f9MktUnitName(_f9MktFilterType) : '') + _totTxt + '):</div>';
+      if (!_shownAvail.length) {
+        html += emptyBox('🔍', 'No ' + _f9MktUnitName(_f9MktFilterType) + ' units — try another type');
+      } else {
+      html += '<div id="f9mkt-units" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:12px;">';
+      const _newSet = (typeof window._f9MktBoughtSet === 'function') ? window._f9MktBoughtSet() : new Set();   // 🆕 ką tik nupirkti
+      for (const u of _shownAvail) {
+        const sel = String(u.tokenId) === String(_f9MktSelId);
+        const _isNew = _newSet.has(String(u.tokenId));
+        html += '<button data-tok="' + u.tokenId + '" title="' + _f9MktUnitName(u.utype) + ' Lv' + (u.level ?? 1) + (_isNew ? ' (just bought)' : '') + '" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 6px 9px;cursor:pointer;border-radius:9px;font-family:inherit;' +
+          'background:' + (sel ? 'rgba(255,207,92,0.18)' : 'rgba(0,0,0,0.3)') + ';border:' + (sel ? '2px solid #ffcf5c' : (_isNew ? '1px solid #6cff8a' : '1px solid #4a3a18')) + ';box-shadow:' + (sel ? '0 0 14px rgba(255,207,92,0.4)' : (_isNew ? '0 0 12px rgba(108,255,138,0.35)' : 'none')) + ';">' +
+          (_isNew ? '<span style="position:absolute;top:5px;left:6px;z-index:2;font-size:7px;font-weight:800;color:#aeffc0;background:rgba(18,60,24,0.92);border:1px solid #6cff8a;padding:2px 5px;border-radius:4px;letter-spacing:.5px;">🆕 NEW</span>' : '') +
+          '<span style="position:absolute;top:5px;right:7px;font-size:8px;color:#ffcf5c;background:rgba(12,16,32,0.85);padding:2px 5px;border-radius:4px;">Lv' + (u.level ?? 1) + '</span>' +
+          '<img src="' + _f9MktUnitSprite(u.utype) + '" alt="" style="width:92px;height:92px;object-fit:contain;image-rendering:pixelated;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(u.utype) + '\'))">' +
+          '<span style="font-size:9px;color:#e8dcc0;letter-spacing:0.4px;">' + _f9MktUnitName(u.utype) + '</span>' +
+          '<span style="font-size:7px;color:#5a6a7a;">#' + String(u.tokenId).slice(0, 8) + '</span>' +
+          '</button>';
+      }
+      html += '</div>';
+      // SELL „LOAD MORE" = dokrauna kitą partiją iš grandinės (700 unitų palaipsniui). Rodyti kol invHasMore().
+      const _bnft = window.BarracksNFT;
+      const _sellMore = !!(_bnft && _bnft.invHasMore && _bnft.invHasMore());
+      let _remTxt = '';
+      try { if (_bnft && _bnft.invCounts) { const _c = _bnft.invCounts(); const _un = (_c.total || 0) - (_c.shown || 0); if (_un > 0) _remTxt = _un + ' more'; } } catch (_) {}
+      html += _f9MktPageFooter('sell', _sellMore, _remTxt);
+      }
+    }
+    // apatinė LIST juosta (sticky-ish apačioje)
+    const canList = connected && !!selUnit;
+    html += '<div style="margin-top:18px;padding-top:16px;border-top:1px solid #4a3a18;">';
+    if (selUnit) {
+      html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 12px;background:rgba(255,207,92,0.08);border:1px solid #6a4a18;border-radius:8px;">' +
+        '<img src="' + _f9MktUnitSprite(selUnit.utype) + '" style="width:60px;height:60px;object-fit:contain;image-rendering:pixelated;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(selUnit.utype) + '\'))">' +
+        '<span style="flex:1;font-size:11px;color:#ffcf5c;">' + _f9MktUnitName(selUnit.utype) + ' Lv' + (selUnit.level ?? 1) + '<span style="color:#5a6a7a;font-size:8px;"> · #' + selUnit.tokenId + '</span></span></div>';
+    }
+    html += '<div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;">';
+    html += '<div style="flex:1 1 200px;min-width:160px;"><label style="display:block;font-size:9px;color:#8a9aaa;margin-bottom:6px;letter-spacing:0.5px;">PRICE (RONKE)</label>' +
+      '<input id="f9mkt-price" type="number" min="1" placeholder="e.g. 500" ' + (canList ? '' : 'disabled') + ' style="width:100%;box-sizing:border-box;padding:13px 12px;background:rgba(0,0,0,0.35);border:1px solid #4a3a18;border-radius:6px;color:#e8dcc0;font-family:inherit;font-size:14px;' + (canList ? '' : 'opacity:0.5;') + '"></div>';
+    html += '<button id="f9mkt-list" ' + (canList ? '' : 'disabled') + ' style="flex:1 1 200px;min-width:160px;align-self:flex-end;padding:14px;font-family:inherit;font-size:11px;letter-spacing:1px;border-radius:6px;border:1px solid ' +
+      (canList ? '#ffcf5c;background:rgba(255,207,92,0.16);color:#ffcf5c;cursor:pointer;' : '#555;background:#333;color:#777;cursor:not-allowed;') + '">' +
+      (selUnit ? ('🏷️ LIST ' + _f9MktUnitName(selUnit.utype).toUpperCase() + ' Lv' + (selUnit.level ?? 1)) : 'SELECT A UNIT TO LIST') + '</button>';
+    html += '</div>';
+    if (_f9MktStatusMsg) html += '<div style="margin-top:12px;font-size:10px;line-height:1.6;color:#7cff6e;letter-spacing:0.4px;">' + _f9MktStatusMsg + '</div>';
+    html += soon;
+    html += '</div>';
+    body.innerHTML = html;
+    _f9MktWireFilterBar(body);
+    // wire: unit selection + list
+    const grid = body.querySelector('#f9mkt-units');
+    if (grid) grid.addEventListener('click', function (ev) {
+      const b = ev.target && ev.target.closest ? ev.target.closest('button[data-tok]') : null;
+      if (b) { _f9MktSelId = b.getAttribute('data-tok'); _f9MktStatusMsg = ''; _f9MktRenderBody(); }
+    });
+    const lb = body.querySelector('#f9mkt-list');
+    if (lb && canList) lb.onclick = function () { _f9MktDoList(selUnit); };
+  }
+}
+function _f9ToggleMarketPanel() {
+  if (_f9MktOverlayEl) { _f9CloseMktPanel(); return; }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.92);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+  ov.addEventListener('click', function (ev) { if (ev.target === ov) _f9CloseMktPanel(); });
+  const el = document.createElement('div');
+  el.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
+    'box-shadow:0 0 60px rgba(255,207,92,0.4),inset 0 0 30px rgba(255,207,92,0.08);border-radius:10px;' +
+    'padding:22px 30px;width:96vw;max-width:1180px;height:92vh;display:flex;flex-direction:column;' +
+    "font-family:'Press Start 2P',monospace,sans-serif;color:#8a9aaa;";
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;padding-bottom:14px;border-bottom:1px solid #4a3a18;flex:0 0 auto;">' +
+      '<span style="font-size:30px;color:#ffcf5c;text-shadow:0 0 16px #ffcf5c;">🛒</span>' +
+      '<span style="flex:1;font-size:18px;color:#ffcf5c;letter-spacing:2px;">UNIT MARKET</span>' +
+      '<span style="font-size:10px;color:#d49a2a;padding:6px 12px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;">5% FEE</span>' +
+      '<button id="f9mkt-x" style="background:none;border:none;color:#8a9aaa;font-size:28px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+    '</div>' +
+    '<div style="font-size:10px;color:#8a9aaa;margin-bottom:14px;letter-spacing:0.5px;flex:0 0 auto;">Buy &amp; sell battle units for RONKE — level trades with the unit</div>' +
+    '<div id="f9mkt-tabs" style="display:flex;gap:10px;margin-bottom:16px;max-width:420px;flex:0 0 auto;">' +
+      '<button id="f9mkt-tab-browse">🔎 BROWSE</button>' +
+      '<button id="f9mkt-tab-sell">🏷️ SELL</button>' +
+    '</div>' +
+    '<div id="f9mkt-body" style="flex:1 1 auto;overflow-y:auto;min-height:0;"></div>';
+  ov.appendChild(el);
+  document.body.appendChild(ov);
+  _f9MktOverlayEl = ov; window._f9MktPanelOpen = true;
+  _f9MktStatusMsg = '';
+  const xb = el.querySelector('#f9mkt-x'); if (xb) xb.onclick = _f9CloseMktPanel;
+  const tb = el.querySelector('#f9mkt-tab-browse'); if (tb) tb.onclick = function () { _f9MktTab = 'browse'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadListings(); };
+  const ts = el.querySelector('#f9mkt-tab-sell'); if (ts) ts.onclick = function () { _f9MktTab = 'sell'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadInv(); };
+  _f9MktRenderBody();
+  _f9MktLoadListings();   // default tab = browse → iškart krauk listingus (jei market ready)
+}
+function _f9DrawMarket() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) return;   // tik PvP pilies scenoje (bazės pastatas, kaip ligoninė)
+  const img = (typeof _buildingImgs !== 'undefined') ? _buildingImgs['House2'] : null;
+  if (!img || !img.complete || !img.naturalWidth) return;
+  const C = CELL;
+  const bw = C * 2.7;
+  const bh = bw * (img.naturalHeight / img.naturalWidth);
+  const cxp = (_F9_MKT.HX + 0.5) * C;
+  const byp = (_F9_MKT.HY + 0.5 + 0.55) * C;                    // vizuali apačia ≈ kolizijos apačia
+  const x = cxp - bw / 2, y = byp - bh;
+  // hover / atidaryta panelė → auksinis švytėjimas (kaip ligoninė)
+  let hover = false;
+  if (typeof _canvasMx === 'number' && _canvasMx >= 0 && S.cam) {
+    const wmx = _canvasMx / _f9WorldZoom() + S.cam.x, wmy = _canvasMy / _f9WorldZoom() + S.cam.y;
+    hover = wmx >= x && wmx <= x + bw && wmy >= y && wmy <= y + bh;
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  if (hover || window._f9MktPanelOpen) { ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 16; }
+  ctx.drawImage(img, x, y, bw, bh);
+  ctx.restore();
+  // 🛒 „MARKET" bannerėlis virš stogo
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const label = '🛒 MARKET';
+  ctx.font = Math.round(C * 0.26) + 'px "Press Start 2P", monospace';
+  const tw = ctx.measureText(label).width;
+  const padX = C * 0.22, bwd = tw + padX * 2, bht = C * 0.5;
+  const bx0 = cxp - bwd / 2, by0 = y - bht - C * 0.06;
+  ctx.fillStyle = 'rgba(12,16,32,0.92)';
+  ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx0, by0, bwd, bht, 5); else ctx.rect(bx0, by0, bwd, bht);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffcf5c';
+  ctx.fillText(label, cxp, by0 + bht / 2 + 1);
+  ctx.restore();
+  window._f9MarketBounds = { x: x, y: y, w: bw, h: bh };   // klik hitbox (world px)
+}
+function _f9DrawCemetery() {
+  // ⚰️ 07-11 (user): kapinės = TIK dekoratyvus sprite. UI (pot badge / hover / klik / panelė) + pasyvi
+  //   kaulų generacija PAŠALINTA — pasyvus uždarbis perkeltas į RONKE kasimą (gold-camp). Kaulai = TIK PvP grobis.
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) return;   // PvP pilies scena (home + raid) — bazės dekoras
+  if (!_f9CemeteryImg) { _f9CemeteryImg = new Image(); _f9CemeteryImg.src = 'cemetery.png'; }
+  if (!(_f9CemeteryImg.complete && _f9CemeteryImg.naturalWidth > 0)) return;
+  const C = CELL;
+  const dw = C * 3.6, dh = dw * (_f9CemeteryImg.naturalHeight / _f9CemeteryImg.naturalWidth);
+  const x = (49.3 + 0.5) * C - dw / 2, y = (18.2 + 0.5) * C - dh / 2;   // 07-03 user: ŠALIA PILIES kairėn-žemyn
+  ctx.drawImage(_f9CemeteryImg, x, y, dw, dh);
+  window._f9CemeteryBounds = null;   // nebe klikinama — UI pašalinta
+}
+// ⚰️ Kapinių panelė v5 — TROFĖJŲ LENTELĖS stilius (user: „trofėjų lentutė geriausiai atrodo"):
+//   tamsus navy gradientas + auksinis rėmas su švytėjimu, tier-card'ai (aktyvus kelias pulsuoja auksu),
+//   requirement eilutės ✓/○ su progress chip'ais, auksinis CLAIM CTA. Overlay pritemdo žaidimą.
+const _F9_MARKET_UNITS = 'https://marketplace.roninchain.com/collections/0xccf604511c5d2b5c3fd61adfba3950d0d2890862';
+const _F9_MARKET_RONKE = 'https://marketplace.roninchain.com/collections/0x810b6d1374ac7ba0e83612e7d49f49a13f1de019';
+let _f9CemPanelEl = null, _f9CemOverlayEl = null, _f9CemPanelTimer = null;
+function _f9CemAction(act) {
+  if (act === 'buy-units') { try { window.open(_F9_MARKET_UNITS, '_blank'); } catch (_) {} }
+  else if (act === 'buy-rv') { try { window.open(_F9_MARKET_RONKE, '_blank'); } catch (_) {} }
+  else if (act === 'train') {
+    _f9CloseCemPanel();
+    try { if (window.NFTBarracksModal && window.NFTBarracksModal.open) window.NFTBarracksModal.open(); } catch (_) {}
+  }
+}
+function _f9CemEnsureKf() {
+  if (document.getElementById('f9cem-kf')) return;
+  const st = document.createElement('style'); st.id = 'f9cem-kf';
+  st.textContent = '@keyframes f9cemPulse{0%,100%{box-shadow:0 0 20px rgba(255,207,92,0.4)}50%{box-shadow:0 0 32px rgba(255,207,92,0.7)}}';
+  document.head.appendChild(st);
+}
+function _f9CemPanelStats() {
+  if (!_f9CemPanelEl) return;
+  const cem = window._f9Cemetery || { pot: 0, rate: 0, cap: 50, claimMin: 25, nft: 0, reg: 0, hosp: 0, rv: 0, wallet: 0, eligible: false, at: Date.now() };
+  const R = cem.rules || { aRv: 1, aReg: 10, bReg: 12, bWallet: 69 };
+  const est = Math.min(cem.cap > 0 ? cem.cap : Infinity, (cem.pot || 0) + (cem.rate || 0) * (Date.now() - (cem.at || Date.now())) / 3600000);
+  const full = cem.cap > 0 && est >= cem.cap - 0.05;
+  const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
+  const cm = cem.claimMin || 25;
+  const hospHint = (cem.hosp || 0) > 0 ? ' <span style="color:#e08a4a;">(' + cem.hosp + ' in hospital)</span>' : '';
+  // requirement eilutė — trofėjų .tier-req stilius: ✓ žalia / ○ pilka + progress chip + fix mygtukai
+  const req = (met, txt, cur, need, fixBtns) =>
+    '<div style="display:flex;align-items:center;gap:8px;font-size:9px;color:' + (met ? '#6fcf5c' : '#8a9aaa') + ';padding:3px 0;">' +
+      '<span style="width:16px;text-align:center;font-size:11px;">' + (met ? '✓' : '○') + '</span>' +
+      '<span style="flex:1;">' + txt + '</span>' +
+      '<span style="font-size:8px;padding:1px 6px;border-radius:3px;background:' + (met ? 'rgba(111,207,92,0.15)' : 'rgba(255,255,255,0.04)') + ';color:' + (met ? '#6fcf5c' : '#6a7a8a') + ';">' + cur + ' / ' + need + '</span>' +
+      (met ? '' : (fixBtns || '')) +
+    '</div>';
+  const abtn = (act, label) => '<button data-act="' + act + '" style="font-family:inherit;font-size:7px;letter-spacing:0.5px;background:rgba(255,207,92,0.1);color:#ffcf5c;border:1px solid #6a4a18;border-radius:4px;padding:4px 7px;cursor:pointer;margin-left:5px;">' + label + '</button>';
+  const trainBuy = abtn('train', '⚒ TRAIN') + abtn('buy-units', 'BUY ↗');
+  // 07-04: sužaloti = neaktyvūs → NEsiskaito (kaip mirę). Slenkstis naudoja cem.nft (SVEIKUS, sužalotus atėmus).
+  const aRv = (cem.rv || 0) >= R.aRv, aReg = (cem.nft || 0) >= R.aReg, aOk = aRv && aReg;
+  const bReg = (cem.nft || 0) >= R.bReg, bWal = (cem.wallet || 0) >= R.bWallet, bOk = bReg && bWal;
+  // tier-card — aktyvus kelias auksinis + pulsas (kaip .tier-card.tier-eligible)
+  const card = (ok, title, rows) =>
+    '<div style="background:linear-gradient(180deg,#14182a 0%,#0a0c18 100%);border:2px solid ' + (ok ? '#ffcf5c' : '#3a3a55') + ';border-radius:6px;padding:10px 12px;margin:6px 0;' + (ok ? 'animation:f9cemPulse 2s ease-in-out infinite;' : '') + '">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">' +
+        '<span style="font-size:11px;letter-spacing:1px;color:' + (ok ? '#ffe168' : '#8a9aaa') + ';">' + title + '</span>' +
+        (ok ? '<span style="font-size:8px;padding:2px 7px;border-radius:4px;background:rgba(111,207,92,0.25);color:#6fcf5c;">ACTIVE</span>' : '') +
+      '</div>' + rows + '</div>';
+  const prog = Math.max(0, Math.min(1, est / cm));
+  const ready = est >= cm;
+  const body = _f9CemPanelEl.querySelector('#f9cem-body');
+  if (body) {
+    body.innerHTML =
+      // 🦴 STAT juosta — didelis skaičius (trofėjų stat-card dvasia)
+      '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:6px;padding:9px 10px;text-align:center;">' +
+          '<div style="font-size:7px;color:#6a7a8a;letter-spacing:1px;margin-bottom:4px;">UNCLAIMED BONES</div>' +
+          '<div style="font-size:16px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 10px rgba(255,207,92,0.5);">🦴 ' + est.toFixed(3) + '</div>' +
+          '<div style="font-size:7px;color:#6a7a8a;margin-top:3px;">' + (full ? 'STORAGE FULL (' + cem.cap + ')' : 'storage ' + cem.cap) + '</div>' +
+        '</div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:6px;padding:9px 10px;text-align:center;">' +
+          '<div style="font-size:7px;color:#6a7a8a;letter-spacing:1px;margin-bottom:4px;">GENERATION</div>' +
+          '<div style="font-size:16px;color:' + (cem.rate > 0 ? '#6fcf5c' : '#8a9aaa') + ';">' + (cem.rate > 0 ? '+' + cem.rate.toFixed(2) + '/h' : 'OFF') + '</div>' +
+          '<div style="font-size:7px;color:#6a7a8a;margin-top:3px;">from Ronke Power</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:8px;color:#8a9aaa;letter-spacing:0.5px;margin:4px 0 2px;">FULL PLAYER — need ONE path:</div>' +
+      card(aOk, 'PATH A',
+        req(aRv, 'Ronke NFT', cem.rv || 0, R.aRv, abtn('buy-rv', 'BUY RONKE NFT ↗')) +
+        req(aReg, 'Combat-ready units' + hospHint, cem.nft || 0, R.aReg, trainBuy)) +
+      '<div style="text-align:center;color:#4a5a6a;font-size:8px;">— OR —</div>' +
+      card(bOk, 'PATH B',
+        req(bReg, 'Combat-ready units' + hospHint, cem.nft || 0, R.bReg, trainBuy) +
+        req(bWal, 'Units in wallet', cem.wallet || 0, R.bWallet, abtn('buy-units', 'BUY UNITS ↗'))) +
+      // CLAIM progresas — auksinis baras, žalias kai ready
+      '<div style="margin:10px 0 4px;">' +
+        '<div style="display:flex;justify-content:space-between;font-size:8px;color:' + (ready ? '#6fcf5c' : '#8a9aaa') + ';margin-bottom:4px;">' +
+          '<span>' + (ready ? '✓ READY TO CLAIM' : 'CLAIM UNLOCKS AT ' + cm + ' 🦴') + '</span><span>' + est.toFixed(1) + ' / ' + cm + '</span></div>' +
+        '<div style="height:10px;background:#0a0c18;border:1px solid #3a3a55;border-radius:5px;overflow:hidden;">' +
+          '<div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:' + (ready ? 'linear-gradient(90deg,#4a9a3a,#6fcf5c)' : 'linear-gradient(90deg,#d49a2a,#ffcf5c)') + ';box-shadow:0 0 8px ' + (ready ? 'rgba(111,207,92,0.6)' : 'rgba(255,207,92,0.6)') + ';"></div></div>' +
+      '</div>' +
+      (cem.eligible && !quietHome ? '<div style="color:#ff6b6b;font-size:8px;text-align:center;margin-top:4px;">Claim only at your home (no raid)</div>' : '') +
+      '<div style="color:#6a7a8a;font-size:8px;margin-top:8px;letter-spacing:0.3px;">⚠ Raiders steal 50% of UNCLAIMED bones if they defeat you. Banked bones are safe — swap 100+ to RONKE (1:5) or spend on upgrades soon.</div>';
+  }
+  const btn = _f9CemPanelEl.querySelector('#f9cem-collect');
+  if (btn) {
+    const canClaim = quietHome && ready;
+    btn.disabled = !canClaim;
+    if (canClaim) {
+      btn.style.cssText = _f9CemBtnCss + 'background:#ffcf5c;color:#1a1208;border-color:#ffcf5c;cursor:pointer;';
+      btn.textContent = '🦴 CLAIM ' + est.toFixed(1);
+    } else {
+      btn.style.cssText = _f9CemBtnCss + 'background:#333;color:#777;border-color:#555;cursor:not-allowed;';
+      btn.textContent = ready ? '🦴 CLAIM AT HOME ONLY' : '🔒 CLAIM AT ' + cm + ' 🦴';
+    }
+  }
+  const cnt = _f9CemPanelEl.querySelector('#f9cem-counter');
+  if (cnt) cnt.textContent = '🦴 ' + est.toFixed(1);
+}
+const _f9CemBtnCss = 'flex:1;padding:11px 14px;font-family:inherit;font-size:10px;letter-spacing:1px;border-radius:4px;border:2px solid;transition:all 0.15s ease;';
+function _f9CloseCemPanel() {
+  if (_f9CemPanelTimer) { clearInterval(_f9CemPanelTimer); _f9CemPanelTimer = null; }
+  if (_f9CemOverlayEl && _f9CemOverlayEl.parentNode) _f9CemOverlayEl.parentNode.removeChild(_f9CemOverlayEl);
+  _f9CemOverlayEl = null; _f9CemPanelEl = null;
+}
+window._f9CemRenderIfOpen = function () { if (_f9CemPanelEl) _f9CemPanelStats(); };
+function _f9ToggleCemeteryPanel() {
+  if (_f9CemPanelEl) { _f9CloseCemPanel(); return; }
+  try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('cemetery_get'); } catch (_) {}
+  _f9CemEnsureKf();
+  // overlay — kaip #trophy-overlay (pritemdo + blur)
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.92);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+  ov.addEventListener('click', function (ev) { if (ev.target === ov) _f9CloseCemPanel(); });
+  const el = document.createElement('div');
+  el.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
+    'box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;' +
+    'padding:18px 22px;width:440px;max-width:94vw;max-height:88vh;overflow-y:auto;' +
+    "font-family:'Press Start 2P',monospace,sans-serif;color:#8a9aaa;";
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
+      '<span style="font-size:22px;color:#ffcf5c;text-shadow:0 0 14px #ffcf5c;">⚰️</span>' +
+      '<span style="flex:1;font-size:13px;color:#ffcf5c;letter-spacing:1.5px;">CEMETERY</span>' +
+      '<span id="f9cem-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
+      '<button id="f9cem-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+    '</div>' +
+    '<div style="font-size:8px;color:#8a9aaa;margin-bottom:12px;letter-spacing:0.5px;">Passive bone generation — for FULL PLAYERS with a defended castle</div>' +
+    '<div id="f9cem-body"></div>' +
+    '<div style="display:flex;margin-top:12px;">' +
+      '<button id="f9cem-collect" disabled></button>' +
+    '</div>';
+  ov.appendChild(el);
+  document.body.appendChild(ov);
+  _f9CemOverlayEl = ov; _f9CemPanelEl = el;
+  const xb = el.querySelector('#f9cem-x'); if (xb) xb.onclick = _f9CloseCemPanel;
+  const cb = el.querySelector('#f9cem-collect');
+  if (cb) cb.onclick = function () {
+    if (cb.disabled) return;
+    try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('cemetery_collect'); } catch (_) {}
+  };
+  const bd = el.querySelector('#f9cem-body');
+  if (bd) bd.addEventListener('click', function (ev) {
+    const b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null;
+    if (b) _f9CemAction(b.dataset.act);
+  });
+  _f9CemPanelStats();
+  _f9CemPanelTimer = setInterval(_f9CemPanelStats, 400);
+}
+// ════════════════════════════════════════════════════════════════════════════
+// ⛏️ RONKE KASYKLA (2026-07-11 user) — gold-camp pastatas. Pasyvus RONKE uždarbis (perima kapinių gen logiką):
+//   gen TIK su registruotais unitais (PATH A/B), greitis ∝ RonkePower, išvedimas ≥500 RONKE, raid steal 50%.
+//   Duomenys iš serverio 'mine' žinutės (window._f9Mine); eligibility fallback iš _f9Cemetery (ta pati taisyklė).
+//   ⚠️ Serverio mine generacija DAR NEstatyta — pot/rate kol kas 0 ('COMING SOON'); eligibility TIKRA.
+// ════════════════════════════════════════════════════════════════════════════
+window._f9MinePanelOpen = false;
+let _f9MinePanelEl = null, _f9MineOverlayEl = null, _f9MinePanelTimer = null;
+let _f9MineWdBusy = false, _f9MineWdMsg = '';   // ⛏️💸 withdrawal būsena
+const _f9MineBtnCss = 'flex:1;padding:14px 16px;font-family:inherit;font-size:12px;letter-spacing:1px;border-radius:6px;border:2px solid;transition:all 0.15s ease;';
+// ── ⛏️ KASIMO FORMULĖ + client-side balansas (2026-07-11 user): balansas AUGA kai žmogeliukas pristato auksą į namuką ──
+//   rate ∝ RonkePower. OFFLINE-safe: kiekvienas pristatymas priauga rate×(praėjęs laikas nuo pask. pristatymo) →
+//   grįžus po pauzės pirmas pristatymas „pagauna" praleistą laiką. ⚠️ KLIENTINIS PROTOTIPAS (localStorage per wallet) —
+//   serveris taps autoritetu; withdraw kol kas COMING SOON. Konstantos TUNABLE.
+const _F9_MINE_BASE_H  = 10;      // RONKE/h bazė (kai eligible)
+const _F9_MINE_POWER_H = 0.1;     // + RONKE/h už kiekvieną RonkePower tašką (power 200 → +20/h)
+const _F9_MINE_POW_CAP = 4000;    // whale cap
+const _F9_MINE_CAP     = 5000;    // sandėlio lubos (RONKE)
+const _F9_MINE_CLAIM   = 500;     // išvedimo slenkstis (RONKE)
+const _F9_MINE_SUCCESS = 0.5;     // ⛏️ SĖKMĖS tikimybė (0.5 = 50% fail → 2× lėtesnis kasimas). ATEITY: upgrade didins → mažiau fail → greičiau.
+const _F9_MINE_LIVE_MAX_MS = 20000;   // gap > šito → "offline/throttle" → statistinis (fail-vidurkintas) accrual, ne 50/50 loterija
+function _f9MineAddrKey() { try { const w = window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress(); return w ? String(w).toLowerCase() : '_guest'; } catch (_) { return '_guest'; } }
+function _f9MineSuccessChance() { return _F9_MINE_SUCCESS; }   // TODO(upgrade): + fail-reduction lygis → didesnė sėkmė → greitesnis kasimas
+// RonkePower iš kapinių rate (serveris siunčia bones/h = 0.5 + power×0.0025) — kol serverio mine dar nesiunčia power.
+function _f9MinePowerNow() { const c = window._f9Cemetery; if (!c || !(c.rate > 0.5)) return 0; return Math.max(0, (c.rate - 0.5) / 0.0025); }
+// ⚔ LAUKO dalis (07-11): kasimas ∝ unitai ANT LAUKO, ne visas registruotas dekas. Rezervas NEduoda kasimo
+//   (bet duoda atsparumą). frac = lauke / (lauke+rezervas). Šaltinis: _f9Cemetery.onField/reserve (serveris,
+//   patikima); fallback į _f9OnField globalą; nežinant → 1.
+function _f9MineFieldFraction() {
+  const c = window._f9Cemetery;
+  if (c && typeof c.onField === 'number' && typeof c.reserve === 'number') {
+    const reg = c.onField + c.reserve;
+    return reg > 0 ? c.onField / reg : (c.onField > 0 ? 1 : 0);
+  }
+  const of = (window._f9OnField instanceof Set) ? window._f9OnField.size : -1;
+  const rv = (window._f9Reserve instanceof Set) ? window._f9Reserve.size : 0;
+  if (of < 0) return 1;                 // nežinom lauko sudėties → nekeičiam (fallback)
+  const reg = of + rv;
+  return reg > 0 ? of / reg : 0;        // 0 lauke → 0 kasimo
+}
+// 🛡 SKYDAS (07-11): kol aktyvus → kasimas ×0.5 (strateginis atsigavimas, ne be-rizikos farminimas).
+function _f9MineShieldMult() { const su = Number(window.__f9ShieldUntil) || 0; return (su > Date.now()) ? 0.5 : 1; }
+// RAW greitis (RONKE/h prie 100% sėkmės). EFEKTYVUS = raw × sėkmė (rodomas panelėj).
+//   base = tik jei bent 1 unitas lauke; power dalis × lauko frakcija; viskas × skydo daugiklis.
+function _f9MineRateNow() {
+  const c = window._f9Cemetery; if (!c || !c.eligible) return 0;
+  const frac = _f9MineFieldFraction();
+  const powerTerm = Math.min(_f9MinePowerNow(), _F9_MINE_POW_CAP) * _F9_MINE_POWER_H;
+  const raw = (frac > 0 ? _F9_MINE_BASE_H : 0) + powerTerm * frac;   // 0 lauke → 0; didelis dekas nebaudžiamas (ta pati lauko power)
+  return raw * _f9MineShieldMult();
+}
+function _f9MineEnsureState() {
+  const a = _f9MineAddrKey();
+  let st = window._f9Mine;
+  if (!st || st._addr !== a || st.clientOnly !== true) {   // serveris atsiuntė (clientOnly!=true) → nesukam kliento
+    if (st && st.clientOnly !== true) return st;            // serverio autoritetas — client accrual neliečia
+    let saved = null; try { saved = JSON.parse(localStorage.getItem('_f9mine_' + a) || 'null'); } catch (_) {}
+    st = (saved && saved._addr === a) ? saved : { pot: 0, at: Date.now(), _addr: a };
+    st.clientOnly = true; window._f9Mine = st;
+  }
+  return st;
+}
+// Vienas kasimo BANDYMAS (baigus mining fazę): ridena sėkmę/fail. Sėkmė → priauga raw×gap; FAIL → 0 (→ 2× lėčiau).
+//   Offline (gap didelis) → statistinis raw×sėkmė×gap (be 50/50 loterijos). Panelės greitis = EFEKTYVUS (raw×sėkmė).
+//   Grąžina { success, add }.
+function _f9MineAttempt() {
+  const st = _f9MineEnsureState();
+  const now = Date.now();
+  const gap = st ? (now - (st.at || now)) : 0;
+  const offline = gap > _F9_MINE_LIVE_MAX_MS;
+  const sc = _f9MineSuccessChance();
+  const success = offline || (Math.random() < sc);   // offline → visada „success" (kredituojam vidurkį)
+  let add = 0;
+  if (st && st.clientOnly === true) {
+    const raw = _f9MineRateNow();
+    st.rate = raw * sc;   // panelė/estimate = EFEKTYVUS greitis (su fail baudos)
+    st.cap = _F9_MINE_CAP; st.claimMin = _F9_MINE_CLAIM;
+    if (raw > 0 && (st.pot || 0) < _F9_MINE_CAP) {
+      if (offline) add = raw * sc * gap / 3600000;    // offline → fail-vidurkintas
+      else if (success) add = raw * gap / 3600000;     // live SĖKMĖ → pilnas gap (fail=0 → vidutiniškai raw×sc)
+      st.pot = Math.min(_F9_MINE_CAP, (st.pot || 0) + add);
+    }
+    st.at = now;
+    try { localStorage.setItem('_f9mine_' + st._addr, JSON.stringify(st)); } catch (_) {}
+    if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen();
+  }
+  return { success: success, add: add };
+}
+function _f9MineData() {
+  const m = window._f9Mine || null;
+  const c = window._f9Cemetery || {};   // fallback: TA PATI eligibility (serveris jau siunčia)
+  const el = (k, def) => (m && m[k] != null ? +m[k] : (c[k] != null ? +c[k] : def));   // eligibility laukai
+  const authoritative = !!(m && m.clientOnly !== true);   // serverio mine (ne kliento estimate) → withdraw galima
+  return {
+    pot:  (m && m.pot  != null) ? +m.pot  : 0,        // RONKE (client estimate ARBA serveris)
+    rate: (m && m.rate != null) ? +m.rate : 0,        // RONKE/h
+    cap:  (m && m.cap  != null) ? +m.cap  : _F9_MINE_CAP,
+    claimMin: (m && m.claimMin != null) ? +m.claimMin : _F9_MINE_CLAIM,
+    nft: el('nft', 0), reg: el('reg', 0), hosp: el('hosp', 0), rv: el('rv', 0), wallet: el('wallet', 0),
+    eligible: (m && m.eligible != null) ? !!m.eligible : !!c.eligible,   // eligibility iš cemetery kol serverio mine dar nėra
+    rules: (m && m.rules) || c.rules || { aRv: 1, aReg: 10, bReg: 12, bWallet: 69 },
+    live: authoritative,                                // TRUE kai serveris = autoritetas (pot patikimas)
+    canWithdraw: !!(m && m.mwd),                        // withdrawal ĮJUNGTAS (fazė 2); false → „COMING SOON"
+    clientOnly: !!(m && m.clientOnly === true),         // kliento estimate (test fallback, jei serveris nesiunčia)
+    at: (m && m.at) || c.at || Date.now(),
+    shielded: (Number(window.__f9ShieldUntil) || 0) > Date.now(),   // 🛡 kasimas ×0.5 kol aktyvus
+    shieldUntil: Number(window.__f9ShieldUntil) || 0,
+    onField: (c && typeof c.onField === 'number') ? c.onField : ((window._f9OnField instanceof Set) ? window._f9OnField.size : -1),   // ⚔ unitai lauke (kasimo bazė)
+    reserve: (c && typeof c.reserve === 'number') ? c.reserve : ((window._f9Reserve instanceof Set) ? window._f9Reserve.size : 0),
+    fullPower: (c && typeof c.fullPower === 'number') ? c.fullPower : null,   // pilnas registruotas RONKE Power (badge)
+    hpower: (c && typeof c.power === 'number') ? c.power : null,              // healthy (combat-ready) power
+  };
+}
+// ⛏️💀 100% pilies wipe → nuima pct (0.5) nuo KLIENTO mining pot. VIENKART per `at` signalą (offline-safe:
+//   serveris siunčia mineStolenAt cemetery payload'e; live raid → 'mine_raided' broadcast). Tik client-only pot.
+function _f9MineApplySteal(pct, at) {
+  at = Number(at) || 0; pct = Number(pct) || 0;
+  if (at <= 0 || pct <= 0) return;
+  const st = _f9MineEnsureState();
+  if (!st || st.clientOnly !== true) return;         // server-authoritative → serveris pats atims
+  if (Number(st._lastSteal || 0) >= at) return;      // jau pritaikyta šitą signalą
+  const before = st.pot || 0;
+  st.pot = Math.round(before * (1 - Math.min(1, pct)) * 1000) / 1000;
+  st._lastSteal = at; st.at = Date.now();
+  try { localStorage.setItem('_f9mine_' + st._addr, JSON.stringify(st)); } catch (_) {}
+  const lost = Math.round((before - st.pot) * 100) / 100;
+  if (lost > 0) { try { window._f9MineStealFx = { lost: lost, t: (typeof performance !== 'undefined' ? performance.now() : Date.now()) }; } catch (_) {} }
+  if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen();
+}
+window._f9MineApplySteal = _f9MineApplySteal;
+// ⛏️💸 WITHDRAW — prašom serverio voucherio (jis nurašo pot + pasirašo). Serveris atsako mine_withdraw_result.
+function _f9MineDoWithdraw() {
+  if (_f9MineWdBusy) return;
+  _f9MineWdBusy = true; _f9MineWdMsg = '⛏️ Preparing withdrawal…'; if (window._f9MineRenderIfOpen) window._f9MineRenderIfOpen();
+  try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('mine_withdraw'); else throw new Error('Not connected'); }
+  catch (e) { _f9MineWdBusy = false; _f9MineWdMsg = '⚠ ' + String((e && e.message) || e).slice(0, 46); if (window._f9MineRenderIfOpen) window._f9MineRenderIfOpen(); }
+}
+window._f9MineDoWithdraw = _f9MineDoWithdraw;
+// Serveris grąžino voucherį → žaidėjas PATS pateikia claimReward TX (moka gas → PoD). Reuse submitFaucetClaim (tas pats RonkeReward).
+window._f9MineSubmitVoucher = async function (e) {
+  const R = window._f9MineRenderIfOpen || function () {};
+  try {
+    if (!e || !e.ok || !e.claim) { _f9MineWdBusy = false; _f9MineWdMsg = '⚠ ' + ((e && e.error) || 'Withdraw failed'); R(); return; }
+    if (!(window.Wallet && window.Wallet.submitFaucetClaim)) { _f9MineWdBusy = false; _f9MineWdMsg = '⚠ Wallet not ready'; R(); return; }
+    _f9MineWdMsg = '🔷 Confirm in your wallet to receive RONKE…'; R();
+    await window.Wallet.submitFaucetClaim(e.claim);   // claimReward TX (player pays gas); jei nenusėda — serveris re-credit'ins po deadline
+    _f9MineWdBusy = false; _f9MineWdMsg = '✅ Withdrawn! RONKE sent to your wallet.'; R();
+    try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('mine_get'); } catch (_) {}   // šviežias pot
+  } catch (err) {
+    _f9MineWdBusy = false;
+    var m = String((err && err.message) || err);
+    _f9MineWdMsg = /reject|denied|cancel/i.test(m) ? '⚠ Cancelled — pot kept, try again.' : ('⚠ ' + m.slice(0, 42));
+    R();
+  }
+};
+function _f9MinePanelStats() {
+  if (!_f9MinePanelEl) return;
+  const d = _f9MineData();
+  const R = d.rules;
+  const est = Math.min(d.cap > 0 ? d.cap : Infinity, d.pot + (d.rate || 0) * (Date.now() - d.at) / 3600000);
+  const full = d.cap > 0 && est >= d.cap - 0.5;
+  const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
+  const cm = d.claimMin || 500;
+  const hospHint = (d.hosp || 0) > 0 ? ' <span style="color:#e08a4a;">(' + d.hosp + ' in hospital)</span>' : '';
+  // reikalavimo eilutė: ✓/○ + tekstas + cur/need; jei NEĮVYKDYTA → aiški veiksmų eilutė žemiau (kaip įsigyti)
+  const req = (met, txt, cur, need, fixBtns) =>
+    '<div style="padding:4px 0;">' +
+      '<div style="display:flex;align-items:center;gap:9px;font-size:11px;color:' + (met ? '#6fcf5c' : '#c9b895') + ';">' +
+        '<span style="width:18px;text-align:center;font-size:13px;">' + (met ? '✓' : '○') + '</span>' +
+        '<span style="flex:1;">' + txt + '</span>' +
+        '<span style="font-size:9px;padding:2px 7px;border-radius:4px;background:' + (met ? 'rgba(111,207,92,0.15)' : 'rgba(232,93,93,0.12)') + ';color:' + (met ? '#6fcf5c' : '#e8a08a') + ';">' + cur + ' / ' + need + '</span>' +
+      '</div>' +
+      (met ? '' : ('<div style="display:flex;flex-wrap:wrap;gap:7px;margin:7px 0 1px 27px;">' + (fixBtns || '') + '</div>')) +
+    '</div>';
+  const abtn = (act, label) => '<button data-act="' + act + '" style="font-family:inherit;font-size:10px;letter-spacing:0.5px;background:rgba(255,207,92,0.15);color:#ffcf5c;border:1px solid #7a5a1e;border-radius:5px;padding:8px 12px;cursor:pointer;">' + label + '</button>';
+  const unitsBtns = abtn('train', '⚒ TRAIN UNITS') + abtn('market', '🛒 BUY IN MARKET');   // in-game keliai gauti unitų
+  const aRv = (d.rv || 0) >= R.aRv, aReg = (d.nft || 0) >= R.aReg, aOk = aRv && aReg;
+  const bReg = (d.nft || 0) >= R.bReg, bWal = (d.wallet || 0) >= R.bWallet, bOk = bReg && bWal;
+  const card = (ok, title, rows) =>
+    '<div style="background:linear-gradient(180deg,#14182a 0%,#0a0c18 100%);border:2px solid ' + (ok ? '#ffcf5c' : '#3a3a55') + ';border-radius:7px;padding:13px 15px;margin:8px 0;' + (ok ? 'animation:f9cemPulse 2s ease-in-out infinite;' : '') + '">' +
+      '<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px;"><span style="font-size:13px;letter-spacing:1px;color:' + (ok ? '#ffe168' : '#8a9aaa') + ';">' + title + '</span>' +
+        (ok ? '<span style="font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(111,207,92,0.25);color:#6fcf5c;">ACTIVE</span>' : '') + '</div>' + rows + '</div>';
+  const prog = Math.max(0, Math.min(1, est / cm));
+  const ready = est >= cm;
+  const body = _f9MinePanelEl.querySelector('#f9mine-body');
+  if (body) {
+    body.innerHTML =
+      '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (full ? 'STORAGE FULL (' + d.cap + ')' : 'storage ' + d.cap) + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.shielded ? '#2a5a8a' : '#3a3a55') + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.eligible ? '#6fcf5c' : '#8a9aaa') + ';">' + (d.eligible ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF') + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power') + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
+      '</div>' +
+      // 🛡 skydas — atsigavimo langas (kasimas ×0.5); rankinis REMOVE grąžina pilną kasimą + ekspoziciją
+      (d.shielded ? '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;background:rgba(68,170,255,0.1);border:1px solid #2a5a8a;border-radius:6px;padding:9px 12px;"><span style="font-size:16px;">🛡</span><span style="flex:1;font-size:9px;color:#7ab8e8;line-height:1.5;">SHIELDED · mining ×0.5 · ' + Math.max(0, Math.ceil((d.shieldUntil - Date.now()) / 60000)) + 'm left<br><span style="color:#5a7a9a;">Recovery window — heal &amp; rebuild your field, or remove to resume full mining (and exposure).</span></span><button id="f9mine-unshield" style="font-family:inherit;font-size:9px;background:rgba(232,93,93,0.15);color:#e88;border:1px solid #a55;border-radius:5px;padding:7px 10px;cursor:pointer;white-space:nowrap;">REMOVE</button></div>' : '') +
+      (!d.canWithdraw ? '<div style="font-size:9px;color:#d49a2a;text-align:center;margin:3px 0 10px;background:rgba(255,207,92,0.07);border:1px solid #6a4a18;border-radius:6px;padding:8px;line-height:1.6;">' + (d.live ? '⛏️ Server-tracked mining (anti-cheat). On-chain withdraw to your wallet activates soon.' : (d.clientOnly ? '⛏️ Live estimate — grows as the worker delivers. On-chain withdraw activates once the server is wired.' : '⛏️ Mining goes live once the server is wired — the eligibility below is real.')) + '</div>' : '') +
+      '<div style="font-size:10px;color:#8a9aaa;letter-spacing:0.5px;margin:8px 0 3px;">MINING NEEDS ONE PATH:</div>' +
+      card(aOk, 'PATH A', req(aRv, 'RonkeVerse NFT', d.rv || 0, R.aRv, abtn('buy-rv', '🛒 GET RONKEVERSE NFT ↗')) + req(aReg, 'Combat-ready units' + hospHint, d.nft || 0, R.aReg, unitsBtns)) +
+      '<div style="text-align:center;color:#4a5a6a;font-size:8px;">— OR —</div>' +
+      card(bOk, 'PATH B', req(bReg, 'Combat-ready units' + hospHint, d.nft || 0, R.bReg, unitsBtns) + req(bWal, 'Units in wallet', d.wallet || 0, R.bWallet, unitsBtns)) +
+      '<div style="margin:13px 0 4px;"><div style="display:flex;justify-content:space-between;font-size:9px;color:' + (ready ? '#6fcf5c' : '#8a9aaa') + ';margin-bottom:5px;"><span>' + (ready ? '✓ READY TO WITHDRAW' : 'WITHDRAW UNLOCKS AT ' + cm + ' RONKE') + '</span><span>' + est.toFixed(0) + ' / ' + cm + '</span></div>' +
+        '<div style="height:13px;background:#0a0c18;border:1px solid #3a3a55;border-radius:6px;overflow:hidden;"><div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:' + (ready ? 'linear-gradient(90deg,#4a9a3a,#6fcf5c)' : 'linear-gradient(90deg,#d49a2a,#ffcf5c)') + ';box-shadow:0 0 8px ' + (ready ? 'rgba(111,207,92,0.6)' : 'rgba(255,207,92,0.6)') + ';"></div></div></div>' +
+      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">⚠ Raiders steal 50% of un-withdrawn RONKE if they defeat you. Withdraw to your wallet at ' + cm + '+.</div>' +
+      '<div id="f9mine-wdmsg" style="margin-top:8px;font-size:9px;line-height:1.5;color:#7cff6e;letter-spacing:0.3px;text-align:center;">' + (_f9MineWdMsg || '') + '</div>';
+  }
+  const ub = _f9MinePanelEl.querySelector('#f9mine-unshield');
+  if (ub) ub.onclick = function () { try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('shield_remove'); } catch (_) {} window.__f9ShieldUntil = 0; _f9MinePanelStats(); };
+  const btn = _f9MinePanelEl.querySelector('#f9mine-claim');
+  if (btn) {
+    const canClaim = d.canWithdraw && quietHome && ready && !_f9MineWdBusy;   // withdraw tik kai mwd + ramūs namai + ≥claimMin
+    btn.disabled = !canClaim;
+    if (_f9MineWdBusy) { btn.style.cssText = _f9MineBtnCss + 'background:#333;color:#aaa;border-color:#555;cursor:default;'; btn.textContent = '🔷 CONFIRM IN WALLET…'; }
+    else if (canClaim) { btn.style.cssText = _f9MineBtnCss + 'background:#ffcf5c;color:#1a1208;border-color:#ffcf5c;cursor:pointer;'; btn.textContent = '💸 WITHDRAW ' + Math.min(est, 1000).toFixed(0) + ' RONKE'; }
+    else { btn.style.cssText = _f9MineBtnCss + 'background:#333;color:#777;border-color:#555;cursor:not-allowed;'; btn.textContent = !d.canWithdraw ? '⛏️ COMING SOON' : (ready ? '💸 WITHDRAW AT HOME ONLY' : '🔒 WITHDRAW AT ' + cm); }
+    btn.onclick = canClaim ? function () { _f9MineDoWithdraw(); } : null;
+  }
+  if (_f9MineWdMsg) { const ml = _f9MinePanelEl.querySelector('#f9mine-wdmsg'); if (ml) ml.textContent = _f9MineWdMsg; }
+  const cnt = _f9MinePanelEl.querySelector('#f9mine-counter');
+  if (cnt) {   // badge = COMBAT-READY power (kovai pajėgių unitų; mirę/sužaloti NEsiskaito — todėl ≠ total RP)
+    cnt.textContent = '⚔ ' + Math.round(_f9MinePowerNow()) + ' pwr';
+    try { cnt.title = 'Combat-ready mining power (healthy units only). Dead/injured units don\'t count — this is why it can differ from your total RONKE Power.'; } catch (_) {}
+  }
+}
+function _f9CloseMinePanel() {
+  if (_f9MinePanelTimer) { clearInterval(_f9MinePanelTimer); _f9MinePanelTimer = null; }
+  if (_f9MineOverlayEl && _f9MineOverlayEl.parentNode) _f9MineOverlayEl.parentNode.removeChild(_f9MineOverlayEl);
+  _f9MineOverlayEl = null; _f9MinePanelEl = null; window._f9MinePanelOpen = false;
+}
+// Eligibility „kaip įsigyti" keliai: RonkeVerse NFT → Ronin marketplace (external); unitai → TRAIN (barakai) / in-game MARKET.
+function _f9MineAction(act) {
+  if (act === 'buy-rv') { try { window.open(_F9_MARKET_RONKE, '_blank'); } catch (_) {} }
+  else if (act === 'market') { _f9CloseMinePanel(); try { if (typeof _f9ToggleMarketPanel === 'function') _f9ToggleMarketPanel(); } catch (_) {} }
+  else if (act === 'train') { _f9CloseMinePanel(); try { if (window.NFTBarracksModal && window.NFTBarracksModal.open) window.NFTBarracksModal.open(); } catch (_) {} }
+}
+window._f9MineRenderIfOpen = function () { if (_f9MinePanelEl) _f9MinePanelStats(); };
+function _f9ToggleMinePanel() {
+  if (_f9MinePanelEl) { _f9CloseMinePanel(); return; }
+  try { if (window.F9PVP && window.F9PVP.room) { window.F9PVP.room.send('mine_get'); window.F9PVP.room.send('cemetery_get'); } } catch (_) {}   // cemetery_get = eligibility fallback kol mine dar neserveruoja
+  if (typeof _f9CemEnsureKf === 'function') _f9CemEnsureKf();   // reuse pulso keyframe (f9cemPulse)
+  window._f9MinePanelOpen = true;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.92);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+  ov.addEventListener('click', function (ev) { if (ev.target === ov) _f9CloseMinePanel(); });
+  const el = document.createElement('div');
+  el.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;box-shadow:0 0 60px rgba(255,207,92,0.4),inset 0 0 28px rgba(255,207,92,0.08);border-radius:10px;padding:26px 32px;width:600px;max-width:96vw;max-height:90vh;overflow-y:auto;font-family:\'Press Start 2P\',monospace,sans-serif;color:#8a9aaa;';
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;padding-bottom:13px;border-bottom:1px solid #4a3a18;">' +
+      '<span style="font-size:28px;color:#ffcf5c;text-shadow:0 0 16px #ffcf5c;">⛏️</span>' +
+      '<span style="flex:1;font-size:17px;color:#ffcf5c;letter-spacing:1.5px;">RONKE MINE</span>' +
+      '<span id="f9mine-counter" style="font-size:11px;color:#d49a2a;padding:5px 12px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:5px;"></span>' +
+      '<button id="f9mine-x" style="background:none;border:none;color:#8a9aaa;font-size:24px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+    '</div>' +
+    '<div style="font-size:10px;color:#8a9aaa;margin-bottom:14px;letter-spacing:0.5px;line-height:1.5;">Passive RONKE mining — speed scales with Ronke Power, for a defended castle</div>' +
+    '<div id="f9mine-body"></div>' +
+    '<div style="display:flex;margin-top:12px;"><button id="f9mine-claim" disabled></button></div>';
+  ov.appendChild(el);
+  document.body.appendChild(ov);
+  _f9MineOverlayEl = ov; _f9MinePanelEl = el;
+  const xb = el.querySelector('#f9mine-x'); if (xb) xb.onclick = _f9CloseMinePanel;
+  const cb = el.querySelector('#f9mine-claim');
+  if (cb) cb.onclick = function () {
+    if (cb.disabled) return;
+    try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('mine_withdraw'); } catch (_) {}
+  };
+  const bd = el.querySelector('#f9mine-body');
+  if (bd) bd.addEventListener('click', function (ev) { const b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null; if (b && typeof _f9MineAction === 'function') _f9MineAction(b.dataset.act); });
+  _f9MinePanelStats();
+  _f9MinePanelTimer = setInterval(_f9MinePanelStats, 400);
+}
+// ════════════════════════════════════════════════════════════════════════════
+// 🏥 LIGONINĖ — namukas (Buildings_House1) pilies teritorijoje; viduje gydosi sužaloti NFT unitai
+//   (serveris: 90% kritusių NFT → injured 8h, spawn'as juos praleidžia). Pozicija PRIVALO sutapti su
+//   serverio PVP_OBSTACLES AABB (69.5, 17.6)! Klik ant namuko → panelė su gijimo laikmačiais.
+// ════════════════════════════════════════════════════════════════════════════
+let _f9HospitalImg = null, _f9HospitalOutlineC = null;
+// Baltas kontūro canvas'as (kešuojamas 1×) — tas pats stilius kaip kapinių/unit/tree outline.
+function _f9HospitalBuildOutline(olNat) {
+  if (_f9HospitalOutlineC || typeof _silhouetteTintSheet !== 'function') return _f9HospitalOutlineC;
+  const img = _f9HospitalImg;
+  const ts = _silhouetteTintSheet(img, '#ffffff');
+  if (!ts) return null;
+  const OL = Math.max(2, Math.round(olNat || 4));   // 🤍 storis natural-px iš call-site (ekrane = 0.045C standartas)
+  const W = img.naturalWidth + OL * 2, H = img.naturalHeight + OL * 2;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const offs = [[-OL, 0], [OL, 0], [0, -OL], [0, OL], [-OL, -OL], [OL, -OL], [-OL, OL], [OL, OL]];
+  for (const [dx, dy] of offs) g.drawImage(ts, OL + dx, OL + dy);
+  g.globalCompositeOperation = 'destination-out';   // paliekam tik kontūro žiedą
+  g.drawImage(img, OL, OL);
+  _f9HospitalOutlineC = { c, OL };
+  return _f9HospitalOutlineC;
+}
+// ════════════════════════════════════════════════════════════════════════════
+// 🪨 AKMENINĖ AIKŠTĖ + TAKELIAI (2026-07-06 user): rikiuotės vieta (HOME_FORM 64.8,~11) = ovali
+//   akmenų „susirinkimo aikštė", iš jos takeliai išsišakoja į PILĮ (54,12.9), BARAKUS (64.8,9),
+//   LIGONINĘ (69.5,18) ir KAPINES (49.8,17.7). Grynas klientinis DEKORAS — kolizijų/serverio neliečia.
+//   PERF: deterministinis rnd (cache-safe) → viskas iškepama 1× į offscreen canvas → 1 drawImage/kadrą.
+//   Koordinatės „centered grid" (world px = (u+0.5)*CELL — kaip unitų/pastatų centrai).
+// ════════════════════════════════════════════════════════════════════════════
+let _f9PlazaC = null, _f9PlazaCell = 0, _f9StoneImg = null;
+const _F9_PLAZA_BB = { x0: 47, y0: 8, x1: 73, y1: 20 };   // celiu grid bounding box (integer)
+// v4 (07-06 user: KOKYBE): Tiny Swords Tilemap_Flat AUTOTILE - tas pats stilius kaip pilis/barakai
+//   (visa scena Tiny Swords!). path_tiles_stone.png = 16 tile x64px, indeksuoti 4-bit kaimynu maske
+//   (N=1,E=2,S=4,W=8); akmens-pilkas recolor is smelio tako (alternatyva: path_tiles_sand.png - originalus
+//   smelis, 1 eilutes keitimas). Aikste + takeliai rasterizuojami i celiu grid -> autotile krastai
+//   apvalus/organiski kaip TS zaidime. Iskepama 1x i offscreen canvas.
+function _f9BuildPlaza(C) {
+  const img = _f9StoneImg;
+  if (!(img && img.complete && img.naturalWidth > 0)) return null;   // sprite dar kraunasi
+  const BB = _F9_PLAZA_BB;
+  const GW = BB.x1 - BB.x0, GH = BB.y1 - BB.y0;
+  const c = document.createElement('canvas'); c.width = GW * C; c.height = GH * C;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  // 1) CELIU GRID uzpildymas: aikste (ovalas @ world-grid 65.3,11.55) + takeliai (kreiviu sampling)
+  const fill = new Uint8Array(GW * GH);
+  const mark = (ux, uy) => { const ix = ux - BB.x0, iy = uy - BB.y0; if (ix >= 0 && iy >= 0 && ix < GW && iy < GH) fill[iy * GW + ix] = 1; };
+  const PCX = 65.3, PCY = 11.55, PHW = 3.9, PHH = 2.0;   // dengia 2x6 rikiuote (HOME_FORM 64.8,10.3-11.65)
+  for (let uy = BB.y0; uy < BB.y1; uy++) for (let ux = BB.x0; ux < BB.x1; ux++) {
+    const dx = (ux + 0.5 - PCX) / PHW, dy = (uy + 0.5 - PCY) / PHH;
+    if (dx * dx + dy * dy <= 1) mark(ux, uy);
+  }
+  function path(x0, y0, qx, qy, x1, y1) {   // kvadratine kreive -> celes (1 tile plocio, kaip TS)
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(8, Math.round(dist * 6));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const bx = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * qx + t * t * x1;
+      const by = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * qy + t * t * y1;
+      mark(Math.floor(bx), Math.floor(by));
+    }
+  }
+  path(61.7, 12.2, 57.9, 13.5, 54.5, 13.4);   // -> pilies vartai
+  path(65.3, 9.9, 65.3, 9.7, 65.3, 9.45);     // -> baraku durys
+  path(68.1, 12.8, 69.9, 15.4, 70.0, 18.45);  // -> ligonines durys
+  path(62.1, 12.9, 55.7, 16.9, 51.1, 18.1);   // -> kapines
+  // 2) AUTOTILE: 4-bit kaimynu maske -> sheet [mask*64] (krastai/kampai/salos automatiskai)
+  const at = (ix, iy) => (ix >= 0 && iy >= 0 && ix < GW && iy < GH) ? fill[iy * GW + ix] : 0;
+  const TS = 64;
+  for (let iy = 0; iy < GH; iy++) for (let ix = 0; ix < GW; ix++) {
+    if (!at(ix, iy)) continue;
+    const mask = (at(ix, iy - 1) ? 1 : 0) | (at(ix + 1, iy) ? 2 : 0) | (at(ix, iy + 1) ? 4 : 0) | (at(ix - 1, iy) ? 8 : 0);
+    g.drawImage(img, mask * TS, 0, TS, TS, ix * C, iy * C, C, C);
+  }
+  return c;
+}
+function _f9DrawStonePlaza() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) return;   // tik PvP pilies scena (home + raid)
+  if (!_f9StoneImg) { _f9StoneImg = new Image(); _f9StoneImg.src = 'path_tiles_stone.png'; }   // Tiny Swords autotile (akmens recolor)
+  const C = CELL;
+  if (!_f9PlazaC || _f9PlazaCell !== C) {
+    try { _f9PlazaC = _f9BuildPlaza(C); _f9PlazaCell = _f9PlazaC ? C : 0; } catch (_) { return; }
+    if (!_f9PlazaC) return;
+  }
+  ctx.drawImage(_f9PlazaC, _F9_PLAZA_BB.x0 * C, _F9_PLAZA_BB.y0 * C);
+}
+// ════════════════════════════════════════════════════════════════════════════
+// 🐑🐦 AMBIENT CRITTERS (2026-07-06 user C): maži judantys gyvūnai tuščiai žolei atgaivinti.
+//   Tiny Swords (CC0) — avinai (ganosi/klaidžioja), HappySheep (šokinėja), BlueBird (kapsto/skrenda).
+//   GRYNAS klientinis DEKORAS: jokių kolizijų/serverio/gameplay. Vengia pastatų+aikštės (keep-out).
+//   PERF: ~12 critter'ių, kiekvienam 1 drawImage/kadrą + pigus state-machine. Frame anim = fidx float acc.
+// ════════════════════════════════════════════════════════════════════════════
+let _f9CritImgs = null, _f9Critters = null, _f9CritLastT = 0;
+const _F9_CRIT_KEEPOUT = [
+  { x0: 48, y0: 8, x1: 59, y1: 16 },   // 🏰 pilis
+  { x0: 62, y0: 6, x1: 68, y1: 11 },   // 🏚️ barakai
+  { x0: 66, y0: 15, x1: 72, y1: 20 },  // 🏥 ligoninė
+  { x0: 46, y0: 15, x1: 53, y1: 20 },  // ⚰️ kapinės
+  { x0: 58, y0: 8, x1: 71, y1: 15 },   // 🪨 aikštė + garnizonas
+];
+const _F9_CRIT_BOUNDS = { x0: 6, y0: 3, x1: 76, y1: 21 };
+function _f9CritKeepout(x, y) {
+  for (const r of _F9_CRIT_KEEPOUT) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) return true;
+  return false;
+}
+function _f9CritValidPt() {
+  const B = _F9_CRIT_BOUNDS;
+  for (let i = 0; i < 12; i++) {
+    const x = B.x0 + Math.random() * (B.x1 - B.x0), y = B.y0 + Math.random() * (B.y1 - B.y0);
+    if (!_f9CritKeepout(x, y)) return { x, y };
+  }
+  return { x: 20, y: 10 };   // fallback (vakarų pieva)
+}
+// type → {sheets{state: {src, n, sz}}, drawCells, fps}
+const _F9_CRIT_DEF = {
+  sheep:      { draw: 1.5, fps: 8, sheets: { graze: { src: 'sheep_grass.png', n: 12, sz: 128 }, move: { src: 'sheep_move.png', n: 4, sz: 128 }, idle: { src: 'sheep_idle.png', n: 6, sz: 128 } } },
+  // 🐦 bird + 🐑 happysheep IŠIMTI (07-06 user) — palikta tik besiganantį avį.
+};
+function _f9CritEnsure() {
+  if (_f9CritImgs) return _f9Critters;
+  _f9CritImgs = {};
+  for (const t in _F9_CRIT_DEF) for (const st in _F9_CRIT_DEF[t].sheets) {
+    const s = _F9_CRIT_DEF[t].sheets[st];
+    if (!_f9CritImgs[s.src]) { const im = new Image(); im.src = s.src; _f9CritImgs[s.src] = im; }
+  }
+  _f9Critters = [];
+  const spawn = (type, n) => { for (let i = 0; i < n; i++) { const p = _f9CritValidPt(); _f9Critters.push({ type, x: p.x, y: p.y, tx: p.x, ty: p.y, state: 'idle', fidx: Math.random() * 6, timer: 1 + Math.random() * 3, face: Math.random() < 0.5 ? 1 : -1, sp: 0 }); } };
+  spawn('sheep', 6);   // 07-06 user: tik besiganantys avinai
+  return _f9Critters;
+}
+function _f9CrittersStep(now) {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) { _f9CritLastT = 0; return; }
+  const crs = _f9CritEnsure();
+  const C = CELL;
+  let dt = _f9CritLastT ? (now - _f9CritLastT) / 1000 : 0; _f9CritLastT = now;
+  if (dt > 0.1) dt = 0.1;   // tab grįžo iš fono → nešokinėja
+  for (const cr of crs) {
+    const def = _F9_CRIT_DEF[cr.type];
+    // ── state machine ──
+    cr.timer -= dt;
+    if (cr.state === 'move') {
+      const dx = cr.tx - cr.x, dy = cr.ty - cr.y, d = Math.hypot(dx, dy);
+      if (d < 0.06 || cr.timer <= 0) {
+        cr.state = (cr.type === 'sheep') ? 'graze' : (cr.type === 'happysheep' ? 'bounce' : 'idle');
+        cr.timer = (cr.type === 'sheep') ? 3 + Math.random() * 5 : 1.5 + Math.random() * 2.5;
+        cr.fidx = 0;
+      } else {
+        if (dx !== 0) cr.face = dx > 0 ? 1 : -1;
+        cr.x += (dx / d) * cr.sp * dt; cr.y += (dy / d) * cr.sp * dt;
+      }
+    } else if (cr.timer <= 0) {   // idle/graze/bounce baigės → naujas judesys (ne visada)
+      const wander = (cr.type === 'bird') ? 0.75 : (cr.type === 'sheep' ? 0.55 : 0.35);
+      if (Math.random() < wander) {
+        const rng = (cr.type === 'bird') ? 6 : 3.2;
+        let tx = cr.x, ty = cr.y;
+        for (let k = 0; k < 8; k++) { const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * rng; const nx = cr.x + Math.cos(a) * r, ny = cr.y + Math.sin(a) * r * 0.7; if (nx >= _F9_CRIT_BOUNDS.x0 && nx <= _F9_CRIT_BOUNDS.x1 && ny >= _F9_CRIT_BOUNDS.y0 && ny <= _F9_CRIT_BOUNDS.y1 && !_f9CritKeepout(nx, ny)) { tx = nx; ty = ny; break; } }
+        cr.tx = tx; cr.ty = ty;
+        cr.state = 'move'; cr.sp = (cr.type === 'bird') ? 1.6 : (cr.type === 'happysheep' ? 1.1 : 0.6);
+        cr.timer = 6; cr.fidx = 0;
+      } else {   // liks vietoj (kita animacija)
+        cr.state = (cr.type === 'sheep') ? (Math.random() < 0.6 ? 'graze' : 'idle') : (cr.type === 'happysheep' ? 'bounce' : 'idle');
+        cr.timer = 2 + Math.random() * 4; cr.fidx = 0;
+      }
+    }
+    // ── anim ──
+    const sh = def.sheets[cr.state] || def.sheets.idle;
+    cr.fidx += def.fps * dt;
+  }
+}
+function _f9DrawCritters() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined' || !window._f9pvpLive || !_f9Critters) return;
+  const C = CELL;
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  // depth: rūšiuoti pagal y (žemesni piešiami vėliau) — natūralus persidengimas
+  const sorted = _f9Critters.slice().sort((a, b) => a.y - b.y);
+  for (const cr of sorted) {
+    const def = _F9_CRIT_DEF[cr.type];
+    const sh = def.sheets[cr.state] || def.sheets.idle;
+    const img = _f9CritImgs[sh.src];
+    if (!(img && img.complete && img.naturalWidth > 0)) continue;
+    const frame = Math.floor(cr.fidx) % sh.n;
+    const dw = def.draw * C, dh = dw;   // kvadratiniai kadrai
+    const px = (cr.x + 0.5) * C, py = (cr.y + 0.5) * C;
+    ctx.save();
+    ctx.translate(px, py);
+    if (cr.face < 0) ctx.scale(-1, 1);   // veidu į judėjimo pusę
+    ctx.drawImage(img, frame * sh.sz, 0, sh.sz, sh.sz, -dw / 2, -dh + dh * 0.28, dw, dh);   // kojos ~ ant (x,y)
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function _f9DrawHospital() {
+  // 🧱 07-12: occlusion rect valomas kiekvieną kadrą (stale guard išėjus iš PvP scenos)
+  window._f9HospitalRect = null;
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) return;   // tik PvP pilies scenoje (home + raid — pastatas priklauso bazei)
+  if (!_f9HospitalImg) { _f9HospitalImg = new Image(); _f9HospitalImg.src = 'hospital.png'; }   // 🏥 user pixel-art sprite (07-03, rembg cutout)
+  if (!(_f9HospitalImg.complete && _f9HospitalImg.naturalWidth > 0)) return;
+  const C = CELL;
+  const bw = C * 2.9;
+  const bh = bw * (_f9HospitalImg.naturalHeight / _f9HospitalImg.naturalWidth);
+  const cxp = (69.5 + 0.5) * C;                 // kolizijos AABB centras unit-space (69.5, 17.6)
+  const byp = (17.6 + 0.5 + 0.55) * C;          // vizuali pastato apačia ≈ kolizijos apačia
+  const x = cxp - bw / 2, y = byp - bh;
+  // 🖱️ hover ARBA atidaryta panelė → baltas kontūras (pastatas „pasižymėjęs", kaip kapinės/unitai)
+  let hover = false;
+  if (typeof _canvasMx === 'number' && _canvasMx >= 0 && S.cam) {
+    const wmx = _canvasMx / _f9WorldZoom() + S.cam.x, wmy = _canvasMy / _f9WorldZoom() + S.cam.y;
+    hover = wmx >= x && wmx <= x + bw && wmy >= y && wmy <= y + bh;
+  }
+  if (hover || _f9HospPanelEl) {
+    const oc = _f9HospitalBuildOutline(C * 0.045 * _f9HospitalImg.naturalWidth / bw);
+    if (oc) {
+      const scl = bw / _f9HospitalImg.naturalWidth;
+      ctx.drawImage(oc.c, x - oc.OL * scl, y - oc.OL * scl, bw + oc.OL * 2 * scl, bh + oc.OL * 2 * scl);
+    }
+  }
+  ctx.drawImage(_f9HospitalImg, x, y, bw, bh);
+  const n = Array.isArray(window._f9Hospital) ? window._f9Hospital.length : 0;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // (🏥 emoji virš stogo NEBEreikia — naujas sprite'as turi raudoną kryžių fasade)
+  if (n > 0) {                                   // raudonas burbulas su sužalotų skaičiumi
+    const bx = cxp + C * 0.58, by2 = y - C * 0.12;
+    ctx.fillStyle = '#e85d5d'; ctx.strokeStyle = '#4a1414'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx, by2, C * 0.26, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.round(C * 0.3) + 'px Verdana, sans-serif';
+    ctx.fillText(String(n), bx, by2 + 1);
+  }
+  ctx.restore();
+  window._f9HospitalBounds = { x: x, y: y, w: bw, h: bh };   // klik hitbox (world px)
+  // 🧱 07-12 (user): unitai lipo ANT ligoninės be kontūrų — FOREGROUND + depth loop (kaip gold camp/pilis).
+  //    hitBaseY = serverio AABB pietinė briauna (cy 17.6 + hh 0.5 → unit-y 18.1). Sprite tight-cropped
+  //    (rembg cutout, alpha-scan ~0.004–0.997) → rect = pilnas piešimo stačiakampis.
+  window._f9HospitalRect = { x0: x, y0: y, x1: x + bw, y1: y + bh, hitBaseY: (18.1 + 0.5) * C };
+  // 🐛 DEBUG (kaip pilis): serverio kolizijos AABB
+  if (window._dbgHit || window._f9DebugOn) {
+    ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)';
+    ctx.fillRect((69.5 + 0.5 - 1.0) * C, (17.6 + 0.5 - 0.5) * C, 2.0 * C, 1.0 * C);
+    ctx.restore();
+  }
+}
+// 💬 „viskas sveika" burbulas IŠ pačios ligoninės (klik ant tuščios; fade in→hold→out + lengvai kyla).
+//    ATSKIRA funkcija — kviečiama PO drawUnits/foreground, kad unitai burbulo neuždengtų.
+function _f9DrawHospBubble() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive || !window._f9HospitalBounds) return;
+  const C = CELL;
+  const hb = window._f9HospitalBounds;
+  const cxp = hb.x + hb.w / 2, y = hb.y;
+  const _bt = window._f9HospBubbleT || 0;
+  if (_bt) {
+    const age = performance.now() - _bt, DUR = 2400;
+    if (age >= DUR) window._f9HospBubbleT = 0;
+    else {
+      const al = Math.min(Math.min(1, age / 160), Math.min(1, (DUR - age) / 300));
+      const rise = (age / DUR) * C * 0.12;
+      const txt = 'All units are healthy 💪';
+      ctx.save();
+      ctx.globalAlpha = al;
+      ctx.font = Math.round(C * 0.20) + 'px "Press Start 2P", monospace';   // 07-03 user: „biski didesnį" (buvo 0.15)
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(txt).width;
+      const padX = C * 0.34;   // platesnis — emoji plotį measureText linkęs nuvertinti
+      const bwd = tw + padX * 2, bht = C * 0.54;
+      const tailH = C * 0.16;
+      const bby = y - C * 0.22 - rise;                 // burbulo apačia (su uodegėle) virš stogo
+      const bx0 = cxp - bwd / 2, by0 = bby - tailH - bht;
+      ctx.fillStyle = 'rgba(12,16,32,0.94)';
+      ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(bx0, by0, bwd, bht, 6); else ctx.rect(bx0, by0, bwd, bht);
+      ctx.fill(); ctx.stroke();
+      // uodegėlė žemyn į pastatą
+      ctx.beginPath();
+      ctx.moveTo(cxp - C * 0.10, by0 + bht - 1);
+      ctx.lineTo(cxp + C * 0.10, by0 + bht - 1);
+      ctx.lineTo(cxp, by0 + bht + tailH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(12,16,32,1)';              // uždengiam vidinę siūlę tarp rect ir uodegėlės
+      ctx.fillRect(cxp - C * 0.09, by0 + bht - 2.5, C * 0.18, 3);
+      ctx.fillStyle = '#6fcf5c';
+      ctx.fillText(txt, cxp, by0 + bht / 2);
+      ctx.restore();
+    }
+  }
+}
+// 🏥 Ligoninės panelė v2 (EILĖS modelis, 2026-07-03): gydosi TIK #1 (progreso baras, 1h), kiti LAUKIA
+//   eilėje; „⬆ FIRST" perkelia pasirinktą į priekį (galva praranda progresą — serverio taisyklė).
+//   Gyvos unitų IDLE animacijos — mini-canvas'ai per _f9UnitFrameForOutline (tikri žaidimo sprite'ai).
+let _f9HospPanelEl = null, _f9HospOverlayEl = null, _f9HospPanelTimer = null, _f9HospAnimTimer = null, _f9HospSig = '';
+function _f9HospIcon(t) { return ({ skull: '💀', archer: '🏹', harpoon_fish: '🔱', shaman: '🔮', pigronke: '🐗', ghost: '👻', ronhood: '🎯' })[t] || '🪖'; }
+function _f9HospFmt(ms) {
+  if (ms <= 0) return 'done';
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000), sec = Math.floor((ms % 60000) / 1000);
+  return h > 0 ? (h + 'h ' + m + 'm') : (m > 0 ? (m + 'm ' + sec + 's') : (sec + 's'));
+}
+// Gyvos idle animacijos — piešiam TIKRUS žaidimo sprite kadrus į kiekvienos eilutės canvas'ą (~7fps).
+function _f9HospDrawSprites() {
+  if (!_f9HospPanelEl || typeof window._f9UnitFrameForOutline !== 'function') return;
+  const cvs = _f9HospPanelEl.querySelectorAll('canvas[data-utype]');
+  for (const cv of cvs) {
+    try {
+      const fr = window._f9UnitFrameForOutline({ utype: cv.dataset.utype, facing: { dx: 1 }, _f9Moving: false, swingStart: 0, guardStart: 0, x: 0, y: 0, rx: 0, ry: 0 });
+      if (!fr || !fr.img || !fr.img.complete || !fr.img.naturalWidth) continue;
+      const c2 = cv.getContext('2d');
+      c2.imageSmoothingEnabled = false;
+      c2.clearRect(0, 0, cv.width, cv.height);
+      c2.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, 0, 0, cv.width, cv.height);
+    } catch (_) {}
+  }
+}
+// ⚡🔵 RONKE BLESS mygtuko FX — CSS (hover glow / press-down / pulse / ripple) įpurškiamas 1× atidarius panelę.
+function _f9HospEnsureFx() {
+  if (document.getElementById('f9-bless-fx')) return;
+  const st = document.createElement('style'); st.id = 'f9-bless-fx';
+  st.textContent = [
+    ".f9-bless-btn{font-family:inherit;font-size:8px;letter-spacing:.5px;line-height:1.3;border-radius:5px;padding:6px 9px;cursor:pointer;white-space:nowrap;position:relative;overflow:hidden;color:#aef0f7;border:1px solid #3a8a96;background:linear-gradient(180deg,rgba(74,157,166,.30),rgba(74,157,166,.14));box-shadow:0 2px 0 rgba(0,0,0,.35),inset 0 0 8px rgba(126,220,234,.15);transition:transform .12s cubic-bezier(.2,.8,.3,1.5),box-shadow .15s,filter .12s,background .15s;}",
+    ".f9-bless-btn:hover{transform:translateY(-1px) scale(1.07);filter:brightness(1.28);border-color:#7fdfea;background:linear-gradient(180deg,rgba(96,196,210,.5),rgba(74,157,166,.24));box-shadow:0 4px 12px rgba(74,157,166,.6),inset 0 0 14px rgba(126,220,234,.45);}",
+    ".f9-bless-btn:active{transform:translateY(1px) scale(.92);filter:brightness(.9);box-shadow:inset 0 2px 6px rgba(0,0,0,.55);}",
+    ".f9-bless-btn.busy{pointer-events:none;animation:f9blsPulse .55s ease-in-out infinite;color:#eafcff;}",
+    ".f9-bless-btn.dim{color:#5a7a82;border-color:#24454a;background:rgba(74,157,166,.06);box-shadow:none;}",
+    ".f9-bless-btn.dim:hover{transform:none;filter:none;background:rgba(74,157,166,.12);box-shadow:none;border-color:#356a72;}",
+    "@keyframes f9blsPulse{0%,100%{box-shadow:0 0 6px rgba(126,220,234,.5);}50%{box-shadow:0 0 18px rgba(126,220,234,.95);}}",
+    ".f9-bl-ripple{position:absolute;border-radius:50%;background:rgba(190,245,252,.55);transform:translate(-50%,-50%) scale(0);animation:f9blsRip .5s ease-out forwards;pointer-events:none;}",
+    "@keyframes f9blsRip{to{transform:translate(-50%,-50%) scale(1);opacity:0;}}",
+  ].join('');
+  document.head.appendChild(st);
+}
+// ⚡ sparkle burstas iš mygtuko (paspaudimo momentinis „kažkas nutiko" feedback'as).
+function _f9BlessSparkle(btn) {
+  try {
+    const r = btn.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    for (let k = 0; k < 7; k++) {
+      const s = document.createElement('div');
+      s.textContent = (k % 2) ? '⚡' : '✨';
+      const ang = (k / 7) * Math.PI * 2 + Math.random() * 0.7, dist = 20 + Math.random() * 18;
+      s.style.cssText = 'position:fixed;left:0;top:0;z-index:100060;font-size:' + (11 + Math.random() * 7).toFixed(0) + 'px;pointer-events:none;opacity:0;transform:translate(' + cx.toFixed(0) + 'px,' + cy.toFixed(0) + 'px) scale(.5);transition:transform .5s cubic-bezier(.2,.8,.3,1),opacity .5s;';
+      document.body.appendChild(s);
+      const tx = cx + Math.cos(ang) * dist, ty = cy + Math.sin(ang) * dist - 6;
+      requestAnimationFrame(function () { s.style.opacity = '1'; s.style.transform = 'translate(' + tx.toFixed(0) + 'px,' + ty.toFixed(0) + 'px) scale(1.15)'; });
+      setTimeout(function () { s.style.opacity = '0'; }, 330);
+      setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 560);
+    }
+  } catch (_) {}
+}
+// Statuso eilutės (progresas/laikai) — atnaujinamos kas 500ms BE eilučių perstatymo (animacijos nemirksi).
+function _f9HospUpdateStatus() {
+  if (!_f9HospPanelEl) return;
+  // ⚡🔵 RONKE BLESS skaitiklis — kiek instant heal'ų liko šiandien (0 jei nėra Ronkeverse NFT)
+  const _blessN = _f9HospPanelEl.querySelector('#f9hosp-bless-n');
+  if (_blessN) { const _in = window._f9HospInsta || {}; _blessN.textContent = String(_in.remaining != null ? _in.remaining : 0); }
+  const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
+  const HEAL = window._f9HospHealMs || 3600000;
+  const now = Date.now();
+  const _nHeal = list.filter((x) => x.healing).length || 1;   // 🏥 kiek slotų gydo (v3: gali būti 2-3)
+  list.forEach((i, idx) => {
+    const el = _f9HospPanelEl.querySelector('[data-status="' + i.tokenId + '"]');
+    if (!el) return;
+    const remain = (i.etaLocal || 0) - now;
+    if (i.healing) {
+      const _dur = i.dur || HEAL;   // 🏥 v3.1: šio unito LOVOS trukmė (lovos skiriasi: 50/60min)
+      const prog = Math.max(0, Math.min(1, 1 - remain / _dur));
+      el.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<div style="flex:1;height:10px;background:#0a0c18;border:1px solid #3a3a55;border-radius:5px;overflow:hidden;">' +
+            '<div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:linear-gradient(90deg,#4a9a3a,#6fcf5c);box-shadow:0 0 8px rgba(111,207,92,0.6);"></div>' +
+          '</div>' +
+          '<span style="color:#6fcf5c;white-space:nowrap;">⚕ ' + _f9HospFmt(remain) + '</span>' +
+        '</div>';
+    } else {
+      el.innerHTML = '<span style="color:#8a9aaa;">IN QUEUE #' + (idx - _nHeal + 1) + '</span> <span style="color:#6a7a8a;">· ready in ~' + _f9HospFmt(remain) + '</span>';
+    }
+  });
+}
+// Eilutės perstatomos TIK pasikeitus eilės sudėčiai/tvarkai (signature) — canvas'ai išlieka gyvi.
+function _f9HospRebuild() {
+  if (!_f9HospPanelEl) return;
+  const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
+  const ready = window._f9HospReady || 0;
+  const sig = list.map(i => i.tokenId).join('|') + ':r' + ready + ':b' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0);   // ⚔️ ready + ⚡🔵 bless charge'ai perpiešia
+  if (sig === _f9HospSig) { _f9HospUpdateStatus(); return; }
+  _f9HospSig = sig;
+  // ⚔️ DEPLOY sekcija — VISADA matoma (07-04 user: „nematau deploy mygtuko"); disabled kai ready=0
+  const dep = _f9HospPanelEl.querySelector('#f9hosp-deploy');
+  if (dep) {
+    const rn = dep.querySelector('#f9hosp-readyn'); if (rn) rn.textContent = String(ready);
+    const rl = dep.querySelector('#f9hosp-readylbl'); if (rl) rl.style.color = ready > 0 ? '#6fcf5c' : '#6a7a8a';
+    const dbtn = dep.querySelector('#f9hosp-deploy-btn');
+    if (dbtn) {
+      if (ready > 0) { dbtn.style.borderColor = '#ffcf5c'; dbtn.style.background = 'rgba(255,207,92,0.12)'; dbtn.style.color = '#ffcf5c'; dbtn.style.cursor = 'pointer'; }
+      else { dbtn.style.borderColor = '#3a4055'; dbtn.style.background = '#232838'; dbtn.style.color = '#6a7285'; dbtn.style.cursor = 'default'; }
+    }
+    // 🃏 deko būsenos eilutė: DECK N/cap · 🟢 lauke · 🏥 gydosi · ✅ paruošti · 👛 piniginėj
+    const di = dep.querySelector('#f9hosp-deckinfo');
+    if (di) {
+      let deckLen = 0;
+      try {
+        const W = window.Wallet, BN = window.BarracksNFT;
+        const a = (W && W.getAddress && W.getAddress()) || '';
+        if (a && BN && BN.getDeck) deckLen = (BN.getDeck(a) || []).length;
+      } catch (_) {}
+      const cem = window._f9Cemetery || {};
+      const cap = Math.min(30, 12 + (cem.rv || 0));
+      // 🟢 M6 fix (07-12, sync auditas): lauko skaičius = serverio onField (tikslus). Sena formulė
+      //   klydo: undercount kai ligoninėj senų-dekų sužaloti (list juos įskaito → +stale atgal),
+      //   overcount kai permadead (deckLen on-chain jų nemato). Fallback — pakoreguota formulė.
+      const fieldN = (window._f9OnField instanceof Set && window._f9FieldAt)
+        ? window._f9OnField.size
+        : Math.max(0, deckLen - list.length + (window._f9HospStale || 0) - ready);
+      di.innerHTML = deckLen
+        ? 'DECK <span style="color:#cfd8e8">' + deckLen + '/' + cap + '</span> · 🟢 ' + fieldN + ' · 🏥 ' + list.length + ' · ✅ ' + ready + (cem.wallet ? ' · 👛 ' + cem.wallet + ' in wallet' : '')
+        : 'No registered deck — build one via MANAGE DECK';
+    }
+  }
+  const body = _f9HospPanelEl.querySelector('#f9hosp-body');
+  if (!body) return;
+  const _staleNote = (window._f9HospStale || 0) > 0
+    ? '<div style="padding:8px 4px 2px;color:#6a7a8a;font-size:8px;line-height:1.5;">🔒 ' + window._f9HospStale + ' old-deck unit' + (window._f9HospStale > 1 ? 's' : '') + ' hidden — not in your current deck</div>'
+    : '';
+  if (!list.length) {
+    body.innerHTML = (ready > 0
+      ? '<div style="padding:14px 4px;color:#6fcf5c;">All wounds healed — ' + ready + ' unit(s) ready to deploy ⚔</div>'
+      : '<div style="padding:14px 4px;color:#8a9aaa;">Hospital is empty — all units are healthy 💪</div>') + _staleNote;
+    const cnt0 = _f9HospPanelEl.querySelector('#f9hosp-counter');
+    if (cnt0) cnt0.textContent = '⚕ 0';
+    return;
+  }
+  const cnt = _f9HospPanelEl.querySelector('#f9hosp-counter');
+  // 🏥⚔️ skirstymas (07-05 user „ligoninėj 21"): kiek DABARTINIO deko vs seni išrotuoti (payload inDeck)
+  const _hdN = list.filter(i => i.inDeck !== false).length, _hoN = list.length - _hdN;
+  if (cnt) cnt.textContent = '⚕ ' + list.length + (_hoN > 0 ? ' (' + _hdN + ' deck · ' + _hoN + ' old)' : '');
+  body.innerHTML = list.map((i, idx) =>
+    '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px dashed rgba(58,58,85,0.55);' + (i.healing ? 'background:rgba(111,207,92,0.08);border-radius:6px;' : (i.inDeck === false ? 'opacity:0.62;' : '')) + '">' +
+      '<canvas data-utype="' + i.utype + '" width="44" height="44" style="width:44px;height:44px;image-rendering:pixelated;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (i.healing ? '#6fcf5c' : '#3a3a55') + ';border-radius:6px;flex:none;"></canvas>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="margin-bottom:4px;color:#cfd8e8;">' + _f9HospIcon(i.utype) + ' ' + String(i.utype || '').toUpperCase() + (i.level ? ' <span style="color:#8a9aaa">Lv' + i.level + '</span>' : '') +
+          (i.healing ? ' <span style="color:#6fcf5c;font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(111,207,92,0.25);">HEALING</span>' : '') +
+          (i.inDeck === false ? ' <span style="color:#8a9aaa;font-size:8px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.06);border:1px solid #3a3a55;" title="Not in your current registered deck — heals AFTER active deck units">📦 OLD DECK</span>' : '') + '</div>' +
+        '<div data-status="' + i.tokenId + '" style="font-size:9px;"></div>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:5px;flex:none;">' +
+        '<button data-insta="' + i.tokenId + '" class="f9-bless-btn' + (((window._f9HospInsta && window._f9HospInsta.remaining) || 0) > 0 ? '' : ' dim') + '" title="Instant heal — Ronke Bless (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' left today)"><span class="f9-bl-lbl">⚡ BLESS</span></button>' +
+        (!i.healing ? '<button data-heal="' + i.tokenId + '" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;line-height:1.3;background:rgba(255,207,92,0.1);color:#ffcf5c;border:1px solid #6a4a18;border-radius:4px;padding:6px 7px;cursor:pointer;white-space:nowrap;">⬆ FIRST</button>' : '') +
+      '</div>' +
+    '</div>').join('') + _staleNote;   // 🔒 „N old-deck units hidden" (jei yra) — PRIEŠ wiring, kad listeneriai išliktų
+  // „⬆ FIRST" — perkelti į eilės priekį; „⚡ BLESS" — momentinis pagydymas (Ronkeverse holder charge, server-auth).
+  body.querySelectorAll('button[data-heal]').forEach(btn => {
+    btn.onclick = function () {
+      try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_heal_first', { tokenId: btn.dataset.heal }); } catch (_) {}
+    };
+  });
+  body.querySelectorAll('button[data-insta]').forEach(btn => {
+    btn.onclick = function (ev) {
+      if (btn.classList.contains('busy')) return;   // jau siunčiama — ignoruojam dvigubą
+      // 💧 ripple iš paspaudimo taško
+      try {
+        const rr = btn.getBoundingClientRect(), sz = Math.max(rr.width, rr.height) * 2.2;
+        const rip = document.createElement('span'); rip.className = 'f9-bl-ripple';
+        rip.style.width = rip.style.height = sz + 'px';
+        rip.style.left = (((ev && ev.clientX) || (rr.left + rr.width / 2)) - rr.left) + 'px';
+        rip.style.top = (((ev && ev.clientY) || (rr.top + rr.height / 2)) - rr.top) + 'px';
+        btn.appendChild(rip);
+        setTimeout(function () { if (rip.parentNode) rip.parentNode.removeChild(rip); }, 520);
+      } catch (_) {}
+      _f9BlessSparkle(btn);                          // ⚡ sparkle burstas
+      // ⏳ „processing" būsena — iškart matai kad paspaudimas užregistruotas (nebekyla klausimas ar suveikė)
+      btn.classList.add('busy');
+      const lbl = btn.querySelector('.f9-bl-lbl'); if (lbl) lbl.textContent = '⚡ …';
+      try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_instant_heal', { tokenId: btn.dataset.insta }); } catch (_) {}
+      // saugiklis: jei serveris neatsako / sig nepakito (panelė paprastai persipiešia anksčiau) → atstatom
+      setTimeout(function () { if (btn.parentNode) { btn.classList.remove('busy'); const l2 = btn.querySelector('.f9-bl-lbl'); if (l2) l2.textContent = '⚡ BLESS'; } }, 2200);
+    };
+  });
+  _f9HospUpdateStatus();
+  _f9HospDrawSprites();
+}
+// Kviečiamas iš f9_pvp_live 'hospital' push'o — jei panelė atidaryta, atsinaujina realiu laiku.
+window._f9HospRenderIfOpen = function () { if (_f9HospPanelEl) _f9HospRebuild(); };
+function _f9CloseHospitalPanel() {
+  if (_f9HospPanelTimer) { clearInterval(_f9HospPanelTimer); _f9HospPanelTimer = null; }
+  if (_f9HospAnimTimer) { clearInterval(_f9HospAnimTimer); _f9HospAnimTimer = null; }
+  if (_f9HospOverlayEl && _f9HospOverlayEl.parentNode) _f9HospOverlayEl.parentNode.removeChild(_f9HospOverlayEl);
+  else if (_f9HospPanelEl && _f9HospPanelEl.parentNode) _f9HospPanelEl.parentNode.removeChild(_f9HospPanelEl);
+  _f9HospOverlayEl = null; _f9HospPanelEl = null; _f9HospSig = '';
+}
+function _f9ToggleHospitalPanel() {
+  if (_f9HospPanelEl) { _f9CloseHospitalPanel(); return; }
+  try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_get'); } catch (_) {}   // šviežia eilė
+  // 🏥 TUŠČIA ligoninė IR nėra paruoštų deploy'ui → JOKIOS panelės, tik 💬 burbulas virš ligoninės.
+  //   ⚔️ 07-04: jei yra PARUOŠTŲ (pasveikę/nespawninti) — panelę ATIDAROM (joje DEPLOY mygtukas).
+  if (!(Array.isArray(window._f9Hospital) && window._f9Hospital.length) && !(window._f9HospReady > 0)) {
+    window._f9HospBubbleT = performance.now();
+    return;
+  }
+  // overlay — kaip trofėjų/kapinių panelė (pritemdo + blur, klik šalia = uždaro)
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.92);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+  ov.addEventListener('click', function (ev) { if (ev.target === ov) _f9CloseHospitalPanel(); });
+  const el = document.createElement('div');
+  el.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
+    'box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;' +
+    'padding:18px 22px;width:520px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;' +   // 520 (buvo 460) — telpa ⚡ BLESS mygtukas (user 2026-07-05)
+    "font-family:'Press Start 2P',monospace,sans-serif;font-size:10px;line-height:1.5;color:#8a9aaa;";
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
+      '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">🏥</span>' +
+      '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
+      // ⚡🔵 RONKE BLESS skaitiklis — kiek instant heal\'ų liko šiandien (0 jei nėra Ronkeverse NFT)
+      '<span id="f9hosp-bless" title="Ronke Bless — instant heals left today (1 per Ronkeverse NFT / 24h)" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;"><img src="assets_tiny/ronke_logo.png" alt="" style="width:12px;height:12px;image-rendering:pixelated;"/>BLESS <span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
+      '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+    '</div>' +
+    '<div id="f9hosp-body" style="overflow:auto;"></div>' +
+    '<div id="f9hosp-deploy" style="margin-top:8px;padding-top:10px;border-top:1px solid #3a3a55;">' +
+      // ⚔ DEPLOY PASLĖPTAS 2026-07-04 (user: „nieko nedaro / neveikia, nenaudingas"). Mygtukas display:none,
+      //   BET elementai lieka DOM'e — _f9HospRebuild ref'ai (#f9hosp-deploy-btn / #f9hosp-readyn) nekrenta, jokio konflikto su kodu.
+      '<div style="display:none;">' +
+        '<span id="f9hosp-readylbl" style="flex:1;font-size:9px;color:#6a7a8a;">✅ READY: <span id="f9hosp-readyn">0</span> unit(s) waiting</span>' +
+        '<button id="f9hosp-deploy-btn" style="font-family:inherit;font-size:10px;letter-spacing:1px;padding:9px 16px;border-radius:4px;border:2px solid #3a4055;background:#232838;color:#6a7285;cursor:default;">⚔ DEPLOY</button>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<span id="f9hosp-deckinfo" style="flex:1;font-size:8px;color:#8a9aaa;line-height:1.6;"></span>' +
+        '<button id="f9hosp-deck-btn" title="Change which NFTs are registered in your deck (10 RONKE)" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;padding:7px 10px;border-radius:4px;border:1px solid #6a4a18;background:rgba(255,207,92,0.1);color:#ffcf5c;cursor:pointer;">🃏 MANAGE DECK</button>' +
+      '</div></div>' +
+    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.</div>';
+  ov.appendChild(el);
+  document.body.appendChild(ov);
+  _f9HospEnsureFx();   // ⚡🔵 RONKE BLESS mygtuko hover/press/ripple CSS
+  _f9HospOverlayEl = ov; _f9HospPanelEl = el;
+  const xb = el.querySelector('#f9hosp-x'); if (xb) xb.onclick = _f9CloseHospitalPanel;
+  // ⚔️ DEPLOY — paruošti (pasveikę/nespawninti) deko unitai į garnizoną (server-auth deploy_ready)
+  const db = el.querySelector('#f9hosp-deploy-btn');
+  if (db) db.onclick = function () {
+    if (!(window._f9HospReady > 0)) return;   // disabled būsena — nieko nesiunčiam
+    try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('deploy_ready'); } catch (_) {}
+  };
+  // 🃏 MANAGE DECK — atidaro ESAMĄ barakų modalą (INVENTORY tab): deko keitimas = tas pats setDeck TX flow
+  //   (07-04 user: deko rotacija leidžiama, 10 RONKE fee = kaina; sužeisti seka tokenId, ne deko slotą)
+  const dk = el.querySelector('#f9hosp-deck-btn');
+  if (dk) dk.onclick = function () {
+    _f9CloseHospitalPanel();
+    try {
+      if (window.NFTBarracksModal && window.NFTBarracksModal.open) window.NFTBarracksModal.open();
+      setTimeout(function () {
+        const t = document.querySelector('.nft-tab[data-tab="inventory"]'); if (t) t.click();
+        // ✏️ AUTO-EDIT (07-04 user: „nuimti negaliu"): registruotas dekas atsidaro UŽRAKINTAS 🔒 —
+        //   automatiškai įjungiam redagavimą, kad iškart galėtum nuimti/keisti unitus.
+        let _tries = 0;
+        (function _clickEdit() {
+          const e = document.getElementById('ndr-edit-ic');
+          if (e && e.style.display !== 'none' && e.offsetParent) { e.click(); return; }
+          if (++_tries < 15) setTimeout(_clickEdit, 300);
+        })();
+      }, 80);
+    } catch (_) {}
+  };
+  _f9HospSig = '__init__';   // 🩹 sentinel ≠ '' — kitaip TUŠČIAS sąrašas (sig='') sutaptų ir body liktų blank
+  _f9HospRebuild();
+  _f9HospPanelTimer = setInterval(_f9HospUpdateStatus, 500);
+  _f9HospAnimTimer = setInterval(_f9HospDrawSprites, 140);
+}
+
+let _f9TpPadImg = null;   // 🌀 user portalo pado sprite (07-03, rembg cutout iš TP.png)
+function _f9DrawTpPads() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || !Array.isArray(window._f9TpPads) || !window._f9TpPads.length) return;
+  if (window.__f9RaidActive) return;   // 🌀 TP pad'us mato TIK pilies savininkas (gynėjas); priešas (raideris) NEmato
+  const C = CELL, now = performance.now();
+  if (!_f9TpPadImg) { _f9TpPadImg = new Image(); _f9TpPadImg.src = 'tp_pad.png'; }
+  const _padReady = _f9TpPadImg.complete && _f9TpPadImg.naturalWidth > 0;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let idx = 0; idx < window._f9TpPads.length; idx++) {
+    const p = window._f9TpPads[idx];
+    // JUODA SKYLĖ. Vizualas ~20% mažesnis už TP veikimo zoną (user 07-03 „sumažink biski");
+    //   serverio TP_RADIUS=1.0 nepakitęs — trigger zona ta pati, tik piešinys kompaktiškesnis.
+    const cx = (p[0] + 0.5) * C, cy = (p[1] + 0.5) * C - 25;
+    const R = C * 0.8;
+    const pulse = (Math.sin(now / 600) + 1) * 0.5;
+    // === PORTALO PADAS: user sprite (akmeninis žiedas + violetinis sūkurys) + animuoti FX ant viršaus ===
+    // 1) pado sprite ant žemės (centras = TP celės centras; plotis ~ zona ±rėmas). Fallback — senas blob'as.
+    if (_padReady) {
+      const w = R * 2.4, h = w * (_f9TpPadImg.naturalHeight / _f9TpPadImg.naturalWidth);
+      ctx.save();
+      ctx.globalAlpha = 0.92 + pulse * 0.08;   // vos gyvas pulsas
+      ctx.drawImage(_f9TpPadImg, cx - w / 2, cy - h / 2, w, h);
+      ctx.restore();
+    } else {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.15);
+      g.addColorStop(0,    'rgba(160,120,255,' + (0.36 + pulse * 0.16).toFixed(3) + ')');
+      g.addColorStop(0.45, 'rgba(120,75,235,0.20)');
+      g.addColorStop(1,    'rgba(95,55,210,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.15, R * 0.62, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // 2) vertikalūs energijos stulpeliai (beam) — kyla aukštyn, švytuoja (shimmer)
+    const BEAMS = 5;
+    for (let i = 0; i < BEAMS; i++) {
+      const ph = now / 560 + i * 1.27;
+      const sway = Math.sin(ph) * R * 0.12;
+      const bx = cx + (i - (BEAMS - 1) / 2) * R * 0.34 + sway;
+      const h = R * (1.5 + 0.55 * ((Math.sin(ph * 1.3) + 1) * 0.5));
+      const bg = ctx.createLinearGradient(bx, cy, bx, cy - h);
+      bg.addColorStop(0, 'rgba(205,175,255,' + (0.5 + pulse * 0.3).toFixed(3) + ')');
+      bg.addColorStop(1, 'rgba(160,110,255,0)');
+      ctx.strokeStyle = bg;
+      ctx.lineWidth = Math.max(1.5, C * 0.05);
+      ctx.beginPath(); ctx.moveTo(bx, cy); ctx.lineTo(bx, cy - h); ctx.stroke();
+    }
+    // 3) kylančios kibirkštys (shimmer) — pakyla ir užgęsta
+    for (let s = 0; s < 6; s++) {
+      const t = ((now / 880) + s / 6) % 1;             // 0..1 ciklas
+      const sx = cx + Math.sin(s * 2.1 + now / 680) * R * 0.5;
+      const sy = cy - t * R * 1.8;
+      const al = (1 - t) * (0.5 + pulse * 0.3);
+      ctx.fillStyle = 'rgba(228,210,255,' + al.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, C * 0.045 * (1 - t * 0.5)), 0, Math.PI * 2); ctx.fill();
+    }
+    // 4) branduolio taškas — TIK fallback'e (sprite pats turi sūkurio centrą)
+    if (!_padReady) {
+      ctx.fillStyle = 'rgba(238,224,255,' + (0.45 + pulse * 0.3).toFixed(3) + ')';
+      ctx.beginPath(); ctx.ellipse(cx, cy, R * 0.24, R * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // 5) AIM highlight — kai pažymi unitus į ŠITĄ pad'ą (tpmove): sustiprėjęs spindulių blyksnis ~1.6s
+    if (window._f9TpAim && window._f9TpAim.gx === p[0] && window._f9TpAim.gy === p[1]) {
+      const age = now - window._f9TpAim.born;
+      const AIM_DUR = 1700;
+      if (age < AIM_DUR) {
+        const fade = 1 - age / AIM_DUR;
+        const flick = (Math.sin(age / 90) + 1) * 0.5;   // mirgėjimas → aiškus „pažymėta"
+        ctx.save();
+        // ryškus pulsuojantis švytėjimas ant žemės (filled, ne žiedas)
+        const fr = R * (0.9 + 0.25 * flick);
+        const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, fr);
+        fg.addColorStop(0, 'rgba(245,235,255,' + (0.55 * fade).toFixed(3) + ')');
+        fg.addColorStop(1, 'rgba(190,150,255,0)');
+        ctx.fillStyle = fg;
+        ctx.beginPath(); ctx.ellipse(cx, cy, fr, fr * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+        // ryškus beam stulpas aukštyn
+        const ag = ctx.createLinearGradient(cx, cy + R * 0.2, cx, cy - R * 2.4);
+        ag.addColorStop(0, 'rgba(250,242,255,' + (0.5 * fade).toFixed(3) + ')');
+        ag.addColorStop(1, 'rgba(190,150,255,0)');
+        ctx.fillStyle = ag;
+        ctx.beginPath(); ctx.moveTo(cx - R * 0.4, cy + R * 0.15); ctx.lineTo(cx + R * 0.4, cy + R * 0.15);
+        ctx.lineTo(cx + R * 0.14, cy - R * 2.4); ctx.lineTo(cx - R * 0.14, cy - R * 2.4); ctx.closePath(); ctx.fill();
+        // žemyn nukreipti chevron'ai virš pad'o — aiškus „teleporto taikinys" indikatorius (bobina)
+        const bob = Math.sin(age / 180) * R * 0.12;
+        ctx.strokeStyle = 'rgba(248,240,255,' + ((0.55 + 0.4 * flick) * fade).toFixed(3) + ')';
+        ctx.lineWidth = Math.max(2, C * 0.06);
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        for (let cI = 0; cI < 2; cI++) {
+          const cyy = cy - R * (1.35 + cI * 0.42) + bob, w = R * 0.34, hh = R * 0.2;
+          ctx.beginPath();
+          ctx.moveTo(cx - w, cyy - hh * 0.5); ctx.lineTo(cx, cyy + hh * 0.6); ctx.lineTo(cx + w, cyy - hh * 0.5);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else { window._f9TpAim = null; }
+    }
+    // 6) AKTYVACIJA — kai unitas perlipa per ŠITĄ pad'ą (~900ms): ŠVELNUS atpalaiduojantis
+    //     šviesos rūkas + minkštas švytėjimas + lengvos kylančios kibirkštys (sine fade-in/out, mažas alpha)
+    const _act = window._f9TpPulse && window._f9TpPulse[idx];
+    if (_act != null) {
+      const age = now - _act;
+      const DUR = 900;
+      if (age < DUR) {
+        const k = age / DUR, env = Math.sin(k * Math.PI);   // 0→1→0 minkštas vokas
+        ctx.save();
+        // švelnus siauras šviesos rūkas pakylantis aukštyn
+        const cg = ctx.createLinearGradient(cx, cy + R * 0.2, cx, cy - R * 2.2);
+        cg.addColorStop(0, 'rgba(210,185,255,' + (0.26 * env).toFixed(3) + ')');
+        cg.addColorStop(1, 'rgba(180,140,255,0)');
+        ctx.fillStyle = cg;
+        const hw = R * 0.42;
+        ctx.beginPath(); ctx.moveTo(cx - hw, cy + R * 0.16); ctx.lineTo(cx + hw, cy + R * 0.16);
+        ctx.lineTo(cx + hw * 0.5, cy - R * 2.2); ctx.lineTo(cx - hw * 0.5, cy - R * 2.2); ctx.closePath(); ctx.fill();
+        // minkštas švytėjimas ant žemės (mažas alpha)
+        const fr = R * (0.72 + 0.5 * env);
+        const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, fr);
+        fg.addColorStop(0, 'rgba(224,205,255,' + (0.30 * env).toFixed(3) + ')');
+        fg.addColorStop(1, 'rgba(190,150,255,0)');
+        ctx.fillStyle = fg;
+        ctx.beginPath(); ctx.ellipse(cx, cy, fr, fr * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+        // lengvos pakylančios kibirkštys
+        for (let s = 0; s < 5; s++) {
+          const tt = (k + s * 0.18) % 1;
+          const sx = cx + Math.sin(s * 1.9 + age / 220) * R * 0.45;
+          const sy = cy - tt * R * 1.7;
+          ctx.fillStyle = 'rgba(228,212,255,' + ((1 - tt) * 0.38 * env).toFixed(3) + ')';
+          ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, C * 0.04 * (1 - tt * 0.5)), 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      } else { delete window._f9TpPulse[idx]; }
+    }
+  }
+  ctx.restore();
+}
+// Tikrina VISUS pastatus (pilis + barakai + kasyklos namukas/akmuo + ligoninė). Front (1) laimi prieš behind (-1).
+function _f9CastleOcclusion(u) {
+  let res = 0;
+  for (const r of [window._f9CastleRect, window._f9BarracksRect, window._f9StatsRect, window._f9GoldCampRect, window._f9GoldStoneRect, window._f9HospitalRect]) {
+    const o = _f9RectOcclusion(u, r);
+    if (o === 1) return 1;
+    if (o === -1) res = -1;
+  }
+  return res;
+}
+// Ar pasaulio taškas (px,py world px) yra ant pastato (pilis/barakai)? → naudojam, kad click ant pastato
+// NEsiųstų move komandos pažymėtiems unitams (interakcija su pastatu turi pirmenybę prieš judėjimą).
+function _f9PointOnBuilding(px, py) {
+  for (const r of [window._f9CastleRect, window._f9BarracksRect, window._f9StatsRect, window._f9GoldCampRect, window._f9HospitalRect]) {
+    if (r && px >= r.x0 && px <= r.x1 && py >= r.y0 && py <= r.y1) return true;
+  }
+  return false;
+}
+
+// 🏰 Capture PILIS — piešiama KAIP MEDŽIAI: FOREGROUND (po unitų piešimo), occluduoja už jos esančius;
+//    depth loop (žemiau) priekinius perpiešia virš, užstotiems piešia baltą kontūrą. + hover/selected kontūras.
+function _f9DrawCapCastle(now) {
+  const cap = window._f9Cap; if (!cap || typeof ctx === 'undefined') return;
+  const st = window._f9CapState || {};
+  const C = CELL, cx = (cap.x + 0.5) * C, cy = (cap.y + 0.5) * C, R = (cap.r || 3.5) * C;
+  const myTeam = (window._f9pvpMyTeam != null) ? window._f9pvpMyTeam : 0;
+  const contested = !!st.contested, team = (st.team != null) ? st.team : -1, pct = st.pct || 0, count = st.count || 0;
+  const capturing = pct > 0 && team >= 0;
+  const capCol = contested ? '255,210,74' : (team === myTeam ? '90,200,255' : (team < 0 ? '160,170,180' : '240,90,90'));
+  const cimg = (typeof _ronkeCastleImg !== 'undefined') ? _ronkeCastleImg : null;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (cimg && cimg.complete && cimg.naturalWidth) {
+    const FR = _RONKE_CASTLE.frames, fw = cimg.naturalWidth / FR, fh = cimg.naturalHeight;
+    const frame = Math.floor(now / (1000 / _RONKE_CASTLE.fps)) % FR;
+    const botFrac = 0.85, topFrac = 0.139, wFrac = 0.627;
+    const cw = R * 2.2, ch = cw, groundY = cy + R * 0.16, drawTop = groundY - ch * botFrac;
+    // 🤍 baltas siluetinis kontūras hover/selected (PRIEŠ pilį → halo aplink)
+    if (window._f9CastleHover || window._f9CastleSelected) {
+      const wsheet = (typeof _silhouetteTintSheet === 'function') ? _silhouetteTintSheet(cimg, '#ffffff') : null;
+      if (wsheet) {
+        const d = Math.max(2, C * 0.045); ctx.save(); ctx.imageSmoothingEnabled = false;   // 🤍 vienodas pastatų kontūras (hospital standartas 0.045C, 07-03)
+        ctx.globalAlpha = 1;
+        const offs = [[-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]];
+        for (const o of offs) ctx.drawImage(wsheet, frame * fw, 0, fw, fh, cx - cw / 2 + o[0], drawTop + o[1], cw, ch);
+        ctx.restore();
+      }
+    }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(cimg, frame * fw, 0, fw, fh, cx - cw / 2, drawTop, cw, ch);
+    // serverio collision AABB (TIKSLIAI sutampa): cy 11.30, hw 2.3, hh 0.65
+    const HIT_CY = 11.30, HIT_HW = 2.3, HIT_HH = 0.65;
+    const hitCenterY = cy + (HIT_CY - cap.y) * C;          // collision centras world Y
+    const hitBaseY = hitCenterY + HIT_HH * C;              // collision PIETINĖ briauna (kur unitai sustoja iš apačios) → front/behind dalintuvas
+    const halfW = cw * wFrac / 2;
+    window._f9CastleRect = { x0: cx - halfW, y0: drawTop + ch * topFrac, x1: cx + halfW, y1: groundY, hitBaseY: hitBaseY };
+    // 🐛 DEBUG: bazės collision AABB
+    if (window._dbgHit || window._f9DebugOn) {
+      ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)'; ctx.fillRect(cx - HIT_HW * C, hitCenterY - HIT_HH * C, HIT_HW * 2 * C, HIT_HH * 2 * C);
+      ctx.strokeStyle = 'rgba(40,160,255,0.95)'; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.strokeRect(cx - HIT_HW * C, hitCenterY - HIT_HH * C, HIT_HW * 2 * C, HIT_HH * 2 * C); ctx.restore();
+    }
+  } else {
+    ctx.globalAlpha = 0.96; ctx.font = 'bold ' + Math.round(C * 0.8) + 'px sans-serif'; ctx.fillText('🏰', cx, cy);
+  }
+  // progreso tekstas po pilim
+  if (capturing) {
+    ctx.globalAlpha = 1; ctx.font = 'bold ' + Math.round(C * 0.42) + 'px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.97)';
+    ctx.fillText(pct + '%', cx, cy + R * 0.58);
+    if (count > 1) { ctx.font = 'bold ' + Math.round(C * 0.32) + 'px monospace'; ctx.fillStyle = 'rgba(' + capCol + ',1)'; ctx.fillText('×' + Math.min(count, 5) + ' speed', cx, cy + R * 0.84); }
+  } else if (contested) {
+    ctx.globalAlpha = 1; ctx.font = 'bold ' + Math.round(C * 0.34) + 'px monospace'; ctx.fillStyle = 'rgba(255,210,74,1)';
+    ctx.fillText('CONTESTED', cx, cy + R * 0.58);
+  }
+  ctx.restore();
+}
+
+// 🏚️ Barakai — statinis pastatas ŠALIA pilies. Elgiasi kaip pilis: foreground render + occlusion (front→sprite virš,
+//    už→baltas kontūras) + AABB kolizija serveryje. Kolizija SUTAMPA su matoma baze (coupled) → jokios divider gotcha.
+function _f9DrawCapBarracks() {
+  const img = _ronkeBarracksImg; if (!img || !img.complete || !img.naturalWidth || typeof ctx === 'undefined') return;
+  const C = CELL, cfg = _F9_BARRACKS;
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const cw = (cfg.wCells / cfg.wFrac) * C, ch = cw * aspect;
+  const cx = (cfg.x + 0.5) * C;
+  const groundY = (cfg.y + cfg.baseY) * C;               // matomas pagrindas
+  const drawTop = groundY - ch * cfg.botFrac;
+  // 🤍 baltas siluetinis kontūras hover/selected (kaip pilis)
+  if (window._f9BarracksHover || window._f9BarracksSelected) {
+    const wsheet = (typeof _silhouetteTintSheet === 'function') ? _silhouetteTintSheet(img, '#ffffff') : null;
+    if (wsheet) {
+      const d = Math.max(2, C * 0.045); ctx.save(); ctx.imageSmoothingEnabled = false;   // 🤍 vienodas pastatų kontūras (hospital standartas 0.045C, 07-03)
+      ctx.globalAlpha = 1;
+      const offs = [[-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]];
+      for (const o of offs) ctx.drawImage(wsheet, cx - cw / 2 + o[0], drawTop + o[1], cw, ch);
+      ctx.restore();
+    }
+  }
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, cx - cw / 2, drawTop, cw, ch);
+  const halfW = cfg.wCells * C / 2;
+  const hitBaseY = (cfg.hitCY + cfg.hitHH + 0.5) * C;   // kolizijos pietinė briauna (feet-world) = front/behind dalintuvas
+  window._f9BarracksRect = { x0: cx - halfW, y0: drawTop + ch * cfg.topFrac, x1: cx + halfW, y1: groundY, hitBaseY: hitBaseY };
+  // 🐛 debug hitbox (TIKSLIAI sutampa su serverio AABB { cy:12.49, hw:1.93, hh:0.55 })
+  if (window._dbgHit || window._f9DebugOn) {
+    const hHW = cfg.hitHW * C, hHH = cfg.hitHH * C, hcy = (cfg.hitCY + 0.5) * C;
+    ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)'; ctx.fillRect(cx - hHW, hcy - hHH, hHW * 2, hHH * 2);
+    ctx.strokeStyle = 'rgba(40,160,255,0.95)'; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.strokeRect(cx - hHW, hcy - hHH, hHW * 2, hHH * 2); ctx.restore();
+  }
+}
+
+// Bendras turinio piešimas į stendo skylę: cover-fit BAZĖ × zoom (scale) + pan (ox/oy). Naudoja IR žaidimas, IR popup → WYSIWYG.
+// Backing užpildomas tamsiu, kad esant scale<1 (matosi visa nuotrauka) tarpai aplink atrodytų švarūs, o ne pro grindis.
+function _f9DrawAdsContentInto(c, cimg, hx, hy, hw, hh, xf) {
+  c.save();
+  c.beginPath(); c.rect(hx, hy, hw, hh); c.clip();
+  c.fillStyle = '#1a120a'; c.fillRect(hx, hy, hw, hh);
+  const ar = (((cimg.naturalWidth || cimg.width) / (cimg.naturalHeight || cimg.height)) || 1), rr = hw / hh;
+  let dw, dh; if (ar > rr) { dh = hh; dw = hh * ar; } else { dw = hw; dh = hw / ar; }   // cover bazė
+  const s = (xf && xf.scale) || 1; dw *= s; dh *= s;
+  const ox = (xf && xf.ox) || 0, oy = (xf && xf.oy) || 0;
+  const cxp = hx + hw / 2 + ox * hw, cyp = hy + hh / 2 + oy * hh;
+  c.imageSmoothingEnabled = true;
+  c.drawImage(cimg, Math.round(cxp - dw / 2), Math.round(cyp - dh / 2), Math.round(dw), Math.round(dh));
+  c.restore();
+}
+
+// Skylės proporcija (w/h) iš ads.png + _ADS_HOLE — naudojama „iškepant" cloud versiją tiksliu kropu.
+function _f9AdsHoleAspect() {
+  const aAsp = (_adsImg && _adsImg.naturalWidth) ? (_adsImg.naturalHeight / _adsImg.naturalWidth) : 0.62;
+  return (_ADS_HOLE.x1 - _ADS_HOLE.x0) / ((_ADS_HOLE.y1 - _ADS_HOLE.y0) * aAsp);
+}
+// „Iškepa" dabartinį stendo vaizdą (nuotrauka × zoom/pan, kropuota į skylės proporciją) į PNG Blob,
+// kad kiti žaidėjai matytų BE jokios transformacijos persiuntimo — tik cover-fit į skylę. cb(blob|null).
+function _f9BakeAdsBlob(cb) {
+  const cimg = _adsContentImg;
+  if (!(cimg && cimg.complete && cimg.naturalWidth)) { cb(null); return; }
+  const rr = _f9AdsHoleAspect(), BW = 512, BH = Math.max(1, Math.round(BW / rr));
+  const cv = document.createElement('canvas'); cv.width = BW; cv.height = BH;
+  _f9DrawAdsContentInto(cv.getContext('2d'), cimg, 0, 0, BW, BH, _adsXform);   // tas pats helper → WYSIWYG
+  try { cv.toBlob(function (b) { cb(b || null); }, 'image/png'); } catch (_) { cb(null); }
+}
+
+// 📋 ADS stendas — medinis rėmas su permatomu fonu. Pozicija: centruotas po barakais, _F9_ADS.gapPx (10px) po jų apačia.
+//    Vidus tuščias — būsimam žaidėjo turiniui (tekstas/nuotrauka). Click rect saugomas _f9AdsRect (būsimam popup'ui).
+function _f9DrawAds() {
+  if (!_adsContentTried) _f9LoadAdsContent();
+  const img = _adsImg; if (!img || !img.complete || !img.naturalWidth || typeof ctx === 'undefined') return;
+  const bImg = _ronkeBarracksImg; if (!bImg || !bImg.naturalWidth) return;
+  const C = CELL, b = _F9_BARRACKS, cfg = _F9_ADS;
+  // barakų matoma apačia (world px) — tas pats anchor kaip _f9DrawCapBarracks
+  const bAspect = bImg.naturalHeight / bImg.naturalWidth;
+  const bcw = (b.wCells / b.wFrac) * C, bch = bcw * bAspect;
+  const bBottom = (b.y + b.baseY) * C - bch * b.botFrac + bch;     // barakų sprite apatinis kraštas
+  // ads stendas (kvadratas), centruotas ant barakų + xOff (px), gapPx žemiau
+  const cx = (b.x + 0.5) * C + (cfg.xOff || 0);
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const aw = cfg.wCells * C, ah = aw * aspect, lx = Math.round(cx - aw / 2), top = Math.round(bBottom + cfg.gapPx + (cfg.yOff || 0));
+  // vidinės skylės world-rect (kur dedamas turinys)
+  const hx = lx + _ADS_HOLE.x0 * aw, hy = top + _ADS_HOLE.y0 * ah, hw = (_ADS_HOLE.x1 - _ADS_HOLE.x0) * aw, hh = (_ADS_HOLE.y1 - _ADS_HOLE.y0) * ah;
+  // 🤍 HOVER baltas siluetinis kontūras (kaip pilis/barakai) — PRIEŠ turinį+rėmą → plonas baltas halo aplink stendą
+  if (window._f9AdsHover) {
+    const wsheet = (typeof _silhouetteTintSheet === 'function') ? _silhouetteTintSheet(img, '#ffffff') : null;
+    if (wsheet) {
+      const d = Math.max(2, C * 0.045);   // 🤍 vienodas pastatų kontūras (hospital standartas 0.045C, 07-03)
+      ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 1;
+      const offs = [[-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]];
+      for (const o of offs) ctx.drawImage(wsheet, lx + o[0], top + o[1], Math.round(aw), Math.round(ah));
+      ctx.restore();
+    }
+  }
+  // 1) žaidėjo turinys (po rėmu — medinis kraštas apgaubia) — cover-fit + clip į skylę
+  // Pre-wire Castle Siege Fazė 1: jei esi KITO žaidėjo pilyje (window.__f9BaseOwner != mano wallet),
+  // rodom JO stendą iš cloud (jau iškeptas → cover-fit, jokio xform). Šiandien __f9BaseOwner neapibrėžtas → mano stendas.
+  let cimg = _adsContentImg, cxf = _adsXform;
+  const _owner = (typeof window !== 'undefined' && window.__f9BaseOwner) ? String(window.__f9BaseOwner).toLowerCase() : null;
+  const _me = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress() || '').toLowerCase();
+  if (_owner && _owner !== _me && window.Boards) {
+    const rec = window.Boards.loadForWallet(_owner);
+    if (rec && rec.img && rec.img.complete && rec.img.naturalWidth) { cimg = rec.img; cxf = { scale: 1, ox: 0, oy: 0 }; }
+    else cimg = null;   // dar kraunasi / žaidėjas neturi stendo → tuščias langas
+  } else if (!cimg && _me && window.Boards) {
+    // 🏠 SAVA pilis BE lokalaus turinio (naujas naršyklės profilis / išvalytas localStorage), bet stendas
+    // PUBLIKUOTAS cloud'e → rodom SAVO cloud versiją (07-05 fix: „prisijungus reklama išnyksta" — logo
+    // gyveno tik cloud'e, o savas kelias žiūrėjo tik į localStorage). Lokalus edit visada nugali cloud.
+    const rec = window.Boards.loadForWallet(_me);
+    if (rec && rec.img && rec.img.complete && rec.img.naturalWidth) { cimg = rec.img; cxf = { scale: 1, ox: 0, oy: 0 }; }
+  }
+  if (cimg && cimg.complete && cimg.naturalWidth) {
+    const src = cimg._gif ? (_f9GifFrameNow(cimg._gif) || cimg) : cimg;   // 🎞️ GIF → gyvas kadras
+    _f9DrawAdsContentInto(ctx, src, hx, hy, hw, hh, cxf);   // cover-fit + zoom/pan (žr. _f9ShowAdsPanel)
+  } else {
+    // tuščia → užuomina, kad galima paspausti ir įkelti
+    ctx.save();
+    ctx.fillStyle = 'rgba(70,48,28,0.55)'; ctx.font = 'bold ' + Math.round(C * 0.34) + 'px Verdana, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('＋', hx + hw / 2, hy + hh * 0.40);
+    ctx.font = 'bold ' + Math.round(C * 0.18) + 'px Verdana, sans-serif';
+    ctx.fillText('click to add', hx + hw / 2, hy + hh * 0.66);
+    ctx.restore();
+  }
+  // 2) rėmas VIRŠ turinio (medinis kraštas apgaubia nuotrauką)
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, lx, top, Math.round(aw), Math.round(ah));
+  // klikų/hover hit-rect = MATOMAS rėmas (be permatomų kraštų), kad nesispaustų pro šalį
+  const _fx0 = lx + _ADS_FRAME.x0 * aw, _fy0 = top + _ADS_FRAME.y0 * ah;
+  const _fx1 = lx + _ADS_FRAME.x1 * aw, _fy1 = top + _ADS_FRAME.y1 * ah;
+  window._f9AdsRect = { x0: _fx0, y0: _fy0, x1: _fx1, y1: _fy1 };
+}
+
+// 📋 ADS turinio popup — žaidėjas pasirenka nuotrauką → sumažinama (≤480px) → localStorage → rodoma rėme.
+function _f9ShowAdsPanel() {
+  let p = document.getElementById('f9-ads-panel');
+  if (!p) {
+    if (!document.getElementById('f9-ads-css')) {
+      const st = document.createElement('style'); st.id = 'f9-ads-css';
+      st.textContent =
+        '#f9-ads-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:340px;max-width:92vw;max-height:92vh;overflow-y:auto;z-index:100000;' +
+        'background:linear-gradient(180deg,#241a10,#150e07);border:3px solid #6b4a2e;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.6);' +
+        'font-family:Verdana,Segoe UI,sans-serif;color:#f5e6c3;display:none}' +
+        '#f9-ads-panel .hd{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:2px solid #4a3a22;font-weight:800;color:#ffcf5c;font-size:16px}' +
+        '#f9-ads-panel .hd button{margin-left:auto;background:none;border:none;color:#caa;font-size:20px;cursor:pointer;line-height:1}' +
+        '#f9-ads-panel .bd{padding:16px;display:flex;flex-direction:column;gap:11px;align-items:center}' +
+        '#f9-ads-panel .bd p{margin:0;font-size:12px;color:#bba98a;text-align:center}' +
+        '#f9ads-canvas{width:100%;display:block;border-radius:8px;background:rgba(0,0,0,.25);touch-action:none;cursor:grab}' +
+        '#f9ads-canvas.drag{cursor:grabbing}' +
+        '#f9ads-hint{margin:0;font-size:11px;color:#8a7a5a;text-align:center}' +
+        '.f9ads-zoom{display:flex;align-items:center;gap:9px;width:100%}' +
+        '.f9ads-zoom input[type=range]{flex:1;accent-color:#ffcf5c;cursor:pointer}' +
+        '.f9ads-zoom span{font-size:17px;color:#ffcf5c;width:14px;text-align:center;user-select:none}' +
+        '.f9ads-row{display:flex;gap:8px;width:100%}' +
+        '.f9ads-btn{flex:1;padding:10px;border-radius:8px;border:1px solid #6b4a2e;background:#2e2113;color:#ffcf5c;font-weight:700;cursor:pointer;font-size:13px}' +
+        '.f9ads-btn.rm{color:#e89090;border-color:#7a3a3a;background:#2a1714}' +
+        '.f9ads-sep{width:100%;height:1px;background:#4a3a22;margin:3px 0}' +
+        '#f9ads-pubstat{margin:0;font-size:11px;text-align:center;min-height:13px;color:#8a7a5a}' +
+        '#f9ads-vaddr{flex:1;min-width:0;padding:9px;border-radius:8px;border:1px solid #6b4a2e;background:#1c140c;color:#f5e6c3;font-size:12px}' +
+        '.f9ads-cap{margin:0;font-size:10px;color:#8a7a5a;text-align:center;line-height:1.4}' +
+        '#f9ads-file{display:none}';
+      document.head.appendChild(st);
+    }
+    p = document.createElement('div'); p.id = 'f9-ads-panel';
+    p.innerHTML =
+      '<div class="hd">📋 Board Image <button id="f9ads-x">✕</button></div>' +
+      '<div class="bd">' +
+      '<p>Upload an image or animated GIF, then drag to move and use the slider to zoom. GIFs animate live on the board.</p>' +
+      '<canvas id="f9ads-canvas"></canvas>' +
+      '<p id="f9ads-hint">drag image to move · slider/scroll to zoom</p>' +
+      '<div class="f9ads-zoom"><span>−</span><input type="range" id="f9ads-zoomr" min="0.25" max="4" step="0.01" value="1"><span>＋</span></div>' +
+      '<div class="f9ads-row">' +
+        '<button class="f9ads-btn" id="f9ads-fit">▭ Fit</button>' +
+        '<button class="f9ads-btn" id="f9ads-fill">⛶ Fill</button>' +
+      '</div>' +
+      '<input type="file" id="f9ads-file" accept="image/*">' +
+      '<div class="f9ads-row"><button class="f9ads-btn" id="f9ads-pick">📁 Choose image…</button></div>' +
+      '<div class="f9ads-row"><button class="f9ads-btn rm" id="f9ads-remove">🗑 Remove</button></div>' +
+      '<div class="f9ads-sep"></div>' +
+      '<div class="f9ads-row"><button class="f9ads-btn" id="f9ads-publish">📤 Publish to my castle</button></div>' +
+      '<p id="f9ads-pubstat"></p>' +
+      '<div class="f9ads-row"><input id="f9ads-vaddr" placeholder="0x… player wallet"><button class="f9ads-btn" id="f9ads-vload" style="flex:0 0 auto">👁 View</button></div>' +
+      '<p class="f9ads-cap">Publish makes your board visible to other players. View loads another wallet’s published board.</p>' +
+      '</div>';
+    document.body.appendChild(p);
+    const canvas = p.querySelector('#f9ads-canvas');
+    const cctx = canvas.getContext('2d');
+    const zoomr = p.querySelector('#f9ads-zoomr');
+    let visitorImg = null;   // jei nustatyta → rodom kito žaidėjo (read-only) stendą iš cloud
+    const pubstat = p.querySelector('#f9ads-pubstat');
+    function setStat(msg, col) { if (pubstat) { pubstat.textContent = msg || ''; pubstat.style.color = col || '#8a7a5a'; } }
+    // skylės rect popup canvas'e (CSS px) — pagal ads.png aspect ir _ADS_HOLE; identiška žaidimo geometrijai
+    function holeCss() {
+      const cw = canvas.clientWidth || 300;
+      const aAsp = (_adsImg && _adsImg.naturalWidth) ? (_adsImg.naturalHeight / _adsImg.naturalWidth) : 0.62;
+      const W = cw, H = cw * aAsp;
+      return { W: W, H: H, hx: _ADS_HOLE.x0 * W, hy: _ADS_HOLE.y0 * H, hw: (_ADS_HOLE.x1 - _ADS_HOLE.x0) * W, hh: (_ADS_HOLE.y1 - _ADS_HOLE.y0) * H };
+    }
+    function drawEditor() {
+      if (_adsImg && !_adsImg.complete) { _adsImg.addEventListener('load', drawEditor, { once: true }); }
+      const R = holeCss(), dpr = window.devicePixelRatio || 1;
+      canvas.style.height = R.H + 'px';
+      canvas.width = Math.max(1, Math.round(R.W * dpr)); canvas.height = Math.max(1, Math.round(R.H * dpr));
+      cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cctx.clearRect(0, 0, R.W, R.H);
+      const cimg = _adsContentImg;
+      if (visitorImg && visitorImg.complete && visitorImg.naturalWidth) {
+        const vsrc = visitorImg._gif ? (_f9GifFrameNow(visitorImg._gif) || visitorImg) : visitorImg;
+        _f9DrawAdsContentInto(cctx, vsrc, R.hx, R.hy, R.hw, R.hh, { scale: 1, ox: 0, oy: 0 });   // svečio stendas (iškeptas → cover-fit)
+      } else if (cimg && cimg.complete && cimg.naturalWidth) {
+        const csrc = cimg._gif ? (_f9GifFrameNow(cimg._gif) || cimg) : cimg;
+        _f9DrawAdsContentInto(cctx, csrc, R.hx, R.hy, R.hw, R.hh, _adsXform);   // tas pats helper kaip žaidime
+      } else {
+        cctx.save();
+        cctx.fillStyle = 'rgba(0,0,0,.30)'; cctx.fillRect(R.hx, R.hy, R.hw, R.hh);
+        cctx.fillStyle = '#7d6a4a'; cctx.font = '12px Verdana,sans-serif';
+        cctx.textAlign = 'center'; cctx.textBaseline = 'middle';
+        cctx.fillText('No image yet', R.hx + R.hw / 2, R.hy + R.hh / 2);
+        cctx.restore();
+      }
+      if (_adsImg && _adsImg.complete && _adsImg.naturalWidth) { cctx.imageSmoothingEnabled = true; cctx.drawImage(_adsImg, 0, 0, R.W, R.H); }   // rėmas viršuj
+      if (zoomr) zoomr.value = String(_adsXform.scale);
+    }
+    p._upd = drawEditor;
+    // 🎞️ GIF gyvai ir editoriuje (10fps peržiūrai užtenka)
+    setInterval(function () {
+      if (p.style.display === 'none') return;
+      const g = (visitorImg && visitorImg._gif) || (_adsContentImg && _adsContentImg._gif);
+      if (g) drawEditor();
+    }, 100);
+    // --- drag (pan) ---
+    let drag = null;
+    canvas.addEventListener('pointerdown', function (e) {
+      if (visitorImg) return;   // svečio stendas read-only
+      if (!(_adsContentImg && _adsContentImg.complete)) return;
+      drag = { x: e.clientX, y: e.clientY }; canvas.classList.add('drag');
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      const r = canvas.getBoundingClientRect();
+      const holeWcss = (_ADS_HOLE.x1 - _ADS_HOLE.x0) * r.width;   // poslinkis frakcijoje skylės → nepriklauso nuo dpr/dydžio
+      const holeHcss = (_ADS_HOLE.y1 - _ADS_HOLE.y0) * r.height;
+      _adsXform.ox += (e.clientX - drag.x) / holeWcss;
+      _adsXform.oy += (e.clientY - drag.y) / holeHcss;
+      drag.x = e.clientX; drag.y = e.clientY; drawEditor();
+    });
+    function endDrag() { if (!drag) return; drag = null; canvas.classList.remove('drag'); _f9SaveAdsXform(); }
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+    // --- zoom: scroll ---
+    canvas.addEventListener('wheel', function (e) {
+      if (visitorImg) return;
+      if (!(_adsContentImg && _adsContentImg.complete)) return;
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+      _adsXform.scale = Math.max(0.25, Math.min(4, _adsXform.scale * f));
+      drawEditor(); _f9SaveAdsXform();
+    }, { passive: false });
+    // --- zoom: slider ---
+    zoomr.addEventListener('input', function () { _adsXform.scale = parseFloat(zoomr.value) || 1; drawEditor(); });
+    zoomr.addEventListener('change', _f9SaveAdsXform);
+    // --- presetai ---
+    p.querySelector('#f9ads-fit').onclick = function () {   // visa nuotrauka matosi (contain)
+      visitorImg = null;
+      const cimg = _adsContentImg; if (!(cimg && cimg.naturalWidth)) { drawEditor(); return; }
+      const R = holeCss(), ar = cimg.naturalWidth / cimg.naturalHeight, rr = R.hw / R.hh;
+      _adsXform = { scale: Math.min(rr / ar, ar / rr), ox: 0, oy: 0 };
+      drawEditor(); _f9SaveAdsXform();
+    };
+    p.querySelector('#f9ads-fill').onclick = function () {   // užpildo skylę (cover, gali apkarpyti)
+      visitorImg = null; _adsXform = { scale: 1, ox: 0, oy: 0 }; drawEditor(); _f9SaveAdsXform();
+    };
+    p.querySelector('#f9ads-x').onclick = function () { p.style.display = 'none'; };
+    p.querySelector('#f9ads-pick').onclick = function () { visitorImg = null; p.querySelector('#f9ads-file').click(); };
+    p.querySelector('#f9ads-remove').onclick = function () {
+      visitorImg = null; _adsContentImg = null; _adsXform = { scale: 1, ox: 0, oy: 0 };
+      try { localStorage.removeItem('f9_ads_image'); localStorage.removeItem('f9_ads_xform'); } catch (_) {}
+      const addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+      if (addr && window.Boards) { window.Boards.remove(addr); setStat('Removed (also from your castle).', '#8a7a5a'); }
+      drawEditor();
+    };
+    // --- share: publish savo stendą / view kito ---
+    p.querySelector('#f9ads-publish').onclick = function () {
+      const addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+      if (!addr) { setStat('Connect your wallet first.', '#e89090'); return; }
+      if (!window.Boards) { setStat('Sharing unavailable (Boards not loaded).', '#e89090'); return; }
+      if (!(_adsContentImg && _adsContentImg.complete)) { setStat('Add an image first.', '#e89090'); return; }
+      setStat('Publishing…', '#ffcf5c');
+      // 🎞️ GIF — keliam RAW originalą (bake per canvas sunaikintų animaciją; zoom/pan svečiui netaikomas)
+      if (_adsContentImg._gif) {
+        fetch(_adsContentImg.src).then(function (r) { return r.blob(); }).then(function (blob) {
+          return window.Boards.upload(blob, addr, 'image/gif');
+        }).then(function (r) {
+          if (r && r.ok) setStat('✓ Published — your GIF animates for visitors too.', '#9fdca0');
+          else setStat('Publish failed: ' + ((r && r.error) || 'unknown') + ' — is the “boards” bucket set up?', '#e89090');
+        }).catch(function () { setStat('Publish failed.', '#e89090'); });
+        return;
+      }
+      _f9BakeAdsBlob(function (blob) {
+        if (!blob) { setStat('Could not prepare image.', '#e89090'); return; }
+        window.Boards.upload(blob, addr).then(function (r) {
+          if (r && r.ok) setStat('✓ Published — other players can see your board.', '#9fdca0');
+          else setStat('Publish failed: ' + ((r && r.error) || 'unknown') + ' — is the “boards” bucket set up?', '#e89090');
+        });
+      });
+    };
+    p.querySelector('#f9ads-vload').onclick = function () {
+      const a = ((p.querySelector('#f9ads-vaddr').value) || '').trim();
+      if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { setStat('Enter a valid 0x… wallet address.', '#e89090'); return; }
+      if (!window.Boards) { setStat('Boards not loaded.', '#e89090'); return; }
+      const tag = a.slice(0, 6) + '…';
+      setStat('Loading ' + tag + ' board…', '#ffcf5c');
+      window.Boards.invalidate(a);
+      const rec = window.Boards.loadForWallet(a);
+      let tries = 0;
+      const tick = function () {
+        if (rec.ready) { visitorImg = rec.img; drawEditor(); setStat('Showing ' + tag + ' board (read-only). Pick an image to return to yours.', '#9fdca0'); }
+        else if (rec.failed) { visitorImg = null; drawEditor(); setStat('That player has no published board yet.', '#e89090'); }
+        else if (tries++ < 60) { setTimeout(tick, 120); }
+        else setStat('Timed out loading that board.', '#e89090');
+      };
+      tick();
+    };
+    p.querySelector('#f9ads-file').onchange = function (ev) {
+      const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
+      if (!f) return;
+      if (!/^image\//.test(f.type)) { alert('Please choose an image file.'); return; }
+      // 🎞️ GIF — saugom RAW (canvas resize sunaikintų animaciją). Limitas 2MB (localStorage ~5MB).
+      if (f.type === 'image/gif') {
+        if (f.size > 2 * 1024 * 1024) { alert('GIF too large — max 2 MB. Try a smaller/shorter GIF.'); return; }
+        const rg = new FileReader();
+        rg.onload = function () {
+          const dataUrl = String(rg.result || '');
+          const fin = new Image();
+          fin.onerror = function () { alert('Could not read that GIF.'); };
+          fin.onload = function () {
+            _adsContentImg = fin; _adsXform = { scale: 1, ox: 0, oy: 0 };
+            try { localStorage.setItem('f9_ads_image', dataUrl); } catch (_) { alert('Could not save GIF — browser storage is full. Try a smaller GIF.'); }
+            _f9DecodeAdsGif(dataUrl, function (g) { if (g) fin._gif = g; drawEditor(); });
+            _f9SaveAdsXform(); drawEditor();
+          };
+          fin.src = dataUrl;
+        };
+        rg.readAsDataURL(f);
+        return;
+      }
+      const rd = new FileReader();
+      rd.onload = function () {
+        const im = new Image();
+        im.onerror = function () { alert('Could not read that image.'); };
+        im.onload = function () {
+          // sumažinam iki ≤480px (kad tilptų localStorage ir aiškiai renderintųsi mažam stende)
+          const MAXD = 480; let w = im.naturalWidth, h = im.naturalHeight;
+          const sc = Math.min(1, MAXD / Math.max(w, h)); w = Math.max(1, Math.round(w * sc)); h = Math.max(1, Math.round(h * sc));
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(im, 0, 0, w, h);
+          let dataUrl; try { dataUrl = cv.toDataURL('image/png'); } catch (_) { dataUrl = rd.result; }
+          const fin = new Image();
+          fin.onload = function () {
+            _adsContentImg = fin; _adsXform = { scale: 1, ox: 0, oy: 0 };   // nauja nuotrauka → reset zoom/pan
+            try { localStorage.setItem('f9_ads_image', dataUrl); } catch (_) { alert('Could not save image — browser storage is full. Try a smaller image.'); }
+            _f9SaveAdsXform(); drawEditor();
+          };
+          fin.src = dataUrl;
+        };
+        im.src = rd.result;
+      };
+      rd.readAsDataURL(f);
+    };
+  }
+  p.style.display = 'block';
+  if (p._upd) p._upd();
+}
+
+// 🪨 vienas žemės grumstas su 3D apšvietimu (pošešėlis apačioj + kūnas + šviesa viršuj)
+function _f9SoilClod(x, y, rx, ry) {
+  ctx.fillStyle = '#3e2b18';                                   // pošešėlis
+  ctx.beginPath(); ctx.ellipse(x, y + ry * 0.20, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#6b4a2c';                                   // kūnas
+  ctx.beginPath(); ctx.ellipse(x, y, rx * 0.92, ry * 0.92, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(172,130,80,0.65)';                     // šviesa
+  ctx.beginPath(); ctx.ellipse(x - rx * 0.22, y - ry * 0.34, rx * 0.46, ry * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+// 🌱 mažas stulpo įsmigimas į žemę. pass='back' (prieš sprite: šešėlis + mažas kauburėlis + 2 grumstai),
+//    pass='front' (po sprite: priekinė briaunelė VIRŠ stulpo apačios → „įkištas"). Kuklus — tik kontaktas.
+function _f9DrawPlantedSoil(cx, baseY, w, pass) {
+  const mW = w, mH = w * 0.5, mY = baseY + mH * 0.02;
+  ctx.save(); ctx.imageSmoothingEnabled = true;
+  if (pass === 'back') {
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';                        // kontaktinis šešėlis
+    ctx.beginPath(); ctx.ellipse(cx, mY + mH * 0.16, mW * 0.52, mH * 0.40, 0, 0, Math.PI * 2); ctx.fill();
+    const g = ctx.createRadialGradient(cx, mY - mH * 0.18, mW * 0.04, cx, mY, mW * 0.5);
+    g.addColorStop(0, '#75502f'); g.addColorStop(1, '#46301d');
+    ctx.fillStyle = g;                                         // mažas žemės kauburėlis
+    ctx.beginPath(); ctx.ellipse(cx, mY, mW * 0.48, mH * 0.74, 0, 0, Math.PI * 2); ctx.fill();
+    _f9SoilClod(cx - mW * 0.28, mY + mH * 0.04, mW * 0.18, mH * 0.24);
+    _f9SoilClod(cx + mW * 0.28, mY - mH * 0.02, mW * 0.16, mH * 0.22);
+  } else {
+    const gF = ctx.createLinearGradient(0, mY, 0, mY + mH);
+    gF.addColorStop(0, '#6b4a2e'); gF.addColorStop(1, '#3a2818');
+    ctx.fillStyle = gF;                                        // priekinė briaunelė virš stulpo apačios
+    ctx.beginPath(); ctx.ellipse(cx, mY + mH * 0.04, mW * 0.40, mH * 0.56, 0, 0, Math.PI, false); ctx.fill();
+    _f9SoilClod(cx + mW * 0.02, mY + mH * 0.16, mW * 0.16, mH * 0.26);
+  }
+  ctx.restore();
+}
+
+// 📊 Global stats ženklas — foreground render + baltas kontūras hover/selected + occlusion (kaip pastatai).
+//    Click → openLeaderboard() (tas pats kaip F10). Plonas → jokios kolizijos; divider = matoma bazė.
+function _f9DrawGlobalStats() {
+  const img = _globalStatsImg; if (!img || !img.complete || !img.naturalWidth || typeof ctx === 'undefined') return;
+  const C = CELL, cfg = _F9_STATS;
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const cw = (cfg.wCells / cfg.wFrac) * C, ch = cw * aspect;
+  const cx = (cfg.x + 0.5) * C;
+  const groundY = (cfg.y + cfg.baseY) * C;
+  const drawTop = groundY - ch * cfg.botFrac;
+  // 🌱 kuklus įsmigimas į žemę (šešėlis + kauburėlis + grumstai) — PRIEŠ stulpą
+  const soilW = cfg.wCells * C * 1.1;
+  _f9DrawPlantedSoil(cx, groundY, soilW, 'back');
+  if (window._f9StatsHover || window._f9StatsSelected) {
+    const wsheet = (typeof _silhouetteTintSheet === 'function') ? _silhouetteTintSheet(img, '#ffffff') : null;
+    if (wsheet) {
+      const d = Math.max(2, C * 0.045); ctx.save(); ctx.imageSmoothingEnabled = false;   // 🤍 vienodas pastatų kontūras (hospital standartas 0.045C, 07-03)
+      ctx.globalAlpha = 1;
+      const offs = [[-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]];
+      for (const o of offs) ctx.drawImage(wsheet, cx - cw / 2 + o[0], drawTop + o[1], cw, ch);
+      ctx.restore();
+    }
+  }
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, cx - cw / 2, drawTop, cw, ch);
+  // priekinė briauna + grumstai VIRŠ stulpo apačios → stulpas atrodo įkištas į žemę — PO stulpo
+  _f9DrawPlantedSoil(cx, groundY, soilW, 'front');
+  ctx.imageSmoothingEnabled = false;
+  const halfW = cfg.wCells * C / 2;
+  window._f9StatsRect = { x0: cx - halfW, y0: drawTop + ch * cfg.topFrac, x1: cx + halfW, y1: groundY, hitBaseY: groundY, noOutline: true };
+}
+
+// 🏰 Castle valdymo panelė (DOM) — atsidaro paspaudus pilį. Tuščias UI kabinetas; čia eis VISI upgrade'ai.
+function _f9CastlePanelEl() {
+  let p = document.getElementById('f9-castle-panel');
+  if (p) return p;
+  if (!document.getElementById('f9-castle-css')) {
+    const st = document.createElement('style'); st.id = 'f9-castle-css';
+    // 🏆 TROPHY stilius (user 07-03 „kaip ant trofėjo" — kaip kapinių/bone bank/ligoninės panelės):
+    //    navy gradientas + auksinis rėmas su glow, tier-card kortelės, auksinis CTA / pilkas disabled.
+    st.textContent =
+      '#f9-castle-panel{position:fixed;inset:0;z-index:99990;display:none;align-items:center;justify-content:center;' +
+      'background:rgba(8,12,22,.92);backdrop-filter:blur(6px);padding:12px}' +
+      '#f9-castle-panel.open{display:flex}' +
+      '.f9cp-box{background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
+      'box-shadow:0 0 48px rgba(255,207,92,.35),inset 0 0 24px rgba(255,207,92,.08);border-radius:8px;' +
+      'width:100%;max-width:460px;max-height:92vh;overflow-y:auto;font-family:"Press Start 2P",monospace,sans-serif;color:#8a9aaa}' +
+      '.f9cp-spr{width:40px;height:40px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;' +
+      'background:linear-gradient(180deg,#14182a,#0a0c18);border:1px solid #3a3a55;border-radius:6px;padding:2px}' +
+      '#f9cp-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #4a3a18;color:#ffcf5c;text-shadow:0 0 8px rgba(255,207,92,.5)}' +
+      '#f9cp-head .ic{font-size:18px;text-shadow:0 0 14px #ffcf5c}#f9cp-head .t{flex:1;margin-left:10px}#f9cp-head .nm{font-size:14px;letter-spacing:1.5px}' +
+      '#f9cp-head .lv{color:#8a9aaa;font-size:7px;margin-top:7px;line-height:1.7;text-shadow:none}' +
+      '#f9cp-x{background:transparent;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;padding:0 4px;line-height:1;font-family:inherit}#f9cp-x:hover{color:#fff}' +
+      '#f9cp-res{display:flex;flex-wrap:wrap;gap:6px;padding:11px 16px;border-bottom:1px solid #3a3a55}' +
+      '.f9cp-r{display:flex;align-items:center;gap:6px;font-size:8px;letter-spacing:.5px;color:#8a9aaa;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:4px;padding:6px 10px}' +
+      '.f9cp-r b{color:#ffcf5c;font-size:12px;text-shadow:0 0 8px rgba(255,207,92,.5)}' +
+      '#f9cp-body{padding:14px 16px;display:flex;flex-direction:column;gap:12px}' +
+      // kortelė — tier-card (kaip kapinių PATH A/B)
+      '.f9cp-card{background:linear-gradient(180deg,#14182a 0%,#0a0c18 100%);border:2px solid #3a3a55;border-radius:6px;padding:13px 14px}' +
+      '.f9cp-card .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px}' +
+      '.f9cp-card .cn{color:#ffe168;font-size:10px;letter-spacing:1px;text-shadow:0 0 7px rgba(255,207,92,.4);display:flex;align-items:center;gap:7px}' +
+      '.f9cp-card .clv{color:#8a9aaa;font-size:7px;background:rgba(255,255,255,.04);border:1px solid #3a3a55;border-radius:4px;padding:3px 7px}' +
+      '.f9cp-pips{display:flex;gap:4px;margin-bottom:11px}' +
+      '.f9cp-pip{flex:1;height:8px;border-radius:3px;background:rgba(255,255,255,.05);border:1px solid #3a3a55}' +
+      '.f9cp-pip.on{background:linear-gradient(90deg,#d49a2a,#ffcf5c);border-color:#ffcf5c;box-shadow:0 0 6px rgba(255,207,92,.5)}' +
+      '.f9cp-stat{display:flex;justify-content:space-between;align-items:center;font-size:7px;color:#6a7a8a;margin-bottom:12px;letter-spacing:.5px}' +
+      '.f9cp-stat b{color:#6fcf5c;font-size:9px}.f9cp-stat .arw{color:#ffcf5c;margin:0 4px}' +
+      // mygtukas — auksinis CTA (kaip CLAIM/SWAP), disabled pilkas
+      '.f9cp-up{display:block;width:100%;padding:11px;border-radius:4px;border:2px solid #ffcf5c;background:#ffcf5c;' +
+      'color:#1a1208;font-family:inherit;font-size:8px;letter-spacing:1px;cursor:pointer;transition:all .15s ease}' +
+      '.f9cp-up:hover{background:#ffe168;box-shadow:0 0 14px rgba(255,207,92,.4)}' +
+      '.f9cp-up + .f9cp-up{margin-top:8px}' +
+      '.f9cp-up.max,.f9cp-up.soon,.f9cp-up.max:hover,.f9cp-up.soon:hover{background:#333;color:#777;border-color:#555;cursor:default;box-shadow:none}' +
+      // 🦴 kaina mygtuke — RYŠKI ir DIDESNĖ (user 07-03); ant pilko locked mygtuko — auksinė, kad matytųsi ko trūksta
+      '.f9cp-bcost{font-size:12px;letter-spacing:0;white-space:nowrap}' +
+      '.f9cp-up.max .f9cp-bcost{color:#ffcf5c;text-shadow:0 0 8px rgba(255,207,92,.4)}' +
+      '.f9cp-cost{font-size:6px;color:#6a7a8a;text-align:center;margin-top:8px;line-height:1.7}';
+    document.head.appendChild(st);
+  }
+  p = document.createElement('div'); p.id = 'f9-castle-panel';
+  p.innerHTML =
+    '<div class="f9cp-box">' +
+    '<div id="f9cp-head"><span class="ic">🏰</span><div class="t"><div class="nm">CASTLE</div><div class="lv">MANAGE &amp; UPGRADE</div></div><button id="f9cp-x">✕</button></div>' +
+    // 🦴 vienintelė upgrade valiuta — kaulai iš BANKO (user 07-03: „viskas upgreidinama už kaulus tiktais")
+    '<div id="f9cp-res"><span class="f9cp-r">🦴 Bone Bank <b id="f9cp-bones">—</b></span><span class="f9cp-r" style="opacity:.75">1 🦴 = 5 RONKE</span></div>' +
+    '<div id="f9cp-body"></div>' +
+    '</div>';
+  document.body.appendChild(p);
+  // backdrop click → uždaro (kaip modalas); klikas ant dėžės — ne
+  p.addEventListener('click', function (e) { if (e.target === p) { window._f9CastleSelected = false; _f9HideCastlePanel(); } });
+  p.querySelector('#f9cp-x').onclick = function () { window._f9CastleSelected = false; _f9HideCastlePanel(); };
+  return p;
+}
+// 🖼️ Sprite thumb'ai panelės kortelėms — viena frame iš sheet'o → data URL (cache'inam, image-rendering pixelated).
+let _f9WallThumbURL = '', _f9ZipThumbURL = '';
+function _f9SpriteThumbURL(img, sx, sy, sw, sh, size) {
+  try {
+    if (!img || !img.complete || !img.naturalWidth) return '';
+    size = size || 72;
+    const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+    const c = cv.getContext('2d'); c.imageSmoothingEnabled = false;
+    const ar = sw / sh; let dw = size, dh = size;
+    if (ar > 1) dh = size / ar; else dw = size * ar;
+    c.drawImage(img, sx, sy, sw, sh, (size - dw) / 2, (size - dh) / 2, dw, dh);
+    return cv.toDataURL();
+  } catch (_) { return ''; }
+}
+function _f9WallThumb() {
+  if (!_f9WallThumbURL && typeof _f9WallSheet !== 'undefined' && _f9WallSheet && _f9WallSheet.complete && _f9WallSheet.naturalWidth)
+    _f9WallThumbURL = _f9SpriteThumbURL(_f9WallSheet, 0, 0, _F9_WALL.fw, _F9_WALL.fh, 72);
+  return _f9WallThumbURL;
+}
+function _f9ZipThumb() {
+  if (!_f9ZipThumbURL) {
+    const z = (typeof _buildingImgs !== 'undefined') ? _buildingImgs['Zip'] : null;
+    if (z && z.complete && z.naturalWidth) _f9ZipThumbURL = _f9SpriteThumbURL(z, 0, 0, z.naturalWidth / _ZIP_DEF.cols, z.naturalHeight / _ZIP_DEF.rows, 72);
+  }
+  return _f9ZipThumbURL;
+}
+// 🦴 Upgrade kainos — VEIDRODIS serverio F9PvpRoom.ts (WALL_UPG_COST/TOWER_BUILD_COST/TOWER_UPG_COST).
+//    Display only — tikrą mokėjimą enforce'ina serveris iš banko. Keisk ABIEJOSE pusėse sinchroniškai!
+const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 } };
+// 🏗️ Pilies panelės KŪNAS — upgrade kortelės (siena dabar; bokštai = STEP2). Skaito lygį LIVE iš S._f9Walls.
+function _f9RenderCastlePanelBody() {
+  const body = document.getElementById('f9cp-body'); if (!body) return;
+  const lvl = (typeof _f9CurrentWallLevel === 'function') ? _f9CurrentWallLevel() : 1;
+  const MAX = (typeof _F9_WALL_MAX_LVL !== 'undefined') ? _F9_WALL_MAX_LVL : 4;
+  const BASE = (typeof _F9_WALL_BASE_HP !== 'undefined') ? _F9_WALL_BASE_HP : 40;
+  const isMax = lvl >= MAX, mat = lvl >= 2 ? 'Stone' : 'Wood';
+  const bank = (window._f9MyBones && window._f9MyBones.bank) || 0;   // 🦴 mokama iš BANKO
+  const bEl = document.getElementById('f9cp-bones'); if (bEl) bEl.textContent = bank.toFixed(1);
+  let pips = ''; for (let i = 1; i <= MAX; i++) pips += '<div class="f9cp-pip' + (i <= lvl ? ' on' : '') + '"></div>';
+  const wallStat = isMax ? ('<b>' + (BASE * lvl) + '</b> HP') : ((BASE * lvl) + ' <span class="arw">→</span> <b>' + (BASE * (lvl + 1)) + '</b> HP');
+  const wallIc = _f9WallThumb() ? '<img class="f9cp-spr" src="' + _f9WallThumb() + '">' : '🧱';
+  const zipIc = _f9ZipThumb() ? '<img class="f9cp-spr" src="' + _f9ZipThumb() + '">' : '🗼';
+  const wCost = _F9_UPG_COST.wall[lvl + 1] || 0, wOk = bank >= wCost;
+  body.innerHTML =
+    // 🧱 SIENA
+    '<div class="f9cp-card">' +
+      '<div class="ch"><span class="cn">' + wallIc + ' WALL</span><span class="clv">L' + lvl + '/' + MAX + ' ' + mat.toUpperCase() + '</span></div>' +
+      '<div class="f9cp-pips">' + pips + '</div>' +
+      '<div class="f9cp-stat"><span>DEFENSE</span><span>' + wallStat + '</span></div>' +
+      (isMax ? '<button class="f9cp-up max">MAX LEVEL</button>'
+             : '<button class="f9cp-up' + (wOk ? '' : ' max') + '" id="f9cp-wallup"' + (wOk ? '' : ' disabled') + '>' +
+               (wOk ? ('⬆ UPGRADE L' + (lvl + 1) + ' — <span class="f9cp-bcost">' + wCost + ' 🦴</span>') : ('🔒 NEED <span class="f9cp-bcost">' + wCost + ' 🦴</span>')) + '</button>' +
+               '<div class="f9cp-cost">PAID FROM BONE BANK</div>') +
+    '</div>' +
+    // 🗼 ZIP BOKŠTAI — STATOMI (kaulai, max 5, min 6 apart) + treniruojami (lygis: HP+žala)
+    (function () {
+      const tcount = _f9TowerCount(), tMax = _F9_MAX_TOWERS;
+      const tl = _f9CurrentTowerLevel(), tLvMax = _F9_TOWER_MAX_LVL, tIsMax = tl >= tLvMax;
+      const canBuild = tcount < tMax;
+      const bCost = _F9_UPG_COST.towerBuild, bOk = bank >= bCost;
+      let tp = ''; for (let i = 1; i <= tLvMax; i++) tp += '<div class="f9cp-pip' + (i <= tl ? ' on' : '') + '"></div>';
+      const dmgStat = tIsMax ? ('<b>' + (_F9_TOWER_BASE_DMG * tl) + '</b>') : ((_F9_TOWER_BASE_DMG * tl) + ' <span class="arw">→</span> <b>' + (_F9_TOWER_BASE_DMG * (tl + 1)) + '</b>');
+      var html = '<div class="f9cp-card">' +
+        '<div class="ch"><span class="cn">' + zipIc + ' ZIP TOWERS</span><span class="clv">' + tcount + '/' + tMax + (tcount > 0 ? ' L' + tl : '') + '</span></div>';
+      if (tcount > 0) html += '<div class="f9cp-pips">' + tp + '</div><div class="f9cp-stat"><span>DAMAGE</span><span>' + dmgStat + '</span></div>';
+      html += '<button class="f9cp-up' + (canBuild && bOk ? '' : ' max') + '" id="f9cp-buildtow"' + (canBuild && bOk ? '' : ' disabled') + '>' +
+        (canBuild ? (bOk ? ('🔨 BUILD TOWER (' + tcount + '/' + tMax + ') — <span class="f9cp-bcost">' + bCost + ' 🦴</span>') : ('🔒 NEED <span class="f9cp-bcost">' + bCost + ' 🦴</span>')) : 'MAX TOWERS') + '</button>';
+      if (tcount > 0 && !tIsMax) {
+        const uCost = _F9_UPG_COST.tower[tl + 1] || 0, uOk = bank >= uCost;
+        html += '<button class="f9cp-up' + (uOk ? '' : ' max') + '" id="f9cp-towup"' + (uOk ? '' : ' disabled') + '>' +
+          (uOk ? ('⬆ UPGRADE L' + (tl + 1) + ' — <span class="f9cp-bcost">' + uCost + ' 🦴</span>') : ('🔒 NEED <span class="f9cp-bcost">' + uCost + ' 🦴</span>')) + '</button>';
+      } else if (tcount > 0 && tIsMax) html += '<button class="f9cp-up max">TOWERS MAX</button>';
+      html += '<div class="f9cp-cost">🦴 • MAX ' + tMax + ' • MIN ' + _F9_TOWER_MIN_GAP + ' APART</div></div>';
+      return html;
+    })() +
+    // 🏥 LIGONINĖ — lygis didina gydymo slotus (L2/L5) ir greitį (L3/L4 po −10min)
+    (function () {
+      const hl = Math.max(1, Math.min(5, window._f9HospLvl || 1)), hMax = 5, hIsMax = hl >= hMax;
+      const SLOTS = { 1: 1, 2: 2, 3: 2, 4: 2, 5: 3 };
+      const MINS = { 1: '60m', 2: '60m', 3: '50/60m', 4: '50m', 5: '50/50/60m' };   // per-lovą (user 07-04)
+      const NEXT_FX = { 2: '+1 SLOT', 3: '\u221210 MIN 1-AM SLOTUI', 4: '\u221210 MIN 2-AM', 5: '+1 SLOT' };
+      const hCost = _F9_UPG_COST.hosp[hl + 1] || 0, hOk = bank >= hCost;
+      let hp = ''; for (let i = 1; i <= hMax; i++) hp += '<div class="f9cp-pip' + (i <= hl ? ' on' : '') + '"></div>';
+      const slotStat = hIsMax ? ('<b>' + SLOTS[hl] + '</b>') : (SLOTS[hl] + ' <span class="arw">\u2192</span> <b>' + SLOTS[hl + 1] + '</b>');
+      const timeStat = hIsMax ? ('<b>' + MINS[hl] + '</b>') : (MINS[hl] + ' <span class="arw">\u2192</span> <b>' + MINS[hl + 1] + '</b>');
+      const hIc = '<img class="f9cp-spr" src="hospital.png" alt="">';
+      return '<div class="f9cp-card">' +
+        '<div class="ch"><span class="cn">' + hIc + ' HOSPITAL</span><span class="clv">L' + hl + '/' + hMax + ' \u00b7 ' + SLOTS[hl] + ' SLOT' + (SLOTS[hl] > 1 ? 'S' : '') + '</span></div>' +
+        '<div class="f9cp-pips">' + hp + '</div>' +
+        '<div class="f9cp-stat"><span>HEALING SLOTS</span><span>' + slotStat + '</span></div>' +
+        '<div class="f9cp-stat"><span>HEAL TIME / UNIT</span><span>' + timeStat + '</span></div>' +
+        (hIsMax ? '<button class="f9cp-up max">MAX LEVEL</button>'
+                : '<button class="f9cp-up' + (hOk ? '' : ' max') + '" id="f9cp-hospup"' + (hOk ? '' : ' disabled') + '>' +
+                  (hOk ? ('\u2b06 UPGRADE L' + (hl + 1) + ' (' + NEXT_FX[hl + 1] + ') \u2014 <span class="f9cp-bcost">' + hCost + ' \ud83e\uddb4</span>')
+                       : ('\ud83d\udd12 NEED <span class="f9cp-bcost">' + hCost + ' \ud83e\uddb4</span>')) + '</button>' +
+                  '<div class="f9cp-cost">PAID FROM BONE BANK</div>') +
+        '</div>';
+    })() +
+    // \ud83d\udee1 RAID SHIELD \u2014 rodoma TIK kai aktyvus; savininkas gali NUSIIMTI (nori b\u016bti puolamas anks\u010diau)
+    (function () {
+      const su = Number(window.__f9ShieldUntil) || 0;
+      const left = su - Date.now();
+      if (left <= 0) return '';
+      const mins = Math.ceil(left / 60000);
+      return '<div class="f9cp-card" style="border-color:#4a9da6;">' +
+        '<div class="ch"><span class="cn" style="color:#7fd0d8;text-shadow:0 0 7px rgba(74,157,166,.5);">\ud83d\udee1 RAID SHIELD</span><span class="clv" style="color:#7fd0d8;border-color:#2d5a60;">' + mins + ' MIN LEFT</span></div>' +
+        '<div class="f9cp-stat"><span>STATUS</span><span><b style="color:#7fd0d8;">PROTECTED</b> \u2014 cannot be raided</span></div>' +
+        '<button class="f9cp-up" id="f9cp-shieldoff" style="border-color:#e85d5d;background:rgba(120,40,40,0.25);color:#ffb3b0;">\u2694 REMOVE SHIELD \u2014 become raidable</button>' +
+        '<div class="f9cp-cost">AUTO AFTER LOSING A DEFENSE \u2022 FREE TO REMOVE</div>' +
+      '</div>';
+    })();
+  const ub = body.querySelector('#f9cp-wallup');
+  if (ub && !ub.disabled) ub.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeWall) window.F9PvpLive.upgradeWall(); };
+  const tb = body.querySelector('#f9cp-towup');
+  if (tb && !tb.disabled) tb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeTowers) window.F9PvpLive.upgradeTowers(); };
+  const bt = body.querySelector('#f9cp-buildtow');
+  if (bt && !bt.disabled && _f9TowerCount() < _F9_MAX_TOWERS) bt.onclick = function () { _f9EnterTowerPlaceMode(); };
+  const hb = body.querySelector('#f9cp-hospup');
+  if (hb && !hb.disabled) hb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeHospital) window.F9PvpLive.upgradeHospital(); };
+  const sb = body.querySelector('#f9cp-shieldoff');
+  if (sb) sb.onclick = function () {
+    window.__f9ShieldUntil = 0;   // optimistinis — serveris patvirtins 'shield {until:0}' žinute
+    if (window.F9PvpLive && window.F9PvpLive.removeShield) window.F9PvpLive.removeShield();
+  };
+}
+let _f9CastlePanelTimer = null;
+function _f9ShowCastlePanel() {
+  const p = _f9CastlePanelEl(); p.style.display = '';
+  _f9RenderCastlePanelBody();
+  if (_f9CastlePanelTimer) clearInterval(_f9CastlePanelTimer);
+  _f9CastlePanelTimer = setInterval(_f9RenderCastlePanelBody, 350);   // LIVE — lygis atsinaujina po upgrade
+  requestAnimationFrame(function () { p.classList.add('open'); });
+}
+function _f9HideCastlePanel() {
+  const p = document.getElementById('f9-castle-panel'); if (p) p.classList.remove('open');
+  if (_f9CastlePanelTimer) { clearInterval(_f9CastlePanelTimer); _f9CastlePanelTimer = null; }
+}
+
+// 🗼 BOKŠTŲ STATYMO režimas — paspaudus „Build Tower" panelėj. Paslepia panelę, rodo banerį, ant sienos
+//    piešia žalius/raudonus build-spot'us (žr. _f9DrawTowerPlacePreview); klikas ant sienos → buildTower.
+function _f9EnterTowerPlaceMode() {
+  window._f9TowerPlaceMode = true;
+  window._f9CastleSelected = false;
+  if (typeof _f9HideCastlePanel === 'function') _f9HideCastlePanel();
+  var b = document.getElementById('f9-towerplace-hint');
+  if (!b) {
+    b = document.createElement('div'); b.id = 'f9-towerplace-hint';
+    b.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:100002;display:flex;align-items:center;gap:12px;' +
+      'background:linear-gradient(180deg,#241a10,#150e07);border:2px solid #c9a227;border-radius:12px;padding:10px 16px;' +
+      'font-family:Verdana,sans-serif;color:#ffe9a8;font-weight:700;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5)';
+    b.innerHTML = '🔨 Click a wall spot to build a tower (min ' + _F9_TOWER_MIN_GAP + ' apart) ' +
+      '<button id="f9tp-cancel" style="background:#3a1714;border:1px solid #7a3a3a;color:#ffd2d2;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700">Cancel</button>';
+    document.body.appendChild(b);
+    b.querySelector('#f9tp-cancel').onclick = function () { _f9ExitTowerPlaceMode(); };
+  }
+  b.style.display = 'flex';
+}
+function _f9ExitTowerPlaceMode() {
+  window._f9TowerPlaceMode = false;
+  var b = document.getElementById('f9-towerplace-hint'); if (b) b.style.display = 'none';
+}
+window._f9ExitTowerPlaceMode = _f9ExitTowerPlaceMode;
+// Build-spot peržiūra ant sienos (place mode): žalias ghost = galima, raudonas = per arti/užimta.
+function _f9DrawTowerPlacePreview() {
+  if (!window._f9TowerPlaceMode || typeof S === 'undefined' || !S || S.floor !== 9 || !Array.isArray(S._f9Walls)) return;
+  const C = CELL, now = performance.now(), pulse = (Math.sin(now / 380) + 1) * 0.5;
+  ctx.save();
+  for (const w of S._f9Walls) {
+    if (!w || w.tower) continue;
+    const ok = _f9CanBuildTowerAt(w.y);
+    const cx = (w.x + 0.5) * C, cy = (w.y + 0.5) * C;
+    ctx.globalAlpha = 0.5 + pulse * 0.3;
+    ctx.fillStyle = ok ? 'rgba(120,235,150,0.5)' : 'rgba(225,90,90,0.32)';
+    ctx.beginPath(); ctx.arc(cx, cy - C * 0.2, C * 0.34, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold ' + Math.round(C * 0.3) + 'px Verdana, sans-serif';
+    ctx.fillText(ok ? '＋' : '✕', cx, cy - C * 0.2);
+  }
+  ctx.restore();
+}
+
+function _f9DrawCastleWall() {
+  if (!S || S.floor !== 9 || !Array.isArray(S._f9Walls) || !S._f9Walls.length || typeof ctx === 'undefined') return;
+  const now = performance.now();
+  const walls = S._f9Walls;
+  // Pilna castle KOLONA (vertikali, daug celių ta pati x) → procedūrinis mūras + gate + bokštai.
+  if (walls.length > 4 && walls.every(s => s && s.x === walls[0].x)) { _f9DrawCastleWallVertical(now); return; }
+  // 🧪 Izoliuotos test celės (ar scattered) — NE pilna eilė/kolona → paprastas per-cell blokas (be gate/bokštų).
+  const _horizCastle = walls.length > 4 && walls.every(s => s && s.y === walls[0].y);
+  if (!_horizCastle) {
+    for (const seg of walls) {
+      if (!seg) continue;
+      if (!seg.alive) { _f9DrawWallRubble((seg.x + 0.5) * CELL, seg.y * CELL, seg, now); continue; }
+      if (seg.tower) _f9DrawZipTowerSeg(seg, now); else _f9DrawWallSegment(seg, now);
+    }
+    return;
+  }
+  // Pilna horizontali siena (solo) → legacy sprite kelias žemiau.
+  const ready = _f9WallSheet.complete && _f9WallSheet.naturalWidth > 0;
+  const dready = _f9WallDestroy.complete && _f9WallDestroy.naturalWidth > 0;
+  const wallH = CELL * _F9_WALL.hScale;
+  const wallW = wallH * _F9_WALL.fw / _F9_WALL.fh;
+  const list = S._f9Walls.slice().sort((a, b) => a.y - b.y);
+  for (const seg of list) {
+    const cx = (seg.x + 0.5) * CELL;
+    const cyBase = (seg.y + 1.0) * CELL;
+    if (!seg.alive) {
+      if (!dready) continue;
+      const el = now - (seg.deathAt || now);
+      const fi = _F9_WD.start + Math.floor(el / _F9_WD.ms);
+      if (fi >= _F9_WD.frames) continue;            // anim baigta → celė tuščia
+      const dh = wallH, dw = dh * _F9_WD.fw / _F9_WD.fh;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(_f9WallDestroy, fi * _F9_WD.fw, 0, _F9_WD.fw, _F9_WD.fh, Math.round(cx - dw / 2), Math.round(cyBase - dh), dw, dh);
+      continue;
+    }
+    const dmgFrac = 1 - (seg.hp / seg.maxHp);
+    const fi = Math.max(0, Math.min(_F9_WALL.frames - 1, Math.floor(dmgFrac * _F9_WALL.frames)));
+    const wx = Math.round(cx - wallW / 2), wyTop = Math.round(cyBase - wallH);
+    if (ready) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(_f9WallSheet, fi * _F9_WALL.fw, 0, _F9_WALL.fw, _F9_WALL.fh, wx, wyTop, wallW, wallH);
+      if (seg.hit && now - seg.hit < 110) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4 * (1 - (now - seg.hit) / 110); ctx.fillStyle = '#fff'; ctx.fillRect(wx, wyTop, wallW, wallH); ctx.restore(); }
+    } else { ctx.fillStyle = '#6b5a44'; ctx.fillRect(wx, wyTop, wallW, wallH); }
+    // HP bar
+    const frac = seg.hp / seg.maxHp, bw = wallW * 0.8, bx = cx - bw / 2, by = wyTop - 7;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+    ctx.fillStyle = frac > 0.5 ? '#7ec77f' : frac > 0.25 ? '#ffcf5c' : '#e85d5d'; ctx.fillRect(bx, by, bw * frac, 3);
+    // 🎯 kokybiškas žymeklis (07-05, vietoj primityvaus strokeRect+X): bracket'ai + ▼ chevron.
+    //    Auksinis = PUOLAMA (seg.hit / solo _f9SiegeWall / 🎯 persistentinis siege mark), teal = hover.
+    const _wallHovered = (window._f9HoverWall === seg);
+    const _sm2 = window._f9SiegeMark;
+    const _wallUnderAttack = (seg.hit && (now - seg.hit) < 1400) ||
+      (Array.isArray(S.units) && S.units.some(u => u && u.alive && u._f9SiegeWall === seg)) ||
+      !!(_sm2 && _sm2.x === seg.x && _sm2.y === seg.y && seg.alive && (now - Math.max(_sm2.at || 0, seg.hit || 0)) < 6000);
+    if (_wallUnderAttack || _wallHovered) {
+      _f9DrawWallTargetFx(wx + 2, wyTop + 2, wallW - 4, wallH - 4, _wallUnderAttack ? 'attack' : 'hover', now);
+    }
+  }
+}
+
 function _f9DecorateMap() {
   if (!S || S.floor !== 9 || !S.decorations) return;
   const R = ROWS, C = COLS;
@@ -6944,6 +12067,7 @@ function _f9DecorateMap() {
     _f9StaticObstacles.push({ cx: c, cy: r + cfg.dy, rad: cfg.rad });
   }
   _f9SyncTowerBlocked();   // zip tower (apskritimas) — pradinė sinchronizacija
+  if (typeof _f9InitCastleWall === 'function') _f9InitCastleWall();   // 🏰 castle siena (destructible)
 }
 
 function _spawnF9Enemies(hero) {
@@ -7269,12 +12393,18 @@ function spawnF9RangedShot(shooter, target, utype, stack) {
   const sgy = (shooter.ry !== undefined) ? shooter.ry : shooter.y;
   const tgx = (target.rx !== undefined) ? target.rx : target.x;
   const tgy = (target.ry !== undefined) ? target.ry : target.y;
-  // Spawn origin pagal utype: ghost — iš RANKŲ (priekyje, žemiau galvos); kiti — iš krūtinės aukščio.
+  // Spawn origin pagal utype: ghost — iš RANKŲ (priekyje, žemiau galvos); lankininkai (archer/ronhood/
+  // harpoon) — iš LANKO aukščio priekyje (2026-07-02 user: „strėlė palieka lanką per aukštai" — buvo
+  // -0.55 CELL ≈ virš galvos); kiti (fallback) — iš krūtinės aukščio.
   let _oxOff = 0, _oyOff = -CELL * 0.55;
   if (utype === 'ghost') {
     const _fdx = (shooter.facing && shooter.facing.dx) ? shooter.facing.dx : (tgx > sgx ? 1 : -1);
     _oxOff = _fdx * CELL * 0.30;   // į priekį — rankų pusėje
     _oyOff = CELL * 0.12;          // rankų/kamuolio aukštis (žemiau galvos)
+  } else if (utype === 'archer' || utype === 'ronhood' || utype === 'harpoon_fish') {
+    const _fdx = (shooter.facing && shooter.facing.dx) ? shooter.facing.dx : (tgx > sgx ? 1 : -1);
+    _oxOff = _fdx * CELL * 0.18;   // lanko/rankos pusėje (į priekį)
+    _oyOff = -CELL * 0.20;         // LANKO aukštis — ne virš galvos
   }
   const sx = (sgx + 0.5) * CELL + _oxOff;
   const sy = (sgy + 0.5) * CELL + _oyOff;
@@ -7302,8 +12432,23 @@ function spawnF9RangedShot(shooter, target, utype, stack) {
 }
 
 // Vaiduoklio projektilas — spektrinė „sielos" dvasia: cyan/teal ektoplazminis halo + baltas branduolys + virpantis aplis.
-function _drawGhostOrb(x, y, now, scale) {
+function _drawGhostOrb(x, y, now, scale, seed) {
   const sc = scale || 1;
+  // Animuotas magic ball sprite (20 kadrų); procedūrinis orbas žemiau lieka fallback'u kol vaizdas neužsikrovęs
+  if (magicBallImg.complete && magicBallImg.naturalWidth > 0) {
+    const fr = Math.floor(now / MBALL_MS + (seed || 0) * 7) % MBALL_FRAMES;
+    const D = 34 * sc;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const hg = ctx.createRadialGradient(x, y, 0, x, y, D * 0.72);
+    hg.addColorStop(0, 'rgba(140,220,255,0.30)');
+    hg.addColorStop(1, 'rgba(90,180,220,0)');
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(x, y, D * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.drawImage(magicBallImg, fr * MBALL_FW, 0, MBALL_FW, MBALL_FH, x - D / 2, y - D / 2, D, D);
+    return;
+  }
   const pulse = 1 + Math.sin(now / 60) * 0.22;
   const R = 5.5 * pulse * sc;
   ctx.save();
@@ -7400,6 +12545,13 @@ function _drawF9Shots() {
         // PIXEL PARTICLE sprogimas — spektrinės skeveldros lekia laukan (vietoj balto radial blast).
         const _age = now - s.stateAt, _BD = 520;
         if (_age >= _BD) { arr.splice(i, 1); continue; }
+        // Magic ball sprogimo sheet'as (ta pati paletė kaip kamuolio); particle burst žemiau lieka fallback'u
+        if (magicBallBurstImg.complete && magicBallBurstImg.naturalWidth > 0) {
+          const _bf = Math.min(MBURST_FRAMES - 1, Math.floor(_age / MBURST_MS));
+          const BS = 68;
+          ctx.drawImage(magicBallBurstImg, _bf * MBURST_FW, 0, MBURST_FW, MBURST_FH, s.x - BS / 2, s.y - BS / 2, BS, BS);
+          continue;
+        }
         // vienkartinis particle spawn (pseudo-random pagal seed → stabilus, be jitter per frame)
         if (!s._burst) {
           s._burst = [];
@@ -7450,8 +12602,16 @@ function _drawF9Shots() {
       const age = now - s.stateAt;
       if (age > 1400) { arr.splice(i, 1); continue; }
       if (s.utype === 'ghost') {
-        ctx.globalAlpha = age > 700 ? Math.max(0, 1 - (age - 700) / 700) : 1;   // miss → kamuolys blėsta
-        _drawGhostOrb(s.x, s.y, now, 0.7);
+        // miss → kamuolys išgaruoja: byra į pixelius kylančius aukštyn (fizzle sheet, ~400ms)
+        if (magicBallFizzImg.complete && magicBallFizzImg.naturalWidth > 0) {
+          if (age >= MFIZZ_FRAMES * MFIZZ_MS) { arr.splice(i, 1); continue; }
+          const _ff = Math.min(MFIZZ_FRAMES - 1, Math.floor(age / MFIZZ_MS));
+          const FS = 44;   // kamuolys sheet'e ~0.78 celės → vizualiai ~34px, kaip skrendant
+          ctx.drawImage(magicBallFizzImg, _ff * MFIZZ_FW, 0, MFIZZ_FW, MFIZZ_FH, s.x - FS / 2, s.y - FS / 2, FS, FS);
+          continue;
+        }
+        ctx.globalAlpha = age > 700 ? Math.max(0, 1 - (age - 700) / 700) : 1;   // fallback kol vaizdas neužsikrovęs
+        _drawGhostOrb(s.x, s.y, now, 0.7, s.seed);
         ctx.globalAlpha = 1;
         continue;
       }
@@ -7486,7 +12646,7 @@ function _drawF9Shots() {
       if (_isGhostShot) ctx.globalCompositeOperation = 'source-over';
     }
     ctx.globalAlpha = 1;
-    if (_isGhostShot) { _drawGhostOrb(s.x, s.y, now); continue; }   // baltas energijos kamuolys (be rotacijos)
+    if (_isGhostShot) { _drawGhostOrb(s.x, s.y, now, 1, s.seed); continue; }   // magic ball (be rotacijos)
     ctx.save();
     ctx.translate(s.x, s.y);
     if (s.utype === 'archer') {
@@ -7767,8 +12927,12 @@ function _updateF9AllyAutoAcquire(now) {
     if (ally._f9EngageTarget && !ally._f9EngageTarget.alive) ally._f9EngageTarget = null;
     // Player'io komanda eigoje — respektuojam, nepertraukiam su auto-engage.
     // IŠIMTIS: A-move (attack-move) — judėdamas SKENUOJA ir engage'ina pakeliui.
-    if (ally._f9Target && !ally._f9AMove) continue;
-    const detectR = _F9_ALLY_DETECT[ally.utype] || 4;
+    if (ally._f9Target && !ally._f9AMove && !ally._f9Hold && !ally._f9Patrol) continue;
+    // 🛡 HOLD POSITION — skenuoja tik ATAKOS spinduliu (nesivaiko); kiti — pilnas detect spindulys.
+    const _atkCfg = _F9_ALLY_ATTACK[ally.utype];
+    const detectR = ally._f9Hold
+      ? Math.max(1.15, (_atkCfg && _atkCfg.range) || 1.2)
+      : (_F9_ALLY_DETECT[ally.utype] || 4);
     const ax = (ally.rx !== undefined) ? ally.rx : ally.x;
     const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
     let nearest = null, nearestD = detectR;
@@ -7781,7 +12945,11 @@ function _updateF9AllyAutoAcquire(now) {
     }
     if (nearest) {
       // Auto-engage — _updateF9AllyEngagement nukreips judėjimą į attack pozicija
-      if (ally._f9AMove) {
+      if (ally._f9Hold) {
+        // 🛡 HOLD — atakuoja in-range, po kovos grįžta į inkarą; NIEKADA nesivaiko (gated engagement'e)
+        ally._f9AutoEngage = true;
+        ally._f9ReturnTarget = ally._f9HoldAt ? { tx: ally._f9HoldAt.x, ty: ally._f9HoldAt.y } : { tx: ax, ty: ay };
+      } else if (ally._f9AMove) {
         // A-move: po kovos grįžta prie SAVO formacijos slot'o ir tęsia žygį
         ally._f9AutoEngage = true;
         ally._f9ReturnTarget = { tx: ally._f9AMove.tx, ty: ally._f9AMove.ty };
@@ -7791,8 +12959,12 @@ function _updateF9AllyAutoAcquire(now) {
         const homeY = (ally.ry !== undefined) ? ally.ry : ally.y;
         ally._f9AutoEngage = true;
         ally._f9ReturnTarget = ally._f9Target ? { tx: ally._f9Target.tx, ty: ally._f9Target.ty } : { tx: homeX, ty: homeY };
+      } else {
+        // 🎯 DEFAULT guard LEASH — fiksuojam postą (grįžimo taškas)
+        if (ally._f9LeashX === undefined) { ally._f9LeashX = ax; ally._f9LeashY = ay; }
       }
       ally._f9EngageTarget = nearest;
+      ally._f9Queue = null;   // 🧭 kovon → numetam pasenusią pathfinding eilę (kad po kovos NEbacktrackintų į startą)
       if (ally.utype === 'pigronke') ally._f9Target = null;
       ally._f9LastRepath = 0; // force immediate repath
     }
@@ -7842,6 +13014,24 @@ function _updateF9AllyEngagement(now) {
       const ay = (ally.ry !== undefined) ? ally.ry : ally.y;
       const distToT = Math.hypot(ax - tx0, ay - ty0);
       const inRange = distToT <= cfg.range;  // STANDARD RTS — tik distance check
+      // 🛡 HOLD POSITION — taikinys už atakos spindulio: NEsivaikom, numetam, grįžtam į inkarą.
+      if (ally._f9Hold && !inRange) {
+        ally._f9EngageTarget = null;
+        ally._f9AutoEngage = false;
+        ally._f9ReturnTarget = null;
+        ally._f9Target = ally._f9HoldAt ? { tx: ally._f9HoldAt.x, ty: ally._f9HoldAt.y } : null;
+        continue;
+      }
+      // 🎯 DEFENSIVE LEASH (default guard): per toli nuo posto → numetam taikinį ir grįžtam.
+      if (ally._f9LeashX !== undefined && !inRange) {
+        const _det = (_F9_ALLY_DETECT[ally.utype] || 4);
+        if (Math.hypot(ax - ally._f9LeashX, ay - ally._f9LeashY) > _det + 2.0) {
+          ally._f9EngageTarget = null;
+          ally._f9Target = { tx: ally._f9LeashX, ty: ally._f9LeashY };
+          ally._f9LeashX = undefined; ally._f9LeashY = undefined;
+          continue;
+        }
+      }
       const pigCommitRange = cfg.range + _F9_PIGRONKE_COMMIT_RANGE_PAD;
       if (ally.utype === 'pigronke' && distToT <= pigCommitRange) {
         if (_f9CommitPigronkeAttack(ally, target, now, cfg)) continue;
@@ -7918,10 +13108,12 @@ function _updateF9EnemyAI(now) {
   if (typeof _f9SyncTowerBlocked === 'function') _f9SyncTowerBlocked();
 
   // ── 0a) Ally auto-acquire — judantis ally pajunta priešą pakelyje ir įsijungia į kovą ──
+  if (typeof _updateF9WallSiege === 'function') _updateF9WallSiege(now);   // 🏰 castle siege (atskira nuo combat)
   _updateF9AllyAutoAcquire(now);
 
   // ── 0b) Ally engagement chase (target lock from right-click ARBA auto-acquire) ──
   _updateF9AllyEngagement(now);
+  // (🚩 PATROL maršruto tikslas kviečiamas KAS KADRĄ render loope — ne čia, kad būtų sklandus)
 
   // ── 0c) Ally auto-attack — friendly unit'ai automatiškai puola priešą range'e ──
   for (const ally of S.units) {
@@ -8086,6 +13278,10 @@ function _updateF9EnemyAI(now) {
 
 function _f9CheckOutcome() {
   if (window._f9pvpLive) return;   // PvP: outcome valdo host (_hostCheckWin → match_end), ne PvE squad-wipe
+  // 🏰 PILIES kontekstas (boot/relaunch/raid; 07-05 fix): per refresh `_f9pvpLive` dar false, o squad'as
+  //   dar nespėjęs užsikrauti → 0 gyvų → klaidingai iššokdavo „F9 ARENA LOST / DEFEAT". Pilis turi SAVO
+  //   outcome (serverio match_end) — solo DEFEAT čia niekada netaikomas.
+  if (window.__f9HomeActive || window._f9HomeRelaunchPending || window.__f9RaidActive || /(?:^|[#&\/])f9home\b/i.test(location.hash || '')) return;
   // KotH režimas turi savo outcome (defeat = visi unitai žuvę, ne tik hero).
   if (window._KOTH && window._KOTH.active) {
     if (typeof window._kothCheckOutcome === 'function') window._kothCheckOutcome();
@@ -8135,6 +13331,7 @@ function _f9TickPendingSpawns(now) {
 
 function _updateF9EnemyRespawn(now) {
   if (window._f9pvpLive) return;   // PvP: jokio PvE priešų spawn/respawn — priešai = kitas žaidėjas
+  if (window.__f9Home) return;     // 🏰 HOME/pilis: ramus režimas — JOKIŲ PvE priešų (raideriai = kiti žaidėjai, async)
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
   // Pending telegraph'ai materializuojami kas frame (pigus tikrinimas)
   _f9TickPendingSpawns(now);
@@ -13177,13 +18374,15 @@ function initAdventure() {
         if (typeof window._kothOnEnter === 'function' && hero) {
           try { window._kothOnEnter(hero); } catch (eK) { console.warn('[KotH onEnter] err:', eK); }
         }
-      } else if (typeof _spawnF9Enemies === 'function' && hero) {
-        // F9 — spawn'inam keletą agresyvių priešų (PvE mode)
+      } else if (typeof _spawnF9Enemies === 'function' && hero && !window.__f9Home) {
+        // F9 — spawn'inam keletą agresyvių priešų (PvE mode). 🏰 HOME/pilis režime — NE (ramu).
         try { _spawnF9Enemies(hero); } catch (eSpw) { console.warn('[F9 spawn enemies] err:', eSpw); }
       }
-      const squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
-      window._f9SelectedSet = squad;   // hero fallback pašalintas — jis F9'e nematomas (2026-06-12)
-      window._f9Selected = window._f9SelectedSet[0] || null;
+      // 🪖 6-cap: pradžioje pažymim pirmus ≤6 (1 pakas, laikinas — būrius formuoji pats per [1-6])
+      const _firstN = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0).slice(0, _F9_SQUAD_CAP);
+      window._f9SelectedSet = _firstN;
+      window._f9Selected = _firstN[0] || null;
+      window._f9ActiveSquad = null;
     } catch (e) { console.warn('[F9 deploy trained] err:', e); }
   }
 
@@ -15944,8 +21143,11 @@ function drawDungeon() {
     _dunDirty = true;
   }
 
-  // Redraw offscreen every 4 frames (animations are slow — imperceptible at 15fps)
-  _dunFrame = (_dunFrame + 1) % 4;
+  // Redraw offscreen every N frames (animations are slow — imperceptible).
+  // ⚡ PERF: F9 arena (80×24, ~statinė — tik moat foam animuoja) → perpiešt RETESNIAI (kas 12, ne 4):
+  //    4× mažiau 1920-celių rebuild'ų. _dunDirty vis tiek priverčia rebuild kai realiai keičiasi (setArena ir kt.).
+  const _rebuildEvery = (typeof S !== 'undefined' && S && S.floor === 9) ? 12 : 4;
+  _dunFrame = (_dunFrame + 1) % _rebuildEvery;
   if (_dunFrame === 0 || _dunDirty) {
     _dunDirty = false;
     const _mainCtx = ctx;
@@ -17372,10 +22574,11 @@ function _isCellInViewport(c, r, padCells) {
   if (!cam) return true; // no camera → world == canvas
   const pad = (padCells || 3) * CELL;
   const cx = c * CELL, cy = r * CELL;
+  const _icz = _f9WorldZoom();   // 🔍 zoom'e matoma daugiau celių
   if (cx + CELL < cam.x - pad) return false;
-  if (cx > cam.x + canvas.width + pad) return false;
+  if (cx > cam.x + canvas.width / _icz + pad) return false;
   if (cy + CELL < cam.y - pad) return false;
-  if (cy > cam.y + canvas.height + pad) return false;
+  if (cy > cam.y + canvas.height / _icz + pad) return false;
   return true;
 }
 
@@ -19180,26 +24383,139 @@ function _drawTowerExplosions() {
   ctx.restore();
 }
 
-function _drawDungeonStatic() {
-  const wallT = performance.now() * 0.001;
-  // PASS 0: WATER
-  // PASS 0: WATER
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
+// ═══ 🚀 STATINIS ŽEMĖS CACHE (2026-07-04 mobile perf) ═══
+// PASS 0 (vanduo) ir PASS 2+3 (krantai + žolė/elevacija/šešėliai) — DETERMINISTINIAI tile blit'ai
+//   iš S.dungeon → iškepami į 2 pilno žemėlapio offscreen canvas'us VIENĄ kartą per sceną.
+//   Kadre vietoj ~šimtų drawImage — 2 slice blit'ai. Puta (PASS 1/1b/2b) lieka gyva TARP sluoksnių
+//   (tvarka identiška originalui). Editor mode / nepasikrovę tile sheet'ai → gyvas kelias kaip anksčiau.
+function _dgPassWater(g, R0, R1, C0, C1) {
+  for (let r = R0; r < R1; r++) {
+    for (let c = C0; c < C1; c++) {
       if ([0, 4, 5].includes(S.dungeon[r][c])) {
         const px = c * CELL, py = r * CELL;
         if (tinyImgs.water.complete && tinyImgs.water.naturalWidth > 0) {
-          ctx.drawImage(tinyImgs.water, px, py, CELL, CELL);
-        } else { ctx.fillStyle = '#4ab5c0'; ctx.fillRect(px, py, CELL, CELL); }
+          g.drawImage(tinyImgs.water, px, py, CELL, CELL);
+        } else { g.fillStyle = '#4ab5c0'; g.fillRect(px, py, CELL, CELL); }
       }
     }
+  }
+}
+function _dgPassDrops(g, R0, R1, C0, C1) {
+  // PASS 2: DROPS / STONE BASES
+  for (let r = R0; r < R1; r++) {
+    for (let c = C0; c < C1; c++) {
+      const px = c * CELL, py = r * CELL;
+      const elevAbove = r > 0 && S.dungeon[r-1][c] === 2;
+      const floorAbove = r > 0 && (S.dungeon[r-1][c] === 1 || S.dungeon[r-1][c] === 3);
+      if (floorAbove && [0, 4, 5].includes(S.dungeon[r][c])) {
+        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
+          const wSeed = Math.abs((r * 97 + c * 211) % 4);
+          g.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
+        }
+      }
+      if (elevAbove && S.dungeon[r][c] !== 2 && elevationImg.complete && elevationImg.naturalWidth > 0) {
+        const cliffY = ([0, 4, 5].includes(S.dungeon[r][c])) ? 256 : 192;
+        const isW = c > 0 && S.dungeon[r-1][c-1] !== 2;
+        const isE = c < COLS - 1 && S.dungeon[r-1][c+1] !== 2;
+        let cliffX = 64; 
+        if (isW && !isE) cliffX = 0; else if (isE && !isW) cliffX = 128; else if (isW && isE) cliffX = 192;
+        g.drawImage(elevationImg, cliffX, cliffY, 64, 64, px, py, CELL, CELL);
+      }
+    }
+  }
+}
+function _dgPassTop(g, R0, R1, C0, C1) {
+  // PASS 3: TOP SURFACES (Grass / Elevation base / Shadow)
+  // type 6 = shadow cell: renders as grass, then draws shadow overlay on top (like foam pattern)
+  const _normT = (tt) => tt === 6 ? 1 : tt; // shadow treated as grass for tile borders
+  for (let r = R0; r < R1; r++) {
+    for (let c = C0; c < C1; c++) {
+      const px = c * CELL, py = r * CELL;
+      const t = S.dungeon[r][c];
+      const nt = _normT(t);
+
+      if (nt === 1 || nt === 3 || nt === 2) {
+        const wN = r === 0          || _normT(S.dungeon[r-1][c]) !== nt;
+        const wS = r === ROWS - 1   || _normT(S.dungeon[r+1][c]) !== nt;
+        const wW = c === 0          || _normT(S.dungeon[r][c-1]) !== nt;
+        const wE = c === COLS - 1   || _normT(S.dungeon[r][c+1]) !== nt;
+        const bitmask = (wN?1:0) | (wS?2:0) | (wW?4:0) | (wE?8:0);
+        const GTILE = [[64,64],[64,0],[64,128],[64,0],[0,64],[0,0],[0,128],[0,0],[192,64],[128,0],[192,128],[128,0],[192,64],[128,0],[192,128],[64,64]];
+        const [tileX, tileY] = GTILE[bitmask];
+        const finalX = (bitmask === 0) ? (1 + (r*123+c*456)%3)*64 : tileX;
+
+        let img = grassTilemapImg;
+        if (nt === 2) img = elevationImg;
+
+        if (img.complete && img.naturalWidth > 0) {
+          g.globalAlpha = (nt === 3) ? 0.75 : 1.0;
+          let fy = tileY;
+          if (nt === 3) fy = (2 + ((r * 317 + c * 211) % 3)) * 64;
+          g.drawImage(img, finalX, fy, 64, 64, px, py, CELL, CELL);
+          g.globalAlpha = 1.0;
+        } else { g.fillStyle = (nt===2) ? '#5a7a4a' : '#3a7a2a'; g.fillRect(px, py, CELL, CELL); }
+
+        if (r > 0 && S.dungeon[r-1][c] === 2 && nt !== 2) {
+          g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(px, py, CELL, CELL);
+        }
+
+        // Shadow overlay — drawn right after the grass tile, same pass as terrain
+        if (t === 6 && shadowImg.complete && shadowImg.naturalWidth > 0) {
+          g.drawImage(shadowImg, 0, 0, 192, 192, px - CELL, py - CELL, CELL * 3, CELL * 3);
+        }
+      }
+    }
+  }
+}
+let _dgCacheA = null, _dgCacheB = null, _dgCacheC = null, _dgCacheKey = '', _dgCacheDun = null;
+function _dgEnsureGroundCache() {
+  if (window.isEditMode) return false;                       // editorius keičia tiles gyvai
+  if (!(tinyImgs.water.complete && tinyImgs.water.naturalWidth > 0 &&
+        grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0 &&
+        elevationImg.complete && elevationImg.naturalWidth > 0 &&
+        shadowImg.complete && shadowImg.naturalWidth > 0)) return false;   // dar kraunasi → live
+  const key = S.floor + '|' + COLS + 'x' + ROWS + '|' + CELL + '|' + (window._dgBump || 0);
+  if (_dgCacheKey === key && _dgCacheDun === S.dungeon && _dgCacheA) return true;
+  const W = COLS * CELL, H = ROWS * CELL;
+  if (W <= 0 || H <= 0 || W * H > 4096 * 4096) return false;               // saugiklis atminčiai
+  try {
+    _dgCacheA = document.createElement('canvas'); _dgCacheA.width = W; _dgCacheA.height = H;
+    _dgCacheB = document.createElement('canvas'); _dgCacheB.width = W; _dgCacheB.height = H;
+    _dgCacheC = document.createElement('canvas'); _dgCacheC.width = W; _dgCacheC.height = H;
+    const gA = _dgCacheA.getContext('2d'), gB = _dgCacheB.getContext('2d'), gC = _dgCacheC.getContext('2d');
+    gA.imageSmoothingEnabled = false; gB.imageSmoothingEnabled = false; gC.imageSmoothingEnabled = false;
+    _dgPassWater(gA, 0, ROWS, 0, COLS);
+    _dgPassDrops(gB, 0, ROWS, 0, COLS);   // atskirai nuo TOP — tarp jų gyva 2b kranto puta (tvarka!)
+    _dgPassTop(gC, 0, ROWS, 0, COLS);
+    _dgCacheKey = key; _dgCacheDun = S.dungeon;
+    console.log('[dgCache] žemės sluoksniai iškepti', W + 'x' + H);
+    return true;
+  } catch (_) { _dgCacheA = _dgCacheB = _dgCacheC = null; return false; }
+}
+function _drawDungeonStatic() {
+  const wallT = performance.now() * 0.001;
+  // 🚀 VIEWPORT CULLING (2026-07-03 mobile perf): grid pass'ai eina TIK per matomas celes (+2 kraštui).
+  //   Iki šiol F9 80×24=1920 celių × keli pass'ai KAS KADRĄ — telefone drawImage dominavo profilį (26%).
+  //   Be kameros (cam=null) — pilnas range kaip anksčiau.
+  const _cvZ = _f9WorldZoom();   // 🔍 zoom'e matoma daugiau celių (canvas/z)
+  const _cvR0 = S.cam ? Math.max(0, Math.floor(S.cam.y / CELL) - 2) : 0;
+  const _cvR1 = S.cam ? Math.min(ROWS, Math.ceil((S.cam.y + canvas.height / _cvZ) / CELL) + 2) : ROWS;
+  const _cvC0 = S.cam ? Math.max(0, Math.floor(S.cam.x / CELL) - 2) : 0;
+  const _cvC1 = S.cam ? Math.min(COLS, Math.ceil((S.cam.x + canvas.width / _cvZ) / CELL) + 2) : COLS;
+  // PASS 0: WATER (🚀 cache A arba live)
+  const _dgUse = _dgEnsureGroundCache();
+  const _dgX = _cvC0 * CELL, _dgY = _cvR0 * CELL, _dgW = (_cvC1 - _cvC0) * CELL, _dgH = (_cvR1 - _cvR0) * CELL;
+  if (_dgUse) {
+    if (_dgW > 0 && _dgH > 0) ctx.drawImage(_dgCacheA, _dgX, _dgY, _dgW, _dgH, _dgX, _dgY, _dgW, _dgH);
+  } else {
+    _dgPassWater(ctx, _cvR0, _cvR1, _cvC0, _cvC1);
   }
 
   // PASS 1: WATER FOAM (192x192 overlays)
   if (tinyImgs.foam.complete && tinyImgs.foam.naturalWidth > 0) {
     const totalFoamFrames = 8;
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
+    for (let r = _cvR0; r < _cvR1; r++) {
+      for (let c = _cvC0; c < _cvC1; c++) {
         // Foam is ONLY generated for type 0 (auto-foam) and type 5 (force-foam)
         if (S.dungeon[r][c] === 0 || S.dungeon[r][c] === 5) {
           const isL = (tr, tc) => (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS && (S.dungeon[tr][tc] === 1 || S.dungeon[tr][tc] === 2 || S.dungeon[tr][tc] === 3));
@@ -19220,8 +24536,8 @@ function _drawDungeonStatic() {
   // PASS 1b: FOAM 2.0 (type 7) — 16 frames, same 192x192 format
   if (waterFoam2Img.complete && waterFoam2Img.naturalWidth > 0) {
     const totalFoam2Frames = 16;
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
+    for (let r = _cvR0; r < _cvR1; r++) {
+      for (let c = _cvC0; c < _cvC1; c++) {
         if (S.dungeon[r][c] === 7) {
           const px = c * CELL, py = r * CELL;
           const stagger = (r * 3 + c * 7) % totalFoam2Frames;
@@ -19233,69 +24549,22 @@ function _drawDungeonStatic() {
     }
   }
 
-  // PASS 2: DROPS / STONE BASES
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const px = c * CELL, py = r * CELL;
-      const elevAbove = r > 0 && S.dungeon[r-1][c] === 2;
-      const floorAbove = r > 0 && (S.dungeon[r-1][c] === 1 || S.dungeon[r-1][c] === 3);
-      if (floorAbove && [0, 4, 5].includes(S.dungeon[r][c])) {
-        if (grassTilemapImg.complete && grassTilemapImg.naturalWidth > 0) {
-          const wSeed = Math.abs((r * 97 + c * 211) % 4);
-          ctx.drawImage(grassTilemapImg, (5 + wSeed % 2) * 64, (4 + Math.floor(wSeed / 2)) * 64, 64, 64, px, py, CELL, CELL);
-        }
-      }
-      if (elevAbove && S.dungeon[r][c] !== 2 && elevationImg.complete && elevationImg.naturalWidth > 0) {
-        const cliffY = ([0, 4, 5].includes(S.dungeon[r][c])) ? 256 : 192;
-        const isW = c > 0 && S.dungeon[r-1][c-1] !== 2;
-        const isE = c < COLS - 1 && S.dungeon[r-1][c+1] !== 2;
-        let cliffX = 64; 
-        if (isW && !isE) cliffX = 0; else if (isE && !isW) cliffX = 128; else if (isW && isE) cliffX = 192;
-        ctx.drawImage(elevationImg, cliffX, cliffY, 64, 64, px, py, CELL, CELL);
-      }
-    }
+  // PASS 2 (🚀 cache B arba live) — žr. _dgEnsureGroundCache
+  if (_dgUse) {
+    if (_dgW > 0 && _dgH > 0) ctx.drawImage(_dgCacheB, _dgX, _dgY, _dgW, _dgH, _dgX, _dgY, _dgW, _dgH);
+  } else {
+    _dgPassDrops(ctx, _cvR0, _cvR1, _cvC0, _cvC1);
   }
 
-  // PASS 3: TOP SURFACES (Grass / Elevation base / Shadow)
-  // type 6 = shadow cell: renders as grass, then draws shadow overlay on top (like foam pattern)
-  const _normT = (tt) => tt === 6 ? 1 : tt; // shadow treated as grass for tile borders
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const px = c * CELL, py = r * CELL;
-      const t = S.dungeon[r][c];
-      const nt = _normT(t);
+  // PASS 2b: 💧 GROVIO KRANTO putos (F9 PvP) — PO grass-drop'ų (kitaip apatinė grovio briauna @ row14
+  //   gauna žolės overhang tile virš putų ir putos dingsta; viršutinė briauna jų neturi → buvo asimetrija).
+  if (typeof S !== 'undefined' && S && S.floor === 9 && window._f9Moat && typeof _f9DrawShoreFoam === 'function') { try { _f9DrawShoreFoam(); } catch (_) {} }
 
-      if (nt === 1 || nt === 3 || nt === 2) {
-        const wN = r === 0          || _normT(S.dungeon[r-1][c]) !== nt;
-        const wS = r === ROWS - 1   || _normT(S.dungeon[r+1][c]) !== nt;
-        const wW = c === 0          || _normT(S.dungeon[r][c-1]) !== nt;
-        const wE = c === COLS - 1   || _normT(S.dungeon[r][c+1]) !== nt;
-        const bitmask = (wN?1:0) | (wS?2:0) | (wW?4:0) | (wE?8:0);
-        const GTILE = [[64,64],[64,0],[64,128],[64,0],[0,64],[0,0],[0,128],[0,0],[192,64],[128,0],[192,128],[128,0],[192,64],[128,0],[192,128],[64,64]];
-        const [tileX, tileY] = GTILE[bitmask];
-        const finalX = (bitmask === 0) ? (1 + (r*123+c*456)%3)*64 : tileX;
-
-        let img = grassTilemapImg;
-        if (nt === 2) img = elevationImg;
-
-        if (img.complete && img.naturalWidth > 0) {
-          ctx.globalAlpha = (nt === 3) ? 0.75 : 1.0;
-          let fy = tileY;
-          if (nt === 3) fy = (2 + ((r * 317 + c * 211) % 3)) * 64;
-          ctx.drawImage(img, finalX, fy, 64, 64, px, py, CELL, CELL);
-          ctx.globalAlpha = 1.0;
-        } else { ctx.fillStyle = (nt===2) ? '#5a7a4a' : '#3a7a2a'; ctx.fillRect(px, py, CELL, CELL); }
-
-        if (r > 0 && S.dungeon[r-1][c] === 2 && nt !== 2) {
-          ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(px, py, CELL, CELL);
-        }
-
-        // Shadow overlay — drawn right after the grass tile, same pass as terrain
-        if (t === 6 && shadowImg.complete && shadowImg.naturalWidth > 0) {
-          ctx.drawImage(shadowImg, 0, 0, 192, 192, px - CELL, py - CELL, CELL * 3, CELL * 3);
-        }
-      }
-    }
+  // PASS 3 (🚀 cache C arba live) — PO 2b putos, kaip originale
+  if (_dgUse) {
+    if (_dgW > 0 && _dgH > 0) ctx.drawImage(_dgCacheC, _dgX, _dgY, _dgW, _dgH, _dgX, _dgY, _dgW, _dgH);
+  } else {
+    _dgPassTop(ctx, _cvR0, _cvR1, _cvC0, _cvC1);
   }
 
   // F11 ally teritorija + conquest/loss mechanika.
@@ -19488,7 +24757,7 @@ function _drawDungeonStatic() {
         }
         if (_isPaintCol && _paintT < 1) ctx.restore();
       };
-      for (let _c = _grayStart; _c < _grayEnd; _c++) _drawCol(_c);
+      for (let _c = Math.max(_grayStart, _cvC0); _c < Math.min(_grayEnd, _cvC1); _c++) _drawCol(_c);   // 🚀 tik matomi stulpeliai
       // Paint col gali būti už gray zonos (kai naujas kairysis gray ant senos owned col srities — gali būti < _grayStart)
       if (_paint && _paintActive && (_paint.col < _grayStart || _paint.col >= _grayEnd)) {
         _drawCol(_paint.col);
@@ -19524,8 +24793,8 @@ function _drawDungeonStatic() {
       ctx.save();
       ctx.globalCompositeOperation = 'multiply';
       ctx.fillStyle = 'rgb(150,170,160)'; // ~30% darkening on grass tones
-      for (let _c = _grayEnd; _c < COLS; _c++) {
-        for (let _r = 0; _r < ROWS; _r++) {
+      for (let _c = Math.max(_grayEnd, _cvC0); _c < _cvC1; _c++) {   // 🚀 tik matomi
+        for (let _r = _cvR0; _r < _cvR1; _r++) {
           const _t = S.dungeon[_r] && S.dungeon[_r][_c];
           if (_t !== 1 && _t !== 3 && _t !== 6) continue;
           ctx.fillRect(_c * CELL, _r * CELL, CELL, CELL);
@@ -19919,6 +25188,61 @@ function _drawDungeonStatic() {
     ctx.restore();
   }
 
+  // 💧 GROVYS (F9 PvP): atstatyta „kaip buvo" — grovį dabar piešia native vandens PASS'ai aukščiau
+  //    (setMoat pažymi celes S.dungeon=0). Atskiras _f9DrawMoat() overlay NEBEnaudojamas.
+}
+
+// 💧 Grovio KRANTO putos — animuotą putų sprite (platus, 3 celės) piešiam ant ŽOLĖS celių,
+//    kurios liečiasi su grovio (type 4) vandeniu → atrodo kaip žolės krantai banguoja palei griovį.
+//    Vanduo pats lieka švarus (type 4, jokių putų ant vandens). Kviečiama iš _drawDungeonStatic (cache, po unitais).
+function _f9DrawShoreFoam() {
+  const moat = window._f9Moat;
+  if (!Array.isArray(moat) || !moat.length || typeof ctx === 'undefined') return;
+  if (!(tinyImgs.foam && tinyImgs.foam.complete && tinyImgs.foam.naturalWidth > 0)) return;
+  // moat aibė (greitas vandens lookup)
+  if (!window._f9MoatSet || window._f9MoatSetN !== moat.length) {
+    window._f9MoatSet = new Set(); for (let i = 0; i < moat.length; i++) window._f9MoatSet.add(moat[i][0] + ',' + moat[i][1]);
+    window._f9MoatSetN = moat.length;
+  }
+  const mset = window._f9MoatSet;
+  // kranto celės = ŽOLĖS (type 1) celės 4-kaimynystėj su grovio vandeniu (cache'inam pagal moat ilgį)
+  if (!window._f9ShoreCells || window._f9ShoreN !== moat.length) {
+    const shore = [], seen = new Set();
+    for (let i = 0; i < moat.length; i++) {
+      const mx = moat[i][0], my = moat[i][1];
+      const nb = [[mx - 1, my], [mx + 1, my], [mx, my - 1], [mx, my + 1]];
+      for (let j = 0; j < nb.length; j++) {
+        const nx = nb[j][0], ny = nb[j][1];
+        if (nx < 0 || ny < 0 || ny >= ROWS || nx >= COLS) continue;
+        if (mset.has(nx + ',' + ny)) continue;                 // kita vandens celė — ne krantas
+        const k = nx + ',' + ny; if (seen.has(k)) continue; seen.add(k);
+        // south = grovio vanduo TIESIAI po šia žolės cele (my === ny+1) → grovio segmento VIRŠUTINĖ briauna (apatinė gap dalis)
+        const south = (ny === my - 1) ? 1 : 0;
+        if (S.dungeon[ny] && S.dungeon[ny][nx] === 1) shore.push([nx, ny, south]);   // tik žolė
+      }
+    }
+    window._f9ShoreCells = shore; window._f9ShoreN = moat.length;
+  }
+  const shore = window._f9ShoreCells, C = CELL, frames = 8, fw = Math.round(C * 3), now = performance.now();
+  for (let i = 0; i < shore.length; i++) {
+    const x = shore[i][0], y = shore[i][1], px = x * C, py = y * C;
+    const stagger = (y * 3 + x * 7) % frames;
+    const frame = (Math.floor(now / 150) + stagger) % frames;
+    const dy = shore[i][2] ? C : 0;   // apatinės dalies (south) putos — nuleistos 1 sluoksniu žemyn
+    ctx.drawImage(tinyImgs.foam, frame * 192, 0, 192, 192, px - C, py - C + dy, fw, fw);
+  }
+  // 🪨 AKMENINIS SLAITAS — tileset3 stone-cliff tiles ant grovio segmento VIRŠUTINĖS briaunos
+  //    (ten kur virš grovio celės — sausuma, t.y. segmento viršus prie praėjimo). KAIRYS stulp=5_4, DEŠINYS=7_4.
+  //    Uždėta ant judančio vandens (po šito piešto = virš putų). User map: deco "13,34":tileset3_5_4, "13,35":tileset3_7_4.
+  if (tileset3Img.complete && tileset3Img.naturalWidth > 0) {
+    for (let i = 0; i < moat.length; i++) {
+      const x = moat[i][0], y = moat[i][1];
+      if (y - 1 < 0 || mset.has(x + ',' + (y - 1))) continue;   // mapo kraštas arba virš vanduo → ne viršutinė briauna
+      const isLeft = mset.has((x + 1) + ',' + y);               // dešinėj vanduo → tai KAIRYS grovio stulpelis
+      const tx = isLeft ? 5 : 7;
+      ctx.drawImage(tileset3Img, tx * 64, 4 * 64, 64, 64, x * C, y * C, C, C);
+    }
+  }
 }
 
 // ---- Wall FX functions (removed — no longer used) -----------------------------------------
@@ -25372,7 +30696,8 @@ function spawnDmgNumber(gx, gy, text, color, size, type) {
 
   // ── VIENINGAS STANDARTAS — spalva pagal type/tekstą. Unitų žala=balta, priešų žala (type 'taken')=raudona ──
   const _dt = typeof text === 'string' ? text : '';
-  if (type === 'crit' || _dt.indexOf('!') >= 0) color = '#ffb030';   // crit — auksinis
+  if (_dt.indexOf('🦴') >= 0) color = '#1f8a2e';                     // 🦴 kaulų reward — TAMSIAI ŽALIA (prieš crit, kad neperrašytų)
+  else if (type === 'crit' || _dt.indexOf('!') >= 0) color = '#ffb030';   // crit — auksinis
   else if (_dt === 'FAIL') color = '#ff3b3b';                        // kasimo FAIL — RAUDONA (nors type 'miss')
   else if (_dt === 'MISS' || type === 'miss') color = '#c8d2e0';     // miss — pilkas
   else if (_dt === 'BLOCK') color = '#78d2ff';                       // block — žydras
@@ -25866,6 +31191,38 @@ function spawnDeath(gx, gy, color) {
       decay: 0.015 + Math.random() * 0.025,
       r: 3 + Math.random() * 5,
       color: Math.random() < 0.25 ? '#ffffff' : color,
+      type: 'pixel'
+    });
+  }
+}
+
+// 🌀 Teleporto FX — TIK dekoratyvūs violetiniai pixeliai (jokio kraujo, mirties animacijos ar garso).
+function spawnF9Teleport(gx, gy) {
+  if (!S || !Array.isArray(S.particles)) return;
+  if (S.floor === 9) S.shake = Math.max(S.shake || 0, 1.6);   // lengvas suvirpėjimas (švelnus)
+  // pažymim artimiausią pad'ą → aktyvacijos animacija (_f9DrawTpPads 6 punktas)
+  if (Array.isArray(window._f9TpPads) && window._f9TpPads.length) {
+    let _bi = -1, _bd = 2.5;
+    for (let i = 0; i < window._f9TpPads.length; i++) {
+      const _d = Math.hypot(gx - window._f9TpPads[i][0], gy - window._f9TpPads[i][1]);
+      if (_d < _bd) { _bd = _d; _bi = i; }
+    }
+    if (_bi >= 0) { if (!window._f9TpPulse) window._f9TpPulse = {}; window._f9TpPulse[_bi] = performance.now(); }
+  }
+  const wx = (gx + 0.5) * CELL, wy = (gy + 0.5) * CELL;
+  const N = 18;
+  for (let i = 0; i < N; i++) {
+    const a = Math.PI * 2 * (i / N) + Math.random() * 0.3;
+    const s = (0.6 + Math.random() * 2.2) * CELL * 0.02;
+    S.particles.push({
+      x: wx + Math.cos(a) * CELL * 0.18,
+      y: wy + Math.sin(a) * CELL * 0.18,
+      vx: Math.cos(a) * s * 1.3,
+      vy: Math.sin(a) * s * 1.3,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.03,
+      r: 2 + Math.random() * 4,
+      color: Math.random() < 0.3 ? '#e7d6ff' : '#9f7bff',
       type: 'pixel'
     });
   }
@@ -26922,6 +32279,8 @@ function loop(now) {
   if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
     window.F9PvpLive.guestTick(now);   // GUEST: tik render iš host būsenos, jokio lokalaus simo
   } else {
+    // ── 🚩 PATROL maršruto tikslas — KAS KADRĄ (ne 360ms AI throttle) kad tiksliai sektų A→B→C taškus ──
+    if (typeof _updateF9AllyPatrol === 'function') _updateF9AllyPatrol(now);
     // ── F9 RTS smooth click-to-move (continuous, no grid hopping) ──
     _updateF9SmoothMove(now);
     // ── F9 enemy AI (PvE) — chase + melee (PvP'e nėra _f9Enemy unitų → inertiškas) ──
@@ -27205,6 +32564,9 @@ function loop(now) {
 
   // PERF: O(N²) → ~O(N) per frame. Pre-build spatial maps, tada per-unit
   // tikrinam tik 3×3 cell neighbors (Chebyshev ≤ 1).
+  // ⚡ PvP/home: serveris valdo kovą + animacijas (FX event'ai) → lokalus _adjEnemy/_bulletDanger
+  //    NEnaudojami → PRALEIDŽIAM (jokio per-frame Map alloc + neighbor scan šitoj scenoj).
+  if (!window._f9pvpLive) {
   const _adjUnitMap = new Map();
   for (let _i = 0; _i < S.units.length; _i++) {
     const _u = S.units[_i];
@@ -27250,6 +32612,7 @@ function loop(now) {
     u._adjEnemy = _adj;
     u._bulletDanger = _danger;
   });
+  }   // /if (!_f9pvpLive) — adjacency skip PvP/home
 
   // Draw
   ctx.save();
@@ -27259,11 +32622,13 @@ function loop(now) {
     updateCamera();
     // World-space pelės koord., atnaujinama kiekvieną frame'ą (po to kai kamera pasikeitė)
     if (_canvasMx >= 0) {
-      _worldMx = _canvasMx + S.cam.x;
-      _worldMy = _canvasMy + S.cam.y;
+      _worldMx = _canvasMx / _f9WorldZoom() + S.cam.x;
+      _worldMy = _canvasMy / _f9WorldZoom() + S.cam.y;
     } else {
       _worldMx = -1; _worldMy = -1;
     }
+    const _rz = _f9WorldZoom();   // 🔍 pinch zoom — TIK pasauliui (UI resetina transformą pats)
+    if (_rz !== 1) ctx.scale(_rz, _rz);
     ctx.translate(-Math.round(S.cam.x), -Math.round(S.cam.y));
   } else {
     _worldMx = _canvasMx; _worldMy = _canvasMy;
@@ -27302,14 +32667,23 @@ function loop(now) {
     _drawObs(_f9TowerObstacles, 'rgba(40,160,255,1)');    // zip tower (kvadratas) — mėlynas, paliktas
     ctx.restore();
   }
+  if (typeof _f9DrawStonePlaza === 'function') _f9DrawStonePlaza();   // 🪨 akmeninė aikštė + takeliai — ŽEMIAUSIAS dekoro sluoksnis (07-06 fix: PRIEŠ selection žiedus/markerius, kad žiedai nepalįstų po akmenim)
+  if (typeof _f9CrittersStep === 'function') { _f9CrittersStep(performance.now()); _f9DrawCritters(); }   // 🐑🐦 ambient gyvūnai ant žolės (po unitais)
   if (typeof _drawF9DebugOverlay === 'function') _drawF9DebugOverlay();
   if (typeof _drawF9EnemyTargetReticle === 'function') _drawF9EnemyTargetReticle();
+  if (typeof _f9DrawEngagedMarkers === 'function') _f9DrawEngagedMarkers();   // 🎯 „turi taikinį" virš savo unitų
+  if (typeof _f9DrawHoldShields === 'function') _f9DrawHoldShields();
+  if (typeof _f9DrawPatrolRoute === 'function') _f9DrawPatrolRoute();
+  if (typeof _f9DrawPatrolFlags === 'function') _f9DrawPatrolFlags();
+  if (typeof _f9DrawMovePreview === 'function') _f9DrawMovePreview();
   _drawF9SelectionRing();
-  _drawF9SelectionBar();
+  // ⚡ perf 07-06: _drawF9SelectionBar() kvietimas IŠIMTAS (buvo 3×/kadrą — piešia TIK paskutinis,
+  //   screen-space po drawScanlines ~:31732; pirmi 2 buvo grynas overdraw, ~900 eilučių f-ja su gradientais)
   // Solo info popup — TIK kai pasirinktas 1 unitas (velkamas, suskleidžiamas, ~30% transparent)
   if (typeof _drawF9SelectionPanel === 'function') _drawF9SelectionPanel();
-  if (typeof _drawF9TouchButtons === 'function') _drawF9TouchButtons();
+  // 📱 _drawF9TouchButtons PERKELTAS į kadro pabaigą (po pastatų/depth) — kitaip ligoninė/pastatai uždengia mygtukus (07-03)
   if (typeof _drawF9HotkeyHint === 'function') _drawF9HotkeyHint();
+  if (typeof _f9DrawFPS === 'function') _f9DrawFPS();   // diag: window._f9FPS=true konsolėj → rodo FPS+unitų sk.
   if (typeof window._kothRenderHud === 'function') window._kothRenderHud();
   _drawF9DragRect();
   drawBloodStains();
@@ -27354,15 +32728,30 @@ function loop(now) {
       ctx.drawImage(_im, _bf * 128, 0, 128, _im.naturalHeight, _bc * CELL + CELL / 2 - _bsz / 2, _br * CELL + CELL - _bsz, _bsz, _bsz);
     }
   }
+  // 🏰 Capture zona (KotH už sienos) — žemės žiedas + progreso arka. PO grindų, PRIEŠ sieną/unitus.
+  if (S.floor === 9 && window._f9Cap && typeof _f9DrawCapZone === 'function') { try { _f9DrawCapZone(); } catch (_) {} }
+  if (typeof _f9DrawCastleWall === 'function') _f9DrawCastleWall();   // 🏰 castle siena PO unitais (unitai matosi priekyje)
+  if (typeof _f9DrawTowerPlacePreview === 'function') _f9DrawTowerPlacePreview();   // 🗼 build-mode spots ant sienos
   // PvP komandos žiedai PO unitais (savi=mėlynas, priešas=raudonas) — universalu visiems utype'ams,
   // kad ghost/pigronke/ronhood (neturi silhouette outline šakos) irgi būtų aiškiai paženklinti. Tik PvP.
+  // 🔴 Priešo žymėjimas — raudonas žiedas po priešais (universalu VISIEM utype'ams). NEgatuojam su _f9Clean:
+  //    funkcija pati piešia TIK priešus (u._f9Enemy) ir TIK PvP'e → ramioj pilyje (be priešų) nieko nerodo,
+  //    o raide priešas aiškiai paženklintas. (_f9Clean tik HP barus/markerius slepia.)
   if (typeof _drawF9PvpTeamRings === 'function') _drawF9PvpTeamRings();
+  if (typeof _f9DrawRetreatZone === 'function') _f9DrawRetreatZone();   // 🏳️ retreat zona (puolikui, po unitais)
+  // 🏥 ligoninė PERKELTA į FOREGROUND (07-12 user: unitai lipo ant viršaus be kontūrų) — žr. po drawUnits()
+  if (typeof _f9DrawCemetery === 'function') _f9DrawCemetery();   // ⚰️ kapinės (prie barakų, dekoras)
+  // ⛏️ gold camp PERKELTA į FOREGROUND (07-12 user: namukas = kietas hitbox) — žr. po drawUnits()
+  if (typeof _f9DrawMarket === 'function') _f9DrawMarket();       // 🛒 unitų marketplace namukas (dešiniau ligoninės — 07-08)
+  if (typeof _f9DrawTpPads === 'function') _f9DrawTpPads();   // 🌀 teleporto pad'ai (ant žemės, po unitais)
   drawUnits();
-  if (typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
+  if (!window._f9Clean && typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
   // Default raudonas silhouette outline visiems matomam enemy unit'am.
   // Tas pats pattern kaip baltas hover (žr. _drawUnitSilhouetteOutline).
   // Hover (baltas) ir selection (mėlynas) draw'inami virš — natural override.
-  {
+  // ⚡ PERF: PvP/home scenoj priešai jau turi raudoną komandos žiedą (_drawF9PvpTeamRings) →
+  //    praleidžiam brangų 9-blit raudoną siluetą (kas kadrą/priešą). Solo PvE — paliekam.
+  if (!window._f9pvpLive) {
     // Tiksli spalva #DE4D4E (rgb 222,77,78) — sampluota iš screenshot 2026-04-28 213622.
     // Hex prefix '#' aktyvuoja offscreen-canvas tinting (pixel-perfect, jokio filter chain).
     const _redFilter = '#DE4D4E';
@@ -27394,20 +32783,45 @@ function loop(now) {
     }
   }
   _drawUnitHoverOutline();
-  if (typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
+  if (!window._f9Clean && typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
   if (typeof _drawF9Shots === 'function') _drawF9Shots();
   drawForegroundDecorations();
-  // F9 DEPTH SORT + OCCLUSION:
-  //  • Unitas ŽEMIAU zip tower (priekyje) → perpiešiam TIKRĄ sprite VIRŠ bokšto (uždengia jį).
-  //  • Unitas UŽ medžio/bokšto (virš) → tuščiaviduris BALTAS kontūras VIRŠ deco (kad nedingtų).
+  // 🏥 LIGONINĖ — FOREGROUND (07-12 user: unitai lipo ant viršaus be kontūrų). Depth loop žemiau perpiešia
+  //    priekinius unitus virš / už esančius baltu kontūru. PRIEŠ burbulą, kad burbulas liktų viršuje.
+  if (S.floor === 9 && typeof _f9DrawHospital === 'function') { try { _f9DrawHospital(); } catch (_) {} }
+  if (typeof _f9DrawHospBubble === 'function') _f9DrawHospBubble();   // 💬 ligoninės burbulas VIRŠ unitų
+  if (typeof _drawF9TouchButtons === 'function') _drawF9TouchButtons();   // 📱 touch mygtukai VIRŠ pastatų (perkelta 07-03)
+  // 🏰 PILIS + 🏚️ BARAKAI — foreground (po unitų; occluduoja kaip medis). Depth tvarko loop žemiau.
+  if (S.floor === 9 && window._f9Cap && typeof _f9DrawCapCastle === 'function') { try { _f9DrawCapCastle(performance.now()); } catch (_) {} }
+  if (S.floor === 9 && window._f9Cap && typeof _f9DrawCapBarracks === 'function') { try { _f9DrawCapBarracks(); } catch (_) {} }
+  if (S.floor === 9 && window._f9Cap && typeof _f9DrawAds === 'function') { try { _f9DrawAds(); } catch (_) {} }
+  if (S.floor === 9 && window._f9Cap && typeof _f9DrawGlobalStats === 'function') { try { _f9DrawGlobalStats(); } catch (_) {} }
+  // ⛏️ AUKSO KASYKLA — FOREGROUND (07-12 user: namukas kietas hitbox → unitai už jo occluduojami, ne piešiami ANT).
+  //    Buvo pre-unit pass'e (32707) → unitai visada dengė namuką. Depth loop žemiau perpiešia priekinius virš.
+  //    Pawn/Pam dioramos sprite'ai piešiami funkcijos viduje PO namuko → diorama nepakitusi 1:1.
+  if (S.floor === 9 && typeof _f9DrawGoldCamp === 'function') { try { _f9DrawGoldCamp(); } catch (_) {} }
+  // F9 DEPTH SORT + OCCLUSION (medžiai/bokštai + PILIS):
+  //  • Unitas PRIEKYJE deco/pilies → perpiešiam TIKRĄ sprite VIRŠ (uždengia ją).
+  //  • Unitas UŽ deco/pilies → tuščiaviduris BALTAS kontūras VIRŠ (kad nedingtų).
   if (S.floor === 9 && typeof _f9DrawTreeOutline === 'function') {
+    const _castleOcc = (typeof _f9CastleOcclusion === 'function' && (window._f9Cap || window._f9GoldCampRect || window._f9HospitalRect));
     for (const u of (S.units || [])) {
       if (!u || !u.alive) continue;
-      if (_f9UnitInFrontOfDeco(u)) { _f9DrawUnitSpriteTop(u); continue; }   // priekyje → ant viršaus
-      if (!_f9UnitOccluded(u)) continue;
-      const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
-      const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-      _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // už deco → baltas kontūras (be užpildo)
+      // ⚡ PERF: occlusion sprendimas priklauso TIK nuo unito celės (x,y) — kešuojam ir perskaičiuojam
+      //    tik kai unitas pereina į kitą celę (ne kas kadrą). Sprite-on-top redraw vis tiek kas kadrą (vizualas).
+      const _cell = u.x + ',' + u.y;
+      if (u._occCell !== _cell) {
+        u._occCell = _cell;
+        u._occCo = _castleOcc ? _f9CastleOcclusion(u) : 0;
+        u._occFront = _f9UnitInFrontOfDeco(u);
+        u._occBehind = _f9UnitOccluded(u);
+      }
+      if (u._occFront || u._occCo === 1) { _f9DrawUnitSpriteTop(u); continue; }   // priekyje → ant viršaus
+      if (u._occBehind || u._occCo === -1) {
+        const _cx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+        const _cy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+        _f9DrawTreeOutline(u, _cx, _cy, '#ffffff');   // už deco/pilies → baltas kontūras (be užpildo)
+      }
     }
   }
   drawBarracksHarpoons('top');
@@ -27433,8 +32847,7 @@ function loop(now) {
   if (gameMode === 'adventure') {
     drawWeaponHUD();
     drawFloorIntro();
-    if (typeof _drawF9SelectionBar === 'function') _drawF9SelectionBar();
-    if (typeof _drawF9DragRect === 'function') _drawF9DragRect();
+    // ⚡ perf 07-06: _drawF9SelectionBar()+_drawF9DragRect() kvietimai IŠIMTI — dubliai (galutinis piešimas po drawScanlines žemiau)
     drawF11DeployPanel();
     if (typeof drawF11TimelockPanel === 'function') drawF11TimelockPanel();
     // drawF11UnitPopup — IŠJUNGTA (vartotojo prašymu pašalintas mažas popup virš units)
@@ -28586,17 +33999,24 @@ function _drawUnitHoverTooltip() {
 function updateCamera() {
   // F9 fullscreen guard kas frame'ą — startGame/kiti keliai gali perrašyti canvas dydį
   // (pvz. canvas.height = ADV_CANVAS_H), šis sync'as atstato į lango dydį kai F9.
-  if (typeof _f9SyncCanvasSize === 'function') _f9SyncCanvasSize();
+  // ⚡ throttle 250ms — visualViewport skaitymas kas kadrą profilyje valgė 4.5% (resize event'ai dengia realius pokyčius)
+  if (typeof _f9SyncCanvasSize === 'function' && (!window._f9CvSyncT || performance.now() - window._f9CvSyncT > 250)) {
+    window._f9CvSyncT = performance.now();
+    _f9SyncCanvasSize();
+  }
   const hero = S._hero || S.units.find(u => u.team === 0 && u.alive);
   if (!hero) return;
   const _now = performance.now();
   // CSS scale(CANVAS_ZOOM) + overflow:hidden wrapper → matoma tik centrinė canvas dalis.
   // Efektyvus viewport world coords'uose = canvas / ZOOM, centruojasi aplink canvas vidurį.
-  const _camZm = (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn) ? 1 : CANVAS_ZOOM;
-  const _camH = (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn) ? canvas.height : ADV_CANVAS_H;
-  const vpW = advCanvasW / _camZm, vpH = _camH / _camZm;
-  const vpOffsetX = (advCanvasW - vpW) / 2;
-  const vpOffsetY = (_camH - vpH) / 2;
+  const _fsOn = (typeof _f9FullscreenOn !== 'undefined' && _f9FullscreenOn);
+  const _camZm = _fsOn ? 1 : CANVAS_ZOOM;
+  const _camH = _fsOn ? canvas.height : ADV_CANVAS_H;
+  // 🔍 F9: matomas PASAULIO plotas = canvas / worldZoom (scale nuo viršutinio-kairio kampo, offset=0)
+  const vpW = _fsOn ? canvas.width / _f9WorldZoom() : advCanvasW / _camZm;
+  const vpH = _fsOn ? canvas.height / _f9WorldZoom() : _camH / _camZm;
+  const vpOffsetX = _fsOn ? 0 : (advCanvasW - vpW) / 2;
+  const vpOffsetY = _fsOn ? 0 : (_camH - vpH) / 2;
   const mapW = COLS * CELL, mapH = ROWS * CELL;
 
   let tx = S.cam.tx ?? S.cam.x;
@@ -28691,7 +34111,9 @@ function updateCamera() {
   // Smooth lerp toward target
   // F10 mobile MANUAL pan → SNAP (be lerp lag) kad vaizdas sektų pirštą 1:1 (responsyvu, ne „senas telefonas").
   // Auto-follow (ne pan) lieka smooth lerp 0.14.
-  if (S.floor === 10 && window._f10PanInstalled && S._camManualLock) {
+  // 📱 F9 touch: rankinis pan/pinch → SNAP (be lerp lago) — pirštas=1:1, kitaip vaizdas „velkasi" (guminis lagas)
+  if ((S.floor === 10 && window._f10PanInstalled && S._camManualLock) ||
+      (S.floor === 9 && window._f9TouchInstalled && S._camManualLock)) {
     S.cam.x = tx; S.cam.y = ty;
   } else {
     S.cam.x += (tx - S.cam.x) * 0.14;
@@ -32104,6 +37526,26 @@ function drawUnits() {
       }
     }
   }
+  // 🚶 WALK-IN-PLACE FIX (F9): animacija pagal TIKRĄ greitį, ne tik intent/cmd. Užstrigęs/susigrūdęs unitas
+  //   (blokuotas kitų, arba serverio cmd="move" bet realiai nejuda) → IDLE, ne „eina vietoj". EMA glotninimas
+  //   (cells/s) atskiria realų judesį (>0.35) nuo separation jitter/spūsties. Kill: window._f9NoIdleFix=true.
+  if (S.floor === 9 && !window._f9NoIdleFix) {
+    const _nowA = _now;
+    const _dtA = window._f9AnimLastT ? Math.min(0.1, (_nowA - window._f9AnimLastT) / 1000) : 0.016;
+    window._f9AnimLastT = _nowA;
+    if (_dtA > 0) {
+      for (const u of S.units) {
+        if (!u || !u.alive) continue;
+        const _rx = (u.rx !== undefined) ? u.rx : u.x, _ry = (u.ry !== undefined) ? u.ry : u.y;
+        if (u._f9PrevRx !== undefined) {
+          const _spd = Math.hypot(_rx - u._f9PrevRx, _ry - u._f9PrevRy) / _dtA;   // cells/s
+          u._f9SpdEMA = (u._f9SpdEMA || 0) * 0.7 + _spd * 0.3;
+        }
+        u._f9PrevRx = _rx; u._f9PrevRy = _ry;
+        if (u._f9Moving && (u._f9SpdEMA || 0) < 0.35) u._f9Moving = false;   // intent yra, bet realiai nejuda → idle
+      }
+    }
+  }
   // Pre-build unit index map once (avoids O(n²) filter inside loop)
   const _unitIdx = new Map();
   const _teamCount = {};
@@ -32163,7 +37605,11 @@ function drawUnits() {
       }
     }
 
-    const cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
+    let cx = (u.rx + 0.5) * CELL, cy = (u.ry + 0.5) * CELL;
+    // PERF (F9 tik): snap'inam unit draw koordinates į sveiką pikselį → canvas praleidžia
+    // sub-pixel sampling'ą scaled drawImage'uose (profilis: drawImage dominuoja). Crisper pixel-art,
+    // 0 vizualinio regreso (judesys CELL skalėj — 1px snap nematomas). Kiti aukštai NEliečiami.
+    if (S.floor === 9) { cx = Math.round(cx); cy = Math.round(cy); }
     const alpha = u.alive ? 1 : u.deathT;
     const r = UNIT_CELL * 0.29 * (u.scale || 1.0);
     const isSel = u.team === 0 && u.id === S.selectedId[0];
@@ -32215,7 +37661,7 @@ function drawUnits() {
         if (sImg && sImg.complete && sImg.naturalWidth > 0) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1) * _mergeAlpha;
           const _dw = sprSz * _mergeScale, _dh = sprSz * _mergeScale;
-          ctx.drawImage(sImg, cx - _dw / 2, cy - _dh / 2, _dw, _dh);
+          _f9Blit(sImg, 0, 0, sImg.naturalWidth, sImg.naturalHeight, cx - _dw / 2, cy - _dh / 2, _dw, _dh, false);
           ctx.globalAlpha = alpha;
           if (_mergeFlash > 0) {
             ctx.save();
@@ -32314,9 +37760,7 @@ function drawUnits() {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1);
           // SMOOTHING OFF: ON darė tamsų halo ant kraštų (juodi A=0 permatomi pikseliai susimaišydavo
           // mažinant 640px→~70px). PNG'ai švarūs (binarinis alpha, 0 stray) — halo buvo render artefaktas.
-          ctx.imageSmoothingEnabled = false;
-          if (_flip) { ctx.save(); ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, _drawY, _dw, _dh); ctx.restore(); }
-          else { ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, _drawY, _dw, _dh); }
+          _f9Blit(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, _drawY, _dw, _dh, _flip);
           ctx.globalAlpha = 1;
         }
       } else if (u.utype === 'harpoon_fish' || u.utype === 'archer') {
@@ -32342,15 +37786,7 @@ function drawUnits() {
         if (frame) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.5 : 1) * _mergeAlpha;
           const _dw = sprSz * _mergeScale, _dh = sprSz * _mergeScale;
-          if (flip) {
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.scale(-1, 1);
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, -_dh / 2, _dw, _dh);
-            ctx.restore();
-          } else {
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, cy - _dh / 2, _dw, _dh);
-          }
+          _f9Blit(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, cy - _dh / 2, _dw, _dh, flip);
           ctx.globalAlpha = alpha;
           if (_mergeFlash > 0) {
             ctx.save();
@@ -32467,15 +37903,7 @@ function drawUnits() {
         const yOff = 0.5 * CELL - 0.38 * sprSz;  // feet anchor: pig kojos ant cell bottom
         if (frame) {
           ctx.globalAlpha = alpha * (u.hitFlash > 0 ? 0.55 : 1);
-          if ((u.facing?.dx || 1) < 0) {
-            ctx.save();
-            ctx.translate(cx, cy + yOff);
-            ctx.scale(-1, 1);
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -sprSz / 2, -sprSz / 2, sprSz, sprSz);
-            ctx.restore();
-          } else {
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2 + yOff, sprSz, sprSz);
-          }
+          _f9Blit(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - sprSz / 2, cy - sprSz / 2 + yOff, sprSz, sprSz, (u.facing?.dx || 1) < 0);
           ctx.globalAlpha = alpha;
         } else {
           ctx.fillStyle = '#cc6688';
@@ -32568,8 +37996,7 @@ function drawUnits() {
         const _gDrawGhost = (px, py, a) => {
           if (!_gOk) return;
           ctx.globalAlpha = a;
-          if (_gFlipL) { ctx.save(); ctx.translate(px, py); ctx.scale(-1, 1); ctx.drawImage(_gsheet, _gsx, 0, GHOST_FRAME_W, GHOST_FRAME_W, -sprSz / 2, -sprSz / 2, sprSz, sprSz); ctx.restore(); }
-          else { ctx.drawImage(_gsheet, _gsx, 0, GHOST_FRAME_W, GHOST_FRAME_W, px - sprSz / 2, py - sprSz / 2, sprSz, sprSz); }
+          _f9Blit(_gsheet, _gsx, 0, GHOST_FRAME_W, GHOST_FRAME_W, px - sprSz / 2, py - sprSz / 2, sprSz, sprSz, _gFlipL);
         };
         if (_gOk) {
           _gDrawGhost(_gcx, _gcy, alpha * (u.hitFlash > 0 ? 0.5 : 1));          // pagrindinis kūnas (viršuje)
@@ -32704,15 +38131,7 @@ function drawUnits() {
           const _isGuarding = u.guardStart && (performance.now() - u.guardStart) < (skullAnimSheets.guard.frameCount / SKULL_ANIM_FPS.guard) * 1000;
           if (_isGuarding) { ctx.shadowColor = '#fffbe0'; ctx.shadowBlur = 18; }
           const _dw = sprSz * _mergeScale, _dh = sprSz * _mergeScale;
-          if ((u.facing?.dx || -1) < 0) {
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.scale(-1, 1);
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, -_dw / 2, -_dh / 2, _dw, _dh);
-            ctx.restore();
-          } else {
-            ctx.drawImage(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, cy - _dh / 2, _dw, _dh);
-          }
+          _f9Blit(frame.sheet, frame.sx, frame.sy, frame.sw, frame.sh, cx - _dw / 2, cy - _dh / 2, _dw, _dh, (u.facing?.dx || -1) < 0);
           ctx.shadowBlur = 0;
           ctx.globalAlpha = alpha;
           if (_mergeFlash > 0) {
@@ -34467,6 +39886,7 @@ function showScreen(id) {
   if (el) { el.style.display = 'flex'; el.classList.add('active'); }
   // Kai rodomas game screen, perskaičiuok fit (layout dabar matomas — scrollWidth teisingas)
   if (id === 'screen-game') {
+    try { var _cbo = document.getElementById('castle-boot-ov'); if (_cbo) _cbo.remove(); } catch (_) {}   // 🏰 pilis pasirodė → nuimam boot overlay
     window.dispatchEvent(new Event('resize'));
     setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
   }
@@ -35233,6 +40653,7 @@ window.startGame = function startGame(mode) {
 }
 
 function backToMenu() {
+  try { localStorage.removeItem('f9_resume_castle'); } catch (_) {}   // 🏰 grįžai į meniu → nebe-auto-resume pilies
   if (gameMode === 'adventure' && S.inventory) {
     Profile.inventory = S.inventory.map(x => x ? { ...x } : null);
     saveProfile();
@@ -35347,6 +40768,21 @@ document.addEventListener('DOMContentLoaded', () => {
   canvas.addEventListener('mouseleave', () => { _canvasMx = -1; _canvasMy = -1; });
 
   // Right-click → deselect ally unit (F11 indirect control)
+  // 🔍 F9 wheel zoom (desktop; telefone — pinch). Zoom aplink pelės tašką.
+  canvas.addEventListener('wheel', e => {
+    if (!(gameMode === 'adventure' && S && S.floor === 9 && S.cam)) return;
+    if (window._f9CastleSelected || window._f9TowerPlaceMode) return;   // panelės/statymas — netrukdom
+    e.preventDefault();
+    const zOld = window._f9Zoom || 1;
+    const zNew = Math.max(0.45, Math.min(1.4, zOld * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+    if (zNew === zOld) return;
+    const p = _clientToCanvasXY(e.clientX, e.clientY);
+    const wx = p.x / zOld + S.cam.x, wy = p.y / zOld + S.cam.y;
+    window._f9Zoom = zNew;
+    S.cam.x = wx - p.x / zNew; S.cam.y = wy - p.y / zNew;
+    S.cam.tx = S.cam.x; S.cam.ty = S.cam.y;
+    S._camManualLock = true;
+  }, { passive: false });
   canvas.addEventListener('contextmenu', e => {
     if (gameMode === 'adventure' && f11LikeFloor() && _selectedAllyUnit) {
       e.preventDefault();
@@ -35355,12 +40791,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // F9 right-click → engage target (RTS pattern: SC2 style)
     if (gameMode === 'adventure' && S && S.floor === 9) {
       e.preventDefault();
+      // 🏗️ MANAGE MODE — kai tvarkai pilį (panelė atidaryta) ar statai bokštą: dešinys klikas NEjudina unitų
+      //    (kitaip jie vaikšto kur klikini upgrade'indamas). Placement metu — atšaukia statymą.
+      if (window._f9TowerPlaceMode) { if (typeof _f9ExitTowerPlaceMode === 'function') _f9ExitTowerPlaceMode(); return; }
+      if (window._f9CastleSelected || window._f9BarracksSelected || window._f9StatsSelected) return;
       const sel = window._f9Selected;
       if (!sel || !sel.alive) return;
       const _p = _clientToCanvasXY(e.clientX, e.clientY);   // cover-aware
       const _cmx = _p.x, _cmy = _p.y;
-      const mx = _cmx + (S.cam ? S.cam.x : 0);
-      const my = _cmy + (S.cam ? S.cam.y : 0);
+      const mx = _cmx / _f9WorldZoom() + (S.cam ? S.cam.x : 0);
+      const my = _cmy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
       const txWorld = mx / CELL - 0.5;
       const tyWorld = my / CELL - 0.5;
       // Hit detect: ar click'as ant priešo?
@@ -35375,13 +40815,56 @@ document.addEventListener('DOMContentLoaded', () => {
           if (d < bestD) { bestD = d; hitEnemy = en; }
         }
       }
+      // 🚩 PATROL armed → dešinys klikas = START (paleidžia patrulį; NE engage/move)
+      if (window._f9PatrolArm) {
+        if (typeof _f9FinalizePatrol === 'function') _f9FinalizePatrol();
+        return;
+      }
       const now = performance.now();
       window._f9AMoveArm = false;   // right-click atšaukia armed A-move (RTS konvencija)
+      window._f9RegroupArm = false; // right-click atšaukia ir armed REGROUP
       // ── Engage target: visi pasirinkti unit'ai puola tą patį priešą ──
       if (hitEnemy) {
         _f9IssueAttackTargetCommand(_f9CommandableSelection(false), hitEnemy, now);
         return;
       }
+      // ── 🏰 Castle wall siege: right-click ant sienos celės → pasirinkti unitai daužo TĄ sieną ──
+      if (typeof _f9WallAt === 'function') {
+        const _wseg = _f9WallAt(txWorld, tyWorld);
+        if (_wseg && _wseg.alive) {
+          // 🏗️ SAVO pilyje (home owner) NEsiege savos sienos — ir neatidarom panelės (upgrade TIK per
+          //    pilies UI, paspaudus pilį). Tiesiog ignoruojam (unitai NEjuda).
+          if (window.__f9HomeActive && !window.__f9RaidActive) return;
+          const _sel = _f9CommandableSelection(false);
+          // 🎯 PERSISTENTINIS pažymėjimas (07-05 user): žymeklis liks kol siena sunaikinta ARBA
+          //    taikinys pakeistas (nauja siege komanda perrašo). Koordinatėm — seg objektai persisync'ina.
+          if (_sel && _sel.length) window._f9SiegeMark = { x: _wseg.x, y: _wseg.y, at: now };
+          if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
+            // PvP: serveris authoritative → siunčiam explicit 'siege' komandą (cell = seg.x,seg.y)
+            window.F9PvpLive.routeCommand('siege', _sel, _wseg.x, _wseg.y);
+            try { _f9PushClickMarker(_wseg.x, _wseg.y, _sel, true); } catch (_) {}   // raudonas attack marker
+          } else {
+            _f9IssueSiegeCommand(_sel, _wseg, now);   // solo → lokaliai
+          }
+          return;
+        }
+      }
+      // 🌀 Teleporto pad (juoda skylė): dešinys-klikas → VISI pažymėti gynėjai konverguoja TIESIAI ant
+      //    pad'o (jokio formacijos spread) ir paeiliui persikelia per sieną. Pad'as pasižymi (aim ring).
+      if (typeof _f9TpPadAt === 'function') {
+        const _pad = _f9TpPadAt(txWorld, tyWorld);
+        if (_pad) {
+          const _sel = _f9CommandableSelection(true);
+          if (_sel && _sel.length) {
+            if (window.F9PvpLive && window.F9PvpLive.routeCommand) window.F9PvpLive.routeCommand('tpmove', _sel, _pad[0], _pad[1]);
+            else _f9IssueMoveCommand(_sel, _pad[0], _pad[1]);   // solo fallback
+            window._f9TpAim = { gx: _pad[0], gy: _pad[1], born: now };
+          }
+          return;
+        }
+      }
+      // 🏰/🏚️ click ant pilies/barakų → NEsiunčiam move (interakcija su pastatu turi pirmenybę; unitas lieka).
+      if (typeof _f9PointOnBuilding === 'function' && _f9PointOnBuilding(mx, my)) return;
       // RTS feel: right-click empty ground = move command. No surprise manual swing/shoot.
       // SHIFT+RMB = waypoint eilė (komandos vykdomos paeiliui, BAR/SC2 pattern).
       if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
@@ -35453,7 +40936,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // naudojam esamą facing (kad neflip'intų atsitiktinai pagal cell vidurį).
     const r1 = canvas.getBoundingClientRect();
     const sx1 = canvas.width / r1.width, sy1 = canvas.height / r1.height;
-    const mxw = (e.clientX - r1.left) * sx1 + (S && S.cam ? S.cam.x : 0);
+    const mxw = (e.clientX - r1.left) * sx1 / _f9WorldZoom() + (S && S.cam ? S.cam.x : 0);
     const _mcellX = Math.floor(mxw / CELL);
     let dir;
     if (_mcellX === u.x) {
@@ -35491,12 +40974,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // House3 click → popup su Upgrade mygtuku
   canvas.addEventListener('click', e => {
     if (_suppressNextClick) { _suppressNextClick = false; return; }
+    // 🗼 BOKŠTO STATYMO režime klikas jau apdorotas mousedown'e (build/cancel) → čia NEjudinam unitų (click-to-move).
+    if (window._f9TowerPlaceMode) return;
     const _p = _clientToCanvasXY(e.clientX, e.clientY);   // cover-aware (mobile object-fit:cover) → tap pataiko
     const _cmx = _p.x, _cmy = _p.y;
     // Popup/building bounds saugomi pasaulio koordinatėse (rašomi viduje ctx.translate(-cam.x,-cam.y)),
     // tad click taškas irgi konvertuojamas į pasaulio erdvę.
-    const mx = _cmx + (gameMode === 'adventure' && S.cam ? S.cam.x : 0);
-    const my = _cmy + (gameMode === 'adventure' && S.cam ? S.cam.y : 0);
+    const mx = _cmx / _f9WorldZoom() + (gameMode === 'adventure' && S.cam ? S.cam.x : 0);
+    const my = _cmy / _f9WorldZoom() + (gameMode === 'adventure' && S.cam ? S.cam.y : 0);
     // ── F9 SMOOTH CLICK-TO-MOVE + DRAG MULTI-SELECT ──
     if (gameMode === 'adventure' && S && S.floor === 9 && S.units) {
       // Po drag selection — click ignoruojam (drag jau pasirinko unit'us)
@@ -35508,30 +40993,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_f9TouchBtnRects) {
         for (const b of _f9TouchBtnRects) {
           if (_cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h) {
-            if (b.id === 'all') {
-              const squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
-              if (squad.length) {
-                window._f9SelectedSet = squad;
-                window._f9Selected = squad[0];
-                // „Kur mano armija" — kamera šoka prie squad centro ir vėl seka
-                let cgx = 0, cgy = 0;
-                for (const u of squad) {
-                  cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
-                  cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-                }
-                cgx /= squad.length; cgy /= squad.length;
-                if (S.cam) {
-                  S.cam.tx = cgx - canvas.width / 2;
-                  S.cam.ty = cgy - canvas.height / 2;
-                  S._camManualLock = false;   // follow vėl įjungtas
-                }
-                if (typeof _f9SetToast === 'function') _f9SetToast('ALL (' + squad.length + ')');
-              }
-            } else if (b.id === 'amove') {
+            if (b.id === 'amove') {
               window._f9AMoveArm = !window._f9AMoveArm;
               if (typeof _f9SetToast === 'function') {
                 _f9SetToast(window._f9AMoveArm ? 'A-MOVE: tap target point' : 'A-MOVE cancelled');
               }
+            } else if (b.id === 'hold') {
+              if (typeof _f9ToggleHoldCommand === 'function') _f9ToggleHoldCommand();
+            } else if (b.id === 'patrol') {
+              if (typeof _f9PatrolButtonPress === 'function') _f9PatrolButtonPress();
             } else if (b.id === 'stop') {
               const sel = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
               for (const u of sel) {
@@ -35588,7 +41058,7 @@ document.addEventListener('DOMContentLoaded', () => {
           let selAM = _f9CommandableSelection(true);
           if (!selAM.length) {
             // Nieko nepasirinkta — komanduojam visą squad'ą (default kaip right-click)
-            selAM = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
+            selAM = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0 && !u._f9Hold && !u._f9Patrol).slice(0, _F9_SQUAD_CAP);
           }
           if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
             _f9QueueMoveCommand(selAM, txA, tyA, true);
@@ -35598,12 +41068,146 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return;
       }
+      // 0b. Armed REGROUP (⊞ mygtukas) → šis click = vieta kurioje pažymėti unitai gražiai susigrupuoja.
+      if (window._f9RegroupArm) {
+        window._f9RegroupArm = false;
+        const txR = mx / CELL - 0.5;
+        const tyR = my / CELL - 0.5;
+        if (txR >= 0 && txR < COLS - 1 && tyR >= 0 && tyR < ROWS - 1) {
+          let selRG = _f9CommandableSelection(true);
+          if (!selRG.length) selRG = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0 && !u._f9Hold && !u._f9Patrol).slice(0, _F9_SQUAD_CAP);
+          if (typeof _f9IssueRegroupCommand === 'function') _f9IssueRegroupCommand(selRG, txR, tyR);
+          if (typeof _f9SetToast === 'function') _f9SetToast('REGROUP →');
+        }
+        return;
+      }
+      // 🔓 UNLOCK mygtukas — atrakina aktyvų būrį (nariai laisvi, galima performuoti).
+      {
+        const _ul = window._f9UnlockRect;
+        if (_ul && _cmx >= _ul.x && _cmx <= _ul.x + _ul.w && _cmy >= _ul.y && _cmy <= _ul.y + _ul.h) {
+          _f9FlashBtn(_ul);
+          if (typeof _f9UnlockSquad === 'function') _f9UnlockSquad(_ul.n);
+          return;
+        }
+      }
+      // ✕ DESELECT mygtukas — atšaukia pažymėjimą (tada klikai NEvaldo unitų; gali laisvai klikinti).
+      {
+        const _ds = window._f9DeselectRect;
+        if (_ds && _cmx >= _ds.x && _cmx <= _ds.x + _ds.w && _cmy >= _ds.y && _cmy <= _ds.y + _ds.h) {
+          _f9FlashBtn(_ds);
+          window._f9SelectedSet = []; window._f9Selected = null; window._f9ActiveSquad = null;   // → grįžtam į compose mode (composeris/⊕ vėl aktualūs)
+          if (typeof _f9SetToast === 'function') _f9SetToast('Units deselected');
+          return;
+        }
+      }
+      // 🛡 HOLD mygtukas (toggle) — užrakina poste (skydas, atakuoja in-range, nesivaiko, ignoruoja komandas);
+      //   paspaudus dar kartą ant užrakintų — atrakina.
+      {
+        const _hd = window._f9HoldRect;
+        if (_hd && _cmx >= _hd.x && _cmx <= _hd.x + _hd.w && _cmy >= _hd.y && _cmy <= _hd.y + _hd.h) {
+          _f9FlashBtn(_hd);
+          if (typeof _f9ToggleHoldCommand === 'function') _f9ToggleHoldCommand();
+          window._f9RegroupArm = false; window._f9AMoveArm = false;
+          return;
+        }
+      }
+      // 🏹 TYPE PICKER — tap tipą → prideda 1 to tipo unitą (composeris: miksuoti pakai 4🏹+2💀).
+      if (Array.isArray(window._f9TypeRects)) {
+        for (const tr of window._f9TypeRects) {
+          if (_cmx >= tr.x && _cmx <= tr.x + tr.w && _cmy >= tr.y && _cmy <= tr.y + tr.h) {
+            _f9FlashBtn(tr);
+            if (!tr.disabled && typeof _f9AddTypeToSelection === 'function') _f9AddTypeToSelection(tr.utype);
+            window._f9RegroupArm = false; window._f9AMoveArm = false; window._f9PatrolArm = false;
+            return;
+          }
+        }
+      }
+      // 🪖 BŪRIŲ mygtukai [1-6] — su pažymėjimu FORMUOJA būrį; be pažymėjimo PAŽYMI būrį. (disabled=tuščias be sel)
+      if (Array.isArray(window._f9SquadRects)) {
+        for (const sr of window._f9SquadRects) {
+          if (_cmx >= sr.x && _cmx <= sr.x + sr.w && _cmy >= sr.y && _cmy <= sr.y + sr.h) {
+            _f9FlashBtn(sr);
+            if (sr.disabled) { return; }
+            // 🔓 UNLOCK slotas (kai nebėra laisvų unitų naujam pakui) → atrakina paką, kad galėtum perdaryti.
+            if (sr.unlock != null && sr.unlock >= 0 && typeof _f9UnlockSquad === 'function') _f9UnlockSquad(sr.unlock);
+            else if (typeof _f9SquadButtonPress === 'function') _f9SquadButtonPress(sr.n);
+            return;
+          }
+        }
+      }
+      // ⊞ REGROUP FORMACIJŲ POPUP — pasirinkimas (Grid/Line/Wedge/…) → uždaro popup'ą + apsiginkluoja.
+      if (window._f9RegroupPopupOpen && Array.isArray(window._f9RegroupFormRects)) {
+        for (const fr of window._f9RegroupFormRects) {
+          if (_cmx >= fr.x && _cmx <= fr.x + fr.w && _cmy >= fr.y && _cmy <= fr.y + fr.h) {
+            window._f9RegroupFormation = fr.id;
+            window._f9RegroupPopupOpen = false;
+            const _selRG = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
+            if (!_selRG.length) { if (typeof _f9SetToast === 'function') _f9SetToast('Select units first'); }
+            else {
+              window._f9RegroupArm = true; window._f9AMoveArm = false; window._f9PatrolArm = false;
+              const _lbl = (_F9_REGROUP_FORMATIONS.find(f => f.id === fr.id) || {}).label || fr.id;
+              if (typeof _f9SetToast === 'function') _f9SetToast('⊞ ' + _lbl + ': click where to form up');
+            }
+            return;
+          }
+        }
+      }
+      // ⊞ REGROUP mygtukas — atidaro/uždaro formacijų popup'ą (Grid/Line/Wedge/…).
+      {
+        const _rg = window._f9RegroupRect;
+        if (_rg && _cmx >= _rg.x && _cmx <= _rg.x + _rg.w && _cmy >= _rg.y && _cmy <= _rg.y + _rg.h) {
+          _f9FlashBtn(_rg);
+          const _selRG = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
+          if (!_selRG.length) { if (typeof _f9SetToast === 'function') _f9SetToast('Select units first'); }
+          else {
+            window._f9RegroupPopupOpen = !window._f9RegroupPopupOpen;
+            window._f9AMoveArm = false; window._f9PatrolArm = false; window._f9RegroupArm = false;
+          }
+          return;
+        }
+      }
+      // 🚩 PATROL mygtukas — arm (dėliok A,B,C) / START / STOP (jei jau patruliuoja — nuima užraktą).
+      {
+        const _pt = window._f9PatrolRect;
+        if (_pt && _cmx >= _pt.x && _cmx <= _pt.x + _pt.w && _cmy >= _pt.y && _cmy <= _pt.y + _pt.h) {
+          _f9FlashBtn(_pt);
+          if (typeof _f9PatrolButtonPress === 'function') _f9PatrolButtonPress();
+          return;
+        }
+      }
+      // 🚩 PATROL dėliojimas — kol armed, kiekvienas klikas ant žemės prideda maršruto tašką (A,B,C…).
+      if (window._f9PatrolArm) {
+        const txP = mx / CELL - 0.5, tyP = my / CELL - 0.5;
+        if (txP >= 0 && txP < COLS - 1 && tyP >= 0 && tyP < ROWS - 1) {
+          if (!Array.isArray(window._f9PatrolPts)) window._f9PatrolPts = [];
+          if (window._f9PatrolPts.length < _F9_PATROL_MAX_PTS) {
+            window._f9PatrolPts.push({ x: txP, y: tyP });
+            const _route = window._f9PatrolPts.map((_p, _k) => String.fromCharCode(65 + _k)).join('→');
+            const _more = _F9_PATROL_MAX_PTS - window._f9PatrolPts.length;
+            if (typeof _f9SetToast === 'function')
+              _f9SetToast('🚩 ' + _route + (_more > 0 ? ' · tap +' + _more + ' or 🚩 START' : ' · 🚩 START'));
+          } else if (typeof _f9SetToast === 'function') _f9SetToast('Max ' + _F9_PATROL_MAX_PTS + ' waypoints — 🚩 START');
+        }
+        return;
+      }
+      // ⊞ Formacijų popup atidarytas + klikas kitur (ne ant opcijos/mygtuko) → uždaro popup'ą (klikas nevaldo unitų).
+      if (window._f9RegroupPopupOpen) { window._f9RegroupPopupOpen = false; return; }
       // 1. Selection bar (screen-space click) — pakeičia pasirinkimą į TIK 1 unit'ą
       if (typeof _f9SelBarRects !== 'undefined' && _f9SelBarRects.length) {
         for (const r of _f9SelBarRects) {
           if (_cmx >= r.x && _cmx <= r.x + r.w && _cmy >= r.y && _cmy <= r.y + r.h) {
-            window._f9SelectedSet = [r.u];
-            window._f9Selected = r.u;
+            // TOGGLE — tap prideda/nuima unitą iš komandų selekcijos (multi-select iš juostos,
+            // kaip box-select lauke). Kortelė lieka juostoj (pakas stabilus) → gali laisvai rinktis subset'ą.
+            let _ss = Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet.slice() : [];
+            const _i = _ss.indexOf(r.u);
+            if (_i >= 0) {
+              if (_ss.length <= 1) return;         // paskutinio nenuimam (bent 1 lieka; naudok ✕ CLEAR)
+              _ss.splice(_i, 1);                    // buvo pažymėtas → nuimam iš komandos
+            } else {
+              _ss.push(r.u);                        // buvo pilkas → prijungiam
+            }
+            window._f9SelectedSet = _ss;
+            window._f9Selected = _ss[_ss.length - 1] || r.u;
             return;
           }
         }
@@ -35614,8 +41218,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!Array.isArray(window._f9SelectedSet)) window._f9SelectedSet = [];
       window._f9SelectedSet = window._f9SelectedSet.filter(u => u && u.alive);
       if (window._f9SelectedSet.length === 0) {
-        const squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0);
-        window._f9SelectedSet = squad;   // hero fallback pašalintas — jis nematomas (2026-06-12)
+        // 🪖 default = aktyvus būrys (jei yra) arba pirmi ≤4 — NE visa armija
+        const _aq = window._f9ActiveSquad;
+        let squad = (_aq != null) ? _f9MyControllable().filter(u => u._f9Squad === _aq) : [];
+        if (!squad.length) squad = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.team !== 0).slice(0, _F9_SQUAD_CAP);
+        window._f9SelectedSet = _f9CapSel(squad);
       }
       window._f9Selected = window._f9SelectedSet[0] || null;
 
@@ -35633,6 +41240,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof _f9SetToast === 'function') _f9SetToast('ZIP TOWER');
             return;
           }
+        }
+      }
+      // ⚰️ 07-11: kapinių klik/UI PAŠALINTA (dabar tik dekoratyvus sprite; pasyvus uždarbis → RONKE kasimas)
+      // 🏥 Ligoninės namukas — klik atidaro/uždaro panelę (prieš unit selekciją)
+      if (window._f9pvpLive && window._f9HospitalBounds) {
+        const _hb = window._f9HospitalBounds;
+        if (mx >= _hb.x && mx <= _hb.x + _hb.w && my >= _hb.y && my <= _hb.y + _hb.h) {
+          if (typeof _f9ToggleHospitalPanel === 'function') _f9ToggleHospitalPanel();
+          return;
+        }
+      }
+      // 🛒 Marketplace namukas — klik atidaro/uždaro market modalą
+      if (window._f9pvpLive && window._f9MarketBounds) {
+        const _mb = window._f9MarketBounds;
+        if (mx >= _mb.x && mx <= _mb.x + _mb.w && my >= _mb.y && my <= _mb.y + _mb.h) {
+          if (typeof _f9ToggleMarketPanel === 'function') _f9ToggleMarketPanel();
+          return;
+        }
+      }
+      // ⛏️ Gold-camp = RONKE kasykla — klik atidaro mine panelę (pasyvus RONKE uždarbis; 07-11 user)
+      if (window._f9pvpLive && window._f9GoldCampBounds) {
+        const _gb = window._f9GoldCampBounds;
+        if (mx >= _gb.x && mx <= _gb.x + _gb.w && my >= _gb.y && my <= _gb.y + _gb.h) {
+          if (typeof _f9ToggleMinePanel === 'function') _f9ToggleMinePanel();
+          return;
         }
       }
       // Click ne ant bokšto → nuimam bokšto selekciją (arba bokštas, arba unitai)
@@ -35656,25 +41288,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       if (hitUnit) {
+        // 🔒 click ant UŽRAKINTO būrio nario → pažymim VISĄ būrį (atomiškai — negalima atskirti vieno)
+        const _hl = (typeof _f9SquadLocks === 'function') ? _f9SquadLocks() : [];
+        if (hitUnit._f9Squad != null && _hl[hitUnit._f9Squad]) {
+          _f9SelectSquad(hitUnit._f9Squad);
+          return;
+        }
         const _nowDc = performance.now();
         const _isDouble = (window._f9LastClickUnit === hitUnit && _nowDc - (window._f9LastClickAt || 0) < 350);
         window._f9LastClickUnit = hitUnit;
         window._f9LastClickAt = _nowDc;
         if (_isDouble) {
-          // Double-click → pasirenka VISUS gyvus to paties tipo ally unit'us (SC2 pattern)
+          // Double-click → pako to paties tipo ally unit'ai (SC2 stilius), CAP _F9_PACK_SIZE + NE užrakintų
           const same = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.utype === hitUnit.utype &&
-            (hitUnit.team === 0 ? u.team === 0 : u.team !== 0));
+            (hitUnit.team === 0 ? u.team === 0 : u.team !== 0) && !(u._f9Squad != null && _hl[u._f9Squad])).slice(0, _F9_PACK_SIZE);
           window._f9SelectedSet = same.length ? same : [hitUnit];
+          window._f9ActiveSquad = null;
           if (typeof _f9SetToast === 'function' && same.length > 1) {
             _f9SetToast(String(hitUnit.utype || '').toUpperCase() + ' ×' + same.length);
           }
         } else if (e.shiftKey) {
-          // Shift+click → toggle in/out of set
+          // Shift+click → toggle in/out of pako (CAP _F9_PACK_SIZE)
           const idx = selSet.indexOf(hitUnit);
           if (idx >= 0) selSet.splice(idx, 1);
-          else selSet.push(hitUnit);
+          else if (selSet.length < _F9_PACK_SIZE) selSet.push(hitUnit);
+          else if (typeof _f9SetToast === 'function') _f9SetToast('Pako max ' + _F9_PACK_SIZE + ' (1 pakas)');
+          window._f9ActiveSquad = null;
         } else {
           window._f9SelectedSet = [hitUnit];
+          window._f9ActiveSquad = null;
         }
         window._f9Selected = window._f9SelectedSet[0] || null;
         return;
@@ -35698,6 +41340,8 @@ document.addEventListener('DOMContentLoaded', () => {
           _f9IssueAttackTargetCommand(_f9CommandableSelection(false), tapEnemy, performance.now());
           return;
         }
+        // 🏰/🏚️ click ant pilies/barakų → NEsiunčiam move (pastato interakcija pirmenybinė; unitas lieka).
+        if (typeof _f9PointOnBuilding === 'function' && _f9PointOnBuilding((tx + 0.5) * CELL, (ty + 0.5) * CELL)) return;
         if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
           _f9QueueMoveCommand(_f9CommandableSelection(true), tx, ty, false);
         } else {
@@ -35720,9 +41364,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const _cgx = Math.floor(mx / CELL), _cgy = Math.floor(my / CELL);
         // Sprite aukštas — priimam click ant anchor celės, ±1 į šonus ir iki 2 celių virš
         if (Math.abs(_cgx - _mineP.x) <= 1 && _cgy >= _mineP.y - 2 && _cgy <= _mineP.y + 1) {
-          // Pasirinkimas: PvP prieš žaidėją ARBA solo battle test (vietoj tiesiogiai į F9).
+          // Mining ola → režimo pasirinkimas: PvP / Battle Test / AFK Expedition (3 mygtukai).
           if (typeof _f9ShowBattleModeChoice === 'function') _f9ShowBattleModeChoice();
-          else if (typeof window.goToFloor === 'function') window.goToFloor(9);
+          else if (window.afkExpedition && typeof window.afkExpedition.open === 'function') window.afkExpedition.open();
           return;
         }
       }
@@ -36702,7 +42346,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvasH = gameMode === 'adventure' ? ADV_CANVAS_H : BOARD_H;
     const sx = (e.clientX - r.left) * advCanvasW / r.width;
     const sy = (e.clientY - r.top) * canvasH / r.height;
-    if (gameMode === 'adventure' && S.cam) return { x: sx + S.cam.x, y: sy + S.cam.y };
+    if (gameMode === 'adventure' && S.cam) return { x: sx / _f9WorldZoom() + S.cam.x, y: sy / _f9WorldZoom() + S.cam.y };
     return { x: sx, y: sy };
   }
 
@@ -38793,8 +44437,23 @@ window.__F9 = {
   pigronkeSpearAttack: (typeof _pigronkeSpearAttack === 'function') ? _pigronkeSpearAttack : null,
   spawnSpearSweep: (typeof spawnSpearSweep === 'function') ? spawnSpearSweep : null,   // pigronke spear AOE vizualas (be žalos)
   f9GhostHurtFx: (typeof _f9GhostHurtFx === 'function') ? _f9GhostHurtFx : null,        // ghost dmg-take ektoplazmos lašiukai
+  f9WallSound: (typeof _f9WallSound === 'function') ? _f9WallSound : null,              // 🏰 castle siena hit/collapse garsas (PvP)
+  spawnWallFx: (typeof _f9SpawnWallFx === 'function') ? _f9SpawnWallFx : null,           // 🧱 sienos skeveldros/dulkės (PvP juice)
   spawnDmgNumber: spawnDmgNumber,
   spawnDeath: spawnDeath,
+  spawnF9Teleport: (typeof spawnF9Teleport === 'function') ? spawnF9Teleport : null,   // 🌀 švarus teleporto FX (be kraujo/mirties)
+  // 📋 Auto-publish SAVO stendą į cloud (kad puolikai matytų tą patį, ką savininkas). 1× per sesiją/wallet.
+  publishMyBoard: function (addr) {
+    try {
+      addr = String(addr || '').toLowerCase();
+      if (!addr || !window.Boards || typeof _f9BakeAdsBlob !== 'function') return;
+      if (window.__f9BoardPublished === addr) return;   // jau publikuota šią sesiją
+      _f9BakeAdsBlob(function (blob) {
+        if (!blob) return;   // nėra lokalaus stendo → nieko nepublikuojam (liks tuščias rėmas)
+        window.Boards.upload(blob, addr).then(function (r) { if (r && r.ok) window.__f9BoardPublished = addr; }).catch(function () {});
+      });
+    } catch (_) {}
+  },
   _f9PushClickMarker: (typeof _f9PushClickMarker === 'function') ? _f9PushClickMarker : null,
   goToFloor: window.goToFloor,
   // C3 host-authority: spawn + komandų taikymas (host kliente sukasi tikras F9 su abiem squad'ais)
@@ -38815,10 +44474,25 @@ window.__F9 = {
     if (typeof buildWallPackets === 'function') { try { buildWallPackets(); } catch (_) {} }
     if (typeof invalidateDungeonCache === 'function') { try { invalidateDungeonCache(); } catch (_) {} }
   },
+  // 💧 GROVYS — pagal user'io referencinį mapą (rows 15,16 @ col34,35 = type 4): grovio celės = ŠVARUS
+  //    dungeon vanduo (type 4) → mėlynas Water.png BE auto-putų košės. Native pipeline dar prideda
+  //    natūralų žolės „shore-drop" ant viršutinės briaunos. Tas pats _drawDungeonStatic() piešia, jokio overlay.
+  setMoat: function (cells) {
+    try {
+      if (Array.isArray(cells) && typeof S !== 'undefined' && S && S.dungeon) {
+        for (var i = 0; i < cells.length; i++) {
+          var cx = cells[i][0], cy = cells[i][1];
+          if (cy >= 0 && cy < ROWS && cx >= 0 && cx < COLS) S.dungeon[cy][cx] = 4;   // švarus vanduo (NO foam)
+        }
+      }
+    } catch (_) {}
+    if (typeof invalidateDungeonCache === 'function') { try { invalidateDungeonCache(); } catch (_) {} }
+  },
 };
 (function () {
   'use strict';
   function wanted() { try { return /(?:^|[#&/])f9live\b/i.test(location.hash || ''); } catch (_) { return false; } }
+  function wantedHome() { try { return /(?:^|[#&/])f9home\b/i.test(location.hash || ''); } catch (_) { return false; } }
   var loading = false;
   function load(src) {
     return new Promise(function (res, rej) {
@@ -38827,23 +44501,82 @@ window.__F9 = {
       document.head.appendChild(s);
     });
   }
-  function boot() {
+  // home=true → 🏰 solo namų pilis (launchHome, be lobby); else → #f9live PvP lobby (launch).
+  function boot(home) {
     if (loading) return; loading = true;
-    // DEV cache-bust: šie moduliai įkeliami dinamiškai BE ?v=, todėl naršyklė juos kešuoja.
-    // ?t=Date.now() → kiekvienas #f9live boot įkelia ŠVIEŽIĄ versiją (kitaip senas kešas slepia pataisymus).
-    var _cb = '?t=' + Date.now();
+    var _cb = '?t=' + Date.now();   // DEV cache-bust dinaminiams moduliams (be ?v=)
     load('f9_pvp_net.js' + _cb)
       .then(function () { return load('f9_pvp_live.js' + _cb); })
-      .then(function () { if (window.F9PvpLive) window.F9PvpLive.launch({}); })
+      .then(function () {
+        if (!window.F9PvpLive) return;
+        var addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+        if (home && window.F9PvpLive.launchHome) window.F9PvpLive.launchHome({ address: addr });
+        else window.F9PvpLive.launch({ address: addr });
+      })
       .catch(function (e) { console.error('[F9Live boot]', e); })
       .then(function () { loading = false; });
   }
-  window.addEventListener('hashchange', function () { if (wanted()) boot(); });
-  if (wanted()) {
-    if (document.readyState === 'complete' || document.readyState === 'interactive') boot();
-    else window.addEventListener('DOMContentLoaded', boot);
+  // 🏰 pilis boot'inant (home) — iškart paslepiam meniu ekranus, kad nemirktelėtų (URL jau su #f9home reload'e)
+  function _hideMenusForHome() {
+    try { ['screen-menu', 'screen-lobby', 'screen-hub'].forEach(function (id) { var e = document.getElementById(id); if (e) { e.classList.remove('active'); e.style.display = 'none'; } }); } catch (_) {}
   }
-  window.F9PvpLiveLaunch = boot;
+  window.addEventListener('hashchange', function () { if (wantedHome()) { _hideMenusForHome(); boot(true); } else if (wanted()) boot(false); });
+  if (wantedHome() || wanted()) {
+    var _h = wantedHome();
+    var _go = function () { if (_h) _hideMenusForHome(); boot(_h); };
+    if (document.readyState === 'complete' || document.readyState === 'interactive') _go();
+    else window.addEventListener('DOMContentLoaded', _go);
+  }
+  window.F9PvpLiveLaunch = function () { boot(false); };
+  window.F9PvpHomeLaunch = function () { boot(true); };
+
+  // 🏰 TIESIOGINIS PILIES ĮĖJIMAS (07-04 user: „pilis bus žaidimas ... turėtų įsijungti tik
+  //   pilis nuo pat pradžių"). Be lobby/hub/kasyklos/režimo-pasirinkimo. Iškart paslepiam meniu
+  //   ekranus, kad nemirktelėtų, tada bootinam pilį (connecting spinner uždengia krovimą).
+  window.enterMyCastle = function () {
+    try { if (window.SFX && SFX.init) SFX.init(); } catch (_) {}
+    try {
+      ['screen-menu', 'screen-lobby', 'screen-hub'].forEach(function (id) {
+        var e = document.getElementById(id); if (e) { e.classList.remove('active'); e.style.display = 'none'; }
+      });
+    } catch (_) {}
+    // 🏰 momentinis krovimo overlay — uždengia tarpą kol užsikrauna f9_pvp_live.js ir parodo savo spinnerį
+    //   (kad nemirktelėtų juodas ekranas / meniu). F9 `_connectingScreen` (z 99999) jį perdengia, tada dingsta.
+    try {
+      if (!document.getElementById('castle-boot-ov')) {
+        var _ov = document.createElement('div');
+        _ov.id = 'castle-boot-ov';
+        _ov.style.cssText = 'position:fixed;inset:0;z-index:99990;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#141b2a,#080a10 75%);color:#cde;font-family:monospace;gap:16px;';
+        _ov.innerHTML = '<div style="font-size:13px;font-weight:700;letter-spacing:2px;color:#fc8;opacity:.9;">LOADING YOUR CASTLE</div>' +
+          '<div style="position:relative;width:300px;height:9px;background:#121927;border-radius:6px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.7);">' +
+            '<div style="position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,207,92,.55),transparent);width:45%;animation:cbo_ind 1.2s linear infinite;"></div>' +
+          '</div>' +
+          '<style>@keyframes cbo_ind{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}</style>';
+        document.body.appendChild(_ov);
+        setTimeout(function () { try { var e = document.getElementById('castle-boot-ov'); if (e) e.remove(); } catch (_) {} }, 12000);
+      }
+    } catch (_) {}
+    try { if (window.enterLandscape) window.enterLandscape(); } catch (_) {}
+    try { if (window.loadProfile) loadProfile(); } catch (_) {}
+    try { if (window.updateRunKeyUI) updateRunKeyUI(); } catch (_) {}
+    var already = /(?:^|[#&\/])f9home\b/i.test(location.hash || '');
+    try { location.hash = 'f9home'; } catch (_) {}
+    if (already) { try { window.F9PvpHomeLaunch && window.F9PvpHomeLaunch(); } catch (_) {} }
+  };
+
+  // 🏰 PILIS = ŽAIDIMAS: įjungus (bet kokį fresh load be hash'o) — IŠKART į pilį, meniu nerodom.
+  //   IŠIMTYS (debug/escape): #menu → senas meniu; #f9live → PvP lobby; #f9home → jau tvarko boot() aukščiau.
+  //   Crash-loop saugiklis: sessionStorage žymė (page reload = nauja sesija → vėl bandys pilį).
+  try {
+    var _escapeMenu = /(?:^|[#&\/])menu\b/i.test(location.hash || '');
+    var _bootTried = sessionStorage.getItem('f9_boot_tried') === '1';
+    if (!_escapeMenu && !wanted() && !wantedHome() && !_bootTried) {
+      sessionStorage.setItem('f9_boot_tried', '1');
+      var _goCastle = function () { try { window.enterMyCastle(); } catch (_) {} };
+      if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(_goCastle, 30);
+      else window.addEventListener('DOMContentLoaded', function () { setTimeout(_goCastle, 30); });
+    }
+  } catch (_) {}
 })();
 
 /* ============================================================================

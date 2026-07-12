@@ -8580,6 +8580,14 @@ kbd {
   pointer-events: none;
 }
 
+/* ⚔️ RAID dock mygtuko label — paveldi .wui-home-hint, tik karmazininis */
+.wui-raid-hint {
+  background: #e85d5d;
+  color: #2a0c0c;
+  border-color: #4a1414;
+  text-shadow: 1px 1px 0 rgba(255, 200, 200, 0.5);
+}
+
 /* Hide old side-panel HOME button (now in floating stack) */
 .adv-mode #btn-goto-f10 {
   display: none !important;
@@ -17848,6 +17856,23 @@ kbd {
   box-shadow: none !important;
   backdrop-filter: none !important;
 }
+/* 🩹 PvP/home scena: tvirtai paslepiam tamsią kairę panelę nepriklausomai nuo .f9-rts laiko
+   (body.f9pvp-on uždedama _onStart, nuimama stop). Sutampa su .f9-rts elgesiu. */
+body.f9pvp-on #screen-game #panel-p1 > *:not(#floor-nav) { display: none !important; }
+body.f9pvp-on #screen-game #panel-p1 {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  position: fixed !important;
+  left: 10px;
+  bottom: 10px;
+  z-index: 60;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
 
 /* ── F9 RTS FULLSCREEN ────────────────────────────────────────────────────
    Canvas vidinė rezoliucija JS'e nustatoma = lango dydžiui (1:1 px, be zoom)
@@ -17898,4 +17923,19 @@ kbd {
   #screen-game.f9-rts .game-layout {
     height: 100dvh !important;
   }
+}
+
+/* ═══ 📱 F9 mobile fixes (2026-07-03) ═══ */
+/* 🦴 widget'as (top-center) nebeuždengia notifikacijų — jos nusileidžia žemiau jo */
+body.f9-bones-live #game-notif.visible { top: calc(64px + env(safe-area-inset-top, 0px)) !important; }
+/* ☰ po notch/Dynamic Island (kol žaidėjas pats nepersitempė mygtuko) */
+#mobile-menu-btn { top: calc(8px + env(safe-area-inset-top, 0px)); right: calc(8px + env(safe-area-inset-right, 0px)); }
+@media (max-width: 900px) and (pointer: coarse) {
+  /* 🏰 pilies panelės šriftai telefone įskaitomi (Press Start 2P 6-8px per smulkus) */
+  #f9cp-head .lv { font-size: 9px !important; }
+  .f9cp-card .clv { font-size: 9px !important; }
+  .f9cp-stat { font-size: 9px !important; }
+  .f9cp-up { font-size: 10px !important; }
+  .f9cp-cost { font-size: 8px !important; }
+  .f9cp-r { font-size: 9px !important; }
 }
