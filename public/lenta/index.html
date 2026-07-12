@@ -972,7 +972,9 @@
 
             <!-- In-game Map Editor Overlay -->
             <button id="btn-edit-mode" onclick="toggleEditMode()" style="position:absolute; top:20px; right:20px; z-index:900; background:#ff00bb; color:white; border:none; padding:10px; font-family:'Press Start 2P', monospace; cursor:pointer; display:none;">EDIT MAP</button>
-            <script>if(location.hostname==='localhost'||location.hostname==='127.0.0.1')document.getElementById('btn-edit-mode').style.display='';</script>
+            <!-- 📱 07-12 user: EDIT MAP mobile NEegzistuoja išvis (net localhost) — dev tool tik desktop lokalei -->
+            <style>@media (pointer:coarse){ #btn-edit-mode{ display:none !important; } }</style>
+            <script>if((location.hostname==='localhost'||location.hostname==='127.0.0.1')&&!('ontouchstart' in window)&&!matchMedia('(pointer:coarse)').matches)document.getElementById('btn-edit-mode').style.display='';</script>
             <div id="edit-palette" style="display:none; position:absolute; top:70px; right:20px; z-index:900; background:rgba(0,0,0,0.8); border:1px solid #ff00bb; padding:10px; flex-direction:column; gap:10px; font-family:'Press Start 2P', monospace;">
               <div style="display:flex; gap:6px;">
                 <button onclick="setEditTile(0)" style="background:#4ab5c0; width:100px; height:40px; color:black; font-weight:bold; cursor:pointer;">WATER (0)</button>
@@ -2136,7 +2138,7 @@
   <script src="barracks_nft.js?v=raidfee_20260712"></script>
   <script src="barracks_nft_modal.js?v=badgebreakdown_20260712"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
-  <script src="game.js?v=f9live331_market01"></script>
+  <script src="game.js?v=f9live334_minecap1k"></script>
   <script src="afk_expedition.js?v=afk33"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=f12_tocastle_20260704"></script>

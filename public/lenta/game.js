@@ -9338,6 +9338,7 @@ function _f9CemeteryBuildOutline(olNat) {
 const _F9_GC = { HX: 58.9, HY: 19.5, SX: 63.7, SY: 19.85 };   // namuko/akmens obstacle centrai (unit-space, avies pieva ~61.4/19.3) — PRIVALO sutapti su serveriu
 let _f9GC = null;   // ciklo būsena {phase, t0, idleDur}
 let _f9GoldMineImg = null;   // 🏦 07-12 user sprite: goldmine sandėlis (rembg cutout, tight-crop 256×284) — keičia House3
+// (🌒 žemės šešėlių helper IŠIMTAS 07-12 — user: „labai prastai atrodo"; pastatai be procedūrinio šešėlio)
 function _f9DrawGoldCamp() {
   // 🧱 07-12: occlusion rect'ai valomi kiekvieną kadrą — kad išėjus iš PvP scenos neliktų stale depth-loop įrašų
   window._f9GoldCampRect = null; window._f9GoldStoneRect = null;
@@ -10246,7 +10247,7 @@ const _f9MineBtnCss = 'flex:1;padding:14px 16px;font-family:inherit;font-size:12
 const _F9_MINE_BASE_H  = 10;      // RONKE/h bazė (kai eligible)
 const _F9_MINE_POWER_H = 0.1;     // + RONKE/h už kiekvieną RonkePower tašką (power 200 → +20/h)
 const _F9_MINE_POW_CAP = 4000;    // whale cap
-const _F9_MINE_CAP     = 5000;    // sandėlio lubos (RONKE)
+const _F9_MINE_CAP     = 1000;    // sandėlio lubos (RONKE; 07-12 user 5000→1000, serveris autoritetas per m.cap)
 const _F9_MINE_CLAIM   = 500;     // išvedimo slenkstis (RONKE)
 const _F9_MINE_SUCCESS = 0.5;     // ⛏️ SĖKMĖS tikimybė (0.5 = 50% fail → 2× lėtesnis kasimas). ATEITY: upgrade didins → mažiau fail → greičiau.
 const _F9_MINE_LIVE_MAX_MS = 20000;   // gap > šito → "offline/throttle" → statistinis (fail-vidurkintas) accrual, ne 50/50 loterija

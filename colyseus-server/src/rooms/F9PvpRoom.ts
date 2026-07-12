@@ -210,7 +210,7 @@ const CEM_REQ_A_RV = 1, CEM_REQ_A_REG = 10, CEM_REQ_B_REG = 12, CEM_REQ_B_WALLET
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
 const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.1;   // +RONKE/h už RonkePower tašką
 const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
-const MINE_CAP = Number(process.env.F9_MINE_CAP) || 5000;          // sandėlio lubos (RONKE)
+const MINE_CAP = Number(process.env.F9_MINE_CAP) || 1000;          // sandėlio lubos (RONKE; 07-12 user 5000→1000)
 const MINE_CLAIM_MIN = Number(process.env.F9_MINE_CLAIM) || 500;   // withdraw slenkstis
 const MINE_SUCCESS = Number(process.env.F9_MINE_SUCCESS) || 0.5;   // sėkmės tikimybė (0.5 → 2× lėčiau; fail vidurkinamas rate'e)
 const MINE_STEAL_PCT = 0.5;                                        // 100% wipe → puolikas „pavogia" 50% pot (defender praranda)
