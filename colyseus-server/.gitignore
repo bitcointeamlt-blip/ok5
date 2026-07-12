@@ -11,10 +11,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables
+# Environment variables (SUPABASE_SERVICE_ROLE_KEY + BONE_SIGNER_KEY privatus raktas!)
 .env
 .env.local
 .env.*.local
+
+# Colyseus Cloud deploy token — NIEKADA necommitint
+.colyseus-cloud.json
+
+# Snapshot atsarginės kopijos (prieš-pakeitimų .pre_* failai)
+*.pre_*
 
 # IDE
 .vscode/
@@ -51,3 +57,9 @@ Thumbs.db
 
 
 
+
+# Dev helper'iai su hardcoded TESTNET signer raktu — necommitint
+_give_mock_nft.mjs
+_test_bone_sig.mjs
+.env.production
+.env.*

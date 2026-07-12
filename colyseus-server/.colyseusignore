@@ -7,3 +7,4 @@ _colyseus_entry.mjs
 *.log
 .devserver*.log
 .static8011.log
+.env

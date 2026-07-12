@@ -27,7 +27,10 @@ export default config({
     // sukurti/prisijungti — jokio priverstinio auto-suporavimo. enableRealtimeListing → f9_pvp_room
     // atsiranda lobby sąraše kol nepilnas/neužrakintas; prasidėjus mūšiui (lock) dingsta iš sąrašo.
     gameServer.define("lobby", LobbyRoom);
-    gameServer.define("f9_pvp_room", F9PvpRoom).enableRealtimeListing();
+    // filterBy(owner): 🏰 HOME pilis sukuriama su owner=wallet → puolikas join'ina KONKRETAUS žaidėjo
+    //   pilį per join({owner: targetAddr}). 1v1/#f9live naudoja create()/joinById → filtras jų neliečia
+    //   (create ignoruoja filterBy; tos pilys owner=undefined → tarpusavyje nesimaišo su home).
+    gameServer.define("f9_pvp_room", F9PvpRoom).enableRealtimeListing().filterBy(["owner"]);
 
     matchMaker.controller.getCorsHeaders = (req: any) => {
       const origin = req.headers.origin;
