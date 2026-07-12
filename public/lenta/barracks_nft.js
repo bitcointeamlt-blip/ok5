@@ -81,7 +81,10 @@
     { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
     { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{type:'address'},{type:'uint256'}], outputs: [{type:'bool'}] },
     { name: 'allowance', type: 'function', stateMutability: 'view', inputs: [{type:'address'},{type:'address'}], outputs: [{type:'uint256'}] },
+    { name: 'transfer', type: 'function', stateMutability: 'nonpayable', inputs: [{type:'address'},{type:'uint256'}], outputs: [{type:'bool'}] },
   ];
+  // ⚔️💰 RAID FEE treasury (== serverio RaidFee.ts default; Barracks/market treasury)
+  const RAID_TREASURY = '0xfF0a2d76E6156Bc1C0c689fe4029f6F1a566E92e';
   const ERC721_ABI = [
     { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
   ];
@@ -786,6 +789,21 @@
     return hash;  // timeout — grąžinam (TX gali būti landed; UI refresh patikrins)
   }
 
+  // ⚔️💰 RAID FEE: paprastas RONKE transfer į treasury — serveris on-chain verifikuos TX hash prieš
+  //   įleisdamas į raidą (RaidFee.ts). Grąžina tx hash TIK po receipt (kad serveris iškart rastų).
+  async function payRaidFee(amountRonke) {
+    await ensureNetwork();
+    const wc = await getWalletClient();
+    const addr = window.Wallet.getAddress();
+    const hash = await wc.writeContract({
+      address: ADDR.ronke, abi: ERC20_ABI, functionName: 'transfer',
+      args: [RAID_TREASURY, BigInt(Math.round(amountRonke)) * 10n ** 18n], account: addr,
+    });
+    const pc = await getPublicClient();
+    await pc.waitForTransactionReceipt({ hash, timeout: 90000 });
+    return hash;
+  }
+
   async function approveRonke(amount) {
     await ensureNetwork();
     const wc = await getWalletClient();
@@ -1175,6 +1193,7 @@
     getRegisteredDeck,
     setRegisteredDeck,
     isDeckRegistered,
+    payRaidFee,
     getRegisteredSquad,
     setRegisteredSquad,
     undoDeckChanges,

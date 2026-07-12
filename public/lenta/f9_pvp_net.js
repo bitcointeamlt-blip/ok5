@@ -189,6 +189,7 @@
       if (!this.client) { return this.connect().then(function (ok) { return ok ? self.raidPlayer(targetAddr, opts) : null; }); }
       var joinOpts = { owner: owner, raid: true, deck: Array.isArray(opts.deck) ? opts.deck : [], address: String(opts.address || '') };
       if (Number.isFinite(+opts.active)) joinOpts.active = +opts.active;   // ⚔ puoliko pageidaujamas aktyvių dydis
+      if (opts.feeTx) joinOpts.feeTx = String(opts.feeTx);   // ⚔️💰 raid fee TX hash (serveris verifikuoja on-chain)
       return this.client.joinOrCreate('f9_pvp_room', joinOpts).then(function (room) {
         self.room = room; self.connected = true; self.myTeam = -1;
         self._wire(room);

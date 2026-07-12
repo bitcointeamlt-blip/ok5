@@ -1844,20 +1844,56 @@
       _lobbyName = _addr || rndAddr();
       return _loadHomeDeck(_addr);   // MŪSŲ battle squad = puoliko unitai
     }).then(function (deck) {
-      _connectingText('Attacking — ' + (deck.length ? deck.length + ' units…' : '…'));
-      return N.connect(opts.endpoint).then(function (ok) {
-        if (!ok) { _status('connect failed', '#f88'); _connectingText('⚠ Connect failed — server offline?'); return null; }
-        var _ra = _squadActiveCount(_addr);   // ⚔ puoliko pageidaujamas aktyvių dydis (kaip pilyje)
-        return N.raidPlayer(target, _ra > 0 ? { deck: deck, address: _addr, active: _ra } : { deck: deck, address: _addr });
+      // ⚔️💰 RAID FEE (07-12 user): 10 RONKE → treasury, moka TIK puolikas, už KIEKVIENĄ raidą.
+      //   Lokaliame dev (localhost) fee išjungtas (serveris be RAID_FEE_RONKE env). Nepanaudotas TX
+      //   (atmestas join — SHIELDED/CD) saugomas localStorage ir panaudojamas kitam bandymui.
+      var _isLocal = (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+      var _feeKey = 'f9_raidfee_' + String(_addr || '').toLowerCase();
+      var _feeP;
+      if (_isLocal) _feeP = Promise.resolve('');
+      else {
+        var _storedFee = '';
+        try { _storedFee = localStorage.getItem(_feeKey) || ''; } catch (_) {}
+        if (_storedFee) { _feeP = Promise.resolve(_storedFee); }   // nepanaudotas ankstesnis fee TX
+        else {
+          _connectingText('⚔️ Raid fee: 10 RONKE → treasury… confirm in wallet');
+          _feeP = window.BarracksNFT.payRaidFee(10).then(function (h) {
+            try { localStorage.setItem(_feeKey, h); } catch (_) {}
+            return h;
+          });
+        }
+      }
+      return _feeP.then(function (feeTx) {
+        _connectingText('Attacking — ' + (deck.length ? deck.length + ' units…' : '…'));
+        return N.connect(opts.endpoint).then(function (ok) {
+          if (!ok) { _status('connect failed', '#f88'); _connectingText('⚠ Connect failed — server offline?'); return null; }
+          var _ra = _squadActiveCount(_addr);   // ⚔ puoliko pageidaujamas aktyvių dydis (kaip pilyje)
+          var _ro = { deck: deck, address: _addr };
+          if (_ra > 0) _ro.active = _ra;
+          if (feeTx) _ro.feeTx = feeTx;
+          return N.raidPlayer(target, _ro);
+        });
+      }, function (payErr) {
+        _connectingText('⚠ Raid fee payment failed / rejected — raid cancelled');
+        try { if (window.showGameNotification) window.showGameNotification('⚔️ RAID', 'Fee payment failed: ' + String((payErr && payErr.message) || payErr).slice(0, 80), '#f66'); } catch (_) {}
+        window.__f9RaidActive = false;
+        setTimeout(function () { try { relaunchHome(); } catch (_) {} }, 1800);
+        return null;
       });
     }).then(function (room) {
       if (!room) {
-        // 🛡⏲ serverio atmetimo priežastis (SHIELDED:min / RAID_COOLDOWN:min / NO_DEFENDERS) → aiški žinutė
+        // 🛡⏲ serverio atmetimo priežastis (SHIELDED:min / RAID_COOLDOWN:min / NO_DEFENDERS / RAID_FEE) → aiški žinutė
         var em = String((N.lastError && N.lastError.message) || '');
         var msg = '⚠ Target offline / no castle — live raid not possible (async later)';
         if (em.indexOf('SHIELDED') !== -1) msg = '🛡 Castle is SHIELDED (just raided) — try again in ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('RAID_COOLDOWN') !== -1) msg = '⏲ You raided this castle recently — wait ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('NO_DEFENDERS') !== -1) msg = '💤 Castle inactive — no combat-ready NFT defenders to raid';
+        else if (em.indexOf('RAID_FEE') !== -1) {
+          // ⚔️💰 fee TX atmestas (panaudotas/pasenęs/nerastas) → išvalom saugotą, kitas bandymas mokės iš naujo
+          var _fa = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+          try { localStorage.removeItem('f9_raidfee_' + String(_fa).toLowerCase()); } catch (_) {}
+          msg = '⚔️💰 Raid fee issue (' + (em.split(':')[1] || '?') + ') — try again, a fresh 10 RONKE payment will be requested';
+        }
         _connectingText(msg);
         try { if (window.showGameNotification) window.showGameNotification('⚔️ RAID', msg, '#e8a54a'); } catch (_) {}
         window.__f9RaidActive = false;
@@ -1865,6 +1901,8 @@
         setTimeout(function () { try { relaunchHome(); } catch (_) {} }, 1800);
         return;
       }
+      // ⚔️💰 raidas PRASIDĖJO → fee TX sunaudotas serveryje, išvalom saugotą (kitam raidui — naujas mokėjimas)
+      try { var _fa2 = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; localStorage.removeItem('f9_raidfee_' + String(_fa2).toLowerCase()); } catch (_) {}
       mySid = room.sessionId;
       _wireRoom(room);
       _status('⚔ raid started', '#f86');

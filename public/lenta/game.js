@@ -9337,13 +9337,18 @@ function _f9CemeteryBuildOutline(olNat) {
 //   F10 (Pawn_*_Pickaxe, pam_npc, Buildings_House3, GoldStone1). Kolizijos AABB serveryje PVP_OBSTACLES!
 const _F9_GC = { HX: 58.9, HY: 19.5, SX: 63.7, SY: 19.85 };   // namuko/akmens obstacle centrai (unit-space, avies pieva ~61.4/19.3) — PRIVALO sutapti su serveriu
 let _f9GC = null;   // ciklo būsena {phase, t0, idleDur}
+let _f9GoldMineImg = null;   // 🏦 07-12 user sprite: goldmine sandėlis (rembg cutout, tight-crop 256×284) — keičia House3
 function _f9DrawGoldCamp() {
   // 🧱 07-12: occlusion rect'ai valomi kiekvieną kadrą — kad išėjus iš PvP scenos neliktų stale depth-loop įrašų
   window._f9GoldCampRect = null; window._f9GoldStoneRect = null;
   if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
   if (!window._f9pvpLive) return;   // PvP pilies scena (home + raid) — bazės dekoras (kaip kapinės)
-  const houseImg = (typeof _buildingImgs !== 'undefined') ? _buildingImgs['House3'] : null;
-  if (!houseImg || !houseImg.complete || !houseImg.naturalWidth) return;
+  // 🏦 07-12 (user): naujas goldmine sprite vietoj House3 — ANIMUOTAS 6 kadrų twinkle sheet
+  //    (goldmine_house_anim.png 1536×284 = 6×256, auksas blizga @8fps kaip gold_stone_3h)
+  if (!_f9GoldMineImg) { _f9GoldMineImg = new Image(); _f9GoldMineImg.src = 'goldmine_house_anim.png'; }
+  const houseImg = _f9GoldMineImg;
+  if (!houseImg.complete || !houseImg.naturalWidth) return;
+  const GM_FRAMES = 6, gmFw = houseImg.naturalWidth / GM_FRAMES;
   // 1:1 kaip F10: animuotas gold_stone_3h (CUSTOM_MAP10 "7,6" tas pats) — 6 kadrų blizgesys @8fps
   const stoneDef = (typeof _GOLD_STONE_DEFS !== 'undefined') ? _GOLD_STONE_DEFS['gold_stone_3h'] : null;
   const stoneImg = (stoneDef && typeof _goldStoneImgs !== 'undefined') ? _goldStoneImgs[stoneDef.img] : null;
@@ -9353,12 +9358,14 @@ function _f9DrawGoldCamp() {
   const gc = _f9GC;
   const el = now - gc.t0;
   // ── geometrija (world px; ctx jau world-transformintas kaip hospital/cemetery) ──
-  const hbw = houseImg.naturalWidth * 0.80, hbh = houseImg.naturalHeight * 0.80;   // F10: natural×0.8
-  const hcx = (_F9_GC.HX + 0.5) * C - 15, hby = (_F9_GC.HY + 0.5 + 0.55) * C; // namuko centras/apačia (07-07 user: namukas −15px kairėn; serverio AABB cx 58.62 atitinka)
+  // 🏦 07-12: fiksuotas cell dydis (hospital pattern) — plotis seka serverio AABB (2.1 cells) + truputis overhang;
+  //    aukštis pagal KADRO aspect (256×284). (Buvo House3 natural×0.8 = 102×154.)
+  const hbw = C * 2.2, hbh = hbw * (houseImg.naturalHeight / gmFw);
+  const hcx = (_F9_GC.HX + 0.5) * C - 30, hby = (_F9_GC.HY + 0.5 + 0.55) * C; // namuko centras/apačia (07-07 −15px + 07-12 dar −15px „žmogeliukas per arti"; serverio AABB cx 58.34 atitinka)
   const scx = (_F9_GC.SX + 0.5) * C, scy = (_F9_GC.SY + 0.5) * C;             // akmens centras
   const gsz = C * 2.1;                                                         // F10: gold stone CELL*2.1 kvadratas
   const footY = (_F9_GC.SY + 0.5 + 0.35) * C - 25;                             // pawn'o kojų linija (07-07 user: žmogeliukas +15px, dar +10px aukštyn)
-  const startX = hcx + 15 + hbw * 0.32;                                        // prie namuko durų — +15 kompensuoja namuko poslinkį (žmogeliuko pozicija NEPAKITUSI)
+  const startX = hcx + 30 + hbw * 0.32;                                        // prie namuko durų — +30 kompensuoja namuko poslinkius (žmogeliuko pozicija NEPAKITUSI, gap +15px 07-12)
   const mineX = scx - gsz * 0.40;                                              // kairiau akmens (kasa į jį, kaip F10 stoneWx-30)
   const WALK_MS = (Math.abs(mineX - startX) / 105) * 1000;                     // F10: WALK_SPD=105 px/s
   const MINE_MS = 4000, UNLOAD_MS = 2200;                                      // F10: MINE_DUR=4000
@@ -9394,19 +9401,20 @@ function _f9DrawGoldCamp() {
   // 🧱 07-12 (user): namukas = kietas hitbox — FOREGROUND + depth loop (kaip pilis/barakai, _f9RectOcclusion).
   //    hitBaseY = serverio kolizijos AABB PIETINĖ briauna (cy 19.5 + hh 0.5 → unit-y 20.0) — front/behind
   //    dalintuvas PRIVALO būti kolizijos briauna, NE matoma bazė (žr. castle gotcha).
-  //    Rect = sprite CONTENT bounds (alpha-scan House3 128×192: x 0.023–0.977, y 0.193–0.896), ne frame'as —
-  //    kitaip permatomas top padding'as duotų klaidingus baltus kontūrus virš stogo.
-  window._f9GoldCampRect = { x0: gcHx + hbw * 0.023, y0: gcHy + hbh * 0.193, x1: gcHx + hbw * 0.977, y1: gcHy + hbh * 0.896, hitBaseY: (20.0 + 0.5) * C };
+  //    Rect = pilnas piešimo stačiakampis — goldmine_house.png TIGHT-CROPPED (alpha-scan 0.004–0.996,
+  //    rembg cutout be padding'o), tad frame'as ≈ matomas turinys.
+  window._f9GoldCampRect = { x0: gcHx, y0: gcHy, x1: gcHx + hbw, y1: hby, hitBaseY: (20.0 + 0.5) * C };
   // 🐛 DEBUG (kaip pilis): serverio kolizijos AABB + akmens circle
   if (window._dbgHit || window._f9DebugOn) {
     ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)';
-    ctx.fillRect((58.62 + 0.5 - 1.05) * C, (19.5 + 0.5 - 0.5) * C, 2.1 * C, 1.0 * C);
+    ctx.fillRect((58.34 + 0.5 - 1.05) * C, (19.5 + 0.5 - 0.5) * C, 2.1 * C, 1.0 * C);
     ctx.beginPath(); ctx.arc((_F9_GC.SX + 0.5) * C, (_F9_GC.SY + 0.5) * C, 0.55 * C, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
   ctx.save(); ctx.imageSmoothingEnabled = false;
   if (gcHover || window._f9MinePanelOpen) { ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 16; }
-  ctx.drawImage(houseImg, gcHx, gcHy, hbw, hbh);
+  const gmFr = Math.floor(now / 125) % GM_FRAMES;   // 8fps twinkle (kaip gold_stone_3h)
+  ctx.drawImage(houseImg, gmFr * gmFw, 0, gmFw, houseImg.naturalHeight, gcHx, gcHy, hbw, hbh);
   ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';   // akmuo/pawn be švytėjimo
   if (stoneImg && stoneImg.complete && stoneImg.naturalWidth && stoneDef) {
     const gFrame = stoneDef.frames > 1 ? Math.floor(now / (1000 / stoneDef.fps)) % stoneDef.frames : 0;
@@ -9487,6 +9495,7 @@ function _f9DrawGoldCamp() {
 // 🛒 UNIT MARKETPLACE pastatas (07-08) — paprastas namukas dešiniau ligoninės. Klik → market modalas.
 //    Vieta unit-space (ligoninė 69.5/17.6) → PRIVALO sutapti su serverio PVP_OBSTACLES.
 const _F9_MKT = { HX: 73.6, HY: 18.7 };
+let _f9MarketImg = null;   // 🛒 07-12 user sprite: ginklų krautuvė market01 (market_house2.png 256×284, chroma cutout, statinis)
 // ── Marketplace modalas (SELL picker rodo tavo unitus; LIST on-chain wiring po kontrakto deploy) ──
 let _f9MktOverlayEl = null, _f9MktTab = 'browse';
 let _f9MktInv = null, _f9MktInvLoading = false, _f9MktInvErr = '', _f9MktSelId = null, _f9MktStatusMsg = '';
@@ -10005,13 +10014,18 @@ function _f9ToggleMarketPanel() {
   _f9MktLoadListings();   // default tab = browse → iškart krauk listingus (jei market ready)
 }
 function _f9DrawMarket() {
+  // 🧱 07-12: occlusion rect valomas kiekvieną kadrą (stale guard, kaip gold camp/ligoninė)
+  window._f9MarketRect = null;
   if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
   if (!window._f9pvpLive) return;   // tik PvP pilies scenoje (bazės pastatas, kaip ligoninė)
-  const img = (typeof _buildingImgs !== 'undefined') ? _buildingImgs['House2'] : null;
-  if (!img || !img.complete || !img.naturalWidth) return;
+  // 🛒 07-12 (user): market01 STATINIS sprite (market_house2.png 256×284, chroma cutout) —
+  //    animuotas 2-kadrų variantas atmestas (AI kadrai „virė"/čiuožinėjo; user įdėjo naują vieno kadro).
+  if (!_f9MarketImg) { _f9MarketImg = new Image(); _f9MarketImg.src = 'market_house2.png'; }
+  const img = _f9MarketImg;
+  if (!img.complete || !img.naturalWidth) return;
   const C = CELL;
   const bw = C * 2.7;
-  const bh = bw * (img.naturalHeight / img.naturalWidth);
+  const bh = bw * (img.naturalHeight / img.naturalWidth);       // sprite aspect (256×284)
   const cxp = (_F9_MKT.HX + 0.5) * C;
   const byp = (_F9_MKT.HY + 0.5 + 0.55) * C;                    // vizuali apačia ≈ kolizijos apačia
   const x = cxp - bw / 2, y = byp - bh;
@@ -10043,6 +10057,15 @@ function _f9DrawMarket() {
   ctx.fillText(label, cxp, by0 + bht / 2 + 1);
   ctx.restore();
   window._f9MarketBounds = { x: x, y: y, w: bw, h: bh };   // klik hitbox (world px)
+  // 🧱 07-12: FOREGROUND + depth loop (kaip gold camp/ligoninė). hitBaseY = serverio AABB pietinė briauna
+  //    (cy 18.7 + hh 0.5 → unit-y 19.2). Sheet tight-cropped (union bbox) → rect = pilnas kadro stačiakampis.
+  window._f9MarketRect = { x0: x, y0: y, x1: x + bw, y1: y + bh, hitBaseY: (19.2 + 0.5) * C };
+  // 🐛 DEBUG (kaip pilis): serverio kolizijos AABB
+  if (window._dbgHit || window._f9DebugOn) {
+    ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)';
+    ctx.fillRect((73.6 + 0.5 - 1.0) * C, (18.7 + 0.5 - 0.5) * C, 2.0 * C, 1.0 * C);
+    ctx.restore();
+  }
 }
 function _f9DrawCemetery() {
   // ⚰️ 07-11 (user): kapinės = TIK dekoratyvus sprite. UI (pot badge / hover / klik / panelė) + pasyvi
@@ -11176,10 +11199,10 @@ function _f9DrawTpPads() {
   }
   ctx.restore();
 }
-// Tikrina VISUS pastatus (pilis + barakai + kasyklos namukas/akmuo + ligoninė). Front (1) laimi prieš behind (-1).
+// Tikrina VISUS pastatus (pilis + barakai + kasykla + ligoninė + marketas). Front (1) laimi prieš behind (-1).
 function _f9CastleOcclusion(u) {
   let res = 0;
-  for (const r of [window._f9CastleRect, window._f9BarracksRect, window._f9StatsRect, window._f9GoldCampRect, window._f9GoldStoneRect, window._f9HospitalRect]) {
+  for (const r of [window._f9CastleRect, window._f9BarracksRect, window._f9StatsRect, window._f9GoldCampRect, window._f9GoldStoneRect, window._f9HospitalRect, window._f9MarketRect]) {
     const o = _f9RectOcclusion(u, r);
     if (o === 1) return 1;
     if (o === -1) res = -1;
@@ -11189,7 +11212,7 @@ function _f9CastleOcclusion(u) {
 // Ar pasaulio taškas (px,py world px) yra ant pastato (pilis/barakai)? → naudojam, kad click ant pastato
 // NEsiųstų move komandos pažymėtiems unitams (interakcija su pastatu turi pirmenybę prieš judėjimą).
 function _f9PointOnBuilding(px, py) {
-  for (const r of [window._f9CastleRect, window._f9BarracksRect, window._f9StatsRect, window._f9GoldCampRect, window._f9HospitalRect]) {
+  for (const r of [window._f9CastleRect, window._f9BarracksRect, window._f9StatsRect, window._f9GoldCampRect, window._f9HospitalRect, window._f9MarketRect]) {
     if (r && px >= r.x0 && px <= r.x1 && py >= r.y0 && py <= r.y1) return true;
   }
   return false;
@@ -32741,8 +32764,7 @@ function loop(now) {
   if (typeof _f9DrawRetreatZone === 'function') _f9DrawRetreatZone();   // 🏳️ retreat zona (puolikui, po unitais)
   // 🏥 ligoninė PERKELTA į FOREGROUND (07-12 user: unitai lipo ant viršaus be kontūrų) — žr. po drawUnits()
   if (typeof _f9DrawCemetery === 'function') _f9DrawCemetery();   // ⚰️ kapinės (prie barakų, dekoras)
-  // ⛏️ gold camp PERKELTA į FOREGROUND (07-12 user: namukas = kietas hitbox) — žr. po drawUnits()
-  if (typeof _f9DrawMarket === 'function') _f9DrawMarket();       // 🛒 unitų marketplace namukas (dešiniau ligoninės — 07-08)
+  // ⛏️ gold camp + 🛒 marketas PERKELTI į FOREGROUND (07-12) — žr. po drawUnits()
   if (typeof _f9DrawTpPads === 'function') _f9DrawTpPads();   // 🌀 teleporto pad'ai (ant žemės, po unitais)
   drawUnits();
   if (!window._f9Clean && typeof _drawEnemyMarkers === 'function') _drawEnemyMarkers();
@@ -32786,9 +32808,10 @@ function loop(now) {
   if (!window._f9Clean && typeof _drawF9UnitHpBars === 'function') _drawF9UnitHpBars();
   if (typeof _drawF9Shots === 'function') _drawF9Shots();
   drawForegroundDecorations();
-  // 🏥 LIGONINĖ — FOREGROUND (07-12 user: unitai lipo ant viršaus be kontūrų). Depth loop žemiau perpiešia
-  //    priekinius unitus virš / už esančius baltu kontūru. PRIEŠ burbulą, kad burbulas liktų viršuje.
+  // 🏥 LIGONINĖ + 🛒 MARKETAS — FOREGROUND (07-12 user: unitai lipo ant viršaus be kontūrų). Depth loop
+  //    žemiau perpiešia priekinius unitus virš / už esančius baltu kontūru. PRIEŠ burbulą (burbulas viršuje).
   if (S.floor === 9 && typeof _f9DrawHospital === 'function') { try { _f9DrawHospital(); } catch (_) {} }
+  if (S.floor === 9 && typeof _f9DrawMarket === 'function') { try { _f9DrawMarket(); } catch (_) {} }
   if (typeof _f9DrawHospBubble === 'function') _f9DrawHospBubble();   // 💬 ligoninės burbulas VIRŠ unitų
   if (typeof _drawF9TouchButtons === 'function') _drawF9TouchButtons();   // 📱 touch mygtukai VIRŠ pastatų (perkelta 07-03)
   // 🏰 PILIS + 🏚️ BARAKAI — foreground (po unitų; occluduoja kaip medis). Depth tvarko loop žemiau.
@@ -32804,7 +32827,7 @@ function loop(now) {
   //  • Unitas PRIEKYJE deco/pilies → perpiešiam TIKRĄ sprite VIRŠ (uždengia ją).
   //  • Unitas UŽ deco/pilies → tuščiaviduris BALTAS kontūras VIRŠ (kad nedingtų).
   if (S.floor === 9 && typeof _f9DrawTreeOutline === 'function') {
-    const _castleOcc = (typeof _f9CastleOcclusion === 'function' && (window._f9Cap || window._f9GoldCampRect || window._f9HospitalRect));
+    const _castleOcc = (typeof _f9CastleOcclusion === 'function' && (window._f9Cap || window._f9GoldCampRect || window._f9HospitalRect || window._f9MarketRect));
     for (const u of (S.units || [])) {
       if (!u || !u.alive) continue;
       // ⚡ PERF: occlusion sprendimas priklauso TIK nuo unito celės (x,y) — kešuojam ir perskaičiuojam

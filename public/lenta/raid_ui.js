@@ -132,9 +132,11 @@
       // dešinė: REWARDS kolonėlė — rodom TIKRĄ grobį (pot × 50%, kaip serverio CEM_STEAL_PCT;
       //   07-03 user: „ar čia jau įskaičiuota su 50%?" — dabar TAIP) + auksinis ATTACK mygtukas
       var steal = Math.floor(pot * STEAL_PCT * 10) / 10;
+      // ⚔️💰 raid fee (10 RONKE → treasury, moka tik puolikas) — rodomas ant mygtuko (localhost dev = nemokamai)
+      var _feeLbl = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '<div style="font-size:7px;margin-top:3px;opacity:0.85;">10 RONKE</div>';
       var actionHtml = shielded
         ? '<div style="padding:8px 11px;border:2px solid #4a9da6;border-radius:4px;background:rgba(74,157,166,0.12);color:#7fd0d8;font-size:8px;white-space:nowrap;" title="Recently raided — protected">🛡 ' + Math.ceil(shMs / 60000) + 'min</div>'
-        : '<div style="padding:8px 11px;border:2px solid #ffcf5c;border-radius:4px;background:rgba(255,207,92,0.1);color:#ffcf5c;font-size:8px;white-space:nowrap;">⚔️ ATTACK</div>';
+        : '<div style="padding:8px 11px;border:2px solid #ffcf5c;border-radius:4px;background:rgba(255,207,92,0.1);color:#ffcf5c;font-size:8px;white-space:nowrap;text-align:center;" title="Raid fee: 10 RONKE → treasury (paid by attacker)">⚔️ ATTACK' + _feeLbl + '</div>';
       row.innerHTML = '<div style="flex:1;min-width:0;"><div style="color:#c9d4e8;font-size:10px;margin-bottom:3px;">' + shortAddr(addr) + '</div>' +
         '<div style="font-size:8px;color:#6a7a8a;">' + cnt + ' defenders · power ' + Math.round((r.buildings && r.buildings.cemPower) || 0) + '</div></div>' +
         '<div style="text-align:center;margin-right:6px;" title="Wipe ALL defenders to loot 50% of the mined RONKE pot">' +
