@@ -11857,7 +11857,18 @@ function _f9RenderCastlePanelBody() {
   const wallIc = _f9WallThumb() ? '<img class="f9cp-spr" src="' + _f9WallThumb() + '">' : '🧱';
   const zipIc = _f9ZipThumb() ? '<img class="f9cp-spr" src="' + _f9ZipThumb() + '">' : '🗼';
   const wCost = _F9_UPG_COST.wall[lvl + 1] || 0, wOk = bank >= wCost;
+  // ⚔ RAID INVITE LINK — pasidalink; draugas paspaudęs → puola TAVO pilį (veikia tik kol ON DUTY).
+  const _invAddr = String(window._f9HomeAddr || window.__f9BaseOwner || (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '').toLowerCase();
+  const _invLink = _invAddr ? (location.href.split('#')[0].split('?')[0] + '#raidinvite=' + _invAddr) : '';
+  const _isSafe = (window._f9Cemetery && window._f9Cemetery.duty === 'safe');
   body.innerHTML =
+    // ⚔ INVITE — raid linkas + copy
+    (_invLink ? ('<div class="f9cp-card" style="border-color:#c9a227;">' +
+      '<div class="ch"><span class="cn" style="color:#ffe168;">⚔ INVITE TO ATTACK</span>' + (_isSafe ? '<span class="clv" style="color:#7fd0d8;border-color:#2d5a60;">🛡 SAFE — link off</span>' : '') + '</div>' +
+      '<div class="f9cp-stat" style="font-size:9px;color:#8a9aaa;line-height:1.5;"><span style="flex:1;">Share this link — a friend who opens it attacks <b>your</b> castle. Works only while you\'re <b>🟢 ON DUTY</b> (switch to 🛡 SAFE to cancel it).</span></div>' +
+      '<input id="f9cp-invlink" readonly value="' + _invLink + '" onclick="this.select()" style="width:100%;box-sizing:border-box;margin:6px 0;padding:8px 10px;border-radius:6px;border:1px solid #6a4a18;background:#0c1020;color:#ffcf5c;font-family:monospace;font-size:9px;">' +
+      '<button class="f9cp-up" id="f9cp-copyinv" style="border-color:#c9a227;background:rgba(255,207,92,0.14);color:#ffe168;">📋 COPY RAID LINK</button>' +
+    '</div>') : '') +
     // 🧱 SIENA
     '<div class="f9cp-card">' +
       '<div class="ch"><span class="cn">' + wallIc + ' WALL</span><span class="clv">L' + lvl + '/' + MAX + ' ' + mat.toUpperCase() + '</span></div>' +
@@ -11937,6 +11948,14 @@ function _f9RenderCastlePanelBody() {
   if (sb) sb.onclick = function () {
     window.__f9ShieldUntil = 0;   // optimistinis — serveris patvirtins 'shield {until:0}' žinute
     if (window.F9PvpLive && window.F9PvpLive.removeShield) window.F9PvpLive.removeShield();
+  };
+  // ⚔ COPY RAID LINK
+  const cpb = body.querySelector('#f9cp-copyinv');
+  if (cpb) cpb.onclick = function () {
+    const inp = body.querySelector('#f9cp-invlink');
+    const val = inp ? inp.value : '';
+    const done = function () { cpb.textContent = '✓ COPIED!'; setTimeout(function () { if (cpb) cpb.textContent = '📋 COPY RAID LINK'; }, 1600); };
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(val).then(done, function () { if (inp) { inp.select(); document.execCommand('copy'); done(); } }); } else if (inp) { inp.select(); document.execCommand('copy'); done(); } } catch (_) { if (inp) inp.select(); }
   };
 }
 let _f9CastlePanelTimer = null;
@@ -44561,6 +44580,8 @@ window.__F9 = {
   'use strict';
   function wanted() { try { return /(?:^|[#&/])f9live\b/i.test(location.hash || ''); } catch (_) { return false; } }
   function wantedHome() { try { return /(?:^|[#&/])f9home\b/i.test(location.hash || ''); } catch (_) { return false; } }
+  // ⚔ RAID INVITE — #raidinvite=0x… → draugas paspaudė linką, veda į TO adreso pilies puolimą (su patvirtinimu).
+  function raidInviteAddr() { try { var m = (location.hash || '').match(/raidinvite=(0x[0-9a-fA-F]{40})/i); return m ? m[1].toLowerCase() : ''; } catch (_) { return ''; } }
   var loading = false;
   function load(src) {
     return new Promise(function (res, rej) {
@@ -44588,8 +44609,49 @@ window.__F9 = {
   function _hideMenusForHome() {
     try { ['screen-menu', 'screen-lobby', 'screen-hub'].forEach(function (id) { var e = document.getElementById(id); if (e) { e.classList.remove('active'); e.style.display = 'none'; } }); } catch (_) {}
   }
-  window.addEventListener('hashchange', function () { if (wantedHome()) { _hideMenusForHome(); boot(true); } else if (wanted()) boot(false); });
-  if (wantedHome() || wanted()) {
+  // ⚔ RAID INVITE boot: užkraunam PvP modulius → parodom patvirtinimą → launchRaid(addr).
+  function bootRaidInvite(addr) {
+    if (loading) return; loading = true;
+    _hideMenusForHome();
+    var _cb = '?t=' + Date.now();
+    load('f9_pvp_net.js' + _cb).then(function () { return load('f9_pvp_live.js' + _cb); }).then(function () {
+      if (!window.F9PvpLive || !window.F9PvpLive.launchRaid) return;
+      _f9RaidInviteConfirm(addr);
+    }).catch(function (e) { console.error('[F9 raidinvite boot]', e); }).then(function () { loading = false; });
+  }
+  // Patvirtinimo ekranas — „⚔ Attack X's castle? Fee 10 RONKE" [ATTACK] [CANCEL→home].
+  function _f9RaidInviteConfirm(addr) {
+    var sh = addr.slice(0, 6) + '…' + addr.slice(-4);
+    var isLocal = (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+    var ov = document.createElement('div');
+    ov.id = 'f9-raidinv-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100050;display:flex;align-items:center;justify-content:center;background:rgba(8,12,22,0.94);backdrop-filter:blur(6px);font-family:\'Press Start 2P\',monospace,sans-serif;';
+    ov.innerHTML = '<div style="background:linear-gradient(180deg,#241a10,#0c1020);border:3px solid #c9a227;border-radius:12px;padding:26px 30px;width:440px;max-width:92vw;text-align:center;box-shadow:0 0 48px rgba(201,162,39,0.35);">' +
+      '<div style="font-size:30px;margin-bottom:12px;">⚔️</div>' +
+      '<div style="font-size:15px;color:#ffe168;letter-spacing:1px;margin-bottom:12px;">RAID INVITE</div>' +
+      '<div style="font-size:11px;color:#c9d4e8;line-height:1.7;margin-bottom:8px;">A friend invited you to attack their castle:</div>' +
+      '<div style="font-size:12px;color:#ffcf5c;font-family:monospace;margin-bottom:14px;">' + sh + '</div>' +
+      (isLocal ? '' : '<div style="font-size:9px;color:#8a9aaa;line-height:1.6;margin-bottom:16px;">Raid fee: <b style="color:#ffcf5c;">10 RONKE</b> (paid by attacker). Standard raid rules apply.</div>') +
+      '<div style="display:flex;gap:10px;">' +
+        '<button id="f9ri-go" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #ffcf5c;background:#ffcf5c;color:#1a1208;cursor:pointer;">⚔ ATTACK</button>' +
+        '<button id="f9ri-cancel" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #3a3a55;background:rgba(255,255,255,0.04);color:#8a9aaa;cursor:pointer;">CANCEL</button>' +
+      '</div></div>';
+    document.body.appendChild(ov);
+    var close = function () { try { ov.remove(); } catch (_) {} };
+    ov.querySelector('#f9ri-go').onclick = function () {
+      close();
+      try { location.hash = 'f9home'; } catch (_) {}   // po raido grįžta į savo pilį (relaunchHome)
+      try { window.F9PvpLive.launchRaid(addr); } catch (e) { console.error(e); }
+    };
+    ov.querySelector('#f9ri-cancel').onclick = function () { close(); try { location.hash = 'f9home'; } catch (_) {} try { if (window.F9PvpHomeLaunch) window.F9PvpHomeLaunch(); } catch (_) {} };
+  }
+  window.addEventListener('hashchange', function () { var _ri = raidInviteAddr(); if (_ri) { bootRaidInvite(_ri); } else if (wantedHome()) { _hideMenusForHome(); boot(true); } else if (wanted()) boot(false); });
+  var _riInit = raidInviteAddr();
+  if (_riInit) {
+    var _goRi = function () { bootRaidInvite(_riInit); };
+    if (document.readyState === 'complete' || document.readyState === 'interactive') _goRi();
+    else window.addEventListener('DOMContentLoaded', _goRi);
+  } else if (wantedHome() || wanted()) {
     var _h = wantedHome();
     var _go = function () { if (_h) _hideMenusForHome(); boot(_h); };
     if (document.readyState === 'complete' || document.readyState === 'interactive') _go();
@@ -44638,7 +44700,7 @@ window.__F9 = {
   try {
     var _escapeMenu = /(?:^|[#&\/])menu\b/i.test(location.hash || '');
     var _bootTried = sessionStorage.getItem('f9_boot_tried') === '1';
-    if (!_escapeMenu && !wanted() && !wantedHome() && !_bootTried) {
+    if (!_escapeMenu && !wanted() && !wantedHome() && !raidInviteAddr() && !_bootTried) {   // ⚔ raidinvite → NE į savo pilį, o į puolimą
       sessionStorage.setItem('f9_boot_tried', '1');
       var _goCastle = function () { try { window.enterMyCastle(); } catch (_) {} };
       if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(_goCastle, 30);
