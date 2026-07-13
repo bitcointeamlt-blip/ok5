@@ -1029,6 +1029,7 @@
       window._f9HospSlots = (e && e.slots) || 1;            // gydymo slotų kiekis
       window._f9HospReady = (e && typeof e.ready === 'number') ? e.ready : 0;   // ⚔️ kiek paruoštų deploy'ui
       if (e && e.insta) window._f9HospInsta = e.insta;                          // ⚡🔵 RONKE BLESS charge'ai {cap,used,remaining}
+      window._f9InstaReady = (e && e.instaReady === true);                      // ⚡🔵 ar Bless DABAR veiks (savoj pilyje, ne raido metu) — mygtukas rodomas tik tada
       window._f9HospStale = (e && typeof e.stale === 'number') ? e.stale : 0;   // 🔒 paslėpta senų-dekų sužalotų
       // 🛡 07-06 user: kurie deko unitai DABAR stovi pilies lauke (kaunasi) vs rezerve — inventoriaus žymėms.
       window._f9OnField = new Set((e && Array.isArray(e.onField)) ? e.onField.map(String) : []);
@@ -1313,7 +1314,7 @@
     // 🐛 P-C3: išvalom SENOS sesijos ligoninės būseną PRIEŠ _f9pvpLive=true — kitaip 1.5s langą (kol ateis
     //   šviežias 'hospital' push) barracks_nft.fetchHospState skaitytų SENOS piniginės sužalotus kaip LIVE
     //   (→ deko/lauko „makalynė" perjungus piniginę). null (NE []) → fetchHospState kris atgal į per-adresą REST.
-    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null;
+    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9InstaReady = false; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null;
     try { _closeRaidSettled(false); } catch (_) {}   // sena panelė (jei liko) — nuimam
     // 🏥 ligoninės/kapinių/🦴banko užklausos — po start'o, kai room stabilus (bankas reikalingas widget'o bendram balansui)
     setTimeout(function () { try { var r = _room(); if (r) { r.send('hospital_get'); r.send('cemetery_get'); r.send('bones_bank_get'); } } catch (_) {} }, 1500);
@@ -1632,7 +1633,7 @@
     window._f9pvpLive = false; window._f9pvpMyTeam = null;
     // 🐛 P-C3: išvalom ligoninės globalus išeinant (piniginės perjungimas/scenos išėjimas) — kad
     //   barracks_nft.fetchHospState nenaudotų SENOS sesijos sužalotų (deko sync šaltinis). null, NE [].
-    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null;
+    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9InstaReady = false; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null;
     window._f9Cap = null; window._f9CapState = null; _capLast = '';
     window._f9MyBones = null; _boneLast = ''; _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true;   // 🦴 išeinant → reset (bankas liks, atsinaujins kitam start)
     if (boneEl) boneEl.style.display = 'none'; if (boneBalEl) boneBalEl.style.display = 'none';

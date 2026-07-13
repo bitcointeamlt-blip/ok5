@@ -1459,7 +1459,10 @@ export class F9PvpRoom extends Room<F9State> {
     // 🔒 M6 fix (07-12, sync auditas): stale = sužaloti NE dabartiniame deke (seni išrotuoti) — klientas
     //   `e.stale` skaito nuo 07-06 (fieldN formulei), bet serveris niekada nesiuntė → visada 0.
     const stale = list.filter((i) => !i.inDeck).length;
-    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale };
+    // ⚡🔵 instaReady = ar ⚡ BLESS instant heal DABAR veiks (server-auth gate'ai: TIK savoj pilyje + NE raido metu).
+    //   Klientas rodo Bless mygtuką tik kai true → nebėra „paspaudžiau per siege, nepagijo" (07-12 user).
+    const instaReady = this._home && addr === this._ownerAddr && this.state.players.size <= 1;
+    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady };
   }
 
   // ⚔️ DEPLOY (07-04 user mechanika): paruošti (pasveikę/nespawninti) deko unitai → garnizono 2×6 slotai.

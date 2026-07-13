@@ -10883,7 +10883,7 @@ function _f9HospRebuild() {
   if (!_f9HospPanelEl) return;
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
   const ready = window._f9HospReady || 0;
-  const sig = list.map(i => i.tokenId).join('|') + ':r' + ready + ':b' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0);   // ⚔️ ready + ⚡🔵 bless charge'ai perpiešia
+  const sig = list.map(i => i.tokenId).join('|') + ':r' + ready + ':b' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ':i' + ((window.__f9HomeActive && window._f9InstaReady) ? 1 : 0);   // ⚔️ ready + ⚡🔵 bless charge'ai + instaReady perpiešia
   if (sig === _f9HospSig) { _f9HospUpdateStatus(); return; }
   _f9HospSig = sig;
   // ⚔️ DEPLOY sekcija — VISADA matoma (07-04 user: „nematau deploy mygtuko"); disabled kai ready=0
@@ -10945,7 +10945,11 @@ function _f9HospRebuild() {
         '<div data-status="' + i.tokenId + '" style="font-size:9px;"></div>' +
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:5px;flex:none;">' +
-        '<button data-insta="' + i.tokenId + '" class="f9-bless-btn' + (((window._f9HospInsta && window._f9HospInsta.remaining) || 0) > 0 ? '' : ' dim') + '" title="Instant heal — Ronke Bless (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' left today)"><span class="f9-bl-lbl">⚡ BLESS</span></button>' +
+        // ⚡🔵 BLESS rodomas TIK kai realiai veiks: savoj pilyje (__f9HomeActive) + serveris instaReady (ne raido metu) +
+        //   yra charge'ų (Ronkeverse NFT). Kitaip mygtukas visai neрodomas → nebėra „paspaudžiau, nepagijo" (07-12 user).
+        ((window.__f9HomeActive && window._f9InstaReady && ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) > 0)
+          ? '<button data-insta="' + i.tokenId + '" class="f9-bless-btn" title="Instant heal — Ronke Bless (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' left today)"><span class="f9-bl-lbl">⚡ BLESS</span></button>'
+          : '') +
         (!i.healing ? '<button data-heal="' + i.tokenId + '" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;line-height:1.3;background:rgba(255,207,92,0.1);color:#ffcf5c;border:1px solid #6a4a18;border-radius:4px;padding:6px 7px;cursor:pointer;white-space:nowrap;">⬆ FIRST</button>' : '') +
       '</div>' +
     '</div>').join('') + _staleNote;   // 🔒 „N old-deck units hidden" (jei yra) — PRIEŠ wiring, kad listeneriai išliktų
