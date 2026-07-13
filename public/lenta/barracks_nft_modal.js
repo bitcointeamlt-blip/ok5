@@ -1256,7 +1256,9 @@
                 }, 60);
               } catch (e) {
                 setT(origTitle);
-                alert('⚠ ' + (e && e.message ? e.message : 'Registration failed.'));
+                // 🛡 NO_CHANGE (07-13): dekas nepasikeitė → neutrali žinutė, NE klaida (10 RONKE NEnurašyta)
+                if (e && e.code === 'NO_CHANGE') alert('ℹ️ Your deck is already registered — no changes to save, so no fee was charged.\n\nTip: if your units are in the hospital, add HEALTHY units from your inventory first, then UPDATE DECK.');
+                else alert('⚠ ' + (e && e.message ? e.message : 'Registration failed.'));
               } finally {
                 reg._busy = false;
                 reg.style.pointerEvents = ''; reg.style.opacity = '';

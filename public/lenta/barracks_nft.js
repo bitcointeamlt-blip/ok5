@@ -875,14 +875,10 @@
         const cur = new Set(ids);
         for (const rid of Array.from(regSnap)) {
           if (!un.inj.has(rid) || un.dead.has(rid) || _gone.has(rid) || cur.has(rid)) continue;
-          if (ids.length >= maxSlots) {
-            // pilna → atlaisvinam vietą išmesdami PASKUTINĮ pending (ne-registruotą) — žaidėjas jį matys 🕓 ir galės pridėti vėliau
-            let dropped = false;
-            for (let k = ids.length - 1; k >= 0; k--) {
-              if (!regSnap.has(String(ids[k]))) { cur.delete(String(ids[k])); ids.splice(k, 1); dropped = true; break; }
-            }
-            if (!dropped) break;   // visi registruoti → nebėra ką išmesti (neturėtų nutikti: injured nebuvo ids'uose)
-          }
+          // 🏥 FIX (07-13, Cydrakke): sužaloti registruoti unitai pildo TIK tuščias slotus — NEBEišstumia
+          //   žaidėjo pačiam pridėtų SVEIKŲ unitų. Anksčiau „drop pending" grąžindavo sužalotus atgal →
+          //   „deck reverts to old unit". Dabar žaidėjo pasirinkimas viršesnis; sužaloti pagijus grįžta į inventorių.
+          if (ids.length >= maxSlots) break;   // pilna žaidėjo unitais → sužalotų NEbepridedam (jie saugūs, pagis→inventorius)
           ids.push(rid); cur.add(rid);
         }
       }
@@ -891,6 +887,15 @@
     if (ids.length > _DECK_HARD_MAX) throw new Error('Deck too big (max ' + _DECK_HARD_MAX + ').');
     // dedup apsauga (kontraktas + backend irgi tikrina, bet nesiunčiam šlamšto)
     if (new Set(ids).size !== ids.length) throw new Error('Duplicate units in deck.');
+
+    // 🛡 NO-OP GUARD (07-13, Cydrakke): jei registruojamas dekas IDENTIŠKAS jau on-chain užregistruotam
+    //   (jokio realaus pakeitimo — pvz. viso deko sužalojimas → K1 re-add grąžina tuos pačius) → NEsiunčiam TX,
+    //   NEnurašom 10 RONKE. Anksčiau žaidėjas mokėdavo už „update", kuris nieko nekeitė.
+    {
+      const _regNow = getRegisteredDeck(addr).map(String);
+      const _same = _regNow.length === ids.length && new Set(_regNow).size === new Set([..._regNow, ...ids.map(String)]).size;
+      if (_regNow.length && _same) { const e = new Error('Deck unchanged — nothing to update (no fee charged).'); e.code = 'NO_CHANGE'; throw e; }
+    }
 
     await ensureNetwork();
 
