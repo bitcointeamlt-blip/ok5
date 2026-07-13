@@ -78,6 +78,7 @@ export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { 
   minePot?: number;   // ⛏️💰 iškastas RONKE (server-authoritative mining pot; tick=cemTick bendras)
   mineField?: number; mineReserve?: number;  // ⛏️ paskutiniai ŽINOMI lauko/rezervo unitų count'ai — offline rate
   //   perskaičiuojamas iš PIRMINIŲ persistintų duomenų (ne įsiminta galutinė rate → mažesnė exploit skylė)
+  dutyMode?: "online" | "safe"; mineGated?: boolean;  // ⚔️🛡 duty režimas + ar safe kasimas užrakintas (lubos→siege)
   mineStolenAt?: number;   // (legacy — client steal signal; nebenaudojamas po server-side steal)
   shieldUntil?: number };   // 🛡 pilis nepuolama iki šio ts (1h po pralaimėtos gynybos)
 
@@ -131,8 +132,10 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const minePot = Number.isFinite(+b.minePot) ? Math.max(0, +b.minePot) : 0;   // ⛏️💰 iškastas RONKE
     const mineField = Number.isFinite(+b.mineField) ? Math.max(0, Math.round(+b.mineField)) : 0;   // ⛏️ lauke
     const mineReserve = Number.isFinite(+b.mineReserve) ? Math.max(0, Math.round(+b.mineReserve)) : 0;   // ⛏️ rezerve
+    const dutyMode: "online" | "safe" = b.dutyMode === "safe" ? "safe" : "online";   // ⚔️🛡 default online
+    const mineGated = !!b.mineGated;   // 🛡 safe kasimas užrakintas iki siege
     const shieldUntil = Number.isFinite(+b.shieldUntil) ? Math.max(0, +b.shieldUntil) : 0;   // 🛡
-    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineField, mineReserve, shieldUntil };
+    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineField, mineReserve, dutyMode, mineGated, shieldUntil };
   } catch (e) { throw (e instanceof Error ? e : new Error("[BaseStore] loadBaseBuildings failed")); }   // 🛡 S-M5: tinklo išimtis = triktis (metam, ne null)
 }
 
