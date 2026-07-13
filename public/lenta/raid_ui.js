@@ -123,7 +123,9 @@
     var me = myAddr();
     rows = (rows || []).filter(function (r) {
       var a = String(r.ronin_address || '').toLowerCase();
-      return a !== me && a.indexOf('#') < 0 && combatReady(r) >= 1;   // be #bones eilučių; be kovai pajėgių gynėjų — nelistinama (L7: sąrašas = gate)
+      if (a === me || a.indexOf('#') >= 0) return false;
+      if (r.buildings && r.buildings.dutyMode === 'safe') return false;   // 🛡 SAFE režimo pilys NEPUOLAMOS (07-13 duty status)
+      return combatReady(r) >= 1;   // be kovai pajėgių gynėjų — nelistinama (L7: sąrašas = gate)
     });
     var cntEl = panel && panel.querySelector('#f9raid-counter');
     if (cntEl) cntEl.textContent = '🏰 ' + rows.length;

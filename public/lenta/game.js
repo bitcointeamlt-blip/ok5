@@ -10341,6 +10341,12 @@ function _f9MineData() {
     reserve: (c && typeof c.reserve === 'number') ? c.reserve : ((window._f9Reserve instanceof Set) ? window._f9Reserve.size : 0),
     fullPower: (c && typeof c.fullPower === 'number') ? c.fullPower : null,   // pilnas registruotas RONKE Power (badge)
     hpower: (c && typeof c.power === 'number') ? c.power : null,              // healthy (combat-ready) power
+    // ⚔️🛡 DUTY STATUS
+    duty: (c && c.duty) || 'online',                       // online | safe
+    gated: !!(c && c.gated),                               // safe pasiekė lubas → kasimas laukia siege
+    dutyMult: (c && typeof c.dutyMult === 'number') ? c.dutyMult : 2,
+    dutyOnlineMult: (c && typeof c.dutyOnlineMult === 'number') ? c.dutyOnlineMult : 2,
+    dutySafeMult: (c && typeof c.dutySafeMult === 'number') ? c.dutySafeMult : 1.2,
   };
 }
 // ⛏️💀 100% pilies wipe → nuima pct (0.5) nuo KLIENTO mining pot. VIENKART per `at` signalą (offline-safe:
@@ -10419,7 +10425,19 @@ function _f9MinePanelStats() {
     body.innerHTML =
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (full ? 'STORAGE FULL (' + d.cap + ')' : 'storage ' + d.cap) + '</div></div>' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.shielded ? '#2a5a8a' : '#3a3a55') + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.eligible ? '#6fcf5c' : '#8a9aaa') + ';">' + (d.eligible ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF') + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power') + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (d.eligible ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (d.eligible ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? 'storage full — siege to resume' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power')) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
+      '</div>' +
+      // ⚔️🛡 DUTY STATUS jungiklis — ON DUTY (greitas + puolamas) / SAFE (lėtas + apsaugotas). Keisti tik ramiuose namuose.
+      '<div style="background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.duty === 'safe' ? '#2a6a74' : '#7a5a1e') + ';border-radius:7px;padding:11px 13px;margin-bottom:10px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;"><span style="font-size:11px;letter-spacing:1px;color:#c9d4e8;">⚔️ DUTY STATUS</span>' +
+          '<span style="flex:1;"></span><span style="font-size:9px;padding:2px 8px;border-radius:4px;background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.2)' : 'rgba(255,207,92,0.18)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#ffcf5c') + ';">' + (d.duty === 'safe' ? '🛡 SAFE' : '🟢 ON DUTY') + '</span></div>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>' + (d.dutyOnlineMult || 2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">raidable · fast</span></button>' +
+          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';">🛡 SAFE<br><b>' + (d.dutySafeMult || 1.2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">protected · caps out</span></button>' +
+        '</div>' +
+        (d.gated ? '<div style="margin-top:9px;font-size:9px;color:#e8a08a;line-height:1.5;background:rgba(232,93,93,0.1);border:1px solid #7a3a3a;border-radius:5px;padding:8px;">🔒 <b>Mining locked</b> — storage is full in SAFE mode. Attack a castle and reach <b>50% casualties</b> (either side) to resume, or switch to 🟢 ON DUTY.</div>'
+          : '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 Nobody can raid you, but mining STOPS at the storage cap until you win a siege.' : '🟢 Faster mining, but your castle is raidable. You keep mining past caps by withdrawing.') + '</div>') +
+        '<div id="f9mine-dutymsg" style="margin-top:6px;font-size:8px;min-height:10px;color:#e8a08a;text-align:center;"></div>' +
       '</div>' +
       // 🛡 skydas — atsigavimo langas (kasimas ×0.5); rankinis REMOVE grąžina pilną kasimą + ekspoziciją
       (d.shielded ? '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;background:rgba(68,170,255,0.1);border:1px solid #2a5a8a;border-radius:6px;padding:9px 12px;"><span style="font-size:16px;">🛡</span><span style="flex:1;font-size:9px;color:#7ab8e8;line-height:1.5;">SHIELDED · mining ×0.5 · ' + Math.max(0, Math.ceil((d.shieldUntil - Date.now()) / 60000)) + 'm left<br><span style="color:#5a7a9a;">Recovery window — heal &amp; rebuild your field, or remove to resume full mining (and exposure).</span></span><button id="f9mine-unshield" style="font-family:inherit;font-size:9px;background:rgba(232,93,93,0.15);color:#e88;border:1px solid #a55;border-radius:5px;padding:7px 10px;cursor:pointer;white-space:nowrap;">REMOVE</button></div>' : '') +
@@ -10463,6 +10481,15 @@ function _f9MineAction(act) {
   else if (act === 'train') { _f9CloseMinePanel(); try { if (window.NFTBarracksModal && window.NFTBarracksModal.open) window.NFTBarracksModal.open(); } catch (_) {} }
 }
 window._f9MineRenderIfOpen = function () { if (_f9MinePanelEl) _f9MinePanelStats(); };
+// ⚔️🛡 DUTY režimo keitimas — siunčiam serveriui; jis validuoja (ne kovoje) + atsako duty_result + cemetery.
+function _f9DutySet(mode) {
+  mode = (mode === 'safe') ? 'safe' : 'online';
+  const cur = (window._f9Cemetery && window._f9Cemetery.duty) || 'online';
+  if (cur === mode) return;   // jau tas režimas
+  const msg = _f9MinePanelEl && _f9MinePanelEl.querySelector('#f9mine-dutymsg');
+  try { if (window.F9PVP && window.F9PVP.room) { window.F9PVP.room.send('duty_set', { mode: mode }); if (msg) { msg.style.color = '#8a9aaa'; msg.textContent = 'Switching…'; } } } catch (_) {}
+}
+window._f9DutySet = _f9DutySet;
 function _f9ToggleMinePanel() {
   if (_f9MinePanelEl) { _f9CloseMinePanel(); return; }
   try { if (window.F9PVP && window.F9PVP.room) { window.F9PVP.room.send('mine_get'); window.F9PVP.room.send('cemetery_get'); } } catch (_) {}   // cemetery_get = eligibility fallback kol mine dar neserveruoja
@@ -10493,7 +10520,13 @@ function _f9ToggleMinePanel() {
     try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('mine_withdraw'); } catch (_) {}
   };
   const bd = el.querySelector('#f9mine-body');
-  if (bd) bd.addEventListener('click', function (ev) { const b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null; if (b && typeof _f9MineAction === 'function') _f9MineAction(b.dataset.act); });
+  if (bd) bd.addEventListener('click', function (ev) {
+    const b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null;
+    if (b && typeof _f9MineAction === 'function') { _f9MineAction(b.dataset.act); return; }
+    // ⚔️🛡 DUTY jungiklis
+    const db = ev.target && ev.target.closest ? ev.target.closest('button[data-duty]') : null;
+    if (db) { _f9DutySet(db.dataset.duty); }
+  });
   _f9MinePanelStats();
   _f9MinePanelTimer = setInterval(_f9MinePanelStats, 400);
 }

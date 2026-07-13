@@ -1082,6 +1082,8 @@
       window._f9Cemetery = { pot: e.pot || 0, rate: e.rate || 0, cap: e.cap || 0, claimMin: e.claimMin || 25, nft: e.nft || 0, reg: e.reg || 0, hosp: e.hosp || 0, rv: e.rv || 0, wallet: e.wallet || 0, eligible: !!e.eligible, rules: e.rules || null, own: e.own !== false,
         onField: (typeof e.onField === 'number' ? e.onField : null), reserve: (typeof e.reserve === 'number' ? e.reserve : null),   // ⚔ kasimo lauko-frakcija
         power: (typeof e.power === 'number' ? e.power : null), fullPower: (typeof e.fullPower === 'number' ? e.fullPower : null),   // healthy / pilnas RP
+        duty: (e.duty === 'safe' ? 'safe' : 'online'), gated: !!e.gated, dutyMult: (typeof e.dutyMult === 'number' ? e.dutyMult : 2),   // ⚔️🛡 DUTY status
+        dutyOnlineMult: (typeof e.dutyOnlineMult === 'number' ? e.dutyOnlineMult : 2), dutySafeMult: (typeof e.dutySafeMult === 'number' ? e.dutySafeMult : 1.2),
         at: Date.now() };
       // ⛏️💰 SERVER-AUTHORITATIVE mining: kai serveris siunčia mpot → nustatom _f9Mine (clientOnly:false → STOJA client accrual)
       try {
@@ -1092,6 +1094,14 @@
       } catch (_) {}
       try { if (typeof window._f9CemRenderIfOpen === 'function') window._f9CemRenderIfOpen(); } catch (_) {}
       try { if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen(); } catch (_) {}
+    });
+    // ⚔️🛡 DUTY keitimo rezultatas — klaida (pvz. kovos metu) rodoma mine panelės žinutėj; sėkmė → cemetery jau atnaujins
+    room.onMessage('duty_result', function (e) {
+      try {
+        var msg = document.getElementById('f9mine-dutymsg');
+        if (!e || !e.ok) { if (msg) { msg.style.color = '#e8a08a'; msg.textContent = (e && e.error) ? e.error : 'Could not change duty'; } }
+        else if (msg) { msg.style.color = '#6fcf5c'; msg.textContent = (e.mode === 'safe' ? '🛡 Now SAFE — protected' : '🟢 Now ON DUTY — 2× mining'); }
+      } catch (_) {}
     });
     room.onMessage('mine_stolen', function (e) {   // ⛏️ 100% wipe → 50% pot pavogta. Gynėjas praranda; puolikas (thief) gauna į savo namų pot.
       try {
@@ -1893,6 +1903,7 @@
         if (em.indexOf('SHIELDED') !== -1) msg = '🛡 Castle is SHIELDED (just raided) — try again in ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('RAID_COOLDOWN') !== -1) msg = '⏲ You raided this castle recently — wait ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('NO_DEFENDERS') !== -1) msg = '💤 Castle inactive — no combat-ready NFT defenders to raid';
+        else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected from raids (they mine slower in exchange).';
         else if (em.indexOf('RAID_FEE') !== -1) {
           // ⚔️💰 fee TX atmestas (panaudotas/pasenęs/nerastas) → išvalom saugotą, kitas bandymas mokės iš naujo
           var _fa = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
