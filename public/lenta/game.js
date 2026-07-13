@@ -41271,24 +41271,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       // ⚰️ 07-11: kapinių klik/UI PAŠALINTA (dabar tik dekoratyvus sprite; pasyvus uždarbis → RONKE kasimas)
-      // 🏥 Ligoninės namukas — klik atidaro/uždaro panelę (prieš unit selekciją)
-      if (window._f9pvpLive && window._f9HospitalBounds) {
+      // 🛡 KOVOS METU (07-13 Cydrakke bug): pastatų panelės (ligoninė/market/kasykla) klik-zonos NEPERIMA
+      //    paspaudimo — visi klikai eina į RTS valdymą (selekcija/ataka/judesys). Kitaip unitas ar priešas
+      //    UŽ pastato nepasiekiamas (klik atidaro panelę vietoj komandos). Kovoje = raidini (__f9RaidActive)
+      //    arba tave puola (yra gyvų priešų lauke). Ramioje pilyje — pastatai klikinami įprastai.
+      let _f9InCombat = !!window.__f9RaidActive;
+      if (!_f9InCombat) { for (const _eu of (S.units || [])) { if (_eu && _eu.alive && typeof _f9IsEnemy === 'function' && _f9IsEnemy(_eu)) { _f9InCombat = true; break; } } }
+      // 🏥 Ligoninės namukas — klik atidaro/uždaro panelę (prieš unit selekciją; TIK ne kovoje)
+      if (!_f9InCombat && window._f9pvpLive && window._f9HospitalBounds) {
         const _hb = window._f9HospitalBounds;
         if (mx >= _hb.x && mx <= _hb.x + _hb.w && my >= _hb.y && my <= _hb.y + _hb.h) {
           if (typeof _f9ToggleHospitalPanel === 'function') _f9ToggleHospitalPanel();
           return;
         }
       }
-      // 🛒 Marketplace namukas — klik atidaro/uždaro market modalą
-      if (window._f9pvpLive && window._f9MarketBounds) {
+      // 🛒 Marketplace namukas — klik atidaro/uždaro market modalą (TIK ne kovoje)
+      if (!_f9InCombat && window._f9pvpLive && window._f9MarketBounds) {
         const _mb = window._f9MarketBounds;
         if (mx >= _mb.x && mx <= _mb.x + _mb.w && my >= _mb.y && my <= _mb.y + _mb.h) {
           if (typeof _f9ToggleMarketPanel === 'function') _f9ToggleMarketPanel();
           return;
         }
       }
-      // ⛏️ Gold-camp = RONKE kasykla — klik atidaro mine panelę (pasyvus RONKE uždarbis; 07-11 user)
-      if (window._f9pvpLive && window._f9GoldCampBounds) {
+      // ⛏️ Gold-camp = RONKE kasykla — klik atidaro mine panelę (TIK ne kovoje)
+      if (!_f9InCombat && window._f9pvpLive && window._f9GoldCampBounds) {
         const _gb = window._f9GoldCampBounds;
         if (mx >= _gb.x && mx <= _gb.x + _gb.w && my >= _gb.y && my <= _gb.y + _gb.h) {
           if (typeof _f9ToggleMinePanel === 'function') _f9ToggleMinePanel();
@@ -41369,7 +41375,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         // 🏰/🏚️ click ant pilies/barakų → NEsiunčiam move (pastato interakcija pirmenybinė; unitas lieka).
-        if (typeof _f9PointOnBuilding === 'function' && _f9PointOnBuilding((tx + 0.5) * CELL, (ty + 0.5) * CELL)) return;
+        //    🛡 BET ne kovoje — kovos metu judesys link/šalia pilies turi veikti (07-13 Cydrakke bug).
+        if (!_f9InCombat && typeof _f9PointOnBuilding === 'function' && _f9PointOnBuilding((tx + 0.5) * CELL, (ty + 0.5) * CELL)) return;
         if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
           _f9QueueMoveCommand(_f9CommandableSelection(true), tx, ty, false);
         } else {
