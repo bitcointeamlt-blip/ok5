@@ -48,25 +48,37 @@ export async function chainDeck(address: string): Promise<Set<string> | null> {
     try {
       const prov = getProv();
       const rp = new ethers.Contract(RONKE_POWER, ["function getDeck(address) view returns (uint256[])"], prov);
-      const ids: string[] = (await rp.getDeck(addr)).map((x: any) => String(x));
-      const set = new Set(ids);
+      let ids: string[] = (await rp.getDeck(addr)).map((x: any) => String(x));
       const stats = new Map<string, ChainUnit>();
-      // 🔐 LYGIŲ TIESA: getUnitFullData(tokenId) → (utype,xp,level,...) per Multicall3 (1 eth_call visiems).
+      // 🔐 LYGIŲ TIESA + 🚮 NUOSAVYBĖ (07-13, Cydrakke bug): getUnitFullData(tokenId) → utype/level IR
+      //   ownerOf(tokenId) — abu per Multicall3 (1 eth_call). Perkeltas/parduotas unitas (owner != addr) ar
+      //   sudegintas (ownerOf revert) IŠMETAMAS iš registruoto deko → nebegina senos pilies, nesiskaito power'ui.
+      //   Fail-OPEN per-token: jei ownerOf call nepavyko (RPC glitch), tokeną PALIEKAM (nekaltiname legit gynėjų).
       if (ids.length) {
         try {
-          const iface = new ethers.Interface(["function getUnitFullData(uint256) view returns (uint8 utype,uint32 xp,uint16 level,uint16 battles,uint16 wins,uint32 kills,uint32 mintedAt,uint32 lastBattleAt)"]);
+          const fdIface = new ethers.Interface(["function getUnitFullData(uint256) view returns (uint8 utype,uint32 xp,uint16 level,uint16 battles,uint16 wins,uint32 kills,uint32 mintedAt,uint32 lastBattleAt)"]);
+          const owIface = new ethers.Interface(["function ownerOf(uint256) view returns (address)"]);
           const mc = new ethers.Contract(MULTICALL3, ["function tryAggregate(bool,(address,bytes)[]) view returns ((bool,bytes)[])"], prov);
-          const calls = ids.map((id) => [BARRACKS, iface.encodeFunctionData("getUnitFullData", [id])]);
+          const calls: any[] = [];
+          for (const id of ids) { calls.push([BARRACKS, fdIface.encodeFunctionData("getUnitFullData", [id])]); calls.push([BARRACKS, owIface.encodeFunctionData("ownerOf", [id])]); }
           const res: any[] = await mc.tryAggregate(false, calls);
-          res.forEach((r, i) => {
-            try {
-              if (!r[0]) return;   // success flag
-              const d = iface.decodeFunctionResult("getUnitFullData", r[1]);
-              stats.set(ids[i], { utype: Number(d[0]), level: Number(d[2]) });
-            } catch (_) {}
+          const kept: string[] = [];
+          ids.forEach((id, i) => {
+            const fd = res[2 * i], ow = res[2 * i + 1];
+            // ownerOf: success + adresas != addr → PARDUOTA/PERKELTA → išmetam. Revert (ow[0]==false) → burned → išmetam.
+            //   Bet jei ownerOf call'as visai nepateiktas (undefined) → RPC glitch → paliekam (fail-open).
+            if (ow !== undefined) {
+              if (!ow[0]) return;   // revert = burned → drop
+              try { const owner = ("0x" + String(owIface.decodeFunctionResult("ownerOf", ow[1])[0]).slice(2)).toLowerCase(); if (owner !== addr) return; } catch (_) { /* decode fail → fail-open, paliekam */ }
+            }
+            kept.push(id);
+            try { if (fd && fd[0]) { const d = fdIface.decodeFunctionResult("getUnitFullData", fd[1]); stats.set(id, { utype: Number(d[0]), level: Number(d[2]) }); } } catch (_) {}
           });
-        } catch (e: any) { console.warn("[DeckChain] getUnitFullData multicall fail:", e?.message); }
+          if (kept.length !== ids.length) console.log(`[DeckChain] 🚮 ${ids.length - kept.length} nenuosav./sudegint. tokenų išmesta iš deko (${addr.slice(0, 10)}…)`);
+          ids = kept;
+        } catch (e: any) { console.warn("[DeckChain] fullData+ownerOf multicall fail:", e?.message); }
       }
+      const set = new Set(ids);
       _cache.set(addr, { ids: set, stats, at: Date.now() });
       return { ids: set, stats };
     } catch (e: any) {
