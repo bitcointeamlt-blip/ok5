@@ -226,7 +226,7 @@ const DUTY_ONLINE_CAP = Number(process.env.F9_DUTY_ONLINE_CAP) || 350;
 const DUTY_SAFE_CAP = Number(process.env.F9_DUTY_SAFE_CAP) || 250;
 // ⛏️ RONKE Power „knee" (07-13 user): pirmi 250 power = pilna 0.1/h, VIRŠ 250 = perpus (0.05/h) iki whale cap.
 const MINE_POWER_KNEE = Number(process.env.F9_MINE_POWER_KNEE) || 250;
-const MINE_POWER_KNEE_MULT = Number(process.env.F9_MINE_POWER_KNEE_MULT) || 0.5;
+const MINE_POWER_KNEE_MULT = Number(process.env.F9_MINE_POWER_KNEE_MULT) || 0.25;   // 07-13 user: 0.5→0.25 (virš 250 power augimas dar perpus mažesnis)
 const RONKEVERSE_ADDR = "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
 const BARRACKS_ADDR = "0xccf604511c5d2b5c3fd61adfba3950d0d2890862";
 const RONIN_RPC = process.env.RONIN_RPC || "https://ronin.drpc.org";   // drpc — stabilus (api.roninchain flaky)
