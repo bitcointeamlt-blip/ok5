@@ -212,7 +212,7 @@ const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h ba
 const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.1;   // +RONKE/h už RonkePower tašką
 const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
 const MINE_CAP = Number(process.env.F9_MINE_CAP) || 1000;          // sandėlio lubos (RONKE; 07-12 user 5000→1000)
-const MINE_CLAIM_MIN = Number(process.env.F9_MINE_CLAIM) || 500;   // withdraw slenkstis
+const MINE_CLAIM_MIN = Number(process.env.F9_MINE_CLAIM) || 200;   // withdraw slenkstis (07-13: 500→200, nes lubos dabar 250/350 < 500)
 const MINE_SUCCESS = Number(process.env.F9_MINE_SUCCESS) || 0.5;   // sėkmės tikimybė (0.5 → 2× lėčiau; fail vidurkinamas rate'e)
 const MINE_STEAL_PCT = 0.5;                                        // 100% wipe → puolikas „pavogia" 50% pot (defender praranda)
 // ⚔️🛡 DUTY STATUS (07-13 user): žaidėjas pasirenka režimą. ON DUTY = 2× kasimas + puolamas; SAFE = 1.2× +
@@ -221,6 +221,12 @@ const MINE_STEAL_PCT = 0.5;                                        // 100% wipe 
 const DUTY_ONLINE_MULT = Number(process.env.F9_DUTY_ONLINE_MULT) || 2.0;
 const DUTY_SAFE_MULT = Number(process.env.F9_DUTY_SAFE_MULT) || 1.2;
 const DUTY_SIEGE_CASUALTY = Number(process.env.F9_DUTY_SIEGE_CASUALTY) || 0.5;   // ≥50% aukų bet kurioj pusėj → siege užskaitytas
+// ⛏️🛡 Sandėlio lubos per DUTY režimą (07-13 user): SAFE 250, ON DUTY 350 (buvo bendra 1000).
+const DUTY_ONLINE_CAP = Number(process.env.F9_DUTY_ONLINE_CAP) || 350;
+const DUTY_SAFE_CAP = Number(process.env.F9_DUTY_SAFE_CAP) || 250;
+// ⛏️ RONKE Power „knee" (07-13 user): pirmi 250 power = pilna 0.1/h, VIRŠ 250 = perpus (0.05/h) iki whale cap.
+const MINE_POWER_KNEE = Number(process.env.F9_MINE_POWER_KNEE) || 250;
+const MINE_POWER_KNEE_MULT = Number(process.env.F9_MINE_POWER_KNEE_MULT) || 0.5;
 const RONKEVERSE_ADDR = "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
 const BARRACKS_ADDR = "0xccf604511c5d2b5c3fd61adfba3950d0d2890862";
 const RONIN_RPC = process.env.RONIN_RPC || "https://ronin.drpc.org";   // drpc — stabilus (api.roninchain flaky)
@@ -1713,6 +1719,18 @@ export class F9PvpRoom extends Room<F9State> {
   //   Skaičiuojama iš PIRMINIŲ duomenų (power/eligibility/injured/shield — visi persistinti), o lauko/rezervo
   //   count'ai paduodami parametrais: gyvi (_fieldCounts) sesijoj arba persistinti (c.mfield/mres) offline —
   //   taip offline rate pats save koreguoja (gyjantys unitai, pasibaigęs skydas) ir nėra „užšaldytos rate" exploit'o.
+  // ⛏️🛡 Sandėlio luba pagal DUTY režimą (SAFE 250 / ON DUTY 350).
+  private _mineCap(addr: string): number {
+    const c = this._cem.get((addr || "").trim().toLowerCase());
+    return (c && c.duty === "safe") ? DUTY_SAFE_CAP : DUTY_ONLINE_CAP;
+  }
+  // ⛏️ RONKE Power → RONKE/h su „knee": pirmi 250 power ×0.1, virš 250 ×0.05 (iki whale cap 4000).
+  private _minePowerTerm(hl: number): number {
+    const capped = Math.min(hl, MINE_POW_CAP);
+    const below = Math.min(capped, MINE_POWER_KNEE) * MINE_POWER_H;
+    const above = Math.max(0, capped - MINE_POWER_KNEE) * MINE_POWER_H * MINE_POWER_KNEE_MULT;
+    return below + above;
+  }
   private _mineRateFrom(addr: string, onField: number, reserve: number): number {
     if (!this._cemEligible(addr)) return 0;
     const c = this._cem.get((addr || "").trim().toLowerCase());
@@ -1721,7 +1739,7 @@ export class F9PvpRoom extends Room<F9State> {
     const hl = this._cemHealthy(addr).power;
     const reg = onField + reserve;
     const frac = reg > 0 ? onField / reg : (onField > 0 ? 1 : 0);
-    const powerTerm = Math.min(hl, MINE_POW_CAP) * MINE_POWER_H;
+    const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250
     const raw = (frac > 0 ? MINE_BASE_H : 0) + powerTerm * frac;   // 0 lauke → 0
     const shielded = addr === this._ownerAddr && (Number((this._buildings as any)?.shieldUntil) || 0) > Date.now();
     const dutyMult = (c && c.duty === "safe") ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT;   // ⚔️ online 2× / safe 1.2×
@@ -1750,12 +1768,13 @@ export class F9PvpRoom extends Room<F9State> {
     this._pruneHosp(addr);   // pasveikę grįžta į rikiuotę → jų power vėl skaičiuojasi
     const now = Date.now();
     const mrate = this._mineRateStored(addr);
+    const _cap = this._mineCap(addr);   // ⛏️🛡 per-mode luba (SAFE 250 / DUTY 350)
     if (mrate > 0 && c.tick > 0 && now > c.tick) {
-      c.mpot = Math.min(MINE_CAP, (c.mpot || 0) + mrate * (now - c.tick) / 3600000);
+      c.mpot = Math.min(_cap, (c.mpot || 0) + mrate * (now - c.tick) / 3600000);
       c.mpot = Math.round(c.mpot * 1000) / 1000;
     }
     // ⚔️🛡 SAFE režimas pasiekęs lubas → gated=true (kasimas sustoja iki siege). Online — nesustoja.
-    if (c.duty === "safe" && !c.gated && (c.mpot || 0) >= MINE_CAP - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🛡 safe kasimas STOP (lubos ${MINE_CAP}) — ${addr.slice(0, 10)}… reikia siege`); }
+    if (c.duty === "safe" && !c.gated && (c.mpot || 0) >= _cap - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🛡 safe kasimas STOP (lubos ${_cap}) — ${addr.slice(0, 10)}… reikia siege`); }
     c.tick = now;
     if (this.state.phase === "playing") {
       let present = false;
@@ -1776,7 +1795,7 @@ export class F9PvpRoom extends Room<F9State> {
         if (used === false) {   // TX NEnusėdo → RE-CREDIT pot (RONKE realiai negautas)
           await this._loadCem(addr);
           const c = this._cem.get(addr);
-          if (c) { c.mpot = Math.round(Math.min(MINE_CAP, (c.mpot || 0) + pend.amt) * 1000) / 1000; this._persistCem(addr); }
+          if (c) { c.mpot = Math.round(Math.min(this._mineCap(addr), (c.mpot || 0) + pend.amt) * 1000) / 1000; this._persistCem(addr); }
           console.log(`[F9PvpRoom] ⛏️↩️ withdraw NEnusėdo → re-credit ${pend.amt} RONKE ${addr.slice(0, 10)}…`);
         } else if (used === null) { this._minePend.set(addr, pend); }   // RPC nepavyko → grąžinam, bandom vėliau
         // used === true → nusėdo, pot lieka nurašytas
@@ -1805,7 +1824,7 @@ export class F9PvpRoom extends Room<F9State> {
       onField: onFieldN, reserve: reserveN,      // ⚔ kasimo lauko-frakcijai (patikimas šaltinis vietoj _f9OnField globalo)
       power: Math.round(hl.power), fullPower: Math.round(c.power),   // healthy (kasimo bazė) + pilnas registruotas RP (rodymui)
       // ⛏️💰 SERVER-AUTHORITATIVE mining (klientas nustato window._f9Mine → nustoja client accrual):
-      mpot: Math.round((c.mpot || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: MINE_CAP, mclaim: MINE_CLAIM_MIN, mwd: mineWithdrawEnabled(),   // mwd = withdrawal ĮJUNGTAS (signer key env'e); mrate = TA PATI stored-rate kurią naudoja accrual (sąžiningas UI)
+      mpot: Math.round((c.mpot || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), mclaim: MINE_CLAIM_MIN, mwd: mineWithdrawEnabled(),   // mcap = per-mode luba; mrate = TA PATI stored-rate kurią naudoja accrual
       // ⚔️🛡 DUTY STATUS: klientas rodo režimo jungiklį + greitį + „locked → siege" būseną
       duty: c.duty || "online", gated: !!c.gated, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
@@ -2357,7 +2376,8 @@ export class F9PvpRoom extends Room<F9State> {
               if (steal > 0) {
                 await this._buildingsOp(wAddr, (b) => {
                   const cur = Number.isFinite(+((b as any).minePot)) ? Math.max(0, +((b as any).minePot)) : 0;
-                  (b as any).minePot = Math.round(Math.min(MINE_CAP, cur + steal) * 1000) / 1000;
+                  const _wcap = ((b as any).dutyMode === "safe") ? DUTY_SAFE_CAP : DUTY_ONLINE_CAP;   // puoliko per-mode luba
+                  (b as any).minePot = Math.round(Math.min(_wcap, cur + steal) * 1000) / 1000;
                 });
               }
               this.broadcast("mine_stolen", { amount: steal, thiefSid: winnerSid, victimAddr: this._ownerAddr });   // FX/notif abiem pusėm (thief=+ / defender=−)
