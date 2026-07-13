@@ -170,11 +170,12 @@ const TP_CD_MS = 10000;      // 10s cooldown — tas PATS unitas tiek negali gr�
 //    išėjo iš zonos (įsitraukė) — kitaip spawninus iškart skaičiuotų.
 const RETREAT_ZONE = { x0: 2, y0: 8, x1: 10, y1: 16 };    // 8×8 kvadratas toli vakaruose (centras 6,12); spawn x=16 → retreatui vesti unitus atgal
 const RETREAT_MS = 15000;    // 15s palaikyti visus zonoj → atsitraukia
-// 🏥 LIGONINĖ — NFT unitas krito home/raid kambaryje: 90% SUŽALOTAS / 10% tikra mirtis
-//   (design 06-27: 10%death/90%injury→rotacija). Dev tokenId ('dev0'…) neliečiami.
+// 🏥 LIGONINĖ — NFT unitas krito home/raid kambaryje: 100% SUŽALOTAS (07-13 user: permadeath IŠJUNGTA,
+//   buvo 90/10 — žaidėjai gali testuoti/raidinti be baimės prarasti unitus; deadUnits infrastruktūra
+//   lieka — įjungiama atgal env'u arba grąžinus default <1). Dev tokenId ('dev0'…) neliečiami.
 //   EILĖS MODELIS (v2, user 2026-07-03): gydosi TIK VIENAS unitas (HEAL_MS=1h), kiti LAUKIA eilėje;
 //   žaidėjas gali pasirinkti, kurį gydyti pirmą ('hospital_heal_first' → perkeliamas į priekį, gydymas nuo 0).
-const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Number(process.env.F9_INJURY_CHANCE) : 0.90;   // env — testams (0=visada mirtis)
+const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Number(process.env.F9_INJURY_CHANCE) : 1.0;   // env — testams (0=visada mirtis)
 const HEAL_MS = Number(process.env.F9_HEAL_MS) || 3600 * 1000;   // 1h / unitą (env override testams)
 // 🏥 LIGONINĖS LYGIAI (user 07-04): L2 +1 slotas; L3/L4 −10min gydymui; L5 3-ias slotas.
 const HOSP_MAX_LVL = 5;

@@ -14,7 +14,8 @@
   function shortAddr(a) { a = String(a || ''); return a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : a; }
 
   function fetchCastles() {
-    var url = SUPABASE_URL + '/rest/v1/f9_bases?select=ronin_address,power,units,buildings,updated_at&order=updated_at.desc&limit=60';
+    // 07-12 user: ilgesnis sąrašas jei yra ką rodyti (limit 60→200; aukštį valdo panelės 86vh + scroll)
+    var url = SUPABASE_URL + '/rest/v1/f9_bases?select=ronin_address,power,units,buildings,updated_at&order=updated_at.desc&limit=200';
     return fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } })
       .then(function (r) { return r.ok ? r.json() : []; })
       .catch(function () { return []; });
@@ -35,6 +36,7 @@
   // 🏆 TROPHY stilius (07-03, kaip hospital/cemetery/bone bank): overlay+blur, navy gradientas,
   //    auksinis rėmas su glow, „Press Start 2P", klik šalia = uždaro.
   var overlay = null;
+  var _refreshTimer = null;   // 🔄 15s sąrašo auto-refresh (valomas closePanel)
   function openPanel() {
     closePanel();
     overlay = document.createElement('div');
@@ -44,7 +46,7 @@
     panel.id = 'f9-raid-panel';
     panel.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
       'box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;' +
-      'padding:18px 22px;width:460px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;' +
+      'padding:18px 22px;width:460px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column;' +
       "font-family:'Press Start 2P',monospace,sans-serif;font-size:10px;line-height:1.5;color:#8a9aaa;";
     panel.innerHTML =
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
@@ -69,6 +71,20 @@
       if (a) doRaid(a);
     };
     fetchCastles().then(renderList);
+    // 🔄 07-12 user: auto-refresh kas 15s kol panelė atidaryta — gynėjas galėjo grįžti online / atsirasti
+    //   skydas / pasikeisti potas. Scroll pozicija išsaugoma. Susidūrimų serveris vis tiek išsprendžia
+    //   join metu (SHIELDED/CD re-check; fee TX atmetus NEsudeginamas).
+    if (_refreshTimer) clearInterval(_refreshTimer);
+    _refreshTimer = setInterval(function () {
+      if (!panel || !document.body.contains(panel)) { clearInterval(_refreshTimer); _refreshTimer = null; return; }
+      fetchCastles().then(function (rows) {
+        if (!panel) return;
+        var list = panel.querySelector('#f9raid-list');
+        var st = list ? list.scrollTop : 0;
+        renderList(rows);
+        if (list) list.scrollTop = st;
+      });
+    }, 15000);
   }
 
   // ⛏️ VIEŠAS pilies RONKE kasimo potas (07-12 ekonomikos redizainas: pasyvus uždarbis = RONKE mining,
@@ -158,6 +174,7 @@
   }
 
   function closePanel() {
+    if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
     if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
     else if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
     overlay = null; panel = null;
