@@ -1089,7 +1089,7 @@
       try {
         if (e.own !== false && typeof e.mpot === 'number') {
           var _ma = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) ? String(window.Wallet.getAddress()).toLowerCase() : '_guest';
-          window._f9Mine = { pot: e.mpot, rate: (typeof e.mrate === 'number' ? e.mrate : 0), cap: (e.mcap || 5000), claimMin: (e.mclaim || 500), mwd: !!e.mwd, clientOnly: false, _addr: _ma, at: Date.now() };
+          window._f9Mine = { pot: e.mpot, rate: (typeof e.mrate === 'number' ? e.mrate : 0), cap: (e.mcap || 200), siegeStep: (e.msiege || 200), claimMin: (e.mclaim || 500), mwd: !!e.mwd, clientOnly: false, _addr: _ma, at: Date.now() };
         }
       } catch (_) {}
       try { if (typeof window._f9CemRenderIfOpen === 'function') window._f9CemRenderIfOpen(); } catch (_) {}

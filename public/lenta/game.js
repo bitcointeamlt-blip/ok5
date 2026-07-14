@@ -10324,10 +10324,11 @@ function _f9MineData() {
   const el = (k, def) => (m && m[k] != null ? +m[k] : (c[k] != null ? +c[k] : def));   // eligibility laukai
   const authoritative = !!(m && m.clientOnly !== true);   // serverio mine (ne kliento estimate) → withdraw galima
   return {
-    pot:  (m && m.pot  != null) ? +m.pot  : 0,        // RONKE (client estimate ARBA serveris)
+    pot:  (m && m.pot  != null) ? +m.pot  : 0,        // ⛏️ iškastas RONKE (client estimate ARBA serveris)
     rate: (m && m.rate != null) ? +m.rate : 0,        // RONKE/h
-    cap:  (m && m.cap  != null) ? +m.cap  : _F9_MINE_CAP,
-    claimMin: (m && m.claimMin != null) ? +m.claimMin : _F9_MINE_CLAIM,
+    cap:  (m && m.cap  != null) ? +m.cap  : _F9_MINE_CAP,   // ⛏️🗡 dabartinis siege checkpoint (pot čia stoja)
+    siegeStep: (m && m.siegeStep != null) ? +m.siegeStep : 200,   // 🗡 kas kiek reikia mūšio (200)
+    claimMin: (m && m.claimMin != null) ? +m.claimMin : _F9_MINE_CLAIM,   // 💸 withdraw slenkstis (500)
     nft: el('nft', 0), reg: el('reg', 0), hosp: el('hosp', 0), rv: el('rv', 0), wallet: el('wallet', 0),
     eligible: (m && m.eligible != null) ? !!m.eligible : !!c.eligible,   // eligibility iš cemetery kol serverio mine dar nėra
     rules: (m && m.rules) || c.rules || { aRv: 1, aReg: 10, bReg: 12, bWallet: 69 },
@@ -10399,6 +10400,7 @@ function _f9MinePanelStats() {
   const full = d.cap > 0 && est >= d.cap - 0.5;
   const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
   const cm = d.claimMin || 500;
+  const step = d.siegeStep || 200;   // 🗡 kas kiek RONKE reikia PvP mūšio
   const hospHint = (d.hosp || 0) > 0 ? ' <span style="color:#e08a4a;">(' + d.hosp + ' in hospital)</span>' : '';
   // reikalavimo eilutė: ✓/○ + tekstas + cur/need; jei NEĮVYKDYTA → aiški veiksmų eilutė žemiau (kaip įsigyti)
   const req = (met, txt, cur, need, fixBtns) =>
@@ -10424,19 +10426,19 @@ function _f9MinePanelStats() {
   if (body) {
     body.innerHTML =
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (full ? 'STORAGE FULL (' + d.cap + ')' : 'storage ' + d.cap) + '</div></div>' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (d.eligible ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (d.eligible ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? 'storage full — siege to resume' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power')) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (full ? '🗡 SIEGE REQUIRED' : 'next siege @ ' + d.cap) + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (d.eligible ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (d.eligible ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power')) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
       '</div>' +
       // ⚔️🛡 DUTY STATUS jungiklis — ON DUTY (greitas + puolamas) / SAFE (lėtas + apsaugotas). Keisti tik ramiuose namuose.
       '<div style="background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.duty === 'safe' ? '#2a6a74' : '#7a5a1e') + ';border-radius:7px;padding:11px 13px;margin-bottom:10px;">' +
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;"><span style="font-size:11px;letter-spacing:1px;color:#c9d4e8;">⚔️ DUTY STATUS</span>' +
           '<span style="flex:1;"></span><span style="font-size:9px;padding:2px 8px;border-radius:4px;background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.2)' : 'rgba(255,207,92,0.18)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#ffcf5c') + ';">' + (d.duty === 'safe' ? '🛡 SAFE' : '🟢 ON DUTY') + '</span></div>' +
         '<div style="display:flex;gap:8px;">' +
-          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>' + (d.dutyOnlineMult || 2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">raidable · fast</span></button>' +
-          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';">🛡 SAFE<br><b>' + (d.dutySafeMult || 1.2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">protected · caps out</span></button>' +
+          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>' + (d.dutyOnlineMult || 2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">raidable · raids = your siege</span></button>' +
+          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';">🛡 SAFE<br><b>' + (d.dutySafeMult || 1.2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">protected · you attack to unlock</span></button>' +
         '</div>' +
-        (d.gated ? '<div style="margin-top:9px;font-size:9px;color:#e8a08a;line-height:1.5;background:rgba(232,93,93,0.1);border:1px solid #7a3a3a;border-radius:5px;padding:8px;">🔒 <b>Mining locked</b> — storage is full in SAFE mode. Attack a castle and reach <b>50% casualties</b> (either side) to resume, or switch to 🟢 ON DUTY.</div>'
-          : '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 Nobody can raid you, but mining STOPS at the storage cap until you win a siege.' : '🟢 Faster mining, but your castle is raidable. You keep mining past caps by withdrawing.') + '</div>') +
+        (d.gated ? '<div style="margin-top:9px;font-size:9px;color:#e8a08a;line-height:1.5;background:rgba(232,93,93,0.1);border:1px solid #7a3a3a;border-radius:5px;padding:8px;">🔒 <b>Mining paused</b> — you hit your siege checkpoint. Win <b>one PvP match</b> (either side reaches <b>50% casualties</b>) to mine the next ' + step + ' RONKE. ' + (d.duty === 'safe' ? 'Go attack a castle.' : 'Attack a castle — or a raid on you counts too.') + '</div>'
+          : '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 Nobody can raid you — but mining PAUSES every ' + step + ' RONKE until you win a PvP match (you go attack).' : '🟢 Faster mining + raidable. Mining also pauses every ' + step + ' RONKE until a PvP match — but raids on you count as your match.') + '</div>') +
         '<div id="f9mine-dutymsg" style="margin-top:6px;font-size:8px;min-height:10px;color:#e8a08a;text-align:center;"></div>' +
       '</div>' +
       // 🛡 skydas — atsigavimo langas (kasimas ×0.5); rankinis REMOVE grąžina pilną kasimą + ekspoziciją
@@ -10448,7 +10450,7 @@ function _f9MinePanelStats() {
       card(bOk, 'PATH B', req(bReg, 'Combat-ready units' + hospHint, d.nft || 0, R.bReg, unitsBtns) + req(bWal, 'Units in wallet', d.wallet || 0, R.bWallet, unitsBtns)) +
       '<div style="margin:13px 0 4px;"><div style="display:flex;justify-content:space-between;font-size:9px;color:' + (ready ? '#6fcf5c' : '#8a9aaa') + ';margin-bottom:5px;"><span>' + (ready ? '✓ READY TO WITHDRAW' : 'WITHDRAW UNLOCKS AT ' + cm + ' RONKE') + '</span><span>' + est.toFixed(0) + ' / ' + cm + '</span></div>' +
         '<div style="height:13px;background:#0a0c18;border:1px solid #3a3a55;border-radius:6px;overflow:hidden;"><div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:' + (ready ? 'linear-gradient(90deg,#4a9a3a,#6fcf5c)' : 'linear-gradient(90deg,#d49a2a,#ffcf5c)') + ';box-shadow:0 0 8px ' + (ready ? 'rgba(111,207,92,0.6)' : 'rgba(255,207,92,0.6)') + ';"></div></div></div>' +
-      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">⚠ Raiders steal 50% of un-withdrawn RONKE if they defeat you. Withdraw to your wallet at ' + cm + '+.</div>' +
+      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 SAFE — nobody can raid your mined RONKE. It just pauses every ' + step + ' until a PvP match.' : '⚠ DUTY — raiders steal 50% of un-withdrawn RONKE if they beat you.') + ' Withdraw to your wallet at ' + cm + '+.</div>' +
       '<div id="f9mine-wdmsg" style="margin-top:8px;font-size:9px;line-height:1.5;color:#7cff6e;letter-spacing:0.3px;text-align:center;">' + (_f9MineWdMsg || '') + '</div>';
   }
   const ub = _f9MinePanelEl.querySelector('#f9mine-unshield');
