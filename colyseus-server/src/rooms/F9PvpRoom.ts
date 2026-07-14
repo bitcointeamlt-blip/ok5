@@ -209,7 +209,7 @@ const CEM_REQ_A_RV = 1, CEM_REQ_A_REG = 10, CEM_REQ_B_REG = 12, CEM_REQ_B_WALLET
 // ⛏️💰 RONKE MINING (07-11 server-authoritative) — PRIVALO sutapti su klientu game.js (_F9_MINE_*).
 //   Rate = (base + healthyPower×powerH × lauko-frakcija) × shield × success(fail vidurkis). Passive bones IŠJUNGTA.
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
-const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.1;   // +RONKE/h už RonkePower tašką
+const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.05;  // +RONKE/h už RonkePower tašką (07-14 user: 0.1→0.05, bazė 10/6 lieka)
 const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
 const MINE_CAP = Number(process.env.F9_MINE_CAP) || 1000;          // sandėlio lubos (RONKE; 07-12 user 5000→1000)
 const MINE_CLAIM_MIN = Number(process.env.F9_MINE_CLAIM) || 200;   // withdraw slenkstis (07-13: 500→200, nes lubos dabar 250/350 < 500)
