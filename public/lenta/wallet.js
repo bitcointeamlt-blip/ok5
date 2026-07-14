@@ -1454,6 +1454,74 @@
   }
   function marketReady() { return !!_marketCfg().market; }
 
+  // ════════════════ 💰 UNIT OFFERS (PewPewOffers) — pasiūlyk SAVO kainą už unitą ════════════════
+  //   Kompanionas marketui: RONKE escrow offerio momentu; pardavėjui accept'inus mainai atomiški.
+  //   Jei unitas LISTINTAS (NFT market escrow'e) — UI pirma marketCancel, tada offersAccept.
+  //   Žaidėjas pats moka gas (PoD). ABI == PewPewOffers.sol.
+  function _offersCfg() {
+    const c = (typeof window !== 'undefined' && window._F9_OFFERS) || {};
+    const m = _marketCfg();
+    return { offers: (c.address || '').toLowerCase(), nft: m.nft, ronke: m.ronke };
+  }
+  const _OFFERS_ABI = [
+    { type: 'function', name: 'makeOffer', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'amount', type: 'uint256' }], outputs: [] },
+    { type: 'function', name: 'cancelOffer', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [] },
+    { type: 'function', name: 'acceptOffer', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'offerer', type: 'address' }, { name: 'minAmount', type: 'uint256' }], outputs: [] },
+    { type: 'function', name: 'getOffers', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'address[]' }, { type: 'uint256[]' }] },
+    { type: 'function', name: 'getTokensWithOffers', stateMutability: 'view', inputs: [{ name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }], outputs: [{ type: 'uint256[]' }, { type: 'uint256[]' }, { type: 'uint256[]' }] },
+  ];
+  // OFFER: (approve RONKE jei reikia) → makeOffer(tokenId, amount). Pakartotinis = pakeičia seną (refund).
+  async function offersMake(tokenId, amountRonke) {
+    const cfg = _offersCfg();
+    if (!cfg.offers) throw new Error('Offers not deployed yet');
+    const from = state.address; if (!from) throw new Error('Connect wallet');
+    const amount = BigInt(Math.floor(Number(amountRonke))) * _MKT_1E18;
+    if (amount <= 0n) throw new Error('Enter an amount');
+    const alwRes = await _mRead(cfg.ronke, await _mEnc('allowance', _ERC20_MKT_ABI, [from, cfg.offers]));
+    if ((alwRes ? BigInt(alwRes) : 0n) < amount) await _marketSend(cfg.ronke, await _mEnc('approve', _ERC20_MKT_ABI, [cfg.offers, amount]));
+    return _marketSend(cfg.offers, await _mEnc('makeOffer', _OFFERS_ABI, [BigInt(tokenId), amount]),
+      { 'own unit': "It's your own unit", 'too many offers': 'Offer limit reached for this unit', 'balance': 'Not enough RONKE', 'no token': 'Unit does not exist' });
+  }
+  async function offersCancel(tokenId) {
+    const cfg = _offersCfg();
+    if (!cfg.offers) throw new Error('Offers not deployed yet');
+    return _marketSend(cfg.offers, await _mEnc('cancelOffer', _OFFERS_ABI, [BigInt(tokenId)]), { 'no offer': 'No active offer' });
+  }
+  // ACCEPT: (approve NFT jei reikia) → acceptOffer(tokenId, offerer, minAmount=offerio suma — front-run guard).
+  async function offersAccept(tokenId, offerer, minAmountWei) {
+    const cfg = _offersCfg();
+    if (!cfg.offers) throw new Error('Offers not deployed yet');
+    const from = state.address; if (!from) throw new Error('Connect wallet');
+    const appRes = await _mRead(cfg.nft, await _mEnc('isApprovedForAll', _ERC721_MKT_ABI, [from, cfg.offers]));
+    if (!(appRes && BigInt(appRes) === 1n)) await _marketSend(cfg.nft, await _mEnc('setApprovalForAll', _ERC721_MKT_ABI, [cfg.offers, true]));
+    return _marketSend(cfg.offers, await _mEnc('acceptOffer', _OFFERS_ABI, [BigInt(tokenId), offerer, BigInt(minAmountWei || 0)]),
+      { 'not unit owner': 'Unit is listed — cancel the listing first', 'offer below min': 'Offer changed — refresh', 'no offer': 'Offer was cancelled', 'self accept': "Can't accept your own offer" });
+  }
+  // READ: visi offeriai už tokeną → [{offerer, amountWei, amountRonke}] (didžiausi viršuje)
+  async function offersGetForToken(tokenId) {
+    const cfg = _offersCfg();
+    if (!cfg.offers) return [];
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const res = await _mRead(cfg.offers, await _mEnc('getOffers', _OFFERS_ABI, [BigInt(tokenId)]));
+    const dec = _viemModule.decodeFunctionResult({ abi: _OFFERS_ABI, functionName: 'getOffers', data: res });
+    const who = dec[0], amts = dec[1], out = [];
+    for (let i = 0; i < who.length; i++) out.push({ offerer: who[i], amountWei: amts[i].toString(), amountRonke: Number(amts[i] / _MKT_1E18) });
+    out.sort(function (a, b) { return b.amountRonke - a.amountRonke; });
+    return out;
+  }
+  // READ: tokenai su offeriais (seller discovery) → { tokenId: {count, bestWei, bestRonke} }
+  async function offersGetTokens(offset, limit) {
+    const cfg = _offersCfg();
+    if (!cfg.offers) return {};
+    if (!_viemModule) _viemModule = await import(/* @vite-ignore */ VIEM_CDN);
+    const res = await _mRead(cfg.offers, await _mEnc('getTokensWithOffers', _OFFERS_ABI, [BigInt(offset || 0), BigInt(limit || 200)]));
+    const dec = _viemModule.decodeFunctionResult({ abi: _OFFERS_ABI, functionName: 'getTokensWithOffers', data: res });
+    const ids = dec[0], counts = dec[1], best = dec[2], out = {};
+    for (let i = 0; i < ids.length; i++) out[ids[i].toString()] = { count: Number(counts[i]), bestWei: best[i].toString(), bestRonke: Number(best[i] / _MKT_1E18) };
+    return out;
+  }
+  function offersReady() { return !!_offersCfg().offers; }
+
   window.Wallet = {
     // identity
     connect, connectPhantom, disconnect, restore,
@@ -1489,6 +1557,8 @@
     swapQuote, swapRonToRonke, swapRonkeToRon, getRonBalance,
     // 🛒 Unit marketplace — player pays gas → PoD (list/buy/cancel + read)
     marketList, marketBuy, marketCancel, marketGetActiveListings, marketReady,
+    // 💰 Unit offers (PewPewOffers) — make/cancel/accept + read
+    offersMake, offersCancel, offersAccept, offersGetForToken, offersGetTokens, offersReady,
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT, KATANA_ROUTER, WRON_TOKEN,
   };
