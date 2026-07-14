@@ -9460,17 +9460,19 @@ function _f9DrawGoldCamp() {
       }
       ctx.restore();
     }
-    // ⛏️ „+X RONKE" floateris — kiek RONKE priaugo šis pristatymas (matomas feedback)
-    if (el < 1100 && (gc._lastAdd || 0) > 0.0001) {
-      const a = Math.max(0, 1 - el / 1100);
+    // ⛏️ „+X RONKE" floateris — kiek RONKE priaugo šis pristatymas (matomas feedback). Kasimas lėtas,
+    //   tad skaičiai maži → mažoms sumoms rodom daugiau skaitmenų (kad NErodytų „+0.00").
+    if (el < 1400 && (gc._lastAdd || 0) > 0.0005) {
+      const a = Math.max(0, 1 - el / 1400);
       ctx.save();
       ctx.globalAlpha = a;
-      ctx.font = 'bold ' + Math.round(C * 0.30) + 'px Verdana, sans-serif';
+      ctx.font = 'bold ' + Math.round(C * 0.32) + 'px Verdana, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3;
       ctx.fillStyle = '#8dffa0';
-      const ty = hby - hbh * 0.95 - (el / 1100) * C * 0.7;
-      const txt = '+' + (gc._lastAdd >= 10 ? gc._lastAdd.toFixed(0) : gc._lastAdd.toFixed(2)) + ' RONKE';
+      const ty = hby - hbh * 0.95 - (el / 1400) * C * 0.85;
+      const _av = gc._lastAdd;
+      const txt = '+' + (_av >= 10 ? _av.toFixed(0) : _av >= 0.1 ? _av.toFixed(2) : _av.toFixed(3)) + ' RONKE';
       ctx.strokeText(txt, hcx, ty); ctx.fillText(txt, hcx, ty);
       ctx.restore();
     }
@@ -10475,6 +10477,15 @@ function _f9MineAttempt() {
     st.at = now;
     try { localStorage.setItem('_f9mine_' + st._addr, JSON.stringify(st)); } catch (_) {}
     if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen();
+  } else if (st && success && (st.rate || 0) > 0) {
+    // ⛏️💰 SERVER-AUTHORITATIVE: „+X RONKE" floateris = vizualus įvertis (pot valdo serveris — NEliečiam jo).
+    //   add = serverio EFEKTYVUS rate (mrate) × laikas nuo paskutinio PRISTATYMO (fail ciklai natūraliai
+    //   įskaičiuoti — kuo ilgesnis tarpas, tuo didesnis skaičiukas). Cap 10min: grįžus po pauzės NErodo milžino.
+    //   Gated (mrate=0) → praleidžiam → 0 (jokio floaterio kol laukia siege). Rodymui, ne apskaitai.
+    const last = window._f9MineDelivAt || now;
+    const dgap = Math.min(now - last, 600000);
+    window._f9MineDelivAt = now;
+    add = (st.rate || 0) * dgap / 3600000;
   }
   return { success: success, add: add };
 }
