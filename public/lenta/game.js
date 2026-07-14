@@ -9540,6 +9540,101 @@ function _f9MktMyOffersMap() {
 }
 function _f9MktMarkMyOffer(tokenId, amt) { const a = _f9MktAddrLc(); if (!a) return; const arr = _f9MktJGet(_F9MKT_MYOFF_KEY, a).filter(function (x) { return String(x.tokenId) !== String(tokenId); }); arr.unshift({ tokenId: String(tokenId), amountRonke: amt, at: Date.now() }); _f9MktJSet(_F9MKT_MYOFF_KEY, a, arr.slice(0, 60)); }
 function _f9MktUnmarkMyOffer(tokenId) { const a = _f9MktAddrLc(); if (!a) return; _f9MktJSet(_F9MKT_MYOFF_KEY, a, _f9MktJGet(_F9MKT_MYOFF_KEY, a).filter(function (x) { return String(x.tokenId) !== String(tokenId); })); }
+// ── 📬 MARKET INBOX (2026-07-14, user): ✉️ indikatorius ant marketo namuko kai yra neskaitytų įvykių
+//   (gautas offeris ant mano listingo / mano unitas parduotas / aš nupirkau). Fonas tikrina kas 90s;
+//   atidarius marketą — „MARKET NEWS" banneris su detalėm, badge nusiskaito.
+const _F9MKT_INBOX_KEY = '_f9mkt_inbox_';       // <addr> → [{type:'offer'|'sold'|'bought', tokenId, amount, from, name, at, read}]
+const _F9MKT_OFFSEEN_KEY = '_f9mkt_offseen_';   // <addr> → {tokenId:{offererLc:amountRonke}} — kad naują offerį pamatytume 1×
+window._f9MktInboxCount = 0;                     // ✉️ badge (unread) — skaito _f9DrawMarket
+function _f9MktInboxGet() { return _f9MktJGet(_F9MKT_INBOX_KEY, _f9MktAddrLc() || '_local'); }
+function _f9MktInboxSet(a) { _f9MktJSet(_F9MKT_INBOX_KEY, _f9MktAddrLc() || '_local', (a || []).slice(0, 30)); _f9MktInboxSync(); }
+function _f9MktInboxSync() { let n = 0; for (const e of _f9MktInboxGet()) if (e && !e.read) n++; window._f9MktInboxCount = n; }
+function _f9MktInboxPush(ev) { const a = _f9MktInboxGet(); a.unshift(Object.assign({ at: Date.now(), read: false }, ev)); _f9MktInboxSet(a); }
+function _f9MktInboxMarkRead() { _f9MktInboxSet(_f9MktInboxGet().map(function (e) { e.read = true; return e; })); }
+// 📬 banneris modalo viršuje — paskutiniai įvykiai (<24h, max 6), nepriklausomai nuo read (badge = tik unread)
+function _f9MktInboxBannerHtml() {
+  const now = Date.now();
+  const evs = _f9MktInboxGet().filter(function (e) { return e && (now - (e.at || 0)) < 24 * 3600 * 1000; }).slice(0, 6);
+  if (!evs.length) return '';
+  const row = function (e) {
+    const t = e.type === 'offer' ? ('📥 <b style="color:#8fd47c;">NEW OFFER</b> ' + e.amount + ' RONKE for ' + (e.name || ('unit #' + e.tokenId)) + ' <span style="opacity:.6;">from ' + String(e.from || '').slice(0, 6) + '…</span>')
+      : e.type === 'sold' ? ('💰 <b style="color:#ffcf5c;">SOLD</b> ' + (e.name || ('unit #' + e.tokenId)) + ' → +' + e.amount + ' RONKE')
+      : ('🛒 <b style="color:#7cc4ff;">BOUGHT</b> ' + (e.name || ('unit #' + e.tokenId)) + (e.amount ? (' for ' + e.amount + ' RONKE') : ''));
+    return '<div style="font-size:9px;line-height:1.7;color:#c9d4e8;">' + t + '</div>';
+  };
+  return '<div id="f9mkt-inbox" style="margin-bottom:14px;padding:10px 14px;background:rgba(255,207,92,0.07);border:1px solid #ffcf5c;border-radius:8px;box-shadow:0 0 12px rgba(255,207,92,0.18);">' +
+    '<div style="font-size:10px;color:#ffcf5c;letter-spacing:1px;margin-bottom:5px;">📬 MARKET NEWS</div>' + evs.map(row).join('') + '</div>';
+}
+// Fono poll'as: nauji offeriai ant MANO listingų (+ on-chain kelias atnaujina listingus → sold-detect).
+let _f9MktInboxBusy = false;
+function _f9MktInboxPoll() {
+  try {
+    if (!window._f9pvpLive || window.__f9RaidActive) return;   // tik savo bazėje
+    if (_f9MktInboxBusy) return;
+    if (_f9MktOffIsLocal()) {
+      // LOCAL sim: mano listingai = local store, offeriai = local offers (svetimi, ne 'you')
+      const myIds = _f9MktLocalListedIds();
+      const seen = _f9MktJGet(_F9MKT_OFFSEEN_KEY, _f9MktAddrLc() || '_local');
+      const seenMap = (seen && seen[0]) || {};   // saugoma kaip [obj]
+      const nowMap = {};
+      for (const o of _f9MktOffLocalGet()) {
+        if (o.offerer === 'you' || !myIds.has(String(o.tokenId))) continue;
+        const k = String(o.tokenId), who = String(o.offerer).toLowerCase();
+        (nowMap[k] = nowMap[k] || {})[who] = o.amountRonke;
+        if (!seenMap[k] || Number(seenMap[k][who] || 0) < Number(o.amountRonke)) {
+          const lst = _f9MktLocalGet().find(function (x) { return String(x.tokenId) === k; });
+          _f9MktInboxPush({ type: 'offer', tokenId: k, amount: o.amountRonke, from: o.offerer, name: lst ? _f9MktNameOf(lst) : null });
+        }
+      }
+      _f9MktJSet(_F9MKT_OFFSEEN_KEY, _f9MktAddrLc() || '_local', [nowMap]);
+      _f9MktInboxSync();
+      return;
+    }
+    const W = window.Wallet, my = _f9MktAddrLc();
+    if (!W || !my || !W.marketGetActiveListings || !W.offersGetTokens) return;
+    _f9MktInboxBusy = true;
+    Promise.all([W.marketGetActiveListings(0, 100), W.offersGetTokens(0, 200)]).then(function (rr) {
+      const list = Array.isArray(rr[0]) ? rr[0] : [], toks = rr[1] || {};
+      _f9MktListings = list;                       // švieži listingai (modalas atidarius panaudos)
+      try { _f9MktDetectSales(); } catch (_) {}    // 💰 sold-detect fone (pats push'ins inbox per hook'ą)
+      const mine = list.filter(function (L) { return String(L.seller).toLowerCase() === my && toks[String(L.tokenId)] && toks[String(L.tokenId)].count > 0; }).slice(0, 15);
+      const seenArr = _f9MktJGet(_F9MKT_OFFSEEN_KEY, my); const seenMap = (seenArr && seenArr[0]) || {};
+      const nowMap = {};
+      return Promise.all(mine.map(function (L) {
+        return W.offersGetForToken(L.tokenId).then(function (offs) {
+          const k = String(L.tokenId);
+          for (const o of offs) {
+            const who = String(o.offerer).toLowerCase();
+            (nowMap[k] = nowMap[k] || {})[who] = o.amountRonke;
+            if (!seenMap[k] || Number(seenMap[k][who] || 0) < Number(o.amountRonke)) {
+              _f9MktInboxPush({ type: 'offer', tokenId: k, amount: o.amountRonke, from: o.offerer, name: (L.utype != null ? _f9MktNameOf(L) : null) });
+              try { if (typeof showGameNotification === 'function') showGameNotification('📥 NEW OFFER', o.amountRonke + ' RONKE for ' + (L.utype != null ? _f9MktNameOf(L) : ('unit #' + k)), '#8fd47c'); } catch (_) {}
+            }
+          }
+          _f9MktOffersDetail[k] = offs;            // šalutinis bonus: ACCEPT eilutės jau paruoštos
+        }).catch(function () {});
+      })).then(function () {
+        _f9MktJSet(_F9MKT_OFFSEEN_KEY, my, [nowMap]);
+        // 🛒 MANO offeris DINGO iš grandinės (pašalinti gali tik mano cancel arba pardavėjo ACCEPT;
+        //    cancel'as unmark'ina) → offeris PRIIMTAS → aš NUPIRKAU unitą. Inbox + 🆕 badge.
+        const myOff = _f9MktMyOffersMap();
+        return Promise.all(Object.keys(myOff).map(function (k) {
+          const bought = function () {
+            _f9MktMarkBought({ tokenId: k, level: 1, priceRonke: myOff[k] });   // 🆕 badge + 📬 inbox + toast (viena vieta)
+            _f9MktUnmarkMyOffer(k);
+          };
+          const info = toks[String(k)];
+          if (!info || !info.count) { bought(); return Promise.resolve(); }
+          return W.offersGetForToken(k).then(function (offs) {
+            if (!offs.some(function (o) { return String(o.offerer).toLowerCase() === my; })) bought();
+          }).catch(function () {});
+        }));
+      }).then(function () { _f9MktInboxSync(); });
+    }).catch(function () {}).then(function () { _f9MktInboxBusy = false; });
+  } catch (_) { _f9MktInboxBusy = false; }
+}
+setInterval(_f9MktInboxPoll, 90000);                          // 🕰 fonas kas 90s (tik home bazėje)
+setTimeout(function () { try { _f9MktInboxSync(); _f9MktInboxPoll(); } catch (_) {} }, 9000);   // pirmas — po wallet restore
 // Užkrauna offerių žemėlapį (count/best) + detales MANO listingams (ACCEPT eilutės). Re-renderina kai gauta.
 function _f9MktLoadOffers() {
   if (_f9MktOffIsLocal()) {
@@ -9664,6 +9759,7 @@ function _f9MktMarkBought(listing) {
   const arr = _f9MktJGet(_F9MKT_BOUGHT_KEY, a).filter(function (x) { return x && (now - (x.at || 0)) < _F9MKT_NEW_MS && String(x.tokenId) !== String(listing.tokenId); });
   arr.unshift({ tokenId: String(listing.tokenId), name: _f9MktNameOf(listing), utype: (listing.utype != null ? listing.utype : null), level: listing.level ?? 1, at: now });
   _f9MktJSet(_F9MKT_BOUGHT_KEY, a, arr.slice(0, 40));
+  try { _f9MktInboxPush({ type: 'bought', tokenId: String(listing.tokenId), name: _f9MktNameOf(listing), amount: listing.priceRonke }); } catch (_) {}   // 📬 ✉️ badge ant namuko
   try { if (typeof showGameNotification === 'function') showGameNotification('🆕 UNIT BOUGHT', _f9MktNameOf(listing) + ' — now in your inventory', '#7cff6e'); } catch (_) {}
 }
 // Set of tokenId (string) „ką tik nupirkta" (48h) — inventoriaus/SELL badge'ui. GLOBALUS (barracks_nft_modal.js kviečia).
@@ -9714,6 +9810,7 @@ function _f9MktDetectSales() {
         if (r.sold) {
           soldNow.push(r.x);
           const sarr = _f9MktJGet(_F9MKT_SOLD_KEY, a); sarr.unshift({ tokenId: r.x.tokenId, name: r.x.name, priceRonke: r.x.priceRonke, at: Date.now() }); _f9MktJSet(_F9MKT_SOLD_KEY, a, sarr.slice(0, 40));
+          try { _f9MktInboxPush({ type: 'sold', tokenId: r.x.tokenId, name: r.x.name, amount: r.x.priceRonke }); } catch (_) {}   // 📬 ✉️ badge ant namuko
           try { if (typeof showGameNotification === 'function') showGameNotification('💰 UNIT SOLD', (r.x.name || ('Unit #' + r.x.tokenId)) + ' → +' + r.x.priceRonke + ' RONKE', '#ffcf5c'); } catch (_) {}
         }
       }
@@ -9961,7 +10058,8 @@ function _f9MktRenderBody() {
   if (!body) return;
   body.onclick = null;   // reset delegacijos (filtrai dažnai re-render'ina → venk listener'ių kaupimosi)
   const _local = _f9MktIsLocal();
-  const _localBanner = _local ? '<div style="margin-bottom:14px;padding:9px 14px;background:rgba(108,207,92,0.1);border:1px solid #3d6a2e;border-radius:8px;font-size:9px;line-height:1.6;color:#8fd47c;letter-spacing:0.4px;">🧪 LOCAL TEST MODE — no real TX / no gas. Try list → browse → buy/cancel. Set the mainnet address to go live (player-pays → PoD).</div>' : '';
+  const _inboxBanner = _f9MktInboxBannerHtml();   // 📬 gauti offeriai / parduota / nupirkta (<24h)
+  const _localBanner = (_local ? '<div style="margin-bottom:14px;padding:9px 14px;background:rgba(108,207,92,0.1);border:1px solid #3d6a2e;border-radius:8px;font-size:9px;line-height:1.6;color:#8fd47c;letter-spacing:0.4px;">🧪 LOCAL TEST MODE — no real TX / no gas. Try list → browse → buy/cancel. Set the mainnet address to go live (player-pays → PoD).</div>' : '') + _inboxBanner;
   // 💰 „parduota" banneris (kažkas nupirko tavo listintą unitą kol nebuvai) — modalo viršuje, aiškiai matomas.
   const _soldBanner = _f9MktSoldNotice ? '<div style="margin-bottom:14px;padding:11px 14px;background:rgba(108,207,92,0.16);border:1px solid #6cff8a;border-radius:8px;font-size:12px;line-height:1.5;color:#aeffc0;letter-spacing:0.4px;box-shadow:0 0 14px rgba(108,255,138,0.28);display:flex;align-items:center;gap:10px;"><span style="flex:1;font-weight:700;">' + _f9MktSoldNotice + '</span><span style="opacity:.65;font-size:9px;">RONKE already in your balance</span></div>' : '';
   const soon = _local ? '' : ('<div style="margin-top:18px;padding:13px 16px;background:rgba(255,207,92,0.08);border:1px solid #6a4a18;border-radius:8px;font-size:10px;line-height:1.7;color:#d49a2a;letter-spacing:0.5px;">' +
@@ -10175,6 +10273,7 @@ function _f9ToggleMarketPanel() {
   const ts = el.querySelector('#f9mkt-tab-sell'); if (ts) ts.onclick = function () { _f9MktTab = 'sell'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadInv(); };
   _f9MktRenderBody();
   _f9MktLoadListings();   // default tab = browse → iškart krauk listingus (jei market ready)
+  _f9MktInboxMarkRead();  // 📬 atidarius marketą — ✉️ badge nusiskaito (banneris lieka, rodo <24h įvykius)
 }
 function _f9DrawMarket() {
   // 🧱 07-12: occlusion rect valomas kiekvieną kadrą (stale guard, kaip gold camp/ligoninė)
@@ -10220,6 +10319,27 @@ function _f9DrawMarket() {
   ctx.fillText(label, cxp, by0 + bht / 2 + 1);
   ctx.restore();
   window._f9MarketBounds = { x: x, y: y, w: bw, h: bh };   // klik hitbox (world px)
+  // 📬 ✉️ INBOX badge (07-14 user): gautas offeris / parduota / nupirkta → laiškas ant namuko su
+  //    neskaitytų skaičiumi + švelnus pulse. Nusiskaito atidarius marketą (_f9MktInboxMarkRead).
+  const _inboxN = Number(window._f9MktInboxCount) || 0;
+  if (_inboxN > 0) {
+    const pu = 1 + 0.08 * Math.sin(performance.now() / 280);   // pulse
+    const mx2 = x + bw - C * 0.06, my2 = y - C * 0.10;         // viršus-dešinė virš stogo
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = Math.round(C * 0.62 * pu) + 'px serif';
+    ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 10;
+    ctx.fillText('✉️', mx2, my2);
+    ctx.shadowBlur = 0;
+    // skaičiuko burbuliukas (kaip ligoninės) — kampe ant voko
+    const bx2 = mx2 + C * 0.26, by2b = my2 - C * 0.24;
+    ctx.fillStyle = '#e85d5d'; ctx.strokeStyle = '#4a1414'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx2, by2b, C * 0.17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.round(C * 0.2) + 'px Verdana, sans-serif';
+    ctx.fillText(String(_inboxN), bx2, by2b + 1);
+    ctx.restore();
+  }
   // 🧱 07-12: FOREGROUND + depth loop (kaip gold camp/ligoninė). hitBaseY = serverio AABB pietinė briauna
   //    (cy 18.7 + hh 0.5 → unit-y 19.2). Sheet tight-cropped (union bbox) → rect = pilnas kadro stačiakampis.
   window._f9MarketRect = { x0: x, y0: y, x1: x + bw, y1: y + bh, hitBaseY: (19.2 + 0.5) * C };
@@ -42425,10 +42545,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (inside(_house3Bounds)) {
-      // NAMUKAS = RONKE kranas (faucet) — paspaudus → reward claim popup (timer 12h + COLLECT + random RP-scaled).
-      // Senas upgrade popup išlieka kode (`_drawHouseUpgradePopup` / `_housePopupOpen`) — grąžinama 1 eilute.
-      if (typeof window.openRonkeFaucet === 'function') { window.openRonkeFaucet(); return; }
-      _housePopupOpen = true;   // fallback jei faucet modulis neįsikrovė
+      // 🚱 FAUCET UŽDARYTAS (2026-07-14): RONKE faucet kranas išjungtas — pool'as buvo tuštinamas
+      //   nekontroliuojamai (žr. ronke-claim edge fn). House3 klik nebeatidaro claim tap-žaidimo.
+      //   openRonkeFaucet nebeįkeliamas (ronke_faucet.js pašalintas); autoritetingas stabdis = edge fn disable dashboard'e.
       return;
     }
     if (S.floor === 10 && inside(_ciucelaBounds)) {

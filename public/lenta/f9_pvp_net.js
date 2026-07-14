@@ -258,7 +258,8 @@
       room.onMessage('melee', function (e) { if (self.onMelee) self.onMelee(e || {}); });
       room.onMessage('shot',  function (e) { if (self.onShot)  self.onShot(e || {}); });
       room.onMessage('hit',   function (e) { if (self.onHit)   self.onHit(e || {}); });
-      room.onMessage('pong',  function () {});
+      room.onMessage('pong',  function () { self.lastPong = Date.now(); });   // 🫀 liveness (watchdog tikrina)
+      self.lastPong = Date.now();   // baseline nuo prisijungimo
 
       room.onError(function (code, message) {
         console.error('[F9PVP] room error', code, message);

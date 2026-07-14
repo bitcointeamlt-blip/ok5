@@ -466,6 +466,42 @@
         (cards || '<div style="color:#6a7a8a;font-size:8px;padding:16px 4px;">no units</div>') + '</div>' +
     '</div>';
   }
+  // 📜 VIEŠA PvP ISTORIJA (07-14 user): po kovos PUOLIKAS įrašo rezultatą į Supabase f9_matches lentelę
+  //   (anon insert; RLS `with check (true)`). Rašo TIK puolikas → be dublių. Skaito raid_ui.js „📜 HISTORY".
+  //   Self-reported (klientas) — vėliau galima perkelti serveriui autoritetui. Rosterių address + matchId
+  //   iš match_result; win/draw iš match_end. Tyliai fail'ina (jei lentelė dar nesukurta / offline).
+  function _f9PostMatchRecord(win, draw) {
+    try {
+      var mid = window._f9SettleMatchId;
+      var rosters = window._f9SettleRosters;
+      if (!mid || !rosters) return;
+      var mine = rosters[String(myTeam)], foe = null;
+      for (var k in rosters) { if (rosters.hasOwnProperty(k) && k !== String(myTeam)) { foe = rosters[k]; break; } }
+      if (!mine || !foe) return;
+      var meta = window._f9SettleMeta || {};
+      var myA = String((window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || window._f9HomeAddr || mine.address || '').toLowerCase();
+      var foeA = String(foe.address || window.__f9RaidTarget || '').toLowerCase();
+      if (!myA || !foeA) return;
+      var rec = {
+        match_id: String(mid),
+        attacker: myA,                                   // wasRaid kontekste kviečiama → aš puolikas
+        defender: foeA,
+        winner: draw ? 'draw' : (win ? 'attacker' : 'defender'),
+        atk_survived: (mine.survived | 0), atk_dead: (mine.dead | 0),
+        def_survived: (foe.survived | 0), def_dead: (foe.dead | 0),
+        bones: +(((window._f9LastBones && window._f9LastBones.bones) || 0)),
+        reason: String(meta.reason || ''),
+        duration_ms: (meta.durationMs | 0)
+      };
+      var U = 'https://rbkivemouxwcgrpzazxb.supabase.co';
+      var K = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';
+      fetch(U + '/rest/v1/f9_matches', {
+        method: 'POST',
+        headers: { apikey: K, Authorization: 'Bearer ' + K, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
+        body: JSON.stringify(rec)
+      }).catch(function () {});
+    } catch (_) {}
+  }
   function _showRaidSettled(o) {
     _closeRaidSettled(false);
     // ⚔ 2-PUSĖ suvestinė — abiejų komandų sudėtis iš serverio (window._f9SettleRosters). Kiekvienas žaidėjas
@@ -495,6 +531,20 @@
           _armyColHtml('🛡 ENEMY ARMY', '#ff9a98', foeR) +
         '</div>'
       : _armyColHtml('⚔ YOUR ARMY', o.win ? '#6fcf5c' : '#8cd0ff', mineR);
+    // 🔎 ATSEKAMUMAS (07-14 user): Match ID + priešo piniginė — kad kiekvieną kovą būtų galima
+    //   atsekti/išanalizuoti kilus problemai. matchId iš match_result; priešo adr: puolikas→__f9RaidTarget,
+    //   gynėjas→_f9LastAttacker (iš under_attack). Viskas kliento pusėje — serverio keisti nereikia.
+    var _esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+    var _mid = window._f9SettleMatchId;
+    var _foe = o.raid ? (window.__f9RaidTarget || '') : (window._f9LastAttacker || '');
+    var _foeLabel = o.raid ? '🛡 DEFENDER' : '⚔ RAIDER';
+    var _shortFoe = _foe ? (String(_foe).slice(0, 6) + '…' + String(_foe).slice(-4)) : '';
+    var _sm = window._f9SettleMeta || {};
+    var _metaRows = [];
+    if (_mid != null && _mid !== '') _metaRows.push('<span>MATCH <b style="color:#ffcf5c">#' + _esc(_mid) + '</b> <span class="f9rs-copy" data-copy="' + _esc(_mid) + '" title="Copy Match ID" style="cursor:pointer;color:#8cd0ff;padding:0 2px;">⧉</span></span>');
+    if (_shortFoe) _metaRows.push('<span>' + _foeLabel + ' <b style="color:#ff9a98" title="' + _esc(_foe) + '">' + _esc(_shortFoe) + '</b> <span class="f9rs-copy" data-copy="' + _esc(_foe) + '" title="Copy wallet" style="cursor:pointer;color:#8cd0ff;padding:0 2px;">⧉</span></span>');
+    if (_sm.durationMs) _metaRows.push('<span style="color:#7d8fa2;">' + (_sm.durationMs / 1000).toFixed(1) + 's' + (_sm.reason ? ' · ' + _esc(_sm.reason) : '') + '</span>');
+    var metaHtml = _metaRows.length ? '<div style="font-size:8px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:center;line-height:1.8;color:#9bb;">' + _metaRows.join('') + '</div>' : '';
     var bonesBits = _settleBonesBits();
     var el = document.createElement('div');
     el.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.94);z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
@@ -505,6 +555,7 @@
       '</div>' +
       '<div style="font-size:15px;color:#ffcf5c;letter-spacing:2px;margin-bottom:8px;text-shadow:0 0 14px rgba(255,207,92,0.5);">' + (o.raid ? '⚔ RAID SETTLED' : '🏰 DEFENSE SETTLED') + '</div>' +
       '<div style="font-size:11px;margin-bottom:6px;">' + bits.join('  ·  ') + '</div>' +
+      metaHtml +
       '<div id="f9rs-bones" style="font-size:9px;margin-bottom:12px;' + (bonesBits.length ? '' : 'display:none;') + '">' + _settleBonesBits(0).join('  ·  ') + '</div>' +
       colsHtml +
       '<div style="margin-top:16px;"><button id="f9rs-close" style="font-family:inherit;font-size:11px;letter-spacing:1px;padding:11px 26px;border-radius:4px;border:2px solid #ffcf5c;background:rgba(255,207,92,0.12);color:#ffcf5c;cursor:pointer;">🏰 RETURN HOME</button></div>' +
@@ -514,6 +565,16 @@
     setTimeout(_startSettleBonesSeq, 300);   // 🦴→🏦 atlygio count-up → skridimas į banko chip'ą
     var cb = el.querySelector('#f9rs-close');
     if (cb) cb.onclick = function () { _closeRaidSettled(true, o.addr); };
+    // 🔎 copy-to-clipboard — Match ID / priešo wallet (atsekamumui kilus ginčui)
+    Array.prototype.forEach.call(el.querySelectorAll('.f9rs-copy'), function (cp) {
+      cp.onclick = function (ev) {
+        try { ev.stopPropagation(); } catch (_) {}
+        var v = cp.getAttribute('data-copy') || '';
+        try { if (navigator.clipboard) navigator.clipboard.writeText(v); } catch (_) {}
+        var old = cp.textContent; cp.textContent = '✓'; cp.style.color = '#6fcf5c';
+        setTimeout(function () { cp.textContent = old; cp.style.color = '#8cd0ff'; }, 1200);
+      };
+    });
     // gyvos sprite idle animacijos (kaip hospital panelėj) — tikri žaidimo kadrai per _f9UnitFrameForOutline
     function drawSprites() {
       if (!_settleEl || typeof window._f9UnitFrameForOutline !== 'function') return;
@@ -1208,6 +1269,7 @@
     room.onMessage('under_attack', function (e) {
       // tik gynėjui (savininkui) — puolikas pats save nemato kaip „under attack"
       if (window.__f9RaidActive) return;
+      try { if (e && e.attacker) window._f9LastAttacker = String(e.attacker); } catch (_) {}   // 🔎 settled atsekamumui — kas puolė
       var who = (e && e.attacker) ? (String(e.attacker).slice(0, 6) + '…' + String(e.attacker).slice(-4)) : 'A raider';
       _status('⚔️ YOUR CASTLE IS UNDER ATTACK!', '#f66');
       try { if (window.showGameNotification) window.showGameNotification('⚔️ UNDER ATTACK', who + ' is raiding your castle! Defend!', '#f66'); } catch (_) {}
@@ -1245,6 +1307,7 @@
         } catch (_) {}
         window._f9SettleData = { survived: _surv };
         setTimeout(function () {
+          if (wasRaid) { try { _f9PostMatchRecord(mine, draw); } catch (_) {} }   // 📜 vieša PvP istorija — rašo TIK puolikas (be dublių)
           try { _showRaidSettled({ win: mine, raid: wasRaid, addr: myAddr }); }
           catch (_) { try { relaunchHome(); } catch (_1) { try { launchHome({ address: myAddr }); } catch (_2) {} } }
         }, 900);
@@ -1257,6 +1320,7 @@
     // 🦴 KAULAI (FAZĖ 1) — parodom kiek kaulų uždirbau (= ×5 RONKE) + prarasta unitų. Display TIK (dar ne realus payout).
     room.onMessage('match_result', function (e) {
       try { if (e && e.rosters) window._f9SettleRosters = e.rosters; } catch (_) {}   // ⚔ abiejų pusių sudėtis 2-pusiam settled ekranui
+      try { if (e) { window._f9SettleMatchId = e.matchId; window._f9SettleMeta = { durationMs: e.durationMs, reason: e.reason }; } } catch (_) {}   // 🔎 Match ID + meta atsekamumui (07-14)
       try {
         if (!e || !Array.isArray(e.players)) return;
         var me = e.players.filter(function (p) { return p.sessionId === mySid; })[0];
@@ -1320,7 +1384,7 @@
     window._f9Passages = (e && Array.isArray(e.passages)) ? e.passages : [];   // 🚪 praėjimų eilės (grovio tarpai) — ant jų bokšto NEstatom
     window._f9CapState = null; _capLast = '';
     window._f9MyBones = null; _boneLast = ''; _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true;   // 🦴 nauja partija → reset balanso count-up (bankas persistuoja, atsinaujins per bones_bank_get)
-    _raidLog = { injured: [], dead: [] }; window._f9LastSteal = null; window._f9SettleData = null; window._f9SettleRosters = null;   // ⚔ settled suvestinės reset (įsk. 2-pusius rosterius)
+    _raidLog = { injured: [], dead: [] }; window._f9LastSteal = null; window._f9SettleData = null; window._f9SettleRosters = null; window._f9SettleMatchId = null; window._f9SettleMeta = null; window._f9LastAttacker = null;   // ⚔ settled suvestinės reset (įsk. 2-pusius rosterius + 🔎 Match ID/priešo adresą)
     // 🐛 P-C3: išvalom SENOS sesijos ligoninės būseną PRIEŠ _f9pvpLive=true — kitaip 1.5s langą (kol ateis
     //   šviežias 'hospital' push) barracks_nft.fetchHospState skaitytų SENOS piniginės sužalotus kaip LIVE
     //   (→ deko/lauko „makalynė" perjungus piniginę). null (NE []) → fetchHospState kris atgal į per-adresą REST.
@@ -1836,6 +1900,80 @@
     setTimeout(function () { window._f9HomeRelaunchPending = false; launchHome({ address: addr }); }, 200);
   }
 
+  // ⚠️ 07-14 RECONNECT WATCHDOG + KEEPALIVE + 🟢🔴 STATUSO BADGE (user: „buvau užpultas online, priešo
+  //   nesimatė; sunku atskirti ar online; langas ilgai atidarytas → disconnect; reikia indikatoriaus/mygtuko"):
+  //   pingInterval:0 + zombie-reaper = kambarys numiršta arba socket'as PAKIMBA PUSIAUKELĖJE (gauni
+  //   under_attack, bet būsena nebeateina → priešo nematai), o ekranas toliau rodo pilį.
+  //   (1) KEEPALIVE ping kas 20s (serveris ping'u atnaujina reaper laikmatį → ramus žaidėjas nenukertamas).
+  //   (2) PONG-LIVENESS: jei „gyvas" kambarys >65s neatsako pong'ų → socket'as pusiau miręs → force reconnect.
+  //   (3) WATCHDOG: kambarys dingo → raudonas baneris su ⟳ RECONNECT mygtuku + auto relaunchHome kas ~7s.
+  //   (4) BADGE: nuolatinis 🟢 ONLINE / 🟡 CONNECTING / 🔴 OFFLINE indikatorius (klik = force reconnect).
+  var _rcEl = null, _rcWasAlive = false, _rcLastTry = 0, _rcLastPing = 0, _rcBadge = null;
+  function _rcForceReconnect() {
+    _rcLastTry = Date.now();
+    try { var N = window.F9PVP; if (N && N.room) N.room.leave(); } catch (_) {}
+    try { relaunchHome(); } catch (_) {}
+  }
+  function _rcShow() {
+    if (_rcEl) return;
+    _rcEl = document.createElement('div');
+    _rcEl.id = 'f9-reconnect-banner';
+    _rcEl.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:100002;display:flex;align-items:center;gap:14px;' +
+      'padding:11px 16px;border-radius:8px;border:2px solid #ff5555;background:rgba(60,10,10,0.95);' +
+      "color:#ffb3b3;font:700 12px 'Press Start 2P',monospace,sans-serif;letter-spacing:1px;box-shadow:0 0 18px rgba(255,60,60,0.5);";
+    _rcEl.innerHTML = '<span id="f9rc-txt">⚠ CONNECTION LOST — RECONNECTING…</span>' +
+      '<button id="f9rc-btn" style="padding:8px 12px;border-radius:6px;border:2px solid #ffcf5c;background:rgba(255,207,92,0.15);color:#ffcf5c;font:700 11px inherit;font-family:inherit;cursor:pointer;white-space:nowrap;">⟳ RECONNECT</button>';
+    document.body.appendChild(_rcEl);
+    var btn = _rcEl.querySelector('#f9rc-btn'); if (btn) btn.onclick = _rcForceReconnect;
+    var vis = true;
+    _rcEl._blink = setInterval(function () { var t = _rcEl && _rcEl.querySelector('#f9rc-txt'); if (t) { vis = !vis; t.style.opacity = vis ? '1' : '0.55'; } }, 550);
+  }
+  function _rcHide() { if (_rcEl) { try { clearInterval(_rcEl._blink); } catch (_) {} if (_rcEl.parentNode) _rcEl.parentNode.removeChild(_rcEl); _rcEl = null; } }
+  // 🟢🟡🔴 nuolatinis ryšio badge (apačioje kairėje virš SOUND) — visada matai ar tikrai online; klik = reconnect
+  function _rcBadgeSet(state) {   // 'on' | 'connecting' | 'off' | null(slėpti)
+    if (!state) { if (_rcBadge && _rcBadge.parentNode) _rcBadge.parentNode.removeChild(_rcBadge); _rcBadge = null; return; }
+    if (!_rcBadge) {
+      _rcBadge = document.createElement('div');
+      _rcBadge.id = 'f9-conn-badge';
+      _rcBadge.style.cssText = 'position:fixed;left:12px;bottom:96px;z-index:99997;padding:7px 11px;border-radius:7px;' +
+        "font:700 10px 'Press Start 2P',monospace,sans-serif;letter-spacing:1px;cursor:pointer;user-select:none;border:2px solid;box-shadow:0 3px 10px rgba(0,0,0,.45);";
+      _rcBadge.title = 'Connection status — click to force reconnect';
+      _rcBadge.onclick = _rcForceReconnect;
+      document.body.appendChild(_rcBadge);
+    }
+    if (_rcBadge._st === state) return;
+    _rcBadge._st = state;
+    if (state === 'on') { _rcBadge.textContent = '🟢 ONLINE'; _rcBadge.style.borderColor = '#3d6a2e'; _rcBadge.style.background = 'rgba(18,50,18,0.88)'; _rcBadge.style.color = '#8fd47c'; }
+    else if (state === 'connecting') { _rcBadge.textContent = '🟡 CONNECTING…'; _rcBadge.style.borderColor = '#8a6a1a'; _rcBadge.style.background = 'rgba(60,45,10,0.9)'; _rcBadge.style.color = '#ffcf5c'; }
+    else { _rcBadge.textContent = '🔴 OFFLINE — TAP TO RECONNECT'; _rcBadge.style.borderColor = '#a53a3a'; _rcBadge.style.background = 'rgba(70,12,12,0.92)'; _rcBadge.style.color = '#ff9a9a'; }
+  }
+  setInterval(function () {
+    try {
+      if (!window.__f9HomeActive || window.__f9RaidActive) {
+        if (!window._f9HomeRelaunchPending) { _rcWasAlive = false; _rcHide(); }
+        _rcBadgeSet(window.__f9RaidActive ? (window.F9PVP && window.F9PVP.room ? 'on' : 'connecting') : null);
+        return;
+      }
+      var N = window.F9PVP;
+      var alive = !!(N && N.room && N.connected);
+      var now = Date.now();
+      if (alive) {
+        // 🫀 pong-liveness: „gyvas" kambarys, bet >65s jokio pong (ping'uojam kas 20s) → socket pusiau miręs
+        if (N.lastPong && now - N.lastPong > 65000) {
+          _rcBadgeSet('off'); _rcShow();
+          if (now - _rcLastTry > 7000) _rcForceReconnect();
+          return;
+        }
+        _rcWasAlive = true; _rcHide(); _rcBadgeSet('on');
+        if (now - _rcLastPing > 20000) { _rcLastPing = now; try { N.ping(); } catch (_) {} }   // 🫀 keepalive
+        return;
+      }
+      if (!_rcWasAlive) { _rcBadgeSet('connecting'); return; }   // dar tik jungiamasi (boot)
+      _rcBadgeSet('off'); _rcShow();
+      if (now - _rcLastTry > 7000) { _rcLastTry = now; try { relaunchHome(); } catch (_) {} }
+    } catch (_) {}
+  }, 3000);
+
   // 🗡️ RAID — puolam KITO žaidėjo pilį (LIVE). Užkraunam MŪSŲ deck'ą, jungiamės kaip puolikas į
   //    taikinio kambarį (filterBy owner). Taikinys offline / nėra kambario → raidPlayer null (vėliau=async).
   function launchRaid(targetAddr, opts) {
@@ -1903,6 +2041,7 @@
         if (em.indexOf('SHIELDED') !== -1) msg = '🛡 Castle is SHIELDED (just raided) — try again in ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('RAID_COOLDOWN') !== -1) msg = '⏲ You raided this castle recently — wait ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('NO_DEFENDERS') !== -1) msg = '💤 Castle inactive — no combat-ready NFT defenders to raid';
+        else if (em.indexOf('DEFENDER_ONLINE') !== -1) msg = '🫀 Defender is online (reconnecting) — retry in a few seconds to fight them LIVE';
         else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected from raids (they mine slower in exchange).';
         else if (em.indexOf('RAID_FEE') !== -1) {
           // ⚔️💰 fee TX atmestas (panaudotas/pasenęs/nerastas) → išvalom saugotą, kitas bandymas mokės iš naujo

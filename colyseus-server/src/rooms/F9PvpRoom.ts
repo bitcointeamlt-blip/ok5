@@ -908,7 +908,11 @@ export class F9PvpRoom extends Room<F9State> {
     });
 
     // Ping (klientas matuoja RTT).
-    this.onMessage("ping", (client, t: number) => client.send("pong", t));
+    // 🧟 07-14 fix (user „buvau online, bet priešo nesimatė"): ping'as = GYVAS klientas → atnaujina
+    //   reaper laikmatį. Anksčiau ramiai pilyje sėdintis žaidėjas (be komandų/kovos) po 6min būdavo
+    //   disposintas → „online iliuzija" + puolikai gaudavo async AI kopiją nematomai. Mirusio WS ping'ų
+    //   nebūna → tikri zombie kambariai vis tiek nukertami po IDLE_MS.
+    this.onMessage("ping", (client, t: number) => { this._lastActivity = Date.now(); client.send("pong", t); });
 
     // ── C3 host-authority RELAY ──
     // guest komanda → host (host kliente sukasi tikras F9, jis pritaikys).
@@ -988,6 +992,8 @@ export class F9PvpRoom extends Room<F9State> {
     if (this._home && this.state.phase === "lobby" && this.state.players.size === 1) {
       this._ownerSid = client.sessionId;
       if (!this._ownerAddr) this._ownerAddr = String(p.address || "").trim().toLowerCase();   // fallback jei create be owner
+      // 🫀 07-14: owner-heartbeat IŠKART join'e (async-raid grace guard: online gynėjo AI-pulti negalima)
+      if (this._ownerAddr) this._buildingsOp(this._ownerAddr, (b) => { b.ownerSeenAt = Date.now(); });
       // Užkraunam IŠSAUGOTĄ pilies layout'ą (jei yra) → unitai atsiras KUR PALIKO (ne formacijoj).
       //   Tas pats snapshot'as = ką vėliau matys puolikai raid'uose (server-authoritative).
       // 🏗️ PERSIST ĮJUNGTAS (07-03): upgrade'ai kainuoja banked kaulus → lygiai PRIVALO išlikti po reconnect.
@@ -1073,6 +1079,15 @@ export class F9PvpRoom extends Room<F9State> {
       // 🛡 SHIELD + ⏲ CD (async) PIRMA — „SHIELDED:Xmin" žinutė su countdown'u informatyvesnė nei
       //   NO_DEFENDERS (po 100% wipe galioja abu; 07-12 grąžinta 07-05 tvarka — shield test to tikisi).
       this._checkRaidGate(String(p.address || ""));
+      // 🫀 07-14 GRACE (user: „online žaidėjas PRIVALO matyti kovą"): gynėjo heartbeat <90s → jis online
+      //   arba tuoj grįš per reconnect — async AI raidas prieš budintį žaidėją DRAUDŽIAMAS. Puolikas
+      //   kartoja po kelių sekundžių: jei gynėjas tikrai online → joinOrCreate ras GYVĄ kambarį → LIVE kova;
+      //   jei tikrai offline → heartbeat pasens → async praeis. Fee TX NEsudeginamas (guard prieš fee gate).
+      const _seenAt = Number((this._buildings as any)?.ownerSeenAt) || 0;
+      if (Date.now() - _seenAt < 90_000) {
+        console.log(`[F9PvpRoom] 🫀 async raid atmestas — gynėjas ${this._ownerAddr.slice(0, 10)}… matytas prieš ${Math.round((Date.now() - _seenAt) / 1000)}s (grace, tuoj LIVE)`);
+        throw new Error("DEFENDER_ONLINE");
+      }
       // ⚰️ RAID GATING: pilis be KOVAI PAJĖGIŲ NFT gynėjų NEPUOLAMA (sužaloti ligoninėj nesiskaito —
       //   po pralaimėto raido pilis neaktyvi kol gynėjai pasveiks; jokios farm spiralės)
       const _injSet = this._injuredSet(this._ownerAddr);
@@ -1095,6 +1110,32 @@ export class F9PvpRoom extends Room<F9State> {
       try { client.send("raid_mode", { live: false }); } catch (_) {}     // ℹ️ puolikui: OFFLINE pilis (AI gynėjai)
       this._startMatch();
       return;
+    }
+    // 🛡🔥 07-14 TAKEOVER (user: „online žaidėjas PRIVALO matyti kovą ir ją išgyventi"): savininkas
+    //   grįžo (reconnect/watchdog) per VYKSTANTĮ async raidą ant JO pilies → PERIMA gynybą GYVAI:
+    //   AI gynėjai perrašomi jam (owner=sid → cmd komandos veikia), gauna match_start + under_attack.
+    //   Jokių „nematomų AI mūšių" žaidėjui esant prie ekrano.
+    if (this._asyncRaid && this.state.phase === "playing" && this._ownerAddr && String(p.address || "").trim().toLowerCase() === this._ownerAddr) {
+      p.team = DEFENDER_TEAM;
+      this._ownerSid = client.sessionId;
+      let _taken = 0;
+      this.state.units.forEach((u) => { if (u.owner === "AI_DEFENDER") { u.owner = client.sessionId; _taken++; } });
+      // siuntimai su delay — klientas handlerius registruoja join'ui rezolvinusis (kitaip žinutės nukristų)
+      const _cl = client;
+      setTimeout(() => {
+        try {
+          _cl.send("match_start", { startedAt: this.state.startedAt, seed: this.state.seed, moat: MOAT_CELLS.map((c) => [c.x, c.y]), cap: { x: CAP_X, y: CAP_Y, r: CAP_R }, tp: TP_PADS.map((pp) => [pp.x, pp.y]), retreatZone: RETREAT_ZONE, passages: MOAT_GAP });
+          _cl.send("raid_mode", { live: true });
+          _cl.send("under_attack", { attacker: this._raidAtkAddr || "", sid: "" });
+        } catch (_) {}
+      }, 400);
+      console.log(`[F9PvpRoom] 🛡🔥 TAKEOVER: savininkas ${this._ownerAddr.slice(0, 10)}… grįžo mid-raid → perėmė ${_taken} gynėjų valdymą`);
+      return;
+    }
+    // 🤖🚫 svetimas bando jungtis į VYKSTANTĮ async raidą (kambarys neberakinamas dėl TAKEOVER) → atmetam
+    if (this._asyncRaid && this.state.phase === "playing") {
+      this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);
+      throw new Error("RAID_IN_PROGRESS");
     }
     // 🗡️ RAID: puolikas prisijungia prie JAU GYVOS pilies (home, phase=playing) → IŠKART spawninam jo
     //   squad'ą (vakaruose) + pranešam gynėjui „under_attack". Mūšis jau vyksta, _checkWin aktyvus (≥2).
@@ -1284,7 +1325,9 @@ export class F9PvpRoom extends Room<F9State> {
       const seg = this.state.walls.get(WALL_COL + "," + t.y);
       if (seg) { seg.tower = true; seg.maxHp = towerHpForLevel(_tlvl); seg.hp = seg.maxHp; }
     }
-    if (!this._home) { try { this.lock(); } catch (_) {} }   // 1v1: užrakinam. 🏰 HOME: NErakinam (raideriai gali prisijungti vėliau)
+    // 1v1: užrakinam. 🏰 HOME: NErakinam (raideriai jungiasi vėliau). 🤖 ASYNC RAID: NErakinam (07-14 —
+    //   grįžtantis SAVININKAS privalo patekti į kambarį TAKEOVER'ui; svetimus atmeta onJoin RAID_IN_PROGRESS).
+    if (!this._home && !this._asyncRaid) { try { this.lock(); } catch (_) {} }
     this.state.phase = "playing";
     this.state.gameStarted = true;
     this.state.startedAt = Date.now();
@@ -1295,7 +1338,15 @@ export class F9PvpRoom extends Room<F9State> {
     console.log(`[F9PvpRoom] match_start (server-auth) — ${this.state.players.size}p, ${this.state.units.size} units`);
     // 🏰 HOME persistencija — periodinis autosave (10s) tavo pilies layout'o į f9_bases.
     if (this._home && !this._saveTimer) {
-      this._saveTimer = setInterval(() => { this._saveSnapshot("auto"); }, 10_000);
+      let _hb = 5;   // 🫀 pirmas heartbeat po 10s, toliau kas 60s
+      this._saveTimer = setInterval(() => {
+        this._saveSnapshot("auto");
+        // 🫀 07-14 owner-heartbeat (kas 60s, tik kai savininkas REALIAI prisijungęs) — async-raid grace guard
+        if (++_hb % 6 === 0) {
+          const op = this.state.players.get(this._ownerSid);
+          if (op && op.connected && this._ownerAddr) this._buildingsOp(this._ownerAddr, (b) => { b.ownerSeenAt = Date.now(); });
+        }
+      }, 10_000);
     }
   }
 

@@ -81,6 +81,7 @@ export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { 
   //   perskaičiuojamas iš PIRMINIŲ persistintų duomenų (ne įsiminta galutinė rate → mažesnė exploit skylė)
   dutyMode?: "online" | "safe"; mineGated?: boolean;  // ⚔️🛡 duty režimas + ar safe kasimas užrakintas (lubos→siege)
   mineStolenAt?: number;   // (legacy — client steal signal; nebenaudojamas po server-side steal)
+  ownerSeenAt?: number;    // 🫀 07-14: savininko heartbeat (online kas 60s) — async-raid GRACE guard (online gynėjas turi matyti kovą!)
   shieldUntil?: number };   // 🛡 pilis nepuolama iki šio ts (1h po pralaimėtos gynybos)
 
 // Užkrauna pilies pastatų konfigūraciją (`buildings` jsonb). null jei nėra.
@@ -137,7 +138,8 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const dutyMode: "online" | "safe" = b.dutyMode === "safe" ? "safe" : "online";   // ⚔️🛡 default online
     const mineGated = !!b.mineGated;   // 🛡 safe kasimas užrakintas iki siege
     const shieldUntil = Number.isFinite(+b.shieldUntil) ? Math.max(0, +b.shieldUntil) : 0;   // 🛡
-    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineField, mineReserve, dutyMode, mineGated, shieldUntil };
+    const ownerSeenAt = Number.isFinite(+b.ownerSeenAt) ? Math.max(0, +b.ownerSeenAt) : 0;   // 🫀 grace guard
+    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineField, mineReserve, dutyMode, mineGated, ownerSeenAt, shieldUntil };
   } catch (e) { throw (e instanceof Error ? e : new Error("[BaseStore] loadBaseBuildings failed")); }   // 🛡 S-M5: tinklo išimtis = triktis (metam, ne null)
 }
 
@@ -243,12 +245,16 @@ export async function appendRaidReport(address: string, rep: RaidReport): Promis
       const raids: RaidReport[] = Array.isArray(b.raids) ? b.raids : [];
       raids.unshift(rep);                       // naujausias priekyje
       const trimmed = raids.slice(0, 10);       // cap 10
-      const { error } = await c.from("f9_bases").upsert({ ronin_address: _raidKey(addr), units: [], buildings: { raids: trimmed }, updated_at: new Date().toISOString() }, { onConflict: "ronin_address" });
+      // 📜 07-14: IŠSAUGOM ir `seen` istoriją (kitaip upsert'as ją numestų) — kas puolė matosi ir vėliau
+      const seen: RaidReport[] = Array.isArray((b as any).seen) ? (b as any).seen : [];
+      const { error } = await c.from("f9_bases").upsert({ ronin_address: _raidKey(addr), units: [], buildings: { raids: trimmed, seen: seen.slice(0, 20) }, updated_at: new Date().toISOString() }, { onConflict: "ronin_address" });
       return !error;
     } catch { return false; }
   });
 }
-// Grąžina laukiančias ataskaitas ir IŠVALO (žaidėjas jas pamatė). [] jei nieko.
+// Grąžina laukiančias ataskaitas ir perkelia jas į `seen` ISTORIJĄ (žaidėjas jas pamatė).
+// 📜 07-14 fix: anksčiau ištrindavo visam (raids:[]) → neįmanoma vėliau sužinoti kas puolė
+// (user atvejis: puolimas async, grįžęs praleido popup'ą — istorijos nebeliko). Dabar seen cap 20.
 export async function loadRaidReports(address: string): Promise<RaidReport[]> {
   const addr = _norm(address); if (!addr) return [];
   return boneBankOp(addr + "#raidlog", async () => {
@@ -257,7 +263,11 @@ export async function loadRaidReports(address: string): Promise<RaidReport[]> {
       const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", _raidKey(addr)).maybeSingle();
       const b = (data && (data as any).buildings) || {};
       const raids: RaidReport[] = Array.isArray(b.raids) ? b.raids : [];
-      if (raids.length) await c.from("f9_bases").upsert({ ronin_address: _raidKey(addr), units: [], buildings: { raids: [] }, updated_at: new Date().toISOString() }, { onConflict: "ronin_address" });
+      if (raids.length) {
+        const seenOld: RaidReport[] = Array.isArray((b as any).seen) ? (b as any).seen : [];
+        const seen = [...raids, ...seenOld].slice(0, 20);   // suvartotos → istorija (naujausios priekyje)
+        await c.from("f9_bases").upsert({ ronin_address: _raidKey(addr), units: [], buildings: { raids: [], seen }, updated_at: new Date().toISOString() }, { onConflict: "ronin_address" });
+      }
       return raids;
     } catch { return []; }
   });
