@@ -230,6 +230,7 @@ export function boneBankOp<T>(address: string, fn: () => Promise<T>): Promise<T>
 // Rašo _appendRaidReport (raido pabaiga); skaito+valo loadRaidReports (savininkui grįžus namo).
 export type RaidReport = {
   at: number; attacker: string; result: string;   // 'defended' | 'lost' | 'retreat'
+  matchId?: string;   // 🆔 kovos ID (roomId) — 07-14 (tas pats laukas kaip match_result payload)
   atkArmy: { utype: string; level: number; count: number }[];
   killed: string[]; injured: string[]; bonesStolen: number;
   defUnits?: { tokenId: string; utype: string; level: number; fate: string }[];

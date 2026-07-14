@@ -236,7 +236,7 @@
           '<div class="rr-title">📜 RAID REPORT</div>' +
           '<div class="rr-sub">Attacked while you were away — ' + resTxt + '  ·  ' + fmtAgo(r.at) + '</div>' +
           '<div class="rr-sub">' + sub.join('  ·  ') + '</div>' +
-          '<div class="rr-atk">⚔️ Raider ' + esc(r.attacker) + '  ·  army: ' + army + '</div>' +
+          '<div class="rr-atk">⚔️ Raider ' + esc(r.attacker) + '  ·  army: ' + army + (r.matchId ? '  ·  🆔 MATCH #' + String(r.matchId).replace(/[<>&"']/g, '') : '') + '</div>' +
           grid + nav +
           '<button class="rr-ok" id="rr-ok">' + (i < reps.length - 1 ? 'NEXT ▶' : 'GOT IT') + '</button>';
         var ok = ov.querySelector('#rr-ok');

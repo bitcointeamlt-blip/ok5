@@ -2324,6 +2324,7 @@ export class F9PvpRoom extends Room<F9State> {
     }));
     const rep = {
       at: Date.now(), attacker: this._raidAtkAddr, result,
+      matchId: this.roomId,   // 🆔 07-14: kovos ID — report'e matosi kuri kova (tas pats laukas kaip match_result)
       atkArmy: Array.from(comp.values()),
       killed: Array.from(this._raidKilled), injured: Array.from(this._raidInjured),
       bonesStolen: this._raidStolen, defUnits,
@@ -2528,7 +2529,9 @@ export class F9PvpRoom extends Room<F9State> {
     //   nepersistuoja į kitą mūšį. Auto-save/dispose snapshot'ins jau pilną HP.
     this.state.units.forEach((u) => { if (u.alive) u.hp = u.maxHp; });
     this.broadcast("match_end", { winnerSid, winnerTeam });
-    this.broadcast("match_result", { winnerSid, winnerTeam, entryFee: this.state.entryFee, players, deaths, reason: "wipe", rosters: this._battleRoster() });
+    // 🆔 07-14 (user): kovos ID = roomId (unikalus per mūšį) + trukmė — klientas (f9_pvp_live ~1323) skaito
+    //   e.matchId/e.durationMs/e.reason → settled ekrano „MATCH #id" eilutė (UI jau buvo, serveris nesiuntė!)
+    this.broadcast("match_result", { winnerSid, winnerTeam, entryFee: this.state.entryFee, players, deaths, reason: "wipe", rosters: this._battleRoster(), matchId: this.roomId, durationMs: this.state.startedAt ? Date.now() - this.state.startedAt : 0 });
     console.log(`[F9PvpRoom] match_end winner=${winnerSid || "(draw)"} pot_left=${this.state.pot.toFixed(2)} payouts=${payouts.length} deaths=${deaths.length}`);
   }
 
