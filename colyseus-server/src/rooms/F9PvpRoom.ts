@@ -1797,7 +1797,10 @@ export class F9PvpRoom extends Room<F9State> {
     const reg = onField + reserve;
     const frac = reg > 0 ? onField / reg : (onField > 0 ? 1 : 0);
     const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250
-    const raw = (frac > 0 ? MINE_BASE_H : 0) + powerTerm * frac;   // 0 lauke → 0
+    // ⚖️ 07-15 EXPLOIT FIX (g3nka repro): BAZĖ irgi × lauko frakcija — buvo plokščia (≥1 lauke → pilna
+    //   MINE_BASE_H), todėl bench'inus 11/12 unitų kasimas beveik nesikeisdavo, nors ekonomikos taisyklė =
+    //   „kasimas ∝ lauko unitai“. Pilnas laukas (frac=1) gauna TIEK PAT kiek anksčiau — nerf tik daliniam.
+    const raw = (MINE_BASE_H + powerTerm) * frac;   // 0 lauke → 0
     const shielded = addr === this._ownerAddr && (Number((this._buildings as any)?.shieldUntil) || 0) > Date.now();
     const dutyMult = (c && c.duty === "safe") ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT;   // ⚔️ online 2× / safe 1.2×
     return raw * (shielded ? 0.5 : 1) * MINE_SUCCESS * dutyMult;   // × success × duty
