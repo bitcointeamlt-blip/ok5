@@ -1896,23 +1896,12 @@
     _rcEl._blink = setInterval(function () { var t = _rcEl && _rcEl.querySelector('#f9rc-txt'); if (t) { vis = !vis; t.style.opacity = vis ? '1' : '0.55'; } }, 550);
   }
   function _rcHide() { if (_rcEl) { try { clearInterval(_rcEl._blink); } catch (_) {} if (_rcEl.parentNode) _rcEl.parentNode.removeChild(_rcEl); _rcEl = null; } }
-  // 🟢🟡🔴 nuolatinis ryšio badge (apačioje kairėje virš SOUND) — visada matai ar tikrai online; klik = reconnect
-  function _rcBadgeSet(state) {   // 'on' | 'connecting' | 'off' | null(slėpti)
-    if (!state) { if (_rcBadge && _rcBadge.parentNode) _rcBadge.parentNode.removeChild(_rcBadge); _rcBadge = null; return; }
-    if (!_rcBadge) {
-      _rcBadge = document.createElement('div');
-      _rcBadge.id = 'f9-conn-badge';
-      _rcBadge.style.cssText = 'position:fixed;left:12px;bottom:96px;z-index:99997;padding:7px 11px;border-radius:7px;' +
-        "font:700 10px 'Press Start 2P',monospace,sans-serif;letter-spacing:1px;cursor:pointer;user-select:none;border:2px solid;box-shadow:0 3px 10px rgba(0,0,0,.45);";
-      _rcBadge.title = 'Connection status — click to force reconnect';
-      _rcBadge.onclick = _rcForceReconnect;
-      document.body.appendChild(_rcBadge);
-    }
-    if (_rcBadge._st === state) return;
-    _rcBadge._st = state;
-    if (state === 'on') { _rcBadge.textContent = '🟢 ONLINE'; _rcBadge.style.borderColor = '#3d6a2e'; _rcBadge.style.background = 'rgba(18,50,18,0.88)'; _rcBadge.style.color = '#8fd47c'; }
-    else if (state === 'connecting') { _rcBadge.textContent = '🟡 CONNECTING…'; _rcBadge.style.borderColor = '#8a6a1a'; _rcBadge.style.background = 'rgba(60,45,10,0.9)'; _rcBadge.style.color = '#ffcf5c'; }
-    else { _rcBadge.textContent = '🔴 OFFLINE — TAP TO RECONNECT'; _rcBadge.style.borderColor = '#a53a3a'; _rcBadge.style.background = 'rgba(70,12,12,0.92)'; _rcBadge.style.color = '#ff9a9a'; }
+  // 🟢🟡🔴 badge PAŠALINTAS (07-15 user: „maišo, neatspindi nieko“) — no-op, tik nuima jei senas dar kabo.
+  //   Raudonas CONNECTION LOST baneris (_rcShow) lieka — jis rodomas TIK realiai nutrūkus ryšiui.
+  function _rcBadgeSet(state) {
+    void state;
+    if (_rcBadge && _rcBadge.parentNode) _rcBadge.parentNode.removeChild(_rcBadge);
+    _rcBadge = null;
   }
   setInterval(function () {
     try {
