@@ -9596,6 +9596,7 @@ function _f9MktInboxPoll() {
     Promise.all([W.marketGetActiveListings(0, 100), W.offersGetTokens(0, 200)]).then(function (rr) {
       const list = Array.isArray(rr[0]) ? rr[0] : [], toks = rr[1] || {};
       _f9MktListings = list;                       // švieži listingai (modalas atidarius panaudos)
+      try { _f9MktEnrichListings(); } catch (_) {} // 🖼 FIX 07-14: poll perrašo listingus BE utype → BROWSE sprite dingdavo; praturtinam iškart (utype/level iš NFT)
       try { _f9MktDetectSales(); } catch (_) {}    // 💰 sold-detect fone (pats push'ins inbox per hook'ą)
       const mine = list.filter(function (L) { return String(L.seller).toLowerCase() === my && toks[String(L.tokenId)] && toks[String(L.tokenId)].count > 0; }).slice(0, 15);
       const seenArr = _f9MktJGet(_F9MKT_OFFSEEN_KEY, my); const seenMap = (seenArr && seenArr[0]) || {};
@@ -9706,7 +9707,7 @@ function _f9MktLoadListings(force) {
   const W = window.Wallet;
   if (!W || !W.marketGetActiveListings) return;
   if (_f9MktListLoading) return;
-  if (_f9MktListings && !force) return;
+  if (_f9MktListings && !force) { try { _f9MktEnrichListings(); } catch (_) {} return; }   // 🖼 FIX 07-14: poll galėjo užpildyti listingus BE utype → atidarius vis tiek praturtinam (sprite)
   _f9MktListLoading = true; _f9MktListErr = '';
   if (_f9MktTab === 'browse') _f9MktRenderBody();
   W.marketGetActiveListings(0, 100).then(function (list) {
