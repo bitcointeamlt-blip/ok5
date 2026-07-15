@@ -35,10 +35,12 @@
           return {
             match_id: b.matchId || String(r.ronin_address || '').slice(6),
             attacker: b.attacker || '', defender: b.defender || '', winner: b.winner || '',
-            // 💀 kolona = eliminuoti (dead+injured) — permadeath OFF metu aukos virsta sužalojimais
-            atk_survived: (b.atkSurvived | 0), atk_dead: ((b.atkDead | 0) + (b.atkInjured | 0)),
-            def_survived: (b.defSurvived | 0), def_dead: ((b.defDead | 0) + (b.defInjured | 0)),
-            bones: +(b.bones || 0), reason: b.result || '', duration_ms: (b.durationMs | 0),
+            atk_survived: (b.atkSurvived | 0), atk_injured: (b.atkInjured | 0), atk_dead: (b.atkDead | 0),
+            def_survived: (b.defSurvived | 0), def_injured: (b.defInjured | 0), def_dead: (b.defDead | 0),
+            // 🦴 pusių kill-loot (nauji įrašai; seni be laukų → null, tada eilutė nerodoma)
+            atk_bones: (b.atkBones == null ? null : +b.atkBones), def_bones: (b.defBones == null ? null : +b.defBones),
+            loot: +(b.bones || 0),   // 💰 pavogtas mining pot RONKE (fullWipe steal)
+            reason: b.result || '', duration_ms: (b.durationMs | 0),
             created_at: b.at ? new Date(b.at).toISOString() : (r.updated_at || '')
           };
         });
@@ -83,6 +85,30 @@
   function renderHistory(rows, listEl) {
     if (!rows || !rows.length) { listEl.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:10px 0;">No battles recorded yet — raid a castle to start the log ⚔️</div>'; return; }
     listEl.innerHTML = '';
+    // 🎴 2-PUSĖ kortelė (07-15 user): kas puolė / kas gynėsi, kiekvienos pusės armija, ✔/🤕/💀 ir 🦴 grobis;
+    //    laimėtojo pusė paauksinta 👑; 💰 = pavogtas mining pot RONKE (rodomas +puolikui / −gynėjui).
+    function sideBox(role, m) {
+      var atk = role === 'attacker';
+      var addr = atk ? m.attacker : m.defender;
+      var sv = atk ? m.atk_survived : m.def_survived, inj = atk ? m.atk_injured : m.def_injured, dd = atk ? m.atk_dead : m.def_dead;
+      var bones = atk ? m.atk_bones : m.def_bones;
+      var army = (sv | 0) + (inj | 0) + (dd | 0);
+      var won = m.winner === role;
+      var col = atk ? '#ff9a98' : '#8cd0ff';
+      var lootHtml = '';
+      if (m.loot) lootHtml = atk
+        ? '<div style="color:#8dffa0;margin-top:3px;" title="Stolen from defender\'s mining pot">💰 +' + (+m.loot).toFixed(1) + ' RONKE</div>'
+        : '<div style="color:#ff8a88;margin-top:3px;" title="Stolen by the attacker">💰 −' + (+m.loot).toFixed(1) + ' RONKE</div>';
+      return '<div style="flex:1 1 0;min-width:0;padding:7px 9px;border-radius:5px;border:1px solid ' + (won ? '#ffcf5c' : '#3a3a55') + ';background:' + (won ? 'rgba(255,207,92,0.07)' : 'rgba(255,255,255,0.02)') + ';">' +
+        '<div style="font-size:7px;color:' + col + ';letter-spacing:.5px;margin-bottom:4px;">' + (atk ? '⚔ ATTACKER' : '🛡 DEFENDER') + (won ? ' <span style="color:#ffcf5c;">👑 WON</span>' : '') + '</div>' +
+        '<div style="font-size:8px;color:#c9d4e8;margin-bottom:5px;" title="' + _histEsc(addr) + '">' + shortAddr(addr) + '</div>' +
+        '<div style="font-size:7px;color:#8a9aaa;line-height:1.8;">' +
+          '<div title="Units fielded">🪖 ' + army + ' unit' + (army === 1 ? '' : 's') + '</div>' +
+          '<div title="survived / injured / dead"><span style="color:#6fcf5c;">✔' + (sv | 0) + '</span> <span style="color:#e8a54a;">🤕' + (inj | 0) + '</span> <span style="color:#ff6b6b;">💀' + (dd | 0) + '</span></div>' +
+          (bones == null ? '' : '<div title="Bones looted from kills">🦴 ' + (+bones).toFixed(1) + ' bones</div>') +
+          lootHtml +
+        '</div></div>';
+    }
     rows.forEach(function (m) {
       var win = m.winner;
       var badge = win === 'attacker' ? '<span style="color:#ff9a98;">⚔ RAIDER WON</span>'
@@ -91,18 +117,12 @@
       var row = document.createElement('div');
       row.style.cssText = 'padding:9px 11px;border-radius:6px;border:1px solid #3a3a55;background:rgba(255,255,255,0.03);';
       row.innerHTML =
-        '<div style="display:flex;align-items:center;gap:7px;font-size:9px;margin-bottom:5px;">' +
-          '<span style="color:#ff9a98;" title="' + _histEsc(m.attacker) + '">⚔ ' + shortAddr(m.attacker) + '</span>' +
-          '<span style="color:#6a7a8a;">→</span>' +
-          '<span style="color:#8cd0ff;" title="' + _histEsc(m.defender) + '">🛡 ' + shortAddr(m.defender) + '</span>' +
-          '<span style="margin-left:auto;font-size:8px;">' + badge + '</span>' +
+        '<div style="display:flex;align-items:center;gap:7px;font-size:8px;margin-bottom:7px;">' +
+          badge +
+          '<span style="margin-left:auto;font-size:7px;color:#6a7a8a;" title="Match ID">#' + _histEsc(m.match_id) + '</span>' +
+          '<span style="font-size:7px;color:#6a7a8a;">' + _histEsc(agoStr(m.created_at)) + '</span>' +
         '</div>' +
-        '<div style="font-size:7px;color:#6a7a8a;letter-spacing:.4px;display:flex;gap:9px;flex-wrap:wrap;align-items:center;">' +
-          '<span title="Match ID">#' + _histEsc(m.match_id) + '</span>' +
-          '<span title="attacker survived/dead · defender survived/dead">🗡' + (m.atk_survived | 0) + '/' + (m.atk_dead | 0) + '💀 · 🛡' + (m.def_survived | 0) + '/' + (m.def_dead | 0) + '💀</span>' +
-          (m.bones ? '<span style="color:#8dffa0;">🦴 ' + (+m.bones).toFixed(1) + '</span>' : '') +
-          '<span style="margin-left:auto;">' + _histEsc(agoStr(m.created_at)) + '</span>' +
-        '</div>';
+        '<div style="display:flex;gap:6px;align-items:stretch;">' + sideBox('attacker', m) + sideBox('defender', m) + '</div>';
       listEl.appendChild(row);
     });
   }

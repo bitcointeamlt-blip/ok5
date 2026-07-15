@@ -516,6 +516,7 @@ export class F9PvpRoom extends Room<F9State> {
   private _raidInjured = new Set<string>();    // gynėjo tokenId sužaloti per ŠĮ raidą
   private _battleFates = new Map<string, "injured" | "dead">();   // ⚔ ŠIO mūšio per-unitId likimai (2-pusiam settled ekranui: abiejų komandų sudėtis)
   private _raidStolen = 0;                      // pavogti kaulai (užpildoma _endMatch grobio bloke)
+  private _endBones = { atk: 0, def: 0 };       // 🦴 abiejų pusių sesijos kaulai (_endMatch summary; _persistRaidReport skaito PO flush'o)
   private _minePend = new Map<string, { nonce: string; amt: number; at: number }>();   // ⛏️💸 laukiantis withdrawal (deduct'inta; jei TX nenusėda po deadline → re-credit)
   private _raidReported = false;               // vieną kartą per kambarį
 
@@ -2345,6 +2346,7 @@ export class F9PvpRoom extends Room<F9State> {
       winner: atkWon ? "attacker" : "defender", result,
       atkSurvived: atkT ? atkT.survived : 0, atkInjured: atkT ? atkT.injured : 0, atkDead: atkT ? atkT.dead : 0,
       defSurvived: defT ? defT.survived : 0, defInjured: defT ? defT.injured : 0, defDead: defT ? defT.dead : 0,
+      atkBones: this._endBones.atk, defBones: this._endBones.def,   // 🦴 kaulų grobis pusėms (kill loot)
       bones: this._raidStolen, durationMs: this.state.startedAt ? Date.now() - this.state.startedAt : 0,
     }).then((ok) => {
       console.log(`[F9PvpRoom] 🌍 mūšio įrašas match_${this.roomId} (${atkWon ? "attacker" : "defender"} won) persist=${ok}`);
@@ -2496,6 +2498,7 @@ export class F9PvpRoom extends Room<F9State> {
     const payouts: Payout[] = [];
     const players: any[] = [];
     let winnerTeam = -1;
+    this._endBones = { atk: 0, def: 0 };   // 🦴 reset per mūšį (home kambarys gali turėti kelis raidus iš eilės)
     this.state.players.forEach((p) => {
       if (p.sessionId === winnerSid) winnerTeam = p.team;
       const survivors = [...this.state.units.values()].filter((u) => u.owner === p.sessionId && u.alive).length;
@@ -2507,6 +2510,9 @@ export class F9PvpRoom extends Room<F9State> {
       const powerBonus = Math.round(Math.min(BONE_POWER_MAX_BONUS, (power / BONE_POWER_MAX) * BONE_POWER_MAX_BONUS) * 100) / 100;
       const totalMult = p.boneMult || (baseMult + powerBonus);                                    // ADITYVUS: puolikas maks 4.0×, gynėjas 3.5×
       const bones = (p as any)._forfeit ? 0 : Math.round((p.bones || (kills * totalMult)) * 10) / 10;   // gyvai kauptas (fallback recompute); 🏳️ forfeit = 0 (rage-quit be grobio)
+      // 🌍 istorijai: pusių kaulų sumos (p.bones tuoj nusinulins _flushBones — čia paskutinis šansas)
+      if (p.team === DEFENDER_TEAM) this._endBones.def = Math.round((this._endBones.def + bones) * 10) / 10;
+      else this._endBones.atk = Math.round((this._endBones.atk + bones) * 10) / 10;
       const ronkeFromBones = Math.round(bones * BONE_VALUE_RONKE * 10) / 10;
       // 💀 Prarasta unitų: permadeath rulojam žaidėjo PARBLOKŠTIEMS unitams (display TIK — jokio realaus burn).
       let unitsLost = 0;

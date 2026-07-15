@@ -284,7 +284,9 @@ export type MatchRecord = {
   result: string;   // gynėjo perspektyva: 'lost' | 'defended' | 'retreat'
   atkSurvived: number; atkInjured: number; atkDead: number;
   defSurvived: number; defInjured: number; defDead: number;
-  bones: number; durationMs: number;
+  atkBones: number; defBones: number;   // 🦴 kiekvienos pusės kaulų grobis (kill loot; AI gynėjas=0)
+  bones: number;                        // 💰 pavogtas mining pot RONKE (fullWipe steal; istoriškai vadinasi bones)
+  durationMs: number;
 };
 export async function logMatch(rec: MatchRecord): Promise<boolean> {
   const id = String(rec.matchId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
