@@ -4375,6 +4375,15 @@ function _f9InstallDragHandlers() {
     };
   }
   canvas.addEventListener('mousedown', (e) => {
+    // 🖱️ DEŠINYS-DRAG = kameros pan (2026-07-15 user swap); dešinys-KLIK lieka komanda (atskiria drag slenkstis).
+    if (e.button === 2) {
+      if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
+      const _p2 = _f9CanvasXY(e);
+      window._f9DragStart = { sx: _p2.sx, sy: _p2.sy, clientX: e.clientX, clientY: e.clientY };
+      window._f9DragActive = false; window._f9DragMode = 'pan'; window._f9DragButton = 2;
+      window._f9DragCamStart = { x: (S.cam ? (S.cam.tx ?? S.cam.x) : 0), y: (S.cam ? (S.cam.ty ?? S.cam.y) : 0) };
+      return;
+    }
     if (e.button !== 0) return;
     if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
     const p = _f9CanvasXY(e);
@@ -4455,6 +4464,10 @@ function _f9InstallDragHandlers() {
     window._f9StatsSelected = false;
     window._f9DragStart = { sx: p.sx, sy: p.sy, clientX: e.clientX, clientY: e.clientY };
     window._f9DragActive = false;
+    // 🖐️ GRAB-AND-DRAG kamera (2026-07-15 user): dešinys-drag = pan; kairys-drag = box-select. Įsimenam kameros poziciją.
+    window._f9DragCamStart = { x: (S.cam ? (S.cam.tx ?? S.cam.x) : 0), y: (S.cam ? (S.cam.ty ?? S.cam.y) : 0) };
+    window._f9DragMode = 'box';   // 🖱️ SWAP: kairys-drag = box-select (unitų pažymėjimas); Shift = add-to-selection
+    window._f9DragButton = 0;
   }, true);
   canvas.addEventListener('mousemove', (e) => {
     // 🏰 HOVER WALL — pelė virš castle sienos → „taikinukas" (highlight + ⚔). Veikia solo IR PvP.
@@ -4492,10 +4505,23 @@ function _f9InstallDragHandlers() {
       window._f9DragActive = true;
     }
     if (window._f9DragActive) {
-      window._f9DragRect = {
-        sx1: window._f9DragStart.sx, sy1: window._f9DragStart.sy,
-        sx2: p.sx, sy2: p.sy,
-      };
+      if (window._f9DragMode === 'box') {
+        window._f9DragRect = {
+          sx1: window._f9DragStart.sx, sy1: window._f9DragStart.sy,
+          sx2: p.sx, sy2: p.sy,
+        };
+      } else {
+        // 🖐️ DRAG-TO-PAN — kamera 1:1 seka pelę (grab-and-drag). Delta canvas-px → world (/zoom).
+        const _z = (typeof _f9WorldZoom === 'function' ? _f9WorldZoom() : 1) || 1;
+        if (S.cam && window._f9DragCamStart) {
+          S.cam.tx = window._f9DragCamStart.x - (p.sx - window._f9DragStart.sx) / _z;
+          S.cam.ty = window._f9DragCamStart.y - (p.sy - window._f9DragStart.sy) / _z;
+          window._f9MouseDragPan = true;
+          window._f9CamFree = true;
+          S._camManualLock = true;
+          try { canvas.style.cursor = 'grabbing'; } catch (_) {}
+        }
+      }
     }
   });
   canvas.addEventListener('mouseup', (e) => {
@@ -4551,9 +4577,13 @@ function _f9InstallDragHandlers() {
       }
       window._f9DragJustEnded = true;
     }
+    if (window._f9DragActive && window._f9DragMode === 'pan') window._f9RightDragPanned = true;   // 🖱️ dešinys-drag panino → nuslopinam contextmenu komandą
     window._f9DragStart = null;
     window._f9DragActive = false;
     window._f9DragRect = null;
+    window._f9DragButton = 0;
+    window._f9MouseDragPan = false;
+    try { canvas.style.cursor = ''; } catch (_) {}
   });
 
   // ── F10 (home) MOBILE touch-pan: tempi pirštu → kamera juda, gali laisvai tyrinėti home ──
@@ -4827,6 +4857,7 @@ document.addEventListener('keydown', (e) => {
       for (const u of _selNow) { cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL; cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL; }
       cgx /= _selNow.length; cgy /= _selNow.length;
       S.cam.tx = cgx - canvas.width / 2; S.cam.ty = cgy - canvas.height / 2; S._camManualLock = true;
+      window._f9CamFree = false;   // 🖐️ double-tap grupės [1-6] = grąžinam „follow"
     }
     e.preventDefault(); e.stopImmediatePropagation();
     return;
@@ -34418,7 +34449,7 @@ function updateCamera() {
   const _vpTop  = vpOffsetY, _vpBot   = vpOffsetY + vpH;
   // MOBILE F9: edge-pan IŠJUNGTAS — synthetic click po tap'o palieka _canvasMx užstrigusį
   // prie krašto → kamera amžinai dreifuoja ir kovoja su piršto pan'u (2026-06-12).
-  const _edgePanOk = !(window._f9TouchInstalled && S.floor === 9);
+  const _edgePanOk = (S.floor !== 9);   // 🖐️ F9 RTS scena (2026-07-15 user): edge-scroll IŠJUNGTAS — kamera valdoma TIK grab-drag.
   if (_edgePanOk && typeof _canvasMx === 'number' && _canvasMx >= _vpLeft - 4 && _canvasMx <= _vpRight + 4
       && _canvasMy >= _vpTop - 4 && _canvasMy <= _vpBot + 4 && !_overDeployPanel) {
     const _dl = _canvasMx - _vpLeft;
@@ -34496,7 +34527,8 @@ function updateCamera() {
   // Auto-follow (ne pan) lieka smooth lerp 0.14.
   // 📱 F9 touch: rankinis pan/pinch → SNAP (be lerp lago) — pirštas=1:1, kitaip vaizdas „velkasi" (guminis lagas)
   if ((S.floor === 10 && window._f10PanInstalled && S._camManualLock) ||
-      (S.floor === 9 && window._f9TouchInstalled && S._camManualLock)) {
+      (S.floor === 9 && window._f9TouchInstalled && S._camManualLock) ||
+      (S.floor === 9 && window._f9MouseDragPan && S._camManualLock)) {   // 🖐️ desktop grab-drag → 1:1 snap
     S.cam.x = tx; S.cam.y = ty;
   } else {
     S.cam.x += (tx - S.cam.x) * 0.14;
@@ -41174,6 +41206,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // F9 right-click → engage target (RTS pattern: SC2 style)
     if (gameMode === 'adventure' && S && S.floor === 9) {
       e.preventDefault();
+      if (window._f9RightDragPanned) { window._f9RightDragPanned = false; return; }   // 🖱️ dešinys-DRAG = kameros pan, ne komanda
       // 🏗️ MANAGE MODE — kai tvarkai pilį (panelė atidaryta) ar statai bokštą: dešinys klikas NEjudina unitų
       //    (kitaip jie vaikšto kur klikini upgrade'indamas). Placement metu — atšaukia statymą.
       if (window._f9TowerPlaceMode) { if (typeof _f9ExitTowerPlaceMode === 'function') _f9ExitTowerPlaceMode(); return; }

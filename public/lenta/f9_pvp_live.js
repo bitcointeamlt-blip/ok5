@@ -1352,7 +1352,7 @@
     window._f9Passages = (e && Array.isArray(e.passages)) ? e.passages : [];   // 🚪 praėjimų eilės (grovio tarpai) — ant jų bokšto NEstatom
     window._f9CapState = null; _capLast = '';
     window._f9MyBones = null; _boneLast = ''; _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true;   // 🦴 nauja partija → reset balanso count-up (bankas persistuoja, atsinaujins per bones_bank_get)
-    _raidLog = { injured: [], dead: [] }; window._f9LastSteal = null; window._f9SettleData = null; window._f9SettleRosters = null; window._f9SettleMatchId = null; window._f9SettleMeta = null; window._f9LastAttacker = null;   // ⚔ settled suvestinės reset (įsk. 2-pusius rosterius + 🔎 Match ID/priešo adresą)
+    _raidLog = { injured: [], dead: [] }; window._f9LastSteal = null; window._f9SettleData = null; window._f9SettleRosters = null; window._f9SettleMatchId = null; window._f9SettleMeta = null; window._f9LastAttacker = null; window._f9CamFree = false;   // ⚔ settled suvestinės reset + 🖐️ nauja scena → kamera vėl seka armiją
     // 🐛 P-C3: išvalom SENOS sesijos ligoninės būseną PRIEŠ _f9pvpLive=true — kitaip 1.5s langą (kol ateis
     //   šviežias 'hospital' push) barracks_nft.fetchHospState skaitytų SENOS piniginės sužalotus kaip LIVE
     //   (→ deko/lauko „makalynė" perjungus piniginę). null (NE []) → fetchHospState kris atgal į per-adresą REST.
@@ -1636,6 +1636,7 @@
   var _cvEl = null;   // ⚡ perf 07-06: canvas ref kešuojamas 1× (buvo getElementById KAS KADRĄ)
   function _centerCam() {
     var s = S(); if (!s || !s.cam) return;
+    if (window._f9CamFree) return;   // 🖐️ user rankiniu drag-pan perėmė kamerą → NEperrašom (laisva kamera). Reset: scenos startas / double-tap grupė [1-6].
     var cv = _cvEl || (_cvEl = document.getElementById('canvas')); if (!cv) return;
     var cxs = 0, cys = 0, n = 0, axs = 0, ays = 0, an = 0;
     s.units.forEach(function (u) {
