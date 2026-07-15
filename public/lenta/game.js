@@ -10529,6 +10529,8 @@ const _f9MineBtnCss = 'flex:1;padding:14px 16px;font-family:inherit;font-size:12
 //   serveris taps autoritetu; withdraw kol kas COMING SOON. Konstantos TUNABLE.
 const _F9_MINE_BASE_H  = 10;      // RONKE/h bazė (kai eligible)
 const _F9_MINE_POWER_H = 0.1;     // + RONKE/h už kiekvieną RonkePower tašką (power 200 → +20/h)
+const _F9_MINE_DUTY_BASE_H = 10;  // 🏁 07-15 (user): DUTY flat bazė RONKE/h (serveris siunčia dutyOnlineBase)
+const _F9_MINE_SAFE_BASE_H = 5;   // 🏁 07-15 (user): SAFE flat bazė RONKE/h
 const _F9_MINE_POW_CAP = 4000;    // whale cap
 const _F9_MINE_CAP     = 1000;    // sandėlio lubos (RONKE; 07-12 user 5000→1000, serveris autoritetas per m.cap)
 const _F9_MINE_CLAIM   = 500;     // išvedimo slenkstis (RONKE)
@@ -10557,12 +10559,18 @@ function _f9MineFieldFraction() {
 function _f9MineShieldMult() { const su = Number(window.__f9ShieldUntil) || 0; return (su > Date.now()) ? 0.5 : 1; }
 // RAW greitis (RONKE/h prie 100% sėkmės). EFEKTYVUS = raw × sėkmė (rodomas panelėj).
 //   base = tik jei bent 1 unitas lauke; power dalis × lauko frakcija; viskas × skydo daugiklis.
+// 🏁 07-15: RONKE Power → RONKE/h (knee @250, kaip serveris _minePowerTerm: 0.05/pt, virš 250 ×0.25)
+function _f9MinePowerTerm(p) {
+  p = Math.max(0, Math.min(p || 0, _F9_MINE_POW_CAP));
+  return Math.min(p, 250) * 0.05 + Math.max(0, p - 250) * 0.05 * 0.25;
+}
 function _f9MineRateNow() {
-  const c = window._f9Cemetery; if (!c || !c.eligible) return 0;
-  const frac = _f9MineFieldFraction();
-  const powerTerm = Math.min(_f9MinePowerNow(), _F9_MINE_POW_CAP) * _F9_MINE_POWER_H;
-  const raw = (frac > 0 ? _F9_MINE_BASE_H : 0) + powerTerm * frac;   // 0 lauke → 0; didelis dekas nebaudžiamas (ta pati lauko power)
-  return raw * _f9MineShieldMult();
+  const d = _f9MineData(); if (!d.eligible || d.gated) return 0;
+  // 🏁 07-15 (user): VIENODAS FLAT rate — SAFE 5/h, DUTY 10/h, + RONKE Power (knee). JOKIOS lauko frakcijos —
+  //   lauko unitų kiekis nebekeičia greičio (tik eligibility). Atspindi serverio _mineRateFrom.
+  const base = (d.duty === 'safe') ? (d.dutySafeBase || _F9_MINE_SAFE_BASE_H) : (d.dutyOnlineBase || _F9_MINE_DUTY_BASE_H);
+  const power = (typeof d.hpower === 'number' && d.hpower >= 0) ? d.hpower : _f9MinePowerNow();
+  return (base + _f9MinePowerTerm(power)) * (d.shielded ? 0.5 : 1);
 }
 function _f9MineEnsureState() {
   const a = _f9MineAddrKey();
@@ -10588,11 +10596,10 @@ function _f9MineAttempt() {
   let add = 0;
   if (st && st.clientOnly === true) {
     const raw = _f9MineRateNow();
-    st.rate = raw * sc;   // panelė/estimate = EFEKTYVUS greitis (su fail baudos)
+    st.rate = raw;   // 🏁 07-15: FLAT rate jau efektyvus (be success baudos) — panelė = tikras greitis
     st.cap = _F9_MINE_CAP; st.claimMin = _F9_MINE_CLAIM;
     if (raw > 0 && (st.pot || 0) < _F9_MINE_CAP) {
-      if (offline) add = raw * sc * gap / 3600000;    // offline → fail-vidurkintas
-      else if (success) add = raw * gap / 3600000;     // live SĖKMĖ → pilnas gap (fail=0 → vidutiniškai raw×sc)
+      add = raw * gap / 3600000;   // 🏁 07-15: FLAT deterministinis (raw jau efektyvus) — jokios success loterijos
       st.pot = Math.min(_F9_MINE_CAP, (st.pot || 0) + add);
     }
     st.at = now;
@@ -10640,6 +10647,8 @@ function _f9MineData() {
     dutyMult: (c && typeof c.dutyMult === 'number') ? c.dutyMult : 2,
     dutyOnlineMult: (c && typeof c.dutyOnlineMult === 'number') ? c.dutyOnlineMult : 2,
     dutySafeMult: (c && typeof c.dutySafeMult === 'number') ? c.dutySafeMult : 1.2,
+    dutyOnlineBase: (c && typeof c.dutyOnlineBase === 'number') ? c.dutyOnlineBase : 10,   // 🏁 flat bazė DUTY
+    dutySafeBase: (c && typeof c.dutySafeBase === 'number') ? c.dutySafeBase : 5,          // 🏁 flat bazė SAFE
   };
 }
 // ⛏️💀 100% pilies wipe → nuima pct (0.5) nuo KLIENTO mining pot. VIENKART per `at` signalą (offline-safe:
@@ -10726,8 +10735,8 @@ function _f9MinePanelStats() {
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;"><span style="font-size:11px;letter-spacing:1px;color:#c9d4e8;">⚔️ DUTY STATUS</span>' +
           '<span style="flex:1;"></span><span style="font-size:9px;padding:2px 8px;border-radius:4px;background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.2)' : 'rgba(255,207,92,0.18)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#ffcf5c') + ';">' + (d.duty === 'safe' ? '🛡 SAFE' : '🟢 ON DUTY') + '</span></div>' +
         '<div style="display:flex;gap:8px;">' +
-          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>' + (d.dutyOnlineMult || 2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">raidable · raids = your siege</span></button>' +
-          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';">🛡 SAFE<br><b>' + (d.dutySafeMult || 1.2) + '× mining</b><br><span style="font-size:8px;opacity:.8;">protected · you attack to unlock</span></button>' +
+          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>+' + (d.dutyOnlineBase || 10) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">raidable · raids = your siege</span></button>' +
+          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';">🛡 SAFE<br><b>+' + (d.dutySafeBase || 5) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">protected · you attack to unlock</span></button>' +
         '</div>' +
         (d.gated ? '<div style="margin-top:9px;font-size:9px;color:#e8a08a;line-height:1.5;background:rgba(232,93,93,0.1);border:1px solid #7a3a3a;border-radius:5px;padding:8px;">🔒 <b>Mining paused</b> — you hit your siege checkpoint. Win <b>one PvP match</b> (either side reaches <b>50% casualties</b>) to mine the next ' + step + ' RONKE. ' + (d.duty === 'safe' ? 'Go attack a castle.' : 'Attack a castle — or a raid on you counts too.') + '</div>'
           : '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 Nobody can raid you — but mining PAUSES every ' + step + ' RONKE until you win a PvP match (you go attack).' : '🟢 Faster mining + raidable. Mining also pauses every ' + step + ' RONKE until a PvP match — but raids on you count as your match.') + '</div>') +

@@ -1112,6 +1112,7 @@
         power: (typeof e.power === 'number' ? e.power : null), fullPower: (typeof e.fullPower === 'number' ? e.fullPower : null),   // healthy / pilnas RP
         duty: (e.duty === 'safe' ? 'safe' : 'online'), gated: !!e.gated, dutyMult: (typeof e.dutyMult === 'number' ? e.dutyMult : 2),   // ⚔️🛡 DUTY status
         dutyOnlineMult: (typeof e.dutyOnlineMult === 'number' ? e.dutyOnlineMult : 2), dutySafeMult: (typeof e.dutySafeMult === 'number' ? e.dutySafeMult : 1.2),
+        dutyOnlineBase: (typeof e.dutyOnlineBase === 'number' ? e.dutyOnlineBase : 10), dutySafeBase: (typeof e.dutySafeBase === 'number' ? e.dutySafeBase : 5),   // 🏁 flat bazės
         at: Date.now() };
       // ⛏️💰 SERVER-AUTHORITATIVE mining: kai serveris siunčia mpot → nustatom _f9Mine (clientOnly:false → STOJA client accrual)
       try {

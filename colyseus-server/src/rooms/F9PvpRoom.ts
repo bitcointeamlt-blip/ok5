@@ -209,6 +209,10 @@ const CEM_REQ_A_RV = 1, CEM_REQ_A_REG = 10, CEM_REQ_B_REG = 12, CEM_REQ_B_WALLET
 // ⛏️💰 RONKE MINING (07-11 server-authoritative) — PRIVALO sutapti su klientu game.js (_F9_MINE_*).
 //   Rate = (base + healthyPower×powerH × lauko-frakcija) × shield × success(fail vidurkis). Passive bones IŠJUNGTA.
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
+// 🏁 07-15 (user): VIENODAS FLAT rate visiems eligible — SAFE 5/h, DUTY 10/h, + RONKE Power bonusas.
+//   (Pakeičia lauko-frakcija × success × dutyMult modelį; DUTY 10 == senas PILNO lauko rate.)
+const MINE_DUTY_BASE_H = Number(process.env.F9_MINE_DUTY_BASE_H) || 10;   // DUTY flat bazė RONKE/h
+const MINE_SAFE_BASE_H = Number(process.env.F9_MINE_SAFE_BASE_H) || 5;    // SAFE flat bazė RONKE/h
 const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.05;  // +RONKE/h už RonkePower tašką (07-14 user: 0.1→0.05, bazė 10/6 lieka)
 const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
 const MINE_CAP = Number(process.env.F9_MINE_CAP) || 1000;          // ⛏️ kietas sandėlio backstop (checkpoint'ai realiai riboja; pot čia niekada normaliai nepasieks)
@@ -988,6 +992,17 @@ export class F9PvpRoom extends Room<F9State> {
         }
       }
     }
+    // 🚫🩹 CRIT FIX (2026-07-15): OWNER-BOUND kambarys (home/async raid → _ownerAddr užpildytas) su joineriu BE
+    //   adreso → ATMETAM ANKSTI. Šaknis: self-raid guard tikrina `p.address === _ownerAddr`; kai kliento adresas
+    //   TUŠČIAS (owner client su dar neužsikrovusia pinigine — relaunchHome()/launchRaid() su '' → wallet not
+    //   ready), palyginimas ''!==ownerAddr → guard'as APEINAMAS → savininkas įkrenta į raider path → spawninasi
+    //   kaip PUOLIKAS ant SAVO pilies → jo paties deko unitai kaunasi su jo gynėjais → masinės traumos/mirtys
+    //   (žaidėjo NFT sunaikinami be priežasties). Legitimus puolikas VISADA turi adresą, tad tuščias = klaida.
+    //   Klientas po to bando iš naujo, kai piniginė atsiranda (arba reconnect per token). Būsena dar nepaliesta.
+    if (this._ownerAddr && !String(options?.address || "").trim()) {
+      console.log(`[F9PvpRoom] 🚫 join atmestas — NĖRA adreso (owner room ${this._ownerAddr.slice(0, 10)}…, wallet not ready) → NO_ADDRESS`);
+      throw new Error("NO_ADDRESS");
+    }
     // 🏰 HOME: savininkas (pirmas) = DEFENDER_TEAM (gynėjas rytuose prie pilies); būsimi raideriai = attacker (team 0).
     const team = this._home ? (this.state.players.size === 0 ? DEFENDER_TEAM : 0) : this.state.players.size;
     const p = new F9Player();
@@ -1194,10 +1209,13 @@ export class F9PvpRoom extends Room<F9State> {
       // 🚫 S-C1: SELF-RAID apsauga — savininkas negali pulti savo paties GYVOS pilies (antras tab'as / zombie
       //   sesija su pingInterval:0 / manual raidPlayer own addr). Kitaip jo unitai dubliuojasi lauke →
       //   dvigubi injury roll'ai → tas pats tokenId atsiduria injured IR deadUnits (DB korupcija).
-      if (this._ownerAddr && String(p.address || "").trim().toLowerCase() === this._ownerAddr) {
-        this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId);
-        console.log(`[F9PvpRoom] 🚫 self-raid (live) atmestas (${this._ownerAddr.slice(0, 10)}…)`);
-        throw new Error("SELF_RAID");
+      //   ⚠️ 07-15: TUŠČIAS adresas irgi = self-raid rizika (guard'as ''!==ownerAddr apeidavo) — dubliuojam
+      //   ankstyvą NO_ADDRESS patikrą čia (defense-in-depth), kad joks puolikas be adreso nespawnintų.
+      const _raddr = String(p.address || "").trim().toLowerCase();
+      if (!_raddr || (this._ownerAddr && _raddr === this._ownerAddr)) {
+        this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);
+        console.log(`[F9PvpRoom] 🚫 self-raid/no-addr (live) atmestas (owner ${this._ownerAddr.slice(0, 10)}…, addr='${_raddr}')`);
+        throw new Error(_raddr ? "SELF_RAID" : "NO_ADDRESS");
       }
       // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (net gyva). Owner cem jau įkeltas home join'e.
       { const _oc = this._cem.get(this._ownerAddr); if (_oc && _oc.duty === "safe") { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw new Error("SAFE_MODE"); } }
@@ -1838,22 +1856,20 @@ export class F9PvpRoom extends Room<F9State> {
     const above = Math.max(0, capped - MINE_POWER_KNEE) * MINE_POWER_H * MINE_POWER_KNEE_MULT;
     return below + above;
   }
-  private _mineRateFrom(addr: string, onField: number, reserve: number): number {
+  private _mineRateFrom(addr: string, _onField: number, _reserve: number): number {
     if (!this._cemEligible(addr)) return 0;
     const c = this._cem.get((addr || "").trim().toLowerCase());
     // ⛏️🗡 SIEGE CHECKPOINT: pasiekus mcp (kas 200) kasimas SUSTOJA (0) kol atliks 1 PvP mūšį. ABU režimai (SAFE ir DUTY).
     if (c && c.gated) return 0;
     const hl = this._cemHealthy(addr).power;
-    const reg = onField + reserve;
-    const frac = reg > 0 ? onField / reg : (onField > 0 ? 1 : 0);
-    const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250
-    // ⚖️ 07-15 EXPLOIT FIX (g3nka repro): BAZĖ irgi × lauko frakcija — buvo plokščia (≥1 lauke → pilna
-    //   MINE_BASE_H), todėl bench'inus 11/12 unitų kasimas beveik nesikeisdavo, nors ekonomikos taisyklė =
-    //   „kasimas ∝ lauko unitai". Pilnas laukas (frac=1) gauna TIEK PAT kiek anksčiau — nerf tik daliniam.
-    const raw = (MINE_BASE_H + powerTerm) * frac;   // 0 lauke → 0
+    // 🏁 07-15 (user): VIENODAS FLAT rate visiems eligible (Path A|B). Nebe × lauko frakcija / success /
+    //   dutyMult — SAFE=5/h, DUTY=10/h, + RONKE Power bonusas (knee @250). Lauko unitų kiekis nebekeičia
+    //   rate (tik eligibility per _cemEligible). DUTY 10 == senas PILNO lauko DUTY rate — dalinis laukas
+    //   nebebaudžiamas. (_onField/_reserve nebenaudojami — palikti parašo suderinamumui su _mineRate*.)
+    const base = (c && c.duty === "safe") ? MINE_SAFE_BASE_H : MINE_DUTY_BASE_H;
+    const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250 (0.05/pt, virš 250 ×0.25)
     const shielded = addr === this._ownerAddr && (Number((this._buildings as any)?.shieldUntil) || 0) > Date.now();
-    const dutyMult = (c && c.duty === "safe") ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT;   // ⚔️ online 2× / safe 1.2×
-    return raw * (shielded ? 0.5 : 1) * MINE_SUCCESS * dutyMult;   // × success × duty
+    return (base + powerTerm) * (shielded ? 0.5 : 1);   // 🛡 skydas kol aktyvus → ×0.5
   }
   // Gyva rate (kambario state) — patikima TIK kai unitai spawninti (phase='playing').
   private _mineRate(addr: string): number {
@@ -1943,6 +1959,7 @@ export class F9PvpRoom extends Room<F9State> {
       // ⚔️🛡 DUTY STATUS: klientas rodo režimo jungiklį + greitį + „locked → siege" būseną
       duty: c.duty || "online", gated: !!c.gated, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
+      dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
       rules: { aRv: CEM_REQ_A_RV, aReg: CEM_REQ_A_REG, bReg: CEM_REQ_B_REG, bWallet: CEM_REQ_B_WALLET },
       now: Date.now(),
     };
