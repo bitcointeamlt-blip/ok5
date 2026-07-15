@@ -531,6 +531,11 @@ export class F9PvpRoom extends Room<F9State> {
     //    (joinOrCreate: jei taikinys ONLINE → prisijungtų prie jo home kambario = live raid; jei ne → kuria šitą.)
     this._asyncRaid = options?.raid === true && options?.home !== true;
     this._ownerAddr = String(options?.owner || "").trim().toLowerCase();   // 🏰 filterBy raktas (puolikas join'ina pagal jį)
+    // 🔒 07-15 HOTFIX: BE savininko (guest / wallet dar neprisijungė) home kambarys = PRIVATUS — kitaip
+    //   joinOrCreate (F1 joinHome) visus owner='' lankytojus sumesdavo į VIENĄ kambarį ir antras+
+    //   gaudavo NO_DEFENDERS (live-raid šaka) → „nežaidžia/neužsikrauna“. Private = nematomas
+    //   matchmaking'ui → kiekvienas guest gauna SAVO kambarį (pre-F1 elgesys). Owner kambariai nepaliesti.
+    if (this._home && !this._ownerAddr) { try { void this.setPrivate(true); } catch (_) {} }
     if (this._home || this._asyncRaid) this.maxClients = 4;                // home: defender+raiders; async: puolikas (+vietos)
     // #f9live = griežtas 1v1: maxClients=2 → vos 2 viduj, kambarys pilnas/nebejoinable →
     // kitas #f9live atidarymas kuria ŠVIEŽIĄ porą (jokio late-join/zombie-room suporavimo). FFA lieka 4.
