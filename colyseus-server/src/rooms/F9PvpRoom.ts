@@ -2,7 +2,7 @@ import { Room, Client } from "@colyseus/core";
 import { F9State, F9Player, F9Unit, F9Wall } from "../schema/F9State";
 import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
-import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
+import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { consumeInstantHeal, instantHealStatus, refundInstantHeal } from "../services/InstantHeal";   // ⚡🔵 Ronke Bless instant heal (2026-07-05)
 import { ethers } from "ethers";
@@ -2331,6 +2331,23 @@ export class F9PvpRoom extends Room<F9State> {
     };
     appendRaidReport(this._ownerAddr, rep).then((ok) => {
       console.log(`[F9PvpRoom] 📜 raid ataskaita → ${this._ownerAddr.slice(0, 10)}… (${result}, killed ${rep.killed.length}, injured ${rep.injured.length}, stolen ${rep.bonesStolen}) persist=${ok}`);
+    }).catch(() => {});
+    // 🌍 GLOBALI mūšių istorija (07-14 user): atskiras `match_<roomId>` įrašas f9_bases —
+    //   raid_ui 📜 HISTORY panelė skaito anon key. Roster'is settled (kviečiama 400ms po _endMatch).
+    const roster = this._battleRoster();
+    let atkT: { survived: number; injured: number; dead: number } | null = null;
+    let defT: { survived: number; injured: number; dead: number } | null = null;
+    for (const k of Object.keys(roster)) {
+      if (roster[k].team === DEFENDER_TEAM) defT = roster[k]; else if (!atkT) atkT = roster[k];
+    }
+    logMatch({
+      matchId: this.roomId, at: Date.now(), attacker: this._raidAtkAddr, defender: this._ownerAddr,
+      winner: atkWon ? "attacker" : "defender", result,
+      atkSurvived: atkT ? atkT.survived : 0, atkInjured: atkT ? atkT.injured : 0, atkDead: atkT ? atkT.dead : 0,
+      defSurvived: defT ? defT.survived : 0, defInjured: defT ? defT.injured : 0, defDead: defT ? defT.dead : 0,
+      bones: this._raidStolen, durationMs: this.state.startedAt ? Date.now() - this.state.startedAt : 0,
+    }).then((ok) => {
+      console.log(`[F9PvpRoom] 🌍 mūšio įrašas match_${this.roomId} (${atkWon ? "attacker" : "defender"} won) persist=${ok}`);
     }).catch(() => {});
   }
   // 🛡⏲ Raid gate: shield (ką tik nusiaubta pilis) + per-puoliko cooldown. Meta klaidas su

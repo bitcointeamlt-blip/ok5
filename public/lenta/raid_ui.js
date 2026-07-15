@@ -15,10 +15,96 @@
 
   function fetchCastles() {
     // 07-12 user: ilgesnis sąrašas jei yra ką rodyti (limit 60→200; aukštį valdo panelės 86vh + scroll)
-    var url = SUPABASE_URL + '/rest/v1/f9_bases?select=ronin_address,power,units,buildings,updated_at&order=updated_at.desc&limit=200';
+    // like.0x* — kad fee_/match_ tarnybinės eilutės neėstų limit'o (pilys visos prasideda 0x)
+    var url = SUPABASE_URL + '/rest/v1/f9_bases?select=ronin_address,power,units,buildings,updated_at&ronin_address=like.0x*&order=updated_at.desc&limit=200';
     return fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } })
       .then(function (r) { return r.ok ? r.json() : []; })
       .catch(function () { return []; });
+  }
+
+  // ── 📜 VIEŠA PvP ISTORIJA (07-14 user) — SERVERIO rašomi `match_<id>` įrašai f9_bases lentelėje ──
+  //    (F9PvpRoom._persistRaidReport → BaseStore.logMatch; server-authoritative — joks klientas nefalsifikuos).
+  //    buildings jsonb: {matchId,at,attacker,defender,winner,result,atkSurvived/Injured/Dead,defSurvived/Injured/Dead,bones,durationMs}
+  function fetchMatches() {
+    var url = SUPABASE_URL + '/rest/v1/f9_bases?select=ronin_address,buildings,updated_at&ronin_address=like.match_*&order=updated_at.desc&limit=50';
+    return fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) {
+        return (rows || []).map(function (r) {
+          var b = (r && r.buildings) || {};
+          return {
+            match_id: b.matchId || String(r.ronin_address || '').slice(6),
+            attacker: b.attacker || '', defender: b.defender || '', winner: b.winner || '',
+            // 💀 kolona = eliminuoti (dead+injured) — permadeath OFF metu aukos virsta sužalojimais
+            atk_survived: (b.atkSurvived | 0), atk_dead: ((b.atkDead | 0) + (b.atkInjured | 0)),
+            def_survived: (b.defSurvived | 0), def_dead: ((b.defDead | 0) + (b.defInjured | 0)),
+            bones: +(b.bones || 0), reason: b.result || '', duration_ms: (b.durationMs | 0),
+            created_at: b.at ? new Date(b.at).toISOString() : (r.updated_at || '')
+          };
+        });
+      })
+      .catch(function () { return []; });
+  }
+  function _histEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+  function agoStr(iso) {
+    try {
+      var t = Date.parse(iso); if (!t) return '';
+      var s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+      if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago';
+    } catch (_) { return ''; }
+  }
+  var histOverlay = null;
+  function openHistory() {
+    closeHistory();
+    histOverlay = document.createElement('div');
+    histOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.92);z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+    histOverlay.addEventListener('click', function (ev) { if (ev.target === histOverlay) closeHistory(); });
+    var hp = document.createElement('div');
+    hp.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;padding:18px 22px;width:520px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column;' +
+      "font-family:'Press Start 2P',monospace,sans-serif;font-size:10px;line-height:1.5;color:#8a9aaa;";
+    hp.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
+        '<span style="font-size:20px;text-shadow:0 0 14px #ffcf5c;">📜</span>' +
+        '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">PvP HISTORY</span>' +
+        '<button id="f9hist-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+      '</div>' +
+      '<div style="font-size:8px;color:#6a7a8a;margin-bottom:8px;line-height:1.6;">Recent castle raids — who attacked whom, Match ID &amp; outcome. Recorded by the game server.</div>' +
+      '<div id="f9hist-list" style="overflow:auto;display:flex;flex-direction:column;gap:6px;"><div style="color:#6a7a8a;font-size:9px;padding:8px 0;">Loading history…</div></div>';
+    histOverlay.appendChild(hp);
+    document.body.appendChild(histOverlay);
+    hp.querySelector('#f9hist-x').onclick = closeHistory;
+    fetchMatches().then(function (rows) { var l = hp.querySelector('#f9hist-list'); if (l) renderHistory(rows, l); });
+  }
+  function closeHistory() {
+    if (histOverlay && histOverlay.parentNode) histOverlay.parentNode.removeChild(histOverlay);
+    histOverlay = null;
+  }
+  function renderHistory(rows, listEl) {
+    if (!rows || !rows.length) { listEl.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:10px 0;">No battles recorded yet — raid a castle to start the log ⚔️</div>'; return; }
+    listEl.innerHTML = '';
+    rows.forEach(function (m) {
+      var win = m.winner;
+      var badge = win === 'attacker' ? '<span style="color:#ff9a98;">⚔ RAIDER WON</span>'
+        : win === 'defender' ? '<span style="color:#6fcf5c;">🛡 DEFENDER WON</span>'
+        : '<span style="color:#fc8;">DRAW</span>';
+      var row = document.createElement('div');
+      row.style.cssText = 'padding:9px 11px;border-radius:6px;border:1px solid #3a3a55;background:rgba(255,255,255,0.03);';
+      row.innerHTML =
+        '<div style="display:flex;align-items:center;gap:7px;font-size:9px;margin-bottom:5px;">' +
+          '<span style="color:#ff9a98;" title="' + _histEsc(m.attacker) + '">⚔ ' + shortAddr(m.attacker) + '</span>' +
+          '<span style="color:#6a7a8a;">→</span>' +
+          '<span style="color:#8cd0ff;" title="' + _histEsc(m.defender) + '">🛡 ' + shortAddr(m.defender) + '</span>' +
+          '<span style="margin-left:auto;font-size:8px;">' + badge + '</span>' +
+        '</div>' +
+        '<div style="font-size:7px;color:#6a7a8a;letter-spacing:.4px;display:flex;gap:9px;flex-wrap:wrap;align-items:center;">' +
+          '<span title="Match ID">#' + _histEsc(m.match_id) + '</span>' +
+          '<span title="attacker survived/dead · defender survived/dead">🗡' + (m.atk_survived | 0) + '/' + (m.atk_dead | 0) + '💀 · 🛡' + (m.def_survived | 0) + '/' + (m.def_dead | 0) + '💀</span>' +
+          (m.bones ? '<span style="color:#8dffa0;">🦴 ' + (+m.bones).toFixed(1) + '</span>' : '') +
+          '<span style="margin-left:auto;">' + _histEsc(agoStr(m.created_at)) + '</span>' +
+        '</div>';
+      listEl.appendChild(row);
+    });
   }
 
   function ensureButton() {
@@ -52,6 +138,7 @@
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
         '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">⚔️</span>' +
         '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">RAID A CASTLE</span>' +
+        '<button id="f9raid-hist" title="Public PvP battle history" style="font-size:8px;color:#ffcf5c;padding:5px 9px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;cursor:pointer;font-family:inherit;letter-spacing:.5px;">📜 HISTORY</button>' +
         '<span id="f9raid-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
         '<button id="f9raid-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
       '</div>' +
@@ -66,6 +153,7 @@
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
     panel.querySelector('#f9raid-x').onclick = closePanel;
+    var _hb = panel.querySelector('#f9raid-hist'); if (_hb) _hb.onclick = openHistory;
     panel.querySelector('#f9raid-go').onclick = function () {
       var a = (panel.querySelector('#f9raid-addr').value || '').trim();
       if (a) doRaid(a);
@@ -191,5 +279,5 @@
   }
   setInterval(tick, 800);
   if (document.readyState !== 'loading') tick(); else document.addEventListener('DOMContentLoaded', tick);
-  window.F9RaidUI = { open: openPanel, close: closePanel };
+  window.F9RaidUI = { open: openPanel, close: closePanel, openHistory: openHistory };
 })();

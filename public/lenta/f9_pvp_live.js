@@ -466,42 +466,9 @@
         (cards || '<div style="color:#6a7a8a;font-size:8px;padding:16px 4px;">no units</div>') + '</div>' +
     '</div>';
   }
-  // 📜 VIEŠA PvP ISTORIJA (07-14 user): po kovos PUOLIKAS įrašo rezultatą į Supabase f9_matches lentelę
-  //   (anon insert; RLS `with check (true)`). Rašo TIK puolikas → be dublių. Skaito raid_ui.js „📜 HISTORY".
-  //   Self-reported (klientas) — vėliau galima perkelti serveriui autoritetui. Rosterių address + matchId
-  //   iš match_result; win/draw iš match_end. Tyliai fail'ina (jei lentelė dar nesukurta / offline).
-  function _f9PostMatchRecord(win, draw) {
-    try {
-      var mid = window._f9SettleMatchId;
-      var rosters = window._f9SettleRosters;
-      if (!mid || !rosters) return;
-      var mine = rosters[String(myTeam)], foe = null;
-      for (var k in rosters) { if (rosters.hasOwnProperty(k) && k !== String(myTeam)) { foe = rosters[k]; break; } }
-      if (!mine || !foe) return;
-      var meta = window._f9SettleMeta || {};
-      var myA = String((window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || window._f9HomeAddr || mine.address || '').toLowerCase();
-      var foeA = String(foe.address || window.__f9RaidTarget || '').toLowerCase();
-      if (!myA || !foeA) return;
-      var rec = {
-        match_id: String(mid),
-        attacker: myA,                                   // wasRaid kontekste kviečiama → aš puolikas
-        defender: foeA,
-        winner: draw ? 'draw' : (win ? 'attacker' : 'defender'),
-        atk_survived: (mine.survived | 0), atk_dead: (mine.dead | 0),
-        def_survived: (foe.survived | 0), def_dead: (foe.dead | 0),
-        bones: +(((window._f9LastBones && window._f9LastBones.bones) || 0)),
-        reason: String(meta.reason || ''),
-        duration_ms: (meta.durationMs | 0)
-      };
-      var U = 'https://rbkivemouxwcgrpzazxb.supabase.co';
-      var K = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';
-      fetch(U + '/rest/v1/f9_matches', {
-        method: 'POST',
-        headers: { apikey: K, Authorization: 'Bearer ' + K, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
-        body: JSON.stringify(rec)
-      }).catch(function () {});
-    } catch (_) {}
-  }
+  // 📜 VIEŠA PvP ISTORIJA (07-14): rašo SERVERIS (F9PvpRoom._persistRaidReport → BaseStore.logMatch,
+  //   f9_bases `match_<id>` eilutės) — server-authoritative, klientinis self-report publisher IŠIMTAS
+  //   (f9_matches lentelė niekada neegzistavo; DDL negalimas — mgmt token miręs). Skaito raid_ui „📜 HISTORY".
   function _showRaidSettled(o) {
     _closeRaidSettled(false);
     // ⚔ 2-PUSĖ suvestinė — abiejų komandų sudėtis iš serverio (window._f9SettleRosters). Kiekvienas žaidėjas
@@ -1307,7 +1274,7 @@
         } catch (_) {}
         window._f9SettleData = { survived: _surv };
         setTimeout(function () {
-          if (wasRaid) { try { _f9PostMatchRecord(mine, draw); } catch (_) {} }   // 📜 vieša PvP istorija — rašo TIK puolikas (be dublių)
+          // 📜 vieša PvP istorija dabar rašoma SERVERYJE (F9PvpRoom → f9_bases match_* eilutės) — klientinis publisher išimtas
           try { _showRaidSettled({ win: mine, raid: wasRaid, addr: myAddr }); }
           catch (_) { try { relaunchHome(); } catch (_1) { try { launchHome({ address: myAddr }); } catch (_2) {} } }
         }, 900);

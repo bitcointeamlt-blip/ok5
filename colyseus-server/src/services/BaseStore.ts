@@ -274,6 +274,32 @@ export async function loadRaidReports(address: string): Promise<RaidReport[]> {
   });
 }
 
+// ─── 🌍 GLOBALI MŪŠIŲ ISTORIJA (07-14) ──────────────────────────────────────────
+// Užbaigtas raid mūšis → atskira f9_bases eilutė `match_<roomId>` (buildings = visas įrašas).
+// Skaito klientas anon key (raid_ui 📜 HISTORY: ronin_address=like.match_*). Server-authoritative —
+// pakeičia klientinį self-report į NEegzistuojančią f9_matches lentelę (DDL negalimas, mgmt token miręs).
+export type MatchRecord = {
+  matchId: string; at: number; attacker: string; defender: string;
+  winner: "attacker" | "defender" | "draw";
+  result: string;   // gynėjo perspektyva: 'lost' | 'defended' | 'retreat'
+  atkSurvived: number; atkInjured: number; atkDead: number;
+  defSurvived: number; defInjured: number; defDead: number;
+  bones: number; durationMs: number;
+};
+export async function logMatch(rec: MatchRecord): Promise<boolean> {
+  const id = String(rec.matchId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+  if (!id) return false;
+  const c = getClient(); if (!c) return false;
+  try {
+    const { error } = await c.from("f9_bases").upsert({
+      ronin_address: "match_" + id, units: [],
+      buildings: { ...rec, matchId: id, attacker: _norm(rec.attacker), defender: _norm(rec.defender) },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "ronin_address" });
+    return !error;
+  } catch { return false; }
+}
+
 // Kredituoja kaulus į banką (match pabaiga / leave / grobis). Grąžina naują balansą (null = persist fail).
 export async function addBones(address: string, delta: number): Promise<number | null> {
   if (!Number.isFinite(delta) || delta <= 0) return null;
