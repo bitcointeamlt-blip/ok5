@@ -102,10 +102,12 @@
       function stat(label, val, valCol, title) {
         return '<span style="white-space:nowrap;" title="' + title + '">' + label + ' <span style="color:' + valCol + ';">' + val + '</span></span>';
       }
-      var lootHtml = '';
-      if (m.loot) lootHtml = atk
-        ? stat('RONKE LOOT', '+' + (+m.loot).toFixed(1), '#8dffa0', "Stolen from defender's mining pot")
-        : stat('RONKE LOOT', '−' + (+m.loot).toFixed(1), '#ff8a88', 'Stolen by the attacker');
+      // 07-15 user: BONES/RONKE LOOT rodomi VISADA (0 — kai vagystės nebuvo; „—" — seni įrašai be kaulų laukų)
+      var lootVal = '0', lootCol = '#e8eef8';
+      if (m.loot) { lootVal = (atk ? '+' : '−') + (+m.loot).toFixed(1); lootCol = atk ? '#8dffa0' : '#ff8a88'; }
+      var lootHtml = stat('RONKE LOOT', lootVal, lootCol, atk ? "Stolen from defender's mining pot" : 'Stolen by the attacker');
+      var bonesVal = bones == null ? '—' : (+bones).toFixed(1);
+      var bonesCol = bones == null ? '#6a7a8a' : (bones > 0 ? '#8dffa0' : '#e8eef8');
       return '<div style="flex:1 1 280px;min-width:250px;padding:13px 16px;border-radius:6px;border:1px solid ' + (won ? '#ffcf5c' : '#3a3a55') + ';background:' + (won ? 'rgba(255,207,92,0.07)' : 'rgba(255,255,255,0.02)') + ';">' +
         '<div style="display:flex;align-items:center;gap:12px;font-size:9px;color:' + col + ';letter-spacing:.8px;margin-bottom:9px;">' +
           (atk ? '⚔ ATTACKER' : '🛡 DEFENDER') +
@@ -117,7 +119,7 @@
           stat('SURVIVED', (sv | 0), '#6fcf5c', 'Units that survived unharmed') +
           stat('INJURED', (inj | 0), '#e8a54a', 'Units injured (hospital)') +
           stat('DEAD', (dd | 0), '#ff6b6b', 'Units killed') +
-          (bones == null ? '' : stat('BONES LOOT', (+bones).toFixed(1), '#8dffa0', 'Bones looted from kills')) +
+          stat('BONES LOOT', bonesVal, bonesCol, 'Bones looted from kills') +
           lootHtml +
         '</div></div>';
     }
