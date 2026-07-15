@@ -97,17 +97,27 @@
       var army = (sv | 0) + (inj | 0) + (dd | 0);
       var won = m.winner === role;
       var col = atk ? '#ff9a98' : '#8cd0ff';
+      // 📝 07-15 user: adresas TOJE PAČIOJE eilutėje kaip ATTACKER/DEFENDER; statistika ŽODŽIAIS+skaičiais
+      //    (be emoji): UNITS / SURVIVED / INJURED / DEAD / BONES LOOT / RONKE LOOT — vietos pakanka.
+      function stat(label, val, valCol, title) {
+        return '<span style="white-space:nowrap;" title="' + title + '">' + label + ' <span style="color:' + valCol + ';">' + val + '</span></span>';
+      }
       var lootHtml = '';
       if (m.loot) lootHtml = atk
-        ? '<span style="color:#8dffa0;" title="Stolen from defender\'s mining pot">💰 +' + (+m.loot).toFixed(1) + ' RONKE</span>'
-        : '<span style="color:#ff8a88;" title="Stolen by the attacker">💰 −' + (+m.loot).toFixed(1) + ' RONKE</span>';
+        ? stat('RONKE LOOT', '+' + (+m.loot).toFixed(1), '#8dffa0', "Stolen from defender's mining pot")
+        : stat('RONKE LOOT', '−' + (+m.loot).toFixed(1), '#ff8a88', 'Stolen by the attacker');
       return '<div style="flex:1 1 280px;min-width:250px;padding:13px 16px;border-radius:6px;border:1px solid ' + (won ? '#ffcf5c' : '#3a3a55') + ';background:' + (won ? 'rgba(255,207,92,0.07)' : 'rgba(255,255,255,0.02)') + ';">' +
-        '<div style="display:flex;align-items:center;gap:10px;font-size:9px;color:' + col + ';letter-spacing:.8px;margin-bottom:8px;">' + (atk ? '⚔ ATTACKER' : '🛡 DEFENDER') + (won ? '<span style="color:#ffcf5c;">👑 WON</span>' : '') + '</div>' +
-        '<div style="font-size:11px;color:#e8eef8;margin-bottom:10px;" title="' + _histEsc(addr) + '">' + shortAddr(addr) + '</div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:7px 18px;font-size:9px;color:#8a9aaa;line-height:1.7;align-items:center;">' +
-          '<span title="Units fielded">🪖 ' + army + ' unit' + (army === 1 ? '' : 's') + '</span>' +
-          '<span title="survived / injured / dead"><span style="color:#6fcf5c;">✔' + (sv | 0) + '</span> <span style="color:#e8a54a;">🤕' + (inj | 0) + '</span> <span style="color:#ff6b6b;">💀' + (dd | 0) + '</span></span>' +
-          (bones == null ? '' : '<span title="Bones looted from kills">🦴 ' + (+bones).toFixed(1) + ' bones</span>') +
+        '<div style="display:flex;align-items:center;gap:12px;font-size:9px;color:' + col + ';letter-spacing:.8px;margin-bottom:9px;">' +
+          (atk ? '⚔ ATTACKER' : '🛡 DEFENDER') +
+          '<span style="font-size:10px;color:#e8eef8;letter-spacing:0;" title="' + _histEsc(addr) + '">' + shortAddr(addr) + '</span>' +
+          (won ? '<span style="margin-left:auto;color:#ffcf5c;">👑 WON</span>' : '') +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:7px 16px;font-size:9px;color:#8a9aaa;line-height:1.7;align-items:center;">' +
+          stat('UNITS', army, '#e8eef8', 'Units fielded') +
+          stat('SURVIVED', (sv | 0), '#6fcf5c', 'Units that survived unharmed') +
+          stat('INJURED', (inj | 0), '#e8a54a', 'Units injured (hospital)') +
+          stat('DEAD', (dd | 0), '#ff6b6b', 'Units killed') +
+          (bones == null ? '' : stat('BONES LOOT', (+bones).toFixed(1), '#8dffa0', 'Bones looted from kills')) +
           lootHtml +
         '</div></div>';
     }
