@@ -1801,7 +1801,7 @@
         var _act0 = _squadActiveCount(_addr);   // ⚔ pageidaujamas lauko dydis (persist per restart)
         var _cm = { name: _lobbyName, home: true, deck: deck, address: _addr, owner: String(_addr || '').toLowerCase() };
         if (_act0 > 0) _cm.active = _act0;
-        return N.createMatch(_cm);
+        return N.joinHome(_cm);   // 🏰 F1: joinOrCreate pagal owner (1 kambarys/savininkui), ne create() dublis
       });
     }).then(function (room) {
       if (!room) { _castleSub('⚠ Could not load your castle — reload to retry'); return; }

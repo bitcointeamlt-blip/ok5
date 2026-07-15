@@ -200,6 +200,45 @@
         if (self.onError) self.onError(e); return null;
       });
     },
+    // 🏰 HOME (F1 2026-07-15): joinOrCreate pagal owner (filterBy) → VIENAS kambarys/savininkui.
+    //   Pakeičia seną createMatch→create() (kuris IGNORUOJA filterBy → dublikatai → split-brain).
+    //   Jei savininko kambarys jau egzistuoja (pvz. vykstantis raidas ant jo) → prisijungia prie JO
+    //   (serveris → takeover/home), NE kuria dublį. Saugo reconnectionToken → reconnectHome resume.
+    joinHome: function (opts) {
+      var self = this; opts = opts || {};
+      if (!this.client) { return this.connect().then(function (ok) { return ok ? self.joinHome(opts) : null; }); }
+      var jo = { name: String(opts.name || ''), home: true, deck: Array.isArray(opts.deck) ? opts.deck : [], address: String(opts.address || ''), owner: String(opts.owner || '').toLowerCase() };
+      if (Number.isFinite(+opts.active)) jo.active = +opts.active;
+      self._homeOpts = jo;   // 🫀 fallback reconnect'ui
+      return this.client.joinOrCreate('f9_pvp_room', jo).then(function (room) {
+        self.room = room; self.connected = true; self.myTeam = -1;
+        self._reconnectToken = room.reconnectionToken || null;
+        self._wire(room);
+        console.log('[F9PVP] 🏰 joinHome → room ' + room.id + ' (owner=' + jo.owner.slice(0, 10) + '…)');
+        return room;
+      }).catch(function (e) {
+        self.lastError = e; console.error('[F9PVP] joinHome failed', e);
+        if (self.onError) self.onError(e); return null;
+      });
+    },
+    // 🫀 RECONNECT (F1): resume TĄ PAČIĄ sesiją tame PAČIAME kambary (Colyseus reconnect token) — ne naujas
+    //   dublis. Veikia kol serverio allowReconnection langas atviras; fail (langas praėjo) → joinHome fallback.
+    reconnectHome: function () {
+      var self = this;
+      if (!this.client || !self._reconnectToken) { return self.joinHome(self._homeOpts || {}); }
+      var tok = self._reconnectToken;
+      return this.client.reconnect(tok).then(function (room) {
+        self.room = room; self.connected = true; self.myTeam = -1;
+        self._reconnectToken = room.reconnectionToken || tok;
+        self._wire(room);
+        console.log('[F9PVP] 🫀 reconnectHome RESUMED room ' + room.id);
+        return room;
+      }).catch(function (e) {
+        console.warn('[F9PVP] reconnect failed → joinHome fallback', e && e.message);
+        self._reconnectToken = null;
+        return self.joinHome(self._homeOpts || {});
+      });
+    },
     // Join a SPECIFIC listed match by roomId. Wires it like join().
     joinMatchById: function (roomId, opts) {
       var self = this; opts = opts || {};
@@ -266,6 +305,10 @@
         if (self.onError) self.onError(new Error('room error ' + code + ' ' + (message || '')));
       });
       room.onLeave(function (code) {
+        // 🐛 F0 (2026-07-15): STALE-LEAVE guard. room.leave() yra async (laukia serverio ack). Jei per tą laiką
+        //   jau prisijungėm prie NAUJO kambario (reconnect/relaunch), seno kambario vėluojantis onLeave
+        //   NEturi nulinti dabartinio self.room → kitaip watchdog mato „miręs" → relaunch → RECONNECT LOOP.
+        if (self.room !== room) { console.log('[F9PVP] stale leave ignored', code); return; }
         console.log('[F9PVP] left room', code);
         self.connected = false;
         self.room = null;

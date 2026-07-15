@@ -963,6 +963,26 @@ export class F9PvpRoom extends Room<F9State> {
   async onJoin(client: Client, options: any) {
     this._lastActivity = Date.now();   // 🧟 join = aktyvumas (reaper laikmatis nusistato)
     this._simWakeUntil = Date.now() + 2000;   // ⚡ S7: join (pvz. raideris) → IŠKART pilnas 30Hz
+    // 🧹 F1 (2026-07-15): GHOST CLEANUP — jei jungiasi TAS PATS adresas, o senoji jo sesija DAR kabo
+    //   (disconnected; reconnect-window / lingering room dėl pingInterval:0), pašalinam ją PRIEŠ team/branch
+    //   logiką. Kitaip joinOrCreate-į-kabantį-kambarį duotų 2 owner sesijas → size≠1 → HOME/takeover branch
+    //   praleistas → broken. (Švarus reconnect eina per Colyseus reconnect(token) → onJoin čia nekviečiamas.)
+    const _removedGhostSids: string[] = [];   // 🧹 F1: pašalintų mirusių sesijų sid (jų unitus perima grįžtantis owner)
+    {
+      const _jAddr = String(options?.address || "").trim().toLowerCase();
+      if (_jAddr) {
+        const _ghosts: string[] = [];
+        this.state.players.forEach((pp, sid) => {
+          if (sid !== client.sessionId && !pp.connected && String(pp.address || "").trim().toLowerCase() === _jAddr) _ghosts.push(sid);
+        });
+        for (const gsid of _ghosts) {
+          this.state.players.delete(gsid); this._decks.delete(gsid); this._activeCount.delete(gsid); this._reserves.delete(gsid);
+          _removedGhostSids.push(gsid);
+          if (this._ownerSid === gsid) this._ownerSid = client.sessionId;   // repoint owner į naują sesiją
+          console.log(`[F9PvpRoom] 🧹 ghost cleanup: pašalinta mirusi sesija ${gsid.slice(0, 8)}… (${_jAddr.slice(0, 10)}…) prieš naują join`);
+        }
+      }
+    }
     // 🏰 HOME: savininkas (pirmas) = DEFENDER_TEAM (gynėjas rytuose prie pilies); būsimi raideriai = attacker (team 0).
     const team = this._home ? (this.state.players.size === 0 ? DEFENDER_TEAM : 0) : this.state.players.size;
     const p = new F9Player();
@@ -1131,6 +1151,28 @@ export class F9PvpRoom extends Room<F9State> {
         } catch (_) {}
       }, 400);
       console.log(`[F9PvpRoom] 🛡🔥 TAKEOVER: savininkas ${this._ownerAddr.slice(0, 10)}… grįžo mid-raid → perėmė ${_taken} gynėjų valdymą`);
+      return;
+    }
+    // 🏰🔥 F1 (2026-07-15): OWNER grįžta/įsijungia į savo GYVĄ HOME raidą (reconnect mid-defense ARBA
+    //   Phase-2 „DEFEND" mygtukas). Kaip async takeover, bet HOME kambariui → DEFENDER role, NE self-raid.
+    //   Perima savo unitus (iš išvalyto ghost sid / orphan). Būtina: kitaip owner join'as krisdavo į
+    //   LIVE_RAID → self-raid guard → SELF_RAID (savininkas negalėtų ginti savo pilies!).
+    if (this._home && this.state.phase === "playing" && this._ownerAddr && String(p.address || "").trim().toLowerCase() === this._ownerAddr) {
+      p.team = DEFENDER_TEAM;
+      this._ownerSid = client.sessionId;
+      let _re = 0;
+      this.state.units.forEach((u) => {
+        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === "AI_DEFENDER" || !this.state.players.has(u.owner))) { u.owner = client.sessionId; _re++; }
+      });
+      const _cl = client;
+      setTimeout(() => {
+        try {
+          _cl.send("match_start", { startedAt: this.state.startedAt, seed: this.state.seed, moat: MOAT_CELLS.map((c) => [c.x, c.y]), cap: { x: CAP_X, y: CAP_Y, r: CAP_R }, tp: TP_PADS.map((pp) => [pp.x, pp.y]), retreatZone: RETREAT_ZONE, passages: MOAT_GAP });
+          _cl.send("raid_mode", { live: true });
+          if (this._raidAtkAddr) _cl.send("under_attack", { attacker: this._raidAtkAddr, sid: "" });
+        } catch (_) {}
+      }, 400);
+      console.log(`[F9PvpRoom] 🏰🔥 OWNER reconnect/DEFEND į home raidą ${this._ownerAddr.slice(0, 10)}… → perėmė ${_re} unitų valdymą`);
       return;
     }
     // 🤖🚫 svetimas bando jungtis į VYKSTANTĮ async raidą (kambarys neberakinamas dėl TAKEOVER) → atmetam
@@ -1799,7 +1841,7 @@ export class F9PvpRoom extends Room<F9State> {
     const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250
     // ⚖️ 07-15 EXPLOIT FIX (g3nka repro): BAZĖ irgi × lauko frakcija — buvo plokščia (≥1 lauke → pilna
     //   MINE_BASE_H), todėl bench'inus 11/12 unitų kasimas beveik nesikeisdavo, nors ekonomikos taisyklė =
-    //   „kasimas ∝ lauko unitai“. Pilnas laukas (frac=1) gauna TIEK PAT kiek anksčiau — nerf tik daliniam.
+    //   „kasimas ∝ lauko unitai". Pilnas laukas (frac=1) gauna TIEK PAT kiek anksčiau — nerf tik daliniam.
     const raw = (MINE_BASE_H + powerTerm) * frac;   // 0 lauke → 0
     const shielded = addr === this._ownerAddr && (Number((this._buildings as any)?.shieldUntil) || 0) > Date.now();
     const dutyMult = (c && c.duty === "safe") ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT;   // ⚔️ online 2× / safe 1.2×

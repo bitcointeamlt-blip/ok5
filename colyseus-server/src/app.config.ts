@@ -30,7 +30,10 @@ export default config({
     // filterBy(owner): 🏰 HOME pilis sukuriama su owner=wallet → puolikas join'ina KONKRETAUS žaidėjo
     //   pilį per join({owner: targetAddr}). 1v1/#f9live naudoja create()/joinById → filtras jų neliečia
     //   (create ignoruoja filterBy; tos pilys owner=undefined → tarpusavyje nesimaišo su home).
-    gameServer.define("f9_pvp_room", F9PvpRoom).enableRealtimeListing().filterBy(["owner"]);
+    // 🏰 F1 (2026-07-15): + sortBy({clients:-1}) — jei dėl race liktų 2 kambariai tam pačiam owner,
+    //   joinOrCreate ima PILNIAUSIĄ (kur gynėjas sėdi), ne tuščią dublį → puolikas visada randa gynėją.
+    //   Kartu su klientu: HOME dabar joinOrCreate (ne create()) → dublių išvis nebekuria.
+    gameServer.define("f9_pvp_room", F9PvpRoom).enableRealtimeListing().filterBy(["owner"]).sortBy({ clients: -1 });
 
     matchMaker.controller.getCorsHeaders = (req: any) => {
       const origin = req.headers.origin;
