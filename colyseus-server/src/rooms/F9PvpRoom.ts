@@ -1167,7 +1167,10 @@ export class F9PvpRoom extends Room<F9State> {
       this._ownerSid = client.sessionId;
       let _re = 0;
       this.state.units.forEach((u) => {
-        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === "AI_DEFENDER" || !this.state.players.has(u.owner))) { u.owner = client.sessionId; _re++; }
+        // 🧷 07-15 (g3nka repro: „savo unitai pažymėti kaip priešai, nevaldomi“): + TO PATIES ADRESO dar-GYVA
+        //   sena sesija (2 tab'ai / reload'o lenktynės su senu socket'u) — NAUJAUSIAS tab'as perima valdymą.
+        const _oldSame = this.state.players.has(u.owner) && String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase() === this._ownerAddr;
+        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === "AI_DEFENDER" || !this.state.players.has(u.owner) || _oldSame)) { u.owner = client.sessionId; _re++; }
       });
       const _cl = client;
       setTimeout(() => {
