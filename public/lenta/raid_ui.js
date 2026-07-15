@@ -63,16 +63,17 @@
     histOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.92);z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
     histOverlay.addEventListener('click', function (ev) { if (ev.target === histOverlay) closeHistory(); });
     var hp = document.createElement('div');
-    hp.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;padding:18px 22px;width:520px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column;' +
+    // 🖼 07-15 user: „lentutė didesnė, neišnaudota tuščia vieta, viskas sugrūsta" → 860px + erdvesni šriftai/tarpai
+    hp.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;padding:22px 28px;width:860px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;' +
       "font-family:'Press Start 2P',monospace,sans-serif;font-size:10px;line-height:1.5;color:#8a9aaa;";
     hp.innerHTML =
-      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
-        '<span style="font-size:20px;text-shadow:0 0 14px #ffcf5c;">📜</span>' +
-        '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">PvP HISTORY</span>' +
-        '<button id="f9hist-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;padding-bottom:12px;border-bottom:1px solid #4a3a18;">' +
+        '<span style="font-size:24px;text-shadow:0 0 14px #ffcf5c;">📜</span>' +
+        '<span style="flex:1;font-size:16px;color:#ffcf5c;letter-spacing:2px;">PvP HISTORY</span>' +
+        '<button id="f9hist-x" style="background:none;border:none;color:#8a9aaa;font-size:22px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
       '</div>' +
-      '<div style="font-size:8px;color:#6a7a8a;margin-bottom:8px;line-height:1.6;">Recent castle raids — who attacked whom, Match ID &amp; outcome. Recorded by the game server.</div>' +
-      '<div id="f9hist-list" style="overflow:auto;display:flex;flex-direction:column;gap:6px;"><div style="color:#6a7a8a;font-size:9px;padding:8px 0;">Loading history…</div></div>';
+      '<div style="font-size:9px;color:#6a7a8a;margin-bottom:12px;line-height:1.7;">Recent castle raids — who attacked whom, Match ID &amp; outcome. Recorded by the game server.</div>' +
+      '<div id="f9hist-list" style="overflow:auto;display:flex;flex-direction:column;gap:12px;"><div style="color:#6a7a8a;font-size:10px;padding:10px 0;">Loading history…</div></div>';
     histOverlay.appendChild(hp);
     document.body.appendChild(histOverlay);
     hp.querySelector('#f9hist-x').onclick = closeHistory;
@@ -83,10 +84,11 @@
     histOverlay = null;
   }
   function renderHistory(rows, listEl) {
-    if (!rows || !rows.length) { listEl.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:10px 0;">No battles recorded yet — raid a castle to start the log ⚔️</div>'; return; }
+    if (!rows || !rows.length) { listEl.innerHTML = '<div style="color:#6a7a8a;font-size:10px;line-height:1.8;padding:12px 0;">No battles recorded yet — raid a castle to start the log ⚔️</div>'; return; }
     listEl.innerHTML = '';
     // 🎴 2-PUSĖ kortelė (07-15 user): kas puolė / kas gynėsi, kiekvienos pusės armija, ✔/🤕/💀 ir 🦴 grobis;
     //    laimėtojo pusė paauksinta 👑; 💰 = pavogtas mining pot RONKE (rodomas +puolikui / −gynėjui).
+    //    v2 07-15: panelė 860px — side box'ai erdvesni, statistika horizontaliai, VS skirtukas.
     function sideBox(role, m) {
       var atk = role === 'attacker';
       var addr = atk ? m.attacker : m.defender;
@@ -97,15 +99,15 @@
       var col = atk ? '#ff9a98' : '#8cd0ff';
       var lootHtml = '';
       if (m.loot) lootHtml = atk
-        ? '<div style="color:#8dffa0;margin-top:3px;" title="Stolen from defender\'s mining pot">💰 +' + (+m.loot).toFixed(1) + ' RONKE</div>'
-        : '<div style="color:#ff8a88;margin-top:3px;" title="Stolen by the attacker">💰 −' + (+m.loot).toFixed(1) + ' RONKE</div>';
-      return '<div style="flex:1 1 0;min-width:0;padding:7px 9px;border-radius:5px;border:1px solid ' + (won ? '#ffcf5c' : '#3a3a55') + ';background:' + (won ? 'rgba(255,207,92,0.07)' : 'rgba(255,255,255,0.02)') + ';">' +
-        '<div style="font-size:7px;color:' + col + ';letter-spacing:.5px;margin-bottom:4px;">' + (atk ? '⚔ ATTACKER' : '🛡 DEFENDER') + (won ? ' <span style="color:#ffcf5c;">👑 WON</span>' : '') + '</div>' +
-        '<div style="font-size:8px;color:#c9d4e8;margin-bottom:5px;" title="' + _histEsc(addr) + '">' + shortAddr(addr) + '</div>' +
-        '<div style="font-size:7px;color:#8a9aaa;line-height:1.8;">' +
-          '<div title="Units fielded">🪖 ' + army + ' unit' + (army === 1 ? '' : 's') + '</div>' +
-          '<div title="survived / injured / dead"><span style="color:#6fcf5c;">✔' + (sv | 0) + '</span> <span style="color:#e8a54a;">🤕' + (inj | 0) + '</span> <span style="color:#ff6b6b;">💀' + (dd | 0) + '</span></div>' +
-          (bones == null ? '' : '<div title="Bones looted from kills">🦴 ' + (+bones).toFixed(1) + ' bones</div>') +
+        ? '<span style="color:#8dffa0;" title="Stolen from defender\'s mining pot">💰 +' + (+m.loot).toFixed(1) + ' RONKE</span>'
+        : '<span style="color:#ff8a88;" title="Stolen by the attacker">💰 −' + (+m.loot).toFixed(1) + ' RONKE</span>';
+      return '<div style="flex:1 1 280px;min-width:250px;padding:13px 16px;border-radius:6px;border:1px solid ' + (won ? '#ffcf5c' : '#3a3a55') + ';background:' + (won ? 'rgba(255,207,92,0.07)' : 'rgba(255,255,255,0.02)') + ';">' +
+        '<div style="display:flex;align-items:center;gap:10px;font-size:9px;color:' + col + ';letter-spacing:.8px;margin-bottom:8px;">' + (atk ? '⚔ ATTACKER' : '🛡 DEFENDER') + (won ? '<span style="color:#ffcf5c;">👑 WON</span>' : '') + '</div>' +
+        '<div style="font-size:11px;color:#e8eef8;margin-bottom:10px;" title="' + _histEsc(addr) + '">' + shortAddr(addr) + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:7px 18px;font-size:9px;color:#8a9aaa;line-height:1.7;align-items:center;">' +
+          '<span title="Units fielded">🪖 ' + army + ' unit' + (army === 1 ? '' : 's') + '</span>' +
+          '<span title="survived / injured / dead"><span style="color:#6fcf5c;">✔' + (sv | 0) + '</span> <span style="color:#e8a54a;">🤕' + (inj | 0) + '</span> <span style="color:#ff6b6b;">💀' + (dd | 0) + '</span></span>' +
+          (bones == null ? '' : '<span title="Bones looted from kills">🦴 ' + (+bones).toFixed(1) + ' bones</span>') +
           lootHtml +
         '</div></div>';
     }
@@ -115,14 +117,15 @@
         : win === 'defender' ? '<span style="color:#6fcf5c;">🛡 DEFENDER WON</span>'
         : '<span style="color:#fc8;">DRAW</span>';
       var row = document.createElement('div');
-      row.style.cssText = 'padding:9px 11px;border-radius:6px;border:1px solid #3a3a55;background:rgba(255,255,255,0.03);';
+      row.style.cssText = 'padding:13px 16px;border-radius:6px;border:1px solid #3a3a55;background:rgba(255,255,255,0.03);';
       row.innerHTML =
-        '<div style="display:flex;align-items:center;gap:7px;font-size:8px;margin-bottom:7px;">' +
+        '<div style="display:flex;align-items:center;gap:12px;font-size:10px;margin-bottom:10px;">' +
           badge +
-          '<span style="margin-left:auto;font-size:7px;color:#6a7a8a;" title="Match ID">#' + _histEsc(m.match_id) + '</span>' +
-          '<span style="font-size:7px;color:#6a7a8a;">' + _histEsc(agoStr(m.created_at)) + '</span>' +
+          '<span style="margin-left:auto;font-size:9px;color:#6a7a8a;" title="Match ID">#' + _histEsc(m.match_id) + '</span>' +
+          '<span style="font-size:9px;color:#6a7a8a;">' + _histEsc(agoStr(m.created_at)) + '</span>' +
         '</div>' +
-        '<div style="display:flex;gap:6px;align-items:stretch;">' + sideBox('attacker', m) + sideBox('defender', m) + '</div>';
+        '<div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;">' + sideBox('attacker', m) +
+          '<div style="align-self:center;color:#5a6a7a;font-size:11px;">VS</div>' + sideBox('defender', m) + '</div>';
       listEl.appendChild(row);
     });
   }
