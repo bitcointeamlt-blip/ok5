@@ -205,7 +205,10 @@ const CEM_CLAIM_MIN = Number(process.env.F9_CEM_CLAIM_MIN) || 25;      // TUNABL
 const CEM_CAP_BONES = Number(process.env.F9_CEM_CAP_BONES) || 50;      // TUNABLE: sandėlio lubos (kaulais)
 // 🎖️ „PILNAVERTIS ŽAIDĖJAS" (user 2026-07-03) — kaulų generacijai (ir konceptualiai swap'ui) reikia VIENO iš kelių:
 //   A: ≥1 RonkeVerse NFT + ≥10 registruotų unitų;  B: ≥12 registruotų unitų + ≥69 Barracks unitai piniginėje.
-const CEM_REQ_A_RV = 1, CEM_REQ_A_REG = 10, CEM_REQ_B_REG = 12, CEM_REQ_B_WALLET = 69;   // TUNABLE
+const CEM_REQ_A_RV = 1, CEM_REQ_A_REG = 10, CEM_REQ_B_REG = 12, CEM_REQ_B_WALLET = 69;   // TUNABLE (BONES kapinės — deko pagrindu)
+// ⛏️ RONKE MINING lauko-gate (07-16 user): kasimas priklauso nuo unitų DABAR ANT LAUKO, ne registruotų.
+//   A: RonkeVerse NFT + ≥12 ant lauko;  B: ≥12 ant lauko + ≥69 wallet. Žemiau → kasimas 0 (kietas jungiklis).
+const MINE_FIELD_REQ_A = Number(process.env.F9_MINE_FIELD_A) || 12, MINE_FIELD_REQ_B = Number(process.env.F9_MINE_FIELD_B) || 12;
 // ⛏️💰 RONKE MINING (07-11 server-authoritative) — PRIVALO sutapti su klientu game.js (_F9_MINE_*).
 //   Rate = (base + healthyPower×powerH × lauko-frakcija) × shield × success(fail vidurkis). Passive bones IŠJUNGTA.
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
@@ -1817,6 +1820,15 @@ export class F9PvpRoom extends Room<F9State> {
     const hl = this._cemHealthy(addr);
     return (c.rv >= CEM_REQ_A_RV && hl.nft >= CEM_REQ_A_REG) || (hl.nft >= CEM_REQ_B_REG && c.wallet >= CEM_REQ_B_WALLET);
   }
+  // 🏁 07-16 (user): MINING eligibility = LAUKO (dislokuotų) unitų reikalavimas, NE viso deko. „Units on field"
+  //   Path A/B skaičiuoja unitus ANT LAUKO (onField), ne turimus. Bench'inti unitus NEBEKASA — reikia
+  //   DISLOKUOTI ≥12 (Path A, +RonkeVerse) / ≥12 (Path B, +69 wallet) gynėjų (jie tampa raidable). Žemiau ribos
+  //   → rate 0 (kasykla pristabdyta). Bones cemetery LIEKA _cemEligible (deck-based; user: „RONKE mining only").
+  private _mineEligible(addr: string, onField: number): boolean {
+    const c = this._cem.get((addr || "").trim().toLowerCase());
+    if (!c) return false;
+    return (c.rv >= CEM_REQ_A_RV && onField >= MINE_FIELD_REQ_A) || (onField >= MINE_FIELD_REQ_B && c.wallet >= CEM_REQ_B_WALLET);
+  }
   // FORMULĖ: 0.5 + 0.25×(healthyPower/100) bones/h, power capped @ 4000 → max 10.5/h
   private _cemRate(addr: string): number {
     if (!this._cemEligible(addr)) return 0;
@@ -1856,11 +1868,12 @@ export class F9PvpRoom extends Room<F9State> {
     const above = Math.max(0, capped - MINE_POWER_KNEE) * MINE_POWER_H * MINE_POWER_KNEE_MULT;
     return below + above;
   }
-  private _mineRateFrom(addr: string, _onField: number, _reserve: number): number {
-    if (!this._cemEligible(addr)) return 0;
+  private _mineRateFrom(addr: string, onField: number, _reserve: number): number {
     const c = this._cem.get((addr || "").trim().toLowerCase());
     // ⛏️🗡 SIEGE CHECKPOINT: pasiekus mcp (kas 200) kasimas SUSTOJA (0) kol atliks 1 PvP mūšį. ABU režimai (SAFE ir DUTY).
     if (c && c.gated) return 0;
+    // 🏁 07-15 (user): MINING gate = LAUKO unitai (dislokuoti gynėjai), NE dekas. <reikalavimo → 0 (pristabdyta).
+    if (!this._mineEligible(addr, onField)) return 0;
     const hl = this._cemHealthy(addr).power;
     // 🏁 07-15 (user): VIENODAS FLAT rate visiems eligible (Path A|B). Nebe × lauko frakcija / success /
     //   dutyMult — SAFE=5/h, DUTY=10/h, + RONKE Power bonusas (knee @250). Lauko unitų kiekis nebekeičia
@@ -1960,7 +1973,9 @@ export class F9PvpRoom extends Room<F9State> {
       duty: c.duty || "online", gated: !!c.gated, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
       dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
+      mineEligible: this._mineEligible(addr, c.mfield || 0), mineField: Math.max(0, c.mfield || 0),   // 🏁 MINING gate = LAUKO unitai (c.mfield = ta pati bazė kaip mrate); Path A/B skaičiuoja dislokuotus, ne deką
       rules: { aRv: CEM_REQ_A_RV, aReg: CEM_REQ_A_REG, bReg: CEM_REQ_B_REG, bWallet: CEM_REQ_B_WALLET },
+      mineRules: { aRv: CEM_REQ_A_RV, aField: MINE_FIELD_REQ_A, bField: MINE_FIELD_REQ_B, bWallet: CEM_REQ_B_WALLET },   // ⛏️ kasimo lauko-gate ribos (klientas rodo „onField / 12")
       now: Date.now(),
     };
   }

@@ -10596,9 +10596,14 @@ function _f9MinePowerTerm(p) {
   return Math.min(p, 250) * 0.05 + Math.max(0, p - 250) * 0.05 * 0.25;
 }
 function _f9MineRateNow() {
-  const d = _f9MineData(); if (!d.eligible || d.gated) return 0;
-  // 🏁 07-15 (user): VIENODAS FLAT rate — SAFE 5/h, DUTY 10/h, + RONKE Power (knee). JOKIOS lauko frakcijos —
-  //   lauko unitų kiekis nebekeičia greičio (tik eligibility). Atspindi serverio _mineRateFrom.
+  const d = _f9MineData(); if (d.gated) return 0;
+  // ⛏️ 07-16 (user): kasimas TIK jei pakanka unitų DABAR ANT LAUKO (ne registruotų). Atspindi serverio _mineEligible.
+  const MR = d.mineRules || { aRv: 1, aField: 12, bField: 12, bWallet: 69 };
+  const fieldN = (typeof d.mineField === 'number' && d.mineField >= 0) ? d.mineField : ((d.onField >= 0) ? d.onField : 0);
+  const fieldElig = (d.mineEligible != null) ? d.mineEligible
+    : (((d.rv || 0) >= MR.aRv && fieldN >= MR.aField) || (fieldN >= MR.bField && (d.wallet || 0) >= MR.bWallet));
+  if (!fieldElig) return 0;
+  // 🏁 FLAT rate — SAFE 5/h, DUTY 10/h, + RONKE Power (knee). Lauko unitų KIEKIS = gate (≥12), power = bonusas ant viršaus.
   const base = (d.duty === 'safe') ? (d.dutySafeBase || _F9_MINE_SAFE_BASE_H) : (d.dutyOnlineBase || _F9_MINE_DUTY_BASE_H);
   const power = (typeof d.hpower === 'number' && d.hpower >= 0) ? d.hpower : _f9MinePowerNow();
   return (base + _f9MinePowerTerm(power)) * (d.shielded ? 0.5 : 1);
@@ -10680,6 +10685,10 @@ function _f9MineData() {
     dutySafeMult: (c && typeof c.dutySafeMult === 'number') ? c.dutySafeMult : 1.2,
     dutyOnlineBase: (c && typeof c.dutyOnlineBase === 'number') ? c.dutyOnlineBase : 10,   // 🏁 flat bazė DUTY
     dutySafeBase: (c && typeof c.dutySafeBase === 'number') ? c.dutySafeBase : 5,          // 🏁 flat bazė SAFE
+    // ⛏️ LAUKO-gate (07-16 user): kasimo eligibility priklauso nuo unitų ANT LAUKO, ne registruoto deko.
+    mineEligible: (c && typeof c.mineEligible === 'boolean') ? c.mineEligible : null,      // serverio lauko-gate rezultatas (null = sena payload → fallback)
+    mineField: (c && typeof c.mineField === 'number') ? c.mineField : ((c && typeof c.onField === 'number') ? c.onField : null),   // unitai ant lauko (gate bazė)
+    mineRules: (c && c.mineRules) || null,                                                 // { aRv, aField, bField, bWallet }
   };
 }
 // ⛏️💀 100% pilies wipe → nuima pct (0.5) nuo KLIENTO mining pot. VIENKART per `at` signalą (offline-safe:
@@ -10746,8 +10755,13 @@ function _f9MinePanelStats() {
     '</div>';
   const abtn = (act, label) => '<button data-act="' + act + '" style="font-family:inherit;font-size:10px;letter-spacing:0.5px;background:rgba(255,207,92,0.15);color:#ffcf5c;border:1px solid #7a5a1e;border-radius:5px;padding:8px 12px;cursor:pointer;">' + label + '</button>';
   const unitsBtns = abtn('train', '⚒ TRAIN UNITS') + abtn('market', '🛒 BUY IN MARKET');   // in-game keliai gauti unitų
-  const aRv = (d.rv || 0) >= R.aRv, aReg = (d.nft || 0) >= R.aReg, aOk = aRv && aReg;
-  const bReg = (d.nft || 0) >= R.bReg, bWal = (d.wallet || 0) >= R.bWallet, bOk = bReg && bWal;
+  // ⛏️ 07-16 (user): kasimo gate = unitai DABAR ANT LAUKO (mineField), NE registruoti (d.nft). Ribos iš mineRules.
+  const MR = d.mineRules || { aRv: R.aRv, aField: (R.bReg || 12), bField: (R.bReg || 12), bWallet: R.bWallet };
+  const deployHint = '<span style="font-size:9px;color:#e8a08a;line-height:1.5;">⚔ Place ≥' + MR.aField + ' healthy units on your castle field to mine. Fewer on field = mining OFF (but less to lose in a raid).</span>';
+  const fieldN = (typeof d.mineField === 'number' && d.mineField >= 0) ? d.mineField : ((d.onField >= 0) ? d.onField : 0);
+  const aRv = (d.rv || 0) >= MR.aRv, aReg = fieldN >= MR.aField, aOk = aRv && aReg;
+  const bReg = fieldN >= MR.bField, bWal = (d.wallet || 0) >= MR.bWallet, bOk = bReg && bWal;
+  const mineElig = (d.mineEligible != null) ? d.mineEligible : (aOk || bOk);   // serverio lauko-gate (fallback → vietinis apskaičiavimas)
   const card = (ok, title, rows) =>
     '<div style="background:linear-gradient(180deg,#14182a 0%,#0a0c18 100%);border:2px solid ' + (ok ? '#ffcf5c' : '#3a3a55') + ';border-radius:7px;padding:13px 15px;margin:8px 0;' + (ok ? 'animation:f9cemPulse 2s ease-in-out infinite;' : '') + '">' +
       '<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px;"><span style="font-size:13px;letter-spacing:1px;color:' + (ok ? '#ffe168' : '#8a9aaa') + ';">' + title + '</span>' +
@@ -10759,7 +10773,7 @@ function _f9MinePanelStats() {
     body.innerHTML =
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (full ? '🗡 SIEGE REQUIRED' : 'next siege @ ' + d.cap) + '</div></div>' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (d.eligible ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (d.eligible ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power')) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (mineElig ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (mineElig ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (!mineElig ? '⚔ ' + fieldN + ' / ' + MR.aField + ' units on field' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power'))) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
       '</div>' +
       // ⚔️🛡 DUTY STATUS jungiklis — ON DUTY (greitas + puolamas) / SAFE (lėtas + apsaugotas). Keisti tik ramiuose namuose.
       '<div style="background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.duty === 'safe' ? '#2a6a74' : '#7a5a1e') + ';border-radius:7px;padding:11px 13px;margin-bottom:10px;">' +
@@ -10777,9 +10791,9 @@ function _f9MinePanelStats() {
       (d.shielded ? '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;background:rgba(68,170,255,0.1);border:1px solid #2a5a8a;border-radius:6px;padding:9px 12px;"><span style="font-size:16px;">🛡</span><span style="flex:1;font-size:9px;color:#7ab8e8;line-height:1.5;">SHIELDED · mining ×0.5 · ' + Math.max(0, Math.ceil((d.shieldUntil - Date.now()) / 60000)) + 'm left<br><span style="color:#5a7a9a;">Recovery window — heal &amp; rebuild your field, or remove to resume full mining (and exposure).</span></span><button id="f9mine-unshield" style="font-family:inherit;font-size:9px;background:rgba(232,93,93,0.15);color:#e88;border:1px solid #a55;border-radius:5px;padding:7px 10px;cursor:pointer;white-space:nowrap;">REMOVE</button></div>' : '') +
       (!d.canWithdraw ? '<div style="font-size:9px;color:#d49a2a;text-align:center;margin:3px 0 10px;background:rgba(255,207,92,0.07);border:1px solid #6a4a18;border-radius:6px;padding:8px;line-height:1.6;">' + (d.live ? '⛏️ Server-tracked mining (anti-cheat). On-chain withdraw to your wallet activates soon.' : (d.clientOnly ? '⛏️ Live estimate — grows as the worker delivers. On-chain withdraw activates once the server is wired.' : '⛏️ Mining goes live once the server is wired — the eligibility below is real.')) + '</div>' : '') +
       '<div style="font-size:10px;color:#8a9aaa;letter-spacing:0.5px;margin:8px 0 3px;">MINING NEEDS ONE PATH:</div>' +
-      card(aOk, 'PATH A', req(aRv, 'RonkeVerse NFT', d.rv || 0, R.aRv, abtn('buy-rv', '🛒 GET RONKEVERSE NFT ↗')) + req(aReg, 'Combat-ready units' + hospHint, d.nft || 0, R.aReg, unitsBtns)) +
+      card(aOk, 'PATH A', req(aRv, 'RonkeVerse NFT', d.rv || 0, MR.aRv, abtn('buy-rv', '🛒 GET RONKEVERSE NFT ↗')) + req(aReg, 'Units on castle field' + hospHint, fieldN, MR.aField, deployHint)) +
       '<div style="text-align:center;color:#4a5a6a;font-size:8px;">— OR —</div>' +
-      card(bOk, 'PATH B', req(bReg, 'Combat-ready units' + hospHint, d.nft || 0, R.bReg, unitsBtns) + req(bWal, 'Units in wallet', d.wallet || 0, R.bWallet, unitsBtns)) +
+      card(bOk, 'PATH B', req(bReg, 'Units on castle field' + hospHint, fieldN, MR.bField, deployHint) + req(bWal, 'Units in wallet', d.wallet || 0, MR.bWallet, unitsBtns)) +
       '<div style="margin:13px 0 4px;"><div style="display:flex;justify-content:space-between;font-size:9px;color:' + (ready ? '#6fcf5c' : '#8a9aaa') + ';margin-bottom:5px;"><span>' + (ready ? '✓ READY TO WITHDRAW' : 'WITHDRAW UNLOCKS AT ' + cm + ' RONKE') + '</span><span>' + est.toFixed(0) + ' / ' + cm + '</span></div>' +
         '<div style="height:13px;background:#0a0c18;border:1px solid #3a3a55;border-radius:6px;overflow:hidden;"><div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:' + (ready ? 'linear-gradient(90deg,#4a9a3a,#6fcf5c)' : 'linear-gradient(90deg,#d49a2a,#ffcf5c)') + ';box-shadow:0 0 8px ' + (ready ? 'rgba(111,207,92,0.6)' : 'rgba(255,207,92,0.6)') + ';"></div></div></div>' +
       '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 SAFE — nobody can raid your mined RONKE. It just pauses every ' + step + ' until a PvP match.' : '⚠ DUTY — raiders steal 50% of un-withdrawn RONKE if they beat you.') + ' Withdraw to your wallet at ' + cm + '+.</div>' +
