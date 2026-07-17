@@ -26,6 +26,13 @@ const ARENA_H = 24;
 const SIM_HZ = 30;
 const READY_WAIT_MS = 45_000;            // anti-stuck: kiek laukiam ready
 const RECONNECT_WINDOW_S = 8;            // disconnect malonės langas
+// 🔌 07-17 SEAT-REAPER: pingInterval:0 → half-open (be WS close) jungtis Colyseus NIEKADA neaptinka →
+//   zombie klientai laiko seat'us → kambarys 4/4 AUTO-LOCK → live raidas neįmanomas (0xc7ce atvejis:
+//   gynėjas online, jo kambarys pilnas jo paties mirusių sesijų → puolikas amžinai DEFENDER_ONLINE).
+//   Klientas keepalive'ina kas 20s (background tab'as — Chrome throttle iki ~1/min) → 150s tylos =
+//   tikrai miręs/frozen socket'as → atjungiam (seat atsilaisvina; frozen tab'as ir taip negina — grįžęs
+//   reconnect'ins per watchdog/reconnectHome). NEliečia pingInterval:0 sprendimo (fono apsauga lieka).
+const CLIENT_SILENT_MS = Number(process.env.F9_CLIENT_SILENT_MS) || 150_000;
 const RETARGET_MS = 300;                  // kas kiek perskaičiuojam taikinius (AI throttle)
 const ARRIVE_EPS = 0.05;                  // kada laikom kad pasiekė tx,ty
 const PATROL_ARRIVE = 40 / 54;            // 🚩 patrulio taško pasiekimo spindulys (≈0.74 cell = 40px @ CELL 54) — tunable
@@ -515,6 +522,7 @@ export class F9PvpRoom extends Room<F9State> {
   private _asyncRaid = false;                                // 🤖 OFFLINE raid: taikinys neprisijungęs → AI gina jo snapshot'ą
   private _buildings: BaseBuildings = { wallLevel: 1, towerLevel: 1, towers: [] };   // 🏗️ pilies upgrade konfigūracija (siena/bokštai)
   private _idleTimer: any = null;              // 🧟 zombie-room reaper (pingInterval:0 → mirę WS nepašalinami savaime)
+  private _clientSeen = new Map<string, number>();   // 🔌 07-17: per-klientą paskutinės žinutės laikas (seat-reaper bazė)
   private _lastActivity = 0;                   // paskutinės žinutės/join sim-laikas (ms wall-clock)
   private _idleSkip = 0;                       // ⚡ S7: idle down-shift tikų skaitliukas (rami namų pilis ~5Hz)
   private _simWakeUntil = 0;                   // ⚡ S7: iki kada pilnas 30Hz po wake signalo (cmd/join)
@@ -559,7 +567,7 @@ export class F9PvpRoom extends Room<F9State> {
 
     // ── Komandų protokolas ──
     // Vieninga „cmd" žinutė: { action, ids:[unitId], x, y }.
-    this.onMessage("cmd", (client, msg: any) => { this._lastActivity = Date.now(); this._simWakeUntil = Date.now() + 1000; this._handleCmd(client, msg); });   // ⚡ S7: cmd → IŠKART pilnas 30Hz
+    this.onMessage("cmd", (client, msg: any) => { this._lastActivity = Date.now(); this._clientSeen.set(client.sessionId, Date.now()); this._simWakeUntil = Date.now() + 1000; this._handleCmd(client, msg); });   // ⚡ S7: cmd → IŠKART pilnas 30Hz
     this.onMessage("presence", () => { this._lastActivity = Date.now(); });   // 🧟 klientas laikas nuo laiko praneša „gyvas" (idle-open pilis nereapinama)
     // 🧪 STRESS: savininkas home pilyje → spawnina N AI puolikų (testas 30v30). TEST-only.
     this.onMessage("stress_spawn", (client, msg: any) => {
@@ -926,7 +934,7 @@ export class F9PvpRoom extends Room<F9State> {
     //   reaper laikmatį. Anksčiau ramiai pilyje sėdintis žaidėjas (be komandų/kovos) po 6min būdavo
     //   disposintas → „online iliuzija" + puolikai gaudavo async AI kopiją nematomai. Mirusio WS ping'ų
     //   nebūna → tikri zombie kambariai vis tiek nukertami po IDLE_MS.
-    this.onMessage("ping", (client, t: number) => { this._lastActivity = Date.now(); client.send("pong", t); });
+    this.onMessage("ping", (client, t: number) => { this._lastActivity = Date.now(); this._clientSeen.set(client.sessionId, Date.now()); client.send("pong", t); });
 
     // ── C3 host-authority RELAY ──
     // guest komanda → host (host kliente sukasi tikras F9, jis pritaikys).
@@ -968,6 +976,18 @@ export class F9PvpRoom extends Room<F9State> {
           console.log(`[F9PvpRoom] 🧟 idle > ${Math.round(F9_ROOM_IDLE_MS / 60000)}min → disposinu zombie kambarį (${this.roomId})`);
           this.disconnect();
         }
+        // 🔌 07-17 SEAT-REAPER: zombie klientai (half-open socket, >CLIENT_SILENT_MS be žinutės) atjungiami —
+        //   kitaip laiko seat'us → 4/4 AUTO-LOCK → gynėjas online, bet raidai amžinai atmetami (0xc7ce atvejis).
+        //   Gyvas klientas keepalive'ina kas 20s (07-14), tad 90s tylos = tikrai miręs. Join'as set'ina seen →
+        //   šviežio prisijungimo niekada nekick'ina.
+        for (const cl of [...this.clients]) {
+          const seen = this._clientSeen.get(cl.sessionId) || 0;
+          if (seen > 0 && Date.now() - seen > CLIENT_SILENT_MS) {
+            console.log(`[F9PvpRoom] 🔌 seat-reaper: ${cl.sessionId.slice(0, 8)}… tyli ${Math.round((Date.now() - seen) / 1000)}s → atjungiu (seat atsilaisvina)`);
+            this._clientSeen.delete(cl.sessionId);
+            try { cl.leave(4002); } catch (_) {}
+          }
+        }
       } catch (_) {}
     }, 30_000);
     console.log(`[F9PvpRoom] created (${this.roomId}) seed=${this.state.seed} combat=${this._combatEnabled}`);
@@ -975,6 +995,7 @@ export class F9PvpRoom extends Room<F9State> {
 
   async onJoin(client: Client, options: any) {
     this._lastActivity = Date.now();   // 🧟 join = aktyvumas (reaper laikmatis nusistato)
+    this._clientSeen.set(client.sessionId, Date.now());   // 🔌 seat-reaper bazė (šviežias join niekada nekick'inamas)
     this._simWakeUntil = Date.now() + 2000;   // ⚡ S7: join (pvz. raideris) → IŠKART pilnas 30Hz
     // 🧹 F1 (2026-07-15): GHOST CLEANUP — jei jungiasi TAS PATS adresas, o senoji jo sesija DAR kabo
     //   (disconnected; reconnect-window / lingering room dėl pingInterval:0), pašalinam ją PRIEŠ team/branch
@@ -985,14 +1006,21 @@ export class F9PvpRoom extends Room<F9State> {
       const _jAddr = String(options?.address || "").trim().toLowerCase();
       if (_jAddr) {
         const _ghosts: string[] = [];
+        // 🔌 07-17: BE `!pp.connected` filtro — half-open zombie (pingInterval:0 → close frame negautas)
+        //   turi connected=true ir seną cleanup'ą APEIDAVO → jo seat'as likdavo → 4/4 LOCK. Naujausias
+        //   to paties adreso tab'as VISADA laimi (kaip 07-15 _oldSame unit re-own taisyklė).
         this.state.players.forEach((pp, sid) => {
-          if (sid !== client.sessionId && !pp.connected && String(pp.address || "").trim().toLowerCase() === _jAddr) _ghosts.push(sid);
+          if (sid !== client.sessionId && String(pp.address || "").trim().toLowerCase() === _jAddr) _ghosts.push(sid);
         });
         for (const gsid of _ghosts) {
           this.state.players.delete(gsid); this._decks.delete(gsid); this._activeCount.delete(gsid); this._reserves.delete(gsid);
           _removedGhostSids.push(gsid);
           if (this._ownerSid === gsid) this._ownerSid = client.sessionId;   // repoint owner į naują sesiją
-          console.log(`[F9PvpRoom] 🧹 ghost cleanup: pašalinta mirusi sesija ${gsid.slice(0, 8)}… (${_jAddr.slice(0, 10)}…) prieš naują join`);
+          // 🔌 SEAT FIX: atjungiam ir patį klientą (state delete seat'o NEatlaisvina!) — kitaip zombie
+          //   jungtys pripildo kambarį iki maxClients → AUTO-LOCK → raideris nebegali įeiti live kovai.
+          const zc = this.clients.find((cl) => cl.sessionId === gsid);
+          if (zc) { this._clientSeen.delete(gsid); try { zc.leave(4001); } catch (_) {} }
+          console.log(`[F9PvpRoom] 🧹 ghost cleanup: pašalinta sena sesija ${gsid.slice(0, 8)}… (${_jAddr.slice(0, 10)}…, seat ${zc ? "atlaisvintas" : "jau laisvas"}) prieš naują join`);
         }
       }
     }
@@ -1269,8 +1297,12 @@ export class F9PvpRoom extends Room<F9State> {
   }
 
   async onLeave(client: Client, consented: boolean) {
+    this._clientSeen.delete(client.sessionId);   // 🔌 seat-reaper švara
     const p = this.state.players.get(client.sessionId);
     if (p) p.connected = false;
+    // 🔌 07-17: kick'intas ghost'as (state JAU ištrintas ghost-cleanup'e/seat-reaper'yje) — jokios 8s
+    //   reconnect rezervacijos (ji laikytų seat'ą, kurį kaip tik atlaisvinom) ir jokio forfeit'o.
+    if (!p) return;
     // 🏰 HOME savininkas išeina (refresh/uždaro) → IŠSAUGOM pilį dabar (kur paliko), kol unitai dar gyvi.
     if (this._home && client.sessionId === this._ownerSid) {
       try { await this._saveSnapshot("leave"); } catch (_) {}
