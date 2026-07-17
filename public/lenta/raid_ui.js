@@ -247,8 +247,9 @@
     rows = (rows || []).filter(function (r) {
       var a = String(r.ronin_address || '').toLowerCase();
       if (a === me || a.indexOf('#') >= 0) return false;
-      if (r.buildings && r.buildings.dutyMode === 'safe') return false;   // 🛡 SAFE režimo pilys NEPUOLAMOS (07-13 duty status)
-      return combatReady(r) >= 1;   // be kovai pajėgių gynėjų — nelistinama (L7: sąrašas = gate)
+      if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;   // 🧹 07-17: fake/test adresai (E2E likučiai: ne-40-hex ARBA 10+ vienodų uodega) NErodomi
+      if (r.buildings && r.buildings.dutyMode === 'safe') return false;   // 🛡 SAFE (+ auto-SAFE po kovos) pilys NEPUOLAMOS
+      return combatReady(r) >= 1;   // be kovai pajėgių gynėjų (RECOVERING) — nelistinama (L7: sąrašas = gate)
     });
     var cntEl = panel && panel.querySelector('#f9raid-counter');
     if (cntEl) cntEl.textContent = '🏰 ' + rows.length;
@@ -266,6 +267,8 @@
       // 🛡 SHIELD: ką tik nusiaubta pilis — nepuolama iki shieldUntil (serveris vis tiek atmes; čia UX)
       var shMs = Math.max(0, (Number(r.buildings && r.buildings.shieldUntil) || 0) - Date.now());
       var shielded = shMs > 0;
+      // 🫀 ONLINE: gynėjas prie ekrano (heartbeat <90s) → puolimas bus GYVA kova prieš jį (ne AI). Informatyvu, NEblokuoja.
+      var online = (Date.now() - (Number(r.buildings && r.buildings.ownerSeenAt) || 0)) < 90000;
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:6px;border:1px solid #3a3a55;background:rgba(255,255,255,0.03);cursor:pointer;transition:background .12s,border-color .12s;' + (shielded ? 'opacity:0.55;' : '');
       row.onmouseenter = function () { row.style.background = 'rgba(255,207,92,0.08)'; row.style.borderColor = shielded ? '#4a9da6' : '#ffcf5c'; };
@@ -278,7 +281,7 @@
       var actionHtml = shielded
         ? '<div style="padding:8px 11px;border:2px solid #4a9da6;border-radius:4px;background:rgba(74,157,166,0.12);color:#7fd0d8;font-size:8px;white-space:nowrap;" title="Recently raided — protected">🛡 ' + Math.ceil(shMs / 60000) + 'min</div>'
         : '<div style="padding:8px 11px;border:2px solid #ffcf5c;border-radius:4px;background:rgba(255,207,92,0.1);color:#ffcf5c;font-size:8px;white-space:nowrap;text-align:center;" title="Raid fee: 10 RONKE → treasury (paid by attacker)">⚔️ ATTACK' + _feeLbl + '</div>';
-      row.innerHTML = '<div style="flex:1;min-width:0;"><div style="color:#c9d4e8;font-size:10px;margin-bottom:3px;">' + shortAddr(addr) + '</div>' +
+      row.innerHTML = '<div style="flex:1;min-width:0;"><div style="color:#c9d4e8;font-size:10px;margin-bottom:3px;">' + shortAddr(addr) + (online && !shielded ? ' <span style="font-size:7px;color:#7ab8e8;border:1px solid #2a5a8a;border-radius:3px;padding:1px 4px;" title="Defender is online — this will be a LIVE fight against them">🫀 LIVE</span>' : '') + '</div>' +
         '<div style="font-size:8px;color:#6a7a8a;">' + cnt + ' defenders · power ' + Math.round((r.buildings && r.buildings.cemPower) || 0) + '</div></div>' +
         '<div style="text-align:center;margin-right:6px;" title="Wipe ALL defenders to loot 50% of the mined RONKE pot">' +
           '<div style="font-size:7px;color:#6a7a8a;letter-spacing:1px;margin-bottom:3px;">REWARDS</div>' +

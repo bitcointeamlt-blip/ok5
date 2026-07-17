@@ -1249,6 +1249,17 @@ export class F9PvpRoom extends Room<F9State> {
         console.log(`[F9PvpRoom] 🚫 self-raid/no-addr (live) atmestas (owner ${this._ownerAddr.slice(0, 10)}…, addr='${_raddr}')`);
         throw new Error(_raddr ? "SELF_RAID" : "NO_ADDRESS");
       }
+      // 🛡 07-17 (user): 1 RAIDAS VIENU METU — kol vyksta gyva kova, JOKS naujas puolikas neįsijungia
+      //   (anti-gangbang: gynėjas nekaunasi su 2+ armijomis vienu metu, kaip async raidas jau blokuotas :1234).
+      {
+        let _atkPresent = 0;
+        this.state.players.forEach((pp) => { if (pp.sessionId !== client.sessionId && pp.team !== DEFENDER_TEAM && pp.connected) _atkPresent++; });
+        if (_atkPresent >= 1) {
+          this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);
+          console.log(`[F9PvpRoom] 🛡 2nd raider atmestas (${_raddr.slice(0, 10)}…) — ${this._ownerAddr.slice(0, 10)}… jau puolama → RAID_IN_PROGRESS`);
+          throw new Error("RAID_IN_PROGRESS");
+        }
+      }
       // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (net gyva). Owner cem jau įkeltas home join'e.
       { const _oc = this._cem.get(this._ownerAddr); if (_oc && _oc.duty === "safe") { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw new Error("SAFE_MODE"); } }
       // 🛡 SHIELD + ⏲ CD (live) PIRMA — „SHIELDED:Xmin" informatyvesnė nei NO_DEFENDERS (07-12, kaip async).
@@ -2588,6 +2599,24 @@ export class F9PvpRoom extends Room<F9State> {
         void this._buildingsOp(this._ownerAddr, (b) => { (b as any).shieldUntil = _shUntil; });   // 🔒 eilė: injured/cem save'ai neperrašo skydo
         try { this.broadcast("shield", { until: _shUntil }); } catch (_) {}
         console.log(`[F9PvpRoom] 🛡 shield ${this._ownerAddr.slice(0, 10)}… (aukos ${Math.round(casualtyPct * 100)}%) iki +${Math.round(SHIELD_MS / 60000)}min`);
+      }
+
+      // 🛡 07-17 (user): AUTO-SAFE po BET KOKIO raido ant tavęs — apsauga LIEKA kol PATS grąžinsi ON DUTY.
+      //   Sprendžia „back-to-back raid": pasibaigus PvP iškart kitas prasidėdavo → gynėjas nepasiruošęs
+      //   (1 unitas lauke, kiti sužaloti/nepersidėlioti) → 1v12 skerdynės. Po raido → SAFE (nepuolamas +
+      //   lėčiau kasa); žaidėjas pasveiksta, persidėlioja 12 unitų, TADA rankiniu jungikliu vėl ON DUTY.
+      //   Manual — jokio auto-expiry (skydas @≥50% turi savo 1h). Puolikas NEpaveiktas. Nesvarbu kas laimėjo.
+      if (this._raidAtkAddr) {
+        const cDef2 = this._cem.get(this._ownerAddr);
+        if (cDef2) { if (cDef2.duty !== "safe") { cDef2.duty = "safe"; this._persistCem(this._ownerAddr); } }
+        else void this._buildingsOp(this._ownerAddr, (b) => { (b as any).dutyMode = "safe"; });
+        for (const cl of this.clients) {
+          const cp = this.state.players.get(cl.sessionId);
+          if (cp && String(cp.address || "").trim().toLowerCase() === this._ownerAddr) {
+            try { cl.send("auto_safe", { reason: "post_raid" }); cl.send("cemetery", { ...this._cemPayload(this._ownerAddr), own: true }); } catch (_) {}
+          }
+        }
+        console.log(`[F9PvpRoom] 🛡 auto-SAFE ${this._ownerAddr.slice(0, 10)}… po raido — apsauga kol pats grąžins ON DUTY`);
       }
 
       // ⛏️ PO RAIDO gynėjo LAUKO count'as = išgyvenusieji — offline rate skaičiuosis iš REALIOS po-mūšio

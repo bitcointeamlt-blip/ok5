@@ -1133,6 +1133,12 @@
         else if (msg) { msg.style.color = '#6fcf5c'; msg.textContent = (e.mode === 'safe' ? '🛡 Now SAFE — protected' : '🟢 Now ON DUTY — 2× mining'); }
       } catch (_) {}
     });
+    // 🛡 07-17 (user): AUTO-SAFE po raido — apsauga kol PATS grąžinsi ON DUTY. Aiški žinutė žaidėjui.
+    room.onMessage('auto_safe', function () {
+      try {
+        if (window.showGameNotification) window.showGameNotification('🛡 PROTECTED', 'Safe after battle — nobody can raid you. Heal & redeploy 12 units, then tap ON DUTY when ready.', '#7fd0d8');
+      } catch (_) {}
+    });
     room.onMessage('mine_stolen', function (e) {   // ⛏️ 100% wipe → 50% pot pavogta. Gynėjas praranda; puolikas (thief) gauna į savo namų pot.
       try {
         var amt = (e && Number(e.amount)) || 0;
@@ -2001,7 +2007,8 @@
         else if (em.indexOf('RAID_COOLDOWN') !== -1) msg = '⏲ You raided this castle recently — wait ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('NO_DEFENDERS') !== -1) msg = '💤 Castle inactive — no combat-ready NFT defenders to raid';
         else if (em.indexOf('DEFENDER_ONLINE') !== -1) msg = '🫀 Defender is online (reconnecting) — retry in a few seconds to fight them LIVE';
-        else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected from raids (they mine slower in exchange).';
+        else if (em.indexOf('RAID_IN_PROGRESS') !== -1) msg = '⚔️ This castle is already under attack — one raider at a time. Try again in a moment.';
+        else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected after a battle (they must switch back to ON DUTY to be raidable).';
         else if (em.indexOf('RAID_FEE') !== -1) {
           // ⚔️💰 fee TX atmestas (panaudotas/pasenęs/nerastas) → išvalom saugotą, kitas bandymas mokės iš naujo
           var _fa = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
