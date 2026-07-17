@@ -414,6 +414,7 @@ export class F9PvpRoom extends Room<F9State> {
   private _capProgress = 0;                                  // 🏰 capture FLOAT akumuliatorius (schema capPct = round() rodymui)
   private _bonePower = new Map<string, number>();            // 🦴 kešuotas RonkePower/žaidėją (kaulų daugikliui + end summary)
   private _reserves = new Map<string, DeckEntry[]>();        // 🪖 REZERVAS/žaidėją (deko unitai virš aktyvių) — įeina kai aktyvus krenta
+  private _snapIds = new Map<string, string[]>();            // ⛏️ 07-17: paskutinio SNAPSHOT'o tokenId'ai — offline kasimo lauko tiesa (_mineFieldStored)
   private _activeCount = new Map<string, number>();          // ⚔ kiek unitų žaidėjas NORI lauke (battle squad dydis, 1..MAX_ACTIVE); default MAX_ACTIVE. 07-06 user: „laisvė palikti tik 1"
   private _clampActive(n: any): number { return Number.isFinite(+n) ? Math.max(1, Math.min(MAX_ACTIVE, Math.floor(+n))) : MAX_ACTIVE; }
   private _setSquadSeq = 0;                                  // 🔒 set_squad async lenktynių guard'as (07-06): stale apply po naujesnio atmetamas
@@ -1445,6 +1446,7 @@ export class F9PvpRoom extends Room<F9State> {
     if (this.state.players.size >= 2) return;   // 🗡️ vyksta raidas → NEsaugom kovos būsenos; pilis atsistatys į ramią pre-raid layout'ą
     const snap = this._collectSnapshot();
     if (!snap.length) return;
+    this._snapIds.set(this._ownerAddr, snap.filter((s) => s.tokenId).map((s) => String(s.tokenId)));   // ⛏️ 07-17: šviežia offline lauko tiesa (_mineFieldStored)
     // ⚡ perf 07-06 DIRTY-CHECK: idle pilis (unitai stovi) rašydavo IDENTIŠKĄ snapshot į Supabase kas 10s —
     //   grynas DB spam. auto-save praleidžiam kai nepakito; dispose/leave VISADA rašom (safety-net).
     const sig = JSON.stringify(snap);
@@ -1785,6 +1787,12 @@ export class F9PvpRoom extends Room<F9State> {
     } catch (_) { _ok = false; }
     if (!_ok) return c;   // 🛡 S-M5: DB triktis → NEcache'inam (kitaip _persistCem perrašytų pot=0); _cem lieka tuščias → _persistCem praleidžia; kitas kvietimas bandys iš naujo
     if (!c.ramp) c.ramp = c.tick || Date.now();   // migracija — momentum startuoja nuo paskutinio žinomo taško
+    // ⛏️ 07-17 (skundas „išjungus žaidimą kasimas stoja"): AWAIT snapshot tokenId'ų PRIEŠ cache'inant cem —
+    //   _cemAccrue kvies _mineFieldStored IŠKART po šito, tad offline lauko tiesa privalo jau būti (fire&forget
+    //   pralaimėtų lenktynes → offline langas dingtų su tick resetu). Kaina: 1 select / addr / kambarį.
+    if (!this._snapIds.has(addr)) {
+      try { const us = await loadBaseUnits(addr); this._snapIds.set(addr, (us || []).filter((s) => s && s.tokenId).map((s) => String(s.tokenId))); } catch (_) {}
+    }
     this._cem.set(addr, c);
     return c;
   }
@@ -1889,11 +1897,34 @@ export class F9PvpRoom extends Room<F9State> {
     const { onField, reserve } = this._fieldCounts(addr);
     return this._mineRateFrom(addr, onField, reserve);
   }
-  // Offline-safe rate — iš paskutinių ŽINOMŲ (persistintų) lauko/rezervo count'ų.
+  // ⛏️ 07-17 OFFLINE LAUKO TIESA (skundas „išjungus žaidimą kasimas stoja"): kai savininko NĖRA kambaryje,
+  //   laukas = SNAPSHOT unitai − sužaloti − mirę − išregistruoti — TA PATI formulė kaip _spawnAiDefenders
+  //   gynyba (jei raideris sutiktų 12 gynėjų, kasti su 12 teisėta). Savaime krenta po raido (sužaloti
+  //   nesiskaito) ir atsistato unitams PAGIJUS — be owner login'o (senoji bėda: mfield=min(...,survivors)
+  //   užstrigdavo 0 iki kito login'o → 32/36 žaidėjų offline kasimas buvo miręs). Owner'iui ESANT kambaryje —
+  //   TIK gyvas c.mfield (kitaip bench-exploit atsidarytų: online 3 lauke + senas 12 snapshot = kastų pilnai).
+  private _mineFieldStored(addr: string): number {
+    addr = (addr || "").trim().toLowerCase();
+    const c = this._cem.get(addr);
+    if (!c) return 0;
+    const live = Math.max(0, c.mfield || 0);
+    let present = false;
+    this.state.players.forEach((pp) => { if (String(pp.address || "").trim().toLowerCase() === addr) present = true; });
+    if (present && this.state.phase === "playing") return live;   // online → tik gyvas laukas (anti-exploit)
+    const snap = this._snapIds.get(addr);
+    if (!snap || !snap.length) return live;                       // snapshot nežinomas → senas elgesys (scalar)
+    const inj = this._injuredSet(addr);
+    const dead = this._deadSet(addr);
+    const cd = chainDeckCached(addr);                             // 🔐 parduoti/išregistruoti nesiskaito (kaip _injuredDrain)
+    let n = 0;
+    for (const id of snap) { if (!id || inj.has(id) || dead.has(id)) continue; if (cd && cd.size > 0 && !cd.has(id)) continue; n++; }
+    return Math.max(live, Math.min(MAX_ACTIVE, n));
+  }
+  // Offline-safe rate — iš paskutinių ŽINOMŲ (persistintų/snapshot) lauko/rezervo count'ų.
   private _mineRateStored(addr: string): number {
     const c = this._cem.get((addr || "").trim().toLowerCase());
     if (!c) return 0;
-    return this._mineRateFrom(addr, c.mfield || 0, c.mres || 0);
+    return this._mineRateFrom(addr, this._mineFieldStored(addr), c.mres || 0);
   }
   // LAZY prikaupimas nuo paskutinio tick (offline-safe). Passive BONES IŠJUNGTA (RONKE mining pakeičia); accrue TIK mpot (RONKE).
   // ⛏️ Prikaupiam pagal _mineRateStored (persistinti mfield/mres count'ai), NE pagal gyvą lauko būseną:
@@ -1973,7 +2004,7 @@ export class F9PvpRoom extends Room<F9State> {
       duty: c.duty || "online", gated: !!c.gated, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
       dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
-      mineEligible: this._mineEligible(addr, c.mfield || 0), mineField: Math.max(0, c.mfield || 0),   // 🏁 MINING gate = LAUKO unitai (c.mfield = ta pati bazė kaip mrate); Path A/B skaičiuoja dislokuotus, ne deką
+      mineEligible: this._mineEligible(addr, this._mineFieldStored(addr)), mineField: this._mineFieldStored(addr),   // 🏁 MINING gate = LAUKO unitai (online → gyvas mfield; offline → snapshot−sužaloti, kaip mrate)
       rules: { aRv: CEM_REQ_A_RV, aReg: CEM_REQ_A_REG, bReg: CEM_REQ_B_REG, bWallet: CEM_REQ_B_WALLET },
       mineRules: { aRv: CEM_REQ_A_RV, aField: MINE_FIELD_REQ_A, bField: MINE_FIELD_REQ_B, bWallet: CEM_REQ_B_WALLET },   // ⛏️ kasimo lauko-gate ribos (klientas rodo „onField / 12")
       now: Date.now(),
