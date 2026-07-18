@@ -47,40 +47,46 @@
       if (!Ctor) return;
       if (!_f9AlarmCtx) { _f9AlarmCtx = new Ctor(); }
       var ctx = _f9AlarmCtx;
-      if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
-      var master = ctx.createGain();
-      master.gain.value = 0.6;
-      master.connect(ctx.destination);
-      // brass šiluma — lowpass nurėžia aštrius aukštus harmonikus (kad būtų „ragas", ne pyptelėjimas)
-      var lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.6;
-      lp.connect(master);
-      // vibrato LFO — gyvas „pučiamo rago" tonas
-      var lfo = ctx.createOscillator(), lfoGain = ctx.createGain();
-      lfo.frequency.value = 5.5; lfoGain.gain.value = 4.5; lfo.connect(lfoGain);
-      var t0 = ctx.currentTime;
-      lfo.start(t0);
-      // 🎺 karo ragas („dūda") — 2 natos: žemas šauksmas → kvinta aukščiau (ta-daaa), ~0.95s
-      var _horn = function (freq, ts, dur, vol) {
-        for (var d = 0; d < 2; d++) {              // 2 detuned sawtooth = brass storumas
-          var o = ctx.createOscillator();
-          o.type = 'sawtooth';
-          o.frequency.setValueAtTime(freq * 0.94, ts);               // „pūstelėjimo" pitch swell
-          o.frequency.exponentialRampToValueAtTime(freq, ts + 0.06);
-          o.detune.value = d ? 8 : -8;
-          lfoGain.connect(o.frequency);
-          var g = ctx.createGain();
-          g.gain.setValueAtTime(0.0001, ts);
-          g.gain.exponentialRampToValueAtTime(vol, ts + 0.045);      // attack
-          g.gain.setValueAtTime(vol, ts + dur - 0.14);               // sustain
-          g.gain.exponentialRampToValueAtTime(0.0001, ts + dur);     // release
-          o.connect(g); g.connect(lp);
-          o.start(ts); o.stop(ts + dur + 0.03);
-        }
+      var _fire = function () {
+        try {
+          var master = ctx.createGain();
+          master.gain.value = 0.7;
+          master.connect(ctx.destination);
+          // brass šiluma — lowpass nurėžia aštrius aukštus harmonikus (kad būtų „ragas", ne pyptelėjimas)
+          var lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.6;
+          lp.connect(master);
+          // vibrato LFO — gyvas „pučiamo rago" tonas
+          var lfo = ctx.createOscillator(), lfoGain = ctx.createGain();
+          lfo.frequency.value = 5.5; lfoGain.gain.value = 4.5; lfo.connect(lfoGain);
+          var t0 = ctx.currentTime + 0.06;   // maža priešakinė pauzė — kad neplanuotų PRAEITY (resume race → tyla)
+          lfo.start(t0);
+          // 🎺 karo ragas („dūda") — 2 natos: žemas šauksmas → kvinta aukščiau (ta-daaa), ~0.95s
+          var _horn = function (freq, ts, dur, vol) {
+            for (var d = 0; d < 2; d++) {              // 2 detuned sawtooth = brass storumas
+              var o = ctx.createOscillator();
+              o.type = 'sawtooth';
+              o.frequency.setValueAtTime(freq * 0.94, ts);               // „pūstelėjimo" pitch swell
+              o.frequency.exponentialRampToValueAtTime(freq, ts + 0.06);
+              o.detune.value = d ? 8 : -8;
+              lfoGain.connect(o.frequency);
+              var g = ctx.createGain();
+              g.gain.setValueAtTime(0.0001, ts);
+              g.gain.exponentialRampToValueAtTime(vol, ts + 0.045);      // attack
+              g.gain.setValueAtTime(vol, ts + dur - 0.14);               // sustain
+              g.gain.exponentialRampToValueAtTime(0.0001, ts + dur);     // release
+              o.connect(g); g.connect(lp);
+              o.start(ts); o.stop(ts + dur + 0.03);
+            }
+          };
+          _horn(196, t0,        0.34, 0.6);   // G3 — žemas šauksmas
+          _horn(294, t0 + 0.34, 0.62, 0.65);  // D4 — kvinta aukščiau (pergalingas)
+          lfo.stop(t0 + 1.05);
+        } catch (_) {}
       };
-      _horn(196, t0,        0.34, 0.5);   // G3 — žemas šauksmas
-      _horn(294, t0 + 0.34, 0.62, 0.55);  // D4 — kvinta aukščiau (pergalingas)
-      lfo.stop(t0 + 1.05);
+      // ⚠️ autoplay: planuok garsą TIK po resume (kitaip suspended kontekste = tyla)
+      if (ctx.state === 'suspended') { try { ctx.resume().then(_fire).catch(_fire); } catch (_) { _fire(); } }
+      else { _fire(); }
     } catch (_) {}
   }
   try { window._f9TestAttackAlarm = _f9PlayAttackAlarm; } catch (_) {}   // 🧪 test: konsolėje `_f9TestAttackAlarm()`
