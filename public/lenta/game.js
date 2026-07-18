@@ -9575,6 +9575,42 @@ function _f9MktMyOffersMap() {
 }
 function _f9MktMarkMyOffer(tokenId, amt) { const a = _f9MktAddrLc(); if (!a) return; const arr = _f9MktJGet(_F9MKT_MYOFF_KEY, a).filter(function (x) { return String(x.tokenId) !== String(tokenId); }); arr.unshift({ tokenId: String(tokenId), amountRonke: amt, at: Date.now() }); _f9MktJSet(_F9MKT_MYOFF_KEY, a, arr.slice(0, 60)); }
 function _f9MktUnmarkMyOffer(tokenId) { const a = _f9MktAddrLc(); if (!a) return; _f9MktJSet(_F9MKT_MYOFF_KEY, a, _f9MktJGet(_F9MKT_MYOFF_KEY, a).filter(function (x) { return String(x.tokenId) !== String(tokenId); })); }
+// 💰 MANO OFFERIAI (tab „MY OFFERS") — on-chain enumeruoti VISUS mano aktyvius offerius, ĮSK. ant nebelistinamų/
+//   parduotų unitų (offeris seka tokeną → kai unitą kažkas nuperka, offeris lieka „pakibęs"; čia žaidėjas jį mato
+//   ir gali CANCEL → escrow'inti RONKE grįžta). Šaltinis = getTokensWithOffers → getOffers(token) filtruotas mano adresu.
+let _f9MktMyOffers = null;        // [{tokenId, amountRonke}] | null=dar nekrauta
+let _f9MktMyOffersLoading = false;
+function _f9MktLoadMyOffers(force) {
+  if (_f9MktOffIsLocal()) {
+    _f9MktMyOffers = _f9MktOffLocalGet().filter(function (x) { return x.offerer === 'you'; })
+      .map(function (x) { return { tokenId: String(x.tokenId), amountRonke: x.amountRonke }; });
+    if (_f9MktOverlayEl && _f9MktTab === 'offers') _f9MktRenderBody();
+    return;
+  }
+  const W = window.Wallet;
+  const my = _f9MktAddrLc();
+  if (!W || !W.offersGetTokens || !W.offersGetForToken || !my) { _f9MktMyOffers = []; if (_f9MktOverlayEl && _f9MktTab === 'offers') _f9MktRenderBody(); return; }
+  if (_f9MktMyOffersLoading && !force) return;
+  _f9MktMyOffersLoading = true;
+  if (_f9MktOverlayEl && _f9MktTab === 'offers') _f9MktRenderBody();   // → „Loading…"
+  W.offersGetTokens(0, 200).then(function (map) {
+    const ids = Object.keys(map || {});
+    return Promise.all(ids.map(function (id) {
+      return W.offersGetForToken(id).then(function (arr) {
+        const mine = (arr || []).find(function (o) { return String(o.offerer).toLowerCase() === my; });
+        return mine ? { tokenId: String(id), amountRonke: mine.amountRonke } : null;
+      }).catch(function () { return null; });
+    }));
+  }).then(function (rows) {
+    _f9MktMyOffers = rows.filter(Boolean).sort(function (a, b) { return b.amountRonke - a.amountRonke; });
+    _f9MktMyOffersLoading = false;
+    if (_f9MktOverlayEl && _f9MktTab === 'offers') _f9MktRenderBody();
+  }).catch(function () {
+    _f9MktMyOffers = _f9MktMyOffers || [];
+    _f9MktMyOffersLoading = false;
+    if (_f9MktOverlayEl && _f9MktTab === 'offers') _f9MktRenderBody();
+  });
+}
 // ── 📬 MARKET INBOX (2026-07-14, user): ✉️ indikatorius ant marketo namuko kai yra neskaitytų įvykių
 //   (gautas offeris ant mano listingo / mano unitas parduotas / aš nupirkau). Fonas tikrina kas 90s;
 //   atidarius marketą — „MARKET NEWS" banneris su detalėm, badge nusiskaito.
@@ -9954,7 +9990,7 @@ function _f9MktDoCancelOffer(listing) {
   if (_f9MktOffIsLocal()) {
     _f9MktOffLocalSet(_f9MktOffLocalGet().filter(function (x) { return !(String(x.tokenId) === String(listing.tokenId) && x.offerer === 'you'); }));
     _f9MktStatusMsg = '✅ Offer cancelled (LOCAL TEST) — RONKE refunded.';
-    _f9MktLoadOffers(); return;
+    _f9MktLoadMyOffers(); _f9MktLoadOffers(); return;
   }
   const W = window.Wallet;
   if (!W || !W.offersCancel || _f9MktBusy) return;
@@ -9962,7 +9998,7 @@ function _f9MktDoCancelOffer(listing) {
   W.offersCancel(listing.tokenId).then(function () {
     _f9MktBusy = false; _f9MktUnmarkMyOffer(listing.tokenId);
     _f9MktStatusMsg = '✅ Offer cancelled — RONKE refunded.';
-    _f9MktLoadOffers(); _f9MktRenderBody();
+    _f9MktLoadMyOffers(true); _f9MktLoadOffers(); _f9MktRenderBody();
   }).catch(function (e) { _f9MktBusy = false; _f9MktStatusMsg = '⚠ ' + String((e && e.message) || e).slice(0, 64); _f9MktRenderBody(); });
 }
 // Pardavėjas PRIIMA offerį. Listintam unitui — 2 žingsniai: market.cancel (NFT grįžta) → offers.accept
@@ -10090,6 +10126,7 @@ function _f9MktRenderBody() {
   if (tabs) {
     tabs.querySelector('#f9mkt-tab-browse').style.cssText = _f9MktTabBtnCss(_f9MktTab === 'browse');
     tabs.querySelector('#f9mkt-tab-sell').style.cssText = _f9MktTabBtnCss(_f9MktTab === 'sell');
+    const _toBtn = tabs.querySelector('#f9mkt-tab-offers'); if (_toBtn) _toBtn.style.cssText = _f9MktTabBtnCss(_f9MktTab === 'offers');
   }
   if (!body) return;
   body.onclick = null;   // reset delegacijos (filtrai dažnai re-render'ina → venk listener'ių kaupimosi)
@@ -10191,6 +10228,42 @@ function _f9MktRenderBody() {
       if (t.hasAttribute('data-offsend')) { const inp = body.querySelector('#f9mkt-offamt-' + L.tokenId); return _f9MktDoOffer(L, inp ? parseFloat(inp.value) : 0); }
       if (t.hasAttribute('data-offcancel')) return _f9MktDoCancelOffer(L);
       if (t.hasAttribute('data-offaccept')) return _f9MktDoAcceptOffer(L, t.getAttribute('data-offerer'), t.getAttribute('data-offwei'), t.getAttribute('data-offramt'));
+    };
+  } else if (_f9MktTab === 'offers') {
+    // 💰 MY OFFERS — visi mano aktyvūs offeriai (įsk. ant nebelistinamų/parduotų unitų). CANCEL → RONKE refund.
+    const emptyBoxO = function (icon, txt) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;">' +
+        '<span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
+    };
+    const connectedO = !!(window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress());
+    let html = _localBanner + _soldBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Offers you placed on units. RONKE is <b style="color:#ffcf5c;">locked in escrow</b> until the owner accepts — or you cancel. If a unit got bought by someone else, your offer stays here: <b style="color:#ffcf5c;">cancel it to get your RONKE back</b>.</div>';
+    if (!_local && !connectedO) {
+      html += emptyBoxO('🔌', 'Connect your wallet to see your offers');
+    } else if (_f9MktMyOffers === null || _f9MktMyOffersLoading) {
+      html += emptyBoxO('⏳', 'Loading your offers…');
+    } else if (!_f9MktMyOffers.length) {
+      html += emptyBoxO('💰', 'You have no active offers');
+    } else {
+      let total = 0;
+      html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+      for (const o of _f9MktMyOffers) {
+        total += Number(o.amountRonke) || 0;
+        html += '<div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:rgba(255,207,92,0.06);border:1px solid #6a4a18;border-radius:8px;">' +
+          '<span style="font-size:26px;">💰</span>' +
+          '<div style="flex:1;min-width:0;"><div style="font-size:12px;color:#ffcf5c;">' + o.amountRonke + ' RONKE</div>' +
+          '<div style="font-size:9px;color:#8a9aaa;margin-top:3px;">offer on unit <b style="color:#c9d4e8;">#' + o.tokenId + '</b> · escrowed</div></div>' +
+          '<button data-offcancelmine="' + o.tokenId + '" ' + (_f9MktBusy ? 'disabled ' : '') + 'style="padding:11px 18px;font-family:inherit;font-size:10px;letter-spacing:0.5px;border-radius:6px;border:1px solid #e06a6a;background:rgba(224,106,106,0.14);color:#ff9a9a;cursor:pointer;">✕ CANCEL &amp; REFUND</button>' +
+          '</div>';
+      }
+      html += '</div><div style="margin-top:14px;font-size:10px;color:#8a9aaa;letter-spacing:0.4px;">Total escrowed: <b style="color:#ffcf5c;">' + (Math.round(total * 100) / 100) + ' RONKE</b> · cancelling refunds instantly (you pay gas).</div>';
+    }
+    if (_f9MktStatusMsg) html += '<div style="margin-top:12px;font-size:10px;line-height:1.6;color:#7cff6e;letter-spacing:0.4px;">' + _f9MktStatusMsg + '</div>';
+    html += soon;
+    body.innerHTML = html;
+    body.onclick = function (ev) {
+      const t = ev.target && ev.target.closest ? ev.target.closest('button[data-offcancelmine]') : null;
+      if (!t) return;
+      _f9MktDoCancelOffer({ tokenId: t.getAttribute('data-offcancelmine') });
     };
   } else {
     const W = window.Wallet;
@@ -10295,18 +10368,20 @@ function _f9ToggleMarketPanel() {
       '<button id="f9mkt-x" style="background:none;border:none;color:#8a9aaa;font-size:28px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
     '<div style="font-size:10px;color:#8a9aaa;margin-bottom:14px;letter-spacing:0.5px;flex:0 0 auto;">Buy &amp; sell battle units for RONKE — level trades with the unit</div>' +
-    '<div id="f9mkt-tabs" style="display:flex;gap:10px;margin-bottom:16px;max-width:420px;flex:0 0 auto;">' +
+    '<div id="f9mkt-tabs" style="display:flex;gap:10px;margin-bottom:16px;max-width:660px;flex:0 0 auto;flex-wrap:wrap;">' +
       '<button id="f9mkt-tab-browse">🔎 BROWSE</button>' +
       '<button id="f9mkt-tab-sell">🏷️ SELL</button>' +
+      '<button id="f9mkt-tab-offers">💰 MY OFFERS</button>' +
     '</div>' +
     '<div id="f9mkt-body" style="flex:1 1 auto;overflow-y:auto;min-height:0;"></div>';
   ov.appendChild(el);
   document.body.appendChild(ov);
   _f9MktOverlayEl = ov; window._f9MktPanelOpen = true;
-  _f9MktStatusMsg = '';
+  _f9MktStatusMsg = ''; _f9MktMyOffers = null;
   const xb = el.querySelector('#f9mkt-x'); if (xb) xb.onclick = _f9CloseMktPanel;
   const tb = el.querySelector('#f9mkt-tab-browse'); if (tb) tb.onclick = function () { _f9MktTab = 'browse'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadListings(); };
   const ts = el.querySelector('#f9mkt-tab-sell'); if (ts) ts.onclick = function () { _f9MktTab = 'sell'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadInv(); };
+  const to = el.querySelector('#f9mkt-tab-offers'); if (to) to.onclick = function () { _f9MktTab = 'offers'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadMyOffers(); };
   _f9MktRenderBody();
   _f9MktLoadListings();   // default tab = browse → iškart krauk listingus (jei market ready)
   _f9MktInboxMarkRead();  // 📬 atidarius marketą — ✉️ badge nusiskaito (banneris lieka, rodo <24h įvykius)
