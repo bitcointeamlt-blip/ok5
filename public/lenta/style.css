@@ -1292,6 +1292,16 @@ kbd {
   gap: 0;
 }
 
+/* 📱 F12 „ball game" FORCE-LANDSCAPE (Ronin webview, kur native orientation.lock neveikia).
+   orientation.js prideda body.f12-landscape kai: toggle ON + mobile + F12 + portrait. Canvas jau padidintas
+   iki loginio landscape dydžio (floor12 resize per __logicalW/H), o šis transformas jį pasuka 90° kad užpildytų
+   portrait ekraną. transform-origin+translate MATEMATIŠKAI patikrinti: footprint=[0,iw]×[0,ih] (jokio „half black").
+   Numatytai NEaktyvus (jokia body neturi šios klasės be toggle). */
+body.f12-landscape #canvas {
+  transform-origin: top left !important;
+  transform: rotate(90deg) translate(0, -100%) !important;
+}
+
 /* Side panels */
 .side-panel {
   width: 154px;
