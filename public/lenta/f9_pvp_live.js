@@ -34,6 +34,57 @@
   var _boneNumEl = null, _boneNumTxt = '';      // ⚡ perf 07-06: boneBalNum span kešas + paskutinis tekstas (write-on-change)
   var _raidLog = { injured: [], dead: [] };     // ⚔ SETTLED suvestinei — mano nuostoliai per mūšį (reset _onStart)
 
+  // 🔊⚔️🎺 ATTACK ALARM — garsinis įspėjimas kai kažkas įžengia į tavo teritoriją / puola pilį (under_attack).
+  //   Savarankiškas WebAudio karo rago („dūda") signalas ~0.95s; GERBIA global SOUND OFF (localStorage 'lenta_muted'); throttle 2.5s.
+  var _f9AlarmCtx = null, _f9AlarmLast = 0;
+  function _f9PlayAttackAlarm() {
+    try { if (localStorage.getItem('lenta_muted') === '1') return; } catch (_) {}   // gerbti SOUND OFF
+    var now = Date.now();
+    if (now - _f9AlarmLast < 2500) return;   // throttle — kad keli under_attack neperkrautų
+    _f9AlarmLast = now;
+    try {
+      var Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return;
+      if (!_f9AlarmCtx) { _f9AlarmCtx = new Ctor(); }
+      var ctx = _f9AlarmCtx;
+      if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+      var master = ctx.createGain();
+      master.gain.value = 0.6;
+      master.connect(ctx.destination);
+      // brass šiluma — lowpass nurėžia aštrius aukštus harmonikus (kad būtų „ragas", ne pyptelėjimas)
+      var lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.6;
+      lp.connect(master);
+      // vibrato LFO — gyvas „pučiamo rago" tonas
+      var lfo = ctx.createOscillator(), lfoGain = ctx.createGain();
+      lfo.frequency.value = 5.5; lfoGain.gain.value = 4.5; lfo.connect(lfoGain);
+      var t0 = ctx.currentTime;
+      lfo.start(t0);
+      // 🎺 karo ragas („dūda") — 2 natos: žemas šauksmas → kvinta aukščiau (ta-daaa), ~0.95s
+      var _horn = function (freq, ts, dur, vol) {
+        for (var d = 0; d < 2; d++) {              // 2 detuned sawtooth = brass storumas
+          var o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(freq * 0.94, ts);               // „pūstelėjimo" pitch swell
+          o.frequency.exponentialRampToValueAtTime(freq, ts + 0.06);
+          o.detune.value = d ? 8 : -8;
+          lfoGain.connect(o.frequency);
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, ts);
+          g.gain.exponentialRampToValueAtTime(vol, ts + 0.045);      // attack
+          g.gain.setValueAtTime(vol, ts + dur - 0.14);               // sustain
+          g.gain.exponentialRampToValueAtTime(0.0001, ts + dur);     // release
+          o.connect(g); g.connect(lp);
+          o.start(ts); o.stop(ts + dur + 0.03);
+        }
+      };
+      _horn(196, t0,        0.34, 0.5);   // G3 — žemas šauksmas
+      _horn(294, t0 + 0.34, 0.62, 0.55);  // D4 — kvinta aukščiau (pergalingas)
+      lfo.stop(t0 + 1.05);
+    } catch (_) {}
+  }
+  try { window._f9TestAttackAlarm = _f9PlayAttackAlarm; } catch (_) {}   // 🧪 test: konsolėje `_f9TestAttackAlarm()`
+
   function S() { return B ? B.S : (window.S || null); }
   function rndAddr() { return '0xlive' + Math.floor(Math.random() * 1e6); }
   function pnow() { return (window.performance ? performance.now() : Date.now()); }
@@ -1244,6 +1295,7 @@
     room.onMessage('under_attack', function (e) {
       // tik gynėjui (savininkui) — puolikas pats save nemato kaip „under attack"
       if (window.__f9RaidActive) return;
+      try { _f9PlayAttackAlarm(); } catch (_) {}   // 🔊⚔️ garsinis įspėjimas — tavo pilį puola
       try { if (e && e.attacker) window._f9LastAttacker = String(e.attacker); } catch (_) {}   // 🔎 settled atsekamumui — kas puolė
       var who = (e && e.attacker) ? (String(e.attacker).slice(0, 6) + '…' + String(e.attacker).slice(-4)) : 'A raider';
       _status('⚔️ YOUR CASTLE IS UNDER ATTACK!', '#f66');
