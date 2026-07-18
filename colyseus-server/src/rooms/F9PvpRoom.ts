@@ -2713,6 +2713,26 @@ export class F9PvpRoom extends Room<F9State> {
     });
     // 🦴 sesijos kaulai → bankas (summary jau sukurtas iš p.bones; flush zero'ina)
     this.state.players.forEach((p) => this._flushBones(p));
+    // 🦴 07-18 (user vizija: „ABI pusės gauna kaulus — 1 eliminuotas priešas = kaulai, nesvarbu gini ar puoli,
+    //   online ar offline"): ASYNC gynyba — gynėjas OFFLINE, gynė AI (owner="AI_DEFENDER"). Jo kills anksčiau
+    //   NIEKAM nekredituoti (players ciklas ima tik realias sesijas) → laimėjęs offline gynėjas gaudavo 0 kaulų
+    //   (DB: 22/29 laimėjusių gynėjų → 0). Kredituojam AI gynėjo kills offline gynėjui (pilni, kaip live, mult
+    //   pagal jo RONKE Power). Live gynyba/takeover → unitai jau player-owned (AI_DEFENDER nebėra) → blokas
+    //   NEVEIKIA (jokio dvigubo kredito; takeover'e ciklas suskaičiuoja ir pre-takeover AI kills per re-owned unitą).
+    if ((this._home || this._asyncRaid) && this._ownerAddr) {
+      let aiKills = 0;
+      this._ai.forEach((ai, id) => { const u = this.state.units.get(id); if (u && u.owner === "AI_DEFENDER") aiKills += (ai.kills || 0); });
+      if (aiKills > 0) {
+        const cOwn = this._cem.get(this._ownerAddr);
+        const dpow = cOwn ? Math.max(0, cOwn.power || 0) : 0;   // pilnas registruotas RONKE Power (kaip _initBoneMults)
+        const dMult = BONE_MULT_DEFENDER + Math.min(BONE_POWER_MAX_BONUS, (dpow / BONE_POWER_MAX) * BONE_POWER_MAX_BONUS);
+        const defBones = Math.round(aiKills * dMult * 10) / 10;
+        if (defBones > 0) {
+          this._endBones.def = Math.round((this._endBones.def + defBones) * 10) / 10;   // 🌍 istorijai (match_ defBones rodys teisingai)
+          void addBones(this._ownerAddr, defBones).then((b) => { if (b != null) console.log(`[F9PvpRoom] 🦴 async gynėjo kaulai +${defBones} (${aiKills} kills × ${dMult.toFixed(2)}) → bank=${b} (${this._ownerAddr.slice(0, 10)}…)`); }).catch(() => {});
+        }
+      }
+    }
     if (this.state.entryFee > 0) this._stake.settle(payouts);
 
     // ── FAZA E: mirties stakes — tik staked režime, tik realiems NFT (tokenId set). ──
