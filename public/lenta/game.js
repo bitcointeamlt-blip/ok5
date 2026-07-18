@@ -4547,10 +4547,14 @@ function _f9InstallDragHandlers() {
       const camX = S.cam ? S.cam.x : 0;
       const camY = S.cam ? S.cam.y : 0;
       const r = window._f9DragRect;
-      const wx1 = Math.min(r.sx1, r.sx2) + camX;
-      const wy1 = Math.min(r.sy1, r.sy2) + camY;
-      const wx2 = Math.max(r.sx1, r.sx2) + camX;
-      const wy2 = Math.max(r.sy1, r.sy2) + camY;
+      // 🔍 07-18 FIX (user: box-select nebeveikia priartinus): rect canvas-px → world PRIVALO /zoom (kaip klik/hover
+      //   :4406/:4418 ir visos kitos konversijos). Priartinęs (wheel-zoom / touch 0.7) marquee pagaudavo NE tą
+      //   world-regioną → nepažymėdavo nieko. zoom=1 → nepakitę (÷1).
+      const _z = (typeof _f9WorldZoom === 'function' ? _f9WorldZoom() : 1) || 1;
+      const wx1 = Math.min(r.sx1, r.sx2) / _z + camX;
+      const wy1 = Math.min(r.sy1, r.sy2) / _z + camY;
+      const wx2 = Math.max(r.sx1, r.sx2) / _z + camX;
+      const wy2 = Math.max(r.sy1, r.sy2) / _z + camY;
       const _locks = (typeof _f9SquadLocks === 'function') ? _f9SquadLocks() : [];
       const sel = [];
       for (const u of S.units) {
