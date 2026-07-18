@@ -80,6 +80,7 @@ export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { 
   mineField?: number; mineReserve?: number;  // ⛏️ paskutiniai ŽINOMI lauko/rezervo unitų count'ai — offline rate
   //   perskaičiuojamas iš PIRMINIŲ persistintų duomenų (ne įsiminta galutinė rate → mažesnė exploit skylė)
   dutyMode?: "online" | "safe"; mineGated?: boolean;  // ⚔️🛡 duty režimas + ar safe kasimas užrakintas (lubos→siege)
+  minePend?: { nonce: string; amt: number; at: number } | null;   // ⛏️💸 07-18 (C1 fix): DURABLE laukiantis withdrawal — pot jau nuskaičiuotas, laukiam ar TX nusėdo; kambariui mirus grąžinam per re-credit (RAM-only buvo → prarasdavom)
   mineStolenAt?: number;   // (legacy — client steal signal; nebenaudojamas po server-side steal)
   ownerSeenAt?: number;    // 🫀 07-14: savininko heartbeat (online kas 60s) — async-raid GRACE guard (online gynėjas turi matyti kovą!)
   shieldUntil?: number };   // 🛡 pilis nepuolama iki šio ts (1h po pralaimėtos gynybos)
@@ -139,7 +140,12 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const mineGated = !!b.mineGated;   // 🛡 safe kasimas užrakintas iki siege
     const shieldUntil = Number.isFinite(+b.shieldUntil) ? Math.max(0, +b.shieldUntil) : 0;   // 🛡
     const ownerSeenAt = Number.isFinite(+b.ownerSeenAt) ? Math.max(0, +b.ownerSeenAt) : 0;   // 🫀 grace guard
-    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineField, mineReserve, dutyMode, mineGated, ownerSeenAt, shieldUntil };
+    // ⛏️💸 07-18 (C1): durable laukiantis withdrawal — validuojam nonce/amt(>0)/at(ts), kitaip null.
+    //   nonce = signMineVoucher() dešimtainis uint256 string (BigInt.toString()); leidžiam ir 0x-hex (ateičiai).
+    const mp = b.minePend;
+    const minePend = (mp && typeof mp.nonce === "string" && /^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$/.test(mp.nonce) && Number.isFinite(+mp.amt) && +mp.amt > 0 && Number.isFinite(+mp.at))
+      ? { nonce: mp.nonce, amt: Math.round(+mp.amt), at: +mp.at } : null;
+    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
   } catch (e) { throw (e instanceof Error ? e : new Error("[BaseStore] loadBaseBuildings failed")); }   // 🛡 S-M5: tinklo išimtis = triktis (metam, ne null)
 }
 

@@ -366,13 +366,16 @@ interface DeckEntry { utype: string; level: number; tokenId: string; }
 function sanitizeDeck(raw: any): DeckEntry[] {
   if (!Array.isArray(raw)) return [];
   const out: DeckEntry[] = [];
-  for (const e of raw) {
+  const seenTok = new Set<string>();   // 🔒 07-18 (H1 fix): dedup tokenId — klientas gali atsiųsti pasikartojantį
+  for (const e of raw) {               //   registruotą tokenId (raid options.deck); _chainFilterDeck jo NEfiltruoja
     const utype = String(e && e.utype || "");
     if (!VALID_UTYPES.has(utype)) continue;
+    const tokenId = String((e && e.tokenId) || "");
+    if (tokenId) { if (seenTok.has(tokenId)) continue; seenTok.add(tokenId); }   // dublis su tokenId → praleidžiam (be-tokenId fake/default praeina)
     out.push({
       utype,
       level: Math.max(0, Math.min(255, Math.floor(Number(e && e.level) || 0))),
-      tokenId: String((e && e.tokenId) || ""),
+      tokenId,
     });
     if (out.length >= MAX_DECK) break;
   }
@@ -669,7 +672,9 @@ export class F9PvpRoom extends Room<F9State> {
         c!.mcp = MINE_SIEGE_STEP;   // 🗡 nusiėmus — naujas ciklas nuo pradžių (kitas checkpoint vėl @200)
         c!.gated = (c!.mpot || 0) >= c!.mcp - 0.01;   // paprastai pot≈0 → false
         this._persistCem(addr);
-        this._minePend.set(addr, { nonce: voucher.nonce, amt, at: Date.now() });
+        const _pend = { nonce: voucher.nonce, amt, at: Date.now() };
+        this._minePend.set(addr, _pend);
+        void this._buildingsOp(addr, (b) => { b.minePend = _pend; });   // ⛏️💸 07-18 (C1): DURABLE — išgyvena kambario mirtį; re-credit po deadline jei TX nenusėdo (atskira #buildings eilė, neliečia mpot bloko)
         client.send("mine_withdraw_result", { ok: true, claim: voucher });
         try { client.send("cemetery", { ...this._cemPayload(addr), own: true }); } catch (_) {}   // šviežias (sumažintas) pot
         console.log(`[F9PvpRoom] ⛏️💸 withdraw voucher: ${amt} RONKE ${addr.slice(0, 10)}… (pot→${c!.mpot}, checkpoint reset→${c!.mcp})`);
@@ -1827,6 +1832,9 @@ export class F9PvpRoom extends Room<F9State> {
     try {
       const b = await loadBaseBuildings(addr);   // 🛡 S-M5: meta klaidą esant DB triktimi
       if (b) c = { pot: Math.max(0, b.cemPot || 0), tick: b.cemTick || 0, power: Math.max(0, b.cemPower || 0), nft: Math.max(0, b.cemNft || 0), rv: Math.max(0, b.cemRv || 0), wallet: Math.max(0, b.cemWallet || 0), ramp: b.cemRamp || 0, mpot: Math.max(0, b.minePot || 0), mcp: Math.max(MINE_SIEGE_STEP, b.mineCheckpoint || MINE_SIEGE_STEP), mfield: Math.max(0, b.mineField || 0), mres: Math.max(0, b.mineReserve || 0), duty: (b.dutyMode === "safe" ? "safe" : "online"), gated: !!b.mineGated };
+      // ⛏️💸 07-18 (C1 fix): durable laukiantis withdrawal → RAM, kad _confirmMineWithdraw jį matytų net po
+      //   kambario mirties/restart'o (anksčiau _minePend buvo RAM-only → prarasdavom → pot amžinai nuskaičiuotas).
+      if (b && b.minePend && !this._minePend.has(addr)) this._minePend.set(addr, { nonce: b.minePend.nonce, amt: b.minePend.amt, at: b.minePend.at });
     } catch (_) { _ok = false; }
     if (!_ok) return c;   // 🛡 S-M5: DB triktis → NEcache'inam (kitaip _persistCem perrašytų pot=0); _cem lieka tuščias → _persistCem praleidžia; kitas kvietimas bandys iš naujo
     if (!c.ramp) c.ramp = c.tick || Date.now();   // migracija — momentum startuoja nuo paskutinio žinomo taško
@@ -2014,9 +2022,10 @@ export class F9PvpRoom extends Room<F9State> {
             c.gated = (c.mpot || 0) >= c.mcp - 0.01;
             this._persistCem(addr);
           }
+          void this._buildingsOp(addr, (b) => { b.minePend = null; });   // ⛏️💸 07-18 (C1): išspręsta → valom durable pending
           console.log(`[F9PvpRoom] ⛏️↩️ withdraw NEnusėdo → re-credit ${pend.amt} RONKE → pot ${addr.slice(0, 10)}…`);
-        } else if (used === null) { this._minePend.set(addr, pend); }   // RPC nepavyko → grąžinam, bandom vėliau
-        // used === true → nusėdo, pot lieka nurašytas
+        } else if (used === null) { this._minePend.set(addr, pend); }   // RPC nepavyko → grąžinam, bandom vėliau (DB pending lieka)
+        else { void this._buildingsOp(addr, (b) => { b.minePend = null; }); }   // used===true: nusėdo, pot lieka nurašytas → valom durable pending
       } catch (_) { this._minePend.set(addr, pend); }
     })();
   }
