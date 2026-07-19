@@ -2138,7 +2138,7 @@
   <script src="barracks_nft.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_modal.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
-  <script src="game.js?v=f9live353_mkthist"></script>
+  <script src="game.js?v=f9live354_pvpsound"></script>
   <script src="afk_expedition.js?v=afk33"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=f12_tocastle_20260704"></script>
@@ -2603,7 +2603,7 @@
       // 🎵 F9 PvP gatebells — 2 takeliai KAITALIOJAMI (vienam pasibaigus → kitas), kad žaidėjas
       //   girdimai atpažintų, kad yra PvP scenoj. Volume aukštesnis nei ambient BGM (0.035) — atpažinimui.
       //   Audio elementai DOM'e su class="pvp-music" → IŠIMTI iš global mute (groja net kai SOUND OFF = PvP alert).
-      const GATE_VOL = 0.18;
+      const GATE_VOL = 0.10;   // 🔉 0.18→0.10 (user: per garsu). Vis tiek > ambient (0.035). TUNABLE.
       const GATE_IDS = ['bgm-gate1', 'bgm-gate2'];
       let gateIdx = 0, gateOn = false;
       function playGate() {
@@ -2611,7 +2611,7 @@
         if (localStorage.getItem('f9_pvp_music_off') === '1') return;   // atskiras PvP-muzikos toggle (NE global SOUND OFF)
         const el = document.getElementById(GATE_IDS[gateIdx]);
         if (!el) return;
-        el.muted = false;   // 🎵 PvP muzika IGNORUOJA global SOUND OFF — ji = „PvP startavo" alert (kaip puolimo alarmas)
+        el.muted = (localStorage.getItem('lenta_muted') === '1');   // 🎵 gerbia global SOUND ON/OFF mygtuką
         try { el.currentTime = 0; } catch (_) {}
         el.play().catch(() => {});
       }
@@ -2624,6 +2624,9 @@
         return !nowOff;
       };
       window._f9PvpMusicOn = function () { return localStorage.getItem('f9_pvp_music_off') !== '1'; };
+      // 🎵 KOVOS trigeriai (iš f9_pvp_live.js): start kai puoli / esi puolamas; stop kai kova baigias / išeini.
+      window._bgmPvpBattleStart = function () { try { startGate(); } catch (_) {} };
+      window._bgmPvpBattleStop = function () { try { stopGate(); applyScene(); } catch (_) {} };
       function startGate() {
         if (gateOn) return;
         gateOn = true; gateIdx = 0;
@@ -2659,13 +2662,12 @@
         return m ? parseInt(m[1], 10) : null;
       }
       function applyScene() {
+        // 🎵 PvP KOVOS muzika (gatebells) valdoma per _bgmPvpBattleStart/Stop (match_start+raid / under_attack →
+        //   start; match_end / išeinant → stop). NE per F9 sceną — kad grotų TIK per realią kovą (puoli / esi
+        //   puolamas), o NE idle bazės valdyme (ten lieka įprastas BGM).
+        if (gateOn) return;   // kova vyksta — nekeičiam (gate valdo battle start/stop)
         const scene = getActiveScene();
         const floor = getCurrentFloor();
-        // 🎵 F9 PvP scena → gatebells KAITALIOJAMA playlist. Detekcija per `.f9-rts` klasę ant AKTYVAUS #screen-game
-        //   (game.js:18762 toggle'ina LIVE pagal S.floor===9 && adventure). ⚠️ window.S NEtinka — S perpriskiriamas
-        //   (game.js:18646) → window.S lieka STALE. Klasė = .screen elemento atributas → MutationObserver gauna iškart.
-        if (document.querySelector('#screen-game.active.f9-rts')) { startGate(); return; }
-        stopGate();
         let wantedId = scene ? (SCENE_TRACKS[scene] || null) : null;
         // F12 turi savo _F12Music (procedural BGM) — nepaleidžiam track kad nesidvigubintų
         if (scene === 'screen-game' && floor === 12) {
@@ -2872,7 +2874,7 @@
               if (typeof window.openNftPerksPanel === 'function') window.openNftPerksPanel();
               return;
             case 'pvpmusic':
-              // 🎵 PvP muzikos toggle (mobile). Muzika groja net kai SOUND OFF (PvP alert); čia išjungi jei nepatinka.
+              // 🎵 PvP muzikos toggle (mobile) — atskiras jungiklis išjungti TIK PvP muziką (SOUND mygtukas nutildo viską).
               if (typeof window._f9TogglePvpMusic === 'function') {
                 const musicOn = window._f9TogglePvpMusic();
                 try { if (window.showGameNotification) window.showGameNotification('🎵 PvP Music', musicOn ? 'Battle music ON' : 'Battle music OFF', musicOn ? '#6fcf5c' : '#8a97ab'); } catch (_) {}

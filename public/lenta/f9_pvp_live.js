@@ -1303,6 +1303,7 @@
       // tik gynėjui (savininkui) — puolikas pats save nemato kaip „under attack"
       if (window.__f9RaidActive) return;
       try { _f9PlayAttackAlarm(); } catch (_) {}   // 🔊⚔️ garsinis įspėjimas — tavo pilį puola
+      try { if (window._bgmPvpBattleStart) window._bgmPvpBattleStart(); } catch (_) {}   // 🎵 kovos muzika — tave puola
       try { if (e && e.attacker) window._f9LastAttacker = String(e.attacker); } catch (_) {}   // 🔎 settled atsekamumui — kas puolė
       var who = (e && e.attacker) ? (String(e.attacker).slice(0, 6) + '…' + String(e.attacker).slice(-4)) : 'A raider';
       _status('⚔️ YOUR CASTLE IS UNDER ATTACK!', '#f66');
@@ -1322,6 +1323,7 @@
       if (reps.length && typeof _showRaidReports === 'function') _showRaidReports(reps);
     });
     room.onMessage('match_end', function (e) {
+      try { if (window._bgmPvpBattleStop) window._bgmPvpBattleStop(); } catch (_) {}   // 🎵 kova baigėsi → grįžta įprastas BGM
       var draw = e && !e.winnerSid;
       var mine = e && e.winnerSid === mySid;
       // 🗡️ RAID pabaiga — po jos grįžtam į SAVO pilį (puolikas → savo home; gynėjas → atstatyta pilis).
@@ -1431,6 +1433,8 @@
     myTeam = me ? me.team : 0;
     window._f9pvpLive = true;
     window._f9pvpMyTeam = myTeam;
+    // 🎵 KOVOS muzika — TIK jei PUOLI (raid). Gynėjas gauna per under_attack. Idle home (__f9RaidActive=false) → NEgroja (lieka įprastas BGM).
+    try { if (window.__f9RaidActive && window._bgmPvpBattleStart) window._bgmPvpBattleStart(); } catch (_) {}
     _status('PLAYING', '#6e8');
     try { _castleStep('castle', 'done'); } catch (_) {}   // 🏰 baras → 100%
     _clearScreen();
@@ -1736,6 +1740,7 @@
   var _ended = false;
   function stop() {
     on = false; started = false; simInited = false; _ended = false;
+    try { if (window._bgmPvpBattleStop) window._bgmPvpBattleStop(); } catch (_) {}   // 🎵 išeinam iš PvP scenos → muzika stop
     window.__f9HomeActive = false;
     window.__f9BaseOwner = null;   // 📋 nebe konkrečioj pilyje → nuimam stendo savininką
     try { document.body.classList.remove('f9pvp-on'); } catch (_) {}

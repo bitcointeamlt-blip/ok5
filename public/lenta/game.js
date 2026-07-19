@@ -16924,8 +16924,8 @@ window.toggleSound = function() {
 };
 
 function _applyGlobalMute(muted) {
-  // 1. All HTML <audio> elements — IŠSKYRUS .pvp-music (F9 gatebells = „PvP startavo" alert, ignoruoja SOUND OFF; savas jungiklis M / ☰ menu)
-  try { document.querySelectorAll('audio:not(.pvp-music)').forEach(a => { a.muted = muted; }); } catch (_) {}
+  // 1. All HTML <audio> elements (įsk. F9 gatebells — dabar KLAUSO global SOUND ON/OFF mygtuko)
+  try { document.querySelectorAll('audio').forEach(a => { a.muted = muted; }); } catch (_) {}
   // 2. F12 BGM player (if active)
   try { if (window._F12Music && typeof window._F12Music.setMuted === 'function') window._F12Music.setMuted(muted);
         else if (window._F12Music) window._F12Music.muted = muted; } catch (_) {}
@@ -16952,7 +16952,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Re-apply periodically for dynamically-added audio (lazy approach)
   setInterval(() => {
     if (localStorage.getItem('lenta_muted') === '1') {
-      document.querySelectorAll('audio:not([data-mute-applied]):not(.pvp-music)').forEach(a => {
+      document.querySelectorAll('audio:not([data-mute-applied])').forEach(a => {
         a.muted = true; a.setAttribute('data-mute-applied', '1');
       });
     }
