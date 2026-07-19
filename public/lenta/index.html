@@ -2660,10 +2660,11 @@
       }
       function applyScene() {
         const scene = getActiveScene();
-        // floor: prefer authoritative window.S.floor (HUD label F9 nepatikimas fullscreen scenoj)
-        const floor = (typeof window.S !== 'undefined' && window.S && typeof window.S.floor === 'number') ? window.S.floor : getCurrentFloor();
-        // 🎵 F9 PvP scena → gatebells KAITALIOJAMA playlist (2 takeliai) vietoj įprasto 1-track BGM
-        if (scene === 'screen-game' && floor === 9) { startGate(); return; }
+        const floor = getCurrentFloor();
+        // 🎵 F9 PvP scena → gatebells KAITALIOJAMA playlist. Detekcija per `.f9-rts` klasę ant AKTYVAUS #screen-game
+        //   (game.js:18762 toggle'ina LIVE pagal S.floor===9 && adventure). ⚠️ window.S NEtinka — S perpriskiriamas
+        //   (game.js:18646) → window.S lieka STALE. Klasė = .screen elemento atributas → MutationObserver gauna iškart.
+        if (document.querySelector('#screen-game.active.f9-rts')) { startGate(); return; }
         stopGate();
         let wantedId = scene ? (SCENE_TRACKS[scene] || null) : null;
         // F12 turi savo _F12Music (procedural BGM) — nepaleidžiam track kad nesidvigubintų
