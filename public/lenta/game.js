@@ -4831,6 +4831,15 @@ document.addEventListener('keydown', (e) => {
     e.stopImmediatePropagation();   // legacy KEYMAP (KeyS = hero move) negauna evento
     return;
   }
+  // 🎵 M — PvP muzikos (gatebells) toggle. Muzika groja NET kai SOUND OFF (= „PvP startavo" alert); čia išjungi jei nepatinka.
+  if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    let on = true;
+    try { if (typeof window._f9TogglePvpMusic === 'function') on = window._f9TogglePvpMusic(); } catch (_) {}
+    if (typeof _f9SetToast === 'function') _f9SetToast(on ? '🎵 PvP music ON' : '🔇 PvP music OFF');
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
   // 🪖 1..6 — pasirink/formuok BŪRĮ (control-group'ą); Ctrl+1..6 — rankinė grupė
   const _dg = e.code && /^Digit([1-6])$/.exec(e.code);
   if (_dg) {
@@ -16826,8 +16835,8 @@ window.toggleSound = function() {
 };
 
 function _applyGlobalMute(muted) {
-  // 1. All HTML <audio> elements
-  try { document.querySelectorAll('audio').forEach(a => { a.muted = muted; }); } catch (_) {}
+  // 1. All HTML <audio> elements — IŠSKYRUS .pvp-music (F9 gatebells = „PvP startavo" alert, ignoruoja SOUND OFF; savas jungiklis M / ☰ menu)
+  try { document.querySelectorAll('audio:not(.pvp-music)').forEach(a => { a.muted = muted; }); } catch (_) {}
   // 2. F12 BGM player (if active)
   try { if (window._F12Music && typeof window._F12Music.setMuted === 'function') window._F12Music.setMuted(muted);
         else if (window._F12Music) window._F12Music.muted = muted; } catch (_) {}
@@ -16854,7 +16863,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Re-apply periodically for dynamically-added audio (lazy approach)
   setInterval(() => {
     if (localStorage.getItem('lenta_muted') === '1') {
-      document.querySelectorAll('audio:not([data-mute-applied])').forEach(a => {
+      document.querySelectorAll('audio:not([data-mute-applied]):not(.pvp-music)').forEach(a => {
         a.muted = true; a.setAttribute('data-mute-applied', '1');
       });
     }

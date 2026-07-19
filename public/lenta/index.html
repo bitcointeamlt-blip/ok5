@@ -2138,7 +2138,7 @@
   <script src="barracks_nft.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_modal.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
-  <script src="game.js?v=f9live351_dutyfix"></script>
+  <script src="game.js?v=f9live352_pvpmusic"></script>
   <script src="afk_expedition.js?v=afk33"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=f12_tocastle_20260704"></script>
@@ -2570,6 +2570,9 @@
   <!-- BGM — scene-aware audio: kiekviena scena turi savo track -->
   <audio id="bgm-pocket" src="pocket_savepoint.mp3?v=3" loop preload="auto" style="display:none;"></audio>
   <audio id="bgm-hearth" src="hearthkeep_courtyard.mp3?v=3" loop preload="auto" style="display:none;"></audio>
+  <!-- 🎵 F9 PvP — 2 gatebells takeliai KAITALIOJAMI (be loop; vienam pasibaigus → kitas). Audio cue kad vyksta PvP. -->
+  <audio id="bgm-gate1" class="pvp-music" src="gatebells1.mp3?v=1" preload="auto" style="display:none;"></audio>
+  <audio id="bgm-gate2" class="pvp-music" src="gatebells2.mp3?v=1" preload="auto" style="display:none;"></audio>
   <script>
     (function () {
       const VOL = 0.035;
@@ -2597,6 +2600,51 @@
       let activeTrackId = null;
       let gestureUnlocked = false;
 
+      // 🎵 F9 PvP gatebells — 2 takeliai KAITALIOJAMI (vienam pasibaigus → kitas), kad žaidėjas
+      //   girdimai atpažintų, kad yra PvP scenoj. Volume aukštesnis nei ambient BGM (0.035) — atpažinimui.
+      //   Audio elementai DOM'e su class="pvp-music" → IŠIMTI iš global mute (groja net kai SOUND OFF = PvP alert).
+      const GATE_VOL = 0.18;
+      const GATE_IDS = ['bgm-gate1', 'bgm-gate2'];
+      let gateIdx = 0, gateOn = false;
+      function playGate() {
+        if (!gateOn || !gestureUnlocked) return;
+        if (localStorage.getItem('f9_pvp_music_off') === '1') return;   // atskiras PvP-muzikos toggle (NE global SOUND OFF)
+        const el = document.getElementById(GATE_IDS[gateIdx]);
+        if (!el) return;
+        el.muted = false;   // 🎵 PvP muzika IGNORUOJA global SOUND OFF — ji = „PvP startavo" alert (kaip puolimo alarmas)
+        try { el.currentTime = 0; } catch (_) {}
+        el.play().catch(() => {});
+      }
+      // 🎵 Atskiras PvP-muzikos jungiklis (M klavišas / mobile ☰ menu). Grąžina ar dabar ĮJUNGTA.
+      window._f9TogglePvpMusic = function () {
+        const nowOff = localStorage.getItem('f9_pvp_music_off') !== '1';   // buvo ON → dabar OFF (ir atvirkščiai)
+        try { localStorage.setItem('f9_pvp_music_off', nowOff ? '1' : '0'); } catch (_) {}
+        if (nowOff) { GATE_IDS.forEach(id => { const el = document.getElementById(id); if (el && !el.paused) el.pause(); }); }
+        else if (gateOn) { playGate(); }
+        return !nowOff;
+      };
+      window._f9PvpMusicOn = function () { return localStorage.getItem('f9_pvp_music_off') !== '1'; };
+      function startGate() {
+        if (gateOn) return;
+        gateOn = true; gateIdx = 0;
+        for (const id in tracks) { if (!tracks[id].paused) tracks[id].pause(); }   // sustabdom įprastą BGM
+        activeTrackId = null;
+        playGate();
+      }
+      function stopGate() {
+        if (!gateOn) return;
+        gateOn = false;
+        GATE_IDS.forEach(id => { const el = document.getElementById(id); if (el && !el.paused) el.pause(); });
+      }
+      GATE_IDS.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.volume = GATE_VOL;
+          el.addEventListener('ended', () => { if (!gateOn) return; gateIdx = (gateIdx + 1) % GATE_IDS.length; playGate(); });
+          el.addEventListener('error', () => console.error('[BGM] gate', id, 'load failed:', el.error));
+        }
+      });
+
       function getActiveScene() {
         const el = document.querySelector('.screen.active');
         return el ? el.id : null;
@@ -2612,7 +2660,11 @@
       }
       function applyScene() {
         const scene = getActiveScene();
-        const floor = getCurrentFloor();
+        // floor: prefer authoritative window.S.floor (HUD label F9 nepatikimas fullscreen scenoj)
+        const floor = (typeof window.S !== 'undefined' && window.S && typeof window.S.floor === 'number') ? window.S.floor : getCurrentFloor();
+        // 🎵 F9 PvP scena → gatebells KAITALIOJAMA playlist (2 takeliai) vietoj įprasto 1-track BGM
+        if (scene === 'screen-game' && floor === 9) { startGate(); return; }
+        stopGate();
         let wantedId = scene ? (SCENE_TRACKS[scene] || null) : null;
         // F12 turi savo _F12Music (procedural BGM) — nepaleidžiam track kad nesidvigubintų
         if (scene === 'screen-game' && floor === 12) {
@@ -2652,6 +2704,7 @@
             err => console.error('[BGM] play failed', activeTrackId, err)
           );
         }
+        if (gateOn) playGate();   // 🎵 F9 gatebells laukė gesto — paleidžiam dabar
         ['click', 'pointerdown', 'keydown', 'touchstart'].forEach(ev =>
           document.removeEventListener(ev, unlock, true));
       }
@@ -2666,7 +2719,13 @@
       }
 
       document.addEventListener('visibilitychange', () => {
-        if (!gestureUnlocked || !activeTrackId) return;
+        if (!gestureUnlocked) return;
+        if (gateOn) {   // 🎵 gatebells pause/resume (playlist aktyvi)
+          const gel = document.getElementById(GATE_IDS[gateIdx]);
+          if (gel) { if (document.hidden) gel.pause(); else gel.play().catch(() => {}); }
+          return;
+        }
+        if (!activeTrackId) return;
         if (document.hidden) tracks[activeTrackId].pause();
         else tracks[activeTrackId].play().catch(() => {});
       });
@@ -2712,6 +2771,7 @@
       <button class="mm-btn" data-action="pewpew"><span class="mm-ic">🎯</span><span>PEWPEW</span></button>
       <button class="mm-btn mm-btn-trophy" data-action="trophy"><span class="mm-ic">🏆</span><span>TROPHIES</span></button>
       <button class="mm-btn mm-btn-nftperks" data-action="nftperks"><span class="mm-ic">◆</span><span>NFT PERKS</span></button>
+      <button class="mm-btn" data-action="pvpmusic"><span class="mm-ic">🎵</span><span>PVP MUSIC</span></button>
       <button class="mm-btn" data-action="home"><span class="mm-ic">🏠</span><span>HOME</span></button>
       <button class="mm-close" data-action="close">✕ CLOSE</button>
     </div>
@@ -2809,6 +2869,13 @@
               return;
             case 'nftperks':
               if (typeof window.openNftPerksPanel === 'function') window.openNftPerksPanel();
+              return;
+            case 'pvpmusic':
+              // 🎵 PvP muzikos toggle (mobile). Muzika groja net kai SOUND OFF (PvP alert); čia išjungi jei nepatinka.
+              if (typeof window._f9TogglePvpMusic === 'function') {
+                const musicOn = window._f9TogglePvpMusic();
+                try { if (window.showGameNotification) window.showGameNotification('🎵 PvP Music', musicOn ? 'Battle music ON' : 'Battle music OFF', musicOn ? '#6fcf5c' : '#8a97ab'); } catch (_) {}
+              }
               return;
           }
           if (id) {
