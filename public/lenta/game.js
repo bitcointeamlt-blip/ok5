@@ -9754,6 +9754,7 @@ function _f9CloseMktPanel() {
   _f9MktResetPaging(); _f9MktLoadingMore = false; _f9MktLoadingTab = '';   // ⬇ vėl 30 iš pradžių
   _f9MktInv = null;   // reopeninus — švarus fetchInventory (BarracksNFT phased state sinchron.)
   _f9MktOfferOpenId = null; _f9MktOffersDetail = {};   // 💰 offer input/detalės — švarus reopen
+  _f9MktHistory = null;   // 📜 prekybos istorija — švieža kitą atidarymą
 }
 function _f9MktUnitIcon(utype) { return ({ 1: '💀', 2: '🏹', 3: '🔱', 4: '🔮', 5: '🐗', 6: '👻', 7: '🎯' })[Number(utype)] || '🪖'; }
 function _f9MktUnitName(utype) { return ({ 1: 'Skull', 2: 'Archer', 3: 'Harpoon', 4: 'Shaman', 5: 'Hog', 6: 'Ghost', 7: 'RonkeHood' })[Number(utype)] || 'Unit'; }
@@ -9942,8 +9943,9 @@ function _f9MktDoBuy(listing) {
   if (!W || !W.marketBuy) return;
   if (_f9MktBusy) return;
   _f9MktBusy = true; _f9MktStatusMsg = '🔷 Confirm in your wallet (may be 2 TX: approve + buy)…'; _f9MktRenderBody();
-  W.marketBuy(listing.tokenId, listing.priceWei).then(function () {
+  W.marketBuy(listing.tokenId, listing.priceWei).then(function (res) {
     _f9MktBusy = false; _f9MktStatusMsg = '✅ Bought unit #' + listing.tokenId + '!';
+    try { _f9MktRecordTrade({ tokenId: listing.tokenId, utype: listing.utype, level: listing.level, priceRonke: listing.priceRonke, buyer: ((W.getAddress && W.getAddress()) || ''), seller: listing.seller, kind: 'buy', tx: (res && res.txHash) || '' }); } catch (_) {}   // 📜 vieša istorija
     _f9MktMarkBought(listing);   // 🆕 badge inventoriuje + toast
     _f9MktListings = null; _f9MktInv = null; _f9MktLoadListings(true); _f9MktRenderBody();
   }).catch(function (e) {
@@ -10031,8 +10033,9 @@ function _f9MktDoAcceptOffer(listing, offerer, amountWei, amountRonke) {
   cancelP.then(function () {
     _f9MktStatusMsg = '🔷 STEP 2/2 — accept offer (may be 2 TX: approve + accept)… confirm in wallet.'; _f9MktRenderBody();
     return W.offersAccept(listing.tokenId, offerer, amountWei);
-  }).then(function () {
+  }).then(function (res) {
     _f9MktBusy = false;
+    try { _f9MktRecordTrade({ tokenId: listing.tokenId, utype: listing.utype, level: listing.level, priceRonke: amountRonke, buyer: offerer, seller: ((window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''), kind: 'offer', tx: (res && res.txHash) || '' }); } catch (_) {}   // 📜 vieša istorija
     _f9MktUnmarkListed(listing.tokenId);   // parduota per offerį — kad sale-detect neskelbtų dubliuoto banerio
     _f9MktStatusMsg = '✅ Offer accepted — sold for ' + amountRonke + ' RONKE (95% to you, 5% fee → treasury).';
     _f9MktListings = null; _f9MktInv = null; _f9MktLoadListings(true); _f9MktLoadOffers(); _f9MktRenderBody();
@@ -10128,6 +10131,54 @@ function _f9MktLoadMore(tab) {
     Promise.all([fetchMore, new Promise(function (r) { setTimeout(r, 5000); })]).then(done);   // min 5s pacing + fetch
   }
 }
+// ── 📜 07-19 (user): VIEŠA PREKYBOS ISTORIJA ──────────────────────────────────────────
+//   Klientas rašo `trade_<tx>` eilutę į f9_bases po sėkmingo ON-CHAIN buy/accept (utype+lvl fiksuojami
+//   PARDAVIMO metu → istorija rodo tikslų tuometinį lygį). HISTORY tab skaito `like.trade_*` viešai.
+//   ⚠️ market=player-pays (be serverio) → klientas-rašomas best-effort (skirtingai nuo match_ kurį rašo serveris).
+var _F9MKT_SB_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co';
+var _F9MKT_SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';
+var _f9MktHistory = null, _f9MktHistLoading = false;
+function _f9MktShort(a) { a = String(a || ''); return a.length > 12 ? (a.slice(0, 6) + '…' + a.slice(-4)) : (a || '?'); }
+function _f9MktAgo(ts) {
+  var t = Number(ts) || 0; if (!t) return '';
+  var s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago';
+}
+function _f9MktRecordTrade(t) {
+  try {
+    if (!t || !t.tokenId) return;
+    var k = 'trade_' + (t.tx ? String(t.tx).slice(2, 26) : (String(t.tokenId) + '_' + Date.now()));
+    var body = { ronin_address: k, buildings: { tokenId: String(t.tokenId), utype: (t.utype != null ? Number(t.utype) : null), level: (t.level != null ? Number(t.level) : null), priceRonke: Number(t.priceRonke) || 0, buyer: String(t.buyer || '').toLowerCase(), seller: String(t.seller || '').toLowerCase(), kind: (t.kind === 'offer' ? 'offer' : 'buy'), tx: t.tx || '', at: Date.now() } };
+    fetch(_F9MKT_SB_URL + '/rest/v1/f9_bases', { method: 'POST', headers: { apikey: _F9MKT_SB_KEY, Authorization: 'Bearer ' + _F9MKT_SB_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) })
+      .then(function () { if (_f9MktOverlayEl && _f9MktTab === 'history') { _f9MktHistory = null; _f9MktLoadHistory(); } })
+      .catch(function () {});
+  } catch (_) {}
+}
+function _f9MktLoadHistory() {
+  if (_f9MktHistLoading) return;
+  if (typeof _f9MktIsLocal === 'function' && _f9MktIsLocal()) {   // 🧪 lokalus testas — demo istorija (matyti layout be realių trade'ų, NEteršiant prod DB)
+    _f9MktHistory = [
+      { tokenId: '2840', utype: 5, level: 7, priceRonke: 9600, buyer: '0x527549aabbccddeeff0011223344556677889900', seller: '0x32782D97a180A0fD5b6F775517Ac4e3727Bb624A', kind: 'offer', at: Date.now() - 90000 },
+      { tokenId: '4119', utype: 7, level: 1, priceRonke: 560, buyer: '0x9703c1a4b6135577889900aabbccddeeff112233', seller: '0x32782D97a180A0fD5b6F775517Ac4e3727Bb624A', kind: 'buy', at: Date.now() - 3600000 },
+      { tokenId: '4440', utype: 1, level: 0, priceRonke: 450, buyer: '0xbde4c7150011223344556677889900aabbccddee', seller: '0x3D5914540011223344556677889900aabbccddee', kind: 'buy', at: Date.now() - 26 * 3600000 }
+    ];
+    if (_f9MktOverlayEl && _f9MktTab === 'history') _f9MktRenderBody();
+    return;
+  }
+  _f9MktHistLoading = true;
+  var url = _F9MKT_SB_URL + '/rest/v1/f9_bases?select=ronin_address,buildings,updated_at&ronin_address=like.trade_*&order=updated_at.desc&limit=60';
+  fetch(url, { headers: { apikey: _F9MKT_SB_KEY, Authorization: 'Bearer ' + _F9MKT_SB_KEY } })
+    .then(function (r) { return r.ok ? r.json() : []; })
+    .then(function (rows) {
+      _f9MktHistory = (rows || []).map(function (r) {
+        var b = (r && r.buildings) || {};
+        return { tokenId: b.tokenId, utype: (b.utype != null ? Number(b.utype) : null), level: (b.level != null ? Number(b.level) : null), priceRonke: Number(b.priceRonke) || 0, buyer: b.buyer || '', seller: b.seller || '', kind: b.kind || 'buy', at: Number(b.at) || Date.parse(r.updated_at || '') || 0 };
+      });
+    })
+    .catch(function () { if (!_f9MktHistory) _f9MktHistory = []; })
+    .then(function () { _f9MktHistLoading = false; if (_f9MktOverlayEl && _f9MktTab === 'history') _f9MktRenderBody(); });
+}
 function _f9MktRenderBody() {
   if (!_f9MktOverlayEl) return;
   const tabs = _f9MktOverlayEl.querySelector('#f9mkt-tabs');
@@ -10136,6 +10187,7 @@ function _f9MktRenderBody() {
     tabs.querySelector('#f9mkt-tab-browse').style.cssText = _f9MktTabBtnCss(_f9MktTab === 'browse');
     tabs.querySelector('#f9mkt-tab-sell').style.cssText = _f9MktTabBtnCss(_f9MktTab === 'sell');
     const _toBtn = tabs.querySelector('#f9mkt-tab-offers'); if (_toBtn) _toBtn.style.cssText = _f9MktTabBtnCss(_f9MktTab === 'offers');
+    const _thBtn = tabs.querySelector('#f9mkt-tab-history'); if (_thBtn) _thBtn.style.cssText = _f9MktTabBtnCss(_f9MktTab === 'history');
   }
   if (!body) return;
   body.onclick = null;   // reset delegacijos (filtrai dažnai re-render'ina → venk listener'ių kaupimosi)
@@ -10274,6 +10326,41 @@ function _f9MktRenderBody() {
       if (!t) return;
       _f9MktDoCancelOffer({ tokenId: t.getAttribute('data-offcancelmine') });
     };
+  } else if (_f9MktTab === 'history') {
+    // 📜 VIEŠA PREKYBOS ISTORIJA — visų žaidėjų užbaigti sandoriai (sprite + lvl pardavimo metu + kaina + pirkėjas + pardavėjas).
+    const emptyBoxH = function (icon, txt) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
+    };
+    let html = _localBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Public market activity — every completed trade (direct buys &amp; accepted offers) across all players. Newest first.</div>';
+    if (_f9MktHistory === null) {
+      if (!_f9MktHistLoading) _f9MktLoadHistory();
+      html += emptyBoxH('⏳', 'Loading trade history…');
+    } else if (!_f9MktHistory.length) {
+      html += emptyBoxH('📜', 'No trades yet — be the first to buy a unit');
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:9px;">';
+      for (const h of _f9MktHistory) {
+        const hasS = (h.utype != null);
+        const nm = hasS ? _f9MktUnitName(h.utype) : ('Unit #' + h.tokenId);
+        const sprH = hasS
+          ? ('<img src="' + _f9MktUnitSprite(h.utype) + '" alt="" style="width:54px;height:54px;object-fit:contain;image-rendering:pixelated;flex:0 0 auto;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(h.utype) + '\'))">')
+          : '<span style="font-size:34px;flex:0 0 auto;">🪖</span>';
+        const kindBadge = h.kind === 'offer'
+          ? '<span style="font-size:7px;color:#8fd47c;background:rgba(108,207,92,0.14);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">OFFER</span>'
+          : '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">BUY</span>';
+        html += '<div style="display:flex;align-items:center;gap:12px;padding:10px 13px;background:rgba(0,0,0,0.3);border:1px solid #4a3a18;border-radius:8px;">' +
+          sprH +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><span style="font-size:12px;color:#e8dcc0;">' + nm + (h.level != null ? ' <span style="color:#ffcf5c;">Lv' + h.level + '</span>' : '') + '</span>' + kindBadge + '</div>' +
+            '<div style="font-size:8px;color:#7a8a9a;margin-top:5px;line-height:1.5;">🛒 buyer <span style="color:#9ab4c8;">' + _f9MktShort(h.buyer) + '</span> &nbsp;←&nbsp; 🏷️ seller <span style="color:#9ab4c8;">' + _f9MktShort(h.seller) + '</span>' + (h.tokenId != null ? ' · #' + h.tokenId : '') + '</div>' +
+          '</div>' +
+          '<div style="text-align:right;flex:0 0 auto;"><div style="font-size:14px;color:#ffcf5c;">' + h.priceRonke + '</div><div style="font-size:7px;color:#8a9aaa;margin-top:2px;">RONKE · ' + _f9MktAgo(h.at) + '</div></div>' +
+        '</div>';
+      }
+      html += '</div>';
+      html += '<div style="margin-top:12px;font-size:8px;color:#5a6a7a;line-height:1.6;">Recorded when a trade completes in-game. Prices &amp; levels are captured at sale time.</div>';
+    }
+    body.innerHTML = html;
   } else {
     const W = window.Wallet;
     const connected = !!(W && W.getAddress && W.getAddress());
@@ -10377,10 +10464,11 @@ function _f9ToggleMarketPanel() {
       '<button id="f9mkt-x" style="background:none;border:none;color:#8a9aaa;font-size:28px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
     '<div style="font-size:10px;color:#8a9aaa;margin-bottom:14px;letter-spacing:0.5px;flex:0 0 auto;">Buy &amp; sell battle units for RONKE — level trades with the unit</div>' +
-    '<div id="f9mkt-tabs" style="display:flex;gap:10px;margin-bottom:16px;max-width:660px;flex:0 0 auto;flex-wrap:wrap;">' +
+    '<div id="f9mkt-tabs" style="display:flex;gap:10px;margin-bottom:16px;flex:0 0 auto;flex-wrap:nowrap;">' +
       '<button id="f9mkt-tab-browse">🔎 BROWSE</button>' +
       '<button id="f9mkt-tab-sell">🏷️ SELL</button>' +
       '<button id="f9mkt-tab-offers">💰 MY OFFERS</button>' +
+      '<button id="f9mkt-tab-history">📜 HISTORY</button>' +
     '</div>' +
     '<div id="f9mkt-body" style="flex:1 1 auto;overflow-y:auto;min-height:0;"></div>';
   ov.appendChild(el);
@@ -10391,6 +10479,7 @@ function _f9ToggleMarketPanel() {
   const tb = el.querySelector('#f9mkt-tab-browse'); if (tb) tb.onclick = function () { _f9MktTab = 'browse'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadListings(); };
   const ts = el.querySelector('#f9mkt-tab-sell'); if (ts) ts.onclick = function () { _f9MktTab = 'sell'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadInv(); };
   const to = el.querySelector('#f9mkt-tab-offers'); if (to) to.onclick = function () { _f9MktTab = 'offers'; _f9MktStatusMsg = ''; _f9MktRenderBody(); _f9MktLoadMyOffers(); };
+  const th = el.querySelector('#f9mkt-tab-history'); if (th) th.onclick = function () { _f9MktTab = 'history'; _f9MktStatusMsg = ''; _f9MktHistory = null; _f9MktRenderBody(); _f9MktLoadHistory(); };
   _f9MktRenderBody();
   _f9MktLoadListings();   // default tab = browse → iškart krauk listingus (jei market ready)
   _f9MktInboxMarkRead();  // 📬 atidarius marketą — ✉️ badge nusiskaito (banneris lieka, rodo <24h įvykius)
