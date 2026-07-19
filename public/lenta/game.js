@@ -10820,7 +10820,10 @@ function _f9MinePanelStats() {
   // ⚔️🛡 DUTY įsipareigojimo langas: DUTY režime dar negali grįžti į SAFE (anti-toggle-dodge). Rodom countdown ant SAFE mygtuko.
   const dutyLocked = d.duty === 'online' && (d.dutyLockUntil || 0) > Date.now();
   const dutyLockMin = dutyLocked ? Math.max(1, Math.ceil((d.dutyLockUntil - Date.now()) / 60000)) : 0;
-  const est = Math.min(d.cap > 0 ? d.cap : Infinity, d.pot + (d.rate || 0) * (Date.now() - d.at) / 3600000);
+  // ⛏️🛡 est CEILING = max(cap, pot): nemažinam žemiau REALAUS iškasto pot. DUTY (cap 1000) perviršis virš SAFE
+  //   checkpoint (200) LIEKA matomas grįžus į SAFE — jokio „restart"/dingimo perjungiant režimą (user 07-19).
+  const _estCeil = d.cap > 0 ? Math.max(d.cap, d.pot || 0) : Infinity;
+  const est = Math.min(_estCeil, (d.pot || 0) + (d.rate || 0) * (Date.now() - d.at) / 3600000);
   const full = d.cap > 0 && est >= d.cap - 0.5;
   const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
   const cm = d.claimMin || 500;
@@ -10929,12 +10932,68 @@ function _f9MineAction(act) {
 }
 window._f9MineRenderIfOpen = function () { if (_f9MinePanelEl) _f9MinePanelStats(); };
 // ⚔️🛡 DUTY režimo keitimas — siunčiam serveriui; jis validuoja (ne kovoje) + atsako duty_result + cemetery.
+// ⚔️🛡 DUTY jungiklis — VISADA per patvirtinimo lentutę (user 07-19: „atrodo kaip bug'as — paspaudi DUTY,
+//   atgal negali; žmogus turi suprasti kas vyksta"). Lentutė paaiškina pasekmes + 10-min įsipareigojimo lock'ą.
 function _f9DutySet(mode) {
   mode = (mode === 'safe') ? 'safe' : 'online';
-  const cur = (window._f9Cemetery && window._f9Cemetery.duty) || 'online';
+  const C = window._f9Cemetery || {};
+  const cur = C.duty || 'online';
   if (cur === mode) return;   // jau tas režimas
+  const lockUntil = C.dutyLockUntil || 0;
+  const lockedNow = (mode === 'safe' && cur === 'online' && Date.now() < lockUntil);
+  const lockMin = lockedNow ? Math.max(1, Math.ceil((lockUntil - Date.now()) / 60000)) : 0;
+  _f9DutyConfirmModal(mode, lockedNow, lockMin);
+}
+// Faktinis persijungimas (po patvirtinimo).
+function _f9DutyDoSet(mode) {
   const msg = _f9MinePanelEl && _f9MinePanelEl.querySelector('#f9mine-dutymsg');
   try { if (window.F9PVP && window.F9PVP.room) { window.F9PVP.room.send('duty_set', { mode: mode }); if (msg) { msg.style.color = '#8a9aaa'; msg.textContent = 'Switching…'; } } } catch (_) {}
+}
+// Įspėjanti/patvirtinimo lentutė. 3 atvejai: (1) locked→SAFE = paaiškinimas (be persijungimo, tik OK);
+//   (2) →ON DUTY = įspėjimas (raidable + 10min lock); (3) →SAFE = paaiškinimas (protected, lėčiau, pauzės).
+function _f9DutyConfirmModal(mode, lockedNow, lockMin) {
+  try { var _old = document.getElementById('f9-duty-confirm'); if (_old) _old.remove(); } catch (_) {}
+  const C = window._f9Cemetery || {};
+  const onlineH = C.dutyOnlineBase || 10, safeH = C.dutySafeBase || 5;
+  let title, accent, body, actionsHtml;
+  const _cancelBtn = '<button id="f9duty-cancel" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #3a3a55;background:rgba(255,255,255,0.04);color:#8a9aaa;cursor:pointer;">CANCEL</button>';
+  if (lockedNow) {
+    title = '🔒 Committed to ON DUTY'; accent = '#ffcf5c';
+    body = 'You switched to <b style="color:#ffcf5c;">🟢 ON DUTY</b> and committed to the fight, so you can\'t go back to <b style="color:#7fd0d8;">🛡 SAFE</b> just yet.<br><br>' +
+      'Time left: <b style="color:#ffcf5c;">' + lockMin + ' min</b>.<br><br>' +
+      '<span style="color:#8a9aaa;">This isn\'t a bug — it stops players from dodging a raid by flipping to SAFE at the last second.</span>';
+    actionsHtml = '<button id="f9duty-ok" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #ffcf5c;background:#ffcf5c;color:#1a1208;cursor:pointer;">GOT IT</button>';
+  } else if (mode === 'online') {
+    title = '🟢 Switch to ON DUTY?'; accent = '#ffcf5c';
+    body = '<div style="text-align:left;line-height:1.9;">' +
+      '✅ Mine <b style="color:#ffcf5c;">faster</b> (+' + onlineH + '/h + power), no checkpoint pauses.<br>' +
+      '⚔️ Your castle becomes <b style="color:#ff9a6a;">RAIDABLE</b> — other players can attack it.<br>' +
+      '💀 If a raider beats you, they steal <b style="color:#ff9a6a;">50%</b> of your un-withdrawn RONKE.<br>' +
+      '🔒 You <b style="color:#ffcf5c;">commit for 10 min</b> — you can\'t switch back to SAFE until then.' +
+      '</div>';
+    actionsHtml = '<button id="f9duty-go" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #ffcf5c;background:#ffcf5c;color:#1a1208;cursor:pointer;">🟢 GO ON DUTY</button>' + _cancelBtn;
+  } else {
+    title = '🛡 Switch to SAFE?'; accent = '#7fd0d8';
+    body = '<div style="text-align:left;line-height:1.9;">' +
+      '🛡 <b style="color:#7fd0d8;">Protected</b> — nobody can raid your mined RONKE.<br>' +
+      '🐢 Mine <b>slower</b> (+' + safeH + '/h + power).<br>' +
+      '⏸ Mining <b>pauses</b> at each checkpoint until you start a PvP match yourself.' +
+      '</div>';
+    actionsHtml = '<button id="f9duty-go" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #4a9da6;background:#4a9da6;color:#06121a;cursor:pointer;">🛡 GO SAFE</button>' + _cancelBtn;
+  }
+  const ov = document.createElement('div');
+  ov.id = 'f9-duty-confirm';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100060;display:flex;align-items:center;justify-content:center;background:rgba(8,12,22,0.9);backdrop-filter:blur(5px);font-family:\'Press Start 2P\',monospace,sans-serif;';
+  ov.innerHTML = '<div style="background:linear-gradient(180deg,#1f2940,#0c1020);border:3px solid ' + accent + ';border-radius:12px;padding:24px 26px;width:430px;max-width:92vw;text-align:center;box-shadow:0 0 44px rgba(0,0,0,0.5);">' +
+    '<div style="font-size:15px;color:' + accent + ';letter-spacing:1px;margin-bottom:16px;">' + title + '</div>' +
+    '<div style="font-size:11px;color:#c9d4e8;line-height:1.7;margin-bottom:20px;">' + body + '</div>' +
+    '<div style="display:flex;gap:10px;">' + actionsHtml + '</div></div>';
+  document.body.appendChild(ov);
+  const close = function () { try { ov.remove(); } catch (_) {} };
+  ov.addEventListener('click', function (ev) { if (ev.target === ov) close(); });
+  const ok = ov.querySelector('#f9duty-ok'); if (ok) ok.onclick = close;
+  const cancel = ov.querySelector('#f9duty-cancel'); if (cancel) cancel.onclick = close;
+  const go = ov.querySelector('#f9duty-go'); if (go) go.onclick = function () { close(); _f9DutyDoSet(mode); };
 }
 window._f9DutySet = _f9DutySet;
 function _f9ToggleMinePanel() {
