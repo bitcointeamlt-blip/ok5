@@ -1433,8 +1433,12 @@
     myTeam = me ? me.team : 0;
     window._f9pvpLive = true;
     window._f9pvpMyTeam = myTeam;
-    // 🎵 KOVOS muzika — TIK jei PUOLI (raid). Gynėjas gauna per under_attack. Idle home (__f9RaidActive=false) → NEgroja (lieka įprastas BGM).
-    try { if (window.__f9RaidActive && window._bgmPvpBattleStart) window._bgmPvpBattleStart(); } catch (_) {}
+    // 🎵 KOVOS muzika — jei PUOLI (raid) ARBA kambaryje ≥2 žaidėjai (LIVE mūšis, įsk. gynybą). Idle home =
+    //   1 žaidėjas (+AI, ne „player") → NEgroja (lieka įprastas BGM). Gynėjas: po relaunch į mūšį _onStart re-fire su 2 players.
+    try {
+      var _f9pc = (room && room.state && room.state.players && room.state.players.size) || 0;
+      if ((window.__f9RaidActive || _f9pc >= 2) && window._bgmPvpBattleStart) window._bgmPvpBattleStart();
+    } catch (_) {}
     _status('PLAYING', '#6e8');
     try { _castleStep('castle', 'done'); } catch (_) {}   // 🏰 baras → 100%
     _clearScreen();
