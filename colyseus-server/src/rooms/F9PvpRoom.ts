@@ -148,7 +148,8 @@ const TOWER_BUILD_COST = 40;
 const TOWER_UPG_COST: Record<number, number> = { 2: 30, 3: 60, 4: 120 };   // upgrade'ina VISUS bokštus iškart
 const UPG_FREE = process.env.F9_UPG_FREE === "1";          // testams/dev — be kainos
 const towerHpForLevel = (lvl: number) => TOWER_HP * Math.max(1, Math.min(TOWER_MAX_LVL, lvl));   // L1=70…L4=280
-const towerDmgForLevel = (lvl: number) => TOWER_DMG * Math.max(1, Math.min(TOWER_MAX_LVL, lvl)); // L1=3…L4=12
+const TOWER_DMG_BY_LVL: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5 };   // 🗼 07-18 user NERF: 12 buvo OP (5 bokštai=60/залп) → max 5
+const towerDmgForLevel = (lvl: number) => TOWER_DMG_BY_LVL[Math.max(1, Math.min(TOWER_MAX_LVL, lvl))] || 3; // L1=3, L2=4, L3=4, L4=5
 const TOWER_RANGE = 6.5;    // šaudymo nuotolis (cells)
 const TOWER_CD = 2200;      // cooldown tarp šūvių (ms)
 const TOWER_DMG = 3;        // bolt žala
