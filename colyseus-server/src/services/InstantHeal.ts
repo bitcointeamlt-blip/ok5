@@ -1,10 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { boneBankOp } from "./BaseStore";
+import { BLESS_PER_1OF1 } from "./RonkeverseBless";   // ⚡🔵 „1/1" NFT = 10 charge kiekvienas (2026-07-19)
 
 // ⚡🔵 RONKE BLESS — instant-heal charges (2026-07-05, user):
 //   Kiekvienas piniginėj laikomas Ronkeverse NFT = 1 momentinis sužaloto unito pagydymas per ROLLING 24h.
-//   Cap 30/parą. 0 NFT → 0 charge'ų. Serializuota (`<addr>#instaheal` eilutė) — jokio double-spend.
-//   Ronkeverse skaičius paduodamas iš išorės (F9PvpRoom chainCounts(addr).rv — jau kešuojamas 10min).
+//   Cap 30/parą PAPRASTIEMS. 07-19: „1/1" NFT = BLESS_PER_1OF1 (10) kiekvienas, BE cap. 0 NFT → 0 charge'ų.
+//   Serializuota (`<addr>#instaheal` eilutė) — jokio double-spend.
+//   Ronkeverse (rv) + „1/1" (n1) skaičiai paduodami iš išorės (F9PvpRoom chainCounts.rv + count1of1(addr)).
 
 const DAILY_CAP = 30;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -21,8 +23,13 @@ function sb(): SupabaseClient | null {
 const _norm = (a: string) => (a || "").trim().toLowerCase();
 const _key = (a: string) => _norm(a) + "#instaheal";
 
-export function instantHealCap(ronkeverseCount: number): number {
-  return Math.max(0, Math.min(DAILY_CAP, Math.floor(ronkeverseCount || 0)));
+// Charge cap: paprasti Ronkeverse = 1 kiekvienas (cap DAILY_CAP 30) + „1/1" = BLESS_PER_1OF1 (10) kiekvienas (BE cap).
+//   1/1 yra Ronkeverse potipis → paprasti = rv − n1. Todėl 1/1 holderiai gali turėti >30 charge.
+export function instantHealCap(ronkeverseCount: number, oneOfOneCount: number = 0): number {
+  const rv = Math.max(0, Math.floor(ronkeverseCount || 0));
+  const n1 = Math.max(0, Math.min(rv, Math.floor(oneOfOneCount || 0)));
+  const regular = rv - n1;
+  return Math.min(DAILY_CAP, regular) + n1 * BLESS_PER_1OF1;
 }
 
 // {used, windowStart} + rolling reset (jei langas pasibaigęs → used=0, langas nuo dabar). Read-only nepersistina reset'o.
@@ -48,8 +55,8 @@ async function _write(addr: string, used: number, windowStart: number): Promise<
 }
 
 export type InstaStatus = { cap: number; used: number; remaining: number; resetAt: number };
-export async function instantHealStatus(addr: string, ronkeverseCount: number): Promise<InstaStatus> {
-  const cap = instantHealCap(ronkeverseCount);
+export async function instantHealStatus(addr: string, ronkeverseCount: number, oneOfOneCount: number = 0): Promise<InstaStatus> {
+  const cap = instantHealCap(ronkeverseCount, oneOfOneCount);
   const now = Date.now();
   try {
     const { used, windowStart } = await _read(_norm(addr), now);
@@ -62,9 +69,9 @@ export async function instantHealStatus(addr: string, ronkeverseCount: number): 
 }
 
 // Bando panaudoti 1 charge'ą (serializuota per `<addr>#instaheal`). ok=false jei nebeliko / 0 NFT.
-export async function consumeInstantHeal(addr: string, ronkeverseCount: number): Promise<{ ok: boolean; remaining: number; cap: number }> {
+export async function consumeInstantHeal(addr: string, ronkeverseCount: number, oneOfOneCount: number = 0): Promise<{ ok: boolean; remaining: number; cap: number }> {
   const a = _norm(addr);
-  const cap = instantHealCap(ronkeverseCount);
+  const cap = instantHealCap(ronkeverseCount, oneOfOneCount);
   if (cap <= 0) return { ok: false, remaining: 0, cap: 0 };
   return boneBankOp(a + "#instaheal", async () => {
     try {

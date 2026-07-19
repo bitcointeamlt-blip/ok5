@@ -5,6 +5,7 @@ import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { consumeInstantHeal, instantHealStatus, refundInstantHeal } from "../services/InstantHeal";   // ⚡🔵 Ronke Bless instant heal (2026-07-05)
+import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 10 charge kiekvienas (2026-07-19)
 import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
@@ -614,7 +615,7 @@ export class F9PvpRoom extends Room<F9State> {
       await this._loadInjured(addr);
       // ⚡🔵 RONKE BLESS charge status (Ronkeverse count iš kešuoto chainCounts) — panelė rodo „N liko".
       let insta: any = { cap: 0, used: 0, remaining: 0 };
-      try { const cc = await chainCounts(addr); insta = await instantHealStatus(addr, cc ? cc.rv : 0); } catch (_) {}
+      try { const cc = await chainCounts(addr); const _n1 = await count1of1(addr); insta = await instantHealStatus(addr, cc ? cc.rv : 0, _n1); } catch (_) {}
       try { client.send("hospital", { ...this._hospPayload(addr), insta }); } catch (_) {}
     });
     // ⚰️ KAPINĖS — pot/rate užklausa (badge + UI)
@@ -783,9 +784,10 @@ export class F9PvpRoom extends Room<F9State> {
       { const h0 = this._injured.get(addr); if (!h0 || h0.q.findIndex((i) => i.tokenId === tokenId) < 0) { try { client.send("insta_heal_fail", { reason: "not_injured" }); } catch (_) {} return; } }
       const cc = await chainCounts(addr);
       const rv = cc ? cc.rv : 0;
-      const consumed = await consumeInstantHeal(addr, rv);
+      const n1 = await count1of1(addr);   // ⚡🔵 kiek „1/1" NFT laiko → ×10 charge kiekvienas
+      const consumed = await consumeInstantHeal(addr, rv, n1);
       if (!consumed.ok) {
-        const st = await instantHealStatus(addr, rv);
+        const st = await instantHealStatus(addr, rv, n1);
         try { client.send("insta_heal_fail", { reason: rv < 1 ? "no_nft" : "no_charges", insta: st }); } catch (_) {}
         return;
       }
@@ -796,7 +798,7 @@ export class F9PvpRoom extends Room<F9State> {
       if (!h || idx < 0) {
         // unitas pasveiko natūraliai per async langą → charge NEpanaudotas heal'ui → grąžinam.
         try { await refundInstantHeal(addr); } catch (_) {}
-        const st = await instantHealStatus(addr, rv);
+        const st = await instantHealStatus(addr, rv, n1);
         try { client.send("hospital", { ...this._hospPayload(addr), insta: st }); } catch (_) {}
         return;
       }
@@ -822,7 +824,7 @@ export class F9PvpRoom extends Room<F9State> {
       // ar pagydytas realiai atsidūrė lauke? deke → taip; ne deke → ne (tiesiog SVEIKAS, re-registerable MANAGE DECK'e).
       let deployed = false;
       this.state.units.forEach((u) => { if (u.tokenId === healed.tokenId) deployed = true; });
-      const st = await instantHealStatus(addr, rv);
+      const st = await instantHealStatus(addr, rv, n1);
       console.log(`[F9PvpRoom] ⚡ RONKE BLESS heal ${healed.utype}#${healed.tokenId} (${addr.slice(0, 10)}… ${deployed ? "deployed" : "healthy"}, liko ${st.remaining}/${st.cap})`);
       try {
         client.send("recovered", { tokenId: healed.tokenId, utype: healed.utype, level: healed.level, instant: true, deployed });
