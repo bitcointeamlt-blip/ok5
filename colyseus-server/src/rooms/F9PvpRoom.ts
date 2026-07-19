@@ -183,7 +183,11 @@ const RETREAT_MS = 15000;    // 15s palaikyti visus zonoj → atsitraukia
 //   Dev tokenId ('dev0'…) neliečiami.
 //   EILĖS MODELIS (v2, user 2026-07-03): gydosi TIK VIENAS unitas (HEAL_MS=1h), kiti LAUKIA eilėje;
 //   žaidėjas gali pasirinkti, kurį gydyti pirmą ('hospital_heal_first' → perkeliamas į priekį, gydymas nuo 0).
-const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Number(process.env.F9_INJURY_CHANCE) : 1.0;   // env — testams (0=visada mirtis)
+// 🚑 07-19 (user): 10% MIRTIS IŠJUNGTA KOLKAS → 100% sužalojimai, 0 mirčių. Hardcode 1.0 (ignoruoja env
+//   F9_INJURY_CHANCE, kuris buvo ~0.9 = ~10% mirtis nuo 07-15). GRĄŽINTI 10% mirtį → keisk 1.0 į 0.9
+//   (arba grąžink žemiau užkomentuotą env eilutę). Originalas:
+//   const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Number(process.env.F9_INJURY_CHANCE) : 1.0;
+const INJURY_CHANCE = 1.0;   // 100% sužalojimai (0% mirtis) — laikinai
 const HEAL_MS = Number(process.env.F9_HEAL_MS) || 3600 * 1000;   // 1h / unitą (env override testams)
 // 🏥 LIGONINĖS LYGIAI (user 07-04): L2 +1 slotas; L3/L4 −10min gydymui; L5 3-ias slotas.
 const HOSP_MAX_LVL = 5;
