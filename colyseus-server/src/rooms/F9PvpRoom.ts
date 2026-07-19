@@ -2021,7 +2021,11 @@ export class F9PvpRoom extends Room<F9State> {
     const mrate = this._mineRateStored(addr);
     const _cap = this._mineCap(addr);   // ⛏️🗡 dabartinis siege checkpoint (pot čia stoja)
     if (mrate > 0 && c.tick > 0 && now > c.tick) {
-      c.mpot = Math.min(_cap, (c.mpot || 0) + mrate * (now - c.tick) / 3600000);
+      // ⛏️🛡 07-19: ceiling = max(_cap, esamas pot). NEmažinam jau iškasto pot žemiau cap — DUTY (cap MINE_CAP)
+      //   perviršis virš SAFE checkpoint LIEKA grįžus į SAFE (cap=mcp). Anksčiau min(_cap,…) klampindavo 500→200
+      //   = prarasta 300 RONKE perjungus DUTY→SAFE. (Perviršio atveju pot laikomas, gated'as jį įšaldo.)
+      const _ceil = Math.max(_cap, c.mpot || 0);
+      c.mpot = Math.min(_ceil, (c.mpot || 0) + mrate * (now - c.tick) / 3600000);
       c.mpot = Math.round(c.mpot * 1000) / 1000;
     }
     // ⛏️🗡 SIEGE CHECKPOINT: pasiekus checkpoint (kas 200) → gated=true → kasimas sustoja iki PvP mūšio. TIK 🛡SAFE.
