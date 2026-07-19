@@ -1168,6 +1168,7 @@
         onField: (typeof e.onField === 'number' ? e.onField : null), reserve: (typeof e.reserve === 'number' ? e.reserve : null),   // ⚔ kasimo lauko-frakcija
         power: (typeof e.power === 'number' ? e.power : null), fullPower: (typeof e.fullPower === 'number' ? e.fullPower : null),   // healthy / pilnas RP
         duty: (e.duty === 'safe' ? 'safe' : 'online'), gated: !!e.gated, dutyMult: (typeof e.dutyMult === 'number' ? e.dutyMult : 2),   // ⚔️🛡 DUTY status
+        dutyLockUntil: (typeof e.dutyLockUntil === 'number' ? e.dutyLockUntil : 0),   // ⚔️🛡 iki kada negali grįžti į SAFE (DUTY įsipareigojimo langas)
         dutyOnlineMult: (typeof e.dutyOnlineMult === 'number' ? e.dutyOnlineMult : 2), dutySafeMult: (typeof e.dutySafeMult === 'number' ? e.dutySafeMult : 1.2),
         dutyOnlineBase: (typeof e.dutyOnlineBase === 'number' ? e.dutyOnlineBase : 10), dutySafeBase: (typeof e.dutySafeBase === 'number' ? e.dutySafeBase : 5),   // 🏁 flat bazės
         mineEligible: (typeof e.mineEligible === 'boolean' ? e.mineEligible : null), mineField: (typeof e.mineField === 'number' ? e.mineField : null), mineRules: e.mineRules || null,   // ⛏️ LAUKO-gate (kasimo eligibility = unitai ant lauko, ne dekas)

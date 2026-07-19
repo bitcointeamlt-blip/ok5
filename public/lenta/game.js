@@ -10759,6 +10759,7 @@ function _f9MineData() {
     // ⚔️🛡 DUTY STATUS
     duty: (c && c.duty) || 'online',                       // online | safe
     gated: !!(c && c.gated),                               // safe pasiekė lubas → kasimas laukia siege
+    dutyLockUntil: (c && typeof c.dutyLockUntil === 'number') ? c.dutyLockUntil : 0,   // ⚔️🛡 iki kada negali grįžti į SAFE (DUTY įsipareigojimo langas)
     dutyMult: (c && typeof c.dutyMult === 'number') ? c.dutyMult : 2,
     dutyOnlineMult: (c && typeof c.dutyOnlineMult === 'number') ? c.dutyOnlineMult : 2,
     dutySafeMult: (c && typeof c.dutySafeMult === 'number') ? c.dutySafeMult : 1.2,
@@ -10816,6 +10817,9 @@ function _f9MinePanelStats() {
   if (!_f9MinePanelEl) return;
   const d = _f9MineData();
   const R = d.rules;
+  // ⚔️🛡 DUTY įsipareigojimo langas: DUTY režime dar negali grįžti į SAFE (anti-toggle-dodge). Rodom countdown ant SAFE mygtuko.
+  const dutyLocked = d.duty === 'online' && (d.dutyLockUntil || 0) > Date.now();
+  const dutyLockMin = dutyLocked ? Math.max(1, Math.ceil((d.dutyLockUntil - Date.now()) / 60000)) : 0;
   const est = Math.min(d.cap > 0 ? d.cap : Infinity, d.pot + (d.rate || 0) * (Date.now() - d.at) / 3600000);
   const full = d.cap > 0 && est >= d.cap - 0.5;
   const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
@@ -10847,11 +10851,28 @@ function _f9MinePanelStats() {
         (ok ? '<span style="font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(111,207,92,0.25);color:#6fcf5c;">ACTIVE</span>' : '') + '</div>' + rows + '</div>';
   const prog = Math.max(0, Math.min(1, est / cm));
   const ready = est >= cm;
+  // ⚔️🛡 DUTY info blokas: 🛡SAFE → siege progreso juostelė (kiek iškasta iki lock @ kitas checkpoint); 🟢DUTY → laisvo kasimo hint.
+  //   SAFE lange kasama nuo (mcp−200) iki mcp; pasiekus → gated (kasimas STOJA kol DUTY arba PvP mūšis).
+  let dutyInfo;
+  if (d.duty === 'safe') {
+    const _prevCp = Math.max(0, (d.cap || step) - step);
+    const _sieMined = Math.max(0, Math.min(step, est - _prevCp));
+    const _siePct = d.gated ? 1 : Math.max(0, Math.min(1, _sieMined / step));
+    const _bar = d.gated ? 'linear-gradient(90deg,#a33,#e85d5d)' : (_siePct > 0.8 ? 'linear-gradient(90deg,#d49a2a,#ffcf5c)' : 'linear-gradient(90deg,#2a6a74,#5ab6c2)');
+    dutyInfo =
+      '<div style="margin-top:9px;background:rgba(' + (d.gated ? '232,93,93,0.1' : '42,106,116,0.12') + ');border:1px solid ' + (d.gated ? '#7a3a3a' : '#2a5a64') + ';border-radius:5px;padding:8px 9px;">' +
+        '<div style="display:flex;justify-content:space-between;font-size:8px;letter-spacing:.5px;color:' + (d.gated ? '#e8a08a' : '#7fd0d8') + ';margin-bottom:5px;"><span>🗡 SIEGE CHECKPOINT</span><span>' + Math.round(_sieMined) + ' / ' + step + '</span></div>' +
+        '<div style="height:9px;background:#0a0c18;border:1px solid #2a3a44;border-radius:5px;overflow:hidden;"><div style="height:100%;width:' + (_siePct * 100).toFixed(1) + '%;background:' + _bar + ';box-shadow:0 0 6px ' + (d.gated ? 'rgba(232,93,93,0.6)' : 'rgba(74,157,166,0.5)') + ';transition:width .3s;"></div></div>' +
+        '<div style="margin-top:6px;font-size:8px;line-height:1.5;color:' + (d.gated ? '#e8a08a' : '#6a7a8a') + ';">' + (d.gated ? '🔒 <b>Mining paused</b> — hit your siege checkpoint. Switch to 🟢 DUTY (no limit) or win <b>one PvP match</b> (either side 50% casualties) to resume.' : '🛡 Protected. At <b>' + step + ' mined</b> mining STOPS until a PvP match — or switch to 🟢 DUTY to mine freely.') + '</div>' +
+      '</div>';
+  } else {
+    dutyInfo = '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">🟢 Faster mining + raidable — no mining limit, mine freely. But raiders steal 50% of un-withdrawn RONKE if they beat you.</div>';
+  }
   const body = _f9MinePanelEl.querySelector('#f9mine-body');
   if (body) {
     body.innerHTML =
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (full ? '🗡 SIEGE REQUIRED' : 'next siege @ ' + d.cap) + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.duty === 'safe' ? (full ? '🗡 SIEGE REQUIRED' : 'next siege @ ' + d.cap) : (full ? '⛏️ at backstop — withdraw' : '🟢 no siege limit')) + '</div></div>' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (mineElig ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (mineElig ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (!mineElig ? '⚔ ' + fieldN + ' / ' + MR.aField + ' units on field' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power'))) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
       '</div>' +
       // ⚔️🛡 DUTY STATUS jungiklis — ON DUTY (greitas + puolamas) / SAFE (lėtas + apsaugotas). Keisti tik ramiuose namuose.
@@ -10859,11 +10880,10 @@ function _f9MinePanelStats() {
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;"><span style="font-size:11px;letter-spacing:1px;color:#c9d4e8;">⚔️ DUTY STATUS</span>' +
           '<span style="flex:1;"></span><span style="font-size:9px;padding:2px 8px;border-radius:4px;background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.2)' : 'rgba(255,207,92,0.18)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#ffcf5c') + ';">' + (d.duty === 'safe' ? '🛡 SAFE' : '🟢 ON DUTY') + '</span></div>' +
         '<div style="display:flex;gap:8px;">' +
-          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>+' + (d.dutyOnlineBase || 10) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">raidable · raids = your siege</span></button>' +
-          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';">🛡 SAFE<br><b>+' + (d.dutySafeBase || 5) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">protected · you attack to unlock</span></button>' +
+          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>+' + (d.dutyOnlineBase || 10) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">raidable · no mining limit</span></button>' +
+          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:' + (dutyLocked ? 'not-allowed' : 'pointer') + ';border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';opacity:' + (dutyLocked ? '0.5' : '1') + ';">🛡 SAFE<br><b>+' + (d.dutySafeBase || 5) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">' + (dutyLocked ? '🔒 on duty ' + dutyLockMin + 'm left' : 'protected · you attack to unlock') + '</span></button>' +
         '</div>' +
-        (d.gated ? '<div style="margin-top:9px;font-size:9px;color:#e8a08a;line-height:1.5;background:rgba(232,93,93,0.1);border:1px solid #7a3a3a;border-radius:5px;padding:8px;">🔒 <b>Mining paused</b> — you hit your siege checkpoint. Win <b>one PvP match</b> (either side reaches <b>50% casualties</b>) to mine the next ' + step + ' RONKE. ' + (d.duty === 'safe' ? 'Go attack a castle.' : 'Attack a castle — or a raid on you counts too.') + '</div>'
-          : '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 Nobody can raid you — but mining PAUSES every ' + step + ' RONKE until you win a PvP match (you go attack).' : '🟢 Faster mining + raidable. Mining also pauses every ' + step + ' RONKE until a PvP match — but raids on you count as your match.') + '</div>') +
+        dutyInfo +
         '<div id="f9mine-dutymsg" style="margin-top:6px;font-size:8px;min-height:10px;color:#e8a08a;text-align:center;"></div>' +
       '</div>' +
       // 🛡 skydas — atsigavimo langas (kasimas ×0.5); rankinis REMOVE grąžina pilną kasimą + ekspoziciją

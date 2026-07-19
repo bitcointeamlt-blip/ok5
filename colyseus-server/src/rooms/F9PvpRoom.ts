@@ -237,6 +237,10 @@ const MINE_STEAL_PCT = 0.5;                                        // 100% wipe 
 const DUTY_ONLINE_MULT = Number(process.env.F9_DUTY_ONLINE_MULT) || 2.0;
 const DUTY_SAFE_MULT = Number(process.env.F9_DUTY_SAFE_MULT) || 1.2;
 const DUTY_SIEGE_CASUALTY = Number(process.env.F9_DUTY_SIEGE_CASUALTY) || 0.5;   // ≥50% aukų bet kurioj pusėj → siege užskaitytas (kasimo checkpoint atrakinimas)
+// ⚔️🛡 07-18 anti-toggle-dodge: persijungus į DUTY negali savanoriškai grįžti į SAFE N min (įsipareigojimo langas).
+//   Uždaro mikro-toggle skylę (kasa lašą DUTY → iškart slepiasi SAFE). Kiekvienas DUTY langas tampa realiu, pagaunamu.
+//   Serverio priverstinis auto-SAFE (po raido) apeina (nustato c.duty tiesiogiai, ne per duty_set). In-memory (offline-DUTY = async raidable = ekspozicija bet kuriuo atveju).
+const DUTY_MIN_DWELL_MS = Number(process.env.F9_DUTY_MIN_DWELL_MS) || 10 * 60 * 1000;   // 10 min minimalus DUTY laikas prieš grįžtant į SAFE
 // (07-14 user: per-mode sandėlio lubos 250/350 pakeistos vieningu siege checkpoint MINE_SIEGE_STEP=200 abiem režimam.)
 // ⛏️ RONKE Power „knee" (07-13 user): pirmi 250 power = pilna 0.1/h, VIRŠ 250 = perpus (0.05/h) iki whale cap.
 const MINE_POWER_KNEE = Number(process.env.F9_MINE_POWER_KNEE) || 250;
@@ -517,6 +521,7 @@ export class F9PvpRoom extends Room<F9State> {
     return out;
   }
   private _cem = new Map<string, { pot: number; tick: number; power: number; nft: number; rv: number; wallet: number; ramp: number; mpot: number; mcp: number; mfield: number; mres: number; duty: "online" | "safe"; gated: boolean }>();   // ⚰️/⛏️ + mpot=iškastas RONKE + mcp=kitas siege checkpoint (pot kaupiasi iki čia→STOJA kol PvP mūšis) + mfield/mres=lauko/rezervo count'ai + duty=režimas + gated=pasiekė checkpoint → laukia mūšio
+  private _dutyLockUntil = new Map<string, number>();       // ⚔️🛡 addr → ts iki kada NEGALI grįžti į SAFE (DUTY įsipareigojimo langas; anti-toggle-dodge). In-memory.
   private _saveTimer: any = null;                            // 🏰 periodinis autosave (10s)
   private _lastSaveAt = 0;                                   // throttle (vengiam per dažnų DB rašymų)
   private _tpDisabled = false;                               // 🌀 TP išjungtas kai vidurio siena išgriauta (atviras perėjimas)
@@ -641,9 +646,24 @@ export class F9PvpRoom extends Room<F9State> {
       await this._loadCem(addr); this._cemAccrue(addr);
       const c = this._cem.get(addr);
       if (!c) { try { client.send("duty_result", { ok: false, error: "Try again." }); } catch (_) {} return; }
+      // ⚔️🛡 DUTY įsipareigojimo langas (anti-toggle-dodge): grįžti į SAFE galima tik išbuvus DUTY ≥ DUTY_MIN_DWELL_MS.
+      //   (Priverstinis auto-SAFE po raido nustato c.duty tiesiogiai, ne per šį handlerį → jo lock'as neblokuoja.)
+      if (want === "safe" && c.duty === "online") {
+        const lockUntil = this._dutyLockUntil.get(addr) || 0;
+        if (Date.now() < lockUntil) {
+          const mins = Math.max(1, Math.ceil((lockUntil - Date.now()) / 60000));
+          try { client.send("duty_result", { ok: false, error: `On duty ${mins} more min — you committed to the fight.`, lockUntil }); client.send("cemetery", { ...this._cemPayload(addr), own: true }); } catch (_) {}
+          return;
+        }
+      }
+      const _prevDuty = c.duty;
       c.duty = want;
-      // ⛏️🗡 Režimo keitimas NEnuima siege gate'o (kitaip būtų dodge: perjungi režimą → atrakini kasimą be mūšio).
-      //   Gate nuima TIK kvalifikuotas PvP mūšis (_endMatch) arba withdraw reset.
+      // ⚔️🛡 Režimo keitimas NEnuima siege gate FLAG'o (jį nuima TIK kvalifikuotas PvP mūšis _endMatch arba withdraw reset).
+      //   Bet gate ENFORCE'inamas tik SAFE'e: SAFE(gated)→DUTY → kasimas atsirakina (priimta rizika = puolamas);
+      //   DUTY→SAFE grįžus flag vis dar true + pot>checkpoint → vėl stoja. Todėl jokio toggle-dodge.
+      // ⚔️🛡 Įsipareigojimo lango žymė: įėjus į DUTY (iš SAFE) → užrakinam grįžimą N min. Grįžus į SAFE → valom.
+      if (want === "online" && _prevDuty !== "online") this._dutyLockUntil.set(addr, Date.now() + DUTY_MIN_DWELL_MS);
+      else if (want === "safe") this._dutyLockUntil.delete(addr);
       this._persistCem(addr);
       try { client.send("duty_result", { ok: true, mode: want }); client.send("cemetery", { ...this._cemPayload(addr), own: true }); } catch (_) {}
       console.log(`[F9PvpRoom] ⚔️🛡 duty → ${want} (${addr.slice(0, 10)}…)`);
@@ -1919,6 +1939,9 @@ export class F9PvpRoom extends Room<F9State> {
   //   Backstop MINE_CAP (kad checkpoint niekada neišbėgtų). Po withdraw resetinasi į MINE_SIEGE_STEP.
   private _mineCap(addr: string): number {
     const c = this._cem.get((addr || "").trim().toLowerCase());
+    // 🟢 DUTY: jokio siege limito — pot kaupiasi iki kieto backstop (puolamas bet kada = ekspozicija jau yra).
+    //   🛡 SAFE: 200-žingsnio checkpoint (pot stoja iki PvP mūšio, nes SAFE nepuolamas → ekspozicijos nėra).
+    if (c && c.duty !== "safe") return MINE_CAP;
     return Math.min(MINE_CAP, (c && c.mcp) ? c.mcp : MINE_SIEGE_STEP);
   }
   // ⛏️ RONKE Power → RONKE/h su „knee": pirmi 250 power ×0.1, virš 250 ×0.05 (iki whale cap 4000).
@@ -1930,8 +1953,10 @@ export class F9PvpRoom extends Room<F9State> {
   }
   private _mineRateFrom(addr: string, onField: number, _reserve: number): number {
     const c = this._cem.get((addr || "").trim().toLowerCase());
-    // ⛏️🗡 SIEGE CHECKPOINT: pasiekus mcp (kas 200) kasimas SUSTOJA (0) kol atliks 1 PvP mūšį. ABU režimai (SAFE ir DUTY).
-    if (c && c.gated) return 0;
+    // ⛏️🗡 SIEGE CHECKPOINT: pasiekus mcp (kas 200) kasimas SUSTOJA (0) kol atliks 1 PvP mūšį. TIK 🛡SAFE.
+    //   🟢DUTY be limito (puolamas bet kada). Persijungus SAFE→DUTY gate'as tik IGNORUOJAMAS (flag lieka) →
+    //   grįžus į SAFE vėl įsijungia (pot>checkpoint) → jokio toggle-dodge (nori kasti be mūšio = LIEK DUTY/puolamas).
+    if (c && c.gated && c.duty === "safe") return 0;
     // 🏁 07-15 (user): MINING gate = LAUKO unitai (dislokuoti gynėjai), NE dekas. <reikalavimo → 0 (pristabdyta).
     if (!this._mineEligible(addr, onField)) return 0;
     const hl = this._cemHealthy(addr).power;
@@ -1995,8 +2020,9 @@ export class F9PvpRoom extends Room<F9State> {
       c.mpot = Math.min(_cap, (c.mpot || 0) + mrate * (now - c.tick) / 3600000);
       c.mpot = Math.round(c.mpot * 1000) / 1000;
     }
-    // ⛏️🗡 SIEGE CHECKPOINT: pasiekus checkpoint (kas 200) → gated=true → kasimas sustoja iki PvP mūšio. ABU režimai.
-    if (!c.gated && (c.mpot || 0) >= _cap - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🗡 kasimas STOP (checkpoint ${_cap}, ${c.duty}) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`); }
+    // ⛏️🗡 SIEGE CHECKPOINT: pasiekus checkpoint (kas 200) → gated=true → kasimas sustoja iki PvP mūšio. TIK 🛡SAFE.
+    //   (DUTY _cap=MINE_CAP backstop → normaliai nepasiekia; be to duty!=="safe" gard'as apsaugo eksplicitiškai.)
+    if (!c.gated && c.duty === "safe" && (c.mpot || 0) >= _cap - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🗡 kasimas STOP (checkpoint ${_cap}, safe) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`); }
     c.tick = now;
     if (this.state.phase === "playing") {
       let present = false;
@@ -2054,7 +2080,8 @@ export class F9PvpRoom extends Room<F9State> {
       // ⛏️💰 SERVER-AUTHORITATIVE mining (klientas nustato window._f9Mine → nustoja client accrual):
       mpot: Math.round((c.mpot || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), msiege: MINE_SIEGE_STEP, mclaim: MINE_CLAIM_MIN, mwd: mineWithdrawEnabled(),   // mpot=iškastas; mcap=dabartinis siege checkpoint (pot stoja); msiege=200 žingsnis; mclaim=500 withdraw slenkstis
       // ⚔️🛡 DUTY STATUS: klientas rodo režimo jungiklį + greitį + „locked → siege" būseną
-      duty: c.duty || "online", gated: !!c.gated, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),
+      duty: c.duty || "online", gated: (!!c.gated && c.duty === "safe"), dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),   // 🟢 gated reportinam TIK SAFE'ui — DUTY be siege limito, klientas nerodo „LOCKED"
+      dutyLockUntil: (c.duty === "online" ? (this._dutyLockUntil.get(addr) || 0) : 0),   // ⚔️🛡 iki kada NEGALI grįžti į SAFE (DUTY įsipareigojimo langas; 0 = laisva)
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
       dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
       mineEligible: this._mineEligible(addr, this._mineFieldStored(addr)), mineField: this._mineFieldStored(addr),   // 🏁 MINING gate = LAUKO unitai (online → gyvas mfield; offline → snapshot−sužaloti, kaip mrate)
