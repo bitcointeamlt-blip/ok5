@@ -705,6 +705,7 @@
       </div>
       <div class="wui-dd-actions">
         <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-swap">⇄ SWAP RON ↔ RONKE</button>
+        <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-abstract" style="border-color:#00d179;color:#8effc0;">🟢 FUND FROM ABSTRACT</button>
         <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-gallery">▣ VIEW NFTS</button>
         <button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-sendnft">⤳ SEND UNIT NFT</button>
         ${isPhantom ? '<button type="button" class="wui-dd-btn wui-dd-btn-primary" id="wui-dd-export" style="border-color:#9945FF;">◎ EXPORT WALLET KEY</button>' : ''}
@@ -729,6 +730,7 @@
     dropdownEl.querySelector('#wui-dd-refresh-nfts').onclick = () => Wallet.refreshNfts();
     dropdownEl.querySelector('#wui-dd-gallery').onclick = () => { closeDropdown(); openGallery(); };
     dropdownEl.querySelector('#wui-dd-swap').onclick = () => { closeDropdown(); if (window.openRonkeSwap) window.openRonkeSwap(); };
+    { const ab = dropdownEl.querySelector('#wui-dd-abstract'); if (ab) ab.onclick = () => { closeDropdown(); if (window._openAbstractModule) window._openAbstractModule(); }; }   // 🟢 tiesioginis įėjimas į AGW (ne tik pirmo Instant Play prompt'e)
     dropdownEl.querySelector('#wui-dd-disconnect').onclick = async () => {
       await Wallet.disconnect();
       showToast('Disconnected', 'ok', 1500);
