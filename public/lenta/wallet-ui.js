@@ -576,29 +576,27 @@
   function _openAbstractModule() {
     const addr = (Wallet.getAddress && Wallet.getAddress()) || '';
     if (!addr) { showToast('Connect / Instant Play first', 'error'); return; }
-    const ov = document.createElement('div');
-    ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(8,12,20,0.9);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
-    const box = document.createElement('div');
-    box.style.cssText = 'position:relative;width:min(420px,96vw);height:min(580px,92vh);';
-    const cb = document.createElement('button');
-    cb.textContent = '✕';
-    cb.style.cssText = 'position:absolute;top:-16px;right:-10px;z-index:2;background:#e85d5d;color:#fff;border:none;border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);';
-    const ifr = document.createElement('iframe');
-    ifr.src = 'abstract/?toAddress=' + encodeURIComponent(addr);
-    ifr.style.cssText = 'width:100%;height:100%;border:none;border-radius:14px;background:#0c1810;box-shadow:0 12px 50px rgba(0,0,0,.6);';
-    ifr.allow = 'clipboard-write; publickey-credentials-get *; payment';
-    box.appendChild(cb); box.appendChild(ifr); ov.appendChild(box); document.body.appendChild(ov);
-    function close() { try { ov.remove(); } catch (_) {} window.removeEventListener('message', onMsg); }
+    // 🪟 POPUP (NE iframe): abstract puslapis serveruojamas su X-Frame-Options: DENY (blokuoja bet kokį iframe),
+    //   o Privy/AGW login iframe'e (ypač Brave) lūžta dėl third-party storage partitioning. Popup = top-level
+    //   langas → apeina abu. Popup pats postMessage'ina opener'iui + užsidaro po sėkmės.
+    const url = 'abstract/?toAddress=' + encodeURIComponent(addr);
+    const w = 460, h = 680;
+    const sx = (window.screen && window.screen.width) || 1200, sy = (window.screen && window.screen.height) || 800;
+    const left = Math.max(0, Math.round((sx - w) / 2)), top = Math.max(0, Math.round((sy - h) / 2));
+    const pop = window.open(url, 'abstractFund', 'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes');
+    if (!pop) { showToast('Allow pop-ups for this site, then tap again', 'error', 6000); return; }
+    try { pop.focus(); } catch (_) {}
+    function cleanup() { window.removeEventListener('message', onMsg); if (_watch) { clearInterval(_watch); _watch = null; } }
     function onMsg(e) {
       if (e && e.data && e.data.type === 'abstract-onboard-done') {
         showToast('✅ RONKE received from Abstract!', 'ok', 5000);
         try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch (_) {}
-        setTimeout(close, 1800);
+        cleanup();
       }
     }
     window.addEventListener('message', onMsg);
-    cb.onclick = close;
-    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    // popup uždarytas be pabaigos → nuimam klausytoją (higiena)
+    var _watch = setInterval(function () { try { if (pop.closed) cleanup(); } catch (_) {} }, 1000);
   }
   window._openAbstractModule = _openAbstractModule;
 
