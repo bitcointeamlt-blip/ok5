@@ -450,6 +450,29 @@
     return { address: addr };
   }
 
+  // 🎮 „Instant Play" — embedded Ronin wallet (window.EmbeddedWallet). Raktas localStorage → skirtingai nuo
+  //   Phantom (derive), atkuriamas SILENT po reload (žr. restore() 'embedded' šaką). Onboarding-grade saugumas.
+  async function connectEmbedded() {
+    if (!window.EmbeddedWallet) throw new Error('Embedded wallet module not loaded');
+    const isNew = !window.EmbeddedWallet.hasWallet();
+    const addr = await window.EmbeddedWallet.connect();        // generuoja NAUJĄ arba įkelia esamą
+    const prov = await window.EmbeddedWallet.getProvider();    // EIP-1193 shim
+    state.provider = prov;
+    state.address = addr;
+    state.connected = true;
+    try {
+      localStorage.setItem(LS.ADDR, addr);
+      localStorage.setItem(LS.SIG, 'embedded:generated');
+      localStorage.setItem(LS.MSG, LOGIN_MSG);
+      localStorage.setItem(LS.METHOD, 'embedded');
+    } catch {}
+    notify();
+    try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch {}
+    refreshBalance().catch(() => {});
+    refreshNfts().catch(() => {});
+    return { address: addr, isNew: isNew };
+  }
+
   async function disconnect() {
     // WC — uždarom sesiją švariai (explicit logout / session_delete).
     try { if (_wcProvider && typeof _wcProvider.disconnect === 'function') _wcProvider.disconnect(); } catch (_) {}
@@ -504,6 +527,19 @@
     // tas pats profilis). Kredencialų NEtrinam ir NEkrentam į injected šaką (kad nesusimaišytų su
     // Ronin extension provideriu).
     if (savedMethod === 'phantom') {
+      return false;
+    }
+
+    // 🎮 Embedded „Instant Play" — raktas localStorage → atkuriamas SILENT (be tap, be re-sign; skirtingai nuo Phantom).
+    if (savedMethod === 'embedded') {
+      try {
+        if (window.EmbeddedWallet && window.EmbeddedWallet.hasWallet()) {
+          await window.EmbeddedWallet.connect();
+          const prov = await window.EmbeddedWallet.getProvider();
+          _markRestored(prov);
+          return true;
+        }
+      } catch (_) {}
       return false;
     }
 
@@ -1524,7 +1560,7 @@
 
   window.Wallet = {
     // identity
-    connect, connectPhantom, disconnect, restore,
+    connect, connectPhantom, connectEmbedded, disconnect, restore,
     isInstalled, isConnected: () => state.connected,
     getAddress: () => state.address,
     // Aktyvus provideris VISIEMS on-chain veiksmams (= shim Phantom userams, real injected/WC kitiems).

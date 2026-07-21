@@ -109,6 +109,7 @@
       var L = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/';
       var chains = [
         { id: '1151111081099710', nm: 'Solana',   logo: L + 'solana.svg',   col: '#9945FF', native: true },   // native in-game (Phantom+LI.FI)
+        { id: '2741',             nm: 'Abstract', logo: L + 'abstract.svg', col: '#00d179', agw: true },   // 🟢 07-19: Abstract → NATIVE AGW modulis (/abstract/): Connect AGW + TX per jį → RONKE. LI.FI Relay ~3s.
         { id: '1',                nm: 'Ethereum', logo: L + 'ethereum.svg', col: '#627eea' },
         { id: '8453',             nm: 'Base',     logo: L + 'base.svg',     col: '#0052ff' },
         { id: '56',               nm: 'BNB',      logo: L + 'bsc.svg',      col: '#f0b90b' },
@@ -117,11 +118,14 @@
       chains.forEach(function (ch) {
         var b = document.createElement('button');
         b.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 5px;font:inherit;font-size:9px;border:3px solid ' + C.woodDark + ';border-left:5px solid ' + ch.col + ';border-radius:10px;cursor:pointer;background:' + C.card + ';color:' + C.ink + ';box-shadow:0 3px 0 ' + C.woodDark + '55;';
-        var _lbl = ch.native ? (ch.nm + ' <b style="color:#9945FF;">→ PLAY</b>') : (ch.nm + ' <b style="color:' + C.tealD + ';">→RONKE</b>');
+        var _lbl = ch.native ? (ch.nm + ' <b style="color:#9945FF;">→ PLAY</b>') : (ch.agw ? (ch.nm + ' <b style="color:#00d179;">→ PLAY</b>') : (ch.nm + ' <b style="color:' + C.tealD + ';">→RONKE</b>'));
         b.innerHTML = '<img src="' + ch.logo + '" alt="" style="width:18px;height:18px;border-radius:50%;flex:none;" onerror="this.style.display=\'none\'"/><span>' + _lbl + '</span>';
         b.onclick = function () {
           if (ch.native) { _close(); _openSolanaOnboard(); return; }   // SOLANA → onboarding (RON pirma, tada RONKE)
-          var url = 'https://jumper.exchange/?fromChain=' + ch.id + '&toChain=2020&toToken=' + RONKE + (addr ? '&toAddress=' + addr : '');
+          if (ch.agw) { _close(); if (window._openAbstractModule) window._openAbstractModule(); return; }   // 🟢 ABSTRACT → native AGW modulis (jis pats tvarko „connect first")
+
+          // 🌉 FIX 07-19: Jumper reikalauja `fromToken` (kitaip klaida — nežino ką bridge'int iš source chain). Native = 0x000…000 (ETH/BNB/... pagal chain).
+          var url = 'https://jumper.exchange/?fromChain=' + ch.id + '&fromToken=0x0000000000000000000000000000000000000000&toChain=2020&toToken=' + RONKE + (addr ? '&toAddress=' + addr : '');
           try { window.open(url, '_blank', 'noopener'); } catch (_) { try { location.href = url; } catch (e) {} }
         };
         grid.appendChild(b);

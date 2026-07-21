@@ -552,6 +552,9 @@
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
         '<span style="color:#ffcf5c;font-weight:800;font-size:16px;">Connect Wallet</span>' +
         '<button data-x style="background:#e85d5d;color:#fff;border:none;border-radius:8px;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button></div>' +
+        // 🎮 Instant Play — embedded Ronin wallet, VEIKIA BE JOKIOS PINIGINĖS (Abstract-only ir naujiems žmonėms). Finansuoja iš bet kur (Abstract/Solana per bridge).
+        '<button data-m="embedded" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;border-radius:10px;border:2px solid #00d179;background:#0e2a1c;color:#c8ffe0;font-weight:700;font-size:14px;cursor:pointer;">' +
+        '<span style="font-size:20px;">🎮</span><div style="text-align:left;"><div>Instant Play</div><div style="font-size:11px;opacity:.7;font-weight:400;">No wallet needed — play now, fund from any chain</div></div></button>' +
         '<button data-m="roninwc" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;border-radius:10px;border:2px solid #4a9da6;background:#15324a;color:#e8f4f6;font-weight:700;font-size:14px;cursor:pointer;">' +
         '<span style="font-size:20px;">🔷</span><div style="text-align:left;"><div>Ronin Wallet</div><div style="font-size:11px;opacity:.7;font-weight:400;">Mobile app or extension</div></div></button>' +
         '<button data-m="waypoint" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:2px solid #6b4a2e;background:#2a1f12;color:#f5e6c3;font-weight:700;font-size:14px;cursor:pointer;">' +
@@ -568,16 +571,65 @@
     });
   }
 
+  // 🟢 AGW native modulis (Vite React /abstract/) — Connect Abstract Wallet + bridge TX PER AGW → RONKE į žaidėjo adresą.
+  //    Atidaro iframe overlay'e; klausosi postMessage 'abstract-onboard-done' → uždaro + refresh balansą.
+  function _openAbstractModule() {
+    const addr = (Wallet.getAddress && Wallet.getAddress()) || '';
+    if (!addr) { showToast('Connect / Instant Play first', 'error'); return; }
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(8,12,20,0.9);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+    const box = document.createElement('div');
+    box.style.cssText = 'position:relative;width:min(420px,96vw);height:min(580px,92vh);';
+    const cb = document.createElement('button');
+    cb.textContent = '✕';
+    cb.style.cssText = 'position:absolute;top:-16px;right:-10px;z-index:2;background:#e85d5d;color:#fff;border:none;border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);';
+    const ifr = document.createElement('iframe');
+    ifr.src = 'abstract/?toAddress=' + encodeURIComponent(addr);
+    ifr.style.cssText = 'width:100%;height:100%;border:none;border-radius:14px;background:#0c1810;box-shadow:0 12px 50px rgba(0,0,0,.6);';
+    ifr.allow = 'clipboard-write; publickey-credentials-get *; payment';
+    box.appendChild(cb); box.appendChild(ifr); ov.appendChild(box); document.body.appendChild(ov);
+    function close() { try { ov.remove(); } catch (_) {} window.removeEventListener('message', onMsg); }
+    function onMsg(e) {
+      if (e && e.data && e.data.type === 'abstract-onboard-done') {
+        showToast('✅ RONKE received from Abstract!', 'ok', 5000);
+        try { if (typeof window.reloadProfileForWallet === 'function') window.reloadProfileForWallet(); } catch (_) {}
+        setTimeout(close, 1800);
+      }
+    }
+    window.addEventListener('message', onMsg);
+    cb.onclick = close;
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  }
+  window._openAbstractModule = _openAbstractModule;
+
+  // 🎮 Po „Instant Play" (naujas TUŠČIAS wallet) — pakvietimas finansuoti (iš Abstract / bet kur per bridge → tampa žaidėju).
+  function _promptFundEmbedded() {
+    const addr = (Wallet.getAddress && Wallet.getAddress()) || '';
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(10,14,24,0.85);display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,sans-serif;';
+    ov.innerHTML =
+      '<div style="background:linear-gradient(180deg,#12241a,#0c1810);border:2px solid #00d179;border-radius:14px;padding:20px;width:min(360px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.6);color:#e8f4ee;">' +
+      '<div style="font-size:17px;font-weight:800;color:#8effc0;margin-bottom:6px;">🎮 Play-wallet ready!</div>' +
+      '<div style="font-size:12px;line-height:1.6;opacity:.85;margin-bottom:14px;">Your in-game Ronin wallet is created. Fund it to start playing — bridge from <b style="color:#8effc0;">Abstract</b>, Solana, or any chain (arrives in seconds).</div>' +
+      '<div style="font-size:10px;opacity:.6;margin-bottom:4px;">Your wallet address (send/bridge funds here):</div>' +
+      '<div style="font-size:11px;font-family:monospace;background:#0a140e;border:1px solid #1e3a28;border-radius:8px;padding:8px;word-break:break-all;margin-bottom:14px;">' + addr + '</div>' +
+      '<button data-agw style="width:100%;padding:13px;border-radius:10px;border:2px solid #00d179;background:#0e3a24;color:#c8ffe0;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:8px;">🟢 Connect Abstract Wallet</button>' +
+      '<button data-other style="width:100%;padding:11px;border-radius:10px;border:1px solid #3a5a6a;background:transparent;color:#9ac4d8;font-size:12px;cursor:pointer;margin-bottom:8px;">◎ Solana / other chains</button>' +
+      '<button data-skip style="width:100%;padding:10px;border-radius:10px;border:1px solid #2a3a44;background:transparent;color:#8a9aaa;font-size:12px;cursor:pointer;">I\'ll fund later</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => {
+      if (e.target === ov || e.target.closest('[data-skip]')) { try { ov.remove(); } catch (_) {} return; }
+      if (e.target.closest('[data-agw]')) { try { ov.remove(); } catch (_) {} _openAbstractModule(); return; }
+      if (e.target.closest('[data-other]')) { try { ov.remove(); } catch (_) {} try { if (window.openRonkeSwap) window.openRonkeSwap(); } catch (_) {} return; }
+    });
+  }
+
   async function handleConnect() {
     const hasPhantom = !!(window.PhantomRonin && window.PhantomRonin.isAvailable());
-    // Nieko nėra (nei Ronin, nei Phantom) → siūlom įsidiegti.
-    if (!Wallet.isInstalled() && !hasPhantom) {
-      showToast('No wallet found. Install Ronin Wallet or Phantom', 'error', 5000);
-      setTimeout(() => { window.open('https://wallet.roninchain.com/', '_blank'); }, 300);
-      return;
-    }
-    // Injected Ronin BE Phantom → jungiam tiesiai (greitas kelias). Jei yra Phantom (arba nėra
-    // injected Ronin) → rodom chooser, kad žmogus galėtų pasirinkti Phantom / Ronin / Email.
+    // Injected Ronin BE Phantom → jungiam tiesiai (greitas kelias). Kitaip (yra Phantom / nėra injected Ronin /
+    // arba VISAI nėra piniginės) → rodom chooser: jame yra „Instant Play" (embedded, veikia BE piniginės) +
+    // Ronin + Waypoint + Phantom. Nebe aklavietė „install wallet" — Abstract-only žmogus renkasi Instant Play.
     let method;
     if (_hasInjectedRonin() && !hasPhantom) {
       method = 'ronin';
@@ -589,9 +641,13 @@
     }
     try {
       showToast('Connecting wallet…', 'ok', 30000);  // feedback (telefonui — kad matytų, jog vyksta)
-      if (method === 'phantom') await Wallet.connectPhantom();   // Solana → embedded Ronin
+      let _embRes = null;
+      if (method === 'phantom') await Wallet.connectPhantom();       // Solana → embedded Ronin
+      else if (method === 'embedded') _embRes = await Wallet.connectEmbedded(); // 🎮 Instant Play — generuotas Ronin wallet
       else await Wallet.connect(method);
       showToast('Connected: ' + Wallet.shortAddress(), 'ok');
+      // 🎮 Naujas (tuščias) Instant Play wallet → iškart pakviečiam finansuoti iš Abstract / bet kur.
+      if (_embRes && _embRes.isNew) { setTimeout(() => { try { _promptFundEmbedded(); } catch (_) {} }, 700); }
     } catch (e) {
       showToast(e && e.message ? e.message : 'Connect failed', 'error');
     }
