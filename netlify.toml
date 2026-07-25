@@ -29,10 +29,13 @@
 # No SPA catch-all redirect - multi-page site serves files directly
 
 # Headers for security and CORS
+# X-Frame-Options: SAMEORIGIN (buvo DENY) — kad savo svetainė galėtų framinti savo puslapius
+#   (RonkePong pinball atidaromas iframe'e per ronkepong_launcher.js). Svetimi domenai vis tiek
+#   NEGALI framinti (clickjacking apsauga išlieka). DENY blokavo net same-origin → pinball neužsikraudavo.
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    X-Frame-Options = "SAMEORIGIN"
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
