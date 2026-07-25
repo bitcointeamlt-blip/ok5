@@ -42,9 +42,9 @@
       var qp = new URLSearchParams(window.location.search).get('ep');
       if (qp && /^wss?:\/\//i.test(qp)) return qp;
     } catch (_) {}
-    var host = (typeof window !== 'undefined' && window.location && window.location.hostname) || '';
-    if (host === 'localhost' || host === '127.0.0.1') return 'ws://localhost:2567';
-    // Production fallback — override anytime via window.F9PVP_ENDPOINT before connect().
+    // 🐛 07-22: localhost'e IRGI default'inam į PROD cloud — senas default ws://localhost:2567
+    //   (lokalus dev serveris) beveik niekada nepaleistas → ERR_CONNECTION_REFUSED → pilis nekraudavo.
+    //   Lokaliam serveriui testuoti: ?ep=ws://localhost:2567 arba window.F9PVP_ENDPOINT.
     return 'wss://de-fra-f8820c12.colyseus.cloud';
   }
 
@@ -106,6 +106,7 @@
         var ep = endpoint || defaultEndpoint();
         ep = ep.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
         self.client = new Colyseus.Client(ep);
+        self.endpoint = ep;   // 🔎 diagnostikai (klaidos ekranas rodo, kur jungtasi)
         console.log('[F9PVP] client ready endpoint=' + ep);
         return true;
       }).catch(function (e) {

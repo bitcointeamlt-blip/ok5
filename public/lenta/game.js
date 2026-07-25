@@ -4358,7 +4358,7 @@ function _f9InstallDragHandlers() {
   if (window._f9DragInstalled) return;
   if (typeof canvas === 'undefined' || !canvas) return;
   window._f9DragInstalled = true;
-  const _DRAG_THRESHOLD = 5;
+  const _DRAG_THRESHOLD = 8;   // 🧹 5→8: 5px buvo normalaus klik jitter ribose → komanda netyčia virsdavo drag'u
   function _f9CanvasXY(e) {
     // Force-landscape (CSS rotate) — loginė erdvė vietoj bbox.
     if (window.__forceLandscape && window.__forceLandscape()) {
@@ -4375,6 +4375,13 @@ function _f9InstallDragHandlers() {
     };
   }
   canvas.addEventListener('mousedown', (e) => {
+    // 🧹 FIX (07-18): naujo gesto pradžioj IŠVALOM „suppress" vėliavas. Anksčiau po box-select/pan drag'o
+    //   būdavo set _f9DragJustEnded/_f9RightDragPanned, bet naršyklė NEsiųsdavo trailing click/contextmenu →
+    //   vėliava likdavo kaboti ir suvalgydavo SEKANČIĄ tikrą komandą („veikia, tą patį darai — nebeveikia").
+    //   Naujas mousedown = švarus startas → orphanas nebeišgyvena iki kitos komandos.
+    if (gameMode === 'adventure' && S && S.floor === 9) {
+      window._f9DragJustEnded = false; window._f9RightDragPanned = false;
+    }
     // 🖱️ DEŠINYS-DRAG = kameros pan (2026-07-15 user swap); dešinys-KLIK lieka komanda (atskiria drag slenkstis).
     if (e.button === 2) {
       if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
@@ -4464,14 +4471,16 @@ function _f9InstallDragHandlers() {
     window._f9StatsSelected = false;
     window._f9DragStart = { sx: p.sx, sy: p.sy, clientX: e.clientX, clientY: e.clientY };
     window._f9DragActive = false;
-    // 🖐️ GRAB-AND-DRAG kamera (2026-07-15 user): dešinys-drag = pan; kairys-drag = box-select. Įsimenam kameros poziciją.
+    // 🖐️ GRAB-AND-DRAG kamera (2026-07-15 user): paprastas kairio drag = „paimk pasaulį ir tempk" pan
+    //    (kaip telefone). Shift+drag = box-select (rėmelis). Įsimenam kameros poziciją drago pradžioj.
     window._f9DragCamStart = { x: (S.cam ? (S.cam.tx ?? S.cam.x) : 0), y: (S.cam ? (S.cam.ty ?? S.cam.y) : 0) };
     window._f9DragMode = 'box';   // 🖱️ SWAP: kairys-drag = box-select (unitų pažymėjimas); Shift = add-to-selection
     window._f9DragButton = 0;
   }, true);
-  canvas.addEventListener('mousemove', (e) => {
+  window.addEventListener('mousemove', (e) => {   // 🧹 FIX: window (ne canvas) → drag tęsiasi ir už lauko
     // 🏰 HOVER WALL — pelė virš castle sienos → „taikinukas" (highlight + ⚔). Veikia solo IR PvP.
-    if (gameMode === 'adventure' && S && S.floor === 9 && typeof _f9WallAt === 'function') {
+    //   e.target===canvas → hover skaičiuojam TIK virš drobės (window-listener'is gauna ir kitus move'us).
+    if (gameMode === 'adventure' && S && S.floor === 9 && e.target === canvas && typeof _f9WallAt === 'function') {
       try {
         const _hp = _clientToCanvasXY(e.clientX, e.clientY);
         const _hmx = _hp.x / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _hmy = _hp.y / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
@@ -4511,20 +4520,21 @@ function _f9InstallDragHandlers() {
           sx2: p.sx, sy2: p.sy,
         };
       } else {
-        // 🖐️ DRAG-TO-PAN — kamera 1:1 seka pelę (grab-and-drag). Delta canvas-px → world (/zoom).
+        // 🖐️ DRAG-TO-PAN — kamera 1:1 seka pelę (grab-and-drag, kaip telefone). Delta canvas-px → world (/zoom).
         const _z = (typeof _f9WorldZoom === 'function' ? _f9WorldZoom() : 1) || 1;
         if (S.cam && window._f9DragCamStart) {
           S.cam.tx = window._f9DragCamStart.x - (p.sx - window._f9DragStart.sx) / _z;
           S.cam.ty = window._f9DragCamStart.y - (p.sy - window._f9DragStart.sy) / _z;
-          window._f9MouseDragPan = true;
-          window._f9CamFree = true;
-          S._camManualLock = true;
+          window._f9MouseDragPan = true;      // updateCamera → SNAP (1:1) + edge-pan OFF kol tempiam
+          window._f9CamFree = true;           // 🖐️ user perėmė kamerą → PvP _centerCam NEperrašo (laisva kamera)
+          S._camManualLock = true;            // sustabdom auto-follow (laisva kamera)
+          window._f9RightDragPanned = true;   // 🧹 FIX: pažymim pan JAU dabar (ne tik mouseup) → contextmenu NIEKADA neišduos komandos po pan'o, nesvarbu event tvarka
           try { canvas.style.cursor = 'grabbing'; } catch (_) {}
         }
       }
     }
   });
-  canvas.addEventListener('mouseup', (e) => {
+  window.addEventListener('mouseup', (e) => {   // 🧹 FIX: window (ne canvas) → atleidus UŽ lauko gestas visada užsibaigia+resetinasi
     // Solo info popup vilkimo pabaiga — persist + click suppress
     if (window._f9InfoPanel && window._f9InfoPanel.drag) {
       window._f9InfoPanel.drag = null;
@@ -4548,8 +4558,8 @@ function _f9InstallDragHandlers() {
       const camY = S.cam ? S.cam.y : 0;
       const r = window._f9DragRect;
       // 🔍 07-18 FIX (user: box-select nebeveikia priartinus): rect canvas-px → world PRIVALO /zoom (kaip klik/hover
-      //   :4406/:4418 ir visos kitos konversijos). Priartinęs (wheel-zoom / touch 0.7) marquee pagaudavo NE tą
-      //   world-regioną → nepažymėdavo nieko. zoom=1 → nepakitę (÷1).
+      //   :4406/:4418 ir visos kitos konversijos). Be to priartinęs (wheel-zoom / touch 0.7) marquee pagaudavo
+      //   NE tą world-regioną → nepažymėdavo nieko. zoom=1 → nepakitę (÷1).
       const _z = (typeof _f9WorldZoom === 'function' ? _f9WorldZoom() : 1) || 1;
       const wx1 = Math.min(r.sx1, r.sx2) / _z + camX;
       const wy1 = Math.min(r.sy1, r.sy2) / _z + camY;
@@ -4581,14 +4591,27 @@ function _f9InstallDragHandlers() {
       }
       window._f9DragJustEnded = true;
     }
-    if (window._f9DragActive && window._f9DragMode === 'pan') window._f9RightDragPanned = true;   // 🖱️ dešinys-drag panino → nuslopinam contextmenu komandą
+    if (window._f9DragActive && window._f9DragMode === 'pan') window._f9RightDragPanned = true;   // 🖱️ dešinys-drag panino → nuslopinam contextmenu komandą (nekomanduoja)
     window._f9DragStart = null;
     window._f9DragActive = false;
     window._f9DragRect = null;
     window._f9DragButton = 0;
+    window._f9DragMode = null;   // 🧹 FIX: nebelieka stale mode (kitas kairys-drag „tik paslinkdavo kamerą")
     window._f9MouseDragPan = false;
     try { canvas.style.cursor = ''; } catch (_) {}
   });
+
+  // 🧹 FIX (07-18): jei gestas nutrūksta NE ant canvas (blur / alt-tab / wallet popup pavagia fokusą /
+  //   pointercancel) — pilnas drag būsenos reset, kad valdymas neužstrigtų (kamera „priklijuota" prie pelės,
+  //   phantom marquee). Be šito užstrigusi būsena maitino orphaned vėliavas → „kartais nebeveikia".
+  function _f9ResetDragState() {
+    window._f9DragStart = null; window._f9DragActive = false; window._f9DragRect = null;
+    window._f9DragMode = null; window._f9DragButton = 0; window._f9MouseDragPan = false;
+    try { if (canvas) canvas.style.cursor = ''; } catch (_) {}
+  }
+  window.addEventListener('blur', _f9ResetDragState);
+  window.addEventListener('pointercancel', _f9ResetDragState);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) _f9ResetDragState(); });
 
   // ── F10 (home) MOBILE touch-pan: tempi pirštu → kamera juda, gali laisvai tyrinėti home ──
   // Izoliuota: tik mobile + tik floor 10. Naudoja esamą S.cam.tx/ty + _camManualLock (kaip edge-pan).
@@ -4640,6 +4663,7 @@ function _f9InstallDragHandlers() {
     const TH = 9;
     canvas.addEventListener('touchstart', (e) => {
       if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
+      window._f9DragJustEnded = false; window._f9RightDragPanned = false;   // 🧹 FIX: orphanas nesuvalgo kitos komandos
       if (e.touches.length >= 2) {
         const t0 = e.touches[0], t1 = e.touches[1];
         clearTimeout(tLongT);
@@ -4664,6 +4688,28 @@ function _f9InstallDragHandlers() {
         tPopupOff = { dx: p.sx - ipr.panel.x, dy: p.sy - ipr.panel.y };
         e.preventDefault();
         return;
+      }
+      // 📱 07-18 grupės mygtukų HOLD (~0.5s) = SAVE dabartinę selekciją į G1/G2; trumpas TAP = recall (per click
+      //   dispatcher). NE preventDefault — kad TAP vis tiek generuotų synthetic click recall'ui; save praryja tą
+      //   click per _f9DragJustEnded (touchend).
+      if (_f9TouchBtnRects) {
+        let _gb = null;
+        for (const _b of _f9TouchBtnRects) {
+          if ((_b.id === 'g1' || _b.id === 'g2') && p.sx >= _b.x && p.sx <= _b.x + _b.w && p.sy >= _b.y && p.sy <= _b.y + _b.h) { _gb = _b; break; }
+        }
+        if (_gb) {
+          tMode = 'btnhold'; window._f9BtnHoldSaved = false;
+          tStart = { sx: p.sx, sy: p.sy, clientX: t.clientX, clientY: t.clientY };
+          const _gid = _gb.id === 'g1' ? '1' : '2';
+          clearTimeout(tLongT);
+          tLongT = setTimeout(() => {
+            if (tMode !== 'btnhold') return;
+            window._f9BtnHoldSaved = true;
+            try { if (navigator.vibrate) navigator.vibrate(25); } catch (_) {}
+            if (typeof _f9MobileSaveGroup === 'function') _f9MobileSaveGroup(_gid);
+          }, 450);
+          return;
+        }
       }
       tMode = 'maybe';
       tStart = { sx: p.sx, sy: p.sy, clientX: t.clientX, clientY: t.clientY };
@@ -4712,6 +4758,13 @@ function _f9InstallDragHandlers() {
       }
       const t = e.touches[0];
       if (!t) return;
+      if (tMode === 'btnhold') {
+        // 📱 nuslydo nuo grupės mygtuko → atšaukiam save (nei save, nei recall)
+        if (tStart && (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH)) {
+          clearTimeout(tLongT); tMode = null; window._f9BtnHoldSaved = false;
+        }
+        return;
+      }
       if (tMode === 'popup' && window._f9InfoPanel) {
         const p = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
         window._f9InfoPanel.x = p.sx - tPopupOff.dx;
@@ -4743,6 +4796,14 @@ function _f9InstallDragHandlers() {
     canvas.addEventListener('touchend', (e) => {
       clearTimeout(tLongT);
       if (!(gameMode === 'adventure' && S && S.floor === 9)) { tMode = null; return; }
+      if (tMode === 'btnhold') {
+        // HOLD jau išsaugojo → _f9DragJustEnded praryja ateinantį synthetic click (kad NErecall'intų).
+        // Jei atleista anksčiau (TAP) → NEpraryjam → click dispatcher recall'ina grupę.
+        if (window._f9BtnHoldSaved) window._f9DragJustEnded = true;
+        window._f9BtnHoldSaved = false;
+        tMode = null;
+        return;
+      }
       if (tMode === 'longfired') {
         // long-press komanda jau išduota per contextmenu — synthetic click NEturi dar ir move'int
         window._f9DragJustEnded = true;
@@ -4767,7 +4828,7 @@ function _f9InstallDragHandlers() {
       }
       tMode = null;   // paprastas tap — leidžiam synthetic click (komandos per click handler)
     }, { passive: false });
-    canvas.addEventListener('touchcancel', () => { clearTimeout(tLongT); tMode = null; window._f9DragRect = null; }, { passive: true });
+    canvas.addEventListener('touchcancel', () => { clearTimeout(tLongT); tMode = null; window._f9BtnHoldSaved = false; window._f9DragRect = null; }, { passive: true });
   })();
 }
 if (typeof setInterval !== 'undefined') {
@@ -4784,6 +4845,23 @@ if (typeof setInterval !== 'undefined') {
 window._f9CtrlGroups = window._f9CtrlGroups || {};
 function _f9SetToast(text) {
   window._f9Toast = { text, until: performance.now() + 1500 };
+}
+// 📱 07-18 MOBILE CONTROL-GRUPĖS (Yadyy Ace prašymas: „pažymėti unitus → grupė"). Naudoja TĄ PATĮ
+//   window._f9CtrlGroups kaip desktop Ctrl+1..6 → grupės bendros tarp klaviatūros ir touch. Save = HOLD ant
+//   G1/G2 mygtuko (touchstart timeris); recall = TAP (per click dispatcher). Multi-select = ＋PICK toggle.
+function _f9MobileSaveGroup(g) {
+  const sel = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [])
+    .filter(u => u && u.alive && typeof _f9IsAlly === 'function' && _f9IsAlly(u)).slice(0, _F9_SQUAD_CAP);
+  if (!sel.length) { _f9SetToast('Select units first (＋PICK)'); return; }
+  window._f9CtrlGroups[g] = sel.slice();
+  _f9SetToast('GROUP ' + g + ' saved (' + sel.length + ')');
+}
+function _f9MobileRecallGroup(g) {
+  const grp = ((window._f9CtrlGroups || {})[g] || []).filter(u => u && u.alive).slice(0, _F9_SQUAD_CAP);
+  if (!grp.length) { _f9SetToast('Group ' + g + ' empty — HOLD to save'); return; }
+  window._f9CtrlGroups[g] = grp;
+  window._f9SelectedSet = grp.slice(); window._f9Selected = grp[0]; window._f9ActiveSquad = null;
+  _f9SetToast('GROUP ' + g + ' (' + grp.length + ')');
 }
 document.addEventListener('keydown', (e) => {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
@@ -4870,7 +4948,7 @@ document.addEventListener('keydown', (e) => {
       for (const u of _selNow) { cgx += ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL; cgy += ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL; }
       cgx /= _selNow.length; cgy /= _selNow.length;
       S.cam.tx = cgx - canvas.width / 2; S.cam.ty = cgy - canvas.height / 2; S._camManualLock = true;
-      window._f9CamFree = false;   // 🖐️ double-tap grupės [1-6] = grąžinam „follow"
+      window._f9CamFree = false;   // 🖐️ double-tap grupės [1-6] = grąžinam „follow" (kamera vėl seka pažymėtus)
     }
     e.preventDefault(); e.stopImmediatePropagation();
     return;
@@ -5214,36 +5292,61 @@ function _drawF9UnitHpBars() {
 let _f9TouchBtnRects = null;
 function _drawF9TouchButtons() {
   _f9TouchBtnRects = null;
+  window._f9DpadRects = null;
   if (!window._f9TouchInstalled) return;
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
   if (typeof ctx === 'undefined' || !ctx || typeof canvas === 'undefined' || !canvas) return;
   const v = (typeof _getVisibleCanvasRect === 'function')
     ? _getVisibleCanvasRect()
     : { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  // 📱 07-18: supaprastintas mobile combat rinkinys. ATK/A-MV/STOP auto-pažymi visą armiją. ＋PICK = multi-select
+  //   režimas (tap unitus = add/remove); G1/G2 = control-grupės (TAP=recall, HOLD ~0.5s=save dabartinę selekciją).
+  // 📱 07-25 (žaidėjo prašymas „2 buttons for attack — one for structures and one for mobs"): ATK išskaidytas į
+  //   ⚔️MOBS (priešų unitai) ir 🏰WALL (sienos/vartai = siege). Telefone long-press right-click buvo vienintelis
+  //   kelias siege'inti — dabar tai atskiras mygtukas su snap'u į artimiausią sienos celę.
+  const _grpCount = (g) => ((window._f9CtrlGroups || {})[g] || []).filter(u => u && u.alive).length;
+  const _g1n = _grpCount('1'), _g2n = _grpCount('2');
+  const _homeOwn = !!(window.__f9HomeActive && !window.__f9RaidActive);   // savo pilis → savų sienų negriaunam
+  const _wallsUp = !_homeOwn && Array.isArray(S._f9Walls) && S._f9Walls.some(w => w && w.alive);
   const btns = [
-    { id: 'amove',  label: '⚔ A-MV',  active: !!window._f9AMoveArm },
-    { id: 'hold',   label: '🛡 HOLD',  active: false },
-    { id: 'patrol', label: '🚩 PTRL',  active: !!window._f9PatrolArm },
-    { id: 'stop',   label: 'STOP',    active: false },
+    { id: 'attack', label: '⚔️ MOBS', active: !!window._f9AttackArm },   // paspaudi → bakstelėk priešą → focus-fire (target LOCK)
+    { id: 'siege',  label: '🏰 WALL', active: !!window._f9SiegeArm, dim: !_wallsUp },   // paspaudi → bakstelėk sieną → siege
+    { id: 'amove',  label: '🏃 A-MV', active: !!window._f9AMoveArm },     // attack-move į tašką
+    { id: 'stop',   label: '✋ STOP', active: false },                    // sustabdyti judėjimą/kovą
+    { id: 'pick',   label: window._f9MultiSelectMode ? '✓ PICK' : '＋ PICK', active: !!window._f9MultiSelectMode },   // multi-select toggle
+    { id: 'g1',     label: _g1n ? ('G1·' + _g1n) : 'G1', active: false, dim: !_g1n },   // TAP=recall / HOLD=save
+    { id: 'g2',     label: _g2n ? ('G2·' + _g2n) : 'G2', active: false, dim: !_g2n },
   ];
-  const bw = 78, bh = 40, gap = 10;
+  // 📱 07-25 ADAPTYVUS dydis: 7 mygtukų × 42px netilpdavo landscape telefone (v.h≈390) — suspaudžiam
+  //   aukštį/tarpą kol telpa į [viršus+40 .. apačia−100] juostą, tada clamp'inam į v.y+40.
+  const nB = btns.length;
+  let bh = 34, gap = 8;
+  const availH = Math.max(140, v.h - 150);
+  if ((bh + gap) * nB > availH) {
+    const per = availH / nB;
+    bh = Math.max(24, Math.floor(per * 0.82));
+    gap = Math.max(3, Math.floor(per - bh));
+  }
+  const bw = Math.max(58, Math.min(76, Math.floor(v.w * 0.20)));
   const bx = v.x + v.w - bw - 10;
-  let by = v.y + v.h - (bh + gap) * btns.length - 110;   // virš hint/bar zonos
+  let by = v.y + v.h - (bh + gap) * nB - 100;   // virš hint/bar zonos
+  if (by < v.y + 40) by = v.y + 40;
+  const fs = Math.max(10, Math.min(12, Math.round(bh * 0.36)));
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const rects = [];
   for (const b of btns) {
-    ctx.globalAlpha = 0.82;
-    ctx.fillStyle = b.active ? '#7a5a20' : '#3a2614';
+    ctx.globalAlpha = b.dim ? 0.5 : 0.82;
+    ctx.fillStyle = b.active ? '#7a5a20' : (b.dim ? '#2c2010' : '#3a2614');
     _f9RoundRect(bx, by, bw, bh, 8);
     ctx.fill();
-    ctx.strokeStyle = b.active ? '#ffcf5c' : '#8a6a2e';
+    ctx.strokeStyle = b.active ? '#ffcf5c' : (b.dim ? '#6a542a' : '#8a6a2e');
     ctx.lineWidth = b.active ? 2 : 1.5;
     _f9RoundRect(bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, 7);
     ctx.stroke();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = b.active ? '#ffe97a' : '#f5e6c3';
-    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillStyle = b.active ? '#ffe97a' : (b.dim ? '#b8a888' : '#f5e6c3');
+    ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(b.label, bx + bw / 2, by + bh / 2 + 1);
@@ -5252,6 +5355,51 @@ function _drawF9TouchButtons() {
   }
   ctx.restore();
   _f9TouchBtnRects = rects;
+  _drawF9TouchDPad(v);
+}
+
+// 📱 07-25 KAMEROS D-PAD (žaidėjo prašymas „some arrows to move the camera") — kairys kraštas.
+//   Rodyklė LAIKOMA → kamera slenka tolygiai (piršto drag'as lieka, bet nebereikia „vilkti visą ekraną").
+//   Centras ⌖ = kamera šoka ant pažymėtų unitų — pagrindinis „kur mano kariai?" fix'as valdant kelias grupes.
+function _drawF9TouchDPad(v) {
+  const c = Math.max(30, Math.min(42, Math.floor(Math.min(v.w, v.h) * 0.105)));   // vienos celės kraštinė
+  const padW = c * 3;
+  const px = v.x + 8;
+  let py = v.y + v.h - padW - 96;                      // virš kortelių juostos
+  if (py < v.y + 40) py = v.y + 40;
+  const cells = [
+    { id: 'up',    dx: 0,  dy: -1, cx: 1, cy: 0, glyph: '▲' },
+    { id: 'left',  dx: -1, dy: 0,  cx: 0, cy: 1, glyph: '◀' },
+    { id: 'focus', dx: 0,  dy: 0,  cx: 1, cy: 1, glyph: '⌖' },
+    { id: 'right', dx: 1,  dy: 0,  cx: 2, cy: 1, glyph: '▶' },
+    { id: 'down',  dx: 0,  dy: 1,  cx: 1, cy: 2, glyph: '▼' },
+  ];
+  const held = window._f9DpadDir;
+  const rects = [];
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const cell of cells) {
+    const x = px + cell.cx * c, y = py + cell.cy * c;
+    const isFocus = cell.id === 'focus';
+    const isHeld = !isFocus && held && held.dx === cell.dx && held.dy === cell.dy;
+    ctx.globalAlpha = isHeld ? 0.92 : 0.62;
+    ctx.fillStyle = isHeld ? '#7a5a20' : (isFocus ? '#1e2a3a' : '#2a2014');
+    _f9RoundRect(x + 2, y + 2, c - 4, c - 4, 7);
+    ctx.fill();
+    ctx.strokeStyle = isHeld ? '#ffcf5c' : (isFocus ? '#5ad0e0' : '#8a6a2e');
+    ctx.lineWidth = isHeld ? 2 : 1.3;
+    _f9RoundRect(x + 2.5, y + 2.5, c - 5, c - 5, 6.5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = isHeld ? '#ffe97a' : (isFocus ? '#9de8f0' : '#e8d8b4');
+    ctx.font = 'bold ' + Math.round(c * 0.42) + 'px system-ui, sans-serif';
+    ctx.fillText(cell.glyph, x + c / 2, y + c / 2 + 1);
+    rects.push({ id: cell.id, dx: cell.dx, dy: cell.dy, x: x + 2, y: y + 2, w: c - 4, h: c - 4 });
+  }
+  ctx.restore();
+  window._f9DpadRects = rects;
 }
 
 // F9 hotkey hint + toast + armed A-move banner (screen-space)
@@ -10895,22 +11043,52 @@ function _f9MineDoWithdraw() {
 }
 window._f9MineDoWithdraw = _f9MineDoWithdraw;
 // Serveris grąžino voucherį → žaidėjas PATS pateikia claimReward TX (moka gas → PoD). Reuse submitFaucetClaim (tas pats RonkeReward).
+// ⛏️📱 07-23: voucher'is IŠKART persistinamas localStorage — mobile wallet app-switch dažnai reload'ina puslapį
+//   (RAM voucher'is dingdavo → pateikti nebeįmanoma, pot atrodė „dingęs" iki serverio 30min re-credit; LEAK LABS bug).
+//   Išsaugotas voucher'is → panelėj ⏳ PENDING banneris + RESUME mygtukas likusiam deadline langui.
 window._f9MineSubmitVoucher = async function (e) {
   const R = window._f9MineRenderIfOpen || function () {};
+  if (!e || !e.ok || !e.claim) { _f9MineWdBusy = false; _f9MineWdMsg = '⚠ ' + ((e && e.error) || 'Withdraw failed'); R(); return; }
+  try { localStorage.setItem('f9_minevoucher', JSON.stringify({ claim: e.claim, at: Date.now() })); } catch (_) {}
+  await _f9MineSubmitClaim(e.claim);
+};
+async function _f9MineSubmitClaim(claim) {
+  const R = window._f9MineRenderIfOpen || function () {};
   try {
-    if (!e || !e.ok || !e.claim) { _f9MineWdBusy = false; _f9MineWdMsg = '⚠ ' + ((e && e.error) || 'Withdraw failed'); R(); return; }
     if (!(window.Wallet && window.Wallet.submitFaucetClaim)) { _f9MineWdBusy = false; _f9MineWdMsg = '⚠ Wallet not ready'; R(); return; }
-    _f9MineWdMsg = '🔷 Confirm in your wallet to receive RONKE…'; R();
-    await window.Wallet.submitFaucetClaim(e.claim);   // claimReward TX (player pays gas); jei nenusėda — serveris re-credit'ins po deadline
+    _f9MineWdBusy = true; _f9MineWdMsg = '🔷 Confirm in your wallet to receive RONKE…'; R();
+    await window.Wallet.submitFaucetClaim(claim);   // claimReward TX (player pays gas); jei nenusėda — serveris re-credit'ins po deadline
+    try { localStorage.removeItem('f9_minevoucher'); } catch (_) {}
     _f9MineWdBusy = false; _f9MineWdMsg = '✅ Withdrawn! RONKE sent to your wallet.'; R();
     try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('mine_get'); } catch (_) {}   // šviežias pot
   } catch (err) {
     _f9MineWdBusy = false;
     var m = String((err && err.message) || err);
-    _f9MineWdMsg = /reject|denied|cancel/i.test(m) ? '⚠ Cancelled — pot kept, try again.' : ('⚠ ' + m.slice(0, 42));
+    var amt = Math.round(Number((claim && claim.amount) || 0) / 1e18);
+    // Pot JAU nurašytas serveryje (deduct prieš TX) — sakom tiesą: RESUME arba auto-return po deadline.
+    _f9MineWdMsg = /reject|denied|cancel/i.test(m)
+      ? ('⏳ Cancelled — ' + amt + ' RONKE is reserved for you. RESUME above, or it auto-returns to the mine ~30 min after the withdraw started.')
+      : ('⚠ ' + m.slice(0, 42) + ' — RESUME above to retry.');
     R();
   }
-};
+}
+// ⛏️📱 Išsaugotas (nepabaigtas) withdraw voucher'is → {claim,amt,expired,minLeft} | null. Pasibaigęs rodomas dar
+//   40 min (kol serverio re-credit grąžins pot), tada išvalomas. Kito wallet'o voucherio nerodom (shared device).
+function _f9MineStoredVoucher() {
+  try {
+    const raw = localStorage.getItem('f9_minevoucher');
+    if (!raw) return null;
+    const c = (JSON.parse(raw) || {}).claim;
+    if (!c || !c.signature || !c.deadline || !c.amount) { localStorage.removeItem('f9_minevoucher'); return null; }
+    try {
+      const my = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
+      if (my && String(c.player || '').toLowerCase() !== String(my).toLowerCase()) return null;
+    } catch (_) {}
+    const msLeft = Number(c.deadline) * 1000 - Date.now();
+    if (msLeft < -40 * 60 * 1000) { localStorage.removeItem('f9_minevoucher'); return null; }
+    return { claim: c, amt: Math.round(Number(c.amount) / 1e18), expired: msLeft <= 0, minLeft: Math.max(0, Math.ceil(msLeft / 60000)) };
+  } catch (_) { return null; }
+}
 function _f9MinePanelStats() {
   if (!_f9MinePanelEl) return;
   const d = _f9MineData();
@@ -10925,6 +11103,9 @@ function _f9MinePanelStats() {
   const full = d.cap > 0 && est >= d.cap - 0.5;
   const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
   const cm = d.claimMin || 500;
+  // ⛏️📱 Nepabaigtas withdraw (voucher'is localStorage) — pot jau nurašytas serveryje, rodom PENDING + RESUME
+  const pend = _f9MineStoredVoucher();
+  const pendActive = !!(pend && !pend.expired);
   const step = d.siegeStep || 200;   // 🗡 kas kiek RONKE reikia PvP mūšio
   const hospHint = (d.hosp || 0) > 0 ? ' <span style="color:#e08a4a;">(' + d.hosp + ' in hospital)</span>' : '';
   // reikalavimo eilutė: ✓/○ + tekstas + cur/need; jei NEĮVYKDYTA → aiški veiksmų eilutė žemiau (kaip įsigyti)
@@ -10989,6 +11170,10 @@ function _f9MinePanelStats() {
       '</div>' +
       // 🛡 skydas — atsigavimo langas (kasimas ×0.5); rankinis REMOVE grąžina pilną kasimą + ekspoziciją
       (d.shielded ? '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;background:rgba(68,170,255,0.1);border:1px solid #2a5a8a;border-radius:6px;padding:9px 12px;"><span style="font-size:16px;">🛡</span><span style="flex:1;font-size:9px;color:#7ab8e8;line-height:1.5;">SHIELDED · mining ×0.5 · ' + Math.max(0, Math.ceil((d.shieldUntil - Date.now()) / 60000)) + 'm left<br><span style="color:#5a7a9a;">Recovery window — heal &amp; rebuild your field, or remove to resume full mining (and exposure).</span></span><button id="f9mine-unshield" style="font-family:inherit;font-size:9px;background:rgba(232,93,93,0.15);color:#e88;border:1px solid #a55;border-radius:5px;padding:7px 10px;cursor:pointer;white-space:nowrap;">REMOVE</button></div>' : '') +
+      // ⛏️📱 PENDING withdraw banneris — voucher'is išgyvena reload'ą; RESUME kol deadline, po jo — auto-return info
+      (!pend ? '' : (pend.expired
+        ? '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;background:rgba(255,207,92,0.08);border:1px solid #6a4a18;border-radius:6px;padding:9px 12px;"><span style="font-size:16px;">⏳</span><span style="flex:1;font-size:9px;color:#d4b06a;line-height:1.6;"><b>' + pend.amt + ' RONKE withdrawal expired</b> — it returns to your mine automatically within ~30 min of expiry. (If the RONKE already arrived in your wallet, ignore this.)</span></div>'
+        : '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;background:rgba(255,207,92,0.1);border:1px solid #7a5a1e;border-radius:6px;padding:9px 12px;"><span style="font-size:16px;">⏳</span><span style="flex:1;font-size:9px;color:#ffcf5c;line-height:1.6;"><b>' + pend.amt + ' RONKE withdrawal pending</b> — already deducted from the mine, waiting for your wallet confirmation (' + pend.minLeft + 'm left). Not confirmed in time &rarr; auto-returns to the mine.</span><button data-act="resume" style="font-family:inherit;font-size:9px;background:#ffcf5c;color:#1a1208;border:1px solid #ffcf5c;border-radius:5px;padding:8px 11px;cursor:pointer;white-space:nowrap;">💸 RESUME</button></div>')) +
       (!d.canWithdraw ? '<div style="font-size:9px;color:#d49a2a;text-align:center;margin:3px 0 10px;background:rgba(255,207,92,0.07);border:1px solid #6a4a18;border-radius:6px;padding:8px;line-height:1.6;">' + (d.live ? '⛏️ Server-tracked mining (anti-cheat). On-chain withdraw to your wallet activates soon.' : (d.clientOnly ? '⛏️ Live estimate — grows as the worker delivers. On-chain withdraw activates once the server is wired.' : '⛏️ Mining goes live once the server is wired — the eligibility below is real.')) + '</div>' : '') +
       '<div style="font-size:10px;color:#8a9aaa;letter-spacing:0.5px;margin:8px 0 3px;">MINING NEEDS ONE PATH:</div>' +
       card(aOk, 'PATH A', req(aRv, 'RonkeVerse NFT', d.rv || 0, MR.aRv, abtn('buy-rv', '🛒 GET RONKEVERSE NFT ↗')) + req(aReg, 'Units on castle field' + hospHint, fieldN, MR.aField, deployHint)) +
@@ -11003,11 +11188,11 @@ function _f9MinePanelStats() {
   if (ub) ub.onclick = function () { try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('shield_remove'); } catch (_) {} window.__f9ShieldUntil = 0; _f9MinePanelStats(); };
   const btn = _f9MinePanelEl.querySelector('#f9mine-claim');
   if (btn) {
-    const canClaim = d.canWithdraw && quietHome && ready && !_f9MineWdBusy;   // withdraw tik kai mwd + ramūs namai + ≥claimMin
+    const canClaim = d.canWithdraw && quietHome && ready && !_f9MineWdBusy && !pendActive;   // withdraw tik kai mwd + ramūs namai + ≥claimMin + nėra pending voucherio (serveris atmestų)
     btn.disabled = !canClaim;
     if (_f9MineWdBusy) { btn.style.cssText = _f9MineBtnCss + 'background:#333;color:#aaa;border-color:#555;cursor:default;'; btn.textContent = '🔷 CONFIRM IN WALLET…'; }
     else if (canClaim) { btn.style.cssText = _f9MineBtnCss + 'background:#ffcf5c;color:#1a1208;border-color:#ffcf5c;cursor:pointer;'; btn.textContent = '💸 WITHDRAW ' + Math.min(est, 1000).toFixed(0) + ' RONKE'; }
-    else { btn.style.cssText = _f9MineBtnCss + 'background:#333;color:#777;border-color:#555;cursor:not-allowed;'; btn.textContent = !d.canWithdraw ? '⛏️ COMING SOON' : (ready ? '💸 WITHDRAW AT HOME ONLY' : '🔒 WITHDRAW AT ' + cm); }
+    else { btn.style.cssText = _f9MineBtnCss + 'background:#333;color:#777;border-color:#555;cursor:not-allowed;'; btn.textContent = !d.canWithdraw ? '⛏️ COMING SOON' : (pendActive ? '⏳ PENDING — RESUME ABOVE' : (ready ? '💸 WITHDRAW AT HOME ONLY' : '🔒 WITHDRAW AT ' + cm)); }
     btn.onclick = canClaim ? function () { _f9MineDoWithdraw(); } : null;
   }
   if (_f9MineWdMsg) { const ml = _f9MinePanelEl.querySelector('#f9mine-wdmsg'); if (ml) ml.textContent = _f9MineWdMsg; }
@@ -11027,6 +11212,8 @@ function _f9MineAction(act) {
   if (act === 'buy-rv') { try { window.open(_F9_MARKET_RONKE, '_blank'); } catch (_) {} }
   else if (act === 'market') { _f9CloseMinePanel(); try { if (typeof _f9ToggleMarketPanel === 'function') _f9ToggleMarketPanel(); } catch (_) {} }
   else if (act === 'train') { _f9CloseMinePanel(); try { if (window.NFTBarracksModal && window.NFTBarracksModal.open) window.NFTBarracksModal.open(); } catch (_) {} }
+  // ⛏️📱 RESUME — pateikiam išsaugotą (reload'ą išgyvenusį) voucher'į; kontrakto usedNonces saugo nuo dublio
+  else if (act === 'resume') { const p = _f9MineStoredVoucher(); if (p && !p.expired && !_f9MineWdBusy) _f9MineSubmitClaim(p.claim); }
 }
 window._f9MineRenderIfOpen = function () { if (_f9MinePanelEl) _f9MinePanelStats(); };
 // ⚔️🛡 DUTY režimo keitimas — siunčiam serveriui; jis validuoja (ne kovoje) + atsako duty_result + cemetery.
@@ -11376,6 +11563,72 @@ function _f9DrawHospital() {
   if (window._dbgHit || window._f9DebugOn) {
     ctx.save(); ctx.fillStyle = 'rgba(40,160,255,0.16)';
     ctx.fillRect((69.5 + 0.5 - 1.0) * C, (17.6 + 0.5 - 0.5) * C, 2.0 * C, 1.0 * C);
+    ctx.restore();
+  }
+}
+// 🦍 07-24: BLUE GORILLA idle animacija prie ligoninės (8 kadrų horizontal strip, 640×640/kadras).
+//    Vieta = ligoninės (69.5, 17.6) centras, pakelta 30px į viršų (user). Grynas dekoras.
+let _f9GorillaImg = null;
+const _F9_GORILLA = { frames: 8, fps: 8, raise: 350, offX: 80 };   // raise=ekrano px aukštyn, offX=px dešinėn (tuninama)
+function _f9DrawGorilla() {
+  if (typeof S === 'undefined' || !S || S.floor !== 9 || typeof ctx === 'undefined') return;
+  if (!window._f9pvpLive) return;   // tik PvP pilies scenoje (kaip ligoninė)
+  if (!_f9GorillaImg) { _f9GorillaImg = new Image(); _f9GorillaImg.src = 'blue_gorilla_idle.png'; }
+  const img = _f9GorillaImg;
+  if (!(img.complete && img.naturalWidth > 0)) return;
+  const C = CELL;
+  const FR = _F9_GORILLA.frames, fw = img.naturalWidth / FR, fh = img.naturalHeight;
+  const t = (window.performance ? performance.now() : Date.now());
+  const frame = Math.floor(t / (1000 / _F9_GORILLA.fps)) % FR;
+  const bw = C * 2.0, bh = bw * (fh / fw);          // ~2 celės platus
+  // 🦍 offsetai = EKRANO px (÷zoom → world px), kad „55px" atitiktų tai, ką matai ekrane
+  const z = (typeof _f9WorldZoom === 'function') ? (_f9WorldZoom() || 1) : 1;
+  const cxp = (69.5 + 0.5) * C + _F9_GORILLA.offX / z;       // ligoninės centras + dešinėn
+  const byp = (17.6 + 0.5 + 0.55) * C - _F9_GORILLA.raise / z;   // ligoninės apačia, pakelta aukštyn
+  const x = cxp - bw / 2, y = byp - bh;
+  // 🖱️ hover → baltas siluetinis kontūras (kaip ligoninė/kapinės/unitai)
+  let hover = false;
+  if (typeof _canvasMx === 'number' && _canvasMx >= 0 && S.cam) {
+    const wmx = _canvasMx / z + S.cam.x, wmy = _canvasMy / z + S.cam.y;
+    hover = wmx >= x && wmx <= x + bw && wmy >= y && wmy <= y + bh;
+  }
+  if (hover && typeof _silhouetteTintSheet === 'function') {
+    const sil = _silhouetteTintSheet(img, '#ffffff');   // viso sheet baltas siluetas (cache'inamas)
+    if (sil) {
+      const OL = Math.max(2, bw * 0.02);   // kontūro storis (world px, ~2% pločio)
+      const offs = [[-OL, 0], [OL, 0], [0, -OL], [0, OL], [-OL, -OL], [OL, -OL], [-OL, OL], [OL, OL]];
+      for (const o of offs) ctx.drawImage(sil, frame * fw, 0, fw, fh, x + o[0], y + o[1], bw, bh);   // dabartinio kadro siluetas 8× → žiedas
+    }
+  }
+  ctx.drawImage(img, frame * fw, 0, fw, fh, x, y, bw, bh);   // gorila viršuj → paliekam tik baltą žiedą
+  window._f9GorillaBounds = { x: x, y: y, w: bw, h: bh };   // klik hitbox (→ RonkePong)
+  if (hover) {
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const fs = Math.round(C * 0.28), pad = C * 0.11;
+    ctx.font = 'bold ' + fs + 'px Verdana, sans-serif';
+    // ▶ PLAY jei nemokamas prieinamas; kitaip countdown (mirksintis „:")
+    const _freeMs = (window.RonkePong && window.RonkePong.freeInMs) ? window.RonkePong.freeInMs() : 0;
+    let label;
+    if (_freeMs <= 0) label = '▶ PLAY';
+    else {
+      const _s = Math.ceil(_freeMs / 1000), _h = Math.floor(_s / 3600), _m = Math.floor((_s % 3600) / 60);
+      const _col = (Math.floor(Date.now() / 500) % 2) ? ':' : ' ';
+      label = _h > 0 ? (_h + _col + ('0' + _m).slice(-2)) : (_m + 'm');
+    }
+    const tw = ctx.measureText(label).width;
+    const pw = tw + pad * 2, ph = fs + pad, pxc = cxp, pyc = y + bh * 0.14 - ph;   // virš galvos
+    const rr = ph * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(pxc - pw / 2 + rr, pyc - ph / 2);
+    ctx.arcTo(pxc + pw / 2, pyc - ph / 2, pxc + pw / 2, pyc + ph / 2, rr);
+    ctx.arcTo(pxc + pw / 2, pyc + ph / 2, pxc - pw / 2, pyc + ph / 2, rr);
+    ctx.arcTo(pxc - pw / 2, pyc + ph / 2, pxc - pw / 2, pyc - ph / 2, rr);
+    ctx.arcTo(pxc - pw / 2, pyc - ph / 2, pxc + pw / 2, pyc - ph / 2, rr);
+    ctx.closePath();
+    ctx.fillStyle = '#ffcf5c'; ctx.fill();
+    ctx.lineWidth = Math.max(2, C * 0.04); ctx.strokeStyle = '#3d2817'; ctx.stroke();
+    ctx.fillStyle = '#3d2817'; ctx.fillText(label, pxc, pyc + 1);
     ctx.restore();
   }
 }
@@ -23466,7 +23719,9 @@ function drawForegroundDecorations() {
     } else {
       // House3/Castle hover — draw outline BEFORE sprite so only kontūras išlieka matomas.
       // Kai popup atidarytas, outline neberodomas (ir UX aiškesnis, ir išvengiama 8× filter-drawImage cost per frame).
-      const _hoverable = (name === 'House3' || name === 'Castle' || name === 'Barracks') && !_housePopupOpen && !_stonePopupOpen;
+      // 🚱 House3 (faucet namukas) IŠIMTAS iš hover — faucet uždarytas (2026-07-14), klikas = no-op.
+      //   Namukas = grynas dekoras: jokio paryškinimo, kad neatrodytų paspaudžiamas.
+      const _hoverable = (name === 'Castle' || name === 'Barracks') && !_housePopupOpen && !_stonePopupOpen;
       const _hov3 = _hoverable &&
                     _worldMx >= bx && _worldMx <= bx + bw &&
                     _worldMy >= by && _worldMy <= by + bh;
@@ -33472,6 +33727,7 @@ function loop(now) {
   // 🏥 LIGONINĖ + 🛒 MARKETAS — FOREGROUND (07-12 user: unitai lipo ant viršaus be kontūrų). Depth loop
   //    žemiau perpiešia priekinius unitus virš / už esančius baltu kontūru. PRIEŠ burbulą (burbulas viršuje).
   if (S.floor === 9 && typeof _f9DrawHospital === 'function') { try { _f9DrawHospital(); } catch (_) {} }
+  if (S.floor === 9 && typeof _f9DrawGorilla === 'function') { try { _f9DrawGorilla(); } catch (_) {} }   // 🦍 blue gorilla idle prie ligoninės
   if (S.floor === 9 && typeof _f9DrawMarket === 'function') { try { _f9DrawMarket(); } catch (_) {} }
   if (typeof _f9DrawHospBubble === 'function') _f9DrawHospBubble();   // 💬 ligoninės burbulas VIRŠ unitų
   if (typeof _drawF9TouchButtons === 'function') _drawF9TouchButtons();   // 📱 touch mygtukai VIRŠ pastatų (perkelta 07-03)
@@ -33619,7 +33875,7 @@ function _updateCanvasCursor() {
     // --- Buildings / castle / house / stone (world-space) ---
     if (!wantPointer && (inWorld(_castleBounds)
       || inWorld(_barracksBounds)
-      || inWorld(_house3Bounds)
+      // 🚱 House3 (faucet namukas) IŠIMTAS — neberodo pointer kursoriaus (faucet uždarytas, klikas no-op)
       || inWorld(_stoneBounds)
       || inWorld(_ciucelaBounds)
       || inWorld(_castleBtnBounds)
@@ -34719,7 +34975,7 @@ function updateCamera() {
   const _vpTop  = vpOffsetY, _vpBot   = vpOffsetY + vpH;
   // MOBILE F9: edge-pan IŠJUNGTAS — synthetic click po tap'o palieka _canvasMx užstrigusį
   // prie krašto → kamera amžinai dreifuoja ir kovoja su piršto pan'u (2026-06-12).
-  const _edgePanOk = (S.floor !== 9);   // 🖐️ F9 RTS scena (2026-07-15 user): edge-scroll IŠJUNGTAS — kamera valdoma TIK grab-drag.
+  const _edgePanOk = (S.floor !== 9);   // 🖐️ F9 RTS scena (2026-07-15 user): edge-scroll IŠJUNGTAS — kamera valdoma TIK grab-drag. Kiti aukštai — kaip anksčiau.
   if (_edgePanOk && typeof _canvasMx === 'number' && _canvasMx >= _vpLeft - 4 && _canvasMx <= _vpRight + 4
       && _canvasMy >= _vpTop - 4 && _canvasMy <= _vpBot + 4 && !_overDeployPanel) {
     const _dl = _canvasMx - _vpLeft;
@@ -41477,10 +41733,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (gameMode === 'adventure' && S && S.floor === 9) {
       e.preventDefault();
       if (window._f9RightDragPanned) { window._f9RightDragPanned = false; return; }   // 🖱️ dešinys-DRAG = kameros pan, ne komanda
+
       // 🏗️ MANAGE MODE — kai tvarkai pilį (panelė atidaryta) ar statai bokštą: dešinys klikas NEjudina unitų
       //    (kitaip jie vaikšto kur klikini upgrade'indamas). Placement metu — atšaukia statymą.
       if (window._f9TowerPlaceMode) { if (typeof _f9ExitTowerPlaceMode === 'function') _f9ExitTowerPlaceMode(); return; }
       if (window._f9CastleSelected || window._f9BarracksSelected || window._f9StatsSelected) return;
+      // 📱 07-18: telefone (long-press = right-click) tuščia selekcija → auto-pažymim visus valdomus, kad
+      //   long-press ataka/siege/teleportas veiktų. Desktop nepaliestas (reikalauja rankinio pažymėjimo).
+      if ((!window._f9Selected || !window._f9Selected.alive) && window._f9TouchInstalled && typeof _f9SelectAllControllable === 'function') _f9SelectAllControllable();
       const sel = window._f9Selected;
       if (!sel || !sel.alive) return;
       const _p = _clientToCanvasXY(e.clientX, e.clientY);   // cover-aware
@@ -41492,7 +41752,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Hit detect: ar click'as ant priešo?
       let hitEnemy = null;
       {
-        let bestD = 0.6;
+        let bestD = window._f9TouchInstalled ? 1.1 : 0.6;   // 📱 07-18: didesnis pataikymo spindulys touch'e (piršto netikslumas)
         for (const en of S.units || []) {
           if (!en || !en.alive || !_f9IsEnemy(en)) continue;
           const ex = (en.rx !== undefined) ? en.rx : en.x;
@@ -41508,6 +41768,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const now = performance.now();
       window._f9AMoveArm = false;   // right-click atšaukia armed A-move (RTS konvencija)
+      window._f9AttackArm = false;  // ir armed ATTACK (mobile ⚔️ATK)
       window._f9RegroupArm = false; // right-click atšaukia ir armed REGROUP
       // ── Engage target: visi pasirinkti unit'ai puola tą patį priešą ──
       if (hitEnemy) {
@@ -41679,23 +41940,33 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_f9TouchBtnRects) {
         for (const b of _f9TouchBtnRects) {
           if (_cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h) {
-            if (b.id === 'amove') {
+            // 📱 07-18: ATK/A-MV = arm (mutually exclusive); STOP = veiksmas iškart. Visi auto-pažymi visą armiją.
+            if (b.id === 'attack') {
+              window._f9AttackArm = !window._f9AttackArm;
+              if (window._f9AttackArm) { window._f9AMoveArm = false; window._f9PatrolArm = false; window._f9MultiSelectMode = false; }
+              if (typeof _f9SetToast === 'function') _f9SetToast(window._f9AttackArm ? '⚔️ ATTACK: tap enemy' : 'Attack cancelled');
+            } else if (b.id === 'amove') {
               window._f9AMoveArm = !window._f9AMoveArm;
-              if (typeof _f9SetToast === 'function') {
-                _f9SetToast(window._f9AMoveArm ? 'A-MOVE: tap target point' : 'A-MOVE cancelled');
-              }
-            } else if (b.id === 'hold') {
-              if (typeof _f9ToggleHoldCommand === 'function') _f9ToggleHoldCommand();
-            } else if (b.id === 'patrol') {
-              if (typeof _f9PatrolButtonPress === 'function') _f9PatrolButtonPress();
+              if (window._f9AMoveArm) { window._f9AttackArm = false; window._f9MultiSelectMode = false; }
+              if (typeof _f9SetToast === 'function') _f9SetToast(window._f9AMoveArm ? '🏃 A-MOVE: tap point' : 'A-MOVE cancelled');
             } else if (b.id === 'stop') {
+              if ((!window._f9Selected || !window._f9Selected.alive) && typeof _f9SelectAllControllable === 'function') _f9SelectAllControllable();
               const sel = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
               for (const u of sel) {
                 if (typeof _f9ClearUnitOrder === 'function') _f9ClearUnitOrder(u);
                 u._f9Target = null;
                 u._f9Moving = false;
               }
-              if (sel.length && typeof _f9SetToast === 'function') _f9SetToast('STOP (' + sel.length + ')');
+              if (typeof _f9SetToast === 'function') _f9SetToast(sel.length ? '✋ STOP (' + sel.length + ')' : 'No units');
+            } else if (b.id === 'pick') {
+              // 📱 multi-select toggle: įjungus, tap ant unito prideda/pašalina iš selekcijos (žr. hitUnit šaką).
+              //   Įjungus PICK → nuimam ATK/A-MV arm (kad tap būtų vienareikšmis — tik selekcija).
+              window._f9MultiSelectMode = !window._f9MultiSelectMode;
+              if (window._f9MultiSelectMode) { window._f9AttackArm = false; window._f9AMoveArm = false; }
+              if (typeof _f9SetToast === 'function') _f9SetToast(window._f9MultiSelectMode ? '＋ PICK: tap units to add/remove' : 'PICK off');
+            } else if (b.id === 'g1' || b.id === 'g2') {
+              // 📱 TAP = recall grupę (HOLD=save apdorojamas touchstart'e; jei ką tik išsaugota → click praryjamas _f9DragJustEnded)
+              if (typeof _f9MobileRecallGroup === 'function') _f9MobileRecallGroup(b.id === 'g1' ? '1' : '2');
             }
             return;
           }
@@ -41751,6 +42022,29 @@ document.addEventListener('DOMContentLoaded', () => {
           } else if (typeof _f9IssueAttackMoveCommand === 'function') {
             _f9IssueAttackMoveCommand(selAM, txA, tyA);
           }
+        }
+        return;
+      }
+      // 📱⚔️ Armed ATTACK (mobile ⚔️ATK mygtukas) → šis tap = FOCUS-FIRE priešą po pirštu (target LOCK);
+      //    nepataikei į priešą → attack-move į tašką. Auto-pažymi visą armiją jei nieko nepažymėta.
+      if (window._f9AttackArm) {
+        window._f9AttackArm = false;
+        if ((!window._f9Selected || !window._f9Selected.alive) && typeof _f9SelectAllControllable === 'function') _f9SelectAllControllable();
+        const _selAtk = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(false) : [];
+        const txAt = mx / CELL - 0.5, tyAt = my / CELL - 0.5;
+        let hitEn = null, bestD = 1.2;   // didesnis pataikymo spindulys — piršto netikslumas
+        for (const en of (S.units || [])) {
+          if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+          const ex = (en.rx !== undefined) ? en.rx : en.x, ey = (en.ry !== undefined) ? en.ry : en.y;
+          const d = Math.hypot(txAt - ex, tyAt - ey);
+          if (d < bestD) { bestD = d; hitEn = en; }
+        }
+        if (hitEn && typeof _f9IssueAttackTargetCommand === 'function') {
+          _f9IssueAttackTargetCommand(_selAtk, hitEn, performance.now());
+          if (typeof _f9SetToast === 'function') _f9SetToast('⚔️ Attacking target');
+        } else if (txAt >= 0 && txAt < COLS - 1 && tyAt >= 0 && tyAt < ROWS - 1 && typeof _f9IssueAttackMoveCommand === 'function') {
+          _f9IssueAttackMoveCommand(_selAtk, txAt, tyAt);
+          if (typeof _f9SetToast === 'function') _f9SetToast('⚔️ Attack-move');
         }
         return;
       }
@@ -41935,6 +42229,14 @@ document.addEventListener('DOMContentLoaded', () => {
       //    arba tave puola (yra gyvų priešų lauke). Ramioje pilyje — pastatai klikinami įprastai.
       let _f9InCombat = !!window.__f9RaidActive;
       if (!_f9InCombat) { for (const _eu of (S.units || [])) { if (_eu && _eu.alive && typeof _f9IsEnemy === 'function' && _f9IsEnemy(_eu)) { _f9InCombat = true; break; } } }
+      // 🦍 RonkeGorilla kūnas — klik atidaro RonkePong (TIK ne kovoje)
+      if (!_f9InCombat && window._f9pvpLive && window._f9GorillaBounds) {
+        const _gg = window._f9GorillaBounds;
+        if (mx >= _gg.x && mx <= _gg.x + _gg.w && my >= _gg.y && my <= _gg.y + _gg.h) {
+          try { if (window.RonkePong && window.RonkePong.open) window.RonkePong.open(); } catch (_) {}
+          return;
+        }
+      }
       // 🏥 Ligoninės namukas — klik atidaro/uždaro panelę (prieš unit selekciją; TIK ne kovoje)
       if (!_f9InCombat && window._f9pvpLive && window._f9HospitalBounds) {
         const _hb = window._f9HospitalBounds;
@@ -41967,7 +42269,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const selSet = window._f9SelectedSet;
       let hitUnit = null;
       {
-        let bestDist = 0.32;
+        let bestDist = window._f9TouchInstalled ? 0.8 : 0.32;   // 📱 didesnis ally tap spindulys touch'e (PICK/select naudojamas pirštu)
         for (const u of S.units) {
           if (!u || !u.alive) continue;
           if (typeof _f9IsAlly === 'function' && !_f9IsAlly(u)) continue; // skip enemies
@@ -41999,8 +42301,8 @@ document.addEventListener('DOMContentLoaded', () => {
           if (typeof _f9SetToast === 'function' && same.length > 1) {
             _f9SetToast(String(hitUnit.utype || '').toUpperCase() + ' ×' + same.length);
           }
-        } else if (e.shiftKey) {
-          // Shift+click → toggle in/out of pako (CAP _F9_PACK_SIZE)
+        } else if (e.shiftKey || window._f9MultiSelectMode) {
+          // Shift+click (desktop) ARBA 📱 ＋PICK režimas → toggle in/out of pako (CAP _F9_PACK_SIZE)
           const idx = selSet.indexOf(hitUnit);
           if (idx >= 0) selSet.splice(idx, 1);
           else if (selSet.length < _F9_PACK_SIZE) selSet.push(hitUnit);
@@ -42013,13 +42315,16 @@ document.addEventListener('DOMContentLoaded', () => {
         window._f9Selected = window._f9SelectedSet[0] || null;
         return;
       }
+      // 📱 ＋PICK režimas: tap NE ant unito (žemė/priešas) NIEKO nekomanduoja — grynas selekcijos rinkimas.
+      //   (Komandas duoda ATK/A-MV mygtukai arba išjungus PICK ir tap'inus žemę/priešą.)
+      if (window._f9MultiSelectMode) return;
       // 3a. KAIRYS = PAGRINDINIS valdymas (user 2026-06-21): click ant priešo = ATTACK, ant žemės = MOVE.
       // Veikia ir desktop, ir mobile. Dešinys click VIS TIEK komanduoja (RTS mėgėjams). Click ant savo
       // unito (aukščiau) = pažymi; dėžės velkimas = multi-select; Shift = waypoint eilė.
       {
         let tapEnemy = null;
         {
-          let bestD = 0.6;
+          let bestD = window._f9TouchInstalled ? 1.1 : 0.6;   // 📱 07-18: didesnis pataikymo spindulys touch'e
           for (const en of S.units || []) {
             if (!en || !en.alive || !_f9IsEnemy(en)) continue;
             const ex = (en.rx !== undefined) ? en.rx : en.x;
@@ -42029,7 +42334,14 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
         if (tapEnemy) {
-          _f9IssueAttackTargetCommand(_f9CommandableSelection(false), tapEnemy, performance.now());
+          let _atkSel = _f9CommandableSelection(false);
+          // 📱 07-18: tuščia selekcija + tap ant priešo → auto-pažymim visus valdomus (telefone nėra box-select →
+          //   „paliečiu priešą, o nieko" buvo dažna). Desktop nepaliestas (tuščias tap-priešas nieko nedaro).
+          if ((!_atkSel || !_atkSel.length) && window._f9TouchInstalled && typeof _f9SelectAllControllable === 'function') {
+            _f9SelectAllControllable();
+            _atkSel = _f9CommandableSelection(false);
+          }
+          if (_atkSel && _atkSel.length) _f9IssueAttackTargetCommand(_atkSel, tapEnemy, performance.now());
           return;
         }
         // 🏰/🏚️ click ant pilies/barakų → NEsiunčiam move (pastato interakcija pirmenybinė; unitas lieka).
@@ -44061,6 +44373,7 @@ document.addEventListener('DOMContentLoaded', () => {
   canvas.addEventListener('touchstart', e => {
     if (gameMode !== 'adventure') return;
     SFX.init();
+    if (S && S.floor === 9) return;   // 🧹 FIX (07-18): F9 turi SAVO touch handlerius (4663+); legacy neinterferuoja (jo preventDefault užmušdavo F9 tap-komandą)
     const t = e.touches[0];
     const { x, y } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
     updateP1Aim(x, y);
@@ -44070,6 +44383,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   canvas.addEventListener('touchmove', e => {
     if (gameMode !== 'adventure') return;
+    if (S && S.floor === 9) return;   // 🧹 FIX: F9 touch = 4707 handleris
     const t = e.touches[0];
     const { x, y } = canvasCoords({ clientX: t.clientX, clientY: t.clientY });
     updateP1Aim(x, y);
@@ -44079,6 +44393,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let _mobLastTap = 0, _mobLastTapX = 0, _mobLastTapY = 0;
   canvas.addEventListener('touchend', e => {
     if (gameMode !== 'adventure') return;
+    if (S && S.floor === 9) return;   // 🧹 FIX: F9 touch = 4766 handleris (tap→synthetic click→komanda)
     // F10 — ronke hero KOSMETINIS: jokio mobile select/shoot/move. Tap propaguoja į pastatus.
     if (S && S.floor === 10) { window._mobRonkeSelected = false; return; }
     const t = e.changedTouches[0];
@@ -44178,7 +44493,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  showScreen('screen-menu');
+  // 🏰 07-25: PILIS = ŽAIDIMAS — NEberodom seno „PEWPEW SAGA" meniu numatytai (jis persidengdavo pilies boot'ą).
+  //   Meniu aktyvuojam TIK per #menu escape (debug). Normaliai — pilies auto-boot (žr. IIFE apačioje).
+  if (/(?:^|[#&\/])menu\b/i.test(location.hash || '')) showScreen('screen-menu');
 
   // Initialize 3D offscreen renderer
   initThreeJS();
@@ -45281,12 +45598,16 @@ window.__F9 = {
       if (!document.getElementById('castle-boot-ov')) {
         var _ov = document.createElement('div');
         _ov.id = 'castle-boot-ov';
-        _ov.style.cssText = 'position:fixed;inset:0;z-index:99990;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#141b2a,#080a10 75%);color:#cde;font-family:monospace;gap:16px;';
-        _ov.innerHTML = '<div style="font-size:13px;font-weight:700;letter-spacing:2px;color:#fc8;opacity:.9;">LOADING YOUR CASTLE</div>' +
-          '<div style="position:relative;width:300px;height:9px;background:#121927;border-radius:6px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.7);">' +
-            '<div style="position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,207,92,.55),transparent);width:45%;animation:cbo_ind 1.2s linear infinite;"></div>' +
+        _ov.style.cssText = 'position:fixed;inset:0;z-index:99990;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#05070c url(\'castle_hall_bg2.png\') center/cover no-repeat;color:#cde;font-family:monospace;gap:16px;';
+        // Tekstas+baras atsiranda TIK jei krovimas >0.45s (fade-in delay) — greitam (localhost) load'ui
+        //   overlay'as tik parodo pilies foną → selektorius → JOKIO „LOADING" blyksnio / blaškymosi.
+        _ov.innerHTML = '<div style="opacity:0;animation:cbo_fadein .35s ease .45s forwards;display:flex;flex-direction:column;align-items:center;gap:16px;">' +
+            '<div style="font-size:13px;font-weight:700;letter-spacing:2px;color:#fc8;opacity:.9;">LOADING YOUR CASTLE</div>' +
+            '<div style="position:relative;width:300px;height:9px;background:#121927;border-radius:6px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.7);">' +
+              '<div style="position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,207,92,.55),transparent);width:45%;animation:cbo_ind 1.2s linear infinite;"></div>' +
+            '</div>' +
           '</div>' +
-          '<style>@keyframes cbo_ind{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}</style>';
+          '<style>@keyframes cbo_ind{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}@keyframes cbo_fadein{to{opacity:1}}</style>';
         document.body.appendChild(_ov);
         setTimeout(function () { try { var e = document.getElementById('castle-boot-ov'); if (e) e.remove(); } catch (_) {} }, 12000);
       }
@@ -45301,15 +45622,23 @@ window.__F9 = {
 
   // 🏰 PILIS = ŽAIDIMAS: įjungus (bet kokį fresh load be hash'o) — IŠKART į pilį, meniu nerodom.
   //   IŠIMTYS (debug/escape): #menu → senas meniu; #f9live → PvP lobby; #f9home → jau tvarko boot() aukščiau.
-  //   Crash-loop saugiklis: sessionStorage žymė (page reload = nauja sesija → vėl bandys pilį).
+  //   🐛 07-25 FIX: senas `f9_boot_tried` sessionStorage saugiklis rėmėsi KLAIDINGA prielaida (komentaras manė,
+  //   kad sessionStorage išsivalo per reload — NEIŠSIVALO, gyvuoja iki tab uždarymo). Todėl atidarius gryną URL
+  //   (be #f9home) tame pačiame tab'e auto-boot'as būdavo PRALEIDŽIAMAS → likdavo senas PEWPEW meniu / „blaškymasis".
+  //   Dabar LAIKO saugiklis: praleidžiam TIK jei paskutinis bandymas <2s (greitas re-load = tikėtinas crash-loop);
+  //   normalus reload/atidarymas → pilis VISADA kraunasi pirma. Crash-loop atveju — fallback senas meniu (escape).
   try {
     var _escapeMenu = /(?:^|[#&\/])menu\b/i.test(location.hash || '');
-    var _bootTried = sessionStorage.getItem('f9_boot_tried') === '1';
-    if (!_escapeMenu && !wanted() && !wantedHome() && !raidInviteAddr() && !_bootTried) {   // ⚔ raidinvite → NE į savo pilį, o į puolimą
-      sessionStorage.setItem('f9_boot_tried', '1');
+    var _lastBoot = 0; try { _lastBoot = Number(sessionStorage.getItem('f9_boot_ts')) || 0; } catch (_) {}
+    var _rapid = _lastBoot && (Date.now() - _lastBoot < 2000);   // <2s nuo pask. bandymo = crash-loop → nekartojam
+    if (!_escapeMenu && !wanted() && !wantedHome() && !raidInviteAddr() && !_rapid) {   // ⚔ raidinvite → NE į savo pilį, o į puolimą
+      try { sessionStorage.setItem('f9_boot_ts', String(Date.now())); } catch (_) {}
       var _goCastle = function () { try { window.enterMyCastle(); } catch (_) {} };
       if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(_goCastle, 30);
       else window.addEventListener('DOMContentLoaded', function () { setTimeout(_goCastle, 30); });
+    } else if (_escapeMenu || _rapid) {
+      // #menu escape ARBA crash-loop apsauga → parodom seną meniu (statiškai jis nebeaktyvus → reikia įjungti)
+      try { var _m = document.getElementById('screen-menu'); if (_m) _m.classList.add('active'); } catch (_) {}
     }
   } catch (_) {}
 })();

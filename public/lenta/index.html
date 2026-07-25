@@ -26,7 +26,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=f12landscape_20260718">
+  <link rel="stylesheet" href="style.css?v=pinball_20260724">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -78,7 +78,7 @@
   <div id="app">
 
     <!-- MENU -->
-    <div id="screen-menu" class="screen active">
+    <div id="screen-menu" class="screen">
       <div class="menu-wrap">
         <div class="menu-hero">
           <div class="menu-status-row">
@@ -2138,17 +2138,24 @@
   <script src="barracks_nft.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_modal.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
-  <script src="game.js?v=f9live354_pvpsound"></script>
+  <script src="game.js?v=f9live369_nomenu_20260725"></script>
   <script src="afk_expedition.js?v=afk33"></script>
   <script src="f12_predeck_modal.js?v=pd3"></script>
   <script src="floor12_merge.js?v=f12_tocastle_20260704"></script>
-  <script src="wallet-ui.js?v=iwallet3_abstbtn_20260721"></script>
+  <script src="wallet-ui.js?v=iwallet11_exportgate_20260725"></script>
   <script src="hog_rider_popup.js?v=hog53forceover"></script>
   <script src="leaderboard.js?v=lb23ronke_client_fallback_20260622"></script>
   <!-- ronke_faucet.js PAŠALINTAS 2026-07-14: RONKE faucet uždarytas (pool drain). Autoritetingas stabdis = ronke-claim edge fn disable Supabase dashboard'e. -->
   <script src="ronke_swap.js?v=iwallet_20260721"></script>
   <script src="phantom_ronin.js?v=pr3export_20260614"></script>
   <script src="embedded_wallet.js?v=ew2_rpcfallback_20260721"></script>
+  <!-- 🎮 CUSTODIAL PLAY (smart-wallet FAZĖ 3): kol PLAY_API_URL tuščias — viskas veikia po senovei
+       (lokalus 10h gate). Po backend deploy (žr. smart-wallet/server/colyseus/MOUNT.md) įrašyk URL
+       ir RonkePong pereis prie on-chain gate (1-click acc + deposit flow + PoD TX) BE kodo keitimo. -->
+  <script>window.PLAY_API_URL = '';</script>
+  <script src="play_client.js?v=pc1_20260722"></script>
+  <script src="recovery_ui.js?v=rec1_20260723"></script>   <!-- 🔒 Save/Restore progress (link wallet/email → custodial recovery) -->
+  <script src="ronkepong_launcher.js?v=rp18_portrait_20260725"></script>   <!-- 🎳 RonkePong: mobile portrait on open, restore landscape on close -->
   <script>
   // ── AUTO-RELOAD kai deployinama nauja versija ───────────────────
   // Kad žaidėjams (ypač mobiliems/Chromebook) NEREIKĖTŲ hard-refresh.
@@ -2603,7 +2610,7 @@
 
       // 🎵 F9 PvP gatebells — 2 takeliai KAITALIOJAMI (vienam pasibaigus → kitas), kad žaidėjas
       //   girdimai atpažintų, kad yra PvP scenoj. Volume aukštesnis nei ambient BGM (0.035) — atpažinimui.
-      //   Audio elementai DOM'e su class="pvp-music" → IŠIMTI iš global mute (groja net kai SOUND OFF = PvP alert).
+      //   Audio elementai DOM'e → global mute (lenta_muted) juos automatiškai nutildo.
       const GATE_VOL = 0.10;   // 🔉 0.18→0.10 (user: per garsu). Vis tiek > ambient (0.035). TUNABLE.
       const GATE_IDS = ['bgm-gate1', 'bgm-gate2'];
       let gateIdx = 0, gateOn = false;
@@ -2616,7 +2623,7 @@
         try { el.currentTime = 0; } catch (_) {}
         el.play().catch(() => {});
       }
-      // 🎵 Atskiras PvP-muzikos jungiklis (M klavišas / mobile ☰ menu). Grąžina ar dabar ĮJUNGTA.
+      // 🎵 Atskiras PvP-muzikos jungiklis (M klavišas / mobile mygtukas). Grąžina ar dabar ĮJUNGTA.
       window._f9TogglePvpMusic = function () {
         const nowOff = localStorage.getItem('f9_pvp_music_off') !== '1';   // buvo ON → dabar OFF (ir atvirkščiai)
         try { localStorage.setItem('f9_pvp_music_off', nowOff ? '1' : '0'); } catch (_) {}

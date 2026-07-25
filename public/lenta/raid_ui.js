@@ -30,7 +30,12 @@
     return fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } })
       .then(function (r) { return r.ok ? r.json() : []; })
       .then(function (rows) {
-        return (rows || []).map(function (r) {
+        // 🧪 testinės pilys (E2E fake šablonai: ne-hex arba 10+ vienodų uodega) nerodomos viešoj istorijoj
+        var fakeA = function (a) { a = String(a || '').toLowerCase(); return !/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a); };
+        return (rows || []).filter(function (r) {
+          var b = (r && r.buildings) || {};
+          return !fakeA(b.attacker) && !fakeA(b.defender);
+        }).map(function (r) {
           var b = (r && r.buildings) || {};
           return {
             match_id: b.matchId || String(r.ronin_address || '').slice(6),

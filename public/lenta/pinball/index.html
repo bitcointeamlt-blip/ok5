@@ -1,0 +1,62 @@
+<meta charset="utf-8">
+<title>RonkePong — physics prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  html, body {
+    margin: 0; height: 100%;
+    background: #0a0c14;
+    overflow: hidden;
+    font-family: monospace;
+    color: #cdd6f4;
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Aukšta raiška: canvas backing = 3× pasaulio; CSS sumažina glotniai (ne pixelated). */
+  #screen {
+    image-rendering: auto;
+    background: #05060c;
+    box-shadow: 0 0 0 2px #1c2030, 0 12px 40px rgba(0,0,0,0.6);
+  }
+  /* Debug panel (etapas 1: fizikos parametrų keitimas gyvai) */
+  #debug {
+    position: fixed; top: 8px; left: 8px;
+    width: 246px; max-height: calc(100vh - 16px); overflow-y: auto;
+    background: rgba(10,12,20,0.94);
+    border: 1px solid #2a3050; border-radius: 6px;
+    padding: 8px 10px; font-size: 11px; line-height: 1.35;
+    display: none; z-index: 10;
+  }
+  #debug h3 { margin: 2px 0 6px; font-size: 12px; color: #f5c96b; }
+  #debug .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  #debug .row label { flex: 0 0 96px; color: #9aa4c4; overflow: hidden; text-overflow: ellipsis; }
+  #debug .row input[type=range] { flex: 1; min-width: 0; }
+  #debug .row .val { flex: 0 0 40px; text-align: right; color: #cdd6f4; }
+  #debug .live { margin-top: 8px; padding-top: 6px; border-top: 1px solid #2a3050; color: #7f8bb0; }
+  #debug .hint { margin-top: 6px; color: #5a6488; font-size: 10px; }
+  #debug button { margin-top: 6px; width: 100%; background: #1c2340; color: #cdd6f4; border: 1px solid #2a3050; border-radius: 4px; padding: 4px; font-family: monospace; cursor: pointer; }
+</style>
+
+<div id="wrap">
+  <canvas id="screen"></canvas>
+</div>
+<div id="debug"></div>
+
+<script src="js/config.js"></script>
+<script src="js/math.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/ball.js"></script>
+<script src="js/flipper.js"></script>
+<script src="js/table.js"></script>
+<script src="js/camera.js"></script>
+<script src="js/score.js"></script>
+<script src="js/upgrades.js"></script>
+<script src="js/feedback.js"></script>
+<script src="js/debug.js"></script>
+<script src="js/web3.js?v=walletsync_20260724"></script>
+<script src="js/web3ui.js?v=top10ronke_20260724"></script>
+<script src="js/game.js?v=musicbtn_20260725"></script>

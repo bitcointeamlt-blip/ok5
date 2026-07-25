@@ -8579,15 +8579,19 @@ body.f12-landscape #canvas {
   background: #ffcf5c;
   color: #3d2817;
   font-size: 9px;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   font-weight: bold;
-  padding: 2px 7px;
+  padding: 2px 4px;
   border: 2px solid #3d2817;
   border-radius: 4px;
   box-shadow: 1px 2px 0 #2a1a0a;
   text-shadow: 1px 1px 0 rgba(255, 244, 192, 0.6);
   white-space: nowrap;
   pointer-events: none;
+  /* 🎳 07-24: VISI dock label'ai VIENODO DYDŽIO — fiksuotas plotis = mygtukas (72px), tekstas centre */
+  width: 72px;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 /* ⚔️ RAID dock mygtuko label — paveldi .wui-home-hint, tik karmazininis */
@@ -8597,6 +8601,21 @@ body.f12-landscape #canvas {
   border-color: #4a1414;
   text-shadow: 1px 1px 0 rgba(255, 200, 200, 0.5);
 }
+
+/* 🎳 07-24: RAID + RonkePong label rėmeliai +3px į VIRŠŲ (didesni) */
+.wui-raid-btn .wui-home-hint,
+.wui-ronkepong-btn .wui-home-hint {
+  padding-top: 5px;
+}
+
+/* 🎳 countdown dvitaškis: +2px tarpas tarp valandų/minučių + mirksi kas sekundę */
+.rp-colon {
+  padding: 0 2px;
+  animation: rpColonBlink 1s step-end infinite;
+}
+@keyframes rpColonBlink { 50% { opacity: 0; } }
+/* 🎳 „H"/„MIN" vienetai — maži prie didelių skaičių */
+.rp-unit { font-size: 7px; opacity: 0.8; padding-left: 1px; }
 
 /* Hide old side-panel HOME button (now in floating stack) */
 .adv-mode #btn-goto-f10 {

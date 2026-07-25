@@ -35,10 +35,11 @@
   var _raidLog = { injured: [], dead: [] };     // ⚔ SETTLED suvestinei — mano nuostoliai per mūšį (reset _onStart)
 
   // 🔊⚔️🎺 ATTACK ALARM — garsinis įspėjimas kai kažkas įžengia į tavo teritoriją / puola pilį (under_attack).
-  //   Savarankiškas WebAudio karo rago („dūda") signalas ~0.95s; GERBIA global SOUND OFF (localStorage 'lenta_muted'); throttle 2.5s.
+  //   Savarankiškas WebAudio karo rago („dūda") signalas ~0.95s; VISADA groja (net SOUND OFF — kritinis įspėjimas); throttle 2.5s.
   var _f9AlarmCtx = null, _f9AlarmLast = 0;
   function _f9PlayAttackAlarm() {
-    try { if (localStorage.getItem('lenta_muted') === '1') return; } catch (_) {}   // gerbti SOUND OFF
+    // ⚠️ KRITINIS ĮSPĖJIMAS — VISADA groja, net kai SOUND OFF (user 07-18): „tavo pilį puola" per svarbu praleisti.
+    //   (Kaip sienos griuvimas, kuris irgi groja per mute.) Tyčia NEtikrinam 'lenta_muted'.
     var now = Date.now();
     if (now - _f9AlarmLast < 2500) return;   // throttle — kad keli under_attack neperkrautų
     _f9AlarmLast = now;
@@ -689,7 +690,11 @@
 
   // ── pilno ekrano overlay (connecting / pabaiga) ──
   var screenEl = null;
-  function _clearScreen() { if (screenEl && screenEl.parentNode) screenEl.parentNode.removeChild(screenEl); screenEl = null; }
+  var _bgAnimTimer = null;
+  function _clearScreen() {
+    if (_bgAnimTimer) { clearInterval(_bgAnimTimer); _bgAnimTimer = null; }   // stop bg animacijos
+    if (screenEl && screenEl.parentNode) screenEl.parentNode.removeChild(screenEl); screenEl = null;
+  }
   function _spinKf() {
     if (document.getElementById('f9sp-kf')) return;
     var st = document.createElement('style'); st.id = 'f9sp-kf';
@@ -716,7 +721,34 @@
   function _castleKf() {
     if (document.getElementById('f9cl-kf')) return;
     var st = document.createElement('style'); st.id = 'f9cl-kf';
-    st.textContent = '@keyframes f9clshine{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}';
+    st.textContent = '@keyframes f9clshine{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}' +
+      // 🔥 fakelo liepsna — mirga (scale/translate) + gliaudžo pulsas
+      '@keyframes f9flame{0%{transform:translate(-50%,0) scaleY(1) scaleX(1);opacity:.9}' +
+        '35%{transform:translate(-50%,-2px) scaleY(1.15) scaleX(.9);opacity:1}' +
+        '60%{transform:translate(-52%,-1px) scaleY(1.05) scaleX(1.05);opacity:.85}' +
+        '100%{transform:translate(-48%,-3px) scaleY(1.22) scaleX(.88);opacity:1}}' +
+      '@keyframes f9flameGlow{0%,100%{opacity:.45;transform:translate(-50%,-50%) scale(1)}50%{opacity:.75;transform:translate(-50%,-50%) scale(1.18)}}' +
+      '.f9-torch{position:absolute;width:24px;height:42px;pointer-events:none;z-index:1;' +
+        'border-radius:50% 50% 46% 46%/62% 62% 40% 40%;filter:blur(1px);mix-blend-mode:screen;' +
+        'background:radial-gradient(ellipse at 50% 78%,#fff6b0 0%,#ffd24a 24%,#ff8a1e 54%,#e5461a 78%,rgba(200,40,10,0) 100%);' +
+        'animation:f9flame .34s ease-in-out infinite alternate;}' +
+      '.f9-torch::after{content:"";position:absolute;left:50%;top:55%;width:70px;height:70px;transform:translate(-50%,-50%);' +
+        'border-radius:50%;background:radial-gradient(circle,rgba(255,150,50,.6),rgba(255,120,30,0) 70%);' +
+        'z-index:-1;animation:f9flameGlow 1.1s ease-in-out infinite;}' +
+      // 🏰 viduramžiški connect/instant mygtukai — akmuo+auksas, dera su pilies fonu
+      '.f9cl-btn{font-family:monospace;font-size:15px;font-weight:800;padding:13px 26px;border-radius:8px;cursor:pointer;' +
+        'color:#ffe6a8;background:linear-gradient(180deg,#2a2418,#15120b);border:2px solid #c9a227;' +
+        'box-shadow:inset 0 2px 0 rgba(255,220,140,.28),inset 0 -3px 0 rgba(0,0,0,.45),0 3px 9px rgba(0,0,0,.55);' +
+        'text-shadow:1px 1px 0 #000;transition:transform .12s,box-shadow .12s,filter .12s;}' +
+      '.f9cl-btn:hover{filter:brightness(1.12);transform:translateY(-2px);' +
+        'box-shadow:inset 0 2px 0 rgba(255,230,160,.35),inset 0 -3px 0 rgba(0,0,0,.4),0 0 16px rgba(255,200,90,.5),0 5px 12px rgba(0,0,0,.55);}' +
+      '.f9cl-btn:active{transform:translateY(1px);}' +
+      '.f9cl-btn.instant{border-color:#5aa0c9;color:#dff0ff;}' +
+      '.f9cl-btn.instant:hover{box-shadow:inset 0 2px 0 rgba(180,220,255,.3),inset 0 -3px 0 rgba(0,0,0,.4),0 0 16px rgba(90,180,255,.55),0 5px 12px rgba(0,0,0,.55);}' +
+      // BACK mygtukas (error ekranai) — kuklus akmens stilius
+      '.f9cl-back{font-family:monospace;font-size:13px;font-weight:700;padding:9px 20px;border-radius:8px;cursor:pointer;' +
+        'background:linear-gradient(180deg,#20242e,#12151c);color:#cdd6e4;border:1px solid #3a4150;box-shadow:0 2px 6px rgba(0,0,0,.5);}' +
+      '.f9cl-back:hover{filter:brightness(1.15);}';
     document.head.appendChild(st);
   }
   function _clPct() { var n = 0; for (var k in _clDone) if (_clDone[k]) n++; return n / _CL_ORDER.length; }
@@ -725,17 +757,24 @@
     var cur = parseFloat(bar.style.width) || 0, next = Math.round(frac * 100);
     if (next > cur) bar.style.width = next + '%';   // tik pirmyn (monotoniškai)
   }
+  var _clFailed = false;   // 🐛 07-22: klaidos ekranas parodytas → watchdog'ai jo nebeperrašo
   function _castleLoadScreen() {
-    _clearScreen(); _castleKf(); _clDone = {};
+    _clearScreen(); _castleKf(); _clDone = {}; _clFailed = false;
     screenEl = document.createElement('div');
-    screenEl.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#141b2a,#080a10 75%);color:#cde;font-family:monospace;gap:16px;';
+    screenEl.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#05070c url(\'castle_hall_bg2.png\') center/cover no-repeat;color:#cde;font-family:monospace;gap:16px;';
     screenEl.innerHTML =
       '<div style="font-size:13px;font-weight:700;letter-spacing:2px;color:#fc8;opacity:.9;">LOADING YOUR CASTLE</div>' +
       '<div style="position:relative;width:300px;height:9px;background:#121927;border-radius:6px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.7);">' +
         '<div id="f9cl-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#b9851f,#ffcf5c);border-radius:6px;transition:width .5s cubic-bezier(.34,.1,.2,1);box-shadow:0 0 10px rgba(255,207,92,.6);"></div>' +
         '<div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);width:40%;animation:f9clshine 1.3s linear infinite;"></div>' +
-      '</div>';
+      '</div>' +
+      // 🐛 07-22: matomas etapo indikatorius — screenshot'as iškart pasako, KURIS žingsnis stringa
+      '<div id="f9cl-stage" style="font-size:11px;opacity:.55;letter-spacing:1px;">starting…</div>';
     document.body.appendChild(screenEl);
+    // 🔥 fakelų liepsnos (ant fono sconce'ų — kairė/dešinė kolonos). % pagal castle_hall_bg2.png (5.5% / 94.5%).
+    var fL = document.createElement('div'); fL.className = 'f9-torch'; fL.style.left = '5.5%'; fL.style.top = '33%';
+    var fR = document.createElement('div'); fR.className = 'f9-torch'; fR.style.left = '94.5%'; fR.style.top = '33%'; fR.style.animationDelay = '-.17s';
+    screenEl.appendChild(fL); screenEl.appendChild(fR);
     _clBar(0.05);   // startas ne visiškai tuščias (rodo, kad prasidėjo)
   }
   // state: 'active' | 'done'. „done" užbaigia IR ankstesnius praleistus (guest be deko ir pan.).
@@ -748,8 +787,122 @@
       var n = 0; for (var k in _clDone) if (_clDone[k]) n++;
       _clBar((n + 0.45) / _CL_ORDER.length);
     }
+    try {   // etapo tekstas po baru (+ kas jau padaryta)
+      var st = document.getElementById('f9cl-stage');
+      if (st) {
+        var done = []; for (var q = 0; q < _CL_ORDER.length; q++) if (_clDone[_CL_ORDER[q]]) done.push(_CL_ORDER[q]);
+        st.textContent = (done.length ? '✓ ' + done.join(' ✓ ') + '  ' : '') + (state === 'done' ? '' : '… ' + key);
+      }
+    } catch (_) {}
   }
   function _castleSub() {}   // no-op (paprastas baras — be paaiškinimų)
+
+  // 🎮 RONKE SAGA = F12 („PewPew Room" merge/balls žaidimas). Iš pilies selektoriaus paleidžiam IŠKART
+  //   su NEMOKAMAIS unitais — be piniginės, be picker'io, be mokesčio (svečias gali iškart išbandyti).
+  //   Kaip veikia (patikrinta žaidimo kode):
+  //     • window.S egzistuoja nuo užkrovimo ({}), tad gotoF12 „S nera" guard'as neužkerta.
+  //     • wrapped gotoF12 iškart praleidžia pay/free popup'ą (_F12_PAYTOPLAY / _F12_FREE_PLAY_TESTING).
+  //     • _f12PreDeckChoice iš anksto nustatytas → activate() PRALEIDŽIA NFT picker'į ir deployina free būrį.
+  //     • F12 piešia SAVO canvas'ą (z=9000), kuris YRA PO pilies overlay (z=99999) → overlay paslepiam.
+  //     • Svečias neturi piniginės, tad bet koks HOME/EXIT iš F12 vestų į wallet-gated F10 → maršrutuojam
+  //       F12 išėjimą į page reload (grįžta į šitą entry selektorių).
+  var _F12_FREE_SQUAD = { shadow: 1, arrow: 1, heart: 1, leaf: 1, spectral: 1, royal: 1 };  // default free deck (po 1)
+  function _startRonkeSaga() {
+    try {
+      // 1) Paslepiam pilies overlay (kitaip uždengtų F12 canvas'ą).
+      if (screenEl) screenEl.style.display = 'none';
+      // 2) Svečio išėjimas iš F12 → reload atgal į entry (F10 reikalauja piniginės). Wrap'inam 1 kartą.
+      if (!window._f12GuestExitWrapped) {
+        window._f12GuestExitWrapped = true;
+        window.gotoF10 = window.gotoHome = function () { try { location.reload(); } catch (_) {} };
+      }
+      // 3) Free būrys iš anksto → picker praleidžiamas; tuščias NFT pool → free (be fee) kova.
+      window._f12NftPickedPool = [];
+      window._f12PreDeckChoice = Object.assign({}, _F12_FREE_SQUAD);
+      // 4) Į F12 (S.floor=12; poll() per 200ms aktyvuoja). Safety-net activateNow po 300ms.
+      if (typeof window.gotoF12 === 'function') window.gotoF12();
+      setTimeout(function () {
+        try { if (window._F12_activateNow && window._f12PreDeckChoice != null) window._F12_activateNow(); } catch (_) {}
+      }, 300);
+    } catch (e) {
+      try { console.error('[saga] start err', e); } catch (_) {}
+      try { if (screenEl) screenEl.style.display = ''; } catch (_) {}   // klaida → grąžinam selektorių
+    }
+  }
+
+  // 🐛 07-22: krovimo KLAIDOS ekranas — anksčiau joinHome atmetimas (pvz. serverio 4216 NO_ADDRESS
+  //   svečiui be piniginės) neturėjo .catch → „LOADING YOUR CASTLE" kabėdavo 80% AMŽINAI be žinutės.
+  //   Dabar: aiški žinutė + BACK mygtukas; connect atveju — auto-relaunch kai piniginė prisijungia.
+  function _castleFail(msg, opts) {
+    opts = opts || {};
+    _clFailed = true;
+    try {
+      if (!screenEl) _castleLoadScreen();
+      screenEl.innerHTML =
+        '<div style="font-size:34px;">🏰</div>' +
+        '<div style="font-size:15px;font-weight:700;color:#fc8;max-width:340px;text-align:center;line-height:1.5;">' + msg + '</div>' +
+        (opts.connect ? '<div style="font-size:12px;opacity:.75;max-width:320px;text-align:center;">Your castle is bound to your wallet address.</div>' : '') +
+        // 🔑 CONNECT + 🎮 INSTANT PLAY — VIENOJE EILUTĖJE (šalia, ne stulpeliu)
+        (opts.connect ? '<div style="display:flex;gap:12px;margin-top:8px;justify-content:center;flex-wrap:wrap;">' +
+          '<button id="f9cl-conn" class="f9cl-btn">🔑 CONNECT WALLET</button>' +
+          '<button id="f9cl-instant" class="f9cl-btn instant">🎮 INSTANT PLAY</button>' +
+          '</div>' : '') +
+        // 🎮 Game selector kortelės (DIDESNĖS) — Age of Ronke / Ronke Saga / Ronke Pinball
+        (opts.connect ? '<div style="font-size:11px;opacity:.55;margin-top:16px;letter-spacing:1px;">— OR PICK A GAME —</div>' +
+          '<div id="f9cl-games" style="display:flex;gap:18px;margin-top:12px;justify-content:center;align-items:stretch;width:min(96vw,1150px);flex-wrap:nowrap;">' +
+            '<img class="f9cl-card" data-game="age"     src="gameselect_age.png"     style="flex:1;min-width:0;max-width:380px;border-radius:10px;cursor:pointer;transition:transform .13s,filter .13s;filter:drop-shadow(0 5px 10px rgba(0,0,0,.5));">' +
+            '<img class="f9cl-card" data-game="saga"    src="gameselect_saga.png"    style="flex:1;min-width:0;max-width:380px;border-radius:10px;cursor:pointer;transition:transform .13s,filter .13s;filter:drop-shadow(0 5px 10px rgba(0,0,0,.5));">' +
+            '<img class="f9cl-card" data-game="pinball" src="gameselect_pinball.png" style="flex:1;min-width:0;max-width:380px;border-radius:10px;cursor:pointer;transition:transform .13s,filter .13s;filter:drop-shadow(0 5px 10px rgba(0,0,0,.5));">' +
+          '</div>' : '') +
+        // BACK mygtukas TIK error atvejams (connect ekrane pašalintas — yra connect/instant/kortelės)
+        (opts.connect ? '' : '<button id="f9cl-back" class="f9cl-back" style="margin-top:14px;">← BACK TO MENU</button>');
+      var b = document.getElementById('f9cl-back');
+      if (b) b.onclick = _backToMenu;
+      var bi = document.getElementById('f9cl-instant');
+      if (bi) bi.onclick = function () {
+        if (window.Wallet && window.Wallet.connectEmbedded) {
+          bi.textContent = '⏳ Creating account…'; bi.disabled = true;
+          Promise.resolve(window.Wallet.connectEmbedded()).then(function () {
+            try { relaunchHome(); } catch (_) {}   // acc sukurtas → pilis kraunasi (onChange irgi pagaus)
+          }).catch(function () { bi.textContent = '🎮 INSTANT PLAY'; bi.disabled = false; });
+        }
+      };
+      // 🎮 Game selector kortelės: Pinball → RonkePong; Age → connect (į pilį); Saga → F12 free play
+      var cards = screenEl.querySelectorAll('.f9cl-card');
+      for (var ci = 0; ci < cards.length; ci++) {
+        (function (card) {
+          card.onmouseenter = function () { card.style.transform = 'translateY(-4px) scale(1.05)'; card.style.filter = 'brightness(1.12) drop-shadow(0 8px 14px rgba(0,0,0,.6))'; };
+          card.onmouseleave = function () { card.style.transform = ''; card.style.filter = 'drop-shadow(0 4px 8px rgba(0,0,0,.5))'; };
+          card.onclick = function () {
+            var g = card.getAttribute('data-game');
+            if (g === 'pinball') { try { if (window.RonkePong && window.RonkePong.open) window.RonkePong.open(); } catch (_) {} }
+            else if (g === 'age') { if (bc) bc.onclick(); }   // Age of Ronke = pilis → connect flow
+            else { _startRonkeSaga(); }                        // 🎮 Ronke Saga = F12 (PewPew Room) → free play
+          };
+        })(cards[ci]);
+      }
+      var bc = document.getElementById('f9cl-conn');
+      if (bc) bc.onclick = function () {
+        // Connect chooser'is atsidaro VIRŠ — savo overlay paslepiam, kad nesimuštų; jei user
+        // uždarė nepriprisijungęs → grąžinam. Prisijungus — auto-relaunch (onChange žemiau).
+        if (window.WalletUI && window.WalletUI.openConnect) {
+          try { screenEl.style.display = 'none'; } catch (_) {}
+          Promise.resolve(window.WalletUI.openConnect()).catch(function () {}).then(function () {
+            try {
+              var s = (window.Wallet && window.Wallet.snapshot) ? window.Wallet.snapshot() : null;
+              if (!(s && s.connected) && screenEl) screenEl.style.display = 'flex';
+            } catch (_) {}
+          });
+        } else { _backToMenu(); }
+      };
+      if (opts.connect && window.Wallet && window.Wallet.onChange) {
+        var _unsub = window.Wallet.onChange(function (s) {
+          if (s && s.connected && s.address) { try { if (_unsub) _unsub(); } catch (_) {} try { relaunchHome(); } catch (_) {} }
+        });
+      }
+    } catch (_) {}
+    _status('home load failed', '#f88');
+  }
   function _endScreen(kind, subtitle) {
     _clearScreen();
     var title = kind === 'win' ? 'VICTORY' : (kind === 'lose' ? 'DEFEAT' : 'DRAW');
@@ -1317,6 +1470,21 @@
       _status(live ? '⚔️ LIVE raid — real opponent!' : '🤖 Offline raid (AI defense)', '#f86');
       try { if (window.showGameNotification) window.showGameNotification(live ? '⚔️ LIVE RAID' : '🤖 OFFLINE RAID', live ? 'Defender is ONLINE — real PvP!' : 'Castle owner is offline — fighting their AI defenders.', live ? '#6fcf5c' : '#4a9da6'); } catch (_) {}
     });
+    // ⏳ F2 (07-15): RAID COUNTDOWN — 5s combat-delay. Puoliko unitai eina, bet kova dar neprasideda;
+    //   gynėjas (jau savo pilyje) spėja reaguoti ir valdyti savo unitus. Rodom top-center countdown baneri.
+    room.onMessage('raid_countdown', function (e) {
+      try { if (window._bgmPvpBattleStart) window._bgmPvpBattleStart(); } catch (_) {}   // 🎵 kova prasideda (5s countdown) — puolikui IR GYNĖJUI (patikimiausias signalas abiem)
+      var until = (e && e.until) || (Date.now() + ((e && e.ms) || 5000));
+      window._f9RaidCountdownUntil = until;
+      var isDefender = !window.__f9RaidActive;   // gynėjas (savo pilyje) vs puolikas
+      try {
+        if (window.showGameNotification) window.showGameNotification(
+          isDefender ? '🛡 DEFEND YOUR CASTLE' : '⚔ BATTLE STARTING',
+          isDefender ? 'Under attack — battle starts in 5s. Command your units!' : 'Your army advances — battle starts in 5s.',
+          isDefender ? '#f66' : '#ffcf5c');
+      } catch (_) {}
+      try { _f9ShowRaidCountdown(until, isDefender); } catch (_) {}
+    });
     // 📜 RAID ATASKAITOS — grįžus namo: kol buvai OFFLINE tavo pilis buvo puolama. Rodom pasekmes.
     room.onMessage('raid_reports', function (e) {
       var reps = (e && Array.isArray(e.reports)) ? e.reports : [];
@@ -1420,7 +1588,7 @@
     window._f9Passages = (e && Array.isArray(e.passages)) ? e.passages : [];   // 🚪 praėjimų eilės (grovio tarpai) — ant jų bokšto NEstatom
     window._f9CapState = null; _capLast = '';
     window._f9MyBones = null; _boneLast = ''; _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true;   // 🦴 nauja partija → reset balanso count-up (bankas persistuoja, atsinaujins per bones_bank_get)
-    _raidLog = { injured: [], dead: [] }; window._f9LastSteal = null; window._f9SettleData = null; window._f9SettleRosters = null; window._f9SettleMatchId = null; window._f9SettleMeta = null; window._f9LastAttacker = null; window._f9CamFree = false;   // ⚔ settled suvestinės reset + 🖐️ nauja scena → kamera vėl seka armiją
+    _raidLog = { injured: [], dead: [] }; window._f9LastSteal = null; window._f9SettleData = null; window._f9SettleRosters = null; window._f9SettleMatchId = null; window._f9SettleMeta = null; window._f9LastAttacker = null; window._f9CamFree = false;   // ⚔ settled suvestinės reset (įsk. 2-pusius rosterius + 🔎 Match ID/priešo adresą) + 🖐️ nauja scena → kamera vėl seka armiją
     // 🐛 P-C3: išvalom SENOS sesijos ligoninės būseną PRIEŠ _f9pvpLive=true — kitaip 1.5s langą (kol ateis
     //   šviežias 'hospital' push) barracks_nft.fetchHospState skaitytų SENOS piniginės sužalotus kaip LIVE
     //   (→ deko/lauko „makalynė" perjungus piniginę). null (NE []) → fetchHospState kris atgal į per-adresą REST.
@@ -1854,26 +2022,69 @@
     on = true; started = false; simInited = false; _ended = false; _mir = {};
     try { var _GS0 = S(); if (_GS0 && Array.isArray(_GS0.units)) _GS0.units = _GS0.units.filter(function (u) { return !(u && u._pvpId); }); } catch (_) {}   // 🐛 07-05: jokių senų PvP orphan'ų prieš naują pilį
     window.__f9HomeActive = true;
+    // 🫀 07-18 FIX (reconnect po gynybos): naujas home (re)launch = švarus „boot" ryšio watchdog'ui. Po LIVE
+    //   gynybos _rcWasAlive liko true (kambarys buvo gyvas mūšy), o launchHome kelias (wallet iki 8s + deck +
+    //   connect + joinHome) kelias sekundes neturi N.room → watchdog KLAIDINGAI šaukė „CONNECTION LOST —
+    //   RECONNECTING" + spontaniškai reconnectHome į SENĄ (ended) kambarį. Reset į „boot" būseną → rodo tik
+    //   nekenksmingą „connecting", kol prisijungia; sujungus _rcWasAlive vėl tampa true natūraliai.
+    _rcWasAlive = false; try { _rcHide(); } catch (_) {}
     window._f9HomeLoaded = false;   // tampa true _onStart'e → reloadProfileForWallet relaunch'ina TIK po pilno užkrovimo (ne mid-load)
     var N = window.F9PVP;
     var _addr = opts.address || '';
     window._f9HomeAddr = _addr;
+    // 🚀 07-25 ĮĖJIMO EKRANAS = game-selektorius. Jei NĖRA aktyvaus piniginės adreso boot'o metu (šviežias
+    //   svečias ARBA „ghost" likutis localStorage'e, kuris realiai neatsistato) — rodom selektorių IŠKART,
+    //   be „LOADING YOUR CASTLE" / 8s laukimo / adventure scenos → JOKIO blaškymosi. Kai piniginė TIKRAI
+    //   prisijungia (CONNECT/INSTANT arba silent restore), _castleFail(connect) onChange → relaunchHome su
+    //   adresu → pilnas pilies krovimas. Pilis kraunama TIK kai adresas realiai yra.
+    if (!_addr) {
+      try { var _bo = document.getElementById('castle-boot-ov'); if (_bo) _bo.remove(); } catch (_) {}   // nuimam tiltinį overlay
+      _castleFail('Connect your wallet to enter your castle', { connect: true });   // → tiesiai selektorius
+      return;
+    }
     _status('loading home…', '#fc8');
     _castleLoadScreen();   // 🏰 etapinis užkrovimo ekranas (rodo kas vyksta — ne „pakibęs" spinneris)
+    // 🐛 07-22: GLOBALUS watchdog — dengia VISUS etapus (deck RPC hang, join hang…): po 25s be
+    //   match_start rodom klaidą su etapų sąrašu vietoj amžino baro. _clFailed guard — neperrašo
+    //   jau parodyto klaidos ekrano (pvz. „Connect your wallet").
+    (function () {
+      var t0 = Date.now();
+      var wd = setInterval(function () {
+        if (!on || started || _clFailed || !window.__f9HomeActive) { clearInterval(wd); return; }
+        if (Date.now() - t0 > 25000) {
+          clearInterval(wd);
+          var done = []; for (var k in _clDone) if (_clDone[k]) done.push(k);
+          // 🔎 ryšio diagnostika TIESIAI ekrane — screenshot'as atsako: join pending ar match_start dingęs
+          var diag = 'room: NONE (join pending)';
+          try {
+            var _r = window.F9PVP && window.F9PVP.room;
+            if (_r) diag = 'room ' + (_r.roomId || '?') + ' · sess ' + String(_r.sessionId || '?').slice(0, 6) +
+              ' · players ' + ((_r.state && _r.state.players && _r.state.players.size) || 0) +
+              ' · ws ' + ((_r.connection && _r.connection.isOpen) ? 'open' : 'CLOSED');
+          } catch (_) {}
+          _castleFail('⚠ Loading stuck (finished: ' + (done.join(', ') || 'nothing') + ')<br><span style="font-size:11px;opacity:.8;">' + diag + '</span>');
+        }
+      }, 1000);
+    })();
     var _connP = N.connect(opts.endpoint);   // ⚡ WS connect LYGIAGREČIAI su piniginės/deko krovimu (07-04)
-    // 🏰 Auto-boot metu (pilis=žaidimas) piniginė dar atsistato (restore ~1-3s). LAUKIAM jos iki 8s,
-    //   kad pilis krautųsi VIENĄ kartą su tikru deku — kitaip boot su '' → wallet grįžta → relaunch
-    //   = DVIGUBAS lėtas krovimas (regresija 07-04). _waitForWallet resolve'ina IŠKART kai adresas atsiranda.
-    _waitForWallet(_addr ? 0 : 8000).then(function (a) {
+    // 🏰 Čia patenkam TIK kai adresas realiai yra (žr. `if (!_addr) return` aukščiau) → laukti nebereikia.
+    _waitForWallet(0).then(function (a) {
       _addr = _addr || a; window._f9HomeAddr = _addr;
+      // 🐛 07-22: serveris home be adreso ATMETA (4216 NO_ADDRESS) — nebandom join'inti,
+      //   rodom aiškų ekraną (prisijungus piniginę _castleFail auto-relaunch'ins).
+      if (!_addr) { _castleFail('Connect your wallet to enter your castle', { connect: true }); return Promise.reject('__f9_handled'); }
       window.__f9BaseOwner = String(_addr || '').toLowerCase();   // 📋 esi SAVO pilyje → stendas = tavo (lokalus/own cloud)
       _lobbyName = _addr || rndAddr();
-      try { _castleStep('wallet', 'done', _addr ? (_addr.slice(0, 6) + '…' + _addr.slice(-4)) : 'guest'); _castleSub('reading your registered units…'); } catch (_) {}
-      return _loadHomeDeck(_addr);
+      try { _castleStep('wallet', 'done', _addr.slice(0, 6) + '…' + _addr.slice(-4)); _castleSub('reading your registered units…'); } catch (_) {}
+      // 🐛 07-22: deko skaitymas eina per chain RPC (flaky!) — be timeout'o galėdavo kabėti amžinai
+      return Promise.race([
+        _loadHomeDeck(_addr),
+        new Promise(function (_, rej) { setTimeout(function () { rej(new Error('units read timed out — chain RPC slow, retry')); }, 20000); }),
+      ]);
     }).then(function (deck) {
       try { _castleStep('units', 'done', deck.length ? (deck.length + ' units') : 'none'); _castleSub('connecting to your realm…'); } catch (_) {}
       return _connP.then(function (ok) {
-        if (!ok) { _status('connect failed', '#f88'); _castleSub('⚠ Connect failed — server offline?'); return null; }
+        if (!ok) { _castleFail('⚠ Could not reach the realm server — check your connection and retry'); return Promise.reject('__f9_handled'); }
         try { _castleStep('server', 'done'); _castleSub('raising the walls…'); } catch (_) {}
         var _act0 = _squadActiveCount(_addr);   // ⚔ pageidaujamas lauko dydis (persist per restart)
         var _cm = { name: _lobbyName, home: true, deck: deck, address: _addr, owner: String(_addr || '').toLowerCase() };
@@ -1881,10 +2092,28 @@
         return N.joinHome(_cm);   // 🏰 F1: joinOrCreate pagal owner (1 kambarys/savininkui), ne create() dublis
       });
     }).then(function (room) {
-      if (!room) { _castleSub('⚠ Could not load your castle — reload to retry'); return; }
+      if (!room) {
+        // 🐛 07-22: joinHome viduje klaidas praryja (catch → null) — parodom, kas realiai įvyko
+        if (!_clFailed) {
+          var le = (window.F9PVP && window.F9PVP.lastError) || null;
+          var lm = String((le && le.message) || le || 'join failed');
+          _castleFail('⚠ Could not join your castle — ' + lm.slice(0, 90) + '<br><span style="font-size:11px;opacity:.8;">endpoint: ' + ((window.F9PVP && window.F9PVP.endpoint) || '?') + '</span>');
+        }
+        return;
+      }
       mySid = room.sessionId;
       _wireRoom(room);   // serveris home → match_start iškart → _onStart → pilis renderinasi
       _status('home loaded', '#8f8');
+      // 🐛 07-22: join OK, bet match_start NEatėjo per 15s (serverio kambario strigtis) → irgi ne amžinas baras
+      setTimeout(function () {
+        if (on && !started && window.__f9HomeActive) _castleFail('⚠ Castle took too long to answer — press BACK and try again');
+      }, 15000);
+    }).catch(function (e) {
+      if (e === '__f9_handled') return;   // žinutė jau ekrane
+      var m = String((e && e.message) || e || 'unknown');
+      console.error('[F9Live] launchHome failed:', e);
+      if (/NO_ADDRESS/i.test(m)) _castleFail('Connect your wallet to enter your castle', { connect: true });
+      else _castleFail('⚠ Could not load your castle — ' + m.slice(0, 90));
     });
   }
   // ⚔ 07-06 user „laisvė palikti tik 1": kiek unitų NORI lauke = battle squad dydis (registruotų). 0 (nėra
@@ -1944,18 +2173,54 @@
     setTimeout(function () { window._f9HomeRelaunchPending = false; launchHome({ address: addr }); }, 200);
   }
 
+  // ⏳ F2 (07-15): RAID COUNTDOWN baneris (top-center) — „⚔ BATTLE IN Ns" puolikui / „🛡 DEFEND! — Ns" gynėjui.
+  //   5s combat-delay langas: puoliko unitai matomi (eina), kova dar neprasidėjo. Auto-dingsta laikui praėjus.
+  var _f9CdEl = null, _f9CdTimer = null;
+  function _f9ShowRaidCountdown(until, isDefender) {
+    if (_f9CdTimer) { clearInterval(_f9CdTimer); _f9CdTimer = null; }
+    if (!_f9CdEl) {
+      _f9CdEl = document.createElement('div');
+      _f9CdEl.id = 'f9-raid-countdown';
+      _f9CdEl.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99998;' +
+        "padding:10px 20px;border-radius:9px;font:700 15px 'Press Start 2P',monospace,sans-serif;letter-spacing:1px;" +
+        'border:2px solid;box-shadow:0 4px 16px rgba(0,0,0,.5);text-align:center;pointer-events:none;';
+      document.body.appendChild(_f9CdEl);
+    }
+    function tick() {
+      var left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      if (left <= 0) {
+        if (_f9CdTimer) { clearInterval(_f9CdTimer); _f9CdTimer = null; }
+        if (_f9CdEl && _f9CdEl.parentNode) _f9CdEl.parentNode.removeChild(_f9CdEl);
+        _f9CdEl = null; return;
+      }
+      _f9CdEl.textContent = isDefender ? ('🛡 DEFEND! — ' + left) : ('⚔ BATTLE IN ' + left);
+      _f9CdEl.style.borderColor = isDefender ? '#e85d5d' : '#ffcf5c';
+      _f9CdEl.style.background = isDefender ? 'rgba(70,12,12,0.94)' : 'rgba(60,45,10,0.94)';
+      _f9CdEl.style.color = isDefender ? '#ff9a9a' : '#ffcf5c';
+    }
+    tick();
+    _f9CdTimer = setInterval(tick, 250);
+  }
+
   // ⚠️ 07-14 RECONNECT WATCHDOG + KEEPALIVE + 🟢🔴 STATUSO BADGE (user: „buvau užpultas online, priešo
   //   nesimatė; sunku atskirti ar online; langas ilgai atidarytas → disconnect; reikia indikatoriaus/mygtuko"):
   //   pingInterval:0 + zombie-reaper = kambarys numiršta arba socket'as PAKIMBA PUSIAUKELĖJE (gauni
   //   under_attack, bet būsena nebeateina → priešo nematai), o ekranas toliau rodo pilį.
   //   (1) KEEPALIVE ping kas 20s (serveris ping'u atnaujina reaper laikmatį → ramus žaidėjas nenukertamas).
   //   (2) PONG-LIVENESS: jei „gyvas" kambarys >65s neatsako pong'ų → socket'as pusiau miręs → force reconnect.
-  //   (3) WATCHDOG: kambarys dingo → raudonas baneris su ⟳ RECONNECT mygtuku + auto relaunchHome kas ~7s.
+  //   (3) WATCHDOG: kambarys dingo → raudonas baneris su ⟳ RECONNECT mygtuku + auto reconnectHome(token) kas ~7s
+  //       (F3 07-15: token-resume, NE aggressive relaunchHome loop → jokio room churn/split-brain).
   //   (4) BADGE: nuolatinis 🟢 ONLINE / 🟡 CONNECTING / 🔴 OFFLINE indikatorius (klik = force reconnect).
   var _rcEl = null, _rcWasAlive = false, _rcLastTry = 0, _rcLastPing = 0, _rcBadge = null;
+  // 🫀 F3 (2026-07-15): RESUME sesiją per reconnectHome(token) — NE relaunchHome (kuris paliekdavo kambarį
+  //   + kūrė naują join = churn/split-brain rizika). reconnectHome tyliai grįžta į TĄ PATĮ kambarį; jei
+  //   reconnect langas praėjo → jis pats fallback'ina į joinHome. Jokio room.leave() (tai nutraukdavo sesiją).
   function _rcForceReconnect() {
     _rcLastTry = Date.now();
-    try { var N = window.F9PVP; if (N && N.room) N.room.leave(); } catch (_) {}
+    try {
+      var N = window.F9PVP;
+      if (N && N.reconnectHome) { N.reconnectHome(); return; }
+    } catch (_) {}
     try { relaunchHome(); } catch (_) {}
   }
   function _rcShow() {
@@ -1973,7 +2238,7 @@
     _rcEl._blink = setInterval(function () { var t = _rcEl && _rcEl.querySelector('#f9rc-txt'); if (t) { vis = !vis; t.style.opacity = vis ? '1' : '0.55'; } }, 550);
   }
   function _rcHide() { if (_rcEl) { try { clearInterval(_rcEl._blink); } catch (_) {} if (_rcEl.parentNode) _rcEl.parentNode.removeChild(_rcEl); _rcEl = null; } }
-  // 🟢🟡🔴 badge PAŠALINTAS (07-15 user: „maišo, neatspindi nieko“) — no-op, tik nuima jei senas dar kabo.
+  // 🟢🟡🔴 badge PAŠALINTAS (07-15 user: „maišo, neatspindi nieko") — no-op, tik nuima jei senas dar kabo.
   //   Raudonas CONNECTION LOST baneris (_rcShow) lieka — jis rodomas TIK realiai nutrūkus ryšiui.
   function _rcBadgeSet(state) {
     void state;
@@ -2003,7 +2268,7 @@
       }
       if (!_rcWasAlive) { _rcBadgeSet('connecting'); return; }   // dar tik jungiamasi (boot)
       _rcBadgeSet('off'); _rcShow();
-      if (now - _rcLastTry > 7000) { _rcLastTry = now; try { relaunchHome(); } catch (_) {} }
+      if (now - _rcLastTry > 7000) { _rcForceReconnect(); }   // 🫀 F3: resume per token, ne aggressive relaunch loop
     } catch (_) {}
   }, 3000);
 
@@ -2095,6 +2360,14 @@
       mySid = room.sessionId;
       _wireRoom(room);
       _status('⚔ raid started', '#f86');
+    }).catch(function (err) {
+      // 🧹 FIX (07-18): bet kokia NEapdorota klaida raid grandinėj (tinklo drop / connect / raidPlayer / wire)
+      //   nebepalieka __f9RaidActive=true užstrigus. Anksčiau užstrigus → _f9InCombat lieka true →
+      //   pastatų paneliai (pilis/barakai/ligoninė) nustodavo atsidaryti, kol kitas raidas match_end.
+      window.__f9RaidActive = false;
+      try { _connectingText('⚠ Raid failed — returning home'); } catch (_) {}
+      try { if (window.showGameNotification) window.showGameNotification('⚔️ RAID', 'Raid failed: ' + String((err && err.message) || err).slice(0, 80), '#f66'); } catch (_) {}
+      setTimeout(function () { try { relaunchHome(); } catch (_) {} }, 1500);
     });
   }
 

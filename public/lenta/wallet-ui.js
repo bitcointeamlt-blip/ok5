@@ -22,6 +22,7 @@
         <button type="button" class="wui-menu-toggle" id="wui-menu-toggle" title="Menu" aria-label="Toggle menu">☰</button>
         <button type="button" class="wui-pill" id="wui-pill-btn"></button>
         <button type="button" class="wui-castle-btn wui-raid-btn" id="wui-raid-btn" title="Raid a Castle" style="display:none"></button>
+        <button type="button" class="wui-castle-btn wui-ronkepong-btn" id="wui-ronkepong-btn" title="RonkePong" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-inv-btn" id="wui-inv-btn" title="Inventory" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
@@ -473,6 +474,20 @@
         raidBtnEl.addEventListener('click', () => { try { if (window.F9RaidUI && window.F9RaidUI.open) window.F9RaidUI.open(); } catch (_) {} });
       }
     }
+    // 🎳 RONKEPONG — dock mygtukas (šalia RAID). Rodom adventure floor'uose, slepiam per raid kovą.
+    const rpBtnEl = pillEl.querySelector('#wui-ronkepong-btn');
+    if (rpBtnEl) {
+      const showRp = inAdv && !(window._f9pvpLive && window.__f9RaidActive);
+      rpBtnEl.style.display = showRp ? 'flex' : 'none';
+      rpBtnEl.style.background = '#3a2c10';
+      if (!rpBtnEl._init) {
+        rpBtnEl._init = true;
+        rpBtnEl.innerHTML = `<span style="font-size:25px;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))">🎳</span><span class="wui-home-hint">PINBALL</span>`;
+        rpBtnEl.addEventListener('click', () => { try { if (window.RonkePong && window.RonkePong.open) window.RonkePong.open(); } catch (_) {} });
+      }
+      // 🎳 hint sinchronizacija: „PONG" / countdown kai nemokamas išnaudotas
+      if (showRp) { try { if (window.RonkePong && window.RonkePong.refresh) window.RonkePong.refresh(); } catch (_) {} }
+    }
     if (pewpewBtnEl) {
       // PewPew Room — F12 cannon merge floor (tikras barrel sprite + hover liquid fill anim)
       pewpewBtnEl.style.display = (inAdv && !isF12) ? 'flex' : 'none';
@@ -548,15 +563,16 @@
           '<span style="font-size:20px;">◎</span><div style="text-align:left;"><div>Phantom (Solana)</div><div style="font-size:11px;opacity:.7;font-weight:400;">Play with your Solana wallet</div></div></button>'
         : '';
       ov.innerHTML =
-        '<div style="background:linear-gradient(180deg,#1a2238,#0f1424);border:2px solid #4a9da6;border-radius:14px;padding:18px 18px 16px;width:min(340px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.55);">' +
+        '<div style="background:linear-gradient(180deg,#231d12,#14110a);border:2px solid #c9a227;border-radius:14px;padding:18px 18px 16px;width:min(340px,90vw);box-shadow:inset 0 2px 0 rgba(255,220,140,.18),0 12px 40px rgba(0,0,0,.6),0 0 22px rgba(201,162,39,.22);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
         '<span style="color:#ffcf5c;font-weight:800;font-size:16px;">Connect Wallet</span>' +
         '<button data-x style="background:#e85d5d;color:#fff;border:none;border-radius:8px;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button></div>' +
-        // 🎮 Instant Play — embedded Ronin wallet, VEIKIA BE JOKIOS PINIGINĖS (Abstract-only ir naujiems žmonėms). Finansuoja iš bet kur (Abstract/Solana per bridge).
+        // 🔷 07-22 USER: RONIN PIRMAS (pagrindinė žaidimo grandinė — ne Abstract/Instant pirmenybė!)
+        '<button data-m="roninwc" style="width:100%;display:flex;align-items:center;gap:10px;padding:13px 14px;margin-bottom:10px;border-radius:10px;border:2px solid #ffcf5c;background:#15324a;color:#e8f4f6;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 0 12px rgba(255,207,92,.25);">' +
+        '<span style="font-size:20px;">🔷</span><div style="text-align:left;"><div>Ronin Wallet</div><div style="font-size:11px;opacity:.7;font-weight:400;">Recommended — mobile app or extension</div></div></button>' +
+        // 🎮 Instant Play — embedded Ronin wallet, VEIKIA BE JOKIOS PINIGINĖS (naujiems be piniginės). Finansuoja iš bet kur (bridge).
         '<button data-m="embedded" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;border-radius:10px;border:2px solid #00d179;background:#0e2a1c;color:#c8ffe0;font-weight:700;font-size:14px;cursor:pointer;">' +
-        '<span style="font-size:20px;">🎮</span><div style="text-align:left;"><div>Instant Play</div><div style="font-size:11px;opacity:.7;font-weight:400;">No wallet needed — play now, fund from any chain</div></div></button>' +
-        '<button data-m="roninwc" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;border-radius:10px;border:2px solid #4a9da6;background:#15324a;color:#e8f4f6;font-weight:700;font-size:14px;cursor:pointer;">' +
-        '<span style="font-size:20px;">🔷</span><div style="text-align:left;"><div>Ronin Wallet</div><div style="font-size:11px;opacity:.7;font-weight:400;">Mobile app or extension</div></div></button>' +
+        '<span style="font-size:20px;">🎮</span><div style="text-align:left;"><div>Instant Play</div><div style="font-size:11px;opacity:.7;font-weight:400;">No wallet yet? Play now, fund later</div></div></button>' +
         '<button data-m="waypoint" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:2px solid #6b4a2e;background:#2a1f12;color:#f5e6c3;font-weight:700;font-size:14px;cursor:pointer;">' +
         '<span style="font-size:20px;">✉️</span><div style="text-align:left;"><div>Email or Social</div><div style="font-size:11px;opacity:.7;font-weight:400;">Sign in with Waypoint</div></div></button>' +
         phantomBtn +
@@ -608,16 +624,24 @@
     ov.innerHTML =
       '<div style="background:linear-gradient(180deg,#12241a,#0c1810);border:2px solid #00d179;border-radius:14px;padding:20px;width:min(360px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.6);color:#e8f4ee;">' +
       '<div style="font-size:17px;font-weight:800;color:#8effc0;margin-bottom:6px;">🎮 Play-wallet ready!</div>' +
-      '<div style="font-size:12px;line-height:1.6;opacity:.85;margin-bottom:14px;">Your in-game Ronin wallet is created. Fund it to start playing — bridge from <b style="color:#8effc0;">Abstract</b>, Solana, or any chain (arrives in seconds).</div>' +
+      '<div style="font-size:12px;line-height:1.6;opacity:.85;margin-bottom:14px;">Your in-game Ronin wallet is created. Fund it to start playing — send <b style="color:#8effc0;">RON / RONKE on Ronin</b>, or bridge from any chain.</div>' +
       '<div style="font-size:10px;opacity:.6;margin-bottom:4px;">Your wallet address (send/bridge funds here):</div>' +
       '<div style="font-size:11px;font-family:monospace;background:#0a140e;border:1px solid #1e3a28;border-radius:8px;padding:8px;word-break:break-all;margin-bottom:14px;">' + addr + '</div>' +
-      '<button data-agw style="width:100%;padding:13px;border-radius:10px;border:2px solid #00d179;background:#0e3a24;color:#c8ffe0;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:8px;">🟢 Connect Abstract Wallet</button>' +
+      // 🔷 07-22 USER: RONIN PIRMAS — paprastas pervedimas iš savo Ronin piniginės (copy adresą)
+      '<button data-ronin style="width:100%;padding:13px;border-radius:10px;border:2px solid #ffcf5c;background:#15324a;color:#e8f4f6;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:8px;">🔷 Send from Ronin wallet (copy address)</button>' +
+      '<button data-agw style="width:100%;padding:11px;border-radius:10px;border:1px solid #00d179;background:transparent;color:#8effc0;font-size:12px;cursor:pointer;margin-bottom:8px;">🟢 Bridge from Abstract</button>' +
       '<button data-other style="width:100%;padding:11px;border-radius:10px;border:1px solid #3a5a6a;background:transparent;color:#9ac4d8;font-size:12px;cursor:pointer;margin-bottom:8px;">◎ Solana / other chains</button>' +
       '<button data-skip style="width:100%;padding:10px;border-radius:10px;border:1px solid #2a3a44;background:transparent;color:#8a9aaa;font-size:12px;cursor:pointer;">I\'ll fund later</button>' +
       '</div>';
     document.body.appendChild(ov);
     ov.addEventListener('click', (e) => {
       if (e.target === ov || e.target.closest('[data-skip]')) { try { ov.remove(); } catch (_) {} return; }
+      if (e.target.closest('[data-ronin]')) {   // 🔷 copy adresą — siunčia iš savo Ronin piniginės
+        try { navigator.clipboard.writeText(addr); } catch (_) {}
+        const rb = ov.querySelector('[data-ronin]');
+        if (rb) rb.textContent = '✅ Address copied — send RON/RONKE to it';
+        return;   // langas lieka atviras (adresas matomas)
+      }
       if (e.target.closest('[data-agw]')) { try { ov.remove(); } catch (_) {} _openAbstractModule(); return; }
       if (e.target.closest('[data-other]')) { try { ov.remove(); } catch (_) {} try { if (window.openRonkeSwap) window.openRonkeSwap(); } catch (_) {} return; }
     });
@@ -671,8 +695,14 @@
       : (st.balLoading ? 'Loading…' : '—');
     const nftCount = Array.isArray(st.nfts) ? st.nfts.length : (st.nftsLoading ? 'Loading…' : '—');
     const addr = st.address || '';
-    // Phantom-derived piniginė → siūlom „Export" (raktą galima importuoti į Ronin Wallet → Mavis Market, full control).
-    const isPhantom = !!(window.PhantomRonin && window.PhantomRonin.isConnected && window.PhantomRonin.isConnected());
+    // 🔐 EXPORT KEY — TIK Phantom/Solana-derived piniginėms (žaidėjo NUOSAVI pinigai: raktą jis gali
+    //   importuoti į Ronin Wallet → Mavis Market, full control). „Instant Play" (embedded, SPONSOR-funded)
+    //   piniginėms export DRAUDŽIAMAS — kitaip žaidėjas ištrauktų raktą ir nusausintų sponsor RON.
+    //   Gate'as PAGAL AKTYVŲ metodą (ne globalų PhantomRonin flag'ą) — kad po Phantom→Instant persijungimo
+    //   toje pačioje sesijoje senas flag'as NEBERODYTŲ export mygtuko ant sponsuotos piniginės.
+    const _activeMethod = (function () { try { return localStorage.getItem('lenta_wallet_method'); } catch (_) { return null; } })();
+    const isPhantom = _activeMethod === 'phantom'
+      && !!(window.PhantomRonin && window.PhantomRonin.isConnected && window.PhantomRonin.isConnected());
     const ddIcon = `<img class="wui-dd-brand-ico wui-dd-brand-ico-img" src="assets_tiny/ronin_logo.png" alt="Ronin" draggable="false"/>`;
     dropdownEl.innerHTML = `
       <div class="wui-dd-header">
@@ -900,6 +930,10 @@
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+
+  // 🏰 07-22: eksportas — F9 pilies „Connect your wallet" ekranas atidaro connect flow tiesiogiai
+  window.WalletUI = window.WalletUI || {};
+  window.WalletUI.openConnect = handleConnect;
 
   // ── Lifecycle ──
   function init() {
