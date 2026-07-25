@@ -180,11 +180,16 @@
     document.body.appendChild(_overlay);
     document.getElementById('rp-close').onclick = _closeGame;
     _enterPortrait();   // 📱 pinball = vertikalus → į portrait (nereikia versti telefono)
+    // 🔇 07-25 FIX: nutildom PAGRINDINIO žaidimo (F9/adventure) muziką+SFX, kad nesikirstų su pinball muzika
+    //   (grojo abi vienu metu). Pinball garsas yra IFRAME'e (atskiras dokumentas) → jo _applyGlobalMute neliečia.
+    try { if (window._applyGlobalMute) window._applyGlobalMute(true); } catch (_) {}
     _tick();
   }
   function _closeGame() {
     if (_overlay) { try { _overlay.remove(); } catch (_) {} _overlay = null; }
     _restoreLandscape();   // 📱 atgal į pilies landscape režimą
+    // 🔊 grąžinam pagrindinio žaidimo garsą pagal IŠSAUGOTĄ user pasirinkimą (ne priverstinai on)
+    try { if (window._applyGlobalMute) window._applyGlobalMute(localStorage.getItem('lenta_muted') === '1'); } catch (_) {}
     _tick();
   }
 
