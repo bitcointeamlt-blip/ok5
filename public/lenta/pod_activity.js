@@ -134,8 +134,51 @@
     return d1 === d2;
   }
 
+  // ── AUTO-ONBOARDING (tylus, be popup'ų) ────────────────────────────────────
+  // Grandinės pirmas žingsnis, kurio anksčiau NEBUVO: `gas-drip` niekas nekviesdavo, kai žaidėjas
+  //   susikuria piniginę (jį kvietė tik SOL→RONKE swap ir `claim()`, o `claim()` pasiekiamas tik per
+  //   nemokamą pinball'ą, kuriam JAU reikia dujų). Todėl naujas žaidėjas amžinai likdavo su 0 RON ir
+  //   nepadarydavo nė vienos savo TX → PoD „New users = 0".
+  // Dabar: prisijungus piniginei, jei RON mažai — fone paprašom drip'o. Parašo NEREIKIA (tai serverio
+  //   kvietimas), tad žaidėjas nieko nepastebi. Serveris tikrina profilį (≥10 min), IP limitą ir
+  //   sponsor'o grindis; „PROFILE_TOO_NEW" atveju pakartojam po nurodyto laiko.
+  var ONBOARD_MIN_WEI = 10000000000000000;   // 0.01 RON — žemiau to laikom „be dujų"
+  var _tried = {};
+
+  async function onboard(a) {
+    a = String(a || addr() || '').toLowerCase();
+    if (!a || _tried[a]) return;
+    _tried[a] = 1;
+    var p = provider(); if (!p) return;
+    try {
+      if (await ronBalance(p, a) >= ONBOARD_MIN_WEI) return;   // jau turi dujų
+    } catch (_) { return; }
+    try {
+      var r = await fetch(GAS_DRIP, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: a }),
+      }).then(function (x) { return x.json(); }).catch(function () { return null; });
+      if (!r) return;
+      if (r.ok && r.txHash) { try { console.log('[PoD] onboarding gas:', r.amount, 'RON', r.txHash); } catch (_) {} return; }
+      // Profilis dar per naujas → pakartojam kai sueis laikas (viena sesija, be spamo).
+      if (r.code === 'PROFILE_TOO_NEW') {
+        var wait = Math.max(1, Number(r.waitMinutes) || 10);
+        delete _tried[a];
+        setTimeout(function () { onboard(a); }, wait * 60000 + 15000);
+      }
+    } catch (_) {}
+  }
+
+  // Prisijungus / pasikeitus piniginei — pabandom. Taip pat vieną kartą po užkrovimo.
+  try {
+    if (window.Wallet && window.Wallet.onChange) {
+      window.Wallet.onChange(function (s) { if (s && s.address) onboard(s.address); });
+    }
+  } catch (_) {}
+  setTimeout(function () { try { if (addr()) onboard(addr()); } catch (_) {} }, 4000);
+
   window.PodActivity = {
-    enabled: enabled, claim: claim, welcome: welcome, doneToday: doneToday,
+    enabled: enabled, claim: claim, welcome: welcome, doneToday: doneToday, onboard: onboard,
     contract: function () { return PLAY; },
   };
 })();
