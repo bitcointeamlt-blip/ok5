@@ -159,7 +159,13 @@
         body: JSON.stringify({ wallet: a }),
       }).then(function (x) { return x.json(); }).catch(function () { return null; });
       if (!r) return;
-      if (r.ok && r.txHash) { try { console.log('[PoD] onboarding gas:', r.amount, 'RON', r.txHash); } catch (_) {} return; }
+      if (r.ok && r.txHash) {
+        try { console.log('[PoD] onboarding gas:', r.amount, 'RON (' + (r.tier || '?') + ')', r.txHash); } catch (_) {}
+        // 1 LYGIS („instant" — dujos iškart, kad žaidėjas veiktų nuo pirmos sekundės). 2 lygis (pilna
+        //   suma treniruotėms) tampa prieinamas kai profilis prasibus → pasiimam jį fone, be žaidėjo.
+        if (r.tier === 'instant') { delete _tried[a]; setTimeout(function () { onboard(a); }, 11 * 60000); }
+        return;
+      }
       // Profilis dar per naujas → pakartojam kai sueis laikas (viena sesija, be spamo).
       if (r.code === 'PROFILE_TOO_NEW') {
         var wait = Math.max(1, Number(r.waitMinutes) || 10);
