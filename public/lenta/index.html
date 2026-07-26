@@ -2135,7 +2135,7 @@
   <script src="wallet.js?v=iwallet_20260721"></script>
   <script src="boards.js?v=boards2_gif"></script>
   <script src="raid_ui.js?v=raid17_protection"></script>
-  <script src="barracks_nft.js?v=deckswap_20260713"></script>
+  <script src="barracks_nft.js?v=podselfpay_20260726"></script>
   <script src="barracks_nft_modal.js?v=deckswap_20260713"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=f9live369_nomenu_20260725"></script>
@@ -2153,6 +2153,14 @@
        (lokalus 10h gate). Po backend deploy (žr. smart-wallet/server/colyseus/MOUNT.md) įrašyk URL
        ir RonkePong pereis prie on-chain gate (1-click acc + deposit flow + PoD TX) BE kodo keitimo. -->
   <script>window.PLAY_API_URL = '';</script>
+  <!-- 🏆 PoD ATTRIBUTION FIX: RONKE mokesčiai (pinball 15, raid fee 10) buvo paprasti
+       `RONKE.transfer(treasury)` → tx.to = RONKE token, kuris NĖRA registruotas PoD kontraktas,
+       tad žaidėjas mokėdavo ir degindavo gas, o projektas gaudavo 0 taškų. Įrašius čia
+       PewPewPlayV2 adresą, tie patys mokesčiai eina per MŪSŲ registruotą kontraktą
+       (Gas + Contract Volume + Paying Users), o pinigai — į tą patį treasury.
+       ⚠️ PO deploy BŪTINA „+ Add Contract" PoD Builder'yje, kitaip nauda = 0.
+       Tuščias = senas elgesys (nieko nelūžta). -->
+  <script>window.PEWPEW_PLAY_V2 = '0x33b93f6eB104d32c516A1EEA9Bd6F704cc9601Ae';</script>
   <script src="play_client.js?v=pc1_20260722"></script>
   <script src="recovery_ui.js?v=rec1_20260723"></script>   <!-- 🔒 Save/Restore progress (link wallet/email → custodial recovery) -->
   <script src="ronkepong_launcher.js?v=rp19_bgmpause_20260725"></script>   <!-- 🎳 RonkePong: mobile portrait on open, restore landscape on close -->

@@ -11,6 +11,20 @@
   const RONKE_TOKEN = '0xf988f63bf26C3Ed3fBf39922149E3E7b1e5c27cB';   // RONKE ERC20 (18 dec)
   const TREASURY = '0xfF0a2d76E6156Bc1C0c689fe4029f6F1a566E92e';      // play-fee treasury (tas pats kaip F12)
   const FEE = 15;                                                     // RONKE / žaidimas
+  // 🏆 PoD ATTRIBUTION: paprastas RONKE.transfer(treasury) turi tx.to = RONKE token, kuris NĖRA
+  //   registruotas PoD kontraktas → žaidėjas moka ir degina gas, o projektas gauna 0 taškų.
+  //   PewPewPlayV2 pačiuptelėja mokestį per transferFrom, tad tx.to = MŪSŲ registruotas kontraktas
+  //   (Gas + Contract Volume + Paying Users), o pinigai keliauja į TĄ PATĮ treasury.
+  //   ⚠️ Tuščias = senas elgesys (transfer). Įrašyk adresą PO deploy + „+ Add Contract" PoD Builder'yje.
+  //   Pinball sukasi iframe'e → konfigą imam ir iš tėvinio lenta puslapio (kaip ir piniginę).
+  const PLAY_V2 = (function () {
+    try { if (window.PEWPEW_PLAY_V2) return String(window.PEWPEW_PLAY_V2).trim(); } catch (_) {}
+    try {
+      if (window.parent && window.parent !== window && window.parent.PEWPEW_PLAY_V2)
+        return String(window.parent.PEWPEW_PLAY_V2).trim();
+    } catch (_) {}   // cross-origin (standalone) → nėra
+    return '';
+  })();
   const SB_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co';
   const SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';    // publishable (client-public) anon key
   const BOARD_TABLE = 'f9_bases';   // reuse esamą lentelę (anon FULL WRITE); raktas rp_<wallet>
@@ -60,7 +74,36 @@
   function encodeTransfer(to, amountWei) {           // ERC20 transfer(address,uint256)
     return '0xa9059cbb' + pad64(to) + pad64(amountWei.toString(16));
   }
+  function encodeApprove(spender, amountWei) {       // ERC20 approve(address,uint256)
+    return '0x095ea7b3' + pad64(spender) + pad64(amountWei.toString(16));
+  }
+  function encodeAllowance(owner, spender) {         // ERC20 allowance(address,address)
+    return '0xdd62ed3e' + pad64(owner) + pad64(spender);
+  }
+  // PewPewPlayV2.payAndPlay(uint256 amount, bool paid, string kind)
+  function encodePayAndPlay(amountWei, paid, kind) {
+    var bytes = [], i;
+    for (i = 0; i < kind.length; i++) bytes.push(kind.charCodeAt(i) & 0xff);   // ASCII tag
+    var hex = ''; for (i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+    var padded = bytes.length ? hex.padEnd(Math.ceil(bytes.length / 32) * 64, '0') : '';
+    return '0x162fe520'
+      + pad64(amountWei.toString(16))
+      + pad64(paid ? '1' : '0')
+      + pad64((96).toString(16))                     // offset iki string dalies
+      + pad64(bytes.length.toString(16)) + padded;
+  }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  // Laukia TX kvito (~3 min). Meta klaidą jei atmesta arba nesulaukta.
+  async function waitReceipt(p, txHash, label) {
+    for (var i = 0; i < 90; i++) {
+      await sleep(2000);
+      var r = null;
+      try { r = await p.request({ method: 'eth_getTransactionReceipt', params: [txHash] }); } catch (_) {}
+      if (r) { if (r.status !== '0x1') throw new Error((label || 'Transaction') + ' failed on-chain.'); return r; }
+    }
+    throw new Error((label || 'Transaction') + ' timed out (not confirmed).');
+  }
 
   // ── Tinklo garantija (Ronin mainnet 2020) ──
   async function ensureChain(p) {
@@ -171,15 +214,32 @@
     if (state.balance < FEE) throw new Error('Not enough RONKE (need ' + FEE + ').');
     state.paying = true; emit();
     try {
+      if (PLAY_V2) {
+        // 🏆 PoD kelias: mokestis per MŪSŲ registruotą kontraktą (tx.to = PewPewPlayV2).
+        //   transferFrom vis tiek emituoja Transfer(žaidėjas → treasury), tad serverio pusės
+        //   mokesčio verifikacija (RaidFee.ts šablonas) veikia be pakeitimų.
+        const need = toWei(FEE);
+        let allow = 0n;
+        try {
+          const a = await p.request({ method: 'eth_call', params: [{ to: RONKE_TOKEN, data: encodeAllowance(from, PLAY_V2) }, 'latest'] });
+          allow = BigInt(a || '0x0');
+        } catch (_) {}
+        if (allow < need) {
+          // Vienkartinis approve (dideliam kiekiui) — vėliau kiekvienas žaidimas = 1 TX.
+          const apHash = await p.request({ method: 'eth_sendTransaction', params: [{ from: from, to: RONKE_TOKEN, data: encodeApprove(PLAY_V2, toWei(1000000)) }] });
+          await waitReceipt(p, apHash, 'Approval');
+        }
+        const txHash = await p.request({ method: 'eth_sendTransaction', params: [{ from: from, to: PLAY_V2, data: encodePayAndPlay(need, true, 'pinball') }] });
+        await waitReceipt(p, txHash, 'Payment');
+        refreshBalance();
+        return true;
+      }
+      // Legacy kelias (kol PLAY_V2 nedeployintas): paprastas transfer — PoD jo NEužskaito.
       const data = encodeTransfer(TREASURY, toWei(FEE));
       const txHash = await p.request({ method: 'eth_sendTransaction', params: [{ from: from, to: RONKE_TOKEN, data }] });
-      for (let i = 0; i < 90; i++) {   // ~3 min poll
-        await sleep(2000);
-        let r = null;
-        try { r = await p.request({ method: 'eth_getTransactionReceipt', params: [txHash] }); } catch (_) {}
-        if (r) { const ok = r.status === '0x1'; state.paying = false; refreshBalance(); emit(); if (!ok) throw new Error('Payment failed on-chain.'); return true; }
-      }
-      throw new Error('Payment timed out (not confirmed).');
+      await waitReceipt(p, txHash, 'Payment');
+      refreshBalance();
+      return true;
     } finally { state.paying = false; emit(); }
   }
 

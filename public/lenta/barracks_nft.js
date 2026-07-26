@@ -85,6 +85,18 @@
   ];
   // ⚔️💰 RAID FEE treasury (== serverio RaidFee.ts default; Barracks/market treasury)
   const RAID_TREASURY = '0xfF0a2d76E6156Bc1C0c689fe4029f6F1a566E92e';
+  // 🏆 PoD ATTRIBUTION: `RONKE.transfer(treasury)` turi tx.to = RONKE token (NEregistruotas PoD
+  //   kontraktas) → žaidėjas moka, degina gas, o projektas gauna 0 taškų. PewPewPlayV2 pačiumpa
+  //   mokestį per transferFrom, tad tx.to = MŪSŲ registruotas kontraktas (Gas + Contract + Paying),
+  //   o pinigai keliauja į TĄ PATĮ treasury ir Transfer(žaidėjas→treasury) log'as išlieka —
+  //   serverio `RaidFee.ts` verifikacija veikia BE pakeitimų.
+  //   ⚠️ Tuščias = senas elgesys. Įrašyk adresą PO deploy + „+ Add Contract" PoD Builder'yje.
+  const PLAY_V2 = (window.PEWPEW_PLAY_V2 || '').trim();
+  const PLAY_V2_ABI = [{
+    type: 'function', name: 'payAndPlay', stateMutability: 'payable',
+    inputs: [{ name: 'amount', type: 'uint256' }, { name: 'paid', type: 'bool' }, { name: 'kind', type: 'string' }],
+    outputs: [],
+  }];
   const ERC721_ABI = [
     { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{type:'address'}], outputs: [{type:'uint256'}] },
   ];
@@ -794,12 +806,34 @@
   async function payRaidFee(amountRonke) {
     await ensureNetwork();
     const wc = await getWalletClient();
+    const pc = await getPublicClient();
     const addr = window.Wallet.getAddress();
+    const amt = BigInt(Math.round(amountRonke)) * 10n ** 18n;
+    if (PLAY_V2) {
+      // 🏆 PoD kelias — mokestis per registruotą kontraktą (vienkartinis approve, po to 1 TX/raidui).
+      let allow = 0n;
+      try {
+        allow = await pc.readContract({ address: ADDR.ronke, abi: ERC20_ABI, functionName: 'allowance', args: [addr, PLAY_V2] });
+      } catch (_) {}
+      if (allow < amt) {
+        const ah = await wc.writeContract({
+          address: ADDR.ronke, abi: ERC20_ABI, functionName: 'approve',
+          args: [PLAY_V2, 1000000n * 10n ** 18n], account: addr,
+        });
+        await pc.waitForTransactionReceipt({ hash: ah, timeout: 90000 });
+      }
+      const hash = await wc.writeContract({
+        address: PLAY_V2, abi: PLAY_V2_ABI, functionName: 'payAndPlay',
+        args: [amt, true, 'raid'], account: addr,
+      });
+      await pc.waitForTransactionReceipt({ hash, timeout: 90000 });
+      return hash;
+    }
+    // Legacy (kol PLAY_V2 nedeployintas): paprastas transfer — PoD jo NEužskaito.
     const hash = await wc.writeContract({
       address: ADDR.ronke, abi: ERC20_ABI, functionName: 'transfer',
-      args: [RAID_TREASURY, BigInt(Math.round(amountRonke)) * 10n ** 18n], account: addr,
+      args: [RAID_TREASURY, amt], account: addr,
     });
-    const pc = await getPublicClient();
     await pc.waitForTransactionReceipt({ hash, timeout: 90000 });
     return hash;
   }
@@ -853,6 +887,20 @@
     const pc = await getPublicClient();
     return await pc.readContract({ address: RONKE_POWER.ronke, abi: ERC20_ABI, functionName: 'allowance', args: [owner, RONKE_POWER.address] });
   }
+
+  // 🏆 PoD: `setDeckForWithFee` yra callable BET KURIO adreso — relayer'is nebūtinas. Kai TX siunčia
+  //   relayer'is, PoD mato VIENĄ adresą vietoj visų žaidėjų → „Active/Paying users" nulinasi (išmatuota
+  //   07-26: RonkePower 116 TX = 1 unikalus siuntėjas). Kai siunčia žaidėjas — jis tampa matomu vartotoju.
+  //   Kontraktas NEPAKEISTAS: on-chain efektas identiškas, skiriasi tik msg.sender ir kas moka gas.
+  //   ⚠️ `setDeckForWithFee` turi `onlyRelayer` apsaugą (patikrinta on-chain 07-26 — simuliacija iš
+  //   žaidėjo adreso revert'ina „not relayer"). Žaidėjui skirta funkcija = `setDeck(uint256[])`,
+  //   kur msg.sender IR yra deko savininkas. Simuliuota mainnet'e ✅.
+  const SETDECK_ABI = [{
+    type: 'function', name: 'setDeck', stateMutability: 'nonpayable',
+    inputs: [{ name: 'ids', type: 'uint256[]' }], outputs: [],
+  }];
+  const PLAYER_PAYS_DECK = (window.PEWPEW_PLAYER_PAYS_DECK !== false);   // globalus jungiklis (avarinis OFF)
+  const _MIN_GAS_WEI = 20000000000000000n;   // 0.02 RON — apytiksliai 1 setDeck TX su atsarga
   async function registerDeckOnChain(tokenIds, onStatus) {
     const status = function (m) { try { if (onStatus) onStatus(m); } catch (_) {} };
     if (!isRonkePowerEnabled()) throw new Error('On-chain deck registration is not live yet.');
@@ -917,6 +965,36 @@
     }
 
     // 2) Pasirašom SetDeck (EIP-712, GASLESS) — autorizuoja, kad TIK savininkas keičia savo deką
+    // 2a) 🏆 KELIAS A (PoD): žaidėjas PATS siunčia TX — tampa matomu unikaliu vartotoju.
+    //     Naudojam tik jei jis turi gas; kitaip krentam į relayer kelią (kad žaidimas nesulūžtų
+    //     tiems ~54% žaidėjų, kurie laiko <1 RON). Parašo NEREIKIA — msg.sender pats yra įrodymas.
+    if (PLAYER_PAYS_DECK) {
+      let ronBal = 0n;
+      try { ronBal = await (await getPublicClient()).getBalance({ address: addr }); } catch (_) { ronBal = 0n; }
+      if (ronBal >= _MIN_GAS_WEI) {
+        try {
+          status('Confirm in your wallet…');
+          const wc = await getWalletClient();
+          const pc = await getPublicClient();
+          const h = await wc.writeContract({
+            address: RONKE_POWER.address, abi: SETDECK_ABI, functionName: 'setDeck',
+            args: [ids.map(function (x) { return BigInt(x); })], account: addr,
+          });
+          const rc = await pc.waitForTransactionReceipt({ hash: h, timeout: 120000 });
+          if (rc.status !== 'success') throw new Error('Registration reverted on-chain.');
+          _finishDeckRegistration(addr, ids);
+          return { ok: true, txHash: h, selfPaid: true };
+        } catch (e) {
+          const m = String((e && (e.shortMessage || e.message)) || e);
+          // Žaidėjas atšaukė → NEsiunčiam per relayer už jo nugaros; klaidą rodom.
+          if (/reject|denied|User rejected|cancell?ed/i.test(m)) throw e;
+          // Techninė klaida (gas/RPC) → tyliai krentam į relayer kelią žemiau.
+          try { console.warn('[deck] self-paid nepavyko, fallback į relayer:', m); } catch (_) {}
+        }
+      }
+    }
+
+    // 2b) KELIAS B (fallback): pasirašom SetDeck (EIP-712, GASLESS) — relayer'is siųs ir mokės gas.
     status('Sign deck registration…');
     const deadline = Math.floor(Date.now() / 1000) + 600;
     const nonce = Date.now().toString() + Math.floor(Math.random() * 1e6).toString();
@@ -947,6 +1025,12 @@
       }).then(function (r) { return r.json(); });
     } catch (e) { throw new Error('Network error: ' + (e && e.message || e)); }
     if (!resp || !resp.ok) throw new Error((resp && resp.error) || 'Registration failed.');
+    _finishDeckRegistration(addr, ids);
+    return resp;  // { ok, txHash, deck, status }
+  }
+
+  // Po-registracijos apskaita — BENDRA abiem keliams (self-paid ir relayer).
+  function _finishDeckRegistration(addr, ids) {
 
     // Sinchronizuojam lokalų deką su tuo, ką užregistravom + įsimenam registruotą snapshot
     setDeck(addr, ids);
@@ -974,7 +1058,6 @@
         })();
       }
     } catch (_) {}
-    return resp;  // { ok, txHash, deck, status }
   }
 
   // Verčia žalią revert priežastį į aiškią žmogui suprantamą žinutę.
