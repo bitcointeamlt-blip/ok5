@@ -140,8 +140,15 @@
 
   }
 
-  // Nemokamo žaidimo tinkamumas: piniginėj ≥11 RON (Age of Ronke treniruotės anti-bot slenkstis).
-  var FREE_MIN_RON = 11;
+  // Nemokamo žaidimo tinkamumas. Buvo 11 RON — slenkstis perimtas iš Barracks treniruočių anti-bot,
+  //   kur mintinami NFT. Nemokamam pinball'ui jis nieko NEsaugo: `?embed=free` tik praleidžia mokestį
+  //   (`payFee → if (FREE_PLAY) return true`), jokio RONKE atlygio nėra, tad nemokamai žaidžiantis
+  //   botas projektui kainuoja 0. Užtat 11 RON LAUŽĖ onboarding'ą: naujas žaidėjas gauna 0.02 RON
+  //   gas-drip'ą, bet iki 11 RON nepriartėja → negali paimti nemokamo žaidimo → nepadaro nė vienos
+  //   savo TX → PoD jo nemato („New users = 0"). Dabar slenkstis = tik dujos, tad grandinė užsidaro:
+  //   profilis → 0.02 RON → nemokamas žaidimas kas 10h → 1 žaidėjo pasirašyta TX → Active/New user.
+  //   Tunable be deploy'o per `window.PEWPEW_FREE_MIN_RON`.
+  var FREE_MIN_RON = Number(window.PEWPEW_FREE_MIN_RON != null ? window.PEWPEW_FREE_MIN_RON : 0.01);
   function _hasFreeRon() {
     try {
       if (window.Wallet && window.Wallet.getRonBalance && window.Wallet.getAddress && window.Wallet.getAddress()) {
