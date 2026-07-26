@@ -4554,41 +4554,7 @@ function _f9InstallDragHandlers() {
       return;
     }
     if (window._f9DragActive && window._f9DragRect) {
-      const camX = S.cam ? S.cam.x : 0;
-      const camY = S.cam ? S.cam.y : 0;
-      const r = window._f9DragRect;
-      // 🔍 07-18 FIX (user: box-select nebeveikia priartinus): rect canvas-px → world PRIVALO /zoom (kaip klik/hover
-      //   :4406/:4418 ir visos kitos konversijos). Be to priartinęs (wheel-zoom / touch 0.7) marquee pagaudavo
-      //   NE tą world-regioną → nepažymėdavo nieko. zoom=1 → nepakitę (÷1).
-      const _z = (typeof _f9WorldZoom === 'function' ? _f9WorldZoom() : 1) || 1;
-      const wx1 = Math.min(r.sx1, r.sx2) / _z + camX;
-      const wy1 = Math.min(r.sy1, r.sy2) / _z + camY;
-      const wx2 = Math.max(r.sx1, r.sx2) / _z + camX;
-      const wy2 = Math.max(r.sy1, r.sy2) / _z + camY;
-      const _locks = (typeof _f9SquadLocks === 'function') ? _f9SquadLocks() : [];
-      const sel = [];
-      for (const u of S.units) {
-        if (!u || !u.alive) continue;
-        // Tik squad'as — hero (team 0) F9'e nematomas, drag jo nepagauna (2026-06-12)
-        if (!(u.team === 1 && u.isEditorEnemy)) continue;
-        // PvP: pažymim TIK savo komandą (opponento unitai irgi ally-tipo, bet kitas _pvpTeam) — kad nebūtų rolių painiavos
-        if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
-        // 🔒 UŽRAKINTO pako narius box-select PAGAUNA → galima pasiimti DALĮ (pvz. 5 iš 6) komandai, o kitus palikti.
-        //    Pako NARYSTĖ NEsikeičia (re-form/prijungimas blokuojamas lock'o _f9SquadButtonPress'e) → tik laikinas pažymėjimas.
-        const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
-        const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
-        if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
-      }
-      if (sel.length > 0) {
-        if (e.shiftKey && Array.isArray(window._f9SelectedSet)) {
-          for (const u of sel) if (window._f9SelectedSet.indexOf(u) < 0 && window._f9SelectedSet.length < _F9_PACK_SIZE) window._f9SelectedSet.push(u);
-        } else {
-          window._f9SelectedSet = sel.slice(0, _F9_PACK_SIZE);   // 🪖 box-select = pakas (max 6); visai armijai → ⛶ ALL
-        }
-        window._f9Selected = window._f9SelectedSet[0] || null;
-        window._f9ActiveSquad = null;   // rankinis pažymėjimas → nebe konkretus būrys
-        if (sel.length > _F9_PACK_SIZE && typeof _f9SetToast === 'function') _f9SetToast('Pako max ' + _F9_PACK_SIZE + ' (1 pakas)');
-      }
+      _f9CommitBoxSelect(window._f9DragRect, e.shiftKey);   // 07-25: bendra su mobile 1-piršto rėmeliu
       window._f9DragJustEnded = true;
     }
     if (window._f9DragActive && window._f9DragMode === 'pan') window._f9RightDragPanned = true;   // 🖱️ dešinys-drag panino → nuslopinam contextmenu komandą (nekomanduoja)
@@ -4662,6 +4628,7 @@ function _f9InstallDragHandlers() {
     let tLongT = null;       // 📱 long-press timeris (450ms) → sintetinis contextmenu (right-click atitikmuo)
     const TH = 9;
     canvas.addEventListener('touchstart', (e) => {
+      window._f9LastTouchT = performance.now();   // 📱 žymė contextmenu gaudyklei (naršyklės long-press)
       if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
       window._f9DragJustEnded = false; window._f9RightDragPanned = false;   // 🧹 FIX: orphanas nesuvalgo kitos komandos
       if (e.touches.length >= 2) {
@@ -4689,43 +4656,30 @@ function _f9InstallDragHandlers() {
         e.preventDefault();
         return;
       }
-      // 📱 07-18 grupės mygtukų HOLD (~0.5s) = SAVE dabartinę selekciją į G1/G2; trumpas TAP = recall (per click
-      //   dispatcher). NE preventDefault — kad TAP vis tiek generuotų synthetic click recall'ui; save praryja tą
-      //   click per _f9DragJustEnded (touchend).
-      if (_f9TouchBtnRects) {
-        let _gb = null;
-        for (const _b of _f9TouchBtnRects) {
-          if ((_b.id === 'g1' || _b.id === 'g2') && p.sx >= _b.x && p.sx <= _b.x + _b.w && p.sy >= _b.y && p.sy <= _b.y + _b.h) { _gb = _b; break; }
-        }
-        if (_gb) {
-          tMode = 'btnhold'; window._f9BtnHoldSaved = false;
-          tStart = { sx: p.sx, sy: p.sy, clientX: t.clientX, clientY: t.clientY };
-          const _gid = _gb.id === 'g1' ? '1' : '2';
-          clearTimeout(tLongT);
-          tLongT = setTimeout(() => {
-            if (tMode !== 'btnhold') return;
-            window._f9BtnHoldSaved = true;
-            try { if (navigator.vibrate) navigator.vibrate(25); } catch (_) {}
-            if (typeof _f9MobileSaveGroup === 'function') _f9MobileSaveGroup(_gid);
-          }, 450);
-          return;
-        }
+      // 📱 07-25 BUG-FIX: pirštas ant on-canvas UI (kortelės / pakai [1-6] / 🛡🚩✕ / info panelė) → JOKIO
+      //   long-press (sintetinio right-click į pasaulį) ir JOKIO rėmelio. Synthetic click praeina normaliai →
+      //   mygtuką apdoroja click dispečeris. Be šito palaikius mygtuką ~0.5s iššaudavo dešinys klikas į tašką
+      //   PO mygtuku: armija nubėgdavo, o mygtukas nesuveikdavo („paspaudžiu — nieko nevyksta").
+      if (_f9PointOverTouchUI(p.sx, p.sy)) {
+        tMode = 'ui';
+        clearTimeout(tLongT);
+        return;
       }
       tMode = 'maybe';
       tStart = { sx: p.sx, sy: p.sy, clientX: t.clientX, clientY: t.clientY };
-      // 📱 LONG-PRESS (450ms be judesio) = DEŠINYS KLIKAS: atrakina siege/tpmove/attack komandas
-      //    telefone (contextmenu handler'is naudoja e.clientX/Y → sintetinis MouseEvent veikia 1:1).
+      // 📱 07-26 PALAIKYMAS (300ms be judesio) = ĮJUNGIA RĖMELĮ. Paprastas tempimas lieka KAMERA.
+      //   Kodėl taip: mobile pattern'as „hold-then-drag" — be jo tektų rinktis ARBA kamerą, ARBA rėmelį
+      //   (07-25 buvau kietai priskyręs rėmeliui → dingo kameros tempimas, user: „dar blogiau"). Tas pats
+      //   sprendimas naudojamas C&C Generals iOS porte: vieno piršto tempimas kaskart NUSPRENDŽIA
+      //   „rėmelis ar kamera". Sintetinis right-click PAŠALINTAS — ataka/siege dabar paprastu bakstelėjimu.
       clearTimeout(tLongT);
       tLongT = setTimeout(() => {
         if (tMode !== 'maybe' || !tStart) return;
-        tMode = 'longfired';                        // touchend praleis synthetic click (komanda jau išduota)
-        try { if (navigator.vibrate) navigator.vibrate(25); } catch (_) {}
-        try {
-          canvas.dispatchEvent(new MouseEvent('contextmenu', {
-            clientX: tStart.clientX, clientY: tStart.clientY, bubbles: true, cancelable: true,
-          }));
-        } catch (_) {}
-      }, 450);
+        tMode = 'boxarm';
+        window._f9BoxArmed = { sx: tStart.sx, sy: tStart.sy, at: performance.now() };
+        try { if (navigator.vibrate) navigator.vibrate(20); } catch (_) {}
+        if (typeof _f9SetToast === 'function') _f9SetToast('▭ Drag to select units');
+      }, 300);
     }, { passive: false });
     canvas.addEventListener('touchmove', (e) => {
       if (!(gameMode === 'adventure' && S && S.floor === 9)) return;
@@ -4758,13 +4712,7 @@ function _f9InstallDragHandlers() {
       }
       const t = e.touches[0];
       if (!t) return;
-      if (tMode === 'btnhold') {
-        // 📱 nuslydo nuo grupės mygtuko → atšaukiam save (nei save, nei recall)
-        if (tStart && (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH)) {
-          clearTimeout(tLongT); tMode = null; window._f9BtnHoldSaved = false;
-        }
-        return;
-      }
+      if (tMode === 'ui') return;   // gestas prasidėjo ant mygtuko — nei rėmelis, nei kamera
       if (tMode === 'popup' && window._f9InfoPanel) {
         const p = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
         window._f9InfoPanel.x = p.sx - tPopupOff.dx;
@@ -4772,15 +4720,23 @@ function _f9InstallDragHandlers() {
         e.preventDefault();
         return;
       }
+      // 📱 07-26 DVI ŠAKOS: pajudėjai IŠKART → KAMERA; palaikei 300ms (boxarm) ir tada tempi → RĖMELIS.
       if (tMode === 'maybe' && tStart) {
         if (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH) {
-          // 1 piršto drag = KAMEROS PAN (mobile standartas). Box-select mobile
-          // nereikalingas — selection per tap / ALL mygtuką (2026-06-12 fix).
-          clearTimeout(tLongT);   // pajudėjo → nebe long-press
+          clearTimeout(tLongT);   // pajudėjo anksčiau nei 300ms → tai kamera, ne rėmelis
           tMode = 'pan1';
           tStart.lastX = t.clientX;
           tStart.lastY = t.clientY;
         }
+      }
+      if (tMode === 'boxarm' && tStart) {
+        if (Math.abs(t.clientX - tStart.clientX) > TH || Math.abs(t.clientY - tStart.clientY) > TH) tMode = 'box';
+      }
+      if (tMode === 'box' && tStart) {
+        const pb = _f9CanvasXY({ clientX: t.clientX, clientY: t.clientY });
+        window._f9DragRect = { sx1: tStart.sx, sy1: tStart.sy, sx2: pb.sx, sy2: pb.sy };
+        e.preventDefault();   // stabdo puslapio scroll
+        return;
       }
       if (tMode === 'pan1' && tStart && S.cam) {
         const r1 = canvas.getBoundingClientRect();
@@ -4795,17 +4751,31 @@ function _f9InstallDragHandlers() {
     }, { passive: false });
     canvas.addEventListener('touchend', (e) => {
       clearTimeout(tLongT);
-      if (!(gameMode === 'adventure' && S && S.floor === 9)) { tMode = null; return; }
-      if (tMode === 'btnhold') {
-        // HOLD jau išsaugojo → _f9DragJustEnded praryja ateinantį synthetic click (kad NErecall'intų).
-        // Jei atleista anksčiau (TAP) → NEpraryjam → click dispatcher recall'ina grupę.
-        if (window._f9BtnHoldSaved) window._f9DragJustEnded = true;
-        window._f9BtnHoldSaved = false;
+      window._f9BoxArmed = null;
+      if (!(gameMode === 'adventure' && S && S.floor === 9)) { tMode = null; window._f9DragRect = null; return; }
+      if (tMode === 'ui') {
+        // mygtukas/kortelė — synthetic click PRALEIDŽIAM (jį apdoros click dispečeris), nieko nepraryjam
         tMode = null;
         return;
       }
-      if (tMode === 'longfired') {
-        // long-press komanda jau išduota per contextmenu — synthetic click NEturi dar ir move'int
+      if (tMode === 'box') {
+        // 📱 RĖMELIO pabaiga — TAS PATS commit'as kaip PC kairio-drago (bendra _f9CommitBoxSelect).
+        _f9CommitBoxSelect(window._f9DragRect, false);
+        window._f9DragRect = null;
+        window._f9DragJustEnded = true;   // rėmelis jau pažymėjo → synthetic click NEturi dar ir komanduoti
+        tMode = null;
+        e.preventDefault();
+        return;
+      }
+      if (tMode === 'boxarm') {
+        // 🔴 07-26 KONFLIKTAS: anksčiau čia komandą PRARYDAVOM. Bet žmogaus „bakstelėjimas" dažnai trunka
+        //   >300ms → įsijungdavo rėmelio režimas, o atleidus NIEKAS neįvykdavo („paspaudžiu, nieko"). Dabar
+        //   palaikymas BE tempimo = paprastas tap → click praleidžiam normaliai (ataka/move suveikia).
+        tMode = null;
+        return;
+      }
+      if (tMode === 'pan1') {
+        // kameros tempimas baigtas — sekantis synthetic click NEturi komanduoti
         window._f9DragJustEnded = true;
         tMode = null;
         e.preventDefault();
@@ -4819,8 +4789,8 @@ function _f9InstallDragHandlers() {
         e.preventDefault();
         return;
       }
-      if (tMode === 'pan1') {
-        // Pan baigtas — sekantis synthetic click ignoruojamas
+      if (tMode === 'pan') {
+        // 2 pirštų kameros gestas — sekantis synthetic click ignoruojamas (kad nenukomanduotų)
         window._f9DragJustEnded = true;
         tMode = null;
         e.preventDefault();
@@ -4828,7 +4798,7 @@ function _f9InstallDragHandlers() {
       }
       tMode = null;   // paprastas tap — leidžiam synthetic click (komandos per click handler)
     }, { passive: false });
-    canvas.addEventListener('touchcancel', () => { clearTimeout(tLongT); tMode = null; window._f9BtnHoldSaved = false; window._f9DragRect = null; }, { passive: true });
+    canvas.addEventListener('touchcancel', () => { clearTimeout(tLongT); tMode = null; window._f9DragRect = null; window._f9BoxArmed = null; }, { passive: true });
   })();
 }
 if (typeof setInterval !== 'undefined') {
@@ -4846,23 +4816,27 @@ window._f9CtrlGroups = window._f9CtrlGroups || {};
 function _f9SetToast(text) {
   window._f9Toast = { text, until: performance.now() + 1500 };
 }
-// 📱 07-18 MOBILE CONTROL-GRUPĖS (Yadyy Ace prašymas: „pažymėti unitus → grupė"). Naudoja TĄ PATĮ
-//   window._f9CtrlGroups kaip desktop Ctrl+1..6 → grupės bendros tarp klaviatūros ir touch. Save = HOLD ant
-//   G1/G2 mygtuko (touchstart timeris); recall = TAP (per click dispatcher). Multi-select = ＋PICK toggle.
-function _f9MobileSaveGroup(g) {
-  const sel = (Array.isArray(window._f9SelectedSet) ? window._f9SelectedSet : [])
-    .filter(u => u && u.alive && typeof _f9IsAlly === 'function' && _f9IsAlly(u)).slice(0, _F9_SQUAD_CAP);
-  if (!sel.length) { _f9SetToast('Select units first (＋PICK)'); return; }
-  window._f9CtrlGroups[g] = sel.slice();
-  _f9SetToast('GROUP ' + g + ' saved (' + sel.length + ')');
+
+// 📱 07-25 Ar taškas (canvas px) yra ant F9 ON-CANVAS UI (mygtukai / kortelės / pakai / panelės)?
+//   BUG-FIX 07-25: touchstart'e virš UI NEbepaleidžiam long-press timerio. Anksčiau palaikius BET KURĮ
+//   mygtuką ~0.5s iššaudavo sintetinis `contextmenu` → dešinio klavišo handleris auto-pažymėdavo visą
+//   armiją ir išduodavo MOVE komandą į tašką PO mygtuku, o pats mygtukas NEsuveikdavo (click'ą prarydavo
+//   _f9DragJustEnded). Būtent tai atrodė kaip „paspaudžiu — nieko nevyksta". Bug'as nuo 07-18 mygtukų.
+function _f9PointOverTouchUI(sx, sy) {
+  const hit = (r) => !!r && sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h;
+  const lists = [
+    (typeof _f9SelBarRects !== 'undefined') ? _f9SelBarRects : null,
+    window._f9SquadRects, window._f9TypeRects, window._f9RegroupFormRects,
+  ];
+  for (const L of lists) { if (Array.isArray(L)) for (const r of L) if (hit(r)) return true; }
+  const singles = [window._f9HoldRect, window._f9PatrolRect, window._f9DeselectRect,
+                   window._f9UnlockRect, window._f9RegroupRect, window._f9SelectAllRect];
+  for (const r of singles) if (hit(r)) return true;
+  const ipr = window._f9InfoPanelRects;
+  if (ipr && (hit(ipr.panel) || hit(ipr.close) || hit(ipr.restore) || hit(ipr.toggle))) return true;
+  return false;
 }
-function _f9MobileRecallGroup(g) {
-  const grp = ((window._f9CtrlGroups || {})[g] || []).filter(u => u && u.alive).slice(0, _F9_SQUAD_CAP);
-  if (!grp.length) { _f9SetToast('Group ' + g + ' empty — HOLD to save'); return; }
-  window._f9CtrlGroups[g] = grp;
-  window._f9SelectedSet = grp.slice(); window._f9Selected = grp[0]; window._f9ActiveSquad = null;
-  _f9SetToast('GROUP ' + g + ' (' + grp.length + ')');
-}
+
 document.addEventListener('keydown', (e) => {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
   if (typeof gameMode === 'undefined' || gameMode !== 'adventure') return;
@@ -5288,120 +5262,14 @@ function _drawF9UnitHpBars() {
   ctx.restore();
 }
 
-// F9 MOBILE mygtukai — ALL / A-MOVE / STOP (tik touch įrenginiuose, dešinys kraštas)
-let _f9TouchBtnRects = null;
-function _drawF9TouchButtons() {
-  _f9TouchBtnRects = null;
-  window._f9DpadRects = null;
-  if (!window._f9TouchInstalled) return;
-  if (typeof S === 'undefined' || !S || S.floor !== 9) return;
-  if (typeof ctx === 'undefined' || !ctx || typeof canvas === 'undefined' || !canvas) return;
-  const v = (typeof _getVisibleCanvasRect === 'function')
-    ? _getVisibleCanvasRect()
-    : { x: 0, y: 0, w: canvas.width, h: canvas.height };
-  // 📱 07-18: supaprastintas mobile combat rinkinys. ATK/A-MV/STOP auto-pažymi visą armiją. ＋PICK = multi-select
-  //   režimas (tap unitus = add/remove); G1/G2 = control-grupės (TAP=recall, HOLD ~0.5s=save dabartinę selekciją).
-  // 📱 07-25 (žaidėjo prašymas „2 buttons for attack — one for structures and one for mobs"): ATK išskaidytas į
-  //   ⚔️MOBS (priešų unitai) ir 🏰WALL (sienos/vartai = siege). Telefone long-press right-click buvo vienintelis
-  //   kelias siege'inti — dabar tai atskiras mygtukas su snap'u į artimiausią sienos celę.
-  const _grpCount = (g) => ((window._f9CtrlGroups || {})[g] || []).filter(u => u && u.alive).length;
-  const _g1n = _grpCount('1'), _g2n = _grpCount('2');
-  const _homeOwn = !!(window.__f9HomeActive && !window.__f9RaidActive);   // savo pilis → savų sienų negriaunam
-  const _wallsUp = !_homeOwn && Array.isArray(S._f9Walls) && S._f9Walls.some(w => w && w.alive);
-  const btns = [
-    { id: 'attack', label: '⚔️ MOBS', active: !!window._f9AttackArm },   // paspaudi → bakstelėk priešą → focus-fire (target LOCK)
-    { id: 'siege',  label: '🏰 WALL', active: !!window._f9SiegeArm, dim: !_wallsUp },   // paspaudi → bakstelėk sieną → siege
-    { id: 'amove',  label: '🏃 A-MV', active: !!window._f9AMoveArm },     // attack-move į tašką
-    { id: 'stop',   label: '✋ STOP', active: false },                    // sustabdyti judėjimą/kovą
-    { id: 'pick',   label: window._f9MultiSelectMode ? '✓ PICK' : '＋ PICK', active: !!window._f9MultiSelectMode },   // multi-select toggle
-    { id: 'g1',     label: _g1n ? ('G1·' + _g1n) : 'G1', active: false, dim: !_g1n },   // TAP=recall / HOLD=save
-    { id: 'g2',     label: _g2n ? ('G2·' + _g2n) : 'G2', active: false, dim: !_g2n },
-  ];
-  // 📱 07-25 ADAPTYVUS dydis: 7 mygtukų × 42px netilpdavo landscape telefone (v.h≈390) — suspaudžiam
-  //   aukštį/tarpą kol telpa į [viršus+40 .. apačia−100] juostą, tada clamp'inam į v.y+40.
-  const nB = btns.length;
-  let bh = 34, gap = 8;
-  const availH = Math.max(140, v.h - 150);
-  if ((bh + gap) * nB > availH) {
-    const per = availH / nB;
-    bh = Math.max(24, Math.floor(per * 0.82));
-    gap = Math.max(3, Math.floor(per - bh));
-  }
-  const bw = Math.max(58, Math.min(76, Math.floor(v.w * 0.20)));
-  const bx = v.x + v.w - bw - 10;
-  let by = v.y + v.h - (bh + gap) * nB - 100;   // virš hint/bar zonos
-  if (by < v.y + 40) by = v.y + 40;
-  const fs = Math.max(10, Math.min(12, Math.round(bh * 0.36)));
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const rects = [];
-  for (const b of btns) {
-    ctx.globalAlpha = b.dim ? 0.5 : 0.82;
-    ctx.fillStyle = b.active ? '#7a5a20' : (b.dim ? '#2c2010' : '#3a2614');
-    _f9RoundRect(bx, by, bw, bh, 8);
-    ctx.fill();
-    ctx.strokeStyle = b.active ? '#ffcf5c' : (b.dim ? '#6a542a' : '#8a6a2e');
-    ctx.lineWidth = b.active ? 2 : 1.5;
-    _f9RoundRect(bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, 7);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = b.active ? '#ffe97a' : (b.dim ? '#b8a888' : '#f5e6c3');
-    ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(b.label, bx + bw / 2, by + bh / 2 + 1);
-    rects.push({ id: b.id, x: bx, y: by, w: bw, h: bh });
-    by += bh + gap;
-  }
-  ctx.restore();
-  _f9TouchBtnRects = rects;
-  _drawF9TouchDPad(v);
-}
-
-// 📱 07-25 KAMEROS D-PAD (žaidėjo prašymas „some arrows to move the camera") — kairys kraštas.
-//   Rodyklė LAIKOMA → kamera slenka tolygiai (piršto drag'as lieka, bet nebereikia „vilkti visą ekraną").
-//   Centras ⌖ = kamera šoka ant pažymėtų unitų — pagrindinis „kur mano kariai?" fix'as valdant kelias grupes.
-function _drawF9TouchDPad(v) {
-  const c = Math.max(30, Math.min(42, Math.floor(Math.min(v.w, v.h) * 0.105)));   // vienos celės kraštinė
-  const padW = c * 3;
-  const px = v.x + 8;
-  let py = v.y + v.h - padW - 96;                      // virš kortelių juostos
-  if (py < v.y + 40) py = v.y + 40;
-  const cells = [
-    { id: 'up',    dx: 0,  dy: -1, cx: 1, cy: 0, glyph: '▲' },
-    { id: 'left',  dx: -1, dy: 0,  cx: 0, cy: 1, glyph: '◀' },
-    { id: 'focus', dx: 0,  dy: 0,  cx: 1, cy: 1, glyph: '⌖' },
-    { id: 'right', dx: 1,  dy: 0,  cx: 2, cy: 1, glyph: '▶' },
-    { id: 'down',  dx: 0,  dy: 1,  cx: 1, cy: 2, glyph: '▼' },
-  ];
-  const held = window._f9DpadDir;
-  const rects = [];
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  for (const cell of cells) {
-    const x = px + cell.cx * c, y = py + cell.cy * c;
-    const isFocus = cell.id === 'focus';
-    const isHeld = !isFocus && held && held.dx === cell.dx && held.dy === cell.dy;
-    ctx.globalAlpha = isHeld ? 0.92 : 0.62;
-    ctx.fillStyle = isHeld ? '#7a5a20' : (isFocus ? '#1e2a3a' : '#2a2014');
-    _f9RoundRect(x + 2, y + 2, c - 4, c - 4, 7);
-    ctx.fill();
-    ctx.strokeStyle = isHeld ? '#ffcf5c' : (isFocus ? '#5ad0e0' : '#8a6a2e');
-    ctx.lineWidth = isHeld ? 2 : 1.3;
-    _f9RoundRect(x + 2.5, y + 2.5, c - 5, c - 5, 6.5);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = isHeld ? '#ffe97a' : (isFocus ? '#9de8f0' : '#e8d8b4');
-    ctx.font = 'bold ' + Math.round(c * 0.42) + 'px system-ui, sans-serif';
-    ctx.fillText(cell.glyph, x + c / 2, y + c / 2 + 1);
-    rects.push({ id: cell.id, dx: cell.dx, dy: cell.dy, x: x + 2, y: y + 2, w: c - 4, h: c - 4 });
-  }
-  ctx.restore();
-  window._f9DpadRects = rects;
-}
-
+// 📱 07-25 MOBILE VALDYMAS PERDARYTAS „KAIP PC" (user: „per daug mygtukų, niekas neveikia normalei —
+//   panaikink juos visus ir daryk iš naujo; kaip yra ant PC, taip padaryk ir ant mobilaus").
+//   VISI mobile-only on-canvas mygtukai PAŠALINTI (buvo: ⛶ALL/⚔️MOBS/🏰WALL/🏃A-MV/✋STOP/＋PICK/G1/G2 +
+//   kameros rodyklių d-pad). Vietoj jų — tiesioginis pelės atitikmuo (žr. _installF9Touch):
+//     1 pirštas  = KAIRYS pelės klavišas → tap = pažymėti/eiti, drag = RĖMELIS (box-select, kaip PC)
+//     palaikymas = DEŠINYS klavišas      → ataka / sienos daužymas / teleportas / move
+//     2 pirštai  = kamera (PC atitikmuo — dešinys-drag) + pinch zoom (PC ratukas)
+//   Apatinė juosta (kortelės, pakai [1-6], 🛡🚩✕) NELIESTA — ji BENDRA su PC.
 // F9 hotkey hint + toast + armed A-move banner (screen-space)
 function _drawF9HotkeyHint() {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
@@ -5414,9 +5282,14 @@ function _drawF9HotkeyHint() {
     ? _getVisibleCanvasRect()
     : { x: 0, y: 0, w: canvas.width, h: canvas.height };
   const vcx = v.x + v.w / 2;
-  // 1) Armed A-move banner — ryškus indikatorius viršuj centre
-  if (window._f9AMoveArm) {
-    const txt = '⚔ A-MOVE — left-click the target point (Esc to cancel)';
+  // 1) Armed A-move / MOBS / WALL banner — ryškus indikatorius viršuj centre
+  //    📱 07-25: telefone tekstas „tap", desktop'e „left-click"; ⚔️MOBS ir 🏰WALL turi savo tekstus.
+  const _armT = window._f9TouchInstalled;
+  const _armTxt = window._f9AMoveArm
+    ? (_armT ? '🏃 A-MOVE — tap the target point' : '⚔ A-MOVE — left-click the target point (Esc to cancel)')
+    : null;
+  if (_armTxt) {
+    const txt = _armTxt;
     ctx.font = 'bold 12px system-ui, sans-serif';
     const tw = ctx.measureText(txt).width;
     const bx = vcx - tw / 2 - 12, by = v.y + 46, bw = tw + 24, bh = 26;
@@ -5438,20 +5311,45 @@ function _drawF9HotkeyHint() {
     ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const ty = v.y + v.h - 108;
+    // 📱 07-26: telefone toast'as ties -108 užlipdavo ant pakų eilės (⊕SAVE) — pakeliam virš jos.
+    const ty = v.y + v.h - (window._f9TouchInstalled ? 168 : 108);
     ctx.fillStyle = `rgba(0, 0, 0, ${(0.55 * fadeA).toFixed(3)})`;
     const tw2 = ctx.measureText(t.text).width;
     ctx.fillRect(vcx - tw2 / 2 - 10, ty - 11, tw2 + 20, 22);
     ctx.fillStyle = `rgba(245, 230, 195, ${fadeA.toFixed(3)})`;
     ctx.fillText(t.text, vcx, ty);
   }
-  // 3) Pastovus hotkey hint — apačioj dešinėj (tik desktop; mobile turi mygtukus)
-  if (!window._f9TouchInstalled) {
-    ctx.font = '10px system-ui, sans-serif';
+  // 3) Pastovus valdymo hint — apačioj. 📱 07-25: telefonui SAVO tekstas (mygtukų nebeliko, gestai = PC pelė).
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
+  if (window._f9TouchInstalled) {
+    // 📱 VIRŠUJE (apačioj užlipdavo ant kortelių juostos) ir tik pirmas 20s scenoje — paaiškinam schemą
+    //    naujokui, paskui netrukdo. S kuriamas iš naujo kiekvienai scenai → laikmatis atsistato pats.
+    if (S._f9HintT0 == null) S._f9HintT0 = now;
+    const _age = now - S._f9HintT0;
+    if (_age < 20000) {
+      const _a = Math.min(1, (20000 - _age) / 1500) * 0.85;
+      // 2 eilutės + auto-mažinimas: viena ilga eilutė nesitilpdavo į 390px ekraną (kraštai nukirpti)
+      const _lines = ['drag = camera  ·  HOLD + drag = select box',
+                      'tap enemy = attack  ·  2× tap unit = all same type'];
+      let _fs = 11;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (; _fs >= 7; _fs--) {
+        ctx.font = 'bold ' + _fs + 'px system-ui, sans-serif';
+        if (Math.max(..._lines.map(s => ctx.measureText(s).width)) <= v.w - 28) break;
+      }
+      const _lh = _fs + 5;
+      const _bw2 = Math.max(..._lines.map(s => ctx.measureText(s).width)) + 20;
+      ctx.fillStyle = `rgba(0,0,0,${(0.5 * _a).toFixed(3)})`;
+      ctx.fillRect(vcx - _bw2 / 2, v.y + 8, _bw2, _lh * _lines.length + 8);
+      ctx.fillStyle = `rgba(245,230,195,${_a.toFixed(3)})`;
+      for (let _i = 0; _i < _lines.length; _i++) ctx.fillText(_lines[_i], vcx, v.y + 12 + _lh * (_i + 0.5));
+    }
+  } else {
     ctx.textAlign = 'right';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(245, 230, 195, 0.38)';
-    ctx.fillText('L-click move·attack · drag = pack ≤6 · tap card = toggle unit · [1-6] save/lock pack · A atk-move · S stop', v.x + v.w - 12, v.y + v.h - 8);
+    ctx.fillText('L-click move·attack · drag = box select · tap card = toggle unit · [1-6] save/lock pack · A atk-move · S stop', v.x + v.w - 12, v.y + v.h - 8);
   }
   ctx.restore();
 }
@@ -6392,6 +6290,30 @@ function _f9DrawFlagGlyph(cx, baseY) {
 function _drawF9DragRect() {
   if (typeof S === 'undefined' || !S || S.floor !== 9) return;
   const dr = window._f9DragRect;
+  // 📱 07-26 „RĖMELIS ĮJUNGTAS" indikatorius: palaikius 300ms pirštas dar nepajudėjo, rėmelio dar nėra.
+  //   iOS Safari NEPALAIKO navigator.vibrate → be vizualo žmogus NEŽINO, kad jau gali tempti rėmelį.
+  //   Pulsuojantis žiedas + ▭ ženklas po pirštu = vienintelis patikimas signalas abiejose platformose.
+  if (!dr && window._f9BoxArmed) {
+    const a = window._f9BoxArmed;
+    const tA = performance.now();
+    const pulse = (Math.sin((tA - (a.at || tA)) * 0.012) + 1) * 0.5;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.strokeStyle = `rgba(180,255,200,${(0.55 + pulse * 0.45).toFixed(3)})`;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -(tA * 0.05) % 11;
+    ctx.beginPath(); ctx.arc(a.sx, a.sy, 26 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(120,255,150,0.13)';
+    ctx.beginPath(); ctx.arc(a.sx, a.sy, 26 + pulse * 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(200,255,215,0.95)';
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('▭', a.sx, a.sy + 1);
+    ctx.restore();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
   if (!dr) return;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);  // screen space
@@ -7166,10 +7088,13 @@ function _f9RawSelectedAllies() {
   return out;
 }
 
-// ── 🪖 BŪRIŲ SISTEMA: 2026-07-01 KIETAS 6-CAP (user: „max 6 unitų pakus judinti vienu metu, panaikink visų
-//   pažymėjimą"). _F9_SQUAD_CAP == _F9_PACK_SIZE (6) → VISI komandų/selekcijos keliai (A-move fallback,
-//   scene-enter default, control-grupės, _f9CapSel backstop) capinami ties 6. Nebėra „SELECT ALL" spragos. ──
-const _F9_SQUAD_CAP = 6;       // KIETAS komandų/selekcijos ceiling (= _F9_PACK_SIZE) — max 6 valdomi vienu metu
+// ── 🪖 BŪRIŲ SISTEMA: 2026-07-01 buvo KIETAS 6-CAP (user: „max 6 unitų pakus judinti vienu metu").
+//   ⚠️ 2026-07-25 PAKELTA 6 → 12 (user: „yra 12 unitų iš viso, reikia patogaus valdymo, nereikia niurkyti po
+//   vieną"): 6-cap reiškė, kad iš 12 lauke esančių unitų komandą gaudavo tik pusė — likusi pusė stovėdavo,
+//   kol žmogus rankiotų juos atskirai. 12 = PvP MAX_ACTIVE (lauke vienu metu). PAKO dydis (_F9_PACK_SIZE=6)
+//   NEPAKEISTAS — box-select/pakai lieka po 6; pakeltas TIK komandų/selekcijos ceiling (⛶ALL, grupės, A-move
+//   fallback, _f9CapSel). Grąžinti seną elgesį = šitą skaičių atgal į 6. ──
+const _F9_SQUAD_CAP = 12;      // KIETAS komandų/selekcijos ceiling — kiek unitų MAX valdoma vienu metu
 const _F9_PACK_SIZE = 6;       // 🪖 PAKO dydis: box-select + pako formavimas MAX 6 unitų (2026-06-30 user „pakai po 6"). ⛶ ALL apeina.
 const _F9_CARDBAR_MAX = 6;     // kiek kortelių MAX rodyti apatinėj juostoj (perf: 30 kortelių/kadrą = lagas) → +N badge
 const _F9_SQUAD_COUNT = 6;     // control-group'ų skaičius (1..6) — 2026-06-30 4→6 (user: pakai po 6)
@@ -7193,6 +7118,40 @@ function _f9SelectSquad(n) {
   if (typeof _f9SetToast === 'function') _f9SetToast(sq.length ? ('Squad ' + (n + 1) + ' (' + sq.length + ')') : ('Squad ' + (n + 1) + ' empty — select units + tap to form'));
   return sq.length > 0;
 }
+// 🖱️📱 07-25 BOX-SELECT COMMIT — BENDRAS pelei ir pirštui (PC kairys-drag == mobile 1-piršto drag).
+//   r = {sx1,sy1,sx2,sy2} canvas-px; add = pridėti prie esamos selekcijos (Shift PC'e).
+//   Grąžina pagautų unitų kiekį. Konversija /zoom — kaip visos kitos screen→world vietos.
+function _f9CommitBoxSelect(r, add) {
+  if (!r || typeof S === 'undefined' || !S || !Array.isArray(S.units)) return 0;
+  const camX = S.cam ? S.cam.x : 0, camY = S.cam ? S.cam.y : 0;
+  const _z = (typeof _f9WorldZoom === 'function' ? _f9WorldZoom() : 1) || 1;
+  const wx1 = Math.min(r.sx1, r.sx2) / _z + camX, wy1 = Math.min(r.sy1, r.sy2) / _z + camY;
+  const wx2 = Math.max(r.sx1, r.sx2) / _z + camX, wy2 = Math.max(r.sy1, r.sy2) / _z + camY;
+  const sel = [];
+  for (const u of S.units) {
+    if (!u || !u.alive) continue;
+    // Tik squad'as — hero (team 0) F9'e nematomas, rėmelis jo nepagauna (2026-06-12)
+    if (!(u.team === 1 && u.isEditorEnemy)) continue;
+    // PvP: pažymim TIK savo komandą (oponento unitai irgi ally-tipo, bet kitas _pvpTeam)
+    if (window._f9pvpLive && window._f9pvpMyTeam != null && u._pvpTeam !== window._f9pvpMyTeam) continue;
+    // 🔒 UŽRAKINTO pako narius rėmelis PAGAUNA → galima pasiimti DALĮ komandai (narystė nesikeičia)
+    const upx = ((u.rx !== undefined ? u.rx : u.x) + 0.5) * CELL;
+    const upy = ((u.ry !== undefined ? u.ry : u.y) + 0.5) * CELL;
+    if (upx >= wx1 && upx <= wx2 && upy >= wy1 && upy <= wy2) sel.push(u);
+  }
+  if (!sel.length) return 0;
+  if (add && Array.isArray(window._f9SelectedSet)) {
+    for (const u of sel) if (window._f9SelectedSet.indexOf(u) < 0 && window._f9SelectedSet.length < _F9_SQUAD_CAP) window._f9SelectedSet.push(u);
+  } else {
+    window._f9SelectedSet = sel.slice(0, _F9_SQUAD_CAP);   // 07-25: rėmelis pagauna iki 12 (buvo 6 = pusė armijos)
+  }
+  window._f9Selected = window._f9SelectedSet[0] || null;
+  window._f9ActiveSquad = null;   // rankinis pažymėjimas → nebe konkretus būrys
+  const n = window._f9SelectedSet.length;
+  if (typeof _f9SetToast === 'function') _f9SetToast(n + (sel.length > n ? ' selected (max ' + _F9_SQUAD_CAP + ')' : ' selected'));
+  return n;
+}
+
 // ⛶ SELECT ALL — pažymi VISUS valdomus unitus (Halo Wars „select all army"). Atrakina būrio režimą (laisvas pažymėjimas).
 function _f9SelectAllControllable() {
   const all = _f9MyControllable();
@@ -9112,7 +9071,10 @@ function _f9DrawWallSegment(seg, now) {
   }
   // 🎯 kokybiškas žymeklis (07-05, vietoj primityvaus strokeRect+X): bracket'ai + ▼ chevron.
   //    Auksinis kai KIRSTA/PAŽYMĖTA siege, teal kai tik hover. Ta pati kalba kaip unit target-lock.
-  if ((recentHit || hovered || marked) && !_homeOwner) {
+  // 📱 07-25: kol 🏰WALL mygtukas ARMED — visi gyvi segmentai pažymimi teal (matai kur bakstelėti; pirštas
+  //    neturi hover'io, tad be šito siege mygtukas atrodo „nieko nedaro").
+  const _siegeAim = false;   // (07-25) buves „WALL armed“ highlight — mygtuko nebeliko
+  if ((recentHit || hovered || marked || _siegeAim) && !_homeOwner) {
     _f9DrawWallTargetFx(bx - C * 0.14, top, bandW + C * 0.14, C, (recentHit || marked) ? 'attack' : 'hover', now);
   }
 }
@@ -33730,7 +33692,6 @@ function loop(now) {
   if (S.floor === 9 && typeof _f9DrawGorilla === 'function') { try { _f9DrawGorilla(); } catch (_) {} }   // 🦍 blue gorilla idle prie ligoninės
   if (S.floor === 9 && typeof _f9DrawMarket === 'function') { try { _f9DrawMarket(); } catch (_) {} }
   if (typeof _f9DrawHospBubble === 'function') _f9DrawHospBubble();   // 💬 ligoninės burbulas VIRŠ unitų
-  if (typeof _drawF9TouchButtons === 'function') _drawF9TouchButtons();   // 📱 touch mygtukai VIRŠ pastatų (perkelta 07-03)
   // 🏰 PILIS + 🏚️ BARAKAI — foreground (po unitų; occluduoja kaip medis). Depth tvarko loop žemiau.
   if (S.floor === 9 && window._f9Cap && typeof _f9DrawCapCastle === 'function') { try { _f9DrawCapCastle(performance.now()); } catch (_) {} }
   if (S.floor === 9 && window._f9Cap && typeof _f9DrawCapBarracks === 'function') { try { _f9DrawCapBarracks(); } catch (_) {} }
@@ -41725,6 +41686,14 @@ document.addEventListener('DOMContentLoaded', () => {
     S._camManualLock = true;
   }, { passive: false });
   canvas.addEventListener('contextmenu', e => {
+    // 🔴📱 07-26 KONFLIKTAS: Android/iOS PATYS generuoja `contextmenu` po ~500ms piršto palaikymo. Kadangi
+    //   palaikymas dabar = „įjungti rėmelį", naršyklės contextmenu tuo pat metu išduodavo dešinio klavišo
+    //   komandą → armija nubėgdavo į tašką, kurį tik ruošeisi apibrėžti rėmeliu. Todėl: jei neseniai (≤2s)
+    //   buvo pirštas — contextmenu TIK nuslopinam, jokių komandų. Tikra pelė (be touch) veikia kaip anksčiau.
+    if (window._f9TouchInstalled && (performance.now() - (window._f9LastTouchT || 0) < 2000)) {
+      e.preventDefault();
+      return;
+    }
     if (gameMode === 'adventure' && f11LikeFloor() && _selectedAllyUnit) {
       e.preventDefault();
       _selectedAllyUnit = null;
@@ -41768,7 +41737,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const now = performance.now();
       window._f9AMoveArm = false;   // right-click atšaukia armed A-move (RTS konvencija)
-      window._f9AttackArm = false;  // ir armed ATTACK (mobile ⚔️ATK)
       window._f9RegroupArm = false; // right-click atšaukia ir armed REGROUP
       // ── Engage target: visi pasirinkti unit'ai puola tą patį priešą ──
       if (hitEnemy) {
@@ -41936,42 +41904,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window._f9DragJustEnded = false;
         return;
       }
-      // 0a0. MOBILE mygtukai — ALL / A-MOVE / STOP
-      if (_f9TouchBtnRects) {
-        for (const b of _f9TouchBtnRects) {
-          if (_cmx >= b.x && _cmx <= b.x + b.w && _cmy >= b.y && _cmy <= b.y + b.h) {
-            // 📱 07-18: ATK/A-MV = arm (mutually exclusive); STOP = veiksmas iškart. Visi auto-pažymi visą armiją.
-            if (b.id === 'attack') {
-              window._f9AttackArm = !window._f9AttackArm;
-              if (window._f9AttackArm) { window._f9AMoveArm = false; window._f9PatrolArm = false; window._f9MultiSelectMode = false; }
-              if (typeof _f9SetToast === 'function') _f9SetToast(window._f9AttackArm ? '⚔️ ATTACK: tap enemy' : 'Attack cancelled');
-            } else if (b.id === 'amove') {
-              window._f9AMoveArm = !window._f9AMoveArm;
-              if (window._f9AMoveArm) { window._f9AttackArm = false; window._f9MultiSelectMode = false; }
-              if (typeof _f9SetToast === 'function') _f9SetToast(window._f9AMoveArm ? '🏃 A-MOVE: tap point' : 'A-MOVE cancelled');
-            } else if (b.id === 'stop') {
-              if ((!window._f9Selected || !window._f9Selected.alive) && typeof _f9SelectAllControllable === 'function') _f9SelectAllControllable();
-              const sel = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(true) : [];
-              for (const u of sel) {
-                if (typeof _f9ClearUnitOrder === 'function') _f9ClearUnitOrder(u);
-                u._f9Target = null;
-                u._f9Moving = false;
-              }
-              if (typeof _f9SetToast === 'function') _f9SetToast(sel.length ? '✋ STOP (' + sel.length + ')' : 'No units');
-            } else if (b.id === 'pick') {
-              // 📱 multi-select toggle: įjungus, tap ant unito prideda/pašalina iš selekcijos (žr. hitUnit šaką).
-              //   Įjungus PICK → nuimam ATK/A-MV arm (kad tap būtų vienareikšmis — tik selekcija).
-              window._f9MultiSelectMode = !window._f9MultiSelectMode;
-              if (window._f9MultiSelectMode) { window._f9AttackArm = false; window._f9AMoveArm = false; }
-              if (typeof _f9SetToast === 'function') _f9SetToast(window._f9MultiSelectMode ? '＋ PICK: tap units to add/remove' : 'PICK off');
-            } else if (b.id === 'g1' || b.id === 'g2') {
-              // 📱 TAP = recall grupę (HOLD=save apdorojamas touchstart'e; jei ką tik išsaugota → click praryjamas _f9DragJustEnded)
-              if (typeof _f9MobileRecallGroup === 'function') _f9MobileRecallGroup(b.id === 'g1' ? '1' : '2');
-            }
-            return;
-          }
-        }
-      }
+      // (07-25) MOBILE mygtuku dispeceris PASALINTAS kartu su paciais mygtukais - zr. _installF9Touch.
       // 0a. Solo info popup — X (uždaryti) / toggle (▾/▸) / click ant panelės (swallow)
       {
         const ipr = window._f9InfoPanelRects;
@@ -42025,29 +41958,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return;
       }
-      // 📱⚔️ Armed ATTACK (mobile ⚔️ATK mygtukas) → šis tap = FOCUS-FIRE priešą po pirštu (target LOCK);
-      //    nepataikei į priešą → attack-move į tašką. Auto-pažymi visą armiją jei nieko nepažymėta.
-      if (window._f9AttackArm) {
-        window._f9AttackArm = false;
-        if ((!window._f9Selected || !window._f9Selected.alive) && typeof _f9SelectAllControllable === 'function') _f9SelectAllControllable();
-        const _selAtk = (typeof _f9CommandableSelection === 'function') ? _f9CommandableSelection(false) : [];
-        const txAt = mx / CELL - 0.5, tyAt = my / CELL - 0.5;
-        let hitEn = null, bestD = 1.2;   // didesnis pataikymo spindulys — piršto netikslumas
-        for (const en of (S.units || [])) {
-          if (!en || !en.alive || !_f9IsEnemy(en)) continue;
-          const ex = (en.rx !== undefined) ? en.rx : en.x, ey = (en.ry !== undefined) ? en.ry : en.y;
-          const d = Math.hypot(txAt - ex, tyAt - ey);
-          if (d < bestD) { bestD = d; hitEn = en; }
-        }
-        if (hitEn && typeof _f9IssueAttackTargetCommand === 'function') {
-          _f9IssueAttackTargetCommand(_selAtk, hitEn, performance.now());
-          if (typeof _f9SetToast === 'function') _f9SetToast('⚔️ Attacking target');
-        } else if (txAt >= 0 && txAt < COLS - 1 && tyAt >= 0 && tyAt < ROWS - 1 && typeof _f9IssueAttackMoveCommand === 'function') {
-          _f9IssueAttackMoveCommand(_selAtk, txAt, tyAt);
-          if (typeof _f9SetToast === 'function') _f9SetToast('⚔️ Attack-move');
-        }
-        return;
-      }
+      // (07-25) ARMED ATTACK/SIEGE rezimai PASALINTI kartu su mobile mygtukais - telefone ataka ir
+      //   sienos dauzymas eina per LONG-PRESS (= desinys klikas), lygiai kaip PC.
       // 0b. Armed REGROUP (⊞ mygtukas) → šis click = vieta kurioje pažymėti unitai gražiai susigrupuoja.
       if (window._f9RegroupArm) {
         window._f9RegroupArm = false;
@@ -42295,7 +42207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (_isDouble) {
           // Double-click → pako to paties tipo ally unit'ai (SC2 stilius), CAP _F9_PACK_SIZE + NE užrakintų
           const same = S.units.filter(u => u && u.alive && _f9IsAlly(u) && u.utype === hitUnit.utype &&
-            (hitUnit.team === 0 ? u.team === 0 : u.team !== 0) && !(u._f9Squad != null && _hl[u._f9Squad])).slice(0, _F9_PACK_SIZE);
+            (hitUnit.team === 0 ? u.team === 0 : u.team !== 0) && !(u._f9Squad != null && _hl[u._f9Squad])).slice(0, _F9_SQUAD_CAP);   // 07-26: 6→12 (visa armija)
           window._f9SelectedSet = same.length ? same : [hitUnit];
           window._f9ActiveSquad = null;
           if (typeof _f9SetToast === 'function' && same.length > 1) {
@@ -42343,6 +42255,38 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           if (_atkSel && _atkSel.length) _f9IssueAttackTargetCommand(_atkSel, tapEnemy, performance.now());
           return;
+        }
+        // 🏰 07-26 TAP ANT SIENOS = SIEGE (pakeičia dingusį mobile long-press right-click'ą). „Magnet" snap
+        //    ≤1.1 celės TIK touch'e — pirštu į vieną celę nepataikysi. Desktop elgesys nepakitęs (right-click).
+        if (window._f9TouchInstalled && typeof _f9WallAt === 'function'
+            && !(window.__f9HomeActive && !window.__f9RaidActive)) {
+          let _wseg = _f9WallAt(tx, ty);
+          if (!_wseg && Array.isArray(S._f9Walls)) {
+            let _bw = 1.1;
+            for (const sg of S._f9Walls) {
+              if (!sg || !sg.alive) continue;
+              const d = Math.hypot(tx - sg.x, ty - sg.y);
+              if (d < _bw) { _bw = d; _wseg = sg; }
+            }
+          }
+          if (_wseg && _wseg.alive) {
+            let _sgSel = _f9CommandableSelection(false);
+            if ((!_sgSel || !_sgSel.length) && typeof _f9SelectAllControllable === 'function') {
+              _f9SelectAllControllable();
+              _sgSel = _f9CommandableSelection(false);
+            }
+            if (_sgSel && _sgSel.length) {
+              const _nowW = performance.now();
+              window._f9SiegeMark = { x: _wseg.x, y: _wseg.y, at: _nowW };   // 🎯 persistentinis žymeklis
+              if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
+                window.F9PvpLive.routeCommand('siege', _sgSel, _wseg.x, _wseg.y);
+                try { _f9PushClickMarker(_wseg.x, _wseg.y, _sgSel, true); } catch (_) {}
+              } else if (typeof _f9IssueSiegeCommand === 'function') {
+                _f9IssueSiegeCommand(_sgSel, _wseg, _nowW);
+              }
+            }
+            return;
+          }
         }
         // 🏰/🏚️ click ant pilies/barakų → NEsiunčiam move (pastato interakcija pirmenybinė; unitas lieka).
         //    🛡 BET ne kovoje — kovos metu judesys link/šalia pilies turi veikti (07-13 Cydrakke bug).
@@ -45690,4 +45634,38 @@ window.__F9 = {
   }
   // expose a manual launcher (console / future menu button) without needing the hash
   window.F9PvpLaunch = _f9pvpBoot;
+})();
+
+/* ============================================================================
+ * RONKE BLOCKS (tetris) — pilies lauko armijos momentinė nuotrauka.
+ *
+ * Tetris sėdi atskirame puslapyje (/lenta/tetris/), tad tiesiogiai `S.units`
+ * nemato. Perduodam per localStorage: tetris koridoriuje žygiuoja BŪTENT tie
+ * unitai, kurie stovi tavo pilies lauke.
+ *
+ * Grynai papildomas blokas: nieko neperrašo, viskas try/catch, rašo kas 5 s.
+ * Jei nereikia — bloką galima ištrinti be jokių pasekmių.
+ * ========================================================================== */
+(function () {
+  var KEY = 'f9_army_snapshot_v1';
+  function snap() {
+    try {
+      if (typeof S === 'undefined' || !S || !S.units) return;
+      if (typeof _BARRACKS_UNIT_TYPES_SET === 'undefined') return;
+      var m = {}, any = false;
+      for (var i = 0; i < S.units.length; i++) {
+        var u = S.units[i];
+        if (!u || !u.alive || u.team !== 1 || u.isEditorEnemy) continue;
+        if (!_BARRACKS_UNIT_TYPES_SET.has(u.utype)) continue;
+        m[u.utype] = (m[u.utype] || 0) + (u.stack || 1);
+        any = true;
+      }
+      if (!any) return;
+      var arr = [];
+      for (var t in m) arr.push({ type: t, stack: m[t] });
+      localStorage.setItem(KEY, JSON.stringify({ units: arr, at: Date.now() }));
+    } catch (e) { }
+  }
+  setTimeout(snap, 3000);
+  setInterval(snap, 5000);
 })();
