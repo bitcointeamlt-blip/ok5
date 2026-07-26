@@ -123,9 +123,21 @@
     var wait = _freeIn();
     if (wait > 0) { _openGame('paid'); return; }   // cooldown → paid
     _hasFreeRon().then(function (ok) {
-      if (ok) { _consumeFree(); _tick(); _openGame('free'); }
-      else { _showFreeReqNote(); _openGame('paid'); }   // <11 RON → paid
+      if (ok) {
+        _consumeFree(); _tick(); _openGame('free');
+        // 🏆 PoD: nemokamas žaidimas iki šiol buvo TIK localStorage → on-chain pėdsako nebūdavo,
+        //   tad PoD nematė nei aktyvaus, nei naujo vartotojo (žaidime 58 aktyvūs, PoD rodė 2).
+        //   Dabar žaidėjas PATS pasirašo nemokamą `payAndPlay(0,false,'freeplay')` į registruotą
+        //   PewPewPlayV2 → tampa matomu unikaliu adresu. Mokestis NEIMAMAS (amount=0), tik gas.
+        //   Fone ir best-effort: atmetus parašą ar be gas — žaidimas jau atidarytas, niekas nelūžta.
+        try {
+          if (window.PodActivity && window.PodActivity.enabled()) {
+            window.PodActivity.claim('freeplay').catch(function () {});
+          }
+        } catch (_) {}
+      } else { _showFreeReqNote(); _openGame('paid'); }   // <11 RON → paid
     });
+
   }
 
   // Nemokamo žaidimo tinkamumas: piniginėj ≥11 RON (Age of Ronke treniruotės anti-bot slenkstis).
