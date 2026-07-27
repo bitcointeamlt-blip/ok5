@@ -246,6 +246,31 @@
   // ── Leaderboard (Supabase raw REST, anon key) ──
   function sbHeaders(extra) { return Object.assign({ apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, extra || {}); }
 
+  // ── ⏳ GLOBALUS SEZONO LAIKAS (07-27) ─────────────────────────────────────
+  // Skaičiuojam NE pagal įrenginio laikrodį (jis pas kiekvieną skirtingas ir gali būti pastumtas),
+  // o pagal SERVERIO laiką: kiekvienas Supabase atsakymas turi `Date` antraštę → įsimenam nuokrypį
+  // nuo vietinio laiko ir jį taikom. Rezultatas: VISI žaidėjai mato tą patį likusį laiką.
+  let _srvSkew = null;                        // serverio laikas − vietinis (ms); null = dar nežinom
+  function _noteServerDate(res) {
+    try {
+      const d = res && res.headers && res.headers.get && res.headers.get('date');
+      if (!d) return;
+      const t = Date.parse(d);
+      if (isFinite(t)) _srvSkew = t - Date.now();
+    } catch (_) {}
+  }
+  function serverNow() { return Date.now() + (_srvSkew || 0); }
+  function hasServerTime() { return _srvSkew !== null; }
+  // Sezonas = savaitė. Riba — PIRMADIENIS 00:00 UTC (vienoda visam pasauliui, be laiko juostų).
+  function seasonEnd() {
+    const t = serverNow();
+    const d = new Date(t);
+    const daysAhead = (1 - d.getUTCDay() + 7) % 7;   // dienų iki artimiausio pirmadienio
+    const end = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + daysAhead);
+    return end > t ? end : end + 7 * 24 * 3600 * 1000;   // jei jau šiandien 00:00 praėjo → kita savaitė
+  }
+  function seasonLeftMs() { return Math.max(0, seasonEnd() - serverNow()); }
+
   // Įrašo runą: BEST (aukščiausias vieno žaidimo score) atsinaujina tik jei geresnis;
   //   TOTAL (bendras) — KIEKVIENO žaidimo score prisideda ant viršaus VISADA (kaupiasi).
   //   Grąžina { best, total }.
@@ -256,6 +281,7 @@
     let b = {};
     try {
       const r = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE + '?select=buildings&ronin_address=eq.' + key, { headers: sbHeaders() });
+      _noteServerDate(r);
       const rows = await r.json();
       if (rows && rows[0] && rows[0].buildings) b = rows[0].buildings || {};
     } catch (_) {}
@@ -277,6 +303,7 @@
   async function loadTop(n, byTotal) {
     try {
       const r = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE + '?select=ronin_address,buildings&ronin_address=like.' + BOARD_KEY + '*&limit=500', { headers: sbHeaders() });
+      _noteServerDate(r);   // ⏳ serverio laikas sezono skaitikliui
       const rows = await r.json();
       const list = (rows || []).map((row) => {
         const b = row.buildings || {};
@@ -297,5 +324,6 @@
     connect, disconnect, restore, refreshBalance, payFee, submitScore, loadTop,
     onChange, snapshot, short, isConnected: () => !!state.address, getAddress: () => state.address,
     FEE, FREE_PLAY, chargeEnabled: () => !FREE_PLAY,
+    serverNow, hasServerTime, seasonEnd, seasonLeftMs,   // ⏳ sezono skaitiklis (globalus serverio laikas)
   };
 })();

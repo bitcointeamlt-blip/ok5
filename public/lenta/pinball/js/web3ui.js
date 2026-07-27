@@ -88,6 +88,13 @@
   .rp-poolline b{color:#8fffb0;}
   /* board pavadinimas ilgesnis („WEEKLY LEADERBOARDS") → mažesnis šriftas, kad tilptų */
   #rp-menu.mode-board #rp-card h1{font-size:20px;letter-spacing:2px;}
+  /* ⏳ Sezono skaitiklis — tarp antraštės ir BACK (07-27). Rodomas TIK board režime. */
+  #rp-season{display:none;}
+  #rp-menu.mode-board #rp-season{display:flex;align-items:center;justify-content:center;gap:8px;
+    margin:-2px 0 10px;padding:7px 10px;font-size:12.5px;letter-spacing:1px;text-align:center;
+    color:#9fb4cc;background:rgba(10,14,24,0.6);box-shadow:inset 0 0 0 1px #2a3346;}
+  #rp-season .rps-t{color:#ffd76a;font-weight:bold;letter-spacing:1.5px;}
+  #rp-season.ending .rps-t{color:#ff9a6a;}
   .rp-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:0;border-bottom:1px solid rgba(90,100,130,0.12);}
   .rp-row.me{background:rgba(110,255,160,0.14);box-shadow:inset 0 0 0 2px rgba(110,255,160,0.5);}
   .rp-row.g1{background:rgba(190,232,255,0.08);} .rp-row.g2{background:rgba(216,221,232,0.06);} .rp-row.g3{background:rgba(143,168,192,0.06);}
@@ -143,6 +150,7 @@
       '<div id="rp-card">' +
       '<button id="rp-close" title="Close">✕</button>' +
       '<h1>RONKEPONG</h1>' +
+      '<div id="rp-season"></div>' +
       '<div id="rp-sub"></div>' +
       '<div class="rp-wallet" id="rp-wallet"></div>' +
       '<button class="rp-btn rp-play" id="rp-play"></button>' +
@@ -165,6 +173,7 @@
     els.secondary = root.querySelector('#rp-secondary');
     els.card = root.querySelector('#rp-card');
     els.title = root.querySelector('#rp-card h1');
+    els.season = root.querySelector('#rp-season');
     els.tabBest = root.querySelector('#rp-tab-best');
     els.tabTotal = root.querySelector('#rp-tab-total');
     els.play.addEventListener('click', onPlay);
@@ -340,6 +349,7 @@
         '</div>';
     }
     els.board.innerHTML = html;
+    renderSeason();   // ⏳ serverio Date jau gautas su šiuo fetch'u → tikslus likutis
   }
 
   // ── Public API (kviečiama iš game.js) ──
@@ -353,12 +363,44 @@
   //   Paspaudus PLAY → connect (jei reikia) → wallet prašo sumokėti 15 RONKE → runas.
   //   Paspaudus 🏆 → atskira leaderboard peržiūra (žr. showBoard).
   function showStart() {
-    mode = 'start'; lastRun = null;
+    mode = 'start'; lastRun = null; stopSeasonTick();
     renderSecondary(); setStatus('');
     updatePlayBtn();   // startе mygtukas = tik „▶" (be teksto)
     show();            // rodom + pastatom prie flipperių (leaderboard = 🏆 ikona viršuj)
     requestAnimationFrame(positionStart);   // dar kartą kai canvas rect tikrai paruoštas
   }
+
+  // ── ⏳ SEZONO SKAITIKLIS (07-27) ────────────────────────────────────────────
+  // Sezonas baigiasi PIRMADIENĮ 00:00 UTC. Laikas imamas iš SERVERIO (Supabase `Date` antraštė),
+  // ne iš telefono laikrodžio → visi žaidėjai mato TĄ PATĮ likutį, net jei jų laikas pastumtas.
+  let seasonTimer = null;
+  function fmtLeft(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600),
+          m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d > 0) return d + 'd ' + h + 'h ' + m + 'm';
+    if (h > 0) return h + 'h ' + m + 'm ' + String(sec).padStart(2, '0') + 's';
+    return m + 'm ' + String(sec).padStart(2, '0') + 's';
+  }
+  function renderSeason() {
+    if (!els.season) return;
+    const W = window.RPWeb3;
+    if (!W || !W.seasonLeftMs) { els.season.textContent = ''; return; }
+    const left = W.seasonLeftMs();
+    els.season.classList.toggle('ending', left < 24 * 3600 * 1000);   // paskutinė para — oranžinė
+    els.season.innerHTML = left <= 0
+      ? '<span>SEASON ENDED · new one starting</span>'
+      : '<span>SEASON ENDS IN</span><span class="rps-t">' + fmtLeft(left) + '</span>';
+  }
+  function startSeasonTick() {
+    renderSeason();
+    if (seasonTimer) return;
+    seasonTimer = setInterval(function () {
+      if (mode !== 'board' || !root || root.style.display === 'none') return;
+      renderSeason();
+    }, 1000);
+  }
+  function stopSeasonTick() { if (seasonTimer) { clearInterval(seasonTimer); seasonTimer = null; } }
 
   // 🏆 Atskira leaderboard peržiūra (iš start juostos ar iš žaidimo trofėjaus mygtuko).
   //   from='game' → grįžus „BACK" tęsiam žaidimą; kitaip → grįžtam į start.
@@ -368,6 +410,7 @@
     if (els.title) els.title.textContent = 'WEEKLY LEADERBOARDS';   // pavadinimas board režime
     renderSecondary(); setStatus('');
     show(); loadBoard();
+    startSeasonTick();
   }
   // Antrinio mygtuko tekstas/veiksmas pagal režimą.
   function renderSecondary() {
@@ -450,7 +493,7 @@
     root.classList.add('show');
     if (mode === 'start') positionStart(); else clearCardPos();
   }
-  function hide() { if (root) root.classList.remove('show'); }
+  function hide() { if (root) root.classList.remove('show'); stopSeasonTick(); }
 
   window.RPWeb3UI = { init, showStart, onGameOver, showBoard, show, hide, loadBoard };
 })();
