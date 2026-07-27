@@ -1303,13 +1303,19 @@ class Game {
     this.canvas.style.transform = this.rotated ? 'rotate(90deg)' : '';
   }
   // 📱 „⟳" mygtukas (DOM, ekrano kampe — nesukasi su drobe). Toggle landscape režimą + persist.
+  // ⚠️ 07-27 (žaidėjo Patto pranešimas): mygtukas buvo `right:10px;bottom:10px` — t.y. TIESIAI PO
+  //   dešiniuoju flipperio mygtuku, tarpas tik ~67px (flipperis y 668–725, ⟳ buvo y 792–834 ant
+  //   390×844 ekrano). Nykštys, siekiantis flipperio, pataikydavo į ⟳ → lenta apsiversdavo į landscape,
+  //   o būsena dar ir įsimenama localStorage → žaidėjui atrodė, kad žaidimas sulūžo ir „išmetė".
+  //   FIX: perkelta į VIRŠUTINĮ KAIRĮ kampą (nykščiai ten nesiekia; ✕EXIT yra viršuj dešinėj — nesikerta)
+  //   + slepiamas kol kamuoliukas žaidime (žr. _syncRotateBtn).
   _installRotateButton() {
     const btn = document.createElement('button');
     btn.id = 'rotate-btn';
     btn.textContent = '⟳';
     btn.title = 'Rotate (landscape)';
     btn.setAttribute('aria-label', 'Rotate landscape');
-    btn.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:20;width:42px;height:42px;' +
+    btn.style.cssText = 'position:fixed;left:10px;top:10px;z-index:20;width:42px;height:42px;' +
       'border-radius:8px;border:1px solid #2a3050;background:rgba(20,26,48,0.85);color:#cdd6f4;' +
       'font:20px monospace;cursor:pointer;padding:0;line-height:42px;text-align:center;' +
       '-webkit-user-select:none;user-select:none;touch-action:manipulation;';
@@ -1322,6 +1328,17 @@ class Game {
       apply();
     });
     document.body.appendChild(btn);
+    this._rotBtn = btn;
+  }
+  // ⟳ rodom TIK kai kamuoliukas NEŽAIDIME (meniu / ant plunger'io / game-over / pauzė / upgrade).
+  //   Sąlyga tyčia ta pati kaip _drawTouchButtons: kai matomi flipperių mygtukai — ⟳ paslėptas,
+  //   tad mid-run į jį pataikyti fiziškai neįmanoma.
+  _syncRotateBtn() {
+    const b = this._rotBtn;
+    if (!b) return;
+    const inPlay = this.isTouch && !this.gameOver && !this.picking && !this.ball.onPlunger && !this.paused;
+    const want = inPlay ? 'none' : '';
+    if (b.style.display !== want) b.style.display = want;
   }
 
   // ── Render ──
@@ -1647,6 +1664,7 @@ class Game {
     this._drawFlash(ctx, W, H);
     this._drawHUD(ctx, W, H);
     this._drawTouchButtons(ctx, W, H);   // 📱 matomi L/R flipperių mygtukai (tik touch)
+    this._syncRotateBtn();               // 📱 ⟳ slepiam kol kamuoliukas žaidime (žr. _installRotateButton)
     if (this._trans) this._drawTransition(ctx, W, H);
     if (this.paused) this._drawCenter(ctx, W, H, 'PAUSED', '#cdd6f4');
     if (this.picking) this._drawUpgradeOverlay(ctx, W, H);
