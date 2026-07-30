@@ -67,7 +67,7 @@
   .rp-play:disabled{background:#2a2f3a;color:#6a6f88;cursor:not-allowed;
     box-shadow:inset 0 3px 0 #3a4152, inset 0 -4px 0 #191d26, 0 0 0 3px #0a0c12, 5px 6px 0 3px rgba(0,0,0,0.4);}
   #rp-status{font-size:10.5px;min-height:15px;margin:6px 0 10px;color:#9aa4c4;line-height:1.4;}
-  #rp-status.err{color:#ff8f8f;} #rp-status.ok{color:#6effa0;}
+  #rp-status.err{color:#ff8f8f;} #rp-status.ok{color:#6effa0;} #rp-status.warn{color:#ffd97a;}
   /* Du leaderboard tab'ai: 🏆 BEST (rekordas) / Σ TOTAL (bendras kaupiamas) — pikseliniai */
   .rp-tabs{display:flex;gap:6px;margin:12px 0 8px;border-top:3px solid #3a3d4a;padding-top:12px;}
   .rp-tab{flex:1;font-family:inherit;font-weight:bold;text-transform:uppercase;letter-spacing:1px;font-size:10.5px;
@@ -456,9 +456,15 @@
     }
     show();
     setStatus('Saving score…');
-    try { const r = await W3.submitScore(run.score, run.floor);
-      setStatus('Saved ✓' + (r && r.total ? '   ·   total ' + r.total : ''), 'ok'); }
-    catch (_) { setStatus(''); }
+    // ⚠️ 07-30: anksčiau VISADA rodydavo „Saved ✓" — net kai niekas neišsaugota (nėra piniginės /
+    //   nepavyko nuskaityt istorijos). Žaidėjas matydavo „Saved ✓" ir 0 taškų → „mano rezultatai
+    //   ištrinti". Dabar sakom tiesą ir siūlom aiškų veiksmą.
+    try {
+      const r = await W3.submitScore(run.score, run.floor);
+      if (r && r.ok) setStatus('Saved ✓' + (r.total ? '   ·   total ' + r.total : ''), 'ok');
+      else if (r && r.reason === 'no_wallet') setStatus('Not saved — connect your wallet', 'warn');
+      else setStatus('Not saved — network issue, your old scores are safe', 'warn');
+    } catch (_) { setStatus('Not saved — network issue, your old scores are safe', 'warn'); }
     loadBoard();
   }
   // Startе ▶ mygtuką pastatom PRIE FLIPPERIŲ (~85% lentos aukščio, pivot y=375/440), sekant canvas.

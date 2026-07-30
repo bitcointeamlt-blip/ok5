@@ -274,29 +274,50 @@
   // Įrašo runą: BEST (aukščiausias vieno žaidimo score) atsinaujina tik jei geresnis;
   //   TOTAL (bendras) — KIEKVIENO žaidimo score prisideda ant viršaus VISADA (kaupiasi).
   //   Grąžina { best, total }.
+  // ⚠️ 07-30 DATA-LOSS FIX (žaidėjo Oba.Ronke skundas „visi seni rezultatai ištrinti"):
+  //   `buildings` rašomas VISAS iš naujo (PostgREST upsert JSON'o nemerge'ina). Anksčiau read'o
+  //   klaida buvo tyliai nuryjama (`catch (_) {}`) → `b = {}` → prevTotal/prevGames = 0 →
+  //   įrašas PERRAŠOMAS taip, lyg žaidėjas žaistų pirmą kartą. Vienas nepavykęs GET (mobilus
+  //   tinklas, Supabase trūkis) SUNAIKINDAVO visą istoriją, o UI vis tiek rodydavo „Saved ✓".
+  //   Dabar: read'as su 3 bandymais, o NEPAVYKUS — NERAŠOM (geriau neišsaugot vieno runo nei
+  //   ištrint visus). Papildomai monotoniškumo saugiklis: total/games niekada nemažėja.
   async function submitScore(score, floor) {
-    if (!state.address) return { best: 0, total: 0 };
+    if (!state.address) return { ok: false, reason: 'no_wallet', best: 0, total: 0 };
     score = Math.floor(score || 0);
     const key = BOARD_KEY + state.address.toLowerCase();
-    let b = {};
-    try {
-      const r = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE + '?select=buildings&ronin_address=eq.' + key, { headers: sbHeaders() });
-      _noteServerDate(r);
-      const rows = await r.json();
-      if (rows && rows[0] && rows[0].buildings) b = rows[0].buildings || {};
-    } catch (_) {}
+    let b = null;
+    for (var att = 0; att < 3 && b === null; att++) {
+      try {
+        const r = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE + '?select=buildings&ronin_address=eq.' + key, { headers: sbHeaders() });
+        _noteServerDate(r);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const rows = await r.json();
+        b = (rows && rows[0] && rows[0].buildings) ? (rows[0].buildings || {}) : {};   // {} = tikrai naujas žaidėjas
+      } catch (_) { if (att < 2) await sleep(600 * (att + 1)); }
+    }
+    if (b === null) {
+      try { console.warn('[RonkePong] score NEIŠSAUGOTAS — nepavyko nuskaityti istorijos (neperrašom, kad neprarastume senų taškų)'); } catch (_) {}
+      return { ok: false, reason: 'read_failed', best: 0, total: 0 };
+    }
     const prevBest = b.score || 0, prevTotal = b.total || 0, prevGames = b.games || 0;
     const best = Math.max(prevBest, score);
     const total = prevTotal + score;                                   // BENDRAS kaupiasi visada
     const bestFloor = score > prevBest ? (floor || 1) : (b.floor || 1);
+    // Monotoniškumo saugiklis — net jei read'as grąžintų pasenusius duomenis, niekada nemažinam.
+    if (total < prevTotal || best < prevBest || prevGames + 1 < prevGames) {
+      return { ok: false, reason: 'regression_guard', best: prevBest, total: prevTotal };
+    }
     try {
-      await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE, {
+      const w = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE, {
         method: 'POST',
         headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify({ ronin_address: key, buildings: { score: best, total: total, floor: bestFloor, games: prevGames + 1, addr: state.address } }),
       });
-    } catch (_) {}
-    return { best: best, total: total };
+      if (!w.ok) throw new Error('HTTP ' + w.status);
+    } catch (_) {
+      return { ok: false, reason: 'write_failed', best: prevBest, total: prevTotal };
+    }
+    return { ok: true, best: best, total: total };
   }
 
   // Top-N (kliento pusėje rikiuojam). byTotal=true → pagal BENDRĄ (total), kitaip → pagal BEST (score).
