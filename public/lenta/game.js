@@ -8794,6 +8794,44 @@ function _f9IssueSiegeCommand(units, seg, now) {
   if (typeof _f9SetToast === 'function') { try { _f9SetToast('SIEGE WALL (' + units.length + ')'); } catch (_) {} }
 }
 
+// 🎯 SIEGE išsiuntimas (PvP guest → serveris fokusuoja siegeTarget / solo → lokaliai) + persistentinis žymeklis.
+//   Vieta: puolikas „pažymi" trukdančią sieną → VISI pasirinkti naikina TĄ sekciją kol nukris (focus-fire).
+function _f9IssueSiegeAt(sel, seg, now) {
+  if (!sel || !sel.length || !seg || !seg.alive) return;
+  window._f9SiegeMark = { x: seg.x, y: seg.y, at: now };   // 🎯 žymeklis lieka kol siena sunaikinta / nauja komanda
+  if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
+    window.F9PvpLive.routeCommand('siege', sel, seg.x, seg.y);       // serveris: ai.order='siege', siegeTarget={x,y}
+    try { _f9PushClickMarker(seg.x, seg.y, sel, true); } catch (_) {}
+  } else if (typeof _f9IssueSiegeCommand === 'function') {
+    _f9IssueSiegeCommand(sel, seg, now);
+  }
+}
+
+// 🎯 VIENINGAS ATAKOS TAIKINYS (user 2026-08-01): siena IR zip-tower taikomi LYGIAI kaip priešo unitas —
+//   didelis spindulys → lengva pažymėti. Grąžina artimiausią iš {priešo unitas, gyva sienos/bokšto sekcija}.
+//   Siena/bokštas gauna DIDESNĮ spindulį (didelis statinis taikinys → „ta siena kuri man trukdo").
+function _f9PickAttackTarget(tx, ty) {
+  const touch = !!window._f9TouchInstalled;
+  const RU = touch ? 1.3 : 0.85;   // priešo unito pataikymo spindulys
+  const RW = touch ? 1.7 : 1.20;   // sienos/bokšto spindulys (didesnis — lengva pažymėti)
+  let bu = null, du = RU;
+  for (const en of S.units || []) {
+    if (!en || !en.alive || !_f9IsEnemy(en)) continue;
+    const ex = (en.rx !== undefined) ? en.rx : en.x, ey = (en.ry !== undefined) ? en.ry : en.y;
+    const d = Math.hypot(tx - ex, ty - ey);
+    if (d < du) { du = d; bu = en; }
+  }
+  let bw = null, dw = RW;
+  if (Array.isArray(S._f9Walls)) for (const sg of S._f9Walls) {
+    if (!sg || !sg.alive) continue;
+    const d = Math.hypot(tx - sg.x, ty - sg.y);   // sg.x/sg.y = celės centras rx-erdvėj (kaip _f9WallAt)
+    if (d < dw) { dw = d; bw = sg; }
+  }
+  if (bu && (!bw || du <= dw)) return { kind: 'unit', unit: bu };   // artimiausias laimi
+  if (bw) return { kind: 'wall', seg: bw };
+  return null;
+}
+
 function _updateF9WallSiege(now) {
   if (!S || S.floor !== 9 || !Array.isArray(S.units) || !_f9WallCells || !_f9WallCells.size) return;
   for (const u of S.units) {
@@ -41718,18 +41756,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const my = _cmy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
       const txWorld = mx / CELL - 0.5;
       const tyWorld = my / CELL - 0.5;
-      // Hit detect: ar click'as ant priešo?
-      let hitEnemy = null;
-      {
-        let bestD = window._f9TouchInstalled ? 1.1 : 0.6;   // 📱 07-18: didesnis pataikymo spindulys touch'e (piršto netikslumas)
-        for (const en of S.units || []) {
-          if (!en || !en.alive || !_f9IsEnemy(en)) continue;
-          const ex = (en.rx !== undefined) ? en.rx : en.x;
-          const ey = (en.ry !== undefined) ? en.ry : en.y;
-          const d = Math.hypot(txWorld - ex, tyWorld - ey);
-          if (d < bestD) { bestD = d; hitEnemy = en; }
-        }
-      }
       // 🚩 PATROL armed → dešinys klikas = START (paleidžia patrulį; NE engage/move)
       if (window._f9PatrolArm) {
         if (typeof _f9FinalizePatrol === 'function') _f9FinalizePatrol();
@@ -41738,28 +41764,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const now = performance.now();
       window._f9AMoveArm = false;   // right-click atšaukia armed A-move (RTS konvencija)
       window._f9RegroupArm = false; // right-click atšaukia ir armed REGROUP
-      // ── Engage target: visi pasirinkti unit'ai puola tą patį priešą ──
-      if (hitEnemy) {
-        _f9IssueAttackTargetCommand(_f9CommandableSelection(false), hitEnemy, now);
-        return;
-      }
-      // ── 🏰 Castle wall siege: right-click ant sienos celės → pasirinkti unitai daužo TĄ sieną ──
-      if (typeof _f9WallAt === 'function') {
-        const _wseg = _f9WallAt(txWorld, tyWorld);
-        if (_wseg && _wseg.alive) {
-          // 🏗️ SAVO pilyje (home owner) NEsiege savos sienos — ir neatidarom panelės (upgrade TIK per
-          //    pilies UI, paspaudus pilį). Tiesiog ignoruojam (unitai NEjuda).
-          if (window.__f9HomeActive && !window.__f9RaidActive) return;
+      // 🎯 VIENINGAS taikinys (user 2026-08-01): priešo unitas ARBA siena/bokštas — vienas didelio spindulio
+      //   pick (siena taikoma LYGIAI kaip unitas su snap tolerancija), unitai focus-fire'ina PAŽYMĖTĄ.
+      {
+        const _tgt = _f9PickAttackTarget(txWorld, tyWorld);
+        const _homeOwn = window.__f9HomeActive && !window.__f9RaidActive;   // savo pilyje savos sienos NEsiege
+        // 🧪 DEV: window._f9DevSiegeOwn=true → leidžia sieg'inti SAVAS sienas solo #f9home (feel testui, be raido)
+        if (_tgt && !(_tgt.kind === 'wall' && _homeOwn && !window._f9DevSiegeOwn)) {
           const _sel = _f9CommandableSelection(false);
-          // 🎯 PERSISTENTINIS pažymėjimas (07-05 user): žymeklis liks kol siena sunaikinta ARBA
-          //    taikinys pakeistas (nauja siege komanda perrašo). Koordinatėm — seg objektai persisync'ina.
-          if (_sel && _sel.length) window._f9SiegeMark = { x: _wseg.x, y: _wseg.y, at: now };
-          if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
-            // PvP: serveris authoritative → siunčiam explicit 'siege' komandą (cell = seg.x,seg.y)
-            window.F9PvpLive.routeCommand('siege', _sel, _wseg.x, _wseg.y);
-            try { _f9PushClickMarker(_wseg.x, _wseg.y, _sel, true); } catch (_) {}   // raudonas attack marker
-          } else {
-            _f9IssueSiegeCommand(_sel, _wseg, now);   // solo → lokaliai
+          if (_sel && _sel.length) {
+            if (_tgt.kind === 'unit') _f9IssueAttackTargetCommand(_sel, _tgt.unit, now);
+            else _f9IssueSiegeAt(_sel, _tgt.seg, now);
           }
           return;
         }
@@ -42234,56 +42249,22 @@ document.addEventListener('DOMContentLoaded', () => {
       // Veikia ir desktop, ir mobile. Dešinys click VIS TIEK komanduoja (RTS mėgėjams). Click ant savo
       // unito (aukščiau) = pažymi; dėžės velkimas = multi-select; Shift = waypoint eilė.
       {
-        let tapEnemy = null;
+        // 🎯 VIENINGAS taikinys (user 2026-08-01): priešo unitas ARBA siena/bokštas — didelis spindulys,
+        //   lengva „pažymėti", VISI pasirinkti focus-fire'ina PAŽYMĖTĄ taikinį. Desktop kairys klikas dabar
+        //   IRGI sieg'ina sieną (anksčiau tik touch) — „ta siena kuri man trukdo, pažymiu ir naikinu".
         {
-          let bestD = window._f9TouchInstalled ? 1.1 : 0.6;   // 📱 07-18: didesnis pataikymo spindulys touch'e
-          for (const en of S.units || []) {
-            if (!en || !en.alive || !_f9IsEnemy(en)) continue;
-            const ex = (en.rx !== undefined) ? en.rx : en.x;
-            const ey = (en.ry !== undefined) ? en.ry : en.y;
-            const d = Math.hypot(tx - ex, ty - ey);
-            if (d < bestD) { bestD = d; tapEnemy = en; }
-          }
-        }
-        if (tapEnemy) {
-          let _atkSel = _f9CommandableSelection(false);
-          // 📱 07-18: tuščia selekcija + tap ant priešo → auto-pažymim visus valdomus (telefone nėra box-select →
-          //   „paliečiu priešą, o nieko" buvo dažna). Desktop nepaliestas (tuščias tap-priešas nieko nedaro).
-          if ((!_atkSel || !_atkSel.length) && window._f9TouchInstalled && typeof _f9SelectAllControllable === 'function') {
-            _f9SelectAllControllable();
-            _atkSel = _f9CommandableSelection(false);
-          }
-          if (_atkSel && _atkSel.length) _f9IssueAttackTargetCommand(_atkSel, tapEnemy, performance.now());
-          return;
-        }
-        // 🏰 07-26 TAP ANT SIENOS = SIEGE (pakeičia dingusį mobile long-press right-click'ą). „Magnet" snap
-        //    ≤1.1 celės TIK touch'e — pirštu į vieną celę nepataikysi. Desktop elgesys nepakitęs (right-click).
-        if (window._f9TouchInstalled && typeof _f9WallAt === 'function'
-            && !(window.__f9HomeActive && !window.__f9RaidActive)) {
-          let _wseg = _f9WallAt(tx, ty);
-          if (!_wseg && Array.isArray(S._f9Walls)) {
-            let _bw = 1.1;
-            for (const sg of S._f9Walls) {
-              if (!sg || !sg.alive) continue;
-              const d = Math.hypot(tx - sg.x, ty - sg.y);
-              if (d < _bw) { _bw = d; _wseg = sg; }
+          const _tgt = _f9PickAttackTarget(tx, ty);
+          const _homeOwn = window.__f9HomeActive && !window.__f9RaidActive;   // savo pilyje savos sienos NEsiege
+          // 🧪 DEV: window._f9DevSiegeOwn=true → leidžia sieg'inti SAVAS sienas solo #f9home (feel testui, be raido)
+          if (_tgt && !(_tgt.kind === 'wall' && _homeOwn && !window._f9DevSiegeOwn)) {
+            let _sel = _f9CommandableSelection(false);
+            // 📱 tuščia selekcija + tap ant taikinio → auto-pažymim visus valdomus (telefone nėra box-select).
+            if ((!_sel || !_sel.length) && window._f9TouchInstalled && typeof _f9SelectAllControllable === 'function') {
+              _f9SelectAllControllable(); _sel = _f9CommandableSelection(false);
             }
-          }
-          if (_wseg && _wseg.alive) {
-            let _sgSel = _f9CommandableSelection(false);
-            if ((!_sgSel || !_sgSel.length) && typeof _f9SelectAllControllable === 'function') {
-              _f9SelectAllControllable();
-              _sgSel = _f9CommandableSelection(false);
-            }
-            if (_sgSel && _sgSel.length) {
-              const _nowW = performance.now();
-              window._f9SiegeMark = { x: _wseg.x, y: _wseg.y, at: _nowW };   // 🎯 persistentinis žymeklis
-              if (window.F9PvpLive && window.F9PvpLive.isGuest && window.F9PvpLive.isGuest()) {
-                window.F9PvpLive.routeCommand('siege', _sgSel, _wseg.x, _wseg.y);
-                try { _f9PushClickMarker(_wseg.x, _wseg.y, _sgSel, true); } catch (_) {}
-              } else if (typeof _f9IssueSiegeCommand === 'function') {
-                _f9IssueSiegeCommand(_sgSel, _wseg, _nowW);
-              }
+            if (_sel && _sel.length) {
+              if (_tgt.kind === 'unit') _f9IssueAttackTargetCommand(_sel, _tgt.unit, performance.now());
+              else _f9IssueSiegeAt(_sel, _tgt.seg, performance.now());
             }
             return;
           }
