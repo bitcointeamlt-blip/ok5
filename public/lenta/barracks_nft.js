@@ -33,7 +33,7 @@
   //   NEBEUŽSIKROVĖ, nors visa kita žaidime veikė (wallet.js/game.js sėdi ant api.roninchain.com).
   //   Priežastis buvo ne kodas, o VIENAS taškas be atsarginio: `_readRetry` 3 kartus daužė TĄ PATĮ
   //   mirusį endpoint'ą. Dabar — viem `fallback`: nukritus pirmam, automatiškai keliauja į antrą.
-  //   Eiliškumas TYČINIS: drpc pirmas (šviežesnis), api.roninchain tik atsarginis (istoriškai flaky).
+  //   Eiliškumas TYČINIS: drpc pirmas (šviežesnis, patikimesnis getLogs), api.roninchain atsarginis.
   const RONIN_RPC = 'https://ronin.drpc.org';
   const RONIN_RPC_FALLBACK = 'https://api.roninchain.com/rpc';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.0';
@@ -142,11 +142,13 @@
       rpcUrls: { default: { http: [RONIN_RPC, RONIN_RPC_FALLBACK] } },
       // Multicall3 (standartinis adresas, deployed ant Ronin) — leidžia viem `multicall`
       // sujungti N skaitymų į VIENĄ eth_call → drastiškai mažiau RPC kvietimų (jokio 429).
+      // Adresas tas pats abiem RPC (kontraktas grandinėj, ne tiekėjo pusėj) → fallback saugus.
       contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
     });
-    // ⚠️ 08-01: buvo `v.http()` = TIK pirmas rpcUrls įrašas, jokio atsarginio.
-    //   `fallback` perjungia į kitą tiekėją, kai pirmas grąžina 429/5xx/timeout.
-    //   rank:false = laikom eiliškumą, o ne automatinį perrikiavimą pagal latency.
+    // ⚠️ 08-01: buvo `v.http()` = TIK pirmas rpcUrls įrašas, jokio atsarginio (žr. RONIN_RPC komentarą).
+    //   `fallback` perjungia į kitą tiekėją, kai pirmas grąžina 429/5xx/timeout — inventorius
+    //   nebemiršta nuo vieno tiekėjo kvotos. rank:false = laikom eiliškumą (drpc pirmas), o ne
+    //   automatinį perrikiavimą pagal latency (kitaip tyliai nudreifuotų ant flaky api.roninchain).
     const _transport = v.fallback(
       [v.http(RONIN_RPC, { timeout: 20000 }), v.http(RONIN_RPC_FALLBACK, { timeout: 20000 })],
       { rank: false, retryCount: 2 },
@@ -329,6 +331,13 @@
   const _INV_MORE = 24;    // "Load more" — kiek papildomai SKAITOM ir RODOM per paspaudimą
   // Stateful inventory: kursorius leidžia "Load more" tęsti nuo kur baigėm (ne perkrauti viską).
   let _invAddr = null, _invTotal = 0, _invCursor = 0, _invAcc = [], _invSeen = null, _invShowN = _INV_MAX, _invOrder = [];
+  // ⚠️ 08-01 „pakeičiu piniginę — viskas dingsta": `fetchInventory` nunulina BENDRĄ būseną
+  //   (_invAddr/_invAcc/_invSeen/_invCursor) ir tada ilgai (fazė 1 + fazė 2 su 150 ms pauzėm) sukasi
+  //   async cikle. Perjungus piniginę VIDURYJE krovimo senasis ciklas NIEKUR nedingsta — jis toliau
+  //   emit'ina SENUS duomenis į naują grid'ą ir gale užrašo savo `_invCursor`, kuris naujam krovimui
+  //   reiškia „jau perskaityta" → tuščias inventorius. Sprendimas: KARTOS ŽYMUO. Kiekvienas naujas
+  //   fetchInventory pasiima `++_invGen`; senas ciklas, pamatęs, kad `gen !== _invGen`, tyliai nutrūksta.
+  let _invGen = 0;
   // Skaitymo eiliškumas iš ABIEJŲ galų pakaitomis: [naujausias, seniausias, 2-as naujausias, ...].
   // tokenOfOwnerByIndex grąžina token'us gavimo tvarka (0=seniausias, n-1=naujausias), tad ši tvarka
   // užtikrina kad pradinis paketas padengtų IR senus veteranus IR naujus pirkinius (naujus tipus) —
@@ -342,9 +351,12 @@
     return _invAcc.slice().sort((a, b) => (b.xp - a.xp) || (Number(b.tokenId) - Number(a.tokenId)));
   }
   // Skaito token indeksus [start,end) į _invAcc paketais po _INV_SLOW_CHUNK; dedupe pagal tokenId.
-  async function _loadRange(start, end, onProgress) {
+  async function _loadRange(start, end, onProgress, gen) {
+    if (gen == null) gen = _invGen;                       // "Load more" — dabartinė karta
+    const stale = () => gen !== _invGen;                  // piniginė pasikeitė → šis ciklas nebeaktualus
     let _lastEmit = 0;
     function emit(force) {
+      if (stale()) return;                                // NErodom senos piniginės duomenų
       if (typeof onProgress !== 'function') return;
       const now = Date.now();
       if (!force && (now - _lastEmit) < 500) return;   // throttle render
@@ -353,6 +365,7 @@
       try { onProgress(sorted, sorted.length, Math.min(_invTotal, _invShowN)); } catch (_) {}
     }
     async function loadChunk(slice) {
+      if (stale()) return;
       const pc = await getPublicClient();
       // 1) tokenId'ai VIENU Multicall3 eth_call
       let idRes;
@@ -372,6 +385,7 @@
           contracts: ids.map((id) => ({ address: ADDR.barracks, abi: BARRACKS_ABI, functionName: 'getUnitFullData', args: [id] })),
         });
       } catch (_) { return; }
+      if (stale()) return;   // kol laukėm multicall'o, piniginė pasikeitė → NEdedam senų unitų į naują _invAcc
       for (let k = 0; k < ids.length; k++) {
         const r = dataRes[k];
         if (r && r.status === 'success' && r.result) {
@@ -386,27 +400,36 @@
     // slice'ai imami iš _invOrder (abiejų galų tvarka), ne tiesiai 0..n.
     const fastEnd = Math.min(end, start + (start === 0 ? _INV_FAST : 0));
     for (let s = start; s < fastEnd; s += _INV_FAST_CHUNK) {
+      if (stale()) return;
       await loadChunk(_invOrder.slice(s, Math.min(fastEnd, s + _INV_FAST_CHUNK)));
       emit(true);
     }
     // Fazė 2 — likę LĖTAI su pauzėmis
     for (let s = fastEnd; s < end; s += _INV_SLOW_CHUNK) {
+      if (stale()) return;
       await loadChunk(_invOrder.slice(s, Math.min(end, s + _INV_SLOW_CHUNK)));
       emit(false);
       if (s + _INV_SLOW_CHUNK < end) await new Promise((r) => setTimeout(r, _INV_SLOW_DELAY));
     }
+    if (stale()) return;                        // senas ciklas NEPERRAŠO naujo kursoriaus
     _invCursor = Math.max(_invCursor, end);
     emit(true);
   }
   async function fetchInventory(addr, onProgress) {
-    const balance = await read('balanceOf', [addr]);
+    const gen = ++_invGen;                      // ši karta anuliuoja bet kokį dar besisukantį krovimą
+    // ⚠️ 08-01: čia buvo `read(...)` BE retry — vienintelis skaitymas visame inventoriaus kelyje,
+    //   neturėjęs `_readRetry`. O jis GATE'ina visą inventorių: krenta jis — krenta viskas. Piniginės
+    //   perjungimo momentu kaip tik ir eina skaitymų pliūpsnis (balansai, dekas, inventorius), tad
+    //   vienas 429 čia = tuščias inventorius. Dabar 3 bandymai su backoff, kaip ir visur kitur.
+    const balance = await _readRetry('balanceOf', [addr]);
+    if (gen !== _invGen) return [];             // kol skaitėm, piniginė vėl pasikeitė
     const n = Number(balance);
     // reset state naujam krovimui
     _invAddr = addr; _invTotal = n; _invCursor = 0; _invAcc = []; _invSeen = new Set(); _invShowN = _INV_MAX;
     _invOrder = _bothEndsOrder(n);   // abiejų galų tvarka — seni veteranai + nauji pirkiniai iškart
     if (n === 0) { if (typeof onProgress === 'function') { try { onProgress([], 0, 0); } catch (_) {} } return []; }
     // Pradinis read cap: dideliems wallet'ams skaitom tik pirmus _INV_LOAD token'us (ne visus n).
-    await _loadRange(0, Math.min(n, _INV_LOAD), onProgress);
+    await _loadRange(0, Math.min(n, _INV_LOAD), onProgress, gen);
     return _invSorted().slice(0, _invShowN);
   }
   // "Load more": pakelia RODYMO ribą +_INV_MORE ir, jei reikia, perskaito tiek token'ų,
@@ -977,7 +1000,6 @@
       });
     }
 
-    // 2) Pasirašom SetDeck (EIP-712, GASLESS) — autorizuoja, kad TIK savininkas keičia savo deką
     // 2a) 🏆 KELIAS A (PoD): žaidėjas PATS siunčia TX — tampa matomu unikaliu vartotoju.
     //     Naudojam tik jei jis turi gas; kitaip krentam į relayer kelią (kad žaidimas nesulūžtų
     //     tiems ~54% žaidėjų, kurie laiko <1 RON). Parašo NEREIKIA — msg.sender pats yra įrodymas.
@@ -1044,7 +1066,6 @@
 
   // Po-registracijos apskaita — BENDRA abiem keliams (self-paid ir relayer).
   function _finishDeckRegistration(addr, ids) {
-
     // Sinchronizuojam lokalų deką su tuo, ką užregistravom + įsimenam registruotą snapshot
     setDeck(addr, ids);
     setRegisteredDeck(addr, ids);   // dabar lokalus == on-chain → lentutė rodys „START BATTLE"
