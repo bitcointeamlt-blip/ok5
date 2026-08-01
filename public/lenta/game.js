@@ -6116,6 +6116,37 @@ function _f9DrawIcHammer(mx, my, s, t) {
     ctx.closePath(); ctx.fill();
   }
 }
+// 🧱 SIENA: plytų mūras su periodiniu „skilimo" pulsu — rodo, kad unitas AKTYVIAI griauna sieną (siege).
+function _f9DrawIcWall(mx, my, s, t) {
+  const beat = (t % 700) / 700;
+  const crack = beat < 0.30 ? Math.sin(beat / 0.30 * Math.PI) : 0;   // periodinis smūgio/skilimo pulsas
+  const w = s * 1.5, h = s * 1.25, x0 = mx - w / 2, y0 = my - h / 2, rows = 3, rh = h / rows;
+  // tamsus fonas (kontrastui)
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x0 - 1, y0 - 1, w + 2, h + 2);
+  // plytos (akmuo/molis gradientas)
+  const g = ctx.createLinearGradient(0, y0, 0, y0 + h);
+  g.addColorStop(0, '#cf9560'); g.addColorStop(1, '#9c6a3e');
+  ctx.fillStyle = g; ctx.fillRect(x0, y0, w, h);
+  // mortar siūlės (running bond — vertikalės pasislenka kas eilę)
+  ctx.strokeStyle = 'rgba(38,24,14,0.85)'; ctx.lineWidth = 1.1; ctx.beginPath();
+  for (let r = 1; r < rows; r++) { ctx.moveTo(x0, y0 + r * rh); ctx.lineTo(x0 + w, y0 + r * rh); }
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) ? w / 4 : 0;
+    for (let vx = off; vx < w - 0.5; vx += w / 2) { ctx.moveTo(x0 + vx, y0 + r * rh); ctx.lineTo(x0 + vx, y0 + (r + 1) * rh); }
+  }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(58,38,22,0.95)'; ctx.lineWidth = 1.4; ctx.strokeRect(x0, y0, w, h);   // apvadas
+  // 💥 aktyvus skilimas + skeveldros (griovimas) — pulsuoja
+  if (crack > 0.12) {
+    ctx.strokeStyle = 'rgba(255,236,182,' + (crack * 0.95) + ')'; ctx.lineWidth = 1.7; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(mx, y0 + 1); ctx.lineTo(mx - s * 0.20, my - s * 0.08);
+    ctx.lineTo(mx + s * 0.16, my + s * 0.14); ctx.lineTo(mx - s * 0.10, y0 + h - 1);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,222,150,' + (crack * 0.8) + ')';
+    ctx.beginPath(); ctx.arc(mx, my, s * 0.20 * crack, 0, Math.PI * 2); ctx.fill();
+  }
+}
 function _f9DrawEngagedMarkers() {
   if (typeof S === 'undefined' || !S || S.floor !== 9 || !S.units) return;
   const t = performance.now();
@@ -6123,9 +6154,16 @@ function _f9DrawEngagedMarkers() {
   for (const u of S.units) {
     if (!u || !u.alive || !_f9IsAlly(u) || u.team === 0) continue;
     const en = u._f9EngageTarget;
-    const sieging = (u._f9SiegeWall && u._f9SiegeWall.alive) || u._lastCmd === 'siege';
+    // 🧱 AKTYVIAI griauna sieną: solo _f9SiegeWall, ARBA PvP — serveris sieg'inant siunčia cmd='attack' su
+    //   targetId="" (→ _f9EngageTarget null), tad aptinkam per: attack + be priešo taikinio + prie GYVOS sienos.
+    let wallHit = !!(u._f9SiegeWall && u._f9SiegeWall.alive);
+    if (!wallHit && !(en && en.alive) && u._lastCmd === 'attack' && Array.isArray(S._f9Walls)) {
+      const _wux = (u.rx !== undefined ? u.rx : u.x), _wuy = (u.ry !== undefined ? u.ry : u.y);
+      for (const sg of S._f9Walls) { if (sg && sg.alive && Math.abs(_wux - sg.x) < 1.3 && Math.abs(_wuy - sg.y) < 1.6) { wallHit = true; break; } }
+    }
     let em = null;
-    if (sieging) em = '⚒️';
+    if (wallHit) em = '🧱';                       // 🧱 aktyviai griauna sieną (matosi, kad taikinys = SIENA)
+    else if (u._lastCmd === 'siege') em = '⚒️';   // sieg'ina (dar artėja, solo)
     else if (en && en.alive) {
       // ⚔️ tiesa pagal režimą (07-05 fix: šamanas/harpūnas rodė ⚔️ per anksti — PvP serverio nuotoliai
       //   TRUMPESNI nei solo lentelės). PvP: (1) TIKRAS serverio atakos įvykis (shot/melee → _f9LastAtkAt,
@@ -6151,12 +6189,13 @@ function _f9DrawEngagedMarkers() {
     // tamsus apvalus badge po ikonėle — įskaitomumas ant bet kokio fono; žiedo spalva = būsenos kalba
     const br = CELL * 0.185 + pulse * 0.8;
     ctx.fillStyle = 'rgba(10,12,24,0.72)';
-    ctx.strokeStyle = em === '⚔️' ? 'rgba(255,207,92,0.95)' : (em === '⚒️' ? 'rgba(232,165,74,0.95)' : 'rgba(120,230,235,0.9)');
+    ctx.strokeStyle = em === '⚔️' ? 'rgba(255,207,92,0.95)' : (em === '🧱' ? 'rgba(210,140,90,0.95)' : (em === '⚒️' ? 'rgba(232,165,74,0.95)' : 'rgba(120,230,235,0.9)'));
     ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(mx, my, br, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     // 🎨 vektorinė animuota ikonėlė (07-05: emoji → custom; kiekvienam unitui savo fazė per ux offset)
     const is = CELL * 0.145;
     if (em === '⚔️') _f9DrawIcSwords(mx, my, is, t + ux * 7);
+    else if (em === '🧱') _f9DrawIcWall(mx, my, is, t + ux * 7);
     else if (em === '⚒️') _f9DrawIcHammer(mx, my, is, t + ux * 7);
     else _f9DrawIcTarget(mx, my, is, t + ux * 7);
   }
