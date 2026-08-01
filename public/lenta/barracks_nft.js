@@ -29,7 +29,13 @@
   const RONIN_CHAIN_ID = 2020;
   // 07-04: api.roninchain.com FLAKY (dalis node'ų timeout'ina getLogs/read'us — įrodyta 06-22) →
   // drpc (10/10 stabilus). Tai buvo „sunkiai krauna" + deko sync fail (stale 22/24) priežastis.
+  // ⚠️ 08-01: drpc grąžino HTTP 429 „Too many requests" (nemokamo endpoint'o kvota) → inventorius
+  //   NEBEUŽSIKROVĖ, nors visa kita žaidime veikė (wallet.js/game.js sėdi ant api.roninchain.com).
+  //   Priežastis buvo ne kodas, o VIENAS taškas be atsarginio: `_readRetry` 3 kartus daužė TĄ PATĮ
+  //   mirusį endpoint'ą. Dabar — viem `fallback`: nukritus pirmam, automatiškai keliauja į antrą.
+  //   Eiliškumas TYČINIS: drpc pirmas (šviežesnis), api.roninchain tik atsarginis (istoriškai flaky).
   const RONIN_RPC = 'https://ronin.drpc.org';
+  const RONIN_RPC_FALLBACK = 'https://api.roninchain.com/rpc';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.0';
 
   // Minimal ABIs
@@ -133,12 +139,19 @@
     const chain = v.defineChain({
       id: RONIN_CHAIN_ID, name: 'Ronin Mainnet',
       nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 },
-      rpcUrls: { default: { http: [RONIN_RPC] } },
+      rpcUrls: { default: { http: [RONIN_RPC, RONIN_RPC_FALLBACK] } },
       // Multicall3 (standartinis adresas, deployed ant Ronin) — leidžia viem `multicall`
       // sujungti N skaitymų į VIENĄ eth_call → drastiškai mažiau RPC kvietimų (jokio 429).
       contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
     });
-    _publicClient = v.createPublicClient({ chain, transport: v.http() });
+    // ⚠️ 08-01: buvo `v.http()` = TIK pirmas rpcUrls įrašas, jokio atsarginio.
+    //   `fallback` perjungia į kitą tiekėją, kai pirmas grąžina 429/5xx/timeout.
+    //   rank:false = laikom eiliškumą, o ne automatinį perrikiavimą pagal latency.
+    const _transport = v.fallback(
+      [v.http(RONIN_RPC, { timeout: 20000 }), v.http(RONIN_RPC_FALLBACK, { timeout: 20000 })],
+      { rank: false, retryCount: 2 },
+    );
+    _publicClient = v.createPublicClient({ chain, transport: _transport });
     _publicClient._chain = chain;
     return _publicClient;
   }
