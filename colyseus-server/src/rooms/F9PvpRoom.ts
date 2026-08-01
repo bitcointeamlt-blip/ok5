@@ -119,7 +119,12 @@ const MOAT_MID = Math.floor(ARENA_H / 2);            // 12
 //    Daugiau kirtimo vietų → mažiau grūsties minioje.
 const MOAT_TOP_GAP = 4;
 const MOAT_BOT_GAP = ARENA_H - 5;   // 19
-const MOAT_GAP: number[] = [MOAT_MID - 2, MOAT_MID - 1, MOAT_MID, MOAT_MID + 1, MOAT_TOP_GAP, MOAT_BOT_GAP];   // 10,11,12,13 + 4 + 19
+// 08-01 (user): virsus+apacia praejimai praplatinti 1->4 blokai (kaip vidurys).
+const MOAT_GAP: number[] = [
+  MOAT_MID - 2, MOAT_MID - 1, MOAT_MID, MOAT_MID + 1,
+  MOAT_TOP_GAP - 3, MOAT_TOP_GAP - 2, MOAT_TOP_GAP - 1, MOAT_TOP_GAP,
+  MOAT_BOT_GAP, MOAT_BOT_GAP + 1, MOAT_BOT_GAP + 2, MOAT_BOT_GAP + 3,
+];
 const MOAT_CELLS: { x: number; y: number }[] = (() => {
   const cells: { x: number; y: number }[] = [];
   for (let y = 0; y < ARENA_H; y++) {
