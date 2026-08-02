@@ -249,6 +249,8 @@
   }
 
   async function onPlay() {
+    // 🏁 SEZONAS BAIGTAS → žaisti negalima, rodom tik leaderboard (defense — net jei mygtukas paspaustas).
+    if (W3.seasonLocked && W3.seasonLocked()) { setStatus('🏁 Season 1 has ended — playing is closed.', 'ok'); showBoard('ended'); return; }
     playSprite();   // sprite švytėjimo animacija paspaudus
     const s = W3.snapshot();
     if (s.freePlay) { startGame(); return; }
@@ -265,6 +267,7 @@
   }
 
   function startGame() {
+    if (W3.seasonLocked && W3.seasonLocked()) { showBoard('ended'); return; }   // 🏁 defense: sezonas baigtas → nestartuojam
     hide();
     if (game && game.beginRun) game.beginRun();
   }
@@ -363,6 +366,8 @@
   //   Paspaudus PLAY → connect (jei reikia) → wallet prašo sumokėti 15 RONKE → runas.
   //   Paspaudus 🏆 → atskira leaderboard peržiūra (žr. showBoard).
   function showStart() {
+    // 🏁 SEZONAS BAIGTAS → jokio PLAY ekrano, iškart leaderboard (view-only). Duomenys neliečiami.
+    if (W3.seasonLocked && W3.seasonLocked()) { showBoard('ended'); return; }
     mode = 'start'; lastRun = null; stopSeasonTick();
     renderSecondary(); setStatus('');
     updatePlayBtn();   // startе mygtukas = tik „▶" (be teksto)
@@ -386,11 +391,14 @@
     if (!els.season) return;
     const W = window.RPWeb3;
     if (!W || !W.seasonLeftMs) { els.season.textContent = ''; return; }
+    const locked = !!(W.seasonLocked && W.seasonLocked());
     const left = W.seasonLeftMs();
-    els.season.classList.toggle('ending', left < 24 * 3600 * 1000);   // paskutinė para — oranžinė
-    els.season.innerHTML = left <= 0
-      ? '<span>SEASON ENDED · new one starting</span>'
-      : '<span>SEASON ENDS IN</span><span class="rps-t">' + fmtLeft(left) + '</span>';
+    els.season.classList.toggle('ending', locked || left < 24 * 3600 * 1000);   // paskutinė para / baigta — oranžinė
+    els.season.innerHTML = locked
+      ? '<span>🏁 SEASON 1 ENDED — thanks for playing! Final standings below.</span>'
+      : (left <= 0
+        ? '<span>🏁 SEASON 1 ENDED — final standings below.</span>'
+        : '<span>SEASON 1 ENDS IN</span><span class="rps-t">' + fmtLeft(left) + '</span>');
   }
   function startSeasonTick() {
     renderSeason();
@@ -415,6 +423,8 @@
   // Antrinio mygtuko tekstas/veiksmas pagal režimą.
   function renderSecondary() {
     if (!els.secondary) return;
+    if (mode === 'board' && W3.seasonLocked && W3.seasonLocked()) { els.secondary.style.display = 'none'; return; }   // 🏁 baigtam sezone jokio BACK (nėra kur grįžti — tik lentelė)
+    els.secondary.style.display = '';
     if (mode === 'board') els.secondary.textContent = '◀ BACK';
     else if (mode === 'gameover') els.secondary.textContent = '◀ BACK TO MENU';
     else els.secondary.textContent = '🏆 VIEW LEADERBOARD';

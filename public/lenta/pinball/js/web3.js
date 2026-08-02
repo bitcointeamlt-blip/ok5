@@ -261,15 +261,13 @@
   }
   function serverNow() { return Date.now() + (_srvSkew || 0); }
   function hasServerTime() { return _srvSkew !== null; }
-  // Sezonas = savaitė. Riba — PIRMADIENIS 00:00 UTC (vienoda visam pasauliui, be laiko juostų).
-  function seasonEnd() {
-    const t = serverNow();
-    const d = new Date(t);
-    const daysAhead = (1 - d.getUTCDay() + 7) % 7;   // dienų iki artimiausio pirmadienio
-    const end = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + daysAhead);
-    return end > t ? end : end + 7 * 24 * 3600 * 1000;   // jei jau šiandien 00:00 praėjo → kita savaitė
-  }
-  function seasonLeftMs() { return Math.max(0, seasonEnd() - serverNow()); }
+  // 🏁 SEZONO 1 PABAIGA — FIKSUOTA (user 2026-08-02): po šio momento žaisti NEGALIMA, leaderboard TIK matomas.
+  //   Duomenys NELIEČIAMI — tiesiog nauji žaidimai neleidžiami → lentelė natūraliai užšąla. Auto-aktyvuojasi.
+  const SEASON1_END = Date.UTC(2026, 7, 2, 20, 0, 0);   // 2026-08-02 20:00 UTC (keisti čia jei reikia kito laiko)
+  function seasonEnd() { return SEASON1_END; }
+  // Serverio laikas (Supabase Date) jei žinom, kitaip vietinis fallback → lock'as suveikia net be serverio laiko.
+  function seasonLocked() { const now = hasServerTime() ? serverNow() : Date.now(); return now >= SEASON1_END; }
+  function seasonLeftMs() { return Math.max(0, seasonEnd() - (hasServerTime() ? serverNow() : Date.now())); }
 
   // Įrašo runą: BEST (aukščiausias vieno žaidimo score) atsinaujina tik jei geresnis;
   //   TOTAL (bendras) — KIEKVIENO žaidimo score prisideda ant viršaus VISADA (kaupiasi).
@@ -345,6 +343,6 @@
     connect, disconnect, restore, refreshBalance, payFee, submitScore, loadTop,
     onChange, snapshot, short, isConnected: () => !!state.address, getAddress: () => state.address,
     FEE, FREE_PLAY, chargeEnabled: () => !FREE_PLAY,
-    serverNow, hasServerTime, seasonEnd, seasonLeftMs,   // ⏳ sezono skaitiklis (globalus serverio laikas)
+    serverNow, hasServerTime, seasonEnd, seasonLeftMs, seasonLocked,   // ⏳ sezono skaitiklis + 🏁 lock (globalus serverio laikas)
   };
 })();
