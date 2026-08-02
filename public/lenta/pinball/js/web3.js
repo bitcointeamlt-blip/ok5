@@ -263,7 +263,7 @@
   function hasServerTime() { return _srvSkew !== null; }
   // 🏁 SEZONO 1 PABAIGA — FIKSUOTA (user 2026-08-02): po šio momento žaisti NEGALIMA, leaderboard TIK matomas.
   //   Duomenys NELIEČIAMI — tiesiog nauji žaidimai neleidžiami → lentelė natūraliai užšąla. Auto-aktyvuojasi.
-  const SEASON1_END = Date.UTC(2026, 7, 2, 20, 0, 0);   // 2026-08-02 20:00 UTC (keisti čia jei reikia kito laiko)
+  const SEASON1_END = Date.UTC(2026, 7, 2, 0, 0, 0);   // 08-02: SUSTABDYTA DABAR (praeitas laikas → lock iš karto visiems) — kol S2 neprasidėjo
   function seasonEnd() { return SEASON1_END; }
   // Serverio laikas (Supabase Date) jei žinom, kitaip vietinis fallback → lock'as suveikia net be serverio laiko.
   function seasonLocked() { const now = hasServerTime() ? serverNow() : Date.now(); return now >= SEASON1_END; }
