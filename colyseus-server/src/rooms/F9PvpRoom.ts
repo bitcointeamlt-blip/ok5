@@ -3009,6 +3009,7 @@ export class F9PvpRoom extends Room<F9State> {
     this._sideLockWalls();
     // 2e. 💧 Grovys — nepraeinamos vandens celės (rytinė pusė, išskyrus vidurį). Net pralaužus sieną negali kirsti.
     this._blockMoatCells();
+    this._wallGapSteer(dt);   // anti corner-stick: slide pressed attackers to nearest gap
     // 2e. 🗼 Zip bokštai šaudo attackerius (bolt dmg, server-authoritative).
     this._updateTowers();
     // 3. Planuoti hit'ai (žala apskaičiuojama suplanuotu sim-laiku).
@@ -3212,6 +3213,28 @@ export class F9PvpRoom extends Room<F9State> {
   }
 
   // 🏰 Artimiausia GYVA siena spinduliu r (siege auto-acquire).
+  // 08-02 GAP-SEEK (anti corner-stick): attackers pressed on the wall (west side, near it, want to cross
+  //   east) that are NOT on a moat-gap row SLIDE along the wall toward the nearest gap -> no more sticking
+  //   at the corner "as if closed"; they flow through the nearby open gap. (axis-aligned local collision
+  //   does not steer to the opening, so we steer there ourselves.)
+  private _wallGapSteer(dt: number) {
+    if (!this._walls.length || !MOAT_GAP.length) return;
+    const SLIDE = 3.4;
+    this.state.units.forEach((u) => {
+      if (!u.alive) return;
+      const ai = this._ai.get(u.id);
+      if (!ai || (ai.order !== "move" && ai.order !== "attackmove")) return;
+      if (u.x >= WALL_COL || u.x < WALL_COL - 2.3) return;
+      if (u.tx <= u.x + 0.5) return;
+      const row = Math.round(u.y);
+      if (MOAT_GAP.indexOf(row) >= 0) return;
+      let best = row, bd = Infinity;
+      for (const g of MOAT_GAP) { const d = Math.abs(u.y - g); if (d < bd) { bd = d; best = g; } }
+      if (bd < 0.4) return;
+      u.y += (best > u.y ? 1 : -1) * SLIDE * dt;
+    });
+  }
+
   private _findWallNear(u: F9Unit, r: number): F9Wall | null {
     let best: F9Wall | null = null, bestD = r;
     for (const s of this._walls) {
