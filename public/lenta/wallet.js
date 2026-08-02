@@ -11,6 +11,9 @@
   const RONIN_CHAIN_ID_DEC = 2020;
   const RONIN_CHAIN_ID_HEX = '0x7e4';
   const RONIN_RPC = 'https://api.roninchain.com/rpc';
+  // 08-02: atsarginis RPC. api.roninchain periodiskai numeta uzklausas (matuota: 22 is 43);
+  //   drpc laikomas patikimu. Naudojamas TIK ten, kur laikina RPC klaida blokuodavo veiksma.
+  const RONIN_RPC_FALLBACK = 'https://ronin.drpc.org';
   const RONKE_TOKEN = '0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb';
   const RONKEVERSE_NFT = '0x810b6d1374ac7ba0e83612e7d49f49a13f1de019';
   const LOGIN_MSG = 'Login to Dungeon Crawler (Lenta)';
@@ -822,26 +825,35 @@
     // tikrą kontrakto revert, IR savo gas-estimation glitch'us). Tad: (1) eth_estimateGas per mūsų RPC
     // → revert'ina → parodom TIKRĄ priežastį angliškai; (2) jei OK — paduodam aiškų gas limitą piniginei,
     // kad ji NEdarytų savo trapios estimation (būtent ji lūžta mobiliam, kai claim teisingas).
+    // 08-02 RPC ATSPARUMAS (kaulu swap gedimas): `api.roninchain.com` periodiskai grazina laikinas
+    //   klaidas. Anksciau BET KOKS nepazistamas `est.error` krisdavo i „Claim cannot be sent now" ir
+    //   **TX net neissiusdavo** - zaidejui atrode, kad swap neveikia (retry veliau pavykdavo).
+    //   DABAR: zinomas revert -> aiski zinute; nepazistama klaida -> PERBANDOM per atsargini RPC;
+    //   jei ir ten neaisku -> NEBLOKUOJAM, siunciam be gas hint'o ir leidziam pinigine nusprest.
+    const _rpcTry = (url) => fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_estimateGas', params: [{ from: from, to: claim.contract, data }] }),
+    }).then(r => r.json()).catch(() => null);
+    const _revertMsg = (est) => {
+      if (!est || !est.error) return null;
+      const m = ((est.error.message || '') + ' ' + (typeof est.error.data === 'string' ? est.error.data : '')).toLowerCase();
+      if (/claim limit/.test(m)) return 'Daily limit reached (2/day)';
+      if (/expired/.test(m)) return 'Claim expired — play again';
+      if (/budget exceeded/.test(m)) return 'Faucet budget reached — try later';
+      if (/nonce used/.test(m)) return 'Claim already used — play again';
+      if (/bad sig|payout fail|bad amount/.test(m)) return 'Claim rejected — play again';
+      return '';   // klaida yra, bet neatpazinta -> gali buti laikinas RPC glitch'as
+    };
     let gasHex = null;
-    try {
-      const est = await fetch(RONIN_RPC, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_estimateGas', params: [{ from: from, to: claim.contract, data }] }),
-      }).then(r => r.json());
-      if (est && est.error) {
-        const m = ((est.error.message || '') + ' ' + (typeof est.error.data === 'string' ? est.error.data : '')).toLowerCase();
-        if (/claim limit/.test(m)) throw new Error('Daily limit reached (2/day)');
-        if (/expired/.test(m)) throw new Error('Claim expired — play again');
-        if (/budget exceeded/.test(m)) throw new Error('Faucet budget reached — try later');
-        if (/nonce used/.test(m)) throw new Error('Claim already used — play again');
-        if (/bad sig|payout fail|bad amount/.test(m)) throw new Error('Claim rejected — play again');
-        throw new Error('Claim cannot be sent now — try again');   // tikras revert, nežinoma priežastis
+    {
+      let est = await _rpcTry(RONIN_RPC);
+      let rv = _revertMsg(est);
+      if (rv === '' || est === null) {
+        const est2 = await _rpcTry(RONIN_RPC_FALLBACK);
+        if (est2) { est = est2; rv = _revertMsg(est2); }
       }
-      if (est && typeof est.result === 'string') { const g = BigInt(est.result); gasHex = '0x' + (g + g / 4n).toString(16); }   // +25% buferis
-    } catch (e) {
-      // mūsų aiškios revert klaidos → rodom žaidėjui; tinklo klaida estimate'inant → tęsiam be gas (wallet pats)
-      if (e && e.message && /(limit|expired|budget|used|rejected|cannot be sent)/i.test(e.message)) throw e;
-      gasHex = null;
+      if (rv) throw new Error(rv);
+      if (est && typeof est.result === 'string') { const g = BigInt(est.result); gasHex = '0x' + (g + g / 4n).toString(16); }
     }
 
     const _txp = { from: from, to: claim.contract, data: data };
@@ -859,10 +871,13 @@
         throw new Error('Wallet could not send TX: ' + (sendErr.message || sendErr.code || 'unknown'));
       }
       if (txHash) {
-        const rc = await fetch(RONIN_RPC, {
+        // 08-02: kvitas per DU RPC - api.roninchain nutildavo ir zaidejas matydavo „not confirmed",
+        //   nors TX jau buvo nuseda (tada pending likdavo pakibes ir kaulai atrode dinge).
+        const _rc = (url) => fetch(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [txHash] }),
         }).then(r => r.json()).then(r => r.result).catch(() => null);
+        const rc = (await _rc(RONIN_RPC)) || (await _rc(RONIN_RPC_FALLBACK));
         if (rc) {
           if (rc.status === '0x1') return { txHash };
           throw new Error('Claim TX reverted on-chain');
