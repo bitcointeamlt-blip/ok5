@@ -3489,9 +3489,10 @@ export class F9PvpRoom extends Room<F9State> {
   // Praeinama celė: ribose + JOKIOS gyvos sienos/bokšto (breach=dead→praeinama) + JOKIO griovio (gaps praeinami).
   private _walkable(x: number, y: number): boolean {
     if (x < 0 || y < 0 || x >= ARENA_W || y >= ARENA_H) return false;
-    const w = this.state.walls.get(x + "," + y);
-    if (w && w.alive) return false;
     if (MOAT_SET.has(x + "," + y)) return false;
+    const w = this.state.walls.get(x + "," + y);
+    // 08-02 STUCK-FIX: sienos cele praeinama PLANAVIMUI jei toj eilej moat tarpas -> lauzia ties tarpais, ne dead-end.
+    if (w && w.alive) return !MOAT_SET.has((WALL_COL + 1) + "," + y);
     return true;
   }
   private _nearestWalkable(x: number, y: number): { x: number; y: number } | null {
