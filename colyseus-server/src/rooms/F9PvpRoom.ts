@@ -919,10 +919,34 @@ export class F9PvpRoom extends Room<F9State> {
                 ? { ...(bank.pending as any).voucher, ronkeReward: true, deciBones: (bank.pending as any).deciBones, resend: true }
                 : { ...bank.pending, contract: cfg.contract, chainId: cfg.chainId, rpc: cfg.rpc, resend: true };
               try { client.send("bones_voucher", pv); } catch (_) {}
-            } else {
-              try { client.send("bones_err", { msg: "Pending swap expired — reopen panel to reclaim bones" }); } catch (_) {}
+              return;
             }
-            return;
+            // ⏳ 08-02 FIX: pasibaigęs voucher'is — kaulus susigrąžinam ČIA PAT ir leidžiam swap'ui tęstis.
+            //   BUVO: grąžindavom „Pending swap expired — reopen panel to reclaim bones", o re-credit veikė
+            //   TIK `bones_bank_get` šakoj. Žaidėjas jau BŪNA panelėj → spaudžia SWAP, gauna tą pačią klaidą,
+            //   kaulai lieka pakibę ir nusiimti neįmanoma. Realiai stebėta 08-02: 2 žaidėjai, 350 kaulų
+            //   (0x69f6fa90… 200, 0xa1aae46d… 150), abiem usedNonces=false → nieko nebuvo išmokėta.
+            //   DABAR: tikrinam nonce grandinėj ir arba grąžinam kaulus, arba (jei jau išmokėta) tik išvalom,
+            //   o tada krentam žemyn ir išduodam NAUJĄ voucherį iš atstatyto balanso.
+            const usedExp = (bank.pending as any).rr
+              ? await isRonkeRewardNonceUsed(bank.pending.nonce)
+              : await isNonceUsed(bank.pending.nonce);
+            if (usedExp === null) {   // RPC neatsakė → NELIEČIAM (kitaip rizikuotume dvigubu kreditu)
+              try { client.send("bones_err", { msg: "Network busy — try SWAP again in a moment" }); } catch (_) {}
+              return;
+            }
+            if (usedExp === true) {
+              bank.pending = null;
+              await saveBoneBank(addr, bank);
+              console.log(`[F9PvpRoom] 🦴 expired voucher already paid → cleared (${addr.slice(0, 10)}…)`);
+            } else {
+              const back = bank.pending.deciBones / 10;
+              bank.bones = Math.round((bank.bones + back) * 10) / 10;
+              bank.pending = null;
+              await saveBoneBank(addr, bank);
+              console.log(`[F9PvpRoom] 🦴 expired voucher re-credit (swap path) +${back} → ${bank.bones} (${addr.slice(0, 10)}…)`);
+            }
+            // toliau — įprasta seka: MIN_BONES patikra ir NAUJAS voucher'is iš atstatyto balanso
           }
           if (bank.bones < MIN_BONES) { try { client.send("bones_err", { msg: `Need ${MIN_BONES} bones in bank (have ${bank.bones})` }); } catch (_) {} return; }
           // ⚡ RONKEREWARD režimas (mainnet, 07-12): kaulai×5 RONKE per faucet pool, cap RR_MAX_SWAP_BONES.
