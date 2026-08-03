@@ -17026,6 +17026,9 @@ async function _handleTrophyClaim(claimable) {
     _playTrophyMintAnimation();
     // 💀 death trofėjus claim'intas → invaliduojam cache, kad panelė iškart parodytų kitą pakopą (ne po 5 min)
     try { if (/^T_deaths_/.test(claimable.id) && typeof _invalidateDeathProgCache === 'function') _invalidateDeathProgCache(); } catch (_) {}
+    // ⚒️ mint / 🎳 pinball trofėjai — ta pati logika (iškart atnaujinam progresą po claim'o)
+    try { if (/^T_mints_/.test(claimable.id) && typeof _invalidateMintProgCache === 'function') _invalidateMintProgCache(); } catch (_) {}
+    try { if (/^T_pinball_/.test(claimable.id) && typeof _invalidatePinballProgCache === 'function') _invalidatePinballProgCache(); } catch (_) {}
   } catch (e) {
     console.warn('[trophy claim]', e);
     statusEl.textContent = 'Error: ' + (e?.shortMessage || e?.message || String(e)).slice(0, 80);
@@ -18364,6 +18367,232 @@ function _appendDeathTrophyCard(grid) {
   });
 }
 
+// ── UNITS-MINTED repeatable trophy mission (added 2026-08-03) ────────────
+// Trofėjus už turimus/išmintintus NFT unitus. Slenksčiai: 50, 100, 150 … = 50·n (žingsnis +50).
+// „logika kaip su mirtim" (pakopos, on-chain) — bet už MINT'us, ne mirtis (mirtys turi SAVO
+//   trofėjų). Serveris (rapid-endpoint): mints = balanceOf (turimi PPB NFT unitai).
+//   nextTier / claimableNow = TIESIAI iš kontrakto (claimedAchievement). Jokio kliento cheat'o.
+function _mintTrophyThreshold(n) { return 50 * n; }
+let _mintProgCache = null;   // { wallet, at, res }
+const _MINT_PROG_TTL = 5 * 60 * 1000;   // 5 min cache (panelė re-renderinasi dažnai)
+function _invalidateMintProgCache() { _mintProgCache = null; }
+function _fetchMintProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_mintProgCache && _mintProgCache.wallet === wallet && (now - _mintProgCache.at) < _MINT_PROG_TTL) {
+    return Promise.resolve(_mintProgCache.res);
+  }
+  return window.SupabaseSync.validateAchievement('T_mints_progress').then(res => {
+    _mintProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
+function _appendMintTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-mints';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">⚒️</span>
+      <span class="tier-card-title">UNITS MINTED</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading mint count…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.insertBefore(card, grid.firstChild);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl  = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your unit mint progress.</span></div></div>`;
+    return;
+  }
+
+  _fetchMintProgress().then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || d.kind !== 'mints_progress') {
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Earn a trophy for every +50 units minted (50 → 100 → 150 …).</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load mint count (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    // Serveryje RPC neprieinamas → mints=null (saugu: neskaičiuojam eligible).
+    if (typeof d.mints !== 'number') {
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">On-chain mint count unavailable — reopen panel to retry.</span></div></div>`;
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">⏳ On-chain check unavailable</span></button>`;
+      return;
+    }
+    const mints = d.mints;
+    const nextTier = d.nextTier || 1;
+    const nextThreshold = (typeof d.nextThreshold === 'number') ? d.nextThreshold : _mintTrophyThreshold(nextTier);
+    const onchainOk = d.onchainOk !== false;
+    const claimable = !!d.claimableNow && onchainOk;
+    const claimedCount = Math.max(0, nextTier - 1);
+    const prevThreshold = claimedCount >= 1 ? _mintTrophyThreshold(claimedCount) : 0;
+    const span = Math.max(1, nextThreshold - prevThreshold);
+    const pct = Math.max(0, Math.min(100, Math.round(((mints - prevThreshold) / span) * 100)));
+
+    progEl.textContent = `${claimedCount} claimed`;
+    progEl.className = 'tier-card-progress' + (claimable ? ' complete' : '');
+    reqsEl.innerHTML = `
+      <div class="tier-req ${claimable ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${claimable ? '✓' : '○'}</span>
+          <span class="tier-req-text">Trophy #${nextTier}: ${nextThreshold} units minted</span>
+          <span class="tier-req-progress">${_formatProgress(mints, nextThreshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text">+50 units per trophy (50 → 100 → 150 …). Counts your PewPew NFT units. Repeatable forever.</span></div></div>`;
+
+    if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled" data-mint-tier="${nextTier}">CLAIM NFT (Trophy #${nextTier})</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_mints_' + nextTier,
+          label: 'UNITS MINTED — Trophy #' + nextTier,
+          desc: `Claim your trophy for ${nextThreshold} units minted. The next one unlocks at ${_mintTrophyThreshold(nextTier + 1)} total.`,
+        }), 200);
+      });
+    } else if (!onchainOk) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">⏳ On-chain check unavailable</span>
+        <span class="tcb-hint">${mints} units · reopen panel to retry</span></button>`;
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 ${Math.max(0, nextThreshold - mints)} more units</span>
+        <span class="tcb-hint">${mints}/${nextThreshold} — next is Trophy #${nextTier}</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading mint count.</span></div></div>`;
+    console.warn('[mint trophy]', err);
+  });
+}
+
+// ── PINBALL 3K single-claim trophy mission (added 2026-08-03) ────────────
+// „Surink 3000 taškų RonkePong pinball" → 1 trofėjus (VIENKARTINIS, ne pakopos).
+// Serveris (rapid-endpoint): best = didžiausias vieno žaidimo score per VISUS sezonus
+//   (rp_, rp2_, …). ⚠️ Pinball score rašo klientas (anon) — ne server-auth kaip mirtys/mint'ai.
+let _pinballProgCache = null;   // { wallet, at, res }
+const _PINBALL_PROG_TTL = 5 * 60 * 1000;
+function _invalidatePinballProgCache() { _pinballProgCache = null; }
+function _fetchPinballProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_pinballProgCache && _pinballProgCache.wallet === wallet && (now - _pinballProgCache.at) < _PINBALL_PROG_TTL) {
+    return Promise.resolve(_pinballProgCache.res);
+  }
+  return window.SupabaseSync.validateAchievement('T_pinball_progress').then(res => {
+    _pinballProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
+function _appendPinballTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-pinball';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">🎳</span>
+      <span class="tier-card-title">PINBALL 3K</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading pinball score…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.insertBefore(card, grid.firstChild);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl  = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your pinball trophy progress.</span></div></div>`;
+    return;
+  }
+
+  _fetchPinballProgress().then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || typeof d.best !== 'number') {
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Score 3,000 in RonkePong pinball to mint a trophy.</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load pinball score (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    const threshold = d.threshold || 3000;
+    const best = d.best || 0;
+    const claimed = !!d.claimed;
+    const claimable = !!d.claimableNow;
+    const pct = Math.max(0, Math.min(100, Math.round((best / threshold) * 100)));
+
+    progEl.textContent = claimed ? 'claimed' : (claimable ? 'ready' : '0/1');
+    progEl.className = 'tier-card-progress' + ((claimed || claimable) ? ' complete' : '');
+    reqsEl.innerHTML = `
+      <div class="tier-req ${(claimed || claimable) ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${(claimed || claimable) ? '✓' : '○'}</span>
+          <span class="tier-req-text">Score ${threshold.toLocaleString()} in RonkePong pinball</span>
+          <span class="tier-req-progress">${_formatProgress(Math.min(best, threshold), threshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text">Best single-game score across all pinball seasons. One-time trophy.</span></div></div>`;
+
+    if (claimed) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn claimed">✓ CLAIMED</button>`;
+    } else if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled" data-pinball-claim="1">CLAIM NFT (Pinball 3K)</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_pinball_3k',
+          label: 'PINBALL 3K',
+          desc: `Claim your trophy for scoring ${threshold.toLocaleString()} points in RonkePong pinball.`,
+        }), 200);
+      });
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 ${Math.max(0, threshold - best).toLocaleString()} more points</span>
+        <span class="tcb-hint">${best.toLocaleString()}/${threshold.toLocaleString()} best pinball score</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading pinball score.</span></div></div>`;
+    console.warn('[pinball trophy]', err);
+  });
+}
+
 function renderTrophyPanel() {
   const grid = document.getElementById('trophy-tier-grid');
   if (!grid) return;
@@ -18428,6 +18657,10 @@ function renderTrophyPanel() {
 
   // NFT-DEATH repeatable mission card (server-authoritative death count).
   _appendDeathTrophyCard(grid);
+  // ⚒️ UNITS-MINTED repeatable mission (balanceOf) — įterpiama VIRŠ death.
+  _appendMintTrophyCard(grid);
+  // 🎳 PINBALL 3K single mission — įterpiama VIRŠ mint (viršuje panelės).
+  _appendPinballTrophyCard(grid);
 
   // Phase 15 — append "COMING SOON" teaser card to signal project growth
   const teaser = document.createElement('div');
