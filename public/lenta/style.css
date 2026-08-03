@@ -13096,10 +13096,21 @@ body.f12-landscape #canvas {
   background: #ffcf5c;
   color: #1a1208;
   border-color: #ffcf5c;
+  /* 🏆 Claimable → švelnus pulsavimas, kad žaidėjas pastebėtų, jog gali mint'inti trofėjų. */
+  animation: trophyClaimPulse 1.25s ease-in-out infinite;
 }
 .tier-claim-btn.enabled:hover {
   background: #fff;
   box-shadow: 0 0 16px #ffcf5c;
+  animation: none;   /* hover metu — statiškas ryškus švytėjimas, be pulsavimo */
+}
+@keyframes trophyClaimPulse {
+  0%, 100% { box-shadow: 0 0 3px 0 rgba(255, 207, 92, 0.35); transform: scale(1); }
+  50%      { box-shadow: 0 0 16px 3px rgba(255, 207, 92, 0.9); transform: scale(1.035); }
+}
+/* Prieinamumas: kas nenori animacijų — nekelia mirksinčio mygtuko. */
+@media (prefers-reduced-motion: reduce) {
+  .tier-claim-btn.enabled { animation: none; }
 }
 .tier-claim-btn.disabled {
   background: #333;
