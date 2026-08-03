@@ -12,6 +12,7 @@
 
   var COOLDOWN_MS = 10 * 3600 * 1000;   // 10h tarp nemokamų žaidimų
   var _overlay = null, _btn = null, _timer = null;
+  var _pendingFree = false;   // 🎳 nemokamas atidarytas, bet DAR nenurasytas (laukia 'rp_started')
 
   // 📱 ORIENTACIJA. „Age of Ronke" (pilis/F12) mobiliajame užrakinama LANDSCAPE (žr. orientation.js).
   //   RonkePong = VERTIKALUS pinball → jį atidarant grąžinam PORTRAIT (natūrali telefono padėtis — NEREIKIA
@@ -41,7 +42,24 @@
   window.addEventListener('message', function (e) {
     var d = e && e.data;
     if (!d || typeof d !== 'object') return;
-    if (d.type === 'rp_gameover') {
+    if (d.type === 'rp_started') {
+      // 🎳 07-28: nemokamą žaidimą nurašom TIK dabar — kai žaidėjas realiai paleido pirmą kamuoliuką.
+      //   Anksčiau `_consumeFree()` būdavo kviečiamas vos atidarius langą, tad netyčia išėjęs (ar
+      //   išmestas) žaidėjas prarasdavo nemokamą žaidimą nieko nesužaidęs ir turėdavo mokėti 15 RONKE
+      //   arba laukti 10h. Žaidėjo Patto skundas.
+      if (_pendingFree) {
+        _pendingFree = false;
+        _consumeFree(); _tick();
+        // 🏆 PoD: žaidėjo PASIRAŠYTA `payAndPlay(0,false,'freeplay')` į REGISTRUOTĄ PewPewPlayV2
+        //   (tx.to = mūsų kontraktas, parašas — žaidėjo) → matomas unikalus adresas. Mokestis 0.
+        //   Perkelta kartu su nurašymu: claim'as tik už tikrai pradėtą žaidimą, ne už atidarytą langą.
+        try {
+          if (window.PodActivity && window.PodActivity.enabled()) {
+            window.PodActivity.claim('freeplay').catch(function () {});
+          }
+        } catch (_) {}
+      }
+    } else if (d.type === 'rp_gameover') {
       setTimeout(function () { _closeGame(); _showCooldownNote(_freeIn()); }, 6000);
     } else if (d.type === 'rp_exit') {
       _closeGame();
@@ -124,20 +142,10 @@
     if (wait > 0) { _openGame('paid'); return; }   // cooldown → paid
     _hasFreeRon().then(function (ok) {
       if (ok) {
-        _consumeFree(); _tick(); _openGame('free');
-        // 🏆 PoD: nemokamas žaidimas iki šiol buvo TIK localStorage → on-chain pėdsako nebūdavo,
-        //   tad PoD nematė nei aktyvaus, nei naujo vartotojo (žaidime 58 aktyvūs, PoD rodė 2).
-        //   Dabar žaidėjas PATS pasirašo nemokamą `payAndPlay(0,false,'freeplay')` į registruotą
-        //   PewPewPlayV2 → tampa matomu unikaliu adresu. Mokestis NEIMAMAS (amount=0), tik gas.
-        //   Fone ir best-effort: atmetus parašą ar be gas — žaidimas jau atidarytas, niekas nelūžta.
-        try {
-          if (window.PodActivity && window.PodActivity.enabled()) {
-            window.PodActivity.claim('freeplay').catch(function () {});
-          }
-        } catch (_) {}
+        _pendingFree = true;          // nurasysim tik gave 'rp_started' (1-as kamuoliukas paleistas)
+        _openGame('free');
       } else { _showFreeReqNote(); _openGame('paid'); }   // <11 RON → paid
     });
-
   }
 
   // Nemokamo žaidimo tinkamumas. Buvo 11 RON — slenkstis perimtas iš Barracks treniruočių anti-bot,
@@ -197,7 +205,29 @@
       '<button id="rp-close" style="position:absolute;top:10px;right:12px;z-index:2;font-family:monospace;font-size:14px;font-weight:800;' +
         'padding:8px 14px;border-radius:8px;border:1px solid #866;background:#2a1c1c;color:#fbb;cursor:pointer;">✕ EXIT</button>';
     document.body.appendChild(_overlay);
-    document.getElementById('rp-close').onclick = _closeGame;
+    // ✕ EXIT: kol vyksta žaidimas — DVIEJŲ paspaudimų (pirmas įspėja, antras išeina). Mygtukas kabo
+    //   viršuj dešinėj virš iframe'o, o gulsčiai telefone ten yra plati juoda zona, kurioje žaidėjas
+    //   baksnoja flipperį → netyčia išeidavo iš vidurio žaidimo. Native confirm() NEnaudojam — jis
+    //   fullscreen'e telefone bjaurus ir blokuoja. Ne žaidimo metu — išeina iš karto, kaip anksčiau.
+    var _exitBtn = document.getElementById('rp-close');
+    var _exitArm = 0;
+    _exitBtn.onclick = function () {
+      var inRun = false;
+      try {
+        var f = _overlay && _overlay.querySelector('iframe');
+        inRun = !!(f && f.contentWindow && f.contentWindow.__RP_IN_RUN);
+      } catch (_) {}   // cross-origin ar dar neįkelta → elgiamės kaip anksčiau
+      if (!inRun) { _closeGame(); return; }
+      if (Date.now() - _exitArm < 3000) { _closeGame(); return; }   // antras paspaudimas per 3s → išeinam
+      _exitArm = Date.now();
+      _exitBtn.textContent = '✕ TAP AGAIN TO QUIT';
+      setTimeout(function () {
+        try { if (_exitBtn && _exitBtn.isConnected) _exitBtn.textContent = '✕ EXIT'; } catch (_) {}
+      }, 3000);
+    };
+    // 🚩 Bendras „minigame atidarytas" flag'as — F9 auto-popup'ai (pvz. RAID REPORT) tikrina jį ir
+    //   ATIDEDA rodymą kol žaidi, kad neišokytų viršum pinball/tetris (žr. f9_pvp_live _showRaidReports).
+    try { window.__minigameOpen = true; } catch (_) {}
     _enterPortrait();   // 📱 pinball = vertikalus → į portrait (nereikia versti telefono)
     // 🔇 07-25 FIX: nutildom PAGRINDINIO žaidimo (F9/adventure) muziką+SFX, kad nesikirstų su pinball muzika
     //   (grojo abi vienu metu). Pinball garsas yra IFRAME'e (atskiras dokumentas) → jo _applyGlobalMute neliečia.
@@ -206,6 +236,8 @@
   }
   function _closeGame() {
     if (_overlay) { try { _overlay.remove(); } catch (_) {} _overlay = null; }
+    // 🚩 minigame uždarytas → atsegam flag'ą ir pranešam, kad atidėti popup'ai (RAID REPORT) gali pasirodyti.
+    try { window.__minigameOpen = false; window.dispatchEvent(new Event('minigame:closed')); } catch (_) {}
     _restoreLandscape();   // 📱 atgal į pilies landscape režimą
     // 🔊 grąžinam pagrindinio žaidimo garsą pagal IŠSAUGOTĄ user pasirinkimą (ne priverstinai on)
     try { if (window._applyGlobalMute) window._applyGlobalMute(localStorage.getItem('lenta_muted') === '1'); } catch (_) {}

@@ -261,13 +261,36 @@
   }
   function serverNow() { return Date.now() + (_srvSkew || 0); }
   function hasServerTime() { return _srvSkew !== null; }
-  // 🏁 SEZONO 1 PABAIGA — FIKSUOTA (user 2026-08-02): po šio momento žaisti NEGALIMA, leaderboard TIK matomas.
-  //   Duomenys NELIEČIAMI — tiesiog nauji žaidimai neleidžiami → lentelė natūraliai užšąla. Auto-aktyvuojasi.
-  const SEASON1_END = Date.UTC(2026, 7, 2, 0, 0, 0);   // 08-02: SUSTABDYTA DABAR (praeitas laikas → lock iš karto visiems) — kol S2 neprasidėjo
-  function seasonEnd() { return SEASON1_END; }
-  // Serverio laikas (Supabase Date) jei žinom, kitaip vietinis fallback → lock'as suveikia net be serverio laiko.
-  function seasonLocked() { const now = hasServerTime() ? serverNow() : Date.now(); return now >= SEASON1_END; }
-  function seasonLeftMs() { return Math.max(0, seasonEnd() - (hasServerTime() ? serverNow() : Date.now())); }
+  // ── 🏁 SEZONAI (2026-08-03) ───────────────────────────────────────────────
+  // Kiekvienas sezonas rašo į SAVO Supabase raktų prefiksą, tad seni rezultatai NIEKADA
+  // neperrašomi ir netrinami — archyvas atsiranda savaime, be jokios duomenų migracijos
+  // (S1 eilutės lieka tiksliai ten, kur buvo; S2 rašo į naują prefiksą).
+  // ⚠️ SQL LIKE gudrybė: `_` = bet kuris VIENAS simbolis, tad `rp_%` pagautų ir `rp2_…`.
+  //    Todėl į Supabase siunčiam PLATŲ filtrą `rp*`, o tikslų prefiksą pritaikom kliente.
+  // Sezonas baigiasi → žaisti negalima, leaderboard lieka TIK peržiūrai (duomenys neliečiami).
+  const SEASONS = [
+    { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0) },
+    { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0) },
+  ];
+  // Serverio laikas (Supabase `Date`) jei žinom, kitaip vietinis fallback → veikia net be tinklo.
+  function nowMs() { return hasServerTime() ? serverNow() : Date.now(); }
+  // Naujausias PRASIDĖJĘS sezonas (net jei jau pasibaigęs — tada tiesiog užrakintas).
+  function currentSeason() {
+    const t = nowMs();
+    for (let i = SEASONS.length - 1; i >= 0; i--) if (t >= SEASONS[i].start) return SEASONS[i];
+    return SEASONS[0];
+  }
+  function seasonById(id) { for (const s of SEASONS) if (s.id === id) return s; return currentSeason(); }
+  // Sezonų sąrašas UI pasirinkimui (naujausias pirmas) + „live" žyma.
+  function seasonList() {
+    const cur = currentSeason(), t = nowMs();
+    return SEASONS.slice().reverse().map((s) => ({ id: s.id, name: s.name, start: s.start, end: s.end,
+      live: s.id === cur.id && t < s.end, ended: t >= s.end }));
+  }
+  function seasonEnd() { return currentSeason().end; }
+  function seasonName() { return currentSeason().name; }
+  function seasonLocked() { return nowMs() >= currentSeason().end; }
+  function seasonLeftMs() { return Math.max(0, seasonEnd() - nowMs()); }
 
   // Įrašo runą: BEST (aukščiausias vieno žaidimo score) atsinaujina tik jei geresnis;
   //   TOTAL (bendras) — KIEKVIENO žaidimo score prisideda ant viršaus VISADA (kaupiasi).
@@ -282,7 +305,8 @@
   async function submitScore(score, floor) {
     if (!state.address) return { ok: false, reason: 'no_wallet', best: 0, total: 0 };
     score = Math.floor(score || 0);
-    const key = BOARD_KEY + state.address.toLowerCase();
+    // 🏁 Rašom į AKTYVAUS sezono prefiksą — senų sezonų eilutės neliečiamos (archyvas).
+    const key = currentSeason().key + state.address.toLowerCase();
     let b = null;
     for (var att = 0; att < 3 && b === null; att++) {
       try {
@@ -319,15 +343,20 @@
   }
 
   // Top-N (kliento pusėje rikiuojam). byTotal=true → pagal BENDRĄ (total), kitaip → pagal BEST (score).
-  async function loadTop(n, byTotal) {
+  //   seasonId — kurio sezono lentelę rodyti (nenurodžius = dabartinis).
+  // ⚠️ Į Supabase einam PLAČIU `like.rp*` (nes `rp_%` dėl SQL `_` wildcard'o pagautų ir `rp2_…`),
+  //   o TIKSLŲ sezono prefiksą pritaikom čia — taip sezonai niekada nesusimaišo.
+  async function loadTop(n, byTotal, seasonId) {
+    const pfx = (seasonId ? seasonById(seasonId) : currentSeason()).key;
     try {
-      const r = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE + '?select=ronin_address,buildings&ronin_address=like.' + BOARD_KEY + '*&limit=500', { headers: sbHeaders() });
+      const r = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE + '?select=ronin_address,buildings&ronin_address=like.' + BOARD_KEY.slice(0, 2) + '*&limit=2000', { headers: sbHeaders() });
       _noteServerDate(r);   // ⏳ serverio laikas sezono skaitikliui
       const rows = await r.json();
-      const list = (rows || []).map((row) => {
-        const b = row.buildings || {};
-        return { addr: b.addr || row.ronin_address.slice(BOARD_KEY.length), score: b.score || 0, total: b.total || 0, floor: b.floor || 1 };
-      }).filter((e) => (byTotal ? e.total : e.score) > 0);
+      const list = (rows || []).filter((row) => String(row.ronin_address || '').toLowerCase().indexOf(pfx) === 0)
+        .map((row) => {
+          const b = row.buildings || {};
+          return { addr: b.addr || row.ronin_address.slice(pfx.length), score: b.score || 0, total: b.total || 0, floor: b.floor || 1 };
+        }).filter((e) => (byTotal ? e.total : e.score) > 0);
       list.sort((a, b) => byTotal ? (b.total - a.total) : (b.score - a.score));
       return list.slice(0, n || 20);
     } catch (_) { return []; }
@@ -344,5 +373,6 @@
     onChange, snapshot, short, isConnected: () => !!state.address, getAddress: () => state.address,
     FEE, FREE_PLAY, chargeEnabled: () => !FREE_PLAY,
     serverNow, hasServerTime, seasonEnd, seasonLeftMs, seasonLocked,   // ⏳ sezono skaitiklis + 🏁 lock (globalus serverio laikas)
+    seasonList, seasonName, currentSeason, seasonById,                 // 🏁 sezonų archyvas (peržiūra)
   };
 })();

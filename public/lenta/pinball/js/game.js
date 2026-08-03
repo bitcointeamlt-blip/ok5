@@ -273,20 +273,47 @@ class Game {
   }
 
   // Mobilus valdymas: kairė/dešinė pusė = flipperiai; laikai (ant plunger) = įkrova.
+  // 📱 07-28 VISO EKRANO valdymas (žaidėjo Patto skundas „kicks me out").
+  //   BUVO: klausytojai kabinti TIK ant `canvas`. Telefonui gulsčiai (o taip būna dažnai — pilis verčia
+  //   landscape, o iOS/Ronin webview `orientation.lock('portrait')` tyliai neveikia) lenta susitraukia į
+  //   ~230px juostą ekrano viduryje, o KAIRĖJE ir DEŠINĖJE lieka po ~307px juodos zonos. Bakstelėjimas
+  //   tose zonose NEPASIEKDAVO canvas → flipperis nereaguodavo, o vienintelis ten reaguojantis daiktas
+  //   buvo launcher'io ✕ EXIT → žaidėją išmesdavo iš žaidimo.
+  //   DABAR: klausom VISO lango. Kairė ekrano pusė = kairys flipperis, dešinė = dešinys, nesvarbu ar
+  //   pirštas ant lentos, ar ant juodo krašto. `_logicalXY` reikšmių NEkarpo (lx<0 kairėj, lx>W dešinėj),
+  //   tad pusių logika suveikia savaime.
   _bindTouch() {
+    // Ar palietimas teko DOM valdikliui (meniu / leaderboard / info popup / ⟳)? Tada NELIEČIAM:
+    //   jokio preventDefault, jokių flipperių — kitaip mygtukai nustotų veikti.
+    const onDomUI = (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return false;
+      return !!t.closest('#rp-menu, #rp-info, #rotate-btn, button, a, input, select, textarea');
+    };
+    // Ar palietimas fiziškai ant drobės? (HUD mygtukams ir upgrade kortelėms — tik ten.)
+    const onCanvas = (x, y) => {
+      const r = this.canvas.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
     const handle = (e) => {
+      if (onDomUI(e)) return;                     // DOM UI tvarko pats save
       e.preventDefault();
       this.audio.init(); this.audio.resume();
       if (this.gameOver) { if (!this._menuGate && e.type === 'touchstart') this._restart(); return; }
       const touches = e.touches;
 
       if (e.type === 'touchstart' && touches.length) {
-        const p = this._logicalXY(touches[touches.length - 1].clientX, touches[touches.length - 1].clientY);
-        const b = this._hitButton(p.lx, p.ly);
-        if (b === 'pause') { this.paused = !this.paused; return; }
-        if (b === 'board') { this._trophyPressT = (window.performance ? performance.now() : Date.now()); this._openBoard(); return; }
-        if (b === 'music') { this._toggleMusicBtn(); return; }   // 🎵 muzikos on/off
-        if (this.picking) { this._pointerPick(p.lx); return; }
+        const last = touches[touches.length - 1];
+        const p = this._logicalXY(last.clientX, last.clientY);
+        // 🏆/🎵 mygtukai ir upgrade kortelės — TIK kai pirštas tikrai ant drobės (juodam krašte lx/ly
+        //   išeina už ribų, tad atsitiktinai nepataikytų, bet tikrinam aiškiai).
+        if (onCanvas(last.clientX, last.clientY)) {
+          const b = this._hitButton(p.lx, p.ly);
+          if (b === 'pause') { this.paused = !this.paused; return; }
+          if (b === 'board') { this._trophyPressT = (window.performance ? performance.now() : Date.now()); this._openBoard(); return; }
+          if (b === 'music') { this._toggleMusicBtn(); return; }   // 🎵 muzikos on/off
+          if (this.picking) { this._pointerPick(p.lx); return; }
+        }
       }
       if (this.picking) return;
 
@@ -297,11 +324,13 @@ class Game {
         return;
       }
 
-      // Žaidimas: flipperiai pagal ekrano puses (HUD juostą ignoruojam). Per _logicalXY → veikia ir pasukus.
+      // Žaidimas: flipperiai pagal ekrano puses. Per _logicalXY → veikia ir pasukus (rotated).
       let left = false, right = false;
       for (const t of touches) {
         const { lx, ly } = this._logicalXY(t.clientX, t.clientY);
-        if (ly < 22) continue;   // viršutinė HUD juosta (mygtukai) — ne flipperis
+        // HUD juostą (viršuje, kur 🏆/🎵) praleidžiam TIK jei pirštas ant drobės — juodam krašte
+        //   viršus yra normalus žaidimo plotas ir turi valdyti flipperį.
+        if (ly < 22 && onCanvas(t.clientX, t.clientY)) continue;
         if (lx < this.table.W / 2) left = true; else right = true;
       }
       this.input.left = left; this.flippers[0].pressed = left;
@@ -309,7 +338,7 @@ class Game {
       this.touchHeld = false; this._wasCharging = false;
     };
     for (const t of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
-      this.canvas.addEventListener(t, handle, { passive: false });
+      window.addEventListener(t, handle, { passive: false });
     }
   }
 
@@ -400,6 +429,7 @@ class Game {
     this.gateTimer = 0;
     this.balls = 3;
     this.gameOver = false;
+    this._runStarted = false; window.__RP_IN_RUN = false;   // 🎳 naujas runas — kol nepaleistas 1-as kamuoliukas
     this._death = null;
     this.picking = false;
     this.choices = [];
@@ -506,6 +536,14 @@ class Game {
     if (this._death) return;   // per mirties animaciją įvestis nepaleidžia kamuoliuko
     if (this._needPay) return; // web3 pay-gate: kol nesumokėta — nepaleidžiam (meniu overlay)
     if (!this.ball.onPlunger) return;
+    // 🎳 07-28: PIRMAS kamuoliukas runo metu = žaidimas REALIAI prasidėjo. Tik dabar tėvas (lenta
+    //   launcher) nurašo nemokamą žaidimą — anksčiau jis būdavo nurašomas vos atidarius langą, tad
+    //   netyčia išėjęs (ar išmestas) žaidėjas prarasdavo jį nieko net nesužaidęs.
+    if (!this._runStarted) {
+      this._runStarted = true;
+      window.__RP_IN_RUN = true;   // launcher'io ✕ EXIT tikrina → klausia patvirtinimo
+      try { parent.postMessage({ type: 'rp_started' }, '*'); } catch (_) {}
+    }
     this.ball.onPlunger = false;
     this.ball.vx = M.rand(-150, 150);                          // įstrižumas (kartais stipriai į šoną)
     this.ball.vy = -CONFIG.emergeSpeed * M.rand(0.85, 1.12);   // atsitiktinis stiprumas
@@ -525,6 +563,7 @@ class Game {
         this._death = null;
         if (go) {
           this.gameOver = true;
+          window.__RP_IN_RUN = false;   // 🎳 runas baigtas → ✕ EXIT nebeklausia patvirtinimo
           this._boardRank = this.score.submitScore(this.floor);   // lokalus leaderboard
           this._board = this.score.loadBoard();
           this.audio.drain();

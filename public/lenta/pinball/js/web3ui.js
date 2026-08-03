@@ -6,6 +6,7 @@
   if (!W3) return;
 
   let game = null, root = null, els = {}, mode = 'start', lastRun = null, boardFrom = 'start', boardMetric = 'score';
+  let boardSeason = 0;   // 🏁 kurio sezono lentelė rodoma (0 = dar nenustatyta → dabartinis)
 
   const CSS = `
   #rp-menu{position:fixed;inset:0;z-index:30;display:none;flex-direction:column;
@@ -95,6 +96,15 @@
     color:#9fb4cc;background:rgba(10,14,24,0.6);box-shadow:inset 0 0 0 1px #2a3346;}
   #rp-season .rps-t{color:#ffd76a;font-weight:bold;letter-spacing:1.5px;}
   #rp-season.ending .rps-t{color:#ff9a6a;}
+  /* 🏁 Sezonų pasirinkimas (08-03): esamas + ARCHYVAS. Rodomas TIK board režime ir tik jei sezonų >1. */
+  #rp-seasons{display:none;}
+  #rp-menu.mode-board #rp-seasons{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:0 0 10px;}
+  .rp-sbtn{font-family:inherit;font-weight:bold;text-transform:uppercase;letter-spacing:1px;font-size:10px;
+    cursor:pointer;border:0;border-radius:0;padding:6px 10px;background:#20242f;color:#8a93a8;
+    box-shadow:inset 0 -3px 0 #12151d, 0 0 0 2px #05070d;text-shadow:1px 1px 0 rgba(0,0,0,0.4);}
+  .rp-sbtn:active{transform:translateY(1px);}
+  .rp-sbtn.on{background:#2f6fa8;color:#eaf6ff;box-shadow:inset 0 2px 0 #62a3da, inset 0 -3px 0 #174a75, 0 0 0 2px #05131f;}
+  .rp-sbtn .sdot{color:#6effa0;} .rp-sbtn .sold{color:#7f8ba0;}
   .rp-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:0;border-bottom:1px solid rgba(90,100,130,0.12);}
   .rp-row.me{background:rgba(110,255,160,0.14);box-shadow:inset 0 0 0 2px rgba(110,255,160,0.5);}
   .rp-row.g1{background:rgba(190,232,255,0.08);} .rp-row.g2{background:rgba(216,221,232,0.06);} .rp-row.g3{background:rgba(143,168,192,0.06);}
@@ -151,6 +161,7 @@
       '<button id="rp-close" title="Close">✕</button>' +
       '<h1>RONKEPONG</h1>' +
       '<div id="rp-season"></div>' +
+      '<div id="rp-seasons"></div>' +
       '<div id="rp-sub"></div>' +
       '<div class="rp-wallet" id="rp-wallet"></div>' +
       '<button class="rp-btn rp-play" id="rp-play"></button>' +
@@ -174,6 +185,7 @@
     els.card = root.querySelector('#rp-card');
     els.title = root.querySelector('#rp-card h1');
     els.season = root.querySelector('#rp-season');
+    els.seasons = root.querySelector('#rp-seasons');
     els.tabBest = root.querySelector('#rp-tab-best');
     els.tabTotal = root.querySelector('#rp-tab-total');
     els.play.addEventListener('click', onPlay);
@@ -186,6 +198,11 @@
     });
     els.tabBest.addEventListener('click', () => setMetric('score'));
     els.tabTotal.addEventListener('click', () => setMetric('total'));
+    // 🏁 Sezono pasirinkimas (event delegation — mygtukai perpiešiami).
+    els.seasons.addEventListener('click', function (ev) {
+      const b = ev.target.closest && ev.target.closest('[data-sid]');
+      if (b) setSeason(Number(b.getAttribute('data-sid')));
+    });
     // Prizo info: paspaudus prizą eilutėj → popup su paaiškinimu (event delegation).
     els.board.addEventListener('click', function (ev) {
       const t = ev.target.closest && ev.target.closest('[data-info]');
@@ -250,7 +267,10 @@
 
   async function onPlay() {
     // 🏁 SEZONAS BAIGTAS → žaisti negalima, rodom tik leaderboard (defense — net jei mygtukas paspaustas).
-    if (W3.seasonLocked && W3.seasonLocked()) { setStatus('🏁 Season 1 has ended — playing is closed.', 'ok'); showBoard('ended'); return; }
+    if (W3.seasonLocked && W3.seasonLocked()) {
+      const nm = (W3.seasonName && W3.seasonName()) || 'The season';
+      setStatus('🏁 ' + nm + ' has ended — playing is closed.', 'ok'); showBoard('ended'); return;
+    }
     playSprite();   // sprite švytėjimo animacija paspaudus
     const s = W3.snapshot();
     if (s.freePlay) { startGame(); return; }
@@ -274,6 +294,20 @@
 
   // Perjungia leaderboard metriką: 'score' = BEST rekordas / 'total' = BENDRAS kaupiamas.
   function setMetric(m) { if (boardMetric === m) return; boardMetric = m; loadBoard(); }
+  // 🏁 Perjungia sezoną (dabartinis ↔ archyvas). Duomenys atskiruose Supabase prefiksuose.
+  function setSeason(id) { if (!id || boardSeason === id) return; boardSeason = id; loadBoard(); }
+  function curSeasonId() { try { return W3.currentSeason().id; } catch (_) { return 0; } }
+  // Sezonų juosta: naujausias pirmas, gyvas pažymėtas ● LIVE. Vienas sezonas → juostos nerodom.
+  function renderSeasons() {
+    if (!els.seasons) return;
+    let list = [];
+    try { list = W3.seasonList ? W3.seasonList() : []; } catch (_) {}
+    if (list.length < 2) { els.seasons.innerHTML = ''; return; }
+    els.seasons.innerHTML = list.map(function (s) {
+      const tag = s.live ? ' <span class="sdot">● LIVE</span>' : ' <span class="sold">✓</span>';
+      return '<button class="rp-sbtn' + (s.id === boardSeason ? ' on' : '') + '" data-sid="' + s.id + '">' + s.name + tag + '</button>';
+    }).join('');
+  }
   function updateTabs() {
     if (!els.tabBest) return;
     els.tabBest.className = 'rp-tab' + (boardMetric === 'score' ? ' rp-tab-on' : '');
@@ -317,10 +351,11 @@
 
   const SLOTS = 20;                                 // visada rodom 20 prizinių vietų (nesvarbu kiek žaidėjų)
   async function loadBoard() {
-    updateTabs();
+    if (!boardSeason) boardSeason = curSeasonId();
+    updateTabs(); renderSeasons();
     els.board.innerHTML = '<div class="rp-empty">loading…</div>';
     const byTotal = boardMetric === 'total';
-    const top = await W3.loadTop(SLOTS, byTotal);
+    const top = await W3.loadTop(SLOTS, byTotal, boardSeason);
     const me = (W3.getAddress() || '').toLowerCase();
     const RONKE_TOP = 10;   // 69k RONKE dalinamas TIK top 10 (bet lentelė rodo top 20 — matai savo vietą)
     const sumTot = byTotal ? (top.slice(0, RONKE_TOP).reduce((s, e) => s + (e.total || 0), 0) || 1) : 1;
@@ -352,7 +387,7 @@
         '</div>';
     }
     els.board.innerHTML = html;
-    renderSeason();   // ⏳ serverio Date jau gautas su šiuo fetch'u → tikslus likutis
+    renderSeason(); renderSeasons();   // ⏳ serverio Date jau gautas su šiuo fetch'u → tikslus likutis
   }
 
   // ── Public API (kviečiama iš game.js) ──
@@ -387,18 +422,20 @@
     if (h > 0) return h + 'h ' + m + 'm ' + String(sec).padStart(2, '0') + 's';
     return m + 'm ' + String(sec).padStart(2, '0') + 's';
   }
+  // Rodo PERŽIŪRIMO sezono būseną: gyvas → likęs laikas, archyvas → „ENDED / final standings".
   function renderSeason() {
     if (!els.season) return;
     const W = window.RPWeb3;
     if (!W || !W.seasonLeftMs) { els.season.textContent = ''; return; }
-    const locked = !!(W.seasonLocked && W.seasonLocked());
-    const left = W.seasonLeftMs();
-    els.season.classList.toggle('ending', locked || left < 24 * 3600 * 1000);   // paskutinė para / baigta — oranžinė
-    els.season.innerHTML = locked
-      ? '<span>🏁 SEASON 1 ENDED — thanks for playing! Final standings below.</span>'
-      : (left <= 0
-        ? '<span>🏁 SEASON 1 ENDED — final standings below.</span>'
-        : '<span>SEASON 1 ENDS IN</span><span class="rps-t">' + fmtLeft(left) + '</span>');
+    let list = []; try { list = W.seasonList ? W.seasonList() : []; } catch (_) {}
+    let s = null;
+    for (const x of list) if (x.id === boardSeason) s = x;
+    if (!s) s = list[0] || { name: 'SEASON', live: false };
+    const left = s.live ? W.seasonLeftMs() : 0;
+    els.season.classList.toggle('ending', !s.live || left < 24 * 3600 * 1000);   // paskutinė para / baigęs — oranžinė
+    els.season.innerHTML = (s.live && left > 0)
+      ? '<span>' + s.name + ' ENDS IN</span><span class="rps-t">' + fmtLeft(left) + '</span>'
+      : '<span>🏁 ' + s.name + ' ENDED — final standings below.</span>';
   }
   function startSeasonTick() {
     renderSeason();
@@ -415,6 +452,7 @@
   function showBoard(from) {
     boardFrom = from || 'start';
     mode = 'board';
+    boardSeason = curSeasonId();   // 🏁 atidarius visada rodom DABARTINĮ sezoną (archyvas — per juostą)
     if (els.title) els.title.textContent = 'WEEKLY LEADERBOARDS';   // pavadinimas board režime
     renderSecondary(); setStatus('');
     show(); loadBoard();
@@ -445,6 +483,7 @@
   }
   async function onGameOver(run) {
     mode = 'gameover'; lastRun = run || {};
+    boardSeason = curSeasonId();   // 🏁 po žaidimo VISADA dabartinio sezono lentelė (net jei žiūrėjai archyvą)
     if (els.title) els.title.textContent = 'RONKEPONG';   // game-over — branding (board režimas rodo „LEADERBOARD")
     els.sub.innerHTML = 'GAME OVER · your score <b>' + (run ? run.score : 0) + '</b> · floor ' + (run ? run.floor : 1);
     els.mini.textContent = '';
