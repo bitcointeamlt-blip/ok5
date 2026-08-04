@@ -23,6 +23,7 @@
         <button type="button" class="wui-pill" id="wui-pill-btn"></button>
         <button type="button" class="wui-castle-btn wui-raid-btn" id="wui-raid-btn" title="Raid a Castle" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-ronkepong-btn" id="wui-ronkepong-btn" title="RonkePong" style="display:none"></button>
+        <button type="button" class="wui-castle-btn wui-ronkeblocks-btn" id="wui-ronkeblocks-btn" title="RONKE BLOCKS (1v1)" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-inv-btn" id="wui-inv-btn" title="Inventory" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
@@ -487,6 +488,25 @@
       }
       // 🎳 hint sinchronizacija: „PONG" / countdown kai nemokamas išnaudotas
       if (showRp) { try { if (window.RonkePong && window.RonkePong.refresh) window.RonkePong.refresh(); } catch (_) {} }
+    }
+    // 🧱 RONKE BLOCKS — dock mygtukas (šalia PINBALL). Tie patys rodymo sąlygos kaip pinball.
+    //   „For fun" + testavimui: atidaro pasirinkimą (vs AI / ONLINE 1v1). Jokio mokesčio/cooldown.
+    const rbBtnEl = pillEl.querySelector('#wui-ronkeblocks-btn');
+    if (rbBtnEl) {
+      const showRb = inAdv && !(window._f9pvpLive && window.__f9RaidActive);
+      rbBtnEl.style.display = showRb ? 'flex' : 'none';
+      rbBtnEl.style.background = '#2a1c10';
+      if (!rbBtnEl._init) {
+        rbBtnEl._init = true;
+        rbBtnEl.innerHTML = `<span style="font-size:25px;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))">🧱</span><span class="wui-home-hint">BLOCKS</span>`;
+        // 🧱 atidaro LOBIO PANELĘ pilyje (BlocksLobby); jei jos nėra — atsarginis senas chooser (RonkeBlocks).
+        rbBtnEl.addEventListener('click', () => {
+          try {
+            if (window.BlocksLobby && window.BlocksLobby.open) window.BlocksLobby.open();
+            else if (window.RonkeBlocks && window.RonkeBlocks.open) window.RonkeBlocks.open();
+          } catch (_) {}
+        });
+      }
     }
     if (pewpewBtnEl) {
       // PewPew Room — F12 cannon merge floor (tikras barrel sprite + hover liquid fill anim)
