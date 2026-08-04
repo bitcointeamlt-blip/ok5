@@ -35,6 +35,7 @@
   //   mirusį endpoint'ą. Dabar — viem `fallback`: nukritus pirmam, automatiškai keliauja į antrą.
   //   Eiliškumas TYČINIS: drpc pirmas (šviežesnis, patikimesnis getLogs), api.roninchain atsarginis.
   const RONIN_RPC = 'https://ronin.drpc.org';
+  const RONIN_RPC_TENDERLY = 'https://ronin.gateway.tenderly.co';   // nemokamas viešas gateway (~155ms) — tarp drpc ir api
   const RONIN_RPC_FALLBACK = 'https://api.roninchain.com/rpc';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.0';
 
@@ -149,9 +150,11 @@
     //   `fallback` perjungia į kitą tiekėją, kai pirmas grąžina 429/5xx/timeout — inventorius
     //   nebemiršta nuo vieno tiekėjo kvotos. rank:false = laikom eiliškumą (drpc pirmas), o ne
     //   automatinį perrikiavimą pagal latency (kitaip tyliai nudreifuotų ant flaky api.roninchain).
+    // ⚡ 08-04: 3 endpointai + trumpesnis timeout (6s) → jei drpc kabo/429, greitai peršoka į
+    //   tenderly (greitas nemokamas), o ne laukia 20s ir viršija pilies outer timeout'ą.
     const _transport = v.fallback(
-      [v.http(RONIN_RPC, { timeout: 20000 }), v.http(RONIN_RPC_FALLBACK, { timeout: 20000 })],
-      { rank: false, retryCount: 2 },
+      [v.http(RONIN_RPC, { timeout: 6000 }), v.http(RONIN_RPC_TENDERLY, { timeout: 6000 }), v.http(RONIN_RPC_FALLBACK, { timeout: 7000 })],
+      { rank: false, retryCount: 1 },
     );
     _publicClient = v.createPublicClient({ chain, transport: _transport });
     _publicClient._chain = chain;
