@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
+    "postbuild": "node -e \"const fs=require('fs'),p=require('path');const s='src/blocks/game',d='build/blocks/game';fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s))if(f.endsWith('.js'))fs.copyFileSync(p.join(s,f),p.join(d,f));console.log('postbuild: copied game js to build')\"",
     "start": "node build/index.js"
   },
   "dependencies": {

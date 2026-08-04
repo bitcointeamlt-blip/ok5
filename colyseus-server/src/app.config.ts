@@ -4,6 +4,7 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import cors, { CorsOptions } from "cors";
 import express from "express";
 import { F9PvpRoom } from "./rooms/F9PvpRoom";
+import { BlocksRoom } from "./rooms/BlocksRoom";   // 🧱 RONKE BLOCKS 1v1 (server-authoritative koridorius)
 
 // ── Lenta F9 PvP Colyseus serveris (švarus, f9-only). ──
 // DOT Clicker GameRoom/Chat/Presence + jų debug-ingest NEĮTRAUKTI (žr. project_lenta_pvp_colyseus).
@@ -34,6 +35,7 @@ export default config({
     //   joinOrCreate ima PILNIAUSIĄ (kur gynėjas sėdi), ne tuščią dublį → puolikas visada randa gynėją.
     //   Kartu su klientu: HOME dabar joinOrCreate (ne create()) → dublių išvis nebekuria.
     gameServer.define("f9_pvp_room", F9PvpRoom).enableRealtimeListing().filterBy(["owner"]).sortBy({ clients: -1 });
+    gameServer.define("blocks_room", BlocksRoom).enableRealtimeListing().sortBy({ clients: -1 });   // 🧱 RONKE BLOCKS 1v1
 
     matchMaker.controller.getCorsHeaders = (req: any) => {
       const origin = req.headers.origin;
