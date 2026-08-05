@@ -100,6 +100,13 @@
     this.vh = C.VH;
     this.t = 0;
     this.menuBits = null;
+    /* 🏰 pilies fonas (medieval castle) — cover-fit už lentų, kad tetris atrodytų kaip viena scena.
+     * Async: kol neužsikrovė — fallback į procedūrinę mūro sieną (drawBackdrop). */
+    this.bgImg = new Image();
+    this.bgReady = false;
+    var _self = this;
+    this.bgImg.onload = function () { _self.bgReady = true; };
+    this.bgImg.src = 'assets/teterisbg.png';
     this.resize();
   }
 
@@ -1463,19 +1470,33 @@
    * Piešiama tik siūlėmis (1 px linijomis), ne pilnais blokais — pigu ir atrodo kaip mūras. */
   Renderer.prototype.drawBackdrop = function (fx, dt) {
     var ctx = this.ctx, vw = this.vw, vh = this.vh;
-    var BH = 16, BW = 34;
 
-    ctx.fillStyle = '#131b2c';   // navy grout (buvo rudas #1d150f)
-    for (var y = 0; y < vh; y += BH) ctx.fillRect(0, y, vw, 1);
-    for (var r = 0, row = 0; r < vh; r += BH, row++) {
-      var shift = (row % 2) ? BW / 2 : 0;
-      for (var x = shift; x < vw; x += BW) ctx.fillRect(Math.round(x), r, 1, BH);
-    }
-    /* reti šviesesni akmenys — kad siena nebūtų mechaniška */
-    ctx.fillStyle = '#182238';   // navy plieno akmuo (buvo rudas #241a12)
-    for (var s = 0; s < vh; s += BH * 3) {
-      ctx.fillRect(((s * 7) % vw) | 0, s + 1, BW - 2, BH - 2);
-      ctx.fillRect(((s * 13 + 120) % vw) | 0, s + BH + 1, BW - 2, BH - 2);
+    if (this.bgReady && this.bgImg.naturalWidth) {
+      /* 🏰 PILIES FONAS — cover-fit (užpildo ekraną, centruota) → centrinis bokštas lieka per vidurį,
+       * lentos atsisėda ant šoninių sienų → viena bendra scena. Glotnus mastelis (ne pixelated). */
+      var iw = this.bgImg.naturalWidth, ih = this.bgImg.naturalHeight;
+      var sc = Math.max(vw / iw, vh / ih);
+      var dw = iw * sc, dh = ih * sc;
+      var dx = Math.round((vw - dw) / 2), dy = Math.round((vh - dh) / 2);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.bgImg, dx, dy, Math.ceil(dw), Math.ceil(dh));
+      ctx.imageSmoothingEnabled = false;
+      /* švelnus pritemdymas → lentos/unitai skaitomi ryškiai virš fono */
+      ctx.globalAlpha = 0.22; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
+    } else {
+      /* fallback (kol paveikslėlis kraunasi): procedūrinė navy mūro siena */
+      var BH = 16, BW = 34;
+      ctx.fillStyle = '#131b2c';
+      for (var y = 0; y < vh; y += BH) ctx.fillRect(0, y, vw, 1);
+      for (var r = 0, row = 0; r < vh; r += BH, row++) {
+        var shift = (row % 2) ? BW / 2 : 0;
+        for (var x = shift; x < vw; x += BW) ctx.fillRect(Math.round(x), r, 1, BH);
+      }
+      ctx.fillStyle = '#182238';
+      for (var s = 0; s < vh; s += BH * 3) {
+        ctx.fillRect(((s * 7) % vw) | 0, s + 1, BW - 2, BH - 2);
+        ctx.fillRect(((s * 13 + 120) % vw) | 0, s + BH + 1, BW - 2, BH - 2);
+      }
     }
 
     /* žarijos */
