@@ -70,7 +70,7 @@ export function boneSwapCfg() {
 //    amžinai rodė ✗. On-chain BoneExchange savo gate'ą vis tiek enforce'ina pats TX metu.
 const RV_MAINNET = process.env.RONKEVERSE_ADDR || "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
 // ⚡ 08-05: keli RPC su FALLBACK (buvo VIENAS → 429 = NFT gate „✗", kaulų swap blokuotas). RONKE_RPCS env perrašo.
-const RV_RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.drpc.org", "https://ronin.gateway.tenderly.co", process.env.RONIN_MAINNET_RPC, process.env.RONIN_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
+const RV_RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.gateway.tenderly.co", "https://ronin.drpc.org", process.env.RONIN_MAINNET_RPC, process.env.RONIN_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
 let _rvProv: AbstractProvider | null = null;
 function getRvProv(): AbstractProvider {
   if (!_rvProv) {

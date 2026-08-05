@@ -153,7 +153,7 @@
     // ⚡ 08-04: 3 endpointai + trumpesnis timeout (6s) → jei drpc kabo/429, greitai peršoka į
     //   tenderly (greitas nemokamas), o ne laukia 20s ir viršija pilies outer timeout'ą.
     const _transport = v.fallback(
-      [v.http(RONIN_RPC, { timeout: 6000 }), v.http(RONIN_RPC_TENDERLY, { timeout: 6000 }), v.http(RONIN_RPC_FALLBACK, { timeout: 7000 })],
+      [v.http(RONIN_RPC_TENDERLY, { timeout: 6000 }), v.http(RONIN_RPC, { timeout: 6000 }), v.http(RONIN_RPC_FALLBACK, { timeout: 7000 })],
       { rank: false, retryCount: 1 },
     );
     _publicClient = v.createPublicClient({ chain, transport: _transport });

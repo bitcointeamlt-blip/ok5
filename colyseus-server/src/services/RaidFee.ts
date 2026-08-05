@@ -17,7 +17,7 @@ const MAX_TX_AGE_MS = Number(process.env.RAID_FEE_TX_AGE_MS || 60 * 60 * 1000); 
 // ⚡ 08-05: keli RPC su FALLBACK (buvo VIENAS → hiccup/429 = „Raid fee issue (rpc)", žaidėjas MOKA bet
 //   neraidina). Greiti nemokami pirmi (drpc, tenderly), api.roninchain paskutinis. RONKE_RPCS env perrašo
 //   (tą patį naudoja WagerEntry — 1 env valdo abu; pvz. Sky Mavis private raktas → pirmas).
-const RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.drpc.org", "https://ronin.gateway.tenderly.co", process.env.RONIN_MAINNET_RPC, process.env.RONIN_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
+const RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.gateway.tenderly.co", "https://ronin.drpc.org", process.env.RONIN_MAINNET_RPC, process.env.RONIN_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
 const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
 
 export function raidFeeEnabled(): boolean { return RAID_FEE_RONKE > 0; }

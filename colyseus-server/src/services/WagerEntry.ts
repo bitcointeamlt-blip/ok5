@@ -17,9 +17,10 @@ const RONKE = (process.env.RONKE_TOKEN_ADDR || "0xf988f63bf26C3Ed3fBf39922149E3E
 const TREASURY = (process.env.BLOCKS_WAGER_TREASURY || "").toLowerCase();   // = PewPewPlayV2.treasury() (kur payAndPlay siunčia). Be jo → wager OFF.
 const MAX_TX_AGE_MS = Number(process.env.BLOCKS_WAGER_TX_AGE_MS || 60 * 60 * 1000);   // TX ne senesnis nei 1h (replay langas)
 // Keli RPC su FALLBACK (jei vienas 429/nukrenta → kitas aptarnauja). Sumažina „game didn't start" dėl RPC.
-// Eiliškumas: GREITI nemokami pirmi (drpc ~150ms, tenderly viešas ~155ms), api.roninchain paskutinis
-//   (svyruoja iki 4+s). RONKE_RPCS env perrašo viską (pvz. Sky Mavis private raktas → pirmas).
-const RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.drpc.org", "https://ronin.gateway.tenderly.co", process.env.RONKE_RPC_URL, process.env.RONIN_MAINNET_RPC, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
+// Eiliškumas: tenderly PIRMAS (patikimas ~155ms) — drpc periodiškai meta „Temporary internal error"/429,
+//   tad nebe pirmas; api.roninchain paskutinis (svyruoja iki 4+s). RONKE_RPCS env perrašo viską
+//   (pvz. Sky Mavis private raktas → pirmas), kad realiam krūviui būtų dedikuotas RPC.
+const RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.gateway.tenderly.co", "https://ronin.drpc.org", process.env.RONKE_RPC_URL, process.env.RONIN_MAINNET_RPC, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
 const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
 
 // wager verifikacija „gyva" tik kai turim treasury adresą (kur tikrinti mokėjimą) — kitaip nemokamas režimas.
