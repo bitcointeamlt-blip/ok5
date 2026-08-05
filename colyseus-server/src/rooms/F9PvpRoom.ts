@@ -257,7 +257,7 @@ const MINE_POWER_KNEE = Number(process.env.F9_MINE_POWER_KNEE) || 250;
 const MINE_POWER_KNEE_MULT = Number(process.env.F9_MINE_POWER_KNEE_MULT) || 0.25;   // 07-13 user: 0.5→0.25 (virš 250 power augimas dar perpus mažesnis)
 const RONKEVERSE_ADDR = "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
 const BARRACKS_ADDR = "0xccf604511c5d2b5c3fd61adfba3950d0d2890862";
-const RONIN_RPC = process.env.RONIN_RPC || "https://ronin.drpc.org";   // drpc — stabilus (api.roninchain flaky)
+const RONIN_RPC = process.env.RONIN_RPC || "https://ronin.gateway.tenderly.co";   // ⚡ 08-05: tenderly (drpc meta batch-3/500)
 // On-chain balansų patikra (RonkeVerse + Barracks balanceOf) — kešuojama 10 min; RPC fail → null (fallback į persisted).
 let _chainProvider: any = null;
 const _chainCache = new Map<string, { rv: number; wallet: number; at: number }>();
@@ -267,7 +267,7 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
   }
   const hit = _chainCache.get(addr);
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit;
-  if (!_chainProvider) _chainProvider = new ethers.JsonRpcProvider(RONIN_RPC);
+  if (!_chainProvider) _chainProvider = new ethers.JsonRpcProvider(RONIN_RPC, 2020, { staticNetwork: true, batchMaxCount: 1 });   // batchMaxCount:1 → nebatch'ina (drpc/free limitas 3)
   const abi = ["function balanceOf(address) view returns (uint256)"];
   const rvC = new ethers.Contract(RONKEVERSE_ADDR, abi, _chainProvider);
   const brC = new ethers.Contract(BARRACKS_ADDR, abi, _chainProvider);

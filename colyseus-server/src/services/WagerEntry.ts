@@ -30,8 +30,8 @@ let _prov: ethers.AbstractProvider | null = null;
 function prov(): ethers.AbstractProvider {
   if (_prov) return _prov;
   _prov = RPCS.length > 1
-    ? new ethers.FallbackProvider(RPCS.map((u, i) => ({ provider: new ethers.JsonRpcProvider(u, 2020, { staticNetwork: true }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
-    : new ethers.JsonRpcProvider(RPCS[0] || "https://api.roninchain.com/rpc", 2020, { staticNetwork: true });
+    ? new ethers.FallbackProvider(RPCS.map((u, i) => ({ provider: new ethers.JsonRpcProvider(u, 2020, { staticNetwork: true, batchMaxCount: 1 }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
+    : new ethers.JsonRpcProvider(RPCS[0] || "https://api.roninchain.com/rpc", 2020, { staticNetwork: true, batchMaxCount: 1 });
   console.log(`[WagerEntry] RPC: ${RPCS.length} endpoint(s) (fallback)`);
   return _prov;
 }

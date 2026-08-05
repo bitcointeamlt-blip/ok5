@@ -23,7 +23,7 @@ const VOUCHER_TTL_MS = 60 * 60 * 1000;   // 1h galiojimas
 
 let _prov: JsonRpcProvider | null = null;
 function getProv(): JsonRpcProvider {
-  if (!_prov) _prov = new JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true });
+  if (!_prov) _prov = new JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true, batchMaxCount: 1 });
   return _prov;
 }
 
@@ -75,8 +75,8 @@ let _rvProv: AbstractProvider | null = null;
 function getRvProv(): AbstractProvider {
   if (!_rvProv) {
     _rvProv = RV_RPCS.length > 1
-      ? new FallbackProvider(RV_RPCS.map((u, i) => ({ provider: new JsonRpcProvider(u, 2020, { staticNetwork: true }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
-      : new JsonRpcProvider(RV_RPCS[0] || "https://ronin.drpc.org", 2020, { staticNetwork: true });
+      ? new FallbackProvider(RV_RPCS.map((u, i) => ({ provider: new JsonRpcProvider(u, 2020, { staticNetwork: true, batchMaxCount: 1 }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
+      : new JsonRpcProvider(RV_RPCS[0] || "https://ronin.drpc.org", 2020, { staticNetwork: true, batchMaxCount: 1 });
     console.log(`[BoneSwap] RV RPC: ${RV_RPCS.length} endpoint(s) (fallback)`);
   }
   return _rvProv;
