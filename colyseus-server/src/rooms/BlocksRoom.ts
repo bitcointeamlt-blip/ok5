@@ -45,9 +45,13 @@ const MATCH_MAX_MS = 6 * 60 * 1000;   // 6 min riba → jei niekas netopina (sta
 const STAKE = new StakeService();     // dalinamasi tarp kambarių (ethers signer lazy-init)
 const WINNER_BPS = 8000;              // laimėtojas 80% poolo; treasury pasilieka 20%
 // 🔁 AUTO režime periodiškai išmokam laukiančias eilės išmokas (kai pool papildytas — senos „eilėje" prizai išsimoka savaime).
+// 🛟 Pirma RECONCILE iš Supabase — po cloud redeploy vietinis blocks_payouts.json tuščias, tad atstatom
+//    laukiančias išmokas iš durablaus Supabase dublio, kad NĖ VIENAS prizas nedingtų per deploy'ą.
 if (STAKE.enabled && !STAKE.manual) {
-  setTimeout(() => { void STAKE.flushQueue(); }, 8000);                   // netrukus po starto
-  setInterval(() => { void STAKE.flushQueue(); }, 3 * 60 * 1000);        // ir kas 3 min
+  setTimeout(() => { void PayoutQueue.reconcile().then(() => STAKE.flushQueue()); }, 8000);   // reconcile → tada flush
+  setInterval(() => { void STAKE.flushQueue(); }, 3 * 60 * 1000);                              // ir kas 3 min
+} else if (STAKE.manual) {
+  setTimeout(() => { void PayoutQueue.reconcile(); }, 8000);   // manual režimas: bent atstatom eilę operatoriui
 }
 
 type Side = "p1" | "p2";
@@ -88,6 +92,7 @@ export class BlocksRoom extends Room<BlocksState> {
   private _verifyStarted = false;
   private _verifyDone = false;
   private _verifyOk = false;
+  private _disposed = false;                          // kambarys uždarytas → stabdom fono verify ciklą
 
   onCreate(options?: any) {
     /* PRIVATUS kambarys (draugo kvietimas per kodą/nuorodą): išimamas iš matchmaking, kad
@@ -229,11 +234,23 @@ export class BlocksRoom extends Room<BlocksState> {
   }
 
   // Fono verifikacija — nustato ar abu realiai sumokėjo (EXACT tier). Rezultatas lemia payout (ne startą).
+  // ♻️ PAKARTOTINIS per visą mačą: drpc/RPC gali laikinai kristi kaip tik mačo pradžioj. Kadangi mačas
+  //    trunka MINUTES, kartojam verify (idempotentiška — verifyBoth praleidžia jau patvirtintus) tol, kol
+  //    ABU patvirtinti ARBA baigiasi bandymai/kambarys. Kai patvirtinta — IŠKART settle (jei mačas baigtas).
+  //    Anksčiau buvo VIENAS bandymas → RPC blyksnis pradžioj amžinai užrakindavo prizą į manual eilę.
   private async _bgVerify() {
     if (this._verifyStarted) return; this._verifyStarted = true;
-    this._verifyOk = await this.escrow.verifyBoth();   // EXACT tier + dedupe, atspari (retry + fallback RPC); fone, žaidimas jau vyksta
+    const MAX_ATTEMPTS = 15, GAP_MS = 18000;    // ~15 × 18s ≈ iki 4.5 min (ilgiau nei tipinis mačas)
+    for (let i = 0; i < MAX_ATTEMPTS && !this._disposed; i++) {
+      let ok = false;
+      try { ok = await this.escrow.verifyBoth(); } catch (_) { /* RPC glitch → bandom vėl */ }
+      if (ok) { this._verifyOk = true; break; }
+      if (this._disposed) break;
+      await new Promise((r) => setTimeout(r, GAP_MS));
+    }
+    this._verifyOk = this.escrow.bothVerified();
     this._verifyDone = true;
-    if (!this._verifyOk) console.warn(`[BLOCKS WAGER] bg verify NEpraėjo (fake tx arba RPC neatsakė) → payout eis į manual eilę`);
+    if (!this._verifyOk) console.warn(`[BLOCKS WAGER] verify NEpraėjo po ${MAX_ATTEMPTS} bandymų (fake tx arba ilgas RPC gedimas) → manual eilė`);
     this._settleIfReady();               // jei mačas jau baigėsi — dabar sprendžiam payout
   }
 
@@ -606,7 +623,17 @@ export class BlocksRoom extends Room<BlocksState> {
 
   // Kambarys užsidaro: jei buvo staking'as, kažkas sumokėjo, bet rungtynių NEĮVYKO → grąžinam.
   async onDispose() {
+    this._disposed = true;   // stabdom fono verify ciklą
     if (this.escrow.active && !this.escrow.settled) {
+      // Jei mačas TURĖJO baigtį (laimėtojas/lygiosios) — NErefundinam aklai: paskutinį kartą verifikuojam ir
+      //   IŠMOKAM laimėtojui (arba refund lygiosioms). Kitaip skubus kambario uždarymas prieš verify pabaigą
+      //   „prarytų" pergalę ir grąžintų 69, o ne 110 → žaidėjas laimi, bet negauna prizo.
+      if (this._winnerSide !== null) {
+        if (!this._verifyDone) { try { this._verifyOk = await this.escrow.verifyBoth(); } catch { /* RPC */ } this._verifyOk = this.escrow.bothVerified(); this._verifyDone = true; }
+        this._settleIfReady();   // verifyOk → winner payout (per StakeService/eilė); else → manual eilė (durabili)
+        return;
+      }
+      // Mačas be baigties (abandoned prieš pabaigą) — grąžinam abiem jau sumokėjusiems.
       const n = await this._refundBoth();
       if (n) console.log(`[BLOCKS WAGER] room disposed → refunded ${n}× ${this.escrow.tier} RONKE`);
     }

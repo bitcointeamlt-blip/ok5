@@ -57,12 +57,13 @@ export class WagerEscrow {
   }
 
   // Verifikuoja ABU įėjimus PAEILIUI (ne lygiagrečiai) — kad nekurtų RPC užklausų pliūpsnio (429 apsauga).
+  // ♻️ IDEMPOTENTIŠKA: jau verifikuotos pusės PRALEIDŽIAMOS → saugu KARTOTI (retry per RPC blyksnį).
+  //   Kritiška: verify() ant sėkmės įrašo dedupe eilutę; pakartotinis to paties tx verify grąžintų
+  //   `fee_used`. Praleisdami jau `verified` puses, retry nesulaužo jau patvirtinto įėjimo.
   async verifyBoth(): Promise<boolean> {
-    const r1 = await this.verify(this.e.p1.addr, this.e.p1.tx, this.tier);
-    this.e.p1.verified = r1.ok;
-    const r2 = await this.verify(this.e.p2.addr, this.e.p2.tx, this.tier);
-    this.e.p2.verified = r2.ok;
-    return r1.ok && r2.ok;
+    if (!this.e.p1.verified) { const r1 = await this.verify(this.e.p1.addr, this.e.p1.tx, this.tier); this.e.p1.verified = r1.ok; }
+    if (!this.e.p2.verified) { const r2 = await this.verify(this.e.p2.addr, this.e.p2.tx, this.tier); this.e.p2.verified = r2.ok; }
+    return this.e.p1.verified && this.e.p2.verified;
   }
 
   // Laimėtojas 80% poolo. Grąžina {prize,pot} arba null (nebeaktyvu / jau settlinta / be adreso). Guard: settled.

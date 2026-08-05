@@ -22,6 +22,32 @@ const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
 ];
 
+// ⚡ PAYOUT RPC su FALLBACK — anksčiau buvo VIENAS `RONKE_RPC_URL` (dažn. drpc). drpc'ui metant
+//   „Temporary internal error"/429 → balanceOf/transfer krisdavo → prizas nukeliaudavo į eilę.
+//   Dabar FallbackProvider (quorum:1): tenderly pirmas, tada drpc/RONKE_RPC_URL/roninchain.
+//   `RONKE_RPCS` env (kableliais) perrašo viską (pvz. Sky Mavis private raktas → pirmas).
+function _payoutRpcs(): string[] {
+  // tenderly PIRMAS (patikimas), drpc NEbe pirmas (dabar meta „Temporary internal error"/429).
+  // RONKE_RPCS env perrašo viską (dedikuotas private raktas realiam krūviui).
+  const csv = process.env.RONKE_RPCS || [
+    "https://ronin.gateway.tenderly.co",
+    "https://ronin.drpc.org",
+    process.env.RONKE_RPC_URL,
+    "https://api.roninchain.com/rpc",
+    process.env.RONIN_MAINNET_RPC,
+  ].filter(Boolean).join(",");
+  return [...new Set(csv.split(",").map((s) => s.trim()).filter(Boolean))];
+}
+function _buildProvider(rpcs: string[]): ethers.AbstractProvider {
+  if (rpcs.length > 1) {
+    return new ethers.FallbackProvider(
+      rpcs.map((u, i) => ({ provider: new ethers.JsonRpcProvider(u, 2020, { staticNetwork: true }), priority: i + 1, stallTimeout: 2500, weight: 1 })),
+      2020, { quorum: 1 },
+    );
+  }
+  return new ethers.JsonRpcProvider(rpcs[0] || "https://api.roninchain.com/rpc", 2020, { staticNetwork: true });
+}
+
 export class StakeService {
   readonly enabled: boolean;
   readonly manual: boolean;   // 🧱💰 MANUAL: raktas NElaikomas serveryje → payout'ai eina į PayoutQueue, operatorius pasirašo per admin.html
@@ -29,7 +55,7 @@ export class StakeService {
   private rpcUrl: string;
   private treasury: string;
   private signerKey: string;
-  private _prov: ethers.JsonRpcProvider | null = null;
+  private _prov: ethers.AbstractProvider | null = null;
   private _wallet: ethers.Wallet | null = null;
   private _token: ethers.Contract | null = null;
   private _signerChecked = false;
@@ -50,9 +76,11 @@ export class StakeService {
   private _erc20(): ethers.Contract | null {
     if (!this.enabled) return null;
     if (!this._token) {
-      this._prov = new ethers.JsonRpcProvider(this.rpcUrl, 2020, { staticNetwork: true });
+      const rpcs = _payoutRpcs();
+      this._prov = _buildProvider(rpcs);
       this._wallet = new ethers.Wallet(this.signerKey, this._prov);
       this._token = new ethers.Contract(this.tokenAddr, ERC20_ABI, this._wallet);
+      console.log(`[StakeService] payout RPC: ${rpcs.length} endpoint(s) (fallback)`);
       if (!this._signerChecked) {
         this._signerChecked = true;
         // ⚠️ payout eina IŠ signer adreso — jis PRIVALO būti treasury (kur susirinko įėjimai). Perspėjam jei ne.
