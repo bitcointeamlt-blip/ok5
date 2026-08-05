@@ -1,4 +1,4 @@
-import { Wallet, JsonRpcProvider, Contract } from "ethers";
+import { Wallet, JsonRpcProvider, FallbackProvider, AbstractProvider, Contract } from "ethers";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed } from "./MineWithdraw";   // 🦴→RONKE per RonkeReward pool (mainnet reuse)
 
 // 🦴→RONKE swap voucher'iai. DU režimai:
@@ -69,10 +69,16 @@ export function boneSwapCfg() {
 //    anksčiau ėjo per BONE_RPC (Saigon testnet) su testiniu NFT_ADDR → tikras holdingas nesimatė ir UI
 //    amžinai rodė ✗. On-chain BoneExchange savo gate'ą vis tiek enforce'ina pats TX metu.
 const RV_MAINNET = process.env.RONKEVERSE_ADDR || "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
-const RV_RPC = process.env.RONIN_MAINNET_RPC || process.env.RONIN_RPC || "https://ronin.drpc.org";
-let _rvProv: JsonRpcProvider | null = null;
-function getRvProv(): JsonRpcProvider {
-  if (!_rvProv) _rvProv = new JsonRpcProvider(RV_RPC, 2020, { staticNetwork: true });
+// ⚡ 08-05: keli RPC su FALLBACK (buvo VIENAS → 429 = NFT gate „✗", kaulų swap blokuotas). RONKE_RPCS env perrašo.
+const RV_RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.drpc.org", "https://ronin.gateway.tenderly.co", process.env.RONIN_MAINNET_RPC, process.env.RONIN_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
+let _rvProv: AbstractProvider | null = null;
+function getRvProv(): AbstractProvider {
+  if (!_rvProv) {
+    _rvProv = RV_RPCS.length > 1
+      ? new FallbackProvider(RV_RPCS.map((u, i) => ({ provider: new JsonRpcProvider(u, 2020, { staticNetwork: true }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
+      : new JsonRpcProvider(RV_RPCS[0] || "https://ronin.drpc.org", 2020, { staticNetwork: true });
+    console.log(`[BoneSwap] RV RPC: ${RV_RPCS.length} endpoint(s) (fallback)`);
+  }
   return _rvProv;
 }
 const _nftCache = new Map<string, { has: boolean; t: number }>();

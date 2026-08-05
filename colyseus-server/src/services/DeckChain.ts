@@ -7,12 +7,19 @@ import { ethers } from "ethers";
 
 const RONKE_POWER = process.env.RONKE_POWER_ADDR || "0x15717035F34DE9541883fc30E7A0483230927eb0";
 const BARRACKS = process.env.F9_BARRACKS_ADDR || "0xccf604511c5d2b5c3fd61adfba3950d0d2890862";   // NFT unitų kontraktas (level/utype tiesa)
-const RPC = process.env.RONIN_MAINNET_RPC || "https://ronin.drpc.org";   // drpc — stabilus (api.roninchain flaky)
+// ⚡ 08-05: keli RPC su FALLBACK (buvo VIENAS → 429/hiccup = dekas nekraunasi → negali žaisti).
+//   RONKE_RPCS env perrašo (tas pats visiems servisams; pvz. Sky Mavis private raktas → pirmas).
+const RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.drpc.org", "https://ronin.gateway.tenderly.co", process.env.RONIN_MAINNET_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";   // Ronin turi Multicall3 tuo pačiu adresu
 
-let _prov: ethers.JsonRpcProvider | null = null;
-function getProv(): ethers.JsonRpcProvider {
-  if (!_prov) _prov = new ethers.JsonRpcProvider(RPC, 2020, { staticNetwork: true });
+let _prov: ethers.AbstractProvider | null = null;
+function getProv(): ethers.AbstractProvider {
+  if (!_prov) {
+    _prov = RPCS.length > 1
+      ? new ethers.FallbackProvider(RPCS.map((u, i) => ({ provider: new ethers.JsonRpcProvider(u, 2020, { staticNetwork: true }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
+      : new ethers.JsonRpcProvider(RPCS[0] || "https://ronin.drpc.org", 2020, { staticNetwork: true });
+    console.log(`[DeckChain] RPC: ${RPCS.length} endpoint(s) (fallback)`);
+  }
   return _prov;
 }
 
