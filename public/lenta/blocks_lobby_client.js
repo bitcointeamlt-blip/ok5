@@ -277,7 +277,7 @@
     _bgActive = true; _myRole = priv ? 'private' : 'host'; _podClaimedMatch = false; _ensureGame();
     if (_wager()) {
       // 🧱💰 pay-on-accept: NEmokam dabar — tik sukuriam wager kambarį. Mokėsi kai atsiras varžovas ir sutiksi.
-      _cmd(priv ? 'private' : 'host', null, tier, null, true, window.BlocksWager.address(), true);   // wager:true
+      _cmd(priv ? 'private' : 'host', null, tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago); cheat-apsauga per periodinę patikrą (LIKO)
       _status((priv ? 'Private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you pay only when an opponent is matched · can close & keep playing</span>', true);
     } else {
       _cmd(priv ? 'private' : 'host', null, tier);   // nemokamas (client-board)
@@ -291,7 +291,7 @@
       // 🛡️ Apsauga: nesijunk į statymo kambarį, jei serveris NEGALI išmokėti (host'as be sukonfigūruoto serverio).
       if (r.wagerLive === false) { _bgActive = false; _status('This room\'s stakes are not live yet - pick a free match.', true); return; }
       // 🧱💰 pay-on-accept: NEmokam dabar — sumokėsi kai host'as patvirtins (abu moka kartu).
-      _cmd('join', r.roomId, r.tier, null, true, window.BlocksWager.address(), true);   // wager:true
+      _cmd('join', r.roomId, r.tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago)
       _status('Joining ' + _esc(r.host) + ' · ' + r.tier + ' RONKE — you pay when the match is confirmed…', true);
     } else {
       _cmd('join', r.roomId);
