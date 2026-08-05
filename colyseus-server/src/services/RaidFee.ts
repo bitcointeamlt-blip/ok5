@@ -14,14 +14,22 @@ const RONKE = (process.env.RONKE_TOKEN_ADDR || "0xf988f63bf26C3Ed3fBf39922149E3E
 const TREASURY = (process.env.RAID_TREASURY || "0xfF0a2d76E6156Bc1C0c689fe4029f6F1a566E92e").toLowerCase();   // Barracks/market treasury
 export const RAID_FEE_RONKE = Number(process.env.RAID_FEE_RONKE || 0);   // 0 = fee IŠJUNGTAS
 const MAX_TX_AGE_MS = Number(process.env.RAID_FEE_TX_AGE_MS || 60 * 60 * 1000);   // TX ne senesnis nei 1h (replay langas)
-const RPC = process.env.RONIN_MAINNET_RPC || process.env.RONIN_RPC || "https://ronin.drpc.org";
+// ⚡ 08-05: keli RPC su FALLBACK (buvo VIENAS → hiccup/429 = „Raid fee issue (rpc)", žaidėjas MOKA bet
+//   neraidina). Greiti nemokami pirmi (drpc, tenderly), api.roninchain paskutinis. RONKE_RPCS env perrašo
+//   (tą patį naudoja WagerEntry — 1 env valdo abu; pvz. Sky Mavis private raktas → pirmas).
+const RPCS = [...new Set((process.env.RONKE_RPCS || ["https://ronin.drpc.org", "https://ronin.gateway.tenderly.co", process.env.RONIN_MAINNET_RPC, process.env.RONIN_RPC, process.env.RONKE_RPC_URL, "https://api.roninchain.com/rpc"].filter(Boolean).join(",")).split(",").map((s) => s.trim()).filter(Boolean))];
 const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
 
 export function raidFeeEnabled(): boolean { return RAID_FEE_RONKE > 0; }
 
-let _prov: ethers.JsonRpcProvider | null = null;
-function prov(): ethers.JsonRpcProvider {
-  if (!_prov) _prov = new ethers.JsonRpcProvider(RPC, 2020, { staticNetwork: true });
+let _prov: ethers.AbstractProvider | null = null;
+function prov(): ethers.AbstractProvider {
+  if (!_prov) {
+    _prov = RPCS.length > 1
+      ? new ethers.FallbackProvider(RPCS.map((u, i) => ({ provider: new ethers.JsonRpcProvider(u, 2020, { staticNetwork: true }), priority: i + 1, stallTimeout: 2500, weight: 1 })), 2020, { quorum: 1 })
+      : new ethers.JsonRpcProvider(RPCS[0] || "https://ronin.drpc.org", 2020, { staticNetwork: true });
+    console.log(`[RaidFee] RPC: ${RPCS.length} endpoint(s) (fallback)`);
+  }
   return _prov;
 }
 
