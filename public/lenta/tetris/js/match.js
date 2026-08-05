@@ -134,6 +134,13 @@
       if (this.state === 'playing') {
         try { global.NET.send('input', { a: a, down: true }); } catch (_) {}
         this._srvInputSfx(a);
+        /* ⚡ CLIENT-SIDE PREDICTION (08-05): mano figūros JUDESYS/POSŪKIS rodomas IŠKART, be laukimo serverio
+         * round-trip'o → valdymas jaučiasi momentaliai net su dideliu ping. Serveris lieka AUTORITETAS: jo
+         * lentos transliacija (~30/s, _applyBoards) patvirtina/pataiso poziciją. Grid/lock/garbage/rezultatas —
+         * TIK iš serverio → lenta NEnukrypsta, jokio ginčo dėl wager'io. hard/hold/softdrop → serveris (keičia grid). */
+        if (a === 'left' || a === 'right' || a === 'cw' || a === 'ccw' || a === 'flip') {
+          try { if (this.you.cur && this.you.state === 'playing') { this.you.press(a); this.you.drainEvents(); this._predictAt = (global.Date && Date.now) ? Date.now() : +new Date(); } } catch (_) {}
+        }
       }
       return;
     }
@@ -816,7 +823,16 @@
   Match.prototype._applyBoards = function (p) {
     var mine = (this.mySide === 'p2') ? p.foe : p.you;
     var opp = (this.mySide === 'p2') ? p.you : p.foe;
+    /* ⚡ PREDICTION HOLD: jei ką tik lokaliai judinau figūrą ir serveris DAR nespėjo apdoroti įvesties (per ping),
+     * NEperrašom figūros pozicijos iš serverio — kitaip ji šoktelėtų atgal. Laikom tik TĄ PAČIĄ figūrą (pieces
+     * count nepakito); užsifiksavus (lock → nauja figūra) priimam serverį. Grid/garbage/rezultatas VISADA iš serverio. */
+    var savedCur = this.you.cur, holdCur = false;
+    if (this._serverAuth && this._predictAt && savedCur && mine && mine.cur && mine.stats && this.you.stats) {
+      var _now = (global.Date && Date.now) ? Date.now() : +new Date();
+      holdCur = (mine.stats.pieces === this.you.stats.pieces) && ((_now - this._predictAt) < ((this._ping || 60) + 90));
+    }
     this._applyBoard(this.you, mine);
+    if (holdCur && savedCur) this.you.cur = savedCur;   // grąžinam lokaliai prognozuotą figūrą (be snap-back)
     this._applyBoard(this.foe, opp);
     /* linijų valymo JUICE (serverio autoritetingi clears → efektai, kaip lokaliame žaidime). */
     if (p.fx && p.fx.length) {
