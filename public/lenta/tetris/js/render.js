@@ -100,13 +100,8 @@
     this.vh = C.VH;
     this.t = 0;
     this.menuBits = null;
-    /* 🏰 pilies fonas (medieval castle) — cover-fit už lentų, kad tetris atrodytų kaip viena scena.
-     * Async: kol neužsikrovė — fallback į procedūrinę mūro sieną (drawBackdrop). */
-    this.bgImg = new Image();
-    this.bgReady = false;
-    var _self = this;
-    this.bgImg.onload = function () { _self.bgReady = true; };
-    this.bgImg.src = 'assets/teterisbg.png';
+    this._wallCanvas = null;   // 🧱 procedūrinės akmens sienos kešas (perbraižom TIK per resize, ne kas kadrą)
+    this._wallKey = '';
     this.resize();
   }
 
@@ -1466,38 +1461,66 @@
     if (oy) ctx.translate(0, -oy);
   };
 
-  /* Fonas: pilies mūro siena + rusenančios žarijos.
-   * Piešiama tik siūlėmis (1 px linijomis), ne pilnais blokais — pigu ir atrodo kaip mūras. */
-  Renderer.prototype.drawBackdrop = function (fx, dt) {
-    var ctx = this.ctx, vw = this.vw, vh = this.vh;
-
-    if (this.bgReady && this.bgImg.naturalWidth) {
-      /* 🏰 PILIES FONAS — cover-fit (užpildo ekraną, centruota) → centrinis bokštas lieka per vidurį,
-       * lentos atsisėda ant šoninių sienų → viena bendra scena. Glotnus mastelis (ne pixelated). */
-      var iw = this.bgImg.naturalWidth, ih = this.bgImg.naturalHeight;
-      var sc = Math.max(vw / iw, vh / ih);
-      var dw = iw * sc, dh = ih * sc;
-      var dx = Math.round((vw - dw) / 2), dy = Math.round((vh - dh) / 2);
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(this.bgImg, dx, dy, Math.ceil(dw), Math.ceil(dh));
-      ctx.imageSmoothingEnabled = false;
-      /* švelnus pritemdymas → lentos/unitai skaitomi ryškiai virš fono */
-      ctx.globalAlpha = 0.22; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
-    } else {
-      /* fallback (kol paveikslėlis kraunasi): procedūrinė navy mūro siena */
-      var BH = 16, BW = 34;
-      ctx.fillStyle = '#131b2c';
-      for (var y = 0; y < vh; y += BH) ctx.fillRect(0, y, vw, 1);
-      for (var r = 0, row = 0; r < vh; r += BH, row++) {
-        var shift = (row % 2) ? BW / 2 : 0;
-        for (var x = shift; x < vw; x += BW) ctx.fillRect(Math.round(x), r, 1, BH);
-      }
-      ctx.fillStyle = '#182238';
-      for (var s = 0; s < vh; s += BH * 3) {
-        ctx.fillRect(((s * 7) % vw) | 0, s + 1, BW - 2, BH - 2);
-        ctx.fillRect(((s * 13 + 120) % vw) | 0, s + BH + 1, BW - 2, BH - 2);
+  /* 🧱 Sukuria procedūrinę NAVY akmens sieną offscreen drobėje: vertikalus gradientas (gylis) +
+   * beveled plytos (deterministinis hash → stabilu, be mirgėjimo) + centrinis fakelų švytėjimas + vinjetė.
+   * Perbraižom TIK keičiant dydį (kešuota pagal vw×vh) → 1 drawImage per kadrą. */
+  Renderer.prototype._buildWall = function (vw, vh) {
+    var doc = this.cv.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    var cv = this._wallCanvas || (this._wallCanvas = doc.createElement('canvas'));
+    cv.width = vw; cv.height = vh;
+    var o = cv.getContext('2d');
+    function h2(i, j) { var x = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return x - Math.floor(x); }
+    function cl(v) { return v < 0 ? 0 : v > 255 ? 255 : v | 0; }
+    function rgb(a) { return 'rgb(' + cl(a[0]) + ',' + cl(a[1]) + ',' + cl(a[2]) + ')'; }
+    /* vertikalus gradientas — gylio pojūtis */
+    var g = o.createLinearGradient(0, 0, 0, vh);
+    g.addColorStop(0, 'rgb(12,17,27)'); g.addColorStop(0.5, 'rgb(20,27,42)'); g.addColorStop(1, 'rgb(9,13,20)');
+    o.fillStyle = g; o.fillRect(0, 0, vw, vh);
+    /* plytos: beveled akmenys, varijuojantys atspalviai */
+    var BW = 42, BH = 20;
+    var pal = [[24, 32, 50], [28, 37, 57], [20, 27, 42], [32, 42, 64], [17, 23, 37]], lite = [44, 56, 82];
+    for (var row = 0, ry = -BH; ry < vh; ry += BH, row++) {
+      var shift = (row % 2) ? (BW / 2) : 0;
+      for (var col = 0, rx = -BW + shift; rx < vw; rx += BW, col++) {
+        var hh = h2(col * 1.7 + row * 0.3, row * 2.3 + col * 0.11);
+        var base = hh > 0.93 ? lite : pal[(hh * pal.length) | 0];
+        var n = ((h2(row, col) - 0.5) * 8) | 0;
+        var f0 = cl(base[0] + n), f1 = cl(base[1] + n), f2 = cl(base[2] + n);
+        var x0 = rx + 1, y0 = ry + 1, w = BW - 2, h = BH - 2;
+        o.fillStyle = 'rgb(' + f0 + ',' + f1 + ',' + f2 + ')'; o.fillRect(x0, y0, w, h);
+        o.fillStyle = rgb([f0 + 16, f1 + 20, f2 + 30]); o.fillRect(x0, y0, w, 1);        // viršaus blikas
+        o.fillStyle = rgb([f0 + 8, f1 + 10, f2 + 15]); o.fillRect(x0, y0, 1, h);          // kairės blikas
+        o.fillStyle = rgb([f0 - 12, f1 - 9, f2 - 14]);
+        o.fillRect(x0, y0 + h - 1, w, 1); o.fillRect(x0 + w - 1, y0, 1, h);               // apačios/dešinės šešėlis
       }
     }
+    /* skiedinio linijos tarp eilių */
+    o.fillStyle = 'rgb(7,10,16)';
+    for (var gy = -BH; gy < vh; gy += BH) o.fillRect(0, gy, vw, 1);
+    /* centrinis švytėjimas — fakelų apšviestas mūšio koridorius (addityvus) */
+    var rad = Math.round(vw * 0.34), cx = vw / 2, cy = Math.round(vh * 0.55);
+    var rgl = o.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    rgl.addColorStop(0, 'rgba(70,60,92,0.5)'); rgl.addColorStop(1, 'rgba(70,60,92,0)');
+    o.globalCompositeOperation = 'lighter'; o.fillStyle = rgl; o.fillRect(0, 0, vw, vh);
+    o.globalCompositeOperation = 'source-over';
+    /* vinjetė — pritemdyti pakraščiai */
+    for (var k = 0; k < 14; k++) {
+      o.globalAlpha = 0.05 * (1 - k / 14); o.fillStyle = '#000';
+      o.fillRect(0, k * 2, vw, 2); o.fillRect(0, vh - (k + 1) * 2, vw, 2);
+      o.fillRect(k * 2, 0, 2, vh); o.fillRect(vw - (k + 1) * 2, 0, 2, vh);
+    }
+    o.globalAlpha = 1;
+    this._wallKey = vw + 'x' + vh;
+  };
+
+  /* Fonas: procedūrinė navy akmens siena (kešuota) + rusenančios žarijos. */
+  Renderer.prototype.drawBackdrop = function (fx, dt) {
+    var ctx = this.ctx, vw = this.vw, vh = this.vh;
+    if (this._wallKey !== vw + 'x' + vh) {
+      try { this._buildWall(vw, vh); } catch (_) { this._wallCanvas = null; this._wallKey = vw + 'x' + vh; }
+    }
+    if (this._wallCanvas) ctx.drawImage(this._wallCanvas, 0, 0);
+    else rect(ctx, 0, 0, vw, vh, '#141b2a');   // fallback (be offscreen drobės, pvz. testuose)
 
     /* žarijos */
     fx.updateEmbers(dt, vw, vh);
