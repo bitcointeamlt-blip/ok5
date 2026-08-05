@@ -114,17 +114,27 @@
     //   PIXEL-ART stilius: medinis rėmas + „Press Start 2P" šriftas + kietas pixel šešėlis. Count-up + pulse.
     //   ⚠️ centravimas per translateX(-50%) → pulse transform PRIVALO jį išlaikyti (žr. _syncBones).
     boneBalEl = document.createElement('div');
+    boneBalEl.id = 'f9-bone-bal';   // 🦴 mygtukas — hover/press efektai per CSS (žemiau)
     boneBalEl.style.cssText = 'position:fixed;top:calc(14px + env(safe-area-inset-top, 0px));left:50%;transform:translateX(-50%) scale(1);z-index:99999;display:none;align-items:center;gap:9px;' +
-      "font-family:'Press Start 2P','Courier New',monospace;font-size:12px;line-height:1;padding:10px 13px 9px;" +
-      'background:#3a2614;color:#ffcf5c;image-rendering:pixelated;pointer-events:auto;cursor:pointer;' +
-      'border:3px solid #1a1208;box-shadow:inset 0 0 0 2px #6b4a2e,inset 0 0 0 4px #241811,0 4px 0 2px #0c0906;' +
-      'transform-origin:center top;transition:transform .12s ease-out,box-shadow .12s ease;';
+      "font-family:'Press Start 2P','Courier New',monospace;font-size:12px;line-height:1;padding:10px 14px 9px;" +
+      'background:linear-gradient(180deg,#4a3218,#301f0f);color:#ffcf5c;image-rendering:pixelated;pointer-events:auto;cursor:pointer;' +
+      'border:3px solid #1a1208;box-shadow:inset 0 0 0 2px #7d5836,inset 0 0 0 4px #241811,0 4px 0 2px #0c0906;' +
+      'transform-origin:center top;transition:transform .12s ease-out,box-shadow .12s ease,filter .12s ease;';
     boneBalEl.innerHTML =
       '<span style="font-size:17px;line-height:1;filter:drop-shadow(1px 1px 0 #0c0906)">🦴</span>' +
-      '<span id="boneBalNum" style="color:#8dffa0;text-shadow:2px 2px 0 #0c0906">0</span>';
+      '<span id="boneBalNum" style="color:#8dffa0;text-shadow:2px 2px 0 #0c0906">0</span>' +
+      '<span style="font-size:8px;color:#c9a86a;opacity:.9;letter-spacing:.5px;">⇄&nbsp;SWAP</span>';   // 🪙 aiškus mygtuko afordansas
     boneBalEl.title = 'Bone bank / swap to RONKE';
     boneBalEl.addEventListener('click', function () { try { _toggleBonePanel(); } catch (_) {} });   // 🦴 bankas + swap panelė
     document.body.appendChild(boneBalEl);
+    // 🦴 mygtuko interaktyvumas (hover = ryškesnis + pakyla; press = nuspaudžiam) — kad matytųsi jog SPAUDŽIAMAS
+    if (!document.getElementById('f9-bone-bal-css')) {
+      var _bcss = document.createElement('style'); _bcss.id = 'f9-bone-bal-css';
+      _bcss.textContent =
+        '#f9-bone-bal:hover{filter:brightness(1.12);box-shadow:inset 0 0 0 2px #9a6d42,inset 0 0 0 4px #241811,0 5px 0 2px #0c0906 !important;}' +
+        '#f9-bone-bal:active{transform:translateX(-50%) translateY(3px) scale(1) !important;box-shadow:inset 0 0 0 2px #7d5836,inset 0 0 0 4px #241811,0 1px 0 2px #0c0906 !important;}';
+      document.head.appendChild(_bcss);
+    }
     // 🚫 Viršutinės HUD juostos (status/info/capture) NUIMTOS (user „kolkas") — statusEl/hudEl slepiam iškart.
     statusEl.style.display = 'none'; hudEl.style.display = 'none';
   }

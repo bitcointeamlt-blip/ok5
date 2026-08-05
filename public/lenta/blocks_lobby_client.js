@@ -17,6 +17,7 @@
   var TIERS = [69, 200, 800];              // statymo pakopos (RONKE); laimėtojas 80%, treasury 20%
   var _selectedTier = 69;                  // pasirinkta pakopa kuriant kambarį
   var _bgActive = false, _lastState = 'lobby', _myRole = '', _myRoomId = '';   // _bgActive: aktyvus FONE; _myRoomId: MANO kambarys (nerodom sąraše)
+  var _challengeAck = false;               // 🛡️ challenge dialogas jau patvirtintas/atmestas → NEberodom dublio (event+interval abu siunčia 'challenge')
 
   function _endpoint() {
     try { var h = location.hostname; if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'ws://localhost:2567'; } catch (_) {}
@@ -83,7 +84,9 @@
     var st = document.createElement('style'); st.id = 'rb-lobby-css';
     st.textContent = '@keyframes rbLobbyPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}' +
       '@keyframes rbToastIn{from{transform:translateX(-50%) translateY(-16px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}' +
-      '.rb-row:hover{background:#2a3450 !important;} .rb-act:hover{filter:brightness(1.18);}';
+      '.rb-row:hover{background:#2a3450 !important;} .rb-act:hover{filter:brightness(1.18);}' +
+      /* 🦴 kai kaulų balanso widget'as viršuje — pranešimą nuleidžiam žemiau (nesusiliestų su balansu) */
+      'body.f9-bones-live #rb-lobby-toast{top:calc(72px + env(safe-area-inset-top, 0px)) !important;}';
     document.head.appendChild(st);
   }
   function _toast(count, who) {
@@ -134,26 +137,26 @@
     var p = document.createElement('div');
     p.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
       'box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;' +
-      'padding:16px 20px;width:440px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;' +
-      "font-family:'Press Start 2P',monospace,sans-serif;font-size:10px;line-height:1.5;color:#8a9aaa;";
+      'padding:22px 26px;width:560px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;' +
+      "font-family:'Press Start 2P',monospace,sans-serif;font-size:12px;line-height:1.55;color:#8a9aaa;";
     p.innerHTML =
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
-        '<span style="font-size:20px;text-shadow:0 0 14px #ffcf5c;">🧱</span>' +
-        '<span style="flex:1;font-size:13px;color:#ffcf5c;letter-spacing:1px;">RONKE BLOCKS · 1v1</span>' +
-        '<button id="rb-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+        '<span style="font-size:24px;text-shadow:0 0 14px #ffcf5c;">🧱</span>' +
+        '<span style="flex:1;font-size:16px;color:#ffcf5c;letter-spacing:1px;">RONKE BLOCKS · 1v1</span>' +
+        '<button id="rb-x" style="background:none;border:none;color:#8a9aaa;font-size:24px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
       '</div>' +
-      '<div id="rb-status" style="display:none;font-size:10px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:6px;padding:10px;margin-bottom:10px;text-align:center;"></div>' +
-      '<div style="font-size:9px;color:#6a7a8a;margin-bottom:6px;">OPEN MATCHES — tap a player to join ⚔️</div>' +
-      '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:40px;max-height:38vh;"><div style="color:#6a7a8a;font-size:9px;padding:8px 0;">Loading…</div></div>' +
-      '<div style="margin-top:12px;border-top:1px solid #3a3a55;padding-top:10px;display:flex;flex-direction:column;gap:7px;">' +
-        '<div style="font-size:8px;color:#6a7a8a;">CREATE A MATCH — pick stake (winner takes 80%, 20% to treasury)</div>' +
-        '<div id="rb-tiers" style="display:flex;gap:6px;">' +
-          TIERS.map(function (t) { return '<button class="rb-tier rb-act" data-t="' + t + '" style="flex:1;padding:9px 4px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">' + t + '<div style="font-size:6px;opacity:.6;">RONKE</div></button>'; }).join('') +
+      '<div id="rb-status" style="display:none;font-size:12px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:6px;padding:12px;margin-bottom:12px;text-align:center;"></div>' +
+      '<div style="font-size:11px;color:#6a7a8a;margin-bottom:8px;">OPEN MATCHES — tap a player to join ⚔️</div>' +
+      '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:9px;min-height:48px;max-height:44vh;"><div style="color:#6a7a8a;font-size:11px;padding:10px 0;">Loading…</div></div>' +
+      '<div style="margin-top:14px;border-top:1px solid #3a3a55;padding-top:12px;display:flex;flex-direction:column;gap:9px;">' +
+        '<div style="font-size:10px;color:#6a7a8a;">CREATE A MATCH — pick stake (winner takes 80%, 20% to treasury)</div>' +
+        '<div id="rb-tiers" style="display:flex;gap:8px;">' +
+          TIERS.map(function (t) { return '<button class="rb-tier rb-act" data-t="' + t + '" style="flex:1;padding:12px 6px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:14px;cursor:pointer;">' + t + '<div style="font-size:8px;opacity:.6;">RONKE</div></button>'; }).join('') +
         '</div>' +
-        '<button id="rb-host" class="rb-act" style="padding:11px;border-radius:6px;border:2px solid #ffcf5c;background:rgba(255,207,92,.14);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> RONKE<div style="font-size:7px;opacity:.7;margin-top:3px;">wait - others can pick you</div></button>' +
-        '<div style="display:flex;gap:7px;">' +
-          '<button id="rb-private" class="rb-act" style="flex:1;padding:9px;border-radius:6px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:9px;cursor:pointer;">🔒 PRIVATE</button>' +
-          '<button id="rb-ai" class="rb-act" style="flex:1;padding:9px;border-radius:6px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:9px;cursor:pointer;">🤖 vs AI</button>' +
+        '<button id="rb-host" class="rb-act" style="padding:15px;border-radius:6px;border:2px solid #ffcf5c;background:rgba(255,207,92,.14);color:#ffcf5c;font-family:inherit;font-size:14px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> RONKE<div style="font-size:9px;opacity:.7;margin-top:4px;">wait - others can pick you</div></button>' +
+        '<div style="display:flex;gap:9px;">' +
+          '<button id="rb-private" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:12px;cursor:pointer;">🔒 PRIVATE</button>' +
+          '<button id="rb-ai" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:12px;cursor:pointer;">🤖 vs AI</button>' +
         '</div>' +
       '</div>';
     ov.appendChild(p); document.body.appendChild(ov);
@@ -221,11 +224,11 @@
     list.innerHTML = '';
     rooms.forEach(function (r) {
       var row = document.createElement('div'); row.className = 'rb-row';
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 11px;background:#141c30;border:1px solid #33405e;border-radius:6px;cursor:pointer;';
-      row.innerHTML = '<span style="font-size:15px;">⚔️</span>' +
-        '<span style="flex:1;color:#ffcf5c;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _esc(String(r.host).slice(0, 14)) + '</span>' +
-        '<span style="font-size:10px;color:#ffd97a;font-weight:700;white-space:nowrap;">' + (r.tier || 69) + ' <span style="font-size:7px;opacity:.6;">RONKE</span></span>' +
-        '<span style="font-size:9px;color:#9fe0a0;border:1px solid #4a7a4a;border-radius:4px;padding:4px 9px;">JOIN ▶</span>';
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:15px 16px;background:#182238;border:2px solid #46567e;border-radius:9px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+      row.innerHTML = '<span style="font-size:20px;">⚔️</span>' +
+        '<span style="flex:1;color:#ffcf5c;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _esc(String(r.host).slice(0, 18)) + '</span>' +
+        '<span style="font-size:13px;color:#ffd97a;font-weight:700;white-space:nowrap;">' + (r.tier || 69) + ' <span style="font-size:8px;opacity:.6;">RONKE</span></span>' +
+        '<span style="font-size:12px;color:#aef0b0;border:2px solid #5ca05c;background:rgba(92,224,138,.12);border-radius:6px;padding:8px 14px;font-weight:700;">JOIN ▶</span>';
       row.onclick = function () { _doJoin(r); };
       list.appendChild(row);
     });
@@ -412,6 +415,8 @@
 
   // ── CHALLENGE dialogas („X wants to play — accept?") — rodomas ir uždarius panelę ──
   function _showChallenge(opponent) {
+    var vis = document.getElementById('rb-challenge');
+    if (vis && vis.style.display !== 'none') return;   // jau matomas → nedubliuojam (event + interval abu siunčia 'challenge')
     _css(); _hideHostPill();
     var d = document.getElementById('rb-challenge');
     if (!d) {
@@ -430,8 +435,8 @@
           '<button id="rb-dec" class="rb-act" style="flex:1;padding:12px;border-radius:8px;border:2px solid #e07070;background:rgba(224,112,112,.13);color:#ffb0b0;font:800 13px monospace;cursor:pointer;">✕ DECLINE</button>' +
         '</div></div>';
     d.style.display = 'flex';
-    d.querySelector('#rb-acc').onclick = function () { _hideChallenge(); _cmd('accept'); };   // reveal ateis su state=countdown
-    d.querySelector('#rb-dec').onclick = function () { _hideChallenge(); _cmd('decline'); if (_bgActive) _showHostPill(); };
+    d.querySelector('#rb-acc').onclick = function () { _challengeAck = true; _hideChallenge(); _cmd('accept'); };   // reveal ateis su state=countdown
+    d.querySelector('#rb-dec').onclick = function () { _challengeAck = true; _hideChallenge(); _cmd('decline'); if (_bgActive) _showHostPill(); };
     try { if (window.Sfx && window.Sfx.play) window.Sfx.play('notify'); } catch (_) {}
   }
   function _hideChallenge() { var d = document.getElementById('rb-challenge'); if (d) d.style.display = 'none'; }
@@ -459,13 +464,14 @@
     if (d.wagerAbort) { _status('Stake ' + (d.wagerAbort === 'stake_verify_failed' ? 'verification failed' : 'issue') + ' — refunded. Try again.', true); }
     if (d.wagerPrize) { _wagerWin(d.wagerPrize, d.wagerPot); }
     var st = d.state; _lastState = st;
+    if (st && st !== 'challenge') _challengeAck = false;   // paliko challenge būseną → kitą kartą (naujas varžovas) vėl rodom
     if (d.myRoomId != null) _myRoomId = d.myRoomId;   // MANO kambarys → nerodom sąraše (negaliu prisijungti prie savęs)
     if (_panel && st !== 'lobby') _renderList();       // perpiešiam sąrašą be savo kambario
     if (st === 'countdown' || st === 'playing' || st === 'result') {
       if (!_podClaimedMatch && st !== 'result') { _podClaimedMatch = true; _podClaimPlay(); }   // 🏆 PoD: sužaistas žaidimas → player-signed claim
       _revealGame();                   // rungtynės prasidėjo / vyksta → atidengiam žaidimą
     } else if (st === 'challenge') {
-      _showChallenge(d.opponent);      // oponentas prisijungė → „do you want to play?" (ir uždarius panelę)
+      if (!_challengeAck) _showChallenge(d.opponent);   // oponentas prisijungė → „do you want to play?" (dedupe: jau patvirtinta → neberodom)
     } else if (st === 'awaiting') {
       if (_panel) _status('Challenge sent - waiting for <b>' + _esc(d.host || 'host') + '</b> to accept...', true);
     } else if (st === 'connecting') {
@@ -475,7 +481,7 @@
           : 'Waiting for an opponent...<br><span style="font-size:8px;opacity:.7;">you can close this and keep playing</span>';
         /* Kvietimo NUORODA — ir HOST, ir PRIVATE. Bet kas ją atidaręs prisijungia (net neregistruotas). */
         var linkRow = d.inviteUrl
-          ? '<br><button id="rb-copy" style="margin-top:8px;font:9px monospace;color:#8fd8e0;background:rgba(143,216,224,.12);border:1px solid #3a6a72;border-radius:5px;padding:6px 10px;cursor:pointer;">📋 COPY INVITE LINK</button>'
+          ? '<br><button id="rb-copy" style="margin-top:12px;font:800 13px monospace;color:#bff0f6;background:rgba(143,216,224,.18);border:2px solid #5aa8b4;border-radius:8px;padding:13px 18px;width:100%;box-sizing:border-box;cursor:pointer;letter-spacing:.5px;">📋 COPY INVITE LINK</button>'
           : '';
         _status(head + linkRow, true);
         var cp = _panel.querySelector('#rb-copy');

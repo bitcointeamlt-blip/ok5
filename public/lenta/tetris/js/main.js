@@ -67,7 +67,11 @@
         match.netOpts = match.netOpts || {};
         if (d.serverAuth != null) match.netOpts.serverAuth = !!d.serverAuth;
         if (d.wager != null) match.netOpts.wager = !!d.wager;      // wager kambario ketinimas (mokama vėliau)
-        if (d.addr != null) match.netOpts.addr = d.addr;           // žaidėjo piniginė (Transfer.from + payout)
+        if (d.addr != null) {
+          match.netOpts.addr = d.addr;                             // žaidėjo piniginė (Transfer.from + payout)
+          // 🪪 vardas = piniginės adresas (0x41f6…dDA5), NE random „Player####" — matomas lobio sąraše ir challenge dialoge
+          if (d.addr && /^0x[0-9a-fA-F]{6,}/.test(String(d.addr))) match.netOpts.name = String(d.addr).slice(0, 6) + '…' + String(d.addr).slice(-4);
+        }
         if (d.cmd === 'host') match.netMatchmake('host', d.tier);
         else if (d.cmd === 'quick') match.netMatchmake('quick');
         else if (d.cmd === 'private') match.netMatchmake('create', d.tier);
