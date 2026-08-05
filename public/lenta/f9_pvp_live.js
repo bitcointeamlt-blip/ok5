@@ -920,6 +920,11 @@
     if (btn) btn.onclick = _backToMenu;
   }
   function _backToMenu() {
+    // 🐛 FIX 08-02 (Cydrakke: „after battle routes back to old homepage/F10"): pilnas puslapio reload
+    //   išmesdavo žaidėją į F10 „HOME" hub'ą (seną homepage). Vietoj to grįžtam į F9 PILĮ (Ronke Saga) —
+    //   kaip jau daro raid/gynybos kelias (relaunchHome). Reload lieka tik fallback'as (nėra piniginės).
+    var addr = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || window._f9HomeAddr || '';
+    if (addr) { try { relaunchHome(); return; } catch (_) {} }   // relaunchHome pats kviečia stop() → F9 pilis
     try { stop(); } catch (_) {}
     try { location.href = location.pathname + location.search; } catch (_) { location.reload(); }
   }
