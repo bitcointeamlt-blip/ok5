@@ -785,8 +785,8 @@
     this._prepLeft = this._prepMs;
     this._prepReady = false;
     this._prepReadyCount = 0;
-    this._prepGrav = 0;
     this._demoIdx = -1;
+    this._demoStep = 0; this._demoAcc = 0; this._demoKey = ''; this._demoKeyT = 0;   // 🎓 auto-demo + kuris mygtukas „paspaustas"
     this._demoSpawn();
     try { global.Sfx.play('click'); } catch (_) {}
   };
@@ -799,7 +799,7 @@
   Match.prototype._demoSpawn = function () {
     var types = ['T', 'L', 'J', 'S', 'Z', 'I', 'O'];
     this._demoIdx = (this._demoIdx + 1) % types.length;
-    this._demo = { type: types[this._demoIdx], rot: 0, x: 3, y: 0, flash: 0, _slam: false };
+    this._demo = { type: types[this._demoIdx], rot: 0, x: 3, y: 0, flash: 0 };
     this._demoClamp();
   };
   Match.prototype._demoCells = function () {
@@ -816,35 +816,51 @@
     if (d.y < 0) d.y = 0;
     if (d.y + maxy > DH - 1) d.y = DH - 1 - maxy;
   };
-  Match.prototype._demoInput = function (a) {
+  Match.prototype._demoSfx = function (n) { if (n) { try { global.Sfx.play(n); } catch (_) {} } };
+  /* Atlieka veiksmą DEMO figūrai IR pažymi atitinkamą mygtuką (keyId: left/right/up/down/space) ~360ms. */
+  Match.prototype._demoDo = function (a, keyId) {
     var d = this._demo; if (!d) return;
-    global.Sfx.unlock();
-    if (a === 'left') { d.x -= 1; this._demoClamp(); this._demoSfx('move'); }
-    else if (a === 'right') { d.x += 1; this._demoClamp(); this._demoSfx('move'); }
-    else if (a === 'cw') { d.rot = (d.rot + 1) & 3; this._demoClamp(); this._demoSfx('rotate'); }
-    else if (a === 'ccw') { d.rot = (d.rot + 3) & 3; this._demoClamp(); this._demoSfx('rotate'); }
-    else if (a === 'flip') { d.rot = (d.rot + 2) & 3; this._demoClamp(); this._demoSfx('rotate'); }
-    else if (a === 'softdrop') { d.y += 1; this._demoClamp(); }
-    else if (a === 'hard') { d._slam = true; d.flash = 200; this._demoSfx('drop'); }
+    this._demoKey = keyId || ''; this._demoKeyT = 360;
+    if (a === 'left') { d.x -= 1; this._demoSfx('move'); }
+    else if (a === 'right') { d.x += 1; this._demoSfx('move'); }
+    else if (a === 'cw') { d.rot = (d.rot + 1) & 3; this._demoSfx('rotate'); }
+    else if (a === 'ccw') { d.rot = (d.rot + 3) & 3; this._demoSfx('rotate'); }
+    else if (a === 'flip') { d.rot = (d.rot + 2) & 3; this._demoSfx('rotate'); }
+    else if (a === 'softdrop') { d.y += 1; }
+    else if (a === 'hard') {
+      var cells = this._demoCells(), my = 0, j;
+      for (j = 0; j < cells.length; j++) if (cells[j][1] > my) my = cells[j][1];
+      d.y = 12 - 1 - my; d.flash = 280; this._demoSfx('drop');
+    }
+    this._demoClamp();
   };
-  Match.prototype._demoSfx = function (n) { try { global.Sfx.play(n); } catch (_) {} };
+  /* Žaidėjo paspaudimas → tas pats demo veiksmas + mygtuko pažymėjimas; atidedam auto-demo, kad matytųsi. */
+  Match.prototype._demoInput = function (a) {
+    global.Sfx.unlock();
+    var k = (a === 'left') ? 'left' : (a === 'right') ? 'right' : (a === 'softdrop') ? 'down' : (a === 'hard') ? 'space' : 'up';
+    this._demoDo(a, k);
+    this._demoAcc = 0;
+  };
+  /* Automatinė demonstracija: scenarijus parodo KIEKVIENĄ valdiklį (juda → sukа → krenta), pažymint mygtuką. */
+  Match.prototype._demoAutoStep = function () {
+    var script = this._demoScript;
+    if (!script) script = this._demoScript = [
+      { a: 'right', k: 'right' }, { a: 'right', k: 'right' }, { a: 'cw', k: 'up' },
+      { a: 'left', k: 'left' }, { a: 'left', k: 'left' }, { a: 'cw', k: 'up' },
+      { a: 'hard', k: 'space' }
+    ];
+    var i = (this._demoStep || 0) % script.length;
+    this._demoStep = i + 1;
+    var s = script[i];
+    this._demoDo(s.a, s.k);
+  };
   Match.prototype._prepUpdate = function (dt) {
     this._prepLeft = Math.max(0, (this._prepLeft || 0) - dt);
+    if (this._demoKeyT > 0) this._demoKeyT -= dt;
     var d = this._demo; if (!d) return;
-    if (d._slam) {   // hard drop → į dugną, tada blyksnis + respawn
-      var cells = this._demoCells(), maxy = 0, i;
-      for (i = 0; i < cells.length; i++) if (cells[i][1] > maxy) maxy = cells[i][1];
-      d.y = 12 - 1 - maxy; d._slam = false;
-    }
-    if (d.flash > 0) { d.flash -= dt; if (d.flash <= 0) { d.flash = 0; this._demoSpawn(); } return; }
-    // švelni gravitacija — kad „kažkas darytųsi" net nespaudžiant; pasiekus dugną → blyksnis → nauja figūra
-    this._prepGrav += dt;
-    if (this._prepGrav > 650) {
-      this._prepGrav = 0;
-      var c2 = this._demoCells(), my = 0, j;
-      for (j = 0; j < c2.length; j++) if (c2[j][1] > my) my = c2[j][1];
-      if (d.y + my >= 12 - 1) d.flash = 150; else d.y += 1;
-    }
+    if (d.flash > 0) { d.flash -= dt; if (d.flash <= 0) { d.flash = 0; this._demoSpawn(); this._demoStep = 0; this._demoAcc = 0; } return; }
+    this._demoAcc = (this._demoAcc || 0) + dt;
+    if (this._demoAcc >= 520) { this._demoAcc = 0; this._demoAutoStep(); }   // ~kas 520ms — kitas scenarijaus žingsnis
   };
 
   /* SAVO lentos serializacija priešui (relay: serveris persiunčia kaip STATE{foe}).

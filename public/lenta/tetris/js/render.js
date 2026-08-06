@@ -1177,30 +1177,30 @@
     if (oy) ctx.translate(0, -oy);
   };
 
-  // 🎓 PASIRUOŠIMO EKRANAS — valdymo tutorial + interaktyvi DEMO figūra + READY. Kad niekam nekiltų
-  //    klausimų kaip pradėti: rodom valdiklius, žaidėjas gali pabandyti, startas kai abu ready / po 15s.
+  // 🎓 PASIRUOŠIMO EKRANAS — NUPIEŠTI valdymo mygtukai (rodyklės) + DEMO figūra, kuri auto-demonstruoja:
+  //    judant kairėn užsidega ◄ mygtukas, sukant — ▲, greitai žemyn — SPACE. Žaidėjas gali ir pats spausti.
+  //    Startas kai abu READY arba po 15s. Kad niekam nekiltų klausimų kaip pradėti / valdyti.
   Renderer.prototype.drawPrep = function (match) {
     var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2);
-    ctx.globalAlpha = 0.86; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.9; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
     var secs = Math.ceil((match._prepLeft || 0) / 1000);
+    var actKey = (match._demoKeyT > 0) ? match._demoKey : '';
 
     F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.05), U.gold, '#05060c', 2);
-    F.outlinedCenter(ctx, 'TRY THE CONTROLS BELOW', cx, Math.floor(vh * 0.05) + 20, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'TRY THE KEYS - LEARN THE MOVES', cx, Math.floor(vh * 0.05) + 20, U.dim, '#05060c', 1);
 
-    // demo lenta
-    var cell = Math.max(9, Math.floor(Math.min(vw, vh) / 24));
-    var DW = 8, DH = 12, bw = DW * cell, bh = DH * cell;
-    var bx = cx - Math.floor(bw / 2), by = Math.floor(vh * 0.20);
+    // --- DEMO lenta (kairėje) ---
+    var cell = Math.max(9, Math.floor(vh / 24)), DW = 8, DH = 12, bw = DW * cell, bh = DH * cell;
+    var bx = Math.floor(vw * 0.27 - bw / 2), by = Math.floor(vh * 0.26);
     rect(ctx, bx, by, bw, bh, '#0c1018');
     frame(ctx, bx - 2, by - 2, bw + 4, bh + 4, U.gold);
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = 0.2;
     for (var gx = 1; gx < DW; gx++) rect(ctx, bx + gx * cell, by, 1, bh, '#3a4666');
     for (var gy = 1; gy < DH; gy++) rect(ctx, bx, by + gy * cell, bw, 1, '#3a4666');
     ctx.globalAlpha = 1;
     var d = match._demo;
     if (d && match._demoCells) {
-      var cells = match._demoCells();
-      var col = (C.COLORS[d.type] || C.COLORS.T);
+      var cells = match._demoCells(), col = (C.COLORS[d.type] || C.COLORS.T);
       var fl = d.flash > 0 && (Math.floor(d.flash / 45) % 2 === 0);
       for (var i = 0; i < cells.length; i++) {
         var px = bx + (d.x + cells[i][0]) * cell, py = by + (d.y + cells[i][1]) * cell;
@@ -1209,21 +1209,47 @@
       }
     }
 
-    // valdymo legenda po lenta
-    var ly = by + bh + 14;
-    F.outlinedCenter(ctx, 'LEFT / RIGHT = MOVE      UP = ROTATE', cx, ly, U.text, '#05060c', 1);
-    F.outlinedCenter(ctx, 'SPACE = FAST DROP      DOWN = SOFT DROP', cx, ly + 12, U.text, '#05060c', 1);
+    // --- NUPIEŠTI valdymo mygtukai (dešinėje) ---
+    function tri(ax, ay, r, kind, color) {
+      ctx.fillStyle = color; ctx.beginPath();
+      if (kind === 'up') { ctx.moveTo(ax, ay - r); ctx.lineTo(ax - r, ay + r * 0.7); ctx.lineTo(ax + r, ay + r * 0.7); }
+      else if (kind === 'down') { ctx.moveTo(ax, ay + r); ctx.lineTo(ax - r, ay - r * 0.7); ctx.lineTo(ax + r, ay - r * 0.7); }
+      else if (kind === 'left') { ctx.moveTo(ax - r, ay); ctx.lineTo(ax + r * 0.7, ay - r); ctx.lineTo(ax + r * 0.7, ay + r); }
+      else { ctx.moveTo(ax + r, ay); ctx.lineTo(ax - r * 0.7, ay - r); ctx.lineTo(ax - r * 0.7, ay + r); }
+      ctx.closePath(); ctx.fill();
+    }
+    function keyBtn(kx, ky, ks, kind, on) {
+      rect(ctx, kx, ky, ks, ks, on ? '#ffcf5c' : '#161d2e');
+      frame(ctx, kx, ky, ks, ks, on ? '#ffffff' : '#6a5a2a');
+      if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
+      tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
+    }
+    var ks = Math.max(24, Math.floor(vh / 8.5)), gap = 5;
+    var kcx = Math.floor(vw * 0.70), midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.33);
+    keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
+    keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
+    keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
+    keyBtn(midx + ks + gap, midy, ks, 'right', actKey === 'right');        // ► MOVE
+    F.outlinedCenter(ctx, 'ROTATE', midx + Math.floor(ks / 2), midy - ks - gap - 10, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'MOVE', midx - Math.floor(ks / 2) - gap, midy + ks + 3, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'MOVE', midx + ks + gap + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);
+    // SPACE juosta (hard drop)
+    var sbx = midx - ks - gap, sby = midy + ks + gap + 14, sbw = ks * 3 + gap * 2, sbh = Math.floor(ks * 0.62);
+    var spOn = actKey === 'space';
+    rect(ctx, sbx, sby, sbw, sbh, spOn ? '#ffcf5c' : '#161d2e');
+    frame(ctx, sbx, sby, sbw, sbh, spOn ? '#ffffff' : '#6a5a2a');
+    if (spOn) frame(ctx, sbx - 1, sby - 1, sbw + 2, sbh + 2, '#ffcf5c');
+    F.outlinedCenter(ctx, 'SPACE', sbx + Math.floor(sbw / 2), sby + Math.floor(sbh / 2) - 3, spOn ? '#241a08' : '#ffcf5c', spOn ? '#ffcf5c' : '#05060c', 1);
+    F.outlinedCenter(ctx, 'FAST DROP', sbx + Math.floor(sbw / 2), sby + sbh + 4, U.dim, '#05060c', 1);
 
-    // READY mygtukas + laikmatis + varžovo būsena
+    // --- READY + laikmatis + varžovo būsena (apačia) ---
     var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
-    var btnW = Math.min(240, vw - 36), btnH = 30, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 16;
+    var btnW = Math.min(260, vw - 36), btnH = 30, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 12;
     rect(ctx, btnX, btnY, btnW, btnH, ready ? '#1c3a24' : '#24543a');
     frame(ctx, btnX, btnY, btnW, btnH, ready ? '#5aa06a' : '#5ce08a');
-    var label = ready ? ('READY - WAITING ' + secs + 'S') : ('PRESS  READY   (AUTO ' + secs + 'S)');
-    F.outlinedCenter(ctx, label, cx, btnY + 11, ready ? U.dim : U.good, '#05060c', 1);
+    F.outlinedCenter(ctx, ready ? ('READY - WAITING ' + secs + 'S') : ('PRESS  READY   (AUTO ' + secs + 'S)'), cx, btnY + 11, ready ? U.dim : U.good, '#05060c', 1);
     match._prepBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-    var opp = both ? 'BOTH READY - STARTING!' : (ready ? 'WAITING FOR OPPONENT...' : 'STARTS WHEN BOTH READY, OR IN ' + secs + 'S');
-    F.outlinedCenter(ctx, opp, cx, btnY - 15, both ? U.good : U.gold, '#05060c', 1);
+    F.outlinedCenter(ctx, both ? 'BOTH READY - STARTING!' : (ready ? 'WAITING FOR OPPONENT...' : 'START WHEN BOTH READY, OR IN ' + secs + 'S'), cx, btnY - 13, both ? U.good : U.gold, '#05060c', 1);
   };
 
   Renderer.prototype.drawCountdown = function (match) {
