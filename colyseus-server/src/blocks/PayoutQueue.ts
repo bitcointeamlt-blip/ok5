@@ -20,6 +20,7 @@ export interface PendingPayout {
   createdAt: number;
   status: "pending" | "paid";
   manual?: boolean;               // true = reikia OPERATORIAUS patikros prieš mokant (neverifikuotas) → auto-flush PRALEIDŽIA
+  note?: string;                  // 🛡️ sulaikymo priežastis operatoriui (pvz. anti-cheat: pps_15.3,pieces_decrease)
   tx?: string;
   paidAt?: number;
 }
@@ -58,7 +59,7 @@ function sbUpsert(it: PendingPayout): void {
 
 class PayoutQueueImpl {
   // Įrašo laukiančią išmoką. Dedupe: tas pats roomId+to+kind (dar nepamokėtas) → negrūdinam antro.
-  add(p: { to: string; amount: number; kind: PayoutKind; roomId: string; manual?: boolean }): PendingPayout | null {
+  add(p: { to: string; amount: number; kind: PayoutKind; roomId: string; manual?: boolean; note?: string }): PendingPayout | null {
     const to = String(p.to || "").toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(to) || !(p.amount > 0)) return null;
     const items = readAll();
@@ -68,6 +69,7 @@ class PayoutQueueImpl {
       id: `${p.roomId}_${p.kind}_${to.slice(2, 10)}`,
       to, amount: p.amount, kind: p.kind, roomId: p.roomId,
       createdAt: Date.now(), status: "pending", manual: !!p.manual,
+      ...(p.note ? { note: p.note } : {}),
     };
     items.push(item);
     writeAll(items);

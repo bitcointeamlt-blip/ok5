@@ -35,6 +35,9 @@ const CLEAR_WINDOW_MS = 2000;         // rate-limit langas
 const MAX_CLEARS_PER_WINDOW = 6;      // >6 valymų per 2s = neįmanoma žmogui → ignoruojam
 const SNAP_MIN_INTERVAL_MS = 40;      // max ~25 snap/s (flood apsauga)
 const MATCH_MAX_MS = 6 * 60 * 1000;   // 6 min riba → jei niekas netopina (stall), sprendžiam pagal linijas
+// 🛡️ ANTI-CHEAT (client-auth): validuojam kliento snapshot'us. Žemas false-positive → ribos KONSERVATYVIOS.
+const MAX_HUMAN_PPS = 12;             // >12 figūrų/s fiziškai neįmanoma žmogui (botas/spartintuvas)
+const CHEAT_HITS = 3;                 // tiek pažeidimų → laikom sukčiumi → laimėjimas į MANUAL review (ne auto-pay)
 
 /* ── 🧱💰 WAGER (statymas) ─────────────────────────────────────────────────────
  * Abu žaidėjai PATYS pasirašo `payAndPlay(tier,…)` → RONKE į treasury (žr. [[WagerEntry.ts]]).
@@ -73,6 +76,8 @@ export class BlocksRoom extends Room<BlocksState> {
   private matchMs = 0;                              // sukauptas žaidimo laikas (playing fazėj)
   private clearLog: Record<string, number[]> = {}; // sessionId → clear'ų laikai (rate-limit)
   private lastSnapMs: Record<string, number> = {}; // sessionId → paskutinio snap laikas (flood)
+  private _cheat: Record<string, { hits: number; reasons: string[] }> = {};   // 🛡️ sessionId → anti-cheat pažeidimai
+  private _lastPieces: Record<string, number> = {};                            // 🛡️ monotonic figūrų patikra
   // A6 L2: SERVER-AUTHORITATIVE lentos (serveris = vienintelis lentų šeimininkas; cheat-proof).
   private serverAuth = false;                      // options.serverAuth → serveris sukа lentas iš įvesčių
   private onchainMatchId = "";                      // wager: on-chain RonkeBlocksWager matchId (payout'ui)
@@ -111,7 +116,17 @@ export class BlocksRoom extends Room<BlocksState> {
     //   ir serveris nepaprašo „stake_now" (žr. _accept). Taip nė vienas nesumoka į nesukonfigūruotą serverį.
     const wagerLive = wagerEnabled() && STAKE.enabled;
     const wagerIntent = !!(options && options.wager);
-    this.escrow = new WagerEscrow((wagerIntent && wagerLive) ? tier : 0, (p) => STAKE.settle(p.map((x) => ({ ...x, roomId: this.roomId }))), (a, t, ti) => verifyWagerEntry(a, t, ti), WINNER_BPS);
+    this.escrow = new WagerEscrow(
+      (wagerIntent && wagerLive) ? tier : 0,
+      (p) => STAKE.settle(p.map((x) => ({ ...x, roomId: this.roomId }))),
+      (a, t, ti) => verifyWagerEntry(a, t, ti),
+      WINNER_BPS,
+      // 🛟 refund'o NEGALIM patvirtinti (RPC krito) → į MANUAL eilę, kad žaidėjo pinigai NEDINGTŲ
+      (side, addr, tierR, reason) => {
+        PayoutQueue.add({ to: addr, amount: tierR, kind: "refund", roomId: this.roomId, manual: true, note: `unverified refund (${reason}) — patikrink įėjimo tx on-chain prieš mokant` });
+        console.warn(`[BLOCKS WAGER] 🛟 refund NEAIŠKUS (${reason}, ${side}) → ${addr} ${tierR} RONKE į MANUAL eilę (RPC krito; operatorius patikrina tx :6610)`);
+      },
+    );
     if (wagerIntent && !wagerLive) console.warn(`[BLOCKS WAGER] wager kambarys prašytas, bet serveris NEGYVAS (WagerEntry=${wagerEnabled()} StakeService=${STAKE.enabled}) → NEMOKAMOS rungtynės. Sukonfigūruok env.`);
     this.onchainMatchId = "";
     this.setMetadata({ host: (options && options.name) || "Player", mode: (options && options.mode) || "public", tier, wager: this.escrow.active, wagerLive });
@@ -259,7 +274,7 @@ export class BlocksRoom extends Room<BlocksState> {
     this.state.phase = "countdown";
     this.state.countdown = COUNTDOWN_MS;
     // A6: šviežias anti-cheat sekimas kiekvienoms rungtynėms
-    this.matchMs = 0; this.clearLog = {}; this.lastSnapMs = {};
+    this.matchMs = 0; this.clearLog = {}; this.lastSnapMs = {}; this._cheat = {}; this._lastPieces = {};
     // A6 L2: sukuriam autoritetingas lentas (serveris sukа abu boardus iš įvesčių)
     if (this.serverAuth) {
       const E = this.lib.Engine;
@@ -304,7 +319,7 @@ export class BlocksRoom extends Room<BlocksState> {
     const log = this.clearLog[client.sessionId] || (this.clearLog[client.sessionId] = []);
     const cutoff = this.matchMs - CLEAR_WINDOW_MS;
     while (log.length && log[0] < cutoff) log.shift();
-    if (log.length >= MAX_CLEARS_PER_WINDOW) return;   // per greitai → ignoruojam (neįmanoma žmogui)
+    if (log.length >= MAX_CLEARS_PER_WINDOW) { this._flag(client.sessionId, "clear_rate"); return; }   // per greitai → ignoruojam + flag
     log.push(this.matchMs);
 
     const armySide = SIDE_TO_ARMY[p.side as Side];
@@ -319,8 +334,48 @@ export class BlocksRoom extends Room<BlocksState> {
     const last = this.lastSnapMs[client.sessionId];
     if (last != null && this.matchMs - last < SNAP_MIN_INTERVAL_MS) return;
     this.lastSnapMs[client.sessionId] = this.matchMs;
+    this._auditSnap(client.sessionId, m);   // 🛡️ anti-cheat validacija (client-auth)
     // persiunčiam TAVO lentos snapshot'ą priešui kaip STATE{foe} (tas pats vardas kaip mock).
     this.broadcast("state", { foe: m }, { except: client });
+  }
+
+  // 🛡️ ANTI-CHEAT (client-auth, 08-05): serveris validuoja kliento snapshot'us (be per-frame naštos). Signalai:
+  //   superhuman PPS, figūrų mažėjimas (fabrikacija), clear-spam. ≥CHEAT_HITS pažeidimų → laimėjimas į MANUAL
+  //   review (ne auto-pay) — sąžiningas žaidėjas apsaugotas (operatorius patikrina, false-positive nesumoka cheat'eriui).
+  //   Ribos KONSERVATYVIOS → mažas false-positive. Stipresnis lygis (pilnas įvesčių replay) — ateity.
+  private _flag(sid: string, reason: string) {
+    const f = this._cheat[sid] || (this._cheat[sid] = { hits: 0, reasons: [] });
+    f.hits++;
+    if (!f.reasons.includes(reason)) f.reasons.push(reason);
+    console.warn(`[BLOCKS ANTI-CHEAT] ${sid.slice(0, 8)}… flag=${reason} hits=${f.hits} (${f.reasons.join(",")})`);
+  }
+  private _isCheater(side: Side | ""): boolean {
+    let bad = false;
+    this.state.players.forEach((p, sid) => { if (side && p.side === side && (this._cheat[sid]?.hits || 0) >= CHEAT_HITS) bad = true; });
+    return bad;
+  }
+  private _cheatReasons(side: Side | ""): string {
+    let r = "";
+    this.state.players.forEach((p, sid) => { if (side && p.side === side) r = (this._cheat[sid]?.reasons || []).join(","); });
+    return r;
+  }
+  private _auditSnap(sid: string, m: any) {
+    try {
+      if (!m || !m.stats || this.matchMs < 4000) return;   // pradžioj per mažai duomenų
+      const pieces = m.stats.pieces | 0, lines = m.stats.lines | 0;
+      // (1) MONOTONIC: figūrų skaičius neturi mažėti — jei mažėja, snapshot fabrikuotas / rollback
+      const prev = this._lastPieces[sid] || 0;
+      if (pieces < prev - 1) this._flag(sid, "pieces_decrease");
+      if (pieces > prev) this._lastPieces[sid] = pieces;
+      // (2) PPS: figūros/s nuo starto — fiziškai neįmanoma > MAX_HUMAN_PPS (botas/spartintuvas)
+      const secs = this.matchMs / 1000;
+      if (pieces > 30 && secs > 3) {
+        const pps = pieces / secs;
+        if (pps > MAX_HUMAN_PPS) this._flag(sid, `pps_${pps.toFixed(1)}`);
+      }
+      // (3) linijos vs figūros: net su garbage, KONSERVATYVI viršutinė riba (didelė marža → mažas false-positive)
+      if (lines > pieces + 60) this._flag(sid, "lines_impossible");
+    } catch (_) {}
   }
 
   private _onTopped(client: Client) {
@@ -539,6 +594,15 @@ export class BlocksRoom extends Room<BlocksState> {
     if (!this.escrow.active || this.escrow.settled) return;
     if (this._winnerSide === null || !this._verifyDone) return;   // laukiam kol IR mačas, IR verify baigti
     const w = this._winnerSide;
+    // 🛡️ BAUSMĖ (#5): jei laimėtojas pažymėtas kaip sukčius → NEauto-mokėti, į manual eilę operatoriui.
+    //    Sąžiningo žaidėjo apsauga: neatmetam automatiškai (galimas false-positive), tik sulaikom peržiūrai.
+    if (w && this._isCheater(w as Side)) {
+      const reasons = this._cheatReasons(w as Side);
+      console.warn(`[BLOCKS ANTI-CHEAT] ⛔ winner=${w} PAŽYMĖTAS sukčiumi (${reasons}) → payout SULAIKYTAS, manual eilė`);
+      void this._queueUnverified(w as Side, `anti-cheat: ${reasons}`);
+      this._logMatch(w);
+      return;
+    }
     if (this._verifyOk) {
       if (w) void this._settleWinner(w as Side);
       else void this.escrow.settleDraw().then((ok) => { if (ok) console.log(`[BLOCKS WAGER] DRAW → refund ${this.escrow.tier} RONKE abiem`); });
@@ -549,14 +613,14 @@ export class BlocksRoom extends Room<BlocksState> {
   }
 
   // Neverifikuotas rezultatas → laimėtojo prizas į MANUAL eilę (:6610). Operatorius patikrina įėjimus prieš mokant.
-  private async _queueUnverified(winner: Side) {
+  private async _queueUnverified(winner: Side, note?: string) {
     this.escrow.markSettled();   // apsauga nuo dvigubo apmokėjimo
     if (!winner) { console.warn(`[BLOCKS WAGER] unverified draw room=${this.roomId} — reikia manual patikros`); return; }
     const { prize } = this.escrow.split();
     const addr = this.escrow.addressOf(winner);
     if (/^0x[0-9a-f]{40}$/.test(addr)) {
-      PayoutQueue.add({ to: addr, amount: prize, kind: "win", roomId: this.roomId, manual: true });   // manual → auto-flush NEmokės
-      console.warn(`[BLOCKS WAGER] ⚠️ UNVERIFIED → winner ${prize} RONKE → ${addr} į MANUAL eilę (admin :6610 patikrink įėjimus prieš mokant!)`);
+      PayoutQueue.add({ to: addr, amount: prize, kind: "win", roomId: this.roomId, manual: true, note });   // manual → auto-flush NEmokės
+      console.warn(`[BLOCKS WAGER] ⚠️ UNVERIFIED → winner ${prize} RONKE → ${addr} į MANUAL eilę${note ? ` (${note})` : ""} (admin :6610 patikrink įėjimus prieš mokant!)`);
     }
   }
 

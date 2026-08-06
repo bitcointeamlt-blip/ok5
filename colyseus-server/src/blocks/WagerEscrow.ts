@@ -27,6 +27,9 @@ export class WagerEscrow {
     private readonly settle: SettleFn,
     private readonly verify: VerifyFn,
     private readonly winnerBps = 8000,      // laimėtojas 80% poolo; treasury – likutis
+    // 🛟 kviečiamas kai refund'o NEGALIM patvirtinti (RPC krito / tx dar neindeksuotas) — kad pinigai NEDINGTŲ:
+    //    operatorius rankiniu būdu patikrina tx ir grąžina. Definityvūs „nemokėjo" atvejai čia NEpatenka.
+    private readonly onUncertainRefund?: (side: EscrowSide, addr: string, tier: number, reason: string) => void,
   ) {}
 
   get active(): boolean { return this.tier > 0; }
@@ -102,14 +105,26 @@ export class WagerEscrow {
   }
 
   // Grąžina VIENĄ pusę: jei dar neverifikuota — verify PIRMA (apsauga nuo pramanyto tx), tik tada refund.
+  //   🛟 ATSPARUS RPC: jei verify NEPAVYKO dėl LAIKINO gedimo (rpc / tx_not_found) — refund NEDINGSTA:
+  //      pažymim ir siunčiam į MANUAL eilę (operatorius patikrina tx). Tik DEFINITYVŪS „nemokėjo" atvejai
+  //      (wrong_to/wrong_amount/tx_failed/bad_tx/disabled/db_off) atmetami be refund'o. Tai užkardo bug'ą,
+  //      kai žaidėjas sumoka, mačas neįvyksta, o refund'as pakimba dėl RPC blyksnio.
   async refundEntry(side: EscrowSide): Promise<boolean> {
     if (!this.active || this._settled) return false;   // po payout/draw – jokių refund'ų (double-pay apsauga)
     const e = this.e[side];
     if (e.refunded || !e.tx || !isAddr(e.addr)) return false;
-    const v = e.verified ? { ok: true } : await this.verify(e.addr, e.tx, this.tier);
-    if (!v.ok) return false;
-    e.verified = true; e.refunded = true;
-    await this.settle([{ address: e.addr, amount: this.tier, sessionId: side, kind: "refund" }]);
-    return true;
+    const v: VerifyResult = e.verified ? { ok: true } : await this.verify(e.addr, e.tx, this.tier);
+    // ✅ tikras įėjimas (ok) ARBA fee_used (tx JAU įrašytas ankstesnės verify → realus mokėjimas) → auto-refund
+    if (v.ok || v.reason === "fee_used") {
+      e.verified = true; e.refunded = true;
+      await this.settle([{ address: e.addr, amount: this.tier, sessionId: side, kind: "refund" }]);
+      return true;
+    }
+    // 🛟 NEAIŠKU (RPC nukrito / tx dar neindeksuotas) → į MANUAL eilę, kad pinigai NEDINGTŲ
+    if (v.reason === "rpc" || v.reason === "tx_not_found") {
+      e.refunded = true;   // pažymim, kad nekurtume dublio
+      if (this.onUncertainRefund) this.onUncertainRefund(side, e.addr, this.tier, v.reason || "rpc");
+    }
+    return false;   // definityvu (nemokėjo/blogas tx) ARBA manual jau sukurtas → ne auto-refund
   }
 }
