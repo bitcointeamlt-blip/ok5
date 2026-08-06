@@ -1186,30 +1186,10 @@
     var secs = Math.ceil((match._prepLeft || 0) / 1000);
     var actKey = (match._demoKeyT > 0) ? match._demoKey : '';
 
-    F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.05), U.gold, '#05060c', 2);
-    F.outlinedCenter(ctx, 'TRY THE KEYS - LEARN THE MOVES', cx, Math.floor(vh * 0.05) + 20, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.08), U.gold, '#05060c', 2);
+    F.outlinedCenter(ctx, 'THESE ARE YOUR CONTROLS', cx, Math.floor(vh * 0.08) + 22, U.dim, '#05060c', 1);
 
-    // --- DEMO lenta (kairėje) ---
-    var cell = Math.max(9, Math.floor(vh / 24)), DW = 8, DH = 12, bw = DW * cell, bh = DH * cell;
-    var bx = Math.floor(vw * 0.27 - bw / 2), by = Math.floor(vh * 0.26);
-    rect(ctx, bx, by, bw, bh, '#0c1018');
-    frame(ctx, bx - 2, by - 2, bw + 4, bh + 4, U.gold);
-    ctx.globalAlpha = 0.2;
-    for (var gx = 1; gx < DW; gx++) rect(ctx, bx + gx * cell, by, 1, bh, '#3a4666');
-    for (var gy = 1; gy < DH; gy++) rect(ctx, bx, by + gy * cell, bw, 1, '#3a4666');
-    ctx.globalAlpha = 1;
-    var d = match._demo;
-    if (d && match._demoCells) {
-      var cells = match._demoCells(), col = (C.COLORS[d.type] || C.COLORS.T);
-      var fl = d.flash > 0 && (Math.floor(d.flash / 45) % 2 === 0);
-      for (var i = 0; i < cells.length; i++) {
-        var px = bx + (d.x + cells[i][0]) * cell, py = by + (d.y + cells[i][1]) * cell;
-        rect(ctx, px + 1, py + 1, cell - 2, cell - 2, fl ? '#ffffff' : col[0]);
-        rect(ctx, px + 1, py + 1, cell - 2, 2, fl ? '#ffffff' : col[1]);
-      }
-    }
-
-    // --- NUPIEŠTI valdymo mygtukai (dešinėje) ---
+    // --- NUPIEŠTI valdymo mygtukai (per vidurį) ---
     function tri(ax, ay, r, kind, color) {
       ctx.fillStyle = color; ctx.beginPath();
       if (kind === 'up') { ctx.moveTo(ax, ay - r); ctx.lineTo(ax - r, ay + r * 0.7); ctx.lineTo(ax + r, ay + r * 0.7); }
@@ -1224,8 +1204,8 @@
       if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
       tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
     }
-    var ks = Math.max(24, Math.floor(vh / 8.5)), gap = 5;
-    var kcx = Math.floor(vw * 0.70), midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.33);
+    var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
+    var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
     keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
     keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
     keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
@@ -1233,6 +1213,7 @@
     F.outlinedCenter(ctx, 'ROTATE', midx + Math.floor(ks / 2), midy - ks - gap - 10, U.dim, '#05060c', 1);
     F.outlinedCenter(ctx, 'MOVE', midx - Math.floor(ks / 2) - gap, midy + ks + 3, U.dim, '#05060c', 1);
     F.outlinedCenter(ctx, 'MOVE', midx + ks + gap + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'SOFT', midx + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);   // ▼ = soft drop (kad ir žemyn rodyklė turėtų „ką daro" užrašą)
     // SPACE juosta (hard drop)
     var sbx = midx - ks - gap, sby = midy + ks + gap + 14, sbw = ks * 3 + gap * 2, sbh = Math.floor(ks * 0.62);
     var spOn = actKey === 'space';

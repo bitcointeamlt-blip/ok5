@@ -856,11 +856,7 @@
   };
   Match.prototype._prepUpdate = function (dt) {
     this._prepLeft = Math.max(0, (this._prepLeft || 0) - dt);
-    if (this._demoKeyT > 0) this._demoKeyT -= dt;
-    var d = this._demo; if (!d) return;
-    if (d.flash > 0) { d.flash -= dt; if (d.flash <= 0) { d.flash = 0; this._demoSpawn(); this._demoStep = 0; this._demoAcc = 0; } return; }
-    this._demoAcc = (this._demoAcc || 0) + dt;
-    if (this._demoAcc >= 520) { this._demoAcc = 0; this._demoAutoStep(); }   // ~kas 520ms — kitas scenarijaus žingsnis
+    if (this._demoKeyT > 0) this._demoKeyT -= dt;   // mygtuko pažymėjimas nublanksta (užsidega TIK paspaudus — jokios auto-demonstracijos, nebeblaško)
   };
 
   /* SAVO lentos serializacija priešui (relay: serveris persiunčia kaip STATE{foe}).
