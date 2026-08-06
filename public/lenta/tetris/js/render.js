@@ -102,6 +102,11 @@
     this.menuBits = null;
     this._wallCanvas = null;   // 🧱 procedūrinės akmens sienos kešas (perbraižom TIK per resize, ne kas kadrą)
     this._wallKey = '';
+    // 🎮 Kenney (CC0) pikseliniai valdymo klavišų sprite'ai — prep ekranui
+    this._keyImg = {};
+    ['up', 'down', 'left', 'right'].forEach(function (k) {
+      try { var im = new Image(); im.src = 'assets/keys/key_' + k + '.png'; this._keyImg[k] = im; } catch (_) {}
+    }, this);
     this.resize();
   }
 
@@ -1181,7 +1186,7 @@
   //    judant kairėn užsidega ◄ mygtukas, sukant — ▲, greitai žemyn — SPACE. Žaidėjas gali ir pats spausti.
   //    Startas kai abu READY arba po 15s. Kad niekam nekiltų klausimų kaip pradėti / valdyti.
   Renderer.prototype.drawPrep = function (match) {
-    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2);
+    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2), self = this;
     ctx.globalAlpha = 0.9; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
     var secs = Math.ceil((match._prepLeft || 0) / 1000);
     var actKey = (match._demoKeyT > 0) ? match._demoKey : '';
@@ -1199,10 +1204,20 @@
       ctx.closePath(); ctx.fill();
     }
     function keyBtn(kx, ky, ks, kind, on) {
-      rect(ctx, kx, ky, ks, ks, on ? '#ffcf5c' : '#161d2e');
-      frame(ctx, kx, ky, ks, ks, on ? '#ffffff' : '#6a5a2a');
-      if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
-      tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
+      var img = self._keyImg && self._keyImg[kind];
+      if (img && img.complete && img.naturalWidth) {
+        // 🎮 Kenney klavišo sprite'as. Aktyvus (paspaustas) → truputį didesnis + auksinis rėmas (pop).
+        var s = on ? ks + 4 : ks, o = on ? -2 : 0;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, kx + o, ky + o, s, s);
+        if (on) frame(ctx, kx - 2, ky - 2, ks + 4, ks + 4, '#ffcf5c');
+      } else {
+        // fallback (kol sprite'as kraunasi): nupieštas klavišas
+        rect(ctx, kx, ky, ks, ks, on ? '#ffcf5c' : '#161d2e');
+        frame(ctx, kx, ky, ks, ks, on ? '#ffffff' : '#6a5a2a');
+        if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
+        tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
+      }
     }
     var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
     var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
