@@ -18,6 +18,7 @@
   var _selectedTier = 69;                  // pasirinkta pakopa kuriant kambarį
   var _bgActive = false, _lastState = 'lobby', _myRole = '', _myRoomId = '';   // _bgActive: aktyvus FONE; _myRoomId: MANO kambarys (nerodom sąraše)
   var _challengeAck = false;               // 🛡️ challenge dialogas jau patvirtintas/atmestas → NEberodom dublio (event+interval abu siunčia 'challenge')
+  var _hostInvite = null;                   // 🔗 {url,priv,roomCode} — kad hostui VĖL atsidarius panelę invite linkas nedingtų (iframe state nesikeičia → nesiunčia)
 
   function _endpoint() {
     try { var h = location.hostname; if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'ws://localhost:2567'; } catch (_) {}
@@ -178,6 +179,8 @@
 
     _ensureGame();                 // preload paslėptą žaidimo iframe (host/join iškart)
     _renderList();
+    // 🔗 jei VĖL atsidarau panelę hostindamas fone → iškart parodau savo laukimo būseną + invite linką
+    if (_bgActive && _hostInvite && _hostInvite.url) _showHostStatus();
     // Momentinis fallback (kol LobbyRoom atsiųs 'rooms'), tada — REALAUS LAIKO push (be polling).
     _fetchWaiting().then(function (l) { if (_panel && !_lobbyRoom) { _waitingRooms = l; _renderList(); } });
     _connectLobby();
@@ -236,6 +239,23 @@
   function _status(html, show) {
     if (!_panel) return; var s = _panel.querySelector('#rb-status'); if (!s) return;
     s.innerHTML = html; s.style.display = show ? 'block' : 'none';
+  }
+  // 🔗 HOST'o laukimo būsena + invite linkas (naudojama ir gavus 'connecting' state, IR vėl atsidarius
+  //    panelę hostinant — nes iframe state nesikeičia, tad naujos žinutės su linku nebeateina).
+  function _showHostStatus() {
+    if (!_panel || !_hostInvite) return;
+    var hi = _hostInvite;
+    var head = (hi.priv && hi.roomCode)
+      ? 'PRIVATE ROOM<br><span style="font-size:14px;color:#ffcf5c;letter-spacing:2px;">' + _esc(String(hi.roomCode).toUpperCase()) + '</span>'
+      : 'Waiting for an opponent...<br><span style="font-size:8px;opacity:.7;">you can close this and keep playing</span>';
+    var linkRow = hi.url
+      ? '<br><button id="rb-copy" style="margin-top:12px;font:800 13px monospace;color:#bff0f6;background:rgba(143,216,224,.18);border:2px solid #5aa8b4;border-radius:8px;padding:13px 18px;width:100%;box-sizing:border-box;cursor:pointer;letter-spacing:.5px;">📋 COPY INVITE LINK</button>'
+      : '';
+    _status(head + linkRow, true);
+    var cp = _panel.querySelector('#rb-copy');
+    if (cp) cp.onclick = function () {
+      try { if (navigator.clipboard && hi.url) { navigator.clipboard.writeText(hi.url); cp.textContent = '✓ link copied - send it to a friend!'; } } catch (_) {}
+    };
   }
 
   var _wager = function () { try { return window.BlocksWager && window.BlocksWager.enabled(); } catch (_) { return false; } };
@@ -424,7 +444,7 @@
   }
   function _hideHostPill() { var p = document.getElementById('rb-host-pill'); if (p) p.style.display = 'none'; }
   function _cancelHosting() {
-    _bgActive = false; _hideHostPill();
+    _bgActive = false; _hideHostPill(); _hostInvite = null;   // 🔗 nustojau hostinti → nuvalom įsimintą linką
     _cmd('lobby');                    // iframe atsijungia nuo kambario (nebe host)
     _teardownGame();
   }
@@ -527,21 +547,11 @@
     } else if (st === 'awaiting') {
       if (_panel) _status('Challenge sent - waiting for <b>' + _esc(d.host || 'host') + '</b> to accept...', true);
     } else if (st === 'connecting') {
-      if (_panel) {
-        var head = (d.priv && d.roomCode)
-          ? 'PRIVATE ROOM<br><span style="font-size:14px;color:#ffcf5c;letter-spacing:2px;">' + _esc(String(d.roomCode).toUpperCase()) + '</span>'
-          : 'Waiting for an opponent...<br><span style="font-size:8px;opacity:.7;">you can close this and keep playing</span>';
-        /* Kvietimo NUORODA — ir HOST, ir PRIVATE. Bet kas ją atidaręs prisijungia (net neregistruotas). */
-        var linkRow = d.inviteUrl
-          ? '<br><button id="rb-copy" style="margin-top:12px;font:800 13px monospace;color:#bff0f6;background:rgba(143,216,224,.18);border:2px solid #5aa8b4;border-radius:8px;padding:13px 18px;width:100%;box-sizing:border-box;cursor:pointer;letter-spacing:.5px;">📋 COPY INVITE LINK</button>'
-          : '';
-        _status(head + linkRow, true);
-        var cp = _panel.querySelector('#rb-copy');
-        if (cp) cp.onclick = function () {
-          try { if (navigator.clipboard && d.inviteUrl) { navigator.clipboard.writeText(d.inviteUrl); cp.textContent = '✓ link copied - send it to a friend!'; } } catch (_) {}
-        };
-      }
+      // 🔗 įsimenam host'o invite duomenis → kad VĖL atsidarius panelę linkas nedingtų (state nesikeičia)
+      _hostInvite = { url: d.inviteUrl || '', priv: !!d.priv, roomCode: d.roomCode || '' };
+      if (_panel) _showHostStatus();
     } else if (st === 'lobby') {
+      _hostInvite = null;                            // host nebelaukia → nuvalom įsimintą linką
       _hideChallenge(); _podClaimedMatch = false;   // nauja rungtynė → leidžiam kitą PoD claim (dedup lieka doneToday)
       if (_gameOn) { _bgActive = false; _myRole = ''; _hideGame(); _teardownGame(); _openPanel(); }   // grįžo po rungtynių → lobis
       else if (_myRole === 'guest') {
