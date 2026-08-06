@@ -335,14 +335,65 @@
       _doJoin(r);
     });
   }
+  // ── 🔗 FOKUSUOTAS KVIETIMO EKRANAS (UX): paspaudus linką iškart AIŠKUS „patvirtink ir žaisk" langas su
+  //    kaina — NE „pasimetimas pilyje". Vienas mygtukas → prisijungimas+mokėjimas per esamą srautą. ──────
+  function _hideInviteOverlay() { var o = document.getElementById('rb-invite-ov'); if (o) { try { o.remove(); } catch (_) {} } }
+  function _renderInviteOverlay(r, roomId, mode) {
+    _css();
+    var o = document.getElementById('rb-invite-ov');
+    if (!o) {
+      o = document.createElement('div'); o.id = 'rb-invite-ov';
+      o.style.cssText = 'position:fixed;inset:0;z-index:99800;background:rgba(6,9,16,.9);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(5px);font-family:monospace;';
+      document.body.appendChild(o);
+    }
+    var tier = (r && r.tier) || _selectedTier || 69;
+    var host = (r && r.host) ? _esc(String(r.host).slice(0, 18)) : 'A player';
+    var prize = Math.floor(tier * 2 * 0.8);
+    var inner;
+    if (mode === 'loading') {
+      inner = '<div style="font-size:30px;margin-bottom:8px;">⚔️</div><div style="font-size:13px;color:#ffd97a;">🔗 Loading invite…</div>';
+    } else if (mode === 'notfound') {
+      inner = '<div style="font-size:30px;margin-bottom:8px;">⚔️</div>' +
+        '<div style="font-size:13px;color:#ffb0b0;margin-bottom:16px;line-height:1.5;">Invite not found —<br>host may have left or the match is full.</div>' +
+        '<button id="rb-inv-x" style="padding:11px 22px;border-radius:8px;border:2px solid #6a4a18;background:rgba(255,207,92,.12);color:#ffcf5c;font:700 12px monospace;cursor:pointer;">← Back to castle</button>';
+    } else {
+      inner =
+        '<div style="font-size:36px;margin-bottom:8px;">⚔️</div>' +
+        '<div style="font-size:16px;color:#8fd8e0;font-weight:800;margin-bottom:2px;">' + host + '</div>' +
+        '<div style="font-size:12px;opacity:.85;margin-bottom:16px;">invited you to <b style="color:#ffcf5c;">RONKE BLOCKS</b> 1v1</div>' +
+        '<div style="display:flex;gap:18px;justify-content:center;align-items:center;margin-bottom:18px;">' +
+          '<div><div style="font-size:22px;color:#ffd97a;font-weight:800;">' + tier + '</div><div style="font-size:8px;opacity:.6;letter-spacing:.5px;">YOUR STAKE</div></div>' +
+          '<div style="font-size:16px;opacity:.4;">→</div>' +
+          '<div><div style="font-size:22px;color:#8dffa0;font-weight:800;">' + prize + '</div><div style="font-size:8px;opacity:.6;letter-spacing:.5px;">WINNER GETS</div></div>' +
+        '</div>' +
+        '<button id="rb-inv-go" class="rb-act" style="width:100%;box-sizing:border-box;padding:16px;border-radius:10px;border:2px solid #5ce08a;background:rgba(92,224,138,.16);color:#8fffb0;font:800 15px monospace;cursor:pointer;letter-spacing:.5px;">⚔️ CONFIRM &amp; PLAY</button>' +
+        '<button id="rb-inv-x" style="margin-top:9px;width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #4a3a55;background:none;color:#8a9aaa;font:600 11px monospace;cursor:pointer;">Cancel</button>';
+    }
+    o.innerHTML = '<div style="background:linear-gradient(180deg,#241a08,#140e04);border:3px solid #e0a832;border-radius:16px;padding:26px 30px;text-align:center;color:#ffd97a;box-shadow:0 0 48px rgba(224,168,50,.45);max-width:360px;width:100%;">' + inner + '</div>';
+    var go = o.querySelector('#rb-inv-go');
+    if (go) go.onclick = function () { _hideInviteOverlay(); _bgActive = true; _myRole = 'guest'; _ensureGame(); _autoJoinInvite(roomId, 0); };
+    var x = o.querySelector('#rb-inv-x');
+    if (x) x.onclick = function () { _hideInviteOverlay(); };
+    try { if (window.Sfx && window.Sfx.play && mode === 'ready') window.Sfx.play('notify'); } catch (_) {}
+  }
+  function _showInviteConfirm(roomId, tries) {
+    tries = tries || 0;
+    _fetchRoomById(roomId).then(function (r) {
+      if (!r) {
+        if (tries < 12) { if (tries === 0) _renderInviteOverlay(null, roomId, 'loading'); setTimeout(function () { _showInviteConfirm(roomId, tries + 1); }, 700); return; }
+        _renderInviteOverlay(null, roomId, 'notfound'); return;
+      }
+      _renderInviteOverlay(r, roomId, 'ready');
+    });
+  }
   function _checkInviteJoin() {
     var roomId = null;
     try { roomId = new URLSearchParams(location.search).get('rbjoin'); } catch (_) {}
     if (!roomId) return;
     // pašalinam param iš adreso juostos (kad perkrovus nesijungtų vėl, ir liktų švarus URL)
     try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
-    // duodam puslapiui/piniginei šiek tiek laiko užsikrauti prieš pradedant
-    setTimeout(function () { _ensureGame(); _autoJoinInvite(roomId, 0); }, 1200);
+    // 🔗 iškart rodom FOKUSUOTĄ patvirtinimo ekraną (su kaina) — ne fone įmetam į pilį
+    setTimeout(function () { _ensureGame(); _showInviteConfirm(roomId, 0); }, 600);
   }
 
   function _closePanel() {
