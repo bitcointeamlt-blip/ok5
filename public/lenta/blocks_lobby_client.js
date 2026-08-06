@@ -518,9 +518,10 @@
     if (st && st !== 'challenge') _challengeAck = false;   // paliko challenge būseną → kitą kartą (naujas varžovas) vėl rodom
     if (d.myRoomId != null) _myRoomId = d.myRoomId;   // MANO kambarys → nerodom sąraše (negaliu prisijungti prie savęs)
     if (_panel && st !== 'lobby') _renderList();       // perpiešiam sąrašą be savo kambario
-    if (st === 'countdown' || st === 'playing' || st === 'result') {
+    if (st === 'prep' || st === 'countdown' || st === 'playing' || st === 'result') {
       if (!_podClaimedMatch && st !== 'result') { _podClaimedMatch = true; _podClaimPlay(); }   // 🏆 PoD: sužaistas žaidimas → player-signed claim
-      _revealGame();                   // rungtynės prasidėjo / vyksta → atidengiam žaidimą
+      _hideInviteOverlay();            // 🎓 pasiruošimas prasidėjo → nuimam invite ekraną (jei buvo)
+      _revealGame();                   // 🎓 prep/rungtynės → atidengiam žaidimą (rodom tutorial ekraną)
     } else if (st === 'challenge') {
       if (!_challengeAck) _showChallenge(d.opponent);   // oponentas prisijungė → „do you want to play?" (dedupe: jau patvirtinta → neberodom)
     } else if (st === 'awaiting') {

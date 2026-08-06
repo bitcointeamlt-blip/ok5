@@ -119,6 +119,13 @@
         }
         return;
       }
+      if (match.state === 'prep') {
+        // 🎓 pasiruošime: paspaudus READY mygtuką (pele) → ready; kitur ant ekrano → demo hard-drop
+        var pb = match._prepBtnRect;
+        if (pb && vx >= pb.x && vx <= pb.x + pb.w && vy >= pb.y && vy <= pb.y + pb.h) { match._prepMarkReady(); return; }
+        if (match._demoInput) match._demoInput('hard');   // bakstelėjimas ne ant mygtuko → demo krenta (pajusk valdymą)
+        return;
+      }
       if (match.state === 'challenge' && match._challengeHit) {
         for (var ci = 0; ci < match._challengeHit.length; ci++) {
           var cb = match._challengeHit[ci];

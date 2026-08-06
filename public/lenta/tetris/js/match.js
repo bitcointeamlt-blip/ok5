@@ -85,6 +85,7 @@
         if (this.netMode === 'colyseus') {
           /* challenge → Enter = ACCEPT; lobis → QUICK MATCH; rezultatas → grįžti į lobį. */
           if (this.state === 'challenge') this.netAccept();
+          else if (this.state === 'prep') this._prepMarkReady();   // 🎓 Enter/OK pasiruošime → READY
           else if (this.state === 'lobby') this.netMatchmake('quick');
           else if (this.state === 'result') { this.state = 'lobby'; this.roomCode = ''; this.inviteUrl = ''; this._startLobbyPoll(); global.Sfx.play('click'); }
           break;
@@ -127,6 +128,7 @@
 
   Match.prototype.playerPress = function (a) {
     global.Sfx.unlock();
+    if (this.state === 'prep') { this._demoInput(a); return; }   // 🎓 pasiruošime valdymas juda DEMO figūrą (tutorial)
     /* A6 L2: serverAuth → siunčiam įvestį serveriui (jis sukа mano lentą); lokaliai nesukam.
      * ⚠️ Kadangi variklis serveryje, lokalūs valdymo garsai (move/rotate/drop) NEsuveiktų → grojam JUOS ČIA
      * iškart (momentinis feedback, be to užmaskuoja serverAuth vaizdo delsimą). */
@@ -567,6 +569,8 @@
     if (mode === 'mock' && global.MockServer && !NET._mock) NET.useMock(new global.MockServer());
 
     var self = this, M = NET.MSG;
+    NET.on('prep', function (p) { self._enterPrep((p && p.ms) || 15000); });   // 🎓 pasiruošimo/tutorial langas prieš startą
+    NET.on('prep_state', function (p) { self._prepReadyCount = (p && p.ready) || 0; });
     NET.on(M.START, function (p) { if (p && p.side) self.mySide = p.side; self._onNetStart(p); });
     NET.on(M.STATE, function (p) { if (p && p.foe) self._applyFoeSnapshot(p.foe); });
     /* Serverio koridorius (tik colyseus): unitų pozicijos → kliento „puppet" armija. */
@@ -770,6 +774,79 @@
     this.state = 'countdown'; this.countdown = C.COUNTDOWN_MS; this._lastTick = -1;
   };
 
+  /* ---------- 🎓 PASIRUOŠIMO LANGAS (valdymo tutorial + interaktyvus demo) ----------
+   * Serveris siunčia „prep" (15s) prieš startą. Rodom valdymą + demo figūrą, kurią žaidėjas gali
+   * PATS pajudinti (←→ juda, ↑ sukа, SPACE meta žemyn) → išmoksta valdymą. READY → startas kai abu
+   * ready ARBA po 15s (serveris siunčia „start"). Kad niekam nekiltų klausimų kaip pradėti. */
+  Match.prototype._enterPrep = function (ms) {
+    this._stopLobbyPoll();
+    this.state = 'prep';
+    this._prepMs = ms || 15000;
+    this._prepLeft = this._prepMs;
+    this._prepReady = false;
+    this._prepReadyCount = 0;
+    this._prepGrav = 0;
+    this._demoIdx = -1;
+    this._demoSpawn();
+    try { global.Sfx.play('click'); } catch (_) {}
+  };
+  Match.prototype._prepMarkReady = function () {
+    if (this.state !== 'prep' || this._prepReady) return;
+    this._prepReady = true;
+    try { global.NET.send('prep_ready', {}); } catch (_) {}
+    try { global.Sfx.play('go'); } catch (_) {}
+  };
+  Match.prototype._demoSpawn = function () {
+    var types = ['T', 'L', 'J', 'S', 'Z', 'I', 'O'];
+    this._demoIdx = (this._demoIdx + 1) % types.length;
+    this._demo = { type: types[this._demoIdx], rot: 0, x: 3, y: 0, flash: 0, _slam: false };
+    this._demoClamp();
+  };
+  Match.prototype._demoCells = function () {
+    var P = global.PIECES, d = this._demo;
+    if (!P || !d) return [[0, 0]];
+    return (P.CELLS[d.type] || P.CELLS.T)[d.rot & 3];
+  };
+  Match.prototype._demoClamp = function () {
+    var d = this._demo, cells = this._demoCells(); if (!cells) return;
+    var DW = 8, DH = 12, minx = 99, maxx = -99, maxy = -99, i;
+    for (i = 0; i < cells.length; i++) { var cx = cells[i][0], cy = cells[i][1]; if (cx < minx) minx = cx; if (cx > maxx) maxx = cx; if (cy > maxy) maxy = cy; }
+    if (d.x + minx < 0) d.x = -minx;
+    if (d.x + maxx > DW - 1) d.x = DW - 1 - maxx;
+    if (d.y < 0) d.y = 0;
+    if (d.y + maxy > DH - 1) d.y = DH - 1 - maxy;
+  };
+  Match.prototype._demoInput = function (a) {
+    var d = this._demo; if (!d) return;
+    global.Sfx.unlock();
+    if (a === 'left') { d.x -= 1; this._demoClamp(); this._demoSfx('move'); }
+    else if (a === 'right') { d.x += 1; this._demoClamp(); this._demoSfx('move'); }
+    else if (a === 'cw') { d.rot = (d.rot + 1) & 3; this._demoClamp(); this._demoSfx('rotate'); }
+    else if (a === 'ccw') { d.rot = (d.rot + 3) & 3; this._demoClamp(); this._demoSfx('rotate'); }
+    else if (a === 'flip') { d.rot = (d.rot + 2) & 3; this._demoClamp(); this._demoSfx('rotate'); }
+    else if (a === 'softdrop') { d.y += 1; this._demoClamp(); }
+    else if (a === 'hard') { d._slam = true; d.flash = 200; this._demoSfx('drop'); }
+  };
+  Match.prototype._demoSfx = function (n) { try { global.Sfx.play(n); } catch (_) {} };
+  Match.prototype._prepUpdate = function (dt) {
+    this._prepLeft = Math.max(0, (this._prepLeft || 0) - dt);
+    var d = this._demo; if (!d) return;
+    if (d._slam) {   // hard drop → į dugną, tada blyksnis + respawn
+      var cells = this._demoCells(), maxy = 0, i;
+      for (i = 0; i < cells.length; i++) if (cells[i][1] > maxy) maxy = cells[i][1];
+      d.y = 12 - 1 - maxy; d._slam = false;
+    }
+    if (d.flash > 0) { d.flash -= dt; if (d.flash <= 0) { d.flash = 0; this._demoSpawn(); } return; }
+    // švelni gravitacija — kad „kažkas darytųsi" net nespaudžiant; pasiekus dugną → blyksnis → nauja figūra
+    this._prepGrav += dt;
+    if (this._prepGrav > 650) {
+      this._prepGrav = 0;
+      var c2 = this._demoCells(), my = 0, j;
+      for (j = 0; j < c2.length; j++) if (c2[j][1] > my) my = c2[j][1];
+      if (d.y + my >= 12 - 1) d.flash = 150; else d.y += 1;
+    }
+  };
+
   /* SAVO lentos serializacija priešui (relay: serveris persiunčia kaip STATE{foe}).
    * Tiksliai ta pati forma, kurią klientas atkuria per _applyFoeSnapshot / mockserver._snapshot. */
   Match.prototype._youSnapshot = function () {
@@ -957,6 +1034,7 @@
   };
 
   Match.prototype._updateNet = function (dt) {
+    if (this.state === 'prep') { this._prepUpdate(dt); return; }
     if (this.state === 'countdown') {
       this.countdown -= dt;
       var tick = Math.ceil(this.countdown / 1000);

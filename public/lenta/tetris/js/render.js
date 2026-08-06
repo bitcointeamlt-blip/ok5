@@ -1177,6 +1177,55 @@
     if (oy) ctx.translate(0, -oy);
   };
 
+  // 🎓 PASIRUOŠIMO EKRANAS — valdymo tutorial + interaktyvi DEMO figūra + READY. Kad niekam nekiltų
+  //    klausimų kaip pradėti: rodom valdiklius, žaidėjas gali pabandyti, startas kai abu ready / po 15s.
+  Renderer.prototype.drawPrep = function (match) {
+    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2);
+    ctx.globalAlpha = 0.86; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
+    var secs = Math.ceil((match._prepLeft || 0) / 1000);
+
+    F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.05), U.gold, '#05060c', 2);
+    F.outlinedCenter(ctx, 'TRY THE CONTROLS BELOW', cx, Math.floor(vh * 0.05) + 20, U.dim, '#05060c', 1);
+
+    // demo lenta
+    var cell = Math.max(9, Math.floor(Math.min(vw, vh) / 24));
+    var DW = 8, DH = 12, bw = DW * cell, bh = DH * cell;
+    var bx = cx - Math.floor(bw / 2), by = Math.floor(vh * 0.20);
+    rect(ctx, bx, by, bw, bh, '#0c1018');
+    frame(ctx, bx - 2, by - 2, bw + 4, bh + 4, U.gold);
+    ctx.globalAlpha = 0.22;
+    for (var gx = 1; gx < DW; gx++) rect(ctx, bx + gx * cell, by, 1, bh, '#3a4666');
+    for (var gy = 1; gy < DH; gy++) rect(ctx, bx, by + gy * cell, bw, 1, '#3a4666');
+    ctx.globalAlpha = 1;
+    var d = match._demo;
+    if (d && match._demoCells) {
+      var cells = match._demoCells();
+      var col = (C.COLORS[d.type] || C.COLORS.T);
+      var fl = d.flash > 0 && (Math.floor(d.flash / 45) % 2 === 0);
+      for (var i = 0; i < cells.length; i++) {
+        var px = bx + (d.x + cells[i][0]) * cell, py = by + (d.y + cells[i][1]) * cell;
+        rect(ctx, px + 1, py + 1, cell - 2, cell - 2, fl ? '#ffffff' : col[0]);
+        rect(ctx, px + 1, py + 1, cell - 2, 2, fl ? '#ffffff' : col[1]);
+      }
+    }
+
+    // valdymo legenda po lenta
+    var ly = by + bh + 14;
+    F.outlinedCenter(ctx, 'LEFT / RIGHT = MOVE      UP = ROTATE', cx, ly, U.text, '#05060c', 1);
+    F.outlinedCenter(ctx, 'SPACE = FAST DROP      DOWN = SOFT DROP', cx, ly + 12, U.text, '#05060c', 1);
+
+    // READY mygtukas + laikmatis + varžovo būsena
+    var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
+    var btnW = Math.min(240, vw - 36), btnH = 30, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 16;
+    rect(ctx, btnX, btnY, btnW, btnH, ready ? '#1c3a24' : '#24543a');
+    frame(ctx, btnX, btnY, btnW, btnH, ready ? '#5aa06a' : '#5ce08a');
+    var label = ready ? ('READY - WAITING ' + secs + 'S') : ('PRESS  READY   (AUTO ' + secs + 'S)');
+    F.outlinedCenter(ctx, label, cx, btnY + 11, ready ? U.dim : U.good, '#05060c', 1);
+    match._prepBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+    var opp = both ? 'BOTH READY - STARTING!' : (ready ? 'WAITING FOR OPPONENT...' : 'STARTS WHEN BOTH READY, OR IN ' + secs + 'S');
+    F.outlinedCenter(ctx, opp, cx, btnY - 15, both ? U.good : U.gold, '#05060c', 1);
+  };
+
   Renderer.prototype.drawCountdown = function (match) {
     var ctx = this.ctx, cx = this.vw / 2;
 
@@ -1945,6 +1994,7 @@
     else if (match.state === 'challenge') this.drawChallenge(match);
     else if (match.state === 'awaiting') this.drawAwaiting(match);
     else if (match.state === 'connecting') this.drawConnecting(match);
+    else if (match.state === 'prep') this.drawPrep(match);
     else if (match.state === 'countdown') this.drawCountdown(match);
     else if (match.state === 'paused') this.drawPause();
     else if (match.state === 'result') this.drawResult(match);
