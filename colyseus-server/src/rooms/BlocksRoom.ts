@@ -23,6 +23,7 @@ import { PayoutQueue } from "../blocks/PayoutQueue";   // neverifikuoto rezultat
 const TICK = 1000 / 60;        // serverio sim (koridoriui pakanka 60Hz; klientas interpoliuoja)
 const CORRIDOR_MS = 60;        // koridoriaus būsenos transliavimo dažnis (~16/s)
 const COUNTDOWN_MS = 3000;
+const PREP_MS = 15000;        // 🎓 pasiruošimo/valdymo-tutorial langas prieš startą: startas kai ABU „ready" ARBA po 15s
 const CHALLENGE_MS = 30000;   // kiek host'as turi laiko atsakyti „do you want to play?" (auto-decline po to)
 const STAKE_MS = 120000;      // 🧱💰 pay-on-accept: kiek abu turi laiko sumokėti statymą (wallet popup+tx) — po to abort+refund
 const LINES_PER_UNIT = 1;
@@ -91,6 +92,8 @@ export class BlocksRoom extends Room<BlocksState> {
   private escrow: WagerEscrow = new WagerEscrow(0, (p) => STAKE.settle(p), (a, t, ti) => verifyWagerEntry(a, t, ti), WINNER_BPS);
   private verifying = false;                         // verifikacija vyksta (anti double)
   private stakeTimer: any = null;                    // pay-on-accept: statymo langas (STAKE_MS) → timeout=abort
+  private prepTimer: any = null;                     // 🎓 pasiruošimo langas (PREP_MS) → timeout=startas
+  private _prepReady: Record<string, boolean> = {};  // 🎓 sessionId → paspaudė „ready" (startas kai abu)
   // 🥇 OPTIMISTINIS STARTAS: žaidimas startuoja IŠKART kai abu sumoka (klientas jau patvirtino kvitą),
   //   verify vyksta FONE per visą mačo laiką, o PAYOUT duodamas TIK jei verify praėjo (kitaip → manual eilė).
   private _winnerSide: Side | "" | null = null;      // null = mačas dar nesibaigė
@@ -151,6 +154,7 @@ export class BlocksRoom extends Room<BlocksState> {
     this.onMessage("decline", (c) => this._decline(c));  // host'as atmetė → svečias išmetamas, host lieka laukti
     this.onMessage("stake", (c, m: any) => this._onStake(c, m));        // 🧱💰 pay-on-accept: žaidėjo įėjimo tx
     this.onMessage("stake_cancel", (c) => this._abortWager("stake_cancelled"));  // žaidėjas atsisakė mokėti → abort+refund kitam
+    this.onMessage("prep_ready", (c) => this._onPrepReady(c));   // 🎓 pasiruošimo lange „ready" → startas kai abu
     this.onMessage("clear", (c, m: any) => this._onClear(c, m));
     this.onMessage("snap", (c, m: any) => this._relaySnap(c, m));
     this.onMessage("topped", (c) => this._onTopped(c));
@@ -177,11 +181,11 @@ export class BlocksRoom extends Room<BlocksState> {
 
   async onLeave(client: Client, consented: boolean) {
     // Iškritus/išėjus DAR NEprasidėjus rungtynėms (lobby/challenge/staking) — jokio „pralaimėjimo".
-    if (this.state.phase === "lobby" || this.state.phase === "challenge" || this.state.phase === "staking") {
+    if (this.state.phase === "lobby" || this.state.phase === "challenge" || this.state.phase === "staking" || this.state.phase === "prep") {
       const p = this.state.players.get(client.sessionId);
       if (this.state.phase === "challenge" && p && p.side === "p2") this._cancelChallenge();  // svečias dingo (niekas nemokėjo)
-      // 🧱💰 staking metu kažkas išėjo → abort + grąžinam tam, kas jau sumokėjo (jei kas)
-      else if (this.state.phase === "staking") void this._abortWager("opponent_left");
+      // 🧱💰 staking/prep metu kažkas išėjo (mačas dar neprasidėjo) → abort + grąžinam abiem sumokėjusiems
+      else if (this.state.phase === "staking" || this.state.phase === "prep") void this._abortWager("opponent_left");
       try { this.state.players.delete(client.sessionId); } catch {}
       if (client.sessionId === this.hostSession) this.hostSession = "";
       return;
@@ -230,7 +234,7 @@ export class BlocksRoom extends Room<BlocksState> {
       this.stakeTimer = setTimeout(() => { void this._abortWager("stake_timeout"); }, STAKE_MS);
       return;
     }
-    this._beginCountdown();
+    this._beginPrep();   // 🎓 nemokamas: iškart į pasiruošimo/tutorial langą
   }
 
   // 🧱💰 pay-on-accept + OPTIMISTINIS STARTAS: žaidėjo įėjimo tx (po „stake_now"). Kai ABU sumokėjo →
@@ -244,7 +248,7 @@ export class BlocksRoom extends Room<BlocksState> {
     this.escrow.setEntry(side, addr, tx);
     if (!this.escrow.bothStaked()) return;   // laukiam kito žaidėjo mokėjimo
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
-    this._beginCountdown();               // ⚡ STARTAS iškart — nelaukiam RPC verifikacijos
+    this._beginPrep();                    // 🎓 pasiruošimo/tutorial langas (verify vyksta jo metu fone)
     void this._bgVerify();               // verify fone (retry/fallback per visą mačo laiką)
   }
 
@@ -269,8 +273,32 @@ export class BlocksRoom extends Room<BlocksState> {
     this._settleIfReady();               // jei mačas jau baigėsi — dabar sprendžiam payout
   }
 
-  // Startas: countdown + (serverAuth) autoritetingos lentos. Kviečiama po verifikacijos (wager) arba iškart (free).
+  // 🎓 PASIRUOŠIMO LANGAS — prieš startą rodom valdymo tutorial (klientas). Startuojam kai ABU paspaudžia
+  //   „ready" ARBA po PREP_MS. Wager: on-chain verify vyksta kaip tik šiuo metu (fone) → daugiau laiko.
+  private _beginPrep() {
+    if (this.state.phase === "prep" || this.state.phase === "countdown" || this.state.phase === "playing") return;
+    this.state.phase = "prep";
+    this._prepReady = {};
+    this.broadcast("prep", { ms: PREP_MS });
+    if (this.prepTimer) clearTimeout(this.prepTimer);
+    this.prepTimer = setTimeout(() => { this.prepTimer = null; this._beginCountdown(); }, PREP_MS);
+  }
+
+  private _onPrepReady(client: Client) {
+    if (this.state.phase !== "prep") return;
+    this._prepReady[client.sessionId] = true;
+    let ready = 0;
+    this.state.players.forEach((_p, sid) => { if (this._prepReady[sid]) ready++; });
+    this.broadcast("prep_state", { ready, total: this.state.players.size });
+    if (ready >= 2 && this.state.players.size >= 2) {
+      if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }
+      this._beginCountdown();   // abu pasiruošę → startas nelaukiant 15s
+    }
+  }
+
+  // Startas: countdown + (serverAuth) autoritetingos lentos. Kviečiama po pasiruošimo (abu ready / timeout).
   private _beginCountdown() {
+    if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }
     this.state.phase = "countdown";
     this.state.countdown = COUNTDOWN_MS;
     // A6: šviežias anti-cheat sekimas kiekvienoms rungtynėms
@@ -659,6 +687,8 @@ export class BlocksRoom extends Room<BlocksState> {
   //   sumokėjo (verify-then-refund kiekvienai pusei), visi grįžta į lobį. Idempotentiška (refunded flag'ai).
   private async _abortWager(reason: string) {
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
+    if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }   // 🎓 kad prep-timeout nepaleistų mačo po abort
+    this._prepReady = {};
     const n = await this._refundBoth();
     if (n) console.log(`[BLOCKS WAGER] abort (${reason}) → refunded ${n}× ${this.escrow.tier} RONKE`);
     // 📊 dashboard'ui: užfiksuojam nutrūkusį/refundintą mačą (kad matytųsi „ar viskas sklandžiai")
@@ -688,6 +718,8 @@ export class BlocksRoom extends Room<BlocksState> {
   // Kambarys užsidaro: jei buvo staking'as, kažkas sumokėjo, bet rungtynių NEĮVYKO → grąžinam.
   async onDispose() {
     this._disposed = true;   // stabdom fono verify ciklą
+    if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }
+    if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
     if (this.escrow.active && !this.escrow.settled) {
       // Jei mačas TURĖJO baigtį (laimėtojas/lygiosios) — NErefundinam aklai: paskutinį kartą verifikuojam ir
       //   IŠMOKAM laimėtojui (arba refund lygiosioms). Kitaip skubus kambario uždarymas prieš verify pabaigą
