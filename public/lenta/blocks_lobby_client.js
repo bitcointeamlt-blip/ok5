@@ -357,6 +357,12 @@
   }
   // ── 🔗 FOKUSUOTAS KVIETIMO EKRANAS (UX): paspaudus linką iškart AIŠKUS „patvirtink ir žaisk" langas su
   //    kaina — NE „pasimetimas pilyje". Vienas mygtukas → prisijungimas+mokėjimas per esamą srautą. ──────
+  // 🔗 prijungtos piniginės adresas ('' jei neprijungta) — invite ekranui reikia piniginės mokėjimui
+  function _walletAddr() {
+    try { if (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) return String(window.Wallet.getAddress()); } catch (_) {}
+    try { if (window.BlocksWager && window.BlocksWager.address && window.BlocksWager.address()) return String(window.BlocksWager.address()); } catch (_) {}
+    return '';
+  }
   function _hideInviteOverlay() { var o = document.getElementById('rb-invite-ov'); if (o) { try { o.remove(); } catch (_) {} } }
   function _renderInviteOverlay(r, roomId, mode) {
     _css();
@@ -377,6 +383,12 @@
         '<div style="font-size:13px;color:#ffb0b0;margin-bottom:16px;line-height:1.5;">Invite not found —<br>host may have left or the match is full.</div>' +
         '<button id="rb-inv-x" style="padding:11px 22px;border-radius:8px;border:2px solid #6a4a18;background:rgba(255,207,92,.12);color:#ffcf5c;font:700 12px monospace;cursor:pointer;">← Back to castle</button>';
     } else {
+      // 🔗 jei wager IR piniginė NEprijungta → pirmas žingsnis = prijungti piniginę (kitaip mokėti negalima)
+      var needWallet = _wager() && !_walletAddr();
+      var goBtn = needWallet
+        ? '<button id="rb-inv-go" class="rb-act" style="width:100%;box-sizing:border-box;padding:16px;border-radius:10px;border:2px solid #5aa8b4;background:rgba(143,216,224,.2);color:#cdeef5;font:800 14px monospace;cursor:pointer;letter-spacing:.5px;">🔗 CONNECT WALLET TO PLAY</button>' +
+            '<div style="font-size:9px;color:#8fd8e0;opacity:.85;margin-top:8px;line-height:1.5;">connect your Ronin wallet,<br>then confirm the ' + tier + ' RONKE stake</div>'
+        : '<button id="rb-inv-go" class="rb-act" style="width:100%;box-sizing:border-box;padding:16px;border-radius:10px;border:2px solid #5ce08a;background:rgba(92,224,138,.16);color:#8fffb0;font:800 15px monospace;cursor:pointer;letter-spacing:.5px;">⚔️ CONFIRM &amp; PLAY</button>';
       inner =
         '<div style="font-size:36px;margin-bottom:8px;">⚔️</div>' +
         '<div style="font-size:16px;color:#8fd8e0;font-weight:800;margin-bottom:2px;">' + host + '</div>' +
@@ -386,12 +398,24 @@
           '<div style="font-size:16px;opacity:.4;">→</div>' +
           '<div><div style="font-size:22px;color:#8dffa0;font-weight:800;">' + prize + '</div><div style="font-size:8px;opacity:.6;letter-spacing:.5px;">WINNER GETS</div></div>' +
         '</div>' +
-        '<button id="rb-inv-go" class="rb-act" style="width:100%;box-sizing:border-box;padding:16px;border-radius:10px;border:2px solid #5ce08a;background:rgba(92,224,138,.16);color:#8fffb0;font:800 15px monospace;cursor:pointer;letter-spacing:.5px;">⚔️ CONFIRM &amp; PLAY</button>' +
+        goBtn +
         '<button id="rb-inv-x" style="margin-top:9px;width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #4a3a55;background:none;color:#8a9aaa;font:600 11px monospace;cursor:pointer;">Cancel</button>';
     }
     o.innerHTML = '<div style="background:linear-gradient(180deg,#241a08,#140e04);border:3px solid #e0a832;border-radius:16px;padding:26px 30px;text-align:center;color:#ffd97a;box-shadow:0 0 48px rgba(224,168,50,.45);max-width:360px;width:100%;">' + inner + '</div>';
     var go = o.querySelector('#rb-inv-go');
-    if (go) go.onclick = function () { _hideInviteOverlay(); _bgActive = true; _myRole = 'guest'; _ensureGame(); _autoJoinInvite(roomId, 0); };
+    if (go) go.onclick = function () {
+      if (!_wager() || _walletAddr()) {   // piniginė yra (arba nemokamas) → jungiam prie mačo
+        _hideInviteOverlay(); _bgActive = true; _myRole = 'guest'; _ensureGame(); _autoJoinInvite(roomId, 0);
+        return;
+      }
+      // 🔗 piniginė NEprijungta → atidarom prisijungimą, palaukiam, tada VĖL rodom (jau su „CONFIRM & PLAY")
+      _hideInviteOverlay();
+      try { if (window.WalletUI && window.WalletUI.openConnect) window.WalletUI.openConnect(); } catch (_) {}
+      var tries = 0, poll = setInterval(function () {
+        tries++;
+        if (_walletAddr() || tries > 80) { clearInterval(poll); _renderInviteOverlay(r, roomId, 'ready'); }   // prisijungė (arba ~40s) → vėl invite ekranas
+      }, 500);
+    };
     var x = o.querySelector('#rb-inv-x');
     if (x) x.onclick = function () { _hideInviteOverlay(); };
     try { if (window.Sfx && window.Sfx.play && mode === 'ready') window.Sfx.play('notify'); } catch (_) {}
