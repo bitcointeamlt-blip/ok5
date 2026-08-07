@@ -185,6 +185,8 @@ export class BlocksRoom extends Room<BlocksState> {
     // 🏅 piniginė reitingui/XP: nemokamiems iš options.addr (deklaruota, ne įrodyta — off-chain XP → OK);
     //    wager metu perrašom ĮRODYTU adresu (_onStake / escrow). Be piniginės → nėra reitingo (ir nėra kam duoti XP).
     this._addrOf[side] = String((options && options.addr) || "").trim().toLowerCase();
+    // 🎁 referrer'is iš invite linko — dabar siunčiamas IR per join (ne tik stake), kad prisirištų ir NEMOKAMUOSE mačuose
+    this._refOf[side] = String((options && options.ref) || "").trim().toLowerCase();
     if (side === "p1") this.hostSession = client.sessionId;   // pirmasis = HOST (jam eina challenge)
     // 🧱💰 pay-on-accept: NEIMAM įėjimo prisijungiant — abu moka tik po host'o „accept" (žr. _accept/_onStake).
     client.send("hello", { side, seed: this.seed });
@@ -625,6 +627,7 @@ export class BlocksRoom extends Room<BlocksState> {
     this.state.winner = winner;
     this.broadcast("gameover", { winner });
     this._applyRank(winner);   // 🏅 reitingas + deko XP (off-chain, idempotentiška per roomId) — free IR wager
+    this._bindReferrals();     // 🎁 referral bind — pakviestas tampa referalu vos sužaidęs (free IR wager)
     // 🥇 OPTIMISTINIS: mačas baigėsi — payout sprendžiam kai IR verify baigtas (žr. _settleIfReady).
     if (this.escrow.active) { this._winnerSide = winner; this._settleIfReady(); }
     else this._logMatch(winner);   // nemokamas mačas — tik žurnalas (jokio payout)
@@ -684,6 +687,21 @@ export class BlocksRoom extends Room<BlocksState> {
       await ReferralStore.markSeen(p2);
       await ReferralStore.creditReferrers(p1, p2, tier, this.roomId);   // 5% nuo kiekvieno statymo
     } catch (e: any) { console.warn("[BLOCKS REFERRAL] credit fail:", e?.message); }
+  }
+
+  // 🎁 REFERRAL BIND — pakviestas žaidėjas tampa referalu vos sužaidęs BET KOKĮ mačą (free ar wager).
+  //   User pasirinko „bind nuo pirmo mačo". Adresai: wager = ĮRODYTI (escrow.matchInfo); free = deklaruoti
+  //   (onJoin options.addr — modifikuotas klientas galėtų pasisavinti referrer komisiją, bet ji < treasury
+  //   cut → NE poolo nusausinimas). Bind idempotentiškas (1× per wallet, self-ref blokuotas). Earnings (5%)
+  //   LIEKA tik wager mačuose (creditReferrers) — nemokamas mačas jokio uždarbio negeneruoja.
+  private _bindReferrals() {
+    try {
+      if (!ReferralStore.referralEnabled()) return;
+      let a1 = this._addrOf.p1, a2 = this._addrOf.p2;
+      if (this.escrow.active) { const mi = this.escrow.matchInfo(); if (mi.p1.addr) a1 = mi.p1.addr; if (mi.p2.addr) a2 = mi.p2.addr; }
+      if (ReferralStore.isAddr(a1)) { void ReferralStore.bind(a1, this._refOf.p1); void ReferralStore.markSeen(a1); }
+      if (ReferralStore.isAddr(a2)) { void ReferralStore.bind(a2, this._refOf.p2); void ReferralStore.markSeen(a2); }
+    } catch (e: any) { console.warn("[BLOCKS REFERRAL] bind fail:", e?.message); }
   }
 
   // Neverifikuotas rezultatas → laimėtojo prizas į MANUAL eilę (:6610). Operatorius patikrina įėjimus prieš mokant.

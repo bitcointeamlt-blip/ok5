@@ -36,7 +36,8 @@
     if (!_isAddr(ref)) return;
     try {
       var mine = _walletAddr().toLowerCase();
-      if (ref !== mine && !localStorage.getItem('rb_ref')) localStorage.setItem('rb_ref', ref);   // neperrašom (prisirišimas 1×)
+      // naujausias invite linkas laimi (serveris vis tiek riša 1× negrįžtamai) — kad senas `rb_ref` neužstrigtų
+      if (ref !== mine) localStorage.setItem('rb_ref', ref);
     } catch (_) {}
     try { var u = new URL(location.href); u.searchParams.delete('ref'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch (_) {}
   }
@@ -641,7 +642,7 @@
       _cmd(priv ? 'private' : 'host', null, tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago); cheat-apsauga per periodinę patikrą (LIKO)
       _status((priv ? 'Private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you pay only when an opponent is matched · can close & keep playing</span>', true);
     } else {
-      _cmd(priv ? 'private' : 'host', null, tier, null, false, _walletAddr());   // nemokamas (client-board); 🏅 addr → reitingas/XP (jei piniginė yra)
+      _cmd(priv ? 'private' : 'host', null, tier, null, false, _walletAddr(), false, _myRef());   // nemokamas (client-board); 🏅 addr → reitingas/XP; 🎁 ref → bind nuo pirmo mačo
       _status((priv ? 'Creating private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you can close this and keep playing</span>', true);
     }
   }
@@ -655,7 +656,7 @@
       _cmd('join', r.roomId, r.tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago)
       _status('Joining ' + _esc(r.host) + ' · ' + r.tier + ' RONKE — you pay when the match is confirmed…', true);
     } else {
-      _cmd('join', r.roomId, r.tier, null, false, _walletAddr());   // 🏅 addr → reitingas/XP (jei piniginė yra)
+      _cmd('join', r.roomId, r.tier, null, false, _walletAddr(), false, _myRef());   // 🏅 addr → reitingas/XP; 🎁 ref → bind nuo pirmo mačo
       _status('Joining ' + _esc(r.host) + ' (' + (r.tier || 69) + ' RONKE)…', true);
     }
   }

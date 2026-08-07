@@ -67,6 +67,7 @@
         match.netOpts = match.netOpts || {};
         if (d.serverAuth != null) match.netOpts.serverAuth = !!d.serverAuth;
         if (d.wager != null) match.netOpts.wager = !!d.wager;      // wager kambario ketinimas (mokama vėliau)
+        if (d.ref != null) match.netOpts.ref = d.ref;              // 🎁 referrer'is → server join options (bind nuo PIRMO mačo, ir nemokamo)
         if (d.addr != null) {
           match.netOpts.addr = d.addr;                             // žaidėjo piniginė (Transfer.from + payout)
           // 🪪 vardas = piniginės adresas (0x41f6…dDA5), NE random „Player####" — matomas lobio sąraše ir challenge dialoge
