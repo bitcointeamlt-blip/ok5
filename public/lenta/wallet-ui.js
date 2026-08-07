@@ -498,7 +498,7 @@
       rbBtnEl.style.background = '#2a1c10';
       if (!rbBtnEl._init) {
         rbBtnEl._init = true;
-        rbBtnEl.innerHTML = `<span style="font-size:25px;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))">🧱</span><span class="wui-home-hint">BLOCKS</span>`;
+        rbBtnEl.innerHTML = `<span style="font-size:25px;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))">🧱</span><span class="wui-home-hint">TETRIS</span>`;
         // 🧱 atidaro LOBIO PANELĘ pilyje (BlocksLobby); jei jos nėra — atsarginis senas chooser (RonkeBlocks).
         rbBtnEl.addEventListener('click', () => {
           try {
