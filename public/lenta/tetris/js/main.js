@@ -78,7 +78,7 @@
         else if (d.cmd === 'join' && d.roomId) match.netJoinRoom(d.roomId);
         else if (d.cmd === 'accept') match.netAccept();
         else if (d.cmd === 'decline') match.netDecline();
-        else if (d.cmd === 'stake') { try { global.NET.send('stake', { tx: d.mid, addr: d.addr }); } catch (_) {} }   // 🧱💰 įėjimo tx serveriui
+        else if (d.cmd === 'stake') { try { global.NET.send('stake', { tx: d.mid, addr: d.addr, ref: d.ref || '' }); } catch (_) {} }   // 🧱💰 įėjimo tx + 🎁 referrer'is serveriui
         else if (d.cmd === 'stakecancel') { try { global.NET.send('stake_cancel', {}); } catch (_) {} }
         else if (d.cmd === 'lobby') { match.state = 'lobby'; match.roomCode = ''; match.inviteUrl = ''; match._startLobbyPoll(); }
       });

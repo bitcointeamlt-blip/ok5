@@ -23,6 +23,114 @@
   var _challengeAck = false;               // 🛡️ challenge dialogas jau patvirtintas/atmestas → NEberodom dublio (event+interval abu siunčia 'challenge')
   var _hostInvite = null;                   // 🔗 {url,priv,roomCode} — kad hostui VĖL atsidarius panelę invite linkas nedingtų (iframe state nesikeičia → nesiunčia)
 
+  // ── 🎁 REFERAL SISTEMA (Supabase anon REST — pattern iš pinball web3.js) ──
+  var SB_URL = 'https://rbkivemouxwcgrpzazxb.supabase.co';
+  var SB_KEY = 'sb_publishable_E4cHxTFKDTYgrdxcv5uRfQ_9tryLJ4p';   // publishable anon (client-public)
+  function _sbHeaders(extra) { return Object.assign({ apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, extra || {}); }
+  function _isAddr(a) { return /^0x[0-9a-f]{40}$/.test(String(a || '').toLowerCase()); }
+  function _myRef() { try { return String(localStorage.getItem('rb_ref') || '').toLowerCase(); } catch (_) { return ''; } }
+  // Pagauna ?ref=<addr> iš URL (referal/invite linkas) → localStorage['rb_ref'] (PIRMAS laimi, ne self), nuvalo iš URL.
+  function _captureRef() {
+    var ref = '';
+    try { ref = String(new URLSearchParams(location.search).get('ref') || '').toLowerCase(); } catch (_) {}
+    if (!_isAddr(ref)) return;
+    try {
+      var mine = _walletAddr().toLowerCase();
+      if (ref !== mine && !localStorage.getItem('rb_ref')) localStorage.setItem('rb_ref', ref);   // neperrašom (prisirišimas 1×)
+    } catch (_) {}
+    try { var u = new URL(location.href); u.searchParams.delete('ref'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch (_) {}
+  }
+  function _refLink() { var a = _walletAddr(); return a ? (location.origin + location.pathname + '?ref=' + a) : ''; }
+  // Statistika: 1 Supabase eilutė refearn_<R> = { accrued, claimed, games, referrals }.
+  function _refStats(addr) {
+    var R = String(addr || '').toLowerCase();
+    if (!_isAddr(R)) return Promise.resolve(null);
+    return fetch(SB_URL + '/rest/v1/f9_bases?select=buildings&ronin_address=eq.refearn_' + R, { headers: _sbHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (rows) {
+        var b = (rows && rows[0] && rows[0].buildings) || {};
+        var accrued = Number(b.accrued) || 0, claimed = Number(b.claimed) || 0;
+        return { referrals: Number(b.referrals) || 0, games: Number(b.games) || 0, accrued: accrued, claimed: claimed, claimable: Math.max(0, accrued - claimed) };
+      }).catch(function () { return null; });
+  }
+  // Claim: rašom refclaimreq_<R> → colyseus serveris drenuoja → pool payout per flushQueue (moka TIK į R).
+  function _requestClaim(addr) {
+    var R = String(addr || '').toLowerCase();
+    if (!_isAddr(R)) return Promise.reject(new Error('no wallet'));
+    return fetch(SB_URL + '/rest/v1/f9_bases', {
+      method: 'POST', headers: _sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ ronin_address: 'refclaimreq_' + R, buildings: { addr: R, at: Date.now() } }),
+    }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return true; });
+  }
+  function _fmtRonke(n) { n = Number(n) || 0; return String(Math.round(n * 100) / 100); }
+  function _refStatCell(label) {
+    return '<div style="background:#0c1020;border:1px solid #46567e;border-radius:6px;padding:10px;text-align:center;">' +
+      '<div class="rb-ref-val" style="font-size:16px;color:#ffcf5c;">…</div>' +
+      '<div style="font-size:7px;color:#6a7a8a;margin-top:4px;letter-spacing:.5px;">' + label + '</div></div>';
+  }
+  // 🎁 Referal panelė (overlay): linkas + statistika + CLAIM.
+  function _openReferralPanel() {
+    var addr = _walletAddr();
+    var ov = document.createElement('div'); ov.id = 'rb-ref-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.94);z-index:99100;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    var p = document.createElement('div');
+    p.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;box-shadow:0 0 48px rgba(255,207,92,0.35);border-radius:8px;padding:22px 26px;width:520px;max-width:96vw;max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:12px;' +
+      "font-family:'Press Start 2P',monospace,sans-serif;font-size:12px;line-height:1.6;color:#8a9aaa;";
+    var link = _refLink();
+    p.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
+        '<span style="font-size:22px;">🎁</span><span style="flex:1;font-size:15px;color:#ffcf5c;letter-spacing:1px;">REFERRALS</span>' +
+        '<button id="rb-ref-x" style="background:none;border:none;color:#8a9aaa;font-size:22px;cursor:pointer;font-family:inherit;">×</button>' +
+      '</div>' +
+      (addr
+        ? ('<div style="font-size:10px;color:#9fb0c0;">Share your link. When a new player plays their FIRST tetris through it, they become your referral — forever. You earn <b style="color:#ffd97a;">5% of their stake</b> on EVERY wager game they play.</div>' +
+           '<div style="font-size:9px;color:#6a7a8a;">YOUR REFERRAL LINK</div>' +
+           '<div style="display:flex;gap:8px;"><input id="rb-ref-link" readonly value="' + _esc(link) + '" style="flex:1;min-width:0;background:#0c1020;border:1px solid #46567e;border-radius:6px;color:#bff0f6;font:600 10px monospace;padding:10px;"/>' +
+             '<button id="rb-ref-copy" style="background:rgba(143,216,224,.18);border:2px solid #5aa8b4;border-radius:6px;color:#bff0f6;font:800 13px monospace;padding:0 14px;cursor:pointer;">📋</button></div>' +
+           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">' +
+             _refStatCell('REFERRALS') + _refStatCell('THEIR GAMES') + _refStatCell('EARNED') + _refStatCell('CLAIMABLE') +
+           '</div>' +
+           '<button id="rb-ref-claim" style="padding:14px;border-radius:6px;border:2px solid #5ce08a;background:rgba(92,224,138,.14);color:#aef0b0;font-family:inherit;font-size:13px;cursor:not-allowed;opacity:.5;">CLAIM —</button>' +
+           '<div id="rb-ref-msg" style="font-size:9px;color:#6a7a8a;text-align:center;min-height:12px;"></div>')
+        : '<div style="font-size:11px;color:#ffd97a;text-align:center;padding:20px 0;">Connect your wallet first to get your referral link.</div>'
+      );
+    ov.appendChild(p); document.body.appendChild(ov);
+    p.querySelector('#rb-ref-x').onclick = function () { try { ov.remove(); } catch (_) {} };
+    if (!addr) return;
+    var copy = p.querySelector('#rb-ref-copy');
+    if (copy) copy.onclick = function () { try { navigator.clipboard.writeText(link); copy.textContent = '✓'; setTimeout(function () { copy.textContent = '📋'; }, 1500); } catch (_) {} };
+    var claimBtn = p.querySelector('#rb-ref-claim'), msg = p.querySelector('#rb-ref-msg');
+    function _refresh() {
+      _refStats(addr).then(function (s) {
+        if (!document.body.contains(p)) return;
+        s = s || { referrals: 0, games: 0, accrued: 0, claimed: 0, claimable: 0 };
+        var cells = p.querySelectorAll('.rb-ref-val');
+        if (cells[0]) cells[0].textContent = s.referrals;
+        if (cells[1]) cells[1].textContent = s.games;
+        if (cells[2]) cells[2].textContent = _fmtRonke(s.accrued);
+        if (cells[3]) cells[3].textContent = _fmtRonke(s.claimable);
+        if (claimBtn) {
+          if (s.claimable > 0) { claimBtn.disabled = false; claimBtn.style.cursor = 'pointer'; claimBtn.style.opacity = '1'; claimBtn.textContent = 'CLAIM ' + _fmtRonke(s.claimable) + ' RONKE'; }
+          else { claimBtn.disabled = true; claimBtn.style.cursor = 'not-allowed'; claimBtn.style.opacity = '.5'; claimBtn.textContent = 'CLAIM —'; }
+        }
+      });
+    }
+    _refresh();
+    if (claimBtn) claimBtn.onclick = function () {
+      if (claimBtn.disabled) return;
+      claimBtn.disabled = true; claimBtn.style.opacity = '.5'; claimBtn.style.cursor = 'not-allowed';
+      if (msg) msg.textContent = 'Requesting claim…';
+      _requestClaim(addr).then(function () {
+        if (msg) msg.innerHTML = '<span style="color:#aef0b0;">✓ Claim queued — RONKE arrives to your wallet shortly.</span>';
+        setTimeout(_refresh, 30000);   // serveris drenuoja ~25s + flushQueue išmoka
+      }).catch(function (e) {
+        if (msg) msg.innerHTML = '<span style="color:#e88;">Claim failed: ' + _esc((e && e.message) || 'error') + '</span>';
+        _refresh();
+      });
+    };
+  }
+
   function _endpoint() {
     try { var h = location.hostname; if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'ws://localhost:2567'; } catch (_) {}
     try { if (window.F9PVP_ENDPOINT) return String(window.F9PVP_ENDPOINT).replace(/^http/, 'ws'); } catch (_) {}
@@ -243,6 +351,7 @@
           '<button id="rb-private" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:12px;cursor:pointer;">🔒 PRIVATE</button>' +
           '<button id="rb-ai" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:12px;cursor:pointer;">🤖 vs AI</button>' +
         '</div>' +
+        '<button id="rb-refs" class="rb-act" style="padding:11px;border-radius:6px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:11px;cursor:pointer;margin-top:2px;">🎁 REFERRALS · invite friends, earn 5%</button>' +
       '</div>';
     ov.appendChild(p); document.body.appendChild(ov);
     p.querySelector('#rb-x').onclick = _closePanel;
@@ -280,6 +389,7 @@
     p.querySelector('#rb-host').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, false); else _doHost(_selectedTier, false); };
     p.querySelector('#rb-private').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, true); else _doHost(_selectedTier, true); };
     p.querySelector('#rb-ai').onclick = function () { _closePanel(); try { if (window.RonkeBlocks) window.RonkeBlocks.openAI(); } catch (_) {} };
+    p.querySelector('#rb-refs').onclick = function () { _openReferralPanel(); };   // 🎁 referal panelė
 
     _ensureGame();                 // preload paslėptą žaidimo iframe (host/join iškart)
     _renderList();
@@ -361,7 +471,9 @@
     _status(head + linkRow, true);
     var cp = _panel.querySelector('#rb-copy');
     if (cp) cp.onclick = function () {
-      try { if (navigator.clipboard && hi.url) { navigator.clipboard.writeText(hi.url); cp.textContent = '✓ link copied - send it to a friend!'; } } catch (_) {}
+      // 🎁 invite linkas = IR referal linkas: pridedam &ref=<mano adresas> (svečias prisiriša per pirmą tetris).
+      var url = hi.url; try { var me = _walletAddr(); if (me && url.indexOf('ref=') < 0) url += (url.indexOf('?') >= 0 ? '&' : '?') + 'ref=' + me; } catch (_) {}
+      try { if (navigator.clipboard && url) { navigator.clipboard.writeText(url); cp.textContent = '✓ link copied - send it to a friend!'; } } catch (_) {}
     };
   }
 
@@ -398,7 +510,7 @@
         _cmd('stakecancel');
         return;
       }
-      _cmd('stake', null, tier, r.tx, null, window.BlocksWager.address());   // įėjimo tx → serveris verifikuoja
+      _cmd('stake', null, tier, r.tx, null, window.BlocksWager.address(), null, _myRef());   // įėjimo tx + 🎁 referrer'is → serveris verifikuoja+bind'ina
       _status('⛓️ Stake sent - verifying…', true);
     });
   }
@@ -617,8 +729,8 @@
     _gameWrap.appendChild(_iframe); _gameWrap.appendChild(exit);
     document.body.appendChild(_gameWrap);
   }
-  function _cmd(cmd, roomId, tier, mid, serverAuth, addr, wager) {
-    try { if (_iframe && _iframe.contentWindow) _iframe.contentWindow.postMessage({ __rbpanel: 'cmd', cmd: cmd, roomId: roomId, tier: tier, mid: mid, serverAuth: serverAuth, addr: addr, wager: wager }, '*'); } catch (_) {}
+  function _cmd(cmd, roomId, tier, mid, serverAuth, addr, wager, ref) {
+    try { if (_iframe && _iframe.contentWindow) _iframe.contentWindow.postMessage({ __rbpanel: 'cmd', cmd: cmd, roomId: roomId, tier: tier, mid: mid, serverAuth: serverAuth, addr: addr, wager: wager, ref: ref }, '*'); } catch (_) {}
   }
   function _revealGame() {
     if (_gameOn || !_gameWrap) return; _gameOn = true;
@@ -714,6 +826,7 @@
   // ── Init ────────────────────────────────────────────────────────────────
   function _start() {
     if (_running) return; _running = true;
+    _captureRef();        // 🎁 pagaunam ?ref=<addr> iš referal/invite linko (localStorage)
     _poll(); _timer = setInterval(_poll, POLL_MS);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) _poll(); });
     window.addEventListener('minigame:closed', function () { _lastCount = 0; setTimeout(_poll, 500); });
