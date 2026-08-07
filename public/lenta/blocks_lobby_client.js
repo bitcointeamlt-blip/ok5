@@ -83,6 +83,23 @@
     for (var b = 1; b <= 3; b++) bars += '<span style="display:inline-block;width:4px;height:' + (3 + b * 3) + 'px;margin:0 1px;vertical-align:bottom;background:' + (b <= lvl ? col : '#33405e') + ';border-radius:1px;"></span>';
     return '<span style="font-size:10px;color:' + col + ';white-space:nowrap;">' + bars + ' <b>SIGNAL: ' + txt + '</b> <span style="opacity:.75;">' + ms + 'ms</span>' + (lvl === 1 ? ' <span style="opacity:.7;">— may lag</span>' : '') + '</span>';
   }
+  // 🔄 GYVAS signalas — perматuojam kas 3s ir atnaujinam rodmenį, kol matomas invite overlay ARBA lobby panelė.
+  var _signalTimer = null;
+  function _refreshSignalUI() {
+    var a = document.getElementById('rb-inv-sig'); if (a) a.innerHTML = _signalHtml(_pingMs);
+    var b = _panel && _panel.querySelector('#rb-panel-sig'); if (b) b.innerHTML = _signalHtml(_pingMs);
+  }
+  function _stopSignalLoop() { if (_signalTimer) { clearInterval(_signalTimer); _signalTimer = null; } }
+  function _startSignalLoop() {
+    _stopSignalLoop();
+    var tick = function () {
+      // matuojam tik kol yra ką rodyti (invite overlay arba panelė) — kitaip sustojam
+      if (!document.getElementById('rb-inv-sig') && !(_panel && _panel.querySelector('#rb-panel-sig'))) { _stopSignalLoop(); return; }
+      _measurePing(function () { _refreshSignalUI(); });
+    };
+    tick();
+    _signalTimer = setInterval(tick, 3000);
+  }
 
   // ── Badge + toast (pranešimas kai kažkas laukia; NErodom kai pats žaidi/panelėje) ──
   function _poll() {
@@ -214,8 +231,8 @@
     _renderList();
     // 🔗 jei VĖL atsidarau panelę hostindamas fone → iškart parodau savo laukimo būseną + invite linką
     if (_bgActive && _hostInvite && _hostInvite.url) _showHostStatus();
-    // 📶 signalo stiprumas — kad žaidėjas prieš prisijungdamas matytų ar bus lagas
-    _measurePing(function () { var sg = _panel && _panel.querySelector('#rb-panel-sig'); if (sg) sg.innerHTML = _signalHtml(_pingMs); });
+    // 📶 GYVAS signalo stiprumas (kartojasi kas 3s) — kad žaidėjas prieš prisijungdamas matytų ar bus lagas
+    _startSignalLoop();
     // Momentinis fallback (kol LobbyRoom atsiųs 'rooms'), tada — REALAUS LAIKO push (be polling).
     _fetchWaiting().then(function (l) { if (_panel && !_lobbyRoom) { _waitingRooms = l; _renderList(); } });
     _connectLobby();
@@ -454,8 +471,8 @@
     };
     var x = o.querySelector('#rb-inv-x');
     if (x) x.onclick = function () { _hideInviteOverlay(); };
-    // 📶 išmatuojam signalą ir atnaujinam rodmenį (kad matytųsi ar bus lagas prieš prisijungiant)
-    if (mode === 'ready') _measurePing(function () { var sg = document.getElementById('rb-inv-sig'); if (sg) sg.innerHTML = _signalHtml(_pingMs); });
+    // 📶 GYVAS signalas — kartojasi kas 3s (kad matytųsi ar bus lagas prieš prisijungiant), ne vienkartinis
+    if (mode === 'ready') _startSignalLoop();
     try { if (window.Sfx && window.Sfx.play && mode === 'ready') window.Sfx.play('notify'); } catch (_) {}
   }
   function _showInviteConfirm(roomId, tries) {
@@ -480,6 +497,7 @@
 
   function _closePanel() {
     _disconnectLobby();
+    _stopSignalLoop();
     if (_panelPoll) { clearInterval(_panelPoll); _panelPoll = null; }
     if (_panel) { try { _panel.remove(); } catch (_) {} _panel = null; }
     // FONE aktyvu (hostinu/laukiu) → PALIEKAM iframe gyvą + rodom „hosting" pill (galiu žaisti pilyje).
