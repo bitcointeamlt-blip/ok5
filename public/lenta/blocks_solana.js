@@ -65,13 +65,48 @@
     return s == null ? d : (d + ' (~' + s.toFixed(4) + ' SOL)');
   }
 
+  // ── @solana/web3.js lazy-load (bundle kraunamas TIK kai reikia mokėti) ──
+  var LAMPORTS = 1000000000, _web3Loading = null;
+  function _rpc() { try { return String(window.BLOCKS_SOL_RPC || '').trim() || 'https://api.mainnet-beta.solana.com'; } catch (_) { return 'https://api.mainnet-beta.solana.com'; } }
+  function _loadWeb3() {
+    if (window.solanaWeb3) return Promise.resolve(window.solanaWeb3);
+    if (_web3Loading) return _web3Loading;
+    _web3Loading = new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = 'solana.web3.min.js';
+      s.onload = function () { window.solanaWeb3 ? res(window.solanaWeb3) : rej(new Error('no solanaWeb3')); };
+      s.onerror = function () { rej(new Error('web3 load fail')); };
+      document.head.appendChild(s);
+    });
+    return _web3Loading;
+  }
+
   // ── ĮSKAITA (INERTIŠKA kol !enabled) ──────────────────────────────────────
-  // Kai įjungta + config paruoštas: @solana/web3.js SystemProgram.transfer(player → treasury, lamports),
-  //   Phantom signAndSendTransaction, grąžinti tx parašą serveriui verifikacijai (80/20 payout iš pool).
-  //   SĄMONINGAI NEĮDIEGTA — kad be treasury/rakto/RPC pinigai nejudėtų. Grąžina aiškią priežastį.
-  async function payEntry(tierUsd) {
+  // Native SOL transfer žaidėjas → treasury (Phantom pasirašo). Suma: `lockedLamports` (užrakinta kambario
+  //   kūrimo metu — kad abu mokėtų vienodai) ARBA skaičiuojama iš tier USD pagal kursą. Grąžina {ok, tx=parašas,
+  //   lamports} — serveris verifikuos Solana RPC. GATED: be BLOCKS_SOL_ON+treasury → not_configured (pinigai nejuda).
+  async function payEntry(tierUsd, lockedLamports) {
     if (!enabled()) return { ok: false, reason: 'not_configured' };   // saugus karkasas — pinigai NEjuda
-    return { ok: false, reason: 'not_implemented' };                  // LIKO: SOL transfer + verify + payout
+    var s = sol(); if (!s) return { ok: false, reason: 'no_wallet' };
+    var from = address() || (await connect()); if (!from) return { ok: false, reason: 'no_wallet' };
+    var treasury = _treasury(); if (!_isSolAddr(treasury)) return { ok: false, reason: 'no_treasury' };
+    var lamports = (lockedLamports | 0);
+    if (!lamports) { var a = await tierSol(Number(tierUsd)); if (!a) return { ok: false, reason: 'no_price' }; lamports = Math.round(a * LAMPORTS); }
+    if (!(lamports > 0)) return { ok: false, reason: 'bad_amount' };
+    try {
+      var web3 = await _loadWeb3();
+      var conn = new web3.Connection(_rpc(), 'confirmed');
+      var fromPk = new web3.PublicKey(from), toPk = new web3.PublicKey(treasury);
+      var bh = await conn.getLatestBlockhash();
+      var tx = new web3.Transaction({ feePayer: fromPk, recentBlockhash: bh.blockhash });
+      tx.add(web3.SystemProgram.transfer({ fromPubkey: fromPk, toPubkey: toPk, lamports: lamports }));
+      var r = await s.signAndSendTransaction(tx);
+      var sig = r && (r.signature || r);
+      if (!sig) return { ok: false, reason: 'tx_failed' };
+      return { ok: true, tx: String(sig), lamports: lamports, sol: lamports / LAMPORTS };
+    } catch (e) {
+      var m = String((e && (e.message || e)) || e);
+      return { ok: false, reason: /reject|denied|cancel|user/i.test(m) ? 'rejected' : 'tx_failed' };
+    }
   }
 
   // Lokalaus testo perjungiklis (TIK localhost).
