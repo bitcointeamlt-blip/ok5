@@ -72,6 +72,7 @@
   // 🎁 Referal panelė (overlay): linkas + statistika + CLAIM.
   function _openReferralPanel() {
     var addr = _walletAddr();
+    var myRef = _myRef();   // 🔗 kas MANE pakvietė (rb_ref) — parodom, kad user matytų ar prilipo
     var ov = document.createElement('div'); ov.id = 'rb-ref-ov';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.94);z-index:99100;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
     ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
@@ -85,7 +86,10 @@
         '<button id="rb-ref-x" style="background:none;border:none;color:#8a9aaa;font-size:22px;cursor:pointer;font-family:inherit;">×</button>' +
       '</div>' +
       (addr
-        ? ('<div style="font-size:10px;color:#9fb0c0;">Share your link. When a new player plays their FIRST tetris through it, they become your referral — forever. You earn <b style="color:#ffd97a;">5% of their stake</b> on EVERY wager game they play.</div>' +
+        ? ((myRef && myRef !== String(addr).toLowerCase()
+             ? '<div style="font-size:9px;color:#aef0b0;background:rgba(92,224,138,.10);border:1px solid #3a7a4a;border-radius:6px;padding:9px;">🔗 You were invited by <b>' + _shortAddr(myRef) + '</b> — play any match to lock it in.</div>'
+             : '') +
+           '<div style="font-size:10px;color:#9fb0c0;">Share your link. When someone plays their FIRST tetris match (free or wager) through it, they become your referral — forever. You earn <b style="color:#ffd97a;">5% of their stake</b> on EVERY wager game they play.</div>' +
            '<div style="font-size:9px;color:#6a7a8a;">YOUR REFERRAL LINK</div>' +
            '<div style="display:flex;gap:8px;"><input id="rb-ref-link" readonly value="' + _esc(link) + '" style="flex:1;min-width:0;background:#0c1020;border:1px solid #46567e;border-radius:6px;color:#bff0f6;font:600 10px monospace;padding:10px;"/>' +
              '<button id="rb-ref-copy" style="background:rgba(143,216,224,.18);border:2px solid #5aa8b4;border-radius:6px;color:#bff0f6;font:800 13px monospace;padding:0 14px;cursor:pointer;">📋</button></div>' +
