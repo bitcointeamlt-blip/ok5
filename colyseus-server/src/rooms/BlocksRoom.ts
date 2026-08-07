@@ -6,6 +6,7 @@ import { verifyWagerEntry, wagerEnabled } from "../services/WagerEntry";
 import { WagerEscrow } from "../blocks/WagerEscrow";
 import { MatchLog } from "../blocks/MatchLog";
 import { PayoutQueue } from "../blocks/PayoutQueue";   // neverifikuoto rezultato payout → manual eilė
+import * as ReferralStore from "../blocks/ReferralStore";   // 🎁 referalų sistema (bind + 5% kreditas)
 
 /* RONKE BLOCKS — 1v1 online (server-authoritative KORIDORIUS).
  *
@@ -54,6 +55,10 @@ const WINNER_BPS = 8000;              // laimėtojas 80% poolo; treasury pasilie
 if (STAKE.enabled && !STAKE.manual) {
   setTimeout(() => { void PayoutQueue.reconcile().then(() => STAKE.flushQueue()); }, 8000);   // reconcile → tada flush
   setInterval(() => { void STAKE.flushQueue(); }, 3 * 60 * 1000);                              // ir kas 3 min
+  // 🎁 Referral claim'ai: klientas rašo `refclaimreq_<R>` (anon) → serveris drenuoja → payout eilė → flushQueue.
+  if (ReferralStore.referralEnabled()) {
+    setInterval(() => { void ReferralStore.drainClaimRequests().then((n) => { if (n) void STAKE.flushQueue(); }); }, 25000);
+  }
 } else if (STAKE.manual) {
   setTimeout(() => { void PayoutQueue.reconcile(); }, 8000);   // manual režimas: bent atstatom eilę operatoriui
 }
@@ -101,6 +106,7 @@ export class BlocksRoom extends Room<BlocksState> {
   private _verifyDone = false;
   private _verifyOk = false;
   private _disposed = false;                          // kambarys uždarytas → stabdom fono verify ciklą
+  private _refOf: Record<Side, string> = { p1: "", p2: "" };   // 🎁 kiekvieno žaidėjo referrer'is (iš stake žinutės)
 
   onCreate(options?: any) {
     /* PRIVATUS kambarys (draugo kvietimas per kodą/nuorodą): išimamas iš matchmaking, kad
@@ -245,6 +251,7 @@ export class BlocksRoom extends Room<BlocksState> {
     const tx = String((m && (m.tx || m.entryTx)) || "");
     const addr = String((m && m.addr) || "");
     if (!tx) return;
+    this._refOf[side] = String((m && m.ref) || "");   // 🎁 referrer'is (iš kliento localStorage `rb_ref`); bind'inam settle metu (proven wallet)
     this.escrow.setEntry(side, addr, tx);
     if (!this.escrow.bothStaked()) return;   // laukiam kito žaidėjo mokėjimo
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
@@ -632,12 +639,28 @@ export class BlocksRoom extends Room<BlocksState> {
       return;
     }
     if (this._verifyOk) {
-      if (w) void this._settleWinner(w as Side);
+      if (w) { void this._settleWinner(w as Side); void this._creditReferrals(); }   // 🎁 TIK jei LAIMĖTOJAS (abiem referrer'iams 5%); draw = refund → jokios maržos, jokio kredito
       else void this.escrow.settleDraw().then((ok) => { if (ok) console.log(`[BLOCKS WAGER] DRAW → refund ${this.escrow.tier} RONKE abiem`); });
     } else {
       void this._queueUnverified(w as Side);   // verify nepraėjo → manual eilė (operatorius sprendžia)
     }
     this._logMatch(w);
+  }
+
+  // 🎁 Referalų kreditas — TIK kai _verifyOk (abu įėjimai on-chain patikrinti → wallet'ai ĮRODYTI).
+  //   1) bind (jei atėjo per ref linką IR „niekada nežaidė tetris"); 2) markSeen; 3) 5% nuo tier referrer'iams.
+  //   Async + best-effort → laimėtojo payout NELIEČIA. Idempotentiška per roomId (creditReferrers dedupe).
+  private async _creditReferrals() {
+    try {
+      if (!this.escrow.active || !ReferralStore.referralEnabled()) return;
+      const mi = this.escrow.matchInfo();
+      const p1 = mi.p1.addr, p2 = mi.p2.addr, tier = mi.tier;
+      await ReferralStore.bind(p1, this._refOf.p1);   // prisiriša tik jei pirmas kartas + ref≠self
+      await ReferralStore.bind(p2, this._refOf.p2);
+      await ReferralStore.markSeen(p1);               // pažymim „žaidė tetris" (užkerta vėlyvą bind)
+      await ReferralStore.markSeen(p2);
+      await ReferralStore.creditReferrers(p1, p2, tier, this.roomId);   // 5% nuo kiekvieno statymo
+    } catch (e: any) { console.warn("[BLOCKS REFERRAL] credit fail:", e?.message); }
   }
 
   // Neverifikuotas rezultatas → laimėtojo prizas į MANUAL eilę (:6610). Operatorius patikrina įėjimus prieš mokant.

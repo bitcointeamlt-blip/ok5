@@ -10,7 +10,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // ⚠️ Bendras failas TARP procesų (colyseus + admin) → kiekviena operacija skaito ŠVIEŽIAI iš disko, mutuoja,
 //    įrašo (be in-memory cache) → admin „paid" žymos ir colyseus „add" nesitrina. Payout'ai reti → I/O nykstamas.
 
-export type PayoutKind = "win" | "refund";
+export type PayoutKind = "win" | "refund" | "referral";   // 🎁 referral = referrer'io claim išmoka
 export interface PendingPayout {
   id: string;
   to: string;

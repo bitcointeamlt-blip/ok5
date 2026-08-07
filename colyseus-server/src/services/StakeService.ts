@@ -14,7 +14,7 @@
 import { ethers } from "ethers";
 import { PayoutQueue } from "../blocks/PayoutQueue";
 
-export interface Payout { address: string; amount: number; sessionId: string; kind?: "win" | "refund"; roomId?: string; }
+export interface Payout { address: string; amount: number; sessionId: string; kind?: "win" | "refund" | "referral"; roomId?: string; }
 export interface DeathSettle { tokenId: string; owner: string; utype: string; level: number; outcome: "burn" | "lock"; lockUntil: number; }
 
 const ERC20_ABI = [
