@@ -433,35 +433,38 @@
       'align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
     ov.addEventListener('click', function (e) { if (e.target === ov) _closePanel(); });
     var p = document.createElement('div');
-    p.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
-      'box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;' +
-      'padding:22px 26px;width:560px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;' +
-      "font-family:'Press Start 2P',monospace,sans-serif;font-size:12px;line-height:1.55;color:#8a9aaa;";
+    p.style.cssText = 'background:linear-gradient(180deg,#222d47 0%,#0b0f1c 100%);border:3px solid #ffcf5c;' +
+      'box-shadow:0 0 64px rgba(255,207,92,0.42),inset 0 0 34px rgba(255,207,92,0.09);border-radius:14px;' +
+      'padding:30px 36px;width:730px;max-width:96vw;max-height:92vh;overflow:auto;display:flex;flex-direction:column;' +
+      "font-family:'Press Start 2P',monospace,sans-serif;font-size:14px;line-height:1.6;color:#9aa8bb;";
     p.innerHTML =
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
-        '<span style="font-size:24px;text-shadow:0 0 14px #ffcf5c;">🧱</span>' +
-        '<span style="flex:1;font-size:16px;color:#ffcf5c;letter-spacing:1px;">PVP TETRIS · 1v1</span>' +
-        '<button id="rb-x" style="background:none;border:none;color:#8a9aaa;font-size:24px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:4px;padding-bottom:14px;border-bottom:1px solid #4a3a18;">' +
+        '<span style="font-size:34px;text-shadow:0 0 18px #ffcf5c;">🧱</span>' +
+        '<div style="flex:1;">' +
+          '<div style="font-size:22px;color:#ffcf5c;letter-spacing:2px;">PVP TETRIS · 1v1</div>' +
+          '<div style="font-size:9px;color:#6a7a8a;letter-spacing:1.5px;margin-top:5px;">STAKE · BATTLE · WINNER TAKES 80%</div>' +
+        '</div>' +
+        '<button id="rb-x" style="background:none;border:none;color:#8a9aaa;font-size:30px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
       '</div>' +
-      '<div id="rb-status" style="display:none;font-size:12px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:6px;padding:12px;margin-bottom:12px;text-align:center;"></div>' +
-      '<div id="rb-panel-sig" style="text-align:center;margin-bottom:8px;">' + _signalHtml(_pingMs) + '</div>' +   // 📶 signalas prieš prisijungiant
-      '<div style="font-size:11px;color:#6a7a8a;margin-bottom:8px;">OPEN MATCHES — tap a player to join ⚔️</div>' +
-      '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:9px;min-height:48px;max-height:44vh;"><div style="color:#6a7a8a;font-size:11px;padding:10px 0;">Loading…</div></div>' +
-      '<div style="margin-top:14px;border-top:1px solid #3a3a55;padding-top:12px;display:flex;flex-direction:column;gap:9px;">' +
-        '<div style="font-size:10px;color:#6a7a8a;">CREATE A MATCH — pick stake (winner takes 80%, 20% to treasury)</div>' +
-        '<div id="rb-chain" style="display:flex;gap:8px;">' +   /* 🔗 grandinės pasirinkimas: Ronin (RONKE) / Solana (SOL) */
-          '<button id="rb-chain-ronin" class="rb-act" style="flex:1;padding:8px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">🔷 RONIN · RONKE</button>' +
-          '<button id="rb-chain-solana" class="rb-act" style="flex:1;padding:8px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">🟣 SOLANA · SOL</button>' +
+      '<div id="rb-status" style="display:none;font-size:13px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:9px;padding:15px;margin:12px 0;text-align:center;line-height:1.5;"></div>' +
+      '<div id="rb-panel-sig" style="text-align:center;margin:12px 0 8px;">' + _signalHtml(_pingMs) + '</div>' +   // 📶 signalas prieš prisijungiant
+      '<div style="font-size:12px;color:#7a8aa0;margin-bottom:10px;letter-spacing:.5px;">⚔️ OPEN MATCHES — tap a player to join</div>' +
+      '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:11px;min-height:56px;max-height:40vh;"><div style="color:#6a7a8a;font-size:12px;padding:14px 0;text-align:center;">Loading…</div></div>' +
+      '<div style="margin-top:20px;border-top:1px solid #3a3a55;padding-top:18px;display:flex;flex-direction:column;gap:12px;">' +
+        '<div style="font-size:11px;color:#7a8aa0;letter-spacing:.5px;">CREATE A MATCH — pick chain &amp; stake</div>' +
+        '<div id="rb-chain" style="display:flex;gap:10px;">' +   /* 🔗 grandinės pasirinkimas: Ronin (RONKE) / Solana (SOL) */
+          '<button id="rb-chain-ronin" class="rb-act" style="flex:1;padding:12px;border-radius:9px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:13px;cursor:pointer;">🔷 RONIN · RONKE</button>' +
+          '<button id="rb-chain-solana" class="rb-act" style="flex:1;padding:12px;border-radius:9px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:13px;cursor:pointer;">🟣 SOLANA · SOL</button>' +
         '</div>' +
-        '<div id="rb-tiers" style="display:flex;gap:8px;"></div>' +   /* pakopos — dinaminės pagal grandinę (_renderTiers) */
-        '<button id="rb-host" class="rb-act" style="padding:15px;border-radius:6px;border:2px solid #ffcf5c;background:rgba(255,207,92,.14);color:#ffcf5c;font-family:inherit;font-size:14px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> <span id="rb-host-cur">RONKE</span><div style="font-size:9px;opacity:.7;margin-top:4px;">wait - others can pick you</div></button>' +
-        '<div style="display:flex;gap:9px;">' +
-          '<button id="rb-private" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:12px;cursor:pointer;">🔒 PRIVATE</button>' +
-          '<button id="rb-ai" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:12px;cursor:pointer;">🤖 vs AI</button>' +
+        '<div id="rb-tiers" style="display:flex;gap:10px;"></div>' +   /* pakopos — dinaminės pagal grandinę (_renderTiers) */
+        '<button id="rb-host" class="rb-act" style="padding:20px;border-radius:9px;border:2px solid #ffcf5c;background:rgba(255,207,92,.16);color:#ffcf5c;font-family:inherit;font-size:17px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> <span id="rb-host-cur">RONKE</span><div style="font-size:10px;opacity:.7;margin-top:6px;">wait - others can pick you</div></button>' +
+        '<div style="display:flex;gap:11px;">' +
+          '<button id="rb-private" class="rb-act" style="flex:1;padding:15px;border-radius:9px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:14px;cursor:pointer;">🔒 PRIVATE</button>' +
+          '<button id="rb-ai" class="rb-act" style="flex:1;padding:15px;border-radius:9px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:14px;cursor:pointer;">🤖 vs AI</button>' +
         '</div>' +
-        '<div style="display:flex;gap:9px;margin-top:2px;">' +
-          '<button id="rb-rank" class="rb-act" style="flex:1;padding:11px;border-radius:6px;border:1px solid #5aa8b4;background:rgba(143,216,224,.12);color:#bff0f6;font-family:inherit;font-size:11px;cursor:pointer;">🏅 RANK · leagues & stars</button>' +
-          '<button id="rb-refs" class="rb-act" style="flex:1;padding:11px;border-radius:6px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:11px;cursor:pointer;">🎁 REFERRALS · earn 5%</button>' +
+        '<div style="display:flex;gap:11px;margin-top:2px;">' +
+          '<button id="rb-rank" class="rb-act" style="flex:1;padding:14px;border-radius:9px;border:1px solid #5aa8b4;background:rgba(143,216,224,.12);color:#bff0f6;font-family:inherit;font-size:12px;cursor:pointer;">🏅 RANK · leagues & stars</button>' +
+          '<button id="rb-refs" class="rb-act" style="flex:1;padding:14px;border-radius:9px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:12px;cursor:pointer;">🎁 REFERRALS · earn 5%</button>' +
         '</div>' +
       '</div>';
     ov.appendChild(p); document.body.appendChild(ov);
@@ -482,7 +485,7 @@
         var on = t === sel;
         var main = solMode ? ('$' + t.toFixed(2)) : String(t);
         var sub = solMode ? 'SOL' : 'RONKE';
-        return '<button class="rb-tier rb-act" data-t="' + t + '" style="flex:1;padding:12px 4px;border-radius:6px;border:1px solid ' + (on ? (solMode ? '#b98cff' : '#ffcf5c') : '#6a4a18') + ';background:' + (on ? (solMode ? 'rgba(157,122,208,.28)' : 'rgba(255,207,92,.30)') : 'rgba(255,207,92,.06)') + ';color:' + (solMode ? '#cbb0ff' : '#ffcf5c') + ';font-family:inherit;font-size:13px;cursor:pointer;">' + main + '<div style="font-size:8px;opacity:.6;">' + sub + '</div></button>';
+        return '<button class="rb-tier rb-act" data-t="' + t + '" style="flex:1;padding:16px 6px;border-radius:9px;border:2px solid ' + (on ? (solMode ? '#b98cff' : '#ffcf5c') : '#6a4a18') + ';background:' + (on ? (solMode ? 'rgba(157,122,208,.28)' : 'rgba(255,207,92,.30)') : 'rgba(255,207,92,.06)') + ';color:' + (solMode ? '#cbb0ff' : '#ffcf5c') + ';font-family:inherit;font-size:17px;cursor:pointer;">' + main + '<div style="font-size:9px;opacity:.6;margin-top:3px;">' + sub + '</div></button>';
       }).join('');
       host.querySelectorAll('.rb-tier').forEach(function (b) {
         b.onclick = function () { var v = Number(b.getAttribute('data-t')); if (solMode) _selectedSol = v; else _selectedTier = v || 69; _renderTiers(); };
