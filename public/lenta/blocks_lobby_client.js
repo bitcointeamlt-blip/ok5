@@ -15,7 +15,10 @@
   var _panel = null, _panelPoll = null, _iframe = null, _gameWrap = null, _gameOn = false, _iframeLoaded = false;
   var _lobbyRoom = null, _allRooms = [];   // realaus laiko LobbyRoom (Colyseus push, ne polling)
   var TIERS = [69, 200, 800];              // statymo pakopos (RONKE); laimėtojas 80%, treasury 20%
-  var _selectedTier = 69;                  // pasirinkta pakopa kuriant kambarį
+  var SOL_TIERS = [0.10, 0.50, 1.00];      // 🟣 Solana pakopos USD (native SOL pagal kursą) — žr. blocks_solana.js
+  var _selectedTier = 69;                  // pasirinkta RONKE pakopa
+  var _selectedSol = 0.10;                 // 🟣 pasirinkta Solana pakopa (USD)
+  var _chain = 'ronin';                    // 🔗 pasirinkta grandinė: 'ronin' (RONKE) | 'solana' (SOL)
   var _bgActive = false, _lastState = 'lobby', _myRole = '', _myRoomId = '';   // _bgActive: aktyvus FONE; _myRoomId: MANO kambarys (nerodom sąraše)
   var _challengeAck = false;               // 🛡️ challenge dialogas jau patvirtintas/atmestas → NEberodom dublio (event+interval abu siunčia 'challenge')
   var _hostInvite = null;                   // 🔗 {url,priv,roomCode} — kad hostui VĖL atsidarius panelę invite linkas nedingtų (iframe state nesikeičia → nesiunčia)
@@ -48,7 +51,7 @@
       return _client.getAvailableRooms('blocks_room');
     }).then(function (rooms) {
       return (rooms || []).filter(function (r) { return r.clients === 1 && r.maxClients === 2; })
-        .map(function (r) { return { roomId: r.roomId, host: (r.metadata && r.metadata.host) || 'Player', tier: (r.metadata && r.metadata.tier) || 69, mid: (r.metadata && r.metadata.mid) || null, wagerLive: (r.metadata && r.metadata.wagerLive) }; });
+        .map(function (r) { return { roomId: r.roomId, host: (r.metadata && r.metadata.host) || 'Player', tier: (r.metadata && r.metadata.tier) || 69, mid: (r.metadata && r.metadata.mid) || null, wagerLive: (r.metadata && r.metadata.wagerLive), chain: (r.metadata && r.metadata.chain) || 'ronin' }; });
     }).catch(function () { return []; });
   }
 
@@ -230,10 +233,12 @@
       '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:9px;min-height:48px;max-height:44vh;"><div style="color:#6a7a8a;font-size:11px;padding:10px 0;">Loading…</div></div>' +
       '<div style="margin-top:14px;border-top:1px solid #3a3a55;padding-top:12px;display:flex;flex-direction:column;gap:9px;">' +
         '<div style="font-size:10px;color:#6a7a8a;">CREATE A MATCH — pick stake (winner takes 80%, 20% to treasury)</div>' +
-        '<div id="rb-tiers" style="display:flex;gap:8px;">' +
-          TIERS.map(function (t) { return '<button class="rb-tier rb-act" data-t="' + t + '" style="flex:1;padding:12px 6px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:14px;cursor:pointer;">' + t + '<div style="font-size:8px;opacity:.6;">RONKE</div></button>'; }).join('') +
+        '<div id="rb-chain" style="display:flex;gap:8px;">' +   /* 🔗 grandinės pasirinkimas: Ronin (RONKE) / Solana (SOL) */
+          '<button id="rb-chain-ronin" class="rb-act" style="flex:1;padding:8px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">🔷 RONIN · RONKE</button>' +
+          '<button id="rb-chain-solana" class="rb-act" style="flex:1;padding:8px;border-radius:6px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">🟣 SOLANA · SOL</button>' +
         '</div>' +
-        '<button id="rb-host" class="rb-act" style="padding:15px;border-radius:6px;border:2px solid #ffcf5c;background:rgba(255,207,92,.14);color:#ffcf5c;font-family:inherit;font-size:14px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> RONKE<div style="font-size:9px;opacity:.7;margin-top:4px;">wait - others can pick you</div></button>' +
+        '<div id="rb-tiers" style="display:flex;gap:8px;"></div>' +   /* pakopos — dinaminės pagal grandinę (_renderTiers) */
+        '<button id="rb-host" class="rb-act" style="padding:15px;border-radius:6px;border:2px solid #ffcf5c;background:rgba(255,207,92,.14);color:#ffcf5c;font-family:inherit;font-size:14px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> <span id="rb-host-cur">RONKE</span><div style="font-size:9px;opacity:.7;margin-top:4px;">wait - others can pick you</div></button>' +
         '<div style="display:flex;gap:9px;">' +
           '<button id="rb-private" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:12px;cursor:pointer;">🔒 PRIVATE</button>' +
           '<button id="rb-ai" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:12px;cursor:pointer;">🤖 vs AI</button>' +
@@ -241,19 +246,39 @@
       '</div>';
     ov.appendChild(p); document.body.appendChild(ov);
     p.querySelector('#rb-x').onclick = _closePanel;
-    // pakopos pasirinkimas — paryškinam aktyvią + atnaujinam HOST mygtuko sumą
-    function _paintTiers() {
-      p.querySelectorAll('.rb-tier').forEach(function (b) {
-        var on = Number(b.getAttribute('data-t')) === _selectedTier;
-        b.style.background = on ? 'rgba(255,207,92,.30)' : 'rgba(255,207,92,.06)';
-        b.style.borderColor = on ? '#ffcf5c' : '#6a4a18';
-      });
-      var amt = p.querySelector('#rb-host-amt'); if (amt) amt.textContent = String(_selectedTier);
+    // 🔗 grandinės mygtukų paryškinimas
+    function _paintChain() {
+      var rn = p.querySelector('#rb-chain-ronin'), so = p.querySelector('#rb-chain-solana');
+      if (rn) { rn.style.background = _chain === 'ronin' ? 'rgba(255,207,92,.30)' : 'rgba(255,207,92,.06)'; rn.style.borderColor = _chain === 'ronin' ? '#ffcf5c' : '#6a4a18'; }
+      if (so) { so.style.background = _chain === 'solana' ? 'rgba(157,122,208,.30)' : 'rgba(255,207,92,.06)'; so.style.borderColor = _chain === 'solana' ? '#b98cff' : '#6a4a18'; so.style.color = _chain === 'solana' ? '#cbb0ff' : '#ffcf5c'; }
     }
-    p.querySelectorAll('.rb-tier').forEach(function (b) { b.onclick = function () { _selectedTier = Number(b.getAttribute('data-t')) || 69; _paintTiers(); }; });
-    _paintTiers();
-    p.querySelector('#rb-host').onclick = function () { _doHost(_selectedTier, false); };
-    p.querySelector('#rb-private').onclick = function () { _doHost(_selectedTier, true); };
+    // pakopos — dinaminės pagal grandinę; Solanai rodom $ + (~SOL) etiketę
+    function _renderTiers() {
+      var host = p.querySelector('#rb-tiers'); if (!host) return;
+      var solMode = _chain === 'solana';
+      var arr = solMode ? SOL_TIERS : TIERS;
+      var sel = solMode ? _selectedSol : _selectedTier;
+      host.innerHTML = arr.map(function (t) {
+        var on = t === sel;
+        var main = solMode ? ('$' + t.toFixed(2)) : String(t);
+        var sub = solMode ? 'SOL' : 'RONKE';
+        return '<button class="rb-tier rb-act" data-t="' + t + '" style="flex:1;padding:12px 4px;border-radius:6px;border:1px solid ' + (on ? (solMode ? '#b98cff' : '#ffcf5c') : '#6a4a18') + ';background:' + (on ? (solMode ? 'rgba(157,122,208,.28)' : 'rgba(255,207,92,.30)') : 'rgba(255,207,92,.06)') + ';color:' + (solMode ? '#cbb0ff' : '#ffcf5c') + ';font-family:inherit;font-size:13px;cursor:pointer;">' + main + '<div style="font-size:8px;opacity:.6;">' + sub + '</div></button>';
+      }).join('');
+      host.querySelectorAll('.rb-tier').forEach(function (b) {
+        b.onclick = function () { var v = Number(b.getAttribute('data-t')); if (solMode) _selectedSol = v; else _selectedTier = v || 69; _renderTiers(); };
+      });
+      var amt = p.querySelector('#rb-host-amt'), cur = p.querySelector('#rb-host-cur');
+      if (amt) amt.textContent = solMode ? ('$' + _selectedSol.toFixed(2)) : String(_selectedTier);
+      if (cur) cur.textContent = solMode ? 'SOL' : 'RONKE';
+    }
+    function _setChain(c) { _chain = c; _paintChain(); _renderTiers(); _renderList(); }
+    p.querySelector('#rb-chain-ronin').onclick = function () { _setChain('ronin'); };
+    p.querySelector('#rb-chain-solana').onclick = function () { _setChain('solana'); };
+    // pradinė grandinė: jei Phantom prijungtas/yra, o Ronino nėra → Solana; kitaip Ronin
+    try { if (window.BlocksSolana && window.BlocksSolana.available() && !(window.BlocksWager && window.BlocksWager.address())) _chain = 'solana'; } catch (_) {}
+    _paintChain(); _renderTiers();
+    p.querySelector('#rb-host').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, false); else _doHost(_selectedTier, false); };
+    p.querySelector('#rb-private').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, true); else _doHost(_selectedTier, true); };
     p.querySelector('#rb-ai').onclick = function () { _closePanel(); try { if (window.RonkeBlocks) window.RonkeBlocks.openAI(); } catch (_) {} };
 
     _ensureGame();                 // preload paslėptą žaidimo iframe (host/join iškart)
@@ -293,16 +318,17 @@
   function _refreshWaiting() {
     _waitingRooms = (_allRooms || [])
       .filter(function (r) { return r.clients === 1 && r.maxClients === 2; })
-      .map(function (r) { return { roomId: r.roomId, host: (r.metadata && r.metadata.host) || 'Player', tier: (r.metadata && r.metadata.tier) || 69, mid: (r.metadata && r.metadata.mid) || null, wagerLive: (r.metadata && r.metadata.wagerLive) }; });
+      .map(function (r) { return { roomId: r.roomId, host: (r.metadata && r.metadata.host) || 'Player', tier: (r.metadata && r.metadata.tier) || 69, mid: (r.metadata && r.metadata.mid) || null, wagerLive: (r.metadata && r.metadata.wagerLive), chain: (r.metadata && r.metadata.chain) || 'ronin' }; });
     _renderList();
   }
   function _renderList() {
     if (!_panel) return;
     var list = _panel.querySelector('#rb-list'); if (!list) return;
-    /* NErodom SAVO paties laukiančio kambario (jei hostinu) — negaliu prisijungti prie savęs. */
-    var rooms = _waitingRooms.filter(function (r) { return r.roomId !== _myRoomId; });
+    /* NErodom SAVO kambario + rodom TIK pasirinktos grandinės mačus (Solana mato Solana, Ronin – Ronin). */
+    var rooms = _waitingRooms.filter(function (r) { return r.roomId !== _myRoomId && (r.chain || 'ronin') === _chain; });
     if (!rooms.length) {
-      list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;padding:14px 0;text-align:center;">no open matches yet<br><span style="opacity:.7;">host one below ↓</span></div>';
+      var none = _chain === 'solana' ? 'no open SOL matches yet' : 'no open matches yet';
+      list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;padding:14px 0;text-align:center;">' + none + '<br><span style="opacity:.7;">host one below ↓</span></div>';
       return;
     }
     list.innerHTML = '';
@@ -377,6 +403,18 @@
     });
   }
 
+  // 🟣 Solana host — realus SOL srautas įsijungs kai serveris+config paruošti (BlocksSolana.enabled()).
+  //   Kol kas: aiškus „coming soon" (nekuriam painaus nemokamo mačo su $ etiketėmis).
+  function _doHostSol(usd, priv) {
+    var S = window.BlocksSolana;
+    if (!(S && S.enabled())) {
+      var w = (S && S.available()) ? '' : '<br><span style="font-size:9px;opacity:.75;">install Phantom wallet to play with SOL</span>';
+      _status('🟣 <b>Solana ($' + usd.toFixed(2) + ' SOL) — coming soon</b>.<br><span style="font-size:9px;opacity:.75;">SOL payments are being set up. Use 🔷 RONIN for now.</span>' + w, true);
+      return;
+    }
+    // LIKO (kai config): connect Phantom → BlocksSolana.payEntry (užrakinta lamports) → host chain='solana'.
+    _status('🟣 Solana host (SOL) — jungiamės…', true);
+  }
   function _doHost(tier, priv) {
     _bgActive = true; _myRole = priv ? 'private' : 'host'; _podClaimedMatch = false; _ensureGame();
     if (_wager()) {
