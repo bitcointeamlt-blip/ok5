@@ -877,10 +877,22 @@
 
   /* Lentos būsenos atkūrimas ant Engine objekto (render.js piešia jį nepakitęs). Bendras: mock foe
    * snapshot'ui IR A6 L2 serverio lentoms (abi pusės). */
-  Match.prototype._applyBoard = function (f, s) {
+  Match.prototype._applyBoard = function (f, s, interp) {
     if (!f || !s) return;
     if (s.grid) f.board.grid = s.grid;
     f.cur = s.cur || null;
+    /* 🛰️ INTERP (tik oponentui): laikom EASED display-poziciją figūrai, kad tarp snapshot'ų slinktų
+     *   sklandžiai. Iškart „snapinam" tik kai NAUJA figūra (kito tipo), hard drop ar didelis šuolis
+     *   (spawn) → kitaip lerpinam kas kadrą (_interpFoePiece) link taikinio. */
+    if (interp && f.cur) {
+      var nt = f.cur.type, nx = f.cur.x, ny = f.cur.y;
+      var snap = (f._piDX == null) || (f._piType !== nt) ||
+                 (Math.abs(nx - f._piDX) > 3) || (Math.abs(ny - f._piDY) > 4);
+      if (snap) { f._piDX = nx; f._piDY = ny; }
+      f._piTX = nx; f._piTY = ny; f._piType = nt;
+    } else {
+      f._piDX = null; f._piDY = null; f._piType = null;   // savo lenta / nėra figūros → jokio interp
+    }
     if (s.nextQueue) f.nextQueue = s.nextQueue;
     f.hold = s.hold; f.holdUsed = !!s.holdUsed;
     if (s.state) f.state = s.state;
@@ -898,15 +910,15 @@
       });
     }
   };
-  Match.prototype._applyFoeSnapshot = function (s) { this._applyBoard(this.foe, s); };
+  Match.prototype._applyFoeSnapshot = function (s) { this._applyBoard(this.foe, s, true); };   // interp=true → sklandi oponento figūra
 
   /* A6 L2: serveris siunčia {you:p1lenta, foe:p2lenta}. MANO lenta rodoma kaip this.you (mano pusė),
    * priešo — this.foe. Jei esu p2 — mano lenta = serverio 'foe'. */
   Match.prototype._applyBoards = function (p) {
     var mine = (this.mySide === 'p2') ? p.foe : p.you;
     var opp = (this.mySide === 'p2') ? p.you : p.foe;
-    this._applyBoard(this.you, mine);
-    this._applyBoard(this.foe, opp);
+    this._applyBoard(this.you, mine, false);   // mano lenta — be interp
+    this._applyBoard(this.foe, opp, true);     // oponento — sklandi interp
     /* linijų valymo JUICE (serverio autoritetingi clears → efektai, kaip lokaliame žaidime). */
     if (p.fx && p.fx.length) {
       for (var i = 0; i < p.fx.length; i++) {
@@ -1035,6 +1047,20 @@
     this.army.time += dt;                          // animacijos tęstinumui tarp corridor žinučių
   };
 
+  /* 🛰️ Kas kadrą slenkam OPONENTO figūrą prie snapshot'o tikslinės pozicijos (sklandus slinkimas,
+   *   ne šokinėjimas). Kaip _interpCorridor, tik lentos figūrai. Naujos figūros/hard drop „snapinami"
+   *   _applyBoard'e (didelis šuolis), tad čia tik glotninam tolydžius judesius (kritimas, ±1 poslinkis). */
+  Match.prototype._interpFoePiece = function (dt) {
+    var f = this.foe;
+    if (!f || f._piDX == null || !f.cur) return;
+    var a = 1 - Math.pow(1 - 0.35, dt / (1000 / 120));   // ~92 % per 50ms snapshot'ą → sklandu, be trailinimo
+    if (a < 0) a = 0; if (a > 1) a = 1;
+    f._piDX += (f._piTX - f._piDX) * a;
+    f._piDY += (f._piTY - f._piDY) * a;
+    if (Math.abs(f._piTX - f._piDX) < 0.02) f._piDX = f._piTX;
+    if (Math.abs(f._piTY - f._piDY) < 0.02) f._piDY = f._piTY;
+  };
+
   Match.prototype._netFinish = function () {
     if (this.state === 'result') return;
     this.winner = this._netWinner === 'you' ? 'you' : 'foe';
@@ -1059,6 +1085,7 @@
      * snap/topped (serveris autoritetingas). Tik koridoriaus interp + įspėjimai + pavojaus pulsas. */
     if (this._serverAuth) {
       this._interpCorridor(dt);
+      this._interpFoePiece(dt);   // 🛰️ sklandi oponento figūra
       this.hammerBeats(this.you);
       this.hammerBeats(this.foe);
       this.dangerPulse(dt);
@@ -1071,7 +1098,7 @@
     this.hammerBeats(this.you);              // tavo įspėjimas apie ateinančią garbage
     this.hammerBeats(this.foe);              // priešo pusės incoming (iš snapshot)
     this.dangerPulse(dt);
-    if (this.netMode === 'colyseus') this._interpCorridor(dt);   // sklandus koridoriaus žygis (interp)
+    if (this.netMode === 'colyseus') { this._interpCorridor(dt); this._interpFoePiece(dt); }   // sklandus koridorius + oponento figūra (interp)
     /* Periodiškai siunčiam SAVO lentos snapshot'ą → serveris persiunčia priešui (jis mus mato).
      * Mock režime nesiunčiam — mock pats generuoja priešą (AI), SNAP jam nereikalingas. */
     if (this.netMode === 'colyseus') {

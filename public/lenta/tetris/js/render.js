@@ -582,17 +582,22 @@
     /* --- šešėlis + aktyvi figūra --- */
     if (eng.cur && eng.state === 'playing') {
       var cur = eng.cur, cells = P.CELLS[cur.type][cur.rot];
+      /* 🛰️ INTERP: oponento figūra piešiama iš EASED display-pozicijos (_piDX/_piDY), kad tarp
+       *   snapshot'ų slinktų sklandžiai, o ne šokinėtų. Savo lentai (_piDX==null) — tiesiai cur.x/cur.y
+       *   (lokaliai jau sklandu). Fallback: nesant interp būsenos, elgiasi kaip anksčiau. */
+      var pcx = (eng._piDX != null) ? eng._piDX : cur.x;
+      var pcy = (eng._piDY != null) ? eng._piDY : cur.y;
       if (C.SHOW_GHOST) {
         var gyy = eng.ghostY();
         for (k = 0; k < cells.length; k++) {
           var gyr = gyy + cells[k][1];
-          if (gyr >= C.BUFFER) ghostBlock(ctx, bx + (cur.x + cells[k][0]) * cell, by + (gyr - C.BUFFER) * cell, cell, cur.type);
+          if (gyr >= C.BUFFER) ghostBlock(ctx, bx + (pcx + cells[k][0]) * cell, by + (gyr - C.BUFFER) * cell, cell, cur.type);
         }
       }
       var lockA = eng.resting ? (0.55 + 0.45 * Math.cos(eng.lockTimer / C.LOCK_DELAY * Math.PI)) : 1;
       for (k = 0; k < cells.length; k++) {
-        var yy2 = cur.y + cells[k][1];
-        if (yy2 >= C.BUFFER) block(ctx, bx + (cur.x + cells[k][0]) * cell, by + (yy2 - C.BUFFER) * cell, cell, cur.type, lockA);
+        var yy2 = pcy + cells[k][1];
+        if (yy2 >= C.BUFFER) block(ctx, bx + (pcx + cells[k][0]) * cell, by + (yy2 - C.BUFFER) * cell, cell, cur.type, lockA);
       }
     }
 
