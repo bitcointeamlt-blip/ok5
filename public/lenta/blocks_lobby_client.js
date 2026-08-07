@@ -132,7 +132,7 @@
   }
 
   // ── 🏅 REITINGO SISTEMA (lygos + žvaigždutės + deko XP) — Supabase anon REST, veidrodis serverio RankStore ──
-  var RANK_LEAGUES = ['POPIERIUS', 'MEDIS', 'AKMUO', 'BRONZE', 'SILVER', 'AUKSAS', 'DEIMANTAS', 'GLOBAL'];
+  var RANK_LEAGUES = ['PAPER', 'WOOD', 'STONE', 'BRONZE', 'SILVER', 'GOLD', 'DIAMOND', 'GLOBAL'];
   var RANK_ICON = ['📄', '🌳', '🪨', '🥉', '🥈', '🥇', '💎', '🌐'];
   function _rankDecode(score) {
     var s = Math.max(0, Math.min(48, Math.round(Number(score) || 0)));

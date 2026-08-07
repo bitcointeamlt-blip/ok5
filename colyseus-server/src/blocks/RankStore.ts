@@ -15,7 +15,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 //   rate = 50 + 10×((lyga−1)*3 + pilnos_žvaigždės);  POPIERIUS=50 … GLOBAL 3★=260.
 //   XP užsiskaito KIEKVIENĄ PvP mačą (win ar lose) pagal žaidėjo PRIEŠ-mačo lygą.
 
-export const LEAGUES = ["POPIERIUS", "MEDIS", "AKMUO", "BRONZE", "SILVER", "AUKSAS", "DEIMANTAS", "GLOBAL"];
+export const LEAGUES = ["PAPER", "WOOD", "STONE", "BRONZE", "SILVER", "GOLD", "DIAMOND", "GLOBAL"];
 export const LEAGUE_ICON = ["📄", "🌳", "🪨", "🥉", "🥈", "🥇", "💎", "🌐"];
 const MAX_SCORE = 48;             // GLOBAL 3★
 const XP_BASE = 50, XP_STEP = 10;
