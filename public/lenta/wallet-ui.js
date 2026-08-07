@@ -23,7 +23,7 @@
         <button type="button" class="wui-pill" id="wui-pill-btn"></button>
         <button type="button" class="wui-castle-btn wui-raid-btn" id="wui-raid-btn" title="Raid a Castle" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-ronkepong-btn" id="wui-ronkepong-btn" title="RonkePong" style="display:none"></button>
-        <button type="button" class="wui-castle-btn wui-ronkeblocks-btn" id="wui-ronkeblocks-btn" title="RONKE BLOCKS (1v1)" style="display:none"></button>
+        <button type="button" class="wui-castle-btn wui-ronkeblocks-btn" id="wui-ronkeblocks-btn" title="PVP TETRIS (1v1)" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-inv-btn" id="wui-inv-btn" title="Inventory" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-rewards-btn" id="wui-rewards-btn" title="Rewards" style="display:none"></button>
         <button type="button" class="wui-castle-btn wui-upgrade-btn" id="wui-upgrade-btn" title="Upgrade" style="display:none"></button>
@@ -489,7 +489,7 @@
       // 🎳 hint sinchronizacija: „PONG" / countdown kai nemokamas išnaudotas
       if (showRp) { try { if (window.RonkePong && window.RonkePong.refresh) window.RonkePong.refresh(); } catch (_) {} }
     }
-    // 🧱 RONKE BLOCKS — dock mygtukas (šalia PINBALL). Tie patys rodymo sąlygos kaip pinball.
+    // 🧱 PVP TETRIS — dock mygtukas (šalia PINBALL). Tie patys rodymo sąlygos kaip pinball.
     //   „For fun" + testavimui: atidaro pasirinkimą (vs AI / ONLINE 1v1). Jokio mokesčio/cooldown.
     const rbBtnEl = pillEl.querySelector('#wui-ronkeblocks-btn');
     if (rbBtnEl) {

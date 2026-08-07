@@ -1,4 +1,4 @@
-// blocks_lobby_client.js — 🧱 RONKE BLOCKS lobis kaip F9 PANELĖ (stilius kaip RAID lentelė) + pranešimas.
+// blocks_lobby_client.js — 🧱 PVP TETRIS lobis kaip F9 PANELĖ (stilius kaip RAID lentelė) + pranešimas.
 //
 // Lobis rodomas PILYJE (DOM panelė — NEreikia krauti/rodyti tetris lango). Tetris žaidimas (iframe)
 // kraunamas PASLĖPTAS: jo net ryšys + matchmaking veikia per websocket/timerius (nepriklauso nuo rAF),
@@ -52,6 +52,38 @@
     }).catch(function () { return []; });
   }
 
+  // ── 📶 SIGNALO STIPRUMAS (ping) PRIEŠ prisijungiant — kad žaidėjas žinotų kas jo laukia (ar bus lagas) ──
+  //    Matuojam getAvailableRooms RTT (HTTP į tą patį game serverį) — 1 apšilimas + 3 matavimai, imam medianą.
+  var _pingMs = null, _pingBusy = false;
+  function _measurePing(cb) {
+    if (_pingBusy) { if (cb) cb(_pingMs); return; }
+    _pingBusy = true;
+    _loadColyseus().then(function () {
+      try { if (!_client) _client = new window.Colyseus.Client(_endpoint()); } catch (_) { _pingBusy = false; if (cb) cb(null); return; }
+      var now = function () { return (window.performance && performance.now) ? performance.now() : Date.now(); };
+      var samples = [], total = 4;
+      function one(i) { var t0 = now(); _client.getAvailableRooms('blocks_room').then(function () { step(i, now() - t0); }).catch(function () { step(i, now() - t0); }); }
+      function step(i, ms) { if (i > 0) samples.push(ms); if (i + 1 < total) setTimeout(function () { one(i + 1); }, 90); else finish(); }
+      function finish() {
+        _pingBusy = false;
+        if (!samples.length) { _pingMs = null; if (cb) cb(null); return; }
+        samples.sort(function (a, b) { return a - b; });
+        _pingMs = Math.round(samples[Math.floor(samples.length / 2)]);
+        if (cb) cb(_pingMs);
+      }
+      one(0);
+    }).catch(function () { _pingBusy = false; if (cb) cb(null); });
+  }
+  function _signalHtml(ms) {
+    if (ms == null) return '<span style="font-size:10px;color:#8a9aaa;">📶 checking connection…</span>';
+    var lvl = ms < 80 ? 3 : ms < 180 ? 2 : 1;   // 3=geras 2=vidut 1=silpnas
+    var col = lvl === 3 ? '#5ce08a' : lvl === 2 ? '#ffcf5c' : '#e07070';
+    var txt = lvl === 3 ? 'GOOD' : lvl === 2 ? 'OK' : 'WEAK';
+    var bars = '';
+    for (var b = 1; b <= 3; b++) bars += '<span style="display:inline-block;width:4px;height:' + (3 + b * 3) + 'px;margin:0 1px;vertical-align:bottom;background:' + (b <= lvl ? col : '#33405e') + ';border-radius:1px;"></span>';
+    return '<span style="font-size:10px;color:' + col + ';white-space:nowrap;">' + bars + ' <b>SIGNAL: ' + txt + '</b> <span style="opacity:.75;">' + ms + 'ms</span>' + (lvl === 1 ? ' <span style="opacity:.7;">— may lag</span>' : '') + '</span>';
+  }
+
   // ── Badge + toast (pranešimas kai kažkas laukia; NErodom kai pats žaidi/panelėje) ──
   function _poll() {
     if (document.hidden || !_inAdventure()) { _setBadge(0); _lastCount = 0; return; }
@@ -103,7 +135,7 @@
     }
     var name = who ? ('<b>' + _esc(who) + '</b>') : (count > 1 ? '<b>' + count + ' players</b>' : 'Someone');
     t.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:26px;">🧱</span>' +
-      '<div><div style="font-weight:800;font-size:13px;">RONKE BLOCKS — PvP</div>' +
+      '<div><div style="font-weight:800;font-size:13px;">PVP TETRIS</div>' +
       '<div style="font-size:12px;opacity:.9;">' + name + ' is waiting in the lobby.</div>' +
       '<div style="font-size:11px;color:#8fd8e0;margin-top:2px;">▶ Tap to open the lobby</div></div></div>';
     t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(_hideToast, 9000);
@@ -143,10 +175,11 @@
     p.innerHTML =
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
         '<span style="font-size:24px;text-shadow:0 0 14px #ffcf5c;">🧱</span>' +
-        '<span style="flex:1;font-size:16px;color:#ffcf5c;letter-spacing:1px;">RONKE BLOCKS · 1v1</span>' +
+        '<span style="flex:1;font-size:16px;color:#ffcf5c;letter-spacing:1px;">PVP TETRIS · 1v1</span>' +
         '<button id="rb-x" style="background:none;border:none;color:#8a9aaa;font-size:24px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
       '</div>' +
       '<div id="rb-status" style="display:none;font-size:12px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:6px;padding:12px;margin-bottom:12px;text-align:center;"></div>' +
+      '<div id="rb-panel-sig" style="text-align:center;margin-bottom:8px;">' + _signalHtml(_pingMs) + '</div>' +   // 📶 signalas prieš prisijungiant
       '<div style="font-size:11px;color:#6a7a8a;margin-bottom:8px;">OPEN MATCHES — tap a player to join ⚔️</div>' +
       '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:9px;min-height:48px;max-height:44vh;"><div style="color:#6a7a8a;font-size:11px;padding:10px 0;">Loading…</div></div>' +
       '<div style="margin-top:14px;border-top:1px solid #3a3a55;padding-top:12px;display:flex;flex-direction:column;gap:9px;">' +
@@ -181,6 +214,8 @@
     _renderList();
     // 🔗 jei VĖL atsidarau panelę hostindamas fone → iškart parodau savo laukimo būseną + invite linką
     if (_bgActive && _hostInvite && _hostInvite.url) _showHostStatus();
+    // 📶 signalo stiprumas — kad žaidėjas prieš prisijungdamas matytų ar bus lagas
+    _measurePing(function () { var sg = _panel && _panel.querySelector('#rb-panel-sig'); if (sg) sg.innerHTML = _signalHtml(_pingMs); });
     // Momentinis fallback (kol LobbyRoom atsiųs 'rooms'), tada — REALAUS LAIKO push (be polling).
     _fetchWaiting().then(function (l) { if (_panel && !_lobbyRoom) { _waitingRooms = l; _renderList(); } });
     _connectLobby();
@@ -392,12 +427,13 @@
       inner =
         '<div style="font-size:36px;margin-bottom:8px;">⚔️</div>' +
         '<div style="font-size:16px;color:#8fd8e0;font-weight:800;margin-bottom:2px;">' + host + '</div>' +
-        '<div style="font-size:12px;opacity:.85;margin-bottom:16px;">invited you to <b style="color:#ffcf5c;">RONKE BLOCKS</b> 1v1</div>' +
-        '<div style="display:flex;gap:18px;justify-content:center;align-items:center;margin-bottom:18px;">' +
+        '<div style="font-size:12px;opacity:.85;margin-bottom:16px;">invited you to <b style="color:#ffcf5c;">PVP TETRIS</b> 1v1</div>' +
+        '<div style="display:flex;gap:18px;justify-content:center;align-items:center;margin-bottom:10px;">' +
           '<div><div style="font-size:22px;color:#ffd97a;font-weight:800;">' + tier + '</div><div style="font-size:8px;opacity:.6;letter-spacing:.5px;">YOUR STAKE</div></div>' +
           '<div style="font-size:16px;opacity:.4;">→</div>' +
           '<div><div style="font-size:22px;color:#8dffa0;font-weight:800;">' + prize + '</div><div style="font-size:8px;opacity:.6;letter-spacing:.5px;">WINNER GETS</div></div>' +
         '</div>' +
+        '<div id="rb-inv-sig" style="margin-bottom:14px;">' + _signalHtml(_pingMs) + '</div>' +   // 📶 signalas PRIEŠ prisijungiant
         goBtn +
         '<button id="rb-inv-x" style="margin-top:9px;width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #4a3a55;background:none;color:#8a9aaa;font:600 11px monospace;cursor:pointer;">Cancel</button>';
     }
@@ -418,6 +454,8 @@
     };
     var x = o.querySelector('#rb-inv-x');
     if (x) x.onclick = function () { _hideInviteOverlay(); };
+    // 📶 išmatuojam signalą ir atnaujinam rodmenį (kad matytųsi ar bus lagas prieš prisijungiant)
+    if (mode === 'ready') _measurePing(function () { var sg = document.getElementById('rb-inv-sig'); if (sg) sg.innerHTML = _signalHtml(_pingMs); });
     try { if (window.Sfx && window.Sfx.play && mode === 'ready') window.Sfx.play('notify'); } catch (_) {}
   }
   function _showInviteConfirm(roomId, tries) {
@@ -524,7 +562,7 @@
       '<div style="background:linear-gradient(180deg,#241a08,#140e04);border:3px solid #e0a832;border-radius:14px;padding:22px 26px;text-align:center;color:#ffd97a;box-shadow:0 0 40px rgba(224,168,50,.4);max-width:340px;">' +
         '<div style="font-size:30px;margin-bottom:6px;">⚔️</div>' +
         '<div style="font-size:15px;font-weight:800;letter-spacing:.5px;"><b style="color:#8fd8e0;">' + _esc(opponent || 'A player') + '</b></div>' +
-        '<div style="font-size:12px;opacity:.85;margin:4px 0 18px;">wants to play RONKE BLOCKS 1v1!</div>' +
+        '<div style="font-size:12px;opacity:.85;margin:4px 0 18px;">wants to play PVP TETRIS 1v1!</div>' +
         '<div style="display:flex;gap:10px;">' +
           '<button id="rb-acc" class="rb-act" style="flex:1;padding:12px;border-radius:8px;border:2px solid #5ce08a;background:rgba(92,224,138,.15);color:#8fffb0;font:800 13px monospace;cursor:pointer;">✓ ACCEPT</button>' +
           '<button id="rb-dec" class="rb-act" style="flex:1;padding:12px;border-radius:8px;border:2px solid #e07070;background:rgba(224,112,112,.13);color:#ffb0b0;font:800 13px monospace;cursor:pointer;">✕ DECLINE</button>' +

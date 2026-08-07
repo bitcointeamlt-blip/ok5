@@ -1108,7 +1108,7 @@
     if (oy) ctx.translate(0, oy);
 
     var bob = Math.round(Math.sin(this.t / 420) * 2);
-    T.outlinedCenter(ctx, 'RONKE BLOCKS', cx, 40 + bob, U.gold, '#000000', 4);
+    T.outlinedCenter(ctx, 'PVP TETRIS', cx, 40 + bob, U.gold, '#000000', 4);
     T.center(ctx, '1 V 1  BLOCK BATTLE', cx, 74, U.text, 1);
 
     /* sudėtingumas */
@@ -1298,7 +1298,7 @@
     var totalH = 26 + 22 + 14 + listH + 8 + 50 + 10 + 40;
     var y = Math.round(cy - totalH / 2);
 
-    F.center(ctx, 'RONKE BLOCKS', cx, y, U.gold, 3); y += 26;
+    F.center(ctx, 'PVP TETRIS', cx, y, U.gold, 3); y += 26;
     F.center(ctx, 'ONLINE  1  v  1', cx, y, U.dim, 1); y += 22;
 
     /* ── LAUKIANČIŲ ŽAIDĖJŲ SĄRAŠAS (pakūrė matchą, laukia varžovo) ── */
@@ -1351,7 +1351,7 @@
     ctx.globalAlpha = pulse;
     F.outlinedCenter(ctx, String(match._challenger || 'PLAYER').toUpperCase(), cx, cy - 20, U.you, '#000000', 3);
     ctx.globalAlpha = 1;
-    F.center(ctx, 'wants to play RONKE BLOCKS', cx, cy + 8, U.dim, 1);
+    F.center(ctx, 'wants to play PVP TETRIS', cx, cy + 8, U.dim, 1);
     /* du mygtukai */
     var bw = 120, bh = 30, gap = 14, x0 = Math.round(cx - bw - gap / 2), x1 = Math.round(cx + gap / 2);
     var y = cy + 30;

@@ -1,4 +1,4 @@
-// ronkeblocks_launcher.js — 🧱 RONKE BLOCKS (PvP „Tetris") paleidyklė lenta žaidime.
+// ronkeblocks_launcher.js — 🧱 PVP TETRIS (PvP „Tetris") paleidyklė lenta žaidime.
 //
 // Principas kaip 🎳 RonkePong (ronkepong_launcher.js): dock mygtukas atidaro modal-iframe.
 // SKIRTUMAI: (1) NEMOKAMA — „for fun" + testavimui, jokio cooldown/kainos; (2) žaidimas
@@ -35,7 +35,7 @@
   function _showChooser() {
     _overlay.innerHTML =
       '<div style="text-align:center;font-family:monospace;color:#ffd97a;max-width:340px;padding:20px;">' +
-        '<div style="font-size:26px;font-weight:800;letter-spacing:1px;text-shadow:2px 2px 0 #000;">RONKE BLOCKS</div>' +
+        '<div style="font-size:26px;font-weight:800;letter-spacing:1px;text-shadow:2px 2px 0 #000;">PVP TETRIS</div>' +
         '<div style="font-size:12px;opacity:.7;margin:6px 0 22px;">medieval 1v1 block battle</div>' +
         '<button id="rb-ai" class="rb-choice">⚔️ &nbsp;PLAY vs AI</button>' +
         '<button id="rb-online" class="rb-choice">🌐 &nbsp;ONLINE 1v1</button>' +
