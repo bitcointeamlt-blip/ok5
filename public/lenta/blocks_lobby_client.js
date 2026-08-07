@@ -110,7 +110,7 @@
       var count = list.length;
       if (_inMinigame() || _panel || _bgActive) count = 0;   // jau čia esu / hostinu → nerodom
       _setBadge(count);
-      if (count > _lastCount && count > 0) _toast(count, list[0] && list[0].host);
+      if (count > _lastCount && count > 0) { _toast(count, list[0] && list[0].host); _shakeDockBtn(); }   // 🎮 naujas laukiantis → mygtukas virpteli
       _lastCount = count;
     });
   }
@@ -135,9 +135,22 @@
     st.textContent = '@keyframes rbLobbyPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}' +
       '@keyframes rbToastIn{from{transform:translateX(-50%) translateY(-16px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}' +
       '.rb-row:hover{background:#2a3450 !important;} .rb-act:hover{filter:brightness(1.18);}' +
+      /* 🎮 TETRIS doko mygtuko virpėjimas — kai kažkas laukia varžovo (dėmesiui) */
+      '@keyframes rbTetrisShake{0%,60%,100%{transform:rotate(0)}6%{transform:rotate(-7deg)}14%{transform:rotate(7deg)}22%{transform:rotate(-5deg)}30%{transform:rotate(5deg)}38%{transform:rotate(-3deg)}46%{transform:rotate(3deg)}54%{transform:rotate(0)}}' +
+      '.rb-tetris-shake{animation:rbTetrisShake 1.5s ease-in-out infinite;transform-origin:center bottom;}' +
       /* 🦴 kai kaulų balanso widget'as viršuje — pranešimą nuleidžiam žemiau (nesusiliestų su balansu) */
       'body.f9-bones-live #rb-lobby-toast{top:calc(72px + env(safe-area-inset-top, 0px)) !important;}';
     document.head.appendChild(st);
+  }
+  // 🎮 Virptelim TETRIS mygtuką ~8s (5–10s), kai atsiranda laukiantis varžovas — kad žaidėjas pastebėtų.
+  var _shakeTimer = null;
+  function _shakeDockBtn() {
+    var btn = _dockBtn(); if (!btn) return;
+    _css();
+    btn.classList.remove('rb-tetris-shake'); void btn.offsetWidth;   // restart animaciją jei jau vyksta
+    btn.classList.add('rb-tetris-shake');
+    if (_shakeTimer) clearTimeout(_shakeTimer);
+    _shakeTimer = setTimeout(function () { var b = _dockBtn(); if (b) b.classList.remove('rb-tetris-shake'); }, 8000);
   }
   function _toast(count, who) {
     _css();
