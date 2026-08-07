@@ -45,9 +45,10 @@ export async function bind(wallet: string, ref: string): Promise<boolean> {
   return _op("bind_" + w, async () => {
     try {
       const { data: ex } = await c.from("f9_bases").select("ronin_address").eq("ronin_address", "ref_" + w).maybeSingle();
-      if (ex) return false;   // jau prisirišęs
-      const { data: seen } = await c.from("f9_bases").select("ronin_address").eq("ronin_address", "tetrisseen_" + w).maybeSingle();
-      if (seen) return false;   // jau žaidė tetris anksčiau → tik „niekada nežaidę" prisiriša
+      if (ex) return false;   // jau prisirišęs → pirmas referrer'is laimi (nekeičiam)
+      // 🎁 08-07: „tik niekada nežaidęs" riba NUIMTA — bet kas be referrer'io gali tapti referalu (augimui),
+      //   nes sistema tik paleista ir dar nė vienas neturi referrer'io. Apsaugos: jau prisirišęs (aukščiau)
+      //   + self-ref (guard funkcijos viršuj). `tetrisseen_` nebetikrinamas.
       const { error } = await c.from("f9_bases").insert({ ronin_address: "ref_" + w, buildings: { referrer: r, boundAt: Date.now() } });
       if (error) return false;   // konfliktas = race, kitas jau prisirišo
       // referrer'io referalų skaitiklis (read-merge, op-serialized ant earn_<r>)
