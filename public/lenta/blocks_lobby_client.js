@@ -103,14 +103,17 @@
 
   // ── Badge + toast (pranešimas kai kažkas laukia; NErodom kai pats žaidi/panelėje) ──
   function _poll() {
-    if (document.hidden || !_inAdventure()) { _setBadge(0); _lastCount = 0; return; }
+    if (document.hidden || !_inAdventure()) { _setBadge(0); _lastCount = 0; _stopShakeLoop(); return; }
     if (_lobbyRoom) return;   // panelė atidaryta su REALAUS LAIKO lobby → jis tvarko sąrašą (nepoliname)
     _fetchWaiting().then(function (list) {
       _waitingRooms = list;
       var count = list.length;
       if (_inMinigame() || _panel || _bgActive) count = 0;   // jau čia esu / hostinu → nerodom
       _setBadge(count);
-      if (count > _lastCount && count > 0) { _toast(count, list[0] && list[0].host); _shakeDockBtn(); }   // 🎮 naujas laukiantis → mygtukas virpteli
+      if (count > 0) {
+        if (count > _lastCount) _toast(count, list[0] && list[0].host);   // toast tik naujam
+        _startShakeLoop();                                                // 🎮 3× virptelėjimai kas 30s, kol laukia
+      } else _stopShakeLoop();
       _lastCount = count;
     });
   }
@@ -137,20 +140,33 @@
       '.rb-row:hover{background:#2a3450 !important;} .rb-act:hover{filter:brightness(1.18);}' +
       /* 🎮 TETRIS doko mygtuko virpėjimas — kai kažkas laukia varžovo (dėmesiui) */
       '@keyframes rbTetrisShake{0%,60%,100%{transform:rotate(0)}6%{transform:rotate(-7deg)}14%{transform:rotate(7deg)}22%{transform:rotate(-5deg)}30%{transform:rotate(5deg)}38%{transform:rotate(-3deg)}46%{transform:rotate(3deg)}54%{transform:rotate(0)}}' +
-      '.rb-tetris-shake{animation:rbTetrisShake 1.5s ease-in-out infinite;transform-origin:center bottom;}' +
+      '.rb-tetris-shake{animation:rbTetrisShake 1.5s ease-in-out 3;transform-origin:center bottom;}' +   /* 3 virptelėjimai (~4.5s) */
       /* 🦴 kai kaulų balanso widget'as viršuje — pranešimą nuleidžiam žemiau (nesusiliestų su balansu) */
       'body.f9-bones-live #rb-lobby-toast{top:calc(72px + env(safe-area-inset-top, 0px)) !important;}';
     document.head.appendChild(st);
   }
-  // 🎮 Virptelim TETRIS mygtuką ~8s (5–10s), kai atsiranda laukiantis varžovas — kad žaidėjas pastebėtų.
-  var _shakeTimer = null;
+  // 🎮 Vienas „virptelėjimas" = 3 kartai (~4.5s). Kviečiama iškart + kas 30s per _shakeLoop, kol laukia varžovas.
+  var _shakeTimer = null, _shakeLoopTimer = null;
   function _shakeDockBtn() {
     var btn = _dockBtn(); if (!btn) return;
     _css();
-    btn.classList.remove('rb-tetris-shake'); void btn.offsetWidth;   // restart animaciją jei jau vyksta
+    btn.classList.remove('rb-tetris-shake'); void btn.offsetWidth;   // restart animaciją
     btn.classList.add('rb-tetris-shake');
     if (_shakeTimer) clearTimeout(_shakeTimer);
-    _shakeTimer = setTimeout(function () { var b = _dockBtn(); if (b) b.classList.remove('rb-tetris-shake'); }, 8000);
+    _shakeTimer = setTimeout(function () { var b = _dockBtn(); if (b) b.classList.remove('rb-tetris-shake'); }, 4700);   // po 3 virptelėjimų nuimam
+  }
+  function _startShakeLoop() {
+    if (_shakeLoopTimer) return;   // jau sukasi
+    _shakeDockBtn();               // iškart 3×
+    _shakeLoopTimer = setInterval(function () {
+      if (!_inAdventure() || _inMinigame() || _panel || _bgActive) return;   // ne pilyje/žaidžia → praleidžiam
+      _shakeDockBtn();             // vėl 3× (kas 30s)
+    }, 30000);
+  }
+  function _stopShakeLoop() {
+    if (_shakeLoopTimer) { clearInterval(_shakeLoopTimer); _shakeLoopTimer = null; }
+    if (_shakeTimer) { clearTimeout(_shakeTimer); _shakeTimer = null; }
+    var b = _dockBtn(); if (b) b.classList.remove('rb-tetris-shake');
   }
   function _toast(count, who) {
     _css();
