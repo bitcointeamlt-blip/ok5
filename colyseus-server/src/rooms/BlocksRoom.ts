@@ -7,6 +7,7 @@ import { WagerEscrow } from "../blocks/WagerEscrow";
 import { MatchLog } from "../blocks/MatchLog";
 import { PayoutQueue } from "../blocks/PayoutQueue";   // neverifikuoto rezultato payout → manual eilė
 import * as ReferralStore from "../blocks/ReferralStore";   // 🎁 referalų sistema (bind + 5% kreditas)
+import * as RankStore from "../blocks/RankStore";           // 🏅 reitingo (lygos+žvaigždutės) + deko XP
 
 /* RONKE BLOCKS — 1v1 online (server-authoritative KORIDORIUS).
  *
@@ -107,6 +108,7 @@ export class BlocksRoom extends Room<BlocksState> {
   private _verifyOk = false;
   private _disposed = false;                          // kambarys uždarytas → stabdom fono verify ciklą
   private _refOf: Record<Side, string> = { p1: "", p2: "" };   // 🎁 kiekvieno žaidėjo referrer'is (iš stake žinutės)
+  private _addrOf: Record<Side, string> = { p1: "", p2: "" };  // 🏅 kiekvieno žaidėjo piniginė (nemokamiems iš options.addr; wager perrašo įrodytu iš escrow) — reitingui/XP
 
   onCreate(options?: any) {
     /* PRIVATUS kambarys (draugo kvietimas per kodą/nuorodą): išimamas iš matchmaking, kad
@@ -180,6 +182,9 @@ export class BlocksRoom extends Room<BlocksState> {
     p.name = (options && options.name) || "Player";
     this.state.players.set(client.sessionId, p);
     this.sideOf[client.sessionId] = side;
+    // 🏅 piniginė reitingui/XP: nemokamiems iš options.addr (deklaruota, ne įrodyta — off-chain XP → OK);
+    //    wager metu perrašom ĮRODYTU adresu (_onStake / escrow). Be piniginės → nėra reitingo (ir nėra kam duoti XP).
+    this._addrOf[side] = String((options && options.addr) || "").trim().toLowerCase();
     if (side === "p1") this.hostSession = client.sessionId;   // pirmasis = HOST (jam eina challenge)
     // 🧱💰 pay-on-accept: NEIMAM įėjimo prisijungiant — abu moka tik po host'o „accept" (žr. _accept/_onStake).
     client.send("hello", { side, seed: this.seed });
@@ -252,6 +257,7 @@ export class BlocksRoom extends Room<BlocksState> {
     const addr = String((m && m.addr) || "");
     if (!tx) return;
     this._refOf[side] = String((m && m.ref) || "");   // 🎁 referrer'is (iš kliento localStorage `rb_ref`); bind'inam settle metu (proven wallet)
+    if (addr) this._addrOf[side] = addr.trim().toLowerCase();   // 🏅 wager: ĮRODYTAS adresas reitingui (perrašo onJoin deklaraciją)
     this.escrow.setEntry(side, addr, tx);
     if (!this.escrow.bothStaked()) return;   // laukiam kito žaidėjo mokėjimo
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
@@ -618,9 +624,26 @@ export class BlocksRoom extends Room<BlocksState> {
     this.state.phase = "over";
     this.state.winner = winner;
     this.broadcast("gameover", { winner });
+    this._applyRank(winner);   // 🏅 reitingas + deko XP (off-chain, idempotentiška per roomId) — free IR wager
     // 🥇 OPTIMISTINIS: mačas baigėsi — payout sprendžiam kai IR verify baigtas (žr. _settleIfReady).
     if (this.escrow.active) { this._winnerSide = winner; this._settleIfReady(); }
     else this._logMatch(winner);   // nemokamas mačas — tik žurnalas (jokio payout)
+  }
+
+  // 🏅 REITINGAS + XP — mačui pasibaigus atnaujinam abiejų žaidėjų lygas/žvaigždutes + deko XP (off-chain).
+  //   Wager: adresai ĮRODYTI (escrow.matchInfo). Nemokamas: deklaruoti (onJoin options.addr) — off-chain,
+  //   ne pinigai → priimtina. Be piniginės žaidėjas praleidžiamas. Idempotentiška per roomId (RankStore dedupe).
+  //   Draw (winner="") → jokio reitingo pokyčio. Async best-effort → NELIEČIA payout/settle kelio.
+  private _applyRank(winner: Side | "") {
+    try {
+      if (!winner || !RankStore.rankEnabled()) return;
+      let a1 = this._addrOf.p1, a2 = this._addrOf.p2;
+      if (this.escrow.active) { const mi = this.escrow.matchInfo(); if (mi.p1.addr) a1 = mi.p1.addr; if (mi.p2.addr) a2 = mi.p2.addr; }
+      const wAddr = winner === "p1" ? a1 : a2;
+      const lAddr = winner === "p1" ? a2 : a1;
+      if (!RankStore.isAddr(wAddr) && !RankStore.isAddr(lAddr)) return;   // nė vienas be piniginės → jokio reitingo (ir DB triukšmo)
+      void RankStore.applyResult(wAddr, lAddr, this.roomId);
+    } catch (e: any) { console.warn("[BLOCKS RANK] apply fail:", e?.message); }
   }
 
   // Payout sprendimas — kviečiamas ir po _end, ir po fono verify (kuris paskutinis nugali). Reikia ABIEJŲ:

@@ -131,6 +131,109 @@
     };
   }
 
+  // ── 🏅 REITINGO SISTEMA (lygos + žvaigždutės + deko XP) — Supabase anon REST, veidrodis serverio RankStore ──
+  var RANK_LEAGUES = ['POPIERIUS', 'MEDIS', 'AKMUO', 'BRONZE', 'SILVER', 'AUKSAS', 'DEIMANTAS', 'GLOBAL'];
+  var RANK_ICON = ['📄', '🌳', '🪨', '🥉', '🥈', '🥇', '💎', '🌐'];
+  function _rankDecode(score) {
+    var s = Math.max(0, Math.min(48, Math.round(Number(score) || 0)));
+    var lg = Math.min(7, Math.floor(s / 6)), hs = s - lg * 6;
+    return { score: s, league: lg, hs: hs, stars: hs / 2, name: RANK_LEAGUES[lg], icon: RANK_ICON[lg] };
+  }
+  function _rankRate(score) { var d = _rankDecode(score); if (d.league <= 0) return 50; return 50 + 10 * ((d.league - 1) * 3 + Math.floor(d.hs / 2)); }
+  // 3 žvaigždutės su pusžvaigžde (hs 0..6): pilna=auksinė, pusė=blyški, tuščia=pilka
+  function _starsHtml(hs, sz) {
+    var full = Math.floor(hs / 2), half = hs % 2, out = '', px = sz || 15;
+    for (var i = 0; i < 3; i++) {
+      var col = (i < full) ? '#ffcf5c' : ((i === full && half) ? 'rgba(255,207,92,.42)' : '#38455a');
+      out += '<span style="color:' + col + ';font-size:' + px + 'px;text-shadow:' + (i < full ? '0 0 8px rgba(255,207,92,.55)' : 'none') + ';">★</span>';
+    }
+    return out;
+  }
+  function _rankStats(addr) {
+    var R = String(addr || '').toLowerCase();
+    if (!_isAddr(R)) return Promise.resolve(null);
+    return fetch(SB_URL + '/rest/v1/f9_bases?select=buildings&ronin_address=eq.rank_' + R, { headers: _sbHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (rows) {
+        var b = (rows && rows[0] && rows[0].buildings) || null;
+        if (!b) return { score: 0, wins: 0, losses: 0, games: 0, xp: 0 };
+        return { score: Number(b.score) || 0, wins: Number(b.wins) || 0, losses: Number(b.losses) || 0, games: Number(b.games) || 0, xp: Number(b.xp) || 0 };
+      }).catch(function () { return null; });
+  }
+  function _rankBoard() {
+    return fetch(SB_URL + '/rest/v1/f9_bases?select=ronin_address,buildings&ronin_address=like.rank_0x*&limit=500', { headers: _sbHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (rows) {
+        var arr = (rows || []).map(function (row) {
+          var b = row.buildings || {};
+          return { addr: String(row.ronin_address).replace(/^rank_/, ''), score: Number(b.score) || 0, wins: Number(b.wins) || 0, losses: Number(b.losses) || 0, games: Number(b.games) || 0, xp: Number(b.xp) || 0 };
+        }).filter(function (x) { return _isAddr(x.addr); });
+        arr.sort(function (a, b) { return b.score - a.score || b.wins - a.wins || a.games - b.games; });
+        return arr;
+      }).catch(function () { return []; });
+  }
+  function _shortAddr(a) { a = String(a || ''); return a.length > 10 ? (a.slice(0, 6) + '…' + a.slice(-4)) : a; }
+  // 🏅 Reitingo panelė (overlay): tavo lyga+žvaigždutės, W/L, laukiantis deko XP, ir top lentelė.
+  function _openRankPanel() {
+    var addr = _walletAddr();
+    var ov = document.createElement('div'); ov.id = 'rb-rank-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.94);z-index:99100;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);';
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    var p = document.createElement('div');
+    p.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;box-shadow:0 0 48px rgba(255,207,92,0.35);border-radius:8px;padding:22px 26px;width:540px;max-width:96vw;max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:12px;' +
+      "font-family:'Press Start 2P',monospace,sans-serif;font-size:12px;line-height:1.6;color:#8a9aaa;";
+    p.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
+        '<span style="font-size:22px;">🏅</span><span style="flex:1;font-size:15px;color:#ffcf5c;letter-spacing:1px;">RANKED</span>' +
+        '<button id="rb-rank-x" style="background:none;border:none;color:#8a9aaa;font-size:22px;cursor:pointer;font-family:inherit;">×</button>' +
+      '</div>' +
+      (addr
+        ? ('<div id="rb-rank-me" style="background:#0c1020;border:1px solid #46567e;border-radius:8px;padding:16px;text-align:center;">' +
+             '<div style="font-size:11px;color:#6a7a8a;">Loading your rank…</div></div>' +
+           '<div style="font-size:9px;color:#6a7a8a;text-align:center;">Win +1★ · Lose −½★ · Beat a higher league +2★ · Lose to a lower league −2★</div>' +
+           '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;"><span style="flex:1;height:1px;background:#3a3a55;"></span><span style="font-size:10px;color:#ffd97a;">LEADERBOARD</span><span style="flex:1;height:1px;background:#3a3a55;"></span></div>' +
+           '<div id="rb-rank-board" style="display:flex;flex-direction:column;gap:5px;min-height:40px;"><div style="color:#6a7a8a;font-size:10px;text-align:center;padding:10px 0;">Loading…</div></div>')
+        : '<div style="font-size:11px;color:#ffd97a;text-align:center;padding:20px 0;">Connect your wallet to earn a rank. Every PvP tetris match moves you up the leagues — and feeds XP to your deck units.</div>'
+      );
+    ov.appendChild(p); document.body.appendChild(ov);
+    p.querySelector('#rb-rank-x').onclick = function () { try { ov.remove(); } catch (_) {} };
+    if (!addr) return;
+    var me = p.querySelector('#rb-rank-me'), board = p.querySelector('#rb-rank-board');
+    _rankStats(addr).then(function (s) {
+      if (!document.body.contains(p) || !me) return;
+      s = s || { score: 0, wins: 0, losses: 0, games: 0, xp: 0 };
+      var d = _rankDecode(s.score), rate = _rankRate(s.score);
+      me.innerHTML =
+        '<div style="font-size:40px;line-height:1;">' + d.icon + '</div>' +
+        '<div style="font-size:16px;color:#ffcf5c;letter-spacing:1px;margin-top:8px;">' + d.name + '</div>' +
+        '<div style="margin-top:8px;">' + _starsHtml(d.hs, 20) + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;">' +
+          '<div><div style="font-size:15px;color:#aef0b0;">' + s.wins + '</div><div style="font-size:7px;color:#6a7a8a;margin-top:3px;">WINS</div></div>' +
+          '<div><div style="font-size:15px;color:#e89a9a;">' + s.losses + '</div><div style="font-size:7px;color:#6a7a8a;margin-top:3px;">LOSSES</div></div>' +
+          '<div><div style="font-size:15px;color:#bff0f6;">' + s.games + '</div><div style="font-size:7px;color:#6a7a8a;margin-top:3px;">GAMES</div></div>' +
+        '</div>' +
+        '<div style="margin-top:14px;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:6px;padding:10px;">' +
+          '<div style="font-size:14px;color:#ffd97a;">⚡ ' + Math.round(s.xp) + ' XP</div>' +
+          '<div style="font-size:8px;color:#8a9aaa;margin-top:5px;line-height:1.5;">pending for your deck units · +' + rate + ' XP per unit each match at ' + d.name + '</div>' +
+        '</div>';
+    });
+    _rankBoard().then(function (rows) {
+      if (!document.body.contains(p) || !board) return;
+      if (!rows.length) { board.innerHTML = '<div style="color:#6a7a8a;font-size:10px;text-align:center;padding:10px 0;">No ranked players yet — be the first!</div>'; return; }
+      var mine = String(addr).toLowerCase();
+      board.innerHTML = rows.slice(0, 20).map(function (r, i) {
+        var d = _rankDecode(r.score), you = r.addr.toLowerCase() === mine;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;background:' + (you ? 'rgba(255,207,92,.14)' : '#0c1020') + ';border:1px solid ' + (you ? '#ffcf5c' : '#2a3550') + ';">' +
+          '<span style="width:22px;font-size:11px;color:' + (i < 3 ? '#ffd97a' : '#6a7a8a') + ';">' + (i + 1) + '</span>' +
+          '<span style="font-size:15px;">' + d.icon + '</span>' +
+          '<span style="flex:1;min-width:0;font-size:9px;color:' + (you ? '#ffcf5c' : '#bff0f6') + ';overflow:hidden;text-overflow:ellipsis;">' + _shortAddr(r.addr) + (you ? ' (you)' : '') + '</span>' +
+          '<span style="font-size:11px;">' + _starsHtml(d.hs, 11) + '</span>' +
+          '<span style="width:52px;text-align:right;font-size:9px;color:#8a9aaa;">' + r.wins + 'W ' + r.losses + 'L</span>' +
+        '</div>';
+      }).join('');
+    });
+  }
+
   function _endpoint() {
     try { var h = location.hostname; if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'ws://localhost:2567'; } catch (_) {}
     try { if (window.F9PVP_ENDPOINT) return String(window.F9PVP_ENDPOINT).replace(/^http/, 'ws'); } catch (_) {}
@@ -351,7 +454,10 @@
           '<button id="rb-private" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:12px;cursor:pointer;">🔒 PRIVATE</button>' +
           '<button id="rb-ai" class="rb-act" style="flex:1;padding:12px;border-radius:6px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:12px;cursor:pointer;">🤖 vs AI</button>' +
         '</div>' +
-        '<button id="rb-refs" class="rb-act" style="padding:11px;border-radius:6px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:11px;cursor:pointer;margin-top:2px;">🎁 REFERRALS · invite friends, earn 5%</button>' +
+        '<div style="display:flex;gap:9px;margin-top:2px;">' +
+          '<button id="rb-rank" class="rb-act" style="flex:1;padding:11px;border-radius:6px;border:1px solid #5aa8b4;background:rgba(143,216,224,.12);color:#bff0f6;font-family:inherit;font-size:11px;cursor:pointer;">🏅 RANK · leagues & stars</button>' +
+          '<button id="rb-refs" class="rb-act" style="flex:1;padding:11px;border-radius:6px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:11px;cursor:pointer;">🎁 REFERRALS · earn 5%</button>' +
+        '</div>' +
       '</div>';
     ov.appendChild(p); document.body.appendChild(ov);
     p.querySelector('#rb-x').onclick = _closePanel;
@@ -390,6 +496,7 @@
     p.querySelector('#rb-private').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, true); else _doHost(_selectedTier, true); };
     p.querySelector('#rb-ai').onclick = function () { _closePanel(); try { if (window.RonkeBlocks) window.RonkeBlocks.openAI(); } catch (_) {} };
     p.querySelector('#rb-refs').onclick = function () { _openReferralPanel(); };   // 🎁 referal panelė
+    p.querySelector('#rb-rank').onclick = function () { _openRankPanel(); };       // 🏅 reitingo panelė
 
     _ensureGame();                 // preload paslėptą žaidimo iframe (host/join iškart)
     _renderList();
@@ -534,7 +641,7 @@
       _cmd(priv ? 'private' : 'host', null, tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago); cheat-apsauga per periodinę patikrą (LIKO)
       _status((priv ? 'Private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you pay only when an opponent is matched · can close & keep playing</span>', true);
     } else {
-      _cmd(priv ? 'private' : 'host', null, tier);   // nemokamas (client-board)
+      _cmd(priv ? 'private' : 'host', null, tier, null, false, _walletAddr());   // nemokamas (client-board); 🏅 addr → reitingas/XP (jei piniginė yra)
       _status((priv ? 'Creating private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you can close this and keep playing</span>', true);
     }
   }
@@ -548,7 +655,7 @@
       _cmd('join', r.roomId, r.tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago)
       _status('Joining ' + _esc(r.host) + ' · ' + r.tier + ' RONKE — you pay when the match is confirmed…', true);
     } else {
-      _cmd('join', r.roomId);
+      _cmd('join', r.roomId, r.tier, null, false, _walletAddr());   // 🏅 addr → reitingas/XP (jei piniginė yra)
       _status('Joining ' + _esc(r.host) + ' (' + (r.tier || 69) + ' RONKE)…', true);
     }
   }
