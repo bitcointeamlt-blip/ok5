@@ -96,7 +96,22 @@
         else if (d.cmd === 'join' && d.roomId) match.netJoinRoom(d.roomId);
         else if (d.cmd === 'accept') match.netAccept();
         else if (d.cmd === 'decline') match.netDecline();
-        else if (d.cmd === 'stake') { try { global.NET.send('stake', { tx: d.mid, addr: d.addr, ref: d.ref || '', aiPlay: !!d.aiPlay }); } catch (_) {} }   // 🧱💰 įėjimo tx + 🎁 referrer'is (+🤖 aiPlay) serveriui
+        else if (d.cmd === 'stake') {
+          /* 📱 MOBILE RESUME: mokant piniginės APP'E naršyklė fone → WS miręs. Jei taip —
+           * prisijungiam prie TO PATIES kambario (joinById) ir tada siunčiam stake tx. */
+          var _sendStake = function () { try { global.NET.send('stake', { tx: d.mid, addr: d.addr, ref: d.ref || '', aiPlay: !!d.aiPlay }); } catch (_) {} };
+          if (global.NET.status === 'open') _sendStake();
+          else {
+            var _rid = global.NET.roomId;
+            if (_rid) {
+              match.netOpts = match.netOpts || {};
+              match.netOpts.roomId = _rid;
+              global.NET.connect('colyseus', match.netOpts)
+                .then(function () { setTimeout(_sendStake, 350); })
+                .catch(function (err) { console.error('[stake resume] rejoin fail', err); });
+            }
+          }
+        }
         else if (d.cmd === 'stakecancel') { try { global.NET.send('stake_cancel', {}); } catch (_) {} }
         else if (d.cmd === 'xpassign') { try { global.NET.send('xp_assign', { unit: d.mid }); } catch (_) {} }   // 🎖️ pool -> unitas
         else if (d.cmd === 'lobby') { match.state = 'lobby'; match.roomCode = ''; match.inviteUrl = ''; match._startLobbyPoll(); }

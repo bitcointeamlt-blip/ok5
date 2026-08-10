@@ -1111,7 +1111,7 @@
       var needWallet = _wager() && !_walletAddr();
       var goBtn = needWallet
         ? '<button id="rb-inv-go" class="rb-act" style="width:100%;box-sizing:border-box;padding:16px;border-radius:10px;border:2px solid #5aa8b4;background:rgba(143,216,224,.2);color:#cdeef5;font:800 14px monospace;cursor:pointer;letter-spacing:.5px;">🔗 CONNECT WALLET TO PLAY</button>' +
-            '<div style="font-size:9px;color:#8fd8e0;opacity:.85;margin-top:8px;line-height:1.5;">connect your Ronin wallet,<br>then confirm the ' + tier + ' RONKE stake</div>'
+            '<div style="font-size:9px;color:#8fd8e0;opacity:.85;margin-top:8px;line-height:1.5;">connect your Ronin wallet,<br>then confirm the ' + tier + ' RONKE stake<br><b>on mobile:</b> this opens the Ronin Wallet app — approve there and come back</div>'
         : '<button id="rb-inv-go" class="rb-act" style="width:100%;box-sizing:border-box;padding:16px;border-radius:10px;border:2px solid #5ce08a;background:rgba(92,224,138,.16);color:#8fffb0;font:800 15px monospace;cursor:pointer;letter-spacing:.5px;">⚔️ CONFIRM &amp; PLAY</button>';
       inner =
         '<div style="font-size:36px;margin-bottom:8px;">⚔️</div>' +
@@ -1137,10 +1137,17 @@
       }
       // 🔗 piniginė NEprijungta → atidarom prisijungimą, palaukiam, tada VĖL rodom (jau su „CONFIRM & PLAY")
       _hideInviteOverlay();
-      try { if (window.WalletUI && window.WalletUI.openConnect) window.WalletUI.openConnect(); } catch (_) {}
+      /* 📱 MOBILE be piniginės: TIESIAI Ronin connect (WalletConnect deep-link į Ronin app) —
+       * bendras connect UI naujoką mobile pasiklaidina. Desktop (yra provider) — įprastas UI. */
+      try {
+        var _hasNative = !!((window.ronin && window.ronin.provider) || window.ethereum);
+        if (!_hasNative && window.Wallet && window.Wallet.connect) {
+          window.Wallet.connect('ronin').catch(function (e) { console.warn('[invite connect]', e && e.message); });
+        } else if (window.WalletUI && window.WalletUI.openConnect) window.WalletUI.openConnect();
+      } catch (_) {}
       var tries = 0, poll = setInterval(function () {
         tries++;
-        if (_walletAddr() || tries > 80) { clearInterval(poll); _renderInviteOverlay(r, roomId, 'ready'); }   // prisijungė (arba ~40s) → vėl invite ekranas
+        if (_walletAddr() || tries > 240) { clearInterval(poll); _renderInviteOverlay(r, roomId, 'ready'); }   // prisijungė (arba ~2min — mobile app kelionė lėta) → vėl invite ekranas
       }, 500);
     };
     var x = o.querySelector('#rb-inv-x');
@@ -1215,7 +1222,7 @@
     _iframe = document.createElement('iframe');
     _iframeLoaded = false;
     _iframe.addEventListener('load', function () { _iframeLoaded = true; });
-    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb94';
+    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb95';
     _iframe.style.cssText = 'border:0;width:100%;height:100%;display:block;';
     _iframe.setAttribute('allow', 'autoplay');
     var exit = document.createElement('button');

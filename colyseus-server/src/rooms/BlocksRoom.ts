@@ -301,8 +301,13 @@ export class BlocksRoom extends Room<BlocksState> {
     if (this.state.phase === "lobby" || this.state.phase === "challenge" || this.state.phase === "staking" || this.state.phase === "prep") {
       const p = this.state.players.get(client.sessionId);
       if (this.state.phase === "challenge" && p && p.side === "p2") this._cancelChallenge();  // svečias dingo (niekas nemokėjo)
-      // 🧱💰 staking/prep metu kažkas išėjo (mačas dar neprasidėjo) → abort + grąžinam abiem sumokėjusiems
-      else if (this.state.phase === "staking" || this.state.phase === "prep") void this._abortWager("opponent_left");
+      // 📱 MOBILE FIX (08-10): mokėdamas piniginės APP'E žaidėjas praranda WS — NEabortinam iškart!
+      //   Kambarys laukia: grįžęs klientas prisijungia per joinById ir atsiunčia stake tx (main.js resume).
+      //   Jei negrįžo — stake_timeout (STAKE_MS) abortina + refund'ina kaip anksčiau.
+      else if (this.state.phase === "staking" || this.state.phase === "prep") {
+        this.autoDispose = false;   // tuščias kambarys nemiršta, kol žaidėjas piniginės app'e
+        console.log(`[BLOCKS] 📱 žaidėjas atsijungė ${this.state.phase} fazėje — laukiam sugrįžtant (room=${this.roomId})`);
+      }
       try { this.state.players.delete(client.sessionId); } catch {}
       if (client.sessionId === this.hostSession) this.hostSession = "";
       return;
@@ -499,7 +504,8 @@ export class BlocksRoom extends Room<BlocksState> {
     });
     // 🤖 PvP su AI: žaidėjas gali IŠEITI, o jo botas pabaigia mačą → kambarys neturi užsidaryti likus 0 klientų.
     //   Grąžinam autoDispose _end'e (žr. ten) — MATCH_MAX_MS garantuoja pabaigą.
-    if (!this.vsAI && (this._aiPlayOf.p1 || this._aiPlayOf.p2)) this.autoDispose = false;
+    //   📱 Eksplicitiškai (staking grace galėjo palikti false): be AI pusių → true.
+    this.autoDispose = this.vsAI ? true : !(this._aiPlayOf.p1 || this._aiPlayOf.p2);
     this.clients.forEach((c) => {
       const p = this.state.players.get(c.sessionId);
       const side: Side = (p ? p.side : "p1") as Side;
@@ -1130,6 +1136,8 @@ export class BlocksRoom extends Room<BlocksState> {
     } catch (_) {}
     this.clients.forEach((c) => c.send("wager_abort", { reason }));
     if (this.state.phase !== "over") this.state.phase = "lobby";
+    this.autoDispose = true;   // 📱 grace baigėsi — kambarys vėl gali užsidaryti normaliai
+    if (this.clients.length === 0) setTimeout(() => { try { void this.disconnect(); } catch (_) {} }, 1500);
   }
 
   // Grąžina abiem pusėm (kiekviena refundEntry: verify-then-refund; no-op jei nemokėjo/jau grąžinta/settlinta).
