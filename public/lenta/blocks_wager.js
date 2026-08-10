@@ -68,12 +68,8 @@
     var tx = await _send(p, a, RONKE, SEL_APPROVE + addrArg(PLAY()) + MAX_UINT); await _receipt(p, tx); return true;
   }
 
-  // ĮSKAITA: žaidėjas moka pakopos statymą → PewPewPlayV2 → treasury (player-signed → PoD).
-  //   Grąžina {ok, tx, stake} — tx hash serveris verifikuoja (RaidFee stilius) prieš startą.
-  async function payEntry(tier) {
-    if (!enabled()) return { ok: false, reason: 'not_configured' };   // nemokamas režimas
-    var idx = TIERS.indexOf(Number(tier)); if (idx < 0) idx = 0;
-    var stake = TIERS[idx];
+  // Bendras mokėjimo branduolys: approve (jei reikia) + payAndPlay(stake,kind) + kvitas.
+  async function _payCore(stake, kind) {
     var a = addr(); if (!a) return { ok: false, reason: 'no_wallet' };
     var p = provider(); if (!p) return { ok: false, reason: 'no_provider' };
     if (!(await _chainOk(p))) return { ok: false, reason: 'wrong_chain' };
@@ -81,11 +77,40 @@
     var amtWei = BigInt(stake) * (10n ** 18n);
     try {
       await _ensureApproval(p, a, amtWei);
-      var tx = await _send(p, a, PLAY(), encPayAndPlay(amtWei, 'blocks_' + stake));
+      var tx = await _send(p, a, PLAY(), encPayAndPlay(amtWei, kind));
       var rc = await _receipt(p, tx);
       if (!rc || rc.status === '0x0') return { ok: false, reason: 'tx_failed', tx: tx };
       return { ok: true, tx: tx, stake: stake };
     } catch (e) { var m = String((e && (e.message || e.shortMessage)) || e); return { ok: false, reason: /reject|denied|cancel/i.test(m) ? 'rejected' : 'tx_failed' }; }
+  }
+
+  // ĮSKAITA: žaidėjas moka pakopos statymą → PewPewPlayV2 → treasury (player-signed → PoD).
+  //   Grąžina {ok, tx, stake} — tx hash serveris verifikuoja (RaidFee stilius) prieš startą.
+  async function payEntry(tier) {
+    if (!enabled()) return { ok: false, reason: 'not_configured' };   // nemokamas režimas
+    var idx = TIERS.indexOf(Number(tier)); if (idx < 0) idx = 0;
+    var stake = TIERS[idx];
+    return _payCore(stake, 'blocks_' + stake);
+  }
+
+  // 🤖 RANKED vs AI fee — TIKSLI suma (serveris diktuoja per stake_now{ai:true}), NE pakopų sąrašo narys.
+  //   Riba ≤200: apsauga nuo sugedusios/piktos serverio žinutės (fee normaliai 25).
+  async function payExact(amount) {
+    if (!enabled()) return { ok: false, reason: 'not_configured' };
+    var stake = Math.floor(Number(amount) || 0);
+    if (!(stake > 0 && stake <= 200)) return { ok: false, reason: 'bad_amount' };
+    return _payCore(stake, 'blocks_ai_' + stake);
+  }
+
+  // 🤖 PvP „AI žaidžia už mane": statymas + AI fee VIENU tx (serveris verifikuoja tier+fee EXACT).
+  //   tier privalo būti iš TIERS (kaip payEntry); fee ≤50 (normaliai 25, ateina iš serverio stake_now.aiFee).
+  async function payEntryWithFee(tier, fee) {
+    if (!enabled()) return { ok: false, reason: 'not_configured' };
+    var idx = TIERS.indexOf(Number(tier)); if (idx < 0) idx = 0;
+    var stake = TIERS[idx];
+    var f = Math.floor(Number(fee) || 0);
+    if (!(f > 0 && f <= 50)) return { ok: false, reason: 'bad_fee' };
+    return _payCore(stake + f, 'blocks_' + stake + '_ai' + f);
   }
 
   // Lokalaus testo perjungiklis (TIK localhost). BlocksWager.localTest(true) → įjungia realų RONKE wager lokaliai.
@@ -100,7 +125,7 @@
   }
 
   window.BlocksWager = {
-    enabled: enabled, payEntry: payEntry, tiers: function () { return TIERS.slice(); },
+    enabled: enabled, payEntry: payEntry, payExact: payExact, payEntryWithFee: payEntryWithFee, tiers: function () { return TIERS.slice(); },
     address: function () { return addr(); },   // žaidėjo piniginė → serveris verifikuoja Transfer.from + išmoka
     localTest: localTest, isLocal: _isLocal,
   };

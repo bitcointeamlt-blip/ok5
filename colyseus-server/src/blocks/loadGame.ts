@@ -10,11 +10,13 @@ const FILES = [
   "f12_data.js", "config.js", "rng.js", "pieces.js",
   "board.js", "garbage.js", "units.js", "army.js",
   "engine.js",   // A6 2 sluoksnis: serveris pats sukа LENTAS autoritetingai (DOM-free variklis)
+  "ai.js",       // 🤖 RANKED vs AI: serverio botas žaidžia per tą patį Engine API (tap) kaip žmogus
 ];
 
 export interface GameLib {
   Army: any;
   Engine: any;
+  AI: any;
   RNG: any;
   CFG: any;
   Units: any;
@@ -39,5 +41,5 @@ export function loadGameLib(): GameLib {
     vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), sandbox, { filename: "blocks/game/" + f });
   }
 
-  return { Army: win.Army, Engine: win.Engine, RNG: win.RNG, CFG: win.CFG, Units: win.Units, PIECES: win.PIECES, window: win };
+  return { Army: win.Army, Engine: win.Engine, AI: win.AI, RNG: win.RNG, CFG: win.CFG, Units: win.Units, PIECES: win.PIECES, window: win };
 }

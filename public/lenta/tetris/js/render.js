@@ -430,6 +430,16 @@
     frame(ctx, x - 1, y - 1, w + 2, h + 2, '#000000');   // išorinis kontūras
   };
 
+  /* 🪪 mačo tapatybės badge'ai: avataro juosta (Ronke=žmogus / kiborgas=AI) + lygos emblema.
+   * Paveikslai iš ../assets_rank; kešuojami; kadras pagal this.t (140ms žingsnis). */
+  var RANKL = ['PAPER', 'WOOD', 'STONE', 'BRONZE', 'SILVER', 'GOLD', 'DIAMOND', 'GLOBAL'];
+  Renderer.prototype._badge = function (name) {
+    if (!this._badges) this._badges = {};
+    var im = this._badges[name];
+    if (!im) { im = new Image(); im.src = '../assets_rank/' + name; this._badges[name] = im; }
+    return (im.complete && im.naturalWidth > 0) ? im : null;
+  };
+
   Renderer.prototype.drawSide = function (eng, fx, sx, isYou, aiName) {
     var ctx = this.ctx;
     var ch = fx.ch(eng.side);
@@ -450,13 +460,14 @@
     var meterX = LX(LAY.METER_X, LAY.METER_W);
 
     /* --- antraštė: vardas ant vėliavos (švariame režime vėliavos nėra) --- */
-    var title = isYou ? 'YOU' : (aiName || 'OPPONENT');
+    var title = isYou ? (aiName || 'YOU') : (aiName || 'OPPONENT');   // 🤖 aiName ant savo pusės = „AI žaidžia už mane"
     if (!C.CLEAN_UI) {
       var bw = F.width(title, 2) + 18;
       banner(ctx, holdX, LAY.HEADER_Y - 2, bw, 17, accent);
       T.text(ctx, title, holdX + 5, LAY.HEADER_Y + 3, '#ffffff', 2);
       T.text(ctx, isYou ? 'CHALLENGER' : 'AI RIVAL', holdX, LAY.HEADER_Y + 20, U.dim, 1);
     }
+
 
     var st = eng.stats;
     T.right(ctx, 'LINES ' + st.lines, nextX + LAY.NEXT_W, LAY.HEADER_Y, U.text, 1);
@@ -481,7 +492,87 @@
       eng.holdUsed ? 0.35 : 1);
     for (i = 0; i < 3; i++) {
       miniPiece(ctx, eng.nextQueue[i], nextX + LAY.NEXT_W / 2,
-        nextY + 26 + i * 30, i === 0 ? 6 : 5, i === 0 ? 1 : 0.7);
+        nextY + 26 + i * 30, i === 0 ? 10 : 8, i === 0 ? 1 : 0.7);   // 🪪 didelės NEXT figūros
+    }
+
+    /* 🪪 2 papildomi slotai IŠKART po NEXT: [lygos emblema] + [kas žaidžia: Ronke=žmogus / kiborgas=AI].
+     * Duomenys iš serverio start žinutės — abu žaidėjai mato tą pačią tiesą. */
+    var mID = this._m && (isYou ? this._m._idYou : this._m._idFoe);
+    if (mID) {
+      var idY = nextY + nh + 4;
+      var idH = 140;   // emblema 42 + avataras 42 + W/L + 🎖️ XP skaitliukas (savo pusėje)
+      if (!C.CLEAN_UI) panel(ctx, nextX, idY, LAY.NEXT_W, idH);
+      else this.drawWell(nextX, idY, LAY.NEXT_W, idH);
+      var cxm = nextX + LAY.NEXT_W / 2;
+      var em = this._badge('emb_' + (mID.league | 0) + '.png');
+      if (em) {
+        /* 🪄 emblemos gyvybe: plūduriavimas + pulsuojantis švytėjimas + blizgesio perbraukimas kas ~3.4s */
+        var ebob = Math.sin(this.t / 620 + (isYou ? 0 : 1.7)) * 1.5;
+        var eY = idY + 4 + ebob;
+        var gp = 0.5 + 0.5 * Math.sin(this.t / 880 + (isYou ? 0 : 1.1));
+        ctx.save();
+        ctx.shadowColor = '#ffd75c';
+        ctx.shadowBlur = 6 + 7 * gp;
+        ctx.globalAlpha = 0.5 + 0.3 * gp;
+        ctx.drawImage(em, cxm - 21, eY, 42, 42);
+        ctx.restore();
+        ctx.drawImage(em, cxm - 21, eY, 42, 42);
+        /* blizgesys RETAI ir atsitiktinai: kas 10-20s (kiekvienai pusei savas grafikas) */
+        if (!this._embSweep) this._embSweep = { you: 2000 + Math.random() * 6000, foe: 5000 + Math.random() * 8000 };
+        var swKey = isYou ? 'you' : 'foe';
+        var swT = this.t - this._embSweep[swKey];
+        if (swT >= 0 && swT < 750) {
+          ctx.save();
+          ctx.beginPath(); ctx.rect(cxm - 21, eY, 42, 42); ctx.clip();
+          ctx.globalAlpha = 0.32;
+          ctx.fillStyle = '#ffffff';
+          ctx.translate(cxm - 21 + (swT / 750) * 52 - 6, eY);
+          ctx.rotate(-0.35);
+          ctx.fillRect(0, -12, 6, 68);
+          ctx.restore();
+        } else if (swT >= 750) {
+          this._embSweep[swKey] = this.t + 10000 + Math.random() * 10000;   // kitas po 10-20s
+        }
+      }
+      var av = this._badge(mID.ai ? 'ai_ronke_anim.png' : 'ronke_idle_anim.png');
+      if (av) {
+        var nfr = Math.max(1, Math.round(av.naturalWidth / 96));
+        var fr = ((this.t / 140) | 0) % nfr;
+        ctx.drawImage(av, fr * 96, 0, 96, 96, cxm - 21, idY + 50, 42, 42);
+      }
+      /* W/L: dvi kategorijos — vs AI ir PvP (serverio duomenys, abiem pusėm matomi vienodai).
+       * ⚠️ Piešiam per F.* TIESIOGIAI: T.* CLEAN_UI režime yra no-op (visi tekstai užgesinti),
+       * o šitie skaičiai turi matytis visada. */
+      if (mID.s) {
+        /* kaip rank korteleje: bold monospace + seselis. Spalvos: etiketes/bruksnys BALTI,
+         * laimejimai ZALI, pralaimejimai RAUDONI (user 08-09). */
+        ctx.save();
+        ctx.font = 'bold 9px Consolas, "Cascadia Mono", monospace';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        var wlLine = function (parts, y) {
+          var tot = 0, i2;
+          for (i2 = 0; i2 < parts.length; i2++) tot += ctx.measureText(parts[i2][0]).width;
+          var x = cxm - tot / 2;
+          for (i2 = 0; i2 < parts.length; i2++) {
+            ctx.fillStyle = '#0a0c14';
+            ctx.fillText(parts[i2][0], x + 1, y + 1);
+            ctx.fillStyle = parts[i2][1];
+            ctx.fillText(parts[i2][0], x, y);
+            x += ctx.measureText(parts[i2][0]).width;
+          }
+        };
+        wlLine([['AI ', '#ffffff'], [String(mID.s.aiW | 0), '#5ce08a'], ['-', '#ffffff'], [String(mID.s.aiL | 0), '#ff7070']], idY + 105);
+        wlLine([['PVP ', '#ffffff'], [String(mID.s.pvpW | 0), '#5ce08a'], ['-', '#ffffff'], [String(mID.s.pvpL | 0), '#ff7070']], idY + 118);
+        /* 🎖️ per maca surinktas XP (gyvas skaitliukas — auga su kiekviena linija) */
+        if (isYou && this._m && this._m._xpTotal > 0) {
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#0a0c14';
+          ctx.fillText('XP +' + this._m._xpTotal, cxm + 1, idY + 132 + 1);
+          ctx.fillStyle = '#ffd75c';
+          ctx.fillText('XP +' + this._m._xpTotal, cxm, idY + 132);
+        }
+        ctx.restore();
+      }
     }
 
     /* --- pavojaus būsena --- */
@@ -543,6 +634,24 @@
         if (t) block(ctx, bx + x * cell, by + (y - C.BUFFER) * cell, cell, t);
       }
     }
+
+    /* ⚡ hard-drop ATSPAUDAI: įsitvirtinusi figūra ~120ms šviečia baltai ir išblunka */
+    ch.stamps.forEach(function (st) {
+      var sa = st.life / st.max;
+      var grow = (1 - sa) * 0.55;   // 💥 shockwave: figūros formos kontūras plečiasi į išorę
+      var scol = (C.COLORS[st.type] || ['#ffffff'])[0];
+      for (var sci = 0; sci < st.cells.length; sci++) {
+        var syy = st.py + st.cells[sci][1];
+        if (syy < C.BUFFER) continue;
+        var sx0 = bx + (st.px + st.cells[sci][0]) * cell;
+        var sy0 = by + (syy - C.BUFFER) * cell;
+        ctx.globalAlpha = sa * 0.45;
+        rect(ctx, sx0 - cell * grow / 2, sy0 - cell * grow / 2, cell * (1 + grow), cell * (1 + grow), scol);
+        ctx.globalAlpha = sa * sa * 0.9;
+        rect(ctx, sx0, sy0, cell, cell, '#ffffff');
+      }
+      ctx.globalAlpha = 1;
+    });
 
     /* --- linijų blyksnis: baltas žybsnis + besiplečiantis wipe + susitraukiantis plyšys --- */
     ch.flash.forEach(function (fl) {
@@ -683,9 +792,30 @@
     ch.pops.forEach(function (q) {
       var a = Math.min(1, q.life / (q.max * 0.35));
       ctx.globalAlpha = a;
-      T.outlinedCenter(ctx, q.txt, bx + C.BOARD_W / 2,
-        by + LAY.BOARD_H / 2 - 30 + q.y + q.dy, q.color, q.outline,
-        global.FXChannel.popScale(q));
+      var px_ = bx + C.BOARD_W / 2, py_ = by + LAY.BOARD_H / 2 - 30 + q.y + q.dy;
+      var sc_ = global.FXChannel.popScale(q);
+      if (q.force) {
+        /* 🎳 PINBALL popup stilius (feedback.js _paintPop): spalvotas švytėjimas + šešėlis +
+         * storas rudas kontūras (8 kryptys) + užpildas (baltas blyksnis pirmus 60ms) + blikas. */
+        var fpx = Math.max(11, Math.round(8 * sc_));
+        var eo = Math.max(1, fpx * 0.09);
+        var fl = (q.max - q.life) < 60;
+        ctx.save();
+        ctx.translate(px_, py_);
+        ctx.font = 'bold ' + fpx + 'px monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.globalAlpha = a * 0.28; ctx.fillStyle = q.color;
+        ctx.save(); ctx.scale(1.35, 1.35); ctx.fillText(q.txt, 0, 0); ctx.restore();
+        ctx.globalAlpha = a * 0.5; ctx.fillStyle = '#000'; ctx.fillText(q.txt, eo, eo * 1.6);
+        ctx.globalAlpha = a * 0.92; ctx.fillStyle = '#1a0e04';
+        var OUT8 = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+        for (var oi = 0; oi < 8; oi++) ctx.fillText(q.txt, OUT8[oi][0] * eo, OUT8[oi][1] * eo);
+        ctx.globalAlpha = a; ctx.fillStyle = fl ? '#ffffff' : q.color; ctx.fillText(q.txt, 0, 0);
+        ctx.globalAlpha = a * 0.55; ctx.fillStyle = '#fff'; ctx.fillText(q.txt, 0, -eo * 0.8);
+        ctx.restore();
+      } else {
+        T.outlinedCenter(ctx, q.txt, px_, py_, q.color, q.outline, sc_);
+      }
       ctx.globalAlpha = 1;
     });
 
@@ -1257,22 +1387,29 @@
     var ctx = this.ctx, cx = this.vw / 2;
 
     if (C.CLEAN_UI) {
-      /* trys rombai gęsta po vieną; GO = platėjantis žiedas ir blyksnis */
+      /* 🐵 Ronke skaičiuoja pirštais (count_to_three_sheet, 20 kadrų):
+       * 0-15 @100ms → 15-as kadras laikomas 1s → 16-19 finišas — lygiai 3s countdown. */
       var cy = this.vh / 2;
       this.dim(0.5);
-      var left = Math.max(0, match.countdown);
-      var lit = Math.ceil(left / 1000);          // 3 -> 2 -> 1 -> 0
-      var frac = 1 - (left % 1000) / 1000;
-      for (var i = 0; i < 3; i++) {
-        var on = i < lit;
-        var r = on ? 8 : 5;
-        if (on && i === lit - 1) r = 8 + Math.round((1 - frac) * 3);
-        gemPip(ctx, cx - 30 + i * 30, cy, r, on ? U.gold : '#241a12', on ? '#ffffff' : null);
-      }
-      if (lit <= 0) {
-        var g = clamp01(1 - frac);
-        ringShape(ctx, cx, cy, 10 + (1 - g) * 60, '#ffffff', g);
-        ringShape(ctx, cx, cy, 6 + (1 - g) * 40, U.gold, g);
+      var total = C.COUNTDOWN_MS || 3000;
+      var el = Math.max(0, Math.min(total, total - Math.max(0, match.countdown)));
+      /* seka „skaičiuojam IKI trijų": k5-k10 = 1 pirštas, k11-k14 = 2 pirštai (14-as laikomas 300ms),
+       * k15 = perėjimas, k16-k19 = 3 pirštai (laikomi iki starto). k0-k4 lape = pabaigos poza, praleidžiam. */
+      /* ⏱️ po ~1s kiekvienam skaičiui. FAKTINĖ lapo analizė: K4-K13 = 1 pirštas, K14 = VIENINTELIS
+       * „du" kadras (juostos idx12 = userio naujas dvejetas), K15-K19 = 3 pirštai. */
+      var cf;
+      if (el < 1000) cf = Math.min(10, 4 + ((el / 143) | 0));                  // ☝️ K4-K10
+      else if (el < 1500) cf = 12;                                             // ✌️ naujas dvejetas (0.5s)
+      else if (el < 2000) cf = 14;                                             // ✌️ lapo dvejetas (0.5s — gyvumas)
+      else if (el < 2400) cf = Math.min(18, 15 + (((el - 2000) / 100) | 0));   // 🤟 K15-K18
+      else cf = 19;   // 🤟 finalinis kadras iki GO
+      var cimg = this._badge('count_anim.png');
+      if (cimg) {
+        var csz = 120, cx0 = cx - csz / 2, cy0 = cy - csz / 2 - 6;
+        stoneFrame(ctx, cx0 - 5, cy0 - 5, csz + 10, csz + 10, 5);
+        ctx.drawImage(cimg, cf * 96, 0, 96, 96, cx0, cy0, csz, csz);
+      } else {
+        gemPip(ctx, cx, cy, 10, U.gold, '#ffffff');
       }
       return;
     }
@@ -1441,6 +1578,378 @@
 
     var bob = won ? Math.round(Math.sin(this.t / 320) * 2) : 0;
     var sw = 62, sy = cy - 14 + bob;
+
+    /* 🛡️ Žaidimo skydo NEBĖRA (user 08-09): rezultatą visada rodo lygos EMBLEMOS kortelė
+     * (lobby _showRankAnim). Čia tik trumpas tekstas — praktikos/nemokamiems mačams be kortelės. */
+    T.center(ctx, won ? 'VICTORY!' : 'DEFEAT', cx, sy - 10, won ? U.gold : U.danger, 3);
+
+    /* pulsuojantis „paspausk" indikatorius — trys kylantys rombai */
+    for (var k = 0; k < 3; k++) {
+      var ph = ((this.t / 900) + k / 3) % 1;
+      ctx.globalAlpha = clamp01(Math.sin(ph * Math.PI) * 0.7);
+      gemPip(ctx, cx, cy + 74 - ph * 22, 4, U.text, U.gold);
+      ctx.globalAlpha = 1;
+    }
+  };
+
+  Renderer.prototype.drawMenu = function (match, dt) {
+    var ctx = this.ctx, cx = this.vw / 2;
+    if (C.CLEAN_UI) { this.drawMenuClean(match, dt); return; }
+    this.dim(0.86);
+    this.drawMenuBits(dt);
+
+    /* meniu turinys suprojektuotas 360 px aukščiui — aukštesniame lange centruojam */
+    var oy = Math.floor((this.vh - C.VH) / 2);
+    if (oy) ctx.translate(0, oy);
+
+    var bob = Math.round(Math.sin(this.t / 420) * 2);
+    T.outlinedCenter(ctx, 'PVP TETRIS', cx, 40 + bob, U.gold, '#000000', 4);
+    T.center(ctx, '1 V 1  BLOCK BATTLE', cx, 74, U.text, 1);
+
+    /* sudėtingumas */
+    panel(ctx, cx - 156, 92, 312, 46);
+    T.center(ctx, 'OPPONENT   [ 1 - 4 TO CHANGE ]', cx, 97, U.dim, 1);
+    var keys = ['EASY', 'NORMAL', 'HARD', 'INSANE'];
+    var bw = 70, gap = 6, totalW = keys.length * bw + (keys.length - 1) * gap;
+    var x0 = cx - totalW / 2;
+    for (var i = 0; i < keys.length; i++) {
+      var sel = keys[i] === match.aiLevel;
+      var bx = x0 + i * (bw + gap);
+      rect(ctx, bx, 110, bw, 20, sel ? '#2b3358' : U.panel2);
+      frame(ctx, bx, 110, bw, 20, sel ? U.gold : U.line);
+      T.center(ctx, C.AI_LEVELS[keys[i]].name, bx + bw / 2, 114, sel ? U.gold : U.dim, 1);
+      /* žvaigždutės = stiprumas */
+      var stars = '';
+      for (var s = 0; s <= i; s++) stars += '*';
+      T.center(ctx, stars, bx + bw / 2, 123, sel ? U.gold : U.line, 1);
+    }
+
+    /* --- kairė: 3 sekundžių taisyklė --- */
+    panel(ctx, cx - 190, 146, 244, 92, U.panel, U.danger);
+    T.center(ctx, 'THE 3 SECOND RULE', cx - 68, 152, U.danger, 2);
+    var lines = [
+      'INCOMING GARBAGE WAITS 3 SECONDS',
+      'BEFORE IT RISES.',
+      '',
+      'EVERY LINE YOU CLEAR IN THAT',
+      'WINDOW BLOCKS ONE OF THEM.',
+      'SPARE LINES FLY BACK - COUNTER!'
+    ];
+    for (var L = 0; L < lines.length; L++) {
+      if (lines[L]) T.center(ctx, lines[L], cx - 68, 170 + L * 11, U.text, 1);
+    }
+
+    /* --- dešinė: atakų lentelė --- */
+    panel(ctx, cx + 58, 146, 132, 92, U.panel, U.gold);
+    T.center(ctx, 'ATTACK TABLE', cx + 124, 152, U.gold, 1);
+    var atk = [
+      ['1 LINE', 0, U.dim],
+      ['2 LINES', 1, U.text],
+      ['3 LINES', 2, U.text],
+      ['4 LINES', 4, U.gold]
+    ];
+    for (var A = 0; A < atk.length; A++) {
+      var ay = 168 + A * 13;
+      T.text(ctx, atk[A][0], cx + 68, ay, atk[A][2], 1);
+      T.text(ctx, '>', cx + 122, ay, U.line, 1);
+      T.right(ctx, '+' + atk[A][1], cx + 182, ay, atk[A][2], 1);
+    }
+    T.center(ctx, 'BUILD UP - QUAD PAYS', cx + 124, 224, U.dim, 1);
+
+    /* valdymas */
+    panel(ctx, cx - 190, 242, 380, 62);
+    T.center(ctx, 'CONTROLS', cx, 246, U.gold, 1);
+    var ctrls = [
+      'LEFT / RIGHT  MOVE          DOWN  SOFT DROP',
+      'UP or X  ROTATE CW          Z  ROTATE CCW      A  ROTATE 180',
+      'SPACE  HARD DROP            C or SHIFT  HOLD',
+      'F  FULLSCREEN     P  PAUSE     M  MUTE     R  RESTART     ESC  MENU'
+    ];
+    for (var k = 0; k < ctrls.length; k++) T.center(ctx, ctrls[k], cx, 258 + k * 11, U.dim, 1);
+
+    var lb = match.leaderboard();
+    T.center(ctx, 'RECORD  ' + lb.wins + 'W - ' + lb.losses + 'L      BEST STREAK ' + lb.best, cx, 308, U.dim, 1);
+
+    if (Math.sin(this.t / 260) > -0.3) {
+      T.outlinedCenter(ctx, 'PRESS ENTER TO FIGHT', cx, 322, '#ffffff', '#000000', 2);
+    }
+
+    if (oy) ctx.translate(0, -oy);
+  };
+
+  // 🎓 PASIRUOŠIMO EKRANAS — NUPIEŠTI valdymo mygtukai (rodyklės) + DEMO figūra, kuri auto-demonstruoja:
+  //    judant kairėn užsidega ◄ mygtukas, sukant — ▲, greitai žemyn — SPACE. Žaidėjas gali ir pats spausti.
+  //    Startas kai abu READY arba po 15s. Kad niekam nekiltų klausimų kaip pradėti / valdyti.
+  Renderer.prototype.drawPrep = function (match) {
+    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2), self = this;
+    ctx.globalAlpha = 0.9; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
+    var secs = Math.ceil((match._prepLeft || 0) / 1000);
+    var actKey = (match._demoKeyT > 0) ? match._demoKey : '';
+
+    F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.08), U.gold, '#05060c', 2);
+    F.outlinedCenter(ctx, 'THESE ARE YOUR CONTROLS', cx, Math.floor(vh * 0.08) + 22, U.dim, '#05060c', 1);
+
+    // --- NUPIEŠTI valdymo mygtukai (per vidurį) ---
+    function tri(ax, ay, r, kind, color) {
+      ctx.fillStyle = color; ctx.beginPath();
+      if (kind === 'up') { ctx.moveTo(ax, ay - r); ctx.lineTo(ax - r, ay + r * 0.7); ctx.lineTo(ax + r, ay + r * 0.7); }
+      else if (kind === 'down') { ctx.moveTo(ax, ay + r); ctx.lineTo(ax - r, ay - r * 0.7); ctx.lineTo(ax + r, ay - r * 0.7); }
+      else if (kind === 'left') { ctx.moveTo(ax - r, ay); ctx.lineTo(ax + r * 0.7, ay - r); ctx.lineTo(ax + r * 0.7, ay + r); }
+      else { ctx.moveTo(ax + r, ay); ctx.lineTo(ax - r * 0.7, ay - r); ctx.lineTo(ax - r * 0.7, ay + r); }
+      ctx.closePath(); ctx.fill();
+    }
+    function keyBtn(kx, ky, ks, kind, on) {
+      var img = self._keyImg && self._keyImg[kind];
+      if (img && img.complete && img.naturalWidth) {
+        // 🎮 Kenney klavišo sprite'as. Aktyvus (paspaustas) → truputį didesnis + auksinis rėmas (pop).
+        var s = on ? ks + 4 : ks, o = on ? -2 : 0;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, kx + o, ky + o, s, s);
+        if (on) frame(ctx, kx - 2, ky - 2, ks + 4, ks + 4, '#ffcf5c');
+      } else {
+        // fallback (kol sprite'as kraunasi): nupieštas klavišas
+        rect(ctx, kx, ky, ks, ks, on ? '#ffcf5c' : '#161d2e');
+        frame(ctx, kx, ky, ks, ks, on ? '#ffffff' : '#6a5a2a');
+        if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
+        tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
+      }
+    }
+    var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
+    var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
+    keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
+    keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
+    keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
+    keyBtn(midx + ks + gap, midy, ks, 'right', actKey === 'right');        // ► MOVE
+    F.outlinedCenter(ctx, 'ROTATE', midx + Math.floor(ks / 2), midy - ks - gap - 10, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'MOVE', midx - Math.floor(ks / 2) - gap, midy + ks + 3, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'MOVE', midx + ks + gap + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);
+    F.outlinedCenter(ctx, 'SOFT', midx + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);   // ▼ = soft drop (kad ir žemyn rodyklė turėtų „ką daro" užrašą)
+    // SPACE juosta (hard drop)
+    var sbx = midx - ks - gap, sby = midy + ks + gap + 14, sbw = ks * 3 + gap * 2, sbh = Math.floor(ks * 0.62);
+    var spOn = actKey === 'space';
+    rect(ctx, sbx, sby, sbw, sbh, spOn ? '#ffcf5c' : '#161d2e');
+    frame(ctx, sbx, sby, sbw, sbh, spOn ? '#ffffff' : '#6a5a2a');
+    if (spOn) frame(ctx, sbx - 1, sby - 1, sbw + 2, sbh + 2, '#ffcf5c');
+    F.outlinedCenter(ctx, 'SPACE', sbx + Math.floor(sbw / 2), sby + Math.floor(sbh / 2) - 3, spOn ? '#241a08' : '#ffcf5c', spOn ? '#ffcf5c' : '#05060c', 1);
+    F.outlinedCenter(ctx, 'FAST DROP', sbx + Math.floor(sbw / 2), sby + sbh + 4, U.dim, '#05060c', 1);
+
+    // --- READY + laikmatis + varžovo būsena (apačia) ---
+    var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
+    var btnW = Math.min(260, vw - 36), btnH = 30, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 12;
+    rect(ctx, btnX, btnY, btnW, btnH, ready ? '#1c3a24' : '#24543a');
+    frame(ctx, btnX, btnY, btnW, btnH, ready ? '#5aa06a' : '#5ce08a');
+    F.outlinedCenter(ctx, ready ? ('READY - WAITING ' + secs + 'S') : ('PRESS  READY   (AUTO ' + secs + 'S)'), cx, btnY + 11, ready ? U.dim : U.good, '#05060c', 1);
+    match._prepBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+    F.outlinedCenter(ctx, both ? 'BOTH READY - STARTING!' : (ready ? 'WAITING FOR OPPONENT...' : 'START WHEN BOTH READY, OR IN ' + secs + 'S'), cx, btnY - 13, both ? U.good : U.gold, '#05060c', 1);
+  };
+
+  Renderer.prototype.drawCountdown = function (match) {
+    var ctx = this.ctx, cx = this.vw / 2;
+
+    if (C.CLEAN_UI) {
+      /* 🐵 Ronke skaičiuoja pirštais (count_to_three_sheet, 20 kadrų):
+       * 0-15 @100ms → 15-as kadras laikomas 1s → 16-19 finišas — lygiai 3s countdown. */
+      var cy = this.vh / 2;
+      this.dim(0.5);
+      var total = C.COUNTDOWN_MS || 3000;
+      var el = Math.max(0, Math.min(total, total - Math.max(0, match.countdown)));
+      /* seka „skaičiuojam IKI trijų": k5-k10 = 1 pirštas, k11-k14 = 2 pirštai (14-as laikomas 300ms),
+       * k15 = perėjimas, k16-k19 = 3 pirštai (laikomi iki starto). k0-k4 lape = pabaigos poza, praleidžiam. */
+      /* ⏱️ po ~1s kiekvienam skaičiui. FAKTINĖ lapo analizė: K4-K13 = 1 pirštas, K14 = VIENINTELIS
+       * „du" kadras (juostos idx12 = userio naujas dvejetas), K15-K19 = 3 pirštai. */
+      var cf;
+      if (el < 1000) cf = Math.min(10, 4 + ((el / 143) | 0));                  // ☝️ K4-K10
+      else if (el < 1500) cf = 12;                                             // ✌️ naujas dvejetas (0.5s)
+      else if (el < 2000) cf = 14;                                             // ✌️ lapo dvejetas (0.5s — gyvumas)
+      else if (el < 2400) cf = Math.min(18, 15 + (((el - 2000) / 100) | 0));   // 🤟 K15-K18
+      else cf = 19;   // 🤟 finalinis kadras iki GO
+      var cimg = this._badge('count_anim.png');
+      if (cimg) {
+        var csz = 120, cx0 = cx - csz / 2, cy0 = cy - csz / 2 - 6;
+        stoneFrame(ctx, cx0 - 5, cy0 - 5, csz + 10, csz + 10, 5);
+        ctx.drawImage(cimg, cf * 96, 0, 96, 96, cx0, cy0, csz, csz);
+      } else {
+        gemPip(ctx, cx, cy, 10, U.gold, '#ffffff');
+      }
+      return;
+    }
+
+    this.dim(0.55);
+    var left = match.countdown;
+    var idx = 3 - Math.min(3, Math.floor(left / 1000));
+    var txt = C.READY_TEXT[Math.max(0, Math.min(3, idx))];
+    var frac = (left % 1000) / 1000;
+    var sc = 6 + Math.round((1 - frac) * 3);
+    T.outlinedCenter(ctx, txt, cx, this.vh / 2 - 24, U.gold, '#000000', sc);
+    T.center(ctx, 'SAME PIECE SEQUENCE FOR BOTH PLAYERS  -  SEED ' + match.seed, cx, this.vh / 2 + 34, U.dim, 1);
+  };
+
+  /* ONLINE: laukiam serverio / priešininko. Be šito ekranas atrodo „užstrigęs". */
+  /* ONLINE LOBIS: QUICK MATCH / CREATE ROOM. Mygtukų stačiakampiai saugomi `match._lobbyHit`
+   * (main.js paverčia paspaudimo koordinates į virtualias ir suranda pataikytą mygtuką).
+   * ⚠️ Naudojam RAW `F.*` (NE `T.*`) — nes `T.*` CLEAN_UI režime NEPIEŠIA, o čia tekstas BŪTINAS
+   * (mygtukų etiketės, kambario kodas). Bazinio žaidimo švarumo tai neliečia — tik online ekranai. */
+  Renderer.prototype.drawLobby = function (match) {
+    var ctx = this.ctx, cx = this.vw / 2, cy = this.vh / 2;
+    this.dim(0.66);
+    var bw = Math.min(300, this.vw - 30), x = Math.round(cx - bw / 2);
+    var rooms = match._lobbyRooms || [];
+    var rowH = 26, maxRows = 4, shown = Math.min(maxRows, rooms.length);
+    /* vertikaliai centruojam pagal turinį (sąrašo aukštis kinta) */
+    var listH = (shown ? shown * (rowH + 5) : rowH + 6);
+    var totalH = 26 + 22 + 14 + listH + 8 + 50 + 10 + 40;
+    var y = Math.round(cy - totalH / 2);
+
+    F.center(ctx, 'PVP TETRIS', cx, y, U.gold, 3); y += 26;
+    F.center(ctx, 'ONLINE  1  v  1', cx, y, U.dim, 1); y += 22;
+
+    /* ── LAUKIANČIŲ ŽAIDĖJŲ SĄRAŠAS (pakūrė matchą, laukia varžovo) ── */
+    F.text(ctx, 'OPEN MATCHES', x, y, U.text, 1);
+    F.right(ctx, 'tap to join', x + bw, y, U.dim, 1); y += 14;
+    match._lobbyHit = [];
+    if (!shown) {
+      rect(ctx, x, y, bw, rowH, '#1c130a');
+      frame(ctx, x, y, bw, rowH, '#3d2817');
+      F.center(ctx, 'no open matches yet - host one below', cx, y + 9, U.dim, 1);
+      y += rowH + 6;
+    } else {
+      for (var i = 0; i < shown; i++) {
+        var r = rooms[i];
+        rect(ctx, x, y, bw, rowH, '#241a0e');
+        rect(ctx, x, y, bw, 1, '#4a3418');
+        frame(ctx, x, y, bw, rowH, U.gold);
+        F.text(ctx, String(r.host).slice(0, 18), x + 8, y + 9, U.gold, 1);   // host vardas
+        var jw = 46, jx = x + bw - jw - 5;
+        rect(ctx, jx, y + 5, jw, rowH - 10, '#2f5e2f');
+        frame(ctx, jx, y + 5, jw, rowH - 10, U.good);
+        F.center(ctx, 'JOIN', jx + jw / 2, y + 9, '#d8ffe0', 1);
+        match._lobbyHit.push({ x: x, y: y, w: bw, h: rowH, action: 'join', roomId: r.roomId });
+        y += rowH + 5;
+      }
+    }
+    y += 8;
+
+    /* ── HOST (public, matomas sąraše) ── */
+    var bh = 40;
+    rect(ctx, x, y, bw, bh, '#2a1c10'); rect(ctx, x, y, bw, 2, '#6b4a2e'); frame(ctx, x, y, bw, bh, U.gold);
+    F.center(ctx, 'HOST A MATCH', cx, y + 8, U.gold, 2);
+    F.center(ctx, 'wait - others pick you from the list', cx, y + 26, U.dim, 1);
+    match._lobbyHit.push({ x: x, y: y, w: bw, h: bh, action: 'host' });
+    y += bh + 10;
+
+    /* ── PRIVATE (invite kodas draugui) ── */
+    rect(ctx, x, y, bw, bh, '#201a2a'); rect(ctx, x, y, bw, 2, '#4a3a66'); frame(ctx, x, y, bw, bh, '#9d7ad0');
+    F.center(ctx, 'PRIVATE ROOM', cx, y + 8, '#cbb0ff', 2);
+    F.center(ctx, 'invite a friend by code', cx, y + 26, U.dim, 1);
+    match._lobbyHit.push({ x: x, y: y, w: bw, h: bh, action: 'create' });
+  };
+
+  /* 🥊 CHALLENGE (HOST'ui): „X wants to play — accept?" — ENTER accept / ESC decline. */
+  Renderer.prototype.drawChallenge = function (match) {
+    var ctx = this.ctx, cx = this.vw / 2, cy = this.vh / 2;
+    this.dim(0.72);
+    var pulse = 0.6 + 0.4 * Math.sin(this.t / 260);
+    F.center(ctx, 'OPPONENT FOUND', cx, cy - 46, U.gold, 2);
+    ctx.globalAlpha = pulse;
+    F.outlinedCenter(ctx, String(match._challenger || 'PLAYER').toUpperCase(), cx, cy - 20, U.you, '#000000', 3);
+    ctx.globalAlpha = 1;
+    F.center(ctx, 'wants to play PVP TETRIS', cx, cy + 8, U.dim, 1);
+    /* du mygtukai */
+    var bw = 120, bh = 30, gap = 14, x0 = Math.round(cx - bw - gap / 2), x1 = Math.round(cx + gap / 2);
+    var y = cy + 30;
+    rect(ctx, x0, y, bw, bh, '#1c3a1c'); frame(ctx, x0, y, bw, bh, U.good);
+    F.center(ctx, 'ACCEPT', x0 + bw / 2, y + 8, U.good, 2);
+    F.center(ctx, '[ENTER]', x0 + bw / 2, y + 22, U.dim, 1);
+    rect(ctx, x1, y, bw, bh, '#3a1c1c'); frame(ctx, x1, y, bw, bh, U.danger);
+    F.center(ctx, 'DECLINE', x1 + bw / 2, y + 8, U.danger, 2);
+    F.center(ctx, '[ESC]', x1 + bw / 2, y + 22, U.dim, 1);
+    match._challengeHit = [
+      { x: x0, y: y, w: bw, h: bh, action: 'accept' },
+      { x: x1, y: y, w: bw, h: bh, action: 'decline' }
+    ];
+  };
+
+  /* SVEČIAS: laukia host'o sprendimo. */
+  Renderer.prototype.drawAwaiting = function (match) {
+    var ctx = this.ctx, cx = this.vw / 2, cy = this.vh / 2;
+    this.dim(0.6);
+    for (var d = 0; d < 3; d++) {
+      var on = (Math.floor(this.t / 300) % 3) === d;
+      gemPip(ctx, cx - 24 + d * 24, cy + 22, on ? 6 : 4, on ? U.gold : '#241a12', on ? '#ffffff' : null);
+    }
+    F.outlinedCenter(ctx, 'CHALLENGE SENT', cx, cy - 14, U.gold, '#000000', 2);
+    F.center(ctx, 'waiting for ' + String(match._hostName || 'host') + ' to accept...', cx, cy + 44, U.dim, 1);
+  };
+
+  Renderer.prototype.drawConnecting = function (match) {
+    var ctx = this.ctx, cx = this.vw / 2, cy = this.vh / 2;
+    this.dim(0.6);
+    /* sukisi trys taškeliai — matosi, kad gyva, ne pakibę. RAW F.* (žr. drawLobby pastabą). */
+    var st = (global.NET && global.NET.status) || 'connecting';
+    var priv = !!(match._private && match.roomCode);       // PRIVATE — rodom kodą
+    var msg = (st === 'open') ? (priv ? 'ROOM READY' : 'WAITING FOR OPPONENT') : 'CONNECTING';
+    var n = Math.floor(this.t / 350) % 4;
+    var dots = ''; for (var i = 0; i < n; i++) dots += '.';
+    for (var d = 0; d < 3; d++) {
+      var on = (Math.floor(this.t / 300) % 3) === d;
+      gemPip(ctx, cx - 24 + d * 24, cy + (priv ? 42 : 20), on ? 6 : 4, on ? U.gold : '#241a12', on ? '#ffffff' : null);
+    }
+    F.outlinedCenter(ctx, msg + dots, cx, cy - (priv ? 40 : 12), U.gold, '#000000', 2);
+    if (priv && st === 'open') {
+      /* PRIVATE: rodom kambario kodą + kvietimo nuorodą (paspaudus — nukopijuoja). */
+      F.center(ctx, 'SHARE THIS CODE WITH A FRIEND', cx, cy - 10, U.dim, 1);
+      F.outlinedCenter(ctx, String(match.roomCode).toUpperCase(), cx, cy + 6, U.gold, '#000000', 3);
+      F.center(ctx, match._copied ? 'LINK COPIED!' : 'TAP HERE TO COPY INVITE LINK', cx, cy + 66, match._copied ? U.good : U.text, 1);
+    } else if (st === 'error') {
+      F.center(ctx, 'CONNECTION FAILED  -  PRESS ESC FOR LOBBY', cx, cy + 44, U.dim, 1);
+    } else if (st === 'open') {
+      /* PUBLIC host / quick match — laukiam; pranešam, kad esam sąraše. */
+      F.center(ctx, 'you are listed - someone can join you', cx, cy + 44, U.dim, 1);
+    } else {
+      F.center(ctx, 'ONLINE 1v1', cx, cy + 44, U.dim, 1);
+    }
+  };
+
+  Renderer.prototype.drawPause = function () {
+    var ctx = this.ctx, cx = this.vw / 2;
+    if (C.CLEAN_UI) {
+      var cy = this.vh / 2;
+      this.dim(0.74);
+      var a = clamp01(0.6 + 0.4 * Math.sin(this.t / 380));
+      ctx.globalAlpha = a;
+      rect(ctx, cx - 13, cy - 14, 9, 28, U.gold);
+      rect(ctx, cx + 4, cy - 14, 9, 28, U.gold);
+      ctx.globalAlpha = 1;
+      frame(ctx, cx - 14, cy - 15, 11, 30, U.shadow);
+      frame(ctx, cx + 3, cy - 15, 11, 30, U.shadow);
+      return;
+    }
+    this.dim(0.72);
+    T.outlinedCenter(ctx, 'PAUSED', cx, this.vh / 2 - 20, U.gold, '#000000', 4);
+    T.center(ctx, 'P  RESUME       R  RESTART       ESC  MENU', cx, this.vh / 2 + 16, U.text, 1);
+  };
+
+  /* ŠVARUS rezultatas: laimėtoją rodo auksinis skydas ir konfeti, pralaimėjimą — suskilęs. */
+  Renderer.prototype.drawResultClean = function (match) {
+    var ctx = this.ctx, cx = this.vw / 2, cy = this.vh / 2;
+    var won = match.winner === 'you';
+    this.dim(0.80);
+    this.drawConfetti(match.fx);
+
+    var bob = won ? Math.round(Math.sin(this.t / 320) * 2) : 0;
+    var sw = 62, sy = cy - 14 + bob;
+
+    /* 🏅 RANKED mačas: žaidimo skydo NErodom — vietoj jo IŠKART iššoka lygos emblema su statais
+     * (lobby rank kortelė, žr. blocks_lobby_client _showRankAnim). Liekam tik fonas+konfeti. */
+    if (match._ranked) {
+      for (var k2 = 0; k2 < 3; k2++) {
+        var ph2 = ((this.t / 900) + k2 / 3) % 1;
+        ctx.globalAlpha = clamp01(Math.sin(ph2 * Math.PI) * 0.7);
+        gemPip(ctx, cx, cy + 96 - ph2 * 22, 4, U.text, won ? U.gold : U.danger);
+        ctx.globalAlpha = 1;
+      }
+      return;
+    }
 
     if (won) {
       /* spinduliai iš po skydo */
@@ -1993,9 +2502,29 @@
 
   /* ---------- pagrindinis kadras ---------- */
 
+  /* 💨 countdown popup'o IŠNYKIMAS: paskutinis kadras išsiplečia ir išblunka per 400ms */
+  Renderer.prototype.drawCountdownExit = function () {
+    var ctx = this.ctx, cx = this.vw / 2, cy = this.vh / 2;
+    var k = Math.min(1, (this.t - this._cdWas) / 400);
+    var e = 1 - Math.pow(1 - k, 2);
+    var cimg = this._badge('count_anim.png');
+    if (!cimg) return;
+    var csz = 120 * (1 + 0.4 * e), cx0 = cx - csz / 2, cy0 = cy - csz / 2 - 6;
+    ctx.save();
+    ctx.globalAlpha = 1 - e;
+    stoneFrame(ctx, cx0 - 5, cy0 - 5, csz + 10, csz + 10, 5);
+    ctx.drawImage(cimg, 19 * 96, 0, 96, 96, cx0, cy0, csz, csz);
+    ctx.restore();
+  };
+
   Renderer.prototype.draw = function (match, dt) {
     var ctx = this.ctx;
     this.t += dt;
+    this._m = match;   // 🪪 drawSide skaito mačo tapatybes (badge'ams)
+    if (!this._preloadedBadges) {   // ⏱️ preload — kad countdown/badge animacijos startuotų be vėlavimo
+      this._preloadedBadges = 1;
+      this._badge('count_anim.png'); this._badge('ai_ronke_anim.png'); this._badge('ronke_idle_anim.png');
+    }
     var fx = match.fx;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2010,7 +2539,7 @@
 
     this.drawBackdrop(fx, dt);
 
-    this.drawSide(match.you, fx, 0, true, null);
+    this.drawSide(match.you, fx, 0, true, match._aiPlaying ? (match._aiYouName || '🤖 YOUR AI') : null);   // 🤖 tavo pusę žaidžia tavo AI
     this.drawSide(match.foe, fx, LAY.HALF, false, match.foeName);
     this.drawDivider(match);
     this.drawLane(match);
@@ -2022,7 +2551,8 @@
     else if (match.state === 'awaiting') this.drawAwaiting(match);
     else if (match.state === 'connecting') this.drawConnecting(match);
     else if (match.state === 'prep') this.drawPrep(match);
-    else if (match.state === 'countdown') this.drawCountdown(match);
+    else if (match.state === 'countdown') { this.drawCountdown(match); this._cdWas = this.t; }
+    if (match.state === 'playing' && this._cdWas && (this.t - this._cdWas) < 400) this.drawCountdownExit();
     else if (match.state === 'paused') this.drawPause();
     else if (match.state === 'result') this.drawResult(match);
 

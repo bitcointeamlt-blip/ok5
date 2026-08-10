@@ -21,6 +21,10 @@ export class WagerEscrow {
     p2: { addr: "", tx: "", verified: false, refunded: false },
   };
   private _settled = false;
+  // 🤖 per-side PRIEDAS prie įėjimo (AI-takeover fee): žaidėjas moka tier+extra VIENU tx (EXACT verify).
+  //   Extra įskaičiuojamas į verify sumą ir į PILNĄ refund'ą (mačas neįvyko); payout/draw skaičiuojasi
+  //   TIK nuo tier (fee lieka treasury, kai mačas įvyko).
+  private extra: Record<EscrowSide, number> = { p1: 0, p2: 0 };
 
   constructor(
     readonly tier: number,                 // 0 = nemokama (viskas no-op)
@@ -46,6 +50,14 @@ export class WagerEscrow {
     this.e[side] = { addr: (addr || "").toLowerCase(), tx: (tx || "").toLowerCase(), verified: false, refunded: false };
   }
 
+  // 🤖 nustato pusės priedą (AI fee). Kviesti PRIEŠ tos pusės verify (setEntry metu).
+  setExtra(side: EscrowSide, amount: number): void {
+    this.extra[side] = Math.max(0, Math.floor(Number(amount) || 0));
+  }
+  extraOf(side: EscrowSide): number { return this.extra[side]; }
+  // pilna įėjimo suma (verify/refund): tier + tos pusės priedas
+  entryAmount(side: EscrowSide): number { return this.tier + this.extra[side]; }
+
   // Mačo info dashboard'ui/žurnalui (adresai + įėjimų tx + padalinimas).
   matchInfo(): { tier: number; pot: number; prize: number; treasuryCut: number; p1: { addr: string; tx: string }; p2: { addr: string; tx: string } } {
     const { pot, prize, treasury } = this.split();
@@ -64,9 +76,16 @@ export class WagerEscrow {
   //   Kritiška: verify() ant sėkmės įrašo dedupe eilutę; pakartotinis to paties tx verify grąžintų
   //   `fee_used`. Praleisdami jau `verified` puses, retry nesulaužo jau patvirtinto įėjimo.
   async verifyBoth(): Promise<boolean> {
-    if (!this.e.p1.verified) { const r1 = await this.verify(this.e.p1.addr, this.e.p1.tx, this.tier); this.e.p1.verified = r1.ok; }
-    if (!this.e.p2.verified) { const r2 = await this.verify(this.e.p2.addr, this.e.p2.tx, this.tier); this.e.p2.verified = r2.ok; }
+    if (!this.e.p1.verified) { const r1 = await this.verify(this.e.p1.addr, this.e.p1.tx, this.entryAmount("p1")); this.e.p1.verified = r1.ok; }
+    if (!this.e.p2.verified) { const r2 = await this.verify(this.e.p2.addr, this.e.p2.tx, this.entryAmount("p2")); this.e.p2.verified = r2.ok; }
     return this.e.p1.verified && this.e.p2.verified;
+  }
+
+  // 🤖 SOLO verifikacija (RANKED vs AI fee — moka tik p1). Idempotentiška kaip verifyBoth.
+  async verifySide(side: EscrowSide): Promise<boolean> {
+    const e = this.e[side];
+    if (!e.verified) { const r = await this.verify(e.addr, e.tx, this.entryAmount(side)); e.verified = r.ok; }
+    return e.verified;
   }
 
   // Laimėtojas 80% poolo. Grąžina {prize,pot} arba null (nebeaktyvu / jau settlinta / be adreso). Guard: settled.
@@ -98,7 +117,7 @@ export class WagerEscrow {
     const refunds: Payout[] = [];
     (["p1", "p2"] as EscrowSide[]).forEach((s) => {
       const e = this.e[s];
-      if (e.verified && !e.refunded && isAddr(e.addr)) { e.refunded = true; refunds.push({ address: e.addr, amount: this.tier, sessionId: s, kind: "refund" }); }
+      if (e.verified && !e.refunded && isAddr(e.addr)) { e.refunded = true; refunds.push({ address: e.addr, amount: this.entryAmount(s), sessionId: s, kind: "refund" }); }
     });
     if (refunds.length) await this.settle(refunds);
     return refunds.length;
@@ -113,17 +132,17 @@ export class WagerEscrow {
     if (!this.active || this._settled) return false;   // po payout/draw – jokių refund'ų (double-pay apsauga)
     const e = this.e[side];
     if (e.refunded || !e.tx || !isAddr(e.addr)) return false;
-    const v: VerifyResult = e.verified ? { ok: true } : await this.verify(e.addr, e.tx, this.tier);
+    const v: VerifyResult = e.verified ? { ok: true } : await this.verify(e.addr, e.tx, this.entryAmount(side));
     // ✅ tikras įėjimas (ok) ARBA fee_used (tx JAU įrašytas ankstesnės verify → realus mokėjimas) → auto-refund
     if (v.ok || v.reason === "fee_used") {
       e.verified = true; e.refunded = true;
-      await this.settle([{ address: e.addr, amount: this.tier, sessionId: side, kind: "refund" }]);
+      await this.settle([{ address: e.addr, amount: this.entryAmount(side), sessionId: side, kind: "refund" }]);
       return true;
     }
     // 🛟 NEAIŠKU (RPC nukrito / tx dar neindeksuotas) → į MANUAL eilę, kad pinigai NEDINGTŲ
     if (v.reason === "rpc" || v.reason === "tx_not_found") {
       e.refunded = true;   // pažymim, kad nekurtume dublio
-      if (this.onUncertainRefund) this.onUncertainRefund(side, e.addr, this.tier, v.reason || "rpc");
+      if (this.onUncertainRefund) this.onUncertainRefund(side, e.addr, this.entryAmount(side), v.reason || "rpc");
     }
     return false;   // definityvu (nemokėjo/blogas tx) ARBA manual jau sukurtas → ne auto-refund
   }

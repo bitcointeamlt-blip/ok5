@@ -15,7 +15,8 @@
     this.pops = [];
     this.flash = [];       // linijų blyksnis
     this.beams = [];       // šviesos pluoštai pro šonus
-    this.trails = [];      // hard-drop šleifai
+    this.trails = [];
+    this.stamps = [];   // ⚡ hard-drop atspaudai (baltas ~120ms blyksnis ant figuros celiu)      // hard-drop šleifai
     this.rings = [];       // smūgio žiedai
     this.heartT = 0;
     this.dangerT = 0;
@@ -50,7 +51,8 @@
       punch: opts.punch !== false,        // trumpas padidėjimas gimimo momentu
       y: opts.y != null ? opts.y : 0,     // pradinis nuokrypis nuo lentos centro
       dy: 0, vy: opts.vy != null ? opts.vy : -0.022,
-      outline: opts.outline || '#0a0c14'
+      outline: opts.outline || '#0a0c14',
+      force: !!(opts && opts.force)
     });
     if (this.pops.length > 5) this.pops.shift();
   };
@@ -141,6 +143,12 @@
     if (this.trails.length > 6) this.trails.shift();
   };
 
+  /* ⚡ hard-drop atspaudas: figuros celes trumpam persviecia baltai (pasimegavimo 'trinkt') */
+  Channel.prototype.stamp = function (type, cells, px, py) {
+    this.stamps.push({ type: type, cells: cells, px: px, py: py, life: 170, max: 170 });
+    if (this.stamps.length > 4) this.stamps.shift();
+  };
+
   Channel.prototype.update = function (dt) {
     var i;
     this.shake = Math.max(0, this.shake - dt * 0.022);
@@ -176,6 +184,10 @@
       r.life -= dt; r.r += dt * 0.10;
       if (r.life <= 0) this.rings.splice(i, 1);
     }
+    for (i = this.stamps.length - 1; i >= 0; i--) {
+      this.stamps[i].life -= dt;
+      if (this.stamps[i].life <= 0) this.stamps.splice(i, 1);
+    }
   };
 
   Channel.prototype.offset = function () {
@@ -194,6 +206,7 @@
     this.beams.length = 0;
     this.heartT = 0;
     this.clearFloor();
+    this.stamps = [];
   };
 
   /* ================= globalus sluoksnis ================= */

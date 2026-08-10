@@ -55,7 +55,7 @@
   }
 
   function _loadGame(mode) {
-    var url = (mode === 'online') ? 'tetris/index.html?net=colyseus' : 'tetris/index.html';
+    var url = (mode === 'online') ? 'tetris/index.html?net=colyseus&v=rb94' : 'tetris/index.html?v=rb94';
     _overlay.innerHTML =
       '<iframe src="' + url + '" style="border:0;width:100%;height:100%;display:block;" allow="autoplay"></iframe>' +
       _exitBtnHtml();

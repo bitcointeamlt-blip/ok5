@@ -129,6 +129,7 @@
   Match.prototype.playerPress = function (a) {
     global.Sfx.unlock();
     if (this.state === 'prep') { this._demoInput(a); return; }   // 🎓 pasiruošime valdymas juda DEMO figūrą (tutorial)
+    if (this._aiPlaying) return;   // 🤖 tavo pusę žaidžia TAVO AI (serveryje) — įvestis išjungta, tik žiūri
     /* A6 L2: serverAuth → siunčiam įvestį serveriui (jis sukа mano lentą); lokaliai nesukam.
      * ⚠️ Kadangi variklis serveryje, lokalūs valdymo garsai (move/rotate/drop) NEsuveiktų → grojam JUOS ČIA
      * iškart (momentinis feedback, be to užmaskuoja serverAuth vaizdo delsimą). */
@@ -152,6 +153,7 @@
   };
   Match.prototype.playerRelease = function (a) {
     if (!a) return;
+    if (this._aiPlaying) return;   // 🤖 AI žaidžia už tave — įvestis išjungta
     if (this._serverAuth) { try { global.NET.send('input', { a: a, down: false }); } catch (_) {} return; }
     this.you.release(a);
   };
@@ -398,6 +400,7 @@
         ch.addShake(Math.min(3.5, 1 + e.dist * 0.13));
         /* šleifas nuo pradinės iki galinės pozicijos */
         ch.trail(e.type, global.PIECES.CELLS[e.type][e.rot], e.x, e.from, e.to);
+        (this._hdrop = this._hdrop || {})[e.side] = Math.max(1, e.dist);   // ⚡ kitas 'lock' gaus efektą (jėga pagal aukštį)
         break;
       }
 
@@ -405,6 +408,30 @@
         /* dulkių pūstelėjimas ties nusileidimo vieta */
         var fy = (e.footY - C.BUFFER) * cell;
         if (fy > 0 && fy < C.BOARD_H) ch.dust(e.footX * cell, fy, 7);
+        /* ⚡ po HARD DROP — mažas subtilus efektas aplink įsitvirtinusią figūrą:
+         * dulkelės prie figūros blokų + švelnus melsvas žiedelis */
+        if (this._hdrop && this._hdrop[e.side]) {
+          var hdD = this._hdrop[e.side];
+          this._hdrop[e.side] = 0;
+          var lcs = global.PIECES.CELLS[e.type][e.rot];
+          for (var li = 0; li < lcs.length; li++) {
+            var lx = (e.x + lcs[li][0] + 0.5) * cell;
+            var ly = (e.y + lcs[li][1] - C.BUFFER + 0.5) * cell;
+            if (ly > 0 && ly < C.BOARD_H && Math.random() < 0.7) ch.dust(lx, ly, 3);
+          }
+          if (fy > 0 && fy < C.BOARD_H) {
+            ch.ring(e.footX * cell, fy, 'rgba(180,220,255,.85)');
+            /* 💥 kibirkščių pliūpsnis figūros spalva — jėga pagal kritimo aukštį */
+            var pcol = (C.COLORS[e.type] || ['#ffffff'])[0];
+            ch.burst(e.footX * cell, fy, 10 + Math.min(12, hdD), [pcol, '#ffffff', '#ffd75c'], 3.4);
+          }
+          ch.stamp(e.type, lcs, e.x, e.y);   // 💥 balta šerdis + besiplečiantis shockwave
+          if (mine) {
+            fx.hitstop(Math.min(40, 12 + hdD * 2));           // mikropauzė — smūgio svoris
+            fx.addShake(Math.min(5, 1.5 + hdD * 0.25));
+            if (hdD >= 10) fx.flash(0.12, '#ffffff');          // aukštas kritimas → blyksnis
+          }
+        }
         break;
       }
 
@@ -439,6 +466,23 @@
           if (e.n >= 4) { fx.hitstop(J.HITSTOP_QUAD); fx.flash(0.38, C.UI.gold); fx.addShake(3.5); }
           else if (e.n === 3) { fx.hitstop(55); fx.flash(0.20, '#ffffff'); fx.addShake(2); }
           else if (e.n === 2) { fx.hitstop(35); fx.flash(0.12, '#ffffff'); fx.addShake(1); }
+          /* 🎖️ XP už linijas + 3s COMBO langas: +1 XP/linija; suspėjai dar kartą per 3s → COMBO xN
+           * su vis stipresne juice (pop dydis, spalvų eskalacija, dalelės, blyksnis). */
+          var xpNow = Date.now();
+          if (this._xpLastClear && (xpNow - this._xpLastClear) <= 3000) this._xpCombo = (this._xpCombo || 1) + 1;
+          else this._xpCombo = 1;
+          this._xpLastClear = xpNow;
+          this._xpTotal = (this._xpTotal || 0) + e.n;
+          ch.pop('+' + e.n + ' XP', '#8fffb0', { scale: 2, life: 900, y: 40, force: true });
+          if (this._xpCombo >= 2) {
+            var cN = this._xpCombo;
+            var cCol = cN >= 5 ? '#ff5ce0' : cN >= 4 ? '#ff7050' : cN >= 3 ? '#ffa040' : '#ffd75c';
+            ch.pop('COMBO x' + cN, cCol, { scale: Math.min(4, 2 + cN * 0.4), life: 1100, y: 62, force: true });
+            ch.burst(C.BOARD_W / 2, 50, 10 + cN * 5, [cCol, '#ffffff', C.UI.gold], 3.2);
+            fx.addShake(Math.min(6, 1.5 + cN));
+            if (cN >= 3) fx.flash(Math.min(0.3, 0.08 + cN * 0.05), cCol);
+            global.Sfx.play(cN >= 4 ? 'quad' : 'clear3');
+          }
         } else if (e.n >= 4) {
           fx.hitstop(J.HITSTOP_QUAD); fx.flash(0.25, C.UI.gold);
         }
@@ -572,7 +616,11 @@
     NET.on('prep', function (p) { self._enterPrep((p && p.ms) || 15000); });   // 🎓 pasiruošimo/tutorial langas prieš startą
     NET.on('prep_state', function (p) { self._prepReadyCount = (p && p.ready) || 0; });
     NET.on(M.START, function (p) { if (p && p.side) self.mySide = p.side; self._onNetStart(p); });
-    NET.on(M.STATE, function (p) { if (p && p.foe) self._applyFoeSnapshot(p.foe); });
+    NET.on(M.STATE, function (p) {
+      if (p && p.foe) self._applyFoeSnapshot(p.foe);
+      // 🤖 „AI žaidžia už mane": serveris siunčia MANO lentą (boto) kaip {you} — piešiam ją be interp
+      if (p && p.you && self._aiPlaying) self._applyBoard(self.you, p.you, false);
+    });
     /* Serverio koridorius (tik colyseus): unitų pozicijos → kliento „puppet" armija. */
     NET.on(M.CORRIDOR, function (p) { if (self.netMode === 'colyseus') self._applyCorridor(p); });
     /* A6 L2 server-authoritative LENTOS: serveris siunčia abi lentas → piešiam iš jų (ne lokaliai). */
@@ -651,12 +699,15 @@
 
   /* Lobio veiksmai: kind =
    *   'quick'  — auto (joinOrCreate)          · 'host'   — PUBLIC kambarys (matomas sąraše, laukia)
-   *   'create' — PRIVATE kambarys (+ kodas)   · 'join'   — netOpts.roomId jau nustatytas (pasirinktas/nuoroda) */
+   *   'create' — PRIVATE kambarys (+ kodas)   · 'join'   — netOpts.roomId jau nustatytas (pasirinktas/nuoroda)
+   *   'ai'     — 🤖 RANKED vs AI: privatus kambarys, serveris pats įdeda botą (options.vsAI) */
   Match.prototype.netMatchmake = function (kind, tier) {
     this.netOpts = this.netOpts || {};
     this._private = false;
+    if (kind !== 'ai') delete this.netOpts.vsAI;   // vsAI flag'as NElimpa prie kitų režimų (netOpts persistuoja)
     if (tier != null) this.netOpts.tier = tier;   // statymo pakopa (69/200/800) → serverio metadata → lobio sąrašas
     if (kind === 'create') { this.netOpts.matchmake = 'create'; delete this.netOpts.roomId; this._hosting = true; this._private = true; }
+    else if (kind === 'ai') { this.netOpts.matchmake = 'create'; this.netOpts.vsAI = true; delete this.netOpts.roomId; this._hosting = false; }
     else if (kind === 'host') { this.netOpts.matchmake = 'host'; delete this.netOpts.roomId; this._hosting = true; }
     else if (kind === 'quick') { this.netOpts.matchmake = 'quick'; delete this.netOpts.roomId; this._hosting = false; }
     else { this._hosting = false; }   // 'join' — roomId jau yra
@@ -756,16 +807,27 @@
   Match.prototype._onNetStart = function (p) {
     this._stopLobbyPoll();                 // rungtynės prasidėjo — nebepolinam lobio sąrašo
     this._serverAuth = !!(p && p.serverAuth);   // A6 L2: serveris sukа lentas → klientas siunčia įvestis + piešia iš serverio
+    // 🤖 „AI žaidžia už mane": serveris žaidžia MANO pusę (mano lygos botas) — aš tik žiūriu.
+    //   Mano lenta ateina kaip "state"{you} snapshot'ai (žr. STATE handlerį); įvestis/siuntimai išjungti.
+    this._aiPlaying = !!(p && p.aiYou);
+    this._aiYouName = (p && p.aiName) || '🤖 YOUR AI';
+    /* 🏅 reitinguotas mačas (yra piniginė → serveris po mačo siųs rank_anim) — rezultato ekranas
+     * NErodo žaidimo skydo, vietoj jo iškart lygos emblema su statais (lobby kortelė). */
+    this._ranked = !!(this.netOpts && this.netOpts.addr);
     this.seed = ((p && p.seed) >>> 0) || this.seed;
     if (p && p.foeName) this.foeName = p.foeName;
+    /* 🪪 mačo tapatybės badge'ai (lygos emblema + žmogus/AI avataras + W/L) — serverio tiesa, abiem vienoda */
+    this._idYou = (p && p.youLeague != null) ? { league: p.youLeague | 0, ai: !!p.youAi, s: p.youStats || null } : null;
+    this._idFoe = (p && p.foeLeague != null) ? { league: p.foeLeague | 0, ai: !!p.foeAi, s: p.foeStats || null } : null;
     this.you.reset(this.seed);
     this.foe.reset(this.seed);
     this.you.side = 'you'; this.foe.side = 'foe'; this.foe.isAI = false;
     var self = this;
-    this.you.onAttack = function (n) { global.NET.send(global.NET.MSG.CLEAR, { lines: n }); };
+    this.you.onAttack = this._aiPlaying ? null : function (n) { global.NET.send(global.NET.MSG.CLEAR, { lines: n }); };
     this.foe.onAttack = null;
     this.army.reset(this.seed); this.fx.reset();   // 🎲 deterministinis koridorius (tas pats seed abiem)
     this.winner = null; this._netTopped = false; this._netWinner = null;
+    this._xpCombo = 0; this._xpLastClear = 0; this._xpTotal = 0;   // 🎖️ XP/combo skaitliukai per maca
     /* Deko parinkimas — SEEDED iš rungtynių seed → abu klientai gauna tuos pačius unitus. */
     this._deckRnd = global.RNG.mulberry32((this.seed ^ 0x1b873593) >>> 0);
     var _dl = (global.Units ? global.Units.deck(0).length : 7) || 7;
@@ -1077,7 +1139,7 @@
       this.countdown -= dt;
       var tick = Math.ceil(this.countdown / 1000);
       if (tick !== this._lastTick) { this._lastTick = tick; if (tick > 0) global.Sfx.play('tick'); }
-      if (this.countdown <= 0) { this.state = 'playing'; if (!this._serverAuth) this.you.start(); global.Sfx.play('go'); }
+      if (this.countdown <= 0) { this.state = 'playing'; if (!this._serverAuth && !this._aiPlaying) this.you.start(); global.Sfx.play('go'); }
       return;
     }
     if (this.state !== 'playing') return;
@@ -1089,6 +1151,15 @@
       this.hammerBeats(this.you);
       this.hammerBeats(this.foe);
       this.dangerPulse(dt);
+      return;
+    }
+    /* 🤖 „AI žaidžia už mane": ABI lentos ateina iš serverio snapshot'ais (you=mano botas, foe=priešas).
+     * Lokalaus variklio nesukam, snap/topped nesiunčiam — tik interp + įspėjimai (žiūrovo režimas). */
+    if (this._aiPlaying) {
+      this.hammerBeats(this.you);
+      this.hammerBeats(this.foe);
+      this.dangerPulse(dt);
+      if (this.netMode === 'colyseus') { this._interpCorridor(dt); this._interpFoePiece(dt); }
       return;
     }
     /* TIK tavo variklis; priešas atvaizduojamas iš snapshot'ų (jokio lokalaus AI). */

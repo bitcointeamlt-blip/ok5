@@ -7,6 +7,14 @@
   var STEP = 1000 / 120;
   var MAX_FRAME = 250;
 
+  /* ⏱️ badge/countdown animacijų PRELOAD skripto starte — paslėptame iframe rAF pristabdytas,
+   * todėl preload per draw() nespėdavo; čia paveikslai kraunasi vos užsikrovus žaidimui. */
+  try {
+    ['count_anim.png', 'ai_ronke_anim.png', 'ronke_idle_anim.png'].forEach(function (f) {
+      var im = new Image(); im.src = '../assets_rank/' + f;
+    });
+  } catch (e) {}
+
   function boot() {
     var canvas = document.getElementById('screen');
     if (global.Units) global.Units.load();     // deck unitų sprite'ai (async, nelaukiam)
@@ -56,10 +64,15 @@
         global.NET.on('challenge', function (p) { _post({ state: 'challenge', opponent: (p && p.opponent) || '' }); });
         global.NET.on('declined', function () { _post({ state: 'lobby' }); });
         /* 🧱💰 wager įvykiai tėvui (panelė moka/rodo statusą/prizą) */
-        global.NET.on('stake_now', function (p) { _post({ stakeNow: true, stakeTier: (p && p.tier) || 0 }); });   // pay-on-accept: laikas mokėti
+        global.NET.on('stake_now', function (p) { _post({ stakeNow: true, stakeTier: (p && p.tier) || 0, stakeAI: !!(p && p.ai), stakeAiFee: (p && p.aiFee) || 0 }); });   // pay-on-accept: laikas mokėti (🤖 ai=true → vsAI fee; aiFee → PvP „AI už mane" priedas)
         global.NET.on('wager_verify', function (p) { _post({ wagerVerify: true, wagerTier: (p && p.tier) || 0 }); });
         global.NET.on('settle', function (p) { var won = !!(p && p.winner && match.mySide && p.winner === match.mySide); _post({ wagerPrize: won ? (p.prize || 0) : 0, wagerPot: (p && p.pot) || 0 }); });
         global.NET.on('wager_abort', function (p) { _post({ wagerAbort: (p && p.reason) || 'error' }); });
+        /* 🎬 reitingo pokytis po mačo → tėvas rodo žvaigždučių animaciją (progresas!) */
+        global.NET.on('rank_anim', function (p) { _post({ rankAnim: p }); });
+        /* 🎖️ linijų XP reportas + priskyrimo patvirtinimas → tėvo panelei */
+        global.NET.on('xp_report', function (p) { _post({ xpReport: p }); });
+        global.NET.on('xp_assigned', function (p) { _post({ xpAssigned: p }); });
       }
       global.addEventListener('message', function (e) {
         var d = e && e.data; if (!d || d.__rbpanel !== 'cmd') return;
@@ -73,14 +86,19 @@
           // 🪪 vardas = piniginės adresas (0x41f6…dDA5), NE random „Player####" — matomas lobio sąraše ir challenge dialoge
           if (d.addr && /^0x[0-9a-fA-F]{6,}/.test(String(d.addr))) match.netOpts.name = String(d.addr).slice(0, 6) + '…' + String(d.addr).slice(-4);
         }
+        // 🤖 aiPlay — „AI žaidžia už mane": kiekvienam matchmake cmd nustatom IŠ NAUJO (kad neliptų iš seno mačo);
+        //   nemokamiems mačams keliauja per join options; wager mačuose galutinis žodis = stake žinutės aiPlay.
+        if (d.cmd === 'host' || d.cmd === 'quick' || d.cmd === 'private' || d.cmd === 'join' || d.cmd === 'ai') match.netOpts.aiPlay = !!d.aiPlay;
         if (d.cmd === 'host') match.netMatchmake('host', d.tier);
         else if (d.cmd === 'quick') match.netMatchmake('quick');
         else if (d.cmd === 'private') match.netMatchmake('create', d.tier);
+        else if (d.cmd === 'ai') match.netMatchmake('ai');   // 🤖 RANKED vs AI — privatus kambarys su serverio botu
         else if (d.cmd === 'join' && d.roomId) match.netJoinRoom(d.roomId);
         else if (d.cmd === 'accept') match.netAccept();
         else if (d.cmd === 'decline') match.netDecline();
-        else if (d.cmd === 'stake') { try { global.NET.send('stake', { tx: d.mid, addr: d.addr, ref: d.ref || '' }); } catch (_) {} }   // 🧱💰 įėjimo tx + 🎁 referrer'is serveriui
+        else if (d.cmd === 'stake') { try { global.NET.send('stake', { tx: d.mid, addr: d.addr, ref: d.ref || '', aiPlay: !!d.aiPlay }); } catch (_) {} }   // 🧱💰 įėjimo tx + 🎁 referrer'is (+🤖 aiPlay) serveriui
         else if (d.cmd === 'stakecancel') { try { global.NET.send('stake_cancel', {}); } catch (_) {} }
+        else if (d.cmd === 'xpassign') { try { global.NET.send('xp_assign', { unit: d.mid }); } catch (_) {} }   // 🎖️ pool -> unitas
         else if (d.cmd === 'lobby') { match.state = 'lobby'; match.roomCode = ''; match.inviteUrl = ''; match._startLobbyPoll(); }
       });
     }

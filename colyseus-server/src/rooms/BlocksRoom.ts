@@ -8,6 +8,8 @@ import { MatchLog } from "../blocks/MatchLog";
 import { PayoutQueue } from "../blocks/PayoutQueue";   // neverifikuoto rezultato payout → manual eilė
 import * as ReferralStore from "../blocks/ReferralStore";   // 🎁 referalų sistema (bind + 5% kreditas)
 import * as RankStore from "../blocks/RankStore";           // 🏅 reitingo (lygos+žvaigždutės) + deko XP
+import * as AiLevels from "../blocks/AiLevels";
+import { chainDeckFull, chainUtypeStr } from "../services/DeckChain";   // 🎖️ unitu XP report (on-chain dekas)             // 🤖 RANKED vs AI — 24 pakopų sunkumo kreivė
 
 /* RONKE BLOCKS — 1v1 online (server-authoritative KORIDORIUS).
  *
@@ -50,6 +52,14 @@ const CHEAT_HITS = 3;                 // tiek pažeidimų → laikom sukčiumi �
  * VISKAS gated ant serverio env raktų (wagerEnabled() && StakeService.enabled) — be jų = NEMOKAMA. */
 const STAKE = new StakeService();     // dalinamasi tarp kambarių (ethers signer lazy-init)
 const WINNER_BPS = 8000;              // laimėtojas 80% poolo; treasury pasilieka 20%
+
+/* ── 🤖 RANKED vs AI ──────────────────────────────────────────────────────────
+ * Žaidėjas moka FIKSUOTĄ fee (25 RONKE ≈ PvP treasury 20% cut) → VISA suma lieka treasury
+ * (payout'o NĖRA — laimėjęs gauna +1★, pralaimėjęs −½★; TAS PATS reitingas kaip PvP).
+ * Botas žaidžia SERVERYJE (0ms ping, cheat'inti negalima) žaidėjo lygos×žvaigždučių stiprumu.
+ * Mokestis per tą patį payAndPlay kelią → verifikacija WagerEntry (EXACT 25), refund jei mačas neįvyko. */
+const AI_FEE = Math.max(1, Number(process.env.BLOCKS_AI_FEE || 25));   // RONKE už vieną RANKED vs AI mačą
+const AI_SNAP_MS = 100;               // boto lentos transliavimo dažnis (klientas interpoliuoja kaip PvP snap'us)
 // 🔁 AUTO režime periodiškai išmokam laukiančias eilės išmokas (kai pool papildytas — senos „eilėje" prizai išsimoka savaime).
 // 🛟 Pirma RECONCILE iš Supabase — po cloud redeploy vietinis blocks_payouts.json tuščias, tad atstatom
 //    laukiančias išmokas iš durablaus Supabase dublio, kad NĖ VIENAS prizas nedingtų per deploy'ą.
@@ -109,6 +119,24 @@ export class BlocksRoom extends Room<BlocksState> {
   private _disposed = false;                          // kambarys uždarytas → stabdom fono verify ciklą
   private _refOf: Record<Side, string> = { p1: "", p2: "" };   // 🎁 kiekvieno žaidėjo referrer'is (iš stake žinutės)
   private _addrOf: Record<Side, string> = { p1: "", p2: "" };  // 🏅 kiekvieno žaidėjo piniginė (nemokamiems iš options.addr; wager perrašo įrodytu iš escrow) — reitingui/XP
+  // 🤖 AI botai (bendra RANKED vs AI ir PvP „AI žaidžia už mane" infrastruktūra):
+  //   _aiPlayOf[side]=true → tą pusę žaidžia SERVERIO botas žaidėjo lygos stiprumu (bots[side]).
+  //   vsAI=true → specialus atvejis: p2 = botas be kliento, solo 25 RONKE fee, be payout.
+  private vsAI = false;
+  private bots: Partial<Record<Side, { eng: any; ai: any; acc: number; snapAcc: number }>> = {};
+  private _aiPlayOf: Record<Side, boolean> = { p1: false, p2: false };
+  private _aiCfgOf: Record<Side, { step: number; name: string }> = {
+    p1: { step: 0, name: "PAPER AI 0★" }, p2: { step: 0, name: "PAPER AI 0★" },
+  };
+  // 🪪 žaidėjų lygos (0..7) + W/L statistika (AI ir PvP atskirai) — mačo badge'ams (abu mato tą patį)
+  private _leagueOf: Record<Side, number> = { p1: 0, p2: 0 };
+  private _idStats: Record<Side, { aiW: number; aiL: number; pvpW: number; pvpL: number }> = {
+    p1: { aiW: 0, aiL: 0, pvpW: 0, pvpL: 0 }, p2: { aiW: 0, aiL: 0, pvpW: 0, pvpL: 0 },
+  };
+  private _feeVerifyStarted = false;   // vsAI: solo fee fono verifikacija (kaip _bgVerify, tik p1)
+  private _feeOk = false;
+  private _feeDone = false;
+  private _rankApplied = false;        // vsAI: rank taikom 1× kai IR mačas baigtas, IR fee verify baigtas
 
   onCreate(options?: any) {
     /* PRIVATUS kambarys (draugo kvietimas per kodą/nuorodą): išimamas iš matchmaking, kad
@@ -142,6 +170,27 @@ export class BlocksRoom extends Room<BlocksState> {
     this.onchainMatchId = "";
     this.setMetadata({ host: (options && options.name) || "Player", mode: (options && options.mode) || "public", tier, wager: this.escrow.active, wagerLive });
 
+    // 🤖 RANKED vs AI kambarys: privatus, 1 žmogus + serverio botas. Escrow perkuriamas SOLO fee režimu
+    //   (tier=AI_FEE, moka tik p1; payout kelio NĖRA — žr. _settleIfReady guard). Be env raktų → nemokamas
+    //   (lokalus dev / serveris nesukonfigūruotas) — mačas vyksta, bet fee neimamas ir rank'ui reikia rankEnabled().
+    this.vsAI = !!(options && options.vsAI);
+    if (this.vsAI) {
+      this._aiPlayOf.p2 = true;   // p2 = serverio botas (be kliento)
+      this.setPrivate();
+      this.maxClients = 1;
+      this.escrow = new WagerEscrow(
+        wagerLive ? AI_FEE : 0,
+        (p) => STAKE.settle(p.map((x) => ({ ...x, roomId: this.roomId }))),
+        (a, t, ti) => verifyWagerEntry(a, t, ti),
+        WINNER_BPS,
+        (side, addr, tierR, reason) => {
+          PayoutQueue.add({ to: addr, amount: tierR, kind: "refund", roomId: this.roomId, manual: true, note: `vsAI fee refund NEAIŠKUS (${reason}) — patikrink įėjimo tx prieš mokant` });
+          console.warn(`[BLOCKS vsAI] 🛟 fee refund NEAIŠKUS (${reason}) → ${addr} ${tierR} RONKE į MANUAL eilę`);
+        },
+      );
+      this.setMetadata({ host: (options && options.name) || "Player", mode: "ai", tier: this.escrow.active ? AI_FEE : 0, wager: this.escrow.active, wagerLive });
+    }
+
     this.setState(new BlocksState());
     this.lib = loadGameLib();
     this.seed = (Math.floor(Math.random() * 0xffffffff)) >>> 0;
@@ -162,7 +211,8 @@ export class BlocksRoom extends Room<BlocksState> {
     this.onMessage("decline", (c) => this._decline(c));  // host'as atmetė → svečias išmetamas, host lieka laukti
     this.onMessage("stake", (c, m: any) => this._onStake(c, m));        // 🧱💰 pay-on-accept: žaidėjo įėjimo tx
     this.onMessage("stake_cancel", (c) => this._abortWager("stake_cancelled"));  // žaidėjas atsisakė mokėti → abort+refund kitam
-    this.onMessage("prep_ready", (c) => this._onPrepReady(c));   // 🎓 pasiruošimo lange „ready" → startas kai abu
+    this.onMessage("prep_ready", (c) => this._onPrepReady(c));
+    this.onMessage("xp_assign", (c, m: any) => { void this._onXpAssign(c, m); });   // 🎖️ pool -> pasirinktas unitas   // 🎓 pasiruošimo lange „ready" → startas kai abu
     this.onMessage("clear", (c, m: any) => this._onClear(c, m));
     this.onMessage("snap", (c, m: any) => this._relaySnap(c, m));
     this.onMessage("topped", (c) => this._onTopped(c));
@@ -190,6 +240,60 @@ export class BlocksRoom extends Room<BlocksState> {
     if (side === "p1") this.hostSession = client.sessionId;   // pirmasis = HOST (jam eina challenge)
     // 🧱💰 pay-on-accept: NEIMAM įėjimo prisijungiant — abu moka tik po host'o „accept" (žr. _accept/_onStake).
     client.send("hello", { side, seed: this.seed });
+    void this._fetchLeague(side);   // 🪪 lyga badge'ams
+    // 🤖 vsAI: sintetinis boto „žaidėjas" p2 + sunkumas pagal žaidėjo reitingą (async — spėja iki countdown).
+    if (this.vsAI && side === "p1") void this._setupBot();
+    // 🤖 PvP „AI žaidžia už mane" NEMOKAMAME mače: deklaruojama join options (fee nėra — nėra ko tikrinti).
+    //   WAGER mače options IGNORUOJAM — ten galutinis žodis = stake žinutės aiPlay (fee sumokėtas kartu).
+    if (!this.vsAI && !this.escrow.active && options && options.aiPlay) {
+      this._aiPlayOf[side] = true;
+      void this._fetchAiLevel(side);
+    }
+  }
+
+  // 🪪 žaidėjo lyga + W/L (AI/PvP atskirai) badge'ams (best-effort; be piniginės/DB → PAPER 0-0)
+  private async _fetchLeague(side: Side) {
+    try {
+      const a = this._addrOf[side];
+      if (!RankStore.isAddr(a) || !RankStore.rankEnabled()) return;
+      const s = await RankStore.get(a);
+      this._leagueOf[side] = s.league;
+      this._idStats[side] = {
+        aiW: s.aiWins, aiL: s.aiLosses,
+        pvpW: Math.max(0, s.wins - s.aiWins), pvpL: Math.max(0, s.losses - s.aiLosses),
+      };
+    } catch (_) {}
+  }
+
+  // 🤖 Pusės AI pakopa = TO žaidėjo lyga×žvaigždutės (naujas/be piniginės → PAPER 0★).
+  private async _fetchAiLevel(side: Side) {
+    let score = 0;
+    try {
+      const addr = this._addrOf[side];
+      if (RankStore.isAddr(addr) && RankStore.rankEnabled()) score = (await RankStore.get(addr)).score;
+    } catch (_) {}
+    const lvl = AiLevels.levelFor(score);
+    this._aiCfgOf[side] = { step: lvl.step, name: lvl.name };
+    console.log(`[BLOCKS AI] ${side} botas ${lvl.name} (step ${lvl.step}) room=${this.roomId}`);
+  }
+
+  // 🤖 vsAI: boto lygis pagal P1 (žaidėjo!) reitingą — botas kopijuoja tave + sintetinis p2 „žaidėjas".
+  private async _setupBot() {
+    let score = 0;
+    try {
+      const addr = this._addrOf.p1;
+      if (RankStore.isAddr(addr) && RankStore.rankEnabled()) score = (await RankStore.get(addr)).score;
+    } catch (_) {}
+    const lvl = AiLevels.levelFor(score);
+    this._aiCfgOf.p2 = { step: lvl.step, name: lvl.name };
+    this._leagueOf.p2 = RankStore.decode(score).league;   // 🪪 boto lyga = žaidėjo lyga
+    this._idStats.p2 = { ...this._idStats.p1 };           // 🪪 boto statistika = tavo dvynio (tavo) statistika
+    if (!this.state.players.get("bot")) {
+      const bot = new BlocksPlayer();
+      bot.side = "p2"; bot.name = lvl.name; bot.ready = true;
+      this.state.players.set("bot", bot);   // sessionId „bot" — realaus kliento su tokiu id nėra
+    } else { const b = this.state.players.get("bot")!; b.name = lvl.name; }
+    console.log(`[BLOCKS vsAI] botas ${lvl.name} (step ${lvl.step}) room=${this.roomId}`);
   }
 
   async onLeave(client: Client, consented: boolean) {
@@ -203,6 +307,13 @@ export class BlocksRoom extends Room<BlocksState> {
       if (client.sessionId === this.hostSession) this.hostSession = "";
       return;
     }
+    // 🤖 AI valdoma pusė: žaidėjas gali IŠEITI — jo botas pabaigia mačą (lago/AFK imunitetas).
+    //   Jokio pralaimėjimo; state.players įrašo NEtrinam (vardai/lines reikalingi iki galo).
+    const leftSide = this.sideOf[client.sessionId];
+    if (leftSide && this._aiPlayOf[leftSide]) {
+      console.log(`[BLOCKS AI] ${leftSide} žaidėjas išėjo — jo AI pabaigia mačą (room=${this.roomId})`);
+      return;
+    }
     // Rungtynėse: sąmoningas išėjimas → iškart pralaimėjimas; kitaip 8s reconnect.
     if (consented) { this._winByLeave(client); return; }
     try { await this.allowReconnection(client, 8); }
@@ -214,6 +325,19 @@ export class BlocksRoom extends Room<BlocksState> {
     const p = this.state.players.get(client.sessionId);
     if (!p) return;
     p.ready = v;
+    // 🤖 vsAI: challenge/accept NEREIKIA (botas visada sutinka) → fee (jei gyvas) arba iškart prep.
+    if (this.vsAI) {
+      if (this.state.phase !== "lobby" || !v) return;
+      if (this.escrow.active) {
+        this.state.phase = "staking";
+        this.clients.forEach((c) => c.send("stake_now", { tier: this.escrow.tier, ai: true }));
+        if (this.stakeTimer) clearTimeout(this.stakeTimer);
+        this.stakeTimer = setTimeout(() => { void this._abortWager("stake_timeout"); }, STAKE_MS);
+      } else {
+        this._beginPrep();
+      }
+      return;
+    }
     // Abu prisijungę & pasiruošę → NEbe auto-start, o CHALLENGE host'ui („do you want to play?").
     if (this.state.phase === "lobby" && this.state.players.size === 2 && this._allReady()) {
       this._openChallenge();
@@ -242,7 +366,7 @@ export class BlocksRoom extends Room<BlocksState> {
     //   tad decline/nemačas nekainuoja. „stake_now" siunčiamas TIK jei serveris wager-live (escrow.active).
     if (this.escrow.active) {
       this.state.phase = "staking";
-      this.clients.forEach((c) => c.send("stake_now", { tier: this.escrow.tier }));
+      this.clients.forEach((c) => c.send("stake_now", { tier: this.escrow.tier }));   // PvP: tik pakopa (AI avataras nemokamas)
       if (this.stakeTimer) clearTimeout(this.stakeTimer);
       this.stakeTimer = setTimeout(() => { void this._abortWager("stake_timeout"); }, STAKE_MS);
       return;
@@ -260,7 +384,22 @@ export class BlocksRoom extends Room<BlocksState> {
     if (!tx) return;
     this._refOf[side] = String((m && m.ref) || "");   // 🎁 referrer'is (iš kliento localStorage `rb_ref`); bind'inam settle metu (proven wallet)
     if (addr) this._addrOf[side] = addr.trim().toLowerCase();   // 🏅 wager: ĮRODYTAS adresas reitingui (perrašo onJoin deklaraciją)
+    void this._fetchLeague(side);   // 🪪 lyga badge'ams (įrodytas adresas galėjo pasikeisti)
+    // 🤖 PvP „AI žaidžia už mane" — NEMOKAMA (user 08-09): žaidėjas moka TIK pakopą (69/200/800),
+    //   jokio priedo. 25 RONKE fee lieka TIK RANKED vs AI mačams (vsAI kelias žemiau).
+    if (!this.vsAI && m && m.aiPlay) {
+      this._aiPlayOf[side] = true;
+      void this._fetchAiLevel(side);
+    }
     this.escrow.setEntry(side, addr, tx);
+    // 🤖 vsAI: moka TIK p1 (botas nemoka) → startuojam iškart (optimistinis, kaip PvP), fee verify fone.
+    if (this.vsAI) {
+      if (side !== "p1") return;
+      if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
+      this._beginPrep();
+      void this._bgVerifyFee();
+      return;
+    }
     if (!this.escrow.bothStaked()) return;   // laukiam kito žaidėjo mokėjimo
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
     this._beginPrep();                    // 🎓 pasiruošimo/tutorial langas (verify vyksta jo metu fone)
@@ -288,6 +427,21 @@ export class BlocksRoom extends Room<BlocksState> {
     this._settleIfReady();               // jei mačas jau baigėsi — dabar sprendžiam payout
   }
 
+  // 🤖 vsAI fee fono verifikacija (kaip _bgVerify, tik SOLO p1). Rezultatas lemia TIK reitingo taikymą:
+  //   fake tx → mačas vyksta, bet ★ NEgaunama/NEatimama (mokestis = bilietas į reitingą).
+  private async _bgVerifyFee() {
+    if (this._feeVerifyStarted) return; this._feeVerifyStarted = true;
+    const MAX_ATTEMPTS = 15, GAP_MS = 18000;
+    for (let i = 0; i < MAX_ATTEMPTS && !this._disposed; i++) {
+      try { if (await this.escrow.verifySide("p1")) { this._feeOk = true; break; } } catch (_) { /* RPC glitch → bandom vėl */ }
+      if (this._disposed) break;
+      await new Promise((r) => setTimeout(r, GAP_MS));
+    }
+    this._feeDone = true;
+    if (!this._feeOk) console.warn(`[BLOCKS vsAI] fee verify NEpraėjo (fake tx arba RPC gedimas) → reitingas šiam mačui NEtaikomas`);
+    this._applyRankVsAiIfReady();
+  }
+
   // 🎓 PASIRUOŠIMO LANGAS — prieš startą rodom valdymo tutorial (klientas). Startuojam kai ABU paspaudžia
   //   „ready" ARBA po PREP_MS. Wager: on-chain verify vyksta kaip tik šiuo metu (fone) → daugiau laiko.
   private _beginPrep() {
@@ -305,7 +459,10 @@ export class BlocksRoom extends Room<BlocksState> {
     let ready = 0;
     this.state.players.forEach((_p, sid) => { if (this._prepReady[sid]) ready++; });
     this.broadcast("prep_state", { ready, total: this.state.players.size });
-    if (ready >= 2 && this.state.players.size >= 2) {
+    // 🤖 vsAI: botas visada „ready" → startuojam vos žmogus paspaudžia (state.players turi ir botą, bet
+    //   _prepReady pildosi tik realiems klientams, tad vsAI slenkstis = 1).
+    const need = this.vsAI ? 1 : 2;
+    if (ready >= need && this.state.players.size >= 2) {
       if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }
       this._beginCountdown();   // abu pasiruošę → startas nelaukiant 15s
     }
@@ -328,9 +485,37 @@ export class BlocksRoom extends Room<BlocksState> {
       this.eng.you.reset(this.seed); this.eng.foe.reset(this.seed);
       this.engAcc = 0; this.boardAcc = 0; this.boardFx = [];
     }
+    // 🤖 AI botai: kiekvienai _aiPlayOf pusei — serverio lenta + ai.js vairuotojas TO žaidėjo lygos
+    //   parametrais (CFG.AI_LEVELS.BOT_p1/p2). Žmogaus valdomos pusės lieka client-auth (be input lago);
+    //   botas cheat'inti negali (serveris = jo lenta). Apima IR vsAI (p2), IR PvP „AI žaidžia už mane".
+    this.bots = {};
+    (["p1", "p2"] as Side[]).forEach((s) => {
+      if (!this._aiPlayOf[s]) return;
+      const E = this.lib.Engine;
+      const eng = new E({ side: SIDE_TO_ARMY[s], name: "BOT_" + s, seed: this.seed, isAI: true });
+      eng.reset(this.seed);
+      try { this.lib.CFG.AI_LEVELS["BOT_" + s] = AiLevels.cfgFor(this._aiCfgOf[s].step); } catch (_) {}
+      this.bots[s] = { eng, ai: new this.lib.AI(eng, "BOT_" + s), acc: 0, snapAcc: 0 };
+    });
+    // 🤖 PvP su AI: žaidėjas gali IŠEITI, o jo botas pabaigia mačą → kambarys neturi užsidaryti likus 0 klientų.
+    //   Grąžinam autoDispose _end'e (žr. ten) — MATCH_MAX_MS garantuoja pabaigą.
+    if (!this.vsAI && (this._aiPlayOf.p1 || this._aiPlayOf.p2)) this.autoDispose = false;
     this.clients.forEach((c) => {
       const p = this.state.players.get(c.sessionId);
-      c.send("start", { side: p ? p.side : "p1", seed: this.seed, countdown: COUNTDOWN_MS, serverAuth: this.serverAuth });
+      const side: Side = (p ? p.side : "p1") as Side;
+      const other: Side = side === "p1" ? "p2" : "p1";
+      c.send("start", {
+        side, seed: this.seed, countdown: COUNTDOWN_MS, serverAuth: this.serverAuth,
+        // priešo etiketė: vsAI botas = grynas vardas ("PAPER AI 0★"); PvP AI-avataras = 🤖 + lygis
+        foeName: this._aiPlayOf[other] ? (this.vsAI ? this._aiCfgOf.p2.name : "🤖 " + this._aiCfgOf[other].name) : undefined,
+        // tavo pusę žaidžia TAVO AI (PvP takeover) → klientas piešia savo lentą iš serverio, įvestis išjungta
+        aiYou: this._aiPlayOf[side] || undefined,
+        aiName: this._aiPlayOf[side] ? "🤖 " + this._aiCfgOf[side].name : undefined,
+        // 🪪 mačo badge'ai: abiejų pusių lygos + kas žaidžia (žmogus/AI) + W/L (AI ir PvP atskirai)
+        youLeague: this._leagueOf[side], foeLeague: this._leagueOf[other],
+        youAi: this._aiPlayOf[side] || undefined, foeAi: this._aiPlayOf[other] || undefined,
+        youStats: this._idStats[side], foeStats: this._idStats[other],
+      });
     });
   }
 
@@ -354,6 +539,7 @@ export class BlocksRoom extends Room<BlocksState> {
     if (this.state.phase !== "playing") return;
     const p = this.state.players.get(client.sessionId);
     if (!p) return;
+    if (this._aiPlayOf[p.side as Side]) return;   // 🤖 šią pusę žaidžia botas — kliento clear ignoruojam
     let n = (m && (m.lines != null ? m.lines : m.n)) | 0;
     // A6: viena valymo žinutė NEGALI viršyti 4 linijų (tetris riba) — kirpk (anti fake-spawn).
     if (n < 1) return;
@@ -373,6 +559,9 @@ export class BlocksRoom extends Room<BlocksState> {
   }
 
   private _relaySnap(client: Client, m: any) {
+    // 🤖 AI valdomos pusės kliento snap'ai ignoruojami (jo lentą transliuoja serveris iš boto)
+    const sideR = this.sideOf[client.sessionId];
+    if (sideR && this._aiPlayOf[sideR]) return;
     // A6: snap flood apsauga — max ~25/s.
     const last = this.lastSnapMs[client.sessionId];
     if (last != null && this.matchMs - last < SNAP_MIN_INTERVAL_MS) return;
@@ -425,6 +614,7 @@ export class BlocksRoom extends Room<BlocksState> {
     if (this.serverAuth) return;   // A6 L2: topout sprendžia serverio variklis
     const p = this.state.players.get(client.sessionId);
     if (!p || this.state.phase === "over") return;
+    if (this._aiPlayOf[p.side as Side]) return;   // 🤖 boto pusės topout sprendžia serveris (bot engine)
     p.topped = true;
     // priešas laimi
     let winner: Side | "" = "";
@@ -439,6 +629,8 @@ export class BlocksRoom extends Room<BlocksState> {
       if (this.state.countdown <= 0) {
         this.state.phase = "playing"; this.state.countdown = 0;
         if (this.serverAuth && this.eng) { this.eng.you.start(); this.eng.foe.start(); }   // A6 L2: paleidžiam lentas
+        if (this.bots.p1) this.bots.p1.eng.start();   // 🤖 botai pradeda žaisti
+        if (this.bots.p2) this.bots.p2.eng.start();
       }
       return;
     }
@@ -450,6 +642,9 @@ export class BlocksRoom extends Room<BlocksState> {
 
     // A6 L2: SERVER-AUTHORITATIVE lentos — žingsniuojam variklius iš įvesčių, clears→unitai, topout→gameover.
     if (this.serverAuth && this.eng) this._stepEngines(dt);
+    // 🤖 AI botai (vsAI p2 ir/ar PvP takeover pusės) — žmogaus valdomos pusės lieka client-auth.
+    if ((this.bots.p1 || this.bots.p2) && this.state.phase === "playing") this._stepBots(dt);
+    if ((this.state.phase as string) !== "playing") return;   // botas galėjo baigti mačą (topout) šio tick'o metu
 
     this.army.update(dt);
     const evs = this.army.drainEvents();
@@ -462,7 +657,13 @@ export class BlocksRoom extends Room<BlocksState> {
           if (teng && teng.state === "playing") teng.addGarbageNow(LINES_PER_UNIT);
         } else {
           const targetSide: Side = e.target === "you" ? "p1" : "p2";
-          this._sendGarbage(targetSide, LINES_PER_UNIT);
+          const bot = this.bots[targetSide];
+          if (bot) {
+            // 🤖 boto pusė serveryje: garbage krenta tiesiai ant boto lentos
+            if (bot.eng.state === "playing") bot.eng.addGarbageNow(LINES_PER_UNIT);
+          } else {
+            this._sendGarbage(targetSide, LINES_PER_UNIT);
+          }
         }
       } else if (e.t === "hit" || e.t === "shoot" || e.t === "impact" ||
                  e.t === "block" || e.t === "miss" || e.t === "die") {
@@ -525,6 +726,48 @@ export class BlocksRoom extends Room<BlocksState> {
           this._end(loser === "p1" ? "p2" : "p1");
           return;
         }
+      }
+    }
+  }
+
+  // 🤖 Botų žingsnis — AI galvoja/spaudo (tap per ai.js), variklis suka lentą 120Hz. Kiekvienai AI pusei:
+  //   clear → tos pusės unitai į koridorių · topout → priešinga pusė laimi · lentos snapshot:
+  //   PRIEŠUI kaip "state"{foe} (esama interpoliacija), SAVININKUI kaip "state"{you} (žiūri savo AI žaidimą).
+  private _stepBots(dt: number) {
+    const STEP = 1000 / 120;
+    for (const s of ["p1", "p2"] as Side[]) {
+      const bot = this.bots[s];
+      if (!bot) continue;
+      bot.acc += dt;
+      let guard = 0;
+      while (bot.acc >= STEP && guard < 40) {
+        bot.ai.update(STEP);
+        bot.eng.update(STEP);
+        bot.acc -= STEP; guard++;
+      }
+      if (guard >= 40) bot.acc = 0;
+      const armySide = SIDE_TO_ARMY[s];
+      const evs = bot.eng.drainEvents();
+      for (const e of evs) {
+        if (e.t === "clear") {
+          const n = Math.max(0, Math.min(4, e.n | 0));
+          for (let i = 0; i < n; i++) this.army.request(armySide, this._nextDeckType(armySide));
+          const pl = this._playerBySide(s); if (pl) pl.lines += n;
+        } else if (e.t === "topout") {
+          this._end(s === "p1" ? "p2" : "p1");   // botas užsivertė → priešinga pusė laimi
+          return;
+        }
+      }
+      bot.snapAcc += dt;
+      if (bot.snapAcc >= AI_SNAP_MS) {
+        bot.snapAcc = 0;
+        const snap = this._serializeBoard(bot.eng);
+        this.clients.forEach((c) => {
+          const p = this.state.players.get(c.sessionId);
+          if (!p) return;
+          if (p.side === s) c.send("state", { you: snap });    // savininkas žiūri savo AI
+          else c.send("state", { foe: snap });                 // priešas mato kaip įprastą oponento lentą
+        });
       }
     }
   }
@@ -626,11 +869,106 @@ export class BlocksRoom extends Room<BlocksState> {
     this.state.phase = "over";
     this.state.winner = winner;
     this.broadcast("gameover", { winner });
+    // 🎖️ linijų XP → pool + unitų reportas (kiekvienai pusei su pinigine; botas be kliento — no-op)
+    void this._xpReport("p1");
+    if (!this.vsAI) void this._xpReport("p2");
+    // 🤖 vsAI: payout/referral kelio NĖRA — fee lieka treasury (markSettled → jokio refund), rank kai fee patvirtintas.
+    if (this.vsAI) {
+      this._winnerSide = winner;
+      if (this.escrow.active) this.escrow.markSettled();   // mačas įvyko → 25 RONKE fee sunaudotas (negrąžinamas)
+      this._applyRankVsAiIfReady();
+      this._logMatch(winner);
+      return;
+    }
     this._applyRank(winner);   // 🏅 reitingas + deko XP (off-chain, idempotentiška per roomId) — free IR wager
     this._bindReferrals();     // 🎁 referral bind — pakviestas tampa referalu vos sužaidęs (free IR wager)
     // 🥇 OPTIMISTINIS: mačas baigėsi — payout sprendžiam kai IR verify baigtas (žr. _settleIfReady).
     if (this.escrow.active) { this._winnerSide = winner; this._settleIfReady(); }
     else this._logMatch(winner);   // nemokamas mačas — tik žurnalas (jokio payout)
+    // 🤖 PvP su AI: mačas baigtas → kambarys vėl gali užsidaryti normaliai; jei visi žaidėjai jau išėję
+    //   (AI žaidė už juos) — uždarom rankiniu būdu (onDispose užbaigs settle/refund kelius).
+    if (this._aiPlayOf.p1 || this._aiPlayOf.p2) {
+      this.autoDispose = true;
+      if (this.clients.length === 0) setTimeout(() => { try { void this.disconnect(); } catch (_) {} }, 2000);
+    }
+  }
+
+  // 🤖 vsAI reitingas: taikom 1× kai IR mačas baigtas, IR fee verify baigtas (mokestis = bilietas į reitingą).
+  //   Fee negyvas (lokalus dev / serveris be env) → rank taikom iškart (rankEnabled vis tiek gate'ina Supabase).
+  private _applyRankVsAiIfReady() {
+    if (!this.vsAI || this._rankApplied) return;
+    if (this._winnerSide === null) return;                          // mačas dar nesibaigė
+    if (this.escrow.active && !this._feeDone) return;               // laukiam fee fono verifikacijos
+    this._rankApplied = true;
+    if (this.escrow.active && !this._feeOk) return;                 // fake tx → jokio reitingo (įspėta _bgVerifyFee)
+    if (this._winnerSide === "") return;                            // draw (laiko limitas lygiomis) → nieko
+    // 🛡️ anti-cheat: pergalė prieš botą su cheat-flag'ais (fake snap/clear spam) → ★ NEduodama (fee lieka).
+    if (this._winnerSide === "p1" && this._isCheater("p1")) {
+      console.warn(`[BLOCKS vsAI] ⛔ pergalė pažymėta anti-cheat (${this._cheatReasons("p1")}) → ★ neduodama room=${this.roomId}`);
+      return;
+    }
+    const addr = this._addrOf.p1;
+    if (!RankStore.isAddr(addr) || !RankStore.rankEnabled()) return;
+    const won = this._winnerSide === "p1";
+    void RankStore.applyResultVsAI(addr, won, this.roomId).then((r) => { this._sendRankAnim("p1", won, r); });
+  }
+
+  // 🎖️ LINIJŲ XP: gain = lines × (lyga+1) → pool; klientui siunčiam reportą su ĮREGISTRUOTAIS
+  //   deko unitais (on-chain tiesa per DeckChain) + jų sukauptu XP — žaidėjas pasirinks, kam skirti.
+  private async _xpReport(side: Side) {
+    try {
+      const addr = this._addrOf[side];
+      if (!RankStore.isAddr(addr) || !RankStore.rankEnabled()) return;
+      const pl = this._playerBySide(side);
+      const lines = pl ? (pl.lines | 0) : 0;
+      const mult = (this._leagueOf[side] | 0) + 1;
+      const gain = Math.max(0, lines * mult);
+      if (gain > 0) await RankStore.xpPoolAdd(addr, gain);
+      const st = await RankStore.xpUnitsGet(addr);
+      const deck = await chainDeckFull(addr).catch(() => null);
+      const units: any[] = [];
+      if (deck) deck.ids.forEach((id) => {
+        const s = deck.stats.get(id);
+        units.push({ id, utype: s ? chainUtypeStr(s.utype) : "", level: s ? s.level : 0, xp: Number(st.units[id]) || 0 });
+      });
+      units.sort((a, b) => b.level - a.level || Number(a.id) - Number(b.id));
+      this.clients.forEach((c) => {
+        const p = this.state.players.get(c.sessionId);
+        if (p && p.side === side) c.send("xp_report", { gain, lines, mult, pool: st.pool, units });
+      });
+      if (gain > 0) console.log(`[BLOCKS XP] ${side} ${addr.slice(0, 8)}… +${gain} XP (${lines} linijų × ${mult})`);
+    } catch (e: any) { console.warn("[BLOCKS XP] report fail:", e?.message); }
+  }
+
+  // 🎖️ žaidėjo pasirinkimas: VISAS pool → nurodytas unitas (validuojam prieš ON-CHAIN deką)
+  private async _onXpAssign(client: Client, m: any) {
+    const side = this.sideOf[client.sessionId]; if (!side) return;
+    const addr = this._addrOf[side];
+    if (!RankStore.isAddr(addr) || !RankStore.rankEnabled()) return;
+    const tid = String((m && m.unit) || "").trim();
+    if (!/^[0-9]+$/.test(tid)) { client.send("xp_assigned", { ok: false, reason: "bad_unit" }); return; }
+    const deck = await chainDeckFull(addr).catch(() => null);
+    if (!deck || !deck.ids.has(tid)) { client.send("xp_assigned", { ok: false, reason: "not_in_deck" }); return; }
+    const r = await RankStore.xpAssign(addr, tid);
+    client.send("xp_assigned", { ok: r.ok, unit: tid, unitXp: r.unitXp || 0, pool: r.pool || 0 });
+  }
+
+  // 🎬 Reitingo pokyčio animacija klientui: {won, before, after} (score 0..48) → lobby rodo žvaigždučių
+  //   pokytį / promotion / demotion + 🤖 TAVO AI statų augimą (greitis/galvojimas/taiklumas — nes tavo
+  //   AI-avataras visada tavo lygio). Best-effort — klientas galėjo jau išeiti (AI žaidė už jį).
+  private _sendRankAnim(side: Side, won: boolean, r: { before: { score: number }; after: { score: number } } | null) {
+    if (!r) return;
+    try {
+      const aiPack = (score: number) => {
+        const l = AiLevels.levelFor(score);
+        return { step: l.step, name: l.name, moveMs: l.cfg.moveMs, thinkMs: l.cfg.thinkMs, mistake: l.cfg.mistake, hold: l.cfg.useHold };
+      };
+      const payload = { won, before: r.before.score, after: r.after.score, ai: { before: aiPack(r.before.score), after: aiPack(r.after.score) } };
+      this.clients.forEach((c) => {
+        const p = this.state.players.get(c.sessionId);
+        if (p && p.side === side) c.send("rank_anim", payload);
+      });
+    } catch (_) {}
   }
 
   // 🏅 REITINGAS + XP — mačui pasibaigus atnaujinam abiejų žaidėjų lygas/žvaigždutes + deko XP (off-chain).
@@ -645,13 +983,19 @@ export class BlocksRoom extends Room<BlocksState> {
       const wAddr = winner === "p1" ? a1 : a2;
       const lAddr = winner === "p1" ? a2 : a1;
       if (!RankStore.isAddr(wAddr) && !RankStore.isAddr(lAddr)) return;   // nė vienas be piniginės → jokio reitingo (ir DB triukšmo)
-      void RankStore.applyResult(wAddr, lAddr, this.roomId);
+      void RankStore.applyResult(wAddr, lAddr, this.roomId).then((r) => {
+        if (!r) return;
+        // 🎬 kiekvienam žaidėjui — JO reitingo animacija (laimėtojui +★, pralaimėjusiam −★)
+        this._sendRankAnim(winner as Side, true, r.winner);
+        this._sendRankAnim(winner === "p1" ? "p2" : "p1", false, r.loser);
+      });
     } catch (e: any) { console.warn("[BLOCKS RANK] apply fail:", e?.message); }
   }
 
   // Payout sprendimas — kviečiamas ir po _end, ir po fono verify (kuris paskutinis nugali). Reikia ABIEJŲ:
   //   mačas baigtas (_winnerSide) IR verify baigtas (_verifyDone). Payout gated ant _verifyOk.
   private _settleIfReady() {
+    if (this.vsAI) return;   // 🤖 vsAI: payout NĖRA (fee lieka treasury) — rank kelias per _applyRankVsAiIfReady
     if (!this.escrow.active || this.escrow.settled) return;
     if (this._winnerSide === null || !this._verifyDone) return;   // laukiam kol IR mačas, IR verify baigti
     const w = this._winnerSide;
@@ -721,6 +1065,22 @@ export class BlocksRoom extends Room<BlocksState> {
     try {
       let p1Name = "", p2Name = "";
       this.state.players.forEach((pl) => { if (pl.side === "p1") p1Name = pl.name; else if (pl.side === "p2") p2Name = pl.name; });
+      // 🤖 vsAI: payout nėra — fiksuojam fee kaip treasury cut (pot=tier=fee), kad dashboard nerodytų fiktyvaus prizo.
+      if (this.vsAI) {
+        const fee = this.escrow.active ? this.escrow.tier : 0;
+        const mi2 = this.escrow.active ? this.escrow.matchInfo() : null;
+        MatchLog.record({
+          ts: Date.now(), roomId: this.roomId, wager: this.escrow.active,
+          tier: fee, pot: fee,
+          p1Name, p2Name: p2Name || this._aiCfgOf.p2.name,
+          p1Addr: mi2 ? mi2.p1.addr : this._addrOf.p1, p1Tx: mi2 ? mi2.p1.tx : "",
+          p2Addr: "", p2Tx: "",
+          winner: winner || "draw", winnerAddr: winner === "p1" ? this._addrOf.p1 : "", loserAddr: winner === "p2" ? this._addrOf.p1 : "",
+          prize: 0, treasuryCut: fee,
+          result: winner ? "settled" : "draw",
+        });
+        return;
+      }
       const wager = this.escrow.active;
       const mi = wager ? this.escrow.matchInfo() : null;
       const wAddr = wager && mi ? (winner === "p1" ? mi.p1.addr : winner === "p2" ? mi.p2.addr : "") : "";
@@ -784,6 +1144,22 @@ export class BlocksRoom extends Room<BlocksState> {
     this._disposed = true;   // stabdom fono verify ciklą
     if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
+    // 🤖 vsAI: mačas ĮVYKO → fee sunaudotas (markSettled jau _end'e), tik pritaikom rank jei dar ne;
+    //   mačas NEĮVYKO (išėjo prieš startą) → grąžinam 25 RONKE fee (verify-then-refund, neaišku → manual eilė).
+    if (this.vsAI) {
+      if (this.escrow.active && !this.escrow.settled) {
+        const n = await this.escrow.refundEntry("p1");
+        if (n) console.log(`[BLOCKS vsAI] room disposed prieš mačą → fee ${this.escrow.tier} RONKE grąžintas`);
+      }
+      // mačas baigėsi, bet fee fono verify nespėjo (kambarys užsidaro) → PASKUTINIS verify čia,
+      // kad sąžiningo žaidėjo ★ nedingtų vien dėl to, kad jis greitai uždarė žaidimą.
+      if (this._winnerSide !== null && this.escrow.active && !this._feeDone) {
+        try { this._feeOk = await this.escrow.verifySide("p1"); } catch (_) { /* RPC */ }
+        this._feeDone = true;
+      }
+      this._applyRankVsAiIfReady();
+      return;
+    }
     if (this.escrow.active && !this.escrow.settled) {
       // Jei mačas TURĖJO baigtį (laimėtojas/lygiosios) — NErefundinam aklai: paskutinį kartą verifikuojam ir
       //   IŠMOKAM laimėtojui (arba refund lygiosioms). Kitaip skubus kambario uždarymas prieš verify pabaigą

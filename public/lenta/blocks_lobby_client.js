@@ -20,6 +20,7 @@
   var _selectedSol = 0.10;                 // 🟣 pasirinkta Solana pakopa (USD)
   var _chain = 'ronin';                    // 🔗 pasirinkta grandinė: 'ronin' (RONKE) | 'solana' (SOL)
   var _bgActive = false, _lastState = 'lobby', _myRole = '', _myRoomId = '';   // _bgActive: aktyvus FONE; _myRoomId: MANO kambarys (nerodom sąraše)
+  var _aiPlayFlag = false;   // 🤖 „AI žaidžia už mane" PvP mače (+25 RONKE fee) — kai lagas/AFK; sesijos ribose
   var _challengeAck = false;               // 🛡️ challenge dialogas jau patvirtintas/atmestas → NEberodom dublio (event+interval abu siunčia 'challenge')
   var _hostInvite = null;                   // 🔗 {url,priv,roomCode} — kad hostui VĖL atsidarius panelę invite linkas nedingtų (iframe state nesikeičia → nesiunčia)
 
@@ -154,6 +155,270 @@
     }
     return out;
   }
+  // ── 🎬 REITINGO ANIMACIJA po mačo (PIXEL ART) — kad žaidėjas PAJUSTŲ progresą ──────────────────
+  //   Žaidimo stiliumi: laiptuoti pikseliniai rėmai, žvaigždės+lygos skydas iš box-shadow pikselių,
+  //   segmentiniai barai, steps() animacijos, kietas 2px šešėlis. AI statai — DIDELI skaičiai su count-up.
+  function _rankAnimCss() {
+    if (document.getElementById('rb-rankanim-css')) return;
+    var st = document.createElement('style'); st.id = 'rb-rankanim-css';
+    st.textContent =
+      '@keyframes rbPxIn{0%{transform:scale(.82);opacity:0;}60%{transform:scale(1.04);opacity:1;}100%{transform:scale(1);}}' +
+      '@keyframes rbPxPop{0%{transform:scale(0) rotate(-30deg);}60%{transform:scale(1.5) rotate(6deg);}100%{transform:scale(1) rotate(0);}}' +
+      '@keyframes rbPxBigPop{0%{transform:scale(2.1);opacity:0;}65%{transform:scale(.95);opacity:1;}100%{transform:scale(1);}}' +
+      '@keyframes rbPxBlink{0%,49%{opacity:1;}50%,100%{opacity:.3;}}' +
+      '@keyframes rbPxShake{0%,100%{transform:translate(0,0);}20%{transform:translate(-7px,2px);}45%{transform:translate(6px,-2px);}70%{transform:translate(-4px,1px);}}' +
+      '@keyframes rbPxConf{0%{transform:translateY(-24px) rotate(0);opacity:1;}88%{opacity:1;}100%{transform:translateY(380px) rotate(560deg);opacity:0;}}' +
+      '@keyframes rbPxRise{0%{opacity:0;transform:translateY(14px);}100%{opacity:1;transform:none;}}' +
+      '@keyframes rbPxNum{0%{transform:scale(1.35);}100%{transform:scale(1);}}' +
+      '@keyframes rbPxGlow{0%,100%{transform:scale(1);opacity:.75;}50%{transform:scale(1.14);opacity:1;}}' +
+      '@keyframes rbPxRing{0%{transform:scale(.45);opacity:1;}100%{transform:scale(1.65);opacity:0;}}' +
+      '@keyframes rbPxSweep{0%{transform:translateX(-160%) skewX(-18deg);}100%{transform:translateX(420%) skewX(-18deg);}}';
+    document.head.appendChild(st);
+  }
+  // 🖼️ SPRITE ikonos: žvaigždės (savos, Kyrise paletė) + statų ikonos (Kyrise 16x16 pack, CC BY 4.0,
+  //   žr. assets_rank/LICENSE.txt) + lygų EMBLEMOS (userio Ronke ženklai, assets_rank/emb_0..7.png).
+  function _pxStarHtml(mode, anim, lose) {
+    var st = 'display:inline-block;margin:0 6px;' + (anim ? 'animation:' + (lose ? 'rbPxShake .5s ease' : 'rbPxPop .55s cubic-bezier(.2,1.6,.4,1)') + ' both;' : '');
+    return '<span style="' + st + '"><img src="assets_rank/star_' + mode + '.png" alt="" style="width:45px;height:42px;image-rendering:pixelated;display:block;"></span>';
+  }
+  function _pxStarsRow(hs, popIdx, lose) {
+    var full = Math.floor(hs / 2), half = hs % 2, out = '';
+    for (var i = 0; i < 3; i++) {
+      var mode = (i < full) ? 'full' : ((i === full && half) ? 'half' : 'empty');
+      out += _pxStarHtml(mode, i === popIdx, lose);
+    }
+    return out;
+  }
+  function _pxShieldHtml(league, slam) {
+    var anim = slam ? 'animation:rbPxBigPop .55s cubic-bezier(.2,1,.3,1) both;' : 'animation:rbPxIn .4s cubic-bezier(.2,1.3,.4,1) both;';
+    return '<img src="assets_rank/emb_' + (Number(league) || 0) + '.png" alt="" style="width:145px;height:145px;display:block;margin:0 auto;filter:drop-shadow(0 5px 10px rgba(0,0,0,.55));' + anim + '">';
+  }
+  function _showRankAnim(d) {
+    try {
+      _css();   // .rb-aironke klase (jei panele dar nebuvo atidaryta)
+      _rankAnimCss();
+      var before = _rankDecode(d.before), after = _rankDecode(d.after);
+      var won = !!d.won;
+      var promoted = after.league > before.league, demoted = after.league < before.league;
+      var old = document.getElementById('rb-rankanim-ov'); if (old) { try { old.remove(); } catch (_) {} }
+      var ov = document.createElement('div'); ov.id = 'rb-rankanim-ov';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100060;display:flex;align-items:center;justify-content:center;' +
+        'background:rgba(4,6,12,.85);font-family:monospace;cursor:pointer;image-rendering:pixelated;';
+      var accent = won ? '#5ce08a' : '#e07070';
+      var card = document.createElement('div');
+      card.style.cssText = 'position:relative;overflow:hidden;background:#171204;border:3px solid ' + (won ? '#5ce08a' : '#7a4444') + ';' +
+        'padding:32px 46px;text-align:center;color:#ffd97a;max-width:460px;min-width:340px;' +
+        'box-shadow:0 0 0 2px #000,0 0 28px ' + (won ? 'rgba(92,224,138,.35)' : 'rgba(224,112,112,.3)') + ';' +
+        'animation:rbPxIn .32s cubic-bezier(.2,1.3,.4,1) both;';
+      // ⛏️ laiptuoti pikseliniai kampai: 4 juodi kvadratėliai „nukerta" rėmo kampus
+      var notch = '';
+      ['top:-3px;left:-3px;', 'top:-3px;right:-3px;', 'bottom:-3px;left:-3px;', 'bottom:-3px;right:-3px;'].forEach(function (pos) {
+        notch += '<span style="position:absolute;width:6px;height:6px;background:#0a0d14;' + pos + '"></span>';
+      });
+      card.innerHTML = notch +
+        '<div style="font-size:18px;font-weight:800;letter-spacing:3px;color:' + accent + ';text-shadow:1px 1px 0 #000;margin-bottom:14px;">' +
+          (won ? 'VICTORY' : 'DEFEAT') + ' <span style="animation:rbPxBlink 1s steps(1) infinite;">' + (won ? '+1★' : '-½★') + '</span></div>' +
+        '<div id="rb-ra-embwrap" style="position:relative;width:152px;height:148px;margin:0 auto 12px;">' +
+          '<div id="rb-ra-glow" style="position:absolute;inset:-20px;border-radius:50%;pointer-events:none;background:radial-gradient(circle, rgba(255,215,92,' + (won ? '.5' : '.16') + ') 0%, rgba(255,215,92,0) 62%);animation:rbPxGlow 2.4s ease-in-out infinite;"></div>' +
+          '<div id="rb-ra-icon" style="position:relative;line-height:1;">' + _pxShieldHtml(before.league, false) + '</div>' +
+        '</div>' +
+        '<div id="rb-ra-name" style="font-size:23px;font-weight:800;letter-spacing:4px;text-shadow:1px 1px 0 #000;margin-bottom:11px;">' + before.name + '</div>' +
+        '<div id="rb-ra-stars" style="min-height:48px;">' + _pxStarsRow(before.hs, -1, false) + '</div>' +
+        '<div id="rb-ra-note" style="font-size:12px;color:#8a9aaa;margin-top:11px;min-height:15px;"></div>' +
+        '<div id="rb-ra-ai" style="max-height:0;opacity:0;overflow:hidden;transition:max-height .5s ease,opacity .45s ease;text-align:left;"></div>' +
+        '<div style="margin-top:18px;"><button id="rb-ra-close" style="font-family:monospace;font-size:14px;font-weight:800;letter-spacing:2px;padding:12px 34px;border:3px solid ' + (won ? '#5ce08a' : '#8a5a5a') + ';background:' + (won ? 'rgba(92,224,138,.16)' : 'rgba(224,112,112,.12)') + ';color:' + (won ? '#8fffb0' : '#ffb0b0') + ';cursor:pointer;text-shadow:1px 1px 0 #000;box-shadow:0 0 0 2px #000,inset -2px -3px 0 rgba(0,0,0,.35);">▶ CONTINUE</button></div>';
+      ov.appendChild(card); document.body.appendChild(ov);
+      // 🤖 AI statų fazė rodoma tik kai boto pakopa realiai pasikeitė (pergalė visada; pralaimėjus — kas antrą)
+      var aiCh = d.ai && d.ai.before && d.ai.after && d.ai.before.step !== d.ai.after.step;
+      var kill = function () {
+        try { ov.remove(); } catch (_) {}
+        if (_xpReport && (_xpReport.pool > 0 || _xpReport.gain > 0)) setTimeout(_showXpAssign, 150);   // 🎖️ XP priskirstymas po korteles
+      };
+      ov.onclick = kill;
+      // ✋ kortelė NEsislepia pati — uždarai TU (▶ CONTINUE arba paspaudimas bet kur) [user 08-09]
+      // FAZĖ 2 (po 900ms): žvaigždutės pokytis + (jei keitėsi lyga) skydo SLAM + pixel konfeti / vinjetė
+      setTimeout(function () {
+        if (!document.getElementById('rb-rankanim-ov')) return;
+        var stars = card.querySelector('#rb-ra-stars'), note = card.querySelector('#rb-ra-note');
+        var icon = card.querySelector('#rb-ra-icon'), name = card.querySelector('#rb-ra-name');
+        var popIdx = Math.max(0, Math.min(2, Math.floor((Math.max(before.hs, after.hs) - 1) / 2)));
+        if (promoted || demoted) {
+          icon.innerHTML = _pxShieldHtml(after.league, true);
+          var wrap = card.querySelector('#rb-ra-embwrap');
+          if (wrap && promoted) {
+            var ring = document.createElement('div');
+            ring.style.cssText = 'position:absolute;inset:-8px;border:3px solid #ffd75c;border-radius:50%;pointer-events:none;animation:rbPxRing .85s cubic-bezier(.2,.8,.3,1) both;';
+            wrap.appendChild(ring);
+            var sw = document.createElement('div');
+            sw.style.cssText = 'position:absolute;inset:2px;overflow:hidden;pointer-events:none;';
+            sw.innerHTML = '<div style="position:absolute;top:-25%;bottom:-25%;left:0;width:34%;background:linear-gradient(105deg,rgba(255,255,255,0),rgba(255,255,255,.8),rgba(255,255,255,0));animation:rbPxSweep .85s ease .2s both;"></div>';
+            wrap.appendChild(sw);
+          }
+          name.textContent = after.name;
+          name.style.animation = 'rbPxBigPop .5s cubic-bezier(.2,1,.3,1) both';
+          note.innerHTML = promoted
+            ? '<b style="color:#8fffb0;font-size:12px;">⬆ PROMOTED TO ' + after.name + '!</b>'
+            : '<b style="color:#ffb0b0;font-size:12px;">⬇ demoted to ' + after.name + '</b>';
+          popIdx = Math.floor((after.hs === 0 ? 0 : after.hs - 1) / 2);
+        } else {
+          note.innerHTML = won ? '<b style="color:#8fffb0;">keep going — next star awaits!</b>' : 'win it back — your AI grows with you';
+        }
+        stars.innerHTML = _pxStarsRow(after.hs, popIdx, !won);
+        if (!won) card.style.animation = 'rbPxShake .5s ease';
+        if (won) {
+          // 🎉 pixel konfeti — dideli kvadratai, krenta „laipteliais" (promotion = dvigubai)
+          var n = promoted ? 32 : 16, cols = ['#ffd75c', '#5ce08a', '#7fd4e8', '#b98cff', '#ff9d5c'];
+          for (var i = 0; i < n; i++) {
+            var sz = (Math.random() < 0.5 ? 5 : 7);
+            var f = document.createElement('div');
+            f.style.cssText = 'position:absolute;top:-16px;left:' + (3 + Math.random() * 94) + '%;width:' + sz + 'px;height:' + sz + 'px;' +
+              'background:' + cols[i % cols.length] + ';pointer-events:none;' +
+              'animation:rbPxConf ' + (1.2 + Math.random() * 1.5).toFixed(2) + 's linear ' + (Math.random() * 0.9).toFixed(2) + 's forwards;';
+            card.appendChild(f);
+          }
+        } else if (demoted) {
+          ov.style.background = 'radial-gradient(ellipse at center, rgba(4,6,12,.85) 55%, rgba(120,20,20,.55) 100%)';
+        }
+      }, 900);
+      // 🤖 FAZĖ 3 (po 1.9s): TAVO AI statai — DIDELI skaičiai su count-up + segmentiniai pixel barai.
+      //   Normalizacija = serverio AiLevels kreivės ribos: move 340→42ms, think 1000→70ms, acc 45→100%.
+      if (aiCh) setTimeout(function () {
+        if (!document.getElementById('rb-rankanim-ov')) return;
+        var A = d.ai.before, B = d.ai.after, up = B.step > A.step;
+        var accA = Math.round((1 - (A.mistake || 0)) * 100), accB = Math.round((1 - (B.mistake || 0)) * 100);
+        function pct(v, lo, hi) { return Math.max(4, Math.min(100, Math.round((v - lo) / (hi - lo) * 100))); }
+        var SEG = 14;   // segmentų kiekis bare
+        var rows = [
+          { ic: 'stat_spd', lb: 'SPEED', a: A.moveMs, b: B.moveMs, unit: 'ms', pA: pct(340 - A.moveMs, 0, 298), pB: pct(340 - B.moveMs, 0, 298) },
+          { ic: 'stat_thk', lb: 'THINKING', a: A.thinkMs, b: B.thinkMs, unit: 'ms', pA: pct(1000 - A.thinkMs, 0, 930), pB: pct(1000 - B.thinkMs, 0, 930) },
+          { ic: 'stat_acc', lb: 'ACCURACY', a: accA, b: accB, unit: '%', pA: pct(accA, 40, 100), pB: pct(accB, 40, 100) }
+        ];
+        var host = card.querySelector('#rb-ra-ai'); if (!host) return;
+        var h = '<div style="border-top:2px solid #3a3222;margin-top:12px;padding-top:11px;">' +
+          '<div style="font-size:14px;font-weight:800;letter-spacing:2px;color:' + (up ? '#8fffb0' : '#ffb0b0') + ';text-align:center;text-shadow:1px 1px 0 #000;">' +
+            (up ? _aironkeHtml(24) + ' YOUR AI LEVELED UP' : _aironkeHtml(24) + ' your AI got weaker') + '</div>' +
+          '<div style="font-size:11px;color:#8a9aaa;text-align:center;margin:5px 0 12px;">' + _esc(A.name) + ' → <b style="color:#ffd97a;">' + _esc(B.name) + '</b></div>';
+        for (var ri = 0; ri < rows.length; ri++) {
+          var rr = rows[ri];
+          var segFillA = Math.max(1, Math.round(rr.pA / 100 * SEG)), segFillB = Math.max(1, Math.round(rr.pB / 100 * SEG));
+          var cells = '';
+          for (var ci = 0; ci < SEG; ci++) {
+            cells += '<span class="rb-px-cell" data-on="' + (ci < segFillA ? 1 : 0) + '" style="flex:1;height:14px;margin-right:2px;' +
+              'background:' + (ci < segFillA ? '#e0a832' : '#242c3c') + ';box-shadow:inset -1px -2px 0 rgba(0,0,0,.35);"></span>';
+          }
+          h += '<div class="rb-ra-airow" style="opacity:0;transform:translateY(12px);animation:rbPxRise .45s cubic-bezier(.16,1,.3,1) ' + (0.15 + ri * 0.3) + 's both;margin:11px 0;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">' +
+              '<span style="font-size:13px;font-weight:800;color:#cfc39f;letter-spacing:1px;"><img src="assets_rank/' + rr.ic + '.png" alt="" style="width:16px;height:16px;image-rendering:pixelated;vertical-align:-3px;"> ' + rr.lb + '</span>' +
+              '<span style="font-variant-numeric:tabular-nums;"><span style="font-size:12px;color:#7a8697;">' + rr.a + rr.unit + '</span>' +
+                ' <span style="font-size:12px;color:#5a6a7a;">→</span> ' +
+                '<b class="rb-ra-num" data-a="' + rr.a + '" data-b="' + rr.b + '" data-u="' + rr.unit + '" data-seg="' + segFillB + '" style="font-size:21px;color:' + (up ? '#8fffb0' : '#ffb0b0') + ';text-shadow:1px 1px 0 #000;">' + rr.a + rr.unit + '</b></span>' +
+            '</div>' +
+            '<div class="rb-px-bar" style="display:flex;">' + cells + '</div></div>';
+        }
+        if (!A.hold && B.hold) h += '<div style="text-align:center;margin-top:10px;font-size:11px;color:#7fd4e8;animation:rbPxBlink .8s steps(1) 1.2s 6;">🔓 HOLD UNLOCKED — your AI banks pieces now!</div>';
+        h += '</div>';
+        host.innerHTML = h;
+        host.style.maxHeight = '380px'; host.style.opacity = '1';
+        // count-up skaičiukai (rAF, ease-out, pabaigoje POP) + segmentų pildymas po vieną (pixel „kraunasi")
+        setTimeout(function () {
+          host.querySelectorAll('.rb-ra-airow').forEach(function (row, ri2) {
+            var num = row.querySelector('.rb-ra-num');
+            var a = Number(num.getAttribute('data-a')), b = Number(num.getAttribute('data-b')), u = num.getAttribute('data-u');
+            var segB = Number(num.getAttribute('data-seg'));
+            var cells2 = row.querySelectorAll('.rb-px-cell');
+            var t0 = null, DUR = 950;
+            function tick(ts) {
+              if (t0 == null) t0 = ts;
+              var k = Math.min(1, (ts - t0) / DUR); var e = 1 - Math.pow(1 - k, 3);
+              num.textContent = Math.round(a + (b - a) * e) + u;
+              // segmentai pildosi kartu su skaičiumi — kiekvienas naujas „užsidega" auksu→žaliai
+              var lit = Math.round(segB * e);
+              for (var ci2 = 0; ci2 < cells2.length; ci2++) {
+                if (ci2 < lit && cells2[ci2].getAttribute('data-on') !== '2') {
+                  cells2[ci2].setAttribute('data-on', '2');
+                  cells2[ci2].style.background = up ? '#5ce08a' : '#e07070';
+                }
+              }
+              if (k < 1) requestAnimationFrame(tick);
+              else num.style.animation = 'rbPxNum .28s cubic-bezier(.2,1.4,.4,1)';
+            }
+            setTimeout(function () { requestAnimationFrame(tick); }, 350 + ri2 * 300);
+          });
+        }, 80);
+      }, 1900);
+    } catch (e) { console.warn('[rankAnim]', e); }
+  }
+  // 🖼️ sprite žvaigždutės (assets_rank/star_*.png, 15x14) — w=plotis px, aukštis proporcingas
+  function _spriteStars(hs, w) {
+    var full = Math.floor(hs / 2), half = hs % 2, out = '', hpx = Math.round(w * 14 / 15);
+    for (var i = 0; i < 3; i++) {
+      var mode = (i < full) ? 'full' : ((i === full && half) ? 'half' : 'empty');
+      out += '<img src="assets_rank/star_' + mode + '.png" alt="" style="width:' + w + 'px;height:' + hpx + 'px;image-rendering:pixelated;margin:0 2px;vertical-align:middle;">';
+    }
+    return out;
+  }
+  // ── 🎖️ MAČO XP PRISKIRSTYMAS: unitų reportas + „skirk visą pool'ą pasirinktam unitui" ──────────
+  var _xpReport = null;
+  var _XP_UICON = { skull: '\uD83D\uDC80', archer: '\uD83C\uDFF9', harpoon_fish: '\uD83D\uDD31', shaman: '\uD83D\uDD2E', pigronke: '\uD83D\uDC37', ghost: '\uD83D\uDC7B', ronhood: '\uD83E\uDDB9' };
+  function _showXpAssign() {
+    try {
+      var rep = _xpReport; if (!rep) return;
+      var old = document.getElementById('rb-xpassign-ov'); if (old) { try { old.remove(); } catch (_) {} }
+      var ov = document.createElement('div'); ov.id = 'rb-xpassign-ov';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100062;display:flex;align-items:center;justify-content:center;' +
+        'background:rgba(4,6,12,.85);font-family:monospace;';
+      var card = document.createElement('div');
+      card.style.cssText = 'position:relative;background:#171204;border:3px solid #ffd75c;padding:24px 30px;color:#ffd97a;' +
+        'max-width:440px;min-width:320px;max-height:80vh;overflow:auto;box-shadow:0 0 0 2px #000,0 0 28px rgba(255,215,92,.35);' +
+        'animation:rbPxIn .32s cubic-bezier(.2,1.3,.4,1) both;text-align:center;';
+      var h = '<div style="font-size:16px;font-weight:800;letter-spacing:2px;text-shadow:1px 1px 0 #000;">\uD83C\uDF96\uFE0F MATCH XP</div>' +
+        '<div style="font-size:11px;color:#8fffb0;margin:8px 0 2px;">earned this match: <b>+' + (rep.gain | 0) + ' XP</b>' +
+          ' <span style="color:#8a9aaa;">(' + (rep.lines | 0) + ' lines \u00d7 ' + (rep.mult | 0) + ')</span></div>' +
+        '<div style="font-size:11px;color:#ffd75c;margin-bottom:12px;">pool to assign: <b>' + (rep.pool | 0) + ' XP</b></div>';
+      var units = rep.units || [];
+      if (!units.length) {
+        h += '<div style="font-size:11px;color:#8a9aaa;padding:14px 0;">no registered deck units found<br><span style="font-size:9px;opacity:.7;">register units in your castle deck first — XP stays in your pool</span></div>';
+      } else {
+        h += '<div style="font-size:9px;color:#7a8aa0;letter-spacing:1.5px;margin-bottom:8px;">PICK A UNIT \u2014 ALL POOL XP GOES TO IT</div>';
+        for (var i = 0; i < units.length; i++) {
+          var u = units[i];
+          h += '<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;margin:6px 0;background:#0e1420;border:1px solid #2a3550;text-align:left;">' +
+            '<span style="font-size:20px;">' + (_XP_UICON[u.utype] || '\u2694\uFE0F') + '</span>' +
+            '<span style="flex:1;min-width:0;">' +
+              '<span style="font-size:11px;color:#bff0f6;font-weight:800;">' + _esc(String(u.utype || 'unit').toUpperCase()) + '</span>' +
+              ' <span style="font-size:9px;color:#8a9aaa;">#' + _esc(String(u.id)) + ' \u00b7 LV ' + (u.level | 0) + '</span>' +
+              '<div style="font-size:9px;color:#ffd75c;margin-top:2px;">XP: ' + (u.xp | 0) + '</div>' +
+            '</span>' +
+            ((rep.pool | 0) > 0
+              ? '<button class="rb-act rb-xp-give" data-id="' + _esc(String(u.id)) + '" style="padding:9px 13px;border:2px solid #5ce08a;background:rgba(92,224,138,.14);color:#8fffb0;font-family:inherit;font-size:10px;font-weight:800;cursor:pointer;">+' + (rep.pool | 0) + ' XP</button>'
+              : '') +
+          '</div>';
+        }
+      }
+      h += '<div style="margin-top:14px;"><button id="rb-xp-close" style="font-family:monospace;font-size:11px;font-weight:800;padding:9px 26px;border:2px solid #4a5a75;background:none;color:#9db0cc;cursor:pointer;">CLOSE</button></div>';
+      card.innerHTML = h;
+      ov.appendChild(card); document.body.appendChild(ov);
+      card.querySelectorAll('.rb-xp-give').forEach(function (b) {
+        b.onclick = function () {
+          b.textContent = '\u23F3'; b.disabled = true;
+          _cmd('xpassign', null, null, b.getAttribute('data-id'));
+        };
+      });
+      var cb = card.querySelector('#rb-xp-close');
+      if (cb) cb.onclick = function () { try { ov.remove(); } catch (_) {} _xpReport = null; };
+    } catch (e) { console.warn('[xpAssign]', e); }
+  }
+  function _onXpAssigned(r) {
+    var ov = document.getElementById('rb-xpassign-ov');
+    if (!r || !r.ok) {
+      if (ov) { var f = ov.querySelector('.rb-xp-give[disabled]'); if (f) { f.textContent = 'ERR'; f.disabled = false; } }
+      return;
+    }
+    if (ov) { try { ov.remove(); } catch (_) {} }
+    _xpReport = null;
+    _status('\uD83C\uDF96\uFE0F <b>+XP assigned!</b> Unit #' + _esc(String(r.unit)) + ' now has <b>' + (r.unitXp | 0) + ' XP</b>', true);
+    setTimeout(function () { if (_panel) _status('', false); }, 4500);
+  }
   function _rankStats(addr) {
     var R = String(addr || '').toLowerCase();
     if (!_isAddr(R)) return Promise.resolve(null);
@@ -209,9 +474,9 @@
       s = s || { score: 0, wins: 0, losses: 0, games: 0, xp: 0 };
       var d = _rankDecode(s.score), rate = _rankRate(s.score);
       me.innerHTML =
-        '<div style="font-size:40px;line-height:1;">' + d.icon + '</div>' +
+        '<div style="line-height:1;"><img src="assets_rank/emb_' + d.league + '.png" alt="" style="width:110px;height:110px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.5));"></div>' +
         '<div style="font-size:16px;color:#ffcf5c;letter-spacing:1px;margin-top:8px;">' + d.name + '</div>' +
-        '<div style="margin-top:8px;">' + _starsHtml(d.hs, 20) + '</div>' +
+        '<div style="margin-top:8px;">' + _spriteStars(d.hs, 30) + '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;">' +
           '<div><div style="font-size:15px;color:#aef0b0;">' + s.wins + '</div><div style="font-size:7px;color:#6a7a8a;margin-top:3px;">WINS</div></div>' +
           '<div><div style="font-size:15px;color:#e89a9a;">' + s.losses + '</div><div style="font-size:7px;color:#6a7a8a;margin-top:3px;">LOSSES</div></div>' +
@@ -230,9 +495,9 @@
         var d = _rankDecode(r.score), you = r.addr.toLowerCase() === mine;
         return '<div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;background:' + (you ? 'rgba(255,207,92,.14)' : '#0c1020') + ';border:1px solid ' + (you ? '#ffcf5c' : '#2a3550') + ';">' +
           '<span style="width:22px;font-size:11px;color:' + (i < 3 ? '#ffd97a' : '#6a7a8a') + ';">' + (i + 1) + '</span>' +
-          '<span style="font-size:15px;">' + d.icon + '</span>' +
+          '<img src="assets_rank/emb_' + d.league + '.png" alt="" style="width:26px;height:26px;flex:0 0 auto;">' +
           '<span style="flex:1;min-width:0;font-size:9px;color:' + (you ? '#ffcf5c' : '#bff0f6') + ';overflow:hidden;text-overflow:ellipsis;">' + _shortAddr(r.addr) + (you ? ' (you)' : '') + '</span>' +
-          '<span style="font-size:11px;">' + _starsHtml(d.hs, 11) + '</span>' +
+          '<span style="white-space:nowrap;">' + _spriteStars(d.hs, 14) + '</span>' +
           '<span style="width:52px;text-align:right;font-size:9px;color:#8a9aaa;">' + r.wins + 'W ' + r.losses + 'L</span>' +
         '</div>';
       }).join('');
@@ -294,13 +559,13 @@
     }).catch(function () { _pingBusy = false; if (cb) cb(null); });
   }
   function _signalHtml(ms) {
-    if (ms == null) return '<span style="font-size:10px;color:#8a9aaa;">📶 checking connection…</span>';
+    if (ms == null) return '<span style="font-size:14px;color:#8a9aaa;">📶 checking connection…</span>';
     var lvl = ms < 80 ? 3 : ms < 180 ? 2 : 1;   // 3=geras 2=vidut 1=silpnas
     var col = lvl === 3 ? '#5ce08a' : lvl === 2 ? '#ffcf5c' : '#e07070';
     var txt = lvl === 3 ? 'GOOD' : lvl === 2 ? 'OK' : 'WEAK';
     var bars = '';
-    for (var b = 1; b <= 3; b++) bars += '<span style="display:inline-block;width:4px;height:' + (3 + b * 3) + 'px;margin:0 1px;vertical-align:bottom;background:' + (b <= lvl ? col : '#33405e') + ';border-radius:1px;"></span>';
-    return '<span style="font-size:10px;color:' + col + ';white-space:nowrap;">' + bars + ' <b>SIGNAL: ' + txt + '</b> <span style="opacity:.75;">' + ms + 'ms</span>' + (lvl === 1 ? ' <span style="opacity:.7;">— may lag</span>' : '') + '</span>';
+    for (var b = 1; b <= 3; b++) bars += '<span style="display:inline-block;width:6px;height:' + (5 + b * 4) + 'px;margin:0 1.5px;vertical-align:bottom;background:' + (b <= lvl ? col : '#33405e') + ';border-radius:1.5px;"></span>';
+    return '<span style="font-size:14px;color:' + col + ';white-space:nowrap;">' + bars + ' <b>SIGNAL: ' + txt + '</b> <span style="opacity:.85;font-size:14px;">' + ms + 'ms</span>' + (lvl === 1 ? ' <span style="opacity:.7;">— may lag</span>' : '') + '</span>';
   }
   // 🔄 GYVAS signalas — perматuojam kas 3s ir atnaujinam rodmenį, kol matomas invite overlay ARBA lobby panelė.
   var _signalTimer = null;
@@ -361,8 +626,35 @@
       '@keyframes rbTetrisShake{0%,60%,100%{transform:rotate(0)}6%{transform:rotate(-7deg)}14%{transform:rotate(7deg)}22%{transform:rotate(-5deg)}30%{transform:rotate(5deg)}38%{transform:rotate(-3deg)}46%{transform:rotate(3deg)}54%{transform:rotate(0)}}' +
       '.rb-tetris-shake{animation:rbTetrisShake 1.5s ease-in-out 3;transform-origin:center bottom;}' +   /* 3 virptelėjimai (~4.5s) */
       /* 🦴 kai kaulų balanso widget'as viršuje — pranešimą nuleidžiam žemiau (nesusiliestų su balansu) */
-      'body.f9-bones-live #rb-lobby-toast{top:calc(72px + env(safe-area-inset-top, 0px)) !important;}';
+      'body.f9-bones-live #rb-lobby-toast{top:calc(72px + env(safe-area-inset-top, 0px)) !important;}' +
+      /* 🤖 animuotas AI Ronke (8 kadrai, assets_rank/ai_ronke_anim.png) — vietoj AI emoji */
+      '.rb-aironke{display:inline-block;width:26px;height:26px;border-radius:5px;vertical-align:middle;background:url(assets_rank/ai_ronke_anim.png) 0 0 no-repeat;background-size:800% 100%;animation:rbAironke 1.1s steps(8) infinite;image-rendering:pixelated;}' +
+      '@keyframes rbAironke{from{background-position:0% 0;}to{background-position:114.2857% 0;}}' +
+      '@keyframes rbAironkeImg{from{transform:translateX(0);}to{transform:translateX(-100%);}}';
     document.head.appendChild(st);
+  }
+  // 🤖 animuotas AI Ronke: 8 kadru juosta per <img>, kadrus stumdo JS intervalas
+  //   (CSS keyframes is injected stiliaus zaidimo puslapyje nesuveikia — JS variklis veikia visada).
+  var _airTimer = null, _airFrame = 0;
+  // 🎞️ kiborgas (8 kadru juosta): 1-a anim (0-3) x3 -> 2-a (4-7) x1 · zingsnis 12.5%
+  var _airSeqA = [0, 1, 2, 3, 4, 5, 6, 7];   // ištisinė 8 kadrų seka (dalinimas į 0-3/4-7 darė kapotą judesį)
+  // 🎞️ paprastas Ronke (16 kadru juosta): neutral_idle (0-7) x3 -> ronke_animation (8-15) x1 · zingsnis 6.25%
+  var _airSeqB = [0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 8,9,10,11,12,13,14,15];
+  function _airTick() {
+    _airFrame++;
+    var fA = _airSeqA[_airFrame % _airSeqA.length];
+    var fB = _airSeqB[_airFrame % _airSeqB.length];
+    var a = document.querySelectorAll('.rb-aironke-img');
+    for (var i = 0; i < a.length; i++) a[i].style.transform = 'translateX(-' + (fA * 12.5) + '%)';
+    var b = document.querySelectorAll('.rb-ronkeidle-img');
+    for (var j = 0; j < b.length; j++) b[j].style.transform = 'translateX(-' + (fB * 6.25) + '%)';
+  }
+  function _airStart() { if (!_airTimer) _airTimer = setInterval(_airTick, 140); }
+  function _aironkeHtml(px, extra) {
+    _airStart();
+    return '<span style="display:inline-block;width:' + px + 'px;height:' + px + 'px;overflow:hidden;border-radius:' + Math.round(px * 0.18) + 'px;position:relative;vertical-align:middle;' + (extra || '') + '">' +
+      '<img class="rb-aironke-img" src="assets_rank/ai_ronke_anim.png" alt="" style="position:absolute;left:0;top:0;height:100%;width:800%;image-rendering:pixelated;">' +
+      '</span>';
   }
   // 🎮 Vienas „virptelėjimas" = 3 kartai (~4.5s). Kviečiama iškart + kas 30s per _shakeLoop, kol laukia varžovas.
   var _shakeTimer = null, _shakeLoopTimer = null;
@@ -435,40 +727,91 @@
     var p = document.createElement('div');
     p.style.cssText = 'background:linear-gradient(180deg,#222d47 0%,#0b0f1c 100%);border:3px solid #ffcf5c;' +
       'box-shadow:0 0 64px rgba(255,207,92,0.42),inset 0 0 34px rgba(255,207,92,0.09);border-radius:14px;' +
-      'padding:30px 36px;width:730px;max-width:96vw;max-height:92vh;overflow:auto;display:flex;flex-direction:column;' +
+      'position:relative;padding:30px 36px;width:730px;max-width:96vw;max-height:92vh;overflow:auto;display:flex;flex-direction:column;' +
       "font-family:'Press Start 2P',monospace,sans-serif;font-size:14px;line-height:1.6;color:#9aa8bb;";
     p.innerHTML =
-      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:4px;padding-bottom:14px;border-bottom:1px solid #4a3a18;">' +
-        '<span style="font-size:34px;text-shadow:0 0 18px #ffcf5c;">🧱</span>' +
-        '<div style="flex:1;">' +
-          '<div style="font-size:22px;color:#ffcf5c;letter-spacing:2px;">PVP TETRIS · 1v1</div>' +
-          '<div style="font-size:9px;color:#6a7a8a;letter-spacing:1.5px;margin-top:5px;">STAKE · BATTLE · WINNER TAKES 80%</div>' +
-        '</div>' +
-        '<button id="rb-x" style="background:none;border:none;color:#8a9aaa;font-size:30px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
+      '<div style="display:flex;align-items:center;gap:14px;padding-bottom:12px;border-bottom:1px solid #4a3a18;">' +
+        '<span id="rb-head-ai" class="rb-act" title="AI plays for me" style="cursor:pointer;display:inline-block;line-height:0;">' +
+        _aironkeHtml(96, 'box-shadow:0 0 18px rgba(92,224,138,.55);') + '</span>' +
+        '<div style="flex:1;text-align:center;padding:0 12px;"><div style="font-size:15px;color:#8fffb0;font-weight:800;letter-spacing:1.5px;text-shadow:1px 1px 0 #000;">BEAT THE AI — IT BECOMES YOU</div><div style="font-size:9px;color:#9db0cc;margin-top:7px;line-height:1.7;">every win makes your AI twin stronger · it always plays at YOUR league<br>turn it on and it will <b style="color:#8fffb0;">fight FOR you</b> when you lag or go AFK</div></div>' +
+        '<span id="rb-head-me" class="rb-act" title="I play myself" style="cursor:pointer;display:inline-block;line-height:0;">' +
+        '<span style="display:inline-block;width:96px;height:96px;overflow:hidden;border-radius:17px;position:relative;transform:scaleX(-1);background:#000;box-shadow:0 0 18px rgba(92,224,138,.55);">' +
+        '<img class="rb-ronkeidle-img" src="assets_rank/ronke_idle_anim.png" alt="" style="position:absolute;left:0;top:0;height:100%;width:1600%;image-rendering:pixelated;">' +
+        '</span>' +
+        '</span>' +
+        '<button id="rb-x" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#8a9aaa;font-size:26px;cursor:pointer;line-height:1;font-family:inherit;z-index:2;padding:4px;">\u00d7</button>' +
       '</div>' +
-      '<div id="rb-status" style="display:none;font-size:13px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:9px;padding:15px;margin:12px 0;text-align:center;line-height:1.5;"></div>' +
-      '<div id="rb-panel-sig" style="text-align:center;margin:12px 0 8px;">' + _signalHtml(_pingMs) + '</div>' +   // 📶 signalas prieš prisijungiant
-      '<div style="font-size:12px;color:#7a8aa0;margin-bottom:10px;letter-spacing:.5px;">⚔️ OPEN MATCHES — tap a player to join</div>' +
-      '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:11px;min-height:56px;max-height:40vh;"><div style="color:#6a7a8a;font-size:12px;padding:14px 0;text-align:center;">Loading…</div></div>' +
-      '<div style="margin-top:20px;border-top:1px solid #3a3a55;padding-top:18px;display:flex;flex-direction:column;gap:12px;">' +
-        '<div style="font-size:11px;color:#7a8aa0;letter-spacing:.5px;">CREATE A MATCH — pick chain &amp; stake</div>' +
-        '<div id="rb-chain" style="display:flex;gap:10px;">' +   /* 🔗 grandinės pasirinkimas: Ronin (RONKE) / Solana (SOL) */
-          '<button id="rb-chain-ronin" class="rb-act" style="flex:1;padding:12px;border-radius:9px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:13px;cursor:pointer;">🔷 RONIN · RONKE</button>' +
-          '<button id="rb-chain-solana" class="rb-act" style="flex:1;padding:12px;border-radius:9px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:13px;cursor:pointer;">🟣 SOLANA · SOL</button>' +
+      '<div id="rb-status" style="display:none;font-size:13px;color:#ffd97a;background:rgba(255,207,92,.08);border:1px solid #6a4a18;border-radius:9px;padding:15px;margin:12px 0 0;text-align:center;line-height:1.5;"></div>' +
+
+      /* \u2500\u2500 MODE TABS: vienas pagrindinis veiksmas per ekrana \u2500\u2500 */
+      '<div style="display:flex;gap:8px;margin-top:16px;">' +
+        '<button id="rb-tabbtn-pvp" class="rb-act" style="flex:1;padding:13px 8px;border-radius:10px 10px 0 0;border:1px solid #3a4666;border-bottom:none;background:none;color:#9db0cc;font-family:inherit;font-size:14px;cursor:pointer;">\u2694\ufe0f PVP ONLINE<div style="font-size:8px;opacity:.65;margin-top:4px;">play a human \u00b7 winner takes 80%</div></button>' +
+        '<button id="rb-tabbtn-ai" class="rb-act" style="flex:1;padding:13px 8px;border-radius:10px 10px 0 0;border:1px solid #3a4666;border-bottom:none;background:none;color:#9db0cc;font-family:inherit;font-size:14px;cursor:pointer;">YOU vs AI<div style="font-size:8px;opacity:.65;margin-top:4px;">ranked bot \u00b7 climb the leagues</div></button>' +
+      '</div>' +
+
+      /* \u2694 PVP tab: sarasas -> kurimas (chain/stake -> HOST/PRIVATE) -> AI-avataro jungiklis */
+      '<div id="rb-tab-pvp" style="display:flex;flex-direction:column;gap:12px;border:1px solid #3a4666;border-radius:0 12px 12px 12px;padding:16px 14px;">' +
+        '<div style="font-size:9px;color:#7a8aa0;letter-spacing:1.5px;">OPEN MATCHES \u2014 tap to join</div>' +
+        '<div id="rb-list" style="overflow:auto;display:flex;flex-direction:column;gap:10px;min-height:30px;max-height:26vh;"><div style="color:#6a7a8a;font-size:12px;padding:6px 0;text-align:center;">Loading\u2026</div></div>' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">' +
+          '<div style="flex:1;height:1px;background:#2c3650;"></div>' +
+          '<div style="font-size:9px;color:#7a8aa0;letter-spacing:1.5px;">OR CREATE YOUR OWN</div>' +
+          '<div style="flex:1;height:1px;background:#2c3650;"></div>' +
         '</div>' +
-        '<div id="rb-tiers" style="display:flex;gap:10px;"></div>' +   /* pakopos — dinaminės pagal grandinę (_renderTiers) */
-        '<button id="rb-host" class="rb-act" style="padding:20px;border-radius:9px;border:2px solid #ffcf5c;background:rgba(255,207,92,.16);color:#ffcf5c;font-family:inherit;font-size:17px;cursor:pointer;">HOST MATCH · <span id="rb-host-amt">69</span> <span id="rb-host-cur">RONKE</span><div style="font-size:10px;opacity:.7;margin-top:6px;">wait - others can pick you</div></button>' +
-        '<div style="display:flex;gap:11px;">' +
-          '<button id="rb-private" class="rb-act" style="flex:1;padding:15px;border-radius:9px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:14px;cursor:pointer;">🔒 PRIVATE</button>' +
-          '<button id="rb-ai" class="rb-act" style="flex:1;padding:15px;border-radius:9px;border:1px solid #4a7a4a;background:rgba(74,122,74,.14);color:#9fe0a0;font-family:inherit;font-size:14px;cursor:pointer;">🤖 vs AI</button>' +
+        '<div id="rb-chain" style="display:flex;gap:10px;">' +
+          '<button id="rb-chain-ronin" class="rb-act" style="flex:1;padding:10px;border-radius:9px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">\ud83d\udd37 RONIN \u00b7 RONKE</button>' +
+          '<button id="rb-chain-solana" class="rb-act" style="flex:1;padding:10px;border-radius:9px;border:1px solid #6a4a18;background:rgba(255,207,92,.06);color:#ffcf5c;font-family:inherit;font-size:11px;cursor:pointer;">\ud83d\udfe3 SOLANA \u00b7 SOL</button>' +
         '</div>' +
-        '<div style="display:flex;gap:11px;margin-top:2px;">' +
-          '<button id="rb-rank" class="rb-act" style="flex:1;padding:14px;border-radius:9px;border:1px solid #5aa8b4;background:rgba(143,216,224,.12);color:#bff0f6;font-family:inherit;font-size:12px;cursor:pointer;">🏅 RANK · leagues & stars</button>' +
-          '<button id="rb-refs" class="rb-act" style="flex:1;padding:14px;border-radius:9px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:12px;cursor:pointer;">🎁 REFERRALS · earn 5%</button>' +
+        '<div id="rb-tiers" style="display:flex;gap:10px;"></div>' +
+        '<div style="display:flex;gap:10px;">' +
+          '<button id="rb-host" class="rb-act" style="flex:1.7;padding:16px;border-radius:9px;border:2px solid #ffcf5c;background:rgba(255,207,92,.16);color:#ffcf5c;font-family:inherit;font-size:16px;cursor:pointer;">HOST MATCH \u00b7 <span id="rb-host-amt">69</span> <span id="rb-host-cur">RONKE</span><div style="font-size:9px;opacity:.7;margin-top:5px;">wait - others can pick you</div></button>' +
+          '<button id="rb-private" class="rb-act" style="flex:1;padding:14px;border-radius:9px;border:1px solid #9d7ad0;background:rgba(157,122,208,.14);color:#cbb0ff;font-family:inherit;font-size:13px;cursor:pointer;">\ud83d\udd12 PRIVATE<div style="font-size:8px;opacity:.6;margin-top:4px;">invite a friend</div></button>' +
         '</div>' +
+        '<button id="rb-aitog" class="rb-act" style="width:100%;box-sizing:border-box;padding:9px;border-radius:9px;border:1px dashed #4a7a4a;background:none;color:#9fe0a0;font-family:inherit;font-size:10px;cursor:pointer;"></button>' +
+      '</div>' +
+
+      /* \ud83e\udd16 VS AI tab: TAVO lyga (emblema) -> vienas didelis CTA -> practice */
+      '<div id="rb-tab-ai" style="display:none;flex-direction:column;gap:12px;border:1px solid #2f5a40;border-radius:12px 0 12px 12px;padding:18px 14px;">' +
+        '<div id="rb-ai-you" style="text-align:center;min-height:70px;color:#8a9aaa;font-size:11px;">\u2026</div>' +
+        '<button id="rb-airank" class="rb-act" style="padding:17px;border-radius:9px;border:2px solid #5ce08a;background:rgba(92,224,138,.14);color:#8fffb0;font-family:inherit;font-size:16px;cursor:pointer;">\ud83c\udfc6 RANKED vs AI \u00b7 25 RONKE<div style="font-size:10px;opacity:.7;margin-top:5px;">win +1\u2605 \u00b7 lose \u2212\u00bd\u2605 \u00b7 the bot grows with you</div></button>' +
+        '<button id="rb-ai" class="rb-act" style="padding:10px;border-radius:9px;border:1px solid #3a5a44;background:none;color:#7fbf90;font-family:inherit;font-size:11px;cursor:pointer;">\ud83c\udfae PRACTICE AI \u00b7 free \u00b7 no rank</button>' +
+      '</div>' +
+
+      '<div style="display:flex;gap:10px;margin-top:14px;">' +
+        '<button id="rb-rank" class="rb-act" style="flex:1;padding:12px;border-radius:9px;border:1px solid #5aa8b4;background:rgba(143,216,224,.12);color:#bff0f6;font-family:inherit;font-size:11px;cursor:pointer;">\ud83c\udfc5 RANK \u00b7 leagues &amp; stars</button>' +
+        '<button id="rb-refs" class="rb-act" style="flex:1;padding:12px;border-radius:9px;border:1px solid #d0a24a;background:rgba(255,207,92,.10);color:#ffd97a;font-family:inherit;font-size:11px;cursor:pointer;">\ud83c\udf81 REFERRALS \u00b7 earn 5%</button>' +
       '</div>';
     ov.appendChild(p); document.body.appendChild(ov);
     p.querySelector('#rb-x').onclick = _closePanel;
+    // \u2500\u2500 MODE TAB perjungimas (isimenamas localStorage) — vienas pagrindinis CTA per ekrana \u2500\u2500
+    function _setTab(t) {
+      try { localStorage.setItem('rb_tab', t); } catch (_) {}
+      var pv = p.querySelector('#rb-tab-pvp'), ai = p.querySelector('#rb-tab-ai');
+      var bp = p.querySelector('#rb-tabbtn-pvp'), ba = p.querySelector('#rb-tabbtn-ai');
+      var aiOn = t === 'ai';
+      if (pv) pv.style.display = aiOn ? 'none' : 'flex';
+      if (ai) ai.style.display = aiOn ? 'flex' : 'none';
+      if (bp) { bp.style.background = aiOn ? 'none' : 'rgba(255,207,92,.14)'; bp.style.borderColor = aiOn ? '#3a4666' : '#ffcf5c'; bp.style.color = aiOn ? '#9db0cc' : '#ffcf5c'; }
+      if (ba) { ba.style.background = aiOn ? 'rgba(92,224,138,.12)' : 'none'; ba.style.borderColor = aiOn ? '#5ce08a' : '#3a4666'; ba.style.color = aiOn ? '#8fffb0' : '#9db0cc'; }
+    }
+    p.querySelector('#rb-tabbtn-pvp').onclick = function () { _setTab('pvp'); };
+    p.querySelector('#rb-tabbtn-ai').onclick = function () { _setTab('ai'); };
+    var _t0 = 'pvp'; try { _t0 = localStorage.getItem('rb_tab') || 'pvp'; } catch (_) {}
+    _setTab(_t0);
+    // \ud83e\udd16 AI tab "TAVO lyga": emblema + kokio lygio botas lauks (bot kopijuoja TAVE)
+    (function () {
+      var el = p.querySelector('#rb-ai-you'); if (!el) return;
+      var a = _walletAddr();
+      if (!a) { el.innerHTML = '<div style="padding:14px 0;">connect your wallet \u2014 the bot plays at YOUR league level</div>'; return; }
+      _rankStats(a).then(function (s) {
+        if (!document.body.contains(el)) return;
+        var d = _rankDecode((s && s.score) || 0), fs = Math.floor(d.hs / 2);
+        el.innerHTML =
+          '<img src="assets_rank/emb_' + d.league + '.png" alt="" style="width:66px;height:66px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5));vertical-align:middle;">' +
+          '<div style="margin-top:6px;font-size:12px;color:#ffd97a;">YOU: ' + d.name + ' ' + _spriteStars(d.hs, 15) + '</div>' +
+          '<div style="margin-top:4px;font-size:9px;color:#8a9aaa;">your opponent will be <b style="color:#8fffb0;">' + d.name + ' AI ' + fs + '\u2605</b></div>';
+      });
+    })();
     // 🔗 grandinės mygtukų paryškinimas
     function _paintChain() {
       var rn = p.querySelector('#rb-chain-ronin'), so = p.querySelector('#rb-chain-solana');
@@ -503,6 +846,27 @@
     p.querySelector('#rb-host').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, false); else _doHost(_selectedTier, false); };
     p.querySelector('#rb-private').onclick = function () { if (_chain === 'solana') _doHostSol(_selectedSol, true); else _doHost(_selectedTier, true); };
     p.querySelector('#rb-ai').onclick = function () { _closePanel(); try { if (window.RonkeBlocks) window.RonkeBlocks.openAI(); } catch (_) {} };
+    p.querySelector('#rb-airank').onclick = function () { _doAiRanked(); };   // 🤖 RANKED vs AI (serverio botas)
+    // 🤖 „AI PLAYS FOR ME" jungiklis — kito PvP mačo metu TAVO lygos botas žais UŽ TAVE (+25 RONKE su statymu)
+    function _paintAiTog() {
+      var b = p.querySelector('#rb-aitog'); if (!b) return;
+      b.innerHTML = _aironkeHtml(20) + ' AI PLAYS FOR ME: <b style="color:' + (_aiPlayFlag ? '#8fffb0' : '#8a9aaa') + ';">' + (_aiPlayFlag ? 'ON' : 'OFF') + '</b>';
+      b.style.borderStyle = _aiPlayFlag ? 'solid' : 'dashed';
+      b.style.borderColor = _aiPlayFlag ? '#5ce08a' : '#4a7a4a';
+      b.style.background = _aiPlayFlag ? 'rgba(92,224,138,.14)' : 'none';
+    }
+    // 🤖 portretai-mygtukai: AI kiborgas = AI žais už tave (ON), Ronke = žaidi pats (OFF)
+    function _paintHeadSel() {
+      var ai = p.querySelector('#rb-head-ai'), me = p.querySelector('#rb-head-me');
+      if (ai) ai.style.opacity = _aiPlayFlag ? '1' : '.45';
+      if (me) me.style.opacity = _aiPlayFlag ? '.45' : '1';
+    }
+    p.querySelector('#rb-aitog').onclick = function () { _aiPlayFlag = !_aiPlayFlag; _paintAiTog(); _paintHeadSel(); };
+    var _hAi = p.querySelector('#rb-head-ai'), _hMe = p.querySelector('#rb-head-me');
+    if (_hAi) _hAi.onclick = function () { _aiPlayFlag = true; _paintAiTog(); _paintHeadSel(); };
+    if (_hMe) _hMe.onclick = function () { _aiPlayFlag = false; _paintAiTog(); _paintHeadSel(); };
+    _paintAiTog();
+    _paintHeadSel();
     p.querySelector('#rb-refs').onclick = function () { _openReferralPanel(); };   // 🎁 referal panelė
     p.querySelector('#rb-rank').onclick = function () { _openRankPanel(); };       // 🏅 reitingo panelė
 
@@ -616,17 +980,20 @@
   //   serverAuth (cheat-proof), on-chain matchId keliauja į kambarį (payout'ui). Kitaip → nemokamas režimas.
   // 🧱💰 pay-on-accept: serveris paprašė („stake_now" — abu sutiko) → DABAR realiai statom RONKE.
   //   Wallet popup rodomas net jei panelė uždaryta (fone). Nepavykus → pranešam serveriui (grąžins varžovui).
-  function _doStake(tier) {
+  function _doStake(tier, ai, aiFee) {
     if (!_wager()) return;
-    _status('Confirm <b>' + tier + ' RONKE</b> stake in your wallet…', true);
-    window.BlocksWager.payEntry(tier).then(function (r) {
+    // 🤖 useAi = PvP „AI žaidžia už mane" — NEMOKAMA (moki tik pakopą); ai=true = RANKED vsAI (25 fee).
+    var useAi = !ai && _aiPlayFlag;
+    _status('Confirm <b>' + tier + ' RONKE</b> ' + (ai ? 'RANKED AI fee' : 'stake') + ' in your wallet…', true);
+    var pay = ai ? window.BlocksWager.payExact(tier) : window.BlocksWager.payEntry(tier);
+    pay.then(function (r) {
       if (!r || !r.ok) {
-        _status('Stake failed: ' + _esc((r && r.reason) || 'error') + ' — match cancelled', true);
+        _status((ai ? 'Fee' : 'Stake') + ' failed: ' + _esc((r && r.reason) || 'error') + ' — match cancelled', true);
         _cmd('stakecancel');
         return;
       }
-      _cmd('stake', null, tier, r.tx, null, window.BlocksWager.address(), null, _myRef());   // įėjimo tx + 🎁 referrer'is → serveris verifikuoja+bind'ina
-      _status('⛓️ Stake sent - verifying…', true);
+      _cmd('stake', null, tier, r.tx, null, window.BlocksWager.address(), null, _myRef(), useAi);   // įėjimo tx + 🎁 referrer'is (+🤖 aiPlay) → serveris verifikuoja+bind'ina
+      _status('⛓️ ' + (ai ? 'Fee' : 'Stake') + ' sent - verifying…' + (useAi ? '<br><span style="font-size:8px;opacity:.7;">🤖 your AI will play this match</span>' : ''), true);
     });
   }
 
@@ -646,12 +1013,23 @@
     _bgActive = true; _myRole = priv ? 'private' : 'host'; _podClaimedMatch = false; _ensureGame();
     if (_wager()) {
       // 🧱💰 pay-on-accept: NEmokam dabar — tik sukuriam wager kambarį. Mokėsi kai atsiras varžovas ir sutiksi.
-      _cmd(priv ? 'private' : 'host', null, tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago); cheat-apsauga per periodinę patikrą (LIKO)
-      _status((priv ? 'Private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you pay only when an opponent is matched · can close & keep playing</span>', true);
+      _cmd(priv ? 'private' : 'host', null, tier, null, false, window.BlocksWager.address(), true, null, _aiPlayFlag);   // wager:true · serverAuth=FALSE → client-auth (be lago); cheat-apsauga per periodinę patikrą (LIKO)
+      _status((priv ? 'Private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you pay only when an opponent is matched · can close & keep playing</span>' + (_aiPlayFlag ? '<br><span style="font-size:8px;color:#8fffb0;">🤖 your AI will play this match</span>' : ''), true);
     } else {
-      _cmd(priv ? 'private' : 'host', null, tier, null, false, _walletAddr(), false, _myRef());   // nemokamas (client-board); 🏅 addr → reitingas/XP; 🎁 ref → bind nuo pirmo mačo
+      _cmd(priv ? 'private' : 'host', null, tier, null, false, _walletAddr(), false, _myRef(), _aiPlayFlag);   // nemokamas (client-board); 🏅 addr → reitingas/XP; 🎁 ref → bind nuo pirmo mačo
       _status((priv ? 'Creating private room' : 'Hosting for ' + tier + ' RONKE') + ' — waiting…<br><span style="font-size:8px;opacity:.7;">you can close this and keep playing</span>', true);
     }
+  }
+  // 🤖 RANKED vs AI — privatus kambarys su SERVERIO botu TAVO lygos×žvaigždučių stiprumo. 25 RONKE fee
+  //   (payAndPlay → treasury, player-signed → PoD), payout NĖRA: laimi +1★ / pralaimi −½★ (TAS PATS
+  //   reitingas kaip PvP). Mokama pay-on-accept stiliumi: serveris paprašo stake_now{ai:true} → _doStake(t,true).
+  //   Reikia piniginės (be jos nėra nei reitingo, nei fee) — net kai wager serveris negyvas (free dev režimas).
+  function _doAiRanked() {
+    var a = _walletAddr();
+    if (!a) { _status('🤖 RANKED vs AI needs your wallet — connect it first (rank + 25 RONKE fee).', true); return; }
+    _bgActive = true; _myRole = 'ai'; _podClaimedMatch = false; _ensureGame();
+    _cmd('ai', null, 0, null, false, a, _wager());
+    _status('🤖 RANKED vs AI — bot plays at <b>your league level</b>. Beat it to rank up!' + (_wager() ? '<br><span style="font-size:8px;opacity:.7;">25 RONKE fee — confirm in wallet when asked</span>' : ''), true);
   }
   // JOIN: jei wager → sumoka tą pačią pakopą į kambario on-chain matchId; kitaip nemokamas.
   function _doJoin(r) {
@@ -660,10 +1038,10 @@
       // 🛡️ Apsauga: nesijunk į statymo kambarį, jei serveris NEGALI išmokėti (host'as be sukonfigūruoto serverio).
       if (r.wagerLive === false) { _bgActive = false; _status('This room\'s stakes are not live yet - pick a free match.', true); return; }
       // 🧱💰 pay-on-accept: NEmokam dabar — sumokėsi kai host'as patvirtins (abu moka kartu).
-      _cmd('join', r.roomId, r.tier, null, false, window.BlocksWager.address(), true);   // wager:true · serverAuth=FALSE → client-auth (be lago)
-      _status('Joining ' + _esc(r.host) + ' · ' + r.tier + ' RONKE — you pay when the match is confirmed…', true);
+      _cmd('join', r.roomId, r.tier, null, false, window.BlocksWager.address(), true, null, _aiPlayFlag);   // wager:true · serverAuth=FALSE → client-auth (be lago)
+      _status('Joining ' + _esc(r.host) + ' · ' + r.tier + ' RONKE — you pay when the match is confirmed…' + (_aiPlayFlag ? '<br><span style="font-size:8px;color:#8fffb0;">🤖 your AI will play this match</span>' : ''), true);
     } else {
-      _cmd('join', r.roomId, r.tier, null, false, _walletAddr(), false, _myRef());   // 🏅 addr → reitingas/XP; 🎁 ref → bind nuo pirmo mačo
+      _cmd('join', r.roomId, r.tier, null, false, _walletAddr(), false, _myRef(), _aiPlayFlag);   // 🏅 addr → reitingas/XP; 🎁 ref → bind nuo pirmo mačo
       _status('Joining ' + _esc(r.host) + ' (' + (r.tier || 69) + ' RONKE)…', true);
     }
   }
@@ -746,6 +1124,8 @@
         '</div>' +
         '<div id="rb-inv-sig" style="margin-bottom:14px;">' + _signalHtml(_pingMs) + '</div>' +   // 📶 signalas PRIEŠ prisijungiant
         goBtn +
+        // 🤖 signalas silpnas? — leisk TAVO lygos AI žaisti už tave (+25 RONKE prie statymo)
+        (needWallet ? '' : '<button id="rb-inv-ai" class="rb-act" style="margin-top:9px;width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #4a7a4a;background:rgba(74,122,74,.12);color:#9fe0a0;font:700 11px monospace;cursor:pointer;">' + _aironkeHtml(20) + ' LAGGY? MY AI PLAYS FOR ME <span style="opacity:.7;">(free)</span></button>') +
         '<button id="rb-inv-x" style="margin-top:9px;width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #4a3a55;background:none;color:#8a9aaa;font:600 11px monospace;cursor:pointer;">Cancel</button>';
     }
     o.innerHTML = '<div style="background:linear-gradient(180deg,#241a08,#140e04);border:3px solid #e0a832;border-radius:16px;padding:26px 30px;text-align:center;color:#ffd97a;box-shadow:0 0 48px rgba(224,168,50,.45);max-width:360px;width:100%;">' + inner + '</div>';
@@ -765,6 +1145,9 @@
     };
     var x = o.querySelector('#rb-inv-x');
     if (x) x.onclick = function () { _hideInviteOverlay(); };
+    // 🤖 „mano AI žaidžia už mane" — įjungiam vėliavą ir einam tuo pačiu confirm keliu (+25 prie statymo)
+    var goAi = o.querySelector('#rb-inv-ai');
+    if (goAi) goAi.onclick = function () { _aiPlayFlag = true; if (go) go.onclick(); };
     // 📶 GYVAS signalas — kartojasi kas 3s (kad matytųsi ar bus lagas prieš prisijungiant), ne vienkartinis
     if (mode === 'ready') _startSignalLoop();
     try { if (window.Sfx && window.Sfx.play && mode === 'ready') window.Sfx.play('notify'); } catch (_) {}
@@ -832,7 +1215,7 @@
     _iframe = document.createElement('iframe');
     _iframeLoaded = false;
     _iframe.addEventListener('load', function () { _iframeLoaded = true; });
-    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel';
+    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb94';
     _iframe.style.cssText = 'border:0;width:100%;height:100%;display:block;';
     _iframe.setAttribute('allow', 'autoplay');
     var exit = document.createElement('button');
@@ -844,8 +1227,8 @@
     _gameWrap.appendChild(_iframe); _gameWrap.appendChild(exit);
     document.body.appendChild(_gameWrap);
   }
-  function _cmd(cmd, roomId, tier, mid, serverAuth, addr, wager, ref) {
-    try { if (_iframe && _iframe.contentWindow) _iframe.contentWindow.postMessage({ __rbpanel: 'cmd', cmd: cmd, roomId: roomId, tier: tier, mid: mid, serverAuth: serverAuth, addr: addr, wager: wager, ref: ref }, '*'); } catch (_) {}
+  function _cmd(cmd, roomId, tier, mid, serverAuth, addr, wager, ref, aiPlay) {
+    try { if (_iframe && _iframe.contentWindow) _iframe.contentWindow.postMessage({ __rbpanel: 'cmd', cmd: cmd, roomId: roomId, tier: tier, mid: mid, serverAuth: serverAuth, addr: addr, wager: wager, ref: ref, aiPlay: aiPlay }, '*'); } catch (_) {}
   }
   function _revealGame() {
     if (_gameOn || !_gameWrap) return; _gameOn = true;
@@ -904,10 +1287,13 @@
   window.addEventListener('message', function (e) {
     var d = e && e.data; if (!d || d.__rbpanel !== 'state') return;
     // 🧱💰 wager įvykiai (nepriklauso nuo state) — mokėjimas/statusas/prizas/refund
-    if (d.stakeNow) { _doStake(d.stakeTier); }
+    if (d.stakeNow) { _doStake(d.stakeTier, d.stakeAI, d.stakeAiFee); }   // 🤖 stakeAI=true → vsAI fee; stakeAiFee → PvP „AI už mane" priedas
     if (d.wagerVerify) { _status('⛓️ Verifying stakes on-chain…', true); }
     if (d.wagerAbort) { _status('Stake ' + (d.wagerAbort === 'stake_verify_failed' ? 'verification failed' : 'issue') + ' — refunded. Try again.', true); }
     if (d.wagerPrize) { _wagerWin(d.wagerPrize, d.wagerPot); }
+    if (d.rankAnim) { setTimeout(function () { _showRankAnim(d.rankAnim); }, 60); }   // 🎬 reitingo šou IŠKART (žaidimo skydas ranked mače nerodomas)
+    if (d.xpReport) { _xpReport = d.xpReport; }   // 🎖️ rodysim uzdarius rank kortele
+    if (d.xpAssigned) { _onXpAssigned(d.xpAssigned); }
     var st = d.state; _lastState = st;
     if (st && st !== 'challenge') _challengeAck = false;   // paliko challenge būseną → kitą kartą (naujas varžovas) vėl rodom
     if (d.myRoomId != null) _myRoomId = d.myRoomId;   // MANO kambarys → nerodom sąraše (negaliu prisijungti prie savęs)

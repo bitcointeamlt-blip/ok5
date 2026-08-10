@@ -1,0 +1,8 @@
+assets_rank/ — reitingo UI ikonos.
+
+Lygu ir statu ikonos (league_*.png, stat_*.png):
+  "Kyrise's Free 16x16 RPG Icon Pack" | Graphics made by Kyrise: https://kyrise.itch.io/
+  Licencija: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  Saltinis: https://opengameart.org/content/kyrises-free-16x16-rpg-icon-pack
+
+Zvaigzdes (star_*.png): piestos projektui Kyrise paletes stiliumi (vietinis darbas, be licencijos apribojimu).
