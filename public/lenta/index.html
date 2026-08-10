@@ -2177,7 +2177,7 @@
   <script src="recovery_ui.js?v=rec1_20260723"></script>   <!-- 🔒 Save/Restore progress (link wallet/email → custodial recovery) -->
   <script src="ronkepong_launcher.js?v=rp23_freeonstart_20260728"></script>   <!-- 🎳 RonkePong: mobile portrait + pause parent BGM on open (no music overlap) -->
   <script src="ronkeblocks_launcher.js?v=rb3_iframebust_20260809"></script>   <!-- 🧱 RONKE BLOCKS (PvP tetris): dock → vs AI / ONLINE 1v1 (for fun + test, no fee) -->
-  <script src="blocks_lobby_client.js?v=rbl92_mobconnect_20260810"></script>   <!-- 🧱 Lobis + 🏆 PoD claim + PAY-ON-ACCEPT wager + 🔗 fokusuotas invite ekranas (?rbjoin → confirm+kaina, ne pasimetimas pilyje) -->
+  <script src="blocks_lobby_client.js?v=rbl94_mobmenu"></script>   <!-- 🧱 Lobis + 🏆 PoD claim + PAY-ON-ACCEPT wager + 🔗 fokusuotas invite ekranas (?rbjoin → confirm+kaina, ne pasimetimas pilyje) -->
   <script src="blocks_wager.js?v=rbw6_aifee_20260808"></script>   <!-- 🧱💰 Wager: payEntry per PewPewPlayV2 (player-signed → PoD); prod'e OFF kol BLOCKS_WAGER_ON nenustatytas + serveris be raktų (nemokamas režimas) -->
   <script src="blocks_solana.js?v=rbsol2_20260807"></script>   <!-- 🟣 SOLANA PvP tetris (native SOL, Solana-vs-Solana): Phantom connect + $ pakopos -> SOL. INERTISKA kol BLOCKS_SOL_ON+treasury+serverio raktai (pinigai nejuda) -->
   <script>
@@ -2804,6 +2804,7 @@
       <button class="mm-btn" data-action="rewards"><span class="mm-ic">🎁</span><span>REWARDS</span></button>
       <button class="mm-btn" data-action="upgrade"><span class="mm-ic">⚒️</span><span>UPGRADE</span></button>
       <button class="mm-btn" data-action="pewpew"><span class="mm-ic">🎯</span><span>PEWPEW</span></button>
+      <button class="mm-btn" data-action="tetris"><span class="mm-ic">🧱</span><span>TETRIS</span></button>
       <button class="mm-btn mm-btn-trophy" data-action="trophy"><span class="mm-ic">🏆</span><span>TROPHIES</span></button>
       <button class="mm-btn mm-btn-nftperks" data-action="nftperks"><span class="mm-ic">◆</span><span>NFT PERKS</span></button>
       <button class="mm-btn" data-action="pvpmusic"><span class="mm-ic">🎵</span><span>PVP MUSIC</span></button>
@@ -2824,6 +2825,7 @@
           const a = b.getAttribute('data-action');
           if (a === 'raid') b.style.display = (f9 && window.__f9HomeActive && !window.__f9RaidActive) ? '' : 'none';
           else if (a === 'inventory' || a === 'rewards' || a === 'upgrade' || a === 'home') b.style.display = f9 ? 'none' : '';
+          else if (a === 'tetris') b.style.display = (f9 && window.__f9RaidActive) ? 'none' : '';   // 🧱 kaip desktop dock: slepiam tik per raid kova
         });
         modal.style.display = 'flex';
       }
@@ -2897,6 +2899,11 @@
             case 'home':      id = 'wui-home-btn';     break;
             case 'raid':
               if (window.F9RaidUI && window.F9RaidUI.open) window.F9RaidUI.open();
+              return;
+            case 'tetris':
+              // 🧱 PVP TETRIS lobis (kaip desktop dock): BlocksLobby; atsarginis - senas chooser
+              if (window.BlocksLobby && window.BlocksLobby.open) window.BlocksLobby.open();
+              else if (window.RonkeBlocks && window.RonkeBlocks.open) window.RonkeBlocks.open();
               return;
             case 'trophy':
               // Trophy panel doesn't have a hidden wallet pill button — call API directly

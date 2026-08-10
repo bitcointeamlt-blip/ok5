@@ -444,6 +444,27 @@
   }
   function _shortAddr(a) { a = String(a || ''); return a.length > 10 ? (a.slice(0, 6) + '…' + a.slice(-4)) : a; }
   // 🏅 Reitingo panelė (overlay): tavo lyga+žvaigždutės, W/L, laukiantis deko XP, ir top lentelė.
+  // 🎖️ Deko XP lentelė: 1 išvalyta linija = (lyga+1) XP; kaupiasi pool'e, po mačo skiriamas vienam deko unitui.
+  function _xpTableHtml(curLeague) {
+    var out = '';
+    for (var i = 0; i < RANK_LEAGUES.length; i++) {
+      var cur = (curLeague === i);
+      out += '<div style="background:' + (cur ? 'rgba(255,215,92,.14)' : '#101828') + ';border:1px solid ' + (cur ? '#ffd75c' : '#2a3550') + ';border-radius:6px;padding:8px 4px 7px;text-align:center;' + (cur ? 'box-shadow:0 0 10px rgba(255,215,92,.25);' : '') + '">' +
+        '<img src="assets_rank/emb_' + i + '.png" alt="" style="width:26px;height:26px;image-rendering:pixelated;">' +
+        '<div style="font-size:6px;color:' + (cur ? '#ffd75c' : '#8a9aaa') + ';margin-top:4px;">' + RANK_LEAGUES[i] + '</div>' +
+        '<div style="font-size:10px;color:#8fffb0;margin-top:3px;">\u00d7' + (i + 1) + '</div>' +
+      '</div>';
+    }
+    return out;
+  }
+  function _xpPoolGet(addr) {
+    var R = String(addr || '').toLowerCase();
+    if (!_isAddr(R)) return Promise.resolve(0);
+    return fetch(SB_URL + '/rest/v1/f9_bases?select=buildings&ronin_address=eq.xpunits_' + R, { headers: _sbHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (rows) { var b = rows && rows[0] && rows[0].buildings; return ((b && b.pool) | 0); })
+      .catch(function () { return 0; });
+  }
   function _openRankPanel() {
     var addr = _walletAddr();
     var ov = document.createElement('div'); ov.id = 'rb-rank-ov';
@@ -461,6 +482,14 @@
         ? ('<div id="rb-rank-me" style="background:#0c1020;border:1px solid #46567e;border-radius:8px;padding:16px;text-align:center;">' +
              '<div style="font-size:11px;color:#6a7a8a;">Loading your rank…</div></div>' +
            '<div style="font-size:9px;color:#6a7a8a;text-align:center;">Win +1★ · Lose −½★ · Beat a higher league +2★ · Lose to a lower league −2★</div>' +
+           '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;"><span style="flex:1;height:1px;background:#3a3a55;"></span><span style="font-size:10px;color:#8fffb0;">DECK XP \u2014 EVERY LINE PAYS</span><span style="flex:1;height:1px;background:#3a3a55;"></span></div>' +
+           '<div style="background:#0c1020;border:1px solid #2a3550;border-radius:8px;padding:12px 14px;">' +
+             '<div style="font-size:8px;color:#bff0f6;text-align:center;line-height:1.8;">1 CLEARED LINE = 1 XP \u00d7 YOUR LEAGUE</div>' +
+             '<div style="font-size:7px;color:#6a7a8a;text-align:center;margin-bottom:10px;">win or lose \u00b7 PvP &amp; vs AI \u00b7 higher league = more XP</div>' +
+             '<div id="rb-xp-table" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">' + _xpTableHtml(-1) + '</div>' +
+             '<div style="font-size:7px;color:#8a9aaa;text-align:center;margin-top:10px;line-height:1.9;">e.g. 12 lines in WOOD \u2192 12 \u00d7 2 = <span style="color:#ffd75c;">24 XP</span><br>XP lands in your pool \u2014 after each match assign the whole pool to ONE registered deck unit</div>' +
+             '<div id="rb-xp-pool" style="font-size:8px;color:#ffd75c;text-align:center;margin-top:8px;"></div>' +
+           '</div>' +
            '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;"><span style="flex:1;height:1px;background:#3a3a55;"></span><span style="font-size:10px;color:#ffd97a;">LEADERBOARD</span><span style="flex:1;height:1px;background:#3a3a55;"></span></div>' +
            '<div id="rb-rank-board" style="display:flex;flex-direction:column;gap:5px;min-height:40px;"><div style="color:#6a7a8a;font-size:10px;text-align:center;padding:10px 0;">Loading…</div></div>')
         : '<div style="font-size:11px;color:#ffd97a;text-align:center;padding:20px 0;">Connect your wallet to earn a rank. Every PvP tetris match moves you up the leagues — and feeds XP to your deck units.</div>'
@@ -469,6 +498,10 @@
     p.querySelector('#rb-rank-x').onclick = function () { try { ov.remove(); } catch (_) {} };
     if (!addr) return;
     var me = p.querySelector('#rb-rank-me'), board = p.querySelector('#rb-rank-board');
+    _xpPoolGet(addr).then(function (pool) {   // \u26A1 gyvas XP pool is xpunits_
+      var el = p.querySelector('#rb-xp-pool');
+      if (el && document.body.contains(p)) el.innerHTML = '\u26A1 YOUR POOL: <b>' + (pool | 0) + ' XP</b> waiting to be assigned';
+    });
     _rankStats(addr).then(function (s) {
       if (!document.body.contains(p) || !me) return;
       s = s || { score: 0, wins: 0, losses: 0, games: 0, xp: 0 };
@@ -486,6 +519,7 @@
           '<div style="font-size:14px;color:#ffd97a;">⚡ ' + Math.round(s.xp) + ' XP</div>' +
           '<div style="font-size:8px;color:#8a9aaa;margin-top:5px;line-height:1.5;">pending for your deck units · +' + rate + ' XP per unit each match at ' + d.name + '</div>' +
         '</div>';
+      var xt = p.querySelector('#rb-xp-table'); if (xt) xt.innerHTML = _xpTableHtml(d.league);   // 🎯 pazymim tavo lyga XP lentelej
     });
     _rankBoard().then(function (rows) {
       if (!document.body.contains(p) || !board) return;
@@ -980,6 +1014,21 @@
   //   serverAuth (cheat-proof), on-chain matchId keliauja į kambarį (payout'ui). Kitaip → nemokamas režimas.
   // 🧱💰 pay-on-accept: serveris paprašė („stake_now" — abu sutiko) → DABAR realiai statom RONKE.
   //   Wallet popup rodomas net jei panelė uždaryta (fone). Nepavykus → pranešam serveriui (grąžins varžovui).
+  // 📱 Pinigines garantas: nera adreso -> Wallet.connect('ronin') (mobile = WalletConnect
+  //   deep-link i Ronin Wallet app, desktop = extension popup) + poll; prisijungus tesiam veiksma.
+  function _ensureWallet(then) {
+    if (_walletAddr()) { then(); return; }
+    if (!(window.Wallet && window.Wallet.connect)) {
+      _status('\uD83D\uDD17 Connect your Ronin wallet first (\u2630 MENU \u2192 WALLET).', true);
+      return;
+    }
+    _status('\uD83D\uDD17 Opening Ronin Wallet \u2014 approve the connection\u2026<br><span style="font-size:8px;opacity:.7;">no wallet app? install Ronin Wallet first</span>', true);
+    try { window.Wallet.connect('ronin').catch(function (e) { console.warn('[lobby connect]', e && e.message); }); } catch (_) {}
+    var n = 0, t = setInterval(function () {
+      if (_walletAddr()) { clearInterval(t); _status('\u2705 Wallet connected!', true); setTimeout(then, 300); }
+      else if (++n > 240) { clearInterval(t); _status('Wallet not connected \u2014 tap again to retry.', true); }
+    }, 500);
+  }
   function _doStake(tier, ai, aiFee) {
     if (!_wager()) return;
     // 🤖 useAi = PvP „AI žaidžia už mane" — NEMOKAMA (moki tik pakopą); ai=true = RANKED vsAI (25 fee).
@@ -1010,6 +1059,7 @@
     _status('🟣 Solana host (SOL) — jungiamės…', true);
   }
   function _doHost(tier, priv) {
+    if (_wager() && !_walletAddr()) { _ensureWallet(function () { _doHost(tier, priv); }); return; }   // 📱 pinigine privaloma statymui
     _bgActive = true; _myRole = priv ? 'private' : 'host'; _podClaimedMatch = false; _ensureGame();
     if (_wager()) {
       // 🧱💰 pay-on-accept: NEmokam dabar — tik sukuriam wager kambarį. Mokėsi kai atsiras varžovas ir sutiksi.
@@ -1026,13 +1076,14 @@
   //   Reikia piniginės (be jos nėra nei reitingo, nei fee) — net kai wager serveris negyvas (free dev režimas).
   function _doAiRanked() {
     var a = _walletAddr();
-    if (!a) { _status('🤖 RANKED vs AI needs your wallet — connect it first (rank + 25 RONKE fee).', true); return; }
+    if (!a) { _ensureWallet(_doAiRanked); return; }   // 📱 mobile: WC deep-link + poll, tada kartojam
     _bgActive = true; _myRole = 'ai'; _podClaimedMatch = false; _ensureGame();
     _cmd('ai', null, 0, null, false, a, _wager());
     _status('🤖 RANKED vs AI — bot plays at <b>your league level</b>. Beat it to rank up!' + (_wager() ? '<br><span style="font-size:8px;opacity:.7;">25 RONKE fee — confirm in wallet when asked</span>' : ''), true);
   }
   // JOIN: jei wager → sumoka tą pačią pakopą į kambario on-chain matchId; kitaip nemokamas.
   function _doJoin(r) {
+    if (_wager() && !_walletAddr()) { _ensureWallet(function () { _doJoin(r); }); return; }   // 📱 pinigine privaloma statymui
     _bgActive = true; _myRole = 'guest'; _podClaimedMatch = false; _ensureGame();
     if (_wager()) {
       // 🛡️ Apsauga: nesijunk į statymo kambarį, jei serveris NEGALI išmokėti (host'as be sukonfigūruoto serverio).
