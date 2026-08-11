@@ -357,68 +357,331 @@
     }
     return out;
   }
-  // ── 🎖️ MAČO XP PRISKIRSTYMAS: unitų reportas + „skirk visą pool'ą pasirinktam unitui" ──────────
+  // ── 🎖️⛓ MAČO XP → ON-CHAIN (kaip PewPew Saga): tetris-xp-claim edge fn pasirašo XpAward voucher'į,
+  //   ŽAIDĖJAS pats siunčia awardBattleXp tx į PewPewBarracks (moka gas) → unito XP/LV auga VISUR
+  //   (barracks, dekas, F9), nes tiesa gyvena kontrakte. Kambario gyvumo NEBEREIKIA — veikia ir iš RANK panelės.
   var _xpReport = null;
-  var _XP_UICON = { skull: '\uD83D\uDC80', archer: '\uD83C\uDFF9', harpoon_fish: '\uD83D\uDD31', shaman: '\uD83D\uDD2E', pigronke: '\uD83D\uDC37', ghost: '\uD83D\uDC7B', ronhood: '\uD83E\uDDB9' };
-  function _showXpAssign() {
+  var _xpState = null;
+  var _xpBusy = false;
+  var _XP_SPRITE = { skull: 'unit-images/skull-idle.gif', archer: 'unit-images/archer-idle.gif', shaman: 'unit-images/shaman-idle.gif', harpoon_fish: 'unit-images/harpoon-idle.gif', ghost: 'unit-images/ghost-idle.png', ronhood: 'unit-images/ronhood-idle.png', pigronke: 'unit-images/hog-idle.gif', hog_rider: 'unit-images/hog-idle.gif' };
+  var _XP_UNAME = { skull: 'SKULL', archer: 'ARCHER', shaman: 'SHAMAN', harpoon_fish: 'HARPOON', ghost: 'GHOST', ronhood: 'RONKEHOOD', pigronke: 'HOG RIDER', hog_rider: 'HOG RIDER' };
+  function _xpLvl(xp) { return Math.floor(Math.sqrt(Math.max(0, xp) / 100)); }   // = kontrakto _levelFromXp
+  function _xpLvlPct(xp) { var L = _xpLvl(xp), lo = L * L * 100, hi = (L + 1) * (L + 1) * 100; return Math.max(0, Math.min(1, (xp - lo) / (hi - lo))); }
+  function _xpFn(body) {
+    return fetch(SB_URL + '/functions/v1/tetris-xp-claim', { method: 'POST', headers: _sbHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); });
+  }
+  function _xpProvider() {
+    try { if (window.Wallet && window.Wallet._getProvider) { var p = window.Wallet._getProvider(); if (p) return p; } } catch (_) {}
+    return (window.ronin && window.ronin.provider) || window.ethereum || null;
+  }
+  function _xpAnimCss() {
+    if (document.getElementById('rb-xpanim-css')) return;
+    var st = document.createElement('style'); st.id = 'rb-xpanim-css';
+    st.textContent =
+      '@keyframes rbXpRise{0%{opacity:1;transform:translateY(0) scale(1);}100%{opacity:0;transform:translateY(-64px) scale(1.55);}}' +
+      '@keyframes rbXpFloat{0%{opacity:0;transform:translateY(10px);}15%{opacity:1;}100%{opacity:0;transform:translateY(-44px);}}';
+    document.head.appendChild(st);
+  }
+  // Panelė: po mačo (xp_report) ARBA standalone iš RANK panelės — duomenys iš edge fn + on-chain.
+  function _showXpAssign(opts) {
     try {
-      var rep = _xpReport; if (!rep) return;
+      opts = opts || {};
+      var rep = (opts && opts.standalone) ? null : _xpReport;
+      var addr = String(_walletAddr() || '').toLowerCase();
+      if (!_isAddr(addr)) return;
+      _rankAnimCss(); _xpAnimCss();
       var old = document.getElementById('rb-xpassign-ov'); if (old) { try { old.remove(); } catch (_) {} }
+      _xpBusy = false;
       var ov = document.createElement('div'); ov.id = 'rb-xpassign-ov';
       ov.style.cssText = 'position:fixed;inset:0;z-index:100062;display:flex;align-items:center;justify-content:center;' +
         'background:rgba(4,6,12,.85);font-family:monospace;';
       var card = document.createElement('div');
       card.style.cssText = 'position:relative;background:#171204;border:3px solid #ffd75c;padding:24px 30px;color:#ffd97a;' +
-        'max-width:440px;min-width:320px;max-height:80vh;overflow:auto;box-shadow:0 0 0 2px #000,0 0 28px rgba(255,215,92,.35);' +
+        'max-width:460px;min-width:320px;max-height:82vh;overflow:auto;box-shadow:0 0 0 2px #000,0 0 28px rgba(255,215,92,.35);' +
         'animation:rbPxIn .32s cubic-bezier(.2,1.3,.4,1) both;text-align:center;';
-      var h = '<div style="font-size:16px;font-weight:800;letter-spacing:2px;text-shadow:1px 1px 0 #000;">\uD83C\uDF96\uFE0F MATCH XP</div>' +
-        '<div style="font-size:11px;color:#8fffb0;margin:8px 0 2px;">earned this match: <b>+' + (rep.gain | 0) + ' XP</b>' +
-          ' <span style="color:#8a9aaa;">(' + (rep.lines | 0) + ' lines \u00d7 ' + (rep.mult | 0) + ')</span></div>' +
-        '<div style="font-size:11px;color:#ffd75c;margin-bottom:12px;">pool to assign: <b>' + (rep.pool | 0) + ' XP</b></div>';
-      var units = rep.units || [];
-      if (!units.length) {
-        h += '<div style="font-size:11px;color:#8a9aaa;padding:14px 0;">no registered deck units found<br><span style="font-size:9px;opacity:.7;">register units in your castle deck first — XP stays in your pool</span></div>';
-      } else {
-        h += '<div style="font-size:9px;color:#7a8aa0;letter-spacing:1.5px;margin-bottom:8px;">PICK A UNIT \u2014 ALL POOL XP GOES TO IT</div>';
-        for (var i = 0; i < units.length; i++) {
-          var u = units[i];
-          h += '<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;margin:6px 0;background:#0e1420;border:1px solid #2a3550;text-align:left;">' +
-            '<span style="font-size:20px;">' + (_XP_UICON[u.utype] || '\u2694\uFE0F') + '</span>' +
-            '<span style="flex:1;min-width:0;">' +
-              '<span style="font-size:11px;color:#bff0f6;font-weight:800;">' + _esc(String(u.utype || 'unit').toUpperCase()) + '</span>' +
-              ' <span style="font-size:9px;color:#8a9aaa;">#' + _esc(String(u.id)) + ' \u00b7 LV ' + (u.level | 0) + '</span>' +
-              '<div style="font-size:9px;color:#ffd75c;margin-top:2px;">XP: ' + (u.xp | 0) + '</div>' +
-            '</span>' +
-            ((rep.pool | 0) > 0
-              ? '<button class="rb-act rb-xp-give" data-id="' + _esc(String(u.id)) + '" style="padding:9px 13px;border:2px solid #5ce08a;background:rgba(92,224,138,.14);color:#8fffb0;font-family:inherit;font-size:10px;font-weight:800;cursor:pointer;">+' + (rep.pool | 0) + ' XP</button>'
-              : '') +
-          '</div>';
-        }
+      var h = '<div style="font-size:16px;font-weight:800;letter-spacing:2px;text-shadow:1px 1px 0 #000;">⛓ UNIT XP</div>';
+      if (rep) {
+        h += '<div style="font-size:11px;color:#8fffb0;margin:8px 0 2px;">earned this match: <b>+' + (rep.gain | 0) + ' XP</b>' +
+          ' <span style="color:#8a9aaa;">(' + (rep.lines | 0) + ' lines × ' + (rep.mult | 0) + ')</span></div>';
       }
-      h += '<div style="margin-top:14px;"><button id="rb-xp-close" style="font-family:monospace;font-size:11px;font-weight:800;padding:9px 26px;border:2px solid #4a5a75;background:none;color:#9db0cc;cursor:pointer;">CLOSE</button></div>';
+      h += '<div style="font-size:11px;color:#ffd75c;margin:6px 0 10px;">pool to assign: <b id="rb-xp-poolnum">…</b></div>' +
+        '<div id="rb-xp-pend"></div>' +
+        '<div id="rb-xp-units"><div style="font-size:10px;color:#8a9aaa;padding:14px 0;">⏳ loading units from chain…</div></div>' +
+        '<div id="rb-xp-flow" style="display:none;font-size:10px;margin-top:10px;padding:8px 10px;background:#0e1420;border:1px solid #2a3550;"></div>' +
+        '<div style="margin-top:14px;"><button id="rb-xp-close" style="font-family:monospace;font-size:11px;font-weight:800;padding:9px 26px;border:2px solid #4a5a75;background:none;color:#9db0cc;cursor:pointer;">CLOSE</button></div>';
       card.innerHTML = h;
       ov.appendChild(card); document.body.appendChild(ov);
-      card.querySelectorAll('.rb-xp-give').forEach(function (b) {
-        b.onclick = function () {
-          b.textContent = '\u23F3'; b.disabled = true;
-          _cmd('xpassign', null, null, b.getAttribute('data-id'));
-        };
-      });
       var cb = card.querySelector('#rb-xp-close');
-      if (cb) cb.onclick = function () { try { ov.remove(); } catch (_) {} _xpReport = null; };
+      if (cb) cb.onclick = function () { if (_xpBusy) return; try { ov.remove(); } catch (_) {} _xpReport = null; };
+      _xpLoadPanel(card, addr, rep);
     } catch (e) { console.warn('[xpAssign]', e); }
   }
-  function _onXpAssigned(r) {
-    var ov = document.getElementById('rb-xpassign-ov');
-    if (!r || !r.ok) {
-      if (ov) { var f = ov.querySelector('.rb-xp-give[disabled]'); if (f) { f.textContent = 'ERR'; f.disabled = false; } }
-      return;
-    }
-    if (ov) { try { ov.remove(); } catch (_) {} }
-    _xpReport = null;
-    _status('\uD83C\uDF96\uFE0F <b>+XP assigned!</b> Unit #' + _esc(String(r.unit)) + ' now has <b>' + (r.unitXp | 0) + ' XP</b>', true);
-    setTimeout(function () { if (_panel) _status('', false); }, 4500);
+  function _xpLoadPanel(card, addr, rep) {
+    _xpFn({ action: 'status', wallet: addr }).catch(function () { return null; }).then(function (st) {
+      if (!document.body.contains(card)) return;
+      var pool = (st && st.ok) ? (st.pool | 0) : ((rep && rep.pool) | 0);
+      var legacy = (st && st.ok && st.units) || {};
+      _xpState = { addr: addr, pool: pool, legacy: legacy, units: {} };
+      var pn = card.querySelector('#rb-xp-poolnum'); if (pn) pn.textContent = pool + ' XP';
+      if (st && st.ok && st.pending) _xpShowPending(st.pending);
+      var ids = [];
+      if (rep && rep.units && rep.units.length) ids = rep.units.map(function (u) { return String(u.id); });
+      else { try { ids = ((window.BarracksNFT && window.BarracksNFT.getDeck) ? window.BarracksNFT.getDeck(addr) : []).map(String); } catch (_) { ids = []; } }
+      var box = card.querySelector('#rb-xp-units');
+      if (!ids.length) {
+        if (box) box.innerHTML = '<div style="font-size:11px;color:#8a9aaa;padding:14px 0;">no registered deck units found<br><span style="font-size:9px;opacity:.7;">register units in your castle deck first — XP stays in your pool</span></div>';
+        return;
+      }
+      var meta = {}; if (rep && rep.units) rep.units.forEach(function (u) { meta[String(u.id)] = u; });
+      // 🖼️ ON-CHAIN tiesa: utype/level/xp/sprite iš kontrakto (multicall) — LV čia = tikrasis, matomas visur
+      Promise.resolve().then(function () {
+        return (window.BarracksNFT && window.BarracksNFT.loadUnitTypes) ? window.BarracksNFT.loadUnitTypes(ids) : new Map();
+      }).catch(function () { return new Map(); }).then(function (m) {
+        if (!document.body.contains(card)) return;
+        var html = '<div style="font-size:9px;color:#7a8aa0;letter-spacing:1.5px;margin-bottom:8px;">PICK A UNIT — XP GOES ON-CHAIN ⛓</div>';
+        for (var i = 0; i < ids.length; i++) {
+          var id = ids[i], ch = (m && m.get) ? m.get(id) : null, mu = meta[id] || {};
+          var utStr = String(mu.utype || '');
+          var u = {
+            id: id,
+            name: (ch && ch.name) ? String(ch.name).toUpperCase() : (_XP_UNAME[utStr] || 'UNIT'),
+            img: (ch && ch.image) || _XP_SPRITE[utStr] || 'unit-images/skull-idle.gif',
+            level: ch ? (ch.level | 0) : (mu.level | 0),
+            xp: ch ? (ch.xp | 0) : 0,
+            legacy: (Number(_xpState.legacy[id]) || 0),
+          };
+          _xpState.units[id] = u;
+          html += _xpUnitCardHtml(u, _xpState.pool + u.legacy);
+        }
+        html += '<div style="font-size:8px;color:#6a7a8a;margin-top:8px;line-height:1.8;">XP is written to the unit’s NFT on Ronin — sign once, then confirm the transaction.<br>Level = √(XP/100), rounded down.</div>';
+        box.innerHTML = html;
+        box.querySelectorAll('.rb-xp-give').forEach(function (b) {
+          b.onclick = function () { _xpClaimFlow(b.getAttribute('data-id')); };
+        });
+      });
+    });
   }
+  function _xpUnitCardHtml(u, give) {
+    var pct = Math.round(_xpLvlPct(u.xp) * 100);
+    return '<div class="rb-xp-card" data-xpcard="' + _esc(u.id) + '" style="position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:10px 12px;margin:7px 0;background:#0e1420;border:2px solid #2a3550;text-align:left;transition:border-color .3s,box-shadow .3s;">' +
+      '<span class="rb-xp-sprwrap" style="position:relative;width:52px;height:52px;flex:0 0 52px;display:flex;align-items:center;justify-content:center;background:#141c2c;border:1px solid #24304a;">' +
+        '<img class="rb-xp-spr" src="' + _esc(u.img) + '" alt="" style="max-width:48px;max-height:48px;image-rendering:pixelated;">' +
+      '</span>' +
+      '<span style="flex:1;min-width:0;">' +
+        '<span style="font-size:11px;color:#bff0f6;font-weight:800;">' + _esc(u.name) + '</span>' +
+        ' <span style="font-size:9px;color:#8a9aaa;">#' + _esc(u.id) + '</span>' +
+        ' <span class="rb-xp-lv" style="display:inline-block;font-size:9px;color:#171204;background:#ffd75c;padding:2px 6px;margin-left:4px;font-weight:800;">LV ' + (u.level | 0) + '</span>' +
+        '<div style="margin-top:5px;font-size:9px;color:#ffd75c;"><span class="rb-xp-num">' + (u.xp | 0) + '</span> XP' +
+          (u.legacy > 0 ? ' <span class="rb-xp-stored" style="color:#8fffb0;">(+' + u.legacy + ' stored → goes on-chain too)</span>' : '') + '</div>' +
+        '<div style="margin-top:4px;height:7px;background:#0a0f18;border:1px solid #24304a;"><div class="rb-xp-bar" style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#ffd75c,#8fffb0);"></div></div>' +
+      '</span>' +
+      (give > 0
+        ? '<button class="rb-act rb-xp-give" data-id="' + _esc(u.id) + '" style="padding:10px 12px;border:2px solid #5ce08a;background:rgba(92,224,138,.14);color:#8fffb0;font-family:inherit;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap;">⛓ +' + give + ' XP</button>'
+        : '') +
+    '</div>';
+  }
+  function _xpFlowMsg(txt, color) {
+    var f = document.querySelector('#rb-xpassign-ov #rb-xp-flow');
+    if (!f) return;
+    f.style.display = 'block'; f.style.color = color || '#ffd97a'; f.innerHTML = txt;
+  }
+  function _xpButtons(on) {
+    document.querySelectorAll('#rb-xpassign-ov .rb-xp-give').forEach(function (b) { b.disabled = !on; b.style.opacity = on ? '1' : '.45'; });
+  }
+  function _xpFail(msg) {
+    _xpBusy = false; _xpButtons(true);
+    var low = String(msg || '').toLowerCase();
+    if (low.indexOf('reject') >= 0 || low.indexOf('denied') >= 0 || low.indexOf('cancel') >= 0) _xpFlowMsg('cancelled — no XP was moved', '#8a9aaa');
+    else _xpFlowMsg('❌ ' + _esc(String(msg || 'failed')), '#ffb0b0');
+  }
+  function _xpShowPending(p) {
+    var el = document.querySelector('#rb-xpassign-ov #rb-xp-pend');
+    if (!el || !p) return;
+    el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:8px;background:rgba(255,215,92,.08);border:1px dashed #ffd75c;font-size:9px;color:#ffd97a;text-align:left;">' +
+      '<span style="flex:1;">⏳ unfinished claim: unit <b>#' + _esc(String(p.tokenId)) + '</b> +' + (p.amount | 0) + ' XP — finish it (or it returns to pool in 30 min)</span>' +
+      '<button id="rb-xp-resume" style="padding:8px 10px;border:2px solid #ffd75c;background:rgba(255,215,92,.14);color:#ffd97a;font-family:inherit;font-size:9px;font-weight:800;cursor:pointer;white-space:nowrap;">⛓ FINISH</button></div>';
+    var b = el.querySelector('#rb-xp-resume');
+    if (b) b.onclick = function () { if (_xpBusy) return; _xpSubmitVoucher(p); };
+  }
+  // 1) personal_sign (įrodo piniginę) → 2) edge fn voucher → 3) awardBattleXp tx (žaidėjas moka gas)
+  function _xpClaimFlow(unitId) {
+    if (_xpBusy || !_xpState) return;
+    if (!window.BarracksNFT || !window.BarracksNFT.claimXpAward) { _xpFail('wallet modules not loaded'); return; }
+    var prov = _xpProvider();
+    if (!prov) { _xpFail('no wallet provider — connect wallet first'); return; }
+    _xpBusy = true; _xpButtons(false);
+    _xpFlowMsg('✍️ sign the claim in your wallet…');
+    var S = _xpState, ts = Math.floor(Date.now() / 1000);
+    var msg = 'RONKE TETRIS XP CLAIM\nwallet: ' + S.addr + '\nunit: #' + unitId + '\nts: ' + ts;
+    Promise.resolve(prov.request({ method: 'personal_sign', params: [msg, S.addr] }))
+      .then(function (sig) {
+        _xpFlowMsg('📡 requesting signed voucher…');
+        return _xpFn({ action: 'claim', wallet: S.addr, tokenId: unitId, ts: ts, signature: sig });
+      })
+      .then(function (r) {
+        if (r && r.ok && r.voucher) return _xpSubmitVoucher(r.voucher);
+        if (r && r.error === 'pending_other' && r.pending) { _xpShowPending(r.pending); throw new Error('finish the pending claim for unit #' + r.pending.tokenId + ' first'); }
+        throw new Error((r && r.error) || 'voucher request failed');
+      })
+      .catch(function (e) { _xpFail(e && e.message ? e.message : String(e)); });
+  }
+  function _xpSubmitVoucher(v) {
+    _xpBusy = true; _xpButtons(false);
+    _xpFlowMsg('⛓ confirm the transaction in your wallet…');
+    var award = { tokenId: v.tokenId, xpGain: v.amount, kills: 0, won: false, battleId: v.battleId, deadline: v.deadline, nonce: v.nonce, signature: v.sig };
+    var timeout = new Promise(function (res) { setTimeout(function () { res('__timeout'); }, 95000); });
+    Promise.race([Promise.resolve().then(function () { return window.BarracksNFT.claimXpAward(award); }), timeout])
+      .then(function (r) {
+        // 📱 Ronin in-app: receipt laukimas gali pakibti → tikrinam per edge fn (nonce panaudotas = claim įvyko)
+        if (r === '__timeout') { _xpFlowMsg('⏳ tx sent — waiting for chain confirmation…'); return _xpWaitClaimed(8); }
+        return true;
+      })
+      .then(function (okFlag) {
+        if (!okFlag) throw new Error('confirmation timed out — reopen this panel to finish or auto-refund');
+        var pend = document.querySelector('#rb-xpassign-ov #rb-xp-pend'); if (pend) pend.innerHTML = '';
+        _xpCelebrate(String(v.tokenId), v.amount | 0);
+      })
+      .catch(function (e) { _xpFail(e && e.message ? e.message : String(e)); });
+  }
+  function _xpWaitClaimed(tries) {
+    if (!_xpState) return Promise.resolve(false);
+    var addr = _xpState.addr;
+    return _xpFn({ action: 'status', wallet: addr }).catch(function () { return null; }).then(function (st) {
+      if (st && st.ok && !st.pending) return true;   // pending išnyko → nonce panaudotas → claim on-chain
+      if (tries <= 1) return false;
+      return new Promise(function (res) { setTimeout(function () { res(_xpWaitClaimed(tries - 1)); }, 6000); });
+    });
+  }
+  // ── 🎉 XP GAVIMO ANIMACIJA: lekiančios ✦ iš pool → unitas, count-up, baras; kertant lygį — LEVEL UP FX ──
+  function _xpCelebrate(unitId, amount) {
+    _xpBusy = false;
+    _xpFlowMsg('✅ <b>+' + amount + ' XP ON-CHAIN!</b> written to unit #' + _esc(unitId), '#8fffb0');
+    var ov = document.getElementById('rb-xpassign-ov'); if (!ov) return;
+    var cardEl = ov.querySelector('[data-xpcard="' + unitId + '"]');
+    var u = (_xpState && _xpState.units[unitId]) || { xp: 0, level: 0, legacy: 0 };
+    var oldXp = u.xp | 0, newXp = oldXp + amount, oldLv = _xpLvl(oldXp), newLv = _xpLvl(newXp);
+    u.xp = newXp; u.level = newLv; u.legacy = 0;
+    if (_xpState) { _xpState.pool = 0; _xpState.legacy[unitId] = 0; }
+    var pn = ov.querySelector('#rb-xp-poolnum');
+    // kiti mygtukai perskaičiuojami (pool = 0) — lieka tik legacy turintys
+    ov.querySelectorAll('.rb-xp-give').forEach(function (b) {
+      var bid = b.getAttribute('data-id'), leg = (_xpState && Number(_xpState.legacy[bid])) || 0;
+      if (bid === unitId || leg <= 0) b.remove();
+      else { b.textContent = '⛓ +' + leg + ' XP'; b.disabled = false; b.style.opacity = '1'; }
+    });
+    if (!cardEl) return;
+    var stored = cardEl.querySelector('.rb-xp-stored'); if (stored) stored.remove();
+    cardEl.style.borderColor = '#ffd75c'; cardEl.style.boxShadow = '0 0 18px rgba(255,215,92,.4)';
+    _xpFlyParticles(pn || cardEl, cardEl, Math.min(16, 8 + Math.floor(amount / 25)));
+    // „+N XP" floateris virš kortelės
+    var fl = document.createElement('div');
+    fl.style.cssText = 'position:absolute;right:14px;top:2px;font-size:13px;font-weight:800;color:#8fffb0;text-shadow:1px 1px 0 #000;pointer-events:none;animation:rbXpFloat 1.6s ease-out both;z-index:5;';
+    fl.textContent = '+' + amount + ' XP';
+    cardEl.appendChild(fl); setTimeout(function () { try { fl.remove(); } catch (_) {} }, 1700);
+    var numEl = cardEl.querySelector('.rb-xp-num'), barEl = cardEl.querySelector('.rb-xp-bar'), lvEl = cardEl.querySelector('.rb-xp-lv');
+    var t0 = null, DUR = 1400, lvShown = oldLv, fxDone = false;
+    function tick(ts2) {
+      if (t0 == null) t0 = ts2;
+      var k = Math.min(1, (ts2 - t0) / DUR), e = 1 - Math.pow(1 - k, 3);
+      var cur = Math.round(oldXp + (newXp - oldXp) * e);
+      if (pn) pn.textContent = Math.max(0, Math.round((1 - e) * amount)) + ' XP';   // pool tirpsta į unitą
+      if (numEl) { numEl.textContent = cur; numEl.style.color = '#8fffb0'; }
+      if (barEl) barEl.style.width = Math.round(_xpLvlPct(cur) * 100) + '%';
+      var L = _xpLvl(cur);
+      if (L > lvShown && lvEl) {
+        lvShown = L; lvEl.textContent = 'LV ' + L;
+        lvEl.style.animation = 'none'; void lvEl.offsetWidth;
+        lvEl.style.animation = 'rbPxBigPop .5s cubic-bezier(.2,1,.3,1) both';
+        if (!fxDone) { fxDone = true; _xpLevelUpFx(cardEl, newLv); }
+      }
+      if (k < 1) requestAnimationFrame(tick);
+      else {
+        if (numEl) { numEl.textContent = newXp; setTimeout(function () { numEl.style.color = ''; }, 1200); }
+        if (!fxDone) setTimeout(function () { cardEl.style.borderColor = '#2a3550'; cardEl.style.boxShadow = 'none'; }, 1400);
+      }
+    }
+    requestAnimationFrame(tick);
+    // 🔄 tikras pool likutis iš edge fn (jei lygiagrečiai atkrito naujas mačo XP)
+    setTimeout(function () {
+      if (!_xpState) return;
+      _xpFn({ action: 'status', wallet: _xpState.addr }).then(function (st) {
+        if (st && st.ok && pn && document.body.contains(pn)) { pn.textContent = (st.pool | 0) + ' XP'; if (_xpState) _xpState.pool = st.pool | 0; }
+      }).catch(function () {});
+    }, DUR + 600);
+  }
+  function _xpFlyParticles(fromEl, toEl, n) {
+    try {
+      var fr = fromEl.getBoundingClientRect(), tr = toEl.getBoundingClientRect();
+      var fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2;
+      var tx = tr.left + tr.width / 2, ty = tr.top + tr.height / 2;
+      for (var i = 0; i < n; i++) {
+        (function (i2) {
+          var sp = document.createElement('span');
+          var jx = (Math.random() - 0.5) * 60, jy = (Math.random() - 0.5) * 26;
+          sp.textContent = '✦';
+          sp.style.cssText = 'position:fixed;left:' + (fx + jx) + 'px;top:' + (fy + jy) + 'px;z-index:100070;font-size:' + (11 + Math.random() * 8) + 'px;' +
+            'color:' + (i2 % 3 === 0 ? '#8fffb0' : '#ffd75c') + ';text-shadow:0 0 6px rgba(255,215,92,.8);pointer-events:none;' +
+            'transition:transform .62s cubic-bezier(.3,.7,.2,1),opacity .62s ease;will-change:transform;';
+          document.body.appendChild(sp);
+          setTimeout(function () {
+            sp.style.transform = 'translate(' + (tx - fx - jx + (Math.random() - 0.5) * 30) + 'px,' + (ty - fy - jy + (Math.random() - 0.5) * 20) + 'px) scale(.6)';
+            sp.style.opacity = '0.05';
+          }, 30 + i2 * 45);
+          setTimeout(function () { try { sp.remove(); } catch (_) {} }, 900 + i2 * 45);
+        })(i);
+      }
+    } catch (_) {}
+  }
+  // ── ⬆️ LEVEL UP FX (žalias, kaip F12 on-board): žiedai + kylančios ✦ + banner SLAM + konfeti ──
+  function _xpLevelUpFx(cardEl, lv) {
+    try {
+      cardEl.style.borderColor = '#5ce08a'; cardEl.style.boxShadow = '0 0 26px rgba(92,224,138,.55)';
+      var wrap = cardEl.querySelector('.rb-xp-sprwrap'), img = cardEl.querySelector('.rb-xp-spr');
+      if (img) { img.style.animation = 'none'; void img.offsetWidth; img.style.animation = 'rbPxBigPop .55s cubic-bezier(.2,1,.3,1) both'; }
+      if (wrap) {
+        for (var r = 0; r < 3; r++) {
+          (function (r2) {
+            var ring = document.createElement('div');
+            ring.style.cssText = 'position:absolute;inset:-6px;border:3px solid #5ce08a;border-radius:50%;pointer-events:none;' +
+              'animation:rbPxRing .9s cubic-bezier(.2,.8,.3,1) ' + (r2 * 0.16) + 's both;';
+            wrap.appendChild(ring);
+            setTimeout(function () { try { ring.remove(); } catch (_) {} }, 1600 + r2 * 160);
+          })(r);
+        }
+      }
+      for (var s = 0; s < 7; s++) {
+        (function (s2) {
+          var sp = document.createElement('span');
+          sp.textContent = '✦';
+          sp.style.cssText = 'position:absolute;left:' + (8 + Math.random() * 84) + '%;bottom:6px;z-index:4;font-size:' + (10 + Math.random() * 8) + 'px;' +
+            'color:#8fffb0;text-shadow:0 0 8px rgba(92,224,138,.9);pointer-events:none;animation:rbXpRise 1.15s ease-out ' + (s2 * 0.09) + 's both;';
+          cardEl.appendChild(sp);
+          setTimeout(function () { try { sp.remove(); } catch (_) {} }, 2300);
+        })(s);
+      }
+      var ban = document.createElement('div');
+      ban.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6;pointer-events:none;';
+      ban.innerHTML = '<div style="background:rgba(10,20,12,.92);border:3px solid #5ce08a;box-shadow:0 0 0 2px #000,0 0 24px rgba(92,224,138,.6);' +
+        'padding:10px 18px;font-size:14px;font-weight:800;letter-spacing:2px;color:#8fffb0;text-shadow:1px 1px 0 #000;' +
+        'animation:rbPxBigPop .55s cubic-bezier(.2,1,.3,1) both;">⬆ LEVEL UP! LV ' + (lv | 0) + '</div>';
+      cardEl.appendChild(ban);
+      setTimeout(function () { try { ban.remove(); } catch (_) {} }, 2400);
+      var colors = ['#5ce08a', '#ffd75c', '#8fffb0', '#ffffff'];
+      for (var cix = 0; cix < 26; cix++) {
+        (function (ci) {
+          var cf = document.createElement('span');
+          cf.style.cssText = 'position:absolute;top:-8px;left:' + (Math.random() * 96) + '%;width:' + (3 + Math.random() * 4) + 'px;height:' + (3 + Math.random() * 4) + 'px;' +
+            'background:' + colors[ci % colors.length] + ';z-index:5;pointer-events:none;animation:rbPxConf ' + (1.1 + Math.random() * 0.8) + 's linear ' + (Math.random() * 0.35) + 's both;';
+          cardEl.appendChild(cf);
+          setTimeout(function () { try { cf.remove(); } catch (_) {} }, 2600);
+        })(cix);
+      }
+      setTimeout(function () { cardEl.style.borderColor = '#2a3550'; cardEl.style.boxShadow = 'none'; }, 3200);
+    } catch (_) {}
+  }
+  // 🔧 debug: panelės/animacijų peržiūra konsolėj be mačo (vien vizualai — claim kelias lieka už parašo+tx)
+  try { window._rbXpDebug = { show: _showXpAssign, celebrate: _xpCelebrate, levelFx: _xpLevelUpFx, setReport: function (r) { _xpReport = r; } }; } catch (_) {}
   function _rankStats(addr) {
     var R = String(addr || '').toLowerCase();
     if (!_isAddr(R)) return Promise.resolve(null);
@@ -500,7 +763,13 @@
     var me = p.querySelector('#rb-rank-me'), board = p.querySelector('#rb-rank-board');
     _xpPoolGet(addr).then(function (pool) {   // \u26A1 gyvas XP pool is xpunits_
       var el = p.querySelector('#rb-xp-pool');
-      if (el && document.body.contains(p)) el.innerHTML = '\u26A1 YOUR POOL: <b>' + (pool | 0) + ' XP</b> waiting to be assigned';
+      if (!el || !document.body.contains(p)) return;
+      el.innerHTML = '\u26A1 YOUR POOL: <b>' + (pool | 0) + ' XP</b>' +
+        ((pool | 0) > 0
+          ? ' <button id="rb-xp-assignbtn" style="margin-left:8px;padding:7px 12px;border:2px solid #5ce08a;background:rgba(92,224,138,.14);color:#8fffb0;font-family:inherit;font-size:8px;font-weight:800;cursor:pointer;letter-spacing:1px;">\u26D3 PUT ON A UNIT</button>'
+          : ' waiting to be assigned');
+      var ab = el.querySelector('#rb-xp-assignbtn');
+      if (ab) ab.onclick = function () { _showXpAssign({ standalone: true }); };   // \u26D3 veikia BE gyvo kambario
     });
     _rankStats(addr).then(function (s) {
       if (!document.body.contains(p) || !me) return;
@@ -1350,8 +1619,7 @@
     if (d.wagerAbort) { _status('Stake ' + (d.wagerAbort === 'stake_verify_failed' ? 'verification failed' : 'issue') + ' — refunded. Try again.', true); }
     if (d.wagerPrize) { _wagerWin(d.wagerPrize, d.wagerPot); }
     if (d.rankAnim) { setTimeout(function () { _showRankAnim(d.rankAnim); }, 60); }   // 🎬 reitingo šou IŠKART (žaidimo skydas ranked mače nerodomas)
-    if (d.xpReport) { _xpReport = d.xpReport; }   // 🎖️ rodysim uzdarius rank kortele
-    if (d.xpAssigned) { _onXpAssigned(d.xpAssigned); }
+    if (d.xpReport) { _xpReport = d.xpReport; }   // 🎖️ rodysim uzdarius rank kortele (claim → ⛓ per edge fn, ne per kambarį)
     var st = d.state; _lastState = st;
     if (st && st !== 'challenge') _challengeAck = false;   // paliko challenge būseną → kitą kartą (naujas varžovas) vėl rodom
     if (d.myRoomId != null) _myRoomId = d.myRoomId;   // MANO kambarys → nerodom sąraše (negaliu prisijungti prie savęs)
