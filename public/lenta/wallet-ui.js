@@ -498,7 +498,7 @@
       rbBtnEl.style.background = '#2a1c10';
       if (!rbBtnEl._init) {
         rbBtnEl._init = true;
-        rbBtnEl.innerHTML = `<span style="line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))"><svg viewBox="0 0 18 18" width="26" height="26" style="display:block"><rect x="0" y="4" width="5" height="5" rx="1.3" fill="#c07bff"/><rect x="6" y="4" width="5" height="5" rx="1.3" fill="#c07bff"/><rect x="12" y="4" width="5" height="5" rx="1.3" fill="#c07bff"/><rect x="6" y="10" width="5" height="5" rx="1.3" fill="#c07bff"/></svg></span><span class="wui-home-hint">TETRIS</span>`;
+        rbBtnEl.innerHTML = `<span style="line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))"><svg viewBox="0 0 18 18" width="34" height="34" style="display:block"><rect x="0" y="4" width="5" height="5" rx="1.3" fill="#c07bff"/><rect x="6" y="4" width="5" height="5" rx="1.3" fill="#c07bff"/><rect x="12" y="4" width="5" height="5" rx="1.3" fill="#c07bff"/><rect x="6" y="10" width="5" height="5" rx="1.3" fill="#c07bff"/></svg></span><span class="wui-home-hint">TETRIS</span>`;
         // 🧱 atidaro LOBIO PANELĘ pilyje (BlocksLobby); jei jos nėra — atsarginis senas chooser (RonkeBlocks).
         rbBtnEl.addEventListener('click', () => {
           try {
