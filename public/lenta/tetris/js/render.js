@@ -1328,6 +1328,11 @@
 
     F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.08), U.gold, '#05060c', 2);
     F.outlinedCenter(ctx, 'THESE ARE YOUR CONTROLS', cx, Math.floor(vh * 0.08) + 22, U.dim, '#05060c', 1);
+    /* 🛡️ mažas įspėjimas: per didelis lygų skirtumas → reitingas nekis, bet prizas lieka */
+    if (match._noRankMatch) {
+      F.outlinedCenter(ctx, 'LEVEL GAP TOO BIG', cx, Math.floor(vh * 0.08) + 40, U.danger, '#05060c', 1);
+      F.outlinedCenter(ctx, 'NO RATING THIS GAME - PRIZE STILL COUNTS', cx, Math.floor(vh * 0.08) + 52, U.gold, '#05060c', 1);
+    }
 
     // --- NUPIEŠTI valdymo mygtukai (per vidurį) ---
     function tri(ax, ay, r, kind, color) {
@@ -1688,6 +1693,11 @@
 
     F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.08), U.gold, '#05060c', 2);
     F.outlinedCenter(ctx, 'THESE ARE YOUR CONTROLS', cx, Math.floor(vh * 0.08) + 22, U.dim, '#05060c', 1);
+    /* 🛡️ mažas įspėjimas: per didelis lygų skirtumas → reitingas nekis, bet prizas lieka */
+    if (match._noRankMatch) {
+      F.outlinedCenter(ctx, 'LEVEL GAP TOO BIG', cx, Math.floor(vh * 0.08) + 40, U.danger, '#05060c', 1);
+      F.outlinedCenter(ctx, 'NO RATING THIS GAME - PRIZE STILL COUNTS', cx, Math.floor(vh * 0.08) + 52, U.gold, '#05060c', 1);
+    }
 
     // --- NUPIEŠTI valdymo mygtukai (per vidurį) ---
     function tri(ax, ay, r, kind, color) {

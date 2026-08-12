@@ -819,6 +819,10 @@
     /* 🪪 mačo tapatybės badge'ai (lygos emblema + žmogus/AI avataras + W/L) — serverio tiesa, abiem vienoda */
     this._idYou = (p && p.youLeague != null) ? { league: p.youLeague | 0, ai: !!p.youAi, s: p.youStats || null } : null;
     this._idFoe = (p && p.foeLeague != null) ? { league: p.foeLeague | 0, ai: !!p.foeAi, s: p.foeStats || null } : null;
+    /* 🛡️ per didelis lygų skirtumas (≥2) → serveris reitingo NEkeis (anti-treidingas); prizas VIS TIEK.
+     * Rodom mažą įspėjimą prep ekrane, kad žaidėjas žinotų iš anksto. */
+    this._noRankMatch = !!(this._ranked && this._idYou && this._idFoe &&
+      Math.abs((this._idYou.league | 0) - (this._idFoe.league | 0)) >= 2);
     this.you.reset(this.seed);
     this.foe.reset(this.seed);
     this.you.side = 'you'; this.foe.side = 'foe'; this.foe.isAI = false;

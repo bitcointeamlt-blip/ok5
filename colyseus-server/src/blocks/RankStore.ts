@@ -7,8 +7,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 //
 // LYGOS (8): POPIERIUS→MEDIS→AKMUO→BRONZE→SILVER→AUKSAS→DEIMANTAS→GLOBAL. Kiekviena 3★.
 //   score = lyga*6 + pusžvaigždės (0..6). Startas POPIERIUS 0★ (score 0).
-//   Pergalė +1★ (+2 score) · Pralaimėjimas −½★ (−1) · Laimi prieš AUKŠTESNĘ lygą +2★ (+4) ·
-//   Pralaimi prieš ŽEMESNĘ lygą −2★ (−4). Clamp [0,48].
+//   🛡️ ZERO-SUM pagal lygų skirtumą (žr. _winDelta): laimi prieš lygų +1★ / pralaimi −1★;
+//   prieš aukštesnį iki +2★; prieš 2+ lygos ŽEMESNĮ → 0 (anti-treidingas). Pralaimėtojas praranda
+//   tiek, kiek laimėtojas gauna → susitarę draugai reitingo iš nieko nesukuria. Clamp [0,48].
 //
 // XP (deko NFT unitams, OFF-CHAIN — kaupiama čia, taikoma F9 pusėj vėliau):
 //   POPIERIUS = 50/mačą; nuo MEDIS +10 už kiekvieną PILNĄ žvaigždę (kaupiasi per lygas).
@@ -105,9 +106,25 @@ async function _apply(c: SupabaseClient, wallet: string, won: boolean, deltaHs: 
   });
 }
 
+// 🛡️ ANTI-TREIDINGAS (2026-08-12): laimėtojo score pokytis (pusžvaigždėmis) pagal lygų skirtumą
+//   gap = laimėtojo_lyga − pralaimėtojo_lyga (PRIEŠ mačą). Pralaimėtojas praranda TIKSLIAI −dWin
+//   (zero-sum) → du susitarę draugai gali reitingą PERSKIRSTYTI, bet NE sukurti iš nieko keisdamiesi.
+//     gap ≥ 2 (laimi prieš 2+ lygos ŽEMESNĮ) → 0 → draugas, nusileidęs į dugną, TAVĘS NEBEMAITINA.
+//     gap = 0 (lygus lygis) → +1★ laimi / −1★ pralaimi (buvo +1★/−½★ = pozityvi suma → pumpuojama).
+//   ⚠️ Prieš tai: pergalė VISADA +1★ nepriklausomai nuo oponento → draugas dugne maitino iki GLOBAL.
+function _winDelta(gap: number): number {
+  if (gap <= -2) return 4;   // laimi prieš 2+ lygos AUKŠTESNĮ → +2★ (didelis, bet legit upset)
+  if (gap === -1) return 3;  // laimi prieš 1 lygą aukštesnį → +1½★
+  if (gap === 0) return 2;   // lygus lygis → +1★
+  if (gap === 1) return 1;   // laimi prieš 1 lygą žemesnį → +½★
+  return 0;                  // gap ≥ 2 → 0 reitingo (anti-treidingas)
+}
+
 // ── APPLY RESULT: mačo rezultatas → reitingas + XP. Idempotentiška per roomId. Grąžina naujus būsenas.
 //   winnerAddr/loserAddr — bent vienas gali būti "" (nemokamas mačas be piniginės) → atnaujinam tik esantį.
-//   Cross-league bonusas taikomas TIK jei abu adresai. XP nuo žaidėjo PRIEŠ-mačo lygos (kur „žaidė").
+//   🛡️ Reitingas juda TIK kai ABI pusės su pinigine (cross); anoniminis oponentas (be piniginės —
+//   pvz. draugas 2-am įrenginy be prisijungimo) NEBEGALI maitinti ★ (be jo — tik XP+statistika).
+//   XP nuo žaidėjo PRIEŠ-mačo lygos (kur „žaidė").
 export async function applyResult(winnerAddr: string, loserAddr: string, roomId: string): Promise<{ winner: { before: RankState; after: RankState } | null; loser: { before: RankState; after: RankState } | null } | null> {
   const c = sb(); if (!c || !roomId) return null;
   try {
@@ -119,16 +136,12 @@ export async function applyResult(winnerAddr: string, loserAddr: string, roomId:
   const wPre = wOk ? await get(wA) : null;
   const lPre = lOk ? await get(lA) : null;
   const cross = !!(wPre && lPre);
+  // gap ir zero-sum dWin — TIK kai abi pusės su pinigine; kitaip 0 (score nejuda, tik XP+statistika).
+  const dWin = cross ? _winDelta(wPre!.league - lPre!.league) : 0;
   let winner: RankState | null = null, loser: RankState | null = null;
-  if (wPre) {
-    const dHs = (cross && lPre && wPre.league < lPre.league) ? 4 : 2;   // laimi prieš AUKŠTESNĘ → +2★
-    winner = await _apply(c, wA, true, dHs, rateOf(wPre.score));
-  }
-  if (lPre) {
-    const dHs = (cross && wPre && lPre.league > wPre.league) ? -4 : -1; // pralaimi prieš ŽEMESNĘ → −2★
-    loser = await _apply(c, lA, false, dHs, rateOf(lPre.score));
-  }
-  if (wPre || lPre) console.log(`[RankStore] 🏅 room=${roomId} W=${wA.slice(0, 8)}…(${winner ? winner.name + " " + winner.stars + "★ +" + rateOf(wPre!.score) + "xp" : "—"}) L=${lA.slice(0, 8)}…(${loser ? loser.name + " " + loser.stars + "★" : "—"})`);
+  if (wPre) winner = await _apply(c, wA, true, dWin, rateOf(wPre.score));
+  if (lPre) loser = await _apply(c, lA, false, -dWin, rateOf(lPre.score));
+  if (wPre || lPre) console.log(`[RankStore] 🏅 room=${roomId} gap=${cross ? wPre!.league - lPre!.league : "—"} d=${dWin / 2}★ W=${wA.slice(0, 8)}…(${winner ? winner.name + " " + winner.stars + "★ +" + rateOf(wPre!.score) + "xp" : "—"}) L=${lA.slice(0, 8)}…(${loser ? loser.name + " " + loser.stars + "★" : "—"})`);
   // 🎬 before/after — kliento rank animacijai (žvaigždučių pokytis, promotion/demotion)
   return {
     winner: (winner && wPre) ? { before: wPre, after: winner } : null,
