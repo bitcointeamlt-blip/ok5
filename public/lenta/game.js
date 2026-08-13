@@ -11202,16 +11202,17 @@ function _f9MinePanelStats() {
       : sl === 'TOP 25%' ? { e: '🥉', c: '#d4a06a', b: '#7a5a3a' }
       : sl === 'TOP 50%' ? { e: '⭐', c: '#8fd88a', b: '#3a6a3a' } : null;
     // 08-13 user (variantas A): JOKIŲ angliškų sakinių — tik trumpos etiketės: RONKE SCORE · [tier pill] · MINING x1.5
+    // 08-13 user: tolygūs tarpai (space-between), didesnis šriftas (12px), ronke logo vietoj 🏆
+    const _rlogo = '<img src="assets_tiny/ronke_logo.png" alt="" style="width:17px;height:17px;image-rendering:pixelated;vertical-align:middle;margin-right:7px;"/>';
     if (sm > 1 && TIER) {
-      // 08-13 user: tolygūs tarpai — space-between paskirsto 3 elementus lygiai, visi 10px/1px spacing
-      scoreRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:10px 13px;border-radius:7px;border:1px solid #3a3a55;background:linear-gradient(180deg,#14182a,#0a0c18);">' +
-        '<span style="font-size:10px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">🏆 RONKE SCORE</span>' +
-        '<span style="font-size:10px;letter-spacing:1px;color:' + TIER.c + ';border:1px solid ' + TIER.b + ';border-radius:5px;padding:4px 10px;background:rgba(255,255,255,0.03);white-space:nowrap;">' + TIER.e + ' ' + sl + '</span>' +
-        '<span style="font-size:10px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">MINING <b style="color:#6fcf5c;">x' + sm + '</b></span></div>';
+      scoreRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:12px 15px;border-radius:7px;border:1px solid #3a3a55;background:linear-gradient(180deg,#14182a,#0a0c18);">' +
+        '<span style="display:flex;align-items:center;font-size:12px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">' + _rlogo + 'RONKE SCORE</span>' +
+        '<span style="font-size:12px;letter-spacing:1px;color:' + TIER.c + ';border:1px solid ' + TIER.b + ';border-radius:5px;padding:5px 12px;background:rgba(255,255,255,0.03);white-space:nowrap;">' + TIER.e + ' ' + sl + '</span>' +
+        '<span style="font-size:12px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">MINING <b style="color:#6fcf5c;">x' + sm + '</b></span></div>';
     } else {
-      scoreRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);">' +
-        '<span style="font-size:9px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">🏆 RONKE SCORE</span>' +
-        '<span style="font-size:9px;color:#6a7a8a;white-space:nowrap;">HOLD $RONKE → MINING UP TO <b style="color:#6fcf5c;">x1.5</b></span></div>';
+      scoreRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:11px 15px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);">' +
+        '<span style="display:flex;align-items:center;font-size:11px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">' + _rlogo + 'RONKE SCORE</span>' +
+        '<span style="font-size:10px;color:#6a7a8a;white-space:nowrap;">HOLD $RONKE → MINING UP TO <b style="color:#6fcf5c;">x1.5</b></span></div>';
     }
   } catch (_) {}
   const body = _f9MinePanelEl.querySelector('#f9mine-body');
