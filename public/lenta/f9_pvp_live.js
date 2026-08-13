@@ -1370,6 +1370,7 @@
         dutyOnlineMult: (typeof e.dutyOnlineMult === 'number' ? e.dutyOnlineMult : 2), dutySafeMult: (typeof e.dutySafeMult === 'number' ? e.dutySafeMult : 1.2),
         dutyOnlineBase: (typeof e.dutyOnlineBase === 'number' ? e.dutyOnlineBase : 10), dutySafeBase: (typeof e.dutySafeBase === 'number' ? e.dutySafeBase : 5),   // 🏁 flat bazės
         mineEligible: (typeof e.mineEligible === 'boolean' ? e.mineEligible : null), mineField: (typeof e.mineField === 'number' ? e.mineField : null), mineRules: e.mineRules || null,   // ⛏️ LAUKO-gate (kasimo eligibility = unitai ant lauko, ne dekas)
+        smult: (typeof e.smult === 'number' ? e.smult : 1), stier: e.stier || '', sscore: (typeof e.sscore === 'number' ? e.sscore : 0),   // 🏆 Ronke Score kasimo bonusas (08-13)
         at: Date.now() };
       // ⛏️💰 SERVER-AUTHORITATIVE mining: kai serveris siunčia mpot → nustatom _f9Mine (clientOnly:false → STOJA client accrual)
       try {

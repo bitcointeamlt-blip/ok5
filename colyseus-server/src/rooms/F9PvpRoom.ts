@@ -5,6 +5,7 @@ import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { blessStatus, blessClaim, blessConsume, blessCredit } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { scoreTierCached } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
 import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
 import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
@@ -2039,7 +2040,10 @@ export class F9PvpRoom extends Room<F9State> {
     const base = (c && c.duty === "safe") ? MINE_SAFE_BASE_H : MINE_DUTY_BASE_H;
     const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250 (0.05/pt, virš 250 ×0.25)
     const shielded = addr === this._ownerAddr && (Number((this._buildings as any)?.shieldUntil) || 0) > Date.now();
-    return (base + powerTerm) * (shielded ? 0.5 : 1);   // 🛡 skydas kol aktyvus → ×0.5
+    // 🏆 Ronke Score lojalumo daugiklis (08-13): top 1% ×1.5 · 5% ×1.25 · 10% ×1.15 · 25% ×1.10 · 50% ×1.05.
+    //   Kešuota+fail-open (API triktis → ×1.0). Kasimas, ne kova — nedubliuoja Ronke Power.
+    const scoreMult = scoreTierCached(addr).mult;
+    return (base + powerTerm) * (shielded ? 0.5 : 1) * scoreMult;   // 🛡 skydas kol aktyvus → ×0.5
   }
   // Gyva rate (kambario state) — patikima TIK kai unitai spawninti (phase='playing').
   private _mineRate(addr: string): number {
@@ -2161,6 +2165,8 @@ export class F9PvpRoom extends Room<F9State> {
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
       dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
       mineEligible: this._mineEligible(addr, this._mineFieldStored(addr)), mineField: this._mineFieldStored(addr),   // 🏁 MINING gate = LAUKO unitai (online → gyvas mfield; offline → snapshot−sužaloti, kaip mrate)
+      // 🏆 Ronke Score kasimo bonusas (08-13): smult=daugiklis, stier=etiketė („TOP 1%"), sscore=score — UI badge'ui
+      smult: scoreTierCached(addr).mult, stier: scoreTierCached(addr).label, sscore: scoreTierCached(addr).score,
       rules: { aRv: CEM_REQ_A_RV, aReg: CEM_REQ_A_REG, bReg: CEM_REQ_B_REG, bWallet: CEM_REQ_B_WALLET },
       mineRules: { aRv: CEM_REQ_A_RV, aField: MINE_FIELD_REQ_A, bField: MINE_FIELD_REQ_B, bWallet: CEM_REQ_B_WALLET },   // ⛏️ kasimo lauko-gate ribos (klientas rodo „onField / 12")
       now: Date.now(),

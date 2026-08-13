@@ -11054,6 +11054,8 @@ function _f9MineData() {
     mineEligible: (c && typeof c.mineEligible === 'boolean') ? c.mineEligible : null,      // serverio lauko-gate rezultatas (null = sena payload → fallback)
     mineField: (c && typeof c.mineField === 'number') ? c.mineField : ((c && typeof c.onField === 'number') ? c.onField : null),   // unitai ant lauko (gate bazė)
     mineRules: (c && c.mineRules) || null,                                                 // { aRv, aField, bField, bWallet }
+    // 🏆 Ronke Score kasimo bonusas (08-13): smult jau įskaičiuotas į serverio rate; čia — badge'ui
+    smult: (c && typeof c.smult === 'number') ? c.smult : 1, stier: (c && c.stier) || '', sscore: (c && typeof c.sscore === 'number') ? c.sscore : 0,
   };
 }
 // ⛏️💀 100% pilies wipe → nuima pct (0.5) nuo KLIENTO mining pot. VIENKART per `at` signalą (offline-safe:
@@ -11189,9 +11191,40 @@ function _f9MinePanelStats() {
   } else {
     dutyInfo = '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">🟢 Faster mining + raidable — no mining limit, mine freely. But raiders steal 50% of un-withdrawn RONKE if they beat you.</div>';
   }
+  // 🏆 RONKE SCORE eilutė (08-13 user): KIEKVIENAS jaučiasi RONKE bendruomenės dalimi — visi tier'ai gauna
+  //   badge su kasimo bonusu; 💎 DIAMOND (top 1%) — VIENINTELIS su animuotu blizgesiu; be tier'o — kvietimas.
+  let scoreRow = '';
+  try {
+    if (!document.getElementById('f9-score-fx')) {
+      const stx = document.createElement('style'); stx.id = 'f9-score-fx';
+      stx.textContent = '@keyframes f9diaShine{0%{background-position:-200% 0;}100%{background-position:200% 0;}}@keyframes f9diaPulse{0%,100%{box-shadow:0 0 10px rgba(130,220,255,0.35),inset 0 0 10px rgba(130,220,255,0.12);}50%{box-shadow:0 0 22px rgba(130,220,255,0.75),inset 0 0 16px rgba(130,220,255,0.3);}}';
+      document.head.appendChild(stx);
+    }
+    const sm = d.smult || 1, sl = d.stier || '', sc0 = d.sscore || 0;
+    const TIER = sl === 'TOP 1%' ? { e: '💎', n: 'DIAMOND', c: '#aee6ff', b: '#4aa6c8' }
+      : sl === 'TOP 5%' ? { e: '🥇', n: 'GOLD', c: '#ffcf5c', b: '#7a5a1e' }
+      : sl === 'TOP 10%' ? { e: '🥈', n: 'SILVER', c: '#c9d4e8', b: '#5a6a85' }
+      : sl === 'TOP 25%' ? { e: '🥉', n: 'BRONZE', c: '#d4a06a', b: '#7a5a3a' }
+      : sl === 'TOP 50%' ? { e: '⭐', n: 'HOLDER', c: '#8fd88a', b: '#3a6a3a' } : null;
+    if (sm > 1 && TIER) {
+      const dia = sl === 'TOP 1%';
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:10px 13px;border-radius:7px;border:2px solid ' + TIER.b + ';' +
+        (dia ? 'background:linear-gradient(110deg,#14182a 30%,rgba(160,230,255,0.28) 50%,#14182a 70%);background-size:200% 100%;animation:f9diaShine 2.6s linear infinite,f9diaPulse 2.6s ease-in-out infinite;'
+             : 'background:linear-gradient(180deg,#14182a,#0a0c18);') + '">' +
+        '<span style="font-size:18px;">' + TIER.e + '</span>' +
+        '<span style="flex:1;font-size:9px;line-height:1.7;color:' + TIER.c + ';"><b style="letter-spacing:1px;">RONKE SCORE ' + sc0 + ' — ' + TIER.n + ' (' + sl + ')</b><br>' +
+        '<span style="color:#9ab0c8;">Part of the RONKE community — your loyalty pays extra mining</span></span>' +
+        '<span style="font-size:14px;color:' + TIER.c + ';white-space:nowrap;' + (dia ? 'text-shadow:0 0 12px rgba(160,230,255,0.9);' : '') + '">×' + sm + '</span></div>';
+    } else if (sc0 > 0) {
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:8px;line-height:1.6;color:#8a9aaa;"><b style="color:#c9d4e8;">RONKE SCORE ' + sc0 + '</b> — you\'re part of the RONKE community! Reach <b>TOP 50%</b> (hold $RONKE &amp; Ronkeverse) to unlock a mining bonus up to <b style="color:#aee6ff;">×1.5</b>.</span></div>';
+    } else {
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:8px;line-height:1.6;color:#8a9aaa;"><b style="color:#c9d4e8;">RONKE SCORE</b> — hold $RONKE &amp; Ronkeverse NFTs to join the community ranks and mine up to <b style="color:#aee6ff;">×1.5</b> faster.</span></div>';
+    }
+  } catch (_) {}
   const body = _f9MinePanelEl.querySelector('#f9mine-body');
   if (body) {
     body.innerHTML =
+      scoreRow +
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.duty === 'safe' ? (full ? '🗡 SIEGE REQUIRED' : 'next siege @ ' + d.cap) : (full ? '⛏️ at backstop — withdraw' : '🟢 no siege limit')) + '</div></div>' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (mineElig ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (mineElig ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (!mineElig ? '⚔ ' + fieldN + ' / ' + MR.aField + ' units on field' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power'))) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
