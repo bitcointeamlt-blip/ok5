@@ -1310,13 +1310,13 @@
     room.onMessage('insta_heal_fail', function (e) {
       if (e && e.insta) window._f9HospInsta = e.insta;
       var r = (e && e.reason) || '';
-      var msg = r === 'no_bless' ? 'No RonkeChoco — claim daily or buy from other players'
+      var msg = r === 'no_bless' ? 'No BLESS items — claim daily or buy from other players'
         : r === 'no_nft' ? 'Hold a Ronkeverse NFT to unlock instant heals'
         : r === 'no_charges' ? 'No Ronke Bless charges left today'
         : r === 'raid' ? 'Cannot instant-heal during a raid'
         : r === 'stale' ? 'That unit is from an old deck — not in your current deck'
         : 'Cannot instant-heal right now';
-      try { if (window.showGameNotification) window.showGameNotification('🍫 RONKECHOCO', msg, '#e85d5d'); } catch (_) {}
+      try { if (window.showGameNotification) window.showGameNotification('🔵 RONKE BLESS', msg, '#e85d5d'); } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
     // ⚡🎒 BLESS CLAIM rezultatas (08-13) — paros itemų emisija įskaityta į balansą
@@ -1324,10 +1324,10 @@
       if (e && e.insta) window._f9HospInsta = e.insta;
       try {
         if (window.showGameNotification) {
-          if (e && e.ok) window.showGameNotification('🍫 RONKECHOCO CLAIMED', '+' + (e.credited || 0) + ' RonkeChoco added to your stash!', '#7fdfea');
-          else if (e && e.reason === 'no_nft') window.showGameNotification('🍫 RONKECHOCO', 'Hold a Ronkeverse NFT to claim daily RonkeChoco', '#e85d5d');
-          else if (e && e.reason === 'nothing_to_claim') window.showGameNotification('🍫 RONKECHOCO', 'Nothing to claim yet — come back later', '#8a9aaa');
-          else window.showGameNotification('🍫 RONKECHOCO', 'Claim failed — try again', '#e85d5d');
+          if (e && e.ok) window.showGameNotification('⚡ BLESS CLAIMED', '+' + (e.credited || 0) + ' BLESS item' + ((e.credited || 0) > 1 ? 's' : '') + ' added to your stash!', '#7fdfea');
+          else if (e && e.reason === 'no_nft') window.showGameNotification('⚡ BLESS', 'Hold a Ronkeverse NFT to claim daily BLESS', '#e85d5d');
+          else if (e && e.reason === 'nothing_to_claim') window.showGameNotification('⚡ BLESS', 'Nothing to claim yet — come back later', '#8a9aaa');
+          else window.showGameNotification('⚡ BLESS', 'Claim failed — try again', '#e85d5d');
         }
       } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
