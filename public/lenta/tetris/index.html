@@ -36,7 +36,7 @@
   #touchpad {
     position: fixed; left: 0; right: 0; bottom: 0;
     display: none;
-    justify-content: space-between;
+    justify-content: flex-end;   /* abu mygtukai dešinėje pusėje */
     flex-wrap: wrap;   /* siauram ekranui: geriau dvi eilės negu nukirpti mygtukai */
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
     gap: 8px;
@@ -64,10 +64,9 @@
 </div>
 
 <div id="touchpad">
+  <!-- 08-13: abu mygtukai DEŠINĖJE (user prašymas) — ROTATE pirmas, DROP šalia -->
   <div class="grp">
     <button data-act="cw" class="wide">&#8635; ROTATE</button>
-  </div>
-  <div class="grp">
     <button data-act="hard" class="wide">DROP &#9660;</button>
   </div>
 </div>
