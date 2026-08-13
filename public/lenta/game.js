@@ -11204,8 +11204,8 @@ function _f9MinePanelStats() {
     if (sm > 1 && TIER) {
       // 08-13 user: paprastas vienos eilutės užrašas — „Ronke Score Top 1% — 1.5x mining power". Statinis.
       scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:10px 13px;border-radius:7px;border:2px solid ' + TIER.b + ';background:linear-gradient(180deg,#14182a,#0a0c18);">' +
-        '<span style="font-size:16px;">' + TIER.e + '</span>' +
-        '<span style="flex:1;font-size:10px;letter-spacing:0.5px;color:' + TIER.c + ';">Ronke Score ' + sl.charAt(0) + sl.slice(1).toLowerCase() + ' — <b style="color:#6fcf5c;">x' + sm + ' mining power</b></span></div>';
+        '<span style="font-size:19px;">' + TIER.e + '</span>' +
+        '<span style="flex:1;font-size:12px;letter-spacing:0.5px;color:' + TIER.c + ';">Ronke Score ' + sl.charAt(0) + sl.slice(1).toLowerCase() + ' — <b style="color:#6fcf5c;">x' + sm + ' mining power</b></span></div>';
     } else if (sc0 > 0) {
       scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:9px;color:#8a9aaa;">Ronke Score — reach <b style="color:#c9d4e8;">Top 50%</b> to boost your mining power</span></div>';
     } else {
@@ -11361,8 +11361,7 @@ function _f9ToggleMinePanel() {
       '<span id="f9mine-counter" style="font-size:11px;color:#d49a2a;padding:5px 12px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:5px;"></span>' +
       '<button id="f9mine-x" style="background:none;border:none;color:#8a9aaa;font-size:24px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
-    '<div style="font-size:10px;color:#8a9aaa;margin-bottom:14px;letter-spacing:0.5px;line-height:1.5;">Passive RONKE mining — speed scales with Ronke Power, for a defended castle</div>' +
-    '<div id="f9mine-body"></div>' +
+    '<div id="f9mine-body" style="margin-top:6px;"></div>' +
     '<div style="display:flex;margin-top:12px;"><button id="f9mine-claim" disabled></button></div>';
   ov.appendChild(el);
   document.body.appendChild(ov);
