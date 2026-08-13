@@ -257,9 +257,21 @@ const MINE_POWER_KNEE = Number(process.env.F9_MINE_POWER_KNEE) || 250;
 const MINE_POWER_KNEE_MULT = Number(process.env.F9_MINE_POWER_KNEE_MULT) || 0.25;   // 07-13 user: 0.5→0.25 (virš 250 power augimas dar perpus mažesnis)
 const RONKEVERSE_ADDR = "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
 const BARRACKS_ADDR = "0xccf604511c5d2b5c3fd61adfba3950d0d2890862";
-const RONIN_RPC = process.env.RONIN_RPC || "https://ronin.gateway.tenderly.co";   // ⚡ 08-05: tenderly (drpc meta batch-3/500)
+// ⚡ 08-13 FIX: tenderly public ėmė agresyviai rate-limit'inti (-32005 net pavienėms užklausoms) → chainCounts
+//   krisdavo 3/3 → rv=0 → BLESS 0 visiems (fail-closed). Vieno RPC nebeužtenka — fallback sąrašas, kiekvienas
+//   retry eina per KITĄ endpointą. env RONIN_RPC (jei nustatytas) lieka pirmas.
+const RONIN_RPCS: string[] = Array.from(new Set([
+  ...(process.env.RONIN_RPC ? [process.env.RONIN_RPC] : []),
+  "https://ronin.gateway.tenderly.co",
+  "https://api.roninchain.com/rpc",
+]));
 // On-chain balansų patikra (RonkeVerse + Barracks balanceOf) — kešuojama 10 min; RPC fail → null (fallback į persisted).
-let _chainProvider: any = null;
+const _chainProviders: any[] = [];
+function _chainProv(i: number): any {
+  const k = i % RONIN_RPCS.length;
+  if (!_chainProviders[k]) _chainProviders[k] = new ethers.JsonRpcProvider(RONIN_RPCS[k], 2020, { staticNetwork: true, batchMaxCount: 1 });   // batchMaxCount:1 → nebatch'ina (free planų limitai)
+  return _chainProviders[k];
+}
 const _chainCache = new Map<string, { rv: number; wallet: number; at: number }>();
 async function chainCounts(addr: string): Promise<{ rv: number; wallet: number } | null> {
   if (process.env.F9_CEM_FAKE_RV != null || process.env.F9_CEM_FAKE_WALLET != null) {   // testų override
@@ -267,20 +279,21 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
   }
   const hit = _chainCache.get(addr);
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit;
-  if (!_chainProvider) _chainProvider = new ethers.JsonRpcProvider(RONIN_RPC, 2020, { staticNetwork: true, batchMaxCount: 1 });   // batchMaxCount:1 → nebatch'ina (drpc/free limitas 3)
   const abi = ["function balanceOf(address) view returns (uint256)"];
-  const rvC = new ethers.Contract(RONKEVERSE_ADDR, abi, _chainProvider);
-  const brC = new ethers.Contract(BARRACKS_ADDR, abi, _chainProvider);
   // 🔁 RETRY (2026-07-04): flaky Ronin RPC — 1 nepavykęs balanceOf palikdavo PASENUSĮ cemWallet (pvz. 69 vietoj
   //   realaus 702), nes caller'is prie null palieka seną reikšmę. 3 bandymai su backoff → realus skaičius patikimai praeina.
+  //   08-13: kiekvienas bandymas per KITĄ RPC (rotacija) — vienas užlimituotas endpointas nebenulinės BLESS/cemetery.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      const prov = _chainProv(attempt);
+      const rvC = new ethers.Contract(RONKEVERSE_ADDR, abi, prov);
+      const brC = new ethers.Contract(BARRACKS_ADDR, abi, prov);
       const [rv, wallet] = await Promise.all([rvC.balanceOf(addr), brC.balanceOf(addr)]);
       const out = { rv: Number(rv), wallet: Number(wallet), at: Date.now() };
       _chainCache.set(addr, out);
       return out;
     } catch (e: any) {
-      if (attempt === 2) { console.warn(`[F9PvpRoom] chainCounts fail ${addr.slice(0, 10)}… (3 bandymai):`, e?.message); return null; }
+      if (attempt === 2) { console.warn(`[F9PvpRoom] chainCounts fail ${addr.slice(0, 10)}… (3 bandymai, ${RONIN_RPCS.length} RPC):`, e?.message); return null; }
       await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));   // 0.4s → 0.8s backoff
     }
   }

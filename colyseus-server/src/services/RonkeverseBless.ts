@@ -5,7 +5,14 @@ import { ethers } from "ethers";
 //   52 official (metadata Special="1/1") + 107 (Special="Community 1/1"). Sąrašas iš full metadata skano 2026-07-19.
 //   Skanas: ownerOf(159) periodiškai (30 min) → holder→count kešas. count1of1(addr) = kiek 1/1 laiko tas adresas.
 const RONKEVERSE_ADDR = "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";
-const RPC = process.env.RONIN_RPC || "https://ronin.drpc.org";
+// ⚡ 08-13 FIX: default buvo ronin.drpc.org — MIRĘS („Temporary internal error") → 1/1 skanas tyliai 0/159 →
+//   1/1 holderiai negaudavo ×10 bonuso. Fallback sąrašas: api.roninchain pirmas (atlaiko sekvencinį skaną),
+//   tenderly atsarginis (public gateway dabar agresyviai rate-limit'ina). env RONIN_RPC (jei yra) — pirmas.
+const RPCS: string[] = Array.from(new Set([
+  ...(process.env.RONIN_RPC ? [process.env.RONIN_RPC] : []),
+  "https://api.roninchain.com/rpc",
+  "https://ronin.gateway.tenderly.co",
+]));
 export const BLESS_PER_1OF1 = Number(process.env.F9_BLESS_PER_1OF1 || 10);   // charge už 1 laikomą „1/1"
 
 // 159 „1/1" Ronkeverse tokenId'ai (52 official + 107 community).
@@ -27,19 +34,24 @@ const REFRESH_MS = 30 * 60 * 1000;   // holder kešas šviežinamas kas 30 min
 let _holders = new Map<string, number>();   // addr(lower) → kiek „1/1" laiko
 let _at = 0;
 let _refreshing: Promise<void> | null = null;
-let _provider: ethers.JsonRpcProvider | null = null;
+const _providers: ethers.JsonRpcProvider[] = [];
+function _prov(i: number): ethers.JsonRpcProvider {
+  const k = i % RPCS.length;
+  if (!_providers[k]) _providers[k] = new ethers.JsonRpcProvider(RPCS[k], 2020, { staticNetwork: true, batchMaxCount: 1 });
+  return _providers[k];
+}
 
 async function _doRefresh(): Promise<void> {
-  if (!_provider) _provider = new ethers.JsonRpcProvider(RPC);
-  const c = new ethers.Contract(RONKEVERSE_ADDR, ["function ownerOf(uint256) view returns (address)"], _provider);
+  const abi = ["function ownerOf(uint256) view returns (address)"];
   const map = new Map<string, number>();
   let ok = 0;
   for (const id of ONE_OF_ONE_IDS) {
     let got = false;
-    for (let a = 0; a < 2 && !got; a++) {
-      try { const o = String(await c.ownerOf(id)).toLowerCase(); map.set(o, (map.get(o) || 0) + 1); got = true; ok++; }
+    for (let a = 0; a < 2 && !got; a++) {   // retry per KITĄ RPC (rotacija)
+      try { const c = new ethers.Contract(RONKEVERSE_ADDR, abi, _prov(a)); const o = String(await c.ownerOf(id)).toLowerCase(); map.set(o, (map.get(o) || 0) + 1); got = true; ok++; }
       catch { if (a === 0) await new Promise((r) => setTimeout(r, 250)); }
     }
+    await new Promise((r) => setTimeout(r, 150));   // ⏱ 08-13 pacing: 159 užklausų be pauzės užlimituodavo VISĄ endpointą (kentėjo ir chainCounts) → ~24s skanas kas 30min OK
   }
   // Priimam kešą tik jei ≥60% ownerOf pavyko (kitaip RPC glitch nurašytų holderius → prarastų bonusą).
   if (ok >= ONE_OF_ONE_IDS.length * 0.6) { _holders = map; _at = Date.now(); }
