@@ -11197,7 +11197,7 @@ function _f9MinePanelStats() {
   try {
     if (!document.getElementById('f9-score-fx')) {
       const stx = document.createElement('style'); stx.id = 'f9-score-fx';
-      stx.textContent = '@keyframes f9diaShine{0%{background-position:-200% 0;}100%{background-position:200% 0;}}@keyframes f9diaPulse{0%,100%{box-shadow:0 0 10px rgba(130,220,255,0.35),inset 0 0 10px rgba(130,220,255,0.12);}50%{box-shadow:0 0 22px rgba(130,220,255,0.75),inset 0 0 16px rgba(130,220,255,0.3);}}';
+      stx.textContent = '@keyframes f9diaShine{0%{background-position:-250% 0;}100%{background-position:250% 0;}}';
       document.head.appendChild(stx);
     }
     const sm = d.smult || 1, sl = d.stier || '', sc0 = d.sscore || 0;
@@ -11208,13 +11208,14 @@ function _f9MinePanelStats() {
       : sl === 'TOP 50%' ? { e: '⭐', n: 'HOLDER', c: '#8fd88a', b: '#3a6a3a' } : null;
     if (sm > 1 && TIER) {
       const dia = sl === 'TOP 1%';
-      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:10px 13px;border-radius:7px;border:2px solid ' + TIER.b + ';' +
-        (dia ? 'background:linear-gradient(110deg,#14182a 30%,rgba(160,230,255,0.28) 50%,#14182a 70%);background-size:200% 100%;animation:f9diaShine 2.6s linear infinite,f9diaPulse 2.6s ease-in-out infinite;'
-             : 'background:linear-gradient(180deg,#14182a,#0a0c18);') + '">' +
-        '<span style="font-size:18px;">' + TIER.e + '</span>' +
-        '<span style="flex:1;font-size:9px;line-height:1.7;color:' + TIER.c + ';"><b style="letter-spacing:1px;">RONKE SCORE ' + sc0 + ' — ' + TIER.n + ' (' + sl + ')</b><br>' +
-        '<span style="color:#9ab0c8;">Part of the RONKE community — your loyalty pays extra mining</span></span>' +
-        '<span style="font-size:14px;color:' + TIER.c + ';white-space:nowrap;' + (dia ? 'text-shadow:0 0 12px rgba(160,230,255,0.9);' : '') + '">×' + sm + '</span></div>';
+      // Ramus dizainas (08-13 user „per daug blizga"): plonas rėmelis, be pulsavimo; deimantui — tik
+      //   vos matomas lėtas šviesos perbėgimas (10% opacity, kas 5.5s).
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:9px 12px;border-radius:7px;border:1px solid ' + TIER.b + ';background:linear-gradient(180deg,#131828,#0b0e1a);position:relative;overflow:hidden;">' +
+        (dia ? '<div style="position:absolute;inset:0;background:linear-gradient(110deg,transparent 42%,rgba(170,230,255,0.10) 50%,transparent 58%);background-size:250% 100%;animation:f9diaShine 5.5s linear infinite;pointer-events:none;"></div>' : '') +
+        '<span style="font-size:14px;">' + TIER.e + '</span>' +
+        '<span style="flex:1;font-size:8px;line-height:1.7;color:#c9d4e8;"><b style="letter-spacing:0.5px;">RONKE SCORE ' + sc0 + '</b> · <span style="color:' + TIER.c + ';">' + TIER.n + ' ' + sl + '</span><br>' +
+        '<span style="font-size:7px;color:#7a8aa0;">Part of the RONKE community — loyalty bonus applied to mining</span></span>' +
+        '<span style="font-size:12px;color:' + TIER.c + ';white-space:nowrap;">×' + sm + '</span></div>';
     } else if (sc0 > 0) {
       scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:8px;line-height:1.6;color:#8a9aaa;"><b style="color:#c9d4e8;">RONKE SCORE ' + sc0 + '</b> — you\'re part of the RONKE community! Reach <b>TOP 50%</b> (hold $RONKE &amp; Ronkeverse) to unlock a mining bonus up to <b style="color:#aee6ff;">×1.5</b>.</span></div>';
     } else {
