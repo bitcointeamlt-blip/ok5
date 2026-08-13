@@ -37,23 +37,26 @@
     position: fixed; left: 0; right: 0; bottom: 0;
     display: none;
     justify-content: space-between;
+    flex-wrap: wrap;   /* siauram ekranui: geriau dvi eilės negu nukirpti mygtukai */
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
     gap: 8px;
     z-index: 5;
     pointer-events: none;
   }
-  #touchpad .grp { display: flex; gap: 8px; pointer-events: auto; }
+  #touchpad .grp { display: flex; gap: 10px; pointer-events: auto; }
   #touchpad button {
-    min-width: 54px; height: 52px;
+    /* 08-13 rb97_swipe: liko tik 2 mygtukai (ROTATE + DROP) — judėjimas per SWIPE ant ekrano,
+       todėl mygtukai dideli, kampuose, o vidurys laisvas pirštui braukti. */
+    min-width: clamp(56px, 8vw, 68px); height: 74px;
     background: rgba(28,33,52,0.86);
     border: 1px solid #2a3050;
-    border-radius: 8px;
+    border-radius: 10px;
     color: #cdd6f4;
-    font: 600 15px/1 ui-monospace, monospace;
-    padding: 0 10px;
+    font: 600 19px/1 ui-monospace, monospace;
+    padding: 0 12px;
   }
   #touchpad button.on { background: #3a4372; border-color: #f5c96b; color: #f5c96b; }
-  #touchpad button.wide { min-width: 78px; }
+  #touchpad button.wide { min-width: clamp(110px, 30vw, 170px); }
 </style>
 
 <div id="wrap">
@@ -62,17 +65,10 @@
 
 <div id="touchpad">
   <div class="grp">
-    <button data-act="left">&#9664;</button>
-    <button data-act="softdrop">&#9660;</button>
-    <button data-act="right">&#9654;</button>
+    <button data-act="cw" class="wide">&#8635; ROTATE</button>
   </div>
   <div class="grp">
-    <button data-act="ccw">&#8630;</button>
-    <button data-act="cw">&#8631;</button>
-    <button data-act="hold">HOLD</button>
-    <button data-act="hard" class="wide">DROP</button>
-    <button data-act="start" data-meta>OK</button>
-    <button data-act="fullscreen" data-meta>&#9974;</button>
+    <button data-act="hard" class="wide">DROP &#9660;</button>
   </div>
 </div>
 
@@ -89,10 +85,10 @@
 <script src="js/audio.js?v=rb30_platform"></script>
 <script src="js/fx.js?v=rb93_slam"></script>
 <script src="js/units.js?v=rb30_platform"></script>
-<script src="js/render.js?v=rb96_notrade"></script>
-<script src="js/input.js?v=rb30_platform"></script>
+<script src="js/render.js?v=rb97_swipe"></script>
+<script src="js/input.js?v=rb97_swipe"></script>
 <script src="../colyseus.browser.js"></script>
 <script src="js/net.js?v=rb45_serverauth"></script>
 <script src="js/mockserver.js?v=rb31_online"></script>
 <script src="js/match.js?v=rb96_notrade"></script>
-<script src="js/main.js?v=rb95_mobresume"></script>
+<script src="js/main.js?v=rb97_swipe"></script>

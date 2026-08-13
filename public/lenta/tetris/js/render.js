@@ -1361,6 +1361,17 @@
     }
     var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
     var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
+    /* 📱 rb97_swipe: touch įrenginyje valdymas kitas — SWIPE judina figūrą, mygtukai tik ROTATE+DROP,
+     * tad vietoj klaviatūros rodom swipe instrukciją (rodyklės užsidega braukiant, kaip klavišai). */
+    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
+    if (isTouch) {
+      var onL = actKey === 'left', onR = actKey === 'right';
+      tri(cx - 84, midy + 4, 13, 'left', onL ? '#ffffff' : '#ffcf5c');
+      tri(cx + 84, midy + 4, 13, 'right', onR ? '#ffffff' : '#ffcf5c');
+      F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, midy - 2, U.gold, '#05060c', 2);
+      F.outlinedCenter(ctx, 'SLIDE FINGER ON SCREEN - PIECE FOLLOWS', cx, midy + 24, U.text, '#05060c', 1);
+      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 40, U.dim, '#05060c', 1);
+    } else {
     keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
     keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
     keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
@@ -1377,6 +1388,7 @@
     if (spOn) frame(ctx, sbx - 1, sby - 1, sbw + 2, sbh + 2, '#ffcf5c');
     F.outlinedCenter(ctx, 'SPACE', sbx + Math.floor(sbw / 2), sby + Math.floor(sbh / 2) - 3, spOn ? '#241a08' : '#ffcf5c', spOn ? '#ffcf5c' : '#05060c', 1);
     F.outlinedCenter(ctx, 'FAST DROP', sbx + Math.floor(sbw / 2), sby + sbh + 4, U.dim, '#05060c', 1);
+    }
 
     // --- READY + laikmatis + varžovo būsena (apačia) ---
     var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
@@ -1726,6 +1738,17 @@
     }
     var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
     var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
+    /* 📱 rb97_swipe: touch įrenginyje valdymas kitas — SWIPE judina figūrą, mygtukai tik ROTATE+DROP,
+     * tad vietoj klaviatūros rodom swipe instrukciją (rodyklės užsidega braukiant, kaip klavišai). */
+    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
+    if (isTouch) {
+      var onL = actKey === 'left', onR = actKey === 'right';
+      tri(cx - 84, midy + 4, 13, 'left', onL ? '#ffffff' : '#ffcf5c');
+      tri(cx + 84, midy + 4, 13, 'right', onR ? '#ffffff' : '#ffcf5c');
+      F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, midy - 2, U.gold, '#05060c', 2);
+      F.outlinedCenter(ctx, 'SLIDE FINGER ON SCREEN - PIECE FOLLOWS', cx, midy + 24, U.text, '#05060c', 1);
+      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 40, U.dim, '#05060c', 1);
+    } else {
     keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
     keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
     keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
@@ -1742,6 +1765,7 @@
     if (spOn) frame(ctx, sbx - 1, sby - 1, sbw + 2, sbh + 2, '#ffcf5c');
     F.outlinedCenter(ctx, 'SPACE', sbx + Math.floor(sbw / 2), sby + Math.floor(sbh / 2) - 3, spOn ? '#241a08' : '#ffcf5c', spOn ? '#ffcf5c' : '#05060c', 1);
     F.outlinedCenter(ctx, 'FAST DROP', sbx + Math.floor(sbw / 2), sby + sbh + 4, U.dim, '#05060c', 1);
+    }
 
     // --- READY + laikmatis + varžovo būsena (apačia) ---
     var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;

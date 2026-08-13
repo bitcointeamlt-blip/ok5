@@ -157,7 +157,9 @@
         // 🎓 pasiruošime: paspaudus READY mygtuką (pele) → ready; kitur ant ekrano → demo hard-drop
         var pb = match._prepBtnRect;
         if (pb && vx >= pb.x && vx <= pb.x + pb.w && vy >= pb.y && vy <= pb.y + pb.h) { match._prepMarkReady(); return; }
-        if (match._demoInput) match._demoInput('hard');   // bakstelėjimas ne ant mygtuko → demo krenta (pajusk valdymą)
+        /* 📱 rb97_swipe: touch įrenginyje bakstelėjimas NEdropina — kitaip kiekvienas swipe startas
+         * numestų demo figūrą. Mobile demo valdomas swipe + ROTATE/DROP mygtukais. */
+        if (match._demoInput && e.pointerType !== 'touch') match._demoInput('hard');   // bakstelėjimas ne ant mygtuko → demo krenta (pajusk valdymą)
         return;
       }
       if (match.state === 'challenge' && match._challengeHit) {

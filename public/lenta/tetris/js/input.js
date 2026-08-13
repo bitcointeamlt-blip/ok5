@@ -132,6 +132,55 @@
       b.addEventListener('touchend', up, { passive: false });
       b.addEventListener('touchcancel', up, { passive: false });
     });
+
+    this.setupSwipe();
+  };
+
+  /* 📱 rb97_swipe: figūra seka pirštą — braukiant per žaidimo ekraną horizontaliai,
+   * kiekvienas perbrauktas LANGELIO plotis = vienas žingsnis kairėn/dešinėn.
+   * Grįžtant pirštu atgal figūra grįžta kartu (absoliutus sekimas nuo prilietimo taško).
+   * Diskretūs press+release žingsniai — be DAS, todėl figūra sustoja lygiai ten, kur pirštas. */
+  Input.prototype.setupSwipe = function () {
+    var canvas = document.getElementById('screen');
+    if (!canvas) return;
+    var match = this.match;
+    var touchId = null, startX = 0, steps = 0;
+
+    /* vieno langelio plotis EKRANO pikseliais: C.CELL (virtualus) × canvas mastelis */
+    function cellPx() {
+      var C = global.CFG || {};
+      var r = canvas.getBoundingClientRect();
+      var vw = (match.renderer && match.renderer.vw) || C.VW || 640;
+      return Math.max(12, (C.CELL || 20) * (r.width / Math.max(1, vw)));
+    }
+    function stepMove(a) { match.playerPress(a); match.playerRelease(a); }
+
+    canvas.addEventListener('touchstart', function (e) {
+      if (touchId !== null) return;              /* sekam tik pirmą pirštą */
+      var t = e.changedTouches[0];
+      touchId = t.identifier; startX = t.clientX; steps = 0;
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', function (e) {
+      if (touchId === null) return;
+      var t = null;
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === touchId) { t = e.changedTouches[i]; break; }
+      }
+      if (!t) return;
+      if (e.cancelable) e.preventDefault();
+      var want = Math.round((t.clientX - startX) / cellPx());
+      while (steps < want) { steps++; stepMove('right'); }
+      while (steps > want) { steps--; stepMove('left'); }
+    }, { passive: false });
+
+    var end = function (e) {
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === touchId) { touchId = null; break; }
+      }
+    };
+    canvas.addEventListener('touchend', end, { passive: true });
+    canvas.addEventListener('touchcancel', end, { passive: true });
   };
 
   Input.KEYMAP = KEYMAP;
