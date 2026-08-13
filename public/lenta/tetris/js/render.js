@@ -1370,7 +1370,8 @@
       tri(cx + 84, midy + 4, 13, 'right', onR ? '#ffffff' : '#ffcf5c');
       F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, midy - 2, U.gold, '#05060c', 2);
       F.outlinedCenter(ctx, 'SLIDE FINGER ON SCREEN - PIECE FOLLOWS', cx, midy + 24, U.text, '#05060c', 1);
-      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 40, U.dim, '#05060c', 1);
+      F.outlinedCenter(ctx, 'SWIPE DOWN AND HOLD - FAST FALL', cx, midy + 38, U.text, '#05060c', 1);
+      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 52, U.dim, '#05060c', 1);
     } else {
     keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
     keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
@@ -1747,7 +1748,8 @@
       tri(cx + 84, midy + 4, 13, 'right', onR ? '#ffffff' : '#ffcf5c');
       F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, midy - 2, U.gold, '#05060c', 2);
       F.outlinedCenter(ctx, 'SLIDE FINGER ON SCREEN - PIECE FOLLOWS', cx, midy + 24, U.text, '#05060c', 1);
-      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 40, U.dim, '#05060c', 1);
+      F.outlinedCenter(ctx, 'SWIPE DOWN AND HOLD - FAST FALL', cx, midy + 38, U.text, '#05060c', 1);
+      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 52, U.dim, '#05060c', 1);
     } else {
     keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
     keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE

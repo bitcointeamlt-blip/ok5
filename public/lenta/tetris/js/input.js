@@ -139,12 +139,14 @@
   /* 📱 rb97_swipe: figūra seka pirštą — braukiant per žaidimo ekraną horizontaliai,
    * kiekvienas perbrauktas LANGELIO plotis = vienas žingsnis kairėn/dešinėn.
    * Grįžtant pirštu atgal figūra grįžta kartu (absoliutus sekimas nuo prilietimo taško).
-   * Diskretūs press+release žingsniai — be DAS, todėl figūra sustoja lygiai ten, kur pirštas. */
+   * Diskretūs press+release žingsniai — be DAS, todėl figūra sustoja lygiai ten, kur pirštas.
+   * 📱 rb98_softswipe: braukiant ŽEMYN (užlaikius) — soft drop: figūra greitai leidžiasi,
+   * kol pirštas laikomas žemai; pakėlus pirštą ar grįžus aukštyn — nustoja. DROP mygtukas lieka instant. */
   Input.prototype.setupSwipe = function () {
     var canvas = document.getElementById('screen');
     if (!canvas) return;
     var match = this.match;
-    var touchId = null, startX = 0, steps = 0;
+    var touchId = null, startX = 0, startY = 0, steps = 0, softOn = false;
 
     /* vieno langelio plotis EKRANO pikseliais: C.CELL (virtualus) × canvas mastelis */
     function cellPx() {
@@ -154,11 +156,12 @@
       return Math.max(12, (C.CELL || 20) * (r.width / Math.max(1, vw)));
     }
     function stepMove(a) { match.playerPress(a); match.playerRelease(a); }
+    function softStop() { if (softOn) { softOn = false; match.playerRelease('softdrop'); } }
 
     canvas.addEventListener('touchstart', function (e) {
       if (touchId !== null) return;              /* sekam tik pirmą pirštą */
       var t = e.changedTouches[0];
-      touchId = t.identifier; startX = t.clientX; steps = 0;
+      touchId = t.identifier; startX = t.clientX; startY = t.clientY; steps = 0; softOn = false;
     }, { passive: true });
 
     canvas.addEventListener('touchmove', function (e) {
@@ -169,14 +172,20 @@
       }
       if (!t) return;
       if (e.cancelable) e.preventDefault();
-      var want = Math.round((t.clientX - startX) / cellPx());
+      var cell = cellPx();
+      var want = Math.round((t.clientX - startX) / cell);
       while (steps < want) { steps++; stepMove('right'); }
       while (steps > want) { steps--; stepMove('left'); }
+      /* ŽEMYN: perbraukus > ~1.2 langelio žemiau pradžios taško — laikom soft drop;
+       * pirštui grįžus aukščiau slenksčio — atleidžiam (galima „pristabdyti" kritimą) */
+      var down = (t.clientY - startY) > cell * 1.2;
+      if (down && !softOn) { softOn = true; match.playerPress('softdrop'); }
+      else if (!down && softOn) softStop();
     }, { passive: false });
 
     var end = function (e) {
       for (var i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === touchId) { touchId = null; break; }
+        if (e.changedTouches[i].identifier === touchId) { touchId = null; softStop(); break; }
       }
     };
     canvas.addEventListener('touchend', end, { passive: true });
