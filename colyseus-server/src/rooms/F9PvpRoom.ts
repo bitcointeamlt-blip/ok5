@@ -4,8 +4,8 @@ import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
-import { consumeInstantHeal, instantHealStatus, refundInstantHeal } from "../services/InstantHeal";   // ⚡🔵 Ronke Bless instant heal (2026-07-05)
-import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 10 charge kiekvienas (2026-07-19)
+import { blessStatus, blessClaim, blessConsume, blessCredit } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
 import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
@@ -298,6 +298,15 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
     }
   }
   return null;
+}
+
+// ⚡🎒 BLESS insta payload klientui (08-13): remaining = BALANSAS (senų klientų counter'is toliau teisingas),
+//   bal/claimable/resetAt — naujam CLAIM UI. cap čia = paros claim lubos, used nebenaudojamas (legacy 0).
+async function blessInsta(addr: string): Promise<any> {
+  const cc = await chainCounts(addr);
+  const n1 = await count1of1(addr);
+  const st = await blessStatus(addr, cc ? cc.rv : 0, n1);
+  return { cap: st.cap, used: 0, remaining: st.bal, bal: st.bal, claimable: st.claimable, resetAt: st.resetAt };
 }
 
 // Base HP pagal utype — atitinka _F9_BASE_HP game.js.
@@ -631,10 +640,27 @@ export class F9PvpRoom extends Room<F9State> {
       const addr = String(p?.address || "").trim().toLowerCase();
       if (!addr) { try { client.send("hospital", { list: [], now: Date.now(), healMs: HEAL_MS }); } catch (_) {} return; }
       await this._loadInjured(addr);
-      // ⚡🔵 RONKE BLESS charge status (Ronkeverse count iš kešuoto chainCounts) — panelė rodo „N liko".
-      let insta: any = { cap: 0, used: 0, remaining: 0 };
-      try { const cc = await chainCounts(addr); const _n1 = await count1of1(addr); insta = await instantHealStatus(addr, cc ? cc.rv : 0, _n1); } catch (_) {}
+      // ⚡🎒 BLESS itemų statusas (08-13): remaining = BALANSAS (senų klientų UI toliau rodo teisingai),
+      //   claimable = kiek dar galima pasiimti šiame 24h lange (CLAIM mygtukui).
+      let insta: any = { cap: 0, used: 0, remaining: 0, bal: 0, claimable: 0 };
+      try { insta = await blessInsta(addr); } catch (_) {}
       try { client.send("hospital", { ...this._hospPayload(addr), insta }); } catch (_) {}
+    });
+    // ⚡🎒 BLESS CLAIM (08-13) — paros emisijos pasiėmimas į balansą. Retention: neužclaim'inta para dingsta.
+    //   Veikia bet kur (nebūtina sava pilis) — svarbu, kad žaidėjas PRISIJUNGĖ. Serializuota BlessBank viduje.
+    this.onMessage("bless_claim", async (client) => {
+      const p = this.state.players.get(client.sessionId);
+      const addr = String(p?.address || "").trim().toLowerCase();
+      if (!addr) { try { client.send("bless_claimed", { ok: false, reason: "no_wallet" }); } catch (_) {} return; }
+      try {
+        const cc = await chainCounts(addr); const _n1 = await count1of1(addr);
+        const rv = cc ? cc.rv : 0;
+        if (rv < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_nft" }); } catch (_) {} return; }
+        const res = await blessClaim(addr, rv, _n1);
+        const insta = await blessInsta(addr);
+        try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}
+        if (res.ok) console.log(`[F9PvpRoom] ⚡🎒 BLESS claim +${res.credited} → bal ${res.bal} (${addr.slice(0, 10)}…)`);
+      } catch (_) { try { client.send("bless_claimed", { ok: false, reason: "error" }); } catch (_) {} }
     });
     // ⚰️ KAPINĖS — pot/rate užklausa (badge + UI)
     this.onMessage("cemetery_get", async (client) => {
@@ -785,8 +811,9 @@ export class F9PvpRoom extends Room<F9State> {
       }
       try { client.send("hospital", this._hospPayload(addr)); } catch (_) {}
     });
-    // ⚡🔵 RONKE BLESS — momentinis sužaloto unito pagydymas (Ronkeverse holder perk, 2026-07-05 user).
-    //   Charge = 1 už kiekvieną laikomą Ronkeverse NFT / rolling 24h (cap 30). TIK savo pilyje + RAMYBĖJE.
+    // ⚡🎒 BLESS heal (08-13; buvo RONKE BLESS charge'ai 07-05) — momentinis sužaloto unito pagydymas
+    //   sudeginant 1 BLESS ITEMĄ iš balanso (BlessBank). NFT gate'o NEBĖRA — itemas gali būti nusipirktas,
+    //   todėl heal'inti gali ir ne-holderis. TIK savo pilyje + RAMYBĖJE.
     //   Išima unitą iš injured queue → auto-deploy į garnizoną (kaip natūralus pasveikimas per _pruneHosp).
     this.onMessage("hospital_instant_heal", async (client, msg: any) => {
       const p = this.state.players.get(client.sessionId);
@@ -800,13 +827,10 @@ export class F9PvpRoom extends Room<F9State> {
       //   SVEIKU unitu (2026-07-05 user), kurį gali vėl registruoti į deką. Deke esantys auto-deploy'inasi;
       //   ne deke — tiesiog pasveiksta ir laukia MANAGE DECK'e (jokio phantom'o — `_deployReady` ne-deko atmeta).
       { const h0 = this._injured.get(addr); if (!h0 || h0.q.findIndex((i) => i.tokenId === tokenId) < 0) { try { client.send("insta_heal_fail", { reason: "not_injured" }); } catch (_) {} return; } }
-      const cc = await chainCounts(addr);
-      const rv = cc ? cc.rv : 0;
-      const n1 = await count1of1(addr);   // ⚡🔵 kiek „1/1" NFT laiko → ×10 charge kiekvienas
-      const consumed = await consumeInstantHeal(addr, rv, n1);
+      const consumed = await blessConsume(addr, 1);   // ⚡🎒 sudeginam 1 BLESS itemą (fail-closed)
       if (!consumed.ok) {
-        const st = await instantHealStatus(addr, rv, n1);
-        try { client.send("insta_heal_fail", { reason: rv < 1 ? "no_nft" : "no_charges", insta: st }); } catch (_) {}
+        let st: any = null; try { st = await blessInsta(addr); } catch (_) {}
+        try { client.send("insta_heal_fail", { reason: "no_bless", insta: st }); } catch (_) {}
         return;
       }
       // 🔁 RE-FIND PO AWAIT'ų (chainCounts/consume metu _pruneHosp 10s timeris galėjo pašalinti pasveikusius →
@@ -814,9 +838,9 @@ export class F9PvpRoom extends Room<F9State> {
       const h = this._injured.get(addr);
       const idx = h ? h.q.findIndex((i) => i.tokenId === tokenId) : -1;
       if (!h || idx < 0) {
-        // unitas pasveiko natūraliai per async langą → charge NEpanaudotas heal'ui → grąžinam.
-        try { await refundInstantHeal(addr); } catch (_) {}
-        const st = await instantHealStatus(addr, rv, n1);
+        // unitas pasveiko natūraliai per async langą → itemas NEpanaudotas heal'ui → grąžinam.
+        try { await blessCredit(addr, 1); } catch (_) {}
+        let st: any = null; try { st = await blessInsta(addr); } catch (_) {}
         try { client.send("hospital", { ...this._hospPayload(addr), insta: st }); } catch (_) {}
         return;
       }
@@ -842,8 +866,8 @@ export class F9PvpRoom extends Room<F9State> {
       // ar pagydytas realiai atsidūrė lauke? deke → taip; ne deke → ne (tiesiog SVEIKAS, re-registerable MANAGE DECK'e).
       let deployed = false;
       this.state.units.forEach((u) => { if (u.tokenId === healed.tokenId) deployed = true; });
-      const st = await instantHealStatus(addr, rv, n1);
-      console.log(`[F9PvpRoom] ⚡ RONKE BLESS heal ${healed.utype}#${healed.tokenId} (${addr.slice(0, 10)}… ${deployed ? "deployed" : "healthy"}, liko ${st.remaining}/${st.cap})`);
+      let st: any = null; try { st = await blessInsta(addr); } catch (_) {}
+      console.log(`[F9PvpRoom] ⚡🎒 BLESS heal ${healed.utype}#${healed.tokenId} (${addr.slice(0, 10)}… ${deployed ? "deployed" : "healthy"}, bal ${st ? st.bal : "?"})`);
       try {
         client.send("recovered", { tokenId: healed.tokenId, utype: healed.utype, level: healed.level, instant: true, deployed });
         client.send("hospital", { ...this._hospPayload(addr), insta: st });

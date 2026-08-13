@@ -11781,9 +11781,16 @@ function _f9BlessSparkle(btn) {
 // Statuso eilutės (progresas/laikai) — atnaujinamos kas 500ms BE eilučių perstatymo (animacijos nemirksi).
 function _f9HospUpdateStatus() {
   if (!_f9HospPanelEl) return;
-  // ⚡🔵 RONKE BLESS skaitiklis — kiek instant heal'ų liko šiandien (0 jei nėra Ronkeverse NFT)
+  // ⚡🎒 BLESS itemų balansas + CLAIM mygtukas (rodomas tik kai yra ką claim'inti)
+  const _in = window._f9HospInsta || {};
   const _blessN = _f9HospPanelEl.querySelector('#f9hosp-bless-n');
-  if (_blessN) { const _in = window._f9HospInsta || {}; _blessN.textContent = String(_in.remaining != null ? _in.remaining : 0); }
+  if (_blessN) _blessN.textContent = String(_in.remaining != null ? _in.remaining : 0);
+  const _clB = _f9HospPanelEl.querySelector('#f9hosp-claim');
+  if (_clB) {
+    const _cl = _in.claimable || 0;
+    if (_cl > 0) { _clB.style.display = ''; const _cn = _clB.querySelector('#f9hosp-claim-n'); if (_cn) _cn.textContent = '+' + _cl; }
+    else _clB.style.display = 'none';
+  }
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
   const HEAL = window._f9HospHealMs || 3600000;
   const now = Date.now();
@@ -11927,7 +11934,9 @@ function _f9ToggleHospitalPanel() {
   try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_get'); } catch (_) {}   // šviežia eilė
   // 🏥 TUŠČIA ligoninė IR nėra paruoštų deploy'ui → JOKIOS panelės, tik 💬 burbulas virš ligoninės.
   //   ⚔️ 07-04: jei yra PARUOŠTŲ (pasveikę/nespawninti) — panelę ATIDAROM (joje DEPLOY mygtukas).
-  if (!(Array.isArray(window._f9Hospital) && window._f9Hospital.length) && !(window._f9HospReady > 0)) {
+  // ⚡🎒 08-13: panelė atsidaro ir TUŠČIA, jei yra ko claim'inti ar balansas >0 (kitaip holderis nepasiektų CLAIM)
+  const _bin = window._f9HospInsta || {};
+  if (!(Array.isArray(window._f9Hospital) && window._f9Hospital.length) && !(window._f9HospReady > 0) && !((_bin.claimable || 0) > 0 || (_bin.bal || 0) > 0 || (_bin.remaining || 0) > 0)) {
     window._f9HospBubbleT = performance.now();
     return;
   }
@@ -11944,8 +11953,9 @@ function _f9ToggleHospitalPanel() {
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
       '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">🏥</span>' +
       '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
-      // ⚡🔵 RONKE BLESS skaitiklis — kiek instant heal\'ų liko šiandien (0 jei nėra Ronkeverse NFT)
-      '<span id="f9hosp-bless" title="Ronke Bless — instant heals left today (1 per Ronkeverse NFT / 24h)" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;"><img src="assets_tiny/ronke_logo.png" alt="" style="width:12px;height:12px;image-rendering:pixelated;"/>BLESS <span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      // ⚡🎒 BLESS itemų balansas (08-13: nebe paros charge\'ai, o kaupiami itemai) + CLAIM mygtukas
+      '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily: Ronkeverse holders get 1 per NFT (max 20/day), 1/1s give 5 each" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;"><img src="assets_tiny/ronke_logo.png" alt="" style="width:12px;height:12px;image-rendering:pixelated;"/>BLESS <span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">⚡ CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
@@ -11961,7 +11971,7 @@ function _f9ToggleHospitalPanel() {
         '<span id="f9hosp-deckinfo" style="flex:1;font-size:8px;color:#8a9aaa;line-height:1.6;"></span>' +
         '<button id="f9hosp-deck-btn" title="Change which NFTs are registered in your deck (10 RONKE)" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;padding:7px 10px;border-radius:4px;border:1px solid #6a4a18;background:rgba(255,207,92,0.1);color:#ffcf5c;cursor:pointer;">🃏 MANAGE DECK</button>' +
       '</div></div>' +
-    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.</div>';
+    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.<br/>⚡ BLESS items: claim daily (Ronkeverse holders — unclaimed days don\'t stack!), spend 1 to instantly heal an injured unit.</div>';
   ov.appendChild(el);
   document.body.appendChild(ov);
   _f9HospEnsureFx();   // ⚡🔵 RONKE BLESS mygtuko hover/press/ripple CSS
@@ -11972,6 +11982,18 @@ function _f9ToggleHospitalPanel() {
   if (db) db.onclick = function () {
     if (!(window._f9HospReady > 0)) return;   // disabled būsena — nieko nesiunčiam
     try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('deploy_ready'); } catch (_) {}
+  };
+  // ⚡🎒 BLESS CLAIM — paros itemų emisija (atsakymas ateina 'bless_claimed' žinute → notification + insta update)
+  const clb = el.querySelector('#f9hosp-claim');
+  if (clb) clb.onclick = function () {
+    try {
+      if (window.F9PVP && window.F9PVP.room) {
+        clb.classList.add('busy'); const l = clb.querySelector('.f9-bl-lbl'); if (l) l.textContent = '⚡ …';
+        _f9BlessSparkle(clb);
+        window.F9PVP.room.send('bless_claim');
+        setTimeout(function () { if (clb.parentNode) { clb.classList.remove('busy'); const l2 = clb.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '⚡ CLAIM <span id="f9hosp-claim-n"></span>'; } }, 2200);
+      }
+    } catch (_) {}
   };
   // 🃏 MANAGE DECK — atidaro ESAMĄ barakų modalą (INVENTORY tab): deko keitimas = tas pats setDeck TX flow
   //   (07-04 user: deko rotacija leidžiama, 10 RONKE fee = kaina; sužeisti seka tokenId, ne deko slotą)
@@ -17309,7 +17331,13 @@ window.openTrophyPanel = function openTrophyPanel() {
 // Phase 15 — fetch live mint cost from contract (RPC), update pricing strip + curve.
 // Post-mainnet-flip (2026-05-23): RPC + contract now point to Ronin Mainnet.
 async function _refreshTrophyPricing() {
-  const RONIN_RPC = 'https://api.roninchain.com/rpc';
+  /* ⚠️ DU RPC, ne vienas.
+   * Iki šiol čia buvo tik `api.roninchain.com`, ir jam ėmus riboti („API rate
+   * limit exceeded") kainos juostelė likdavo tuščia — atrodė, kad puslapis
+   * neužsikrovė. `barracks_nft.js` tą jau seniai daro teisingai: drpc pirmas,
+   * oficialus kaip atsarginis. Adresas tas pats abiem, nes kontraktas yra
+   * grandinėje, ne tiekėjo pusėje, tad perjungimas saugus. */
+  const RONIN_RPCS = ['https://ronin.drpc.org', 'https://api.roninchain.com/rpc'];
   const CONTRACT = (window.Wallet && window.Wallet.TROPHY_CONTRACT) || '0xb7873833e7AC43c921AF736F2E3988Ba26a39512';
   // Function selectors:
   const SELECTORS = {
@@ -17323,6 +17351,9 @@ async function _refreshTrophyPricing() {
   async function rpcCall(selector, tries) {
     tries = tries || 3;
     for (let i = 0; i < tries; i++) {
+      /* Kiekvienas bandymas — per KITĄ tiekėją. Taip vienam ribojant kitas
+       * atsako iš karto, o ne po trijų nesėkmingų bandymų į tą patį. */
+      const RONIN_RPC = RONIN_RPCS[i % RONIN_RPCS.length];
       try {
         const resp = await fetch(RONIN_RPC, {
           method: 'POST',

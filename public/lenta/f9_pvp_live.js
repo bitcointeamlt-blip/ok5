@@ -265,8 +265,24 @@
     ].join('');
     document.head.appendChild(st);
   }
+  var _deferredRaidReps = null, _deferredRaidListener = false;
   function _showRaidReports(reps) {
     try {
+      // 🎮 Jei žaidėjas minigame'e (pinball/tetris) — NErodom report'o viršum jo. ATIDEDAM
+      //   kol žaidimas užsidarys (launcher dispatch'ina 'minigame:closed'). Fix Yadyy Ace bug 07-28.
+      if (window.__minigameOpen) {
+        _deferredRaidReps = reps;
+        if (!_deferredRaidListener) {
+          _deferredRaidListener = true;
+          window.addEventListener('minigame:closed', function () {
+            if (_deferredRaidReps && !window.__minigameOpen) {
+              var r = _deferredRaidReps; _deferredRaidReps = null;
+              _showRaidReports(r);
+            }
+          });
+        }
+        return;
+      }
       _rrInjectStyle();
       var esc = function (a) { a = String(a || ''); return a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : a; };
       var fmtAgo = function (t) { var m = Math.max(0, Math.round((Date.now() - (t || 0)) / 60000)); return m < 60 ? (m + 'm ago') : (Math.round(m / 60) + 'h ago'); };
@@ -1290,16 +1306,30 @@
       window._f9FieldAt = recv;   // šviežumo žymė (inventorius naudoja tik jei šviežia + savo pilyje)
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
-    // ⚡🔵 RONKE BLESS — instant heal nepavyko (nėra charge'ų / NFT / raidas / senas dekas)
+    // ⚡🔵 RONKE BLESS — instant heal nepavyko (nėra itemų / raidas / senas dekas)
     room.onMessage('insta_heal_fail', function (e) {
       if (e && e.insta) window._f9HospInsta = e.insta;
       var r = (e && e.reason) || '';
-      var msg = r === 'no_nft' ? 'Hold a Ronkeverse NFT to unlock instant heals'
+      var msg = r === 'no_bless' ? 'No BLESS items — claim daily or buy from other players'
+        : r === 'no_nft' ? 'Hold a Ronkeverse NFT to unlock instant heals'
         : r === 'no_charges' ? 'No Ronke Bless charges left today'
         : r === 'raid' ? 'Cannot instant-heal during a raid'
         : r === 'stale' ? 'That unit is from an old deck — not in your current deck'
         : 'Cannot instant-heal right now';
       try { if (window.showGameNotification) window.showGameNotification('🔵 RONKE BLESS', msg, '#e85d5d'); } catch (_) {}
+      try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
+    // ⚡🎒 BLESS CLAIM rezultatas (08-13) — paros itemų emisija įskaityta į balansą
+    room.onMessage('bless_claimed', function (e) {
+      if (e && e.insta) window._f9HospInsta = e.insta;
+      try {
+        if (window.showGameNotification) {
+          if (e && e.ok) window.showGameNotification('⚡ BLESS CLAIMED', '+' + (e.credited || 0) + ' BLESS item' + ((e.credited || 0) > 1 ? 's' : '') + ' added to your stash!', '#7fdfea');
+          else if (e && e.reason === 'no_nft') window.showGameNotification('⚡ BLESS', 'Hold a Ronkeverse NFT to claim daily BLESS', '#e85d5d');
+          else if (e && e.reason === 'nothing_to_claim') window.showGameNotification('⚡ BLESS', 'Nothing to claim yet — come back later', '#8a9aaa');
+          else window.showGameNotification('⚡ BLESS', 'Claim failed — try again', '#e85d5d');
+        }
+      } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
     // ⚔️ DEPLOY rezultatas — kiek unitų įleista į garnizoną
