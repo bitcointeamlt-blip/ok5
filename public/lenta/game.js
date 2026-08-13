@@ -11209,7 +11209,7 @@ function _f9MinePanelStats() {
     } else if (sc0 > 0) {
       scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:9px;color:#8a9aaa;">Ronke Score — reach <b style="color:#c9d4e8;">Top 50%</b> to boost your mining power</span></div>';
     } else {
-      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:9px;color:#8a9aaa;">Ronke Score — hold $RONKE &amp; Ronkeverse to boost mining up to <b style="color:#c9d4e8;">1.5x</b></span></div>';
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:9px;color:#8a9aaa;">Ronke Score — hold $RONKE &amp; Ronkeverse to boost mining up to <b style="color:#c9d4e8;">x1.5</b></span></div>';
     }
   } catch (_) {}
   const body = _f9MinePanelEl.querySelector('#f9mine-body');
