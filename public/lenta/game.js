@@ -11884,12 +11884,12 @@ function _f9HospRebuild() {
         // ⚡🔵 BLESS rodomas TIK kai realiai veiks: savoj pilyje (__f9HomeActive) + serveris instaReady (ne raido metu) +
         //   yra charge'ų (Ronkeverse NFT). Kitaip mygtukas visai neрodomas → nebėra „paspaudžiau, nepagijo" (07-12 user).
         ((window.__f9HomeActive && window._f9InstaReady && ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) > 0)
-          ? '<button data-insta="' + i.tokenId + '" class="f9-bless-btn" title="Instant heal — Ronke Bless (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' left today)"><span class="f9-bl-lbl">⚡ BLESS</span></button>'
+          ? '<button data-insta="' + i.tokenId + '" class="f9-bless-btn" title="Instant heal — spend 1 RonkeChoco (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' in stash)"><span class="f9-bl-lbl">🍫 CHOCO</span></button>'
           : '') +
         (!i.healing ? '<button data-heal="' + i.tokenId + '" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;line-height:1.3;background:rgba(255,207,92,0.1);color:#ffcf5c;border:1px solid #6a4a18;border-radius:4px;padding:6px 7px;cursor:pointer;white-space:nowrap;">⬆ FIRST</button>' : '') +
       '</div>' +
     '</div>').join('') + _staleNote;   // 🔒 „N old-deck units hidden" (jei yra) — PRIEŠ wiring, kad listeneriai išliktų
-  // „⬆ FIRST" — perkelti į eilės priekį; „⚡ BLESS" — momentinis pagydymas (Ronkeverse holder charge, server-auth).
+  // „⬆ FIRST" — perkelti į eilės priekį; „🍫 CHOCO" — momentinis pagydymas už 1 RonkeChoco itemą (server-auth).
   body.querySelectorAll('button[data-heal]').forEach(btn => {
     btn.onclick = function () {
       try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_heal_first', { tokenId: btn.dataset.heal }); } catch (_) {}
@@ -11911,10 +11911,10 @@ function _f9HospRebuild() {
       _f9BlessSparkle(btn);                          // ⚡ sparkle burstas
       // ⏳ „processing" būsena — iškart matai kad paspaudimas užregistruotas (nebekyla klausimas ar suveikė)
       btn.classList.add('busy');
-      const lbl = btn.querySelector('.f9-bl-lbl'); if (lbl) lbl.textContent = '⚡ …';
+      const lbl = btn.querySelector('.f9-bl-lbl'); if (lbl) lbl.textContent = '🍫 …';
       try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_instant_heal', { tokenId: btn.dataset.insta }); } catch (_) {}
       // saugiklis: jei serveris neatsako / sig nepakito (panelė paprastai persipiešia anksčiau) → atstatom
-      setTimeout(function () { if (btn.parentNode) { btn.classList.remove('busy'); const l2 = btn.querySelector('.f9-bl-lbl'); if (l2) l2.textContent = '⚡ BLESS'; } }, 2200);
+      setTimeout(function () { if (btn.parentNode) { btn.classList.remove('busy'); const l2 = btn.querySelector('.f9-bl-lbl'); if (l2) l2.textContent = '🍫 CHOCO'; } }, 2200);
     };
   });
   _f9HospUpdateStatus();
@@ -11954,8 +11954,8 @@ function _f9ToggleHospitalPanel() {
       '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">🏥</span>' +
       '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
       // ⚡🎒 BLESS itemų balansas (08-13: nebe paros charge\'ai, o kaupiami itemai) + CLAIM mygtukas
-      '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily: Ronkeverse holders get 1 per NFT (max 20/day), 1/1s give 5 each" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;"><img src="assets_tiny/ronke_logo.png" alt="" style="width:12px;height:12px;image-rendering:pixelated;"/>BLESS <span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
-      '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">⚡ CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
+      '<span id="f9hosp-bless" title="RonkeChoco — spend 1 to instantly heal an injured unit. Claim daily: Ronkeverse holders get 1 per NFT (max 20/day), 1/1s give 5 each" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;"><img src="assets_tiny/ronke_logo.png" alt="" style="width:12px;height:12px;image-rendering:pixelated;"/>RONKECHOCO <span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily RonkeChoco (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">🍫 CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
@@ -11971,7 +11971,7 @@ function _f9ToggleHospitalPanel() {
         '<span id="f9hosp-deckinfo" style="flex:1;font-size:8px;color:#8a9aaa;line-height:1.6;"></span>' +
         '<button id="f9hosp-deck-btn" title="Change which NFTs are registered in your deck (10 RONKE)" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;padding:7px 10px;border-radius:4px;border:1px solid #6a4a18;background:rgba(255,207,92,0.1);color:#ffcf5c;cursor:pointer;">🃏 MANAGE DECK</button>' +
       '</div></div>' +
-    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.<br/>⚡ BLESS items: claim daily (Ronkeverse holders — unclaimed days don\'t stack!), spend 1 to instantly heal an injured unit.</div>';
+    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.<br/>🍫 RonkeChoco: claim daily (Ronkeverse holders — unclaimed days don\'t stack!), spend 1 to instantly heal an injured unit.</div>';
   ov.appendChild(el);
   document.body.appendChild(ov);
   _f9HospEnsureFx();   // ⚡🔵 RONKE BLESS mygtuko hover/press/ripple CSS
@@ -11988,10 +11988,10 @@ function _f9ToggleHospitalPanel() {
   if (clb) clb.onclick = function () {
     try {
       if (window.F9PVP && window.F9PVP.room) {
-        clb.classList.add('busy'); const l = clb.querySelector('.f9-bl-lbl'); if (l) l.textContent = '⚡ …';
+        clb.classList.add('busy'); const l = clb.querySelector('.f9-bl-lbl'); if (l) l.textContent = '🍫 …';
         _f9BlessSparkle(clb);
         window.F9PVP.room.send('bless_claim');
-        setTimeout(function () { if (clb.parentNode) { clb.classList.remove('busy'); const l2 = clb.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '⚡ CLAIM <span id="f9hosp-claim-n"></span>'; } }, 2200);
+        setTimeout(function () { if (clb.parentNode) { clb.classList.remove('busy'); const l2 = clb.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '🍫 CLAIM <span id="f9hosp-claim-n"></span>'; } }, 2200);
       }
     } catch (_) {}
   };
