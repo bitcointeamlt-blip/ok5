@@ -11220,6 +11220,15 @@ function _f9MinePanelStats() {
     } else {
       scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:8px;line-height:1.6;color:#8a9aaa;"><b style="color:#c9d4e8;">RONKE SCORE</b> — hold $RONKE &amp; Ronkeverse NFTs to join the community ranks and mine up to <b style="color:#aee6ff;">×1.5</b> faster.</span></div>';
     }
+    // 🏆 Tier'ų legenda (08-13 user: „būtinai užrašiukas top 1% iki top 50%") — visi mato visą kopėtėlę
+    scoreRow += '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px 10px;margin:-4px 0 10px;padding:7px 12px;border-radius:6px;background:rgba(255,255,255,0.02);border:1px dashed #2a3448;font-size:7px;color:#7a8aa0;line-height:1.7;">' +
+      '<b style="color:#c9d4e8;letter-spacing:0.5px;">RONKE SCORE TIERS:</b>' +
+      '<span' + (sl === 'TOP 1%' ? ' style="color:#aee6ff;font-weight:bold;"' : '') + '>💎 TOP 1% ×1.5</span>' +
+      '<span' + (sl === 'TOP 5%' ? ' style="color:#ffcf5c;font-weight:bold;"' : '') + '>🥇 TOP 5% ×1.25</span>' +
+      '<span' + (sl === 'TOP 10%' ? ' style="color:#c9d4e8;font-weight:bold;"' : '') + '>🥈 TOP 10% ×1.15</span>' +
+      '<span' + (sl === 'TOP 25%' ? ' style="color:#d4a06a;font-weight:bold;"' : '') + '>🥉 TOP 25% ×1.10</span>' +
+      '<span' + (sl === 'TOP 50%' ? ' style="color:#8fd88a;font-weight:bold;"' : '') + '>⭐ TOP 50% ×1.05</span>' +
+      '<a href="https://ronke-analytics.vercel.app" target="_blank" rel="noopener" style="color:#5a7a9a;text-decoration:underline;margin-left:auto;">check your score ↗</a></div>';
   } catch (_) {}
   const body = _f9MinePanelEl.querySelector('#f9mine-body');
   if (body) {
