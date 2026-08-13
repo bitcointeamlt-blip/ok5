@@ -11195,21 +11195,24 @@ function _f9MinePanelStats() {
   //   badge su kasimo bonusu; 💎 DIAMOND (top 1%) — VIENINTELIS su animuotu blizgesiu; be tier'o — kvietimas.
   let scoreRow = '';
   try {
-    const sm = d.smult || 1, sl = d.stier || '', sc0 = d.sscore || 0;
-    const TIER = sl === 'TOP 1%' ? { e: '💎', n: 'DIAMOND', c: '#aee6ff', b: '#4aa6c8' }
-      : sl === 'TOP 5%' ? { e: '🥇', n: 'GOLD', c: '#ffcf5c', b: '#7a5a1e' }
-      : sl === 'TOP 10%' ? { e: '🥈', n: 'SILVER', c: '#c9d4e8', b: '#5a6a85' }
-      : sl === 'TOP 25%' ? { e: '🥉', n: 'BRONZE', c: '#d4a06a', b: '#7a5a3a' }
-      : sl === 'TOP 50%' ? { e: '⭐', n: 'HOLDER', c: '#8fd88a', b: '#3a6a3a' } : null;
+    const sm = d.smult || 1, sl = d.stier || '';
+    const TIER = sl === 'TOP 1%' ? { e: '💎', c: '#aee6ff', b: '#4aa6c8' }
+      : sl === 'TOP 5%' ? { e: '🥇', c: '#ffcf5c', b: '#7a5a1e' }
+      : sl === 'TOP 10%' ? { e: '🥈', c: '#c9d4e8', b: '#5a6a85' }
+      : sl === 'TOP 25%' ? { e: '🥉', c: '#d4a06a', b: '#7a5a3a' }
+      : sl === 'TOP 50%' ? { e: '⭐', c: '#8fd88a', b: '#3a6a3a' } : null;
+    // 08-13 user (variantas A): JOKIŲ angliškų sakinių — tik trumpos etiketės: RONKE SCORE · [tier pill] · MINING x1.5
     if (sm > 1 && TIER) {
-      // 08-13 user: paprastas vienos eilutės užrašas — „Ronke Score Top 1% — 1.5x mining power". Statinis.
-      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:10px 13px;border-radius:7px;border:2px solid ' + TIER.b + ';background:linear-gradient(180deg,#14182a,#0a0c18);">' +
-        '<span style="font-size:19px;">' + TIER.e + '</span>' +
-        '<span style="flex:1;font-size:12px;letter-spacing:0.5px;line-height:1.7;color:' + TIER.c + ';">Ronke Score: you\'re in the <b>' + sl.charAt(0) + sl.slice(1).toLowerCase() + '</b>! Your mining multiplier is <b style="color:#6fcf5c;">x' + sm + '</b></span></div>';
-    } else if (sc0 > 0) {
-      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:9px;color:#8a9aaa;">Ronke Score — reach <b style="color:#c9d4e8;">Top 50%</b> to boost your mining power</span></div>';
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:10px 13px;border-radius:7px;border:1px solid #3a3a55;background:linear-gradient(180deg,#14182a,#0a0c18);">' +
+        '<span style="font-size:10px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">🏆 RONKE SCORE</span>' +
+        '<span style="font-size:10px;letter-spacing:1px;color:' + TIER.c + ';border:1px solid ' + TIER.b + ';border-radius:5px;padding:4px 9px;background:rgba(255,255,255,0.03);white-space:nowrap;">' + TIER.e + ' ' + sl + '</span>' +
+        '<span style="flex:1;"></span>' +
+        '<span style="font-size:11px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">MINING <b style="color:#6fcf5c;">x' + sm + '</b></span></div>';
     } else {
-      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);"><span style="font-size:14px;">🏆</span><span style="flex:1;font-size:9px;color:#8a9aaa;">Ronke Score — hold $RONKE &amp; Ronkeverse to boost mining up to <b style="color:#c9d4e8;">x1.5</b></span></div>';
+      scoreRow = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #3a3a55;background:rgba(255,255,255,0.02);">' +
+        '<span style="font-size:9px;letter-spacing:1px;color:#8a9aaa;white-space:nowrap;">🏆 RONKE SCORE</span>' +
+        '<span style="flex:1;"></span>' +
+        '<span style="font-size:8px;color:#6a7a8a;white-space:nowrap;">HOLD $RONKE → MINING UP TO <b style="color:#6fcf5c;">x1.5</b></span></div>';
     }
   } catch (_) {}
   const body = _f9MinePanelEl.querySelector('#f9mine-body');
