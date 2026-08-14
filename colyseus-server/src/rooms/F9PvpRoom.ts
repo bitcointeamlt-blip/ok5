@@ -1247,7 +1247,11 @@ export class F9PvpRoom extends Room<F9State> {
         try { await this._loadCem(this._ownerAddr); this._cemAccrue(this._ownerAddr); } catch (_) {}   // ⚰️ grobiui
       }
       // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (žaidėjas pasirinko saugumą už lėtesnį kasimą).
-      { const _oc = this._cem.get(this._ownerAddr); if (_oc && _oc.duty === "safe") { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); throw new Error("SAFE_MODE"); } }
+      //   08-14 FAIL-CLOSED (user „kasi sau ir tave užpuola"): cem neužsikrovė (try/catch aukščiau tyliai
+      //   nurydavo DB triktį → gate praleisdavo!) → _dutySafeGate perskaito duty TIESIAI iš DB su retry;
+      //   triktis → TRY_AGAIN (raidas atmetamas, ne praleidžiamas).
+      try { await this._dutySafeGate(this._ownerAddr); }
+      catch (e) { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); throw e; }
       // 🛡 SHIELD + ⏲ CD (async) PIRMA — „SHIELDED:Xmin" žinutė su countdown'u informatyvesnė nei
       //   NO_DEFENDERS (po 100% wipe galioja abu; 07-12 grąžinta 07-05 tvarka — shield test to tikisi).
       this._checkRaidGate(String(p.address || ""));
@@ -1359,8 +1363,11 @@ export class F9PvpRoom extends Room<F9State> {
           throw new Error("RAID_IN_PROGRESS");
         }
       }
-      // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (net gyva). Owner cem jau įkeltas home join'e.
-      { const _oc = this._cem.get(this._ownerAddr); if (_oc && _oc.duty === "safe") { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw new Error("SAFE_MODE"); } }
+      // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (net gyva). 08-14 FAIL-CLOSED: owner cem paprastai įkeltas
+      //   home join'e, bet jei jo load tyliai failino (arba kambarys po deploy restarto) — _dutySafeGate
+      //   perskaito duty tiesiai iš DB; triktis → TRY_AGAIN (atmetam, ne praleidžiam).
+      try { await this._dutySafeGate(this._ownerAddr); }
+      catch (e) { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw e; }
       // 🛡 SHIELD + ⏲ CD (live) PIRMA — „SHIELDED:Xmin" informatyvesnė nei NO_DEFENDERS (07-12, kaip async).
       //   🐛 M3: SHIELDED/RAID_COOLDOWN throw PRIVALO išvalyti ghost player.
       try { this._checkRaidGate(String(p.address || "")); }
@@ -1915,6 +1922,27 @@ export class F9PvpRoom extends Room<F9State> {
   private _pureDeck(deck: DeckEntry[]): DeckEntry[] {
     const hasNft = deck.some((d) => d.tokenId && !/^dev/i.test(d.tokenId));
     return hasNft ? deck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId)) : deck;
+  }
+  // 🛡 08-14 FAIL-CLOSED SAFE gate (user „kasu sau SAFE, o mane užpuolė"): duty tikrinamas AUTORITETINGAI.
+  //   In-memory cem (šviežiausia tiesa — apima ką tik perjungtą duty) ARBA, jo nesant, ŠVIEŽIAS DB skaitymas
+  //   su retry. DB triktis 2× → TRY_AGAIN: raidas ATMETAMAS, ne praleidžiamas. Senoji `if (_oc && _oc.duty…)`
+  //   forma buvo fail-OPEN — neužkrautas cem (deploy restartas / S-M5 ne-cache po DB klaidos) tyliai
+  //   praleisdavo raidą prieš SAFE pilį.
+  private async _dutySafeGate(addr: string): Promise<void> {
+    if (!addr) return;
+    const mem = this._cem.get(addr);
+    if (mem) { if (mem.duty === "safe") throw new Error("SAFE_MODE"); return; }
+    for (let a = 0; a < 2; a++) {
+      try {
+        const b = await loadBaseBuildings(addr);   // DB klaida → throw (S-M5); null = TIKRAI nėra eilutės (nauja pilis → online)
+        if (b && b.dutyMode === "safe") throw new Error("SAFE_MODE");
+        return;
+      } catch (e: any) {
+        if (e && e.message === "SAFE_MODE") throw e;
+        if (a === 1) { console.warn(`[F9PvpRoom] 🛡 duty gate DB triktis 2× (${addr.slice(0, 10)}…) → raidas atmestas (fail-closed)`); throw new Error("TRY_AGAIN"); }
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
   }
   private async _loadCem(addr: string) {
     addr = (addr || "").trim().toLowerCase();

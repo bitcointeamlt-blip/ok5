@@ -2388,6 +2388,7 @@
         else if (em.indexOf('DEFENDER_ONLINE') !== -1) msg = '🫀 Defender is online (reconnecting) — retry in a few seconds to fight them LIVE';
         else if (em.indexOf('RAID_IN_PROGRESS') !== -1) msg = '⚔️ This castle is already under attack — one raider at a time. Try again in a moment.';
         else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected after a battle (they must switch back to ON DUTY to be raidable).';
+        else if (em.indexOf('TRY_AGAIN') !== -1) msg = '⏳ Castle data is still loading — try again in a few seconds.';
         else if (em.indexOf('RAID_FEE') !== -1) {
           // ⚔️💰 fee TX atmestas (panaudotas/pasenęs/nerastas) → išvalom saugotą, kitas bandymas mokės iš naujo
           var _fa = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || '';
