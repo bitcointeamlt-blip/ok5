@@ -10,12 +10,26 @@ import { Wallet, JsonRpcProvider, Contract } from "ethers";
 const SIGNER_KEY = process.env.RONKE_REWARD_SIGNER_KEY || process.env.MINE_SIGNER_KEY || process.env.BONE_SIGNER_KEY || "";
 const REWARD_ADDR = process.env.RONKE_REWARD_CONTRACT_ADDRESS || "0xc59e860e2115ccdab499f619a67bedf71ee26007";   // RonkeReward MAINNET (faucet pool — reuse)
 const CHAIN_ID = Number(process.env.RONKE_REWARD_CHAIN_ID || 2020);   // Ronin mainnet
-const RPC_URL = process.env.RONKE_REWARD_RPC || "https://ronin.drpc.org";
+// 🔴 2026-08-14: drpc default MIRĘS (500) → nonce patikra amžinai grąžindavo null → minePend
+// niekada neišsivalydavo → „Previous withdrawal still pending" blokavo žaidėjus VISAM (4 užstrigo).
+// FIX kaip bless'o chainCounts (81eb34e): RPC sąrašas su rotacija per bandymus — net jei env miręs,
+// kitas bandymas pasiekia gyvą endpointą.
+const RPC_URLS = [
+  process.env.RONKE_REWARD_RPC || "",
+  "https://rpc-ronin-mainnet-bfz9fadqzl.t.conduit.xyz",   // Conduit — dosniausias limitas
+  "https://api.roninchain.com/rpc",
+  "https://ronin.gateway.tenderly.co",
+].filter(Boolean);
 export const MINE_MAX_SINGLE = Number(process.env.MINE_MAX_SINGLE || 1000);   // == RonkeReward maxSingleClaim (vienas withdraw ≤ tiek)
 const VOUCHER_TTL_MS = 30 * 60 * 1000;   // 30 min galiojimas (== kontrakto deadline langas)
 
-let _prov: JsonRpcProvider | null = null;
-function getProv(): JsonRpcProvider { if (!_prov) _prov = new JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true }); return _prov; }
+const _provs = new Map<string, JsonRpcProvider>();
+function getProv(i = 0): JsonRpcProvider {
+  const url = RPC_URLS[Math.min(i, RPC_URLS.length - 1)];
+  let p = _provs.get(url);
+  if (!p) { p = new JsonRpcProvider(url, CHAIN_ID, { staticNetwork: true }); _provs.set(url, p); }
+  return p;
+}
 
 let _wallet: Wallet | null = null;
 function getSigner(): Wallet | null {
@@ -48,10 +62,16 @@ export async function signMineVoucher(player: string, ronke: number): Promise<Mi
   } catch (e: any) { console.warn("[MineWithdraw] sign fail:", e?.message); return null; }
 }
 
-// Ar nonce panaudotas on-chain? (deduct/re-credit sprendimui). null = RPC nepavyko (saugom pending, bandom vėliau).
+// Ar nonce panaudotas on-chain? (deduct/re-credit sprendimui). null = VISI RPC nepavyko (saugom pending, bandom vėliau).
+// Kiekvienas bandymas per KITĄ endpointą — vienas miręs RPC nebeužrakina žaidėjų (08-14 fix).
 export async function isMineNonceUsed(nonce: string): Promise<boolean | null> {
-  try {
-    const c = new Contract(REWARD_ADDR, ["function usedNonces(uint256) view returns (bool)"], getProv());
-    return Boolean(await c.usedNonces(nonce));
-  } catch (e: any) { console.warn("[MineWithdraw] nonce check fail:", e?.message); return null; }
+  for (let i = 0; i < RPC_URLS.length; i++) {
+    try {
+      const c = new Contract(REWARD_ADDR, ["function usedNonces(uint256) view returns (bool)"], getProv(i));
+      return Boolean(await c.usedNonces(nonce));
+    } catch (e: any) {
+      if (i === RPC_URLS.length - 1) { console.warn("[MineWithdraw] nonce check fail (visi RPC):", e?.message); return null; }
+    }
+  }
+  return null;
 }
