@@ -3096,6 +3096,51 @@
       else window.addEventListener('DOMContentLoaded', function () { attempt(50); });
     })();
   </script>
+  <script>
+    /* 🔄 UPDATE WATCHER — atviri tabai niekada patys neatsinaujina (index no-store padeda tik
+       perkraunantiems). Kas 5 min + grįžus į tabą parsisiunčiam šviežią index (no-store) ir
+       lyginam game.js ?v= žymą; jei skiriasi → ryškus baneris „TAP TO UPDATE" (be auto-reload,
+       kad nenutrauktume kovos). UI angliškas. Viskas try/catch — žaidimo netrikdo. */
+    (function () {
+      try {
+        function curV() {
+          try {
+            var s = document.querySelector('script[src*="game.js?v="],script[src*="floor12_merge.js?v="]');
+            return s ? (s.getAttribute('src').split('?v=')[1] || '') : '';
+          } catch (_) { return ''; }
+        }
+        var mine = curV();
+        if (!mine) return;
+        var shown = false, lastCheck = 0;
+        function show() {
+          if (shown) return; shown = true;
+          try {
+            var d = document.createElement('div');
+            d.id = 'f9-update-banner';
+            d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#ff9f1c;color:#111;font:bold 14px/1.4 ui-monospace,monospace;text-align:center;padding:10px 12px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.6)';
+            d.textContent = '🔄 NEW GAME VERSION AVAILABLE — TAP HERE TO UPDATE';
+            d.onclick = function () { try { location.reload(); } catch (_) {} };
+            document.body.appendChild(d);
+          } catch (_) {}
+        }
+        function check() {
+          if (shown) return;
+          var now = Date.now();
+          if (now - lastCheck < 60 * 1000) return;
+          lastCheck = now;
+          try {
+            fetch(location.pathname + '?_uc=' + now, { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
+              var m = t.match(/(?:game|floor12_merge).js?v=([w.-]+)/);
+              if (m && m[1] && m[1] !== mine) show();
+            }).catch(function () {});
+          } catch (_) {}
+        }
+        setInterval(check, 5 * 60 * 1000);
+        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(check, 1500); });
+        setTimeout(check, 60 * 1000);
+      } catch (_) {}
+    })();
+  </script>
 </body>
 
 </html>
