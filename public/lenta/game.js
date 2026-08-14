@@ -9660,7 +9660,24 @@ function _f9DrawGoldCamp() {
     window._f9GoldStoneRect = { x0: sX0 + gsz * 0.266, y0: sY + gsz * 0.281, x1: sX0 + gsz * 0.719, y1: sY + gsz * 0.688, hitBaseY: (_F9_GC.SY + 0.5 + 0.55) * C };
   }
   ctx.restore();
-  // (07-11 user: „RONKE MINE" užrašas pašalintas — pastatas lieka paspaudžiamas su hover švytėjimu)
+  // ⛏️ „RONKE MINE" iškaba virš stogo (08-14 user; identiškas MARKET bannerėlio stilius — tamsi lentelė,
+  //   auksinis rėmelis, Press Start 2P). 07-11 buvo nuimta — grąžinta MARKET formatu.
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const gmLabel = '⛏️ RONKE MINE';
+  ctx.font = Math.round(C * 0.26) + 'px "Press Start 2P", monospace';
+  const gmTw = ctx.measureText(gmLabel).width;
+  const gmPadX = C * 0.22, gmBwd = gmTw + gmPadX * 2, gmBht = C * 0.5;
+  const gmCx = gcHx + hbw / 2;
+  const gmBx = gmCx - gmBwd / 2, gmBy = gcHy - gmBht - C * 0.06;
+  ctx.fillStyle = 'rgba(12,16,32,0.92)';
+  ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(gmBx, gmBy, gmBwd, gmBht, 5); else ctx.rect(gmBx, gmBy, gmBwd, gmBht);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffcf5c';
+  ctx.fillText(gmLabel, gmCx, gmBy + gmBht / 2 + 1);
+  ctx.restore();
   // ── ciklo fazės ──
   if (gc.phase === 'walk_to_stone') {
     const t = Math.min(el / WALK_MS, 1);
