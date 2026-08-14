@@ -232,6 +232,7 @@
     return Math.min(5000, pot);   // MINE_CAP
   }
   var STEAL_PCT = 0.5;   // == serverio MINE_STEAL_PCT — 100% wipe atveju puolikas gauna 50% poto
+  var RAID_MIN_DEFENDERS = 12;   // == serverio RAID_FIELD_REQ (F9PvpRoom) — ta pati riba kaip kasimo
   // ⚔ M7 fix (07-12, sync auditas): rodom KOVAI PAJĖGIUS gynėjus (snapshot NFT − sužaloti − mirę) —
   //   raw snapshot count over-count'indavo (po raido rodė pre-raid skaičių, nors visi ligoninėj).
   function combatReady(r) {
@@ -254,12 +255,15 @@
       if (a === me || a.indexOf('#') >= 0) return false;
       if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;   // 🧹 07-17: fake/test adresai (E2E likučiai: ne-40-hex ARBA 10+ vienodų uodega) NErodomi
       if (r.buildings && r.buildings.dutyMode === 'safe') return false;   // 🛡 SAFE (+ auto-SAFE po kovos) pilys NEPUOLAMOS
-      return combatReady(r) >= 1;   // be kovai pajėgių gynėjų (RECOVERING) — nelistinama (L7: sąrašas = gate)
+      // ⚔️🛡 08-14 (user): VIENA riba — „neturi 12 unitų pilyje → nekasi IR tavęs niekas negali pulti".
+      //   Buvo >=1: pilys be kasyklos (grobis 0.0) vis tiek listinamos → puolikas pelnydavo kaulais, naujokas
+      //   gaudavo unitus į ligoninę už dyką. Serveris enforce'ina tą patį (RAID_FIELD_REQ, NO_DEFENDERS).
+      return combatReady(r) >= RAID_MIN_DEFENDERS;
     });
     var cntEl = panel && panel.querySelector('#f9raid-counter');
     if (cntEl) cntEl.textContent = '🏰 ' + rows.length;
     if (!rows.length) {
-      list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:8px 0;">No raidable castles (need registered NFT defenders). Open the game on another wallet/PC first.</div>';
+      list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:8px 0;">No raidable castles right now. Only castles with <b style="color:#c9d4e8;">' + RAID_MIN_DEFENDERS + '+ units on the field</b> (the ones actually mining RONKE) can be raided.</div>';
       return;
     }
     rows.forEach(function (r) { r._pot = estPot(r.buildings); });

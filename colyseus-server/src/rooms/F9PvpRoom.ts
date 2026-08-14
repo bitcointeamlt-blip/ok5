@@ -228,6 +228,10 @@ const CEM_REQ_A_RV = 1, CEM_REQ_A_REG = 10, CEM_REQ_B_REG = 12, CEM_REQ_B_WALLET
 // ⛏️ RONKE MINING lauko-gate (07-16 user): kasimas priklauso nuo unitų DABAR ANT LAUKO, ne registruotų.
 //   A: RonkeVerse NFT + ≥12 ant lauko;  B: ≥12 ant lauko + ≥69 wallet. Žemiau → kasimas 0 (kietas jungiklis).
 const MINE_FIELD_REQ_A = Number(process.env.F9_MINE_FIELD_A) || 12, MINE_FIELD_REQ_B = Number(process.env.F9_MINE_FIELD_B) || 12;
+// ⚔️🛡 08-14 (user): VIENA PAPRASTA TAISYKLĖ — „neturi 12 unitų pilyje → nekasi IR tavęs niekas negali pulti".
+//   Anksčiau raid gate buvo ≥1 gynėjas, o kasimo ≥12 → pilys, kurios nieko nekasa (grobis 0), vis tiek buvo
+//   puolamos, o puolikas pelnydavo KAULAIS už kill'us (iki 4×/kill × 5 RONKE) — naujokų farm'as. Dabar riba ta pati.
+const RAID_FIELD_REQ = Number(process.env.F9_RAID_FIELD_REQ) || MINE_FIELD_REQ_A;
 // ⛏️💰 RONKE MINING (07-11 server-authoritative) — PRIVALO sutapti su klientu game.js (_F9_MINE_*).
 //   Rate = (base + healthyPower×powerH × lauko-frakcija) × shield × success(fail vidurkis). Passive bones IŠJUNGTA.
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
@@ -1264,12 +1268,13 @@ export class F9PvpRoom extends Room<F9State> {
         console.log(`[F9PvpRoom] 🫀 async raid atmestas — gynėjas ${this._ownerAddr.slice(0, 10)}… matytas prieš ${Math.round((Date.now() - _seenAt) / 1000)}s (grace, tuoj LIVE)`);
         throw new Error("DEFENDER_ONLINE");
       }
-      // ⚰️ RAID GATING: pilis be KOVAI PAJĖGIŲ NFT gynėjų NEPUOLAMA (sužaloti ligoninėj nesiskaito —
-      //   po pralaimėto raido pilis neaktyvi kol gynėjai pasveiks; jokios farm spiralės)
+      // ⚰️ RAID GATING: pilis su MAŽIAU nei RAID_FIELD_REQ kovai pajėgių NFT gynėjų NEPUOLAMA (sužaloti
+      //   ligoninėj nesiskaito). 08-14 (user): riba pakelta 1 → 12 = TA PATI kaip kasimo → „negauni rewardų
+      //   (nekasi) → tavęs niekas ir pulti negali". Uždaro naujokų farm'ą kaulais + saugo nuo 10% mirties rizikos.
       const _injSet = this._injuredSet(this._ownerAddr);
-      const _hasNftDef = !!(this._restoreUnits && this._restoreUnits.some((s) => s.tokenId && !/^dev/i.test(s.tokenId) && !_injSet.has(s.tokenId)));
-      if (!_hasNftDef) {
-        console.log(`[F9PvpRoom] 🚫 async raid atmestas — ${this._ownerAddr} neturi kovai pajėgių NFT gynėjų`);
+      const _healthyAsync = (this._restoreUnits || []).filter((s) => s.tokenId && !/^dev/i.test(s.tokenId) && !_injSet.has(s.tokenId)).length;
+      if (_healthyAsync < RAID_FIELD_REQ) {
+        console.log(`[F9PvpRoom] 🚫 async raid atmestas — ${this._ownerAddr} turi ${_healthyAsync}/${RAID_FIELD_REQ} kovai pajėgių gynėjų (nekasa → nepuolamas)`);
         throw new Error("NO_DEFENDERS");
       }
       // ⚔️💰 RAID FEE (PASKUTINIS gate — atmestas join TX nesudegina): 10 RONKE → treasury, moka TIK puolikas.
@@ -1376,9 +1381,14 @@ export class F9PvpRoom extends Room<F9State> {
       const _ownerDeck = this._decks.get(this._ownerSid) || [];
       const _ownInj = this._injuredSet(this._ownerAddr);
       const _healthyDef = _ownerDeck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId) && !_ownInj.has(d.tokenId)).length;
-      if (_healthyDef < 1) {
+      // 08-14: 1 → RAID_FIELD_REQ (12) = TA PATI riba kaip kasimo. Matuojam unitus LAUKE (kaip _mineEligible),
+      //   NE deką — kitaip bench'intas žaidėjas (kasimas OFF) vis tiek būtų puolamas. Reikalaujam abiejų:
+      //   lauke ≥12 IR sveikų NFT deke ≥12 (dev tokenai nesiskaito). Nespėję spawn'intis → atmetam (fee dar
+      //   nenuskaitytas — fee gate žemiau) → puolikas pakartos.
+      const _onFieldNow = this._fieldCounts(this._ownerAddr).onField;
+      if (Math.min(_onFieldNow, _healthyDef) < RAID_FIELD_REQ) {
         this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId);   // 🐛 M3: išvalom ghost player (kitaip throw palieka size=2 → onLeave→_handlePlayerOut→klaidingas owner _endMatch)
-        console.log(`[F9PvpRoom] 🚫 live raid atmestas — savininkas be kovai pajėgių NFT unitų`);
+        console.log(`[F9PvpRoom] 🚫 live raid atmestas — savininkas lauke ${_onFieldNow}, sveikų deke ${_healthyDef} (< ${RAID_FIELD_REQ}) → nekasa → nepuolamas`);
         throw new Error("NO_DEFENDERS");
       }
       // ⚔️💰 RAID FEE (PASKUTINIS gate, kaip async): 10 RONKE → treasury, moka TIK puolikas.
