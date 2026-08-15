@@ -2287,21 +2287,28 @@
         sinceGuard: army.time - u.guardAt,
         moving: !fighting && !u.holding
       };
-      /* ⚔️ PASTIPRINTAS unitas (army.js `_reinforce`) — DIDESNIS + auksinė aureolė, kad iškart
-       * matytum, jog didelis valymas nuėjo į kovotoją, o ne į nematomą eilę (2026-08-15). */
-      var bl = u.buffed | 0;
-      var usc = sc * (1 + Math.min(bl, 6) * 0.09);
-      if (bl > 0) {
+      /* ⚔️ ×N unitas (2026-08-15): 2 linijos = ×2, tetris = ×4 — didesnis, su aureole ir ×N virš galvos.
+       * Kovoje daugiklis krenta (žr. army.js `_syncMult`), tad užrašas iškart rodo tikrą jo jėgą. */
+      var ml = Math.max(1, Math.min(4, u.mult || 1));
+      var usc = sc * (1 + (ml - 1) * 0.16);
+      if (ml > 1) {
         ctx.save();
-        ctx.globalAlpha = 0.16 + Math.min(bl, 6) * 0.05;
+        ctx.globalAlpha = 0.14 + (ml - 1) * 0.07;
         ctx.fillStyle = '#ffcf5c';
         ctx.beginPath();
-        ctx.arc(Math.round(ux + jab), laneY - 2, 9 + Math.min(bl, 6) * 1.6, 0, Math.PI * 2);
+        ctx.arc(Math.round(ux + jab), laneY - 2, 9 + (ml - 1) * 2.4, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
       if (!u.type || !this.drawDeckUnit(u.type, ux + jab, laneY, u.dir, this.t, ph, fighting, dist, fighting, usc, pose)) {
         unitSprite(ctx, Math.round(ux + jab), laneY, u.dir, c, this.t / 90 + ph, fighting);
+      }
+      /* ⚔️ ×N virš galvos — kiek linijų šis unitas neša ir kiek kartų jis stipresnis. */
+      if (ml > 1) {
+        var mtx = 'x' + ml, mw = F.width(mtx, 1);
+        var mx = Math.round(ux + jab - mw / 2), my = laneY - 16 - (ml - 1) * 2;
+        rect(ctx, mx - 2, my - 2, mw + 4, 11, '#05060c');
+        F.outlined(ctx, mtx, mx, my, ml >= 4 ? '#ffd75c' : '#ffffff', '#05060c', 1);
       }
       /* HP juosta — rodoma tik apgadintiems, kad nekabėtų virš visų */
       /* (sviediniai piešiami po visų unitų — žr. žemiau) */

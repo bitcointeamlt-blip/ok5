@@ -67,60 +67,53 @@
     return -1;
   };
 
-  /* Paleidimo prašymas. Aukštai laisvi → paleidžiam unitą (kaip visada).
-   * ⚔️ 2026-08-15 (user idėja): jei aukštai UŽIMTI — unitas NEBEstoja į eilę, o PASTIPRINA
-   * silpniausią jau kovojantį savo unitą (pagydo + HP + žala). Anksčiau eilėje kabodavo
-   * vidutiniškai 28 unitai, o kova stovėjo 1v1 lygiosiose ir niekas neprasiverždavo —
-   * dabar didelis valymas iškart matomas mūšyje: tavo unitas laiko ir prasiveržia. */
+  /* Vieno unito paleidimas (senas API — naudoja lokalus/legacy kodas). ×N kelias eina per requestClear. */
   Army.prototype.request = function (side, type) {
-    if (this.freeLane(side) < 0 && this._reinforce(side)) return;
-    this.queue[side].push(type);
-    this._pumpQueue();
+    this.requestClear(side, [type]);
   };
 
-  /* ⚔️ VIENO VALYMO SMŪGIS: `n` linijų vienu metu → 1 unitas + (n−1) pastiprinimai JAM PAČIAM.
-   * Vienguba = paprastas unitas (kaip visada), dviguba = stiprus, TETRIS = milžinas, kuris
-   * realiai pralaužia 1v1 ir nuneša liniją. Anksčiau 4 linijos duodavo 4 vienodus unitus,
-   * kurie po vieną susinaikindavo su priešo unitais → didelis valymas nieko nekeisdavo. */
+  /* ⚔️ ×N SISTEMA (2026-08-15, user): vienas valymas = VIENAS unitas su daugikliu.
+   *   1 linija → ×1 (paprastas) · 2 → ×2 · 3 → ×3 · TETRIS → ×4.
+   *   ×N reiškia N kartų stipresnį VISOMIS prasmėmis: HP ×N, žala ×N, o nuėjęs iki galo
+   *   prideda priešui N linijų. Kovoje daugiklis NUSITRINA: nuėmus vieno „×1" vertą HP,
+   *   ×3 virsta ×2 (žala irgi nukrenta). Pradėjęs ×3, bet atėjęs ×1 — prideda tik 1 liniją.
+   *   Taip didelis valymas ir matomas (×N virš galvos), ir realiai lemia mūšį. */
   Army.prototype.requestClear = function (side, types) {
     if (!types || !types.length) return;
-    var n = types.length;
-    var before = this.units.length;
-    this.request(side, types[0]);
-    var fresh = null;
-    for (var i = before; i < this.units.length; i++) if (this.units[i].side === side) { fresh = this.units[i]; break; }
-    for (var k = 1; k < n; k++) {
-      if (fresh && fresh.state !== 'dead') this._buff(fresh);   // visa valymo jėga — į TĄ PATĮ unitą
-      else this.request(side, types[k]);                        // jei jis jau žuvo — paprastas unitas
-    }
-  };
-
-  /* Pastiprinimas: silpniausias (mažiausiai HP) gyvas savo unitas pagydomas ir sustiprinamas.
-   * Grąžina true, jei pavyko — tada naujo unito nebekuriam. Riba `REINFORCE.MAX` saugo nuo begalinio augimo. */
-  Army.prototype._reinforce = function (side) {
-    var R = (C.MARCH && C.MARCH.REINFORCE) || null;
-    if (!R) return false;
+    var n = Math.max(1, Math.min(4, types.length));
+    var lane = this.freeLane(side);
+    if (lane >= 0) { this.spawn(side, types[0], lane, n); return; }
+    /* Aukštai užimti → jėga keliauja į silpniausią savo unitą (jokių eilių, kur unitai kabėdavo). */
     var best = null;
     for (var i = 0; i < this.units.length; i++) {
       var u = this.units[i];
       if (u.state === 'dead' || u.side !== side) continue;
-      if ((u.buffed || 0) >= (R.MAX || 6)) continue;
-      if (!best || u.hp < best.hp) best = u;
+      if (!best || u.mult < best.mult) best = u;
     }
-    if (!best) return false;
-    this._buff(best);
-    return true;
+    if (best) this.addMult(best, n);
+    else { this.queue[side].push(types[0]); this._pumpQueue(); }
   };
 
-  /* Vienas pastiprinimas: pilnas pagydymas + HP/žalos priedas. `buffed` naudoja klientas piešimui. */
-  Army.prototype._buff = function (u) {
-    var R = (C.MARCH && C.MARCH.REINFORCE) || { HP: 0.5, DMG: 0.35, MAX: 6 };
-    if ((u.buffed || 0) >= (R.MAX || 6)) { u.hp = u.maxHp; return; }   // riba pasiekta — bent pagydom
-    u.maxHp = Math.round(u.maxHp * (1 + (R.HP || 0)));
-    u.hp = u.maxHp;
-    u.dmg = Math.round(u.dmg * (1 + (R.DMG || 0)) * 10) / 10;
-    u.buffed = (u.buffed || 0) + 1;
-    this.emit('buff', { unit: u, lane: u.lane, x: u.x, side: u.side, level: u.buffed });
+  /* Prideda daugiklį jau kovojančiam unitui (iki 4): HP ir žala perskaičiuojami nuo bazės. */
+  Army.prototype.addMult = function (u, n) {
+    var m = Math.max(1, Math.min(4, (u.mult || 1) + n));
+    if (m === u.mult) { u.hp = Math.min(u.maxHp, u.hp + u.baseHp); return; }
+    var gained = m - u.mult;
+    u.mult = m;
+    u.maxHp = u.baseHp * m;
+    u.hp = Math.min(u.maxHp, u.hp + u.baseHp * gained);
+    u.dmg = Math.round(u.baseDmg * m * 10) / 10;
+    this.emit('buff', { unit: u, lane: u.lane, x: u.x, side: u.side, level: u.mult });
+  };
+
+  /* Po žalos: ×N = kiek pilnų „×1" HP dar liko. Nukritus daugikliui, krenta ir žala. */
+  Army.prototype._syncMult = function (u) {
+    if (!u.baseHp) return;
+    var m = Math.max(1, Math.min(4, Math.ceil(u.hp / u.baseHp)));
+    if (m === u.mult) return;
+    u.mult = m;
+    u.dmg = Math.round(u.baseDmg * m * 10) / 10;
+    this.emit('multdown', { unit: u, lane: u.lane, x: u.x, side: u.side, level: m });
   };
 
   Army.prototype._pumpQueue = function () {
@@ -147,9 +140,10 @@
   };
 
   /* side: 'you' | 'foe'. Statai imami iš F12 (`Units.stats`) — hp/dmg/cd/range/spd. */
-  Army.prototype.spawn = function (side, type, lane) {
+  Army.prototype.spawn = function (side, type, lane, mult) {
     var Un = global.Units;
     var st = Un ? Un.stats(type) : { hp: 4, dmg: 2, cd: 1500, range: 0.05, spd: 0.012 };
+    var m = Math.max(1, Math.min(4, mult || 1));   // ⚔️ ×N: kiek linijų buvo išvalyta vienu metu
     var u = {
       id: this._id++,
       side: side,
@@ -157,8 +151,10 @@
       lane: lane || 0,
       dir: side === 'you' ? 1 : -1,
       x: side === 'you' ? 0 : 1,
-      hp: st.hp, maxHp: st.hp,
-      dmg: st.dmg,
+      /* ×N = N kartų stipresnis VISOMIS prasmėmis; base* laikom, kad kovoje daugiklis galėtų kristi. */
+      mult: m, baseHp: st.hp, baseDmg: st.dmg,
+      hp: st.hp * m, maxHp: st.hp * m,
+      dmg: Math.round(st.dmg * m * 10) / 10,
       cd: st.cd,
       range: st.range * (C.MARCH.RANGE_SCALE || 1),
       /* F12 specialieji: skull blokuoja 25 %, hog 10 % crit, ronhood 1 % crit + 11 % miss,
@@ -383,6 +379,7 @@
         }
         var dmg = s.fixedDmg != null ? s.fixedDmg : (crit ? s.by.dmg * 2 : s.by.dmg);
         tgt.hp -= dmg;
+        this._syncMult(tgt);   // ⚔️ ×N nukrenta, kai nuimta vieno „×1" verta HP dalis
         this.emit('hit', {
           by: s.by, on: tgt, x: tgt.x, lane: tgt.lane,
           dmg: dmg, crit: crit, ranged: s.ranged || s.by.range > 0.06

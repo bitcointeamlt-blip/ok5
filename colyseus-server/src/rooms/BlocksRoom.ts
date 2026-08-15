@@ -656,18 +656,20 @@ export class BlocksRoom extends Room<BlocksState> {
     for (const e of evs) {
       if (e.t === "arrive") {
         // e.target = kuriai pusei krenta linija ('you'→p1, 'foe'→p2)
+        // ⚔️ ×N: linijų tiek, koks daugiklis LIKO atėjus (pradėjo ×3, kovoje nukrito iki ×1 → 1 linija)
+        const lines = Math.max(1, Math.min(4, (e.unit && e.unit.mult) || LINES_PER_UNIT));
         if (this.serverAuth && this.eng) {
           // serverAuth: garbage krenta ant SERVERIO lentos (autoritetinga), ne siunčiam klientui
           const teng = e.target === "you" ? this.eng.you : this.eng.foe;
-          if (teng && teng.state === "playing") teng.addGarbageNow(LINES_PER_UNIT);
+          if (teng && teng.state === "playing") teng.addGarbageNow(lines);
         } else {
           const targetSide: Side = e.target === "you" ? "p1" : "p2";
           const bot = this.bots[targetSide];
           if (bot) {
             // 🤖 boto pusė serveryje: garbage krenta tiesiai ant boto lentos
-            if (bot.eng.state === "playing") bot.eng.addGarbageNow(LINES_PER_UNIT);
+            if (bot.eng.state === "playing") bot.eng.addGarbageNow(lines);
           } else {
-            this._sendGarbage(targetSide, LINES_PER_UNIT);
+            this._sendGarbage(targetSide, lines);
           }
         }
       } else if (e.t === "hit" || e.t === "shoot" || e.t === "impact" ||

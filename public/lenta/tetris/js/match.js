@@ -284,7 +284,9 @@
       var e = evs[i];
       if (e.t === 'arrive') {
         var target = e.target === 'you' ? this.you : this.foe;
-        target.addGarbageNow(C.MARCH.LINES_PER_UNIT);
+        /* ⚔️ ×N: prideda tiek linijų, KOKS daugiklis liko atėjus (pradėjo ×3, kovoje nukrito iki ×1 → 1). */
+        var lines = Math.max(1, Math.min(4, (e.unit && e.unit.mult) || C.MARCH.LINES_PER_UNIT));
+        target.addGarbageNow(lines);
       } else {
         this._armyFxEvent(e);
       }
