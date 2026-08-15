@@ -12299,6 +12299,22 @@ function _f9DrawCapBarracks() {
   }
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(img, cx - cw / 2, drawTop, cw, ch);
+  // 🪖 „NFT UNITS" iškaba virš stogo (08-15 user) — identiškas MARKET / RONKE MINE bannerėlio stilius.
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const brLabel = '🪖 NFT UNITS';
+  ctx.font = Math.round(C * 0.26) + 'px "Press Start 2P", monospace';
+  const brTw = ctx.measureText(brLabel).width;
+  const brPadX = C * 0.22, brBwd = brTw + brPadX * 2, brBht = C * 0.5;
+  const brBx = cx - brBwd / 2, brBy = drawTop + ch * cfg.topFrac - brBht - C * 0.06;
+  ctx.fillStyle = 'rgba(12,16,32,0.92)';
+  ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(brBx, brBy, brBwd, brBht, 5); else ctx.rect(brBx, brBy, brBwd, brBht);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffcf5c';
+  ctx.fillText(brLabel, cx, brBy + brBht / 2 + 1);
+  ctx.restore();
   const halfW = cfg.wCells * C / 2;
   const hitBaseY = (cfg.hitCY + cfg.hitHH + 0.5) * C;   // kolizijos pietinė briauna (feet-world) = front/behind dalintuvas
   window._f9BarracksRect = { x0: cx - halfW, y0: drawTop + ch * cfg.topFrac, x1: cx + halfW, y1: groundY, hitBaseY: hitBaseY };
