@@ -226,7 +226,11 @@
 
     var dx = pick.x - eng.cur.x;
     for (var j = 0; j < Math.abs(dx); j++) steps.push(dx > 0 ? 'right' : 'left');
-    steps.push('hard');
+    /* 🪶 2026-08-15: silpniausioms pakopoms (cfg.hardDrop === false) momentinis drop UŽDRAUSTAS —
+     * botas leidžia figūrą rodykle žemyn (softdrop), likusį kelią nukrenta gravitacija.
+     * Naujokas ir atrodo kaip naujokas, ir realiai deda figūras lėčiau. */
+    if (this.cfg.hardDrop === false) { var _ss = (C && C.AI_SOFT_STEPS) || 20; for (var q = 0; q < _ss; q++) steps.push('softdrop'); }
+    else steps.push('hard');
     this.plan = steps;
   };
 
@@ -251,8 +255,13 @@
     }
 
     this.timer += dt;
-    while (this.plan && this.plan.length && this.timer >= this.cfg.moveMs) {
-      this.timer -= this.cfg.moveMs;
+    while (this.plan && this.plan.length) {
+      /* Rodyklė ŽEMYN pigesnė už judesį į šoną — žmogus ją laiko nuspaudęs, o ne bakstelėja
+       * po vieną (2026-08-15). Be šito silpnas botas nusmukdavo iki 5 figūrų/min. */
+      var _nx = this.plan[0];
+      var cost = (_nx === 'softdrop') ? Math.max(35, this.cfg.moveMs * 0.28) : this.cfg.moveMs;
+      if (this.timer < cost) break;
+      this.timer -= cost;
       var a = this.plan.shift();
       eng.tap(a);
       if (a === 'hard' || a === 'hold') { this.plan = null; this.lastPiece = eng.cur; this.thinking = this.cfg.thinkMs; break; }

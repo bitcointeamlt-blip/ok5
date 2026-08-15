@@ -256,6 +256,7 @@
     var deck = Un ? Un.deck(0) : null;
     if (!this._deckAt) this._deckAt = { you: 0, foe: 0 };
     if (!this._deckRnd) this._deckRnd = Math.random;   // apsauga (lokaliai=Math.random; online start'e=seeded)
+    var _types = [];
     for (var i = 0; i < n; i++) {
       var type = 'skull';
       if (deck && deck.length) {
@@ -266,9 +267,12 @@
          * SEEDED rnd → online abu klientai peršoka vienodai (deterministika). */
         this._deckAt[side] += (this._deckRnd() < 0.35 ? 2 : 1);
       }
-      /* `request` pats parenka laisvą aukštą; jei visi užimti — laukia eilėje */
-      this.army.request(side, type);
+      _types.push(type);
     }
+    /* ⚔️ VIENAS valymas = VIENAS smūgis: 1 unitas + (n−1) pastiprinimai jam (tetris → milžinas).
+     * Seniau 4 linijos duodavo 4 vienodus unitus, kurie po vieną susinaikindavo (2026-08-15). */
+    if (this.army.requestClear) this.army.requestClear(side, _types);
+    else _types.forEach(function (t) { this.army.request(side, t); }, this);
     var eng = side === 'you' ? this.you : this.foe;
     eng.stats.sent += n;
   };

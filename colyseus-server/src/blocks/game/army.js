@@ -78,6 +78,23 @@
     this._pumpQueue();
   };
 
+  /* ⚔️ VIENO VALYMO SMŪGIS: `n` linijų vienu metu → 1 unitas + (n−1) pastiprinimai JAM PAČIAM.
+   * Vienguba = paprastas unitas (kaip visada), dviguba = stiprus, TETRIS = milžinas, kuris
+   * realiai pralaužia 1v1 ir nuneša liniją. Anksčiau 4 linijos duodavo 4 vienodus unitus,
+   * kurie po vieną susinaikindavo su priešo unitais → didelis valymas nieko nekeisdavo. */
+  Army.prototype.requestClear = function (side, types) {
+    if (!types || !types.length) return;
+    var n = types.length;
+    var before = this.units.length;
+    this.request(side, types[0]);
+    var fresh = null;
+    for (var i = before; i < this.units.length; i++) if (this.units[i].side === side) { fresh = this.units[i]; break; }
+    for (var k = 1; k < n; k++) {
+      if (fresh && fresh.state !== 'dead') this._buff(fresh);   // visa valymo jėga — į TĄ PATĮ unitą
+      else this.request(side, types[k]);                        // jei jis jau žuvo — paprastas unitas
+    }
+  };
+
   /* Pastiprinimas: silpniausias (mažiausiai HP) gyvas savo unitas pagydomas ir sustiprinamas.
    * Grąžina true, jei pavyko — tada naujo unito nebekuriam. Riba `REINFORCE.MAX` saugo nuo begalinio augimo. */
   Army.prototype._reinforce = function (side) {
@@ -91,12 +108,19 @@
       if (!best || u.hp < best.hp) best = u;
     }
     if (!best) return false;
-    best.maxHp = Math.round(best.maxHp * (1 + (R.HP || 0)));
-    best.hp = best.maxHp;                                        // pilnas pagydymas
-    best.dmg = Math.round(best.dmg * (1 + (R.DMG || 0)) * 10) / 10;
-    best.buffed = (best.buffed || 0) + 1;
-    this.emit('buff', { unit: best, lane: best.lane, x: best.x, side: side, level: best.buffed });
+    this._buff(best);
     return true;
+  };
+
+  /* Vienas pastiprinimas: pilnas pagydymas + HP/žalos priedas. `buffed` naudoja klientas piešimui. */
+  Army.prototype._buff = function (u) {
+    var R = (C.MARCH && C.MARCH.REINFORCE) || { HP: 0.5, DMG: 0.35, MAX: 6 };
+    if ((u.buffed || 0) >= (R.MAX || 6)) { u.hp = u.maxHp; return; }   // riba pasiekta — bent pagydom
+    u.maxHp = Math.round(u.maxHp * (1 + (R.HP || 0)));
+    u.hp = u.maxHp;
+    u.dmg = Math.round(u.dmg * (1 + (R.DMG || 0)) * 10) / 10;
+    u.buffed = (u.buffed || 0) + 1;
+    this.emit('buff', { unit: u, lane: u.lane, x: u.x, side: u.side, level: u.buffed });
   };
 
   Army.prototype._pumpQueue = function () {

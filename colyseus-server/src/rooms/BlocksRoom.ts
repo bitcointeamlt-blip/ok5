@@ -558,9 +558,8 @@ export class BlocksRoom extends Room<BlocksState> {
     log.push(this.matchMs);
 
     const armySide = SIDE_TO_ARMY[p.side as Side];
-    for (let i = 0; i < n; i++) {
-      this.army.request(armySide, this._nextDeckType(armySide));
-    }
+    // vienas valymas = vienas smuugis: 1 unitas + (n-1) pastiprinimai jam (zr. army.js requestClear)
+    this.army.requestClear(armySide, Array.from({ length: n }, () => this._nextDeckType(armySide)));
     p.lines += n;
   }
 
@@ -724,7 +723,7 @@ export class BlocksRoom extends Room<BlocksState> {
       for (const e of evs) {
         if (e.t === "clear") {
           const n = Math.max(0, Math.min(4, e.n | 0));
-          for (let i = 0; i < n; i++) this.army.request(key, this._nextDeckType(key));
+          this.army.requestClear(key, Array.from({ length: n }, () => this._nextDeckType(key)));
           const pl = this._playerBySide(key === "you" ? "p1" : "p2"); if (pl) pl.lines += n;
           this.boardFx.push({ side: key, n, rows: e.rows || [], colors: e.colors || [] });   // juice klientui
         } else if (e.t === "topout") {
@@ -757,7 +756,7 @@ export class BlocksRoom extends Room<BlocksState> {
       for (const e of evs) {
         if (e.t === "clear") {
           const n = Math.max(0, Math.min(4, e.n | 0));
-          for (let i = 0; i < n; i++) this.army.request(armySide, this._nextDeckType(armySide));
+          this.army.requestClear(armySide, Array.from({ length: n }, () => this._nextDeckType(armySide)));
           const pl = this._playerBySide(s); if (pl) pl.lines += n;
         } else if (e.t === "topout") {
           this._end(s === "p1" ? "p2" : "p1");   // botas užsivertė → priešinga pusė laimi

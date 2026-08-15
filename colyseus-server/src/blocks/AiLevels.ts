@@ -16,6 +16,7 @@ import { LEAGUES, decode } from "./RankStore";
 export type AiCfg = {
   name: string; moveMs: number; thinkMs: number;
   mistake: number; blunder: number; useHold: boolean; panic: number;
+  hardDrop: boolean;   // false → botas figūros „nemeta" žemyn, o leidžia rodykle (žr. ai.js)
 };
 
 const MAX_STEP = 23;   // 0..23
@@ -37,6 +38,9 @@ export function cfgFor(step: number): AiCfg {
     blunder: Math.round((0.30 * Math.pow(1 - t, 1.7) + 0.01) * 1000) / 1000,    // 0.31 → 0.01
     useHold: s >= 7,                                       // HOLD tik nuo STONE 1★ (buvo WOOD 2★)
     panic: Math.round((1.0 + 1.5 * t) * 100) / 100,        // 1.0 → 2.5 (buvo 2.9)
+    /* 🪶 PAPER lygos botas (0★–2★) NEnaudoja momentinio drop — leidžia figūrą rodykle žemyn,
+     * kaip naujokas. Todėl jis ne tik klysta, bet ir fiziškai lėtesnis (user 08-15). */
+    hardDrop: s >= 3,
   };
 }
 
