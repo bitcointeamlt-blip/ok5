@@ -15431,16 +15431,23 @@ body.f12-landscape #canvas {
   border-bottom: 1px solid #2a3a5a;
 }
 .nft-tab {
-  flex: 1;
+  flex: 1 1 0; min-width: 0;   /* lygaus pločio tabai, net kai pavadinimai skirtingo ilgio */
   background: #1a2238; color: #8a9aaa;
   border: 1px solid #2a3a5a; border-bottom: none;
-  padding: 10px 8px;
+  padding: 10px 6px;
   font-family: inherit; font-size: 9px;
+  line-height: 1.35;   /* ilgesni pavadinimai (DECK MANAGEMENT / DEPLOY TO FIELD) — tvarkingas 2-jų eilučių wrap */
   cursor: pointer;
   border-radius: 4px 4px 0 0;
   transition: all 0.15s;
 }
 .nft-tab:hover { color: #fff; }
+/* Tabų pavadinimai: pilni plačiam ekranui, trumpi telefonui (siaurame flex'e ilgi lūžta į 3 eilutes) */
+.ntab-short { display: none; }
+@media (max-width: 900px) {
+  .ntab-long { display: none; }
+  .ntab-short { display: inline; }
+}
 .nft-tab.active {
   background: #2a3a5a; color: #ffcf5c;
   border-color: #4a9da6;
@@ -15647,7 +15654,7 @@ body.f12-landscape #canvas {
 @media (max-width: 480px) {
   .nft-modal-content { font-size: 8px; }
   .nft-modal-header { font-size: 11px; padding: 12px; }
-  .nft-tab { font-size: 8px; padding: 8px 4px; }
+  .nft-tab { font-size: 7.5px; padding: 8px 3px; }
   .nft-unit-option img { width: 44px; height: 44px; }
   .nft-pending-countdown { font-size: 22px; }
   .nft-btn { font-size: 9px; padding: 10px 4px; min-width: 100px; }

@@ -102,11 +102,8 @@
     this.menuBits = null;
     this._wallCanvas = null;   // 🧱 procedūrinės akmens sienos kešas (perbraižom TIK per resize, ne kas kadrą)
     this._wallKey = '';
-    // 🎮 Kenney (CC0) pikseliniai valdymo klavišų sprite'ai — prep ekranui
-    this._keyImg = {};
-    ['up', 'down', 'left', 'right'].forEach(function (k) {
-      try { var im = new Image(); im.src = 'assets/keys/key_' + k + '.png'; this._keyImg[k] = im; } catch (_) {}
-    }, this);
+    /* 🎮 (08-15) Kenney `assets/keys/*.png` preload PAŠALINTAS — prep ekranas klavišus piešia pats
+     * (tų sprite'ų rodyklės tokios smulkios, kad visos keturios atrodė kaip vienodas „+"). */
     this.resize();
   }
 
@@ -1317,89 +1314,6 @@
     if (oy) ctx.translate(0, -oy);
   };
 
-  // 🎓 PASIRUOŠIMO EKRANAS — NUPIEŠTI valdymo mygtukai (rodyklės) + DEMO figūra, kuri auto-demonstruoja:
-  //    judant kairėn užsidega ◄ mygtukas, sukant — ▲, greitai žemyn — SPACE. Žaidėjas gali ir pats spausti.
-  //    Startas kai abu READY arba po 15s. Kad niekam nekiltų klausimų kaip pradėti / valdyti.
-  Renderer.prototype.drawPrep = function (match) {
-    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2), self = this;
-    ctx.globalAlpha = 0.9; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
-    var secs = Math.ceil((match._prepLeft || 0) / 1000);
-    var actKey = (match._demoKeyT > 0) ? match._demoKey : '';
-
-    F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.08), U.gold, '#05060c', 2);
-    F.outlinedCenter(ctx, 'THESE ARE YOUR CONTROLS', cx, Math.floor(vh * 0.08) + 22, U.dim, '#05060c', 1);
-    /* 🛡️ mažas įspėjimas: per didelis lygų skirtumas → reitingas nekis, bet prizas lieka */
-    if (match._noRankMatch) {
-      F.outlinedCenter(ctx, 'LEVEL GAP TOO BIG', cx, Math.floor(vh * 0.08) + 40, U.danger, '#05060c', 1);
-      F.outlinedCenter(ctx, 'NO RATING THIS GAME - PRIZE STILL COUNTS', cx, Math.floor(vh * 0.08) + 52, U.gold, '#05060c', 1);
-    }
-
-    // --- NUPIEŠTI valdymo mygtukai (per vidurį) ---
-    function tri(ax, ay, r, kind, color) {
-      ctx.fillStyle = color; ctx.beginPath();
-      if (kind === 'up') { ctx.moveTo(ax, ay - r); ctx.lineTo(ax - r, ay + r * 0.7); ctx.lineTo(ax + r, ay + r * 0.7); }
-      else if (kind === 'down') { ctx.moveTo(ax, ay + r); ctx.lineTo(ax - r, ay - r * 0.7); ctx.lineTo(ax + r, ay - r * 0.7); }
-      else if (kind === 'left') { ctx.moveTo(ax - r, ay); ctx.lineTo(ax + r * 0.7, ay - r); ctx.lineTo(ax + r * 0.7, ay + r); }
-      else { ctx.moveTo(ax + r, ay); ctx.lineTo(ax - r * 0.7, ay - r); ctx.lineTo(ax - r * 0.7, ay + r); }
-      ctx.closePath(); ctx.fill();
-    }
-    function keyBtn(kx, ky, ks, kind, on) {
-      var img = self._keyImg && self._keyImg[kind];
-      if (img && img.complete && img.naturalWidth) {
-        // 🎮 Kenney klavišo sprite'as. Aktyvus (paspaustas) → truputį didesnis + auksinis rėmas (pop).
-        var s = on ? ks + 4 : ks, o = on ? -2 : 0;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, kx + o, ky + o, s, s);
-        if (on) frame(ctx, kx - 2, ky - 2, ks + 4, ks + 4, '#ffcf5c');
-      } else {
-        // fallback (kol sprite'as kraunasi): nupieštas klavišas
-        rect(ctx, kx, ky, ks, ks, on ? '#ffcf5c' : '#161d2e');
-        frame(ctx, kx, ky, ks, ks, on ? '#ffffff' : '#6a5a2a');
-        if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
-        tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
-      }
-    }
-    var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
-    var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
-    /* 📱 rb97_swipe: touch įrenginyje valdymas kitas — SWIPE judina figūrą, mygtukai tik ROTATE+DROP,
-     * tad vietoj klaviatūros rodom swipe instrukciją (rodyklės užsidega braukiant, kaip klavišai). */
-    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
-    if (isTouch) {
-      var onL = actKey === 'left', onR = actKey === 'right';
-      tri(cx - 84, midy + 4, 13, 'left', onL ? '#ffffff' : '#ffcf5c');
-      tri(cx + 84, midy + 4, 13, 'right', onR ? '#ffffff' : '#ffcf5c');
-      F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, midy - 2, U.gold, '#05060c', 2);
-      F.outlinedCenter(ctx, 'SLIDE FINGER ON SCREEN - PIECE FOLLOWS', cx, midy + 24, U.text, '#05060c', 1);
-      F.outlinedCenter(ctx, 'SWIPE DOWN AND HOLD - FAST FALL', cx, midy + 38, U.text, '#05060c', 1);
-      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 52, U.dim, '#05060c', 1);
-    } else {
-    keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
-    keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
-    keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
-    keyBtn(midx + ks + gap, midy, ks, 'right', actKey === 'right');        // ► MOVE
-    F.outlinedCenter(ctx, 'ROTATE', midx + Math.floor(ks / 2), midy - ks - gap - 10, U.dim, '#05060c', 1);
-    F.outlinedCenter(ctx, 'MOVE', midx - Math.floor(ks / 2) - gap, midy + ks + 3, U.dim, '#05060c', 1);
-    F.outlinedCenter(ctx, 'MOVE', midx + ks + gap + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);
-    F.outlinedCenter(ctx, 'SOFT', midx + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);   // ▼ = soft drop (kad ir žemyn rodyklė turėtų „ką daro" užrašą)
-    // SPACE juosta (hard drop)
-    var sbx = midx - ks - gap, sby = midy + ks + gap + 14, sbw = ks * 3 + gap * 2, sbh = Math.floor(ks * 0.62);
-    var spOn = actKey === 'space';
-    rect(ctx, sbx, sby, sbw, sbh, spOn ? '#ffcf5c' : '#161d2e');
-    frame(ctx, sbx, sby, sbw, sbh, spOn ? '#ffffff' : '#6a5a2a');
-    if (spOn) frame(ctx, sbx - 1, sby - 1, sbw + 2, sbh + 2, '#ffcf5c');
-    F.outlinedCenter(ctx, 'SPACE', sbx + Math.floor(sbw / 2), sby + Math.floor(sbh / 2) - 3, spOn ? '#241a08' : '#ffcf5c', spOn ? '#ffcf5c' : '#05060c', 1);
-    F.outlinedCenter(ctx, 'FAST DROP', sbx + Math.floor(sbw / 2), sby + sbh + 4, U.dim, '#05060c', 1);
-    }
-
-    // --- READY + laikmatis + varžovo būsena (apačia) ---
-    var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
-    var btnW = Math.min(260, vw - 36), btnH = 30, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 12;
-    rect(ctx, btnX, btnY, btnW, btnH, ready ? '#1c3a24' : '#24543a');
-    frame(ctx, btnX, btnY, btnW, btnH, ready ? '#5aa06a' : '#5ce08a');
-    F.outlinedCenter(ctx, ready ? ('READY - WAITING ' + secs + 'S') : ('PRESS  READY   (AUTO ' + secs + 'S)'), cx, btnY + 11, ready ? U.dim : U.good, '#05060c', 1);
-    match._prepBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-    F.outlinedCenter(ctx, both ? 'BOTH READY - STARTING!' : (ready ? 'WAITING FOR OPPONENT...' : 'START WHEN BOTH READY, OR IN ' + secs + 'S'), cx, btnY - 13, both ? U.good : U.gold, '#05060c', 1);
-  };
 
   Renderer.prototype.drawCountdown = function (match) {
     var ctx = this.ctx, cx = this.vw / 2;
@@ -1695,88 +1609,135 @@
     if (oy) ctx.translate(0, -oy);
   };
 
-  // 🎓 PASIRUOŠIMO EKRANAS — NUPIEŠTI valdymo mygtukai (rodyklės) + DEMO figūra, kuri auto-demonstruoja:
-  //    judant kairėn užsidega ◄ mygtukas, sukant — ▲, greitai žemyn — SPACE. Žaidėjas gali ir pats spausti.
-  //    Startas kai abu READY arba po 15s. Kad niekam nekiltų klausimų kaip pradėti / valdyti.
+  /* 🎓 PASIRUOŠIMO EKRANAS — perdaryta 2026-08-15 (user: „griozdiška ir nesuprantama kaip prasideda žaidimas").
+   * Stilius: poliruotos navy „plaque" kortelės su ◇ gemų kampais (kaip likusiame RonkePong UI) vietoj
+   * plikų mygtukų krūvos. DVI aiškios zonos: CONTROLS (ką spausti) ir START (kaip prasideda mačas).
+   * ⚠️ Kenney `assets/keys/*.png` čia NEBENAUDOJAMI: jų rodyklės tokios smulkios, kad visos keturios
+   * atrodė kaip vienodas „+" — klavišų kepurės ir rodyklės dabar piešiamos pačios (aštrūs pikseliai).
+   * Paspaudus klavišą (arba demo) atitinkama kepurė užsidega auksu — iškart matyti, kas ką daro. */
   Renderer.prototype.drawPrep = function (match) {
-    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2), self = this;
-    ctx.globalAlpha = 0.9; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
+    var ctx = this.ctx, vw = this.vw, vh = this.vh, cx = Math.floor(vw / 2);
+    ctx.globalAlpha = 0.94; rect(ctx, 0, 0, vw, vh, '#05060c'); ctx.globalAlpha = 1;
     var secs = Math.ceil((match._prepLeft || 0) / 1000);
     var actKey = (match._demoKeyT > 0) ? match._demoKey : '';
+    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
 
-    F.outlinedCenter(ctx, 'GET READY', cx, Math.floor(vh * 0.08), U.gold, '#05060c', 2);
-    F.outlinedCenter(ctx, 'THESE ARE YOUR CONTROLS', cx, Math.floor(vh * 0.08) + 22, U.dim, '#05060c', 1);
-    /* 🛡️ mažas įspėjimas: per didelis lygų skirtumas → reitingas nekis, bet prizas lieka */
+    /* ── pikselinė rodyklė: trikampė galva + kotas, viskas stačiakampiais (jokio antialiasingo) ── */
+    function arrow(axc, ayc, r, dir, col) {
+      var i, s;
+      for (i = 0; i < r; i++) {
+        s = 1 + i * 2;
+        if (dir === 'up') rect(ctx, axc - Math.floor(s / 2), ayc - r + i, s, 1, col);
+        else if (dir === 'down') rect(ctx, axc - Math.floor(s / 2), ayc + r - i - 1, s, 1, col);
+        else if (dir === 'left') rect(ctx, axc - r + i, ayc - Math.floor(s / 2), 1, s, col);
+        else rect(ctx, axc + r - i - 1, ayc - Math.floor(s / 2), 1, s, col);
+      }
+      var st = Math.max(2, Math.floor(r * 0.9));
+      if (dir === 'up') rect(ctx, axc - 1, ayc, 2, st, col);
+      else if (dir === 'down') rect(ctx, axc - 1, ayc - st, 2, st, col);
+      else if (dir === 'left') rect(ctx, axc, ayc - 1, st, 2, col);
+      else rect(ctx, axc - st, ayc - 1, st, 2, col);
+    }
+    /* ── klaviatūros kepurė: šešėlis + korpusas + bevel; „on" = paspausta (auksinė, nusėdusi 1px) ── */
+    function keycap(kx, ky, kw, kh, glyph, on) {
+      var dy = on ? 1 : 0;
+      rect(ctx, kx + 1, ky + 2, kw, kh, '#03040a');
+      rect(ctx, kx, ky + dy, kw, kh, on ? U.gold : '#2b3852');
+      rect(ctx, kx + 1, ky + dy + 1, kw - 2, 1, on ? '#fff3c4' : '#41527a');
+      rect(ctx, kx + 1, ky + dy + kh - 2, kw - 2, 1, on ? '#c9a03c' : '#192134');
+      frame(ctx, kx, ky + dy, kw, kh, on ? '#ffffff' : '#131a29');
+      var gc = on ? '#241a08' : U.text;
+      if (glyph === 'space') F.center(ctx, 'SPACE', kx + kw / 2, ky + dy + Math.floor(kh / 2) - 3, gc, 1);
+      else arrow(kx + Math.floor(kw / 2), ky + dy + Math.floor(kh / 2), Math.max(3, Math.floor(kh * 0.22)), glyph, gc);
+    }
+
+    /* ── antraštė ── */
+    var topY = Math.max(8, Math.floor(vh * 0.045));
+    F.outlinedCenter(ctx, 'GET READY', cx, topY, U.gold, '#05060c', 2);
+    F.outlinedCenter(ctx, isTouch ? 'HOW TO PLAY' : 'YOUR CONTROLS', cx, topY + 20, U.dim, '#05060c', 1);
+    var warnY = topY + 32;
     if (match._noRankMatch) {
-      F.outlinedCenter(ctx, 'LEVEL GAP TOO BIG', cx, Math.floor(vh * 0.08) + 40, U.danger, '#05060c', 1);
-      F.outlinedCenter(ctx, 'NO RATING THIS GAME - PRIZE STILL COUNTS', cx, Math.floor(vh * 0.08) + 52, U.gold, '#05060c', 1);
+      F.outlinedCenter(ctx, 'LEVEL GAP TOO BIG - NO RATING, PRIZE STILL COUNTS', cx, warnY, U.danger, '#05060c', 1);
+      warnY += 11;
+    } else if (match._aiNoRank) {
+      F.outlinedCenter(ctx, 'AI PLAYS THIS MATCH - UNRANKED, XP STILL COUNTS', cx, warnY, U.gold, '#05060c', 1);
+      warnY += 11;
     }
 
-    // --- NUPIEŠTI valdymo mygtukai (per vidurį) ---
-    function tri(ax, ay, r, kind, color) {
-      ctx.fillStyle = color; ctx.beginPath();
-      if (kind === 'up') { ctx.moveTo(ax, ay - r); ctx.lineTo(ax - r, ay + r * 0.7); ctx.lineTo(ax + r, ay + r * 0.7); }
-      else if (kind === 'down') { ctx.moveTo(ax, ay + r); ctx.lineTo(ax - r, ay - r * 0.7); ctx.lineTo(ax + r, ay - r * 0.7); }
-      else if (kind === 'left') { ctx.moveTo(ax - r, ay); ctx.lineTo(ax + r * 0.7, ay - r); ctx.lineTo(ax + r * 0.7, ay + r); }
-      else { ctx.moveTo(ax + r, ay); ctx.lineTo(ax - r * 0.7, ay - r); ctx.lineTo(ax - r * 0.7, ay + r); }
-      ctx.closePath(); ctx.fill();
-    }
-    function keyBtn(kx, ky, ks, kind, on) {
-      var img = self._keyImg && self._keyImg[kind];
-      if (img && img.complete && img.naturalWidth) {
-        // 🎮 Kenney klavišo sprite'as. Aktyvus (paspaustas) → truputį didesnis + auksinis rėmas (pop).
-        var s = on ? ks + 4 : ks, o = on ? -2 : 0;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, kx + o, ky + o, s, s);
-        if (on) frame(ctx, kx - 2, ky - 2, ks + 4, ks + 4, '#ffcf5c');
-      } else {
-        // fallback (kol sprite'as kraunasi): nupieštas klavišas
-        rect(ctx, kx, ky, ks, ks, on ? '#ffcf5c' : '#161d2e');
-        frame(ctx, kx, ky, ks, ks, on ? '#ffffff' : '#6a5a2a');
-        if (on) frame(ctx, kx - 1, ky - 1, ks + 2, ks + 2, '#ffcf5c');
-        tri(kx + ks / 2, ky + ks / 2, ks * 0.26, kind, on ? '#241a08' : '#ffcf5c');
+    /* ── apatinis READY mygtukas (geometrija reikalinga anksčiau — kortelės telpa tarp jo ir antraštės) ── */
+    var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
+    var btnW = Math.min(240, vw - 36), btnH = 28, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 10;
+
+    var pw = Math.min(300, vw - 28), px = cx - Math.floor(pw / 2);
+    var cardTop = warnY + 6, cardBottom = btnY - 22;
+    var avail = cardBottom - cardTop;
+
+    if (isTouch) {
+      /* 📱 SWIPE valdymas (rb97): figūra seka pirštą; mygtukai tik ROTATE + DROP. */
+      var th = Math.min(avail, 62), ty = cardTop + Math.max(0, Math.floor((avail - th) / 2));
+      plaque(ctx, px, ty, pw, th, U.pnlIn);
+      var ttlT = 'HOW TO PLAY', twT = F.width(ttlT, 1) + 10;
+      rect(ctx, cx - Math.floor(twT / 2), ty - 4, twT, 9, '#05060c');
+      F.center(ctx, ttlT, cx, ty - 3, U.gold, 1);
+      var ly = ty + 11;
+      /* rodyklės flankuoja antraštę (NE tekstą — anksčiau užlipdavo ant raidžių) */
+      var ax = Math.min(Math.floor(pw / 2) - 14, 74);
+      arrow(cx - ax, ly + 3, 5, 'left', actKey === 'left' ? '#ffffff' : U.gold);
+      arrow(cx + ax, ly + 3, 5, 'right', actKey === 'right' ? '#ffffff' : U.gold);
+      F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, ly, U.gold, '#05060c', 1); ly += 13;
+      F.outlinedCenter(ctx, 'PIECE FOLLOWS YOUR FINGER', cx, ly, U.text, '#05060c', 1); ly += 12;
+      F.outlinedCenter(ctx, 'SWIPE DOWN + HOLD = FAST FALL', cx, ly, U.text, '#05060c', 1); ly += 12;
+      F.outlinedCenter(ctx, 'ROTATE / DROP = BUTTONS BELOW', cx, ly, U.dim, '#05060c', 1);
+    } else {
+      /* ⌨️ KLAVIATŪRA: 4 eilutės „kepurė(-s) + ką daro". */
+      var rows = [
+        { keys: ['up'], name: 'ROTATE', hint: 'TURN THE PIECE' },
+        { keys: ['left', 'right'], name: 'MOVE', hint: 'SLIDE LEFT / RIGHT' },
+        { keys: ['down'], name: 'SOFT DROP', hint: 'FALL FASTER' },
+        { keys: ['space'], name: 'HARD DROP', hint: 'INSTANT LOCK' },
+      ];
+      var ks = Math.max(16, Math.min(30, Math.floor((avail - 30) / rows.length) - 8));
+      var rh = ks + 8, ch = rows.length * rh + 18;
+      var cy0 = cardTop + Math.max(0, Math.floor((avail - ch) / 2));
+      plaque(ctx, px, cy0, pw, ch, U.pnlIn);
+      /* „iškaltas" antraštės skydelis ant viršutinio krašto (kaip fieldset legenda) */
+      var ttl = 'CONTROLS', tw = F.width(ttl, 1) + 10;
+      rect(ctx, cx - Math.floor(tw / 2), cy0 - 4, tw, 9, '#05060c');
+      F.center(ctx, ttl, cx, cy0 - 3, U.gold, 1);
+      var keyColW = ks * 2 + 4, kx0 = px + 12, textX = kx0 + keyColW + 12;
+      for (var i = 0; i < rows.length; i++) {
+        var r0 = rows[i], ry = cy0 + 11 + i * rh, lit = false;
+        if (r0.keys[0] === 'space') {
+          lit = actKey === 'space';
+          keycap(kx0, ry, keyColW, ks, 'space', lit);
+        } else if (r0.keys.length === 2) {
+          lit = actKey === 'left' || actKey === 'right';
+          keycap(kx0, ry, ks, ks, 'left', actKey === 'left');
+          keycap(kx0 + ks + 4, ry, ks, ks, 'right', actKey === 'right');
+        } else {
+          lit = actKey === r0.keys[0];
+          keycap(kx0 + Math.floor((keyColW - ks) / 2), ry, ks, ks, r0.keys[0], lit);
+        }
+        F.text(ctx, r0.name, textX, ry + Math.floor(ks / 2) - 7, lit ? U.gold : U.text, 1);
+        F.text(ctx, r0.hint, textX, ry + Math.floor(ks / 2) + 2, U.dim, 1);
       }
     }
-    var ks = Math.max(28, Math.floor(vh / 7)), gap = 6;
-    var kcx = cx, midx = kcx - Math.floor(ks / 2), midy = Math.floor(vh * 0.40);
-    /* 📱 rb97_swipe: touch įrenginyje valdymas kitas — SWIPE judina figūrą, mygtukai tik ROTATE+DROP,
-     * tad vietoj klaviatūros rodom swipe instrukciją (rodyklės užsidega braukiant, kaip klavišai). */
-    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
-    if (isTouch) {
-      var onL = actKey === 'left', onR = actKey === 'right';
-      tri(cx - 84, midy + 4, 13, 'left', onL ? '#ffffff' : '#ffcf5c');
-      tri(cx + 84, midy + 4, 13, 'right', onR ? '#ffffff' : '#ffcf5c');
-      F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, midy - 2, U.gold, '#05060c', 2);
-      F.outlinedCenter(ctx, 'SLIDE FINGER ON SCREEN - PIECE FOLLOWS', cx, midy + 24, U.text, '#05060c', 1);
-      F.outlinedCenter(ctx, 'SWIPE DOWN AND HOLD - FAST FALL', cx, midy + 38, U.text, '#05060c', 1);
-      F.outlinedCenter(ctx, 'ROTATE AND DROP - BUTTONS BELOW', cx, midy + 52, U.dim, '#05060c', 1);
-    } else {
-    keyBtn(midx, midy - ks - gap, ks, 'up', actKey === 'up');              // ▲ ROTATE
-    keyBtn(midx - ks - gap, midy, ks, 'left', actKey === 'left');          // ◄ MOVE
-    keyBtn(midx, midy, ks, 'down', actKey === 'down');                     // ▼ SOFT
-    keyBtn(midx + ks + gap, midy, ks, 'right', actKey === 'right');        // ► MOVE
-    F.outlinedCenter(ctx, 'ROTATE', midx + Math.floor(ks / 2), midy - ks - gap - 10, U.dim, '#05060c', 1);
-    F.outlinedCenter(ctx, 'MOVE', midx - Math.floor(ks / 2) - gap, midy + ks + 3, U.dim, '#05060c', 1);
-    F.outlinedCenter(ctx, 'MOVE', midx + ks + gap + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);
-    F.outlinedCenter(ctx, 'SOFT', midx + Math.floor(ks / 2), midy + ks + 3, U.dim, '#05060c', 1);   // ▼ = soft drop (kad ir žemyn rodyklė turėtų „ką daro" užrašą)
-    // SPACE juosta (hard drop)
-    var sbx = midx - ks - gap, sby = midy + ks + gap + 14, sbw = ks * 3 + gap * 2, sbh = Math.floor(ks * 0.62);
-    var spOn = actKey === 'space';
-    rect(ctx, sbx, sby, sbw, sbh, spOn ? '#ffcf5c' : '#161d2e');
-    frame(ctx, sbx, sby, sbw, sbh, spOn ? '#ffffff' : '#6a5a2a');
-    if (spOn) frame(ctx, sbx - 1, sby - 1, sbw + 2, sbh + 2, '#ffcf5c');
-    F.outlinedCenter(ctx, 'SPACE', sbx + Math.floor(sbw / 2), sby + Math.floor(sbh / 2) - 3, spOn ? '#241a08' : '#ffcf5c', spOn ? '#ffcf5c' : '#05060c', 1);
-    F.outlinedCenter(ctx, 'FAST DROP', sbx + Math.floor(sbw / 2), sby + sbh + 4, U.dim, '#05060c', 1);
-    }
 
-    // --- READY + laikmatis + varžovo būsena (apačia) ---
-    var ready = !!match._prepReady, both = (match._prepReadyCount || 0) >= 2;
-    var btnW = Math.min(260, vw - 36), btnH = 30, btnX = cx - Math.floor(btnW / 2), btnY = vh - btnH - 12;
+    /* ── kaip prasideda mačas (virš mygtuko, kad klausimo nekiltų) ── */
+    var stY = btnY - 15;
+    F.outlinedCenter(ctx, both ? 'BOTH READY - STARTING!'
+      : (ready ? 'WAITING FOR OPPONENT - AUTO START IN ' + secs + 'S'
+        : 'PRESS READY BELOW - MATCH STARTS IN ' + secs + 'S'),
+      cx, stY, both ? U.good : (ready ? U.dim : U.gold), '#05060c', 1);
+
+    /* ── READY mygtukas ── */
+    rect(ctx, btnX + 1, btnY + 2, btnW, btnH, '#03040a');
     rect(ctx, btnX, btnY, btnW, btnH, ready ? '#1c3a24' : '#24543a');
+    rect(ctx, btnX + 1, btnY + 1, btnW - 2, 1, ready ? '#3d6b4b' : '#6ff0a0');
     frame(ctx, btnX, btnY, btnW, btnH, ready ? '#5aa06a' : '#5ce08a');
-    F.outlinedCenter(ctx, ready ? ('READY - WAITING ' + secs + 'S') : ('PRESS  READY   (AUTO ' + secs + 'S)'), cx, btnY + 11, ready ? U.dim : U.good, '#05060c', 1);
+    F.outlinedCenter(ctx, ready ? 'READY - WAITING ' + secs + 'S' : 'PRESS TO READY UP',
+      cx, btnY + Math.floor(btnH / 2) - 3, ready ? U.dim : U.good, '#05060c', 1);
     match._prepBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-    F.outlinedCenter(ctx, both ? 'BOTH READY - STARTING!' : (ready ? 'WAITING FOR OPPONENT...' : 'START WHEN BOTH READY, OR IN ' + secs + 'S'), cx, btnY - 13, both ? U.good : U.gold, '#05060c', 1);
   };
 
   Renderer.prototype.drawCountdown = function (match) {

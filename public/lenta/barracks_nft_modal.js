@@ -188,7 +188,7 @@
   ];
   const FREE_MAX_PER_TYPE = 5;
   const NFT_MAX_PER_TYPE = 4;   // 4× max per unit tipą (sutampa su floor12 _NFT_MAX_PER_TYPE)
-  let _battleMode = 'free';   // 'free' arba 'nft' — exclusive
+  let _battleMode = 'nft';   // 'nft' (default — DEPLOY atsidaro ties NFT unitais) arba 'free'; exclusive
   let _battleUseDeck = true;   // jei deck'as netuščias — kraunam TIK jį (instant, jokio RPC skeno)
   let _invShowAll = false;     // INVENTORY: false = TIK dekas (greitai, registracijos esmė); true = pilnas skenas (PASIRINKIMAS, naujų unitų pridėjimui)
   let _invLoadCdUntil = 0;     // load mygtuko cooldown (anti-spam, 3s) — timestamp iki kada užšaldyta
@@ -440,7 +440,7 @@
           _renderBattleGrid(loaded < total ? { loaded: loaded, total: total } : null);
         }), _injSet);
         if (!_battleInventory.length) {
-          grid.innerHTML = '<div class="nft-empty">No NFT units yet — train one in TRAIN tab first</div>';
+          grid.innerHTML = '<div class="nft-empty">No NFT units yet — mint one in the MINT NFT tab first</div>';
           _battlePickQty = {};
           _updateBattleFooter();
           return;
@@ -1390,7 +1390,7 @@
           const label = inDeck > 0 ? (_pending ? '🕓 PENDING' : '✓ IN DECK') : '⚡ ADD TO DECK';
           const title = inDeck > 0
             ? (_pending ? 'Added locally but NOT registered on-chain — press UPDATE DECK to register, or click to remove.' : 'In your Power Deck (counts toward RONKE Power). Click to remove.')
-            : 'Add to your Power Deck — counts toward RONKE Power. Pick battle units in the BATTLE tab.';
+            : 'Add to your Power Deck — counts toward RONKE Power. Send units to the field in the DEPLOY tab.';
           return `<button class="nft-smart-btn ${cls}" data-ids="${idsAttr}" type="button" title="${title}" style="--fill:${fill}%"><span class="nsb-txt">${label}</span><span class="nsb-cnt">${cnt}</span></button>`;
         }
         // ── RONKE Power (per kortą) — formulė max(0,lvl-1)×rate. Rodom tik skaičiuką dešinio
@@ -1684,7 +1684,7 @@
       try {
         setStatus('Claiming NFT units...');
         const hash = await window.BarracksNFT.claimTraining();
-        setStatus(`🎉 Claimed ✓ ${txLink(hash)} — check Inventory tab + F10 plots!`, 'success');
+        setStatus(`🎉 Claimed ✓ ${txLink(hash)} — check the DECK tab + F10 plots!`, 'success');
         // Try several refreshes — RPC needs a few seconds to update inventory after mint
         refreshAll();
         refreshInventory();

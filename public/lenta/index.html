@@ -35,7 +35,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
   <title>PEWPEW SAGA</title>
-  <link rel="stylesheet" href="style.css?v=trophyblink_20260803">
+  <link rel="stylesheet" href="style.css?v=nfttabs_20260815">
   <style>
     /* Pagrindinis kursorius — Tiny Swords Cursor_01 (default) */
     html, body, canvas,
@@ -1732,9 +1732,9 @@
       </div>
 
       <div class="nft-modal-tabs">
-        <button class="nft-tab active" data-tab="train">TRAIN</button>
-        <button class="nft-tab" data-tab="inventory">INVENTORY <span id="nft-inv-badge">0</span></button>
-        <button class="nft-tab" data-tab="battle">⚔ BATTLE</button>
+        <button class="nft-tab active" data-tab="train"><span class="ntab-long">⚒ TRAIN · NFT MINT</span><span class="ntab-short">⚒ MINT NFT</span></button>
+        <button class="nft-tab" data-tab="inventory"><span class="ntab-long">🃏 DECK MANAGEMENT</span><span class="ntab-short">🃏 DECK</span> <span id="nft-inv-badge">0</span></button>
+        <button class="nft-tab" data-tab="battle"><span class="ntab-long">🛡 DEPLOY TO FIELD</span><span class="ntab-short">🛡 DEPLOY</span></button>
       </div>
 
       <!-- TRAIN TAB -->
@@ -1851,35 +1851,36 @@
           <button class="nft-btn-primary" id="nft-battle-acct-reconnect">↻ RECONNECT WITH WALLET'S ACTIVE ACCOUNT</button>
         </div>
         <div class="nft-battle-header">
-          <span>Pick units for PewPew Saga battle</span>
+          <span>Deploy units — they defend your castle field and fight in PewPew Saga</span>
           <button class="nft-btn-small" id="nft-battle-refresh">Refresh</button>
         </div>
 
-        <!-- Mode toggle — FREE arba NFT (exclusive) -->
+        <!-- Mode toggle — NFT (default) arba FREE (exclusive). NFT pirmas: tai pagrindinis kelias,
+             FREE liko kaip nerizikinga alternatyva (user 08-15). -->
         <div class="nft-battle-mode-toggle">
-          <button class="nft-mode-tab active" id="nft-mode-tab-free" data-mode="free">🆓 FREE UNITS</button>
-          <button class="nft-mode-tab" id="nft-mode-tab-nft" data-mode="nft">⚔ NFT UNITS</button>
+          <button class="nft-mode-tab active" id="nft-mode-tab-nft" data-mode="nft">⚔ NFT UNITS</button>
+          <button class="nft-mode-tab" id="nft-mode-tab-free" data-mode="free">🆓 FREE UNITS</button>
         </div>
 
-        <!-- FREE UNITS sekcija -->
-        <div class="nft-battle-mode-panel active" id="nft-mode-panel-free">
-          <div class="nft-battle-desc">No on-chain risk. Pick how many of each unit to start with.</div>
-          <div class="nft-battle-free-grid" id="nft-battle-free-grid"></div>
-        </div>
-
-        <!-- NFT UNITS sekcija -->
-        <div class="nft-battle-mode-panel" id="nft-mode-panel-nft">
+        <!-- NFT UNITS sekcija (default) -->
+        <div class="nft-battle-mode-panel active" id="nft-mode-panel-nft">
           <div class="nft-battle-desc">
             NFT units have persistent XP + level. Dead NFTs are <strong style="color:#e85d5d">permanently burned</strong> (disabled in test mode).
           </div>
           <div class="nft-battle-grid" id="nft-battle-grid">
-            <div class="nft-empty">Connect wallet + train your first NFT unit</div>
+            <div class="nft-empty">Connect wallet + mint your first NFT unit</div>
           </div>
+        </div>
+
+        <!-- FREE UNITS sekcija -->
+        <div class="nft-battle-mode-panel" id="nft-mode-panel-free">
+          <div class="nft-battle-desc">No on-chain risk. Pick how many of each unit to start with.</div>
+          <div class="nft-battle-free-grid" id="nft-battle-free-grid"></div>
         </div>
 
         <div class="nft-battle-footer">
           <div class="nft-battle-summary" id="nft-battle-summary-text">
-            Selected: <strong id="nft-battle-active-count">0</strong> units · Mode: <strong id="nft-battle-active-mode">FREE</strong>
+            Selected: <strong id="nft-battle-active-count">0</strong> units · Mode: <strong id="nft-battle-active-mode">NFT</strong>
           </div>
           <button class="nft-btn-primary nft-battle-start" id="nft-battle-start" disabled>▶ START BATTLE</button>
           <!-- hidden counts (legacy DOM refs used by JS) -->
@@ -2145,7 +2146,7 @@
   <script src="boards.js?v=boards2_gif"></script>
   <script src="raid_ui.js?v=raid18_field12"></script>
   <script src="barracks_nft.js?v=rpc4tenderly_20260805"></script>
-  <script src="barracks_nft_modal.js?v=deckswap_20260713"></script>
+  <script src="barracks_nft_modal.js?v=nfttabs_20260815"></script>
   <script src="barracks_nft_plots.js?v=nft31hogprice"></script>
   <script src="game.js?v=f9live395_nftsign_20260815"></script>
   <script src="afk_expedition.js?v=afk33"></script>
@@ -3130,7 +3131,7 @@
           lastCheck = now;
           try {
             fetch(location.pathname + '?_uc=' + now, { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
-              var m = t.match(/(?:game|floor12_merge).js?v=([w.-]+)/);
+              var m = t.match(/(?:game|floor12_merge)\.js\?v=([\w.-]+)/);
               if (m && m[1] && m[1] !== mine) show();
             }).catch(function () {});
           } catch (_) {}
