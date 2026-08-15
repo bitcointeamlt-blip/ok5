@@ -2300,7 +2300,7 @@
       if (ml > 1) {
         var STAR = ['..#..', '.###.', '#####', '.###.', '#...#'];
         var sw = 5, sgap = 1, totw = ml * sw + (ml - 1) * sgap;
-        var sx0 = Math.round(ux + jab - totw / 2), sy0 = Math.round(laneY - 24);
+        var sx0 = Math.round(ux + jab - totw / 2), sy0 = Math.round(laneY - 27);   // 08-15: +3px aukščiau (user)
         for (var si = 0; si < ml; si++) {
           var bx3 = sx0 + si * (sw + sgap);
           for (var ry = 0; ry < STAR.length; ry++) {
