@@ -2287,7 +2287,20 @@
         sinceGuard: army.time - u.guardAt,
         moving: !fighting && !u.holding
       };
-      if (!u.type || !this.drawDeckUnit(u.type, ux + jab, laneY, u.dir, this.t, ph, fighting, dist, fighting, sc, pose)) {
+      /* ⚔️ PASTIPRINTAS unitas (army.js `_reinforce`) — DIDESNIS + auksinė aureolė, kad iškart
+       * matytum, jog didelis valymas nuėjo į kovotoją, o ne į nematomą eilę (2026-08-15). */
+      var bl = u.buffed | 0;
+      var usc = sc * (1 + Math.min(bl, 6) * 0.09);
+      if (bl > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.16 + Math.min(bl, 6) * 0.05;
+        ctx.fillStyle = '#ffcf5c';
+        ctx.beginPath();
+        ctx.arc(Math.round(ux + jab), laneY - 2, 9 + Math.min(bl, 6) * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      if (!u.type || !this.drawDeckUnit(u.type, ux + jab, laneY, u.dir, this.t, ph, fighting, dist, fighting, usc, pose)) {
         unitSprite(ctx, Math.round(ux + jab), laneY, u.dir, c, this.t / 90 + ph, fighting);
       }
       /* HP juosta — rodoma tik apgadintiems, kad nekabėtų virš visų */

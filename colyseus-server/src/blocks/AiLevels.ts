@@ -24,15 +24,19 @@ const MAX_STEP = 23;   // 0..23
 export function cfgFor(step: number): AiCfg {
   const s = Math.max(0, Math.min(MAX_STEP, Math.round(step) || 0));
   const t = s / MAX_STEP;
-  const k = Math.pow(t, 0.35);   // staigus kilimas iš „durnos" apačios (žr. inkarus viršuje)
+  /* 🪶 2026-08-15 (user: „botas per stiprus ir per greitai auga"): kreivė SUŠVELNINTA.
+   * Buvo k=t^0.35 (staigus šuolis jau po kelių pergalių) + tobulas viršus (42ms, 0% klaidų).
+   * Dabar k=t^0.6 — kilimas tolygus, o viršuje lieka žmogiškos klaidos (nebe robotas).
+   * Inkarai: GOLD 0★ 83ms/10% → 127ms/18% · GLOBAL 0★ 51ms/1% → 80ms/6% · PAPER lieka toks pat durnas. */
+  const k = Math.pow(t, 0.6);
   return {
     name: "AI",
-    moveMs: Math.round(340 - 298 * k),                     // 340 → 42
-    thinkMs: Math.round(1000 - 930 * k),                   // 1000 → 70
-    mistake: Math.round(0.55 * Math.pow(1 - t, 1.6) * 1000) / 1000,   // 0.55 → 0
-    blunder: Math.round(0.30 * Math.pow(1 - t, 2.0) * 1000) / 1000,   // 0.30 → 0
-    useHold: s >= 5,                                       // nuo WOOD 2★ botas naudoja HOLD
-    panic: Math.round((1.0 + 1.9 * t) * 100) / 100,        // 1.0 → 2.9
+    moveMs: Math.round(340 - 275 * k),                     // 340 → 65
+    thinkMs: Math.round(1000 - 870 * k),                   // 1000 → 130
+    mistake: Math.round((0.55 * Math.pow(1 - t, 1.25) + 0.03) * 1000) / 1000,   // 0.58 → 0.03 (niekada tobulas)
+    blunder: Math.round((0.30 * Math.pow(1 - t, 1.7) + 0.01) * 1000) / 1000,    // 0.31 → 0.01
+    useHold: s >= 7,                                       // HOLD tik nuo STONE 1★ (buvo WOOD 2★)
+    panic: Math.round((1.0 + 1.5 * t) * 100) / 100,        // 1.0 → 2.5 (buvo 2.9)
   };
 }
 

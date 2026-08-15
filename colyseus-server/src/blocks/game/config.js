@@ -73,6 +73,11 @@
        * Išvalius 4 linijas unitai išsiskirsto po aukštus, o ne susigrūda krūvon;
        * jei laisvų aukštų nėra — laukia eilėje prie savo lentos. */
       LANES: 4,
+      /* ⚔️ PASTIPRINIMAS vietoj eilės (2026-08-15, user: „stiprinam tuos, kurie jau kovoja,
+       * kad nesusinaikintų"). Kai visi aukštai užimti, nauja linija nebeguldo unito į eilę
+       * (ten kabodavo ~28 unitai), o pagydo silpniausią kovojantį ir prideda HP/žalos.
+       * HP/DMG — kiek pridedama už vieną pastiprinimą; MAX — kiek kartų vienas unitas gali stiprėti. */
+      REINFORCE: { HP: 0.5, DMG: 0.35, MAX: 6 },
       LANE_UNIT_SCALE: 0.72,  // unitai mažesni, kad 4 aukštai tilptų vienas virš kito
       /* Kiek px nuleisti unitą žemyn nuo aukšto linijos, kad kojos atsiremtų
        * į patį taką, o ne kabotų virš jo. */

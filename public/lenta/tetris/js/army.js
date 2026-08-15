@@ -67,10 +67,36 @@
     return -1;
   };
 
-  /* Paleidimo prašymas. Jei visi aukštai užimti — unitas laukia eilėje. */
+  /* Paleidimo prašymas. Aukštai laisvi → paleidžiam unitą (kaip visada).
+   * ⚔️ 2026-08-15 (user idėja): jei aukštai UŽIMTI — unitas NEBEstoja į eilę, o PASTIPRINA
+   * silpniausią jau kovojantį savo unitą (pagydo + HP + žala). Anksčiau eilėje kabodavo
+   * vidutiniškai 28 unitai, o kova stovėjo 1v1 lygiosiose ir niekas neprasiverždavo —
+   * dabar didelis valymas iškart matomas mūšyje: tavo unitas laiko ir prasiveržia. */
   Army.prototype.request = function (side, type) {
+    if (this.freeLane(side) < 0 && this._reinforce(side)) return;
     this.queue[side].push(type);
     this._pumpQueue();
+  };
+
+  /* Pastiprinimas: silpniausias (mažiausiai HP) gyvas savo unitas pagydomas ir sustiprinamas.
+   * Grąžina true, jei pavyko — tada naujo unito nebekuriam. Riba `REINFORCE.MAX` saugo nuo begalinio augimo. */
+  Army.prototype._reinforce = function (side) {
+    var R = (C.MARCH && C.MARCH.REINFORCE) || null;
+    if (!R) return false;
+    var best = null;
+    for (var i = 0; i < this.units.length; i++) {
+      var u = this.units[i];
+      if (u.state === 'dead' || u.side !== side) continue;
+      if ((u.buffed || 0) >= (R.MAX || 6)) continue;
+      if (!best || u.hp < best.hp) best = u;
+    }
+    if (!best) return false;
+    best.maxHp = Math.round(best.maxHp * (1 + (R.HP || 0)));
+    best.hp = best.maxHp;                                        // pilnas pagydymas
+    best.dmg = Math.round(best.dmg * (1 + (R.DMG || 0)) * 10) / 10;
+    best.buffed = (best.buffed || 0) + 1;
+    this.emit('buff', { unit: best, lane: best.lane, x: best.x, side: side, level: best.buffed });
+    return true;
   };
 
   Army.prototype._pumpQueue = function () {
