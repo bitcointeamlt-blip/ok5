@@ -816,6 +816,9 @@ export class BlocksRoom extends Room<BlocksState> {
       out.push({
         id: u.id, side: u.side, type: u.type, lane: u.lane,
         x: Math.round(u.x * 1000) / 1000, hp: u.hp, maxHp: u.maxHp,
+        // ⚔️ ×N daugiklis — BŪTINAS klientui: nuo jo priklauso užrašas virš galvos ir unito dydis.
+        // (08-15: be šito lauko online režime visi unitai atrodė ×1, nors serveryje buvo ×4.)
+        mult: u.mult || 1,
         state: u.state, holding: !!u.holding, dir: u.dir,
         // mūšio animacijos laukai — kad klientas rodytų atakos POZAS/mostus + skydą (F12 pozų mašina)
         swingAt: Math.round(u.swingAt), swingT: Math.round(u.swingT),

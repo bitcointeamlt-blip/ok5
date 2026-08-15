@@ -1051,6 +1051,7 @@
       }
       u.side = side; u.type = s.type; u.lane = s.lane || 0; u.dir = dir;
       u.hp = s.hp; u.maxHp = s.maxHp || s.hp; u.state = s.state; u.holding = !!s.holding;
+      u.mult = s.mult || 1;   // ⚔️ ×N iš serverio → užrašas virš galvos + unito dydis (render.js)
       /* MŪŠIO POZŲ laukai iš serverio (F12 pozų mašina: atakos mostas + skydas + jab).
        * Tai LAIKO reikšmės (serverio army.time bazėje) — apsukimas jų neliečia; jab kryptis
        * jau teisinga per apsuktą `dir`. Sinchronizuota su `army.time = p.t` žemiau. */
