@@ -13,7 +13,15 @@ import { addBones, boneBankOp } from "./BaseStore";
 //   Lentelė (cumulative už n vienu metu nukaltų): 1→10 2→21 3→33 4→44 5→55 6→66 7→77 8→88 9→99 10→110.
 //   Cap 10 unitų = 110 kaulų per mintą (11n−1 pattern su +12 ties 3, kaip user surašė).
 
-const RPC = process.env.RONIN_MAINNET_RPC || process.env.RONIN_RPC || "https://ronin.drpc.org";
+// 🔴 2026-08-15: drpc default MIRĘS („Temporary internal error" VISIEMS metodams) → getReceipt krisdavo
+//   4/4 → mint-bonus NIEKAM neužsiskaitydavo (patvirtinta: tx 0xe963ba19… 10 unitų, holderis 22 RV → 110🦴
+//   negauta). FIX kaip bless chainCounts (81eb34e) / MineWithdraw (f03341e): RPC sąrašas + rotacija.
+const RPC_URLS = [
+  process.env.RONIN_MAINNET_RPC || "",
+  process.env.RONIN_RPC || "",
+  "https://ronin.gateway.tenderly.co",
+  "https://api.roninchain.com/rpc",
+].filter(Boolean);
 const BARRACKS = (process.env.F9_BARRACKS_ADDR || "0xccf604511c5d2b5c3fd61adfba3950d0d2890862").toLowerCase();
 const RONKEVERSE = "0x810B6d1374ac7BA0E83612E7d49F49A13f1de019";   // mainnet Ronkeverse (== kapinių gate)
 
@@ -23,10 +31,12 @@ export function mintRewardFor(n: number): number {
   return REWARD_TABLE[Math.min(n, 10)];
 }
 
-let _prov: ethers.JsonRpcProvider | null = null;
-function prov(): ethers.JsonRpcProvider {
-  if (!_prov) _prov = new ethers.JsonRpcProvider(RPC, 2020, { staticNetwork: true });
-  return _prov;
+const _provs = new Map<string, ethers.JsonRpcProvider>();
+function prov(i = 0): ethers.JsonRpcProvider {
+  const url = RPC_URLS[i % RPC_URLS.length];
+  let p = _provs.get(url);
+  if (!p) { p = new ethers.JsonRpcProvider(url, 2020, { staticNetwork: true, batchMaxCount: 1 }); _provs.set(url, p); }
+  return p;
 }
 const _iface = new ethers.Interface(["event UnitMinted(uint256 indexed tokenId, address indexed owner, uint8 utype)"]);
 
@@ -64,18 +74,23 @@ async function saveRewarded(addr: string, set: Set<string>): Promise<void> {
 
 // 🎫 Gate: mainnet Ronkeverse ≥1. RPC fail → false (award TIK patvirtinus turėjimą).
 async function hasRonkeverse(addr: string): Promise<boolean> {
-  try {
-    const c = new ethers.Contract(RONKEVERSE, ["function balanceOf(address) view returns (uint256)"], prov());
-    return Number(await c.balanceOf(addr)) >= 1;
-  } catch { return false; }
+  for (let i = 0; i < RPC_URLS.length; i++) {   // 08-15: rotacija — vienas miręs RPC nebeatima bonuso
+    try {
+      const c = new ethers.Contract(RONKEVERSE, ["function balanceOf(address) view returns (uint256)"], prov(i));
+      return Number(await c.balanceOf(addr)) >= 1;
+    } catch { /* kitas endpointas */ }
+  }
+  console.warn(`[MintReward] hasRonkeverse: visi ${RPC_URLS.length} RPC krito (${addr.slice(0, 10)}…) → bonusas neduodamas`);
+  return false;
 }
 
 // TX receipt su retry (ką tik atsiųstas mintas gali dar nebūti indeksuotas).
 async function getReceipt(txHash: string): Promise<ethers.TransactionReceipt | null> {
   for (let i = 0; i < 4; i++) {
-    try { const r = await prov().getTransactionReceipt(txHash); if (r) return r; } catch { /* retry */ }
+    try { const r = await prov(i).getTransactionReceipt(txHash); if (r) return r; } catch { /* kitas RPC */ }   // 08-15: rotacija per bandymus
     await new Promise((r) => setTimeout(r, 800 * (i + 1)));
   }
+  console.warn(`[MintReward] getReceipt: nepavyko per ${RPC_URLS.length} RPC (${txHash.slice(0, 12)}…) → no_receipt (klientas kartos)`);
   return null;
 }
 
