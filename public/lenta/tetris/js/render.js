@@ -2287,28 +2287,30 @@
         sinceGuard: army.time - u.guardAt,
         moving: !fighting && !u.holding
       };
-      /* ⚔️ ×N unitas (2026-08-15): 2 linijos = ×2, tetris = ×4 — didesnis, su aureole ir ×N virš galvos.
-       * Kovoje daugiklis krenta (žr. army.js `_syncMult`), tad užrašas iškart rodo tikrą jo jėgą. */
+      /* ⭐ Unito jėga = ŽVAIGŽDUTĖS virš galvos (2026-08-15, user: „tik paprastos žvaigždutės,
+       * jokių paryškinimų"). 1 linija = 1★ … tetris = 4★; kovoje žvaigždutės krenta (army.js `_syncMult`).
+       * Jokios aureolės, jokio dydžio keitimo — unitas atrodo kaip visada. */
       var ml = Math.max(1, Math.min(4, u.mult || 1));
-      var usc = sc * (1 + (ml - 1) * 0.16);
-      if (ml > 1) {
-        ctx.save();
-        ctx.globalAlpha = 0.14 + (ml - 1) * 0.07;
-        ctx.fillStyle = '#ffcf5c';
-        ctx.beginPath();
-        ctx.arc(Math.round(ux + jab), laneY - 2, 9 + (ml - 1) * 2.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
+      var usc = sc;
       if (!u.type || !this.drawDeckUnit(u.type, ux + jab, laneY, u.dir, this.t, ph, fighting, dist, fighting, usc, pose)) {
         unitSprite(ctx, Math.round(ux + jab), laneY, u.dir, c, this.t / 90 + ph, fighting);
       }
-      /* ⚔️ ×N virš galvos — kiek linijų šis unitas neša ir kiek kartų jis stipresnis. */
+      /* ⭐ Žvaigždutės VIRŠ GALVOS (ne ant kūno): kiek linijų unitas neša, tiek žvaigždučių.
+       * Piešiam pačios, pikseliais — šrifto `*` atrodo prastai. */
       if (ml > 1) {
-        var mtx = 'x' + ml, mw = F.width(mtx, 1);
-        var mx = Math.round(ux + jab - mw / 2), my = laneY - 16 - (ml - 1) * 2;
-        rect(ctx, mx - 2, my - 2, mw + 4, 11, '#05060c');
-        F.outlined(ctx, mtx, mx, my, ml >= 4 ? '#ffd75c' : '#ffffff', '#05060c', 1);
+        var STAR = ['..#..', '.###.', '#####', '.###.', '#...#'];
+        var sw = 5, sgap = 1, totw = ml * sw + (ml - 1) * sgap;
+        var sx0 = Math.round(ux + jab - totw / 2), sy0 = Math.round(laneY - 24);
+        for (var si = 0; si < ml; si++) {
+          var bx3 = sx0 + si * (sw + sgap);
+          for (var ry = 0; ry < STAR.length; ry++) {
+            for (var rx = 0; rx < sw; rx++) {
+              if (STAR[ry][rx] !== '#') continue;
+              rect(ctx, bx3 + rx, sy0 + ry + 1, 1, 1, '#05060c');   // 1px šešėlis — kad matytųsi ant šviesaus fono
+              rect(ctx, bx3 + rx, sy0 + ry, 1, 1, '#ffd75c');
+            }
+          }
+        }
       }
       /* HP juosta — rodoma tik apgadintiems, kad nekabėtų virš visų */
       /* (sviediniai piešiami po visų unitų — žr. žemiau) */
