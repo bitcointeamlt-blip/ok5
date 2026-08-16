@@ -17111,6 +17111,7 @@ async function _handleTrophyClaim(claimable) {
     // 💀 death trofėjus claim'intas → invaliduojam cache, kad panelė iškart parodytų kitą pakopą (ne po 5 min)
     try { if (/^T_deaths_/.test(claimable.id) && typeof _invalidateDeathProgCache === 'function') _invalidateDeathProgCache(); } catch (_) {}
     try { if (/^T_league_/.test(claimable.id) && typeof _invalidateLeagueProgCache === 'function') _invalidateLeagueProgCache(); } catch (_) {}
+    try { if (/^T_tetris_/.test(claimable.id) && typeof _invalidateTetProgCache === 'function') _invalidateTetProgCache(); } catch (_) {}
     // ⚒️ mint / 🎳 pinball trofėjai — ta pati logika (iškart atnaujinam progresą po claim'o)
     try { if (/^T_mints_/.test(claimable.id) && typeof _invalidateMintProgCache === 'function') _invalidateMintProgCache(); } catch (_) {}
     try { if (/^T_pinball_/.test(claimable.id) && typeof _invalidatePinballProgCache === 'function') _invalidatePinballProgCache(); } catch (_) {}
@@ -18387,6 +18388,126 @@ function _fetchLeagueProgress() {
     return res;
   });
 }
+// ── 🧱🏆 TETRISŲ trofėjų misija (2026-08-16) ─────────────────────────────────
+// 30 tetrisų (4 linijos vienu metu) → 1 trofėjus · 69 → antras · 169 → trečias.
+// Skaitiklį kaupia serveris (Colyseus), claim'intos pakopos — iš kontrakto.
+const _TETRIS_STEPS = [30, 69, 169];
+let _tetProgCache = null;
+const _TET_PROG_TTL = 5 * 60 * 1000;
+function _invalidateTetProgCache() { _tetProgCache = null; }
+function _fetchTetrisProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_tetProgCache && _tetProgCache.wallet === wallet && (now - _tetProgCache.at) < _TET_PROG_TTL) {
+    return Promise.resolve(_tetProgCache.res);
+  }
+  return window.SupabaseSync.validateAchievement('T_tetris_progress').then(res => {
+    _tetProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
+function _appendTetrisTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-tetris';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">🧱</span>
+      <span class="tier-card-title">TETRIS COUNT</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading your tetris count…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.insertBefore(card, grid.firstChild);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your tetris progress.</span></div></div>`;
+    return;
+  }
+
+  _fetchTetrisProgress().then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || typeof d.count !== 'number') {
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Clear 4 lines at once — 30 tetrises earn a trophy, then 69, then 169.</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load tetris count (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    const count = d.count | 0;
+    const steps = (d.steps && d.steps.length) ? d.steps : _TETRIS_STEPS;
+    const tiers = d.tiers || steps.length;
+    const nextTier = d.nextTier || 1;
+    const nextThreshold = (typeof d.nextThreshold === 'number') ? d.nextThreshold : steps[Math.min(steps.length, nextTier) - 1];
+    const onchainOk = d.onchainOk !== false;
+    const claimable = !!d.claimableNow && onchainOk;
+    const claimedCount = Math.max(0, Math.min(tiers, nextTier - 1));
+    const done = claimedCount >= tiers;
+
+    progEl.textContent = `${claimedCount}/${tiers} claimed`;
+    progEl.className = 'tier-card-progress' + (claimable || done ? ' complete' : '');
+
+    const prev = claimedCount >= 1 ? steps[claimedCount - 1] : 0;
+    const span = Math.max(1, nextThreshold - prev);
+    const pct = done ? 100 : Math.max(0, Math.min(100, Math.round(((count - prev) / span) * 100)));
+    const ladder = steps.map((t) => `<span style="opacity:${count >= t ? 1 : 0.35}">${count >= t ? '★' : '☆'} ${t}</span>`).join(' · ');
+    reqsEl.innerHTML = `
+      <div class="tier-req ${claimable ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${claimable ? '✓' : '○'}</span>
+          <span class="tier-req-text">${done ? 'All tetris trophies claimed' : 'Trophy #' + nextTier + ': ' + nextThreshold + ' tetrises'}</span>
+          <span class="tier-req-progress">${_formatProgress(count, nextThreshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text">${ladder} &nbsp;·&nbsp; a tetris = 4 lines cleared at once</span></div></div>`;
+
+    if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled">CLAIM NFT (${nextThreshold} tetrises)</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_tetris_' + nextTier,
+          label: 'TETRIS COUNT — ' + nextThreshold,
+          desc: 'Claim your trophy for ' + nextThreshold + ' tetrises (4-line clears).'
+            + (nextTier < tiers ? ' The next one unlocks at ' + steps[nextTier] + '.' : ''),
+        }), 200);
+      });
+    } else if (done) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🏆 ALL ${tiers} CLAIMED</span></button>`;
+    } else if (!onchainOk) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">⏳ On-chain check unavailable</span>
+        <span class="tcb-hint">${count} tetrises · reopen panel to retry</span></button>`;
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 ${Math.max(0, nextThreshold - count)} more tetrises</span>
+        <span class="tcb-hint">${count}/${nextThreshold} — clear 4 lines at once in ranked Tetris</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading tetris count.</span></div></div>`;
+    console.warn('[tetris trophy]', err);
+  });
+}
+
 function _appendLeagueTrophyCard(grid) {
   const card = document.createElement('div');
   card.className = 'tier-card tier-league';
@@ -18891,6 +19012,8 @@ function renderTrophyPanel() {
   _appendPinballTrophyCard(grid);
   // 🏅 TETRIS LEAGUE misija (2026-08-15) — trofėjus už SILVER ir kiekvieną aukštesnę lygą.
   _appendLeagueTrophyCard(grid);
+  // 🧱 TETRIS COUNT misija (2026-08-16) — 30 / 69 / 169 tetrisai (4 linijos vienu metu).
+  _appendTetrisTrophyCard(grid);
 
   // Phase 15 — append "COMING SOON" teaser card to signal project growth
   const teaser = document.createElement('div');

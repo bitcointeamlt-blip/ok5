@@ -88,6 +88,8 @@ export class BlocksRoom extends Room<BlocksState> {
   /* 🎖️ XP taškai su COMBO/dydžio premija (2026-08-16). Kaupiami PER MAČĄ, serverio pusėje —
    * combo grandinė nustatoma pagal valymų laiką (klientas jos nesiunčia, tad ir suklastoti negali). */
   private _xpAcc: Record<Side, number> = { p1: 0, p2: 0 };
+  /* 🧱🏆 TETRISAI (4 linijos vienu metu) — trofėjų misijai; rašom į DB kartą, mačo gale. */
+  private _tetrisCnt: Record<Side, number> = { p1: 0, p2: 0 };
   private _combo: Record<Side, { at: number; n: number }> = { p1: { at: -1e9, n: 0 }, p2: { at: -1e9, n: 0 } };
   private corridorAcc = 0;
   private fxBuf: any[] = [];   // mūšio efektų įvykiai, kaupiami tarp corridor transliacijų
@@ -486,6 +488,7 @@ export class BlocksRoom extends Room<BlocksState> {
     this.matchMs = 0; this.clearLog = {}; this.lastSnapMs = {}; this._cheat = {}; this._lastPieces = {};
     /* 🎖️ šviežias XP/combo skaitliukas kiekvienoms rungtynėms (rematch tame pačiame kambaryje) */
     this._xpAcc = { p1: 0, p2: 0 };
+    this._tetrisCnt = { p1: 0, p2: 0 };
     this._combo = { p1: { at: -1e9, n: 0 }, p2: { at: -1e9, n: 0 } };
     // A6 L2: sukuriam autoritetingas lentas (serveris sukа abu boardus iš įvesčių)
     if (this.serverAuth) {
@@ -950,6 +953,7 @@ export class BlocksRoom extends Room<BlocksState> {
     const c = this._combo[side] || { at: -1e9, n: 0 };
     const chain = (this.matchMs - c.at <= BlocksRoom.COMBO_WINDOW_MS) ? c.n + 1 : 1;
     this._combo[side] = { at: this.matchMs, n: chain };
+    if (lines >= 4) this._tetrisCnt[side] = (this._tetrisCnt[side] || 0) + 1;   // 🧱🏆 TETRIS!
     const sizeMult = lines >= 4 ? 1.6 : lines === 3 ? 1.3 : lines === 2 ? 1.15 : 1;
     const comboMult = 1 + Math.min(0.30, 0.06 * (chain - 1));
     this._xpAcc[side] = (this._xpAcc[side] || 0) + lines * sizeMult * comboMult;
@@ -970,6 +974,9 @@ export class BlocksRoom extends Room<BlocksState> {
       const pts = Math.min(raw, lines * BlocksRoom.XP_BONUS_CAP);
       const gain = Math.max(0, Math.round(pts * mult));
       if (gain > 0) await RankStore.xpPoolAdd(addr, gain);
+      /* 🧱🏆 tetrisų skaitiklis (30 → 69 → 169 trofėjai). Botų pusės neturi adreso → praleidžiama. */
+      const _tet = this._tetrisCnt[side] || 0;
+      if (_tet > 0) await RankStore.tetrisAdd(addr, _tet);
       const st = await RankStore.xpUnitsGet(addr);
       const deck = await chainDeckFull(addr).catch(() => null);
       const units: any[] = [];

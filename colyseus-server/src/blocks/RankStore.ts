@@ -183,6 +183,31 @@ export async function xpPoolAdd(wallet: string, amount: number): Promise<number 
   });
 }
 
+/* 🧱🏆 TETRISŲ (4 linijų vienu metu) skaitiklis — trofėjų misijai „30 → 69 → 169 tetrisų".
+ * ATSKIRA `f9_bases` eilutė `tetris_<wallet>` — kad `applyResult` (rašo visą rank įrašą) jo neperrašytų.
+ * Rašom VIENĄ kartą mačo pabaigoje (ne po kiekvieno tetriso) — mažiau DB rašymų. Serverio tiesa. */
+export async function tetrisAdd(wallet: string, count: number): Promise<number | null> {
+  const c = sb(); const w = _norm(wallet);
+  if (!c || !_isAddr(w) || !(count > 0)) return null;
+  return _op("tet_" + w, async () => {
+    try {
+      const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "tetris_" + w).maybeSingle();
+      const b = (data as any)?.buildings || {};
+      const rec = { n: (Number(b.n) || 0) + Math.floor(count), at: Date.now() };
+      await c.from("f9_bases").upsert({ ronin_address: "tetris_" + w, buildings: rec }, { onConflict: "ronin_address" });
+      return rec.n;
+    } catch (e: any) { console.warn("[TetrisCount] add fail:", e?.message); return null; }
+  });
+}
+export async function tetrisGet(wallet: string): Promise<number> {
+  const c = sb(); const w = _norm(wallet);
+  if (!c || !_isAddr(w)) return 0;
+  try {
+    const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "tetris_" + w).maybeSingle();
+    return Number((data as any)?.buildings?.n) || 0;
+  } catch { return 0; }
+}
+
 export async function xpUnitsGet(wallet: string): Promise<{ pool: number; units: Record<string, number> }> {
   const c = sb(); const w = _norm(wallet);
   const empty = { pool: 0, units: {} as Record<string, number> };
