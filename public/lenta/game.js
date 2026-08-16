@@ -17400,7 +17400,9 @@ async function _refreshTrophyPricing() {
    * neužsikrovė. `barracks_nft.js` tą jau seniai daro teisingai: drpc pirmas,
    * oficialus kaip atsarginis. Adresas tas pats abiem, nes kontraktas yra
    * grandinėje, ne tiekėjo pusėje, tad perjungimas saugus. */
-  const RONIN_RPCS = ['https://ronin.drpc.org', 'https://api.roninchain.com/rpc'];
+  /* 🔴 2026-08-16: drpc MIRĘS („Temporary internal error"), o api.roninchain ir tenderly tuo metu
+   * rate-limitino → duomenys puslapyje NEUŽSIKRAUDAVO. Conduit (Ronin operatoriaus op-reth) PIRMAS. */
+  const RONIN_RPCS = ['https://rpc-ronin-mainnet-bfz9fadqzl.t.conduit.xyz', 'https://api.roninchain.com/rpc', 'https://ronin.gateway.tenderly.co'];
   const CONTRACT = (window.Wallet && window.Wallet.TROPHY_CONTRACT) || '0xb7873833e7AC43c921AF736F2E3988Ba26a39512';
   // Function selectors:
   const SELECTORS = {

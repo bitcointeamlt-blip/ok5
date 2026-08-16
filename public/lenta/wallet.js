@@ -13,7 +13,9 @@
   const RONIN_RPC = 'https://api.roninchain.com/rpc';
   // 08-02: atsarginis RPC. api.roninchain periodiskai numeta uzklausas (matuota: 22 is 43);
   //   drpc laikomas patikimu. Naudojamas TIK ten, kur laikina RPC klaida blokuodavo veiksma.
-  const RONIN_RPC_FALLBACK = 'https://ronin.drpc.org';
+  /* 🔴 2026-08-16: drpc MIRĘS („Temporary internal error"), o api.roninchain ir tenderly tuo metu
+   * rate-limitino → duomenys puslapyje NEUŽSIKRAUDAVO. Conduit (Ronin operatoriaus op-reth) PIRMAS. */
+  const RONIN_RPC_FALLBACK = 'https://rpc-ronin-mainnet-bfz9fadqzl.t.conduit.xyz';
   const RONKE_TOKEN = '0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb';
   const RONKEVERSE_NFT = '0x810b6d1374ac7ba0e83612e7d49f49a13f1de019';
   const LOGIN_MSG = 'Login to Dungeon Crawler (Lenta)';

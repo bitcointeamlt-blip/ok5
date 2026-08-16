@@ -156,7 +156,9 @@
   var _RFAUCET = '0xc59e860e2115ccdab499f619a67bedf71ee26007';
   var _RTOPIC = '0x9cdcf2f7714cca3508c7f0110b04a90a80a3a8dd0e35de99689db74d28c5383e';
   var _RDEPLOY = 56821227;
-  var _RRPCS = ['https://ronin.drpc.org', 'https://api.roninchain.com/rpc'];
+  /* 🔴 2026-08-16: drpc MIRĘS („Temporary internal error"), o api.roninchain ir tenderly tuo metu
+   * rate-limitino → duomenys puslapyje NEUŽSIKRAUDAVO. Conduit (Ronin operatoriaus op-reth) PIRMAS. */
+  var _RRPCS = ['https://rpc-ronin-mainnet-bfz9fadqzl.t.conduit.xyz', 'https://api.roninchain.com/rpc', 'https://ronin.gateway.tenderly.co'];
   var _RCACHE = 'lb_ronke_rewards_v1';
   var _RTTL = 2 * 60 * 60 * 1000;
 

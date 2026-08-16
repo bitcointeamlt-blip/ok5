@@ -34,7 +34,9 @@
   //   Priežastis buvo ne kodas, o VIENAS taškas be atsarginio: `_readRetry` 3 kartus daužė TĄ PATĮ
   //   mirusį endpoint'ą. Dabar — viem `fallback`: nukritus pirmam, automatiškai keliauja į antrą.
   //   Eiliškumas TYČINIS: drpc pirmas (šviežesnis, patikimesnis getLogs), api.roninchain atsarginis.
-  const RONIN_RPC = 'https://ronin.drpc.org';
+  /* 🔴 2026-08-16: drpc MIRĘS („Temporary internal error"), o api.roninchain ir tenderly tuo metu
+   * rate-limitino → duomenys puslapyje NEUŽSIKRAUDAVO. Conduit (Ronin operatoriaus op-reth) PIRMAS. */
+  const RONIN_RPC = 'https://rpc-ronin-mainnet-bfz9fadqzl.t.conduit.xyz';
   const RONIN_RPC_TENDERLY = 'https://ronin.gateway.tenderly.co';   // nemokamas viešas gateway (~155ms) — tarp drpc ir api
   const RONIN_RPC_FALLBACK = 'https://api.roninchain.com/rpc';
   const VIEM_CDN = 'https://esm.sh/viem@2.21.0';

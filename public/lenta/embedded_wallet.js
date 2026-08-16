@@ -16,7 +16,9 @@
   var _EW_KEY = '_pewpew_embedded_pk_v1';   // localStorage raktas (privkey hex)
   // ⛓️ RONIN RPC — fallback grandinė: drpc PIRMAS (patikimas), api.roninchain ATSARGINIS (flaky, bet oficialus).
   //   Onboarding embedded wallet PRIVALO patikimai pasiųsti pirmą raid-fee/withdraw TX — 1 flaky RPC = lūžęs onboarding.
-  var RONIN_RPCS = ['https://ronin.drpc.org', 'https://api.roninchain.com/rpc'];
+  /* 🔴 2026-08-16: drpc MIRĘS („Temporary internal error"), o api.roninchain ir tenderly tuo metu
+   * rate-limitino → duomenys puslapyje NEUŽSIKRAUDAVO. Conduit (Ronin operatoriaus op-reth) PIRMAS. */
+  var RONIN_RPCS = ['https://rpc-ronin-mainnet-bfz9fadqzl.t.conduit.xyz', 'https://api.roninchain.com/rpc', 'https://ronin.gateway.tenderly.co'];
   var RONIN_RPC = RONIN_RPCS[0];   // chain default (žr. defineChain); provider bando VISUS iš eilės
   var _addr = '', _account = null, _viem = null, _provider = null, _privKey = '';
 
