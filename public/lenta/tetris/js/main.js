@@ -154,6 +154,19 @@
         return;
       }
       if (match.state === 'prep') {
+        /* 📱 valdymo schemos pasirinkimas (BUTTONS / TAP+SWIPE) — bakstelėjus tabą perjungiam iškart,
+         * kad demo figūrą galėtum pačiupinėti nauju būdu dar prieš startą. */
+        var ch = match._prepCtrlHit;
+        if (ch) {
+          for (var chi = 0; chi < ch.length; chi++) {
+            var cbx = ch[chi];
+            if (vx >= cbx.x && vx <= cbx.x + cbx.w && vy >= cbx.y && vy <= cbx.y + cbx.h) {
+              if (global.RBCTL) global.RBCTL.set(cbx.scheme);
+              try { global.Sfx.play('click'); } catch (_) {}
+              return;
+            }
+          }
+        }
         // 🎓 pasiruošime: paspaudus READY mygtuką (pele) → ready; kitur ant ekrano → demo hard-drop
         var pb = match._prepBtnRect;
         if (pb && vx >= pb.x && vx <= pb.x + pb.w && vy >= pb.y && vy <= pb.y + pb.h) { match._prepMarkReady(); return; }

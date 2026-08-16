@@ -1673,22 +1673,51 @@
     var avail = cardBottom - cardTop;
 
     if (isTouch) {
-      /* 📱 SWIPE valdymas (rb97): figūra seka pirštą; mygtukai tik ROTATE + DROP. */
-      var th = Math.min(avail, 62), ty = cardTop + Math.max(0, Math.floor((avail - th) / 2));
+      /* 📱 VALDYMO PASIRINKIMAS (2026-08-16, user: „prieš pradedant žaidimą žmogus pasirenka
+       * kokio valdymo tipo nori"). Dvi schemos, pasirinkimas įsimenamas (localStorage):
+       *   BUTTONS    — braukimas judina + mygtukai ROTATE / HOLD / DROP (senasis, dabar su HOLD)
+       *   TAP+SWIPE  — be mygtukų: bakstelėjimas suka, brūkšt žemyn = drop, aukštyn = hold
+       * Bakstelėjimas ant kortelės perjungia schemą (hit-rect'ai → main.js). */
+      var scheme = (global.RBCTL && global.RBCTL.get) ? global.RBCTL.get() : 'buttons';
+      /* eilutės TRUMPOS — kad tilptų telefone ir kad rodyklės neužliptų ant raidžių */
+      var lines = (scheme === 'gestures')
+        ? ['TAP ANYWHERE = ROTATE', 'SWIPE = MOVE PIECE', 'SLOW SWIPE DOWN = FAST FALL', 'FLICK DOWN = DROP - UP = HOLD']
+        : ['SWIPE = MOVE PIECE', 'SWIPE DOWN + HOLD = FAST FALL', 'BUTTONS: ROTATE - HOLD - DROP'];
+      var th = Math.min(avail, 37 + lines.length * 12 + 16), ty = cardTop + Math.max(0, Math.floor((avail - th) / 2));
       plaque(ctx, px, ty, pw, th, U.pnlIn);
-      var ttlT = 'HOW TO PLAY', twT = F.width(ttlT, 1) + 10;
+      var ttlT = 'CHOOSE YOUR CONTROLS', twT = F.width(ttlT, 1) + 10;
       rect(ctx, cx - Math.floor(twT / 2), ty - 4, twT, 9, '#05060c');
       F.center(ctx, ttlT, cx, ty - 3, U.gold, 1);
-      var ly = ty + 11;
-      /* rodyklės flankuoja antraštę (NE tekstą — anksčiau užlipdavo ant raidžių) */
-      var ax = Math.min(Math.floor(pw / 2) - 14, 74);
-      arrow(cx - ax, ly + 3, 5, 'left', actKey === 'left' ? '#ffffff' : U.gold);
-      arrow(cx + ax, ly + 3, 5, 'right', actKey === 'right' ? '#ffffff' : U.gold);
-      F.outlinedCenter(ctx, 'SWIPE TO MOVE', cx, ly, U.gold, '#05060c', 1); ly += 13;
-      F.outlinedCenter(ctx, 'PIECE FOLLOWS YOUR FINGER', cx, ly, U.text, '#05060c', 1); ly += 12;
-      F.outlinedCenter(ctx, 'SWIPE DOWN + HOLD = FAST FALL', cx, ly, U.text, '#05060c', 1); ly += 12;
-      F.outlinedCenter(ctx, 'ROTATE / DROP = BUTTONS BELOW', cx, ly, U.dim, '#05060c', 1);
+
+      /* — du pasirinkimo „tabai": aktyvus auksinis, kitas blankus — */
+      var tabW = Math.floor((pw - 26) / 2), tabH = 16, tabY = ty + 8, tabX0 = px + 9;
+      var tabs = [['buttons', 'BUTTONS'], ['gestures', 'TAP + SWIPE']];
+      match._prepCtrlHit = [];
+      for (var ti = 0; ti < tabs.length; ti++) {
+        var tx0 = tabX0 + ti * (tabW + 8), on = scheme === tabs[ti][0];
+        rect(ctx, tx0 + 1, tabY + 2, tabW, tabH, '#03040a');
+        rect(ctx, tx0, tabY, tabW, tabH, on ? '#3a3216' : '#141a29');
+        frame(ctx, tx0, tabY, tabW, tabH, on ? U.gold : '#2a3350');
+        F.center(ctx, tabs[ti][1], tx0 + Math.floor(tabW / 2), tabY + Math.floor(tabH / 2) - 3, on ? U.gold : U.dim, 1);
+        match._prepCtrlHit.push({ x: tx0, y: tabY, w: tabW, h: tabH, scheme: tabs[ti][0] });
+      }
+
+      var ly = tabY + tabH + 8;
+      /* rodyklės flankuoja BŪTENT „SWIPE = MOVE PIECE" eilutę; jei netelpa — nepiešiam */
+      var moveLine = (scheme === 'gestures') ? 1 : 0;
+      var ax = Math.floor(F.width(lines[moveLine], 1) / 2) + 10;
+      if (ax > Math.floor(pw / 2) - 8) ax = 0;
+      for (var li = 0; li < lines.length; li++) {
+        if (li === moveLine && ax) {
+          arrow(cx - ax, ly + 3, 5, 'left', actKey === 'left' ? '#ffffff' : U.gold);
+          arrow(cx + ax, ly + 3, 5, 'right', actKey === 'right' ? '#ffffff' : U.gold);
+        }
+        F.outlinedCenter(ctx, lines[li], cx, ly, li === 0 ? U.gold : U.text, '#05060c', 1);
+        ly += 12;
+      }
+      F.outlinedCenter(ctx, 'TAP A TAB TO SWITCH - SAVED FOR NEXT TIME', cx, ly, U.dim, '#05060c', 1);
     } else {
+      match._prepCtrlHit = null;
       /* ⌨️ KLAVIATŪRA: 4 eilutės „kepurė(-s) + ką daro". */
       var rows = [
         { keys: ['up'], name: 'ROTATE', hint: 'TURN THE PIECE' },

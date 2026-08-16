@@ -56,7 +56,9 @@
     padding: 0 12px;
   }
   #touchpad button.on { background: #3a4372; border-color: #f5c96b; color: #f5c96b; }
-  #touchpad button.wide { min-width: clamp(110px, 30vw, 170px); }
+  #touchpad button.wide { min-width: clamp(96px, 26vw, 170px); }
+  /* HOLD siauresnis ir smulkesnis — kad trys mygtukai tilptų ir siauriausiame telefone */
+  #touchpad button.slim { min-width: 52px; padding: 0 8px; font-size: 13px; line-height: 1.25; }
 </style>
 
 <div id="wrap">
@@ -64,9 +66,11 @@
 </div>
 
 <div id="touchpad">
-  <!-- 08-13: abu mygtukai DEŠINĖJE (user prašymas) — ROTATE pirmas, DROP šalia -->
+  <!-- 08-13: mygtukai DEŠINĖJE (user prašymas) — ROTATE pirmas, DROP šalia.
+       08-16: prisidėjo HOLD (mobile neturėjo, o klaviatūroje jis ant Shift/C — user prašymas). -->
   <div class="grp">
     <button data-act="cw" class="wide">&#8635; ROTATE</button>
+    <button data-act="hold" class="slim">&#8646;<br>HOLD</button>
     <button data-act="hard" class="wide">DROP &#9660;</button>
   </div>
 </div>
@@ -84,10 +88,10 @@
 <script src="js/audio.js?v=rb30_platform"></script>
 <script src="js/fx.js?v=rb93_slam"></script>
 <script src="js/units.js?v=rb30_platform"></script>
-<script src="js/render.js?v=rb106_stars3px"></script>
-<script src="js/input.js?v=rb98_softswipe"></script>
+<script src="js/render.js?v=rb107_ctlpick"></script>
+<script src="js/input.js?v=rb107_ctlpick"></script>
 <script src="../colyseus.browser.js"></script>
 <script src="js/net.js?v=rb45_serverauth"></script>
 <script src="js/mockserver.js?v=rb31_online"></script>
 <script src="js/match.js?v=rb106_stars3px"></script>
-<script src="js/main.js?v=rb97_swipe"></script>
+<script src="js/main.js?v=rb107_ctlpick"></script>

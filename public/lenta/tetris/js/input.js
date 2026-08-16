@@ -34,6 +34,34 @@
     'F11': 'fullscreen'
   };
 
+  /* 📱 VALDYMO SCHEMA (2026-08-16; user + ShadowRonke pasiūlymas Discorde).
+   * Žaidėjas PATS pasirenka GET READY ekrane, pasirinkimas įsimenamas naršyklėje:
+   *   'buttons'  — braukimas judina figūrą, apačioje mygtukai ⟳ ROTATE · ⇄ HOLD · ▼ DROP
+   *   'gestures' — jokių mygtukų: bakstelėjimas = sukimas · greitas brūkšt ŽEMYN = instant drop
+   *                · brūkšt AUKŠTYN = HOLD · lėtas braukimas žemyn = soft drop (pozicionavimui, T-spin) */
+  var CTL_KEY = 'rb_ctrl_v1';
+  var _scheme = null;
+  function ctlGet() {
+    if (_scheme) return _scheme;
+    var v = null;
+    try { v = global.localStorage.getItem(CTL_KEY); } catch (_) {}
+    _scheme = (v === 'gestures') ? 'gestures' : 'buttons';
+    return _scheme;
+  }
+  function ctlSet(v) {
+    _scheme = (v === 'gestures') ? 'gestures' : 'buttons';
+    try { global.localStorage.setItem(CTL_KEY, _scheme); } catch (_) {}
+    ctlApply();
+    return _scheme;
+  }
+  /* Mygtukų juosta rodoma TIK 'buttons' schemoje (ir tik touch įrenginyje). */
+  function ctlApply() {
+    var d = global.document; if (!d) return;
+    var pad = d.getElementById('touchpad'); if (!pad) return;
+    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
+    pad.style.display = (isTouch && ctlGet() === 'buttons') ? 'flex' : 'none';
+  }
+
   /* Fullscreen perjungimas. Naršyklės reikalauja naudotojo gesto — todėl tik iš klavišo/mygtuko.
    * Mobiliajame dar bandom užrakinti landscape (jei API prieinamas). */
   function toggleFullscreen() {
@@ -114,7 +142,7 @@
     var pad = document.getElementById('touchpad');
     if (!pad) return;
     if (!isTouch) { pad.style.display = 'none'; return; }
-    pad.style.display = 'flex';
+    ctlApply();   // 📱 mygtukai matomi tik 'buttons' schemoje
 
     var match = this.match;
     var btns = pad.querySelectorAll('[data-act]');
@@ -146,7 +174,8 @@
     var canvas = document.getElementById('screen');
     if (!canvas) return;
     var match = this.match;
-    var touchId = null, startX = 0, startY = 0, steps = 0, softOn = false;
+    var touchId = null, startX = 0, startY = 0, startT = 0, steps = 0, softOn = false;
+    var used = false, maxD = 0;   /* used = gestas jau suveikė (drop/hold); maxD = didžiausias nuokrypis px */
 
     /* vieno langelio plotis EKRANO pikseliais: C.CELL (virtualus) × canvas mastelis */
     function cellPx() {
@@ -156,12 +185,31 @@
       return Math.max(12, (C.CELL || 20) * (r.width / Math.max(1, vw)));
     }
     function stepMove(a) { match.playerPress(a); match.playerRelease(a); }
+    function fire(a) { match.playerPress(a); match.playerRelease(a); }
     function softStop() { if (softOn) { softOn = false; match.playerRelease('softdrop'); } }
+    function nowMs() { return Date.now(); }
+    /* GET READY ekrane bakstelėjimas ant READY / schemos mygtukų NEturi sukti demo figūros. */
+    function onPrepBtn(clientX, clientY) {
+      if (match.state !== 'prep') return false;
+      var r = canvas.getBoundingClientRect();
+      var vw = (match.renderer && match.renderer.vw) || 640;
+      var vh = (match.renderer && match.renderer.vh) || 360;
+      var vx = (clientX - r.left) * (vw / Math.max(1, r.width));
+      var vy = (clientY - r.top) * (vh / Math.max(1, r.height));
+      var list = (match._prepCtrlHit || []).slice();
+      if (match._prepBtnRect) list.push(match._prepBtnRect);
+      for (var i = 0; i < list.length; i++) {
+        var b = list[i];
+        if (b && vx >= b.x && vx <= b.x + b.w && vy >= b.y && vy <= b.y + b.h) return true;
+      }
+      return false;
+    }
 
     canvas.addEventListener('touchstart', function (e) {
       if (touchId !== null) return;              /* sekam tik pirmą pirštą */
       var t = e.changedTouches[0];
-      touchId = t.identifier; startX = t.clientX; startY = t.clientY; steps = 0; softOn = false;
+      touchId = t.identifier; startX = t.clientX; startY = t.clientY; startT = nowMs();
+      steps = 0; softOn = false; used = false; maxD = 0;
     }, { passive: true });
 
     canvas.addEventListener('touchmove', function (e) {
@@ -172,20 +220,44 @@
       }
       if (!t) return;
       if (e.cancelable) e.preventDefault();
+      if (used) return;                          /* gestas jau atliktas — likusio judesio nebeskaitom */
       var cell = cellPx();
-      var want = Math.round((t.clientX - startX) / cell);
+      var dx = t.clientX - startX, dy = t.clientY - startY;
+      if (Math.abs(dx) > maxD) maxD = Math.abs(dx);
+      if (Math.abs(dy) > maxD) maxD = Math.abs(dy);
+
+      /* 👆 GESTŲ schema: GREITIS skiria „instant drop" nuo lėto pozicionavimo žemyn (ShadowRonke). */
+      if (ctlGet() === 'gestures') {
+        var dt = nowMs() - startT;
+        if (dy > cell * 2.2 && Math.abs(dy) > Math.abs(dx) * 1.5 && dt <= 260) {   /* ⚡ brūkšt žemyn = DROP */
+          softStop(); used = true; fire('hard'); return;
+        }
+        if (-dy > cell * 1.6 && Math.abs(dy) > Math.abs(dx) * 1.5 && dt <= 420) {  /* ⬆️ brūkšt aukštyn = HOLD */
+          softStop(); used = true; fire('hold'); return;
+        }
+      }
+
+      var want = Math.round(dx / cell);
       while (steps < want) { steps++; stepMove('right'); }
       while (steps > want) { steps--; stepMove('left'); }
       /* ŽEMYN: perbraukus > ~1.2 langelio žemiau pradžios taško — laikom soft drop;
        * pirštui grįžus aukščiau slenksčio — atleidžiam (galima „pristabdyti" kritimą) */
-      var down = (t.clientY - startY) > cell * 1.2;
+      var down = dy > cell * 1.2;
       if (down && !softOn) { softOn = true; match.playerPress('softdrop'); }
       else if (!down && softOn) softStop();
     }, { passive: false });
 
     var end = function (e) {
       for (var i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === touchId) { touchId = null; softStop(); break; }
+        var t = e.changedTouches[i];
+        if (t.identifier !== touchId) continue;
+        /* 👆 BAKSTELĖJIMAS = SUKIMAS (tik gestų schemoje): pirštas beveik nepajudėjo ir greitai pakeltas. */
+        if (ctlGet() === 'gestures' && !used && !softOn
+          && maxD < cellPx() * 0.5 && (nowMs() - startT) < 300 && !onPrepBtn(t.clientX, t.clientY)) {
+          fire('cw');
+        }
+        touchId = null; softStop();
+        break;
       }
     };
     canvas.addEventListener('touchend', end, { passive: true });
@@ -195,5 +267,7 @@
   Input.KEYMAP = KEYMAP;
   Input.META = META;
   Input.toggleFullscreen = toggleFullscreen;
+  /* 📱 valdymo schemos API (naudoja GET READY ekranas: render.js piešia, main.js perjungia) */
+  global.RBCTL = { get: ctlGet, set: ctlSet, apply: ctlApply, KEY: CTL_KEY };
   global.Input = Input;
 })(window);

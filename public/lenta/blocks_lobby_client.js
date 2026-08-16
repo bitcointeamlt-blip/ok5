@@ -1542,7 +1542,7 @@
     _iframe = document.createElement('iframe');
     _iframeLoaded = false;
     _iframe.addEventListener('load', function () { _iframeLoaded = true; });
-    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb95';
+    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb107';
     _iframe.style.cssText = 'border:0;width:100%;height:100%;display:block;';
     _iframe.setAttribute('allow', 'autoplay');
     var exit = document.createElement('button');
