@@ -934,21 +934,24 @@ export class BlocksRoom extends Room<BlocksState> {
     void RankStore.applyResultVsAI(addr, won, this.roomId).then((r) => { this._sendRankAnim("p1", won, r); });
   }
 
-  /* 🎖️🔥 XP taškų kaupimas su premijomis (2026-08-16, user: „combo turi duoti daugiau XP").
+  /* 🎖️🔥 XP premijos (2026-08-16, user: „combo turi duoti daugiau XP, bet kad nebūtų OP").
    * Buvo: XP = linijos × (lyga+1) — vienguba po viengubos duodavo tiek pat, kiek tetrisas.
-   * Dabar dar du daugikliai:
-   *   DYDIS  — 1 linija ×1.0 · dviguba ×1.25 · triguba ×1.5 · TETRIS ×2.0
-   *   COMBO  — valymai iš eilės (tarpas < COMBO_WINDOW_MS): +10% už kiekvieną grandinės žingsnį, iki +50%
+   * Dabar:
+   *   DYDIS  — 1 linija ×1.0 · dviguba ×1.15 · triguba ×1.3 · TETRIS ×1.6
+   *   COMBO  — valymai iš eilės (tarpas < COMBO_WINDOW_MS): +6% už grandinės žingsnį, iki +30%
+   *   🔒 LUBOS — visa premija NIEKADA neviršija +50% bazinio (linijos ×1.5), kad nebūtų begalinio farmo.
+   * Išmatuota (BRONZE, 3 min): naujokas ×1.04 · vidutinis ×1.50 · profas ×1.50 (be lubų būtų buvę ×2.6).
    * Combo skaičiuoja SERVERIS pagal valymų laiką — klientas jo nesiunčia, tad nesuklastosi. */
   private static readonly COMBO_WINDOW_MS = 5000;
+  private static readonly XP_BONUS_CAP = 1.5;   // premijos lubos: taškai ≤ linijos × 1.5
   private _xpCredit(side: Side, n: number) {
     const lines = Math.max(0, Math.min(4, n | 0));
     if (!lines) return;
     const c = this._combo[side] || { at: -1e9, n: 0 };
     const chain = (this.matchMs - c.at <= BlocksRoom.COMBO_WINDOW_MS) ? c.n + 1 : 1;
     this._combo[side] = { at: this.matchMs, n: chain };
-    const sizeMult = lines >= 4 ? 2 : lines === 3 ? 1.5 : lines === 2 ? 1.25 : 1;
-    const comboMult = 1 + Math.min(0.5, 0.1 * (chain - 1));
+    const sizeMult = lines >= 4 ? 1.6 : lines === 3 ? 1.3 : lines === 2 ? 1.15 : 1;
+    const comboMult = 1 + Math.min(0.30, 0.06 * (chain - 1));
     this._xpAcc[side] = (this._xpAcc[side] || 0) + lines * sizeMult * comboMult;
   }
 
@@ -961,8 +964,10 @@ export class BlocksRoom extends Room<BlocksState> {
       const pl = this._playerBySide(side);
       const lines = pl ? (pl.lines | 0) : 0;
       const mult = (this._leagueOf[side] | 0) + 1;
-      /* 🎖️ taškai su combo/dydžio premija; jei jų nėra (legacy kelias) — grįžtam prie plikų linijų */
-      const pts = (this._xpAcc[side] || 0) > 0 ? this._xpAcc[side] : lines;
+      /* 🎖️ taškai su combo/dydžio premija; jei jų nėra (legacy kelias) — grįžtam prie plikų linijų.
+       * 🔒 Premija ribojama XP_BONUS_CAP — daugiau nei ×1.5 nuo linijų kiekio neišeis niekada. */
+      const raw = (this._xpAcc[side] || 0) > 0 ? this._xpAcc[side] : lines;
+      const pts = Math.min(raw, lines * BlocksRoom.XP_BONUS_CAP);
       const gain = Math.max(0, Math.round(pts * mult));
       if (gain > 0) await RankStore.xpPoolAdd(addr, gain);
       const st = await RankStore.xpUnitsGet(addr);
