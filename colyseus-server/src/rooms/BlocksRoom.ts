@@ -953,7 +953,10 @@ export class BlocksRoom extends Room<BlocksState> {
     const c = this._combo[side] || { at: -1e9, n: 0 };
     const chain = (this.matchMs - c.at <= BlocksRoom.COMBO_WINDOW_MS) ? c.n + 1 : 1;
     this._combo[side] = { at: this.matchMs, n: chain };
-    if (lines >= 4) this._tetrisCnt[side] = (this._tetrisCnt[side] || 0) + 1;   // 🧱🏆 TETRIS!
+    /* 🧱🏆 TETRIS! Trofėjų skaitiklis — TIK kai žaidi PATS. „AI PLAYS FOR ME" pusės neskaičiuojam,
+     * kitaip botą palikus žaisti 169 tetrisai prisifarmintų be tavęs. vsAI mače žmogus = p1
+     * (_aiPlayOf.p1 = false) → ten skaičiuojasi normaliai, kaip ir turi (sumokėta 25 RONKE). */
+    if (lines >= 4 && !this._aiPlayOf[side]) this._tetrisCnt[side] = (this._tetrisCnt[side] || 0) + 1;
     const sizeMult = lines >= 4 ? 1.6 : lines === 3 ? 1.3 : lines === 2 ? 1.15 : 1;
     const comboMult = 1 + Math.min(0.30, 0.06 * (chain - 1));
     this._xpAcc[side] = (this._xpAcc[side] || 0) + lines * sizeMult * comboMult;
