@@ -17110,6 +17110,7 @@ async function _handleTrophyClaim(claimable) {
     _playTrophyMintAnimation();
     // 💀 death trofėjus claim'intas → invaliduojam cache, kad panelė iškart parodytų kitą pakopą (ne po 5 min)
     try { if (/^T_deaths_/.test(claimable.id) && typeof _invalidateDeathProgCache === 'function') _invalidateDeathProgCache(); } catch (_) {}
+    try { if (/^T_league_/.test(claimable.id) && typeof _invalidateLeagueProgCache === 'function') _invalidateLeagueProgCache(); } catch (_) {}
     // ⚒️ mint / 🎳 pinball trofėjai — ta pati logika (iškart atnaujinam progresą po claim'o)
     try { if (/^T_mints_/.test(claimable.id) && typeof _invalidateMintProgCache === 'function') _invalidateMintProgCache(); } catch (_) {}
     try { if (/^T_pinball_/.test(claimable.id) && typeof _invalidatePinballProgCache === 'function') _invalidatePinballProgCache(); } catch (_) {}
@@ -18364,6 +18365,129 @@ function _fetchDeathProgress() {
     return res;
   });
 }
+// ── 🏅 TETRIS LEAGUE trofėjų misija (2026-08-15) ─────────────────────────────
+// Pasiekei SILVER → 1 trofėjus; GOLD, DIAMOND, GLOBAL → dar po vieną (viso 4).
+// Lyga imama iš serverio (Colyseus RankStore), claim'intos pakopos — IŠ KONTRAKTO,
+// tad joks kliento state nedalyvauja (kaip ir mirčių misijoje).
+const _LEAGUE_NAMES = ['PAPER', 'WOOD', 'STONE', 'BRONZE', 'SILVER', 'GOLD', 'DIAMOND', 'GLOBAL'];
+let _leagueProgCache = null;
+const _LEAGUE_PROG_TTL = 5 * 60 * 1000;
+function _invalidateLeagueProgCache() { _leagueProgCache = null; }
+function _fetchLeagueProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_leagueProgCache && _leagueProgCache.wallet === wallet && (now - _leagueProgCache.at) < _LEAGUE_PROG_TTL) {
+    return Promise.resolve(_leagueProgCache.res);
+  }
+  return window.SupabaseSync.validateAchievement('T_league_progress').then(res => {
+    _leagueProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
+function _appendLeagueTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-league';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">🏅</span>
+      <span class="tier-card-title">TETRIS LEAGUES</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading your league…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.insertBefore(card, grid.firstChild);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your league progress.</span></div></div>`;
+    return;
+  }
+
+  _fetchLeagueProgress().then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || typeof d.league !== 'number') {
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Earn a trophy for reaching SILVER, then one for every league above it.</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load league (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    const league = d.league | 0;
+    const tiers = d.tiers || 4;
+    const nextTier = d.nextTier || 1;
+    const nextLeague = (typeof d.nextLeague === 'number') ? d.nextLeague : 4;
+    const nextName = d.nextLeagueName || _LEAGUE_NAMES[nextLeague] || 'SILVER';
+    const onchainOk = d.onchainOk !== false;
+    const claimable = !!d.claimableNow && onchainOk;
+    const claimedCount = Math.max(0, Math.min(tiers, nextTier - 1));
+    const done = claimedCount >= tiers;
+
+    progEl.textContent = `${claimedCount}/${tiers} claimed`;
+    progEl.className = 'tier-card-progress' + (claimable || done ? ' complete' : '');
+
+    /* Progreso juosta — kiek lygų nuo SILVER iki GLOBAL jau pasiekta. */
+    const pct = Math.max(0, Math.min(100, Math.round((Math.max(0, league - 3) / 4) * 100)));
+    const ladder = _LEAGUE_NAMES.slice(4).map((n, i) => {
+      const idx = i + 4;
+      return `<span style="opacity:${league >= idx ? 1 : 0.35}">${league >= idx ? '★' : '☆'} ${n}</span>`;
+    }).join(' · ');
+    reqsEl.innerHTML = `
+      <div class="tier-req ${claimable ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${claimable ? '✓' : '○'}</span>
+          <span class="tier-req-text">${done ? 'All league trophies claimed' : 'Trophy #' + nextTier + ': reach ' + nextName + ' league'}</span>
+          <span class="tier-req-progress">${_LEAGUE_NAMES[league] || 'PAPER'}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text">${ladder}</span></div></div>`;
+
+    if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled">CLAIM NFT (${_LEAGUE_NAMES[Math.min(7, 3 + nextTier)]})</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_league_' + nextTier,
+          label: 'TETRIS LEAGUE — ' + (_LEAGUE_NAMES[Math.min(7, 3 + nextTier)] || ''),
+          desc: 'Claim your trophy for reaching ' + (_LEAGUE_NAMES[Math.min(7, 3 + nextTier)] || '') + ' league in ranked Tetris.'
+            + (nextTier < tiers ? ' The next one unlocks at ' + (_LEAGUE_NAMES[Math.min(7, 4 + nextTier)] || '') + '.' : ''),
+        }), 200);
+      });
+    } else if (done) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🏆 ALL 4 CLAIMED</span></button>`;
+    } else if (!onchainOk) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">⏳ On-chain check unavailable</span>
+        <span class="tcb-hint">${_LEAGUE_NAMES[league]} league · reopen panel to retry</span></button>`;
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 Reach ${nextName} league</span>
+        <span class="tcb-hint">You are ${_LEAGUE_NAMES[league] || 'PAPER'} — win ranked Tetris matches to climb</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading league.</span></div></div>`;
+    console.warn('[league trophy]', err);
+  });
+}
+
 function _appendDeathTrophyCard(grid) {
   const card = document.createElement('div');
   card.className = 'tier-card tier-deaths';
@@ -18754,6 +18878,8 @@ function renderTrophyPanel() {
   _appendMintTrophyCard(grid);
   // 🎳 PINBALL 3K single mission — įterpiama VIRŠ mint (viršuje panelės).
   _appendPinballTrophyCard(grid);
+  // 🏅 TETRIS LEAGUE misija (2026-08-15) — trofėjus už SILVER ir kiekvieną aukštesnę lygą.
+  _appendLeagueTrophyCard(grid);
 
   // Phase 15 — append "COMING SOON" teaser card to signal project growth
   const teaser = document.createElement('div');
