@@ -1754,17 +1754,22 @@
 
     /* ── kaip prasideda mačas (virš mygtuko, kad klausimo nekiltų) ── */
     var stY = btnY - 15;
-    F.outlinedCenter(ctx, both ? 'BOTH READY - STARTING!'
-      : (ready ? 'WAITING FOR OPPONENT - AUTO START IN ' + secs + 'S'
-        : 'PRESS READY BELOW - MATCH STARTS IN ' + secs + 'S'),
-      cx, stY, both ? U.good : (ready ? U.dim : U.gold), '#05060c', 1);
+    /* 🎮 PRACTICE (lokalus, nemokamas): priešininko laukti nereikia — tekstas kitas */
+    var practice = !!match._prepLocal;
+    F.outlinedCenter(ctx, practice
+      ? (ready ? 'STARTING PRACTICE!' : 'TRY THE CONTROLS - AUTO START IN ' + secs + 'S')
+      : (both ? 'BOTH READY - STARTING!'
+        : (ready ? 'WAITING FOR OPPONENT - AUTO START IN ' + secs + 'S'
+          : 'PRESS READY BELOW - MATCH STARTS IN ' + secs + 'S')),
+      cx, stY, (practice ? (ready ? U.good : U.gold) : (both ? U.good : (ready ? U.dim : U.gold))), '#05060c', 1);
 
     /* ── READY mygtukas ── */
     rect(ctx, btnX + 1, btnY + 2, btnW, btnH, '#03040a');
     rect(ctx, btnX, btnY, btnW, btnH, ready ? '#1c3a24' : '#24543a');
     rect(ctx, btnX + 1, btnY + 1, btnW - 2, 1, ready ? '#3d6b4b' : '#6ff0a0');
     frame(ctx, btnX, btnY, btnW, btnH, ready ? '#5aa06a' : '#5ce08a');
-    F.outlinedCenter(ctx, ready ? 'READY - WAITING ' + secs + 'S' : 'PRESS TO READY UP',
+    F.outlinedCenter(ctx, ready ? (practice ? 'STARTING...' : 'READY - WAITING ' + secs + 'S')
+      : (practice ? 'PRESS TO START' : 'PRESS TO READY UP'),
       cx, btnY + Math.floor(btnH / 2) - 3, ready ? U.dim : U.good, '#05060c', 1);
     match._prepBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
   };

@@ -91,7 +91,8 @@
           break;
         }
         if (this.netMode) { if (this.state === 'menu' || this.state === 'result') this._netConnect(); break; }
-        if (this.state === 'menu' || this.state === 'result') this.startMatch();
+        if (this.state === 'prep') { this._prepMarkReady(); break; }   // 🎮 PRACTICE pasiruošimas → READY
+        if (this.state === 'menu' || this.state === 'result') this._localStart();
         break;
       case 'restart':
         if (this.netMode === 'colyseus') {
@@ -164,6 +165,9 @@
     if (dt > 100) dt = 100;                 // apsauga po tab switch
 
     if (this.netMode) { this._updateNet(dt); this.fx.update(dt); return; }   // online kelias (žr. žemiau)
+
+    /* 🎮 PRACTICE pasiruošimas (lokalus, nemokamas) — tas pats GET READY langas kaip online. */
+    if (this.state === 'prep') { this._prepUpdate(dt); this.fx.update(dt); return; }
 
     if (this.state === 'countdown') {
       this.countdown -= dt;
@@ -857,6 +861,7 @@
     this._prepLeft = this._prepMs;
     this._prepReady = false;
     this._prepReadyCount = 0;
+    this._prepGo = null;   // 🎮 PRACTICE: atgalinis laikmatis nuo READY iki starto
     this._demoIdx = -1;
     this._demoStep = 0; this._demoAcc = 0; this._demoKey = ''; this._demoKeyT = 0;   // 🎓 auto-demo + kuris mygtukas „paspaustas"
     this._demoSpawn();
@@ -865,8 +870,19 @@
   Match.prototype._prepMarkReady = function () {
     if (this.state !== 'prep' || this._prepReady) return;
     this._prepReady = true;
-    try { global.NET.send('prep_ready', {}); } catch (_) {}
+    /* 🎮 PRACTICE: priešininko laukti nereikia — startuojam po trumpo „BOTH READY" blyksnio. */
+    if (this._prepLocal) { this._prepReadyCount = 2; this._prepGo = 600; }
+    else { try { global.NET.send('prep_ready', {}); } catch (_) {} }
     try { global.Sfx.play('go'); } catch (_) {}
+  };
+  /* 🎮 PRACTICE AI (nemokamas, lokalus): telefone prieš mačą rodom TĄ PATĮ „GET READY" langą kaip
+   * online — kad valdymo schemą (BUTTONS / TAP + SWIPE) galėtum pasirinkti ir pačiupinėti nemokėdamas
+   * RONKE. Kompiuteryje elgsena nesikeičia: klaviatūra pasirinkimo neturi, tad startuojam iškart. */
+  Match.prototype._localStart = function () {
+    var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
+    if (!isTouch) { this.startMatch(); return; }
+    this._prepLocal = true;
+    this._enterPrep(20000);
   };
   Match.prototype._demoSpawn = function () {
     var types = ['T', 'L', 'J', 'S', 'Z', 'I', 'O'];
@@ -929,6 +945,14 @@
   Match.prototype._prepUpdate = function (dt) {
     this._prepLeft = Math.max(0, (this._prepLeft || 0) - dt);
     if (this._demoKeyT > 0) this._demoKeyT -= dt;   // mygtuko pažymėjimas nublanksta (užsidega TIK paspaudus — jokios auto-demonstracijos, nebeblaško)
+    /* 🎮 PRACTICE: online mače startą duoda serveris, o čia jo nėra — startuojam patys
+     * (paspaudus READY arba pasibaigus laikui). */
+    if (!this._prepLocal) return;
+    if (this._prepGo != null) this._prepGo -= dt;
+    if ((this._prepGo != null && this._prepGo <= 0) || this._prepLeft <= 0) {
+      this._prepLocal = false; this._prepGo = null;
+      this.startMatch();
+    }
   };
 
   /* SAVO lentos serializacija priešui (relay: serveris persiunčia kaip STATE{foe}).
