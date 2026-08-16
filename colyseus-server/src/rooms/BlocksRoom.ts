@@ -85,6 +85,10 @@ export class BlocksRoom extends Room<BlocksState> {
   private seed = 0;
   private deckRnd: (() => number) | null = null;
   private deckAt: Record<"you" | "foe", number> = { you: 0, foe: 0 };
+  /* 🎖️ XP taškai su COMBO/dydžio premija (2026-08-16). Kaupiami PER MAČĄ, serverio pusėje —
+   * combo grandinė nustatoma pagal valymų laiką (klientas jos nesiunčia, tad ir suklastoti negali). */
+  private _xpAcc: Record<Side, number> = { p1: 0, p2: 0 };
+  private _combo: Record<Side, { at: number; n: number }> = { p1: { at: -1e9, n: 0 }, p2: { at: -1e9, n: 0 } };
   private corridorAcc = 0;
   private fxBuf: any[] = [];   // mūšio efektų įvykiai, kaupiami tarp corridor transliacijų
   private hostSession = "";    // p1 (kambario kūrėjas) — jam siunčiam „challenge" kai kažkas prisijungia
@@ -480,6 +484,9 @@ export class BlocksRoom extends Room<BlocksState> {
     this.state.countdown = COUNTDOWN_MS;
     // A6: šviežias anti-cheat sekimas kiekvienoms rungtynėms
     this.matchMs = 0; this.clearLog = {}; this.lastSnapMs = {}; this._cheat = {}; this._lastPieces = {};
+    /* 🎖️ šviežias XP/combo skaitliukas kiekvienoms rungtynėms (rematch tame pačiame kambaryje) */
+    this._xpAcc = { p1: 0, p2: 0 };
+    this._combo = { p1: { at: -1e9, n: 0 }, p2: { at: -1e9, n: 0 } };
     // A6 L2: sukuriam autoritetingas lentas (serveris sukа abu boardus iš įvesčių)
     if (this.serverAuth) {
       const E = this.lib.Engine;
@@ -560,6 +567,7 @@ export class BlocksRoom extends Room<BlocksState> {
     const armySide = SIDE_TO_ARMY[p.side as Side];
     // vienas valymas = vienas smuugis: 1 unitas + (n-1) pastiprinimai jam (zr. army.js requestClear)
     this.army.requestClear(armySide, Array.from({ length: n }, () => this._nextDeckType(armySide)));
+    this._xpCredit(p.side as Side, n);   // 🎖️ combo/dydžio premija
     p.lines += n;
   }
 
@@ -726,7 +734,9 @@ export class BlocksRoom extends Room<BlocksState> {
         if (e.t === "clear") {
           const n = Math.max(0, Math.min(4, e.n | 0));
           this.army.requestClear(key, Array.from({ length: n }, () => this._nextDeckType(key)));
-          const pl = this._playerBySide(key === "you" ? "p1" : "p2"); if (pl) pl.lines += n;
+          const _sd: Side = key === "you" ? "p1" : "p2";
+          this._xpCredit(_sd, n);   // 🎖️ combo/dydžio premija
+          const pl = this._playerBySide(_sd); if (pl) pl.lines += n;
           this.boardFx.push({ side: key, n, rows: e.rows || [], colors: e.colors || [] });   // juice klientui
         } else if (e.t === "topout") {
           const loser: Side = key === "you" ? "p1" : "p2";
@@ -759,6 +769,7 @@ export class BlocksRoom extends Room<BlocksState> {
         if (e.t === "clear") {
           const n = Math.max(0, Math.min(4, e.n | 0));
           this.army.requestClear(armySide, Array.from({ length: n }, () => this._nextDeckType(armySide)));
+          this._xpCredit(s, n);   // 🎖️ combo/dydžio premija
           const pl = this._playerBySide(s); if (pl) pl.lines += n;
         } else if (e.t === "topout") {
           this._end(s === "p1" ? "p2" : "p1");   // botas užsivertė → priešinga pusė laimi
@@ -923,7 +934,25 @@ export class BlocksRoom extends Room<BlocksState> {
     void RankStore.applyResultVsAI(addr, won, this.roomId).then((r) => { this._sendRankAnim("p1", won, r); });
   }
 
-  // 🎖️ LINIJŲ XP: gain = lines × (lyga+1) → pool; klientui siunčiam reportą su ĮREGISTRUOTAIS
+  /* 🎖️🔥 XP taškų kaupimas su premijomis (2026-08-16, user: „combo turi duoti daugiau XP").
+   * Buvo: XP = linijos × (lyga+1) — vienguba po viengubos duodavo tiek pat, kiek tetrisas.
+   * Dabar dar du daugikliai:
+   *   DYDIS  — 1 linija ×1.0 · dviguba ×1.25 · triguba ×1.5 · TETRIS ×2.0
+   *   COMBO  — valymai iš eilės (tarpas < COMBO_WINDOW_MS): +10% už kiekvieną grandinės žingsnį, iki +50%
+   * Combo skaičiuoja SERVERIS pagal valymų laiką — klientas jo nesiunčia, tad nesuklastosi. */
+  private static readonly COMBO_WINDOW_MS = 5000;
+  private _xpCredit(side: Side, n: number) {
+    const lines = Math.max(0, Math.min(4, n | 0));
+    if (!lines) return;
+    const c = this._combo[side] || { at: -1e9, n: 0 };
+    const chain = (this.matchMs - c.at <= BlocksRoom.COMBO_WINDOW_MS) ? c.n + 1 : 1;
+    this._combo[side] = { at: this.matchMs, n: chain };
+    const sizeMult = lines >= 4 ? 2 : lines === 3 ? 1.5 : lines === 2 ? 1.25 : 1;
+    const comboMult = 1 + Math.min(0.5, 0.1 * (chain - 1));
+    this._xpAcc[side] = (this._xpAcc[side] || 0) + lines * sizeMult * comboMult;
+  }
+
+  // 🎖️ LINIJŲ XP: gain = XP taškai (su combo/dydžio premija) × (lyga+1) → pool; klientui siunčiam reportą su ĮREGISTRUOTAIS
   //   deko unitais (on-chain tiesa per DeckChain) + jų sukauptu XP — žaidėjas pasirinks, kam skirti.
   private async _xpReport(side: Side) {
     try {
@@ -932,7 +961,9 @@ export class BlocksRoom extends Room<BlocksState> {
       const pl = this._playerBySide(side);
       const lines = pl ? (pl.lines | 0) : 0;
       const mult = (this._leagueOf[side] | 0) + 1;
-      const gain = Math.max(0, lines * mult);
+      /* 🎖️ taškai su combo/dydžio premija; jei jų nėra (legacy kelias) — grįžtam prie plikų linijų */
+      const pts = (this._xpAcc[side] || 0) > 0 ? this._xpAcc[side] : lines;
+      const gain = Math.max(0, Math.round(pts * mult));
       if (gain > 0) await RankStore.xpPoolAdd(addr, gain);
       const st = await RankStore.xpUnitsGet(addr);
       const deck = await chainDeckFull(addr).catch(() => null);

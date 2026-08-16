@@ -18390,13 +18390,16 @@ function _appendLeagueTrophyCard(grid) {
   card.className = 'tier-card tier-league';
   card.innerHTML = `
     <div class="tier-card-header">
-      <span class="tier-card-icon"><img class="league-emb" src="assets_rank/emb_4.png" alt=""
-        style="width:22px;height:22px;image-rendering:pixelated;vertical-align:middle;"></span>
+      <span class="tier-card-icon">🏅</span>
       <span class="tier-card-title">TETRIS LEAGUES</span>
       <span class="tier-card-progress">…</span>
     </div>
-    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
-      <span class="tier-req-text">Loading your league…</span></div></div></div>
+    <div class="league-body" style="display:flex;align-items:center;gap:14px;">
+      <img class="league-emb" src="assets_rank/emb_4.png" alt=""
+        style="width:64px;height:64px;image-rendering:pixelated;flex:0 0 auto;">
+      <div class="tier-reqs" style="flex:1;min-width:0;"><div class="tier-req"><div class="tier-req-row">
+        <span class="tier-req-text">Loading your league…</span></div></div></div>
+    </div>
     <div class="tier-actions"></div>`;
   grid.insertBefore(card, grid.firstChild);
 
