@@ -13100,13 +13100,14 @@ body.f12-landscape #canvas {
   animation: trophyClaimPulse 1.25s ease-in-out infinite;
 }
 .tier-claim-btn.enabled:hover {
-  background: #fff;
-  box-shadow: 0 0 16px #ffcf5c;
-  animation: none;   /* hover metu — statiškas ryškus švytėjimas, be pulsavimo */
+  background: #ffe9a8;
+  box-shadow: 0 0 7px rgba(255, 207, 92, 0.5);
+  animation: none;   /* hover metu — statiškas, be pulsavimo */
 }
+/* 2026-08-16 (user: „perryškus"): pulsavimas sušvelnintas — mažesnis švytėjimas, beveik be dydžio šuolio. */
 @keyframes trophyClaimPulse {
-  0%, 100% { box-shadow: 0 0 3px 0 rgba(255, 207, 92, 0.35); transform: scale(1); }
-  50%      { box-shadow: 0 0 16px 3px rgba(255, 207, 92, 0.9); transform: scale(1.035); }
+  0%, 100% { box-shadow: 0 0 2px 0 rgba(255, 207, 92, 0.22); transform: scale(1); }
+  50%      { box-shadow: 0 0 7px 1px rgba(255, 207, 92, 0.42); transform: scale(1.012); }
 }
 /* Prieinamumas: kas nenori animacijų — nekelia mirksinčio mygtuko. */
 @media (prefers-reduced-motion: reduce) {

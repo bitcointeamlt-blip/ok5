@@ -18390,7 +18390,8 @@ function _appendLeagueTrophyCard(grid) {
   card.className = 'tier-card tier-league';
   card.innerHTML = `
     <div class="tier-card-header">
-      <span class="tier-card-icon">🏅</span>
+      <span class="tier-card-icon"><img class="league-emb" src="assets_rank/emb_4.png" alt=""
+        style="width:22px;height:22px;image-rendering:pixelated;vertical-align:middle;"></span>
       <span class="tier-card-title">TETRIS LEAGUES</span>
       <span class="tier-card-progress">…</span>
     </div>
@@ -18437,6 +18438,11 @@ function _appendLeagueTrophyCard(grid) {
 
     progEl.textContent = `${claimedCount}/${tiers} claimed`;
     progEl.className = 'tier-card-progress' + (claimable || done ? ' complete' : '');
+    /* 🥈 Emblema antraštėje = lyga, už kurią eina KITAS trofėjus (viską surinkus — GLOBAL). */
+    try {
+      const embEl = card.querySelector('.league-emb');
+      if (embEl) embEl.src = 'assets_rank/emb_' + Math.max(4, Math.min(7, done ? 7 : nextLeague)) + '.png';
+    } catch (_) {}
 
     /* Progreso juosta — kiek lygų nuo SILVER iki GLOBAL jau pasiekta. */
     const pct = Math.max(0, Math.min(100, Math.round((Math.max(0, league - 3) / 4) * 100)));
