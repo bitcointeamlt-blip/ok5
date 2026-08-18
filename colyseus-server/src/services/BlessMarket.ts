@@ -250,6 +250,25 @@ async function _unlockFinal(id: string): Promise<void> {
   try { await c.from("f9_bases").delete().eq("ronin_address", "blessmktdone_" + id); } catch { /* best-effort */ }
 }
 
+/* 📜 VIEŠA ISTORIJA: rašom į TĄ PAČIĄ `trade_<tx>` eilučių šeimą, kurią skaito marketo HISTORY
+ * skiltis — tad BLESS sandoriai matosi bendrame sraute šalia unitų. Skirtumas: unitų įrašus rašo
+ * KLIENTAS (player-pays), o šituos — SERVERIS, jau patikrinęs abu kvitus ⇒ jų suklastoti nepavyks. */
+async function _recordTrade(l: BlessListing, buyer: string, tx: string): Promise<void> {
+  const c = sb(); if (!c) return;
+  try {
+    await c.from("f9_bases").upsert({
+      ronin_address: "trade_" + tx.slice(2, 26),
+      units: [],
+      buildings: {
+        kind: "bless", qty: l.qty, pricePer: l.price,
+        priceRonke: Math.round(Number(ethers.formatUnits(l.totalWei, 18)) * 100) / 100,
+        buyer, seller: l.seller, tx, at: Date.now(),
+      },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "ronin_address" });
+  } catch (e: any) { console.warn("[BlessMarket] istorijos įrašas nepavyko:", e?.message); }
+}
+
 // ── BUY: du kvitai (95% pardavėjui + 5% treasury) → itemai pirkėjui. ──
 export async function blessMarketBuy(buyer: string, id: string, txSeller: string, txFee: string): Promise<{ ok: boolean; reason?: string; qty?: number; listing?: BlessListing }> {
   const b = _norm(buyer);
@@ -285,6 +304,7 @@ export async function blessMarketBuy(buyer: string, id: string, txSeller: string
       if (u2 === "used") { await _unlockFinal(id); return { ok: false, reason: "tx_used" }; }
       await _put({ ...l, status: "sold", buyer: b, soldAt: Date.now(), txSeller: t1, txFee: t2, resvAddr: undefined, resvUntil: 0 });
       await blessCredit(b, l.qty);   // 🎒 itemai pirkėjui (best-effort kaip visur, bet lotas jau „sold")
+      await _recordTrade(l, b, t1);  // 📜 vieša istorija (marketo HISTORY skiltis)
       console.log(`[BlessMarket] 💰 SOLD ${l.qty}×BLESS @${l.price} → ${b.slice(0, 10)}… (pardavėjas ${l.seller.slice(0, 10)}…, id ${id})`);
       return { ok: true, qty: l.qty, listing: { ...l, status: "sold", buyer: b } };
     } catch { return { ok: false, reason: "db" }; }

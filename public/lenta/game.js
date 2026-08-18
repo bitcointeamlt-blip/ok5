@@ -10577,7 +10577,8 @@ function _f9MktLoadHistory() {
     _f9MktHistory = [
       { tokenId: '2840', utype: 5, level: 7, priceRonke: 9600, buyer: '0x527549aabbccddeeff0011223344556677889900', seller: '0x32782D97a180A0fD5b6F775517Ac4e3727Bb624A', kind: 'offer', at: Date.now() - 90000 },
       { tokenId: '4119', utype: 7, level: 1, priceRonke: 560, buyer: '0x9703c1a4b6135577889900aabbccddeeff112233', seller: '0x32782D97a180A0fD5b6F775517Ac4e3727Bb624A', kind: 'buy', at: Date.now() - 3600000 },
-      { tokenId: '4440', utype: 1, level: 0, priceRonke: 450, buyer: '0xbde4c7150011223344556677889900aabbccddee', seller: '0x3D5914540011223344556677889900aabbccddee', kind: 'buy', at: Date.now() - 26 * 3600000 }
+      { tokenId: '4440', utype: 1, level: 0, priceRonke: 450, buyer: '0xbde4c7150011223344556677889900aabbccddee', seller: '0x3D5914540011223344556677889900aabbccddee', kind: 'buy', at: Date.now() - 26 * 3600000 },
+      { kind: 'bless', qty: 5, pricePer: 10, priceRonke: 50, buyer: '0xff0a2d76e6156bc1c0c689fe4029f6f1a566e92e', seller: '0x32782D97a180A0fD5b6F775517Ac4e3727Bb624A', at: Date.now() - 300000 }   // ⚡ itemų sandoris
     ];
     if (_f9MktOverlayEl && _f9MktTab === 'history') _f9MktRenderBody();
     return;
@@ -10589,7 +10590,7 @@ function _f9MktLoadHistory() {
     .then(function (rows) {
       _f9MktHistory = (rows || []).map(function (r) {
         var b = (r && r.buildings) || {};
-        return { tokenId: b.tokenId, utype: (b.utype != null ? Number(b.utype) : null), level: (b.level != null ? Number(b.level) : null), priceRonke: Number(b.priceRonke) || 0, buyer: b.buyer || '', seller: b.seller || '', kind: b.kind || 'buy', at: Number(b.at) || Date.parse(r.updated_at || '') || 0 };
+        return { tokenId: b.tokenId, utype: (b.utype != null ? Number(b.utype) : null), level: (b.level != null ? Number(b.level) : null), priceRonke: Number(b.priceRonke) || 0, buyer: b.buyer || '', seller: b.seller || '', kind: b.kind || 'buy', at: Number(b.at) || Date.parse(r.updated_at || '') || 0, qty: Number(b.qty) || 0, pricePer: Number(b.pricePer) || 0 };   // ⚡ qty/pricePer — BLESS lotams
       });
     })
     .catch(function () { if (!_f9MktHistory) _f9MktHistory = []; })
@@ -10753,7 +10754,7 @@ function _f9MktRenderBody() {
     const emptyBoxH = function (icon, txt) {
       return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
     };
-    let html = _localBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Public market activity — every completed trade (direct buys &amp; accepted offers) across all players. Newest first.</div>';
+    let html = _localBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Public market activity — every completed trade across all players: units, accepted offers and ⚡ BLESS item lots. Newest first.</div>';
     if (_f9MktHistory === null) {
       if (!_f9MktHistLoading) _f9MktLoadHistory();
       html += emptyBoxH('⏳', 'Loading trade history…');
@@ -10762,19 +10763,25 @@ function _f9MktRenderBody() {
     } else {
       html += '<div style="display:flex;flex-direction:column;gap:9px;">';
       for (const h of _f9MktHistory) {
-        const hasS = (h.utype != null);
-        const nm = hasS ? _f9MktUnitName(h.utype) : ('Unit #' + h.tokenId);
-        const sprH = hasS
-          ? ('<img src="' + _f9MktUnitSprite(h.utype) + '" alt="" style="width:54px;height:54px;object-fit:contain;image-rendering:pixelated;flex:0 0 auto;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(h.utype) + '\'))">')
-          : '<span style="font-size:34px;flex:0 0 auto;">🪖</span>';
-        const kindBadge = h.kind === 'offer'
-          ? '<span style="font-size:7px;color:#8fd47c;background:rgba(108,207,92,0.14);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">OFFER</span>'
-          : '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">BUY</span>';
+        /* ⚡ BLESS lotai (rašo SERVERIS po patikrintų kvitų) — vietoj unito sprite'o plasnojantys sparnai. */
+        const isBless = (h.kind === 'bless');
+        const hasS = !isBless && (h.utype != null);
+        const nm = isBless ? ((h.qty || 0) + ' × BLESS') : (hasS ? _f9MktUnitName(h.utype) : ('Unit #' + h.tokenId));
+        const sprH = isBless
+          ? _f9WingsIco(48, 'margin:3px;')
+          : (hasS
+            ? ('<img src="' + _f9MktUnitSprite(h.utype) + '" alt="" style="width:54px;height:54px;object-fit:contain;image-rendering:pixelated;flex:0 0 auto;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(h.utype) + '\'))">')
+            : '<span style="font-size:34px;flex:0 0 auto;">🪖</span>');
+        const kindBadge = isBless
+          ? '<span style="font-size:7px;color:#aef0f7;background:rgba(74,157,166,0.18);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">ITEMS</span>'
+          : (h.kind === 'offer'
+            ? '<span style="font-size:7px;color:#8fd47c;background:rgba(108,207,92,0.14);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">OFFER</span>'
+            : '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">BUY</span>');
         html += '<div style="display:flex;align-items:center;gap:12px;padding:10px 13px;background:rgba(0,0,0,0.3);border:1px solid #4a3a18;border-radius:8px;">' +
           sprH +
           '<div style="flex:1;min-width:0;">' +
-            '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><span style="font-size:12px;color:#e8dcc0;">' + nm + (h.level != null ? ' <span style="color:#ffcf5c;">Lv' + h.level + '</span>' : '') + '</span>' + kindBadge + '</div>' +
-            '<div style="font-size:8px;color:#7a8a9a;margin-top:5px;line-height:1.5;">🛒 buyer <span style="color:#9ab4c8;">' + _f9MktShort(h.buyer) + '</span> &nbsp;←&nbsp; 🏷️ seller <span style="color:#9ab4c8;">' + _f9MktShort(h.seller) + '</span>' + (h.tokenId != null ? ' · #' + h.tokenId : '') + '</div>' +
+            '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><span style="font-size:12px;color:' + (isBless ? '#aef0f7' : '#e8dcc0') + ';">' + nm + (!isBless && h.level != null ? ' <span style="color:#ffcf5c;">Lv' + h.level + '</span>' : '') + '</span>' + kindBadge + '</div>' +
+            '<div style="font-size:8px;color:#7a8a9a;margin-top:5px;line-height:1.5;">🛒 buyer <span style="color:#9ab4c8;">' + _f9MktShort(h.buyer) + '</span> &nbsp;←&nbsp; 🏷️ seller <span style="color:#9ab4c8;">' + _f9MktShort(h.seller) + '</span>' + (isBless ? (h.pricePer ? ' · ' + h.pricePer + ' each' : '') : (h.tokenId != null ? ' · #' + h.tokenId : '')) + '</div>' +
           '</div>' +
           '<div style="text-align:right;flex:0 0 auto;"><div style="font-size:14px;color:#ffcf5c;">' + h.priceRonke + '</div><div style="font-size:7px;color:#8a9aaa;margin-top:2px;">RONKE · ' + _f9MktAgo(h.at) + '</div></div>' +
         '</div>';
