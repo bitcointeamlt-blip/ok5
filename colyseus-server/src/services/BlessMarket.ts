@@ -109,8 +109,14 @@ async function _put(l: BlessListing): Promise<void> {
 export async function blessMarketBrowse(limit = 60): Promise<BlessListing[]> {
   const c = sb(); if (!c) return [];
   try {
+    /* ⚠️ SQL LIKE: `_` = VIENO SIMBOLIO pakaitalas! „blessmkt_%" gaudo ir `blessmkttx_…` (kvitus),
+     * ir `blessmktdone_…` (užraktus) — po kelių šimtų sandorių jie išstumtų tikrus lotus iš lango.
+     * Todėl filtruojam PAČIOJE bazėje: tik eilutės su `seller` ir statusu „active". */
     const { data, error } = await c.from("f9_bases").select("ronin_address, buildings")
-      .like("ronin_address", "blessmkt_%").order("updated_at", { ascending: false }).limit(Math.max(1, Math.min(200, limit * 3)));
+      .like("ronin_address", "blessmkt%")
+      .not("buildings->>seller", "is", null)
+      .filter("buildings->>status", "eq", "active")
+      .order("updated_at", { ascending: false }).limit(Math.max(1, Math.min(200, limit)));
     if (error) return [];
     const out: BlessListing[] = [];
     for (const r of (data as any[]) || []) {
