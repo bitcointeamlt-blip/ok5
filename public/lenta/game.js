@@ -10270,6 +10270,23 @@ let _f9MktItems = false;   // „⚡ ITEMS" chip TYPE eilėje → vietoj unitų 
 let _f9BmkState = { listings: [], bal: 0, feeBps: 500, treasury: '', me: '', loaded: false };
 let _f9BmkBusy = false, _f9BmkMsg = '';
 let _f9BmkResvWait = null;
+/* 🪽 BLESS ikona — PLASNOJANTYS angelo sparnai (2026-08-18). 7 kadrų horizontalus sheet'as;
+ * ⚠️ procentinio background-position pabaiga PRIVALO būti N/(N−1)×100% (7/6 = 116.667%) — kitaip
+ * kadrai „slenka" ir matosi puskadriai. Fonas % dydžiu → ta pati klasė veikia bet kokiam dydžiui. */
+const _F9_WINGS_N = 7;
+function _f9EnsureWingsCss() {
+  if (document.getElementById('f9-wings-css')) return;
+  const s = document.createElement('style'); s.id = 'f9-wings-css';
+  s.textContent = '.f9-wings{display:inline-block;flex:0 0 auto;background:url("assets_tiny/bless_wings_anim.png") 0 0/' + (_F9_WINGS_N * 100) + '% 100% no-repeat;image-rendering:pixelated;animation:f9wingflap .78s steps(' + _F9_WINGS_N + ') infinite;}' +
+    '@keyframes f9wingflap{to{background-position-x:' + (Math.round((_F9_WINGS_N / (_F9_WINGS_N - 1)) * 1000000) / 10000) + '%}}' +
+    '@media (prefers-reduced-motion: reduce){.f9-wings{animation:none;}}';
+  document.head.appendChild(s);
+}
+// px = ikonos kraštinė; extra = papildomi stiliai (pvz. tarpas nuo teksto)
+function _f9WingsIco(px, extra) {
+  _f9EnsureWingsCss();
+  return '<span class="f9-wings" style="width:' + px + 'px;height:' + px + 'px;' + (extra || '') + '"></span>';
+}
 function _f9BmkRoom() { try { return (window.F9PVP && window.F9PVP.room) || null; } catch (_) { return null; } }
 function _f9BmkRefresh() { const r = _f9BmkRoom(); if (r) { try { r.send('blessmkt_get'); } catch (_) {} } }
 function _f9BmkMe() { try { const a = window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress(); return a ? String(a).toLowerCase() : ''; } catch (_) { return ''; } }
@@ -10339,7 +10356,7 @@ function _f9BmkSellHtml() {
   if (!_f9BmkState.loaded) return '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">⏳</span><span>Loading your items…</span></div>';
   const mine = _f9BmkState.listings.filter(function (L) { return String(L.seller).toLowerCase() === me; });
   let h = '<div style="display:flex;align-items:center;gap:16px;padding:15px 18px;background:rgba(74,157,166,0.12);border:1px solid #2a6a74;border-radius:10px;margin-bottom:16px;">' +
-    '<img src="assets_tiny/bless_wings.png" alt="" style="width:34px;height:34px;image-rendering:pixelated;">' +   // ⚡ BLESS = angelo sparnai (08-18)
+    _f9WingsIco(34) +   // ⚡ BLESS = angelo sparnai (08-18)
     '<div style="flex:1;min-width:0;"><div style="font-size:17px;color:#aef0f7;">' + _f9BmkState.bal + ' <span style="font-size:10px;color:#7fdfea;">BLESS in your stash</span></div>' +
     '<div style="font-size:8px;color:#6a8a92;margin-top:4px;">Claim daily in the hospital · spend 1 to instantly heal an injured unit</div></div></div>';
   h += '<div style="font-size:10px;color:#8a9aaa;line-height:1.7;margin-bottom:12px;letter-spacing:0.5px;">Set <b style="color:#ffcf5c;">how many</b> and the <b style="color:#ffcf5c;">price per item</b>. Listed BLESS move to escrow (out of your stash) until sold or cancelled. Fee <b style="color:#ffcf5c;">' + feePct + '%</b> → treasury — the buyer pays it on top, you receive the rest straight to your wallet.</div>';
@@ -10376,7 +10393,7 @@ function _f9BmkCardHtml(L, mine) {
   const busyResv = L.resvUntil && L.resvUntil > Date.now() && String(L.resvAddr || '').toLowerCase() !== _f9BmkMe();
   return '<div style="display:flex;flex-direction:column;gap:9px;padding:13px;border-radius:9px;background:rgba(0,0,0,0.3);border:1px solid ' + (mine ? '#6a4a18' : '#2a6a74') + ';">' +
     '<div style="display:flex;align-items:center;gap:9px;">' +
-      '<img src="assets_tiny/bless_wings.png" alt="" style="width:26px;height:26px;image-rendering:pixelated;">' +
+      _f9WingsIco(26) +
       '<span style="flex:1;font-size:15px;color:#aef0f7;">' + L.qty + ' × <span style="font-size:10px;color:#7fdfea;">BLESS</span></span>' +
       (mine ? '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;">YOURS</span>' : '') + '</div>' +
     '<div style="font-size:15px;color:#ffcf5c;">' + total + ' <span style="font-size:9px;">RONKE</span> <span style="font-size:8px;color:#8a9aaa;">· ' + L.price + ' each</span></div>' +
@@ -12137,7 +12154,7 @@ function _f9HospRebuild() {
         // ⚡🔵 BLESS rodomas TIK kai realiai veiks: savoj pilyje (__f9HomeActive) + serveris instaReady (ne raido metu) +
         //   yra charge'ų (Ronkeverse NFT). Kitaip mygtukas visai neрodomas → nebėra „paspaudžiau, nepagijo" (07-12 user).
         ((window.__f9HomeActive && window._f9InstaReady && ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) > 0)
-          ? '<button data-insta="' + i.tokenId + '" class="f9-bless-btn" title="Instant heal — spend 1 BLESS (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' in stash)"><span class="f9-bl-lbl"><img src="assets_tiny/bless_wings.png" alt="" style="width:13px;height:13px;image-rendering:pixelated;vertical-align:-2px;margin-right:3px;"/>BLESS</span></button>'
+          ? '<button data-insta="' + i.tokenId + '" class="f9-bless-btn" title="Instant heal — spend 1 BLESS (' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ' in stash)"><span class="f9-bl-lbl">' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'BLESS</span></button>'
           : '') +
         (!i.healing ? '<button data-heal="' + i.tokenId + '" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;line-height:1.3;background:rgba(255,207,92,0.1);color:#ffcf5c;border:1px solid #6a4a18;border-radius:4px;padding:6px 7px;cursor:pointer;white-space:nowrap;">⬆ FIRST</button>' : '') +
       '</div>' +
@@ -12167,7 +12184,7 @@ function _f9HospRebuild() {
       const lbl = btn.querySelector('.f9-bl-lbl'); if (lbl) lbl.textContent = '⚡ …';
       try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_instant_heal', { tokenId: btn.dataset.insta }); } catch (_) {}
       // saugiklis: jei serveris neatsako / sig nepakito (panelė paprastai persipiešia anksčiau) → atstatom
-      setTimeout(function () { if (btn.parentNode) { btn.classList.remove('busy'); const l2 = btn.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '<img src="assets_tiny/bless_wings.png" alt="" style="width:13px;height:13px;image-rendering:pixelated;vertical-align:-2px;margin-right:3px;"/>BLESS'; } }, 2200);
+      setTimeout(function () { if (btn.parentNode) { btn.classList.remove('busy'); const l2 = btn.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'BLESS'; } }, 2200);
     };
   });
   _f9HospUpdateStatus();
@@ -12207,8 +12224,8 @@ function _f9ToggleHospitalPanel() {
       '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">🏥</span>' +
       '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
       // ⚡🎒 BLESS itemų balansas (08-13: nebe paros charge\'ai, o kaupiami itemai) + CLAIM mygtukas
-      '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily: Ronkeverse holders get 1 per NFT (max 20/day), 1/1s give 5 each" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;"><img src="assets_tiny/bless_wings.png" alt="" style="width:14px;height:14px;image-rendering:pixelated;"/>BLESS<span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
-      '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl"><img src="assets_tiny/bless_wings.png" alt="" style="width:13px;height:13px;image-rendering:pixelated;vertical-align:-2px;margin-right:3px;"/>CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
+      '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily: Ronkeverse holders get 1 per NFT (max 20/day), 1/1s give 5 each" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;">' + _f9WingsIco(14, "margin-right:3px;") + 'BLESS<span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
@@ -12244,7 +12261,7 @@ function _f9ToggleHospitalPanel() {
         clb.classList.add('busy'); const l = clb.querySelector('.f9-bl-lbl'); if (l) l.textContent = '⚡ …';
         _f9BlessSparkle(clb);
         window.F9PVP.room.send('bless_claim');
-        setTimeout(function () { if (clb.parentNode) { clb.classList.remove('busy'); const l2 = clb.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '<img src="assets_tiny/bless_wings.png" alt="" style="width:13px;height:13px;image-rendering:pixelated;vertical-align:-2px;margin-right:3px;"/>CLAIM <span id="f9hosp-claim-n"></span>'; } }, 2200);
+        setTimeout(function () { if (clb.parentNode) { clb.classList.remove('busy'); const l2 = clb.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'CLAIM <span id="f9hosp-claim-n"></span>'; } }, 2200);
       }
     } catch (_) {}
   };
