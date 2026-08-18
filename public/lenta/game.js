@@ -9959,6 +9959,7 @@ function _f9CloseMktPanel() {
   _f9MktInv = null;   // reopeninus — švarus fetchInventory (BarracksNFT phased state sinchron.)
   _f9MktOfferOpenId = null; _f9MktOffersDetail = {};   // 💰 offer input/detalės — švarus reopen
   _f9MktHistory = null;   // 📜 prekybos istorija — švieža kitą atidarymą
+  _f9MktItems = false; _f9BmkMsg = ''; _f9BmkBusy = false; _f9BmkResvWait = null;   // ⚡ itemų skiltis — švari
 }
 function _f9MktUnitIcon(utype) { return ({ 1: '💀', 2: '🏹', 3: '🔱', 4: '🔮', 5: '🐗', 6: '👻', 7: '🎯' })[Number(utype)] || '🪖'; }
 function _f9MktUnitName(utype) { return ({ 1: 'Skull', 2: 'Archer', 3: 'Harpoon', 4: 'Shaman', 5: 'Hog', 6: 'Ghost', 7: 'RonkeHood' })[Number(utype)] || 'Unit'; }
@@ -10261,6 +10262,55 @@ const _F9MKT_TYPES = [1, 2, 3, 4, 5, 6, 7];   // visi egzistuojantys unitų tipa
 const _F9MKT_PAGE = 30;        // kiek unitų rodoma iš pradžių / kiek priduoda kiekvienas LOAD MORE
 let _f9MktShown = { browse: 30, sell: 30 };   // display cap per tab (po filtro/sort)
 let _f9MktLoadingMore = false, _f9MktLoadingTab = '';   // 5s krovimo animacijos būsena
+/* ⚡🛒 BLESS ITEMŲ PREKYBA (2026-08-18, user: „bless tradable — pardavėjas nustato kainą ir kiek nori
+ * parduoti, 5% mokestis į treasury"). Itemai yra OFF-CHAIN (serverio balansas), tad čia NENAUDOJAM
+ * PewPewMarket kontrakto: escrow laiko serveris, o pinigai juda TIESIOGIAI tarp piniginių —
+ * 95% pardavėjui + 5% treasury (du RONKE pavedimai), serveris verifikuoja abu kvitus. */
+let _f9MktItems = false;   // „⚡ ITEMS" chip TYPE eilėje → vietoj unitų rodom BLESS itemus
+let _f9BmkState = { listings: [], bal: 0, feeBps: 500, treasury: '', me: '', loaded: false };
+let _f9BmkBusy = false, _f9BmkMsg = '';
+let _f9BmkResvWait = null;
+function _f9BmkRoom() { try { return (window.F9PVP && window.F9PVP.room) || null; } catch (_) { return null; } }
+function _f9BmkRefresh() { const r = _f9BmkRoom(); if (r) { try { r.send('blessmkt_get'); } catch (_) {} } }
+function _f9BmkMe() { try { const a = window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress(); return a ? String(a).toLowerCase() : ''; } catch (_) { return ''; } }
+function _f9BmkFmt(wei) { try { return (Number(BigInt(String(wei)) / 10n ** 14n) / 1e4).toFixed(2).replace(/\.00$/, ''); } catch (_) { return '?'; } }
+function _f9BmkReason(r) {
+  const m = {
+    no_wallet: 'Connect your wallet', not_enough: 'You don\'t have that many BLESS', bad_qty: 'Bad quantity',
+    bad_price: 'Bad price', too_many_listings: 'Too many active lots — cancel one first', not_found: 'Lot not found',
+    gone: 'Already sold', busy: 'Someone is paying for this lot — try again in a minute', own_listing: 'This is your own lot',
+    not_seller: 'Not your lot', reserved: 'A buyer is paying right now — try again shortly', tx_used: 'That payment was already used',
+    db: 'Server storage error — nothing was charged',
+  };
+  if (m[r]) return m[r];
+  if (/^seller_/.test(r || '')) return 'Payment to seller not verified (' + String(r).slice(7) + ')';
+  if (/^fee_/.test(r || '')) return 'Fee payment not verified (' + String(r).slice(4) + ')';
+  return r || 'failed';
+}
+/* Serverio žinutės (registruojamos f9_pvp_live.js) → globalūs kabliukai. */
+window._f9BmkOnState = function (p) {
+  if (!p) return;
+  _f9BmkState = {
+    listings: Array.isArray(p.listings) ? p.listings : [], bal: Number(p.bal) || 0,
+    feeBps: Number(p.feeBps) || 500, treasury: String(p.treasury || ''), me: String(p.me || ''), loaded: true,
+  };
+  if (_f9MktOverlayEl && _f9MktItems) _f9MktRenderBody();
+};
+window._f9BmkOnResult = function (p) {
+  if (!p) return;
+  if (p.action === 'buy' && p.ok) { _f9BmkPendSet(_f9BmkLastBuyId, null); _f9BmkMsg = '✅ Bought ' + (p.qty || 0) + ' BLESS — they are in your stash'; }
+  else if (p.action === 'list') _f9BmkMsg = p.ok ? '✅ Lot listed — BLESS moved to escrow' : ('⚠ ' + _f9BmkReason(p.reason));
+  else if (p.action === 'cancel') _f9BmkMsg = p.ok ? ('↩️ Lot cancelled — ' + (p.qty || 0) + ' BLESS back in your stash') : ('⚠ ' + _f9BmkReason(p.reason));
+  else if (!p.ok) _f9BmkMsg = '⚠ ' + _f9BmkReason(p.reason);
+  if (_f9MktOverlayEl && _f9MktItems) _f9MktRenderBody();
+};
+window._f9BmkOnReserved = function (p) { if (_f9BmkResvWait) { const f = _f9BmkResvWait; _f9BmkResvWait = null; f(p || { ok: false, reason: 'no_reply' }); } };
+/* Nebaigto pirkimo apsauga: jei pirkėjas apmokėjo PARDAVĖJUI ir nutrūko prieš 5% mokestį, antram
+ * bandymui NEBEsiunčiam to paties pavedimo antrą kartą — pasiimam įsimintą kvitą (galioja 50 min). */
+let _f9BmkLastBuyId = '';
+function _f9BmkPend(id) { try { const o = JSON.parse(localStorage.getItem('_f9bmk_pend_' + id) || 'null'); return (o && Date.now() - o.at < 50 * 60 * 1000 && o.me === _f9BmkMe()) ? o : null; } catch (_) { return null; } }
+function _f9BmkPendSet(id, o) { try { if (o) localStorage.setItem('_f9bmk_pend_' + id, JSON.stringify(o)); else localStorage.removeItem('_f9bmk_pend_' + id); } catch (_) {} }
+
 function _f9MktChipCss(active) {
   return 'padding:6px 9px;font-family:inherit;font-size:13px;line-height:1;cursor:pointer;border-radius:6px;border:1px solid ' +
     (active ? '#ffcf5c;background:rgba(255,207,92,0.18);color:#ffcf5c;' : '#4a3a18;background:rgba(0,0,0,0.25);color:#c9b895;') + ';';
@@ -10269,10 +10319,149 @@ function _f9MktFilterBar() {
   let chips = '<button data-mktf="0" style="' + _f9MktChipCss(_f9MktFilterType === 0) + 'font-size:10px;font-weight:700;padding:7px 10px;">ALL</button>';
   for (const t of _F9MKT_TYPES) chips += '<button data-mktf="' + t + '" title="' + _f9MktUnitName(t) + '" style="' + _f9MktChipCss(_f9MktFilterType === t) + '">' + _f9MktUnitIcon(t) + '</button>';
   const sortLbl = 'Lv ' + (_f9MktSortDir === 'desc' ? '▼' : '▲');
+  /* ⚡ ITEMS — user 08-18: „ten kur yra TYPE, būti ITEMS mygtukas; paspaudus — tavo BLESS itemai".
+   * Pasirinkus, unitų tinklelį keičia BLESS lotai (ir BROWSE, ir SELL). */
+  const itemsChip = '<button data-mktitems="1" title="Trade BLESS items instead of units" style="' +
+    _f9MktChipCss(_f9MktItems) + 'font-size:10px;font-weight:700;padding:7px 10px;">⚡ ITEMS</button>';
   return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid rgba(74,58,24,0.55);">' +
-    '<span style="font-size:9px;color:#8a9aaa;letter-spacing:1px;margin-right:2px;">TYPE</span>' + chips +
-    '<button data-mktsort="1" title="Sort by level (high↔low)" style="margin-left:auto;' + _f9MktChipCss(false) + 'font-size:10px;font-weight:700;padding:7px 11px;color:#ffcf5c;">' + sortLbl + '</button>' +
+    '<span style="font-size:9px;color:#8a9aaa;letter-spacing:1px;margin-right:2px;">TYPE</span>' +
+    (_f9MktItems ? '' : chips) + itemsChip +
+    (_f9MktItems ? '' : '<button data-mktsort="1" title="Sort by level (high↔low)" style="margin-left:auto;' + _f9MktChipCss(false) + 'font-size:10px;font-weight:700;padding:7px 11px;color:#ffcf5c;">' + sortLbl + '</button>') +
     '</div>';
+}
+
+/* ⚡ SELL → ITEMS: tavo BLESS balansas + „kiek parduodu / už kiek" + tavo aktyvūs lotai. */
+function _f9BmkSellHtml() {
+  const me = _f9BmkMe();
+  const feePct = (_f9BmkState.feeBps / 100);
+  if (!me) return '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">🔌</span><span>Connect your wallet to sell BLESS</span></div>';
+  if (!_f9BmkRoom()) return '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">⚠</span><span>Item trading needs the live game connection</span></div>';
+  if (!_f9BmkState.loaded) return '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">⏳</span><span>Loading your items…</span></div>';
+  const mine = _f9BmkState.listings.filter(function (L) { return String(L.seller).toLowerCase() === me; });
+  let h = '<div style="display:flex;align-items:center;gap:16px;padding:15px 18px;background:rgba(74,157,166,0.12);border:1px solid #2a6a74;border-radius:10px;margin-bottom:16px;">' +
+    '<img src="assets_tiny/ronke_logo.png" alt="" style="width:34px;height:34px;image-rendering:pixelated;">' +
+    '<div style="flex:1;min-width:0;"><div style="font-size:17px;color:#aef0f7;">' + _f9BmkState.bal + ' <span style="font-size:10px;color:#7fdfea;">BLESS in your stash</span></div>' +
+    '<div style="font-size:8px;color:#6a8a92;margin-top:4px;">Claim daily in the hospital · spend 1 to instantly heal an injured unit</div></div></div>';
+  h += '<div style="font-size:10px;color:#8a9aaa;line-height:1.7;margin-bottom:12px;letter-spacing:0.5px;">Set <b style="color:#ffcf5c;">how many</b> and the <b style="color:#ffcf5c;">price per item</b>. Listed BLESS move to escrow (out of your stash) until sold or cancelled. Fee <b style="color:#ffcf5c;">' + feePct + '%</b> → treasury — the buyer pays it on top, you receive the rest straight to your wallet.</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:14px;background:rgba(0,0,0,0.3);border:1px solid #4a3a18;border-radius:9px;margin-bottom:18px;">' +
+    '<label style="flex:1;min-width:110px;font-size:8px;color:#8a9aaa;letter-spacing:1px;">HOW MANY<input id="f9bmk-qty" type="number" min="1" step="1" max="' + Math.max(1, _f9BmkState.bal) + '" value="' + Math.min(5, Math.max(1, _f9BmkState.bal)) + '" style="width:100%;box-sizing:border-box;margin-top:5px;padding:10px;border-radius:6px;border:1px solid #6a4a18;background:#0c1020;color:#ffcf5c;font-family:inherit;font-size:13px;"></label>' +
+    '<label style="flex:1;min-width:110px;font-size:8px;color:#8a9aaa;letter-spacing:1px;">PRICE PER ITEM (RONKE)<input id="f9bmk-price" type="number" min="1" step="1" placeholder="e.g. 25" style="width:100%;box-sizing:border-box;margin-top:5px;padding:10px;border-radius:6px;border:1px solid #6a4a18;background:#0c1020;color:#ffcf5c;font-family:inherit;font-size:13px;"></label>' +
+    '<button data-bmklist="1" ' + (_f9BmkBusy || _f9BmkState.bal < 1 ? 'disabled ' : '') + 'style="flex:0 0 auto;padding:12px 22px;font-family:inherit;font-size:11px;letter-spacing:1px;border-radius:6px;border:1px solid #ffcf5c;background:rgba(255,207,92,0.16);color:#ffcf5c;cursor:pointer;">📦 LIST LOT</button>' +
+    '<div id="f9bmk-preview" style="flex:1 0 100%;font-size:9px;color:#8a9aaa;">Total for the buyer: —</div></div>';
+  h += '<div style="font-size:10px;color:#8a9aaa;margin-bottom:10px;letter-spacing:0.5px;">YOUR ACTIVE LOTS (' + mine.length + '):</div>';
+  if (!mine.length) {
+    h += '<div style="padding:26px;text-align:center;color:#5a6a7a;font-size:11px;border:1px dashed #3a4a5a;border-radius:8px;">No lots listed yet</div>';
+  } else {
+    h += '<div style="display:flex;flex-direction:column;gap:10px;">';
+    for (const L of mine) h += _f9BmkCardHtml(L, true);
+    h += '</div>';
+  }
+  return h;
+}
+/* ⚡ BROWSE → ITEMS: visų žaidėjų BLESS lotai. */
+function _f9BmkBrowseHtml() {
+  if (!_f9BmkRoom()) return '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">⚠</span><span>Item trading needs the live game connection</span></div>';
+  if (!_f9BmkState.loaded) return '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">⏳</span><span>Loading item lots…</span></div>';
+  const feePct = (_f9BmkState.feeBps / 100);
+  let h = '<div style="font-size:10px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">⚡ <b style="color:#7fdfea;">BLESS</b> lots listed by players. You pay the seller directly (RONKE, 2 quick transfers: seller + ' + feePct + '% fee) and the items land in your stash. Your stash: <b style="color:#aef0f7;">' + _f9BmkState.bal + '</b>.</div>';
+  if (!_f9BmkState.listings.length) return h + '<div style="display:flex;flex-direction:column;align-items:center;padding:56px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;"><span style="font-size:44px;opacity:.6;">📭</span><span>No BLESS lots for sale right now</span></div>';
+  const me = _f9BmkMe();
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;">';
+  for (const L of _f9BmkState.listings) h += _f9BmkCardHtml(L, me && String(L.seller).toLowerCase() === me);
+  h += '</div>';
+  return h;
+}
+function _f9BmkCardHtml(L, mine) {
+  const total = _f9BmkFmt(L.totalWei), toSeller = _f9BmkFmt(L.sellerWei), fee = _f9BmkFmt(L.feeWei);
+  const busyResv = L.resvUntil && L.resvUntil > Date.now() && String(L.resvAddr || '').toLowerCase() !== _f9BmkMe();
+  return '<div style="display:flex;flex-direction:column;gap:9px;padding:13px;border-radius:9px;background:rgba(0,0,0,0.3);border:1px solid ' + (mine ? '#6a4a18' : '#2a6a74') + ';">' +
+    '<div style="display:flex;align-items:center;gap:9px;">' +
+      '<img src="assets_tiny/ronke_logo.png" alt="" style="width:26px;height:26px;image-rendering:pixelated;">' +
+      '<span style="flex:1;font-size:15px;color:#aef0f7;">' + L.qty + ' × <span style="font-size:10px;color:#7fdfea;">BLESS</span></span>' +
+      (mine ? '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;">YOURS</span>' : '') + '</div>' +
+    '<div style="font-size:15px;color:#ffcf5c;">' + total + ' <span style="font-size:9px;">RONKE</span> <span style="font-size:8px;color:#8a9aaa;">· ' + L.price + ' each</span></div>' +
+    '<div style="font-size:7px;color:#5a6a7a;line-height:1.6;">' + (mine ? 'you get ' + toSeller + ' · fee ' + fee : 'seller ' + String(L.seller).slice(0, 6) + '…' + String(L.seller).slice(-4) + ' · incl. ' + fee + ' fee') + '</div>' +
+    (mine
+      ? '<button data-bmkcancel="' + L.id + '" ' + (_f9BmkBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #a55;background:rgba(180,80,80,0.15);color:#e88;cursor:pointer;">CANCEL &amp; TAKE BACK</button>'
+      : '<button data-bmkbuy="' + L.id + '" ' + (_f9BmkBusy || busyResv ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid ' + (busyResv ? '#4a5a6a' : '#7fdfea') + ';background:rgba(127,223,234,0.14);color:' + (busyResv ? '#6a7a8a' : '#aef0f7') + ';cursor:pointer;">' + (busyResv ? '⏳ SOMEONE IS PAYING' : '🛒 BUY ' + L.qty + ' BLESS') + '</button>') +
+    '</div>';
+}
+/* Mygtukų prijungimas (kaip unitų srautas — body.onclick, kad re-render nekauptų listener'ių). */
+function _f9BmkWire(body) {
+  if (!body) return;
+  const prev = body.onclick;
+  body.onclick = function (ev) {
+    const t = ev.target && ev.target.closest ? ev.target.closest('button[data-bmklist],button[data-bmkbuy],button[data-bmkcancel]') : null;
+    if (!t) { if (prev) prev(ev); return; }
+    if (t.hasAttribute('data-bmklist')) {
+      const q = parseInt((body.querySelector('#f9bmk-qty') || {}).value, 10) || 0;
+      const p = parseFloat((body.querySelector('#f9bmk-price') || {}).value) || 0;
+      return _f9BmkDoList(q, p);
+    }
+    if (t.hasAttribute('data-bmkcancel')) return _f9BmkDoCancel(t.getAttribute('data-bmkcancel'));
+    if (t.hasAttribute('data-bmkbuy')) return _f9BmkDoBuy(t.getAttribute('data-bmkbuy'));
+  };
+  const qEl = body.querySelector('#f9bmk-qty'), pEl = body.querySelector('#f9bmk-price'), prevEl = body.querySelector('#f9bmk-preview');
+  if (qEl && pEl && prevEl) {
+    const upd = function () {
+      const q = parseInt(qEl.value, 10) || 0, p = parseFloat(pEl.value) || 0;
+      if (!(q > 0 && p > 0)) { prevEl.textContent = 'Total for the buyer: —'; return; }
+      const tot = Math.round(q * p * 100) / 100, fee = Math.round(tot * (_f9BmkState.feeBps / 10000) * 100) / 100;
+      prevEl.innerHTML = 'Buyer pays <b style="color:#ffcf5c;">' + tot + ' RONKE</b> · you receive <b style="color:#8fd47c;">' + (Math.round((tot - fee) * 100) / 100) + '</b> · fee <b style="color:#d49a2a;">' + fee + '</b> → treasury';
+    };
+    qEl.oninput = upd; pEl.oninput = upd; upd();
+  }
+}
+function _f9BmkDoList(qty, price) {
+  const r = _f9BmkRoom(); if (!r) return;
+  if (!(qty >= 1)) { _f9BmkMsg = '⚠ Pick how many BLESS to sell'; return _f9MktRenderBody(); }
+  if (qty > _f9BmkState.bal) { _f9BmkMsg = '⚠ You only have ' + _f9BmkState.bal + ' BLESS'; return _f9MktRenderBody(); }
+  if (!(price > 0)) { _f9BmkMsg = '⚠ Set a price per item'; return _f9MktRenderBody(); }
+  _f9BmkMsg = '⏳ Listing…'; _f9MktRenderBody();
+  try { r.send('blessmkt_list', { qty: qty, price: price }); } catch (_) { _f9BmkMsg = '⚠ Connection lost'; _f9MktRenderBody(); }
+}
+function _f9BmkDoCancel(id) {
+  const r = _f9BmkRoom(); if (!r || !id) return;
+  _f9BmkMsg = '⏳ Cancelling…'; _f9MktRenderBody();
+  try { r.send('blessmkt_cancel', { id: id }); } catch (_) { _f9BmkMsg = '⚠ Connection lost'; _f9MktRenderBody(); }
+}
+function _f9BmkReserve(id) {
+  const r = _f9BmkRoom();
+  return new Promise(function (resolve) {
+    if (!r) return resolve({ ok: false, reason: 'no_room' });
+    _f9BmkResvWait = resolve;
+    try { r.send('blessmkt_reserve', { id: id }); } catch (_) { _f9BmkResvWait = null; resolve({ ok: false, reason: 'no_room' }); }
+    setTimeout(function () { if (_f9BmkResvWait === resolve) { _f9BmkResvWait = null; resolve({ ok: false, reason: 'timeout' }); } }, 15000);
+  });
+}
+/* PIRKIMAS: rezervuojam lotą → 2 RONKE pavedimai (pardavėjui + mokestis) → serveris tikrina kvitus. */
+async function _f9BmkDoBuy(id) {
+  if (_f9BmkBusy) return;
+  const W = window.Wallet, r = _f9BmkRoom();
+  if (!r) return;
+  if (!W || !W.ronkeTransfer || !_f9BmkMe()) { _f9BmkMsg = '⚠ Connect your wallet first'; return _f9MktRenderBody(); }
+  _f9BmkBusy = true; _f9BmkLastBuyId = id; _f9BmkMsg = '🔒 Reserving the lot…'; _f9MktRenderBody();
+  try {
+    const rs = await _f9BmkReserve(id);
+    if (!rs || !rs.ok) throw new Error(_f9BmkReason(rs && rs.reason));
+    const pend = _f9BmkPend(id);
+    let txSeller = pend && pend.txSeller;
+    if (!txSeller) {
+      _f9BmkMsg = '1/2 · Confirm the payment to the seller (' + _f9BmkFmt(rs.sellerWei) + ' RONKE)…'; _f9MktRenderBody();
+      const t1 = await W.ronkeTransfer(rs.seller, rs.sellerWei);
+      txSeller = t1.txHash;
+      _f9BmkPendSet(id, { txSeller: txSeller, at: Date.now(), me: _f9BmkMe() });   // ↩️ nutrūkus — nemokėsim antrą kartą
+    } else {
+      _f9BmkMsg = '↩️ Payment to the seller already sent — finishing the fee…'; _f9MktRenderBody();
+    }
+    _f9BmkMsg = '2/2 · Confirm the ' + (_f9BmkState.feeBps / 100) + '% market fee (' + _f9BmkFmt(rs.feeWei) + ' RONKE)…'; _f9MktRenderBody();
+    const t2 = await W.ronkeTransfer(rs.treasury, rs.feeWei);
+    _f9BmkMsg = '⏳ Verifying both payments on-chain…'; _f9MktRenderBody();
+    r.send('blessmkt_buy', { id: id, txSeller: txSeller, txFee: t2.txHash });
+  } catch (e) {
+    _f9BmkMsg = '⚠ ' + ((e && e.message) ? String(e.message).slice(0, 120) : 'Purchase failed');
+  }
+  _f9BmkBusy = false; _f9MktRenderBody();
 }
 // filtruoja pagal tipą (jei pasirinktas) + rūšiuoja pagal lygį (getU/getL = tokenId→utype/level ištraukėjai).
 function _f9MktFilterSort(arr, getU, getL) {
@@ -10289,6 +10478,12 @@ function _f9MktWireFilterBar(container) {
   });
   const sb = container.querySelector('[data-mktsort]');
   if (sb) sb.onclick = function () { _f9MktSortDir = (_f9MktSortDir === 'desc' ? 'asc' : 'desc'); _f9MktResetPaging(); _f9MktRenderBody(); };
+  // ⚡ ITEMS — perjungia unitus ↔ BLESS itemus (abiejuose tab'uose); įjungus iškart pasiimam lotus iš serverio
+  const ib = container.querySelector('[data-mktitems]');
+  if (ib) ib.onclick = function () {
+    _f9MktItems = !_f9MktItems; _f9BmkMsg = ''; _f9MktResetPaging(); _f9MktRenderBody();
+    if (_f9MktItems) _f9BmkRefresh();
+  };
   const mb = container.querySelector('[data-mktmore]');
   if (mb) mb.onclick = function () { _f9MktLoadMore(mb.getAttribute('data-mktmore')); };
 }
@@ -10410,7 +10605,14 @@ function _f9MktRenderBody() {
       return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;">' +
         '<span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
     };
-    let html = _localBanner + _soldBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Browse units other players listed. Price in <b style="color:#ffcf5c;">RONKE</b>. Unit level &amp; XP travel with the NFT. You pay gas (→ PoD).</div>';
+    let html = _localBanner + _soldBanner + (_f9MktItems ? '' : '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">Browse units other players listed. Price in <b style="color:#ffcf5c;">RONKE</b>. Unit level &amp; XP travel with the NFT. You pay gas (→ PoD).</div>');
+    /* ⚡ ITEMS režimas — vietoj unitų rodom BLESS lotus (filtro juosta lieka, kad būtų kur perjungti atgal). */
+    if (_f9MktItems) {
+      html += _f9MktFilterBar() + _f9BmkBrowseHtml();
+      if (_f9BmkMsg) html += '<div style="margin-top:12px;font-size:10px;line-height:1.6;color:#7cff6e;letter-spacing:0.4px;">' + _f9BmkMsg + '</div>';
+      body.innerHTML = html; _f9MktWireFilterBar(body); _f9BmkWire(body); return;
+    }
+    html += _f9MktFilterBar();   // juosta VISADA — kitaip tuščiame sąraše nebūtų kur paspausti „⚡ ITEMS"
     if (!ready) {
       html += emptyBoxB('📭', 'No active listings yet') + soon;
     } else if (_f9MktListLoading) {
@@ -10420,7 +10622,6 @@ function _f9MktRenderBody() {
     } else if (!_f9MktListings || !_f9MktListings.length) {
       html += emptyBoxB('📭', 'No active listings yet');
     } else {
-      html += _f9MktFilterBar();
       const _shown = _f9MktFilterSort(_f9MktListings, function (L) { return L.utype; }, function (L) { return L.level; });
       if (!_shown.length) {
         html += emptyBoxB('🔍', 'No ' + _f9MktUnitName(_f9MktFilterType) + ' listings — try another type');
@@ -10572,7 +10773,14 @@ function _f9MktRenderBody() {
       return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 10px;color:#5a6a7a;font-size:13px;gap:14px;border:1px dashed #3a4a5a;border-radius:8px;">' +
         '<span style="font-size:44px;opacity:0.6;">' + icon + '</span><span>' + txt + '</span></div>';
     };
-    let html = _localBanner + _soldBanner + '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">List one of your units for sale. It moves to <b style="color:#ffcf5c;">escrow</b> (locked, can\'t fight) until sold or cancelled. Fee <b style="color:#ffcf5c;">5%</b> → treasury.</div>';
+    let html = _localBanner + _soldBanner + (_f9MktItems ? '' : '<div style="font-size:11px;color:#8a9aaa;line-height:1.7;margin-bottom:14px;letter-spacing:0.5px;">List one of your units for sale. It moves to <b style="color:#ffcf5c;">escrow</b> (locked, can\'t fight) until sold or cancelled. Fee <b style="color:#ffcf5c;">5%</b> → treasury.</div>');
+    /* ⚡ ITEMS režimas — vietoj unitų parduodam BLESS itemus (user 08-18). */
+    if (_f9MktItems) {
+      html += _f9MktFilterBar() + _f9BmkSellHtml();
+      if (_f9BmkMsg) html += '<div style="margin-top:12px;font-size:10px;line-height:1.6;color:#7cff6e;letter-spacing:0.4px;">' + _f9BmkMsg + '</div>';
+      body.innerHTML = html; _f9MktWireFilterBar(body); _f9BmkWire(body); return;
+    }
+    html += _f9MktFilterBar();   // juosta VISADA — kitaip be unitų nebūtų kur paspausti „⚡ ITEMS"
     let selUnit = null;
     // lokaliai listinti unitai išimami iš picker'io (kaip realiam escrow — dingsta iš deko)
     const _listed = _local ? _f9MktLocalListedIds() : new Set();
@@ -10589,7 +10797,6 @@ function _f9MktRenderBody() {
       html += emptyBox('📭', _f9MktInv.length ? 'All your units are listed' : 'You have no units to sell');
     } else {
       selUnit = _avail.find(function (u) { return String(u.tokenId) === String(_f9MktSelId); }) || null;
-      html += _f9MktFilterBar();
       const _shownAvail = _f9MktFilterSort(_avail, function (u) { return u.utype; }, function (u) { return u.level; });
       let _totTxt = '';
       try { const _ic = window.BarracksNFT && window.BarracksNFT.invCounts && window.BarracksNFT.invCounts(); if (_ic && _ic.total) _totTxt = ' · ' + _ic.total + ' total'; } catch (_) {}

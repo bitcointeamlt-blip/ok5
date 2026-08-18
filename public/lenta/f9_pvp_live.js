@@ -1332,6 +1332,20 @@
       } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
+    /* ⚡🛒 BLESS ITEMŲ MARKETAS (08-18) — lotų sąrašas / veiksmo rezultatas / rezervacija apmokėjimui.
+     * Piešia game.js (market modalo „⚡ ITEMS" skiltis) — čia tik persiunčiam. */
+    room.onMessage('blessmkt', function (e) { try { if (window._f9BmkOnState) window._f9BmkOnState(e); } catch (_) {} });
+    room.onMessage('blessmkt_reserved', function (e) { try { if (window._f9BmkOnReserved) window._f9BmkOnReserved(e); } catch (_) {} });
+    room.onMessage('blessmkt_result', function (e) {
+      try { if (window._f9BmkOnResult) window._f9BmkOnResult(e); } catch (_) {}
+      try {
+        if (window.showGameNotification && e && e.ok) {
+          if (e.action === 'buy') window.showGameNotification('⚡ BLESS BOUGHT', '+' + (e.qty || 0) + ' BLESS added to your stash!', '#7fdfea');
+          else if (e.action === 'list') window.showGameNotification('📦 LOT LISTED', 'Your BLESS are in escrow until sold or cancelled', '#ffcf5c');
+        }
+      } catch (_) {}
+      try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
     // ⚔️ DEPLOY rezultatas — kiek unitų įleista į garnizoną
     room.onMessage('deploy_done', function (e) {
       var n = (e && e.added) || 0;

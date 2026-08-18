@@ -5,6 +5,7 @@ import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { blessStatus, blessClaim, blessConsume, blessCredit } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReserve, blessMarketBuy, blessMarketFeeBps, blessMarketTreasury } from "../services/BlessMarket";   // ⚡🛒 BLESS itemų prekyba (2026-08-18)
 import { scoreTierCached } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
 import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
 import { ethers } from "ethers";
@@ -666,6 +667,48 @@ export class F9PvpRoom extends Room<F9State> {
         try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}
         if (res.ok) console.log(`[F9PvpRoom] ⚡🎒 BLESS claim +${res.credited} → bal ${res.bal} (${addr.slice(0, 10)}…)`);
       } catch (_) { try { client.send("bless_claimed", { ok: false, reason: "error" }); } catch (_) {} }
+    });
+    /* ⚡🛒 BLESS ITEMŲ MARKETAS (2026-08-18, user: „bless tradable — pardavėjas nustato kainą ir kiek
+     * nori parduoti, 5% mokestis į treasury"). Itemai off-chain, tad escrow serveryje; pinigai eina
+     * TIESIOGIAI tarp piniginių (95% pardavėjui + 5% treasury), serveris verifikuoja abu kvitus. */
+    const _mktAddr = (client: Client) => String(this.state.players.get(client.sessionId)?.address || "").trim().toLowerCase();
+    const _mktSend = async (client: Client, extra: Record<string, unknown> = {}) => {
+      try {
+        const addr = _mktAddr(client);
+        const [listings, insta] = await Promise.all([blessMarketBrowse(60), addr ? blessInsta(addr) : Promise.resolve(null)]);
+        client.send("blessmkt", { listings, bal: insta ? insta.bal : 0, feeBps: blessMarketFeeBps(), treasury: blessMarketTreasury(), me: addr, ...extra });
+      } catch (_) { try { client.send("blessmkt", { listings: [], bal: 0, feeBps: blessMarketFeeBps(), treasury: blessMarketTreasury(), ...extra }); } catch (_2) {} }
+    };
+    this.onMessage("blessmkt_get", (client) => { void _mktSend(client); });
+    this.onMessage("blessmkt_list", async (client, m: any) => {
+      const addr = _mktAddr(client);
+      if (!addr) { try { client.send("blessmkt_result", { ok: false, action: "list", reason: "no_wallet" }); } catch (_) {} return; }
+      const res = await blessMarketList(addr, Number(m?.qty), Number(m?.price));
+      try { client.send("blessmkt_result", { ok: res.ok, action: "list", reason: res.reason, id: res.listing?.id }); } catch (_) {}
+      void _mktSend(client);
+    });
+    this.onMessage("blessmkt_cancel", async (client, m: any) => {
+      const addr = _mktAddr(client);
+      const res = await blessMarketCancel(addr, String(m?.id || ""));
+      try { client.send("blessmkt_result", { ok: res.ok, action: "cancel", reason: res.reason, qty: res.qty }); } catch (_) {}
+      void _mktSend(client);
+    });
+    this.onMessage("blessmkt_reserve", async (client, m: any) => {
+      const addr = _mktAddr(client);
+      const res = await blessMarketReserve(addr, String(m?.id || ""));
+      try {
+        client.send("blessmkt_reserved", {
+          ok: res.ok, reason: res.reason, until: res.until,
+          id: res.listing?.id, seller: res.listing?.seller, qty: res.listing?.qty,
+          sellerWei: res.listing?.sellerWei, feeWei: res.listing?.feeWei, treasury: blessMarketTreasury(),
+        });
+      } catch (_) {}
+    });
+    this.onMessage("blessmkt_buy", async (client, m: any) => {
+      const addr = _mktAddr(client);
+      const res = await blessMarketBuy(addr, String(m?.id || ""), String(m?.txSeller || ""), String(m?.txFee || ""));
+      try { client.send("blessmkt_result", { ok: res.ok, action: "buy", reason: res.reason, qty: res.qty }); } catch (_) {}
+      void _mktSend(client);
     });
     // ⚰️ KAPINĖS — pot/rate užklausa (badge + UI)
     this.onMessage("cemetery_get", async (client) => {

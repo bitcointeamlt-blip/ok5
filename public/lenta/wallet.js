@@ -1410,6 +1410,7 @@
   const _ERC20_MKT_ABI = [
     { type: 'function', name: 'allowance', stateMutability: 'view', inputs: [{ name: 'o', type: 'address' }, { name: 's', type: 'address' }], outputs: [{ type: 'uint256' }] },
     { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 's', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+    { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ type: 'bool' }] },   // ⚡🛒 BLESS itemų apmokėjimas
   ];
   const _MARKET_ABI = [
     { type: 'function', name: 'list', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'price', type: 'uint256' }], outputs: [] },
@@ -1575,6 +1576,19 @@
   }
   function offersReady() { return !!_offersCfg().offers; }
 
+  /* ⚡🛒 BLESS ITEMŲ APMOKĖJIMAS (2026-08-18) — paprastas RONKE pavedimas, be jokio kontrakto:
+   * itemai off-chain, tad pirkėjas moka TIESIOGIAI pardavėjui (95%) ir treasury (5%), o serveris
+   * verifikuoja abu kvitus. Suma ateina WEI eilute iš serverio (jis ją ir tikrins) — jokio
+   * apvalinimo kliente, kad kvitas sutaptų bit-į-bitą. */
+  async function ronkeTransfer(to, amountWei) {
+    const cfg = _marketCfg();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(to || ''))) throw new Error('Bad recipient address');
+    const amt = BigInt(String(amountWei));
+    if (!(amt > 0n)) throw new Error('Bad amount');
+    const data = await _mEnc('transfer', _ERC20_MKT_ABI, [to, amt]);
+    return _marketSend(cfg.ronke, data, { 'balance': 'Not enough RONKE', 'exceeds': 'Not enough RONKE' });
+  }
+
   window.Wallet = {
     // identity
     connect, connectPhantom, connectEmbedded, disconnect, restore,
@@ -1612,6 +1626,7 @@
     marketList, marketBuy, marketCancel, marketGetActiveListings, marketReady,
     // 💰 Unit offers (PewPewOffers) — make/cancel/accept + read
     offersMake, offersCancel, offersAccept, offersGetForToken, offersGetTokens, offersReady,
+    ronkeTransfer,   // ⚡🛒 BLESS itemų apmokėjimas (95% pardavėjui + 5% treasury)
     // constants (for debugging)
     RONKE_TOKEN, RONKEVERSE_NFT, RONIN_CHAIN_ID_DEC, TROPHY_CONTRACT, KATANA_ROUTER, WRON_TOKEN,
   };
