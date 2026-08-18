@@ -6,15 +6,25 @@ import { boneBankOp } from "./BaseStore";
 //   (1) instant heal sužalotam unitui, (2) apsauga nuo mirties sveikam unitui (1 mačas; F3).
 //   CLAIM = retention mechanika: žaidėjas turi GRĮŽTI į žaidimą pasiimti paros emisijos;
 //   neužclaim'inta para DINGSTA (nesikaupia). Jau claim'inti itemai balanse lieka amžinai + tradable (F4 market).
-//   Emisija / rolling 24h langą (user 08-13): paprastas Ronkeverse NFT = 1 BLESS, bet MAX 20/parą piniginei
-//   nesvarbu kiek NFT; „1/1" = 5 BLESS už kiekvieną (jų tik 159, cap nereikia).
+//   Emisija per rolling 24h langą: nuo 2026-08-18 ją lemia RONKE SCORE pakopa (žr. SCORE_TIERS žemiau).
+//   Iki tol buvo „1 už kiekvieną Ronkeverse NFT (max 20/parą) + 1/1 ×5" — pakeista user'io sprendimu.
 //   Persist: `<addr>#bless` eilutė f9_bases (buildings = {bal, claimed, windowStart}), serializuota per
 //   boneBankOp — jokio double-spend/double-claim. 🛡 Fail-closed kaip InstantHeal (S-M5): DB triktis →
 //   jokio kredito ir jokio nemokamo nurašymo-be-įrašo.
 
-const CLAIM_CAP_REGULAR = Number(process.env.F9_BLESS_CLAIM_CAP || 20);      // paprastų NFT paros lubos piniginei
-const CLAIM_PER_1OF1 = Number(process.env.F9_BLESS_CLAIM_PER_1OF1 || 5);     // „1/1" = 5/parą kiekvienas, be lubų
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/* 🏆 EMISIJA PAGAL RONKE SCORE (2026-08-18, user) — pakeitė seną „1 už NFT, max 20/parą + 1/1 ×5".
+ * Dabar paros kiekį lemia TAVO vieta bendruomenės reitinge (ta pati percentilė kaip kasimo bonusui):
+ *   top 1% → 20 · top 5% → 15 · top 10% → 10 · top 25% → 6 · top 50% → 3 · žemiau → 0.
+ * Score API neatsakius pakopos NĖRA ⇒ cap 0, BET nieko neįrašom ⇒ para NEprarandama: pavyks vėliau. */
+const SCORE_TIERS: Array<[number, number]> = [
+  [99, Number(process.env.F9_BLESS_P99 || 20)],
+  [95, Number(process.env.F9_BLESS_P95 || 15)],
+  [90, Number(process.env.F9_BLESS_P90 || 10)],
+  [75, Number(process.env.F9_BLESS_P75 || 6)],
+  [50, Number(process.env.F9_BLESS_P50 || 3)],
+];
 
 let _sb: SupabaseClient | null = null; let _sbTried = false;
 function sb(): SupabaseClient | null {
@@ -28,11 +38,18 @@ function sb(): SupabaseClient | null {
 const _norm = (a: string) => (a || "").trim().toLowerCase();
 const _key = (a: string) => _norm(a) + "#bless";
 
-// Kiek iš viso galima claim'inti per parą: min(20, paprasti) + n1×5. 1/1 yra Ronkeverse potipis → paprasti = rv − n1.
-export function blessClaimCap(ronkeverseCount: number, oneOfOneCount: number = 0): number {
-  const rv = Math.max(0, Math.floor(ronkeverseCount || 0));
-  const n1 = Math.max(0, Math.min(rv, Math.floor(oneOfOneCount || 0)));
-  return Math.min(CLAIM_CAP_REGULAR, rv - n1) + n1 * CLAIM_PER_1OF1;
+// Kiek galima claim'inti per parą pagal Ronke Score percentilę (0 = žemiau top 50% arba nėra score).
+export function blessClaimCap(percentile: number): number {
+  const p = Number(percentile) || 0;
+  for (const [minP, n] of SCORE_TIERS) if (p >= minP) return Math.max(0, Math.floor(n));
+  return 0;
+}
+// Etiketė UI'ui („TOP 5%") — kad žaidėjas matytų, KODĖL gauna tiek.
+export function blessTierLabel(percentile: number): string {
+  const p = Number(percentile) || 0;
+  const names = ["TOP 1%", "TOP 5%", "TOP 10%", "TOP 25%", "TOP 50%"];
+  for (let i = 0; i < SCORE_TIERS.length; i++) if (p >= SCORE_TIERS[i][0]) return names[i];
+  return "";
 }
 
 type BlessRow = { bal: number; claimed: number; windowStart: number; ver: number; fresh: boolean; noVer: boolean };
@@ -81,8 +98,8 @@ async function _write(addr: string, r: BlessRow): Promise<boolean> {
 
 export type BlessStatus = { bal: number; cap: number; claimable: number; resetAt: number };
 // Statusas panelei: balansas + kiek DAR galima claim'inti šiam lange. DB triktis → konservatyvu (0/0).
-export async function blessStatus(addr: string, ronkeverseCount: number, oneOfOneCount: number = 0): Promise<BlessStatus> {
-  const cap = blessClaimCap(ronkeverseCount, oneOfOneCount);
+export async function blessStatus(addr: string, percentile: number): Promise<BlessStatus> {
+  const cap = blessClaimCap(percentile);
   const now = Date.now();
   try {
     const r = await _read(_norm(addr), now);
@@ -93,9 +110,9 @@ export async function blessStatus(addr: string, ronkeverseCount: number, oneOfOn
 }
 
 // CLAIM — įskaito VISĄ likusią šio lango emisiją į balansą. ok=false kai nebėra ko (arba DB triktis).
-export async function blessClaim(addr: string, ronkeverseCount: number, oneOfOneCount: number = 0): Promise<{ ok: boolean; credited: number; bal: number; claimable: number }> {
+export async function blessClaim(addr: string, percentile: number): Promise<{ ok: boolean; credited: number; bal: number; claimable: number }> {
   const a = _norm(addr);
-  const cap = blessClaimCap(ronkeverseCount, oneOfOneCount);
+  const cap = blessClaimCap(percentile);
   if (cap <= 0) return { ok: false, credited: 0, bal: 0, claimable: 0 };
   return boneBankOp(a + "#bless", async () => {
     for (let i = 0; i < CAS_RETRIES; i++) {

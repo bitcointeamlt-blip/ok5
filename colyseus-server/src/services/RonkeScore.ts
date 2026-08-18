@@ -57,6 +57,19 @@ async function _fetchTier(addr: string): Promise<void> {
   }
 }
 
+/* ⏳ ASYNC: palaukia realaus atsakymo (kešas tas pats). Reikalinga ten, kur tiksli pakopa svarbesnė
+ * už greitį ir kur galima palaukti — pvz. ⚡ BLESS paros claim'as (vienas mygtuko paspaudimas). */
+export async function scoreTierNow(address: string): Promise<ScoreTier> {
+  const addr = (address || "").trim().toLowerCase();
+  if (!addr) return NO_TIER;
+  const hit = _cache.get(addr);
+  const ttl = hit && hit.ok ? TTL_MS : FAIL_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) return hit.tier;
+  await _fetchTier(addr);
+  const now = _cache.get(addr);
+  return now ? now.tier : NO_TIER;
+}
+
 // Sync: grąžina kešuotą tier (nesant — ×1.0) ir fone atsišviežina jei pasenęs. Kasimo keliui saugu visada.
 export function scoreTierCached(address: string): ScoreTier {
   const addr = (address || "").trim().toLowerCase();

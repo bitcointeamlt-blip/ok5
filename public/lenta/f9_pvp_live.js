@@ -1325,7 +1325,7 @@
       try {
         if (window.showGameNotification) {
           if (e && e.ok) window.showGameNotification('⚡ BLESS CLAIMED', '+' + (e.credited || 0) + ' BLESS item' + ((e.credited || 0) > 1 ? 's' : '') + ' added to your stash!', '#7fdfea');
-          else if (e && e.reason === 'no_nft') window.showGameNotification('⚡ BLESS', 'Hold a Ronkeverse NFT to claim daily BLESS', '#e85d5d');
+          else if (e && (e.reason === 'no_score' || e.reason === 'no_nft')) window.showGameNotification('⚡ BLESS', 'Reach TOP 50% Ronke Score to earn daily BLESS', '#e85d5d');
           else if (e && e.reason === 'nothing_to_claim') window.showGameNotification('⚡ BLESS', 'Nothing to claim yet — come back later', '#8a9aaa');
           else window.showGameNotification('⚡ BLESS', 'Claim failed — try again', '#e85d5d');
         }

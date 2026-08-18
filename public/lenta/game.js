@@ -10358,7 +10358,7 @@ function _f9BmkSellHtml() {
   let h = '<div style="display:flex;align-items:center;gap:16px;padding:15px 18px;background:rgba(74,157,166,0.12);border:1px solid #2a6a74;border-radius:10px;margin-bottom:16px;">' +
     _f9WingsIco(34) +   // ⚡ BLESS = angelo sparnai (08-18)
     '<div style="flex:1;min-width:0;"><div style="font-size:17px;color:#aef0f7;">' + _f9BmkState.bal + ' <span style="font-size:10px;color:#7fdfea;">BLESS in your stash</span></div>' +
-    '<div style="font-size:8px;color:#6a8a92;margin-top:4px;">Claim daily in the hospital · spend 1 to instantly heal an injured unit</div></div></div>';
+    '<div style="font-size:8px;color:#6a8a92;margin-top:4px;">Claim daily in the hospital — amount by your Ronke Score · spend 1 to instantly heal an injured unit</div></div></div>';
   h += '<div style="font-size:10px;color:#8a9aaa;line-height:1.7;margin-bottom:12px;letter-spacing:0.5px;">Set <b style="color:#ffcf5c;">how many</b> and the <b style="color:#ffcf5c;">price per item</b>. Listed BLESS move to escrow (out of your stash) until sold or cancelled. Fee <b style="color:#ffcf5c;">' + feePct + '%</b> → treasury — the buyer pays it on top, you receive the rest straight to your wallet.</div>';
   h += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:14px;background:rgba(0,0,0,0.3);border:1px solid #4a3a18;border-radius:9px;margin-bottom:18px;">' +
     '<label style="flex:1;min-width:110px;font-size:8px;color:#8a9aaa;letter-spacing:1px;">HOW MANY<input id="f9bmk-qty" type="number" min="1" step="1" max="' + Math.max(1, _f9BmkState.bal) + '" value="' + Math.min(5, Math.max(1, _f9BmkState.bal)) + '" style="width:100%;box-sizing:border-box;margin-top:5px;padding:10px;border-radius:6px;border:1px solid #6a4a18;background:#0c1020;color:#ffcf5c;font-family:inherit;font-size:13px;"></label>' +
@@ -12062,11 +12062,21 @@ function _f9HospUpdateStatus() {
   const _in = window._f9HospInsta || {};
   const _blessN = _f9HospPanelEl.querySelector('#f9hosp-bless-n');
   if (_blessN) _blessN.textContent = String(_in.remaining != null ? _in.remaining : 0);
+  /* 🏆 08-18: paros kiekį lemia Ronke Score pakopa — parodom ją tooltipe, kad būtų aišku KODĖL tiek. */
+  const _bBadge = _f9HospPanelEl.querySelector('#f9hosp-bless');
+  if (_bBadge && _in.cap != null) {
+    _bBadge.title = 'BLESS items — spend 1 to instantly heal an injured unit.\n'
+      + (_in.tier ? 'Your Ronke Score: ' + _in.tier + ' → ' + _in.cap + ' BLESS per 24h'
+        : 'No Ronke Score tier yet — reach TOP 50% to earn daily BLESS')
+      + '\nTOP 1% 20 · 5% 15 · 10% 10 · 25% 6 · 50% 3';
+  }
   const _clB = _f9HospPanelEl.querySelector('#f9hosp-claim');
   if (_clB) {
     const _cl = _in.claimable || 0;
-    if (_cl > 0) { _clB.style.display = ''; const _cn = _clB.querySelector('#f9hosp-claim-n'); if (_cn) _cn.textContent = '+' + _cl; }
-    else _clB.style.display = 'none';
+    if (_cl > 0) {
+      _clB.style.display = ''; const _cn = _clB.querySelector('#f9hosp-claim-n'); if (_cn) _cn.textContent = '+' + _cl;
+      _clB.title = 'Claim your daily BLESS' + (_in.tier ? ' (' + _in.tier + ' Ronke Score → ' + (_in.cap || 0) + '/24h)' : '') + ' — unclaimed days do NOT stack!';
+    } else _clB.style.display = 'none';
   }
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
   const HEAL = window._f9HospHealMs || 3600000;
@@ -12231,7 +12241,7 @@ function _f9ToggleHospitalPanel() {
       '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">🏥</span>' +
       '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
       // ⚡🎒 BLESS itemų balansas (08-13: nebe paros charge\'ai, o kaupiami itemai) + CLAIM mygtukas
-      '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily: Ronkeverse holders get 1 per NFT (max 20/day), 1/1s give 5 each" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;">' + _f9WingsIco(14, "margin-right:3px;") + 'BLESS<span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily by Ronke Score: TOP 1% 20 · TOP 5% 15 · TOP 10% 10 · TOP 25% 6 · TOP 50% 3 per 24h" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;">' + _f9WingsIco(14, "margin-right:3px;") + 'BLESS<span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
       '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +

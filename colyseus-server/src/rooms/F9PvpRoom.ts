@@ -4,9 +4,9 @@ import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
-import { blessStatus, blessClaim, blessConsume, blessCredit } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
 import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReserve, blessMarketBuy, blessMarketFeeBps, blessMarketTreasury } from "../services/BlessMarket";   // ⚡🛒 BLESS itemų prekyba (2026-08-18)
-import { scoreTierCached } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
+import { scoreTierCached, scoreTierNow } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
 import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
 import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
@@ -308,11 +308,11 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
 
 // ⚡🎒 BLESS insta payload klientui (08-13): remaining = BALANSAS (senų klientų counter'is toliau teisingas),
 //   bal/claimable/resetAt — naujam CLAIM UI. cap čia = paros claim lubos, used nebenaudojamas (legacy 0).
+//   🏆 08-18: paros emisiją lemia RONKE SCORE pakopa (top1% 20 · top5% 15 · top10% 10 · top25% 6 · top50% 3).
 async function blessInsta(addr: string): Promise<any> {
-  const cc = await chainCounts(addr);
-  const n1 = await count1of1(addr);
-  const st = await blessStatus(addr, cc ? cc.rv : 0, n1);
-  return { cap: st.cap, used: 0, remaining: st.bal, bal: st.bal, claimable: st.claimable, resetAt: st.resetAt };
+  const t = await scoreTierNow(addr);
+  const st = await blessStatus(addr, t.pct);
+  return { cap: st.cap, used: 0, remaining: st.bal, bal: st.bal, claimable: st.claimable, resetAt: st.resetAt, tier: blessTierLabel(t.pct), pct: t.pct, score: t.score };
 }
 
 // Base HP pagal utype — atitinka _F9_BASE_HP game.js.
@@ -659,10 +659,11 @@ export class F9PvpRoom extends Room<F9State> {
       const addr = String(p?.address || "").trim().toLowerCase();
       if (!addr) { try { client.send("bless_claimed", { ok: false, reason: "no_wallet" }); } catch (_) {} return; }
       try {
-        const cc = await chainCounts(addr); const _n1 = await count1of1(addr);
-        const rv = cc ? cc.rv : 0;
-        if (rv < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_nft" }); } catch (_) {} return; }
-        const res = await blessClaim(addr, rv, _n1);
+        // 🏆 emisija pagal RONKE SCORE pakopą; nėra pakopos (žemiau top 50% / API tyli) → nėra ko claim'inti,
+        //    IR nieko neįrašom ⇒ para neprarandama, pavyks kai score atsiras/API atsakys.
+        const t = await scoreTierNow(addr);
+        if (blessClaimCap(t.pct) < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_score" }); } catch (_) {} return; }
+        const res = await blessClaim(addr, t.pct);
         const insta = await blessInsta(addr);
         try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}
         if (res.ok) console.log(`[F9PvpRoom] ⚡🎒 BLESS claim +${res.credited} → bal ${res.bal} (${addr.slice(0, 10)}…)`);
