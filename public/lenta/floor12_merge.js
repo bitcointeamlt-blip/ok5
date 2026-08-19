@@ -2045,7 +2045,15 @@
 
     try {
 
-      return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      // ⚠️ 08-19: PRIVALO sutapti su orientation.js — ten sąrašo gale yra dar ir plikas `Android`.
+      //    Be jo naršyklės, kurių UA turi „Android", bet NETURI „Mobile" (Ronin dApp webview,
+      //    „Desktop site" režimas), F12'e buvo laikomos KOMPIUTERIU ⇒ resize() imdavo desktop šaką
+      //    (canvas = innerWidth×innerHeight = siauras portretas, ~360×780) vietoj virtualaus 1280×720.
+      //    Pasekmės, kurias pranešė žaidėjas: (1) unitų kortos netilpdavo ir dingdavo,
+      //    (2) priešai atrodė MILŽINIŠKI — jų dydis ∝ canvas AUKŠČIUI (laneH), o laukas ∝ PLOČIUI,
+      //    tad siaurame portrete priešas užimdavo 28.7% pločio vietoj 7.4%. Dar ir visi brangūs
+      //    efektai (rūkas/vėjas/vortex) sukdavosi telefone, nes mobile skip'ai nesuveikdavo.
+      return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini|Android/i.test(navigator.userAgent);
 
     } catch (_) { return false; }
 
