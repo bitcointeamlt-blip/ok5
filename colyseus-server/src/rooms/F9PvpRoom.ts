@@ -309,10 +309,21 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
 // ⚡🎒 BLESS insta payload klientui (08-13): remaining = BALANSAS (senų klientų counter'is toliau teisingas),
 //   bal/claimable/resetAt — naujam CLAIM UI. cap čia = paros claim lubos, used nebenaudojamas (legacy 0).
 //   🏆 08-18: paros emisiją lemia RONKE SCORE pakopa (top1% 20 · top5% 15 · top10% 10 · top25% 6 · top50% 3).
+//   🪖 08-19 (user): claim'inti gali TIK laikantis ≥12 unitų piniginėje — bless yra armijos priežiūrai,
+//      ne tuščiam farmui. Neįrodžius (RPC tyli) → claim'as neduodamas, bet nieko neįrašom ⇒ para nedingsta.
+const BLESS_MIN_UNITS = Number(process.env.F9_BLESS_MIN_UNITS || 12);
 async function blessInsta(addr: string): Promise<any> {
   const t = await scoreTierNow(addr);
   const st = await blessStatus(addr, t.pct);
-  return { cap: st.cap, used: 0, remaining: st.bal, bal: st.bal, claimable: st.claimable, resetAt: st.resetAt, tier: blessTierLabel(t.pct), pct: t.pct, score: t.score };
+  const cc = await chainCounts(addr);
+  const units = cc ? cc.wallet : -1;                    // −1 = nepavyko patikrinti (RPC)
+  const gated = !(units >= BLESS_MIN_UNITS);            // neatitinka reikalavimo ARBA nepatikrinta
+  return {
+    cap: st.cap, used: 0, remaining: st.bal, bal: st.bal,
+    claimable: gated ? 0 : st.claimable,                // mygtukas nerodomas, kol neatitinka
+    resetAt: st.resetAt, tier: blessTierLabel(t.pct), pct: t.pct, score: t.score,
+    units, minUnits: BLESS_MIN_UNITS, gated,
+  };
 }
 
 // Base HP pagal utype — atitinka _F9_BASE_HP game.js.
@@ -663,6 +674,13 @@ export class F9PvpRoom extends Room<F9State> {
         //    IR nieko neįrašom ⇒ para neprarandama, pavyks kai score atsiras/API atsakys.
         const t = await scoreTierNow(addr);
         if (blessClaimCap(t.pct) < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_score" }); } catch (_) {} return; }
+        // 🪖 vartai: ≥12 unitų piniginėje. RPC neatsakius NEleidžiam (fail-closed), bet ir nieko nenurašom.
+        const _cc = await chainCounts(addr);
+        if (!_cc) { try { client.send("bless_claimed", { ok: false, reason: "units_unknown" }); } catch (_) {} return; }
+        if (_cc.wallet < BLESS_MIN_UNITS) {
+          try { client.send("bless_claimed", { ok: false, reason: "need_units", units: _cc.wallet, minUnits: BLESS_MIN_UNITS }); } catch (_) {}
+          return;
+        }
         const res = await blessClaim(addr, t.pct);
         const insta = await blessInsta(addr);
         try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}

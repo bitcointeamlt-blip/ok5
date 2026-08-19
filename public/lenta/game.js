@@ -12068,14 +12068,26 @@ function _f9HospUpdateStatus() {
     _bBadge.title = 'BLESS items — spend 1 to instantly heal an injured unit.\n'
       + (_in.tier ? 'Your Ronke Score: ' + _in.tier + ' → ' + _in.cap + ' BLESS per 24h'
         : 'No Ronke Score tier yet — reach TOP 50% to earn daily BLESS')
-      + '\nTOP 1% 20 · 5% 15 · 10% 10 · 25% 6 · 50% 3';
+      + '\nTOP 1% 20 · 5% 15 · 10% 10 · 25% 6 · 50% 3'
+      + '\nRequires ' + (_in.minUnits || 12) + '+ units in your wallet'
+      + (_in.units >= 0 ? ' (you have ' + _in.units + ')' : '');
   }
   const _clB = _f9HospPanelEl.querySelector('#f9hosp-claim');
   if (_clB) {
     const _cl = _in.claimable || 0;
+    const _lbl = _clB.querySelector('.f9-bl-lbl');
     if (_cl > 0) {
-      _clB.style.display = ''; const _cn = _clB.querySelector('#f9hosp-claim-n'); if (_cn) _cn.textContent = '+' + _cl;
+      _clB.style.display = ''; _clB.classList.remove('dim');
+      if (_lbl) _lbl.innerHTML = _f9WingsIco(13, 'vertical-align:-2px;margin-right:3px;') + 'CLAIM <span id="f9hosp-claim-n">+' + _cl + '</span>';
       _clB.title = 'Claim your daily BLESS' + (_in.tier ? ' (' + _in.tier + ' Ronke Score → ' + (_in.cap || 0) + '/24h)' : '') + ' — unclaimed days do NOT stack!';
+    } else if (_in.gated && (_in.cap || 0) > 0) {
+      /* 🪖 08-19: claim'ui reikia ≥12 unitų piniginėje — mygtuko NEslepiam, o paaiškinam, ko trūksta. */
+      _clB.style.display = ''; _clB.classList.add('dim');
+      const _u = _in.units, _min = _in.minUnits || 12;
+      if (_lbl) _lbl.innerHTML = (_u >= 0 ? '🪖 NEED ' + _min + ' UNITS' : '🪖 CHECKING UNITS…');
+      _clB.title = _u >= 0
+        ? ('Daily BLESS needs at least ' + _min + ' units in your wallet — you have ' + _u + '. Mint or buy units to unlock it.')
+        : 'Could not read your units on-chain — reopen the panel in a moment';
     } else _clB.style.display = 'none';
   }
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
@@ -12258,7 +12270,7 @@ function _f9ToggleHospitalPanel() {
         '<span id="f9hosp-deckinfo" style="flex:1;font-size:8px;color:#8a9aaa;line-height:1.6;"></span>' +
         '<button id="f9hosp-deck-btn" title="Change which NFTs are registered in your deck (10 RONKE)" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;padding:7px 10px;border-radius:4px;border:1px solid #6a4a18;background:rgba(255,207,92,0.1);color:#ffcf5c;cursor:pointer;">🃏 MANAGE DECK</button>' +
       '</div></div>' +
-    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.<br/>⚡ BLESS items: claim daily (Ronkeverse holders — unclaimed days don\'t stack!), spend 1 to instantly heal an injured unit.</div>';
+    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.<br/>BLESS items: claim daily — your Ronke Score sets the amount (TOP 1% 20 · 5% 15 · 10% 10 · 25% 6 · 50% 3 per 24h) and you must hold 12+ units in your wallet. Unclaimed days don\'t stack! Spend 1 to instantly heal an injured unit.</div>';
   ov.appendChild(el);
   document.body.appendChild(ov);
   _f9HospEnsureFx();   // ⚡🔵 RONKE BLESS mygtuko hover/press/ripple CSS
