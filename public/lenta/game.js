@@ -12081,18 +12081,44 @@ function _f9HospRenderShield() {
               '<span class="f9-bl-lbl">' + _f9WingsIco(12, 'vertical-align:-2px;margin-right:3px;') + 'PROTECT ALL (' + cost + ')</span></button>'
           : (unprot.length ? '<span style="font-size:8px;color:#e88;">need BLESS</span>' : '<span style="font-size:8px;color:#8fd47c;">all protected</span>')) +
       '</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+      /* kortelės kaip markete: sprite + #id + Lv (user 08-19: „vietoj numerių — sprite ir minimali info") */
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;max-height:186px;overflow:auto;">' +
         all.map(function (id) {
           const on = shield.has(id);
+          const m = _f9ShieldMeta.get(String(id));
+          const spr = (m && m.utype != null)
+            ? '<img src="' + _f9MktUnitSprite(m.utype) + '" alt="" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(m.utype) + '\'))">'
+            : '<span style="font-size:22px;opacity:.5;">🪖</span>';
           return '<button ' + (on ? '' : 'data-shieldone="' + id + '" ') +
-            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead (burns after the match)' : 'Spend 1 BLESS to protect unit #' + id) + '" ' +
-            'style="display:flex;align-items:center;gap:3px;padding:3px 7px;border-radius:5px;font-family:inherit;font-size:8px;cursor:' + (on ? 'default' : 'pointer') + ';' +
-            'border:1px solid ' + (on ? '#2a6a74' : '#3a4055') + ';background:' + (on ? 'rgba(74,157,166,0.16)' : 'rgba(0,0,0,0.25)') + ';color:' + (on ? '#aef0f7' : '#8a9aaa') + ';">' +
-            (on ? _f9WingsIco(11, '') : '') + '#' + id + '</button>';
+            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead (burns after the match)' : 'Spend 1 BLESS to protect this unit') + '" ' +
+            'style="position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 3px;border-radius:7px;font-family:inherit;cursor:' + (on ? 'default' : 'pointer') + ';' +
+            'border:1px solid ' + (on ? '#2a6a74' : '#3a4055') + ';background:' + (on ? 'rgba(74,157,166,0.16)' : 'rgba(0,0,0,0.25)') + ';">' +
+            (on ? '<span style="position:absolute;top:2px;right:2px;">' + _f9WingsIco(12, '') + '</span>' : '') +
+            spr +
+            '<span style="font-size:7px;color:' + (on ? '#aef0f7' : '#8a9aaa') + ';">#' + id + '</span>' +
+            (m && m.level != null ? '<span style="font-size:7px;color:#ffcf5c;">Lv' + m.level + '</span>' : '') +
+            '</button>';
         }).join('') +
       '</div>' +
-      '<div style="margin-top:6px;font-size:7px;color:#5a6a7a;line-height:1.6;">1 BLESS per unit · one match, then it burns — whether or not it was needed.</div>' +
     '</div>';
+  _f9ShieldLoadMeta(all);   // trūkstamiems unitams pasiimam utype/level (kaip market enrichment)
+}
+/* Unitų meta (utype/level) skydo kortelėms — tas pats šaltinis kaip marketo BROWSE enrichment'e. */
+const _f9ShieldMeta = new Map();
+let _f9ShieldMetaBusy = false;
+function _f9ShieldLoadMeta(ids) {
+  try {
+    const BNFT = window.BarracksNFT;
+    if (!BNFT || !BNFT.loadUnitTypes || _f9ShieldMetaBusy) return;
+    const need = (ids || []).map(String).filter(function (id) { return !_f9ShieldMeta.has(id); });
+    if (!need.length) return;
+    _f9ShieldMetaBusy = true;
+    BNFT.loadUnitTypes(need.slice(0, 60)).then(function (map) {
+      if (map && map.size) map.forEach(function (v, k) { _f9ShieldMeta.set(String(k), { utype: v.utype, level: v.level }); });
+      _f9ShieldMetaBusy = false;
+      if (_f9HospPanelEl) { _f9HospRenderShield(); _f9HospWireShield(); }
+    }).catch(function () { _f9ShieldMetaBusy = false; });
+  } catch (_) { _f9ShieldMetaBusy = false; }
 }
 function _f9HospShieldSend(ids) {
   try {
@@ -12346,7 +12372,7 @@ function _f9ToggleHospitalPanel() {
         '<span id="f9hosp-deckinfo" style="flex:1;font-size:8px;color:#8a9aaa;line-height:1.6;"></span>' +
         '<button id="f9hosp-deck-btn" title="Change which NFTs are registered in your deck (10 RONKE)" style="font-family:inherit;font-size:8px;letter-spacing:0.5px;padding:7px 10px;border-radius:4px;border:1px solid #6a4a18;background:rgba(255,207,92,0.1);color:#ffcf5c;cursor:pointer;">🃏 MANAGE DECK</button>' +
       '</div></div>' +
-    '<div style="padding-top:10px;margin-top:6px;font-size:9px;line-height:1.7;color:#6a7a8a;border-top:1px solid #3a3a55;">One unit heals at a time (1h each). Use ⬆ FIRST to choose who heals next — the current patient loses progress. Healed units auto-deploy when your castle is at peace.<br/>BLESS items: claim daily — your Ronke Score sets the amount (TOP 1% 20 · 5% 15 · 10% 10 · 25% 6 · 50% 3 per 24h) and you must hold 12+ units in your wallet. Unclaimed days don\'t stack! Spend 1 to instantly heal an injured unit.</div>';
+    '';   // 📝 08-19 user: ilgas paaiškinimų blokas panelės apačioje pašalintas (viskas ir taip tooltipuose)
   ov.appendChild(el);
   document.body.appendChild(ov);
   _f9HospEnsureFx();   // ⚡🔵 RONKE BLESS mygtuko hover/press/ripple CSS
