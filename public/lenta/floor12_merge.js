@@ -11123,6 +11123,7 @@
     // drawPowerMeter pakeistas į pixel art ring drawLauncher viduje
 
     drawNextPreview(L, t);
+    _f12DebugOverlay(L);   // 🔎 ?f12dbg=1 → rodo tikrus matmenis (mobile diagnostikai)
 
     _drawCards(L, t);
 
@@ -15926,12 +15927,60 @@
 
   const _CARD_CONSUME_DUR = 520;
 
-  const _CARD_W = 68, _CARD_H = 96, _CARD_GAP = 8;
+  // 📱 08-19 FIX (user: „ant PC veikia, ant mobilaus nerodo unitų kortų"):
+  //    Kortos buvo FIKSUOTO dydžio. Eilei reikia 9×(68+8)−8 = 676px, o su STASH slotu — 752px.
+  //    Siauresniam canvas'ui `startX` nusikirpdavo į 20 ⇒ STASH atsidurdavo ties x = −56 (už ekrano),
+  //    o kortos nubėgdavo pro dešinį kraštą ⇒ telefone jų nesimatė.
+  //    Sprendimas: matmenys DINAMIŠKI — perskaičiuojami pagal canvas plotį, tad VISOS naudojimo
+  //    vietos (hover rect'ai, consume animacijos, hold slotas) automatiškai gauna suderintą dydį.
+  const _CARD_W0 = 68, _CARD_H0 = 96, _CARD_GAP0 = 8;   // baziniai (desktop, kai telpa)
+  let _CARD_W = _CARD_W0, _CARD_H = _CARD_H0, _CARD_GAP = _CARD_GAP0;
+  function _fitCardSize(L) {
+    const n = (typeof TYPES !== 'undefined' && TYPES.length) ? TYPES.length : 9;
+    const need = (n + 1) * (_CARD_W0 + _CARD_GAP0) - _CARD_GAP0 + 24;   // +1 = STASH, +24 paraštės
+    const k = Math.max(0.42, Math.min(1, (L.W - 12) / need));           // ne mažiau 42% (liktų neįskaitomos)
+    _CARD_W = Math.round(_CARD_W0 * k);
+    _CARD_H = Math.round(_CARD_H0 * k);
+    _CARD_GAP = Math.max(2, Math.round(_CARD_GAP0 * k));
+  }
 
   function _spawnMergeSpirit(srcX, srcY, type, value, t) {
 
     _f12Spirits.push({ sx: srcX, sy: srcY, type, value, born: t, duration: _SPIRIT_DURATION });
 
+  }
+
+  // 🔎 LAIKINA DIAGNOSTIKA (2026-08-19) — įjungiama TIK su `?f12dbg=1` URL parametru.
+  //    Tikslas: sužinoti TIKRUS matmenis telefone, nes kortų dingimo priežastis iš kodo neaiški
+  //    (mobile šaka duoda canvas ≥1280px, kur eilė TELPA — vadinasi kaltas kažkas kita).
+  //    Piešiam VIRŠ visko, kairiam viršuje, ryškiai — kad matytųsi ir suspaustame ekrane.
+  var _F12_DBG = (function () { try { return /[?&]f12dbg=1/.test(location.search); } catch (_) { return false; } })();
+  function _f12DebugOverlay(L) {
+    if (!_F12_DBG || !ctx) return;
+    try {
+      var lay = _getCardLayout(L);
+      var fl = (window.__forceLandscape ? window.__forceLandscape() : null);
+      var lines = [
+        'canvas ' + canvas.width + 'x' + canvas.height,
+        'css    ' + Math.round(parseFloat(canvas.style.width) || 0) + 'x' + Math.round(parseFloat(canvas.style.height) || 0),
+        'inner  ' + window.innerWidth + 'x' + window.innerHeight,
+        'logical ' + (window.__logicalW ? window.__logicalW() : '?') + 'x' + (window.__logicalH ? window.__logicalH() : '?'),
+        'landscape=' + fl + '  mobile=' + _IS_MOBILE,
+        'card ' + _CARD_W + 'x' + _CARD_H + ' gap' + _CARD_GAP,
+        lay ? ('cards x ' + Math.round(lay.startX) + '..' + Math.round(lay.startX + lay.totalW) + '  y ' + Math.round(lay.cardY)) : 'layout NULL',
+        lay ? ('stash x ' + Math.round(lay.startX - _CARD_GAP - _CARD_W)) : ''
+      ];
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.font = 'bold 22px monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      var w = 520, h = lines.length * 26 + 14;
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(4, 4, w, h);
+      ctx.strokeStyle = '#0f0'; ctx.lineWidth = 2; ctx.strokeRect(4, 4, w, h);
+      ctx.fillStyle = '#0f0';
+      for (var i = 0; i < lines.length; i++) ctx.fillText(lines[i], 12, 12 + i * 26);
+      ctx.restore();
+    } catch (_) {}
   }
 
   function _getCardLayout(L) {
@@ -15942,9 +15991,12 @@
 
     if (allTypes.length === 0) return null;
 
+    _fitCardSize(L);   // 📱 pirma pritaikom dydį prie ekrano, tik tada pozicijos
+
     const totalW = allTypes.length * (_CARD_W + _CARD_GAP) - _CARD_GAP;
 
-    const startX = Math.max(20, (L.W - totalW) / 2);
+    // ⚠️ Minimumas nebe „20", o vieta STASH slotui kairėje (jis piešiamas ties startX−GAP−W).
+    const startX = Math.max(_CARD_W + _CARD_GAP + 6, (L.W - totalW) / 2);
 
     const cardY = L.H - _CARD_H - 16;
 
