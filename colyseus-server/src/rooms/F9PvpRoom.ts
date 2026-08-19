@@ -5,6 +5,7 @@ import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { shieldList, shieldAdd, shieldBurn } from "../services/BlessShield";   // 🪽🛡 BLESS skydas ant unito (2026-08-19)
 import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReserve, blessMarketBuy, blessMarketFeeBps, blessMarketTreasury } from "../services/BlessMarket";   // ⚡🛒 BLESS itemų prekyba (2026-08-18)
 import { scoreTierCached, scoreTierNow } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
 import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
@@ -589,6 +590,9 @@ export class F9PvpRoom extends Room<F9State> {
   private _raidKilled = new Set<string>();     // gynėjo tokenId žuvę per ŠĮ raidą
   private _raidInjured = new Set<string>();    // gynėjo tokenId sužaloti per ŠĮ raidą
   private _battleFates = new Map<string, "injured" | "dead">();   // ⚔ ŠIO mūšio per-unitId likimai (2-pusiam settled ekranui: abiejų komandų sudėtis)
+  /* 🪽 apsaugoti unitai (addr → tokenId aibė). Sinchroniškai skaitomi mūšio cikle, DB — fone. */
+  private _shield = new Map<string, Set<string>>();
+  private _shieldSeen = new Map<string, Set<string>>();   // kurie apsaugoti unitai TIKRAI buvo lauke šį mačą
   private _raidStolen = 0;                      // pavogti kaulai (užpildoma _endMatch grobio bloke)
   private _endBones = { atk: 0, def: 0 };       // 🦴 abiejų pusių sesijos kaulai (_endMatch summary; _persistRaidReport skaito PO flush'o)
   private _minePend = new Map<string, { nonce: string; amt: number; at: number }>();   // ⛏️💸 laukiantis withdrawal (deduct'inta; jei TX nenusėda po deadline → re-credit)
@@ -686,6 +690,26 @@ export class F9PvpRoom extends Room<F9State> {
         try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}
         if (res.ok) console.log(`[F9PvpRoom] ⚡🎒 BLESS claim +${res.credited} → bal ${res.bal} (${addr.slice(0, 10)}…)`);
       } catch (_) { try { client.send("bless_claimed", { ok: false, reason: "error" }); } catch (_) {} }
+    });
+    /* 🪽🛡 BLESS SKYDAS ANT UNITO (2026-08-19, user): „uždedi BLESS ant unito — jei jis turėtų mirti,
+     * vietoj mirties keliauja į ligoninę". Vienas mačas = vienas BLESS, sudega nesvarbu ar prireikė. */
+    this.onMessage("bless_protect", async (client, m: any) => {
+      const addr = String(this.state.players.get(client.sessionId)?.address || "").trim().toLowerCase();
+      if (!addr) { try { client.send("bless_protect_result", { ok: false, reason: "no_wallet" }); } catch (_) {} return; }
+      const ids = Array.isArray(m?.tokenIds) ? m.tokenIds.map((t: any) => String(t || "").trim()).filter(Boolean).slice(0, 24) : [];
+      if (!ids.length) { try { client.send("bless_protect_result", { ok: false, reason: "no_units" }); } catch (_) {} return; }
+      const res = await shieldAdd(addr, ids);
+      if (res.ok && res.added.length) {
+        const set = this._shield.get(addr) || new Set<string>();
+        res.added.forEach((t) => set.add(t));
+        this._shield.set(addr, set);
+      }
+      try {
+        client.send("bless_protect_result", {
+          ok: res.ok, reason: res.reason, added: res.added, skipped: res.skipped,
+          shielded: [...(this._shield.get(addr) || [])], insta: await blessInsta(addr),
+        });
+      } catch (_) {}
     });
     /* ⚡🛒 BLESS ITEMŲ MARKETAS (2026-08-18, user: „bless tradable — pardavėjas nustato kainą ir kiek
      * nori parduoti, 5% mokestis į treasury"). Itemai off-chain, tad escrow serveryje; pinigai eina
@@ -1215,6 +1239,11 @@ export class F9PvpRoom extends Room<F9State> {
     try { if (p.address) _joinDeck = await this._chainFilterDeck(String(p.address), _joinDeck); } catch (_) {}
     // 🏥 užkraunam ŠIO žaidėjo ligoninę+mirusius PRIEŠ deko store (sužaloti nedalyvauja, mirę NEEGZISTUOJA)
     try { await this._loadInjured(String(p.address || "")); } catch (_) {}
+    // 🪽 skydai į atmintį — mūšio cikle tikrinama sinchroniškai (žr. _rollInjury)
+    try {
+      const _sa = String(p.address || "").trim().toLowerCase();
+      if (_sa && !this._shield.has(_sa)) this._shield.set(_sa, new Set(await shieldList(_sa)));
+    } catch (_) {}
     // 💀 PERMADEATH filtras: mirę NFT išmetami iš deko VISAM (cem power/nft skaičiuojasi be jų)
     const _deadJ = this._deadSet(String(p.address || ""));
     if (_deadJ.size) {
@@ -1849,7 +1878,8 @@ export class F9PvpRoom extends Room<F9State> {
     // ⚡🔵 instaReady = ar ⚡ BLESS instant heal DABAR veiks (server-auth gate'ai: TIK savoj pilyje + NE raido metu).
     //   Klientas rodo Bless mygtuką tik kai true → nebėra „paspaudžiau per siege, nepagijo" (07-12 user).
     const instaReady = this._home && addr === this._ownerAddr && this.state.players.size <= 1;
-    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady };
+    // 🪽 shield = tokenId sąrašas, ant kurių uždėtas BLESS (kortelių ženkliukams)
+    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady, shield: [...(this._shield.get(addr) || [])] };
   }
 
   // ⚔️ DEPLOY (07-04 user mechanika): paruošti (pasveikę/nespawninti) deko unitai → garnizono 2×6 slotai.
@@ -1969,9 +1999,24 @@ export class F9PvpRoom extends Room<F9State> {
     } catch (_) { try { client.send("upgrade_fail", { reason: "save", cost, what }); } catch (_) {} return false; }
   }
   // Kritusio NFT unito likimas: 90% → ligoninės eilės GALAS, 10% → tikra mirtis.
-  private _rollInjury(addr: string, u: F9Unit): { fate: "injured" | "dead"; eta: number; queuePos: number } {
+  private _rollInjury(addr: string, u: F9Unit): { fate: "injured" | "dead"; eta: number; queuePos: number; saved?: boolean } {
     addr = (addr || "").trim().toLowerCase();
-    if (Math.random() >= INJURY_CHANCE) { this._recordDeath(addr, u.tokenId, u.utype, u.level || 0); return { fate: "dead", eta: 0, queuePos: -1 }; }
+    let _saved = false;
+    if (Math.random() >= INJURY_CHANCE) {
+      /* 🪽 BLESS SKYDAS (2026-08-19, user): jei ant unito uždėtas BLESS — vietoj MIRTIES jis
+       * keliauja į ligoninę. Skydas nuimamas iškart (vienam kartui), o pats itemas ir taip sudegs
+       * mačo pabaigoje. Sinchroninė atmintis; DB nurašymas fone (mūšio ciklo nestabdom). */
+      const set = this._shield.get(addr);
+      if (set && set.has(u.tokenId)) {
+        set.delete(u.tokenId);
+        void shieldBurn(addr, [u.tokenId]);
+        _saved = true;
+        console.log(`[F9PvpRoom] 🪽 BLESS IŠGELBĖJO ${u.utype}#${u.tokenId} (${addr.slice(0, 10)}…) — vietoj mirties į ligoninę`);
+      } else {
+        this._recordDeath(addr, u.tokenId, u.utype, u.level || 0);
+        return { fate: "dead", eta: 0, queuePos: -1 };
+      }
+    }
     this._pruneHosp(addr);
     let h = this._injured.get(addr);
     if (!h) { h = { q: [], starts: [], durs: [], lvl: (this._home && addr === this._ownerAddr ? (this._buildings.hospLevel || 1) : 1) }; this._injured.set(addr, h); }
@@ -1982,7 +2027,7 @@ export class F9PvpRoom extends Room<F9State> {
     this._persistInjured(addr);
     const pos = h.q.findIndex((i) => i.tokenId === u.tokenId);
     const _etas = this._hospEtas(h);
-    return { fate: "injured", eta: (_etas[pos] && _etas[pos].eta) || Date.now() + this._hospHealMs(h.lvl), queuePos: pos };
+    return { fate: "injured", eta: (_etas[pos] && _etas[pos].eta) || Date.now() + this._hospHealMs(h.lvl), queuePos: pos, saved: _saved };
   }
 
   // ── ⚰️ KAPINĖS — pasyvi kaulų generacija ─────────────────────────────────
@@ -2770,6 +2815,21 @@ export class F9PvpRoom extends Room<F9State> {
     this.state.phase = "ended";
     this.state.gameStarted = false;
     this.state.winnerSid = winnerSid;
+
+    /* 🪽 SKYDAI SUDEGA (user 08-19: „vienas mačas = vienas BLESS, nesvarbu mirsi ar ne").
+     * Degina TIK tuos, kurie realiai buvo lauke šį mūšį — barakuose laukiantis skydas lieka. */
+    try {
+      const _burn = new Map<string, string[]>();
+      this.state.units.forEach((u) => {
+        if (!u.tokenId) return;
+        const oa = u.owner === "AI_DEFENDER" ? this._ownerAddr
+          : String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase();
+        if (!oa) return;
+        const set = this._shield.get(oa);
+        if (set && set.has(u.tokenId)) { set.delete(u.tokenId); (_burn.get(oa) || _burn.set(oa, []).get(oa)!).push(u.tokenId); }
+      });
+      _burn.forEach((ids, oa) => { if (ids.length) void shieldBurn(oa, ids); });
+    } catch (_) {}
 
     // 🛡⚰️ SKYDAS + VAGYSTĖ pagal gynėjo LAUKO AUKAS (07-11 kasimo redizainas):
     //   • ≥50% lauko unitų eliminuota → 1h SKYDAS (atsigavimo langas; klientas kasa ×0.5). Nesvarbu kas laimėjo.
@@ -3861,7 +3921,7 @@ export class F9PvpRoom extends Room<F9State> {
           if (ownAddr === this._ownerAddr) {   // 📜 gynėjo nuostolis per raidą → ataskaitai
             if (res.fate === "dead") this._raidKilled.add(tgt.tokenId); else this._raidInjured.add(tgt.tokenId);
           }
-          const payload = { tokenId: tgt.tokenId, utype: tgt.utype, level: tgt.level || 0, fate: res.fate, eta: res.eta, queuePos: res.queuePos };
+          const payload = { tokenId: tgt.tokenId, utype: tgt.utype, level: tgt.level || 0, fate: res.fate, eta: res.eta, queuePos: res.queuePos, saved: !!res.saved };   // 🪽 saved = BLESS neleido mirti
           for (const c of this.clients) {   // pranešam SAVININKUI, jei jis šiame kambaryje
             const cp = this.state.players.get(c.sessionId);
             if (cp && String(cp.address || "").trim().toLowerCase() === ownAddr) {

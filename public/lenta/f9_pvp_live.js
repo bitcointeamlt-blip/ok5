@@ -1303,7 +1303,22 @@
       // 🛡 07-06 user: kurie deko unitai DABAR stovi pilies lauke (kaunasi) vs rezerve — inventoriaus žymėms.
       window._f9OnField = new Set((e && Array.isArray(e.onField)) ? e.onField.map(String) : []);
       window._f9Reserve = new Set((e && Array.isArray(e.reserve)) ? e.reserve.map(String) : []);
+      window._f9Shield = new Set((e && Array.isArray(e.shield)) ? e.shield.map(String) : []);   // 🪽 ant kurių unitų uždėtas BLESS skydas
       window._f9FieldAt = recv;   // šviežumo žymė (inventorius naudoja tik jei šviežia + savo pilyje)
+      try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
+    // 🪽🛡 BLESS SKYDAS — uždėjimo rezultatas (08-19)
+    room.onMessage('bless_protect_result', function (e) {
+      if (e && e.insta) window._f9HospInsta = e.insta;
+      if (e && Array.isArray(e.shielded)) window._f9Shield = new Set(e.shielded.map(String));
+      try {
+        if (window.showGameNotification) {
+          if (e && e.ok && (e.added || []).length) window.showGameNotification('🪽 SHIELDED', (e.added.length) + ' unit' + (e.added.length > 1 ? 's' : '') + ' protected — if one would die, it goes to hospital instead', '#aef0f7');
+          else if (e && e.reason === 'not_enough') window.showGameNotification('🪽 SHIELD', 'Not enough BLESS — claim daily or buy in the market', '#e85d5d');
+          else if (e && e.reason === 'already') window.showGameNotification('🪽 SHIELD', 'Those units are already protected', '#8a9aaa');
+          else if (e && !e.ok) window.showGameNotification('🪽 SHIELD', 'Could not apply the shield — try again', '#e85d5d');
+        }
+      } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
     // ⚡🔵 RONKE BLESS — instant heal nepavyko (nėra itemų / raidas / senas dekas)
@@ -1370,6 +1385,11 @@
       if (e.fate === 'injured') {
         var pos = (typeof e.queuePos === 'number' && e.queuePos >= 0) ? e.queuePos + 1 : null;
         var txt = String(e.utype || 'unit').toUpperCase() + ' injured — ' + (pos === 1 ? 'healing now (1h)' : 'hospital queue #' + pos);
+        // 🪽 skydas suveikė: unitas TURĖJO mirti, bet BLESS nuvedė jį į ligoninę
+        if (e.saved) {
+          try { if (window._f9Shield) window._f9Shield.delete(String(e.tokenId)); } catch (_) {}
+          try { if (window.showGameNotification) window.showGameNotification('🪽 SAVED BY BLESS', String(e.utype || 'unit').toUpperCase() + ' should have DIED — the shield sent it to hospital instead', '#aef0f7'); } catch (_) {}
+        } else
         try { if (window.showGameNotification) window.showGameNotification('🏥 HOSPITAL', txt, '#ffcf5c'); } catch (_) {}
       } else {
         try { if (window.showGameNotification) window.showGameNotification('💀 UNIT LOST', String(e.utype || 'unit').toUpperCase() + ' died in battle — gone forever', '#e85d5d'); } catch (_) {}

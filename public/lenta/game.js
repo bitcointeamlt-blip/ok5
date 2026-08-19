@@ -12055,6 +12055,79 @@ function _f9BlessSparkle(btn) {
     }
   } catch (_) {}
 }
+/* 🪽🛡 DEATH SHIELD sekcija (2026-08-19, user): uždėjus BLESS ant unito, vietoj mirties jis keliauja
+ * į ligoninę. Vienas mačas = vienas BLESS, sudega nesvarbu ar prireikė — todėl rodom AIŠKIAI, kiek
+ * kainuos, ir leidžiam uždėti visai komandai vienu paspaudimu. */
+function _f9HospRenderShield() {
+  if (!_f9HospPanelEl) return;
+  const box = _f9HospPanelEl.querySelector('#f9hosp-shield');
+  if (!box) return;
+  const shield = window._f9Shield instanceof Set ? window._f9Shield : new Set();
+  const field = window._f9OnField instanceof Set ? [...window._f9OnField] : [];
+  const reserve = window._f9Reserve instanceof Set ? [...window._f9Reserve] : [];
+  const all = [...new Set(field.concat(reserve))].map(String);
+  const bal = (window._f9HospInsta && window._f9HospInsta.bal) || 0;
+  const home = !!(window.__f9HomeActive && window._f9InstaReady);
+  if (!all.length || !home) { box.innerHTML = ''; return; }
+  const unprot = all.filter((id) => !shield.has(id));
+  const cost = Math.min(unprot.length, bal);
+  box.innerHTML =
+    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #3a3a55;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;">' +
+        _f9WingsIco(15, 'margin-right:1px;') +
+        '<span style="font-size:10px;color:#aef0f7;letter-spacing:1px;flex:1;">DEATH SHIELD · ' + shield.size + '/' + all.length + ' protected</span>' +
+        (unprot.length && cost > 0
+          ? '<button data-shieldall="1" class="f9-bless-btn" title="Spend 1 BLESS per unit. If a shielded unit would die, it goes to the hospital instead. Burns after the match either way.">' +
+              '<span class="f9-bl-lbl">' + _f9WingsIco(12, 'vertical-align:-2px;margin-right:3px;') + 'PROTECT ALL (' + cost + ')</span></button>'
+          : (unprot.length ? '<span style="font-size:8px;color:#e88;">need BLESS</span>' : '<span style="font-size:8px;color:#8fd47c;">all protected</span>')) +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+        all.map(function (id) {
+          const on = shield.has(id);
+          return '<button ' + (on ? '' : 'data-shieldone="' + id + '" ') +
+            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead (burns after the match)' : 'Spend 1 BLESS to protect unit #' + id) + '" ' +
+            'style="display:flex;align-items:center;gap:3px;padding:3px 7px;border-radius:5px;font-family:inherit;font-size:8px;cursor:' + (on ? 'default' : 'pointer') + ';' +
+            'border:1px solid ' + (on ? '#2a6a74' : '#3a4055') + ';background:' + (on ? 'rgba(74,157,166,0.16)' : 'rgba(0,0,0,0.25)') + ';color:' + (on ? '#aef0f7' : '#8a9aaa') + ';">' +
+            (on ? _f9WingsIco(11, '') : '') + '#' + id + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div style="margin-top:6px;font-size:7px;color:#5a6a7a;line-height:1.6;">1 BLESS per unit · one match, then it burns — whether or not it was needed.</div>' +
+    '</div>';
+}
+function _f9HospShieldSend(ids) {
+  try {
+    if (!ids || !ids.length) return;
+    if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('bless_protect', { tokenIds: ids });
+  } catch (_) {}
+}
+/* Skydo mygtukų prijungimas — po kiekvieno perpiešimo (kaip ⚡ insta mygtukai). */
+function _f9HospWireShield() {
+  if (!_f9HospPanelEl) return;
+  const box = _f9HospPanelEl.querySelector('#f9hosp-shield');
+  if (!box) return;
+  const one = box.querySelectorAll('button[data-shieldone]');
+  one.forEach(function (b) {
+    b.onclick = function () {
+      if (b.classList.contains('busy')) return;
+      b.classList.add('busy'); b.style.opacity = '.6';
+      _f9BlessSparkle(b);
+      _f9HospShieldSend([b.getAttribute('data-shieldone')]);
+    };
+  });
+  const all = box.querySelector('button[data-shieldall]');
+  if (all) all.onclick = function () {
+    if (all.classList.contains('busy')) return;
+    const shield = window._f9Shield instanceof Set ? window._f9Shield : new Set();
+    const field = window._f9OnField instanceof Set ? [...window._f9OnField] : [];
+    const reserve = window._f9Reserve instanceof Set ? [...window._f9Reserve] : [];
+    const ids = [...new Set(field.concat(reserve))].map(String).filter(function (id) { return !shield.has(id); });
+    if (!ids.length) return;
+    all.classList.add('busy');
+    const l = all.querySelector('.f9-bl-lbl'); if (l) l.textContent = '🪽 …';
+    _f9BlessSparkle(all);
+    _f9HospShieldSend(ids);
+  };
+}
 // Statuso eilutės (progresas/laikai) — atnaujinamos kas 500ms BE eilučių perstatymo (animacijos nemirksi).
 function _f9HospUpdateStatus() {
   if (!_f9HospPanelEl) return;
@@ -12118,9 +12191,11 @@ function _f9HospRebuild() {
   if (!_f9HospPanelEl) return;
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
   const ready = window._f9HospReady || 0;
-  const sig = list.map(i => i.tokenId).join('|') + ':r' + ready + ':b' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ':i' + ((window.__f9HomeActive && window._f9InstaReady) ? 1 : 0);   // ⚔️ ready + ⚡🔵 bless charge'ai + instaReady perpiešia
+  const sig = list.map(i => i.tokenId).join('|') + ':r' + ready + ':b' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ':i' + ((window.__f9HomeActive && window._f9InstaReady) ? 1 : 0)
+    + ':s' + ((window._f9Shield && window._f9Shield.size) || 0) + '/' + ((window._f9OnField && window._f9OnField.size) || 0) + '/' + ((window._f9Reserve && window._f9Reserve.size) || 0);   // 🪽 skydų/lauko pokytis irgi perpiešia
   if (sig === _f9HospSig) { _f9HospUpdateStatus(); return; }
   _f9HospSig = sig;
+  _f9HospRenderShield(); _f9HospWireShield();   // 🪽 DEATH SHIELD sekcija
   // ⚔️ DEPLOY sekcija — VISADA matoma (07-04 user: „nematau deploy mygtuko"); disabled kai ready=0
   const dep = _f9HospPanelEl.querySelector('#f9hosp-deploy');
   if (dep) {
@@ -12259,6 +12334,7 @@ function _f9ToggleHospitalPanel() {
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
     '<div id="f9hosp-body" style="overflow:auto;"></div>' +
+    '<div id="f9hosp-shield"></div>' +   // 🪽 DEATH SHIELD — BLESS ant unitų (08-19)
     '<div id="f9hosp-deploy" style="margin-top:8px;padding-top:10px;border-top:1px solid #3a3a55;">' +
       // ⚔ DEPLOY PASLĖPTAS 2026-07-04 (user: „nieko nedaro / neveikia, nenaudingas"). Mygtukas display:none,
       //   BET elementai lieka DOM'e — _f9HospRebuild ref'ai (#f9hosp-deploy-btn / #f9hosp-readyn) nekrenta, jokio konflikto su kodu.
