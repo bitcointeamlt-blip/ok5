@@ -128,6 +128,7 @@ export class BlocksRoom extends Room<BlocksState> {
   private _verifyOk = false;
   private _disposed = false;                          // kambarys uždarytas → stabdom fono verify ciklą
   private _refOf: Record<Side, string> = { p1: "", p2: "" };   // 🎁 kiekvieno žaidėjo referrer'is (iš stake žinutės)
+  private _aborting = false;   // 🛟 mačas nutraukiamas — nebepriimam naujų statymų kaip „gyvų"
   private _addrOf: Record<Side, string> = { p1: "", p2: "" };  // 🏅 kiekvieno žaidėjo piniginė (nemokamiems iš options.addr; wager perrašo įrodytu iš escrow) — reitingui/XP
   // 🤖 AI botai (bendra RANKED vs AI ir PvP „AI žaidžia už mane" infrastruktūra):
   //   _aiPlayOf[side]=true → tą pusę žaidžia SERVERIO botas žaidėjo lygos stiprumu (bots[side]).
@@ -402,7 +403,7 @@ export class BlocksRoom extends Room<BlocksState> {
     //    ⇒ jo 69 RONKE lieka treasury: escrow tos pusės įrašo NETURI (tx nebuvo užfiksuotas),
     //      tad joks vėlesnis `refundEntry` jo neranda. Pinigai dingdavo be pėdsako.
     //    DABAR: vėluojantį mokėjimą PRIIMAM ir iškart grąžinam (verify-then-refund; neaišku → manual eilė).
-    if (this.state.phase !== "staking" || !this.escrow.active) {
+    if (this.state.phase !== "staking" || this._aborting || !this.escrow.active) {
       const lateSide = this.sideOf[client.sessionId];
       const lateTx = String((m && (m.tx || m.entryTx)) || "");
       const lateAddr = String((m && m.addr) || "");
@@ -1213,6 +1214,16 @@ export class BlocksRoom extends Room<BlocksState> {
     if (this.stakeTimer) { clearTimeout(this.stakeTimer); this.stakeTimer = null; }
     if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }   // 🎓 kad prep-timeout nepaleistų mačo po abort
     this._prepReady = {};
+    // 🛟 08-20 (rasta simuliacija): fazę uždarom PIRMA, tik tada grąžinam pinigus.
+    //    BUVO: `await this._refundBoth()` ĖJO PIRMAS, o jis daro on-chain verify su pakartojimais
+    //    (~15+ s, o RPC gedimo metu ir ilgiau). Visą tą laiką fazė likdavo „staking", tad
+    //    ką tik atšauktas mačas dar galėdavo PRASIDĖTI, jei per tą langą atkeliaudavo antro
+    //    žaidėjo statymas. Simuliacija (scenarijus C) tai atkartojo: po `stake_cancel` fazė
+    //    liko „staking" ir mačas vis tiek startavo. Dabar langas uždaromas iš karto.
+    const _wasPhase = this.state.phase;
+    if (this.state.phase !== "over") this.state.phase = "lobby";
+    this._aborting = true;
+    if (_wasPhase === "staking") console.log(`[BLOCKS WAGER] abort (${reason}) — statymo langas uždarytas IŠ KARTO, refundai vykdomi toliau`);
     const n = await this._refundBoth();
     if (n) console.log(`[BLOCKS WAGER] abort (${reason}) → refunded ${n}× ${this.escrow.tier} RONKE`);
     // 📊 dashboard'ui: užfiksuojam nutrūkusį/refundintą mačą (kad matytųsi „ar viskas sklandžiai")
