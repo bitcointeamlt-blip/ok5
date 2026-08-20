@@ -29,7 +29,11 @@ const CORRIDOR_MS = 60;        // koridoriaus būsenos transliavimo dažnis (~16
 const COUNTDOWN_MS = 3000;
 const PREP_MS = 15000;        // 🎓 pasiruošimo/valdymo-tutorial langas prieš startą: startas kai ABU „ready" ARBA po 15s
 const CHALLENGE_MS = 30000;   // kiek host'as turi laiko atsakyti „do you want to play?" (auto-decline po to)
-const STAKE_MS = 120000;      // 🧱💰 pay-on-accept: kiek abu turi laiko sumokėti statymą (wallet popup+tx) — po to abort+refund
+// 🧱💰 pay-on-accept: kiek abu turi laiko sumokėti statymą. 08-20: 120 s → 240 s.
+//    120 s pakako desktop plėtiniui, bet TELEFONE kelias yra: perjungimas į Ronin appsą →
+//    WalletConnect sesija → patvirtinimas → grįžimas į naršyklę → tx blokas. Tai reguliariai
+//    netilpdavo, laikmatis nutraukdavo mačą, ir žaidėjams atrodydavo „abu sumokėjom, o žaidimo nėra".
+const STAKE_MS = Number(process.env.BLOCKS_STAKE_MS) || 240000;
 const LINES_PER_UNIT = 1;
 
 /* ── A6 ANTI-CHEAT (1 sluoksnis: sveiko proto ribos + rate-limit + match timeout) ──
@@ -388,7 +392,30 @@ export class BlocksRoom extends Room<BlocksState> {
   // 🧱💰 pay-on-accept + OPTIMISTINIS STARTAS: žaidėjo įėjimo tx (po „stake_now"). Kai ABU sumokėjo →
   //   žaidimas startuoja IŠKART (klientas jau patvirtino tx kvitą), o verify vyksta FONE. Payout gated.
   private _onStake(client: Client, m: any) {
-    if (this.state.phase !== "staking" || !this.escrow.active) return;
+    // 🛟 08-20 PINIGŲ PRARADIMO FIX (žaidėjai: „abu sumokam, o žaidimas neįvyksta"):
+    //    Anksčiau čia buvo TYLUS `return`, jei fazė nebe „staking". Realus scenarijus:
+    //      1) abu sutinka → `stake_now`, paleidžiamas 120 s (STAKE_MS) laikmatis
+    //      2) vienas sumoka greitai; kito piniginė užtrunka ilgiau (mobile: perjungimas į Ronin
+    //         appsą, WalletConnect, patvirtinimas) — 120 s telefone praeina LENGVAI
+    //      3) laikmatis suveikia → `_abortWager` → pirmajam refundas, fazė → „lobby"
+    //      4) vėluojančio tx patvirtinamas, klientas siunčia `stake` → čia TYLIAI atmesdavo
+    //    ⇒ jo 69 RONKE lieka treasury: escrow tos pusės įrašo NETURI (tx nebuvo užfiksuotas),
+    //      tad joks vėlesnis `refundEntry` jo neranda. Pinigai dingdavo be pėdsako.
+    //    DABAR: vėluojantį mokėjimą PRIIMAM ir iškart grąžinam (verify-then-refund; neaišku → manual eilė).
+    if (this.state.phase !== "staking" || !this.escrow.active) {
+      const lateSide = this.sideOf[client.sessionId];
+      const lateTx = String((m && (m.tx || m.entryTx)) || "");
+      const lateAddr = String((m && m.addr) || "");
+      if (lateSide && lateTx && lateAddr && this.escrow.active && !this.escrow.isRefunded(lateSide)) {
+        console.warn(`[BLOCKS WAGER] ⏰ VĖLYVAS stake (fazė=${this.state.phase}) ${lateAddr.slice(0, 10)}… → priimam ir GRĄŽINAM`);
+        this.escrow.setEntry(lateSide, lateAddr, lateTx);
+        void this.escrow.refundEntry(lateSide).then((ok) => {
+          console.log(`[BLOCKS WAGER] ⏰ vėlyvo stake refundas: ${ok ? "IŠSIŲSTAS" : "į manual eilę / neapmokėta"}`);
+        }).catch((e) => console.warn("[BLOCKS WAGER] vėlyvo stake refundo klaida:", e?.message));
+        try { client.send("wager_abort", { reason: "stake_too_late_refunded" }); } catch (_) {}
+      }
+      return;
+    }
     const side = this.sideOf[client.sessionId]; if (!side) return;
     const tx = String((m && (m.tx || m.entryTx)) || "");
     const addr = String((m && m.addr) || "");
