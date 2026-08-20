@@ -503,6 +503,22 @@ export class BlocksRoom extends Room<BlocksState> {
   private _beginPrep() {
     if (this.state.phase === "prep" || this.state.phase === "countdown" || this.state.phase === "playing") return;
     this.state.phase = "prep";
+    // 🔎 08-20: fiksuojam PATĮ STARTĄ. Tiriant „abu sumoka, o žaidimo nėra" nebuvo kaip atskirti,
+    //    ar serveris iki starto apskritai priėjo — MatchLog rašydavo tik pabaigoje/nutraukime, o
+    //    Cloud runtime log'ai neprieinami. Dabar DB matyti: startavo ir neužsibaigė vs išvis nestartavo.
+    if (this.escrow.active) {
+      try {
+        const mi = this.escrow.matchInfo();
+        let p1Name = "", p2Name = "";
+        this.state.players.forEach((pl) => { if (pl.side === "p1") p1Name = pl.name; else if (pl.side === "p2") p2Name = pl.name; });
+        MatchLog.record({
+          ts: Date.now(), roomId: this.roomId, wager: true, tier: mi.tier, pot: mi.pot,
+          p1Name, p2Name, p1Addr: mi.p1.addr, p1Tx: mi.p1.tx, p2Addr: mi.p2.addr, p2Tx: mi.p2.tx,
+          winner: "", winnerAddr: "", loserAddr: "", prize: 0, treasuryCut: 0,
+          result: "started", reason: `clients=${this.clients.length} players=${this.state.players.size}`,
+        });
+      } catch (_) {}
+    }
     this._prepReady = {};
     this.broadcast("prep", { ms: PREP_MS });
     if (this.prepTimer) clearTimeout(this.prepTimer);
