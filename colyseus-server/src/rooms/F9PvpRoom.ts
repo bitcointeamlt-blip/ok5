@@ -570,7 +570,7 @@ export class F9PvpRoom extends Room<F9State> {
     }
     return out;
   }
-  private _cem = new Map<string, { pot: number; tick: number; power: number; nft: number; rv: number; wallet: number; ramp: number; mpot: number; mcp: number; mfield: number; mres: number; duty: "online" | "safe"; gated: boolean; mpotSync?: number }>();   // ⚰️/⛏️ + mpot=iškastas RONKE + mcp=kitas siege checkpoint (pot kaupiasi iki čia→STOJA kol PvP mūšis) + mfield/mres=lauko/rezervo count'ai + duty=režimas + gated=pasiekė checkpoint → laukia mūšio
+  private _cem = new Map<string, { pot: number; tick: number; power: number; nft: number; rv: number; wallet: number; ramp: number; mpot: number; mcp: number; mfield: number; mres: number; duty: "online" | "safe"; gated: boolean; mpotSync?: number; mmined: number; msync?: number }>();   // ⚰️/⛏️ + mpot=iškastas RONKE + mcp=kitas siege checkpoint (pot kaupiasi iki čia→STOJA kol PvP mūšis) + mfield/mres=lauko/rezervo count'ai + duty=režimas + gated=pasiekė checkpoint → laukia mūšio
   private _dutyLockUntil = new Map<string, number>();       // ⚔️🛡 addr → ts iki kada NEGALI grįžti į SAFE (DUTY įsipareigojimo langas; anti-toggle-dodge). In-memory.
   private _saveTimer: any = null;                            // 🏰 periodinis autosave (10s)
   private _lastSaveAt = 0;                                   // throttle (vengiam per dažnų DB rašymų)
@@ -798,9 +798,9 @@ export class F9PvpRoom extends Room<F9State> {
       }
       const _prevDuty = c.duty;
       c.duty = want;
-      // ⚔️🛡 Režimo keitimas NEnuima siege gate FLAG'o (jį nuima TIK kvalifikuotas PvP mūšis _endMatch arba withdraw reset).
-      //   Bet gate ENFORCE'inamas tik SAFE'e: SAFE(gated)→DUTY → kasimas atsirakina (priimta rizika = puolamas);
-      //   DUTY→SAFE grįžus flag vis dar true + pot>checkpoint → vėl stoja. Todėl jokio toggle-dodge.
+      // ⚔️🛡 Režimo keitimas NEnuima kasimo ciklo (`mmined`) — jį nulina TIK kvalifikuotas PvP mūšis (_endMatch).
+      //   Vartai ENFORCE'inami tik SAFE'e: SAFE(pilnas ciklas)→DUTY → kasi toliau (priimta rizika = puolamas);
+      //   DUTY→SAFE grįžus mmined vis dar ≥200 → vėl stoja. Todėl jokio toggle-dodge.
       // ⚔️🛡 Įsipareigojimo lango žymė: įėjus į DUTY (iš SAFE) → užrakinam grįžimą N min. Grįžus į SAFE → valom.
       if (want === "online" && _prevDuty !== "online") this._dutyLockUntil.set(addr, Date.now() + DUTY_MIN_DWELL_MS);
       else if (want === "safe") this._dutyLockUntil.delete(addr);
@@ -830,15 +830,15 @@ export class F9PvpRoom extends Room<F9State> {
         if (!voucher) { client.send("mine_withdraw_result", { ok: false, error: "Signing failed — try again." }); return; }
         // DEDUCT pot + pending (re-credit jei TX nenusėda). c! saugu (pot≥MIN → c egzistuoja).
         c!.mpot = Math.round(((c!.mpot || 0) - amt) * 1000) / 1000;
-        c!.mcp = MINE_SIEGE_STEP;   // 🗡 nusiėmus — naujas ciklas nuo pradžių (kitas checkpoint vėl @200)
-        c!.gated = (c!.mpot || 0) >= c!.mcp - 0.01;   // paprastai pot≈0 → false
+        /* ⛏️💰 08-20: nusiėmimas liečia TIK piniginį balansą. Kasimo ciklas (mmined/gated) NEkeičiamas —
+         * kitaip withdraw būtų „nemokamas" gate'o atrakinimas (taisyklė: atrakina TIK PvP mūšis). */
         this._persistCem(addr);
         const _pend = { nonce: voucher.nonce, amt, at: Date.now() };
         this._minePend.set(addr, _pend);
         void this._buildingsOp(addr, (b) => { b.minePend = _pend; });   // ⛏️💸 07-18 (C1): DURABLE — išgyvena kambario mirtį; re-credit po deadline jei TX nenusėdo (atskira #buildings eilė, neliečia mpot bloko)
         client.send("mine_withdraw_result", { ok: true, claim: voucher });
         try { client.send("cemetery", { ...this._cemPayload(addr), own: true }); } catch (_) {}   // šviežias (sumažintas) pot
-        console.log(`[F9PvpRoom] ⛏️💸 withdraw voucher: ${amt} RONKE ${addr.slice(0, 10)}… (pot→${c!.mpot}, checkpoint reset→${c!.mcp})`);
+        console.log(`[F9PvpRoom] ⛏️💸 withdraw voucher: ${amt} RONKE ${addr.slice(0, 10)}… (pot→${c!.mpot}, ciklas ${Math.round(c!.mmined || 0)}/${MINE_SIEGE_STEP} nekeičiamas)`);
       } catch (e: any) { try { client.send("mine_withdraw_result", { ok: false, error: "Error — try again." }); } catch (_) {} }
     });
     // ⚰️ SURINKTI — tik savininkas, tik ramiuose namuose (raido metu grobis užrakintas kovai)
@@ -2075,11 +2075,14 @@ export class F9PvpRoom extends Room<F9State> {
     if (!addr) return null;
     try { await chainDeck(addr); } catch (_) {}   // 🔐 sušildo chain cache _injuredDrain'ui (TTL 120s — pigu)
     if (this._cem.has(addr)) return this._cem.get(addr)!;
-    let c = { pot: 0, tick: 0, power: 0, nft: 0, rv: 0, wallet: 0, ramp: 0, mpot: 0, mcp: MINE_SIEGE_STEP, mfield: 0, mres: 0, duty: "online" as "online" | "safe", gated: false, mpotSync: 0 };
+    let c = { pot: 0, tick: 0, power: 0, nft: 0, rv: 0, wallet: 0, ramp: 0, mpot: 0, mcp: MINE_SIEGE_STEP, mfield: 0, mres: 0, duty: "online" as "online" | "safe", gated: false, mpotSync: 0, mmined: 0, msync: 0 };
     let _ok = true;
     try {
       const b = await loadBaseBuildings(addr);   // 🛡 S-M5: meta klaidą esant DB triktimi
-      if (b) c = { pot: Math.max(0, b.cemPot || 0), tick: b.cemTick || 0, power: Math.max(0, b.cemPower || 0), nft: Math.max(0, b.cemNft || 0), rv: Math.max(0, b.cemRv || 0), wallet: Math.max(0, b.cemWallet || 0), ramp: b.cemRamp || 0, mpot: Math.max(0, b.minePot || 0), mcp: Math.max(MINE_SIEGE_STEP, b.mineCheckpoint || MINE_SIEGE_STEP), mfield: Math.max(0, b.mineField || 0), mres: Math.max(0, b.mineReserve || 0), duty: (b.dutyMode === "safe" ? "safe" : "online"), gated: !!b.mineGated, mpotSync: Math.max(0, b.minePot || 0) };
+      /* ⛏️💰 mmined = per ciklą IŠKASTA (be grobio). Senoms eilutėms (lauko dar nėra) migruojam iš mineGated:
+       * užrakinta pilis ⇒ ciklas pilnas (200), kitaip ⇒ pradedam nuo 0. */
+      const _mm = b ? (Number.isFinite(+(b as any).mineMined) ? Math.max(0, +(b as any).mineMined) : (b.mineGated ? MINE_SIEGE_STEP : 0)) : 0;
+      if (b) c = { pot: Math.max(0, b.cemPot || 0), tick: b.cemTick || 0, power: Math.max(0, b.cemPower || 0), nft: Math.max(0, b.cemNft || 0), rv: Math.max(0, b.cemRv || 0), wallet: Math.max(0, b.cemWallet || 0), ramp: b.cemRamp || 0, mpot: Math.max(0, b.minePot || 0), mcp: Math.max(MINE_SIEGE_STEP, b.mineCheckpoint || MINE_SIEGE_STEP), mfield: Math.max(0, b.mineField || 0), mres: Math.max(0, b.mineReserve || 0), duty: (b.dutyMode === "safe" ? "safe" : "online"), gated: !!b.mineGated, mpotSync: Math.max(0, b.minePot || 0), mmined: _mm, msync: _mm };
       // ⛏️💸 07-18 (C1 fix): durable laukiantis withdrawal → RAM, kad _confirmMineWithdraw jį matytų net po
       //   kambario mirties/restart'o (anksčiau _minePend buvo RAM-only → prarasdavom → pot amžinai nuskaičiuotas).
       if (b && b.minePend && !this._minePend.has(addr)) this._minePend.set(addr, { nonce: b.minePend.nonce, amt: b.minePend.amt, at: b.minePend.at });
@@ -2167,10 +2170,8 @@ export class F9PvpRoom extends Room<F9State> {
   //   Skaičiuojama iš PIRMINIŲ duomenų (power/eligibility/injured/shield — visi persistinti), o lauko/rezervo
   //   count'ai paduodami parametrais: gyvi (_fieldCounts) sesijoj arba persistinti (c.mfield/mres) offline —
   //   taip offline rate pats save koreguoja (gyjantys unitai, pasibaigęs skydas) ir nėra „užšaldytos rate" exploit'o.
-  // ⛏️🗡 „Sandėlio luba" = dabartinis siege checkpoint (pot kaupiasi iki čia → STOJA kol atliks PvP mūšį). Abu režimai.
-  //   Backstop MINE_CAP (kad checkpoint niekada neišbėgtų). Po withdraw resetinasi į MINE_SIEGE_STEP.
-  private _mineCap(addr: string): number {
-    const c = this._cem.get((addr || "").trim().toLowerCase());
+  // ⛏️💰 „Sandėlio luba" = MINE_CAP — pot yra BENDRAS piniginis balansas (kasimas + raido grobis).
+  private _mineCap(_addr: string): number {
     /* ⛏️🛡🟢 TAISYKLĖS (user patvirtino 2026-08-20):
      *   🛡 SAFE — kasi iki MINE_SIEGE_STEP (200), niekas nepuola, esi NEMATOMAS. Pasiekus — kasimas stoja.
      *   🟢 DUTY — kasi toliau BE checkpoint'o, bet esi MATOMAS ir puolamas bet kada (ir privalai laikyti
@@ -2178,8 +2179,10 @@ export class F9PvpRoom extends Room<F9State> {
      *   Grįžus iš DUTY į SAFE kasimas vėl stoja, kol įvyks PvP (≥50% aukų vienoje pusėje).
      * ⚠️ Anksčiau DUTY „ekspozicija" buvo tik popierinė — nematomi kasėjai. Tai užtaisyta ne vartais,
      *    o prie šaknies: pilis be REALIŲ gynėjų nebekasa, tad kiekvienas DUTY kasėjas yra raid sąraše. */
-    if (c && c.duty !== "safe") return MINE_CAP;
-    return Math.min(MINE_CAP, (c && c.mcp) ? c.mcp : MINE_SIEGE_STEP);
+    /* ⛏️💰 2026-08-20 (user): „grobis eina į bendrą balansą, bet 200/200 save kasimas turėtų būti atskiras
+     * dalykas". Todėl pot = TIK piniginis balansas (kasimas + raido grobis), o 200 ciklą skaičiuoja atskiras
+     * `mmined`. Luba čia = MINE_CAP backstop abiem režimam; SAFE stabdo _cemAccrue pagal mmined, ne pagal pot. */
+    return MINE_CAP;
   }
   // ⛏️ RONKE Power → RONKE/h su „knee": pirmi 250 power ×0.1, virš 250 ×0.05 (iki whale cap 4000).
   private _minePowerTerm(hl: number): number {
@@ -2193,7 +2196,8 @@ export class F9PvpRoom extends Room<F9State> {
     // ⛏️🗡 SIEGE CHECKPOINT: pasiekus mcp (kas 200) kasimas SUSTOJA (0) kol atliks 1 PvP mūšį. TIK 🛡SAFE.
     //   🟢DUTY be limito (puolamas bet kada). Persijungus SAFE→DUTY gate'as tik IGNORUOJAMAS (flag lieka) →
     //   grįžus į SAFE vėl įsijungia (pot>checkpoint) → jokio toggle-dodge (nori kasti be mūšio = LIEK DUTY/puolamas).
-    if (c && c.gated && c.duty === "safe") return 0;   // 🛡 SAFE: pasiekus 200 stoja · 🟢 DUTY: kasa toliau (bet matomas)
+    //   Vartai išvedami iš `mmined` (per ciklą IŠKASTA), NE iš pot — raido grobis 200 skalės nebepildo.
+    if (c && c.duty === "safe" && (c.mmined || 0) >= MINE_SIEGE_STEP - 0.01) return 0;   // 🛡 SAFE: iškasus 200 stoja · 🟢 DUTY: kasa toliau (bet matomas)
     // 🏁 07-15 (user): MINING gate = LAUKO unitai (dislokuoti gynėjai), NE dekas. <reikalavimo → 0 (pristabdyta).
     if (!this._mineEligible(addr, onField)) return 0;
     const hl = this._cemHealthy(addr).power;
@@ -2261,18 +2265,24 @@ export class F9PvpRoom extends Room<F9State> {
     this._pruneHosp(addr);   // pasveikę grįžta į rikiuotę → jų power vėl skaičiuojasi
     const now = Date.now();
     const mrate = this._mineRateStored(addr);
-    const _cap = this._mineCap(addr);   // ⛏️🗡 dabartinis siege checkpoint (pot čia stoja)
+    const _cap = this._mineCap(addr);   // ⛏️💰 balanso backstop (MINE_CAP)
     if (mrate > 0 && c.tick > 0 && now > c.tick) {
-      // ⛏️🛡 07-19: ceiling = max(_cap, esamas pot). NEmažinam jau iškasto pot žemiau cap — DUTY (cap MINE_CAP)
-      //   perviršis virš SAFE checkpoint LIEKA grįžus į SAFE (cap=mcp). Anksčiau min(_cap,…) klampindavo 500→200
-      //   = prarasta 300 RONKE perjungus DUTY→SAFE. (Perviršio atveju pot laikomas, gated'as jį įšaldo.)
-      const _ceil = Math.max(_cap, c.mpot || 0);
-      c.mpot = Math.min(_ceil, (c.mpot || 0) + mrate * (now - c.tick) / 3600000);
-      c.mpot = Math.round(c.mpot * 1000) / 1000;
+      /* ⛏️💰 2026-08-20 (user): pot = BENDRAS balansas (kasimas + raido grobis), o „200/200" ciklą skaičiuoja
+       * ATSKIRAS `mmined` — tik tai, ką pats iškasei nuo paskutinio PvP. Todėl parsineštas grobis nebeužpildo
+       * SAFE skalės ir nebesustabdo kasimo (senoji bėda: 120/200 + grobis ⇒ iškart 200/200 ir STOP). */
+      let gain = mrate * (now - c.tick) / 3600000;
+      if (c.duty === "safe") gain = Math.min(gain, Math.max(0, MINE_SIEGE_STEP - (c.mmined || 0)));   // 🛡 ciklo luba 200
+      gain = Math.min(gain, Math.max(0, Math.max(_cap, c.mpot || 0) - (c.mpot || 0)));                // 💰 balanso backstop
+      if (gain > 0) {
+        c.mpot = Math.round(((c.mpot || 0) + gain) * 1000) / 1000;
+        c.mmined = Math.round(((c.mmined || 0) + gain) * 1000) / 1000;
+      }
     }
-    // ⛏️🗡 SIEGE CHECKPOINT: pasiekus checkpoint (kas 200) → gated=true → kasimas sustoja iki PvP mūšio. TIK 🛡SAFE.
-    //   (DUTY _cap=MINE_CAP backstop → normaliai nepasiekia; be to duty!=="safe" gard'as apsaugo eksplicitiškai.)
-    if (!c.gated && c.duty === "safe" && (c.mpot || 0) >= _cap - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🗡 kasimas STOP (checkpoint ${_cap}, ${c.duty}) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`); }
+    // ⛏️🗡 CIKLO VARTAI: iškasus 200 (mmined) → kasimas sustoja iki kvalifikuoto PvP mūšio. TIK 🛡SAFE.
+    //   🟢DUTY kasa be ciklo lubų (mainais — matomas ir puolamas bet kada).
+    const _gatedNow = c.duty === "safe" && (c.mmined || 0) >= MINE_SIEGE_STEP - 0.01;
+    if (_gatedNow && !c.gated) console.log(`[F9PvpRoom] 🗡 kasimas STOP (iškasta ${Math.round(c.mmined || 0)}/${MINE_SIEGE_STEP}) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`);
+    c.gated = _gatedNow;   // išvestinė būsena (SAFE + ciklas pilnas); grobis jos nebeįjungia
     c.tick = now;
     if (this.state.phase === "playing") {
       let present = false;
@@ -2294,9 +2304,7 @@ export class F9PvpRoom extends Room<F9State> {
           await this._loadCem(addr);
           const c = this._cem.get(addr);
           if (c) {
-            c.mpot = Math.round(Math.min(MINE_CAP, (c.mpot || 0) + pend.amt) * 1000) / 1000;
-            c.mcp = Math.min(MINE_CAP, Math.max(c.mcp || MINE_SIEGE_STEP, Math.ceil((c.mpot || 0) / MINE_SIEGE_STEP) * MINE_SIEGE_STEP));   // 🗡 grąžinam checkpoint headroom (kad grąžintas pot nebūtų iškart gated)
-            c.gated = (c.mpot || 0) >= c.mcp - 0.01;
+            c.mpot = Math.round(Math.min(MINE_CAP, (c.mpot || 0) + pend.amt) * 1000) / 1000;   // 💰 TIK balansas — kasimo ciklas (mmined) nekeičiamas
             this._persistCem(addr);
           }
           void this._buildingsOp(addr, (b) => { b.minePend = null; });   // ⛏️💸 07-18 (C1): išspręsta → valom durable pending
@@ -2323,12 +2331,24 @@ export class F9PvpRoom extends Room<F9State> {
       const merged = Math.max(0, Math.min(MINE_CAP, Math.round((snap.mpot + external) * 1000) / 1000));
       b.minePot = merged;
       c.mpot = merged; c.mpotSync = merged;   // kambario atmintis irgi pasiveja (klientas mato tikrą sumą)
-      b.cemPot = snap.pot; b.cemTick = snap.tick; b.mineCheckpoint = snap.mcp || MINE_SIEGE_STEP; b.mineField = snap.mfield || 0; b.mineReserve = snap.mres || 0; b.cemPower = snap.power; b.cemNft = snap.nft; b.cemRv = snap.rv; b.cemWallet = snap.wallet; b.cemRamp = snap.ramp; b.dutyMode = snap.duty || "online"; b.mineGated = !!snap.gated;
+      /* ⛏️🗡 TAS PATS DELTOS principas ciklo skaitliukui: `mineMined` nulinį reikšmę rašo IR raido kambarys
+       * (_advanceSiege po kvalifikuoto PvP). Aklas `b.mineMined = snap.mmined` grąžintų 200 atgal ⇒ mūšis
+       * nieko neduotų. Neigiama delta = kitas kambarys atrakino ciklą — priimam. */
+      const dbMined = Number.isFinite(+((b as any).mineMined)) ? Math.max(0, +((b as any).mineMined)) : (snap.mmined || 0);
+      const mBase = Number.isFinite(+(snap as any).msync) ? +(snap as any).msync! : dbMined;
+      const mMerged = Math.max(0, Math.round(((snap.mmined || 0) + (dbMined - mBase)) * 1000) / 1000);
+      b.mineMined = mMerged;
+      c.mmined = mMerged; c.msync = mMerged;
+      // 🗡 gated NEBĖRA savarankiška būsena — išvedam iš ciklo (SAFE + iškasta ≥200). Rašom tik senų klientų/ataskaitų labui.
+      const _gated = (snap.duty === "safe") && mMerged >= MINE_SIEGE_STEP - 0.01;
+      c.gated = _gated;
+      b.cemPot = snap.pot; b.cemTick = snap.tick; b.mineCheckpoint = snap.mcp || MINE_SIEGE_STEP; b.mineField = snap.mfield || 0; b.mineReserve = snap.mres || 0; b.cemPower = snap.power; b.cemNft = snap.nft; b.cemRv = snap.rv; b.cemWallet = snap.wallet; b.cemRamp = snap.ramp; b.dutyMode = snap.duty || "online"; b.mineGated = _gated;
     });
   }
   private _cemPayload(addr: string) {
     addr = (addr || "").trim().toLowerCase();
-    const c = this._cem.get(addr) || { pot: 0, tick: 0, power: 0, nft: 0, rv: 0, wallet: 0, ramp: 0, mpot: 0, mcp: MINE_SIEGE_STEP, mfield: 0, mres: 0, duty: "online" as "online" | "safe", gated: false };
+    const c = this._cem.get(addr) || { pot: 0, tick: 0, power: 0, nft: 0, rv: 0, wallet: 0, ramp: 0, mpot: 0, mcp: MINE_SIEGE_STEP, mfield: 0, mres: 0, duty: "online" as "online" | "safe", gated: false, mmined: 0 };
+    const _gatedNow = c.duty === "safe" && (((c as any).mmined || 0) >= MINE_SIEGE_STEP - 0.01);   // 🗡 išvestinė (nebe flag'as)
     const hl = this._cemHealthy(addr);
     const { onField: onFieldN, reserve: reserveN } = this._fieldCounts(addr);
     return {
@@ -2339,9 +2359,10 @@ export class F9PvpRoom extends Room<F9State> {
       onField: onFieldN, reserve: reserveN,      // ⚔ kasimo lauko-frakcijai (patikimas šaltinis vietoj _f9OnField globalo)
       power: Math.round(hl.power), fullPower: Math.round(c.power),   // healthy (kasimo bazė) + pilnas registruotas RP (rodymui)
       // ⛏️💰 SERVER-AUTHORITATIVE mining (klientas nustato window._f9Mine → nustoja client accrual):
-      mpot: Math.round((c.mpot || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), msiege: MINE_SIEGE_STEP, mclaim: MINE_CLAIM_MIN, mwd: mineWithdrawEnabled(),   // mpot=iškastas; mcap=dabartinis siege checkpoint (pot stoja); msiege=200 žingsnis; mclaim=500 withdraw slenkstis
+      // mpot = BENDRAS balansas (kasimas + raido grobis) · mmined = per šį ciklą IŠKASTA (200 skalė; grobis jos nepildo)
+      mpot: Math.round((c.mpot || 0) * 1000) / 1000, mmined: Math.round(Math.min(MINE_SIEGE_STEP, (c as any).mmined || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), msiege: MINE_SIEGE_STEP, mclaim: MINE_CLAIM_MIN, mwd: mineWithdrawEnabled(),   // mcap=balanso luba; msiege=200 ciklas; mclaim=500 withdraw slenkstis
       // ⚔️🛡 DUTY STATUS: klientas rodo režimo jungiklį + greitį + „locked → siege" būseną
-      duty: c.duty || "online", gated: (!!c.gated && c.duty === "safe"), dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),   // ⛏️🗡 08-19: gated rodom ABIEM režimam (vartai galioja visiems)
+      duty: c.duty || "online", gated: _gatedNow, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),   // ⛏️🗡 08-19: gated rodom ABIEM režimam (vartai galioja visiems)
       dutyLockUntil: (c.duty === "online" ? (this._dutyLockUntil.get(addr) || 0) : 0),   // ⚔️🛡 iki kada NEGALI grįžti į SAFE (DUTY įsipareigojimo langas; 0 = laisva)
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
       dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
@@ -2902,17 +2923,13 @@ export class F9PvpRoom extends Room<F9State> {
       if ((casualtyPct >= DUTY_SIEGE_CASUALTY || atkCasualtyPct >= DUTY_SIEGE_CASUALTY) && this._raidAtkAddr) {
         const _qualified = Math.round(Math.max(casualtyPct, atkCasualtyPct) * 100);
         // helper: raw buildings obj → jei gated, atrakink + pakelk checkpoint +200 (cap MINE_CAP)
+        /* ⛏️💰 08-20: ciklas resetinasi VISADA (ne tik gated) — mmined=0 reiškia „nauja 200 skalė nuo nulio".
+         * Checkpoint (mcp/mineCheckpoint) nebedalyvauja vartuose, laikom jį tik senų klientų suderinamumui. */
         const _advanceSiege = (b: any) => {
-          if (b && b.mineGated) {
-            b.mineGated = false;
-            const cur = Number.isFinite(+b.mineCheckpoint) ? Math.max(MINE_SIEGE_STEP, +b.mineCheckpoint) : MINE_SIEGE_STEP;
-            /* ⛏️ Naujas checkpoint PRIVALO būti virš dabartinio pot — kitaip grįžus iš DUTY su dideliu
-             * pot'u kasimas iškart vėl užsirakintų ir vienas mūšis nieko neduotų (user taisyklė:
-             * „kasimas pradeda vėl kasti, kai įvyksta PvP kova"). */
-            const pot = Number.isFinite(+b.minePot) ? Math.max(0, +b.minePot) : 0;
-            const need = Math.ceil((pot + 0.01) / MINE_SIEGE_STEP) * MINE_SIEGE_STEP;
-            b.mineCheckpoint = Math.min(MINE_CAP, Math.max(cur + MINE_SIEGE_STEP, need));
-          }
+          if (!b) return;
+          b.mineGated = false;
+          b.mineMined = 0;
+          b.mineCheckpoint = MINE_SIEGE_STEP;
         };
         // PUOLIKAS — jo _cem nėra šiam kambary; rašom per jo #buildings eilę
         const _atk = this._raidAtkAddr;
@@ -2920,16 +2937,14 @@ export class F9PvpRoom extends Room<F9State> {
         // GYNĖJAS — jei _cem įkeltas (gyva gynyba), keičiam tiesiogiai; kitaip (async offline) per #buildings eilę
         const cDef = this._cem.get(this._ownerAddr);
         if (cDef) {
-          if (cDef.gated) {
-            cDef.gated = false;
-            const _need = Math.ceil(((cDef.mpot || 0) + 0.01) / MINE_SIEGE_STEP) * MINE_SIEGE_STEP;   // virš pot — kad kasimas TIKRAI atsinaujintų
-            cDef.mcp = Math.min(MINE_CAP, Math.max((cDef.mcp || MINE_SIEGE_STEP) + MINE_SIEGE_STEP, _need));
-            this._persistCem(this._ownerAddr);
-          }
+          cDef.gated = false;
+          cDef.mmined = 0;                  // ⛏️ nauja 200 skalė nuo nulio (grobis jos nebeliečia)
+          cDef.mcp = MINE_SIEGE_STEP;
+          this._persistCem(this._ownerAddr);
         } else {
           void this._buildingsOp(this._ownerAddr, _advanceSiege);
         }
-        console.log(`[F9PvpRoom] ⛏️🗡 siege užskaityta (${_qualified}% aukų) — atrakinta puolikui ${_atk.slice(0, 10)}… + gynėjui ${this._ownerAddr.slice(0, 10)}… (jei buvo gated, checkpoint +${MINE_SIEGE_STEP})`);
+        console.log(`[F9PvpRoom] ⛏️🗡 siege užskaityta (${_qualified}% aukų) — kasimo ciklas 0/${MINE_SIEGE_STEP} abiem: puolikui ${_atk.slice(0, 10)}… + gynėjui ${this._ownerAddr.slice(0, 10)}…`);
       }
 
       if (casualtyPct >= 0.5) {   // 🛡 ≥50% aukų → 1h skydas (nesvarbu kas laimėjo)
@@ -2991,7 +3006,7 @@ export class F9PvpRoom extends Room<F9State> {
               if (steal > 0) {
                 await this._buildingsOp(wAddr, (b) => {
                   const cur = Number.isFinite(+((b as any).minePot)) ? Math.max(0, +((b as any).minePot)) : 0;
-                  (b as any).minePot = Math.round(Math.min(MINE_CAP, cur + steal) * 1000) / 1000;   // grobis į puoliko pot (backstop MINE_CAP; checkpoint gate'ins kasimą normaliai)
+                  (b as any).minePot = Math.round(Math.min(MINE_CAP, cur + steal) * 1000) / 1000;   // 💰 grobis TIK į balansą — `mineMined` (200 ciklo skalė) sąmoningai NELIEČIAMAS (user 08-20)
                 });
               }
               this.broadcast("mine_stolen", { amount: steal, thiefSid: winnerSid, victimAddr: this._ownerAddr });   // FX/notif abiem pusėm (thief=+ / defender=−)

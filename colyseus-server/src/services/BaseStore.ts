@@ -76,7 +76,8 @@ export type InjuredUnit = { tokenId: string; utype: string; level: number; until
 export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { y: number; level: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; deadUnits?: string[];
   cemPot?: number; cemTick?: number; cemPower?: number; cemNft?: number; cemRv?: number; cemWallet?: number; cemRamp?: number;   // ⚰️ kapinės (pot=nesurinkti; rv=RonkeVerse NFT, wallet=Barracks unitų piniginėj — full-player gating)
   minePot?: number;   // ⛏️💰 iškastas RONKE (server-authoritative mining pot; tick=cemTick bendras) — DUTY: raiders vagia 50%
-  mineCheckpoint?: number;  // ⛏️🗡 kito „siege checkpoint" lygis: pot kaupiasi iki čia → kasimas STOJA kol atliks PvP mūšį (+200 kas mūšis). Withdraw @500.
+  mineCheckpoint?: number;  // ⛏️🗡 (legacy) senas „siege checkpoint" lygis — vartuose nebedalyvauja, laikom senų klientų suderinamumui
+  mineMined?: number;       // ⛏️🗡 08-20 (user): kiek RONKE IŠKASTA per dabartinį ciklą (be raido grobio!). SAFE stoja ties 200; kvalifikuotas PvP → 0. minePot lieka BENDRAS balansas.
   mineField?: number; mineReserve?: number;  // ⛏️ paskutiniai ŽINOMI lauko/rezervo unitų count'ai — offline rate
   //   perskaičiuojamas iš PIRMINIŲ persistintų duomenų (ne įsiminta galutinė rate → mažesnė exploit skylė)
   dutyMode?: "online" | "safe"; mineGated?: boolean;  // ⚔️🛡 duty režimas + ar safe kasimas užrakintas (lubos→siege)
@@ -134,6 +135,9 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const cemRamp = Number.isFinite(+b.cemRamp) ? Math.max(0, +b.cemRamp) : 0;
     const minePot = Number.isFinite(+b.minePot) ? Math.max(0, +b.minePot) : 0;   // ⛏️💰 iškastas RONKE
     const mineCheckpoint = Number.isFinite(+b.mineCheckpoint) ? Math.max(200, +b.mineCheckpoint) : 200;   // ⛏️🗡 kitas siege checkpoint (min 200)
+    // ⛏️🗡 mineMined: kiek IŠKASTA per ciklą. `undefined` (senos eilutės) PALIEKAM undefined — F9PvpRoom pats
+    //   migruoja iš mineGated. Nulis čia sugadintų migraciją (užrakinta pilis staiga kastų iš naujo).
+    const mineMined = Number.isFinite(+(b as any).mineMined) ? Math.max(0, +(b as any).mineMined) : undefined;
     const mineField = Number.isFinite(+b.mineField) ? Math.max(0, Math.round(+b.mineField)) : 0;   // ⛏️ lauke
     const mineReserve = Number.isFinite(+b.mineReserve) ? Math.max(0, Math.round(+b.mineReserve)) : 0;   // ⛏️ rezerve
     const dutyMode: "online" | "safe" = b.dutyMode === "safe" ? "safe" : "online";   // ⚔️🛡 default online
@@ -145,7 +149,7 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const mp = b.minePend;
     const minePend = (mp && typeof mp.nonce === "string" && /^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$/.test(mp.nonce) && Number.isFinite(+mp.amt) && +mp.amt > 0 && Number.isFinite(+mp.at))
       ? { nonce: mp.nonce, amt: Math.round(+mp.amt), at: +mp.at } : null;
-    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
+    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineMined, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
   } catch (e) { throw (e instanceof Error ? e : new Error("[BaseStore] loadBaseBuildings failed")); }   // 🛡 S-M5: tinklo išimtis = triktis (metam, ne null)
 }
 

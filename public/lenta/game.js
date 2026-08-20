@@ -11273,7 +11273,8 @@ function _f9MineData() {
   return {
     pot:  (m && m.pot  != null) ? +m.pot  : 0,        // ⛏️ iškastas RONKE (client estimate ARBA serveris)
     rate: (m && m.rate != null) ? +m.rate : 0,        // RONKE/h
-    cap:  (m && m.cap  != null) ? +m.cap  : _F9_MINE_CAP,   // ⛏️🗡 dabartinis siege checkpoint (pot čia stoja)
+    cap:  (m && m.cap  != null) ? +m.cap  : _F9_MINE_CAP,   // ⛏️💰 balanso backstop (1000)
+    mined: (m && m.mined != null) ? +m.mined : null,        // ⛏️🗡 per ŠĮ ciklą iškasta (200 skalė; grobis jos nepildo). null = senas serveris
     siegeStep: (m && m.siegeStep != null) ? +m.siegeStep : 200,   // 🗡 kas kiek reikia mūšio (200)
     claimMin: (m && m.claimMin != null) ? +m.claimMin : _F9_MINE_CLAIM,   // 💸 withdraw slenkstis (500)
     nft: el('nft', 0), reg: el('reg', 0), hosp: el('hosp', 0), rv: el('rv', 0), wallet: el('wallet', 0),
@@ -11387,7 +11388,12 @@ function _f9MinePanelStats() {
   const dutyLockMin = dutyLocked ? Math.max(1, Math.ceil((d.dutyLockUntil - Date.now()) / 60000)) : 0;
   // ⛏️🛡 est CEILING = max(cap, pot): nemažinam žemiau REALAUS iškasto pot. DUTY (cap 1000) perviršis virš SAFE
   //   checkpoint (200) LIEKA matomas grįžus į SAFE — jokio „restart"/dingimo perjungiant režimą (user 07-19).
-  const _estCeil = d.cap > 0 ? Math.max(d.cap, d.pot || 0) : Infinity;
+  let _estCeil = d.cap > 0 ? Math.max(d.cap, d.pot || 0) : Infinity;
+  /* ⛏️🛡 08-20: SAFE'e serveris duoda tik tiek, kiek liko ciklo (step − mmined) — kad kliento skaičiukas
+   * nepralėktų tikros sumos, ribojam tuo pačiu likučiu (grobis ciklo neliečia, tad pot bazė lieka pilna). */
+  if (d.duty === 'safe' && typeof d.mined === 'number' && d.mined >= 0) {
+    _estCeil = Math.min(_estCeil, (d.pot || 0) + Math.max(0, (d.siegeStep || 200) - d.mined));
+  }
   const est = Math.min(_estCeil, (d.pot || 0) + (d.rate || 0) * (Date.now() - d.at) / 3600000);
   const full = d.cap > 0 && est >= d.cap - 0.5;
   const quietHome = window.__f9HomeActive && !window.__f9RaidActive;
@@ -11422,19 +11428,23 @@ function _f9MinePanelStats() {
         (ok ? '<span style="font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(111,207,92,0.25);color:#6fcf5c;">ACTIVE</span>' : '') + '</div>' + rows + '</div>';
   const prog = Math.max(0, Math.min(1, est / cm));
   const ready = est >= cm;
-  // ⚔️🛡 DUTY info blokas: 🛡SAFE → siege progreso juostelė (kiek iškasta iki lock @ kitas checkpoint); 🟢DUTY → laisvo kasimo hint.
-  //   SAFE lange kasama nuo (mcp−200) iki mcp; pasiekus → gated (kasimas STOJA kol DUTY arba PvP mūšis).
+  // ⚔️🛡 DUTY info blokas: 🛡SAFE → kasimo ciklo juostelė (kiek IŠKASTA nuo paskutinio PvP); 🟢DUTY → laisvo kasimo hint.
+  /* ⛏️💰 08-20 (user): „grobis eina į bendrą balansą, bet 200/200 save kasimas — atskiras dalykas".
+   * Juostelė dabar remiasi serverio `mmined` (tik kasimas) + vietiniu prikaupimu nuo paskutinio paketo,
+   * o NE pot'u. Anksčiau parsineštas raido grobis iškart užpildydavo skalę ir kasimas sustodavo. */
+  const _localGain = Math.max(0, est - (d.pot || 0));   // kiek prikaupė kliente nuo paskutinio serverio paketo
+  const _sieMined = (typeof d.mined === 'number' && d.mined >= 0)
+    ? Math.max(0, Math.min(step, d.mined + _localGain))
+    : Math.max(0, Math.min(step, est - Math.max(0, (d.cap || step) - step)));   // fallback senam serveriui
   let dutyInfo;
   if (d.duty === 'safe') {
-    const _prevCp = Math.max(0, (d.cap || step) - step);
-    const _sieMined = Math.max(0, Math.min(step, est - _prevCp));
     const _siePct = d.gated ? 1 : Math.max(0, Math.min(1, _sieMined / step));
     const _bar = d.gated ? 'linear-gradient(90deg,#a33,#e85d5d)' : (_siePct > 0.8 ? 'linear-gradient(90deg,#d49a2a,#ffcf5c)' : 'linear-gradient(90deg,#2a6a74,#5ab6c2)');
     dutyInfo =
       '<div style="margin-top:9px;background:rgba(' + (d.gated ? '232,93,93,0.1' : '42,106,116,0.12') + ');border:1px solid ' + (d.gated ? '#7a3a3a' : '#2a5a64') + ';border-radius:5px;padding:8px 9px;">' +
-        '<div style="display:flex;justify-content:space-between;font-size:8px;letter-spacing:.5px;color:' + (d.gated ? '#e8a08a' : '#7fd0d8') + ';margin-bottom:5px;"><span>🗡 SIEGE CHECKPOINT</span><span>' + Math.round(_sieMined) + ' / ' + step + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:8px;letter-spacing:.5px;color:' + (d.gated ? '#e8a08a' : '#7fd0d8') + ';margin-bottom:5px;"><span>🗡 MINED THIS CYCLE</span><span>' + Math.round(_sieMined) + ' / ' + step + '</span></div>' +
         '<div style="height:9px;background:#0a0c18;border:1px solid #2a3a44;border-radius:5px;overflow:hidden;"><div style="height:100%;width:' + (_siePct * 100).toFixed(1) + '%;background:' + _bar + ';box-shadow:0 0 6px ' + (d.gated ? 'rgba(232,93,93,0.6)' : 'rgba(74,157,166,0.5)') + ';transition:width .3s;"></div></div>' +
-        '<div style="margin-top:6px;font-size:8px;line-height:1.5;color:' + (d.gated ? '#e8a08a' : '#6a7a8a') + ';">' + (d.gated ? '🔒 <b>Mining paused</b> — hit your siege checkpoint. Switch to 🟢 DUTY (no limit) or win <b>one PvP match</b> (either side 50% casualties) to resume.' : '🛡 Protected. At <b>' + step + ' mined</b> mining STOPS until a PvP match — or switch to 🟢 DUTY to mine freely.') + '</div>' +
+        '<div style="margin-top:6px;font-size:8px;line-height:1.5;color:' + (d.gated ? '#e8a08a' : '#6a7a8a') + ';">' + (d.gated ? '🔒 <b>Mining paused</b> — you mined the full ' + step + ' this cycle. Switch to 🟢 DUTY (no limit) or fight <b>one PvP match</b> (either side 50% casualties) to reset the cycle.' : '🛡 Protected &amp; hidden. Mining STOPS after <b>' + step + ' mined</b> until a PvP match — or switch to 🟢 DUTY to mine freely. Raid loot goes to your balance and does <b>not</b> fill this bar.') + '</div>' +
       '</div>';
   } else {
     dutyInfo = '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">🟢 Faster mining + raidable — no mining limit, mine freely. But raiders steal 50% of un-withdrawn RONKE if they beat you.</div>';
@@ -11471,7 +11481,7 @@ function _f9MinePanelStats() {
       //   kad „OFF" nebūtų suprantama kaip bausmė (serveryje enforce'ina RAID_FIELD_REQ).
       (!mineElig ? '<div style="display:flex;align-items:center;gap:9px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #2a6a74;background:rgba(74,157,166,0.10);"><span style="font-size:14px;">🛡</span><span style="flex:1;font-size:9px;line-height:1.6;color:#7fd0d8;">Under <b>' + MR.aField + ' units on the field</b> — mining is OFF, but <b>nobody can raid you</b> either.</span></div>' : '') +
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINED RONKE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.duty === 'safe' ? (full ? '🗡 SIEGE REQUIRED' : 'next siege @ ' + d.cap) : (full ? '⛏️ at backstop — withdraw' : '🟢 no siege limit')) + '</div></div>' +
+        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">RONKE BALANCE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.duty === 'safe' ? (d.gated ? '🗡 PVP REQUIRED' : 'cycle ' + Math.round(_sieMined) + ' / ' + step) : (full ? '⛏️ at backstop — withdraw' : '🟢 no mining limit')) + '</div></div>' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (mineElig ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (mineElig ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (!mineElig ? '⚔ ' + fieldN + ' / ' + MR.aField + ' units on field' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power'))) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
       '</div>' +
       // ⚔️🛡 DUTY STATUS jungiklis — ON DUTY (greitas + puolamas) / SAFE (lėtas + apsaugotas). Keisti tik ramiuose namuose.
