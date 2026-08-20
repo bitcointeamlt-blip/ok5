@@ -2045,14 +2045,19 @@ export class F9PvpRoom extends Room<F9State> {
   //   su retry. DB triktis 2× → TRY_AGAIN: raidas ATMETAMAS, ne praleidžiamas. Senoji `if (_oc && _oc.duty…)`
   //   forma buvo fail-OPEN — neužkrautas cem (deploy restartas / S-M5 ne-cache po DB klaidos) tyliai
   //   praleisdavo raidą prieš SAFE pilį.
+  /* 🛡 SAFE apsauga (2026-08-19 patikslinta): SAFE saugo, KOL tu realiai kasi arba atsigauni.
+   * Pasiekus siege checkpoint (gated=true) kasimas stoja ir pilis tampa PUOLAMA — kitaip susidarydavo
+   * aklavietė: vartams nusiimti reikia mūšio, o mūšio nėra su kuo, nes visi sėdi SAFE. Dabar užpuolimas
+   * atrakina abi puses (_advanceSiege), tad sistema atsikabina pati. Nekasančio (pot < checkpoint)
+   * ar ką tik nusiaubto (auto-SAFE) žaidėjo apsauga nesikeičia. */
   private async _dutySafeGate(addr: string): Promise<void> {
     if (!addr) return;
     const mem = this._cem.get(addr);
-    if (mem) { if (mem.duty === "safe") throw new Error("SAFE_MODE"); return; }
+    if (mem) { if (mem.duty === "safe" && !mem.gated) throw new Error("SAFE_MODE"); return; }
     for (let a = 0; a < 2; a++) {
       try {
         const b = await loadBaseBuildings(addr);   // DB klaida → throw (S-M5); null = TIKRAI nėra eilutės (nauja pilis → online)
-        if (b && b.dutyMode === "safe") throw new Error("SAFE_MODE");
+        if (b && b.dutyMode === "safe" && !b.mineGated) throw new Error("SAFE_MODE");
         return;
       } catch (e: any) {
         if (e && e.message === "SAFE_MODE") throw e;
@@ -2157,9 +2162,10 @@ export class F9PvpRoom extends Room<F9State> {
   //   Backstop MINE_CAP (kad checkpoint niekada neišbėgtų). Po withdraw resetinasi į MINE_SIEGE_STEP.
   private _mineCap(addr: string): number {
     const c = this._cem.get((addr || "").trim().toLowerCase());
-    // 🟢 DUTY: jokio siege limito — pot kaupiasi iki kieto backstop (puolamas bet kada = ekspozicija jau yra).
-    //   🛡 SAFE: 200-žingsnio checkpoint (pot stoja iki PvP mūšio, nes SAFE nepuolamas → ekspozicijos nėra).
-    if (c && c.duty !== "safe") return MINE_CAP;
+    /* ⛏️🗡 2026-08-19 (user: „kad viskas vyktų pagal taisykles"): checkpoint galioja ABIEM režimam.
+     * Anksčiau DUTY neturėjo jokio limito — buvo galima kasti be galo ir be nė vieno PvP mūšio, o
+     * ekspozicija („esi puolamas") realiai neegzistavo, nes raid sąrašas beveik visada tuščias.
+     * Taisyklė buvo viena: kas MINE_SIEGE_STEP RONKE — 1 kvalifikuotas mūšis. Dabar taip ir yra. */
     return Math.min(MINE_CAP, (c && c.mcp) ? c.mcp : MINE_SIEGE_STEP);
   }
   // ⛏️ RONKE Power → RONKE/h su „knee": pirmi 250 power ×0.1, virš 250 ×0.05 (iki whale cap 4000).
@@ -2174,7 +2180,7 @@ export class F9PvpRoom extends Room<F9State> {
     // ⛏️🗡 SIEGE CHECKPOINT: pasiekus mcp (kas 200) kasimas SUSTOJA (0) kol atliks 1 PvP mūšį. TIK 🛡SAFE.
     //   🟢DUTY be limito (puolamas bet kada). Persijungus SAFE→DUTY gate'as tik IGNORUOJAMAS (flag lieka) →
     //   grįžus į SAFE vėl įsijungia (pot>checkpoint) → jokio toggle-dodge (nori kasti be mūšio = LIEK DUTY/puolamas).
-    if (c && c.gated && c.duty === "safe") return 0;
+    if (c && c.gated) return 0;   // ⛏️🗡 08-19: stoja IR DUTY (anksčiau vartai galiojo tik SAFE)
     // 🏁 07-15 (user): MINING gate = LAUKO unitai (dislokuoti gynėjai), NE dekas. <reikalavimo → 0 (pristabdyta).
     if (!this._mineEligible(addr, onField)) return 0;
     const hl = this._cemHealthy(addr).power;
@@ -2247,7 +2253,7 @@ export class F9PvpRoom extends Room<F9State> {
     }
     // ⛏️🗡 SIEGE CHECKPOINT: pasiekus checkpoint (kas 200) → gated=true → kasimas sustoja iki PvP mūšio. TIK 🛡SAFE.
     //   (DUTY _cap=MINE_CAP backstop → normaliai nepasiekia; be to duty!=="safe" gard'as apsaugo eksplicitiškai.)
-    if (!c.gated && c.duty === "safe" && (c.mpot || 0) >= _cap - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🗡 kasimas STOP (checkpoint ${_cap}, safe) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`); }
+    if (!c.gated && (c.mpot || 0) >= _cap - 0.01) { c.gated = true; console.log(`[F9PvpRoom] 🗡 kasimas STOP (checkpoint ${_cap}, ${c.duty}) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`); }
     c.tick = now;
     if (this.state.phase === "playing") {
       let present = false;
@@ -2305,7 +2311,7 @@ export class F9PvpRoom extends Room<F9State> {
       // ⛏️💰 SERVER-AUTHORITATIVE mining (klientas nustato window._f9Mine → nustoja client accrual):
       mpot: Math.round((c.mpot || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), msiege: MINE_SIEGE_STEP, mclaim: MINE_CLAIM_MIN, mwd: mineWithdrawEnabled(),   // mpot=iškastas; mcap=dabartinis siege checkpoint (pot stoja); msiege=200 žingsnis; mclaim=500 withdraw slenkstis
       // ⚔️🛡 DUTY STATUS: klientas rodo režimo jungiklį + greitį + „locked → siege" būseną
-      duty: c.duty || "online", gated: (!!c.gated && c.duty === "safe"), dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),   // 🟢 gated reportinam TIK SAFE'ui — DUTY be siege limito, klientas nerodo „LOCKED"
+      duty: c.duty || "online", gated: !!c.gated, dutyMult: (c.duty === "safe" ? DUTY_SAFE_MULT : DUTY_ONLINE_MULT),   // ⛏️🗡 08-19: gated rodom ABIEM režimam (vartai galioja visiems)
       dutyLockUntil: (c.duty === "online" ? (this._dutyLockUntil.get(addr) || 0) : 0),   // ⚔️🛡 iki kada NEGALI grįžti į SAFE (DUTY įsipareigojimo langas; 0 = laisva)
       dutyOnlineMult: DUTY_ONLINE_MULT, dutySafeMult: DUTY_SAFE_MULT,
       dutyOnlineBase: MINE_DUTY_BASE_H, dutySafeBase: MINE_SAFE_BASE_H,   // 🏁 flat bazės (klientas rodo „10/h" / „5/h" + power)
