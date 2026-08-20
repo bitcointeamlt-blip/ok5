@@ -254,10 +254,9 @@
       var a = String(r.ronin_address || '').toLowerCase();
       if (a === me || a.indexOf('#') >= 0) return false;
       if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;   // 🧹 07-17: fake/test adresai (E2E likučiai: ne-40-hex ARBA 10+ vienodų uodega) NErodomi
-      // 🛡 SAFE pilys NEPUOLAMOS — BET tik kol realiai kasa/atsigauna. Pasiekus siege checkpoint
-      //   (mineGated) kasimas stoja ir pilis tampa taikiniu (08-19): kitaip vartams nusiimti reikėtų
-      //   mūšio, o mūšio nebūtų su kuo — visi sėdėtų SAFE. Serveris tikrina tą patį (_dutySafeGate).
-      if (r.buildings && r.buildings.dutyMode === 'safe' && !r.buildings.mineGated) return false;
+      // 🛡 SAFE pilys NEPUOLAMOS (user taisyklė 08-20: „kasi iki 200 — niekas nepuola, esi nematomas").
+      //   Nori kasti toliau → jungiesi DUTY ir tada esi taikinys. Serveris tikrina tą patį (_dutySafeGate).
+      if (r.buildings && r.buildings.dutyMode === 'safe') return false;
       // ⚔️🛡 08-14 (user): VIENA riba — „neturi 12 unitų pilyje → nekasi IR tavęs niekas negali pulti".
       //   Buvo >=1: pilys be kasyklos (grobis 0.0) vis tiek listinamos → puolikas pelnydavo kaulais, naujokas
       //   gaudavo unitus į ligoninę už dyką. Serveris enforce'ina tą patį (RAID_FIELD_REQ, NO_DEFENDERS).
