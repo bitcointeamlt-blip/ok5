@@ -86,6 +86,23 @@ export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { 
   ownerSeenAt?: number;    // 🫀 07-14: savininko heartbeat (online kas 60s) — async-raid GRACE guard (online gynėjas turi matyti kovą!)
   shieldUntil?: number };   // 🛡 pilis nepuolama iki šio ts (1h po pralaimėtos gynybos)
 
+/* 🛡 2026-08-20 DATA-LOSS SARGAS (žaidėjo skundas „kur dingo mano siena ir zip bokštai?").
+ * `loadBaseBuildings` grąžina null DVIEM skirtingom prasmėm: „pilies dar nėra" ir „eilutė yra, bet
+ * jos `buildings` neperskaitomas". Kvietėjas (_buildingsOp) abu traktavo vienodai ir rašydavo
+ * NUMATYTUOSIUS pastatus ⇒ nušluodavo sieną/bokštus/ligoninę. Šitas patikrina, ar eilutė EGZISTUOJA:
+ *   true = yra (NERAŠOM numatytųjų) · false = tikrai nėra (galima kurti) · null = nežinom (irgi nerašom). */
+export async function baseRowExists(address: string): Promise<boolean | null> {
+  const addr = _norm(address);
+  if (!addr) return null;
+  const c = getClient();
+  if (!c) return null;
+  try {
+    const { data, error } = await c.from("f9_bases").select("ronin_address").eq("ronin_address", addr).maybeSingle();
+    if (error) return null;             // triktis → „nežinom" (skambintojas praleis rašymą)
+    return !!data;
+  } catch (_) { return null; }
+}
+
 // Užkrauna pilies pastatų konfigūraciją (`buildings` jsonb). null jei nėra.
 export async function loadBaseBuildings(address: string): Promise<BaseBuildings | null> {
   const addr = _norm(address);

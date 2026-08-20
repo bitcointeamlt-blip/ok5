@@ -2,7 +2,7 @@ import { Room, Client } from "@colyseus/core";
 import { F9State, F9Player, F9Unit, F9Wall } from "../schema/F9State";
 import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
-import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
+import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, baseRowExists, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
 import { shieldList, shieldAdd, shieldBurn } from "../services/BlessShield";   // 🪽🛡 BLESS skydas ant unito (2026-08-19)
@@ -1938,7 +1938,19 @@ export class F9PvpRoom extends Room<F9State> {
     if (!addr) return Promise.resolve();
     return boneBankOp(addr + "#buildings", async () => {
       let b = await loadBaseBuildings(addr);
-      if (!b) b = { wallLevel: 1, towerLevel: 1, towers: [] };
+      if (!b) {
+        /* 🛡 08-20 DATA-LOSS FIX: anksčiau čia buvo aklas `b = {wallLevel:1,…}`. Jei skaitymas grąžindavo
+         * tuščią (eilutė YRA, bet neperskaityta), sekantis save NUŠLUODAVO VISĄ buildings objektą —
+         * o cem/injured persist'ai po to atstatydavo tik SAVO laukus, tad amžinai prapuldavo būtent
+         * siena / bokštai / ligoninės lygis (niekas jų neperrašo, jie rašomi tik per upgrade).
+         * Numatytuosius kuriam TIK kai patvirtinta, kad eilutės tikrai NĖRA. */
+        const exists = await baseRowExists(addr);
+        if (exists !== false) {
+          console.warn(`[F9PvpRoom] 🛡 buildings praleista: ${addr.slice(0, 10)}… eilutė yra/nežinoma, bet neperskaityta — NERAŠOM (kitaip nušluotume statinius)`);
+          return;
+        }
+        b = { wallLevel: 1, towerLevel: 1, towers: [] };
+      }
       mutate(b);
       await saveBaseBuildings(addr, b);
     }).catch(() => {});
@@ -1980,7 +1992,13 @@ export class F9PvpRoom extends Room<F9State> {
     const towers = (this._buildings.towers || []).map((t) => ({ y: t.y, level: t.level }));
     const hospLevel = this._buildings.hospLevel || 1;
     void this._buildingsOp(addr, (b) => {
-      b.wallLevel = wallLevel; b.towerLevel = towerLevel; b.towers = towers; b.hospLevel = hospLevel;
+      /* 🛡 08-20 MONOTONIŠKUMO SARGAS: žaidime statiniai TIK auga (downgrade'o nėra, bokštai negriaunami
+       * visam laikui). Todėl niekada neperrašom DB reikšmės ŽEMESNE — jei kambario `_buildings` liko
+       * numatytieji (nepavykęs load'as), upgrade nebegali „nuridenti" pilies į 1 lygį. */
+      b.wallLevel = Math.max(Number(b.wallLevel) || 1, wallLevel);
+      b.towerLevel = Math.max(Number(b.towerLevel) || 1, towerLevel);
+      b.hospLevel = Math.max(Number(b.hospLevel) || 1, hospLevel);
+      if (towers.length >= ((b.towers || []).length)) b.towers = towers;   // bokštų tik daugėja
     });
   }
   // 🦴 Upgrade kaina iš žaidėjo BANKO (f9_bases <addr>#bones). false = neužteko/klaida → klientui 'upgrade_fail'.
