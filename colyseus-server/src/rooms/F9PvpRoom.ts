@@ -2,6 +2,7 @@ import { Room, Client } from "@colyseus/core";
 import { F9State, F9Player, F9Unit, F9Wall } from "../schema/F9State";
 import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
+import { bakRecord, healStructures } from "../services/BaseBackup";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, baseRowExists, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
@@ -1274,6 +1275,9 @@ export class F9PvpRoom extends Room<F9State> {
           this._loadCem(this._ownerAddr).catch(() => null),
         ]);
         if (bb) this._buildings = bb;
+        // 🏰💾 08-20: kopija + SAVIGYDA. Jei DB statiniai žemesni nei aukščiausias žinomas taškas —
+        //   atstatom (sienos/bokštų lygiai IR pozicijos, ligoninė) ir įrašom atgal. Kitu atveju tik įsimenam.
+        if (bb) await this._bakSyncHeal(this._ownerAddr);
         try {
           this._restoreUnits = ru;
           this._restoreUnits = await this._chainFilterSnap(this._ownerAddr, this._restoreUnits);   // 🔐 tik registruoti (chain cache jau šiltas)
@@ -1332,7 +1336,7 @@ export class F9PvpRoom extends Room<F9State> {
       }
       this._retreatMs = 0; this._attackerEngaged = false; this._lastRetreatSec = -1;
       this._buildings = { wallLevel: 1, towerLevel: 1, towers: [] };
-      if (this._ownerAddr) { try { const bb = await loadBaseBuildings(this._ownerAddr); if (bb) this._buildings = bb; } catch (_) {} }   // 🏗️ tikri owner lygiai
+      if (this._ownerAddr) { try { const bb = await loadBaseBuildings(this._ownerAddr); if (bb) { this._buildings = bb; await this._bakSyncHeal(this._ownerAddr); } } catch (_) {} }   // 🏗️ tikri owner lygiai (+ savigyda iš kopijos)
       if (this._ownerAddr) {
         try {
           this._restoreUnits = await loadBaseUnits(this._ownerAddr);
@@ -1984,6 +1988,24 @@ export class F9PvpRoom extends Room<F9State> {
       (b as any).deadUnits = Array.from(new Set([..._dbDead, ...dead]));
     });
   }
+  /* 🏰💾🩺 Atsarginė kopija + savigyda vienu žingsniu (2026-08-20, user: „daryk sistemą, kad progresai
+   * išsisaugotų"). Kviečiam užkrovus pilį: jei kopija rodo AUKŠTESNIUS statinius nei DB — atstatom
+   * (bokštų POZICIJOS atkuriamos tiksliai pagal y), kitaip tik atnaujinam aukščiausią tašką.
+   * Viskas try/catch — kopijos triktis niekada nestabdo žaidimo. */
+  private async _bakSyncHeal(addr: string): Promise<void> {
+    addr = (addr || "").trim().toLowerCase();
+    if (!addr) return;
+    try {
+      const fix = await healStructures(addr, this._buildings);
+      if (fix) {
+        this._buildings = fix.b;
+        this._persistStructures(addr);   // monotoniškas → saugu, DB pasiveja atstatytas reikšmes
+        console.log(`[F9PvpRoom] 🩺 pilis ATSTATYTA iš kopijos (${addr.slice(0, 10)}…): ${fix.healed.join(" · ")}`);
+      } else {
+        await bakRecord(addr, this._buildings);
+      }
+    } catch (_) {}
+  }
   // 🏗️ Persist sienos/bokštų lygius (per _buildingsOp eilę — neclobberina injured/cem laukų). Fire-and-forget.
   private _persistStructures(addr: string) {
     addr = (addr || "").trim().toLowerCase();
@@ -1999,6 +2021,7 @@ export class F9PvpRoom extends Room<F9State> {
       b.towerLevel = Math.max(Number(b.towerLevel) || 1, towerLevel);
       b.hospLevel = Math.max(Number(b.hospLevel) || 1, hospLevel);
       if (towers.length >= ((b.towers || []).length)) b.towers = towers;   // bokštų tik daugėja
+      void bakRecord(addr, b);   // 🏰💾 kas nupirkta už kaulus — iškart į atsarginę kopiją
     });
   }
   // 🦴 Upgrade kaina iš žaidėjo BANKO (f9_bases <addr>#bones). false = neužteko/klaida → klientui 'upgrade_fail'.
