@@ -110,7 +110,11 @@ class PayoutQueueImpl {
           // 🔒 SAUGU: atstatytą LAUKIANČIĄ išmoką žymim `manual` → auto-flush jos NEmokės, kol
           //    neverifikuota on-chain (ar pool jau nesumokėjo prieš redeploy). Išvengiam dvigubo
           //    apmokėjimo, jei „paid" žyma nespėjo pasiekti Supabase. Nieko neprarandama (įrašas durabilus).
-          if (it.status === "pending") { it.manual = true; restored++; }
+          // 🛟 08-20 IŠIMTIS: įrašai su `autopay: true` — tai RANKINIAI sutikrinimai (`_refund_stuck.mjs`),
+          //    kur mokėjimas JAU patvirtintas on-chain IR patikrinta, kad grąžinimo dar nebuvo.
+          //    Be šios išimties jie amžinai likdavo `manual`, o `admin.html` (vienintelis manual kelias)
+          //    repozitorijoje NEEGZISTUOJA ⇒ pinigai kabodavo eilėje ir žaidėjas jų NIEKADA negaudavo.
+          if (it.status === "pending") { if (!(it as any).autopay) { it.manual = true; } restored++; }
           items.push(it); byId.set(it.id, it);
         }
         else if (it.status === "paid" && local.status !== "paid") { local.status = "paid"; local.tx = it.tx; local.paidAt = it.paidAt; }
