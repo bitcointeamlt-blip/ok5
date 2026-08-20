@@ -103,12 +103,27 @@
           if (global.NET.status === 'open') _sendStake();
           else {
             var _rid = global.NET.roomId;
+            /* 🛟 08-20: anksčiau čia buvo TYLI spraga — jei `roomId` prarastas arba rejoin krito,
+             * statymas taip ir likdavo neišsiųstas, nors tx JAU apmokėtas. Serveris nieko negaudavo,
+             * mačas neįvykdavo, o pinigai likdavo treasury. Dabar kiekvienas nesėkmės kelias
+             * praneša tėvui → panelė parodo klaidą ir atšaukia (oponentui refundas nelaukiant laikmačio). */
+            var _stakeFailed = function (why) {
+              console.error('[stake resume] ' + why + ' — tx apmokėtas, bet neišsiųstas!', { tx: d.mid });
+              _post({ stakeSendFail: true, stakeSendWhy: why, stakeTx: d.mid || '' });
+            };
             if (_rid) {
               match.netOpts = match.netOpts || {};
               match.netOpts.roomId = _rid;
               global.NET.connect('colyseus', match.netOpts)
-                .then(function () { setTimeout(_sendStake, 350); })
-                .catch(function (err) { console.error('[stake resume] rejoin fail', err); });
+                .then(function () {
+                  setTimeout(function () {
+                    if (global.NET.status === 'open') _sendStake();
+                    else _stakeFailed('rejoin ok, bet ryšys neatsidarė');
+                  }, 350);
+                })
+                .catch(function (err) { _stakeFailed('rejoin fail: ' + ((err && err.message) || err)); });
+            } else {
+              _stakeFailed('roomId prarastas — nėra kur siųsti');
             }
           }
         }

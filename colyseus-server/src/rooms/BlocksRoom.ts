@@ -416,9 +416,26 @@ export class BlocksRoom extends Room<BlocksState> {
       }
       return;
     }
-    const side = this.sideOf[client.sessionId]; if (!side) return;
+    // 🛟 08-20 ESMINIS FIX — „abu sumokėjom, o žaidimo nėra, ir pinigai neatgal":
+    //    Mokant piniginės APP'E (mobile) naršyklė nueina į foną ⇒ WebSocket miršta. Grįžęs klientas
+    //    persijungia per `joinById` (žr. tetris/js/main.js „MOBILE RESUME") ir gauna **NAUJĄ sessionId**.
+    //    O puses laikėm žemėlapyje pagal SENĄ sessionId, tad čia buvo `if (!side) return;` — statymas
+    //    TYLIAI dingdavo. Pasekmė: tx patvirtinta ir pinigai treasury, bet escrow apie tą pusę nieko
+    //    nežino ⇒ nei mačo, nei refundo, nei prizo (adreso irgi nėra, tad `refundEntry`/`settleWinner`
+    //    tos pusės niekada neranda). Būtent tai ir matyti grandinėje: 4 mokėjimai, 0 grąžinimų.
+    //    DABAR: pusę atstatom pagal PINIGINĖS ADRESĄ, o nepavykus — pagal vienintelę laisvą pusę.
+    let side = this.sideOf[client.sessionId];
     const tx = String((m && (m.tx || m.entryTx)) || "");
-    const addr = String((m && m.addr) || "");
+    const addr = String((m && m.addr) || "").trim().toLowerCase();
+    if (!side && addr) {
+      const bySide = (["p1", "p2"] as Side[]).find((sd) => this._addrOf[sd] && this._addrOf[sd] === addr);
+      if (bySide) { side = bySide; this.sideOf[client.sessionId] = bySide; console.warn(`[BLOCKS] ♻️ pusė atstatyta pagal adresą po perjungimo: ${bySide} (${addr.slice(0, 10)}…)`); }
+    }
+    if (!side) {
+      const free = (["p1", "p2"] as Side[]).filter((sd) => !this.escrow.hasEntry(sd));
+      if (free.length === 1) { side = free[0]; this.sideOf[client.sessionId] = side; console.warn(`[BLOCKS] ♻️ pusė atstatyta pagal laisvą vietą: ${side}`); }
+    }
+    if (!side) { console.warn(`[BLOCKS] ⛔ stake be atpažįstamos pusės (${addr.slice(0, 10)}…) — praleista`); return; }
     if (!tx) return;
     this._refOf[side] = String((m && m.ref) || "");   // 🎁 referrer'is (iš kliento localStorage `rb_ref`); bind'inam settle metu (proven wallet)
     if (addr) this._addrOf[side] = addr.trim().toLowerCase();   // 🏅 wager: ĮRODYTAS adresas reitingui (perrašo onJoin deklaraciją)

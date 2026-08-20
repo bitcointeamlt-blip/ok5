@@ -1553,7 +1553,7 @@
     _iframe = document.createElement('iframe');
     _iframeLoaded = false;
     _iframe.addEventListener('load', function () { _iframeLoaded = true; });
-    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb108';
+    _iframe.src = 'tetris/index.html?net=colyseus&embed=panel&v=rb109_stakeresume';
     _iframe.style.cssText = 'border:0;width:100%;height:100%;display:block;';
     _iframe.setAttribute('allow', 'autoplay');
     var exit = document.createElement('button');
@@ -1627,6 +1627,13 @@
     // 🧱💰 wager įvykiai (nepriklauso nuo state) — mokėjimas/statusas/prizas/refund
     if (d.stakeNow) { _doStake(d.stakeTier, d.stakeAI, d.stakeAiFee); }   // 🤖 stakeAI=true → vsAI fee; stakeAiFee → PvP „AI už mane" priedas
     if (d.wagerVerify) { _status('⛓️ Verifying stakes on-chain…', true); }
+    // 🛟 08-20: statymas APMOKĖTAS, bet neišsiųstas serveriui (ryšys nutrūko mokant piniginės app'e).
+    //    Anksčiau tai baigdavosi tyla. Dabar žaidėjas mato, kad tx yra, ir gauna hash'ą pagalbai.
+    if (d.stakeSendFail) {
+      _status('⚠️ Payment went through, but the server did not receive it — match cancelled.<br>' +
+        '<span style="font-size:8px;opacity:.7;">' + _esc(String(d.stakeSendWhy || '')) + '<br>tx ' + _esc(String(d.stakeTx || '').slice(0, 18)) + '… — it will be refunded</span>', true);
+      _cmd('stakecancel');
+    }
     if (d.wagerAbort) { _status('Stake ' + (d.wagerAbort === 'stake_verify_failed' ? 'verification failed' : 'issue') + ' — refunded. Try again.', true); }
     if (d.wagerPrize) { _wagerWin(d.wagerPrize, d.wagerPot); }
     if (d.rankAnim) { setTimeout(function () { _showRankAnim(d.rankAnim); }, 60); }   // 🎬 reitingo šou IŠKART (žaidimo skydas ranked mače nerodomas)
