@@ -2227,6 +2227,7 @@ export class F9PvpRoom extends Room<F9State> {
      * `[]` = užkrautas ir TUŠČIAS → pilyje NĖRA gynėjų: tokios pilies niekas negali pulti (raid sąrašas
      * skaičiuoja realius unitus), tad ji ir kasti negali. Anksčiau čia grįždavo pasenęs skaitliukas
      * `mineField=12` → 10 pilių kasė būdamos nematomos ir nepuolamos. Taisyklė viena: nėra gynėjų — nėra kasimo. */
+    const snap = this._snapIds.get(addr);
     if (!snap) return live;                                       // snapshot nežinomas → senas elgesys (scalar)
     if (!snap.length) return 0;                                   // žinom, kad gynėjų nėra → nekasa
     const inj = this._injuredSet(addr);
