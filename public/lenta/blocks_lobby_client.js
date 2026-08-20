@@ -1299,7 +1299,18 @@
     }, 500);
   }
   function _doStake(tier, ai, aiFee) {
-    if (!_wager()) return;
+    // 🛟 08-20: TYLUS `return` čia kainavo žaidėjams pinigus. Jei šitas klientas nelaiko wager'io
+    //    įjungto (blocks_wager.js neįsikrovė, PEWPEW_PLAY_V2/BLOCKS_WAGER_ON dar nenustatyti, ad-blocker),
+    //    žaidėjas NEGAUDAVO NEI piniginės popup'o, NEI klaidos — tiesiog nieko. Serveris tuo metu laukdavo
+    //    statymo iki laikmačio pabaigos, o OPONENTAS jau būdavo sumokėjęs ir kabodavo tuščiai.
+    //    DABAR: iškart pranešam serveriui (jis nutraukia + grąžina sumokėjusiam) ir parodom priežastį.
+    if (!_wager()) {
+      console.warn('[BLOCKS] stake_now gautas, bet wager NEAKTYVUS šitame kliente → atšaukiam',
+        { hasModule: !!window.BlocksWager, playV2: !!window.PEWPEW_PLAY_V2, flag: window.BLOCKS_WAGER_ON });
+      _status('⚠️ Staking is unavailable in this browser — match cancelled.<br><span style="font-size:8px;opacity:.7;">reload the page and try again</span>', true);
+      _cmd('stakecancel');   // → serveris abort'ina IŠKART ir grąžina oponentui (nelaukia laikmačio)
+      return;
+    }
     // 🤖 useAi = PvP „AI žaidžia už mane" — NEMOKAMA (moki tik pakopą); ai=true = RANKED vsAI (25 fee).
     var useAi = !ai && _aiPlayFlag;
     _status('Confirm <b>' + tier + ' RONKE</b> ' + (ai ? 'RANKED AI fee' : 'stake') + ' in your wallet…', true);
