@@ -570,7 +570,7 @@ export class F9PvpRoom extends Room<F9State> {
     }
     return out;
   }
-  private _cem = new Map<string, { pot: number; tick: number; power: number; nft: number; rv: number; wallet: number; ramp: number; mpot: number; mcp: number; mfield: number; mres: number; duty: "online" | "safe"; gated: boolean }>();   // ⚰️/⛏️ + mpot=iškastas RONKE + mcp=kitas siege checkpoint (pot kaupiasi iki čia→STOJA kol PvP mūšis) + mfield/mres=lauko/rezervo count'ai + duty=režimas + gated=pasiekė checkpoint → laukia mūšio
+  private _cem = new Map<string, { pot: number; tick: number; power: number; nft: number; rv: number; wallet: number; ramp: number; mpot: number; mcp: number; mfield: number; mres: number; duty: "online" | "safe"; gated: boolean; mpotSync?: number }>();   // ⚰️/⛏️ + mpot=iškastas RONKE + mcp=kitas siege checkpoint (pot kaupiasi iki čia→STOJA kol PvP mūšis) + mfield/mres=lauko/rezervo count'ai + duty=režimas + gated=pasiekė checkpoint → laukia mūšio
   private _dutyLockUntil = new Map<string, number>();       // ⚔️🛡 addr → ts iki kada NEGALI grįžti į SAFE (DUTY įsipareigojimo langas; anti-toggle-dodge). In-memory.
   private _saveTimer: any = null;                            // 🏰 periodinis autosave (10s)
   private _lastSaveAt = 0;                                   // throttle (vengiam per dažnų DB rašymų)
@@ -2077,11 +2077,11 @@ export class F9PvpRoom extends Room<F9State> {
     if (!addr) return null;
     try { await chainDeck(addr); } catch (_) {}   // 🔐 sušildo chain cache _injuredDrain'ui (TTL 120s — pigu)
     if (this._cem.has(addr)) return this._cem.get(addr)!;
-    let c = { pot: 0, tick: 0, power: 0, nft: 0, rv: 0, wallet: 0, ramp: 0, mpot: 0, mcp: MINE_SIEGE_STEP, mfield: 0, mres: 0, duty: "online" as "online" | "safe", gated: false };
+    let c = { pot: 0, tick: 0, power: 0, nft: 0, rv: 0, wallet: 0, ramp: 0, mpot: 0, mcp: MINE_SIEGE_STEP, mfield: 0, mres: 0, duty: "online" as "online" | "safe", gated: false, mpotSync: 0 };
     let _ok = true;
     try {
       const b = await loadBaseBuildings(addr);   // 🛡 S-M5: meta klaidą esant DB triktimi
-      if (b) c = { pot: Math.max(0, b.cemPot || 0), tick: b.cemTick || 0, power: Math.max(0, b.cemPower || 0), nft: Math.max(0, b.cemNft || 0), rv: Math.max(0, b.cemRv || 0), wallet: Math.max(0, b.cemWallet || 0), ramp: b.cemRamp || 0, mpot: Math.max(0, b.minePot || 0), mcp: Math.max(MINE_SIEGE_STEP, b.mineCheckpoint || MINE_SIEGE_STEP), mfield: Math.max(0, b.mineField || 0), mres: Math.max(0, b.mineReserve || 0), duty: (b.dutyMode === "safe" ? "safe" : "online"), gated: !!b.mineGated };
+      if (b) c = { pot: Math.max(0, b.cemPot || 0), tick: b.cemTick || 0, power: Math.max(0, b.cemPower || 0), nft: Math.max(0, b.cemNft || 0), rv: Math.max(0, b.cemRv || 0), wallet: Math.max(0, b.cemWallet || 0), ramp: b.cemRamp || 0, mpot: Math.max(0, b.minePot || 0), mcp: Math.max(MINE_SIEGE_STEP, b.mineCheckpoint || MINE_SIEGE_STEP), mfield: Math.max(0, b.mineField || 0), mres: Math.max(0, b.mineReserve || 0), duty: (b.dutyMode === "safe" ? "safe" : "online"), gated: !!b.mineGated, mpotSync: Math.max(0, b.minePot || 0) };
       // ⛏️💸 07-18 (C1 fix): durable laukiantis withdrawal → RAM, kad _confirmMineWithdraw jį matytų net po
       //   kambario mirties/restart'o (anksčiau _minePend buvo RAM-only → prarasdavom → pot amžinai nuskaičiuotas).
       if (b && b.minePend && !this._minePend.has(addr)) this._minePend.set(addr, { nonce: b.minePend.nonce, amt: b.minePend.amt, at: b.minePend.at });
@@ -2299,7 +2299,18 @@ export class F9PvpRoom extends Room<F9State> {
     if (!c) return;
     const snap = { ...c };
     void this._buildingsOp(addr, (b) => {
-      b.cemPot = snap.pot; b.cemTick = snap.tick; b.minePot = snap.mpot; b.mineCheckpoint = snap.mcp || MINE_SIEGE_STEP; b.mineField = snap.mfield || 0; b.mineReserve = snap.mres || 0; b.cemPower = snap.power; b.cemNft = snap.nft; b.cemRv = snap.rv; b.cemWallet = snap.wallet; b.cemRamp = snap.ramp; b.dutyMode = snap.duty || "online"; b.mineGated = !!snap.gated;
+      /* ⛏️💰 LOST-UPDATE FIX (2026-08-20, user: „puola pilį, laimi, bet negauna looto").
+       * `minePot` keičia NE tik šis kambarys: raido grobis įrašomas per puoliko #buildings eilę IŠ KITO
+       * kambario. Anksčiau čia buvo aklas `b.minePot = snap.mpot` → savininko namų kambarys, turintis
+       * senesnę reikšmę atmintyje, TIESIOG UŽTRINDAVO ką tik gautą grobį (arba gynėjui grąžindavo
+       * pavogtą sumą). Dabar rašom DELTĄ: kiek pridėjo/atėmė kitas kambarys — tiek ir pritaikom. */
+      const dbPot = Number.isFinite(+((b as any).minePot)) ? Math.max(0, +((b as any).minePot)) : 0;
+      const base = Number.isFinite(+(snap as any).mpotSync) ? +(snap as any).mpotSync! : dbPot;
+      const external = dbPot - base;   // >0 = grobis atėjo · <0 = kažkas nurašė (pvz. mus apiplėšė)
+      const merged = Math.max(0, Math.min(MINE_CAP, Math.round((snap.mpot + external) * 1000) / 1000));
+      b.minePot = merged;
+      c.mpot = merged; c.mpotSync = merged;   // kambario atmintis irgi pasiveja (klientas mato tikrą sumą)
+      b.cemPot = snap.pot; b.cemTick = snap.tick; b.mineCheckpoint = snap.mcp || MINE_SIEGE_STEP; b.mineField = snap.mfield || 0; b.mineReserve = snap.mres || 0; b.cemPower = snap.power; b.cemNft = snap.nft; b.cemRv = snap.rv; b.cemWallet = snap.wallet; b.cemRamp = snap.ramp; b.dutyMode = snap.duty || "online"; b.mineGated = !!snap.gated;
     });
   }
   private _cemPayload(addr: string) {
