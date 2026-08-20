@@ -2221,8 +2221,13 @@ export class F9PvpRoom extends Room<F9State> {
     let present = false;
     this.state.players.forEach((pp) => { if (String(pp.address || "").trim().toLowerCase() === addr) present = true; });
     if (present && this.state.phase === "playing") return live;   // online → tik gyvas laukas (anti-exploit)
-    const snap = this._snapIds.get(addr);
-    if (!snap || !snap.length) return live;                       // snapshot nežinomas → senas elgesys (scalar)
+    /* ⛏️⚔️ 2026-08-20 (user: „jeigu kasi DUTY, tai ir tave turėtų rodyti kaip taikinį").
+     * `undefined` = snapshot dar neužkrautas → paliekam seną elgesį (scalar), kitaip lūžtų offline kasimas.
+     * `[]` = užkrautas ir TUŠČIAS → pilyje NĖRA gynėjų: tokios pilies niekas negali pulti (raid sąrašas
+     * skaičiuoja realius unitus), tad ji ir kasti negali. Anksčiau čia grįždavo pasenęs skaitliukas
+     * `mineField=12` → 10 pilių kasė būdamos nematomos ir nepuolamos. Taisyklė viena: nėra gynėjų — nėra kasimo. */
+    if (!snap) return live;                                       // snapshot nežinomas → senas elgesys (scalar)
+    if (!snap.length) return 0;                                   // žinom, kad gynėjų nėra → nekasa
     const inj = this._injuredSet(addr);
     const dead = this._deadSet(addr);
     const cd = chainDeckCached(addr);                             // 🔐 parduoti/išregistruoti nesiskaito (kaip _injuredDrain)
