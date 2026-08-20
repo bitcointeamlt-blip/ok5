@@ -1870,12 +1870,13 @@ export class F9PvpRoom extends Room<F9State> {
     this.state.players.forEach((pp) => {
       if (String(pp.address || "").trim().toLowerCase() !== addr) return;
       const deck = this._decks.get(pp.sessionId) || [];
+      const _real = (t: any) => !!t && !/^dev/i.test(String(t));   // 🚫 nemokami/testiniai nesiskaito (08-20)
       const onField = new Set<string>();
-      this.state.units.forEach((u) => { if (u.owner === pp.sessionId && u.tokenId && u.alive) onField.add(u.tokenId); });
+      this.state.units.forEach((u) => { if (u.owner === pp.sessionId && _real(u.tokenId) && u.alive) onField.add(u.tokenId); });
       const inj = new Set(qAll.map((i) => i.tokenId));
       const dead = this._deadSet(addr);   // 🐛 L1 fix: reserve/ready NEįskaito mirusių (kaip _deployReady)
       onFieldArr = Array.from(onField);
-      reserveArr = deck.filter((e) => e.tokenId && !inj.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId)).map((e) => e.tokenId);
+      reserveArr = deck.filter((e) => _real(e.tokenId) && !inj.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId)).map((e) => e.tokenId);
       ready = reserveArr.length;
     });
     // 🔒 M6 fix (07-12, sync auditas): stale = sužaloti NE dabartiniame deke (seni išrotuoti) — klientas
@@ -2148,12 +2149,17 @@ export class F9PvpRoom extends Room<F9State> {
     this.state.players.forEach((pp) => {
       if (String(pp.address || "").trim().toLowerCase() !== addr) return;
       const deck = this._decks.get(pp.sessionId) || [];
+      /* 🚫 NEMOKAMI/TESTINIAI unitai (`dev…`) NIEKUR nesiskaito (user taisyklė 2026-08-20): jokių rewardų,
+       * jokio konkuravimo su kitais. Iki tol jie užsiskaitydavo kaip „12 lauke" → piniginė be nė vieno NFT
+       * galėjo kasti (07-18 klasteris). Visur kitur (kapinės, raid gate'ai, deck) jie jau buvo filtruojami —
+       * čia buvo paskutinė skylė. */
+      const real = (t: any) => !!t && !/^dev/i.test(String(t));
       const onField = new Set<string>();
-      this.state.units.forEach((u) => { if (u.owner === pp.sessionId && u.tokenId && u.alive) onField.add(u.tokenId); });
+      this.state.units.forEach((u) => { if (u.owner === pp.sessionId && real(u.tokenId) && u.alive) onField.add(u.tokenId); });
       const inj = new Set((this._injured.get(addr)?.q || []).map((i) => i.tokenId));
       const dead = this._deadSet(addr);
       onFieldN = onField.size;
-      reserveN = deck.filter((e) => e.tokenId && !inj.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId)).length;
+      reserveN = deck.filter((e) => real(e.tokenId) && !inj.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId)).length;
     });
     return { onField: onFieldN, reserve: reserveN };
   }
