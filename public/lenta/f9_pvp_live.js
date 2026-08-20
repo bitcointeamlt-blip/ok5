@@ -2421,6 +2421,7 @@
         if (em.indexOf('SHIELDED') !== -1) msg = '🛡 Castle is SHIELDED (just raided) — try again in ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('RAID_COOLDOWN') !== -1) msg = '⏲ You raided this castle recently — wait ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('NO_DEFENDERS') !== -1) msg = '💤 Castle inactive — no combat-ready NFT defenders to raid';
+        else if (em.indexOf('WEAK_SQUAD') !== -1) msg = '🪖 Your squad is too small — you need ' + (em.split(':')[2] || 12) + ' combat-ready units to raid (you have ' + (em.split(':')[1] || '?') + '). Heal or deploy more.';
         else if (em.indexOf('DEFENDER_ONLINE') !== -1) msg = '🫀 Defender is online (reconnecting) — retry in a few seconds to fight them LIVE';
         else if (em.indexOf('RAID_IN_PROGRESS') !== -1) msg = '⚔️ This castle is already under attack — one raider at a time. Try again in a moment.';
         else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected after a battle (they must switch back to ON DUTY to be raidable).';

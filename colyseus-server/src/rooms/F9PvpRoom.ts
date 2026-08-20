@@ -1368,6 +1368,9 @@ export class F9PvpRoom extends Room<F9State> {
         console.log(`[F9PvpRoom] 🚫 async raid atmestas — ${this._ownerAddr} turi ${_healthyAsync}/${RAID_FIELD_REQ} kovai pajėgių gynėjų (nekasa → nepuolamas)`);
         throw new Error("NO_DEFENDERS");
       }
+      // ⚔️🚫 ta pati riba PUOLIKUI (08-19): su 3 unitais raidas nebeleidžiamas
+      try { this._checkRaiderSquad(client, String(p.address || "")); }
+      catch (e) { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw e; }
       // ⚔️💰 RAID FEE (PASKUTINIS gate — atmestas join TX nesudegina): 10 RONKE → treasury, moka TIK puolikas.
       if (raidFeeEnabled()) {
         const _fee = await verifyAndConsumeRaidFee(String(p.address || ""), String(options?.feeTx || ""));
@@ -1482,6 +1485,9 @@ export class F9PvpRoom extends Room<F9State> {
         console.log(`[F9PvpRoom] 🚫 live raid atmestas — savininkas lauke ${_onFieldNow}, sveikų deke ${_healthyDef} (< ${RAID_FIELD_REQ}) → nekasa → nepuolamas`);
         throw new Error("NO_DEFENDERS");
       }
+      // ⚔️🚫 ta pati riba PUOLIKUI (08-19): su 3 unitais raidas nebeleidžiamas
+      try { this._checkRaiderSquad(client, String(p.address || "")); }
+      catch (e) { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw e; }
       // ⚔️💰 RAID FEE (PASKUTINIS gate, kaip async): 10 RONKE → treasury, moka TIK puolikas.
       if (raidFeeEnabled()) {
         const _fee = await verifyAndConsumeRaidFee(String(p.address || ""), String(options?.feeTx || ""));
@@ -2783,6 +2789,20 @@ export class F9PvpRoom extends Room<F9State> {
   }
   // 🛡⏲ Raid gate: shield (ką tik nusiaubta pilis) + per-puoliko cooldown. Meta klaidas su
   //   minutėmis klientui („SHIELDED:42" / „RAID_COOLDOWN:9") — raid_ui rodo žinutę.
+  /* ⚔️🚫 PUOLIKO MINIMUMAS (2026-08-19, user: „buvo padarytas PvP su 3 unitais, kai to daryti negalima").
+   * RAID_FIELD_REQ iki šiol buvo taikomas TIK gynėjui — puolikas galėjo atjoti su 3 unitais, juos prarasti
+   * ir taip „atsirakinti" kasimo vartus (100% puoliko aukų ≥ 50% ⇒ siege užskaitomas ABIEM pusėm).
+   * Dabar riba ta pati abiem: nori pulti — atsivesk tokią pat komandą, kokios reikalaujama iš gynėjo. */
+  private _checkRaiderSquad(client: Client, atkAddrRaw: string) {
+    const atk = String(atkAddrRaw || "").trim().toLowerCase();
+    const deck = this._decks.get(client.sessionId) || [];
+    const inj = this._injuredSet(atk), dead = this._deadSet(atk);
+    const ready = deck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId) && !inj.has(d.tokenId) && !dead.has(d.tokenId)).length;
+    if (ready < RAID_FIELD_REQ) {
+      console.log(`[F9PvpRoom] 🚫 raid atmestas — puolikas ${atk.slice(0, 10)}… turi ${ready}/${RAID_FIELD_REQ} kovai pajėgių unitų`);
+      throw new Error("WEAK_SQUAD:" + ready + ":" + RAID_FIELD_REQ);
+    }
+  }
   private _checkRaidGate(atkAddrRaw: string) {
     const atk = String(atkAddrRaw || "").trim().toLowerCase();
     const sh = Number((this._buildings as any)?.shieldUntil) || 0;
