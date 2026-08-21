@@ -15,7 +15,7 @@ import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, RR_MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
 import { raidFeeEnabled, verifyAndConsumeRaidFee, RAID_FEE_RONKE } from "../services/RaidFee";   // ⚔️💰 10 RONKE raid fee → treasury (moka tik puolikas)
-import { chainDeck, chainDeckCached, chainDeckFull, chainDeckInvalidate, chainUtypeStr } from "../services/DeckChain";
+import { chainDeck, chainDeckCached, chainStatsCached, chainDeckFull, chainDeckInvalidate, chainUtypeStr } from "../services/DeckChain";
 
 // ── F9 PvP room — real-time FFA (iki 4 žaidėjų) RTS squad battle + KotH (authoritative). ──
 // FAZA A: lifecycle (join → ready → start → end) + komandų protokolas + judėjimas (30Hz) + KotH zona.
@@ -418,6 +418,7 @@ const DEFAULT_SQUAD = ["skull", "archer", "harpoon_fish", "shaman", "pigronke", 
 const F9_ROOM_IDLE_MS = Number(process.env.F9_ROOM_IDLE_MS) || 360_000;   // 🧟 6min be aktyvumo → zombie kambarys disposinamas
 const MAX_DECK = 30;                         // gaunamo registruoto deko cap (Power Deck + RonkeVerse)
 const MAX_ACTIVE = 12;                        // kiek unitų AKTYVŪS mūšy vienu metu (Battle Squad); likę = rezervas
+const AI_DEF_OWNER = "AI_DEFENDER";           // 🤖 async gynybos unitų „savininkas" (savininkas offline; rezervą turi kaip ir žmogus)
 const VALID_UTYPES = new Set(Object.keys(BASE_HP));
 // Žaidėjo deko įrašas (iš join opts.deck).
 interface DeckEntry { utype: string; level: number; tokenId: string; }
@@ -1419,7 +1420,16 @@ export class F9PvpRoom extends Room<F9State> {
       p.team = DEFENDER_TEAM;
       this._ownerSid = client.sessionId;
       let _taken = 0;
-      this.state.units.forEach((u) => { if (u.owner === "AI_DEFENDER") { u.owner = client.sessionId; _taken++; } });
+      this.state.units.forEach((u) => { if (u.owner === AI_DEF_OWNER) { u.owner = client.sessionId; _taken++; } });
+      /* 🪖 08-21: kartu su unitais perimam ir REZERVĄ — kitaip žaidėjui prisijungus mūšio viduryje
+       * AI eilė liktų pakibusi ties `AI_DEFENDER`, o jo paties rezervas dar nebūtų sudarytas ⇒
+       * pastiprinimai staiga nutrūktų būtent todėl, kad atėjai ginti savo pilies. */
+      const _aiPool = this._reserves.get(AI_DEF_OWNER);
+      if (_aiPool && _aiPool.length && !(this._reserves.get(client.sessionId) || []).length) {
+        this._reserves.set(client.sessionId, _aiPool);
+        console.log(`[F9PvpRoom] 🪖 rezervas (${_aiPool.length}) perduotas prisijungusiam gynėjui`);
+      }
+      this._reserves.delete(AI_DEF_OWNER);
       // siuntimai su delay — klientas handlerius registruoja join'ui rezolvinusis (kitaip žinutės nukristų)
       const _cl = client;
       setTimeout(() => {
@@ -1444,7 +1454,7 @@ export class F9PvpRoom extends Room<F9State> {
         // 🧷 07-15 (g3nka repro: „savo unitai pažymėti kaip priešai, nevaldomi“): + TO PATIES ADRESO dar-GYVA
         //   sena sesija (2 tab'ai / reload'o lenktynės su senu socket'u) — NAUJAUSIAS tab'as perima valdymą.
         const _oldSame = this.state.players.has(u.owner) && String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase() === this._ownerAddr;
-        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === "AI_DEFENDER" || !this.state.players.has(u.owner) || _oldSame)) { u.owner = client.sessionId; _re++; }
+        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === AI_DEF_OWNER || !this.state.players.has(u.owner) || _oldSame)) { u.owner = client.sessionId; _re++; }
       });
       const _cl = client;
       setTimeout(() => {
@@ -1766,7 +1776,10 @@ export class F9PvpRoom extends Room<F9State> {
     const pool = this._reserves.get(fallen.owner);
     if (!pool || !pool.length) return;
     const p = this.state.players.get(fallen.owner);
-    if (!p) return;                                    // tik realūs žaidėjai (AI/stress rezervo neturi)
+    /* 🪖 08-21: AI gynėjas (async raidas) rezervą turi TAIP PAT kaip žmogus — jo pilis, jo unitai.
+     * Anksčiau čia buvo `if (!p) return`, todėl offline gynėjo dekas mūšyje nedalyvaudavo visai. */
+    if (!p && fallen.owner === AI_DEF_OWNER) { this._reinforceAiDefender(fallen, pool); return; }
+    if (!p) return;                                    // stress/kiti savininkai rezervo neturi
     // 🔒 07-04 ANTI-DUBLIS: praleidžiam rezervo įrašus, kurių tokenId JAU yra lauke (gyvas AR kritęs
     //   šiame mūšyje) — kitaip tas pats NFT įeitų antrą kartą (dvigubas injury roll, „prisikėlimas").
     const onField = new Set<string>();
@@ -1779,6 +1792,44 @@ export class F9PvpRoom extends Room<F9State> {
     const sp = FFA_SPAWNS[p.team % FFA_SPAWNS.length];
     this._spawnOneUnit(p, entry, sp.x, sp.y);          // pastiprinimas ateina prie savo bazės krašto
     this.broadcast("reinforce", { owner: fallen.owner, team: p.team, left: pool.length });
+  }
+
+  /* 🪖🤖 Pastiprinimas AI ginamai piliai (savininkas offline). Tas pats principas kaip žmogui:
+   * FIFO iš rezervo, praleidžiam tuos, kurie jau lauke (gyvi ar kritę), naujokas stoja į kritusiojo vietą
+   * (pilies viduje, ne prie žemėlapio krašto — gynėjas gina savo pilį, o ne ateina iš toli). */
+  private _reinforceAiDefender(fallen: F9Unit, pool: DeckEntry[]) {
+    const onField = new Set<string>();
+    this.state.units.forEach((u) => { if (u.owner === AI_DEF_OWNER && u.tokenId) onField.add(u.tokenId); });
+    let alive = 0;
+    this.state.units.forEach((u) => { if (u.owner === AI_DEF_OWNER && u.alive) alive++; });
+    if (alive >= MAX_ACTIVE) return;                   // lauke jau pilna — nieko neįleidžiam
+    let entry = pool.shift();
+    while (entry && entry.tokenId && onField.has(entry.tokenId)) {
+      if (!pool.length) return;
+      entry = pool.shift();
+    }
+    if (!entry) return;
+    const inj = this._injuredSet(this._ownerAddr), dead = this._deadSet(this._ownerAddr);
+    if (entry.tokenId && (inj.has(entry.tokenId) || dead.has(entry.tokenId))) return;   // per mūšį pateko į ligoninę
+    const u = new F9Unit();
+    u.id = `u${++this._uidCounter}`;
+    u.owner = AI_DEF_OWNER;
+    u.team = DEFENDER_TEAM;
+    u.utype = entry.utype;
+    u.level = entry.level || 0;
+    u.tokenId = entry.tokenId || "";
+    u.x = Math.max(1, Math.min(ARENA_W - 1, fallen.x));
+    u.y = Math.max(1, Math.min(ARENA_H - 1, fallen.y));
+    u.tx = u.x; u.ty = u.y;
+    u.maxHp = BASE_HP[entry.utype] || 8;
+    u.hp = u.maxHp;
+    u.faceDx = -1;                                     // gynėjas žiūri į puoliką (į vakarus)
+    u.alive = true;
+    u.cmd = "idle";
+    this.state.units.set(u.id, u);
+    this._ai.set(u.id, { order: "hold", lastAtk: 0, engageId: "", kills: 0 });
+    this.broadcast("reinforce", { owner: AI_DEF_OWNER, team: DEFENDER_TEAM, left: pool.length });
+    console.log(`[F9PvpRoom] 🪖🤖 gynėjo pastiprinimas: ${entry.utype} lv${entry.level} (#${entry.tokenId}) — rezerve liko ${pool.length}`);
   }
 
   // ── 🏥 LIGONINĖ (EILĖS MODELIS v2) ──────────────────────────────────────
@@ -2541,7 +2592,7 @@ export class F9PvpRoom extends Room<F9State> {
       if (s.tokenId && deadSet.has(s.tokenId)) continue;   // 💀
       const u = new F9Unit();
       u.id = `u${++this._uidCounter}`;
-      u.owner = "AI_DEFENDER";
+      u.owner = AI_DEF_OWNER;
       u.team = DEFENDER_TEAM;
       u.utype = s.utype;
       u.level = s.level || 0;
@@ -2558,7 +2609,26 @@ export class F9PvpRoom extends Room<F9State> {
       this._ai.set(u.id, { order: "hold", lastAtk: 0, engageId: "", kills: 0 });
       _spawned++;
     }
-    console.log(`[F9PvpRoom] 🤖 spawned ${_spawned}/${snap.length} AI defenders (snapshot positions, cap ${MAX_ACTIVE})`);
+    /* 🪖 2026-08-21 (user: „jeigu turiu rezervą, tai noriu jį ir naudoti — nesvarbu puolu ar ginuosi,
+     * offline ar ne"). BUVO: rezervas veikė TIK tikram žaidėjui kambaryje, tad async gynyboje (o taip
+     * vyksta dauguma raidų) gynėjas kovodavo su 12 be pastiprinimų, o puolikas atsivesdavo 24–26.
+     * Išmatuota 505 raiduose: puoliko pusėje >12 dalyvavo 132×, gynėjo — 30× (tik gyvose gynybose).
+     * DABAR gynėjo eilė sudaroma ir AI gynybai: snapshot'o likutis + on-chain registruotas dekas,
+     * be sužalotų / mirusių / jau lauke esančių. `_tryReinforce` moka juos įleisti (žr. ten). */
+    const _spawnedIds = new Set<string>();
+    this.state.units.forEach((u) => { if (u.owner === AI_DEF_OWNER && u.tokenId) _spawnedIds.add(u.tokenId); });
+    const pool: DeckEntry[] = [];
+    const _push = (tokenId: string, utype: string, level: number) => {
+      if (!tokenId || !utype) return;
+      if (_spawnedIds.has(tokenId) || injuredSet.has(tokenId) || deadSet.has(tokenId)) return;
+      if (pool.some((e) => e.tokenId === tokenId)) return;
+      pool.push({ utype, level: level || 0, tokenId });
+    };
+    for (const s of snap) if (s && s.tokenId && !/^dev/i.test(s.tokenId)) _push(String(s.tokenId), s.utype, s.level || 0);   // snapshot'o likutis (netilpę į 12)
+    const _stats = chainStatsCached(this._ownerAddr);   // on-chain registruotas dekas — likusi deko dalis
+    if (_stats) _stats.forEach((cu, id) => _push(String(id), chainUtypeStr(cu.utype), cu.level || 0));
+    this._reserves.set(AI_DEF_OWNER, pool);
+    console.log(`[F9PvpRoom] 🤖 spawned ${_spawned}/${snap.length} AI defenders (snapshot positions, cap ${MAX_ACTIVE}) · 🪖 rezervas ${pool.length}`);
   }
 
   // 🧪 STRESS TEST — spawnina N AI puolikų (team 0, vakaruose) → tikras server-side 30v30 pilyje. Tik home + savininkas.
@@ -2960,7 +3030,7 @@ export class F9PvpRoom extends Room<F9State> {
       const _burn = new Map<string, string[]>();
       this.state.units.forEach((u) => {
         if (!u.tokenId) return;
-        const oa = u.owner === "AI_DEFENDER" ? this._ownerAddr
+        const oa = u.owner === AI_DEF_OWNER ? this._ownerAddr
           : String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase();
         if (!oa) return;
         const set = this._shield.get(oa);
@@ -3138,7 +3208,7 @@ export class F9PvpRoom extends Room<F9State> {
     //   NEVEIKIA (jokio dvigubo kredito; takeover'e ciklas suskaičiuoja ir pre-takeover AI kills per re-owned unitą).
     if ((this._home || this._asyncRaid) && this._ownerAddr) {
       let aiKills = 0;
-      this._ai.forEach((ai, id) => { const u = this.state.units.get(id); if (u && u.owner === "AI_DEFENDER") aiKills += (ai.kills || 0); });
+      this._ai.forEach((ai, id) => { const u = this.state.units.get(id); if (u && u.owner === AI_DEF_OWNER) aiKills += (ai.kills || 0); });
       if (aiKills > 0) {
         const cOwn = this._cem.get(this._ownerAddr);
         const dpow = cOwn ? Math.max(0, cOwn.power || 0) : 0;   // pilnas registruotas RONKE Power (kaip _initBoneMults)
@@ -4059,7 +4129,7 @@ export class F9PvpRoom extends Room<F9State> {
       // 🏥 LIGONINĖ (tik home/raid): NFT unitas krito → 90% sužalotas (gydosi), 10% tikra mirtis.
       //   Savininkas: gynėjo unitams = pilies owner; puoliko — jo paties wallet. Dev tokenai neliečiami.
       if ((this._home || this._asyncRaid) && tgt.tokenId && !/^dev/i.test(tgt.tokenId)) {
-        const ownAddr = tgt.owner === "AI_DEFENDER"
+        const ownAddr = tgt.owner === AI_DEF_OWNER
           ? this._ownerAddr
           : String(this.state.players.get(tgt.owner)?.address || "").trim().toLowerCase();
         if (ownAddr) {
