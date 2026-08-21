@@ -374,12 +374,35 @@
           '<div id="boneProgV" style="height:100%;width:0%;background:linear-gradient(90deg,#d49a2a,#ffcf5c);box-shadow:0 0 8px rgba(255,207,92,0.6);"></div></div>' +
         '<div id="boneProgTxt" style="font-size:11px;color:#8a9aaa;text-align:center;margin-top:7px;letter-spacing:0.5px;line-height:1.6;">— / 100 🦴 swap limit</div>' +
         '<div style="font-size:11px;text-align:center;color:#8a9aaa;margin-top:6px;line-height:1.6;">🎫 <span id="boneNftV">—</span></div></div>' +
+      /* 🦴🎚 SUMOS PASIRINKIMAS (08-21, žaidėjų prašymas): minimumas lieka 100, bet virš jo žaidėjas pats
+         nusistato, kiek keisti — nuo 100 iki to, kiek turi banke (bet ne daugiau nei vieno swap'o luba). */
+      '<div id="boneAmtBox" style="display:none;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:6px;padding:13px 16px;margin:10px 0 4px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">' +
+          '<span style="font-size:10px;color:#6a7a8a;letter-spacing:1px;">SWAP AMOUNT</span>' +
+          '<span style="font-size:9px;color:#6a7a8a;">min <span id="boneAmtMin">100</span> · max <span id="boneAmtMax">200</span></span></div>' +
+        '<div style="display:flex;align-items:center;gap:10px;">' +
+          '<div id="boneAmtDn" style="width:34px;height:34px;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#ffcf5c;background:#182238;border:2px solid #46567e;border-radius:6px;cursor:pointer;user-select:none;">−</div>' +
+          '<input id="boneAmtRange" type="range" min="100" max="200" step="1" value="100" style="flex:1;accent-color:#ffcf5c;cursor:pointer;">' +
+          '<div id="boneAmtUp" style="width:34px;height:34px;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#ffcf5c;background:#182238;border:2px solid #46567e;border-radius:6px;cursor:pointer;user-select:none;">+</div></div>' +
+        '<div style="display:flex;align-items:center;justify-content:center;gap:9px;margin-top:9px;font-size:14px;color:#ffcf5c;">' +
+          '<span id="boneAmtV">100</span> 🦴 <span style="color:#6a7a8a;">→</span> <span id="boneAmtRonke" style="color:#6fcf5c;">500</span> RONKE</div>' +
+        '<div style="display:flex;gap:8px;margin-top:9px;">' +
+          '<div id="boneAmtMinBtn" style="flex:1;text-align:center;font-size:10px;color:#8a9aaa;background:#141a2a;border:1px solid #3a3a55;border-radius:5px;padding:7px 0;cursor:pointer;">MIN</div>' +
+          '<div id="boneAmtMaxBtn" style="flex:1;text-align:center;font-size:10px;color:#8a9aaa;background:#141a2a;border:1px solid #3a3a55;border-radius:5px;padding:7px 0;cursor:pointer;">MAX</div></div></div>' +
       '<div id="boneSwapBtn" style="' + _boneBtnCss + 'background:#333;color:#777;border-color:#555;cursor:not-allowed;">…</div>' +
       '<div id="boneSwapStatus" style="font-size:11px;min-height:16px;line-height:1.7;color:#8a9aaa;"></div>';
     boneOverlayEl.appendChild(bonePanelEl);
     document.body.appendChild(boneOverlayEl);
     bonePanelEl.querySelector('#bonePanelX').addEventListener('click', function () { boneOverlayEl.style.display = 'none'; });
     bonePanelEl.querySelector('#boneSwapBtn').addEventListener('click', _boneSwapClick);
+    // 🎚 sumos valdikliai — slankiklis, −/+ po 1 ir MIN/MAX greitieji mygtukai
+    var _rng = bonePanelEl.querySelector('#boneAmtRange');
+    var _nudge = function (d) { if (!_rng) return; _rng.value = String(Math.max(+_rng.min, Math.min(+_rng.max, (+_rng.value || 0) + d))); _boneAmtSync(); };
+    if (_rng) _rng.addEventListener('input', _boneAmtSync);
+    bonePanelEl.querySelector('#boneAmtDn').addEventListener('click', function () { _nudge(-1); });
+    bonePanelEl.querySelector('#boneAmtUp').addEventListener('click', function () { _nudge(1); });
+    bonePanelEl.querySelector('#boneAmtMinBtn').addEventListener('click', function () { if (_rng) { _rng.value = _rng.min; _boneAmtSync(); } });
+    bonePanelEl.querySelector('#boneAmtMaxBtn').addEventListener('click', function () { if (_rng) { _rng.value = _rng.max; _boneAmtSync(); } });
     return bonePanelEl;
   }
   function _toggleBonePanel() {
@@ -440,10 +463,35 @@
     else if (nftReq && e.hasNft === false) { _btnOff('NEED RONKEVERSE NFT'); _boneStatus('own ' + nftReq + ' Ronkeverse NFT to unlock swap', '#ff6b6b'); }
     else if (bank < min) { _btnOff('NEED ' + min + ' 🦴'); _boneStatus(''); }
     else {
-      var deci = Math.floor(Math.min(bank, (_boneCfg.maxSwapBones || 1000)) * 10);
-      _btnOn('SWAP ' + (deci / 10).toFixed(1) + ' 🦴 → ' + (deci / 10 * rate).toFixed(0) + ' RONKE');
+      // 🎚 pasirinkimo ruožas: [min … min(bankas, vieno swap'o luba)]. Ankstesnį pasirinkimą išlaikom.
+      var _max = Math.floor(Math.min(bank, (_boneCfg.maxSwapBones || 1000)));
+      var box = document.getElementById('boneAmtBox'), rng = document.getElementById('boneAmtRange');
+      if (box && rng) {
+        var prev = Math.floor(Number(rng.value) || 0);
+        rng.min = String(min); rng.max = String(_max);
+        rng.value = String(prev >= min && prev <= _max ? prev : _max);   // pirmą kartą — MAX (senas elgesys)
+        var mn = document.getElementById('boneAmtMin'), mx = document.getElementById('boneAmtMax');
+        if (mn) mn.textContent = String(min);
+        if (mx) mx.textContent = String(_max);
+        box.style.display = _max > min ? 'block' : 'none';   // nėra ko rinktis (turi lygiai minimumą) → nerodom
+      }
+      var _v0 = rng ? Math.floor(Number(rng.value) || _max) : _max;
+      _btnOn('SWAP ' + _v0 + ' 🦴 → ' + (_v0 * rate) + ' RONKE');   // vartus praėjom → mygtukas AKTYVUS
+      _boneAmtSync();
       _boneStatus('');
     }
+  }
+  // 🎚 Vienintelė vieta, kur slankiklio reikšmė virsta tekstu ant mygtuko — kviečiama ir iš įvykių, ir po banko atnaujinimo.
+  function _boneAmtSync() {
+    var rng = document.getElementById('boneAmtRange'), btn = document.getElementById('boneSwapBtn');
+    if (!rng || !btn) return;
+    var rate = (_boneCfg && _boneCfg.ratePerBone) || 5;
+    var v = Math.max(+rng.min, Math.min(+rng.max, Math.floor(Number(rng.value) || 0)));
+    var av = document.getElementById('boneAmtV'), ar = document.getElementById('boneAmtRonke');
+    if (av) av.textContent = String(v);
+    if (ar) ar.textContent = String(v * rate);
+    // ⚠️ TIK etiketė. Mygtuko įjungimas priklauso nuo vartų (NFT, limitas, pending) — jį sprendžia _onBonesBank.
+    if (btn.dataset.mode === 'swap') btn.textContent = 'SWAP ' + v + ' 🦴 → ' + (v * rate) + ' RONKE';
   }
   // ── ⚔ RAID/DEFENSE SETTLED — trofėjų stiliaus suvestinė po pilies puolimo/gynybos (07-04 user):
   //    sužaloti/mirę unitai gyvomis sprite kortelėmis + 🦴 uždirbta/prarasta. CLOSE → grįžtam namo.
@@ -651,7 +699,10 @@
     if (!btn || btn.dataset.mode !== 'swap' || _boneSwapBusy) return;
     _boneSwapBusy = true;
     _boneStatus('requesting voucher…', '#ffd24a');
-    try { var r = _room(); if (r) r.send('bones_swap'); else _boneSwapBusy = false; } catch (_) { _boneSwapBusy = false; }
+    // 🎚 siunčiam PASIRINKTĄ sumą; serveris ją apkerpa į [min … min(bankas, luba)]. Be slankiklio → serveris ims maksimumą.
+    var _rngS = document.getElementById('boneAmtRange');
+    var _amt = _rngS ? Math.floor(Number(_rngS.value) || 0) : 0;
+    try { var r = _room(); if (r) r.send('bones_swap', _amt > 0 ? { bones: _amt } : {}); else _boneSwapBusy = false; } catch (_) { _boneSwapBusy = false; }
     setTimeout(function () { _boneSwapBusy = false; }, 15000);   // guard jei atsakymas pradingo
   }
   function _onBonesVoucher(v) {

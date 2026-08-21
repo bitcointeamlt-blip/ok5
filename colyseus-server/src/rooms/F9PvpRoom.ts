@@ -12,7 +12,7 @@ import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReser
 import { scoreTierCached, scoreTierNow } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
 import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
 import { ethers } from "ethers";
-import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
+import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, RR_MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
 import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
 import { raidFeeEnabled, verifyAndConsumeRaidFee, RAID_FEE_RONKE } from "../services/RaidFee";   // ⚔️💰 10 RONKE raid fee → treasury (moka tik puolikas)
 import { chainDeck, chainDeckCached, chainDeckFull, chainDeckInvalidate, chainUtypeStr } from "../services/DeckChain";
@@ -1033,9 +1033,16 @@ export class F9PvpRoom extends Room<F9State> {
       // Klientui grąžinam VISADA (su txHash) — kad išvalytų pending; animacija tik kai amount>0.
       try { client.send("mint_reward_done", { txHash, amount: res.amount, n: res.n, total: res.total, reason: res.reason, ok: res.ok }); } catch (_) {}
     });
-    this.onMessage("bones_swap", async (client) => {
+    this.onMessage("bones_swap", async (client, _msg: any) => {
       const p = this.state.players.get(client.sessionId);
       const addr = String(p?.address || "").trim().toLowerCase();
+      /* 🦴🎚 08-21 (žaidėjų prašymas Discorde — OBA: „o jei noriu iškeisti tik 169?"):
+       * anksčiau swap VISADA imdavo min(bankas, 200) ⇒ gaudavai 1000 RONKE ir pasirinkti nebuvo kaip.
+       * Dabar klientas gali atsiųsti `bones` — kiek nori keisti. Minimumas lieka MIN_BONES (100),
+       * viršus — kiek turi banke, bet ne daugiau nei vieno swap'o luba (RR_MAX_SWAP_BONES).
+       * Senas klientas `bones` nesiunčia → elgiasi kaip anksčiau (ima maksimumą). */
+      const _wantRaw = Number(_msg && (_msg as any).bones);
+      const _want = Number.isFinite(_wantRaw) && _wantRaw > 0 ? Math.floor(_wantRaw) : 0;
       if (!addr) { try { client.send("bones_err", { msg: "Wallet required" }); } catch (_) {} return; }
       const cfg = boneSwapCfg();
       if (!cfg.enabled) { try { client.send("bones_err", { msg: "Swap contract not configured yet" }); } catch (_) {} return; }
@@ -1088,7 +1095,13 @@ export class F9PvpRoom extends Room<F9State> {
           if (bank.bones < MIN_BONES) { try { client.send("bones_err", { msg: `Need ${MIN_BONES} bones in bank (have ${bank.bones})` }); } catch (_) {} return; }
           // ⚡ RONKEREWARD režimas (mainnet, 07-12): kaulai×5 RONKE per faucet pool, cap RR_MAX_SWAP_BONES.
           if (cfg.mode === "ronkereward") {
-            const v: any = await signBoneRonkeVoucher(addr, bank.bones);
+            // 🎚 pasirinkta suma: [MIN_BONES … min(bankas, vieno swap'o luba)]. Be pasirinkimo → maksimumas (senas elgesys).
+            const _ceil = Math.min(Math.floor(bank.bones), RR_MAX_SWAP_BONES);
+            // Prašymas UŽ RIBŲ → aiški klaida, o NE tylus „iškeisim kitokią sumą" (žaidėjas turi gauti tiek, kiek prašė).
+            if (_want && _want < MIN_BONES) { try { client.send("bones_err", { msg: `Minimum ${MIN_BONES} bones per swap` }); } catch (_) {} return; }
+            if (_want && _want > _ceil) { try { client.send("bones_err", { msg: `Max ${_ceil} bones per swap` }); } catch (_) {} return; }
+            const _take = _want || _ceil;
+            const v: any = await signBoneRonkeVoucher(addr, _take);
             if (!v) { try { client.send("bones_err", { msg: "Voucher signing failed" }); } catch (_) {} return; }
             const bones = v.deciBones / 10;
             bank.bones = Math.round((bank.bones - bones) * 10) / 10;
