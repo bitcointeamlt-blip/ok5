@@ -218,18 +218,32 @@
   // ⛏️ VIEŠAS pilies RONKE kasimo potas (07-12 ekonomikos redizainas: pasyvus uždarbis = RONKE mining,
   //   kaulų gen OFF; grobis = 50% mining pot per 100% wipe). == serverio _mineRateFrom formulė iš persistintų
   //   buildings laukų (minePot/mineField/mineReserve/cemPower/shieldUntil). Display only; tikras grobis — server-auth.
-  function estPot(b) {
+  // ⚠️ 08-21 FIX (user: „REWARDS pusę valandos nejuda, nors jis turi didelį power"): formulė buvo PASENUSI —
+  //   (a) skaičiavo lauko FRAKCIJĄ iš persistuoto `mineField`, kuris offline žaidėjui dažnai lieka 0 →
+  //       frac=0 → rate=0 → pot UŽŠALDAVO (serveris tuo metu realiai kasė!);
+  //   (b) power×0.1 be „knee" ir ×0.5 „success" — serveris seniai skaičiuoja kitaip.
+  //   Dabar veidrodis serverio `_mineRateFrom` + `_mineFieldStored` (offline = snapshot unitai − sužaloti − mirę).
+  //   ⚠️ Ronke Score daugiklis (×1.05…×1.5) čia NEĮSKAIČIUOTAS — svetimo score klientas nežino, tad
+  //   rodoma reikšmė yra KUKLIAUSIA (tikras grobis gali būti didesnis).
+  function estPot(b, units) {
     if (!b || typeof b !== 'object') return 0;
-    var nft = +b.cemNft || 0, rv = +b.cemRv || 0, wallet = +b.cemWallet || 0;
-    var eligible = (rv >= 1 && nft >= 10) || (nft >= 12 && wallet >= 69);
-    var onF = +b.mineField || 0, res = +b.mineReserve || 0, reg = onF + res;
-    var frac = reg > 0 ? onF / reg : 0;
-    var raw = (frac > 0 ? 10 : 0) + Math.min(+b.cemPower || 0, 4000) * 0.1 * frac;   // MINE_BASE_H + power×0.1×frakcija
-    var shielded = (Number(b.shieldUntil) || 0) > Date.now();
-    var rate = eligible ? raw * (shielded ? 0.5 : 1) * 0.5 : 0;   // ×0.5 success (efektyvus, kaip serveris)
+    var rv = +b.cemRv || 0, wallet = +b.cemWallet || 0;
+    var bad = {};
+    (Array.isArray(b.injured) ? b.injured : []).forEach(function (i) { if (i && i.tokenId != null) bad[String(i.tokenId)] = 1; });
+    (Array.isArray(b.deadUnits) ? b.deadUnits : []).forEach(function (t) { bad[String(t)] = 1; });
+    var healthy = 0;
+    (Array.isArray(units) ? units : []).forEach(function (u) { if (u && u.tokenId && !/^dev/i.test(String(u.tokenId)) && !bad[String(u.tokenId)]) healthy++; });
+    var onF = Math.max(+b.mineField || 0, Math.min(RAID_MIN_DEFENDERS, healthy));   // == serverio _mineFieldStored (offline)
     var pot = +b.minePot || 0;
-    if (rate > 0 && +b.cemTick > 0) pot += rate * Math.max(0, Date.now() - (+b.cemTick)) / 3600000;
-    return Math.min(5000, pot);   // MINE_CAP
+    var eligible = onF >= RAID_MIN_DEFENDERS && (rv >= 1 || wallet >= 69);
+    if (!eligible) return Math.min(1000, pot);
+    var safe = b.dutyMode === 'safe';
+    var pw = Math.min(+b.cemPower || 0, 4000);
+    var powTerm = Math.min(pw, 250) * 0.05 + Math.max(0, pw - 250) * 0.05 * 0.25;    // knee @250 (virš — ¼ tempo)
+    var rate = ((safe ? 5 : 10) + powTerm) * (((Number(b.shieldUntil) || 0) > Date.now()) ? 0.5 : 1);
+    if (+b.cemTick > 0) pot += rate * Math.max(0, Date.now() - (+b.cemTick)) / 3600000;
+    var cap = safe ? Math.max(200, +b.mineCheckpoint || 200) : 1000;                 // SAFE stoja ties checkpoint; DUTY — 1000 stogas
+    return Math.min(cap, pot);
   }
   var STEAL_PCT = 0.5;   // == serverio MINE_STEAL_PCT — 100% wipe atveju puolikas gauna 50% poto
   var RAID_MIN_DEFENDERS = 12;   // == serverio RAID_FIELD_REQ (F9PvpRoom) — ta pati riba kaip kasimo
@@ -268,7 +282,7 @@
       list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:8px 0;">No raidable castles right now. Only castles with <b style="color:#c9d4e8;">' + RAID_MIN_DEFENDERS + '+ units on the field</b> (the ones actually mining RONKE) can be raided.</div>';
       return;
     }
-    rows.forEach(function (r) { r._pot = estPot(r.buildings); });
+    rows.forEach(function (r) { r._pot = estPot(r.buildings, r.units); });
     rows.sort(function (a, b) { return b._pot - a._pot; });   // riebiausios kapinės viršuje — rinkis auką!
     list.innerHTML = '';
     rows.forEach(function (r) {
