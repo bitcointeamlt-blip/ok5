@@ -326,6 +326,7 @@ async function blessInsta(addr: string): Promise<any> {
     claimable: gated ? 0 : st.claimable,                // mygtukas nerodomas, kol neatitinka
     resetAt: st.resetAt, tier: blessTierLabel(t.pct), pct: t.pct, score: t.score,
     units, minUnits: BLESS_MIN_UNITS, gated,
+    supply: st.supply,   // 🌐 globalus BLESS kiekis ŽAIDĖJŲ rankose (dev piniginė išskaičiuota)
   };
 }
 

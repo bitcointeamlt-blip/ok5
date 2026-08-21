@@ -12179,7 +12179,17 @@ function _f9HospUpdateStatus() {
         : 'No Ronke Score tier yet — reach TOP 50% to earn daily BLESS')
       + '\nTOP 1% 20 · 5% 15 · 10% 10 · 25% 6 · 50% 3'
       + '\nRequires ' + (_in.minUnits || 12) + '+ units in your wallet'
-      + (_in.units >= 0 ? ' (you have ' + _in.units + ')' : '');
+      + (_in.units >= 0 ? ' (you have ' + _in.units + ')' : '')
+      // 🌐 08-21 (user): GLOBALUS BLESS supply. Dev/owner piniginė serveryje IŠSKAIČIUOTA — joje
+      //    gulėjo 97% visų BLESS, tad be to skaičius apie ekonomiką nieko nesakytų.
+      //    Rodom TIK bendrą kiekį (piniginių skaičiaus user prašė NErašyti).
+      + (_in.supply != null ? '\n\nGlobal supply: ' + _in.supply + ' BLESS' : '');
+  }
+  // 🌐 Tas pats skaičius MATOMA eilute (ne tik tooltipe) — šalia savo balanso.
+  const _supEl = _f9HospPanelEl.querySelector('#f9hosp-bless-supply');
+  if (_supEl) {
+    if (_in.supply != null) { _supEl.style.display = ''; _supEl.textContent = 'GLOBAL ' + _in.supply; }
+    else _supEl.style.display = 'none';
   }
   const _clB = _f9HospPanelEl.querySelector('#f9hosp-claim');
   if (_clB) {
@@ -12365,6 +12375,8 @@ function _f9ToggleHospitalPanel() {
       '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
       // ⚡🎒 BLESS itemų balansas (08-13: nebe paros charge\'ai, o kaupiami itemai) + CLAIM mygtukas
       '<span id="f9hosp-bless" title="BLESS items — spend 1 to instantly heal an injured unit. Claim daily by Ronke Score: TOP 1% 20 · TOP 5% 15 · TOP 10% 10 · TOP 25% 6 · TOP 50% 3 per 24h" style="display:flex;align-items:center;gap:4px;font-size:9px;color:#7fdfea;padding:4px 8px;background:rgba(74,157,166,0.14);border:1px solid #2a6a74;border-radius:4px;white-space:nowrap;">' + _f9WingsIco(14, "margin-right:3px;") + 'BLESS<span id="f9hosp-bless-n" style="color:#aef0f7;">0</span></span>' +
+      /* 🌐 08-21: globalus BLESS supply (dev piniginė išskaičiuota serveryje). Slepiamas, kol nėra duomenų. */
+      '<span id="f9hosp-bless-supply" style="display:none;font-size:8px;color:#6a8f96;padding:3px 6px;background:rgba(74,157,166,0.08);border:1px solid #1f4d54;border-radius:4px;white-space:nowrap;" title="Total BLESS held by players (dev wallet excluded)">GLOBAL 0</span>' +
       '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +

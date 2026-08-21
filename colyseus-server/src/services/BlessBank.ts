@@ -96,14 +96,57 @@ async function _write(addr: string, r: BlessRow): Promise<boolean> {
   return !!(data && data.length);   // 0 eilučių = versija pasikeitė (kitas rašė) → kartojam
 }
 
-export type BlessStatus = { bal: number; cap: number; claimable: number; resetAt: number };
+export type BlessStatus = { bal: number; cap: number; claimable: number; resetAt: number; supply?: number };
+
+// ── 🌐 GLOBALUS BLESS SUPPLY (2026-08-21, user) ─────────────────────────────
+// Rodo, kiek BLESS realiai yra ŽAIDĖJŲ rankose. Dev/owner piniginė(s) IŠSKAIČIUOJAMOS —
+// 08-21 jose gulėjo 10 036 iš 10 362 (97%), tad be išskaičiavimo skaičius nieko nesako
+// apie ekonomiką (atrodytų „10k BLESS apyvartoje", nors žaidėjai turi ~321).
+// Sąrašas per env `BLESS_SUPPLY_EXCLUDE` (kableliais), default = žinoma dev piniginė.
+const _EXCLUDE = new Set(
+  (process.env.BLESS_SUPPLY_EXCLUDE || "0x32782d97a180a0fd5b6f775517ac4e3727bb624a")
+    .split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
+);
+const SUPPLY_TTL_MS = 60_000;   // skaičiavimas skenuoja visas eilutes → kešuojam minutei
+let _supplyCache = { at: 0, val: 0 };
+
+export async function blessSupply(): Promise<number> {
+  const now = Date.now();
+  if (now - _supplyCache.at < SUPPLY_TTL_MS) return _supplyCache.val;
+  const c = sb();
+  if (!c) return _supplyCache.val;
+  try {
+    // 1) balansai piniginėse
+    const { data: bal } = await c.from("f9_bases").select("ronin_address,buildings").ilike("ronin_address", "%#bless");
+    let total = 0;
+    for (const r of (bal || [])) {
+      const addr = String((r as any).ronin_address || "").replace("#bless", "").toLowerCase();
+      if (_EXCLUDE.has(addr)) continue;
+      total += Math.max(0, Number((r as any).buildings?.bal) || 0);
+    }
+    // 2) + itemai, kurie guli TURGUJE (escrow) — jie irgi egzistuoja, tik nurašyti iš balanso
+    const { data: mk } = await c.from("f9_bases").select("ronin_address,buildings").like("ronin_address", "blessmkt\_%");
+    for (const r of (mk || [])) {
+      const b: any = (r as any).buildings || {};
+      if (b.status !== "active") continue;                       // nupirkti/atšaukti lotai NEskaičiuojami
+      if (_EXCLUDE.has(String(b.seller || "").toLowerCase())) continue;
+      total += Math.max(0, Number(b.qty) || 0);
+    }
+    _supplyCache = { at: now, val: total };
+    return total;
+  } catch (e: any) {
+    console.warn("[BlessBank] supply skaičiavimas nepavyko:", e?.message);
+    return _supplyCache.val;
+  }
+}
 // Statusas panelei: balansas + kiek DAR galima claim'inti šiam lange. DB triktis → konservatyvu (0/0).
 export async function blessStatus(addr: string, percentile: number): Promise<BlessStatus> {
   const cap = blessClaimCap(percentile);
   const now = Date.now();
   try {
     const r = await _read(_norm(addr), now);
-    return { bal: r.bal, cap, claimable: Math.max(0, cap - r.claimed), resetAt: r.windowStart + WINDOW_MS };
+    const supply = await blessSupply();   // 🌐 globalus kiekis žaidėjų rankose (be dev piniginės)
+    return { bal: r.bal, cap, claimable: Math.max(0, cap - r.claimed), resetAt: r.windowStart + WINDOW_MS, supply };
   } catch {
     return { bal: 0, cap, claimable: 0, resetAt: now + WINDOW_MS };
   }
