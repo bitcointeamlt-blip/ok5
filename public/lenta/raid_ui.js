@@ -356,34 +356,41 @@
       _shakeRaidBtn();
     }, 45000);
   }
-  // Ar eilutė = puolamas GYVAS taikinys (tie patys filtrai kaip renderList + online heartbeat <90s).
-  function _isLiveTarget(r, me) {
+  // Ar eilutė = PUOLAMAS taikinys — TIE PATYS filtrai kaip renderList (be online reikalavimo!).
+  //   ⚠️ 08-21 fix: anksčiau reikalavom ir `ownerSeenAt < 90s` (savininkas prie ekrano) — tokių praktiškai
+  //   nebūna (matuota: 200 pilių → 14 puolamų, bet 0 online), todėl ženkliukas nevirpėdavo NIEKADA.
+  //   Dabar praneša apie bet kokį naują taikinį sąraše; online tik sustiprina (kartojam priminimą).
+  function _isRaidTarget(r, me) {
     var a = String(r.ronin_address || '').toLowerCase();
     if (!a || a === me || a.indexOf('#') >= 0) return false;
     if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;
     var b = r.buildings || {};
     if (b.dutyMode === 'safe') return false;
     if ((Number(b.shieldUntil) || 0) > Date.now()) return false;        // po skydu — nepuolamas
-    if (combatReady(r) < RAID_MIN_DEFENDERS) return false;              // <12 lauke — nepuolamas
-    return (Date.now() - (Number(b.ownerSeenAt) || 0)) < 90000;         // 🫀 prie ekrano
+    return combatReady(r) >= RAID_MIN_DEFENDERS;                        // 12+ lauke = puolamas
   }
+  function _isOnline(r) { return (Date.now() - (Number((r.buildings || {}).ownerSeenAt) || 0)) < 90000; }
   function _liveScan() {
     if (!window.__f9HomeActive || window.__f9RaidActive || document.hidden || panel) return;   // panelė atidaryta → matai pats
     if (!myAddr()) return;
     fetchCastles().then(function (rows) {
       var me = myAddr();
-      var now = new Set();
-      (rows || []).forEach(function (r) { if (_isLiveTarget(r, me)) now.add(String(r.ronin_address).toLowerCase()); });
+      var now = new Set(), anyOnline = false;
+      (rows || []).forEach(function (r) {
+        if (!_isRaidTarget(r, me)) return;
+        now.add(String(r.ronin_address).toLowerCase());
+        if (_isOnline(r)) anyOnline = true;
+      });
       var fresh = 0;
       now.forEach(function (a) { if (!_liveSeen || !_liveSeen.has(a)) fresh++; });   // pirmas ciklas: VISI = nauji
       _liveSeen = now;
-      try { if (window.__f9RaidDebug) console.log('[RaidWatch] gyvų taikinių:', now.size, '| naujų:', fresh); } catch (_) {}
-      if (fresh > 0) _startShakeLoop();
+      try { if (window.__f9RaidDebug) console.log('[RaidWatch] taikinių:', now.size, '| naujų:', fresh, '| online:', anyOnline); } catch (_) {}
+      if (fresh > 0) { if (anyOnline) _startShakeLoop(); else _shakeRaidBtn(); }   // online → kartojam; šiaip 1 kartą
       else if (!now.size && _shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
-    }).catch(function () {});
+    }).catch(function (e) { try { if (window.__f9RaidDebug) console.warn('[RaidWatch] klaida:', e); } catch (_) {} });
   }
-  _liveTimer = setInterval(_liveScan, 45000);
-  setTimeout(_liveScan, 5000);   // netrukus po įėjimo: jau esantis gyvas taikinys irgi praneša
+  _liveTimer = setInterval(_liveScan, 30000);
+  setTimeout(_liveScan, 4000);   // netrukus po įėjimo: jau esantys taikiniai irgi praneša
 
   // 07-03: senas plaukiojantis top-right pill'as IŠJUNGTAS — RAID entry point dabar dock'e
   //   (wallet-ui.js ⚔️ mygtukas → window.F9RaidUI.open). Tick liko tik auto-uždaryti panelę išėjus iš home.
