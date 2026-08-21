@@ -374,16 +374,16 @@
       var me = myAddr();
       var now = new Set();
       (rows || []).forEach(function (r) { if (_isLiveTarget(r, me)) now.add(String(r.ronin_address).toLowerCase()); });
-      if (_liveSeen === null) { _liveSeen = now; return; }              // pirmas ciklas = bazinė linija
       var fresh = 0;
-      now.forEach(function (a) { if (!_liveSeen.has(a)) fresh++; });
+      now.forEach(function (a) { if (!_liveSeen || !_liveSeen.has(a)) fresh++; });   // pirmas ciklas: VISI = nauji
       _liveSeen = now;
+      try { if (window.__f9RaidDebug) console.log('[RaidWatch] gyvų taikinių:', now.size, '| naujų:', fresh); } catch (_) {}
       if (fresh > 0) _startShakeLoop();
       else if (!now.size && _shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
     }).catch(function () {});
   }
-  _liveTimer = setInterval(_liveScan, 60000);
-  setTimeout(_liveScan, 8000);   // bazinė linija netrukus po įėjimo
+  _liveTimer = setInterval(_liveScan, 45000);
+  setTimeout(_liveScan, 5000);   // netrukus po įėjimo: jau esantis gyvas taikinys irgi praneša
 
   // 07-03: senas plaukiojantis top-right pill'as IŠJUNGTAS — RAID entry point dabar dock'e
   //   (wallet-ui.js ⚔️ mygtukas → window.F9RaidUI.open). Tick liko tik auto-uždaryti panelę išėjus iš home.
@@ -394,5 +394,7 @@
   }
   setInterval(tick, 800);
   if (document.readyState !== 'loading') tick(); else document.addEventListener('DOMContentLoaded', tick);
-  window.F9RaidUI = { open: openPanel, close: closePanel, openHistory: openHistory };
+  // shake()/scan() — rankinis patikrinimas iš konsolės (F9RaidUI.shake() turi supurtyti ⚔️ iškart);
+  //   __f9RaidDebug = true → scan'as rašo į konsolę, kiek gyvų taikinių randa.
+  window.F9RaidUI = { open: openPanel, close: closePanel, openHistory: openHistory, shake: _shakeRaidBtn, scan: _liveScan };
 })();
