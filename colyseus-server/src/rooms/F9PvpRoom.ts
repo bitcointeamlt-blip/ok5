@@ -4,7 +4,8 @@ import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { bakRecord, healStructures } from "../services/BaseBackup";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, baseRowExists, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
-import { claimMintReward } from "../services/MintReward";   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
+import { claimMintReward } from "../services/MintReward";
+import { MineLog } from "../services/MineLog";   // ⛏️📜 kasimo įvykių žurnalas (auditui: kaip uždirbti RONKE)   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
 import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
 import { shieldList, shieldAdd, shieldBurn } from "../services/BlessShield";   // 🪽🛡 BLESS skydas ant unito (2026-08-19)
 import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReserve, blessMarketBuy, blessMarketFeeBps, blessMarketTreasury } from "../services/BlessMarket";   // ⚡🛒 BLESS itemų prekyba (2026-08-18)
@@ -806,6 +807,9 @@ export class F9PvpRoom extends Room<F9State> {
       if (want === "online" && _prevDuty !== "online") this._dutyLockUntil.set(addr, Date.now() + DUTY_MIN_DWELL_MS);
       else if (want === "safe") this._dutyLockUntil.delete(addr);
       this._persistCem(addr);
+      // ⛏️📜 AUDITAS: rankinis režimo keitimas. DUTY kasa 2× greičiau, tad „kiek laiko kuriuo režimu"
+      //    yra esminis klausimas tiriant, kaip susidarė balansas (08-21 to duomens NEBUVO).
+      MineLog.add(addr, { k: "duty", duty: want, pot: c.mpot, mined: c.mmined, why: "manual" });
       try { client.send("duty_result", { ok: true, mode: want }); client.send("cemetery", { ...this._cemPayload(addr), own: true }); } catch (_) {}
       console.log(`[F9PvpRoom] ⚔️🛡 duty → ${want} (${addr.slice(0, 10)}…)`);
     });
@@ -834,6 +838,9 @@ export class F9PvpRoom extends Room<F9State> {
         /* ⛏️💰 08-20: nusiėmimas liečia TIK piniginį balansą. Kasimo ciklas (mmined/gated) NEkeičiamas —
          * kitaip withdraw būtų „nemokamas" gate'o atrakinimas (taisyklė: atrakina TIK PvP mūšis). */
         this._persistCem(addr);
+        // ⛏️📜 AUDITAS: išėmimas su nonce — pagal jį galima sutikrinti su on-chain claim'u
+        //    (žr. [[project_audit_c7ce_wallet_20260815]]: nonce↔grandinė sutikrinimas privalomas).
+        MineLog.add(addr, { k: "withdraw", amt, pot: c!.mpot, mined: c!.mmined, duty: c!.duty, why: voucher.nonce.slice(0, 18) });
         const _pend = { nonce: voucher.nonce, amt, at: Date.now() };
         this._minePend.set(addr, _pend);
         void this._buildingsOp(addr, (b) => { b.minePend = _pend; });   // ⛏️💸 07-18 (C1): DURABLE — išgyvena kambario mirtį; re-credit po deadline jei TX nenusėdo (atskira #buildings eilė, neliečia mpot bloko)
@@ -2322,7 +2329,12 @@ export class F9PvpRoom extends Room<F9State> {
     // ⛏️🗡 CIKLO VARTAI: iškasus 200 (mmined) → kasimas sustoja iki kvalifikuoto PvP mūšio. TIK 🛡SAFE.
     //   🟢DUTY kasa be ciklo lubų (mainais — matomas ir puolamas bet kada).
     const _gatedNow = c.duty === "safe" && (c.mmined || 0) >= MINE_SIEGE_STEP - 0.01;
-    if (_gatedNow && !c.gated) console.log(`[F9PvpRoom] 🗡 kasimas STOP (iškasta ${Math.round(c.mmined || 0)}/${MINE_SIEGE_STEP}) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`);
+    if (_gatedNow && !c.gated) {
+      console.log(`[F9PvpRoom] 🗡 kasimas STOP (iškasta ${Math.round(c.mmined || 0)}/${MINE_SIEGE_STEP}) — ${addr.slice(0, 10)}… reikia 1 PvP mūšio`);
+      // ⛏️📜 AUDITAS: ciklas pilnas. Pora `gate`→`siege` parodo, ar žaidėjas realiai kovojo,
+      //    ar balansas augo be mūšių (pvz. per DUTY, kur ciklo lubų nėra).
+      MineLog.add(addr, { k: "gate", pot: c.mpot, mined: c.mmined, duty: c.duty, why: "cycle full — needs PvP" });
+    }
     c.gated = _gatedNow;   // išvestinė būsena (SAFE + ciklas pilnas); grobis jos nebeįjungia
     c.tick = now;
     if (this.state.phase === "playing") {
@@ -2972,8 +2984,12 @@ export class F9PvpRoom extends Room<F9State> {
           b.mineMined = 0;
           b.mineCheckpoint = MINE_SIEGE_STEP;
         };
+        // ⛏️📜 AUDITAS: fiksuojam KIEKVIENĄ kvalifikuotą mūšį abiem pusėms. Be šito neįmanoma
+        //    atsakyti „kiek PvP žaidėjas atliko, kad prisikastų X RONKE" (08-21 auditas to neturėjo).
         // PUOLIKAS — jo _cem nėra šiam kambary; rašom per jo #buildings eilę
         const _atk = this._raidAtkAddr;
+        MineLog.add(_atk, { k: "siege", why: `attacker ${_qualified}% casualties`, by: this._ownerAddr.slice(0, 10) });
+        MineLog.add(this._ownerAddr, { k: "siege", why: `defender ${_qualified}% casualties`, by: _atk.slice(0, 10) });
         void this._buildingsOp(_atk, _advanceSiege);
         // GYNĖJAS — jei _cem įkeltas (gyva gynyba), keičiam tiesiogiai; kitaip (async offline) per #buildings eilę
         const cDef = this._cem.get(this._ownerAddr);
@@ -3003,8 +3019,8 @@ export class F9PvpRoom extends Room<F9State> {
       //   Manual — jokio auto-expiry (skydas @≥50% turi savo 1h). Puolikas NEpaveiktas. Nesvarbu kas laimėjo.
       if (this._raidAtkAddr) {
         const cDef2 = this._cem.get(this._ownerAddr);
-        if (cDef2) { if (cDef2.duty !== "safe") { cDef2.duty = "safe"; this._persistCem(this._ownerAddr); } }
-        else void this._buildingsOp(this._ownerAddr, (b) => { (b as any).dutyMode = "safe"; });
+        if (cDef2) { if (cDef2.duty !== "safe") { cDef2.duty = "safe"; this._persistCem(this._ownerAddr); MineLog.add(this._ownerAddr, { k: "duty", duty: "safe", why: "auto post-raid" }); } }
+        else { void this._buildingsOp(this._ownerAddr, (b) => { (b as any).dutyMode = "safe"; }); MineLog.add(this._ownerAddr, { k: "duty", duty: "safe", why: "auto post-raid" }); }
         for (const cl of this.clients) {
           const cp = this.state.players.get(cl.sessionId);
           if (cp && String(cp.address || "").trim().toLowerCase() === this._ownerAddr) {
@@ -3048,6 +3064,7 @@ export class F9PvpRoom extends Room<F9State> {
                 await this._buildingsOp(wAddr, (b) => {
                   const cur = Number.isFinite(+((b as any).minePot)) ? Math.max(0, +((b as any).minePot)) : 0;
                   (b as any).minePot = Math.round(Math.min(MINE_CAP, cur + steal) * 1000) / 1000;   // 💰 grobis TIK į balansą — `mineMined` (200 ciklo skalė) sąmoningai NELIEČIAMAS (user 08-20)
+                  MineLog.add(wAddr, { k: "steal", amt: Math.round(steal * 100) / 100, pot: (b as any).minePot, why: "raid loot" });   // ⛏️📜 grobis ≠ kasimas — auditui skiriam
                 });
               }
               this.broadcast("mine_stolen", { amount: steal, thiefSid: winnerSid, victimAddr: this._ownerAddr });   // FX/notif abiem pusėm (thief=+ / defender=−)
