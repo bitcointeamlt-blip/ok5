@@ -314,10 +314,76 @@
 
   function closePanel() {
     if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+    // ⚔️🔔 pažiūrėjai sąrašą → virpėjimas nebereikalingas; kitas NAUJAS gyvas taikinys vėl praneš
+    try {
+      if (_shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
+      if (_shakeT) { clearTimeout(_shakeT); _shakeT = null; }
+      var _rb = _raidBtnEl(); if (_rb) _rb.classList.remove('f9-raid-shake');
+    } catch (_) {}
     if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
     else if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
     overlay = null; panel = null;
   }
+
+  // ── ⚔️🔔 GYVO TAIKINIO SARGYBA (08-21 user) — kai atsiranda NAUJAS online taikinys, dock'o ⚔️ RAID
+  //    ženkliukas suvirpa (kaip 🧱 TETRIS mygtukas, kai kažkas laukia varžovo: 3 virptelėjimai ~4.5s).
+  //    Tikrinam kas 60s TIK savo pilyje + kai skirtukas matomas + panelė uždaryta (atidaręs jau matai pats).
+  //    Pirmas ciklas = bazinė linija (nevirpa) — kitaip virptelėtų kiekvieną kartą įėjus į pilį.
+  var _liveSeen = null, _liveTimer = null, _shakeT = null, _shakeLoopT = null;
+  function _raidBtnEl() { try { return document.getElementById('wui-raid-btn'); } catch (_) { return null; } }
+  function _shakeCss() {
+    if (document.getElementById('f9-raid-shake-css')) return;
+    var st = document.createElement('style'); st.id = 'f9-raid-shake-css';
+    st.textContent = '@keyframes f9RaidShake{0%,60%,100%{transform:rotate(0)}6%{transform:rotate(-7deg)}14%{transform:rotate(7deg)}22%{transform:rotate(-5deg)}30%{transform:rotate(5deg)}38%{transform:rotate(-3deg)}46%{transform:rotate(3deg)}54%{transform:rotate(0)}}' +
+      '.f9-raid-shake{animation:f9RaidShake 1.5s ease-in-out 3;transform-origin:center bottom;}';
+    document.head.appendChild(st);
+  }
+  function _shakeRaidBtn() {
+    var b = _raidBtnEl(); if (!b || b.style.display === 'none') return;
+    _shakeCss();
+    b.classList.remove('f9-raid-shake'); void b.offsetWidth;   // restart animaciją
+    b.classList.add('f9-raid-shake');
+    if (_shakeT) clearTimeout(_shakeT);
+    _shakeT = setTimeout(function () { var e = _raidBtnEl(); if (e) e.classList.remove('f9-raid-shake'); }, 4700);
+  }
+  // Kartojam kas 45s kol tas taikinys vis dar gyvas (kaip tetris loop) — kad nepražiopsotum.
+  function _startShakeLoop() {
+    _shakeRaidBtn();
+    if (_shakeLoopT) return;
+    _shakeLoopT = setInterval(function () {
+      if (panel || !window.__f9HomeActive || window.__f9RaidActive || document.hidden) return;
+      if (!_liveSeen || !_liveSeen.size) { clearInterval(_shakeLoopT); _shakeLoopT = null; return; }
+      _shakeRaidBtn();
+    }, 45000);
+  }
+  // Ar eilutė = puolamas GYVAS taikinys (tie patys filtrai kaip renderList + online heartbeat <90s).
+  function _isLiveTarget(r, me) {
+    var a = String(r.ronin_address || '').toLowerCase();
+    if (!a || a === me || a.indexOf('#') >= 0) return false;
+    if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;
+    var b = r.buildings || {};
+    if (b.dutyMode === 'safe') return false;
+    if ((Number(b.shieldUntil) || 0) > Date.now()) return false;        // po skydu — nepuolamas
+    if (combatReady(r) < RAID_MIN_DEFENDERS) return false;              // <12 lauke — nepuolamas
+    return (Date.now() - (Number(b.ownerSeenAt) || 0)) < 90000;         // 🫀 prie ekrano
+  }
+  function _liveScan() {
+    if (!window.__f9HomeActive || window.__f9RaidActive || document.hidden || panel) return;   // panelė atidaryta → matai pats
+    if (!myAddr()) return;
+    fetchCastles().then(function (rows) {
+      var me = myAddr();
+      var now = new Set();
+      (rows || []).forEach(function (r) { if (_isLiveTarget(r, me)) now.add(String(r.ronin_address).toLowerCase()); });
+      if (_liveSeen === null) { _liveSeen = now; return; }              // pirmas ciklas = bazinė linija
+      var fresh = 0;
+      now.forEach(function (a) { if (!_liveSeen.has(a)) fresh++; });
+      _liveSeen = now;
+      if (fresh > 0) _startShakeLoop();
+      else if (!now.size && _shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
+    }).catch(function () {});
+  }
+  _liveTimer = setInterval(_liveScan, 60000);
+  setTimeout(_liveScan, 8000);   // bazinė linija netrukus po įėjimo
 
   // 07-03: senas plaukiojantis top-right pill'as IŠJUNGTAS — RAID entry point dabar dock'e
   //   (wallet-ui.js ⚔️ mygtukas → window.F9RaidUI.open). Tick liko tik auto-uždaryti panelę išėjus iš home.
