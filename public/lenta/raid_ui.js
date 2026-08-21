@@ -314,8 +314,9 @@
 
   function closePanel() {
     if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
-    // ⚔️🔔 pažiūrėjai sąrašą → virpėjimas nebereikalingas; kitas NAUJAS gyvas taikinys vėl praneš
+    // ⚔️🔔 pažiūrėjai sąrašą → 2 min tylos (po to vėl primins, jei taikinių tebėra)
     try {
+      _snoozeUntil = Date.now() + SNOOZE_MS;
       if (_shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
       if (_shakeT) { clearTimeout(_shakeT); _shakeT = null; }
       var _rb = _raidBtnEl(); if (_rb) _rb.classList.remove('f9-raid-shake');
@@ -330,6 +331,9 @@
   //    Tikrinam kas 60s TIK savo pilyje + kai skirtukas matomas + panelė uždaryta (atidaręs jau matai pats).
   //    Pirmas ciklas = bazinė linija (nevirpa) — kitaip virptelėtų kiekvieną kartą įėjus į pilį.
   var _liveSeen = null, _liveTimer = null, _shakeT = null, _shakeLoopT = null;
+  var REMIND_MS = 25000;      // kol sąraše yra ką pulti — primename kas ~30s (kiekvieną skenavimo ciklą)
+  var SNOOZE_MS = 120000;     // ką tik žiūrėjai sąrašą → 2 min tylos, kad neerzintų
+  var _snoozeUntil = 0;
   function _raidBtnEl() { try { return document.getElementById('wui-raid-btn'); } catch (_) { return null; } }
   function _shakeCss() {
     if (document.getElementById('f9-raid-shake-css')) return;
@@ -345,16 +349,6 @@
     b.classList.add('f9-raid-shake');
     if (_shakeT) clearTimeout(_shakeT);
     _shakeT = setTimeout(function () { var e = _raidBtnEl(); if (e) e.classList.remove('f9-raid-shake'); }, 4700);
-  }
-  // Kartojam kas 45s kol tas taikinys vis dar gyvas (kaip tetris loop) — kad nepražiopsotum.
-  function _startShakeLoop() {
-    _shakeRaidBtn();
-    if (_shakeLoopT) return;
-    _shakeLoopT = setInterval(function () {
-      if (panel || !window.__f9HomeActive || window.__f9RaidActive || document.hidden) return;
-      if (!_liveSeen || !_liveSeen.size) { clearInterval(_shakeLoopT); _shakeLoopT = null; return; }
-      _shakeRaidBtn();
-    }, 45000);
   }
   // Ar eilutė = PUOLAMAS taikinys — TIE PATYS filtrai kaip renderList (be online reikalavimo!).
   //   ⚠️ 08-21 fix: anksčiau reikalavom ir `ownerSeenAt < 90s` (savininkas prie ekrano) — tokių praktiškai
@@ -384,9 +378,13 @@
       var fresh = 0;
       now.forEach(function (a) { if (!_liveSeen || !_liveSeen.has(a)) fresh++; });   // pirmas ciklas: VISI = nauji
       _liveSeen = now;
-      try { if (window.__f9RaidDebug) console.log('[RaidWatch] taikinių:', now.size, '| naujų:', fresh, '| online:', anyOnline); } catch (_) {}
-      if (fresh > 0) { if (anyOnline) _startShakeLoop(); else _shakeRaidBtn(); }   // online → kartojam; šiaip 1 kartą
-      else if (!now.size && _shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
+      try { if (window.__f9RaidDebug) console.log('[RaidWatch] taikinių:', now.size, '| naujų:', fresh, '| online:', anyOnline, '| snooze:', Math.max(0, Math.round((_snoozeUntil - Date.now()) / 1000)) + 's'); } catch (_) {}
+      // ⚔️🔔 08-21 (user: „matau taikinį, o mygtukas nevirpa"): virpam ne tik dėl NAUJŲ — kol sąraše
+      //   apskritai yra ką pulti, primenam periodiškai (kaip tetris mygtukas, kol kažkas laukia varžovo).
+      //   NAUJAS taikinys → iškart. Priminimas → kas REMIND_MS. Atsidarius sąrašą → tyla SNOOZE_MS.
+      if (!now.size) { if (_shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; } return; }
+      if (fresh > 0) { _snoozeUntil = 0; _shakeRaidBtn(); _snoozeUntil = Date.now() + REMIND_MS; return; }
+      if (Date.now() >= _snoozeUntil) { _shakeRaidBtn(); _snoozeUntil = Date.now() + REMIND_MS; }
     }).catch(function (e) { try { if (window.__f9RaidDebug) console.warn('[RaidWatch] klaida:', e); } catch (_) {} });
   }
   _liveTimer = setInterval(_liveScan, 30000);
