@@ -1209,7 +1209,10 @@
   // iš LobbyRoom sąrašo → laukiantys (1/2) blocks_room; badge/toast irgi gauna tiesiogiai
   function _refreshWaiting() {
     _waitingRooms = (_allRooms || [])
-      .filter(function (r) { return r.clients === 1 && r.maxClients === 2; })
+      /* 🚪 08-21: `clients === 1` VIENAS nepakanka — sužaidus mačą varžovas išeina, lieka 1 iš 2 ir
+         BAIGTAS kambarys vėl atrodo kaip laukiantis (žaidėjo skundas: „mačą sužaidžiau, o jis vis dar
+         rodomas visiems"). Serveris tokį kambarį dabar pažymi `open:false` — gerbiam tą žymę. */
+      .filter(function (r) { return r.clients === 1 && r.maxClients === 2 && !(r.metadata && r.metadata.open === false); })
       .map(function (r) { return { roomId: r.roomId, host: (r.metadata && r.metadata.host) || 'Player', tier: (r.metadata && r.metadata.tier) || 69, mid: (r.metadata && r.metadata.mid) || null, wagerLive: (r.metadata && r.metadata.wagerLive), chain: (r.metadata && r.metadata.chain) || 'ronin' }; });
     _renderList();
   }

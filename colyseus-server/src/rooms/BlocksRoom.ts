@@ -1,4 +1,4 @@
-import { Room, Client } from "@colyseus/core";
+import { Room, Client, updateLobby } from "@colyseus/core";
 import { BlocksState, BlocksPlayer } from "../schema/BlocksState";
 import { loadGameLib, GameLib } from "../blocks/loadGame";
 import { StakeService } from "../services/StakeService";
@@ -153,7 +153,7 @@ export class BlocksRoom extends Room<BlocksState> {
     /* PRIVATUS kambarys (draugo kvietimas per kodą/nuorodą): išimamas iš matchmaking, kad
      * QUICK MATCH (joinOrCreate) į jį atsitiktinai neįmestų pašalinio. Prisijungiama TIK per
      * joinById(roomId). Public kambariai (quick match) lieka matomi. */
-    if (options && options.mode === "private") this.setPrivate();
+    if (options && options.mode === "private") { this.setPrivate(); this._neverList = true; }   // 🔒 invite kambarys lobyje nefigūruoja NIEKADA
     /* METADATA — matoma LobbyRoom sąraše (host vardas + režimas + STATYMO PAKOPA). Pakopa (RONKE suma)
      * leidžia žaidėjui lobyje matyti, už kokią sumą kambarys atviras, ir pasirinkti. Leistinos: 69/200/800. */
     const ALLOWED_TIERS = [69, 200, 800];
@@ -188,6 +188,7 @@ export class BlocksRoom extends Room<BlocksState> {
     if (this.vsAI) {
       this._aiPlayOf.p2 = true;   // p2 = serverio botas (be kliento)
       this.setPrivate();
+      this._neverList = true;     // 🔒 vsAI kambarys irgi niekada nefigūruoja lobyje
       this.maxClients = 1;
       this.escrow = new WagerEscrow(
         wagerLive ? AI_FEE : 0,
@@ -503,6 +504,7 @@ export class BlocksRoom extends Room<BlocksState> {
   private _beginPrep() {
     if (this.state.phase === "prep" || this.state.phase === "countdown" || this.state.phase === "playing") return;
     this.state.phase = "prep";
+    this._unlist("mačas prasidėjo");   // 🚪 nuo šio momento kambarys NEBERODOMAS lobyje (žr. _unlist)
     // 🔎 08-20: fiksuojam PATĮ STARTĄ. Tiriant „abu sumoka, o žaidimo nėra" nebuvo kaip atskirti,
     //    ar serveris iki starto apskritai priėjo — MatchLog rašydavo tik pabaigoje/nutraukime, o
     //    Cloud runtime log'ai neprieinami. Dabar DB matyti: startavo ir neužsibaigė vs išvis nestartavo.
@@ -949,9 +951,42 @@ export class BlocksRoom extends Room<BlocksState> {
     try { this.state.players.delete(client.sessionId); } catch {}
     this._end(winner);
   }
+  /* 🚪 08-21 (user: „mačą jau sužaidžiau, o lobyje jis vis dar kabo ir jį mato visi").
+   * Lobio sąrašą klientas filtruoja TIK pagal `clients === 1 && maxClients === 2`. Sužaidus mačą
+   * kambarys lieka gyvas (rezultatų ekranas); varžovui išėjus lieka 1 klientas iš 2 ⇒ kambarys VĖL
+   * įkrenta į „atvirų mačų" sąrašą. Žmonės siunčia iššūkį, o šeimininkas nieko nebepatvirtina — jo ten
+   * jau nebėra. Tas pats nutinka mačo VIDURY, kai vieną pusę žaidžia AI, o žaidėjas išėjęs.
+   * `lock()` čia netinka: Colyseus LobbyRoom užklausa filtruoja `private/unlisted`, o ne `locked`.
+   * `setPrivate(true)` išima kambarį iš lobio, bet `joinById` LIEKA — mobilus stake-resume nesulūžta. */
+  private _listed = true;
+  /* 🔒 Kambariai, kurie NIEKADA nebuvo lobyje (invite `mode:"private"` ir visi vsAI) — jų negalima
+   * nei išimti, nei GRĄŽINTI. Be šito `_relist` po nutrūkusio statymo būtų padaręs privatų kambarį viešą. */
+  private _neverList = false;
+  private _unlist(why: string) {
+    if (this._neverList) return;
+    if (!this._listed) return;
+    this._listed = false;
+    /* setPrivate() išima kambarį iš NAUJŲ užklausų (`matchMaker.query({private:false})`), BET
+     * NEPRANEŠA jau prisijungusiems lobio klientams — Colyseus `updateLobby` publikuoja tik kai
+     * kambarys VIEŠAS. Todėl atskirai siunčiam pašalinimą, kad įrašas dingtų iš atidarytų panelių iškart. */
+    try { void this.setPrivate(true); } catch (_) {}
+    try { this.setMetadata({ ...((this as any).listing?.metadata || {}), open: false }); } catch (_) {}   // 2-as sluoksnis: senas kliento įrašas irgi nebebus rodomas
+    try { updateLobby(this as any, true); } catch (_) {}
+    console.log(`[BLOCKS] 🚪 kambarys išimtas iš lobio (${why}) room=${this.roomId}`);
+  }
+  private _relist(why: string) {
+    if (this._neverList) return;
+    if (this._listed) return;
+    this._listed = true;
+    try { void this.setPrivate(false); } catch (_) {}
+    try { this.setMetadata({ ...((this as any).listing?.metadata || {}), open: true }); } catch (_) {}
+    try { updateLobby(this as any); } catch (_) {}
+    console.log(`[BLOCKS] 🔙 kambarys grąžintas į lobį (${why}) room=${this.roomId}`);
+  }
   private _end(winner: Side | "") {
     if (this.state.phase === "over") return;
     this.state.phase = "over";
+    this._unlist("mačas baigtas");   // 🚪 baigtas mačas NIEKADA nebegrįžta į lobį
     this.state.winner = winner;
     this.broadcast("gameover", { winner });
     // 🎖️ linijų XP → pool + unitų reportas (kiekvienai pusei su pinigine; botas be kliento — no-op)
@@ -1237,7 +1272,7 @@ export class BlocksRoom extends Room<BlocksState> {
     //    žaidėjo statymas. Simuliacija (scenarijus C) tai atkartojo: po `stake_cancel` fazė
     //    liko „staking" ir mačas vis tiek startavo. Dabar langas uždaromas iš karto.
     const _wasPhase = this.state.phase;
-    if (this.state.phase !== "over") this.state.phase = "lobby";
+    if (this.state.phase !== "over") { this.state.phase = "lobby"; this._relist("mačas nutrūko — šeimininkas vėl laukia"); }
     this._aborting = true;
     if (_wasPhase === "staking") console.log(`[BLOCKS WAGER] abort (${reason}) — statymo langas uždarytas IŠ KARTO, refundai vykdomi toliau`);
     const n = await this._refundBoth();
