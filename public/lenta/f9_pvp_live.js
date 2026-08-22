@@ -1400,6 +1400,18 @@
       } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
+    /* ⚡🏭 BLESS GENERATORIUS (08-22) — pirktas/upgrade’intas už kaulus. Serveris grąžina naują lygį ir
+     * ŠVIEŽIĄ `insta` (paros lubos jau su nauju lygiu), tad panelė iškart rodo teisingą claim skaičių. */
+    room.onMessage('blessgen_upgraded', function (e) {
+      if (e && e.insta) window._f9HospInsta = e.insta;
+      try {
+        if (window.showGameNotification) {
+          if (e && e.max && !e.nextCost) window.showGameNotification('⚡ BLESS GENERATOR', 'Fully upgraded — L' + (e.level || 5) + ' gives +' + (e.level || 5) + ' BLESS every 24h', '#7fdfea');
+          else window.showGameNotification('⚡ BLESS GENERATOR', 'Level ' + (e.level || 1) + ' — now +' + (e.level || 1) + ' BLESS every 24h', '#7fdfea');
+        }
+      } catch (_) {}
+      try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
     /* ⚡🛒 BLESS ITEMŲ MARKETAS (08-18) — lotų sąrašas / veiksmo rezultatas / rezervacija apmokėjimui.
      * Piešia game.js (market modalo „⚡ ITEMS" skiltis) — čia tik persiunčiam. */
     room.onMessage('blessmkt', function (e) { try { if (window._f9BmkOnState) window._f9BmkOnState(e); } catch (_) {} });

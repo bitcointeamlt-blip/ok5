@@ -6,7 +6,7 @@ import { bakRecord, healStructures } from "../services/BaseBackup";
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, baseRowExists, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";
 import { MineLog } from "../services/MineLog";   // ⛏️📜 kasimo įvykių žurnalas (auditui: kaip uždirbti RONKE)   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
-import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel, BLESS_GEN_MAX_LVL } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
 import { shieldList, shieldAdd, shieldBurn } from "../services/BlessShield";   // 🪽🛡 BLESS skydas ant unito (2026-08-19)
 import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReserve, blessMarketBuy, blessMarketFeeBps, blessMarketTreasury } from "../services/BlessMarket";   // ⚡🛒 BLESS itemų prekyba (2026-08-18)
 import { scoreTierCached, scoreTierNow } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
@@ -101,7 +101,14 @@ const FFA_SPAWNS = [
 // Server-authoritative: kolizija (side-lock — pereiti tik pro vartus) + HP + siege + collapse.
 const WALL_HP = 40;
 const WALL_MAX_LVL = 4;                                    // 🏗️ sienos upgrade lygiai (1 medis → 2-4 akmuo, vis stipresnė)
-const wallHpForLevel = (lvl: number) => WALL_HP * Math.max(1, Math.min(WALL_MAX_LVL, lvl));   // L1=40, L2=80, L3=120, L4=160
+/* 🧱🐢 NERF 2026-08-22 (user): „tiktais paskutinį lygį −10 HP" — nuimam TIK nuo aukščiausio lygio,
+ * žemesni lieka nepaliesti. L1=40 · L2=80 · L3=120 · L4=150 (buvo 160).
+ * maxHp visada perskaičiuojamas iš lygio (spawn’inant ir upgrade’inant), tad migracijos nereikia. */
+const WALL_TOP_LVL_NERF = 10;
+const wallHpForLevel = (lvl: number) => {
+  const L = Math.max(1, Math.min(WALL_MAX_LVL, lvl));
+  return WALL_HP * L - (L === WALL_MAX_LVL ? WALL_TOP_LVL_NERF : 0);   // L1=40, L2=80, L3=120, L4=150
+};
 const WALL_COL = 33;                        // 🧱 PILNA VERTIKALI siena per visą map (x=33) — JOKIO apėjimo
 const WALL_GATE: number[] = [];             // jokių vartų — žaidėjas PRIVALO pralaužti sieną kad eitų toliau
 // 🧱 Pilno aukščio siena (rows 0..ARENA_H-1) + zip bokštai prie galų (viršus/apačia). Kiekviena celė = atskiras
@@ -162,7 +169,10 @@ const towerHpForLevel = (lvl: number) => TOWER_HP * Math.max(1, Math.min(TOWER_M
 const TOWER_DMG_BY_LVL: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5 };   // 🗼 07-18 user NERF: 12 buvo OP (5 bokštai=60/залп) → max 5
 const towerDmgForLevel = (lvl: number) => TOWER_DMG_BY_LVL[Math.max(1, Math.min(TOWER_MAX_LVL, lvl))] || 3; // L1=3, L2=4, L3=4, L4=5
 const TOWER_RANGE = 6.5;    // šaudymo nuotolis (cells)
-const TOWER_CD = 2200;      // cooldown tarp šūvių (ms)
+/* 🗼🐢 NERF 2026-08-22 (user): „3 kartai kas 10 sek" → 10000/3 ≈ 3333 ms tarp šūvių.
+ * Buvo 2200 ms = 4,55 šūvio per 10 s vienam bokštui; dabar lygiai 3,0. Su 5 bokštais zalpas krenta
+ * nuo ~22,7 iki 15 šūvių per 10 s. Cooldown per-celę, tad kiekvienas bokštas lėtėja vienodai. */
+const TOWER_CD = 3333;      // cooldown tarp šūvių (ms) — 3 šūviai / 10 s
 const TOWER_DMG = 3;        // bolt žala
 const TOWER_FIRE_MS = 380;  // delsa nuo charge iki hit (sutampa su bolt FX)
 
@@ -321,9 +331,21 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
 //   🪖 08-19 (user): claim'inti gali TIK laikantis ≥12 unitų piniginėje — bless yra armijos priežiūrai,
 //      ne tuščiam farmui. Neįrodžius (RPC tyli) → claim'as neduodamas, bet nieko neįrašom ⇒ para nedingsta.
 const BLESS_MIN_UNITS = Number(process.env.F9_BLESS_MIN_UNITS || 12);
+/* ⚡🏭 BLESS GENERATORIUS (2026-08-22, user): „galimybė generuoti bless tiems, kurie neturi RONKE NFT".
+ * Perkamas pilyje už KAULUS, lygis 1..5. Lygis = +N BLESS į paros emisiją (L1 = 1/parą … L5 = 5/parą).
+ * PRIDEDAMAS prie Score pakopos, ne pakeičia ją (user pasirinkimas: prieinama visiems).
+ * Naudoja TĄ PAČIĄ claim mechaniką (rolling 24h langas, nepasiimta para dingsta) — jokio atskiro laikmačio. */
+const BLESS_GEN_COST: Record<number, number> = { 1: 250, 2: 260, 3: 270, 4: 280, 5: 290 };   // 🦴 už PASIEKIAMĄ lygį
+/* Lygis gyvena pilies `buildings` eilutėje, o claim veikia BET KUR (ne tik savoj pilyje) → skaitom pagal adresą.
+ * DB triktis → 0: emisijos NEpriskaičiuojam, bet ir nieko neišrašom ⇒ para neprarandama (kaip su Score API). */
+async function blessGenLevelOf(addr: string): Promise<number> {
+  try { const b = await loadBaseBuildings(String(addr || "").trim().toLowerCase()); return Math.max(0, Math.min(BLESS_GEN_MAX_LVL, Number(b?.blessGenLevel) || 0)); }
+  catch { return 0; }
+}
 async function blessInsta(addr: string): Promise<any> {
   const t = await scoreTierNow(addr);
-  const st = await blessStatus(addr, t.pct);
+  const gen = await blessGenLevelOf(addr);   // ⚡🏭 generatoriaus lygis pakelia paros lubas
+  const st = await blessStatus(addr, t.pct, gen);
   const cc = await chainCounts(addr);
   const units = cc ? cc.wallet : -1;                    // −1 = nepavyko patikrinti (RPC)
   const gated = !(units >= BLESS_MIN_UNITS);            // neatitinka reikalavimo ARBA nepatikrinta
@@ -332,6 +354,7 @@ async function blessInsta(addr: string): Promise<any> {
     claimable: gated ? 0 : st.claimable,                // mygtukas nerodomas, kol neatitinka
     resetAt: st.resetAt, tier: blessTierLabel(t.pct), pct: t.pct, score: t.score,
     units, minUnits: BLESS_MIN_UNITS, gated,
+    genLevel: gen, genMax: BLESS_GEN_MAX_LVL, genNextCost: BLESS_GEN_COST[gen + 1] || 0,
     supply: st.supply,   // 🌐 globalus BLESS kiekis ŽAIDĖJŲ rankose (dev piniginė išskaičiuota)
   };
 }
@@ -655,6 +678,7 @@ export class F9PvpRoom extends Room<F9State> {
     // 🏗️ HOME: sienos/bokštų upgrade per pilies panelę. Tik savininkas, tik ramus home (be raiderio).
     this.onMessage("upgrade_wall", (client) => this._handleUpgradeWall(client));
     this.onMessage("upgrade_hospital", (client) => this._handleUpgradeHospital(client));
+    this.onMessage("upgrade_blessgen", (client) => this._handleUpgradeBlessGen(client));   // ⚡🏭 BLESS generatorius už kaulus
     // 🛡 SKYDO NUĖMIMAS — TIK pilies SAVININKAS savo namuose (nori būti puolamas anksčiau nei 1h).
     this.onMessage("shield_remove", async (client) => {
       if (!this._home || client.sessionId !== this._ownerSid || !this._ownerAddr) return;
@@ -687,7 +711,8 @@ export class F9PvpRoom extends Room<F9State> {
         // 🏆 emisija pagal RONKE SCORE pakopą; nėra pakopos (žemiau top 50% / API tyli) → nėra ko claim'inti,
         //    IR nieko neįrašom ⇒ para neprarandama, pavyks kai score atsiras/API atsakys.
         const t = await scoreTierNow(addr);
-        if (blessClaimCap(t.pct) < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_score" }); } catch (_) {} return; }
+        const gen = await blessGenLevelOf(addr);   // ⚡🏭 nupirktas generatorius duoda emisiją ir be Score pakopos
+        if (blessClaimCap(t.pct, gen) < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_score" }); } catch (_) {} return; }
         // 🪖 vartai: ≥12 unitų piniginėje. RPC neatsakius NEleidžiam (fail-closed), bet ir nieko nenurašom.
         const _cc = await chainCounts(addr);
         if (!_cc) { try { client.send("bless_claimed", { ok: false, reason: "units_unknown" }); } catch (_) {} return; }
@@ -695,7 +720,7 @@ export class F9PvpRoom extends Room<F9State> {
           try { client.send("bless_claimed", { ok: false, reason: "need_units", units: _cc.wallet, minUnits: BLESS_MIN_UNITS }); } catch (_) {}
           return;
         }
-        const res = await blessClaim(addr, t.pct);
+        const res = await blessClaim(addr, t.pct, gen);
         const insta = await blessInsta(addr);
         try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}
         if (res.ok) console.log(`[F9PvpRoom] ⚡🎒 BLESS claim +${res.credited} → bal ${res.bal} (${addr.slice(0, 10)}…)`);
@@ -2091,6 +2116,7 @@ export class F9PvpRoom extends Room<F9State> {
     const wallLevel = this._buildings.wallLevel || 1, towerLevel = this._buildings.towerLevel || 1;
     const towers = (this._buildings.towers || []).map((t) => ({ y: t.y, level: t.level }));
     const hospLevel = this._buildings.hospLevel || 1;
+    const blessGenLevel = this._buildings.blessGenLevel || 0;   // ⚡🏭 pirktas už kaulus → tas pats monotoniškas kelias
     void this._buildingsOp(addr, (b) => {
       /* 🛡 08-20 MONOTONIŠKUMO SARGAS: žaidime statiniai TIK auga (downgrade'o nėra, bokštai negriaunami
        * visam laikui). Todėl niekada neperrašom DB reikšmės ŽEMESNE — jei kambario `_buildings` liko
@@ -2098,6 +2124,7 @@ export class F9PvpRoom extends Room<F9State> {
       b.wallLevel = Math.max(Number(b.wallLevel) || 1, wallLevel);
       b.towerLevel = Math.max(Number(b.towerLevel) || 1, towerLevel);
       b.hospLevel = Math.max(Number(b.hospLevel) || 1, hospLevel);
+      b.blessGenLevel = Math.max(Number(b.blessGenLevel) || 0, blessGenLevel);
       if (towers.length >= ((b.towers || []).length)) b.towers = towers;   // bokštų tik daugėja
       void bakRecord(addr, b);   // 🏰💾 kas nupirkta už kaulus — iškart į atsarginę kopiją
     });
@@ -2703,6 +2730,29 @@ export class F9PvpRoom extends Room<F9State> {
       this.broadcast("hospital_upgraded", { level: next, slots: this._hospSlots(next), healMs: this._hospHealMs(next) });
       try { client.send("hospital", this._hospPayload(this._ownerAddr)); } catch (_) {}
       console.log(`[F9PvpRoom] 🏥 hospital upgraded → L${next} (-${HOSP_UPG_COST[next] || 0}🦴, slots ${this._hospSlots(next)}, heal ${Math.round(this._hospHealMs(next) / 60000)}min)`);
+    } finally { this._upgBusy = false; }
+  }
+  /* ⚡🏭 BLESS GENERATORIUS — pirkimas ir upgrade už kaulus (2026-08-22, user).
+   * L1 = 250🦴 → +1 BLESS į paros emisiją; toliau +10🦴 už lygį iki L5 (290🦴) → +5/parą.
+   * Emisijos laikmačio nėra: lygis tiesiog pakelia paros claim lubas (BlessBank.blessClaimCap),
+   * tad galioja ta pati rolling 24h mechanika ir tie patys anti-double-claim saugikliai (CAS).
+   * Statoma savo pilyje ir be raido — kaip ligoninė/bokštai (_upgBusy = anti double-spend). */
+  private async _handleUpgradeBlessGen(client: Client) {
+    if (!this._home || client.sessionId !== this._ownerSid) return;
+    if (this.state.players.size > 1) return;   // vyksta raidas → statybos uždarytos
+    const cur = this._buildings.blessGenLevel || 0;
+    if (cur >= BLESS_GEN_MAX_LVL) { try { client.send("blessgen_upgraded", { level: cur, max: true }); } catch (_) {} return; }
+    if (this._upgBusy) return; this._upgBusy = true;
+    try {
+      const next = cur + 1;
+      if (!(await this._spendBones(client, BLESS_GEN_COST[next] || 0, "Bless Generator L" + next))) return;
+      // pakartotinė patikra PO kaulų nurašymo (kitas klik’as/raidas galejo įsiterpti kol laukėm banko)
+      if (this.state.players.size > 1 || (this._buildings.blessGenLevel || 0) >= next) return;
+      this._buildings.blessGenLevel = next;
+      this._persistStructures(this._ownerAddr);
+      const _insta = await blessInsta(this._ownerAddr);   // šviežios paros lubos UI’ui (cap jau su nauju lygiu)
+      try { client.send("blessgen_upgraded", { level: next, max: next >= BLESS_GEN_MAX_LVL, nextCost: BLESS_GEN_COST[next + 1] || 0, insta: _insta }); } catch (_) {}
+      console.log(`[F9PvpRoom] ⚡🏭 bless generator → L${next} (-${BLESS_GEN_COST[next] || 0}🦴, +${next} BLESS/parą) ${this._ownerAddr.slice(0, 10)}…`);
     } finally { this._upgBusy = false; }
   }
   private async _handleUpgradeTowers(client: Client) {

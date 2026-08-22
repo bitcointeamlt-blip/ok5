@@ -39,10 +39,17 @@ const _norm = (a: string) => (a || "").trim().toLowerCase();
 const _key = (a: string) => _norm(a) + "#bless";
 
 // Kiek galima claim'inti per parą pagal Ronke Score percentilę (0 = žemiau top 50% arba nėra score).
-export function blessClaimCap(percentile: number): number {
+/* ⚡🏭 BLESS GENERATORIUS (2026-08-22, user): žaidėjams, kurių Ronke Score nesiekia pakopų (arba
+ * ir siekia — generatorius PRIDEDAMAS, ne pakeičia). Perkamas už kaulus pilyje, lygis 1..5 =
+ * +1..+5 BLESS į paros emisiją. Emisijos mechanika ta pati (rolling 24h langas, nepasiimta para
+ * dingsta), tad jokio atskiro laikmačio nereikia — tik pakyla paros lubos. */
+export const BLESS_GEN_MAX_LVL = 5;
+export function blessClaimCap(percentile: number, genLevel: number = 0): number {
   const p = Number(percentile) || 0;
-  for (const [minP, n] of SCORE_TIERS) if (p >= minP) return Math.max(0, Math.floor(n));
-  return 0;
+  const gen = Math.max(0, Math.min(BLESS_GEN_MAX_LVL, Math.floor(Number(genLevel) || 0)));
+  let tier = 0;
+  for (const [minP, n] of SCORE_TIERS) if (p >= minP) { tier = Math.max(0, Math.floor(n)); break; }
+  return tier + gen;
 }
 // Etiketė UI'ui („TOP 5%") — kad žaidėjas matytų, KODĖL gauna tiek.
 export function blessTierLabel(percentile: number): string {
@@ -140,8 +147,8 @@ export async function blessSupply(): Promise<number> {
   }
 }
 // Statusas panelei: balansas + kiek DAR galima claim'inti šiam lange. DB triktis → konservatyvu (0/0).
-export async function blessStatus(addr: string, percentile: number): Promise<BlessStatus> {
-  const cap = blessClaimCap(percentile);
+export async function blessStatus(addr: string, percentile: number, genLevel: number = 0): Promise<BlessStatus> {
+  const cap = blessClaimCap(percentile, genLevel);
   const now = Date.now();
   try {
     const r = await _read(_norm(addr), now);
@@ -153,9 +160,9 @@ export async function blessStatus(addr: string, percentile: number): Promise<Ble
 }
 
 // CLAIM — įskaito VISĄ likusią šio lango emisiją į balansą. ok=false kai nebėra ko (arba DB triktis).
-export async function blessClaim(addr: string, percentile: number): Promise<{ ok: boolean; credited: number; bal: number; claimable: number }> {
+export async function blessClaim(addr: string, percentile: number, genLevel: number = 0): Promise<{ ok: boolean; credited: number; bal: number; claimable: number }> {
   const a = _norm(addr);
-  const cap = blessClaimCap(percentile);
+  const cap = blessClaimCap(percentile, genLevel);
   if (cap <= 0) return { ok: false, credited: 0, bal: 0, claimable: 0 };
   return boneBankOp(a + "#bless", async () => {
     for (let i = 0; i < CAS_RETRIES; i++) {

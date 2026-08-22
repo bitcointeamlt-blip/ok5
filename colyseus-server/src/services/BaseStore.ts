@@ -73,7 +73,7 @@ export type InjuredUnit = { tokenId: string; utype: string; level: number; until
 // 🏗️ Pastatų konfigūracija (upgrade sistema): sienos lygis + pastatyti bokštai.
 //    + 🏥 injured (eilė) + hospStart — ligoninė laikoma ČIA (buildings jsonb — atskiros DB kolonos NEreikia,
 //    nes Supabase mgmt token miręs → DDL negalimas; service-role upsert veikia).
-export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { y: number; level: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; deadUnits?: string[];
+export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { y: number; level: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; blessGenLevel?: number; deadUnits?: string[];
   cemPot?: number; cemTick?: number; cemPower?: number; cemNft?: number; cemRv?: number; cemWallet?: number; cemRamp?: number;   // ⚰️ kapinės (pot=nesurinkti; rv=RonkeVerse NFT, wallet=Barracks unitų piniginėj — full-player gating)
   minePot?: number;   // ⛏️💰 iškastas RONKE (server-authoritative mining pot; tick=cemTick bendras) — DUTY: raiders vagia 50%
   mineCheckpoint?: number;  // ⛏️🗡 (legacy) senas „siege checkpoint" lygis — vartuose nebedalyvauja, laikom senų klientų suderinamumui
@@ -120,6 +120,9 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const wallLevel = Number.isFinite(+b.wallLevel) ? Math.max(1, Math.min(5, Math.round(+b.wallLevel))) : 1;
     const towerLevel = Number.isFinite(+b.towerLevel) ? Math.max(1, Math.min(5, Math.round(+b.towerLevel))) : 1;
     const hospLevel = Number.isFinite(+b.hospLevel) ? Math.max(1, Math.min(5, Math.round(+b.hospLevel))) : 1;
+    /* ⚡🏭 BLESS GENERATORIUS (2026-08-22, user): perkamas už kaulus, lygis 0..5; lygis = kiek BLESS
+     * prisideda prie paros emisijos (žr. blessClaimCap). 0 = nenupirktas. */
+    const blessGenLevel = Number.isFinite(+b.blessGenLevel) ? Math.max(0, Math.min(5, Math.round(+b.blessGenLevel))) : 0;
     const hospStarts: number[] = Array.isArray(b.hospStarts) ? b.hospStarts.filter((x: any) => Number.isFinite(+x)).map((x: any) => +x) : [];
     const hospDurs: number[] = Array.isArray(b.hospDurs) ? b.hospDurs.filter((x: any) => Number.isFinite(+x)).map((x: any) => +x) : [];
     const deadUnits: string[] = Array.isArray(b.deadUnits) ? b.deadUnits.filter((x: any) => x != null).map((x: any) => String(x)) : [];
@@ -166,7 +169,7 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const mp = b.minePend;
     const minePend = (mp && typeof mp.nonce === "string" && /^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$/.test(mp.nonce) && Number.isFinite(+mp.amt) && +mp.amt > 0 && Number.isFinite(+mp.at))
       ? { nonce: mp.nonce, amt: Math.round(+mp.amt), at: +mp.at } : null;
-    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineMined, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
+    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, blessGenLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineMined, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
   } catch (e) { throw (e instanceof Error ? e : new Error("[BaseStore] loadBaseBuildings failed")); }   // 🛡 S-M5: tinklo išimtis = triktis (metam, ne null)
 }
 
