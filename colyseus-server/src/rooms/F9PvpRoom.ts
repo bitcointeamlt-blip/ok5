@@ -199,6 +199,12 @@ const RETREAT_MS = 15000;    // 15s palaikyti visus zonoj → atsitraukia
 //   (arba grąžink žemiau užkomentuotą env eilutę). Originalas:
 //   const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Number(process.env.F9_INJURY_CHANCE) : 1.0;
 const INJURY_CHANCE = 1.0;   // 100% sužalojimai (0% mirtis) — laikinai
+/* 🏳️💥 DEZERTYRO BAUSMĖ (user 2026-08-22): „pamatė, kad pralaimės, ir išjungė žaidimą" nebeturi būti
+ *   nemokamas. Kokia dalis dar GYVŲ pabėgusiojo NFT unitų nubaudžiama tuo pačiu keliu kaip kritusieji
+ *   mūšyje (_rollInjury). Kol INJURY_CHANCE = 1.0 — tai reiškia TIK ligoninę; grąžinus 10% mirtį
+ *   (1.0 → 0.9) dezertyrai automatiškai pradės ir žūti, be jokių papildomų pakeitimų.
+ *   0 = išjungta (senas elgesys, be deploy'o). */
+const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0.5;
 const HEAL_MS = Number(process.env.F9_HEAL_MS) || 3600 * 1000;   // 1h / unitą (env override testams)
 // 🏥 LIGONINĖS LYGIAI (user 07-04): L2 +1 slotas; L3/L4 −10min gydymui; L5 3-ias slotas.
 const HOSP_MAX_LVL = 5;
@@ -2861,8 +2867,43 @@ export class F9PvpRoom extends Room<F9State> {
       return;
     }
     // FAZA E: čia mirusiems unitams eis lock/permadeath settlement.
+    this._desertPenalty(sid);   // 🏳️💥 PIRMA bausmė (unitai dar alive), TIK TADA nurašom lauką
     this.state.units.forEach((u) => { if (u.owner === sid) u.alive = false; });
     this._checkWin();
+  }
+
+  /* 🏳️💥 DEZERTYRO BAUSMĖ (2026-08-22, user: „užpuoliau, jis pamatė kad pralaimės ir išjungė žaidimą").
+   * PROBLEMA: dar GYVI pabėgusiojo unitai gaudavo tiesiog `alive=false` BE _rollInjury. Puolikui settled
+   * ekranas rodydavo „LOST", bet gynėjo dekas realiai likdavo NEPALIESTAS → grįžęs iškart kasdavo toliau.
+   * Tai buvo pigiausias būdas išvengti atsakomybės: pralaimi → išjungi → sausas.
+   * DABAR: DESERT_PCT (50%) atsitiktinių dar gyvų NFT unitų praeina TĄ PATĮ kelią kaip kritę mūšyje —
+   * _rollInjury → ligoninė (o grąžinus 10% mirtį — ir žūtis; BLESS skydas galioja kaip visada).
+   * Likę 50% laikomi „ištrūkusiais" — jiems nieko; bausmė skaudi, bet ne totali.
+   * Taikoma ABIEM pusėm (puolikas, išjungęs žaidimą pralaimint, baudžiamas taip pat). */
+  private _desertPenalty(sid: string) {
+    if (DESERT_PCT <= 0) return;
+    if (!(this._home || this._asyncRaid)) return;   // ligoninė veikia tik raiduose — kaip ir kovinis _rollInjury
+    const addr = String(this.state.players.get(sid)?.address || "").trim().toLowerCase();
+    if (!addr) return;
+    const alive: F9Unit[] = [];
+    this.state.units.forEach((u) => {
+      if (u.owner === sid && u.alive && u.tokenId && !/^dev/i.test(u.tokenId)) alive.push(u);
+    });
+    if (!alive.length) return;
+    for (let i = alive.length - 1; i > 0; i--) {   // Fisher–Yates: kurie 50% nukenčia — atsitiktinumas, ne eilės tvarka
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = alive[i]; alive[i] = alive[j]; alive[j] = t;
+    }
+    const take = Math.ceil(alive.length * DESERT_PCT);   // ceil → pabėgus su 1 unitu bausmė vis tiek yra
+    for (const u of alive.slice(0, take)) {
+      const res = this._rollInjury(addr, u);
+      this._battleFates.set(u.id, res.fate);
+      if (addr === this._ownerAddr) {   // 📜 gynėjo nuostolis → raido ataskaita (_persistRaidReport)
+        if (res.fate === "dead") this._raidKilled.add(u.tokenId); else this._raidInjured.add(u.tokenId);
+      }
+      console.log(`[F9PvpRoom] 🏳️💥 dezertyras ${u.utype}#${u.tokenId} (${addr.slice(0, 10)}…) → ${res.fate}`);
+    }
+    console.log(`[F9PvpRoom] 🏳️💥 ${addr.slice(0, 10)}… išjungė žaidimą mūšyje → nubausta ${take}/${alive.length} dar gyvų unitų (${Math.round(DESERT_PCT * 100)}%)`);
   }
 
   // FFA win: lieka tik vienas team su gyvais unitais → jis laimi (arba 0 → lygiosios).
