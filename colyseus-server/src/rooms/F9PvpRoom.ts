@@ -2469,27 +2469,44 @@ export class F9PvpRoom extends Room<F9State> {
     addr = (addr || "").trim().toLowerCase();
     const c = this._cem.get(addr);
     if (!c) return;
+    /* 🐛💰 DVIGUBO UŽSKAITYMO FIX (2026-08-22) — regresija iš 52e1e142/eebb5fdf (08-20).
+     * BUVO: delta skaičiuota callback'e nuo `snap.mpotSync`, o `snap` daromas SINCHRONIŠKAI, kai
+     * callback'as vykdomas tik PO DB round-trip'o. Pilies atidarymas kviečia _persistCem DUKART tame
+     * pačiame sinchroniniame bloke (onJoin :1471 ir :1491, tarp jų sinchroniškas _startMatch, jokio
+     * await) ⇒ abu snapshot'ai nešė TĄ PAČIĄ seną bazę S. Pirmas įrašė S+G, antras tą patį G perskaitė
+     * kaip „external" ir pridėjo dar kartą → S+2G. Offline iškastas kiekis užsiskaitydavo 2× KAS
+     * pilies atidarymą (emisija 4,9k → 12,9k per parą; DB liko neįmanoma būsena safe+mineMined=600).
+     * DABAR: deltą pasiimam ir „suvartojam" SINCHRONIŠKAI — dar prieš dedant į eilę. Antras to paties
+     * tiko kvietimas gauna deltą 0, o svetimas grobis (dėl ko 08-20 fix'as ir darytas) vis tiek
+     * pridedamas, nes rašom `dbPot + delta`, o ne aklą savo reikšmę. */
+    const _pSync = Number.isFinite(+(c.mpotSync as any)) ? +(c.mpotSync as any) : (c.mpot || 0);
+    const dPot = Math.round(((c.mpot || 0) - _pSync) * 1000) / 1000;
+    c.mpotSync = c.mpot || 0;                       // suvartota — kitas kvietimas šito nebepridės
+    const _mSync = Number.isFinite(+(c.msync as any)) ? +(c.msync as any) : (c.mmined || 0);
+    const dMined = Math.round(((c.mmined || 0) - _mSync) * 1000) / 1000;
+    c.msync = c.mmined || 0;
     const snap = { ...c };
     void this._buildingsOp(addr, (b) => {
       /* ⛏️💰 LOST-UPDATE FIX (2026-08-20, user: „puola pilį, laimi, bet negauna looto").
        * `minePot` keičia NE tik šis kambarys: raido grobis įrašomas per puoliko #buildings eilę IŠ KITO
-       * kambario. Anksčiau čia buvo aklas `b.minePot = snap.mpot` → savininko namų kambarys, turintis
-       * senesnę reikšmę atmintyje, TIESIOG UŽTRINDAVO ką tik gautą grobį (arba gynėjui grąžindavo
-       * pavogtą sumą). Dabar rašom DELTĄ: kiek pridėjo/atėmė kitas kambarys — tiek ir pritaikom. */
+       * kambario. Aklas `b.minePot = snap.mpot` užtrindavo ką tik gautą grobį. Todėl rašom savo DELTĄ
+       * ant DABARTINĖS DB reikšmės — svetimi pokyčiai išlieka savaime. */
       const dbPot = Number.isFinite(+((b as any).minePot)) ? Math.max(0, +((b as any).minePot)) : 0;
-      const base = Number.isFinite(+(snap as any).mpotSync) ? +(snap as any).mpotSync! : dbPot;
-      const external = dbPot - base;   // >0 = grobis atėjo · <0 = kažkas nurašė (pvz. mus apiplėšė)
-      const merged = Math.max(0, Math.min(MINE_CAP, Math.round((snap.mpot + external) * 1000) / 1000));
+      const merged = Math.max(0, Math.min(MINE_CAP, Math.round((dbPot + dPot) * 1000) / 1000));
       b.minePot = merged;
-      c.mpot = merged; c.mpotSync = merged;   // kambario atmintis irgi pasiveja (klientas mato tikrą sumą)
-      /* ⛏️🗡 TAS PATS DELTOS principas ciklo skaitliukui: `mineMined` nulinį reikšmę rašo IR raido kambarys
-       * (_advanceSiege po kvalifikuoto PvP). Aklas `b.mineMined = snap.mmined` grąžintų 200 atgal ⇒ mūšis
-       * nieko neduotų. Neigiama delta = kitas kambarys atrakino ciklą — priimam. */
+      /* Gyvos reikšmės NEperrašom aklai: tarp eilės sudarymo ir callback'o _cemAccrue galėjo prikaupti
+       * dar (`localSince`) — aklas `c.mpot = merged` tą prieaugį prarastų (žaidėjas netektų iškasto). */
+      const localSince = Math.max(0, Math.round(((c.mpot || 0) - (c.mpotSync || 0)) * 1000) / 1000);
+      c.mpot = Math.max(0, Math.min(MINE_CAP, Math.round((merged + localSince) * 1000) / 1000));
+      c.mpotSync = merged;
+      /* ⛏️🗡 TAS PATS DELTOS principas ciklo skaitliukui: `mineMined` nulį rašo IR raido kambarys
+       * (_advanceSiege po kvalifikuoto PvP). Neigiama delta = kitas kambarys atrakino ciklą — priimam. */
       const dbMined = Number.isFinite(+((b as any).mineMined)) ? Math.max(0, +((b as any).mineMined)) : (snap.mmined || 0);
-      const mBase = Number.isFinite(+(snap as any).msync) ? +(snap as any).msync! : dbMined;
-      const mMerged = Math.max(0, Math.round(((snap.mmined || 0) + (dbMined - mBase)) * 1000) / 1000);
+      const mMerged = Math.max(0, Math.round((dbMined + dMined) * 1000) / 1000);
       b.mineMined = mMerged;
-      c.mmined = mMerged; c.msync = mMerged;
+      const mLocalSince = Math.max(0, Math.round(((c.mmined || 0) - (c.msync || 0)) * 1000) / 1000);
+      c.mmined = Math.max(0, Math.round((mMerged + mLocalSince) * 1000) / 1000);
+      c.msync = mMerged;
       // 🗡 gated NEBĖRA savarankiška būsena — išvedam iš ciklo (SAFE + iškasta ≥200). Rašom tik senų klientų/ataskaitų labui.
       const _gated = (snap.duty === "safe") && mMerged >= MINE_SIEGE_STEP - 0.01;
       c.gated = _gated;
