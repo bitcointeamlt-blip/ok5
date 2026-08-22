@@ -2297,6 +2297,10 @@
   function upgradeHospital() {
     var r = _room(); if (r) { try { r.send('upgrade_hospital'); } catch (_) {} }
   }
+  // ⚡ BLESS GENERATORIUS — antra ligoninės dalis (08-22 user). Serveris validuoja savininką/kaulus/lygį.
+  function upgradeBlessGen() {
+    var r = _room(); if (r) { try { r.send('upgrade_blessgen'); } catch (_) {} }
+  }
   // 🛡 Savininkas nusiima skydą (nori būti puolamas anksčiau) — serveris validuoja owner.
   function removeShield() {
     var r = _room(); if (r) { try { r.send('shield_remove'); } catch (_) {} }
@@ -2520,7 +2524,7 @@
   }
 
   window.F9PvpLive = {
-    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, removeShield: removeShield, buildTower: buildTower, stop: stop,
+    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, removeShield: removeShield, buildTower: buildTower, stop: stop,
     isActive: active,
     netTick: netTick,
     sendCommand: sendCommand,

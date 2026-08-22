@@ -12209,27 +12209,6 @@ function _f9HospUpdateStatus() {
         : 'Could not read your units on-chain — reopen the panel in a moment';
     } else _clB.style.display = 'none';
   }
-  /* ⚡🏭 BLESS GENERATOR (08-22) — rodom tik SAVO pilyje (ne raide). Lygis 0 → „BUY 250🦴",
-     1..4 → „L2 260🦴", L5 → pilnas. Serveris yra tiesos šaltinis; čia tik etiketė iš `insta`. */
-  const _genB = _f9HospPanelEl.querySelector('#f9hosp-gen');
-  if (_genB) {
-    const _lvl = _in.genLevel || 0, _max = _in.genMax || 5, _cost = _in.genNextCost || 0;
-    const _atHome = !!window.__f9HomeActive && !window.__f9RaidActive;
-    const _lb = _genB.querySelector('.f9-bl-lbl');
-    if (!_atHome || _in.genLevel == null) { _genB.style.display = 'none'; }
-    else if (_lvl >= _max) {
-      _genB.style.display = ''; _genB.classList.add('dim'); _genB.onclick = null;
-      if (_lb) _lb.innerHTML = '⚡🏭 L' + _lvl + ' MAX';
-      _genB.title = 'BLESS Generator is fully upgraded — it adds +' + _lvl + ' BLESS to your daily claim.';
-    } else {
-      _genB.style.display = ''; _genB.classList.remove('dim');
-      if (_lb) _lb.innerHTML = _lvl > 0 ? ('⚡🏭 L' + (_lvl + 1) + ' · ' + _cost + '🦴') : ('⚡🏭 BUY · ' + _cost + '🦴');
-      _genB.title = (_lvl > 0
-        ? 'BLESS Generator L' + _lvl + ' — adds +' + _lvl + ' BLESS to your daily claim.\nUpgrade to L' + (_lvl + 1) + ' for ' + _cost + ' bones → +' + (_lvl + 1) + ' per 24h.'
-        : 'Buy a BLESS Generator for ' + _cost + ' bones — it adds +1 BLESS to your daily claim, no Ronke Score needed.\nUpgradeable to L' + _max + ' (+' + _max + ' per 24h).')
-        + '\nStacks on top of your Ronke Score tier. Unclaimed days still do NOT stack.';
-    }
-  }
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
   const HEAL = window._f9HospHealMs || 3600000;
   const now = Date.now();
@@ -12401,9 +12380,6 @@ function _f9ToggleHospitalPanel() {
       /* 🌐 08-21: globalus BLESS supply (dev piniginė išskaičiuota serveryje). Slepiamas, kol nėra duomenų. */
       '<span id="f9hosp-bless-supply" style="display:none;font-size:8px;color:#6a8f96;padding:3px 6px;background:rgba(74,157,166,0.08);border:1px solid #1f4d54;border-radius:4px;white-space:nowrap;" title="Total BLESS held by players (dev wallet excluded)">GLOBAL 0</span>' +
       '<button id="f9hosp-claim" class="f9-bless-btn" style="display:none;" title="Claim your daily BLESS items (unclaimed days do NOT stack — come back every day!)"><span class="f9-bl-lbl">' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'CLAIM <span id="f9hosp-claim-n"></span></span></button>' +
-      /* ⚡🏭 08-22 (user): BLESS GENERATOR — perkamas už kaulus, kad daily BLESS turėtų ir tie, kurių
-         Ronke Score nesiekia pakopų. L1 250🦴 → +1/24h, toliau +10🦴 už lygį iki L5 (+5/24h). */
-      '<button id="f9hosp-gen" class="f9-bless-btn" style="display:none;"><span class="f9-bl-lbl">⚡🏭</span></button>' +
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
@@ -12441,18 +12417,6 @@ function _f9ToggleHospitalPanel() {
         _f9BlessSparkle(clb);
         window.F9PVP.room.send('bless_claim');
         setTimeout(function () { if (clb.parentNode) { clb.classList.remove('busy'); const l2 = clb.querySelector('.f9-bl-lbl'); if (l2) l2.innerHTML = '' + _f9WingsIco(13, "vertical-align:-2px;margin-right:3px;") + 'CLAIM <span id="f9hosp-claim-n"></span>'; } }, 2200);
-      }
-    } catch (_) {}
-  };
-  /* ⚡🏭 BLESS GENERATOR — pirkimas/upgrade už kaulus. Serveris tikrina viską pats (sava pilis, ne raido
-     metu, kaulų užtenka, lygis tik auga) — čia tik mygtukas + busy būsena, kaip su CLAIM. */
-  const genb = el.querySelector('#f9hosp-gen');
-  if (genb) genb.onclick = function () {
-    try {
-      if (window.F9PVP && window.F9PVP.room) {
-        genb.classList.add('busy'); const l = genb.querySelector('.f9-bl-lbl'); if (l) l.textContent = '⚡ …';
-        window.F9PVP.room.send('upgrade_blessgen');
-        setTimeout(function () { if (genb.parentNode) { genb.classList.remove('busy'); _f9HospUpdateStatus(); } }, 2200);
       }
     } catch (_) {}
   };
@@ -13192,7 +13156,12 @@ function _f9CastlePanelEl() {
       // 🦴 kaina mygtuke — RYŠKI ir DIDESNĖ (user 07-03); ant pilko locked mygtuko — auksinė, kad matytųsi ko trūksta
       '.f9cp-bcost{font-size:12px;letter-spacing:0;white-space:nowrap}' +
       '.f9cp-up.max .f9cp-bcost{color:#ffcf5c;text-shadow:0 0 8px rgba(255,207,92,.4)}' +
-      '.f9cp-cost{font-size:6px;color:#6a7a8a;text-align:center;margin-top:8px;line-height:1.7}';
+      '.f9cp-cost{font-size:6px;color:#6a7a8a;text-align:center;margin-top:8px;line-height:1.7}' +
+      /* ⚡ 08-22: antra kortelės dalis (HOSPITAL = gydymas + BLESS generatorius). Atskiriama linija,
+         kad būtų aišku, jog tai TA PATI ligoninė, o ne naujas pastatas. */
+      '.f9cp-sub{margin-top:13px;padding-top:12px;border-top:1px dashed #3a3a55}' +
+      '.f9cp-note{font-size:6px;color:#7a8a9a;margin-top:8px;line-height:1.9;text-align:center}' +
+      '.f9cp-note b{color:#aef0f7}';
     document.head.appendChild(st);
   }
   p = document.createElement('div'); p.id = 'f9-castle-panel';
@@ -13237,7 +13206,9 @@ function _f9ZipThumb() {
 }
 // 🦴 Upgrade kainos — VEIDRODIS serverio F9PvpRoom.ts (WALL_UPG_COST/TOWER_BUILD_COST/TOWER_UPG_COST).
 //    Display only — tikrą mokėjimą enforce'ina serveris iš banko. Keisk ABIEJOSE pusėse sinchroniškai!
-const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 } };
+/* ⚡ bless: BLESS GENERATOR — antra HOSPITAL kortelės dalis (08-22 user). Raktas = PASIEKIAMAS lygis,
+   kaip ir kitur. Turi sutapti su serverio BLESS_GEN_COST (F9PvpRoom.ts) — serveris yra tiesos šaltinis. */
+const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 }, bless: { 1: 250, 2: 260, 3: 270, 4: 280, 5: 290 } };
 // 🏗️ Pilies panelės KŪNAS — upgrade kortelės (siena dabar; bokštai = STEP2). Skaito lygį LIVE iš S._f9Walls.
 function _f9RenderCastlePanelBody() {
   const body = document.getElementById('f9cp-body'); if (!body) return;
@@ -13316,6 +13287,26 @@ function _f9RenderCastlePanelBody() {
                   (hOk ? ('\u2b06 UPGRADE L' + (hl + 1) + ' (' + NEXT_FX[hl + 1] + ') \u2014 <span class="f9cp-bcost">' + hCost + ' \ud83e\uddb4</span>')
                        : ('\ud83d\udd12 NEED <span class="f9cp-bcost">' + hCost + ' \ud83e\uddb4</span>')) + '</button>' +
                   '<div class="f9cp-cost">PAID FROM BONE BANK</div>') +
+        /* ⚡ BLESS GENERATOR — antra ligoninės dalis (08-22 user: „hospitas irgi bus iš dviejų").
+           Duoda BLESS kas 24h net ir tiems, kurių Ronke Score nesiekia pakopų. Lygis = kiek per parą. */
+        (function () {
+          const _in = window._f9HospInsta || {};
+          const bl = Math.max(0, Math.min(5, _in.genLevel || 0)), bMax = _in.genMax || 5, bIsMax = bl >= bMax;
+          const bCost = _F9_UPG_COST.bless[bl + 1] || 0, bOk = bank >= bCost;
+          let bp = ''; for (let i = 1; i <= bMax; i++) bp += '<div class="f9cp-pip' + (i <= bl ? ' on' : '') + '"></div>';
+          const perDay = bIsMax ? ('<b>' + bl + ' / 24H</b>')
+            : ((bl > 0 ? bl : 0) + ' <span class="arw">→</span> <b>' + (bl + 1) + ' / 24H</b>');
+          return '<div class="f9cp-sub">' +
+            '<div class="ch"><span class="cn">⚡ BLESS GENERATOR</span><span class="clv">' + (bl > 0 ? ('L' + bl + '/' + bMax) : 'NOT BUILT') + '</span></div>' +
+            '<div class="f9cp-pips">' + bp + '</div>' +
+            '<div class="f9cp-stat"><span>BLESS PER 24H</span><span>' + perDay + '</span></div>' +
+            (bIsMax ? '<button class="f9cp-up max">MAX LEVEL</button>'
+                    : '<button class="f9cp-up' + (bOk ? '' : ' max') + '" id="f9cp-blessup"' + (bOk ? '' : ' disabled') + '>' +
+                      (bOk ? ('⚡ BLESS L' + (bl + 1) + ' (+1 / 24H) — <span class="f9cp-bcost">' + bCost + ' 🦴</span>')
+                           : ('🔒 NEED <span class="f9cp-bcost">' + bCost + ' 🦴</span>')) + '</button>') +
+            '<div class="f9cp-note">Generates BLESS every 24h. Level 1 gives you <b>1 per day</b>, and every level adds one more — up to <b>' + bMax + '</b> at L' + bMax + '. Adds on top of your Ronke Score tier. Come back to CLAIM it — unclaimed days do not stack.</div>' +
+          '</div>';
+        })() +
         '</div>';
     })() +
     // \ud83d\udee1 RAID SHIELD \u2014 rodoma TIK kai aktyvus; savininkas gali NUSIIMTI (nori b\u016bti puolamas anks\u010diau)
@@ -13339,6 +13330,9 @@ function _f9RenderCastlePanelBody() {
   if (bt && !bt.disabled && _f9TowerCount() < _F9_MAX_TOWERS) bt.onclick = function () { _f9EnterTowerPlaceMode(); };
   const hb = body.querySelector('#f9cp-hospup');
   if (hb && !hb.disabled) hb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeHospital) window.F9PvpLive.upgradeHospital(); };
+  // ⚡ BLESS GENERATOR — ta pati ligoninės kortelė, antras mygtukas (serveris validuoja viską pats)
+  const bgb = body.querySelector('#f9cp-blessup');
+  if (bgb && !bgb.disabled) bgb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeBlessGen) window.F9PvpLive.upgradeBlessGen(); };
   const sb = body.querySelector('#f9cp-shieldoff');
   if (sb) sb.onclick = function () {
     window.__f9ShieldUntil = 0;   // optimistinis — serveris patvirtins 'shield {until:0}' žinute
