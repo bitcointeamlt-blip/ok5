@@ -2883,7 +2883,18 @@ export class F9PvpRoom extends Room<F9State> {
   private _desertPenalty(sid: string) {
     if (DESERT_PCT <= 0) return;
     if (!(this._home || this._asyncRaid)) return;   // ligoninė veikia tik raiduose — kaip ir kovinis _rollInjury
-    const addr = String(this.state.players.get(sid)?.address || "").trim().toLowerCase();
+    /* 🚨 HOTFIX 2026-08-22: BŪTINA sąlyga — lauke turi būti GYVŲ PRIEŠO unitų, t. y. mūšis TIKRAI vyksta.
+     * Be šito `this._home` buvo true ir tada, kai žaidėjas tiesiog sėdi SAVO pilyje be jokio raido:
+     * uždarius skirtuką (arba telefonui užmigdžius puslapį → seat-reaper) `onLeave` kviesdavo
+     * `_handlePlayerOut`, ir pusė VISIŠKAI nekaltų unitų keliaudavo į ligoninę. Kas kartą, kas išėjimą.
+     * Solo pilyje priešo unitų nėra ⇒ bausmės nėra. Gyvame raide (gynėjas mato puoliką) ir async raide
+     * (puolikas mato AI gynėjus) priešas yra ⇒ dezertyravimas baudžiamas kaip ir turi būti. */
+    const me = this.state.players.get(sid);
+    if (!me) return;
+    let enemyAlive = false;
+    this.state.units.forEach((u) => { if (u.alive && u.team !== me.team) enemyAlive = true; });
+    if (!enemyAlive) return;
+    const addr = String(me.address || "").trim().toLowerCase();
     if (!addr) return;
     const alive: F9Unit[] = [];
     this.state.units.forEach((u) => {
