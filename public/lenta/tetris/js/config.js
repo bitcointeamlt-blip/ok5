@@ -17,11 +17,7 @@
 
     /* ---------- valdymo jausmas (handling) ---------- */
     DAS: 133,      // ms iki auto-shift pradžios
-    /* 2026-08-23: 20 -> 2 ms. Prie 20 ms palaikius kairėn figūra per 5 stulpelius keliaudavo
-     * 133 + 5x20 = 233 ms — žaidėjai tai jautė kaip lagą („doesnt feel very responsive", Discord).
-     * 2 ms = ~480 langelių/s: praktiškai momentinis, bet VIS DAR sustabdomas — palaikęs ir paleidęs
-     * sustoji ten, kur nori. 0 = šuolis iškart iki sienos (nebesustabdoma; kompetityvus variantas). */
-    ARR: 2,        // ms tarp auto-shift žingsnių (0 = momentinis šuolis iki sienos)
+    ARR: 20,       // ms tarp auto-shift žingsnių (0 = momentinis)
     SDF: 25,       // soft drop greitis: kartų greičiau nei gravitacija (ms/cell = max(8, grav/SDF))
     LOCK_DELAY: 500,
     LOCK_RESETS: 15,   // kiek kartų judesys gali atnaujinti lock delay
