@@ -93,9 +93,23 @@
   try { window._f9TestAttackAlarm = _f9PlayAttackAlarm; } catch (_) {}   // 🧪 test: konsolėje `_f9TestAttackAlarm()`
 
   function S() { return B ? B.S : (window.S || null); }
-  /* 📱 Telefono aptikimas kaulų widget'ui. NEsiremiam vien User-Agent: Chrome „Desktop site" režime
-   * Android'as prisistato kaip `X11; Linux x86_64` (be „Android"/„Mobile"), ir telefonas būtų palaikytas
-   * kompiuteriu. Todėl PIRMA klausiam paties įrenginio — ar pelė „stambi" (pirštas) ir ar yra lietimas. */
+  /* 📱🦴 08-23 (user): telefone F12 „ball" žaidime kaulų balanso NErodom — widget'as yra `position:fixed`
+   * viršuje per vidurį ir gula ant paties žaidimo lauko, o ten ekrano aukščio ir taip mažai.
+   * Desktop'e ir kituose aukštuose lieka kaip buvo. Grąžina true, jei paslėpė.
+   * ⚠️ Tikrinti reikia NE tik `_syncBones` viduje: tą kviečia F9 būsenos atnaujinimai, o įėjus į F12 jie
+   * nustoja ateiti ⇒ funkcija nebekviečiama ir widget'as lieka kabėti (būtent taip ir buvo pirmu bandymu).
+   * Todėl žemiau dar sukasi savas 500ms tikrintuvas. */
+  function _f12HideBones() {
+    try {
+      var st = S();
+      if (!_IS_MOBILE_BONE || !boneBalEl || !st || st.floor !== 12) return false;
+      if (boneBalEl.style.display !== 'none') {
+        boneBalEl.style.display = 'none';
+        document.body.classList.remove('f9-bones-live');
+      }
+      return true;
+    } catch (_) { return false; }
+  }
   var _IS_MOBILE_BONE = (function () {
     try {
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
@@ -103,6 +117,7 @@
     } catch (_) {}
     return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini|Android/i.test(navigator.userAgent || '');
   })();
+  setInterval(_f12HideBones, 500);   // 📱 F12 gali būti atidarytas be jokio F9 atnaujinimo — tikrinam patys
   function rndAddr() { return '0xlive' + Math.floor(Math.random() * 1e6); }
   function pnow() { return (window.performance ? performance.now() : Date.now()); }
   function _room() { return window.F9PVP && window.F9PVP.room; }
@@ -161,14 +176,7 @@
     _mb.bones = session; _mb.bank = _boneBankVal; _mb.total = target; _mb.mult = me.boneMult || 1; _mb.ronke = target * 5;   // 1 kaulas = 5 RONKE (== serverio BONE_VALUE_RONKE)
     _ui(); if (!boneBalEl) return;
     if (!started) { boneBalEl.style.display = 'none'; document.body.classList.remove('f9-bones-live'); _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true; return; }
-    /* 📱🦴 08-23 (user): telefone F12 „ball" žaidime kaulų balanso NErodom. Widget'as yra
-     * `position:fixed` viršuje per vidurį, tad F12'e jis gula ant paties žaidimo lauko — o ten ekrano
-     * aukščio ir taip mažai. Desktop'e ir kituose aukštuose lieka kaip buvo. */
-    if (_IS_MOBILE_BONE && S() && S().floor === 12) {
-      boneBalEl.style.display = 'none';
-      document.body.classList.remove('f9-bones-live');
-      return;
-    }
+    if (_f12HideBones()) return;   // 📱🦴 telefone F12 „ball" žaidime balanso nerodom (žr. _f12HideBones)
     boneBalEl.style.display = 'flex';
     document.body.classList.add('f9-bones-live');   // 📱 notifikacijos nusileidžia žemiau widget'o (style.css)
     // Pirmas load (scene-enter / bankas ką tik sužinotas) → SNAP be animacijos/pulse (bankas ne „nauji" kaulai)
