@@ -12,6 +12,13 @@
   var POLL_MS = 8000, PANEL_POLL_MS = 2500;
   var _timer = null, _colyseusLoading = null, _client = null, _running = false;
   var _waitingRooms = [], _lastCount = 0;
+  /* 🧱🔕 PRANEŠTA APIE KAMBARĮ (2026-08-23, user: „atrodo, kad žaidėjas pastoviai kuria mačus").
+   * Anksčiau toast'as kabėjo ant `count > _lastCount`, o `_lastCount` nunulinamas kaskart, kai
+   * paslepiamas skirtukas / uždaroma panelė / išeinama iš minižaidimo. Todėl TAS PATS vienas laukiantis
+   * žaidėjas būdavo skelbiamas vėl ir vėl, ir atrodydavo, kad jis kuria vis naujus mačus. Patikrinta
+   * gyvai: jis turėjo VIENĄ kambarį, sukurtą prieš 22 min. Dabar žymim roomId — vienas kambarys = vienas
+   * pranešimas; dingus iš sąrašo žymė nuimama, tad tikrai naujas mačas vėl praneš. */
+  var _toasted = Object.create(null);
   var _panel = null, _panelPoll = null, _iframe = null, _gameWrap = null, _gameOn = false, _iframeLoaded = false;
   var _lobbyRoom = null, _allRooms = [];   // realaus laiko LobbyRoom (Colyseus push, ne polling)
   var TIERS = [69, 200, 800];              // statymo pakopos (RONKE); laimėtojas 80%, treasury 20%
@@ -890,6 +897,7 @@
 
   // ── Badge + toast (pranešimas kai kažkas laukia; NErodom kai pats žaidi/panelėje) ──
   function _poll() {
+    // ⚠️ `_toasted` čia NEVALOM — kitaip grįžus į skirtuką tas pats kambarys būtų paskelbtas iš naujo.
     if (document.hidden || !_inAdventure()) { _setBadge(0); _lastCount = 0; _stopShakeLoop(); return; }
     if (_lobbyRoom) return;   // panelė atidaryta su REALAUS LAIKO lobby → jis tvarko sąrašą (nepoliname)
     _fetchWaiting().then(function (list) {
@@ -897,8 +905,18 @@
       var count = list.length;
       if (_inMinigame() || _panel || _bgActive) count = 0;   // jau čia esu / hostinu → nerodom
       _setBadge(count);
+      // 🔕 nuimam žymes nuo kambarių, kurių sąraše nebėra (jie užsidarė) → tikrai naujas mačas vėl praneš
+      var _live = Object.create(null);
+      for (var i = 0; i < list.length; i++) if (list[i].roomId) _live[list[i].roomId] = 1;
+      for (var k in _toasted) if (!_live[k]) delete _toasted[k];
       if (count > 0) {
-        if (count > _lastCount) _toast(count, list[0] && list[0].host);   // toast tik naujam
+        /* Skelbiam TIK tuos, apie kuriuos dar nepranešta. Kol esi minižaidime/panelėje (`count = 0`
+         * aukščiau) nieko nežymim — išėjus gausi pranešimą vieną kartą, o ne kas kartą. */
+        var _fresh = list.filter(function (r) { return r.roomId && !_toasted[r.roomId]; });
+        if (_fresh.length) {
+          _toast(_fresh.length, _fresh[0] && _fresh[0].host);
+          _fresh.forEach(function (r) { _toasted[r.roomId] = 1; });
+        }
         _startShakeLoop();                                                // 🎮 3× virptelėjimai kas 30s, kol laukia
       } else _stopShakeLoop();
       _lastCount = count;
@@ -1677,6 +1695,7 @@
     _captureRef();        // 🎁 pagaunam ?ref=<addr> iš referal/invite linko (localStorage)
     _poll(); _timer = setInterval(_poll, POLL_MS);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) _poll(); });
+    // 🔕 `_toasted` NEvalom — išėjus iš minižaidimo apie tą patį laukiantį kambarį pranešam tik jei dar nepranešta
     window.addEventListener('minigame:closed', function () { _lastCount = 0; setTimeout(_poll, 500); });
     _checkInviteJoin();   // 🔗 atidaryta per kvietimo nuorodą (?rbjoin=<id>) → auto-join
   }
