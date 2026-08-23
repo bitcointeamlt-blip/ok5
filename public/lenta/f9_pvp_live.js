@@ -93,6 +93,16 @@
   try { window._f9TestAttackAlarm = _f9PlayAttackAlarm; } catch (_) {}   // 🧪 test: konsolėje `_f9TestAttackAlarm()`
 
   function S() { return B ? B.S : (window.S || null); }
+  /* 📱 Telefono aptikimas kaulų widget'ui. NEsiremiam vien User-Agent: Chrome „Desktop site" režime
+   * Android'as prisistato kaip `X11; Linux x86_64` (be „Android"/„Mobile"), ir telefonas būtų palaikytas
+   * kompiuteriu. Todėl PIRMA klausiam paties įrenginio — ar pelė „stambi" (pirštas) ir ar yra lietimas. */
+  var _IS_MOBILE_BONE = (function () {
+    try {
+      if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+      if ((navigator.maxTouchPoints || 0) > 1) return true;
+    } catch (_) {}
+    return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini|Android/i.test(navigator.userAgent || '');
+  })();
   function rndAddr() { return '0xlive' + Math.floor(Math.random() * 1e6); }
   function pnow() { return (window.performance ? performance.now() : Date.now()); }
   function _room() { return window.F9PVP && window.F9PVP.room; }
@@ -151,6 +161,14 @@
     _mb.bones = session; _mb.bank = _boneBankVal; _mb.total = target; _mb.mult = me.boneMult || 1; _mb.ronke = target * 5;   // 1 kaulas = 5 RONKE (== serverio BONE_VALUE_RONKE)
     _ui(); if (!boneBalEl) return;
     if (!started) { boneBalEl.style.display = 'none'; document.body.classList.remove('f9-bones-live'); _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true; return; }
+    /* 📱🦴 08-23 (user): telefone F12 „ball" žaidime kaulų balanso NErodom. Widget'as yra
+     * `position:fixed` viršuje per vidurį, tad F12'e jis gula ant paties žaidimo lauko — o ten ekrano
+     * aukščio ir taip mažai. Desktop'e ir kituose aukštuose lieka kaip buvo. */
+    if (_IS_MOBILE_BONE && S() && S().floor === 12) {
+      boneBalEl.style.display = 'none';
+      document.body.classList.remove('f9-bones-live');
+      return;
+    }
     boneBalEl.style.display = 'flex';
     document.body.classList.add('f9-bones-live');   // 📱 notifikacijos nusileidžia žemiau widget'o (style.css)
     // Pirmas load (scene-enter / bankas ką tik sužinotas) → SNAP be animacijos/pulse (bankas ne „nauji" kaulai)
