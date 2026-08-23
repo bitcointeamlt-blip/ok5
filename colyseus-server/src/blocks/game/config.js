@@ -17,7 +17,9 @@
 
     /* ---------- valdymo jausmas (handling) ---------- */
     DAS: 133,      // ms iki auto-shift pradžios
-    ARR: 20,       // ms tarp auto-shift žingsnių (0 = momentinis)
+    /* 2026-08-23: 20 -> 2 ms. PRIVALO sutapti su public/lenta/tetris/js/config.js — kitaip tas pats
+     * žaidėjas client-auth ir serverAuth mačuose jaustų skirtingą valdymą. Žr. kliento kopijos komentarą. */
+    ARR: 2,        // ms tarp auto-shift žingsnių (0 = momentinis šuolis iki sienos)
     SDF: 25,       // soft drop greitis: kartų greičiau nei gravitacija (ms/cell = max(8, grav/SDF))
     LOCK_DELAY: 500,
     LOCK_RESETS: 15,   // kiek kartų judesys gali atnaujinti lock delay
